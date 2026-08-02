@@ -1,0 +1,72 @@
+# === Python ===
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+
+# === Build Artifacts ===
+dist/
+build/
+build_cache/
+build_dist/
+.omnicra/           # legacy build marker
+.runtime/
+_internal/
+browsers/
+runtime/
+_empty_*/
+artifacts/
+*.spec.bak
+
+# === Testing & Coverage ===
+.pytest_cache/
+.test-tmp/
+.coverage
+.coverage.*
+coverage.xml
+coverage.json
+htmlcov/
+cov_baseline.txt
+e2e-artifacts/
+
+# === Linting & Type-Checking ===
+.mypy_cache/
+.ruff_cache/
+
+# === IDE / OS ===
+.vscode/
+.idea/
+.trae/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# === Tool Data ===
+.workbuddy/
+.reasonix/
+.omnicrawler/
+.uploads/
+
+# === Runtime Data ===
+data/input/*
+!data/input/.gitkeep
+data/pdfs/*
+!data/pdfs/.gitkeep
+work/*
+!work/.gitkeep
+output/*
+!output/.gitkeep
+*.sqlite3*
+*.sqlite3-*
+
+# === Environment ===
+.env
+
+# === Logs ===
+*.log
+
+# === Docker ===
+docker-compose.override.yml

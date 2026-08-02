@@ -1,0 +1,27 @@
+template_version: 1
+
+template:
+  id: protocols/server-sent-events
+  name: SSE 服务器事件流
+  category: protocols/stream
+  description: "采集公开或授权的 text/event-stream 事件"
+  version: 1.0.0
+  tags: [SSE, 实时, 事件流]
+  capabilities: [sse, streaming]
+
+  placeholders:
+    stream_url: {label: SSE 地址, required: true}
+
+  header_contains: {content-type: text/event-stream}
+
+  verified_at: '2026-07-17'
+
+project: {name: sse_stream, workspace: work/sse_stream}
+
+source: {kind: sse, seeds: ['{{stream_url}}'], max_messages: 1000, timeout_seconds: 60}
+
+crawl: {max_pages: 1, concurrency: 1}
+
+extract: {mode: auto, fields: {}, review_low_confidence: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

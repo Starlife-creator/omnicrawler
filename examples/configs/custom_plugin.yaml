@@ -1,0 +1,6 @@
+project: {name: 示例项目-自定义站点插件, workspace: work/custom_plugin}
+source: {kind: example_news, seeds: [https://example.com/]}
+plugins: {paths: [examples/plugins/example_site.py]}
+crawl: {max_pages: 20, max_depth: 2, same_host: true}
+http: {user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
+extract: {mode: html, fields: {title: {selector: title}, heading: {selector: h1}}}

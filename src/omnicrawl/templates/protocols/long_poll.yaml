@@ -1,0 +1,27 @@
+template_version: 1
+
+template:
+  id: protocols/long-poll
+  name: "HTTP 长轮询"
+  category: protocols/real-time
+  description: "对公开或授权接口进行长轮询采集"
+  version: 1.0.0
+  tags: ["长轮询", HTTP, JSON]
+  capabilities: [long-poll, json, bounded-stream]
+
+  placeholders:
+    api_url: {label: 接口地址, required: true}
+
+  verified_at: '2026-07-17'
+
+project: {name: long_poll, workspace: work/long_poll}
+
+source: {kind: long_poll, seeds: ['{{api_url}}'], max_messages: 1000, timeout_seconds: 30}
+
+crawl: {max_pages: 1, concurrency: 1}
+
+http: {respect_robots: true, delay_seconds: 1.0, headers: {Accept: application/json}}
+
+extract: {mode: json, fields: {}, review_low_confidence: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

@@ -1,0 +1,136 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "omnicrawl-platform"
+version = "2.7.0"
+description = "从全类型网站采集、PDF解析/OCR到结构化导出和人工复核的模块化工作台"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = ["PyYAML>=6,<7"]
+
+[project.optional-dependencies]
+html = ["beautifulsoup4>=4.12,<5", "lxml>=5,<7"]
+pdf = ["PyMuPDF>=1.24,<2", "openpyxl>=3.1,<4"]
+browser = ["playwright>=1.49,<2"]
+selenium = ["selenium>=4.27,<5"]
+async-http = ["httpx>=0.27,<1"]
+streams = ["websockets>=14,<17"]
+distributed = ["redis>=5,<7"]
+scrapy = ["Scrapy>=2.12,<3"]
+ocr-tesseract = ["pytesseract>=0.3.13,<1", "Pillow>=10,<13"]
+ocr-paddle = ["paddleocr[doc-parser]>=3.3,<4", "paddlepaddle>=3,<4", "numpy>=1.26,<3"]
+ocr-captcha = ["ddddocr>=1.5,<2", "onnxruntime>=1.17,<2"]
+crawl4ai = ["crawl4ai>=0.5,<1"]
+gui = [
+  "PyQt6>=6.5,<7",
+  "ruamel.yaml>=0.17,<1",
+  "lxml>=5,<7",
+  "openpyxl>=3.1,<4",
+  "psutil>=5.9,<6",
+  "requests>=2.28,<3",
+]
+dev = ["pytest>=8,<9", "coverage>=7,<8", "ruff>=0.12,<1", "mypy>=1.16,<2"]
+security = ["keyring>=25,<27", "cryptography>=44,<47"]
+storage = ["boto3>=1.35,<2", "duckdb>=1.2,<2", "pyarrow>=18,<24"]
+postgresql = ["psycopg[binary]>=3.2,<4"]
+search = ["opensearch-py>=2.8,<4"]
+full = [
+  "beautifulsoup4>=4.12,<5", "lxml>=5,<7", "PyMuPDF>=1.24,<2", "openpyxl>=3.1,<4",
+  "playwright>=1.49,<2", "selenium>=4.27,<5", "httpx>=0.27,<1",
+  "websockets>=14,<17", "redis>=5,<7", "Scrapy>=2.12,<3",
+  "pytesseract>=0.3.13,<1", "Pillow>=10,<13",
+  "paddleocr[doc-parser]>=3.3,<4", "paddlepaddle>=3,<4", "numpy>=1.26,<3",
+  "ddddocr>=1.5,<2", "onnxruntime>=1.17,<2",
+  "PyQt6>=6.5", "ruamel.yaml>=0.17", "psutil>=5.9", "requests>=2.28",
+    "keyring>=25,<27", "cryptography>=44,<47",
+    "boto3>=1.35,<2", "duckdb>=1.2,<2", "pyarrow>=18,<24",
+  "psycopg[binary]>=3.2,<4", "opensearch-py>=2.8,<4",
+]
+
+[project.scripts]
+omnicrawl = "omnicrawl.cli:main"
+pdfx = "omnicrawl.pdfx.cli:main"
+pdf-process = "omnicrawl.apps.pdf_processor:main"
+pdf-extract = "omnicrawl.apps.field_extractor:main"
+omnicrawl-workbench = "omnicrawl.services.workbench:main"
+omnicrawl-gui = "omnicrawl.gui.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+omnicrawl = ["templates/**/*.yaml", "templates/**/*.yml", "templates/**/*.csv", "templates/**/*.json"]
+"omnicrawl.gui" = ["templates/*.yaml", "help/*.html", "help/images/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "e2e: full workflow test that exercises real local services and external runtime adapters",
+  "e2e_browser: optional local Chromium extension; never accesses a remote service",
+]
+
+[tool.coverage.run]
+source = ["src/omnicrawl"]
+
+[tool.coverage.report]
+skip_covered = true
+show_missing = true
+# Phase 1 (2.3.0): baseline at 66% after subpackage splitting expanded total LOC.
+# Target: 72% by next patch, 80% overall, 85% core by next minor release.
+fail_under = 66
+
+[tool.ruff]
+target-version = "py313"
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "W", "B", "N"]
+ignore = [
+  "E501",     # line-too-long (handled by formatter)
+  "E402",     # module-import-not-at-top (legacy compat)
+  "E731",     # lambda-assignment (intentional)
+  "N802",     # function-name-lowercase (some legacy names)
+  "N803",     # argument-name-lowercase
+  "N806",     # non-lowercase-variable-in-function
+  "N815",     # mixed-case-variable-in-class-scope
+  "N816",     # mixed-case-variable-in-global-scope
+  "B904",     # raise-without-from-inside-except (intentional in some contexts)
+  "B028",     # no-explicit-stacklevel (not all callers need this)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["N802", "N803", "N806", "N815", "N816", "B018"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["omnicrawl"]
+
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+check_untyped_defs = true
+exclude = "^src/omnicrawl/(pdfx|apps)/"
+disable_error_code = ["import-untyped"]
+
+# Gradual GUI mypy inclusion — Phase 2 (2.3.0):
+# gui/core is now fully strict (disallow_untyped_defs).
+# Other GUI subdirectories remain at Phase 1 relaxed rules.
+# Target: tighten widgets/ → views/ → wizard/ → runner/ → main/ → delegates/
+# in subsequent phases.
+[[tool.mypy.overrides]]
+module = "omnicrawl.gui.core.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = "omnicrawl.gui.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+warn_return_any = false
+warn_unused_ignores = false

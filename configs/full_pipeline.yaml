@@ -1,0 +1,63 @@
+# 全流程模板：复制后修改项目名、入口URL、域名、联系邮箱和PDF字段模板。
+project:
+  name: full_pipeline
+  workspace: work/full_pipeline
+
+source:
+  kind: incremental
+  seeds:
+    - https://example.com/announcements
+
+crawl:
+  strategy: priority
+  max_pages: 500
+  max_depth: 4
+  same_host: true
+  allow_domains: [example.com]
+  deny_patterns: ['/(logout|delete|admin)(?:/|\?|$)']
+  focus_keywords: [公告, 报告, PDF, 附件]
+  concurrency: 4
+
+http:
+  user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)"
+  timeout_seconds: 25
+  retries: 3
+  delay_seconds: 1.0
+  respect_robots: true
+  robots_fail_closed: true
+  verify_tls: true
+  max_response_bytes: 104857600
+  allow_private_network: false
+
+download:
+  enabled: true
+  extensions: [.pdf, .doc, .docx, .xls, .xlsx, .csv, .zip]
+  media: false
+
+incremental:
+  skip_unchanged: true
+  archive_raw: true
+
+extract:
+  mode: html
+  item_selector: ""
+  fields:
+    title: {selector: title}
+    heading: {selector: h1}
+    published_at: {selector: time, attr: datetime}
+
+processors:
+  pdf:
+    enabled: true
+    config: configs/pdf/announcement_fields.yaml
+    project_config: ""
+    ocr_backend: none
+    skip_ocr: false
+
+outputs:
+  jsonl: true
+  csv: true
+  xlsx: true
+
+plugins:
+  paths: []

@@ -1,0 +1,128 @@
+template_version: 1
+
+# 默认配置针对上市公司担保公告。字段同义词和正则表达式可修改
+project_name: 上市公司担保公告批量抽取
+
+input_dir: data/pdfs
+work_dir: work
+output_dir: output
+database: work/pipeline.sqlite3
+
+parser:
+  workers: 4
+  min_native_chars: "40"
+  max_garbled_ratio: "0.03"
+
+ocr:
+  # none: 不识别扫描页；paddle: 推荐；tesseract: 轻量备用
+  backend: ${PDFX_OCR_BACKEND:-none}
+  lang: ch
+  device: ${PDFX_OCR_DEVICE:-cpu}
+  dpi: "220"
+  orientation: true
+  textline_orientation: true
+  unwarping: false
+  table_recognition: true
+  formula_recognition: false
+
+retrieval:
+  top_pages: 4
+  neighbor_pages: 1
+  min_score: 1
+  alias_weight: 1
+  pattern_weight: 2
+  negative_weight: "0.5"
+  negative_keywords: [目录, 正文]
+  fallback_pages: [1, 2]
+
+llm:
+  # disabled可先测试流程，正式抽取时建议设置为openai_compatible
+  provider: ${PDFX_LLM_PROVIDER:-disabled}
+  base_url: ${PDFX_LLM_BASE_URL:-https://api.openai.com/v1}
+  api_key: ${PDFX_LLM_API_KEY:-}
+  model: ${PDFX_LLM_MODEL:-}
+  timeout_seconds: "180"
+  retry_attempts: 4
+  max_output_tokens: "5000"
+  temperature: "0"
+  # 复杂扫描表格可开启；会显著增加图片传输量和模型费用
+  include_page_images: false
+  image_dpi: 144
+
+extraction:
+  # 并发调用模型，控制并发数；接口超时时适当降低
+  workers: 4
+  max_chars_per_page: "12000"
+
+normalization:
+  entity_master_csv: builtin:pdf/entity_master.csv
+
+validation:
+  auto_accept_confidence: "0.90"
+  required_together:
+    - [guaranteed_party, guarantee_amount]
+    - [guaranteed_party, guarantor]
+
+fields:
+  - name: publisher_stock_code
+    label: 公告号及上市公司股票代码
+    source: both
+    required: true
+    aliases: [证券代码, 股票代码, 公司代码]
+    patterns:
+      - '(?P<value>(?<!\d)\d{6}(?!\d))'
+
+  - name: announcement_year
+    label: 公告年份
+    description: "从公告发布日期中提取年份，用于按年度分类"
+    source: both
+    required: true
+    aliases: [公告日期, 公告时间, 披露日期, 发布日期]
+    patterns:
+      - '(?P<value>20\d{2})(?=[年\-./])'
+
+  - name: guaranteed_party
+    label: 被担保方企业名称
+    description: "被担保事项的目标企业或主体，包含完整的企业名称；若一份公告存在多个被担保方时应拆分多条记录"
+    source: content
+    required: true
+    aliases: [被担保方, 被担保人, 担保对象, 债务人, 借款人]
+    patterns:
+      - '(?:被担保方|被担保人|担保对象|债务人|借款人)\s*[：:"\u201c]\s*(?P<value>[^\n"]{2,80}(?:有限公司|股份有限公司|公司))'
+
+  - name: guarantee_amount
+    label: 担保金额
+    description: "本笔事项涉及的担保金额或最高担保额度；原始数据若为累计金额则标注为累计金额或总额"
+    source: content
+    target_unit: 万元
+    aliases: [担保金额, 担保额度, 保证金额, 最高担保额, 担保本金]
+    patterns:
+      - '(?:担保金额|担保额度|保证金额|最高担保额|担保本金)\s*(?:为|共计|约|最高不超过|：|:)?\s*(?P<value>(?:人民币)\s*[\d,]+\s*(?:亿元|万元|千元|元))'
+      - '(?:提供|承担)[^\n]{0,30}担保[^\n]{0,20}(?P<value>(?:人民币)\s*[\d,]+\s*(?:亿元|万元|千元|元))'
+    minimum: "0"
+
+  - name: guarantor
+    label: 担保方企业名称
+    source: content
+    required: true
+    aliases: [担保人, 担保方, 保证人, 提供担保方]
+    patterns:
+      - '(?:担保人|担保方|保证人|提供担保)\s*[供]?\s*[：:"\u201c]\s*(?P<value>[^\n"]{2,80}(?:有限公司|股份有限公司|公司))'
+
+  - name: relationship
+    label: 被担保方与担保方关联关系
+    description: "被担保方与担保方之间的公司关系，用于合规审查"
+    source: content
+    required: true
+    aliases: [与本公司关系, 与本公司的关系, 关联关系, 被担保方关系]
+    allowed_values: [全资子公司, 控股子公司, 孙公司, 参股公司, 合营企业, 联营企业, 控股股东, 非关联第三方, 未知]
+    value_aliases:
+      全资子公司: [全资子公司, 持股100%, 持有100%股权]
+      控股子公司: [控股子公司, 纳入合并报表范围的子公司]
+      孙公司: [控股子公司的子公司, 全资孙公司, 控股孙公司]
+      参股公司: [参股公司, 参股企业]
+      合营企业: [合营企业, 合营公司]
+      联营企业: [联营企业, 联营公司]
+      控股股东: [控股股东, 控股股东企业]
+      非关联第三方: [无关联关系, 非关联方, 第三方]
+      未知: [未知]

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omnicrawler.local/schema/task-ir-v1.json",
+  "title": "OmniCrawler Task IR v1",
+  "type": "object",
+  "required": ["ir_version", "identity", "goal", "source", "scope", "authorization", "actions", "pagination", "fields", "filters", "attachments", "pdf", "quality", "outputs", "updates", "resources", "capabilities", "extensions"],
+  "properties": {
+    "ir_version": {"const": 1},
+    "identity": {"type": "object", "additionalProperties": true},
+    "goal": {"type": "object", "additionalProperties": true},
+    "source": {"type": "object", "required": ["kind", "seeds"], "additionalProperties": true},
+    "scope": {"type": "object", "additionalProperties": true},
+    "authorization": {"type": "object", "additionalProperties": true},
+    "actions": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+    "pagination": {"type": "object", "additionalProperties": true},
+    "fields": {"type": "object", "additionalProperties": true},
+    "filters": {"type": "object", "additionalProperties": true},
+    "attachments": {"type": "object", "additionalProperties": true},
+    "pdf": {"type": "object", "additionalProperties": true},
+    "quality": {"type": "object", "additionalProperties": true},
+    "outputs": {"type": "object", "additionalProperties": true},
+    "updates": {"type": "object", "additionalProperties": true},
+    "resources": {"type": "object", "additionalProperties": true},
+    "capabilities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "extensions": {"type": "object", "additionalProperties": true}
+  },
+  "additionalProperties": true
+}

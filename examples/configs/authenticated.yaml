@@ -1,0 +1,11 @@
+project: {name: 示例项目-登录会话, workspace: work/authenticated}
+source:
+  kind: static_html
+  seeds: [https://example.invalid/account/notices]
+  login:
+    url: https://example.invalid/login
+    method: POST
+    fields: {username: "${OMNICRAWL_USERNAME:-}", password: "${OMNICRAWL_PASSWORD:-}"}
+crawl: {max_pages: 1, same_host: true}
+http: {user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
+extract: {mode: html, fields: {title: {selector: title}}}

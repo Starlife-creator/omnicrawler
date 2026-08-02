@@ -1,0 +1,53 @@
+template_version: 1
+
+template:
+  id: sites/crossref-works
+  name: "Crossref 学术文献元数据"
+  category: sites/academic
+  description: "使用 Crossref 官方 REST API 按关键词检索论文元数据，并保留 DOI、作者、出版商等结构化信息"
+  version: 1.0.0
+  tags: [Crossref, DOI, 学术, 开放元数据]
+  capabilities: [rest, json, cursor-pagination, public-api]
+
+  domains: [api.crossref.org]
+  json_keys: [message, items, next-cursor]
+
+  placeholders:
+    query: {label: 检索词, required: true}
+    contact_email: {label: 维护者联系邮箱, required: true}
+
+  source_urls:
+    - https://www.crossref.org/documentation/retrieve-metadata/rest-api/
+    - https://www.crossref.org/documentation/retrieve-metadata/rest-api/access-and-authentication/
+    - https://www.crossref.org/documentation/retrieve-metadata/rest-api/tips-for-using-the-crossref-rest-api/
+
+  license: Crossref metadata terms; abstracts may retain publisher copyright
+
+  verified_at: '2026-07-18'
+
+project: {name: crossref_works, workspace: work/crossref_works}
+
+source:
+  kind: rest
+  seeds: [https://api.crossref.org/v1/works]
+  params: {query: '{{query}}', rows: 100, mailto: '{{contact_email}}'}
+
+crawl: {max_pages: 100, concurrency: 1}
+
+http:
+  respect_robots: true
+  delay_seconds: 1.0
+  headers: {Accept: application/json}
+
+extract:
+  mode: json
+  item_selector: message.items
+  fields:
+    doi: {selector: DOI, type: jsonpath, required: true}
+    title: {selector: title.0, type: jsonpath, required: true}
+    type: {selector: type, type: jsonpath}
+    published: {selector: published.date-parts.0, type: jsonpath}
+    url: {selector: URL, type: jsonpath}
+    license: {selector: license.0.URL, type: jsonpath}
+
+outputs: {jsonl: true, csv: true, xlsx: true, parquet: false}

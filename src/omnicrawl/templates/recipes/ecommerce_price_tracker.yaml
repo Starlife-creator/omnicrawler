@@ -1,0 +1,79 @@
+template_version: 1
+
+# Recipe: Ecommerce Price Tracker
+
+# Use case: track product prices daily, detect price changes
+
+# Schedule: daily (86400 seconds)
+
+project: {name: price_tracker, workspace: work/price_tracker}
+
+source: {kind: browser, seeds: [https://example-shop.com/products]}
+
+crawl:
+
+  strategy: bfs
+
+  max_pages: 50            # focused on product pages only
+
+  max_depth: 2
+
+  same_host: true
+
+  concurrency: 1           # single-threaded to avoid triggering anti-bot
+
+http:
+
+  user_agent: "OmniCrawler/2.1 (+contact: change-me@example.com)"
+
+  respect_robots: true
+
+  delay_seconds: 3.0       # extra polite for ecommerce sites
+
+browser:
+
+  engine: playwright
+
+  headless: true
+
+  wait_until: networkidle
+
+  actions:
+
+    - {action: wait_for, selector: .product-card, timeout_ms: 15000}
+
+    - {action: scroll_bottom}            # trigger lazy-loaded products
+
+    - {action: wait_ms, value: 1000}     # wait for render
+
+extract:
+
+  mode: html
+
+  fields:
+
+    name: {selector: .product-name}
+
+    price: {selector: .price, attribute: text}
+
+    old_price: {selector: .old-price, attribute: text}
+
+    currency: {selector: .price-currency}
+
+    link: {selector: a.product-link, attribute: href}
+
+updates:
+
+  enabled: true
+
+  detect_content_changes: true
+
+  fields_to_track: [price]  # only track price field for changes
+
+outputs: {jsonl: true, csv: true, xlsx: true}
+
+schedule:
+
+  enabled: true
+
+  interval_seconds: 86400   # 24 hours

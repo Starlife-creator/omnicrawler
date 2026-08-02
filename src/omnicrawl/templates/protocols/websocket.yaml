@@ -1,0 +1,27 @@
+template_version: 1
+
+template:
+  id: protocols/websocket
+  name: "WebSocket 公开数据"
+  category: protocols/stream
+  description: "在明确授权范围内采集 WebSocket 消息并按 JSON 记录"
+  version: 1.0.0
+  tags: [WebSocket, 实时, 流]
+  capabilities: [websocket, streaming, json]
+
+  placeholders:
+    websocket_url: {label: ws 或 wss 地址, required: true}
+
+  url_patterns: ['ws://*', 'wss://*']
+
+  verified_at: '2026-07-17'
+
+project: {name: websocket_stream, workspace: work/websocket_stream}
+
+source: {kind: websocket, seeds: ['{{websocket_url}}'], max_messages: 1000, timeout_seconds: 60}
+
+crawl: {max_pages: 1, concurrency: 1}
+
+extract: {mode: json, fields: {}, review_low_confidence: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

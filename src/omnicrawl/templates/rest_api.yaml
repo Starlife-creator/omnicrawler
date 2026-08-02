@@ -1,0 +1,28 @@
+template_version: 1
+# 模板: REST API 接口采集
+# 适用: 直接调用 JSON API 接口获取数据（非网页）
+# 特点: 需知道 API 地址、分页参数和响应方式
+project: {name: 示例项目-REST接口, workspace: work/rest_api}
+
+# ── 数据源 ──
+source:
+  kind: rest                       # REST API 模式
+  seeds: [https://api.example.invalid/v1/notices]  # API 接口地址
+  method: GET                      # 请求方法: GET/POST/PUT
+  params: {page_size: 50}         # 请求参数（自动拼接到URL）
+  pagination:                      # 分页设置
+    type: page                     # page=页码分页, cursor=游标分页, offset=偏移量分页
+    parameter: page                # 页码参数名
+    end: 5                         # 结束页码
+
+crawl: {max_pages: 5, same_host: true}
+http: {user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: "1.0"}
+
+# ── 提取规则 ──
+extract:
+  mode: json                       # JSON 提取模式
+  item_path: data.items[*]         # JSONPath: 数据所在数组路径
+  fields:
+    id: {path: id}                 # 从 JSON 中按路径提取字段
+    title: {path: title}
+    published_at: {path: published_at}

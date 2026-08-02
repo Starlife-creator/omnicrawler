@@ -1,0 +1,8 @@
+project: {name: 示例项目-Scrapy框架, workspace: work/scrapy}
+source:
+  kind: scrapy
+  seeds: [https://example.com/]
+  spider_file: examples/scrapy_spider.py
+  arguments: {start_url: https://example.com/}
+crawl: {max_pages: 100, same_host: true}
+http: {user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)", respect_robots: true}

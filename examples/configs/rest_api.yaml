@@ -1,0 +1,17 @@
+project: {name: 示例项目-REST接口, workspace: work/rest_api}
+source:
+  kind: rest
+  seeds: [https://api.example.invalid/v1/notices]
+  method: GET
+  params: {page_size: 50}
+  headers: {Authorization: "Bearer ${OMNICRAWL_API_TOKEN:-}"}
+  pagination: {type: page, parameter: page, start: 1, end: 5}
+crawl: {max_pages: 5, same_host: true}
+http: {user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
+extract:
+  mode: json
+  item_path: data.items[*]
+  fields:
+    id: {path: id}
+    title: {path: title}
+    published_at: {path: published_at}

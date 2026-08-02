@@ -1,0 +1,33 @@
+template_version: 1
+
+# 模板: 聚焦爬虫 (Focused Crawl)
+
+# 适用: 需要从大量页面中只采集含特定关键词的页面
+
+# 特点: 页面按相关性排序，含关键词的高优先级采集
+
+project: {name: 示例项目-聚焦爬虫, workspace: work/focused}
+
+source: {kind: focused, seeds: [https://example.com/]}
+
+# ── 爬取策略 ──
+
+crawl:
+
+  strategy: priority                # priority=按关键词匹配度排序
+
+  focus_keywords: [公告, 年度报告, 担保]  # 含任一关键词的页面优先采集
+
+  max_pages: 200                    # 聚焦模式可设稍高上限
+
+  max_depth: 5                      # 深度可放宽以发现深层相关内容
+
+  same_host: true
+
+# ── HTTP 请求设置 ──
+
+http: {user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
+
+# ── 提取规则 ──
+
+extract: {mode: auto, fields: {title: {selector: title}, heading: {selector: h1}}}

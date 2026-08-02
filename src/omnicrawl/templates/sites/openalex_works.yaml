@@ -1,0 +1,49 @@
+template_version: 1
+
+template:
+  id: sites/openalex-works
+  name: OpenAlex 学术目录
+  category: sites/academic
+  description: "使用 OpenAlex 官方 API 检索论文目录；API Key 可按需换取，但默认匿名请求也可使用，限制为每分钟 100 次请求"
+  version: 1.0.0
+  tags: [OpenAlex, 学术, CC0, API]
+  capabilities: [rest, json, api-key, public-data]
+
+  domains: [api.openalex.org]
+  json_keys: [meta, results, group_by]
+
+  placeholders:
+    query: {label: 检索词, required: true}
+
+  source_urls:
+    - https://developers.openalex.org/
+    - https://developers.openalex.org/api-reference/introduction
+    - https://developers.openalex.org/api-reference/authentication
+
+  license: OpenAlex data CC0; API subject to current service terms and usage budget
+
+  verified_at: '2026-07-18'
+
+project: {name: openalex_works, workspace: work/openalex_works}
+
+source:
+  kind: rest
+  seeds: [https://api.openalex.org/works]
+  params: {search: '{{query}}', per_page: 100, api_key: secret://openalex_api_key}
+
+crawl: {max_pages: 100, concurrency: 1}
+
+http: {respect_robots: true, delay_seconds: 1.0, headers: {Accept: application/json}}
+
+extract:
+  mode: json
+  item_selector: results
+  fields:
+    id: {selector: id, type: jsonpath, required: true}
+    doi: {selector: doi, type: jsonpath}
+    title: {selector: title, type: jsonpath, required: true}
+    publication_year: {selector: publication_year, type: jsonpath, data_type: integer}
+    cited_by_count: {selector: cited_by_count, type: jsonpath, data_type: integer}
+    open_access: {selector: open_access.oa_status, type: jsonpath}
+
+outputs: {jsonl: true, csv: true, xlsx: true, parquet: false}

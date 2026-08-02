@@ -1,0 +1,32 @@
+template_version: 1
+
+template:
+  id: protocols/sitemap
+  name: Sitemap 站点地图
+  category: protocols/feed
+  description: "从 sitemap.xml 或站点地图索引发现公开页面"
+  version: 1.0.0
+  tags: [Sitemap, XML, 全站发现]
+  capabilities: [sitemap, xml, link-discovery]
+
+  placeholders:
+    sitemap_url: {label: Sitemap 地址, required: true}
+
+  url_patterns: ['*sitemap*.xml*']
+  html_contains: ['<urlset', '<sitemapindex']
+
+  verified_at: '2026-07-17'
+
+project: {name: sitemap, workspace: work/sitemap}
+
+source: {kind: sitemap, seeds: ['{{sitemap_url}}']}
+
+crawl: {max_pages: 5000, max_depth: 1, same_host: true, concurrency: 8}
+
+http: {respect_robots: true, delay_seconds: 1.0}
+
+extract: {mode: auto, fields: {}, review_low_confidence: true}
+
+incremental: {skip_unchanged: true, archive_raw: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

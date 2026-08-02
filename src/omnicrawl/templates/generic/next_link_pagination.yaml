@@ -1,0 +1,34 @@
+template_version: 1
+
+template:
+  id: generic/next-link-pagination
+  name: 下一页链接型分页
+  category: generic/pagination
+  description: "自动发现列表页中的下一页链接并限制在同站点，支持由服务器生成的固定栏目"
+  tags: [pagination, next-link, list-page]
+  capabilities: [http, link-discovery, next-link-pagination]
+
+  placeholders:
+    seed_url: {label: 列表页首页地址, required: true}
+    list_selector: {label: 每条记录的节点选择器, default: article}
+
+  verified_at: '2026-07-18'
+
+project: {name: next_link_pagination, workspace: work/next_link_pagination}
+source: {kind: crawl, seeds: ['{{seed_url}}']}
+
+crawl:
+  max_pages: "1000"
+  max_depth: "100"
+  same_host: true
+  concurrency: 4
+
+http: {respect_robots: true, delay_seconds: "1.0"}
+
+extract:
+  mode: html
+  item_selector: '{{list_selector}}'
+  fields: {}
+  review_low_confidence: true
+
+outputs: {jsonl: true, csv: true, xlsx: true}

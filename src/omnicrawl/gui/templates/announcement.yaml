@@ -1,0 +1,59 @@
+template_version: 1
+
+template:
+  id: gui/announcement
+  name: 公告列表采集
+  category: gui/templates
+  description: 可视化配置公告列表采集规则
+  version: 1.0.0
+  tags: [公告, GUI, 静态HTML]
+  capabilities: [focused-crawl, html, attachment-download]
+
+  placeholders:
+    seed_url: {label: 公告栏目目标地址, required: true}
+    title_selector: {label: 标题 CSS 选择器, required: true}
+    date_selector: {label: 发布日期 CSS 选择器}
+    category_selector: {label: 分类 CSS 选择器}
+    attachment_selector: {label: 附件链接 CSS 选择器}
+
+  verified_at: '2026-07-17'
+
+# 公告信息爬虫模板，适合政府、企业公告页面，支持 PDF 附件下载
+project:
+  name: announcement_crawler
+  workspace: work/announcement
+source:
+  kind: static_html
+  seeds:
+    - "{{seed_url}}"
+crawl:
+  max_pages: 30
+  delay_seconds: 1.5
+  concurrency: 2
+http:
+  user_agent: "OmniCrawler-GUI/1.0"
+  respect_robots: true
+extract:
+  mode: html
+  item_selector: ""
+  fields:
+    title:
+      selector: "{{title_selector}}"
+      type: css
+    publish_date:
+      selector: "{{date_selector}}"
+      type: css
+    category:
+      selector: "{{category_selector}}"
+      type: css
+    attachment_link:
+      selector: "{{attachment_selector}}"
+      type: css
+      attr: href
+download:
+  enabled: true
+  extensions: [.pdf, .doc, .docx, .xls, .xlsx]
+  output_dir: downloads/announcement
+outputs:
+  jsonl: true
+  csv: true

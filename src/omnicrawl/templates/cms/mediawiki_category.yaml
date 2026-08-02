@@ -1,0 +1,67 @@
+template_version: 1
+
+template:
+
+  id: cms/mediawiki-category
+
+  name: MediaWiki�����Ա
+
+  category: cms/mediawiki
+
+  description: ͨ��MediaWiki Action API�ɼ������Ա������Ｍ令牌由站点插件增强处理
+
+  version: 1.0.0
+
+  tags: [MediaWiki, Wiki, ����, API]
+
+  capabilities: [rest, json, continuation-token, plugin-recommended]
+
+  placeholders:
+
+    site_url: {label: Wiki站点根地坢�, required: true}
+
+    category_name: {label: ������吧�, required: true}
+
+  url_patterns: ['*/w/api.php*', '*/api.php*action=query*']
+
+  html_contains: [MediaWiki, mw.config, /w/load.php]
+
+  json_keys: [batchcomplete, continue, query, categorymembers]
+
+  source_urls:
+
+    - https://www.mediawiki.org/wiki/API:Continue
+
+    - https://www.mediawiki.org/wiki/API:Lists
+
+  license: OmniCrawler-MIT; API行为依据MediaWiki�ٷ���斡�
+
+  verified_at: '2026-07-17'
+
+project: {name: mediawiki_category, workspace: work/mediawiki_category}
+
+source:
+
+  kind: site_mediawiki
+
+  seeds: ['{{site_url}}/w/api.php?action=query&list=categorymembers&cmtitle=Category:{{category_name}}&cmlimit=max&format=json']
+
+crawl: {max_pages: 1000, concurrency: 2}
+
+http: {respect_robots: true, delay_seconds: 1.0, headers: {Accept: application/json}}
+
+extract:
+
+  mode: json
+
+  item_selector: query.categorymembers
+
+  fields:
+
+    page_id: {selector: pageid, type: jsonpath, required: true}
+
+    namespace: {selector: ns, type: jsonpath}
+
+    title: {selector: title, type: jsonpath, required: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

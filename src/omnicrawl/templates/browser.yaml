@@ -1,0 +1,37 @@
+template_version: 1
+
+# 模板: 动态浏览器渲染 (Browser)
+
+# 适用: 需要 JavaScript 渲染、点击翻页、搜索交互的动态页面
+
+# 特点: 使用 Playwright 浏览器引擎渲染页面，支持录制操作
+
+project: {name: 示例项目-动态浏览器, workspace: work/browser}
+
+source: {kind: browser, seeds: [https://example.com/]}
+
+crawl: {max_pages: 1, same_host: true}
+
+http: {user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)", respect_robots: true}
+
+# ── 浏览器设置 ──
+
+browser:
+
+  engine: playwright                # playwright=现代浏览器引擎, selenium=传统兼容
+
+  headless: true                    # true=无界面后台运行, false=显示窗口（调试用）
+
+  wait_until: networkidle           # 等待条件: networkidle=网络空闲, load=页面加载完, domcontentloaded=DOM就绪
+
+  actions:                          # 模拟用户操作序列
+
+    - {action: wait_for, selector: body, timeout_ms: 10000}  # 等待页面加载
+
+    - {action: scroll_bottom}                                  # 滚动到底部（触发懒加载）
+
+    - {action: wait_ms, value: 500}                            # 等待渲染完成
+
+# ── 提取规则 ──
+
+extract: {mode: html, fields: {title: {selector: title}, heading: {selector: h1}}}

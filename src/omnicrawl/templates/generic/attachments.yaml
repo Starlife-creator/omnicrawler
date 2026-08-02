@@ -1,0 +1,37 @@
+template_version: 1
+
+template:
+
+  id: generic/attachments
+
+  name: 附件批量下载
+
+  category: generic/assets
+
+  description: 从公开栏目发现并下载文档、表格和压缩包
+
+  version: 1.0.0
+
+  tags: [附件, 下载, 文档]
+
+  capabilities: [crawl, attachment-download, evidence]
+
+  placeholders:
+
+    seed_url: {label: 栏目地址, required: true}
+
+  verified_at: '2026-07-17'
+
+project: {name: attachments, workspace: work/attachments}
+
+source: {kind: focused, seeds: ['{{seed_url}}']}
+
+crawl: {strategy: priority, focus_keywords: [附件, 下载, file, document], max_pages: 2000, max_depth: 4, same_host: true, concurrency: 4}
+
+http: {respect_robots: true, delay_seconds: 1.0, auto_browser_fallback: true}
+
+extract: {mode: auto, fields: {}, review_low_confidence: true}
+
+download: {enabled: true, extensions: [.pdf, .doc, .docx, .xls, .xlsx, .csv, .zip, .rar, .7z], media: false}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

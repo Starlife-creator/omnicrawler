@@ -1,0 +1,41 @@
+config_version: 5
+project:
+  name: 示例_政策人工智能PDF
+  workspace: work/example_policy_ai_pdf
+  intent: documents
+source:
+  kind: focused
+  seeds: [https://example.org/policy]
+crawl:
+  strategy: priority
+  max_pages: 200
+  max_depth: 4
+  same_host: true
+  focus_keywords: [人工智能, 大模型, pdf, 下载, 附件]
+selection:
+  topic:
+    enabled: true
+    include_any: [人工智能, 大模型]
+    include_all: []
+    exclude: [失效, 征求意见稿]
+    match_on: [url, anchor, title, heading, text]
+    keep_uncertain: true
+    filter_records: true
+download:
+  enabled: true
+  extensions: [.pdf]
+processors:
+  pdf:
+    enabled: true
+  config: builtin:pdf/generic_template.yaml
+    skip_ocr: false
+    ocr_backend: none
+updates:
+  enabled: true
+  revisit_completed: true
+  detect_same_url_changes: true
+  keep_versions: true
+  use_conditional_requests: true
+incremental: {skip_unchanged: true, archive_raw: true}
+outputs: {jsonl: true, csv: true, xlsx: true}
+ai: {mode: disabled, default_provider: '', providers: {}, routing: {}, fallback: [deterministic]}

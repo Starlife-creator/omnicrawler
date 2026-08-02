@@ -1,0 +1,11 @@
+template_version: 1
+
+project: {name: 示例项目-RSS-Atom, workspace: work/feed}
+
+source: {kind: feed, seeds: [https://example.com/feed.xml]}
+
+crawl: {max_pages: 100, max_depth: 1, same_host: true}
+
+http: {user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
+
+extract: {mode: auto, fields: {title: {selector: title}, heading: {selector: h1}}}

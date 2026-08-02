@@ -1,0 +1,13 @@
+project: {name: 示例项目-HTTPX异步接口, workspace: work/httpx_async}
+source:
+  kind: url_list
+  seeds:
+    - https://example.com/
+    - https://www.iana.org/help/example-domains
+crawl: {max_pages: 2, same_host: false, allow_domains: [example.com, iana.org], concurrency: 20}
+http:
+  engine: httpx_async
+  user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)"
+  respect_robots: true
+  delay_seconds: 1.0
+extract: {mode: auto}

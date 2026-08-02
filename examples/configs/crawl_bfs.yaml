@@ -1,0 +1,10 @@
+project: {name: 示例项目-BFS站内爬取, workspace: work/crawl_bfs}
+source: {kind: crawl, seeds: [https://example.com/]}
+crawl:
+  strategy: bfs
+  max_pages: 100
+  max_depth: 3
+  same_host: true
+  concurrency: 4
+http: {user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
+extract: {mode: auto, fields: {title: {selector: title}, heading: {selector: h1}}}

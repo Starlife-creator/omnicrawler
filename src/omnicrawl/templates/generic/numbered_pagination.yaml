@@ -1,0 +1,45 @@
+template_version: 1
+
+template:
+
+  id: generic/numbered-pagination
+
+  name: ҳ�뷭翡��З表
+
+  category: generic/pagination
+
+  description: ͨ����查询参数预生成页码列表，��ʺ��ȶ��Ĺ��公��栏目
+
+  version: 1.0.0
+
+  tags: [�ֆ页, ҳ��, �З表ҳ]
+
+  capabilities: [http, numbered-pagination]
+
+  placeholders:
+
+    seed_url: {label: 第一��ҳ��坸���, required: true}
+
+    page_parameter: {label: ҳ�����, default: page}
+
+    end_page: {label: �末页ҳ��, default: 20}
+
+  verified_at: '2026-07-17'
+
+project: {name: numbered_pagination, workspace: work/numbered_pagination}
+
+source:
+
+  kind: static_html
+
+  seeds: ['{{seed_url}}']
+
+  pagination: {type: page, parameter: '{{page_parameter}}', start: 1, end: '{{end_page}}'}
+
+crawl: {max_pages: 1000, max_depth: 1, same_host: true, concurrency: 4}
+
+http: {respect_robots: true, delay_seconds: 1.0}
+
+extract: {mode: auto, fields: {}, review_low_confidence: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

@@ -1,0 +1,49 @@
+template_version: 1
+
+template:
+
+  id: generic/infinite-scroll
+
+  name: ���޹���ҳ��
+
+  category: generic/dynamic
+
+  description: "\"ʹ���浧�器滚动和等待动作头���兽��开������޹���动页�?"
+
+  tags: ["动�����顁�? 无限滚动", 浏览器]
+
+  capabilities: [browser, javascript, infinite-scroll]
+
+  recommended_when: "\"地址栏网坢㲻�䣬���¹�下�后挳����������ڰ内?"
+
+  placeholders:
+
+    seed_url: {label: ҳ����ַ, required: true}
+
+  html_contains: [IntersectionObserver, infinite-scroll, load-more]
+
+  verified_at: '2026-07-17'
+
+project: {name: infinite_scroll, workspace: work/infinite_scroll}
+
+source: {kind: browser, seeds: ['{{seed_url}}']}
+
+crawl: {max_pages: "50", max_depth: 1, same_host: true, concurrency: 1}
+
+browser:
+
+  engine: playwright
+
+  headless: true
+
+  actions:
+
+    - {action: wait_ms, value: "1500"}
+
+    - {action: scroll_bottom, times: 12, pause_ms: "1000"}
+
+http: {respect_robots: true, delay_seconds: "1.0"}
+
+extract: {mode: auto, fields: {}, review_low_confidence: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

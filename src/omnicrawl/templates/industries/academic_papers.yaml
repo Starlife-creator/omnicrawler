@@ -1,0 +1,39 @@
+template_version: 1
+
+template:
+
+  id: industries/academic-papers
+
+  name: 学术�������Ԫ����
+
+  category: industries/academic
+
+  description: �ɼ���公开������Ԫ����据��摘要��DOI���������ص�载�文附件
+
+  version: 1.0.0
+
+  tags: [学术, ����, DOI, PDF]
+
+  capabilities: [crawl, metadata, attachment-download, pdf, evidence]
+
+  placeholders:
+
+    listing_url: {label: ������刡�或检索地坢�, required: true}
+
+  html_contains: [citation_title, citation_doi, citation_pdf_url]
+
+  verified_at: '2026-07-17'
+
+project: {name: academic_papers, workspace: work/academic_papers}
+
+source: {kind: focused, seeds: ['{{listing_url}}']}
+
+crawl: {strategy: priority, focus_keywords: [paper, article, doi, pdf, ����], max_pages: 5000, max_depth: 4, same_host: false, concurrency: 4}
+
+http: {respect_robots: true, delay_seconds: 1.5}
+
+extract: {mode: auto, fields: {}, quality_threshold: 0.85, review_low_confidence: true}
+
+download: {enabled: true, extensions: [.pdf], media: false}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

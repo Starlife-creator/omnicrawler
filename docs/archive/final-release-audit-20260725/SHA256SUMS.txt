@@ -1,0 +1,10 @@
+# OmniCrawler 2.1.0 SHA-256 校验清单
+# 生成时间：自动生成
+# 覆盖文件：2 个
+#
+# 核对方法（PowerShell）:
+#   Get-FileHash .\OmniCrawler-2.1.0-Windows-Portable-Standard.zip -Algorithm SHA256
+#   将结果与此文件对照
+
+8f4eeb668c355e87c750174d57cf2dd193351d8fc68f65be44f2d78f1759230e  omnicrawl_platform-2.1.0-py3-none-any.whl
+7a4dcda480a9abf27428eb11d3c2daa021e136245c7b28d638dff67e4cdb1b49  OmniCrawler-2.1.0-Source.zip

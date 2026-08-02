@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omnicrawler.local/schemas/task-spec-1.1.schema.json",
+  "title": "OmniCrawler TaskSpec 1.1",
+  "type": "object",
+  "required": ["name", "seeds"],
+  "properties": {
+    "name": {"type": "string", "minLength": 1},
+    "intent": {"enum": ["auto", "records", "interactive", "api", "updates", "documents"]},
+    "seeds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "pattern": "^https?://"}
+    },
+    "scope": {"enum": ["same_host", "allowed_domains"]},
+    "execution_mode": {"enum": ["auto", "browser", "api"]},
+    "max_pages": {"type": "integer", "minimum": 1, "maximum": 1000000},
+    "max_depth": {"type": "integer", "minimum": 0, "maximum": 100},
+    "topic": {
+      "type": "object",
+      "properties": {
+        "include_any": {"type": "array", "items": {"type": "string"}},
+        "include_all": {"type": "array", "items": {"type": "string"}},
+        "exclude": {"type": "array", "items": {"type": "string"}},
+        "match_on": {"type": "array", "items": {"type": "string"}},
+        "keep_uncertain": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "files": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "extensions": {"type": "array", "items": {"type": "string"}},
+        "process_pdf": {"type": "boolean"},
+        "ocr": {"enum": ["auto", "never", "paddle", "tesseract"]}
+      },
+      "additionalProperties": false
+    },
+    "updates": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "detect_same_url_changes": {"type": "boolean"},
+        "keep_versions": {"type": "boolean"},
+        "revisit_completed": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "ai": {
+      "type": "object",
+      "properties": {
+        "mode": {"enum": ["disabled", "local", "cloud", "custom"]},
+        "provider": {"type": "string"},
+        "capabilities": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "outputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"enum": ["jsonl", "csv", "xlsx", "parquet", "duckdb"]},
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": false
+}

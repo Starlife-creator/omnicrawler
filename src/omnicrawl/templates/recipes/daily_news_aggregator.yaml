@@ -1,0 +1,53 @@
+template_version: 1
+
+# Recipe: Daily News Aggregator
+
+# Use case: aggregate news from multiple RSS/Atom feeds daily
+
+# Schedule: daily (86400 seconds)
+
+project: {name: daily_news, workspace: work/daily_news}
+
+source:
+
+  kind: feed
+
+  seeds:
+
+    - https://example.com/rss/news
+
+    - https://example2.com/rss/latest
+
+crawl: {max_pages: 500, same_host: false}  # allow cross-domain for multiple feeds
+
+http:
+
+  user_agent: "OmniCrawler/2.1 (+contact: change-me@example.com)"
+
+  respect_robots: true
+
+  delay_seconds: 1.0
+
+extract:
+
+  mode: auto
+
+  fields:
+
+    title: {selector: title}
+
+    author: {selector: author}
+
+    published: {selector: pubDate}
+
+    link: {selector: link}
+
+    summary: {selector: description}
+
+outputs: {jsonl: true, csv: true, xlsx: true}
+
+schedule:
+
+  enabled: true
+
+  interval_seconds: 86400  # 24 hours

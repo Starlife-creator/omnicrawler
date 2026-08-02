@@ -1,0 +1,39 @@
+template_version: 1
+
+template:
+
+  id: authenticated/cookie-session
+
+  name: 合法登录会话
+
+  category: authenticated/browser
+
+  description: "ʹ�ø�隦��������Context�Ϳ�ѡ�Ự�־û�����化�户��ѻ���Ȩ��皡��?  version: 1.0.0"
+
+  tags: [登录, Cookie, 会话, 浏览器]
+
+  capabilities: [browser, authentication, isolated-context, session]
+
+  placeholders:
+
+    seed_url: {label: 已授权页面地坢�, required: true}
+
+  source_urls: [https://playwright.dev/docs/auth]
+
+  verified_at: '2026-07-17'
+
+project: {name: cookie_session, workspace: work/cookie_session}
+
+source: {kind: browser, seeds: ['{{seed_url}}']}
+
+crawl: {max_pages: 500, max_depth: 3, same_host: true, concurrency: 1}
+
+http: {respect_robots: true, delay_seconds: 1.0}
+
+browser: {engine: playwright, headless: true, actions: []}
+
+session: {persist_cookies: true, name: authorized_session}
+
+extract: {mode: auto, fields: {}, review_low_confidence: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

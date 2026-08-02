@@ -1,0 +1,5 @@
+project: {name: 示例项目-Redis分布式, workspace: work/redis_distributed}
+source: {kind: redis, seeds: [https://example.com/], wrapped_kind: crawl}
+distributed: {redis_url: "${REDIS_URL:-redis://localhost:6379/0}", namespace: omnicrawl_example}
+crawl: {max_pages: 10000, max_depth: 5, same_host: true, concurrency: 8}
+http: {user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}

@@ -1,0 +1,39 @@
+template_version: 1
+
+template:
+
+  id: industries/jobs
+
+  name: ��Ƹְλ�位�开信息
+
+  category: industries/jobs
+
+  description: 抽取职位名称、公司��地点��薪资��巢�����ں�ְλ����
+
+  version: 1.0.0
+
+  tags: [招聘, 职位, �公司, JSON-LD]
+
+  capabilities: [crawl, job-posting-schema, incremental, evidence]
+
+  placeholders:
+
+    listing_url: {label: ְλ��刡�地址, required: true}
+
+  html_contains: [JobPosting, hiringOrganization, datePosted]
+
+  verified_at: '2026-07-17'
+
+project: {name: jobs, workspace: work/jobs}
+
+source: {kind: incremental, seeds: ['{{listing_url}}']}
+
+crawl: {strategy: priority, focus_keywords: [job, career, position, 招聘, 职位], max_pages: 5000, max_depth: 4, same_host: true, concurrency: 4}
+
+http: {respect_robots: true, delay_seconds: 1.5, auto_browser_fallback: true}
+
+extract: {mode: auto, fields: {}, quality_threshold: 0.82, review_low_confidence: true}
+
+incremental: {skip_unchanged: true, archive_raw: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

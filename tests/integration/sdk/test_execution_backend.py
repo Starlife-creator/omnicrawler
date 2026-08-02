@@ -1,0 +1,55 @@
+from __future__ import annotations
+
+import time
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+from omnicrawl.runtime.execution_backend import (
+    ExecutionBackend,
+    FutureRemoteBackend,
+    InProcessBackend,
+    LocalWorkerBackend,
+)
+
+
+def _config(tmp_path: Path) -> Path:
+    path = tmp_path / "worker.yaml"
+    path.write_text(
+        f"project: {{name: worker, workspace: '{tmp_path / 'workspace'}'}}\n"
+        "source: {kind: static_html, seeds: [https://127.0.0.1/]}\n"
+        "http: {respect_robots: false, retries: 0, timeout_seconds: 0.1}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_in_process_and_future_backend_contracts(tmp_path: Path) -> None:
+    backend = InProcessBackend()
+    assert isinstance(backend, ExecutionBackend)
+    with patch("omnicrawl.application_service.ApplicationService.run", return_value={"status": "succeeded"}):
+        backend.start(_config(tmp_path))
+        deadline = time.monotonic() + 2
+        while backend.status()["status"] == "running" and time.monotonic() < deadline:
+            time.sleep(0.01)
+    assert backend.status()["status"] == "succeeded"
+    assert isinstance(FutureRemoteBackend(), ExecutionBackend)
+    with pytest.raises(NotImplementedError):
+        FutureRemoteBackend().status()
+
+
+def test_local_worker_is_authenticated_detached_and_reconnectable(tmp_path: Path) -> None:
+    first = LocalWorkerBackend()
+    started = first.start(_config(tmp_path))
+    assert "status" in started
+    assert first.session_file is not None and first.session_file.is_file()
+    session_text = first.session_file.read_text(encoding="utf-8")
+    assert "auth_token" in session_text and "AF_PIPE" in session_text
+
+    reconnected = LocalWorkerBackend()
+    status = reconnected.attach(first.session_file)
+    assert "status" in status
+    assert reconnected.pause()["paused"] is True
+    assert reconnected.resume()["paused"] is False
+    assert reconnected.shutdown()["shutdown"] is True

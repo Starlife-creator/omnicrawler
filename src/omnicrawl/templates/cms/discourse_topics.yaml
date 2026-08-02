@@ -1,0 +1,55 @@
+template_version: 1
+
+template:
+
+  id: cms/discourse-topics
+
+  name: Discourse�公开��������
+
+  category: cms/discourse
+
+  description: �ɼ�Discourse�公开���������З表及详情JSON
+
+  version: 1.0.0
+
+  tags: [Discourse, ��̳, 社区, JSON]
+
+  capabilities: [rest, json, community]
+
+  placeholders:
+
+    site_url: {label: Discourse站点根地坢�, required: true}
+
+    end_page: "{label: �朢�大页�? default: 20}"
+
+  url_patterns: ['*/latest.json*', '*/top.json*', '*/c/*/*.json*']
+
+  header_contains: {x-discourse-route: ''}
+
+  html_contains: [Discourse, discourse-application, discourse_theme_id]
+
+  json_keys: [topic_list, topics, users]
+
+  source_urls: [https://docs.discourse.org/]
+
+  license: OmniCrawler-MIT; API行为依据Discourse�ٷ���斡�
+
+  verified_at: '2026-07-17'
+
+project: {name: discourse_topics, workspace: work/discourse_topics}
+
+source:
+
+  kind: site_discourse
+
+  seeds: ['{{site_url}}/latest.json']
+
+  max_pages: '{{end_page}}'
+
+crawl: {max_pages: 500, concurrency: 2}
+
+http: {respect_robots: true, delay_seconds: 1.0, headers: {Accept: application/json}}
+
+extract: {mode: json, item_selector: topic_list.topics, fields: {}, review_low_confidence: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

@@ -1,0 +1,31 @@
+template_version: 1
+
+template:
+  id: documents/office-collection
+  name: Office 文档集合
+  category: documents/office
+  description: "批量发现 Word、Excel、PowerPoint 和开放文档格式文件"
+  version: 1.0.0
+  tags: [Office, Word, Excel, PowerPoint]
+  capabilities: [crawl, attachment-download, parser-plugin]
+
+  placeholders:
+    seed_url: {label: 文档栏目地址, required: true}
+
+  source_urls: [https://tika.apache.org/2.9.2/formats.html]
+
+  verified_at: '2026-07-17'
+
+project: {name: office_collection, workspace: work/office_collection}
+
+source: {kind: focused, seeds: ['{{seed_url}}']}
+
+crawl: {strategy: priority, focus_keywords: [文档, 附件, 下载], max_pages: 2000, max_depth: 4, same_host: true, concurrency: 4}
+
+http: {respect_robots: true, delay_seconds: 1.0}
+
+extract: {mode: auto, fields: {}, review_low_confidence: true}
+
+download: {enabled: true, extensions: [.doc, .docx, .xls, .xlsx, .ppt, .pptx, .odt, .ods, .odp], media: false}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

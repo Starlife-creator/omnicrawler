@@ -1,0 +1,90 @@
+from __future__ import annotations
+
+import copy
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from .utils import deep_merge
+
+CURRENT_CONFIG_VERSION = 5
+
+
+def migrate_config(value: dict[str, Any]) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """Non-destructively normalize legacy keys; unknown values are always retained."""
+    raw = copy.deepcopy(value)
+    notes: list[str] = []
+    try:
+        version = int(raw.get("config_version", 1))
+    except (TypeError, ValueError):
+        version = 1
+        notes.append("invalid config_version treated as version 1")
+    if version > CURRENT_CONFIG_VERSION:
+        notes.append(
+            f"configuration version {version} is newer than core version {CURRENT_CONFIG_VERSION}; unknown fields retained"
+        )
+        return raw, tuple(notes)
+
+    source = raw.setdefault("source", {})
+    if isinstance(source, dict):
+        if not source.get("seeds") and isinstance(raw.get("seed_urls"), list):
+            source["seeds"] = copy.deepcopy(raw["seed_urls"])
+            notes.append("seed_urls copied to source.seeds")
+        if str(source.get("kind", "")).casefold() == "rss":
+            source["kind"] = "feed"
+            notes.append("source.kind rss migrated to feed")
+
+    legacy_output = raw.get("output")
+    if isinstance(legacy_output, dict):
+        current = raw.get("outputs", {})
+        raw["outputs"] = deep_merge(legacy_output, current if isinstance(current, dict) else {})
+        notes.append("output copied to outputs")
+
+    crawl = raw.get("crawl", {})
+    if isinstance(crawl, dict) and "delay_seconds" in crawl:
+        http = raw.setdefault("http", {})
+        if isinstance(http, dict) and "delay_seconds" not in http:
+            http["delay_seconds"] = crawl["delay_seconds"]
+            notes.append("crawl.delay_seconds copied to http.delay_seconds")
+    if isinstance(crawl, dict) and isinstance(crawl.get("pagination"), dict):
+        source = raw.setdefault("source", {})
+        if isinstance(source, dict) and "pagination" not in source:
+            pagination = copy.deepcopy(crawl["pagination"])
+            if "param" in pagination and "parameter" not in pagination:
+                pagination["parameter"] = pagination.pop("param")
+            if pagination.get("type") is None:
+                pagination["type"] = "page"
+            source["pagination"] = pagination
+            notes.append("crawl.pagination copied to source.pagination")
+
+    extract = raw.get("extract", {})
+    if isinstance(extract, dict) and extract.get("mode") == "json":
+        if "item_selector" in extract and "item_path" not in extract:
+            extract["item_path"] = extract["item_selector"]
+            notes.append("extract.item_selector copied to extract.item_path for JSON sources")
+
+    if isinstance(raw.get("plugin_paths"), list):
+        plugins = raw.setdefault("plugins", {})
+        if isinstance(plugins, dict) and not plugins.get("paths"):
+            plugins["paths"] = copy.deepcopy(raw["plugin_paths"])
+            notes.append("plugin_paths copied to plugins.paths")
+
+    raw["config_version"] = CURRENT_CONFIG_VERSION
+    return raw, tuple(notes)
+
+
+def migrate_file(source: Path, target: Path, *, overwrite: bool = False) -> tuple[Path, tuple[str, ...]]:
+    source = source.expanduser().resolve()
+    target = target.expanduser().resolve()
+    if not source.is_file():
+        raise FileNotFoundError(source)
+    if target.exists() and not overwrite:
+        raise FileExistsError(target)
+    value = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
+    if not isinstance(value, dict):
+        raise ValueError("Configuration root must be a YAML mapping")
+    migrated, notes = migrate_config(value)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(yaml.safe_dump(migrated, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    return target, notes

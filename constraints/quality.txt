@@ -1,0 +1,10 @@
+# Reproducible quality/build toolchain for OmniCrawler 2.7.0.
+# Update deliberately and record the change in CHANGELOG.md and docs/TEST_REPORT.md.
+pip==24.3.1
+setuptools==83.0.0
+wheel==0.46.3
+PyYAML==6.0.2
+pytest==8.4.2
+coverage==7.15.2
+ruff==0.15.22
+mypy==1.20.2

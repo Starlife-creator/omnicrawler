@@ -1,0 +1,37 @@
+template_version: 1
+
+template:
+
+  id: industries/ecommerce-products
+
+  name: ������Ʒ�品�开信息
+
+  category: industries/ecommerce
+
+  description: "��ȡ��公开商品标题、价格��库存状态��SKU、图片和结构化数�?  version: 1.0.0"
+
+  tags: [����, 商品, 价格, JSON-LD]
+
+  capabilities: [crawl, product-schema, json-ld, incremental, evidence]
+
+  placeholders:
+
+    category_url: {label: ��Ʒ�����ַ, required: true}
+
+  html_contains: [Product, offers, priceCurrency]
+
+  verified_at: '2026-07-17'
+
+project: {name: ecommerce_products, workspace: work/ecommerce_products}
+
+source: {kind: incremental, seeds: ['{{category_url}}']}
+
+crawl: {strategy: priority, focus_keywords: [product, item, goods, 商品], max_pages: 5000, max_depth: 4, same_host: true, concurrency: 4}
+
+http: {respect_robots: true, delay_seconds: 1.5, auto_browser_fallback: true}
+
+extract: {mode: auto, fields: {}, quality_threshold: 0.85, review_low_confidence: true}
+
+incremental: {skip_unchanged: true, archive_raw: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

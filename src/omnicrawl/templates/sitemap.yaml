@@ -1,0 +1,6 @@
+template_version: 1
+project: {name: 示例项目-Sitemap, workspace: work/sitemap}
+source: {kind: sitemap, seeds: [https://example.com/sitemap.xml]}
+crawl: {max_pages: 500, max_depth: 2, same_host: true, concurrency: 6}
+http: {user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
+extract: {mode: auto, fields: {title: {selector: title}, heading: {selector: h1}}}

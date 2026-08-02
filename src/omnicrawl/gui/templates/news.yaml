@@ -1,0 +1,53 @@
+template_version: 1
+
+template:
+  id: gui/news
+  name: 新闻列表采集
+  category: gui/templates
+  description: 可视化配置新闻网站列表采集规则
+  version: 1.0.0
+  tags: [新闻, GUI, 静态HTML]
+  capabilities: [focused-crawl, html]
+
+  placeholders:
+    seed_url: {label: 新闻列表页地址, required: true}
+    title_selector: {label: 标题 CSS 选择器, required: true}
+    link_selector: {label: 链接 CSS 选择器, required: true}
+    date_selector: {label: 发布日期 CSS 选择器}
+
+  verified_at: '2026-07-17'
+
+# 新闻列表爬虫模板，适合新闻网站、博客等列表页面
+project:
+  name: news_crawler
+  workspace: work/news
+source:
+  kind: static_html
+  seeds:
+    - "{{seed_url}}"
+crawl:
+  max_pages: 20
+  delay_seconds: 1.0
+  concurrency: 2
+http:
+  user_agent: "OmniCrawler-GUI/1.0"
+  respect_robots: true
+extract:
+  mode: html
+  item_selector: ""
+  fields:
+    title:
+      selector: "{{title_selector}}"
+      type: css
+    link:
+      selector: "{{link_selector}}"
+      type: css
+      attr: href
+    date:
+      selector: "{{date_selector}}"
+      type: css
+download:
+  enabled: false
+outputs:
+  jsonl: true
+  csv: true

@@ -1,0 +1,41 @@
+template_version: 1
+
+template:
+
+  id: cms/discuz-forum
+
+  name: Discuz�公开����̳
+
+  category: cms/discuz
+
+  description: �ɼ�Discuz�公开���顢���������ҳ�棬��������֤������验�制绕过
+
+  version: 1.0.0
+
+  tags: [Discuz, ��̳, ���题, 帖子]
+
+  capabilities: [crawl, forum, pagination, evidence]
+
+  placeholders:
+
+    forum_url: {label: �公开版块地址, required: true}
+
+  url_patterns: ['*/forum-*-*.html', '*forumdisplay.php?fid=*']
+
+  html_contains: [discuz_uid, forum.php, thread-]
+
+  verified_at: '2026-07-17'
+
+project: {name: discuz_forum, workspace: work/discuz_forum}
+
+source: {kind: focused, seeds: ['{{forum_url}}']}
+
+crawl: {strategy: priority, focus_keywords: [thread, forum, ���题, 帖子], max_pages: 5000, max_depth: 4, same_host: true, concurrency: 3}
+
+http: {respect_robots: true, delay_seconds: 1.5, auto_browser_fallback: true}
+
+extract: {mode: auto, fields: {}, quality_threshold: 0.8, review_low_confidence: true}
+
+incremental: {skip_unchanged: true, archive_raw: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}
