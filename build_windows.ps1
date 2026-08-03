@@ -51,6 +51,19 @@ if ($Offline) {
     }
 }
 
+# =============================================================================
+# Version guard — version is read from source code, never hardcoded or guessed.
+# If you want a different version, bump __version__ in src/omnicrawl/__init__.py
+# *before* running this script.  Do NOT edit __version__ as a side effect of
+# other work — that is a separate, deliberate operation.
+# =============================================================================
+$appVersion = (& $builderPython -c 'from omnicrawl import __version__; print(__version__)').Trim()
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "  OmniCrawler $appVersion — $Edition edition portable build" -ForegroundColor Cyan
+Write-Host "  Build root : $buildRoot" -ForegroundColor DarkGray
+Write-Host "  Release    : $releaseOutput" -ForegroundColor DarkGray
+Write-Host "============================================================" -ForegroundColor Cyan
+
 function Assert-LastExit([string]$Message) {
     if ($LASTEXITCODE -ne 0) { throw $Message }
 }
@@ -219,7 +232,7 @@ Assert-LastExit 'Packaged runtime integrity verification failed.'
 & $builderPython (Join-Path $projectRoot 'tools\portable_smoke_test.py') $releaseRoot --edition $Edition
 Assert-LastExit 'Packaged browser/native runtime verification failed.'
 
-$appVersion = (& $builderPython -c 'from omnicrawl import __version__; print(__version__)').Trim()
+# $appVersion was already resolved at script startup — reuse it.
 New-Item -ItemType Directory -Path $releaseOutput -Force | Out-Null
 $releaseArchive = Join-Path $releaseOutput "OmniCrawler-$appVersion-Windows-Portable-$Edition.zip"
 & $builderPython (Join-Path $projectRoot 'tools\create_zip.py') $releaseRoot $releaseArchive --root-name 'OmniCrawler'

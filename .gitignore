@@ -4,20 +4,25 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 *.egg
+*.whl
+.python-version
 
-# === Build Artifacts ===
+# === Build Artifacts (禁止入库) ===
+# 所有构建产物在 artifacts/ 版本化目录，详见 artifacts/README.md
+artifacts/
 dist/
 build/
 build_cache/
 build_dist/
-.omnicra/           # legacy build marker
+release/
+.omnicra/
 .runtime/
 _internal/
 browsers/
 runtime/
 _empty_*/
-artifacts/
 *.spec.bak
+*.manifest
 
 # === Testing & Coverage ===
 .pytest_cache/
@@ -27,8 +32,11 @@ artifacts/
 coverage.xml
 coverage.json
 htmlcov/
+cov_html/
 cov_baseline.txt
 e2e-artifacts/
+test-results/
+.pytest_session/
 
 # === Linting & Type-Checking ===
 .mypy_cache/
@@ -44,13 +52,13 @@ e2e-artifacts/
 Thumbs.db
 Desktop.ini
 
-# === Tool Data ===
+# === Tool Data (项目级) ===
 .workbuddy/
 .reasonix/
 .omnicrawler/
 .uploads/
 
-# === Runtime Data ===
+# === Runtime Data (运行期产出) ===
 data/input/*
 !data/input/.gitkeep
 data/pdfs/*
@@ -59,11 +67,13 @@ work/*
 !work/.gitkeep
 output/*
 !output/.gitkeep
-*.sqlite3*
+*.sqlite3
 *.sqlite3-*
+tmp/
 
-# === Environment ===
+# === Environment & Secrets ===
 .env
+.env.*
 
 # === Logs ===
 *.log

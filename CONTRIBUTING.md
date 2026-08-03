@@ -84,6 +84,51 @@ pre-commit hooks 会在提交时自动运行 ruff 和 mypy，从源头防止退�
 | 字段清洗/归一化 | transformer | exporter |
 | 输出格式（CSV/JSON/DB） | exporter | transformer |
 
+## 构建与发布
+
+**Windows 便携版构建详见 [`docs/WINDOWS_PACKAGING.md`](docs/WINDOWS_PACKAGING.md)。**
+下面是最关键的规则：
+
+1. **版本号唯一来源**：`src/omnicrawl/__init__.py` 中的 `__version__`。构建脚本自动读取，
+   产物文件名由脚本生成，任何人（包括自动化工具）都不应在构建流程中手动修改版本号。
+2. **修改版本号是独立操作**：使用 `tools/bump_version.py`，不与构建、测试、修复混在一起。
+3. **产物归档**：所有构建产物放入 `artifacts/` 版本化目录，规则见 [`artifacts/README.md`](artifacts/README.md)。
+
+### 快速构建命令（离线模式）
+
+```powershell
+# 当前版本号由源码决定，不要手动传入版本号
+$python = "$PWD\.venv\Scripts\python.exe"
+
+# Standard 便携 ZIP
+.\build_windows.ps1 -Offline -Edition Standard -BuilderPythonPath $python `
+  -BuildRootPath "$PWD\artifacts\build\{version}-standard-r1" `
+  -ReleaseOutputPath "$PWD\artifacts\release\{version}" `
+  -BrowserCachePath "$PWD\build_cache\browsers"
+
+# Full 便携 ZIP
+.\build_windows.ps1 -Offline -Edition Full -BuilderPythonPath $python `
+  -BuildRootPath "$PWD\artifacts\build\{version}-full-r1" `
+  -ReleaseOutputPath "$PWD\artifacts\release\{version}" `
+  -BrowserCachePath "$PWD\build_cache\browsers" `
+  -RuntimeCachePath "$PWD\build_cache\runtime"
+
+# 源码 ZIP + wheel
+.\.venv\Scripts\python.exe tools\build_source_archive.py
+```
+
+### 产物清单
+
+每次构建生成 4 类产物，路径规则详见 [`artifacts/README.md`](artifacts/README.md)：
+
+| # | 产物 | 典型路径 |
+|---|------|---------|
+| 1 | Standard 便携 ZIP | `artifacts/release/{version}/OmniCrawler-{version}-Windows-Portable-Standard.zip` |
+| 2 | Full 便携 ZIP | `artifacts/release/{version}/OmniCrawler-{version}-Windows-Portable-Full.zip` |
+| 3 | 源码 ZIP + wheel | `artifacts/python/{version}/OmniCrawler-{version}-Source.zip` |
+| 4 | 完整便携目录 | `artifacts/build/{version}-{edition}-rN/release/OmniCrawler/` |
+| 4 | 完整便携目录（压缩前） | `artifacts/build/{version}-{edition}-rN/release/OmniCrawler/`
+
 ## ADR（架构决策记录）
 
 重要架构决策请记录到 `docs/adr/` 目录，使用模板 `docs/adr/0000-template.md`。

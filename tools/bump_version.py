@@ -3,13 +3,14 @@
 
 用法::
 
-    python tools/bump_version.py 新版本号 [--no-git] [-m "自定义摘要"]
+    python tools/bump_version.py 新版本号 [--no-git] [-m "自定义摘要"] [--report]
 
 示例::
 
     python tools/bump_version.py 2.8.0
     python tools/bump_version.py 0.1.0 --no-git
     python tools/bump_version.py 2.8.0 -m "修复关键Bug并发布"
+    python tools/bump_version.py 2.8.0 --report   # 仅输出变更报告，供 AI 生成摘要
 
 步骤:
     1. 读取 pyproject.toml 旧版本号
@@ -75,6 +76,16 @@ _TEXT_REPLACE_FILES: tuple[str, ...] = (
     "docs/releases/RELEASE_REPORT_{old}.md",
 )
 
+# ── 无意义 commit 过滤规则（自动 CHANGELOG 生成时跳过） ──────────────
+_FILTER_PATTERNS: tuple[str, ...] = (
+    r"^- release: bump to",      # bump_version 自身产生的 commit
+    r"^- Initial commit$",        # 仓库初始化
+    r"^- init$",                  # 简短初始化
+    r"^- first commit$",          # 首次提交变体
+    r"^- chore: bump",            # bump 类操作变体
+    r"^- bump:",                  # bump 前缀变体
+)
+
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -86,6 +97,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "-m", "--message", metavar="MSG",
         help="自定义 CHANGELOG 变更摘要（覆盖自动 git log）",
+    )
+    parser.add_argument(
+        "--report", action="store_true",
+        help="输出结构化变更报告并退出（供 AI 生成摘要后通过 -m 传入）",
     )
     return parser.parse_args(argv)
 
@@ -235,33 +250,128 @@ def step_sync_check_docs_consistency(root: Path, old: str, new: str) -> None:
         print("     - 无需更新 (已是最新)")
 
 
+def _run_git_log(root: Path, *range_args: str) -> str:
+    """执行 git log 并返回原始输出。"""
+    try:
+        result = subprocess.run(
+            ["git", "log", *range_args, "--pretty=format:- %s"],
+            capture_output=True, text=True, cwd=str(root),
+            timeout=30,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return ""
+
+
+def _filter_commits(raw: str) -> str:
+    """过滤掉无意义的 commit 条目（bump 操作、初始提交等）。"""
+    lines = raw.split("\n")
+    kept = [line for line in lines
+            if not any(re.search(p, line) for p in _FILTER_PATTERNS)]
+    return "\n".join(kept)
+
+
 def _get_changelog_entries(root: Path, old_version: str) -> str:
-    """从 git log 提取变更摘要。"""
-    # 尝试从旧版本 tag 到 HEAD
-    try:
-        result = subprocess.run(
-            ["git", "log", f"v{old_version}..HEAD", "--pretty=format:- %s"],
-            capture_output=True, text=True, cwd=str(root),
-            timeout=30,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-    except (OSError, subprocess.TimeoutExpired):
-        pass
+    """从 git log 提取变更摘要，过滤无意义条目。"""
+    commits = _run_git_log(root, f"v{old_version}..HEAD")
+    if not commits:
+        commits = _run_git_log(root, "-n", "15")
 
-    # 回退：取最近 15 条 commit
-    try:
-        result = subprocess.run(
-            ["git", "log", "--pretty=format:- %s", "-n", "15"],
-            capture_output=True, text=True, cwd=str(root),
-            timeout=30,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-    except (OSError, subprocess.TimeoutExpired):
-        pass
+    filtered = _filter_commits(commits)
+    return filtered if filtered else "版本更新"
 
-    return "版本更新"
+
+def _generate_change_report(root: Path, old_version: str) -> str:
+    """生成结构化变更报告，供 AI 生成 CHANGELOG 摘要。
+
+    报告包含：
+    - 过滤后的 commit 列表
+    - 文件变更统计 (git diff --stat)
+    - 增删行数汇总
+    - AI 摘要生成提示
+    """
+    lines: list[str] = []
+    lines.append(f"# OmniCrawler 变更报告: v{old_version} → HEAD")
+    lines.append("")
+
+    # ── 1. 提交记录 ──
+    lines.append("## 提交记录")
+    commits = _get_changelog_entries(root, old_version)
+    lines.append(commits)
+    lines.append("")
+
+    # ── 2. 文件变更统计 ──
+    lines.append("## 文件变更")
+    try:
+        stat = subprocess.run(
+            ["git", "diff", "--stat", f"v{old_version}..HEAD"],
+            capture_output=True, text=True, cwd=str(root), timeout=30,
+        )
+        if stat.returncode == 0 and stat.stdout.strip():
+            lines.append("```")
+            lines.append(stat.stdout.strip())
+            lines.append("```")
+    except (OSError, subprocess.TimeoutExpired):
+        lines.append("(无法获取)")
+    lines.append("")
+
+    # ── 3. 增删汇总 ──
+    lines.append("## 增删汇总")
+    try:
+        shortstat = subprocess.run(
+            ["git", "diff", "--shortstat", f"v{old_version}..HEAD"],
+            capture_output=True, text=True, cwd=str(root), timeout=30,
+        )
+        if shortstat.returncode == 0 and shortstat.stdout.strip():
+            lines.append(shortstat.stdout.strip())
+    except (OSError, subprocess.TimeoutExpired):
+        lines.append("(无法获取)")
+    lines.append("")
+
+    # ── 4. 文件分类 ──
+    lines.append("## 文件分类")
+    try:
+        name_status = subprocess.run(
+            ["git", "diff", "--name-status", f"v{old_version}..HEAD"],
+            capture_output=True, text=True, cwd=str(root), timeout=30,
+        )
+        if name_status.returncode == 0:
+            added: list[str] = []
+            modified: list[str] = []
+            deleted: list[str] = []
+            for line in name_status.stdout.strip().split("\n"):
+                if not line:
+                    continue
+                status, _, path = line.partition("\t")
+                if status == "A":
+                    added.append(path)
+                elif status == "D":
+                    deleted.append(path)
+                else:
+                    modified.append(path)
+            if added:
+                lines.append(f"**新增 ({len(added)})**: {', '.join(added[:10])}")
+            if modified:
+                lines.append(f"**修改 ({len(modified)})**: {', '.join(modified[:10])}")
+            if deleted:
+                lines.append(f"**删除 ({len(deleted)})**: {', '.join(deleted[:10])}")
+    except (OSError, subprocess.TimeoutExpired):
+        lines.append("(无法获取)")
+    lines.append("")
+
+    # ── 5. AI 提示 ──
+    lines.append("## AI 摘要生成提示")
+    lines.append("")
+    lines.append("请根据以上变更报告，生成一个结构化的 CHANGELOG 条目。要求：")
+    lines.append("1. 按功能领域分节（如：Bug 修复、测试与质量、依赖管理、性能优化等）")
+    lines.append("2. 每条变更用一句话描述，避免罗列 commit subject")
+    lines.append("3. 同类变更合并到同一节")
+    lines.append("4. 输出格式为纯文本，可直接作为 `-m` 参数传入 bump_version.py")
+    lines.append("5. 用中文撰写")
+
+    return "\n".join(lines)
 
 
 def step_update_changelog(
@@ -427,6 +537,13 @@ def main(argv: list[str] | None = None) -> int:
     old = _read_old_version(root)
     if old == new:
         print(f"当前版本已是 {new}，无需更新。")
+        return 0
+
+    # ── --report 模式：输出变更报告并退出 ──
+    if args.report:
+        print(_generate_change_report(root, old))
+        print("\n提示: 将以上报告提交给 AI 生成摘要，然后运行:")
+        print(f'  python tools/bump_version.py {new} -m "AI生成的摘要"')
         return 0
 
     print(f"OmniCrawler 版本号自动更新: {old} → {new}")

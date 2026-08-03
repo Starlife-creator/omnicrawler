@@ -1,4 +1,21 @@
-# Windows 0.2.0 便携版构建
+# Windows 便携版构建
+
+## 版本号来源
+
+构建脚本 **不会从命令行参数接收版本号**。它直接从源码读取：
+
+```
+src/omnicrawl/__init__.py  →  __version__
+           ↓
+build_windows.ps1（启动时立刻打印版本、产物命名使用该值）
+           ↓
+OmniCrawler-{version}-Windows-Portable-{edition}.zip
+```
+
+**因此：构建前不要改版本号。** 版本号就是你当前在开发的那个版本。
+如果要变更版本号，用 `tools/bump_version.py` 独立操作，绝不在构建流程中混着改。
+
+---
 
 ## 产物结构
 
@@ -77,3 +94,27 @@ Selenium、Tesseract 与离线 Paddle 模型验证。
 
 Windows 包不携带 Linux/macOS 启动脚本、包管理器缓存或其他平台二进制。跨平台源码、
 命令和安装预案保留在源码包及 `docs/INSTALLATION.md` 中。
+
+## 源码 ZIP 构建
+
+源码 ZIP 和 wheel 由 `tools/build_source_archive.py` 独立生成，不与便携版共用构建流程：
+
+```powershell
+.\.venv\Scripts\python.exe tools\build_source_archive.py
+```
+
+产物落点：
+- `artifacts/python/{version}/OmniCrawler-{version}-Source.zip`
+- `artifacts/python/{version}/omnicrawl_platform-{version}-py3-none-any.whl`
+
+## 完整产物一览
+
+每次构建共 4 类产物，路径规则详见 [`artifacts/README.md`](../artifacts/README.md)：
+
+| # | 产物 | 路径模式 |
+|---|------|---------|
+| 1 | Standard 便携 ZIP | `artifacts/release/{version}/OmniCrawler-{version}-Windows-Portable-Standard.zip` |
+| 2 | Full 便携 ZIP | `artifacts/release/{version}/OmniCrawler-{version}-Windows-Portable-Full.zip` |
+| 3 | 源码 ZIP + wheel | `artifacts/python/{version}/OmniCrawler-{version}-Source.zip` |
+| 4 | 完整便携目录 | `artifacts/build/{version}-{edition}-rN/release/OmniCrawler/` |
+| 4 | 完整便携目录 | `artifacts/build/{version}-{edition}-rN/release/OmniCrawler/`
