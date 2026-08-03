@@ -68,6 +68,8 @@ def build_parser() -> argparse.ArgumentParser:
     parse_parser.add_argument("--workers", type=int)
     ocr_parser = sub.add_parser("ocr", help="只OCR缺少可用文字层的页面")
     ocr_parser.add_argument("--limit-pages", type=int)
+    ocr_parser.add_argument("--ocr-workers", type=int, default=1,
+                            help="OCR 并行 worker 数（默认 1，串行；增加可加速但占用更多内存）")
     extract_parser = sub.add_parser("extract", help="候选页召回、结构化抽取和校验")
     extract_parser.add_argument("--limit", type=int)
     extract_parser.add_argument("--workers", type=int)
@@ -84,12 +86,14 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = sub.add_parser("run", help="依次运行全部阶段")
     run_parser.add_argument("--limit", type=int, help="仅用于首次小规模试跑")
     run_parser.add_argument("--workers", type=int)
+    run_parser.add_argument("--ocr-workers", type=int, default=1)
     run_parser.add_argument("--skip-ocr", action="store_true")
     process_parser = sub.add_parser(
         "process", help="独立运行PDF解析流程：扫描、解析、OCR、文本导出"
     )
     process_parser.add_argument("--limit", type=int)
     process_parser.add_argument("--workers", type=int)
+    process_parser.add_argument("--ocr-workers", type=int, default=1)
     process_parser.add_argument("--skip-ocr", action="store_true")
     return parser
 
@@ -115,7 +119,7 @@ def main() -> None:
             elif args.command == "parse":
                 emit("parse", parse_stage(config, db, args.limit, args.workers))
             elif args.command == "ocr":
-                emit("ocr", ocr_stage(config, db, args.limit_pages))
+                emit("ocr", ocr_stage(config, db, args.limit_pages, ocr_workers=args.ocr_workers))
             elif args.command == "extract":
                 emit("extract", extraction_stage(config, db, args.limit, args.workers))
             elif args.command == "export":
@@ -136,7 +140,7 @@ def main() -> None:
                 emit("ingest", ingest(config, db, args.limit))
                 emit("parse", parse_stage(config, db, args.limit, args.workers))
                 if not args.skip_ocr:
-                    emit("ocr", ocr_stage(config, db, None))
+                    emit("ocr", ocr_stage(config, db, None, ocr_workers=args.ocr_workers))
                 emit("export-text", export_text_stage(config, db, args.limit))
                 emit("extract", extraction_stage(config, db, args.limit, args.workers))
                 emit("export", export_stage(config, db))
@@ -148,7 +152,7 @@ def main() -> None:
                 emit("ingest", ingest(config, db, args.limit))
                 emit("parse", parse_stage(config, db, args.limit, args.workers))
                 if not args.skip_ocr:
-                    emit("ocr", ocr_stage(config, db, None))
+                    emit("ocr", ocr_stage(config, db, None, ocr_workers=args.ocr_workers))
                 emit("export-text", export_text_stage(config, db, args.limit))
                 emit("status", status(db))
     except KeyboardInterrupt:

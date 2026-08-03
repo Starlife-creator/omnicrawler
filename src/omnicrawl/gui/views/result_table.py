@@ -319,6 +319,9 @@ class ResultTable(QWidget):
     CSV 索引与 JSONL 证据查找均通过后台线程执行，避免大文件阻塞 UI。
     """
 
+    # 用户请求在证据查看器中打开某条记录
+    record_selected_for_review = pyqtSignal(object)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._model = CsvStreamModel(self)
@@ -333,6 +336,7 @@ class ResultTable(QWidget):
         self._current_page = 0
         self._export_thread: ExportThread | None = None
         self._evidence_worker: JsonlSearchWorker | None = None
+        self._current_evidence_record: dict | None = None  # 当前选中的 JSONL 记录
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -389,9 +393,22 @@ class ResultTable(QWidget):
         self._evidence = QPlainTextEdit()
         self._evidence.setReadOnly(True)
         self._evidence.setPlaceholderText("选择一条记录后，这里显示原始数据、字段证据和质量信息。")
+
+        # 证据面板容器：证据文本 + 打开按钮
+        evidence_container = QWidget()
+        evidence_container_layout = QVBoxLayout(evidence_container)
+        evidence_container_layout.setContentsMargins(0, 0, 0, 0)
+        evidence_container_layout.setSpacing(6)
+        evidence_container_layout.addWidget(self._evidence, 1)
+
+        self._open_evidence_btn = QPushButton("在证据查看器中打开 →")
+        self._open_evidence_btn.setEnabled(False)
+        self._open_evidence_btn.clicked.connect(self._open_in_evidence_view)
+        evidence_container_layout.addWidget(self._open_evidence_btn)
+
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self._table)
-        splitter.addWidget(self._evidence)
+        splitter.addWidget(evidence_container)
         splitter.setStretchFactor(0, 4)
         splitter.setStretchFactor(1, 2)
         layout.addWidget(splitter)
@@ -504,16 +521,26 @@ class ResultTable(QWidget):
             record_column = self._model.headers.index("record_id")
         except ValueError:
             self._evidence.setPlainText("当前 CSV 不包含 record_id，无法关联字段证据。")
+            self._open_evidence_btn.setEnabled(False)
+            self._current_evidence_record = None
             return
         record_id = str(self._model.data(self._model.index(source_index.row(), record_column)) or "")
         if not record_id:
+            self._open_evidence_btn.setEnabled(False)
+            self._current_evidence_record = None
             return
 
         # 命中缓存则立即展示
         record = self._evidence_cache.get(record_id)
         if record is not None:
             self._evidence.setPlainText(json.dumps(record, ensure_ascii=False, indent=2, default=str))
+            self._current_evidence_record = record
+            self._open_evidence_btn.setEnabled(True)
             return
+
+        # 异步查找时暂时禁用按钮
+        self._open_evidence_btn.setEnabled(False)
+        self._current_evidence_record = None
 
         jsonl = self._filepath.with_name("records.jsonl")
         if not jsonl.is_file():
@@ -537,16 +564,22 @@ class ResultTable(QWidget):
     def _on_evidence_found(self, record_id: str, record: dict) -> None:
         """证据查找成功回调（主线程）。"""
         self._evidence_cache[record_id] = record
+        self._current_evidence_record = record
         self._evidence.setPlaceholderText("选择一条记录后，这里显示原始数据、字段证据和质量信息。")
         self._evidence.setPlainText(json.dumps(record, ensure_ascii=False, indent=2, default=str))
+        self._open_evidence_btn.setEnabled(True)
 
     def _on_evidence_not_found(self, record_id: str) -> None:
         """证据查找未命中回调（主线程）。"""
+        self._current_evidence_record = None
+        self._open_evidence_btn.setEnabled(False)
         self._evidence.setPlaceholderText("选择一条记录后，这里显示原始数据、字段证据和质量信息。")
         self._evidence.setPlainText(f"记录 {record_id}\n未找到配套 records.jsonl 证据文件。")
 
     def _on_evidence_failed(self, message: str) -> None:
         """证据查找失败回调（主线程）。"""
+        self._current_evidence_record = None
+        self._open_evidence_btn.setEnabled(False)
         self._evidence.setPlaceholderText("选择一条记录后，这里显示原始数据、字段证据和质量信息。")
         self._evidence.setPlainText(f"证据加载失败：{message}")
 
@@ -555,6 +588,11 @@ class ResultTable(QWidget):
         sender = self.sender()
         if sender is self._evidence_worker:
             self._evidence_worker = None
+
+    def _open_in_evidence_view(self) -> None:
+        """触发信号：在证据查看器中打开当前记录。"""
+        if self._current_evidence_record is not None:
+            self.record_selected_for_review.emit(self._current_evidence_record)
 
     def _export_filtered_csv(self) -> None:
         if self._proxy.rowCount() == 0:

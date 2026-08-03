@@ -103,6 +103,11 @@ class MenuBuilder(_BaseDelegate):
         recorder_action.triggered.connect(mw._record_browser_actions)
         settings_menu.addAction(recorder_action)
 
+        settings_menu.addSeparator()
+        ai_center_action = QAction(_("AI 服务中心..."), mw)
+        ai_center_action.triggered.connect(mw._open_ai_service_center)
+        settings_menu.addAction(ai_center_action)
+
         # Theme submenu
         theme_menu = QMenu(_("主题"), mw)
         for theme_name, theme_id in [(_("明亮"), "light"), (_("黑暗"), "dark"), (_("跟随系统"), "system")]:

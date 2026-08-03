@@ -1,4 +1,4 @@
-# OmniCrawler 桌面运行、工作区与组件（2.7.0）
+# OmniCrawler 桌面运行、工作区与组件（2.8.0）
 
 ## Worker
 

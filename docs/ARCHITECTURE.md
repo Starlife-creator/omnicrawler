@@ -1,4 +1,4 @@
-# OmniCrawler 2.7.0 架构
+# OmniCrawler 2.8.0 架构
 
 ## 原则
 

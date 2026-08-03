@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+## 2.8.0 - 2026-08-03
+
+### 变更
+
+- Initial commit
+
 
 ## 2.7.0 - 2026-08-01
 

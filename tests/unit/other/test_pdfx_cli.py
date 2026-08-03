@@ -59,7 +59,7 @@ def test_pdfx_cli_all_offline_stage_branches(tmp_path: Path, monkeypatch, capsys
     monkeypatch.setattr(cli, "validate_runtime_config", lambda _config: ["warning"])
     monkeypatch.setattr(cli, "ingest", lambda *_args: calls.append("ingest") or {"new": 1})
     monkeypatch.setattr(cli, "parse_stage", lambda *_args: calls.append("parse") or {"parsed": 1})
-    monkeypatch.setattr(cli, "ocr_stage", lambda *_args: calls.append("ocr") or {"pages": 1})
+    monkeypatch.setattr(cli, "ocr_stage", lambda *a, **kw: calls.append("ocr") or {"pages": 1})
     monkeypatch.setattr(cli, "extraction_stage", lambda *_args: calls.append("extract") or {"records": 1})
     monkeypatch.setattr(cli, "export_stage", lambda *_args: calls.append("export") or {"records": 1})
     monkeypatch.setattr(cli, "export_text_stage", lambda *_args: calls.append("text") or {"pages": 1})

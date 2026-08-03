@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import logging
 import math
 
-from PyQt6.QtCore import QTimer, pyqtSignal
+from PyQt6.QtCore import QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPaintEvent
 from PyQt6.QtWidgets import (
     QApplication,
@@ -17,6 +18,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
@@ -30,6 +32,85 @@ from .design_system import ThemeManager, rgba_token_to_qcolor
 from .motion_signal import MotionSignal
 
 logger = logging.getLogger(__name__)
+
+
+class _AIEnrichWorker(QThread):
+    """后台线程：调用 AI 增强自然语言解析结果。
+
+    失败不影响主流程 — 本地解析结果始终先展示。
+    """
+
+    result_ready = pyqtSignal(object)  # NaturalLanguageDraft | None
+
+    def __init__(self, request: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._request = request
+
+    def run(self) -> None:
+        try:
+            from pathlib import Path
+            from ..services.natural_language_task import compile_with_ai
+
+            # 尝试加载 AI provider
+            provider = self._load_provider()
+            if provider is None:
+                self.result_ready.emit(None)
+                return
+
+            result = compile_with_ai(self._request, provider)
+            self.result_ready.emit(result)
+        except Exception:
+            logger.debug("AI enrichment failed", exc_info=True)
+            self.result_ready.emit(None)
+
+    def _load_provider(self) -> object | None:
+        """尝试从 .env 加载 AI provider 配置并实例化。"""
+        import os
+        from pathlib import Path
+
+        env_paths = [
+            Path(os.getcwd()) / ".env",
+            Path.home() / ".omnicrawl" / ".env",
+        ]
+        env_vars: dict[str, str] = {}
+        for env_path in env_paths:
+            if env_path.exists():
+                for line in env_path.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, _, value = line.partition("=")
+                        env_vars[key.strip()] = value.strip().strip("\"'")
+
+        provider_type = env_vars.get("OMNICRAWL_AI_PROVIDER", "disabled")
+        if provider_type == "disabled":
+            return None
+
+        base_url = env_vars.get("OMNICRAWL_AI_BASE_URL", "")
+        api_key = env_vars.get("OMNICRAWL_AI_API_KEY", "")
+        model = env_vars.get("OMNICRAWL_AI_MODEL", "")
+        if not base_url or not model:
+            return None
+
+        try:
+            from ..services.ai_providers import OpenAICompatibleProvider
+            config = {
+                "base_url": base_url,
+                "api_key": api_key,
+                "model": model,
+                "timeout": int(env_vars.get("OMNICRAWL_AI_TIMEOUT", "60")),
+            }
+            return OpenAICompatibleProvider("default", config)
+        except ImportError:
+            logger.debug("OpenAICompatibleProvider not available", exc_info=True)
+            return None
+
+
+def _package_version() -> str:
+    """动态读取包版本号。"""
+    try:
+        return importlib.metadata.version("omnicrawl-platform")
+    except Exception:
+        return "2.7"
 
 
 class AmbientHero(QWidget):
@@ -50,7 +131,7 @@ class AmbientHero(QWidget):
         self._timer.start(50)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 220, 18)
-        eyebrow = QLabel("OMNICRAWLER 2.1 · DESKTOP PROFESSIONAL")
+        eyebrow = QLabel(f"OMNICRAWLER {_package_version()} · DESKTOP PROFESSIONAL")
         eyebrow.setObjectName("eyebrow")
         layout.addWidget(eyebrow)
         title = QLabel("把网页、PDF 和接口变成可复核的数据")
@@ -135,7 +216,7 @@ class HomePage(QWidget):
         card_layout.addWidget(description_hint)
         self.natural_language = QPlainTextEdit()
         self.natural_language.setPlaceholderText(
-            "例如：每周监测 https://example.com/news 中“人工智能”相关内容，下载 PDF 并导出 Excel"
+            "描述你的任务，例如：分析合同 PDF 中的金额和日期，或每周监测某网站的动态"
         )
         self.natural_language.setAccessibleName("自然语言任务描述")
         self.natural_language.setMinimumHeight(82)
@@ -229,20 +310,106 @@ class HomePage(QWidget):
         self._show_draft(draft)
 
     def _draft_natural_language(self) -> None:
+        """三层判定处理自然语言输入：URL → 文件路径 → 二选一对话框。"""
+        request = self.natural_language.toPlainText().strip()
+        if not request:
+            self.feedback.setText("请描述你的任务")
+            return
         try:
-            compiled = compile_natural_language(self.natural_language.toPlainText())
+            compiled = compile_natural_language(request, fallback_url=self.url.text().strip())
         except ValueError as exc:
             self.feedback.setText(f"请补充：{exc}")
             return
+
+        # Layer 3: 都没命中 → 二选一对话框
+        if compiled.mode == "ambiguous":
+            self._show_mode_dialog(request)
+            return
+
+        if compiled.mode == "pdf":
+            self._handle_pdf_mode(compiled)
+            return
+
+        # crawl 模式（现有逻辑）
         self.url.setText(compiled.task.url)
         self._save_recent_url(compiled.task.url)
         self._show_draft(compiled.task, emit=False)
         self.natural_task_ready.emit(compiled)
+        self._try_ai_enrich(compiled)
+
+    def _show_mode_dialog(self, request: str) -> None:
+        """弹出二选一对话框，让用户选择爬虫还是 PDF 模式。"""
+        msg = QMessageBox(self)
+        msg.setWindowTitle("选择任务类型")
+        msg.setText("无法自动判断你的意图。\n你想做什么？")
+        crawl_btn = msg.addButton("爬取网页数据", QMessageBox.ButtonRole.AcceptRole)
+        pdf_btn = msg.addButton("处理本地文件（PDF/文档）", QMessageBox.ButtonRole.ActionRole)
+        msg.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
+
+        clicked = msg.clickedButton()
+        if clicked == crawl_btn:
+            # 用户选择爬虫 → 弹出 URL 输入
+            self.url.setFocus()
+            self.feedback.setText("请在下方输入目标网址后点击「分析并准备试跑」")
+        elif clicked == pdf_btn:
+            # 用户选择 PDF → 引导到 PDF 工作台
+            self.feedback.setText("已切换为文件处理模式。请前往「📄 PDF 工作台」选择目录和模板。")
+            # 保存原始需求，供 PDF 工作台读取
+            self.setProperty("last_nl_request", request)
+
+    def _handle_pdf_mode(self, compiled: object) -> None:
+        """处理 PDF 模式：展示检测到的文件路径和解析结果。"""
+        draft = compiled  # type: ignore[assignment]
+        paths_text = "\n".join(f"  • {p}" for p in draft.file_paths) if hasattr(draft, 'file_paths') and draft.file_paths else "（未检测到具体文件路径）"
+        self.feedback.setText(
+            f"📄 检测为文件处理任务\n"
+            f"检测到的文件：\n{paths_text}\n"
+            f"请前往「📄 PDF 工作台」开始处理。"
+        )
+        self.setProperty("last_nl_request", draft.request)
 
     def _show_draft(self, draft: QuickTaskDraft, *, emit: bool = True) -> None:
         self.feedback.setText("已安全限制在入口站点；将先试跑。为什么：" + "；".join(draft.decisions))
         if emit:
             self.quick_task_ready.emit(draft)
+
+    def _try_ai_enrich(self, compiled: object) -> None:
+        """双路径：本地解析已出结果，异步启动 AI 增强。"""
+        draft = compiled  # type: ignore[assignment]
+        request = draft.request if hasattr(draft, 'request') else ""
+        if not request:
+            return
+
+        self._enrich_worker = _AIEnrichWorker(request, self)
+        self._enrich_worker.result_ready.connect(self._on_ai_enriched)
+        self._enrich_worker.start()
+
+    def _on_ai_enriched(self, ai_draft: object | None) -> None:
+        """AI 增强结果到达：合并展示，不覆盖本地结果。"""
+        if ai_draft is None:
+            return
+
+        draft = ai_draft  # type: ignore[assignment]
+        parts = [self.feedback.text()]
+
+        if hasattr(draft, 'ai_assumptions') and draft.ai_assumptions:
+            parts.append("\n--- AI 分析 ---")
+            for a in draft.ai_assumptions[:3]:
+                parts.append(f"  • 假设「{a.get('field', '?')}」= {a.get('value', '?')}（置信度: {a.get('confidence', '?')}）")
+
+        if hasattr(draft, 'ai_risks') and draft.ai_risks:
+            parts.append("⚠ 风险提示：")
+            for r in draft.ai_risks[:3]:
+                parts.append(f"  • {r.get('risk', '?')} [{r.get('severity', '?')}]")
+
+        if hasattr(draft, 'ai_recommendations') and draft.ai_recommendations:
+            parts.append("💡 建议操作：")
+            for rec in draft.ai_recommendations[:3]:
+                parts.append(f"  • {rec}")
+
+        if len(parts) > 1:
+            self.feedback.setText("\n".join(parts))
 
     def _load_recent_urls(self) -> None:
         """从本地缓存加载最近使用的 URL。"""

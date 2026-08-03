@@ -1,4 +1,4 @@
-# OmniCrawler 2.7.0 生产部署指南
+# OmniCrawler 2.8.0 生产部署指南
 
 ## 推荐拓扑
 

@@ -1,4 +1,4 @@
-# Windows 2.7.0 便携版构建
+# Windows 2.8.0 便携版构建
 
 ## 产物结构
 
@@ -46,14 +46,14 @@
 
 ```powershell
 $python = "$PWD\.venv\Scripts\python.exe"
-$out = "$PWD\artifacts\release\2.7.0"
+$out = "$PWD\artifacts\release\2.8.0"
 
 .\build_windows.ps1 -Offline -Edition Standard -BuilderPythonPath $python `
-  -BuildRootPath "$PWD\artifacts\build\2.7.0-standard-r1" `
+  -BuildRootPath "$PWD\artifacts\build\2.8.0-standard-r1" `
   -ReleaseOutputPath $out -BrowserCachePath "$PWD\build_cache\browsers"
 
 .\build_windows.ps1 -Offline -Edition Full -BuilderPythonPath $python `
-  -BuildRootPath "$PWD\artifacts\build\2.7.0-full-r1" `
+  -BuildRootPath "$PWD\artifacts\build\2.8.0-full-r1" `
   -ReleaseOutputPath $out -BrowserCachePath "$PWD\build_cache\browsers" `
   -RuntimeCachePath "$PWD\build_cache\runtime"
 ```

@@ -19,6 +19,8 @@ from typing import Any
 from .ux_service import QuickTaskDraft, draft_quick_task
 
 _URL = re.compile(r"https?://[^\s，。；;]+", re.IGNORECASE)
+_FILE_EXT = re.compile(r"(?:^|\s)([\w\-/\\]+\.(?:pdf|docx?|xlsx?|pptx?|txt|csv|扫描件))", re.IGNORECASE)
+_FILE_PATH = re.compile(r"([A-Za-z]:[/\\][^\s，。；;]+|[~/][^\s，。；;]+)", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,9 +29,11 @@ class NaturalLanguageDraft:
     task: QuickTaskDraft
     topics: tuple[str, ...]
     schedule: str
+    mode: str = "crawl"  # "crawl" | "pdf" | "ambiguous"
     safety_constraints: tuple[str, ...] = (
         "不扩大入口域名", "不写入真实凭据", "不关闭网络安全策略", "不跳过试跑和用户确认"
     )
+    file_paths: tuple[str, ...] = ()  # 检测到的文件路径
     ai_enhanced: bool = False
     ai_assumptions: tuple[dict[str, str], ...] = ()
     ai_questions: tuple[dict[str, Any], ...] = ()
@@ -38,21 +42,64 @@ class NaturalLanguageDraft:
 
 
 def compile_natural_language(request: str, *, fallback_url: str = "") -> NaturalLanguageDraft:
-    """本地解析常见中文需求；AI providers 不是必需的。
+    """三层判定解析自然语言需求。
 
-    支持的本地识别模式：
-    - URL 提取
-    - 任务类型：保存页面 / 采集栏目 / 下载附件 / 监测变化
-    - 引号内的主题词
-    - 周次调度关键词
+    ① URL 匹配 → 爬虫模式
+    ② 文件路径/扩展名匹配 → PDF 模式
+    ③ 都没命中 → 返回 ambiguous 模式，由调用方弹出二选一对话框
     """
     match = _URL.search(request)
     url = match.group(0) if match else fallback_url.strip()
-    if not url:
-        raise ValueError("请在描述中或目标网址栏中提供一个完整的 http(s) 地址")
+    
+    # Layer 2: 检测文件路径
+    file_paths: list[str] = []
+    for m in _FILE_EXT.finditer(request):
+        file_paths.append(m.group(1))
+    for m in _FILE_PATH.finditer(request):
+        fp = m.group(1)
+        if fp not in file_paths and not _URL.match(fp):
+            file_paths.append(fp)
+    
+    has_file = bool(file_paths)
+    has_url = bool(url)
+    
+    # Layer 3: 都没命中 → ambiguous，由调用方处理
+    if not has_url and not has_file:
+        # 尝试用 fallback_url 作为保底
+        if fallback_url.strip():
+            url = fallback_url.strip()
+        else:
+            return NaturalLanguageDraft(
+                request=request.strip(),
+                task=draft_quick_task("file:///placeholder", "save_page"),
+                topics=(),
+                schedule="manual",
+                mode="ambiguous",
+            )
+    
+    if has_file and not has_url:
+        # 纯文件模式 → PDF
+        lowered = request.lower()
+        schedule = "manual"
+        task = draft_quick_task("file:///placeholder", "download_files")
+        decisions = list(task.decisions)
+        decisions.append("检测到文件路径，切换为 PDF 处理模式")
+        task = replace(task, download_files=True, process_pdf=True, decisions=tuple(decisions))
+        quoted = [
+            next(value for value in match if value)
+            for match in re.findall(r'[「「"『]([^」」"』]+)[」」"』]', request)
+        ]
+        return NaturalLanguageDraft(
+            request=request.strip(),
+            task=task,
+            topics=tuple(quoted),
+            schedule=schedule,
+            mode="pdf",
+            file_paths=tuple(file_paths),
+        )
+    
+    # URL 模式 → 爬虫（现有逻辑）
     lowered = request.lower()
-
-    # 任务类型决定默认范围；附件和监测是可组合的独立需求，不能因优先级而丢失。
     wants_monitor = any(word in lowered for word in ("每周", "每天", "监测", "变化", "更新", "调度", "定期"))
     wants_download = any(word in lowered for word in ("附件", "pdf", "下载", ".doc", "表格"))
     wants_section = any(word in lowered for word in ("栏目", "列表", "全部", "所有", "整个", "翻页", "分页"))
@@ -77,10 +124,9 @@ def compile_natural_language(request: str, *, fallback_url: str = "") -> Natural
         task = replace(task, monitor_changes=True, decisions=tuple(decisions))
     quoted = [
         next(value for value in match if value)
-        for match in re.findall(r'“([^”]+)”|"([^"]+)"|「([^」]+)」|『([^』]+)』', request)
+        for match in re.findall(r'\u201c([^\u201d]+)\u201d|"([^"]+)"|\u300c([^\u300d]+)\u300d|\u300e([^\u300f]+)\u300e', request)
     ]
 
-    # 调度识别
     if "每周" in request:
         schedule = "weekly"
     elif "每天" in request:
@@ -88,11 +134,13 @@ def compile_natural_language(request: str, *, fallback_url: str = "") -> Natural
     elif "每月" in request:
         schedule = "monthly"
     elif any(word in request for word in ("监测", "调度", "定期")):
-        schedule = "weekly"  # 默认每周
+        schedule = "weekly"
     else:
         schedule = "manual"
 
-    return NaturalLanguageDraft(request.strip(), task, tuple(quoted), schedule)
+    return NaturalLanguageDraft(
+        request=request.strip(), task=task, topics=tuple(quoted), schedule=schedule, mode="crawl"
+    )
 
 
 def compile_with_ai(

@@ -90,6 +90,7 @@ if not _HEADLESS_MODE:
             QMessageBox,
             QProgressBar,
             QPushButton,
+            QSplitter,
             QSpinBox,
             QStackedWidget,
             QStatusBar,
@@ -147,10 +148,10 @@ if not _HEADLESS_MODE:
     from .settings import AppSettings
     from .shortcuts import GlobalShortcutManager
     from .views.chart_view import ChartView
-    from .views.developer_inspector import DeveloperInspector
     from .views.file_list import FileList
     from .views.pdf_region_selector import PdfRegionSelectorDialog
-    from .views.professional_review import ProfessionalReviewView
+    from .views.pdf_workbench import PdfWorkbenchView
+    from .views.professional_review import EvidenceView  # ProfessionalReviewView 别名保持兼容
     from .views.result_table import ResultTable
     from .views.task_history import TaskHistory
     from .views.yaml_editor import YamlEditor
@@ -758,11 +759,11 @@ class MainWindow(QMainWindow):
         nav_items = [
             ("⌂ " + _("首页"), 4),
             ("⚙ " + _("配置向导"), 0),
+            ("📄 " + _("PDF 工作台"), 6),
             ("📝 " + _("YAML 编辑器"), 1),
             ("📋 " + _("任务监控"), 2),
             ("📊 " + _("结果与复核"), 3),
-            ("✓ " + _("专业复核台"), 5),
-            ("</> " + _("开发者检查器"), 6),
+            ("🔍 " + _("证据查看器"), 5),
         ]
         for label, _idx in nav_items:
             item = QListWidgetItem(label)
@@ -782,9 +783,30 @@ class MainWindow(QMainWindow):
         self._advanced_summary.setObjectName("advancedSummary")
         self._advanced_summary.setProperty("status", "warning")
         wizard_layout.addWidget(self._advanced_summary)
+        
+        # 拆分器：左侧配置向导 + 右侧信息面板
+        wizard_splitter = QSplitter(Qt.Orientation.Horizontal)
         self._config_wizard = ConfigWizard(self._config)
-        wizard_layout.addWidget(self._config_wizard)
+        wizard_splitter.addWidget(self._config_wizard)
+        
+        # 右侧信息面板（200px 宽，只读）
+        self._wizard_info_panel = QLabel("")
+        self._wizard_info_panel.setObjectName("wizardInfoPanel")
+        self._wizard_info_panel.setWordWrap(True)
+        self._wizard_info_panel.setMinimumWidth(200)
+        self._wizard_info_panel.setMaximumWidth(240)
+        self._wizard_info_panel.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self._wizard_info_panel.setTextFormat(Qt.TextFormat.RichText)
+        wizard_splitter.addWidget(self._wizard_info_panel)
+        wizard_splitter.setStretchFactor(0, 3)
+        wizard_splitter.setStretchFactor(1, 1)
+        wizard_splitter.setSizes([600, 200])
+        
+        wizard_layout.addWidget(wizard_splitter)
         self._stack.addWidget(self._wizard_widget)
+        
+        # 监听向导页面切换以更新信息面板
+        self._config_wizard.currentIdChanged.connect(self._update_wizard_info_panel)
 
         self._yaml_editor = YamlEditor()
         self._yaml_editor.sync_to_form.connect(self._on_editor_sync_to_form)
@@ -843,6 +865,7 @@ class MainWindow(QMainWindow):
         results_layout = QVBoxLayout(results_widget)
         results_layout.setContentsMargins(8, 8, 8, 8)
         self._result_table = ResultTable()
+        self._result_table.record_selected_for_review.connect(self._on_record_selected_for_review)
         results_layout.addWidget(self._result_table)
         self._file_list = FileList()
         results_layout.addWidget(self._file_list)
@@ -862,10 +885,11 @@ class MainWindow(QMainWindow):
         self._home.create_demo.connect(self._create_offline_demo)
         self._stack.addWidget(self._home)
 
-        self._professional_review = ProfessionalReviewView()
-        self._stack.addWidget(self._professional_review)
-        self._developer_inspector = DeveloperInspector()
-        self._stack.addWidget(self._developer_inspector)
+        self._evidence_view = EvidenceView()
+        self._evidence_view.back_to_results.connect(lambda: self._nav.setCurrentRow(5))  # 返回结果与复核页
+        self._stack.addWidget(self._evidence_view)
+        self._pdf_workbench = PdfWorkbenchView()
+        self._stack.addWidget(self._pdf_workbench)
 
         main_layout.addWidget(self._stack)
         self._page_transition = PageTransitionController(
@@ -946,14 +970,15 @@ class MainWindow(QMainWindow):
             ToastManager.instance().warning(_("请先切换到 YAML 编辑器"))
 
     def _on_nav_changed(self, index: int) -> None:
-        page = (4, 0, 1, 2, 3, 5, 6)[index] if 0 <= index < 7 else 4
+        # nav index -> stack page: 首页(4), 配置向导(0), PDF工作台(6), YAML编辑器(1), 任务监控(2), 结果复核(3), 证据查看器(5)
+        page = (4, 0, 6, 1, 2, 3, 5)[index] if 0 <= index < 7 else 4
         self._page_transition.show(page)
         if page == 1:
             self._yaml_editor.update_from_config(self._config)
         elif page == 3:
             self._auto_load_results()
-        elif page == 6:
-            self._developer_inspector.update_config(self._config)
+        elif page == 5:
+            pass  # 证据查看器数据由 record_selected_for_review 信号加载
 
     def _apply_quick_task(self, draft: QuickTaskDraft) -> None:
         self._apply_task_draft(draft)
@@ -973,6 +998,11 @@ class MainWindow(QMainWindow):
         self._set_status(_("已从自然语言生成草案；建议频率：{0}。请确认第一页内容并先试跑。").format(
             cadence.get(draft.schedule, draft.schedule)
         ))
+
+    def _on_record_selected_for_review(self, record: dict) -> None:
+        """从结果表格跳转到证据查看器。"""
+        self._evidence_view.show_record(record)
+        self._nav.setCurrentRow(6)  # 导航到证据查看器（nav row 6 → stack page 5）
 
     def _apply_task_draft(self, draft: QuickTaskDraft) -> None:
         self._config.seed_urls = [draft.url]
@@ -1031,6 +1061,48 @@ class MainWindow(QMainWindow):
         self._updating_editor = True
         QTimer.singleShot(300, self._sync_wizard_to_editor)
         self._updating_editor = False
+
+    def _update_wizard_info_panel(self, page_id: int) -> None:
+        """更新配置向导右侧信息面板，显示当前步骤的字段帮助。"""
+        tips: dict[int, str] = {
+            0: (
+                "<h3>📌 Step 1：选择数据源</h3>"
+                "<p><b>是什么</b>：设定要采集的网站或本地文件路径。</p>"
+                "<p><b>为什么</b>：这是所有后续规则的根基——源类型决定了解析策略。</p>"
+                "<p><b>示例</b>：<code>https://example.com/news</code> 或 <code>./data/pdfs/</code></p>"
+                "<hr><p style='color:gray;font-size:11px'>💡 支持 HTTP/HTTPS 网页和本地 file:// 路径。</p>"
+            ),
+            1: (
+                "<h3>🔗 Step 2：发现 URL</h3>"
+                "<p><b>是什么</b>：定义如何从首页发现更多目标页面。</p>"
+                "<p><b>为什么</b>：控制爬取范围和深度，避免无限扩展。</p>"
+                "<p><b>示例</b>：CSS 选择器 <code>a.article-link</code> 或正则 <code>/post/\\d+</code></p>"
+                "<hr><p style='color:gray;font-size:11px'>💡 默认限制同域名，防止意外跳转到外部站点。</p>"
+            ),
+            2: (
+                "<h3>📋 Step 3：定义字段</h3>"
+                "<p><b>是什么</b>：指定要从每个页面提取的数据字段。</p>"
+                "<p><b>为什么</b>：字段是最小的数据单元，决定最终输出表格的列。</p>"
+                "<p><b>示例</b>：<code>标题</code> → <code>h1.article-title</code>、<code>日期</code> → <code>time.published</code></p>"
+                "<hr><p style='color:gray;font-size:11px'>💡 可选的 <b>AI 辅助设计</b> 能根据描述自动推荐字段规则。</p>"
+            ),
+            3: (
+                "<h3>📥 Step 4：下载设置</h3>"
+                "<p><b>是什么</b>：配置附件下载和文件类型过滤。</p>"
+                "<p><b>为什么</b>：控制是否下载 PDF/图片/文档，避免下载不必要的大文件。</p>"
+                "<p><b>示例</b>：限制扩展名 <code>.pdf,.docx</code> 或最大文件大小 50MB</p>"
+                "<hr><p style='color:gray;font-size:11px'>💡 下载文件默认存储在 <code>output/downloads/</code> 子目录。</p>"
+            ),
+            4: (
+                "<h3>✅ Step 5：预览与确认</h3>"
+                "<p><b>是什么</b>：在正式运行前检查所有配置，运行小样本试跑。</p>"
+                "<p><b>为什么</b>：避免配置错误导致的大规模失败——小样本验证是安全底线。</p>"
+                "<p><b>示例</b>：先采集 5 页，确认字段正确后再全量运行。</p>"
+                "<hr><p style='color:gray;font-size:11px'>💡 始终建议先试跑再全量执行。</p>"
+            ),
+        }
+        text = tips.get(page_id, "")
+        self._wizard_info_panel.setText(text)
 
     def _sync_wizard_to_editor(self) -> None:
         self._yaml_editor.update_from_config(self._config)
@@ -1331,6 +1403,26 @@ class MainWindow(QMainWindow):
         interval.setValue(60)
         interval.setSuffix(_(" 分钟"))
         form.addRow(_("运行间隔"), interval)
+        # CalendarPopup 接入：选择首次运行日期
+        start_row = QHBoxLayout()
+        start_date_label = QLineEdit()
+        start_date_label.setReadOnly(True)
+        start_date_label.setPlaceholderText("立即开始（点击选择日期）")
+        start_row.addWidget(start_date_label)
+        start_date_btn = QPushButton("📅")
+        start_date_btn.setFixedWidth(36)
+        start_date_btn.setToolTip("选择首次运行日期")
+        
+        def _pick_date() -> None:
+            from .widgets.calendar_popup import CalendarPopup
+            popup = CalendarPopup(dialog)
+            if popup.exec() == QDialog.DialogCode.Accepted:
+                selected = popup._calendar.selectedDate()
+                start_date_label.setText(selected.toString("yyyy-MM-dd"))
+        
+        start_date_btn.clicked.connect(_pick_date)
+        start_row.addWidget(start_date_btn)
+        form.addRow(_("首次运行"), start_row)
         require_ac = QCheckBox("仅接通电源时运行", dialog)
         require_ac.setChecked(True)
         form.addRow("电源条件", require_ac)
@@ -1423,15 +1515,19 @@ class MainWindow(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_template:
             template = dialog.selected_template
             try:
+                from ..templates.template_application import apply_template
+                
                 recipe = yaml.safe_load(template.filepath.read_text(encoding="utf-8")) or {}
                 current = yaml.safe_load(to_yaml(self._config)) or {}
-                composed = compose_recipe(current, recipe)
-                changes = diff_config(current, composed)
+                application = apply_template(current, recipe)
             except Exception as exc:
                 QMessageBox.warning(self, _("模板不可用"), str(exc))
                 return
             preview = "\n".join(
-                f"{item.path}: {item.before!r} → {item.after!r}" for item in changes[:18]
+                f"{item.get('business_section', item['path'])}: "
+                f"{item.get('business_change', item['change_type'])} — "
+                f"{item['path']}"
+                for item in application.changes[:18]
             )
             box = QMessageBox(self)
             box.setWindowTitle(_("组合模板"))
@@ -1441,7 +1537,7 @@ class MainWindow(QMainWindow):
             box.setStandardButtons(QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel)
             if box.exec() != QMessageBox.StandardButton.Apply:
                 return
-            self._config = from_yaml(yaml.safe_dump(composed, allow_unicode=True, sort_keys=False))
+            self._config = from_yaml(yaml.safe_dump(application.after, allow_unicode=True, sort_keys=False))
             self._config_path = None
             self._config_label.setText(_("组合模板: ") + template.display_name)
             self._rebuild_wizard()
@@ -1765,6 +1861,70 @@ class MainWindow(QMainWindow):
     def _show_pdf_region_dialog(self) -> None:
         """MenuBuilder 引用 — 打开 PDF 区域选择对话框。"""
         PdfRegionSelectorDialog(self).exec()
+
+    def _open_ai_service_center(self) -> None:
+        """MenuBuilder 引用 — 打开 AI 服务中心对话框，写 .env 文件。"""
+        from .views.ai_service_center import AIServiceCenterDialog
+
+        ai_config = self._load_ai_config_from_env()
+        dialog = AIServiceCenterDialog(ai_config, self, workspace=self._project_root)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._save_ai_config_to_env(ai_config)
+
+    def _load_ai_config_from_env(self) -> dict[str, Any]:
+        """从项目 .env 文件加载 AI 配置。"""
+        import os
+        env_path = Path(self._project_root) / ".env" if self._project_root else Path.home() / ".omnicrawl" / ".env"
+        config: dict[str, Any] = {"mode": "disabled"}
+        if not env_path.exists():
+            return config
+        env_vars = {}
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _, value = line.partition("=")
+                env_vars[key.strip()] = value.strip().strip("\"'")
+        provider = env_vars.get("OMNICRAWL_AI_PROVIDER", "disabled")
+        if provider != "disabled":
+            config["mode"] = "enabled"
+            config["default_provider"] = "default"
+            config.setdefault("providers", {})["default"] = {
+                "type": provider,
+                "base_url": env_vars.get("OMNICRAWL_AI_BASE_URL", ""),
+                "model": env_vars.get("OMNICRAWL_AI_MODEL", ""),
+                "api_key": env_vars.get("OMNICRAWL_AI_API_KEY", ""),
+                "timeout_seconds": int(env_vars.get("OMNICRAWL_AI_TIMEOUT", "60")),
+            }
+        return config
+
+    def _save_ai_config_to_env(self, config: dict[str, Any]) -> None:
+        """将 AI 配置写入项目 .env 文件（单向写入，不设进程环境变量）。"""
+        import os
+        env_path = Path(self._project_root) / ".env" if self._project_root else Path.home() / ".omnicrawl" / ".env"
+        env_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 读取现有内容，保留非 AI 相关的行
+        existing: dict[str, str] = {}
+        if env_path.exists():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                line_stripped = line.strip()
+                if line_stripped and not line_stripped.startswith("#") and "=" in line_stripped:
+                    key, _, value = line_stripped.partition("=")
+                    existing[key.strip()] = value.strip().strip("\"'")
+
+        # 更新 AI 相关变量
+        if config.get("mode") == "disabled":
+            existing["OMNICRAWL_AI_PROVIDER"] = "disabled"
+        else:
+            provider = config.get("providers", {}).get("default", {})
+            existing["OMNICRAWL_AI_PROVIDER"] = provider.get("type", "openai_compatible")
+            existing["OMNICRAWL_AI_BASE_URL"] = provider.get("base_url", "")
+            existing["OMNICRAWL_AI_MODEL"] = provider.get("model", "")
+            existing["OMNICRAWL_AI_API_KEY"] = provider.get("api_key", "")
+            existing["OMNICRAWL_AI_TIMEOUT"] = str(provider.get("timeout_seconds", 60))
+
+        lines = [f"{k}={v}" for k, v in existing.items()]
+        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 # ================================================================
