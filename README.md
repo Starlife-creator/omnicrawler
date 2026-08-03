@@ -1,10 +1,10 @@
-# OmniCrawler 0.1.0 — 桌面专业数据采集平台
+# OmniCrawler 0.2.0 — 桌面专业数据采集平台
 
 > 可配置 · 可恢复 · 可扩展 · 可审计
 
 OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台。从网站、API、动态页面和流式协议获取数据，下载附件，解析 PDF/OCR，完成结构化提取、质量检查、人工复核与多格式交付。
 
-**v0.1.0** 在可验证的本地采集、文档抽取与可恢复管线之上，进一步把 GUI 首页改为“先描述需求、再补充必要信息”的任务入口：所有运行前必填项集中在第一页，自然语言输入会编译为可审阅的任务草案。通知、动画、导出进度与关闭流程也补齐了生命周期保护；发布一致性治理、本地可复用 E2E、无障碍/i18n、CLI、性能指标和 Windows 便携构建能力继续保持。
+**v0.2.0** 在可验证的本地采集、文档抽取与可恢复管线之上，进一步把 GUI 首页改为“先描述需求、再补充必要信息”的任务入口：所有运行前必填项集中在第一页，自然语言输入会编译为可审阅的任务草案。通知、动画、导出进度与关闭流程也补齐了生命周期保护；发布一致性治理、本地可复用 E2E、无障碍/i18n、CLI、性能指标和 Windows 便携构建能力继续保持。
 
 ---
 
@@ -12,7 +12,7 @@ OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台�
 
 ### Windows 便携版（零依赖）
 
-1. 解压当前构建生成的 `OmniCrawler-0.1.0-Windows-Portable-<Edition>.zip` 到可写目录（建议 `D:\OmniCrawler`）
+1. 解压当前构建生成的 `OmniCrawler-0.2.0-Windows-Portable-<Edition>.zip` 到可写目录（建议 `D:\OmniCrawler`）
 2. 双击 `OmniCrawler-Launcher.bat`
 3. 按五步向导完成配置 → 试跑 3 页 → 正式运行
 
@@ -63,7 +63,7 @@ omnicrawl reprocess -c config.yaml --run-id <id>
 │       → quality → export → archive → cleanup         │
 ├─────────────────────────────────────────────────────┤
 │   StateStore (SQLite WAL) │ EgressBroker (策略)      │
-│   Config   │   Templates (67套)   │   Plugins        │
+│   Config   │   Templates (72套)   │   Plugins        │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -94,17 +94,26 @@ omnicrawl reprocess -c config.yaml --run-id <id>
 | 能力 | 说明 |
 |------|------|
 | 提取引擎 | CSS / XPath / JSONPath / JSON-LD / OpenGraph / Meta |
+| AI 智能提取 | LLM 驱动字段提取（分块 HTML → 结构化输出），AI 服务中心可配置 |
 | 智能模式 | AI 辅助字段推荐 + 自动选择器生成 |
 | 质量检查 | 字段证据链、类型校验、正则、跨字段、异常检测 |
-| 人工复核 | 字段复核台（开发中）、证据页、来源清单 |
+| 人工复核 | 字段复核台、证据查看器、来源清单 |
 
 ### 交付与存储
 
 | 格式 | 支持 |
 |------|------|
-| 输出 | JSONL / CSV / Excel / Parquet / DuckDB |
+| 输出 | JSONL / CSV / Excel / Parquet / DuckDB / Markdown |
 | 存储 | 本地文件 / S3 兼容对象存储 / PostgreSQL / OpenSearch |
-| 归档 | 原始响应归档 + SHA-256 变更检测 + 审计记录 |
+| 归档 | 原始响应归档 + 完整页面快照 + SHA-256 变更检测 + 审计记录 |
+
+### 监控与反检测
+
+| 能力 | 说明 |
+|------|------|
+| 变更监控 | URL 定时检查 + 内容哈希对比 + 变化 diff + 桌面通知 |
+| 反检测隐身 | 四级隐身等级（off/low/medium/high），可控指纹随机化 |
+| 代理池 | 加权轮换 + 健康检查 + 按域绑定 |
 
 ### 安全与治理
 
@@ -117,7 +126,7 @@ omnicrawl reprocess -c config.yaml --run-id <id>
 
 ---
 
-## 模板库（67 套）
+## 模板库（72 套）
 
 ```powershell
 omnicrawl templates list              # 按类别列出
@@ -125,7 +134,7 @@ omnicrawl templates recommend <url>   # 智能推荐
 omnicrawl templates validate          # 校验完整性
 ```
 
-覆盖场景：通用单页 · 列表详情 · 分页 · 无限滚动 · 表格 · 搜索 · 新闻 · 政务 · 电商 · 招聘 · 地产 · 金融 · 论文 · WordPress · Drupal · MediaWiki · Shopify · GitHub API · Crossref · OpenAlex
+覆盖场景：通用单页 · 列表详情 · 分页 · 无限滚动 · 表格 · 搜索 · 新闻 · 政务 · 电商 · 招聘 · 地产 · 金融 · 论文 · 社交媒体（Twitter/微博/知乎/小红书） · WordPress · Drupal · MediaWiki · Shopify · GitHub API · Crossref · OpenAlex
 
 ---
 
@@ -175,7 +184,7 @@ omnicrawl sample -c config.yaml --pages 3
 ```powershell
 omnicrawl status -c config.yaml [--format json|text]
 omnicrawl control -c config.yaml {pause|resume|stop}
-omnicrawl recovery -c config.yaml {overview|continue|retry-failed|relogin}
+omnicrawl recovery -c config.yaml {overview|continue|retry-failed|relogin|reprocess|rollback-config}
 ```
 
 ### 模板管理
@@ -222,7 +231,7 @@ omnicrawl regression -c config.yaml
 ```powershell
 omnicrawl components list
 omnicrawl plugins -c config.yaml
-omnicrawl workspace {init|open|doctor|cleanup}
+omnicrawl workspace {init|health|package|snapshot|rollback}
 omnicrawl migrate -c config.yaml -o migrated.yaml [--force]
 omnicrawl serve -c config.yaml [--host 127.0.0.1] [--port 8765]
 ```
@@ -231,27 +240,36 @@ omnicrawl serve -c config.yaml [--host 127.0.0.1] [--port 8765]
 
 ## 开发者指南
 
-### 项目结构（v0.1.0）
+### 项目结构（v0.2.0）
 
 ```
 src/omnicrawl/
-├── cli.py, cli_commands.py    # CLI 入口 + 注册表
-├── config.py                   # AppConfig（运行时真相源）
-├── errors.py                   # 11 子类异常层次
-├── runtime_paths.py            # 跨平台路径（已从 gui/ 提升）
-��── pipeline/                   # 星型编排器 (core/parallel.py)
-├── commands/                   # CLI 子命令处理器 (13 modules)
-├── state/                      # SQLite WAL 状态存储
-├── gui/                        # PyQt6 桌面界面
-│   ├── design_system.py        # VisualTokens + QSS + 主题管理
-│   ├── icon_registry.py        # SVG 图标管线 (16 icons)
-│   ├── motion_signal.py        # 减帧信号总线
-│   ├── wizard/                 # 5 步配置向导
-│   ├── widgets/                # Toast, LogConsole, StatusIndicator, ...
-│   └── delegates/              # Menu, Toolbar, Theme, Config, ...
-├── sdk/                        # 公共 API (_all__ + 稳定性标记)
-├── tools/                      # extract_i18n, generate_xx_po, compile_i18n
-└── locale/                     # .pot + en_US/LC_MESSAGES/
+├── __init__.py, __main__.py     # 包入口
+├── cli/                         # CLI 入口 (_main.py 参数 + _handlers.py 分发)
+├── core/                        # 配置、异常、迁移、路径工具
+├── pipeline/                    # 星型编排器 + 导出器
+├── pipeline_ops/                # 任务 IR、计划、批处理
+├── commands/                    # CLI 子命令处理器 (13 modules)
+├── fetching/                    # HTTP/浏览器客户端、会话管理
+├── extraction/                  # CSS/XPath/JSONPath/AI 提取引擎
+├── quality/                     # 质量校验、证据链
+├── review/                      # 人工复核台、证据查看器
+├── security/                    # Egress Broker、沙箱、脱敏
+├── runtime/                     # 状态存储、仓库、锁定
+├── services/                    # 应用服务编排
+├── state/                       # SQLite WAL schema + store
+├── sdk/                         # 公共 API（稳定性标记）
+├── templates/                   # 67 套采集模板
+├── pdfx/                        # PDF 解析/OCR/抽取子系统
+├── sources/                     # 数据源适配器
+├── plugins/                     # 插件系统
+├── gui/                         # PyQt6 桌面界面
+│   ├── views/                   # 首页/向导/结果/设置/PDF工作台/证据查看器/变更监控/反检测设置
+│   ├── widgets/                 # Toast, LogConsole, StatusIndicator, ...
+│   └── delegates/               # Menu, Toolbar, Theme, Config, ...
+├── scheduling/                  # 变更检测引擎
+├── export/                      # Markdown 导出器
+└── locale/                      # .pot + 翻译文件
 ```
 
 ### 质量门禁
@@ -264,9 +282,9 @@ src/omnicrawl/
 | coverage | 全源码 ≥66%，并执行分组门禁（下一目标：总体 70%、长期目标 80%、核心 ≥85%） |
 | pre-commit hooks | 已配置 |
 
-### 优化演进（2.2.0 → 0.1.0）
+### 优化演进（2.2.0 → 0.2.0）
 
-| 指标 | 2.2.0 | 0.1.0 |
+| 指标 | 2.2.0 | 0.2.0 |
 |------|-------|-------|
 | ruff violations | 0 | 0 |
 | 测试数量 | 229 passed | 持续增长；以 CI 收集与执行结果为准 |
@@ -281,7 +299,7 @@ src/omnicrawl/
 - 在完整依赖环境下运行全量测试 + 覆盖率统计，验证总体 66% 与分组门禁；本地 E2E 另有 95% 支撑代码门禁
 - 逐步收紧 mypy GUI overrides（Phase 2: 开启 disallow_untyped_defs）
 - 覆盖率阶梯继续提升：66% → 70% → 75% → 80%（核心 >=85%）
-- 为 BenchmarkRunner 添加 CLI 集成（`omnicrawl benchmark`）
+
 
 ### 贡献流程
 
@@ -294,12 +312,16 @@ src/omnicrawl/
 ### 添加新 CLI 命令
 
 ```python
-# src/omnicrawl/cli_commands.py
-from omnicrawl.cli_commands import _reg
+# src/omnicrawl/cli/_main.py                # 参数定义
+my_cmd = sub.add_parser("my-command", help="命令描述")
+my_cmd.add_argument("--flag")
 
-_reg("my-command",
-     lambda p: p.add_argument("--flag"),
-     lambda a: print(f"Hello {a.flag}"))
+# src/omnicrawl/cli/_handlers.py             # 执行逻辑
+from omnicrawl.cli._handlers import _register
+
+@_register("my-command")
+def _handle_my_command(args: argparse.Namespace) -> None:
+    print(f"Hello {args.flag}")
 ```
 
 ### 添加新语言翻译
@@ -323,3 +345,9 @@ pytest tests/gui/visual/ -v                      # 像素级对比
 ---
 
 *OmniCrawler 是一个合规的数据采集工具。"支持各种网站"指公开且允许自动访问的内容，以及用户有权访问的系统。项目不会绕过验证码、付费墙或站点安全策略。*
+
+---
+
+## AI 使用声明
+
+本项目在开发过程中使用了 AI 编程助手作为辅助工具。所有 AI 生成的代码均经过人工审查、测试和质量门禁（ruff / mypy / pytest / coverage）验证后方可合入。最终设计决策和代码质量由项目维护者负责。

@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 from ..core.config import AppConfig
 from ..core.errors import PermanentFetchError, ResponseTooLargeError
 from ..core.models import CrawlRequest, FetchResult
+from ..core.utils import user_agent
 from ..security.egress import EgressBroker
 from ..security.policy import AsyncHostRateLimiter, HostRateLimiter, NetworkTargetPolicy
 from .retry import RETRYABLE_STATUS, backoff_seconds, retry_after_seconds
@@ -41,7 +42,7 @@ class HTTPXAsyncFetcher:
             http = self.config.section("http")
             limits = httpx.Limits(max_connections=int(self.config.section("crawl").get("concurrency", 4)))
             headers = {
-                "User-Agent": str(http.get("user_agent", "OmniCrawler/1.0")),
+                "User-Agent": str(http.get("user_agent", user_agent())),
                 **http.get("headers", {}), **self.config.section("source").get("headers", {}),
             }
             self._client = httpx.AsyncClient(

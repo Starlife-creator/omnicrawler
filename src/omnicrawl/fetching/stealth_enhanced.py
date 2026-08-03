@@ -4,16 +4,19 @@
     - 浏览器指纹随机化（User-Agent / Viewport / WebGL / Canvas / 字体 / 时区 / 语言）
     - 代理轮换策略（轮询 / 随机 / 加权 / 按域绑定）
     - 人类行为模拟（鼠标移动 / 随机延迟 / 滚动模式 / 打字速度）
+    - 多级隐身控制（StealthLevel OFF/LOW/MEDIUM/HIGH）
+    - navigator.plugins 注入、AudioContext 指纹噪声
     - 自动集成到 BrowserFetcher
 
 用法:
-    from omnicrawl.fetching.stealth_enhanced import StealthEnhancer
+    from omnicrawl.fetching.stealth_enhanced import StealthEnhancer, StealthLevel
     enhancer = StealthEnhancer(proxy_list=["http://p1:8080", "http://p2:8080"])
     enhanced_config = enhancer.randomize()
 """
 
 from __future__ import annotations
 
+import enum
 import json
 import logging
 import math
@@ -24,6 +27,16 @@ from dataclasses import dataclass, field
 from typing import Any
 
 LOGGER = logging.getLogger(__name__)
+
+# ── 隐身等级 ──────────────────────────────────────────────────────────
+
+
+class StealthLevel(enum.Enum):
+    """隐身等级控制。"""
+    OFF = 0           # 不做任何伪装
+    LOW = 1           # 基础 WebDriver 隐藏 + UA 轮换
+    MEDIUM = 2        # + Canvas/WebGL 指纹 + 插件模拟
+    HIGH = 3          # + AudioContext + 时区 + 全面伪装
 
 # ── 指纹库 ────────────────────────────────────────────────────────────
 
@@ -117,14 +130,15 @@ class Fingerprint:
 # ── 代理轮换 ──────────────────────────────────────────────────────────
 
 class ProxyRotator:
-    """代理轮换器。"""
+    """代理轮换器 — 支持加权评分 + 主动健康检查。"""
 
     def __init__(self, proxies: list[str] | None = None) -> None:
         self._proxies: list[str] = list(proxies) if proxies else []
         self._index: int = 0
         self._lock = threading.Lock()
-        self._usage: dict[str, int] = {}      # 使用计数
-        self._failures: dict[str, int] = {}    # 失败计数
+        self._usage: dict[str, int] = {}          # 使用计数
+        self._failures: dict[str, int] = {}        # 失败计数
+        self._latency: dict[str, float] = {}       # 最近延迟（ms）
         self._domain_binding: dict[str, str] = {}  # 域名 → 代理绑定
 
     def add(self, proxy: str) -> None:
@@ -138,6 +152,27 @@ class ProxyRotator:
                 self._proxies.remove(proxy)
             self._usage.pop(proxy, None)
             self._failures.pop(proxy, None)
+            self._latency.pop(proxy, None)
+
+    def _score_proxy(self, proxy: str) -> float:
+        """综合评分：失败权重 -40，延迟扣分，使用均衡加分。"""
+        fails = self._failures.get(proxy, 0)
+        lat = self._latency.get(proxy, 9999)
+        usage = self._usage.get(proxy, 0)
+        score = 100.0 - fails * 40.0 - min(lat / 10, 30) - min(usage * 2, 20)
+        return max(score, 1.0)
+
+    def _weighted_choice(self, candidates: list[str]) -> str:
+        """加权随机选择。"""
+        scores = [self._score_proxy(p) for p in candidates]
+        total = sum(scores)
+        r = random.uniform(0, total)
+        cum = 0.0
+        for proxy, score in zip(candidates, scores, strict=False):
+            cum += score
+            if r <= cum:
+                return proxy
+        return candidates[-1]
 
     def next_round_robin(self) -> str | None:
         """轮询模式。"""
@@ -154,13 +189,21 @@ class ProxyRotator:
         with self._lock:
             if not self._proxies:
                 return None
-            # 排除最近失败的
             healthy = [p for p in self._proxies if self._failures.get(p, 0) < 3]
             if not healthy:
                 healthy = self._proxies
                 for p in self._proxies:
                     self._failures[p] = 0
             proxy = random.choice(healthy)
+            self._usage[proxy] = self._usage.get(proxy, 0) + 1
+            return proxy
+
+    def next_weighted(self) -> str | None:
+        """加权随机模式 — 根据代理的失败次数、延迟和使用均衡综合评分。"""
+        with self._lock:
+            if not self._proxies:
+                return None
+            proxy = self._weighted_choice(self._proxies)
             self._usage[proxy] = self._usage.get(proxy, 0) + 1
             return proxy
 
@@ -180,9 +223,26 @@ class ProxyRotator:
         with self._lock:
             self._failures[proxy] = self._failures.get(proxy, 0) + 1
 
-    def report_success(self, proxy: str) -> None:
+    def report_success(self, proxy: str, latency_ms: float = 0) -> None:
         with self._lock:
             self._failures[proxy] = max(0, self._failures.get(proxy, 0) - 1)
+            if latency_ms > 0:
+                self._latency[proxy] = latency_ms
+
+    def validate_proxy(self, proxy: str, test_url: str = "http://httpbin.org/ip", timeout: float = 5.0) -> tuple[bool, float]:
+        """主动验证代理可用性并测量延迟。"""
+        try:
+            from urllib.request import ProxyHandler, build_opener
+            proxy_handler = ProxyHandler({scheme: proxy for scheme in ("http", "https")})
+            opener = build_opener(proxy_handler)
+            start = time.time()
+            resp = opener.open(test_url, timeout=timeout)
+            _ = resp.read()
+            latency = (time.time() - start) * 1000
+            resp.close()
+            return True, latency
+        except Exception:
+            return False, 0
 
     @property
     def count(self) -> int:
@@ -190,7 +250,12 @@ class ProxyRotator:
 
     @property
     def stats(self) -> dict[str, Any]:
-        return {"total": len(self._proxies), "usage": dict(self._usage), "failures": dict(self._failures)}
+        return {
+            "total": len(self._proxies),
+            "usage": dict(self._usage),
+            "failures": dict(self._failures),
+            "latency": dict(self._latency),
+        }
 
 
 # ── 人类行为模拟 ──────────────────────────────────────────────────────
@@ -255,10 +320,12 @@ class StealthEnhancer:
         self,
         proxy_list: list[str] | None = None,
         seed: int | None = None,
+        level: StealthLevel = StealthLevel.MEDIUM,
     ) -> None:
         self._rng = random.Random(seed or int(time.time() * 1000))
         self.rotator = ProxyRotator(proxy_list)
         self._generation: int = 0
+        self.level = level
 
     def randomize(self, *, domain: str = "") -> Fingerprint:
         """生成一个随机浏览器指纹。"""
@@ -298,17 +365,29 @@ class StealthEnhancer:
     def proxy_for_domain(self, domain: str) -> str | None:
         return self.rotator.next_for_domain(domain)
 
-    def report_proxy_result(self, proxy: str, success: bool) -> None:
+    def report_proxy_result(self, proxy: str, success: bool, latency_ms: float = 0) -> None:
         if success:
-            self.rotator.report_success(proxy)
+            self.rotator.report_success(proxy, latency_ms)
         else:
             self.rotator.report_failure(proxy)
 
     # ── Playwright 集成 ──────────────────────────────────────────────
 
-    def apply_to_playwright_context(self, context: Any, fingerprint: Fingerprint | None = None) -> None:
-        """将指纹应用到 Playwright BrowserContext。"""
+    def apply_to_playwright_context(
+        self, context: Any, fingerprint: Fingerprint | None = None, level: StealthLevel | None = None
+    ) -> None:
+        """将指纹应用到 Playwright BrowserContext。
+
+        Args:
+            context: Playwright BrowserContext
+            fingerprint: 指纹配置，None 时自动生成
+            level: 隐身等级覆盖，None 时使用 self.level
+        """
         fp = fingerprint or self.randomize()
+        actual_level = level or self.level
+
+        if actual_level == StealthLevel.OFF:
+            return
 
         # 设置视口
         try:
@@ -318,30 +397,42 @@ class StealthEnhancer:
             LOGGER.warning("设置视口尺寸失败: %s", exc)
 
         # 注入指纹脚本
-        init_script = f"""
-        // === OmniCrawler Stealth Enhancer ===
+        init_script = self._build_init_script(fp, actual_level)
+        try:
+            context.add_init_script(init_script)
+        except Exception as exc:
+            LOGGER.warning("注入指纹脚本失败: %s", exc)
+
+    def _build_init_script(self, fp: Fingerprint, level: StealthLevel) -> str:
+        """根据隐身等级生成注入脚本。"""
+        parts: list[str] = []
+
+        # LOW+: WebDriver 隐藏
+        if level.value >= StealthLevel.LOW.value:
+            parts.append(f"""
+        // === OmniCrawler WebDriver 隐藏 ===
         Object.defineProperty(navigator, 'webdriver', {{get: () => undefined}});
         Object.defineProperty(navigator, 'hardwareConcurrency', {{get: () => {fp.hardware_concurrency}}});
         Object.defineProperty(navigator, 'deviceMemory', {{get: () => {fp.device_memory}}});
         Object.defineProperty(navigator, 'platform', {{get: () => '{fp.platform}'}});
+        Object.defineProperty(navigator, 'language', {{get: () => '{fp.languages[0] if fp.languages else 'zh-CN'}'}});
         Object.defineProperty(navigator, 'languages', {{get: () => [{', '.join(repr(lang) for lang in fp.languages)}]}});
-        Object.defineProperty(navigator, 'language', {{get: () => '{fp.languages[0]}'}});
+        """)
 
-        // 覆盖时区
-        Date.prototype.getTimezoneOffset = function() {{
-            const tz = '{fp.timezone}';
-            const offsets = {{'Asia/Shanghai': -480, 'Asia/Tokyo': -540, 'America/New_York': 300, 'Europe/London': 0}};
-            return offsets[tz] || -480;
-        }};
-
-        // 覆盖屏幕分辨率
+        # LOW+: 屏幕分辨率覆盖
+        if level.value >= StealthLevel.LOW.value:
+            parts.append(f"""
         Object.defineProperty(screen, 'width', {{get: () => {fp.viewport_width}}});
         Object.defineProperty(screen, 'height', {{get: () => {fp.viewport_height}}});
         Object.defineProperty(screen, 'colorDepth', {{get: () => {fp.color_depth}}});
         Object.defineProperty(screen, 'pixelDepth', {{get: () => {fp.pixel_depth}}});
+        """)
 
+        # MEDIUM+: Canvas 指纹噪声
+        if level.value >= StealthLevel.MEDIUM.value:
+            parts.append(f"""
         // Canvas 指纹噪声
-        const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+        const _origToDataURL = HTMLCanvasElement.prototype.toDataURL;
         HTMLCanvasElement.prototype.toDataURL = function(type) {{
             const ctx = this.getContext('2d');
             if (ctx) {{
@@ -350,23 +441,82 @@ class StealthEnhancer:
                     imageData.data[i] ^= {fp.canvas_noise % 256};
                 }}
             }}
-            return origToDataURL.apply(this, arguments);
+            return _origToDataURL.apply(this, arguments);
         }};
+        """)
 
+        # MEDIUM+: WebGL 指纹噪声
+        if level.value >= StealthLevel.MEDIUM.value:
+            parts.append(f"""
         // WebGL 指纹噪声
         try {{
-            const getParam = WebGLRenderingContext.prototype.getParameter;
+            const _getParam = WebGLRenderingContext.prototype.getParameter;
             WebGLRenderingContext.prototype.getParameter = function(p) {{
                 if (p === 37445) return '{fp.webgl_vendor}';
                 if (p === 37446) return '{fp.webgl_renderer}';
-                return getParam.call(this, p);
+                return _getParam.call(this, p);
             }};
         }} catch(e) {{}}
-        """
-        try:
-            context.add_init_script(init_script)
-        except Exception as exc:
-            LOGGER.warning("注入指纹脚本失败: %s", exc)
+        """)
+
+        # MEDIUM+: navigator.plugins 注入（Chrome 默认插件）
+        if level.value >= StealthLevel.MEDIUM.value:
+            parts.append("""
+        // 注入 Chrome 默认插件列表，避免暴露 headless 模式
+        const _fakePlugins = [
+            {name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1, 0: {type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format'}},
+            {name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '', length: 1, 0: {type: 'application/pdf', suffixes: 'pdf', description: ''}},
+            {name: 'Native Client', filename: 'internal-nacl-plugin', description: '', length: 2, 0: {type: 'application/x-nacl', suffixes: '', description: 'Native Client Executable'}, 1: {type: 'application/x-pnacl', suffixes: '', description: 'Portable Native Client Executable'}},
+        ];
+        Object.defineProperty(navigator, 'plugins', {get: () => {
+            const arr = Object.create(MimeTypeArray.prototype);
+            _fakePlugins.forEach((p, i) => arr[i] = p);
+            Object.defineProperty(arr, 'length', {get: () => _fakePlugins.length});
+            arr.item = (i) => _fakePlugins[i] || null;
+            arr.namedItem = (name) => _fakePlugins.find(p => p.name === name) || null;
+            arr.refresh = () => {};
+            return arr;
+        }});
+        """)
+
+        # HIGH: AudioContext 指纹噪声
+        if level.value >= StealthLevel.HIGH.value:
+            parts.append("""
+        // AudioContext 指纹噪声
+        const _origGetChannelData = AudioBuffer.prototype.getChannelData;
+        AudioBuffer.prototype.getChannelData = function(channel) {
+            const data = _origGetChannelData.call(this, channel);
+            for (let i = 0; i < data.length; i++) {
+                data[i] += (Math.random() - 0.5) * 1e-10;
+            }
+            return data;
+        };
+        const _origCreateAnalyser = AudioContext.prototype.createAnalyser;
+        AudioContext.prototype.createAnalyser = function() {
+            const analyser = _origCreateAnalyser.call(this);
+            const _origGetFloatFrequencyData = analyser.getFloatFrequencyData;
+            analyser.getFloatFrequencyData = function(array) {
+                _origGetFloatFrequencyData.call(this, array);
+                for (let i = 0; i < array.length; i++) {
+                    array[i] += (Math.random() - 0.5) * 0.1;
+                }
+            };
+            return analyser;
+        };
+        """)
+
+        # HIGH: 时区伪装
+        if level.value >= StealthLevel.HIGH.value:
+            parts.append(f"""
+        // 覆盖时区
+        Date.prototype.getTimezoneOffset = function() {{
+            const _tz = '{fp.timezone}';
+            const _offsets = {{'Asia/Shanghai': -480, 'Asia/Tokyo': -540, 'America/New_York': 300, 'Europe/London': 0, 'Asia/Seoul': -540, 'Europe/Berlin': -60, 'Europe/Paris': -60, 'Australia/Sydney': -660, 'Pacific/Auckland': -780}};
+            return _offsets[_tz] !== undefined ? _offsets[_tz] : -480;
+        }};
+        """)
+
+        return "\n".join(parts)
 
     # ── Selenium 集成 ─────────────────────────────────────────────────
 

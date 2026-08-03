@@ -12,6 +12,7 @@ import yaml
 from .. import __version__
 from ..core.logging_utils import configure_logging
 from ..core.runtime_paths import configure_runtime_environment
+from ..core.utils import user_agent
 from ..services.benchmarking import BenchmarkHistory, BenchmarkRunner
 
 # Source installs discover project-local .runtime assets, while frozen builds
@@ -485,7 +486,7 @@ def _wizard(output: Path) -> None:
         "source": {"kind": kind, "seeds": [seed]},
         "crawl": {"max_pages": max_pages, "max_depth": 3, "same_host": True, "concurrency": 4},
         "http": {
-            "user_agent": f"OmniCrawler/2.1 (+contact: {email})",
+            "user_agent": user_agent(f"+contact: {email}"),
             "respect_robots": True,
             "delay_seconds": 1.0,
         },

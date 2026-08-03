@@ -34,7 +34,7 @@ class PluginMetadata:
     optional_dependencies: tuple[str, ...] = ()
     license: str = ""
     source_url: str = ""
-    min_core_version: str = "1.0.0"
+    min_core_version: str = "0.0.1"
     max_core_version: str = ""
     fallback: str = "generic"
     resource_limits: dict[str, Any] = field(default_factory=dict)

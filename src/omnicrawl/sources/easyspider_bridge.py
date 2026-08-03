@@ -16,6 +16,8 @@ from typing import Any
 
 import yaml
 
+from ..core.utils import user_agent
+
 # ── EasySpider graph node type/option 常量 ──────────────────────────────
 _ROOT = -1
 _OP = 0       # 操作节点
@@ -84,7 +86,7 @@ class EasySpiderImporter:
         config["project"] = {"name": _sanitize_filename(self._raw.get("name", "easyspider_task"))}
         config["source"] = self._build_source()
         config["crawl"] = self._build_crawl()
-        config["http"] = {"user_agent": "OmniCrawler/2.1 (+bot)", "respect_robots": True}
+        config["http"] = {"user_agent": user_agent("+bot"), "respect_robots": True}
         config["extract"] = self._build_extract()
         config["outputs"] = self._build_outputs()
         if self._has_browser:

@@ -9,6 +9,7 @@ Covers:
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -158,7 +159,7 @@ class TestAISafety:
 # ---------------------------------------------------------------------------
 
 class TestDocumentVersions:
-    """Verify that version references are consistent."""
+    """Verify that version references are consistent between pyproject.toml and __init__.py."""
 
     def test_pyproject_version(self) -> None:
         import tomllib
@@ -168,8 +169,16 @@ class TestDocumentVersions:
             with open(pyproject, "rb") as f:
                 data = tomllib.load(f)
             version = data.get("project", {}).get("version", "")
-            assert version == "2.7.0", f"pyproject.toml version is {version}"
+            assert re.fullmatch(r"\d+\.\d+\.\d+", version), f"Invalid semver: {version}"
 
     def test_init_version(self) -> None:
+        import tomllib
         from omnicrawl import __version__
-        assert __version__ == "2.7.0"
+        root = Path(__file__).resolve().parents[2]
+        pyproject = root / "pyproject.toml"
+        with open(pyproject, "rb") as f:
+            data = tomllib.load(f)
+        expected = data.get("project", {}).get("version", "")
+        assert __version__ == expected, (
+            f"__init__.py version {__version__} != pyproject.toml version {expected}"
+        )

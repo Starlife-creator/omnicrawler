@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..core.utils import user_agent
+
 
 @dataclass
 class SelectedElement:
@@ -127,7 +129,7 @@ class SelectionToFieldSpec:
             "project": {"name": "visual_selector_task"},
             "source": {"kind": "browser", "seeds": [seed_url] if seed_url else ["https://example.com"]},
             "crawl": {"max_pages": 50},
-            "http": {"user_agent": "OmniCrawler/2.1 (+bot)", "respect_robots": True},
+            "http": {"user_agent": user_agent("+bot"), "respect_robots": True},
             "extract": {"mode": "html", "fields": fields},
             "outputs": {"jsonl": True, "csv": True},
             "browser": {"engine": "playwright", "headless": True},
@@ -175,7 +177,7 @@ class FieldConverter:
             "project": {"name": "visual_selector_task"},
             "source": {"kind": "browser", "seeds": [self._seed_url] if self._seed_url else ["https://example.com"]},
             "crawl": {"max_pages": 200},
-            "http": {"user_agent": "OmniCrawler/2.1 (+bot)", "respect_robots": True},
+            "http": {"user_agent": user_agent("+bot"), "respect_robots": True},
             "extract": {"mode": "html", "fields": self.merge_fields()},
             "outputs": {"jsonl": True, "csv": True, "xlsx": True},
             "browser": {"engine": "playwright", "headless": True},

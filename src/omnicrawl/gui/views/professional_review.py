@@ -14,10 +14,12 @@ from typing import Any
 from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
     QPushButton,
     QSplitter,
     QTableWidget,
@@ -74,7 +76,7 @@ def _build_review_item(record: dict[str, Any]) -> ReviewItem:
                 fields.append(ReviewField(
                     name=str(fv.get("field_name", fv.get("name", "?"))),
                     value=fv.get("normalized_value", fv.get("value", "")),
-                    origin=fv.get("extraction_method", fv.get("origin", "raw")),
+                    origin=fv.get("extraction_method", fv.get("origin", "raw")),  # type: ignore[arg-type]
                     evidence=str(fv.get("evidence", ""))[:300],
                     confidence=float(fv.get("confidence", 1.0)),
                     page=fv.get("page_no", fv.get("page")),
@@ -85,7 +87,7 @@ def _build_review_item(record: dict[str, Any]) -> ReviewItem:
                 fields.append(ReviewField(
                     name=name,
                     value=fv.get("normalized_value", fv.get("value", "")),
-                    origin=fv.get("extraction_method", fv.get("origin", "raw")),
+                    origin=fv.get("extraction_method", fv.get("origin", "raw")),  # type: ignore[arg-type]
                     evidence=str(fv.get("evidence", ""))[:300],
                     confidence=float(fv.get("confidence", 1.0)),
                     page=fv.get("page_no", fv.get("page")),
@@ -134,11 +136,16 @@ class EvidenceView(QWidget):
         root.setContentsMargins(20, 16, 20, 16)
         root.setSpacing(12)
 
-        # 顶部：返回按钮 + 标题
+        # 顶部：返回按钮 + 导出 + 标题
         top_bar = QHBoxLayout()
         self._back_btn = QPushButton("← 返回结果列表")
         self._back_btn.clicked.connect(self._on_back)
         top_bar.addWidget(self._back_btn)
+
+        self._export_md_btn = QPushButton("导出 Markdown")
+        self._export_md_btn.setToolTip("将当前记录的完整证据链导出为 Markdown 文件")
+        self._export_md_btn.clicked.connect(self._export_markdown)
+        top_bar.addWidget(self._export_md_btn)
         top_bar.addStretch()
 
         self._record_title = QLabel("")
@@ -215,15 +222,19 @@ class EvidenceView(QWidget):
         self._field_table = QTableWidget()
         self._field_table.setColumnCount(5)
         self._field_table.setHorizontalHeaderLabels(["字段", "值", "来源", "证据", "置信度"])
-        self._field_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self._field_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self._field_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self._field_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self._field_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        h_header = self._field_table.horizontalHeader()
+        assert h_header is not None
+        h_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        h_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        h_header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        h_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        h_header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self._field_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._field_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._field_table.setAlternatingRowColors(True)
-        self._field_table.verticalHeader().setVisible(False)
+        v_header = self._field_table.verticalHeader()
+        assert v_header is not None
+        v_header.setVisible(False)
         right_layout.addWidget(self._field_table, 1)
 
         splitter.addWidget(right_panel)
@@ -404,6 +415,35 @@ class EvidenceView(QWidget):
             conf_item.setForeground(conf_color)
             conf_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self._field_table.setItem(row, 4, conf_item)
+
+    # ── 导出 ───────────────────────────────────────────────────
+    @pyqtSlot()
+    def _export_markdown(self) -> None:
+        """导出当前记录证据为 Markdown 文件。"""
+        if self._raw_record is None:
+            QMessageBox.information(self, "提示", "当前没有可导出的记录。")
+            return
+
+        output_path, _selected_filter = QFileDialog.getSaveFileName(
+            self, "导出 Markdown", f"record_{self._raw_record.get('record_id', 'evidence')}.md",
+            "Markdown 文件 (*.md)",
+        )
+        if not output_path:
+            return
+
+        try:
+            from pathlib import Path
+
+            from omnicrawl.export.markdown_exporter import MarkdownExporter
+
+            MarkdownExporter.export_single_record(
+                self._raw_record,
+                output_path=Path(output_path),
+                style="card",
+            )
+            QMessageBox.information(self, "导出成功", f"已导出到: {output_path}")
+        except Exception as exc:
+            QMessageBox.critical(self, "导出失败", str(exc))
 
     # ── 返回 ───────────────────────────────────────────────────
     @pyqtSlot()

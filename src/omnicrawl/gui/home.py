@@ -48,7 +48,6 @@ class _AIEnrichWorker(QThread):
 
     def run(self) -> None:
         try:
-            from pathlib import Path
             from ..services.natural_language_task import compile_with_ai
 
             # 尝试加载 AI provider
@@ -367,7 +366,7 @@ class HomePage(QWidget):
             f"检测到的文件：\n{paths_text}\n"
             f"请前往「📄 PDF 工作台」开始处理。"
         )
-        self.setProperty("last_nl_request", draft.request)
+        self.setProperty("last_nl_request", draft.request)  # type: ignore[attr-defined]
 
     def _show_draft(self, draft: QuickTaskDraft, *, emit: bool = True) -> None:
         self.feedback.setText("已安全限制在入口站点；将先试跑。为什么：" + "；".join(draft.decisions))

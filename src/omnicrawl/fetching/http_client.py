@@ -14,6 +14,7 @@ from typing import Any
 from ..core.config import AppConfig
 from ..core.errors import PermanentFetchError, ResponseTooLargeError
 from ..core.models import CrawlRequest, FetchResult
+from ..core.utils import user_agent
 from ..security.egress import EgressBroker, NetworkCapability
 from ..security.policy import HostRateLimiter, NetworkTargetPolicy
 from .retry import RETRYABLE_STATUS, backoff_seconds, parse_retry_config, retry_after_seconds
@@ -199,7 +200,7 @@ class HTTPFetcher:
         timeout = float(self.http.get("timeout_seconds", 25))
         max_bytes = int(self.http.get("max_response_bytes", 50_000_000))
         headers = {
-            "User-Agent": str(self.http.get("user_agent", "OmniCrawler/1.2")),
+            "User-Agent": str(self.http.get("user_agent", user_agent())),
             "Accept": "*/*",
             "Accept-Encoding": "gzip, deflate",
             **{str(k): str(v) for k, v in self.http.get("headers", {}).items()},
@@ -298,7 +299,7 @@ class HTTPFetcher:
         content_type = str(login.get("content_type", "application/x-www-form-urlencoded"))
         body, payload_headers = encode_request_payload(method, login.get("fields", {}), content_type)
         headers = {
-            "User-Agent": str(self.http.get("user_agent", "OmniCrawler/1.2")),
+            "User-Agent": str(self.http.get("user_agent", user_agent())),
             **payload_headers,
             **{str(k): str(v) for k, v in login.get("headers", {}).items()},
         }

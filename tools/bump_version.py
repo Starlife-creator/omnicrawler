@@ -18,8 +18,15 @@
     4. 替换所有文档正文中的旧版本号
     5. 同步 check_docs_consistency.py
     6. 更新 CHANGELOG.md
-    7. 自验证 (check_docs_consistency.py)
-    8. Git 操作 (add / commit / tag，可用 --no-git 跳过)
+    7. 自动替换 YAML 模板中的 OmniCrawler/X.Y
+    8. 扫描 .py 源码硬编码版本号（安全网）
+    9. 自验证 (check_docs_consistency.py)
+   10. Git 操作 (add / commit / tag，可用 --no-git 跳过)
+
+架构说明:
+    项目版本号唯一数据源在 pyproject.toml (project.version) 和
+    src/omnicrawl/__init__.py (__version__)。所有 User-Agent 字符串均通过
+    core.utils.user_agent() 动态生成，无需手动维护各模块的版本号。
 """
 
 from __future__ import annotations
@@ -292,6 +299,76 @@ def step_update_changelog(
     print(f"     ✓ 新增 {heading}")
 
 
+def step_fix_template_versions(root: Path, new: str) -> None:
+    """Step 7a: 自动替换 YAML 模板中的硬编码 OmniCrawler/X.Y 版本号。
+
+    YAML 配置模板是静态文件，无法调用 Python 的 user_agent()，
+    因此此处用正则自动替换为当前版本号。
+    """
+    print("\n  ── 修复 YAML 模板版本号 ──")
+    templates_dir = root / "src" / "omnicrawl" / "templates"
+    ua_pattern = re.compile(r"OmniCrawler/[\d.]+")
+    fixed_count = 0
+    fixed_files: list[str] = []
+
+    if not templates_dir.is_dir():
+        print("     - 无 templates 目录，跳过")
+        return
+
+    for yaml_file in sorted(templates_dir.rglob("*.yaml")):
+        try:
+            text = yaml_file.read_text(encoding="utf-8")
+            if not ua_pattern.search(text):
+                continue
+            new_text = ua_pattern.sub(f"OmniCrawler/{new}", text)
+            if new_text == text:
+                continue
+            yaml_file.write_text(new_text, encoding="utf-8")
+            count = len(ua_pattern.findall(text))
+            fixed_count += count
+            fixed_files.append(str(yaml_file.relative_to(root)))
+            print(f"     ✓ {yaml_file.relative_to(root)} ({count} 处)")
+        except Exception:
+            continue
+
+    if fixed_count:
+        print(f"     共修复 {fixed_count} 处，涉及 {len(fixed_files)} 个文件")
+    else:
+        print("     - 无需修复")
+
+
+def step_scan_hardcoded_py_versions(root: Path, new: str) -> None:
+    """Step 7b: 扫描 .py 源码中可能遗漏的硬编码 OmniCrawler/X.Y 版本号。
+
+    自当前版本起，所有 User-Agent 已通过 core.utils.user_agent() 动态生成，
+    此步骤作为安全网确保没有人在无意中重新引入硬编码版本号。
+    只扫描 .py 文件（.yaml/.yml 已在 step_fix_template_versions 中自动替换）。
+    """
+    print("\n  ── 扫描 Python 源码硬编码版本号 ──")
+    src = root / "src" / "omnicrawl"
+    hardcoded_pattern = re.compile(r"OmniCrawler/[\d.]+")
+    found: list[tuple[Path, int, str]] = []
+
+    for pyfile in sorted(src.rglob("*.py")):
+        # 跳过 venv 和 __pycache__
+        if ".venv" in str(pyfile) or "__pycache__" in str(pyfile):
+            continue
+        try:
+            for i, line in enumerate(pyfile.read_text(encoding="utf-8").splitlines(), 1):
+                if hardcoded_pattern.search(line):
+                    found.append((pyfile.relative_to(root), i, line.strip()))
+        except Exception:
+            continue
+
+    if found:
+        print(f"     ⚠ 发现 {len(found)} 处硬编码版本号 (应使用 user_agent()):")
+        for fpath, lineno, text in found:
+            print(f"       {fpath}:{lineno}  {text[:100]}")
+        print("     提示: 将硬编码替换为 core.utils.user_agent() 调用后重新运行。")
+    else:
+        print("     ✓ Python 源码中无硬编码版本号 — user_agent() 全覆盖")
+
+
 def step_self_validate(root: Path) -> None:
     """Step 8: 运行 check_docs_consistency.py 自验证。"""
     print("\n  ── 自验证 (check_docs_consistency.py) ──")
@@ -379,8 +456,16 @@ def main(argv: list[str] | None = None) -> int:
     print("\n[6/7] 更新 CHANGELOG.md")
     step_update_changelog(root, new, args.message)
 
+    # ── Step 7a: 修复 YAML 模板版本号 ──
+    print("\n[7/9] 修复 YAML 模板版本号")
+    step_fix_template_versions(root, new)
+
+    # ── Step 7b: 扫描 Python 源码硬编码版本号 ──
+    print("\n[8/9] 扫描 Python 源码硬编码版本号")
+    step_scan_hardcoded_py_versions(root, new)
+
     # ── Step 8: 自验证 ──
-    print("\n[7/7] 自验证")
+    print("\n[9/9] 自验证")
     step_self_validate(root)
 
     # ── Step 9: Git 操作 ──

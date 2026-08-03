@@ -53,7 +53,7 @@ def inspect_plugin(path: Path) -> PluginInspection:
     api_version = int(metadata.get("api_version", PLUGIN_API_VERSION))
     if api_version != PLUGIN_API_VERSION:
         errors.append(f"插件 API {api_version} 与当前 API {PLUGIN_API_VERSION} 不兼容")
-    min_core = str(metadata.get("min_core_version", "1.0.0"))
+    min_core = str(metadata.get("min_core_version", "0.0.1"))
     max_core = str(metadata.get("max_core_version", ""))
     if _version(min_core) > _version(CORE_VERSION):
         errors.append(f"需要 OmniCrawler >= {min_core}")

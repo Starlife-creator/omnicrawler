@@ -27,14 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..design_system import ThemeManager, rgba_token_to_qcolor
-
-# TODO: migrate to IconRegistry per F1.2.2
-_ICONS = {
-    "success": "✓",
-    "info": "ℹ",
-    "warning": "⚠",
-    "error": "✕",
-}
+from ..icon_registry import IconRegistry
 
 
 class Toast(QFrame):
@@ -84,7 +77,9 @@ class Toast(QFrame):
         layout.setSpacing(10)
 
         # 图标
-        icon_label = QLabel(_ICONS.get(kind, "ℹ"))
+        icon_label = QLabel()
+        icon = IconRegistry.icon(kind if kind in ("success", "info", "warning", "error") else "info", size=18)
+        icon_label.setPixmap(icon.pixmap(18, 18))
         icon_label.setObjectName("toastIcon")
         layout.addWidget(icon_label)
 
@@ -105,7 +100,9 @@ class Toast(QFrame):
             self._action_btn = None
 
         # 关闭按钮
-        self._close_btn = QPushButton("✕")
+        self._close_btn = QPushButton()
+        close_icon = IconRegistry.icon("close", size=14, color="muted")
+        self._close_btn.setIcon(close_icon)
         self._close_btn.setObjectName("toastClose")
         self._close_btn.setFlat(True)
         self._close_btn.setFixedSize(20, 20)

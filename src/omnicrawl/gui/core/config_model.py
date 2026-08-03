@@ -111,6 +111,15 @@ class CrawlConfig:
     ai_model: str = ""
     ai_api_key_ref: str = ""
 
+    # ---- 页面快照 ----
+    snapshot_mode: bool = False  # 保存完整页面快照（单文件 HTML，含 CSS/图片）
+
+    # ---- AI 智能提取 ----
+    extraction_mode: Literal["selector", "ai", "hybrid"] = "selector"  # 选择器 / AI / 混合
+    ai_extraction_prompt: str | None = None  # 自定义 AI 提取 prompt
+    ai_chunk_strategy: str = "auto"  # auto | heading | fixed_chunk
+    ai_max_tokens_per_chunk: int = 4000
+
     # ---- HTTP 选项 ----
     user_agent: str = "OmniCrawler-GUI/1.1"
     respect_robots: bool = True

@@ -16,6 +16,7 @@ import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -90,8 +91,8 @@ if not _HEADLESS_MODE:
             QMessageBox,
             QProgressBar,
             QPushButton,
-            QSplitter,
             QSpinBox,
+            QSplitter,
             QStackedWidget,
             QStatusBar,
             QSystemTrayIcon,
@@ -147,6 +148,7 @@ if not _HEADLESS_MODE:
     from .runner.worker_task_runner import WorkerTaskRunner as TaskRunner
     from .settings import AppSettings
     from .shortcuts import GlobalShortcutManager
+    from .views.change_monitor import ChangeMonitorView
     from .views.chart_view import ChartView
     from .views.file_list import FileList
     from .views.pdf_region_selector import PdfRegionSelectorDialog
@@ -764,6 +766,7 @@ class MainWindow(QMainWindow):
             ("📋 " + _("任务监控"), 2),
             ("📊 " + _("结果与复核"), 3),
             ("🔍 " + _("证据查看器"), 5),
+            ("🔔 " + _("变更监控"), 7),
         ]
         for label, _idx in nav_items:
             item = QListWidgetItem(label)
@@ -783,12 +786,12 @@ class MainWindow(QMainWindow):
         self._advanced_summary.setObjectName("advancedSummary")
         self._advanced_summary.setProperty("status", "warning")
         wizard_layout.addWidget(self._advanced_summary)
-        
+
         # 拆分器：左侧配置向导 + 右侧信息面板
         wizard_splitter = QSplitter(Qt.Orientation.Horizontal)
         self._config_wizard = ConfigWizard(self._config)
         wizard_splitter.addWidget(self._config_wizard)
-        
+
         # 右侧信息面板（200px 宽，只读）
         self._wizard_info_panel = QLabel("")
         self._wizard_info_panel.setObjectName("wizardInfoPanel")
@@ -801,10 +804,10 @@ class MainWindow(QMainWindow):
         wizard_splitter.setStretchFactor(0, 3)
         wizard_splitter.setStretchFactor(1, 1)
         wizard_splitter.setSizes([600, 200])
-        
+
         wizard_layout.addWidget(wizard_splitter)
         self._stack.addWidget(self._wizard_widget)
-        
+
         # 监听向导页面切换以更新信息面板
         self._config_wizard.currentIdChanged.connect(self._update_wizard_info_panel)
 
@@ -891,6 +894,10 @@ class MainWindow(QMainWindow):
         self._pdf_workbench = PdfWorkbenchView()
         self._stack.addWidget(self._pdf_workbench)
 
+        self._change_monitor = ChangeMonitorView(settings=self._settings)
+        self._change_monitor.desktop_notify.connect(self._on_monitor_desktop_notify)
+        self._stack.addWidget(self._change_monitor)
+
         main_layout.addWidget(self._stack)
         self._page_transition = PageTransitionController(
             self._stack, reduced_motion=self._settings.reduced_motion,
@@ -970,8 +977,8 @@ class MainWindow(QMainWindow):
             ToastManager.instance().warning(_("请先切换到 YAML 编辑器"))
 
     def _on_nav_changed(self, index: int) -> None:
-        # nav index -> stack page: 首页(4), 配置向导(0), PDF工作台(6), YAML编辑器(1), 任务监控(2), 结果复核(3), 证据查看器(5)
-        page = (4, 0, 6, 1, 2, 3, 5)[index] if 0 <= index < 7 else 4
+        # nav index -> stack page: 首页(4), 配置向导(0), PDF工作台(6), YAML编辑器(1), 任务监控(2), 结果复核(3), 证据查看器(5), 变更监控(7)
+        page = (4, 0, 6, 1, 2, 3, 5, 7)[index] if 0 <= index < 8 else 4
         self._page_transition.show(page)
         if page == 1:
             self._yaml_editor.update_from_config(self._config)
@@ -1412,14 +1419,14 @@ class MainWindow(QMainWindow):
         start_date_btn = QPushButton("📅")
         start_date_btn.setFixedWidth(36)
         start_date_btn.setToolTip("选择首次运行日期")
-        
+
         def _pick_date() -> None:
             from .widgets.calendar_popup import CalendarPopup
             popup = CalendarPopup(dialog)
             if popup.exec() == QDialog.DialogCode.Accepted:
                 selected = popup._calendar.selectedDate()
                 start_date_label.setText(selected.toString("yyyy-MM-dd"))
-        
+
         start_date_btn.clicked.connect(_pick_date)
         start_row.addWidget(start_date_btn)
         form.addRow(_("首次运行"), start_row)
@@ -1516,7 +1523,7 @@ class MainWindow(QMainWindow):
             template = dialog.selected_template
             try:
                 from ..templates.template_application import apply_template
-                
+
                 recipe = yaml.safe_load(template.filepath.read_text(encoding="utf-8")) or {}
                 current = yaml.safe_load(to_yaml(self._config)) or {}
                 application = apply_template(current, recipe)
@@ -1871,9 +1878,20 @@ class MainWindow(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._save_ai_config_to_env(ai_config)
 
+    def _show_stealth_settings(self) -> None:
+        """打开反检测与隐身设置对话框。"""
+        from .views.stealth_settings import StealthSettingsDialog
+
+        dialog = StealthSettingsDialog(self._settings, parent=self)
+        dialog.exec()
+
+    def _on_monitor_desktop_notify(self, title: str, message: str) -> None:
+        """变更监控触发桌面通知 — 通过系统托盘弹窗。"""
+        if self._tray_icon and self._tray_icon.isSystemTrayAvailable():
+            self._tray_icon.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 8000)
+
     def _load_ai_config_from_env(self) -> dict[str, Any]:
         """从项目 .env 文件加载 AI 配置。"""
-        import os
         env_path = Path(self._project_root) / ".env" if self._project_root else Path.home() / ".omnicrawl" / ".env"
         config: dict[str, Any] = {"mode": "disabled"}
         if not env_path.exists():
@@ -1899,7 +1917,6 @@ class MainWindow(QMainWindow):
 
     def _save_ai_config_to_env(self, config: dict[str, Any]) -> None:
         """将 AI 配置写入项目 .env 文件（单向写入，不设进程环境变量）。"""
-        import os
         env_path = Path(self._project_root) / ".env" if self._project_root else Path.home() / ".omnicrawl" / ".env"
         env_path.parent.mkdir(parents=True, exist_ok=True)
 

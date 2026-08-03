@@ -1,6 +1,28 @@
 # Changelog
 
 ## Unreleased
+## 0.2.0 - 2026-08-04
+
+### 变更
+
+- release: bump to 0.1.0
+- release: bump to 2.8.0
+- Initial commit
+
+## 0.1.0 - 2026-08-04
+
+### 变更
+
+回滚测试
+
+## 0.1.1 - 2026-08-04
+
+### 变更
+
+- release: bump to 0.1.0
+- release: bump to 2.8.0
+- Initial commit
+
 ## 0.1.0 - 2026-08-03
 
 ### 变更

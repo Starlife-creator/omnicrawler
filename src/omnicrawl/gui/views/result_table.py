@@ -363,6 +363,11 @@ class ResultTable(QWidget):
         export_btn.clicked.connect(self._export_excel)
         info_layout.addWidget(export_btn)
 
+        export_md_btn = QPushButton(_("导出 Markdown"))
+        export_md_btn.setToolTip(_("将完整抓取结果导出为 Markdown 文件"))
+        export_md_btn.clicked.connect(self._export_markdown)
+        info_layout.addWidget(export_md_btn)
+
         export_filtered_btn = QPushButton("导出筛选结果")
         export_filtered_btn.clicked.connect(self._export_filtered_csv)
         info_layout.addWidget(export_filtered_btn)
@@ -611,6 +616,33 @@ class ResultTable(QWidget):
                     [self._proxy.data(self._proxy.index(row, column)) for column in range(self._proxy.columnCount())]
                 )
         QMessageBox.information(self, "导出完成", f"已导出 {self._proxy.rowCount()} 行到：\n{output_path}")
+
+    def _export_markdown(self) -> None:
+        """导出完整结果为 Markdown 文件。"""
+        if not self._filepath or not self._filepath.is_file():
+            QMessageBox.information(self, _("提示"), _("请先加载 CSV 文件"))
+            return
+
+        output_path, _selected_filter = QFileDialog.getSaveFileName(
+            self, _("导出 Markdown"), self._filepath.stem + ".md",
+            _("Markdown 文件 (*.md)"),
+        )
+        if not output_path:
+            return
+
+        try:
+            from omnicrawl.export.markdown_exporter import MarkdownExporter
+
+            jsonl = self._filepath.with_name("records.jsonl")
+            MarkdownExporter.export_results(
+                csv_path=self._filepath,
+                jsonl_path=jsonl if jsonl.is_file() else None,
+                output_path=Path(output_path),
+                include_evidence=True,
+            )
+            QMessageBox.information(self, _("导出成功"), _(f"已导出到: {output_path}"))
+        except Exception as exc:
+            QMessageBox.critical(self, _("导出失败"), str(exc))
 
     def refresh(self) -> None:
         """手动刷新。"""

@@ -40,7 +40,7 @@ class TemplateMetadata:
     source_urls: tuple[str, ...] = ()
     license: str = "OmniCrawler-MIT"
     verified_at: str = ""
-    min_core_version: str = "1.0.0"
+    min_core_version: str = "0.0.1"
     deprecated: bool = False
 
 

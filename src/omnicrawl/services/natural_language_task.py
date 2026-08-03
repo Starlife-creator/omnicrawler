@@ -50,7 +50,7 @@ def compile_natural_language(request: str, *, fallback_url: str = "") -> Natural
     """
     match = _URL.search(request)
     url = match.group(0) if match else fallback_url.strip()
-    
+
     # Layer 2: 检测文件路径
     file_paths: list[str] = []
     for m in _FILE_EXT.finditer(request):
@@ -59,10 +59,10 @@ def compile_natural_language(request: str, *, fallback_url: str = "") -> Natural
         fp = m.group(1)
         if fp not in file_paths and not _URL.match(fp):
             file_paths.append(fp)
-    
+
     has_file = bool(file_paths)
     has_url = bool(url)
-    
+
     # Layer 3: 都没命中 → ambiguous，由调用方处理
     if not has_url and not has_file:
         # 尝试用 fallback_url 作为保底
@@ -76,7 +76,7 @@ def compile_natural_language(request: str, *, fallback_url: str = "") -> Natural
                 schedule="manual",
                 mode="ambiguous",
             )
-    
+
     if has_file and not has_url:
         # 纯文件模式 → PDF
         lowered = request.lower()
@@ -97,7 +97,7 @@ def compile_natural_language(request: str, *, fallback_url: str = "") -> Natural
             mode="pdf",
             file_paths=tuple(file_paths),
         )
-    
+
     # URL 模式 → 爬虫（现有逻辑）
     lowered = request.lower()
     wants_monitor = any(word in lowered for word in ("每周", "每天", "监测", "变化", "更新", "调度", "定期"))

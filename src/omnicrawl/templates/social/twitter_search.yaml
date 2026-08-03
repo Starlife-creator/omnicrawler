@@ -1,0 +1,45 @@
+template_version: 1
+
+template:
+  id: social/twitter-search
+  name: "Twitter/X 搜索采集"
+  category: social/twitter
+  description: 采集 Twitter/X 搜索结果页或话题时间线，自动提取推文内容、作者、互动数据
+  version: 1.0.0
+  tags: [twitter, social, search, 社交媒体, 推特]
+  capabilities: [browser, auto-extraction, pagination]
+  intents: [collect_section]
+  recommended_when: "需要采集 Twitter/X 搜索页或话题标签页的推文列表"
+  limitations: "需要已登录的浏览器会话；Twitter API 频率限制可能导致部分推文缺失"
+  domains: [twitter.com, x.com]
+  url_patterns: ["*/search*", "*/hashtag/*"]
+  html_contains: [data-testid="tweet", article, tweet]
+  placeholders:
+    search_url: {label: "Twitter 搜索页地址 (如 https://twitter.com/search?q=keyword)", required: true}
+  verified_at: '2026-08-04'
+
+project: {name: twitter_search, workspace: work/twitter_search}
+source: {kind: browser, seeds: ['{{search_url}}']}
+crawl:
+  strategy: priority
+  focus_keywords: [tweet, article]
+  max_pages: 200
+  max_depth: 2
+  same_host: true
+  concurrency: 2
+http:
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+  respect_robots: true
+  delay_seconds: 2.0
+  auto_browser_fallback: true
+extract:
+  mode: auto
+  fields:
+    author: {selector: '[data-testid="User-Name"]', selector_type: css}
+    content: {selector: '[data-testid="tweetText"]', selector_type: css}
+    timestamp: {selector: time, selector_type: css, attribute: datetime}
+    likes: {selector: '[data-testid="like"]', selector_type: css}
+    retweets: {selector: '[data-testid="retweet"]', selector_type: css}
+    replies: {selector: '[data-testid="reply"]', selector_type: css}
+    tweet_url: {selector: 'a[href*="/status/"]', selector_type: css, attribute: href}
+incremental: {skip_unchanged: true, archive_raw: true}

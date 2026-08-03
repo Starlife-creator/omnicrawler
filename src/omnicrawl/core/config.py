@@ -9,7 +9,7 @@ import yaml
 from ..pdfx.templates import DEFAULT_PDF_TEMPLATE, LEGACY_DEFAULT_PDF_TEMPLATE, resolve_builtin_pdf_reference
 from .credentials import resolve_secret_refs
 from .migrations import CURRENT_CONFIG_VERSION, migrate_config
-from .utils import deep_merge, expand_env
+from .utils import deep_merge, expand_env, user_agent
 
 SOURCE_KINDS = {
     "static_html", "crawl", "focused", "incremental", "url_list", "rest",
@@ -45,7 +45,7 @@ DEFAULTS: dict[str, Any] = {
         "allow_patterns": [], "focus_keywords": [], "concurrency": 4,
     },
     "http": {
-        "user_agent": "OmniCrawler/1.2 (+contact: change-me@example.com)",
+        "user_agent": user_agent("+contact: change-me@example.com"),
         "timeout_seconds": 25, "retries": 3, "delay_seconds": 1.0,
         "retry_base_seconds": 1.0, "retry_max_seconds": 30.0,
         "retry_jitter": 0.25, "max_redirects": 10,

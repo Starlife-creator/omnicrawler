@@ -1,0 +1,44 @@
+template_version: 1
+
+template:
+  id: social/twitter-profile
+  name: "Twitter/X 用户主页采集"
+  category: social/twitter
+  description: 采集指定 Twitter/X 用户主页的推文时间线，自动提取推文及互动数据
+  version: 1.0.0
+  tags: [twitter, social, profile, 社交媒体, 推特, 用户]
+  capabilities: [browser, auto-extraction, pagination, incremental]
+  intents: [collect_section, monitor_changes]
+  recommended_when: "需要持续监控某个 Twitter/X 账号的推文或采集用户主页历史"
+  limitations: "需要已登录的浏览器会话；Twitter 对未登录用户限制较多"
+  domains: [twitter.com, x.com]
+  url_patterns: ["*twitter.com/*", "*x.com/*"]
+  html_contains: [data-testid="tweet", article]
+  placeholders:
+    profile_url: {label: "Twitter 用户主页地址 (如 https://twitter.com/username)", required: true}
+  verified_at: '2026-08-04'
+
+project: {name: twitter_profile, workspace: work/twitter_profile}
+source: {kind: browser, seeds: ['{{profile_url}}']}
+crawl:
+  strategy: priority
+  focus_keywords: [tweet, article]
+  max_pages: 500
+  max_depth: 2
+  same_host: true
+  concurrency: 1
+http:
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+  respect_robots: true
+  delay_seconds: 2.0
+  auto_browser_fallback: true
+extract:
+  mode: auto
+  fields:
+    author: {selector: '[data-testid="UserName"]', selector_type: css}
+    content: {selector: '[data-testid="tweetText"]', selector_type: css}
+    timestamp: {selector: time, selector_type: css, attribute: datetime}
+    likes: {selector: '[data-testid="like"]', selector_type: css}
+    retweets: {selector: '[data-testid="retweet"]', selector_type: css}
+    tweet_url: {selector: 'a[href*="/status/"]', selector_type: css, attribute: href}
+incremental: {skip_unchanged: true, archive_raw: true}

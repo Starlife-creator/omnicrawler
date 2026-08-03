@@ -1,0 +1,43 @@
+template_version: 1
+
+template:
+  id: social/weibo-search
+  name: "微博搜索采集"
+  category: social/weibo
+  description: "采集微博搜索页或话题页的帖子列表，自动提取内容、作者、转发/评论/点赞数据"
+  version: 1.0.0
+  tags: [weibo, social, search, 社交媒体, 微博, 热搜]
+  capabilities: [browser, auto-extraction, pagination]
+  intents: [collect_section]
+  recommended_when: "需要采集微博关键词搜索结果或话题标签页的帖子"
+  limitations: "需要已登录的微博账号；微博反爬较严，建议使用 browser 模式 + 较长延迟"
+  domains: [weibo.com, s.weibo.com]
+  url_patterns: ["*/weibo*", "*/s.weibo.com/*"]
+  html_contains: [WB_feed, mid, 微博]
+  placeholders:
+    search_url: {label: "微博搜索页地址 (如 https://s.weibo.com/weibo?q=keyword)", required: true}
+  verified_at: '2026-08-04'
+
+project: {name: weibo_search, workspace: work/weibo_search}
+source: {kind: browser, seeds: ['{{search_url}}']}
+crawl:
+  strategy: priority
+  focus_keywords: [weibo, WB_feed, card-wrap]
+  max_pages: 200
+  max_depth: 2
+  same_host: true
+  concurrency: 1
+http:
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+  respect_robots: true
+  delay_seconds: 3.0
+  auto_browser_fallback: true
+extract:
+  mode: auto
+  fields:
+    author: {selector: '.name, .W_autocut', selector_type: css}
+    content: {selector: '.txt, .WB_text', selector_type: css}
+    timestamp: {selector: '.from a, .time', selector_type: css}
+    reposts: {selector: '[node-type="forward_btn_text"] span', selector_type: css}
+    comments: {selector: '[node-type="comment_btn_text"] span', selector_type: css}
+    likes: {selector: '[node-type="like"] span, .woo-like-count', selector_type: css}

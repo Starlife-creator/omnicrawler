@@ -162,6 +162,18 @@ class MenuBuilder(_BaseDelegate):
         settings_menu.addAction(dnd_action)
 
         settings_menu.addSeparator()
+        export_md_action = QAction(_("任务完成后自动导出 Markdown"), mw)
+        export_md_action.setCheckable(True)
+        export_md_action.setChecked(mw._settings.markdown_export_enabled)
+        export_md_action.toggled.connect(lambda v: setattr(mw._settings, 'markdown_export_enabled', v))
+        settings_menu.addAction(export_md_action)
+
+        settings_menu.addSeparator()
+        stealth_action = QAction(_("反检测与隐身设置..."), mw)
+        stealth_action.triggered.connect(mw._show_stealth_settings)
+        settings_menu.addAction(stealth_action)
+
+        settings_menu.addSeparator()
         shortcuts_action = QAction(_("快捷键说明"), mw)
         shortcuts_action.triggered.connect(mw._show_shortcuts)
         settings_menu.addAction(shortcuts_action)

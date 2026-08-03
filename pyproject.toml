@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omnicrawl-platform"
-version = "0.1.0"
+version = "0.2.0"
 description = "从全类型网站采集、PDF解析/OCR到结构化导出和人工复核的模块化工作台"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = {text = "AGPL-3.0-only"}
 dependencies = ["PyYAML>=6,<7"]
 
 [project.optional-dependencies]

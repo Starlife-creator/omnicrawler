@@ -238,7 +238,7 @@ class ProductionFoundationTest(unittest.TestCase):
     def test_plugin_contract_reports_metadata(self):
         plugin = self.root / "plugin.py"
         plugin.write_text(
-            "PLUGIN_METADATA={'name':'demo','version':'1.2.3','api_version':1}\n"
+            "PLUGIN_METADATA={'name':'demo','version':'1.2.3','api_version':1,'min_core_version':'0.0.1'}\n"
             "def register(registry):\n"
             "    registry.register_source('demo_source', object)\n",
             encoding="utf-8",

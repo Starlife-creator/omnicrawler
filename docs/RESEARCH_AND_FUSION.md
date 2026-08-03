@@ -1,6 +1,6 @@
 # 成熟项目研究、融合映射与许可边界
 
-最后核验：2026-07-18。
+最后核验：2026-08-04。
 
 本项目吸收公开架构思想、协议行为和工程模式，不复制第三方项目源码。可选依赖通过官方包集成；发布前进入依赖清单与 CycloneDX SBOM。外部站点模板只保存公开协议配置，不复制数据或网页内容。
 
@@ -10,6 +10,7 @@
 |---|---|---|---|
 | [Scrapy](https://github.com/scrapy/scrapy) | Engine、Scheduler、Downloader、Middleware、Pipeline 分层 | Source/Fetcher/Processor/Exporter 注册表、Scrapy 桥 | BSD-3-Clause；可选适配 |
 | [Crawlee Python](https://github.com/apify/crawlee-python) | 请求管理、会话、资源感知并发、路由与生命周期钩子 | 生命周期 hook、资源守卫、浏览器池 | Apache-2.0；设计参考 |
+| [Crawl4AI](https://github.com/unclecode/crawl4ai) | AI 驱动 JS 渲染、自适应抓取策略、深度爬取、LLM 结构化提取 | 可选 `crawl4ai_bridge.py` 桥接层；`extraction/ai_graph.py` AI 提取 pipeline 借鉴其 HTML 分块→LLM→结构化输出模式 | Apache-2.0；可选依赖 |
 | [Playwright Python](https://github.com/microsoft/playwright-python) | BrowserContext 隔离、网络监听和状态管理 | HTTP→浏览器升级、隔离上下文、XHR/fetch 归档 | Apache-2.0；可选依赖 |
 | [Heritrix](https://github.com/internetarchive/heritrix3) | 可恢复 frontier、归档、范围和礼貌策略 | SQLite frontier、原始响应、作用域/robots/限速 | Apache-2.0；不复制代码 |
 | [Apache Nutch](https://github.com/apache/nutch) | 插件化、分段和抓取数据库 | 插件元数据、可扩展 source/processor | Apache-2.0；不内嵌 Java |
@@ -23,6 +24,7 @@ HTTP 客户端行为核验自 [HTTPX Client/连接池](https://www.python-httpx.
 |---|---|---|
 | [selectolax](https://github.com/rushter/selectolax) | 高性能 DOM 解析器作为可插拔层 | Parser 契约；核心保留内置解析和可选 lxml/BeautifulSoup |
 | [Trafilatura](https://github.com/adbar/trafilatura) | 正文/元数据与精度回退 | 自动提取与证据输出的扩展方向 |
+| [MarkItDown](https://github.com/microsoft/markitdown) | 网页/文档内容 → 结构化 Markdown 转换 | `export/markdown_exporter.py`：抓取结果 → Markdown 导出，支持 card/table/list 风格与 Jinja2 模板 | MIT；设计参考 |
 | [Apache Tika](https://github.com/apache/tika) | 统一 MIME 检测与 parser 接口 | Parser 插件、Office/文档扩展点 |
 | [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) | 文档预处理、布局、表格和 OCR 流水线 | 可选 Paddle 后端与结构化结果 |
 | [OCRmyPDF](https://github.com/ocrmypdf/OCRmyPDF) | 固定次序预处理和副文本 | PDF 预处理扩展方向；不复制 MPL 源码 |
@@ -36,6 +38,7 @@ HTTP 客户端行为核验自 [HTTPX Client/连接池](https://www.python-httpx.
 | 来源 | 核验重点 | 当前实现 |
 |---|---|---|
 | [Airflow Scheduler](https://airflow.apache.org/docs/apache-airflow/stable/concepts/scheduler.html) | 调度与执行分离、任务状态 | SQLite 租约式固定间隔调度、CLI/GUI 管理 |
+| [changedetection.io](https://github.com/dgtlmoon/changedetection.io) | URL 监控、内容哈希对比、变化通知 | `scheduling/change_detector.py`：MonitorRule + ChangeDetector 引擎，定时检查→哈希对比→diff→桌面通知；GUI 有独立标签页 | Apache-2.0；设计参考 |
 | [Prefect](https://github.com/PrefectHQ/prefect) | 状态、重试、超时与缓存 | 可恢复阶段、重试分类、资源硬限额 |
 | [Redis Streams](https://redis.io/docs/latest/develop/data-types/streams/) | 消费组和待确认消息 | Redis frontier 扩展方向；现有队列和锁适配 |
 | [Redis distributed locks](https://redis.io/docs/latest/develop/clients/patterns/distributed-locks/) | 所有权 token 与租约释放 | Redis 锁封装、SQLite 本地租约 |
@@ -63,7 +66,7 @@ HTTP 客户端行为核验自 [HTTPX Client/连接池](https://www.python-httpx.
 
 - 验证码破解、付费墙绕过、风控规避、隐匿身份或未授权访问。
 - 未核对许可证的代码、模型或模板快照。
-- 把 AGPL 等强互惠组件源码直接合并进 MIT 核心。
+- 把第三方强互惠组件源码未经许可合并进核心（本项目已采用 AGPL v3）。
 - 宣称一个通用模板能永久适配所有站点；站点变化通过健康记录、快照和插件维护。
 
 ## 维护规则

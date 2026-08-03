@@ -20,7 +20,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from ..core.config import DEFAULTS, AppConfig
 from ..core.models import CrawlRequest, FetchResult
-from ..core.utils import deep_merge
+from ..core.utils import deep_merge, user_agent
 from ..fetching.http_client import HTTPFetcher
 
 
@@ -31,7 +31,7 @@ def scoped_network_config(
     purpose: str,
     timeout_seconds: float = 30,
     max_response_bytes: int = 1_048_576,
-    user_agent: str = "OmniCrawler/2.7 scoped operation",
+    user_agent: str = user_agent("scoped operation"),
 ) -> AppConfig:
     """Create a strict in-memory config for one user-initiated endpoint.
 
@@ -104,7 +104,7 @@ def scoped_fetch(
     body: bytes | None = None,
     timeout_seconds: float = 30,
     max_response_bytes: int = 1_048_576,
-    user_agent: str = "OmniCrawler/2.7 scoped operation",
+    user_agent: str = user_agent("scoped operation"),
 ) -> FetchResult:
     """Fetch one endpoint through the shared policy, budget and audit path."""
 

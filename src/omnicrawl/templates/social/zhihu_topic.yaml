@@ -1,0 +1,44 @@
+template_version: 1
+
+template:
+  id: social/zhihu-topic
+  name: "知乎话题与问答采集"
+  category: social/zhihu
+  description: "采集知乎话题页面或搜索结果的问题列表，自动提取标题、摘要、回答数、关注数"
+  version: 1.0.0
+  tags: [zhihu, social, qa, 社交媒体, 知乎, 问答]
+  capabilities: [browser, auto-extraction, pagination]
+  intents: [collect_section]
+  recommended_when: "需要采集知乎话题下的问题列表或搜索页答案"
+  limitations: "知乎登录墙较强，未登录可能只能看到少量内容；建议使用 browser 模式 + 已登录会话"
+  domains: [zhihu.com, www.zhihu.com]
+  url_patterns: ["*/topic/*", "*/search*", "*/question/*"]
+  html_contains: [ContentItem, List-item, QuestionItem, zhihu]
+  placeholders:
+    topic_url: {label: "知乎话题或搜索页地址 (如 https://www.zhihu.com/topic/12345)", required: true}
+  verified_at: '2026-08-04'
+
+project: {name: zhihu_topic, workspace: work/zhihu_topic}
+source: {kind: browser, seeds: ['{{topic_url}}']}
+crawl:
+  strategy: priority
+  focus_keywords: [question, answer, content, List-item]
+  max_pages: 300
+  max_depth: 2
+  same_host: true
+  concurrency: 2
+http:
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+  respect_robots: true
+  delay_seconds: 2.0
+  auto_browser_fallback: true
+extract:
+  mode: auto
+  fields:
+    title: {selector: '.QuestionItem-title, .ContentItem-title, h2', selector_type: css}
+    summary: {selector: '.RichText, .ContentItem-excerpt', selector_type: css}
+    answer_count: {selector: '[itemprop="answerCount"], .QuestionItem-answerCount', selector_type: css}
+    follower_count: {selector: '[itemprop="followerCount"], .NumberBoard-itemValue', selector_type: css}
+    author: {selector: '.AuthorInfo-name, .UserLink-link', selector_type: css}
+    url: {selector: 'a[href*="/question/"]', selector_type: css, attribute: href}
+incremental: {skip_unchanged: true, archive_raw: true}

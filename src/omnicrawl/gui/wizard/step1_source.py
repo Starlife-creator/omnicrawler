@@ -173,6 +173,10 @@ class Step1SourcePage(QWizardPage):
         self._monitor_same_url = QCheckBox(_("网址不变时也保留新版本并比较变化"))
         self._monitor_same_url.toggled.connect(self._on_data_changed)
         results_layout.addWidget(self._monitor_same_url)
+        self._snapshot_mode = QCheckBox(_("保存完整页面快照（单文件 HTML，含 CSS/图片）"))
+        self._snapshot_mode.setToolTip(_("将抓取页面保存为自包含的单文件 HTML，适合离线归档"))
+        self._snapshot_mode.toggled.connect(self._on_data_changed)
+        results_layout.addWidget(self._snapshot_mode)
         output_row = QHBoxLayout()
         output_row.addWidget(QLabel(_("结果格式：")))
         self._output_checks: dict[str, QCheckBox] = {}
@@ -211,6 +215,7 @@ class Step1SourcePage(QWizardPage):
         self._download_enabled.setChecked(self._config.download.enabled)
         self._process_pdf.setChecked(self._config.process_pdf)
         self._monitor_same_url.setChecked(self._config.monitor_same_url)
+        self._snapshot_mode.setChecked(self._config.snapshot_mode)
         for key, check in self._output_checks.items():
             check.setChecked(key in self._config.output_formats)
         self._set_combo_data(self._intent_combo, self._canonical_intent(self._config.task_intent))
@@ -411,6 +416,7 @@ class Step1SourcePage(QWizardPage):
         self._config.process_pdf = self._process_pdf.isChecked()
         self._config.monitor_same_url = self._monitor_same_url.isChecked()
         self._config.incremental = self._config.monitor_same_url
+        self._config.snapshot_mode = self._snapshot_mode.isChecked()
         self._config.output_formats = [key for key, check in self._output_checks.items() if check.isChecked()]
 
     def _update_enabled_state(self) -> None:

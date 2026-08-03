@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QSpinBox,
     QTabWidget,
@@ -149,6 +150,10 @@ class AIServiceCenterDialog(QDialog):
         # Tab 3: 路由与预算
         routing_tab = self._build_routing_tab()
         tabs.addTab(routing_tab, _("路由与预算"))
+
+        # Tab 4: 智能提取
+        extraction_tab = self._build_extraction_tab()
+        tabs.addTab(extraction_tab, _("智能提取"))
 
         layout.addWidget(tabs)
 
@@ -310,6 +315,44 @@ class AIServiceCenterDialog(QDialog):
         layout.addStretch()
         return widget
 
+    def _build_extraction_tab(self) -> QWidget:
+        """构建智能提取设置标签页。"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        prompt_group = QGroupBox(_("默认 Prompt 模板"))
+        prompt_layout = QVBoxLayout(prompt_group)
+        self._extraction_prompt = QPlainTextEdit()
+        self._extraction_prompt.setPlaceholderText(_(
+            "自定义 AI 提取 prompt 模板。\n"
+            "可用变量: {fields_spec}, {html_chunk}\n"
+            "留空使用内置默认模板。"
+        ))
+        self._extraction_prompt.setMaximumHeight(200)
+        prompt_layout.addWidget(self._extraction_prompt)
+        layout.addWidget(prompt_group)
+
+        strategy_group = QGroupBox(_("分块策略"))
+        strategy_layout = QFormLayout(strategy_group)
+
+        self._chunk_strategy = QComboBox()
+        self._chunk_strategy.addItem(_("自动（推荐）"), "auto")
+        self._chunk_strategy.addItem(_("按标题分块"), "heading")
+        self._chunk_strategy.addItem(_("按固定字数分块"), "fixed_chunk")
+        strategy_layout.addRow(_("分块方式："), self._chunk_strategy)
+
+        self._max_tokens_per_chunk_spin = QSpinBox()
+        self._max_tokens_per_chunk_spin.setRange(500, 32000)
+        self._max_tokens_per_chunk_spin.setValue(4000)
+        self._max_tokens_per_chunk_spin.setSingleStep(1000)
+        self._max_tokens_per_chunk_spin.setSuffix(_(" tokens"))
+        self._max_tokens_per_chunk_spin.setToolTip(_("每次 LLM 调用发送的最大 token 数，超过则自动分块"))
+        strategy_layout.addRow(_("每次请求最大 Token："), self._max_tokens_per_chunk_spin)
+
+        layout.addWidget(strategy_group)
+        layout.addStretch()
+        return widget
+
     def _on_provider_changed(self, index: int) -> None:
         """Provider 类型变更时更新默认值。"""
         provider_type = str(self._provider_type.currentData())
@@ -439,4 +482,12 @@ class AIServiceCenterDialog(QDialog):
                     routing[capability] = value
             if routing:
                 self._ai_config["routing"] = routing
+
+            # 智能提取设置
+            extraction_prompt = self._extraction_prompt.toPlainText().strip()
+            self._ai_config["extraction"] = {
+                "prompt_template": extraction_prompt if extraction_prompt else None,
+                "chunk_strategy": str(self._chunk_strategy.currentData()),
+                "max_tokens_per_chunk": self._max_tokens_per_chunk_spin.value(),
+            }
         self.accept()

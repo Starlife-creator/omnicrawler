@@ -162,6 +162,85 @@ class AppSettings:
         self._set_value("behavior/dnd_enabled", value)
 
     @property
+    def markdown_export_enabled(self) -> bool:
+        """任务完成后是否自动导出 Markdown。"""
+        return self._value("export/markdown_enabled", False, bool)
+
+    @markdown_export_enabled.setter
+    def markdown_export_enabled(self, value: bool) -> None:
+        self._set_value("export/markdown_enabled", value)
+
+    # ---- 反检测/隐身 ----
+    @property
+    def stealth_level(self) -> str:
+        return self._value("stealth/level", "medium", str)
+
+    @stealth_level.setter
+    def stealth_level(self, value: str) -> None:
+        self._set_value("stealth/level", value)
+
+    @property
+    def stealth_webdriver_override(self) -> bool:
+        return self._value("stealth/webdriver_override", True, bool)
+
+    @stealth_webdriver_override.setter
+    def stealth_webdriver_override(self, value: bool) -> None:
+        self._set_value("stealth/webdriver_override", value)
+
+    @property
+    def stealth_canvas_noise(self) -> bool:
+        return self._value("stealth/canvas_noise", True, bool)
+
+    @property
+    def stealth_webgl_noise(self) -> bool:
+        return self._value("stealth/webgl_noise", True, bool)
+
+    @property
+    def stealth_plugin_spoof(self) -> bool:
+        return self._value("stealth/plugin_spoof", True, bool)
+
+    @property
+    def stealth_audio_noise(self) -> bool:
+        return self._value("stealth/audio_noise", True, bool)
+
+    @property
+    def stealth_timezone_spoof(self) -> bool:
+        return self._value("stealth/timezone_spoof", True, bool)
+
+    @property
+    def stealth_locale_spoof(self) -> bool:
+        return self._value("stealth/locale_spoof", True, bool)
+
+    @property
+    def proxy_list(self) -> str:
+        return self._value("proxy/list", "", str)
+
+    @property
+    def proxy_strategy(self) -> str:
+        return self._value("proxy/strategy", "weighted", str)
+
+    @property
+    def proxy_rotate_every_n(self) -> int:
+        return self._value("proxy/rotate_every_n", 20, int)
+
+    # ---- 变更监控 ----
+    @property
+    def monitor_rules(self) -> list:
+        return self._value("monitor/rules", [], list)
+
+    @property
+    def monitor_enabled(self) -> bool:
+        return self._value("monitor/enabled", True, bool)
+
+    @property
+    def monitor_desktop_notify(self) -> bool:
+        return self._value("monitor/desktop_notify", True, bool)
+
+    @property
+    def monitor_sound_notify(self) -> bool:
+        return self._value("monitor/sound_notify", False, bool)
+
+    @property
     def is_first_launch(self) -> bool:
         return self._value("app/first_launch", True, bool)
 

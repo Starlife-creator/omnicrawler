@@ -11,6 +11,8 @@ YouTube, X, LinkedIn, Google Maps, Amazon, Airbnb 等）。
 
 from __future__ import annotations
 
+from ..core.utils import user_agent
+
 # ── Apify Ultimate Scraper 覆盖的 130+ 平台 ──────────────────────────
 # 信息来源: https://github.com/apify/agent-skills (Apache 2.0)
 
@@ -149,7 +151,7 @@ def generate_omnicrawl_template(platform: str) -> str:
     for f in field_list[:12]:  # 最多 12 个字段
         key = f.replace("@", "_").replace(".", "_")
         field_lines.append(f"    {key}:")
-        field_lines.append("      selector: \"\"  # TODO: 根据实际页面填写")
+        field_lines.append("      selector: \"\"  # 请根据实际页面 CSS 选择器填写")
         field_lines.append(f"      desc: \"{f}\"")
 
     fields_yaml = "\n".join(field_lines) if field_lines else "    {}"
@@ -178,7 +180,7 @@ crawl:
   concurrency: 2
 
 http:
-  user_agent: "OmniCrawler/2.1 (+bot)"
+  user_agent: "{user_agent("+bot")}"
   respect_robots: true
   delay_seconds: 3.0
 

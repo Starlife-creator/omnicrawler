@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..core.utils import user_agent
+
 # ── DOM 特征提取 ──────────────────────────────────────────────────────
 
 @dataclass
@@ -493,7 +495,7 @@ def analyze_to_config(html: str, url: str = "", project_name: str = "auto_task")
         "project": {"name": project_name},
         "source": {"kind": "browser", "seeds": [url] if url else ["https://example.com"]},
         "crawl": {"max_pages": 200},
-        "http": {"user_agent": "OmniCrawler/2.1 (+bot)", "respect_robots": True},
+        "http": {"user_agent": user_agent("+bot"), "respect_robots": True},
         "extract": {"mode": "html", "fields": fields_dict},
         "outputs": {"jsonl": True, "csv": True, "xlsx": True},
         "browser": {"engine": "playwright", "headless": True},

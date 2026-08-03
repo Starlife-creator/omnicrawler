@@ -125,6 +125,22 @@ def excel_safe(value: Any) -> Any:
     return value
 
 
+def user_agent(suffix: str = "") -> str:
+    """Generate a version-tracking User-Agent string automatically.
+
+    The returned string always mirrors the current :data:`omnicrawl.__version__`,
+    so a single ``python tools/bump_version.py X.Y.Z`` updates every User-Agent in
+    the codebase.
+
+    *suffix* is appended after a space (no parentheses are added automatically).
+    Typical values: ``"+contact: change-me@example.com"``, ``"+bot"``,
+    ``"scoped operation"``, ``"Probe"``.
+    """
+    from .. import __version__
+    base = f"OmniCrawler/{__version__}"
+    return f"{base} {suffix}" if suffix else base
+
+
 def redact_headers(headers: dict[str, str]) -> dict[str, str]:
     sensitive = {"authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key", "api-key"}
     return {
