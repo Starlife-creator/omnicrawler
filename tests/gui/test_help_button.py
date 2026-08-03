@@ -173,6 +173,7 @@ class TestDocumentVersions:
 
     def test_init_version(self) -> None:
         import tomllib
+
         from omnicrawl import __version__
         root = Path(__file__).resolve().parents[2]
         pyproject = root / "pyproject.toml"

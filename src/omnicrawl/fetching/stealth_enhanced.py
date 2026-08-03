@@ -287,8 +287,13 @@ class HumanBehavior:
             return patterns
         pos = 0
         while pos < remaining:
-            # 随机滚动距离（300-800px）
-            scroll = random.randint(300, min(800, remaining - pos))
+            # 当剩余空间不足 300px 时，直接滚到底
+            gap = remaining - pos
+            if gap < 300:
+                scroll = gap
+            else:
+                # 随机滚动距离（300-800px）
+                scroll = random.randint(300, min(800, gap))
             pos += scroll
             # 随机停顿（1-5 秒阅读时间）
             pause = random.uniform(1.0, 5.0)
