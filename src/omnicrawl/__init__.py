@@ -11,7 +11,7 @@ import logging
 
 # Keep this value import-safe for source checkouts. Packaging metadata is
 # verified against it by tools/check_docs_consistency.py before release.
-__version__ = "2.8.0"
+__version__ = "0.1.0"
 
 logger = logging.getLogger(__name__)
 

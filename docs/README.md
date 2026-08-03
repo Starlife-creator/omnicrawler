@@ -1,6 +1,6 @@
 # OmniCrawler 文档导航
 
-当前版本为 2.8.0，配置协议为 v5。当前发布质量结论见 `../E2E_TEST_REPORT.md`（本地 E2E）和 `TEST_REPORT.md`（全项目回归基线）。
+当前版本为 0.1.0，配置协议为 v5。当前发布质量结论见 `../E2E_TEST_REPORT.md`（本地 E2E）和 `TEST_REPORT.md`（全项目回归基线）。
 
 - [架构](ARCHITECTURE.md)：模块边界、执行模型与兼容性原则。
 - [配置参考](CONFIG_REFERENCE.md)：当前 YAML 配置协议。
