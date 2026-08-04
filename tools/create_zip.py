@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import os
 import zipfile
 from pathlib import Path
@@ -73,12 +74,40 @@ def create_zip(source: Path, output: Path, root_name: str, clean_source: bool) -
                 continue
             relative = path.relative_to(source)
             name = Path(root_name) / relative
-            info = zipfile.ZipInfo(name.as_posix(), date_time=(2026, 7, 21, 0, 0, 0))
+            # F22：时间戳不再硬编码——SOURCE_DATE_EPOCH（可复现构建）缺省回退文件 mtime
+            stat = path.stat()
+            source_epoch = os.environ.get("SOURCE_DATE_EPOCH")
+            if source_epoch:
+                try:
+                    date_time = datetime.datetime.fromtimestamp(int(source_epoch), tz=datetime.UTC).timetuple()[:6]
+                except (ValueError, OSError):
+                    date_time = datetime.datetime.fromtimestamp(stat.st_mtime).timetuple()[:6]
+            else:
+                date_time = datetime.datetime.fromtimestamp(stat.st_mtime).timetuple()[:6]
+            info = zipfile.ZipInfo(name.as_posix(), date_time=date_time)
             info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = (path.stat().st_mode & 0xFFFF) << 16
+            info.external_attr = (stat.st_mode & 0xFFFF) << 16
             with path.open("rb") as handle, archive.open(info, "w", force_zip64=True) as target:
                 while chunk := handle.read(1024 * 1024):
                     target.write(chunk)
+        # F13：显式写目录条目——约定目录（data/input、work、output 等）若为空，
+        # 解压后不会自动创建，用户首次运行看不到落点
+        source_epoch = os.environ.get("SOURCE_DATE_EPOCH")
+        for dir_path in sorted(p for p in source.rglob("*") if p.is_dir()):
+            relative_dir = dir_path.relative_to(source)
+            dir_name = (Path(root_name) / relative_dir).as_posix() + "/"
+            if dir_name in archive.namelist():
+                continue
+            if source_epoch:
+                try:
+                    dir_date = datetime.datetime.fromtimestamp(int(source_epoch), tz=datetime.UTC).timetuple()[:6]
+                except (ValueError, OSError):
+                    dir_date = datetime.datetime.fromtimestamp(dir_path.stat().st_mtime).timetuple()[:6]
+            else:
+                dir_date = datetime.datetime.fromtimestamp(dir_path.stat().st_mtime).timetuple()[:6]
+            dir_info = zipfile.ZipInfo(dir_name, date_time=dir_date)
+            dir_info.external_attr = (0x10 << 16) | 0o40755  # 目录属性（MS-DOS dir bit）
+            archive.writestr(dir_info, "")
 
 
 def main() -> int:

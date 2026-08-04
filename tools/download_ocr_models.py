@@ -55,7 +55,10 @@ def download_and_verify(cache: Path, source: str) -> dict[str, object]:
         "models": models,
         "bytes": total,
         "prediction_results": len(results),
-        "verified": True,
+        # F43：区分"完整验证"与"冒烟验证"——关 formula/chart 且仅推理空白合成图时
+        # 只算 smoke_verified，不再无条件声称 verified
+        "smoke_verified": True,
+        "verified_dimensions": {"models_present": len(models), "predictions": len(results)},
     }
     (cache / "omnicrawler-model-manifest.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"

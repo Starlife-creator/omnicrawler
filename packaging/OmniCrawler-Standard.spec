@@ -36,7 +36,7 @@ hiddenimports = sorted(set(hiddenimports + _pw_hidden))
 hiddenimports = sorted(set(hiddenimports + _lxml_hidden))
 
 common = dict(
-    pathex=[str(src_root)], binaries=_lxml_binaries, datas=datas, hiddenimports=hiddenimports,
+    pathex=[str(src_root)], binaries=_lxml_binaries + _pw_binaries, datas=datas, hiddenimports=hiddenimports,
     hookspath=[], hooksconfig={}, runtime_hooks=[], excludes=excludes, noarchive=False,
 )
 

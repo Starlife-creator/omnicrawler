@@ -3,7 +3,7 @@
 ## 安装与环境
 
 **Q: 解压后双击没反应？**
-A: 确保解压到普通可写目录（如 D:\OmniCrawler），不要直接在 ZIP 内运行。如仍无反应，运行 `启动OmniCrawler.bat` 查看命令行报错。
+A: 确保解压到普通可写目录（如 D:\OmniCrawler），不要直接在 ZIP 内运行。如仍无反应，运行 `OmniCrawler-Launcher.bat` 查看命令行报错。
 
 **Q: 缺少 Chromium 或 Playwright？**
 A: 便携版已内置。源码版运行 `python -m playwright install chromium`。

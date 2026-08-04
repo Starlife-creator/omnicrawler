@@ -47,7 +47,7 @@ def build_release_info(project_root: Path, release_root: Path, edition: str) -> 
             "requires_python": str(metadata["requires-python"]),
         },
         "edition": edition,
-        "release_root": str(release_root.resolve()),
+        "release_root": release_root.name,  # F42：只保留包根目录名，不泄漏构建机绝对路径
         "artifacts": {"file_count": len(files), "bytes": sum(path.stat().st_size for path in files)},
         "runtime_manifest": {
             "name": RUNTIME_MANIFEST,

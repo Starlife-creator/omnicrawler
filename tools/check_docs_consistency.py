@@ -147,6 +147,21 @@ def check(root: Path) -> list[str]:
         issues.append(f"coverage gate mismatch: pyproject={configured_gate:g}% tool={gate:g}%")
     if f'"{python_version}"' not in workflow:
         issues.append(f"quality workflow does not exercise the minimum Python {python_version}")
+
+    # F46：便携包随附文本/启动器纳入一致性检查（防 F44/F45 复发）
+    portable_readme = root / "packaging" / "PORTABLE_README.txt"
+    launcher = root / "packaging" / "OmniCrawler-Launcher.bat"
+    if not launcher.is_file():
+        issues.append("packaging/OmniCrawler-Launcher.bat missing")
+    if not portable_readme.is_file():
+        issues.append("packaging/PORTABLE_README.txt missing")
+    else:
+        readme_text = portable_readme.read_text(encoding="utf-8")
+        for mentioned_name in re.findall(r"[“\"]([\w.-]+\.bat)[”\"]", readme_text):
+            if not (root / "packaging" / mentioned_name).is_file():
+                issues.append(f"PORTABLE_README.txt 提到 {mentioned_name} 但 packaging 下不存在")
+        if re.search(r"OmniCrawler\s+\d+\.\d+(?:\.\d+)?", readme_text):
+            issues.append("PORTABLE_README.txt 硬编码版本号，应去掉或由构建渲染")
     return issues
 
 

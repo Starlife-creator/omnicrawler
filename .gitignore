@@ -22,7 +22,7 @@ release/
 .runtime/
 _internal/
 browsers/
-runtime/
+/runtime/
 _empty_*/
 *.spec.bak
 *.manifest

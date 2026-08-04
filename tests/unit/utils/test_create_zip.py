@@ -26,5 +26,7 @@ def test_clean_source_archive_excludes_retained_portable_runtime(tmp_path: Path)
 
     with zipfile.ZipFile(archive_path) as archive:
         names = set(archive.namelist())
+        # F13：目录条目（以 / 结尾）是显式写入的；文件内容只应有 README.md
+        file_names = {name for name in names if not name.endswith("/")}
 
-    assert names == {"Demo/README.md"}
+    assert file_names == {"Demo/README.md"}

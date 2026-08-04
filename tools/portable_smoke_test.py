@@ -77,7 +77,15 @@ extract:
     records = list((root / f"{engine}-work").rglob("records.jsonl"))
     payload = "\n".join(path.read_text(encoding="utf-8") for path in records)
     if "bundled browser ready" in payload:
-        return
+        # F20：内容成功导出但进程非零退出——区分"收尾编码崩溃"（非致命）与真正失败
+        if completed.returncode == 0:
+            return
+        output = (completed.stdout + "\n" + completed.stderr).strip()
+        if "UnicodeEncodeError" in output:
+            return
+        raise RuntimeError(
+            f"portable {engine} smoke test produced expected content but exited {completed.returncode}:\n{output[-6000:]}"
+        )
     if completed.returncode != 0:
         output = (completed.stdout + "\n" + completed.stderr).strip()
         raise RuntimeError(f"portable {engine} smoke test failed:\n{output[-6000:]}")
@@ -93,6 +101,21 @@ def run_smoke_test(release_dir: Path, edition: str = "Full") -> None:
     executable = release_dir / "omnicrawl.exe"
     if not executable.is_file():
         raise FileNotFoundError(executable)
+    # F21：GUI 壳（OmniCrawler.exe）也必须过冒烟——缺 PyQt 插件/Qt DLL 只会在
+    # 用户双击时才暴露。离屏启动：进程持续运行说明 GUI 正常初始化，然后主动退出。
+    gui = release_dir / "OmniCrawler.exe"
+    if gui.is_file():
+        gui_env = {**_env, "QT_QPA_PLATFORM": "offscreen"}
+        gui_proc = subprocess.Popen([str(gui)], cwd=str(release_dir), env=gui_env)
+        try:
+            gui_proc.wait(timeout=8)
+        except subprocess.TimeoutExpired:
+            gui_proc.terminate()
+            gui_proc.wait(timeout=10)
+        else:
+            raise RuntimeError(
+                f"OmniCrawler.exe (GUI) exited immediately with rc={gui_proc.returncode}"
+            )
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

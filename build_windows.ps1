@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [switch]$SkipDependencyInstall,
     [switch]$SkipBrowserDownload,
@@ -15,7 +15,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+# F4：统一用 $PSScriptRoot（dot-source/部分宿主下 $MyInvocation.MyCommand.Path 可能为空）
+$projectRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 # Keep .NET's working directory in sync with the script location so that
 # [IO.Path]::GetFullPath() resolves relative path parameters (BuildRootPath,
 # ReleaseOutputPath, BrowserCachePath, RuntimeCachePath) against the project
@@ -62,13 +63,17 @@ if ($Offline) {
 # If you want a different version, bump __version__ in src/omnicrawl/__init__.py
 # *before* running this script.  Do NOT edit __version__ as a side effect of
 # other work — that is a separate, deliberate operation.
+# F1：版本读取移到依赖安装之后（全新构建时构建 venv 尚未创建）。
+# F2：读取结果校验非空且形似版本号，否则立即中止。
 # =============================================================================
-$appVersion = (& $builderPython -c 'from omnicrawl import __version__; print(__version__)').Trim()
-Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "  OmniCrawler $appVersion — $Edition edition portable build" -ForegroundColor Cyan
-Write-Host "  Build root : $buildRoot" -ForegroundColor DarkGray
-Write-Host "  Release    : $releaseOutput" -ForegroundColor DarkGray
-Write-Host "============================================================" -ForegroundColor Cyan
+function Read-AppVersion([string]$Python) {
+    $versionOutput = (& $Python -c 'from omnicrawl import __version__; print(__version__)').Trim()
+    Assert-LastExit 'Could not read the application version from the source tree.'
+    if (-not $versionOutput -or $versionOutput -notmatch '^\d+\.\d+') {
+        throw "Invalid application version read from source: '$versionOutput'"
+    }
+    return $versionOutput
+}
 
 function Assert-LastExit([string]$Message) {
     if ($LASTEXITCODE -ne 0) { throw $Message }
@@ -101,9 +106,17 @@ function Copy-VerifiedTree([string]$Source, [string]$Destination, [string]$Label
         Copy-Item -Destination $resolvedDestination -Recurse -Force
 }
 
+# ---- 依赖安装（F1：版本读取必须在此之后，构建 venv 此时才可用）----
 if (-not $SkipDependencyInstall) {
     if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
         throw 'Python 3.10 or newer was not found.'
+    }
+    # F5：显式 -BuilderPythonPath 指向非构建 venv 的解释器时拒绝自动安装，
+    # 避免把项目+PyInstaller+完整依赖矩阵灌入系统 Python。
+    $resolvedBuilder = [IO.Path]::GetFullPath($builderPython)
+    $resolvedVenvPython = [IO.Path]::GetFullPath((Join-Path $builderVenv 'Scripts\python.exe'))
+    if ($BuilderPythonPath -and $resolvedBuilder -ne $resolvedVenvPython) {
+        throw '-BuilderPythonPath 指向非构建 venv 的解释器；自动安装会污染该系统 Python，请改用 -SkipDependencyInstall。'
     }
     if (-not (Test-Path -LiteralPath $builderPython)) {
         python -m venv $builderVenv
@@ -126,7 +139,27 @@ if (-not $SkipDependencyInstall) {
     Assert-LastExit "The selected builder Python does not contain all $Edition dependencies."
 }
 
-$env:PLAYWRIGHT_BROWSERS_PATH = $browsersRoot
+# F1/F2：版本读取移到依赖安装后，并校验非空/形似版本号（内置于 Read-AppVersion）
+$appVersion = Read-AppVersion $builderPython
+# F26：便携包版本（omnicrawl.__version__）与源码包版本（pyproject）必须一致，
+# 否则同次发布产出版本号矛盾的产物
+$env:OMNICRAWL_PROJECT_ROOT = $projectRoot
+$pyprojectVersion = (& $builderPython -c "import os, tomllib; root = os.environ['OMNICRAWL_PROJECT_ROOT']; data = tomllib.loads(open(os.path.join(root, 'pyproject.toml'), encoding='utf-8').read()); print(data['project']['version'])").Trim()
+Remove-Item Env:OMNICRAWL_PROJECT_ROOT -ErrorAction SilentlyContinue
+if ($pyprojectVersion -and $pyprojectVersion -ne $appVersion) {
+    throw "版本不一致: pyproject=$pyprojectVersion vs omnicrawl.__version__=$appVersion"
+}
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "  OmniCrawler $appVersion — $Edition edition portable build" -ForegroundColor Cyan
+Write-Host "  Build root : $buildRoot" -ForegroundColor DarkGray
+Write-Host "  Release    : $releaseOutput" -ForegroundColor DarkGray
+Write-Host "============================================================" -ForegroundColor Cyan
+
+# F6：PLAYWRIGHT_BROWSERS_PATH 只在构建期间指向临时 browsers 目录，结束后还原调用者会话
+$previousPlaywrightPath = $env:PLAYWRIGHT_BROWSERS_PATH
+try {
+    $env:PLAYWRIGHT_BROWSERS_PATH = $browsersRoot
+
 if (-not $SkipBrowserDownload) {
     & $builderPython -m playwright install chromium
     Assert-LastExit 'Playwright Chromium download failed.'
@@ -135,6 +168,11 @@ if (-not $SkipBrowserDownload) {
 }
 if (-not (Test-Path -LiteralPath $browsersRoot)) {
     throw "Bundled Chromium was not found: $browsersRoot"
+}
+# F7：进一步校验目录里确实有可用的 chrome.exe，避免残留空目录直到 ZIP 检查才暴露
+$chromeProbe = Get-ChildItem -LiteralPath $browsersRoot -Recurse -Filter 'chrome.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $chromeProbe) {
+    throw "Bundled Chromium executable was not found under: $browsersRoot"
 }
 
 if ($Edition -eq 'Full' -and -not $SkipRuntimeAssetDownload) {
@@ -149,9 +187,20 @@ if ($Edition -eq 'Full') {
     foreach ($required in @(
         (Join-Path $runtimeRoot 'selenium\chromedriver.exe'),
         (Join-Path $runtimeRoot 'tesseract\tesseract.exe'),
+        (Join-Path $runtimeRoot 'tesseract\tessdata\eng.traineddata'),
+        (Join-Path $runtimeRoot 'tesseract\tessdata\chi_sim.traineddata'),
+        (Join-Path $runtimeRoot 'tesseract\tessdata\osd.traineddata'),
         (Join-Path $runtimeRoot 'models\paddlex\omnicrawler-model-manifest.json')
     )) {
         if (-not (Test-Path -LiteralPath $required)) { throw "Runtime asset is missing: $required" }
+    }
+    # F8：traineddata 必须是有效 gzip（Tesseract 语言包格式），防止残留空文件通过门禁
+    foreach ($lang in @('eng', 'chi_sim', 'osd')) {
+        $trained = Join-Path $runtimeRoot "tesseract\tessdata\$lang.traineddata"
+        $bytes = [IO.File]::ReadAllBytes($trained)
+        if ($bytes.Length -lt 1024 -or $bytes[0] -ne 0x1F -or $bytes[1] -ne 0x8B) {
+            throw "Tesseract language pack is not a valid gzip file: $trained"
+        }
     }
 }
 
@@ -191,14 +240,14 @@ foreach ($file in @('packaging\PORTABLE_README.txt', 'packaging\THIRD_PARTY_NOTI
     Copy-Item -LiteralPath (Join-Path $projectRoot $file) -Destination $releaseRoot
 }
 "OmniCrawler $Edition portable edition" |
-    Set-Content -LiteralPath (Join-Path $releaseRoot 'EDITION.txt') -Encoding utf8
+    ForEach-Object { [IO.File]::WriteAllText((Join-Path $releaseRoot 'EDITION.txt'), $_, (New-Object Text.UTF8Encoding($false))) }
 foreach ($directory in @('configs', 'docs', 'examples')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $directory) -Destination $releaseRoot -Recurse
 }
 
-# Some cross-platform Python wheels carry macOS/Linux maintenance launchers as
-# package data. They cannot run on Windows and are not part of the application
-# contract, so keep the Windows-specific portable distribution clear.
+# F14：只清理 _internal/browsers/runtime 内第三方 wheel 携带的 .sh/.command，
+# 不再误删 docs/examples 等随包跨平台示例脚本（文档引用它们）
+$scopedCleanRoots = @('_internal', 'browsers', 'runtime')
 $resolvedRelease = [IO.Path]::GetFullPath($releaseRoot).TrimEnd('\') + '\'
 Get-ChildItem -LiteralPath $releaseRoot -Recurse -File |
     Where-Object { $_.Extension -in @('.sh', '.command') } |
@@ -207,6 +256,9 @@ Get-ChildItem -LiteralPath $releaseRoot -Recurse -File |
         if (-not $candidate.StartsWith($resolvedRelease, [StringComparison]::OrdinalIgnoreCase)) {
             throw "Refusing to remove a non-Windows launcher outside release staging: $candidate"
         }
+        $relative = [IO.Path]::GetRelativePath($resolvedRelease, $candidate)
+        $topLevel = ($relative -split '[\\/]')[0]
+        if ($topLevel -notin $scopedCleanRoots) { return }
         Remove-Item -LiteralPath $candidate -Force
     }
 
@@ -221,22 +273,26 @@ Assert-LastExit 'SBOM generation failed.'
 Assert-LastExit 'Packaged CLI version verification failed.'
 & (Join-Path $releaseRoot 'omnicrawl.exe') templates validate
 Assert-LastExit 'Packaged template verification failed.'
-& (Join-Path $releaseRoot 'omnicrawl.exe') capabilities --verify-imports --portable-paths |
-    Set-Content -LiteralPath (Join-Path $releaseRoot 'CAPABILITIES.json') -Encoding utf8
+# F11：冒烟测试先于清单生成——其 cwd=releaseRoot 会写 .omnicrawler 缓存，
+# 若在清单生成后跑会产出"不在清单中的新文件"导致完整性检查随机失败。
+& $builderPython (Join-Path $projectRoot 'tools\portable_smoke_test.py') $releaseRoot --edition $Edition
+Assert-LastExit 'Packaged browser/native runtime verification failed.'
+# F12：CAPABILITIES.json 无 BOM 写入（带 BOM 会让第三方 json.loads 失败）
+$capabilitiesOutput = & (Join-Path $releaseRoot 'omnicrawl.exe') capabilities --verify-imports --portable-paths
 Assert-LastExit 'Packaged capability import verification failed.'
-& $builderPython -c "from pathlib import Path; from omnicrawl.runtime_manifest import create_runtime_manifest; create_runtime_manifest(Path(r'$releaseRoot'))"
+[IO.File]::WriteAllText((Join-Path $releaseRoot 'CAPABILITIES.json'), ($capabilitiesOutput -join "`n"), (New-Object Text.UTF8Encoding($false)))
+# F9：路径经命令行参数传递，不再把 PowerShell 变量插值进 Python 源码字符串
+& $builderPython (Join-Path $projectRoot 'tools\create_runtime_manifest.py') --release-root $releaseRoot
 Assert-LastExit 'Runtime integrity manifest generation failed.'
 & $builderPython (Join-Path $projectRoot 'tools\generate_release_info.py') `
     --project-root $projectRoot --release-root $releaseRoot --edition $Edition
 Assert-LastExit 'Portable release metadata generation failed.'
 # Regenerate after adding RELEASE-INFO.json so the integrity manifest covers
 # the machine-readable release description as well as executables and runtime.
-& $builderPython -c "from pathlib import Path; from omnicrawl.runtime_manifest import create_runtime_manifest; create_runtime_manifest(Path(r'$releaseRoot'))"
+& $builderPython (Join-Path $projectRoot 'tools\create_runtime_manifest.py') --release-root $releaseRoot
 Assert-LastExit 'Runtime integrity manifest refresh failed.'
 & (Join-Path $releaseRoot 'omnicrawl.exe') runtime-verify --root $releaseRoot
 Assert-LastExit 'Packaged runtime integrity verification failed.'
-& $builderPython (Join-Path $projectRoot 'tools\portable_smoke_test.py') $releaseRoot --edition $Edition
-Assert-LastExit 'Packaged browser/native runtime verification failed.'
 
 # $appVersion was already resolved at script startup — reuse it.
 New-Item -ItemType Directory -Path $releaseOutput -Force | Out-Null
@@ -264,3 +320,11 @@ Write-Host "Portable ZIP: $releaseArchive"
 Write-Host "SHA-256: $($archiveHash.Hash)"
 Write-Host 'GUI: OmniCrawler.exe'
 Write-Host 'CLI: omnicrawl.exe --help'
+} finally {
+    # F6：构建结束还原调用者会话的 PLAYWRIGHT_BROWSERS_PATH
+    if ($null -eq $previousPlaywrightPath) {
+        Remove-Item Env:PLAYWRIGHT_BROWSERS_PATH -ErrorAction SilentlyContinue
+    } else {
+        $env:PLAYWRIGHT_BROWSERS_PATH = $previousPlaywrightPath
+    }
+}

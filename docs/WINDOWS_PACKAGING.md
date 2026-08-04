@@ -41,7 +41,7 @@ OmniCrawler-{version}-Windows-Portable-{edition}.zip
 .\build_windows.ps1
 ```
 
-脚本在 `%TEMP%\OmniCrawler-build-<edition>` 创建隔离环境并按顺序执行：
+脚本在 `%TEMP%\OmniCrawler-build-<edition>`（隔离 venv 在 `%TEMP%\OmniCrawler-build-<edition>-venv`）创建隔离环境并按顺序执行：
 
 1. 安装 `.[full,dev]`、PyInstaller 和构建工具。
 2. 下载 Playwright Chromium。
@@ -101,8 +101,8 @@ Windows 包不携带 Linux/macOS 启动脚本、包管理器缓存或其他平�
 wheel 为独立产物：构建环境（`.venv`）**未预装 `build` 模块**，不能用 `python -m build`，需用 `pip wheel` 单独构建。
 
 ```powershell
-# 1) 源码 ZIP（由 build_source_archive.py 生成）
-.\.venv\Scripts\python.exe tools\build_source_archive.py
+# 1) 源码 ZIP（由 build_source_archive.py 生成；--output-dir 必须与下方产物落点一致）
+.\.venv\Scripts\python.exe tools\build_source_archive.py --output-dir artifacts\python\{version}
 
 # 2) wheel（--no-deps 仅打包本项目；离线环境加 --no-build-isolation）
 .\.venv\Scripts\python.exe -m pip wheel . --no-deps -w artifacts\python\{version}

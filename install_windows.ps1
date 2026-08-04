@@ -21,25 +21,34 @@ if (Test-Path -LiteralPath $BundledPython) {
         throw 'Python 3.10 or newer was not found. Add .runtime\\python\\python.exe or install Python from python.org and enable Add Python to PATH.'
     }
 }
+# F49：原生命令失败不会触发 $ErrorActionPreference，必须显式检查 $LASTEXITCODE
+if ($LASTEXITCODE -ne 0) { throw 'Failed to create the virtual environment.' }
 
 $Python = Join-Path $ProjectDirectory '.venv\Scripts\python.exe'
 & $Python -m pip install --upgrade pip setuptools wheel
+if ($LASTEXITCODE -ne 0) { throw 'Failed to upgrade pip.' }
 if ($Minimal) {
     & $Python -m pip install -e '.[html,gui]'
 } else {
     & $Python -m pip install -e '.[full,dev]'
 }
+if ($LASTEXITCODE -ne 0) { throw 'Failed to install project dependencies.' }
 if (-not $SkipBrowser -and -not $Minimal) {
     $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $ProjectDirectory '.runtime\browsers'
     & $Python -m playwright install chromium
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to install Playwright Chromium.' }
 }
 if (-not $SkipRuntimeAssets -and -not $Minimal) {
     & (Join-Path $ProjectDirectory 'tools\prepare_windows_runtime.ps1') `
         -Python $Python `
         -RuntimeRoot (Join-Path $ProjectDirectory '.runtime') `
         -BrowsersRoot (Join-Path $ProjectDirectory '.runtime\browsers')
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to prepare the Windows runtime.' }
 }
 & $Python -m omnicrawl.cli --help | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'CLI smoke check failed.' }
 & $Python -m omnicrawl.cli capabilities --verify-imports
+if ($LASTEXITCODE -ne 0) { throw 'Capability import verification failed.' }
 $Version = & $Python -c "import importlib.metadata; print(importlib.metadata.version('omnicrawl-platform'))"
+if ($LASTEXITCODE -ne 0) { throw 'Failed to read the installed version.' }
 Write-Host "OmniCrawler $Version full source environment is ready." -ForegroundColor Green

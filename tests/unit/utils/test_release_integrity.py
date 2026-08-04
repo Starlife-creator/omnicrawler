@@ -97,6 +97,11 @@ def _write_portable(
         "CAPABILITIES.json": b"{}",
         "SBOM.json": b"{}",
         "THIRD_PARTY_NOTICES.md": b"notices",
+        # F23：启动器/本地说明/发布信息/文档现在是必需文件
+        "OmniCrawler-Launcher.bat": b"@echo off\r\nstart OmniCrawler.exe\r\n",
+        "PORTABLE_README.txt": b"OmniCrawler portable\n",
+        "RELEASE-INFO.json": b"{}",
+        "docs/README.md": b"# docs",
         "browsers/chromium-1234/chrome-win64/chrome.exe": b"MZ-chromium",
     }
     if edition == "Full":

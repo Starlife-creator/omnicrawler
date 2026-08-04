@@ -136,7 +136,12 @@ def check_wheel(wheel_path: Path) -> list[str]:
             errors.append(f"wheel must contain exactly one RECORD, found {len(record_names)}")
         else:
             rows = csv.reader(io.StringIO(archive.read(record_names[0]).decode("utf-8")))
-            for name, digest, size in rows:
+            for row in rows:
+                # F24：RECORD 畸形行（不足三列）给出可读错误，不抛堆栈
+                if len(row) < 3:
+                    errors.append(f"RECORD malformed row (expected 3 columns): {row!r}")
+                    continue
+                name, digest, size = row[0], row[1], row[2]
                 if name not in names:
                     errors.append(f"RECORD references missing file: {name}")
                     continue
@@ -359,10 +364,14 @@ def _check_portable_archive(
         "OmniCrawler.exe", "omnicrawl.exe", "omnicrawl-worker.exe",
         "PORTABLE.flag", "EDITION.txt", "RUNTIME-MANIFEST.json",
         "CAPABILITIES.json", "SBOM.json", "THIRD_PARTY_NOTICES.md",
+        # F23：便携包门禁必须含启动器/本地说明/发布信息，否则解压后无从下手
+        "OmniCrawler-Launcher.bat", "PORTABLE_README.txt", "RELEASE-INFO.json",
     )
     for relative in required_files:
         if file_info(relative) is None:
             errors.append(f"portable archive missing required file: {relative}")
+    if not any(key.startswith("docs/") and not info.is_dir() for key, info in relative_infos.items()):
+        errors.append("portable archive missing required directory content: docs")
     if not any(key.startswith("_internal/") and not info.is_dir() for key, info in relative_infos.items()):
         errors.append("portable archive missing required directory content: _internal")
 
@@ -450,7 +459,12 @@ def _check_portable_archive(
                 except json.JSONDecodeError as exc:
                     errors.append(f"invalid Paddle model manifest: {exc}")
             models = model_manifest.get("models") if isinstance(model_manifest, dict) else None
-            if not isinstance(model_manifest, dict) or model_manifest.get("verified") is not True:
+            # F43：兼容旧清单 verified 与新版 smoke_verified
+            verified_ok = (
+                isinstance(model_manifest, dict)
+                and (model_manifest.get("verified") is True or model_manifest.get("smoke_verified") is True)
+            )
+            if not verified_ok:
                 errors.append("Paddle model manifest is not marked verified")
             if not isinstance(models, list) or not models or not all(isinstance(item, str) for item in models):
                 errors.append("Paddle model manifest must contain a non-empty model list")
