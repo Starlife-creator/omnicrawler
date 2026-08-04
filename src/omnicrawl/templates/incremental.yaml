@@ -2,6 +2,6 @@ template_version: 1
 project: {name: 示例项目-增量监测, workspace: work/incremental}
 source: {kind: incremental, seeds: [https://example.com/]}
 crawl: {strategy: bfs, max_pages: 100, max_depth: 3, same_host: true, concurrency: 4}
-http: {user_agent: "OmniCrawler/0.2.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
+http: {user_agent: "OmniCrawler/0.3.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
 incremental: {skip_unchanged: true, archive_raw: true}
 extract: {mode: auto, fields: {title: {selector: title}, heading: {selector: h1}}}

@@ -1,6 +1,15 @@
 # Changelog
 
 ## Unreleased
+## 0.3.0 - 2026-08-05
+
+### 变更
+
+- feat(runtime): 补跟踪 omnicrawl.runtime 模块（此前被 .gitignore 误忽略）
+- fix(build,portable): 审计修复 Phase 2/5c — 构建脚本、运行时准备、工具脚本、便携首启体验（F1-F55）
+- fix(gui,pdf): 审计修复 Phase 3/5a — PDF 抽取准确度、跨平台 GUI 稳健性（D8-D66、A13-B16）
+- fix(core,ai,cli): 审计修复 Phase 0/1/5b — 配置单一真源、AI 链路端到端、CLI 管线（C1-C50、E3-E16）
+
 ## 0.2.0 - 2026-08-04
 
 ### 变更
