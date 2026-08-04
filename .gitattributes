@@ -25,8 +25,10 @@
 
 # === Python 项目文件 ===
 *.py       text
-*.spec     text          # PyInstaller spec
-.gitkeep   text          # 占位文件
+# PyInstaller 构建规格
+*.spec     text
+# 占位文件
+.gitkeep   text
 .gitignore text
 
 # === 二进制 (不进行 diff/merge) ===

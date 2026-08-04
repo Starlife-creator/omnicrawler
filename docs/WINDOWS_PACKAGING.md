@@ -97,15 +97,20 @@ Windows 包不携带 Linux/macOS 启动脚本、包管理器缓存或其他平�
 
 ## 源码 ZIP 构建
 
-源码 ZIP 和 wheel 由 `tools/build_source_archive.py` 独立生成，不与便携版共用构建流程：
+源码 ZIP 由 `tools/build_source_archive.py` 独立生成，不与便携版共用构建流程。
+wheel 为独立产物：构建环境（`.venv`）**未预装 `build` 模块**，不能用 `python -m build`，需用 `pip wheel` 单独构建。
 
 ```powershell
+# 1) 源码 ZIP（由 build_source_archive.py 生成）
 .\.venv\Scripts\python.exe tools\build_source_archive.py
+
+# 2) wheel（--no-deps 仅打包本项目；离线环境加 --no-build-isolation）
+.\.venv\Scripts\python.exe -m pip wheel . --no-deps -w artifacts\python\{version}
 ```
 
 产物落点：
-- `artifacts/python/{version}/OmniCrawler-{version}-Source.zip`
-- `artifacts/python/{version}/omnicrawl_platform-{version}-py3-none-any.whl`
+- `artifacts/python/{version}/OmniCrawler-{version}-Source.zip`（源码归档，由 `build_source_archive.py` 产出）
+- `artifacts/python/{version}/omnicrawl_platform-{version}-py3-none-any.whl`（wheel，由上方 `pip wheel` 生成，**非** `build_source_archive.py` 产出）
 
 ## 完整产物一览
 
@@ -116,5 +121,6 @@ Windows 包不携带 Linux/macOS 启动脚本、包管理器缓存或其他平�
 | 1 | Standard 便携 ZIP | `artifacts/release/{version}/OmniCrawler-{version}-Windows-Portable-Standard.zip` |
 | 2 | Full 便携 ZIP | `artifacts/release/{version}/OmniCrawler-{version}-Windows-Portable-Full.zip` |
 | 3 | 源码 ZIP + wheel | `artifacts/python/{version}/OmniCrawler-{version}-Source.zip` |
-| 4 | 完整便携目录 | `artifacts/build/{version}-{edition}-rN/release/OmniCrawler/` |
-| 4 | 完整便携目录 | `artifacts/build/{version}-{edition}-rN/release/OmniCrawler/`
+| 4 | 完整便携目录（未压缩完整包） | `artifacts/build/{version}-{edition}-rN/release/OmniCrawler/` |
+
+> **关于"完整便携目录"（第 4 类产物）**：它**不是独立命令**，而是由运行 Standard（`-Edition Standard`）或 Full（`-Edition Full`）便携构建时**自动产出并保留的未压缩目录**——脚本先构建到该目录，再将其压缩为对应的 `OmniCrawler-{version}-Windows-Portable-{edition}.zip`（第 1/2 类）。构建结束后此目录不会被删除，可直接作为"压缩前的完整包"使用或分发。其中 `{version}-{edition}-rN` 的 `rN` 为构建轮次（如 `0.2.0-standard-r1`），与 `-BuildRootPath` 参数值一致。

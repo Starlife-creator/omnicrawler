@@ -9,7 +9,10 @@ __pycache__/
 
 # === Build Artifacts (禁止入库) ===
 # 所有构建产物在 artifacts/ 版本化目录，详见 artifacts/README.md
-artifacts/
+# 用 artifacts/** 而非 artifacts/：后者整目录忽略会阻止 git 进入，导致下方 ! 放行失效
+artifacts/**
+# 放行构建产物说明文档，使其纳入版本控制（协作者 clone 可见构建规则与版本来源）
+!artifacts/README.md
 dist/
 build/
 build_cache/
