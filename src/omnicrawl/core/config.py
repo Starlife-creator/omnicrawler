@@ -343,6 +343,11 @@ def validate_config(config: AppConfig) -> tuple[list[str], list[str]]:
     outputs = config.section("outputs")
     if not isinstance(outputs.get("plugin_exporters", []), list):
         errors.append("outputs.plugin_exporters must be a list")
+    # E15：至少启用一种导出格式，否则 run 结束只产出辅助文件——以 warning 提示，
+    # 不阻止加载（分析类任务可能有意只留 state.sqlite3）
+    enabled_formats = [key for key in ("jsonl", "csv", "xlsx") if bool(outputs.get(key, False))]
+    if not enabled_formats and not outputs.get("plugin_exporters"):
+        warnings.append("outputs未启用任何导出格式（jsonl/csv/xlsx）或 plugin_exporters，运行只会产出辅助/状态文件")
     resources = config.section("resources")
     if str(resources.get("profile", "balanced")).casefold() not in {
         "economy", "balanced", "performance"

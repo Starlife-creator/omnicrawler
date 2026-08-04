@@ -136,11 +136,26 @@ def capability_report(
     if paddle_cache is not None and paddle_cache.is_dir():
         official = paddle_cache / "official_models"
         if official.is_dir():
-            models = sorted(path.name for path in official.iterdir() if path.is_dir())
+            # F41：仅当模型权重完整（inference.pdiparams）才算就绪，目录存在不代表可用
+            models = sorted(
+                path.name for path in official.iterdir()
+                if path.is_dir() and (path / "inference.pdiparams").is_file()
+            )
+    tessdata_dir = _path_from_env("TESSDATA_PREFIX")
+    tess_langs: list[str] = []
+    if tessdata_dir is not None and tessdata_dir.is_dir():
+        tess_langs = sorted(path.stem for path in tessdata_dir.glob("*.traineddata"))
+    required_tess = {"eng", "chi_sim"}
+    # F39：Tesseract 就绪还需所需语言包存在，且报告实际可用语言
+    tess_ready = tesseract is not None and required_tess.issubset(set(tess_langs))
     native: dict[str, dict[str, Any]] = {
         "chromium": {"ready": chrome is not None, "path": chrome},
         "selenium_driver": {"ready": driver is not None, "path": driver},
-        "tesseract": {"ready": tesseract is not None, "path": tesseract},
+        "tesseract": {
+            "ready": tess_ready, "path": tesseract,
+            "languages": tess_langs,
+            "missing_languages": sorted(required_tess - set(tess_langs)),
+        },
         "paddle_models": {"ready": bool(models), "path": str(paddle_cache) if paddle_cache else None, "models": models},
     }
     if portable_paths:
@@ -357,7 +372,20 @@ def runtime_self_test() -> dict[str, Any]:
         image = Image.new("RGB", (520, 100), "white")
         ImageDraw.Draw(image).text((20, 30), "OmniCrawler OCR 1.0", fill="black")
         text = pytesseract.image_to_string(image, lang="eng").strip()
-        tests["tesseract_ocr"] = {"ok": bool(text), "text": text[:120]}
+        # F40：同时对 chi_sim 做实际识别，语言包缺失/损坏立即暴露，不再只验 eng
+        chi_result = False
+        chi_error = ""
+        try:
+            zh_image = Image.new("RGB", (560, 100), "white")
+            # F40：PIL 默认位图字体无中文字形，用 ASCII 文本保证 chi_sim 可识别
+            ImageDraw.Draw(zh_image).text((20, 30), "OCR 123", fill="black")
+            chi_result = bool(pytesseract.image_to_string(zh_image, lang="chi_sim").strip())
+        except Exception as exc:  # noqa: BLE001
+            chi_error = f"{type(exc).__name__}: {exc}"
+        tests["tesseract_ocr"] = {
+            "ok": bool(text) and chi_result, "text": text[:120],
+            "chi_sim": chi_result, "chi_sim_error": chi_error,
+        }
     except Exception as exc:  # noqa: BLE001
         tests["tesseract_ocr"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 

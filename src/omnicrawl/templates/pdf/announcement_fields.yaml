@@ -68,6 +68,9 @@ fields:
     label: 公告号及上市公司股票代码
     source: both
     required: true
+    type: code
+    # D28：仅接受 A 股常见板块代码（000/001/002/003/300/301/600/601/603/605/688/8xx/4xx）
+    value_pattern: '^(00[013]\d{3}|30[01]\d{3}|60[0135]\d{3}|688\d{3}|8\d{5}|4\d{5})$'
     aliases: [证券代码, 股票代码, 公司代码]
     patterns:
       - '(?P<value>(?<!\d)\d{6}(?!\d))'
@@ -94,6 +97,7 @@ fields:
     label: 担保金额
     description: "本笔事项涉及的担保金额或最高担保额度；原始数据若为累计金额则标注为累计金额或总额"
     source: content
+    type: amount
     target_unit: 万元
     aliases: [担保金额, 担保额度, 保证金额, 最高担保额, 担保本金]
     patterns:
@@ -114,6 +118,7 @@ fields:
     description: "被担保方与担保方之间的公司关系，用于合规审查"
     source: content
     required: true
+    type: enum
     aliases: [与本公司关系, 与本公司的关系, 关联关系, 被担保方关系]
     allowed_values: [全资子公司, 控股子公司, 孙公司, 参股公司, 合营企业, 联营企业, 控股股东, 非关联第三方, 未知]
     value_aliases:

@@ -7,7 +7,6 @@ import time
 from typing import Any
 
 from ..core.config import load_config
-from ..pipeline import Pipeline
 from ..services.application_service import ApplicationService
 
 
@@ -28,8 +27,9 @@ def execute(
         def _on_progress(event: str, details: dict[str, Any]) -> None:
             if event == "crawl_progress":
                 current = details.get("processed", 0)
-                total = details.get("total", 0) or max_pages or 0
-                url = (details.get("url" or "") or "")[:70]
+                # E7：管线进度事件发的是 "limit" 键（_run.py），兼容 "total"
+                total = details.get("limit") or details.get("total") or max_pages or 0
+                url = (details.get("url") or "")[:70]  # E8：去掉恒真的 "url" or "" 死代码
                 bar_width = 30
                 if total:
                     filled = int(bar_width * current / total) if total else 0
@@ -57,20 +57,14 @@ def execute(
         callback = None
 
     loaded = load_config(config)
-    if max_pages is not None:
-        loaded.raw["crawl"]["max_pages"] = max_pages
-        with Pipeline(loaded) as pipeline:
-            result = pipeline.run(
-                resume=command == "resume",
-                retry_failed=retry_failed,
-                max_pages=max_pages,
-                callback=callback,
-            )
-    else:
-        result = ApplicationService(config).run(
-            resume=command == "resume",
-            retry_failed=retry_failed,
-        )
+    # E9：统一走 ApplicationService（内部透传 max_pages/callback 到 Pipeline.run），
+    # 不再出现 max_pages 分支走 Pipeline、无 max_pages 分支走 ApplicationService 的双路径不一致。
+    result = ApplicationService(loaded.path).run(
+        resume=command == "resume",
+        retry_failed=retry_failed,
+        max_pages=max_pages,
+        callback=callback,
+    )
 
     if progress:
         print(file=sys.stderr)  # newline after progress bar

@@ -201,9 +201,19 @@ class TestMergeResults:
 
     def test_confidence_as_int(self) -> None:
         ex = AIGraphExtractor()
-        results = [{"fields": {}, "confidence": 1}]
+        results = [{"fields": {"title": "x"}, "confidence": 1}]
         merged = ex._merge_results(results, 1)
         assert merged["confidence"] == 1.0
+
+    def test_empty_chunk_not_counted_in_confidence(self) -> None:
+        """D59：无产出的分块不参与置信度均值（避免空结果拉低/抬高）。"""
+        ex = AIGraphExtractor()
+        results = [
+            {"fields": {}, "confidence": 1.0},
+            {"fields": {"title": "x"}, "confidence": 0.6},
+        ]
+        merged = ex._merge_results(results, 2)
+        assert merged["confidence"] == 0.6
 
     def test_fields_not_a_dict_is_skipped(self) -> None:
         ex = AIGraphExtractor()
@@ -232,7 +242,7 @@ class TestExtractAsync:
         html = "a" * 25  # will be split into 3 chunks
         fields = [FieldDef(name="title")]
         ok = {"fields": {"title": "OK"}, "confidence": 0.8}
-        async def side_effect(html, fields, max_tokens):
+        async def side_effect(html, fields, max_tokens, *, session=None):
             if "aaaaa" in html:
                 return ok
             raise RuntimeError("chunk failed")

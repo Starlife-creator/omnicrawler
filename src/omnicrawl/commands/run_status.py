@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from ..core.config import load_config
@@ -17,6 +18,8 @@ def execute(config: str, *, output_format: str = "json") -> dict[str, Any]:
     else:
         with StateStore(database) as state:
             result = {"crawl": {"latest_run": state.latest_run(), "totals": state.stats()}}
+    # E3：配置路径由 execute 显式携带，避免 _print_text 永远打印空路径
+    result["config_path"] = str(Path(config).expanduser().resolve())
     pdf_settings = loaded.section("processors").get("pdf", {})
     configured = str(pdf_settings.get("project_config", "")).strip()
     pdf_project = (
@@ -100,4 +103,5 @@ def _print_text(result: dict[str, Any]) -> None:
     db_path = crawl.get("database", "")
     if db_path:
         print(f"\n💾 数据库: {db_path}")
-    print(f"   配置:    {result.get('_config_path', '')}")
+    # E3：配置路径由 execute 携带（不再是永不写入的 _config_path）
+    print(f"   配置:    {result.get('config_path', '')}")

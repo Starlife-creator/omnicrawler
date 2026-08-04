@@ -225,7 +225,8 @@ class TemplateCatalog:
                 return str(merged_values[key])
 
             rendered = PLACEHOLDER_RE.sub(substitution, value)
-            missing.update(PLACEHOLDER_RE.findall(rendered))
+            # E14：缺失键已在 substitution 回调中逐个记录；不再对渲染结果二次 findall，
+            # 避免"替换值本身含占位符"被误报为缺失
             return rendered
 
         rendered = replace(data)

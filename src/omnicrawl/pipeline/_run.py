@@ -267,6 +267,7 @@ class _PipelineRun(_PipelineBase):
             status = "cancelled"
             self.run_control.request_stop()
             self.egress.disconnect_task()
+            drain()  # E5：与 cancel/stop/资源超限分支一致，收尾在途请求防孤儿 in_progress
             summary = {"run_id": run_id, "status": status, "processed": processed, **self.state.stats(run_id)}
             self._write_pipeline_summary(summary)
             self.state.finish_run(run_id, status, summary)
@@ -470,6 +471,13 @@ class _PipelineRun(_PipelineBase):
             self._write_pipeline_summary(summary)
             self.state.finish_run(run_id, status, summary)
             return summary
+        except KeyboardInterrupt:
+            # E6：流式模式 Ctrl+C 也按取消处理并收尾，避免 run 卡在 running
+            self.egress.disconnect_task()
+            summary = {"run_id": run_id, "status": "cancelled", "messages": total}
+            self._write_pipeline_summary(summary)
+            self.state.finish_run(run_id, "cancelled", summary)
+            raise
         except Exception as exc:
             self.state.add_error(run_id, None, "stream", exc, retryable=True)
             self._emit("on_error", run_id=run_id, stage="stream", error=exc, request=None)

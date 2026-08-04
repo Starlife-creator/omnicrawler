@@ -10,6 +10,7 @@ from typing import Any
 
 from ..core.config import DEFAULTS, AppConfig
 from ..core.models import CrawlRequest, FetchResult
+from ..core.utils import user_agent
 from ..extraction.extractors import decode_body
 from ..fetching.http_client import HTTPFetcher
 from ..fetching.routing import needs_browser
@@ -50,7 +51,7 @@ def inspect_url(
     raw["project"] = {"name": "site_inspection", "workspace": "work/site_inspection"}
     raw["source"] = {"kind": "static_html", "seeds": [url]}
     raw["http"].update({
-        "user_agent": "OmniCrawler-Inspector/3.0 (+contact: local-user)",
+        "user_agent": user_agent("Inspector (+contact: local-user)"),
         "timeout_seconds": timeout_seconds,
         "retries": 1,
         "max_response_bytes": 10_000_000,

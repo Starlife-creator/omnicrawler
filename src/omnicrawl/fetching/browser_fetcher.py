@@ -405,6 +405,19 @@ class BrowserFetcher:
             options.add_argument(str(argument))
         started = time.monotonic()
         driver_path = os.environ.get("OMNICRAWL_SELENIUM_DRIVER", "").strip()
+        if not driver_path:
+            from ...core.runtime_paths import application_dir, is_frozen
+
+            if is_frozen():
+                expected = application_dir() / "runtime" / "selenium" / "chromedriver.exe"
+                if not expected.is_file():
+                    # F38：标称离线自包含便携包缺内置驱动时，绝不触发 Selenium Manager 联网下载
+                    raise RuntimeError(
+                        f"未找到内置 ChromeDriver（{expected}）。请重新解压完整便携包，"
+                        "或设置 OMNICRAWL_SELENIUM_DRIVER 指向可用驱动。"
+                    )
+                # F38：冻结模式只用内置驱动，绝不落到 Service() 的联网回退
+                driver_path = str(expected)
         service = Service(executable_path=driver_path) if driver_path else Service()
         driver = webdriver.Chrome(service=service, options=options)
         try:

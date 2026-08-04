@@ -65,16 +65,22 @@ class VisualSelectorServer:
         self.converter = FieldConverter()
         self._on_selection: Callable[[SelectionEvent], None] | None = None
         self._loop: Any = None
+        self._start_error: str | None = None  # A19：启动失败原因（端口占用/缺依赖）
 
     # ── 公共 API ──────────────────────────────────────────────────────
 
-    def start(self, blocking: bool = False) -> None:
-        """启动 WebSocket 服务器。"""
+    def start(self, blocking: bool = False) -> bool:
+        """启动 WebSocket 服务器；启动失败（端口占用/缺依赖）返回 False。"""
         if self._running:
-            return
+            return True
+        self._start_error = None
         self._running = True
         if blocking:
-            asyncio.run(self._run_server())
+            try:
+                asyncio.run(self._run_server())
+            except Exception as exc:  # noqa: BLE001
+                self._start_error = str(exc)
+                self._running = False
         else:
             self._thread = threading.Thread(
                 target=lambda: asyncio.run(self._run_server()),
@@ -82,7 +88,15 @@ class VisualSelectorServer:
                 daemon=True,
             )
             self._thread.start()
-            time.sleep(0.3)  # 给服务器一点启动时间
+            # A19：等待启动结果（serve 成功或报错），最多 2s
+            for _ in range(20):
+                time.sleep(0.1)
+                if self._start_error is not None or self._server is not None:
+                    break
+        if self._start_error:
+            logger.error("可视化选择器启动失败: %s", self._start_error)
+            return False
+        return True
 
     def stop(self) -> None:
         """停止服务器。"""
@@ -121,14 +135,20 @@ class VisualSelectorServer:
         try:
             import websockets
         except ImportError:
-            logger.error("缺少 websockets 库，请执行 pip install websockets")
+            self._start_error = "缺少 websockets 库，请执行 pip install websockets"
+            logger.error("%s", self._start_error)
             return
         self._loop = asyncio.get_event_loop()
-        self._server = await websockets.serve(
-            self._handle_connection,  # type: ignore[arg-type]
-            self._host,
-            self._port,
-        )
+        try:
+            self._server = await websockets.serve(
+                self._handle_connection,  # type: ignore[arg-type]
+                self._host,
+                self._port,
+            )
+        except Exception as exc:  # noqa: BLE001 - 端口占用等启动失败需透传
+            self._start_error = str(exc)
+            logger.error("可视化选择器服务启动失败: %s", exc)
+            return
         logger.info("可视化选择器 WebSocket 服务已启动: ws://%s:%s", self._host, self._port)
         while self._running:
             await asyncio.sleep(0.5)

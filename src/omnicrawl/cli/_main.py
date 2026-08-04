@@ -553,6 +553,7 @@ def _run_benchmark(args: argparse.Namespace) -> None:
     print(f"历史: {history_path}")
     print()
 
+    failed: list[str] = []
     for profile in profiles_to_run:
         print(f"[{profile}] 运行中...", end=" ", flush=True)
         try:
@@ -567,11 +568,15 @@ def _run_benchmark(args: argparse.Namespace) -> None:
                 print(f"  ⚠ 性能退化: 吞吐量下降 {abs(change):.1f}% (阈值 {args.regression_threshold * 100:.0f}%)")
             elif check.get("reason") == "no_baseline":
                 print("  📊 首次基准记录（无历史基线）")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             print(f"失败: {exc}")
+            failed.append(profile)
 
     summary = history.all_results()
     print(f"\n共 {len(summary)} 条基准记录保存至 {history_path}")
+    if failed:
+        # E10：失败不再静默吞掉——全部 profile 失败时以非零退出码结束
+        raise SystemExit(f"基准运行失败: {', '.join(failed)}")
 
 
 if __name__ == "__main__":

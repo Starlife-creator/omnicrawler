@@ -137,6 +137,15 @@ APIFY_ACTOR_MAP: dict[str, dict[str, str]] = {
 }
 
 
+# E16：首页域名与 www.{platform}.com 不一致的平台（key 与 APIFY_ACTOR_MAP 一致）
+_PLATFORM_HOME_URLS: dict[str, str] = {
+    "x_twitter": "https://x.com/",
+    "google_maps": "https://www.google.com/maps",
+    "google_search": "https://www.google.com/",
+    "google_trends": "https://trends.google.com/",
+}
+
+
 def generate_omnicrawl_template(platform: str) -> str:
     """根据 Apify Actor 知识生成 OmniCrawler YAML 模板。"""
     info = APIFY_ACTOR_MAP.get(platform)
@@ -145,6 +154,10 @@ def generate_omnicrawl_template(platform: str) -> str:
 
     fields_str = info["typical_fields"]
     field_list = [f.strip() for f in fields_str.split(",")]
+
+    # E16：部分平台首页域名不是 www.{platform}.com（x_twitter/google_maps 等），
+    # 用白名单覆盖，避免生成错误入口
+    seed_url = _PLATFORM_HOME_URLS.get(platform, f"https://www.{platform}.com/")
 
     # 构建字段定义
     field_lines: list[str] = []
@@ -171,7 +184,7 @@ project:
 source:
   kind: browser
   seeds:
-    - https://www.{platform}.com/
+    - {seed_url}
 
 crawl:
   max_pages: 100

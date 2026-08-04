@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -91,6 +92,17 @@ def execute(
         if target_path.exists() and not force:
             raise FileExistsError(f"目标已存在；使用 --force 才会覆盖: {target_path}")
         target_path.write_text(yaml.safe_dump(rendered, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        # E13：渲染出的配置先跑校验——内部不合法（缺必填/数值越界）直接报错，
+        # 不再生成"能写盘但跑不起来"的配置；--force 仅放行写入，校验错误仍报告。
+        from ..core.config import load_config, validate_config
+        loaded = load_config(target_path)
+        errors, _warnings = validate_config(loaded)
+        if errors:
+            detail = "\n".join(f"  - {item}" for item in errors)
+            if force:
+                print(f"⚠ 渲染出的配置校验不通过（--force 已放行，请手工修复）:\n{detail}", file=sys.stderr)
+            else:
+                raise ValueError(f"渲染出的配置校验不通过:\n{detail}")
         return {"created": str(target_path), "next": f"omnicrawl validate -c {target_path}"}
     if action == "validate":
         health = validate_catalog(catalog, include_legacy=include_legacy)

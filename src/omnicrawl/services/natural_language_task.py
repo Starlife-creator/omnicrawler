@@ -20,7 +20,10 @@ from .ux_service import QuickTaskDraft, draft_quick_task
 
 _URL = re.compile(r"https?://[^\s，。；;]+", re.IGNORECASE)
 _FILE_EXT = re.compile(r"(?:^|\s)([\w\-/\\]+\.(?:pdf|docx?|xlsx?|pptx?|txt|csv|扫描件))", re.IGNORECASE)
-_FILE_PATH = re.compile(r"([A-Za-z]:[/\\][^\s，。；;]+|[~/][^\s，。；;]+)", re.IGNORECASE)
+# 本地路径分支加 (?<![\w:]) 前置断言，避免把 ftp://host/x 里的 p://host/x 误当本地路径
+_FILE_PATH = re.compile(r"((?<![\w:])[A-Za-z]:[/\\][^\s，。；;]+|[~/][^\s，。；;]+)", re.IGNORECASE)
+# 统一的引号主题词提取（PDF 与爬虫分支共用，支持弯引号/直引号/中文书名号）
+_QUOTED = re.compile(r"“([^”]+)”|\"([^\"]+)\"|「([^」]+)」|『([^』]+)』")
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,13 +89,13 @@ def compile_natural_language(request: str, *, fallback_url: str = "") -> Natural
         decisions.append("检测到文件路径，切换为 PDF 处理模式")
         task = replace(task, download_files=True, process_pdf=True, decisions=tuple(decisions))
         quoted = [
-            next(value for value in match if value)
-            for match in re.findall(r'[「「"『]([^」」"』]+)[」」"』]', request)
+            next((group for group in match.groups() if group), "")
+            for match in _QUOTED.finditer(request)
         ]
         return NaturalLanguageDraft(
             request=request.strip(),
             task=task,
-            topics=tuple(quoted),
+            topics=tuple(item for item in quoted if item),
             schedule=schedule,
             mode="pdf",
             file_paths=tuple(file_paths),
@@ -123,8 +126,8 @@ def compile_natural_language(request: str, *, fallback_url: str = "") -> Natural
         decisions.append("需求包含周期或变化监测，因此保留同址内容版本")
         task = replace(task, monitor_changes=True, decisions=tuple(decisions))
     quoted = [
-        next(value for value in match if value)
-        for match in re.findall(r'\u201c([^\u201d]+)\u201d|"([^"]+)"|\u300c([^\u300d]+)\u300d|\u300e([^\u300f]+)\u300e', request)
+        next((group for group in match.groups() if group), "")
+        for match in _QUOTED.finditer(request)
     ]
 
     if "每周" in request:
@@ -149,16 +152,20 @@ def compile_with_ai(
     *,
     available_components: str = "",
     mode: str = "simple",
-) -> NaturalLanguageDraft | None:
-    """使用 AI provider 增强自然语言解析。
+) -> NaturalLanguageDraft:
+    """使用 AI provider 增强自然语言解析（E11：与 docstring 契约对齐）。
 
-    返回 None 表示 AI 不可用或返回无效结果；此时应回退到 compile_natural_language。
+    本函数从不返回 None——provider 不可用时由调用方先行判断并回退到
+    compile_natural_language（见 home.py 的 _AIEnrichWorker）。
 
     Raises:
-        RuntimeError: AI 调用失败（网络、超时、额度等）。
-        ValueError: AI 返回结果 Schema 校验不通过。
+        RuntimeError: AI 调用失败（网络、超时、额度等）或预算超限。
+        ValueError: AI 返回结果 Schema 校验不通过或违反安全边界。
     """
+    from .ai_safety import AIBudgetExceededError
     from .ai_task_designer import (
+        _append_ai_audit,
+        ai_task_design_audit,
         build_task_design_messages,
         parse_ai_task_output,
         validate_task_config_safety,
@@ -170,31 +177,69 @@ def compile_with_ai(
     messages = build_task_design_messages(request, available_components, mode)
 
     try:
-        result = provider.generate(messages, temperature=0.0)
+        # C27：显式要求 JSON 对象输出，降低模型返回 Markdown 围栏的概率
+        result = provider.generate(messages, temperature=0.0, response_format={"type": "json_object"})
+    except AIBudgetExceededError as exc:
+        # 预算超限不是瞬时故障，不应包装成可重试的"调用失败"；仍落审计
+        _append_ai_audit({
+            "provider": str(getattr(provider, "name", "unknown")),
+            "model": str(getattr(provider, "model", "")),
+            "status": "budget_exceeded",
+            "error": str(exc)[:300],
+        })
+        raise
     except Exception as exc:
+        _append_ai_audit({
+            "provider": str(getattr(provider, "name", "unknown")),
+            "model": str(getattr(provider, "model", "")),
+            "status": "failed",
+            "error": str(exc)[:300],
+        })
         raise RuntimeError(f"AI 调用失败：{exc}") from exc
 
-    draft = parse_ai_task_output(result.text)
+    draft = parse_ai_task_output(result.text, request=request)
 
-    # 安全性校验
-    violations = validate_task_config_safety(draft.config_patch)
+    # 安全性校验（C30：按用户入口域名做包含校验，拒绝扩大域名）
+    entry_domains = [match.group(0) for match in _URL.finditer(request)]
+    violations = validate_task_config_safety(draft.config_patch, allowed_domains=entry_domains)
     if violations:
+        _append_ai_audit({
+            "provider": str(getattr(provider, "name", "unknown")),
+            "model": str(getattr(provider, "model", "")),
+            "status": "blocked",
+            "violations": violations,
+        })
         raise ValueError("AI 配置违反安全边界：\n" + "\n".join(f"  - {v}" for v in violations))
+
+    # C32：审计落盘
+    _append_ai_audit(ai_task_design_audit(result, draft))
 
     # 将 AI 输出转换为本地草稿格式
     known = draft.known_requirements
     url = str(known.get("url", ""))
-    intent = str(known.get("task_intent", "save_page"))
+    intent = str(known.get("intent") or known.get("task_intent") or "save_page")
     if not url:
         match = _URL.search(request)
         url = match.group(0) if match else ""
 
-    task = draft_quick_task(url, intent)
+    try:
+        task = draft_quick_task(url, intent)
+    except ValueError:
+        # AI 返回了非法 intent：先保留 url 降级为 save_page；
+        # url 本身非法时再用占位地址，不整体作废
+        try:
+            task = draft_quick_task(url, "save_page")
+        except ValueError:
+            task = draft_quick_task("https://example.com/", "save_page")
+
+    topics_raw = known.get("topics", [])
+    topics_list = topics_raw if isinstance(topics_raw, list) else [topics_raw]
+    topics = tuple(item for item in (str(t or "").strip() for t in topics_list) if item)
 
     return NaturalLanguageDraft(
         request=request.strip(),
         task=task,
-        topics=tuple(known.get("topics", []) if isinstance(known.get("topics"), list) else [known.get("topics", "")]),
+        topics=topics,
         schedule=str(known.get("schedule", "manual")),
         ai_enhanced=True,
         ai_assumptions=tuple(

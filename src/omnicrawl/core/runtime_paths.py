@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import sys
 from collections.abc import Iterable
 from functools import lru_cache
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def is_frozen() -> bool:
@@ -65,6 +68,20 @@ def portable_data_root() -> Path:
         # usable for the current session even when normal profile storage is denied.
         emergency = Path(os.environ.get("TEMP", str(application_dir()))) / "OmniCrawler"
         emergency.mkdir(parents=True, exist_ok=True)
+        # F29：兜底数据根落在临时目录，必须显式告知（会被系统清理、无声丢数据）
+        logger.warning(
+            "无法创建常规数据目录，工作区落入临时目录: %s；重启后数据可能被系统清理，请改用 portable/local 数据模式",
+            emergency,
+        )
+        try:
+            (emergency / "DATA-ROOT-NOTICE.txt").write_text(
+                "此目录是 OmniCrawler 的临时兜底数据根。\n"
+                "常规数据目录（%LOCALAPPDATA% 或应用目录）不可写，本目录可能被系统清理。\n"
+                "请在设置中改用 portable 或 custom 数据模式以保留配置与结果。\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
         return emergency
 
 
@@ -117,6 +134,17 @@ def _data_mode_choice(root: Path) -> dict[str, object]:
     return {}
 
 
+def browsers_root() -> Path:
+    """Bundled browsers 目录单一真源（F27：修复两处路径不一致）。"""
+    if is_frozen():
+        return application_dir() / "browsers"
+    app_dir = application_dir()
+    for candidate in (app_dir / ".runtime" / "browsers", app_dir / "runtime" / "browsers"):
+        if candidate.is_dir():
+            return candidate
+    return app_dir / ".runtime" / "browsers"
+
+
 def configure_runtime_environment() -> None:
     """Configure paths needed by optional bundled runtime components."""
     app_dir = application_dir()
@@ -127,7 +155,7 @@ def configure_runtime_environment() -> None:
         return
     cache_dir = portable_data_root() / ".omnicrawler" / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    browsers = app_dir / "browsers" if is_frozen() else runtime_dir / "browsers"
+    browsers = browsers_root()
     if browsers.is_dir():
         os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(browsers))
     paddle_models = runtime_dir / "models" / "paddlex"
@@ -140,19 +168,39 @@ def configure_runtime_environment() -> None:
         # Paddle 3.3's oneDNN/PIR path cannot execute every PPStructureV3
         # detector on Windows; the regular CPU runner is complete and stable.
         os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "False")
+    # F28：冻结模式下逐资产记录状态（缺失时 warning + runtime-status.json 供 GUI 展示）
+    runtime_status: dict[str, str] = {}
     tesseract = runtime_dir / "tesseract" / "tesseract.exe"
     tessdata = runtime_dir / "tesseract" / "tessdata"
     if tesseract.is_file():
         os.environ.setdefault("TESSERACT_CMD", str(tesseract))
         os.environ.setdefault("TESSDATA_PREFIX", str(tessdata))
+        runtime_status["tesseract"] = "ok"
+    elif is_frozen():
+        logger.warning("内置 Tesseract 缺失: %s（中文 OCR 不可用，请重解压完整包）", tesseract)
+        runtime_status["tesseract"] = "missing"
     driver = runtime_dir / "selenium" / "chromedriver.exe"
     if driver.is_file():
         os.environ.setdefault("OMNICRAWL_SELENIUM_DRIVER", str(driver))
+        runtime_status["chromedriver"] = "ok"
+    elif is_frozen():
+        logger.warning("内置 ChromeDriver 缺失: %s（浏览器自动化不可用）", driver)
+        runtime_status["chromedriver"] = "missing"
     chrome = bundled_browser_executable()
     if chrome is not None:
         os.environ.setdefault("OMNICRAWL_CHROME_BINARY", str(chrome))
+        runtime_status["chromium"] = "ok"
+    elif is_frozen():
+        logger.warning("内置 Chromium 缺失（浏览器采集不可用）")
+        runtime_status["chromium"] = "missing"
     if is_frozen():
         os.environ.setdefault("OMNICRAWL_PORTABLE_ROOT", str(portable_data_root()))
+        try:
+            status_path = portable_data_root() / ".omnicrawler" / "runtime-status.json"
+            status_path.parent.mkdir(parents=True, exist_ok=True)
+            status_path.write_text(json.dumps(runtime_status, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError:
+            pass
 
 
 def bundled_browser_available() -> bool:
@@ -162,8 +210,7 @@ def bundled_browser_available() -> bool:
 
 def bundled_browser_executable() -> Path | None:
     """Return the bundled Chromium executable, if present."""
-    app_dir = application_dir()
-    browsers = app_dir / "browsers" if is_frozen() else app_dir / ".runtime" / "browsers"
+    browsers = browsers_root()
     for pattern in ("chromium-*/chrome-win/chrome.exe", "chromium-*/chrome-win64/chrome.exe"):
         match = next(browsers.glob(pattern), None) if browsers.is_dir() else None
         if match is not None:
@@ -183,18 +230,26 @@ def bundled_cli_path() -> Path | None:
     return None
 
 
-def resolve_cli_command(configured: str = "omnicrawl") -> str:
-    """Resolve the CLI, preferring the companion executable in frozen builds."""
+def resolve_cli_candidates(configured: str = "omnicrawl") -> tuple[str, list[str]]:
+    """返回 (选中命令, 已尝试候选路径列表)——供失败消息展示（F54）。"""
     companion = bundled_cli_path()
     if companion is not None:
-        return str(companion)
+        return str(companion), [str(companion)]
 
     configured_path = Path(configured).expanduser()
     if configured_path.is_file():
-        return str(configured_path.resolve())
+        return str(configured_path.resolve()), [str(configured_path.resolve())]
 
     discovered = shutil.which(configured)
-    return discovered or configured
+    candidates = [configured]
+    if discovered:
+        return discovered, [discovered, configured]
+    return configured, candidates
+
+
+def resolve_cli_command(configured: str = "omnicrawl") -> str:
+    """Resolve the CLI, preferring the companion executable in frozen builds."""
+    return resolve_cli_candidates(configured)[0]
 
 
 def document_candidates(names: Iterable[str]) -> list[Path]:

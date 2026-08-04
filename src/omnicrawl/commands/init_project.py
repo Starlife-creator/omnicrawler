@@ -10,7 +10,9 @@ import yaml
 
 
 def execute(template: str, output: str, name: str) -> dict[str, Any]:
-    root = Path(__file__).resolve().parents[2]
+    # E4：parents[2] 指向 src/，导致 examples 目录找不到；仓库根才是 parents[3]。
+    # 打包环境无 examples 时自动回退内置模板（_find_template 返回 None 后走 bundled）。
+    root = Path(__file__).resolve().parents[3]
     bundled = Path(__file__).resolve().parent.parent / "templates"
     # 支持子目录模板，如 generic/single-page、industries/news_articles
     source = _find_template(bundled, template)

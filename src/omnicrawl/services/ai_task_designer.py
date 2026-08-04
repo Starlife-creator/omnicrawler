@@ -18,11 +18,17 @@
 from __future__ import annotations
 
 import json
+import re
+import threading
 from dataclasses import asdict, dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 from .ai_providers import AIResult
 from .ai_safety import ai_audit_record
+
+# 审计 JSONL 写入互斥（_append_ai_audit 并发安全）
+_AUDIT_LOCK = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # 受约束的 AI 输出 Schema
@@ -203,16 +209,67 @@ class ConfigDiff:
 # ---------------------------------------------------------------------------
 
 
-def parse_ai_task_output(raw_json: str) -> TaskDesignDraft:
-    """解析并校验 AI 输出的 JSON。
+def _extract_json_object(text: str) -> dict[str, Any]:
+    """剥离 ```json 围栏后解析 JSON 对象；失败再尝试截取首个 {…} 对象。"""
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```(?:json)?\s*", "", stripped, flags=re.IGNORECASE)
+        stripped = re.sub(r"\s*```$", "", stripped)
+    try:
+        value = json.loads(stripped)
+        if not isinstance(value, dict):
+            raise ValueError("AI 返回的 JSON 顶层必须是对象")
+        return value
+    except json.JSONDecodeError:
+        start = stripped.find("{")
+        end = stripped.rfind("}")
+        if start < 0 or end <= start:
+            raise ValueError("AI 返回了无效的 JSON，且未找到可解析的对象")
+        try:
+            value = json.loads(stripped[start:end + 1])
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"AI 返回了无效的 JSON：{exc}") from exc
+        if not isinstance(value, dict):
+            raise ValueError("AI 返回的 JSON 顶层必须是对象")
+        return value
+
+
+_LIST_ITEM_REQUIRED: dict[str, set[str]] = {
+    "assumptions": {"field", "value", "confidence"},
+    "unresolved_questions": {"question"},
+    "explanations": {"field", "why"},
+    "risks": {"risk", "severity"},
+    # recommended_actions 是字符串列表，不要求元素为对象
+}
+
+
+def _validate_list_elements(value: dict[str, Any]) -> None:
+    """逐元素校验 AI 输出的列表字段：元素必须是对象且含必填子键。"""
+    for field_name, required_subkeys in _LIST_ITEM_REQUIRED.items():
+        items = value.get(field_name, [])
+        if not isinstance(items, list):
+            continue  # 类型校验已在上层处理
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                raise ValueError(f"AI 输出字段 {field_name}[{index}] 必须是对象")
+            missing = required_subkeys - set(item)
+            if missing:
+                raise ValueError(
+                    f"AI 输出字段 {field_name}[{index}] 缺少必填子键: {', '.join(sorted(missing))}"
+                )
+
+
+def parse_ai_task_output(raw_json: str, request: str = "") -> TaskDesignDraft:
+    """解析并校验 AI 输出的 JSON（支持 Markdown 围栏）。
+
+    Args:
+        raw_json: 模型返回的原始文本。
+        request: 原始用户需求，用于回填审计字段（模型输出本身不携带）。
 
     Raises:
         ValueError: JSON 解析失败或 Schema 校验不通过。
     """
-    try:
-        value = json.loads(raw_json)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"AI 返回了无效的 JSON：{exc}") from exc
+    value = _extract_json_object(raw_json)
 
     if not isinstance(value, dict):
         raise ValueError("AI 输出必须是 JSON 对象")
@@ -224,6 +281,11 @@ def parse_ai_task_output(raw_json: str) -> TaskDesignDraft:
     if missing:
         raise ValueError(f"AI 输出缺少必要字段：{', '.join(missing)}")
 
+    # 拒绝 Schema 未声明字段（C35：防止注入额外字段穿透；user_request 是历史兼容字段）
+    unknown = set(value) - set(AI_TASK_OUTPUT_SCHEMA) - {"user_request"}
+    if unknown:
+        raise ValueError(f"AI 输出包含 Schema 未声明字段: {', '.join(sorted(unknown))}")
+
     # 类型校验
     for field_name, expected_type in AI_TASK_OUTPUT_SCHEMA.items():
         if field_name not in value:
@@ -231,8 +293,11 @@ def parse_ai_task_output(raw_json: str) -> TaskDesignDraft:
         if not isinstance(value[field_name], expected_type):
             raise ValueError(f"AI 输出字段 {field_name} 类型错误：期望 {expected_type.__name__}")
 
+    # 逐元素校验（C28：拒绝非对象元素与缺子键）
+    _validate_list_elements(value)
+
     return TaskDesignDraft(
-        request=value.get("user_request", ""),
+        request=request,
         known_requirements=value.get("known_requirements", {}),
         assumptions=value.get("assumptions", []),
         unresolved_questions=value.get("unresolved_questions", []),
@@ -367,8 +432,28 @@ def build_task_design_messages(user_request: str, available_components: str = ""
     ]
 
 
-def validate_task_config_safety(config_patch: dict[str, Any]) -> list[str]:
+def _hostname(value: Any) -> str:
+    """提取 URL 的主机名（小写）；非 URL 返回空串。"""
+    try:
+        return (urlsplit(str(value)).hostname or "").casefold().rstrip(".")
+    except ValueError:
+        return ""
+
+
+def _domain_within(domain: str, allowed: set[str]) -> bool:
+    """判断 domain 是否在允许集合内（含子域名）。"""
+    domain = str(domain).casefold().strip().lstrip(".")
+    return any(domain == item or domain.endswith("." + item) for item in allowed)
+
+
+def validate_task_config_safety(
+    config_patch: dict[str, Any], allowed_domains: list[str] | None = None
+) -> list[str]:
     """校验 AI 生成的配置是否违反安全边界。
+
+    Args:
+        config_patch: AI 建议的配置修改。
+        allowed_domains: 用户原始入口域名列表（seed_urls 解析所得）；None 表示跳过域名包含校验。
 
     Returns:
         安全违规列表；空列表表示通过。
@@ -379,16 +464,40 @@ def validate_task_config_safety(config_patch: dict[str, Any]) -> list[str]:
     if config_patch.get("disable_security", False):
         violations.append("AI 试图关闭网络安全策略——已阻止")
 
-    # 检查是否包含明文密钥
+    # 递归检查是否包含明文密钥（C30：嵌套 dict/list 也不放过）
     suspicious_keys = {"api_key", "password", "secret", "token", "credential"}
-    for key, value in config_patch.items():
-        if key.casefold() in suspicious_keys or any(sk in key.casefold() for sk in suspicious_keys):
-            if isinstance(value, str) and value and not value.startswith("secret://"):
-                violations.append(f"AI 输出了明文敏感值 {key}——已阻止")
 
-    # 检查是否试图扩大域名
-    if config_patch.get("allowed_domains") == ["*"]:
-        violations.append("AI 试图将所有域名加入白名单——已阻止")
+    def walk(value: Any, path: str) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                lowered = str(key).casefold()
+                if lowered in suspicious_keys or any(sk in lowered for sk in suspicious_keys):
+                    if isinstance(item, str) and item and not item.startswith("secret://"):
+                        violations.append(f"AI 输出了明文敏感值 {path}.{key}——已阻止")
+                walk(item, f"{path}.{key}")
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                walk(item, f"{path}[{index}]")
+
+    walk(config_patch, "config_patch")
+
+    # 域名包含校验（C30：不允许扩大用户原始入口域名）
+    # “*” 白名单无条件拦截（即使未提供原始域名集合）
+    for domain in config_patch.get("allowed_domains", []):
+        if str(domain).strip() == "*":
+            violations.append("AI 试图将所有域名加入白名单——已阻止")
+    if allowed_domains:
+        original = {host for url in allowed_domains if (host := _hostname(url))}
+        if original:
+            for url in config_patch.get("seed_urls", []):
+                host = _hostname(url)
+                if host and not _domain_within(host, original):
+                    violations.append(f"AI 试图将入口域名扩大到 {host}——已阻止")
+            for domain in config_patch.get("allowed_domains", []):
+                if str(domain).strip() == "*":
+                    continue  # 已在上面拦截
+                if not _domain_within(str(domain), original):
+                    violations.append(f"AI 试图将域名 {domain} 加入白名单——已阻止")
 
     return violations
 
@@ -396,10 +505,22 @@ def validate_task_config_safety(config_patch: dict[str, Any]) -> list[str]:
 def ai_task_design_audit(
     result: AIResult, draft: TaskDesignDraft, prompt_version: str = "2.1.0"
 ) -> dict[str, Any]:
-    """记录 AI 调用的完整审计信息。"""
-    return ai_audit_record(
-        provider=result.provider,
-        model=result.model,
+    """记录 AI 调用的完整审计信息（C31：usage 缺失时明确标注未知费用）。"""
+    usage = getattr(result, "usage", None)
+    usage = usage if isinstance(usage, dict) else {}
+    try:
+        total_tokens = int(usage.get("total_tokens", 0) or 0)
+    except (TypeError, ValueError):
+        total_tokens = 0
+    if total_tokens > 0:
+        cost = total_tokens * 0.000002
+        cost_note = f"按 0.000002/token 估算（{total_tokens} tokens）"
+    else:
+        cost = 0.0
+        cost_note = "未知费用（provider 未返回 usage）"
+    record = ai_audit_record(
+        provider=str(getattr(result, "provider", "unknown")),
+        model=str(getattr(result, "model", "")),
         prompt_version=prompt_version,
         parameters={
             "request": draft.request[:500],
@@ -408,5 +529,26 @@ def ai_task_design_audit(
             "risks_count": len(draft.risks),
         },
         response=json.dumps(asdict(draft), ensure_ascii=False),
-        cost=result.usage.get("total_tokens", 0) * 0.000002,  # 估算成本
+        cost=cost,
     )
+    record["cost_note"] = cost_note
+    return record
+
+
+def _append_ai_audit(record: dict[str, Any]) -> None:
+    """追加一条 AI 审计记录到 JSONL（C32：成功/失败/拦截三路落盘）。
+
+    审计失败不影响主流程。
+    """
+    import time
+
+    from ..core.runtime_paths import portable_data_root
+
+    record = {**record, "ts": time.time()}
+    try:
+        path = portable_data_root() / ".omnicrawl" / "ai-logs" / "ai-audit.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with _AUDIT_LOCK, path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError:
+        pass

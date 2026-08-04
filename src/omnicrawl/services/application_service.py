@@ -81,8 +81,12 @@ class ApplicationService:
         other = ApplicationService(other_config)._plan()
         return {"before_hash": before.plan_hash, "after_hash": other.plan_hash, "changes": diff_plans(before, other)}
 
-    def run(self, *, resume: bool = False, retry_failed: bool = False, require_sample_match: bool = False) -> dict[str, Any]:
+    def run(self, *, resume: bool = False, retry_failed: bool = False, require_sample_match: bool = False,
+            max_pages: int | None = None, callback: Callable[[str, dict[str, Any]], None] | None = None) -> dict[str, Any]:
+        # E9：max_pages 与 callback 透传 Pipeline.run，保证任意调用方（CLI/GUI）行为一致
         config = self._ensure_config()
+        if max_pages is not None:
+            config.raw["crawl"]["max_pages"] = max_pages
         plan = compile_task_plan(TaskIR.from_config(config.raw))
         self._require_runnable(plan)
         if require_sample_match:
@@ -91,7 +95,7 @@ class ApplicationService:
                 raise ValueError("正式运行计划与最近一次试跑计划不一致，请重新试跑或明确取消绑定检查")
         self._emit("stage", "run_started", {"plan_hash": plan.plan_hash})
         with Pipeline(config) as pipeline:
-            result = pipeline.run(resume=resume, retry_failed=retry_failed)
+            result = pipeline.run(resume=resume, retry_failed=retry_failed, max_pages=max_pages, callback=callback)
         self._write_binding(config, formal_plan_hash=plan.plan_hash)
         self._emit("stage", "run_finished", {"plan_hash": plan.plan_hash, "status": result.get("status")})
         return {**result, "plan_hash": plan.plan_hash}
