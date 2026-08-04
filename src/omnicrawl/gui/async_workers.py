@@ -199,10 +199,9 @@ class CsvIndexWorker(QThread):
     finished_indexing = pyqtSignal(list, int, float)  # headers, total_rows, file_size
     failed = pyqtSignal(str)
 
-    def __init__(self, path: str | Path, *, max_rows: int = 100_000, parent=None) -> None:
+    def __init__(self, path: str | Path, parent=None) -> None:
         super().__init__(parent)
         self._path = Path(path)
-        self._max_rows = max_rows
 
     def run(self) -> None:
         try:
@@ -214,13 +213,12 @@ class CsvIndexWorker(QThread):
                     self.finished_indexing.emit([], 0, float(file_size))
                     return
                 headers = [str(h).strip() for h in first_row]
+                # B9：完整计数（不再截断前 100000 行）；内存占用 O(1)
                 row_count = 0
                 for _ in reader:
                     if self.isInterruptionRequested():
                         return
                     row_count += 1
-                    if row_count >= self._max_rows:
-                        break
             self.finished_indexing.emit(headers, row_count, float(file_size))
         except (OSError, UnicodeError, csv.Error) as exc:
             self.failed.emit(str(exc))

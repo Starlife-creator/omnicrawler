@@ -95,9 +95,12 @@ def write_query_csv(
 
 
 def _csv_to_sheet(workbook: Workbook, path: Path, title: str) -> None:
+    from openpyxl.utils import get_column_letter
+
     sheet = workbook.create_sheet(title=title)
     sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = "A1:ZZ1"
+    column_count = 0
+    row_count = 0
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.reader(handle)
         for row_index, row in enumerate(reader, start=1):
@@ -110,8 +113,22 @@ def _csv_to_sheet(workbook: Workbook, path: Path, title: str) -> None:
                     cell.alignment = Alignment(horizontal="center", vertical="center")
                     cells.append(cell)
                 sheet.append(cells)
+                column_count = max(column_count, len(row))
             else:
                 sheet.append([safe_cell(value) for value in row])
+                if len(row) > column_count:
+                    column_count = len(row)
+            row_count += 1
+            # D48：超过 Excel 行上限（1048576）时停止写入，完整数据保留在 CSV
+            if row_count >= 1_048_576:
+                sheet.append([f"[已截断：超过 Excel 1048576 行上限，完整数据见 {path.name}]"])
+                break
+    # D48：auto_filter.ref 按实际列数计算，字段超 115 时不再筛选错位
+    if column_count:
+        last_column = get_column_letter(column_count)
+        sheet.auto_filter.ref = f"A1:{last_column}{max(row_count, 1)}"
+    else:
+        sheet.auto_filter.ref = "A1"
 
 
 def export_stage(config: ProjectConfig, db: Database) -> dict[str, Any]:

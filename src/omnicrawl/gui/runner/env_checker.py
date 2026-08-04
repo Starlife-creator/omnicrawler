@@ -9,6 +9,7 @@ import logging
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from ...core.runtime_paths import resolve_cli_command
@@ -39,27 +40,54 @@ class EnvCheckResult:
 def check_omnicrawl(command_path: str = "omnicrawl") -> tuple[bool, str]:
     """检查 omnicrawl 命令是否可用。
 
+    F30：冻结模式内置 CLI 存在即视为"已就绪"强信号——探测只用于取版本号，
+    超时/冷启动慢（杀软首扫 1GB+ _internal）不判不可用。
+    F31：区分 TimeoutExpired / FileNotFoundError / OSError，记录具体原因。
+    F32：Windows 子进程加 CREATE_NO_WINDOW，避免每次探测闪黑控制台窗。
+
     Args:
         command_path: omnicrawl 命令路径。
 
     Returns:
         (是否可用, 版本字符串) 元组。
     """
+    from ...core.runtime_paths import bundled_cli_path, is_frozen
+
+    resolved_command = resolve_cli_command(command_path)
+    bundled = bundled_cli_path()
+    # F30/F36：冻结内置 CLI 存在即视为就绪；bundled 存在时探测只取版本号，
+    # 用短超时避免在主线程阻塞（冷启动慢不判不可用，由强信号兜底）
+    timeout = 10 if bundled is not None else (60 if is_frozen() else 10)
+    creationflags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
     try:
-        resolved_command = resolve_cli_command(command_path)
         result = subprocess.run(
             [resolved_command, "--version"],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=timeout,
+            creationflags=creationflags,
         )
         version_output = result.stdout.strip() or result.stderr.strip()
         if result.returncode == 0 and version_output:
             return True, version_output
+        if bundled is not None:
+            # 内置引擎在但探测异常（慢启动/被杀软拦截）→ 仍按就绪处理
+            logger.warning(
+                "内置 CLI 探测返回非零（rc=%s），仍按已就绪处理; 路径: %s",
+                result.returncode, resolved_command,
+            )
+            return True, version_output or "（内置引擎版本探测失败）"
         return False, ""
-    except FileNotFoundError:
+    except subprocess.TimeoutExpired:
+        logger.warning("omnicrawl 探测超时（%ss），路径: %s", timeout, resolved_command)
+        if bundled is not None:
+            return True, "（内置引擎启动较慢）"
         return False, ""
-    except Exception:
+    except FileNotFoundError as exc:
+        logger.warning("omnicrawl 命令不存在: %s（%s）", resolved_command, exc)
+        return False, ""
+    except OSError as exc:
+        logger.warning("omnicrawl 探测失败（%s）: %s", type(exc).__name__, exc)
         return False, ""
 
 
@@ -213,12 +241,14 @@ def try_auto_install(project_root: Path | None = None) -> tuple[bool, str]:
         return False, f"目录 {root} 中未找到 setup.py 或 pyproject.toml"
 
     try:
+        # F34：始终用当前解释器 -m pip，避免 PATH 上的 pip 指向错误环境
         result = subprocess.run(
-            ["pip", "install", "-e", str(root)],
+            [sys.executable, "-m", "pip", "install", "-e", str(root)],
             capture_output=True,
             text=True,
             timeout=120,
             cwd=str(root),
+            creationflags=0x08000000 if sys.platform == "win32" else 0,
         )
         if result.returncode == 0:
             # 验证安装

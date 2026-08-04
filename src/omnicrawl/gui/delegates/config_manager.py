@@ -121,7 +121,8 @@ class ConfigManager(_BaseDelegate):
 
     def clear_recent(self) -> None:
         mw = self._mw
-        mw._settings._settings.remove("recent/files")
+        # A21：走公开接口，不再访问 _settings 私有成员
+        mw._settings.clear_recent()
         self.refresh_recent_menu()
 
     def export_config_package(self) -> None:

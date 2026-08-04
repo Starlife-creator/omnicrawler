@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import Any
 
 try:
@@ -15,37 +16,37 @@ MAX_TEXT_LENGTH = 2_000_000
 NESTED_QUANTIFIER = re.compile(r"\([^)]*[+*][^)]*\)\s*(?:[+*]|\{\d*,?\d*\})")
 
 
-def validate_pattern(pattern: str) -> None:
+@lru_cache(maxsize=512)
+def _compile_pattern(pattern: str) -> Any:
+    """D43：缓存校验+编译结果（retrieval 每页每 pattern 调用，避免数千万次重复编译）。"""
     if len(pattern) > MAX_PATTERN_LENGTH:
         raise ValueError(f"正则长度超过 {MAX_PATTERN_LENGTH} 字符")
     if NESTED_QUANTIFIER.search(pattern):
         raise ValueError("正则包含高风险嵌套量词")
-    (timeout_regex or re).compile(pattern, flags=re.I)
+    return (timeout_regex or re).compile(pattern, flags=re.I)
+
+
+def validate_pattern(pattern: str) -> None:
+    _compile_pattern(pattern)
 
 
 def search(pattern: str, text: str, timeout_seconds: float = 1.0) -> Any:
-    validate_pattern(pattern)
+    compiled = _compile_pattern(pattern)
     bounded = text[:MAX_TEXT_LENGTH]
     if timeout_regex is not None:
         try:
-            return timeout_regex.search(
-                pattern, bounded, flags=timeout_regex.I, timeout=timeout_seconds
-            )
+            return compiled.search(bounded, timeout=timeout_seconds)
         except TimeoutError as exc:
             raise ValueError("正则匹配超时") from exc
-    return re.search(pattern, bounded, flags=re.I)
+    return compiled.search(bounded)
 
 
 def findall_count(pattern: str, text: str, timeout_seconds: float = 1.0) -> int:
-    validate_pattern(pattern)
+    compiled = _compile_pattern(pattern)
     bounded = text[:MAX_TEXT_LENGTH]
     if timeout_regex is not None:
         try:
-            return len(
-                timeout_regex.findall(
-                    pattern, bounded, flags=timeout_regex.I, timeout=timeout_seconds
-                )
-            )
+            return len(compiled.findall(bounded, timeout=timeout_seconds))
         except TimeoutError as exc:
             raise ValueError("正则匹配超时") from exc
-    return len(re.findall(pattern, bounded, flags=re.I))
+    return len(compiled.findall(bounded))

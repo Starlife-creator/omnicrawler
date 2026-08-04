@@ -71,8 +71,9 @@ class HeadlessRunner:
         process: subprocess.Popen | None = None
         try:
             env = dict(os.environ)
-            env["PYTHONIOCODING"] = "utf-8"
+            env["PYTHONIOENCODING"] = "utf-8"  # B10/F37：原 PYTHONIOCODING 拼写错误，从未生效
             env["PYTHONUTF8"] = "1"
+            creationflags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
             process = subprocess.Popen(
                 [self._omnicrawl_path, "run", "-c", str(config_path), "--log-level", log_level],
@@ -83,6 +84,7 @@ class HeadlessRunner:
                 errors="replace",
                 env=env,
                 cwd=str(config_path.parent),
+                creationflags=creationflags,
             )
 
             # 实时输出日志

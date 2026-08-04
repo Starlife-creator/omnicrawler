@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ...core.utils import user_agent
 from ...security.controlled_http import scoped_json_request
 from ..i18n import _
 
@@ -74,7 +75,7 @@ class AITestWorker(QThread):
                 body=payload,
                 timeout_seconds=self._timeout,
                 max_response_bytes=1_048_576,
-        user_agent="OmniCrawler-GUI/2.7 AI connection test",
+        user_agent=user_agent("AI connection test"),
             )
             model_name = data.get("model", self._model)
             if not self.isInterruptionRequested():
@@ -107,7 +108,7 @@ class AIListModelsWorker(QThread):
                 headers=headers,
                 timeout_seconds=self._timeout,
                 max_response_bytes=1_048_576,
-        user_agent="OmniCrawler-GUI/2.7 model discovery",
+        user_agent=user_agent("model discovery"),
             )
             models = [str(item.get("id", "")) for item in data.get("data", []) if isinstance(item, dict)]
             if not self.isInterruptionRequested():
@@ -167,6 +168,60 @@ class AIServiceCenterDialog(QDialog):
         buttons.accepted.connect(self._save_and_accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+        # 回填已保存配置（关键：此前遗漏了 api_key 等字段的回填，
+        # 导致保存后重开对话框显示为空，用户误以为密钥未持久化）
+        self._populate_from_config()
+
+    def _populate_from_config(self) -> None:
+        """将已保存的 ai_config 回填到各输入控件。
+
+        修复：旧实现只在切换 Provider 类型时填入默认值，从未从 ai_config
+        回填真实保存值，导致重开对话框后 api_key / base_url / model 等字段
+        显示为空（尽管 .env 中已正确保存）。
+        """
+        provider = self._ai_config.get("providers", {}).get("default", {})
+
+        # 先设 Provider 类型，触发 _on_provider_changed 调整启用状态与默认值
+        provider_type = provider.get("type", "disabled")
+        idx = self._provider_type.findData(provider_type)
+        self._provider_type.setCurrentIndex(idx if idx >= 0 else 0)
+
+        # 用真实保存值覆盖默认填充（顺序必须在此之后，确保保存值胜出）
+        self._base_url.setText(provider.get("base_url", ""))
+        self._model_name.setText(provider.get("model", ""))
+        self._api_key.setText(provider.get("api_key", ""))
+        if provider.get("timeout_seconds"):
+            self._timeout.setValue(int(provider["timeout_seconds"]))
+
+        # 安全与隐私 / 预算
+        privacy = self._ai_config.get("privacy", {})
+        self._allow_page_text.setChecked(bool(privacy.get("allow_page_text", False)))
+        self._allow_pdf_content.setChecked(bool(privacy.get("allow_pdf_content", False)))
+        self._allow_screenshots.setChecked(bool(privacy.get("allow_screenshots", False)))
+        self._allow_cookies.setChecked(bool(privacy.get("allow_cookies", False)))
+        budget = self._ai_config.get("budget", {})
+        if budget.get("max_cost") is not None:
+            self._cost_limit.setValue(int(budget["max_cost"]))
+        self._log_ai_calls.setChecked(bool(budget.get("log_calls", True)))
+
+        # 能力路由
+        routing = self._ai_config.get("routing", {})
+        self._route_field_design.setEditText(str(routing.get("field_designer", "")))
+        self._route_content_analysis.setEditText(str(routing.get("content_analysis", "")))
+        self._route_task_planning.setEditText(str(routing.get("task_planning", "")))
+        self._route_pdf_ocr.setEditText(str(routing.get("pdf_ocr", "")))
+
+        # 智能提取
+        extraction = self._ai_config.get("extraction", {})
+        if extraction.get("prompt_template"):
+            self._extraction_prompt.setPlainText(str(extraction["prompt_template"]))
+        if extraction.get("chunk_strategy"):
+            ci = self._chunk_strategy.findData(extraction["chunk_strategy"])
+            if ci >= 0:
+                self._chunk_strategy.setCurrentIndex(ci)
+        if extraction.get("max_tokens_per_chunk"):
+            self._max_tokens_per_chunk_spin.setValue(int(extraction["max_tokens_per_chunk"]))
 
     def _build_provider_tab(self) -> QWidget:
         widget = QWidget()

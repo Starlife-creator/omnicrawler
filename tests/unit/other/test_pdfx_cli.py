@@ -170,7 +170,10 @@ def test_apply_review_csv_accept_reject_missing_skipped_and_field_updates(tmp_pa
     db = _ReviewDatabase({"accepted", "rejected"})
     summary = apply_review(config, db, path)
     assert summary == {"rows": 5, "accepted": 1, "rejected": 1, "skipped": 2, "missing": 1}
-    assert any("field_values" in sql and values[3] == 2 for sql, values in db.statements)
+    # 参数顺序为 (record_id, field_name, raw, normalized, unit, page_no, evidence)：
+    # page_no（2）应在第 6 位，record_id 在第 1 位（blocking 回归）
+    assert any("field_values" in sql and values[0] == "accepted" and values[5] == 2
+               for sql, values in db.statements)
     assert any("human_rejected" in sql for sql, _values in db.statements)
     assert any("human_accepted" in sql for sql, _values in db.statements)
 

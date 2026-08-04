@@ -70,6 +70,7 @@ class CsvStreamModel(QAbstractTableModel):
         self._avg_line_size: int = 200  # 估计平均行长
         self._line_offsets: list[int] = []
         self._index_worker: CsvIndexWorker | None = None
+        self.last_error: str | None = None  # A17：最近一次翻页/加载错误（视图层展示）
 
     def load_file_async(self, filepath: Path) -> bool:
         """异步加载 CSV 文件。
@@ -110,7 +111,7 @@ class CsvStreamModel(QAbstractTableModel):
         self._headers = headers
         self._total_rows = total_rows
         self._file_size = int(file_size)
-        self._line_offsets = list(range(total_rows))
+        self._line_offsets = list(range(0, total_rows, ROWS_PER_PAGE)) or [0]
         self._load_page(0)
         self.endResetModel()
         self.indexing_finished.emit(total_rows)
@@ -145,22 +146,18 @@ class CsvStreamModel(QAbstractTableModel):
                     return False
                 self._headers = [str(h).strip() for h in first_row]
 
-                # csv.reader 使用文本缓冲后不允许可靠 tell()。保存逻辑行编号，
-                # 翻页时重新流式跳过；这样也正确处理带引号的多行字段。
+                # csv.reader 使用文本缓冲后不允许可靠 tell()。只记录每页起始行号
+                # （B9：不再截断——_total_rows 完整计数，_line_offsets 内存 O(页数)）。
                 row_count = 0
                 for _ in reader:
-                    self._line_offsets.append(row_count)
+                    if row_count % ROWS_PER_PAGE == 0:
+                        self._line_offsets.append(row_count)
                     row_count += 1
-                    if row_count >= 100000:  # 防止内存爆
-                        self._total_rows = row_count
-                        break
-                else:
-                    self._total_rows = row_count
+                self._total_rows = row_count
 
-            if not self._line_offsets and self._total_rows == 0:
+            if self._total_rows == 0:
                 self._total_rows = 0
-            elif self._total_rows == 0:
-                self._total_rows = len(self._line_offsets)
+            self._line_offsets = self._line_offsets or [0]
 
             self._load_page(0)
             self.endResetModel()
@@ -175,7 +172,7 @@ class CsvStreamModel(QAbstractTableModel):
             return
 
         start = page * ROWS_PER_PAGE
-        if start >= len(self._line_offsets) and len(self._line_offsets) > 0:
+        if self._total_rows > 0 and start >= self._total_rows:
             self._rows = []
             return
 
@@ -196,6 +193,7 @@ class CsvStreamModel(QAbstractTableModel):
                         break
         except Exception as exc:
             _logger.warning("Failed to load page %d: %s", page, exc)
+            self.last_error = str(exc)
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: B008
         return len(self._rows)
@@ -241,6 +239,7 @@ class CsvStreamModel(QAbstractTableModel):
 
     def go_to_page(self, page: int) -> None:
         """跳转到指定页码。"""
+        self.last_error = None
         total = self.total_pages
         if total == 0:
             return
@@ -669,12 +668,20 @@ class ResultTable(QWidget):
         self._next_btn.setEnabled(self._current_page < total_pages - 1)
         self._last_btn.setEnabled(self._current_page < total_pages - 1)
 
+    def _warn_if_page_error(self) -> None:
+        """A17：翻页加载失败时给用户可见提示（不再静默）。"""
+        if self._model.last_error:
+            from ..widgets.toast import ToastManager
+            ToastManager.instance().warning(_("翻页失败: {0}").format(self._model.last_error))
+            self._model.last_error = None
+
     def _go_first(self) -> None:
         if self._current_page > 0:
             self._current_page = 0
             self._model.go_to_page(self._current_page)
             self._update_pagination()
             self._table.resizeColumnsToContents()
+            self._warn_if_page_error()
 
     def _go_prev(self) -> None:
         if self._current_page > 0:
@@ -682,6 +689,7 @@ class ResultTable(QWidget):
             self._model.go_to_page(self._current_page)
             self._update_pagination()
             self._table.resizeColumnsToContents()
+            self._warn_if_page_error()
 
     def _go_next(self) -> None:
         if self._current_page < self._model.total_pages - 1:
@@ -689,6 +697,7 @@ class ResultTable(QWidget):
             self._model.go_to_page(self._current_page)
             self._update_pagination()
             self._table.resizeColumnsToContents()
+            self._warn_if_page_error()
 
     def _go_last(self) -> None:
         last = max(0, self._model.total_pages - 1)
@@ -697,6 +706,7 @@ class ResultTable(QWidget):
             self._model.go_to_page(self._current_page)
             self._update_pagination()
             self._table.resizeColumnsToContents()
+            self._warn_if_page_error()
 
     def _go_to_page(self, page: int) -> None:
         """页码输入跳转。"""

@@ -11,6 +11,8 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import uuid4
 
+from ...core.utils import user_agent as _user_agent
+
 
 @dataclass
 class FieldDef:
@@ -121,7 +123,8 @@ class CrawlConfig:
     ai_max_tokens_per_chunk: int = 4000
 
     # ---- HTTP 选项 ----
-    user_agent: str = "OmniCrawler-GUI/1.1"
+    # A16：版本号不再硬编码，随包版本自动更新
+    user_agent: str = field(default_factory=lambda: _user_agent("GUI"))
     respect_robots: bool = True
 
     # Raw template/config values that the five-step GUI does not edit. They are deep-merged

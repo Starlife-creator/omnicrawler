@@ -77,18 +77,27 @@ def apply_review(config: ProjectConfig, db: Database, file_path: str | Path) -> 
                     page_no = None
                 conn.execute(
                     """
-                    UPDATE field_values SET raw_value=?, normalized_value=?, unit=?, page_no=?,
-                        evidence=?, extraction_method='human_review', confidence=1.0,
+                    INSERT INTO field_values
+                        (record_id, field_name, raw_value, normalized_value, unit, page_no,
+                         evidence, extraction_method, confidence, validation_status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'human_review', 1.0, 'human_reviewed')
+                    ON CONFLICT(record_id, field_name) DO UPDATE SET
+                        raw_value=excluded.raw_value,
+                        normalized_value=excluded.normalized_value,
+                        unit=excluded.unit,
+                        page_no=excluded.page_no,
+                        evidence=excluded.evidence,
+                        extraction_method='human_review',
+                        confidence=1.0,
                         validation_status='human_reviewed'
-                    WHERE record_id=? AND field_name=?
                     """,
                     (
+                        record_id, spec.name,
                         None if raw is None else str(raw).lstrip("'"),
                         None if normalized is None else str(normalized).lstrip("'"),
                         None if unit is None else str(unit).lstrip("'"),
                         page_no,
                         None if evidence is None else str(evidence).lstrip("'"),
-                        record_id, spec.name,
                     ),
                 )
             conn.execute(

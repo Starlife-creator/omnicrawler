@@ -17,7 +17,15 @@ class AppSettings:
     _instance: Optional["AppSettings"] = None
 
     def __init__(self) -> None:
-        self._settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
+        from ..core.runtime_paths import is_frozen, portable_data_root
+
+        if is_frozen():
+            # F53：便携版设置落在程序数据目录的 INI，脱离 HKCU 注册表，
+            # 同机解压多份便携包互不串扰配置/历史/结果。
+            ini_path = portable_data_root() / "settings.ini"
+            self._settings = QSettings(str(ini_path), QSettings.Format.IniFormat)
+        else:
+            self._settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
         # Sandboxed Windows sessions can deny registry writes.  Keep settings
         # functional for the active session rather than silently ignoring user
         # actions such as theme and accessibility changes.
@@ -36,6 +44,11 @@ class AppSettings:
         except RuntimeError:
             # The session fallback remains valid if Qt has disposed QSettings.
             pass
+
+    @classmethod
+    def reset(cls) -> None:
+        """丢弃当前单例（数据模式变更后重建，使 settings.ini 落新数据根）。"""
+        cls._instance = None
 
     @classmethod
     def instance(cls) -> "AppSettings":
@@ -88,6 +101,14 @@ class AppSettings:
         files = [f for f in files if f != filepath]
         files.insert(0, filepath)
         self._set_value("recent/files", files[:5])
+
+    def clear_recent(self) -> None:
+        """清除最近文件列表（公开接口，封装底层存储细节）。"""
+        self._session_values.pop("recent/files", None)
+        try:
+            self._settings.remove("recent/files")
+        except RuntimeError:
+            pass
 
     # ---- 主题 ----
     @property

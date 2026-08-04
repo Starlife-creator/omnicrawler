@@ -8,6 +8,8 @@ import statistics
 import time
 from typing import Any, Protocol
 
+import fitz
+
 from .config import ProjectConfig
 from .database import Database
 from .parser import render_page, text_quality
@@ -63,8 +65,52 @@ class PaddleStructureBackend:
                     scores.append(float(score))
                 except (TypeError, ValueError):
                     pass
+            # D10：PPStructureV3 的表格 HTML 在 json.res（type=table）中，未进入 markdown_texts 时显式提取
+            res_list = result_json.get("res", []) if isinstance(result_json, dict) else []
+            table_htmls = []
+            for region in res_list:
+                if not isinstance(region, dict) or str(region.get("type", "")).casefold() != "table":
+                    continue
+                html = region.get("res", {})
+                if isinstance(html, dict):
+                    html = html.get("html", "")
+                if isinstance(html, str) and html.strip():
+                    table_htmls.append(html)
+            if table_htmls:
+                markdown_parts.append(_table_html_to_markdown(table_htmls))
         confidence = statistics.fmean(scores) if scores else None
         return clean_text("\n".join(markdown_parts)), confidence
+
+
+def _table_html_to_markdown(html_parts: list[str]) -> str:
+    """把表格 HTML（<table><tr><td>）转为 Markdown 表格（D10：表格结构不进最终文本时补充）。"""
+    import re as html_re
+
+    lines: list[str] = []
+    for html in html_parts:
+        rows = html_re.findall(r"<tr[^>]*>(.*?)</tr>", html, html_re.S | html_re.I)
+        if not rows:
+            continue
+        markdown_rows: list[list[str]] = []
+        for row_html in rows:
+            cells = html_re.findall(
+                r"<(?:td|th)[^>]*>(.*?)</(?:td|th)>", row_html, html_re.S | html_re.I
+            )
+            markdown_rows.append([
+                html_re.sub(r"<[^>]+>", "", cell).replace("\n", " ").strip()
+                for cell in cells
+            ])
+        if not markdown_rows:
+            continue
+        width = max(len(row) for row in markdown_rows)
+        header = markdown_rows[0]
+        lines.append("| " + " | ".join(header) + " |")
+        lines.append("|" + "|".join(["---"] * max(width, 1)) + "|")
+        for row in markdown_rows[1:]:
+            padded = row + [""] * (width - len(row))
+            lines.append("| " + " | ".join(padded) + " |")
+        lines.append("")
+    return "\n".join(lines).strip()
 
 
 class TesseractBackend:
@@ -89,18 +135,50 @@ class TesseractBackend:
         data = self.pytesseract.image_to_data(
             image, lang=self.lang, output_type=self.pytesseract.Output.DICT
         )
-        words: list[str] = []
+        # D9：按 (block, par, line) 分行、left 分列重建，扫描件表格不再拍平为一行
+        lines: dict[tuple[int, int, int], list[tuple[float, float, str]]] = {}
         scores: list[float] = []
-        for text, confidence in zip(data.get("text", []), data.get("conf", []), strict=False):
-            if str(text).strip():
-                words.append(str(text))
-                try:
-                    score = float(confidence)
-                    if score >= 0:
-                        scores.append(score / 100)
-                except (TypeError, ValueError):
-                    pass
-        return clean_text(" ".join(words)), statistics.fmean(scores) if scores else None
+        text_list = data.get("text", [])
+        for index, text in enumerate(text_list):
+            word = str(text).strip()
+            if not word:
+                continue
+            key = (
+                int(data["block_num"][index]),
+                int(data["par_num"][index]),
+                int(data["line_num"][index]),
+            )
+            lines.setdefault(key, []).append((
+                float(data["left"][index]),
+                float(data["width"][index]),
+                word,
+            ))
+            try:
+                conf = float(data["conf"][index])
+                if conf >= 0:
+                    scores.append(conf / 100)
+            except (TypeError, ValueError):
+                pass
+        ordered = sorted(lines.items(), key=lambda item: (item[0][0], item[0][1], item[0][2]))
+        text_lines: list[str] = []
+        for _key, words in ordered:
+            words.sort(key=lambda item: item[0])  # 行内按 left 排序
+            parts: list[str] = []
+            prev_right: float | None = None
+            for left, width, word in words:
+                if prev_right is None:
+                    parts.append(word)
+                else:
+                    gap = left - prev_right
+                    # 列间隙大 → 多空格分隔（保留列对齐信号）
+                    if gap < 4:
+                        parts.append(" " + word)
+                    else:
+                        parts.append(" " * min(6, max(2, int(gap / 8))) + word)
+                prev_right = left + width
+            text_lines.append("".join(parts))
+        text = "\n".join(text_lines)
+        return clean_text(text, compress_ws=False), statistics.fmean(scores) if scores else None
 
 
 def create_backend(config: ProjectConfig) -> OCRBackend | None:
@@ -176,6 +254,9 @@ def _ocr_worker_init(ocr_config: dict[str, Any]) -> None:
 
 
 _worker_backend: OCRBackend | None = None
+# D35：worker 内复用 PDF 句柄（同文档多页不重复打开）
+_worker_document: Any | None = None
+_worker_document_path: str | None = None
 
 
 def _ocr_worker_process(args: tuple[str, int, int]) -> tuple[str, int, str | None, float | None, int, float]:
@@ -185,19 +266,26 @@ def _ocr_worker_process(args: tuple[str, int, int]) -> tuple[str, int, str | Non
         (doc_id, page_no, text, confidence, printable_chars, garbled_ratio)
         若失败则 text 为 None。
     """
-    global _worker_backend
+    global _worker_backend, _worker_document, _worker_document_path
     primary_path, page_no, dpi = args
     doc_id = os.path.basename(primary_path)  # 近似 — 实际 doc_id 由调用方提供
     try:
         if _worker_backend is None:
             raise RuntimeError("OCR backend 未初始化")
 
-        png = render_page(primary_path, page_no, dpi=dpi)
+        # D35：worker 内复用已打开的 PDF 句柄（同文档多页不再逐页 fitz.open）
+        if _worker_document_path != primary_path:
+            _worker_document = None
+        if _worker_document is None:
+            _worker_document = fitz.open(primary_path)
+            _worker_document_path = primary_path
+        png = render_page(primary_path, page_no, dpi=dpi, document=_worker_document)
         text, confidence = _worker_backend.recognize(png)
         printable, garbled = text_quality(text)
-        return (doc_id, page_no, text, confidence, printable, garbled)
-    except Exception:
-        return (doc_id, page_no, None, None, 0, 0.0)
+        return (doc_id, page_no, text, confidence, printable, garbled, None)
+    except Exception as exc:  # noqa: BLE001
+        # D15：worker 把错误信息带回主进程，主进程写 errors 表而非仅标 failed
+        return (doc_id, page_no, None, None, 0, 0.0, str(exc))
 
 
 def ocr_stage(
@@ -230,19 +318,29 @@ def ocr_stage(
     summary: dict[str, int] = {"selected": len(rows), "recognized": 0, "failed": 0, "skipped": 0}
     if not rows:
         return summary
-    backend = create_backend(config)
-    if backend is None:
-        summary["skipped"] = len(rows)
-        return summary
-
     dpi = int(config.ocr.get("dpi", 220))
     workers = adaptive_ocr_workers(ocr_workers)
 
     if workers <= 1:
-        # 串行路径（行为不变）
+        # 串行路径：父进程创建 backend（失败按 D13 降级跳过，不中断整批）
+        try:
+            backend = create_backend(config)
+        except Exception as exc:  # noqa: BLE001 - missing optional OCR dependency must degrade
+            logger.error("OCR backend 初始化失败，跳过 OCR 阶段: %s", exc)
+            for row in rows:
+                db.add_error(row["doc_id"], "ocr", exc)
+                db.execute(
+                    "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
+                    (utcnow(), row["doc_id"], row["page_no"]),
+                )
+            summary["skipped"] = len(rows)
+            return summary
+        if backend is None:
+            summary["skipped"] = len(rows)
+            return summary
         return _ocr_serial(config, db, rows, backend, dpi, summary)
 
-    # 多进程路径
+    # 多进程路径：D39 父进程不实例化 backend（PPStructureV3 占 1-2GB），worker 各自初始化
     logger.info("OCR 阶段启动 %d 个 worker 进程", workers)
     work_items: list[tuple[str, int, int, str, int]] = []
     for row in rows:
@@ -259,47 +357,54 @@ def ocr_stage(
         initializer=_ocr_worker_init,
         initargs=(ocr_config,),
     ) as executor:
-        futures: dict[concurrent.futures.Future, tuple[str, int]] = {}
-        for doc_id, page_no, path, _dpi in work_items:
-            fut = executor.submit(_ocr_worker_process, (path, page_no, _dpi))
-            futures[fut] = (doc_id, page_no)
-
+        # D37：按批提交（每批 500），避免百万页 futures 常驻；批间结果即时落库
+        batch_size = 500
         completed = 0
-        for fut in concurrent.futures.as_completed(futures):
-            doc_id, page_no = futures[fut]
-            try:
-                _, _, text, confidence, printable, garbled = fut.result()
-            except Exception as exc:  # noqa: BLE001
-                db.add_error(doc_id, "ocr", exc)
-                db.execute(
-                    "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
-                    (utcnow(), doc_id, page_no),
-                )
-                summary["failed"] += 1
-                continue
-
-            if text is None:
-                db.execute(
-                    "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
-                    (utcnow(), doc_id, page_no),
-                )
-                summary["failed"] += 1
-            else:
-                db.execute(
-                    """
-                    UPDATE pages SET ocr_text=?, final_text=?, parse_method='ocr',
-                        printable_chars=?, garbled_ratio=?, ocr_status='done',
-                        ocr_confidence=?, updated_at=? WHERE doc_id=? AND page_no=?
-                    """,
-                    (text, text, printable, garbled, confidence, utcnow(), doc_id, page_no),
-                )
-                summary["recognized"] += 1
-
-            completed += 1
-            # 温度保护：每 10 页检查一次
-            if completed % 10 == 0 and not _check_temperature():
-                logger.warning("温度过高，等待 30 秒后继续...")
+        for batch_start in range(0, len(work_items), batch_size):
+            batch = work_items[batch_start:batch_start + batch_size]
+            futures: dict[concurrent.futures.Future, tuple[str, int]] = {}
+            for doc_id, page_no, path, _dpi in batch:
+                fut = executor.submit(_ocr_worker_process, (path, page_no, _dpi))
+                futures[fut] = (doc_id, page_no)
+            # D38：温度保护前移到提交侧——每批提交后检查，任务不再满载后才 sleep
+            if not _check_temperature():
+                logger.warning("温度过高，等待 30 秒后处理下一批...")
                 time.sleep(30)
+            for fut in concurrent.futures.as_completed(futures):
+                doc_id, page_no = futures[fut]
+                try:
+                    results = fut.result()
+                    text, confidence, printable, garbled = results[2], results[3], results[4], results[5]
+                except Exception as exc:  # noqa: BLE001
+                    db.add_error(doc_id, "ocr", exc)
+                    db.execute(
+                        "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
+                        (utcnow(), doc_id, page_no),
+                    )
+                    summary["failed"] += 1
+                    completed += 1
+                    continue
+
+                if text is None:
+                    # D15：错误详情写 errors 表，用户可知为何无文字
+                    worker_error = results[6] if len(results) > 6 and results[6] else "OCR 识别无输出"
+                    db.add_error(doc_id, "ocr", RuntimeError(str(worker_error)[:4000]))
+                    db.execute(
+                        "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
+                        (utcnow(), doc_id, page_no),
+                    )
+                    summary["failed"] += 1
+                else:
+                    db.execute(
+                        """
+                        UPDATE pages SET ocr_text=?, final_text=?, parse_method='ocr',
+                            printable_chars=?, garbled_ratio=?, ocr_status='done',
+                            ocr_confidence=?, updated_at=? WHERE doc_id=? AND page_no=?
+                        """,
+                        (text, text, printable, garbled, confidence, utcnow(), doc_id, page_no),
+                    )
+                    summary["recognized"] += 1
+                completed += 1
 
     elapsed = time.monotonic() - start_time
     logger.info(

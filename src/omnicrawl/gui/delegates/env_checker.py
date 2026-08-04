@@ -36,6 +36,12 @@ class EnvironmentChecker(_BaseDelegate):
                 configure_data_mode("custom", directory) if directory else configure_data_mode("portable")
             else:
                 configure_data_mode("portable")
+            # F53：数据模式变更会改变 portable_data_root() 结果；
+            # 重置设置单例，让 settings.ini 落在新数据根，避免本会话配置写错目录。
+            from ..settings import AppSettings
+
+            AppSettings.reset()
+            AppSettings.instance()
         except OSError as exc:
             QMessageBox.warning(mw, _("数据位置未保存"), str(exc))
 
@@ -116,8 +122,38 @@ class EnvironmentChecker(_BaseDelegate):
 
     def show_env_setup_dialog(self) -> None:
         mw = self._mw
-        from ...core.runtime_paths import resolve_cli_command
+        from ...core.runtime_paths import bundled_cli_path, is_frozen, resolve_cli_command
         from ..runner.env_checker import check_omnicrawl, try_auto_install
+
+        if is_frozen():
+            # F33/F34：便携版没有 pip，也不该引导自动安装；
+            # 未就绪多为冷启动慢或被杀软拦截，主按钮改为"重试检测"
+            bundled = bundled_cli_path()
+            path_hint = str(bundled) if bundled else _("（未找到内置 CLI）")
+            msg = QMessageBox(mw)
+            msg.setWindowTitle(_("环境配置"))
+            msg.setText(_("内置引擎暂未就绪。\n已探测到: {0}\n\n"
+                          "可能原因：首次冷启动较慢或被杀毒软件拦截。\n"
+                          "请点击「重试检测」；若持续失败请重新解压完整便携包。").format(path_hint))
+            retry_btn = msg.addButton(_("重试检测"), QMessageBox.ButtonRole.AcceptRole)
+            # 便携包自包含：不提供"手动指定路径"/"自动安装"（外部 CLI 无配套 worker 且无 pip）
+            msg.addButton(_("跳过（仅编辑配置）"), QMessageBox.ButtonRole.RejectRole)
+            msg.exec()
+            clicked = msg.clickedButton()
+            if clicked == retry_btn:
+                available, version = check_omnicrawl(mw._omnicrawl_path)
+                mw._omnicrawl_available = available
+                if available:
+                    mw._settings.omnicrawl_version = version
+                    mw._settings.env_checked = True
+                    ToastManager.instance().success(_("环境就绪: {0}").format(version))
+                else:
+                    QMessageBox.warning(
+                        mw, _("环境检测"),
+                        _("仍无法启动内置引擎，请重新解压完整便携包或检查安全软件拦截。"),
+                    )
+            return
+
         msg = QMessageBox(mw)
         msg.setWindowTitle(_("环境配置"))
         msg.setText(_("未检测到 omnicrawl 命令。请选择配置方式："))

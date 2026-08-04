@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,8 @@ from .ingest import ingest
 from .ocr import ocr_stage
 from .parser import parse_stage
 from .text_export import export_text_stage
+
+LOGGER = logging.getLogger(__name__)
 
 EventCallback = Callable[[str, dict[str, Any]], None]
 StopCallback = Callable[[], bool]
@@ -68,6 +71,7 @@ def run_processing(
     *,
     limit: int | None = None,
     workers: int | None = None,
+    ocr_workers: int | None = None,
     run_ocr: bool = True,
     callback: EventCallback | None = None,
     should_stop: StopCallback | None = None,
@@ -86,12 +90,21 @@ def run_processing(
                 results["stopped"] = True
                 return results
             _emit(callback, f"{stage}_started", {})
-            result = operation()
+            # B1：阶段级异常隔离——单阶段失败保留已完成结果与失败清单，不整批 failed
+            try:
+                result = operation()
+            except Exception as exc:  # noqa: BLE001 - stage isolation keeps partial results
+                LOGGER.exception("PDF 管线阶段 %s 失败", stage)
+                results[stage] = {"failed": True, "error": str(exc)}
+                _emit(callback, stage, {"failed": True, "error": str(exc)})
+                results["stopped"] = True
+                return results
             results[stage] = result
             _emit(callback, stage, result)
         if run_ocr and not _stopped(should_stop):
             _emit(callback, "ocr_started", {})
-            result = ocr_stage(config, db)
+            # D39：透传 ocr_workers，GUI/CLI 并行 OCR 才真正生效
+            result = ocr_stage(config, db, ocr_workers=ocr_workers or 1)
             results["ocr"] = result
             _emit(callback, "ocr", result)
         if _stopped(should_stop):
@@ -139,14 +152,29 @@ def run_extraction(
         _emit(callback, "warnings", {"items": warnings})
     with Database(config.database) as db:
         _emit(callback, "extract_started", {})
-        result = extraction_stage(config, db, limit, workers)
+        # B1：抽取/导出阶段异常隔离
+        try:
+            result = extraction_stage(config, db, limit, workers, should_stop=should_stop)
+        except Exception as exc:  # noqa: BLE001 - stage isolation keeps partial results
+            LOGGER.exception("PDF 抽取阶段失败")
+            results["extract"] = {"failed": True, "error": str(exc)}
+            _emit(callback, "extract", {"failed": True, "error": str(exc)})
+            results["stopped"] = True
+            return results
         results["extract"] = result
         _emit(callback, "extract", result)
         if _stopped(should_stop):
             results["stopped"] = True
             return results
         _emit(callback, "export_started", {})
-        result = export_stage(config, db)
+        try:
+            result = export_stage(config, db)
+        except Exception as exc:  # noqa: BLE001 - export failure keeps extraction results
+            LOGGER.exception("PDF 导出阶段失败")
+            results["export"] = {"failed": True, "error": str(exc)}
+            _emit(callback, "export", {"failed": True, "error": str(exc)})
+            results["stopped"] = True
+            return results
         results["export"] = result
         _emit(callback, "export", result)
         results["status"] = database_status(db)

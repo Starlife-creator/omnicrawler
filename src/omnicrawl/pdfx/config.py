@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 from dataclasses import dataclass, field
@@ -9,7 +10,10 @@ from urllib.parse import urlparse
 
 import yaml
 
+from ..core.ai_env import bridge_pdfx_llm_env
 from .templates import resolve_pdf_project_config
+
+LOGGER = logging.getLogger(__name__)
 
 _ENV_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
@@ -18,7 +22,13 @@ def _expand_env(value: Any) -> Any:
     if isinstance(value, str):
         def repl(match: re.Match[str]) -> str:
             name, default = match.group(1), match.group(2)
-            return os.environ.get(name, default or "")
+            # D6：环境变量存在（含空串）就用它；不存在才用默认；无默认保留字面量并告警
+            if name in os.environ:
+                return os.environ[name]
+            if default is not None:
+                return default
+            LOGGER.warning("环境变量 %s 未设置且无默认值，保留字面量", name)
+            return match.group(0)
         return _ENV_RE.sub(repl, value)
     if isinstance(value, list):
         return [_expand_env(item) for item in value]
@@ -42,6 +52,8 @@ class FieldSpec:
     allowed_values: list[str] = field(default_factory=list)
     minimum: float | None = None
     maximum: float | None = None
+    # 校验用白名单正则（D28：code 等字段的取值形态约束，与提取 patterns 分离）
+    value_pattern: str | None = None
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> FieldSpec:
@@ -50,7 +62,7 @@ class FieldSpec:
         known = {
             "name", "label", "description", "type", "aliases", "patterns",
             "source", "required", "target_unit", "value_aliases",
-            "allowed_values", "minimum", "maximum",
+            "allowed_values", "minimum", "maximum", "value_pattern",
         }
         unknown = set(raw) - known
         if unknown:
@@ -76,7 +88,31 @@ class FieldSpec:
             raise ValueError(f"字段 {name} 的 source 只能是 content、filename 或 both")
         if "required" in raw and not isinstance(raw["required"], bool):
             raise ValueError(f"字段 {name} 的 required 必须是 true 或 false")
-        return cls(**raw)
+        # D25：minimum/maximum 显式转 float（YAML 引号字符串会引发 float<str TypeError）
+        minimum = raw.get("minimum")
+        maximum = raw.get("maximum")
+        if minimum not in {None, ""}:
+            try:
+                minimum = float(minimum)
+            except (TypeError, ValueError):
+                raise ValueError(f"字段 {name} 的 minimum 必须是数字")
+        if maximum not in {None, ""}:
+            try:
+                maximum = float(maximum)
+            except (TypeError, ValueError):
+                raise ValueError(f"字段 {name} 的 maximum 必须是数字")
+        # D26/D27：配置健全性——数值换算/枚举配置必须配对应 type，否则静默失效
+        spec_type = str(raw.get("type", "text")).casefold()
+        allowed_types = {"text", "amount", "currency", "date", "percent", "integer", "number", "enum", "code", "year"}
+        if spec_type not in allowed_types:
+            raise ValueError(f"字段 {name} 的 type 不支持: {spec_type}")
+        if raw.get("target_unit") and spec_type not in {"amount", "currency", "number", "integer", "percent"}:
+            raise ValueError(f"字段 {name} 设置了 target_unit 但 type 不是数值类型（当前 {spec_type}）")
+        if raw.get("allowed_values") and spec_type != "enum":
+            raise ValueError(f"字段 {name} 设置了 allowed_values 但 type 不是 enum（当前 {spec_type}）")
+        return cls(
+            **{**raw, "minimum": minimum, "maximum": maximum, "type": spec_type},
+        )
 
     @property
     def search_terms(self) -> list[str]:
@@ -116,10 +152,21 @@ def _resolve_path(value: str | Path, base: Path) -> Path:
     return path.resolve() if path.is_absolute() else (base / path).resolve()
 
 
+def _pdf_project_root(path: Path) -> Path | None:
+    """按 pyproject.toml 上溯推断 PDF 项目根（供 AI 配置桥接定位项目 .env）。"""
+    for candidate in [path.parent, *path.parents]:
+        if (candidate / "pyproject.toml").is_file():
+            return candidate
+    return None
+
+
 def load_config(config_path: str | Path) -> ProjectConfig:
     path = resolve_pdf_project_config(config_path)
     if not path.exists():
         raise FileNotFoundError(f"配置文件不存在: {path}")
+    # 将 GUI 写入的 OMNICRAWL_AI_* 桥接为 PDFX_LLM_* 兼容别名，
+    # 使 CLI/headless 路径与 GUI PDF 工作台行为一致（显式配置优先，不覆盖）。
+    bridge_pdfx_llm_env(_pdf_project_root(path))
     raw = _expand_env(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
     fields = [FieldSpec.from_dict(item) for item in raw.get("fields", [])]
     if not fields:

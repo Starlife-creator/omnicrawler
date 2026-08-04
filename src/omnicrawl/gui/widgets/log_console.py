@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QMenu,
+    QMessageBox,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
@@ -295,8 +296,10 @@ class LogConsole(QWidget):
                     redacted = self._redact_log(msg)
                     f.write(f"[{level.upper():5s}] {redacted}\n")
 
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
             logger.debug("Failed to export logs", exc_info=True)
+            # A18：导出失败必须让用户可见，不再静默吞掉
+            QMessageBox.critical(self, _("导出失败"), _("日志导出失败: {0}").format(exc))
 
     def _redact_log(self, text: str) -> str:
         """对日志文本进行隐私脱敏处理。

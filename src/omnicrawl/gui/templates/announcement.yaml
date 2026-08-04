@@ -31,7 +31,7 @@ crawl:
   delay_seconds: 1.5
   concurrency: 2
 http:
-  user_agent: "OmniCrawler-GUI/1.0"
+  # A16：user_agent 不写死版本，沿用默认（OmniCrawler/{__version__}）
   respect_robots: true
 extract:
   mode: html

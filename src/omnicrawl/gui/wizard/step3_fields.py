@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
     QWizardPage,
 )
 
+from ...core.utils import user_agent
 from ...extraction.field_designer import FieldCandidate, analyze_url
 from ...security.controlled_http import scoped_fetch
 from ..core.config_model import CrawlConfig, FieldDef
@@ -392,10 +393,10 @@ class SelectorTestThread(QThread):
                 self._url,
                 workspace=self._workspace,
                 purpose="selector",
-            headers={"User-Agent": "OmniCrawler-GUI/2.7 selector test"},
+            headers={"User-Agent": user_agent("selector test")},
                 timeout_seconds=15,
                 max_response_bytes=2 * 1024 * 1024,
-            user_agent="OmniCrawler-GUI/2.7 selector test",
+            user_agent=user_agent("selector test"),
             )
 
             parser = etree.HTMLParser(recover=True)
@@ -691,9 +692,14 @@ class Step3FieldsPage(QWizardPage):
         from ...visual_selector.field_converter import FieldConverter
         from ...visual_selector.server import VisualSelectorServer
 
-        # 启动 WebSocket 服务
+        # 启动 WebSocket 服务（A19：启动失败需显式提示，不再无声继续）
         server = VisualSelectorServer()
-        server.start()
+        if not server.start():
+            QMessageBox.critical(
+                self, _("可视化选择服务启动失败"),
+                _("无法启动可视化选择服务，请检查端口占用或 websockets 依赖后重试。"),
+            )
+            return
         url = self._config.seed_urls[0] if self._config.seed_urls else "https://example.com"
 
         # 显示操作指引

@@ -105,6 +105,7 @@ if not _HEADLESS_MODE:
         print("请运行: pip install omnicrawl-platform[gui]", file=sys.stderr)
         sys.exit(1)
 
+    from ..core.ai_env import load_ai_env, save_ai_env, sync_ai_env_to_os
     from ..core.config import load_config as load_core_config
     from ..pipeline_ops.preflight import run_preflight, run_sample
     from ..plugins.plugin_inspector import inspect_directory
@@ -543,6 +544,8 @@ class MainWindow(QMainWindow):
         # ---- 构建 UI ----
         self._refresh_accessibility()
         self._ensure_data_mode_choice()
+        # F53：数据模式弹窗可能重置设置单例（settings.ini 换目录），重新绑定当前实例
+        self._settings = AppSettings.instance()
         self._setup_menu_bar()
         self._setup_toolbar()
         self._setup_status_bar()
@@ -876,7 +879,7 @@ class MainWindow(QMainWindow):
         results_layout.addWidget(self._chart_view)
         self._stack.addWidget(results_widget)
 
-        self._home = HomePage()
+        self._home = HomePage(project_root=str(self._project_root))
         self._home.quick_task_ready.connect(self._apply_quick_task)
         self._home.natural_task_ready.connect(self._apply_natural_task)
         self._home.open_wizard.connect(lambda: self._nav.setCurrentRow(1))
@@ -1423,9 +1426,9 @@ class MainWindow(QMainWindow):
         def _pick_date() -> None:
             from .widgets.calendar_popup import CalendarPopup
             popup = CalendarPopup(dialog)
-            if popup.exec() == QDialog.DialogCode.Accepted:
-                selected = popup._calendar.selectedDate()
-                start_date_label.setText(selected.toString("yyyy-MM-dd"))
+            # A15：走公开信号 date_selected，不再访问私有 _calendar
+            popup.date_selected.connect(start_date_label.setText)
+            popup.exec()
 
         start_date_btn.clicked.connect(_pick_date)
         start_row.addWidget(start_date_btn)
@@ -1548,7 +1551,14 @@ class MainWindow(QMainWindow):
             self._config_path = None
             self._config_label.setText(_("组合模板: ") + template.display_name)
             self._rebuild_wizard()
-            ToastManager.instance().success(_("模板能力已组合；建议先试跑 3 页"))
+            if self._config.has_placeholders():
+                # B14：模板组合后存在 {{...}} 占位符需显式警告，避免带着未替换占位符直接运行
+                QMessageBox.warning(
+                    self, _("存在占位符"),
+                    _("模板包含尚未替换的占位符（{{...}}），直接运行可能采集不到数据，请先在编辑器中替换。"),
+                )
+            else:
+                ToastManager.instance().success(_("模板能力已组合；建议先试跑 3 页"))
 
     # ================================================================
     #  站点智能识别
@@ -1668,7 +1678,10 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, _("加载失败"), str(e))
 
     def _load_history_results(self, workspace: str) -> None:
-        ws_path = self._project_root / workspace
+        # A14：workspace 可能含 ~ 等用户目录标记，需 expanduser 后判断绝对路径
+        ws_path = Path(workspace).expanduser()
+        if not ws_path.is_absolute():
+            ws_path = self._project_root / ws_path
         csv_path = next(
             (path for path in (ws_path / "output" / "records.csv", ws_path / "records.csv") if path.is_file()),
             None,
@@ -1684,7 +1697,10 @@ class MainWindow(QMainWindow):
             self._stack.setCurrentIndex(3)
 
     def _auto_load_results(self) -> None:
-        workspace = self._project_root / self._config.workspace
+        # A14：workspace 可能含 ~ 等用户目录标记，需 expanduser 后判断绝对路径
+        workspace = Path(self._config.workspace).expanduser()
+        if not workspace.is_absolute():
+            workspace = self._project_root / workspace
         csv_path = next(
             (path for path in (workspace / "output" / "records.csv", workspace / "records.csv") if path.is_file()),
             None,
@@ -1701,7 +1717,10 @@ class MainWindow(QMainWindow):
             self._file_list.set_directory(download_dir)
 
     def _open_result_folder(self) -> None:
-        workspace = self._project_root / self._config.workspace
+        # A14：workspace 可能含 ~ 等用户目录标记，需 expanduser 后判断绝对路径
+        workspace = Path(self._config.workspace).expanduser()
+        if not workspace.is_absolute():
+            workspace = self._project_root / workspace
         if workspace.is_dir():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(workspace)))
 
@@ -1801,6 +1820,8 @@ class MainWindow(QMainWindow):
             if page is not None and hasattr(page, 'record_requested'):
                 page.record_requested.connect(self._record_browser_actions)  # type: ignore[attr-defined]
         self._connect_wizard_actions()
+        # A20：重建后重连 currentIdChanged（原 815 行仅初始连接一次，重建后信息面板不再更新）
+        self._config_wizard.currentIdChanged.connect(self._update_wizard_info_panel)
         layout = self._wizard_widget.layout()
         assert layout is not None
         layout.removeWidget(old_wizard)
@@ -1891,17 +1912,9 @@ class MainWindow(QMainWindow):
             self._tray_icon.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 8000)
 
     def _load_ai_config_from_env(self) -> dict[str, Any]:
-        """从项目 .env 文件加载 AI 配置。"""
-        env_path = Path(self._project_root) / ".env" if self._project_root else Path.home() / ".omnicrawl" / ".env"
+        """从单一真源 .env 加载 AI 配置（优先级 os.environ > 项目 .env > 用户级 .env）。"""
+        env_vars = load_ai_env(self._project_root)
         config: dict[str, Any] = {"mode": "disabled"}
-        if not env_path.exists():
-            return config
-        env_vars = {}
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, _, value = line.partition("=")
-                env_vars[key.strip()] = value.strip().strip("\"'")
         provider = env_vars.get("OMNICRAWL_AI_PROVIDER", "disabled")
         if provider != "disabled":
             config["mode"] = "enabled"
@@ -1911,37 +1924,39 @@ class MainWindow(QMainWindow):
                 "base_url": env_vars.get("OMNICRAWL_AI_BASE_URL", ""),
                 "model": env_vars.get("OMNICRAWL_AI_MODEL", ""),
                 "api_key": env_vars.get("OMNICRAWL_AI_API_KEY", ""),
-                "timeout_seconds": int(env_vars.get("OMNICRAWL_AI_TIMEOUT", "60")),
+                "timeout_seconds": _safe_int(env_vars.get("OMNICRAWL_AI_TIMEOUT"), 60),
             }
         return config
 
     def _save_ai_config_to_env(self, config: dict[str, Any]) -> None:
-        """将 AI 配置写入项目 .env 文件（单向写入，不设进程环境变量）。"""
-        env_path = Path(self._project_root) / ".env" if self._project_root else Path.home() / ".omnicrawl" / ".env"
-        env_path.parent.mkdir(parents=True, exist_ok=True)
+        """将 AI 配置行级写入单一真源 .env，并同步进程内 os.environ。
 
-        # 读取现有内容，保留非 AI 相关的行
-        existing: dict[str, str] = {}
-        if env_path.exists():
-            for line in env_path.read_text(encoding="utf-8").splitlines():
-                line_stripped = line.strip()
-                if line_stripped and not line_stripped.startswith("#") and "=" in line_stripped:
-                    key, _, value = line_stripped.partition("=")
-                    existing[key.strip()] = value.strip().strip("\"'")
-
-        # 更新 AI 相关变量
+        保留 .env 中的注释/空行/顺序；关闭 AI 时同步删除 KEY/BASE_URL/MODEL。
+        """
+        updates: dict[str, str | None] = {}
         if config.get("mode") == "disabled":
-            existing["OMNICRAWL_AI_PROVIDER"] = "disabled"
+            updates["OMNICRAWL_AI_PROVIDER"] = "disabled"
+            updates["OMNICRAWL_AI_BASE_URL"] = None
+            updates["OMNICRAWL_AI_MODEL"] = None
+            updates["OMNICRAWL_AI_API_KEY"] = None
+            updates["OMNICRAWL_AI_TIMEOUT"] = None
         else:
             provider = config.get("providers", {}).get("default", {})
-            existing["OMNICRAWL_AI_PROVIDER"] = provider.get("type", "openai_compatible")
-            existing["OMNICRAWL_AI_BASE_URL"] = provider.get("base_url", "")
-            existing["OMNICRAWL_AI_MODEL"] = provider.get("model", "")
-            existing["OMNICRAWL_AI_API_KEY"] = provider.get("api_key", "")
-            existing["OMNICRAWL_AI_TIMEOUT"] = str(provider.get("timeout_seconds", 60))
+            updates["OMNICRAWL_AI_PROVIDER"] = provider.get("type", "openai_compatible")
+            updates["OMNICRAWL_AI_BASE_URL"] = provider.get("base_url", "")
+            updates["OMNICRAWL_AI_MODEL"] = provider.get("model", "")
+            updates["OMNICRAWL_AI_API_KEY"] = provider.get("api_key", "")
+            updates["OMNICRAWL_AI_TIMEOUT"] = str(provider.get("timeout_seconds", 60))
+        save_ai_env(updates, project_root=self._project_root)
+        sync_ai_env_to_os(updates)
 
-        lines = [f"{k}={v}" for k, v in existing.items()]
-        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+def _safe_int(value: Any, default: int) -> int:
+    """解析整数，非数字值回退默认（避免 .env 脏数据使 AI 静默不可用）。"""
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return default
 
 
 # ================================================================

@@ -86,8 +86,15 @@ def ingest(config: ProjectConfig, db: Database, limit: int | None = None) -> dic
             or ""
         ).strip() or None
         source_meta_json = stable_json(source_meta) if source_meta else None
-        digest = sha256_file(path)
-        existing = db.fetchone("SELECT doc_id FROM documents WHERE sha256=?", (digest,))
+        stat = path.stat()
+        # D45：path+size 命中即跳过全量 SHA-256（十万份续跑不再全量读盘哈希）
+        existing = db.fetchone(
+            "SELECT doc_id FROM documents WHERE primary_path=? AND size_bytes=?",
+            (str(path), stat.st_size),
+        )
+        digest = existing["doc_id"] if existing else sha256_file(path)
+        if existing is None:
+            existing = db.fetchone("SELECT doc_id FROM documents WHERE sha256=?", (digest,))
         if existing:
             db.execute(
                 """INSERT INTO document_sources(

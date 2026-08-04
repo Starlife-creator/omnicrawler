@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import re
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
@@ -20,26 +20,59 @@ AMOUNT_UNITS = {
     "元": 1,
 }
 
+# D50：外币币种识别（无法按人民币直接换算，拒换交人工复核）
+_FOREIGN_CURRENCIES = (
+    "美元", "美金", "港币", "港元", "欧元", "日元", "日圆", "英镑", "瑞郎", "法郎",
+)
+
 
 def _number(text: str) -> float | None:
-    match = re.search(r"[-+]?\d[\d,，]*(?:\.\d+)?", text)
-    if not match:
+    """提取数字；识别会计负数括号 (1,234) / （1,234）（D49）。"""
+    stripped = text.strip()
+    bracket = re.search(r"[(（]\s*([\d,，.]+)\s*[)）]", stripped)
+    if bracket:
+        value_str = bracket.group(1)
+        sign = -1.0
+    else:
+        match = re.search(r"[-+]?\d[\d,，]*(?:\.\d+)?", text)
+        if not match:
+            return None
+        value_str = match.group(0)
+        sign = -1.0 if value_str.startswith("-") else 1.0
+        if value_str.startswith(("-", "+")):
+            value_str = value_str[1:]
+    try:
+        return sign * float(value_str.replace(",", "").replace("，", ""))
+    except ValueError:
         return None
-    return float(match.group(0).replace(",", "").replace("，", ""))
+
+
+def _format_decimal(value: object) -> str:
+    """D51：Decimal 换算格式化，避免 IEEE754 浮点误差（1.15亿 → 114999999.99999999）。"""
+    from decimal import Decimal
+
+    decimal_value = Decimal(str(value))
+    if decimal_value == decimal_value.to_integral_value():
+        return str(decimal_value.to_integral_value())
+    return format(decimal_value, "f").rstrip("0").rstrip(".")
 
 
 def normalize_amount(raw: str, target_unit: str | None = "元") -> tuple[str | None, str | None]:
+    from decimal import Decimal
+
     value = _number(raw)
     if value is None:
         return None, target_unit
+    # D50：外币（美元/港币/欧元等）无法按人民币换算，拒绝并交人工复核
+    if any(name in raw for name in _FOREIGN_CURRENCIES):
+        return None, target_unit
     source_unit = next((unit for unit in AMOUNT_UNITS if unit in raw), None)
     source_multiplier = AMOUNT_UNITS.get(source_unit or "元", 1)
-    yuan = value * source_multiplier
     target = target_unit or "元"
     target_multiplier = AMOUNT_UNITS.get(target, 1)
-    normalized = yuan / target_multiplier
-    text = str(int(normalized)) if normalized.is_integer() else f"{normalized:.8f}".rstrip("0").rstrip(".")
-    return text, target
+    yuan = Decimal(str(value)) * Decimal(source_multiplier)
+    normalized = yuan / Decimal(target_multiplier)
+    return _format_decimal(normalized), target
 
 
 def normalize_date(raw: str) -> tuple[str | None, None]:
@@ -59,7 +92,8 @@ def normalize_date(raw: str) -> tuple[str | None, None]:
         try:
             parsed = date(year, month, day)
         except ValueError:
-            return None, None
+            # D52：该 pattern 解析失败（如 2023年13月 的 OCR 错字）继续尝试下一 pattern
+            continue
         if "d" not in match.groupdict() or not match.groupdict().get("d"):
             normalized = f"{year:04d}-{month:02d}" if match.groupdict().get("m") else f"{year:04d}"
             return normalized, None
@@ -114,6 +148,8 @@ def _load_entities(csv_path: Path) -> dict[str, str]:
 @dataclass(slots=True)
 class EntityResolver:
     aliases: dict[str, str]
+    # D44：预计算去空白键字典（resolve 每次调用不再重建全表）
+    _direct: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_config(cls, config: ProjectConfig) -> EntityResolver:
@@ -140,12 +176,12 @@ class EntityResolver:
                         break
             path = (base / path).resolve()
         aliases = _load_entities(path)
-        return cls(aliases)
+        direct = {re.sub(r"\s+", "", key): value for key, value in aliases.items()}
+        return cls(aliases, direct)
 
     def resolve(self, raw: str) -> str:
         key = re.sub(r"\s+", "", raw).casefold()
-        direct = {re.sub(r"\s+", "", k): v for k, v in self.aliases.items()}
-        return direct.get(key, raw.strip())
+        return self._direct.get(key, raw.strip())
 
 
 def normalize_value(
@@ -180,9 +216,24 @@ def normalize_value(
             return "0", None
         return None, None
     if kind in {"enum", "relationship"}:
-        for canonical, aliases in spec.value_aliases.items():
-            if text == canonical or any(alias in text for alias in aliases):
+        # D53：精确匹配优先；别名按最长优先，且拒绝含否定词（非/不/未/无）的误匹配
+        for canonical, _aliases in spec.value_aliases.items():
+            if text == canonical:
                 return canonical, None
+        best: str | None = None
+        best_length = -1
+        for canonical, aliases in spec.value_aliases.items():
+            for alias in aliases:
+                index = text.find(alias)
+                if index < 0:
+                    continue
+                if index > 0 and any(ch in text[max(0, index - 2):index] for ch in "非不未无"):
+                    continue  # “不是/并非/并未 全资子公司”不得归一为正向关系
+                if len(alias) > best_length:
+                    best = canonical
+                    best_length = len(alias)
+        if best:
+            return best, None
         return text, None
     if kind == "entity" and entity_resolver:
         return entity_resolver.resolve(text), None

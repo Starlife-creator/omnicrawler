@@ -542,8 +542,9 @@ class YamlEditor(QWidget):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._filepath)))
             self._last_mtime = self._filepath.stat().st_mtime
         else:
-            # 保存临时文件
-            temp_path = Path.cwd() / "temp_config.yaml"
+            # A24：临时文件写系统临时目录，避免污染 cwd
+            import tempfile
+            temp_path = Path(tempfile.gettempdir()) / "omnicrawl_temp_config.yaml"
             temp_path.write_text(self._editor.toPlainText(), encoding="utf-8")
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(temp_path)))
 

@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..services.help_registry import HelpEntry, contextual_advice, get_help, search_help
+from .i18n import _
 
 
 class HelpCenterDock(QDockWidget):
@@ -59,7 +60,16 @@ class HelpCenterDock(QDockWidget):
         self.show_help(self._current_id, reveal=False)
 
     def show_help(self, help_id: str, *, reveal: bool = True) -> None:
-        entry = get_help(help_id)
+        try:
+            entry = get_help(help_id)
+        except KeyError:
+            # A22：未知帮助 ID 不崩溃——显示通用提示（registry 缺键时的兜底）
+            entry = HelpEntry(
+                help_id=help_id, title=_("帮助"), what=_("暂无可用的帮助内容。"),
+                why=_("此条目尚未收录到帮助中心。"), how=_("可在帮助搜索框输入关键词检索其他主题。"),
+                example="", limitations=_("无"), common_errors=_("无"),
+                default_behavior=_("无"), change_impact=_("无"),
+            )
         self._current_id = help_id
         self.title.setText(entry.title)
         advice = contextual_advice(help_id, self._task)

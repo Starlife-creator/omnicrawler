@@ -25,7 +25,15 @@ def resolve_builtin_pdf_reference(value: str | Path) -> Path:
     raw = str(value).strip().replace("\\", "/")
     if not raw.startswith(BUILTIN_PREFIX):
         raise ValueError(f"不是内置 PDF 资源引用: {value}")
-    return builtin_pdf_resource(raw[len(BUILTIN_PREFIX):])
+    name = raw[len(BUILTIN_PREFIX):]
+    # D66：拒绝路径穿越（builtin:pdf/../../../x 逃逸模板目录）
+    base = builtin_pdf_resource("generic_template.yaml").resolve().parent
+    resolved = (base / name).resolve()
+    if base not in resolved.parents:
+        raise ValueError(f"内置 PDF 资源引用越界: {value}")
+    if not resolved.is_file():
+        raise FileNotFoundError(f"内置 PDF 模板不存在: {name}")
+    return resolved
 
 
 def resolve_pdf_project_config(value: str | Path) -> Path:

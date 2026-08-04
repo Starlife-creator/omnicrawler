@@ -20,7 +20,8 @@ class CandidatePage:
 
 
 def score_page(text: str, config: ProjectConfig) -> tuple[float, dict[str, Any]]:
-    folded = text.casefold()
+    # D11：入库文本保留原始空白（列对齐信号），检索匹配前统一压缩
+    folded = re.sub(r"\s+", " ", text.casefold())
     score = 0.0
     hits: dict[str, Any] = {"terms": {}, "patterns": {}}
     alias_weight = float(config.retrieval.get("alias_weight", 1.0))
@@ -73,8 +74,11 @@ def select_candidates(config: ProjectConfig, db: Database, doc_id: str) -> list[
                 selected_numbers.add(page_no + offset)
     if not selected_numbers:
         fallback = config.retrieval.get("fallback_pages", [1])
-        selected_numbers = {int(page) for page in fallback if 1 <= int(page) <= len(rows)}
-
+        # D21：按实际页号集合过滤，页号不连续时不再 KeyError
+        by_number = {int(item[3]["page_no"]): item for item in scored}
+        selected_numbers = {int(page) for page in fallback if int(page) in by_number}
+    else:
+        by_number = {int(item[3]["page_no"]): item for item in scored}
     now = utcnow()
     with db.transaction() as conn:
         conn.execute(
@@ -92,7 +96,6 @@ def select_candidates(config: ProjectConfig, db: Database, doc_id: str) -> list[
             (len(selected_numbers), now, doc_id),
         )
 
-    by_number = {int(item[3]["page_no"]): item for item in scored}
     result: list[CandidatePage] = []
     for page_no in sorted(selected_numbers):
         _, score, _, row = by_number[page_no]

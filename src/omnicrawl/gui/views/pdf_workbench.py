@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import os
 import tempfile
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import Qt, QThread, QUrl, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -23,6 +25,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QSplitter,
@@ -42,6 +45,7 @@ class _PdfPipelineWorker(QThread):
 
     stage_started = pyqtSignal(str)       # 阶段名（中文）
     stage_finished = pyqtSignal(str, object)  # 阶段名, 结果 dict
+    warnings_received = pyqtSignal(list)  # D3：运行时警告（如“大模型已启用但 Key 空”）
     progress = pyqtSignal(int)            # 0-100
     all_done = pyqtSignal(object)         # 全部结果 dict
     failed = pyqtSignal(str)              # 错误消息
@@ -85,6 +89,11 @@ class _PdfPipelineWorker(QThread):
                 name = stage_names.get(stage, stage)
                 if stage.endswith("_started"):
                     self.stage_started.emit(name)
+                elif stage == "warnings":
+                    # D3：关键警告（“大模型已启用但 Key 空”“OCR 未启用”）必须对用户可见
+                    items = result.get("items", []) if isinstance(result, dict) else []
+                    if items:
+                        self.warnings_received.emit(list(items))
                 elif stage in stage_order:
                     self.stage_finished.emit(name, result)
                     idx = stage_order.index(stage) + 1
@@ -429,6 +438,22 @@ class PdfWorkbenchView(QWidget):
         run_ocr = self._ocr_checkbox.isChecked()
         input_dir = self._dir_input.text().strip()
 
+        if run_ocr:
+            # D14：OCR 勾选前检测 paddleocr 可用性，不可用则询问降级（避免整批 skipped 无解释）
+            try:
+                import paddleocr  # noqa: F401
+            except ImportError:
+                reply = QMessageBox.question(
+                    self, _("OCR 依赖缺失"),
+                    _("未检测到 PaddleOCR 依赖，OCR 功能不可用。\n"
+                      "是否仍继续（本次仅规则抽取，不执行 OCR）？"),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
+                run_ocr = False
+
         self._state = "running"
         self._execute_btn.setVisible(False)
         self._cancel_btn.setVisible(True)
@@ -442,8 +467,31 @@ class PdfWorkbenchView(QWidget):
         self._stage_label.setVisible(True)
         self._stage_label.setText("正在准备...")
 
-        # 创建临时项目目录
-        self._temp_dir = tempfile.mkdtemp(prefix="omnicrawl_pdf_")
+        # C50：PDF 正文外发第三方 AI 前一次性确认（目标域名 + 预计文本量）
+        ai_egress_ok = self._confirm_pdf_ai_egress()
+        if ai_egress_ok:
+            # 用户本次放行：清除上一次拒绝留下的进程级禁用标记，强制按当前配置桥接
+            os.environ.pop("PDFX_LLM_PROVIDER", None)
+        # 将 GUI 已配置的 AI 密钥桥接为 PDF 子系统所需的 PDFX_LLM_* 变量
+        self._inject_pdf_llm_env()
+        if not ai_egress_ok:
+            # 用户拒绝外发 → 本次强制关闭 LLM，仅规则抽取
+            os.environ["PDFX_LLM_PROVIDER"] = "disabled"
+
+        # D18：持久工作目录——不再用临时目录（重跑复用 sqlite 增量续跑，结果不随系统清理丢失）
+        import hashlib
+
+        from ...core.runtime_paths import portable_data_root
+
+        persistent_root = portable_data_root() / ".omnicrawl" / "pdf-workbench"
+        try:
+            persistent_root.mkdir(parents=True, exist_ok=True)
+            task_key = hashlib.sha1(input_dir.encode("utf-8")).hexdigest()[:10]
+            self._temp_dir = str(persistent_root / f"task-{task_key}")
+            os.makedirs(self._temp_dir, exist_ok=True)
+        except OSError:
+            # 持久目录不可写时回退临时目录（功能不中断）
+            self._temp_dir = tempfile.mkdtemp(prefix="omnicrawl_pdf_")
         work_dir = os.path.join(self._temp_dir, "work")
         output_dir = os.path.join(self._temp_dir, "output")
         config_path = os.path.join(self._temp_dir, "project.yaml")
@@ -469,10 +517,95 @@ class PdfWorkbenchView(QWidget):
         )
         self._worker.stage_started.connect(self._on_stage_started)
         self._worker.stage_finished.connect(self._on_stage_finished)
+        self._worker.warnings_received.connect(self._on_warnings)
         self._worker.progress.connect(self._progress_bar.setValue)
         self._worker.all_done.connect(self._on_done)
         self._worker.failed.connect(self._on_failed)
         self._worker.start()
+
+    def _confirm_pdf_ai_egress(self) -> bool:
+        """C50：PDF 正文外发第三方 AI 前一次性确认。
+
+        返回 True 表示放行（AI 未启用/本地模型/无密钥时无需确认直接放行）。
+        """
+        main = self.window()
+        loader = getattr(main, "_load_ai_config_from_env", None)
+        if loader is None:
+            return True
+        try:
+            ai_config = loader()
+        except Exception:
+            return True
+        provider = ai_config.get("providers", {}).get("default", {})
+        if ai_config.get("mode") != "enabled" or not isinstance(provider, dict):
+            return True  # AI 未启用无需确认
+        base_url = str(provider.get("base_url", "") or "")
+        api_key = str(provider.get("api_key", "") or "")
+        is_local = "127.0.0.1" in base_url or "localhost" in base_url
+        if not api_key and not is_local:
+            return True  # 无密钥不会实际外发
+        char_count = sum(path.stat().st_size for path in self._pdf_files if path.is_file())
+        host = urllib.parse.urlsplit(base_url).netloc or base_url
+        reply = QMessageBox.question(
+            self,
+            _("PDF 内容外发确认"),
+            _("将把 PDF 正文发送到外部 AI 服务：\n\n目标: {0}\n预计文本量: 约 {1} 字符\n\n"
+              "仅在确认信任该服务后继续。拒绝后将使用规则抽取。").format(host, char_count),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
+    def _inject_pdf_llm_env(self) -> None:
+        """将 GUI 的 AI 配置桥接为 PDF 子系统期望的 PDFX_LLM_* 环境变量。
+
+        根因：GUI 的 AI 服务中心写入 OMNICRAWL_AI_API_KEY，而 PDF 模板
+        （generic_template.yaml 等）的 llm 段读取 PDFX_LLM_API_KEY /
+        PDFX_LLM_PROVIDER / PDFX_LLM_BASE_URL / PDFX_LLM_MODEL。两者从未桥接，
+        导致即便用户在 GUI 配置了密钥，PDF 抽取阶段的 LLM 也因
+        provider 默认 disabled 且密钥为空而完全不生效。
+
+        注：PDF 子系统的 llm.provider 仅接受 disabled / openai_compatible，
+        因此这里把 GUI 的非 disabled 类型统一映射为 openai_compatible
+        （兼容 OpenAI / Ollama / 自定义 OpenAI 风格端点）。
+        """
+        main = self.window()
+        loader = getattr(main, "_load_ai_config_from_env", None)
+        if loader is None:
+            return
+        try:
+            ai_config = loader()
+        except Exception:
+            return
+        provider = ai_config.get("providers", {}).get("default", {})
+        if ai_config.get("mode") != "enabled" or not isinstance(provider, dict):
+            return
+        api_key = str(provider.get("api_key", "") or "")
+        base_url = str(provider.get("base_url", "") or "")
+        # C47：本地端点（Ollama 等）无需 API Key 也应桥接；云端缺 key 才跳过
+        is_local = "127.0.0.1" in base_url or "localhost" in base_url
+        if not api_key and not is_local:
+            return
+
+        gui_provider = str(provider.get("type", "openai_compatible"))
+        pdf_provider = "openai_compatible" if gui_provider != "disabled" else "disabled"
+
+        # D5：记录注入键，任务结束后从进程环境清除（减少密钥残留窗口）
+        self._injected_keys = []
+        injected: dict[str, str] = {}
+        if not os.environ.get("PDFX_LLM_PROVIDER"):
+            injected["PDFX_LLM_PROVIDER"] = pdf_provider
+        if not os.environ.get("PDFX_LLM_API_KEY"):
+            injected["PDFX_LLM_API_KEY"] = provider["api_key"]
+        if not os.environ.get("PDFX_LLM_BASE_URL"):
+            injected["PDFX_LLM_BASE_URL"] = provider.get("base_url", "")
+        if not os.environ.get("PDFX_LLM_MODEL"):
+            injected["PDFX_LLM_MODEL"] = provider.get("model", "")
+        if not os.environ.get("PDFX_LLM_TIMEOUT"):
+            injected["PDFX_LLM_TIMEOUT"] = str(provider.get("timeout_seconds", 60))
+        for key, value in injected.items():
+            os.environ[key] = value
+            self._injected_keys.append(key)
 
     @pyqtSlot(str)
     def _on_stage_started(self, stage: str) -> None:
@@ -483,8 +616,18 @@ class PdfWorkbenchView(QWidget):
         _ = result
         self._stage_label.setText(f"✓ {stage} 完成")
 
+    @pyqtSlot(list)
+    def _on_warnings(self, items: list) -> None:
+        """D3：显示管线关键警告（AI Key 为空/OCR 未启用等），不再静默丢弃。"""
+        for item in items:
+            self._stage_label.setText(f"⚠ {item}")
+        existing = self._result_text.toPlainText()
+        block = "\n".join(f"⚠ {item}" for item in items)
+        self._result_text.setText(f"{existing}\n\n[运行警告]\n{block}" if existing else f"[运行警告]\n{block}")
+
     @pyqtSlot(object)
     def _on_done(self, result: object) -> None:
+        self._clear_injected_env()
         self._state = "done"
         self._progress_bar.setValue(100)
         self._stage_label.setText("✓ 全部完成！")
@@ -523,8 +666,15 @@ class PdfWorkbenchView(QWidget):
         toast = ToastManager.instance()
         toast.success(f"PDF 处理完成！共处理 {docs.get('ingested', '?')} 份文档")
 
+    def _clear_injected_env(self) -> None:
+        """D5：任务结束后清除本工作台注入的 PDFX_LLM_* 环境变量（减少密钥残留窗口）。"""
+        for key in getattr(self, "_injected_keys", []):
+            os.environ.pop(key, None)
+        self._injected_keys = []
+
     @pyqtSlot(str)
     def _on_failed(self, msg: str) -> None:
+        self._clear_injected_env()
         self._state = "idle"
         self._progress_bar.setVisible(False)
         self._stage_label.setVisible(False)
@@ -555,7 +705,8 @@ class PdfWorkbenchView(QWidget):
         if self._temp_dir:
             output = os.path.join(self._temp_dir, "output")
             if os.path.isdir(output):
-                os.startfile(output)  # type: ignore[attr-defined]
+                # A13/D65：跨平台打开结果目录（os.startfile 仅 Windows）
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(output)))
                 return
         toast = ToastManager.instance()
         toast.warning("输出目录不存在或已被清理")
@@ -570,7 +721,8 @@ class PdfWorkbenchView(QWidget):
         csv_files = glob.glob(os.path.join(output, "*.csv"))
         files = xlsx_files + csv_files
         if files:
-            os.startfile(files[0])  # type: ignore[attr-defined]
+            # A13/D65：跨平台打开结果文件（os.startfile 仅 Windows）
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(files[0])))
         else:
             toast = ToastManager.instance()
             toast.warning("未找到 Excel/CSV 输出文件")

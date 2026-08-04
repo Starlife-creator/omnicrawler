@@ -163,6 +163,12 @@ def to_yaml(config: CrawlConfig) -> str:
         "providers": providers,
         "routing": CommentedMap(),
         "fallback": ["deterministic"],
+        "extraction": CommentedMap({
+            "mode": config.extraction_mode,
+            "prompt": config.ai_extraction_prompt or "",
+            "chunk_strategy": config.ai_chunk_strategy,
+            "max_tokens_per_chunk": config.ai_max_tokens_per_chunk,
+        }),
     })
 
     resources = CommentedMap()
@@ -352,6 +358,17 @@ def from_yaml(yaml_str: str) -> CrawlConfig:
             config.ai_base_url = str(provider.get("base_url", ""))
             config.ai_model = str(provider.get("model", ""))
             config.ai_api_key_ref = str(provider.get("api_key", ""))
+        extraction = ai.get("extraction", {})
+        if isinstance(extraction, dict):
+            mode = str(extraction.get("mode", "selector")).casefold()
+            if mode in ("selector", "ai", "hybrid"):
+                config.extraction_mode = mode  # type: ignore[assignment]
+            config.ai_extraction_prompt = str(extraction.get("prompt") or "") or None
+            config.ai_chunk_strategy = str(extraction.get("chunk_strategy", "auto"))
+            try:
+                config.ai_max_tokens_per_chunk = int(extraction.get("max_tokens_per_chunk", 4000))
+            except (TypeError, ValueError):
+                pass
 
     resources = raw.get("resources", {})
     if isinstance(resources, dict):

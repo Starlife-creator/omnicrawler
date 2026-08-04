@@ -123,10 +123,13 @@ class Database:
     def __init__(self, path: Path):
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(path, timeout=60)
+        self.connection = sqlite3.connect(path, timeout=60, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA busy_timeout=60000")
         self.connection.executescript(SCHEMA)
+        # D42：foreign_keys 独立设置（混在 executescript DDL 中的 PRAGMA 不生效），并断言读回
+        self.connection.execute("PRAGMA foreign_keys=ON")
+        assert self.connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1, "foreign_keys 未启用"
         self._migrate_schema()
 
     def _migrate_schema(self) -> None:
@@ -137,6 +140,16 @@ class Database:
         if "source_meta_json" not in columns:
             self.connection.execute(
                 "ALTER TABLE document_sources ADD COLUMN source_meta_json TEXT"
+            )
+            self.connection.commit()
+        # D16：解析失败次数，超阈值置 parse_dead 排除（防永久损坏 PDF 无限重试/errors 膨胀）
+        doc_columns = {
+            row["name"]
+            for row in self.connection.execute("PRAGMA table_info(documents)")
+        }
+        if "attempt_count" not in doc_columns:
+            self.connection.execute(
+                "ALTER TABLE documents ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0"
             )
             self.connection.commit()
 
@@ -151,6 +164,9 @@ class Database:
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
+        # D41：写事务显式 BEGIN IMMEDIATE——多线程并发写不再随机 SQLITE_BUSY
+        # （deferred 事务在写升级时竞争，busy_timeout 无效）
+        self.connection.execute("BEGIN IMMEDIATE")
         try:
             yield self.connection
             self.connection.commit()

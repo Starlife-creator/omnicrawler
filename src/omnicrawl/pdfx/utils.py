@@ -82,9 +82,10 @@ def chunks(items: Iterable[Any], size: int) -> Iterator[list[Any]]:
         yield batch
 
 
-def clean_text(text: str) -> str:
+def clean_text(text: str, *, compress_ws: bool = True) -> str:
     text = text.replace("\x00", "").replace("\u00a0", " ")
-    text = re.sub(r"[ \t]+", " ", text)
+    if compress_ws:
+        text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 

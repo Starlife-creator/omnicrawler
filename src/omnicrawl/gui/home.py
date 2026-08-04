@@ -42,9 +42,10 @@ class _AIEnrichWorker(QThread):
 
     result_ready = pyqtSignal(object)  # NaturalLanguageDraft | None
 
-    def __init__(self, request: str, parent: QWidget | None = None) -> None:
+    def __init__(self, request: str, parent: QWidget | None = None, project_root: str | None = None) -> None:
         super().__init__(parent)
         self._request = request
+        self._project_root = project_root
 
     def run(self) -> None:
         try:
@@ -63,45 +64,10 @@ class _AIEnrichWorker(QThread):
             self.result_ready.emit(None)
 
     def _load_provider(self) -> object | None:
-        """尝试从 .env 加载 AI provider 配置并实例化。"""
-        import os
-        from pathlib import Path
+        """从单一真源构造 AI provider（含 Egress 审计；未启用返回 None）。"""
+        from ..services.ai_providers import provider_from_env
 
-        env_paths = [
-            Path(os.getcwd()) / ".env",
-            Path.home() / ".omnicrawl" / ".env",
-        ]
-        env_vars: dict[str, str] = {}
-        for env_path in env_paths:
-            if env_path.exists():
-                for line in env_path.read_text(encoding="utf-8").splitlines():
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        key, _, value = line.partition("=")
-                        env_vars[key.strip()] = value.strip().strip("\"'")
-
-        provider_type = env_vars.get("OMNICRAWL_AI_PROVIDER", "disabled")
-        if provider_type == "disabled":
-            return None
-
-        base_url = env_vars.get("OMNICRAWL_AI_BASE_URL", "")
-        api_key = env_vars.get("OMNICRAWL_AI_API_KEY", "")
-        model = env_vars.get("OMNICRAWL_AI_MODEL", "")
-        if not base_url or not model:
-            return None
-
-        try:
-            from ..services.ai_providers import OpenAICompatibleProvider
-            config = {
-                "base_url": base_url,
-                "api_key": api_key,
-                "model": model,
-                "timeout": int(env_vars.get("OMNICRAWL_AI_TIMEOUT", "60")),
-            }
-            return OpenAICompatibleProvider("default", config)
-        except ImportError:
-            logger.debug("OpenAICompatibleProvider not available", exc_info=True)
-            return None
+        return provider_from_env(project_root=self._project_root)
 
 
 def _package_version() -> str:
@@ -109,7 +75,9 @@ def _package_version() -> str:
     try:
         return importlib.metadata.version("omnicrawl-platform")
     except Exception:
-        return "2.7"
+        # A16：回退用 omnicrawl.__version__，不再硬编码 "2.7"
+        from .. import __version__
+        return __version__
 
 
 class AmbientHero(QWidget):
@@ -186,8 +154,9 @@ class HomePage(QWidget):
     run_doctor = pyqtSignal()
     create_demo = pyqtSignal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, project_root: str | None = None) -> None:
         super().__init__(parent)
+        self._project_root = project_root
         self.setObjectName("homePage")
         self.setAccessibleName("OmniCrawler 首页")
         layout = QVBoxLayout(self)
@@ -380,7 +349,7 @@ class HomePage(QWidget):
         if not request:
             return
 
-        self._enrich_worker = _AIEnrichWorker(request, self)
+        self._enrich_worker = _AIEnrichWorker(request, self, project_root=self._project_root)
         self._enrich_worker.result_ready.connect(self._on_ai_enriched)
         self._enrich_worker.start()
 

@@ -2,15 +2,21 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+import fitz
+
+from ..core.utils import user_agent
 from ..security.controlled_http import scoped_json_request
 from .config import ProjectConfig
 from .parser import render_page
 from .retrieval import CandidatePage
 from .utils import extract_json_object, retry
+
+LOGGER = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """你是一个严格的文档数据抽取程序。只能依据用户给出的文件名和候选页面原文抽取，禁止根据常识、上下文猜测或补全。
 
@@ -55,21 +61,37 @@ def build_user_content(
         "候选页面：",
     ]
     for page in pages:
-        text = page.text[:max_chars]
-        text_parts.append(f"\n===== 第{page.page_no}页 =====\n{text}")
+        text = page.text
+        truncated = len(text) > max_chars
+        if truncated:
+            text = text[:max_chars]
+        # D46：静默截断必须显式标记，避免模型在残缺上下文上仍高置信
+        marker = "\n[内容已截断，超出部分未发送]" if truncated else ""
+        text_parts.append(f"\n===== 第{page.page_no}页 =====\n{text}{marker}")
     prompt = "\n".join(text_parts)
 
     if not config.llm.get("include_page_images", False) or not pdf_path:
         return prompt
     content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
     dpi = int(config.llm.get("image_dpi", 144))
-    for page in pages:
-        png = render_page(pdf_path, page.page_no, dpi=dpi)
-        encoded = base64.b64encode(png).decode("ascii")
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:image/png;base64,{encoded}", "detail": "high"},
-        })
+    # D35：复用已打开的 PDF 句柄，避免逐页重复打开
+    with fitz.open(pdf_path) as document:
+        for page in pages:
+            png = render_page(pdf_path, page.page_no, dpi=dpi, document=document)
+            encoded = base64.b64encode(png).decode("ascii")
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{encoded}", "detail": "high"},
+            })
+    # D47：请求体超限时放弃内联图片（保留文本），避免 413/超时
+    max_request_bytes = int(config.llm.get("max_request_bytes", 20 * 1024 * 1024))
+    estimated = len(prompt.encode("utf-8")) + sum(len(str(part).encode("utf-8")) for part in content)
+    if estimated > max_request_bytes:
+        LOGGER.warning(
+            "图片请求体约 %d 字节超限，已降级为纯文本发送（max_request_bytes=%d）",
+            estimated, max_request_bytes,
+        )
+        content = [{"type": "text", "text": prompt}]
     return content
 
 
@@ -133,7 +155,7 @@ class OpenAICompatibleClient:
                 body=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
                 timeout_seconds=self.timeout,
                 max_response_bytes=self.max_response_bytes,
-        user_agent="OmniCrawler-PDF/2.7 LLM extraction",
+        user_agent=user_agent("PDF LLM extraction"),
             )
             choices = body.get("choices") or []
             if not choices:
