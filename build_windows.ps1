@@ -16,6 +16,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Keep .NET's working directory in sync with the script location so that
+# [IO.Path]::GetFullPath() resolves relative path parameters (BuildRootPath,
+# ReleaseOutputPath, BrowserCachePath, RuntimeCachePath) against the project
+# root instead of a stale process CWD.  Without this, relative paths can be
+# resolved against the wrong directory (e.g. the user's home) on some shells.
+[Environment]::CurrentDirectory = $projectRoot
 $buildRoot = if ($BuildRootPath) {
     [IO.Path]::GetFullPath($BuildRootPath)
 } else {

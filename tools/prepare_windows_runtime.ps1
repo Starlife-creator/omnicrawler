@@ -94,9 +94,25 @@ if (-not $SkipTesseract) {
     Copy-Item -LiteralPath (Join-Path $tesseractExtract 'tesseract.exe') -Destination $tesseractRoot -Force
     Get-ChildItem -LiteralPath $tesseractExtract -File -Filter '*.dll' |
         ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $tesseractRoot -Force }
-    foreach ($language in @('eng', 'chi_sim', 'osd')) {
-        Get-Asset ("https://github.com/tesseract-ocr/tessdata_fast/raw/main/$language.traineddata") `
-            (Join-Path $tessdataRoot "$language.traineddata") 100000
+    $requiredLanguages = @('eng', 'chi_sim', 'osd')
+    foreach ($language in $requiredLanguages) {
+        $langPath = Join-Path $tessdataRoot "$language.traineddata"
+        Get-Asset ("https://github.com/tesseract-ocr/tessdata_fast/raw/main/$language.traineddata") $langPath 100000
+        # Explicit post-download guard. Get-Asset reuses an existing file when it
+        # already meets the minimum size, but a previous interrupted run may have
+        # left a zero-byte/partial stub behind; fail loudly instead of letting a
+        # half-prepared cache slip through to the build (which then fails much
+        # later at the OCR self-test).
+        if (-not (Test-Path -LiteralPath $langPath) -or (Get-Item -LiteralPath $langPath).Length -lt 100000) {
+            throw "Tesseract language pack missing or corrupt after download: $langPath"
+        }
+        # A failed download can land an HTML error page (GitHub 404 / rate-limit)
+        # that still exceeds the minimum size. A valid .traineddata is gzip and
+        # starts with the magic bytes 1F 8B; reject anything that does not.
+        $magic = Get-Content -LiteralPath $langPath -Encoding Byte -TotalCount 2 -ErrorAction SilentlyContinue
+        if (-not ($magic -and $magic[0] -eq 0x1F -and $magic[1] -eq 0x8B)) {
+            throw "Tesseract language pack is not a valid gzip archive: $langPath"
+        }
     }
     & (Join-Path $tesseractRoot 'tesseract.exe') --tessdata-dir $tessdataRoot --list-langs | Out-Host
     if ($LASTEXITCODE -ne 0) { throw 'Tesseract language verification failed.' }
