@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import stat
 import zipfile
 from dataclasses import dataclass
@@ -60,7 +61,12 @@ def validate_zip_archive(
             raise UnsafePackageError("package exceeds the total uncompressed size limit")
         if info.file_size and info.compress_size <= 0:
             raise UnsafePackageError(f"package member has invalid compressed size: {info.filename!r}")
-        if info.compress_size and info.file_size / info.compress_size > limits.max_compression_ratio:
+        # S4.5 P3#146：压缩比检查仅对足够大的成员生效（小文本文件高压缩比正常，不再误伤）
+        if (
+            info.compress_size
+            and info.file_size >= 16 * 1024
+            and info.file_size / info.compress_size > limits.max_compression_ratio
+        ):
             raise UnsafePackageError(f"package member has suspicious compression ratio: {info.filename!r}")
         members[name] = info
     missing = [name for name in required if name not in members or members[name].is_dir()]
@@ -90,25 +96,41 @@ def copy_zip_member(
     info: zipfile.ZipInfo,
     destination: Path,
 ) -> str:
-    """Stream one validated member to disk and return its SHA-256 digest."""
+    """Stream one validated member to disk and return its SHA-256 digest.
+
+    Writes to a temporary sibling and atomically renames on success, so a
+    failed or oversized extraction never leaves a partial file behind.
+    """
     destination.parent.mkdir(parents=True, exist_ok=True)
+    temp_name = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
     digest = hashlib.sha256()
     written = 0
-    with archive.open(info) as source, destination.open("xb") as target:
-        while chunk := source.read(1024 * 1024):
-            written += len(chunk)
-            if written > info.file_size:
-                raise UnsafePackageError(f"package member expanded beyond metadata: {info.filename!r}")
-            digest.update(chunk)
-            target.write(chunk)
-    if written != info.file_size:
-        raise UnsafePackageError(f"package member size mismatch: {info.filename!r}")
+    try:
+        with archive.open(info) as source, temp_name.open("xb") as target:
+            while chunk := source.read(1024 * 1024):
+                written += len(chunk)
+                if written > info.file_size:
+                    raise UnsafePackageError(f"package member expanded beyond metadata: {info.filename!r}")
+                digest.update(chunk)
+                target.write(chunk)
+        if written != info.file_size:
+            raise UnsafePackageError(f"package member size mismatch: {info.filename!r}")
+        os.replace(temp_name, destination)
+    except Exception:
+        temp_name.unlink(missing_ok=True)
+        raise
     return digest.hexdigest()
 
 
 def _safe_relative(name: str) -> PurePosixPath:
     normalized = name.replace("\\", "/")
     path = PurePosixPath(normalized)
-    if not normalized or path.is_absolute() or ".." in path.parts or ":" in path.parts[0]:
+    if (
+        not normalized
+        or not path.parts
+        or path.is_absolute()
+        or ".." in path.parts
+        or ":" in path.parts[0]
+    ):
         raise UnsafePackageError(f"unsafe package path: {name!r}")
     return path

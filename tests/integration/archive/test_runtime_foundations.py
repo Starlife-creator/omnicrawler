@@ -36,7 +36,7 @@ def _config(tmp_path: Path, *, source_kind="static_html", session=None, extra=No
 
 
 def test_credentials_environment_keyring_missing_and_recursive_resolution(monkeypatch) -> None:
-    monkeypatch.setenv("OMNICRAW_SECRET_API_KEY", "environment-secret")
+    monkeypatch.setenv("OMNICRAWL_SECRET_API_KEY", "environment-secret")
     assert get_secret("api-key") == "environment-secret"
     value = {
         "header": "secret://api-key",
@@ -48,10 +48,18 @@ def test_credentials_environment_keyring_missing_and_recursive_resolution(monkey
     assert resolved["nested"][1]["token"] == "environment-secret"
     assert resolved["number"] == 3
 
-    monkeypatch.delenv("OMNICRAW_SECRET_MISSING", raising=False)
+    monkeypatch.delenv("OMNICRAWL_SECRET_MISSING", raising=False)
     monkeypatch.setitem(sys.modules, "keyring", None)
-    with pytest.raises(ValueError, match="OMNICRAW_SECRET_MISSING"):
+    with pytest.raises(ValueError, match="OMNICRAWL_SECRET_MISSING"):
         get_secret("missing")
+
+
+def test_credentials_legacy_prefix_still_works(monkeypatch) -> None:
+    """S1.3.8：旧前缀 OMNICRAW_SECRET_* 兼容读取，新前缀优先。"""
+    monkeypatch.setenv("OMNICRAW_SECRET_LEGACY", "legacy-value")
+    assert get_secret("legacy") == "legacy-value"
+    monkeypatch.setenv("OMNICRAWL_SECRET_LEGACY", "new-value")
+    assert get_secret("legacy") == "new-value"
 
 
 def test_credentials_keyring_fallback(monkeypatch) -> None:
@@ -91,9 +99,14 @@ def test_cookie_session_memory_persistence_corrupt_load_and_safe_name(tmp_path: 
 
 
 def test_schedule_conditions_hours_power_battery_and_network(monkeypatch) -> None:
+    from datetime import timezone as _timezone
+
     assert evaluate_conditions({}) == (True, "")
-    fixed = SimpleNamespace(now=lambda: datetime(2026, 1, 1, 9, 0, 0))
-    monkeypatch.setattr("omnicrawl.schedule_conditions.datetime", fixed)
+    fixed = SimpleNamespace(
+        now=lambda tz=None: datetime(2026, 1, 1, 9, 0, 0, tzinfo=tz),
+        timezone=_timezone,
+    )
+    monkeypatch.setattr("omnicrawl.runtime.schedule_conditions.datetime", fixed)
     assert evaluate_conditions({"allowed_hours": [10]})[0] is False
     assert evaluate_conditions({"allowed_hours": [9]}) == (True, "")
 

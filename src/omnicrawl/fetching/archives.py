@@ -1,3 +1,9 @@
+"""存档解包安全工具（S3.2.2：标记 deprecated——由 core/archive_security 收敛）。
+
+⚠ 已废弃：归档安全实现已收敛到 :mod:`omnicrawl.core.archive_security`，
+本模块仅供历史调用方过渡，新代码禁止使用。
+"""
+
 from __future__ import annotations
 
 import os
@@ -5,6 +11,7 @@ import shutil
 import stat
 import tarfile
 import tempfile
+import warnings
 import zipfile
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -14,6 +21,14 @@ from typing import IO
 
 class UnsafeArchiveError(ValueError):
     """Raised when an archive violates extraction safety limits."""
+
+
+def _deprecated() -> None:
+    warnings.warn(
+        "fetching.archives 已废弃，请改用 omnicrawl.core.archive_security",
+        DeprecationWarning,
+        stacklevel=3,
+    )
 
 
 @dataclass(frozen=True)
@@ -37,9 +52,9 @@ class ArchiveMember:
 def _safe_relative_path(name: str) -> Path:
     normalized = name.replace("\\", "/")
     path = PurePosixPath(normalized)
-    if not normalized or path.is_absolute() or ".." in path.parts:
+    if not normalized or not path.parts or path.is_absolute() or ".." in path.parts:
         raise UnsafeArchiveError(f"Archive member escapes destination: {name!r}")
-    if path.parts and ":" in path.parts[0]:
+    if ":" in path.parts[0]:
         raise UnsafeArchiveError(f"Archive member contains a drive path: {name!r}")
     return Path(*path.parts)
 
@@ -126,7 +141,11 @@ def safe_extract_archive(
     *,
     limits: ArchiveLimits | None = None,
 ) -> list[Path]:
-    """Extract ZIP or TAR safely and publish the destination only after success."""
+    """Extract ZIP or TAR safely and publish the destination only after success.
+
+    已废弃（S3.2.2）：归档安全已收敛到 :mod:`omnicrawl.core.archive_security`。
+    """
+    _deprecated()
 
     source = Path(archive_path).resolve(strict=True)
     target = Path(destination).resolve()

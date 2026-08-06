@@ -58,3 +58,20 @@ def test_recovery_center_config_rollback_preserves_current_file(tmp_path: Path) 
     result = RecoveryCenter(load_config(current)).rollback_config(backup)
     assert load_config(current).project_name == "restored"
     assert "name: current" in Path(result["previous_config"]).read_text(encoding="utf-8")
+
+
+def test_s2520_reset_login_twice_in_same_second_succeeds(tmp_path: Path) -> None:
+    from unittest import mock
+
+    config = load_config(_task(tmp_path, "twice"))
+    sessions = config.workspace / "sessions"
+    sessions.mkdir(parents=True)
+    (sessions / "default.cookies").write_text("private", encoding="utf-8")
+
+    center = RecoveryCenter(config)
+    with mock.patch("omnicrawl.runtime.recovery.utcnow", return_value="2026-01-01T00:00:00+00:00"):
+        first = center.reset_login()
+        (sessions / "default.cookies").write_text("private-again", encoding="utf-8")
+        second = center.reset_login()
+    assert first["moved"] == 1 and second["moved"] == 1
+    assert Path(first["quarantine"]) != Path(second["quarantine"])

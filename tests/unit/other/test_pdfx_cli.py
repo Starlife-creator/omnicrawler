@@ -65,6 +65,16 @@ def test_pdfx_cli_all_offline_stage_branches(tmp_path: Path, monkeypatch, capsys
     monkeypatch.setattr(cli, "export_text_stage", lambda *_args: calls.append("text") or {"pages": 1})
     monkeypatch.setattr(cli, "status", lambda _db: calls.append("status") or {"ok": True})
     monkeypatch.setattr(cli, "apply_review", lambda *_args: calls.append("review") or {"accepted": 1})
+    # S2.3.4：run/process 统一走 service 入口（CLI 不再手写阶段链）
+    run_calls: list[str] = []
+    monkeypatch.setattr(
+        cli, "run_extraction",
+        lambda *_args, **_kw: run_calls.append("run") or {"status": {}},
+    )
+    monkeypatch.setattr(
+        cli, "run_processing",
+        lambda *_args, **_kw: run_calls.append("process") or {"status": {}},
+    )
 
     common = ["--config", str(config.path)]
     for command, options in (
@@ -85,7 +95,10 @@ def test_pdfx_cli_all_offline_stage_branches(tmp_path: Path, monkeypatch, capsys
     ):
         _main(monkeypatch, [*common, command, *options])
     assert {"ingest", "parse", "ocr", "extract", "export", "text", "status", "review"}.issubset(calls)
-    assert '"stage": "warnings"' in capsys.readouterr().out
+    # S2.3.4：run/process 分支必须经 service 入口（各两次：带/不带 --skip-ocr）
+    assert run_calls.count("run") == 2
+    assert run_calls.count("process") == 2
+    assert '"stage": "run"' in capsys.readouterr().out
 
 
 def test_pdfx_cli_validate_doctor_dependencies_and_errors(tmp_path: Path, monkeypatch, capsys) -> None:

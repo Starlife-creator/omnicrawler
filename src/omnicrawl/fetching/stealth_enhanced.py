@@ -21,6 +21,7 @@ import json
 import logging
 import math
 import random
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -130,6 +131,10 @@ class Fingerprint:
 # ── 代理轮换 ──────────────────────────────────────────────────────────
 
 class ProxyRotator:
+    """代理轮换器（S3.2.2 标注：实验性）。
+
+    ⚠ 实验性：代理轮换策略仅供显式启用 stealth 的场景，默认采集路径不使用。
+    """
     """代理轮换器 — 支持加权评分 + 主动健康检查。"""
 
     def __init__(self, proxies: list[str] | None = None) -> None:
@@ -351,6 +356,15 @@ class StealthEnhancer:
         except Exception:
             lang_str = "zh-CN,zh,en"
 
+        # S2.5.29：sec_ch_ua 版本号与 UA 联动——同一 UA 下 Chromium/Chrome 版本一致；
+        # 非 Chromium 内核 UA（Firefox/Safari）不注入 sec-ch-ua（避免自相矛盾）
+        chrome_match = re.search(r"Chrome/(\d+)", ua)
+        chrome_version = chrome_match.group(1) if chrome_match else ""
+        sec_ch_ua = (
+            f'"Chromium";v="{chrome_version}", "Not=A?Brand";v="24", '
+            f'"Google Chrome";v="{chrome_version}"'
+        ) if chrome_version else ""
+
         return Fingerprint(
             user_agent=ua,
             viewport_width=w, viewport_height=h,
@@ -363,7 +377,7 @@ class StealthEnhancer:
             hardware_concurrency=self._rng.choice([4, 8, 12, 16]),
             device_memory=self._rng.choice([4, 8, 16]),
             accept_language=lang_str,
-            sec_ch_ua=f'"Chromium";v="{self._rng.randint(125, 131)}", "Not=A?Brand";v="24", "Google Chrome";v="{self._rng.randint(125, 131)}"',
+            sec_ch_ua=sec_ch_ua,
             sec_ch_ua_platform=f'"{platform}"',
         )
 
@@ -381,7 +395,9 @@ class StealthEnhancer:
     def apply_to_playwright_context(
         self, context: Any, fingerprint: Fingerprint | None = None, level: StealthLevel | None = None
     ) -> None:
-        """将指纹应用到 Playwright BrowserContext。
+        """将指纹应用到 Playwright BrowserContext（S3.2.2 标注：实验性）。
+
+        ⚠ 实验性：仅在显式启用 stealth 的浏览器抓取路径调用，不在默认主路径。
 
         Args:
             context: Playwright BrowserContext
@@ -394,10 +410,11 @@ class StealthEnhancer:
         if actual_level == StealthLevel.OFF:
             return
 
-        # 设置视口
+        # 设置视口（S2.5.29：使用现有标签页，不再 new_page 建空白页）
         try:
-            page = context.pages[0] if hasattr(context, "pages") and context.pages else context.new_page()
-            page.set_viewport_size({"width": fp.viewport_width, "height": fp.viewport_height})
+            pages = context.pages if hasattr(context, "pages") else []
+            if pages:
+                pages[0].set_viewport_size({"width": fp.viewport_width, "height": fp.viewport_height})
         except Exception as exc:
             LOGGER.warning("设置视口尺寸失败: %s", exc)
 
@@ -510,13 +527,13 @@ class StealthEnhancer:
         };
         """)
 
-        # HIGH: 时区伪装
+        # HIGH: 时区伪装（S2.5.29：offsets 覆盖全部 _TIMEZONES，含 America/Chicago 等）
         if level.value >= StealthLevel.HIGH.value:
             parts.append(f"""
         // 覆盖时区
         Date.prototype.getTimezoneOffset = function() {{
             const _tz = '{fp.timezone}';
-            const _offsets = {{'Asia/Shanghai': -480, 'Asia/Tokyo': -540, 'America/New_York': 300, 'Europe/London': 0, 'Asia/Seoul': -540, 'Europe/Berlin': -60, 'Europe/Paris': -60, 'Australia/Sydney': -660, 'Pacific/Auckland': -780}};
+            const _offsets = {{'Asia/Shanghai': -480, 'Asia/Tokyo': -540, 'Asia/Seoul': -540, 'America/New_York': 300, 'America/Chicago': 360, 'America/Los_Angeles': 420, 'Europe/London': 0, 'Europe/Berlin': -60, 'Europe/Paris': -60, 'Australia/Sydney': -660, 'Pacific/Auckland': -780}};
             return _offsets[_tz] !== undefined ? _offsets[_tz] : -480;
         }};
         """)

@@ -192,7 +192,8 @@ class OpenSearchRecordSink:
 @dataclass(slots=True)
 class RecordSinkManager:
     sinks: list[tuple[str, RecordSink]] = field(default_factory=list)
-    fail_open: bool = True
+    # S2.5.16：默认 fail_closed——sink 崩坏使运行失败，不再静默丢弃记录
+    fail_open: bool = False
     max_errors: int = 200
     errors: list[dict[str, str]] = field(default_factory=list)
     _error_counts: dict[str, int] = field(default_factory=dict, init=False, repr=False)
@@ -248,7 +249,8 @@ def build_record_sink_manager(
     if max_errors < 0:
         raise ValueError("storage.records.max_errors不能为负数")
     manager = RecordSinkManager(
-        fail_open=bool(settings.get("fail_open", True)), max_errors=max_errors
+        # S2.5.16：默认 fail_closed——sink 崩坏使运行失败，不再静默丢记录
+        fail_open=bool(settings.get("fail_open", False)), max_errors=max_errors
     )
     backends = settings.get("backends", [])
     if not isinstance(backends, list):

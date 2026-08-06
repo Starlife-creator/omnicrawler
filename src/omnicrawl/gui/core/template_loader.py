@@ -5,10 +5,13 @@
 
 from __future__ import annotations
 
+import copy
+from dataclasses import fields
 from pathlib import Path
 
 from ...templates.template_catalog import TemplateCatalog, TemplateRecord
-from .config_model import CrawlConfig
+from ..i18n import _
+from .config_model import CrawlConfig, FieldDef
 
 
 class TemplateInfo:
@@ -163,6 +166,58 @@ class TemplateLoader:
             return direct
         return next((item for item in self._cache.values() if item.name == name), None)
 
+    def combine(self, names: list[str]) -> CrawlConfig | None:
+        """合并多个模板为一个可执行配置。
+
+        Args:
+            names: 模板名称列表，按顺序合并，后者覆盖前者。
+
+        Returns:
+            合并后的 CrawlConfig；任一模板缺失则抛出 ValueError。
+        """
+        if not names:
+            raise ValueError(_(_("至少需要一个模板名称")))
+
+        configs = []
+        for name in names:
+            config = self.load_template(name)
+            if config is None:
+                raise ValueError(_(_(f"模板不存在: {name}")))
+            configs.append(config)
+
+        merged = copy.deepcopy(configs[0])
+        identity_fields = {"task_id", "created_at", "project_name", "workspace"}
+        defaults = CrawlConfig()
+
+        # seed_urls 合并去重
+        seen_urls = set(merged.seed_urls)
+        for config in configs[1:]:
+            for url in config.seed_urls:
+                if url not in seen_urls:
+                    seen_urls.add(url)
+                    merged.seed_urls.append(url)
+
+        # fields 合并，冲突时后者覆盖
+        field_by_name: dict[str, FieldDef] = {f.name: f for f in merged.fields}
+        for config in configs[1:]:
+            for field in config.fields:
+                field_by_name[field.name] = copy.deepcopy(field)
+        merged.fields = list(field_by_name.values())
+
+        # 其余配置段取第一个模板；仅当后者显式设置（非默认值）且冲突时覆盖
+        for config in configs[1:]:
+            for field in fields(CrawlConfig):
+                name = field.name
+                if name in ("seed_urls", "fields") or name in identity_fields:
+                    continue
+                later = getattr(config, name)
+                if later == getattr(defaults, name):
+                    continue
+                if later != getattr(merged, name):
+                    setattr(merged, name, copy.deepcopy(later))
+
+        return merged
+
     @staticmethod
     def _to_info(record: TemplateRecord) -> TemplateInfo:
         metadata = record.metadata
@@ -186,11 +241,11 @@ class TemplateLoader:
     def _placeholder_description(key: str) -> str:
         """根据占位符 key 返回人类可读的描述。"""
         descriptions = {
-            "seed_url": "种子 URL",
-            "domain": "目标域名",
-            "item_selector": "列表项 CSS 选择器",
-            "title_selector": "标题 CSS 选择器",
-            "link_selector": "链接 CSS 选择器",
-            "date_selector": "日期 CSS 选择器",
+            "seed_url": _(_("种子 URL")),
+            "domain": _(_("目标域名")),
+            "item_selector": _(_("列表项 CSS 选择器")),
+            "title_selector": _(_("标题 CSS 选择器")),
+            "link_selector": _(_("链接 CSS 选择器")),
+            "date_selector": _(_("日期 CSS 选择器")),
         }
         return descriptions.get(key, key.replace("_", " "))

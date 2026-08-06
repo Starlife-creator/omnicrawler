@@ -13,16 +13,23 @@ from .templates import is_builtin_pdf_reference, resolve_builtin_pdf_reference
 AMOUNT_UNITS = {
     "亿元": 100_000_000,
     "亿": 100_000_000,
+    "千万元": 10_000_000,
     "百万元": 1_000_000,
+    "百万": 1_000_000,
     "万元": 10_000,
     "万": 10_000,
     "千元": 1_000,
+    "百元": 100,
     "元": 1,
 }
 
-# D50：外币币种识别（无法按人民币直接换算，拒换交人工复核）
-_FOREIGN_CURRENCIES = (
-    "美元", "美金", "港币", "港元", "欧元", "日元", "日圆", "英镑", "瑞郎", "法郎",
+# S2.5.1：外币识别补符号/ISO 形式（$100 / USD 100 / €50 / HK$），
+# 中文币名保留原 _FOREIGN_CURRENCIES 语义。¥ 是人民币符号不拒。
+_FOREIGN_CURRENCY_RE = re.compile(
+    r"(?:美元|美金|港币|港元|欧元|日元|日圆|英镑|瑞郎|法郎)"
+    r"|(?<![A-Za-z])(?:USD|EUR|JPY|GBP|HKD|AUD|CAD)(?=\s*\d)"
+    r"|(?<=[\d，,.])\s*(?:USD|EUR|JPY|GBP|HKD|AUD|CAD)\b"
+    r"|(?:HK\$|\$|€|£)(?=\s*\d)"
 )
 
 
@@ -63,8 +70,8 @@ def normalize_amount(raw: str, target_unit: str | None = "元") -> tuple[str | N
     value = _number(raw)
     if value is None:
         return None, target_unit
-    # D50：外币（美元/港币/欧元等）无法按人民币换算，拒绝并交人工复核
-    if any(name in raw for name in _FOREIGN_CURRENCIES):
+    # D50/S2.5.1：外币（亿美元/港币/$100/USD 100/€50）无法按人民币换算，拒绝交人工复核
+    if _FOREIGN_CURRENCY_RE.search(raw):
         return None, target_unit
     source_unit = next((unit for unit in AMOUNT_UNITS if unit in raw), None)
     source_multiplier = AMOUNT_UNITS.get(source_unit or "元", 1)
@@ -112,6 +119,7 @@ def normalize_percent(raw: str) -> tuple[str | None, str]:
 
 
 # Module-level entity cache with double-checked locking for thread safety.
+# S4.5 P3#144：缓存键含 mtime——CSV 变更后重新加载，不再永不过期。
 _entity_cache: dict[str, dict[str, str]] = {}
 _entity_lock = threading.Lock()
 
@@ -122,7 +130,12 @@ def _load_entities(csv_path: Path) -> dict[str, str]:
     Uses double-checked locking: the cache is checked first without the lock,
     then re-checked under the lock before performing the actual load.
     """
-    cache_key = str(csv_path.resolve())
+    resolved = csv_path.resolve()
+    try:
+        mtime = resolved.stat().st_mtime_ns
+    except OSError:
+        mtime = -1
+    cache_key = f"{resolved}|{mtime}"
     cached = _entity_cache.get(cache_key)
     if cached is not None:
         return cached
@@ -131,8 +144,8 @@ def _load_entities(csv_path: Path) -> dict[str, str]:
         if cached is not None:
             return cached
         aliases: dict[str, str] = {}
-        if csv_path.exists():
-            with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
+        if resolved.exists():
+            with resolved.open("r", encoding="utf-8-sig", newline="") as handle:
                 for row in csv.DictReader(handle):
                     canonical = (row.get("standard_name") or "").strip()
                     if not canonical:

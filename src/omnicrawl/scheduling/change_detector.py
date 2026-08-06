@@ -34,7 +34,7 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -85,7 +85,7 @@ class MonitorRule:
         if not self.rule_id:
             self.rule_id = uuid.uuid4().hex[:12]
         if self.created_at is None:
-            self.created_at = datetime.now(tz=UTC)
+            self.created_at = datetime.now(tz=timezone.utc)
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为可 JSON 存储的字典。"""
@@ -163,11 +163,23 @@ class ChangeDetector:
         self._data_dir = data_dir or Path(".omnicrawl_monitor")
         self._on_notify = on_notify
         self._running: bool = True
+        # S3.2.1：基线持久化——每轮重建规则对象也能恢复 last_hash，
+        # 消除 GUI 侧 "__baseline__" 哨兵假哈希导致的每轮误报变化
+        self._baselines: dict[str, dict[str, Any]] = {}
+        self._load_baselines()
 
     # ── 规则管理 ────────────────────────────────────────────────────
 
     def add_rule(self, rule: MonitorRule) -> str:
-        """添加一条监控规则。返回 rule_id。"""
+        """添加一条监控规则。返回 rule_id。
+
+        S3.2.1：若磁盘存在该规则基线，恢复 last_hash/last_content，
+        使每轮重建规则对象仍能正确比较。
+        """
+        baseline = self._baselines.get(rule.rule_id)
+        if baseline and rule.last_hash is None:
+            rule.last_hash = baseline.get("last_hash")
+            rule.last_content = baseline.get("last_content")
         self._rules[rule.rule_id] = rule
         LOGGER.info("添加监控规则: %s (%s)", rule.name, rule.rule_id)
         return rule.rule_id
@@ -350,7 +362,7 @@ class ChangeDetector:
         if rule is None or not rule.enabled:
             return None
 
-        now = datetime.now(tz=UTC)
+        now = datetime.now(tz=timezone.utc)
 
         # 检查间隔
         if rule.last_checked is not None:
@@ -372,11 +384,13 @@ class ChangeDetector:
             rule.last_hash = current_hash
             rule.last_content = content
             rule.last_checked = now
+            self._persist_baseline(rule)
             return None
 
         # 无变化
         if current_hash == rule.last_hash:
             rule.last_checked = now
+            self._persist_baseline(rule)
             return None
 
         # 检查条件
@@ -401,9 +415,13 @@ class ChangeDetector:
         rule.last_hash = current_hash
         rule.last_content = content
         rule.last_checked = now
+        self._persist_baseline(rule)
 
-        # 记录历史
-        self._history.setdefault(rule_id, []).append(event)
+        # 记录历史（S3.2.1 ⑥：每规则历史有界，防内存无限增长）
+        history = self._history.setdefault(rule_id, [])
+        history.append(event)
+        if len(history) > 50:
+            del history[: len(history) - 50]
 
         # 触发通知
         if self._on_notify:
@@ -428,6 +446,37 @@ class ChangeDetector:
             except Exception as exc:
                 LOGGER.error("检查规则 %s 异常: %s", rule_id, exc)
         return events
+
+    # ── S3.2.1：基线持久化 ─────────────────────────────────────────
+
+    def _baseline_path(self) -> Path:
+        return self._data_dir / "baselines.json"
+
+    def _load_baselines(self) -> None:
+        try:
+            data = json.loads(self._baseline_path().read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                self._baselines = data
+        except (OSError, json.JSONDecodeError):
+            self._baselines = {}
+
+    def _persist_baseline(self, rule: MonitorRule) -> None:
+        """把规则的 last_hash/last_content/last_checked 写入磁盘基线。"""
+        self._baselines[rule.rule_id] = {
+            "last_hash": rule.last_hash,
+            "last_content": rule.last_content,
+            "last_checked": rule.last_checked.isoformat() if rule.last_checked else None,
+        }
+        try:
+            self._baseline_path().parent.mkdir(parents=True, exist_ok=True)
+            temporary = self._baseline_path().with_suffix(".tmp")
+            temporary.write_text(
+                json.dumps(self._baselines, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            temporary.replace(self._baseline_path())
+        except OSError as exc:
+            LOGGER.warning("变更监控基线写入失败: %s", exc)
 
     # ── 历史查询 ────────────────────────────────────────────────────
 

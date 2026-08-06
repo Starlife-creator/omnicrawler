@@ -29,11 +29,15 @@ class _PipelineFetch(_PipelineBase):
             fetchers = self._local.fetchers = {}
         if name not in fetchers:
             factory = self.registry.fetchers[name]
-            fetchers[name] = (
+            instance = (
                 factory(self.config, self.limiter, self.egress)
                 if built_in
                 else factory(self.config, self.limiter)
             )
+            fetchers[name] = instance
+            # S2.5.45：登记线程局部 fetcher，Pipeline.close 统一回收防连接泄漏
+            with self._all_fetchers_lock:
+                self._all_fetchers.append(instance)
         return fetchers[name]
 
     def _fetch_checked(self, run_id: str, request: CrawlRequest) -> FetchResult:

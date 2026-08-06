@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 
 from ..core.config import AppConfig
 from ..core.models import ExtractedRecord, FetchResult, ProcessResult
+from ..core.safe_data import safe_json_loads, safe_regex_search
 from .html_tools import node_attr, node_markup, node_text, parse_html, select_nodes
 
 
@@ -28,9 +28,8 @@ def _structured_metadata(document: Any, result: FetchResult) -> dict[str, Any]:
         raw = node_text(node).strip()
         if not raw:
             continue
-        try:
-            value = json.loads(raw)
-        except json.JSONDecodeError:
+        value = safe_json_loads(raw)
+        if value is None:
             continue
         if isinstance(value, list):
             jsonld.extend(value)
@@ -160,11 +159,15 @@ def _apply_xpath_rule(context: Any, rule: dict[str, Any]) -> tuple[Any, dict[str
         cleaned = str(node_value).strip()
         regex = rule.get("regex")
         if regex:
-            match = re.search(str(regex), cleaned, flags=re.S)
+            # S2.5.14：safe_regex_search 防病态正则卡死；group 越界防护
+            match = safe_regex_search(str(regex), cleaned, flags=re.S)
             if not match:
                 continue
             group = rule.get("group", "value" if "value" in match.groupdict() else 1 if match.lastindex else 0)
-            cleaned = str(match.group(group)).strip()
+            try:
+                cleaned = str(match.group(group)).strip()
+            except (IndexError, re.error):
+                continue
         for transform in rule.get("transforms", []):
             name = str(transform).casefold()
             if name == "normalize_space":
@@ -224,11 +227,15 @@ def _apply_rule(context: Any, rule: Any) -> tuple[Any, dict[str, Any]]:
         raw_values.append(str(value)[:2000])
         regex = rule.get("regex")
         if regex:
-            match = re.search(str(regex), str(value), flags=re.S)
+            # S2.5.14：safe_regex_search 防病态正则卡死；group 越界防护
+            match = safe_regex_search(str(regex), str(value), flags=re.S)
             if not match:
                 continue
             group = rule.get("group", "value" if "value" in match.groupdict() else 1 if match.lastindex else 0)
-            value = match.group(group)
+            try:
+                value = match.group(group)
+            except (IndexError, re.error):
+                continue
         value = str(value).strip()
         for transform in rule.get("transforms", []):
             name = str(transform).lower()
@@ -334,7 +341,10 @@ class JSONProcessor:
         self.config = config
 
     def process(self, result: FetchResult) -> ProcessResult:
-        payload = json.loads(decode_body(result))
+        payload = safe_json_loads(decode_body(result))
+        if payload is None:
+            # S2.5.14：错误带上 URL 上下文，便于定位具体响应
+            raise ValueError(f"响应体不是合法 JSON，无法按 JSON 模式提取（{result.final_url}）")
         extract = self.config.section("extract")
         items = json_path(payload, str(extract.get("item_path", "$")))
         fields = extract.get("fields", {})
@@ -393,6 +403,8 @@ class TableProcessor:
     def process(self, result: FetchResult) -> ProcessResult:
         document = parse_html(decode_body(result))
         selector = str(self.config.section("extract").get("table_selector", "table"))
+        # S2.5.32：extract.fields 参与列选择/过滤，不再被忽略
+        fields = self.config.section("extract").get("fields", {})
         records: list[ExtractedRecord] = []
         for table_index, table in enumerate(select_nodes(document, selector), 1):
             rows = select_nodes(table, "tr")
@@ -405,15 +417,52 @@ class TableProcessor:
             if not has_header:
                 headers = [f"column_{index}" for index in range(1, len(first) + 1)]
             for row_index, row in enumerate(data_rows, 1):
-                values = [node_text(cell) for cell in select_nodes(row, "th, td")]
-                if not values:
-                    continue
-                data = {headers[index] if index < len(headers) else f"column_{index + 1}": value for index, value in enumerate(values)}
+                if fields:
+                    data = _extract_table_fields(row, headers, fields)
+                    if not data:
+                        continue
+                else:
+                    values = [node_text(cell) for cell in select_nodes(row, "th, td")]
+                    if not values:
+                        continue
+                    data = {headers[index] if index < len(headers) else f"column_{index + 1}": value for index, value in enumerate(values)}
                 records.append(ExtractedRecord(
                     result.final_url, "html_table_row", data,
                     {"table": table_index, "row": row_index, "selector": selector},
                 ))
         return ProcessResult(records=records)
+
+
+def _extract_table_fields(row: Any, headers: list[str], fields: dict[str, Any]) -> dict[str, Any]:
+    """S2.5.32：按 extract.fields 规则从表格行提取字段。
+
+    规则支持：``{"column": "表头名" | int 索引}`` 或 ``{"selector": "td.x"}``；
+    字符串简写视为表头名。
+    """
+    cells = select_nodes(row, "th, td")
+    data: dict[str, Any] = {}
+    for name, rule in fields.items():
+        column = rule if isinstance(rule, str) else (rule or {}).get("column")
+        target: list[Any] = []
+        if column is None:
+            selector = (rule or {}).get("selector")
+            if isinstance(selector, str) and selector:
+                target = select_nodes(row, selector)
+        elif isinstance(column, int):
+            if 0 <= column < len(cells):
+                target = [cells[column]]
+        else:
+            wanted = str(column).strip().casefold()
+            index = next(
+                (i for i, header in enumerate(headers) if str(header).strip().casefold() == wanted),
+                None,
+            )
+            if index is not None and index < len(cells):
+                target = [cells[index]]
+        value = " ".join(node_text(cell).strip() for cell in target).strip() if target else None
+        if value:
+            data[str(name)] = value
+    return data
 
 
 def choose_processor(result: FetchResult) -> str:

@@ -17,10 +17,10 @@ class RunController(_BaseDelegate):
         mw = self._mw
         if mw._task_runner.state == "paused":
             mw._task_runner.resume()
-            mw._pause_btn.setText("Ⅱ 暂停")
+            mw._pause_btn.setText(_("Ⅱ 暂停"))
         elif mw._task_runner.state == "running":
             mw._task_runner.pause()
-            mw._pause_btn.setText("▶ 继续")
+            mw._pause_btn.setText(_("▶ 继续"))
 
     def run_task(self) -> None:
         mw = self._mw
@@ -43,7 +43,7 @@ class RunController(_BaseDelegate):
         mw._run_btn.setEnabled(False)
         mw._stop_btn.setEnabled(True)
         mw._pause_btn.setEnabled(True)
-        mw._pause_btn.setText("Ⅱ 暂停")
+        mw._pause_btn.setText(_("Ⅱ 暂停"))
         mw._progress_bar.setRange(0, 0)
         mw._progress_bar.setValue(0)
         mw._progress_url_label.setText("")
@@ -56,9 +56,11 @@ class RunController(_BaseDelegate):
         mw._resource_monitor.set_pid(None)
         ok = mw._task_runner.start(mw._config)
         if ok:
+            # S3.1.3：记录本次运行归属的 task_id——结束时用它而非当前配置
+            mw._running_task_id = mw._config.task_id
             run_config_path = mw._task_runner.config_path or mw._config_path
             mw._task_history.add_record(
-                task_id=mw._config.task_id, project_name=mw._config.project_name,
+                task_id=mw._running_task_id, project_name=mw._config.project_name,
                 config_path=str(run_config_path),
                 workspace=str(mw._project_root / mw._config.workspace), status="running")
             mw._resource_monitor.set_pid(mw._task_runner.get_pid())
@@ -107,10 +109,10 @@ class RunController(_BaseDelegate):
         mw._monitor_status_text.setText(state_text.get(state, state))
         if state == "paused":
             mw._pause_btn.setEnabled(True)
-            mw._pause_btn.setText("▶ 继续")
+            mw._pause_btn.setText(_("▶ 继续"))
         elif state == "running":
             mw._pause_btn.setEnabled(True)
-            mw._pause_btn.setText("Ⅱ 暂停")
+            mw._pause_btn.setText(_("Ⅱ 暂停"))
         if state in ("finished", "error"):
             mw._run_btn.setEnabled(True)
             mw._stop_btn.setEnabled(False)
@@ -118,7 +120,10 @@ class RunController(_BaseDelegate):
             if mw._task_elapsed_timer:
                 mw._task_elapsed_timer.stop()
                 mw._task_elapsed_timer = None
-            mw._task_history.update_record(mw._config.task_id, state)
+            # S3.1.3：结束记录归属启动时的 task_id（运行中切换配置不串历史）
+            completed_task_id = mw._running_task_id or mw._config.task_id
+            mw._task_history.update_record(completed_task_id, state)
+            mw._running_task_id = None
             if state == "finished":
                 mw._auto_load_results()
                 if mw._settings.auto_open_result:

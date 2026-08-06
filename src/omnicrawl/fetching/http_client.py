@@ -12,12 +12,20 @@ import zlib
 from typing import Any
 
 from ..core.config import AppConfig
-from ..core.errors import PermanentFetchError, ResponseTooLargeError
+from ..core.errors import LoginFailedError, PermanentFetchError, ResponseTooLargeError
 from ..core.models import CrawlRequest, FetchResult
+
+
+def _flatten_headers(headers: Any) -> dict[str, str]:
+    """S4.5 P3#132：重复响应头逗号合并；兼容 dict（测试/mock）与 email.message（urllib）。"""
+    get_all = getattr(headers, "get_all", None)
+    if get_all is not None:
+        return {k.lower(): ",".join(get_all(k, ())) for k in headers.keys()}
+    return {str(k).lower(): str(v) for k, v in headers.items()}
 from ..core.utils import user_agent
 from ..security.egress import EgressBroker, NetworkCapability
 from ..security.policy import HostRateLimiter, NetworkTargetPolicy
-from .retry import RETRYABLE_STATUS, backoff_seconds, parse_retry_config, retry_after_seconds
+from .retry import backoff_seconds, parse_retry_config, retry_after_seconds
 from .session import get_cookie_session
 
 
@@ -196,13 +204,24 @@ class HTTPFetcher:
 
     def fetch(self, request: CrawlRequest) -> FetchResult:
         self._ensure_login()
+        # S2.1.4：retries 为总尝试次数（0 表示不重试，max(1,...) 保证至少一次）；
+        # retry_on_status 由配置驱动，默认与 DEFAULTS/RETRYABLE_STATUS 一致
         retries = max(1, int(self.http.get("retries", 3)))
+        retry_cfg = parse_retry_config(self.http)
         timeout = float(self.http.get("timeout_seconds", 25))
         max_bytes = int(self.http.get("max_response_bytes", 50_000_000))
+        # S2.5.6：按已安装的解码库声明 Accept-Encoding（br/zstd 支持时启用）
+        accept_encoding = "gzip, deflate"
+        for package_name, token in (("brotli", "br"), ("zstandard", "zstd")):
+            try:
+                __import__(package_name)
+                accept_encoding += f", {token}"
+            except ImportError:
+                pass
         headers = {
             "User-Agent": str(self.http.get("user_agent", user_agent())),
             "Accept": "*/*",
-            "Accept-Encoding": "gzip, deflate",
+            "Accept-Encoding": accept_encoding,
             **{str(k): str(v) for k, v in self.http.get("headers", {}).items()},
             **{str(k): str(v) for k, v in self.config.section("source").get("headers", {}).items()},
             **request.headers,
@@ -225,7 +244,8 @@ class HTTPFetcher:
                     capability=self.capability,
                 ):
                     with self.opener.open(raw_request, timeout=timeout) as response:
-                        response_headers = {k.lower(): v for k, v in response.headers.items()}
+                        # S4.5 P3#132：重复响应头不再丢失（get_all 逗号合并，Set-Cookie 亦保留）
+                        response_headers = _flatten_headers(response.headers)
                         declared = response_headers.get("content-length", "")
                         if declared.isdigit() and int(declared) > max_bytes:
                             raise ResponseTooLargeError(f"响应超过大小限制: {declared} > {max_bytes}")
@@ -250,7 +270,7 @@ class HTTPFetcher:
                 last_error = exc
                 if exc.code == 304:
                     self.egress.record_success(request.url)
-                    response_headers = {k.lower(): v for k, v in exc.headers.items()}
+                    response_headers = _flatten_headers(exc.headers)
                     return FetchResult(
                         request=request,
                         final_url=exc.geturl() or request.url,
@@ -260,12 +280,11 @@ class HTTPFetcher:
                         elapsed_seconds=time.monotonic() - started,
                         meta={"not_modified": True},
                     )
-                if exc.code not in RETRYABLE_STATUS or attempt + 1 >= retries:
+                if exc.code not in retry_cfg["status_codes"] or attempt + 1 >= retries:
                     raise PermanentFetchError(f"HTTP {exc.code}: {request.url}") from exc
                 self.egress.record_failure(request.url, error=f"HTTP {exc.code}")
                 wait = retry_after_seconds(dict(exc.headers.items()))
                 if wait is None:
-                    retry_cfg = parse_retry_config(self.http)
                     wait = backoff_seconds(
                         attempt,
                         base=retry_cfg["base_seconds"],
@@ -278,7 +297,6 @@ class HTTPFetcher:
                 self.egress.record_failure(request.url, error=str(exc))
                 if attempt + 1 >= retries:
                     raise
-                retry_cfg = parse_retry_config(self.http)
                 time.sleep(backoff_seconds(
                     attempt,
                     base=retry_cfg["base_seconds"],
@@ -311,13 +329,17 @@ class HTTPFetcher:
                 self.egress.record_response(len(response_body), url=response.geturl())
                 self.egress.record_success(response.geturl())
                 if int(getattr(response, "status", 200)) >= 400:
-                    raise RuntimeError(f"登录失败: HTTP {response.status}")
+                    raise LoginFailedError(f"登录失败: HTTP {response.status}")
         self._login_done = True
         self.cookie_session.save()
 
     @staticmethod
     def _decode_content(body: bytes, encoding: str, max_bytes: int) -> bytes:
         encoding = encoding.lower()
+        if encoding == "br":
+            return HTTPFetcher._decode_br(body, max_bytes)
+        if encoding == "zstd":
+            return HTTPFetcher._decode_zstd(body, max_bytes)
         if encoding not in {"gzip", "deflate"}:
             return body
         window_bits = zlib.MAX_WBITS | 16 if encoding == "gzip" else zlib.MAX_WBITS
@@ -327,6 +349,33 @@ class HTTPFetcher:
             if encoding != "deflate":
                 raise
             result = HTTPFetcher._bounded_decompress(body, -zlib.MAX_WBITS, max_bytes)
+        return result
+
+    @staticmethod
+    def _decode_br(body: bytes, max_bytes: int) -> bytes:
+        # S2.5.6：br 解码；未安装 brotli 时显式报错，不再把压缩字节当正文
+        try:
+            import brotli
+        except ImportError as exc:
+            raise ValueError("响应使用 br 压缩但未安装 brotli（pip install brotli）") from exc
+        result = brotli.decompress(body)
+        if len(result) > max_bytes:
+            raise ResponseTooLargeError(f"解压后响应超过大小限制: > {max_bytes}")
+        return result
+
+    @staticmethod
+    def _decode_zstd(body: bytes, max_bytes: int) -> bytes:
+        # S2.5.6：zstd 解码；未安装 zstandard 时显式报错
+        try:
+            import zstandard
+        except ImportError as exc:
+            raise ValueError("响应使用 zstd 压缩但未安装 zstandard（pip install zstandard）") from exc
+        try:
+            result = zstandard.ZstdDecompressor().decompress(body, max_output_size=max_bytes)
+        except zstandard.ZstdError as exc:
+            raise ValueError(f"zstd 解压失败: {exc}") from exc
+        if len(result) > max_bytes:
+            raise ResponseTooLargeError(f"解压后响应超过大小限制: > {max_bytes}")
         return result
 
     @staticmethod

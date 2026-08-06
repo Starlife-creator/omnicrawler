@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from difflib import SequenceMatcher
 from pathlib import Path
+from typing import Any
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -40,6 +41,46 @@ from ..widgets.form_feedback import clear_error_style, set_error_style, shake_wi
 from ..widgets.help_tooltip import HelpTooltip
 
 
+def selector_kind(selector: str) -> str:
+    """判断选择器是 XPath 还是 CSS（默认 css）。"""
+    stripped = (selector or "").strip()
+    if not stripped:
+        return "css"
+    # XPath 通常以 / .// ( @ [ 或 // 开头；CSS 选择器不会
+    if stripped.startswith(("/", ".//", "(", "@", "//")) or "[@" in stripped:
+        return "xpath"
+    return "css"
+
+
+def suggest_xpath_candidates(tree: Any, samples: list[str], *, top_n: int = 3) -> list[tuple[str, str, float]]:
+    """根据示例文本从已解析的 HTML 树推荐 XPath 候选（(text, xpath, similarity)）。"""
+    candidates: list[tuple[str, str, float]] = []
+    for elem in tree.iter():
+        text = (elem.text or "").strip()
+        if not text:
+            continue
+        # 只取直接文本（不包含子元素文本）
+        if len(elem) == 0 or text:
+            xpath = tree.getroottree().getpath(elem)
+
+            # 计算与示例文本的相似度
+            best_sim = 0.0
+            for sample in samples:
+                # 包含匹配
+                if sample in text or text in sample:
+                    best_sim = max(best_sim, 0.85)
+                # 编辑距离相似度
+                sim = SequenceMatcher(None, text.lower(), sample.lower()).ratio()
+                best_sim = max(best_sim, sim)
+
+            if best_sim > 0.6:
+                candidates.append((text[:100], xpath, best_sim))
+
+    # 按相似度排序，取前 N
+    candidates.sort(key=lambda x: x[2], reverse=True)
+    return candidates[:top_n]
+
+
 class VisualFieldThread(QThread):
     result_ready = pyqtSignal(list)
     error_occurred = pyqtSignal(str)
@@ -65,21 +106,21 @@ class VisualFieldDialog(QDialog):
 
     def __init__(self, url: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("可视化选字段")
+        self.setWindowTitle(_("可视化选字段"))
         self.setMinimumSize(900, 560)
         self._thread: VisualFieldThread | None = None
         self._candidates: list[FieldCandidate] = []
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("输入网页地址，系统会列出最稳定、最像业务字段的内容；选中需要的行后点击“添加字段”。"))
+        layout.addWidget(QLabel(_("输入网页地址，系统会列出最稳定、最像业务字段的内容；选中需要的行后点击“添加字段”。")))
         line = QHBoxLayout()
         self._url = QLineEdit(url)
-        load = QPushButton("分析网页")
+        load = QPushButton(_("分析网页"))
         load.clicked.connect(self._load)
         line.addWidget(self._url)
         line.addWidget(load)
         layout.addLayout(line)
         self._table = QTableWidget(0, 5)
-        self._table.setHorizontalHeaderLabels(["建议名称", "网页内容预览", "CSS 选择器", "属性", "稳定度"])
+        self._table.setHorizontalHeaderLabels([_("建议名称"), _("网页内容预览"), _("CSS 选择器"), _("属性"), _("稳定度")])
         header = self._table.horizontalHeader()
         assert header is not None
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -90,7 +131,7 @@ class VisualFieldDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         ok_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
         assert ok_button is not None
-        ok_button.setText("添加字段")
+        ok_button.setText(_("添加字段"))
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -105,13 +146,13 @@ class VisualFieldDialog(QDialog):
     def _load(self) -> None:
         url = self._url.text().strip()
         if not url:
-            QMessageBox.information(self, "提示", "请先输入 http:// 或 https:// 网页地址。")
+            QMessageBox.information(self, _("提示"), _("请先输入 http:// 或 https:// 网页地址。"))
             return
         self._table.setRowCount(0)
         self._thread = VisualFieldThread(url)
         self._thread.setParent(self)
         self._thread.result_ready.connect(self._show_results)
-        self._thread.error_occurred.connect(lambda message: QMessageBox.warning(self, "分析失败", message))
+        self._thread.error_occurred.connect(lambda message: QMessageBox.warning(self, _("分析失败"), message))
         self._thread.start()
 
     def _show_results(self, candidates: list) -> None:
@@ -123,7 +164,7 @@ class VisualFieldDialog(QDialog):
         if candidates:
             self._table.selectRow(0)
         else:
-            QMessageBox.information(self, "未找到字段", "该页面没有可读字段；可尝试浏览器模式或操作录制。")
+            QMessageBox.information(self, _("未找到字段"), _("该页面没有可读字段；可尝试浏览器模式或操作录制。"))
 
 
 class SmartExtractDialog(QDialog):
@@ -244,10 +285,9 @@ class SmartExtractDialog(QDialog):
         samples = [s.strip() for s in sample_text.splitlines() if s.strip()]
 
         try:
-            from lxml import etree
-            # 尝试解析 HTML（宽松模式）
-            parser = etree.HTMLParser(recover=True)
-            tree = etree.fromstring(html_text.encode("utf-8"), parser)
+            from lxml import html
+            # 尝试解析 HTML（宽松模式），返回 HtmlElement 以支持 getpath/text_content/cssselect
+            tree = html.fromstring(html_text)
         except ImportError:
             QMessageBox.warning(
                 self, _("依赖缺失"),
@@ -258,33 +298,7 @@ class SmartExtractDialog(QDialog):
             QMessageBox.warning(self, _("解析失败"), f"HTML 解析错误: {e}")
             return
 
-        # 收集所有叶子节点的文本和 XPath
-        candidates: list[tuple[str, str, float]] = []  # (text, xpath, similarity)
-
-        for elem in tree.iter():
-            text = (elem.text or "").strip()
-            if not text:
-                continue
-            # 只取直接文本（不包含子元素文本）
-            if len(elem) == 0 or text:
-                xpath = tree.getpath(elem)
-
-                # 计算与示例文本的相似度
-                best_sim = 0.0
-                for sample in samples:
-                    # 包含匹配
-                    if sample in text or text in sample:
-                        best_sim = max(best_sim, 0.85)
-                    # 编辑距离相似度
-                    sim = SequenceMatcher(None, text.lower(), sample.lower()).ratio()
-                    best_sim = max(best_sim, sim)
-
-                if best_sim > 0.6:
-                    candidates.append((text[:100], xpath, best_sim))
-
-        # 按相似度排序，取前 3
-        candidates.sort(key=lambda x: x[2], reverse=True)
-        top = candidates[:3]
+        top = suggest_xpath_candidates(tree, samples)
 
         self._result_table.setRowCount(len(top))
         for i, (text, xpath, sim) in enumerate(top):
@@ -323,9 +337,8 @@ class SmartExtractDialog(QDialog):
             return
 
         # 使用简单规则模拟 AI 提取（真实场景替换为 ai_graph.AIGraphExtractor）
-        from lxml import etree
-        parser = etree.HTMLParser(recover=True)
-        tree = etree.fromstring(html_text.encode("utf-8"), parser)
+        from lxml import html
+        tree = html.fromstring(html_text)
 
         self._result_table.setRowCount(len(fields))
         for i, field in enumerate(fields):
@@ -333,19 +346,29 @@ class SmartExtractDialog(QDialog):
             # 启发式搜索：找标题、meta、h1-h3 等
             text = ""
             xpath = ""
-
-            # 尝试从 meta 标签查找
-            for meta in tree.xpath(f"//meta[contains(@name, '{name}') or contains(@property, '{name}')]"):
-                text = meta.get("content", "")
-                xpath = tree.getpath(meta)
-                break
-
-            # 尝试从 h1-h3 查找
-            if not text:
-                for h in tree.xpath(f"//h1[contains(text(), '{name}')] | //h2[contains(text(), '{name}')] | //h3[contains(text(), '{name}')]"):
-                    text = (h.text_content() or "").strip()[:100]
-                    xpath = tree.getpath(h)
+            try:
+                # 尝试从 meta 标签查找（XPath 变量绑定，字段名含引号也不会崩溃）
+                for meta in tree.xpath(
+                    "//meta[contains(@name, $field) or contains(@property, $field)]",
+                    field=name,
+                ):
+                    text = meta.get("content", "")
+                    xpath = tree.getroottree().getpath(meta)
                     break
+
+                # 尝试从 h1-h3 查找
+                if not text:
+                    for h in tree.xpath(
+                        "//h1[contains(text(), $field)] | //h2[contains(text(), $field)] | //h3[contains(text(), $field)]",
+                        field=name,
+                    ):
+                        text = (h.text_content() or "").strip()[:100]
+                        xpath = tree.getroottree().getpath(h)
+                        break
+            except Exception:
+                # XPathEvalError 等：字段名特殊字符导致表达式无法求值时降级为未匹配
+                text = ""
+                xpath = ""
 
             if text:
                 self._result_table.setItem(i, 0, QTableWidgetItem("90%"))
@@ -387,7 +410,6 @@ class SelectorTestThread(QThread):
         try:
             if self.isInterruptionRequested():
                 return
-            from lxml import etree
 
             response = scoped_fetch(
                 self._url,
@@ -399,8 +421,8 @@ class SelectorTestThread(QThread):
             user_agent=user_agent("selector test"),
             )
 
-            parser = etree.HTMLParser(recover=True)
-            tree = etree.fromstring(response.body, parser)
+            from lxml import html
+            tree = html.fromstring(response.body)
 
             results: list = []
 
@@ -666,10 +688,13 @@ class Step3FieldsPage(QWizardPage):
         reply = QMessageBox.question(
             self,
             _("可视化选择字段"),
-            _("请选择可视化方式：\n\n"
-              "• 内置选择器 — 输入 URL 后在浏览器中手动查看源码选取 XPath\n"
-              "• 高级点选模式 — 启动 Chrome + EasySpider 扩展，在网页上右键点选元素\n\n"
-              "推荐高级点选模式（需要 EasySpider Chrome 扩展）。"),
+            _("请选择可视化方式：\n\n" +
+
+              _("• 内置选择器 — 输入 URL 后在浏览器中手动查看源码选取 XPath\n") +
+
+              _("• 高级点选模式 — 启动 Chrome + EasySpider 扩展，在网页上右键点选元素\n\n") +
+
+              _("推荐高级点选模式（需要 EasySpider Chrome 扩展）。")),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Yes,
         )
@@ -689,7 +714,6 @@ class Step3FieldsPage(QWizardPage):
 
     def _visual_pick_advanced(self) -> None:
         """启动 WebSocket 服务器 + 引导用户使用 EasySpider 扩展。"""
-        from ...visual_selector.field_converter import FieldConverter
         from ...visual_selector.server import VisualSelectorServer
 
         # 启动 WebSocket 服务（A19：启动失败需显式提示，不再无声继续）
@@ -704,13 +728,19 @@ class Step3FieldsPage(QWizardPage):
 
         # 显示操作指引
         msg = (
-            f"WebSocket 服务已启动 (ws://localhost:8084)\n\n"
-            f"请在 Chrome 中:\n"
-            f"1. 打开目标页面: {url}\n"
-            f"2. 确保 EasySpider Chrome 扩展已加载\n"
-            f"3. 右键点击要采集的元素 → 选择\"选中元素\"\n"
-            f"4. 点击\"选中全部\"选中同类元素\n"
-            f"5. 完成后点击下方\"导入字段\""
+            _("WebSocket 服务已启动 (ws://localhost:8084)\n\n") +
+
+            _("请在 Chrome 中:\n") +
+
+            _(f"1. 打开目标页面: {url}\n") +
+
+            _("2. 确保 EasySpider Chrome 扩展已加载\n") +
+
+            _("3. 右键点击要采集的元素 → 选择\"选中元素\"\n") +
+
+            _("4. 点击\"选中全部\"选中同类元素\n") +
+
+            _("5. 完成后点击下方\"导入字段\"")
         )
         result = QMessageBox.information(
             self, _("高级可视化选择"), msg,
@@ -720,25 +750,56 @@ class Step3FieldsPage(QWizardPage):
             server.stop()
             return
 
-        # 获取选择结果
-        selections = server.get_selections()
-        server.stop()
+        # 获取选择结果（S3.1.20：后台限时等待，不再同步轮询假死；可取消）
+        from ..core.background_worker import BackgroundWorker, run_worker
+
+        class _SelectionWorker(BackgroundWorker):
+            def __init__(self, selector_server, timeout_seconds: float = 30.0, parent=None) -> None:
+                super().__init__(parent)
+                self._server = selector_server
+                self._timeout = timeout_seconds
+
+            def work(self) -> list:
+                import time as _time
+
+                deadline = _time.monotonic() + self._timeout
+                selections: list = []
+                while _time.monotonic() < deadline:
+                    if self.isInterruptionRequested():
+                        break
+                    selections = self._server.get_selections()
+                    if selections:
+                        break
+                    _time.sleep(0.2)
+                self._server.stop()
+                return selections
+
+        self._selection_worker = run_worker(
+            _SelectionWorker(server),
+            on_succeeded=lambda selections: self._apply_visual_selections(
+                url, selections, converter=None,
+            ),
+        )
+
+    def _apply_visual_selections(self, url: str, selections: list, converter) -> None:
+        from ...visual_selector.field_converter import FieldConverter
 
         if not selections:
-            QMessageBox.warning(self, _("提示"), _("未收到任何元素选择，请在网页上右键点选元素后重试。"))
+            QMessageBox.warning(
+                self, _("提示"),
+                _("等待选择超时，未收到任何元素选择。请在网页上右键点选元素后重试。"),
+            )
             return
-
-        # 转换为字段
-        converter = FieldConverter()
-        converter.set_seed_url(url)
+        field_converter = converter or FieldConverter()
+        field_converter.set_seed_url(url)
         for sel in selections:
-            converter.add_selection(
+            field_converter.add_selection(
                 [{"xpath": sel.xpath, "allXPaths": sel.all_xpaths, "text": sel.content}],
                 common_xpath=sel.xpath,
             )
 
         # 生成候选字段并填入表格
-        fields = converter.merge_fields()
+        fields = field_converter.merge_fields()
         if not fields:
             QMessageBox.warning(self, _("提示"), _("无法从选择结果生成字段，请重试。"))
             return
@@ -764,13 +825,18 @@ class Step3FieldsPage(QWizardPage):
                 name = f"{candidate.suggested_name}_{suffix}"
                 suffix += 1
             existing.add(name)
+            kind = selector_kind(candidate.css or candidate.xpath or "")
+            if kind == "xpath":
+                selector, fallback = candidate.css or candidate.xpath or "", ""
+            else:
+                selector, fallback = candidate.css or "", candidate.xpath or ""
             self._add_row(
                 FieldDef(
                     name=name,
-                    selector=candidate.css,
-                    selector_type="css",
+                    selector=selector,
+                    selector_type=kind,
                     attribute=candidate.attribute,
-                    fallback_xpath=candidate.xpath,
+                    fallback_xpath=fallback,
                 )
             )
         self._save_to_config()
@@ -815,7 +881,7 @@ class Step3FieldsPage(QWizardPage):
         for i, row in enumerate(results[:10]):
             msg += f"{i + 1}. {row[0]}\n"
         if len(results) > 10:
-            msg += f"\n... 共 {len(results)} 条结果"
+            msg += _(f"\n... 共 {len(results)} 条结果")
         QMessageBox.information(self, _("测试结果"), msg)
 
     def _on_test_error(self, error: str) -> None:
@@ -832,16 +898,26 @@ class Step3FieldsPage(QWizardPage):
         if not help_path.is_file():
             QMessageBox.information(
                 self, _("选择器帮助"),
-                _("CSS 选择器示例:\n"
-                  "  .title          — 选择 class='title'\n"
-                  "  #main a         — 选择 #main 下的链接\n"
-                  "  [href]          — 选择有 href 属性的元素\n\n"
-                  "XPath 示例:\n"
-                  "  //div[@class='title']/a\n"
-                  "  //h2[contains(text(),'公告')]\n"
-                  "  //a[starts-with(@href,'/news')]\n\n"
-                  "JSONPath 示例:\n"
-                  "  $.data.list[*].title\n"
+                _("CSS 选择器示例:\n" +
+
+                  _("  .title          — 选择 class='title'\n") +
+
+                  _("  #main a         — 选择 #main 下的链接\n") +
+
+                  _("  [href]          — 选择有 href 属性的元素\n\n") +
+
+                  _("XPath 示例:\n") +
+
+                  "  //div[@class='title']/a\n" +
+
+                  _("  //h2[contains(text(),'公告')]\n") +
+
+                  "  //a[starts-with(@href,'/news')]\n\n" +
+
+                  _("JSONPath 示例:\n") +
+
+                  "  $.data.list[*].title\n" +
+
                   "  $..author\n")
             )
             return

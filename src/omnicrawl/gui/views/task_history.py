@@ -27,6 +27,8 @@ from ..i18n import _
 HISTORY_FILE = "work/task_history.jsonl"
 DEFAULT_MAX_ENTRIES = 100
 DEFAULT_MAX_DAYS = 30
+# S3.2.1：内存有界上限（防超长文件全量驻留），显示/清理按 max_entries 截断
+MAX_LOADED_RECORDS = 5000
 
 
 class TaskHistory(QWidget):
@@ -44,9 +46,15 @@ class TaskHistory(QWidget):
         self,
         project_root: Path,
         parent: QWidget | None = None,
+        *,
+        max_entries: int = DEFAULT_MAX_ENTRIES,
+        max_days: int = DEFAULT_MAX_DAYS,
     ) -> None:
         super().__init__(parent)
         self._project_root = project_root
+        # S3.2.1：history_max_entries 消费方——不再硬编码 100
+        self._max_entries = max(1, int(max_entries))
+        self._max_days = max(1, int(max_days))
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -107,10 +115,12 @@ class TaskHistory(QWidget):
 
         # 按时间倒序
         self._records.sort(key=lambda r: r.get("started_at", ""), reverse=True)
-        # 限制显示数量
-        self._records = self._records[:DEFAULT_MAX_ENTRIES]
+        # S3.2.1：内存有界（MAX_LOADED_RECORDS）；显示按 max_entries 截断，
+        # 不截断 _records——update/重写不再误删文件中更旧的记录
+        self._records = self._records[:MAX_LOADED_RECORDS]
+        shown = self._records[: self._max_entries]
 
-        for record in self._records:
+        for record in shown:
             time_str = record.get("started_at", "?")[:19]
             name = record.get("project_name", "?")
             status = record.get("status", "?")
@@ -167,8 +177,8 @@ class TaskHistory(QWidget):
         self.load_history()
 
     def _cleanup(self) -> None:
-        """清理过期记录。"""
-        cutoff = datetime.now() - timedelta(days=DEFAULT_MAX_DAYS)
+        """清理过期记录（按 days + max_entries，S3.2.1 消费 max_days/max_entries）。"""
+        cutoff = datetime.now() - timedelta(days=self._max_days)
         new_records = []
         for r in self._records:
             started = r.get("started_at", "")
@@ -180,7 +190,7 @@ class TaskHistory(QWidget):
                 new_records.append(r)
 
         # 限制条目数
-        self._records = new_records[:DEFAULT_MAX_ENTRIES]
+        self._records = new_records[: self._max_entries]
 
         # 重写文件
         fp = self.history_path

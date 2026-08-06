@@ -53,7 +53,8 @@ class AdaptiveController:
             result.append(Adjustment("ocr", True, False, "PDF文本层质量充分", False, True))
         if signals.free_disk_bytes < self.minimum_free_disk:
             result.append(Adjustment("run_state", "running", "pause", "磁盘低于安全阈值；不会自动删除证据", "pause", "running"))
-        self.audit.extend(result)
+        # S2.5.27：audit 有界，不无限增长
+        self.audit = (self.audit + result)[-500:]
         return tuple(result)
 
     def audit_mapping(self) -> list[dict[str, Any]]:

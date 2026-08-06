@@ -103,7 +103,11 @@ class FieldSpec:
                 raise ValueError(f"字段 {name} 的 maximum 必须是数字")
         # D26/D27：配置健全性——数值换算/枚举配置必须配对应 type，否则静默失效
         spec_type = str(raw.get("type", "text")).casefold()
-        allowed_types = {"text", "amount", "currency", "date", "percent", "integer", "number", "enum", "code", "year"}
+        # S2.3.6/7：boolean/entity/relationship 接入白名单（normalization.py 对应分支已可达）
+        allowed_types = {
+            "text", "amount", "currency", "date", "percent", "integer", "number",
+            "enum", "code", "year", "boolean", "entity", "relationship",
+        }
         if spec_type not in allowed_types:
             raise ValueError(f"字段 {name} 的 type 不支持: {spec_type}")
         if raw.get("target_unit") and spec_type not in {"amount", "currency", "number", "integer", "percent"}:

@@ -9,6 +9,8 @@ import re
 from collections.abc import Callable
 from re import Pattern
 
+from ..i18n import _
+
 
 class LogParser:
     """日志行解析器。
@@ -22,11 +24,17 @@ class LogParser:
         r"PROGRESS:\s*(\d+)%?\s*(https?://\S+)?"
     )
 
-    # 统计信息正则
+    # 统计信息正则（S3.3.1：匹配真实 CLI 输出——"提取记录: 45"/"采集页面: 3"/"下载附件: 2"）
     STAT_PATTERNS: dict[str, Pattern] = {
-        "pages": re.compile(r"(?:已处理|爬取|crawled?)\s*[:：]?\s*(\d+)\s*(?:页|pages?)"),
-        "records": re.compile(r"(?:提取|extracted?)\s*[:：]?\s*(\d+)\s*(?:条|records?)"),
-        "downloaded": re.compile(r"(?:下载|downloaded?)\s*[:：]?\s*(\d+)\s*(?:文件|files?)"),
+        "pages": re.compile(
+            _(r"(?:已处理|爬取|采集|crawled?)\s*(?:页面|页|pages?)?\s*[:：]?\s*(\d+)")
+        ),
+        "records": re.compile(
+            _(r"(?:提取|extracted?)\s*(?:记录|条|records?)?\s*[:：]?\s*(\d+)")
+        ),
+        "downloaded": re.compile(
+            _(r"(?:下载|downloaded?)\s*(?:附件|文件|files?)?\s*[:：]?\s*(\d+)")
+        ),
     }
 
     def __init__(
@@ -62,12 +70,19 @@ class LogParser:
             "stats": {},
         }
 
-        # 检测日志级别
-        lower = line.lower()
-        if any(kw in lower for kw in ("error", "exception", "traceback", "failed")):
-            result["level"] = "error"
-        elif any(kw in lower for kw in ("warn", "warning")):
-            result["level"] = "warn"
+        # 检测日志级别（S3.3.1：显式级别前缀优先——真实 CLI 的
+        # "WARNING: ..." / "ERROR: ..." 前缀是权威级别，避免
+        # "PermissionError" 等类型名中的 error 子串误判级别）
+        prefix_match = re.match(r"^\[?(WARNING|ERROR|INFO|WARN)\]?\s*:", line, re.I)
+        if prefix_match:
+            prefix = prefix_match.group(1).casefold()
+            result["level"] = "warn" if prefix in {"warning", "warn"} else "error" if prefix == "error" else "info"
+        else:
+            lower = line.lower()
+            if any(kw in lower for kw in ("error", "exception", "traceback", "failed")):
+                result["level"] = "error"
+            elif any(kw in lower for kw in ("warn", "warning")):
+                result["level"] = "warn"
 
         # 解析进度
         progress_match = self._progress_pattern.search(line)

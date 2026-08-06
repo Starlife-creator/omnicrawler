@@ -133,7 +133,8 @@ CREATE TABLE IF NOT EXISTS semantic_changes (
 
 CREATE TABLE IF NOT EXISTS record_edits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    record_id TEXT NOT NULL REFERENCES records(record_id),
+    -- S2.5.42：ON DELETE CASCADE——records REPLACE 删除旧行时编辑历史级联清理
+    record_id TEXT NOT NULL REFERENCES records(record_id) ON DELETE CASCADE,
     field_name TEXT NOT NULL,
     old_value_json TEXT,
     new_value_json TEXT,

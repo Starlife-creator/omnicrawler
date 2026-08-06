@@ -9,7 +9,7 @@ from concurrent.futures import FIRST_COMPLETED, Future, as_completed, wait
 from pathlib import Path
 from typing import Any
 
-from ..core.errors import PolicyBlockedError, describe_error
+from ..core.errors import ExtractionError, PolicyBlockedError, describe_error
 from ..core.models import CrawlRequest, FetchResult
 from ..extraction import extractors
 from ..fetching.streams import collect_sse, collect_websocket
@@ -48,7 +48,10 @@ class _PipelineRun(_PipelineBase):
             The assembled run summary dict, including export results.
         """
         if self.config.source_kind in {"websocket", "sse", "long_poll"}:
-            return self._run_stream()
+            # S2.5.4：流式模式透传 max_pages/callback/should_stop（取消与进度回调生效）
+            return self._run_stream(
+                max_pages=max_pages, callback=callback, should_stop=should_stop,
+            )
         if self.config.source_kind == "redis":
             raise RuntimeError("Redis分布式模式请使用 omnicrawl.redis_frontier.RedisFrontier；参见 docs/DISTRIBUTED.md")
         if self.config.source_kind == "scrapy":
@@ -86,21 +89,91 @@ class _PipelineRun(_PipelineBase):
             self.state.add_error(run_id, None, "setup", exc, retryable=False)
             self.diagnostics.failure(run_id, "setup", exc)
             self._emit("on_error", run_id=run_id, stage="setup", error=exc, request=None)
-            summary = {"run_id": run_id, "status": "failed", "processed": 0, "error": str(exc)}
+            summary = {"run_id": run_id, "status": "failed", "processed": 0, "error": str(exc), **self.state.stats(run_id)}
             self._write_pipeline_summary(summary)
             self.state.finish_run(run_id, "failed", summary)
             raise
 
         crawl = self.config.section("crawl")
-        limit = max_pages or int(crawl.get("max_pages", 100))
+        limit = int(crawl.get("max_pages", 100)) if max_pages is None else max_pages
+        if limit < 0:
+            raise ValueError(f"max_pages 不能为负数: {limit}")
         concurrency = effective_concurrency(self.config, int(crawl.get("concurrency", 4)))
         strategy = str(crawl.get("strategy", "bfs"))
         maximum_depth = int(crawl.get("max_depth", 3))
         attempts = int(self.config.section("http").get("retries", 3))
+        # S1.2.4：max_pages 仍是“成功页”上限；max_requests 是总请求硬上限（默认 max_pages×5），
+        # 大面积 403/失败时请求总量也不会失控。
+        max_requests = int(crawl.get("max_requests", limit * 5))
+        if max_requests < 1:
+            raise ValueError(f"max_requests 不能小于 1: {max_requests}")
         processed = 0
+        attempted = 0
         started_monotonic = time.monotonic()
         status = "succeeded"
         pdf_summary: dict[str, Any] | None = None
+        inflight: dict[Future[FetchResult], CrawlRequest] = {}
+        frontier_exhausted = False
+
+        def consume(future: Future[FetchResult]) -> None:
+            nonlocal processed, frontier_exhausted
+            request = inflight.pop(future)
+            try:
+                result = future.result()
+                self._handle_result(run_id, result, maximum_depth)
+                frontier_exhausted = False  # discovery may have enqueued new URLs
+                self.state.mark_done(request.fingerprint)
+                self.state.save_checkpoint(
+                    run_id,
+                    "fetch",
+                    request.fingerprint,
+                    {"url": result.final_url, "status": result.status},
+                )
+                processed += 1
+                LOGGER.info("[%s/%s] %s %s", processed, limit, result.status, result.final_url)
+                if callback:
+                    elapsed = max(0.001, time.monotonic() - started_monotonic)
+                    rate = processed / elapsed
+                    callback(
+                        "crawl_progress",
+                        {
+                            "processed": processed,
+                            "limit": limit,
+                            "url": result.final_url,
+                            "pages_per_second": round(rate, 3),
+                            "eta_seconds": round((limit - processed) / rate, 1) if rate else None,
+                        },
+                    )
+            except (PermissionError, PolicyBlockedError) as exc:
+                self.state.mark_done(request.fingerprint, status="blocked", error=str(exc))
+                self.state.add_error(run_id, request, "policy", exc, retryable=False)
+                self.diagnostics.failure(run_id, "policy", exc, request=request)
+                LOGGER.warning("已拦截 %s: %s", request.url, exc)
+                self.metrics.increment("omnicrawl_failures_total", stage="policy", error=type(exc).__name__)
+                self._emit("on_error", run_id=run_id, stage="policy", error=exc, request=request)
+            except ExtractionError as exc:
+                # S2.5.33：提取阶段异常单独归类，日志语义与阶段一致
+                self.state.add_error(run_id, request, "extract", exc, retryable=False)
+                self.state.mark_done(request.fingerprint, status="failed", error=str(exc))
+                self.diagnostics.failure(run_id, "extract", exc, request=request)
+                LOGGER.error("提取失败 %s: %s: %s", request.url, type(exc).__name__, exc)
+                self.metrics.increment("omnicrawl_failures_total", stage="extract", error=type(exc).__name__)
+                self._emit("on_error", run_id=run_id, stage="extract", error=exc, request=request)
+            except Exception as exc:  # Per-URL isolation and retry boundary.
+                info = describe_error(exc)
+                self.state.add_error(run_id, request, "fetch", exc, retryable=info.retryable)
+                self.state.mark_failed(request, exc, attempts, retryable=info.retryable)
+                self.diagnostics.failure(run_id, "fetch", exc, request=request)
+                LOGGER.error("抓取失败 %s: %s: %s", request.url, type(exc).__name__, exc)
+                self.metrics.increment("omnicrawl_failures_total", stage="fetch", error=type(exc).__name__)
+                self._emit("on_error", run_id=run_id, stage="fetch", error=exc, request=request)
+
+        def drain() -> None:
+            # S1.2.1：收尾在途请求的单一出口，供正常/取消/异常/流式路径共用，
+            # 保证 frontier 不残留孤儿 in_progress 行（不丢请求、不重复处理）。
+            for future in as_completed(list(inflight)):
+                consume(future)
+
         try:
             # === Stage: Crawl ===
             executor = self._get_executor(max(1, concurrency))
@@ -112,65 +185,6 @@ class _PipelineRun(_PipelineBase):
                     self.state.transition_run(run_id, "running", reason="user_resume")
                 if callback:
                     callback(event, details)
-
-            # Rolling / continuous scheduling: keep an in-flight window of up to
-            # ``concurrency`` requests running at all times.  As soon as any future
-            # completes we claim and submit the next request(s), eliminating the
-            # per-batch barrier where fast URLs idled waiting for the slowest one.
-            inflight: dict[Future[FetchResult], CrawlRequest] = {}
-            frontier_exhausted = False
-
-            def consume(future: Future[FetchResult]) -> None:
-                nonlocal processed, frontier_exhausted
-                request = inflight.pop(future)
-                try:
-                    result = future.result()
-                    self._handle_result(run_id, result, maximum_depth)
-                    frontier_exhausted = False  # discovery may have enqueued new URLs
-                    self.state.mark_done(request.fingerprint)
-                    self.state.save_checkpoint(
-                        run_id,
-                        "fetch",
-                        request.fingerprint,
-                        {"url": result.final_url, "status": result.status},
-                    )
-                    processed += 1
-                    LOGGER.info("[%s/%s] %s %s", processed, limit, result.status, result.final_url)
-                    if callback:
-                        elapsed = max(0.001, time.monotonic() - started_monotonic)
-                        rate = processed / elapsed
-                        callback(
-                            "crawl_progress",
-                            {
-                                "processed": processed,
-                                "limit": limit,
-                                "url": result.final_url,
-                                "pages_per_second": round(rate, 3),
-                                "eta_seconds": round((limit - processed) / rate, 1) if rate else None,
-                            },
-                        )
-                except (PermissionError, PolicyBlockedError) as exc:
-                    self.state.mark_done(request.fingerprint, status="blocked", error=str(exc))
-                    self.state.add_error(run_id, request, "policy", exc, retryable=False)
-                    self.diagnostics.failure(run_id, "policy", exc, request=request)
-                    LOGGER.warning("已拦截 %s: %s", request.url, exc)
-                    self.metrics.increment("omnicrawl_failures_total", stage="policy", error=type(exc).__name__)
-                    self._emit("on_error", run_id=run_id, stage="policy", error=exc, request=request)
-                except Exception as exc:  # Per-URL isolation and retry boundary.
-                    info = describe_error(exc)
-                    self.state.add_error(run_id, request, "fetch", exc, retryable=info.retryable)
-                    self.state.mark_failed(request, exc, attempts, retryable=info.retryable)
-                    self.diagnostics.failure(run_id, "fetch", exc, request=request)
-                    LOGGER.error("抓取失败 %s: %s: %s", request.url, type(exc).__name__, exc)
-                    self.metrics.increment("omnicrawl_failures_total", stage="fetch", error=type(exc).__name__)
-                    self._emit("on_error", run_id=run_id, stage="fetch", error=exc, request=request)
-
-            def drain() -> None:
-                # Finish every in-flight request before leaving the loop so the
-                # frontier never keeps orphaned ``in_progress`` rows (no lost or
-                # duplicated work when the run is cancelled/stopped/aborted).
-                for future in as_completed(list(inflight)):
-                    consume(future)
 
             while inflight or (not frontier_exhausted and processed < limit):
 
@@ -204,29 +218,40 @@ class _PipelineRun(_PipelineBase):
 
                 # Top up the window.  ``processed + len(inflight)`` never exceeds
                 # ``limit`` so successful pages cannot overshoot the cap, and each
-                # claim stays bounded by the remaining concurrency budget.
+                # claim stays bounded by the remaining concurrency budget.  The
+                # S1.2.4 ``attempted`` budget bounds total dispatch (成功的+失败的).
                 while (
                     not frontier_exhausted
                     and len(inflight) < concurrency
                     and processed + len(inflight) < limit
+                    and attempted + len(inflight) < max_requests
                 ):
-                    want = min(concurrency - len(inflight), limit - processed - len(inflight))
+                    want = min(
+                        concurrency - len(inflight),
+                        limit - processed - len(inflight),
+                        max_requests - attempted - len(inflight),
+                    )
                     batch = self.state.claim(want, strategy)
                     if not batch:
                         frontier_exhausted = True
                         break
                     for request in batch:
                         inflight[executor.submit(self._fetch_checked, run_id, request)] = request
+                        attempted += 1
 
                 if not inflight:
                     break
 
-                done, _pending = wait(inflight, return_when=FIRST_COMPLETED)
+                # S2.5.43：wait 带超时——任务挂起时不再无限阻塞（默认 60s 上限）
+                wait_timeout = float(crawl.get("wait_timeout_seconds", 60))
+                done, _pending = wait(inflight, return_when=FIRST_COMPLETED, timeout=wait_timeout)
                 for future in done:
                     consume(future)
 
-                frontier_stats = self.state.stats(run_id).get("frontier", {})
-                self.metrics.gauge("omnicrawl_frontier_pending", float(frontier_stats.get("pending", 0)))
+                # S2.5.37：增量统计——循环内用轻量索引 COUNT，不再全表聚合
+                self.metrics.gauge(
+                    "omnicrawl_frontier_pending", float(self.state.pending_count())
+                )
             crawl_status = {"processed": processed, **self.state.stats(run_id)}
             self.state.save_checkpoint(run_id, "crawl", "crawl", crawl_status)
             self.metrics.record_stage("crawl", time.monotonic() - started_monotonic)
@@ -274,6 +299,8 @@ class _PipelineRun(_PipelineBase):
             raise
         except Exception as exc:
             status = "failed"
+            self.egress.disconnect_task()
+            drain()  # S1.2.1：任意异常路径先收尾在途请求，再落库，避免残留 in_progress
             self.state.add_error(run_id, None, "pipeline", exc, retryable=False)
             self.diagnostics.failure(run_id, "pipeline", exc)
             self._emit("on_error", run_id=run_id, stage="pipeline", error=exc, request=None)
@@ -281,6 +308,10 @@ class _PipelineRun(_PipelineBase):
             self._write_pipeline_summary(summary)
             self.state.finish_run(run_id, status, summary)
             raise
+        finally:
+            # S1.2.1：兜底出口——任何经由 break/return/raise 的路径都会执行 drain；
+            # 已在分支内 drain 的场景此处为空操作。
+            drain()
 
     def reprocess_records(
         self,
@@ -333,18 +364,37 @@ class _PipelineRun(_PipelineBase):
         processed = 0
         failures = 0
         for index, (row, path) in enumerate(prepared, 1):
-            request = CrawlRequest(
-                str(row["url"]),
-                meta={"_fingerprint_override": str(row["request_fingerprint"]), "reprocessed": True},
-            )
-            result = FetchResult(
-                request,
-                str(row["final_url"]),
-                int(row["status_code"]),
-                {"content-type": str(row["content_type"] or "application/octet-stream")},
-                path.read_bytes(),
-                float(row["elapsed_seconds"] or 0),
-            )
+            try:
+                request = CrawlRequest(
+                    str(row["url"]),
+                    meta={"_fingerprint_override": str(row["request_fingerprint"]), "reprocessed": True},
+                )
+                result = FetchResult(
+                    request,
+                    str(row["final_url"]),
+                    int(row["status_code"]),
+                    {"content-type": str(row["content_type"] or "application/octet-stream")},
+                    path.read_bytes(),
+                    float(row["elapsed_seconds"] or 0),
+                )
+            except Exception as exc:
+                # S1.2.2：单条坏记录（NULL status_code / 已删除文件）构造失败也计入 failures，继续下一条。
+                failures += 1
+                self.state.add_error(
+                    run_id,
+                    CrawlRequest(str(row["url"]), meta={"_fingerprint_override": str(row["request_fingerprint"])}),
+                    "reprocess",
+                    exc,
+                    retryable=True,
+                )
+                self.diagnostics.failure(run_id, "reprocess", exc)
+                self._emit("on_error", run_id=run_id, stage="reprocess", error=exc, request=None)
+                if callback:
+                    callback(
+                        "reprocess_progress",
+                        {"processed": index, "total": len(prepared), "failures": failures},
+                    )
+                continue
             try:
                 self._handle_result(
                     run_id, result, 0, persist_response=False, discover=False
@@ -360,7 +410,7 @@ class _PipelineRun(_PipelineBase):
                     "reprocess_progress",
                     {"processed": index, "total": len(prepared), "failures": failures},
                 )
-        exported = self._run_exports(run_id)
+        exported = self._run_exports(run_id, force=True)  # S2.5.2：reprocess 后强制刷新输出文件
         self.metrics.record_stage("reprocess", time.monotonic() - reprocess_started)
         summary = {
             "run_id": run_id,
@@ -381,17 +431,29 @@ class _PipelineRun(_PipelineBase):
             callback("reprocess_completed", summary)
         return summary
 
-    def _run_stream(self) -> dict[str, Any]:
+    def _run_stream(
+        self,
+        *,
+        max_pages: int | None = None,
+        callback: Callable[[str, dict[str, Any]], None] | None = None,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> dict[str, Any]:
         self.resource_guard.check(force=True)
         self.run_control.reset()
         self.egress.reconnect_task()
         run_id = self.state.start_run(self.config.project_name, str(self.config.path))
         total = 0
+        completed = 0
         status = "succeeded"
         try:
             self._emit("before_run", run_id=run_id, resume=False, retry_failed=False)
             for request in self.source.seed():
                 if not self.run_control.wait_if_paused():
+                    status = "cancelled"
+                    self.egress.disconnect_task()
+                    break
+                # S2.5.4：should_stop 谓词在流式模式同样生效，触发即取消收尾
+                if should_stop and should_stop():
                     status = "cancelled"
                     self.egress.disconnect_task()
                     break
@@ -410,31 +472,51 @@ class _PipelineRun(_PipelineBase):
                 if self.config.source_kind == "long_poll":
                     source = self.config.section("source")
                     maximum = int(source.get("max_messages", 100))
-                    import time
                     started = time.monotonic()
                     duration = float(source.get("duration_seconds", 60))
-                    collected = []
+                    stream_stopped = False
                     for _ in range(maximum):
                         if not self.run_control.wait_if_paused():
                             status = "cancelled"
                             self.egress.disconnect_task()
+                            stream_stopped = True
+                            break
+                        # S2.5.4：内层消息循环同样响应 should_stop（取消即收尾）
+                        if should_stop and should_stop():
+                            status = "cancelled"
+                            self.egress.disconnect_task()
+                            stream_stopped = True
                             break
                         if time.monotonic() - started >= duration:
                             break
                         result = self._fetch_checked(run_id, request)
                         self.state.save_response(run_id, result, None)
                         processor_name = extractors.choose_processor(result)
+                        collected = []
                         if processor_name in self.registry.processors:
                             records = self._processor(processor_name).process(result).records
                             for transformer in self._transformers:
                                 records = [transform_record(transformer, record) for record in records]
                             collected.extend(records)
-                    total += self.state.save_records(run_id, request, collected)
-                    self.record_sinks.write(run_id, request, collected)
-                    self._emit(
-                        "after_extract", run_id=run_id, result=None, records=collected,
-                        count=len(collected), processor="stream",
-                    )
+                        total += self.state.save_records(run_id, request, collected)
+                        self.record_sinks.write(run_id, request, collected)
+                        self._emit(
+                            "after_extract", run_id=run_id, result=None, records=collected,
+                            count=len(collected), processor="stream",
+                        )
+                        completed += 1
+                        if callback:
+                            callback(
+                                "stream_progress",
+                                {"processed": completed, "limit": max_pages, "messages": total},
+                            )
+                        if self.run_control.read().get("stop_requested"):
+                            status = "cancelled"
+                            self.egress.disconnect_task()
+                            stream_stopped = True
+                            break
+                    if stream_stopped:
+                        break
                 else:
                     self._emit("before_fetch", run_id=run_id, request=request)
                     should_continue = self.run_control.wait_if_paused
@@ -451,6 +533,12 @@ class _PipelineRun(_PipelineBase):
                         "after_extract", run_id=run_id, result=None, records=records,
                         count=len(records), processor="stream",
                     )
+                    completed += 1
+                    if callback:
+                        callback(
+                            "stream_progress",
+                            {"processed": completed, "limit": max_pages, "messages": total},
+                        )
                     if self.run_control.read().get("stop_requested"):
                         status = "cancelled"
                         self.egress.disconnect_task()
@@ -480,7 +568,9 @@ class _PipelineRun(_PipelineBase):
             raise
         except Exception as exc:
             self.state.add_error(run_id, None, "stream", exc, retryable=True)
+            self.diagnostics.failure(run_id, "stream", exc)
             self._emit("on_error", run_id=run_id, stage="stream", error=exc, request=None)
             summary = {"run_id": run_id, "status": "failed", "messages": total, "error": str(exc)}
+            self._write_pipeline_summary(summary)  # S1.2.1：流式失败路径补写 summary（源B P1#36）
             self.state.finish_run(run_id, "failed", summary)
             raise

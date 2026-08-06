@@ -14,6 +14,7 @@ from typing import Any
 from ..core.config import AppConfig, load_config
 from ..core.utils import atomic_write, utcnow
 from ..quality.artifact_integrity import verify_artifacts
+from ..security.security_audit import scan_config_text
 from ..state import StateStore
 from .research_package import create_research_package
 
@@ -22,6 +23,18 @@ WORKSPACE_DIRECTORIES = (
     "config_versions", "raw", "attachments", "rules", "review", "logs", "output",
     "snapshots", "temp", "components",
 )
+
+
+def _reject_plaintext_config(config_path: Path) -> None:
+    """导出前明文凭据扫描（S2.2.2）：命中即拒绝，避免凭据流出工作区包。"""
+    report = scan_config_text(config_path.read_text(encoding="utf-8", errors="replace"))
+    if report["ok"]:
+        return
+    lines = "、".join(str(item["line"]) for item in report["findings"])
+    raise ValueError(
+        f"配置文件包含 {len(report['findings'])} 处明文凭据（第 {lines} 行），"
+        "已拒绝导出；请改用 secret:// 引用或环境变量。"
+    )
 
 
 class WorkspaceManager:
@@ -51,6 +64,7 @@ class WorkspaceManager:
         return value if isinstance(value, dict) else {"created_at": utcnow()}
 
     def package(self, target: Path, *, kind: str = "full") -> dict[str, Any]:
+        _reject_plaintext_config(self.config.path)
         if kind == "full":
             return self._full_package(target)
         if kind == "support":
@@ -71,14 +85,13 @@ class WorkspaceManager:
         self.initialize()
         target = target.resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
-        entries: dict[str, bytes] = {
-            "project/config.yaml": self.config.path.read_bytes(),
-            "project/workspace.json": self.manifest_path.read_bytes(),
-        }
+        hashes: dict[str, str] = {}
+        file_count = 0
         with tempfile.TemporaryDirectory(prefix="omnicrawler-full-package-") as temporary:
             state_source = self.root / "state.sqlite3"
-            state_snapshot = Path(temporary) / "state.sqlite3"
+            state_snapshot: Path | None = None
             if state_source.is_file():
+                state_snapshot = Path(temporary) / "state.sqlite3"
                 source = sqlite3.connect(state_source)
                 destination = sqlite3.connect(state_snapshot)
                 try:
@@ -86,19 +99,44 @@ class WorkspaceManager:
                 finally:
                     destination.close()
                     source.close()
-            for path in sorted(item for item in self.root.rglob("*") if item.is_file()):
-                if path.resolve() == target or path == state_source:
-                    continue
-                entries[f"project/workspace/{path.relative_to(self.root).as_posix()}"] = path.read_bytes()
-            if state_snapshot.is_file():
-                entries["project/workspace/state.sqlite3"] = state_snapshot.read_bytes()
-            hashes = {name: hashlib.sha256(payload).hexdigest() for name, payload in entries.items()}
-            manifest = {"format": 1, "kind": "full-workspace", "created_at": utcnow(), "files": hashes}
             with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
-                for name, payload in entries.items():
+
+                def _add_bytes(name: str, payload: bytes) -> None:
+                    nonlocal file_count
+                    hashes[name] = hashlib.sha256(payload).hexdigest()
                     archive.writestr(name, payload)
-                archive.writestr("omnicrawler-package.json", json.dumps(manifest, ensure_ascii=False, indent=2))
-        return {"created": str(target), "kind": "full", "files": len(entries), "sha256": _sha256(target)}
+                    file_count += 1
+
+                def _add_file(name: str, path: Path) -> None:
+                    # S2.5.17：流式写出，多 GB 文件不整读内存
+                    nonlocal file_count
+                    digest = hashlib.sha256()
+                    with archive.open(name, "w", force_zip64=True) as member, path.open("rb") as source:
+                        while chunk := source.read(1 << 20):
+                            digest.update(chunk)
+                            member.write(chunk)
+                    hashes[name] = digest.hexdigest()
+                    file_count += 1
+
+                _add_bytes("project/config.yaml", self.config.path.read_bytes())
+                _add_bytes("project/workspace.json", self.manifest_path.read_bytes())
+                for path in sorted(item for item in self.root.rglob("*") if item.is_file()):
+                    if path.resolve() == target or path == state_source:
+                        continue
+                    relative = path.relative_to(self.root).as_posix()
+                    if relative.split("/", 1)[0] == "output":
+                        continue  # S2.5.17：排除旧导出，避免重复与体积
+                    _add_file(f"project/workspace/{relative}", path)
+                if state_snapshot is not None:
+                    _add_file("project/workspace/state.sqlite3", state_snapshot)
+                manifest = {
+                    "format": 1, "kind": "full-workspace", "created_at": utcnow(), "files": hashes,
+                }
+                archive.writestr(
+                    "omnicrawler-package.json",
+                    json.dumps(manifest, ensure_ascii=False, indent=2),
+                )
+        return {"created": str(target), "kind": "full", "files": file_count, "sha256": _sha256(target)}
 
     def health(self) -> dict[str, Any]:
         self.initialize()

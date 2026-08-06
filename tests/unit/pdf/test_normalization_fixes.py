@@ -21,6 +21,26 @@ def test_d50_foreign_currency_rejected() -> None:
     assert normalize_amount("100港币", "元") == (None, "元")
 
 
+def test_s251_foreign_currency_symbol_forms_rejected() -> None:
+    # 符号/ISO 形式外币不再静默按人民币标准化
+    assert normalize_amount("$100", "元") == (None, "元")
+    assert normalize_amount("USD 100", "元") == (None, "元")
+    assert normalize_amount("€50", "元") == (None, "元")
+    assert normalize_amount("HK$3,000", "元") == (None, "元")
+    assert normalize_amount("200 USD", "元") == (None, "元")
+    # ¥ 是人民币符号，不应拒绝
+    assert normalize_amount("¥1,200", "元") == ("1200", "元")
+
+
+def test_s251_large_unit_before_wan() -> None:
+    # “千万元”/“百万”/“百元” 等大单位不再被 “万元/元” 抢先命中
+    assert normalize_amount("3千万元", "元") == ("30000000", "元")
+    assert normalize_amount("3千万元", "万元") == ("3000", "万元")
+    assert normalize_amount("2.5百万元", "元") == ("2500000", "元")
+    assert normalize_amount("3百万", "元") == ("3000000", "元")
+    assert normalize_amount("8百元", "元") == ("800", "元")
+
+
 def test_d51_decimal_no_ieee_artifacts() -> None:
     assert normalize_amount("1.15亿元", "元") == ("115000000", "元")
     assert normalize_amount("1.15亿", "万元") == ("11500", "万元")

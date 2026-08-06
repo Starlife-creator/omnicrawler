@@ -28,6 +28,7 @@ exit /b 0
 
 :failed
 echo.
+echo Logs: %~dp0logs\\  (gui.log / local-worker.log)
 echo [ERROR] OmniCrawler.exe 在 60 秒内未启动（可能缺少 DLL 或被安全软件拦截）。
 echo 请尝试重新解压完整便携包后再次启动。
 pause

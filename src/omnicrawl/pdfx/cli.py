@@ -16,7 +16,7 @@ from .ocr import ocr_stage
 from .parser import parse_stage
 from .project import validate_project_template
 from .review import apply_review
-from .service import database_status
+from .service import database_status, run_extraction, run_processing
 from .templates import DEFAULT_PDF_TEMPLATE
 from .text_export import export_text_stage
 
@@ -134,27 +134,27 @@ def main() -> None:
             elif args.command == "apply-review":
                 emit("apply-review", apply_review(config, db, args.file))
             elif args.command == "run":
-                warnings = validate_runtime_config(config)
-                if warnings:
-                    emit("warnings", warnings)
-                emit("ingest", ingest(config, db, args.limit))
-                emit("parse", parse_stage(config, db, args.limit, args.workers))
-                if not args.skip_ocr:
-                    emit("ocr", ocr_stage(config, db, None, ocr_workers=args.ocr_workers))
-                emit("export-text", export_text_stage(config, db, args.limit))
-                emit("extract", extraction_stage(config, db, args.limit, args.workers))
-                emit("export", export_stage(config, db))
-                emit("status", status(db))
+                # S2.3.4：手写阶段链统一走 service（阶段隔离/短路/降级语义一致）
+                result = run_extraction(
+                    args.config,
+                    limit=args.limit,
+                    workers=args.workers,
+                    run_ocr=not args.skip_ocr,
+                    ocr_workers=args.ocr_workers,
+                    callback=emit,
+                )
+                emit("run", result)
             elif args.command == "process":
-                warnings = validate_runtime_config(config)
-                if warnings:
-                    emit("warnings", warnings)
-                emit("ingest", ingest(config, db, args.limit))
-                emit("parse", parse_stage(config, db, args.limit, args.workers))
-                if not args.skip_ocr:
-                    emit("ocr", ocr_stage(config, db, None, ocr_workers=args.ocr_workers))
-                emit("export-text", export_text_stage(config, db, args.limit))
-                emit("status", status(db))
+                # S2.3.4：手写阶段链统一走 service（ingest/parse/ocr/text_export）
+                result = run_processing(
+                    args.config,
+                    limit=args.limit,
+                    workers=args.workers,
+                    ocr_workers=args.ocr_workers,
+                    run_ocr=not args.skip_ocr,
+                    callback=emit,
+                )
+                emit("process", result)
     except KeyboardInterrupt:
         print("用户中断；已完成的阶段结果已保存在数据库中。", file=sys.stderr)
         raise SystemExit(130)

@@ -35,11 +35,18 @@ def migrate_config(value: dict[str, Any]) -> tuple[dict[str, Any], tuple[str, ..
             source["kind"] = "feed"
             notes.append("source.kind rss migrated to feed")
 
+    # S4.5 P3#129：迁移旧键后清理，杜绝新旧并存（双重消费/歧义）
+    if isinstance(raw.get("seed_urls"), list) and isinstance(source.get("seeds"), list):
+        del raw["seed_urls"]
+        notes.append("legacy seed_urls removed")
+
     legacy_output = raw.get("output")
     if isinstance(legacy_output, dict):
         current = raw.get("outputs", {})
         raw["outputs"] = deep_merge(legacy_output, current if isinstance(current, dict) else {})
         notes.append("output copied to outputs")
+        del raw["output"]  # S4.5 P3#129：旧键清理
+        notes.append("legacy output removed")
 
     crawl = raw.get("crawl", {})
     if isinstance(crawl, dict) and "delay_seconds" in crawl:
@@ -47,6 +54,9 @@ def migrate_config(value: dict[str, Any]) -> tuple[dict[str, Any], tuple[str, ..
         if isinstance(http, dict) and "delay_seconds" not in http:
             http["delay_seconds"] = crawl["delay_seconds"]
             notes.append("crawl.delay_seconds copied to http.delay_seconds")
+        # S4.5 P3#129：旧键清理（复制完成即删除，勿再保留）
+        del crawl["delay_seconds"]
+        notes.append("legacy crawl.delay_seconds removed")
     if isinstance(crawl, dict) and isinstance(crawl.get("pagination"), dict):
         source = raw.setdefault("source", {})
         if isinstance(source, dict) and "pagination" not in source:
@@ -57,18 +67,26 @@ def migrate_config(value: dict[str, Any]) -> tuple[dict[str, Any], tuple[str, ..
                 pagination["type"] = "page"
             source["pagination"] = pagination
             notes.append("crawl.pagination copied to source.pagination")
+            del crawl["pagination"]  # S4.5 P3#129：旧键清理
+            notes.append("legacy crawl.pagination removed")
 
     extract = raw.get("extract", {})
     if isinstance(extract, dict) and extract.get("mode") == "json":
         if "item_selector" in extract and "item_path" not in extract:
             extract["item_path"] = extract["item_selector"]
             notes.append("extract.item_selector copied to extract.item_path for JSON sources")
+        if "item_path" in extract and "item_selector" in extract:
+            del extract["item_selector"]  # S4.5 P3#129：旧键清理
+            notes.append("legacy extract.item_selector removed")
 
     if isinstance(raw.get("plugin_paths"), list):
         plugins = raw.setdefault("plugins", {})
         if isinstance(plugins, dict) and not plugins.get("paths"):
             plugins["paths"] = copy.deepcopy(raw["plugin_paths"])
             notes.append("plugin_paths copied to plugins.paths")
+        if isinstance(plugins.get("paths"), list):
+            del raw["plugin_paths"]  # S4.5 P3#129：旧键清理
+            notes.append("legacy plugin_paths removed")
 
     raw["config_version"] = CURRENT_CONFIG_VERSION
     return raw, tuple(notes)

@@ -26,11 +26,21 @@ def create_runtime_manifest(root: Path, *, include: Iterable[Path] | None = None
 
 
 def verify_runtime_manifest(root: Path) -> dict[str, Any]:
+    """校验运行时清单（S2.3.3 未知文件检测 + S4.5 P3#149 format 校验）。"""
     root = root.resolve()
     path = root / RUNTIME_MANIFEST
     if not path.is_file():
-        return {"ok": False, "status": "missing_manifest", "missing": [], "corrupt": []}
+        return {"ok": False, "status": "missing_manifest", "missing": [], "corrupt": [], "unknown": []}
     value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        return {"ok": False, "status": "invalid_manifest", "missing": [], "corrupt": [], "unknown": []}
+    # S4.5 P3#149：manifest format 不匹配即视为无效
+    manifest_format = value.get("format")
+    if manifest_format != 1:
+        return {
+            "ok": False, "status": "unsupported_format",
+            "missing": [], "corrupt": [], "unknown": [], "format": manifest_format,
+        }
     files = value.get("files", {}) if isinstance(value, dict) else {}
     missing: list[str] = []
     corrupt: list[str] = []
@@ -44,7 +54,24 @@ def verify_runtime_manifest(root: Path) -> dict[str, Any]:
             missing.append(str(name))
         elif target.stat().st_size != int(expected["bytes"]) or _sha256(target) != expected["sha256"]:
             corrupt.append(str(name))
-    return {"ok": not missing and not corrupt, "status": "valid" if not missing and not corrupt else "invalid", "missing": missing, "corrupt": corrupt, "checked": len(files)}
+    # S3.2.3：清单比对——磁盘上存在但清单未声明的文件（新增未知文件）
+    declared = set(files)
+    unknown: list[str] = []
+    for candidate in root.rglob("*"):
+        if not candidate.is_file() or candidate.name == RUNTIME_MANIFEST:
+            continue
+        relative = candidate.relative_to(root).as_posix()
+        if relative not in declared:
+            unknown.append(relative)
+    unknown.sort()
+    return {
+        "ok": not missing and not corrupt and not unknown,
+        "status": "valid" if not missing and not corrupt and not unknown else "invalid",
+        "missing": missing,
+        "corrupt": corrupt,
+        "unknown": unknown,
+        "checked": len(files),
+    }
 
 
 def _sha256(path: Path) -> str:

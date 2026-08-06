@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$Python,
     [Parameter(Mandatory = $true)][string]$RuntimeRoot,
@@ -17,9 +17,20 @@ $BrowsersRoot = [IO.Path]::GetFullPath($BrowsersRoot)
 $CacheRoot = [IO.Path]::GetFullPath($CacheRoot)
 New-Item -ItemType Directory -Path $RuntimeRoot, $CacheRoot -Force | Out-Null
 
-function Get-Asset([string]$Uri, [string]$Destination, [int64]$MinimumBytes = 1024, [string]$Sha256 = '') {
+# S4.3.3：第三方二进制已知哈希表（资产完整路径 → SHA-256）。
+# 构建前必须由维护者填充/复核；`Get-Asset -RequireKnownHash` 的资产
+# 在表中找不到哈希时拒绝下载（fail-closed），不再"首次下载后自行记录"。
+# 获取方式：下载后运行 Get-FileHash -Algorithm SHA256。
+$KNOWN_SHA256 = @{
+    # Join-Path $CacheRoot 'tesseract-ocr-w64-setup-5.5.0.20241111.exe' = '<填入真实 SHA-256>'
+    # Join-Path $CacheRoot '7zr.exe'                                   = '<填入真实 SHA-256>'
+    # Join-Path $CacheRoot '7z2602-x64.exe'                            = '<填入真实 SHA-256>'
+}
+
+function Get-Asset([string]$Uri, [string]$Destination, [int64]$MinimumBytes = 1024, [string]$Sha256 = '', [switch]$RequireKnownHash) {
     # F15/F16：复用前必须通过 SHA-256 校验（显式传入或上次下载记录）；下载走 .part 临时名 + 原子改名，
     # 中断的半截文件永远不会被当作完整资产复用。
+    # S4.3.3：RequireKnownHash 且无已知哈希（显式参数或 $KNOWN_SHA256 表）→ 拒绝下载。
     $hashPath = Join-Path (Split-Path -Parent $Destination) '.asset-hashes.json'
     $known = @{}
     if (Test-Path -LiteralPath $hashPath) {
@@ -27,6 +38,12 @@ function Get-Asset([string]$Uri, [string]$Destination, [int64]$MinimumBytes = 10
             $stored = Get-Content -LiteralPath $hashPath -Raw | ConvertFrom-Json
             $stored.PSObject.Properties | ForEach-Object { $known[$_.Name] = [string]$_.Value }
         } catch { $known = @{} }
+    }
+    if (-not $Sha256 -and $RequireKnownHash -and $KNOWN_SHA256.ContainsKey($Destination)) {
+        $Sha256 = [string]$KNOWN_SHA256[$Destination]
+    }
+    if (-not $Sha256 -and $RequireKnownHash) {
+        throw "SHA-256 未知，拒绝下载第三方二进制（fail-closed）: $Destination`n请在 tools/prepare_windows_runtime.ps1 的 `$KNOWN_SHA256 中登记真实哈希"
     }
     if (Test-Path -LiteralPath $Destination) {
         $cached = Get-Item -LiteralPath $Destination
@@ -110,9 +127,9 @@ if (-not $SkipTesseract) {
     $sevenInstaller = Join-Path $CacheRoot '7z2602-x64.exe'
     $sevenRoot = Join-Path $CacheRoot '7zip-full'
     $tesseractExtract = Join-Path $CacheRoot 'tesseract-extracted'
-    Get-Asset 'https://github.com/tesseract-ocr/tesseract/releases/download/5.5.0/tesseract-ocr-w64-setup-5.5.0.20241111.exe' $tesseractInstaller 10000000
-    Get-Asset 'https://github.com/ip7z/7zip/releases/download/26.02/7zr.exe' $sevenR 500000
-    Get-Asset 'https://github.com/ip7z/7zip/releases/download/26.02/7z2602-x64.exe' $sevenInstaller 1000000
+    Get-Asset 'https://github.com/tesseract-ocr/tesseract/releases/download/5.5.0/tesseract-ocr-w64-setup-5.5.0.20241111.exe' $tesseractInstaller 10000000 -RequireKnownHash
+    Get-Asset 'https://github.com/ip7z/7zip/releases/download/26.02/7zr.exe' $sevenR 500000 -RequireKnownHash
+    Get-Asset 'https://github.com/ip7z/7zip/releases/download/26.02/7z2602-x64.exe' $sevenInstaller 1000000 -RequireKnownHash
     New-Item -ItemType Directory -Path $sevenRoot, $tesseractExtract -Force | Out-Null
     if (-not (Test-Path -LiteralPath (Join-Path $sevenRoot '7z.exe'))) {
         & $sevenR x $sevenInstaller ("-o$sevenRoot") -y | Out-Host

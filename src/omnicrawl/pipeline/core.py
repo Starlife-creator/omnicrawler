@@ -44,47 +44,102 @@ class Pipeline(_PipelineBuilders, _PipelineExports, _PipelineFetch, _PipelineRun
 
         Args:
             config: Fully-resolved application configuration.
+
+        Raises:
+            Exception: 任一子系统构造失败时，已建资源全部释放后重新抛出。
         """
+        from contextlib import ExitStack
+
         self.config = config
         self.workspace = config.workspace
         self.workspace.mkdir(parents=True, exist_ok=True)
-        self.egress = EgressBroker(config)
-        self.registry = build_registry(config, self.egress)
-        self.state = StateStore(self.workspace / "state.sqlite3")
-        self.object_store = build_object_store(config, self.egress)
-        self.record_sinks = build_record_sink_manager(config, self.egress)
-        self.metrics = RunMetrics()
-        self.source = self.registry.sources[config.source_kind](config)
-        self.scope = ScopePolicy(config)
-        self.robots = RobotsPolicy(config, egress=self.egress)
-        self.limiter = HostRateLimiter(float(config.section("http").get("delay_seconds", 1)))
-        self.diagnostics = DiagnosticRecorder(self.workspace, config.raw)
-        self._local = threading.local()
-        self._shared_fetchers: dict[str, Any] = {}
-        self._shared_fetchers_lock = threading.Lock()
-        self._processor_instances: dict[str, Any] = {}
-        self._executor: ThreadPoolExecutor | None = None
-        self.resource_guard = ResourceGuard(config)
-        self._auth_provider = self._build_auth_provider()
-        self._transformers = self._build_transformers()
-        self.template_monitor = TemplateMonitor(config)
-        self._api_discoveries: list[dict[str, Any]] = []
-        self.run_control = RunControl(self.workspace)
-        self.regression_library = RegressionLibrary(config)
+        self._close_stack = ExitStack()
+
+        def track(resource: Any) -> Any:
+            self._close_stack.callback(self._try_close, resource)
+            return resource
+
+        try:
+            self.egress = EgressBroker(config)
+            self.registry = build_registry(config, self.egress)
+            self.state = track(StateStore(self.workspace / "state.sqlite3"))
+            self.object_store = track(build_object_store(config, self.egress))
+            self.record_sinks = track(build_record_sink_manager(config, self.egress))
+            self.metrics = RunMetrics()
+            self.source = self.registry.sources[config.source_kind](config)
+            self.scope = ScopePolicy(config)
+            self.robots = RobotsPolicy(config, egress=self.egress)
+            self.limiter = HostRateLimiter(float(config.section("http").get("delay_seconds", 1)))
+            self.diagnostics = DiagnosticRecorder(self.workspace, config.raw)
+            self._local = threading.local()
+            self._shared_fetchers: dict[str, Any] = {}
+            self._shared_fetchers_lock = threading.Lock()
+            # S2.5.45：线程局部 fetcher 注册表——close 时统一回收
+            self._all_fetchers: list[Any] = []
+            self._all_fetchers_lock = threading.Lock()
+            self._processor_instances: dict[str, Any] = {}
+            self._processor_lock = threading.Lock()  # S2.5.41：实例创建互斥
+            # S4.5 P3#135：插件 hook_fail_open 只读一次，_emit 不再每事件重读配置
+            self._hook_fail_open = bool(config.section("plugins").get("hook_fail_open", False))
+            self._executor: ThreadPoolExecutor | None = None
+            self.resource_guard = ResourceGuard(config)
+            self._auth_provider = self._build_auth_provider()
+            self._transformers = self._build_transformers()
+            self.template_monitor = TemplateMonitor(config)
+            self._api_discoveries: list[dict[str, Any]] = []
+            self.run_control = RunControl(self.workspace)
+            self.regression_library = RegressionLibrary(config)
+        except Exception:
+            self._close_stack.close()  # S1.5.2：构造中途失败，回滚已建资源
+            raise
+
+    @staticmethod
+    def _try_close(resource: Any) -> None:
+        """单项关闭，失败不阻断其余资源回收。"""
+        close = getattr(resource, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception as exc:  # noqa: BLE001 - 关闭失败不应中断整体
+                LOGGER.warning("关闭资源失败 %r: %s", resource, exc)
 
     def close(self) -> None:
         """Release shared fetchers, the thread pool, record sinks, and state."""
-        for fetcher in self._shared_fetchers.values():
-            close = getattr(fetcher, "close", None)
-            if callable(close):
-                close()
+        errors: list[Exception] = []
+        # S2.5.45：线程局部 fetcher 也在 close 时统一回收（消除连接池泄漏）
+        fetchers = list(self._shared_fetchers.values())
+        with self._all_fetchers_lock:
+            fetchers.extend(self._all_fetchers)
+            self._all_fetchers.clear()
+        for fetcher in fetchers:
+            try:
+                close = getattr(fetcher, "close", None)
+                if callable(close):
+                    close()
+            except Exception as exc:  # noqa: BLE001 - 单项关闭隔离
+                errors.append(exc)
         if self._executor is not None:
-            self._executor.shutdown(wait=False)
+            try:
+                self._executor.shutdown(wait=False)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
             self._executor = None
         try:
             self.record_sinks.close()
-        finally:
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+        try:
             self.state.close()
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+        stack = getattr(self, "_close_stack", None)
+        if stack is not None:
+            try:
+                stack.close()
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+        if errors:
+            raise RuntimeError("Pipeline 关闭阶段存在异常: " + "; ".join(str(e) for e in errors)) from errors[0]
 
     def __enter__(self) -> Pipeline:
         return self
@@ -103,7 +158,7 @@ class Pipeline(_PipelineBuilders, _PipelineExports, _PipelineFetch, _PipelineRun
     def _emit(self, event: str, **context: Any) -> list[Any]:
         return self.registry.emit(
             event,
-            fail_open=bool(self.config.section("plugins").get("hook_fail_open", False)),
+            fail_open=self._hook_fail_open,
             pipeline=self,
             **context,
         )

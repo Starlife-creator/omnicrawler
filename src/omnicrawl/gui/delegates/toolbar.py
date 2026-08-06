@@ -37,7 +37,7 @@ class ToolbarManager(_BaseDelegate):
         mw._stop_btn.setToolTip(_("停止任务 ({0})").format(shortcuts["stop"]))
         toolbar.addWidget(mw._stop_btn)
 
-        mw._pause_btn = QPushButton("Ⅱ 暂停")
+        mw._pause_btn = QPushButton(_("Ⅱ 暂停"))
         mw._pause_btn.clicked.connect(mw._toggle_pause)
         mw._pause_btn.setEnabled(False)
         toolbar.addWidget(mw._pause_btn)
@@ -60,24 +60,24 @@ class ToolbarManager(_BaseDelegate):
         template_btn.setToolTip(_("打开模板库 ({0})").format(shortcuts["open_templates"]))
         toolbar.addWidget(template_btn)
 
-        preflight_btn = QPushButton("✓ 试跑检查")
+        preflight_btn = QPushButton(_("✓ 试跑检查"))
         preflight_btn.clicked.connect(mw._show_preflight)
-        preflight_btn.setToolTip("检查依赖、磁盘与配置，并可独立试跑 3 页")
+        preflight_btn.setToolTip(_("检查依赖、磁盘与配置，并可独立试跑 3 页"))
         toolbar.addWidget(preflight_btn)
         toolbar.addSeparator()
 
-        mw._resource_label = QLabel("资源:")
+        mw._resource_label = QLabel(_("资源:"))
         toolbar.addWidget(mw._resource_label)
         mw._resource_profile_combo = QComboBox()
-        mw._resource_profile_combo.addItem("省电", "economy")
-        mw._resource_profile_combo.addItem("均衡", "balanced")
-        mw._resource_profile_combo.addItem("全速", "performance")
+        mw._resource_profile_combo.addItem(_("省电"), "economy")
+        mw._resource_profile_combo.addItem(_("均衡"), "balanced")
+        mw._resource_profile_combo.addItem(_("全速"), "performance")
         for index in range(mw._resource_profile_combo.count()):
             if mw._resource_profile_combo.itemData(index) == mw._config.resource_profile:
                 mw._resource_profile_combo.setCurrentIndex(index)
                 break
         mw._resource_profile_combo.currentIndexChanged.connect(mw._change_resource_profile)
-        mw._resource_profile_combo.setToolTip("省电适合电池；均衡适合日常；全速建议插电使用")
+        mw._resource_profile_combo.setToolTip(_("省电适合电池；均衡适合日常；全速建议插电使用"))
         toolbar.addWidget(mw._resource_profile_combo)
         toolbar.addSeparator()
 

@@ -256,6 +256,8 @@ def _run_git_log(root: Path, *range_args: str) -> str:
         result = subprocess.run(
             ["git", "log", *range_args, "--pretty=format:- %s"],
             capture_output=True, text=True, cwd=str(root),
+            # GBK 控制台环境显式 UTF-8 解码（git 输出固定 UTF-8），防止解码崩溃
+            encoding="utf-8", errors="replace",
             timeout=30,
         )
         if result.returncode == 0 and result.stdout.strip():

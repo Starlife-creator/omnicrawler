@@ -108,6 +108,21 @@ def test_recording_api_and_template_inputs_merge_through_one_ir_contract(tmp_pat
     assert merged.extensions["api_candidate_evidence"]["method"] == "post"
 
 
+def test_application_service_run_does_not_mutate_cached_config(tmp_path: Path) -> None:
+    """S1.1.1: run(max_pages) 不得就地改写缓存配置，污染后续任务的默认值。"""
+    path = _config(tmp_path, pages=12)
+    service = ApplicationService(path)
+    before = compile_task_plan(TaskIR.from_config(load_config(path).raw)).to_mapping()
+
+    with patch("omnicrawl.services.application_service.Pipeline") as mock_pipeline:
+        mock_pipeline.return_value.__enter__.return_value.run.return_value = {"status": "succeeded"}
+        service.run(max_pages=50)
+
+    after = compile_task_plan(TaskIR.from_config(load_config(path).raw)).to_mapping()
+    assert after == before
+    assert after["config"]["crawl"]["max_pages"] == 12
+
+
 def test_application_service_plan_equivalence_and_sample_binding(tmp_path: Path) -> None:
     path = _config(tmp_path)
     service = ApplicationService(path)

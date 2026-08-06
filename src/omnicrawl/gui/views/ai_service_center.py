@@ -79,10 +79,10 @@ class AITestWorker(QThread):
             )
             model_name = data.get("model", self._model)
             if not self.isInterruptionRequested():
-                self.test_done.emit(True, f"连接成功！模型：{model_name}")
+                self.test_done.emit(True, _(f"连接成功！模型：{model_name}"))
         except Exception as exc:
             if not self.isInterruptionRequested():
-                self.test_done.emit(False, f"连接失败：{exc}")
+                self.test_done.emit(False, _(f"连接失败：{exc}"))
 
 
 class AIListModelsWorker(QThread):
@@ -341,8 +341,9 @@ class AIServiceCenterDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        layout.addWidget(QLabel(_("为不同能力指定不同的 AI Provider：\n"
-                                "留空表示使用默认 Provider 或关闭该能力的 AI 增强。")))
+        layout.addWidget(QLabel(_("为不同能力指定不同的 AI Provider：\n" +
+
+                                _("留空表示使用默认 Provider 或关闭该能力的 AI 增强。"))))
         routing_group = QGroupBox(_("能力路由"))
         routing_layout = QFormLayout(routing_group)
 
@@ -379,9 +380,11 @@ class AIServiceCenterDialog(QDialog):
         prompt_layout = QVBoxLayout(prompt_group)
         self._extraction_prompt = QPlainTextEdit()
         self._extraction_prompt.setPlaceholderText(_(
-            "自定义 AI 提取 prompt 模板。\n"
-            "可用变量: {fields_spec}, {html_chunk}\n"
-            "留空使用内置默认模板。"
+            _("自定义 AI 提取 prompt 模板。\n") +
+
+            _("可用变量: {fields_spec}, {html_chunk}\n") +
+
+            _("留空使用内置默认模板。")
         ))
         self._extraction_prompt.setMaximumHeight(200)
         prompt_layout.addWidget(self._extraction_prompt)
@@ -489,11 +492,11 @@ class AIServiceCenterDialog(QDialog):
             self._model_name.setText(models[0])
             models_text = "\n".join(models[:20])
             if len(models) > 20:
-                models_text += f"\n… 还有 {len(models) - 20} 个模型"
+                models_text += _(f"\n… 还有 {len(models) - 20} 个模型")
             QMessageBox.information(
                 self, _("可用模型"), f"共找到 {len(models)} 个模型：\n{models_text}"
             )
-            self._status_label.setText(f"✅ 已加载 {len(models)} 个模型，已选择 {models[0]}")
+            self._status_label.setText(_(f"✅ 已加载 {len(models)} 个模型，已选择 {models[0]}"))
         else:
             self._status_label.setText(_("⚠ 未找到可用模型"))
 

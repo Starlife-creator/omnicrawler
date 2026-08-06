@@ -258,6 +258,42 @@ class TestStealthEnhancerRandomize:
         se.randomize()
         assert se._generation == 1
 
+    def test_s2529_sec_ch_ua_version_matches_ua(self) -> None:
+        se = StealthEnhancer(seed=7)
+        for _ in range(30):
+            fp = se.randomize()
+            if "Chrome/" not in fp.user_agent:
+                # 非 Chromium 内核 UA 不再注入 sec_ch_ua（避免自相矛盾）
+                assert fp.sec_ch_ua == ""
+                continue
+            import re as _re
+
+            version = _re.search(r"Chrome/(\d+)", fp.user_agent).group(1)
+            assert f'Chromium";v="{version}"' in fp.sec_ch_ua
+            assert f'Google Chrome";v="{version}"' in fp.sec_ch_ua
+
+    def test_s2529_apply_to_context_does_not_create_blank_page(self) -> None:
+        se = StealthEnhancer(level=StealthLevel.LOW)
+        fp = se.randomize()
+        created: list[str] = []
+        page = type("Page", (), {"set_viewport_size": lambda self, _s: None})()
+
+        class _Ctx:
+            pages = [page]
+
+            def new_page(self):
+                created.append("new_page")
+
+        se.apply_to_playwright_context(_Ctx(), fp, StealthLevel.LOW)
+        assert created == []
+
+    def test_s2529_timezone_offsets_cover_all_timezones(self) -> None:
+        se = StealthEnhancer()
+        fp = se.randomize()
+        script = se._build_init_script(fp, StealthLevel.HIGH)
+        for tz in ("Asia/Shanghai", "America/Chicago", "America/Los_Angeles", "Pacific/Auckland"):
+            assert tz in script
+
 
 # ── StealthEnhancer — proxy delegation ─────────────────────────────────
 

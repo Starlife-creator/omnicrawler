@@ -256,11 +256,11 @@ def test_selenium_bidi_guard_allows_or_fails_each_subrequest(tmp_path: Path) -> 
     handlers[0][1](request)
     request.fail.assert_called_once_with()
 
-    with pytest.raises(RuntimeError, match="逐请求安全拦截不可用"):
+    with pytest.raises(RuntimeError, match="逐请求拦截不可用"):
         fetcher._install_selenium_guard(SimpleNamespace())
 
-    fetcher.config = _config(tmp_path / "closed")
-    with pytest.raises(RuntimeError, match="默认安全关闭"):
+    fetcher.config = _config(tmp_path / "closed", experimental_selenium_bidi_guard=False)
+    with pytest.raises(RuntimeError, match="已显式关闭"):
         fetcher._install_selenium_guard(driver)
 
     fetcher.config = _config(tmp_path / "legacy", allow_unintercepted_selenium=True)
@@ -391,7 +391,7 @@ def test_ai_provider_is_fail_closed_without_broker_and_audited_with_it(tmp_path:
     response.__enter__.return_value = response
     opener = MagicMock()
     opener.open.return_value = response
-    with patch("omnicrawl.ai_providers.build_safe_opener", return_value=opener):
+    with patch("omnicrawl.services.ai_providers.build_safe_opener", return_value=opener):
         result = provider.generate([{"role": "user", "content": "hello"}])
     assert result.text == "ok"
     audit = broker.audit_path.read_text(encoding="utf-8")

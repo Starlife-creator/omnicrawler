@@ -22,6 +22,36 @@ class DemoWorkspace:
     config: Path
 
 
+def _build_report_pdf(path: Path) -> None:
+    """S2.5.18：PyMuPDF 生成合法 PDF（文本层，可直抽文本）。"""
+    import fitz
+
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((72, 72), "Offline Annual Report", fontsize=16)
+    page.insert_text((72, 110), "Revenue: 1,200,000", fontsize=12)
+    page.insert_text((72, 132), "Profits: 240,000", fontsize=12)
+    page.insert_text((72, 154), "Published: 2024-03-01", fontsize=12)
+    document.save(str(path))
+    document.close()
+
+
+def _build_scan_pdf(path: Path) -> None:
+    """S2.5.18：渲染成纯位图页（无文字层）——OCR 演示路径真实可走通。"""
+    import fitz
+
+    document = fitz.open()
+    scratch = document.new_page()
+    scratch.insert_text((72, 72), "OCR DEMO 2024", fontsize=18)
+    scratch.insert_text((72, 110), "Scan Date: 2024-03-01", fontsize=12)
+    pixmap = scratch.get_pixmap(dpi=150)
+    document.delete_page(0)
+    page = document.new_page()
+    page.insert_image(page.rect, pixmap=pixmap)
+    document.save(str(path))
+    document.close()
+
+
 def create_demo_workspace(root: Path) -> DemoWorkspace:
     root.mkdir(parents=True, exist_ok=True)
     files = {
@@ -40,14 +70,11 @@ def create_demo_workspace(root: Path) -> DemoWorkspace:
             '<p>Amount adjusted from 1M to 1.2M</p>'
         ),
         'api.json': '{"items":[{"title":"API Item","status":"published"}],"next":null}',
-        'report.pdf': (
-            '%PDF-1.4\n% Offline PDF fixture\n1 0 obj<</Type/Catalog>>endobj\n'
-            'trailer<</Root 1 0 R>>\n%%EOF\n'
-        ),
-        'scan.pdf': '%PDF-1.4\n% Scanned PDF placeholder for OCR routing\n%%EOF\n',
     }
     for name, content in files.items():
         (root / name).write_text(content, encoding='utf-8')
+    _build_report_pdf(root / 'report.pdf')
+    _build_scan_pdf(root / 'scan.pdf')
     config = root / 'offline-demo.yaml'
     config.write_text(
         'config_version: 3\nproject:\n  name: offline_demo\n  workspace: work/offline_demo\n'

@@ -18,23 +18,32 @@ class CrawlRequest:
     depth: int = 0
     parent_url: str | None = None
     meta: dict[str, Any] = field(default_factory=dict)
+    # S2.5.40：指纹惰性缓存（请求对象在生命周期内不可变）
+    _fingerprint_cache: str | None = field(default=None, init=False, repr=False)
 
     @property
     def fingerprint(self) -> str:
+        if self._fingerprint_cache is not None:
+            return self._fingerprint_cache
         override = str(self.meta.get("_fingerprint_override", ""))
         if len(override) == 64 and all(char in "0123456789abcdefABCDEF" for char in override):
-            return override.casefold()
+            self._fingerprint_cache = override.casefold()
+            return self._fingerprint_cache
         stable = json.dumps(
             {
                 "method": self.method.upper(),
                 "url": self.url,
+                # S2.5.5：指纹含规范化 headers（多语言/多身份采集不再误去重）。
+                # 顺序无关，仅参与 sha256 摘要，不泄露 header 值本身。
+                "headers": {key: value for key, value in sorted(self.headers.items())},
                 "body": hashlib.sha256(self.body or b"").hexdigest(),
                 "kind": self.kind,
             },
             sort_keys=True,
             ensure_ascii=False,
         )
-        return hashlib.sha256(stable.encode("utf-8")).hexdigest()
+        self._fingerprint_cache = hashlib.sha256(stable.encode("utf-8")).hexdigest()
+        return self._fingerprint_cache
 
 
 @dataclass(slots=True)
@@ -46,6 +55,8 @@ class FetchResult:
     body: bytes
     elapsed_seconds: float
     meta: dict[str, Any] = field(default_factory=dict)
+    # S2.5.40：内容哈希惰性缓存（body 在结果生命周期内不可变）
+    _content_hash_cache: str | None = field(default=None, init=False, repr=False)
 
     @property
     def content_type(self) -> str:
@@ -53,7 +64,9 @@ class FetchResult:
 
     @property
     def content_hash(self) -> str:
-        return hashlib.sha256(self.body).hexdigest()
+        if self._content_hash_cache is None:
+            self._content_hash_cache = hashlib.sha256(self.body).hexdigest()
+        return self._content_hash_cache
 
 
 @dataclass(slots=True)

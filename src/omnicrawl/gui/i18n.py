@@ -5,7 +5,7 @@
 - 直接返回中文原文（开发期默认，保证零配置可用）
 - 运行时语言切换（通过 set_language()）
 
-翻译文件存放路径：locale/<lang>/LC_MESSAGES/omnicrawler.mo
+翻译文件存放路径：locale/<lang>/LC_MESSAGES/omnicrawl-gui.mo
 """
 
 from __future__ import annotations
@@ -13,6 +13,10 @@ from __future__ import annotations
 import gettext as _gettext
 import os
 from pathlib import Path
+
+# S4.3.2：domain 与 locale/ 目录下的 .pot/.po 统一（原 "omnicrawler" 与
+# "omnicrawl-gui.pot" 不匹配——假语言包根因，切换语言永不生效）
+DOMAIN = "omnicrawl-gui"
 
 _translation: _gettext.NullTranslations | None = None
 _current_language: str = "zh_CN"
@@ -54,7 +58,7 @@ def set_language(lang: str = "zh_CN") -> None:
 
     try:
         _translation = _gettext.translation(
-            "omnicrawler",
+            DOMAIN,
             localedir=str(_localedir),
             languages=[lang],
             fallback=True,

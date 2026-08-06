@@ -45,6 +45,7 @@ def _config(tmp_path: Path, *, source=None, http=None):
 class _LineResponse:
     def __init__(self, lines):
         self.lines = iter(lines)
+        self.readline_calls = 0
 
     def __enter__(self):
         return self
@@ -53,6 +54,7 @@ class _LineResponse:
         return None
 
     def readline(self):
+        self.readline_calls += 1
         return next(self.lines, b"")
 
 
@@ -71,7 +73,7 @@ def test_sse_collects_events_and_honors_limits(tmp_path: Path) -> None:
     )
     opener = MagicMock()
     opener.open.return_value = response
-    with patch("omnicrawl.streams.build_safe_opener", return_value=opener):
+    with patch("omnicrawl.fetching.streams.build_safe_opener", return_value=opener):
         records = collect_sse(config, CrawlRequest("https://example.org/events"))
     assert len(records) == 2
     assert records[0].data == {"event": "update", "data": "one\ntwo"}
@@ -79,7 +81,7 @@ def test_sse_collects_events_and_honors_limits(tmp_path: Path) -> None:
 
     stopped = _LineResponse([b"data: ignored\n", b"\n"])
     opener.open.return_value = stopped
-    with patch("omnicrawl.streams.build_safe_opener", return_value=opener):
+    with patch("omnicrawl.fetching.streams.build_safe_opener", return_value=opener):
         assert collect_sse(
             config, CrawlRequest("https://example.org/events"), should_continue=lambda: False
         ) == []
@@ -87,9 +89,35 @@ def test_sse_collects_events_and_honors_limits(tmp_path: Path) -> None:
     tiny = _config(tmp_path, http={"max_response_bytes": 1024})
     oversized = _LineResponse([b"data: " + (b"x" * 1100) + b"\n"])
     opener.open.return_value = oversized
-    with patch("omnicrawl.streams.build_safe_opener", return_value=opener):
+    with patch("omnicrawl.fetching.streams.build_safe_opener", return_value=opener):
         with pytest.raises(ValueError, match="SSE"):
             collect_sse(tiny, CrawlRequest("https://example.org/events"))
+
+
+def test_sse_breaks_out_of_busy_loop_on_eof(tmp_path: Path) -> None:
+    """S1.4.3：服务端断开（EOF 空读）后不再忙循环，循环尽快退出。"""
+    hung_up = _LineResponse([])
+    opener = MagicMock()
+    opener.open.return_value = hung_up
+    with patch("omnicrawl.fetching.streams.build_safe_opener", return_value=opener):
+        records = collect_sse(
+            _config(tmp_path, source={"max_messages": 100, "duration_seconds": 60}),
+            CrawlRequest("https://example.org/events"),
+        )
+    assert records == []
+    assert hung_up.readline_calls <= 5  # 阈值内即退出，而非烧完整段 timeout
+
+    # 正常事件流之间出现较多空行也不受影响
+    heartbeat = _LineResponse(
+        [b"data: keepalive\n", b"\n", b"\n", b"\n", b"data: still-alive\n", b"\n"]
+    )
+    opener.open.return_value = heartbeat
+    with patch("omnicrawl.fetching.streams.build_safe_opener", return_value=opener):
+        records = collect_sse(
+            _config(tmp_path, source={"max_messages": 10, "duration_seconds": 5}),
+            CrawlRequest("https://example.org/events"),
+        )
+    assert [item.data for item in records] == [{"data": "keepalive"}, {"data": "still-alive"}]
 
 
 class _FakeSocket:
@@ -139,28 +167,45 @@ def test_websocket_collects_json_text_binary_and_subscribes(tmp_path: Path, monk
 
 
 class _FakePipeline:
-    def __init__(self):
-        self.items = []  # list of (cmd, *args, result)
-        self._seen: set[str] = set()
+    def __init__(self, client):
+        self.client = client
+        self.items = []  # list of (cmd, *args)
         self.executed = False
 
     def sadd(self, name, value):
-        if value in self._seen:
-            result = 0
-        else:
-            self._seen.add(value)
-            result = 1
-        self.items.append(("sadd", name, value, result))
+        self.items.append(("sadd", name, value))
 
     def zadd(self, queue, mapping):
-        # redis-py zadd takes a {payload: score} mapping
-        for payload, score in mapping.items():
-            self.items.append(("zadd", queue, payload, score, 1))
+        self.items.append(("zadd", queue, mapping))
+
+    def hset(self, name, key, value):
+        self.items.append(("hset", name, key, value))
+
+    def expire(self, name, seconds):
+        self.items.append(("expire", name, seconds))
 
     def execute(self):
         self.executed = True
-        # Return list of results in command order (last element of each tuple)
-        return [item[-1] for item in self.items]
+        results = []
+        for item in self.items:
+            cmd = item[0]
+            if cmd == "sadd":
+                _name, value = item[1], item[2]
+                results.append(self.client.sadd(_name, value))
+            elif cmd == "zadd":
+                _queue, mapping = item[1], item[2]
+                self.client.queue_store.update(mapping)
+                results.append(1)
+            elif cmd == "hset":
+                _name, key, value = item[1], item[2], item[3]
+                self.client.payload_store[key] = value
+                results.append(1)
+            elif cmd == "expire":
+                results.append(True)
+            else:
+                results.append(1)
+        self.items.clear()
+        return results
 
 
 class _FakeLock:
@@ -182,12 +227,19 @@ class _FakeLock:
 class _FakeRedisClient:
     def __init__(self):
         self.seen = set()
-        self.pipe = _FakePipeline()
+        self.queue_store: dict[str, float] = {}
+        self.payload_store: dict[str, str] = {}
+        self.pipe = _FakePipeline(self)
+        self.last_pipe: _FakePipeline | None = None
+        self.pushed_executed = False
         self.rows = []
         self.lock_value = _FakeLock()
 
     def pipeline(self, transaction=True):
-        return self.pipe
+        pipe = _FakePipeline(self)
+        self.last_pipe = pipe
+        self.pushed_executed = True
+        return pipe
 
     def sadd(self, _name, value):
         if value in self.seen:
@@ -199,10 +251,14 @@ class _FakeRedisClient:
         rows, self.rows = self.rows, []
         return rows
 
+    def hget(self, _name, key):
+        return self.payload_store.get(key)
+
+    def hdel(self, _name, key):
+        return self.payload_store.pop(key, None)
+
     def zcard(self, _queue):
-        # Count unique zadd payloads (zadd updates existing members, not adds duplicates)
-        unique_payloads = {item[2] for item in self.pipe.items if item[0] == "zadd"}
-        return len(unique_payloads)
+        return len(self.queue_store)
 
     def lock(self, *_args, **_kwargs):
         return self.lock_value
@@ -221,16 +277,16 @@ def test_redis_frontier_push_pop_size_and_lock(monkeypatch) -> None:
     frontier = RedisFrontier("redis://example", "tests")
     request = CrawlRequest("https://example.org", priority=7, meta={"root_url": "https://example.org"})
     assert frontier.push([request, request]) == 1
-    assert client.pipe.executed
+    assert client.pushed_executed, "push 应通过 pipeline 批量提交"
     assert frontier.size() == 1
     assert frontier.pop() is None
 
-    # Find the zadd payload from the pipeline items
-    zadd_item = next(item for item in client.pipe.items if item[0] == "zadd")
-    payload = zadd_item[2]
-    client.rows = [(payload, -7.0)]
+    # 队列成员是 fingerprint，payload 从 hash 还原
+    fingerprint = next(iter(client.queue_store))
+    client.rows = [(fingerprint, -7.0)]
     popped = frontier.pop()
     assert popped is not None and popped.url == request.url and popped.priority == 7
+    assert fingerprint not in client.payload_store  # pop 后 payload 已清理
 
     lock = frontier.acquire_lock("task", timeout_seconds=10, blocking_timeout_seconds=1)
     assert lock is client.lock_value
@@ -240,6 +296,27 @@ def test_redis_frontier_push_pop_size_and_lock(monkeypatch) -> None:
 
     client.lock_value = _FakeLock(acquire=False)
     assert frontier.acquire_lock("busy") is None
+
+
+def test_redis_frontier_push_accepts_generator_and_dedups_by_fingerprint(monkeypatch) -> None:
+    client = _FakeRedisClient()
+
+    class RedisFactory:
+        @staticmethod
+        def from_url(_url, decode_responses):
+            return client
+
+    monkeypatch.setitem(sys.modules, "redis", SimpleNamespace(Redis=RedisFactory))
+    frontier = RedisFrontier("redis://example", "tests")
+    request = CrawlRequest("https://example.org")
+
+    def gen():
+        yield request
+        yield CrawlRequest("https://other.example")
+        yield request  # 重复指纹
+
+    assert frontier.push(gen()) == 2  # S1.5.5：生成器输入计数正确，去重后入队 2 个
+    assert frontier.size() == 2
 
 
 def test_scrapy_bridge_success_failure_and_validation(tmp_path: Path) -> None:

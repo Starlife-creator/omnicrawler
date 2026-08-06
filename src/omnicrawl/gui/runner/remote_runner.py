@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ..i18n import _
+
 if TYPE_CHECKING:
     from ..core.config_model import CrawlConfig
 
@@ -28,7 +30,7 @@ class RemoteRunner:
         Raises:
             NotImplementedError: 远程执行后端尚未发布。
         """
-        raise NotImplementedError("远程执行后端尚未发布")
+        raise NotImplementedError(_("远程执行后端尚未发布"))
 
     def status(self, task_id: str) -> str:
         """查询远程任务状态。
@@ -36,7 +38,7 @@ class RemoteRunner:
         Raises:
             NotImplementedError: 远程执行后端尚未发布。
         """
-        raise NotImplementedError("远程执行后端尚未发布")
+        raise NotImplementedError(_("远程执行后端尚未发布"))
 
     def cancel(self, task_id: str) -> bool:
         """取消远程任务。
@@ -44,4 +46,4 @@ class RemoteRunner:
         Raises:
             NotImplementedError: 远程执行后端尚未发布。
         """
-        raise NotImplementedError("远程执行后端尚未发布")
+        raise NotImplementedError(_("远程执行后端尚未发布"))

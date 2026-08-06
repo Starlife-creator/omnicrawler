@@ -44,7 +44,7 @@ class MenuBuilder(_BaseDelegate):
         save_as_action.triggered.connect(mw._save_config_as)
         file_menu.addAction(save_as_action)
 
-        history_action = QAction("配置历史与恢复...", mw)
+        history_action = QAction(_("配置历史与恢复..."), mw)
         history_action.triggered.connect(mw._show_config_history)
         file_menu.addAction(history_action)
 
@@ -78,28 +78,28 @@ class MenuBuilder(_BaseDelegate):
         mw._schedule_action.triggered.connect(mw._manage_schedules)
         settings_menu.addAction(mw._schedule_action)
 
-        preflight_action = QAction("运行前检查与小样本试跑...", mw)
+        preflight_action = QAction(_("运行前检查与小样本试跑..."), mw)
         preflight_action.triggered.connect(mw._show_preflight)
         settings_menu.addAction(preflight_action)
 
-        error_center_action = QAction("打开统一错误中心", mw)
+        error_center_action = QAction(_("打开统一错误中心"), mw)
         error_center_action.triggered.connect(mw._open_error_center)
         settings_menu.addAction(error_center_action)
 
-        compare_runs_action = QAction("对比两次运行...", mw)
+        compare_runs_action = QAction(_("对比两次运行..."), mw)
         compare_runs_action.triggered.connect(mw._show_run_comparison)
         settings_menu.addAction(compare_runs_action)
 
-        plugin_action = QAction("插件管理与权限...", mw)
+        plugin_action = QAction(_("插件管理与权限..."), mw)
         plugin_action.triggered.connect(mw._manage_plugins)
         settings_menu.addAction(plugin_action)
 
-        pdf_region_action = QAction("PDF 页面框选字段...", mw)
+        pdf_region_action = QAction(_("PDF 页面框选字段..."), mw)
         pdf_region_action.triggered.connect(lambda: mw._show_pdf_region_dialog())
         settings_menu.addAction(pdf_region_action)
 
-        recorder_action = QAction("录制网页操作...", mw)
-        recorder_action.setToolTip("打开浏览器，正常点击和输入；关闭窗口后自动写入当前配置")
+        recorder_action = QAction(_("录制网页操作..."), mw)
+        recorder_action.setToolTip(_("打开浏览器，正常点击和输入；关闭窗口后自动写入当前配置"))
         recorder_action.triggered.connect(mw._record_browser_actions)
         settings_menu.addAction(recorder_action)
 

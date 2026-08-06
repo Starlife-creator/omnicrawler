@@ -53,11 +53,18 @@ class _PipelineBuilders(_PipelineBase):
         )
         kind = "parser" if parser else "extractor" if extractor else "processor"
         cache_key = f"{kind}:{name}"
-        if cache_key not in self._processor_instances:
-            if name not in bucket:
-                raise KeyError(f"Unknown {kind} plugin: {name}")
-            options = self.config.section("extract").get(f"{kind}_options", {})
-            if not isinstance(options, dict):
-                raise TypeError(f"extract.{kind}_options must be a mapping")
-            self._processor_instances[cache_key] = build_extension(bucket[name], self.config, options)
-        return self._processor_instances[cache_key]
+        # S2.5.41：实例缓存加锁，消除多线程 check-then-act 竞态
+        with self._processor_lock:
+            if cache_key not in self._processor_instances:
+                if name not in bucket:
+                    raise KeyError(f"Unknown {kind} plugin: {name}")
+                options = self.config.section("extract").get(f"{kind}_options", {})
+                if not isinstance(options, dict):
+                    raise TypeError(f"extract.{kind}_options must be a mapping")
+                # S2.5.41：按插件名分配独立 options——当所有键都是已注册插件名时
+                # 视为 {name: {…}} 映射，未点名插件得空 options；否则视为通用 options
+                named_form = bool(options) and all(key in bucket for key in options)
+                if named_form:
+                    options = options.get(name, {})
+                self._processor_instances[cache_key] = build_extension(bucket[name], self.config, options)
+            return self._processor_instances[cache_key]

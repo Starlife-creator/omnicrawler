@@ -28,4 +28,9 @@ def test_legacy_config_is_migrated_without_losing_unknown_fields(tmp_path) -> No
 
     config = load_config(migrated)
     assert config.source_kind == "feed"
-    assert config.raw["plugin_paths"] == ["plugins/old.py"]
+    # S4.5 P3#129：迁移后旧键清理、新键生效
+    assert config.raw["plugins"]["paths"] == ["plugins/old.py"]
+    assert "plugin_paths" not in config.raw
+    assert "seed_urls" not in config.raw
+    assert "output" not in config.raw
+    assert "delay_seconds" not in config.raw["crawl"]

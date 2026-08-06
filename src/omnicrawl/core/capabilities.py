@@ -94,8 +94,9 @@ def capability_report(
 ) -> dict[str, Any]:
     """Return a layered capability report without needlessly importing heavy modules.
 
-    ``quick`` checks installation metadata for the core runtime, ``task``
-    imports only the features explicitly requested, and ``deep`` imports every
+    ``quick`` checks installation metadata (defaulting to the core runtime;
+    explicit ``require_features`` are honored since S2.1.1), ``task`` checks
+    only the features explicitly requested, and ``deep`` imports every
     installed optional module.  ``verify_imports=True`` remains available for
     backwards compatibility and performs the old all-module import check.
     """
@@ -107,8 +108,8 @@ def capability_report(
     unknown = sorted(set(requested) - set(FEATURE_REQUIREMENTS))
     if unknown:
         raise ValueError(f"未知能力名称: {', '.join(unknown)}")
-    if mode == "quick":
-        requested = ("core",)
+    # S2.1.1 后项（源B P1#30）：quick 模式不再静默丢弃显式 require_features；
+    # 未显式提供时仍默认只检查核心运行环境
 
     required_modules = {
         module for feature in requested for module in FEATURE_REQUIREMENTS[feature]["modules"]
@@ -266,7 +267,14 @@ def _build_full_capabilities(modules: dict[str, dict[str, Any]], native: dict[st
                                    "表格、版面分析和中文 OCR", "full")
     items["paddle_models"] = _cap_item("PaddleOCR 离线模型", native.get("paddle_models", {}).get("ready", False),
                                        "版面/表格/文字检测模型", "full")
-    items["keyring"] = _cap_item("Windows 凭据管理器 (keyring)", modules.get("keyring", {}).get("installed", False),
+    # S4.5 P3#150：keyring 文案按平台显示，不再全平台写 "Windows 凭据管理器"
+    if sys.platform == "win32":
+        keyring_label = "Windows 凭据管理器 (keyring)"
+    elif sys.platform == "darwin":
+        keyring_label = "macOS Keychain (keyring)"
+    else:
+        keyring_label = "Secret Service / GNOME Keyring (keyring)"
+    items["keyring"] = _cap_item(keyring_label, modules.get("keyring", {}).get("installed", False),
                                  "安全存储 API Key 和密码", "full")
 
     ready_count = sum(1 for item in items.values() if item["ready"])

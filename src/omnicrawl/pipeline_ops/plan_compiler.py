@@ -99,9 +99,19 @@ def _diff(path: str, before: Any, after: Any, changes: list[dict[str, Any]]) -> 
         changes.append({"path": path, "before": before, "after": after})
 
 
+_REDACT_TOKENS = (
+    "password", "passwd", "secret", "token", "api_key", "apikey",
+    "authorization", "bearer", "cookie",
+    "密码", "口令", "密钥", "令牌", "凭据", "授权",
+)
+
+
 def _redact_for_hash(value: Any) -> Any:
     if isinstance(value, Mapping):
-        return {key: ("<secret>" if any(token in str(key).casefold() for token in ("password", "secret", "token", "api_key")) else _redact_for_hash(item)) for key, item in value.items()}
+        return {
+            key: ("<redacted>" if any(token in str(key).casefold() for token in _REDACT_TOKENS) else _redact_for_hash(item))
+            for key, item in value.items()
+        }
     if isinstance(value, list):
         return [_redact_for_hash(item) for item in value]
     if isinstance(value, tuple):

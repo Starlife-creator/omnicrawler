@@ -24,6 +24,18 @@ def _json(value: Any) -> None:
     print(json.dumps(value, ensure_ascii=False, indent=2, default=str))
 
 
+def _complete_seed_scheme(seed: str) -> str | None:
+    """为入口网址补全 http(s) scheme。
+
+    对 Windows 盘符路径 / 反斜杠路径 / 相对路径返回 None，避免把
+    ``C:\\data\\page.html`` 误补全成 ``https://C:\\data\\page.html``（F688）。
+    """
+    if not seed or "\\" in seed or re.match(r"^[A-Za-z]:[\\/]", seed) or seed.startswith(("/", ".", "\\")):
+        return None
+    has_scheme = re.match(r"^[A-Za-z][A-Za-z0-9+.\-]*://", seed) is not None
+    return seed if has_scheme else f"https://{seed}"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="omnicrawl", description="模块化网站采集、附件下载与PDF字段抽取平台")
     parser.add_argument("--version", action="version", version=f"omnicrawl {__version__}")
@@ -36,6 +48,10 @@ def build_parser() -> argparse.ArgumentParser:
         item.add_argument("--config", "-c", required=True)
         item.add_argument("--max-pages", type=int)
         item.add_argument("--progress", action="store_true", help="显示实时采集进度条")
+        item.add_argument(
+            "--strict", action="store_true",
+            help="严格模式: 0 条有效记录时退出码为 1(默认向前兼容)",
+        )
         if name == "resume":
             item.add_argument("--retry-failed", action="store_true", help="重试死信队列中的失败请求")
     validate = sub.add_parser("validate", help="校验配置")
@@ -187,6 +203,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     recovery.add_argument("--limit", type=int)
     recovery.add_argument("--backup", help="rollback-config使用的已验证配置备份")
+    recovery.add_argument("--apply", "--yes", action="store_true", help="执行破坏性操作（rollback-config 需要）")
     plan = sub.add_parser("plan", help="把任务编译为可解释、可校验哈希的执行计划")
     plan.add_argument("--config", "-c", required=True)
     plan.add_argument("--compare", help="与另一配置的计划进行字段级差异比较")
@@ -200,12 +217,14 @@ def build_parser() -> argparse.ArgumentParser:
     workspace.add_argument("action", choices=["init", "health", "package", "snapshot", "rollback"])
     workspace.add_argument("--target")
     workspace.add_argument("--kind", choices=["full", "config", "support"], default="full")
+    workspace.add_argument("--apply", "--yes", action="store_true", help="执行破坏性操作（rollback 需要）")
     components = sub.add_parser("components", help="查看、验证、离线导入或卸载可选组件")
     components.add_argument("action", choices=["list", "inspect", "stage", "import", "uninstall", "rollback"])
     components.add_argument("--package")
     components.add_argument("--name")
     components.add_argument("--sha256")
     components.add_argument("--allow-unsigned", action="store_true", help="仅用于本地开发包")
+    components.add_argument("--apply", "--yes", action="store_true", help="执行破坏性操作（uninstall/rollback 需要）")
     runtime_verify = sub.add_parser("runtime-verify", help="验证便携运行时清单是否缺失或被篡改")
     runtime_verify.add_argument("--root", default=".")
     # EasySpider 导入
@@ -268,6 +287,13 @@ def main(argv: list[str] | None = None) -> None:
             print("\n💡 提示: 运行 omnicrawl wizard 开始交互创建配置，或 omnicrawl --help 查看全部命令", file=sys.stderr)
         raise
     configure_logging(args.log_level, args.log_format)
+    # S4.2 ③：启动第一行日志打印关键路径（data_dir/config_path），排障不迷路
+    import logging as _logging
+
+    _root_logger = _logging.getLogger("omnicrawl")
+    _root_logger.info("omnicrawl %s 启动; data_dir=%s", __version__, _data_dir_hint())
+    if getattr(args, "config", None):
+        _root_logger.info("config_path=%s", args.config)
     try:
         _dispatch(args)
     except KeyboardInterrupt:
@@ -277,6 +303,16 @@ def main(argv: list[str] | None = None) -> None:
         print(f"错误: {type(exc).__name__}: {exc}", file=sys.stderr)
         _print_error_hint(exc)
         raise SystemExit(1)
+
+
+def _data_dir_hint() -> str:
+    """S4.2 ③：数据目录提示——便携数据根/本地数据根，不指向安装目录。"""
+    from ..core.runtime_paths import portable_data_root
+
+    try:
+        return str(portable_data_root())
+    except Exception:  # noqa: BLE001 - 兜底不阻断启动
+        return "（数据目录解析失败）"
 
 
 def _print_welcome() -> None:
@@ -446,10 +482,12 @@ def _wizard(output: Path) -> None:
         if not seed:
             print("   ⚠ 入口网址不能为空")
             continue
-        parsed = urllib.parse.urlparse(seed if "://" in seed else f"https://{seed}")
-        if not parsed.scheme:
-            seed = f"https://{seed}"
-            parsed = urllib.parse.urlparse(seed)
+        # F688：不要把 Windows 盘符路径/相对路径误补成 https://C:\data\page.html
+        candidate = _complete_seed_scheme(seed)
+        if candidate is None:
+            print("   ⚠ 网址格式无效，请以 https:// 开头")
+            continue
+        parsed = urllib.parse.urlparse(candidate)
         if parsed.netloc:
             print(f"   → 已识别域名: {parsed.netloc}")
             break

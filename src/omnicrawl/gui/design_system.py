@@ -20,6 +20,8 @@ from PyQt6.QtWidgets import (
     QStackedWidget,
 )
 
+from .i18n import _
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -451,8 +453,8 @@ def assert_no_raw_hex(qss_or_style: str, *, context: str = "") -> None:
             offenders.append(val)
     if offenders:
         raise ValueError(
-            f"禁裸色值守卫触发（{context}）：发现 {len(offenders)} 处非令牌十六进制色值: "
-            f"{', '.join(offenders[:8])}。请改用 VisualTokens 令牌。"
+            _(f"样式串包含非法十六进制颜色值（{context}），发现 {len(offenders)} 处裸十六进制颜色值: ")
+            + _(f"{', '.join(offenders[:8])}。请改用 VisualTokens 令牌。")
         )
 
 
@@ -461,12 +463,16 @@ def assert_no_raw_hex(qss_or_style: str, *, context: str = "") -> None:
 # ---------------------------------------------------------------------------
 
 def apply_font_strategy(app: QApplication, *, scale: int = 100) -> None:
-    """应用字体族策略。scale 为百分比（80–160）。"""
+    """应用字体族策略。scale 为百分比（80–160）。
+
+    S3.1.22：保留 accessibility 缩放比例——移除 0.75 稀释魔数，
+    字体大小 = 正文基准 × 缩放因子，80–160% 缩放真实生效。
+    """
     factor = max(0.8, min(1.6, scale / 100.0))
-    base_size = int(FONT_SIZE["body"] * factor)
+    base_size = FONT_SIZE["body"]
     font = QFont()
     font.setFamilies(FONT_FAMILY_UI.split(", "))
-    font.setPointSize(max(8, int(base_size * 0.75)))  # pointSize 近似
+    font.setPointSize(max(8, round(base_size * factor)))
     app.setFont(font)
 
 

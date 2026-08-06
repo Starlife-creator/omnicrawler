@@ -10,4 +10,4 @@ if not exist ".venv\Scripts\python.exe" (
   exit /b 1
 )
 ".runtime\python\python.exe" "tools\rebase_venv.py" || exit /b 1
-".venv\Scripts\python.exe" -m omnicrawl workbench
+".venv\Scripts\python.exe" -m omnicrawl workbench %*

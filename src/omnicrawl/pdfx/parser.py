@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
@@ -145,69 +146,96 @@ def parse_stage(
     if not rows:
         return summary
 
+    # S1.5.1：每线程复用独立数据库连接（参照 extraction.py 每线程 DB 模式），
+    # 避免多线程共享单连接并发写导致 "cannot start a transaction within a transaction" / SQLITE_BUSY
+    _thread_db = threading.local()
+    _thread_connections: list[Database] = []
+
+    def work(row):
+        worker_db = getattr(_thread_db, "db", None)
+        if worker_db is None:
+            worker_db = Database(config.database)
+            _thread_db.db = worker_db
+            _thread_connections.append(worker_db)  # GIL 下 list.append 线程安全
+        return _parse_and_store(config, worker_db, row, min_chars, max_garbled)
+
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        futures = {
-            pool.submit(_parse_and_store, config, db, row, min_chars, max_garbled): row
-            for row in rows
-        }
-        for future in as_completed(futures):
-            row = futures[future]
-            doc_id = row["doc_id"]
-            try:
-                outcome = future.result()
-                if "error" in outcome:
-                    raise outcome["error"]
-                summary["parsed"] += 1
-                summary["ocr_pages"] += outcome["ocr_pages"]
-                status = "parsed" if outcome["ocr_pages"] == 0 else "parsed_native"
-                db.execute(
-                    """
-                    UPDATE documents SET page_count=?, status=?, text_page_count=?,
-                        ocr_page_count=0, error=NULL, parser_version=?, updated_at=?
-                    WHERE doc_id=?
-                    """,
-                    (
-                        outcome["page_count"], status,
-                        outcome["page_count"] - outcome["ocr_pages"], PARSER_VERSION, utcnow(), doc_id,
-                    ),
-                )
-            except Exception as exc:  # noqa: BLE001 - per-file isolation is intentional
-                summary["failed"] += 1
-                db.add_error(doc_id, "parse", exc)
-                # D16：失败计数累加，超阈值置 parse_dead 排除（防永久损坏 PDF 无限重试）
-                attempts = int(row.get("attempt_count") or 0)
-                db.execute(
-                    """
-                    UPDATE documents SET status=?, error=?, attempt_count=attempt_count+1,
-                        updated_at=? WHERE doc_id=?
-                    """,
-                    (
-                        "parse_dead" if attempts + 1 >= MAX_PARSE_ATTEMPTS else "parse_failed",
-                        str(exc)[:4000], utcnow(), doc_id,
-                    ),
-                )
+        try:
+            futures = {
+                pool.submit(work, row): row
+                for row in rows
+            }
+            for future in as_completed(futures):
+                row = futures[future]
+                doc_id = row["doc_id"]
+                try:
+                    outcome = future.result()
+                    if "error" in outcome:
+                        raise outcome["error"]
+                    summary["parsed"] += 1
+                    summary["ocr_pages"] += outcome["ocr_pages"]
+                    status = "parsed" if outcome["ocr_pages"] == 0 else "parsed_native"
+                    db.execute(
+                        """
+                        UPDATE documents SET page_count=?, status=?, text_page_count=?,
+                            ocr_page_count=0, error=NULL, parser_version=?, updated_at=?
+                        WHERE doc_id=?
+                        """,
+                        (
+                            outcome["page_count"], status,
+                            outcome["page_count"] - outcome["ocr_pages"], PARSER_VERSION, utcnow(), doc_id,
+                        ),
+                    )
+                except Exception as exc:  # noqa: BLE001 - per-file isolation is intentional
+                    summary["failed"] += 1
+                    db.add_error(doc_id, "parse", exc)
+                    # D16：失败计数累加，超阈值置 parse_dead 排除（防永久损坏 PDF 无限重试）
+                    attempts = int(row["attempt_count"] or 0)
+                    db.execute(
+                        """
+                        UPDATE documents SET status=?, error=?, attempt_count=attempt_count+1,
+                            updated_at=? WHERE doc_id=?
+                        """,
+                        (
+                            "parse_dead" if attempts + 1 >= MAX_PARSE_ATTEMPTS else "parse_failed",
+                            str(exc)[:4000], utcnow(), doc_id,
+                        ),
+                    )
+        finally:
+            for conn in _thread_connections:
+                try:
+                    conn.close()
+                except Exception:  # noqa: BLE001 - 线程连接关闭失败不应影响调用方
+                    pass
     return summary
 
 
 def _parse_and_store(config: ProjectConfig, db: Database, row, min_chars: int, max_garbled: float) -> dict[str, int]:
-    """D36：流式解析并分批写库——逐页 yield，每 500 页一批 executemany，内存峰值受控。"""
+    """先流式解析到内存页列表，再开单事务 executemany（S1.5.1 短事务批写）。
+
+    长事务覆盖整个解析会与其他线程互相阻塞；改为把解析（纯内存，无锁）与
+    写库（单次 BEGIN IMMEDIATE 短事务）分离，避免 SQLITE_BUSY / 嵌套事务。
+    """
     doc_id = row["doc_id"]
     try:
         now = utcnow()
         page_count = 0
         ocr_pages = 0
+        pages: list[tuple] = []
+        for page in _iter_parsed_pages(row["primary_path"], min_chars, max_garbled):
+            pages.append((
+                doc_id, page["page_no"], page["width"], page["height"],
+                page["native_text"], page["final_text"], page["parse_method"],
+                page["printable_chars"], page["garbled_ratio"],
+                page["needs_ocr"], page["ocr_status"], now,
+            ))
+            page_count += 1
+            ocr_pages += page["needs_ocr"]
         with db.transaction() as conn:
             conn.execute("DELETE FROM pages WHERE doc_id=?", (doc_id,))
             batch: list[tuple] = []
-            for page in _iter_parsed_pages(row["primary_path"], min_chars, max_garbled):
-                batch.append((
-                    doc_id, page["page_no"], page["width"], page["height"],
-                    page["native_text"], page["final_text"], page["parse_method"],
-                    page["printable_chars"], page["garbled_ratio"],
-                    page["needs_ocr"], page["ocr_status"], now,
-                ))
-                page_count += 1
-                ocr_pages += page["needs_ocr"]
+            for item in pages:
+                batch.append(item)
                 if len(batch) >= 500:
                     conn.executemany(
                         """

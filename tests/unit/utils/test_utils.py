@@ -37,6 +37,16 @@ class UtilsTest(unittest.TestCase):
         self.assertEqual(excel_safe("=1+1"), "'=1+1")
         self.assertEqual(excel_safe("-12.5"), "-12.5")
 
+    def test_excel_safe_defeats_whitespace_prefix_injection(self):
+        """S1.3.1：`\t=cmd`、`\r@x` 等前导空白注入必须被护栏捕获。"""
+        self.assertEqual(excel_safe("\t=cmd|' /C calc'!A0"), "'\t=cmd|' /C calc'!A0")
+        self.assertEqual(excel_safe("\r@x"), "'\r@x")
+        self.assertEqual(excel_safe(" +1+1"), "' +1+1")
+        self.assertEqual(excel_safe("@SUM(A1:A2)"), "'@SUM(A1:A2)")
+        self.assertEqual(excel_safe("plain text"), "plain text")
+        self.assertEqual(excel_safe("42"), "42")
+        self.assertEqual(excel_safe(" 12"), " 12")
+
     def test_private_targets(self):
         self.assertTrue(is_private_target("http://127.0.0.1/test"))
         self.assertTrue(is_private_target("http://localhost/test"))
@@ -126,6 +136,19 @@ class DeepMergeTest(unittest.TestCase):
 
     def test_empty_override_no_change(self):
         self.assertEqual(deep_merge({"a": 1}, {}), {"a": 1})
+
+    def test_result_is_deep_copy_of_base(self):
+        base = {"outer": {"inner": [1, 2]}}
+        result = deep_merge(base, {"extra": 1})
+        result["outer"]["inner"].append(3)
+        result["outer"]["inner"] = []
+        self.assertEqual(base, {"outer": {"inner": [1, 2]}})
+
+    def test_nested_result_does_not_share_list_with_base(self):
+        base = {"items": ["a"]}
+        result = deep_merge(base, {"count": 1})
+        result["items"].append("b")
+        self.assertEqual(base["items"], ["a"])
 
 
 class CanonicalizeUrlEdgeTest(unittest.TestCase):

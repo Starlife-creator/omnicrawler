@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from ..core.config_serializer import load_yaml
+from ..i18n import _
 from ..runner.env_checker import check_omnicrawl
 
 
@@ -40,7 +41,7 @@ class HeadlessRunner:
         """
         # 检查配置文件
         if not config_path.is_file():
-            print(f"\033[31m[ERROR]\033[0m 配置文件不存在: {config_path}", file=sys.stderr)
+            print(_(f"\033[31m[ERROR]\033[0m 配置文件不存在: {config_path}"), file=sys.stderr)
             return 1
 
         # 验证配置
@@ -49,23 +50,23 @@ class HeadlessRunner:
             errors = config.validate()
             if errors:
                 for err in errors:
-                    print(f"\033[31m[ERROR]\033[0m 配置校验失败: {err}", file=sys.stderr)
+                    print(_(f"\033[31m[ERROR]\033[0m 配置校验失败: {err}"), file=sys.stderr)
                 return 1
         except Exception as e:
-            print(f"\033[31m[ERROR]\033[0m 配置加载失败: {e}", file=sys.stderr)
+            print(_(f"\033[31m[ERROR]\033[0m 配置加载失败: {e}"), file=sys.stderr)
             return 1
 
         # 检查 omnicrawl
         available, version = check_omnicrawl(self._omnicrawl_path)
         if not available:
-            print(f"\033[31m[ERROR]\033[0m omnicrawl 命令不可用 (路径: {self._omnicrawl_path})",
+            print(_(f"\033[31m[ERROR]\033[0m omnicrawl 命令不可用 (路径: {self._omnicrawl_path})"),
                   file=sys.stderr)
             return 1
 
         print(f"\033[36m[INFO]\033[0m OmniCrawler {version}")
-        print(f"\033[36m[INFO]\033[0m 配置: {config_path}")
-        print(f"\033[36m[INFO]\033[0m 项目: {config.project_name} (task_id: {config.task_id})")
-        print("\033[36m[INFO]\033[0m 正在启动爬虫...")
+        print(_(f"\033[36m[INFO]\033[0m 配置: {config_path}"))
+        print(_(f"\033[36m[INFO]\033[0m 项目: {config.project_name} (task_id: {config.task_id})"))
+        print(_("\033[36m[INFO]\033[0m 正在启动爬虫..."))
 
         # 启动子进程
         process: subprocess.Popen | None = None
@@ -104,13 +105,13 @@ class HeadlessRunner:
 
             exit_code = process.wait()
             if exit_code == 0:
-                print("\033[32m[SUCCESS]\033[0m 任务成功完成")
+                print(_("\033[32m[SUCCESS]\033[0m 任务成功完成"))
             else:
-                print(f"\033[31m[FAILED]\033[0m 任务失败，退出码: {exit_code}")
+                print(_(f"\033[31m[FAILED]\033[0m 任务失败，退出码: {exit_code}"))
             return exit_code
 
         except KeyboardInterrupt:
-            print("\033[33m[WARN]\033[0m 用户中断")
+            print(_("\033[33m[WARN]\033[0m 用户中断"))
             if process is not None:
                 try:
                     process.terminate()
@@ -119,7 +120,7 @@ class HeadlessRunner:
                     process.kill()
             return 1
         except Exception as e:
-            print(f"\033[31m[ERROR]\033[0m 执行异常: {e}", file=sys.stderr)
+            print(_(f"\033[31m[ERROR]\033[0m 执行异常: {e}"), file=sys.stderr)
             return 1
         finally:
             if process is not None and process.stdout:

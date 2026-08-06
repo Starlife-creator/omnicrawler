@@ -62,6 +62,9 @@ class _PipelineBase:
     _shared_fetchers: dict[str, Any]
     _shared_fetchers_lock: threading.Lock
     _processor_instances: dict[str, Any]
+    _processor_lock: threading.Lock
+    _all_fetchers: list[Any]
+    _all_fetchers_lock: threading.Lock
     _executor: ThreadPoolExecutor | None
     resource_guard: ResourceGuard
     _auth_provider: Any | None

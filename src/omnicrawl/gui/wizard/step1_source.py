@@ -90,16 +90,18 @@ class Step1SourcePage(QWizardPage):
         brief_group = QGroupBox(_("用自然语言描述任务（推荐，从这里开始）"))
         brief_layout = QVBoxLayout(brief_group)
         brief_hint = QLabel(_(
-            "例如：每周监测 https://example.com/news 中“人工智能”相关政策，下载 PDF 并导出 Excel。\n"
-            "系统只会生成受入口站点限制的安全草案；不会联网、不会保存真实密钥，也不会跳过试跑。"
+            _("例如：每周监测 https://example.com/news 中“人工智能”相关政策，下载 PDF 并导出 Excel。\n") +
+
+            _("系统只会生成受入口站点限制的安全草案；不会联网、不会保存真实密钥，也不会跳过试跑。")
         ))
         brief_hint.setWordWrap(True)
         brief_hint.setObjectName("muted")
         brief_layout.addWidget(brief_hint)
         self._task_description = QPlainTextEdit()
         self._task_description.setPlaceholderText(_(
-            "我想从哪个网址获取什么内容，范围有多大，需要哪些文件或结果格式？\n"
-            "示例：采集 https://example.com/notices 的全部公告，排除“失效”，下载 PDF，输出 Excel。"
+            _("我想从哪个网址获取什么内容，范围有多大，需要哪些文件或结果格式？\n") +
+
+            _("示例：采集 https://example.com/notices 的全部公告，排除“失效”，下载 PDF，输出 Excel。")
         ))
         self._task_description.setMinimumHeight(118)
         self._task_description.setMaximumHeight(180)
@@ -314,8 +316,9 @@ class Step1SourcePage(QWizardPage):
         self._apply_draft(draft.task, list(draft.topics))
         cadence = {"weekly": _("每周"), "daily": _("每天"), "monthly": _("每月"), "manual": _("手动")}
         self._brief_feedback.setText(_(
-            "已应用建议：{intent}，最多 {pages} 页；主题词 {topics}；建议执行频率：{schedule}。"
-            "仍可在本页直接修改，下一步只处理高级范围。"
+            _("已应用建议：{intent}，最多 {pages} 页；主题词 {topics}；建议执行频率：{schedule}。") +
+
+            _("仍可在本页直接修改，下一步只处理高级范围。")
         ).format(
             intent=self._intent_combo.currentText(),
             pages=self._config.max_pages,
@@ -352,12 +355,12 @@ class Step1SourcePage(QWizardPage):
     def _suggest_task_name(draft: QuickTaskDraft) -> str:
         host = urlsplit(draft.url).hostname or "task"
         labels = {
-            "save_page": "页面采集",
-            "collect_section": "栏目采集",
-            "download_files": "附件采集",
-            "monitor_changes": "变化监测",
+            "save_page": _("页面采集"),
+            "collect_section": _("栏目采集"),
+            "download_files": _("附件采集"),
+            "monitor_changes": _("变化监测"),
         }
-        return f"{host}-{labels.get(draft.intent, '采集任务')}"
+        return _(f"{host}-{labels.get(draft.intent, '采集任务')}")
 
     def _on_data_changed(self) -> None:
         if self._updating:

@@ -15,11 +15,15 @@ def execute(
     max_pages: int | None = None,
     retry_failed: bool = False,
     progress: bool = False,
+    strict: bool = False,
 ) -> dict[str, Any]:
     """运行或恢复采集任务。
 
     支持 --progress 标志启用实时进度输出到 stderr。
     完成后自动打印结构化摘要。
+
+    S2.4.1：strict 模式下仅 succeeded 且有效记录 > 0 的退出码为 0，
+    否则退出码为 1；默认（非 strict）保持向前兼容，成功即 0。
     """
     if progress:
         _last = [0, time.monotonic()]
@@ -69,8 +73,29 @@ def execute(
     if progress:
         print(file=sys.stderr)  # newline after progress bar
 
+    status = result.get("status", "unknown")
+    result["effective_records"] = int(result.get("records", 0))
+    if status in {"failed", "cancelled"}:
+        result["exit_code"] = 1
+    elif strict:
+        result["exit_code"] = (
+            0 if status == "succeeded" and result["effective_records"] > 0 else 1
+        )
+    else:
+        result["exit_code"] = 0
+
     _print_summary(result)
+    if result["effective_records"] == 0:
+        print(_ZERO_RECORD_HINT)
     return result
+
+
+_ZERO_RECORD_HINT = (
+    "\n⚠ 本次任务有效记录为 0。可能原因:\n"
+    "  1) 目标网站当前无数据(已抓取页面均未命中模板)\n"
+    "  2) 出网被拦截(403/robots 拒绝)——运行 omnicrawl doctor 检查\n"
+    "  3) 模板与页面结构不匹配——运行 omnicrawl sample 试跑验证\n"
+)
 
 
 def _print_summary(result: dict[str, Any]) -> None:

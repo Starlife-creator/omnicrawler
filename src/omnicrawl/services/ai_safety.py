@@ -37,13 +37,19 @@ def mark_untrusted(content: str) -> str:
     return UNTRUSTED_PREFIX + content
 
 
-def validate_ai_output(value: dict[str, Any], schema: dict[str, type]) -> dict[str, Any]:
-    """Reject unknown keys and wrong types before AI output reaches deterministic stages."""
+def validate_ai_output(value: dict[str, Any], schema: dict[str, type | tuple[type, ...]]) -> dict[str, Any]:
+    """Reject unknown keys and wrong types before AI output reaches deterministic stages.
+
+    S3.2.1：改为"未知键拒绝 + 已存在键类型校验"——缺失键不报错
+    （LLM 输出字段集随输入变化，允许部分缺失）。
+    """
+    if not isinstance(value, dict):
+        raise ValueError("AI 输出必须是 JSON 对象")
     if set(value) - set(schema):
         raise ValueError("AI 输出包含 Schema 未声明字段")
     for key, expected in schema.items():
-        if key not in value or not isinstance(value[key], expected):
-            raise ValueError(f"AI 输出字段 {key} 缺失或类型错误")
+        if key in value and not isinstance(value[key], expected):
+            raise ValueError(f"AI 输出字段 {key} 类型错误")
     return value
 
 

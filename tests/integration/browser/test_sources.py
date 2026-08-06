@@ -126,6 +126,32 @@ def test_page_pagination_get_and_post_body(tmp_path: Path) -> None:
     assert [json.loads(item.body)["offset"] for item in requests] == [1, 2]
 
 
+def test_s257_pagination_keeps_all_seeds(tmp_path: Path) -> None:
+    multi = GenericSource(
+        _config(
+            tmp_path,
+            "rest",
+            source={
+                "seeds": ["https://example.org/a", "https://example.org/b", "https://example.org/c"],
+                "pagination": {"type": "page", "parameter": "page", "start": 1, "end": 3},
+            },
+        )
+    )
+    requests = multi.seed()
+    urls = {item.url for item in requests}
+    assert len(requests) == 9
+    assert urls == {
+        "https://example.org/a?page=1", "https://example.org/a?page=2", "https://example.org/a?page=3",
+        "https://example.org/b?page=1", "https://example.org/b?page=2", "https://example.org/b?page=3",
+        "https://example.org/c?page=1", "https://example.org/c?page=2", "https://example.org/c?page=3",
+    }
+    # 分页不覆盖原始 seed（无分页时保留全部）
+    plain = GenericSource(
+        _config(tmp_path, "rest", source={"seeds": ["https://example.org/a", "https://example.org/b"]})
+    )
+    assert len(plain.seed()) == 2
+
+
 def test_html_discovery_attachments_media_pages_and_strategies(tmp_path: Path) -> None:
     html = b"""
     <html><body>

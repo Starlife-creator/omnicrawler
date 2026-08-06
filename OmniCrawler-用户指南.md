@@ -1,4 +1,4 @@
-# OmniCrawler 0.3.0 — 全能采集平台
+# OmniCrawler 0.4.0 — 全能采集平台
 
 > 从全类型网站采集、PDF 解析/OCR 到结构化导出和人工复核的模块化工作台。
 > 支持可视化点选、零配置智能分析、AI 驱动提取、反检测执行。
@@ -75,7 +75,7 @@ OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台�
 
 ### 方式一：Windows 便携版（推荐）
 
-1. 下载当前构建生成的 `OmniCrawler-0.3.0-Windows-Portable-Standard.zip`
+1. 下载当前构建生成的 `OmniCrawler-0.4.0-Windows-Portable-Standard.zip`
 2. 解压到普通可写目录（如 `D:\OmniCrawler`）
 3. 双击 `OmniCrawler-Launcher.bat`
 
@@ -963,4 +963,4 @@ GNU Affero General Public License v3.0 — 详见 `LICENSE` 文件。
 
 详见 `CHANGELOG.md` 和各版本 `RELEASE_REPORT_*.md`。
 
-当前 0.3.0 版本额外提供本地可复用 E2E：它只使用临时本机 HTTP 服务，不会采集互联网或生产数据。首页会优先接收自然语言任务描述，并将其转化为可检查的配置草案；其余必填项也集中在第一页，减少向导中途被阻断的情况。开发者可在仓库根目录执行 `./e2e/run.ps1 -Browser`（Windows）或 `./e2e/run.sh --browser`（macOS/Linux）复验完整链路；结果写入 `E2E_TEST_REPORT.md`。
+当前 0.4.0 版本额外提供本地可复用 E2E：它只使用临时本机 HTTP 服务，不会采集互联网或生产数据。首页会优先接收自然语言任务描述，并将其转化为可检查的配置草案；其余必填项也集中在第一页，减少向导中途被阻断的情况。开发者可在仓库根目录执行 `./e2e/run.ps1 -Browser`（Windows）或 `./e2e/run.sh --browser`（macOS/Linux）复验完整链路；结果写入 `E2E_TEST_REPORT.md`。

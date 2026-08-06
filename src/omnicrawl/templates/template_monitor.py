@@ -38,7 +38,8 @@ class TemplateMonitor:
         records: list[ExtractedRecord],
         fields: dict[str, Any],
     ) -> TemplateObservation | None:
-        if "html" not in result.content_type and b"<html" not in result.body[:4096].lower():
+        content_type = (result.content_type or "").lower()
+        if "html" not in content_type and b"<html" not in result.body[:4096].lower():
             return None
         template_id = str(
             self.config.section("project").get("template_id")
@@ -47,7 +48,7 @@ class TemplateMonitor:
         )
         successes = {
             str(name): (
-                sum(record.data.get(str(name)) not in (None, "", []) for record in records)
+                sum((record.data or {}).get(str(name)) not in (None, "", []) for record in records)
                 / max(1, len(records))
             )
             for name in fields

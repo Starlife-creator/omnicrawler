@@ -172,7 +172,19 @@ def _run_runtime_verify(args: argparse.Namespace) -> None:
 
 @_register("import-easyspider")
 def _run_import_easyspider(args: argparse.Namespace) -> None:
-    from ..sources.easyspider_bridge import import_easyspider
+    from ..sources.easyspider_bridge import EasySpiderImporter, import_easyspider
+    if getattr(args, "ir", False):
+        # S2.5.23：--ir 输出 Task IR JSON，不再静默 no-op
+        import json as _json
+        from pathlib import Path as _Path
+
+        ir = EasySpiderImporter(args.json).to_task_ir()
+        output = _json.dumps(ir, ensure_ascii=False, indent=2)
+        if args.output:
+            _Path(args.output).write_text(output, encoding="utf-8")
+        else:
+            print(output)
+        return
     config = import_easyspider(args.json, output_path=args.output)
     if not args.output:
         import yaml as _yaml
@@ -269,6 +281,10 @@ def _run_gen_templates(args: argparse.Namespace) -> None:
 
 @_register("components")
 def _run_components(args: argparse.Namespace) -> None:
+    from ..core.safe_action import require_explicit_apply
+
+    if args.action in {"uninstall", "rollback"}:
+        require_explicit_apply(f"components {args.action}")
     _json(cmd_components.execute(
         args.action, package=args.package or "", name=args.name or "",
         allow_unsigned=bool(args.allow_unsigned), sha256=args.sha256 or "",
@@ -327,6 +343,10 @@ def _run_worker(args: argparse.Namespace) -> None:
 
 @_register("workspace")
 def _run_workspace(args: argparse.Namespace) -> None:
+    from ..core.safe_action import require_explicit_apply
+
+    if args.action == "rollback":
+        require_explicit_apply("workspace rollback")
     load_config(args.config)
     _json(cmd_workspace.execute(args.config, args.action, target=args.target or "", kind=args.kind))
 
@@ -339,6 +359,10 @@ def _run_plan(args: argparse.Namespace) -> None:
 
 @_register("recovery")
 def _run_recovery(args: argparse.Namespace) -> None:
+    from ..core.safe_action import require_explicit_apply
+
+    if args.action == "rollback-config":
+        require_explicit_apply("recovery rollback-config")
     load_config(args.config)
     _json(cmd_recovery.execute(args.config, args.action, limit=args.limit, backup=args.backup or ""))
 
@@ -421,12 +445,15 @@ def _run_doctor(args: argparse.Namespace) -> None:
 @_register("resume")
 def _run_run_or_resume(args: argparse.Namespace) -> None:
     load_config(args.config)
-    _json(cmd_run.execute(
+    result = cmd_run.execute(
         args.config, args.command,
         max_pages=args.max_pages,
         retry_failed=bool(getattr(args, "retry_failed", False)),
         progress=bool(getattr(args, "progress", False)),
-    ))
+        strict=bool(getattr(args, "strict", False)),
+    )
+    _json(result)
+    raise SystemExit(int(result.get("exit_code", 0)))
 
 
 @_register("status")

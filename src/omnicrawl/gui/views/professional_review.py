@@ -60,7 +60,7 @@ def _risk_color(score: float) -> QColor:
 
 def _origin_label(origin: str) -> str:
     """来源代码 → 中文标签。"""
-    return {"raw": "原始值", "rule": "规则", "ai": "AI", "human": "人工"}.get(origin, origin)
+    return {"raw": _("原始值"), "rule": _("规则"), "ai": "AI", "human": _("人工")}.get(origin, origin)
 
 
 def _build_review_item(record: dict[str, Any]) -> ReviewItem:
@@ -138,12 +138,12 @@ class EvidenceView(QWidget):
 
         # 顶部：返回按钮 + 导出 + 标题
         top_bar = QHBoxLayout()
-        self._back_btn = QPushButton("← 返回结果列表")
+        self._back_btn = QPushButton(_("← 返回结果列表"))
         self._back_btn.clicked.connect(self._on_back)
         top_bar.addWidget(self._back_btn)
 
-        self._export_md_btn = QPushButton("导出 Markdown")
-        self._export_md_btn.setToolTip("将当前记录的完整证据链导出为 Markdown 文件")
+        self._export_md_btn = QPushButton(_("导出 Markdown"))
+        self._export_md_btn.setToolTip(_("将当前记录的完整证据链导出为 Markdown 文件"))
         self._export_md_btn.clicked.connect(self._export_markdown)
         top_bar.addWidget(self._export_md_btn)
         top_bar.addStretch()
@@ -198,13 +198,13 @@ class EvidenceView(QWidget):
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(12, 12, 12, 12)
 
-        left_header = QLabel("原始证据")
+        left_header = QLabel(_("原始证据"))
         left_header.setObjectName("sectionSubtitle")
         left_layout.addWidget(left_header)
 
         self._evidence_text = QTextEdit()
         self._evidence_text.setReadOnly(True)
-        self._evidence_text.setPlaceholderText("选择一条记录以查看原始证据数据")
+        self._evidence_text.setPlaceholderText(_("选择一条记录以查看原始证据数据"))
         left_layout.addWidget(self._evidence_text, 1)
 
         splitter.addWidget(left_panel)
@@ -215,13 +215,13 @@ class EvidenceView(QWidget):
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(12, 12, 12, 12)
 
-        right_header = QLabel("字段详情")
+        right_header = QLabel(_("字段详情"))
         right_header.setObjectName("sectionSubtitle")
         right_layout.addWidget(right_header)
 
         self._field_table = QTableWidget()
         self._field_table.setColumnCount(5)
-        self._field_table.setHorizontalHeaderLabels(["字段", "值", "来源", "证据", "置信度"])
+        self._field_table.setHorizontalHeaderLabels([_("字段"), _("值"), _("来源"), _("证据"), _("置信度")])
         h_header = self._field_table.horizontalHeader()
         assert h_header is not None
         h_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -322,7 +322,7 @@ class EvidenceView(QWidget):
         self._risk_badge.setStyleSheet("")
         self._risk_details.setText("")
         self._evidence_text.clear()
-        self._evidence_text.setPlaceholderText("选择一条记录以查看原始证据数据")
+        self._evidence_text.setPlaceholderText(_("选择一条记录以查看原始证据数据"))
         self._field_table.setRowCount(0)
 
     # ── 渲染 ───────────────────────────────────────────────────
@@ -333,37 +333,38 @@ class EvidenceView(QWidget):
             return
 
         # 标题
-        self._record_title.setText(f"记录: {item.record_id[:40]}{'...' if len(item.record_id) > 40 else ''}")
+        self._record_title.setText(_(f"记录: {item.record_id[:40]}{'...' if len(item.record_id) > 40 else ''}"))
 
         # 信息栏
         self._info_record_id.setText(f"ID: {item.record_id[:24]}...")
-        self._info_source.setText(f"来源: {item.source_url[:60]}{'...' if len(item.source_url) > 60 else ''}")
+        self._info_source.setText(_(f"来源: {item.source_url[:60]}{'...' if len(item.source_url) > 60 else ''}"))
         self._info_source.setToolTip(item.source_url)
-        self._info_fields_count.setText(f"字段: {len(item.fields)} 个")
+        self._info_fields_count.setText(_(f"字段: {len(item.fields)} 个"))
 
         # 风险评分
         risk = item.risk_score
         risk_color = _risk_color(risk)
         self._risk_badge.setText(f"{risk:.0f}")
         self._risk_badge.setStyleSheet(
-            f"background-color: {risk_color.name()}; color: white; "
+            f"background-color: {risk_color.name()}; color: white; " +
+
             f"font-weight: 700; border-radius: {RADIUS['lg']}px; padding: 4px;"
         )
 
         risks_parts: list[str] = []
         if item.missing_required:
-            risks_parts.append(f"缺{len(item.missing_required)}项必填")
+            risks_parts.append(_(f"缺{len(item.missing_required)}项必填"))
         if item.rule_conflicts:
-            risks_parts.append(f"{item.rule_conflicts}规则冲突")
+            risks_parts.append(_(f"{item.rule_conflicts}规则冲突"))
         if item.ai_conflicts:
-            risks_parts.append(f"{item.ai_conflicts}AI冲突")
+            risks_parts.append(_(f"{item.ai_conflicts}AI冲突"))
         if item.structure_drift > 0.1:
-            risks_parts.append("结构漂移")
+            risks_parts.append(_("结构漂移"))
         if item.ocr_quality < 0.8:
-            risks_parts.append("OCR质量低")
+            risks_parts.append(_("OCR质量低"))
         if item.duplicate:
-            risks_parts.append("重复")
-        self._risk_details.setText(", ".join(risks_parts) if risks_parts else "无风险")
+            risks_parts.append(_("重复"))
+        self._risk_details.setText(", ".join(risks_parts) if risks_parts else _("无风险"))
 
         # 原始证据
         if self._raw_record:
@@ -421,12 +422,12 @@ class EvidenceView(QWidget):
     def _export_markdown(self) -> None:
         """导出当前记录证据为 Markdown 文件。"""
         if self._raw_record is None:
-            QMessageBox.information(self, "提示", "当前没有可导出的记录。")
+            QMessageBox.information(self, _("提示"), _("当前没有可导出的记录。"))
             return
 
         output_path, _selected_filter = QFileDialog.getSaveFileName(
-            self, "导出 Markdown", f"record_{self._raw_record.get('record_id', 'evidence')}.md",
-            "Markdown 文件 (*.md)",
+            self, _("导出 Markdown"), f"record_{self._raw_record.get('record_id', 'evidence')}.md",
+            _("Markdown 文件 (*.md)"),
         )
         if not output_path:
             return
@@ -441,9 +442,9 @@ class EvidenceView(QWidget):
                 output_path=Path(output_path),
                 style="card",
             )
-            QMessageBox.information(self, "导出成功", f"已导出到: {output_path}")
+            QMessageBox.information(self, _("导出成功"), _(f"已导出到: {output_path}"))
         except Exception as exc:
-            QMessageBox.critical(self, "导出失败", str(exc))
+            QMessageBox.critical(self, _("导出失败"), str(exc))
 
     # ── 返回 ───────────────────────────────────────────────────
     @pyqtSlot()

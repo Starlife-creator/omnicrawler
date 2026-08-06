@@ -8,10 +8,11 @@ Public API::
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 # Keep this value import-safe for source checkouts. Packaging metadata is
 # verified against it by tools/check_docs_consistency.py before release.
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,11 @@ _DEPRECATED_MODULE_MAP = {
 }
 
 def _setup_compat_aliases() -> None:
-    """注册向后兼容模块别名，使 `from omnicrawl.config import AppConfig` 仍可用。"""
+    """注册向后兼容模块别名，使 `from omnicrawl.config import AppConfig` 仍可用。
+
+    S4.1：不再于包加载时调用——eager 注册会导入全部兼容模块（约 287ms）。
+    由模块级 __getattr__ 与 _CompatMetaFinder 惰性接管。
+    """
     import importlib
     import sys
 
@@ -159,6 +164,52 @@ def _setup_compat_aliases() -> None:
                 logger.debug("Failed to import optional compat module '%s'", old_name, exc_info=True)
 
 
+class _AliasLoader:
+    """S4.1：为已加载的兼容模块提供别名 spec。
+
+    模块对象 __dict__ 只读不可整体替换，因此逐键复制命名空间；
+    monkeypatch 通过模块级 __getattr__ 解析旧名时拿到的是真实模块，
+    两侧行为一致。
+    """
+
+    def __init__(self, module: Any) -> None:
+        self._module = module
+
+    def create_module(self, spec) -> None:
+        return None  # 由 bootstrap 创建新模块壳
+
+    def exec_module(self, module: Any) -> None:
+        module.__dict__.clear()
+        module.__dict__.update(self._module.__dict__)
+
+
+class _CompatMetaFinder:
+    """S4.1：拦截 `from omnicrawl.<旧名> import X` 形式的子模块导入，
+    惰性重定向到新路径（import 语句不触发模块级 __getattr__）。"""
+
+    def find_spec(self, fullname, path=None, target=None):
+        if not fullname.startswith("omnicrawl."):
+            return None
+        short = fullname[len("omnicrawl."):]
+        if "." in short:
+            return None
+        import importlib.machinery
+
+        # 物理上真实存在的子包/模块（quality/utils/state 等与旧别名同名）
+        # 不被拦截——只有旧名路径不存在时才走兼容重定向
+        if importlib.machinery.PathFinder.find_spec(fullname, path) is not None:
+            return None
+        new_subpath = _DEPRECATED_MODULE_MAP.get(short)
+        if new_subpath is None:
+            return None
+        import importlib
+        import importlib.util
+
+        new_path = f"omnicrawl.{new_subpath}"
+        module = importlib.import_module(new_path)
+        return importlib.util.spec_from_loader(fullname, _AliasLoader(module))
+
+
 def __getattr__(name: str):
     """模块级兼容重定向：旧 import 路径仍可用。
 
@@ -170,7 +221,11 @@ def __getattr__(name: str):
 
     if name in _DEPRECATED_MODULE_MAP:
         new_path = f"omnicrawl.{_DEPRECATED_MODULE_MAP[name]}"
-        module = importlib.import_module(new_path)
+        try:
+            module = importlib.import_module(new_path)
+        except Exception as exc:  # noqa: BLE001 - S4.1：失败记 warning 而非静默
+            logger.warning("兼容模块 %s 加载失败: %s", new_path, exc)
+            raise AttributeError(f"module 'omnicrawl' has no attribute {name!r}") from exc
         sys.modules[f"omnicrawl.{name}"] = module
         return module
 
@@ -188,5 +243,7 @@ def __getattr__(name: str):
     raise AttributeError(f"module 'omnicrawl' has no attribute {name!r}")
 
 
-# 在包加载时注册兼容别名
-_setup_compat_aliases()
+# S4.1：惰性兼容重定向——不再 eager 导入全部兼容模块（import omnicrawl 毫秒级）
+import sys as _sys
+
+_sys.meta_path.insert(0, _CompatMetaFinder())

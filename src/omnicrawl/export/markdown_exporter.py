@@ -14,6 +14,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from ..core.safe_data import safe_json_loads
+
 _logger = logging.getLogger(__name__)
 
 
@@ -136,7 +138,9 @@ class MarkdownExporter:
                     line = line.strip()
                     if not line:
                         continue
-                    rec = json.loads(line)
+                    rec = safe_json_loads(line)
+                    if rec is None or not isinstance(rec, dict):
+                        continue
                     rid = rec.get("record_id")
                     if rid:
                         index[str(rid)] = rec
@@ -223,7 +227,9 @@ class MarkdownExporter:
                 pct = f"{float(conf):.0%}"
                 lines.append(f"**置信度**: {pct}")
             if f.get("evidence"):
-                lines.append(f"**证据**: {f['evidence'][:200]}")
+                # S2.5.28：dict 证据安全截断（str()），不再对 dict 做 [:200] 切片 KeyError
+                evidence = str(f["evidence"])
+                lines.append(f"**证据**: {evidence[:200]}")
             lines.append("")
         return lines
 

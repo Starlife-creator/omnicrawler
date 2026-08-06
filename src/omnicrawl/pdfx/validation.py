@@ -58,8 +58,17 @@ def _type_format_issues(spec, normalized: str | None) -> list[str]:
     elif spec_type == "code":
         if not re.fullmatch(r"\d{6}", str(normalized)):
             issues.append(f"字段代码不是 6 位数字：{spec.label}={normalized}")
-    if spec.value_pattern and not re.fullmatch(spec.value_pattern, str(normalized)):
-        issues.append(f"字段取值不符合白名单格式：{spec.label}={normalized}")
+    if spec.value_pattern:
+        # S3.2.1：value_pattern 经 safe_regex 编译校验（病态模式拒绝，不卡死）
+        from .safe_regex import validate_pattern
+
+        try:
+            validate_pattern(spec.value_pattern)
+        except ValueError as exc:
+            issues.append(f"字段白名单正则无效：{spec.label}={exc}")
+        else:
+            if not re.fullmatch(spec.value_pattern, str(normalized)):
+                issues.append(f"字段取值不符合白名单格式：{spec.label}={normalized}")
     return issues
 
 

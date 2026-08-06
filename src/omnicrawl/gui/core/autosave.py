@@ -5,11 +5,13 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
+from ..i18n import _
 from .config_model import CrawlConfig
 from .config_serializer import load_yaml, save_yaml
 
@@ -22,19 +24,26 @@ class AutosaveManager(QObject):
     """草稿自动保存管理器。
 
     定期将当前配置保存为草稿文件，并在应用恢复时检测残余草稿。
+    S3.1.25：写盘移入后台线程；失败经 save_failed 信号可见；间隔可配置。
 
     Signals:
         draft_found: 检测到未保存草稿时发射，携带草稿文件路径。
+        save_failed: 自动保存失败时发射，携带错误消息。
     """
 
     draft_found = pyqtSignal(str)  # 草稿文件路径
+    save_failed = pyqtSignal(str)  # 保存失败消息
 
-    def __init__(self, project_root: Path, parent: QObject | None = None) -> None:
+    def __init__(
+        self, project_root: Path, parent: QObject | None = None,
+        *, interval_ms: int = AUTOSAVE_INTERVAL_MS,
+    ) -> None:
         """初始化草稿管理器。
 
         Args:
             project_root: 项目根目录（configs/ 目录将基于此路径）。
             parent: Qt 父对象。
+            interval_ms: 自动保存间隔（毫秒），默认 60s，可配置。
         """
         super().__init__(parent)
         self._project_root = Path(project_root)
@@ -43,7 +52,7 @@ class AutosaveManager(QObject):
         self._last_save_time: float = 0.0
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._on_timer)
-        self._timer.setInterval(AUTOSAVE_INTERVAL_MS)
+        self._timer.setInterval(max(1_000, int(interval_ms)))
 
     @property
     def autosave_dir(self) -> Path:
@@ -65,19 +74,26 @@ class AutosaveManager(QObject):
         self._timer.stop()
 
     def save_now(self) -> bool:
-        """立即执行一次草稿保存。
+        """立即执行一次草稿保存（S3.1.25：后台线程写盘，主线程不卡顿）。
 
         Returns:
-            保存成功返回 True，否则返回 False。
+            保存任务已提交返回 True，否则返回 False。
+            写盘失败经 save_failed 信号提示（不再静默）。
         """
         if self._config is None or self._draft_path is None:
             return False
-        try:
-            save_yaml(self._config, self._draft_path)
-            self._last_save_time = time.time()
-            return True
-        except Exception:
-            return False
+        config = self._config
+        draft_path = self._draft_path
+
+        def _write() -> None:
+            try:
+                save_yaml(config, draft_path)
+            except Exception as exc:  # noqa: BLE001 - 写盘失败提示不崩溃
+                self.save_failed.emit(_(f"自动保存失败: {exc}"))
+
+        threading.Thread(target=_write, name="omnicrawl-autosave", daemon=True).start()
+        self._last_save_time = time.time()
+        return True
 
     def delete_draft(self) -> None:
         """删除当前草稿文件。"""

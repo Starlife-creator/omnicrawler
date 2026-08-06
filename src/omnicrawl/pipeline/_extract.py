@@ -8,6 +8,7 @@ import mimetypes
 from pathlib import Path
 from typing import Any
 
+from ..core.errors import ExtractionError
 from ..core.models import FetchResult
 from ..extraction import extractors
 from ..extraction.api_discovery import write_discovery_bundle
@@ -68,7 +69,9 @@ class _PipelineExtract(_PipelineBase):
             else True
         )
 
-        is_binary = extractors.choose_processor(result) == "binary"
+        # S4.5 P3#136：choose_processor 只调一次（binary 判定与提取选择共用）
+        processor_name = extractors.choose_processor(result)
+        is_binary = processor_name == "binary"
         if result.request.kind == "asset" or is_binary:
             topic_config = self.config.section("selection").get("topic", {})
             if isinstance(topic_config, dict) and topic_config.get("enabled", False):
@@ -91,64 +94,76 @@ class _PipelineExtract(_PipelineBase):
 
         # === Stage: Extract ===
         mode = str(self.config.section("extract").get("mode", "auto")).lower()
-        processor_name = extractors.choose_processor(result) if mode == "auto" else mode
+        # S4.5 P3#136：复用上方 binary 判定的 processor_name（auto 模式）
+        if mode != "auto":
+            processor_name = mode
         parser_name = str(self.config.section("extract").get("parser", "")).strip().casefold()
         extractor_name = str(self.config.section("extract").get("extractor", "")).strip().casefold()
         if parser_name and extractor_name:
             raise ValueError("extract.parser and extract.extractor cannot both be selected")
         if parser_name or extractor_name or processor_name in self.registry.processors:
-            processor = (
-                self._processor(parser_name, parser=True)
-                if parser_name
-                else self._processor(extractor_name, extractor=True)
-                if extractor_name
-                else self._processor(processor_name)
-            )
-            outcome = processor.process(result)
-            for transformer in self._transformers:
-                outcome.records = [transform_record(transformer, record) for record in outcome.records]
-            topic_config = self.config.section("selection").get("topic", {})
-            if (
-                isinstance(topic_config, dict)
-                and topic_config.get("enabled", False)
-                and topic_config.get("filter_records", True)
-            ):
-                outcome.records = filter_records(outcome.records, topic_config)
-            extract_config = self.config.section("extract")
-            fields = extract_config.get("fields", {})
-            intelligence = enrich_records(outcome.records, self.config)
-            self.metrics.increment(
-                "omnicrawl_entities_resolved_total", intelligence["entities_resolved"]
-            )
-            self.metrics.increment(
-                "omnicrawl_near_duplicate_records_total", intelligence["near_duplicates"]
-            )
-            if isinstance(fields, dict) and fields:
-                self._stage_quality(run_id, outcome.records, fields, extract_config)
-            semantic_changes = self.state.track_semantic_changes(run_id, outcome.records)
-            self.metrics.increment("omnicrawl_semantic_changes_total", len(semantic_changes))
-            observation = self.template_monitor.observe(
-                result,
-                outcome.records,
-                fields if isinstance(fields, dict) else {},
-            )
-            if observation and observation.invalidated:
-                LOGGER.warning("Template invalidated for %s: %s", result.final_url, observation.suggestions)
-            self.state.save_records(run_id, result.request, outcome.records)
-            if persist_response:
-                self.regression_library.capture(
-                    result, records=len(outcome.records), processor=processor_name
+            try:
+                # S2.5.33：提取阶段整体隔离——异常以 ExtractionError 上抛，
+                # 上游记为 stage="extract" 而非 "fetch"
+                processor = (
+                    self._processor(parser_name, parser=True)
+                    if parser_name
+                    else self._processor(extractor_name, extractor=True)
+                    if extractor_name
+                    else self._processor(processor_name)
                 )
-            self.record_sinks.write(run_id, result.request, outcome.records)
-            self.metrics.increment("omnicrawl_records_total", len(outcome.records), processor=processor_name)
-            self._emit(
-                "after_extract",
-                run_id=run_id,
-                result=result,
-                records=outcome.records,
-                count=len(outcome.records),
-                processor=parser_name or extractor_name or processor_name,
-            )
+                outcome = processor.process(result)
+                for transformer in self._transformers:
+                    outcome.records = [transform_record(transformer, record) for record in outcome.records]
+                topic_config = self.config.section("selection").get("topic", {})
+                if (
+                    isinstance(topic_config, dict)
+                    and topic_config.get("enabled", False)
+                    and topic_config.get("filter_records", True)
+                ):
+                    outcome.records = filter_records(outcome.records, topic_config)
+                extract_config = self.config.section("extract")
+                fields = extract_config.get("fields", {})
+                # S4.5 P3#137：enrich 增加开关（extract.enrich 默认开，兼容现状）
+                intelligence = (
+                    enrich_records(outcome.records, self.config)
+                    if extract_config.get("enrich", True)
+                    else {"entities_resolved": 0, "near_duplicates": 0}
+                )
+                self.metrics.increment(
+                    "omnicrawl_entities_resolved_total", intelligence["entities_resolved"]
+                )
+                self.metrics.increment(
+                    "omnicrawl_near_duplicate_records_total", intelligence["near_duplicates"]
+                )
+                if isinstance(fields, dict) and fields:
+                    self._stage_quality(run_id, outcome.records, fields, extract_config)
+                semantic_changes = self.state.track_semantic_changes(run_id, outcome.records)
+                self.metrics.increment("omnicrawl_semantic_changes_total", len(semantic_changes))
+                observation = self.template_monitor.observe(
+                    result,
+                    outcome.records,
+                    fields if isinstance(fields, dict) else {},
+                )
+                if observation and observation.invalidated:
+                    LOGGER.warning("Template invalidated for %s: %s", result.final_url, observation.suggestions)
+                self.state.save_records(run_id, result.request, outcome.records)
+                if persist_response:
+                    self.regression_library.capture(
+                        result, records=len(outcome.records), processor=processor_name
+                    )
+                self.record_sinks.write(run_id, result.request, outcome.records)
+                self.metrics.increment("omnicrawl_records_total", len(outcome.records), processor=processor_name)
+                self._emit(
+                    "after_extract",
+                    run_id=run_id,
+                    result=result,
+                    records=outcome.records,
+                    count=len(outcome.records),
+                    processor=parser_name or extractor_name or processor_name,
+                )
+            except Exception as exc:
+                raise ExtractionError(f"{type(exc).__name__}: {exc}") from exc
 
         # === Stage: Discover ===
         if not discover or result.request.depth >= maximum_depth:

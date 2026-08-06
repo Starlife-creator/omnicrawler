@@ -15,6 +15,11 @@ from pathlib import Path
 
 import pytest
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib  # type: ignore[no-redef]
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 
@@ -162,7 +167,6 @@ class TestDocumentVersions:
     """Verify that version references are consistent between pyproject.toml and __init__.py."""
 
     def test_pyproject_version(self) -> None:
-        import tomllib
         root = Path(__file__).resolve().parents[2]
         pyproject = root / "pyproject.toml"
         if pyproject.is_file():
@@ -172,8 +176,6 @@ class TestDocumentVersions:
             assert re.fullmatch(r"\d+\.\d+\.\d+", version), f"Invalid semver: {version}"
 
     def test_init_version(self) -> None:
-        import tomllib
-
         from omnicrawl import __version__
         root = Path(__file__).resolve().parents[2]
         pyproject = root / "pyproject.toml"

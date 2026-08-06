@@ -12,8 +12,14 @@ from ..core.capabilities import capability_report
 from ..core.config import AppConfig, validate_config
 
 
-def _probe_models(base_url: str, api_key: str, model: str) -> dict[str, Any]:
-    """轻量 GET {base_url}/models 探活；失败降级为 warning 不阻断（可能离线）。"""
+def _probe_models(
+    base_url: str, api_key: str, model: str, *, config: AppConfig | None = None,
+) -> dict[str, Any]:
+    """轻量 GET {base_url}/models 探活；失败降级为 warning 不阻断（可能离线）。
+
+    S2.5.22：传入 AppConfig 时改经 EgressBroker/安全 opener 探测（策略/审计/预算
+    受约束，不探测私有目标），不再 urllib 直连。
+    """
     import json
     import urllib.error
     import urllib.request
@@ -27,15 +33,22 @@ def _probe_models(base_url: str, api_key: str, model: str) -> dict[str, Any]:
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     request = urllib.request.Request(url, headers=headers, method="GET")
+    if config is not None:
+        from ..fetching.http_client import build_safe_opener
+        from ..security.egress import EgressBroker
+
+        opener = build_safe_opener(config, egress=EgressBroker(config))
+    else:
+        opener = urllib.request.build_opener()
     try:
-        with urllib.request.urlopen(request, timeout=5) as response:
+        with opener.open(request, timeout=5) as response:
             body = json.loads(response.read(1024 * 1024).decode("utf-8", "replace"))
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
             return {"ok": False, "detail": f"/models 探活返回 {exc.code}：API Key 无效或无权访问"}
         return {"ok": False, "detail": f"/models 探活返回 HTTP {exc.code}"}
     except Exception as exc:
-        return {"ok": False, "detail": f"/models 探活失败（可能离线或地址不可达）: {exc}"}
+        return {"ok": False, "detail": f"/models 探活失败（可能离线、地址不可达或策略拦截）: {exc}"}
     names = [
         item.get("id")
         for item in (body.get("data", []) if isinstance(body, dict) else [])
@@ -46,7 +59,12 @@ def _probe_models(base_url: str, api_key: str, model: str) -> dict[str, Any]:
     return {"ok": True, "detail": f"/models 探活成功；配置模型 {model!r} {hint}", "models": len(names)}
 
 
-def ai_health(project_root: str | Path | None = None, *, probe: bool = True) -> dict[str, Any]:
+def ai_health(
+    project_root: str | Path | None = None,
+    *,
+    probe: bool = True,
+    config: AppConfig | None = None,
+) -> dict[str, Any]:
     """AI provider 环境体检：env 齐备性、OMNICRAWL_AI_* vs PDFX_LLM_* 一致性、可选 /models 探活。
 
     返回 ``status``：disabled / incomplete（启用但缺必填）/ configured / connected。
@@ -79,7 +97,7 @@ def ai_health(project_root: str | Path | None = None, *, probe: bool = True) -> 
                 if pdfx_value and omni_value and pdfx_value != omni_value:
                     warnings.append(f"{target}={pdfx_value} 与 {source}={omni_value} 不一致，以 PDFX_LLM_* 为准")
             if probe:
-                probe_result = _probe_models(base_url, api_key, model)
+                probe_result = _probe_models(base_url, api_key, model, config=config)
                 if probe_result.get("ok"):
                     status = "connected"
                 else:
@@ -98,7 +116,7 @@ def ai_health(project_root: str | Path | None = None, *, probe: bool = True) -> 
 
 def run_doctor(config: AppConfig, *, probe_ai: bool = True) -> dict[str, Any]:
     errors, warnings = validate_config(config)
-    ai = ai_health(project_root=config.root, probe=probe_ai)
+    ai = ai_health(project_root=config.root, probe=probe_ai, config=config)
     errors.extend(ai["issues"])
     warnings.extend(ai["warnings"])
     capabilities = capability_report()

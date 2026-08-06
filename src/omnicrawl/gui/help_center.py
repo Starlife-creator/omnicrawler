@@ -31,8 +31,8 @@ class HelpCenterDock(QDockWidget):
         body = QWidget()
         layout = QVBoxLayout(body)
         self.search = QLineEdit()
-        self.search.setPlaceholderText("搜索：翻页、PDF、监测、Excel……")
-        self.search.setAccessibleName("搜索离线帮助")
+        self.search.setPlaceholderText(_("搜索：翻页、PDF、监测、Excel……"))
+        self.search.setAccessibleName(_("搜索离线帮助"))
         self.search.textChanged.connect(self._refresh_results)
         layout.addWidget(self.search)
         self.results = QListWidget()
@@ -45,7 +45,7 @@ class HelpCenterDock(QDockWidget):
         self.details.setOpenExternalLinks(False)
         layout.addWidget(self.details, 2)
         actions = QHBoxLayout()
-        copy = QPushButton("复制示例")
+        copy = QPushButton(_("复制示例"))
         copy.clicked.connect(self._copy_example)
         actions.addWidget(copy)
         actions.addStretch()
@@ -70,7 +70,9 @@ class HelpCenterDock(QDockWidget):
                 example="", limitations=_("无"), common_errors=_("无"),
                 default_behavior=_("无"), change_impact=_("无"),
             )
-        self._current_id = help_id
+        else:
+            # S3.1.12：仅已知 id 写入 _current_id——复制示例不再 KeyError
+            self._current_id = entry.help_id
         self.title.setText(entry.title)
         advice = contextual_advice(help_id, self._task)
         self.details.setPlainText(entry.full_text(self._mode, advice))

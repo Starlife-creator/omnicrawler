@@ -364,4 +364,4 @@ class Step2UrlsPage(QWizardPage):
 
 def _help_text(key: str) -> str:
     entry = get_help(key)
-    return f"{entry.summary}\n\n{entry.details}" + (f"\n\n示例：{entry.example}" if entry.example else "")
+    return f"{entry.summary}\n\n{entry.details}" + (_(f"\n\n示例：{entry.example}") if entry.example else "")

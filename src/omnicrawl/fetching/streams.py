@@ -9,6 +9,7 @@ from typing import Any
 from ..core.config import AppConfig
 from ..core.errors import ResponseTooLargeError
 from ..core.models import CrawlRequest, ExtractedRecord
+from ..core.safe_data import safe_float, safe_int, safe_json_loads
 from ..security.egress import EgressBroker
 from .http_client import build_safe_opener
 
@@ -20,9 +21,9 @@ def collect_sse(
     egress: EgressBroker | None = None,
 ) -> list[ExtractedRecord]:
     source = config.section("source")
-    maximum = int(source.get("max_messages", 100))
-    timeout = float(source.get("duration_seconds", 60))
-    maximum_bytes = int(config.section("http").get("max_response_bytes", 50_000_000))
+    maximum = safe_int(source.get("max_messages"), default=100) or 100
+    timeout = safe_float(source.get("duration_seconds"), default=60.0) or 60.0
+    maximum_bytes = safe_int(config.section("http").get("max_response_bytes"), default=50_000_000) or 50_000_000
     headers = {
         "Accept": "text/event-stream", "User-Agent": config.section("http").get("user_agent", "OmniCrawler"),
         **config.section("http").get("headers", {}), **source.get("headers", {}), **request.headers,
@@ -38,11 +39,25 @@ def collect_sse(
     with broker.request(request.url, purpose="stream", headers=headers):
         with opener.open(raw, timeout=float(config.section("http").get("timeout_seconds", 25))) as response:
             event: dict[str, list[str]] = {}
+            eof_streak = 0
             while len(records) < maximum and time.monotonic() - started < timeout:
                 if should_continue is not None and not should_continue():
                     break
-                line = response.readline().decode("utf-8", errors="replace").rstrip("\r\n")
-                consumed += len(line.encode("utf-8", errors="replace"))
+                line_bytes = response.readline()
+                if not line_bytes:
+                    # EOF：服务端断开连接。连续多次空读判定为断开，避免忙循环占 CPU；
+                    # 正常 SSE 的事件分隔空行会返回 b"\n"，不会被误判。
+                    eof_streak += 1
+                    if eof_streak >= 3:
+                        if event:
+                            data = {key: "\n".join(values) for key, values in event.items()}
+                            records.append(ExtractedRecord(request.url, "sse_event", data))
+                            event = {}
+                        break
+                    continue
+                eof_streak = 0
+                line = line_bytes.decode("utf-8", errors="replace").rstrip("\r\n")
+                consumed += len(line_bytes)
                 if consumed > maximum_bytes:
                     raise ResponseTooLargeError(f"SSE数据超过大小限制: > {maximum_bytes}")
                 if not line:
@@ -70,12 +85,12 @@ async def _websocket_collect(
     except ImportError as exc:
         raise RuntimeError("缺少websockets，请安装 omnicrawl[streams]") from exc
     source = config.section("source")
-    maximum = int(source.get("max_messages", 100))
-    duration = float(source.get("duration_seconds", 60))
+    maximum = safe_int(source.get("max_messages"), default=100) or 100
+    duration = safe_float(source.get("duration_seconds"), default=60.0) or 60.0
     records: list[ExtractedRecord] = []
     started = time.monotonic()
     consumed = 0
-    maximum_bytes = int(config.section("http").get("max_response_bytes", 50_000_000))
+    maximum_bytes = safe_int(config.section("http").get("max_response_bytes"), default=50_000_000) or 50_000_000
     headers = {**config.section("http").get("headers", {}), **source.get("headers", {}), **request.headers}
     broker = egress or EgressBroker(config)
     with broker.request(request.url, purpose="stream", headers=headers):
@@ -97,10 +112,8 @@ async def _websocket_collect(
                 if isinstance(message, bytes):
                     data: Any = {"binary_hex": message.hex(), "size": len(message)}
                 else:
-                    try:
-                        data = json.loads(message)
-                    except json.JSONDecodeError:
-                        data = {"text": message}
+                    parsed = safe_json_loads(message)
+                    data = parsed if parsed is not None else {"text": message}
                 records.append(ExtractedRecord(request.url, "websocket_message", data if isinstance(data, dict) else {"value": data}))
         broker.record_response(consumed, url=request.url)
     return records

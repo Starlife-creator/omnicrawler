@@ -1,18 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 
 def evaluate_conditions(conditions: dict[str, Any]) -> tuple[bool, str]:
     if not conditions:
         return True, ""
-    hour = datetime.now().hour
+    # S2.5.44：allowed_hours 与 next_run_at 统一 UTC 基准（调度时间戳为 UTC epoch）
+    hour = datetime.now(timezone.utc).hour
     allowed_hours = conditions.get("allowed_hours")
     if isinstance(allowed_hours, list) and allowed_hours:
         hours = {int(value) % 24 for value in allowed_hours}
         if hour not in hours:
-            return False, f"当前小时 {hour} 不在允许运行时段"
+            return False, f"当前小时 {hour}（UTC）不在允许运行时段"
     try:
         import psutil
     except ImportError:

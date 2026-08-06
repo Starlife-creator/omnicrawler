@@ -61,24 +61,67 @@ def ai_env_candidates(project_root: str | Path | None = None) -> list[Path]:
     return paths
 
 
+def _parse_env_value(value: str) -> str:
+    """剥离引号并反转义；无引号值时按 .env 惯例丢弃行内注释（`` # ...``）。"""
+    value = value.strip()
+    if value and value[0] in "\"'":
+        quote = value[0]
+        closing = value.rfind(quote, 1)
+        if closing > 0:
+            inner = value[1:closing]
+            if quote == '"':
+                inner = _UNESCAPE_RE.sub(r"\1", inner)  # 双引号内 \" → "、\\ → \
+            return inner
+        # 未闭合引号：退化为无引号值
+    hash_index = value.find(" #")
+    if hash_index >= 0:
+        value = value[:hash_index].rstrip()
+    return value
+
+
 def parse_env_file(path: Path) -> dict[str, str]:
-    """解析 .env 文件为键值映射（忽略注释/空行，剥离成对引号并反转义）。"""
+    """解析 .env 文件为键值映射（忽略注释/空行，剥离成对引号并反转义）。
+
+    S2.1.3 健壮化（源B P2#67）：非 UTF-8 编码不抛裸异常（逐行替换坏字节继续解析）；
+    容忍 BOM 前缀、行内注释（`` #``）与 bash 风格 ``export`` 前缀。
+    """
     result: dict[str, str] = {}
     if not path.is_file():
         return result
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    for raw_line in text.lstrip("\ufeff").splitlines():
+        stripped = raw_line.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
-        key, _, value = stripped.partition("=")
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            quote = value[0]
-            value = value[1:-1]
-            if quote == '"':
-                value = _UNESCAPE_RE.sub(r"\1", value)  # 双引号内 \" → "、\\ → \
-        result[key.strip()] = value
+        raw_key, _, raw_value = stripped.partition("=")
+        key = raw_key.strip()
+        if key.casefold().startswith("export "):
+            key = key[7:].strip()
+        if not key:
+            continue
+        result[key] = _parse_env_value(raw_value)
     return result
+
+
+def _resolve_env_secret(value: str) -> str:
+    """S2.2.2 出口解引用：``secret://<name>`` 值经 secrets_store 还原为明文。
+
+    引用不可解（store 被删/密钥丢失）时保留引用串本身——不含明文，不泄漏；
+    调用方以空/缺失语义处理。旧前缀 OMNICRAW_SECRET_* 由 get_secret 兼容。
+    """
+    stripped = value.strip()
+    if not stripped.startswith("secret://"):
+        return value
+    name = stripped[len("secret://") :]
+    try:
+        from .credentials import get_secret
+
+        return get_secret(name)
+    except Exception:
+        return value
 
 
 def load_ai_env(project_root: str | Path | None = None) -> dict[str, str]:
@@ -88,11 +131,16 @@ def load_ai_env(project_root: str | Path | None = None) -> dict[str, str]:
     进程内 os.environ 仅对 AI 相关键做覆盖。
     """
     merged: dict[str, str] = {}
-    for path in ai_env_candidates(project_root):
+    # S2.1.3：候选列表优先级从高到低（项目 > cwd > 用户级），
+    # 因此从低到高遍历，让高层级（项目）最后写入以覆盖低层级（源A P1#81 / 源B P1#18）
+    for path in reversed(ai_env_candidates(project_root)):
         merged.update(parse_env_file(path))
     for key in AI_ENV_KEYS:
         if key in os.environ:
             merged[key] = os.environ[key]
+    for key, value in merged.items():
+        if value is not None:
+            merged[key] = _resolve_env_secret(value)
     return merged
 
 
@@ -128,6 +176,8 @@ def save_ai_env(
         key: str | None = None
         if stripped and not stripped.startswith("#") and "=" in stripped:
             key = stripped.partition("=")[0].strip()
+            if key.casefold().startswith("export "):
+                key = key[7:].strip()
         if key in update_keys:
             value = updates.get(key)
             if value is not None:

@@ -104,14 +104,28 @@ def run_processing(
         if run_ocr and not _stopped(should_stop):
             _emit(callback, "ocr_started", {})
             # D39：透传 ocr_workers，GUI/CLI 并行 OCR 才真正生效
-            result = ocr_stage(config, db, ocr_workers=ocr_workers or 1)
+            try:
+                result = ocr_stage(config, db, ocr_workers=ocr_workers or 1)
+            except Exception as exc:  # noqa: BLE001 - stage isolation keeps partial results
+                LOGGER.exception("PDF 管线阶段 ocr 失败")
+                results["ocr"] = {"failed": True, "error": str(exc)}
+                _emit(callback, "ocr", {"failed": True, "error": str(exc)})
+                results["stopped"] = True
+                return results
             results["ocr"] = result
             _emit(callback, "ocr", result)
         if _stopped(should_stop):
             results["stopped"] = True
             return results
         _emit(callback, "text_export_started", {})
-        result = export_text_stage(config, db, limit)
+        try:
+            result = export_text_stage(config, db, limit)
+        except Exception as exc:  # noqa: BLE001 - export failure keeps earlier stage results
+            LOGGER.exception("PDF 管线阶段 text_export 失败")
+            results["text_export"] = {"failed": True, "error": str(exc)}
+            _emit(callback, "text_export", {"failed": True, "error": str(exc)})
+            results["stopped"] = True
+            return results
         results["text_export"] = result
         _emit(callback, "text_export", result)
         results["status"] = database_status(db)
@@ -126,6 +140,7 @@ def run_extraction(
     workers: int | None = None,
     auto_prepare: bool = True,
     run_ocr: bool = True,
+    ocr_workers: int | None = None,
     callback: EventCallback | None = None,
     should_stop: StopCallback | None = None,
 ) -> dict[str, Any]:
@@ -137,6 +152,7 @@ def run_extraction(
             limit=limit,
             workers=workers,
             run_ocr=run_ocr,
+            ocr_workers=ocr_workers,
             callback=callback,
             should_stop=should_stop,
         )

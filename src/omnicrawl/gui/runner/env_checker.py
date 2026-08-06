@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from ...core.runtime_paths import resolve_cli_command
+from ..i18n import _
 from ..settings import AppSettings
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,7 @@ class EnvCheckResult:
 def check_omnicrawl(command_path: str = "omnicrawl") -> tuple[bool, str]:
     """检查 omnicrawl 命令是否可用。
 
-    F30：冻结模式内置 CLI 存在即视为"已就绪"强信号——探测只用于取版本号，
+    F30：冻结模式内置 CLI 存在即视为_("已就绪")强信号——探测只用于取版本号，
     超时/冷启动慢（杀软首扫 1GB+ _internal）不判不可用。
     F31：区分 TimeoutExpired / FileNotFoundError / OSError，记录具体原因。
     F32：Windows 子进程加 CREATE_NO_WINDOW，避免每次探测闪黑控制台窗。
@@ -73,21 +74,21 @@ def check_omnicrawl(command_path: str = "omnicrawl") -> tuple[bool, str]:
         if bundled is not None:
             # 内置引擎在但探测异常（慢启动/被杀软拦截）→ 仍按就绪处理
             logger.warning(
-                "内置 CLI 探测返回非零（rc=%s），仍按已就绪处理; 路径: %s",
+                _("内置 CLI 探测返回非零（rc=%s），仍按已就绪处理; 路径: %s"),
                 result.returncode, resolved_command,
             )
-            return True, version_output or "（内置引擎版本探测失败）"
+            return True, version_output or _("（内置引擎版本探测失败）")
         return False, ""
     except subprocess.TimeoutExpired:
-        logger.warning("omnicrawl 探测超时（%ss），路径: %s", timeout, resolved_command)
+        logger.warning(_("omnicrawl 探测超时（%ss），路径: %s"), timeout, resolved_command)
         if bundled is not None:
-            return True, "（内置引擎启动较慢）"
+            return True, _("（内置引擎启动较慢）")
         return False, ""
     except FileNotFoundError as exc:
-        logger.warning("omnicrawl 命令不存在: %s（%s）", resolved_command, exc)
+        logger.warning(_("omnicrawl 命令不存在: %s（%s）"), resolved_command, exc)
         return False, ""
     except OSError as exc:
-        logger.warning("omnicrawl 探测失败（%s）: %s", type(exc).__name__, exc)
+        logger.warning(_("omnicrawl 探测失败（%s）: %s"), type(exc).__name__, exc)
         return False, ""
 
 
@@ -163,8 +164,9 @@ def run_full_check(
 
     if not available:
         result.errors.append(
-            f"无法执行 omnicrawl 命令（路径: {omnicrawl_path}）。"
-            f"请确保 OmniCrawler 框架已安装。"
+            _(f"无法执行 omnicrawl 命令（路径: {omnicrawl_path}）。") +
+
+            _("请确保 OmniCrawler 框架已安装。")
         )
     else:
         # 版本一致性检查
@@ -172,7 +174,7 @@ def run_full_check(
         cached_version = settings.omnicrawl_version
         if cached_version and cached_version != version:
             result.warnings.append(
-                f"框架版本已变更（{cached_version} → {version}），建议重新验证环境。"
+                _(f"框架版本已变更（{cached_version} → {version}），建议重新验证环境。")
             )
         settings.omnicrawl_version = version
 
@@ -182,7 +184,7 @@ def run_full_check(
     if total > 0:
         free_mb = free // (1024 * 1024)
         if free < MIN_DISK_SPACE:
-            result.warnings.append(f"磁盘剩余空间不足 500MB（当前: {free_mb}MB）")
+            result.warnings.append(_(f"磁盘剩余空间不足 500MB（当前: {free_mb}MB）"))
 
     return result
 
@@ -233,12 +235,12 @@ def try_auto_install(project_root: Path | None = None) -> tuple[bool, str]:
     """
     root = project_root or find_project_root()
     if root is None:
-        return False, "未找到 OmniCrawler 项目根目录，请手动指定 omnicrawl 路径"
+        return False, _("未找到 OmniCrawler 项目根目录，请手动指定 omnicrawl 路径")
 
     has_setup = (root / "setup.py").is_file()
     has_pyproject = (root / "pyproject.toml").is_file()
     if not has_setup and not has_pyproject:
-        return False, f"目录 {root} 中未找到 setup.py 或 pyproject.toml"
+        return False, _(f"目录 {root} 中未找到 setup.py 或 pyproject.toml")
 
     try:
         # F34：始终用当前解释器 -m pip，避免 PATH 上的 pip 指向错误环境
@@ -254,9 +256,9 @@ def try_auto_install(project_root: Path | None = None) -> tuple[bool, str]:
             # 验证安装
             available, version = check_omnicrawl()
             if available:
-                return True, f"安装成功！omnicrawl {version}"
-            return False, "安装完成但 omnicrawl 命令仍不可用，请检查 PATH 环境变量"
+                return True, _(f"安装成功！omnicrawl {version}")
+            return False, _("安装完成但 omnicrawl 命令仍不可用，请检查 PATH 环境变量")
         else:
-            return False, f"安装失败: {result.stderr.strip()[-500:]}"
+            return False, _(f"安装失败: {result.stderr.strip()[-500:]}")
     except Exception as e:
-        return False, f"安装异常: {e}"
+        return False, _(f"安装异常: {e}")

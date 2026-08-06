@@ -51,7 +51,15 @@ class ResourceGuard:
         }
 
 
+# S2.5.27：工作区大小缓存——目录 mtime 摘要不变时跳过全量 stat
+_SIZE_CACHE: dict[Path, tuple[int, int]] = {}
+
+
 def _directory_size(root: Path) -> int:
+    key = _tree_mtime_digest(root)
+    cached = _SIZE_CACHE.get(root)
+    if cached is not None and cached[1] == key:
+        return cached[0]
     total = 0
     for path in root.rglob("*"):
         try:
@@ -59,4 +67,24 @@ def _directory_size(root: Path) -> int:
                 total += path.stat().st_size
         except OSError:
             continue
+    _SIZE_CACHE[root] = (total, key)
     return total
+
+
+def _tree_mtime_digest(root: Path) -> int:
+    """目录树变化指纹：目录 mtime 摘要 + 文件数量。
+
+    文件写入通常更新父目录 mtime，但 Windows 上并不总是可靠，
+    因此把文件计数一并纳入（新增/删除文件必然改变指纹）。
+    """
+    digest = 0
+    file_count = 0
+    for entry in root.rglob("*"):
+        if entry.is_dir():
+            try:
+                digest = (digest * 31 + entry.stat().st_mtime_ns) % (2**64)
+            except OSError:
+                continue
+        elif entry.is_file() and not entry.is_symlink():
+            file_count += 1
+    return (digest * 31 + file_count) % (2**64)

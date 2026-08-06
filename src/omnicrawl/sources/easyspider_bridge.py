@@ -227,11 +227,11 @@ class EasySpiderImporter:
         elif option == _OP_CLICK:
             self._has_browser = True
             if xpath:
-                action: dict[str, Any] = {"action": "click", "selector": xpath}
+                self._actions.append({"action": "click", "selector": xpath})
                 wait = params.get("wait", 2)
                 if wait:
-                    action["timeout_ms"] = wait * 1000
-                self._actions.append(action)
+                    # 点击后的等待改为显式延时（页面加载/动画），不再误用作元素查找超时
+                    self._actions.append({"action": "wait_ms", "value": wait * 1000})
 
         elif option == _OP_EXTRACT:
             sub_params = params.get("params", [])

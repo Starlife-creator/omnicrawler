@@ -15,8 +15,8 @@ from pathlib import Path
 CURRENT_DOCS = (
     "README.md",
     "OmniCrawler-用户指南.md",
-    "OmniCrawler-0.3.0-Agent-Context.md",
-    "OmniCrawler-0.3.0-Agent-Prompt.md",
+    "OmniCrawler-0.4.0-Agent-Context.md",
+    "OmniCrawler-0.4.0-Agent-Prompt.md",
     "CONTRIBUTING.md",
     "docs/README.md",
     "docs/SUPPORT_MATRIX.md",
@@ -24,13 +24,13 @@ CURRENT_DOCS = (
     "docs/ARCHITECTURE.md",
     "docs/CONFIG_REFERENCE.md",
     "docs/CAPABILITY_MATURITY.md",
-    "docs/COMPATIBILITY_0.3.0.md",
+    "docs/COMPATIBILITY_0.4.0.md",
     "docs/DESKTOP_RUNTIME_1.4.md",
     "docs/GUI_DESIGN_2.1.md",
     "docs/PLUGIN_CONTRACT.md",
     "docs/PRODUCTION_GUIDE.md",
     "docs/WINDOWS_PACKAGING.md",
-    "docs/releases/RELEASE_REPORT_0.3.0.md",
+    "docs/releases/RELEASE_REPORT_0.4.0.md",
     "E2E_TEST_REPORT.md",
 )
 
@@ -115,19 +115,19 @@ def check(root: Path) -> list[str]:
             issues.append(f"{label}: missing supported Python statement Python {python_version}+")
     versioned_docs = (
         "OmniCrawler-用户指南.md",
-        "OmniCrawler-0.3.0-Agent-Context.md",
-        "OmniCrawler-0.3.0-Agent-Prompt.md",
+        "OmniCrawler-0.4.0-Agent-Context.md",
+        "OmniCrawler-0.4.0-Agent-Prompt.md",
         "docs/README.md",
         "docs/ARCHITECTURE.md",
         "docs/CONFIG_REFERENCE.md",
         "docs/CAPABILITY_MATURITY.md",
-        "docs/COMPATIBILITY_0.3.0.md",
+        "docs/COMPATIBILITY_0.4.0.md",
         "docs/DESKTOP_RUNTIME_1.4.md",
         "docs/GUI_DESIGN_2.1.md",
         "docs/PLUGIN_CONTRACT.md",
         "docs/PRODUCTION_GUIDE.md",
         "docs/WINDOWS_PACKAGING.md",
-        "docs/releases/RELEASE_REPORT_0.3.0.md",
+        "docs/releases/RELEASE_REPORT_0.4.0.md",
         "E2E_TEST_REPORT.md",
     )
     for label in versioned_docs:

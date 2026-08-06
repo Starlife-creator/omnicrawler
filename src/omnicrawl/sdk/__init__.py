@@ -65,7 +65,7 @@ def compile(config_path: str | Path, *, capabilities: list[str] | None = None) -
     return ApplicationService(config_path).compile(available_capabilities=capabilities)
 
 
-def run(config_path: str | Path, *, resume: bool = False, require_sample_match: bool = True) -> dict[str, Any]:
+def run(config_path: str | Path, *, resume: bool = False, require_sample_match: bool = False) -> dict[str, Any]:
     """Execute a crawl task defined by *config_path*.
 
     Args:
@@ -74,6 +74,7 @@ def run(config_path: str | Path, *, resume: bool = False, require_sample_match: 
             using the seven-state recovery center.
         require_sample_match: If *True*, abort when the first fetched page
             does not match the field selectors defined in the config.
+            S2.5.39：默认 False，与 CLI/GUI 入口语义一致。
 
     Returns:
         Run result dict with keys ``run_id`` (str), ``status`` (str),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import mimetypes
@@ -7,33 +8,54 @@ import os
 import re
 import tempfile
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlsplit, urlunsplit
 
 _ENV_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
 
 def utcnow() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    # S4.5 P3#128：微秒级精度——同秒多条记录不再无法区分
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
 def expand_env(value: Any) -> Any:
-    if isinstance(value, str):
-        def replace(match: re.Match[str]) -> str:
-            name, default = match.group(1), match.group(2)
-            return os.environ.get(name, default or "")
-        return _ENV_RE.sub(replace, value)
-    if isinstance(value, list):
-        return [expand_env(item) for item in value]
-    if isinstance(value, dict):
-        return {key: expand_env(item) for key, item in value.items()}
-    return value
+    """递归展开配置中的 ${VAR} / ${VAR:-default} 占位符（缺失变量替换为空串）。
+
+    需要汇总缺失变量时请使用 :func:`expand_env_checked`。
+    """
+    expanded, _missing = expand_env_checked(value)
+    return expanded
+
+
+def expand_env_checked(value: Any) -> tuple[Any, list[str]]:
+    """与 expand_env 相同，但额外返回缺失（无环境值且无默认）的变量名列表。
+
+    S2.1.2 ③：${VAR} 缺失不再静默——调用方可据此给出 warning 汇总。
+    """
+    missing: list[str] = []
+
+    def walk(item: Any) -> Any:
+        if isinstance(item, str):
+            def replace(match: re.Match[str]) -> str:
+                name, default = match.group(1), match.group(2)
+                if name not in os.environ and default is None and name not in missing:
+                    missing.append(name)
+                return os.environ.get(name, default or "")
+            return _ENV_RE.sub(replace, item)
+        if isinstance(item, list):
+            return [walk(child) for child in item]
+        if isinstance(item, dict):
+            return {key: walk(child) for key, child in item.items()}
+        return item
+
+    return walk(value), missing
 
 
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    result = dict(base)
+    result = copy.deepcopy(base)
     for key, value in override.items():
         if isinstance(value, dict) and isinstance(result.get(key), dict):
             result[key] = deep_merge(result[key], value)
@@ -58,7 +80,14 @@ def canonicalize_url(base_url: str, href: str, *, sort_query: bool = False) -> s
         parts.scheme.lower() == "https" and port == 443
     )
     display_host = f"[{hostname}]" if ":" in hostname else hostname
-    host = display_host if not port or default_port else f"{display_host}:{port}"
+    # S4.5 P3#126：保留 userinfo（urlsplit 的 username/password 不再被丢弃）
+    userinfo = ""
+    if parts.username:
+        userinfo = quote(parts.username, safe="")
+        if parts.password:
+            userinfo += ":" + quote(parts.password, safe="")
+        userinfo += "@"
+    host = userinfo + display_host if not port or default_port else userinfo + f"{display_host}:{port}"
     query = urlencode(sorted(parse_qsl(parts.query, keep_blank_values=True))) if sort_query else parts.query
     return urlunsplit((parts.scheme.lower(), host, parts.path or "/", query, ""))
 
@@ -118,9 +147,20 @@ def json_text(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
 
 
-def excel_safe(value: Any) -> Any:
-    if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
-        if not re.fullmatch(r"[-+]?\d+(?:\.\d+)?", value):
+def excel_safe(value: Any, max_length: int = 32700) -> Any:
+    """Excel/CSV 单元格安全化（S4.4 ③：pdfx.safe_cell 统一委托此处）。
+
+    - 截断超长字符串（Excel 单格上限 32767）
+    - 公式注入防护：以 = + - @ 开头且非纯数字的字符串前加单引号
+    """
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        return value
+    value = value[:max_length]
+    # S4.5 P3#127：数字含科学计数法（1e10）不被误伤
+    if value.lstrip("\t\r\n ").startswith(("=", "+", "-", "@")):
+        if not re.fullmatch(r"[-+]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?", value):
             return "'" + value
     return value
 

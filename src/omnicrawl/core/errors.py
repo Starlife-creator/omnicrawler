@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ssl
+import urllib.error
 from dataclasses import dataclass
 
 
@@ -56,7 +58,7 @@ class CredentialScopeError(PolicyBlockedError):
     suggestion = "凭据只能发送到任务明确批准的域名和用途。"
 
 
-class ConfigParseError(OmniCrawlError):
+class ConfigParseError(ValueError, OmniCrawlError):
     code = "config_parse_error"
     suggestion = "配置文件存在语法错误；请检查 YAML 缩进、引号匹配和字段名拼写，或运行 omnicrawl validate。"
 
@@ -81,11 +83,63 @@ class TemplateValidationError(OmniCrawlError):
     suggestion = "模板校验失败；请检查模板占位符是否正确填充，或使用 omnicrawl templates validate 批量检查。"
 
 
+class LoginFailedError(OmniCrawlError):
+    code = "login_failed"
+    suggestion = (
+        "登录请求被目标拒绝（HTTP 4xx/5xx）。请检查 source.login 的 url、method、"
+        "fields、headers 是否正确，以及登录凭据是否仍然有效。"
+    )
+
+
+class ExtractionError(OmniCrawlError):
+    """S2.5.33：提取阶段异常——与 fetch 阶段区分，排障方向正确。"""
+
+    code = "extraction_error"
+    suggestion = (
+        "提取阶段失败（处理器/规则/质量评估）。请检查 extract.fields 选择器与正则，"
+        "或运行 omnicrawl sample 试跑验证模板。"
+    )
+
+
+def _safe_message(exc: BaseException) -> str:
+    """空 message 兜底（源B P2#65）：异常无消息时退化为类型名，避免输出空串。"""
+    message = str(exc).strip()
+    return message or exc.__class__.__name__
+
+
 def describe_error(exc: BaseException) -> ErrorInfo:
     if isinstance(exc, OmniCrawlError):
         return exc.as_info()
+    if isinstance(exc, urllib.error.URLError):
+        reason = exc.reason
+        detail = _safe_message(reason) if reason else _safe_message(exc)
+        if isinstance(reason, ssl.SSLCertVerificationError):
+            return ErrorInfo(
+                "tls_verification",
+                detail,
+                False,
+                "HTTPS 证书校验失败；请确认目标证书链有效、服务器时间正确，"
+                "或在明确信任的环境中使用 verify_tls=false。",
+            )
+        return ErrorInfo("network_transient", detail, True, TransientFetchError.suggestion)
+    if isinstance(exc, ssl.SSLError):
+        return ErrorInfo(
+            "tls_error",
+            _safe_message(exc),
+            True,
+            "TLS 握手失败；请检查目标 HTTPS 配置、本地时钟或证书信任设置。",
+        )
     if isinstance(exc, PermissionError):
-        return ErrorInfo("policy_blocked", str(exc), False, PolicyBlockedError.suggestion)
+        return ErrorInfo("policy_blocked", _safe_message(exc), False, PolicyBlockedError.suggestion)
     if isinstance(exc, (TimeoutError, ConnectionError)):
-        return ErrorInfo("network_transient", str(exc), True, TransientFetchError.suggestion)
-    return ErrorInfo(type(exc).__name__.lower(), str(exc), False, "请查看详细日志和失败诊断包。")
+        return ErrorInfo("network_transient", _safe_message(exc), True, TransientFetchError.suggestion)
+    if isinstance(exc, KeyError):
+        # 源B P2#78：KeyError 消息带键名 + 修复建议，不再只有孤零零的 repr
+        key = exc.args[0] if exc.args else ""
+        return ErrorInfo(
+            "key_error",
+            f"缺少必需的键: {key!r}",
+            False,
+            "请检查配置文件或数据结构是否缺少该字段，或检查键名拼写。",
+        )
+    return ErrorInfo(type(exc).__name__.lower(), _safe_message(exc), False, "请查看详细日志和失败诊断包。")

@@ -1,4 +1,4 @@
-# OmniCrawler 0.3.0 配置参考
+# OmniCrawler 0.4.0 配置参考
 
 配置为 UTF-8 YAML。未知顶层字段会在迁移和 GUI 往返保存时保留。相对路径以配置文件所在项目根目录解析。
 
@@ -40,8 +40,10 @@ outputs: {jsonl: true, csv: true, xlsx: true}
 ## http
 
 - `user_agent`：应含真实维护者联系方式。
-- `timeout_seconds/retries/delay_seconds`：超时、重试与每主机间隔。
+- `timeout_seconds/retries/delay_seconds`：超时、重试与每主机间隔。`retries` 为总尝试次数（0 表示不重试，仍会尝试 1 次）。
 - `retry_base_seconds/retry_max_seconds/retry_jitter`：指数退避。
+- `retry_on_status`：发生重试的状态码列表，默认 `[408, 425, 429, 500, 502, 503, 504]`；设为空数组 `[]` 表示不重试任何 HTTP 状态码。
+- `retry_max`：旧轨兼容别名，等价 `retries`，仅在未写 `retries` 时生效（非负整数，0 表示不重试）。
 - `respect_robots/robots_fail_closed/robots_cache_ttl_seconds/robots_max_bytes`。
 - `verify_tls/max_redirects/max_response_bytes`。
 - `allow_private_network`：默认 `false`；仅对自有或已授权内网站点开启。

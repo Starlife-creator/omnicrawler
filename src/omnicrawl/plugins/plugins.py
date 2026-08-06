@@ -19,6 +19,11 @@ PLUGIN_API_VERSION = 1
 CORE_VERSION = __version__
 LOGGER = logging.getLogger(__name__)
 
+# S2.5.41：插件模块加载缓存——同一文件（mtime 未变）只 exec_module 一次，
+# 多 Pipeline 不再重复编译执行插件代码。键 = (路径, mtime_ns)。
+_PLUGIN_MODULE_CACHE: dict[tuple[Path, int], Any] = {}
+_PLUGIN_CACHE_LOCK = threading.Lock()
+
 
 @dataclass(frozen=True, slots=True)
 class PluginMetadata:
@@ -241,15 +246,31 @@ def _load_local_plugin(
             path,
         )
         name = f"omnicrawl_user_plugin_{index}_{path.stem}"
-        spec = importlib.util.spec_from_file_location(name, path)
-        if not spec or not spec.loader:
-            raise ImportError(f"无法加载插件: {path}")
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        mtime_key = (path, path.stat().st_mtime_ns)
+        with _PLUGIN_CACHE_LOCK:
+            cached = _PLUGIN_MODULE_CACHE.get(mtime_key)
+            if cached is not None:
+                # S2.5.41：缓存命中——复用已执行模块，跳过重复编译
+                module = cached
+            else:
+                spec = importlib.util.spec_from_file_location(name, path)
+                if not spec or not spec.loader:
+                    raise ImportError(f"无法加载插件: {path}")
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                _PLUGIN_MODULE_CACHE[mtime_key] = module
         register = getattr(module, "register", None)
         if not callable(register):
             raise TypeError(f"插件必须提供register(registry)函数: {path}")
         metadata = _metadata(module, path)
+        # S1.3.7：运行时权限必须是静态字面量审批集的子集——动态计算/拼接的
+        # metadata 无法绕过权限门（其静态预检结果为空，任何运行时权限即越界）。
+        live_permissions = {item.casefold() for item in metadata.permissions}
+        if live_permissions - requested:
+            raise PermissionError(
+                "插件声明了静态审批之外的权限（PLUGIN_METADATA 必须为字面量，"
+                f"不支持动态计算）: {', '.join(sorted(live_permissions - requested))}; file={path}"
+            )
         network = None
         capability = None
         if "network" in {item.casefold() for item in metadata.permissions}:

@@ -1,38 +1,48 @@
 from __future__ import annotations
 
-import json
 import re
 import urllib.parse
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from ..core.safe_data import safe_json_loads
+
 _KEY_PATTERN = re.compile(
     r"(?i)(password|passwd|token|secret|authorization|cookie|api[-_]?key|client[-_]?secret)\s*:\s*([^\n#]+)"
 )
+
+
+def _scan_text(text: str) -> list[dict[str, Any]]:
+    """扫描配置文本中的明文凭据（跳过 secret:// 引用、${} 变量与 <redacted>）。"""
+    findings: list[dict[str, Any]] = []
+    for line_number, line in enumerate(text.splitlines(), 1):
+        for match in _KEY_PATTERN.finditer(line):
+            value = match.group(2).strip().strip("'\"")
+            if not value or value.startswith(("secret://", "${", "<redacted")):
+                continue
+            findings.append(
+                {
+                    "line": line_number,
+                    "key": match.group(1),
+                    "severity": "error",
+                    "message": "检测到可能的明文凭据；请改用 secret:// 引用或环境变量。",
+                }
+            )
+    return findings
+
+
+def scan_config_text(text: str) -> dict[str, Any]:
+    """对配置 YAML 文本做明文凭据扫描（S2.2 导出前检查用）。"""
+    findings = _scan_text(text)
+    return {"ok": not findings, "findings": findings}
 
 
 def scan_config_file(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {"ok": True, "findings": []}
     text = path.read_text(encoding="utf-8", errors="replace")
-    findings: list[dict[str, Any]] = []
-    for line_number, line in enumerate(text.splitlines(), 1):
-        match = _KEY_PATTERN.search(line)
-        if not match:
-            continue
-        value = match.group(2).strip().strip("'\"")
-        if not value or value.startswith(("secret://", "${", "<redacted")):
-            continue
-        findings.append(
-            {
-                "line": line_number,
-                "key": match.group(1),
-                "severity": "error",
-                "message": "检测到可能的明文凭据；请改用 secret:// 引用或环境变量。",
-            }
-        )
-    return {"ok": not findings, "findings": findings}
+    return scan_config_text(text)
 
 
 def pii_summary(records: list[dict[str, Any]]) -> dict[str, int]:
@@ -60,11 +70,7 @@ def egress_audit_report(path: Path) -> dict[str, Any]:
     invalid_lines = 0
     if path.is_file():
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            try:
-                item = json.loads(line)
-            except json.JSONDecodeError:
-                invalid_lines += 1
-                continue
+            item = safe_json_loads(line)
             if not isinstance(item, dict):
                 invalid_lines += 1
                 continue

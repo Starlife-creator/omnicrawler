@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import itertools
 import json
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+# S2.5.14：大页面节点上限，防止冻结数分钟
+MAX_ANALYZED_ELEMENTS = 50_000
 
 _HASHY = re.compile(r"^(?:[a-f0-9]{8,}|[A-Za-z_-]*\d[A-Za-z0-9_-]{10,})$")
 _NAME_HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
@@ -48,7 +52,7 @@ def analyze_html(html: str, *, limit: int = 200) -> list[FieldCandidate]:
     candidates: list[FieldCandidate] = []
     seen: set[tuple[str, str | None]] = set()
     ignored = {"html", "body", "script", "style", "noscript", "svg", "path", "meta", "link"}
-    for element in root.iter():
+    for element in itertools.islice(root.iter(), MAX_ANALYZED_ELEMENTS):
         tag = str(getattr(element, "tag", "")).casefold()
         if not tag or tag in ignored or not isinstance(element.tag, str):
             continue
@@ -64,6 +68,10 @@ def analyze_html(html: str, *, limit: int = 200) -> list[FieldCandidate]:
         seen.add(key)
         score = _candidate_score(element, tag, preview, reasons, attribute)
         if score < 0.25:
+            continue
+        # S4.5 P3#153：阈值必须高于基础分（基础 0.25）才有效过滤；
+        # 低于阈值=全候选通过=白过滤
+        if score <= 0.25:
             continue
         candidates.append(
             FieldCandidate(
@@ -196,6 +204,7 @@ def _candidate_score(
         score += 0.15
     if element.get("itemprop"):
         score += 0.2
-    if len(list(element.iterdescendants())) > 8:
+    # S2.5.14：len(element) 为直接子节点数（O(1)），替代 iterdescendants 全树遍历（O(n²)）
+    if len(element) > 8:
         score -= 0.3
     return max(0.0, min(1.0, score))

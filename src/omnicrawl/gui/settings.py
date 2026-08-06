@@ -45,6 +45,14 @@ class AppSettings:
             # The session fallback remains valid if Qt has disposed QSettings.
             pass
 
+    # ---- S3.1.16：公共读写接口（消费方不再直调私有方法） ----
+
+    def value(self, key: str, default: object, value_type: type):
+        return self._value(key, default, value_type)
+
+    def set_value(self, key: str, value: object) -> None:
+        self._set_value(key, value)
+
     @classmethod
     def reset(cls) -> None:
         """丢弃当前单例（数据模式变更后重建，使 settings.ini 落新数据根）。"""
@@ -234,7 +242,17 @@ class AppSettings:
 
     @property
     def proxy_list(self) -> str:
-        return self._value("proxy/list", "", str)
+        value = self._value("proxy/list", "", str)
+        if value and value.startswith("secret://"):
+            # S2.2.2 出口解引用：INI 只存引用，此处还原明文；
+            # 解引用失败（store 被删/密钥丢失）返回空串，不泄漏引用串给 UI。
+            from ..core.credentials import get_secret
+
+            try:
+                return get_secret(value[len("secret://") :])
+            except Exception:
+                return ""
+        return value
 
     @property
     def proxy_strategy(self) -> str:

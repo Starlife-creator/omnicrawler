@@ -21,43 +21,27 @@ from typing import Any
 import yaml
 
 from .. import __version__ as APP_VERSION  # noqa: N812
+from ..core.logging_utils import configure_logging
 from ..core.runtime_paths import (
+    application_dir,
     configure_runtime_environment,
     is_frozen,
     package_resource,
     portable_data_root,
     resolve_cli_command,
 )
+from .i18n import _
+from .navigation import NavIndex  # noqa: F401  # S3.1.2 re-export
 
-configure_runtime_environment()
 
-_HEADLESS_MODE = False
+def _cli_mode() -> bool:
+    """S3.1.7：只读判定 CLI 模式（无副作用）。"""
+    return any(arg in ("--headless", "--run") for arg in sys.argv[1:])
+
+
 _GUI_APP_HOLD = None
-for _arg in sys.argv[1:]:
-    if _arg in ("--headless", "--run"):
-        _HEADLESS_MODE = True
-        break
 
-if not _HEADLESS_MODE:
-    for _arg in sys.argv[1:]:
-        if _arg in ("--help", "-h"):
-            print(f"OmniCrawler GUI 工作台 v{APP_VERSION}")
-            print()
-            print("用法: omnicrawl-gui [选项]")
-            print()
-            print("选项:")
-            print("  --run PATH       无 GUI 模式：直接执行指定的 YAML 配置文件")
-            print("  --headless       无 GUI 模式（需配合 --run）")
-            print("  --help, -h       显示此帮助信息")
-            print("  --log-level LVL  日志级别: DEBUG, INFO, WARNING, ERROR (默认: INFO)")
-            print()
-            print("示例:")
-            print("  omnicrawl-gui                             启动图形工作台")
-            print("  omnicrawl-gui --run configs/project.yaml  无界面直接运行")
-            print("  pip install omnicrawl-platform[gui]       安装 GUI 依赖")
-            sys.exit(0)
-
-if not _HEADLESS_MODE:
+if not _cli_mode():
     try:
         from PyQt6.QtCore import (
             QObject,
@@ -101,12 +85,13 @@ if not _HEADLESS_MODE:
             QWizard,
         )
     except ImportError as e:
-        print(f"PyQt6 未安装，无法启动图形界面: {e}", file=sys.stderr)
-        print("请运行: pip install omnicrawl-platform[gui]", file=sys.stderr)
+        print(_(f"PyQt6 未安装，无法启动图形界面: {e}"), file=sys.stderr)
+        print(_("请运行: pip install omnicrawl-platform[gui]"), file=sys.stderr)
         sys.exit(1)
 
     from ..core.ai_env import load_ai_env, save_ai_env, sync_ai_env_to_os
     from ..core.config import load_config as load_core_config
+    from ..core.credentials import seal_secret
     from ..pipeline_ops.preflight import run_preflight, run_sample
     from ..plugins.plugin_inspector import inspect_directory
     from ..review.run_compare import compare_runs
@@ -142,7 +127,6 @@ if not _HEADLESS_MODE:
     from .design_system import PageTransitionController, VisualTokens
     from .help_center import HelpCenterDock
     from .home import HomePage
-    from .i18n import _
     from .runner.env_checker import (
         find_project_root,
     )
@@ -297,7 +281,7 @@ class TemplateLibraryDialog(QDialog):
         self._category.addItem(_("全部分类"), "")
         for category in sorted({item.category for item in templates}):
             self._category.addItem(category, category)
-        self._favorite_only = QCheckBox("只看收藏")
+        self._favorite_only = QCheckBox(_("只看收藏"))
         filters.addWidget(self._search, 1)
         filters.addWidget(self._category)
         filters.addWidget(self._favorite_only)
@@ -310,7 +294,7 @@ class TemplateLibraryDialog(QDialog):
         self._description.setWordWrap(True)
         self._description.setMinimumHeight(55)
         layout.addWidget(self._description)
-        self._favorite_button = QPushButton("☆ 收藏/取消收藏")
+        self._favorite_button = QPushButton(_("☆ 收藏/取消收藏"))
         self._favorite_button.clicked.connect(self._toggle_favorite)
         layout.addWidget(self._favorite_button)
         buttons = QDialogButtonBox(
@@ -350,7 +334,7 @@ class TemplateLibraryDialog(QDialog):
                 continue
             item = QListWidgetItem(
                 f"{template.display_name}  ·  {template.category}  ·  v{template.version}"
-                + (f"  ·  验证 {template.verified_at}" if template.verified_at else "  ·  未标注验证日期")
+                + (_(f"  ·  验证 {template.verified_at}") if template.verified_at else _("  ·  未标注验证日期"))
             )
             item.setText(("★ " if template.template_id in self._favorites else "☆ ") + item.text())
             item.setData(Qt.ItemDataRole.UserRole, template.template_id)
@@ -364,14 +348,14 @@ class TemplateLibraryDialog(QDialog):
     def _show_description(self, item: QListWidgetItem | None, _previous=None) -> None:
         template = self._find(item)
         if template:
-            capabilities = "、".join(template.capabilities) or "未声明"
-            source = "内置模板" if template.is_builtin else "用户模板"
+            capabilities = "、".join(template.capabilities) or _("未声明")
+            source = _("内置模板") if template.is_builtin else _("用户模板")
             self._description.setText(
                 f"{template.description}\n"
-                f"适用：{template.recommended_when or '请结合目标网址试跑判断'}\n"
-                f"为什么推荐：{template.why or '由网址、页面结构、数据源和所需能力综合判断'}\n"
-                f"限制：{template.limitations or '未声明特殊限制'}\n"
-                f"能力：{capabilities}\n来源：{source}；文件：{template.filepath}"
+                + _(f"适用：{template.recommended_when or '请结合目标网址试跑判断'}\n")
+                + _(f"为什么推荐：{template.why or '由网址、页面结构、数据源和所需能力综合判断'}\n")
+                + _(f"限制：{template.limitations or '未声明特殊限制'}\n")
+                + _(f"能力：{capabilities}\n来源：{source}；文件：{template.filepath}")
             )
         else:
             self._description.setText("")
@@ -498,8 +482,11 @@ class MainWindow(QMainWindow):
         if project_root_str and Path(project_root_str).is_dir():
             self._project_root = Path(project_root_str)
         else:
+            # S4.2 ⑤：兜底不再用 cwd（随启动位置漂移）——冻结用数据根，
+            # 源码环境用应用目录（稳定，不指向随意的启动目录）
             found = portable_data_root() if is_frozen() else find_project_root()
-            self._project_root = found or Path.cwd()
+            fallback = portable_data_root() if is_frozen() else application_dir()
+            self._project_root = found or fallback
             self._settings.project_root = str(self._project_root)
         self._config_history = ConfigHistory(self._project_root / ".config_history")
 
@@ -509,27 +496,8 @@ class MainWindow(QMainWindow):
             self._settings.omnicrawl_path = self._omnicrawl_path
         self._omnicrawl_available = False
 
-        # ---- 核心组件 ----
-        self._task_runner = TaskRunner(
-            omnicrawl_path=self._omnicrawl_path,
-            project_root=self._project_root,
-        )
-        self._task_runner.log_line.connect(self._on_log_line)
-        self._task_runner.progress.connect(self._on_progress)
-        self._task_runner.state_changed.connect(self._on_task_state_changed)
-        self._task_runner.task_finished.connect(self._on_task_finished)
-
-        self._autosave = AutosaveManager(self._project_root)
-        self._autosave.draft_found.connect(self._on_draft_found)
-
-        self._template_loader = TemplateLoader(
-            builtin_dir=package_resource("omnicrawl", "templates"),
-            user_dir=self._project_root / "templates",
-            additional_builtin_dirs=(package_resource("omnicrawl", "gui", "templates"),),
-        )
-        self._task_history = TaskHistory(self._project_root)
-        self._task_history.load_config_requested.connect(self._load_history_config)
-        self._task_history.view_results_requested.connect(self._load_history_results)
+        # ---- 核心组件（S3.1.27：抽方法，切换项目可重建）----
+        self._build_project_components()
 
         # ---- 运行状态 ----
         self._task_start_time: datetime | None = None
@@ -792,6 +760,8 @@ class MainWindow(QMainWindow):
 
         # 拆分器：左侧配置向导 + 右侧信息面板
         wizard_splitter = QSplitter(Qt.Orientation.Horizontal)
+        # S3.1.2：保存 splitter 引用——重建向导时操作 splitter 而非外层 layout
+        self._wizard_splitter = wizard_splitter
         self._config_wizard = ConfigWizard(self._config)
         wizard_splitter.addWidget(self._config_wizard)
 
@@ -844,7 +814,6 @@ class MainWindow(QMainWindow):
         self._progress_url_label.setObjectName("muted")
         monitor_layout.addWidget(self._progress_url_label)
 
-        self._resource_monitor = ResourceMonitor(project_root=self._project_root)
         monitor_layout.addWidget(self._resource_monitor)
 
         self._log_console = LogConsole()
@@ -857,7 +826,7 @@ class MainWindow(QMainWindow):
         ctrl_stop = QPushButton(_("■ 停止"))
         ctrl_stop.clicked.connect(self._stop_task)
         ctrl_layout.addWidget(ctrl_stop)
-        ctrl_pause = QPushButton("Ⅱ 暂停/继续")
+        ctrl_pause = QPushButton(_("Ⅱ 暂停/继续"))
         ctrl_pause.clicked.connect(self._toggle_pause)
         ctrl_layout.addWidget(ctrl_pause)
         ctrl_layout.addStretch()
@@ -882,9 +851,10 @@ class MainWindow(QMainWindow):
         self._home = HomePage(project_root=str(self._project_root))
         self._home.quick_task_ready.connect(self._apply_quick_task)
         self._home.natural_task_ready.connect(self._apply_natural_task)
-        self._home.open_wizard.connect(lambda: self._nav.setCurrentRow(1))
-        self._home.open_recent.connect(lambda: self._nav.setCurrentRow(3))
-        self._home.open_results.connect(lambda: self._nav.setCurrentRow(4))
+        self._home.open_wizard.connect(lambda: self._nav.setCurrentRow(NavIndex.WIZARD))
+        self._home.open_recent.connect(lambda: self._nav.setCurrentRow(NavIndex.YAML_EDITOR))
+        # S3.1.2：修复"结果与复核"错页（原误用 NavIndex.MONITOR）
+        self._home.open_results.connect(lambda: self._nav.setCurrentRow(NavIndex.RESULTS))
         self._home.open_schedule.connect(self._manage_schedules)
         self._home.import_task.connect(self._import_config_package)
         self._home.run_doctor.connect(self._recheck_env)
@@ -892,7 +862,7 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._home)
 
         self._evidence_view = EvidenceView()
-        self._evidence_view.back_to_results.connect(lambda: self._nav.setCurrentRow(5))  # 返回结果与复核页
+        self._evidence_view.back_to_results.connect(lambda: self._nav.setCurrentRow(NavIndex.RESULTS))  # 返回结果与复核页
         self._stack.addWidget(self._evidence_view)
         self._pdf_workbench = PdfWorkbenchView()
         self._stack.addWidget(self._pdf_workbench)
@@ -905,14 +875,50 @@ class MainWindow(QMainWindow):
         self._page_transition = PageTransitionController(
             self._stack, reduced_motion=self._settings.reduced_motion,
         )
-        self._nav.setCurrentRow(0)
+        self._nav.setCurrentRow(NavIndex.HOME)
+
+    def _build_project_components(self) -> None:
+        """S3.1.27：构建/重建依赖项目根的组件（switch_project 时复用）。"""
+        self._config_history = ConfigHistory(self._project_root / ".config_history")
+        self._task_runner = TaskRunner(
+            omnicrawl_path=self._omnicrawl_path,
+            project_root=self._project_root,
+        )
+        self._task_runner.log_line.connect(self._on_log_line)
+        self._task_runner.progress.connect(self._on_progress)
+        self._task_runner.state_changed.connect(self._on_task_state_changed)
+        self._task_runner.task_finished.connect(self._on_task_finished)
+
+        self._autosave = AutosaveManager(self._project_root)
+        self._autosave.draft_found.connect(self._on_draft_found)
+
+        self._template_loader = TemplateLoader(
+            builtin_dir=package_resource("omnicrawl", "templates"),
+            user_dir=self._project_root / "templates",
+            additional_builtin_dirs=(package_resource("omnicrawl", "gui", "templates"),),
+        )
+        self._task_history = TaskHistory(
+            self._project_root,
+            max_entries=self._settings.history_max_entries,
+            max_days=self._settings.history_max_days,
+        )
+        self._task_history.load_config_requested.connect(self._load_history_config)
+        self._task_history.view_results_requested.connect(self._load_history_results)
+        self._resource_monitor = ResourceMonitor(project_root=self._project_root)
+
+    def _rebuild_project_components(self) -> None:
+        """S3.1.27：切换项目后重建依赖项目根的组件（不再只改标签）。"""
+        self._build_project_components()
+        for widget in (self._autosave, self._template_loader, self._task_history):
+            widget.deleteLater()
 
     def _setup_system_tray(self) -> None:
         if QSystemTrayIcon.isSystemTrayAvailable():
             self._tray_icon = QSystemTrayIcon(self)
             self._tray_icon.setToolTip(_("OmniCrawler GUI 工作台"))
             self._tray_icon.activated.connect(self._on_tray_activated)
-            tray_menu = QMenu()
+            # S3.1.2：QMenu(self) 接管所有权，托盘右键菜单不因父对象销毁而悬空
+            tray_menu = QMenu(self)
             show_action = QAction(_("显示主窗口"), self)
             show_action.triggered.connect(self.show)
             tray_menu.addAction(show_action)
@@ -993,7 +999,7 @@ class MainWindow(QMainWindow):
     def _apply_quick_task(self, draft: QuickTaskDraft) -> None:
         self._apply_task_draft(draft)
         self._rebuild_wizard()
-        self._nav.setCurrentRow(1)
+        self._nav.setCurrentRow(NavIndex.WIZARD)
         self._set_status(_("快速草案已生成：请查看自动决定和修改入口，然后先试跑"))
 
     def _apply_natural_task(self, draft: NaturalLanguageDraft) -> None:
@@ -1003,8 +1009,8 @@ class MainWindow(QMainWindow):
         if draft.topics:
             self._config.topic_include_any = list(dict.fromkeys(topic for topic in draft.topics if topic.strip()))
         self._rebuild_wizard()
-        self._nav.setCurrentRow(1)
-        cadence = {"weekly": "每周", "daily": "每天", "monthly": "每月", "manual": "手动"}
+        self._nav.setCurrentRow(NavIndex.WIZARD)
+        cadence = {"weekly": _("每周"), "daily": _("每天"), "monthly": _("每月"), "manual": _("手动")}
         self._set_status(_("已从自然语言生成草案；建议频率：{0}。请确认第一页内容并先试跑。").format(
             cadence.get(draft.schedule, draft.schedule)
         ))
@@ -1012,7 +1018,7 @@ class MainWindow(QMainWindow):
     def _on_record_selected_for_review(self, record: dict) -> None:
         """从结果表格跳转到证据查看器。"""
         self._evidence_view.show_record(record)
-        self._nav.setCurrentRow(6)  # 导航到证据查看器（nav row 6 → stack page 5）
+        self._nav.setCurrentRow(NavIndex.EVIDENCE)  # 导航到证据查看器
 
     def _apply_task_draft(self, draft: QuickTaskDraft) -> None:
         self._config.seed_urls = [draft.url]
@@ -1034,7 +1040,7 @@ class MainWindow(QMainWindow):
             self._config_path = demo.config
             self._config_label.setText(str(demo.config))
             self._rebuild_wizard()
-            self._nav.setCurrentRow(1)
+            self._nav.setCurrentRow(NavIndex.WIZARD)
             self._set_status(_("离线演示已准备：无需网络，可直接查看并试跑"))
         except (OSError, ValueError) as exc:
             self._show_error_dialog(exc, _("创建离线演示"))
@@ -1076,39 +1082,59 @@ class MainWindow(QMainWindow):
         """更新配置向导右侧信息面板，显示当前步骤的字段帮助。"""
         tips: dict[int, str] = {
             0: (
-                "<h3>📌 Step 1：选择数据源</h3>"
-                "<p><b>是什么</b>：设定要采集的网站或本地文件路径。</p>"
-                "<p><b>为什么</b>：这是所有后续规则的根基——源类型决定了解析策略。</p>"
-                "<p><b>示例</b>：<code>https://example.com/news</code> 或 <code>./data/pdfs/</code></p>"
-                "<hr><p style='color:gray;font-size:11px'>💡 支持 HTTP/HTTPS 网页和本地 file:// 路径。</p>"
+                _("<h3>📌 Step 1：选择数据源</h3>") +
+
+                _("<p><b>是什么</b>：设定要采集的网站或本地文件路径。</p>") +
+
+                _("<p><b>为什么</b>：这是所有后续规则的根基——源类型决定了解析策略。</p>") +
+
+                _("<p><b>示例</b>：<code>https://example.com/news</code> 或 <code>./data/pdfs/</code></p>") +
+
+                _("<hr><p style='color:gray;font-size:11px'>💡 支持 HTTP/HTTPS 网页和本地 file:// 路径。</p>")
             ),
             1: (
-                "<h3>🔗 Step 2：发现 URL</h3>"
-                "<p><b>是什么</b>：定义如何从首页发现更多目标页面。</p>"
-                "<p><b>为什么</b>：控制爬取范围和深度，避免无限扩展。</p>"
-                "<p><b>示例</b>：CSS 选择器 <code>a.article-link</code> 或正则 <code>/post/\\d+</code></p>"
-                "<hr><p style='color:gray;font-size:11px'>💡 默认限制同域名，防止意外跳转到外部站点。</p>"
+                _("<h3>🔗 Step 2：发现 URL</h3>") +
+
+                _("<p><b>是什么</b>：定义如何从首页发现更多目标页面。</p>") +
+
+                _("<p><b>为什么</b>：控制爬取范围和深度，避免无限扩展。</p>") +
+
+                _("<p><b>示例</b>：CSS 选择器 <code>a.article-link</code> 或正则 <code>/post/\\d+</code></p>") +
+
+                _("<hr><p style='color:gray;font-size:11px'>💡 默认限制同域名，防止意外跳转到外部站点。</p>")
             ),
             2: (
-                "<h3>📋 Step 3：定义字段</h3>"
-                "<p><b>是什么</b>：指定要从每个页面提取的数据字段。</p>"
-                "<p><b>为什么</b>：字段是最小的数据单元，决定最终输出表格的列。</p>"
-                "<p><b>示例</b>：<code>标题</code> → <code>h1.article-title</code>、<code>日期</code> → <code>time.published</code></p>"
-                "<hr><p style='color:gray;font-size:11px'>💡 可选的 <b>AI 辅助设计</b> 能根据描述自动推荐字段规则。</p>"
+                _("<h3>📋 Step 3：定义字段</h3>") +
+
+                _("<p><b>是什么</b>：指定要从每个页面提取的数据字段。</p>") +
+
+                _("<p><b>为什么</b>：字段是最小的数据单元，决定最终输出表格的列。</p>") +
+
+                _("<p><b>示例</b>：<code>标题</code> → <code>h1.article-title</code>、<code>日期</code> → <code>time.published</code></p>") +
+
+                _("<hr><p style='color:gray;font-size:11px'>💡 可选的 <b>AI 辅助设计</b> 能根据描述自动推荐字段规则。</p>")
             ),
             3: (
-                "<h3>📥 Step 4：下载设置</h3>"
-                "<p><b>是什么</b>：配置附件下载和文件类型过滤。</p>"
-                "<p><b>为什么</b>：控制是否下载 PDF/图片/文档，避免下载不必要的大文件。</p>"
-                "<p><b>示例</b>：限制扩展名 <code>.pdf,.docx</code> 或最大文件大小 50MB</p>"
-                "<hr><p style='color:gray;font-size:11px'>💡 下载文件默认存储在 <code>output/downloads/</code> 子目录。</p>"
+                _("<h3>📥 Step 4：下载设置</h3>") +
+
+                _("<p><b>是什么</b>：配置附件下载和文件类型过滤。</p>") +
+
+                _("<p><b>为什么</b>：控制是否下载 PDF/图片/文档，避免下载不必要的大文件。</p>") +
+
+                _("<p><b>示例</b>：限制扩展名 <code>.pdf,.docx</code> 或最大文件大小 50MB</p>") +
+
+                _("<hr><p style='color:gray;font-size:11px'>💡 下载文件默认存储在 <code>output/downloads/</code> 子目录。</p>")
             ),
             4: (
-                "<h3>✅ Step 5：预览与确认</h3>"
-                "<p><b>是什么</b>：在正式运行前检查所有配置，运行小样本试跑。</p>"
-                "<p><b>为什么</b>：避免配置错误导致的大规模失败——小样本验证是安全底线。</p>"
-                "<p><b>示例</b>：先采集 5 页，确认字段正确后再全量运行。</p>"
-                "<hr><p style='color:gray;font-size:11px'>💡 始终建议先试跑再全量执行。</p>"
+                _("<h3>✅ Step 5：预览与确认</h3>") +
+
+                _("<p><b>是什么</b>：在正式运行前检查所有配置，运行小样本试跑。</p>") +
+
+                _("<p><b>为什么</b>：避免配置错误导致的大规模失败——小样本验证是安全底线。</p>") +
+
+                _("<p><b>示例</b>：先采集 5 页，确认字段正确后再全量运行。</p>") +
+
+                _("<hr><p style='color:gray;font-size:11px'>💡 始终建议先试跑再全量执行。</p>")
             ),
         }
         text = tips.get(page_id, "")
@@ -1139,11 +1165,31 @@ class MainWindow(QMainWindow):
         if not self._config_path:
             return
         self._save_config()
-        try:
-            report = run_preflight(load_core_config(self._config_path))
-        except Exception as exc:
-            QMessageBox.warning(self, "运行前检查失败", str(exc))
-            return
+        # S3.1.1：预检移入后台线程，避免冻结界面
+        from .core.background_worker import BackgroundWorker, run_worker
+
+        config_path = self._config_path
+
+        class _PreflightWorker(BackgroundWorker):
+            def __init__(self, path: str, parent=None) -> None:
+                super().__init__(parent)
+                self._config_path = path
+
+            def work(self) -> dict:
+                return run_preflight(load_core_config(self._config_path))
+
+        self._preflight_pending = True
+        run_worker(
+            _PreflightWorker(config_path),
+            on_succeeded=self._apply_preflight,
+            on_failed=lambda error: (
+                QMessageBox.warning(self, _("运行前检查失败"), error),
+                setattr(self, "_preflight_pending", False),
+            ),
+        )
+
+    def _apply_preflight(self, report: dict) -> None:
+        self._preflight_pending = False
         lines = []
         icons = {"ok": "✓", "warning": "!", "error": "×"}
         for check in report["checks"]:
@@ -1151,17 +1197,17 @@ class MainWindow(QMainWindow):
         estimate = report["estimate"]
         lines.extend([
             "",
-            f"资源模式：{estimate['resource_profile']['name']}",
-            f"预计最低运行时间：{estimate['estimated_minimum_seconds']} 秒",
-            f"预计原始数据空间：约 {estimate['estimated_raw_storage_mb']} MB",
+            _(f"资源模式：{estimate['resource_profile']['name']}"),
+            _(f"预计最低运行时间：{estimate['estimated_minimum_seconds']} 秒"),
+            _(f"预计原始数据空间：约 {estimate['estimated_raw_storage_mb']} MB"),
         ])
         box = QMessageBox(self)
-        box.setWindowTitle("运行前检查")
+        box.setWindowTitle(_("运行前检查"))
         box.setIcon(QMessageBox.Icon.Information if report["ok"] else QMessageBox.Icon.Warning)
-        box.setText("检查通过，可以先用 3 页小样本验证。" if report["ok"] else "检查发现阻止运行的问题。")
+        box.setText(_("检查通过，可以先用 3 页小样本验证。") if report["ok"] else _("检查发现阻止运行的问题。"))
         box.setDetailedText("\n".join(lines))
-        sample_button = box.addButton("试跑 3 页", QMessageBox.ButtonRole.AcceptRole)
-        box.addButton("关闭", QMessageBox.ButtonRole.RejectRole)
+        sample_button = box.addButton(_("试跑 3 页"), QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(_("关闭"), QMessageBox.ButtonRole.RejectRole)
         box.exec()
         if box.clickedButton() == sample_button and report["ok"]:
             self._start_sample_run()
@@ -1180,9 +1226,10 @@ class MainWindow(QMainWindow):
                 return
             sample = result.get("sample", {})
             QMessageBox.information(
-                self, "小样本试跑完成",
-                f"状态：{sample.get('status')}\n处理页面：{sample.get('processed', 0)}\n"
-                f"提取记录：{sample.get('records', 0)}\n报告：{result.get('report', '')}",
+                self, _("小样本试跑完成"),
+                _(f"状态：{sample.get('status')}\n处理页面：{sample.get('processed', 0)}\n") +
+
+                _(f"提取记录：{sample.get('records', 0)}\n报告：{result.get('report', '')}"),
             )
             thread.quit()
 
@@ -1190,7 +1237,7 @@ class MainWindow(QMainWindow):
             if self._close_after_background_jobs:
                 thread.quit()
                 return
-            QMessageBox.warning(self, "小样本试跑失败", message)
+            QMessageBox.warning(self, _("小样本试跑失败"), message)
             thread.quit()
 
         worker.finished.connect(completed)
@@ -1218,7 +1265,7 @@ class MainWindow(QMainWindow):
         if path.is_file():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
         else:
-            QMessageBox.information(self, "错误中心", "当前项目还没有错误中心报告；完成一次任务后会自动生成。")
+            QMessageBox.information(self, _("错误中心"), _("当前项目还没有错误中心报告；完成一次任务后会自动生成。"))
 
     def _show_run_comparison(self) -> None:
         workspace = Path(self._config.workspace).expanduser()
@@ -1226,35 +1273,36 @@ class MainWindow(QMainWindow):
             workspace = self._project_root / workspace
         database = workspace / "state.sqlite3"
         if not database.is_file():
-            QMessageBox.information(self, "运行对比", "当前项目还没有可对比的运行记录。")
+            QMessageBox.information(self, _("运行对比"), _("当前项目还没有可对比的运行记录。"))
             return
         with StateStore(database) as state:
             rows = state.rows(
                 "SELECT run_id, started_at, status FROM runs ORDER BY started_at DESC LIMIT 30"
             )
             if len(rows) < 2:
-                QMessageBox.information(self, "运行对比", "至少完成两次运行后才能进行对比。")
+                QMessageBox.information(self, _("运行对比"), _("至少完成两次运行后才能进行对比。"))
                 return
             labels = [f"{row['started_at']} · {row['status']} · {row['run_id']}" for row in rows]
-            before_label, ok = QInputDialog.getItem(self, "运行对比", "选择较早的一次运行：", labels, 1, False)
+            before_label, ok = QInputDialog.getItem(self, _("运行对比"), _("选择较早的一次运行："), labels, 1, False)
             if not ok:
                 return
-            after_label, ok = QInputDialog.getItem(self, "运行对比", "选择较新的一次运行：", labels, 0, False)
+            after_label, ok = QInputDialog.getItem(self, _("运行对比"), _("选择较新的一次运行："), labels, 0, False)
             if not ok:
                 return
             before_id = rows[labels.index(before_label)]["run_id"]
             after_id = rows[labels.index(after_label)]["run_id"]
             if before_id == after_id:
-                QMessageBox.warning(self, "运行对比", "请选择两次不同的运行。")
+                QMessageBox.warning(self, _("运行对比"), _("请选择两次不同的运行。"))
                 return
             report = compare_runs(state, str(before_id), str(after_id))
         output = workspace / "output" / f"run_comparison_{str(before_id)[:8]}_{str(after_id)[:8]}.json"
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         QMessageBox.information(
-            self, "运行对比完成",
-            f"新增：{report['added']}\n修改：{report['modified']}\n"
-            f"确认删除：{report['removed']}\n可能删除：{report['possibly_removed']}\n\n报告：{output}",
+            self, _("运行对比完成"),
+            _(f"新增：{report['added']}\n修改：{report['modified']}\n") +
+
+            _(f"确认删除：{report['removed']}\n可能删除：{report['possibly_removed']}\n\n报告：{output}"),
         )
 
     def _manage_plugins(self) -> None:
@@ -1262,10 +1310,10 @@ class MainWindow(QMainWindow):
         directory.mkdir(parents=True, exist_ok=True)
         inspections = inspect_directory(directory)
         dialog = QDialog(self)
-        dialog.setWindowTitle("插件管理与权限")
+        dialog.setWindowTitle(_("插件管理与权限"))
         dialog.resize(760, 460)
         layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel("插件启用前只做静态检查；所需权限会明确列出，不会自动批准。"))
+        layout.addWidget(QLabel(_("插件启用前只做静态检查；所需权限会明确列出，不会自动批准。")))
         listing = QListWidget(dialog)
         configured = self._config.passthrough.get("plugins", {})
         current_paths = configured.get("paths", []) if isinstance(configured, dict) else []
@@ -1274,9 +1322,9 @@ class MainWindow(QMainWindow):
             for path in current_paths
         }
         for inspection in inspections:
-            state = "兼容" if inspection.compatible else "不可用"
-            permissions = ", ".join(inspection.permissions) or "无额外权限"
-            item = QListWidgetItem(f"{inspection.name} {inspection.version} · {state} · 权限: {permissions}")
+            state = _("兼容") if inspection.compatible else _("不可用")
+            permissions = ", ".join(inspection.permissions) or _("无额外权限")
+            item = QListWidgetItem(_(f"{inspection.name} {inspection.version} · {state} · 权限: {permissions}"))
             item.setData(Qt.ItemDataRole.UserRole, inspection)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             checked = inspection.path in current_resolved and inspection.compatible
@@ -1286,7 +1334,7 @@ class MainWindow(QMainWindow):
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
             listing.addItem(item)
         layout.addWidget(listing)
-        open_button = QPushButton("打开插件目录")
+        open_button = QPushButton(_("打开插件目录"))
         open_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory))))
         layout.addWidget(open_button)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
@@ -1307,8 +1355,8 @@ class MainWindow(QMainWindow):
             requested_permissions.update(inspection.permissions)
         if requested_permissions:
             answer = QMessageBox.question(
-                self, "批准插件权限",
-                "所选插件请求以下权限：\n\n" + "\n".join(sorted(requested_permissions)) + "\n\n是否批准？",
+                self, _("批准插件权限"),
+                _("所选插件请求以下权限：\n\n") + "\n".join(sorted(requested_permissions)) + _("\n\n是否批准？"),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -1328,8 +1376,8 @@ class MainWindow(QMainWindow):
             url, accepted = default_url, True
         else:
             url, accepted = QInputDialog.getText(
-                self, "学习网页操作",
-                "填写浏览器地址栏中的入口。打开后请正常搜索、点击下一页或滚动；完成时关闭窗口：",
+                self, _("学习网页操作"),
+                _("填写浏览器地址栏中的入口。打开后请正常搜索、点击下一页或滚动；完成时关闭窗口："),
                 text=default_url,
             )
         if not accepted or not url.strip():
@@ -1356,9 +1404,10 @@ class MainWindow(QMainWindow):
             self._rebuild_wizard()
             ToastManager.instance().success(_("网页操作已写入当前任务；密码值已替换为 secret:// 引用"))
             QMessageBox.information(
-                self, "录制完成",
-                f"已记录 {len(result.get('actions', []))} 个操作并写入当前配置。\n"
-                "密码不会明文保存，请在运行前配置 browser_password 密钥。",
+                self, _("录制完成"),
+                _(f"已记录 {len(result.get('actions', []))} 个操作并写入当前配置。\n") +
+
+                _("密码不会明文保存，请在运行前配置 browser_password 密钥。"),
             )
             if self._recorder_thread is not None:
                 self._recorder_thread.quit()
@@ -1368,7 +1417,7 @@ class MainWindow(QMainWindow):
                 if self._recorder_thread is not None:
                     self._recorder_thread.quit()
                 return
-            QMessageBox.warning(self, "录制失败", message)
+            QMessageBox.warning(self, _("录制失败"), message)
             if self._recorder_thread is not None:
                 self._recorder_thread.quit()
 
@@ -1402,7 +1451,7 @@ class MainWindow(QMainWindow):
         dialog.resize(680, 420)
         layout = QVBoxLayout(dialog)
         layout.addWidget(QLabel(_(
-            "任务保存在本地；请用系统计划任务定期执行 omnicrawl schedule run-due。"
+            _("任务保存在本地；请用系统计划任务定期执行 omnicrawl schedule run-due。")
         )))
         schedule_list = QListWidget(dialog)
         layout.addWidget(schedule_list)
@@ -1417,11 +1466,11 @@ class MainWindow(QMainWindow):
         start_row = QHBoxLayout()
         start_date_label = QLineEdit()
         start_date_label.setReadOnly(True)
-        start_date_label.setPlaceholderText("立即开始（点击选择日期）")
+        start_date_label.setPlaceholderText(_("立即开始（点击选择日期）"))
         start_row.addWidget(start_date_label)
         start_date_btn = QPushButton("📅")
         start_date_btn.setFixedWidth(36)
-        start_date_btn.setToolTip("选择首次运行日期")
+        start_date_btn.setToolTip(_("选择首次运行日期"))
 
         def _pick_date() -> None:
             from .widgets.calendar_popup import CalendarPopup
@@ -1433,17 +1482,17 @@ class MainWindow(QMainWindow):
         start_date_btn.clicked.connect(_pick_date)
         start_row.addWidget(start_date_btn)
         form.addRow(_("首次运行"), start_row)
-        require_ac = QCheckBox("仅接通电源时运行", dialog)
+        require_ac = QCheckBox(_("仅接通电源时运行"), dialog)
         require_ac.setChecked(True)
-        form.addRow("电源条件", require_ac)
-        require_network = QCheckBox("需要可用网络接口", dialog)
+        form.addRow(_("电源条件"), require_ac)
+        require_network = QCheckBox(_("需要可用网络接口"), dialog)
         require_network.setChecked(True)
-        form.addRow("网络条件", require_network)
+        form.addRow(_("网络条件"), require_network)
         minimum_battery = QSpinBox(dialog)
         minimum_battery.setRange(0, 100)
         minimum_battery.setValue(30)
         minimum_battery.setSuffix("%")
-        form.addRow("最低电量", minimum_battery)
+        form.addRow(_("最低电量"), minimum_battery)
         layout.addLayout(form)
 
         buttons = QHBoxLayout()
@@ -1534,8 +1583,10 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, _("模板不可用"), str(exc))
                 return
             preview = "\n".join(
-                f"{item.get('business_section', item['path'])}: "
-                f"{item.get('business_change', item['change_type'])} — "
+                f"{item.get('business_section', item['path'])}: " +
+
+                f"{item.get('business_change', item['change_type'])} — " +
+
                 f"{item['path']}"
                 for item in application.changes[:18]
             )
@@ -1613,7 +1664,7 @@ class MainWindow(QMainWindow):
             record = catalog.get(str(item.get("id", "")))
             name = record.metadata.name if record else str(item.get("id"))
             reasons = "、".join(str(value) for value in item.get("reasons", []))
-            lines.append(f"  {index}. {name} — {reasons or '安全通用回退'}")
+            lines.append(_(f"  {index}. {name} — {reasons or '安全通用回退'}"))
         if not recommendations:
             QMessageBox.information(self, _("智能识别结果"), "\n".join(lines))
             return
@@ -1645,13 +1696,13 @@ class MainWindow(QMainWindow):
         for change in changes[:18]:
             preview.append(f"{change.path}: {change.before!r} → {change.after!r}")
         if len(changes) > 18:
-            preview.append(f"…另有 {len(changes) - 18} 项")
+            preview.append(_(f"…另有 {len(changes) - 18} 项"))
         confirm = QMessageBox(self)
         confirm.setWindowTitle(_("组合建议预览"))
         confirm.setText(_("模板只会补充所需能力；任务名称、入口网址、主题、已有字段和输出选择将保留。"))
         confirm.setInformativeText(
             (record.metadata.why or record.metadata.description)
-            + (f"\n限制：{record.metadata.limitations}" if record.metadata.limitations else "")
+            + (_(f"\n限制：{record.metadata.limitations}") if record.metadata.limitations else "")
         )
         confirm.setDetailedText("\n".join(preview) or _("没有需要修改的配置"))
         confirm.setStandardButtons(QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel)
@@ -1787,8 +1838,9 @@ class MainWindow(QMainWindow):
         if self._tray_icon and self._tray_icon.isVisible() and self._task_runner.is_running:
             reply = QMessageBox.question(
                 self, _("确认"),
-                _("任务正在运行中。是否最小化到系统托盘？\n\n"
-                  "选择「否」将终止任务并退出。"),
+                _("任务正在运行中。是否最小化到系统托盘？\n\n" +
+
+                  _("选择「否」将终止任务并退出。")),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
@@ -1796,6 +1848,22 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
         if self._task_runner.is_running:
+            # S3.1.5：无托盘图标时不再静默 stop()——给出三选一确认
+            box = QMessageBox(self)
+            box.setWindowTitle(_("确认退出"))
+            box.setText(_("任务正在运行中。关闭窗口将如何处理？"))
+            stop_btn = box.addButton(_("停止任务并退出"), QMessageBox.ButtonRole.DestructiveRole)
+            hide_btn = box.addButton(_("最小化到后台"), QMessageBox.ButtonRole.AcceptRole)
+            box.addButton(_("取消"), QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked == hide_btn:
+                self.hide()
+                event.ignore()
+                return
+            if clicked != stop_btn:
+                event.ignore()
+                return
             self._task_runner.stop()
         if any(thread.isRunning() for thread in self._background_threads()):
             self._close_after_background_jobs = True
@@ -1822,11 +1890,17 @@ class MainWindow(QMainWindow):
         self._connect_wizard_actions()
         # A20：重建后重连 currentIdChanged（原 815 行仅初始连接一次，重建后信息面板不再更新）
         self._config_wizard.currentIdChanged.connect(self._update_wizard_info_panel)
-        layout = self._wizard_widget.layout()
-        assert layout is not None
-        layout.removeWidget(old_wizard)
+        # S3.1.2：在 wizard_splitter 上替换旧向导（原代码操作外层 wizard_layout，
+        # 新向导从未真正显示）
+        index = self._wizard_splitter.indexOf(old_wizard)
+        if index >= 0:
+            self._wizard_splitter.replaceWidget(index, self._config_wizard)
+        else:  # pragma: no cover - 防御：splitter 找不到时回退旧路径
+            layout = self._wizard_widget.layout()
+            if layout is not None:
+                layout.removeWidget(old_wizard)
+                layout.addWidget(self._config_wizard)
         old_wizard.deleteLater()
-        layout.addWidget(self._config_wizard)
         if hasattr(self, "_resource_profile_combo"):
             for index in range(self._resource_profile_combo.count()):
                 if self._resource_profile_combo.itemData(index) == self._config.resource_profile:
@@ -1932,6 +2006,8 @@ class MainWindow(QMainWindow):
         """将 AI 配置行级写入单一真源 .env，并同步进程内 os.environ。
 
         保留 .env 中的注释/空行/顺序；关闭 AI 时同步删除 KEY/BASE_URL/MODEL。
+        S2.2.2：OMNICRAWL_AI_API_KEY 明文先加密入 secrets_store，.env 只写
+        ``secret://`` 引用（引用幂等，不可存时拒绝写入绝不回退明文）。
         """
         updates: dict[str, str | None] = {}
         if config.get("mode") == "disabled":
@@ -1942,10 +2018,23 @@ class MainWindow(QMainWindow):
             updates["OMNICRAWL_AI_TIMEOUT"] = None
         else:
             provider = config.get("providers", {}).get("default", {})
+            api_key = str(provider.get("api_key", "")).strip()
+            try:
+                if api_key:
+                    api_key = seal_secret("ai.env.OMNICRAWL_AI_API_KEY", api_key)
+            except Exception:
+                QMessageBox.warning(
+                    self,
+                    _("无法安全保存"),
+                    _("API key 无法加密存储（secrets_store 不可用），已拒绝写入明文，请检查系统凭据库或设置 {var}。").format(
+                        var="OMNICRAWL_MASTER_PASSWORD"
+                    ),
+                )
+                return
             updates["OMNICRAWL_AI_PROVIDER"] = provider.get("type", "openai_compatible")
             updates["OMNICRAWL_AI_BASE_URL"] = provider.get("base_url", "")
             updates["OMNICRAWL_AI_MODEL"] = provider.get("model", "")
-            updates["OMNICRAWL_AI_API_KEY"] = provider.get("api_key", "")
+            updates["OMNICRAWL_AI_API_KEY"] = api_key
             updates["OMNICRAWL_AI_TIMEOUT"] = str(provider.get("timeout_seconds", 60))
         save_ai_env(updates, project_root=self._project_root)
         sync_ai_env_to_os(updates)
@@ -1969,6 +2058,9 @@ def main() -> int:
     Returns:
         退出码：0 成功，1 失败。
     """
+    # S3.1.7：运行时环境配置从模块顶层迁入 main()——import gui.main 无副作用
+    configure_runtime_environment()
+
     parser = argparse.ArgumentParser(
         prog="omnicrawler-gui",
         description=_("OmniCrawler GUI 工作台 — 可视化爬虫配置与管理工具"),
@@ -1992,12 +2084,14 @@ def main() -> int:
     if args.run or args.headless:
         config_path = args.run
         if not config_path:
-            print("错误: --headless 模式下需要指定 --run <yaml_path>", file=sys.stderr)
+            print(_("错误: --headless 模式下需要指定 --run <yaml_path>"), file=sys.stderr)
             return 1
         from .runner.headless_runner import run_headless
         return run_headless(config_path=config_path, log_level=args.log_level)
 
     try:
+        configure_logging(args.log_level, log_format="text")
+
         if is_frozen():
             settings_path = portable_data_root() / ".omnicrawler" / "settings"
             settings_path.mkdir(parents=True, exist_ok=True)
@@ -2025,7 +2119,7 @@ def main() -> int:
         return app.exec()
 
     except Exception as e:
-        print(f"严重错误: {e}", file=sys.stderr)
+        print(_(f"严重错误: {e}"), file=sys.stderr)
         traceback.print_exc()
         return 1
 

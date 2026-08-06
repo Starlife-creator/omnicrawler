@@ -8,6 +8,7 @@ from ..accessibility import AccessibilityProfile, apply_accessibility
 from ..design_system import apply_design_system
 from ..i18n import _
 from ..motion_signal import MotionSignal
+from ..navigation import NavIndex
 from ..widgets.toast import ToastManager
 from ._base import _BaseDelegate
 
@@ -28,9 +29,10 @@ class ThemeManager(_BaseDelegate):
             })
         if not hasattr(mw, "_nav"):
             return
-        _nav2 = mw._nav.item(2)
-        _nav5 = mw._nav.item(5)
-        _nav6 = mw._nav.item(6)
+        # S3.1.15：固定行号 2/5/6 改 NavIndex 常量——导航结构调整不再 AssertionError
+        _nav2 = mw._nav.item(NavIndex.PDF_WORKBENCH)
+        _nav5 = mw._nav.item(NavIndex.RESULTS)
+        _nav6 = mw._nav.item(NavIndex.EVIDENCE)
         assert _nav2 is not None
         assert _nav5 is not None
         assert _nav6 is not None
@@ -54,7 +56,7 @@ class ThemeManager(_BaseDelegate):
                 _("已保留 {0} 项高级规则：{1}。切换到专业模式可查看。").format(count, "、".join(sections))
             )
         if mode == "simple" and mw._stack.currentIndex() == 1:
-            mw._nav.setCurrentRow(1)
+            mw._nav.setCurrentRow(NavIndex.WIZARD)
         messages = {
             "simple": _("简单模式：技术参数已隐藏，使用五步向导即可完成任务"),
             "professional": _("专业模式：可编辑 YAML 和高级采集规则"),
@@ -72,9 +74,9 @@ class ThemeManager(_BaseDelegate):
         if isinstance(resources, dict):
             resources["profile"] = profile
         descriptions = {
-            "economy": "省电模式：最多 2 个并发、1 个浏览器实例",
-            "balanced": "均衡模式：笔记本日常推荐",
-            "performance": "全速模式：建议插电并保持散热",
+            "economy": _("省电模式：最多 2 个并发、1 个浏览器实例"),
+            "balanced": _("均衡模式：笔记本日常推荐"),
+            "performance": _("全速模式：建议插电并保持散热"),
         }
         ToastManager.instance().info(descriptions[profile])
 

@@ -14,6 +14,13 @@ from ..quality.semantic_changes import compare_record_data, record_identity, sem
 from .schema import SCHEMA
 
 
+class _ClosedConnection:
+    """S2.5.42：close() 后 conn 的受控占位——任何访问抛可读错误而非 AttributeError。"""
+
+    def __getattr__(self, _name: str) -> Any:
+        raise RuntimeError("StateStore 已关闭，禁止继续操作")
+
+
 class StateStore:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -54,10 +61,11 @@ class StateStore:
 
     def close(self) -> None:
         with self._lock:
-            if not self.conn:
+            if not self.conn or isinstance(self.conn, _ClosedConnection):
                 return
             self.conn.close()
-            self.conn = None  # type: ignore[assignment]
+            # S2.5.42：关闭后方法调用得到受控 RuntimeError，而非 AttributeError
+            self.conn = _ClosedConnection()  # type: ignore[assignment]
 
     def __enter__(self) -> StateStore:
         return self
@@ -198,7 +206,9 @@ class StateStore:
             "updated_at": row["updated_at"],
         }
 
-    def begin_export(self, run_id: str, exporter: str, idempotency_key: str) -> bool:
+    def begin_export(
+        self, run_id: str, exporter: str, idempotency_key: str, *, force: bool = False,
+    ) -> bool:
         with self._lock, self.conn:
             cursor = self.conn.execute(
                 "INSERT OR IGNORE INTO export_commits(idempotency_key, run_id, exporter, status, result_json, updated_at) "
@@ -207,11 +217,20 @@ class StateStore:
             )
             if cursor.rowcount > 0:
                 return True
-            cursor = self.conn.execute(
-                "UPDATE export_commits SET status='running', updated_at=? "
-                "WHERE idempotency_key=? AND run_id=? AND exporter=? AND status IN ('failed','retrying')",
-                (utcnow(), idempotency_key, run_id, exporter),
-            )
+            if force:
+                # S2.5.2：reprocess 强制刷新——已成功的提交也降回 running 重新导出
+                cursor = self.conn.execute(
+                    "UPDATE export_commits SET status='running', updated_at=? "
+                    "WHERE idempotency_key=? AND run_id=? AND exporter=? "
+                    "AND status IN ('failed','retrying','succeeded')",
+                    (utcnow(), idempotency_key, run_id, exporter),
+                )
+            else:
+                cursor = self.conn.execute(
+                    "UPDATE export_commits SET status='running', updated_at=? "
+                    "WHERE idempotency_key=? AND run_id=? AND exporter=? AND status IN ('failed','retrying')",
+                    (utcnow(), idempotency_key, run_id, exporter),
+                )
             return cursor.rowcount > 0
 
     def finish_export(self, idempotency_key: str, result: dict[str, Any]) -> None:
@@ -261,18 +280,32 @@ class StateStore:
                 )
 
     def retry_failed(self, limit: int | None = None) -> int:
-        """Move dead-letter frontier entries back to pending without resetting completed work."""
-        with self._lock, self.conn:
-            rows = self.conn.execute(
-                "SELECT fingerprint FROM frontier WHERE status='failed' ORDER BY updated_at LIMIT ?",
-                (limit if limit is not None else 1_000_000_000,),
-            ).fetchall()
-            if rows:
+        """Move dead-letter frontier entries back to pending without resetting completed work.
+
+        S2.5.38：分批拉取（每批 1000），大规模失败场景内存可控。
+        """
+        total = 0
+        batch = 1000
+        while True:
+            with self._lock, self.conn:
+                remaining = None if limit is None else max(0, limit - total)
+                if remaining == 0:
+                    break
+                want = batch if remaining is None else min(batch, remaining)
+                rows = self.conn.execute(
+                    "SELECT fingerprint FROM frontier WHERE status='failed' ORDER BY updated_at LIMIT ?",
+                    (want,),
+                ).fetchall()
+                if not rows:
+                    break
                 self.conn.executemany(
                     "UPDATE frontier SET status='pending', attempts=0, last_error=NULL, updated_at=? WHERE fingerprint=?",
                     [(utcnow(), row["fingerprint"]) for row in rows],
                 )
-            return len(rows)
+            total += len(rows)
+            if len(rows) < want:
+                break
+        return total
 
     def enqueue(self, request: CrawlRequest, *, force: bool = False) -> bool:
         now = utcnow()
@@ -293,8 +326,10 @@ class StateStore:
             )
             inserted = cursor.rowcount > 0
             if force and not inserted:
+                # S2.5.42：force 重入队不再重置 attempts（保留重试计数），
+                # 仅把状态拉回 pending 并清错误
                 self.conn.execute(
-                    "UPDATE frontier SET status='pending', attempts=0, last_error=NULL, priority=?, updated_at=? WHERE fingerprint=?",
+                    "UPDATE frontier SET status='pending', last_error=NULL, priority=?, updated_at=? WHERE fingerprint=?",
                     (request.priority, now, request.fingerprint),
                 )
             return inserted
@@ -311,16 +346,28 @@ class StateStore:
         order = self._CLAIM_ORDER.get(strategy)
         if order is None:
             order = self._CLAIM_ORDER["bfs"]
+        claimed: list[sqlite3.Row] = []
         with self._lock, self.conn:
-            rows = self.conn.execute(
-                f"SELECT * FROM frontier WHERE status='pending' ORDER BY {order} LIMIT ?", (limit,)
-            ).fetchall()
-            if rows:
-                self.conn.executemany(
-                    "UPDATE frontier SET status='in_progress', attempts=attempts+1, updated_at=? WHERE fingerprint=?",
-                    [(utcnow(), row["fingerprint"]) for row in rows],
-                )
-        return [self._row_to_request(row) for row in rows]
+            # S2.5.3：候选先 SELECT 排序，再用条件 UPDATE（WHERE status='pending'）原子认领；
+            # 被并发进程抢走的行 UPDATE 影响 0 行，跳过重取，杜绝 SELECT→UPDATE 双重认领。
+            while len(claimed) < limit:
+                rows = self.conn.execute(
+                    f"SELECT * FROM frontier WHERE status='pending' ORDER BY {order} LIMIT ?",
+                    (limit - len(claimed),),
+                ).fetchall()
+                if not rows:
+                    break
+                for row in rows:
+                    cursor = self.conn.execute(
+                        "UPDATE frontier SET status='in_progress', attempts=attempts+1, updated_at=? "
+                        "WHERE fingerprint=? AND status='pending'",
+                        (utcnow(), row["fingerprint"]),
+                    )
+                    if cursor.rowcount == 1:
+                        claimed.append(row)
+                        if len(claimed) >= limit:
+                            break
+        return [self._row_to_request(row) for row in claimed]
 
     @staticmethod
     def _row_to_request(row: sqlite3.Row) -> CrawlRequest:
@@ -744,6 +791,15 @@ class StateStore:
             result["quality"] = self.quality_stats(run_id)
         return result
 
+    def pending_count(self) -> int:
+        """S2.5.37：轻量单表 COUNT（走 idx_frontier_status 索引），
+        替代 stats() 的五表全量聚合——高频循环内不再全表扫描。"""
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT COUNT(*) AS n FROM frontier WHERE status='pending'"
+            ).fetchone()
+            return int(row["n"])
+
     def latest_run(self) -> dict[str, Any] | None:
         with self._lock:
             row = self.conn.execute("SELECT * FROM runs ORDER BY started_at DESC LIMIT 1").fetchone()
@@ -752,8 +808,12 @@ class StateStore:
     def rows(self, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
         """⚠ 调试/诊断用：执行原始 SQL 查询。
 
-        调用方必须确保 sql 不含用户输入——此方法不提供 SQL 注入防护。
+        S2.5.42：只允许只读语句（SELECT/WITH/PRAGMA），拒绝写操作，
+        防止注入面被滥用为数据篡改。调用方仍须保证参数化。
         优先使用 set_status / claim / mark_done 等类型安全方法。
         """
+        prefix = sql.lstrip().upper()
+        if not prefix.startswith(("SELECT", "WITH", "PRAGMA")):
+            raise ValueError("rows() 仅允许只读查询（SELECT/WITH/PRAGMA）")
         with self._lock:
             return [dict(row) for row in self.conn.execute(sql, params).fetchall()]

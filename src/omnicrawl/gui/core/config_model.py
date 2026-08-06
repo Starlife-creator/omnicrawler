@@ -12,6 +12,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from ...core.utils import user_agent as _user_agent
+from ..i18n import _
 
 
 @dataclass
@@ -30,16 +31,16 @@ class FieldDef:
         """校验单个字段定义的合法性。"""
         errors: list[str] = []
         if not self.name or not self.name.strip():
-            errors.append("字段名不能为空")
+            errors.append(_("字段名不能为空"))
         if not self.selector or not self.selector.strip():
-            errors.append(f"字段 '{self.name}' 的选择器不能为空")
+            errors.append(_(f"字段 '{self.name}' 的选择器不能为空"))
         if self.selector_type not in ("css", "xpath", "jsonpath"):
-            errors.append(f"字段 '{self.name}' 的选择器类型无效: {self.selector_type}")
+            errors.append(_(f"字段 '{self.name}' 的选择器类型无效: {self.selector_type}"))
         if self.regex:
             try:
                 re.compile(self.regex)
             except re.error as e:
-                errors.append(f"字段 '{self.name}' 的正则表达式无效: {e}")
+                errors.append(_(f"字段 '{self.name}' 的正则表达式无效: {e}"))
         return errors
 
 
@@ -56,9 +57,9 @@ class DownloadConfig:
         errors: list[str] = []
         if self.enabled:
             if not self.extensions:
-                errors.append("下载已启用但未指定文件扩展名")
+                errors.append(_("下载已启用但未指定文件扩展名"))
             if not self.output_dir or not self.output_dir.strip():
-                errors.append("下载已启用但未指定输出目录")
+                errors.append(_("下载已启用但未指定输出目录"))
         return errors
 
 
@@ -147,7 +148,7 @@ class CrawlConfig:
         # 种子 URL
         valid_urls = [u for u in self.seed_urls if u and u.strip()]
         if not valid_urls:
-            errors.append("至少需要一个种子 URL")
+            errors.append(_("至少需要一个种子 URL"))
 
         # 字段
         if self.fields:
@@ -156,34 +157,34 @@ class CrawlConfig:
                 errors.extend(f.validate())
                 field_names.append(f.name)
             if len(field_names) != len(set(field_names)):
-                errors.append("字段名不能重复")
+                errors.append(_("字段名不能重复"))
 
         # max_pages
         if self.max_pages <= 0:
-            errors.append("最大页数必须大于 0")
+            errors.append(_("最大页数必须大于 0"))
 
         # 延迟
         if self.delay < 0:
-            errors.append("请求延迟不能为负数")
+            errors.append(_("请求延迟不能为负数"))
 
         # 并发
         if self.concurrency < 1:
-            errors.append("并发数至少为 1")
+            errors.append(_("并发数至少为 1"))
         if self.resource_profile not in ("economy", "balanced", "performance"):
-            errors.append("资源模式必须是省电、均衡或全速")
+            errors.append(_("资源模式必须是省电、均衡或全速"))
         if self.pdf_ocr not in ("auto", "never", "paddle", "tesseract"):
-            errors.append("PDF OCR 必须是自动、关闭、Paddle 或 Tesseract")
+            errors.append(_("PDF OCR 必须是自动、关闭、Paddle 或 Tesseract"))
         if self.ai_mode not in ("disabled", "local", "cloud", "custom"):
-            errors.append("AI 模式无效")
+            errors.append(_("AI 模式无效"))
         if self.ai_mode != "disabled" and (not self.ai_base_url or not self.ai_model):
-            errors.append("启用 AI 后需要填写 API 地址和模型名")
+            errors.append(_("启用 AI 后需要填写 API 地址和模型名"))
         if not self.output_formats:
-            errors.append("至少选择一种输出格式")
+            errors.append(_("至少选择一种输出格式"))
 
         # 增量模式
         if self.incremental and self.since_date:
             if not re.match(r"^\d{4}-\d{2}-\d{2}$", self.since_date):
-                errors.append("起始日期格式无效，应为 YYYY-MM-DD")
+                errors.append(_("起始日期格式无效，应为 YYYY-MM-DD"))
 
         # 下载配置
         errors.extend(self.download.validate())

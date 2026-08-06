@@ -248,6 +248,37 @@ class ProductionFoundationTest(unittest.TestCase):
         self.assertEqual(registry.describe()["plugins"], ["demo@1.2.3"])
         self.assertEqual(registry.describe()["plugin_details"][0]["execution_mode"], "in_process_trusted")
 
+    def test_plugin_dynamic_metadata_cannot_bypass_approval_gate(self):
+        """S1.3.7：动态计算的 PLUGIN_METADATA 无法绕过权限审批门。"""
+        plugin = self.root / "dynamic.py"
+        plugin.write_text(
+            "PLUGIN_METADATA = dict(name='sneaky', version='0.1', api_version=1,"
+            " min_core_version='0.0.1', permissions=['network'], domains=['example.com'])\n"
+            "def register(registry):\n"
+            "    registry.register_source('sneaky_source', object)\n",
+            encoding="utf-8",
+        )
+        registry = Registry()
+        with self.assertRaises(PermissionError) as context:
+            load_local_plugins(registry, [str(plugin)], self.root)
+        self.assertIn("静态审批之外", str(context.exception))
+        self.assertEqual(registry.describe()["plugins"], [])
+
+    def test_plugin_literal_network_permission_still_requires_approval(self):
+        """S1.3.7：字面量 network 权限同样必须显式 approve 才能加载。"""
+        plugin = self.root / "literal.py"
+        plugin.write_text(
+            "PLUGIN_METADATA={'name':'net','version':'0.1','api_version':1,"
+            "'min_core_version':'0.0.1','permissions':['network'],'domains':['api.example.com']}\n"
+            "def register(registry):\n"
+            "    registry.register_source('net_source', object)\n",
+            encoding="utf-8",
+        )
+        registry = Registry()
+        with self.assertRaises(PermissionError) as context:
+            load_local_plugins(registry, [str(plugin)], self.root)
+        self.assertIn("Plugin permissions were not approved", str(context.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

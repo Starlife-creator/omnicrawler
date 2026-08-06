@@ -36,7 +36,7 @@ def merge_template_upgrade(
 ) -> tuple[dict[str, Any], list[MergeConflict]]:
     """Three-way merge an update while preferring explicit user edits on conflicts."""
     conflicts: list[MergeConflict] = []
-    merged = _merge(dict(base), dict(user), dict(update), "", conflicts)
+    merged = _merge(copy.deepcopy(dict(base)), copy.deepcopy(dict(user)), copy.deepcopy(dict(update)), "", conflicts)
     assert isinstance(merged, dict)
     return merged, conflicts
 

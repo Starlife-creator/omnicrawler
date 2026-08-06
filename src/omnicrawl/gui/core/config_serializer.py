@@ -16,7 +16,29 @@ import ruamel.yaml
 from ruamel.yaml.comments import CommentedMap
 
 from ... import __version__ as GUI_VERSION  # noqa: N812
+from ...core.secrets_store import SecretsStore
+from ..i18n import _
 from .config_model import CrawlConfig, DownloadConfig, FieldDef
+
+
+def _seal_ai_provider_keys(providers: dict) -> None:
+    """S2.2.2：明文 API key 密封进 secrets_store，替换为 secret:// 引用。
+
+    已是引用（secret:// 前缀）原样保留；密封失败（无 keyring 且无主密码）
+    抛可读 ValueError，绝不回退写明文。
+    """
+    store = SecretsStore()
+    for name, provider in providers.items():
+        if not isinstance(provider, dict):
+            continue
+        key = provider.get("api_key")
+        if not key or str(key).startswith("secret://"):
+            continue
+        try:
+            store.set(f"ai.{name}.api_key", str(key))
+        except Exception as exc:  # noqa: BLE001 - 统一包装为可读错误
+            raise ValueError(_(f"无法安全保存 API key（{name}）: {exc}")) from exc
+        provider["api_key"] = f"secret://ai.{name}.api_key"
 
 
 def _create_yaml_handler() -> ruamel.yaml.YAML:
@@ -157,6 +179,8 @@ def to_yaml(config: CrawlConfig) -> str:
         if config.ai_api_key_ref:
             provider["api_key"] = config.ai_api_key_ref
         providers[config.ai_provider] = provider
+    # S2.2.2：AI api_key 出口加密——明文密封进 secrets_store，YAML 只写 secret:// 引用
+    _seal_ai_provider_keys(providers)
     root["ai"] = CommentedMap({
         "mode": config.ai_mode,
         "default_provider": config.ai_provider,
@@ -186,8 +210,8 @@ def to_yaml(config: CrawlConfig) -> str:
     # 添加头部注释
     header = (
         f"# OmniCrawler GUI v{GUI_VERSION} - "
-        f"生成于 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        f"# task_id: {config.task_id}\n"
+        + _(f"生成于 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        + f"# task_id: {config.task_id}\n"
     )
     return header + yaml_str
 
@@ -212,13 +236,13 @@ def from_yaml(yaml_str: str) -> CrawlConfig:
     try:
         raw = yaml_handler.load(yaml_str)
     except Exception as e:
-        raise ValueError(f"YAML 解析失败: {e}") from e
+        raise ValueError(_(f"YAML 解析失败: {e}")) from e
 
     if raw is None:
-        raise ValueError("YAML 内容为空")
+        raise ValueError(_("YAML 内容为空"))
 
     if not isinstance(raw, dict):
-        raise ValueError("YAML 顶层必须是映射 (mapping)")
+        raise ValueError(_("YAML 顶层必须是映射 (mapping)"))
 
     config = CrawlConfig()
     config.passthrough = copy.deepcopy(dict(raw))
@@ -412,11 +436,11 @@ def load_yaml(filepath: Path) -> CrawlConfig:
         ValueError: 文件格式或内容无效时抛出。
     """
     if not filepath.is_file():
-        raise FileNotFoundError(f"配置文件不存在: {filepath}")
+        raise FileNotFoundError(_(f"配置文件不存在: {filepath}"))
     try:
         yaml_str = filepath.read_text(encoding="utf-8")
     except UnicodeDecodeError as e:
-        raise ValueError(f"文件编码错误，请使用 UTF-8 编码: {e}") from e
+        raise ValueError(_(f"文件编码错误，请使用 UTF-8 编码: {e}")) from e
     return from_yaml(yaml_str)
 
 

@@ -24,6 +24,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
 
+from ..core.safe_data import safe_json_loads
 from .ai_providers import AIResult
 from .ai_safety import ai_audit_record
 
@@ -215,23 +216,21 @@ def _extract_json_object(text: str) -> dict[str, Any]:
     if stripped.startswith("```"):
         stripped = re.sub(r"^```(?:json)?\s*", "", stripped, flags=re.IGNORECASE)
         stripped = re.sub(r"\s*```$", "", stripped)
-    try:
-        value = json.loads(stripped)
+    value = safe_json_loads(stripped)
+    if value is not None:
         if not isinstance(value, dict):
             raise ValueError("AI 返回的 JSON 顶层必须是对象")
         return value
-    except json.JSONDecodeError:
-        start = stripped.find("{")
-        end = stripped.rfind("}")
-        if start < 0 or end <= start:
-            raise ValueError("AI 返回了无效的 JSON，且未找到可解析的对象")
-        try:
-            value = json.loads(stripped[start:end + 1])
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"AI 返回了无效的 JSON：{exc}") from exc
-        if not isinstance(value, dict):
-            raise ValueError("AI 返回的 JSON 顶层必须是对象")
-        return value
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("AI 返回了无效的 JSON，且未找到可解析的对象")
+    value = safe_json_loads(stripped[start:end + 1])
+    if value is None:
+        raise ValueError("AI 返回了无效的 JSON")
+    if not isinstance(value, dict):
+        raise ValueError("AI 返回的 JSON 顶层必须是对象")
+    return value
 
 
 _LIST_ITEM_REQUIRED: dict[str, set[str]] = {

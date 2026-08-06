@@ -100,7 +100,8 @@ class Step5PreviewPage(QWizardPage):
         """从设计令牌生成摘要面板样式，自动跟随主题。"""
         t = ThemeManager.instance().tokens
         self._summary.setStyleSheet(
-            f"padding: {SPACING['lg']}px; background: {t.info_bg}; "
+            f"padding: {SPACING['lg']}px; background: {t.info_bg}; " +
+
             f"border: 1px solid {t.border}; border-radius: {RADIUS['md']}px;"
         )
 
@@ -210,19 +211,32 @@ class Step5PreviewPage(QWizardPage):
                 "performance": _("Performance (plugged in)"),
             }
             self._summary.setText(_(
-                "## Config Summary\n\n"
-                "Project: {0}\nSource type: {1}\nSeed URLs: {2}\nFields: {3}\n"
-                "Max pages: {4}\nConcurrency: {5}\nResource mode: {10}\n"
-                "Downloads: {6}\nTopic filter: {7}\n"
-                "PDF processing: {8}\nChange monitoring: {9}\nAI: {11}\n\n"
-                "---\n"
-                "**Why these settings?**\n"
-                "- Source type: auto-detected from seed URL; trial run will verify\n"
-                "- Concurrency & limits: protect target site and local resources\n"
-                "- Fields: auto-extract title, body, source, link when not specified\n\n"
-                "**Next steps:**\n"
-                "1. Click 'Trial Run (3 pages)' to verify scope, fields and files\n"
-                "2. If correct, click 'Save & Run' to execute\n"
+                "## Config Summary\n\n" +
+
+                "Project: {0}\nSource type: {1}\nSeed URLs: {2}\nFields: {3}\n" +
+
+                "Max pages: {4}\nConcurrency: {5}\nResource mode: {10}\n" +
+
+                "Downloads: {6}\nTopic filter: {7}\n" +
+
+                "PDF processing: {8}\nChange monitoring: {9}\nAI: {11}\n\n" +
+
+                "---\n" +
+
+                "**Why these settings?**\n" +
+
+                "- Source type: auto-detected from seed URL; trial run will verify\n" +
+
+                "- Concurrency & limits: protect target site and local resources\n" +
+
+                "- Fields: auto-extract title, body, source, link when not specified\n\n" +
+
+                "**Next steps:**\n" +
+
+                "1. Click 'Trial Run (3 pages)' to verify scope, fields and files\n" +
+
+                "2. If correct, click 'Save & Run' to execute\n" +
+
                 "3. If not, go back to adjust before re-trying"
             ).format(
                 self._config.project_name,

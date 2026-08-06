@@ -1,5 +1,16 @@
-$base = "E:\tool\biancheng\VScode project 3\omnicrawler2.1.0\source_extracted\OmniCrawler-2.1.0-Source\src\omnicrawl\templates"
-$yamlFiles = Get-ChildItem -Path $base -Recurse -Include "*.yaml","*.yml"
+﻿# S4.3.4 ①：不再硬编码其他项目的绝对路径——基于脚本所在目录推导仓库相对路径。
+# 用法: powershell -File tools\add_template_version.ps1 [-Base <相对路径>]
+[CmdletBinding()]
+param(
+    [string]$Base = "src\omnicrawl\templates"
+)
+
+$ProjectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$base = Join-Path $ProjectRoot $Base
+if (-not (Test-Path -LiteralPath $base)) {
+    throw "模板目录不存在: $base"
+}
+$yamlFiles = Get-ChildItem -Path $base -Recurse -Include "*.yaml", "*.yml"
 $added = 0
 $skipped = 0
 foreach ($f in $yamlFiles) {

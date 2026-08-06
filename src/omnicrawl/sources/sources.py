@@ -31,20 +31,22 @@ class GenericSource:
             end = int(pagination.get("end", start))
             step = max(1, int(pagination.get("step", 1)))
             name = str(pagination.get("parameter", "page"))
-            template = requests[0]
-            requests = []
-            for page in range(start, end + 1, step):
-                url = _with_query(template.url, {name: page})
-                body = template.body
-                if template.method == "POST" and pagination.get("location") == "body":
-                    payload = dict(self.source.get("payload", {}))
-                    payload[name] = page
-                    body, _ = encode_request_payload(template.method, payload, "application/json")
-                requests.append(CrawlRequest(
-                    url, template.method, dict(template.headers), body, template.kind,
-                    template.render, template.priority, 0, None,
-                    {**template.meta, "page": page},
-                ))
+            # S2.5.7：每个 seed 请求都进入分页逻辑，不再只保留 requests[0]
+            paged: list[CrawlRequest] = []
+            for template in requests:
+                for page in range(start, end + 1, step):
+                    url = _with_query(template.url, {name: page})
+                    body = template.body
+                    if template.method == "POST" and pagination.get("location") == "body":
+                        payload = dict(self.source.get("payload", {}))
+                        payload[name] = page
+                        body, _ = encode_request_payload(template.method, payload, "application/json")
+                    paged.append(CrawlRequest(
+                        url, template.method, dict(template.headers), body, template.kind,
+                        template.render, template.priority, 0, None,
+                        {**template.meta, "page": page},
+                    ))
+            requests = paged
         return requests
 
     def _seed_request(self, raw: Any) -> CrawlRequest:

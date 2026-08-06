@@ -33,11 +33,17 @@ class HelpDialogManager(_BaseDelegate):
         tmp.write(html)
         tmp.close()
         QDesktopServices.openUrl(QUrl.fromLocalFile(tmp.name))
+        # S3.1.13：延迟删除临时文件（浏览器读取后清理），不再每次泄漏 tmp
+        from pathlib import Path as _Path
+
+        from PyQt6.QtCore import QTimer
+
+        QTimer.singleShot(60_000, lambda: _Path(tmp.name).unlink(missing_ok=True))
 
     def show_quick_start(self) -> None:
         mw = self._mw
         from ...core.runtime_paths import find_document
-        doc_path = find_document("OmniCrawler-用户指南.md", "USER_GUIDE.md", "README.md")
+        doc_path = find_document(_("OmniCrawler-用户指南.md"), "USER_GUIDE.md", "README.md")
         if doc_path is not None:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(doc_path)))
         else:
@@ -46,7 +52,7 @@ class HelpDialogManager(_BaseDelegate):
     def show_faq(self) -> None:
         mw = self._mw
         from ...core.runtime_paths import find_document
-        doc_path = find_document("FAQ.md", "OmniCrawler-用户指南.md", "USER_GUIDE.md")
+        doc_path = find_document("FAQ.md", _("OmniCrawler-用户指南.md"), "USER_GUIDE.md")
         if doc_path is not None:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(doc_path)))
         else:
@@ -71,16 +77,16 @@ class HelpDialogManager(_BaseDelegate):
         browser_status = _("已就绪") if bundled_browser_available() else _("未随包提供")
         import sys as _sys
         text = (
-            f"<h2>OmniCrawler GUI 工作台</h2>"
-            f"<p>版本: v{APP_VERSION}</p>"
-            f"<p>框架版本: {version_info}</p>"
-            f"<p>运行模式: {runtime_mode}<br>"
-            f"内置 Chromium: {browser_status}<br>"
-            f"数据目录: {portable_data_root()}</p>"
-            f"<p>项目目录: {mw._project_root}</p>"
-            f"<hr>"
-            f"<p>模块化网站采集与 PDF 数据抽取平台</p>"
-            f"<p>Python {_sys.version.split()[0]} | PyQt6</p>"
+            _("<h2>OmniCrawler GUI 工作台</h2>")
+            + _(f"<p>版本: v{APP_VERSION}</p>")
+            + _(f"<p>框架版本: {version_info}</p>")
+            + _(f"<p>运行模式: {runtime_mode}<br>")
+            + _(f"内置 Chromium: {browser_status}<br>")
+            + _(f"数据目录: {portable_data_root()}</p>")
+            + _(f"<p>项目目录: {mw._project_root}</p>")
+            + "<hr>"
+            + _("<p>模块化网站采集与 PDF 数据抽取平台</p>")
+            + f"<p>Python {_sys.version.split()[0]} | PyQt6</p>"
         )
         QMessageBox.about(mw, _("关于 OmniCrawler GUI"), text)
 
@@ -89,7 +95,7 @@ class HelpDialogManager(_BaseDelegate):
         from ...core.capabilities import capability_report
         report = capability_report()
         module_lines = [f"{'✓' if item['installed'] else '✗'} {name}" for name, item in report["modules"].items()]
-        native_lines = [f"{'✓' if item['ready'] else '✗'} {name}: {item.get('path') or '未找到'}" for name, item in report["native"].items()]
+        native_lines = [_(f"{'✓' if item['ready'] else '✗'} {name}: {item.get('path') or '未找到'}") for name, item in report["native"].items()]
         QMessageBox.information(mw, _("运行能力与自包含组件"),
             _("Python 功能模块：\n") + "\n".join(module_lines)
             + _("\n\n本地运行组件：\n") + "\n".join(native_lines)

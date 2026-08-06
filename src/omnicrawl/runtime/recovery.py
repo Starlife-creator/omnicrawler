@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 import shutil
 from pathlib import Path
 from typing import Any
@@ -146,8 +147,10 @@ class RecoveryCenter:
         if not files:
             return {"moved": 0, "quarantine": None, "message": "没有持久化登录会话。"}
         stamp = utcnow().replace(":", "-").replace("+", "_")
+        # S2.5.20：同秒两次 reset 不再 FileExistsError——随机后缀 + exist_ok
+        stamp += f"-{secrets.token_hex(3)}"
         quarantine = self.config.workspace / "recovery" / f"sessions-{stamp}"
-        quarantine.mkdir(parents=True, exist_ok=False)
+        quarantine.mkdir(parents=True, exist_ok=True)
         for path in files:
             shutil.move(str(path), str(quarantine / path.name))
         return {

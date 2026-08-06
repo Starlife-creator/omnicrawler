@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import logging
@@ -172,7 +173,7 @@ def _merge_rules(
     filename_rule 是文件名级信息，回填并标记 shared_from_rules 便于复核。
     """
     if not records:
-        return [dict(rules)] if rules else []
+        return [copy.deepcopy(rules)] if rules else []
     for record in records:
         for name, value in rules.items():
             if name in record:
@@ -314,7 +315,12 @@ def extraction_stage(
     summary = {"selected": len(rows), "documents": 0, "records": 0, "no_data": 0, "failed": 0}
     if not rows:
         return summary
-    client = create_llm_client(config)
+    # S2.3.2：LLM 客户端构造失败（Key 空/参数非法/依赖缺失）降级为纯规则模式，不中断抽取
+    try:
+        client = create_llm_client(config)
+    except Exception as exc:  # noqa: BLE001 - missing/empty LLM config must not break extraction
+        LOGGER.warning("LLM 客户端构造失败，降级为纯规则抽取: %s", exc)
+        client = None
     resolver = EntityResolver.from_config(config)
 
     # D40：每线程复用数据库连接（十万文档不再十万次建连+建表脚本）；

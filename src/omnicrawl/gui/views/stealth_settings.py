@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
@@ -28,6 +29,24 @@ from PyQt6.QtWidgets import (
 
 from ..i18n import _
 from ..settings import AppSettings
+
+
+def _seal_proxy_list(text: str) -> str:
+    """代理池出口加密（S2.2.2）。
+
+    空文本、无凭据代理（不含 user:pass@）与已密封引用原样返回；
+    含凭据（``scheme://user:pass@host``）加密入 secrets_store 并返回
+    ``secret://settings.proxy_list`` 引用；secrets_store 不可用抛异常，
+    绝不回退写明文。
+    """
+    text = text.strip()
+    if not text or text.startswith("secret://"):
+        return text
+    if "://" not in text or "@" not in text:
+        return text
+    from ...core.credentials import seal_secret
+
+    return seal_secret("settings.proxy_list", text)
 
 
 class _FingerprintCheckWorker(QThread):
@@ -210,23 +229,23 @@ class StealthSettingsDialog(QDialog):
 
     def _load_settings(self) -> None:
         """从 AppSettings 加载当前值。"""
-        level = self._settings._value("stealth/level", "medium", str)
+        level = self._settings.value("stealth/level", "medium", str)
         if level in self._level_radios:
             self._level_radios[level].setChecked(True)
 
-        self._check_webdriver.setChecked(self._settings._value("stealth/webdriver_override", True, bool))
-        self._check_canvas.setChecked(self._settings._value("stealth/canvas_noise", True, bool))
-        self._check_webgl.setChecked(self._settings._value("stealth/webgl_noise", True, bool))
-        self._check_plugins.setChecked(self._settings._value("stealth/plugin_spoof", True, bool))
-        self._check_audio.setChecked(self._settings._value("stealth/audio_noise", True, bool))
-        self._check_timezone.setChecked(self._settings._value("stealth/timezone_spoof", True, bool))
-        self._check_locale.setChecked(self._settings._value("stealth/locale_spoof", True, bool))
+        self._check_webdriver.setChecked(self._settings.value("stealth/webdriver_override", True, bool))
+        self._check_canvas.setChecked(self._settings.value("stealth/canvas_noise", True, bool))
+        self._check_webgl.setChecked(self._settings.value("stealth/webgl_noise", True, bool))
+        self._check_plugins.setChecked(self._settings.value("stealth/plugin_spoof", True, bool))
+        self._check_audio.setChecked(self._settings.value("stealth/audio_noise", True, bool))
+        self._check_timezone.setChecked(self._settings.value("stealth/timezone_spoof", True, bool))
+        self._check_locale.setChecked(self._settings.value("stealth/locale_spoof", True, bool))
 
-        proxy_list = self._settings._value("proxy/list", "", str)
+        proxy_list = self._settings.proxy_list
         if proxy_list:
             self._proxy_input.setPlainText(proxy_list)
 
-        strategy = self._settings._value("proxy/strategy", "weighted", str)
+        strategy = self._settings.value("proxy/strategy", "weighted", str)
         strategies = self._strategy_combo.property("strategies") or ["weighted", "round_robin", "random"]
         try:
             idx = strategies.index(strategy)
@@ -234,7 +253,7 @@ class StealthSettingsDialog(QDialog):
         except ValueError:
             pass
 
-        self._rotate_spin.setValue(self._settings._value("proxy/rotate_every_n", 20, int))
+        self._rotate_spin.setValue(self._settings.value("proxy/rotate_every_n", 20, int))
 
     def _on_level_changed(self, button: QRadioButton) -> None:
         """等级切换时自动勾选/取消高级选项。"""
@@ -327,26 +346,39 @@ class StealthSettingsDialog(QDialog):
         if checked:
             level = checked.property("stealth_level")
             if level:
-                self._settings._set_value("stealth/level", str(level))
+                self._settings.set_value("stealth/level", str(level))
 
         # 高级选项
-        self._settings._set_value("stealth/webdriver_override", self._check_webdriver.isChecked())
-        self._settings._set_value("stealth/canvas_noise", self._check_canvas.isChecked())
-        self._settings._set_value("stealth/webgl_noise", self._check_webgl.isChecked())
-        self._settings._set_value("stealth/plugin_spoof", self._check_plugins.isChecked())
-        self._settings._set_value("stealth/audio_noise", self._check_audio.isChecked())
-        self._settings._set_value("stealth/timezone_spoof", self._check_timezone.isChecked())
-        self._settings._set_value("stealth/locale_spoof", self._check_locale.isChecked())
+        self._settings.set_value("stealth/webdriver_override", self._check_webdriver.isChecked())
+        self._settings.set_value("stealth/canvas_noise", self._check_canvas.isChecked())
+        self._settings.set_value("stealth/webgl_noise", self._check_webgl.isChecked())
+        self._settings.set_value("stealth/plugin_spoof", self._check_plugins.isChecked())
+        self._settings.set_value("stealth/audio_noise", self._check_audio.isChecked())
+        self._settings.set_value("stealth/timezone_spoof", self._check_timezone.isChecked())
+        self._settings.set_value("stealth/locale_spoof", self._check_locale.isChecked())
 
-        # 代理池
+        # 代理池（S2.2.2：含凭据的代理加密入 secrets_store，INI 只写 secret:// 引用）
         proxy_text = self._proxy_input.toPlainText().strip()
-        self._settings._set_value("proxy/list", proxy_text)
+        try:
+            proxy_text = _seal_proxy_list(proxy_text)
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                _("无法保存代理"),
+                _("代理列表含账号密码但无法加密存储（{error}），已取消保存，绝不写明文。" +
+
+                  _("请检查系统凭据库或设置 {var}。")).format(
+                    error=str(exc), var="OMNICRAWL_MASTER_PASSWORD"
+                ),
+            )
+            return
+        self._settings.set_value("proxy/list", proxy_text)
 
         strategies = self._strategy_combo.property("strategies") or ["weighted", "round_robin", "random"]
         idx = self._strategy_combo.currentIndex()
         if 0 <= idx < len(strategies):
-            self._settings._set_value("proxy/strategy", strategies[idx])
+            self._settings.set_value("proxy/strategy", strategies[idx])
 
-        self._settings._set_value("proxy/rotate_every_n", self._rotate_spin.value())
+        self._settings.set_value("proxy/rotate_every_n", self._rotate_spin.value())
 
         self.accept()

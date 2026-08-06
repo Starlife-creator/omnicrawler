@@ -63,14 +63,14 @@ OmniCrawler-{version}-Windows-Portable-{edition}.zip
 
 ```powershell
 $python = "$PWD\.venv\Scripts\python.exe"
-$out = "$PWD\artifacts\release\0.3.0"
+$out = "$PWD\artifacts\release\0.4.0"
 
 .\build_windows.ps1 -Offline -Edition Standard -BuilderPythonPath $python `
-  -BuildRootPath "$PWD\artifacts\build\0.3.0-standard-r1" `
+  -BuildRootPath "$PWD\artifacts\build\0.4.0-standard-r1" `
   -ReleaseOutputPath $out -BrowserCachePath "$PWD\build_cache\browsers"
 
 .\build_windows.ps1 -Offline -Edition Full -BuilderPythonPath $python `
-  -BuildRootPath "$PWD\artifacts\build\0.3.0-full-r1" `
+  -BuildRootPath "$PWD\artifacts\build\0.4.0-full-r1" `
   -ReleaseOutputPath $out -BrowserCachePath "$PWD\build_cache\browsers" `
   -RuntimeCachePath "$PWD\build_cache\runtime"
 ```
@@ -123,4 +123,4 @@ wheel 为独立产物：构建环境（`.venv`）**未预装 `build` 模块**，
 | 3 | 源码 ZIP + wheel | `artifacts/python/{version}/OmniCrawler-{version}-Source.zip` |
 | 4 | 完整便携目录（未压缩完整包） | `artifacts/build/{version}-{edition}-rN/release/OmniCrawler/` |
 
-> **关于"完整便携目录"（第 4 类产物）**：它**不是独立命令**，而是由运行 Standard（`-Edition Standard`）或 Full（`-Edition Full`）便携构建时**自动产出并保留的未压缩目录**——脚本先构建到该目录，再将其压缩为对应的 `OmniCrawler-{version}-Windows-Portable-{edition}.zip`（第 1/2 类）。构建结束后此目录不会被删除，可直接作为"压缩前的完整包"使用或分发。其中 `{version}-{edition}-rN` 的 `rN` 为构建轮次（如 `0.3.0-standard-r1`），与 `-BuildRootPath` 参数值一致。
+> **关于"完整便携目录"（第 4 类产物）**：它**不是独立命令**，而是由运行 Standard（`-Edition Standard`）或 Full（`-Edition Full`）便携构建时**自动产出并保留的未压缩目录**——脚本先构建到该目录，再将其压缩为对应的 `OmniCrawler-{version}-Windows-Portable-{edition}.zip`（第 1/2 类）。构建结束后此目录不会被删除，可直接作为"压缩前的完整包"使用或分发。其中 `{version}-{edition}-rN` 的 `rN` 为构建轮次（如 `0.4.0-standard-r1`），与 `-BuildRootPath` 参数值一致。

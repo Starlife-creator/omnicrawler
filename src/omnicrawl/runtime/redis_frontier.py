@@ -6,6 +6,9 @@ from typing import cast
 
 from ..core.models import CrawlRequest
 
+# seen 集合的过期时长（秒）：超时未处理的任务允许重新入队
+SEEN_TTL_SECONDS = 7 * 86400
+
 
 class RedisFrontier:
     """多worker共享队列。业务处理仍复用CrawlRequest与通用处理器。"""
@@ -19,11 +22,13 @@ class RedisFrontier:
         self.namespace = namespace
         self.queue = f"{namespace}:frontier"
         self.seen = f"{namespace}:seen"
+        self.payload = f"{namespace}:payload"
 
     def push(self, requests: Iterable[CrawlRequest]) -> int:
-        added = 0
-        pipe = self.client.pipeline(transaction=False)
-        payloads: list[str] = []
+        requests = list(requests)  # 生成器只消费一次，added 计数不再恒 0（S1.5.5）
+        if not requests:
+            return 0
+        pipe = self.client.pipeline(transaction=True)
         for request in requests:
             pipe.sadd(self.seen, request.fingerprint)
             payload = json.dumps({
@@ -31,22 +36,33 @@ class RedisFrontier:
                 "kind": request.kind, "render": request.render, "priority": request.priority,
                 "depth": request.depth, "parent_url": request.parent_url, "meta": request.meta,
             }, ensure_ascii=False)
-            payloads.append(payload)
-            pipe.zadd(self.queue, {payload: -request.priority})
+            # 队列成员用 fingerprint 去重：同一指纹不会重复入队
+            pipe.zadd(self.queue, {request.fingerprint: -request.priority})
+            pipe.hset(self.payload, request.fingerprint, payload)
         results = pipe.execute()
-        # sadd results are at even indices (0, 2, 4, ...); count newly-added members
-        for i in range(len(list(requests))):
-            idx = i * 2  # sadd is the first command per iteration
+        added = 0
+        request_list = list(requests)
+        for i, _request in enumerate(request_list):
+            idx = i * 3  # 每条请求三条命令：sadd / zadd / hset
             if isinstance(results, list) and idx < len(results) and results[idx]:
                 added += 1
+        # seen 集合带过期，防止不活跃 URL 永不重扫
+        pipe = self.client.pipeline(transaction=True)
+        pipe.expire(self.seen, SEEN_TTL_SECONDS)
+        pipe.expire(self.payload, SEEN_TTL_SECONDS)
+        pipe.execute()
         return added
 
     def pop(self) -> CrawlRequest | None:
         rows = cast(list[tuple[str, float]], self.client.zpopmin(self.queue, 1))
         if not rows:
             return None
-        data = json.loads(rows[0][0])
-        return CrawlRequest(**data)
+        fingerprint = rows[0][0]
+        raw = cast(str | None, self.client.hget(self.payload, fingerprint))
+        if raw is None:
+            return None
+        self.client.hdel(self.payload, fingerprint)
+        return CrawlRequest(**json.loads(raw))
 
     def size(self) -> int:
         return int(cast(int, self.client.zcard(self.queue)))

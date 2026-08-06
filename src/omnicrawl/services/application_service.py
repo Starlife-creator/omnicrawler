@@ -85,8 +85,6 @@ class ApplicationService:
             max_pages: int | None = None, callback: Callable[[str, dict[str, Any]], None] | None = None) -> dict[str, Any]:
         # E9：max_pages 与 callback 透传 Pipeline.run，保证任意调用方（CLI/GUI）行为一致
         config = self._ensure_config()
-        if max_pages is not None:
-            config.raw["crawl"]["max_pages"] = max_pages
         plan = compile_task_plan(TaskIR.from_config(config.raw))
         self._require_runnable(plan)
         if require_sample_match:
@@ -94,11 +92,16 @@ class ApplicationService:
             if binding.get("sample_plan_hash") != plan.plan_hash:
                 raise ValueError("正式运行计划与最近一次试跑计划不一致，请重新试跑或明确取消绑定检查")
         self._emit("stage", "run_started", {"plan_hash": plan.plan_hash})
-        with Pipeline(config) as pipeline:
-            result = pipeline.run(resume=resume, retry_failed=retry_failed, max_pages=max_pages, callback=callback)
-        self._write_binding(config, formal_plan_hash=plan.plan_hash)
-        self._emit("stage", "run_finished", {"plan_hash": plan.plan_hash, "status": result.get("status")})
-        return {**result, "plan_hash": plan.plan_hash}
+        status = "unknown"
+        try:
+            with Pipeline(config) as pipeline:
+                result = pipeline.run(resume=resume, retry_failed=retry_failed, max_pages=max_pages, callback=callback)
+            self._write_binding(config, formal_plan_hash=plan.plan_hash)
+            status = result.get("status")
+            return {**result, "plan_hash": plan.plan_hash}
+        finally:
+            # S2.5.36：异常路径也发 run_finished，监听方不再永久等待
+            self._emit("stage", "run_finished", {"plan_hash": plan.plan_hash, "status": status})
 
     def sample(self, *, pages: int = 3) -> dict[str, Any]:
         config = self._ensure_config()
@@ -129,7 +132,13 @@ class ApplicationService:
 
     def export(self, run_id: str | None = None) -> dict[str, Any]:
         config = self._ensure_config()
-        with StateStore(config.workspace / "state.sqlite3") as state:
+        database = config.workspace / "state.sqlite3"
+        if not database.is_file():
+            # S2.5.35：空库显式报错，不再静默创建空库返回空结果
+            raise FileNotFoundError(
+                f"断点数据库不存在: {database}。请先运行采集任务（omnicrawl run -c <配置>）再导出。"
+            )
+        with StateStore(database) as state:
             return export_all(config, state, run_id)
 
     def _plan(self) -> TaskPlan:

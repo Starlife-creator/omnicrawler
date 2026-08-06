@@ -6,12 +6,41 @@ from pathlib import Path
 from PyQt6.QtWidgets import QCheckBox, QFileDialog, QInputDialog, QMessageBox
 
 from ..i18n import _
+from ..navigation import NavIndex
 from ..widgets.toast import ToastManager
 from ._base import _BaseDelegate
 
 
 class EnvironmentChecker(_BaseDelegate):
     """Environment detection, first-launch guidance, and quick experience."""
+
+    # ── S3.1.1：后台任务结果应用（主线程回调）────────────────────────
+
+    def _apply_probe_result(self, available: bool, version: str) -> None:
+        mw = self._mw
+        mw._omnicrawl_available = available
+        if available:
+            mw._settings.omnicrawl_version = version
+            mw._settings.env_checked = True
+            ToastManager.instance().success(_("环境就绪: {0}").format(version))
+        else:
+            QMessageBox.warning(
+                mw, _("环境检测"),
+                _("仍无法启动内置引擎，请重新解压完整便携包或检查安全软件拦截。"),
+            )
+
+    def _apply_install_result(self, ok: bool, result: str) -> None:
+        mw = self._mw
+        from ...core.runtime_paths import resolve_cli_command
+
+        if ok:
+            mw._omnicrawl_available = True
+            mw._omnicrawl_path = resolve_cli_command("omnicrawl")
+            mw._settings.omnicrawl_path = mw._omnicrawl_path
+            mw._task_runner.set_omnicrawl_path(mw._omnicrawl_path)
+            ToastManager.instance().success(_("安装成功！"))
+        else:
+            QMessageBox.warning(mw, _("安装失败"), result)
 
     def ensure_data_mode_choice(self) -> None:
         mw = self._mw
@@ -33,7 +62,12 @@ class EnvironmentChecker(_BaseDelegate):
                 configure_data_mode("local")
             elif selected == choices[2]:
                 directory = QFileDialog.getExistingDirectory(mw, _("选择工作区根目录"), str(app_root))
-                configure_data_mode("custom", directory) if directory else configure_data_mode("portable")
+                if not directory:
+                    # S3.1.11：取消选择目录后不静默回退 portable——
+                    # 保留当前数据模式并提示，用户明确选择不被静默丢弃
+                    ToastManager.instance().warning(_("已取消自定义数据目录选择；数据位置保持不变。"))
+                    return
+                configure_data_mode("custom", directory)
             else:
                 configure_data_mode("portable")
             # F53：数据模式变更会改变 portable_data_root() 结果；
@@ -72,6 +106,9 @@ class EnvironmentChecker(_BaseDelegate):
         if directory:
             mw._project_root = Path(directory)
             mw._settings.project_root = str(mw._project_root)
+            # S3.1.27：重建依赖项目根的组件（task_runner/autosave/history/template_loader），
+            # 不再只改标签
+            mw._rebuild_project_components()
             mw._update_project_label()
             ToastManager.instance().info(_("项目目录已切换"))
 
@@ -94,18 +131,18 @@ class EnvironmentChecker(_BaseDelegate):
 
     def show_welcome_dialog(self) -> None:
         mw = self._mw
-        mw._nav.setCurrentRow(0)
+        mw._nav.setCurrentRow(NavIndex.HOME)
         mw._config_wizard.restart()
         mw._config_wizard.step1_page.focus_primary_url()
         msg = QMessageBox(mw)
         msg.setWindowTitle(_("欢迎使用 OmniCrawler"))
         msg.setIcon(QMessageBox.Icon.Information)
-        msg.setText(_("OmniCrawler 可以从网站提取结构化数据。\n\n"
-            "  · 静态网页：使用向导输入网址即可\n"
-            "  · 动态页面：浏览器模式自动渲染\n"
-            "  · 数据接口：直接调用 API 并认证\n"
-            "  · PDF 文档：自动下载并 OCR 识别\n\n"
-            "选择开始使用的方式："))
+        msg.setText(_("OmniCrawler 可以从网站提取结构化数据。\n\n")
+            + _("  · 静态网页：使用向导输入网址即可\n")
+            + _("  · 动态页面：浏览器模式自动渲染\n")
+            + _("  · 数据接口：直接调用 API 并认证\n")
+            + _("  · PDF 文档：自动下载并 OCR 识别\n\n")
+            + _("选择开始使用的方式："))
         wizard_btn = msg.addButton(_("1. 向导模式"), QMessageBox.ButtonRole.AcceptRole)
         demo_btn = msg.addButton(_("2. 5 分钟演示"), QMessageBox.ButtonRole.ActionRole)
         tmpl_btn = msg.addButton(_("3. 浏览模板"), QMessageBox.ButtonRole.ActionRole)
@@ -122,7 +159,7 @@ class EnvironmentChecker(_BaseDelegate):
 
     def show_env_setup_dialog(self) -> None:
         mw = self._mw
-        from ...core.runtime_paths import bundled_cli_path, is_frozen, resolve_cli_command
+        from ...core.runtime_paths import bundled_cli_path, is_frozen
         from ..runner.env_checker import check_omnicrawl, try_auto_install
 
         if is_frozen():
@@ -133,25 +170,25 @@ class EnvironmentChecker(_BaseDelegate):
             msg = QMessageBox(mw)
             msg.setWindowTitle(_("环境配置"))
             msg.setText(_("内置引擎暂未就绪。\n已探测到: {0}\n\n"
-                          "可能原因：首次冷启动较慢或被杀毒软件拦截。\n"
-                          "请点击「重试检测」；若持续失败请重新解压完整便携包。").format(path_hint))
+                          + _("可能原因：首次冷启动较慢或被杀毒软件拦截。\n")
+                          + _("请点击「重试检测」；若持续失败请重新解压完整便携包。")).format(path_hint))
             retry_btn = msg.addButton(_("重试检测"), QMessageBox.ButtonRole.AcceptRole)
             # 便携包自包含：不提供"手动指定路径"/"自动安装"（外部 CLI 无配套 worker 且无 pip）
             msg.addButton(_("跳过（仅编辑配置）"), QMessageBox.ButtonRole.RejectRole)
             msg.exec()
             clicked = msg.clickedButton()
             if clicked == retry_btn:
-                available, version = check_omnicrawl(mw._omnicrawl_path)
-                mw._omnicrawl_available = available
-                if available:
-                    mw._settings.omnicrawl_version = version
-                    mw._settings.env_checked = True
-                    ToastManager.instance().success(_("环境就绪: {0}").format(version))
-                else:
-                    QMessageBox.warning(
-                        mw, _("环境检测"),
-                        _("仍无法启动内置引擎，请重新解压完整便携包或检查安全软件拦截。"),
-                    )
+                # S3.1.1：探测移入后台线程，界面不再冻结（冷启动可能 60s）
+                from ..core.background_worker import BackgroundWorker, run_worker
+
+                class _ProbeWorker(BackgroundWorker):
+                    def work(self) -> tuple[bool, str]:
+                        return check_omnicrawl(mw._omnicrawl_path)
+
+                run_worker(
+                    _ProbeWorker(),
+                    on_succeeded=lambda payload: self._apply_probe_result(*payload),
+                )
             return
 
         msg = QMessageBox(mw)
@@ -163,15 +200,17 @@ class EnvironmentChecker(_BaseDelegate):
         msg.exec()
         clicked = msg.clickedButton()
         if clicked == auto_btn:
-            ok, result = try_auto_install(mw._project_root)
-            if ok:
-                mw._omnicrawl_available = True
-                mw._omnicrawl_path = resolve_cli_command("omnicrawl")
-                mw._settings.omnicrawl_path = mw._omnicrawl_path
-                mw._task_runner.set_omnicrawl_path(mw._omnicrawl_path)
-                ToastManager.instance().success(_("安装成功！"))
-            else:
-                QMessageBox.warning(mw, _("安装失败"), result)
+            # S3.1.1：pip 安装移入后台线程，安装期间界面可交互
+            from ..core.background_worker import BackgroundWorker, run_worker
+
+            class _InstallWorker(BackgroundWorker):
+                def work(self) -> tuple[bool, str]:
+                    return try_auto_install(mw._project_root)
+
+            run_worker(
+                _InstallWorker(),
+                on_succeeded=lambda payload: self._apply_install_result(*payload),
+            )
         elif clicked == manual_btn:
             filepath, _filter = QFileDialog.getOpenFileName(mw, _("选择 omnicrawl 可执行文件"),
                 filter=_("可执行文件 (*.exe *.bat *.cmd);;所有文件 (*)"))

@@ -56,8 +56,16 @@ class WorkerRuntime:
             result = self.service.run()
         except Exception as exc:
             result = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
-        with self._lock:
-            self.state = dict(result)
+        if isinstance(result, dict):
+            with self._lock:
+                self.state = dict(result)
+        else:
+            # S2.5.47：非 dict 返回正常置终态，不卡 running
+            with self._lock:
+                self.state = {
+                    "status": "succeeded",
+                    "result": {"status": "succeeded", "value": result},
+                }
 
     def _handle(self, request: Any) -> dict[str, Any]:
         command = request.get("command") if isinstance(request, dict) else ""

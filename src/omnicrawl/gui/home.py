@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
 from ..services.natural_language_task import compile_natural_language
 from ..services.ux_service import QuickTaskDraft, draft_quick_task
 from .design_system import ThemeManager, rgba_token_to_qcolor
+from .i18n import _
 from .motion_signal import MotionSignal
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,9 @@ class _AIEnrichWorker(QThread):
         except Exception:
             logger.debug("AI enrichment failed", exc_info=True)
             self.result_ready.emit(None)
+        finally:
+            # S1.1.5：任务运行完立即释放，避免关闭窗口时 QThread 仍在运行
+            self.deleteLater()
 
     def _load_provider(self) -> object | None:
         """从单一真源构造 AI provider（含 Egress 审计；未启用返回 None）。"""
@@ -101,11 +105,11 @@ class AmbientHero(QWidget):
         eyebrow = QLabel(f"OMNICRAWLER {_package_version()} · DESKTOP PROFESSIONAL")
         eyebrow.setObjectName("eyebrow")
         layout.addWidget(eyebrow)
-        title = QLabel("把网页、PDF 和接口变成可复核的数据")
+        title = QLabel(_("把网页、PDF 和接口变成可复核的数据"))
         title.setObjectName("homeTitle")
         title.setWordWrap(True)
         layout.addWidget(title)
-        subtitle = QLabel("从一个地址开始。自动设置会解释原因，全量运行前始终先试跑。")
+        subtitle = QLabel(_("从一个地址开始。自动设置会解释原因，全量运行前始终先试跑。"))
         subtitle.setObjectName("muted")
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
@@ -158,7 +162,7 @@ class HomePage(QWidget):
         super().__init__(parent)
         self._project_root = project_root
         self.setObjectName("homePage")
-        self.setAccessibleName("OmniCrawler 首页")
+        self.setAccessibleName(_("OmniCrawler 首页"))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(32, 24, 32, 24)
         layout.setSpacing(14)
@@ -174,44 +178,44 @@ class HomePage(QWidget):
         card.setGraphicsEffect(shadow)
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(20, 18, 20, 18)
-        card_layout.addWidget(QLabel("先描述你的任务"))
+        card_layout.addWidget(QLabel(_("先描述你的任务")))
         description_hint = QLabel(
-            "用一句话说明你想采集什么、范围有多大、是否下载文件或监测变化。"
-            "系统会生成可修改的安全草案，并始终先试跑。"
+            _("用一句话说明你想采集什么、范围有多大、是否下载文件或监测变化。")
+            + _("系统会生成可修改的安全草案，并始终先试跑。")
         )
         description_hint.setWordWrap(True)
         description_hint.setObjectName("muted")
         card_layout.addWidget(description_hint)
         self.natural_language = QPlainTextEdit()
         self.natural_language.setPlaceholderText(
-            "描述你的任务，例如：分析合同 PDF 中的金额和日期，或每周监测某网站的动态"
+            _("描述你的任务，例如：分析合同 PDF 中的金额和日期，或每周监测某网站的动态")
         )
-        self.natural_language.setAccessibleName("自然语言任务描述")
+        self.natural_language.setAccessibleName(_("自然语言任务描述"))
         self.natural_language.setMinimumHeight(82)
         self.natural_language.setMaximumHeight(130)
         card_layout.addWidget(self.natural_language)
         natural_actions = QHBoxLayout()
-        nl_button = QPushButton("生成安全草案")
+        nl_button = QPushButton(_("生成安全草案"))
         nl_button.setProperty("primary", True)
         nl_button.clicked.connect(self._draft_natural_language)
         natural_actions.addWidget(nl_button)
         natural_actions.addStretch()
         card_layout.addLayout(natural_actions)
 
-        url_hint = QLabel("或者只填写网址并选择任务类型：")
+        url_hint = QLabel(_("或者只填写网址并选择任务类型："))
         url_hint.setObjectName("muted")
         card_layout.addWidget(url_hint)
         self.url = QLineEdit()
-        self.url.setPlaceholderText("粘贴网页地址，例如 https://example.com/news")
-        self.url.setAccessibleName("任务入口网址")
+        self.url.setPlaceholderText(_("粘贴网页地址，例如 https://example.com/news"))
+        self.url.setAccessibleName(_("任务入口网址"))
         self.url.setClearButtonEnabled(True)
         card_layout.addWidget(self.url)
         # 最近使用的 URL 下拉
         recent_row = QHBoxLayout()
-        recent_row.addWidget(QLabel("最近:"))
+        recent_row.addWidget(QLabel(_("最近:")))
         self.recent_combo = QComboBox()
         self.recent_combo.setMinimumWidth(200)
-        self.recent_combo.setAccessibleName("最近使用的网址")
+        self.recent_combo.setAccessibleName(_("最近使用的网址"))
         self.recent_combo.currentTextChanged.connect(self._on_recent_selected)
         recent_row.addWidget(self.recent_combo)
         recent_row.addStretch()
@@ -220,41 +224,41 @@ class HomePage(QWidget):
         intent_row = QHBoxLayout()
         self.intent_group = QButtonGroup(self)
         options = (
-            ("保存这个页面", "save_page"), ("采集整个栏目", "collect_section"),
-            ("下载附件/PDF", "download_files"), ("监测内容变化", "monitor_changes"),
+            (_("保存这个页面"), "save_page"), (_("采集整个栏目"), "collect_section"),
+            (_("下载附件/PDF"), "download_files"), (_("监测内容变化"), "monitor_changes"),
         )
         for index, (label, value) in enumerate(options):
             button = QRadioButton(label)
             button.setProperty("intent", value)
-            button.setAccessibleName(f"任务类型：{label}")
+            button.setAccessibleName(_(f"任务类型：{label}"))
             self.intent_group.addButton(button)
             intent_row.addWidget(button)
             if index == 0:
                 button.setChecked(True)
         card_layout.addLayout(intent_row)
         action_row = QHBoxLayout()
-        self.analyse_button = QPushButton("分析并准备试跑")
-        self.analyse_button.setAccessibleName("分析网址并准备试跑")
+        self.analyse_button = QPushButton(_("分析并准备试跑"))
+        self.analyse_button.setAccessibleName(_("分析网址并准备试跑"))
         self.analyse_button.setProperty("primary", True)
         self.analyse_button.clicked.connect(self._draft_quick)
         action_row.addWidget(self.analyse_button)
-        edit = QPushButton("进入完整五步向导")
+        edit = QPushButton(_("进入完整五步向导"))
         edit.clicked.connect(self.open_wizard.emit)
         action_row.addWidget(edit)
         action_row.addStretch()
         card_layout.addLayout(action_row)
         self.feedback = QLabel("")
         self.feedback.setWordWrap(True)
-        self.feedback.setAccessibleName("快速任务分析结果")
+        self.feedback.setAccessibleName(_("快速任务分析结果"))
         card_layout.addWidget(self.feedback)
         layout.addWidget(card)
 
         grid = QGridLayout()
         actions = (
-            ("新建任务", self.open_wizard.emit), ("最近任务", self.open_recent.emit),
-            ("定时监测", self.open_schedule.emit), ("结果与复核", self.open_results.emit),
-            ("导入任务", self.import_task.emit), ("系统体检", self.run_doctor.emit),
-            ("5分钟离线演示", self.create_demo.emit),
+            (_("新建任务"), self.open_wizard.emit), (_("最近任务"), self.open_recent.emit),
+            (_("定时监测"), self.open_schedule.emit), (_("结果与复核"), self.open_results.emit),
+            (_("导入任务"), self.import_task.emit), (_("系统体检"), self.run_doctor.emit),
+            (_("5分钟离线演示"), self.create_demo.emit),
         )
         for index, (label, callback) in enumerate(actions):
             action_btn = QPushButton(label)
@@ -272,7 +276,7 @@ class HomePage(QWidget):
             intent = str(selected.property("intent")) if selected else "save_page"
             draft = draft_quick_task(self.url.text(), intent)
         except ValueError as exc:
-            self.feedback.setText(f"请修改：{exc}")
+            self.feedback.setText(_(f"请修改：{exc}"))
             return
         self._save_recent_url(self.url.text())
         self._show_draft(draft)
@@ -281,12 +285,12 @@ class HomePage(QWidget):
         """三层判定处理自然语言输入：URL → 文件路径 → 二选一对话框。"""
         request = self.natural_language.toPlainText().strip()
         if not request:
-            self.feedback.setText("请描述你的任务")
+            self.feedback.setText(_("请描述你的任务"))
             return
         try:
             compiled = compile_natural_language(request, fallback_url=self.url.text().strip())
         except ValueError as exc:
-            self.feedback.setText(f"请补充：{exc}")
+            self.feedback.setText(_(f"请补充：{exc}"))
             return
 
         # Layer 3: 都没命中 → 二选一对话框
@@ -308,37 +312,37 @@ class HomePage(QWidget):
     def _show_mode_dialog(self, request: str) -> None:
         """弹出二选一对话框，让用户选择爬虫还是 PDF 模式。"""
         msg = QMessageBox(self)
-        msg.setWindowTitle("选择任务类型")
-        msg.setText("无法自动判断你的意图。\n你想做什么？")
-        crawl_btn = msg.addButton("爬取网页数据", QMessageBox.ButtonRole.AcceptRole)
-        pdf_btn = msg.addButton("处理本地文件（PDF/文档）", QMessageBox.ButtonRole.ActionRole)
-        msg.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+        msg.setWindowTitle(_("选择任务类型"))
+        msg.setText(_("无法自动判断你的意图。\n你想做什么？"))
+        crawl_btn = msg.addButton(_("爬取网页数据"), QMessageBox.ButtonRole.AcceptRole)
+        pdf_btn = msg.addButton(_("处理本地文件（PDF/文档）"), QMessageBox.ButtonRole.ActionRole)
+        msg.addButton(_("取消"), QMessageBox.ButtonRole.RejectRole)
         msg.exec()
 
         clicked = msg.clickedButton()
         if clicked == crawl_btn:
             # 用户选择爬虫 → 弹出 URL 输入
             self.url.setFocus()
-            self.feedback.setText("请在下方输入目标网址后点击「分析并准备试跑」")
+            self.feedback.setText(_("请在下方输入目标网址后点击「分析并准备试跑」"))
         elif clicked == pdf_btn:
             # 用户选择 PDF → 引导到 PDF 工作台
-            self.feedback.setText("已切换为文件处理模式。请前往「📄 PDF 工作台」选择目录和模板。")
+            self.feedback.setText(_("已切换为文件处理模式。请前往「📄 PDF 工作台」选择目录和模板。"))
             # 保存原始需求，供 PDF 工作台读取
             self.setProperty("last_nl_request", request)
 
     def _handle_pdf_mode(self, compiled: object) -> None:
         """处理 PDF 模式：展示检测到的文件路径和解析结果。"""
         draft = compiled  # type: ignore[assignment]
-        paths_text = "\n".join(f"  • {p}" for p in draft.file_paths) if hasattr(draft, 'file_paths') and draft.file_paths else "（未检测到具体文件路径）"
+        paths_text = "\n".join(f"  • {p}" for p in draft.file_paths) if hasattr(draft, 'file_paths') and draft.file_paths else _("（未检测到具体文件路径）")
         self.feedback.setText(
-            f"📄 检测为文件处理任务\n"
-            f"检测到的文件：\n{paths_text}\n"
-            f"请前往「📄 PDF 工作台」开始处理。"
+            _("📄 检测为文件处理任务\n")
+            + _(f"检测到的文件：\n{paths_text}\n")
+            + _("请前往「📄 PDF 工作台」开始处理。")
         )
         self.setProperty("last_nl_request", draft.request)  # type: ignore[attr-defined]
 
     def _show_draft(self, draft: QuickTaskDraft, *, emit: bool = True) -> None:
-        self.feedback.setText("已安全限制在入口站点；将先试跑。为什么：" + "；".join(draft.decisions))
+        self.feedback.setText(_("已安全限制在入口站点；将先试跑。为什么：") + "；".join(draft.decisions))
         if emit:
             self.quick_task_ready.emit(draft)
 
@@ -362,17 +366,17 @@ class HomePage(QWidget):
         parts = [self.feedback.text()]
 
         if hasattr(draft, 'ai_assumptions') and draft.ai_assumptions:
-            parts.append("\n--- AI 分析 ---")
+            parts.append(_("\n--- AI 分析 ---"))
             for a in draft.ai_assumptions[:3]:
-                parts.append(f"  • 假设「{a.get('field', '?')}」= {a.get('value', '?')}（置信度: {a.get('confidence', '?')}）")
+                parts.append(_(f"  • 假设「{a.get('field', '?')}」= {a.get('value', '?')}（置信度: {a.get('confidence', '?')}）"))
 
         if hasattr(draft, 'ai_risks') and draft.ai_risks:
-            parts.append("⚠ 风险提示：")
+            parts.append(_("⚠ 风险提示："))
             for r in draft.ai_risks[:3]:
                 parts.append(f"  • {r.get('risk', '?')} [{r.get('severity', '?')}]")
 
         if hasattr(draft, 'ai_recommendations') and draft.ai_recommendations:
-            parts.append("💡 建议操作：")
+            parts.append(_("💡 建议操作："))
             for rec in draft.ai_recommendations[:3]:
                 parts.append(f"  • {rec}")
 
@@ -386,7 +390,7 @@ class HomePage(QWidget):
             cache = Path.home() / ".omnicrawl_recent_urls.txt"
             if cache.exists():
                 urls = [u.strip() for u in cache.read_text().split("\n") if u.strip()]
-                self.recent_combo.addItem("— 最近使用 —")
+                self.recent_combo.addItem(_("— 最近使用 —"))
                 for u in urls[-10:]:
                     short = u[:60] + ("…" if len(u) > 60 else "")
                     self.recent_combo.addItem(short, u)

@@ -87,14 +87,34 @@ def ingest(config: ProjectConfig, db: Database, limit: int | None = None) -> dic
         ).strip() or None
         source_meta_json = stable_json(source_meta) if source_meta else None
         stat = path.stat()
-        # D45：path+size 命中即跳过全量 SHA-256（十万份续跑不再全量读盘哈希）
+        # S4.4 ④：path+size 命中不再直接跳过——补 SHA-256 校验，
+        # 同路径同大小的新文件（内容已变）被正确检出（F699）。
+        # 命中项才需哈希（十万份续跑未命中项仍不读盘）。
         existing = db.fetchone(
-            "SELECT doc_id FROM documents WHERE primary_path=? AND size_bytes=?",
+            "SELECT doc_id, sha256 FROM documents WHERE primary_path=? AND size_bytes=?",
             (str(path), stat.st_size),
         )
-        digest = existing["doc_id"] if existing else sha256_file(path)
-        if existing is None:
-            existing = db.fetchone("SELECT doc_id FROM documents WHERE sha256=?", (digest,))
+        if existing and existing["sha256"]:
+            current_digest = sha256_file(path)
+            if current_digest == existing["sha256"]:
+                db.execute(
+                    """INSERT INTO document_sources(
+                        doc_id, source_path, source_url, source_meta_json, created_at
+                    ) VALUES(?,?,?,?,?)
+                    ON CONFLICT(source_path) DO UPDATE SET
+                        source_url=COALESCE(excluded.source_url, document_sources.source_url),
+                        source_meta_json=COALESCE(
+                            excluded.source_meta_json, document_sources.source_meta_json
+                        )""",
+                    (existing["doc_id"], str(path), source_url, source_meta_json, utcnow()),
+                )
+                summary["duplicate"] += 1
+                continue
+            # 内容变化：用当前哈希走"新文档"分支重建
+            digest = current_digest
+        else:
+            digest = sha256_file(path)
+        existing = db.fetchone("SELECT doc_id FROM documents WHERE sha256=?", (digest,))
         if existing:
             db.execute(
                 """INSERT INTO document_sources(
@@ -114,6 +134,9 @@ def ingest(config: ProjectConfig, db: Database, limit: int | None = None) -> dic
         status = "invalid" if error else ("needs_password" if encrypted else "ingested")
         now = utcnow()
         with db.transaction() as conn:
+            # S4.4 ④：内容变化（同路径同大小新文件）时移除旧文档行，
+            # 避免 sha256 UNIQUE 与 source_path 关联冲突
+            conn.execute("DELETE FROM documents WHERE primary_path=?", (str(path),))
             conn.execute(
                 """
                 INSERT INTO documents(
@@ -129,7 +152,13 @@ def ingest(config: ProjectConfig, db: Database, limit: int | None = None) -> dic
             conn.execute(
                 """INSERT INTO document_sources(
                     doc_id, source_path, source_url, source_meta_json, created_at
-                ) VALUES(?,?,?,?,?)""",
+                ) VALUES(?,?,?,?,?)
+                ON CONFLICT(source_path) DO UPDATE SET
+                    doc_id=excluded.doc_id,
+                    source_url=COALESCE(excluded.source_url, document_sources.source_url),
+                    source_meta_json=COALESCE(
+                        excluded.source_meta_json, document_sources.source_meta_json
+                    )""",
                 (digest, str(path), source_url, source_meta_json, now),
             )
         if error:

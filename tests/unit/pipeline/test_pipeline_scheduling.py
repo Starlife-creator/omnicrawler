@@ -241,3 +241,102 @@ def test_pause_stop_signal_drains_inflight(tmp_path: Path) -> None:
         by_status = _frontier_by_status(pipeline)
         assert by_status.get("in_progress", 0) == 0
         assert by_status.get("done", 0) <= concurrency
+
+
+def test_max_requests_hard_caps_total_dispatch_on_failures(tmp_path: Path) -> None:
+    """S1.2.4：大面积失败时总请求量由 max_requests 封顶，max_pages 仍为成功页语义。"""
+    config_path = tmp_path / "project.yaml"
+    workspace = tmp_path / "work"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "project": {"name": "cap-test", "workspace": str(workspace)},
+                "source": {"kind": "incremental", "seeds": ["http://127.0.0.1:1/seed"]},
+                "crawl": {
+                    "max_pages": 10,
+                    "max_requests": 6,
+                    "max_depth": 0,
+                    "same_host": True,
+                    "concurrency": 4,
+                },
+                "http": {
+                    "user_agent": "CapTest/1.0 (+contact: test@example.org)",
+                    "respect_robots": False,
+                    "delay_seconds": 0,
+                    "allow_private_network": True,
+                    "retries": 0,
+                },
+                "extract": {"mode": "html", "fields": {"title": {"selector": "title"}}},
+                "outputs": {"jsonl": False, "csv": False, "xlsx": False},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    config = load_config(config_path)
+    calls = {"n": 0}
+    lock = threading.Lock()
+
+    def fetch(run_id: str, request: CrawlRequest) -> FetchResult:
+        with lock:
+            calls["n"] += 1
+        raise PermissionError("403 simulated")  # 全部失败：不消耗成功页上限
+
+    with Pipeline(config) as pipeline:
+        requests = [_fake_request(i) for i in range(20)]
+        pipeline.source.seed = lambda: iter(requests)  # type: ignore[method-assign]
+        pipeline._handle_result = lambda run_id, result, maximum_depth, **kw: None  # type: ignore[method-assign]
+        pipeline._stage_exports = (  # type: ignore[method-assign]
+            lambda run_id, status, processed, pdf_summary, callback: {
+                "run_id": run_id,
+                "status": status,
+                "processed": processed,
+            }
+        )
+        pipeline._fetch_checked = fetch  # type: ignore[method-assign]
+        summary = pipeline.run()
+
+        assert calls["n"] == 6  # 总请求被 max_requests=6 封顶，而不是 max_pages=10
+        assert summary["status"] == "succeeded"
+        by_status = _frontier_by_status(pipeline)
+        assert by_status.get("in_progress", 0) == 0
+
+
+def test_negative_max_requests_rejected(tmp_path: Path) -> None:
+    """S1.2.4：max_requests < 1 显式报错。"""
+    config_path = tmp_path / "project.yaml"
+    workspace = tmp_path / "work"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "project": {"name": "cap-test", "workspace": str(workspace)},
+                "source": {"kind": "incremental", "seeds": ["http://127.0.0.1:1/seed"]},
+                "crawl": {
+                    "max_pages": 10,
+                    "max_requests": 0,
+                    "max_depth": 0,
+                    "same_host": True,
+                    "concurrency": 1,
+                },
+                "http": {
+                    "user_agent": "CapTest/1.0 (+contact: test@example.org)",
+                    "respect_robots": False,
+                    "delay_seconds": 0,
+                    "allow_private_network": True,
+                    "retries": 0,
+                },
+                "extract": {"mode": "html", "fields": {"title": {"selector": "title"}}},
+                "outputs": {"jsonl": False, "csv": False, "xlsx": False},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    config = load_config(config_path)
+    with Pipeline(config) as pipeline:
+        requests = [_fake_request(i) for i in range(3)]
+        pipeline.source.seed = lambda: iter(requests)  # type: ignore[method-assign]
+        import pytest as _pytest
+
+        with _pytest.raises(ValueError, match="max_requests"):
+            pipeline.run()

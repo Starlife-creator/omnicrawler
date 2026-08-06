@@ -208,70 +208,87 @@ class C4AConfig:
 # ── 核心引擎 ──────────────────────────────────────────────────────────
 
 class Crawl4AIEngine:
-    """crawl4ai 抓取引擎 — 轻量 JS 渲染 + AI 提取。"""
+    """crawl4ai 抓取引擎 — 轻量 JS 渲染 + AI 提取。
 
-    def __init__(self, config: C4AConfig | None = None) -> None:
+    支持注入 EgressBroker：注入后所有抓取走 审计/预算/熔断 边界
+    （S2.5.5），不再走直连校验；未注入时保留轻量 NetworkTargetPolicy 直连校验。
+    """
+
+    def __init__(
+        self,
+        config: C4AConfig | None = None,
+        *,
+        egress: Any | None = None,
+    ) -> None:
         self.config = config or C4AConfig()
+        self.egress = egress
         self._available: bool | None = None
 
     @property
     def available(self) -> bool:
-        if self._available is None:
-            try:
-                import crawl4ai  # noqa: F401
-                self._available = True
-            except ImportError:
-                self._available = False
-        return self._available
+        # S4.5 P3#154：仅成功缓存；import 失败不缓存（运行时安装后下次探测可发现）
+        if self._available is True:
+            return True
+        try:
+            import crawl4ai  # noqa: F401
+            self._available = True
+            return True
+        except ImportError:
+            return False
 
     def fetch(self, url: str, *, config: C4AConfig | None = None) -> C4AResult:
         """同步抓取单个 URL。"""
         cfg = config or self.config
-        _require_target(url, cfg)
+        self._authorize(url, cfg)
         if not self.available:
             raise RuntimeError("crawl4ai 未安装，请执行 pip install crawl4ai 或 pip install omnicrawl[crawl4ai]")
         try:
             asyncio.get_running_loop()
         except RuntimeError:
             try:
-                return asyncio.run(self._fetch_async(url, cfg))
+                result = asyncio.run(self._fetch_async(url, cfg))
             except Exception as exc:
                 logger.exception("crawl4ai 抓取失败")
-                return C4AResult(url=url, status=0, error=f"{type(exc).__name__}: {exc}")
+                result = C4AResult(url=url, status=0, error=f"{type(exc).__name__}: {exc}")
+        else:
+            result_box: list[C4AResult] = []
+            error_box: list[Exception] = []
 
-        result_box: list[C4AResult] = []
-        error_box: list[Exception] = []
+            def _run():
+                try:
+                    result_box.append(asyncio.run(self._fetch_async(url, cfg)))
+                except Exception as exc:
+                    error_box.append(exc)
 
-        def _run():
-            try:
-                result_box.append(asyncio.run(self._fetch_async(url, cfg)))
-            except Exception as exc:
-                error_box.append(exc)
-
-        thread = threading.Thread(target=_run, name="c4a-fetch", daemon=True)
-        thread.start()
-        thread.join(timeout=cfg.timeout_ms / 1000 + 30)
-        if result_box:
-            return result_box[0]
-        if error_box:
-            err = error_box[0]
-            logger.error("crawl4ai 抓取失败: %s: %s", type(err).__name__, err)
-            return C4AResult(url=url, status=0, error=f"{type(err).__name__}: {err}")
-        return C4AResult(url=url, status=0, error="crawl4ai 抓取超时")
+            thread = threading.Thread(target=_run, name="c4a-fetch", daemon=True)
+            thread.start()
+            thread.join(timeout=cfg.timeout_ms / 1000 + 30)
+            if result_box:
+                result = result_box[0]
+            elif error_box:
+                err = error_box[0]
+                logger.error("crawl4ai 抓取失败: %s: %s", type(err).__name__, err)
+                result = C4AResult(url=url, status=0, error=f"{type(err).__name__}: {err}")
+            else:
+                result = C4AResult(url=url, status=0, error="crawl4ai 抓取超时")
+        self._record_result(url, result)
+        return result
 
     async def fetch_async(self, url: str, *, config: C4AConfig | None = None) -> C4AResult:
         cfg = config or self.config
-        _require_target(url, cfg)
+        self._authorize(url, cfg)
         if not self.available:
             raise RuntimeError("crawl4ai 未安装")
-        return await self._fetch_async(url, cfg)
+        result = await self._fetch_async(url, cfg)
+        self._record_result(url, result)
+        return result
 
     async def fetch_many(
         self, urls: list[str], *, config: C4AConfig | None = None,
     ) -> list[C4AResult]:
         cfg = config or self.config
         for url in urls:
-            _require_target(url, cfg)
+            self._authorize(url, cfg)
         if not self.available:
             raise RuntimeError("crawl4ai 未安装")
         try:
@@ -283,9 +300,13 @@ class Crawl4AIEngine:
                 for url in urls:
                     raw = await crawler.arun(url, config=crawler_cfg)
                     results.append(self._convert(raw))
+            for url, result in zip(urls, results, strict=False):
+                self._record_result(url, result)
             return results
         except Exception as exc:
             logger.exception("crawl4ai 批量抓取失败")
+            for url in urls:
+                self._record_result(url, C4AResult(url=url, status=0, error=str(exc)))
             return [C4AResult(url=u, status=0, error=str(exc)) for u in urls]
 
     async def adaptive_fetch(
@@ -293,7 +314,7 @@ class Crawl4AIEngine:
     ) -> list[C4AResult]:
         """自适应抓取：自动学习网站模式，深度探索。"""
         cfg = config or self.config
-        _require_target(start_url, cfg)
+        self._authorize(start_url, cfg)
         if not self.available:
             raise RuntimeError("crawl4ai 未安装")
         try:
@@ -306,7 +327,10 @@ class Crawl4AIEngine:
             async with AsyncWebCrawler(config=browser_cfg) as crawler:
                 adaptive = AdaptiveCrawler(crawler, adaptive_cfg)
                 state = await adaptive.digest(start_url=start_url, query=query or "")
-                return [self._convert(r) for r in state.results] if hasattr(state, "results") else []
+                results = [self._convert(r) for r in state.results] if hasattr(state, "results") else []
+            for item in results:
+                self._record_result(item.url, item)
+            return results
         except Exception as exc:
             logger.exception("crawl4ai 自适应抓取失败")
             return [C4AResult(url=start_url, status=0, error=str(exc))]
@@ -317,7 +341,7 @@ class Crawl4AIEngine:
     ) -> list[C4AResult]:
         """BFS 深度爬取整个网站。"""
         cfg = config or self.config
-        _require_target(start_url, cfg)
+        self._authorize(start_url, cfg)
         if not self.available:
             raise RuntimeError("crawl4ai 未安装")
         result_box: list[list[C4AResult]] = []
@@ -342,6 +366,8 @@ class Crawl4AIEngine:
                     async with AsyncWebCrawler(config=browser_cfg) as crawler:
                         raw_results = await crawler.arun(url=start_url, config=strategy)
                         converted = [self._convert(r) for r in raw_results] if raw_results else []
+                        for item in converted:
+                            self._record_result(item.url, item)
                         result_box.append(converted)
                 except Exception as exc:
                     logger.exception("crawl4ai 深度爬取失败")
@@ -355,6 +381,26 @@ class Crawl4AIEngine:
 
     # ── 内部 ──────────────────────────────────────────────────────────
 
+    def _authorize(self, url: str, cfg: C4AConfig) -> None:
+        """S2.5.5：egress 注入时走 broker 审计/预算/熔断边界；否则直连校验。"""
+        if self.egress is not None:
+            self.egress.authorize(url, purpose="browser")
+            return
+        _require_target(url, cfg)
+
+    def _record_result(self, url: str, result: C4AResult) -> None:
+        """S2.5.5：把抓取结果计入 egress 审计（响应字节/成功/失败）。"""
+        if self.egress is None:
+            return
+        size = len(result.html) + len(result.markdown) + len(result.text)
+        self.egress.record_response(size, url=url)
+        if result.status and not result.error:
+            self.egress.record_success(url)
+        else:
+            self.egress.record_failure(
+                url, error=result.error or f"status={result.status}"
+            )
+
     async def _fetch_async(self, url: str, cfg: C4AConfig) -> C4AResult:
         from crawl4ai import AsyncWebCrawler
         browser_cfg = cfg.to_browser_config()
@@ -366,19 +412,25 @@ class Crawl4AIEngine:
     def _convert(self, raw: Any) -> C4AResult:
         """将 crawl4ai CrawlResult 转换为 C4AResult。"""
         try:
+            # S2.5.5：metadata 可能为 None，统一兜底空 dict 防 .get 崩溃
+            metadata = getattr(raw, "metadata", None)
+            metadata = metadata if isinstance(metadata, dict) else {}
+            # S2.5.5：status_code 真实透传（404/403 不再兜底成 200），仅 0/None 回退 200
+            status = getattr(raw, "status_code", None)
+            status = status if isinstance(status, int) and status > 0 else 200
             return C4AResult(
                 url=getattr(raw, "url", ""),
                 final_url=getattr(raw, "url", ""),
-                status=getattr(raw, "status_code", 200) or 200,
+                status=status,
                 markdown=getattr(raw, "markdown", "") or "",
                 html=getattr(raw, "html", "") or "",
                 text=getattr(raw, "text", "") or "",
-                title=getattr(raw, "metadata", {}).get("title", "") if hasattr(raw, "metadata") else "",
+                title=metadata.get("title", ""),
                 extracted=getattr(raw, "extracted_content", {}) or {},
                 links=list(getattr(raw, "links", []) or []),
                 media=list(getattr(raw, "media", []) or []),
                 tables=list(getattr(raw, "tables", []) or []),
-                metadata=getattr(raw, "metadata", {}) or {},
+                metadata=metadata,
                 screenshot=getattr(raw, "screenshot", None),
             )
         except Exception as exc:

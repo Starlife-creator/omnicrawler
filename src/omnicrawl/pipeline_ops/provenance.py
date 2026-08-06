@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ..core.safe_data import safe_json_loads
 from ..core.utils import atomic_write, utcnow
 from ..state import StateStore
 
@@ -40,10 +41,7 @@ def write_pdf_source_manifest(
         if not path.is_file():
             missing += 1
             continue
-        try:
-            request_meta = json.loads(row.get("meta_json") or "{}")
-        except (TypeError, json.JSONDecodeError):
-            request_meta = {}
+        request_meta = safe_json_loads(row.get("meta_json") or "{}", default={})
         item = {
             "filename": path.name,
             "file_path": str(path),

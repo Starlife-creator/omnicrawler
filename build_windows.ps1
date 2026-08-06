@@ -15,6 +15,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# S4.3.4 ②：架构断言——便携包仅面向 64 位 x64 环境，早失败避免后期莫名崩溃
+if (-not [Environment]::Is64BitOperatingSystem) {
+    throw 'OmniCrawler 便携包仅支持 64 位 Windows（检测到 32 位操作系统）'
+}
+if (-not [Environment]::Is64BitProcess) {
+    throw '请使用 64 位 PowerShell 执行构建（当前为 32 位进程）'
+}
 # F4：统一用 $PSScriptRoot（dot-source/部分宿主下 $MyInvocation.MyCommand.Path 可能为空）
 $projectRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 # Keep .NET's working directory in sync with the script location so that

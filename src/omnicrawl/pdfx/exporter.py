@@ -24,18 +24,10 @@ NUMERIC_TEXT = re.compile(
 
 
 def safe_cell(value: Any, max_length: int = 32700) -> Any:
-    if value is None:
-        return ""
-    if not isinstance(value, str):
-        return value
-    value = value[:max_length]
-    candidate = value.lstrip()
-    unsafe = bool(candidate) and candidate[0] in {"=", "+", "@"}
-    if candidate.startswith("-") and not NUMERIC_TEXT.fullmatch(candidate):
-        unsafe = True
-    if unsafe:
-        return "'" + value
-    return value
+    """Excel 单元格安全化（S4.4 ③：统一委托 core.utils.excel_safe，消除重复实现）。"""
+    from ..core.utils import excel_safe
+
+    return excel_safe(value, max_length=max_length)
 
 
 def _wide_query(config: ProjectConfig, review_only: bool = False) -> tuple[str, list[str]]:

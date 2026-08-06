@@ -13,6 +13,16 @@ EventCallback = Callable[[str, dict[str, Any]], None]
 StopCallback = Callable[[], bool]
 
 
+def _pdf_input_dir(config: AppConfig) -> Path:
+    """S2.3.5：PDF 附件输入目录——显式配置 storage.objects.local_directory（非默认 "."）时
+    以其驱动，不再被硬编码 artifacts/pdf 绕过。"""
+    objects = config.section("storage").get("objects", {})
+    local_dir = str(objects.get("local_directory", "")).strip() if isinstance(objects, dict) else ""
+    if local_dir and local_dir != ".":
+        return (config.workspace / local_dir / "pdf").resolve()
+    return (config.workspace / "artifacts" / "pdf").resolve()
+
+
 def ensure_pdf_project(config: AppConfig) -> tuple[Path, bool]:
     """创建一份持久化的 PDF 工作台配置，之后可独立调整和续跑。"""
     from ..pdfx.project import create_project_config
@@ -30,7 +40,7 @@ def ensure_pdf_project(config: AppConfig) -> tuple[Path, bool]:
         raise FileNotFoundError(f"PDF项目配置不存在: {project_path}")
 
     template = resolve_pdf_template(config, settings.get("config", ""))
-    pdf_input = config.workspace / "artifacts" / "pdf"
+    pdf_input = _pdf_input_dir(config)
     work = config.workspace / "pdf" / "work"
     output = config.workspace / "output" / "pdf"
     project_path.parent.mkdir(parents=True, exist_ok=True)
@@ -64,9 +74,10 @@ def run_pdf_pipeline(
         ) from exc
 
     settings = config.section("processors").get("pdf", {})
-    pdf_input = config.workspace / "artifacts" / "pdf"
+    pdf_input = _pdf_input_dir(config)
     manifest = write_pdf_source_manifest(config.workspace, state, run_id=run_id)
-    pdf_files = list(pdf_input.glob("*.pdf")) if pdf_input.exists() else []
+    # S2.3.5：子目录 PDF 也计入（rglob 递归），不再只扫顶层
+    pdf_files = list(pdf_input.rglob("*.pdf")) if pdf_input.exists() else []
     if not pdf_files:
         return {
             "enabled": True,

@@ -6,9 +6,10 @@ import os
 import queue
 import threading
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 LOGGER = logging.getLogger(__name__)
 
@@ -17,9 +18,42 @@ from typing import Protocol, runtime_checkable
 from ..core.config import AppConfig
 from ..core.errors import EgressBudgetExceededError, ResponseTooLargeError
 from ..core.models import CrawlRequest, FetchResult
+from ..core.safe_data import safe_json_loads
 from ..runtime.resource_profiles import effective_browser_pool
 from ..security.egress import EgressBroker
 from ..security.policy import HostRateLimiter, NetworkTargetPolicy
+
+_SENSITIVE_HEADER_NAMES = {
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "x-api-key",
+    "api-key",
+}
+
+
+def strip_cross_origin_credentials(
+    headers: dict[str, str],
+    target_url: str,
+    request_url: str,
+) -> dict[str, str] | None:
+    """跨来源请求时剔除认证凭据头，返回脱敏后的 headers（同源返回 None）。
+
+    S1.3.4：浏览器页面加载第三方 CDN / 分析脚本时，Auth/Cookie 不得被广播。
+    """
+    target_netloc = urlsplit(target_url).netloc.casefold()
+    request_netloc = urlsplit(request_url).netloc.casefold()
+    if target_netloc and target_netloc == request_netloc:
+        return None
+    stripped = {
+        str(key): str(value)
+        for key, value in headers.items()
+        if str(key).casefold() not in _SENSITIVE_HEADER_NAMES
+        and not str(key).casefold().endswith("-api-key")
+    }
+    if len(stripped) == len(headers):
+        return None
+    return stripped
 
 # ---------------------------------------------------------------------------
 # Unified browser action protocol
@@ -261,6 +295,12 @@ def _dispatch_action(action: BrowserAction, engine: BrowserEngine) -> None:
             engine.check(action)
         case "scroll_bottom":
             engine.scroll_bottom(action)
+        case "scroll":
+            # EasySpider 导入的 scroll 动作等价 scroll_bottom（times=value）
+            count = max(1, int(action.value or 1))
+            engine.scroll_bottom(
+                BrowserAction(name="scroll_bottom", times=count, pause_ms=action.pause_ms)
+            )
         case "wait_ms":
             engine.wait_ms(action)
         case "manual_pause":
@@ -442,10 +482,11 @@ class BrowserFetcher:
         egress_config = self.config.section("egress")
         if egress_config.get("allow_unintercepted_selenium", False):
             return
-        if not egress_config.get("experimental_selenium_bidi_guard", False):
+        # S2.5.12：默认启用 BiDi 拦截；仅当用户显式关闭时才提示风险
+        if not egress_config.get("experimental_selenium_bidi_guard", True):
             raise RuntimeError(
-                "Selenium逐请求拦截在当前版本中属于实验能力，默认安全关闭；"
-                "请改用Playwright，或显式接受风险并设置"
+                "Selenium逐请求拦截已显式关闭（egress.experimental_selenium_bidi_guard=false），"
+                "子请求将绕过网络策略；请改用Playwright，或显式设置"
                 "egress.allow_unintercepted_selenium=true"
             )
         try:
@@ -461,13 +502,20 @@ class BrowserFetcher:
                     )
                 except PermissionError:
                     request.fail()
+                except Exception as exc:
+                    # S2.5.12：非权限异常（预算/熔断/瞬态）放行请求而非挂死渲染
+                    LOGGER.warning(
+                        "BiDi guard 异常放行请求 %s: %s: %s",
+                        request.url, type(exc).__name__, exc,
+                    )
+                    request.continue_request()
                 else:
                     request.continue_request()
 
             network.add_request_handler("before_request", guard)
         except Exception as exc:
             raise RuntimeError(
-                "Selenium逐请求安全拦截不可用；请改用Playwright，或显式设置"
+                "Selenium BiDi 逐请求拦截不可用；请改用Playwright，或显式设置"
                 "egress.allow_unintercepted_selenium=true"
             ) from exc
 
@@ -483,6 +531,8 @@ class _PoolTask:
     done: threading.Event
     result: FetchResult | None = None
     error: BaseException | None = None
+    # S2.5.11：fetch 调用方超时后置位，worker 据此跳过渲染或释放 context
+    discarded: threading.Event = field(default_factory=threading.Event)
 
 
 class PlaywrightPool:
@@ -513,6 +563,9 @@ class PlaywrightPool:
             thread.start()
             self._threads.append(thread)
 
+    def _fetch_timeout(self) -> float:
+        return float(self.config.section("http").get("timeout_seconds", 25)) + 30
+
     def fetch(self, request: CrawlRequest) -> FetchResult:
         task = _PoolTask(request, threading.Event())
         with self._lock:
@@ -521,8 +574,10 @@ class PlaywrightPool:
             work_queue = self._queues[self._counter % len(self._queues)]
             self._counter += 1
             work_queue.put(task)  # 锁内入队，防止 close() 插入 None 哨兵
-        timeout = float(self.config.section("http").get("timeout_seconds", 25)) + 30
+        timeout = self._fetch_timeout()
         if not task.done.wait(timeout):
+            # S2.5.11：调用方超时——标记丢弃（worker 不再渲染/渲染后释放资源）
+            task.discarded.set()
             raise TimeoutError(f"Browser pool worker did not finish within {timeout:g} seconds")
         if task.error is not None:
             raise task.error
@@ -555,12 +610,7 @@ class PlaywrightPool:
                         task = work_queue.get()
                         if task is None:
                             return
-                        try:
-                            task.result = self._render(browser, contexts, task.request)
-                        except BaseException as exc:
-                            task.error = exc
-                        finally:
-                            task.done.set()
+                        self._handle_task(browser, contexts, task)
                 finally:
                     for context in contexts.values():
                         try:
@@ -576,6 +626,30 @@ class PlaywrightPool:
                 task.error = startup_error
                 task.done.set()
 
+    def _handle_task(
+        self, browser: Any, contexts: dict[str, Any], task: _PoolTask,
+    ) -> None:
+        """S2.5.11：单个任务的统一处理——丢弃检查、渲染、超时后资源释放。"""
+        if task.discarded.is_set():
+            task.error = TimeoutError("任务已被丢弃（调用方等待超时）")
+            task.done.set()
+            return
+        try:
+            task.result = self._render(browser, contexts, task.request)
+            if task.discarded.is_set():
+                # 渲染期间被标记丢弃：关闭该 context 并移除，防资源滞留
+                context_key = self._context_key(task.request)
+                context = contexts.pop(context_key, None)
+                if context is not None:
+                    try:
+                        context.close()
+                    except Exception as exc:
+                        LOGGER.debug("Browser cleanup error: %s", exc)
+        except BaseException as exc:
+            task.error = exc
+        finally:
+            task.done.set()
+
     def _render(self, browser: Any, contexts: dict[str, Any], request: CrawlRequest) -> FetchResult:
         context_key = self._context_key(request)
         for attempt in range(2):
@@ -585,7 +659,9 @@ class PlaywrightPool:
             page = context.new_page()
             api_candidates: list[dict[str, Any]] = []
             try:
-                page.route("**/*", self._guard_route)
+                page.route(
+                    "**/*", lambda route, req=request: self._guard_route(route, target_url=req.url)
+                )
                 page.on("response", lambda response, ac=api_candidates: self._capture_response(response, ac))
                 started = time.monotonic()
                 browser_config = self.config.section("browser")
@@ -656,7 +732,8 @@ class PlaywrightPool:
         options: dict[str, Any] = {"user_agent": self.config.section("http").get("user_agent")}
         if state_path and state_path.is_file():
             options["storage_state"] = str(state_path)
-        proxy = str(request.meta.get("proxy") or "")
+        # S2.5.13：与 _context_key 同源——meta 代理优先，否则配置代理
+        proxy = str(request.meta.get("proxy") or self.config.section("http").get("proxy", ""))
         if proxy:
             options["proxy"] = {"server": proxy}
         context = browser.new_context(**options)
@@ -693,9 +770,10 @@ class PlaywrightPool:
         except OSError:
             pass
 
-    def _guard_route(self, route: Any) -> None:
+    def _guard_route(self, route: Any, *, target_url: str = "") -> None:
         try:
             headers = getattr(route.request, "headers", {}) or {}
+            headers = headers if isinstance(headers, dict) else {}
             egress = getattr(self, "egress", None)
             if egress is None:
                 self.target_policy.require(route.request.url)
@@ -703,8 +781,13 @@ class PlaywrightPool:
                 egress.authorize(
                     route.request.url,
                     purpose="browser",
-                    headers=headers if isinstance(headers, dict) else {},
+                    headers=headers,
                 )
+            # S1.3.4：跨来源（CDN/三方脚本/分析）请求剥除认证凭据头。
+            stripped = strip_cross_origin_credentials(headers, target_url, route.request.url)
+            if stripped is not None:
+                route.continue_(headers=stripped)
+                return
         except PermissionError:
             route.abort("blockedbyclient")
         else:
@@ -744,22 +827,33 @@ class PlaywrightPool:
                     per_response = max(0, int(browser.get("max_api_response_bytes", 1_000_000)))
                     total_limit = max(0, int(browser.get("max_api_capture_bytes", 10_000_000)))
                     captured = sum(int(item.get("captured_bytes", 0)) for item in output)
-                    body = response.body()
-                    if len(body) <= per_response and captured + len(body) <= total_limit:
-                        egress = getattr(self, "egress", None)
-                        if egress is not None:
-                            egress.record_response(len(body), url=response.url)
-                        entry["captured_bytes"] = len(body)
-                        text = body.decode("utf-8", errors="replace")
-                        if "json" in content_type:
-                            try:
-                                entry["json"] = json.loads(text)
-                            except json.JSONDecodeError:
+                    declared = response.headers.get("content-length", "")
+                    # S1.3.6：先在 content-length 上拒绝超大响应，并先计入预算，
+                    # 避免把超大响应整体读进内存。
+                    declared_len = int(declared) if declared.isdigit() else -1
+                    if (
+                        (declared_len > per_response and declared_len != -1)
+                        or captured + (declared_len if declared_len != -1 else 0) > total_limit
+                    ):
+                        entry["capture_skipped"] = "size_limit"
+                    else:
+                        body = response.body()
+                        if len(body) <= per_response and captured + len(body) <= total_limit:
+                            egress = getattr(self, "egress", None)
+                            if egress is not None:
+                                egress.record_response(len(body), url=response.url)
+                            entry["captured_bytes"] = len(body)
+                            text = body.decode("utf-8", errors="replace")
+                            if "json" in content_type:
+                                parsed = safe_json_loads(text)
+                                if parsed is not None:
+                                    entry["json"] = parsed
+                                else:
+                                    entry["text"] = text
+                            else:
                                 entry["text"] = text
                         else:
-                            entry["text"] = text
-                    else:
-                        entry["capture_skipped"] = "size_limit"
+                            entry["capture_skipped"] = "size_limit"
                 output.append(entry)
         except EgressBudgetExceededError:
             egress = getattr(self, "egress", None)

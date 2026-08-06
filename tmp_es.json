@@ -1,0 +1,1 @@
+{"name": "demo", "version": "1.0", "url": "https://example.org", "graph": [{"id": 1, "parentId": 1, "position": 0, "type": "open", "option": "\u6253\u5f00\u7f51\u9875", "parameters": {"url": "https://example.org"}}]}

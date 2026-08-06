@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from ..core.config import AppConfig
 from ..extraction import extractors
-from ..fetching import async_fetcher, browser_fetcher
-from ..fetching.http_client import HTTPFetcher
 from ..plugins.plugins import Registry, load_local_plugins
 from ..security.egress import EgressBroker
 from ..sources import site_adapters, sources
@@ -16,7 +14,14 @@ def build_registry(
     config: AppConfig | None = None,
     egress: EgressBroker | None = None,
 ) -> Registry:
-    """注册所有内置组件并按配置加载本地插件。"""
+    """注册所有内置组件并按配置加载本地插件。
+
+    S4.1 ⑥：重量级 fetcher（浏览器/异步）延迟到本函数内导入——
+    import pipeline 与构建纯 HTTP 注册表不全量加载浏览器栈。
+    """
+    from ..fetching import async_fetcher, browser_fetcher
+    from ..fetching.http_client import HTTPFetcher
+
     registry = Registry()
     sources.register(registry)
     site_adapters.register(registry)

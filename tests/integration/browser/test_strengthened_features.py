@@ -109,10 +109,13 @@ def test_artifact_integrity_detects_change(tmp_path: Path) -> None:
 
 
 def test_schedule_allowed_hours_can_defer() -> None:
-    disallowed = (datetime.now().hour + 1) % 24
+    from datetime import timezone
+
+    utc_hour = datetime.now(timezone.utc).hour
+    disallowed = (utc_hour + 1) % 24
     allowed, reason = evaluate_conditions({"allowed_hours": [disallowed]})
     assert allowed is False
-    assert str(datetime.now().hour) in reason
+    assert str(utc_hour) in reason  # S2.5.44：与 next_run_at 统一 UTC 基准
 
 
 def test_pdf_rectangle_rule(tmp_path: Path) -> None:
@@ -123,9 +126,9 @@ def test_pdf_rectangle_rule(tmp_path: Path) -> None:
     page.insert_text((40, 80), "Selected Research Text")
     document.save(pdf)
     document.close()
-    text = extract_region(pdf, 0, (20, 40, 280, 110))
+    text = extract_region(pdf, 1, (20, 40, 280, 110))  # S3.1.17：1 基页码
     assert "Selected Research Text" in text
-    rule = make_region_rule(pdf, "abstract", 0, (20, 40, 280, 110))
+    rule = make_region_rule(pdf, "abstract", 1, (20, 40, 280, 110))
     assert rule.page == 1
     assert rule.confidence == 0.95
 

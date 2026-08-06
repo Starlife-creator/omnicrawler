@@ -1,10 +1,14 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [switch]$SkipBrowser,
     [switch]$SkipRuntimeAssets,
     [switch]$Minimal
 )
 $ErrorActionPreference = 'Stop'
+# S4.3.4 ②：架构断言——便携包仅面向 64 位 x64 环境
+if (-not [Environment]::Is64BitOperatingSystem) {
+    throw 'OmniCrawler 便携包仅支持 64 位 Windows（检测到 32 位操作系统）'
+}
 $ProjectDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location -LiteralPath $ProjectDirectory
 

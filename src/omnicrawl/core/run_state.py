@@ -1,24 +1,30 @@
 from __future__ import annotations
 
 RUN_STATES = frozenset(
-    {"pending", "running", "succeeded", "failed", "paused", "cancelled", "retrying"}
+    {
+        "pending", "running", "succeeded", "failed", "paused",
+        "cancelled", "retrying", "partial_success",
+    }
 )
-TERMINAL_RUN_STATES = frozenset({"succeeded", "failed", "cancelled"})
+TERMINAL_RUN_STATES = frozenset({"succeeded", "failed", "cancelled", "partial_success"})
 STATUS_ALIASES = {
     "completed": "succeeded",
-    "completed_with_errors": "succeeded",
+    "completed_with_errors": "partial_success",
     "stopped": "cancelled",
     "interrupted": "cancelled",
     "resource_limited": "failed",
 }
 ALLOWED_TRANSITIONS = {
     "pending": frozenset({"running", "cancelled"}),
-    "running": frozenset({"succeeded", "failed", "paused", "cancelled", "retrying"}),
+    "running": frozenset(
+        {"succeeded", "failed", "paused", "cancelled", "retrying", "partial_success"}
+    ),
     "paused": frozenset({"running", "failed", "cancelled"}),
     "retrying": frozenset({"running", "failed", "cancelled"}),
     "failed": frozenset({"retrying"}),
     "succeeded": frozenset(),
     "cancelled": frozenset(),
+    "partial_success": frozenset(),
 }
 
 

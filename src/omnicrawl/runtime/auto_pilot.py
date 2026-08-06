@@ -224,11 +224,13 @@ class AutoPilot:
         error_trend = self._history.analyze("error_rate")
         latency_trend = self._history.analyze("latency_seconds")
 
-        # 只在严重或恶化趋势时触发调整
+        # 只在严重或恶化趋势时触发调整；健康时也触发以允许并发回升（S2.5.26）
+        healthy = error_trend.severity in ("ok", "info") and latency_trend.severity in ("ok", "info", "warning")
         should_adjust = (
             error_trend.severity in ("warning", "critical")
             or error_trend.direction == "rising"
             or latency_trend.severity == "critical"
+            or healthy
         )
 
         if not should_adjust:
@@ -266,11 +268,16 @@ class AutoPilot:
             elif adj.parameter == "ocr":
                 self._state.current_ocr = bool(adj.after)
                 applied.append(adj)
+            elif adj.parameter == "run_state":
+                # S2.5.26：磁盘保护提案不再被应用循环静默丢弃
+                self._state.running = bool(adj.after == "running")
+                applied.append(adj)
 
         if applied:
             self._state.total_adjustments += len(applied)
             self._state.last_adjustment_time = now
-            self._state.audit.extend(applied)
+            # S2.5.27：audit 有界（200 条），不无限增长
+            self._state.audit = (self._state.audit + applied)[-200:]
 
         return applied
 

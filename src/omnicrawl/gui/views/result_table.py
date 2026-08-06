@@ -347,7 +347,7 @@ class ResultTable(QWidget):
         info_layout.addStretch()
 
         self._search = QLineEdit()
-        self._search.setPlaceholderText("搜索当前页全部字段…")
+        self._search.setPlaceholderText(_("搜索当前页全部字段…"))
         self._search.setClearButtonEnabled(True)
         self._search.textChanged.connect(self._apply_filter)
         info_layout.addWidget(self._search)
@@ -367,7 +367,7 @@ class ResultTable(QWidget):
         export_md_btn.clicked.connect(self._export_markdown)
         info_layout.addWidget(export_md_btn)
 
-        export_filtered_btn = QPushButton("导出筛选结果")
+        export_filtered_btn = QPushButton(_("导出筛选结果"))
         export_filtered_btn.clicked.connect(self._export_filtered_csv)
         info_layout.addWidget(export_filtered_btn)
 
@@ -396,7 +396,7 @@ class ResultTable(QWidget):
         self._table.setSortingEnabled(False)  # 流式加载不支持全局排序
         self._evidence = QPlainTextEdit()
         self._evidence.setReadOnly(True)
-        self._evidence.setPlaceholderText("选择一条记录后，这里显示原始数据、字段证据和质量信息。")
+        self._evidence.setPlaceholderText(_("选择一条记录后，这里显示原始数据、字段证据和质量信息。"))
 
         # 证据面板容器：证据文本 + 打开按钮
         evidence_container = QWidget()
@@ -405,7 +405,7 @@ class ResultTable(QWidget):
         evidence_container_layout.setSpacing(6)
         evidence_container_layout.addWidget(self._evidence, 1)
 
-        self._open_evidence_btn = QPushButton("在证据查看器中打开 →")
+        self._open_evidence_btn = QPushButton(_("在证据查看器中打开 →"))
         self._open_evidence_btn.setEnabled(False)
         self._open_evidence_btn.clicked.connect(self._open_in_evidence_view)
         evidence_container_layout.addWidget(self._open_evidence_btn)
@@ -524,7 +524,7 @@ class ResultTable(QWidget):
         try:
             record_column = self._model.headers.index("record_id")
         except ValueError:
-            self._evidence.setPlainText("当前 CSV 不包含 record_id，无法关联字段证据。")
+            self._evidence.setPlainText(_("当前 CSV 不包含 record_id，无法关联字段证据。"))
             self._open_evidence_btn.setEnabled(False)
             self._current_evidence_record = None
             return
@@ -548,11 +548,11 @@ class ResultTable(QWidget):
 
         jsonl = self._filepath.with_name("records.jsonl")
         if not jsonl.is_file():
-            self._evidence.setPlainText(f"记录 {record_id}\n未找到配套 records.jsonl 证据文件。")
+            self._evidence.setPlainText(_(f"记录 {record_id}\n未找到配套 records.jsonl 证据文件。"))
             return
 
         # 异步查找证据，避免大 JSONL 阻塞 UI
-        self._evidence.setPlaceholderText(f"正在查找记录 {record_id} 的证据…")
+        self._evidence.setPlaceholderText(_(f"正在查找记录 {record_id} 的证据…"))
         if self._evidence_worker is not None and self._evidence_worker.isRunning():
             self._evidence_worker.requestInterruption()
             self._evidence_worker.quit()
@@ -569,7 +569,7 @@ class ResultTable(QWidget):
         """证据查找成功回调（主线程）。"""
         self._evidence_cache[record_id] = record
         self._current_evidence_record = record
-        self._evidence.setPlaceholderText("选择一条记录后，这里显示原始数据、字段证据和质量信息。")
+        self._evidence.setPlaceholderText(_("选择一条记录后，这里显示原始数据、字段证据和质量信息。"))
         self._evidence.setPlainText(json.dumps(record, ensure_ascii=False, indent=2, default=str))
         self._open_evidence_btn.setEnabled(True)
 
@@ -577,15 +577,15 @@ class ResultTable(QWidget):
         """证据查找未命中回调（主线程）。"""
         self._current_evidence_record = None
         self._open_evidence_btn.setEnabled(False)
-        self._evidence.setPlaceholderText("选择一条记录后，这里显示原始数据、字段证据和质量信息。")
-        self._evidence.setPlainText(f"记录 {record_id}\n未找到配套 records.jsonl 证据文件。")
+        self._evidence.setPlaceholderText(_("选择一条记录后，这里显示原始数据、字段证据和质量信息。"))
+        self._evidence.setPlainText(_(f"记录 {record_id}\n未找到配套 records.jsonl 证据文件。"))
 
     def _on_evidence_failed(self, message: str) -> None:
         """证据查找失败回调（主线程）。"""
         self._current_evidence_record = None
         self._open_evidence_btn.setEnabled(False)
-        self._evidence.setPlaceholderText("选择一条记录后，这里显示原始数据、字段证据和质量信息。")
-        self._evidence.setPlainText(f"证据加载失败：{message}")
+        self._evidence.setPlaceholderText(_("选择一条记录后，这里显示原始数据、字段证据和质量信息。"))
+        self._evidence.setPlainText(_(f"证据加载失败：{message}"))
 
     def _on_evidence_worker_finished(self) -> None:
         """线程结束后清理引用。"""
@@ -600,10 +600,10 @@ class ResultTable(QWidget):
 
     def _export_filtered_csv(self) -> None:
         if self._proxy.rowCount() == 0:
-            QMessageBox.information(self, "导出筛选结果", "当前没有可导出的筛选结果。")
+            QMessageBox.information(self, _("导出筛选结果"), _("当前没有可导出的筛选结果。"))
             return
         output_path, _selected_filter = QFileDialog.getSaveFileName(
-            self, "导出筛选结果", "filtered_records.csv", "CSV 文件 (*.csv)"
+            self, _("导出筛选结果"), "filtered_records.csv", _("CSV 文件 (*.csv)")
         )
         if not output_path:
             return
@@ -614,7 +614,7 @@ class ResultTable(QWidget):
                 writer.writerow(
                     [self._proxy.data(self._proxy.index(row, column)) for column in range(self._proxy.columnCount())]
                 )
-        QMessageBox.information(self, "导出完成", f"已导出 {self._proxy.rowCount()} 行到：\n{output_path}")
+        QMessageBox.information(self, _("导出完成"), _(f"已导出 {self._proxy.rowCount()} 行到：\n{output_path}"))
 
     def _export_markdown(self) -> None:
         """导出完整结果为 Markdown 文件。"""
@@ -629,19 +629,32 @@ class ResultTable(QWidget):
         if not output_path:
             return
 
-        try:
-            from omnicrawl.export.markdown_exporter import MarkdownExporter
+        # S3.1.1：Markdown 导出移入后台线程（大表不冻结界面）
+        from ..core.background_worker import BackgroundWorker, run_worker
 
-            jsonl = self._filepath.with_name("records.jsonl")
-            MarkdownExporter.export_results(
-                csv_path=self._filepath,
-                jsonl_path=jsonl if jsonl.is_file() else None,
-                output_path=Path(output_path),
-                include_evidence=True,
-            )
-            QMessageBox.information(self, _("导出成功"), _(f"已导出到: {output_path}"))
-        except Exception as exc:
-            QMessageBox.critical(self, _("导出失败"), str(exc))
+        filepath = self._filepath
+        jsonl = filepath.with_name("records.jsonl")
+        target = Path(output_path)
+
+        class _MarkdownExportWorker(BackgroundWorker):
+            def work(self) -> str:
+                from omnicrawl.export.markdown_exporter import MarkdownExporter
+
+                MarkdownExporter.export_results(
+                    csv_path=filepath,
+                    jsonl_path=jsonl if jsonl.is_file() else None,
+                    output_path=target,
+                    include_evidence=True,
+                )
+                return str(target)
+
+        run_worker(
+            _MarkdownExportWorker(),
+            on_succeeded=lambda path: QMessageBox.information(
+                self, _("导出成功"), _(f"已导出到: {path}")
+            ),
+            on_failed=lambda error: QMessageBox.critical(self, _("导出失败"), error),
+        )
 
     def refresh(self) -> None:
         """手动刷新。"""
@@ -739,6 +752,8 @@ class ResultTable(QWidget):
 
         self._export_thread = ExportThread(self._filepath, Path(output_path))
         self._export_thread.setParent(self)
+        # S3.1.9：取消按钮真正中断导出线程
+        progress.canceled.connect(self._export_thread.requestInterruption)
         self._export_thread.finished_signal.connect(
             lambda ok, msg: self._on_export_finished(ok, msg, progress)
         )

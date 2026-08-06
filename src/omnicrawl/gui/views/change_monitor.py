@@ -14,7 +14,7 @@ GUI 接入链路:
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal, pyqtSlot
@@ -41,6 +41,8 @@ from PyQt6.QtWidgets import (
 from omnicrawl.core.utils import user_agent
 from omnicrawl.gui.widgets.toast import ToastManager
 
+from ..i18n import _
+
 if TYPE_CHECKING:
     from omnicrawl.gui.settings import AppSettings
 
@@ -49,22 +51,22 @@ LOGGER = logging.getLogger(__name__)
 # ── 间隔选项 ────────────────────────────────────────────────────────
 
 INTERVAL_OPTIONS = [
-    (60, "1 分钟"),
-    (300, "5 分钟"),
-    (600, "10 分钟"),
-    (1800, "30 分钟"),
-    (3600, "1 小时"),
-    (7200, "2 小时"),
-    (21600, "6 小时"),
-    (43200, "12 小时"),
-    (86400, "24 小时"),
+    (60, _("1 分钟")),
+    (300, _("5 分钟")),
+    (600, _("10 分钟")),
+    (1800, _("30 分钟")),
+    (3600, _("1 小时")),
+    (7200, _("2 小时")),
+    (21600, _("6 小时")),
+    (43200, _("12 小时")),
+    (86400, _("24 小时")),
 ]
 
 CONDITION_OPTIONS = [
-    ("changed", "内容发生变化"),
-    ("contains:{{text}}", "包含指定文本"),
-    ("regex:{{pattern}}", "匹配正则表达式"),
-    ("equals:{{value}}", "精确等于某个值"),
+    ("changed", _("内容发生变化")),
+    ("contains:{{text}}", _("包含指定文本")),
+    ("regex:{{pattern}}", _("匹配正则表达式")),
+    ("equals:{{value}}", _("精确等于某个值")),
 ]
 
 
@@ -107,7 +109,7 @@ class NewRuleDialog(QDialog):
         rule_data: dict | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("新建变更监控规则" if rule_data is None else "编辑变更监控规则")
+        self.setWindowTitle(_("新建变更监控规则") if rule_data is None else _("编辑变更监控规则"))
         self.setMinimumSize(480, 420)
         self._rule_data = rule_data
 
@@ -116,40 +118,40 @@ class NewRuleDialog(QDialog):
 
         # 规则名称
         self._name_edit = QLineEdit()
-        self._name_edit.setPlaceholderText("如: 监控 Product Hunt 首页")
-        layout.addRow("规则名称:", self._name_edit)
+        self._name_edit.setPlaceholderText(_("如: 监控 Product Hunt 首页"))
+        layout.addRow(_("规则名称:"), self._name_edit)
 
         # 目标 URL
         url_row = QHBoxLayout()
         self._url_edit = QLineEdit()
         self._url_edit.setPlaceholderText("https://example.com/page")
         url_row.addWidget(self._url_edit)
-        probe_btn = QPushButton("探测")
-        probe_btn.setToolTip("测试 URL 是否可达")
+        probe_btn = QPushButton(_("探测"))
+        probe_btn.setToolTip(_("测试 URL 是否可达"))
         probe_btn.clicked.connect(self._probe_url)
         url_row.addWidget(probe_btn)
-        layout.addRow("目标 URL:", url_row)
+        layout.addRow(_("目标 URL:"), url_row)
 
         # CSS 选择器
         selector_row = QHBoxLayout()
         self._selector_edit = QLineEdit()
-        self._selector_edit.setPlaceholderText("留空 = 监控整页；如: .post-item")
+        self._selector_edit.setPlaceholderText(_("留空 = 监控整页；如: .post-item"))
         selector_row.addWidget(self._selector_edit)
-        test_btn = QPushButton("测试")
-        test_btn.setToolTip("在当前页面测试选择器")
+        test_btn = QPushButton(_("测试"))
+        test_btn.setToolTip(_("在当前页面测试选择器"))
         test_btn.clicked.connect(self._test_selector)
         selector_row.addWidget(test_btn)
-        layout.addRow("CSS 选择器:", selector_row)
+        layout.addRow(_("CSS 选择器:"), selector_row)
 
         # 检测条件
         self._condition_combo = QComboBox()
         for value, label in CONDITION_OPTIONS:
             self._condition_combo.addItem(label, value)
         self._condition_combo.currentIndexChanged.connect(self._on_condition_changed)
-        layout.addRow("检测条件:", self._condition_combo)
+        layout.addRow(_("检测条件:"), self._condition_combo)
 
         self._condition_value_edit = QLineEdit()
-        self._condition_value_edit.setPlaceholderText("额外参数（文本/正则/值）")
+        self._condition_value_edit.setPlaceholderText(_("额外参数（文本/正则/值）"))
         self._condition_value_edit.setVisible(False)
         layout.addRow("", self._condition_value_edit)
 
@@ -158,15 +160,15 @@ class NewRuleDialog(QDialog):
         for seconds, label in INTERVAL_OPTIONS:
             self._interval_combo.addItem(label, seconds)
         self._interval_combo.setCurrentIndex(3)  # 默认 30 分钟
-        layout.addRow("检查间隔:", self._interval_combo)
+        layout.addRow(_("检查间隔:"), self._interval_combo)
 
         # 通知方式
-        notify_group = QGroupBox("通知方式")
+        notify_group = QGroupBox(_("通知方式"))
         notify_layout = QVBoxLayout(notify_group)
-        self._notify_desktop = QCheckBox("桌面通知（系统托盘弹窗）")
+        self._notify_desktop = QCheckBox(_("桌面通知（系统托盘弹窗）"))
         self._notify_desktop.setChecked(True)
         notify_layout.addWidget(self._notify_desktop)
-        self._notify_sound = QCheckBox("提示音")
+        self._notify_sound = QCheckBox(_("提示音"))
         notify_layout.addWidget(self._notify_sound)
         layout.addRow(notify_group)
 
@@ -212,7 +214,7 @@ class NewRuleDialog(QDialog):
     def _probe_url(self) -> None:
         url = self._url_edit.text().strip()
         if not url:
-            QMessageBox.warning(self, "提示", "请先输入目标 URL")
+            QMessageBox.warning(self, _("提示"), _("请先输入目标 URL"))
             return
         # 简单异步探测
         import urllib.request
@@ -220,19 +222,19 @@ class NewRuleDialog(QDialog):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": user_agent("Probe")})
             with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
-                QMessageBox.information(self, "探测成功", f"URL 可达\nHTTP {resp.status}")
+                QMessageBox.information(self, _("探测成功"), _(f"URL 可达\nHTTP {resp.status}"))
         except Exception as exc:
-            QMessageBox.warning(self, "探测失败", f"无法访问该 URL:\n{exc}")
+            QMessageBox.warning(self, _("探测失败"), _(f"无法访问该 URL:\n{exc}"))
 
     def _test_selector(self) -> None:
         """测试 CSS 选择器在当前 URL 上是否匹配到内容。"""
         url = self._url_edit.text().strip()
         selector = self._selector_edit.text().strip()
         if not url:
-            QMessageBox.warning(self, "提示", "请先输入目标 URL")
+            QMessageBox.warning(self, _("提示"), _("请先输入目标 URL"))
             return
         if not selector:
-            QMessageBox.warning(self, "提示", "请先输入 CSS 选择器")
+            QMessageBox.warning(self, _("提示"), _("请先输入 CSS 选择器"))
             return
 
         import urllib.request
@@ -242,8 +244,10 @@ class NewRuleDialog(QDialog):
                 url,
                 headers={
                     "User-Agent": (
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+
+                        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+
                         "Chrome/127.0.0.0 Safari/537.36"
                     ),
                 },
@@ -257,24 +261,24 @@ class NewRuleDialog(QDialog):
             if content.strip():
                 preview = content[:200] + ("..." if len(content) > 200 else "")
                 QMessageBox.information(
-                    self, "选择器测试成功",
-                    f"选择器匹配到 {len(content)} 个字符\n\n预览:\n{preview}",
+                    self, _("选择器测试成功"),
+                    _(f"选择器匹配到 {len(content)} 个字符\n\n预览:\n{preview}"),
                 )
             else:
-                QMessageBox.warning(self, "选择器测试", "选择器未匹配到任何内容")
+                QMessageBox.warning(self, _("选择器测试"), _("选择器未匹配到任何内容"))
         except Exception as exc:
-            QMessageBox.warning(self, "测试失败", f"{exc}")
+            QMessageBox.warning(self, _("测试失败"), f"{exc}")
 
     def _validate_and_accept(self) -> None:
         url = self._url_edit.text().strip()
         name = self._name_edit.text().strip()
 
         if not name:
-            name = url[:50] if url else "未命名规则"
+            name = url[:50] if url else _("未命名规则")
             self._name_edit.setText(name)
 
         if not url:
-            QMessageBox.warning(self, "提示", "请输入目标 URL")
+            QMessageBox.warning(self, _("提示"), _("请输入目标 URL"))
             return
 
         self.accept()
@@ -294,7 +298,7 @@ class NewRuleDialog(QDialog):
             notify_methods.append("sound")
 
         result: dict = {
-            "name": self._name_edit.text().strip() or "未命名规则",
+            "name": self._name_edit.text().strip() or _("未命名规则"),
             "url": self._url_edit.text().strip(),
             "selector": self._selector_edit.text().strip(),
             "condition": condition,
@@ -318,7 +322,7 @@ class ChangeEventDialog(QDialog):
 
     def __init__(self, event_data: dict, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle(f"变化详情 — {event_data.get('rule_name', '')}")
+        self.setWindowTitle(_(f"变化详情 — {event_data.get('rule_name', '')}"))
         self.setMinimumSize(680, 480)
 
         layout = QVBoxLayout(self)
@@ -329,11 +333,11 @@ class ChangeEventDialog(QDialog):
         info_line.addStretch()
         detected = event_data.get("detected_at", "")
         if isinstance(detected, str):
-            info_line.addWidget(QLabel(f"检测时间: {detected[:19]}"))
+            info_line.addWidget(QLabel(_(f"检测时间: {detected[:19]}")))
         layout.addLayout(info_line)
 
-        summary = event_data.get("diff_summary", "无摘要")
-        summary_label = QLabel(f"变化摘要: {summary}")
+        summary = event_data.get("diff_summary", _("无摘要"))
+        summary_label = QLabel(_(f"变化摘要: {summary}"))
         summary_label.setStyleSheet("font-weight: bold; padding: 4px 0;")
         layout.addWidget(summary_label)
 
@@ -349,7 +353,7 @@ class ChangeEventDialog(QDialog):
         layout.addWidget(diff_text)
 
         # 关闭按钮
-        close_btn = QPushButton("关闭")
+        close_btn = QPushButton(_("关闭"))
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn)
 
@@ -420,11 +424,11 @@ class ChangeMonitorView(QWidget):
 
         # 标题行
         title_row = QHBoxLayout()
-        title = QLabel('<b style="font-size: 16px;">🔔 变更监控</b>')
+        title = QLabel(_('<b style="font-size: 16px;">🔔 变更监控</b>'))
         title_row.addWidget(title)
         title_row.addStretch()
 
-        self._status_label = QLabel("就绪")
+        self._status_label = QLabel(_("就绪"))
         self._status_label.setStyleSheet("color: gray;")
         title_row.addWidget(self._status_label)
         layout.addLayout(title_row)
@@ -432,21 +436,21 @@ class ChangeMonitorView(QWidget):
         # 工具栏
         toolbar = QHBoxLayout()
 
-        new_btn = QPushButton("+ 新建规则")
+        new_btn = QPushButton(_("+ 新建规则"))
         new_btn.clicked.connect(self._new_rule)
         toolbar.addWidget(new_btn)
 
-        check_all_btn = QPushButton("▶ 全部检查")
+        check_all_btn = QPushButton(_("▶ 全部检查"))
         check_all_btn.clicked.connect(self._check_all)
         toolbar.addWidget(check_all_btn)
 
-        self._pause_btn = QPushButton("⏸ 暂停监控")
+        self._pause_btn = QPushButton(_("⏸ 暂停监控"))
         self._pause_btn.clicked.connect(self._toggle_pause)
         toolbar.addWidget(self._pause_btn)
 
         toolbar.addStretch()
 
-        clear_btn = QPushButton("清空历史")
+        clear_btn = QPushButton(_("清空历史"))
         clear_btn.clicked.connect(self._clear_history)
         toolbar.addWidget(clear_btn)
 
@@ -460,14 +464,14 @@ class ChangeMonitorView(QWidget):
 
         # 底部状态
         bottom_row = QHBoxLayout()
-        bottom_row.addWidget(QLabel("通知方式:"))
-        self._notify_desktop_cb = QCheckBox("桌面通知")
+        bottom_row.addWidget(QLabel(_("通知方式:")))
+        self._notify_desktop_cb = QCheckBox(_("桌面通知"))
         self._notify_desktop_cb.setChecked(
             settings._value("monitor/desktop_notify", True, bool) if settings else True
         )
         self._notify_desktop_cb.toggled.connect(self._save_monitor_settings)
         bottom_row.addWidget(self._notify_desktop_cb)
-        self._notify_sound_cb = QCheckBox("提示音")
+        self._notify_sound_cb = QCheckBox(_("提示音"))
         self._notify_sound_cb.setChecked(
             settings._value("monitor/sound_notify", False, bool) if settings else False
         )
@@ -494,14 +498,14 @@ class ChangeMonitorView(QWidget):
         self._rule_list.clear()
 
         if not self._rules_data:
-            empty_item = QListWidgetItem("暂无监控规则 — 点击「+ 新建规则」开始")
+            empty_item = QListWidgetItem(_("暂无监控规则 — 点击「+ 新建规则」开始"))
             empty_item.setFlags(empty_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
             self._rule_list.addItem(empty_item)
             return
 
         for rule in self._rules_data:
             enabled = rule.get("enabled", True)
-            name = rule.get("name", "未命名")
+            name = rule.get("name", _("未命名"))
             url = rule.get("url", "")
             selector = rule.get("selector", "")
             last_checked = rule.get("last_checked", "")
@@ -512,23 +516,23 @@ class ChangeMonitorView(QWidget):
             if isinstance(last_checked, str) and last_checked:
                 try:
                     dt = datetime.fromisoformat(last_checked)
-                    elapsed = (datetime.now(tz=UTC) - dt).total_seconds()
+                    elapsed = (datetime.now(tz=timezone.utc) - dt).total_seconds()
                     if elapsed < 60:
-                        last_str = "刚才"
+                        last_str = _("刚才")
                     elif elapsed < 3600:
-                        last_str = f"{int(elapsed / 60)} 分钟前"
+                        last_str = _(f"{int(elapsed / 60)} 分钟前")
                     elif elapsed < 86400:
-                        last_str = f"{int(elapsed / 3600)} 小时前"
+                        last_str = _(f"{int(elapsed / 3600)} 小时前")
                     else:
-                        last_str = f"{int(elapsed / 86400)} 天前"
+                        last_str = _(f"{int(elapsed / 86400)} 天前")
                 except ValueError:
                     last_str = last_checked[:19]
 
             lines = [
                 f"{status_icon} {name}",
                 f"   URL: {url[:80]}{'...' if len(url) > 80 else ''}",
-                f"   选择器: {selector or '(整页)'}",
-                f"   上次检查: {last_str or '从未'}",
+                _(f"   选择器: {selector or '(整页)'}"),
+                _(f"   上次检查: {last_str or '从未'}"),
             ]
             item = QListWidgetItem("\n".join(lines))
             if not enabled:
@@ -543,7 +547,7 @@ class ChangeMonitorView(QWidget):
             self._rules_data.append(rule_data)
             self._save_rules()
             self._refresh_list()
-            ToastManager.instance().success(f"已添加监控规则: {rule_data['name']}")
+            ToastManager.instance().success(_(f"已添加监控规则: {rule_data['name']}"))
 
     def _edit_rule(self, rule_id: str) -> None:
         for i, r in enumerate(self._rules_data):
@@ -555,21 +559,21 @@ class ChangeMonitorView(QWidget):
                     self._rules_data[i] = updated
                     self._save_rules()
                     self._refresh_list()
-                    ToastManager.instance().success(f"已更新规则: {updated['name']}")
+                    ToastManager.instance().success(_(f"已更新规则: {updated['name']}"))
                 return
 
     def _delete_rule(self, rule_id: str) -> None:
         for i, r in enumerate(self._rules_data):
             if r.get("rule_id") == rule_id:
-                name = r.get("name", "未命名")
+                name = r.get("name", _("未命名"))
                 reply = QMessageBox.question(
-                    self, "确认删除", f"确定要删除监控规则「{name}」吗？", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    self, _("确认删除"), _(f"确定要删除监控规则「{name}」吗？"), QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
                 if reply == QMessageBox.StandardButton.Yes:
                     del self._rules_data[i]
                     self._save_rules()
                     self._refresh_list()
-                    ToastManager.instance().info(f"已删除规则: {name}")
+                    ToastManager.instance().info(_(f"已删除规则: {name}"))
                 return
 
     def _toggle_rule(self, rule_id: str) -> None:
@@ -583,11 +587,14 @@ class ChangeMonitorView(QWidget):
     # ── 检查执行 ────────────────────────────────────────────────────
 
     def _check_all(self) -> None:
+        if self._worker is not None and self._worker.isRunning():
+            ToastManager.instance().warning(_("检查仍在进行中，请稍候"))
+            return
         if not self._rules_data:
-            QMessageBox.information(self, "提示", "没有可检查的规则")
+            QMessageBox.information(self, _("提示"), _("没有可检查的规则"))
             return
 
-        self._status_label.setText("检查中...")
+        self._status_label.setText(_("检查中..."))
         self._status_label.setStyleSheet("color: #0078d4;")
 
         self._worker = _CheckWorker(self._rules_data, self)
@@ -601,7 +608,7 @@ class ChangeMonitorView(QWidget):
             return
 
         # 检查是否有到期的规则
-        now = datetime.now(tz=UTC)
+        now = datetime.now(tz=timezone.utc)
         due = False
         for rule in self._rules_data:
             if not rule.get("enabled", True):
@@ -629,7 +636,7 @@ class ChangeMonitorView(QWidget):
         events_list = list(events)
 
         if events_list:
-            self._status_label.setText(f"检测到 {len(events_list)} 个变化")
+            self._status_label.setText(_(f"检测到 {len(events_list)} 个变化"))
             self._status_label.setStyleSheet("color: #d83b01; font-weight: bold;")
 
             # 更新 rules_data 中的 last_hash/last_checked
@@ -642,8 +649,8 @@ class ChangeMonitorView(QWidget):
                         # 桌面通知
                         if self._notify_desktop_cb.isChecked():
                             self.desktop_notify.emit(
-                                f"变更监控: {ed['rule_name']}",
-                                ed.get("diff_summary", "检测到变化"),
+                                _(f"变更监控: {ed['rule_name']}"),
+                                ed.get("diff_summary", _("检测到变化")),
                             )
                         break
 
@@ -654,13 +661,12 @@ class ChangeMonitorView(QWidget):
             first_event = events_list[0]
             self._show_event_detail(first_event.to_dict())
         else:
-            self._status_label.setText("无变化")
+            self._status_label.setText(_("无变化"))
             self._status_label.setStyleSheet("color: #107c10;")
-            # 更新检查时间
-            now = datetime.now(tz=UTC).isoformat()
+            # 更新检查时间（S3.2.1：不再写 "__baseline__" 哨兵假哈希——
+            # 基线由 ChangeDetector 内部持久化，每轮比较真实哈希）
+            now = datetime.now(tz=timezone.utc).isoformat()
             for rule in self._rules_data:
-                if rule.get("enabled", True) and not rule.get("last_hash"):
-                    rule["last_hash"] = "__baseline__"
                 rule["last_checked"] = now
             self._save_rules()
             self._refresh_list()
@@ -668,9 +674,9 @@ class ChangeMonitorView(QWidget):
     @pyqtSlot(str)
     def _on_check_error(self, error: str) -> None:
         self._worker = None
-        self._status_label.setText("检查失败")
+        self._status_label.setText(_("检查失败"))
         self._status_label.setStyleSheet("color: #d83b01;")
-        ToastManager.instance().error(f"变更检查失败: {error}")
+        ToastManager.instance().error(_(f"变更检查失败: {error}"))
 
     def _show_event_detail(self, event_data: dict) -> None:
         dialog = ChangeEventDialog(event_data, self)
@@ -681,18 +687,18 @@ class ChangeMonitorView(QWidget):
     def _toggle_pause(self) -> None:
         self._paused = not self._paused
         if self._paused:
-            self._pause_btn.setText("▶ 继续监控")
-            self._status_label.setText("已暂停")
+            self._pause_btn.setText(_("▶ 继续监控"))
+            self._status_label.setText(_("已暂停"))
             self._status_label.setStyleSheet("color: gray;")
         else:
-            self._pause_btn.setText("⏸ 暂停监控")
-            self._status_label.setText("就绪")
+            self._pause_btn.setText(_("⏸ 暂停监控"))
+            self._status_label.setText(_("就绪"))
             self._status_label.setStyleSheet("color: gray;")
 
     # ── 持久化 ────────────────────────────────────────────────────
 
     def _save_rules(self) -> None:
-        """保存规则到设置。"""
+        """保存规则到设置（S3.2.1 ⑥：失败可见，不再静默丢失）。"""
         if self._settings:
             serializable = []
             for r in self._rules_data:
@@ -702,9 +708,12 @@ class ChangeMonitorView(QWidget):
                     if isinstance(val, datetime):
                         d[key] = val.isoformat()
                     elif val is None and key == "created_at":
-                        d[key] = datetime.now(tz=UTC).isoformat()
+                        d[key] = datetime.now(tz=timezone.utc).isoformat()
                 serializable.append(d)
-            self._settings._set_value("monitor/rules", serializable)
+            try:
+                self._settings.set_value("monitor/rules", serializable)
+            except Exception as exc:  # noqa: BLE001 - 写失败提示不崩溃
+                ToastManager.instance().error(_(f"监控规则保存失败: {exc}"))
 
     def _save_monitor_settings(self) -> None:
         if self._settings:
@@ -713,8 +722,8 @@ class ChangeMonitorView(QWidget):
 
     def _clear_history(self) -> None:
         reply = QMessageBox.question(
-            self, "确认清空",
-            "这会清除所有规则的检测历史（保留规则定义），确定吗？",
+            self, _("确认清空"),
+            _("这会清除所有规则的检测历史（保留规则定义），确定吗？"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
@@ -723,7 +732,7 @@ class ChangeMonitorView(QWidget):
                 rule["last_checked"] = None
             self._save_rules()
             self._refresh_list()
-            ToastManager.instance().info("已清空检测历史")
+            ToastManager.instance().info(_("已清空检测历史"))
 
     # ── 右键菜单 ────────────────────────────────────────────────────
 
@@ -741,25 +750,25 @@ class ChangeMonitorView(QWidget):
         from PyQt6.QtWidgets import QMenu
 
         menu = QMenu(self)
-        menu.addAction("编辑", lambda: self._edit_rule(rule_id))
-        menu.addAction("立即检查", lambda: self._check_single(rule_id))
+        menu.addAction(_("编辑"), lambda: self._edit_rule(rule_id))
+        menu.addAction(_("立即检查"), lambda: self._check_single(rule_id))
 
         # 找到规则状态
         for r in self._rules_data:
             if r.get("rule_id") == rule_id:
-                toggle_text = "禁用" if r.get("enabled", True) else "启用"
+                toggle_text = _("禁用") if r.get("enabled", True) else _("启用")
                 menu.addAction(toggle_text, lambda: self._toggle_rule(rule_id))
                 break
 
         menu.addSeparator()
-        menu.addAction("删除", lambda: self._delete_rule(rule_id))
+        menu.addAction(_("删除"), lambda: self._delete_rule(rule_id))
         menu.exec(event.globalPos())
 
     def _check_single(self, rule_id: str) -> None:
         """手动检查单条规则。"""
         for rule in self._rules_data:
             if rule.get("rule_id") == rule_id:
-                self._status_label.setText("检查中...")
+                self._status_label.setText(_("检查中..."))
                 self._status_label.setStyleSheet("color: #0078d4;")
                 self._worker = _CheckWorker([rule], self)
                 self._worker.finished.connect(self._on_check_finished)

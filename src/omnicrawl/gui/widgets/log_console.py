@@ -38,6 +38,8 @@ logger = logging.getLogger(__name__)
 
 MAX_BLOCKS = 5000
 TRIM_HEAD = 2000
+# S3.1.4：_all_logs 缓存上限（过滤数据源），长时间运行内存平稳
+MAX_CACHED_LOGS = 5000
 
 
 class LogHighlighter(QSyntaxHighlighter):
@@ -173,7 +175,10 @@ class LogConsole(QWidget):
             message: 日志消息。
             level: 日志级别 (info/warn/error)。
         """
+        # S3.1.4：_all_logs 裁剪上限（5000 行），长时间运行内存平稳
         self._all_logs.append((message, level))
+        if len(self._all_logs) > MAX_CACHED_LOGS:
+            del self._all_logs[: len(self._all_logs) - MAX_CACHED_LOGS]
 
         # 根据过滤器决定是否显示
         if self._current_filter != "all" and level != self._current_filter:
@@ -285,11 +290,11 @@ class LogConsole(QWidget):
 
         try:
             with open(filepath, "w", encoding="utf-8") as f:
-                f.write("# OmniCrawler GUI 日志导出\n")
-                f.write(f"# 导出时间: {datetime.now().isoformat()}\n")
-                f.write("# ---- 以下日志已自动脱敏 ----\n")
-                f.write("# 本日志已自动脱敏：URL 域名和查询参数、选择器内容已被隐藏\n")
-                f.write("# 字段名称和统计信息保留不变\n")
+                f.write(_("# OmniCrawler GUI 日志导出\n"))
+                f.write(_(f"# 导出时间: {datetime.now().isoformat()}\n"))
+                f.write(_("# ---- 以下日志已自动脱敏 ----\n"))
+                f.write(_("# 本日志已自动脱敏：URL 域名和查询参数、选择器内容已被隐藏\n"))
+                f.write(_("# 字段名称和统计信息保留不变\n"))
                 f.write("#\n\n")
 
                 for msg, level in self._all_logs:

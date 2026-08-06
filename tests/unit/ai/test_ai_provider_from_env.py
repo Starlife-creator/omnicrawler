@@ -58,7 +58,7 @@ def test_custom_type_normalized_to_openai_compatible() -> None:
 
 
 def test_secret_ref_is_resolved(monkeypatch) -> None:
-    monkeypatch.setenv("OMNICRAW_SECRET_MYKEY", "resolved-key")
+    monkeypatch.setenv("OMNICRAWL_SECRET_MYKEY", "resolved-key")
     provider = provider_from_env(_env(OMNICRAWL_AI_API_KEY="secret://MYKEY"))
     assert isinstance(provider, OpenAICompatibleProvider)
     assert provider.api_key == "resolved-key"

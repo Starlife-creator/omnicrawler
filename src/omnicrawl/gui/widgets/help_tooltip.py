@@ -52,8 +52,9 @@ class HelpTooltip(QPushButton):
         # 悬停摘要
         short_text = self._entry.short(mode)
         self.setToolTip(
-            f"<b>{self._entry.title}</b><br>{short_text}<br>"
-            f"<i>点击查看完整说明；按 F1 打开帮助中心</i>"
+            f"<b>{self._entry.title}</b><br>{short_text}<br>" +
+
+            _("<i>点击查看完整说明；按 F1 打开帮助中心</i>")
         )
 
         self.setAccessibleName(_("帮助：") + self._entry.title)

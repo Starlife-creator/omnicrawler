@@ -6,7 +6,7 @@ import platform
 import sqlite3
 import tempfile
 import zipfile
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -77,7 +77,7 @@ def create_research_package(
         "omnicrawler_version": __version__,
         "python": platform.python_version(),
         "platform": platform.platform(),
-        "created_at": datetime.now(UTC).isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
     }
     entries["project/environment.json"] = json.dumps(
         environment, ensure_ascii=False, indent=2

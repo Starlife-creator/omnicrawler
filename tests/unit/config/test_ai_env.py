@@ -126,6 +126,8 @@ def test_sync_ai_env_to_os_invalidates_stale_bridge(project: Path, monkeypatch) 
     monkeypatch.setenv("PDFX_LLM_MODEL", "stale-model")
     sync_ai_env_to_os({"OMNICRAWL_AI_MODEL": "new-model"})
     assert "PDFX_LLM_MODEL" not in os.environ
+    # sync_ai_env_to_os 直写 os.environ 绕过 monkeypatch，须显式清理防止泄漏
+    sync_ai_env_to_os({"OMNICRAWL_AI_MODEL": None})
 
 
 def test_bridge_pdfx_llm_env(project: Path, monkeypatch) -> None:

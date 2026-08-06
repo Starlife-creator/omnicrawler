@@ -255,11 +255,14 @@ class ToastOverlay(QWidget):
         margin_top = 48
         margin_right = 8
         w = min(360, parent.width() // 2)
+        # S3.1.4：高度只覆盖实际 toast 内容（不再全高）——右侧 360px 不再全高死区
+        desired = self._layout.sizeHint().height() + 32
+        height = max(0, min(desired, parent.height() - margin_top - 16))
         self.setGeometry(
             parent.width() - w - margin_right,
             margin_top,
             w,
-            parent.height() - margin_top - 16,
+            height,
         )
         self.raise_()
 
@@ -271,8 +274,8 @@ class ToastOverlay(QWidget):
         duration: int = 3000,
         action_text: str = "",
         action_callback: Callable[[], None] | None = None,
-    ) -> Toast:
-        """显示一条 Toast。"""
+    ) -> Toast | None:
+        """显示一条 Toast；去重命中且无可见 toast 时返回 None（S3.1.4 标注一致）。"""
         # 去重：500ms 内相同消息不重复弹出（滑动窗口，不仅看最后一条）
         import time
         now_ms = int(time.monotonic() * 1000)
@@ -281,6 +284,7 @@ class ToastOverlay(QWidget):
             self._recent_messages.popleft()
         # Check if message was seen recently
         if any(msg == message for msg, _ in self._recent_messages):
+            # S3.1.4：返回类型标注一致（去重路径可能无 toast 可见）
             return self._toasts[-1] if self._toasts else None  # type: ignore[return-value]
         self._recent_messages.append((message, now_ms))
 

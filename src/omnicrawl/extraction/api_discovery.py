@@ -9,7 +9,53 @@ from typing import Any
 
 import yaml
 
+from ..core.safe_data import safe_json_loads
 from ..core.utils import atomic_write
+
+_SENSITIVE_KEYS: set[str] = {
+    "authorization",
+    "auth_token",
+    "token",
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "api_key",
+    "apikey",
+    "key",
+    "password",
+    "passwd",
+    "pwd",
+    "secret",
+    "secret_key",
+    "client_secret",
+    "cookie",
+    "set-cookie",
+}
+_SENSITIVE_PATTERN = re.compile(r"(key|secret|token|password|passwd|pwd|auth|credential)", re.IGNORECASE)
+
+
+def _is_sensitive_key(name: str) -> bool:
+    lowered = name.casefold()
+    return lowered in _SENSITIVE_KEYS or bool(_SENSITIVE_PATTERN.search(lowered))
+
+
+def redact_payload(payload: Any) -> Any:
+    """递归脱敏 request payload 中的 token/key/password/authorization 字段。
+
+    生成模板只保留字段结构，不泄露登录凭证（S1.3.3）。
+    """
+    if isinstance(payload, dict):
+        return {
+            str(key): ("***" if _is_sensitive_key(str(key)) else redact_payload(value))
+            for key, value in payload.items()
+        }
+    if isinstance(payload, list):
+        return [redact_payload(item) for item in payload]
+    if isinstance(payload, str):
+        parsed = safe_json_loads(payload)
+        if parsed is not None:
+            return redact_payload(parsed)
+    return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,7 +116,7 @@ def discover_api_endpoints(responses: list[dict[str, Any]]) -> list[ApiEndpointP
                 {
                     str(key): str(value)
                     for key, value in (response.get("request_headers", {}) or {}).items()
-                    if str(key).casefold() not in {"authorization", "cookie", "proxy-authorization"}
+                    if not _is_sensitive_key(str(key))
                 },
                 response.get("request_payload"),
             )
@@ -194,7 +240,15 @@ def write_discovery_bundle(
     validations = [_validate_from_captures(profile, responses) for profile in profiles]
     report = {
         "endpoints": [
-            {**profile.to_dict(), "validation": validation}
+            {
+                **profile.to_dict(),
+                "request_payload": (
+                    redact_payload(profile.request_payload)
+                    if profile.request_payload is not None
+                    else None
+                ),
+                "validation": validation,
+            }
             for profile, validation in zip(profiles, validations, strict=False)
         ]
     }
@@ -208,7 +262,7 @@ def write_discovery_bundle(
         if profile.request_headers:
             source["headers"] = profile.request_headers
         if profile.request_payload is not None:
-            source["payload"] = profile.request_payload
+            source["payload"] = redact_payload(profile.request_payload)
         pagination = _pagination_config(profile)
         if pagination:
             source["pagination"] = pagination

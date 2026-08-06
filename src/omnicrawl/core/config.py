@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import difflib
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -8,8 +10,11 @@ import yaml
 
 from ..pdfx.templates import DEFAULT_PDF_TEMPLATE, LEGACY_DEFAULT_PDF_TEMPLATE, resolve_builtin_pdf_reference
 from .credentials import resolve_secret_refs
+from .errors import ConfigParseError
 from .migrations import CURRENT_CONFIG_VERSION, migrate_config
-from .utils import deep_merge, expand_env, user_agent
+from .utils import deep_merge, expand_env_checked, user_agent
+
+LOGGER = logging.getLogger("omnicrawl")
 
 SOURCE_KINDS = {
     "static_html", "crawl", "focused", "incremental", "url_list", "rest",
@@ -45,10 +50,13 @@ DEFAULTS: dict[str, Any] = {
         "allow_patterns": [], "focus_keywords": [], "concurrency": 4,
     },
     "http": {
+        "engine": "urllib",
         "user_agent": user_agent("+contact: change-me@example.com"),
         "timeout_seconds": 25, "retries": 3, "delay_seconds": 1.0,
         "retry_base_seconds": 1.0, "retry_max_seconds": 30.0,
-        "retry_jitter": 0.25, "max_redirects": 10,
+        "retry_jitter": 0.25,
+        "retry_on_status": [408, 425, 429, 500, 502, 503, 504],
+        "max_redirects": 10,
         "auto_browser_fallback": True,
         "respect_robots": True, "robots_fail_closed": True,
         "robots_cache_ttl_seconds": 3600, "robots_max_bytes": 2_000_000,
@@ -75,7 +83,9 @@ DEFAULTS: dict[str, Any] = {
         "circuit_recovery_seconds": 30,
         "audit": True,
         "allow_unintercepted_selenium": False,
-        "experimental_selenium_bidi_guard": False,
+        # S2.5.12：Selenium BiDi 逐请求拦截默认开启（安全默认），
+        # 引擎不支持或拦截不可用时给出清晰指引而非静默直连
+        "experimental_selenium_bidi_guard": True,
     },
     "browser": {
         "engine": "playwright", "headless": True, "pool_size": 2, "actions": [],
@@ -123,6 +133,7 @@ DEFAULTS: dict[str, Any] = {
             "config": DEFAULT_PDF_TEMPLATE,
             "project_config": "",
             "skip_ocr": False,
+            "ocr_backend": "none",
         }
     },
     "outputs": {
@@ -131,7 +142,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "storage": {
         "objects": {"backend": "local", "local_directory": "."},
-        "records": {"backends": [], "fail_open": True, "max_errors": 200},
+        "records": {"backends": [], "fail_open": False, "max_errors": 200},
         "retention": {"raw_days": None, "artifacts_days": None, "diagnostics_days": None},
     },
     "plugins": {
@@ -160,6 +171,7 @@ class AppConfig:
     raw: dict[str, Any]
     workspace: Path
     migration_notes: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
 
     @property
     def project_name(self) -> str:
@@ -194,37 +206,167 @@ def load_config(path: str | Path) -> AppConfig:
     config_path = Path(path).expanduser().resolve()
     if not config_path.is_file():
         raise FileNotFoundError(f"配置文件不存在: {config_path}")
-    raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    # S2.1.2 ②：YAML 语法错误包装为含行列号的友好提示，原始异常保留到日志
+    try:
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        position = f"，第 {mark.line + 1} 行第 {mark.column + 1} 列" if mark is not None else ""
+        problem = getattr(exc, "problem", None) or str(exc)
+        LOGGER.error("YAML 语法错误: %s", exc, exc_info=True)
+        raise ConfigParseError(f"配置文件 {config_path} 存在语法错误: {problem}{position}") from exc
     if not isinstance(raw, dict):
         raise ValueError("配置文件顶层必须是YAML对象")
     raw, migration_notes = migrate_config(raw)
-    merged = resolve_secret_refs(deep_merge(DEFAULTS, expand_env(raw)))
+    expanded, missing_vars = expand_env_checked(raw)
+    merged = resolve_secret_refs(deep_merge(DEFAULTS, expanded))
+    _apply_retry_alias(merged, expanded)
     root = config_path.parent
-    project_root_found = False
-    for candidate in [config_path.parent, *config_path.parents]:
-        if (candidate / "pyproject.toml").is_file():
-            root = candidate
-            project_root_found = True
-            break
-    if not project_root_found:
-        for candidate in config_path.parents:
-            if candidate.name == "configs":
-                root = candidate.parent
+    # S4.2 ⑥：显式 project.root 优先（固定策略，不再跨环境漂移）；
+    # 否则 pyproject.toml → configs/ 目录的确定性探测
+    declared_root = merged["project"].get("root") if isinstance(merged["project"], dict) else None
+    if declared_root:
+        root = Path(str(declared_root)).expanduser()
+        if not root.is_absolute():
+            root = (config_path.parent / root).resolve()
+    else:
+        project_root_found = False
+        for candidate in [config_path.parent, *config_path.parents]:
+            if (candidate / "pyproject.toml").is_file():
+                root = candidate
+                project_root_found = True
                 break
+        if not project_root_found:
+            for candidate in config_path.parents:
+                if candidate.name == "configs":
+                    root = candidate.parent
+                    break
     workspace_value = merged["project"].get("workspace", "work/default")
     workspace = Path(workspace_value).expanduser()
     if not workspace.is_absolute():
         workspace = (root / workspace).resolve()
     config = AppConfig(config_path, root.resolve(), merged, workspace, migration_notes)
-    errors, _warnings = validate_config(config)
+    errors, warnings = validate_config(config)
+    if missing_vars:
+        warnings.append(
+            f"环境变量未定义已替换为空串，共 {len(missing_vars)} 个: " + "、".join(sorted(missing_vars))
+        )
     if errors:
-        raise ValueError("；".join(errors))
+        # S2.1.2 ①：错误多行、带编号，不再 ", ".join 挤一行
+        lines = "\n".join(f"  [{index}] {message}" for index, message in enumerate(errors, 1))
+        raise ConfigParseError(f"配置校验失败，共 {len(errors)} 项错误：\n{lines}")
+    config.warnings = tuple(warnings)
     return config
 
 
-def validate_config(config: AppConfig) -> tuple[list[str], list[str]]:
+def _closest_hint(known: list[str], key: str) -> str:
+    """给拼写错误配置键一个最接近的合法键候选提示（difflib 相似度 >= 0.6）。"""
+    candidates = difflib.get_close_matches(key, known, n=1, cutoff=0.6)
+    return f"，是否想写 '{candidates[0]}'？" if candidates else ""
+
+
+def _apply_retry_alias(merged: dict[str, Any], expanded: dict[str, Any]) -> None:
+    """双轨合并（S2.1.4）：旧轨 `http.retry_max` 写进新轨 `http.retries`。
+
+    merged 恒含 DEFAULTS 的 retries，无法区分用户是否显式配置；因此只在用户
+    YAML（expanded）中出现 retry_max 时覆盖，retries 仍优先（两者都写时 retries 胜）。
+    retries 语义为"总尝试次数"：0 表示不重试。非法 retry_max（负数/非整数）忽略，
+    由 validate_config 报错。
+    """
+    raw_http = expanded.get("http")
+    if not isinstance(raw_http, dict):
+        return
+    if "retries" in raw_http:
+        return  # 新轨显式配置优先，retry_max 仅在未写 retries 时兜底
+    retry_max = raw_http.get("retry_max")
+    if retry_max is None:
+        return
+    try:
+        count = int(retry_max)
+    except (TypeError, ValueError):
+        return
+    if count < 0:
+        return
+    merged["http"]["retries"] = count
+
+
+def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[str], list[str]]:
+    """校验配置。
+
+    strict=False（默认）时，未知段/未知字段以 warning 提示（DEFAULTS 合并后
+    白名单外的键只能是用户写错的键，不会误伤内置默认值）；strict=True 时升级为 error。
+
+    Returns:
+        (errors, warnings) 元组。
+    """
     errors: list[str] = []
     warnings: list[str] = []
+    flag = errors.append if strict else warnings.append
+
+    # S2.1.1 ②：顶层段白名单（DEFAULTS 键 + GUI/模板允许的扩展段）
+    known_sections = set(DEFAULTS) | {"api_discovery", "task", "template"}
+    for key in sorted(set(config.raw) - known_sections):
+        hint = _closest_hint(sorted(known_sections), key)
+        flag(
+            f"配置包含未知顶层段 '{key}'，允许的段: {', '.join(sorted(known_sections))}{hint}"
+        )
+
+    # 固定结构段的白名单子键（未知键只能是用户拼写错误）
+    section_whitelist = {
+        "browser": set(DEFAULTS["browser"]),
+        "crawl": set(DEFAULTS["crawl"]),
+        "download": set(DEFAULTS["download"]) | {"output_dir"},
+        "egress": set(DEFAULTS["egress"]),
+        "extract": set(DEFAULTS["extract"]) | {"item_path"},
+        "http": set(DEFAULTS["http"]) | {"retry_max"},
+        "incremental": set(DEFAULTS["incremental"]) | {"since_date"},
+        "outputs": set(DEFAULTS["outputs"]),
+        "plugins": set(DEFAULTS["plugins"]),
+        "resources": set(DEFAULTS["resources"]),
+        "session": set(DEFAULTS["session"]),
+        "updates": set(DEFAULTS["updates"]),
+        # S3.3.2：source 是核心段——漏检会让 seedz 等拼写错误静默通过
+        "source": set(DEFAULTS["source"]) | {
+            "method", "headers", "payload", "content_type", "pagination",
+            "login", "max_messages", "duration_seconds", "subscribe",
+            "fields", "params", "variables", "arguments", "query",
+            "query_file", "spider_file", "max_pages",
+        },
+    }
+    for section, allowed in section_whitelist.items():
+        raw_section = config.raw.get(section)
+        if not isinstance(raw_section, dict):
+            continue
+        for key in sorted(set(raw_section) - allowed):
+            hint = _closest_hint(sorted(allowed), key)
+            flag(
+                f"配置段 '{section}' 包含未知字段 '{key}'，允许: {', '.join(sorted(allowed))}{hint}"
+            )
+
+    # 嵌套固定结构（storage.* / processors.pdf）
+    nested_whitelist = {
+        "storage": {
+            "objects": set(DEFAULTS["storage"]["objects"]),
+            "records": set(DEFAULTS["storage"]["records"]),
+            "retention": set(DEFAULTS["storage"]["retention"]),
+        },
+        "processors": {"pdf": set(DEFAULTS["processors"]["pdf"])},
+    }
+    for section, nested in nested_whitelist.items():
+        raw_section = config.raw.get(section)
+        if not isinstance(raw_section, dict):
+            continue
+        for child, allowed in nested.items():
+            raw_child = raw_section.get(child)
+            if not isinstance(raw_child, dict):
+                continue
+            for key in sorted(set(raw_child) - allowed):
+                hint = _closest_hint(sorted(allowed), key)
+                flag(
+                    f"配置段 '{section}.{child}' 包含未知字段 '{key}'，"
+                    f"允许: {', '.join(sorted(allowed))}{hint}"
+                )
+
     if config.source_kind not in SOURCE_KINDS:
         if config.section("plugins").get("paths"):
             warnings.append(f"source.kind={config.source_kind}将由本地插件提供，运行时再验证")
@@ -255,6 +397,17 @@ def validate_config(config: AppConfig) -> tuple[list[str], list[str]]:
             errors.append("http.max_redirects必须在0到50之间")
         if float(http.get("retry_max_seconds", 30)) < 0:
             errors.append("http.retry_max_seconds不能为负数")
+        if http.get("retry_max") is not None:
+            if isinstance(http.get("retry_max"), bool):
+                errors.append("http.retry_max必须是大于等于0的整数（0 表示不重试）")
+            else:
+                try:
+                    retry_max_value = int(http.get("retry_max"))
+                except (TypeError, ValueError):
+                    errors.append("http.retry_max必须是大于等于0的整数（0 表示不重试）")
+                else:
+                    if retry_max_value < 0:
+                        errors.append("http.retry_max必须是大于等于0的整数（0 表示不重试）")
         if int(http.get("robots_max_bytes", 2_000_000)) < 1024:
             errors.append("http.robots_max_bytes不能小于1024")
     except (TypeError, ValueError):
@@ -312,9 +465,9 @@ def validate_config(config: AppConfig) -> tuple[list[str], list[str]]:
     if fields and not isinstance(fields, dict):
         errors.append("extract.fields必须是字段名到规则的映射")
     if not isinstance(config.section("auth").get("options", {}), dict):
-        errors.append("auth.options must be a mapping")
+        errors.append("auth.options必须是YAML对象")
     if not isinstance(config.raw.get("transformers", []), list):
-        errors.append("transformers must be a list")
+        errors.append("transformers必须是数组")
     selection = config.section("selection")
     topic = selection.get("topic", {})
     if topic and not isinstance(topic, dict):
@@ -342,7 +495,7 @@ def validate_config(config: AppConfig) -> tuple[list[str], list[str]]:
         warnings.append("AI已启用，但尚未为任何能力选择provider；系统将使用确定性回退")
     outputs = config.section("outputs")
     if not isinstance(outputs.get("plugin_exporters", []), list):
-        errors.append("outputs.plugin_exporters must be a list")
+        errors.append("outputs.plugin_exporters必须是数组")
     # E15：至少启用一种导出格式，否则 run 结束只产出辅助文件——以 warning 提示，
     # 不阻止加载（分析类任务可能有意只留 state.sqlite3）
     enabled_formats = [key for key in ("jsonl", "csv", "xlsx") if bool(outputs.get(key, False))]
@@ -352,16 +505,16 @@ def validate_config(config: AppConfig) -> tuple[list[str], list[str]]:
     if str(resources.get("profile", "balanced")).casefold() not in {
         "economy", "balanced", "performance"
     }:
-        errors.append("resources.profile must be economy, balanced or performance")
+        errors.append("resources.profile只能是economy、balanced或performance")
     try:
         for key in ("minimum_free_disk_bytes", "maximum_workspace_bytes"):
             if int(resources.get(key, 0)) < 0:
-                errors.append(f"resources.{key} cannot be negative")
+                errors.append(f"resources.{key}不能为负数")
         for key in ("maximum_runtime_seconds", "check_interval_seconds"):
             if float(resources.get(key, 0)) < 0:
-                errors.append(f"resources.{key} cannot be negative")
+                errors.append(f"resources.{key}不能为负数")
     except (TypeError, ValueError):
-        errors.append("resources limits must be numeric")
+        errors.append("resources配置必须是数值")
     diagnostics_raw = config.raw.get("diagnostics", {})
     if not isinstance(diagnostics_raw, dict):
         errors.append("diagnostics必须是YAML对象")
@@ -385,9 +538,9 @@ def validate_config(config: AppConfig) -> tuple[list[str], list[str]]:
             errors.append(f"diagnostics.{key}必须是整数")
     record_storage = config.section("storage").get("records", {})
     if not isinstance(record_storage, dict):
-        errors.append("storage.records must be a mapping")
+        errors.append("storage.records必须是YAML对象")
     elif not isinstance(record_storage.get("backends", []), list):
-        errors.append("storage.records.backends must be a list")
+        errors.append("storage.records.backends必须是数组")
     else:
         try:
             if int(record_storage.get("max_errors", 200)) < 0:

@@ -5,8 +5,6 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
-
 from omnicrawl.gui.runner.env_checker import check_omnicrawl
 from omnicrawl.gui.runner.worker_task_runner import _derive_worker_command
 

@@ -36,4 +36,13 @@ def effective_concurrency(config: AppConfig, requested: int) -> int:
 
 
 def effective_browser_pool(config: AppConfig, requested: int) -> int:
-    return max(1, min(int(requested), profile_for(config).browser_pool_cap))
+    cap = profile_for(config).browser_pool_cap
+    if int(requested) > cap:
+        # S4.5 P3#141：不再静默截断——显式提示被资源档位上限约束
+        import logging
+
+        logging.getLogger("omnicrawl").info(
+            "browser.pool_size=%s 超过资源档位上限 %s，按 %s 生效",
+            requested, cap, cap,
+        )
+    return max(1, min(int(requested), cap))

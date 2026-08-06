@@ -133,9 +133,17 @@ class ConfigManager(_BaseDelegate):
         if not filepath:
             return
         try:
+            from ...security.security_audit import scan_config_text
             from ..core.config_serializer import to_yaml
+            yaml_str = to_yaml(mw._config)
+            report = scan_config_text(yaml_str)
+            if not report["ok"]:
+                lines = "、".join(str(item["line"]) for item in report["findings"])
+                raise ValueError(
+                    _("导出配置包含明文凭据（第 {} 行），已拒绝导出；请改用 secret:// 引用或环境变量。")
+                    .format(lines)
+                )
             with zipfile.ZipFile(filepath, "w", zipfile.ZIP_DEFLATED) as zf:
-                yaml_str = to_yaml(mw._config)
                 zf.writestr("config.yaml", yaml_str)
                 manifest = {"exported_at": datetime.now().isoformat(), "gui_version": APP_VERSION,
                             "config_name": mw._config.project_name, "task_id": mw._config.task_id}
@@ -191,10 +199,10 @@ class ConfigManager(_BaseDelegate):
             QMessageBox.information(mw, _("配置历史"), _("保存第二个版本后即可在这里恢复。"))
             return
         dialog = QDialog(mw)
-        dialog.setWindowTitle("配置历史与恢复")
+        dialog.setWindowTitle(_("配置历史与恢复"))
         dialog.resize(720, 420)
         layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel("恢复前会自动备份当前配置。选择一个历史版本："))
+        layout.addWidget(QLabel(_("恢复前会自动备份当前配置。选择一个历史版本：")))
         listing = QListWidget(dialog)
         for version in versions:
             item = QListWidgetItem(f"{version.get('created_at', '')}  {version.get('reason', '')}  {version.get('sha256', '')[:10]}")
@@ -204,7 +212,7 @@ class ConfigManager(_BaseDelegate):
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         _ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
         assert _ok_btn is not None
-        _ok_btn.setText("恢复所选版本")
+        _ok_btn.setText(_("恢复所选版本"))
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
@@ -213,8 +221,27 @@ class ConfigManager(_BaseDelegate):
         _current = listing.currentItem()
         if _current is None:
             return
+        # S3.1.26：恢复前先校验——坏配置不覆盖当前文件
+        from ..core.validator import validate_full_config
+
+        version_path = Path(str(_current.data(Qt.ItemDataRole.UserRole)))
+        try:
+            candidate = load_yaml(version_path)
+            errors, _warnings = validate_full_config(candidate)
+        except Exception as exc:
+            QMessageBox.critical(
+                mw, _("恢复失败"),
+                _(f"该历史版本解析失败，未覆盖当前文件：{exc}"),
+            )
+            return
+        if errors:
+            QMessageBox.critical(
+                mw, _("恢复失败"),
+                _("该历史版本配置无效，未覆盖当前文件：\n") + "\n".join(errors),
+            )
+            return
         mw._config_history.snapshot(mw._config_path, reason="before_restore")
-        mw._config_history.restore(Path(str(_current.data(Qt.ItemDataRole.UserRole))), mw._config_path)
+        mw._config_history.restore(version_path, mw._config_path)
         mw._config = load_yaml(mw._config_path)
         mw._rebuild_wizard()
         ToastManager.instance().success(_("历史配置已恢复；如需撤销，可再次打开配置历史"))

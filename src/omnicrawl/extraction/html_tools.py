@@ -161,6 +161,7 @@ def node_markup(node: Any) -> str:
 
 def discover_links(document: Any) -> list[tuple[str, str, str]]:
     found: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
     for selector, attribute, kind in (
         ("a[href]", "href", "link"), ("iframe[src]", "src", "link"),
         ("img[src]", "src", "media"), ("source[src]", "src", "media"),
@@ -168,6 +169,26 @@ def discover_links(document: Any) -> list[tuple[str, str, str]]:
     ):
         for node in select_nodes(document, selector):
             value = node_attr(node, attribute)
-            if value:
-                found.append((value, node_text(node), kind))
+            if not value:
+                continue
+            # S2.5.34：伪协议链接（javascript:/mailto:/tel:/void(0)）直接过滤
+            if _is_pseudo_protocol(value):
+                continue
+            key = value.casefold()
+            if key in seen:
+                continue  # 链接去重
+            seen.add(key)
+            found.append((value, node_text(node), kind))
     return found
+
+
+def _is_pseudo_protocol(value: str) -> bool:
+    """S2.5.34：伪协议/空协议链接识别（javascript:、mailto:、tel:、void(0) 等）。"""
+    lowered = value.strip().casefold()
+    if lowered.startswith(("javascript:", "mailto:", "tel:", "sms:", "data:", "file:", "about:")):
+        return True
+    if lowered.startswith(("javascript", "vbscript")) and "(" in lowered:
+        return True
+    if "void(0)" in lowered or "void (0)" in lowered:
+        return True
+    return False

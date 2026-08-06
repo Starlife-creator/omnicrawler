@@ -199,9 +199,12 @@ class CsvIndexWorker(QThread):
     finished_indexing = pyqtSignal(list, int, float)  # headers, total_rows, file_size
     failed = pyqtSignal(str)
 
-    def __init__(self, path: str | Path, parent=None) -> None:
+    def __init__(self, path: str | Path, parent=None, *, max_rows: int | None = None) -> None:
         super().__init__(parent)
         self._path = Path(path)
+        # S3.1.21：接受 max_rows 参数（调用方传值不再 TypeError）；
+        # None 表示完整计数（B9 语义），>0 时提前停止扫描
+        self._max_rows = max_rows
 
     def run(self) -> None:
         try:
@@ -219,6 +222,8 @@ class CsvIndexWorker(QThread):
                     if self.isInterruptionRequested():
                         return
                     row_count += 1
+                    if self._max_rows is not None and row_count >= self._max_rows:
+                        break
             self.finished_indexing.emit(headers, row_count, float(file_size))
         except (OSError, UnicodeError, csv.Error) as exc:
             self.failed.emit(str(exc))

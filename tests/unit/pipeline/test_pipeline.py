@@ -88,6 +88,100 @@ class PipelineTest(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_exception_mid_loop_drains_in_progress_rows(self):
+        """S1.2.1：循环中途抛异常时，在途请求仍被 drain，frontier 不残留 in_progress。"""
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                workspace = root / "work"
+                config_path = root / "project.yaml"
+                config_path.write_text(yaml.safe_dump({
+                    "project": {"name": "drain", "workspace": str(workspace)},
+                    "source": {"kind": "crawl", "seeds": [
+                        f"http://127.0.0.1:{server.server_port}/index",
+                        f"http://127.0.0.1:{server.server_port}/page2",
+                    ]},
+                    "crawl": {"max_pages": 2, "max_depth": 1, "same_host": True, "concurrency": 2},
+                    "http": {
+                        "user_agent": "DrainTest/1.0 (+contact: test@example.org)",
+                        "respect_robots": False, "delay_seconds": 0, "allow_private_network": True,
+                    },
+                    "extract": {"mode": "html", "fields": {"title": {"selector": "title"}}},
+                }, sort_keys=False), encoding="utf-8")
+                config = load_config(config_path)
+                from unittest import mock
+                with Pipeline(config) as pipeline:
+                    original = pipeline.run_control.wait_if_paused
+                    calls = {"n": 0}
+
+                    def _explode(*args, **kwargs):
+                        calls["n"] += 1
+                        if calls["n"] >= 2:
+                            raise RuntimeError("boom")
+                        return original(*args, **kwargs)
+
+                    with mock.patch.object(pipeline.run_control, "wait_if_paused", side_effect=_explode):
+                        with pytest.raises(RuntimeError, match="boom"):
+                            pipeline.run()
+                    leftover = pipeline.state.rows(
+                        "SELECT status, COUNT(*) AS n FROM frontier GROUP BY status"
+                    )
+                    statuses = {row["status"]: row["n"] for row in leftover}
+                    assert statuses.get("in_progress", 0) == 0, statuses
+                    run = pipeline.state.latest_run()
+                    assert run["status"] == "failed"
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
+    def test_reprocess_survives_corrupt_single_record(self):
+        """S1.2.2：单条 NULL status_code 的坏记录不拖垮整个 reprocess 任务。"""
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                workspace = root / "work"
+                config_path = root / "project.yaml"
+                config_path.write_text(yaml.safe_dump({
+                    "project": {"name": "reprocess", "workspace": str(workspace)},
+                    "source": {"kind": "crawl", "seeds": [
+                        f"http://127.0.0.1:{server.server_port}/index",
+                        f"http://127.0.0.1:{server.server_port}/page2",
+                    ]},
+                    "crawl": {"max_pages": 2, "max_depth": 1, "same_host": True, "concurrency": 2},
+                    "http": {
+                        "user_agent": "ReprocessTest/1.0 (+contact: test@example.org)",
+                        "respect_robots": False, "delay_seconds": 0, "allow_private_network": True,
+                    },
+                    "incremental": {"archive_raw": True},
+                    "extract": {"mode": "html", "fields": {"title": {"selector": "title"}}},
+                }, sort_keys=False), encoding="utf-8")
+                config = load_config(config_path)
+                with Pipeline(config) as pipeline:
+                    first = pipeline.run()
+                    run_id = first["run_id"]
+                    # 人为破坏一条响应记录：status_code 写入非数值 → FetchResult 构造时 int() 失败
+                    row = pipeline.state.rows(
+                        "SELECT id FROM responses WHERE run_id=? AND raw_path IS NOT NULL ORDER BY id LIMIT 1",
+                        (run_id,),
+                    )[0]
+                    with pipeline.state.conn:
+                        pipeline.state.conn.execute(
+                            "UPDATE responses SET status_code='abc' WHERE id=?", (row["id"],)
+                        )
+                    summary = pipeline.reprocess_records(run_id)
+                    assert summary["failures"] == 1
+                    assert summary["reprocessed_responses"] == 1
+        finally:
+            server.shutdown()
+            server.server_close()
+
 
 if __name__ == "__main__":
     unittest.main()

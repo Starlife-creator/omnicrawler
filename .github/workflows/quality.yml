@@ -32,6 +32,7 @@ jobs:
       - run: python tools/check_cli_docs.py
       - run: python tools/check_docs_consistency.py
       - run: python tools/check_network_boundaries.py
+      - run: python tools/check_coding_standards.py src
       - run: python -m coverage run -m pytest -q
       - run: python -m coverage json -o coverage.json
       - run: python tools/check_coverage_gates.py coverage.json
@@ -94,6 +95,7 @@ jobs:
       - run: python tools/check_architecture.py
       - run: python tools/check_docs_consistency.py
       - run: python tools/check_network_boundaries.py
+      - run: python tools/check_coding_standards.py src
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

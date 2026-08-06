@@ -3,11 +3,14 @@ from __future__ import annotations
 import builtins
 import json
 import sqlite3
+import threading
 import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+from ..core.safe_data import safe_json_loads
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schedules (
@@ -34,7 +37,7 @@ class ScheduleStore:
     def __init__(self, path: Path) -> None:
         self.path = path.resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(self.path, timeout=30)
+        self.conn = sqlite3.connect(self.path, timeout=30, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA busy_timeout=30000")
         self.conn.executescript(SCHEMA)
@@ -42,6 +45,8 @@ class ScheduleStore:
         if "conditions_json" not in columns:
             with self.conn:
                 self.conn.execute("ALTER TABLE schedules ADD COLUMN conditions_json TEXT NOT NULL DEFAULT '{}'")
+        # S2.5.44：并行 run_due 时共享连接的进程内互斥
+        self._lock = threading.Lock()
 
     def close(self) -> None:
         self.conn.close()
@@ -93,38 +98,40 @@ class ScheduleStore:
             if cursor.rowcount == 0:
                 raise KeyError(schedule_id)
 
-    def claim_due(self, *, now: float | None = None, lease_seconds: int = 3600, limit: int = 10) -> builtins.list[dict[str, Any]]:
+    def claim_due(self, *, now: float | None = None, lease_seconds: int = 300, limit: int = 10) -> builtins.list[dict[str, Any]]:
         now = time.time() if now is None else now
-        self.conn.execute("BEGIN IMMEDIATE")
-        try:
-            rows = self.conn.execute(
-                """
-                SELECT * FROM schedules
-                WHERE enabled=1 AND next_run_at<=? AND (lease_until IS NULL OR lease_until<=?)
-                ORDER BY next_run_at LIMIT ?
-                """,
-                (now, now, limit),
-            ).fetchall()
-            if rows:
-                self.conn.executemany(
-                    "UPDATE schedules SET lease_until=?, last_started_at=?, last_status='running' WHERE schedule_id=?",
-                    [(now + lease_seconds, now, row["schedule_id"]) for row in rows],
-                )
-            self.conn.commit()
-        except Exception:
-            self.conn.rollback()
-            raise
+        with self._lock:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                rows = self.conn.execute(
+                    """
+                    SELECT * FROM schedules
+                    WHERE enabled=1 AND next_run_at<=? AND (lease_until IS NULL OR lease_until<=?)
+                    ORDER BY next_run_at LIMIT ?
+                    """,
+                    (now, now, limit),
+                ).fetchall()
+                if rows:
+                    self.conn.executemany(
+                        "UPDATE schedules SET lease_until=?, last_started_at=?, last_status='running' WHERE schedule_id=?",
+                        [(now + lease_seconds, now, row["schedule_id"]) for row in rows],
+                    )
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
         return [dict(row) for row in rows]
 
     def finish(self, schedule_id: str, *, ok: bool, error: str = "", now: float | None = None) -> None:
         now = time.time() if now is None else now
-        with self.conn:
+        with self._lock:
             row = self.conn.execute(
                 "SELECT interval_seconds FROM schedules WHERE schedule_id=?",
                 (schedule_id,),
             ).fetchone()
             if row is None:
-                raise KeyError(schedule_id)
+                # S2.5.19：调度已被删除时静默兜底，不再中断整批循环
+                return
             self.conn.execute(
                 """
                 UPDATE schedules SET lease_until=NULL, last_finished_at=?, last_status=?, last_error=?, next_run_at=?
@@ -134,34 +141,42 @@ class ScheduleStore:
             )
 
     def defer(self, schedule_id: str, reason: str, *, seconds: int = 300) -> None:
-        with self.conn:
+        with self._lock:
             self.conn.execute(
                 "UPDATE schedules SET lease_until=NULL, last_status='waiting_condition', last_error=?, next_run_at=? WHERE schedule_id=?",
                 (reason[:4000], time.time() + max(60, seconds), schedule_id),
             )
 
     def run_due(self, executor: Callable[[Path], Any], *, limit: int = 10) -> builtins.list[dict[str, Any]]:
-        results: list[dict[str, Any]] = []
-        for schedule in self.claim_due(limit=limit):
-            from .schedule_conditions import evaluate_conditions
+        # S2.5.44：并行执行到期任务——长任务不再拖住后续调度
+        from concurrent.futures import ThreadPoolExecutor
 
-            try:
-                conditions = json.loads(schedule.get("conditions_json") or "{}")
-            except json.JSONDecodeError:
-                conditions = {}
-            allowed, reason = evaluate_conditions(conditions if isinstance(conditions, dict) else {})
-            if not allowed:
-                self.defer(schedule["schedule_id"], reason)
-                results.append(
-                    {"schedule_id": schedule["schedule_id"], "ok": True, "deferred": True, "reason": reason}
-                )
-                continue
-            try:
-                value = executor(Path(schedule["config_path"]))
-            except Exception as exc:
-                self.finish(schedule["schedule_id"], ok=False, error=f"{type(exc).__name__}: {exc}")
-                results.append({"schedule_id": schedule["schedule_id"], "ok": False, "error": str(exc)})
-            else:
-                self.finish(schedule["schedule_id"], ok=True)
-                results.append({"schedule_id": schedule["schedule_id"], "ok": True, "result": value})
-        return results
+        schedules = self.claim_due(limit=limit)
+        if not schedules:
+            return []
+        workers = min(len(schedules), 8)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [
+                pool.submit(self._run_one, schedule, executor) for schedule in schedules
+            ]
+            return [future.result() for future in futures]
+
+    def _run_one(
+        self, schedule: dict[str, Any], executor: Callable[[Path], Any],
+    ) -> dict[str, Any]:
+        from .schedule_conditions import evaluate_conditions
+
+        conditions = safe_json_loads(schedule.get("conditions_json") or "{}", default={})
+        allowed, reason = evaluate_conditions(conditions if isinstance(conditions, dict) else {})
+        if not allowed:
+            self.defer(schedule["schedule_id"], reason)
+            return {
+                "schedule_id": schedule["schedule_id"], "ok": True, "deferred": True, "reason": reason,
+            }
+        try:
+            value = executor(Path(schedule["config_path"]))
+        except Exception as exc:
+            self.finish(schedule["schedule_id"], ok=False, error=f"{type(exc).__name__}: {exc}")
+            return {"schedule_id": schedule["schedule_id"], "ok": False, "error": str(exc)}
+        self.finish(schedule["schedule_id"], ok=True)
+        return {"schedule_id": schedule["schedule_id"], "ok": True, "result": value}

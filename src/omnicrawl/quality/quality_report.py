@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 from typing import Any
 
 from ..core.config import AppConfig
+from ..core.safe_data import safe_json_loads
 from ..core.utils import atomic_write, utcnow
 from ..security.security_audit import pii_summary
 from ..state import StateStore
+
+LOGGER = logging.getLogger(__name__)
 
 
 def build_quality_report(config: AppConfig, state: StateStore, run_id: str | None) -> dict[str, Any]:
@@ -15,8 +19,13 @@ def build_quality_report(config: AppConfig, state: StateStore, run_id: str | Non
     rows = state.rows(f"SELECT data_json, evidence_json FROM records{where}", params)
     qualities: list[dict[str, Any]] = []
     resolved_entities = 0
+    skipped_malformed = 0
     for row in rows:
-        evidence = json.loads(row["evidence_json"])
+        # S2.5.30：NULL/畸形 JSON 单元格安全解析并跳过计数，不中断报告
+        evidence = safe_json_loads(row["evidence_json"], default=None)
+        if not isinstance(evidence, dict):
+            skipped_malformed += 1
+            continue
         quality = evidence.get("_quality", {})
         if isinstance(quality, dict):
             qualities.append(quality)
@@ -36,13 +45,22 @@ def build_quality_report(config: AppConfig, state: StateStore, run_id: str | Non
         "run_id": run_id,
         "generated_at": utcnow(),
         "records": total,
+        "skipped_malformed": skipped_malformed,
         "average_quality_score": round(average_score, 4),
         "review_required": review,
         "near_duplicates": near_duplicates,
         "entities_resolved": resolved_entities,
         "semantic_changes": {row["change_type"]: row["count"] for row in changes},
         "fields": fields,
-        "pii_candidates": pii_summary([json.loads(row["data_json"]) for row in rows]),
+        "pii_candidates": pii_summary(
+            [
+                payload
+                for payload in (
+                    safe_json_loads(row["data_json"], default=None) for row in rows
+                )
+                if isinstance(payload, dict)
+            ]
+        ),
     }
     output = config.workspace / "output"
     output.mkdir(parents=True, exist_ok=True)

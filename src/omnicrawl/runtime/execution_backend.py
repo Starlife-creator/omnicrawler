@@ -64,8 +64,16 @@ class InProcessBackend:
                 with self._lock:
                     self._state = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
             else:
-                with self._lock:
-                    self._state = {"status": result.get("status", "succeeded"), "result": result}
+                # S2.5.47：非 dict 返回也正常置终态，不卡 running
+                if isinstance(result, dict):
+                    with self._lock:
+                        self._state = {"status": result.get("status", "succeeded"), "result": result}
+                else:
+                    with self._lock:
+                        self._state = {
+                            "status": "succeeded",
+                            "result": {"status": "succeeded", "value": result},
+                        }
 
         self._thread = threading.Thread(target=run, name="omnicrawl-in-process", daemon=True)
         self._thread.start()
@@ -153,7 +161,8 @@ class LocalWorkerBackend:
             except (OSError, EOFError, ConnectionError) as exc:
                 last_error = str(exc)
                 time.sleep(0.05)
-        raise RuntimeError(f"本地Worker启动超时: {last_error}")
+        # S2.5.21：超时错误信息兜底非空，不再输出 "本地Worker启动超时: " 尾随空白
+        raise RuntimeError(f"本地Worker启动超时: {last_error or 'Worker未在时限内就绪（可查看工作区 logs/local-worker.log）'}")
 
     def attach(self, session_file: str | Path) -> dict[str, Any]:
         self.session_file = Path(session_file).expanduser().resolve()
@@ -207,6 +216,8 @@ class FutureRemoteBackend:
 
 
 def _write_session(path: Path, session: WorkerSession) -> None:
+    # S2.5.21：IPC 安全核心是随机的 auth_token（连接须 authkey 匹配），
+    # 不依赖 chmod 0600（Windows 无 POSIX 权限语义，chmod 仅尽力而为）。
     atomic_write(path, json.dumps(asdict(session), ensure_ascii=False, indent=2).encode("utf-8"))
     try:
         os.chmod(path, 0o600)

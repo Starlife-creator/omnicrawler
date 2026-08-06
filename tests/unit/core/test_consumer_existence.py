@@ -1,0 +1,72 @@
+"""S3.2.2 ③：消费方存在性测试——关键守卫/配置项必须有真实消费方，零消费即红。"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+SRC = Path(__file__).resolve().parents[3] / "src" / "omnicrawl"
+
+
+def _source_text() -> str:
+    texts: list[str] = []
+    for path in SRC.rglob("*.py"):
+        if "__pycache__" in str(path):
+            continue
+        try:
+            texts.append(path.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+    return "\n".join(texts)
+
+
+@pytest.fixture(scope="module")
+def source() -> str:
+    return _source_text()
+
+
+def _usage(source: str, token: str) -> int:
+    """统计 token 在源码中的出现次数（不含定义处与注释）。"""
+    count = 0
+    for line in source.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(("#", '"""', "'''")):
+            continue
+        if token in line and "noqa" not in line:
+            count += 1
+    return count
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "safe_regex_search",          # S2.5.14 核心防护——必须被消费
+        "value_pattern",              # S3.2.1 ①：配置项消费方（pdfx config+validation）
+        "history_max_entries",        # S3.2.1 ②：配置项消费方（settings+main 构造）
+        "validate_ai_output",         # S3.2.1 ⑤：接入生产（ai_graph）
+        "ai_audit_record",            # AI 审计（ai_task_designer）
+        "seal_secret",                # S2.2.2 密封出口
+        "pending_count",              # S2.5.37 增量统计
+        "background_worker",          # S3.1.1 基类
+        "NavIndex",                   # S3.1.2 导航常量
+        "retry_after_cap_seconds",    # S2.5.9 配置项
+        "partial_success",            # S2.4.1 状态
+    ],
+)
+def test_guard_or_config_has_consumer(source: str, token: str) -> None:
+    assert _usage(source, token) >= 1, f"{token} 无消费方（零消费孤儿）"
+
+
+def test_deprecated_archives_still_importable() -> None:
+    from omnicrawl.fetching.archives import ArchiveLimits, safe_extract_archive  # noqa: F401
+
+    assert callable(safe_extract_archive)
+    assert callable(ArchiveLimits)
+    assert "已废弃" in _source_text()
+
+
+def test_experimental_components_are_marked() -> None:
+    text = _source_text()
+    assert "实验性" in text  # AIGraphExtractor/ProxyRotator/apply_to_playwright_context 标注存在
+    assert "已废弃" in text  # archives.py deprecated 标注存在

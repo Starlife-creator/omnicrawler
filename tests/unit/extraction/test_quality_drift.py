@@ -83,3 +83,22 @@ def test_template_monitor_detects_breaking_structure(tmp_path: Path) -> None:
     assert observation.invalidated is True
     latest = json.loads((config.workspace / "template_health" / "latest.json").read_text(encoding="utf-8"))
     assert latest["status"] == "invalid"
+
+
+def test_template_monitor_none_content_type_and_data(tmp_path: Path) -> None:
+    """S1.5.6：content_type=None / record.data=None 不抛 TypeError。"""
+    config = _config(tmp_path)
+    monitor = TemplateMonitor(config)
+    request = CrawlRequest("https://example.com")
+    result = FetchResult(
+        request,
+        request.url,
+        200,
+        {},  # 无 content-type 头 → content_type 属性空串
+        b"<html><body><h1>Title</h1></body></html>",
+        0.1,
+    )
+    record = ExtractedRecord(request.url, "page", None)  # type: ignore[arg-type]
+    observation = monitor.observe(result, [record], {"title": {}})
+    assert observation is not None
+    assert observation.status in {"healthy", "warning", "invalid"}

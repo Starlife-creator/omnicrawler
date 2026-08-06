@@ -97,7 +97,10 @@ def test_fetch_success_gzip_headers_and_final_url(tmp_path: Path) -> None:
     assert result.final_url == "https://example.org/final"
     request = fetcher.opener.requests[0][0]
     assert request.headers["X-test"] == "yes"
-    assert request.headers["Accept-encoding"] == "gzip, deflate"
+    # S2.5.6：基础编码始终声明；br/zstd 仅当对应解码库已安装时附加
+    accept = request.headers["Accept-encoding"].split(", ")
+    assert accept[0:2] == ["gzip", "deflate"]
+    assert set(accept[2:]) <= {"br", "zstd"}
 
 
 def test_response_declared_streamed_and_decompressed_size_limits(tmp_path: Path) -> None:

@@ -113,6 +113,28 @@ def _table_html_to_markdown(html_parts: list[str]) -> str:
     return "\n".join(lines).strip()
 
 
+# S2.3.3：非标准 Tesseract 语言名归一（ch→chi_sim 等），避免配置 lang 不兼容静默 OCR 失败
+_LANG_ALIASES = {
+    "ch": "chi_sim",
+    "chi": "chi_sim",
+    "cn": "chi_sim",
+    "sim": "chi_sim",
+    "trad": "chi_tra",
+    "jp": "jpn",
+    "jap": "jpn",
+    "kr": "kor",
+    "kor": "kor",
+}
+
+
+def normalize_ocr_lang(lang: str) -> str:
+    """把 ``+`` 分隔的 Tesseract 语言串归一为标准语言名（未知项原样保留）。"""
+    parts = [part.strip() for part in str(lang).split("+") if part.strip()]
+    if not parts:
+        return "chi_sim+eng"
+    return "+".join(_LANG_ALIASES.get(part.casefold(), part) for part in parts)
+
+
 class TesseractBackend:
     def __init__(self, config: dict[str, Any]):
         try:
@@ -125,7 +147,7 @@ class TesseractBackend:
             ) from exc
         self.pytesseract = pytesseract
         self.Image = Image
-        self.lang = config.get("lang", "chi_sim+eng")
+        self.lang = normalize_ocr_lang(config.get("lang", "chi_sim+eng"))
         command = str(config.get("command") or os.environ.get("TESSERACT_CMD", "")).strip()
         if command:
             self.pytesseract.pytesseract.tesseract_cmd = command
@@ -340,7 +362,27 @@ def ocr_stage(
             return summary
         return _ocr_serial(config, db, rows, backend, dpi, summary)
 
-    # 多进程路径：D39 父进程不实例化 backend（PPStructureV3 占 1-2GB），worker 各自初始化
+    # 多进程路径：D39 父进程不保留 backend 实例（PPStructureV3 占 1-2GB），
+    # 但 S2.3.1 要求进入进程池前在本进程预检一次依赖（缺依赖/GPU 不可用早失败，
+    # 提示"依赖缺失"并按 D13 语义标记 skipped 写 errors，不崩管线）。
+    precheck_backend: OCRBackend | None = None
+    try:
+        precheck_backend = create_backend(config)
+    except Exception as exc:  # noqa: BLE001 - missing optional OCR dependency must degrade
+        logger.error("OCR 依赖缺失，跳过 OCR 阶段: %s", exc)
+        for row in rows:
+            db.add_error(row["doc_id"], "ocr", exc)
+            db.execute(
+                "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
+                (utcnow(), row["doc_id"], row["page_no"]),
+            )
+        summary["skipped"] = len(rows)
+        return summary
+    if precheck_backend is None:
+        summary["skipped"] = len(rows)
+        return summary
+    del precheck_backend  # 预检实例即刻释放，父进程不驻留模型
+
     logger.info("OCR 阶段启动 %d 个 worker 进程", workers)
     work_items: list[tuple[str, int, int, str, int]] = []
     for row in rows:
@@ -351,65 +393,75 @@ def ocr_stage(
 
     ocr_config = dict(config.ocr)
     start_time = time.monotonic()
+    completed = 0
 
-    with concurrent.futures.ProcessPoolExecutor(
-        max_workers=workers,
-        initializer=_ocr_worker_init,
-        initargs=(ocr_config,),
-    ) as executor:
-        # D37：按批提交（每批 500），避免百万页 futures 常驻；批间结果即时落库
-        batch_size = 500
-        completed = 0
-        for batch_start in range(0, len(work_items), batch_size):
-            batch = work_items[batch_start:batch_start + batch_size]
-            futures: dict[concurrent.futures.Future, tuple[str, int]] = {}
-            for doc_id, page_no, path, _dpi in batch:
-                fut = executor.submit(_ocr_worker_process, (path, page_no, _dpi))
-                futures[fut] = (doc_id, page_no)
-            # D38：温度保护前移到提交侧——每批提交后检查，任务不再满载后才 sleep
-            if not _check_temperature():
-                logger.warning("温度过高，等待 30 秒后处理下一批...")
-                time.sleep(30)
-            for fut in concurrent.futures.as_completed(futures):
-                doc_id, page_no = futures[fut]
-                try:
-                    results = fut.result()
-                    text, confidence, printable, garbled = results[2], results[3], results[4], results[5]
-                except Exception as exc:  # noqa: BLE001
-                    db.add_error(doc_id, "ocr", exc)
-                    db.execute(
-                        "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
-                        (utcnow(), doc_id, page_no),
-                    )
-                    summary["failed"] += 1
+    try:
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=workers,
+            initializer=_ocr_worker_init,
+            initargs=(ocr_config,),
+        ) as executor:
+            # D37：按批提交（每批 500），避免百万页 futures 常驻；批间结果即时落库
+            batch_size = 500
+            for batch_start in range(0, len(work_items), batch_size):
+                batch = work_items[batch_start:batch_start + batch_size]
+                futures: dict[concurrent.futures.Future, tuple[str, int]] = {}
+                for doc_id, page_no, path, _dpi in batch:
+                    fut = executor.submit(_ocr_worker_process, (path, page_no, _dpi))
+                    futures[fut] = (doc_id, page_no)
+                # D38：温度保护前移到提交侧——每批提交后检查，任务不再满载后才 sleep
+                if not _check_temperature():
+                    logger.warning("温度过高，等待 30 秒后处理下一批...")
+                    time.sleep(30)
+                for fut in concurrent.futures.as_completed(futures):
+                    doc_id, page_no = futures[fut]
+                    try:
+                        results = fut.result()
+                        text, confidence, printable, garbled = results[2], results[3], results[4], results[5]
+                    except Exception as exc:  # noqa: BLE001
+                        db.add_error(doc_id, "ocr", exc)
+                        db.execute(
+                            "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
+                            (utcnow(), doc_id, page_no),
+                        )
+                        summary["failed"] += 1
+                        completed += 1
+                        continue
+
+                    if text is None:
+                        # D15：错误详情写 errors 表，用户可知为何无文字
+                        worker_error = results[6] if len(results) > 6 and results[6] else "OCR 识别无输出"
+                        db.add_error(doc_id, "ocr", RuntimeError(str(worker_error)[:4000]))
+                        db.execute(
+                            "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
+                            (utcnow(), doc_id, page_no),
+                        )
+                        summary["failed"] += 1
+                    else:
+                        db.execute(
+                            """
+                            UPDATE pages SET ocr_text=?, final_text=?, parse_method='ocr',
+                                printable_chars=?, garbled_ratio=?, ocr_status='done',
+                                ocr_confidence=?, updated_at=? WHERE doc_id=? AND page_no=?
+                            """,
+                            (text, text, printable, garbled, confidence, utcnow(), doc_id, page_no),
+                        )
+                        summary["recognized"] += 1
                     completed += 1
-                    continue
-
-                if text is None:
-                    # D15：错误详情写 errors 表，用户可知为何无文字
-                    worker_error = results[6] if len(results) > 6 and results[6] else "OCR 识别无输出"
-                    db.add_error(doc_id, "ocr", RuntimeError(str(worker_error)[:4000]))
-                    db.execute(
-                        "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
-                        (utcnow(), doc_id, page_no),
-                    )
-                    summary["failed"] += 1
-                else:
-                    db.execute(
-                        """
-                        UPDATE pages SET ocr_text=?, final_text=?, parse_method='ocr',
-                            printable_chars=?, garbled_ratio=?, ocr_status='done',
-                            ocr_confidence=?, updated_at=? WHERE doc_id=? AND page_no=?
-                        """,
-                        (text, text, printable, garbled, confidence, utcnow(), doc_id, page_no),
-                    )
-                    summary["recognized"] += 1
-                completed += 1
+    except Exception as exc:  # noqa: BLE001 - S2.3.1: worker 池崩溃（BrokenProcessPool 等）降级不崩管线
+        logger.error("OCR 多进程池崩溃，剩余 %d 页标记跳过: %s", len(rows) - completed, exc)
+        for row in rows[completed:]:
+            db.add_error(row["doc_id"], "ocr", RuntimeError(f"OCR 多进程崩溃: {exc}"[:4000]))
+            db.execute(
+                "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
+                (utcnow(), row["doc_id"], row["page_no"]),
+            )
+            summary["skipped"] += 1
 
     elapsed = time.monotonic() - start_time
     logger.info(
-        "OCR 阶段完成：%d/%d 页识别成功，%d 失败，耗时 %.1f 秒（%d workers）",
-        summary["recognized"], summary["selected"], summary["failed"], elapsed, workers,
+        "OCR 阶段完成：%d/%d 页识别成功，%d 失败，%d 跳过，耗时 %.1f 秒（%d workers）",
+        summary["recognized"], summary["selected"], summary["failed"], summary["skipped"], elapsed, workers,
     )
 
     # 更新文档状态

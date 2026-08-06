@@ -14,7 +14,7 @@ from ._mixin_base import _PipelineBase
 
 
 class _PipelineExports(_PipelineBase):
-    def _run_exports(self, run_id: str) -> dict[str, Any]:
+    def _run_exports(self, run_id: str, *, force: bool = False) -> dict[str, Any]:
         outputs = self.config.section("outputs")
         primary = str(outputs.get("exporter", "default")).strip().casefold() or "default"
         extras_raw = outputs.get("plugin_exporters", [])
@@ -37,10 +37,16 @@ class _PipelineExports(_PipelineBase):
             idempotency_key = f"{run_id}:export:{name}"
             if not self.state.begin_export(run_id, name, idempotency_key):
                 commit = self.state.export_commit(idempotency_key)
-                if commit and commit["status"] == "succeeded":
+                if not force and commit and commit["status"] == "succeeded":
                     results[name] = commit["result"]
                     continue
-                raise RuntimeError(f"导出器{name}已有未完成提交，拒绝重复提交")
+                # S2.5.2：force（reprocess）路径绕过幂等提交缓存，重新导出刷新输出文件
+                if force:
+                    if commit is None:
+                        raise RuntimeError(f"导出器{name}提交状态异常，拒绝重复提交")
+                    self.state.begin_export(run_id, name, idempotency_key, force=True)
+                else:
+                    raise RuntimeError(f"导出器{name}已有未完成提交，拒绝重复提交")
             try:
                 value = run_exporter(
                     self.registry.exporters[name], self.config, self.state, run_id, options

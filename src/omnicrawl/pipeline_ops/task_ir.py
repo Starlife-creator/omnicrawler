@@ -157,7 +157,7 @@ class TaskIR:
 
     def merge_fragment(self, fragment: Mapping[str, Any]) -> TaskIR:
         """Return a new IR with ``fragment`` deep-merged on top of this one."""
-        return TaskIR.from_mapping(deep_merge(self.to_mapping(), dict(fragment)))
+        return TaskIR.from_mapping(deep_merge(self.to_mapping(), copy.deepcopy(dict(fragment))))
 
 
 def infer_capabilities(config: Mapping[str, Any]) -> list[str]:

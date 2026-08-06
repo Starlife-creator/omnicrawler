@@ -189,7 +189,7 @@ def _parent_css(css_path: str) -> str:
 # 字段名推断规则：(tag, class_pattern, text_pattern) → field_name
 _FIELD_RULES: list[tuple[str, str, str]] = [
     # (CSS 类名正则, 标签, 文本正则) → 字段名
-    (r"(price|价钱|价格|售价|金额|￥|$)", "span|div|strong|b", r""),
+    (r"(price|价钱|价格|售价|金额|￥|\$)", "span|div|strong|b", r""),
     (r"(title|标题|name|名称|heading)", "a|h[1-6]|span|div", r""),
     (r"(date|time|日期|时间|published|pubdate)", "time|span|div|a", r""),
     (r"(author|作者|发布者|writer)", "span|a|div", r""),
@@ -475,39 +475,52 @@ def analyze_page(html: str, url: str = "") -> IntelligentAnalysis:
 
 
 def analyze_to_config(html: str, url: str = "", project_name: str = "auto_task") -> dict[str, Any]:
-    """分析页面并直接生成 OmniCrawler YAML 配置。"""
+    """分析页面并直接生成符合 core/config.py 契约的 OmniCrawler 配置。
+
+    Raises:
+        ValueError: 未提供真实 URL（占位符不允许）或契约核验失败时抛出。
+    """
+    url = (url or "").strip()
+    if not url or url.startswith("file://"):
+        raise ValueError("自动配置需要真实页面 URL：占位地址（如 file:///placeholder）不能通过校验，请补充 URL")
     analysis = analyze_page(html, url)
 
     fields_dict: dict[str, Any] = {}
+    item_selector = ""
     for f in analysis.fields:
-        name = f["name"]
-        if "is_container" in f:
+        if f.get("is_container"):
+            item_selector = str(f["selector"])
             continue
-        fields_dict[name] = {
-            "selector": f["selector"],
-            "attribute": f.get("attribute", "text"),
-            "desc": f.get("desc", ""),
-        }
+        name = f["name"]
+        rule: dict[str, Any] = {"selector": f["selector"]}
+        attribute = f.get("attribute") or "text"
+        if attribute not in ("", "text"):
+            rule["attr"] = attribute
+        if f.get("regex"):
+            rule["regex"] = f["regex"]
         if f.get("examples"):
-            fields_dict[name]["examples"] = f["examples"]
+            rule["examples"] = f["examples"]
+        fields_dict[name] = rule
 
     config: dict[str, Any] = {
         "project": {"name": project_name},
-        "source": {"kind": "browser", "seeds": [url] if url else ["https://example.com"]},
+        "source": {"kind": "browser", "seeds": [url]},
         "crawl": {"max_pages": 200},
         "http": {"user_agent": user_agent("+bot"), "respect_robots": True},
         "extract": {"mode": "html", "fields": fields_dict},
         "outputs": {"jsonl": True, "csv": True, "xlsx": True},
         "browser": {"engine": "playwright", "headless": True},
     }
+    if item_selector:
+        config["extract"]["item_selector"] = item_selector
 
-    # 加入分页配置
+    # 分页：契约位置 source.pagination，type=page + parameter（page 语义统一）
     if analysis.pagination:
         pag = analysis.pagination
         if pag["type"] == "url_param":
-            config["crawl"]["pagination"] = {
-                "type": "url_param",
-                "param": pag["param"],
+            config["source"]["pagination"] = {
+                "type": "page",
+                "parameter": pag["param"],
             }
         elif pag["type"] == "next_link":
             config["browser"]["actions"] = [

@@ -16,7 +16,7 @@ class _FailingSink:
 
 
 def test_sink_errors_are_bounded_but_counts_remain_complete() -> None:
-    manager = RecordSinkManager(sinks=[("mirror", _FailingSink())], max_errors=2)
+    manager = RecordSinkManager(sinks=[("mirror", _FailingSink())], max_errors=2, fail_open=True)
     request = CrawlRequest("https://example.com")
     for _ in range(3):
         manager.write("run", request, [])
@@ -26,6 +26,29 @@ def test_sink_errors_are_bounded_but_counts_remain_complete() -> None:
     assert status["error_counts"] == {"mirror": 4}
     assert len(status["recent_errors"]) == 2
     assert {item["sink"] for item in status["recent_errors"]} == {"mirror"}
+
+
+def test_s2516_default_fail_closed_raises_on_sink_error() -> None:
+    manager = RecordSinkManager(sinks=[("mirror", _FailingSink())], max_errors=2)
+    request = CrawlRequest("https://example.com")
+    with pytest.raises(RuntimeError, match="unavailable"):
+        manager.write("run", request, [])
+    with pytest.raises(RuntimeError, match="unavailable"):
+        manager.close()
+
+
+def test_s2516_default_config_is_fail_closed(tmp_path) -> None:
+    config = AppConfig(
+        tmp_path / "task.yaml", tmp_path,
+        {
+            **DEFAULTS,
+            "project": {"name": "test", "workspace": str(tmp_path / "work")},
+            "source": {"kind": "static_html", "seeds": ["https://example.com/"]},
+        },
+        tmp_path / "work",
+    )
+    manager = build_record_sink_manager(config)
+    assert manager.fail_open is False
 
 
 def test_negative_storage_error_limit_is_rejected(tmp_path) -> None:

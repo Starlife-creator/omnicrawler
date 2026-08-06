@@ -22,11 +22,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
+
+from ..core.safe_data import safe_json_loads
 
 LOGGER = logging.getLogger(__name__)
 
@@ -62,6 +63,10 @@ class Provider:
 
 
 class AIGraphExtractor:
+    """LLM 驱动的图/字段提取（S3.2.2 标注：实验性，不在采集主路径）。
+
+    ⚠ 实验性：仅在显式启用 AI 提取的模板/命令中使用，默认采集流程不经过此组件。
+    """
     """AI 驱动的字段提取 pipeline。
 
     将 HTML 分块后发送给 LLM，LLM 返回结构化的字段值。
@@ -307,7 +312,13 @@ class AIGraphExtractor:
         if "error" in data:
             raise RuntimeError(f"AI API 错误: {data['error']}")
 
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+        choices = data.get("choices")
+        if not isinstance(choices, list) or not choices:
+            # S2.5.15：LLM 返回 {"choices":[]} 时记 warning 降级，不再 IndexError
+            LOGGER.warning("AI API 返回空 choices，按空内容降级: %s", self._provider.base_url)
+            return self._parse_response("{}")
+
+        content = choices[0].get("message", {}).get("content", "{}")
         return self._parse_response(content)
 
     def _build_fields_spec(self, fields: list[FieldDef]) -> str:
@@ -325,25 +336,38 @@ class AIGraphExtractor:
         return "\n".join(lines)
 
     def _parse_response(self, content: str) -> dict[str, Any]:
-        """解析 LLM JSON 响应。"""
+        """解析 LLM JSON 响应（S3.2.1：解析结果经 validate_ai_output 校验）。"""
         # 尝试提取 JSON（可能有 markdown 包裹）
         content = content.strip()
         if content.startswith("```"):
             # 移除 markdown 代码块标记
             lines = content.split("\n")
             content = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
+        parsed = safe_json_loads(content)
+        if parsed is None:
             # 尝试提取 {} 包裹的 JSON
             import re
+
             match = re.search(r'\{[\s\S]*\}', content)
             if match:
-                try:
-                    return json.loads(match.group())
-                except json.JSONDecodeError:
-                    pass
+                parsed = safe_json_loads(match.group())
+        if not isinstance(parsed, dict):
             LOGGER.warning("无法解析 AI 响应为 JSON: %.200s", content)
+            return {"fields": {}, "confidence": 0.0}
+        try:
+            from ..services.ai_safety import validate_ai_output
+
+            return validate_ai_output(parsed, {
+                "fields": dict,
+                "confidence": (int, float),
+                "messages": list,
+                "nodes": list,
+                "edges": list,
+                "summary": str,
+            })
+        except ValueError as exc:
+            # LLM 返回未声明字段/类型错误——按不可信输入降级，不中断管线
+            LOGGER.warning("AI 输出校验未通过，按空结果降级: %s", exc)
             return {"fields": {}, "confidence": 0.0}
 
     def _merge_results(

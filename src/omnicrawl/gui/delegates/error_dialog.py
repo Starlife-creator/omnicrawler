@@ -36,13 +36,20 @@ class ErrorDialogHelper(_BaseDelegate):
         assert _clipboard is not None
         help_btn.clicked.connect(lambda: (msg.close(), mw._help_center.show_help("troubleshooting")))  # type: ignore[func-returns-value]
         copy_btn.clicked.connect(lambda: _clipboard.setText(
-            "# OmniCrawler GUI 错误报告\n# 配置中的网址和选择器已被隐藏以保护隐私\n# \n" + redacted_tb
+            _("# OmniCrawler GUI 错误报告\n# 配置中的网址和选择器已被隐藏以保护隐私\n# \n") + redacted_tb
         ))
         msg.exec()
 
     def redact_error(self, text: str) -> str:
         """Redact sensitive information from error text."""
         text = re.sub(r'https?://[^\s\'"<>]+', lambda m: re.sub(r'(https?://)[^/\s\'"<>]+', r'\1[REDACTED]', m.group(0)), text)
-        text = re.sub(r'(\?[^\s\'"<>]*)', '?[REDACTED]', text)
+        # S3.1.14：只替换凭据上下文（key=/token=/password= 等后的参数值），
+        # 普通句子中的问号不再被误伤
+        text = re.sub(
+            r'([?&](?:key|token|secret|password|passwd|signature|credential|auth|session|cookie)[=:])([^&\s\'"<>]*)',
+            r'\1[REDACTED]',
+            text,
+            flags=re.I,
+        )
         text = re.sub(r'(selector[=:]\s*["\'])([^"\']+)(["\'])', r'\1[REDACTED]\3', text)
         return text
