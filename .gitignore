@@ -84,3 +84,4 @@ tmp/
 # === Docker ===
 docker-compose.override.yml
 .omnicrawl_monitor/
+tmp_es.json
