@@ -11,9 +11,10 @@ import hashlib
 import io
 import json
 import re
-import tomllib
 import zipfile
 from pathlib import Path, PurePosixPath
+
+import tomllib
 
 MAX_PORTABLE_ENTRIES = 100_000
 MAX_PORTABLE_EXPANDED_BYTES = 20 * 1024**3

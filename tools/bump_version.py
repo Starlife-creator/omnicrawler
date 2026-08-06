@@ -37,9 +37,10 @@ import os
 import re
 import subprocess
 import sys
-import tomllib
 from datetime import date
 from pathlib import Path
+
+import tomllib
 
 # ── 版本化文件清单（文件名含版本号，需要重命名） ──────────────────────────
 _VERSIONED_FILES: tuple[tuple[str, str], ...] = (

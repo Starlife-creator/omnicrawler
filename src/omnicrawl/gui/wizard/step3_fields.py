@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -41,7 +41,7 @@ from ..widgets.form_feedback import clear_error_style, set_error_style, shake_wi
 from ..widgets.help_tooltip import HelpTooltip
 
 
-def selector_kind(selector: str) -> str:
+def selector_kind(selector: str) -> Literal["css", "xpath"]:
     """判断选择器是 XPath 还是 CSS（默认 css）。"""
     stripped = (selector or "").strip()
     if not stripped:

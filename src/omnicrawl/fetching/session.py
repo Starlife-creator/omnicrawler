@@ -43,7 +43,7 @@ class _ThreadSafeCookieJar(LWPCookieJar):
 
     def _really_load(self, *args: Any, **kwargs: Any) -> None:
         with self._jar_lock:
-            super()._really_load(*args, **kwargs)
+            super()._really_load(*args, **kwargs)  # type: ignore[misc]
 
 
 class CookieSession:
@@ -61,6 +61,8 @@ class CookieSession:
             self._load()
 
     def _load(self) -> None:
+        if not self.path:
+            return
         try:
             raw = self.path.read_bytes()
             if raw.startswith(FILE_MAGIC):

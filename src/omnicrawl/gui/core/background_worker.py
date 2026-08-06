@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
 
 class BackgroundWorker(QThread):
@@ -24,7 +24,7 @@ class BackgroundWorker(QThread):
     succeeded = pyqtSignal(object)
     failed = pyqtSignal(str)
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
 
     def run(self) -> None:
@@ -47,8 +47,9 @@ class BackgroundWorker(QThread):
 
 def run_worker(
     worker: BackgroundWorker,
-    on_succeeded: Callable[[Any], None] | None = None,
-    on_failed: Callable[[str], None] | None = None,
+    # 回调返回值被 Qt 信号机制忽略——放宽为 object，允许调用方复用消息框返回值
+    on_succeeded: Callable[[Any], object] | None = None,
+    on_failed: Callable[[str], object] | None = None,
 ) -> BackgroundWorker:
     """启动后台任务并接线信号；结束自动 deleteLater 防止泄漏。"""
     if on_succeeded is not None:

@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 # 必须覆盖的发行物文件名模式
 REQUIRED_PATTERNS = [

@@ -62,7 +62,7 @@ def collect_sse(
                     raise ResponseTooLargeError(f"SSE数据超过大小限制: > {maximum_bytes}")
                 if not line:
                     if event:
-                        data: dict[str, Any] = {key: "\n".join(values) for key, values in event.items()}
+                        data = {key: "\n".join(values) for key, values in event.items()}
                         records.append(ExtractedRecord(request.url, "sse_event", data))
                         event = {}
                     continue

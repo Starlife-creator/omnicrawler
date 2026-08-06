@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 try:
     from tools.create_zip import create_zip

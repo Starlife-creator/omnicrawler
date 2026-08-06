@@ -15,16 +15,28 @@ import base64
 import json
 import os
 import secrets
+import types
 from pathlib import Path
+from typing import Protocol
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 try:
-    import keyring as _keyring
+    import keyring as _keyring_module
 except ImportError:  # pragma: no cover - 无 keyring 时依赖可选
-    _keyring = None
+    _keyring_module = None  # type: ignore[assignment]  # try 绑定为 Module 类型
+
+_keyring: types.ModuleType | None = _keyring_module
+
+
+class _KeyringBackend(Protocol):
+    """keyring 可用后端的最小接口（keyring.set_keyring 注入的 mock 也满足）。"""
+
+    def get_password(self, service: str, username: str) -> str | None: ...
+
+    def set_password(self, service: str, username: str, password: str) -> None: ...
 
 SERVICE = "omnicrawler"
 ACCOUNT = "secrets-master"
@@ -53,7 +65,7 @@ class SecretsStore:
         self,
         path: str | Path | None = None,
         *,
-        keyring_api: object | None = None,
+        keyring_api: _KeyringBackend | None = None,
     ) -> None:
         self.path = Path(path) if path else Path.home() / ".omnicrawl" / "secrets.bin"
         self.keyring = _keyring if keyring_api is None else keyring_api
@@ -106,9 +118,12 @@ class SecretsStore:
         return entries
 
     def _save(self) -> None:
+        if self._cache is None:
+            raise SecretsStoreError("内部状态错误: 缓存未加载，无法写盘")
+        cache = self._cache
         key = self._master_key()
         plaintext = json.dumps(
-            {k: base64.b64encode(v).decode("ascii") for k, v in self._cache.items()}
+            {k: base64.b64encode(v).decode("ascii") for k, v in cache.items()}
         ).encode("utf-8")
         nonce = secrets.token_bytes(12)
         ciphertext = AESGCM(key).encrypt(nonce, plaintext, FILE_MAGIC)
@@ -128,15 +143,15 @@ class SecretsStore:
         return value.decode("utf-8") if value is not None else None
 
     def set(self, key: str, value: str) -> None:
-        self._load()
-        self._cache[key] = value.encode("utf-8")
+        cache = self._load()
+        cache[key] = value.encode("utf-8")
         self._save()
 
     def delete(self, key: str) -> bool:
-        self._load()
-        if key not in self._cache:
+        cache = self._load()
+        if key not in cache:
             return False
-        del self._cache[key]
+        del cache[key]
         self._save()
         return True
 

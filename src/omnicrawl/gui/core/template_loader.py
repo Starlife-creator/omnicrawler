@@ -206,8 +206,8 @@ class TemplateLoader:
 
         # 其余配置段取第一个模板；仅当后者显式设置（非默认值）且冲突时覆盖
         for config in configs[1:]:
-            for field in fields(CrawlConfig):
-                name = field.name
+            for dc_field in fields(CrawlConfig):
+                name = dc_field.name
                 if name in ("seed_urls", "fields") or name in identity_fields:
                     continue
                 later = getattr(config, name)

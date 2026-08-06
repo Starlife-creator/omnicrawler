@@ -157,12 +157,16 @@ class ChangeDetector:
         self,
         data_dir: Path | None = None,
         on_notify: Callable[[ChangeEvent], None] | None = None,
+        *,
+        egress: Any = None,
     ) -> None:
         self._rules: dict[str, MonitorRule] = {}
         self._history: dict[str, list[ChangeEvent]] = {}
         self._data_dir = data_dir or Path(".omnicrawl_monitor")
         self._on_notify = on_notify
         self._running: bool = True
+        # 网络边界（S4.5 门禁）：注入 EgressBroker 后所有抓取走授权路径
+        self._egress = egress
         # S3.2.1：基线持久化——每轮重建规则对象也能恢复 last_hash，
         # 消除 GUI 侧 "__baseline__" 哨兵假哈希导致的每轮误报变化
         self._baselines: dict[str, dict[str, Any]] = {}
@@ -268,7 +272,10 @@ class ChangeDetector:
         return html
 
     async def _fetch_content(self, url: str) -> str | None:
-        """获取页面内容。返回 HTML 字符串，失败时返回 None。"""
+        """获取页面内容。返回 HTML 字符串，失败时返回 None。
+
+        经 EgressBroker 授权（S4.5 网络边界门禁）：拒绝的 URL 不再发请求。
+        """
         try:
             import urllib.request
 
@@ -286,8 +293,18 @@ class ChangeDetector:
                         "Accept": "text/html,application/xhtml+xml",
                     },
                 )
+                if self._egress is not None:
+                    with self._egress.request(
+                        url, purpose="change_monitor", headers=req.headers
+                    ):
+                        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
+                            return resp.read().decode(
+                                resp.headers.get_content_charset("utf-8"), errors="replace"
+                            )
                 with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
-                    return resp.read().decode(resp.headers.get_content_charset("utf-8"), errors="replace")
+                    return resp.read().decode(
+                        resp.headers.get_content_charset("utf-8"), errors="replace"
+                    )
 
             return await loop.run_in_executor(None, _sync_fetch)
 

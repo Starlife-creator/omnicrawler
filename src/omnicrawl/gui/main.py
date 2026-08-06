@@ -446,6 +446,11 @@ class MainWindow(QMainWindow):
     _dnd_mode: bool
     _statusbar: QStatusBar
     _tray_icon: QSystemTrayIcon | None
+    # 委托/后台构建的方法内赋值属性（方法内局部 import 类型，注解延迟求值）
+    _log_console: Any
+    _page_transition: Any
+    _running_task_id: str | None
+    _preflight_pending: bool
 
     def __init__(self) -> None:
         global _GUI_APP_HOLD
@@ -909,8 +914,10 @@ class MainWindow(QMainWindow):
     def _rebuild_project_components(self) -> None:
         """S3.1.27：切换项目后重建依赖项目根的组件（不再只改标签）。"""
         self._build_project_components()
+        # 三者均为 QObject 子类（模板加载器 QObject、自动保存/历史 QWidget）
         for widget in (self._autosave, self._template_loader, self._task_history):
-            widget.deleteLater()
+            if isinstance(widget, QWidget):
+                widget.deleteLater()
 
     def _setup_system_tray(self) -> None:
         if QSystemTrayIcon.isSystemTrayAvailable():
@@ -1180,13 +1187,14 @@ class MainWindow(QMainWindow):
 
         self._preflight_pending = True
         run_worker(
-            _PreflightWorker(config_path),
+            _PreflightWorker(str(config_path)),
             on_succeeded=self._apply_preflight,
-            on_failed=lambda error: (
-                QMessageBox.warning(self, _("运行前检查失败"), error),
-                setattr(self, "_preflight_pending", False),
-            ),
+            on_failed=self._on_preflight_failed,
         )
+
+    def _on_preflight_failed(self, error: str) -> None:
+        QMessageBox.warning(self, _("运行前检查失败"), error)
+        self._preflight_pending = False
 
     def _apply_preflight(self, report: dict) -> None:
         self._preflight_pending = False

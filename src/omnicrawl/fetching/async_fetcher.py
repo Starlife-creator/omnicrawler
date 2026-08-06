@@ -145,7 +145,7 @@ class HTTPXAsyncFetcher:
         if pool is None or not hasattr(pool, "_network_backend"):
             return
         pool._network_backend = _PinnedAsyncNetworkBackend(
-            httpcore.AsyncBackend(), self.target_policy
+            httpcore.AsyncNetworkBackend(), self.target_policy
         )
 
     def close(self) -> None:

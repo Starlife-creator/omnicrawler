@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import tomllib
 from pathlib import Path
 from typing import Any
+
+import tomllib
 
 RELEASE_INFO = "RELEASE-INFO.json"
 RUNTIME_MANIFEST = "RUNTIME-MANIFEST.json"

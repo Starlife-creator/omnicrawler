@@ -97,7 +97,8 @@ class ApplicationService:
             with Pipeline(config) as pipeline:
                 result = pipeline.run(resume=resume, retry_failed=retry_failed, max_pages=max_pages, callback=callback)
             self._write_binding(config, formal_plan_hash=plan.plan_hash)
-            status = result.get("status")
+            result_status = result.get("status")
+            status = result_status if isinstance(result_status, str) else "unknown"
             return {**result, "plan_hash": plan.plan_hash}
         finally:
             # S2.5.36：异常路径也发 run_finished，监听方不再永久等待

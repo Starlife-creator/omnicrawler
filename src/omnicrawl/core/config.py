@@ -402,7 +402,7 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
                 errors.append("http.retry_max必须是大于等于0的整数（0 表示不重试）")
             else:
                 try:
-                    retry_max_value = int(http.get("retry_max"))
+                    retry_max_value = int(str(http.get("retry_max")))
                 except (TypeError, ValueError):
                     errors.append("http.retry_max必须是大于等于0的整数（0 表示不重试）")
                 else:

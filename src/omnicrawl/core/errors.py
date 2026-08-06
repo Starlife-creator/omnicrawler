@@ -112,7 +112,7 @@ def describe_error(exc: BaseException) -> ErrorInfo:
         return exc.as_info()
     if isinstance(exc, urllib.error.URLError):
         reason = exc.reason
-        detail = _safe_message(reason) if reason else _safe_message(exc)
+        detail = _safe_message(reason) if isinstance(reason, BaseException) else str(reason or exc)
         if isinstance(reason, ssl.SSLCertVerificationError):
             return ErrorInfo(
                 "tls_verification",

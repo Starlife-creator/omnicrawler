@@ -151,7 +151,7 @@ class AIGraphExtractor:
                 errors.append(f"chunk[{index}]: {item}")
                 LOGGER.warning("AI 提取分块失败: %s", item)
             else:
-                ok_results.append(item)
+                ok_results.append(item if isinstance(item, dict) else {})
 
         # D55：全部分块失败必须显式失败，而不是伪装成"确实无数据"
         if not ok_results:

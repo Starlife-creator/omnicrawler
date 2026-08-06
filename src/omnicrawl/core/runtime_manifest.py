@@ -45,11 +45,11 @@ def verify_runtime_manifest(root: Path) -> dict[str, Any]:
     missing: list[str] = []
     corrupt: list[str] = []
     for name, expected in files.items():
-        relative = PurePosixPath(str(name))
-        if relative.is_absolute() or ".." in relative.parts:
+        manifest_relative = PurePosixPath(str(name))
+        if manifest_relative.is_absolute() or ".." in manifest_relative.parts:
             corrupt.append(str(name))
             continue
-        target = root.joinpath(*relative.parts)
+        target = root.joinpath(*manifest_relative.parts)
         if not target.is_file():
             missing.append(str(name))
         elif target.stat().st_size != int(expected["bytes"]) or _sha256(target) != expected["sha256"]:

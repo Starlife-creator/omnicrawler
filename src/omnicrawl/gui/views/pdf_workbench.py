@@ -649,7 +649,7 @@ class PdfWorkbenchView(QWidget):
 
     @pyqtSlot(str, object)
     def _on_stage_finished(self, stage: str, result: object) -> None:
-        _ = result
+        del result  # 无信息量载荷，仅通知到达
         self._stage_label.setText(_(f"✓ {stage} 完成"))
 
     @pyqtSlot(list)

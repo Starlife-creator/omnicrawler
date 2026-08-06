@@ -7,6 +7,8 @@ Public API::
 
 from __future__ import annotations
 
+import importlib
+import importlib.abc
 import logging
 from typing import Any
 
@@ -164,19 +166,19 @@ def _setup_compat_aliases() -> None:
                 logger.debug("Failed to import optional compat module '%s'", old_name, exc_info=True)
 
 
-class _AliasLoader:
-    """S4.1：为已加载的兼容模块提供别名 spec。
+class _AliasLoader(importlib.abc.Loader):
+    """S4.1：为已加载的壳模块提供兼容 spec。
 
-    模块对象 __dict__ 只读不可整体替换，因此逐键复制命名空间；
-    monkeypatch 通过模块级 __getattr__ 解析旧名时拿到的是真实模块，
-    两侧行为一致。
+    模块 __dict__ 只读用于外壳占位，真实命名空间由 Loader 填充；
+    monkeypatch 通过模块级 __getattr__ 与实际导入都会得到真实模块，
+    行为保持一致。
     """
 
     def __init__(self, module: Any) -> None:
         self._module = module
 
-    def create_module(self, spec) -> None:
-        return None  # 由 bootstrap 创建新模块壳
+    def create_module(self, spec: Any) -> None:
+        return None  # 由 bootstrap 重建模块
 
     def exec_module(self, module: Any) -> None:
         module.__dict__.clear()
