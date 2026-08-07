@@ -66,6 +66,52 @@ pre-commit hooks 会在提交时自动运行 ruff 和 mypy，从源头防止退�
 - **不引入未使用导入**，不吞咽异常
 - **日志用英文**，GUI 用户提示用中文，异常消息用英文
 
+## 插件提交与签名
+
+OmniCrawler 对第三方插件采用 **ed25519 离线单信任根签名**。只有维护者持有签名私钥（冷存储），**贡献者无法、也不需要自己签名**——签名意味着维护者为该插件代码背书。
+
+### 贡献者（提交插件）
+
+1. 将插件放在 `examples/plugins/`（单文件 `.py`，含模块级 `def register(registry)` 入口）。
+2. **不要生成或提交 `.sig` 文件**——你签不了，必须由维护者签名。
+3. PR 描述说明：插件用途、所需 `permissions`/`domains`、是否有网络访问。
+4. 通过常规 PR 流程等待代码审查与签名。
+
+### 维护者（审查与签名）
+
+签名动作**仅在持有私钥的冷机器**进行（私钥位于 `C:\Users\Lenovo\Desktop\档案\隐私`，绝不进仓库 / 构建 / 便携包）。
+
+1. **代码 / 安全审查**：确认无越权导入、无 `eval`/`exec`、网络权限声明合理。
+2. 在冷机器用项目 venv 的 Python 签名（裸 `python` 缺 `cryptography` 会失败）：
+
+```powershell
+# 单文件
+.\.venv\Scripts\python.exe tools/sign_plugin.py sign examples/plugins/your_plugin.py `
+    --private-key "C:\Users\Lenovo\Desktop\档案\隐私\plugin_signing_private.pem"
+
+# 或批量（自动发现插件入口，排除框架 / 构建目录）
+.\.venv\Scripts\python.exe tools/sign_plugins_batch.py --scan-dir examples/plugins --verify
+```
+
+3. 将插件 `.py` 与其 `.py.sig` **一并合入同一 PR/commit**（审计轨迹原子化）。
+4. **先签最终审查版**：签名绑定文件字节，合入后再改文件会导致 `.sig` 失配、加载被拒。
+
+### 生产环境启用 fail-closed
+
+加载门默认"未配信任根则告警并放行"（过渡期，不误伤现有 dev 插件）。要真正强制验签，在运行时配置中设置信任根：
+
+```yaml
+plugins:
+  trust_public_key: configs/plugin_trust.pub.pem   # 或内联 ed25519 公钥 PEM
+```
+
+配置后：缺少 `.sig` 或签名不符的插件将被 **fail-closed 直接拒载**。
+
+### 已知边界
+
+- 签名仅覆盖插件**入口 `.py`** 一个文件；多文件目录包只有入口被签（加载门只 `exec` 被签模块，风险受限）。
+- 私钥为单点信任源：维护者不在场时无法签名，这是可控供应链的有意设计。
+
 ## 测试规范
 
 - 测试框架：pytest
