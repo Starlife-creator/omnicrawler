@@ -156,6 +156,12 @@ Remove-Item Env:OMNICRAWL_PROJECT_ROOT -ErrorAction SilentlyContinue
 if ($pyprojectVersion -and $pyprojectVersion -ne $appVersion) {
     throw "版本不一致: pyproject=$pyprojectVersion vs omnicrawl.__version__=$appVersion"
 }
+# F53：构建 venv 的 installed 元数据也必须与源码一致，否则产物会带漂移版本。
+$installedVersion = (& $builderPython -c "import importlib.metadata; print(importlib.metadata.version('omnicrawl-platform'))").Trim()
+Assert-LastExit 'Could not read the installed version from the build environment.'
+if ($installedVersion -and $installedVersion -ne $appVersion) {
+    throw "版本元数据漂移: installed=$installedVersion vs src=$appVersion —— 构建环境需重跑 pip install -e . 对齐。"
+}
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host "  OmniCrawler $appVersion — $Edition edition portable build" -ForegroundColor Cyan
 Write-Host "  Build root : $buildRoot" -ForegroundColor DarkGray

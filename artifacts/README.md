@@ -53,3 +53,14 @@ artifacts/
 根目录的 `release/` 与 `dist/` 仅为兼容旧构建工具的默认输出位置。新的可保留发布物应
 显式输出至本目录的版本化路径；`build/`、`build_dist/` 和 `build_cache/` 是构建中间物或
 缓存，不属于版本发行归档。
+
+## 单一输出规则（F53，必须遵守）
+
+- **可保留发布物的唯一归档位置是 `artifacts/` 下的版本化目录**（`build/`、`release/`、`python/`）。
+- **`dist/` 只允许作为 CI（quality.yml）的临时构建工作区**：CI 每次从全新 checkout 生成并
+  校验产物后即丢弃，不允许在其中留存长期发布物。手工构建请使用
+  `build_windows.ps1`（输出至 `artifacts/`），不要手工把文件放进 `dist/` 或根目录 `release/`。
+- 若发现 `dist/`、根目录 `release/` 或 `build/` 出现可保留产物，视为漂移，应移入
+  `artifacts/` 对应版本目录后再发布。
+- 发布 tag 上的 CI 会校验 `artifacts/` 中便携产物命名版本 == 源码 `__version__`
+  （见 `.github/workflows/quality.yml` 的 `release-artifact-version` job），不一致即失败。

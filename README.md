@@ -126,7 +126,7 @@ omnicrawl reprocess -c config.yaml --run-id <id>
 
 ---
 
-## 模板库（72 套）
+## 模板库（78 套）
 
 ```powershell
 omnicrawl templates list              # 按类别列出
@@ -163,7 +163,7 @@ omnicrawl templates validate          # 校验完整性
 
 - 556 条界面字符串已提取为 `.pot` 模板
 - 英文翻译 `.po` 就绪（部分覆盖）
-- 新增语言：`python tools/generate_xx_po.py` → 翻译 → `python tools/compile_i18n.py`
+- 新增语言：`python tools/generate_en_po.py` → 翻译 → `python tools/compile_i18n.py`
 
 ---
 
@@ -238,6 +238,76 @@ omnicrawl serve -c config.yaml [--host 127.0.0.1] [--port 8765]
 
 ---
 
+## 开发者命令速查
+
+日常开发常用命令与一键门禁，从这里开始。
+
+### 环境准备（Windows）
+
+```powershell
+setup_windows.bat                    # 一键安装：venv + 依赖 + 运行时资产 + Playwright
+install_windows.ps1 -Minimal          # 仅 venv + [html,gui] 依赖（无浏览器/运行时，最快）
+install_windows.ps1                   # 完整：venv + [full,dev] + 浏览器 + OCR 资产
+run_gui_windows.bat                   # 启动 GUI（自动 rebase 环境）
+run_windows.bat                       # 启动 CLI
+```
+
+环境自动自愈：仓库内 `.runtime\python` + `.venv` 每次启动都会执行 `tools/rebase_venv.py`
+自动对齐——项目目录搬移、版本 bump 后本地环境与源码收敛，无需手动重建。
+
+```powershell
+.venv\Scripts\python.exe tools\rebase_venv.py   # 手动触发对账（常规无需执行）
+```
+
+### 质量门禁（一键全套）
+
+```powershell
+# 单项
+.venv\Scripts\python.exe tools\check_docs_consistency.py      # 版本/文档一致性
+.venv\Scripts\python.exe tools\check_release_integrity.py     # 发布完整性
+.venv\Scripts\python.exe tools\check_architecture.py          # 依赖架构
+.venv\Scripts\python.exe tools\check_coding_standards.py src tools  # 编码规范
+.venv\Scripts\python.exe tools\check_cli_docs.py               # CLI 文档一致性
+.venv\Scripts\python.exe tools\check_network_boundaries.py     # 网络边界
+.venv\Scripts\ruff.exe check src tests tools                   # lint
+.venv\Scripts\python.exe -m mypy src/omnicrawl                 # 类型检查
+.venv\Scripts\python.exe -m pytest -q                           # 测试
+.venv\Scripts\python.exe -m coverage run -m pytest -q && .venv\Scripts\python.exe -m coverage json && .venv\Scripts\python.exe tools\check_coverage_gates.py coverage.json
+```
+
+### 版本发布
+
+```powershell
+# 自动 bump：更新 pyproject/__init__/文档 + CHANGELOG + 校验 + git commit/tag
+.venv\Scripts\python.exe tools\bump_version.py <X.Y.Z>
+# 只改版本不外动 git（如试运行）
+.venv\Scripts\python.exe tools\bump_version.py <X.Y.Z> --no-git --report
+```
+
+发布时 `bump_version.py` 会自动运行环境版本对账；若本地 `.venv` 的 installed 版本
+与源码新版本不符会终止发布。正式发布前应确保 `dist/` 与 `artifacts/` 的产物版本
+== 当前版本（CI 的 `release-artifact-version` job 在 tag 上强制校验）。
+
+### 便携包构建
+
+```powershell
+# 完整构建（Full 版，含全部分发资产）
+.\build_windows.ps1 -Edition Full
+# Standard 版
+.\build_windows.ps1 -Edition Standard
+# 离线复用本地缓存（不访问网络，browser/runtime 走本地缓存）
+.\build_windows.ps1 -Edition Full -Offline -BuilderPythonPath .venv\Scripts\python.exe
+# 显式产物目录（默认写入 release/，建议写进 artifacts/）
+.\build_windows.ps1 -Edition Standard -ReleaseOutputPath .\artifacts\release\0.5.0
+```
+
+### 提交前自检
+
+```powershell
+# pre-commit（已有配置 .pre-commit-config.yaml）
+pre-commit run --all-files
+```
+
 ## 开发者指南
 
 ### 项目结构（v0.5.0）
@@ -259,7 +329,7 @@ src/omnicrawl/
 ├── services/                    # 应用服务编排
 ├── state/                       # SQLite WAL schema + store
 ├── sdk/                         # 公共 API（稳定性标记）
-├── templates/                   # 67 套采集模板
+├── templates/                   # 78 套采集模板
 ├── pdfx/                        # PDF 解析/OCR/抽取子系统
 ├── sources/                     # 数据源适配器
 ├── plugins/                     # 插件系统

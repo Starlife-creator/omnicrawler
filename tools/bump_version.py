@@ -268,6 +268,39 @@ def _run_git_log(root: Path, *range_args: str) -> str:
     return ""
 
 
+def _resolve_previous_tag(root: Path, old_version: str) -> str | None:
+    """跳过悬空/无序历史 tag，返回用于 CHANGELOG 区间的前一 tag。
+
+    项目曾从 2.8.0 重置版本线到 0.x（v2.8.0 仍悬在旧历史上）；直接使用
+    ``v{old_version}..HEAD`` 会在旧版本 tag 缺失或顺序错乱时生成错误区间。
+    这里先探测 v{old_version} 是否真实存在，不存在则退回时间序最近的一个
+    合法语义化 tag，否则返回 None 让调用方走 fallback。
+    """
+    target = f"v{old_version}"
+    try:
+        probe = subprocess.run(
+            ["git", "rev-parse", "-q", "--verify", target],
+            capture_output=True, text=True, cwd=str(root),
+            encoding="utf-8", errors="replace", timeout=30,
+        )
+        if probe.returncode == 0:
+            return target
+        result = subprocess.run(
+            ["git", "tag", "--sort=-creatordate", "--format=%(refname:short)"],
+            capture_output=True, text=True, cwd=str(root),
+            encoding="utf-8", errors="replace", timeout=30,
+        )
+        if result.returncode != 0:
+            return None
+        for tag in result.stdout.splitlines():
+            tag = tag.strip()
+            if re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+                return tag
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
 def _filter_commits(raw: str) -> str:
     """过滤掉无意义的 commit 条目（bump 操作、初始提交等）。"""
     lines = raw.split("\n")
@@ -278,7 +311,8 @@ def _filter_commits(raw: str) -> str:
 
 def _get_changelog_entries(root: Path, old_version: str) -> str:
     """从 git log 提取变更摘要，过滤无意义条目。"""
-    commits = _run_git_log(root, f"v{old_version}..HEAD")
+    previous = _resolve_previous_tag(root, old_version)
+    commits = _run_git_log(root, f"{previous}..HEAD") if previous else ""
     if not commits:
         commits = _run_git_log(root, "-n", "15")
 
@@ -482,7 +516,7 @@ def step_scan_hardcoded_py_versions(root: Path, new: str) -> None:
         print("     ✓ Python 源码中无硬编码版本号 — user_agent() 全覆盖")
 
 
-def step_self_validate(root: Path) -> None:
+def step_self_validate(root: Path, new: str) -> None:
     """Step 8: 运行 check_docs_consistency.py 自验证。"""
     print("\n  ── 自验证 (check_docs_consistency.py) ──")
 
@@ -499,6 +533,40 @@ def step_self_validate(root: Path) -> None:
         print("     ✗ 一致性校验失败：", file=sys.stderr)
         print(result.stderr, file=sys.stderr)
         raise SystemExit(1)
+
+    # F53：版本 bump 后，本地环境（存在 .runtime/.venv 时）也必须收敛到新版本。
+    # 复用 rebase_venv.py 的版本对账：installed 元数据 != __version__ 时自动重装，
+    # 保证"源码已 bump 但环境还是旧版本"的漂移在发布前被发现/修复。
+    bundled_python = root / ".runtime" / "python" / "python.exe"
+    venv_python = root / ".venv" / "Scripts" / "python.exe"
+    if bundled_python.is_file() and venv_python.is_file():
+        print("\n  ── 环境版本对账 (rebase_venv.py) ──")
+        rebase_script = root / "tools" / "rebase_venv.py"
+        result = subprocess.run(
+            [str(bundled_python), str(rebase_script)],
+            capture_output=True, text=True, cwd=str(root),
+            timeout=600,
+        )
+        for line in result.stdout.splitlines() or result.stderr.splitlines():
+            print(f"     {line}")
+        if result.returncode != 0:
+            print("     ✗ 环境版本对账失败：", file=sys.stderr)
+            print(result.stderr, file=sys.stderr)
+            raise SystemExit(1)
+
+        # 校验收敛结果：installed 版本必须等于新的源码版本
+        verify_result = subprocess.run(
+            [str(venv_python), "-c",
+             "import importlib.metadata; print(importlib.metadata.version('omnicrawl-platform'))"],
+            capture_output=True, text=True, cwd=str(root), timeout=60,
+        )
+        installed = verify_result.stdout.strip() if verify_result.returncode == 0 else ""
+        if installed != new:
+            print(f"     ✗ 环境已安装版本仍为 {installed!r}，与 {new!r} 不符", file=sys.stderr)
+            raise SystemExit(1)
+        print(f"     ✓ 环境版本 {installed} 已对齐")
+    else:
+        print("  [info] 未发现本地运行时/venv（.runtime 或 .venv 缺失），跳过环境版本对账。")
 
 
 def step_git_operations(root: Path, new: str) -> None:
@@ -586,7 +654,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── Step 8: 自验证 ──
     print("\n[9/9] 自验证")
-    step_self_validate(root)
+    step_self_validate(root, new)
 
     # ── Step 9: Git 操作 ──
     if args.no_git:

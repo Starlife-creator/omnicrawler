@@ -55,4 +55,10 @@ if ($LASTEXITCODE -ne 0) { throw 'CLI smoke check failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Capability import verification failed.' }
 $Version = & $Python -c "import importlib.metadata; print(importlib.metadata.version('omnicrawl-platform'))"
 if ($LASTEXITCODE -ne 0) { throw 'Failed to read the installed version.' }
+# F53：installed 元数据必须与源码 __version__ 一致；漂移即失败
+$SrcVersion = & $Python -c "from omnicrawl import __version__; print(__version__)"
+if ($LASTEXITCODE -ne 0) { throw 'Failed to read the source version.' }
+if ($Version -ne $SrcVersion) {
+    throw "版本元数据漂移: installed=$Version vs src=$SrcVersion —— 请重跑 pip install -e '.[full,dev]' 对齐后再继续。"
+}
 Write-Host "OmniCrawler $Version full source environment is ready." -ForegroundColor Green
