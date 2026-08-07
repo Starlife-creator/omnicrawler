@@ -89,7 +89,13 @@ if not _cli_mode():
         print(_("请运行: pip install omnicrawl-platform[gui]"), file=sys.stderr)
         sys.exit(1)
 
-    from ..core.ai_env import load_ai_env, save_ai_env, sync_ai_env_to_os
+    from ..core.ai_env import (
+        load_ai_config_sidecar,
+        load_ai_env,
+        save_ai_config_sidecar,
+        save_ai_env,
+        sync_ai_env_to_os,
+    )
     from ..core.config import load_config as load_core_config
     from ..core.credentials import seal_secret
     from ..pipeline_ops.preflight import run_preflight, run_sample
@@ -138,6 +144,7 @@ if not _cli_mode():
     from .views.file_list import FileList
     from .views.pdf_region_selector import PdfRegionSelectorDialog
     from .views.pdf_workbench import PdfWorkbenchView
+    from .views.plugin_market import PluginMarketView
     from .views.professional_review import EvidenceView  # ProfessionalReviewView 别名保持兼容
     from .views.result_table import ResultTable
     from .views.task_history import TaskHistory
@@ -743,6 +750,7 @@ class MainWindow(QMainWindow):
             ("📊 " + _("结果与复核"), 3),
             ("🔍 " + _("证据查看器"), 5),
             ("🔔 " + _("变更监控"), 7),
+            ("🧩 " + _("插件市场"), 8),
         ]
         for label, _idx in nav_items:
             item = QListWidgetItem(label)
@@ -875,6 +883,9 @@ class MainWindow(QMainWindow):
         self._change_monitor = ChangeMonitorView(settings=self._settings)
         self._change_monitor.desktop_notify.connect(self._on_monitor_desktop_notify)
         self._stack.addWidget(self._change_monitor)
+
+        self._plugin_market = PluginMarketView(project_root=self._project_root)
+        self._stack.addWidget(self._plugin_market)
 
         main_layout.addWidget(self._stack)
         self._page_transition = PageTransitionController(
@@ -2008,6 +2019,17 @@ class MainWindow(QMainWindow):
                 "api_key": env_vars.get("OMNICRAWL_AI_API_KEY", ""),
                 "timeout_seconds": _safe_int(env_vars.get("OMNICRAWL_AI_TIMEOUT"), 60),
             }
+        # C36：合并旁路 JSON 中的隐私/预算/路由/抽取设置（保留 .env 解析出的 api_key，
+        # 绝不信任旁路文件里的 api_key）
+        sidecar = load_ai_config_sidecar(self._project_root)
+        if sidecar:
+            sidecar_providers = sidecar.get("providers", {})
+            if isinstance(sidecar_providers, dict) and "default" in sidecar_providers:
+                sidecar_providers["default"].pop("api_key", None)
+            for key, value in sidecar.items():
+                if key == "api_key":
+                    continue
+                config[key] = value
         return config
 
     def _save_ai_config_to_env(self, config: dict[str, Any]) -> None:
@@ -2046,6 +2068,8 @@ class MainWindow(QMainWindow):
             updates["OMNICRAWL_AI_TIMEOUT"] = str(provider.get("timeout_seconds", 60))
         save_ai_env(updates, project_root=self._project_root)
         sync_ai_env_to_os(updates)
+        # C36：将 .env 无法承载的隐私/预算/路由/抽取设置持久化到旁路 JSON（不含明文 api_key）
+        save_ai_config_sidecar(self._project_root, config)
 
 
 def _safe_int(value: Any, default: int) -> int:

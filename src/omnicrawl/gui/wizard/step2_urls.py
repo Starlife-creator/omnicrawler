@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat
+from PyQt6.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat, QTextCursor
 from PyQt6.QtWidgets import (
     QFormLayout,
     QFrame,
@@ -85,6 +85,8 @@ class Step2UrlsPage(QWizardPage):
         super().__init__(parent)
         self._config = config
         self._updating = False
+        # rehighlight() 会再次触发 textChanged，需要防重入，否则用户输入即递归崩溃
+        self._checking_placeholders = False
 
         self.setTitle(_("步骤 2/5：可选：补充范围与高级控制"))
         self.setSubTitle(_("第一页已带入入口和建议范围；只有多个入口、页码规则或性能要求不同时才需要修改。"))
@@ -268,18 +270,36 @@ class Step2UrlsPage(QWizardPage):
             set_error_style(self._url_edit, _("请至少输入一个种子 URL"))
             return False
 
-        # 检查占位符
+        # 检查占位符（B16：提供明确的"返回替换"入口，而不是只有 Yes/No）
         if any("{{" in u and "}}" in u for u in urls):
             reply = QMessageBox.question(
                 self, _("存在未替换占位符"),
-                _("种子 URL 中包含未替换的模板占位符 {{...}}。\n是否仍然继续？"),
+            _("种子 URL 中包含未替换的模板占位符 {{...}}，抓取时很可能直接失败。\n\n· 选择“否”：返回本页替换占位符（将自动定位到第一个占位符，也可点击“从剪贴板填充”批量替换）\n· 选择“是”：忽略并继续"),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
-            if reply == QMessageBox.StandardButton.No:
+            if reply != QMessageBox.StandardButton.Yes:
+                # 返回替换：停留在本页、定位光标并给出错误提示
+                self._focus_first_placeholder()
+                set_error_style(
+                    self._url_edit,
+                    _("请先把 {{...}} 占位符替换为真实网址"),
+                )
                 return False
 
         self._save_to_config()
+        return True
+
+    def _focus_first_placeholder(self) -> bool:
+        """把光标定位并选中第一个未替换的 {{...}} 占位符，方便直接改写。"""
+        match = re.search(r"\{\{.*?\}\}", self._url_edit.toPlainText())
+        if match is None:
+            return False
+        cursor = self._url_edit.textCursor()
+        cursor.setPosition(match.start())
+        cursor.setPosition(match.end(), QTextCursor.MoveMode.KeepAnchor)
+        self._url_edit.setTextCursor(cursor)
+        self._url_edit.setFocus()
         return True
 
     def _get_urls(self) -> list[str]:
@@ -314,13 +334,19 @@ class Step2UrlsPage(QWizardPage):
         self._config.since_date = self._since_date.text().strip() or None
 
     def _check_placeholders(self) -> None:
-        """检查并高亮占位符。"""
-        text = self._url_edit.toPlainText()
-        has_placeholders = bool(re.search(r"\{\{.*?\}\}", text))
-        self._placeholder_hint.setVisible(has_placeholders)
-        if has_placeholders:
-            self._placeholder_hint.setText(_("⚠ 请将 {{...}} 占位符替换为真实网址"))
-        self._highlighter.rehighlight()
+        """检查并高亮占位符（rehighlight 会重入 textChanged，需防护）。"""
+        if self._checking_placeholders:
+            return
+        self._checking_placeholders = True
+        try:
+            text = self._url_edit.toPlainText()
+            has_placeholders = bool(re.search(r"\{\{.*?\}\}", text))
+            self._placeholder_hint.setVisible(has_placeholders)
+            if has_placeholders:
+                self._placeholder_hint.setText(_("⚠ 请将 {{...}} 占位符替换为真实网址"))
+            self._highlighter.rehighlight()
+        finally:
+            self._checking_placeholders = False
 
     def _on_data_changed(self) -> None:
         """数据变更处理。"""

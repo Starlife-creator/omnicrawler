@@ -159,10 +159,12 @@ def compile_with_ai(
     compile_natural_language（见 home.py 的 _AIEnrichWorker）。
 
     Raises:
-        RuntimeError: AI 调用失败（网络、超时、额度等）或预算超限。
-        ValueError: AI 返回结果 Schema 校验不通过或违反安全边界。
+        RuntimeError: AI 调用失败（网络、超时、额度等）。
+        AIBudgetExceededError: AI 预算超限（RuntimeError 子类，不可重试）。
+        AISafetyViolationError: AI 建议越过安全边界被拦截（ValueError 子类，C25）。
+        ValueError: AI 返回结果 Schema 校验不通过。
     """
-    from .ai_safety import AIBudgetExceededError
+    from .ai_safety import AIBudgetExceededError, AISafetyViolationError
     from .ai_task_designer import (
         _append_ai_audit,
         ai_task_design_audit,
@@ -209,7 +211,7 @@ def compile_with_ai(
             "status": "blocked",
             "violations": violations,
         })
-        raise ValueError("AI 配置违反安全边界：\n" + "\n".join(f"  - {v}" for v in violations))
+        raise AISafetyViolationError(violations)
 
     # C32：审计落盘
     _append_ai_audit(ai_task_design_audit(result, draft))

@@ -160,6 +160,32 @@ class TaskIR:
         return TaskIR.from_mapping(deep_merge(self.to_mapping(), copy.deepcopy(dict(fragment))))
 
 
+# 默认插件搜索路径（必须与 core/config.py DEFAULTS["plugins"]["paths"] 保持一致）。
+# 这些是运行时安装关注点（零配置、目录可能不存在），仅配置这些默认目录
+# 不算"任务要用插件"——能力推断不应把"运行时配了插件路径"误判为"任务需要插件能力"。
+DEFAULT_PLUGIN_SEARCH_PATHS: frozenset[str] = frozenset({"plugins/", "plugins_installed/"})
+
+
+def _task_declares_plugins(plugins: Any) -> bool:
+    """任务真正声明使用插件，才算需要 ``plugin`` 运行能力。
+
+    仅配置默认搜索目录（``plugins/``、``plugins_installed/``）不算——那是运行时安装
+    关注点，不是本任务要加载插件。需显式声明非默认路径（具体插件文件或自定义目录）、
+    ``enabled=true``，或 ``use`` 列表，才视为任务要用插件。
+    """
+    if not isinstance(plugins, dict):
+        return False
+    paths = plugins.get("paths")
+    if isinstance(paths, (list, tuple)) and {str(p) for p in paths} - DEFAULT_PLUGIN_SEARCH_PATHS:
+        return True
+    if plugins.get("enabled") is True:
+        return True
+    use = plugins.get("use")
+    if isinstance(use, (list, tuple, set)) and len(use) > 0:
+        return True
+    return False
+
+
 def infer_capabilities(config: Mapping[str, Any]) -> list[str]:
     """Derive declared capability tags (browser, ocr, ai, storage, plugin, stream)."""
     result: list[str] = []
@@ -178,7 +204,7 @@ def infer_capabilities(config: Mapping[str, Any]) -> list[str]:
         result.append("ai")
     if storage and (storage.get("objects", {}).get("backend", "local") != "local" or storage.get("records", {}).get("backends")):
         result.append("storage")
-    if plugins.get("paths"):
+    if _task_declares_plugins(plugins):
         result.append("plugin")
     if source.get("kind") in {"websocket", "sse", "long_poll"}:
         result.append("stream")

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-07T23:32:00+08:00",
+  "publisher": "Starlife-creator",
+  "trust_model": "single-root-ed25519",
+  "trust_public_key_ref": "configs/plugin_trust.pub.pem",
+  "plugins": [
+    {
+      "id": "example_news",
+      "name": "示例新闻站点适配器",
+      "version": "1.0.0",
+      "publisher": "Starlife-creator",
+      "category": "source",
+      "summary": "为示例新闻站点强制附加 XHR 请求头并打站点标记，复用通用发现逻辑。",
+      "description_file": "plugins/example_news/listing.md",
+      "plugin_file": "plugins/example_news/plugin.py",
+      "signature_file": "plugins/example_news/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [],
+      "compatible_core": ">=2.7.0",
+      "license": "MIT",
+      "tags": ["example", "source", "news", "template"],
+      "updated_at": "2026-08-07",
+      "homepage": "https://github.com/Starlife-creator/omnicrawler/tree/main/registry/plugins/example_news"
+    }
+  ]
+}

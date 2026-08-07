@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
@@ -297,6 +298,7 @@ def extraction_stage(
     limit: int | None = None,
     workers: int | None = None,
     should_stop=None,
+    on_document: Callable[[int, int], None] | None = None,
 ) -> dict[str, int]:
     if limit is not None and limit < 0:
         raise ValueError("limit 不能为负数")
@@ -345,6 +347,9 @@ def extraction_stage(
                     count = future.result()
                     summary["documents"] += 1
                     summary["records"] += count
+                    if on_document is not None:
+                        # B12：实时汇报已处理文档数，避免大批量时进度条长时间不动误以为卡死
+                        on_document(summary["documents"], len(rows))
                     if count == 0:
                         summary["no_data"] += 1
                 except Exception as exc:  # noqa: BLE001

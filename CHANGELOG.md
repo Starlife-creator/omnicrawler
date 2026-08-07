@@ -1,6 +1,24 @@
 # Changelog
 
 ## Unreleased
+## 0.5.0 - 2026-08-08
+
+### 变更
+
+- docs: CONTRIBUTING 增加插件提交与签名流程
+- feat(plugins): ed25519 离线插件签名验签 (C9 安全)
+- chore: ignore stray tmp_es.json test artifact
+- chore: stop tracking stray tmp_es.json test artifact
+- chore(quality): close acceptance gates - mypy clean (240 files), network boundary approved, coverage gates pass
+- chore: remove stray tmp_es.json test artifact from repository
+- feat(runtime): track omnicrawl.runtime module (was git-ignored by runtime/)
+- fix(build,portable): audit fixes Phases 2/5c — first-run UX, packaging tooling
+- fix(gui,pdf): audit fixes Phases 3/5a — PDF extraction accuracy, cross-platform GUI
+- fix(core,ai,cli): audit fixes Phases 0/1/5b — config single source, AI pipeline, CLI robustness
+- Sync CWD; validate Tesseract downloads
+- Add artifacts README; update gitignore and docs
+- Enhance Windows packaging and versioning
+
 ## 0.4.0 - 2026-08-07
 
 ### 变更

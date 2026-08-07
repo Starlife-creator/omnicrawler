@@ -146,9 +146,16 @@ DEFAULTS: dict[str, Any] = {
         "retention": {"raw_days": None, "artifacts_days": None, "diagnostics_days": None},
     },
     "plugins": {
-        "paths": [], "allow_external_paths": False, "fail_open": False,
+        "paths": ["plugins/", "plugins_installed/"], "allow_external_paths": False, "fail_open": False,
         "hook_fail_open": False, "approved_permissions": [],
         "trust_public_key": "",
+        # 插件市场 catalog 基址（单一可迁移配置）。所有 catalog 内部路径均为相对此基址
+        # 的相对路径；迁移到独立仓库或自托管 HTTP 服务时，只需改这一项。
+        # 留空表示不配置远程市场（GUI 市场面板回退到 bundled_catalog_dir 或禁用）。
+        "catalog_url": "https://raw.githubusercontent.com/Starlife-creator/omnicrawler/main/registry",
+        # 离线/便携构建内置的 catalog 快照目录（相对或绝对路径）。
+        # 留空表示无内置快照（市场仅在线可用）。
+        "bundled_catalog_dir": "",
     },
     "resources": {
         "profile": "balanced",
@@ -199,6 +206,31 @@ class AppConfig:
 
         plugins = self.section("plugins")
         value = plugins.get("trust_public_key", "") if isinstance(plugins, dict) else ""
+        return str(value) if value else ""
+
+    @property
+    def plugin_catalog_url(self) -> str:
+        """插件市场 catalog 基址（单一可迁移配置）。
+
+        所有 catalog 内部文件路径均为相对于此基址的相对路径。迁移到独立仓库或
+        自托管 HTTP 服务时，只需修改此值（见 registry/README.md），catalog 内部
+        无需任何改动。空串表示不配置远程市场，GUI 市场面板回退 bundled_catalog_dir。
+        """
+
+        plugins = self.section("plugins")
+        value = plugins.get("catalog_url", "") if isinstance(plugins, dict) else ""
+        return str(value) if value else ""
+
+    @property
+    def plugin_bundled_catalog_dir(self) -> str:
+        """离线/便携构建内置的 catalog 快照目录（相对或绝对路径）。
+
+        留空表示没有内置快照（市场仅在线可用）。便携包在构建期把 registry/ 打包进
+        应用并填此路径，可使市场离线也可用。路径相对于应用根目录解析。
+        """
+
+        plugins = self.section("plugins")
+        value = plugins.get("bundled_catalog_dir", "") if isinstance(plugins, dict) else ""
         return str(value) if value else ""
 
 

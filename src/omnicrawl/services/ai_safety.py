@@ -12,6 +12,21 @@ class AIBudgetExceededError(RuntimeError):
     """AI 请求/Token/费用预算超限。与网络/解析错误区分，避免上层误判为重试。"""
 
 
+class AISafetyViolationError(ValueError):
+    """AI 建议越过安全边界（扩大域名/明文凭据/关闭安全策略）被拦截。
+
+    C25：与"Schema 校验失败"区分——调用方（GUI）据此明确告知用户
+    "已拦截越权建议"，而不是把它和普通解析错误一起静默吞掉。
+    继承 ValueError 以保持既有 ``except ValueError`` 调用方的兼容性。
+    """
+
+    def __init__(self, violations: list[str]) -> None:
+        self.violations = list(violations)
+        super().__init__(
+            "AI 配置违反安全边界：\n" + "\n".join(f"  - {item}" for item in self.violations)
+        )
+
+
 @dataclass(slots=True)
 class AIBudget:
     maximum_requests: int = 0
@@ -45,8 +60,9 @@ def validate_ai_output(value: dict[str, Any], schema: dict[str, type | tuple[typ
     """
     if not isinstance(value, dict):
         raise ValueError("AI 输出必须是 JSON 对象")
-    if set(value) - set(schema):
-        raise ValueError("AI 输出包含 Schema 未声明字段")
+    unknown = set(value) - set(schema)
+    if unknown:
+        raise ValueError(f"AI 输出包含 Schema 未声明字段: {', '.join(sorted(unknown))}")
     for key, expected in schema.items():
         if key in value and not isinstance(value[key], expected):
             raise ValueError(f"AI 输出字段 {key} 类型错误")

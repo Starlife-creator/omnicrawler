@@ -143,6 +143,7 @@ def run_extraction(
     ocr_workers: int | None = None,
     callback: EventCallback | None = None,
     should_stop: StopCallback | None = None,
+    on_document: Callable[[int, int], None] | None = None,
 ) -> dict[str, Any]:
     """Run extraction independently; missing ingest/parse stages can be prepared automatically."""
     results: dict[str, Any] = {}
@@ -170,7 +171,9 @@ def run_extraction(
         _emit(callback, "extract_started", {})
         # B1：抽取/导出阶段异常隔离
         try:
-            result = extraction_stage(config, db, limit, workers, should_stop=should_stop)
+            result = extraction_stage(
+                config, db, limit, workers, should_stop=should_stop, on_document=on_document
+            )
         except Exception as exc:  # noqa: BLE001 - stage isolation keeps partial results
             LOGGER.exception("PDF 抽取阶段失败")
             results["extract"] = {"failed": True, "error": str(exc)}

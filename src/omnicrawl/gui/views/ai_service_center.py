@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QStandardPaths, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -203,6 +203,9 @@ class AIServiceCenterDialog(QDialog):
         budget = self._ai_config.get("budget", {})
         if budget.get("max_cost") is not None:
             self._cost_limit.setValue(int(budget["max_cost"]))
+        # B4：回填「最大响应长度」(max_tokens_per_request)，否则重开配置丢失
+        if budget.get("max_tokens_per_request") is not None:
+            self._max_tokens.setValue(int(budget["max_tokens_per_request"]))
         self._log_ai_calls.setChecked(bool(budget.get("log_calls", True)))
 
         # 能力路由
@@ -433,6 +436,18 @@ class AIServiceCenterDialog(QDialog):
         self._test_button.setEnabled(is_enabled)
         self._list_models_button.setEnabled(is_enabled)
 
+    def _resolve_workspace(self) -> Path:
+        """C43：活动任务工作区为空时回退到用户数据目录，保证探测类操作仍可进行。"""
+        if self._workspace is not None:
+            return self._workspace
+        fallback = (
+            Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation))
+            / "omnicrawl"
+            / "ai_probe"
+        )
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
+
     def _test_connection(self) -> None:
         """测试 AI 服务连接。"""
         base_url = self._base_url.text().strip().rstrip("/")
@@ -444,13 +459,12 @@ class AIServiceCenterDialog(QDialog):
             self._status_label.setText(_("❌ 请填写 API 地址和模型名称"))
             return
         if self._workspace is None:
-            self._status_label.setText(_("❌ 连接测试需要活动任务工作区；请从任务设置中打开此窗口"))
-            return
+            self._status_label.setText(_("⚠ 未检测到活动任务工作区，将使用本地临时目录进行探测"))
 
         self._test_button.setEnabled(False)
         self._status_label.setText(_("正在测试连接…"))
 
-        self._test_worker = AITestWorker(base_url, api_key, model, timeout, self._workspace)
+        self._test_worker = AITestWorker(base_url, api_key, model, timeout, self._resolve_workspace())
         self._test_worker.setParent(self)
         self._test_worker.test_done.connect(self._on_test_complete)
         self._test_worker.finished.connect(self._test_worker.deleteLater)
@@ -471,13 +485,12 @@ class AIServiceCenterDialog(QDialog):
             self._status_label.setText(_("❌ 请填写 API 地址"))
             return
         if self._workspace is None:
-            self._status_label.setText(_("❌ 获取模型需要活动任务工作区；请从任务设置中打开此窗口"))
-            return
+            self._status_label.setText(_("⚠ 未检测到活动任务工作区，将使用本地临时目录进行探测"))
 
         self._list_models_button.setEnabled(False)
         self._status_label.setText(_("正在获取模型列表…"))
 
-        self._models_worker = AIListModelsWorker(base_url, api_key, timeout, self._workspace)
+        self._models_worker = AIListModelsWorker(base_url, api_key, timeout, self._resolve_workspace())
         self._models_worker.setParent(self)
         self._models_worker.models_ready.connect(self._on_models_ready)
         self._models_worker.finished.connect(self._models_worker.deleteLater)
@@ -506,12 +519,22 @@ class AIServiceCenterDialog(QDialog):
         if provider_type == "disabled":
             self._ai_config["mode"] = "disabled"
         else:
+            # C42：保存前必填校验，避免存下「已启用但填不全」导致静默 None 的配置
+            base_url = self._base_url.text().strip().rstrip("/")
+            model = self._model_name.text().strip()
+            if not base_url or not model:
+                QMessageBox.warning(
+                    self,
+                    _("配置不完整"),
+                    _("已启用 AI 但未填写 API 地址或模型名称，无法保存。请补全后再保存，或先用「测试连接」验证。"),
+                )
+                return
             self._ai_config["mode"] = "enabled"
             self._ai_config["default_provider"] = "default"
             self._ai_config.setdefault("providers", {})["default"] = {
                 "type": provider_type,
-                "base_url": self._base_url.text().strip().rstrip("/"),
-                "model": self._model_name.text().strip(),
+                "base_url": base_url,
+                "model": model,
                 "api_key": self._api_key.text().strip(),
                 "timeout_seconds": self._timeout.value(),
             }

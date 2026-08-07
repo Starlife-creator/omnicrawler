@@ -171,7 +171,8 @@ class SmartExtractDialog(QDialog):
     """智能提取对话框。
 
     粘贴 HTML 和示例文本，自动推荐最匹配的 XPath。
-    支持 AI 模式：粘贴 HTML → LLM 直接提取字段值。
+    另提供智能推荐（启发式）模式：粘贴 HTML → 本地离线规则（meta/h1-h3 匹配）
+    猜测字段位置。该模式**不会调用任何大模型**，仅为规则匹配结果。
     """
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -186,7 +187,11 @@ class SmartExtractDialog(QDialog):
         self._mode_group = QButtonGroup(self)
         self._selector_mode_btn = QRadioButton(_("选择器模式"))
         self._selector_mode_btn.setChecked(True)
-        self._ai_mode_btn = QRadioButton(_("AI 模式"))
+        # B7：原文案为"AI 模式"，实为离线启发式规则，改名避免误导
+        self._ai_mode_btn = QRadioButton(_("智能推荐(启发式)"))
+        self._ai_mode_btn.setToolTip(
+            _("离线规则匹配（meta / h1-h3 等），不调用大模型，结果需人工核对。")
+        )
         self._mode_group.addButton(self._selector_mode_btn, 1)
         self._mode_group.addButton(self._ai_mode_btn, 2)
         mode_row.addWidget(self._selector_mode_btn)
@@ -200,9 +205,14 @@ class SmartExtractDialog(QDialog):
         self._html_edit.setPlaceholderText(_("<html>...</html>"))
         layout.addWidget(self._html_edit)
 
-        # AI 模式：字段定义区域
-        self._ai_fields_group = QGroupBox(_("AI 提取字段定义"))
+        # 智能推荐(启发式) 模式：字段定义区域
+        self._ai_fields_group = QGroupBox(_("智能推荐字段定义（离线规则）"))
         ai_fields_layout = QVBoxLayout(self._ai_fields_group)
+        heuristic_note = QLabel(
+            _("说明：本模式使用本地启发式规则匹配，不调用大模型；结果仅供参考，请核对后使用。")
+        )
+        heuristic_note.setWordWrap(True)
+        ai_fields_layout.addWidget(heuristic_note)
         ai_fields_layout.addWidget(QLabel(_("每行一个字段：字段名=描述（如: title=文章标题）")))
         self._ai_fields_edit = QPlainTextEdit()
         self._ai_fields_edit.setPlaceholderText(_("title=文章标题\nauthor=作者名\ndate=发布日期"))
@@ -244,12 +254,32 @@ class SmartExtractDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+        # B8：未选中有效结果行时禁用"确定"，避免把空 XPath 绑定到字段
+        ok_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        assert ok_button is not None
+        self._ok_button: QPushButton = ok_button
+        self._ok_button.setToolTip(_("请先在推荐结果中选择一行"))
+        self._result_table.itemSelectionChanged.connect(self._update_ok_enabled)
+        self._update_ok_enabled()
+
         self._selected_xpath: str = ""
         self._selected_text: str = ""
 
         # 模式切换联动
         self._mode_group.buttonClicked.connect(self._on_mode_changed)
         self._on_mode_changed(self._selector_mode_btn)
+
+    def _current_xpath(self) -> str:
+        """返回当前选中结果行的 XPath（未选中或为空时返回空串）。"""
+        row = self._result_table.currentRow()
+        if row < 0:
+            return ""
+        item = self._result_table.item(row, 2)
+        return item.text().strip() if item else ""
+
+    def _update_ok_enabled(self) -> None:
+        """仅当选中行带有非空 XPath 时才允许确认。"""
+        self._ok_button.setEnabled(bool(self._current_xpath()))
 
     @property
     def selected_xpath(self) -> str:
@@ -260,13 +290,13 @@ class SmartExtractDialog(QDialog):
         return self._selected_text
 
     def _on_mode_changed(self, button: QRadioButton) -> None:
-        """切换选择器/AI 模式时显示/隐藏对应区域。"""
+        """切换选择器 / 智能推荐(启发式) 模式时显示/隐藏对应区域。"""
         is_ai = button is self._ai_mode_btn
         self._sample_group.setVisible(not is_ai)
         self._ai_fields_group.setVisible(is_ai)
 
     def _analyze(self) -> None:
-        """分析 HTML 并推荐 XPath（选择器模式）或 AI 提取（AI 模式）。"""
+        """分析 HTML 并推荐 XPath（选择器模式）或启发式规则匹配（智能推荐模式）。"""
         html_text = self._html_edit.toPlainText().strip()
 
         if not html_text:
@@ -307,6 +337,8 @@ class SmartExtractDialog(QDialog):
             self._result_table.setItem(i, 1, QTableWidgetItem(text))
             self._result_table.setItem(i, 2, QTableWidgetItem(xpath))
 
+        self._update_ok_enabled()
+
         if not top:
             QMessageBox.information(
                 self, _("未找到匹配"),
@@ -316,7 +348,7 @@ class SmartExtractDialog(QDialog):
             self._result_table.resizeColumnsToContents()
 
     def _analyze_ai(self, html_text: str) -> None:
-        """AI 模式：调用 LLM 从 HTML 中提取字段。"""
+        """智能推荐(启发式)：用本地规则在 HTML 中猜测字段位置（不调用 LLM）。"""
         fields_text = self._ai_fields_edit.toPlainText().strip()
         if not fields_text:
             QMessageBox.warning(self, _("提示"), _("请输入要提取的字段定义"))
@@ -336,7 +368,7 @@ class SmartExtractDialog(QDialog):
             QMessageBox.warning(self, _("提示"), _("无法解析字段定义"))
             return
 
-        # 使用简单规则模拟 AI 提取（真实场景替换为 ai_graph.AIGraphExtractor）
+        # 离线启发式规则匹配（若需真实 LLM 提取，请使用 ai_graph.AIGraphExtractor）
         from lxml import html
         tree = html.fromstring(html_text)
 
@@ -371,7 +403,8 @@ class SmartExtractDialog(QDialog):
                 xpath = ""
 
             if text:
-                self._result_table.setItem(i, 0, QTableWidgetItem("90%"))
+                # 不再显示伪造的 90% 置信度，如实标注为规则命中
+                self._result_table.setItem(i, 0, QTableWidgetItem(_("规则命中")))
                 self._result_table.setItem(i, 1, QTableWidgetItem(text[:80]))
                 self._result_table.setItem(i, 2, QTableWidgetItem(xpath))
             else:
@@ -379,17 +412,29 @@ class SmartExtractDialog(QDialog):
                 self._result_table.setItem(i, 1, QTableWidgetItem(_("未找到匹配")))
                 self._result_table.setItem(i, 2, QTableWidgetItem(""))
 
-        self._result_table.setHorizontalHeaderLabels([_("匹配度"), _("提取文本"), _("XPath 位置")])
+        self._result_table.setHorizontalHeaderLabels(
+            [_("规则匹配"), _("提取文本"), _("XPath 位置")]
+        )
         self._result_table.resizeColumnsToContents()
+        self._update_ok_enabled()
 
     def accept(self) -> None:
-        """确认选择。"""
+        """确认选择。
+
+        B8：未选中结果行（或该行 XPath 为空）时拒绝确认并提示，
+        避免把空 XPath 绑定到字段上。
+        """
+        xpath = self._current_xpath()
+        if not xpath:
+            QMessageBox.warning(
+                self, _("提示"),
+                _("请先在推荐结果中选中一行有效的 XPath 后再确认；若无结果请先执行分析。"),
+            )
+            return
         row = self._result_table.currentRow()
-        if row >= 0:
-            xpath_item = self._result_table.item(row, 2)
-            self._selected_xpath = xpath_item.text() if xpath_item else ""
-            text_item = self._result_table.item(row, 1)
-            self._selected_text = text_item.text() if text_item else ""
+        self._selected_xpath = xpath
+        text_item = self._result_table.item(row, 1)
+        self._selected_text = text_item.text() if text_item else ""
         super().accept()
 
 

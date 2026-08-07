@@ -48,6 +48,7 @@ class _PdfPipelineWorker(QThread):
     progress = pyqtSignal(int)            # 0-100
     all_done = pyqtSignal(object)         # 全部结果 dict
     failed = pyqtSignal(str)              # 错误消息
+    document_progress = pyqtSignal(int, int)  # B12：已处理文档数, 总文档数（抽取阶段实时汇报）
 
     def __init__(
         self,
@@ -101,12 +102,19 @@ class _PdfPipelineWorker(QThread):
             def _should_stop() -> bool:
                 return self._cancelled
 
+            def _doc_callback(processed: int, total: int) -> None:
+                # B12：抽取阶段每处理完一份文档实时汇报，避免大批量时进度条长期不动误以为卡死
+                if self._cancelled:
+                    return
+                self.document_progress.emit(processed, total)
+
             result = run_extraction(
                 self._config_path,
                 auto_prepare=True,
                 run_ocr=self._run_ocr,
                 callback=_callback,
                 should_stop=_should_stop,
+                on_document=_doc_callback,
             )
 
             if self._cancelled:
@@ -554,6 +562,7 @@ class PdfWorkbenchView(QWidget):
         self._worker.stage_finished.connect(self._on_stage_finished)
         self._worker.warnings_received.connect(self._on_warnings)
         self._worker.progress.connect(self._progress_bar.setValue)
+        self._worker.document_progress.connect(self._on_document_progress)
         self._worker.all_done.connect(self._on_done)
         self._worker.failed.connect(self._on_failed)
         self._worker.start()
@@ -574,6 +583,20 @@ class PdfWorkbenchView(QWidget):
         provider = ai_config.get("providers", {}).get("default", {})
         if ai_config.get("mode") != "enabled" or not isinstance(provider, dict):
             return True  # AI 未启用无需确认
+        # C37：隐私开关 — PDF 正文外发被禁用时直接拒绝 AI 外发，回退规则抽取
+        try:
+            from ...core.ai_env import load_ai_privacy
+
+            privacy = load_ai_privacy(getattr(main, "_project_root", None))
+        except Exception:
+            privacy = {}
+        if not privacy.get("allow_pdf_content", True):
+            QMessageBox.information(
+                self,
+                _("PDF 内容 AI 已禁用"),
+                _("按隐私设置，PDF 正文不会发送到任何 AI 服务。本次将仅使用本地规则抽取。"),
+            )
+            return False
         base_url = str(provider.get("base_url", "") or "")
         api_key = str(provider.get("api_key", "") or "")
         is_local = "127.0.0.1" in base_url or "localhost" in base_url
@@ -652,6 +675,21 @@ class PdfWorkbenchView(QWidget):
         del result  # 无信息量载荷，仅通知到达
         self._stage_label.setText(_(f"✓ {stage} 完成"))
 
+    @pyqtSlot(int, int)
+    def _on_document_progress(self, processed: int, total: int) -> None:
+        """B12：抽取阶段实时把「已处理 X/Y 文档」混入进度条，避免大批量时卡死错觉。
+
+        抽取阶段在 6 阶段流水线中排第 5（前 4 阶段完成后进度约 66%），
+        故以其内部进度在 66%~83% 区间线性展开，使进度条持续前进。
+        """
+        if total <= 0:
+            return
+        base = 4 / 6 * 100          # 进入抽取阶段时的进度基线
+        span = 1 / 6 * 100          # 抽取阶段占据的进度跨度
+        pct = int(base + min(processed, total) / total * span)
+        self._progress_bar.setValue(min(pct, 99))
+        self._stage_label.setText(_(f"⏳ 抽取文档 {processed}/{total}..."))
+
     @pyqtSlot(list)
     def _on_warnings(self, items: list) -> None:
         """D3：显示管线关键警告（AI Key 为空/OCR 未启用等），不再静默丢弃。"""
@@ -710,6 +748,20 @@ class PdfWorkbenchView(QWidget):
         lines.append(_(f"文档: {docs}"))
         lines.append(_(f"页面: 共 {pages.get('total', '?')} 页, OCR {pages.get('ocr_done', '?')} 页"))
         lines.append(_(f"记录: 共 {records.get('total', '?')} 条, 需复核 {records.get('needs_review', '?')} 条"))
+
+        # B13：字段级"AI vs 规则"来源分布，明示本次到底有没有真的用大模型
+        extract = result_data.get("extract", {}) if isinstance(result_data.get("extract"), dict) else {}
+        methods = extract.get("extraction_methods", {}) if isinstance(extract.get("extraction_methods"), dict) else {}
+        if methods:
+            ai_count = sum(int(n) for m, n in methods.items() if "llm" in str(m).lower())
+            rule_count = sum(int(n) for m, n in methods.items() if "llm" not in str(m).lower())
+            lines.append("")
+            lines.append(_(f"抽取方式: 🤖 AI 大模型 {ai_count} 条, 📐 规则/启发式 {rule_count} 条"))
+            detail = ", ".join(_(f"{m}={n}") for m, n in methods.items())
+            lines.append(_(f"  明细: {detail}"))
+            sel = extract.get("selected")
+            if sel is not None:
+                lines.append(_(f"  抽取统计: 选中文档 {sel}, 无数据 {extract.get('no_data', '?')}, 失败 {extract.get('failed', '?')}"))
 
         output_files = export_info.get("files", {}) if isinstance(export_info, dict) else {}
         output_paths = (

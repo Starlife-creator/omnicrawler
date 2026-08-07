@@ -16,6 +16,8 @@ datas = [
     (str(src_root / "omnicrawl" / "gui" / "templates"), "omnicrawl/gui/templates"),
     (str(src_root / "omnicrawl" / "gui" / "help"), "omnicrawl/gui/help"),
     (str(src_root / "omnicrawl" / "fetching" / "stealth.min.js"), "omnicrawl/fetching"),
+    # 用户插件工作目录：打包进便携版，用户可在便携环境里放自己的插件
+    (str(project_root / "plugins"), "plugins"),
 ]
 hiddenimports = sorted(set(collect_submodules("omnicrawl") + collect_submodules("keyring.backends")))
 excludes = [

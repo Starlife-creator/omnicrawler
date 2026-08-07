@@ -12,9 +12,12 @@
 
 from __future__ import annotations
 
+import copy
+import json
 import os
 import re
 from pathlib import Path
+from typing import Any
 
 # GUI 与 PDF 子系统统一使用的 AI 配置变量名（唯一真源）
 AI_ENV_KEYS: tuple[str, ...] = (
@@ -231,3 +234,69 @@ def bridge_pdfx_llm_env(project_root: str | Path | None = None) -> None:
         value = ai_vars.get(source)
         if value is not None:
             os.environ[target] = value
+
+
+# ================================================================
+#  C36 / C37：完整 AI 配置旁路持久化 与 外发隐私开关读取
+# ================================================================
+
+def ai_config_sidecar_path(project_root: str | Path | None = None) -> Path:
+    """AI 完整配置（隐私/预算/路由/抽取，不含明文 api_key）的旁路 JSON 落盘点。
+
+    与 .env 同目录：项目态 ``<root>/ai_config.json``，用户态 ``~/.omnicrawl/ai_config.json``。
+    """
+    return ai_env_path(project_root).parent / "ai_config.json"
+
+
+def save_ai_config_sidecar(project_root: str | Path | None, config: dict[str, Any]) -> Path:
+    """C36：把 .env 无法承载的非机密 AI 配置持久化到旁路 JSON。
+
+    api_key 仅存于 .env（经 seal_secret 加密），此处剥离，绝不落明文。
+    重开「AI 服务中心」时由 load_ai_config_sidecar 合并回完整配置。
+    """
+    path = ai_config_sidecar_path(project_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    safe = copy.deepcopy(config)
+    safe.pop("api_key", None)
+    for prov in safe.get("providers", {}).values():
+        if isinstance(prov, dict):
+            prov.pop("api_key", None)
+    path.write_text(json.dumps(safe, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    return path
+
+
+def load_ai_config_sidecar(project_root: str | Path | None = None) -> dict[str, Any]:
+    """C36：读取旁路 JSON；缺失/损坏返回空 dict（不阻断 AI 启用）。"""
+    path = ai_config_sidecar_path(project_root)
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+# C37：AI 外发隐私开关默认值（fail-open 保持既有行为，显式关闭才生效）
+DEFAULT_AI_PRIVACY: dict[str, bool] = {
+    "allow_page_text": True,
+    "allow_pdf_content": True,
+    "allow_screenshots": True,
+    "allow_cookies": True,
+}
+
+
+def load_ai_privacy(project_root: str | Path | None = None) -> dict[str, bool]:
+    """C37：读取 AI 外发隐私开关，供页面文本 / PDF 正文等外发闸门前置判断。
+
+    仅从旁路 JSON 读取用户显式设置；无配置时回退默认值（全部允许，兼容旧行为）。
+    """
+    sidecar = load_ai_config_sidecar(project_root)
+    privacy = sidecar.get("privacy")
+    if isinstance(privacy, dict):
+        return {k: bool(privacy.get(k, DEFAULT_AI_PRIVACY[k])) for k in DEFAULT_AI_PRIVACY}
+    return dict(DEFAULT_AI_PRIVACY)

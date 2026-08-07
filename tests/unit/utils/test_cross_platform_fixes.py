@@ -5,12 +5,16 @@
 - A22：帮助中心未知 ID 的 registry 行为（GUI 侧 show_help 有兜底）
 - A21：AppSettings.clear_recent 公开接口（不依赖私有 _settings）
 - B9：CSV 大文件不再截断（offscreen QApplication）
+- B10：无头子进程环境变量 PYTHONIOENCODING 拼写正确
+- B11：WorkerTaskRunner 对 created_at 为 None 的兜底
 """
 
 from __future__ import annotations
 
+import io
 import os
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -91,3 +95,87 @@ def test_b9_csv_index_no_100k_truncation(tmp_path) -> None:
     worker = CsvIndexWorker(csv_path)
     worker.run()
     assert worker is not None
+
+
+def test_b9_csv_tail_reachable_beyond_100k_rows(tmp_path) -> None:
+    """B9：超过 10 万行时尾页仍可达且内容正确（旧实现在第 100000 行 break 丢尾部）。"""
+    pytest.importorskip("PyQt6")
+    from PyQt6.QtWidgets import QApplication
+
+    from omnicrawl.gui.views.result_table import ROWS_PER_PAGE, CsvStreamModel
+
+    QApplication.instance() or QApplication([])
+    total = 100_000 + 3
+    csv_path = tmp_path / "huge.csv"
+    with csv_path.open("w", encoding="utf-8", newline="") as f:
+        f.write("idx,val\n")
+        for i in range(total):
+            f.write(f"{i},v{i}\n")
+
+    model = CsvStreamModel()
+    assert model.load_file(csv_path)
+    assert model.total_rows == total  # 完整计数，未在 100000 行截断
+
+    last_page = model.total_pages - 1
+    model.go_to_page(last_page)
+    assert model.rowCount() == total - last_page * ROWS_PER_PAGE
+    tail = model.rowCount() - 1
+    assert model.data(model.index(tail, 0)) == str(total - 1)
+    assert model.data(model.index(tail, 1)) == f"v{total - 1}"
+
+
+def test_b10_headless_runner_sets_pythonioencoding(tmp_path, monkeypatch) -> None:
+    """B10：无头子进程须收到 PYTHONIOENCODING（旧代码拼作 PYTHONIOCODING 从未生效）。"""
+    from omnicrawl.gui.runner import headless_runner as hr
+
+    config_path = tmp_path / "task.yaml"
+    config_path.write_text("project_name: demo\n", encoding="utf-8")
+    fake_config = SimpleNamespace(
+        validate=lambda: [], project_name="demo", task_id="t-1"
+    )
+    monkeypatch.setattr(hr, "load_yaml", lambda _path: fake_config)
+    monkeypatch.setattr(hr, "check_omnicrawl", lambda _path: (True, "0.4.0"))
+
+    captured: dict[str, dict[str, str]] = {}
+
+    class _FakeProcess:
+        def __init__(self) -> None:
+            self.stdout = io.StringIO("正在抓取 ✅\n")
+
+        def wait(self) -> int:
+            return 0
+
+    def _fake_popen(_args, **kwargs):
+        captured["env"] = kwargs["env"]
+        return _FakeProcess()
+
+    monkeypatch.setattr(hr.subprocess, "Popen", _fake_popen)
+
+    assert hr.HeadlessRunner().run(config_path) == 0
+    assert captured["env"]["PYTHONIOENCODING"] == "utf-8"
+    assert "PYTHONIOCODING" not in captured["env"]
+
+
+def test_b11_worker_task_runner_tolerates_none_created_at(tmp_path, monkeypatch) -> None:
+    """B11：config.created_at 为 None 时 start() 不再 AttributeError。"""
+    pytest.importorskip("PyQt6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PyQt6.QtWidgets import QApplication
+
+    from omnicrawl.gui.core.config_model import CrawlConfig
+    from omnicrawl.gui.runner.worker_task_runner import WorkerTaskRunner
+
+    app = QApplication.instance() or QApplication([])
+    runner = WorkerTaskRunner(project_root=tmp_path)
+    runner._backend = SimpleNamespace(start=lambda _path: {"status": "running"})
+    config = CrawlConfig(
+        project_name="none-created-at",
+        workspace=str(tmp_path / "work"),
+        seed_urls=["https://example.org/"],
+    )
+    config.created_at = None  # type: ignore[assignment]
+
+    assert runner.start(config) is True
+    assert runner.config_path is not None and runner.config_path.is_file()
+    runner._poller.stop()
+    app.processEvents()

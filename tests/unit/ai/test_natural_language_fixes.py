@@ -1,18 +1,23 @@
-"""自然语言任务解析修复测试（Phase 1：C19/C20/C21/C23/C24/E12）。"""
+"""自然语言任务解析修复测试（Phase 1：C19/C20/C21/C23/C24/C25/C27/E12）。"""
 
 from __future__ import annotations
 
+import pytest
+
+from omnicrawl.services.ai_safety import AISafetyViolationError
 from omnicrawl.services.natural_language_task import compile_natural_language, compile_with_ai
 from omnicrawl.services.ux_service import draft_quick_task
 
 
 class _FakeProvider:
-    """模拟 AI provider：返回预设文本。"""
+    """模拟 AI provider：返回预设文本，并记录调用参数。"""
 
     def __init__(self, text: str) -> None:
         self._text = text
+        self.calls: list[dict] = []
 
     def generate(self, messages, **kwargs):
+        self.calls.append(kwargs)
         return type("R", (), {"text": self._text})()
 
 
@@ -91,6 +96,34 @@ def test_c24_ftp_url_not_misread_as_local_path() -> None:
     # 本地盘符路径仍正常识别
     draft2 = compile_natural_language("提取 C:/data/2024年报.pdf 中内容")
     assert any(str(p).startswith("C:/") for p in draft2.file_paths)
+
+
+def test_c25_safety_violation_uses_dedicated_exception() -> None:
+    """AI 试图扩大入口域名时抛专用异常，调用方可明示"已拦截越权建议"。"""
+    text = (
+        '{"known_requirements": {"url": "https://example.com/x", "intent": "save_page"}, '
+        '"assumptions": [], "unresolved_questions": [], "explanations": [], '
+        '"risks": [], "recommended_actions": [], '
+        '"config_patch": {"seed_urls": ["https://evil.example.org/steal"]}}'
+    )
+    with pytest.raises(AISafetyViolationError) as excinfo:
+        compile_with_ai("保存 https://example.com/x", _FakeProvider(text))
+    assert excinfo.value.violations
+    assert any("扩大" in v for v in excinfo.value.violations)
+    # 兼容既有 except ValueError 调用方
+    assert isinstance(excinfo.value, ValueError)
+
+
+def test_c27_response_format_json_object_is_requested() -> None:
+    """必须显式请求 json_object，降低模型返回 Markdown 围栏的概率。"""
+    text = (
+        '{"known_requirements": {"url": "https://example.com/x", "intent": "save_page"}, '
+        '"assumptions": [], "unresolved_questions": [], "explanations": [], '
+        '"risks": [], "recommended_actions": [], "config_patch": {}}'
+    )
+    provider = _FakeProvider(text)
+    compile_with_ai("保存 https://example.com/x", provider)
+    assert provider.calls[0]["response_format"] == {"type": "json_object"}
 
 
 def test_draft_quick_task_intent_whitelist() -> None:

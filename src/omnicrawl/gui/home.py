@@ -42,6 +42,9 @@ class _AIEnrichWorker(QThread):
     """
 
     result_ready = pyqtSignal(object)  # NaturalLanguageDraft | None
+    # C13/C25：明确区分「未启用/已禁用」与「运行出错」，UI 可明示而非吞掉
+    ai_unavailable = pyqtSignal(str)  # reason
+    ai_error = pyqtSignal(str)  # error message
 
     def __init__(self, request: str, parent: QWidget | None = None, project_root: str | None = None) -> None:
         super().__init__(parent)
@@ -50,19 +53,29 @@ class _AIEnrichWorker(QThread):
 
     def run(self) -> None:
         try:
+            # C37：隐私闸门 — 页面文本外发被禁用时直接跳过 AI，不静默发走
+            from ..core.ai_env import load_ai_privacy
+
+            privacy = load_ai_privacy(self._project_root)
+            if not privacy.get("allow_page_text", True):
+                self.ai_unavailable.emit(_("AI 页面文本外发已按隐私设置禁用，已使用本地解析"))
+                return
+
             from ..services.natural_language_task import compile_with_ai
 
             # 尝试加载 AI provider
             provider = self._load_provider()
             if provider is None:
-                self.result_ready.emit(None)
+                self.ai_unavailable.emit(_("AI 未启用：请在「AI 服务中心」配置后重试"))
                 return
 
             result = compile_with_ai(self._request, provider)
             self.result_ready.emit(result)
-        except Exception:
-            logger.debug("AI enrichment failed", exc_info=True)
-            self.result_ready.emit(None)
+        except Exception as exc:  # noqa: BLE001 - 错误需上抛给 UI，不再是静默 None
+            # C12/C25：将异常（含 AISafetyViolation 越权拦截）明示给用户
+            reason = str(exc).strip() or type(exc).__name__
+            logger.debug("AI enrichment failed: %s", reason, exc_info=True)
+            self.ai_error.emit(reason)
         finally:
             # S1.1.5：任务运行完立即释放，避免关闭窗口时 QThread 仍在运行
             self.deleteLater()
@@ -353,9 +366,29 @@ class HomePage(QWidget):
         if not request:
             return
 
+        # C17：启动新 worker 前先回收旧 worker，避免覆盖旧任务仍在跑导致结果错乱
+        old = getattr(self, "_enrich_worker", None)
+        if old is not None:
+            old.quit()
+            old.wait(500)
+            old.deleteLater()
+
         self._enrich_worker = _AIEnrichWorker(request, self, project_root=self._project_root)
         self._enrich_worker.result_ready.connect(self._on_ai_enriched)
+        self._enrich_worker.ai_unavailable.connect(self._on_ai_unavailable)
+        self._enrich_worker.ai_error.connect(self._on_ai_error)
         self._enrich_worker.start()
+
+    def _on_ai_unavailable(self, reason: str) -> None:
+        """C13：AI 未启用/被隐私禁用时，明确告知用户（仍保留本地解析结果）。"""
+        base = self.feedback.text()
+        if reason not in base:
+            self.feedback.setText(_(f"{base}\nℹ {reason}（已使用本地解析）"))
+
+    def _on_ai_error(self, message: str) -> None:
+        """C12/C25：AI 运行出错（含越权拦截）时明示，而非静默丢弃。"""
+        base = self.feedback.text()
+        self.feedback.setText(_(f"{base}\n⚠ AI 增强失败：{message}（已使用本地解析）"))
 
     def _on_ai_enriched(self, ai_draft: object | None) -> None:
         """AI 增强结果到达：合并展示，不覆盖本地结果。"""
@@ -364,16 +397,17 @@ class HomePage(QWidget):
 
         draft = ai_draft  # type: ignore[assignment]
         parts = [self.feedback.text()]
+        # C18：标注 AI 增强来源，避免与本地规则解析混淆
+        parts.append(_("\n--- AI 增强（在线模型，非本地规则）---"))
 
         if hasattr(draft, 'ai_assumptions') and draft.ai_assumptions:
-            parts.append(_("\n--- AI 分析 ---"))
             for a in draft.ai_assumptions[:3]:
                 parts.append(_(f"  • 假设「{a.get('field', '?')}」= {a.get('value', '?')}（置信度: {a.get('confidence', '?')}）"))
 
         if hasattr(draft, 'ai_risks') and draft.ai_risks:
             parts.append(_("⚠ 风险提示："))
             for r in draft.ai_risks[:3]:
-                parts.append(f"  • {r.get('risk', '?')} [{r.get('severity', '?')}]")
+                parts.append(f"  • {r.get('risk', '?')}")  # 严重度已在风险文本内
 
         if hasattr(draft, 'ai_recommendations') and draft.ai_recommendations:
             parts.append(_("💡 建议操作："))

@@ -230,7 +230,30 @@ def load_local_plugins(
     egress: EgressBroker | None = None,
 ) -> None:
     root = root.resolve()
-    for index, value in enumerate(paths):
+    expanded: list[str] = []
+    for value in paths:
+        candidate = Path(value).expanduser()
+        if not candidate.is_absolute():
+            candidate = (root / value).resolve()
+        if not candidate.exists():
+            # 配置的插件路径不存在：记为非致命提示并跳过，不抛异常。
+            # 这样零配置默认路径（如尚未创建的 plugins_installed/）不会使加载崩溃，
+            # 同时用户手滑写错的路径仍有可见记录（fail_open 语义对此类情况同样适用）。
+            registry.plugin_errors.append(
+                {"path": str(value), "error": "skipped: 路径不存在", "level": "skipped"}
+            )
+            LOGGER.debug("跳过不存在的插件路径: %s", value)
+            continue
+        if candidate.is_dir():
+            # 目录模式：递归加载目录下所有插件（如 plugins_installed）。
+            # 仅取 .py，排除 __pycache__ 与 .sig。
+            for py in sorted(candidate.rglob("*.py")):
+                if "__pycache__" in py.parts:
+                    continue
+                expanded.append(str(py))
+            continue
+        expanded.append(value)
+    for index, value in enumerate(expanded):
         try:
             _load_local_plugin(
                 registry,

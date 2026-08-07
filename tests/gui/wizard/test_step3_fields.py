@@ -1,8 +1,30 @@
 from __future__ import annotations
 
+import importlib.util
+
 import pytest
 
 from omnicrawl.gui.wizard.step3_fields import selector_kind, suggest_xpath_candidates
+
+requires_qt = pytest.mark.skipif(
+    importlib.util.find_spec("PyQt6") is None,
+    reason="需要 PyQt6",
+)
+
+
+@pytest.fixture()
+def smart_dialog(monkeypatch):
+    """离屏构造 SmartExtractDialog。"""
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PyQt6.QtWidgets import QApplication
+
+    from omnicrawl.gui.wizard.step3_fields import SmartExtractDialog
+
+    app = QApplication.instance() or QApplication([])
+    dialog = SmartExtractDialog()
+    yield dialog
+    dialog.deleteLater()
+    app.processEvents()
 
 
 def test_suggest_xpath_candidates_with_chinese_text() -> None:
@@ -81,3 +103,72 @@ def test_xpath_parameterization_survives_quotes_in_field_name() -> None:
         field="标题's内容",
     )
     assert heading and (heading[0].text_content() or "").strip().startswith("标题")
+
+
+@requires_qt
+def test_heuristic_mode_label_does_not_claim_real_ai(smart_dialog) -> None:
+    """B7：启发式模式不得以"AI 模式"名义误导用户。"""
+    label = smart_dialog._ai_mode_btn.text()
+    assert "启发式" in label
+    assert label.strip() != "AI 模式"
+    assert "不调用大模型" in smart_dialog._ai_mode_btn.toolTip()
+    assert "离线规则" in smart_dialog._ai_fields_group.title()
+
+
+@requires_qt
+def test_accept_without_selection_is_rejected(smart_dialog, monkeypatch) -> None:
+    """B8：未选中结果行时确认必须被拒绝，且不产生空 XPath。"""
+    from PyQt6.QtWidgets import QDialog, QMessageBox
+
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox, "warning",
+        lambda *args, **kwargs: warnings.append(args[2]) or QMessageBox.StandardButton.Ok,
+    )
+
+    assert smart_dialog._result_table.currentRow() < 0
+    assert not smart_dialog._ok_button.isEnabled()
+
+    smart_dialog.accept()
+
+    assert warnings, "未选中行确认时应给出警告"
+    assert smart_dialog.selected_xpath == ""
+    assert smart_dialog.result() != QDialog.DialogCode.Accepted
+
+
+@requires_qt
+def test_accept_rejects_row_with_empty_xpath(smart_dialog, monkeypatch) -> None:
+    """B8：选中行但 XPath 为空（如"未找到匹配"行）同样应被拒绝。"""
+    from PyQt6.QtWidgets import QMessageBox, QTableWidgetItem
+
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
+    )
+    table = smart_dialog._result_table
+    table.setRowCount(1)
+    table.setItem(0, 0, QTableWidgetItem("—"))
+    table.setItem(0, 1, QTableWidgetItem("未找到匹配"))
+    table.setItem(0, 2, QTableWidgetItem(""))
+    table.selectRow(0)
+
+    assert not smart_dialog._ok_button.isEnabled()
+    smart_dialog.accept()
+    assert smart_dialog.selected_xpath == ""
+
+
+@requires_qt
+def test_accept_with_valid_selection_binds_xpath(smart_dialog) -> None:
+    """B8 回归：选中有效行时确认仍正常返回 XPath。"""
+    from PyQt6.QtWidgets import QTableWidgetItem
+
+    table = smart_dialog._result_table
+    table.setRowCount(1)
+    table.setItem(0, 0, QTableWidgetItem("90%"))
+    table.setItem(0, 1, QTableWidgetItem("标题文本"))
+    table.setItem(0, 2, QTableWidgetItem("/html/body/h1"))
+    table.selectRow(0)
+
+    assert smart_dialog._ok_button.isEnabled()
+    smart_dialog.accept()
+    assert smart_dialog.selected_xpath == "/html/body/h1"
+    assert smart_dialog.selected_text == "标题文本"

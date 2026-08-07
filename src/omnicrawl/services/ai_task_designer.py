@@ -25,8 +25,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from ..core.safe_data import safe_json_loads
-from .ai_providers import AIResult
-from .ai_safety import ai_audit_record
+from .ai_providers import _ESTIMATED_COST_PER_TOKEN, AIResult
+from .ai_safety import ai_audit_record, mark_untrusted, validate_ai_output
 
 # 审计 JSONL 写入互斥（_append_ai_audit 并发安全）
 _AUDIT_LOCK = threading.Lock()
@@ -35,7 +35,7 @@ _AUDIT_LOCK = threading.Lock()
 # 受约束的 AI 输出 Schema
 # ---------------------------------------------------------------------------
 
-AI_TASK_OUTPUT_SCHEMA: dict[str, type] = {
+AI_TASK_OUTPUT_SCHEMA: dict[str, type | tuple[type, ...]] = {
     "known_requirements": dict,       # 用户明确要求
     "assumptions": list,              # 系统假设
     "unresolved_questions": list,     # 待确认问题（每项含 question/why/options）
@@ -280,17 +280,13 @@ def parse_ai_task_output(raw_json: str, request: str = "") -> TaskDesignDraft:
     if missing:
         raise ValueError(f"AI 输出缺少必要字段：{', '.join(missing)}")
 
-    # 拒绝 Schema 未声明字段（C35：防止注入额外字段穿透；user_request 是历史兼容字段）
-    unknown = set(value) - set(AI_TASK_OUTPUT_SCHEMA) - {"user_request"}
-    if unknown:
-        raise ValueError(f"AI 输出包含 Schema 未声明字段: {', '.join(sorted(unknown))}")
-
-    # 类型校验
-    for field_name, expected_type in AI_TASK_OUTPUT_SCHEMA.items():
-        if field_name not in value:
-            continue
-        if not isinstance(value[field_name], expected_type):
-            raise ValueError(f"AI 输出字段 {field_name} 类型错误：期望 {expected_type.__name__}")
+    # C35：统一走 ai_safety.validate_ai_output（拒未声明字段 + 已有键类型校验），
+    # 不再在本模块重复实现一套宽松校验。user_request 是历史兼容字段，
+    # Schema 未声明（见 C29：request 由调用方回填），校验前剔除。
+    validate_ai_output(
+        {key: item for key, item in value.items() if key != "user_request"},
+        AI_TASK_OUTPUT_SCHEMA,
+    )
 
     # 逐元素校验（C28：拒绝非对象元素与缺子键）
     _validate_list_elements(value)
@@ -420,11 +416,15 @@ def format_task_design_for_display(draft: TaskDesignDraft) -> str:
 
 
 def build_task_design_messages(user_request: str, available_components: str = "", mode: str = "simple") -> list[dict[str, str]]:
-    """构建发送给 AI 的消息列表。"""
+    """构建发送给 AI 的消息列表。
+
+    C34：用户需求可能是从网页/PDF 粘贴的外部片段，一律用 mark_untrusted 标注为
+    “数据而非指令”后再进 prompt，避免其中的越权指令穿透系统提示的安全边界。
+    """
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
-            user_request=user_request,
+            user_request=mark_untrusted(user_request),
             available_components=available_components or "Standard 核心组件已就绪",
             mode=mode,
         )},
@@ -512,8 +512,9 @@ def ai_task_design_audit(
     except (TypeError, ValueError):
         total_tokens = 0
     if total_tokens > 0:
-        cost = total_tokens * 0.000002
-        cost_note = f"按 0.000002/token 估算（{total_tokens} tokens）"
+        # 与 AIBudget 记账使用同一单价常量，避免审计与预算两套口径
+        cost = total_tokens * _ESTIMATED_COST_PER_TOKEN
+        cost_note = f"按 {_ESTIMATED_COST_PER_TOKEN}/token 粗略估算（{total_tokens} tokens），非账单实际金额"
     else:
         cost = 0.0
         cost_note = "未知费用（provider 未返回 usage）"

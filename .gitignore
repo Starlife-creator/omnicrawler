@@ -85,6 +85,9 @@ plugin_signing_private.pem
 *_private.pem
 *private*.pem
 
+# === Installed marketplace plugins (runtime download, not source) ===
+plugins_installed/
+
 # === Logs ===
 *.log
 

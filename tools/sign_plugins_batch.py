@@ -13,7 +13,7 @@ are excluded — they are first-party code, not user plugins, and are never subj
 to the signature gate.
 
 Usage:
-    # sign everything under examples/plugins (default scan dir)
+    # sign everything under plugins/ and examples/plugins (default scan dirs)
     python tools/sign_plugins_batch.py
 
     # sign specific files
@@ -47,7 +47,7 @@ from omnicrawl.plugins.signing import sign_file, verify_plugin
 PRIVATE_DEFAULT = r"C:\Users\Lenovo\Desktop\档案\隐私\plugin_signing_private.pem"
 # Trust-root public key shipped with the repo (used for post-sign verification).
 PUBLIC_DEFAULT = "configs/plugin_trust.pub.pem"
-DEFAULT_SCAN_DIRS = ["examples/plugins"]
+DEFAULT_SCAN_DIRS = ["plugins", "examples/plugins"]
 
 # Directories that must never be treated as plugin sources.
 _EXCLUDE_DIRS = {

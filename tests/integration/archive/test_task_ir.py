@@ -82,6 +82,28 @@ def test_plan_detects_missing_capabilities_and_application_service_has_public_dt
     assert all("Pipeline" not in type(value).__name__ for value in compiled.values())
 
 
+def test_ir_requires_plugin_capability_only_when_task_declares_plugins(tmp_path: Path) -> None:
+    """plugin 能力仅当任务显式声明插件时要求，而非因默认搜索目录普遍要求。"""
+    base = _config(tmp_path)
+    # 默认配置：仅默认插件搜索目录，不要求 plugin 能力
+    default_ir = TaskIR.from_config(load_config(base).raw)
+    assert "plugin" not in default_ir.capabilities
+
+    # 显式声明插件文件：要求 plugin 能力
+    custom = tmp_path / "task-with-plugin.yaml"
+    custom.write_text(
+        base.read_text(encoding="utf-8").rstrip()
+        + "\nplugins: {paths: [examples/plugins/example_site.py]}\n",
+        encoding="utf-8",
+    )
+    plugin_ir = TaskIR.from_config(load_config(custom).raw)
+    assert "plugin" in plugin_ir.capabilities
+
+    # 能力受限环境（不含 plugin）应报缺 plugin 能力
+    plan = compile_task_plan(plugin_ir, available_capabilities=["browser", "ocr"])
+    assert "缺少运行能力: plugin" in plan.conflicts
+
+
 def test_recording_api_and_template_inputs_merge_through_one_ir_contract(tmp_path: Path) -> None:
     base = TaskIR.from_config(load_config(_config(tmp_path)).raw)
     recorded = base.merge_fragment(recording_fragment({

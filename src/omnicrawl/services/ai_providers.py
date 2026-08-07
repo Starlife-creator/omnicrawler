@@ -8,16 +8,66 @@ the existing ``secret://`` resolver.
 from __future__ import annotations
 
 import json
+import socket
+import ssl
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
-from ..core.config import AppConfig
+from ..core.config import DEFAULTS, AppConfig
 from ..core.errors import ResponseTooLargeError
 from ..fetching.http_client import build_safe_opener
 from ..security.egress import EgressBroker
 from .ai_safety import AIBudget, AIBudgetExceededError
+
+# C5/C6/C7 配套常量：AI 请求对网络瞬断做指数退避重试（HTTP/解析错误不重试）
+AI_RETRY_ATTEMPTS = 3
+AI_RETRY_BASE_DELAY = 1.0
+
+# HTTP 状态码 -> 中文处置建议（C6：透出响应体时附上可操作指引）
+_STATUS_GUIDANCE: dict[int, str] = {
+    400: "请求格式错误，请检查 messages / response_format 是否符合 OpenAI 规范。",
+    401: "API 密钥无效或未授权，请检查 OMNICRAWL_AI_API_KEY。",
+    403: "密钥无权限访问该模型或端点。",
+    404: "端点不存在，请确认 base_url 指向 /chat/completions（或前缀正确）。",
+    408: "服务端请求超时，可稍后重试。",
+    429: "请求过于频繁（限流）。请降低并发或稍后重试；长期使用建议申请提额。",
+    500: "服务端内部错误，可稍后重试。",
+    502: "网关错误，可稍后重试。",
+    503: "服务不可用，可稍后重试。",
+    504: "网关超时，可稍后重试。",
+}
+
+
+def _read_error_body(exc: urllib.error.HTTPError) -> str:
+    """读取 HTTPError 响应体前 1KB，用于透出 429/余额/密钥 等详情（C6）。"""
+    try:
+        data = exc.read(1024)
+    except Exception:
+        return ""
+    if not data:
+        return ""
+    return data.decode("utf-8", errors="replace").strip()[:800]
+
+
+def _format_http_error(name: str, exc: urllib.error.HTTPError, body: str) -> str:
+    code = getattr(exc, "code", None)
+    guidance = _STATUS_GUIDANCE.get(int(code) if isinstance(code, int) else 0, "请查看响应体定位原因。")
+    snippet = f"\n响应体: {body}" if body else ""
+    return f"AI provider {name} 返回 HTTP {code}。{guidance}{snippet}"
+
+
+def _format_network_error(name: str, exc: Exception, timeout: float) -> str:
+    if isinstance(exc, socket.timeout):
+        return f"AI provider {name} 请求超时（{timeout}s）。请检查网络或调大 AI 超时设置。"
+    if isinstance(exc, ssl.SSLError):
+        return f"AI provider {name} SSL 握手失败：{exc}。请检查 base_url 是否使用 https 且证书有效。"
+    if isinstance(exc, ConnectionError):
+        return f"AI provider {name} 连接失败：{exc}。请检查 base_url 可达性与网络/代理。"
+    return f"AI provider {name} 网络请求失败：{exc}。"
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +83,7 @@ class DisabledProvider:
     name = "disabled"
 
     def generate(self, *_args: Any, **_kwargs: Any) -> AIResult:
-        raise RuntimeError("AI 已关闭；请在 ai.mode 中选择本地、云端或自定义服务")
+        raise RuntimeError("AI 已关闭；请在「AI 服务中心」选择本地、云端或自定义服务")
 
 
 # 费用预算按 token 估算（与审计一致；实际计费以 provider 账单为准）
@@ -49,17 +99,26 @@ class OpenAICompatibleProvider:
         app_config: AppConfig | None = None,
         egress: EgressBroker | None = None,
         budget: AIBudget | None = None,
+        max_tokens: int | None = None,
     ) -> None:
         self.name = name
         self.base_url = str(config.get("base_url", "")).rstrip("/")
         self.api_key = str(config.get("api_key", ""))
         self.model = str(config.get("model", ""))
         self.timeout = float(config.get("timeout_seconds", 60))
+        # C10：单次最大 token（UI "最大响应长度" 落点）；<=0 视为不限制
+        self.max_tokens = int(max_tokens) if max_tokens and int(max_tokens) > 0 else None
         self.app_config = app_config
         self.egress = egress
         # C33：费用/次数上限默认无上限但保持计数；配置了上限后 consume 生效
         self.budget = budget or AIBudget()
-        if not self.base_url or not self.model:
+        # C8：base_url 必须是合法 http(s) URL，提前失败给出清晰错误而非请求时诡异异常
+        parsed = urlparse(self.base_url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError(
+                f"AI provider {name} 的 base_url 必须是合法的 http(s) URL，收到: {self.base_url!r}"
+            )
+        if not self.model:
             raise ValueError(f"AI provider {name} 需要 base_url 和 model")
 
     def generate(
@@ -74,6 +133,9 @@ class OpenAICompatibleProvider:
             "messages": messages,
             "temperature": temperature,
         }
+        # C10：将单次最大 token 写入请求体，使 UI "最大响应长度" 设置生效
+        if self.max_tokens:
+            payload["max_tokens"] = self.max_tokens
         if response_format:
             payload["response_format"] = response_format
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
@@ -87,13 +149,6 @@ class OpenAICompatibleProvider:
         )
         if self.app_config is None or self.egress is None:
             raise RuntimeError("AI网络请求必须通过应用Egress Broker创建provider")
-        opener = build_safe_opener(
-            self.app_config,
-            target_policy=self.egress.policy,
-            include_cookies=False,
-            egress=self.egress,
-            purpose="ai",
-        )
         maximum = int(self.app_config.section("http").get("max_response_bytes", 50_000_000))
         # C33：请求前预占——只递增请求次数；token/费用已耗尽则直接拒发
         self.budget.consume(tokens=0, cost=0.0)
@@ -101,16 +156,8 @@ class OpenAICompatibleProvider:
             raise AIBudgetExceededError("AI Token 预算已用完")
         if self.budget.maximum_cost and self.budget.cost >= self.budget.maximum_cost:
             raise AIBudgetExceededError("AI 费用预算已用完")
-        try:
-            with self.egress.request(request.full_url, purpose="ai", headers=headers):
-                with opener.open(request, timeout=self.timeout) as response:
-                    raw = response.read(maximum + 1)
-                    if len(raw) > maximum:
-                        raise ResponseTooLargeError(f"AI响应超过大小限制: > {maximum}")
-                    self.egress.record_response(len(raw), url=response.geturl())
-                    value = json.loads(raw.decode("utf-8"))
-        except (urllib.error.URLError, json.JSONDecodeError) as exc:
-            raise RuntimeError(f"AI provider {self.name} 请求失败: {exc}") from exc
+        # C5/C6/C7：带重试退避与异常覆盖、HTTP 响应体透出的网络请求
+        value = self._open_json(request, maximum)
         # C33：响应后结算 token——先记账再检查，超限也记账（熔断：后续预占/结算持续失败）
         usage = value.get("usage", {}) if isinstance(value, dict) else {}
         try:
@@ -129,6 +176,48 @@ class OpenAICompatibleProvider:
             raise RuntimeError(f"AI provider {self.name} 未返回 choices")
         text = str(choices[0].get("message", {}).get("content", ""))
         return AIResult(text, self.name, self.model, dict(value.get("usage", {})), value)
+
+
+    def _open_json(self, request: urllib.request.Request, maximum: int) -> dict[str, Any]:
+        """带重试退避的 JSON 请求（C5/C6/C7 综合修复）。
+
+        - 网络瞬断（超时 / SSL / 连接错）按指数退避重试；HTTP 错误与解析错误不重试
+        - HTTPError 透出响应体前 ~1KB 与中文处置建议（C6）
+        - 覆盖 socket.timeout / ssl.SSLError / UnicodeDecodeError 等原被逃逸的异常（C5）
+        """
+        assert self.egress is not None, "generate() 已校验 egress 非空"
+        for attempt in range(AI_RETRY_ATTEMPTS):
+            try:
+                with self.egress.request(request.full_url, purpose="ai", headers=request.headers):
+                    opener = build_safe_opener(
+                        self.app_config,  # type: ignore[arg-type]
+                        target_policy=self.egress.policy,
+                        include_cookies=False,
+                        egress=self.egress,
+                        purpose="ai",
+                    )
+                    with opener.open(request, timeout=self.timeout) as response:
+                        raw = response.read(maximum + 1)
+                        if len(raw) > maximum:
+                            raise ResponseTooLargeError(f"AI响应超过大小限制: > {maximum}")
+                        self.egress.record_response(len(raw), url=response.geturl())
+                        return json.loads(raw.decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                # HTTP 错误（含 429/401/403/404/5xx）不重试，直接透出详情
+                body = _read_error_body(exc)
+                raise RuntimeError(_format_http_error(self.name, exc, body)) from exc
+            except (ssl.SSLError, TimeoutError, ConnectionError, OSError, urllib.error.URLError) as exc:
+                if attempt + 1 < AI_RETRY_ATTEMPTS:
+                    time.sleep(min(8.0, AI_RETRY_BASE_DELAY * (2 ** attempt)))
+                    continue
+                raise RuntimeError(_format_network_error(self.name, exc, self.timeout)) from exc
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise RuntimeError(
+                    f"AI provider {self.name} 响应不是合法 JSON（可能返回了错误页/HTML）。"
+                    f"请确认 base_url 指向 /chat/completions 端点。原始错误: {exc}"
+                ) from exc
+        # 理论不可达（循环内已 raise）；保留以保证类型与逻辑完整
+        raise RuntimeError(f"AI provider {self.name} 请求失败（重试耗尽）")
 
 
 def build_provider(
@@ -158,11 +247,17 @@ def build_provider(
         provider_type = "openai_compatible"
     if provider_type not in {"openai_compatible", "openai", "local"}:
         raise ValueError(f"不支持的 AI provider 类型: {provider_type}")
+    # C10：从 ai.budget.max_tokens_per_request 读取单次最大 token（缺省回退 DEFAULTS）
+    raw_budget = ai_config.get("budget")
+    budget_section = raw_budget if isinstance(raw_budget, dict) else {}
+    raw_max = int(budget_section.get("max_tokens_per_request", DEFAULTS["ai"]["budget"]["max_tokens_per_request"]))
+    request_max_tokens = raw_max if raw_max > 0 else None
     return OpenAICompatibleProvider(
         provider_name,
         provider_config,
         app_config=app_config,
         egress=egress,
+        max_tokens=request_max_tokens,
     )
 
 
