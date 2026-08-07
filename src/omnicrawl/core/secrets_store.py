@@ -17,11 +17,35 @@ import os
 import secrets
 import types
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+# cryptography is an optional dependency (pyproject.toml → [security]).
+# Lazy-import to allow importing secrets_store without cryptography installed
+# (e.g. e2e CI where only html/pdf/browser/dev extras are present).
+_cryptography_imported = False
+hashes: Any  # placeholder for type-checkers; real binding set by _ensure_crypto()
+AESGCM: Any
+PBKDF2HMAC: Any
+
+
+def _ensure_crypto() -> None:
+    """Import cryptography primitives on first use; raise a clear error if missing."""
+    global hashes, AESGCM, PBKDF2HMAC, _cryptography_imported  # noqa: PLW0603
+    if _cryptography_imported:
+        return
+    try:
+        from cryptography.hazmat.primitives import hashes as _hashes
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM as _AESGCM
+        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC as _PBKDF2HMAC
+    except ModuleNotFoundError as exc:
+        raise SecretsStoreError(
+            "需要安装 cryptography 才能使用凭据加密存储。"
+            "请运行: pip install 'omnicrawl-platform[security]'"
+        ) from exc
+    hashes = _hashes
+    AESGCM = _AESGCM
+    PBKDF2HMAC = _PBKDF2HMAC
+    _cryptography_imported = True
 
 try:
     import keyring as _keyring_module
@@ -52,7 +76,8 @@ class SecretsStoreError(RuntimeError):
 
 
 def _derived_key(password: str, salt: bytes = DERIVE_SALT) -> bytes:
-    kdf = PBKDF2HMAC(
+    _ensure_crypto()
+    kdf = PBKDF2HMAC(  # type: ignore[misc]
         algorithm=hashes.SHA256(), length=KEY_LENGTH, salt=salt, iterations=PBKDF2_ITERATIONS
     )
     return kdf.derive(password.encode("utf-8"))
@@ -100,6 +125,7 @@ class SecretsStore:
     def _load(self) -> dict[str, bytes]:
         if self._cache is not None:
             return self._cache
+        _ensure_crypto()
         entries: dict[str, bytes] = {}
         if self.path.is_file():
             raw = self.path.read_bytes()
@@ -120,6 +146,7 @@ class SecretsStore:
     def _save(self) -> None:
         if self._cache is None:
             raise SecretsStoreError("内部状态错误: 缓存未加载，无法写盘")
+        _ensure_crypto()
         cache = self._cache
         key = self._master_key()
         plaintext = json.dumps(
@@ -169,18 +196,20 @@ class SecretsStore:
 
     def encrypt(self, data: bytes) -> bytes:
         """加密任意字节流，返回自包含 blob（magic+nonce+密文）。"""
+        _ensure_crypto()
         key = self._master_key()
         nonce = secrets.token_bytes(12)
-        return FILE_MAGIC + nonce + AESGCM(key).encrypt(nonce, data, FILE_MAGIC)
+        return FILE_MAGIC + nonce + AESGCM(key).encrypt(nonce, data, FILE_MAGIC)  # type: ignore[misc]
 
     def decrypt(self, blob: bytes) -> bytes:
         """解密 ``encrypt`` 产生的 blob。"""
         if not blob.startswith(FILE_MAGIC):
             raise SecretsStoreError("secrets blob 格式损坏")
+        _ensure_crypto()
         key = self._master_key()
         nonce = blob[len(FILE_MAGIC) : len(FILE_MAGIC) + 12]
         ciphertext = blob[len(FILE_MAGIC) + 12 :]
         try:
-            return AESGCM(key).decrypt(nonce, ciphertext, FILE_MAGIC)
+            return AESGCM(key).decrypt(nonce, ciphertext, FILE_MAGIC)  # type: ignore[misc]
         except Exception as exc:
             raise SecretsStoreError("secrets blob 解密失败（密钥不匹配?）") from exc

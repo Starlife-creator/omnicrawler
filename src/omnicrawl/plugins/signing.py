@@ -17,13 +17,43 @@ Design notes (cold-key principle):
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-    Ed25519PrivateKey,
-    Ed25519PublicKey,
-)
+# cryptography is an optional dependency (pyproject.toml → [security]).
+# Lazy-import to allow importing signing without cryptography installed
+# (e.g. e2e CI where only html/pdf/browser/dev extras are present).
+_cryptography_imported = False
+InvalidSignature: Any
+serialization: Any
+Ed25519PrivateKey: Any
+Ed25519PublicKey: Any
+
+
+def _ensure_crypto() -> None:
+    """Import cryptography primitives on first use; raise a clear error if missing."""
+    global InvalidSignature, serialization, Ed25519PrivateKey, Ed25519PublicKey  # noqa: PLW0603
+    global _cryptography_imported  # noqa: PLW0603
+    if _cryptography_imported:
+        return
+    try:
+        from cryptography.exceptions import InvalidSignature as _InvalidSignature
+        from cryptography.hazmat.primitives import serialization as _serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+            Ed25519PrivateKey as _Ed25519PrivateKey,
+        )
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+            Ed25519PublicKey as _Ed25519PublicKey,
+        )
+    except ModuleNotFoundError as exc:
+        raise ImportError(
+            "需要安装 cryptography 才能使用插件签名验证。"
+            "请运行: pip install 'omnicrawl-platform[security]'"
+        ) from exc
+    InvalidSignature = _InvalidSignature
+    serialization = _serialization
+    Ed25519PrivateKey = _Ed25519PrivateKey
+    Ed25519PublicKey = _Ed25519PublicKey
+    _cryptography_imported = True
 
 ALGORITHM = "ed25519"
 
@@ -38,6 +68,7 @@ def generate_keypair() -> tuple[bytes, bytes]:
     The caller is responsible for storing the private key on cold storage and
     never committing it.
     """
+    _ensure_crypto()
 
     private_key = Ed25519PrivateKey.generate()
     public_key = private_key.public_key()
@@ -54,6 +85,7 @@ def generate_keypair() -> tuple[bytes, bytes]:
 
 
 def _load_private_key(private_pem: bytes) -> Ed25519PrivateKey:
+    _ensure_crypto()
     key = serialization.load_pem_private_key(private_pem, password=None)
     if not isinstance(key, Ed25519PrivateKey):
         raise TypeError("插件签名私钥必须是 ed25519 密钥")
@@ -61,6 +93,7 @@ def _load_private_key(private_pem: bytes) -> Ed25519PrivateKey:
 
 
 def _load_public_key(trust_source: str) -> Ed25519PublicKey:
+    _ensure_crypto()
     candidate = trust_source.strip()
     if not candidate:
         raise ValueError("未配置插件信任根公钥")
