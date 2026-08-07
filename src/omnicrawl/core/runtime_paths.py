@@ -244,6 +244,14 @@ def resolve_cli_candidates(configured: str = "omnicrawl") -> tuple[str, list[str
     candidates = [configured]
     if discovered:
         return discovered, [discovered, configured]
+
+    # 源码模式下自动探测项目根目录的 .venv 入口脚本（项目根 = core 的上级两级）
+    if not is_frozen():
+        suffix = ".exe" if sys.platform == "win32" else ""
+        venv_cli = Path(__file__).resolve().parents[3] / ".venv" / "Scripts" / f"omnicrawl{suffix}"
+        if venv_cli.is_file():
+            return str(venv_cli), candidates + [str(venv_cli)]
+
     return configured, candidates
 
 
