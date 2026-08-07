@@ -78,6 +78,13 @@ tmp/
 .env
 .env.*
 
+# === Plugin signing: private key NEVER commits (cold-storage only) ===
+# 公钥信任根 configs/plugin_trust.pub.pem 必须入库，故不按 *.pem 全忽略，
+# 仅按 private 命名约定拦截私钥，防止误复制进仓库被提交。
+plugin_signing_private.pem
+*_private.pem
+*private*.pem
+
 # === Logs ===
 *.log
 

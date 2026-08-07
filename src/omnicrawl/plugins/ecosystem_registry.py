@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .signing import verify_bytes
+
 
 @dataclass(frozen=True, slots=True)
 class EcosystemPackage:
@@ -16,6 +18,17 @@ class EcosystemPackage:
     compatible_core: str
     signature_valid: bool
     automated_tests_passed: bool
+    signature: bytes = b""
+    signature_algorithm: str = ""
+
+
+def _ecosystem_payload(package: EcosystemPackage) -> bytes:
+    """Canonical bytes covered by an ecosystem package signature."""
+
+    return "|".join([
+        package.package_id, package.version, package.publisher,
+        ",".join(package.permissions), package.license, package.compatible_core,
+    ]).encode("utf-8")
 
 
 class EcosystemRegistry:
@@ -37,6 +50,20 @@ class EcosystemRegistry:
         if not package.license or not package.compatible_core:
             return False, "缺少许可或兼容信息"
         return True, "verified"
+
+    def verify_package(self, package: EcosystemPackage, trust_source: str) -> tuple[bool, str]:
+        """Verify ``package.signature`` against the configured trust root.
+
+        Callers should set ``signature_valid`` from this result before calling
+        :meth:`installable`, so the field reflects a real cryptographic check
+        rather than an uninitialized default.
+        """
+
+        if not package.signature:
+            return False, "包未签名"
+        if verify_bytes(_ecosystem_payload(package), package.signature, trust_source):
+            return True, "verified"
+        return False, "签名校验失败"
 
 
 def template_quality_score(*, recent_validation: float, success: float, completeness: float, reuse: float, drift_recovery: float) -> float:

@@ -13,6 +13,7 @@ from typing import Any
 from .. import __version__
 from ..core.config import AppConfig
 from ..security.egress import EgressBroker
+from . import signing
 
 Factory = Callable[..., Any]
 PLUGIN_API_VERSION = 1
@@ -180,6 +181,43 @@ class Registry:
         }
 
 
+def _resolve_trust_root(config: AppConfig | None, trust_source: str) -> str:
+    """Resolve a trust root given as inline PEM or a (root-relative) path."""
+
+    if "-----BEGIN" in trust_source:
+        return trust_source
+    candidate = Path(trust_source)
+    if not candidate.is_absolute() and config is not None:
+        candidate = config.resolve(trust_source)
+    if candidate.is_file():
+        return candidate.read_text(encoding="utf-8").strip()
+    return trust_source
+
+
+def _verify_plugin_signature(path: Path, config: AppConfig | None) -> None:
+    """Fail-closed signature gate, run before a plugin module is executed.
+
+    - Trust root configured: verify the detached ``.sig``; any failure raises
+      ``PluginSignatureError`` (the plugin is rejected, fail-closed).
+    - No trust root configured: warn explicitly (never silently accept) and
+      allow loading (transition period for existing dev plugins).
+    """
+
+    trust_source = ""
+    if config is not None and config.plugin_trust_public_key:
+        trust_source = _resolve_trust_root(config, config.plugin_trust_public_key)
+    if not trust_source:
+        LOGGER.warning(
+            "插件签名信任根未配置，将以'未验签'方式加载本地插件 %s；"
+            "生产环境应在 plugins.trust_public_key 配置 ed25519 公钥以启用 fail-closed 验签。",
+            path,
+        )
+        return
+    ok, reason = signing.verify_plugin(path, trust_source)
+    if not ok:
+        raise signing.PluginSignatureError(f"插件签名校验失败，拒绝加载: {path}（{reason}）")
+
+
 def load_local_plugins(
     registry: Registry,
     paths: list[str],
@@ -240,6 +278,7 @@ def _load_local_plugin(
                 "插件不得直接导入网络客户端；请声明network权限、domains，并使用"
                 f"PluginContext.network: {', '.join(sorted(forbidden_imports))}"
             )
+        _verify_plugin_signature(path, config)
         LOGGER.warning(
             "Loading trusted local plugin in the main process: %s. "
             "Do not use plugins.paths for untrusted code; signed subprocess plugins are the target migration path.",

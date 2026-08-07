@@ -148,6 +148,7 @@ DEFAULTS: dict[str, Any] = {
     "plugins": {
         "paths": [], "allow_external_paths": False, "fail_open": False,
         "hook_fail_open": False, "approved_permissions": [],
+        "trust_public_key": "",
     },
     "resources": {
         "profile": "balanced",
@@ -188,6 +189,17 @@ class AppConfig:
     def resolve(self, value: str | Path) -> Path:
         path = Path(value).expanduser()
         return path.resolve() if path.is_absolute() else (self.root / path).resolve()
+
+    @property
+    def plugin_trust_public_key(self) -> str:
+        """ed25519 信任根公钥（PEM 或公钥文件路径），用于插件 fail-closed 验签。
+
+        默认空串表示未配置信任根；此时加载门显式告警而非静默接受。
+        """
+
+        plugins = self.section("plugins")
+        value = plugins.get("trust_public_key", "") if isinstance(plugins, dict) else ""
+        return str(value) if value else ""
 
 
 def resolve_pdf_template(config: AppConfig, value: str | Path = DEFAULT_PDF_TEMPLATE) -> Path:
