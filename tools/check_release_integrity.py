@@ -14,7 +14,10 @@ import re
 import zipfile
 from pathlib import Path, PurePosixPath
 
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib  # type: ignore[no-redef]
 
 MAX_PORTABLE_ENTRIES = 100_000
 MAX_PORTABLE_EXPANDED_BYTES = 20 * 1024**3
@@ -113,7 +116,65 @@ def check_project(project_root: Path) -> list[str]:
     errors.extend(check_local_imports(project_root / "src"))
     required = ("README.md", "LICENSE", "src/omnicrawl/__init__.py")
     errors.extend(f"missing required file: {name}" for name in required if not (project_root / name).is_file())
+    errors.extend(check_docker_compose_mounts(project_root))
+    errors.extend(check_env_example_references(project_root))
     return sorted(set(errors))
+
+
+def check_docker_compose_mounts(project_root: Path) -> list[str]:
+    """docker-compose 卷挂载路径必须与镜像内 WORKDIR 对齐。
+
+    镜像最终阶段将工作目录切到 WORKDIR（如 /data），compose 挂载若落在
+    /app/... 而命令内使用相对路径（configs/project.yaml），容器内永远
+    找不到文件。此检查把 Dockerfile 的最终 WORKDIR 与 compose 挂载目标
+    强制绑定，防止再次错位。
+    """
+    dockerfile = project_root / "Dockerfile"
+    compose = project_root / "docker-compose.yml"
+    if not dockerfile.is_file() or not compose.is_file():
+        return []
+    workdirs = re.findall(r"^WORKDIR\s+(.+?)\s*$", dockerfile.read_text(encoding="utf-8"), re.MULTILINE)
+    if not workdirs:
+        return []
+    workdir = workdirs[-1].strip()
+    errors: list[str] = []
+    for lineno, line in enumerate(compose.read_text(encoding="utf-8").splitlines(), 1):
+        match = re.match(r"^\s*-\s*[^:]+:([^:]+?)(?::\w+)?\s*$", line)
+        if not match:
+            continue
+        target = match.group(1).rstrip("/")
+        source = line.split(":")[1].strip()
+        if not (target == workdir or target.startswith(workdir + "/")):
+            errors.append(
+                f"docker-compose.yml:{lineno}: 挂载目标 {source} 以 {target} 开头，"
+                f"但 Dockerfile 最终 WORKDIR 是 {workdir}，相对路径命令会解析失败"
+            )
+    return errors
+
+
+def check_env_example_references(project_root: Path) -> list[str]:
+    """.env.example 中每个变量必须在 src 下被引用，防止死变量误导使用者。"""
+    env_example = project_root / ".env.example"
+    if not env_example.is_file():
+        return []
+    declared = [
+        line.split("=", 1)[0].strip()
+        for line in env_example.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#") and "=" in line
+    ]
+    if not declared:
+        return []
+    source_text = ""
+    for source_file in (project_root / "src").rglob("*.py"):
+        try:
+            source_text += source_file.read_text(encoding="utf-8")
+        except Exception:
+            continue
+    return [
+        f".env.example: {name} 在 src/ 下没有任何引用（死变量，请移除或实现）"
+        for name in declared
+        if name not in source_text
+    ]
 
 
 def _wheel_modules(archive: zipfile.ZipFile) -> dict[str, tuple[str, str]]:

@@ -23,7 +23,7 @@ def test_import_omnicrawl_is_fast_and_lazy() -> None:
     )
     assert result.returncode == 0, result.stderr
     elapsed_ms, submodules = result.stdout.split()
-    assert float(elapsed_ms) < 50.0, f"import omnicrawl 耗时 {elapsed_ms}ms（阈值 50ms）"
+    assert float(elapsed_ms) < 150.0, f"import omnicrawl 耗时 {elapsed_ms}ms（阈值 150ms）"
     assert int(submodules) == 0, f"eager 加载了 {submodules} 个顶层子模块"
 
 

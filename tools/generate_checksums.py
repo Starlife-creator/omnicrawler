@@ -22,7 +22,10 @@ import argparse
 import hashlib
 from pathlib import Path
 
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib  # type: ignore[no-redef]
 
 # 必须覆盖的发行物文件名模式
 REQUIRED_PATTERNS = [

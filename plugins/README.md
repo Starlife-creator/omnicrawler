@@ -21,7 +21,7 @@
 3. 用冷私钥签名：
    ```bash
    python tools/sign_plugin.py sign plugins/your_plugin.py \
-       --key "C:/Users/Lenovo/Desktop/档案/隐私/plugin_signing_private.pem"
+       --key /path/to/cold-storage/plugin_signing_private.pem
    ```
 4. 启动即自动加载；若要发布到市场，再走 `registry/` 的发布流程（复制+签名+`listing.md`）。
 

@@ -33,7 +33,7 @@ python -m compileall src/ -q
 | mypy | 0 errors | 类型检查（GUI/pdfx/apps 暂排除） |
 | compileall | 0 errors | 语法编译检查 |
 | 覆盖率 | >= 66% | 全源码覆盖率，并通过分组门禁（下一目标 70%，长期目标 80%） |
-| pytest | 全部通过 | 229+ 测试用例 |
+| pytest | 全部通过 | 1100+ 测试用例 |
 
 pre-commit hooks 会在提交时自动运行 ruff 和 mypy，从源头防止退化。
 
@@ -79,7 +79,7 @@ OmniCrawler 对第三方插件采用 **ed25519 离线单信任根签名**。只�
 
 ### 维护者（审查与签名）
 
-签名动作**仅在持有私钥的冷机器**进行（私钥位于 `C:\Users\Lenovo\Desktop\档案\隐私`，绝不进仓库 / 构建 / 便携包）。
+签名动作**仅在持有私钥的冷机器**进行（私钥位于维护者冷存储介质，绝不进仓库 / 构建 / 便携包）。
 
 1. **代码 / 安全审查**：确认无越权导入、无 `eval`/`exec`、网络权限声明合理。
 2. 在冷机器用项目 venv 的 Python 签名（裸 `python` 缺 `cryptography` 会失败）：
@@ -87,7 +87,7 @@ OmniCrawler 对第三方插件采用 **ed25519 离线单信任根签名**。只�
 ```powershell
 # 单文件
 .\.venv\Scripts\python.exe tools/sign_plugin.py sign examples/plugins/your_plugin.py `
-    --private-key "C:\Users\Lenovo\Desktop\档案\隐私\plugin_signing_private.pem"
+    --private-key /path/to/cold-storage/plugin_signing_private.pem
 
 # 或批量（自动发现插件入口，排除框架 / 构建目录）
 .\.venv\Scripts\python.exe tools/sign_plugins_batch.py --scan-dir examples/plugins --verify

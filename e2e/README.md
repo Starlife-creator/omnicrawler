@@ -23,7 +23,7 @@
 
 可用 `-Browser` 或 `--browser` 启用本地 Chromium 扩展；不传该参数时核心套件不要求浏览器。`-FullRegression` 或 `--full-regression` 会在 E2E 前额外执行仓库的完整 pytest 回归。运行结束后，以下文件会生成在仓库根目录：
 
-- `E2E_TEST_REPORT.md`：人可读结论、测试计数、覆盖率与门禁状态；
+- `docs/E2E_TEST_REPORT.md`：人可读结论、测试计数、覆盖率与门禁状态；
 - `e2e-artifacts/`：JUnit XML、Coverage XML/JSON/文本报告和命令输出。
 
 无论是否启用 `--full-regression`，脚本都会将 pytest 临时目录固定在 `e2e-artifacts/` 内，避免系统临时目录权限或遗留文件影响本地复跑。

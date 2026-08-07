@@ -51,20 +51,20 @@ omnicrawl reprocess -c config.yaml --run-id <id>
 ## 架构总览
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Desktop GUI (PyQt6)                │
-│  Wizard(5-pages) │ Home │ Results │ Settings │ A11y  │
-├─────────────────────────────────────────────────────┤
-│              CLI (注册表模式, ~20 子命令)              │
-│  run │ resume │ validate │ doctor │ export │ ...     │
-├─────────────────────────────────────────────────────┤
-│                Pipeline (星型编排器)                  │
-│  plan → discover → fetch → parse → filter           │
-│       → quality → export → archive → cleanup         │
-├─────────────────────────────────────────────────────┤
-│   StateStore (SQLite WAL) │ EgressBroker (策略)      │
-│   Config   │   Templates (72套)   │   Plugins        │
-└─────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│                  Desktop GUI (PyQt6)                   │
+│  Wizard(5-pages) │ Home │ Results │ Settings │ A11y    │
+├────────────────────────────────────────────────────────┤
+│             CLI (registry pattern, ~20 cmds)           │
+│  run │ resume │ validate │ doctor │ export │ ...       │
+├────────────────────────────────────────────────────────┤
+│               Pipeline (star orchestrator)             │
+│  plan → discover → fetch → parse → filter              │
+│       → quality → export → archive → cleanup           │
+├────────────────────────────────────────────────────────┤
+│  StateStore (SQLite WAL) │ EgressBroker (policy)       │
+│  Config   │   Templates (78 sets)   │   Plugins        │
+└────────────────────────────────────────────────────────┘
 ```
 
 **核心设计决策**（详见 `docs/adr/`）：
@@ -86,7 +86,7 @@ omnicrawl reprocess -c config.yaml --run-id <id>
 |------|------|
 | 静态 HTML | BFS/DFS/优先级/随机遍历、聚焦与增量采集 |
 | 动态页面 | Playwright 浏览器池、隔离会话、动作链、XHR 捕获 |
-| API | REST、GraphQL、表��、RSS/Atom、WebSocket/SSE |
+| API | REST、GraphQL、表单、RSS/Atom、WebSocket/SSE |
 | 文档 | PDF 文本提取、按页 OCR（Tesseract + PaddleOCR）、Office |
 
 ### 提取与质量
@@ -357,11 +357,11 @@ src/omnicrawl/
 | 指标 | 2.2.0 | 0.5.0 |
 |------|-------|-------|
 | ruff violations | 0 | 0 |
-| 测试数量 | 229 passed | 持续增长；以 CI 收集与执行结果为准 |
+| 测试数量 | 229 passed | 1100+ passed；以 CI 收集与执行结果为准 |
 | 类型注解风格 | 混合（Optional/Dict/List） | 统一 Python 3.10+（`str \| None`/`dict`/`list`） |
 | GUI main.py 行数 | 2730 | 1666（-39%） |
 | 覆盖率门禁 | 70% | 66% 全源码 + 分组门禁；E2E 支撑代码 >=95% |
-| mypy 覆盖范围 | 排除 GUI | 包含 GUI（Phase 1） |
+| mypy 覆盖范围 | 排除 GUI | 包含 GUI |
 | SDK docstring | 部分 | 完整 |
 
 ### 后续建议
@@ -421,3 +421,22 @@ pytest tests/gui/visual/ -v                      # 像素级对比
 ## AI 使用声明
 
 本项目在开发过程中使用了 AI 编程助手作为辅助工具。所有 AI 生成的代码均经过人工审查、测试和质量门禁（ruff / mypy / pytest / coverage）验证后方可合入。最终设计决策和代码质量由项目维护者负责。
+
+---
+
+## 致谢
+
+本项目在架构设计和工程实现上借鉴了以下开源项目的思路与模式，特此致谢：
+
+| 项目 | 许可证 | 借鉴内容 |
+|------|--------|----------|
+| [Crawl4AI](https://github.com/unclecode/crawl4ai) | Apache-2.0 | AI 驱动 HTML 分块→LLM→结构化提取模式 |
+| [Scrapy](https://github.com/scrapy/scrapy) | BSD-3-Clause | Engine/Scheduler/Downloader/Middleware/Pipeline 分层架构 |
+| [Crawlee Python](https://github.com/apify/crawlee-python) | Apache-2.0 | 请求管理、会话、资源感知并发与生命周期钩子 |
+| [MarkItDown](https://github.com/microsoft/markitdown) | MIT | 网页/文档→结构化 Markdown 转换设计 |
+| [changedetection.io](https://github.com/dgtlmoon/changedetection.io) | Apache-2.0 | URL 监控、内容哈希对比与变化通知机制 |
+| [Playwright Python](https://github.com/microsoft/playwright-python) | Apache-2.0 | BrowserContext 隔离与网络监听 |
+| [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) | Apache-2.0 | 文档预处理、布局与 OCR 流水线 |
+| [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) | Apache-2.0 | 多语言 OCR 引擎 |
+
+完整第三方声明见 [`NOTICE`](NOTICE) 文件和 [`docs/RESEARCH_AND_FUSION.md`](docs/RESEARCH_AND_FUSION.md)。

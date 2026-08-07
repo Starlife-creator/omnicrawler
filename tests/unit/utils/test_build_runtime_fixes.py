@@ -105,6 +105,8 @@ def test_f54_resolve_cli_candidates_lists_searched_paths(monkeypatch) -> None:
     monkeypatch.setattr(runtime_paths, "is_frozen", lambda: False)
     monkeypatch.setattr(runtime_paths, "bundled_cli_path", lambda: None)
     monkeypatch.setattr(runtime_paths, "shutil", type("S", (), {"which": staticmethod(lambda n: None)}))
+    # 屏蔽 .venv 入口探测，保证"无任何候选"分支可稳定回归
+    monkeypatch.setattr(runtime_paths.Path, "is_file", lambda self: False)
     resolved, candidates = runtime_paths.resolve_cli_candidates("omnicrawl")
     assert resolved == "omnicrawl"
     assert "omnicrawl" in candidates

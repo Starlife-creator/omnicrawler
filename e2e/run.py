@@ -17,7 +17,7 @@ def command(python: str, *args: str) -> list[str]:
 def run(args: argparse.Namespace) -> int:
     root = Path(__file__).resolve().parents[1]
     artifacts = root / "e2e-artifacts"
-    report = root / "E2E_TEST_REPORT.md"
+    report = root / "docs" / "E2E_TEST_REPORT.md"
     shutil.rmtree(artifacts, ignore_errors=True)
     artifacts.mkdir(parents=True, exist_ok=True)
     environment = os.environ.copy()

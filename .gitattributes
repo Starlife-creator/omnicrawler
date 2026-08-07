@@ -25,6 +25,9 @@
 
 # === Python 项目文件 ===
 *.py       text
+# 插件市场载荷：签名按字节比对，禁止换行改写
+registry/**/plugin.py   -text
+registry/**/*.sig       -text
 # PyInstaller 构建规格
 *.spec     text
 # 占位文件

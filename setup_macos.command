@@ -19,4 +19,5 @@ fi
 mkdir -p .runtime/models
 .venv/bin/python tools/download_ocr_models.py .runtime/models/paddlex --source modelscope
 .venv/bin/python -m omnicrawl capabilities --verify-imports
-echo "OmniCrawler 1.0.0 full macOS source environment is ready."
+VERSION=$(.venv/bin/python -c "import omnicrawl; print(omnicrawl.__version__)")
+echo "OmniCrawler $VERSION full macOS source environment is ready."

@@ -65,7 +65,7 @@ def check_docs(project_root: Path, paths: tuple[str, ...] = DEFAULT_DOCS) -> lis
     issues: list[str] = []
     candidates = [(relative, project_root / relative) for relative in paths]
     candidates.extend((path.name, path) for path in sorted(project_root.glob("OmniCrawler-*-Quick-Start.md")))
-    release_guide = project_root.parents[1] / "OmniCrawler-用户指南.md"
+    release_guide = project_root / "OmniCrawler-用户指南.md"
     if release_guide.is_file():
         candidates.append((str(release_guide), release_guide))
     for label, path in candidates:

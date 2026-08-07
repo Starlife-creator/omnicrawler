@@ -39,7 +39,7 @@ registry/
 4. 提交 PR；维护者审核 `listing.md` 与代码。
 5. 审核通过后，由持有冷私钥的发布者在**冷机器**上签名：
    `python tools/sign_plugin.py sign plugins/<plugin_id>/plugin.py`
-   （私钥位于 `C:\Users\Lenovo\Desktop\档案\隐私`，绝不入库）。
+    （私钥位于维护者冷存储介质，绝不入库）。
 6. 把插件条目加入 `catalog.json`（相对路径），更新 `generated_at`，合并。
 
 > 后续 CI 门（待接入）：PR 若新增/更新 `plugins/<id>/`，必须附带 `listing.md`，

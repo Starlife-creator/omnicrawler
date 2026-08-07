@@ -41,6 +41,6 @@ jobs:
         with:
           name: e2e-artifacts-python-3.13
           path: |
-            E2E_TEST_REPORT.md
+            docs/E2E_TEST_REPORT.md
             e2e-artifacts/
           if-no-files-found: warn

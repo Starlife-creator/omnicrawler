@@ -1,6 +1,6 @@
 # OmniCrawler 测试报告
 
-> 当前版本：0.5.0。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见仓库根目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
+> 当前版本：0.5.0。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
 验证日期：2026-07-22  
 环境：Windows 11、Python 3.13.1、PyQt6 offscreen 与真实 Chromium/Selenium 组合验证
@@ -98,16 +98,17 @@ Selenium 的逐请求拦截兼容降级只在测试进程拥有的回环服务�
 
 0.5.0 的最终离线构建会重新执行发布一致性、构件完整性和便携冒烟验证；构建后的结果以 `docs/releases/RELEASE_REPORT_0.5.0.md` 和版本化 `artifacts/` 目录为准。
 
-## 当前覆盖率快照 (2026-08-03) — 66% 门禁达标
+## 当前覆盖率快照 (2026-08-08) — 66% 门禁达标
 
 | 项目 | 实测结果 |
 |---|---|
-| 全项目回归 | **580 passed**, 4 skipped, 1 warning |
+| 全项目回归 | **1165 passed**, 1 failed, 4 skipped, 11 warnings |
 | 全源码覆盖率 | **66%** (26,030 stmts, 8,828 missed)，**通过 66% 门禁** |
 | 100% 覆盖文件 | 52 个（已跳过） |
 | ruff | 0 errors（src/ + tests/） |
 | mypy | 0 errors（234 source files） |
 | pytest-asyncio | 已安装，`asyncio_mode = "auto"` |
+| 已知失败 | `test_f54_resolve_cli_candidates_lists_searched_paths`（待修复） |
 
 ### 覆盖率达标策略
 

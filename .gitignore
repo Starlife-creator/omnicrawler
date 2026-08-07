@@ -18,6 +18,7 @@ build/
 build_cache/
 build_dist/
 release/
+SBOM.json
 .omnicra/
 .runtime/
 _internal/
@@ -89,7 +90,9 @@ plugin_signing_private.pem
 plugins_installed/
 
 # === Logs ===
+logs/
 *.log
+!tests/fixtures/cli_outputs/*.log
 
 # === Docker ===
 docker-compose.override.yml

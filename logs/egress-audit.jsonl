@@ -1,1 +1,0 @@
-{"event": "blocked", "purpose": "ai", "reason": "DNS解析失败，已按安全策略阻止访问: ai.example.com: [Errno 11001] getaddrinfo failed", "timestamp": "2026-08-06T16:44:19+00:00", "url": "https://ai.example.com/v1/chat/completions"}

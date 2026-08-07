@@ -11,14 +11,16 @@ import re
 import sys
 from pathlib import Path
 
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib  # type: ignore[no-redef]
 
 CURRENT_DOCS = (
     "README.md",
     "OmniCrawler-用户指南.md",
-    "OmniCrawler-0.5.0-Agent-Context.md",
-    "OmniCrawler-0.5.0-Agent-Prompt.md",
     "CONTRIBUTING.md",
+    "SECURITY.md",
     "docs/README.md",
     "docs/SUPPORT_MATRIX.md",
     "docs/TEST_REPORT.md",
@@ -32,7 +34,7 @@ CURRENT_DOCS = (
     "docs/PRODUCTION_GUIDE.md",
     "docs/WINDOWS_PACKAGING.md",
     "docs/releases/RELEASE_REPORT_0.5.0.md",
-    "E2E_TEST_REPORT.md",
+    "docs/E2E_TEST_REPORT.md",
 )
 
 CURRENT_METADATA = (
@@ -116,8 +118,6 @@ def check(root: Path) -> list[str]:
             issues.append(f"{label}: missing supported Python statement Python {python_version}+")
     versioned_docs = (
         "OmniCrawler-用户指南.md",
-        "OmniCrawler-0.5.0-Agent-Context.md",
-        "OmniCrawler-0.5.0-Agent-Prompt.md",
         "docs/README.md",
         "docs/ARCHITECTURE.md",
         "docs/CONFIG_REFERENCE.md",
@@ -129,7 +129,7 @@ def check(root: Path) -> list[str]:
         "docs/PRODUCTION_GUIDE.md",
         "docs/WINDOWS_PACKAGING.md",
         "docs/releases/RELEASE_REPORT_0.5.0.md",
-        "E2E_TEST_REPORT.md",
+        "docs/E2E_TEST_REPORT.md",
     )
     for label in versioned_docs:
         if version not in texts.get(label, ""):

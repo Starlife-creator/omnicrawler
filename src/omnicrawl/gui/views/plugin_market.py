@@ -50,18 +50,39 @@ def _project_root_of(base: str | Path | None) -> Path:
     return Path(__file__).resolve().parents[4]
 
 
+_CATALOG_PURPOSE = "plugin"
+
+
+def _market_egress(project_root: Path) -> Any:
+    """Lazily build a shared EgressBroker for curated plugin-market traffic.
+
+    The marketplace downloads third-party signed plugins; those requests must
+    cross the same policy/budget/audit boundary as every other network egress,
+    not ride a raw urllib call.  A fresh default broker is safe here because
+    egress defaults only restrict private-network targets and count requests.
+    """
+    from ...core.config import DEFAULTS, AppConfig, deep_merge
+    from ...security.egress import EgressBroker
+
+    raw = deep_merge(dict(DEFAULTS), {"egress": {"audit": True}})
+    raw.setdefault("project", {"name": "plugin-market", "workspace": str(project_root)})
+    config = AppConfig(Path("<plugin-market>"), project_root, raw, project_root)
+    return EgressBroker(config)
+
+
 # ── 后台任务 ─────────────────────────────────────────────────────
 class _CatalogWorker(BackgroundWorker):
     """后台拉取 catalog：先远程，失败回退本地 registry/。"""
 
-    def __init__(self, catalog_url: str, local_fallback: Path, parent=None) -> None:
+    def __init__(self, catalog_url: str, local_fallback: Path, egress: Any, parent=None) -> None:
         super().__init__(parent)
         self._catalog_url = catalog_url
         self._local_fallback = local_fallback
+        self._egress = egress
 
     def work(self) -> dict[str, Any]:
         try:
-            catalog = fetch_catalog(self._catalog_url)
+            catalog = fetch_catalog(self._catalog_url, egress=self._egress)
             catalog["_source"] = self._catalog_url
             return catalog
         except Exception:
@@ -76,13 +97,14 @@ class _CatalogWorker(BackgroundWorker):
 class _ListingWorker(BackgroundWorker):
     """后台拉取单个插件的 listing.md 说明。"""
 
-    def __init__(self, catalog_url: str, rel: str, parent=None) -> None:
+    def __init__(self, catalog_url: str, rel: str, egress: Any, parent=None) -> None:
         super().__init__(parent)
         self._catalog_url = catalog_url
         self._rel = rel
+        self._egress = egress
 
     def work(self) -> str:
-        return fetch_resource(self._catalog_url, self._rel).decode("utf-8", "replace")
+        return fetch_resource(self._catalog_url, self._rel, egress=self._egress).decode("utf-8", "replace")
 
 
 class _InstallWorker(BackgroundWorker):
@@ -94,6 +116,7 @@ class _InstallWorker(BackgroundWorker):
         catalog_url: str,
         dest_root: Path,
         trust_source: str,
+        egress: Any,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -101,6 +124,7 @@ class _InstallWorker(BackgroundWorker):
         self._catalog_url = catalog_url
         self._dest_root = dest_root
         self._trust_source = trust_source
+        self._egress = egress
 
     def work(self) -> str:
         download_and_verify(
@@ -108,6 +132,7 @@ class _InstallWorker(BackgroundWorker):
             self._catalog_url,
             self._dest_root,
             self._trust_source,
+            egress=self._egress,
         )
         return self._plugin_id
 
@@ -128,6 +153,7 @@ class PluginMarketView(QWidget):
         self._base = base
         self._dest_root = base / "plugins_installed"
         self._local_fallback = base / "registry"
+        self._egress = _market_egress(base)
 
         plugins_cfg = DEFAULTS.get("plugins", {}) if isinstance(DEFAULTS.get("plugins"), dict) else {}
         self._catalog_url: str = str(plugins_cfg.get("catalog_url", ""))
@@ -338,7 +364,7 @@ class PluginMarketView(QWidget):
 
         catalog_url = self._catalog_url or (self._bundled_catalog_dir or str(self._local_fallback))
         self._catalog_worker = _CatalogWorker(
-            catalog_url, self._local_fallback, parent=self
+            catalog_url, self._local_fallback, self._egress, parent=self
         )
         self._catalog_worker.succeeded.connect(self._on_catalog_loaded)
         self._catalog_worker.failed.connect(self._on_catalog_error)
@@ -445,7 +471,7 @@ class PluginMarketView(QWidget):
             rel = entry["description_file"]
             source = (self._catalog or {}).get("_source", self._catalog_url)
             if source:
-                self._listing_worker = _ListingWorker(source, rel, parent=self)
+                self._listing_worker = _ListingWorker(source, rel, self._egress, parent=self)
                 self._listing_worker.succeeded.connect(
                     lambda text, pid=plugin_id: self._on_listing_loaded(pid, text)
                 )
@@ -472,7 +498,7 @@ class PluginMarketView(QWidget):
         self._install_btn.setEnabled(False)
         self._footer.setText(_(f"正在下载并校验 {pid} ..."))
         self._install_worker = _InstallWorker(
-            pid, self._catalog_url, self._dest_root, self._trust_source, parent=self
+            pid, self._catalog_url, self._dest_root, self._trust_source, self._egress, parent=self
         )
         self._install_worker.succeeded.connect(self._on_installed)
         self._install_worker.failed.connect(self._on_install_error)

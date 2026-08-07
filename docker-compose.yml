@@ -2,10 +2,10 @@ services:
   omnicrawl:
     build: .
     volumes:
-      - ./configs:/app/configs:ro
-      - ./work:/app/work
-      - ./output:/app/output
-      - ./data:/app/data
+      - ./configs:/data/configs:ro
+      - ./work:/data/work
+      - ./output:/data/output
+      - ./data:/data/data
     command: ["doctor", "-c", "configs/project.yaml"]
 
   redis:

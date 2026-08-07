@@ -40,13 +40,14 @@ import sys
 from datetime import date
 from pathlib import Path
 
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib  # type: ignore[no-redef]
 
 # ── 版本化文件清单（文件名含版本号，需要重命名） ──────────────────────────
 _VERSIONED_FILES: tuple[tuple[str, str], ...] = (
     # (带旧版版本号占位符的相对路径, 带新版版本号占位符的相对路径)
-    ("OmniCrawler-{old}-Agent-Context.md", "OmniCrawler-{new}-Agent-Context.md"),
-    ("OmniCrawler-{old}-Agent-Prompt.md", "OmniCrawler-{new}-Agent-Prompt.md"),
     ("docs/COMPATIBILITY_{old}.md", "docs/COMPATIBILITY_{new}.md"),
     ("docs/OPTIMIZATION_PLAN_FIRST_PRINCIPLES_{old}.md", "docs/OPTIMIZATION_PLAN_FIRST_PRINCIPLES_{new}.md"),
     ("docs/releases/RELEASE_REPORT_{old}.md", "docs/releases/RELEASE_REPORT_{new}.md"),
@@ -55,7 +56,7 @@ _VERSIONED_FILES: tuple[tuple[str, str], ...] = (
 # ── 正文含版本号的文档清单（替换 "旧版本" → "新版本"） ──────────────────
 _TEXT_REPLACE_FILES: tuple[str, ...] = (
     "README.md",
-    "E2E_TEST_REPORT.md",
+    "docs/E2E_TEST_REPORT.md",
     "docs/README.md",
     "docs/SUPPORT_MATRIX.md",
     "docs/ARCHITECTURE.md",
@@ -68,10 +69,9 @@ _TEXT_REPLACE_FILES: tuple[str, ...] = (
     "docs/PRODUCTION_GUIDE.md",
     "docs/TEST_REPORT.md",
     "docs/WINDOWS_PACKAGING.md",
+    "SECURITY.md",
     "OmniCrawler-用户指南.md",
     # 下面用 {old} 占位，在运行时用实际版本号填入
-    "OmniCrawler-{old}-Agent-Context.md",
-    "OmniCrawler-{old}-Agent-Prompt.md",
     "docs/COMPATIBILITY_{old}.md",
     "docs/OPTIMIZATION_PLAN_FIRST_PRINCIPLES_{old}.md",
     "docs/releases/RELEASE_REPORT_{old}.md",
@@ -485,35 +485,45 @@ def step_fix_template_versions(root: Path, new: str) -> None:
 
 
 def step_scan_hardcoded_py_versions(root: Path, new: str) -> None:
-    """Step 7b: 扫描 .py 源码中可能遗漏的硬编码 OmniCrawler/X.Y 版本号。
+    """Step 7b: 扫描可能遗漏的硬编码 OmniCrawler/X.Y 版本号。
 
     自当前版本起，所有 User-Agent 已通过 core.utils.user_agent() 动态生成，
     此步骤作为安全网确保没有人在无意中重新引入硬编码版本号。
-    只扫描 .py 文件（.yaml/.yml 已在 step_fix_template_versions 中自动替换）。
+    扫描范围：src 下的 .py（应使用 user_agent()）与仓库根的
+    .sh/.command/.bat/.ps1 脚本（应动态读取 __version__，见 install_windows.ps1
+    的 Read-AppVersion 模式）。.yaml/.yml 已在 step_fix_template_versions 中自动替换。
     """
-    print("\n  ── 扫描 Python 源码硬编码版本号 ──")
-    src = root / "src" / "omnicrawl"
-    hardcoded_pattern = re.compile(r"OmniCrawler/[\d.]+")
+    print("\n  ── 扫描源码/脚本硬编码版本号 ──")
+
+    def _check_file(candidate: Path) -> None:
+        try:
+            for i, line in enumerate(candidate.read_text(encoding="utf-8").splitlines(), 1):
+                if hardcoded_pattern.search(line):
+                    found.append((candidate.relative_to(root), i, line.strip()))
+        except Exception:
+            return
+
     found: list[tuple[Path, int, str]] = []
 
-    for pyfile in sorted(src.rglob("*.py")):
-        # 跳过 venv 和 __pycache__
+    # .py：应通过 user_agent() 动态生成；脚本：应通过 __version__ 动态读取。
+    hardcoded_pattern = re.compile(r"OmniCrawler[/\s-](\d+\.\d+\.\d+)")
+    for pyfile in sorted((root / "src" / "omnicrawl").rglob("*.py")):
         if ".venv" in str(pyfile) or "__pycache__" in str(pyfile):
             continue
-        try:
-            for i, line in enumerate(pyfile.read_text(encoding="utf-8").splitlines(), 1):
-                if hardcoded_pattern.search(line):
-                    found.append((pyfile.relative_to(root), i, line.strip()))
-        except Exception:
-            continue
+        _check_file(pyfile)
+    for pattern in ("*.sh", "*.command", "*.bat", "*.ps1"):
+        for script in sorted(root.glob(pattern)):
+            if ".venv" in str(script):
+                continue
+            _check_file(script)
 
     if found:
-        print(f"     ⚠ 发现 {len(found)} 处硬编码版本号 (应使用 user_agent()):")
+        print(f"     [WARN] {len(found)} 处硬编码版本号 (应动态生成/读取):")
         for fpath, lineno, text in found:
             print(f"       {fpath}:{lineno}  {text[:100]}")
-        print("     提示: 将硬编码替换为 core.utils.user_agent() 调用后重新运行。")
+        print("     提示: Python 内使用 core.utils.user_agent()；脚本内使用 __version__ 动态读取。")
     else:
-        print("     ✓ Python 源码中无硬编码版本号 — user_agent() 全覆盖")
+        print("     [OK] 源码与脚本中无硬编码版本号")
 
 
 def step_self_validate(root: Path, new: str) -> None:

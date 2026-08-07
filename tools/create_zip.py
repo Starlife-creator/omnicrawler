@@ -32,6 +32,13 @@ PORTABLE_ROOT_FILES = {
 }
 
 
+def _excluded_tree(name: str, *, clean_source: bool) -> bool:
+    """Whether a directory name is excluded from clean source archives."""
+    return clean_source and (
+        name in DEFAULT_EXCLUDES or name.endswith(".egg-info")
+    )
+
+
 def _archive_files(source: Path, *, clean_source: bool) -> list[Path]:
     """Return source files in reproducible order without descending into excluded trees."""
     files: list[Path] = []
@@ -41,7 +48,7 @@ def _archive_files(source: Path, *, clean_source: bool) -> list[Path]:
             child_dirs[:] = [
                 name
                 for name in child_dirs
-                if name not in DEFAULT_EXCLUDES and not name.endswith(".egg-info")
+                if not _excluded_tree(name, clean_source=clean_source)
             ]
         for name in child_files:
             path = directory_path / name
@@ -91,13 +98,25 @@ def create_zip(source: Path, output: Path, root_name: str, clean_source: bool) -
                 while chunk := handle.read(1024 * 1024):
                     target.write(chunk)
         # F13：显式写目录条目——约定目录（data/input、work、output 等）若为空，
-        # 解压后不会自动创建，用户首次运行看不到落点
+        # 解压后不会自动创建，用户首次运行看不到落点。
+        # 仅遍历未被排除的子树，避免把 artifacts/build/dist 等的空目录条目
+        # 泄漏进源码包（会触发 check_release_integrity 的 build/cache 路径告警）。
         source_epoch = os.environ.get("SOURCE_DATE_EPOCH")
-        for dir_path in sorted(p for p in source.rglob("*") if p.is_dir()):
-            relative_dir = dir_path.relative_to(source)
-            dir_name = (Path(root_name) / relative_dir).as_posix() + "/"
-            if dir_name in archive.namelist():
+
+        def _walk_clean(path: Path) -> list[Path]:
+            children: list[Path] = []
+            for child in sorted(path.iterdir()):
+                if child.is_dir() and not _excluded_tree(child.name, clean_source=clean_source):
+                    children.append(child)
+                    children.extend(_walk_clean(child))
+            return children
+
+        written_dirs: set[str] = set()
+        for dir_path in [source, *_walk_clean(source)]:
+            dir_name = (Path(root_name) / dir_path.relative_to(source)).as_posix() + "/"
+            if dir_name in archive.namelist() or dir_name in written_dirs:
                 continue
+            written_dirs.add(dir_name)
             if source_epoch:
                 try:
                     dir_date = datetime.datetime.fromtimestamp(int(source_epoch), tz=datetime.UTC).timetuple()[:6]

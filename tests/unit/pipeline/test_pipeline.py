@@ -1,5 +1,6 @@
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -12,7 +13,10 @@ from omnicrawl.pipeline import Pipeline
 
 
 class _Handler(BaseHTTPRequestHandler):
+    delay_for: dict[str, float] = {}
+
     def do_GET(self):  # noqa: N802
+        time.sleep(self.delay_for.get(self.path, 0.0))
         if self.path == "/index":
             body = b"<html><title>Index</title><h1>Home</h1><a href='/page2'>Next</a><a href='/report.pdf'>PDF</a></html>"
             kind = "text/html; charset=utf-8"
@@ -93,6 +97,9 @@ class PipelineTest(unittest.TestCase):
         server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
+        # 让第二个页面慢响应：保证第一页完成后循环未结束，wait_if_paused 的
+        # 第二次调用必然发生（否则两个请求同一轮收敛时 mock 永不触发）。
+        _Handler.delay_for = {"/page2": 0.3}
         try:
             with tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)

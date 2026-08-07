@@ -13,7 +13,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib  # type: ignore[no-redef]
 
 RELEASE_INFO = "RELEASE-INFO.json"
 RUNTIME_MANIFEST = "RUNTIME-MANIFEST.json"

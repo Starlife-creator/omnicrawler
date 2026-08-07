@@ -18,7 +18,7 @@ class ArchiveSafetyTest(unittest.TestCase):
                 output.writestr("nested/data.txt", "safe content")
             files = safe_extract_archive(archive, root / "output")
             self.assertEqual((root / "output/nested/data.txt").read_text(), "safe content")
-            self.assertEqual(files, [root / "output/nested/data.txt"])
+            self.assertEqual(files, [(root / "output/nested/data.txt").resolve()])
 
     def test_rejects_zip_traversal_and_does_not_publish_partial_output(self):
         with tempfile.TemporaryDirectory() as temp:
