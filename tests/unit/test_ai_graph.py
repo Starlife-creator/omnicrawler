@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+pytest.importorskip("aiohttp")
+
 from omnicrawl.extraction.ai_graph import (
     AIGraphExtractor,
     FieldDef,

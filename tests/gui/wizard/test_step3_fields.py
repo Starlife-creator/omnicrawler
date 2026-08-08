@@ -4,6 +4,8 @@ import importlib.util
 
 import pytest
 
+pytest.importorskip("PyQt6")
+
 from omnicrawl.gui.wizard.step3_fields import selector_kind, suggest_xpath_candidates
 
 requires_qt = pytest.mark.skipif(

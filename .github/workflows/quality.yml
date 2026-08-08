@@ -25,7 +25,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[html,pdf,dev]"
+      - run: python -m pip install -e ".[html,pdf,dev,async-http]" cryptography
       - run: python -m compileall -q src tests examples
       - run: python tools/check_release_integrity.py
       - run: python tools/check_architecture.py

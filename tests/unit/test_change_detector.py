@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+try:
+    from datetime import UTC, datetime  # Python 3.11+
+except ImportError:
+    from datetime import datetime, timezone
+    UTC = timezone.utc
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 

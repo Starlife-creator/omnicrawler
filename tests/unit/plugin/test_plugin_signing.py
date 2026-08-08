@@ -3,6 +3,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
+pytest.importorskip("cryptography")
+
 from omnicrawl.core.config import load_config
 from omnicrawl.plugins import signing
 from omnicrawl.plugins.ecosystem_registry import (

@@ -11,6 +11,8 @@ from unittest.mock import patch
 import pytest
 import yaml
 
+pytest.importorskip("cryptography")
+
 from omnicrawl.core.config import load_config
 from omnicrawl.core.credentials import get_secret, resolve_secret_refs
 from omnicrawl.core.logging_utils import JsonFormatter, configure_logging
@@ -69,7 +71,8 @@ def test_credentials_keyring_fallback(monkeypatch) -> None:
     assert get_secret("desktop") == "omnicrawl:desktop"
 
 
-def test_cookie_session_memory_persistence_corrupt_load_and_safe_name(tmp_path: Path) -> None:
+def test_cookie_session_memory_persistence_corrupt_load_and_safe_name(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OMNICRAWL_MASTER_PASSWORD", "ci-test-password")
     memory = CookieSession(None)
     memory.save()
     assert memory.path is None

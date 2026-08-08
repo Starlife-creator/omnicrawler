@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("cryptography")
+
 from omnicrawl.plugins import market_client
 from omnicrawl.plugins.plugins import Registry, load_local_plugins
 

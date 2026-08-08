@@ -7,8 +7,11 @@ import contextlib
 from pathlib import Path
 from types import SimpleNamespace
 
-import httpx
 import pytest
+
+pytest.importorskip("httpx")
+
+import httpx
 
 from omnicrawl.core.config import load_config
 from omnicrawl.core.errors import PermanentFetchError

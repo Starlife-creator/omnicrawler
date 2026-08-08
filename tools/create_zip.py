@@ -86,7 +86,7 @@ def create_zip(source: Path, output: Path, root_name: str, clean_source: bool) -
             source_epoch = os.environ.get("SOURCE_DATE_EPOCH")
             if source_epoch:
                 try:
-                    date_time = datetime.datetime.fromtimestamp(int(source_epoch), tz=datetime.UTC).timetuple()[:6]
+                    date_time = datetime.datetime.fromtimestamp(int(source_epoch), tz=datetime.timezone.utc).timetuple()[:6]
                 except (ValueError, OSError):
                     date_time = datetime.datetime.fromtimestamp(stat.st_mtime).timetuple()[:6]
             else:
@@ -119,7 +119,7 @@ def create_zip(source: Path, output: Path, root_name: str, clean_source: bool) -
             written_dirs.add(dir_name)
             if source_epoch:
                 try:
-                    dir_date = datetime.datetime.fromtimestamp(int(source_epoch), tz=datetime.UTC).timetuple()[:6]
+                    dir_date = datetime.datetime.fromtimestamp(int(source_epoch), tz=datetime.timezone.utc).timetuple()[:6]
                 except (ValueError, OSError):
                     dir_date = datetime.datetime.fromtimestamp(dir_path.stat().st_mtime).timetuple()[:6]
             else:

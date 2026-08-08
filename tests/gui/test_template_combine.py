@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+pytest.importorskip("ruamel.yaml")
+
 from omnicrawl.gui.core.template_loader import TemplateLoader
 
 

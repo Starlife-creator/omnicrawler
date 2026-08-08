@@ -23,6 +23,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 def test_a16_config_default_user_agent_tracks_package_version() -> None:
     """A16：ProjectConfig 默认 UA 不再硬编码 "OmniCrawler-GUI/1.1"。"""
+    pytest.importorskip("PyQt6")
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
     from omnicrawl import __version__
     from omnicrawl.gui.core.config_model import CrawlConfig
@@ -35,6 +36,7 @@ def test_a16_config_default_user_agent_tracks_package_version() -> None:
 
 def test_a16_home_version_fallback_uses_package_version(monkeypatch) -> None:
     """A16：包版本读取失败时回退 omnicrawl.__version__ 而非硬编码 "2.7"。"""
+    pytest.importorskip("PyQt6")
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
     import importlib.metadata
 
@@ -55,6 +57,7 @@ def test_a22_help_registry_unknown_id_raises_key_error() -> None:
 
 def test_a21_settings_clear_recent_is_public(monkeypatch) -> None:
     """A21：AppSettings 提供公开 clear_recent()，不再被外部访问 _settings 私有成员。"""
+    pytest.importorskip("PyQt6")
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
     from PyQt6.QtWidgets import QApplication
 
@@ -70,6 +73,7 @@ def test_a21_settings_clear_recent_is_public(monkeypatch) -> None:
 
 def test_b9_csv_index_no_100k_truncation(tmp_path) -> None:
     """B9：结果表大文件不再截断——完整行数可索引。"""
+    pytest.importorskip("PyQt6")
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
     from PyQt6.QtWidgets import QApplication
 
@@ -126,6 +130,7 @@ def test_b9_csv_tail_reachable_beyond_100k_rows(tmp_path) -> None:
 
 def test_b10_headless_runner_sets_pythonioencoding(tmp_path, monkeypatch) -> None:
     """B10：无头子进程须收到 PYTHONIOENCODING（旧代码拼作 PYTHONIOCODING 从未生效）。"""
+    pytest.importorskip("ruamel.yaml")
     from omnicrawl.gui.runner import headless_runner as hr
 
     config_path = tmp_path / "task.yaml"

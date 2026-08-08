@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("cryptography")
+
 from omnicrawl.core.secrets_store import (
     ENV_PASSWORD,
     FILE_MAGIC,

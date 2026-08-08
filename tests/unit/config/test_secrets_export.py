@@ -11,6 +11,9 @@ from unittest.mock import patch
 
 import pytest
 
+pytest.importorskip("cryptography")
+pytest.importorskip("ruamel.yaml")
+
 from omnicrawl.core.secrets_store import SecretsStore
 
 

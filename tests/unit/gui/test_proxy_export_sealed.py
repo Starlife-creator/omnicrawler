@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("PyQt6")
+
 from omnicrawl.core import credentials
 from omnicrawl.gui.views.stealth_settings import _seal_proxy_list
 

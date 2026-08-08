@@ -1,6 +1,10 @@
 import json
 import os
-from datetime import UTC, datetime, timedelta
+try:
+    from datetime import UTC, datetime, timedelta  # Python 3.11+
+except ImportError:
+    from datetime import datetime, timedelta, timezone
+    UTC = timezone.utc
 from pathlib import Path
 from unittest.mock import patch
 

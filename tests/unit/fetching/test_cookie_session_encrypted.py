@@ -13,6 +13,8 @@ from unittest.mock import patch
 
 import pytest
 
+pytest.importorskip("cryptography")
+
 from omnicrawl.core.secrets_store import FILE_MAGIC, SecretsStore
 from omnicrawl.fetching.session import CookieSession
 

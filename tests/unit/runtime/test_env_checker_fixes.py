@@ -5,6 +5,10 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
+pytest.importorskip("PyQt6")
+
 from omnicrawl.gui.runner.env_checker import check_omnicrawl
 from omnicrawl.gui.runner.worker_task_runner import _derive_worker_command
 

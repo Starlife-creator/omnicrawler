@@ -165,6 +165,7 @@ def test_s234_text_export_failure_is_isolated(monkeypatch: pytest.MonkeyPatch, t
 
 
 def test_s234_collect_failures_nested() -> None:
+    pytest.importorskip("PyQt6")
     from omnicrawl.gui.views.pdf_workbench import _collect_failures
 
     assert _collect_failures({}) == []

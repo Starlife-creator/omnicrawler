@@ -6,6 +6,8 @@ import json
 
 import pytest
 
+pytest.importorskip("aiohttp")
+
 from omnicrawl.extraction.ai_graph import AIGraphExtractor, FieldDef, SplitStrategy
 
 

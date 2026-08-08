@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
+pytest.importorskip("PyQt6")
+
 from omnicrawl.gui.async_workers import AsyncWorkerManager
 
 
