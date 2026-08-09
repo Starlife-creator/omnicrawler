@@ -352,25 +352,6 @@ src/omnicrawl/
 | coverage | 全源码 ≥66%，并执行分组门禁（下一目标：总体 70%、长期目标 80%、核心 ≥85%） |
 | pre-commit hooks | 已配置 |
 
-### 优化演进（2.2.0 → 0.5.0）
-
-| 指标 | 2.2.0 | 0.5.0 |
-|------|-------|-------|
-| ruff violations | 0 | 0 |
-| 测试数量 | 229 passed | 1100+ passed；以 CI 收集与执行结果为准 |
-| 类型注解风格 | 混合（Optional/Dict/List） | 统一 Python 3.10+（`str \| None`/`dict`/`list`） |
-| GUI main.py 行数 | 2730 | 1666（-39%） |
-| 覆盖率门禁 | 70% | 66% 全源码 + 分组门禁；E2E 支撑代码 >=95% |
-| mypy 覆盖范围 | 排除 GUI | 包含 GUI |
-| SDK docstring | 部分 | 完整 |
-
-### 后续建议
-
-- 在完整依赖环境下运行全量测试 + 覆盖率统计，验证总体 66% 与分组门禁；本地 E2E 另有 95% 支撑代码门禁
-- 逐步收紧 mypy GUI overrides（Phase 2: 开启 disallow_untyped_defs）
-- 覆盖率阶梯继续提升：66% → 70% → 75% → 80%（核心 >=85%）
-
-
 ### 贡献流程
 
 1. 阅读 `CONTRIBUTING.md` 和 `docs/adr/`
