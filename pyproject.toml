@@ -96,7 +96,7 @@ skip_covered = true
 show_missing = true
 # Phase 1 (2.3.0): baseline at 66% after subpackage splitting expanded total LOC.
 # Target: 72% by next patch, 80% overall, 85% core by next minor release.
-fail_under = 50
+fail_under = 66
 
 [tool.ruff]
 target-version = "py310"

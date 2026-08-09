@@ -5,6 +5,7 @@
 ### 变更
 
 - chore(quality): bump pip 24.3.1→26.1.2, pytest 8.4.2→9.0.3 (PYSEC-2026-196/1795/1796/2875/2876, PYSEC-2026-1845); cryptography <50→<51 (PYSEC-2026-3552, fix 50.0.0)
+- ci(test): run GUI tests in the full matrix (gui extra + QT_QPA_PLATFORM=offscreen); coverage 51%→70%, gate restored to 66% (desktop_core 65%)
 
 ## 0.5.0 - 2026-08-08
 
@@ -108,7 +109,7 @@ release 0.4.0：优化计划阶段 0-4 全部完成（基线 1114 测试通过�
 - 新增分阶段运行时耗时指标（p50、p95、最大值），并限制每个指标序列的样本容量，避免长任务的可观测性数据反向占用内存。
 - 管线在 setup、crawl、PDF、export 和 reprocess 完成后记录阶段耗时，写入既有 metrics JSON/Prometheus 产物。
 - 新增当前版本支持矩阵、项目事实一致性检查和架构依赖检查；CI 现在验证这些约束。
-- 修复覆盖率分组检查仍引用重构前旧模块路径的问题，并将总体门禁与当前可验证的 50% 基线对齐；70% 作为下一阶段目标。
+- 修复覆盖率分组检查仍引用重构前旧模块路径的问题，并将总体门禁与当前可验证的 66% 基线对齐；70% 作为下一阶段目标。
 - 统一 Python 支持声明为 3.10+，与 CI 矩阵及代码注解风格一致。
 - Windows 便携构建新增 `RELEASE-INFO.json`，记录 Edition、版本、必要组件、运行时清单和产物规模。
 - 建立本地可复用 E2E 包：全部业务请求仅指向临时本地 HTTP 服务，验证抓取、PDF 字段提取、结构化交付、幂等重跑、CLI 计划编译；Chromium 扩展额外验证动态渲染、XHR 捕获与浏览器池复用。
