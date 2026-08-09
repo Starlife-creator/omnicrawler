@@ -186,11 +186,13 @@ class Toast(QFrame):
         anim.deleteLater()
 
     def _finish_close_animation(self, anim: QPropertyAnimation) -> None:
+        if anim is None:
+            return
         if self._close_animation is not anim:
             return
         self._close_fallback_timer.stop()
         self._close_animation = None
-        anim.deleteLater()
+        anim.deleteLater()  # type: ignore[union-attr]  # PyQt6 stub 缺失时推断为 Any|None
         self._finish_close()
 
     def _finish_close_after_timeout(self) -> None:

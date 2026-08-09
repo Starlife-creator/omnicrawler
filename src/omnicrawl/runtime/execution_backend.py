@@ -131,7 +131,10 @@ class LocalWorkerBackend:
         creationflags = 0
         kwargs: dict[str, Any] = {}
         if os.name == "nt":
-            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+            creationflags = (
+                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                | getattr(subprocess, "DETACHED_PROCESS", 0)
+            )
         else:
             kwargs["start_new_session"] = True
         with log_path.open("ab") as log:

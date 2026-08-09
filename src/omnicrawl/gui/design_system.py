@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import asdict, dataclass
-from typing import Any
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation
 from PyQt6.QtGui import QColor, QFont, QPalette
@@ -504,18 +503,17 @@ class _SignalProxy:
         if self._emitting:
             return  # 重入保护：回调执行期间的 emit 被静默丢弃
         self._emitting = True
-        sip: Any
         try:
-            from PyQt6 import sip
+            from PyQt6 import sip as _sip
         except ImportError:
-            sip = None
+            _sip = None
         dead: list = []
         for callback in list(self._callbacks):
             # 检查 bound method 的目标对象是否已被 C++ 析构
             target = getattr(callback, '__self__', None)
-            if target is not None and sip is not None:
+            if target is not None and _sip is not None:
                 try:
-                    if sip.isdeleted(target):
+                    if _sip.isdeleted(target):
                         dead.append(callback)
                         continue
                 except (TypeError, AttributeError):

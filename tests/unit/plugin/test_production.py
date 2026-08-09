@@ -3,13 +3,14 @@ import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 try:
     from datetime import UTC, datetime, timedelta  # Python 3.11+
 except ImportError:
     from datetime import datetime, timedelta, timezone
     UTC = timezone.utc
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import yaml
 

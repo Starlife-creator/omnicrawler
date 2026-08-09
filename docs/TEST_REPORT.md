@@ -107,6 +107,7 @@ Selenium 的逐请求拦截兼容降级只在测试进程拥有的回环服务�
 | 100% 覆盖文件 | 52 个（已跳过） |
 | ruff | 0 errors（src/ + tests/） |
 | mypy | 0 errors（234 source files） |
+| 工具链 | pip 26.1.2 / pytest 9.0.3 / cryptography <51（修复 PYSEC-2026-196/1795/1796/2875/2876/1845/3552，2026-08-09） |
 | pytest-asyncio | 已安装，`asyncio_mode = "auto"` |
 | 已知失败 | `test_f54_resolve_cli_candidates_lists_searched_paths`（待修复） |
 

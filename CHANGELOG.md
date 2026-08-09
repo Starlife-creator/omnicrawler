@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+
+### 变更
+
+- chore(quality): bump pip 24.3.1→26.1.2, pytest 8.4.2→9.0.3 (PYSEC-2026-196/1795/1796/2875/2876, PYSEC-2026-1845); cryptography <50→<51 (PYSEC-2026-3552, fix 50.0.0)
+
 ## 0.5.0 - 2026-08-08
 
 ### 变更

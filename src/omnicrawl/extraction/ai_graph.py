@@ -24,6 +24,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from typing import Any
+
 try:
     from enum import StrEnum
 except ImportError:  # Python < 3.11
@@ -33,7 +35,6 @@ except ImportError:  # Python < 3.11
         @staticmethod
         def _generate_next_value_(name: str, start: int, count: int, last_values: list[str]) -> str:
             return name.lower()
-from typing import Any
 
 from ..core.safe_data import safe_json_loads
 

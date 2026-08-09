@@ -5,7 +5,7 @@ import hashlib
 import importlib.metadata
 import json
 import re
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -36,14 +36,14 @@ def main() -> None:
             "properties": [{"name": "omnicrawler:requirement", "value": requirement}],
         })
     components.sort(key=lambda item: (item["name"].casefold(), item["version"]))
-    serial_seed = f"omnicrawl-platform:{project.version}:{datetime.now(UTC).date()}"
+    serial_seed = f"omnicrawl-platform:{project.version}:{datetime.now(timezone.utc).date()}"
     document = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
         "serialNumber": "urn:uuid:" + _uuid_from_hash(serial_seed),
         "version": 1,
         "metadata": {
-            "timestamp": datetime.now(UTC).isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "component": {"type": "application", "name": "omnicrawl-platform", "version": project.version},
         },
         "components": components,
@@ -72,3 +72,4 @@ def _uuid_from_hash(value: str) -> str:
 
 if __name__ == "__main__":
     main()
+

@@ -20,7 +20,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import sys
 from pathlib import Path
+
+# Windows CI 控制台默认 charmap 编码无法输出中文/符号，强制 UTF-8。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 try:
     import tomllib

@@ -16,7 +16,7 @@ import platform
 import re
 import subprocess
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -87,7 +87,7 @@ def build_provenance(
         missing.append("verified_signature")
     return {
         "format": 1,
-        "generated_at": datetime.now(UTC).isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "project": {"name": "omnicrawl-platform", "version": _project_version(root)},
         "source": {"commit": source_commit or None, "tag": source_tag or None},
         "build": {"python": sys.version.split()[0], "platform": platform.platform()},
