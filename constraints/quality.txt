@@ -1,6 +1,6 @@
 # Reproducible quality/build toolchain for OmniCrawler 0.6.0.
 # Update deliberately and record the change in CHANGELOG.md and docs/TEST_REPORT.md.
-pip==26.1.2
+pip==26.2.1
 setuptools==83.0.0
 wheel==0.46.3
 PyYAML==6.0.2
