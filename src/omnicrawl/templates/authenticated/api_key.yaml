@@ -1,0 +1,47 @@
+template_version: 1
+
+template:
+
+  id: authenticated/api-key
+
+  name: API Key 授权接口
+
+  category: authenticated/api
+
+  description: "�ӻ���������ϵͳ��糭据库读�?API Key�����������ͷ���调�授权接口，������ļ������������ܘ�斥��?  version: 1.0.0"
+
+  tags: [授权, API-Key, 凭据库]
+
+  capabilities: [rest, authentication, secret-reference]
+
+  placeholders:
+
+    api_url: {label: API 地址, required: true}
+
+    header_name: "{label: 密钥请求头名�? default: X-API-Key}"
+
+    secret_name: {label: OmniCrawler 凭据名称, default: api_key}
+
+  verified_at: '2026-07-18'
+
+project: {name: api_key, workspace: work/api_key}
+
+source:
+
+  kind: rest
+
+  seeds: ['{{api_url}}']
+
+  headers:
+
+    Accept: application/json
+
+    '{{header_name}}': 'secret://{{secret_name}}'
+
+crawl: {max_pages: 1000, concurrency: 2}
+
+http: {respect_robots: true, delay_seconds: 1.0}
+
+extract: {mode: json, fields: {}, review_low_confidence: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

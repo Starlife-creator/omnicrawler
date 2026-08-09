@@ -1,0 +1,5 @@
+WARNING: omnicrawl.pipeline._run: 已拦截 https://example.org/login: PermissionError: 默认禁止访问本机、内网或保留地址
+[INFO] 1/10 200 https://example.org/start
+ERROR: omnicrawl.pipeline._run: 抓取失败 https://example.org/start: PermissionError: robots.txt不允许抓取此地址
+[INFO] 任务 succeeded
+[INFO]    提取记录: 0

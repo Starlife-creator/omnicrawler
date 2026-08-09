@@ -1,0 +1,62 @@
+template_version: 1
+
+template:
+  id: recipes/dynamic-topic-pdf-monitor
+  name: 动态主题全量PDF变化监控
+  description: "地址栏不翻页时通过浏览器学习后台接口；结合主题和关键词二次筛选，PDF全文解析并保存同址版本"
+  version: "1.1.0"
+  tags: [dynamic-monitor, api-discovery, topic-filter, PDF, OCR, versioning]
+  capabilities: [browser, api-discovery, pagination-learning, topic-filter, attachment-download, pdf, ocr, versioning]
+  intents: [documents, interactive, updates]
+  recommended_when: "网页前端加载分页列表但地址栏不变，需要只采集某主题下的全部PDF"
+  why: "组合动态渲染、分页学习、接口发现和主题筛选，自动嗅探PDF附件并做版本对比，不要求用户从F12手抄接口"
+  workflow:
+    - 填写浏览器地址栏中的入口网址
+    - 系统自动学习分页规则，在可观测的网络请求中搜索主列表
+    - 审核系统发现的JSON接口、请求头和分页参数
+    - 验证前3页以确认全部数据覆盖
+
+  placeholders:
+    seed_url: {label: 目标入口网址, required: true}
+    topic_keyword: {label: 主题关键词, required: true}
+
+  verified_at: '2026-07-21'
+
+project: {name: dynamic_topic_pdf_monitor, workspace: work/dynamic_topic_pdf_monitor, intent: documents}
+source: {kind: browser, seeds: ['{{seed_url}}']}
+
+crawl:
+  strategy: priority
+  focus_keywords: [pdf, document, attachment, file]
+  max_pages: "2000"
+  max_depth: 5
+  same_host: true
+  concurrency: 1
+
+browser:
+  engine: playwright
+  headless: false
+  capture_api_responses: true
+  auto_generate_api_templates: true
+  actions: []
+
+http: {respect_robots: true, delay_seconds: "1.0", auto_browser_fallback: true}
+
+selection:
+  topic:
+    enabled: true
+    include_any: ['{{topic_keyword}}']
+    include_all: []
+    exclude: []
+    match_on: [url, anchor, title, heading, text]
+    keep_uncertain: true
+    filter_records: true
+
+download: {enabled: true, extensions: [.pdf], media: false}
+
+processors:
+  pdf: {enabled: true, config: builtin:pdf/generic_template.yaml, skip_ocr: false, ocr_backend: none}
+
+updates: {enabled: true, revisit_completed: true, detect_same_url_changes: true, keep_versions: true}
+incremental: {skip_unchanged: true, archive_raw: true}
+outputs: {jsonl: true, csv: true, xlsx: true}

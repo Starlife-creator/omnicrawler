@@ -1,0 +1,55 @@
+# 兜底：所有未知文本文件默认 LF，Git 自动检测
+* text=auto
+
+# === 通用 ===
+
+# === Windows 脚本 ===
+# .bat/.cmd：仓库内 LF，检出到 Windows 时转 CRLF（cmd.exe 对 LF 兼容性差）
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+# .ps1：统一 LF，PowerShell Core 跨平台原生支持
+*.ps1   text eol=lf
+
+# === Unix 脚本 (LF) ===
+*.sh       text eol=lf
+*.command  text eol=lf
+
+# === 文档与配置 ===
+*.md       text
+*.yaml     text
+*.yml      text
+*.toml     text
+*.cfg      text
+*.ini      text
+*.json     text
+
+# === Python 项目文件 ===
+*.py       text
+# 插件市场载荷：签名按字节比对，禁止换行改写
+registry/**/plugin.py   -text
+registry/**/*.sig       -text
+# PyInstaller 构建规格
+*.spec     text
+# 占位文件
+.gitkeep   text
+.gitignore text
+
+# === 二进制 (不进行 diff/merge) ===
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.gif      binary
+*.ico      binary
+*.svg      binary
+*.ttf      binary
+*.woff     binary
+*.woff2    binary
+*.eot      binary
+*.zip      binary
+*.tar.gz   binary
+*.7z       binary
+*.whl      binary
+*.so       binary
+*.dll      binary
+*.dylib    binary
+*.exe      binary

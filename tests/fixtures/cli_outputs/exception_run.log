@@ -1,0 +1,5 @@
+[ERROR] Traceback (most recent call last):
+[ERROR]   File "omnicrawl/pipeline/_run.py", line 288, in run
+[ERROR]     raise exc
+[ERROR] omnicrawl.core.errors.ExtractionError: ValueError: broken rule
+[ERROR] 任务 failed

@@ -1,0 +1,33 @@
+template_version: 1
+
+# 模板: 站内广度优先爬取 (BFS Crawl)
+
+# 适用: 新闻列表、产品目录、论坛帖子列表等有明确翻页结构的网站
+
+# 特点: 先从入口页收集所有同层链接，再逐层深入
+
+project: {name: 示例项目-BFS站内爬取, workspace: work/crawl_bfs}
+
+source: {kind: crawl, seeds: [https://example.com/]}
+
+# ── 爬取策略 ──
+
+crawl:
+
+  strategy: bfs          # bfs=广度优先（先遍历同层）, dfs=深度优先, random=随机
+
+  max_pages: 100         # 最多采集页数，防止失控
+
+  max_depth: 3           # 从入口算起的最大链接深度
+
+  same_host: true        # 只采集入口同域名的页面
+
+  concurrency: 4         # 同时请求数（大站可到8，小站建议1-2）
+
+# ── HTTP 请求设置 ──
+
+http: {user_agent: "OmniCrawler/0.6.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
+
+# ── 提取规则 ──
+
+extract: {mode: auto, fields: {title: {selector: title}, heading: {selector: h1}}}

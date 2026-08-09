@@ -1,0 +1,23 @@
+template_version: 1
+
+template:
+  id: documents/archive-collection
+  name: 压缩包与归档文件集合
+  category: documents/archive
+  description: "自动发现公开压缩包并交给安全档案解析流程，要求路径穿越和解压大小保护"
+  version: "1.0.0"
+  tags: [ZIP, archive, compression, security]
+  capabilities: [crawl, attachment-download, archive-parser, zip-slip-protection]
+
+  placeholders:
+    seed_url: {label: 归档文件入口地址, required: true}
+
+  verified_at: '2026-07-17'
+
+project: {name: archive_collection, workspace: work/archive_collection}
+source: {kind: focused, seeds: ['{{seed_url}}']}
+crawl: {strategy: priority, focus_keywords: [zip, archive, compression, security], max_pages: 2000, max_depth: 4, same_host: true, concurrency: 3}
+http: {respect_robots: true, delay_seconds: "1.0"}
+extract: {mode: auto, fields: {}, review_low_confidence: true}
+download: {enabled: true, extensions: [.zip, .tar, .gz, .tgz, .7z], media: false}
+outputs: {jsonl: true, csv: true, xlsx: true}

@@ -1,0 +1,45 @@
+template_version: 1
+
+template:
+
+  id: generic/search-form
+
+  name: "������ɸѡ�����?  category: generic/search"
+
+  description: 向公弢�搜索表单��ύ�ؼ��ʺ�ɸ������������ʺ�����有�授权的棢�索页
+
+  version: 1.0.0
+
+  tags: [搜索, 表单, 筛��]
+
+  capabilities: [form, post, search]
+
+  placeholders:
+
+    search_url: {label: 搜索接口或表单地坢�, required: true}
+
+    keyword: "{label: �����ؼ��键? required: true}"
+
+    keyword_field: {label: �ؼ����ֶ���, default: q}
+
+  verified_at: '2026-07-17'
+
+project: {name: search_form, workspace: work/search_form}
+
+source:
+
+  kind: form
+
+  seeds: ['{{search_url}}']
+
+  method: POST
+
+  fields: {'{{keyword_field}}': '{{keyword}}'}
+
+crawl: {max_pages: 500, max_depth: 2, same_host: true, concurrency: 2}
+
+http: {respect_robots: true, delay_seconds: 1.0}
+
+extract: {mode: auto, fields: {}, review_low_confidence: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

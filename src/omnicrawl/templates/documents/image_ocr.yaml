@@ -1,0 +1,31 @@
+template_version: 1
+
+template:
+  id: documents/image-ocr
+  name: 扫描图片 OCR
+  category: documents/ocr
+  description: "批量下载扫描件图片，自动选择 OCR 解析提取，按置信度进行人工复核"
+  version: 1.0.0
+  tags: [OCR, "扫描件 图片", 复核]
+  capabilities: [media-download, ocr, review, evidence]
+
+  placeholders:
+    seed_url: {label: 图片栏目地址, required: true}
+
+  source_urls: [https://www.paddleocr.ai/main/en/index/index.html]
+
+  verified_at: '2026-07-17'
+
+project: {name: image_ocr, workspace: work/image_ocr}
+
+source: {kind: media, seeds: ['{{seed_url}}']}
+
+crawl: {max_pages: 1000, max_depth: 3, same_host: true, concurrency: 2}
+
+http: {respect_robots: true, delay_seconds: 1.0}
+
+extract: {mode: auto, fields: {}, quality_threshold: 0.85, review_low_confidence: true}
+
+download: {enabled: true, extensions: [.jpg, .jpeg, .png, .tif, .tiff, .webp], media: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

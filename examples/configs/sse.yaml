@@ -1,0 +1,4 @@
+project: {name: 示例项目-SSE, workspace: work/sse}
+source: {kind: sse, seeds: [https://stream.example.invalid/events], max_messages: 100, duration_seconds: 60}
+crawl: {max_pages: 100, same_host: true}
+http: {user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)", respect_robots: true}

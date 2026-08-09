@@ -1,0 +1,13 @@
+project: {name: 示例项目-动态浏览器, workspace: work/browser}
+source: {kind: browser, seeds: [https://example.com/]}
+crawl: {max_pages: 1, same_host: true}
+http: {user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)", respect_robots: true}
+browser:
+  engine: playwright
+  headless: true
+  wait_until: networkidle
+  actions:
+    - {action: wait_for, selector: body, timeout_ms: 10000}
+    - {action: scroll_bottom}
+    - {action: wait_ms, value: 500}
+extract: {mode: html, fields: {title: {selector: title}, heading: {selector: h1}}}

@@ -1,0 +1,100 @@
+# === Python ===
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+*.whl
+.python-version
+
+# === Build Artifacts (禁止入库) ===
+# 所有构建产物在 artifacts/ 版本化目录，详见 artifacts/README.md
+# 用 artifacts/** 而非 artifacts/：后者整目录忽略会阻止 git 进入，导致下方 ! 放行失效
+artifacts/**
+# 放行构建产物说明文档，使其纳入版本控制（协作者 clone 可见构建规则与版本来源）
+!artifacts/README.md
+dist/
+build/
+build_cache/
+build_dist/
+release/
+SBOM.json
+.omnicra/
+.runtime/
+_internal/
+browsers/
+/runtime/
+_empty_*/
+*.spec.bak
+*.manifest
+
+# === Testing & Coverage ===
+.pytest_cache/
+.test-tmp/
+.coverage
+.coverage.*
+coverage.xml
+coverage.json
+htmlcov/
+cov_html/
+cov_baseline.txt
+e2e-artifacts/
+test-results/
+.pytest_session/
+
+# === Linting & Type-Checking ===
+.mypy_cache/
+.ruff_cache/
+
+# === IDE / OS ===
+.vscode/
+.idea/
+.trae/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# === Tool Data (项目级) ===
+.workbuddy/
+.reasonix/
+.omnicrawler/
+.uploads/
+
+# === Runtime Data (运行期产出) ===
+data/input/*
+!data/input/.gitkeep
+data/pdfs/*
+!data/pdfs/.gitkeep
+work/*
+!work/.gitkeep
+output/*
+!output/.gitkeep
+*.sqlite3
+*.sqlite3-*
+tmp/
+
+# === Environment & Secrets ===
+.env
+.env.*
+
+# === Plugin signing: private key NEVER commits (cold-storage only) ===
+# 公钥信任根 configs/plugin_trust.pub.pem 必须入库，故不按 *.pem 全忽略，
+# 仅按 private 命名约定拦截私钥，防止误复制进仓库被提交。
+plugin_signing_private.pem
+*_private.pem
+*private*.pem
+
+# === Installed marketplace plugins (runtime download, not source) ===
+plugins_installed/
+
+# === Logs ===
+logs/
+*.log
+!tests/fixtures/cli_outputs/*.log
+
+# === Docker ===
+docker-compose.override.yml
+.omnicrawl_monitor/
+tmp_es.json

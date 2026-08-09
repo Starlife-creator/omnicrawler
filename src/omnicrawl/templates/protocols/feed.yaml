@@ -1,0 +1,32 @@
+template_version: 1
+
+template:
+  id: protocols/rss-atom
+  name: "RSS/Atom 订阅"
+  category: protocols/feed
+  description: "采集 RSS 或 Atom 条目并跟踪文章链接"
+  version: 1.0.0
+  tags: [RSS, Atom, 订阅]
+  capabilities: [feed, xml, incremental]
+
+  placeholders:
+    feed_url: {label: 订阅源地址, required: true}
+
+  header_contains: {content-type: xml}
+  html_contains: ['<rss', '<feed']
+
+  verified_at: '2026-07-17'
+
+project: {name: rss_atom, workspace: work/rss_atom}
+
+source: {kind: feed, seeds: ['{{feed_url}}']}
+
+crawl: {max_pages: 500, max_depth: 1, same_host: false, concurrency: 4}
+
+http: {respect_robots: true, delay_seconds: 1.0}
+
+extract: {mode: auto, fields: {}, review_low_confidence: true}
+
+incremental: {skip_unchanged: true, archive_raw: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

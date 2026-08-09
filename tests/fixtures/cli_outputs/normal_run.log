@@ -1,0 +1,8 @@
+[INFO] 1/10 200 https://example.org/index
+[INFO] 2/10 200 https://example.org/page2
+[INFO] 3/10 200 https://example.org/page3
+[INFO] PROGRESS: 30% https://example.org/page3
+[INFO] 提取记录: 45
+[INFO] 采集页面: 3
+[INFO] 下载附件: 2
+[INFO] 任务 succeeded

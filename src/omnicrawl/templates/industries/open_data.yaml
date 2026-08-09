@@ -1,0 +1,23 @@
+template_version: 1
+
+template:
+  id: industries/open-data
+  name: 政府开放数据门户
+  description: "发现开放数据目录中的CSV、JSON、Excel、压缩包和数据集元数据"
+  tags: [open-data, dataset, CSV, JSON]
+  capabilities: [crawl, attachment-download, metadata, incremental]
+
+  placeholders:
+    catalog_url: {label: 开放数据目录地址, required: true}
+
+  html_contains: [dataset, distribution, downloadURL]
+  verified_at: '2026-07-17'
+
+project: {name: open_data, workspace: work/open_data}
+source: {kind: incremental, seeds: ['{{catalog_url}}']}
+crawl: {strategy: priority, focus_keywords: [dataset, data, download, metadata], max_pages: 5000, max_depth: 5, same_host: true, concurrency: 6}
+http: {respect_robots: true, delay_seconds: "1.0"}
+extract: {mode: auto, fields: {}, review_low_confidence: true}
+download: {enabled: true, extensions: [.csv, .json, .xls, .xlsx, .zip, .xml, .parquet], media: false}
+incremental: {skip_unchanged: true, archive_raw: true}
+outputs: {jsonl: true, csv: true, xlsx: true}

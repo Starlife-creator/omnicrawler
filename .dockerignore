@@ -1,0 +1,66 @@
+.git
+.gitignore
+.github
+
+# Python
+.venv
+__pycache__
+*.py[cod]
+*.egg-info
+*.egg
+
+# Build
+dist
+build
+build_cache
+build_dist
+.runtime
+artifacts
+*.spec.bak
+
+# Testing
+.pytest_cache
+.test-tmp
+.coverage
+coverage.*
+htmlcov
+cov_baseline.txt
+e2e-artifacts
+
+# Linting
+.mypy_cache
+.ruff_cache
+
+# IDE / Tools
+.vscode
+.idea
+.trae
+.workbuddy
+.reasonix
+.omnicrawler
+.uploads
+
+# Runtime data
+work
+output
+data/input
+data/pdfs
+*.sqlite3*
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Docker (avoid recursive copy)
+Dockerfile
+docker-compose.yml
+docker-compose.override.yml
+.dockerignore
+
+# Temp / handoff
+HANDOFF.md
+_empty_*

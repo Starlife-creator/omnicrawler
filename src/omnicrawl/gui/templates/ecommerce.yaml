@@ -1,0 +1,60 @@
+template_version: 1
+
+template:
+  id: gui/ecommerce
+  name: 电商商品采集
+  category: gui/templates
+  description: 可视化配置电商网站商品信息采集规则
+  version: 1.0.0
+  tags: [电商, GUI, 静态HTML]
+  capabilities: [focused-crawl, html, media-download]
+
+  placeholders:
+    seed_url: {label: 商品列表页地址, required: true}
+    product_name_selector: {label: 商品名称 CSS 选择器, required: true}
+    price_selector: {label: 价格 CSS 选择器, required: true}
+    image_selector: {label: 图片 CSS 选择器}
+    link_selector: {label: 商品链接 CSS 选择器}
+
+  verified_at: '2026-07-17'
+
+# 电商商品列表爬虫模板，适合电商网站商品信息采集
+project:
+  name: ecommerce_crawler
+  workspace: work/ecommerce
+source:
+  kind: static_html
+  seeds:
+    - "{{seed_url}}"
+crawl:
+  max_pages: 50
+  delay_seconds: 2.0
+  concurrency: 2
+http:
+  # A16：user_agent 不写死版本，沿用默认（OmniCrawler/{__version__}）
+  respect_robots: true
+extract:
+  mode: html
+  item_selector: ""
+  fields:
+    product_name:
+      selector: "{{product_name_selector}}"
+      type: css
+    price:
+      selector: "{{price_selector}}"
+      type: css
+    image:
+      selector: "{{image_selector}}"
+      type: css
+      attr: src
+    link:
+      selector: "{{link_selector}}"
+      type: css
+      attr: href
+download:
+  enabled: true
+  extensions: [.jpg, .png, .webp]
+  output_dir: downloads/ecommerce
+outputs:
+  jsonl: true
+  csv: true

@@ -1,0 +1,9 @@
+query Notices($limit: Int!) {
+  notices(limit: $limit) {
+    id
+    title
+    publishedAt
+    attachmentUrl
+  }
+}
+

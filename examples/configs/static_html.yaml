@@ -1,0 +1,16 @@
+project:
+  name: 示例项目-静态网页
+  workspace: work/static_html
+source:
+  kind: static_html
+  seeds: [https://example.com/]
+http:
+  user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)"
+  respect_robots: true
+  delay_seconds: 1.0
+extract:
+  mode: html
+  fields:
+    title: {selector: title}
+    heading: {selector: h1}
+    links: {selector: "a[href]", attr: href, all: true, join: " | "}

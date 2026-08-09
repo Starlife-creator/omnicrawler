@@ -1,0 +1,33 @@
+template_version: 1
+
+template:
+
+  id: authenticated/bearer-api
+
+  name: Bearer Token授权API
+
+  category: authenticated/api
+
+  description: "�ӻ���������ϵͳ��糭据库读取Token�������܊密�写兆����配�?  version: 1.0.0"
+
+  tags: [授权, Bearer, Token, API]
+
+  capabilities: [rest, authentication, secret-reference]
+
+  placeholders:
+
+    api_url: {label: 已授权API地址, required: true}
+
+  verified_at: '2026-07-17'
+
+project: {name: bearer_api, workspace: work/bearer_api}
+
+source: {kind: rest, seeds: ['{{api_url}}']}
+
+crawl: {max_pages: 1000, concurrency: 2}
+
+http: {respect_robots: true, delay_seconds: 1.0, headers: {Accept: application/json, Authorization: 'Bearer secret://api_token'}}
+
+extract: {mode: json, fields: {}, review_low_confidence: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

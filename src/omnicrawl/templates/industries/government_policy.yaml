@@ -1,0 +1,47 @@
+template_version: 1
+
+template:
+
+  id: industries/government-policy
+
+  name: "���������빫与�?  category: industries/government"
+
+  description: "�ɼ����ߡ���ʾ�����知和附件，保留来源���ԭ��֤���?  version: 1.0.0"
+
+  tags: [政府, 政策, �公示, 附件]
+
+  capabilities: [crawl, focused-crawl, attachment-download, pdf, evidence, incremental]
+
+  placeholders:
+
+    channel_url: {label: ���߻�ʾ��示�地坢�, required: true}
+
+  verified_at: '2026-07-17'
+
+project: {name: government_policy, workspace: work/government_policy}
+
+source: {kind: focused, seeds: ['{{channel_url}}']}
+
+crawl:
+
+  strategy: priority
+
+  focus_keywords: [政策, �公示, �公告, ֪ͨ, �ļ�, 解读, 附件]
+
+  max_pages: 3000
+
+  max_depth: 5
+
+  same_host: true
+
+  concurrency: 4
+
+http: {respect_robots: true, delay_seconds: 1.5, auto_browser_fallback: true}
+
+extract: {mode: auto, fields: {}, quality_threshold: 0.85, review_low_confidence: true}
+
+download: {enabled: true, extensions: [.pdf, .doc, .docx, .xls, .xlsx, .csv, .zip], media: false}
+
+incremental: {skip_unchanged: true, archive_raw: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

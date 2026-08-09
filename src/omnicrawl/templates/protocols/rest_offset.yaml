@@ -1,0 +1,35 @@
+template_version: 1
+
+template:
+  id: protocols/rest-offset
+  name: "REST 页码/偏移分页"
+  category: protocols/api
+  description: "适合使用 page 或 offset 参数的公开 JSON 接口"
+  version: 1.0.0
+  tags: [REST, JSON, 翻页]
+  capabilities: [rest, json, numbered-pagination]
+
+  placeholders:
+    api_url: {label: API 地址, required: true}
+    page_parameter: {label: 翻页参数, default: page}
+    end_page: {label: 末页页码, default: 20}
+
+  header_contains: {content-type: application/json}
+  json_keys: [data, results, items]
+
+  verified_at: '2026-07-17'
+
+project: {name: rest_offset, workspace: work/rest_offset}
+
+source:
+  kind: rest
+  seeds: ['{{api_url}}']
+  pagination: {type: page, parameter: '{{page_parameter}}', start: 1, end: '{{end_page}}'}
+
+crawl: {max_pages: 1000, concurrency: 4}
+
+http: {respect_robots: true, delay_seconds: 0.5, headers: {Accept: application/json}}
+
+extract: {mode: json, fields: {}, review_low_confidence: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

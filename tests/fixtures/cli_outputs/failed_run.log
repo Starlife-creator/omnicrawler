@@ -1,0 +1,4 @@
+[INFO] 1/5 200 https://example.org/start
+[ERROR] 抓取失败 https://example.org/start: HTTP 500
+[ERROR] 任务 failed
+[ERROR] PipelineError: 提取阶段失败: ValueError: broken rule

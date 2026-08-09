@@ -1,0 +1,20 @@
+template_version: 1
+template:
+  id: industries/company-announcements
+  name: 企业公告与信息披露
+  category: industries/company
+  description: 采集企业公开公告、新闻、报告和附件并进行增量跟踪
+  version: 1.0.0
+  tags: [企业, 公告, 信息披露, 报告]
+  capabilities: [focused-crawl, attachment-download, incremental, evidence]
+  placeholders:
+    channel_url: {label: 企业公告栏目目标地址, required: true}
+  verified_at: '2026-07-17'
+project: {name: company_announcements, workspace: work/company_announcements}
+source: {kind: focused, seeds: ['{{channel_url}}']}
+crawl: {strategy: priority, focus_keywords: [公告, 信息披露, 报告, 投资, announcement, report], max_pages: 3000, max_depth: 4, same_host: true, concurrency: 4}
+http: {respect_robots: true, delay_seconds: 1.5, auto_browser_fallback: true}
+extract: {mode: auto, fields: {}, quality_threshold: 0.82, review_low_confidence: true}
+download: {enabled: true, extensions: [.pdf, .doc, .docx, .xls, .xlsx], media: false}
+incremental: {skip_unchanged: true, archive_raw: true}
+outputs: {jsonl: true, csv: true, xlsx: true}

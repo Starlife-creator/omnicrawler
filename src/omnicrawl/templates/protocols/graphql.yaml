@@ -1,0 +1,31 @@
+template_version: 1
+
+template:
+  id: protocols/graphql
+  name: GraphQL 查询
+  category: protocols/api
+  description: "执行授权范围内的 GraphQL 查询并抽取 JSON 结果"
+  version: 1.0.0
+  tags: [GraphQL, JSON, API]
+  capabilities: [graphql, json, post]
+
+  placeholders:
+    api_url: {label: GraphQL 端点, required: true}
+    graphql_query: {label: GraphQL 查询, required: true}
+
+  url_patterns: ['*/graphql*']
+  json_keys: [data, errors]
+
+  verified_at: '2026-07-17'
+
+project: {name: graphql_query, workspace: work/graphql_query}
+
+source: {kind: graphql, seeds: ['{{api_url}}'], query: '{{graphql_query}}', variables: {}}
+
+crawl: {max_pages: 100, concurrency: 2}
+
+http: {respect_robots: true, delay_seconds: 0.5, headers: {Accept: application/json}}
+
+extract: {mode: json, fields: {}, review_low_confidence: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

@@ -1,0 +1,37 @@
+template_version: 1
+
+template:
+
+  id: industries/forum-threads
+
+  name: "��̳��两�区主�?  category: industries/community"
+
+  description: �ɼ���公开����̳������颢�楼层������ߺ�ʱ�䣬��������¼�ƹ�����֤���ƿ���
+
+  version: 1.0.0
+
+  tags: [��̳, 社区, ���题, 帖子]
+
+  capabilities: [crawl, pagination, incremental, evidence]
+
+  placeholders:
+
+    forum_url: {label: �公开����̳����ַ, required: true}
+
+  html_contains: [discussion, thread, post]
+
+  verified_at: '2026-07-17'
+
+project: {name: forum_threads, workspace: work/forum_threads}
+
+source: {kind: incremental, seeds: ['{{forum_url}}']}
+
+crawl: {strategy: priority, focus_keywords: [thread, topic, post, ���题, 帖子], max_pages: 5000, max_depth: 5, same_host: true, concurrency: 3}
+
+http: {respect_robots: true, delay_seconds: 1.5, auto_browser_fallback: true}
+
+extract: {mode: auto, fields: {}, quality_threshold: 0.8, review_low_confidence: true}
+
+incremental: {skip_unchanged: true, archive_raw: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

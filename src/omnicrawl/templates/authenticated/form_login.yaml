@@ -1,0 +1,57 @@
+template_version: 1
+
+template:
+
+  id: authenticated/form-login
+
+  name: "表单癵�¼��־û�会?  category: authenticated/session"
+
+  description: "���Ꮠ交登录表单，再复��?Cookie ץȡ��Ȩҳ�棻�û���������ֻ�Ӱ��密�凭据引甼����读取��?  version: 1.0.0"
+
+  tags: [登录, 表单, Cookie, 会话]
+
+  capabilities: [form-login, cookies, persistent-session, secret-reference]
+
+  placeholders:
+
+    login_url: {label: 登录提交地址, required: true}
+
+    target_url: {label: 登录后采集地坢�, required: true}
+
+    username_field: {label: �用户名字段名, default: username}
+
+    password_field: "{label: 密码字段�? default: password}"
+
+  verified_at: '2026-07-18'
+
+project: {name: form_login, workspace: work/form_login}
+
+source:
+
+  kind: crawl
+
+  seeds: ['{{target_url}}']
+
+  login:
+
+    url: '{{login_url}}'
+
+    method: POST
+
+    content_type: application/x-www-form-urlencoded
+
+    fields:
+
+      '{{username_field}}': secret://login_username
+
+      '{{password_field}}': secret://login_password
+
+crawl: {max_pages: 100, max_depth: 3, same_host: true, concurrency: 1}
+
+http: {respect_robots: true, delay_seconds: 1.0}
+
+session: {persist_cookies: true, name: authenticated}
+
+extract: {mode: auto, fields: {}, review_low_confidence: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

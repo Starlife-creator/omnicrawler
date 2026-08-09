@@ -1,0 +1,13 @@
+project: {name: 示例项目-GraphQL, workspace: work/graphql}
+source:
+  kind: graphql
+  seeds: [https://api.example.invalid/graphql]
+  query: |
+    query Notices($limit: Int!) {
+      notices(limit: $limit) { id title publishedAt attachmentUrl }
+    }
+  variables: {limit: 50}
+  headers: {Authorization: "Bearer ${OMNICRAWL_API_TOKEN:-}"}
+crawl: {max_pages: 1, same_host: true}
+http: {user_agent: "OmniCrawler/1.0 (+contact: crawler@example.org)", respect_robots: true}
+extract: {mode: json, item_path: "data.notices[*]", fields: {id: {path: id}, title: {path: title}}}

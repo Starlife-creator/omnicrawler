@@ -1,0 +1,19 @@
+template_version: 1
+
+project: {name: 示例项目-表单深网, workspace: work/form}
+
+source:
+
+  kind: form
+
+  seeds: [https://example.invalid/search]
+
+  method: POST
+
+  fields: {keyword: 公告, start_date: 2025-01-01, end_date: 2025-12-31}
+
+crawl: {max_pages: 1, same_host: true}
+
+http: {user_agent: "OmniCrawler/0.6.0 (+contact: crawler@example.org)", respect_robots: true}
+
+extract: {mode: html, item_selector: ".result", fields: {title: {selector: h2}, link: {selector: "a[href]", attr: href}}}

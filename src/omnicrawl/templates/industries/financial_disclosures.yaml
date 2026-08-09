@@ -1,0 +1,35 @@
+template_version: 1
+
+template:
+
+  id: industries/financial-disclosures
+
+  name: "���ڞ�披露��붨�ڱ����?  category: industries/finance"
+
+  description: "�ɼ���公开披露〡����ڱ���呢�临时公告及PDF������������留�证�?  version: 1.0.0"
+
+  tags: [����, 披露, ���ڜ�报告, PDF]
+
+  capabilities: [focused-crawl, attachment-download, pdf, incremental, evidence]
+
+  placeholders:
+
+    disclosure_url: {label: �公开披露栏目地址, required: true}
+
+  verified_at: '2026-07-17'
+
+project: {name: financial_disclosures, workspace: work/financial_disclosures}
+
+source: {kind: focused, seeds: ['{{disclosure_url}}']}
+
+crawl: {strategy: priority, focus_keywords: [披露, �公告, 年报, 季报, report, filing], max_pages: 5000, max_depth: 5, same_host: true, concurrency: 4}
+
+http: {respect_robots: true, delay_seconds: 1.5, auto_browser_fallback: true}
+
+extract: {mode: auto, fields: {}, quality_threshold: 0.88, review_low_confidence: true}
+
+download: {enabled: true, extensions: [.pdf, .xls, .xlsx, .csv], media: false}
+
+incremental: {skip_unchanged: true, archive_raw: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

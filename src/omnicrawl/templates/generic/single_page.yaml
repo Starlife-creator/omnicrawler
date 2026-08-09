@@ -1,0 +1,39 @@
+template_version: 1
+
+template:
+
+  id: generic/single-page
+
+  name: 通用单页正文
+
+  category: generic
+
+  description: 自动提取单个公开页面的标题、正文、日期、作者和链接证据
+
+  version: 1.0.0
+
+  tags: [通用, 单页, 正文]
+
+  capabilities: [http, auto-extraction, evidence]
+
+  placeholders:
+
+    seed_url: {label: 页面网址, required: true}
+
+  verified_at: '2026-07-17'
+
+project: {name: single_page, workspace: work/single_page}
+
+source:
+
+  kind: static_html
+
+  seeds: ['{{seed_url}}']
+
+crawl: {max_pages: 1, max_depth: 0, concurrency: 1, same_host: true}
+
+http: {respect_robots: true, delay_seconds: 1.0, auto_browser_fallback: true}
+
+extract: {mode: auto, fields: {}, quality_threshold: 0.75, review_low_confidence: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

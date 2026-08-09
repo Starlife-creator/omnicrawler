@@ -1,0 +1,143 @@
+name: release
+
+# 云端打包构建并发布：
+#   - push v* tag（如 v0.6.0）→ 自动构建 Windows 便携包（Standard + Full）并发布正式 Release
+#   - workflow_dispatch → 手动构建（预发布），用于正式发布前的验证
+#
+# 产物（每个 ZIP 都含 SHA256SUMS 校验和 + SBOM + provenance）：
+#   OmniCrawler-<version>-Windows-Portable-Standard.zip
+#   OmniCrawler-<version>-Windows-Portable-Full.zip
+#   SHA256SUMS.txt / omnicrawler-sbom.cdx.json / omnicrawler-provenance.json
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: "发布为预发布（pre-release）"
+        type: boolean
+        default: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-portable:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: 读取源码版本号
+        id: version
+        shell: pwsh
+        run: |
+          $version = (& python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])").Trim()
+          Write-Output "version=$version"
+          Write-Output "version=$version" >> $env:GITHUB_OUTPUT
+
+      # 浏览器（Playwright Chromium）与 OCR 运行时（Tesseract/Paddle 模型）缓存，
+      # 二次构建直接复用，避免每次从网络下载数百 MB。
+      - name: 缓存浏览器运行时
+        id: browser-cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155df47e93e2c5 # v5.1.3
+        with:
+          path: .cache/playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+
+      - name: 缓存 OCR 运行时
+        id: runtime-cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155df47e93e2c5 # v5.1.3
+        with:
+          path: .cache/runtime
+          key: ocr-runtime-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+
+      # ── Standard 便携包 ────────────────────────────────────────────
+      # 首次构建（无浏览器缓存）走联网下载；命中缓存则跳过下载直接复制。
+      - name: 构建 Standard 便携包
+        shell: pwsh
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/playwright
+        run: |
+          $browserArgs = if (Test-Path ".cache/playwright") { "-BrowserCachePath", ".cache/playwright", "-SkipBrowserDownload" } else { @() }
+          powershell -ExecutionPolicy Bypass -File build_windows.ps1 `
+            -Edition Standard `
+            -ReleaseOutputPath "$env:RUNNER_TEMP/artifacts" `
+            -SkipRuntimeAssetDownload @browserArgs
+
+      # ── Full 便携包 ────────────────────────────────────────────────
+      - name: 构建 Full 便携包
+        shell: pwsh
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/playwright
+        run: |
+          $browserArgs = if (Test-Path ".cache/playwright") { "-BrowserCachePath", ".cache/playwright", "-SkipBrowserDownload" } else { @() }
+          $runtimeArgs = if (Test-Path ".cache/runtime") { "-RuntimeCachePath", ".cache/runtime", "-SkipRuntimeAssetDownload" } else { @() }
+          powershell -ExecutionPolicy Bypass -File build_windows.ps1 `
+            -Edition Full `
+            -ReleaseOutputPath "$env:RUNNER_TEMP/artifacts" `
+            @browserArgs @runtimeArgs
+
+      # ── 发布元数据（SBOM / provenance / 校验和）────────────────────
+      - name: 生成 SBOM
+        shell: pwsh
+        run: python tools/generate_sbom.py --output "$env:RUNNER_TEMP/artifacts/omnicrawler-sbom.cdx.json"
+
+      - name: 生成 provenance
+        shell: pwsh
+        run: |
+          python tools/generate_provenance.py --artifact-dir "$env:RUNNER_TEMP/artifacts" `
+            --output "$env:RUNNER_TEMP/artifacts/omnicrawler-provenance.json"
+
+      - name: 生成并校验 SHA-256 清单
+        shell: pwsh
+        run: |
+          python tools/generate_checksums.py "$env:RUNNER_TEMP/artifacts" `
+            --output "$env:RUNNER_TEMP/artifacts/SHA256SUMS.txt" --verify
+          python tools/generate_checksums.py "$env:RUNNER_TEMP/artifacts" `
+            --output "$env:RUNNER_TEMP/artifacts/SHA256SUMS.txt" --check
+
+      - name: 列出构建产物
+        shell: pwsh
+        run: Get-ChildItem "$env:RUNNER_TEMP/artifacts" | Select-Object Name, @{N='MB';E={[math]::Round($_.Length/1MB,1)}}
+
+      # ── 上传到 GitHub Release ──────────────────────────────────────
+      - name: 发布到 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: OmniCrawler ${{ steps.version.outputs.version }}
+          body: |
+            ## OmniCrawler ${{ steps.version.outputs.version }}
+
+            > 由 CI 自动构建（GitHub Actions Windows runner）。
+
+            ### 便携包
+            - **Standard**：GUI + Chromium + 常规采集
+            - **Full**：另含 ChromeDriver + 双 OCR 引擎（Tesseract + PaddleOCR）
+
+            安装：解压 ZIP → 双击 `OmniCrawler-Launcher.bat`。
+
+            ### 安全
+            - 所有产物附带 `SHA256SUMS.txt` 校验和（与 `omnicrawler-provenance.json` 对应）
+            - `omnicrawler-sbom.cdx.json`：依赖物料清单（CycloneDX）
+            - 本版本未做 Authenticode 代码签名；校验完整性请以 SHA-256 为准
+          files: |
+            ${{ runner.temp }}/artifacts/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          prerelease: ${{ inputs.prerelease || startsWith(github.ref_name, 'v') && contains(github.ref_name, '-') }}

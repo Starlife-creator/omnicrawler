@@ -1,0 +1,75 @@
+template_version: 1
+
+# Recipe: Weekly Government Announcement Monitor
+
+# Use case: monitor a government announcements page weekly, detect new/updated PDFs
+
+# Schedule: weekly (604800 seconds)
+
+project: {name: weekly_announcements, workspace: work/weekly_announcements}
+
+source: {kind: crawl, seeds: [https://example.gov/announcements]}
+
+crawl:
+
+  strategy: bfs            # breadth-first: collect all sibling links first
+
+  max_pages: 200           # enough for a typical government section
+
+  max_depth: 2             # list page + detail pages
+
+  same_host: true          # stay on the government domain
+
+  concurrency: 2           # conservative for government servers
+
+http:
+
+  user_agent: "OmniCrawler/0.6.0 (+contact: change-me@example.com)"
+
+  respect_robots: true
+
+  delay_seconds: 2.0       # be polite to government servers
+
+download:
+
+  enabled: true
+
+  extensions: [.pdf, .docx, .xlsx]
+
+  media: false
+
+extract:
+
+  mode: auto
+
+  fields:
+
+    title: {selector: a, attribute: text}
+
+    link: {selector: a, attribute: href}
+
+    date: {selector: span.date}
+
+updates:
+
+  enabled: true
+
+  revisit_completed: true
+
+  detect_content_changes: true
+
+processors:
+
+  pdf:
+
+    enabled: true
+
+    ocr: auto              # OCR when needed, skip when text layer exists
+
+outputs: {jsonl: true, csv: true, xlsx: true}
+
+schedule:
+
+  enabled: true
+
+  interval_seconds: 604800  # 7 days

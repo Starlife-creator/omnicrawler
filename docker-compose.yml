@@ -1,0 +1,16 @@
+services:
+  omnicrawl:
+    build: .
+    volumes:
+      - ./configs:/data/configs:ro
+      - ./work:/data/work
+      - ./output:/data/output
+      - ./data:/data/data
+    command: ["doctor", "-c", "configs/project.yaml"]
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["distributed"]
+    ports:
+      - "127.0.0.1:6379:6379"
+

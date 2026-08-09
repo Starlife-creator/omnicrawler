@@ -1,0 +1,75 @@
+template_version: 1
+
+template:
+
+  id: cms/wordpress-rest
+
+  name: WordPress�公开������API
+
+  category: cms/wordpress
+
+  description: "ʹ��WordPress REST API按页�ɼ���公开�����£�Ĭ��认每顯���?00�?  version: 1.0.0"
+
+  tags: [WordPress, CMS, REST, ����]
+
+  capabilities: [rest, json, numbered-pagination]
+
+  placeholders:
+
+    site_url: {label: WordPress站点根地坢�, required: true}
+
+    end_page: "{label: �朢�大页�? default: 20}"
+
+  url_patterns: ['*/wp-json/wp/v2/*']
+
+  header_contains: {x-wp-totalpages: ''}
+
+  html_contains: [/wp-content/, /wp-includes/, wp-json]
+
+  json_keys: [id, date, link, title, content]
+
+  source_urls:
+
+    - https://developer.wordpress.org/rest-api/reference/posts/
+
+    - https://developer.wordpress.org/rest-api/using-the-rest-api/pagination/
+
+  license: OmniCrawler-MIT; API行为依据WordPress�ٷ���斡�
+
+  verified_at: '2026-07-17'
+
+project: {name: wordpress_posts, workspace: work/wordpress_posts}
+
+source:
+
+  kind: site_wordpress
+
+  seeds: ['{{site_url}}/wp-json/wp/v2/posts?per_page=100&_embed=1']
+
+  max_pages: '{{end_page}}'
+
+crawl: {max_pages: 500, concurrency: 3}
+
+http: {respect_robots: true, delay_seconds: 1.0, headers: {Accept: application/json}}
+
+extract:
+
+  mode: json
+
+  item_selector: '$[*]'
+
+  fields:
+
+    id: {selector: id, type: jsonpath, required: true}
+
+    title: {selector: title.rendered, type: jsonpath, required: true}
+
+    url: {selector: link, type: jsonpath, required: true}
+
+    published_at: {selector: date, type: jsonpath}
+
+    modified_at: {selector: modified, type: jsonpath}
+
+    content_html: {selector: content.rendered, type: jsonpath}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

@@ -1,0 +1,57 @@
+OmniCrawler NOTICE
+==================
+
+Copyright 2024-2026 OmniCrawler Contributors
+
+This product includes software developed by third parties:
+
+---
+
+Crawl4AI (https://github.com/unclecode/crawl4ai)
+Copyright (c) 2024 UncleCode
+Licensed under the Apache License, Version 2.0.
+You may obtain a copy of the License at:
+    http://www.apache.org/licenses/LICENSE-2.0
+
+---
+
+Scrapy (https://github.com/scrapy/scrapy)
+Copyright (c) Scrapy developers
+Licensed under the BSD 3-Clause License.
+    https://github.com/scrapy/scrapy/blob/master/LICENSE
+
+---
+
+Crawlee Python (https://github.com/apify/crawlee-python)
+Copyright (c) Apify Technologies s.r.o.
+Licensed under the Apache License, Version 2.0.
+
+---
+
+Playwright Python (https://github.com/microsoft/playwright-python)
+Copyright (c) Microsoft Corporation
+Licensed under the Apache License, Version 2.0.
+
+---
+
+Tesseract OCR (https://github.com/tesseract-ocr/tesseract)
+Licensed under the Apache License, Version 2.0.
+
+---
+
+PaddlePaddle / PaddleOCR / PaddleX
+Licensed under the Apache License, Version 2.0.
+
+---
+
+MarkItDown (https://github.com/microsoft/markitdown)
+Copyright (c) Microsoft Corporation
+Licensed under the MIT License.
+    https://github.com/microsoft/markitdown/blob/main/LICENSE
+
+---
+
+changedetection.io (https://github.com/dgtlmoon/changedetection.io)
+Copyright (c) dgtlmoon
+Licensed under the Apache License, Version 2.0.
+    https://github.com/dgtlmoon/changedetection.io/blob/master/LICENSE

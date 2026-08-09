@@ -1,0 +1,46 @@
+name: end-to-end
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/**"
+      - "e2e/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/e2e.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "e2e/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/e2e.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Python 3.13 / Chromium E2E
+    runs-on: ubuntu-latest
+    env:
+      E2E_COVERAGE_TARGET: "95"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[html,pdf,browser,dev]"
+      - run: python -m playwright install --with-deps chromium
+      - run: bash e2e/run.sh --browser
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-artifacts-python-3.13
+          path: |
+            docs/E2E_TEST_REPORT.md
+            e2e-artifacts/
+          if-no-files-found: warn

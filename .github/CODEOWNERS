@@ -1,0 +1,29 @@
+# OmniCrawler CODEOWNERS
+# Reviews are automatically requested based on file paths.
+
+# Core pipeline and architecture
+/src/omnicrawl/pipeline/        @starlife
+/src/omnicrawl/services/application_service.py @starlife
+/src/omnicrawl/pipeline_ops/task_ir.py       @starlife
+/src/omnicrawl/runtime/repository.py    @starlife
+/src/omnicrawl/security/egress.py        @starlife
+
+# GUI layer
+/src/omnicrawl/gui/             @starlife
+
+# Security-sensitive modules
+/src/omnicrawl/pipeline/exporters.py     @starlife
+/src/omnicrawl/state/           @starlife
+/src/omnicrawl/fetching/http_client.py   @starlife
+
+# Build and CI
+/pyproject.toml                 @starlife
+/Dockerfile                     @starlife
+/.github/                       @starlife
+
+# Configuration and templates
+/src/omnicrawl/core/config.py        @starlife
+/src/omnicrawl/templates/       @starlife
+
+# Default: catch-all
+*                               @starlife

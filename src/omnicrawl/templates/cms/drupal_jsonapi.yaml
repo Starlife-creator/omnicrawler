@@ -1,0 +1,55 @@
+template_version: 1
+
+template:
+
+  id: cms/drupal-jsonapi
+
+  name: Drupal JSON API内容
+
+  category: cms/drupal
+
+  description: ʹ��Drupal核心JSON:API�ɼ���公开内容���ϲ�����links.next
+
+  version: 1.0.0
+
+  tags: [Drupal, CMS, JSONAPI]
+
+  capabilities: [rest, json, next-url-pagination]
+
+  placeholders:
+
+    site_url: {label: Drupal站点根地坢�, required: true}
+
+    content_type: "{label: 内容���ͻ����器? default: article}"
+
+  url_patterns: ['*/jsonapi/*']
+
+  header_contains: {content-type: application/vnd.api+json}
+
+  html_contains: [Drupal.settings, /core/misc/drupal.js]
+
+  json_keys: [jsonapi, data, links, attributes]
+
+  source_urls:
+
+    - https://www.drupal.org/docs/core-modules-and-themes/core-modules/jsonapi-module/pagination
+
+  license: OmniCrawler-MIT; API行为依据Drupal�ٷ���斡�
+
+  verified_at: '2026-07-17'
+
+project: {name: drupal_content, workspace: work/drupal_content}
+
+source:
+
+  kind: site_drupal
+
+  seeds: ['{{site_url}}/jsonapi/node/{{content_type}}?page[limit]=50']
+
+crawl: {max_pages: 500, concurrency: 3}
+
+http: {respect_robots: true, delay_seconds: 1.0, headers: {Accept: application/vnd.api+json}}
+
+extract: {mode: json, item_selector: data, fields: {}, review_low_confidence: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

@@ -1,0 +1,182 @@
+name: quality
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_CONSTRAINT: constraints/quality.txt
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # 市场仓库与主仓库同级（tests 与 tools 按 "../OmniCrawler-market" 相对布局引用）。
+      # checkout action 的 path 不能逃逸 workspace，且市场仓库为 private，
+      # 故用 git clone + PAT（MARKET_REPO_TOKEN secret）替代。
+      - name: Checkout OmniCrawler-market (sibling)
+        shell: pwsh
+        run: |
+          $token = "${{ secrets.MARKET_REPO_TOKEN }}"
+          $url = "https://github.com/${{ github.repository_owner }}/OmniCrawler-market.git"
+          if ($token) {
+            $url = "https://x-access-token:$token@github.com/${{ github.repository_owner }}/OmniCrawler-market.git"
+          }
+          git clone --depth 1 --branch main $url ../OmniCrawler-market
+          if (-not (Test-Path "../OmniCrawler-market")) {
+            Write-Error "市场仓库 clone 失败。若仓库为 private，请在仓库 Settings -> Secrets 配置 MARKET_REPO_TOKEN（PAT，权限 repo）。"
+            exit 1
+          }
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[html,pdf,dev,async-http,gui]" cryptography
+      - if: runner.os == 'Linux'
+        name: Install Qt runtime dependencies
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0
+      - run: python -m compileall -q src tests examples
+      - run: python tools/check_release_integrity.py
+      - run: python tools/check_architecture.py
+      - run: python tools/check_cli_docs.py
+      - run: python tools/check_docs_consistency.py
+      - run: python tools/check_network_boundaries.py
+      - run: python tools/check_coding_standards.py src
+      - run: python -m coverage run -m pytest -q
+      - run: python -m coverage json -o coverage.json
+      - run: python tools/check_coverage_gates.py coverage.json
+      - run: python -m coverage report
+      - run: python -m omnicrawl.cli templates validate
+      - run: python -m ruff check src tests
+      - run: python -m mypy src/omnicrawl
+      - run: python -m pip wheel . --no-deps -w dist
+      - run: python tools/check_release_integrity.py --wheel-dir dist
+      - run: python tools/build_source_archive.py --output-dir dist
+      - run: python tools/check_release_integrity.py --source-zip-dir dist
+      - run: python tools/generate_sbom.py --output dist/omnicrawler-sbom.cdx.json
+      - run: python tools/generate_checksums.py dist --output SHA256SUMS-ci.txt
+      - run: python tools/generate_checksums.py dist --output SHA256SUMS-ci.txt --check
+      - run: python tools/generate_provenance.py --artifact-dir dist --output dist/omnicrawler-provenance.json
+
+  # F53：产物版本与 tag 对账——在发布 tag 上校验仓库内 artifacts/ 便携产物
+  # 命名版本 == 源码 __version__，防止"产物版本 ← 漂移的当场版本"回流发布。
+  release-artifact-version:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[html,pdf,browser,async-http]"
+      - name: Assert portable artifacts match the tagged source version
+        shell: python
+        run: |
+          import importlib.metadata
+          import re
+          from pathlib import Path
+
+          src = importlib.metadata.version("omnicrawl-platform")
+          root = Path.cwd()
+          archives = sorted(root.glob("artifacts/build/*/release/*Windows-Portable-*.zip"))
+          archives += sorted(root.glob("artifacts/release/*/*Windows-Portable-*.zip"))
+          if not archives:
+              print(f"[skip] no portable artifacts present for v{src}; nothing to check")
+              raise SystemExit(0)
+          bad = []
+          for archive in archives:
+              name = archive.name
+              match = re.search(r"OmniCrawler-(\d+\.\d+\.\d+)-Windows-Portable", name)
+              artifact_version = match.group(1) if match else ""
+              ok = artifact_version == src
+              print(f"{'OK  ' if ok else 'FAIL'} {archive.relative_to(root)} -> source {src}")
+              if not ok:
+                  bad.append(name)
+          if bad:
+              raise SystemExit(f"portable artifact version mismatch for src {src}: {bad}")
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker build -t omnicrawler:ci .
+
+  gui-and-browser:
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+      OMNICRAWL_BROWSER_TESTS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[html,browser,gui,dev]"
+      - name: Install Qt runtime dependencies
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0
+      - run: python -m playwright install --with-deps chromium
+      - run: python -m pytest --collect-only -q tests/gui/test_gui_smoke.py tests/integration/browser/test_browser_integration.py
+      - run: python -m pytest -q tests/gui/test_gui_smoke.py tests/integration/browser/test_browser_integration.py
+
+  windows-full-dependency-matrix:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # 市场仓库与主仓库同级（tests 引用 "../OmniCrawler-market"）
+      - name: Checkout OmniCrawler-market (sibling)
+        shell: pwsh
+        run: |
+          $token = "${{ secrets.MARKET_REPO_TOKEN }}"
+          $url = "https://github.com/${{ github.repository_owner }}/OmniCrawler-market.git"
+          if ($token) {
+            $url = "https://x-access-token:$token@github.com/${{ github.repository_owner }}/OmniCrawler-market.git"
+          }
+          git clone --depth 1 --branch main $url ../OmniCrawler-market
+          if (-not (Test-Path "../OmniCrawler-market")) {
+            Write-Error "市场仓库 clone 失败。若仓库为 private，请在仓库 Settings -> Secrets 配置 MARKET_REPO_TOKEN（PAT，权限 repo）。"
+            exit 1
+          }
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[full,dev]"
+      - run: python -m pip check
+      - name: Install non-blocking dependency audit tool
+        continue-on-error: true
+        run: python -m pip install pip-audit
+      - name: Audit resolved full dependency environment
+        continue-on-error: true
+        run: pip-audit --local --format json --output dependency-audit.json
+      - run: python -m omnicrawl.cli capabilities --verify-imports
+        env:
+          PYTHONIOENCODING: utf-8
+      - run: python -m compileall -q src tools tests
+      - run: python tools/check_release_integrity.py
+      - run: python tools/check_architecture.py
+      - run: python tools/check_docs_consistency.py
+      - run: python tools/check_network_boundaries.py
+      - run: python tools/check_coding_standards.py src
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-audit-windows-full
+          path: dependency-audit.json
+          if-no-files-found: warn
+      - run: python -m pytest -q

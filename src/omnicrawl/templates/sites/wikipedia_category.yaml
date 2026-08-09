@@ -1,0 +1,42 @@
+template_version: 1
+
+template:
+  id: sites/wikipedia-category
+  name: Wikipedia 分类成员
+  category: sites/wikipedia
+  description: 使用 MediaWiki 官方 Action API 采集 Wikipedia 分类成员
+  version: 1.0.0
+  tags: [Wikipedia, MediaWiki, 分类, API]
+  capabilities: [rest, continuation-token, site-adapter]
+
+  domains: [wikipedia.org]
+
+  placeholders:
+    language: {label: 语言子域, default: zh}
+    category_name: {label: 分类名称, required: true}
+
+  source_urls:
+    - https://www.mediawiki.org/wiki/API:Continue
+    - https://www.mediawiki.org/wiki/API:Categorymembers
+
+  verified_at: '2026-07-17'
+
+project: {name: wikipedia_category, workspace: work/wikipedia_category}
+
+source:
+  kind: site_mediawiki
+  seeds: ['https://{{language}}.wikipedia.org/w/api.php?action=query&list=categorymembers&cmtitle=Category:{{category_name}}&cmlimit=max&format=json']
+
+crawl: {max_pages: 1000, concurrency: 2}
+
+http: {respect_robots: true, delay_seconds: 1.0, headers: {Accept: application/json}}
+
+extract:
+  mode: json
+  item_selector: query.categorymembers
+  fields:
+    page_id: {selector: pageid, type: jsonpath, required: true}
+    namespace: {selector: ns, type: jsonpath}
+    title: {selector: title, type: jsonpath, required: true}
+
+outputs: {jsonl: true, csv: true, xlsx: true}

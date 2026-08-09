@@ -1,0 +1,35 @@
+template_version: 1
+
+template:
+  id: generic/spa-api-discovery
+  name: SPA 动态页面与接口发现
+  category: generic/dynamic
+  description: "用浏览器执行页面脚本，等待渲染完成后捕获XHR/fetch JSON，从中发现站点发送的实际数据接口"
+  tags: [SPA, dynamic-render, XHR, api-discovery]
+  capabilities: [browser, javascript, network-capture, evidence]
+
+  placeholders:
+    seed_url: {label: 动态页面网址, required: true}
+    wait_selector: {label: 内容加载完成选择器, default: body}
+
+  html_contains: [__NEXT_DATA__, __NUXT__, webpack]
+  verified_at: '2026-07-18'
+
+project: {name: spa_api_discovery, workspace: work/spa_api_discovery}
+source: {kind: browser, seeds: ['{{seed_url}}']}
+crawl: {max_pages: "100", max_depth: 2, same_host: true, concurrency: 2}
+http: {respect_robots: true, delay_seconds: "1.0", auto_browser_fallback: true}
+
+browser:
+  engine: playwright
+  headless: true
+  pool_size: 2
+  capture_api_responses: true
+  max_api_response_bytes: "1000000"
+  max_api_capture_bytes: "10000000"
+  actions:
+    - {action: wait_for, selector: '{{wait_selector}}', timeout_ms: 15000}
+
+extract: {mode: html, fields: {}, review_low_confidence: true}
+incremental: {archive_raw: true, skip_unchanged: true}
+outputs: {jsonl: true, csv: true, xlsx: true}

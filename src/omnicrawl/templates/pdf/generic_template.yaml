@@ -1,0 +1,75 @@
+template_version: 1
+# 复制为新的 YAML 后修改 fields，可用于合同、年报、论文或其他 PDF。
+project_name: 自定义PDF抽取项目
+input_dir: data/pdfs
+work_dir: work
+output_dir: output
+database: work/pipeline.sqlite3
+
+parser:
+  workers: 4
+  min_native_chars: 40
+  max_garbled_ratio: 0.03
+
+ocr:
+  backend: ${PDFX_OCR_BACKEND:-none}
+  lang: ch
+  device: ${PDFX_OCR_DEVICE:-cpu}
+  dpi: 220
+  orientation: true
+  textline_orientation: true
+  table_recognition: true
+  formula_recognition: false
+
+retrieval:
+  top_pages: 4
+  neighbor_pages: 1
+  min_score: 1
+  alias_weight: 1
+  pattern_weight: 2
+  fallback_pages: [1]
+
+llm:
+  provider: ${PDFX_LLM_PROVIDER:-disabled}
+  base_url: ${PDFX_LLM_BASE_URL:-https://api.openai.com/v1}
+  api_key: ${PDFX_LLM_API_KEY:-}
+  model: ${PDFX_LLM_MODEL:-}
+  timeout_seconds: 180
+  retry_attempts: 4
+  max_output_tokens: 4000
+  temperature: 0
+  include_page_images: false
+
+extraction:
+  workers: 4
+  max_chars_per_page: 12000
+
+normalization:
+  entity_master_csv: builtin:pdf/entity_master.csv
+
+validation:
+  auto_accept_confidence: 0.90
+  required_together: []
+
+fields:
+  - name: example_name
+    label: 示例名称
+    description: 在这里准确描述该字段是什么、包含什么、不包含什么。
+    type: text
+    source: content
+    required: true
+    aliases: [别名一, 别名二]
+    patterns:
+      - '示例名称\s*[：:]\s*(?P<value>[^\n；;]+)'
+
+  - name: example_amount
+    label: 示例金额
+    description: 需要提取并统一为元的金额。
+    type: amount
+    source: content
+    target_unit: 元
+    required: false
+    aliases: [金额, 合同金额, 交易金额]
+    patterns:
+      - '(?:金额|合同金额|交易金额)\s*[：:]?\s*(?P<value>[\d,，.]+\s*(?:亿元|万元|元))'
+    minimum: 0

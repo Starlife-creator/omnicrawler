@@ -1,0 +1,182 @@
+# OmniCrawler 贡献指南
+
+感谢你对 OmniCrawler 项目的关注！本文档描述了参与开发需要遵循的规范和流程。
+
+## 快速开始
+
+```bash
+# 克隆仓库
+git clone <repo-url> && cd OmniCrawler
+
+# 安装开发依赖
+pip install -e ".[full,dev]"
+
+# 安装 pre-commit hooks
+pip install pre-commit && pre-commit install
+
+# 运行测试
+pytest
+
+# 运行质量门禁
+ruff check src/ && ruff format --check src/
+mypy src/omnicrawl/ --exclude 'src/omnicrawl/(gui|pdfx|apps)/'
+python -m compileall src/ -q
+```
+
+## 质量门禁（红线）
+
+所有提交必须通过以下门禁，任何一项不通过即不可合入：
+
+| 门禁 | 阈值 | 说明 |
+|------|------|------|
+| ruff | 0 violations | 代码风格 + 导入排序 |
+| mypy | 0 errors | 类型检查（GUI/pdfx/apps 暂排除） |
+| compileall | 0 errors | 语法编译检查 |
+| 覆盖率 | >= 66% | 全源码覆盖率，并通过分组门禁（下一目标 70%，长期目标 80%） |
+| pytest | 全部通过 | 1100+ 测试用例 |
+
+pre-commit hooks 会在提交时自动运行 ruff 和 mypy，从源头防止退化。
+
+## 架构原则（宪法）
+
+以下 6 条原则不可违反，触及前必须先说明影响并征得确认：
+
+1. **分层隔离** — 按"差异来源"分层（source/template → fetcher → parser/extractor → transformer → exporter）
+2. **Pipeline 只编排** — 九阶段管线只编排不干活，具体能力下沉到组件
+3. **统一入口** — 所有外部调用经 ApplicationService，返回 dict DTO
+4. **配置先编译为 Task IR** — 不得新增"跳过 IR 直接跑"的捷径
+5. **持久化走 Repository Port** — 上层不得直接 import sqlite3
+6. **异常隔离** — 单 URL 失败不拖垮整轮 run
+
+详见项目根目录 `project-instructions`。
+
+## 提交流程
+
+1. **创建分支**：`feat/`、`fix/`、`refactor/`、`docs/`、`test/` 前缀
+2. **编写代码**：遵循类型注解规范（Python 3.10+ 风格：`str | None` 而非 `Optional[str]`）
+3. **补充测试**：新增功能必须带对应测试；可选/重型能力用 skip 优雅降级
+4. **本地验证**：运行 `pre-commit run --all-files` 确保门禁全绿
+5. **提交 PR**：PR 描述包含变更摘要、测试方式、是否触及架构原则
+6. **代码审查**：至少 1 人 approve 后合入；架构变更需 2 人 approve
+
+## PR 行为约束
+
+- **PR <= 400 行**（目标占比 >80%），大型重构拆分为多个 PR
+- **不跳过 hooks**（不使用 `--no-verify`），除非用户明确要求
+- **不引入未使用导入**，不吞咽异常
+- **日志用英文**，GUI 用户提示用中文，异常消息用英文
+
+## 插件提交与签名
+
+OmniCrawler 对第三方插件采用 **ed25519 离线单信任根签名**。只有维护者持有签名私钥（冷存储），**贡献者无法、也不需要自己签名**——签名意味着维护者为该插件代码背书。
+
+### 贡献者（提交插件）
+
+1. 将插件放在 `examples/plugins/`（单文件 `.py`，含模块级 `def register(registry)` 入口）。
+2. **不要生成或提交 `.sig` 文件**——你签不了，必须由维护者签名。
+3. PR 描述说明：插件用途、所需 `permissions`/`domains`、是否有网络访问。
+4. 通过常规 PR 流程等待代码审查与签名。
+
+### 维护者（审查与签名）
+
+签名动作**仅在持有私钥的冷机器**进行（私钥位于维护者冷存储介质，绝不进仓库 / 构建 / 便携包）。
+
+1. **代码 / 安全审查**：确认无越权导入、无 `eval`/`exec`、网络权限声明合理。
+2. 在冷机器用项目 venv 的 Python 签名（裸 `python` 缺 `cryptography` 会失败）：
+
+```powershell
+# 单文件
+.\.venv\Scripts\python.exe tools/sign_plugin.py sign examples/plugins/your_plugin.py `
+    --private-key /path/to/cold-storage/plugin_signing_private.pem
+
+# 或批量（自动发现插件入口，排除框架 / 构建目录）
+.\.venv\Scripts\python.exe tools/sign_plugins_batch.py --scan-dir examples/plugins --verify
+```
+
+3. 将插件 `.py` 与其 `.py.sig` **一并合入同一 PR/commit**（审计轨迹原子化）。
+4. **先签最终审查版**：签名绑定文件字节，合入后再改文件会导致 `.sig` 失配、加载被拒。
+
+### 生产环境启用 fail-closed
+
+加载门默认"未配信任根则告警并放行"（过渡期，不误伤现有 dev 插件）。要真正强制验签，在运行时配置中设置信任根：
+
+```yaml
+plugins:
+  trust_public_key: configs/plugin_trust.pub.pem   # 或内联 ed25519 公钥 PEM
+```
+
+配置后：缺少 `.sig` 或签名不符的插件将被 **fail-closed 直接拒载**。
+
+### 已知边界
+
+- 签名仅覆盖插件**入口 `.py`** 一个文件；多文件目录包只有入口被签（加载门只 `exec` 被签模块，风险受限）。
+- 私钥为单点信任源：维护者不在场时无法签名，这是可控供应链的有意设计。
+
+## 测试规范
+
+- 测试框架：pytest
+- 测试目录：`tests/`，与 `src/` 结构对应
+- 命名：`test_<module>.py`，测试函数 `test_<behavior>`
+- 因环境缺失依赖而不可跑的测试用 `skip`（带原因），不要注释掉或删除
+- 核心模块覆盖率目标 >= 85%
+
+## 文件落点速查
+
+| 你要做什么 | 放在哪里 | 不放在哪里 |
+|-----------|---------|-----------|
+| 某站点的特殊字段 | source/template 层 | 通用 parser |
+| HTTP/浏览器/流式差异 | fetcher 层 | pipeline |
+| PDF/OCR/语法解析 | parser/extractor/processor | fetcher |
+| 字段清洗/归一化 | transformer | exporter |
+| 输出格式（CSV/JSON/DB） | exporter | transformer |
+
+## 构建与发布
+
+**Windows 便携版构建详见 [`docs/WINDOWS_PACKAGING.md`](docs/WINDOWS_PACKAGING.md)。**
+下面是最关键的规则：
+
+1. **版本号唯一来源**：`src/omnicrawl/__init__.py` 中的 `__version__`。构建脚本自动读取，
+   产物文件名由脚本生成，任何人（包括自动化工具）都不应在构建流程中手动修改版本号。
+2. **修改版本号是独立操作**：使用 `tools/bump_version.py`，不与构建、测试、修复混在一起。
+3. **产物归档**：所有构建产物放入 `artifacts/` 版本化目录，规则见 [`artifacts/README.md`](artifacts/README.md)。
+
+### 快速构建命令（离线模式）
+
+```powershell
+# 当前版本号由源码决定，不要手动传入版本号
+$python = "$PWD\.venv\Scripts\python.exe"
+
+# Standard 便携 ZIP
+.\build_windows.ps1 -Offline -Edition Standard -BuilderPythonPath $python `
+  -BuildRootPath "$PWD\artifacts\build\{version}-standard-r1" `
+  -ReleaseOutputPath "$PWD\artifacts\release\{version}" `
+  -BrowserCachePath "$PWD\build_cache\browsers"
+
+# Full 便携 ZIP
+.\build_windows.ps1 -Offline -Edition Full -BuilderPythonPath $python `
+  -BuildRootPath "$PWD\artifacts\build\{version}-full-r1" `
+  -ReleaseOutputPath "$PWD\artifacts\release\{version}" `
+  -BrowserCachePath "$PWD\build_cache\browsers" `
+  -RuntimeCachePath "$PWD\build_cache\runtime"
+
+# 源码 ZIP + wheel
+.\.venv\Scripts\python.exe tools\build_source_archive.py
+```
+
+### 产物清单
+
+每次构建生成 4 类产物，路径规则详见 [`artifacts/README.md`](artifacts/README.md)：
+
+| # | 产物 | 典型路径 |
+|---|------|---------|
+| 1 | Standard 便携 ZIP | `artifacts/release/{version}/OmniCrawler-{version}-Windows-Portable-Standard.zip` |
+| 2 | Full 便携 ZIP | `artifacts/release/{version}/OmniCrawler-{version}-Windows-Portable-Full.zip` |
+| 3 | 源码 ZIP + wheel | `artifacts/python/{version}/OmniCrawler-{version}-Source.zip` |
+| 4 | 完整便携目录 | `artifacts/build/{version}-{edition}-rN/release/OmniCrawler/` |
+| 4 | 完整便携目录（压缩前） | `artifacts/build/{version}-{edition}-rN/release/OmniCrawler/`
+
+## ADR（架构决策记录）
+
+重要架构决策请记录到 `docs/adr/` 目录，使用模板 `docs/adr/0000-template.md`。
+
+ADR 内容包括：上下文、决策、替代方案、后果。一旦写入不可修改（只能标记为 Superseded）。
