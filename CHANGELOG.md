@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+## 0.6.0 - 2026-08-10
+
+### 变更
+
+feat(extraction): L3 自适应提取闭环（失效检测→LLM 重生成→本地验证）；Markdown 降维与语义分块；SimHash 双层去重（URL 规范化 + 内容指纹）；curl_cffi TLS 指纹伪装（含 DNS 钉扎与出口审计，未装时回退 httpx）；新增 tls extra；签名密钥默认路径改为主目录相对；市场拆分为独立仓库（git-as-registry）；CI 双库 checkout；市场测试缺失时自动跳过
+
 
 ### 变更
 

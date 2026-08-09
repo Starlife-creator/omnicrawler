@@ -292,7 +292,7 @@ def _resolve_previous_tag(root: Path, old_version: str) -> str | None:
         )
         if result.returncode != 0:
             return None
-        for tag in result.stdout.splitlines():
+        for tag in (result.stdout or "").splitlines():
             tag = tag.strip()
             if re.fullmatch(r"v\d+\.\d+\.\d+", tag):
                 return tag
@@ -538,7 +538,7 @@ def step_self_validate(root: Path, new: str) -> None:
     )
 
     if result.returncode == 0:
-        print(f"     ✓ {result.stdout.strip()}")
+        print(f"     ✓ {(result.stdout or '').strip()}")
     else:
         print("     ✗ 一致性校验失败：", file=sys.stderr)
         print(result.stderr, file=sys.stderr)
@@ -557,7 +557,7 @@ def step_self_validate(root: Path, new: str) -> None:
             capture_output=True, text=True, cwd=str(root),
             timeout=600,
         )
-        for line in result.stdout.splitlines() or result.stderr.splitlines():
+        for line in (result.stdout or "").splitlines() or (result.stderr or "").splitlines():
             print(f"     {line}")
         if result.returncode != 0:
             print("     ✗ 环境版本对账失败：", file=sys.stderr)
