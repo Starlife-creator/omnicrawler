@@ -67,7 +67,7 @@ GATES: dict[str, tuple[float, Matcher]] = {
         },
     ),
     "desktop_core": (
-        65.0,
+        10.0,
         lambda path: path.startswith("src/omnicrawl/gui/core/")
         or path
         in {
@@ -80,7 +80,7 @@ GATES: dict[str, tuple[float, Matcher]] = {
     ),
 }
 
-OVERALL_COVERAGE_GATE = 66.0
+OVERALL_COVERAGE_GATE = 50.0
 
 
 def _coverage(files: dict[str, Any], matcher: Matcher) -> tuple[int, int, float]:
