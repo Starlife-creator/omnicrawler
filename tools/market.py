@@ -34,7 +34,7 @@ from omnicrawl.plugins.market_client import (  # noqa: E402
     verify_installed_template,
 )
 
-DEFAULT_CATALOG_URL = "https://raw.githubusercontent.com/Starlife-creator/omnicrawler/main/registry"
+DEFAULT_CATALOG_URL = str(ROOT.parent / "OmniCrawler-market")
 DEFAULT_DEST = ROOT / "plugins_installed"
 DEFAULT_TEMPLATE_DEST = ROOT / "templates_installed"
 

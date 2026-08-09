@@ -13,7 +13,12 @@ from omnicrawl.plugins.plugins import Registry, load_local_plugins
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TRUST = str(REPO_ROOT / "configs" / "plugin_trust.pub.pem")
-REGISTRY_DIR = REPO_ROOT / "registry"
+REGISTRY_DIR = REPO_ROOT.parent / "OmniCrawler-market"
+
+pytestmark = pytest.mark.skipif(
+    not REGISTRY_DIR.is_dir(),
+    reason="OmniCrawler-market 仓库未 clone（需与主仓库同级），跳过市场客户端测试",
+)
 
 
 def test_fetch_catalog_local() -> None:

@@ -42,9 +42,18 @@ for _cand in (_REPO_ROOT / "src", _REPO_ROOT):
 
 from omnicrawl.plugins.signing import sign_file, verify_plugin
 
+
 # Designated private-key location (operator cuts it to cold storage immediately
 # after generation). Override with --private-key.
-PRIVATE_DEFAULT = r"C:\Users\Lenovo\Desktop\档案\隐私\plugin_signing_private.pem"
+def _default_private_path() -> str:
+    """用户主目录下的 .omnicrawl/keys（无 HOME 时回退仓库内 .private_keys/）。"""
+    try:
+        return str(Path.home() / ".omnicrawl" / "keys" / "plugin_signing_private.pem")
+    except RuntimeError:
+        return str(_REPO_ROOT / ".private_keys" / "plugin_signing_private.pem")
+
+
+PRIVATE_DEFAULT = _default_private_path()
 # Trust-root public key shipped with the repo (used for post-sign verification).
 PUBLIC_DEFAULT = "configs/plugin_trust.pub.pem"
 DEFAULT_SCAN_DIRS = ["plugins", "examples/plugins"]

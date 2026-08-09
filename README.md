@@ -28,6 +28,32 @@ pip install -e ".[full,dev]"
 playwright install chromium
 ```
 
+### 双仓库布局（源码版必读）
+
+插件市场采用 **git-as-registry** 模式，源码仓库与市场仓库**必须放在同一父目录下、且目录名保持默认**：
+
+```
+你的任意目录/
+├── OmniCrawler/            # 本仓库（应用 + 引擎 + 插件生态）
+└── OmniCrawler-market/     # 插件市场仓库（另库 clone）
+```
+
+```powershell
+git clone https://github.com/<owner>/OmniCrawler
+git clone https://github.com/<owner>/OmniCrawler-market
+```
+
+布局依赖说明（目录名与同级关系不可变，路径前缀无关）：
+
+| 组件 | 引用方式 |
+|---|---|
+| `tools/market.py` | `../OmniCrawler-market` 作为默认 catalog 源 |
+| `tools/sign_plugin.py` | `../OmniCrawler-market/tools/scan_plugin.py` 发布前扫描 |
+| GUI 插件/模板市场 | 无 `catalog_url` 配置时回退到 `../OmniCrawler-market` 本地浏览 |
+| `tests/unit/plugin/` | 市场相关测试引用同级市场仓库；未 clone 时自动跳过 |
+
+只 clone 主仓库时应用完全可用（本地回退目录缺失即视为无市场）；要使用插件市场需同时 clone 两个仓库。私有签名路径默认写入 `~/.omnicrawl/keys/`（可用 `--private-out` / `--private-key` 覆盖）。
+
 ### 三分钟命令行
 
 ```powershell

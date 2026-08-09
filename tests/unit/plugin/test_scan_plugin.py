@@ -1,4 +1,4 @@
-"""Tests for registry/tools/scan_plugin.py — pre-publish security scanning."""
+"""Tests for OmniCrawler-market/tools/scan_plugin.py — pre-publish security scanning."""
 
 from __future__ import annotations
 
@@ -6,8 +6,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SCANNER = REPO_ROOT / "registry" / "tools" / "scan_plugin.py"
+SCANNER = REPO_ROOT.parent / "OmniCrawler-market" / "tools" / "scan_plugin.py"
+
+pytestmark = pytest.mark.skipif(
+    not SCANNER.is_file(),
+    reason="OmniCrawler-market 仓库未 clone（需与主仓库同级），跳过扫描器测试",
+)
 
 _UTF8_ENV = {"PYTHONIOENCODING": "utf-8"}
 

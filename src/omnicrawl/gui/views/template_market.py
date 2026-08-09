@@ -115,7 +115,7 @@ class TemplateMarketView(QWidget):
 
         self._base = Path(project_root)
         self._dest_root = self._base / "templates_installed"
-        self._local_fallback = self._base / "registry"
+        self._local_fallback = self._base.parent / "OmniCrawler-market"
         self._catalog_url = catalog_url
         self._trust_source = trust_source
 

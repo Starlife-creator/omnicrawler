@@ -17,9 +17,14 @@ pytest.importorskip("cryptography")
 from omnicrawl.plugins import signing  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-GENERATOR = REPO_ROOT / "registry" / "tools" / "generate_catalog.py"
-REAL_REGISTRY = REPO_ROOT / "registry"
+GENERATOR = REPO_ROOT.parent / "OmniCrawler-market" / "tools" / "generate_catalog.py"
+REAL_REGISTRY = REPO_ROOT.parent / "OmniCrawler-market"
 TRUST_ROOT = REPO_ROOT / "configs" / "plugin_trust.pub.pem"
+
+pytestmark = pytest.mark.skipif(
+    not REAL_REGISTRY.is_dir(),
+    reason="OmniCrawler-market 仓库未 clone（需与主仓库同级），跳过目录生成测试",
+)
 
 _UTF8_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
 

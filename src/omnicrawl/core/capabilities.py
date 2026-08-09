@@ -27,6 +27,7 @@ MODULES = {
     "playwright": "playwright",
     "selenium": "selenium",
     "async_http": "httpx",
+    "tls_impersonate": "curl_cffi",
     "websocket": "websockets",
     "redis": "redis",
     "scrapy": "scrapy",
@@ -230,6 +231,8 @@ def _build_standard_capabilities(modules: dict[str, dict[str, Any]], native: dic
                                      "RSS/Atom/Sitemap 处理", "standard")
     items["async_http"] = _cap_item("异步 HTTP (httpx)", modules.get("async_http", {}).get("installed", False),
                                     "高性能网页和 API 请求", "standard")
+    items["tls_impersonate"] = _cap_item("TLS 指纹伪装 (curl_cffi)", modules.get("tls_impersonate", {}).get("installed", False),
+                                         "模拟浏览器 TLS 握手对抗检测", "standard")
     items["pdf_text"] = _cap_item("PDF 文本解析 (PyMuPDF)", modules.get("pdf", {}).get("installed", False),
                                   "提取 PDF 文字、表格和元数据", "standard")
     items["xlsx"] = _cap_item("Excel 导出 (openpyxl)", modules.get("xlsx", {}).get("installed", False),

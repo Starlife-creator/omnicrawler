@@ -5,7 +5,7 @@
 ``plugins_installed/``。离线时仅展示已安装列表并禁用联网操作。
 
 设计约束（见 docs/ADR-001-plugin-catalog.md）：
-- 仅联网时从远程拉取；远程失败可回退到本地 ``registry/``（开发态便利）。
+- 仅联网时从远程拉取；远程失败可回退到本地 ``OmniCrawler-market/``（开发态便利）。
 - 所有下载均用打包内的信任根公钥验签，绝不信任网络本身。
 - 安装目录 ``plugins_installed/<id>/`` 已被默认 ``plugins.paths`` 覆盖，落盘即自动加载。
 """
@@ -73,7 +73,7 @@ def _market_egress(project_root: Path) -> Any:
 
 # ── 后台任务 ─────────────────────────────────────────────────────
 class _CatalogWorker(BackgroundWorker):
-    """后台拉取 catalog：先远程，失败回退本地 registry/。"""
+    """后台拉取 catalog：先远程，失败回退本地 OmniCrawler-market/。"""
 
     def __init__(self, catalog_url: str, local_fallback: Path, egress: Any, parent=None) -> None:
         super().__init__(parent)
@@ -153,7 +153,7 @@ class PluginMarketView(QWidget):
         base = _project_root_of(project_root)
         self._base = base
         self._dest_root = base / "plugins_installed"
-        self._local_fallback = base / "registry"
+        self._local_fallback = base.parent / "OmniCrawler-market"
         self._egress = _market_egress(base)
 
         plugins_cfg = DEFAULTS.get("plugins", {}) if isinstance(DEFAULTS.get("plugins"), dict) else {}
@@ -377,7 +377,7 @@ class PluginMarketView(QWidget):
     # ── 拉取目录 ──────────────────────────────────────────────
     def refresh(self) -> None:
         if not self._catalog_url and not self._bundled_catalog_dir and not self._local_fallback.is_dir():
-            self._set_offline_state(_("未配置 catalog_url，且无本地 registry/ 回退。"))
+            self._set_offline_state(_("未配置 catalog_url，且无本地 OmniCrawler-market/ 回退。"))
             return
         self._state = "loading"
         self._status_indicator.state = "running"

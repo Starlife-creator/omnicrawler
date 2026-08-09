@@ -139,6 +139,7 @@ _DEPRECATED_MODULE_MAP = {
     "template_monitor": "templates.template_monitor",
     "temporal_facts": "quality.temporal_facts",
     "topic_filter": "extraction.topic_filter",
+    "tls_impersonator": "fetching.tls_impersonator",
     "updater": "services.updater",
     "utils": "core.utils",
     "ux_service": "services.ux_service",

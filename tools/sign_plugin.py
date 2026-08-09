@@ -46,11 +46,20 @@ from omnicrawl.plugins.signing import (  # noqa: E402
     verify_plugin,
 )
 
+
 # Designated private-key generation location (operator moves it to cold storage
 # immediately after generation). Override with --private-out.
-PRIVATE_DEFAULT = r"C:\Users\Lenovo\Desktop\档案\隐私\plugin_signing_private.pem"
+def _default_private_path() -> str:
+    """用户主目录下的 .omnicrawl/keys（无 HOME 时回退仓库内 .private_keys/）。"""
+    try:
+        return str(Path.home() / ".omnicrawl" / "keys" / "plugin_signing_private.pem")
+    except RuntimeError:
+        return str(_REPO_ROOT / ".private_keys" / "plugin_signing_private.pem")
+
+
+PRIVATE_DEFAULT = _default_private_path()
 PUBLIC_DEFAULT = "configs/plugin_trust.pub.pem"
-SCANNER = _REPO_ROOT / "registry" / "tools" / "scan_plugin.py"
+SCANNER = _REPO_ROOT.parent / "OmniCrawler-market" / "tools" / "scan_plugin.py"
 TRANSPARENCY_LOG_DEFAULT = "signing_transparency.jsonl"
 
 
@@ -66,7 +75,7 @@ def _generate_keys(private_out: Path, public_out: Path) -> None:
 def _run_scan(plugin: Path, manifest: Path | None) -> None:
     """发布前安全扫描（第二道防线；扫描器随生态目录分发）。"""
     if not SCANNER.is_file():
-        print(f"[扫描] 未找到扫描器 {SCANNER}，跳过（建议在开发机运行 registry/tools/scan_plugin.py）")
+        print(f"[扫描] 未找到扫描器 {SCANNER}，跳过（建议在开发机运行 OmniCrawler-market/tools/scan_plugin.py）")
         return
     cmd = [sys.executable, str(SCANNER), "scan", str(plugin)]
     if manifest and manifest.is_file():
