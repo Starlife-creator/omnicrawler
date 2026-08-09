@@ -157,6 +157,34 @@ def test_generate_writes_catalog_and_check_passes(tmp_path: Path) -> None:
     assert checked.returncode == 0, checked.stderr or checked.stdout
 
 
+def test_license_explicit_passthrough(tmp_path: Path) -> None:
+    """显式声明的 license 原样透传。"""
+    registry, trust_pem, _ = _build_registry(tmp_path)
+    manifest = registry / "plugins" / "demo_plug" / "plugin.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace("license: MIT\n", "license: Apache-2.0\n"),
+        encoding="utf-8",
+    )
+    result = _run("--registry", str(registry))
+    assert result.returncode == 0, result.stderr
+    catalog = json.loads((registry / "catalog.json").read_text(encoding="utf-8"))
+    assert catalog["plugins"][0]["license"] == "Apache-2.0"
+
+
+def test_license_default_when_omitted(tmp_path: Path) -> None:
+    """未声明 license 时回退默认条款（与模板分支一致，避免'未知许可'）。"""
+    registry, trust_pem, _ = _build_registry(tmp_path)
+    manifest = registry / "plugins" / "demo_plug" / "plugin.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace("license: MIT\n", ""),
+        encoding="utf-8",
+    )
+    result = _run("--registry", str(registry))
+    assert result.returncode == 0, result.stderr
+    catalog = json.loads((registry / "catalog.json").read_text(encoding="utf-8"))
+    assert catalog["plugins"][0]["license"] == "OmniCrawler-MIT"
+
+
 def test_check_detects_drift(tmp_path: Path) -> None:
     registry, trust_pem, _ = _build_registry(tmp_path)
     _run("--registry", str(registry))
