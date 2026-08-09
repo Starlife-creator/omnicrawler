@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QSplitter,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -182,9 +183,27 @@ class PluginMarketView(QWidget):
         root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(14)
 
-        title = QLabel(_("插件市场"))
+        title = QLabel(_("市场"))
         title.setObjectName("homeTitle")
         root.addWidget(title)
+
+        from .template_market import TemplateMarketView
+
+        self._tabs = QTabWidget()
+        self._tabs.setObjectName("marketTabs")
+        plugin_pane = QWidget()
+        self._build_plugin_pane(plugin_pane)
+        self._tabs.addTab(plugin_pane, _("插件"))
+        self._template_market = TemplateMarketView(
+            self._catalog_url, self._base, self._trust_source, parent=self
+        )
+        self._tabs.addTab(self._template_market, _("模板"))
+        root.addWidget(self._tabs, 1)
+
+    def _build_plugin_pane(self, pane: QWidget) -> None:
+        root = QVBoxLayout(pane)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(14)
 
         subtitle = QLabel(
             _("审核通过的插件，联网后按需下载安装。每份插件均经 ed25519 签名校验，安装后自动加载。")
@@ -207,6 +226,10 @@ class PluginMarketView(QWidget):
         self._source_label.setObjectName("mutedLabel")
         self._source_label.setWordWrap(False)
         top_bar.addWidget(self._source_label)
+
+        self._identity_btn = QPushButton(_("身份与信任"))
+        self._identity_btn.clicked.connect(self._open_identity_dialog)
+        top_bar.addWidget(self._identity_btn)
 
         self._refresh_btn = QPushButton(_("刷新"))
         self._refresh_btn.clicked.connect(self.refresh)
@@ -363,9 +386,7 @@ class PluginMarketView(QWidget):
         self._refresh_btn.setEnabled(False)
 
         catalog_url = self._catalog_url or (self._bundled_catalog_dir or str(self._local_fallback))
-        self._catalog_worker = _CatalogWorker(
-            catalog_url, self._local_fallback, self._egress, parent=self
-        )
+        self._catalog_worker = _CatalogWorker(catalog_url, self._local_fallback, self._egress, parent=self)
         self._catalog_worker.succeeded.connect(self._on_catalog_loaded)
         self._catalog_worker.failed.connect(self._on_catalog_error)
         self._catalog_worker.finished.connect(self._catalog_worker.deleteLater)
@@ -390,7 +411,9 @@ class PluginMarketView(QWidget):
         self._status_label.setText(_("离线"))
         self._source_label.setText("")
         self._footer.setText(
-            _("无法连接插件目录（可能离线）：{0}。已安装插件仍可使用；联网后点「刷新」重试。").format(msg.split(chr(10))[0])
+            _("无法连接插件目录（可能离线）：{0}。已安装插件仍可使用；联网后点「刷新」重试。").format(
+                msg.split(chr(10))[0]
+            )
         )
         self._refresh_btn.setEnabled(True)
         # 离线也展示已安装列表，便于管理
@@ -417,9 +440,7 @@ class PluginMarketView(QWidget):
         # 离线时补充展示本地已安装但不在目录中的插件
         if self._state == "offline":
             for pid in self._installed_ids():
-                if not any(
-                    e.get("id") == pid for e in plugins
-                ):
+                if not any(e.get("id") == pid for e in plugins):
                     item = QListWidgetItem(_(f"✓ {pid}  （本地已安装）"))
                     item.setData(Qt.ItemDataRole.UserRole, pid)
                     item.setToolTip(pid)
@@ -458,12 +479,23 @@ class PluginMarketView(QWidget):
         summary = (entry or {}).get("summary", "")
 
         self._detail_name.setText(name)
-        meta_parts = [f"v{version}" if version else "", publisher, category,
-                      _(f"兼容 {compat}") if compat else "", license_]
+        meta_parts = [
+            f"v{version}" if version else "",
+            publisher,
+            category,
+            _(f"兼容 {compat}") if compat else "",
+            license_,
+        ]
         self._detail_meta.setText(" · ".join(p for p in meta_parts if p))
         self._detail_tags.setText(_("标签: ") + (", ".join(tags) if tags else "—"))
         self._detail_summary.setText(summary)
-        self._detail_listing.setText(_("（加载功能说明中...）" if entry and entry.get("description_file") else "（该插件未提供功能说明）"))
+        self._detail_listing.setText(
+            _(
+                "（加载功能说明中...）"
+                if entry and entry.get("description_file")
+                else "（该插件未提供功能说明）"
+            )
+        )
         self._update_action_buttons(installed=installed)
 
         # 懒加载 listing.md
@@ -475,9 +507,7 @@ class PluginMarketView(QWidget):
                 self._listing_worker.succeeded.connect(
                     lambda text, pid=plugin_id: self._on_listing_loaded(pid, text)
                 )
-                self._listing_worker.failed.connect(
-                    lambda _e, pid=plugin_id: self._on_listing_error(pid)
-                )
+                self._listing_worker.failed.connect(lambda _e, pid=plugin_id: self._on_listing_error(pid))
                 self._listing_worker.finished.connect(self._listing_worker.deleteLater)
                 self._listing_worker.start()
 
@@ -510,6 +540,45 @@ class PluginMarketView(QWidget):
         self._footer.setText(_(f"已安装 {plugin_id} 到 {self._dest_root / plugin_id}"))
         self._populate_list()
         self._update_action_buttons(installed=True)
+        self._prompt_p2p_trust(plugin_id)
+
+    def _open_identity_dialog(self) -> None:
+        from .identity_dialog import IdentityDialog
+
+        dialog = IdentityDialog(parent=self)
+        dialog.exec()
+
+    def _prompt_p2p_trust(self, plugin_id: str) -> None:
+        """安装的插件仅带创作者签名（无维护者签名）时，询问是否信任该创作者。"""
+        from PyQt6.QtWidgets import QMessageBox
+
+        from ...plugins.trust import TrustedUserList, TrustLevel, verify_plugin_trust
+
+        plugin_dir = self._dest_root / plugin_id
+        decision = verify_plugin_trust(plugin_dir, self._trust_source, TrustedUserList())
+        if decision.level != TrustLevel.CreatorUntrusted or decision.creator is None:
+            return
+        creator = decision.creator
+        reply = QMessageBox.question(
+            self,
+            _("检测到外部插件"),
+            _(
+                "检测到创作者签名的插件：{0}\n\n"
+                "插件作者：{1}\n公钥指纹：{2}\n\n"
+                "该插件未经市场审核（无维护者签名）。是否信任此用户？\n"
+                "信任后，该用户的所有插件将自动信任。"
+            ).format(plugin_id, creator.username, creator.key_fingerprint),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        if TrustedUserList().add(creator, source="p2p", path_hint=f"（{plugin_id}）"):
+            ToastManager.instance().success(
+                _(f"已信任创作者 {creator.username}（指纹 {creator.key_fingerprint}）")
+            )
+        else:
+            ToastManager.instance().info(_(f"创作者 {creator.username} 已在信任列表"))
 
     def _on_install_error(self, msg: str) -> None:
         ToastManager.instance().error(_(f"安装失败：{msg.split(chr(10))[0]}"))
@@ -524,7 +593,8 @@ class PluginMarketView(QWidget):
             ToastManager.instance().warning(_("未选择已安装插件"))
             return
         reply = QMessageBox.question(
-            self, _("卸载插件"),
+            self,
+            _("卸载插件"),
             _(f"确定卸载插件 {pid}？\n将从 {self._dest_root / pid} 移除。"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
@@ -563,10 +633,7 @@ class PluginMarketView(QWidget):
     def _installed_ids(self) -> list[str]:
         if not self._dest_root.is_dir():
             return []
-        return [
-            d.name for d in self._dest_root.iterdir()
-            if d.is_dir() and (d / "plugin.py.sig").is_file()
-        ]
+        return [d.name for d in self._dest_root.iterdir() if d.is_dir() and (d / "plugin.py.sig").is_file()]
 
     def _entry_of(self, plugin_id: str) -> dict[str, Any] | None:
         if not self._catalog:

@@ -95,3 +95,126 @@ registry/
 - `registry/catalog.json` + `CATALOG_SCHEMA.md` + `README.md`
 - `registry/plugins/example_news/`（plugin.py + plugin.py.sig + listing.md）——首个已签名条目
 - `src/omnicrawl/core/config.py`：`plugins.catalog_url` / `bundled_catalog_dir` 及 `AppConfig` 属性
+
+---
+
+## 追加：git-as-registry 升级（2026-08-09）
+
+### 背景
+
+原设计 `catalog.json` 是手写的唯一索引：新增/更新插件时需人工同步 JSON 条目，
+且无作者身份记录（发布者仅是字符串），社区贡献的门槛与出错面都偏高。
+
+### 决策
+
+把 `registry/` 升级为 **git-as-registry**（目录结构即索引）模式，应用端**零改动**：
+
+1. **`plugins/<id>/plugin.yaml` 成为唯一元数据源**：每个插件一个 YAML 清单，
+   字段与 catalog 条目一一对应，另加 `author_fingerprint`。
+2. **`authors/<username>.yaml` 记录发布者身份**：`username` / `pubkey_ref` /
+   `fingerprint`（公钥 SHA-256 前 16 字节 hex，生态绝对唯一标识）。
+3. **`catalog.json` 变为派生物**：由 `tools/generate_catalog.py` 聚合生成并随仓库提交；
+   应用端（`market_client` / GUI 市场面板 / `tools/market.py`）继续只读它，schema 不变。
+4. **CI 门禁（`.github/workflows/registry.yml`）**：PR 修改 `registry/` 时执行
+   `generate_catalog.py --check`——校验清单合法、与生成物一致、作者指纹匹配、
+   签名通过信任根验签，否则阻断合并。
+
+### 影响
+
+- 正向：插件元数据与代码同目录可审；作者身份可验证（指纹 ↔ 公钥强校验）；
+  新增插件的正确流程 = 写 YAML + 签名 + 跑生成器，无需手改 JSON；迁移到独立仓库
+  的"拷贝 + 改 `catalog_url`"承诺保持不变。
+- 约束：`catalog.json` 禁止手改（CI 会抓漂移）；发布者首次入场需先提交
+  `authors/` 记录。
+
+## 追加：registry/ 自包含升级（2026-08-09）
+
+### 背景
+
+上一版 `registry/` 仍有一处跨仓库引用：`authors/*.yaml` 的 `pubkey_ref` 指向主仓库
+`configs/plugin_trust.pub.pem`，生成器依赖应用包 `omnicrawl.plugins.signing` 验签。
+拆库时需要复制公钥并改引用，生成器也无法在独立仓库运行——"拷贝 + 改一个值"并不成立。
+
+### 决策
+
+让 `registry/` **完全自包含**，拆库退化为纯粹的"拷贝 + 改 `catalog_url`"：
+
+1. **信任根公钥副本进入 `registry/keys/plugin_trust.pub.pem`**；`authors/*.yaml`
+   的 `pubkey_ref` 改为相对 `registry/` 的路径（`../keys/plugin_trust.pub.pem`）。
+   公钥是公开文件，主仓库 `configs/` 副本保留（应用端信任根配置不变）。
+2. **生成器迁入 `registry/tools/generate_catalog.py` 并自包含**：ed25519 验签内联
+   实现（仅依赖 PyYAML + cryptography），不再 import 应用包；信任根查找链
+   `--trust` > `registry/keys/` > 主仓库 `configs/`（回退，拆库后第二项自然失效）。
+   `catalog.json` 顶层 `trust_public_key_ref` 更新为 `keys/plugin_trust.pub.pem`。
+3. **CI 演练拆库**：`registry.yml` 增加"复制 `registry/` 到临时目录 → 独立校验 +
+   市场 CLI 消费"步骤，任何时刻保证复制即成立。
+4. 测试新增 `test_standalone_copy_passes_check` 本地演练同一场景。
+
+### 影响
+
+- 正向：拆库 = 复制 `registry/` + 复制 CI 文件 + 改 `catalog_url`，无其他改动；
+  独立仓库无需应用包即可运行校验工具。
+- 约束：唯一双维护点是公钥副本（主仓库 `configs/` ↔ 生态 `keys/`），轮换时两边同步。
+
+## 追加：身份系统与三层信任模型（阶段 1，2026-08-09）
+
+### 背景
+
+照搬 Helios 市场生态设计（用户需求：完整身份系统 + 维护者签名 + 三层信任），
+将插件信任链从"单一信任根"演进为"创作者签名 + 维护者签名"双签名体系。
+
+### 决策
+
+1. **本地身份系统**（`src/omnicrawl/plugins/identity.py`）：首次使用创建本地身份
+   （用户名 + 密码，纯本地），自动生成 Ed25519 密钥对；私钥经密码派生密钥
+   （PBKDF2-HMAC-SHA256，60 万次迭代）二次加密后存入 OS keyring 保护的
+   SecretsStore——私钥绝不落盘明文、绝不入库（对齐 Helios §13.7/§13.10）。
+   公开身份 `CreatorIdentity`（username/public_key/fingerprint）可随插件分发。
+2. **创建即签名**：`tools/sign_plugin.py creator-sign` 用本地身份生成
+   `creator.sig` + `creator.identity`；`maintainer-sign` 由维护者在冷机器生成
+   `maintainer.sig`（仅市场分发携带）。
+3. **三层信任模型**（`src/omnicrawl/plugins/trust.py`）：
+   - 层级 1：`maintainer.sig`（或遗留 `plugin.py.sig`）通过信任根验签 → 自动信任；
+   - 层级 2：`creator.sig` + `creator.identity` 有效且指纹在本地信任列表
+     （`~/.omnicrawl/trusted_users.json`，纯本地决策）→ 信任；
+   - 层级 2b：创作者签名有效但未信任 → 拒绝加载并提示信任命令（GUI 弹窗为阶段 2）；
+   - 层级 3：无有效签名 → 拒绝（配置信任根时）；未配置信任根保留开发者模式警告加载。
+4. **SecretsStore 环境隔离**：新增 `OMNICRAWL_SECRET_STORE_PATH` /
+   `OMNICRAWL_KEYRING_DISABLE` / `OMNICRAWL_MASTER_PASSWORD` 支持（便携/测试）。
+5. 信任列表管理 CLI：`tools/identity.py trust add|revoke|list`。
+
+### 影响
+
+- 正向：P2P 插件分发成为可能（创作者签名 + 信任提示）；未签名插件在配置信任根
+  时被拒绝（对齐 Helios 层级 3）；单文件形态插件（dev 工具）保留旧验签路径。
+- 差异（有意保留）：Helios 对未签名插件一律拒绝；OmniCrawler 在**未配置信任根**
+  时保留开发者模式（显式警告加载），配置信任根后即为拒绝。
+- 待办（阶段 2）：GUI 首次启动身份设置、P2P 信任提示弹窗、市场徽章显示。
+
+## 追加：模板纳入市场生态（2026-08-09）
+
+### 决策
+
+模板（声明式配置）与插件共享签名、信任与分发机制（对齐 Helios 三层体系）：
+
+1. **`registry/templates/<id>/template.yaml` 成为市场模板源**：`template:` 块新增
+   `publisher` / `author_fingerprint` 市场字段（内置模板不需要）；模板 ID 允许
+   层级命名（`demo/template`），插件 ID 保持严格。
+2. **`catalog.json` 新增 `templates` 数组**（schema_version 保持 1，向后兼容）；
+   生成器扫描 `templates/*/template.yaml` 并校验：project/source 存在、市场字段
+   必填、作者指纹匹配、文件存在、签名验签（信任根）。
+3. **签名复用**：`sign_plugin.py creator-sign/maintainer-sign` 增加 `--file`
+   参数（默认 `plugin.py`，模板传 `template.yaml`）。
+4. **应用端**：`market_client.download_template_and_verify` /
+   `verify_installed_template`（安装到 `templates_installed/<id>/`，模板库
+   `user_dirs` 自动发现）；`tools/market.py templates list|info|install|verify`；
+   GUI 市场面板改为「插件 / 模板」双页（QTabWidget）。
+5. 分块模板（blocks/，端口体系）依赖工作流画布能力，暂不实现，见
+   `docs/MARKET_ECOSYSTEM.md` 远期预留。
+
+### 影响
+
+- 正向：模板生态闭环（贡献 → 签名 → 市场 → 安装 → 模板库发现），P2P 分享模板
+  与插件同机制。
+- 约束：市场模板必须声明 `publisher`/`author_fingerprint`；模板签名由
+  生成器/CI 强制（fail-closed）。

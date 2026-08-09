@@ -23,6 +23,8 @@ from .signing import verify_bytes
 
 DEFAULT_TIMEOUT = 15.0
 _ID_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
+# 模板 ID 允许层级命名（如 generic/single-page）；禁止 .. / 空段 / 首尾斜杠
+_TEMPLATE_ID_RE = re.compile(r"^[a-z][a-z0-9_-]*(?:/[a-z0-9_-]+)*$")
 _USER_AGENT = "OmniCrawler-Market/1.0"
 
 
@@ -37,9 +39,7 @@ def _read(
     egress: EgressBroker | None = None,
 ) -> bytes:
     if _is_remote(url_or_path):
-        request = urllib.request.Request(
-            url_or_path, headers={"User-Agent": _USER_AGENT}
-        )
+        request = urllib.request.Request(url_or_path, headers={"User-Agent": _USER_AGENT})
         if egress is None:
             with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
                 return response.read()
@@ -94,6 +94,13 @@ def resolve_entry(catalog: dict[str, Any], plugin_id: str) -> dict[str, Any]:
     raise KeyError(f"catalog 中无此插件: {plugin_id}")
 
 
+def resolve_template_entry(catalog: dict[str, Any], template_id: str) -> dict[str, Any]:
+    for entry in catalog.get("templates", []):
+        if entry.get("id") == template_id:
+            return entry
+    raise KeyError(f"catalog 中无此模板: {template_id}")
+
+
 def download_and_verify(
     plugin_id: str,
     catalog_url: str,
@@ -142,4 +149,56 @@ def verify_installed(dest_root: str | Path, plugin_id: str, trust_source: str) -
     if not plugin_path.is_file() or not sig_path.is_file():
         return False, "插件或签名文件缺失"
     ok = verify_bytes(plugin_path.read_bytes(), sig_path.read_bytes(), trust_source)
+    return ok, "verified" if ok else "签名校验失败"
+
+
+def download_template_and_verify(
+    template_id: str,
+    catalog_url: str,
+    dest_root: str | Path,
+    trust_source: str,
+    *,
+    timeout: float = DEFAULT_TIMEOUT,
+    egress: EgressBroker | None = None,
+) -> Path:
+    """Download a market template, verify its detached signature, and install it.
+
+    Installs into ``dest_root/<template_id>/`` as ``template.yaml`` +
+    ``template.yaml.sig`` (+ ``listing.md`` when present). Raises on a bad id,
+    download failure, or a signature mismatch (fail-closed). Installed templates
+    are discovered by ``TemplateCatalog`` via ``user_dirs``.
+    """
+    if not _TEMPLATE_ID_RE.match(template_id) or ".." in template_id:
+        raise ValueError(f"非法模板 ID: {template_id}")
+    catalog = fetch_catalog(catalog_url, timeout=timeout, egress=egress)
+    entry = resolve_template_entry(catalog, template_id)
+    template_bytes = fetch_resource(catalog_url, entry["template_file"], timeout=timeout, egress=egress)
+    sig_bytes = fetch_resource(catalog_url, entry["signature_file"], timeout=timeout, egress=egress)
+    if not verify_bytes(template_bytes, sig_bytes, trust_source):
+        raise PermissionError(f"模板 {template_id} 签名校验失败（fail-closed 拒载）")
+
+    dest_dir = Path(dest_root) / template_id
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    template_path = dest_dir / "template.yaml"
+    template_path.write_bytes(template_bytes)
+    (dest_dir / "template.yaml.sig").write_bytes(sig_bytes)
+    listing_rel = entry.get("description_file")
+    if listing_rel:
+        try:
+            (dest_dir / "listing.md").write_bytes(
+                fetch_resource(catalog_url, listing_rel, timeout=timeout, egress=egress)
+            )
+        except (FileNotFoundError, OSError):
+            pass
+    return template_path
+
+
+def verify_installed_template(dest_root: str | Path, template_id: str, trust_source: str) -> tuple[bool, str]:
+    """Re-verify an already-installed market template against the trust root."""
+    dest_dir = Path(dest_root) / template_id
+    template_path = dest_dir / "template.yaml"
+    sig_path = dest_dir / "template.yaml.sig"
+    if not template_path.is_file() or not sig_path.is_file():
+        return False, "模板或签名文件缺失"
+    ok = verify_bytes(template_path.read_bytes(), sig_path.read_bytes(), trust_source)
     return ok, "verified" if ok else "签名校验失败"

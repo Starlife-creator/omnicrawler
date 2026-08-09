@@ -46,14 +46,14 @@ def _ensure_crypto() -> None:
         )
     except ModuleNotFoundError as exc:
         raise ImportError(
-            "需要安装 cryptography 才能使用插件签名验证。"
-            "请运行: pip install 'omnicrawl-platform[security]'"
+            "需要安装 cryptography 才能使用插件签名验证。请运行: pip install 'omnicrawl-platform[security]'"
         ) from exc
     InvalidSignature = _InvalidSignature
     serialization = _serialization
     Ed25519PrivateKey = _Ed25519PrivateKey
     Ed25519PublicKey = _Ed25519PublicKey
     _cryptography_imported = True
+
 
 ALGORITHM = "ed25519"
 
@@ -119,6 +119,11 @@ def sign_file(path: str | Path, private_pem: bytes) -> Path:
     sig_path = Path(path).with_suffix(Path(path).suffix + ".sig")
     sig_path.write_bytes(signature)
     return sig_path
+
+
+def load_public_key(trust_source: str) -> Ed25519PublicKey:
+    """Load the trust-root public key from a PEM path or inline PEM (public API)."""
+    return _load_public_key(trust_source)
 
 
 def verify_bytes(data: bytes, signature: bytes, trust_source: str) -> bool:

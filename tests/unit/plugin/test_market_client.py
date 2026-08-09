@@ -46,6 +46,83 @@ def test_fetch_missing_plugin_raises(tmp_path: Path) -> None:
         market_client.download_and_verify("nonexistent", str(REGISTRY_DIR), tmp_path, TRUST)
 
 
+def test_download_template_and_verify(tmp_path: Path) -> None:
+    """模板市场：构造含 templates 条目的本地 catalog → 下载验签安装。"""
+    import hashlib
+    import json
+
+    from omnicrawl.plugins import signing
+
+    private_pem, public_pem = signing.generate_keypair()
+    trust = tmp_path / "trust.pub.pem"
+    trust.write_bytes(public_pem)
+    fingerprint = hashlib.sha256(public_pem).hexdigest()[:32]
+
+    registry = tmp_path / "market"
+    template_dir = registry / "templates" / "demo" / "template"
+    template_dir.mkdir(parents=True)
+    template_path = template_dir / "template.yaml"
+    template_path.write_text(
+        "template_version: 1\n"
+        "template:\n"
+        "  id: demo/template\n"
+        "  name: Demo Template\n"
+        "  category: generic\n"
+        "  version: 1.0.0\n"
+        "  publisher: alice\n"
+        f"  author_fingerprint: {fingerprint}\n"
+        "project: {name: demo, workspace: work/demo}\n"
+        "source: {kind: static_html, seeds: ['https://example.com']}\n",
+        encoding="utf-8",
+    )
+    signature = signing.sign_bytes(template_path.read_bytes(), private_pem)
+    (template_dir / "template.yaml.sig").write_bytes(signature)
+    (template_dir / "listing.md").write_text("# demo\n模板说明。\n", encoding="utf-8")
+    (registry / "catalog.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "plugins": [],
+                "templates": [
+                    {
+                        "id": "demo/template",
+                        "name": "Demo Template",
+                        "version": "1.0.0",
+                        "publisher": "alice",
+                        "category": "generic",
+                        "summary": "测试模板",
+                        "template_file": "templates/demo/template/template.yaml",
+                        "signature_file": "templates/demo/template/template.yaml.sig",
+                        "description_file": "templates/demo/template/listing.md",
+                        "signature_algorithm": "ed25519",
+                        "compatible_core": ">=2.7.0",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    dest = tmp_path / "templates_installed"
+    path = market_client.download_template_and_verify("demo/template", str(registry), dest, str(trust))
+    assert path.is_file()
+    assert path.name == "template.yaml"
+    assert (path.parent / "template.yaml.sig").is_file()
+    assert (path.parent / "listing.md").is_file()
+    ok, reason = market_client.verify_installed_template(dest, "demo/template", str(trust))
+    assert ok and reason == "verified"
+
+    # 篡改后校验失败（fail-closed）
+    path.write_bytes(path.read_bytes() + b"\n# tampered")
+    ok, _ = market_client.verify_installed_template(dest, "demo/template", str(trust))
+    assert not ok
+
+
+def test_download_template_rejects_unsafe_id(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        market_client.download_template_and_verify("../evil", str(REGISTRY_DIR), tmp_path, TRUST)
+
+
 def test_directory_loading_recursive(tmp_path: Path) -> None:
     for name in ("foo", "bar"):
         sub = tmp_path / name

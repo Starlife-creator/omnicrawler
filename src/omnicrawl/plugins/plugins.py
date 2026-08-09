@@ -63,9 +63,7 @@ def _metadata(module: Any, path: Path) -> PluginMetadata:
     else:
         raise TypeError(f"PLUGIN_METADATA必须是PluginMetadata或字典: {path}")
     if result.api_version != PLUGIN_API_VERSION:
-        raise RuntimeError(
-            f"插件API版本不兼容: {path} 需要{result.api_version}，当前为{PLUGIN_API_VERSION}"
-        )
+        raise RuntimeError(f"插件API版本不兼容: {path} 需要{result.api_version}，当前为{PLUGIN_API_VERSION}")
     if not result.name.strip():
         raise ValueError(f"插件名称不能为空: {path}")
     if _version(result.min_core_version) > _version(CORE_VERSION):
@@ -140,10 +138,12 @@ class Registry:
                 if not fail_open:
                     raise
                 with self._error_lock:
-                    self.plugin_errors.append({
-                        "path": f"hook:{event_name}",
-                        "error": f"{type(exc).__name__}: {exc}",
-                    })
+                    self.plugin_errors.append(
+                        {
+                            "path": f"hook:{event_name}",
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
+                    )
         return results
 
     @staticmethod
@@ -157,9 +157,12 @@ class Registry:
 
     def describe(self) -> dict[str, Any]:
         return {
-            "sources": sorted(self.sources), "fetchers": sorted(self.fetchers),
-            "processors": sorted(self.processors), "exporters": sorted(self.exporters),
-            "auth_providers": sorted(self.auth_providers), "parsers": sorted(self.parsers),
+            "sources": sorted(self.sources),
+            "fetchers": sorted(self.fetchers),
+            "processors": sorted(self.processors),
+            "exporters": sorted(self.exporters),
+            "auth_providers": sorted(self.auth_providers),
+            "parsers": sorted(self.parsers),
             "extractors": sorted(self.extractors),
             "transformers": sorted(self.transformers),
             "hooks": {name: len(callbacks) for name, callbacks in sorted(self.hooks.items())},
@@ -195,12 +198,15 @@ def _resolve_trust_root(config: AppConfig | None, trust_source: str) -> str:
 
 
 def _verify_plugin_signature(path: Path, config: AppConfig | None) -> None:
-    """Fail-closed signature gate, run before a plugin module is executed.
+    """三层信任验签门（fail-closed），对齐 Helios §13.6。
 
-    - Trust root configured: verify the detached ``.sig``; any failure raises
-      ``PluginSignatureError`` (the plugin is rejected, fail-closed).
+    - Trust root configured:
+      1. ``maintainer.sig`` / 遗留 ``plugin.py.sig`` 通过信任根验签 → 自动信任；
+      2. ``creator.sig`` + ``creator.identity`` 有效且指纹在本地信任列表 → 信任；
+      3. 创作者签名有效但未在信任列表 → 拒绝，并给出信任命令；
+      4. 无有效签名 → 拒绝。
     - No trust root configured: warn explicitly (never silently accept) and
-      allow loading (transition period for existing dev plugins).
+      allow loading (documented developer mode for local plugins).
     """
 
     trust_source = ""
@@ -213,9 +219,28 @@ def _verify_plugin_signature(path: Path, config: AppConfig | None) -> None:
             path,
         )
         return
-    ok, reason = signing.verify_plugin(path, trust_source)
-    if not ok:
-        raise signing.PluginSignatureError(f"插件签名校验失败，拒绝加载: {path}（{reason}）")
+    if path.name != "plugin.py":
+        # 单文件形态（开发期工具）：仅支持信任根对 <file>.sig 的验签（旧行为）。
+        ok, reason = signing.verify_plugin(path, trust_source)
+        if not ok:
+            raise signing.PluginSignatureError(f"插件签名校验失败，拒绝加载: {path}（{reason}）")
+        return
+    from . import trust as trust_model
+
+    decision = trust_model.verify_plugin_trust(path.parent, trust_source, trust_model.TrustedUserList())
+    ok, reason = trust_model.load_decision(decision)
+    if ok:
+        if decision.level == trust_model.TrustLevel.CreatorTrusted:
+            LOGGER.info("创作者信任列表命中，加载插件: %s", path)
+        return
+    if decision.level == trust_model.TrustLevel.CreatorUntrusted and decision.creator is not None:
+        creator = decision.creator
+        raise signing.PluginSignatureError(
+            f"插件 {path} 拒绝加载：作者 {creator.username}（指纹 {creator.key_fingerprint}）"
+            " 未在本地信任列表。信任命令: python tools/identity.py trust add "
+            f"{creator.key_fingerprint} --name {creator.username}"
+        )
+    raise signing.PluginSignatureError(f"插件签名校验失败，拒绝加载: {path}（{reason}）")
 
 
 def load_local_plugins(
@@ -281,95 +306,95 @@ def _load_local_plugin(
     config: AppConfig | None,
     egress: EgressBroker | None,
 ) -> None:
-        path = Path(value).expanduser()
-        if not path.is_absolute():
-            path = (root / path).resolve()
-        if not path.is_file() or path.suffix != ".py":
-            raise FileNotFoundError(f"插件文件不存在或不是.py文件: {path}")
-        path = path.resolve()
-        if not allow_external_paths and root not in path.parents:
-            raise PermissionError(f"默认禁止加载项目目录之外的插件: {path}")
-        requested = _preflight_permissions(path)
-        denied = requested - {item.casefold() for item in approved_permissions}
-        if denied:
-            raise PermissionError(
-                f"Plugin permissions were not approved: {', '.join(sorted(denied))}; file={path}"
-            )
-        forbidden_imports = _preflight_network_imports(path)
-        if forbidden_imports:
-            raise PermissionError(
-                "插件不得直接导入网络客户端；请声明network权限、domains，并使用"
-                f"PluginContext.network: {', '.join(sorted(forbidden_imports))}"
-            )
-        _verify_plugin_signature(path, config)
-        LOGGER.warning(
-            "Loading trusted local plugin in the main process: %s. "
-            "Do not use plugins.paths for untrusted code; signed subprocess plugins are the target migration path.",
-            path,
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = (root / path).resolve()
+    if not path.is_file() or path.suffix != ".py":
+        raise FileNotFoundError(f"插件文件不存在或不是.py文件: {path}")
+    path = path.resolve()
+    if not allow_external_paths and root not in path.parents:
+        raise PermissionError(f"默认禁止加载项目目录之外的插件: {path}")
+    requested = _preflight_permissions(path)
+    denied = requested - {item.casefold() for item in approved_permissions}
+    if denied:
+        raise PermissionError(
+            f"Plugin permissions were not approved: {', '.join(sorted(denied))}; file={path}"
         )
-        name = f"omnicrawl_user_plugin_{index}_{path.stem}"
-        mtime_key = (path, path.stat().st_mtime_ns)
-        with _PLUGIN_CACHE_LOCK:
-            cached = _PLUGIN_MODULE_CACHE.get(mtime_key)
-            if cached is not None:
-                # S2.5.41：缓存命中——复用已执行模块，跳过重复编译
-                module = cached
-            else:
-                spec = importlib.util.spec_from_file_location(name, path)
-                if not spec or not spec.loader:
-                    raise ImportError(f"无法加载插件: {path}")
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                _PLUGIN_MODULE_CACHE[mtime_key] = module
-        register = getattr(module, "register", None)
-        if not callable(register):
-            raise TypeError(f"插件必须提供register(registry)函数: {path}")
-        metadata = _metadata(module, path)
-        # S1.3.7：运行时权限必须是静态字面量审批集的子集——动态计算/拼接的
-        # metadata 无法绕过权限门（其静态预检结果为空，任何运行时权限即越界）。
-        live_permissions = {item.casefold() for item in metadata.permissions}
-        if live_permissions - requested:
-            raise PermissionError(
-                "插件声明了静态审批之外的权限（PLUGIN_METADATA 必须为字面量，"
-                f"不支持动态计算）: {', '.join(sorted(live_permissions - requested))}; file={path}"
-            )
-        network = None
-        capability = None
-        if "network" in {item.casefold() for item in metadata.permissions}:
-            if config is None or egress is None:
-                raise RuntimeError("网络插件只能由带Egress Broker的运行时加载")
-            if not metadata.domains:
-                raise ValueError("请求network权限的插件必须声明domains")
-            from .plugin_runtime import PluginNetworkClient
+    forbidden_imports = _preflight_network_imports(path)
+    if forbidden_imports:
+        raise PermissionError(
+            "插件不得直接导入网络客户端；请声明network权限、domains，并使用"
+            f"PluginContext.network: {', '.join(sorted(forbidden_imports))}"
+        )
+    _verify_plugin_signature(path, config)
+    LOGGER.warning(
+        "Loading trusted local plugin in the main process: %s. "
+        "Do not use plugins.paths for untrusted code; signed subprocess plugins are the target migration path.",
+        path,
+    )
+    name = f"omnicrawl_user_plugin_{index}_{path.stem}"
+    mtime_key = (path, path.stat().st_mtime_ns)
+    with _PLUGIN_CACHE_LOCK:
+        cached = _PLUGIN_MODULE_CACHE.get(mtime_key)
+        if cached is not None:
+            # S2.5.41：缓存命中——复用已执行模块，跳过重复编译
+            module = cached
+        else:
+            spec = importlib.util.spec_from_file_location(name, path)
+            if not spec or not spec.loader:
+                raise ImportError(f"无法加载插件: {path}")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            _PLUGIN_MODULE_CACHE[mtime_key] = module
+    register = getattr(module, "register", None)
+    if not callable(register):
+        raise TypeError(f"插件必须提供register(registry)函数: {path}")
+    metadata = _metadata(module, path)
+    # S1.3.7：运行时权限必须是静态字面量审批集的子集——动态计算/拼接的
+    # metadata 无法绕过权限门（其静态预检结果为空，任何运行时权限即越界）。
+    live_permissions = {item.casefold() for item in metadata.permissions}
+    if live_permissions - requested:
+        raise PermissionError(
+            "插件声明了静态审批之外的权限（PLUGIN_METADATA 必须为字面量，"
+            f"不支持动态计算）: {', '.join(sorted(live_permissions - requested))}; file={path}"
+        )
+    network = None
+    capability = None
+    if "network" in {item.casefold() for item in metadata.permissions}:
+        if config is None or egress is None:
+            raise RuntimeError("网络插件只能由带Egress Broker的运行时加载")
+        if not metadata.domains:
+            raise ValueError("请求network权限的插件必须声明domains")
+        from .plugin_runtime import PluginNetworkClient
 
-            maximum = int(metadata.resource_limits.get("maximum_requests", 0))
-            capability = egress.issue_capability(
-                metadata.name,
-                domains=metadata.domains,
-                purposes=("plugin",),
-                maximum_requests=maximum,
-            )
-            network = PluginNetworkClient(config, egress, capability)
-        context = PluginContext(metadata, network)
+        maximum = int(metadata.resource_limits.get("maximum_requests", 0))
+        capability = egress.issue_capability(
+            metadata.name,
+            domains=metadata.domains,
+            purposes=("plugin",),
+            maximum_requests=maximum,
+        )
+        network = PluginNetworkClient(config, egress, capability)
+    context = PluginContext(metadata, network)
+    try:
         try:
-            try:
-                signature = inspect.signature(register)
-            except (TypeError, ValueError):
+            signature = inspect.signature(register)
+        except (TypeError, ValueError):
+            register(registry)
+        else:
+            if _signature_accepts(signature, registry, context):
+                register(registry, context)
+            elif _signature_accepts(signature, registry):
                 register(registry)
             else:
-                if _signature_accepts(signature, registry, context):
-                    register(registry, context)
-                elif _signature_accepts(signature, registry):
-                    register(registry)
-                else:
-                    raise TypeError("插件register必须接受(registry)或(registry, context)")
-        except Exception:
-            # A failed registration must not leave a usable network capability
-            # behind for an object captured during partial module setup.
-            if capability is not None and egress is not None:
-                egress.revoke_capability(capability)
-            raise
-        registry.plugins.append(metadata)
+                raise TypeError("插件register必须接受(registry)或(registry, context)")
+    except Exception:
+        # A failed registration must not leave a usable network capability
+        # behind for an object captured during partial module setup.
+        if capability is not None and egress is not None:
+            egress.revoke_capability(capability)
+        raise
+    registry.plugins.append(metadata)
 
 
 def _signature_accepts(signature: inspect.Signature, *arguments: Any) -> bool:
@@ -384,7 +409,13 @@ def _preflight_network_imports(path: Path) -> set[str]:
     """Reject direct transports before executing plugin module-level code."""
 
     network_modules = {
-        "socket", "requests", "httpx", "aiohttp", "websockets", "urllib.request", "http.client"
+        "socket",
+        "requests",
+        "httpx",
+        "aiohttp",
+        "websockets",
+        "urllib.request",
+        "http.client",
     }
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

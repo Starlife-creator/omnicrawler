@@ -92,8 +92,19 @@ class SecretsStore:
         *,
         keyring_api: _KeyringBackend | None = None,
     ) -> None:
-        self.path = Path(path) if path else Path.home() / ".omnicrawl" / "secrets.bin"
-        self.keyring = _keyring if keyring_api is None else keyring_api
+        env_path = os.environ.get("OMNICRAWL_SECRET_STORE_PATH", "")
+        self.path = (
+            Path(path)
+            if path
+            else Path(env_path)
+            if env_path
+            else Path.home() / ".omnicrawl" / "secrets.bin"
+        )
+        self.keyring = (
+            None
+            if os.environ.get("OMNICRAWL_KEYRING_DISABLE")
+            else (_keyring if keyring_api is None else keyring_api)
+        )
         self._cache: dict[str, bytes] | None = None
 
     # -- 密钥获取 ----------------------------------------------------------
