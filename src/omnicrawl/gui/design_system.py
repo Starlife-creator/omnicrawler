@@ -506,7 +506,7 @@ class _SignalProxy:
         try:
             from PyQt6 import sip as _sip
         except ImportError:
-            _sip = None
+            _sip = None  # type: ignore[assignment]  # 无 PyQt6 时降级
         dead: list = []
         for callback in list(self._callbacks):
             # 检查 bound method 的目标对象是否已被 C++ 析构

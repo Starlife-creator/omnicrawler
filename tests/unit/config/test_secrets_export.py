@@ -17,6 +17,12 @@ pytest.importorskip("ruamel.yaml")
 from omnicrawl.core.secrets_store import SecretsStore
 
 
+@pytest.fixture(autouse=True)
+def _master_password(monkeypatch) -> None:
+    """CI 无系统 keyring；给 secrets 加密提供密码派生密钥。"""
+    monkeypatch.setenv("OMNICRAWL_MASTER_PASSWORD", "ci-test-password")
+
+
 class _FakeKeyring:
     def __init__(self) -> None:
         self._data: dict[tuple[str, str], str] = {}
