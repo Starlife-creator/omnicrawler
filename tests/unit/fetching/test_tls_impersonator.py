@@ -140,7 +140,7 @@ class TestRealCurlCffiFetch:
         thread.join(timeout=5)
 
     def test_impersonate_fetch_local(self, tmp_path: Path, local_server: str) -> None:
-        curl_cffi = pytest.importorskip("curl_cffi")
+        pytest.importorskip("curl_cffi")
         raw = copy.deepcopy(DEFAULTS)
         raw["project"] = {"name": "tls-live", "workspace": str(tmp_path / "ws")}
         raw["source"] = {"kind": "static_html", "seeds": [local_server]}

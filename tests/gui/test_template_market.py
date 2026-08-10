@@ -68,5 +68,7 @@ def test_market_view_embeds_template_tab(tmp_path) -> None:
 
     MotionSignal._instance = None
     view = PluginMarketView(project_root=str(tmp_path))
-    assert view._tabs.count() == 2
+    assert view._tabs.count() == 3
+    market_pane = view._tabs.widget(0)
     assert isinstance(view._template_market, TemplateMarketView)
+    assert market_pane.findChild(TemplateMarketView) is view._template_market

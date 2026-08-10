@@ -55,12 +55,20 @@ def test_gui_source_has_no_unwrapped_chinese_literals() -> None:
     gui = Path(__file__).resolve().parents[3] / "src" / "omnicrawl" / "gui"
     offenders: list[str] = []
     for path in sorted(gui.rglob("*.py")):
+        wrap_depth = 0  # 跨行 _(...) 括号深度：>0 表示当前行位于 _() 多行包裹体内
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             stripped = line.lstrip()
             if stripped.startswith(("#", '"""', "'''", "*")):
                 continue
+            if wrap_depth > 0:
+                wrap_depth += line.count("(") - line.count(")")
+                continue
             # 跳过 _() 包裹、import、中文注释行、QSS 样式串与 HTML 文档串
             if "_(" in line or "noqa" in line or "import " in line:
+                if "_(" in line:
+                    delta = line.count("(") - line.count(")")
+                    if delta > 0:
+                        wrap_depth = delta
                 continue
             if re.search(r'[\u4e00-\u9fff]', line) and not re.search(r'["\'].*[\u4e00-\u9fff]', line):
                 continue

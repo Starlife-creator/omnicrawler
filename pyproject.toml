@@ -14,7 +14,7 @@ license = {text = "AGPL-3.0-only"}
 dependencies = ["PyYAML>=6,<7"]
 
 [project.optional-dependencies]
-html = ["beautifulsoup4>=4.12,<5", "lxml>=5,<7"]
+html = ["beautifulsoup4>=4.12,<5", "lxml>=5,<7", "cssselect>=1.2,<2"]
 pdf = ["PyMuPDF>=1.24,<2", "openpyxl>=3.1,<4"]
 browser = ["playwright>=1.49,<2", "patchright>=1,<2"]
 selenium = ["selenium>=4.27,<5"]
@@ -50,7 +50,7 @@ storage = ["boto3>=1.35,<2", "duckdb>=1.2,<2", "pyarrow>=18,<24"]
 postgresql = ["psycopg[binary]>=3.2,<4"]
 search = ["opensearch-py>=2.8,<4"]
 full = [
-  "beautifulsoup4>=4.12,<5", "lxml>=5,<7", "PyMuPDF>=1.24,<2", "openpyxl>=3.1,<4",
+  "beautifulsoup4>=4.12,<5", "lxml>=5,<7", "cssselect>=1.2,<2", "PyMuPDF>=1.24,<2", "openpyxl>=3.1,<4",
   "playwright>=1.49,<2", "patchright>=1,<2", "selenium>=4.27,<5", "httpx>=0.27,<1",
   "websockets>=14,<17", "redis>=5,<7", "Scrapy>=2.12,<3",
   "pytesseract>=0.3.13,<1", "Pillow>=10,<13",

@@ -59,8 +59,12 @@ def _load_user(username: str, password: str) -> UserIdentity:
 
 
 def _pem_fingerprint(pem_bytes: bytes) -> str:
-    """市场作者指纹：SHA-256(PEM 文件字节) 前 16 字节 hex。"""
-    return hashlib.sha256(pem_bytes).hexdigest()[:32]
+    """市场作者指纹：SHA-256(PEM 字节) 前 16 字节 hex（生态唯一标识）。
+
+    先归一化行尾（\\r\\n → \\n）：市场侧 tools/generate_catalog.py 对检出文件
+    做同样归一化，避免 Windows（CRLF）与 CI（LF）对同一公钥算出两个指纹。
+    """
+    return hashlib.sha256(pem_bytes.replace(b"\r\n", b"\n")).hexdigest()[:32]
 
 
 def _public_pem(user: UserIdentity) -> bytes:
