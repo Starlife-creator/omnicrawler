@@ -80,7 +80,11 @@ def _run_scan(plugin: Path, manifest: Path | None) -> None:
     cmd = [sys.executable, str(SCANNER), "scan", str(plugin)]
     if manifest and manifest.is_file():
         cmd += ["--manifest", str(manifest)]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    result = subprocess.run(
+        cmd, capture_output=True, text=True,
+        encoding="utf-8", errors="replace", env=env,
+    )
     print(result.stdout, end="")
     if result.stderr:
         print(result.stderr, end="")
@@ -107,7 +111,7 @@ def _current_operator() -> str:
             return value
     try:
         return getpass.getuser()
-    except OSError:
+    except Exception:  # noqa: BLE001 - Windows 无 pwd 模块或环境缺用户名时兜底
         return "unknown"
 
 

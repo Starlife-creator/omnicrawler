@@ -101,6 +101,7 @@ def test_d48_csv_to_sheet_column_count_and_row_cap(tmp_path: Path) -> None:
     # 4 列 → 列字母 D；2 行数据
     sheet = workbook["测试"]
     assert sheet.auto_filter.ref == "A1:D3"
+    workbook.close()
 
 
 def test_d48_csv_to_sheet_row_cap(tmp_path: Path) -> None:
@@ -118,6 +119,7 @@ def test_d48_csv_to_sheet_row_cap(tmp_path: Path) -> None:
     _csv_to_sheet(workbook, csv_path, "大表")
     # 不抛异常即通过；write_only sheet 无法直接读行数，这里仅验证未崩溃
     assert workbook.sheetnames == ["大表"]
+    workbook.close()
 
 
 class _FakeTable:
@@ -171,6 +173,8 @@ def test_d8_table_detection_failure_is_graceful() -> None:
 
 def test_d36_iter_pages_yields_and_wraps() -> None:
     """D36：_iter_parsed_pages 逐页 yield；parse_document 兼容封装收集。"""
+    import gc
+
     import fitz
 
     from omnicrawl.pdfx.parser import _iter_parsed_pages, parse_document
@@ -191,6 +195,10 @@ def test_d36_iter_pages_yields_and_wraps() -> None:
         wrapped = parse_document(str(pdf), 5, 0.1)
         assert wrapped["page_count"] == 1
         assert wrapped["pages"][0]["needs_ocr"] == 0
+
+        # Windows：PyMuPDF 的文件句柄可能在 GC 后才释放，先清理引用再删除临时目录
+        del document, page, yielded, wrapped
+        gc.collect()
 
 
 def test_d12_high_image_coverage_forces_ocr(monkeypatch) -> None:
