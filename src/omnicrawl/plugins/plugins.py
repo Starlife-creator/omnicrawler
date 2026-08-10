@@ -615,12 +615,40 @@ def _load_local_plugin(
             raise RuntimeError("网络插件只能由带Egress Broker的运行时加载")
         if not metadata.domains:
             raise ValueError("请求network权限的插件必须声明domains")
+        # S52：域名与额度此前完全由插件自声明——"批准 network" 等于
+        # "批准任意公网外传"。这里做两道机械收紧：
+        # ① 域名必须是"可解析主机"形态：含至少一个点且非纯后缀（拒绝
+        #    domains=["com"] 这类访问任意 *.com 的宽泛声明）；
+        # ② maximum_requests 取「插件声明」与「配置 egress.maximum_requests
+        #    上限」的较小值（配置 0 表示无上限，此时仍以插件声明为准）。
+        for domain in metadata.domains:
+            normalized = str(domain).strip().rstrip(".")
+            if (
+                "." not in normalized
+                or normalized.endswith((".", ".."))
+                or not all(part and part.isalnum() or part == "-" for part in normalized.split("."))
+            ):
+                raise PermissionError(
+                    f"插件 network 域名为宽泛或非法形态，拒绝加载: {domain!r}"
+                    "（域名须为可解析主机名，如 api.example.com）"
+                )
         from .plugin_runtime import PluginNetworkClient
 
-        maximum = int(metadata.resource_limits.get("maximum_requests", 0))
+        declared = int(metadata.resource_limits.get("maximum_requests", 0))
+        configured = 0
+        if config is not None:
+            egress_section = config.section("egress") or {}
+            try:
+                configured = int(egress_section.get("maximum_requests", 0) or 0)
+            except (TypeError, ValueError):
+                configured = 0
+        if declared > 0 and configured > 0:
+            maximum = min(declared, configured)
+        else:
+            maximum = declared or configured
         capability = egress.issue_capability(
             metadata.name,
-            domains=metadata.domains,
+            domains=tuple(metadata.domains),
             purposes=("plugin",),
             maximum_requests=maximum,
         )

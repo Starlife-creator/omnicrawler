@@ -17,6 +17,7 @@ Safety boundaries:
 
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import Any
 
@@ -32,17 +33,22 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _safe_call(callback: Any, action_id: str, *arguments: Any) -> Any:
-    """Run a plugin callback; convert exceptions into toast + log (fail-open)."""
+    """Run a plugin callback; convert exceptions into toast + log (fail-open).
+
+    **S31 修复**：用 ``inspect.signature`` 判定回调是否接受参数，而不是捕获
+    ``TypeError`` 后重试——旧实现把「回调体内部抛出的 TypeError」误判为
+    「签名不匹配」，导致插件动作被执行两次（副作用重复）。
+    """
     try:
-        return callback(*arguments)
-    except TypeError:
-        try:
-            return callback()
-        except Exception as exc:  # noqa: BLE001 - plugin failure never breaks the UI
-            _report_error(_(f"插件动作 {action_id} 失败"), exc)
-    except Exception as exc:  # noqa: BLE001
+        accepts = len(inspect.signature(callback).parameters)
+    except (TypeError, ValueError):
+        accepts = 0
+    args = arguments if accepts > 0 else ()
+    try:
+        return callback(*args)
+    except Exception as exc:  # noqa: BLE001 - plugin failure never breaks the UI
         _report_error(_(f"插件动作 {action_id} 失败"), exc)
-    return None
+        return None
 
 
 def _report_error(context: str, exc: Exception) -> None:

@@ -80,7 +80,12 @@ def _generate_keys(private_out: Path, public_out: Path) -> None:
 
 
 def _run_scan(plugin: Path, manifest: Path | None) -> None:
-    """发布前安全扫描（第二道防线；扫描器随生态目录分发）。
+    """发布前**凭据泄漏检查**（scan_plugin.py：敏感文件/高熵串/API Token/私钥字段）。
+
+    **不是代码行为安全扫描**——scan_plugin.py 不分析恶意代码，危险调用检查
+    由客户端加载期的 AST 预检（B2）承担，两者是不同的事（审查报告 S48）。
+    文案从"第二道防线"改为"凭据泄漏检查"，避免维护者在错误的安全预期上
+    做决策。
 
     **fail-closed（S41①）**：找不到扫描器时**中止签名**，而不是打印一行
     "跳过"继续——docstring 承诺的"五项发布前安全检查"对只克隆主仓的操作者

@@ -208,12 +208,17 @@ class AppConfig:
     def plugin_trust_public_key(self) -> str:
         """ed25519 信任根公钥（PEM 或公钥文件路径），用于插件 fail-closed 验签。
 
-        默认空串表示未配置信任根；此时加载门显式告警而非静默接受。
+        未显式配置时**默认接线内置信任根** ``configs/plugin_trust.pub.pem``
+        （审查报告 B5：内置公钥默认不接线，开箱即用市场插件必然拒载）。
+        内置文件不存在（如 pip 安装形态）时回退空串——加载门显式告警而非
+        静默接受（S51）。
         """
-
         plugins = self.section("plugins")
         value = plugins.get("trust_public_key", "") if isinstance(plugins, dict) else ""
-        return str(value) if value else ""
+        if value:
+            return str(value)
+        bundled = self.root / "configs" / "plugin_trust.pub.pem"
+        return str(bundled) if bundled.is_file() else ""
 
     @property
     def plugin_catalog_url(self) -> str:

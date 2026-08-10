@@ -25,9 +25,14 @@
 
 # === Python 项目文件 ===
 *.py       text
-# 插件市场载荷：签名按字节比对，禁止换行改写
-registry/**/plugin.py   -text
-registry/**/*.sig       -text
+# 插件市场载荷：签名按字节比对，禁止换行改写。
+# 曾写成 registry/** 而两个仓库都没有 registry/ 目录（拆库前路径），
+# 规则命中 0 → examples/plugins/example_site.py 落兜底 *.py text，
+# Windows autocrlf 下 CRLF 检出导致已签名示例必然验签失败（审查报告 S45）。
+examples/plugins/**/*.py   -text
+examples/plugins/**/*.sig  -text
+plugins_installed/**/*.py  -text
+plugins_installed/**/*.sig -text
 # PyInstaller 构建规格
 *.spec     text
 # 占位文件
