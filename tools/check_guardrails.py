@@ -29,6 +29,14 @@ MARKET_ROOT = REPO_ROOT.parent / "OmniCrawler-market"
 PO_THRESHOLD_DEFAULT = 0.95
 _PO_MSGSTR_CJK = re.compile(r'^msgstr ".*[\u4e00-\u9fff]')
 
+# Windows CI 的 stdout 默认是 GBK/charmap，print 中文（如失败详情）会抛
+# UnicodeEncodeError 且**掩盖真实的失败原因**。强制 UTF-8 输出。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 
 def _git_blob(repo: Path, path: Path) -> bytes:
     """取指定路径在 git 索引（HEAD）中的字节。"""
@@ -96,13 +104,16 @@ def check_sbom(sbom_path: Path | None) -> list[str]:
     if bad:
         return [f"[4] SBOM 含非法版本号（{len(bad)} 个）: {bad[:5]}..."]
     # 与同一环境 pip freeze 比对：SBOM 必须覆盖 freeze 的每个包
+    # （排除构建/环境工具链包：pip/setuptools/wheel 出现在 freeze 但不在
+    # 依赖树里，Windows/不同 Python 版本下存在性不一，不参与比对）
     freeze = subprocess.run(
         [sys.executable, "-m", "pip", "freeze"], capture_output=True, text=True
     ).stdout
+    _TOOLCHAIN = {"pip", "setuptools", "wheel"}
     frozen = {
         line.split("==", 1)[0].lower().replace("_", "-")
         for line in freeze.splitlines()
-        if "==" in line
+        if "==" in line and line.split("==", 1)[0].lower().replace("_", "-") not in _TOOLCHAIN
     }
     sbom_names = {comp["name"].lower().replace("_", "-") for comp in components}
     missing = sorted(frozen - sbom_names)
