@@ -1,8 +1,12 @@
 """Tests for the plugin AST preflight gate (forbidden dangerous patterns).
 
 Covers the static scan that rejects subprocess/ctypes/eval/os.system-style
-patterns before plugin module-level code executes, plus the two explicit
-escape hatches (config allowlist and in-file comment).
+patterns before plugin module-level code executes, plus the admin-controlled
+config allowlist (``plugins.ast_allowed_patterns``).
+
+``# omnicrawl: allow-ast`` 文件内自豁免注释已于 2026-08 移除（审查报告 S47）：
+豁免权在插件自己手里等于没有豁免门——插件写一行注释即可放行任何危险调用。
+如今只有运行配置能豁免。
 """
 
 from __future__ import annotations
@@ -137,14 +141,15 @@ def test_legitimate_file_io_still_allowed(tmp_path: Path) -> None:
     assert registry.plugins[0].name == "io"
 
 
-def test_comment_allowlist_permits_pattern(tmp_path: Path) -> None:
+def test_comment_self_exemption_no_longer_honored(tmp_path: Path) -> None:
+    """S47：文件内豁免注释已失效——带注释的 os.system 依然必须被拒。"""
     plugin = _write_plugin(
         tmp_path,
         "allowed",
         "# omnicrawl: allow-ast os.system\nimport os\ndef register(registry):\n    os.system('echo ok')\n",
     )
-    registry = _load(plugin)
-    assert registry.plugins[0].name == "allowed"
+    with pytest.raises(PermissionError, match="os.system"):
+        _load(plugin)
 
 
 def test_config_allowlist_permits_pattern(tmp_path: Path) -> None:

@@ -1,5 +1,5 @@
 template_version: 1
-project: {name: 示例项目-URL娓呭崟, workspace: work/url_list}
+project: {name: 示例项目-URL清单, workspace: work/url_list}
 source:
   kind: url_list
   seeds:

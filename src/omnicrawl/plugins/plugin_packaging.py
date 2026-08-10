@@ -4,22 +4,23 @@
   等价于 ``tools/sign_plugin.py local-sign``，供 GUI 直接调用；
 - ``build_plugin_upload`` ：生成提交市场仓库的 PR 文件集（plugin.py /
   creator.sig / creator.identity / plugin.yaml / listing.md /
-  keys/<pem指纹>.pub.pem / authors/<username>.yaml）；
+  keys/<raw32指纹>.pub.pem / authors/<username>.yaml）；
 - ``build_template_upload``：模板同构（template.yaml 注入 template: 元数据块）；
 - ``scan_local_plugins``  ：扫描 plugins/ 目录，把条目分为
   已签名且属于当前用户 / 已签名未信任 / 已签名已信任 / 未签名 四态。
 
-指纹双轨约定：
-- 客户端身份指纹 = SHA-256(公钥原始字节) 前 16 字节 hex（identity.py）；
-- 市场作者指纹     = SHA-256(PEM 文件字节) 前 16 字节 hex（generate_catalog.py）。
-  上传包同时携带两者：``creator.identity`` 用客户端指纹，``authors/*.yaml``
-  与 ``keys/*.pub.pem`` 用市场指纹。
+指纹约定（2026-08 统一后）：
+- **全生态只有一条指纹轨**：``SHA-256(ed25519 公钥原始 32 字节) 前 16 字节 hex``
+  （identity.derive_fingerprint）。
+- 历史上的第二条「PEM 文本指纹」轨（``SHA-256(PEM 字节, CRLF 归一化)``）已废弃：
+  双轨 = 两套互不认证的信任命名空间，且 PEM 文本需要行尾归一化才稳定，本身是设计缺陷。
+- 上传包里的 ``author_fingerprint``、``keys/*.pub.pem`` 文件名、``authors/*.yaml``
+  的 fingerprint 统一使用这条 raw32 轨。
 """
 
 from __future__ import annotations
 
 import ast
-import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -49,6 +50,9 @@ class LocalPluginEntry:
     status: str  # signed_by_me | signed_untrusted | signed_trusted | unsigned
     author_username: str = ""
     fingerprint: str = ""
+    #: 作者公钥原始字节（存在时可用）：信任操作必须绑定公钥本体，
+    #: 而不是把 fingerprint 字符串当凭据（审查报告 N23①/N26）。
+    public_key: bytes = b""
 
 
 def _load_user(username: str, password: str) -> UserIdentity:
@@ -56,15 +60,6 @@ def _load_user(username: str, password: str) -> UserIdentity:
         return IdentityStore().load(username, password)
     except Exception as exc:  # noqa: BLE001 - 身份库错误统一转可读异常
         raise PackagingError(f"身份加载失败：{exc}") from exc
-
-
-def _pem_fingerprint(pem_bytes: bytes) -> str:
-    """市场作者指纹：SHA-256(PEM 字节) 前 16 字节 hex（生态唯一标识）。
-
-    先归一化行尾（\\r\\n → \\n）：市场侧 tools/generate_catalog.py 对检出文件
-    做同样归一化，避免 Windows（CRLF）与 CI（LF）对同一公钥算出两个指纹。
-    """
-    return hashlib.sha256(pem_bytes.replace(b"\r\n", b"\n")).hexdigest()[:32]
 
 
 def _public_pem(user: UserIdentity) -> bytes:
@@ -168,22 +163,29 @@ def build_plugin_upload(
         raise PackagingError("插件缺少介绍：请在 PLUGIN_METADATA 中填写 description")
 
     pem = _public_pem(user)
-    pem_fingerprint = _pem_fingerprint(pem)
+    # raw32 指纹：与 keys/*.pub.pem 文件名、authors/*.yaml、creator.identity 全生态一致
+    author_fingerprint = creator.key_fingerprint
 
     manifest = {
         "id": plugin_id,
         "name": name,
         "version": version,
         "publisher": username,
-        "author_fingerprint": pem_fingerprint,
+        "author_fingerprint": author_fingerprint,
         "category": category,
         "summary": summary,
         "description_file": f"plugins/{plugin_id}/listing.md",
         "plugin_file": f"plugins/{plugin_id}/plugin.py",
+        # 本 PR 实际携带的创作者签名轨（市场 CI 据此验签并核对作者指纹）
+        "creator_signature_file": f"plugins/{plugin_id}/creator.sig",
+        "creator_identity_file": f"plugins/{plugin_id}/creator.identity",
+        # 维护者计数器签名：由维护者审核后补签（plugin.py.sig），**上传包不伪造该文件**。
+        # 修复前 manifest 声明它却不出产它，导致 GUI 一键上传的 PR 必然过不了自家 CI
+        # （审查报告 S50）。
         "signature_file": f"plugins/{plugin_id}/plugin.py.sig",
         "signature_algorithm": "ed25519",
         "permissions": list(metadata.get("permissions") or []),
-        "compatible_core": f">={metadata.get('min_core_version') or '1.0.0'}",
+        "compatible_core": f">={metadata.get('min_core_version') or '0.6.0'}",
         "license": str(metadata.get("license") or "MIT"),
         "tags": list(metadata.get("tags") or []),
         "updated_at": date.today().isoformat(),
@@ -196,16 +198,18 @@ def build_plugin_upload(
         f"plugins/{plugin_id}/creator.identity": identity_path.read_bytes(),
         f"plugins/{plugin_id}/plugin.yaml": (
             "# 插件清单（由 OmniCrawler 生成；CI 校验 author_fingerprint 与公钥指纹）\n"
+            "# 说明：signature_file（plugin.py.sig）为维护者审核后计数器签名，\n"
+            "# 提交 PR 阶段该文件尚未生成，属正常状态；审核通过补签后 CI 即绿。\n"
             + yaml.safe_dump(manifest, allow_unicode=True, sort_keys=False)
         ).encode("utf-8"),
         f"plugins/{plugin_id}/listing.md": listing.encode("utf-8"),
-        f"keys/{pem_fingerprint}.pub.pem": pem,
+        f"keys/{author_fingerprint}.pub.pem": pem,
         f"authors/{username}.yaml": (
-            "# 作者记录（首次上传自动生成；指纹 = SHA-256(PEM 公钥字节) 前 16 字节 hex）\n"
+            "# 作者记录（首次上传自动生成；指纹 = SHA-256(ed25519 公钥原始字节) 前 16 字节 hex）\n"
             f"username: {username}\n"
             f"display_name: {username}\n"
-            f"pubkey_ref: ../keys/{pem_fingerprint}.pub.pem\n"
-            f"fingerprint: {pem_fingerprint}\n"
+            f"pubkey_ref: ../keys/{author_fingerprint}.pub.pem\n"
+            f"fingerprint: {author_fingerprint}\n"
             "roles: [publisher]\n"
         ).encode(),
     }
@@ -247,15 +251,15 @@ def build_template_upload(
         "description": summary,
         "publisher": username,
         "author_fingerprint": "0" * 32,  # 占位：签名后由下方真实指纹覆盖
-        "min_core_version": "1.0.0",
+        "min_core_version": "0.6.0",
         "license": "MIT",
     }
 
     user = _load_user(username, password)
     creator = user.export_identity()
     pem = _public_pem(user)
-    pem_fingerprint = _pem_fingerprint(pem)
-    raw["template"]["author_fingerprint"] = pem_fingerprint
+    author_fingerprint = creator.key_fingerprint
+    raw["template"]["author_fingerprint"] = author_fingerprint
     content = yaml.safe_dump(raw, allow_unicode=True, sort_keys=False).encode("utf-8")
 
     files: dict[str, bytes] = {
@@ -266,12 +270,12 @@ def build_template_upload(
             json.dumps(creator.to_dict(), ensure_ascii=False, indent=2) + "\n"
         ).encode("utf-8"),
         f"templates/{template_id}/listing.md": listing.encode("utf-8"),
-        f"keys/{pem_fingerprint}.pub.pem": pem,
+        f"keys/{author_fingerprint}.pub.pem": pem,
         f"authors/{username}.yaml": (
             f"username: {username}\n"
             f"display_name: {username}\n"
-            f"pubkey_ref: ../keys/{pem_fingerprint}.pub.pem\n"
-            f"fingerprint: {pem_fingerprint}\n"
+            f"pubkey_ref: ../keys/{author_fingerprint}.pub.pem\n"
+            f"fingerprint: {author_fingerprint}\n"
             "roles: [publisher]\n"
         ).encode(),
     }
@@ -302,17 +306,19 @@ def scan_local_plugins(root: Path) -> list[LocalPluginEntry]:
             metadata = _read_metadata(plugin_file)
             decision = verify_plugin_trust(plugin_dir, "", trusted)
             status = "unsigned"
-            author, fingerprint = "", ""
+            author, fingerprint, public_key = "", "", b""
             if decision.level == TrustLevel.MaintainerSigned:
                 status = "signed_trusted"
             elif decision.level == TrustLevel.CreatorTrusted and decision.creator is not None:
                 status = "signed_by_me" if plugins_dir == "plugins" else "signed_trusted"
                 author = decision.creator.username
                 fingerprint = decision.creator.key_fingerprint
+                public_key = decision.creator.public_key
             elif decision.level == TrustLevel.CreatorUntrusted and decision.creator is not None:
                 status = "signed_untrusted"
                 author = decision.creator.username
                 fingerprint = decision.creator.key_fingerprint
+                public_key = decision.creator.public_key
             entries.append(
                 LocalPluginEntry(
                     path=plugin_dir,
@@ -322,6 +328,7 @@ def scan_local_plugins(root: Path) -> list[LocalPluginEntry]:
                     status=status,
                     author_username=author,
                     fingerprint=fingerprint,
+                    public_key=public_key,
                 )
             )
     return entries

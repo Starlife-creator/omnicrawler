@@ -14,6 +14,8 @@ import pytest
 
 pytest.importorskip("cryptography")
 
+from cryptography.hazmat.primitives import serialization  # noqa: E402
+
 from omnicrawl.plugins import signing  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -49,7 +51,9 @@ def _build_registry(tmp_path: Path) -> tuple[Path, Path, bytes]:
     trust_pem = tmp_path / "trust.pub.pem"
     trust_pem.write_bytes(public_pem)
 
-    fingerprint = hashlib.sha256(public_pem).hexdigest()[:32]
+    # raw32 指纹：SHA-256(ed25519 公钥原始 32 字节) 前 16 字节 hex（与生成器同源）
+    _public_key = serialization.load_pem_public_key(public_pem)
+    fingerprint = hashlib.sha256(_public_key.public_bytes_raw()).hexdigest()[:32]
 
     plugin_path = plugin_dir / "plugin.py"
     plugin_path.write_text(
@@ -77,7 +81,7 @@ def _build_registry(tmp_path: Path) -> tuple[Path, Path, bytes]:
         "signature_file: plugins/demo_plug/plugin.py.sig\n"
         "signature_algorithm: ed25519\n"
         "permissions: []\n"
-        'compatible_core: ">=2.7.0"\n'
+        'compatible_core: ">=0.6.0"\n'
         "license: MIT\n",
         encoding="utf-8",
     )
@@ -100,8 +104,8 @@ def _add_market_template(
         "  description: 测试模板\n"
         "  version: 1.0.0\n"
         "  publisher: alice\n"
-        f"  author_fingerprint: {hashlib.sha256(trust_pem.read_bytes()).hexdigest()[:32]}\n"
-        "  min_core_version: '2.7.0'\n"
+        f"  author_fingerprint: {hashlib.sha256(serialization.load_pem_public_key(trust_pem.read_bytes()).public_bytes_raw()).hexdigest()[:32]}\n"
+        "  min_core_version: '0.6.0'\n"
         "  tags: [demo]\n"
         "project: {name: demo, workspace: work/demo}\n"
         "source: {kind: static_html, seeds: ['https://example.com']}\n",
@@ -282,7 +286,7 @@ def test_generate_includes_templates(tmp_path: Path) -> None:
     assert entry["publisher"] == "alice"
     assert entry["template_file"] == "templates/demo_template/template.yaml"
     assert entry["signature_file"] == "templates/demo_template/template.yaml.sig"
-    assert entry["compatible_core"] == ">=2.7.0"
+    assert entry["compatible_core"] == ">=0.6.0"
     assert entry["description_file"] == "templates/demo_template/listing.md"
     assert "plugin_file" not in entry
 

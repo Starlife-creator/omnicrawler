@@ -27,27 +27,27 @@ def test_plugin_module_cache_avoids_recompile(tmp_path: Path, monkeypatch) -> No
         encoding="utf-8",
     )
     monkeypatch.setattr(plugins_module, "_PLUGIN_MODULE_CACHE", {})
-    executed: list[str] = []
+    # 加载器从 exec_module 改为 compile+exec（验签字节绑定，S49）。
+    # 缓存语义不变：插件模块只应被编译执行一次，第二次 Pipeline 命中缓存。
+    # 注意 ast.parse 内部也会调 compile（带 PyCF_ONLY_AST），需排除。
+    compiled: list[str] = []
+    real_compile = compile
 
-    real_exec = plugins_module.importlib.util.spec_from_file_location
+    def _tracked(source, filename, mode, flags=0, *args, **kwargs):
+        if (
+            isinstance(filename, str)
+            and filename.endswith("site.py")
+            and not (flags & __import__("ast").PyCF_ONLY_AST)
+        ):
+            compiled.append(filename)
+        return real_compile(source, filename, mode, flags, *args, **kwargs)
 
-    def _spec(*args, **kwargs):
-        spec = real_exec(*args, **kwargs)
-        original = spec.loader.exec_module
-
-        def _tracked(module, *a, **k):
-            executed.append(module.__name__)
-            return original(module, *a, **k)
-
-        spec.loader.exec_module = _tracked
-        return spec
-
-    monkeypatch.setattr(plugins_module.importlib.util, "spec_from_file_location", _spec)
+    monkeypatch.setattr("builtins.compile", _tracked)
     with Pipeline(load_config(config_path)):
         pass
     with Pipeline(load_config(config_path)):
         pass
-    assert len(executed) == 1  # 第二次 Pipeline 复用缓存，不再 exec_module
+    assert len(compiled) == 1  # 第二次 Pipeline 复用缓存，不再编译执行
 
 
 class _FakeFactory:

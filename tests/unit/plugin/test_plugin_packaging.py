@@ -147,7 +147,16 @@ def test_build_template_upload(identity_env, tmp_path: Path, monkeypatch) -> Non
     rendered = yaml.safe_load(files["templates/my/tpl/template.yaml"].decode("utf-8"))
     assert rendered["template"]["publisher"] == "alice"
     assert rendered["template"]["id"] == "my/tpl"
-    assert rendered["template"]["author_fingerprint"].startswith(("0" * 16).replace("0", "") or "") or True
+    # raw32 指纹：SHA-256(公钥原始 32 字节) 前 16 字节 hex，与 creator.identity 同源
+    import base64
+    import hashlib
+    import re
+
+    fingerprint = rendered["template"]["author_fingerprint"]
+    assert re.fullmatch(r"[0-9a-f]{32}", fingerprint), fingerprint
+    creator = json.loads(files["templates/my/tpl/creator.identity"].decode("utf-8"))
+    expected = hashlib.sha256(base64.b64decode(creator["public_key"])).hexdigest()[:32]
+    assert fingerprint == expected
     assert "templates/my/tpl/template.yaml.sig" in files
     assert "templates/my/tpl/creator.identity" in files
     assert "authors/alice.yaml" in files

@@ -18,6 +18,8 @@ datas = [
     (str(src_root / "omnicrawl" / "fetching" / "stealth.min.js"), "omnicrawl/fetching"),
     # 用户插件工作目录：打包进便携版，用户可在便携环境里放自己的插件
     (str(project_root / "plugins"), "plugins"),
+    # 语言包：i18n._find_localedir 沿包父链找到 omnicrawl/locale（S42 打包登记）
+    (str(project_root / "locale"), "omnicrawl/locale"),
 ]
 hiddenimports = sorted(set(collect_submodules("omnicrawl") + collect_submodules("keyring.backends")))
 excludes = [

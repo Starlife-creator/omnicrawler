@@ -12,6 +12,15 @@ under their own licenses:
   (`omnicrawl[crawl4ai]`).
 - Python packages listed in `SBOM.json` — each package's declared license applies.
 
+Bundled static assets redistributed inside this repository (see `docs/archive/`):
+
+- `mermaid.min.js` (docs/archive/omnicrawler-evaluation-report/_shared/js/) — MIT License.
+  Upstream: https://github.com/mermaid-js/mermaid
+- `echarts.min.js` (docs/archive/omnicrawler-evaluation-report/_shared/js/) — Apache License 2.0.
+  Upstream: https://github.com/apache/echarts
+- Instrument Sans fonts (`_shared/fonts/InstrumentSans-*.ttf`) — SIL Open Font License 1.1.
+  Upstream: https://github.com/googlefonts/instrument-sans
+
 7-Zip is used only during the build to extract the Tesseract NSIS package and is not included
 in the portable application. 7-Zip is licensed mainly under GNU LGPL with additional components;
 source and license information: https://www.7-zip.org/

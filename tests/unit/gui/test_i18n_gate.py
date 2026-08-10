@@ -46,7 +46,9 @@ def test_translation_actually_translates(tmp_path: Path) -> None:
     set_language("en_US")
     from omnicrawl.gui.i18n import _
 
-    assert _("omnicrawl") or True  # 翻译函数可用
+    # 未知 msgid 回退原文；已知中文 msgid 必须取到英文译文
+    assert _("omnicrawl") == "omnicrawl"
+    assert _("运行任务") == "Run task"
     assert "en_US" in get_available_languages()
 
 

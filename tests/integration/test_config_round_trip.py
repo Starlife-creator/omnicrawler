@@ -116,5 +116,8 @@ def test_export_single_record_styles_with_structured_evidence(
     assert "rec-1" in md
     assert "金额" in md
     assert "1200000" in md
-    # 结构化证据（dict）在 card 样式不崩溃
-    assert md.strip().endswith("}") or "证据" in md or True
+    # 结构化证据（dict）：card 样式输出证据原文；table/list 只输出字段值
+    if style == "card":
+        assert "Revenue: 1,200,000" in md
+    else:
+        assert "2024-03-01" in md

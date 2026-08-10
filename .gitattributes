@@ -53,3 +53,5 @@ registry/**/*.sig       -text
 *.dll      binary
 *.dylib    binary
 *.exe      binary
+*.mo       binary
+*.crx      binary

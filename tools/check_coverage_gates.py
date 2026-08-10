@@ -29,6 +29,7 @@ GATES: dict[str, tuple[float, Matcher]] = {
         85.0,
         _is_one_of(
             "src/omnicrawl/security/policy.py",
+            "src/omnicrawl/security/egress.py",  # 出口管控核心（S37 补漏）
             "src/omnicrawl/fetching/archives.py",
             "src/omnicrawl/state/state_store.py",
             "src/omnicrawl/core/migrations.py",
@@ -43,7 +44,8 @@ GATES: dict[str, tuple[float, Matcher]] = {
     "pipeline_http_client": (
         75.0,
         _is_one_of(
-            "src/omnicrawl/http_client.py",
+            # 曾把不存在的 src/omnicrawl/http_client.py 列在此处——门禁在查空集合
+            # （S37 死路径），已移除；真实路径为 fetching/http_client.py
             "src/omnicrawl/fetching/http_client.py",
             "src/omnicrawl/sources/sources.py",
         ),
@@ -82,6 +84,18 @@ GATES: dict[str, tuple[float, Matcher]] = {
 
 OVERALL_COVERAGE_GATE = 66.0
 
+# 单文件下限：分组门禁是加权聚合，关键模块可以被同组高覆盖率"赎买"
+# （审查报告 S37③）。对最关键的文件单独设下限——低于即失败，不许借道。
+# 取值贴近 2026-08 实测水平，作为"禁止继续下滑"的护栏；
+# 提高这些下限需要配套补齐测试（见审查报告 §8 修复优先级）。
+_FILE_FLOORS: dict[str, float] = {
+    "src/omnicrawl/security/policy.py": 80.0,
+    "src/omnicrawl/security/egress.py": 80.0,
+    "src/omnicrawl/fetching/http_client.py": 70.0,
+    "src/omnicrawl/apps/field_extractor.py": 30.0,
+    "src/omnicrawl/apps/pdf_processor.py": 40.0,
+}
+
 
 def _coverage(files: dict[str, Any], matcher: Matcher) -> tuple[int, int, float]:
     statements = covered = matched = 0
@@ -96,6 +110,30 @@ def _coverage(files: dict[str, Any], matcher: Matcher) -> tuple[int, int, float]
     if not matched or not statements:
         raise ValueError("coverage report does not contain the required source group")
     return covered, statements, covered * 100.0 / statements
+
+
+def _file_coverage(files: dict[str, Any], raw_path: str) -> float | None:
+    """单文件覆盖率；报告里不存在该文件时返回 None（视为缺失）。
+
+    coverage.json 的 key 是**绝对路径**（CI runner 上各不相同），因此先按
+    相对路径精确匹配，再按「以 src/... 结尾」兜底匹配，避免不同机器上
+    覆盖率报告路径前缀差异导致的漏检（曾导致 Windows CI 全报 missing）。
+    """
+    norm = _normalise(raw_path)
+    details = files.get(norm)
+    if details is None:
+        for key, value in files.items():
+            candidate = _normalise(key)
+            if candidate == norm or candidate.endswith("/" + norm):
+                details = value
+                break
+    if details is None:
+        return None
+    summary = details["summary"]
+    statements = int(summary["num_statements"])
+    if not statements:
+        return 100.0
+    return int(summary["covered_lines"]) * 100.0 / statements
 
 
 def main() -> int:
@@ -128,6 +166,17 @@ def main() -> int:
         print(f"{name:29} {covered:5}/{statements:<7} {actual:7.2f}% {minimum:7.2f}%")
         if actual < minimum:
             failures.append(f"{name} {actual:.2f}% < {minimum:.2f}%")
+
+    # 单文件下限（S37③）：分组聚合掩盖关键模块，逐文件兜底
+    for raw_path, floor in sorted(_FILE_FLOORS.items()):
+        actual = _file_coverage(files, raw_path)
+        if actual is None:
+            failures.append(f"{raw_path}: missing from coverage report (file-level floor {floor:.2f}%)")
+            print(f"{raw_path:29} {'missing':>13} {'--':>8} {floor:7.2f}%")
+            continue
+        print(f"{raw_path:29} {'':>5}{'':<7} {actual:7.2f}% {floor:7.2f}%")
+        if actual < floor:
+            failures.append(f"{raw_path} {actual:.2f}% < {floor:.2f}%")
 
     if failures:
         print("\nCoverage gates failed:", file=sys.stderr)

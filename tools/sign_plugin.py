@@ -65,18 +65,34 @@ TRANSPARENCY_LOG_DEFAULT = "signing_transparency.jsonl"
 
 def _generate_keys(private_out: Path, public_out: Path) -> None:
     private_pem, public_pem = generate_keypair()
+    private_out.parent.mkdir(parents=True, exist_ok=True)
     private_out.write_bytes(private_pem)
+    # 冷私钥权限收紧：ed25519 私钥明文落盘必须 0600，禁止继承默认 umask（0644）
+    try:
+        os.chmod(private_out, 0o600)
+    except OSError:  # Windows 上 chmod 语义受限，尽力而为
+        pass
+    public_out.parent.mkdir(parents=True, exist_ok=True)
     public_out.write_bytes(public_pem)
-    print(f"[冷密钥] 私钥已写入: {private_out}")
+    print(f"[冷密钥] 私钥已写入: {private_out}（权限 0600）")
     print("[冷密钥] 请立即将其剪切至加密 U 盘/离线机，并安全擦除源位置（覆写、不走回收站）。")
     print(f"[信任根] 公钥已写入（可随构建分发）: {public_out}")
 
 
 def _run_scan(plugin: Path, manifest: Path | None) -> None:
-    """发布前安全扫描（第二道防线；扫描器随生态目录分发）。"""
+    """发布前安全扫描（第二道防线；扫描器随生态目录分发）。
+
+    **fail-closed（S41①）**：找不到扫描器时**中止签名**，而不是打印一行
+    "跳过"继续——docstring 承诺的"五项发布前安全检查"对只克隆主仓的操作者
+    一次都没跑却照常签名，等于门禁在 public 仓场景下是空的。
+    显式 ``--skip-scan`` 仍是唯一逃生口（不推荐）。
+    """
     if not SCANNER.is_file():
-        print(f"[扫描] 未找到扫描器 {SCANNER}，跳过（建议在开发机运行 OmniCrawler-market/tools/scan_plugin.py）")
-        return
+        sys.exit(
+            f"[扫描] FAIL：未找到发布前扫描器 {SCANNER}\n"
+            "签名已中止。请先克隆 OmniCrawler-market 仓库（扫描器在 "
+            "OmniCrawler-market/tools/scan_plugin.py），或显式使用 --skip-scan 跳过（不推荐）。"
+        )
     cmd = [sys.executable, str(SCANNER), "scan", str(plugin)]
     if manifest and manifest.is_file():
         cmd += ["--manifest", str(manifest)]

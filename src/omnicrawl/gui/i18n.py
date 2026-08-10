@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import gettext as _gettext
 import os
+import sys
 from pathlib import Path
 
 # S4.3.2：domain 与 locale/ 目录下的 .pot/.po 统一（原 "omnicrawler" 与
@@ -23,16 +24,45 @@ _current_language: str = "zh_CN"
 _localedir: Path | None = None
 
 
+def _has_domain(localedir: Path) -> bool:
+    """True if *localedir* really holds translation files for DOMAIN.
+
+    The locale tree is ``locale/<lang>/LC_MESSAGES/<domain>.mo|.po``, so we
+    inspect the per-language subdirectories to avoid a false positive from an
+    empty ``locale/`` folder."""
+    if not localedir.is_dir():
+        return False
+    return any(
+        (lang_dir / "LC_MESSAGES" / f"{DOMAIN}.mo").is_file()
+        or (lang_dir / "LC_MESSAGES" / f"{DOMAIN}.po").is_file()
+        for lang_dir in localedir.iterdir()
+        if lang_dir.is_dir()
+    )
+
+
 def _find_localedir() -> Path | None:
-    """查找 locale 目录。优先从包路径下查找。"""
+    """查找 locale 目录（含 LC_MESSAGES/<DOMAIN>.mo|.po）。
+
+    旧实现的三个候选（gui/locale、omnicrawl/locale 下两级）全都不存在——
+    真实位置在仓库根的 ``locale/``（或打包后的 ``site-packages/omnicrawl/locale``），
+    于是 ``_find_localedir`` 恒返回 None，切英文成了静默空操作（审查报告 S42）。
+    现改为：从模块所在目录沿父链逐级向上找 ``locale/``，并校验其中确有本
+    domain 的翻译文件，覆盖源码形态与打包形态。
+    """
     here = Path(__file__).resolve().parent
-    candidates = [
-        here / "locale",
-        here.parent / "locale",
-        here.parent.parent / "locale",
-    ]
+    candidates: list[Path] = []
+    for ancestor in here.parents:  # gui → omnicrawl → src → 仓库根 → ...
+        candidates.append(ancestor / "locale")
+        candidates.append(ancestor / "locales")
+    # pip wheel 形态：data-files 安装到 share/omnicrawl/locale
+    candidates.append(Path(sys.prefix) / "share" / "omnicrawl" / "locale")
+    candidates.append(here / "locale")
+    seen: set[Path] = set()
     for candidate in candidates:
-        if candidate.is_dir():
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if _has_domain(candidate):
             return candidate
     return None
 

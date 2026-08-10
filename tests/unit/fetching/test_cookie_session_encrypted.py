@@ -136,4 +136,7 @@ def test_s223_no_persist_path_is_noop(tmp_path: Path) -> None:
     session = CookieSession(None)
     session.jar.set_cookie(_cookie())
     session.save()
-    assert True
+    # 无持久化路径时 save() 是 no-op：不抛异常、不落盘、cookie 仍在内存中
+    assert session.path is None
+    assert len(session.jar) > 0
+    assert not list(tmp_path.rglob("cookie*"))

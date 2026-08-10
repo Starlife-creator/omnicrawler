@@ -266,7 +266,7 @@ class ProductionFoundationTest(unittest.TestCase):
         registry = Registry()
         with self.assertRaises(PermissionError) as context:
             load_local_plugins(registry, [str(plugin)], self.root)
-        self.assertIn("静态审批之外", str(context.exception))
+        self.assertIn("静态字面量", str(context.exception))
         self.assertEqual(registry.describe()["plugins"], [])
 
     def test_plugin_literal_network_permission_still_requires_approval(self):

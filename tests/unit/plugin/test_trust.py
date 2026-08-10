@@ -38,16 +38,10 @@ def _make_creator(tmp_path: Path) -> tuple[CreatorIdentity, bytes]:
     """生成创作者身份（公开身份 + 测试用私钥）。"""
     from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-    from omnicrawl.plugins.identity import _fingerprint
-
     private_pem, _ = signing.generate_keypair()
     key = load_pem_private_key(private_pem, password=None)
     public_bytes = key.public_key().public_bytes_raw()
-    identity = CreatorIdentity(
-        username="alice",
-        public_key=public_bytes,
-        key_fingerprint=_fingerprint(public_bytes),
-    )
+    identity = CreatorIdentity(username="alice", public_key=public_bytes)
     return identity, private_pem
 
 
@@ -140,7 +134,8 @@ def test_tampered_creator_signature_rejected(tmp_path: Path) -> None:
 
 def test_trust_list_persists_and_revokes(tmp_path: Path) -> None:
     path = tmp_path / "trusted.json"
-    creator = CreatorIdentity(username="bob", public_key=b"\x00" * 32, key_fingerprint="f" * 32)
+    # 公钥仅用于指纹推导与列表持久化，无需是真实密钥（长度合法即可）
+    creator = CreatorIdentity(username="bob", public_key=b"\x01" * 32)
 
     trusted = TrustedUserList(path)
     assert trusted.add(creator) is True
@@ -162,7 +157,7 @@ def test_trust_list_persists_and_revokes(tmp_path: Path) -> None:
 def test_trusted_without_signature_never_loads(tmp_path: Path) -> None:
     plugin_dir = tmp_path / "plug"
     _make_plugin(plugin_dir)
-    creator = CreatorIdentity(username="carol", public_key=b"\x00" * 32, key_fingerprint="a" * 32)
+    creator = CreatorIdentity(username="carol", public_key=b"\x02" * 32)
     _, trust = _make_keypair(tmp_path)
     trusted = TrustedUserList(tmp_path / "trusted.json")
     trusted.add(creator)
