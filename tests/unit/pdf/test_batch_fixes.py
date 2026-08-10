@@ -179,7 +179,9 @@ def test_d36_iter_pages_yields_and_wraps() -> None:
 
     from omnicrawl.pdfx.parser import _iter_parsed_pages, parse_document
 
-    with tempfile.TemporaryDirectory() as temp:
+    # ignore_cleanup_errors：Windows runner 偶发对新建 p.pdf 的瞬时外部锁
+    # （安全扫描），临时目录属一次性产物，清理失败不影响断言结果。
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp:
         pdf = Path(temp) / "p.pdf"
         document = fitz.open()
         page = document.new_page()
