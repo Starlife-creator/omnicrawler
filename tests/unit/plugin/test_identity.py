@@ -77,7 +77,12 @@ def test_sign_and_export_identity_excludes_private_key(tmp_path: Path) -> None:
     assert creator.key_fingerprint == identity.key_fingerprint
 
     payload = json.dumps(creator.to_dict()).lower()
-    assert set(json.loads(payload)) == {"username", "public_key", "key_fingerprint"}
+    assert set(json.loads(payload)) == {
+        "username",
+        "public_key",
+        "key_fingerprint",
+        "fingerprint_algorithm",
+    }
     assert "private" not in payload
 
 

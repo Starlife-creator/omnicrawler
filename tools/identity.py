@@ -6,7 +6,7 @@
   list                                列出本地身份（用户名 + 指纹）
   show <username> [--password P]      显示身份详情（公钥指纹）
   delete <username> [--password P]    注销身份（需密码确认）
-  trust add <fingerprint> --name N    信任某创作者（指纹 + 显示名，纯本地）
+  trust add --pubkey <作者的 .pem 公钥文件> --name N   信任某创作者（绑定公钥，纯本地）
   trust revoke <fingerprint>          撤销信任
   trust list                          列出信任列表
 
@@ -90,11 +90,18 @@ def cmd_delete(args: argparse.Namespace) -> int:
 
 
 def cmd_trust_add(args: argparse.Namespace) -> int:
-    from omnicrawl.plugins.identity import CreatorIdentity
+    from omnicrawl.plugins.identity import CreatorIdentity, public_key_bytes_from_pem
 
-    creator = CreatorIdentity(username=args.name, public_key=b"", key_fingerprint=args.fingerprint)
-    added = TrustedUserList().add(creator, source="manual", path_hint=f"（{args.fingerprint}）")
-    print(f"{'OK 已信任' if added else '已存在'} {args.name} 指纹 {args.fingerprint}")
+    try:
+        public_key = public_key_bytes_from_pem(args.pubkey)
+    except Exception as exc:  # noqa: BLE001
+        print(f"FAIL 公钥加载失败: {exc}")
+        return 1
+    creator = CreatorIdentity(username=args.name, public_key=public_key)
+    added = TrustedUserList().add(creator, source="manual", path_hint=f"（{args.name}）")
+    print(
+        f"{'OK 已信任' if added else '已存在'} {args.name} 指纹 {creator.key_fingerprint}"
+    )
     return 0
 
 
@@ -133,8 +140,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     trust = sub.add_parser("trust", help="信任列表管理")
     trust_sub = trust.add_subparsers(dest="trust_command", required=True)
-    add = trust_sub.add_parser("add", help="信任某创作者指纹")
-    add.add_argument("fingerprint", help="创作者公钥指纹（32 位 hex）")
+    add = trust_sub.add_parser("add", help="信任某创作者（需其 ed25519 公钥 PEM 文件）")
+    add.add_argument("--pubkey", required=True, help="创作者公钥 PEM 文件路径（或内联 PEM 文本）")
     add.add_argument("--name", required=True, help="创作者显示名")
     revoke = trust_sub.add_parser("revoke", help="撤销信任")
     revoke.add_argument("fingerprint", help="公钥指纹")

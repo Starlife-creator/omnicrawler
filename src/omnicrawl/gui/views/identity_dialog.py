@@ -1,7 +1,8 @@
 """身份与信任管理对话框（阶段 2，对齐 Helios 身份系统）。
 
 - 本地身份：创建（用户名 + 密码，私钥密码加密入 OS 密钥库）/ 删除。
-- 信任列表：添加（公钥指纹 + 显示名）/ 撤销。纯本地决策，不同步服务器。
+- 信任列表：添加（公钥 PEM + 显示名，绑定公钥本体）/ 撤销。纯本地决策，
+  不同步服务器。
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ...plugins.identity import IdentityStore
-from ...plugins.trust import CreatorIdentity, TrustedUserList
+from ...plugins.trust import TrustedUserList
 from ..design_system import FONT_SIZE, RADIUS, ThemeManager
 from ..i18n import _
 from ..widgets.toast import ToastManager
@@ -89,10 +90,10 @@ class IdentityDialog(QDialog):
         trust_form = QFormLayout()
         self._trust_name = QLineEdit()
         self._trust_name.setPlaceholderText(_("创作者显示名"))
-        self._trust_fingerprint = QLineEdit()
-        self._trust_fingerprint.setPlaceholderText(_("公钥指纹（32 位 hex）"))
+        self._trust_pubkey = QLineEdit()
+        self._trust_pubkey.setPlaceholderText(_("创作者公钥 PEM 文件路径或文本"))
         trust_form.addRow(_("显示名"), self._trust_name)
-        trust_form.addRow(_("指纹"), self._trust_fingerprint)
+        trust_form.addRow(_("公钥"), self._trust_pubkey)
         root.addLayout(trust_form)
 
         trust_buttons = QHBoxLayout()
@@ -200,17 +201,28 @@ class IdentityDialog(QDialog):
     # ── 信任列表操作 ─────────────────────────────────────
     def _on_trust_add(self) -> None:
         name = self._trust_name.text().strip()
-        fingerprint = self._trust_fingerprint.text().strip()
-        if not name or not fingerprint:
-            ToastManager.instance().warning(_("显示名与指纹不能为空"))
+        pubkey_value = self._trust_pubkey.text().strip()
+        if not name or not pubkey_value:
+            ToastManager.instance().warning(_("显示名与公钥不能为空"))
             return
-        creator = CreatorIdentity(username=name, public_key=b"", key_fingerprint=fingerprint)
+        try:
+            from omnicrawl.plugins.identity import (
+                CreatorIdentity,
+                public_key_bytes_from_pem,
+            )
+
+            creator = CreatorIdentity(
+                username=name, public_key=public_key_bytes_from_pem(pubkey_value)
+            )
+        except Exception as exc:  # noqa: BLE001 - 用户输入解析失败，提示即可
+            ToastManager.instance().error(_(f"公钥无效：{exc}"))
+            return
         added = TrustedUserList().add(creator, source="manual")
         ToastManager.instance().success(
-            _(f"已信任 {name}（指纹 {fingerprint}）" if added else f"指纹 {fingerprint} 已在信任列表")
+            _(f"已信任 {name}（指纹 {creator.key_fingerprint}）" if added else f"指纹 {creator.key_fingerprint} 已在信任列表")
         )
         self._trust_name.clear()
-        self._trust_fingerprint.clear()
+        self._trust_pubkey.clear()
         self.refresh()
 
     def _on_trust_revoke(self) -> None:

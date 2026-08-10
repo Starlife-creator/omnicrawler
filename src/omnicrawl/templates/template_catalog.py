@@ -67,6 +67,15 @@ class TemplateMatch:
     reasons: tuple[str, ...]
 
 
+class TemplateParseError(ValueError):
+    """模板 YAML 解析失败。
+
+    fail-closed：破损模板必须显式暴露（谁引入谁修），**不得**静默剔除出
+    校验集合——否则 ``templates validate`` 的 ``all(item.ok)`` 会对一个
+    残缺集合恒真，CI 绿灯放行破损模板进仓（审查报告 S33）。
+    """
+
+
 class TemplateCatalog:
     """Recursive template discovery, search, rendering and evidence-based recommendation.
 
@@ -249,10 +258,12 @@ class TemplateCatalog:
     def _read_record(self, root: Path, path: Path, builtin: bool) -> TemplateRecord | None:
         try:
             raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except (OSError, UnicodeError, yaml.YAMLError):
-            return None
+        except yaml.YAMLError as exc:
+            raise TemplateParseError(f"模板 YAML 解析失败: {path}（{exc}）") from exc
+        except (OSError, UnicodeError) as exc:
+            raise TemplateParseError(f"模板文件读取/解码失败: {path}（{exc}）") from exc
         if not isinstance(raw, dict):
-            return None
+            raise TemplateParseError(f"模板 YAML 顶层必须是映射: {path}")
         relative = path.relative_to(root).with_suffix("")
         fallback_id = "/".join(relative.parts)
         block = raw.get("template", {})
@@ -282,7 +293,7 @@ class TemplateCatalog:
             source_urls=self._tuple(block.get("source_urls")),
             license=str(block.get("license") or "OmniCrawler-MIT"),
             verified_at=str(block.get("verified_at") or ""),
-            min_core_version=str(block.get("min_core_version") or "1.0.0"),
+            min_core_version=str(block.get("min_core_version") or "0.6.0"),
             deprecated=bool(block.get("deprecated", False)),
         )
         return TemplateRecord(metadata, path.resolve(), raw, builtin)

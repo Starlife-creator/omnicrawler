@@ -317,7 +317,11 @@ class _LocalPluginsPane(QWidget):
 
     def _on_trust(self) -> None:
         entry = self._current()
-        if entry is None or not entry.author_username or not entry.fingerprint:
+        if entry is None or not entry.author_username:
+            return
+        if not entry.public_key:
+            # 无公钥即无信任依据：指纹字符串不能当凭据（审查报告 N23①/N26）
+            ToastManager.instance().error(_(f"无法信任 {entry.author_username}：缺少作者公钥"))
             return
         reply = QMessageBox.question(
             self,
@@ -330,9 +334,7 @@ class _LocalPluginsPane(QWidget):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        creator = CreatorIdentity(
-            username=entry.author_username, public_key=b"", key_fingerprint=entry.fingerprint
-        )
+        creator = CreatorIdentity(username=entry.author_username, public_key=entry.public_key)
         if TrustedUserList().add(creator, source="manual", path_hint=f"（{entry.name}）"):
             ToastManager.instance().success(_(f"已信任作者 {entry.author_username}"))
         else:

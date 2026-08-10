@@ -3,9 +3,11 @@ from __future__ import annotations
 import ast
 import importlib.util
 import inspect
+import io
 import logging
 import re
 import threading
+import tokenize
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -22,8 +24,10 @@ PLUGIN_API_VERSION = 1
 CORE_VERSION = __version__
 LOGGER = logging.getLogger(__name__)
 
-# 市场安装目录名：位于该目录下的插件视为市场来源（维护者签名+信任根门禁）。
-# 其余路径（默认 plugins/）视为本地来源（创作者签名+信任询问门禁）。
+# 市场安装目录名：位于**项目根下该目录**的插件视为市场来源
+# （维护者签名+信任根门禁）。市场来源判定必须是「规范的安装位置」，
+# 而不是"路径里碰巧出现这个名字"——后者可被任意目录名伪造
+# （审查报告 B10：把市场插件挪进 plugins/ 即逃脱维护者签名要求）。
 MARKET_DIR_NAME = "plugins_installed"
 
 # UI 权限族：本地来源插件自动放行（GUI 插件宿主按注册类型挂载）；
@@ -332,7 +336,9 @@ def _verify_plugin_signature(
     *,
     signature_policy: str,
     trust_prompter: TrustPrompter | None,
-) -> None:
+    plugin_bytes: bytes | None = None,
+    is_market: bool = False,
+) -> Any:
     """签名验签门（按来源分级 + 签名策略）。
 
     分层：
@@ -341,6 +347,10 @@ def _verify_plugin_signature(
     - 创作者签名有效但未在信任列表：strict 策略下经信任询问器确认
       （信任并加载 / 仅本次加载 / 拒绝）；developer 策略下警告放行；
     - 无有效签名：strict 一律拒载；developer 策略下警告放行（开发模式）。
+
+    ``plugin_bytes`` 传入调用方已读好的内容，验签基于**同一份字节**（TOCTOU 消除，
+    审查报告 S49）。返回 TrustDecision（含通过验签的 verified_bytes），供调用方
+    原样执行；未通过时抛 PluginSignatureError。
     """
 
     trust_source = ""
@@ -356,35 +366,39 @@ def _verify_plugin_signature(
                     path,
                     reason,
                 )
-                return
+                return None
             raise signing.PluginSignatureError(f"插件签名校验失败，拒绝加载: {path}（{reason}）")
-        return
+        return None
     from . import trust as trust_model
 
-    is_market = MARKET_DIR_NAME in path.parent.parts
     decision = trust_model.verify_plugin_trust(
-        path.parent, trust_source, trust_model.TrustedUserList()
+        path.parent,
+        trust_source,
+        trust_model.TrustedUserList(),
+        plugin_bytes=plugin_bytes,
     )
     level = decision.level
     if is_market:
-        # 市场来源：仅接受维护者签名（内置信任根验签），创作者签名不足以放行
+        # 市场来源：仅接受维护者签名（内置信任根验签），创作者签名不足以放行。
+        # 信任根缺失时（trust_root_available=False）维护者层级根本没被评估，
+        # 一律拒绝——绝不把"没查到"当成"通过"（审查报告 S51）。
         if level == trust_model.TrustLevel.MaintainerSigned:
-            return
+            return decision
         if signature_policy == SIGNATURE_POLICY_DEVELOPER:
             LOGGER.warning(
                 "开发者模式：市场目录插件未经信任根验签，警告放行: %s（%s）",
                 path,
                 decision.reason,
             )
-            return
+            return decision
         raise signing.PluginSignatureError(
             f"市场插件必须通过信任根验签，拒绝加载: {path}（{decision.reason}）"
         )
     if level == trust_model.TrustLevel.MaintainerSigned:
-        return
+        return decision
     if level == trust_model.TrustLevel.CreatorTrusted:
         LOGGER.info("创作者信任列表命中，加载插件: %s", path)
-        return
+        return decision
     if level == trust_model.TrustLevel.CreatorUntrusted and decision.creator is not None:
         creator = decision.creator
         if signature_policy == SIGNATURE_POLICY_DEVELOPER:
@@ -394,7 +408,7 @@ def _verify_plugin_signature(
                 creator.username,
                 creator.key_fingerprint,
             )
-            return
+            return decision
         if trust_prompter is not None:
             result = trust_prompter(
                 path.parent.name, creator.username, creator.key_fingerprint
@@ -409,14 +423,14 @@ def _verify_plugin_signature(
                     creator.key_fingerprint,
                     path,
                 )
-                return
+                return decision
             if result == TrustPromptResult.LOAD_ONCE:
                 LOGGER.info("仅本次加载（作者未入信任列表）: %s", path)
-                return
+                return decision
         raise signing.PluginSignatureError(
             f"插件 {path} 拒绝加载：作者 {creator.username}（指纹 {creator.key_fingerprint}）"
             " 未在本地信任列表。信任命令: python tools/identity.py trust add "
-            f"{creator.key_fingerprint} --name {creator.username}"
+            f"--pubkey <作者的 .pem 公钥文件> --name {creator.username}"
         )
     if signature_policy == SIGNATURE_POLICY_DEVELOPER:
         LOGGER.warning(
@@ -425,7 +439,7 @@ def _verify_plugin_signature(
             path,
             decision.reason,
         )
-        return
+        return decision
     raise signing.PluginSignatureError(f"插件签名校验失败，拒绝加载: {path}（{decision.reason}）")
 
 
@@ -514,9 +528,20 @@ def _load_local_plugin(
     path = path.resolve()
     if not allow_external_paths and root not in path.parents:
         raise PermissionError(f"默认禁止加载项目目录之外的插件: {path}")
-    requested = _preflight_permissions(path)
+
+    # ── 全链路共用同一份字节：预检 / 验签 / 执行全部基于本次读取（S49）。
+    #    此后不再对磁盘做第二次读取，杜绝"验签读 A、执行读 B"的 TOCTOU 窗口。
+    plugin_bytes = path.read_bytes()
+    source = _decode_plugin_source(path, plugin_bytes)
+
+    # 市场来源判定：规范安装位置 = <项目根>/<市场目录名>/<插件id>/plugin.py。
+    # 仅当父目录**精确等于**该位置时才视为市场插件；路径里任何别处出现
+    # "plugins_installed" 字样都不算（审查报告 B10）。
+    is_market = path.parent == (root / MARKET_DIR_NAME / path.parent.name)
+
+    requested = _preflight_permissions(path, source)
     approved = {item.casefold() for item in approved_permissions}
-    if MARKET_DIR_NAME not in path.parent.parts:
+    if not is_market:
         # 本地来源插件：ui:* 权限族自动放行（GUI 插件宿主按注册类型挂载）
         approved |= UI_PERMISSIONS
     denied = requested - approved
@@ -525,7 +550,7 @@ def _load_local_plugin(
             f"Plugin permissions were not approved: {', '.join(sorted(denied))}; file={path}"
         )
     network_imports, dangerous_patterns = _preflight_forbidden_patterns(
-        path, allowed=set(ast_allowed_patterns)
+        path, source, allowed=set(ast_allowed_patterns)
     )
     if network_imports:
         raise PermissionError(
@@ -535,14 +560,16 @@ def _load_local_plugin(
     if dangerous_patterns:
         raise PermissionError(
             "插件包含禁止的危险调用/导入: "
-            f"{', '.join(sorted(dangerous_patterns))}；如确属需要，请在插件文件头添加注释 "
-            "'# omnicrawl: allow-ast <名称>' 或在配置 plugins.ast_allowed_patterns 中声明豁免"
+            f"{', '.join(sorted(dangerous_patterns))}；如确属需要，请在配置 "
+            "plugins.ast_allowed_patterns 中显式声明豁免"
         )
-    _verify_plugin_signature(
+    decision = _verify_plugin_signature(
         path,
         config,
         signature_policy=signature_policy,
         trust_prompter=trust_prompter,
+        plugin_bytes=plugin_bytes,
+        is_market=is_market,
     )
     LOGGER.warning(
         "Loading trusted local plugin in the main process: %s. "
@@ -561,7 +588,14 @@ def _load_local_plugin(
             if not spec or not spec.loader:
                 raise ImportError(f"无法加载插件: {path}")
             module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
+            # 执行**通过验签的那一份字节**（decision.verified_bytes），而非重新读盘。
+            # developer 策略下验签可能未执行（decision 为 None 或 verified_bytes 为空），
+            # 此时回退到本次已读的 plugin_bytes——同样是单次读取的内容。
+            exec_bytes = (
+                decision.verified_bytes if decision is not None and decision.verified_bytes else plugin_bytes
+            )
+            code = compile(_decode_plugin_source(path, exec_bytes), str(path), "exec")
+            exec(code, module.__dict__)
             _PLUGIN_MODULE_CACHE[mtime_key] = module
     register = getattr(module, "register", None)
     if not callable(register):
@@ -668,31 +702,47 @@ _FORBIDDEN_ATTR_CALLS = {
 
 # 危险内建调用（eval/exec 动态执行）
 _FORBIDDEN_BUILTIN_CALLS = {"eval", "exec"}
+# 动态导入函数：`__import__` / `importlib.import_module` 是绕过 AST 门的
+# 常规入口（`__import__('os').system('id')` 的 func.value 是 Call 而非 Name，
+# 旧实现因此漏判——审查报告 B2）。任何出现都直接判危险，杜绝"借道导入"。
+_FORBIDDEN_IMPORT_FUNCS = {"__import__", "import_module"}
 
-# 文件内豁免注释：# omnicrawl: allow-ast <pattern-id>（如 os.system、subprocess、eval）
-_ALLOW_AST_COMMENT_RE = re.compile(r"^\s*#\s*omnicrawl:\s*allow-ast\s+([\w.]+)\s*$", re.IGNORECASE)
+
+def _decode_plugin_source(path: Path, data: bytes) -> str:
+    """按 PEP 263 编码声明解码插件源码。
+
+    尊重文件头 ``# -*- coding: xxx -*-``（tokenize.detect_encoding 负责），
+    解码失败即抛 PermissionError——**绝不**返回空内容蒙混过关
+    （审查报告 B2：旧实现用 utf-8 硬解，latin-1 文件抛 UnicodeDecodeError
+    后被吞掉、预检返回空集 = fail-open）。
+    """
+    try:
+        encoding, _ = tokenize.detect_encoding(io.BytesIO(data).readline)
+    except (SyntaxError, LookupError) as exc:
+        raise PermissionError(f"插件源码编码声明非法，拒绝加载: {path}（{exc}）") from exc
+    try:
+        return data.decode(encoding)
+    except UnicodeDecodeError as exc:
+        raise PermissionError(
+            f"插件源码无法按声明的编码解码（{encoding}），拒绝加载: {path}（{exc}）"
+        ) from exc
 
 
-def _preflight_forbidden_patterns(path: Path, allowed: set[str]) -> tuple[set[str], set[str]]:
+def _preflight_forbidden_patterns(path: Path, source: str, allowed: set[str]) -> tuple[set[str], set[str]]:
     """AST 静态检查插件源码，返回 (网络导入, 其他危险模式)。
 
     两类均为空才允许加载。``allowed`` 提供豁免的 pattern id（模块名、
-    调用名如 ``os.system``），来源：``plugins.ast_allowed_patterns`` 配置
-    或文件内 ``# omnicrawl: allow-ast <id>`` 注释。豁免必须显式、可审计。
+    调用名如 ``os.system``），**唯一**来源：``plugins.ast_allowed_patterns``
+    配置——由管理员（运行配置）控制，不由插件自己声明。
+
+    任何解析失败都抛 PermissionError（fail-closed）；语法错误的文件本来
+    也无法执行，此处显式拒绝而非静默放行。
     """
-    try:
-        source = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
-        return set(), set()
+    allowed = set(allowed)
     try:
         tree = ast.parse(source, filename=str(path))
-    except SyntaxError:
-        return set(), set()
-    allowed = set(allowed)
-    for line in source.splitlines():
-        match = _ALLOW_AST_COMMENT_RE.search(line)
-        if match:
-            allowed.add(match.group(1))
+    except SyntaxError as exc:
+        raise PermissionError(f"插件源码解析失败，拒绝加载: {path}（{exc}）") from exc
 
     network: set[str] = set()
     dangerous: set[str] = set()
@@ -725,6 +775,8 @@ def _preflight_forbidden_patterns(path: Path, allowed: set[str]) -> tuple[set[st
                 pair = f"{top}.{item.name}"
                 if (top, item.name) in _FORBIDDEN_ATTR_CALLS and pair not in allowed:
                     dangerous.add(pair)
+                if item.name in _FORBIDDEN_IMPORT_FUNCS:
+                    dangerous.add(f"{top}.{item.name}")
                 alias[item.asname or item.name] = pair
         elif isinstance(node, ast.Call):
             func = node.func
@@ -732,31 +784,65 @@ def _preflight_forbidden_patterns(path: Path, allowed: set[str]) -> tuple[set[st
                 if func.id in _FORBIDDEN_BUILTIN_CALLS and func.id not in allowed:
                     dangerous.add(func.id)
                 if func.id == "__import__":
-                    if (
-                        node.args
-                        and isinstance(node.args[0], ast.Constant)
-                        and isinstance(node.args[0].value, str)
-                    ):
-                        name = node.args[0].value
-                        if (
-                            any(name == m or name.startswith(m + ".") for m in _NETWORK_MODULES)
-                            and name not in allowed
-                        ):
-                            network.add(name)
-            elif isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
-                module = alias.get(func.value.id, func.value.id)
-                pair = f"{module}.{func.attr}"
-                if (module, func.attr) in _FORBIDDEN_ATTR_CALLS and pair not in allowed:
-                    dangerous.add(pair)
+                    # __import__ 本身即动态导入入口：无论参数是否字面量，
+                    # 一律拒绝（旧实现只在参数为常量字符串时检查网络模块，
+                    # 其余情况漏过）。
+                    dangerous.add("__import__")
+            elif isinstance(func, ast.Attribute):
+                if func.attr in _FORBIDDEN_IMPORT_FUNCS:
+                    dangerous.add(f"<call>.{func.attr}")
+                # 常规形态：<模块>.<属性>(...) —— 属性链逐层向上解析模块名
+                module = _resolve_module_of_attribute(func, alias)
+                if module is not None:
+                    pair = f"{module}.{func.attr}"
+                    if (module, func.attr) in _FORBIDDEN_ATTR_CALLS and pair not in allowed:
+                        dangerous.add(pair)
     return network, dangerous
 
 
-def _preflight_permissions(path: Path) -> set[str]:
-    """Read literal metadata from the AST before importing and executing plugin code."""
+def _resolve_module_of_attribute(node: ast.Attribute, alias: dict[str, str]) -> str | None:
+    """从属性调用链解析「模块.属性」中的模块名。
+
+    覆盖三种形态：
+    - ``os.system(...)``         → func.value 是 Name → "os"
+    - ``alias.system(...)``      → func.value 是 Name，经 import as 别名映射
+    - ``__import__('os').system(...)`` → func.value 是 Call —— 旧实现漏判
+      的关键形态（审查报告 B2）：此处把 `__import__('<字面量>')` 的参数字面量
+      当作模块名返回，命中 _FORBIDDEN_ATTR_CALLS 即拒绝。
+    解析不出明确模块名时返回 None（不误报，交由其它规则兜底）。
+    """
+    value = node.value
+    if isinstance(value, ast.Name):
+        return alias.get(value.id, value.id)
+    if isinstance(value, ast.Call):
+        inner = value.func
+        if isinstance(inner, ast.Name) and inner.id == "__import__":
+            if (
+                value.args
+                and isinstance(value.args[0], ast.Constant)
+                and isinstance(value.args[0].value, str)
+            ):
+                return value.args[0].value.split(".")[0]
+        if (
+            isinstance(inner, ast.Attribute)
+            and inner.attr in _FORBIDDEN_IMPORT_FUNCS
+            and value.args
+            and isinstance(value.args[0], ast.Constant)
+            and isinstance(value.args[0].value, str)
+        ):
+            return value.args[0].value.split(".")[0]
+    return None
+
+
+def _preflight_permissions(path: Path, source: str) -> set[str]:
+    """Read literal metadata from the AST before importing and executing plugin code.
+
+    fail-closed：解析/求值失败一律抛 PermissionError，绝不返回空集放行。
+    """
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    except (OSError, UnicodeError, SyntaxError):
-        return set()
+        tree = ast.parse(source, filename=str(path))
+    except SyntaxError as exc:
+        raise PermissionError(f"插件源码解析失败，拒绝加载: {path}（{exc}）") from exc
     for node in tree.body:
         if not isinstance(node, (ast.Assign, ast.AnnAssign)):
             continue
@@ -764,14 +850,14 @@ def _preflight_permissions(path: Path) -> set[str]:
         if not any(isinstance(target, ast.Name) and target.id == "PLUGIN_METADATA" for target in targets):
             continue
         if node.value is None:
-            return set()
+            raise PermissionError(f"PLUGIN_METADATA 不能为空: {path}")
         try:
             value = ast.literal_eval(node.value)
-        except (ValueError, TypeError):
-            return set()
+        except (ValueError, TypeError) as exc:
+            raise PermissionError(f"PLUGIN_METADATA 必须是静态字面量: {path}（{exc}）") from exc
         if isinstance(value, dict):
             permissions = value.get("permissions", [])
             if isinstance(permissions, (list, tuple)):
                 return {str(item).casefold() for item in permissions}
-        return set()
+        raise PermissionError(f"PLUGIN_METADATA 结构非法: {path}")
     return set()
