@@ -103,23 +103,24 @@ def check_sbom(sbom_path: Path | None) -> list[str]:
     ]
     if bad:
         return [f"[4] SBOM 含非法版本号（{len(bad)} 个）: {bad[:5]}..."]
-    # 与同一环境 pip freeze 比对：SBOM 必须覆盖 freeze 的每个包
-    # （排除构建/环境工具链包：pip/setuptools/wheel 出现在 freeze 但不在
-    # 依赖树里，Windows/不同 Python 版本下存在性不一，不参与比对）
+    # 与同一环境 pip freeze 比对：SBOM 的每个包必须真实存在于环境
+    # （SBOM ⊆ freeze）。反向（freeze ⊆ SBOM）不成立——runner 预装
+    # 的无关工具（如 pipx/platformdirs）在 freeze 里但不在依赖树中，
+    # 若要求 SBOM 覆盖它们会让门禁在部分平台误报。
     freeze = subprocess.run(
         [sys.executable, "-m", "pip", "freeze"], capture_output=True, text=True
     ).stdout
-    _TOOLCHAIN = {"pip", "setuptools", "wheel"}
     frozen = {
         line.split("==", 1)[0].lower().replace("_", "-")
         for line in freeze.splitlines()
-        if "==" in line and line.split("==", 1)[0].lower().replace("_", "-") not in _TOOLCHAIN
+        if "==" in line
     }
     sbom_names = {comp["name"].lower().replace("_", "-") for comp in components}
-    missing = sorted(frozen - sbom_names)
-    if missing:
+    fake = sorted(sbom_names - frozen)
+    if fake:
         return [
-            f"[4] SBOM 未覆盖 pip freeze 中的 {len(missing)} 个包（SBOM {len(sbom_names)} 条 vs freeze {len(frozen)} 条）: {missing[:8]}..."
+            f"[4] SBOM 包含环境中不存在的包（{len(fake)} 个）: {fake[:8]}... "
+            "(SBOM 必须由 generate_sbom.py 从真实环境生成)"
         ]
     return []
 
