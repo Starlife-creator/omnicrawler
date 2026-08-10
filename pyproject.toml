@@ -87,14 +87,10 @@ where = ["src"]
 [tool.setuptools.package-data]
 omnicrawl = ["templates/**/*.yaml", "templates/**/*.yml", "templates/**/*.csv", "templates/**/*.json"]
 "omnicrawl.gui" = ["templates/*.yaml", "help/*.html", "help/images/*"]
-
-# pip 安装形态的语言包：随 wheel 分发到 share/omnicrawl/locale
-# （i18n._find_localedir 已把该位置纳入候选链）
-[tool.setuptools.data-files]
-"share/omnicrawl/locale" = [
-  "locale/en_US/LC_MESSAGES/omnicrawl-gui.po",
-  "locale/en_US/LC_MESSAGES/omnicrawl-gui.mo",
-]
+# 注：locale 语言包不在此登记——pip wheel 形态经 data-files 打包需配套
+# MANIFEST.in 与 Docker COPY，曾导致 docker/test CI 构建失败（2026-08-11）。
+# 语言包随 PyInstaller 便携包分发（packaging/*.spec datas 已登记），
+# 源码形态由 i18n._find_localedir 沿父链找到仓库根 locale/。
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

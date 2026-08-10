@@ -42,9 +42,12 @@ def test_dialog_instantiates_and_refreshes(monkeypatch, tmp_path) -> None:
 
 
 def test_trust_add_and_revoke(monkeypatch, tmp_path) -> None:
+    from omnicrawl.plugins import signing
+
     dialog = _make_dialog(monkeypatch, tmp_path)
+    _, public_pem = signing.generate_keypair()
     dialog._trust_name.setText("alice")
-    dialog._trust_fingerprint.setText("a" * 32)
+    dialog._trust_pubkey.setText(public_pem.decode("ascii"))
     dialog._on_trust_add()
     assert dialog._trust_list.count() == 1
     assert "alice" in dialog._trust_list.item(0).text()
@@ -62,6 +65,6 @@ def test_trust_add_and_revoke(monkeypatch, tmp_path) -> None:
 def test_trust_add_requires_both_fields(monkeypatch, tmp_path) -> None:
     dialog = _make_dialog(monkeypatch, tmp_path)
     dialog._trust_name.setText("alice")
-    dialog._trust_fingerprint.setText("")
+    dialog._trust_pubkey.setText("")
     dialog._on_trust_add()  # 不应抛异常，也不应写入
     assert dialog._trust_list.count() == 0
