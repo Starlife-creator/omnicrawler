@@ -29,6 +29,8 @@ jobs:
       - name: Checkout OmniCrawler-market (sibling)
         shell: pwsh
         run: |
+          # 签名/指纹按字节校验：必须按 LF 检出，禁止 Windows autocrlf 转 CRLF
+          git config core.autocrlf false
           $token = "${{ secrets.MARKET_REPO_TOKEN }}"
           $url = "https://github.com/${{ github.repository_owner }}/OmniCrawler-market.git"
           if ($token) {
@@ -142,6 +144,8 @@ jobs:
       - name: Checkout OmniCrawler-market (sibling)
         shell: pwsh
         run: |
+          # 签名/指纹按字节校验：必须按 LF 检出，禁止 Windows autocrlf 转 CRLF
+          git config core.autocrlf false
           $token = "${{ secrets.MARKET_REPO_TOKEN }}"
           $url = "https://github.com/${{ github.repository_owner }}/OmniCrawler-market.git"
           if ($token) {
