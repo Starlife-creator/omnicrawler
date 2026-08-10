@@ -4,6 +4,7 @@ and transparency log."""
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -17,7 +18,7 @@ from omnicrawl.plugins import signing  # noqa: E402
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SIGN_TOOL = REPO_ROOT / "tools" / "sign_plugin.py"
 
-_UTF8_ENV = {"PYTHONIOENCODING": "utf-8"}
+_UTF8_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
 
 
 def _run(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:

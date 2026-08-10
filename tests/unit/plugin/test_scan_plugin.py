@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -16,7 +17,7 @@ pytestmark = pytest.mark.skipif(
     reason="OmniCrawler-market 仓库未 clone（需与主仓库同级），跳过扫描器测试",
 )
 
-_UTF8_ENV = {"PYTHONIOENCODING": "utf-8"}
+_UTF8_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
 
 
 def _run_scan(*plugin_dirs: str, manifest: str | None = None) -> subprocess.CompletedProcess[str]:
