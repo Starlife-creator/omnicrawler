@@ -69,6 +69,7 @@ jobs:
       - run: python tools/build_source_archive.py --output-dir dist
       - run: python tools/check_release_integrity.py --source-zip-dir dist
       - run: python tools/generate_sbom.py --output dist/omnicrawler-sbom.cdx.json
+      - run: python tools/check_guardrails.py --sbom dist/omnicrawler-sbom.cdx.json
       - run: python tools/generate_checksums.py dist --output SHA256SUMS-ci.txt
       - run: python tools/generate_checksums.py dist --output SHA256SUMS-ci.txt --check
       - run: python tools/generate_provenance.py --artifact-dir dist --output dist/omnicrawler-provenance.json

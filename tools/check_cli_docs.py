@@ -11,10 +11,13 @@ from omnicrawl.cli import build_parser
 COMMAND = re.compile(r"\bomnicrawl[ \t]+([a-z][a-z0-9-]*)\b")
 INVOCATION = re.compile(r"\bomnicrawl[ \t]+([a-z][a-z0-9-]*)([^\r\n`]*)")
 OPTION = re.compile(r"(?<![\w-])(--[a-z][a-z0-9-]*|-[A-Za-z])\b")
+# 声明即承诺：DEFAULT_DOCS 里的文件**必须存在**（下方 check_docs 对缺失文件
+# 直接记为 issue，fail-closed）。曾把 docs/USER_GUIDE.md 与
+# docs/USER_GUIDE_2.0.md 列在此处而两文件均不存在，循环体却 `continue`
+# 静默跳过——"目标不存在"被当成"目标通过"，5 份声明实际只查了 3 份
+# （审查报告 S44）。
 DEFAULT_DOCS = (
     "README.md",
-    "docs/USER_GUIDE.md",
-    "docs/USER_GUIDE_2.0.md",
     "docs/INSTALLATION.md",
     "docs/FAQ.md",
 )
@@ -70,6 +73,8 @@ def check_docs(project_root: Path, paths: tuple[str, ...] = DEFAULT_DOCS) -> lis
         candidates.append((str(release_guide), release_guide))
     for label, path in candidates:
         if not path.is_file():
+            # fail-closed：声明检查的文档不存在 = 检查范围缩水，必须显式报错
+            issues.append(f"{label}: declared documentation file does not exist: {path}")
             continue
         text = path.read_text(encoding="utf-8")
         for command in sorted(documented_commands(text) - available):

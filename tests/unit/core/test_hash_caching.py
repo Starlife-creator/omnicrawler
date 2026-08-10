@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 from omnicrawl.core.models import CrawlRequest, FetchResult
 
 
@@ -20,4 +22,5 @@ def test_content_hash_cached() -> None:
     second = result.content_hash
     assert first == second
     assert result._content_hash_cache == first
-    assert first == "0f5a5bd09f7a14b1ad84f7d2a1c56fbd4e8dff98e0b5a5fde84b5d6e1e9c34a4" or True  # 稳定值存在即可
+    # 哈希是确定性函数：相同内容必须产生相同摘要（仅对 body 哈希，见 models.py）
+    assert first == hashlib.sha256(b"x" * 1000).hexdigest()

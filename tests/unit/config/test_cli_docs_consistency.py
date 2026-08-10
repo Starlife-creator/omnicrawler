@@ -8,7 +8,8 @@ def test_documented_command_parser_only_reads_top_level_command():
 def test_checked_project_docs_only_reference_real_commands():
     from pathlib import Path
 
-    project_root = Path(__file__).resolve().parents[1]
+    # 仓库根（DEFAULT_DOCS 声明的文档真实存在；缺失文件现在会被记为 issue）
+    project_root = Path(__file__).resolve().parents[3]
     assert check_docs(project_root) == []
 
 
