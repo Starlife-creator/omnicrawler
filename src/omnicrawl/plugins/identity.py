@@ -78,7 +78,7 @@ ED25519_PUBLIC_KEY_SIZE = 32
 FINGERPRINT_ALGORITHM = "sha256-raw32-16"
 
 
-class FingerprintMismatch(IdentityError):
+class FingerprintMismatchError(IdentityError):
     """自称指纹与公钥实际推导值不符——视为身份伪造，fail-closed 拒绝。"""
 
 
@@ -163,7 +163,7 @@ class CreatorIdentity:
         identity = cls(username=str(data["username"]), public_key=public_key)
         declared = str(data.get("key_fingerprint", "")).strip().lower()
         if declared and declared != identity.key_fingerprint:
-            raise FingerprintMismatch(
+            raise FingerprintMismatchError(
                 f"creator.identity 指纹与公钥不符：声明 {declared}，"
                 f"公钥实际推导 {identity.key_fingerprint}（疑似身份冒充，已拒绝）"
             )

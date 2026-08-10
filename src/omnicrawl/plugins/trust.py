@@ -32,7 +32,7 @@ from . import signing
 from .identity import (
     FINGERPRINT_ALGORITHM,
     CreatorIdentity,
-    FingerprintMismatch,
+    FingerprintMismatchError,
     IdentityError,
     derive_fingerprint,
 )
@@ -204,7 +204,7 @@ def _load_creator_identity(plugin_dir: Path) -> CreatorIdentity | None:
         return None
     try:
         return CreatorIdentity.from_dict(json.loads(path.read_text(encoding="utf-8")))
-    except FingerprintMismatch as exc:
+    except FingerprintMismatchError as exc:
         # 指纹与公钥对不上不是"格式坏了"，是有人在冒充别人 —— 按安全事件记录
         LOGGER.error("拒绝加载：creator.identity 身份伪造嫌疑 %s（%s）", path, exc)
         return None

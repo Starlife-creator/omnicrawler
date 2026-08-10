@@ -5,7 +5,6 @@ import importlib.util
 import inspect
 import io
 import logging
-import re
 import threading
 import tokenize
 from collections.abc import Callable
@@ -792,10 +791,10 @@ def _preflight_forbidden_patterns(path: Path, source: str, allowed: set[str]) ->
                 if func.attr in _FORBIDDEN_IMPORT_FUNCS:
                     dangerous.add(f"<call>.{func.attr}")
                 # 常规形态：<模块>.<属性>(...) —— 属性链逐层向上解析模块名
-                module = _resolve_module_of_attribute(func, alias)
-                if module is not None:
-                    pair = f"{module}.{func.attr}"
-                    if (module, func.attr) in _FORBIDDEN_ATTR_CALLS and pair not in allowed:
+                resolved_module = _resolve_module_of_attribute(func, alias)
+                if resolved_module is not None:
+                    pair = f"{resolved_module}.{func.attr}"
+                    if (resolved_module, func.attr) in _FORBIDDEN_ATTR_CALLS and pair not in allowed:
                         dangerous.add(pair)
     return network, dangerous
 
