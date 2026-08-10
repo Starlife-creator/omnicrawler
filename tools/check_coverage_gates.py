@@ -113,8 +113,20 @@ def _coverage(files: dict[str, Any], matcher: Matcher) -> tuple[int, int, float]
 
 
 def _file_coverage(files: dict[str, Any], raw_path: str) -> float | None:
-    """单文件覆盖率；报告里不存在该文件时返回 None（视为缺失）。"""
-    details = files.get(_normalise(raw_path))
+    """单文件覆盖率；报告里不存在该文件时返回 None（视为缺失）。
+
+    coverage.json 的 key 是**绝对路径**（CI runner 上各不相同），因此先按
+    相对路径精确匹配，再按「以 src/... 结尾」兜底匹配，避免不同机器上
+    覆盖率报告路径前缀差异导致的漏检（曾导致 Windows CI 全报 missing）。
+    """
+    norm = _normalise(raw_path)
+    details = files.get(norm)
+    if details is None:
+        for key, value in files.items():
+            candidate = _normalise(key)
+            if candidate == norm or candidate.endswith("/" + norm):
+                details = value
+                break
     if details is None:
         return None
     summary = details["summary"]
