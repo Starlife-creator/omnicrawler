@@ -16,6 +16,8 @@ datas = [
     (str(src_root / "omnicrawl" / "gui" / "templates"), "omnicrawl/gui/templates"),
     (str(src_root / "omnicrawl" / "gui" / "help"), "omnicrawl/gui/help"),
     (str(src_root / "omnicrawl" / "fetching" / "stealth.min.js"), "omnicrawl/fetching"),
+    # 语言包：i18n._find_localedir 沿包父链找到 omnicrawl/locale（S42 打包登记）
+    (str(project_root / "locale"), "omnicrawl/locale"),
 ]
 binaries = []
 hiddenimports = collect_submodules("omnicrawl")

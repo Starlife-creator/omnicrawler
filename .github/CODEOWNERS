@@ -2,28 +2,28 @@
 # Reviews are automatically requested based on file paths.
 
 # Core pipeline and architecture
-/src/omnicrawl/pipeline/        @starlife
-/src/omnicrawl/services/application_service.py @starlife
-/src/omnicrawl/pipeline_ops/task_ir.py       @starlife
-/src/omnicrawl/runtime/repository.py    @starlife
-/src/omnicrawl/security/egress.py        @starlife
+/src/omnicrawl/pipeline/        @Starlife-creator
+/src/omnicrawl/services/application_service.py @Starlife-creator
+/src/omnicrawl/pipeline_ops/task_ir.py       @Starlife-creator
+/src/omnicrawl/runtime/repository.py    @Starlife-creator
+/src/omnicrawl/security/egress.py        @Starlife-creator
 
 # GUI layer
-/src/omnicrawl/gui/             @starlife
+/src/omnicrawl/gui/             @Starlife-creator
 
 # Security-sensitive modules
-/src/omnicrawl/pipeline/exporters.py     @starlife
-/src/omnicrawl/state/           @starlife
-/src/omnicrawl/fetching/http_client.py   @starlife
+/src/omnicrawl/pipeline/exporters.py     @Starlife-creator
+/src/omnicrawl/state/           @Starlife-creator
+/src/omnicrawl/fetching/http_client.py   @Starlife-creator
 
 # Build and CI
-/pyproject.toml                 @starlife
-/Dockerfile                     @starlife
-/.github/                       @starlife
+/pyproject.toml                 @Starlife-creator
+/Dockerfile                     @Starlife-creator
+/.github/                       @Starlife-creator
 
 # Configuration and templates
-/src/omnicrawl/core/config.py        @starlife
-/src/omnicrawl/templates/       @starlife
+/src/omnicrawl/core/config.py        @Starlife-creator
+/src/omnicrawl/templates/       @Starlife-creator
 
 # Default: catch-all
-*                               @starlife
+*                               @Starlife-creator

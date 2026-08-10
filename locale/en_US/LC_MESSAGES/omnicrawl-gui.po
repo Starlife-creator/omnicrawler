@@ -9,31 +9,31 @@ msgstr ""
 #: src\omnicrawl\gui\wizard\step5_preview.py:211
 #: src\omnicrawl\gui\views\chart_view.py:136
 msgid "%p% 非空"
-msgstr "%p% 非空"
+msgstr "%p% is not empty"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:294
 msgid "(未匹配到任何内容)"
-msgstr "(未匹配到任何内容)"
+msgstr "(no content matched)"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:322
 msgid "+ 添加字段"
-msgstr "+ 添加字段"
+msgstr "+ Add field"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:326
 msgid "- 删除选中"
-msgstr "- 删除选中"
+msgstr "- Remove selected"
 
 #: src\omnicrawl\gui\delegates.py:583
 msgid "1. 向导模式"
-msgstr "1. 向导模式"
+msgstr "1. Wizard mode"
 
 #: src\omnicrawl\gui\delegates.py:584
 msgid "2. 5 分钟演示"
-msgstr "2. 5 分钟演示"
+msgstr "2. 5-minute demo"
 
 #: src\omnicrawl\gui\delegates.py:585
 msgid "3. 浏览模板"
-msgstr "3. 浏览模板"
+msgstr "3. Browse templates"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:130
 msgid "<html>...</html>"
@@ -45,11 +45,11 @@ msgstr "?"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:122
 msgid "AI 增强（完全可选）"
-msgstr "AI 增强（完全可选）"
+msgstr "AI enhancement (fully optional)"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:114
 msgid "AI 服务中心"
-msgstr "AI 服务中心"
+msgstr "AI service center"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:174
 msgid "API Key："
@@ -57,11 +57,11 @@ msgstr "API Key："
 
 #: src\omnicrawl\gui\wizard\step4_download.py:138
 msgid "API 地址:"
-msgstr "API 地址:"
+msgstr "API address:"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:165
 msgid "API 地址："
-msgstr "API 地址："
+msgstr "API address:"
 
 #: src\omnicrawl\gui\wizard\step5_preview.py:238
 msgid "Balanced"
@@ -90,7 +90,7 @@ msgstr "Economy (2 concurrent)"
 
 #: src\omnicrawl\gui\views\result_table.py:636
 msgid "Excel 文件 (*.xlsx)"
-msgstr "Excel 文件 (*.xlsx)"
+msgstr "Excel files (*.xlsx)"
 
 #: src\omnicrawl\gui\wizard\step5_preview.py:250
 msgid "Hide Advanced YAML"
@@ -98,7 +98,7 @@ msgstr "Hide Advanced YAML"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:37
 msgid "JSON/XML 数据接口，通过 HTTP API 获取结构化数据"
-msgstr "JSON/XML 数据接口，通过 HTTP API 获取结构化数据"
+msgstr "JSON/XML data endpoints: fetch structured data over HTTP API"
 
 #: src\omnicrawl\gui\wizard\step5_preview.py:233
 msgid "None"
@@ -120,15 +120,15 @@ msgstr "Off (no AI needed)"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:158
 msgid "Ollama 本地模型"
-msgstr "Ollama 本地模型"
+msgstr "Ollama local model"
 
 #: src\omnicrawl\gui\delegates.py:541
 msgid "omnicrawl 命令不可用。请确保 OmniCrawler 框架已安装。"
-msgstr "omnicrawl 命令不可用。请确保 OmniCrawler 框架已安装。"
+msgstr "The omnicrawl command is unavailable. Make sure the OmniCrawler framework is installed."
 
 #: src\omnicrawl\gui\delegates.py:764
 msgid "omnicrawl 命令不可用，请先配置环境。"
-msgstr "omnicrawl 命令不可用，请先配置环境。"
+msgstr "The omnicrawl command is unavailable. Configure the environment first."
 
 #: src\omnicrawl\gui\delegates.py:863
 msgid "OmniCrawler"
@@ -136,15 +136,15 @@ msgstr "OmniCrawler"
 
 #: src\omnicrawl\gui\main.py:832
 msgid "OmniCrawler GUI 工作台"
-msgstr "OmniCrawler GUI 工作台"
+msgstr "OmniCrawler GUI workbench"
 
 #: src\omnicrawl\gui\main.py:425
 msgid "OmniCrawler GUI 工作台 v{0}"
-msgstr "OmniCrawler GUI 工作台 v{0}"
+msgstr "OmniCrawler GUI workbench v{0}"
 
 #: src\omnicrawl\gui\main.py:1638
 msgid "OmniCrawler GUI 工作台 — 可视化爬虫配置与管理工具"
-msgstr "OmniCrawler GUI 工作台 — 可视化爬虫配置与管理工具"
+msgstr "OmniCrawler GUI workbench — visual crawler configuration and management tool"
 
 #: src\omnicrawl\gui\delegates.py:577
 #: src\omnicrawl\gui\main.py:178
@@ -163,19 +163,19 @@ msgstr "OpenAI"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:157
 msgid "OpenAI 兼容服务"
-msgstr "OpenAI 兼容服务"
+msgstr "OpenAI-compatible service"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:93
 msgid "PDF 与同址变化"
-msgstr "PDF 与同址变化"
+msgstr "PDF and same-site changes"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:286
 msgid "PDF 文档理解和 OCR 后处理使用的 Provider"
-msgstr "PDF 文档理解和 OCR 后处理使用的 Provider"
+msgstr "Provider used for PDF document understanding and OCR post-processing"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:287
 msgid "PDF 理解："
-msgstr "PDF 理解："
+msgstr "PDF understanding:"
 
 #: src\omnicrawl\gui\wizard\step5_preview.py:208
 msgid "Performance (plugged in)"
@@ -183,11 +183,11 @@ msgstr "Performance (plugged in)"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:125
 msgid "Provider 配置"
-msgstr "Provider 配置"
+msgstr "Provider configuration"
 
 #: src\omnicrawl\gui\delegates.py:741
 msgid "Python 功能模块："
-msgstr "Python 功能模块："
+msgstr "Python functional modules:"
 
 #: src\omnicrawl\gui\wizard\step5_preview.py:56
 msgid "Refresh Preview"
@@ -205,7 +205,7 @@ msgstr "Review the generated YAML config, then save or run."
 
 #: src\omnicrawl\gui\wizard\step1_source.py:38
 msgid "RSS/Atom 订阅源，定期抓取更新的内容"
-msgstr "RSS/Atom 订阅源，定期抓取更新的内容"
+msgstr "RSS/Atom feeds: periodically fetch updated content"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:38
 #: src\omnicrawl\gui\wizard\step5_preview.py:203
@@ -268,7 +268,7 @@ msgstr "YAML Files (*.yaml *.yml)"
 
 #: src\omnicrawl\gui\delegates.py:941
 msgid "YAML 文件 (*.yaml *.yml)"
-msgstr "YAML 文件 (*.yaml *.yml)"
+msgstr "YAML files (*.yaml *.yml)"
 
 #: src\omnicrawl\gui\delegates.py:899
 msgid "YAML 文件 (*.yaml *.yml);;所有文件 (*)"
@@ -276,7 +276,7 @@ msgstr "YAML Files (*.yaml *.yml);;All Files (*)"
 
 #: src\omnicrawl\gui\main.py:715
 msgid "YAML 编辑器"
-msgstr "YAML 编辑器"
+msgstr "YAML editor"
 
 #: src\omnicrawl\gui\delegates.py:979
 msgid "ZIP 文件 (*.zip)"
@@ -292,46 +292,46 @@ msgstr "← Back"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:239
 msgid "→ 同步到表单"
-msgstr "→ 同步到表单"
+msgstr "→ Sync to form"
 
 #: src\omnicrawl\gui\main.py:947
 msgid "⇄ 向导"
-msgstr "⇄ 向导"
+msgstr "⇄ Wizard"
 
 #: src\omnicrawl\gui\delegates.py:286
 #: src\omnicrawl\gui\main.py:943
 msgid "⇄ 编辑器"
-msgstr "⇄ 编辑器"
+msgstr "⇄ Editor"
 
 #: src\omnicrawl\gui\delegates.py:274
 #: src\omnicrawl\gui\main.py:783
 msgid "■ 停止"
-msgstr "■ 停止"
+msgstr "■ Stop"
 
 #: src\omnicrawl\gui\delegates.py:268
 #: src\omnicrawl\gui\main.py:780
 msgid "▶ 运行"
-msgstr "▶ 运行"
+msgstr "▶ Run"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:372
 msgid "⚠ 未找到可用模型"
-msgstr "⚠ 未找到可用模型"
+msgstr "⚠ No usable model found"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:308
 msgid "⚠ 请将 {{...}} 占位符替换为真实网址"
-msgstr "⚠ 请将 {{...}} 占位符替换为真实网址"
+msgstr "⚠ Replace the {{...}} placeholders with real URLs"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:346
 msgid "❌ 请填写 API 地址"
-msgstr "❌ 请填写 API 地址"
+msgstr "❌ Please fill in the API address"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:323
 msgid "❌ 请填写 API 地址和模型名称"
-msgstr "❌ 请填写 API 地址和模型名称"
+msgstr "❌ Please fill in the API address and model name"
 
 #: src\omnicrawl\gui\delegates.py:294
 msgid "一键加载示例配置并运行演示任务"
-msgstr "一键加载示例配置并运行演示任务"
+msgstr "Load the sample config with one click and run the demo task"
 
 #: src\omnicrawl\gui\main.py:196
 msgid "下一步 →"
@@ -339,20 +339,20 @@ msgstr "Next →"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:95
 msgid "下载后提取 PDF 文本、表格和元数据"
-msgstr "下载后提取 PDF 文本、表格和元数据"
+msgstr "Extract PDF text, tables and metadata after download"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:444
 #: src\omnicrawl\gui\views\yaml_editor.py:477
 msgid "下载开关"
-msgstr "下载开关"
+msgstr "Download switch"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:100
 msgid "不使用 OCR"
-msgstr "不使用 OCR"
+msgstr "Do not use OCR"
 
 #: src\omnicrawl\gui\delegates.py:587
 msgid "不再显示"
-msgstr "不再显示"
+msgstr "Do not show again"
 
 #: src\omnicrawl\gui\main.py:718
 #: src\omnicrawl\gui\views\professional_review.py:27
@@ -361,24 +361,24 @@ msgstr "Professional Review Desk"
 
 #: src\omnicrawl\gui\views\professional_review.py:33
 msgid "专业复核台 · 功能开发中"
-msgstr "专业复核台 · 功能开发中"
+msgstr "Professional review desk · under development"
 
 #: src\omnicrawl\gui\delegates.py:327
 msgid "专业模式"
-msgstr "专业模式"
+msgstr "Pro mode"
 
 #: src\omnicrawl\gui\delegates.py:379
 msgid "专业模式：可编辑 YAML 和高级采集规则"
-msgstr "专业模式：可编辑 YAML 和高级采集规则"
+msgstr "Pro mode: edit YAML and advanced crawl rules"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:264
 #: src\omnicrawl\gui\main.py:709
 msgid "主导航"
-msgstr "主导航"
+msgstr "Main navigation"
 
 #: src\omnicrawl\gui\delegates.py:257
 msgid "主工具栏"
-msgstr "主工具栏"
+msgstr "Main toolbar"
 
 #: src\omnicrawl\gui\delegates.py:169
 msgid "主题"
@@ -386,51 +386,51 @@ msgstr "Theme"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:78
 msgid "主题词:"
-msgstr "主题词:"
+msgstr "Keywords:"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:127
 msgid "云端 OpenAI 兼容 API"
-msgstr "云端 OpenAI 兼容 API"
+msgstr "Cloud OpenAI-compatible API"
 
 #: src\omnicrawl\gui\widgets\calendar_popup.py:41
 msgid "今天"
-msgstr "今天"
+msgstr "Today"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:109
 msgid "从剪贴板填充"
-msgstr "从剪贴板填充"
+msgstr "Fill from clipboard"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:123
 msgid "以下字段在编辑器和表单中存在差异，请选择如何处理:"
-msgstr "以下字段在编辑器和表单中存在差异，请选择如何处理:"
+msgstr "The following fields differ between the editor and the form. Choose how to handle them:"
 
 #: src\omnicrawl\gui\delegates.py:508
 msgid "以后可在设置中修改；迁移时可复制整个工作区。"
-msgstr "以后可在设置中修改；迁移时可复制整个工作区。"
+msgstr "This can be changed later in Settings; you can copy the whole workspace when migrating."
 
 #: src\omnicrawl\gui\wizard\step4_download.py:76
 msgid "任一命中即可，例如：人工智能, 大模型"
-msgstr "任一命中即可，例如：人工智能, 大模型"
+msgstr "Any keyword matches, e.g.: AI, large model"
 
 #: src\omnicrawl\gui\main.py:1222
 msgid "任务保存在本地；请用系统计划任务定期执行 omnicrawl schedule run-due。"
-msgstr "任务保存在本地；请用系统计划任务定期执行 omnicrawl schedule run-due。"
+msgstr "Tasks are saved locally; use the OS task scheduler to periodically run `omnicrawl schedule run-due`."
 
 #: src\omnicrawl\gui\wizard\step1_source.py:60
 msgid "任务名称"
-msgstr "任务名称"
+msgstr "Task name"
 
 #: src\omnicrawl\gui\delegates.py:202
 msgid "任务完成后自动打开结果文件夹"
-msgstr "任务完成后自动打开结果文件夹"
+msgstr "Automatically open the results folder when the task finishes"
 
 #: src\omnicrawl\gui\delegates.py:208
 msgid "任务完成声音提示"
-msgstr "任务完成声音提示"
+msgstr "Play a sound when the task finishes"
 
 #: src\omnicrawl\gui\delegates.py:863
 msgid "任务已完成！"
-msgstr "任务已完成！"
+msgstr "Task completed!"
 
 #: src\omnicrawl\gui\main.py:1532
 #: src\omnicrawl\gui\widgets\status_indicator.py:42
@@ -444,35 +444,35 @@ msgstr "Task Status Indicator"
 
 #: src\omnicrawl\gui\main.py:716
 msgid "任务监控"
-msgstr "任务监控"
+msgstr "Task monitor"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:281
 msgid "任务设计和配置生成使用的 Provider"
-msgstr "任务设计和配置生成使用的 Provider"
+msgstr "Provider used for task design and config generation"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:282
 msgid "任务设计："
-msgstr "任务设计："
+msgstr "Task design:"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:73
 msgid "例如：https://example.com/news"
-msgstr "例如：https://example.com/news"
+msgstr "e.g.: https://example.com/news"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:84
 msgid "例如：征求意见稿, 失效"
-msgstr "例如：征求意见稿, 失效"
+msgstr "e.g.: draft for comments, expired"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:63
 msgid "例如：政策栏目—人工智能主题 PDF"
-msgstr "例如：政策栏目—人工智能主题 PDF"
+msgstr "e.g.: policy section — AI-themed PDFs"
 
 #: src\omnicrawl\gui\delegates.py:717
 msgid "便携自包含"
-msgstr "便携自包含"
+msgstr "Portable & self-contained"
 
 #: src\omnicrawl\gui\delegates.py:101
 msgid "保存(&S)"
-msgstr "保存(&S)"
+msgstr "Save(&S)"
 
 #: src\omnicrawl\gui\delegates.py:931
 #: src\omnicrawl\gui\delegates.py:954
@@ -481,65 +481,65 @@ msgstr "Save Failed"
 
 #: src\omnicrawl\gui\delegates.py:1038
 msgid "保存第二个版本后即可在这里恢复。"
-msgstr "保存第二个版本后即可在这里恢复。"
+msgstr "Once a second version is saved, you can restore it here."
 
 #: src\omnicrawl\gui\views\ai_service_center.py:141
 msgid "保存设置"
-msgstr "保存设置"
+msgstr "Save settings"
 
 #: src\omnicrawl\gui\delegates.py:706
 #: src\omnicrawl\gui\shortcuts.py:53
 msgid "保存配置"
-msgstr "保存配置"
+msgstr "Save config"
 
 #: src\omnicrawl\gui\delegates.py:264
 msgid "保存配置 ({0})"
-msgstr "保存配置 ({0})"
+msgstr "Save config ({0})"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:87
 msgid "保留链接阶段无法判断的候选，读取正文后再确认（推荐）"
-msgstr "保留链接阶段无法判断的候选，读取正文后再确认（推荐）"
+msgstr "Keep candidates that cannot be decided at the link stage, then confirm after reading the content (recommended)"
 
 #: src\omnicrawl\gui\delegates.py:706
 #: src\omnicrawl\gui\shortcuts.py:55
 msgid "停止任务"
-msgstr "停止任务"
+msgstr "Stop task"
 
 #: src\omnicrawl\gui\delegates.py:277
 msgid "停止任务 ({0})"
-msgstr "停止任务 ({0})"
+msgstr "Stop task ({0})"
 
 #: src\omnicrawl\gui\main.py:1262
 msgid "停用"
-msgstr "停用"
+msgstr "Disable"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:233
 msgid "允许发送 Cookie 和认证信息"
-msgstr "允许发送 Cookie 和认证信息"
+msgstr "Allow sending cookies and auth info"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:225
 msgid "允许发送 PDF 内容给 AI"
-msgstr "允许发送 PDF 内容给 AI"
+msgstr "Allow sending PDF content to the AI"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:229
 msgid "允许发送截图给 AI"
-msgstr "允许发送截图给 AI"
+msgstr "Allow sending screenshots to the AI"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:221
 msgid "允许发送网页正文给 AI"
-msgstr "允许发送网页正文给 AI"
+msgstr "Allow sending page content to the AI"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:35
 msgid "先快速抓取，必要时自动切换浏览器"
-msgstr "先快速抓取，必要时自动切换浏览器"
+msgstr "Fetch quickly first, auto-switch to browser when needed"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:56
 msgid "先粘贴目标网址；不确定网站类型时保留“自动识别”即可。"
-msgstr "先粘贴目标网址；不确定网站类型时保留“自动识别”即可。"
+msgstr "Paste the target URL first; keep “Auto-detect” if you are unsure about the site type."
 
 #: src\omnicrawl\gui\widgets\log_console.py:97
 msgid "全部"
-msgstr "全部"
+msgstr "All"
 
 #: src\omnicrawl\gui\main.py:281
 msgid "全部分类"
@@ -547,15 +547,15 @@ msgstr "All Categories"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:150
 msgid "全部选编辑器"
-msgstr "全部选编辑器"
+msgstr "Select editor for all"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:154
 msgid "全部选表单"
-msgstr "全部选表单"
+msgstr "Select form for all"
 
 #: src\omnicrawl\gui\views\file_list.py:86
 msgid "共 {0} 个文件"
-msgstr "共 {0} 个文件"
+msgstr "{0} files in total"
 
 #: src\omnicrawl\gui\delegates.py:230
 msgid "关于"
@@ -563,7 +563,7 @@ msgstr "About"
 
 #: src\omnicrawl\gui\delegates.py:732
 msgid "关于 OmniCrawler GUI"
-msgstr "关于 OmniCrawler GUI"
+msgstr "About OmniCrawler GUI"
 
 #: src\omnicrawl\gui\delegates.py:479
 #: src\omnicrawl\gui\main.py:1249
@@ -572,40 +572,40 @@ msgstr "Off"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:155
 msgid "关闭 AI（不使用）"
-msgstr "关闭 AI（不使用）"
+msgstr "Disable AI (not used)"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:125
 msgid "关闭（默认）"
-msgstr "关闭（默认）"
+msgstr "Off (default)"
 
 #: src\omnicrawl\gui\widgets\resource_monitor.py:50
 #: src\omnicrawl\gui\widgets\resource_monitor.py:108
 msgid "内存: --"
-msgstr "内存: --"
+msgstr "Memory: --"
 
 #: src\omnicrawl\gui\widgets\resource_monitor.py:100
 msgid "内存: {:.0f} MB"
-msgstr "内存: {:.0f} MB"
+msgstr "Memory: {:.0f} MB"
 
 #: src\omnicrawl\gui\widgets\resource_monitor.py:98
 msgid "内存: {:.1f} GB"
-msgstr "内存: {:.1f} GB"
+msgstr "Memory: {:.1f} GB"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:276
 msgid "内容分析和摘要使用的 Provider"
-msgstr "内容分析和摘要使用的 Provider"
+msgstr "Provider used for content analysis and summarization"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:277
 msgid "内容分析："
-msgstr "内容分析："
+msgstr "Content analysis:"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:218
 msgid "内容发送控制"
-msgstr "内容发送控制"
+msgstr "Content sending control"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:339
 msgid "内置选择器 或 高级模式：启动 Chrome 扩展在网页上右键点选元素"
-msgstr "内置选择器 或 高级模式：启动 Chrome 扩展在网页上右键点选元素"
+msgstr "Built-in selector, or advanced mode: launch the Chrome extension and right-click elements on the page"
 
 #: src\omnicrawl\gui\delegates.py:194
 msgid "减少动画"
@@ -613,42 +613,42 @@ msgstr "Reduce Motion"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:141
 msgid "分析推荐 XPath"
-msgstr "分析推荐 XPath"
+msgstr "Analyze and recommend XPath"
 
 #: src\omnicrawl\gui\main.py:1231
 #: src\omnicrawl\gui\main.py:1265
 msgid "分钟"
-msgstr "分钟"
+msgstr "minutes"
 
 #: src\omnicrawl\gui\main.py:1387
 msgid "分页:"
-msgstr "分页:"
+msgstr "Pagination:"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:159
 msgid "分页参数名:"
-msgstr "分页参数名:"
+msgstr "Pagination parameter name:"
 
 #: src\omnicrawl\gui\delegates.py:707
 #: src\omnicrawl\gui\shortcuts.py:56
 msgid "切换向导/编辑器"
-msgstr "切换向导/编辑器"
+msgstr "Toggle wizard/editor"
 
 #: src\omnicrawl\gui\delegates.py:288
 msgid "切换向导/编辑器 ({0})"
-msgstr "切换向导/编辑器 ({0})"
+msgstr "Toggle wizard/editor ({0})"
 
 #: src\omnicrawl\gui\delegates.py:709
 #: src\omnicrawl\gui\shortcuts.py:60
 msgid "切换请勿打扰模式"
-msgstr "切换请勿打扰模式"
+msgstr "Toggle do-not-disturb mode"
 
 #: src\omnicrawl\gui\delegates.py:135
 msgid "切换项目目录..."
-msgstr "切换项目目录..."
+msgstr "Switch project directory..."
 
 #: src\omnicrawl\gui\main.py:937
 msgid "创建离线演示"
-msgstr "创建离线演示"
+msgstr "Create offline demo"
 
 #: src\omnicrawl\gui\views\file_list.py:51
 msgid "刷新"
@@ -657,26 +657,26 @@ msgstr "Refresh"
 #: src\omnicrawl\gui\delegates.py:708
 #: src\omnicrawl\gui\shortcuts.py:58
 msgid "刷新结果页"
-msgstr "刷新结果页"
+msgstr "Refresh results page"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:325
 msgid "剪贴板为空"
-msgstr "剪贴板为空"
+msgstr "Clipboard is empty"
 
 #: src\omnicrawl\gui\widgets\empty_state.py:61
 msgid "功能开发中"
-msgstr "功能开发中"
+msgstr "Feature under development"
 
 #: src\omnicrawl\gui\delegates.py:916
 #: src\omnicrawl\gui\main.py:1458
 #: src\omnicrawl\gui\main.py:1599
 msgid "加载失败"
-msgstr "加载失败"
+msgstr "Load failed"
 
 #: src\omnicrawl\gui\views\chart_view.py:161
 #: src\omnicrawl\gui\views\result_table.py:477
 msgid "加载失败：{0}"
-msgstr "加载失败：{0}"
+msgstr "Load failed: {0}"
 
 #: src\omnicrawl\gui\main.py:303
 msgid "加载模板"
@@ -684,16 +684,16 @@ msgstr "Load Template"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:36
 msgid "动态浏览器"
-msgstr "动态浏览器"
+msgstr "Dynamic browser"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:244
 #: src\omnicrawl\gui\main.py:1385
 msgid "动态页面:"
-msgstr "动态页面:"
+msgstr "Dynamic pages:"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:248
 msgid "单次任务 AI 调用的费用上限；超过后自动回退到本地模式。"
-msgstr "单次任务 AI 调用的费用上限；超过后自动回退到本地模式。"
+msgstr "Cost cap for AI calls in a single task; falls back to local mode when exceeded."
 
 #: src\omnicrawl\gui\delegates.py:1018
 msgid "即将导入配置 '{0}'，当前配置将被覆盖，是否继续？"
@@ -701,15 +701,15 @@ msgstr "Import config '{0}' — current config will be overwritten. Continue?"
 
 #: src\omnicrawl\gui\main.py:1456
 msgid "历史配置已加载"
-msgstr "历史配置已加载"
+msgstr "Historical config loaded"
 
 #: src\omnicrawl\gui\delegates.py:1062
 msgid "历史配置已恢复；如需撤销，可再次打开配置历史"
-msgstr "历史配置已恢复；如需撤销，可再次打开配置历史"
+msgstr "Historical config restored; reopen the config history to undo"
 
 #: src\omnicrawl\gui\delegates.py:471
 msgid "发生错误"
-msgstr "发生错误"
+msgstr "An error occurred"
 
 #: src\omnicrawl\gui\main.py:198
 #: src\omnicrawl\gui\views\result_table.py:641
@@ -723,7 +723,7 @@ msgstr "Save YAML Config As"
 
 #: src\omnicrawl\gui\delegates.py:106
 msgid "另存为..."
-msgstr "另存为..."
+msgstr "Save as..."
 
 #: src\omnicrawl\gui\delegates.py:621
 msgid "可执行文件 (*.exe *.bat *.cmd);;所有文件 (*)"
@@ -731,23 +731,23 @@ msgstr "Executables (*.exe *.bat *.cmd);;All Files (*)"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:315
 msgid "可添加精确字段；如果跳过，系统会自动提取标题、正文和来源网址。"
-msgstr "可添加精确字段；如果跳过，系统会自动提取标题、正文和来源网址。"
+msgstr "You can add precise fields; if skipped, the system auto-extracts title, content and source URL."
 
 #: src\omnicrawl\gui\views\ai_service_center.py:368
 msgid "可用模型"
-msgstr "可用模型"
+msgstr "Available models"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:519
 msgid "可视化选择字段"
-msgstr "可视化选择字段"
+msgstr "Visually select fields"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:338
 msgid "可视化选择字段 (右键点选)"
-msgstr "可视化选择字段 (右键点选)"
+msgstr "Visually select fields (right-click to pick)"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:177
 msgid "同址变化监测（可选）"
-msgstr "同址变化监测（可选）"
+msgstr "Same-site change monitoring (optional)"
 
 #: src\omnicrawl\gui\main.py:1385
 msgid "否"
@@ -755,7 +755,7 @@ msgstr "No"
 
 #: src\omnicrawl\gui\delegates.py:803
 msgid "启动失败"
-msgstr "启动失败"
+msgstr "Startup failed"
 
 #: src\omnicrawl\gui\main.py:1262
 msgid "启用"
@@ -763,68 +763,68 @@ msgstr "Enabled"
 
 #: src\omnicrawl\gui\main.py:1248
 msgid "启用/停用选中任务"
-msgstr "启用/停用选中任务"
+msgstr "Enable/disable the selected task"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:44
 msgid "启用自动下载文件"
-msgstr "启用自动下载文件"
+msgstr "Enable automatic file downloads"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:39
 msgid "在指定栏目内优先查找主题内容与附件"
-msgstr "在指定栏目内优先查找主题内容与附件"
+msgstr "Prioritize topic content and attachments within the specified sections"
 
 #: src\omnicrawl\gui\widgets\log_console.py:221
 msgid "复制选中行"
-msgstr "复制选中行"
+msgstr "Copy selected row"
 
 #: src\omnicrawl\gui\delegates.py:478
 msgid "复制错误详情"
-msgstr "复制错误详情"
+msgstr "Copy error details"
 
 #: src\omnicrawl\gui\delegates.py:179
 msgid "大字体 125%"
-msgstr "大字体 125%"
+msgstr "Large fonts 125%"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:128
 msgid "字段"
-msgstr "字段"
+msgstr "Fields"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:354
 msgid "字段名"
-msgstr "字段名"
+msgstr "Field name"
 
 #: src\omnicrawl\gui\views\chart_view.py:122
 msgid "字段完整率：{0} 行，{1} 列{2}"
-msgstr "字段完整率：{0} 行，{1} 列{2}"
+msgstr "Field completeness: {0} rows, {1} columns{2}"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:447
 #: src\omnicrawl\gui\views\yaml_editor.py:481
 msgid "字段数"
-msgstr "字段数"
+msgstr "Field count"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:271
 msgid "字段理解和推荐使用的 Provider"
-msgstr "字段理解和推荐使用的 Provider"
+msgstr "Provider used for field understanding and recommendation"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:272
 msgid "字段设计："
-msgstr "字段设计："
+msgstr "Field design:"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:260
 msgid "存在未替换占位符"
-msgstr "存在未替换占位符"
+msgstr "Unreplaced placeholders exist"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:117
 msgid "学习点击/搜索/翻页"
-msgstr "学习点击/搜索/翻页"
+msgstr "Learn clicks/search/pagination"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:129
 msgid "安全与隐私"
-msgstr "安全与隐私"
+msgstr "Security & privacy"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:114
 msgid "安全探测第一个网址并推荐模板、分页和抓取方式"
-msgstr "安全探测第一个网址并推荐模板、分页和抓取方式"
+msgstr "Safely probe the first URL and recommend template, pagination and fetch strategy"
 
 #: src\omnicrawl\gui\delegates.py:618
 msgid "安装失败"
@@ -836,7 +836,7 @@ msgstr "Installation Successful!"
 
 #: src\omnicrawl\gui\delegates.py:505
 msgid "完全便携：数据放在程序目录"
-msgstr "完全便携：数据放在程序目录"
+msgstr "Fully portable: data stored in the program directory"
 
 #: src\omnicrawl\gui\delegates.py:868
 msgid "完成: {0}"
@@ -848,23 +848,23 @@ msgstr "Finish & Save"
 
 #: src\omnicrawl\gui\main.py:1218
 msgid "定时任务"
-msgstr "定时任务"
+msgstr "Scheduled tasks"
 
 #: src\omnicrawl\gui\delegates.py:139
 msgid "定时任务..."
-msgstr "定时任务..."
+msgstr "Scheduled tasks..."
 
 #: src\omnicrawl\gui\views\ai_service_center.py:240
 msgid "审计与成本控制"
-msgstr "审计与成本控制"
+msgstr "Audit & cost control"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:146
 msgid "密钥引用:"
-msgstr "密钥引用:"
+msgstr "Secret reference:"
 
 #: src\omnicrawl\gui\delegates.py:1028
 msgid "导入失败"
-msgstr "导入失败"
+msgstr "Import failed"
 
 #: src\omnicrawl\gui\delegates.py:1017
 msgid "导入配置"
@@ -876,29 +876,29 @@ msgstr "Import Config Package"
 
 #: src\omnicrawl\gui\delegates.py:115
 msgid "导入配置包..."
-msgstr "导入配置包..."
+msgstr "Import config pack..."
 
 #: src\omnicrawl\gui\views\result_table.py:348
 #: src\omnicrawl\gui\views\result_table.py:635
 msgid "导出 Excel"
-msgstr "导出 Excel"
+msgstr "Export Excel"
 
 #: src\omnicrawl\gui\delegates.py:992
 #: src\omnicrawl\gui\views\result_table.py:657
 msgid "导出失败"
-msgstr "导出失败"
+msgstr "Export failed"
 
 #: src\omnicrawl\gui\views\result_table.py:655
 msgid "导出成功"
-msgstr "导出成功"
+msgstr "Export succeeded"
 
 #: src\omnicrawl\gui\widgets\log_console.py:266
 msgid "导出日志"
-msgstr "导出日志"
+msgstr "Export log"
 
 #: src\omnicrawl\gui\widgets\log_console.py:231
 msgid "导出日志为 .txt"
-msgstr "导出日志为 .txt"
+msgstr "Export log as .txt"
 
 #: src\omnicrawl\gui\delegates.py:979
 msgid "导出配置包"
@@ -906,37 +906,37 @@ msgstr "Export Config Package"
 
 #: src\omnicrawl\gui\delegates.py:119
 msgid "导出配置包..."
-msgstr "导出配置包..."
+msgstr "Export config pack..."
 
 #: src\omnicrawl\gui\main.py:1337
 msgid "将模板能力组合到当前任务，不覆盖名称、入口网址、主题、已有字段和输出选择。"
-msgstr "将模板能力组合到当前任务，不覆盖名称、入口网址、主题、已有字段和输出选择。"
+msgstr "Combine template capabilities into the current task without overwriting the name, entry URLs, topic, existing fields or output choices."
 
 #: src\omnicrawl\gui\views\yaml_editor.py:241
 msgid "将编辑器内容解析后同步到向导表单"
-msgstr "将编辑器内容解析后同步到向导表单"
+msgstr "Parse editor content and sync to the wizard form"
 
 #: src\omnicrawl\gui\views\chart_view.py:34
 #: src\omnicrawl\gui\views\chart_view.py:98
 msgid "尚未加载结果统计"
-msgstr "尚未加载结果统计"
+msgstr "Result statistics not loaded yet"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:259
 msgid "就绪"
-msgstr "就绪"
+msgstr "Ready"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:354
 msgid "属性"
-msgstr "属性"
+msgstr "Properties"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:437
 #: src\omnicrawl\gui\views\yaml_editor.py:463
 msgid "工作区"
-msgstr "工作区"
+msgstr "Workspace"
 
 #: src\omnicrawl\gui\main.py:982
 msgid "已从编辑器同步到表单"
-msgstr "已从编辑器同步到表单"
+msgstr "Synced from editor to form"
 
 #: src\omnicrawl\gui\delegates.py:929
 msgid "已保存"
@@ -944,19 +944,19 @@ msgstr "Saved"
 
 #: src\omnicrawl\gui\delegates.py:373
 msgid "已保留 {0} 项高级规则：{1}。切换到专业模式可查看。"
-msgstr "已保留 {0} 项高级规则：{1}。切换到专业模式可查看。"
+msgstr "{0} advanced rule(s) kept: {1}. Switch to Pro mode to view them."
 
 #: src\omnicrawl\gui\views\yaml_editor.py:365
 msgid "已同步"
-msgstr "已同步"
+msgstr "Synced"
 
 #: src\omnicrawl\gui\main.py:1164
 msgid "已启用 {0} 个插件；运行前仍会执行兼容性和权限检查"
-msgstr "已启用 {0} 个插件；运行前仍会执行兼容性和权限检查"
+msgstr "{0} plugin(s) enabled; compatibility and permission checks still run before execution"
 
 #: src\omnicrawl\gui\main.py:735
 msgid "已启用高级规则摘要"
-msgstr "已启用高级规则摘要"
+msgstr "Advanced rule summary enabled"
 
 #: src\omnicrawl\gui\delegates.py:838
 #: src\omnicrawl\gui\widgets\status_indicator.py:80
@@ -965,31 +965,31 @@ msgstr "Completed"
 
 #: src\omnicrawl\gui\delegates.py:1024
 msgid "已导入:"
-msgstr "已导入:"
+msgstr "Imported:"
 
 #: src\omnicrawl\gui\delegates.py:718
 msgid "已就绪"
-msgstr "已就绪"
+msgstr "Ready"
 
 #: src\omnicrawl\gui\main.py:1510
 msgid "已恢复的草稿"
-msgstr "已恢复的草稿"
+msgstr "Restored draft"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:488
 msgid "已按选择合并字段"
-msgstr "已按选择合并字段"
+msgstr "Fields merged as chosen"
 
 #: src\omnicrawl\gui\delegates.py:837
 msgid "已暂停"
-msgstr "已暂停"
+msgstr "Paused"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:497
 msgid "已格式化"
-msgstr "已格式化"
+msgstr "Formatted"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:490
 msgid "已采用表单值"
-msgstr "已采用表单值"
+msgstr "Form values adopted"
 
 #: src\omnicrawl\gui\delegates.py:672
 msgid "帮助"
@@ -997,19 +997,19 @@ msgstr "Help"
 
 #: src\omnicrawl\gui\delegates.py:235
 msgid "帮助(&H)"
-msgstr "帮助(&H)"
+msgstr "Help(&H)"
 
 #: src\omnicrawl\gui\delegates.py:672
 msgid "帮助文件未找到"
-msgstr "帮助文件未找到"
+msgstr "Help file not found"
 
 #: src\omnicrawl\gui\widgets\help_tooltip.py:59
 msgid "帮助："
-msgstr "帮助："
+msgstr "Help:"
 
 #: src\omnicrawl\gui\delegates.py:242
 msgid "常见问题"
-msgstr "常见问题"
+msgstr "FAQ"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:442
 #: src\omnicrawl\gui\views\yaml_editor.py:473
@@ -1018,32 +1018,32 @@ msgstr "Concurrency"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:148
 msgid "并发数:"
-msgstr "并发数:"
+msgstr "Concurrency:"
 
 #: src\omnicrawl\gui\delegates.py:472
 msgid "应用程序遇到一个错误: {0}"
-msgstr "应用程序遇到一个错误: {0}"
+msgstr "The application encountered an error: {0}"
 
 #: src\omnicrawl\gui\delegates.py:743
 msgid "开发者可运行：omnicrawl capabilities --verify-imports"
-msgstr "开发者可运行：omnicrawl capabilities --verify-imports"
+msgstr "Developers can run: omnicrawl capabilities --verify-imports"
 
 #: src\omnicrawl\gui\main.py:719
 #: src\omnicrawl\gui\views\developer_inspector.py:23
 msgid "开发者检查器"
-msgstr "开发者检查器"
+msgstr "Developer inspector"
 
 #: src\omnicrawl\gui\views\developer_inspector.py:29
 msgid "开发者检查器 · 功能开发中"
-msgstr "开发者检查器 · 功能开发中"
+msgstr "Developer inspector · under development"
 
 #: src\omnicrawl\gui\delegates.py:328
 msgid "开发者模式"
-msgstr "开发者模式"
+msgstr "Developer mode"
 
 #: src\omnicrawl\gui\delegates.py:380
 msgid "开发者模式：显示完整配置与诊断工具"
-msgstr "开发者模式：显示完整配置与诊断工具"
+msgstr "Developer mode: show full config and diagnostics"
 
 #: src\omnicrawl\gui\delegates.py:637
 msgid "当前配置将被覆盖，是否继续？"
@@ -1055,11 +1055,11 @@ msgstr "Unsaved changes exist. Continue?"
 
 #: src\omnicrawl\gui\views\result_table.py:482
 msgid "当前页显示 {0} / {1} 行"
-msgstr "当前页显示 {0} / {1} 行"
+msgstr "Showing {0} / {1} rows on this page"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:82
 msgid "必含词:"
-msgstr "必含词:"
+msgstr "Must-include words:"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:354
 msgid "必填"
@@ -1067,20 +1067,20 @@ msgstr "Required"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:80
 msgid "必须全部出现，可留空"
-msgstr "必须全部出现，可留空"
+msgstr "All must appear; may be left empty"
 
 #: src\omnicrawl\gui\delegates.py:705
 msgid "快捷键列表:"
-msgstr "快捷键列表:"
+msgstr "Shortcut list:"
 
 #: src\omnicrawl\gui\delegates.py:222
 #: src\omnicrawl\gui\delegates.py:711
 msgid "快捷键说明"
-msgstr "快捷键说明"
+msgstr "Shortcut help"
 
 #: src\omnicrawl\gui\delegates.py:239
 msgid "快速上手指南"
-msgstr "快速上手指南"
+msgstr "Quick start guide"
 
 #: src\omnicrawl\gui\delegates.py:658
 #: src\omnicrawl\gui\delegates.py:637
@@ -1093,23 +1093,23 @@ msgstr "Quick Start - Unsaved"
 
 #: src\omnicrawl\gui\main.py:925
 msgid "快速草案已生成：请查看自动决定和修改入口，然后先试跑"
-msgstr "快速草案已生成：请查看自动决定和修改入口，然后先试跑"
+msgstr "Quick draft generated: review the auto decisions and edit entry points, then do a test run"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:194
 msgid "性能设置"
-msgstr "性能设置"
+msgstr "Performance settings"
 
 #: src\omnicrawl\gui\views\result_table.py:454
 msgid "总行数（近似）: {:,} 行"
-msgstr "总行数（近似）: {:,} 行"
+msgstr "Total rows (approx): {:,}"
 
 #: src\omnicrawl\gui\main.py:1501
 msgid "恢复草稿"
-msgstr "恢复草稿"
+msgstr "Restore draft"
 
 #: src\omnicrawl\gui\views\result_table.py:343
 msgid "手动刷新"
-msgstr "手动刷新"
+msgstr "Manual refresh"
 
 #: src\omnicrawl\gui\delegates.py:605
 msgid "手动指定路径"
@@ -1117,7 +1117,7 @@ msgstr "Specify Path Manually"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:153
 msgid "手动页码规则（高级，可选）"
-msgstr "手动页码规则（高级，可选）"
+msgstr "Manual page-number rules (advanced, optional)"
 
 #: src\omnicrawl\gui\delegates.py:897
 msgid "打开 YAML 配置"
@@ -1126,20 +1126,20 @@ msgstr "Open YAML Config"
 #: src\omnicrawl\gui\views\file_list.py:47
 #: src\omnicrawl\gui\views\result_table.py:357
 msgid "打开文件夹"
-msgstr "打开文件夹"
+msgstr "Open folder"
 
 #: src\omnicrawl\gui\delegates.py:707
 #: src\omnicrawl\gui\shortcuts.py:57
 msgid "打开模板库"
-msgstr "打开模板库"
+msgstr "Open template library"
 
 #: src\omnicrawl\gui\delegates.py:300
 msgid "打开模板库 ({0})"
-msgstr "打开模板库 ({0})"
+msgstr "Open template library ({0})"
 
 #: src\omnicrawl\gui\delegates.py:90
 msgid "打开配置(&O)..."
-msgstr "打开配置(&O)..."
+msgstr "Open config(&O)..."
 
 #: src\omnicrawl\gui\delegates.py:632
 msgid "指定的路径无效"
@@ -1147,19 +1147,19 @@ msgstr "The specified path is invalid"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:86
 msgid "排除词:"
-msgstr "排除词:"
+msgstr "Excluded words:"
 
 #: src\omnicrawl\gui\main.py:1389
 msgid "推荐模板:"
-msgstr "推荐模板:"
+msgstr "Recommended template:"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:146
 msgid "推荐结果（相似度 > 60%）:"
-msgstr "推荐结果（相似度 > 60%）:"
+msgstr "Recommendations (similarity > 60%):"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:148
 msgid "提取文本"
-msgstr "提取文本"
+msgstr "Extract text"
 
 #: src\omnicrawl\gui\main.py:1297
 #: src\omnicrawl\gui\views\result_table.py:631
@@ -1169,7 +1169,7 @@ msgstr "Tip"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:151
 msgid "提示: 扩展名用逗号分隔，如 \\".pdf,.jpg\\"。输出目录相对于项目根目录。"
-msgstr "提示: 扩展名用逗号分隔，如 \\".pdf,.jpg\\"。输出目录相对于项目根目录。"
+msgstr "Tip: separate extensions with commas, e.g. \".pdf,.jpg\". The output directory is relative to the project root."
 
 #: src\omnicrawl\gui\main.py:279
 msgid "搜索名称、说明或标签…"
@@ -1177,36 +1177,36 @@ msgstr "Search name, description, or tags..."
 
 #: src\omnicrawl\gui\delegates.py:245
 msgid "搜索帮助中心"
-msgstr "搜索帮助中心"
+msgstr "Search help center"
 
 #: src\omnicrawl\gui\widgets\log_console.py:225
 msgid "搜索高亮"
-msgstr "搜索高亮"
+msgstr "Search highlight"
 
 #: src\omnicrawl\gui\delegates.py:521
 msgid "数据位置未保存"
-msgstr "数据位置未保存"
+msgstr "Data location not saved"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:89
 msgid "数据源类型"
-msgstr "数据源类型"
+msgstr "Source type"
 
 #: src\omnicrawl\gui\delegates.py:85
 msgid "文件(&F)"
-msgstr "文件(&F)"
+msgstr "File(&F)"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:523
 msgid "文件已修改"
-msgstr "文件已修改"
+msgstr "File modified"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:445
 #: src\omnicrawl\gui\views\yaml_editor.py:479
 msgid "文件扩展名"
-msgstr "文件扩展名"
+msgstr "File extensions"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:55
 msgid "文件扩展名:"
-msgstr "文件扩展名:"
+msgstr "File extensions:"
 
 #: src\omnicrawl\gui\widgets\log_console.py:267
 msgid "文本文件 (*.txt)"
@@ -1215,12 +1215,12 @@ msgstr "Text Files (*.txt)"
 #: src\omnicrawl\gui\delegates.py:691
 #: src\omnicrawl\gui\delegates.py:700
 msgid "文档"
-msgstr "文档"
+msgstr "Documents"
 
 #: src\omnicrawl\gui\delegates.py:691
 #: src\omnicrawl\gui\delegates.py:700
 msgid "文档未找到"
-msgstr "文档未找到"
+msgstr "Document not found"
 
 #: src\omnicrawl\gui\delegates.py:882
 msgid "新建配置"
@@ -1228,23 +1228,23 @@ msgstr "New Config"
 
 #: src\omnicrawl\gui\delegates.py:86
 msgid "新建配置(&N)"
-msgstr "新建配置(&N)"
+msgstr "New config(&N)"
 
 #: src\omnicrawl\gui\main.py:1646
 msgid "无 GUI 模式（与 --run 等效，不显示图形界面）"
-msgstr "无 GUI 模式（与 --run 等效，不显示图形界面）"
+msgstr "No-GUI mode (equivalent to --run; no graphical interface)"
 
 #: src\omnicrawl\gui\main.py:1642
 msgid "无 GUI 模式：直接执行指定的 YAML 配置文件"
-msgstr "无 GUI 模式：直接执行指定的 YAML 配置文件"
+msgstr "No-GUI mode: directly execute the given YAML config file"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:418
 msgid "无差异"
-msgstr "无差异"
+msgstr "No differences"
 
 #: src\omnicrawl\gui\delegates.py:1012
 msgid "无效的配置包：缺少 config.yaml"
-msgstr "无效的配置包：缺少 config.yaml"
+msgstr "Invalid config pack: missing config.yaml"
 
 #: src\omnicrawl\gui\delegates.py:632
 msgid "无效路径"
@@ -1252,7 +1252,7 @@ msgstr "Invalid Path"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:589
 msgid "无法从选择结果生成字段，请重试。"
-msgstr "无法从选择结果生成字段，请重试。"
+msgstr "Could not generate fields from the selection. Please retry."
 
 #: src\omnicrawl\gui\delegates.py:643
 msgid "无法加载 news 模板"
@@ -1260,31 +1260,31 @@ msgstr "Cannot load news template"
 
 #: src\omnicrawl\gui\main.py:1378
 msgid "无法安全完成探测。原配置没有改变。"
-msgstr "无法安全完成探测。原配置没有改变。"
+msgstr "Probe could not be completed safely. The original config is unchanged."
 
 #: src\omnicrawl\gui\views\yaml_editor.py:413
 msgid "无法对比"
-msgstr "无法对比"
+msgstr "Cannot compare"
 
 #: src\omnicrawl\gui\delegates.py:764
 msgid "无法运行"
-msgstr "无法运行"
+msgstr "Cannot run"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:246
 msgid "无限制"
-msgstr "无限制"
+msgstr "Unlimited"
 
 #: src\omnicrawl\gui\delegates.py:178
 msgid "无障碍与显示"
-msgstr "无障碍与显示"
+msgstr "Accessibility & display"
 
 #: src\omnicrawl\gui\main.py:1651
 msgid "日志级别（默认: INFO）"
-msgstr "日志级别（默认: INFO）"
+msgstr "Log level (default: INFO)"
 
 #: src\omnicrawl\gui\delegates.py:170
 msgid "明亮"
-msgstr "明亮"
+msgstr "Light"
 
 #: src\omnicrawl\gui\main.py:1385
 msgid "是"
@@ -1292,50 +1292,50 @@ msgstr "Yes"
 
 #: src\omnicrawl\gui\main.py:1403
 msgid "是否套用第一项模板？"
-msgstr "是否套用第一项模板？"
+msgstr "Apply the first template?"
 
 #: src\omnicrawl\gui\main.py:835
 msgid "显示主窗口"
-msgstr "显示主窗口"
+msgstr "Show main window"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:244
 msgid "显示差异"
-msgstr "显示差异"
+msgstr "Show differences"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:122
 msgid "智能提取 — XPath 推荐"
-msgstr "智能提取 — XPath 推荐"
+msgstr "Smart extraction — XPath recommendations"
 
 #: src\omnicrawl\gui\main.py:1442
 msgid "智能模板:"
-msgstr "智能模板:"
+msgstr "Smart template:"
 
 #: src\omnicrawl\gui\main.py:1444
 msgid "智能模板已加载；请检查红色占位符后运行"
-msgstr "智能模板已加载；请检查红色占位符后运行"
+msgstr "Smart template loaded; check the red placeholders before running"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:113
 #: src\omnicrawl\gui\wizard\step2_urls.py:195
 msgid "智能识别"
-msgstr "智能识别"
+msgstr "Smart detection"
 
 #: src\omnicrawl\gui\main.py:1375
 #: src\omnicrawl\gui\main.py:1377
 msgid "智能识别失败"
-msgstr "智能识别失败"
+msgstr "Smart detection failed"
 
 #: src\omnicrawl\gui\main.py:1402
 #: src\omnicrawl\gui\main.py:1398
 msgid "智能识别结果"
-msgstr "智能识别结果"
+msgstr "Smart detection result"
 
 #: src\omnicrawl\gui\main.py:1306
 msgid "更新失败"
-msgstr "更新失败"
+msgstr "Update failed"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:208
 msgid "最大响应长度："
-msgstr "最大响应长度："
+msgstr "Max response length:"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:440
 #: src\omnicrawl\gui\views\yaml_editor.py:469
@@ -1344,23 +1344,23 @@ msgstr "Max Pages"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:135
 msgid "最大页数:"
-msgstr "最大页数:"
+msgstr "Max pages:"
 
 #: src\omnicrawl\gui\delegates.py:96
 msgid "最近文件"
-msgstr "最近文件"
+msgstr "Recent files"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:134
 msgid "服务名称:"
-msgstr "服务名称:"
+msgstr "Service name:"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:140
 msgid "服务提供的模型 ID"
-msgstr "服务提供的模型 ID"
+msgstr "Model ID provided by the service"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:161
 msgid "服务类型："
-msgstr "服务类型："
+msgstr "Service type:"
 
 #: src\omnicrawl\gui\delegates.py:891
 #: src\omnicrawl\gui\main.py:680
@@ -1369,39 +1369,39 @@ msgstr "Unsaved"
 
 #: src\omnicrawl\gui\views\file_list.py:43
 msgid "未加载下载目录"
-msgstr "未加载下载目录"
+msgstr "Download directory not loaded"
 
 #: src\omnicrawl\gui\views\result_table.py:332
 msgid "未加载数据"
-msgstr "未加载数据"
+msgstr "Data not loaded"
 
 #: src\omnicrawl\gui\views\file_list.py:73
 msgid "未找到下载目录"
-msgstr "未找到下载目录"
+msgstr "Download directory not found"
 
 #: src\omnicrawl\gui\main.py:1319
 msgid "未找到任何模板"
-msgstr "未找到任何模板"
+msgstr "No template found"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:232
 msgid "未找到匹配"
-msgstr "未找到匹配"
+msgstr "No match found"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:233
 msgid "未找到匹配内容，请检查示例文本是否存在于粘贴的 HTML 中。"
-msgstr "未找到匹配内容，请检查示例文本是否存在于粘贴的 HTML 中。"
+msgstr "No matching content found. Check that the sample text exists in the pasted HTML."
 
 #: src\omnicrawl\gui\views\result_table.py:433
 msgid "未找到结果文件，请确认爬虫已正确输出。点击【手动刷新】重试。"
-msgstr "未找到结果文件，请确认爬虫已正确输出。点击【手动刷新】重试。"
+msgstr "No results file found. Verify the crawler output, then click [Manual refresh] to retry."
 
 #: src\omnicrawl\gui\views\result_table.py:667
 msgid "未找到结果目录"
-msgstr "未找到结果目录"
+msgstr "Results directory not found"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:574
 msgid "未收到任何元素选择，请在网页上右键点选元素后重试。"
-msgstr "未收到任何元素选择，请在网页上右键点选元素后重试。"
+msgstr "No element selection received. Right-click elements on the page and retry."
 
 #: src\omnicrawl\gui\delegates.py:603
 msgid "未检测到 omnicrawl 命令。请选择配置方式："
@@ -1414,77 +1414,77 @@ msgstr "Unknown"
 #: src\omnicrawl\gui\main.py:1386
 #: src\omnicrawl\gui\main.py:1387
 msgid "未识别"
-msgstr "未识别"
+msgstr "Unrecognized"
 
 #: src\omnicrawl\gui\delegates.py:718
 msgid "未随包提供"
-msgstr "未随包提供"
+msgstr "Not bundled"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:126
 msgid "本地模型 / Ollama 等"
-msgstr "本地模型 / Ollama 等"
+msgstr "Local models / Ollama etc."
 
 #: src\omnicrawl\gui\delegates.py:742
 msgid "本地运行组件："
-msgstr "本地运行组件："
+msgstr "Local runtime components:"
 
 #: src\omnicrawl\gui\delegates.py:505
 msgid "本机数据：程序便携，数据放在本机"
-msgstr "本机数据：程序便携，数据放在本机"
+msgstr "Local data: portable program, data stays on this machine"
 
 #: src\omnicrawl\gui\delegates.py:477
 msgid "查看帮助"
-msgstr "查看帮助"
+msgstr "View help"
 
 #: src\omnicrawl\gui\views\task_history.py:70
 msgid "查看结果"
-msgstr "查看结果"
+msgstr "View results"
 
 #: src\omnicrawl\gui\delegates.py:179
 msgid "标准 100%"
-msgstr "标准 100%"
+msgstr "Standard 100%"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:39
 msgid "栏目/主题定向采集"
-msgstr "栏目/主题定向采集"
+msgstr "Section/topic targeted crawl"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:73
 msgid "栏目/主题筛选（可选）"
-msgstr "栏目/主题筛选（可选）"
+msgstr "Section/topic filtering (optional)"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:249
 msgid "格式化"
-msgstr "格式化"
+msgstr "Format"
 
 #: src\omnicrawl\gui\shortcuts.py:59
 msgid "格式化 YAML"
-msgstr "格式化 YAML"
+msgstr "Format YAML"
 
 #: src\omnicrawl\gui\delegates.py:708
 msgid "格式化 YAML（编辑器模式）"
-msgstr "格式化 YAML（编辑器模式）"
+msgstr "Format YAML (editor mode)"
 
 #: src\omnicrawl\gui\main.py:1502
 #: src\omnicrawl\gui\wizard\step4_download.py:142
 msgid "模型:"
-msgstr "模型:"
+msgstr "Model:"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:169
 msgid "模型名称："
-msgstr "模型名称："
+msgstr "Model name:"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:130
 msgid "模式:"
-msgstr "模式:"
+msgstr "Mode:"
 
 #: src\omnicrawl\gui\main.py:1410
 #: src\omnicrawl\gui\main.py:1330
 msgid "模板不可用"
-msgstr "模板不可用"
+msgstr "Template unavailable"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:132
 msgid "模板专用来源（保持原配置）"
-msgstr "模板专用来源（保持原配置）"
+msgstr "Template-specific source (keep original config)"
 
 #: src\omnicrawl\gui\delegates.py:643
 msgid "模板加载失败"
@@ -1492,7 +1492,7 @@ msgstr "Template Load Failed"
 
 #: src\omnicrawl\gui\main.py:1431
 msgid "模板只会补充所需能力；任务名称、入口网址、主题、已有字段和输出选择将保留。"
-msgstr "模板只会补充所需能力；任务名称、入口网址、主题、已有字段和输出选择将保留。"
+msgstr "The template only adds the required capabilities; task name, entry URLs, topic, existing fields and output choices are preserved."
 
 #: src\omnicrawl\gui\main.py:266
 #: src\omnicrawl\gui\main.py:1319
@@ -1501,99 +1501,99 @@ msgstr "Template Library"
 
 #: src\omnicrawl\gui\main.py:1347
 msgid "模板能力已组合；建议先试跑 3 页"
-msgstr "模板能力已组合；建议先试跑 3 页"
+msgstr "Template capabilities combined; a 3-page test run is recommended"
 
 #: src\omnicrawl\gui\delegates.py:575
 msgid "欢迎使用 OmniCrawler"
-msgstr "欢迎使用 OmniCrawler"
+msgstr "Welcome to OmniCrawler"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:354
 msgid "正则"
-msgstr "正则"
+msgstr "Regex"
 
 #: src\omnicrawl\gui\delegates.py:811
 msgid "正在停止..."
-msgstr "正在停止..."
+msgstr "Stopping..."
 
 #: src\omnicrawl\gui\views\result_table.py:437
 msgid "正在加载结果…"
-msgstr "正在加载结果…"
+msgstr "Loading results…"
 
 #: src\omnicrawl\gui\views\chart_view.py:79
 msgid "正在加载结果统计…"
-msgstr "正在加载结果统计…"
+msgstr "Loading result statistics…"
 
 #: src\omnicrawl\gui\delegates.py:838
 msgid "正在安全停止"
-msgstr "正在安全停止"
+msgstr "Stopping safely"
 
 #: src\omnicrawl\gui\main.py:1355
 msgid "正在安全探测网址并识别模板…"
-msgstr "正在安全探测网址并识别模板…"
+msgstr "Safely probing the URL and detecting templates…"
 
 #: src\omnicrawl\gui\views\result_table.py:641
 msgid "正在导出 Excel..."
-msgstr "正在导出 Excel..."
+msgstr "Exporting Excel..."
 
 #: src\omnicrawl\gui\main.py:1212
 msgid "正在录制网页操作；完成后关闭录制浏览器窗口"
-msgstr "正在录制网页操作；完成后关闭录制浏览器窗口"
+msgstr "Recording page actions; close the recording browser window when done"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:327
 msgid "正在测试连接…"
-msgstr "正在测试连接…"
+msgstr "Testing connection…"
 
 #: src\omnicrawl\gui\main.py:1051
 msgid "正在独立工作区试跑 3 页，不会改变正式任务断点"
-msgstr "正在独立工作区试跑 3 页，不会改变正式任务断点"
+msgstr "Test-running 3 pages in an isolated workspace; the real task checkpoints are untouched"
 
 #: src\omnicrawl\gui\views\result_table.py:446
 msgid "正在索引 CSV 行…"
-msgstr "正在索引 CSV 行…"
+msgstr "Indexing CSV rows…"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:350
 msgid "正在获取模型列表…"
-msgstr "正在获取模型列表…"
+msgstr "Fetching model list…"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:195
 msgid "正在识别…"
-msgstr "正在识别…"
+msgstr "Detecting…"
 
 #: src\omnicrawl\gui\views\developer_inspector.py:31
 #: src\omnicrawl\gui\views\professional_review.py:35
 #: src\omnicrawl\gui\wizard\step1_source.py:55
 msgid "步骤 1/5：告诉我你要采集什么"
-msgstr "步骤 1/5：告诉我你要采集什么"
+msgstr "Step 1/5: tell me what you want to collect"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:77
 msgid "步骤 2/5：确认网址与采集范围"
-msgstr "步骤 2/5：确认网址与采集范围"
+msgstr "Step 2/5: confirm the URLs and crawl scope"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:314
 msgid "步骤 3: 定义提取字段"
-msgstr "步骤 3: 定义提取字段"
+msgstr "Step 3: define extraction fields"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:38
 msgid "步骤 4/5：筛选、文件处理与输出"
-msgstr "步骤 4/5：筛选、文件处理与输出"
+msgstr "Step 4/5: filtering, file handling and output"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:95
 #: src\omnicrawl\gui\main.py:344
 msgid "没有匹配的模板"
-msgstr "没有匹配的模板"
+msgstr "No matching template"
 
 #: src\omnicrawl\gui\main.py:1436
 #: src\omnicrawl\gui\main.py:1339
 msgid "没有需要修改的配置"
-msgstr "没有需要修改的配置"
+msgstr "No config needs changes"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:666
 msgid "测试失败"
-msgstr "测试失败"
+msgstr "Test failed"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:662
 msgid "测试结果"
-msgstr "测试结果"
+msgstr "Test result"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:330
 #: src\omnicrawl\gui\wizard\step3_fields.py:643
@@ -1602,27 +1602,27 @@ msgstr "Test Selector"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:64
 msgid "浏览..."
-msgstr "浏览..."
+msgstr "Browse..."
 
 #: src\omnicrawl\gui\main.py:1290
 msgid "添加失败"
-msgstr "添加失败"
+msgstr "Add failed"
 
 #: src\omnicrawl\gui\main.py:1247
 msgid "添加当前配置"
-msgstr "添加当前配置"
+msgstr "Add current config"
 
 #: src\omnicrawl\gui\views\task_history.py:74
 msgid "清理"
-msgstr "清理"
+msgstr "Clean up"
 
 #: src\omnicrawl\gui\widgets\log_console.py:111
 msgid "清空"
-msgstr "清空"
+msgstr "Clear"
 
 #: src\omnicrawl\gui\widgets\calendar_popup.py:45
 msgid "清除"
-msgstr "清除"
+msgstr "Clear"
 
 #: src\omnicrawl\gui\delegates.py:966
 msgid "清除最近文件"
@@ -1630,11 +1630,11 @@ msgstr "Clear Recent Files"
 
 #: src\omnicrawl\gui\delegates.py:717
 msgid "源码环境"
-msgstr "源码环境"
+msgstr "Source environment"
 
 #: src\omnicrawl\gui\delegates.py:179
 msgid "特大字体 150%"
-msgstr "特大字体 150%"
+msgstr "Extra-large fonts 150%"
 
 #: src\omnicrawl\gui\delegates.py:630
 msgid "环境就绪"
@@ -1646,7 +1646,7 @@ msgstr "Environment ready: {0}{1}"
 
 #: src\omnicrawl\gui\delegates.py:541
 msgid "环境检测"
-msgstr "环境检测"
+msgstr "Environment check"
 
 #: src\omnicrawl\gui\delegates.py:602
 msgid "环境配置"
@@ -1654,40 +1654,40 @@ msgstr "Environment Setup"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:39
 msgid "用主题词缩小范围；附件、PDF、变化监测、输出和可选 AI 都在这里确认。"
-msgstr "用主题词缩小范围；附件、PDF、变化监测、输出和可选 AI 都在这里确认。"
+msgstr "Narrow the scope with keywords; attachments, PDFs, change monitoring, output and optional AI are all confirmed here."
 
 #: src\omnicrawl\gui\views\ai_service_center.py:226
 msgid "用于 PDF 字段提取和文档理解。可能包含敏感文档内容。"
-msgstr "用于 PDF 字段提取和文档理解。可能包含敏感文档内容。"
+msgstr "Used for PDF field extraction and document understanding. May contain sensitive document content."
 
 #: src\omnicrawl\gui\views\ai_service_center.py:230
 msgid "用于可视化页面分析和选择器推荐。截屏可能包含登录界面信息。"
-msgstr "用于可视化页面分析和选择器推荐。截屏可能包含登录界面信息。"
+msgstr "Used for visual page analysis and selector recommendations. Screenshots may contain login-page information."
 
 #: src\omnicrawl\gui\views\ai_service_center.py:222
 msgid "用于字段理解和内容分析。关闭时只发送页面 URL 和元数据。"
-msgstr "用于字段理解和内容分析。关闭时只发送页面 URL 和元数据。"
+msgstr "Used for field understanding and content analysis. When off, only the page URL and metadata are sent."
 
 #: src\omnicrawl\gui\views\yaml_editor.py:443
 #: src\omnicrawl\gui\views\yaml_editor.py:475
 msgid "用户代理"
-msgstr "用户代理"
+msgstr "User agent"
 
 #: src\omnicrawl\gui\delegates.py:324
 msgid "界面:"
-msgstr "界面:"
+msgstr "Interface:"
 
 #: src\omnicrawl\gui\delegates.py:434
 msgid "界面缩放已应用；部分控件将在重新打开窗口后达到最佳布局"
-msgstr "界面缩放已应用；部分控件将在重新打开窗口后达到最佳布局"
+msgstr "Interface scaling applied; some controls will reach their best layout after reopening the window"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:69
 msgid "目标网址（必填）"
-msgstr "目标网址（必填）"
+msgstr "Target URL (required)"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:148
 msgid "相似度"
-msgstr "相似度"
+msgstr "Similarity"
 
 #: src\omnicrawl\gui\main.py:1531
 msgid "确认"
@@ -1696,36 +1696,36 @@ msgstr "Confirm"
 #: src\omnicrawl\gui\widgets\resource_monitor.py:54
 #: src\omnicrawl\gui\widgets\resource_monitor.py:122
 msgid "磁盘: --"
-msgstr "磁盘: --"
+msgstr "Disk: --"
 
 #: src\omnicrawl\gui\widgets\resource_monitor.py:115
 msgid "磁盘: {:.1f} GB 可用"
-msgstr "磁盘: {:.1f} GB 可用"
+msgstr "Disk: {:.1f} GB free"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:136
 #: src\omnicrawl\gui\delegates.py:658
 msgid "示例配置已加载！是否立即运行此任务？"
-msgstr "示例配置已加载！是否立即运行此任务？"
+msgstr "Sample config loaded! Run this task now?"
 
 #: src\omnicrawl\gui\delegates.py:657
 msgid "示例配置已加载，点击 ▶ 运行即可体验"
-msgstr "示例配置已加载，点击 ▶ 运行即可体验"
+msgstr "Sample config loaded; click ▶ Run to try it"
 
 #: src\omnicrawl\gui\main.py:935
 msgid "离线演示已准备：无需网络，可直接查看并试跑"
-msgstr "离线演示已准备：无需网络，可直接查看并试跑"
+msgstr "Offline demo ready: no network needed, view and test-run directly"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:439
 #: src\omnicrawl\gui\views\yaml_editor.py:467
 #: src\omnicrawl\gui\wizard\step2_urls.py:91
 msgid "种子 URL"
-msgstr "种子 URL"
+msgstr "Seed URLs"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:261
 #: src\omnicrawl\gui\views\ai_service_center.py:200
 #: src\omnicrawl\gui\wizard\step2_urls.py:140
 msgid "秒"
-msgstr "秒"
+msgstr "seconds"
 
 #: src\omnicrawl\gui\delegates.py:837
 #: src\omnicrawl\gui\main.py:685
@@ -1735,19 +1735,19 @@ msgstr "Idle"
 
 #: src\omnicrawl\gui\delegates.py:326
 msgid "简单模式"
-msgstr "简单模式"
+msgstr "Simple mode"
 
 #: src\omnicrawl\gui\delegates.py:336
 msgid "简单模式隐藏技术配置；随时可以切换，项目内容不会改变"
-msgstr "简单模式隐藏技术配置；随时可以切换，项目内容不会改变"
+msgstr "Simple mode hides technical settings; you can switch anytime without changing project content"
 
 #: src\omnicrawl\gui\delegates.py:378
 msgid "简单模式：技术参数已隐藏，使用五步向导即可完成任务"
-msgstr "简单模式：技术参数已隐藏，使用五步向导即可完成任务"
+msgstr "Simple mode: technical parameters hidden; use the five-step wizard to complete the task"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:354
 msgid "类型"
-msgstr "类型"
+msgstr "Type"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:77
 msgid "粘贴"
@@ -1755,106 +1755,106 @@ msgstr "Paste"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:334
 msgid "粘贴 HTML 智能提取"
-msgstr "粘贴 HTML 智能提取"
+msgstr "Paste HTML for smart extraction"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:128
 msgid "粘贴目标网页的 HTML 代码:"
-msgstr "粘贴目标网页的 HTML 代码:"
+msgstr "Paste the target page's HTML:"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:253
 msgid "系统编辑器打开"
-msgstr "系统编辑器打开"
+msgstr "Open in system editor"
 
 #: src\omnicrawl\gui\delegates.py:179
 msgid "紧凑 90%"
-msgstr "紧凑 90%"
+msgstr "Compact 90%"
 
 #: src\omnicrawl\gui\main.py:1430
 msgid "组合建议预览"
-msgstr "组合建议预览"
+msgstr "Combination suggestion preview"
 
 #: src\omnicrawl\gui\main.py:1336
 msgid "组合模板"
-msgstr "组合模板"
+msgstr "Combine template"
 
 #: src\omnicrawl\gui\main.py:1345
 msgid "组合模板:"
-msgstr "组合模板:"
+msgstr "Combine template:"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:171
 msgid "结束页码:"
-msgstr "结束页码:"
+msgstr "End page:"
 
 #: src\omnicrawl\gui\main.py:717
 msgid "结果与复核"
-msgstr "结果与复核"
+msgstr "Results & review"
 
 #: src\omnicrawl\gui\views\chart_view.py:114
 msgid "结果文件为空"
-msgstr "结果文件为空"
+msgstr "Results file is empty"
 
 #: src\omnicrawl\gui\main.py:1604
 msgid "结果文件已加载: {0}"
-msgstr "结果文件已加载: {0}"
+msgstr "Results file loaded: {0}"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:110
 msgid "结果格式"
-msgstr "结果格式"
+msgstr "Result format"
 
 #: src\omnicrawl\gui\main.py:893
 msgid "结果页已刷新"
-msgstr "结果页已刷新"
+msgstr "Results page refreshed"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:235
 msgid "绝大多数情况下应关闭。仅在需要 AI 帮助调整认证流程时临时开启。"
-msgstr "绝大多数情况下应关闭。仅在需要 AI 帮助调整认证流程时临时开启。"
+msgstr "Keep off in almost all cases. Enable temporarily only when the AI needs to help adjust the authentication flow."
 
 #: src\omnicrawl\gui\views\yaml_editor.py:181
 #: src\omnicrawl\gui\views\yaml_editor.py:192
 #: src\omnicrawl\gui\views\yaml_editor.py:151
 msgid "编辑器"
-msgstr "编辑器"
+msgstr "Editor"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:413
 msgid "编辑器中的 YAML 格式无效，无法对比差异。"
-msgstr "编辑器中的 YAML 格式无效，无法对比差异。"
+msgstr "The YAML in the editor is invalid; cannot compare differences."
 
 #: src\omnicrawl\gui\views\yaml_editor.py:128
 msgid "编辑器值"
-msgstr "编辑器值"
+msgstr "Editor value"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:418
 msgid "编辑器和表单配置完全一致。"
-msgstr "编辑器和表单配置完全一致。"
+msgstr "Editor and form configs are fully identical."
 
 #: src\omnicrawl\gui\wizard\step4_download.py:105
 msgid "网址不变也重新访问并保存变化版本"
-msgstr "网址不变也重新访问并保存变化版本"
+msgstr "Re-visit even when the URL is unchanged and save the changed version"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:78
 msgid "网址已从第一步带入；需要时可每行添加一个入口，再设置页数和速度。"
-msgstr "网址已从第一步带入；需要时可每行添加一个入口，再设置页数和速度。"
+msgstr "URLs carried over from step 1; add one entry per line as needed, then set page count and speed."
 
 #: src\omnicrawl\gui\views\yaml_editor.py:438
 #: src\omnicrawl\gui\views\yaml_editor.py:465
 msgid "网站类型"
-msgstr "网站类型"
+msgstr "Site type"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:370
 msgid "网页位置（自动生成）"
-msgstr "网页位置（自动生成）"
+msgstr "Page location (auto-generated)"
 
 #: src\omnicrawl\gui\main.py:1196
 msgid "网页操作已写入当前任务；密码值已替换为 secret:// 引用"
-msgstr "网页操作已写入当前任务；密码值已替换为 secret:// 引用"
+msgstr "Page actions written to the current task; password values replaced with secret:// references"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:266
 msgid "能力路由"
-msgstr "能力路由"
+msgstr "Capability routing"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:146
 msgid "自动合并（推荐）"
-msgstr "自动合并（推荐）"
+msgstr "Auto-merge (recommended)"
 
 #: src\omnicrawl\gui\delegates.py:604
 msgid "自动安装"
@@ -1862,144 +1862,144 @@ msgstr "Auto Install"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:35
 msgid "自动识别（推荐）"
-msgstr "自动识别（推荐）"
+msgstr "Auto-detect (recommended)"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:237
 #: src\omnicrawl\gui\wizard\step4_download.py:99
 msgid "自动：仅扫描件使用 OCR（推荐）"
-msgstr "自动：仅扫描件使用 OCR（推荐）"
+msgstr "Auto: OCR only for scanned documents (recommended)"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:159
 msgid "自定义 API 地址"
-msgstr "自定义 API 地址"
+msgstr "Custom API address"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:128
 msgid "自定义 OpenAI 兼容 API"
-msgstr "自定义 OpenAI 兼容 API"
+msgstr "Custom OpenAI-compatible API"
 
 #: src\omnicrawl\gui\delegates.py:505
 msgid "自选数据目录"
-msgstr "自选数据目录"
+msgstr "Choose data directory"
 
 #: src\omnicrawl\gui\delegates.py:189
 msgid "色盲友好配色"
-msgstr "色盲友好配色"
+msgstr "Color-blind-friendly palette"
 
 #: src\omnicrawl\gui\main.py:1512
 msgid "草稿已恢复"
-msgstr "草稿已恢复"
+msgstr "Draft restored"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:102
 msgid "获取方式:"
-msgstr "获取方式:"
+msgstr "Fetch method:"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:181
 #: src\omnicrawl\gui\views\yaml_editor.py:137
 #: src\omnicrawl\gui\views\yaml_editor.py:181
 msgid "表单"
-msgstr "表单"
+msgstr "Form"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:128
 msgid "表单值"
-msgstr "表单值"
+msgstr "Form value"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:192
 msgid "解析失败"
-msgstr "解析失败"
+msgstr "Parse failed"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:251
 msgid "记录 AI 调用详情"
-msgstr "记录 AI 调用详情"
+msgstr "Record AI call details"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:253
 msgid "记录模型、Prompt 版本、参数、调用时间和配置差异，用于审计。"
-msgstr "记录模型、Prompt 版本、参数、调用时间和配置差异，用于审计。"
+msgstr "Record model, prompt version, parameters, call time and config differences for audit."
 
 #: src\omnicrawl\gui\delegates.py:130
 msgid "设置(&S)"
-msgstr "设置(&S)"
+msgstr "Settings(&S)"
 
 #: src\omnicrawl\gui\delegates.py:1034
 msgid "请先保存当前配置。"
-msgstr "请先保存当前配置。"
+msgstr "Save the current config first."
 
 #: src\omnicrawl\gui\main.py:899
 msgid "请先切换到 YAML 编辑器"
-msgstr "请先切换到 YAML 编辑器"
+msgstr "Switch to the YAML editor first"
 
 #: src\omnicrawl\gui\views\result_table.py:631
 msgid "请先加载 CSV 文件"
-msgstr "请先加载 CSV 文件"
+msgstr "Load a CSV file first"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:179
 msgid "请先粘贴 HTML 代码"
-msgstr "请先粘贴 HTML 代码"
+msgstr "Paste HTML code first"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:200
 msgid "请先输入一个网址"
-msgstr "请先输入一个网址"
+msgstr "Enter a URL first"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:207
 msgid "请先输入浏览器地址栏中的栏目入口网址"
-msgstr "请先输入浏览器地址栏中的栏目入口网址"
+msgstr "Enter the section entry URL from the browser address bar first"
 
 #: src\omnicrawl\gui\main.py:1297
 msgid "请先选择一个任务。"
-msgstr "请先选择一个任务。"
+msgstr "Select a task first."
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:629
 msgid "请先选择一个字段行"
-msgstr "请先选择一个字段行"
+msgstr "Select a field row first"
 
 #: src\omnicrawl\gui\delegates.py:214
 msgid "请勿打扰模式"
-msgstr "请勿打扰模式"
+msgstr "Do-not-disturb mode"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:441
 #: src\omnicrawl\gui\views\yaml_editor.py:471
 msgid "请求延迟"
-msgstr "请求延迟"
+msgstr "Request delay"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:142
 msgid "请求延迟:"
-msgstr "请求延迟:"
+msgstr "Request delay:"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:201
 msgid "请求超时："
-msgstr "请求超时："
+msgstr "Request timeout:"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:254
 msgid "请至少输入一个种子 URL"
-msgstr "请至少输入一个种子 URL"
+msgstr "Enter at least one seed URL"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:182
 msgid "请输入示例文本"
-msgstr "请输入示例文本"
+msgstr "Enter sample text"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:148
 msgid "请输入要采集的目标网址"
-msgstr "请输入要采集的目标网址"
+msgstr "Enter the target URL to collect"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:520
 #: src\omnicrawl\gui\views\ai_service_center.py:249
 msgid "费用上限："
-msgstr "费用上限："
+msgstr "Cost cap:"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:186
 msgid "起始日期 (YYYY-MM-DD):"
-msgstr "起始日期 (YYYY-MM-DD):"
+msgstr "Start date (YYYY-MM-DD):"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:165
 msgid "起始页码:"
-msgstr "起始页码:"
+msgstr "Start page:"
 
 #: src\omnicrawl\gui\delegates.py:170
 msgid "跟随系统"
-msgstr "跟随系统"
+msgstr "Follow system"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:133
 msgid "路由与预算"
-msgstr "路由与预算"
+msgstr "Routing & budget"
 
 #: src\omnicrawl\gui\delegates.py:606
 msgid "跳过（仅编辑配置）"
@@ -2007,19 +2007,19 @@ msgstr "Skip (Edit Only)"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:173
 msgid "输入 API Key 或 secret://引用"
-msgstr "输入 API Key 或 secret://引用"
+msgstr "Enter an API Key or secret:// reference"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:134
 msgid "输入希望提取的示例文本（一行一个）:"
-msgstr "输入希望提取的示例文本（一行一个）:"
+msgstr "Enter sample text to extract (one per line):"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:643
 msgid "输入测试页面 URL:"
-msgstr "输入测试页面 URL:"
+msgstr "Enter a test page URL:"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:68
 msgid "输出目录:"
-msgstr "输出目录:"
+msgstr "Output directory:"
 
 #: src\omnicrawl\gui\delegates.py:837
 #: src\omnicrawl\gui\delegates.py:798
@@ -2030,39 +2030,39 @@ msgstr "Running"
 #: src\omnicrawl\gui\delegates.py:706
 #: src\omnicrawl\gui\shortcuts.py:54
 msgid "运行任务"
-msgstr "运行任务"
+msgstr "Run task"
 
 #: src\omnicrawl\gui\delegates.py:271
 msgid "运行任务 ({0})"
-msgstr "运行任务 ({0})"
+msgstr "Run task ({0})"
 
 #: src\omnicrawl\gui\delegates.py:740
 msgid "运行能力与自包含组件"
-msgstr "运行能力与自包含组件"
+msgstr "Runtime capabilities & self-contained components"
 
 #: src\omnicrawl\gui\delegates.py:226
 msgid "运行能力与自包含组件..."
-msgstr "运行能力与自包含组件..."
+msgstr "Runtime capabilities & self-contained components..."
 
 #: src\omnicrawl\gui\main.py:1232
 msgid "运行间隔"
-msgstr "运行间隔"
+msgstr "Run interval"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:82
 msgid "这里只需填写一个入口网址；下一步可继续添加多个网址和采集范围。"
-msgstr "这里只需填写一个入口网址；下一步可继续添加多个网址和采集范围。"
+msgstr "Only one entry URL is needed here; you can add more URLs and crawl scope in the next step."
 
 #: src\omnicrawl\gui\main.py:838
 msgid "退出"
-msgstr "退出"
+msgstr "Quit"
 
 #: src\omnicrawl\gui\delegates.py:124
 msgid "退出(&Q)"
-msgstr "退出(&Q)"
+msgstr "Quit(&Q)"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:151
 msgid "选择 AI 服务"
-msgstr "选择 AI 服务"
+msgstr "Choose AI service"
 
 #: src\omnicrawl\gui\delegates.py:620
 msgid "选择 omnicrawl 可执行文件"
@@ -2070,11 +2070,11 @@ msgstr "Select omnicrawl executable"
 
 #: src\omnicrawl\gui\delegates.py:545
 msgid "选择 OmniCrawler 项目根目录"
-msgstr "选择 OmniCrawler 项目根目录"
+msgstr "Choose the OmniCrawler project root directory"
 
 #: src\omnicrawl\gui\wizard\step4_download.py:221
 msgid "选择下载输出目录"
-msgstr "选择下载输出目录"
+msgstr "Choose the download output directory"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:354
 #: src\omnicrawl\gui\wizard\step3_fields.py:370
@@ -2083,40 +2083,40 @@ msgstr "Selector"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:637
 msgid "选择器为空"
-msgstr "选择器为空"
+msgstr "Selector is empty"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:343
 #: src\omnicrawl\gui\wizard\step3_fields.py:677
 msgid "选择器帮助"
-msgstr "选择器帮助"
+msgstr "Selector help"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:666
 msgid "选择器测试出错"
-msgstr "选择器测试出错"
+msgstr "Selector test error"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:657
 msgid "选择器测试结果（最多显示前 10 条）:"
-msgstr "选择器测试结果（最多显示前 10 条）:"
+msgstr "Selector test results (up to 10 shown):"
 
 #: src\omnicrawl\gui\delegates.py:236
 msgid "选择器语法帮助"
-msgstr "选择器语法帮助"
+msgstr "Selector syntax help"
 
 #: src\omnicrawl\gui\delegates.py:516
 msgid "选择工作区根目录"
-msgstr "选择工作区根目录"
+msgstr "Choose the workspace root directory"
 
 #: src\omnicrawl\gui\widgets\calendar_popup.py:28
 msgid "选择日期"
-msgstr "选择日期"
+msgstr "Pick a date"
 
 #: src\omnicrawl\gui\delegates.py:1026
 msgid "配置包已导入: {0}"
-msgstr "配置包已导入: {0}"
+msgstr "Config pack imported: {0}"
 
 #: src\omnicrawl\gui\delegates.py:990
 msgid "配置包已导出"
-msgstr "配置包已导出"
+msgstr "Config pack exported"
 
 #: src\omnicrawl\gui\delegates.py:1034
 #: src\omnicrawl\gui\delegates.py:1038
@@ -2125,55 +2125,55 @@ msgstr "Config History"
 
 #: src\omnicrawl\gui\main.py:714
 msgid "配置向导"
-msgstr "配置向导"
+msgstr "Config wizard"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:117
 msgid "配置差异对比"
-msgstr "配置差异对比"
+msgstr "Config diff"
 
 #: src\omnicrawl\gui\delegates.py:952
 msgid "配置已保存"
-msgstr "配置已保存"
+msgstr "Config saved"
 
 #: src\omnicrawl\gui\delegates.py:914
 msgid "配置已加载"
-msgstr "配置已加载"
+msgstr "Config loaded"
 
 #: src\omnicrawl\gui\main.py:1597
 msgid "配置已加载: {0}"
-msgstr "配置已加载: {0}"
+msgstr "Config loaded: {0}"
 
 #: src\omnicrawl\gui\views\task_history.py:206
 msgid "配置文件已不存在"
-msgstr "配置文件已不存在"
+msgstr "The config file no longer exists"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:524
 msgid "配置文件已被外部程序修改，是否重新加载？"
-msgstr "配置文件已被外部程序修改，是否重新加载？"
+msgstr "The config file was modified by an external program. Reload it?"
 
 #: src\omnicrawl\gui\delegates.py:768
 msgid "配置校验失败"
-msgstr "配置校验失败"
+msgstr "Config validation failed"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:128
 msgid "采用"
-msgstr "采用"
+msgstr "Adopt"
 
 #: src\omnicrawl\gui\wizard\step2_urls.py:128
 msgid "采集数量与速度"
-msgstr "采集数量与速度"
+msgstr "Crawl quantity & speed"
 
 #: src\omnicrawl\gui\views\task_history.py:66
 msgid "重新加载配置"
-msgstr "重新加载配置"
+msgstr "Reload config"
 
 #: src\omnicrawl\gui\delegates.py:131
 msgid "重新检测环境"
-msgstr "重新检测环境"
+msgstr "Re-check environment"
 
 #: src\omnicrawl\gui\delegates.py:475
 msgid "重试"
-msgstr "重试"
+msgstr "Retry"
 
 #: src\omnicrawl\gui\delegates.py:838
 #: src\omnicrawl\gui\widgets\status_indicator.py:81
@@ -2186,24 +2186,24 @@ msgstr "Attachment Download"
 
 #: src\omnicrawl\gui\wizard\step1_source.py:36
 msgid "需要 JavaScript 渲染的动态页面，使用 Playwright 浏览器引擎"
-msgstr "需要 JavaScript 渲染的动态页面，使用 Playwright 浏览器引擎"
+msgstr "Dynamic pages requiring JavaScript rendering; uses the Playwright browser engine"
 
 #: src\omnicrawl\gui\main.py:1384
 msgid "页面类型:"
-msgstr "页面类型:"
+msgstr "Page type:"
 
 #: src\omnicrawl\gui\views\yaml_editor.py:436
 #: src\omnicrawl\gui\views\yaml_editor.py:461
 msgid "项目名"
-msgstr "项目名"
+msgstr "Project name"
 
 #: src\omnicrawl\gui\delegates.py:550
 msgid "项目目录已切换"
-msgstr "项目目录已切换"
+msgstr "Project directory switched"
 
 #: src\omnicrawl\gui\delegates.py:507
 msgid "首次启动：选择数据位置"
-msgstr "首次启动：选择数据位置"
+msgstr "First run: choose data location"
 
 #: src\omnicrawl\gui\main.py:713
 msgid "首页"
@@ -2215,23 +2215,23 @@ msgstr "High Contrast"
 
 #: src\omnicrawl\gui\wizard\step3_fields.py:562
 msgid "高级可视化选择"
-msgstr "高级可视化选择"
+msgstr "Advanced visual selection"
 
 #: src\omnicrawl\gui\delegates.py:170
 msgid "黑暗"
-msgstr "黑暗"
+msgstr "Dark"
 
 #: src\omnicrawl\gui\views\chart_view.py:120
 msgid "（抽样）"
-msgstr "（抽样）"
+msgstr "(sample)"
 
 #: src\omnicrawl\gui\delegates.py:532
 msgid "，内置 Chromium 已就绪"
-msgstr "，内置 Chromium 已就绪"
+msgstr ", built-in Chromium is ready"
 
 #: src\omnicrawl\gui\delegates.py:262
 msgid "💾 保存"
-msgstr "💾 保存"
+msgstr "💾 Save"
 
 #: src\omnicrawl\gui\delegates.py:557
 msgid "📁"
@@ -2239,21 +2239,21 @@ msgstr "📁"
 
 #: src\omnicrawl\gui\views\task_history.py:54
 msgid "📋 历史任务"
-msgstr "📋 历史任务"
+msgstr "📋 History"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:182
 msgid "📋 获取模型列表"
-msgstr "📋 获取模型列表"
+msgstr "📋 Get model list"
 
 #: src\omnicrawl\gui\views\ai_service_center.py:178
 msgid "🔍 测试连接"
-msgstr "🔍 测试连接"
+msgstr "🔍 Test connection"
 
 #: src\omnicrawl\gui\delegates.py:298
 msgid "🗂 模板"
-msgstr "🗂 模板"
+msgstr "🗂 Templates"
 
 #: src\omnicrawl\gui\delegates.py:292
 msgid "🚀 快速体验"
-msgstr "🚀 快速体验"
+msgstr "🚀 Quick demo"
 

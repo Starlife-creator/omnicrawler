@@ -2,7 +2,13 @@
 
 ## 报告安全漏洞
 
-如果您发现安全漏洞，请不要在公开 Issue 中报告。请通过项目维护者的私密渠道提交。
+如果您发现安全漏洞，请不要在公开 Issue 中报告。请使用 GitHub Private
+Vulnerability Reporting（仓库 Settings → Security 已开启）：
+
+→ https://github.com/Starlife-creator/omnicrawler/security/advisories/new
+
+我们承诺在 90 天披露期限内处置。若 PVR 不可用，可改用
+zqx666666@tutamail.com 直接联系维护者（邮件同样遵守披露期限）。
 
 ## 安全架构
 

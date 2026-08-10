@@ -11,7 +11,15 @@ description = "从全类型网站采集、PDF解析/OCR到结构化导出和人�
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "AGPL-3.0-only"}
+authors = [{name = "Starlife-creator", email = "zqx666666@tutamail.com"}]
+maintainers = [{name = "Starlife-creator", email = "zqx666666@tutamail.com"}]
 dependencies = ["PyYAML>=6,<7"]
+
+[project.urls]
+Homepage = "https://github.com/Starlife-creator/omnicrawler"
+Repository = "https://github.com/Starlife-creator/omnicrawler"
+Issues = "https://github.com/Starlife-creator/omnicrawler/issues"
+Documentation = "https://github.com/Starlife-creator/omnicrawler/blob/main/README.md"
 
 [project.optional-dependencies]
 html = ["beautifulsoup4>=4.12,<5", "lxml>=5,<7", "cssselect>=1.2,<2"]
@@ -79,6 +87,14 @@ where = ["src"]
 [tool.setuptools.package-data]
 omnicrawl = ["templates/**/*.yaml", "templates/**/*.yml", "templates/**/*.csv", "templates/**/*.json"]
 "omnicrawl.gui" = ["templates/*.yaml", "help/*.html", "help/images/*"]
+
+# pip 安装形态的语言包：随 wheel 分发到 share/omnicrawl/locale
+# （i18n._find_localedir 已把该位置纳入候选链）
+[tool.setuptools.data-files]
+"share/omnicrawl/locale" = [
+  "locale/en_US/LC_MESSAGES/omnicrawl-gui.po",
+  "locale/en_US/LC_MESSAGES/omnicrawl-gui.mo",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

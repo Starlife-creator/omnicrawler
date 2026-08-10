@@ -1,7 +1,7 @@
 OmniCrawler NOTICE
 ==================
 
-Copyright 2024-2026 OmniCrawler Contributors
+Copyright (C) 2026 Starlife-creator（2024-2026 OmniCrawler Contributors）
 
 This product includes software developed by third parties:
 
@@ -22,12 +22,6 @@ Licensed under the BSD 3-Clause License.
 
 ---
 
-Crawlee Python (https://github.com/apify/crawlee-python)
-Copyright (c) Apify Technologies s.r.o.
-Licensed under the Apache License, Version 2.0.
-
----
-
 Playwright Python (https://github.com/microsoft/playwright-python)
 Copyright (c) Microsoft Corporation
 Licensed under the Apache License, Version 2.0.
@@ -44,14 +38,14 @@ Licensed under the Apache License, Version 2.0.
 
 ---
 
-MarkItDown (https://github.com/microsoft/markitdown)
-Copyright (c) Microsoft Corporation
-Licensed under the MIT License.
-    https://github.com/microsoft/markitdown/blob/main/LICENSE
+# 设计参考（Design references — NOT distributed）
 
----
+以下项目仅作为**设计参考**被借鉴（README「借鉴内容」表），**未以任何形式
+随本产品分发**，不构成 NOTICE 意义上的"包含软件"，特此列出以免误读：
 
-changedetection.io (https://github.com/dgtlmoon/changedetection.io)
-Copyright (c) dgtlmoon
-Licensed under the Apache License, Version 2.0.
-    https://github.com/dgtlmoon/changedetection.io/blob/master/LICENSE
+- Crawlee Python (https://github.com/apify/crawlee-python) — Apache-2.0
+  （请求管理、会话、资源感知并发与生命周期钩子的设计借鉴）
+- MarkItDown (https://github.com/microsoft/markitdown) — MIT
+  （网页/文档 → 结构化 Markdown 转换的设计借鉴）
+- changedetection.io (https://github.com/dgtlmoon/changedetection.io) — Apache-2.0
+  （URL 监控、内容哈希对比与变化通知机制的设计借鉴）
