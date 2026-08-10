@@ -2,7 +2,7 @@ template_version: 1
 project: {name: 示例项目-PDF采集抽取, workspace: work/pdf_end_to_end}
 source: {kind: crawl, seeds: [https://example.invalid/announcements]}
 crawl: {strategy: priority, focus_keywords: [公告, 担保, PDF], max_pages: 500, max_depth: 4, same_host: true, concurrency: 4}
-http: {user_agent: "OmniCrawler/0.6.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0, max_response_bytes: 104857600}
+http: {user_agent: "OmniCrawler/0.7.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0, max_response_bytes: 104857600}
 download: {enabled: true, extensions: [.pdf], media: false}
 extract: {mode: auto, fields: {title: {selector: title}, heading: {selector: h1}}}
 processors:

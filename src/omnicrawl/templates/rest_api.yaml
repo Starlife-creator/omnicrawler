@@ -16,7 +16,7 @@ source:
     end: 5                         # 结束页码
 
 crawl: {max_pages: 5, same_host: true}
-http: {user_agent: "OmniCrawler/0.6.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: "1.0"}
+http: {user_agent: "OmniCrawler/0.7.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: "1.0"}
 
 # ── 提取规则 ──
 extract:

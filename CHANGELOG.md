@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+## 0.7.0 - 2026-08-11
+
+### 变更
+
+0.7.0: trustchain hardening, guardrails, i18n, metadata
+
 ## 0.6.0 - 2026-08-10
 
 ### 变更
