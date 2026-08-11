@@ -44,11 +44,13 @@ def _archive_files(source: Path, *, clean_source: bool) -> list[Path]:
     files: list[Path] = []
     for directory, child_dirs, child_files in os.walk(source):
         directory_path = Path(directory)
-        # 运行时日志（logs/）不进任何归档：随 exe 启动而变，且与
-        # RUNTIME-MANIFEST.json（已排除 logs/）不一致会触发
-        # check_release_integrity 的 "missing from runtime manifest"。
+        # 仅排除顶层 logs/（便携包用户数据日志目录，随 exe 启动而变，且与
+        # RUNTIME-MANIFEST.json 的顶层 logs/ 排除规则一致）。任意层级的 logs
+        # 目录（如 _internal/botocore/data/logs、runtime/**/xet/logs）是正常
+        # 运行时资产，必须保留，否则 ZIP 会与清单不一致触发完整性失败。
         # 空目录条目仍由 _walk_clean 单独写入（约定目录语义不受影响）。
-        child_dirs[:] = [name for name in child_dirs if name != "logs"]
+        if directory_path == Path(source):
+            child_dirs[:] = [name for name in child_dirs if name != "logs"]
         if clean_source:
             child_dirs[:] = [
                 name
