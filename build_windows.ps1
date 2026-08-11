@@ -15,6 +15,12 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# 统一 UTF-8 输出：Windows runner 控制台默认按系统代码页（cp1252/GBK）解码
+# 子进程输出，打包后的 exe（Python）打印中文（如 capabilities --verify-imports
+# 的说明文本）到该管道时抛 UnicodeEncodeError 导致构建失败。
+$env:PYTHONIOENCODING = 'utf-8'
+$OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 # S4.3.4 ②：架构断言——便携包仅面向 64 位 x64 环境，早失败避免后期莫名崩溃
 if (-not [Environment]::Is64BitOperatingSystem) {
     throw 'OmniCrawler 便携包仅支持 64 位 Windows（检测到 32 位操作系统）'
@@ -269,7 +275,9 @@ Get-ChildItem -LiteralPath $releaseRoot -Recurse -File |
         if (-not $candidate.StartsWith($resolvedRelease, [StringComparison]::OrdinalIgnoreCase)) {
             throw "Refusing to remove a non-Windows launcher outside release staging: $candidate"
         }
-        $relative = [IO.Path]::GetRelativePath($resolvedRelease, $candidate)
+        # [IO.Path]::GetRelativePath 是 .NET Core 2.0+ 方法，Windows PowerShell 5.1
+        # （release CI 用 powershell 调用本脚本）不存在；前缀已在上一行校验，直接截断等价。
+        $relative = $candidate.Substring($resolvedRelease.Length)
         $topLevel = ($relative -split '[\\/]')[0]
         if ($topLevel -notin $scopedCleanRoots) { return }
         Remove-Item -LiteralPath $candidate -Force

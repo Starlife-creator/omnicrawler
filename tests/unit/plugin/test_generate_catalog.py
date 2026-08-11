@@ -81,7 +81,7 @@ def _build_registry(tmp_path: Path) -> tuple[Path, Path, bytes]:
         "signature_file: plugins/demo_plug/plugin.py.sig\n"
         "signature_algorithm: ed25519\n"
         "permissions: []\n"
-        'compatible_core: ">=0.6.0"\n'
+        'compatible_core: ">=0.7.0"\n'
         "license: MIT\n",
         encoding="utf-8",
     )
@@ -105,7 +105,7 @@ def _add_market_template(
         "  version: 1.0.0\n"
         "  publisher: alice\n"
         f"  author_fingerprint: {hashlib.sha256(serialization.load_pem_public_key(trust_pem.read_bytes()).public_bytes_raw()).hexdigest()[:32]}\n"
-        "  min_core_version: '0.6.0'\n"
+        "  min_core_version: '0.7.0'\n"
         "  tags: [demo]\n"
         "project: {name: demo, workspace: work/demo}\n"
         "source: {kind: static_html, seeds: ['https://example.com']}\n",
@@ -286,7 +286,7 @@ def test_generate_includes_templates(tmp_path: Path) -> None:
     assert entry["publisher"] == "alice"
     assert entry["template_file"] == "templates/demo_template/template.yaml"
     assert entry["signature_file"] == "templates/demo_template/template.yaml.sig"
-    assert entry["compatible_core"] == ">=0.6.0"
+    assert entry["compatible_core"] == ">=0.7.0"
     assert entry["description_file"] == "templates/demo_template/listing.md"
     assert "plugin_file" not in entry
 
