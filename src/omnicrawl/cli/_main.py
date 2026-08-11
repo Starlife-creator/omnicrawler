@@ -272,6 +272,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
+    # 统一 UTF-8 输出：Windows 管道/重定向下 Python 默认按 locale（cp1252/GBK）
+    # 编码 stdout，打印含中文的 JSON（_json ensure_ascii=False）会抛
+    # UnicodeEncodeError——CI（capabilities --verify-imports）与任何重定向
+    # 场景都受影响。交互控制台（PEP 528）本就是 UTF-8，此处只修正管道形态。
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     # PDF sub-commands use their own entry points
     if argv and argv[0] in {"pdf", "pdf-process", "pdf-extract"}:
         _dispatch_pdf(argv)
