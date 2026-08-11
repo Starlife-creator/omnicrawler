@@ -200,7 +200,8 @@ class PluginMarketView(QWidget):
         self._build_plugin_pane(plugin_pane)
         market_tabs.addTab(plugin_pane, _("插件"))
         self._template_market = TemplateMarketView(
-            self._catalog_url, self._base, self._trust_source, parent=self
+            self._catalog_url, self._base, self._trust_source,
+            bundled_catalog_dir=self._bundled_catalog_dir, parent=self
         )
         market_tabs.addTab(self._template_market, _("模板"))
         market_layout.addWidget(market_tabs)

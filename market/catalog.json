@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-11T18:02:07+00:00",
+  "publisher": "Starlife-creator",
+  "trust_model": "single-root-ed25519",
+  "trust_public_key_ref": "keys/plugin_trust.pub.pem",
+  "plugins": [
+    {
+      "id": "example_news",
+      "name": "示例新闻站点适配器",
+      "version": "1.0.0",
+      "publisher": "Starlife-creator",
+      "category": "source",
+      "summary": "为示例新闻站点强制附加 XHR 请求头并打站点标记，复用通用发现逻辑。",
+      "description_file": "plugins/example_news/listing.md",
+      "plugin_file": "plugins/example_news/plugin.py",
+      "signature_file": "plugins/example_news/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [],
+      "compatible_core": ">=0.7.0",
+      "license": "MIT",
+      "tags": [
+        "example",
+        "source",
+        "news",
+        "template"
+      ],
+      "updated_at": "2026-08-07",
+      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/example_news"
+    }
+  ],
+  "templates": [
+    {
+      "id": "sites/crossref-works",
+      "name": "Crossref 学术文献元数据",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "sites/academic",
+      "summary": "使用 Crossref 官方 REST API 按关键词检索论文元数据，并保留 DOI、作者、出版商等结构化信息",
+      "template_file": "templates/crossref-works/template.yaml",
+      "signature_file": "templates/crossref-works/template.yaml.sig",
+      "signature_algorithm": "ed25519",
+      "compatible_core": ">=0.7.0",
+      "license": "Crossref metadata terms; abstracts may retain publisher copyright",
+      "tags": [],
+      "updated_at": "",
+      "description_file": "templates/crossref-works/listing.md"
+    },
+    {
+      "id": "sites/github-public-issues",
+      "name": "GitHub 公开仓库 Issues",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "sites/development",
+      "summary": "使用 GitHub 官方 REST API 获取公开仓库 Issue/PR 列表，支持分页和并发控制以遵守速率额度",
+      "template_file": "templates/github-public-issues/template.yaml",
+      "signature_file": "templates/github-public-issues/template.yaml.sig",
+      "signature_algorithm": "ed25519",
+      "compatible_core": ">=0.7.0",
+      "license": "GitHub API terms; repository content retains its original license",
+      "tags": [],
+      "updated_at": "",
+      "description_file": "templates/github-public-issues/listing.md"
+    },
+    {
+      "id": "sites/openalex-works",
+      "name": "OpenAlex 学术目录",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "sites/academic",
+      "summary": "使用 OpenAlex 官方 API 检索论文目录；API Key 可按需换取，但默认匿名请求也可使用，限制为每分钟 100 次请求",
+      "template_file": "templates/openalex-works/template.yaml",
+      "signature_file": "templates/openalex-works/template.yaml.sig",
+      "signature_algorithm": "ed25519",
+      "compatible_core": ">=0.7.0",
+      "license": "OpenAlex data CC0; API subject to current service terms and usage budget",
+      "tags": [],
+      "updated_at": "",
+      "description_file": "templates/openalex-works/listing.md"
+    }
+  ]
+}

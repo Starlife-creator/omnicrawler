@@ -1,0 +1,61 @@
+template_version: 1
+template:
+  id: sites/openalex-works
+  name: OpenAlex 学术目录
+  version: 1.0.0
+  category: sites/academic
+  description: 使用 OpenAlex 官方 API 检索论文目录；API Key 可按需换取，但默认匿名请求也可使用，限制为每分钟 100 次请求
+  publisher: starlife
+  author_fingerprint: 5dcd59f72fc0ac05bbd4c989e997e0d8
+  min_core_version: 0.7.0
+  license: OpenAlex data CC0; API subject to current service terms and usage budget
+project:
+  name: openalex_works
+  workspace: work/openalex_works
+source:
+  kind: rest
+  seeds:
+  - https://api.openalex.org/works
+  params:
+    search: '{{query}}'
+    per_page: 100
+    api_key: secret://openalex_api_key
+crawl:
+  max_pages: 100
+  concurrency: 1
+http:
+  respect_robots: true
+  delay_seconds: 1.0
+  headers:
+    Accept: application/json
+extract:
+  mode: json
+  item_selector: results
+  fields:
+    id:
+      selector: id
+      type: jsonpath
+      required: true
+    doi:
+      selector: doi
+      type: jsonpath
+    title:
+      selector: title
+      type: jsonpath
+      required: true
+    publication_year:
+      selector: publication_year
+      type: jsonpath
+      data_type: integer
+    cited_by_count:
+      selector: cited_by_count
+      type: jsonpath
+      data_type: integer
+    open_access:
+      selector: open_access.oa_status
+      type: jsonpath
+outputs:
+  jsonl: true
+  csv: true
+  xlsx: true
+  parquet: false

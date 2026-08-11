@@ -160,9 +160,10 @@ DEFAULTS: dict[str, Any] = {
         # 的相对路径；迁移到独立仓库或自托管 HTTP 服务时，只需改这一项。
         # 留空表示不配置远程市场（GUI 市场面板回退到 bundled_catalog_dir 或禁用）。
         "catalog_url": "",
-        # 离线/便携构建内置的 catalog 快照目录（相对或绝对路径）。
-        # 留空表示无内置快照（市场仅在线可用）。
-        "bundled_catalog_dir": "",
+        # 离线/便携构建内置的 catalog 快照目录（相对或绝对路径，相对应用根解析）。
+        # 默认 "market"：仓库根 market/ 为内置快照（出包时打入 catalog.json + 信任根公钥 + 首发模板），
+        # 用户开箱即可离线浏览/安装市场；找不到时回退 local_fallback（../OmniCrawler-market）或 catalog_url。
+        "bundled_catalog_dir": "market",
     },
     "resources": {
         "profile": "balanced",

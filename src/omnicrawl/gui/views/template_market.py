@@ -107,6 +107,7 @@ class TemplateMarketView(QWidget):
         catalog_url: str,
         project_root: str | Path,
         trust_source: str,
+        bundled_catalog_dir: str = "",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -117,6 +118,7 @@ class TemplateMarketView(QWidget):
         self._dest_root = self._base / "templates_installed"
         self._local_fallback = self._base.parent / "OmniCrawler-market"
         self._catalog_url = catalog_url
+        self._bundled_catalog_dir = bundled_catalog_dir or ""
         self._trust_source = trust_source
 
         self._state = "offline"
@@ -246,12 +248,13 @@ class TemplateMarketView(QWidget):
 
     # ── 数据 ────────────────────────────────────────────
     def refresh(self) -> None:
+        catalog_url = self._catalog_url or (self._bundled_catalog_dir or str(self._local_fallback))
         self._state = "loading"
         self._status_indicator.state = "running"
         self._status_label.setText(_("正在拉取..."))
         self._refresh_btn.setEnabled(False)
         self._catalog_worker = _TemplateCatalogWorker(
-            self._catalog_url, self._local_fallback, None, parent=self
+            catalog_url, self._local_fallback, None, parent=self
         )
         self._catalog_worker.succeeded.connect(self._on_catalog_loaded)
         self._catalog_worker.failed.connect(self._on_catalog_error)

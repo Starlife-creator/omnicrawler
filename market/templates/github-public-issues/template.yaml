@@ -1,0 +1,64 @@
+template_version: 1
+template:
+  id: sites/github-public-issues
+  name: GitHub 公开仓库 Issues
+  version: 1.0.0
+  category: sites/development
+  description: 使用 GitHub 官方 REST API 获取公开仓库 Issue/PR 列表，支持分页和并发控制以遵守速率额度
+  publisher: starlife
+  author_fingerprint: 5dcd59f72fc0ac05bbd4c989e997e0d8
+  min_core_version: 0.7.0
+  license: GitHub API terms; repository content retains its original license
+project:
+  name: github_public_issues
+  workspace: work/github_public_issues
+source:
+  kind: rest
+  seeds:
+  - https://api.github.com/repos/{{owner}}/{{repository}}/issues
+  params:
+    state: all
+    per_page: 100
+  pagination:
+    type: page
+    parameter: page
+    start: 1
+    end: '{{end_page}}'
+crawl:
+  max_pages: 100
+  concurrency: 1
+http:
+  respect_robots: true
+  delay_seconds: 2.0
+  headers:
+    Accept: application/vnd.github+json
+    X-GitHub-Api-Version: '2022-11-28'
+extract:
+  mode: json
+  fields:
+    number:
+      selector: number
+      type: jsonpath
+      required: true
+    title:
+      selector: title
+      type: jsonpath
+      required: true
+    state:
+      selector: state
+      type: jsonpath
+    url:
+      selector: html_url
+      type: jsonpath
+    created_at:
+      selector: created_at
+      type: jsonpath
+      data_type: datetime
+    updated_at:
+      selector: updated_at
+      type: jsonpath
+      data_type: datetime
+outputs:
+  jsonl: true
+  csv: true
+  xlsx: true
