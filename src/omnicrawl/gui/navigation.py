@@ -15,3 +15,4 @@ class NavIndex:
     EVIDENCE = 6
     CHANGE_MONITOR = 7
     PLUGIN_MARKET = 8
+    DEVELOPER = 9

@@ -152,6 +152,7 @@ if not _cli_mode():
     from .views.result_table import ResultTable
     from .views.task_history import TaskHistory
     from .views.yaml_editor import YamlEditor
+    from .views.developer_inspector import DeveloperInspector
     from .widgets.log_console import LogConsole
     from .widgets.resource_monitor import ResourceMonitor
     from .widgets.status_indicator import StatusIndicator
@@ -834,6 +835,7 @@ class MainWindow(QMainWindow):
             ("🔍 " + _("证据查看器"), 5),
             ("🔔 " + _("变更监控"), 7),
             ("🧩 " + _("插件市场"), 8),
+            ("🛠 " + _("开发者检查器"), 9),
         ]
         for label, _idx in nav_items:
             item = QListWidgetItem(label)
@@ -970,6 +972,9 @@ class MainWindow(QMainWindow):
         self._plugin_market = PluginMarketView(project_root=self._project_root)
         self._stack.addWidget(self._plugin_market)
 
+        self._developer_inspector = DeveloperInspector(self._config)
+        self._stack.addWidget(self._developer_inspector)
+
         main_layout.addWidget(self._stack)
         self._page_transition = PageTransitionController(
             self._stack, reduced_motion=self._settings.reduced_motion,
@@ -1088,8 +1093,8 @@ class MainWindow(QMainWindow):
             ToastManager.instance().warning(_("请先切换到 YAML 编辑器"))
 
     def _on_nav_changed(self, index: int) -> None:
-        # nav index -> stack page: 首页(4), 配置向导(0), PDF工作台(6), YAML编辑器(1), 任务监控(2), 结果复核(3), 证据查看器(5), 变更监控(7)
-        page = (4, 0, 6, 1, 2, 3, 5, 7)[index] if 0 <= index < 8 else 4
+        # nav index -> stack page: 首页(4), 配置向导(0), PDF工作台(6), YAML编辑器(1), 任务监控(2), 结果复核(3), 证据查看器(5), 变更监控(7), 插件市场(8), 开发者检查器(9)
+        page = (4, 0, 6, 1, 2, 3, 5, 7, 8, 9)[index] if 0 <= index < 10 else 4
         self._page_transition.show(page)
         if page == 1:
             self._yaml_editor.update_from_config(self._config)
@@ -1097,6 +1102,8 @@ class MainWindow(QMainWindow):
             self._auto_load_results()
         elif page == 5:
             pass  # 证据查看器数据由 record_selected_for_review 信号加载
+        elif page == 9:
+            self._developer_inspector.refresh()
 
     def _apply_quick_task(self, draft: QuickTaskDraft) -> None:
         self._apply_task_draft(draft)
