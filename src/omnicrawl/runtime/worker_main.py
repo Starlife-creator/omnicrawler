@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import threading
 from dataclasses import asdict
 from multiprocessing.connection import Listener
@@ -53,7 +54,7 @@ class WorkerRuntime:
 
     def _execute(self) -> None:
         try:
-            result = self.service.run()
+            result = self.service.run(callback=self._progress_to_stderr)
         except Exception as exc:
             result = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
         if isinstance(result, dict):
@@ -66,6 +67,19 @@ class WorkerRuntime:
                     "status": "succeeded",
                     "result": {"status": "succeeded", "value": result},
                 }
+
+    def _progress_to_stderr(self, event: str, details: dict[str, Any]) -> None:
+        """把采集进度事件打印为 'PROGRESS: pct% url' 到 stderr（进 local-worker.log）。
+
+        供 GUI 端 LogParser 解析驱动进度条；CLI 用户走 run_task 路径不经此分支。
+        """
+        if event != "crawl_progress":
+            return
+        current = details.get("processed", 0)
+        total = details.get("limit") or details.get("total") or 0
+        url = (details.get("url") or "")[:70]
+        pct = int(current * 100 / total) if total else 0
+        print(f"PROGRESS: {pct}% {url}", file=sys.stderr, flush=True)
 
     def _handle(self, request: Any) -> dict[str, Any]:
         command = request.get("command") if isinstance(request, dict) else ""

@@ -6,6 +6,7 @@ from pathlib import Path
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 from ...core.utils import utcnow
+from .log_parser import LogParser
 from ...runtime.execution_backend import LocalWorkerBackend
 from ..core.config_model import CrawlConfig
 from ..core.config_serializer import save_yaml
@@ -52,6 +53,10 @@ class WorkerTaskRunner(QObject):
         self._state = "idle"
         self._current_task_id = ""
         self._yaml_path: Path | None = None
+        # S3.3.1：日志解析器——增量读取 worker 日志，解析 PROGRESS 行驱动进度条
+        self._parser = LogParser(on_progress=self.progress.emit)
+        self._log_path: Path | None = None
+        self._log_offset = 0
         self._poller = QTimer(self)
         self._poller.setInterval(750)
         self._poller.timeout.connect(self._poll)
@@ -110,6 +115,9 @@ class WorkerTaskRunner(QObject):
         self._current_task_id = config.task_id
         self._set_state(str(result.get("status", "running")))
         self.log_line.emit(_("独立本地Worker已启动；关闭或重启GUI不会终止任务。"), "info")
+        # S3.3.1：接管 LogParser——准备增量读取 worker 日志（workspace/logs/local-worker.log）
+        self._log_path = config.workspace / "logs" / "local-worker.log"
+        self._log_offset = 0
         self._poller.start()
         return True
 
@@ -149,6 +157,18 @@ class WorkerTaskRunner(QObject):
         return self._backend.session.pid if self._backend.session else None
 
     def _poll(self) -> None:
+        # S3.3.1：增量读取 worker 日志，逐行过 LogParser（命中 PROGRESS 行经 on_progress emit progress）
+        if self._log_path is not None and self._log_path.is_file():
+            try:
+                with self._log_path.open("r", encoding="utf-8", errors="replace") as fh:
+                    fh.seek(self._log_offset)
+                    for raw in fh:
+                        line = raw.rstrip("\n").rstrip("\r")
+                        if line:
+                            self._parser.parse_line(line)
+                    self._log_offset = fh.tell()
+            except OSError:
+                pass
         try:
             result = self._backend.status()
         except Exception as exc:
@@ -159,6 +179,7 @@ class WorkerTaskRunner(QObject):
         status = str(result.get("status", "running"))
         if status in {"succeeded", "failed", "cancelled", "partial_success"}:
             self._poller.stop()
+            self._log_path = None  # 任务终态，停止增量读日志
             if status == "partial_success":
                 self.log_line.emit(_("任务部分成功(存在错误记录)，见详情。"), "warn")
                 self._set_state("finished")
