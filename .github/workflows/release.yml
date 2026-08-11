@@ -117,7 +117,7 @@ jobs:
 
       # ── 上传到 GitHub Release ──────────────────────────────────────
       - name: 发布到 GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: OmniCrawler ${{ steps.version.outputs.version }}
