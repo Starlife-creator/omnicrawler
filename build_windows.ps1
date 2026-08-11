@@ -326,6 +326,11 @@ Assert-LastExit 'ZIP64 portable archive creation failed.'
     --portable-zip $releaseArchive --portable-deep
 Assert-LastExit 'Portable ZIP integrity verification failed.'
 $archiveHash = Get-FileHash -LiteralPath $releaseArchive -Algorithm SHA256
+<# F31：不再自生成 SHA256SUMS-$appVersion.txt。
+   发布资产里曾出现两份校验清单（本文件生成 + release.yml 的
+   tools/generate_checksums.py --output SHA256SUMS.txt），内容一致但冗余。
+   权威清单由 release.yml 统一生成，这里停用；$archiveHash 仍保留供
+   下方 Write-Host "SHA-256" 日志输出使用。
 $checksumPath = Join-Path $releaseOutput "SHA256SUMS-$appVersion.txt"
 $archiveName = $archiveHash.Path | Split-Path -Leaf
 $existingChecksums = if (Test-Path -LiteralPath $checksumPath) {
@@ -337,6 +342,7 @@ $existingChecksums = if (Test-Path -LiteralPath $checksumPath) {
 @("# OmniCrawler $appVersion portable archive SHA-256", $existingChecksums,
     "$($archiveHash.Hash)  $archiveName") |
     Set-Content -LiteralPath $checksumPath -Encoding ascii
+#>
 
 Write-Host "Build staging: $releaseRoot"
 Write-Host "Portable ZIP: $releaseArchive"
