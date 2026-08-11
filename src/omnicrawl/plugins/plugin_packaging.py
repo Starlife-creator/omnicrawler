@@ -243,7 +243,8 @@ def build_template_upload(
     raw = yaml.safe_load(template_file.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise PackagingError("template.yaml 必须是映射")
-    source_block = raw.get("template") if isinstance(raw.get("template"), dict) else {}
+    tpl = raw.get("template")
+    source_block = tpl if isinstance(tpl, dict) else {}
     raw["template"] = {
         "id": template_id,
         "name": name,

@@ -10,6 +10,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
 from PyQt6.QtWidgets import (
     QHeaderView,
     QTabWidget,
@@ -19,14 +22,64 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ...core.config import AppConfig
+from ..core.config_model import CrawlConfig
 from ..i18n import _
+
+if TYPE_CHECKING:
+    from ...plugins.plugin_inspector import PluginInspection
 
 _PLUGIN_INSPECTOR_WARNED = False
 
 
-def _collect_plugins(config: AppConfig):
-    """扫描 plugins.paths，静态读取每个插件元数据（可能慢，调用方自行控制频率）。"""
+def _config_snapshot(config: CrawlConfig) -> dict[str, Any]:
+    """把 GUI 的 CrawlConfig 归一为检视用的分节字典（含 passthrough 中的高级配置）。"""
+    pt = config.passthrough
+    crawl = pt.get("crawl")
+    crawl = crawl if isinstance(crawl, dict) else {}
+    http = pt.get("http")
+    http = http if isinstance(http, dict) else {}
+    ai = pt.get("ai")
+    ai = ai if isinstance(ai, dict) else {}
+    ai_privacy = ai.get("privacy")
+    ai_privacy = ai_privacy if isinstance(ai_privacy, dict) else {}
+    extract = crawl.get("extract")
+    extract_mode = extract.get("mode", "") if isinstance(extract, dict) else ""
+    plugins = pt.get("plugins")
+    plugins = plugins if isinstance(plugins, dict) else {}
+    egress = pt.get("egress")
+    egress = egress if isinstance(egress, dict) else {}
+    return {
+        "project_name": config.project_name,
+        "source": {"kind": config.source_kind, "seeds": config.seed_urls},
+        "crawl": {
+            "strategy": crawl.get("strategy", ""),
+            "max_pages": config.max_pages,
+            "max_depth": crawl.get("max_depth", ""),
+            "concurrency": config.concurrency,
+            "same_host": crawl.get("same_host", ""),
+        },
+        "http": {
+            "engine": http.get("engine", ""),
+            "respect_robots": config.respect_robots,
+            "verify_tls": http.get("verify_tls", ""),
+            "robots_fail_closed": http.get("robots_fail_closed", ""),
+            "delay_seconds": config.delay,
+            "retries": http.get("retries", ""),
+        },
+        "extract": {"mode": extract_mode},
+        "outputs": {k: (k in config.output_formats) for k in ("jsonl", "csv", "xlsx")},
+        "resources": {"profile": config.resource_profile},
+        "plugins": plugins,
+        "egress": egress,
+        "ai": {"privacy": ai_privacy},
+    }
+
+
+def _collect_plugins(config: CrawlConfig, project_root: Path) -> list[PluginInspection]:
+    """扫描插件目录，静态读取每个插件元数据（可能慢，调用方自行控制频率）。
+
+    插件路径来自 CrawlConfig.passthrough["plugins"]["paths"]，相对路径按 project_root 解析。
+    """
     global _PLUGIN_INSPECTOR_WARNED
     try:
         from ...plugins.plugin_inspector import inspect_plugin
@@ -34,12 +87,13 @@ def _collect_plugins(config: AppConfig):
         if not _PLUGIN_INSPECTOR_WARNED:
             _PLUGIN_INSPECTOR_WARNED = True
         return []
-    found = []
-    resolver = getattr(config, "resolve", None)
-    if not callable(resolver):
-        return found
-    for raw in config.section("plugins").get("paths", []) or []:
-        directory = resolver(raw)
+    found: list[PluginInspection] = []
+    plugins_block = config.passthrough.get("plugins")
+    plugins_block = plugins_block if isinstance(plugins_block, dict) else {}
+    for raw in plugins_block.get("paths", []) or []:
+        directory = Path(raw)
+        if not directory.is_absolute():
+            directory = project_root / directory
         if not directory.is_dir():
             continue
         # 对齐 registry.load_local_plugins 的递归发现约定（plugins/<id>/plugin.py）
@@ -53,11 +107,13 @@ def _collect_plugins(config: AppConfig):
 class DeveloperInspector(QWidget):
     """开发者检查器视图（检视层）。"""
 
-    def __init__(self, config: AppConfig, parent: QWidget | None = None) -> None:
+    def __init__(self, config: CrawlConfig, project_root: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("developerInspector")
         self.setAccessibleName(_("开发者检查器"))
         self._config = config
+        self._project_root = project_root
+        self._snap = _config_snapshot(config)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -83,8 +139,10 @@ class DeveloperInspector(QWidget):
         tree.setHeaderLabels(headers)
         tree.setAlternatingRowColors(True)
         tree.setColumnCount(len(headers))
-        tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        tree.header().setStretchLastSection(True)
+        header = tree.header()
+        if header is not None:
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+            header.setStretchLastSection(True)
         return tree
 
     @staticmethod
@@ -111,22 +169,10 @@ class DeveloperInspector(QWidget):
         self._build_policy()
         self._build_plugins()
 
-    def _section(self, name: str) -> dict:
-        """读配置段，对真实 AppConfig 与测试替身均健壮。
-
-        真实 AppConfig 暴露 ``section(name)``；部分测试替身仅提供 ``.raw`` 字典。
-        """
-        cfg = self._config
-        if cfg is None:
-            return {}
-        section = getattr(cfg, "section", None)
-        if callable(section):
-            return section(name)
-        raw = getattr(cfg, "raw", None)
-        if isinstance(raw, dict):
-            value = raw.get(name, {})
-            return value if isinstance(value, dict) else {}
-        return {}
+    def _section(self, name: str) -> dict[str, Any]:
+        """读检视分节（由 CrawlConfig 归一快照提供，对空配置健壮）。"""
+        value = self._snap.get(name)
+        return value if isinstance(value, dict) else {}
 
     # ------------------------------------------------------------------ #
     def _build_plan(self) -> None:
@@ -196,7 +242,7 @@ class DeveloperInspector(QWidget):
     def _build_plugins(self) -> None:
         rows: list[list[str]] = []
         try:
-            inspections = _collect_plugins(self._config)
+            inspections = _collect_plugins(self._config, self._project_root)
         except Exception:  # pragma: no cover - 极端降级
             inspections = []
         if not inspections:
@@ -218,6 +264,9 @@ class DeveloperInspector(QWidget):
         self._fill(self._plugin_tree, rows)
 
     # 预留：配置变更时由主导航调用
-    def update_config(self, config: AppConfig) -> None:
+    def update_config(self, config: CrawlConfig, project_root: Path | None = None) -> None:
         self._config = config
+        if project_root is not None:
+            self._project_root = project_root
+        self._snap = _config_snapshot(config)
         self.refresh()

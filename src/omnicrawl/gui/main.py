@@ -972,7 +972,7 @@ class MainWindow(QMainWindow):
         self._plugin_market = PluginMarketView(project_root=self._project_root)
         self._stack.addWidget(self._plugin_market)
 
-        self._developer_inspector = DeveloperInspector(self._config)
+        self._developer_inspector = DeveloperInspector(self._config, self._project_root)
         self._stack.addWidget(self._developer_inspector)
 
         main_layout.addWidget(self._stack)
