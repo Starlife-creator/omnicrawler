@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import re
 import sys
@@ -276,9 +277,11 @@ def main(argv: list[str] | None = None) -> None:
     # 编码 stdout，打印含中文的 JSON（_json ensure_ascii=False）会抛
     # UnicodeEncodeError——CI（capabilities --verify-imports）与任何重定向
     # 场景都受影响。交互控制台（PEP 528）本就是 UTF-8，此处只修正管道形态。
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    stdout = sys.stdout
+    stderr = sys.stderr
+    if isinstance(stdout, io.TextIOWrapper) and isinstance(stderr, io.TextIOWrapper):
+        stdout.reconfigure(encoding="utf-8", errors="replace")
+        stderr.reconfigure(encoding="utf-8", errors="replace")
     # PDF sub-commands use their own entry points
     if argv and argv[0] in {"pdf", "pdf-process", "pdf-extract"}:
         _dispatch_pdf(argv)
