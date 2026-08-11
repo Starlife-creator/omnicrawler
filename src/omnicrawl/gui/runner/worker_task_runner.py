@@ -6,12 +6,12 @@ from pathlib import Path
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 from ...core.utils import utcnow
-from .log_parser import LogParser
 from ...runtime.execution_backend import LocalWorkerBackend
 from ..core.config_model import CrawlConfig
 from ..core.config_serializer import save_yaml
 from ..core.validator import validate_full_config
 from ..i18n import _
+from .log_parser import LogParser
 
 
 def _derive_worker_command(omnicrawl_path: str) -> list[str] | None:

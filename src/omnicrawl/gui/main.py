@@ -144,6 +144,7 @@ if not _cli_mode():
     from .shortcuts import GlobalShortcutManager
     from .views.change_monitor import ChangeMonitorView
     from .views.chart_view import ChartView
+    from .views.developer_inspector import DeveloperInspector
     from .views.file_list import FileList
     from .views.pdf_region_selector import PdfRegionSelectorDialog
     from .views.pdf_workbench import PdfWorkbenchView
@@ -152,7 +153,6 @@ if not _cli_mode():
     from .views.result_table import ResultTable
     from .views.task_history import TaskHistory
     from .views.yaml_editor import YamlEditor
-    from .views.developer_inspector import DeveloperInspector
     from .widgets.log_console import LogConsole
     from .widgets.resource_monitor import ResourceMonitor
     from .widgets.status_indicator import StatusIndicator
