@@ -26,14 +26,14 @@ artifacts/
 
 | # | 产物类型 | 示例文件名 | 输出目录 |
 |---|---|---|---|
-| 1 | **Standard 便携 ZIP** | `OmniCrawler-0.2.0-Windows-Portable-Standard.zip` | `artifacts/release/{version}/` |
-| 2 | **Full 便携 ZIP** | `OmniCrawler-0.2.0-Windows-Portable-Full.zip` | `artifacts/release/{version}/` |
-| 3 | **源码 ZIP** | `OmniCrawler-0.2.0-Source.zip` | `artifacts/python/{version}/` |
+| 1 | **Standard 便携 ZIP** | `OmniCrawler-0.7.0-Windows-Portable-Standard.zip` | `artifacts/release/{version}/` |
+| 2 | **Full 便携 ZIP** | `OmniCrawler-0.7.0-Windows-Portable-Full.zip` | `artifacts/release/{version}/` |
+| 3 | **源码 ZIP** | `OmniCrawler-0.7.0-Source.zip` | `artifacts/python/{version}/` |
 | 4 | **完整便携目录**（压缩前）| `release/OmniCrawler/` | `artifacts/build/{version}-{edition}-rN/` |
 
 - #4 是 #1/#2 的压缩前完整文件夹，可直接双击运行、调试。
 - #3 是纯源码归档（不含 `artifacts/`、`build_cache/`、`dist/` 等构建物）。
-- wheel（`omnicrawl_platform-0.2.0-py3-none-any.whl`）随 #3 同一目录产出。
+- wheel（`omnicrawl_platform-0.7.0-py3-none-any.whl`）随 #3 同一目录产出。
 
 ## 历史归档
 
