@@ -88,6 +88,8 @@ plugin_signing_private.pem
 
 # === Installed marketplace plugins (runtime download, not source) ===
 plugins_installed/
+# === Installed marketplace templates (runtime download, not source) ===
+templates_installed/
 
 # === Logs ===
 logs/
