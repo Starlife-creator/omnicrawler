@@ -115,8 +115,12 @@ class WorkerTaskRunner(QObject):
         self._current_task_id = config.task_id
         self._set_state(str(result.get("status", "running")))
         self.log_line.emit(_("独立本地Worker已启动；关闭或重启GUI不会终止任务。"), "info")
-        # S3.3.1：接管 LogParser——准备增量读取 worker 日志（workspace/logs/local-worker.log）
-        self._log_path = config.workspace / "logs" / "local-worker.log"
+        # S3.3.1：接管 LogParser——增量读取 worker 日志（workspace/logs/local-worker.log）。
+        # CrawlConfig.workspace 是字符串，须按 AppConfig 规则相对 project_root 解析，与 worker 端落盘路径一致。
+        ws = Path(config.workspace)
+        if not ws.is_absolute():
+            ws = (self._project_root / ws).resolve()
+        self._log_path = ws / "logs" / "local-worker.log"
         self._log_offset = 0
         self._poller.start()
         return True

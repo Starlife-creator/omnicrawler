@@ -19,7 +19,7 @@ def test_inprocess_backend_non_dict_result_reaches_terminal_state(tmp_path: Path
     backend = InProcessBackend()
 
     class _FakeService:
-        def run(self):
+        def run(self, callback=None):
             return "plain-value"
 
     monkeypatch.setattr(
@@ -45,7 +45,7 @@ def test_worker_runtime_non_dict_result_does_not_crash(tmp_path: Path) -> None:
     runtime._lock = threading.Lock()
 
     class _FakeService:
-        def run(self):
+        def run(self, callback=None):
             return 42
 
     runtime.service = _FakeService()

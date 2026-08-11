@@ -75,8 +75,9 @@ class WorkerRuntime:
         """
         if event != "crawl_progress":
             return
-        current = details.get("processed", 0)
-        total = details.get("limit") or details.get("total") or 0
+        # 数值安全转换：processed/limit 可能以字符串形式经外部事件传入，避免 str*int / str 除法崩溃
+        current = int(details.get("processed") or 0)
+        total = int(details.get("limit") or details.get("total") or 0)
         url = (details.get("url") or "")[:70]
         pct = int(current * 100 / total) if total else 0
         print(f"PROGRESS: {pct}% {url}", file=sys.stderr, flush=True)
