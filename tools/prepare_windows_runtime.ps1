@@ -178,12 +178,15 @@ if (-not $SkipTesseract) {
     & (Join-Path $tesseractRoot 'tesseract.exe') --tessdata-dir $tessdataRoot --list-langs | Out-Host
     if ($LASTEXITCODE -ne 0) { throw 'Tesseract language verification failed.' }
     # F17：不仅列语言，还要用 chi_sim 实际识别合成图——语言包结构损坏但 gzip 头正常时也能暴露。
-    # 注意：Windows PowerShell 5.1 在 $ErrorActionPreference='Stop' 下，原生程序写 stderr
-    # （tesseract 的 "Estimating resolution..." 正常输出）会抛 NativeCommandError；2>$null
-    # 无法阻止，必须 2>&1 合并到 stdout 再丢弃。
+    # 实测（本机 Windows PowerShell 5.1）：$ErrorActionPreference='Stop' 下原生 stderr
+    # （tesseract 的 "Estimating resolution..." 正常输出）无论 2>&1 还是 2>$null 都会抛
+    # NativeCommandError；唯一有效的是临时切 SilentlyContinue。
     $probePng = Join-Path $env:TEMP 'omnicrawl_ocr_probe.png'
     & $Python -c "from PIL import Image, ImageDraw; import os; img = Image.new('RGB', (560, 100), 'white'); ImageDraw.Draw(img).text((20, 30), 'OmniCrawler OCR 123', fill='black'); img.save(os.environ['TEMP'] + '/omnicrawl_ocr_probe.png')"
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
     & (Join-Path $tesseractRoot 'tesseract.exe') $probePng stdout --tessdata-dir $tessdataRoot -l chi_sim 2>&1 | Out-Null
+    $ErrorActionPreference = $oldEap
     if ($LASTEXITCODE -ne 0) { throw 'Tesseract chi_sim 实际识别失败（语言包可能损坏）' }
     Remove-Item -LiteralPath $probePng -Force -ErrorAction SilentlyContinue
 }
