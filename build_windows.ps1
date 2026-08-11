@@ -269,7 +269,9 @@ Get-ChildItem -LiteralPath $releaseRoot -Recurse -File |
         if (-not $candidate.StartsWith($resolvedRelease, [StringComparison]::OrdinalIgnoreCase)) {
             throw "Refusing to remove a non-Windows launcher outside release staging: $candidate"
         }
-        $relative = [IO.Path]::GetRelativePath($resolvedRelease, $candidate)
+        # [IO.Path]::GetRelativePath 是 .NET Core 2.0+ 方法，Windows PowerShell 5.1
+        # （release CI 用 powershell 调用本脚本）不存在；前缀已在上一行校验，直接截断等价。
+        $relative = $candidate.Substring($resolvedRelease.Length)
         $topLevel = ($relative -split '[\\/]')[0]
         if ($topLevel -notin $scopedCleanRoots) { return }
         Remove-Item -LiteralPath $candidate -Force
