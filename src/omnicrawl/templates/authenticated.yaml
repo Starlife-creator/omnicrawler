@@ -18,6 +18,6 @@ source:
 
 crawl: {max_pages: 1, same_host: true}
 
-http: {user_agent: "OmniCrawler/0.7.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
+http: {user_agent: "OmniCrawler/0.8.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
 
 extract: {mode: html, fields: {title: {selector: title}}}

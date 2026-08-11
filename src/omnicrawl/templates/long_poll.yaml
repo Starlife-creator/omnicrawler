@@ -7,5 +7,5 @@ source:
   max_messages: 100
   duration_seconds: 60
 crawl: {max_pages: 100, same_host: true}
-http: {user_agent: "OmniCrawler/0.7.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
+http: {user_agent: "OmniCrawler/0.8.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
 extract: {mode: json, item_path: "$"}

@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+## 0.8.0 - 2026-08-12
+
+### 变更
+
+0.8.0：新增离线市场快照与3套官方模板（Crossref著作/GitHub公开Issue/OpenAlex著作，含签名与说明）及模板发布校验工具链；GUI本地任务进度条接管Worker日志增量解析，新增开发者检查器视图并接入导航；模板/插件市场支持离线bundled_catalog加载；增强core配置解析健壮性与worker进度数值安全；修复quality CI 5项失败（路径解析/测试桩签名/ruff排序/mypy类型），优化Windows构建去重与依赖约束。
+
 ## 0.7.0 - 2026-08-11
 
 ### 变更
