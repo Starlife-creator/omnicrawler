@@ -213,12 +213,14 @@ if ($Edition -eq 'Full') {
     )) {
         if (-not (Test-Path -LiteralPath $required)) { throw "Runtime asset is missing: $required" }
     }
-    # F8：traineddata 必须是有效 gzip（Tesseract 语言包格式），防止残留空文件通过门禁
+    # F8：语言包门禁——tessdata_fast 的 .traineddata 是未压缩的 Tesseract LSTM blob，
+    # 不是 gzip（早期 1F 8B 魔数检查会误杀有效文件，与 prepare_windows_runtime.ps1
+    # 同源修复）。只拒绝 HTML 错误页（GitHub 404/限流，以 '<' 开头）与过小残留。
     foreach ($lang in @('eng', 'chi_sim', 'osd')) {
         $trained = Join-Path $runtimeRoot "tesseract\tessdata\$lang.traineddata"
         $bytes = [IO.File]::ReadAllBytes($trained)
-        if ($bytes.Length -lt 1024 -or $bytes[0] -ne 0x1F -or $bytes[1] -ne 0x8B) {
-            throw "Tesseract language pack is not a valid gzip file: $trained"
+        if ($bytes.Length -lt 1024 -or $bytes[0] -eq 0x3C) {
+            throw "Tesseract language pack is not a valid traineddata blob: $trained"
         }
     }
 }
