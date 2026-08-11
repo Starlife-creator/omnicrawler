@@ -293,7 +293,7 @@ class TemplateCatalog:
             source_urls=self._tuple(block.get("source_urls")),
             license=str(block.get("license") or "OmniCrawler-MIT"),
             verified_at=str(block.get("verified_at") or ""),
-            min_core_version=str(block.get("min_core_version") or "0.6.0"),
+            min_core_version=str(block.get("min_core_version") or "0.7.0"),
             deprecated=bool(block.get("deprecated", False)),
         )
         return TemplateRecord(metadata, path.resolve(), raw, builtin)

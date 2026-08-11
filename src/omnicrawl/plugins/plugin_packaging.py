@@ -185,7 +185,7 @@ def build_plugin_upload(
         "signature_file": f"plugins/{plugin_id}/plugin.py.sig",
         "signature_algorithm": "ed25519",
         "permissions": list(metadata.get("permissions") or []),
-        "compatible_core": f">={metadata.get('min_core_version') or '0.6.0'}",
+        "compatible_core": f">={metadata.get('min_core_version') or '0.7.0'}",
         "license": str(metadata.get("license") or "MIT"),
         "tags": list(metadata.get("tags") or []),
         "updated_at": date.today().isoformat(),
@@ -251,7 +251,7 @@ def build_template_upload(
         "description": summary,
         "publisher": username,
         "author_fingerprint": "0" * 32,  # 占位：签名后由下方真实指纹覆盖
-        "min_core_version": "0.6.0",
+        "min_core_version": "0.7.0",
         "license": "MIT",
     }
 
