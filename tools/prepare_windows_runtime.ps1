@@ -22,9 +22,11 @@ New-Item -ItemType Directory -Path $RuntimeRoot, $CacheRoot -Force | Out-Null
 # 在表中找不到哈希时拒绝下载（fail-closed），不再"首次下载后自行记录"。
 # 获取方式：下载后运行 Get-FileHash -Algorithm SHA256。
 $KNOWN_SHA256 = @{
-    # Join-Path $CacheRoot 'tesseract-ocr-w64-setup-5.5.0.20241111.exe' = '<填入真实 SHA-256>'
-    # Join-Path $CacheRoot '7zr.exe'                                   = '<填入真实 SHA-256>'
-    # Join-Path $CacheRoot '7z2602-x64.exe'                            = '<填入真实 SHA-256>'
+    # 哈希于 2026-08-11 由官方 release 资产本地下载计算并核对大小登记
+    # （tesseract 21,381,872 B / 7zr 602,112 B / 7z2602 1,657,896 B）。
+    (Join-Path $CacheRoot 'tesseract-ocr-w64-setup-5.5.0.20241111.exe') = 'f3fc4236425b690c8be756f35793f77394ee004be0a6460a440c754d892f68bc'
+    (Join-Path $CacheRoot '7zr.exe')                                   = '56b8cc9f4971cef253644fafe54063ed7fdca551d4dee0f8c6baa81b855acd72'
+    (Join-Path $CacheRoot '7z2602-x64.exe')                            = '6745fa76dc2ea031596d8678f6f6b99c3c1b435b4164a63485adbbc7b8d82ef0'
 }
 
 function Get-Asset([string]$Uri, [string]$Destination, [int64]$MinimumBytes = 1024, [string]$Sha256 = '', [switch]$RequireKnownHash) {
