@@ -165,19 +165,28 @@ if (-not $SkipTesseract) {
             throw "Tesseract language pack missing or corrupt after download: $langPath"
         }
         # A failed download can land an HTML error page (GitHub 404 / rate-limit)
-        # that still exceeds the minimum size. A valid .traineddata is gzip and
-        # starts with the magic bytes 1F 8B; reject anything that does not.
+        # that still exceeds the minimum size. Reject anything that does not
+        # start with '<' (HTML). NOTE: tessdata_fast ships UNCOMPRESSED LSTM
+        # blobs — an earlier "must be gzip (1F 8B)" magic check wrongly rejected
+        # valid eng.traineddata (4,113,088 B, loads fine in tesseract). Real
+        # usability is verified afterwards via --list-langs and the F17 OCR probe.
         $magic = Get-Content -LiteralPath $langPath -Encoding Byte -TotalCount 2 -ErrorAction SilentlyContinue
-        if (-not ($magic -and $magic[0] -eq 0x1F -and $magic[1] -eq 0x8B)) {
-            throw "Tesseract language pack is not a valid gzip archive: $langPath"
+        if (-not ($magic -and $magic[0] -ne 0x3C)) {
+            throw "Tesseract language pack looks like an HTML error page: $langPath"
         }
     }
     & (Join-Path $tesseractRoot 'tesseract.exe') --tessdata-dir $tessdataRoot --list-langs | Out-Host
     if ($LASTEXITCODE -ne 0) { throw 'Tesseract language verification failed.' }
-    # F17：不仅列语言，还要用 chi_sim 实际识别合成图——语言包结构损坏但 gzip 头正常时也能暴露
+    # F17：不仅列语言，还要用 chi_sim 实际识别合成图——语言包结构损坏但 gzip 头正常时也能暴露。
+    # 实测（本机 Windows PowerShell 5.1）：$ErrorActionPreference='Stop' 下原生 stderr
+    # （tesseract 的 "Estimating resolution..." 正常输出）无论 2>&1 还是 2>$null 都会抛
+    # NativeCommandError；唯一有效的是临时切 SilentlyContinue。
     $probePng = Join-Path $env:TEMP 'omnicrawl_ocr_probe.png'
     & $Python -c "from PIL import Image, ImageDraw; import os; img = Image.new('RGB', (560, 100), 'white'); ImageDraw.Draw(img).text((20, 30), 'OmniCrawler OCR 123', fill='black'); img.save(os.environ['TEMP'] + '/omnicrawl_ocr_probe.png')"
-    & (Join-Path $tesseractRoot 'tesseract.exe') $probePng stdout --tessdata-dir $tessdataRoot -l chi_sim 2>$null | Out-Null
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
+    & (Join-Path $tesseractRoot 'tesseract.exe') $probePng stdout --tessdata-dir $tessdataRoot -l chi_sim 2>&1 | Out-Null
+    $ErrorActionPreference = $oldEap
     if ($LASTEXITCODE -ne 0) { throw 'Tesseract chi_sim 实际识别失败（语言包可能损坏）' }
     Remove-Item -LiteralPath $probePng -Force -ErrorAction SilentlyContinue
 }
