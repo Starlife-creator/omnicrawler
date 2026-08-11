@@ -358,7 +358,8 @@ class _LocalTemplatesPane(QWidget):
         root_layout.setSpacing(10)
 
         hint = QLabel(
-            _("自制模板：把 template.yaml 放入项目根 templates/ 目录（每个子目录一份），在此签名后上传市场。")
+            _("自制模板：把 template.yaml 放入项目根 templates/ 或 templates_installed/ 目录"
+              "（每个子目录一份），在此签名后上传市场。")
         )
         hint.setObjectName("mutedLabel")
         hint.setWordWrap(True)
@@ -393,14 +394,19 @@ class _LocalTemplatesPane(QWidget):
     def refresh(self) -> None:
         self._list.clear()
         self._templates = []
-        base = self._root / "templates"
-        if base.is_dir():
+        # F1：对齐插件侧双目录——同时扫描 templates/（本地创作）与
+        # templates_installed/（市场已安装），使内置/已安装模板可直接发布
+        for base_name in ("templates", "templates_installed"):
+            base = self._root / base_name
+            if not base.is_dir():
+                continue
             for template_dir in sorted(base.iterdir()):
                 if template_dir.is_dir() and (template_dir / "template.yaml").is_file():
                     self._templates.append(template_dir)
         for template_dir in self._templates:
             signed = (template_dir / "creator.identity").is_file()
-            self._list.addItem(_(f"{template_dir.name}  ·  {'已签名' if signed else '未签名'}"))
+            rel = template_dir.relative_to(self._root)
+            self._list.addItem(_(f"{rel}  ·  {'已签名' if signed else '未签名'}"))
         self._meta.setText(_(f"共 {len(self._templates)} 个模板"))
 
     def _current(self) -> Path | None:

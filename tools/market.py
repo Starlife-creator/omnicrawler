@@ -18,6 +18,7 @@ catalog_url 默认取自配置 ``plugins.catalog_url``（主仓库 raw），
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -191,6 +192,58 @@ def cmd_templates_verify(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_templates_submit(args: argparse.Namespace) -> int:
+    """构建模板上传包并发布到市场（G2）。
+
+    默认 fork/clone/push 并创建 PR（需 gh 登录）；``--no-pr`` 仅把文件集写入
+    ``--out-dir``（默认市场仓）以供本地备好、手动提交。
+    """
+    from omnicrawl.plugins.plugin_packaging import build_template_upload
+    from omnicrawl.plugins.market_uploader import create_market_pr, UploadError
+
+    tpl_dir = Path(args.template_dir)
+    try:
+        listing = Path(args.listing).read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"无法读取 listing: {exc}")
+        return 1
+    password = args.password or os.environ.get("OMNICRAWL_IDENTITY_PASSWORD", "")
+    try:
+        files = build_template_upload(
+            tpl_dir,
+            username=args.username,
+            password=password,
+            template_id=args.id,
+            name=args.name,
+            version=args.version,
+            category=args.category,
+            summary=args.summary,
+            listing=listing,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"构建上传包失败: {exc}")
+        return 1
+
+    if args.no_pr:
+        out = Path(args.out_dir)
+        for rel, content in files.items():
+            target = out / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+        print(f"已本地备好上传包（未推 PR）：{out}")
+        return 0
+
+    title = args.title or f"模板提交：{args.id}"
+    body = f"类型：template\nID：{args.id}\n由 {args.username} 通过 CLI 提交。"
+    try:
+        url = create_market_pr(files=files, title=title, body=body)
+    except UploadError as exc:
+        print(f"提交 PR 失败: {exc}")
+        return 1
+    print(f"已创建 PR：{url}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="market", description="OmniCrawler 策展式插件市场 CLI")
     parser.add_argument("--catalog-url", default=None, help="catalog 基址（默认取配置或主仓库 raw）")
@@ -224,6 +277,21 @@ def build_parser() -> argparse.ArgumentParser:
     t_ver.add_argument("id", help="模板 ID")
     t_ver.add_argument("--dest", default=str(DEFAULT_TEMPLATE_DEST))
     t_ver.add_argument("--trust", default=None)
+    t_sub = tpl_sub.add_parser("submit", help="构建并发布模板到市场（生成 PR）")
+    t_sub.add_argument("--template-dir", required=True, help="本地模板目录（含 template.yaml）")
+    t_sub.add_argument("--id", required=True, help="市场模板 ID")
+    t_sub.add_argument("--name", required=True, help="模板显示名")
+    t_sub.add_argument("--version", default="1.0.0", help="版本（默认 1.0.0）")
+    t_sub.add_argument("--category", default="general", help="分类（默认 general）")
+    t_sub.add_argument("--summary", required=True, help="简介/描述")
+    t_sub.add_argument("--listing", required=True, help="listing.md 路径")
+    t_sub.add_argument("--username", required=True, help="创作者身份用户名")
+    t_sub.add_argument("--password", default=None, help="身份密码（默认读 OMNICRAWL_IDENTITY_PASSWORD）")
+    t_sub.add_argument("--title", default=None, help="PR 标题")
+    t_sub.add_argument("--no-pr", action="store_true", help="只本地备好上传包，不推 PR")
+    t_sub.add_argument(
+        "--out-dir", default=str(ROOT.parent / "OmniCrawler-market"), help="--no-pr 写入根目录（默认市场仓）"
+    )
     return parser
 
 
@@ -235,6 +303,7 @@ def main(argv: list[str] | None = None) -> int:
             "info": cmd_templates_info,
             "install": cmd_templates_install,
             "verify": cmd_templates_verify,
+            "submit": cmd_templates_submit,
         }
         return handlers[args.template_command](args)
     handlers = {

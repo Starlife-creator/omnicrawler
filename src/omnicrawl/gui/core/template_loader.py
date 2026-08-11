@@ -64,16 +64,21 @@ class TemplateLoader:
         builtin_dir: Path,
         user_dir: Path | None = None,
         additional_builtin_dirs: tuple[Path, ...] = (),
+        additional_user_dirs: tuple[Path, ...] = (),
     ) -> None:
         """初始化模板加载器。
 
         Args:
             builtin_dir: 内置模板目录路径。
             user_dir: 用户自定义模板目录路径（可选）。
+            additional_builtin_dirs: 附加内置目录（如 GUI 内置模板）。
+            additional_user_dirs: 附加用户目录（如市场安装目录 templates_installed/），
+                与 user_dir 同为覆盖语义（同 ID 优先于内置），用于 G4 安装后自动发现。
         """
         self._builtin_dir = Path(builtin_dir)
         self._additional_builtin_dirs = tuple(Path(path) for path in additional_builtin_dirs)
         self._user_dir = Path(user_dir) if user_dir else None
+        self._additional_user_dirs = tuple(Path(path) for path in additional_user_dirs)
         self._cache: dict[str, TemplateInfo] = {}
 
     def discover_templates(self, force: bool = False) -> list[TemplateInfo]:
@@ -97,6 +102,12 @@ class TemplateLoader:
                 by_id.setdefault(record.metadata.template_id, self._to_info(record))
         if self._user_dir:
             for record in TemplateCatalog(self._user_dir).discover(refresh=force):
+                by_id[record.metadata.template_id] = self._to_info(record)
+        # G4：附加用户目录（如市场安装 templates_installed/），覆盖语义（后写胜）
+        for user_dir in self._additional_user_dirs:
+            if not user_dir.is_dir():
+                continue
+            for record in TemplateCatalog(user_dir).discover(refresh=force):
                 by_id[record.metadata.template_id] = self._to_info(record)
 
         templates = sorted(by_id.values(), key=lambda item: (item.category, item.display_name))

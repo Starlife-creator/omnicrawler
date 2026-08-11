@@ -243,6 +243,7 @@ def build_template_upload(
     raw = yaml.safe_load(template_file.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise PackagingError("template.yaml 必须是映射")
+    source_block = raw.get("template") if isinstance(raw.get("template"), dict) else {}
     raw["template"] = {
         "id": template_id,
         "name": name,
@@ -250,9 +251,10 @@ def build_template_upload(
         "category": category,
         "description": summary,
         "publisher": username,
-        "author_fingerprint": "0" * 32,  # 占位：签名后由下方真实指纹覆盖
-        "min_core_version": "0.7.0",
-        "license": "MIT",
+        "author_fingerprint": "0" * 32,  # 占位：下方用创作者真实指纹覆盖
+        # G5：优先保留模板自带声明，缺省回退（与 build_plugin_upload 188-189 对齐）
+        "min_core_version": str(source_block.get("min_core_version") or "0.7.0"),
+        "license": str(source_block.get("license") or "MIT"),
     }
 
     user = _load_user(username, password)

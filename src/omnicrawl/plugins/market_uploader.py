@@ -140,14 +140,26 @@ def _branch_suffix() -> str:
 
 
 def pr_body(payload_kind: str, plugin_id: str, username: str) -> str:
-    """标准 PR 描述（含维护者签名提示）。"""
+    """标准 PR 描述（含维护者签名提示，按 payload 类型分支）。"""
+    if payload_kind == "template":
+        sign_hint = (
+            "python tools/sign_plugin.py sign templates/<id>/template.yaml "
+            "--private-key <冷存储信任根私钥>"
+        )
+    else:
+        sign_hint = (
+            "python tools/sign_plugin.py sign plugins/<id>/plugin.py "
+            "--private-key <冷存储信任根私钥>"
+        )
     return (
         f"提交者：{username}\n"
         f"类型：{payload_kind}\n"
         f"ID：{plugin_id}\n\n"
-        "本 PR 仅含创作者签名（审核材料）。审核通过后请维护者执行：\n"
+        "本 PR 仅含创作者签名（审核材料）。审核通过后请维护者执行（用冷存储信任根私钥"
+        "覆盖 <file>.sig，下载端/CI 校验此文件；不要用 maintainer-sign，其产出 "
+        "maintainer.sig 下载端不校验）：\n"
         "```\n"
-        "python tools/sign_plugin.py sign plugins/<id>/plugin.py\n"
+        f"{sign_hint}\n"
         "```\n"
         "补充维护者签名后 CI 签名校验通过，再合并并更新 catalog.json。\n"
     )

@@ -995,6 +995,7 @@ class MainWindow(QMainWindow):
             builtin_dir=package_resource("omnicrawl", "templates"),
             user_dir=self._project_root / "templates",
             additional_builtin_dirs=(package_resource("omnicrawl", "gui", "templates"),),
+            additional_user_dirs=(self._project_root / "templates_installed",),  # G4：市场安装模板可被发现
         )
         self._task_history = TaskHistory(
             self._project_root,
