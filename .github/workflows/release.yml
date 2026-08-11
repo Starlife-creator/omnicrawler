@@ -93,6 +93,15 @@ jobs:
             @browserArgs @runtimeArgs
 
       # ── 发布元数据（SBOM / provenance / 校验和）────────────────────
+      # SBOM/provenance/checksums 依赖包元数据（omnicrawl-platform.requires 与
+      # 各依赖的已装版本）；系统 python 是全新环境，先安装与 quality.yml
+      # release-artifact-version job 相同的依赖集。
+      - name: 安装发布元数据依赖
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[html,pdf,browser,async-http]"
+
       - name: 生成 SBOM
         shell: pwsh
         run: python tools/generate_sbom.py --output "$env:RUNNER_TEMP/artifacts/omnicrawler-sbom.cdx.json"
