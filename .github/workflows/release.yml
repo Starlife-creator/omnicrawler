@@ -1,7 +1,7 @@
 name: release
 
 # 云端打包构建并发布：
-#   - push v* tag（如 v0.6.0）→ 自动构建 Windows 便携包（Standard + Full）并发布正式 Release
+#   - push v* tag（如 v0.7.0）→ 自动构建 Windows 便携包（Standard + Full）并发布正式 Release
 #   - workflow_dispatch → 手动构建（预发布），用于正式发布前的验证
 #
 # 产物（每个 ZIP 都含 SHA256SUMS 校验和 + SBOM + provenance）：
@@ -54,14 +54,14 @@ jobs:
       # 二次构建直接复用，避免每次从网络下载数百 MB。
       - name: 缓存浏览器运行时
         id: browser-cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155df47e93e2c5 # v5.1.3
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: .cache/playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
 
       - name: 缓存 OCR 运行时
         id: runtime-cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155df47e93e2c5 # v5.1.3
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: .cache/runtime
           key: ocr-runtime-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}

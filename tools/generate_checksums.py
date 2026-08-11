@@ -1,19 +1,15 @@
 """Generate a sorted SHA-256 release manifest covering ALL release artifacts.
 
-Expected artifacts (validated against actual files):
+Expected artifacts (validated against actual files, aligned with
+.github/workflows/release.yml):
 - Windows Standard ZIP
 - Windows Full ZIP
-- Python Wheel
-- Source ZIP
 - CycloneDX SBOM JSON
-- ChangeLog (1.1→2.1)
-- Quick Start guide
-- Release Report
-- Test Report
+- Provenance JSON
 
 Usage:
     python tools/generate_checksums.py dist/
-    python tools/generate_checksums.py dist/ --output SHA256SUMS-2.1.0.txt --verify
+    python tools/generate_checksums.py dist/ --output SHA256SUMS-0.7.0.txt --verify
 """
 
 from __future__ import annotations
@@ -25,25 +21,21 @@ from pathlib import Path
 
 # Windows CI 控制台默认 charmap 编码无法输出中文/符号，强制 UTF-8。
 if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
 
 try:
     import tomllib
 except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
-# 必须覆盖的发行物文件名模式
+# 必须覆盖的发行物文件名模式（与 release.yml 实际产物一致；wheel/源码 ZIP
+# 等形态当前不由 release workflow 产出，故不在此列）
 REQUIRED_PATTERNS = [
     "Windows-Portable-Standard.zip",
     "Windows-Portable-Full.zip",
-    "py3-none-any.whl",
-    "Source.zip",
     "SBOM.cdx.json",
-    "ChangeLog.md",
-    "Quick-Start.md",
-    "Release-Report.md",
-    "Test-Report.md",
+    "provenance.json",
 ]
 
 
@@ -62,11 +54,12 @@ def _sha256(path: Path) -> str:
 
 
 def _check_coverage(files: list[Path]) -> list[str]:
-    """Verify all required artifact categories are covered."""
-    filenames = " ".join(path.name for path in files)
+    """Verify all required artifact categories are covered (case-insensitive:
+    actual artifacts use lowercase names, e.g. ``omnicrawler-sbom.cdx.json``)."""
+    filenames = " ".join(path.name for path in files).casefold()
     missing = []
     for pattern in REQUIRED_PATTERNS:
-        if pattern not in filenames:
+        if pattern.casefold() not in filenames:
             missing.append(pattern)
     return missing
 

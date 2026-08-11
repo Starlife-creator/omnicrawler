@@ -10,6 +10,12 @@ from .utils import atomic_write, utcnow
 
 RUNTIME_MANIFEST = "RUNTIME-MANIFEST.json"
 
+# 运行时可变目录：打包后的 exe 每次启动都会写入/追加日志（logs/），
+# 若纳入完整性清单，runtime-verify 自身启动写日志就会让哈希漂移而误报
+# corrupt（release CI 实测 corrupt: logs/omnicrawl.log）。创建与校验两侧
+# 都必须排除，保持一致。
+_EXCLUDED_RELATIVE_PREFIXES = ("logs/",)
+
 
 def create_runtime_manifest(root: Path, *, include: Iterable[Path] | None = None) -> dict[str, Any]:
     root = root.resolve()
@@ -19,6 +25,8 @@ def create_runtime_manifest(root: Path, *, include: Iterable[Path] | None = None
         if path.name == RUNTIME_MANIFEST or root not in path.parents:
             continue
         relative = path.relative_to(root).as_posix()
+        if relative.startswith(_EXCLUDED_RELATIVE_PREFIXES):
+            continue
         files[relative] = {"sha256": _sha256(path), "bytes": path.stat().st_size}
     manifest = {"format": 1, "created_at": utcnow(), "files": files}
     atomic_write(root / RUNTIME_MANIFEST, json.dumps(manifest, ensure_ascii=False, indent=2).encode())
@@ -61,6 +69,8 @@ def verify_runtime_manifest(root: Path) -> dict[str, Any]:
         if not candidate.is_file() or candidate.name == RUNTIME_MANIFEST:
             continue
         relative = candidate.relative_to(root).as_posix()
+        if relative.startswith(_EXCLUDED_RELATIVE_PREFIXES):
+            continue
         if relative not in declared:
             unknown.append(relative)
     unknown.sort()
