@@ -1,13 +1,17 @@
 name: release
 
 # 云端打包构建并发布：
-#   - push v* tag（如 v0.7.0）→ 自动构建 Windows 便携包（Standard + Full）并发布正式 Release
+#   - push v* tag（如 v0.7.0）→ 自动构建 Windows / Linux / macOS 便携包并发布正式 Release
 #   - workflow_dispatch → 手动构建（预发布），用于正式发布前的验证
 #
-# 产物（每个 ZIP 都含 SHA256SUMS 校验和 + SBOM + provenance）：
-#   OmniCrawler-<version>-Windows-Portable-Standard.zip
-#   OmniCrawler-<version>-Windows-Portable-Full.zip
+# 产物（每个平台包都含 SHA256SUMS 校验和 + SBOM + provenance）：
+#   OmniCrawler-<version>-Windows-Portable-{Standard,Full}.zip
+#   OmniCrawler-<version>-Linux-Portable-{Standard,Full}.tar.gz
+#   OmniCrawler-<version>-macOS-Portable-{Standard,Full}.dmg
 #   SHA256SUMS.txt / omnicrawler-sbom.cdx.json / omnicrawler-provenance.json
+#
+# 结构：三个平台构建 job 各自打包并上传 Actions artifact，聚合 release job
+# 下载全部产物后统一发布到 GitHub Release（避免多 job 并发写同一 Release）。
 
 on:
   push:
@@ -96,8 +100,9 @@ jobs:
 
       # ── 发布元数据（SBOM / provenance / 校验和）────────────────────
       # SBOM/provenance/checksums 依赖包元数据（omnicrawl-platform.requires 与
-      # 各依赖的已装版本）；系统 python 是全新环境，先安装与 quality.yml
-      # release-artifact-version job 相同的依赖集。
+      # 各依赖的已装版本）；系统 python 是全新环境，先安装元数据依赖集。
+      # 三平台各自生成带平台后缀的 SBOM 与校验和；provenance 由聚合发布
+      # job 统一生成（覆盖全部产物）。
       - name: 安装发布元数据依赖
         shell: pwsh
         run: |
@@ -106,21 +111,15 @@ jobs:
 
       - name: 生成 SBOM
         shell: pwsh
-        run: python tools/generate_sbom.py --output "$env:RUNNER_TEMP/artifacts/omnicrawler-sbom.cdx.json"
-
-      - name: 生成 provenance
-        shell: pwsh
-        run: |
-          python tools/generate_provenance.py --artifact-dir "$env:RUNNER_TEMP/artifacts" `
-            --output "$env:RUNNER_TEMP/artifacts/omnicrawler-provenance.json"
+        run: python tools/generate_sbom.py --output "$env:RUNNER_TEMP/artifacts/omnicrawler-sbom-windows.cdx.json"
 
       - name: 生成并校验 SHA-256 清单
         shell: pwsh
         run: |
           python tools/generate_checksums.py "$env:RUNNER_TEMP/artifacts" `
-            --output "$env:RUNNER_TEMP/artifacts/SHA256SUMS.txt" --verify
+            --output "$env:RUNNER_TEMP/artifacts/SHA256SUMS-windows.txt" --verify
           python tools/generate_checksums.py "$env:RUNNER_TEMP/artifacts" `
-            --output "$env:RUNNER_TEMP/artifacts/SHA256SUMS.txt" --check
+            --output "$env:RUNNER_TEMP/artifacts/SHA256SUMS-windows.txt" --check
 
       # ── keyless 签名证明（Sigstore / gh attestation）────────────────
       # 不需要任何私钥：签名身份 = 本 release.yml 在 tag 上由 GitHub OIDC 背书，
@@ -138,28 +137,192 @@ jobs:
         shell: pwsh
         run: Get-ChildItem "$env:RUNNER_TEMP/artifacts" | Select-Object Name, @{N='MB';E={[math]::Round($_.Length/1MB,1)}}
 
+      - name: 上传构建产物（供聚合发布 job 使用）
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: artifacts-windows
+          path: ${{ runner.temp }}/artifacts/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── Linux 便携包（Standard + Full，tar.gz）────────────────────────
+  build-linux-portable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PYTHONIOENCODING: utf-8
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/playwright
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: 缓存浏览器运行时
+        id: browser-cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: .cache/playwright
+          key: playwright-linux-${{ hashFiles('pyproject.toml') }}
+
+      - name: 构建 Standard 便携包
+        shell: bash
+        run: |
+          browserArgs=()
+          if [ -d ".cache/playwright" ]; then
+            browserArgs=(--browser-cache-path .cache/playwright)
+          fi
+          bash build_linux.sh --edition Standard \
+            --release-output "$RUNNER_TEMP/artifacts-linux" "${browserArgs[@]}"
+
+      - name: 构建 Full 便携包
+        shell: bash
+        run: |
+          browserArgs=()
+          if [ -d ".cache/playwright" ]; then
+            browserArgs=(--browser-cache-path .cache/playwright)
+          fi
+          bash build_linux.sh --edition Full \
+            --release-output "$RUNNER_TEMP/artifacts-linux" "${browserArgs[@]}"
+
+      - name: 生成 SBOM 与校验和
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[html,pdf,browser,async-http]"
+          python tools/generate_sbom.py --output "$RUNNER_TEMP/artifacts-linux/omnicrawler-sbom-linux.cdx.json"
+          python tools/generate_checksums.py "$RUNNER_TEMP/artifacts-linux" \
+            --output "$RUNNER_TEMP/artifacts-linux/SHA256SUMS-linux.txt" --verify
+          python tools/generate_checksums.py "$RUNNER_TEMP/artifacts-linux" \
+            --output "$RUNNER_TEMP/artifacts-linux/SHA256SUMS-linux.txt" --check
+
+      - name: 上传构建产物（供聚合发布 job 使用）
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: artifacts-linux
+          path: ${{ runner.temp }}/artifacts-linux/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── macOS 便携包（Standard + Full，dmg / tar.gz）──────────────────
+  build-macos-portable:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    env:
+      PYTHONIOENCODING: utf-8
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/playwright
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: 缓存浏览器运行时
+        id: browser-cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: .cache/playwright
+          key: playwright-macos-${{ hashFiles('pyproject.toml') }}
+
+      - name: 构建 Standard 便携包
+        shell: bash
+        run: |
+          browserArgs=()
+          if [ -d ".cache/playwright" ]; then
+            browserArgs=(--browser-cache-path .cache/playwright)
+          fi
+          bash build_macos.sh --edition Standard \
+            --release-output "$RUNNER_TEMP/artifacts-macos" "${browserArgs[@]}"
+
+      - name: 构建 Full 便携包
+        shell: bash
+        run: |
+          browserArgs=()
+          if [ -d ".cache/playwright" ]; then
+            browserArgs=(--browser-cache-path .cache/playwright)
+          fi
+          bash build_macos.sh --edition Full \
+            --release-output "$RUNNER_TEMP/artifacts-macos" "${browserArgs[@]}"
+
+      - name: 生成 SBOM 与校验和
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[html,pdf,browser,async-http]"
+          python tools/generate_sbom.py --output "$RUNNER_TEMP/artifacts-macos/omnicrawler-sbom-macos.cdx.json"
+          python tools/generate_checksums.py "$RUNNER_TEMP/artifacts-macos" \
+            --output "$RUNNER_TEMP/artifacts-macos/SHA256SUMS-macos.txt" --verify
+          python tools/generate_checksums.py "$RUNNER_TEMP/artifacts-macos" \
+            --output "$RUNNER_TEMP/artifacts-macos/SHA256SUMS-macos.txt" --check
+
+      - name: 上传构建产物（供聚合发布 job 使用）
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: artifacts-macos
+          path: ${{ runner.temp }}/artifacts-macos/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── 聚合发布：下载三平台产物，统一生成 provenance 并发布 ──────────
+  release:
+    needs: [build-windows-portable, build-linux-portable, build-macos-portable]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/artifacts
+          merge-multiple: true
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: 生成 provenance
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[html,pdf,browser,async-http]"
+          python tools/generate_provenance.py --artifact-dir "$RUNNER_TEMP/artifacts" \
+            --output "$RUNNER_TEMP/artifacts/omnicrawler-provenance.json"
+
+      - name: 列出全部构建产物
+        shell: bash
+        run: ls -lh "$RUNNER_TEMP/artifacts"
+
       # ── 上传到 GitHub Release ──────────────────────────────────────
       - name: 发布到 GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
         with:
           tag_name: ${{ github.ref_name }}
-          name: OmniCrawler ${{ steps.version.outputs.version }}
+          name: OmniCrawler ${{ github.ref_name }}
           body: |
-            ## OmniCrawler ${{ steps.version.outputs.version }}
+            ## OmniCrawler ${{ github.ref_name }}
 
-            > 由 CI 自动构建（GitHub Actions Windows runner）。
+            > 由 CI 自动构建（GitHub Actions 三平台 runner）。
 
             ### 便携包
-            - **Standard**：GUI + Chromium + 常规采集
-            - **Full**：另含 ChromeDriver + 双 OCR 引擎（Tesseract + PaddleOCR）
-
-            安装：解压 ZIP → 双击 `OmniCrawler-Launcher.bat`。
+            - **Windows**（Standard/Full）：GUI + Chromium +（Full 含）ChromeDriver/Tesseract/PaddleOCR
+              - 安装：解压 ZIP → 双击 `OmniCrawler-Launcher.bat`
+            - **Linux**（Standard/Full）：GUI + Chromium；Tesseract 由系统包提供
+              - 安装：`tar -xzf <包> && ./OmniCrawler/omnicrawl --help`
+            - **macOS**（Standard/Full）：.app（ad-hoc 签名）；首次打开请右键 → 打开
+              - 安装：挂载 dmg → 拖入 Applications
 
             ### 安全
-            - 所有产物附带 `SHA256SUMS.txt` 校验和（与 `omnicrawler-provenance.json` 对应）
-            - `omnicrawler-sbom.cdx.json`：依赖物料清单（CycloneDX）
+            - 各平台产物附带 `SHA256SUMS-<platform>.txt` 校验和（与 `omnicrawler-provenance.json` 对应）
+            - `omnicrawler-sbom-<platform>.cdx.json`：各平台依赖物料清单（CycloneDX）
             - 可用 `gh attestation verify <包名> --owner Starlife-creator` 验证构建来源（keyless 签名，无需导入任何密钥）
-            - 本版本未做 Authenticode 代码签名；校验完整性请以 SHA-256 为准
+            - 本版本未做代码签名（Windows Authenticode / macOS Developer ID）；校验完整性请以 SHA-256 为准
           files: |
             ${{ runner.temp }}/artifacts/*
           fail_on_unmatched_files: true

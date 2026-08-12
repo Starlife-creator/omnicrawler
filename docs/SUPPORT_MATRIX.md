@@ -5,8 +5,8 @@
 ## Python 与平台
 
 - 源码安装支持 Python 3.10+。
-- 持续集成覆盖 Windows 与 Linux 的 Python 3.10、3.12、3.13。
-- macOS 提供源码启动脚本；当前没有 macOS 持续集成验证，发布前不得将其描述为已验证的便携版平台。
+- 持续集成覆盖 Windows、Linux 与 macOS 的 Python 3.10、3.12、3.13。
+- 便携版构建支持 Windows（ZIP）、Linux（tar.gz）与 macOS（dmg）；macOS 产物为 ad-hoc 签名（无 Developer ID，首次打开需右键 → 打开）。
 
 ## 能力分级
 

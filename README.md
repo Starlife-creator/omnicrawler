@@ -313,13 +313,16 @@ run_windows.bat                       # 启动 CLI
 ```
 
 发布时 `bump_version.py` 会自动运行环境版本对账；若本地 `.venv` 的 installed 版本
-与源码新版本不符会终止发布。正式发布前应确保 `dist/` 与 `artifacts/` 的产物版本
-== 当前版本（CI 的 `release-artifact-version` job 在 tag 上强制校验）。
+与源码新版本不符会终止发布。正式发布前应确保 `artifacts/` 的产物版本
+== 当前版本（构建脚本会对 `omnicrawl.__version__` / `pyproject.toml` / installed
+元数据做三重一致校验，不一致即失败）。
 
 ### 便携包构建
 
+三平台构建总纲见 `docs/PORTABLE_PACKAGING.md`。各平台脚本：
+
 ```powershell
-# 完整构建（Full 版，含全部分发资产）
+# Windows：完整构建（Full 版，含全部分发资产）
 .\build_windows.ps1 -Edition Full
 # Standard 版
 .\build_windows.ps1 -Edition Standard
@@ -327,6 +330,15 @@ run_windows.bat                       # 启动 CLI
 .\build_windows.ps1 -Edition Full -Offline -BuilderPythonPath .venv\Scripts\python.exe
 # 显式产物目录（默认写入 release/，建议写进 artifacts/）
 .\build_windows.ps1 -Edition Standard -ReleaseOutputPath .\artifacts\release\0.8.0
+```
+
+```bash
+# Linux：在 x86_64 / aarch64 上执行
+./build_linux.sh                     # Standard
+./build_linux.sh --edition Full      # Full（OCR 依赖系统 tesseract）
+# macOS：只能在 macOS 上执行（PyInstaller 不支持交叉编译）
+./build_macos.sh                     # Standard（ad-hoc 签名 .app → dmg）
+./build_macos.sh --edition Full
 ```
 
 ### 提交前自检

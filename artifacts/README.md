@@ -14,7 +14,7 @@
 ```text
 artifacts/
   build/<version>-<edition>-rN/release/OmniCrawler/  完整 Windows 便携目录
-  release/<version>/                                Windows ZIP 与 SHA-256 清单
+  release/<version>/                                Windows ZIP / Linux tar.gz / macOS dmg 与 SHA-256 清单
   python/<version>/                                 源码 ZIP 与 wheel
   package-source/                                   从源码 ZIP 解压出的 wheel 构建暂存
   tmp/                                              可恢复的短期构建临时文件
@@ -26,14 +26,15 @@ artifacts/
 
 | # | 产物类型 | 示例文件名 | 输出目录 |
 |---|---|---|---|
-| 1 | **Standard 便携 ZIP** | `OmniCrawler-0.7.0-Windows-Portable-Standard.zip` | `artifacts/release/{version}/` |
-| 2 | **Full 便携 ZIP** | `OmniCrawler-0.7.0-Windows-Portable-Full.zip` | `artifacts/release/{version}/` |
-| 3 | **源码 ZIP** | `OmniCrawler-0.7.0-Source.zip` | `artifacts/python/{version}/` |
+| 1 | **Standard 便携包** | `OmniCrawler-0.8.0-Windows-Portable-Standard.zip` / `...-Linux-Portable-Standard.tar.gz` / `...-macOS-Portable-Standard.dmg` | `artifacts/release/{version}/` |
+| 2 | **Full 便携包** | `OmniCrawler-0.8.0-Windows-Portable-Full.zip` / 同规则 Linux / macOS | `artifacts/release/{version}/` |
+| 3 | **源码 ZIP** | `OmniCrawler-0.8.0-Source.zip` | `artifacts/python/{version}/` |
 | 4 | **完整便携目录**（压缩前）| `release/OmniCrawler/` | `artifacts/build/{version}-{edition}-rN/` |
 
-- #4 是 #1/#2 的压缩前完整文件夹，可直接双击运行、调试。
+- #4 是 #1/#2 的压缩前完整文件夹（Windows 直接可运行；Linux/macOS 见 `docs/PORTABLE_PACKAGING.md`），可直接运行、调试。
 - #3 是纯源码归档（不含 `artifacts/`、`build_cache/`、`dist/` 等构建物）。
-- wheel（`omnicrawl_platform-0.7.0-py3-none-any.whl`）随 #3 同一目录产出。
+- wheel（`omnicrawl_platform-0.8.0-py3-none-any.whl`）随 #3 同一目录产出。
+- 三平台便携包构建总纲见 `docs/PORTABLE_PACKAGING.md`；Windows 细节见 `docs/WINDOWS_PACKAGING.md`。
 
 ## 历史归档
 
