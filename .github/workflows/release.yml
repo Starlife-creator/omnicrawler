@@ -26,6 +26,8 @@ concurrency:
 
 permissions:
   contents: write
+  id-token: write        # OIDC，keyless 签名必需
+  attestations: write    # 写入 Release 证明
 
 jobs:
   build-windows-portable:
@@ -120,6 +122,18 @@ jobs:
           python tools/generate_checksums.py "$env:RUNNER_TEMP/artifacts" `
             --output "$env:RUNNER_TEMP/artifacts/SHA256SUMS.txt" --check
 
+      # ── keyless 签名证明（Sigstore / gh attestation）────────────────
+      # 不需要任何私钥：签名身份 = 本 release.yml 在 tag 上由 GitHub OIDC 背书，
+      # 证明存于 GitHub 证明库，用户用 `gh attestation verify <包> --owner Starlife-creator` 核验。
+      - name: 为便携包生成 keyless 签名证明
+        uses: actions/attest@ce27ba3b4a9a139d9a20a4a07d69fabb52f1e5bc # v2.4.0
+        with:
+          subject-path: |
+            ${{ runner.temp }}/artifacts/OmniCrawler-${{ steps.version.outputs.version }}-Windows-Portable-Standard.zip
+            ${{ runner.temp }}/artifacts/OmniCrawler-${{ steps.version.outputs.version }}-Windows-Portable-Full.zip
+          predicate-type: "https://in-toto.io/attestation/release/v0.1"
+          predicate: "{}"
+
       - name: 列出构建产物
         shell: pwsh
         run: Get-ChildItem "$env:RUNNER_TEMP/artifacts" | Select-Object Name, @{N='MB';E={[math]::Round($_.Length/1MB,1)}}
@@ -144,6 +158,7 @@ jobs:
             ### 安全
             - 所有产物附带 `SHA256SUMS.txt` 校验和（与 `omnicrawler-provenance.json` 对应）
             - `omnicrawler-sbom.cdx.json`：依赖物料清单（CycloneDX）
+            - 可用 `gh attestation verify <包名> --owner Starlife-creator` 验证构建来源（keyless 签名，无需导入任何密钥）
             - 本版本未做 Authenticode 代码签名；校验完整性请以 SHA-256 为准
           files: |
             ${{ runner.temp }}/artifacts/*
