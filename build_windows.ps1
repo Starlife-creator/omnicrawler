@@ -256,7 +256,12 @@ if ($Edition -eq 'Full') {
 }
 $launcher = Join-Path $projectRoot 'packaging\OmniCrawler-Launcher.bat'
 if (-not (Test-Path -LiteralPath $launcher)) { throw "Portable launcher is missing: $launcher" }
-Copy-Item -LiteralPath $launcher -Destination $releaseRoot
+# A3/D2：打包前强制转 CRLF——.gitattributes 声明 *.bat eol=crlf 是设计意图，
+# 但工作树可能因 autocrlf 差异保持 LF；cmd 对 LF-only 批处理的 goto/括号块
+# 解析不稳定，故统一按 CRLF 写出（保留原 UTF-8 无 BOM 编码，含中文 echo）。
+$launcherText = [IO.File]::ReadAllText($launcher)
+$launcherText = [regex]::Replace($launcherText, '(\r?\n)', "`r`n")
+[IO.File]::WriteAllText((Join-Path $releaseRoot 'OmniCrawler-Launcher.bat'), $launcherText, (New-Object Text.UTF8Encoding($false)))
 foreach ($file in @('packaging\PORTABLE_README.txt', 'packaging\THIRD_PARTY_NOTICES.md', 'README.md', 'LICENSE')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $file) -Destination $releaseRoot
 }
@@ -349,6 +354,20 @@ Write-Host "Portable ZIP: $releaseArchive"
 Write-Host "SHA-256: $($archiveHash.Hash)"
 Write-Host 'GUI: OmniCrawler.exe'
 Write-Host 'CLI: omnicrawl.exe --help'
+# D3：构建成功后清理临时目录。仅当 $buildRoot 为默认 %TEMP% 路径时清理
+# （$builderVenv 始终位于 %TEMP%）；显式 -BuildRootPath 指向的版本化
+# 产物目录（artifacts/build/...）保留作"压缩前完整包"。失败路径不会到达此处。
+if (-not $BuildRootPath) {
+    $tempPrefix = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
+    foreach ($candidate in @($buildRoot, $builderVenv)) {
+        $full = [IO.Path]::GetFullPath($candidate)
+        if ($full.StartsWith($tempPrefix, [StringComparison]::OrdinalIgnoreCase) -and
+            (Test-Path -LiteralPath $full)) {
+            Remove-Item -LiteralPath $full -Recurse -Force
+            Write-Host "Cleaned temporary build directory: $full"
+        }
+    }
+}
 } finally {
     # F6：构建结束还原调用者会话的 PLAYWRIGHT_BROWSERS_PATH
     if ($null -eq $previousPlaywrightPath) {
