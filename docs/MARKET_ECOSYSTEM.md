@@ -74,9 +74,9 @@
   → 社区审核员 Review
   → 维护者审核（代码安全 + 权限合理 + 功能正确）
   → 合并 PR
-  → 维护者离线签名（maintainer.sig）                      [✅ 已落地: sign_plugin.py maintainer-sign]
+  → 维护者离线签名（plugin.py.sig）                     [✅ 已落地: sign_plugin.py sign]
   → 插件包上传 CDN / 对象存储                             [⏳ market-server 阶段]
-  → 用户下载 → 验证 maintainer.sig → 自动信任             [✅ 已落地: 三层信任加载链]
+  → 用户下载 → 验证 plugin.py.sig → 自动信任             [✅ 已落地: 三层信任加载链]
 ```
 
 ## 7. 触发市场服务器建设的信号
@@ -99,7 +99,7 @@
 | 密钥安全（OS 密钥库） | `identity.py`（密码加密入 SecretsStore/keyring）+ `SecretsStore` env 支持 |
 | 私钥四层保证 | 存储隔离（OS 密钥库）✅ / 允许列表打包（`scan_plugin.py --manifest`）✅ / 发布前扫描（五项）✅ / 导出接口无私钥路径（`export_identity()`）✅ |
 | 开发者文件预留 | `registry/` 内 LICENSE/CONTRIBUTING/CODE_OF_CONDUCT/SECURITY/CHANGELOG/.github/ |
-| 维护者签名发布 | `sign_plugin.py maintainer-sign` + 透明日志 |
+| 维护者签名发布 | `sign_plugin.py sign` + 透明日志 |
 | 身份系统 | `identity.py` + `tools/identity.py` + GUI 身份对话框 |
 | 创建即签名 | `sign_plugin.py creator-sign` |
 | 三层信任模型 | `trust.py` + `plugins.py` 加载链接入 + 信任列表 |
@@ -114,7 +114,7 @@
 - 市场源：`registry/templates/<id>/template.yaml`（`template:` 块含
   `publisher`/`author_fingerprint` 市场字段）
 - 索引：`catalog.json` `templates` 数组（生成器聚合，CI 强制一致性 + 签名）
-- 签名：`sign_plugin.py creator-sign/maintainer-sign --file template.yaml`
+- 签名：`sign_plugin.py creator-sign/sign --file template.yaml`
 - 安装：`tools/market.py templates install` → `templates_installed/<id>/` →
   `TemplateCatalog` 用户目录自动发现
 - GUI：市场面板「插件 / 模板」双页

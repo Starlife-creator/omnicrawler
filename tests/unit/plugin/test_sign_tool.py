@@ -157,27 +157,6 @@ def test_creator_sign_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert decision.level == trust_model.TrustLevel.CreatorTrusted
 
 
-def test_maintainer_sign_generates_maintainer_sig(tmp_path: Path) -> None:
-    from omnicrawl.plugins import trust as trust_model
-
-    private, public = _make_keypair(tmp_path)
-    plugin_dir = tmp_path / "plug"
-    plugin_dir.mkdir()
-    plugin = plugin_dir / "plugin.py"
-    plugin.write_text("def register(registry): pass\n", encoding="utf-8")
-
-    log = tmp_path / "signing_transparency.jsonl"
-    signed = _run("maintainer-sign", str(plugin_dir), "--private-key", str(private), "--log", str(log))
-    assert signed.returncode == 0, signed.stdout + signed.stderr
-    assert (plugin_dir / "maintainer.sig").is_file()
-    assert log.is_file()
-
-    decision = trust_model.verify_plugin_trust(
-        plugin_dir, str(public), trust_model.TrustedUserList(tmp_path / "trusted.json")
-    )
-    assert decision.level == trust_model.TrustLevel.MaintainerSigned
-
-
 def test_creator_sign_targets_template_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """创建即签名支持 --file template.yaml（模板入市的三件套之二）。"""
     import json

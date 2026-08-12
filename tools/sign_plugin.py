@@ -41,7 +41,6 @@ for _cand in (_REPO_ROOT / "src", _REPO_ROOT):
 
 from omnicrawl.plugins.signing import (  # noqa: E402
     generate_keypair,
-    sign_bytes,
     sign_file,
     verify_plugin,
 )
@@ -183,19 +182,6 @@ def _creator_sign(plugin_dir: Path, username: str, password: str, target: str) -
     return plugin_dir / "creator.identity"
 
 
-def _maintainer_sign(plugin_dir: Path, private_pem: bytes, log_path: Path, target: str) -> Path:
-    """维护者签名：市场分发形态，生成 maintainer.sig（仅市场分发携带）。"""
-    target_path = plugin_dir / target
-    if not target_path.is_file():
-        raise FileNotFoundError(f"缺少待签名文件 {target}: {target_path}")
-    signature = sign_bytes(target_path.read_bytes(), private_pem)
-    sig_path = plugin_dir / "maintainer.sig"
-    sig_path.write_bytes(signature)
-    print(f"[维护者签名] 已生成 {sig_path}（目标: {target}）")
-    _append_transparency_log(target_path, log_path)
-    return sig_path
-
-
 def _local_sign(plugin_dir: Path, username: str, password: str, target: str) -> Path:
     """本地一键签名：creator-sign + 自动加入本地信任列表。
 
@@ -259,16 +245,6 @@ def main(argv: list[str] | None = None) -> int:
     ls.add_argument("--manifest", default=None, help="插件清单 YAML 路径（扫描允许列表）")
     ls.add_argument("--skip-scan", action="store_true", help="跳过发布前扫描（不推荐）")
 
-    ms = sub.add_parser("maintainer-sign", help="维护者签名（市场分发，生成 maintainer.sig）")
-    ms.add_argument("plugin_dir", help="插件/模板目录路径")
-    ms.add_argument(
-        "--file", default="plugin.py", help="待签名文件名（默认 plugin.py；模板用 template.yaml）"
-    )
-    ms.add_argument("--private-key", default=PRIVATE_DEFAULT, help="维护者私钥 PEM 路径（冷存储）")
-    ms.add_argument("--manifest", default=None, help="插件清单 YAML 路径（扫描允许列表）")
-    ms.add_argument("--skip-scan", action="store_true", help="跳过发布前扫描（不推荐）")
-    ms.add_argument("--log", default=TRANSPARENCY_LOG_DEFAULT, help="签名透明日志路径")
-
     vf = sub.add_parser("verify", help="验签插件")
     vf.add_argument("plugin", help="插件 .py 文件路径")
     vf.add_argument("--trust", required=True, help="信任根公钥 PEM 或公钥文件路径")
@@ -309,13 +285,6 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:  # noqa: BLE001 - 统一给出可读错误
             print(f"FAIL 本地签名: {exc}")
             return 1
-        return 0
-    if args.command == "maintainer-sign":
-        plugin_dir = Path(args.plugin_dir)
-        if not args.skip_scan:
-            _run_scan(plugin_dir, Path(args.manifest) if args.manifest else None)
-        private_pem = Path(args.private_key).expanduser().read_bytes()
-        _maintainer_sign(plugin_dir, private_pem, Path(args.log), args.file)
         return 0
     if args.command == "verify":
         ok, reason = verify_plugin(args.plugin, args.trust)

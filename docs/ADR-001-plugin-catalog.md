@@ -171,10 +171,10 @@ registry/
    SecretsStore——私钥绝不落盘明文、绝不入库（对齐 Helios §13.7/§13.10）。
    公开身份 `CreatorIdentity`（username/public_key/fingerprint）可随插件分发。
 2. **创建即签名**：`tools/sign_plugin.py creator-sign` 用本地身份生成
-   `creator.sig` + `creator.identity`；`maintainer-sign` 由维护者在冷机器生成
-   `maintainer.sig`（仅市场分发携带）。
+   `creator.sig` + `creator.identity`；`sign` 由维护者在冷机器生成
+   `plugin.py.sig`（市场分发携带）。
 3. **三层信任模型**（`src/omnicrawl/plugins/trust.py`）：
-   - 层级 1：`maintainer.sig`（或遗留 `plugin.py.sig`）通过信任根验签 → 自动信任；
+   - 层级 1：`plugin.py.sig`（legacy `maintainer.sig` 仍兼容）通过信任根验签 → 自动信任；
    - 层级 2：`creator.sig` + `creator.identity` 有效且指纹在本地信任列表
      （`~/.omnicrawl/trusted_users.json`，纯本地决策）→ 信任；
    - 层级 2b：创作者签名有效但未信任 → 拒绝加载并提示信任命令（GUI 弹窗为阶段 2）；
@@ -203,7 +203,7 @@ registry/
 2. **`catalog.json` 新增 `templates` 数组**（schema_version 保持 1，向后兼容）；
    生成器扫描 `templates/*/template.yaml` 并校验：project/source 存在、市场字段
    必填、作者指纹匹配、文件存在、签名验签（信任根）。
-3. **签名复用**：`sign_plugin.py creator-sign/maintainer-sign` 增加 `--file`
+3. **签名复用**：`sign_plugin.py creator-sign/sign` 增加 `--file`
    参数（默认 `plugin.py`，模板传 `template.yaml`）。
 4. **应用端**：`market_client.download_template_and_verify` /
    `verify_installed_template`（安装到 `templates_installed/<id>/`，模板库
