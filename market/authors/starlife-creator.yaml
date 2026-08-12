@@ -1,0 +1,18 @@
+# 作者公钥指纹记录（git-as-registry 的信任身份目录）
+#
+# 每个生态发布者一个 YAML 文件，文件名 = username。fingerprint 是
+# 发布者签名公钥的 SHA-256（对 ed25519 公钥原始 32 字节）前 16 字节 hex，
+# 是生态中的绝对唯一标识（用户名可重名，指纹不可重名）。
+#
+# tools/generate_catalog.py --check 会校验：插件清单声明的 author_fingerprint
+# 必须能在 authors/ 中找到对应记录，且与 pubkey_ref 指向的公钥实际计算值一致。
+#
+# 指纹算法（2026-08 统一）：SHA-256(ed25519 公钥原始字节)[:32]，
+# 与运行时 omnicrawl.plugins.identity.derive_fingerprint 同源；
+# 旧的「PEM 文本字节 + CRLF 归一化」算法已废弃。
+
+username: Starlife-creator
+display_name: Starlife-creator
+pubkey_ref: ../keys/plugin_trust.pub.pem
+fingerprint: d92fa9fbf75e823a5d606211bf10fed1
+roles: [publisher]
