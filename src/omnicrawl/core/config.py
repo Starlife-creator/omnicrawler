@@ -158,8 +158,9 @@ DEFAULTS: dict[str, Any] = {
         "ast_allowed_patterns": [],
         # 插件市场 catalog 基址（单一可迁移配置）。所有 catalog 内部路径均为相对此基址
         # 的相对路径；迁移到独立仓库或自托管 HTTP 服务时，只需改这一项。
-        # 留空表示不配置远程市场（GUI 市场面板回退到 bundled_catalog_dir 或禁用）。
-        "catalog_url": "",
+        # 默认连在线独立市场仓（GitHub raw 基址）；插件/模板上架即时可见、无需重新发版。
+        # 联网失败自动回退 bundled_catalog_dir 内置离线快照。迁移/自托管改这一项即可。
+        "catalog_url": "https://raw.githubusercontent.com/Starlife-creator/OmniCrawler-market/main",
         # 离线/便携构建内置的 catalog 快照目录（相对或绝对路径，相对应用根解析）。
         # 默认 "market"：仓库根 market/ 为内置快照（出包时打入 catalog.json + 信任根公钥 + 首发模板），
         # 用户开箱即可离线浏览/安装市场；找不到时回退 local_fallback（../OmniCrawler-market）或 catalog_url。
