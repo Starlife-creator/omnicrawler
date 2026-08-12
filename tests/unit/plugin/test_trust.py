@@ -56,7 +56,7 @@ def test_maintainer_signed_auto_trust(tmp_path: Path) -> None:
     plugin_dir = tmp_path / "plug"
     plugin = _make_plugin(plugin_dir)
     private_pem, trust = _make_keypair(tmp_path)
-    plugin_dir.joinpath("maintainer.sig").write_bytes(_sign_with_private(private_pem, plugin.read_bytes()))
+    plugin_dir.joinpath("plugin.py.sig").write_bytes(_sign_with_private(private_pem, plugin.read_bytes()))
 
     decision = verify_plugin_trust(plugin_dir, str(trust), TrustedUserList(tmp_path / "trusted.json"))
     assert decision.level == TrustLevel.MaintainerSigned

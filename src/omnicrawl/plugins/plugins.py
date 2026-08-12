@@ -341,7 +341,7 @@ def _verify_plugin_signature(
     """签名验签门（按来源分级 + 签名策略）。
 
     分层：
-    - 维护者签名（``maintainer.sig``/遗留 ``plugin.py.sig``）经信任根验证 → 自动信任；
+    - 维护者签名（``plugin.py.sig``；旧版 ``maintainer.sig`` 已弃用，验证器不再兼容）经信任根验证 → 自动信任；
     - 创作者签名（``creator.sig`` + ``creator.identity``）指纹在本地信任列表 → 信任；
     - 创作者签名有效但未在信任列表：strict 策略下经信任询问器确认
       （信任并加载 / 仅本次加载 / 拒绝）；developer 策略下警告放行；

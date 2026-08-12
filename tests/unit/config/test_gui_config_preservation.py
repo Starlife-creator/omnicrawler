@@ -1,3 +1,12 @@
+"""S3.3.2：配置往返 e2e + 结构化证据路径参数化测试。
+
+本测试覆盖 B 类（passthrough 透传）字段的往返保活——即 GUI 不编辑
+但 AppConfig 需要的字段（plugins、session、processors 等）在
+CrawlConfig → YAML → CrawlConfig 往返后不丢失。
+
+A 类（GUI 可编辑）字段的显式映射契约见 test_field_mapping_contract.py。
+"""
+
 from __future__ import annotations
 
 import importlib.util

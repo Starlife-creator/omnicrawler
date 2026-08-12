@@ -62,10 +62,10 @@ def _creator_sign(plugin_dir: Path, user: UserIdentity) -> None:
     (plugin_dir / "creator.sig").write_bytes(signature)
 
 
-def _maintainer_sign(plugin_dir: Path, private_pem: bytes) -> None:
+def _trust_root_sign(plugin_dir: Path, private_pem: bytes) -> None:
     plugin = plugin_dir / "plugin.py"
     signature = signing.sign_bytes(plugin.read_bytes(), private_pem)
-    (plugin_dir / "maintainer.sig").write_bytes(signature)
+    (plugin_dir / "plugin.py.sig").write_bytes(signature)
 
 
 def test_strict_rejects_unsigned_local_plugin(tmp_path: Path) -> None:
@@ -103,7 +103,7 @@ def test_strict_market_dir_accepts_maintainer_signed(tmp_path: Path) -> None:
     trust_path.write_bytes(public_pem)
     plugin_dir = tmp_path / "plugins_installed" / "demo"
     plugin = _write_plugin(plugin_dir)
-    _maintainer_sign(plugin_dir, private_pem)
+    _trust_root_sign(plugin_dir, private_pem)
     config = AppConfig(
         Path("<memory>"),
         tmp_path,

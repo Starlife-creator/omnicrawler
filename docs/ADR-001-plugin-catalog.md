@@ -174,10 +174,10 @@ registry/
    `creator.sig` + `creator.identity`；`sign` 由维护者在冷机器生成
    `plugin.py.sig`（市场分发携带）。
 3. **三层信任模型**（`src/omnicrawl/plugins/trust.py`）：
-   - 层级 1：`plugin.py.sig`（legacy `maintainer.sig` 仍兼容）通过信任根验签 → 自动信任；
+   - 层级 1：`plugin.py.sig` 通过信任根验签 → 自动信任；（旧版 `maintainer.sig` 文件名已弃用，验证器不再兼容）
    - 层级 2：`creator.sig` + `creator.identity` 有效且指纹在本地信任列表
      （`~/.omnicrawl/trusted_users.json`，纯本地决策）→ 信任；
-   - 层级 2b：创作者签名有效但未信任 → 拒绝加载并提示信任命令（GUI 弹窗为阶段 2）；
+   - 层级 2b：创作者签名有效但未信任 → 拒绝加载并弹出信任确认弹窗（GUI 已通过 QMessageBox 实现，确认后写入 `trusted_users.json`）；
    - 层级 3：无有效签名 → 拒绝（配置信任根时）；未配置信任根保留开发者模式警告加载。
 4. **SecretsStore 环境隔离**：新增 `OMNICRAWL_SECRET_STORE_PATH` /
    `OMNICRAWL_KEYRING_DISABLE` / `OMNICRAWL_MASTER_PASSWORD` 支持（便携/测试）。

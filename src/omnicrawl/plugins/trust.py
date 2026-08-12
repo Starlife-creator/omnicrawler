@@ -2,13 +2,14 @@
 
 Trust levels:
 
-- ``MaintainerSigned``   : ``maintainer.sig`` (or legacy ``plugin.py.sig``)
-  verifies against the bundled trust root → automatically trusted, load.
+- ``MaintainerSigned``   : ``plugin.py.sig`` verifies against the bundled trust
+  root → automatically trusted, load. (旧版 ``maintainer.sig`` 文件名已弃用，
+  不再产生；新签名统一用 ``plugin.py.sig``。)
 - ``CreatorTrusted``     : ``creator.sig`` verifies with ``creator.identity``
   and the creator's fingerprint is in the local trust list → load.
 - ``CreatorUntrusted``   : ``creator.sig`` verifies but the creator is not in
-  the trust list → prompt the user (CLI prints how to trust; GUI dialog in a
-  later stage); load only after explicit trust.
+  the trust list → prompt the user (CLI 打印信任指引；GUI 通过信任确认弹窗
+  QMessageBox 询问，确认后写入 ``trusted_users.json``)；显式信任后才加载。
 - ``Unsigned``           : no valid signature → rejected by policy; the loader
   keeps a documented developer-mode escape hatch for local plugins.
 
@@ -264,14 +265,14 @@ def verify_plugin_trust(
             trust_root = None
     root_ok = trust_root is not None
     if trust_root is not None:
-        for sig_name in ("maintainer.sig", "plugin.py.sig"):  # plugin.py.sig 为遗留兼容
-            if _verify_sig_file(plugin_bytes, plugin_dir / sig_name, trust_root):
-                return TrustDecision(
-                    TrustLevel.MaintainerSigned,
-                    f"{sig_name} 通过信任根验签",
-                    verified_bytes=plugin_bytes,
-                    trust_root_available=root_ok,
-                )
+        sig_path = plugin_dir / "plugin.py.sig"
+        if _verify_sig_file(plugin_bytes, sig_path, trust_root):
+            return TrustDecision(
+                TrustLevel.MaintainerSigned,
+                "plugin.py.sig 通过信任根验签",
+                verified_bytes=plugin_bytes,
+                trust_root_available=root_ok,
+            )
 
     # 层级 2：创作者签名 + 信任列表（不依赖信任根）
     creator = _load_creator_identity(plugin_dir)
