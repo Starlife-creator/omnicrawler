@@ -295,9 +295,11 @@ class SceneStore:
         with self._tx() as con:
             rows = con.execute(
                 f"""SELECT c.id, c.slot_id, c.value_json, c.confidence, c.evidence_json,
-                           c.accepted, c.created_at, s.slot_key, s.slot_name
+                           c.accepted, c.created_at, s.slot_key, s.slot_name,
+                           c.document_id, df.source_url
                     FROM extraction_candidates c
                     JOIN slot_definitions s ON s.id = c.slot_id
+                    JOIN document_fingerprints df ON df.id = c.document_id
                     {clause}
                     ORDER BY c.id DESC LIMIT ?""",
                 params,
@@ -310,6 +312,41 @@ class SceneStore:
             item["accepted"] = bool(item["accepted"])
             result.append(item)
         return result
+
+    def accepted_values(
+        self,
+        scene: str,
+        *,
+        limit: int = 2000,
+    ) -> list[dict[str, Any]]:
+        """返回已验收候选的文档级透视：每文档一行（source_url + 各槽位值）。
+
+        同一文档同一槽位多条已验收候选时取最新一条（按 c.id DESC 首个）。
+        供 GUI 导出「已验收结果」与下游结构化消费。
+        """
+        with self._tx() as con:
+            rows = con.execute(
+                """SELECT c.document_id, df.source_url, c.slot_id, s.slot_key,
+                          c.value_json, c.id
+                    FROM extraction_candidates c
+                    JOIN slot_definitions s ON s.id = c.slot_id
+                    JOIN document_fingerprints df ON df.id = c.document_id
+                    WHERE s.scene=? AND c.accepted=1
+                    ORDER BY c.document_id, c.id DESC LIMIT ?""",
+                (scene, limit),
+            ).fetchall()
+        by_doc: dict[int, dict[str, Any]] = {}
+        for row in rows:
+            doc_id = int(row["document_id"])
+            doc_row = by_doc.setdefault(
+                doc_id,
+                {"document_id": doc_id, "source_url": str(row["source_url"])},
+            )
+            value = json.loads(row["value_json"])
+            slot_key = str(row["slot_key"])
+            # 查询按 c.id DESC，首个出现的槽位即最新候选
+            doc_row.setdefault(slot_key, value)
+        return list(by_doc.values())
 
     # ── 选择器基因 ─────────────────────────────────────────
     @staticmethod

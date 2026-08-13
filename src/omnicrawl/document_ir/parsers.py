@@ -103,6 +103,32 @@ def _parse_txt(path: Path, options: dict[str, Any]) -> DocumentIR:
 _HEADING_SELECTOR = "h1,h2,h3,h4,h5,h6"
 _CONTENT_SELECTOR = "p,li,blockquote,h2,h3,h4,h5,h6"
 
+# T3：正文主体抽取 —— 正文容器词典（按优先级）。
+# 命中首个非空容器后只取容器内正文，跳过导航/页脚/侧栏；全部未命中回退全页选择。
+# 覆盖常见 CMS/WordPress/Elementor 页面结构与语义化 main/article。
+_MAIN_CONTAINER_SELECTORS = (
+    "main",
+    "article",
+    "[role=main]",
+    "#content",
+    "#main",
+    ".content",
+    ".entry-content",
+    ".post-content",
+    ".article-content",
+    ".page-content",
+    ".main-content",
+)
+
+
+def _select_main_container(document: Any) -> Any | None:
+    """按正文容器词典返回首个含实质文本的容器（无命中返回 None）。"""
+    for selector in _MAIN_CONTAINER_SELECTORS:
+        for node in select_nodes(document, selector):
+            if node_text(node).strip():
+                return node
+    return None
+
 
 @register_document_parser(".html")
 def _parse_html(path: Path, options: dict[str, Any]) -> DocumentIR:
@@ -122,8 +148,13 @@ def _parse_html(path: Path, options: dict[str, Any]) -> DocumentIR:
         if title_nodes:
             title = node_text(title_nodes[0]).strip()
 
+    # 正文主体：容器命中则限定容器内，未命中回退全页选择（向后兼容）。
+    main_node: Any = None
+    if options.get("main_content", True):
+        main_node = _select_main_container(document)
+    content_root = main_node if main_node is not None else document
     paragraphs: list[str] = []
-    for node in select_nodes(document, _CONTENT_SELECTOR):
+    for node in select_nodes(content_root, _CONTENT_SELECTOR):
         text = node_text(node)
         if text and text not in paragraphs:
             paragraphs.append(text)
@@ -134,6 +165,8 @@ def _parse_html(path: Path, options: dict[str, Any]) -> DocumentIR:
             links.append((text or href, href))
 
     meta: dict[str, Any] = {"encoding": encoding}
+    if main_node is not None:
+        meta["main_container"] = True
     description = select_nodes(document, 'meta[name="description"]')
     if description:
         desc = node_attr(description[0], "content")

@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+
+### 变更
+
+T 批次：场景体系闭环——SceneStore 新增已验收候选文档级透视（accepted_values）、candidates 补 document 维度；ScenePanel 新增「导出已验收结果」（JSON/CSV，标准库零依赖）与「生成为任务字段」（槽位→extract.fields YAML + 复制剪贴板）；document_ir HTML 正文主体抽取（正文容器词典 main/article/#content/.entry-content 等，未命中回退全页，main_content 选项默认开）；normalizers L3 槽位注释澄清（设计预留，LLM 修复走 shadow_repair）。
+
 ## 0.8.0 - 2026-08-12
 
 ### 变更

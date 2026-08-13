@@ -115,6 +115,55 @@ def test_parse_html(html_doc: Path) -> None:
     assert doc.metadata.get("description") == "desc-1"
 
 
+# ── T3：HTML 正文主体抽取（容器命中 / 回退 / 关闭）────────
+def test_parse_html_main_container_skips_navigation(tmp_path: Path) -> None:
+    """命中 main 容器：导航/页脚 p 不应进入正文。"""
+    p = tmp_path / "article.html"
+    p.write_text(
+        "<html><body>"
+        "<nav><p>导航链接</p></nav>"
+        '<main><h1>文章标题</h1><p>正文段落A</p><p>正文段落B</p></main>'
+        "<footer><p>页脚版权</p></footer>"
+        "</body></html>",
+        encoding="utf-8",
+    )
+    doc = parse_document(p)
+    assert doc.metadata.get("main_container") is True
+    assert "正文段落A" in doc.paragraphs
+    assert "正文段落B" in doc.paragraphs
+    assert not any("导航" in para for para in doc.paragraphs)
+    assert not any("页脚" in para for para in doc.paragraphs)
+
+
+def test_parse_html_main_container_fallback_when_missing(tmp_path: Path) -> None:
+    """无任何容器结构时回退全页选择（保持原行为）。"""
+    p = tmp_path / "flat.html"
+    p.write_text(
+        "<html><body><h1>标题</h1><p>全页段落一</p><p>全页段落二</p></body></html>",
+        encoding="utf-8",
+    )
+    doc = parse_document(p)
+    assert "main_container" not in doc.metadata
+    assert "全页段落一" in doc.paragraphs
+    assert "全页段落二" in doc.paragraphs
+
+
+def test_parse_html_main_container_disabled_by_option(tmp_path: Path) -> None:
+    """options['main_content']=False 时保留全页选择，不限定容器。"""
+    p = tmp_path / "mixed.html"
+    p.write_text(
+        "<html><body>"
+        '<main><p>容器内段落</p></main>'
+        "<p>容器外段落</p>"
+        "</body></html>",
+        encoding="utf-8",
+    )
+    doc = parse_document(p, options={"main_content": False})
+    assert "main_container" not in doc.metadata
+    assert "容器内段落" in doc.paragraphs
+    assert "容器外段落" in doc.paragraphs
+
+
 # ── parse_document: .eml ─────────────────────────────────
 def test_parse_eml(eml_doc: Path) -> None:
     doc = parse_document(eml_doc)

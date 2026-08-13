@@ -36,7 +36,7 @@
 | ✅ 已融合 | datatoolkit / Sieve | 流式数据管道、算子组合 | `services/data_transform.py` `commands/transform.py` | P3-2（`omnicrawl transform` 值级变换，写盘需 --confirm） |
 | ✅ 已融合 | VERT | 格式注册表 + 最短路径图搜索 + 零信任 | `convertx/paths.py` `convertx/__main__.py` | P3-2（--list-paths 路径枚举 + 注册表驱动） |
 | ✅ 已融合 | everythingtohtml | 统一文档中间表示（txt/html/eml/docx/pptx/odt/epub → IR → 槽位抽取/文本导出） | `document_ir/` `convertx/document.py` `doc_extractors/` `core/encoding.py` `sources/url_cleaner.py` | S1-S3：文本/Markdown 导出 + 槽位抽取 auto 打通 + 编码自动检测 |
-| 计划借鉴 | 正文容器/Elementor 类名词典 | 整页 HTML 正文主体识别（class/id 白名单 → 文本密度兜底） | `document_ir/parsers.py`（html 正文抽取增强，计划） | 待激活：无消费者不建配置；落点=html 正文抽取 / L3 内容级嗅探 / 通用正文选择器兜底 |
+| ✅ 已融合 | 正文容器/Elementor 类名词典 | 整页 HTML 正文主体识别（class/id 白名单 → 未命中回退全页） | `document_ir/parsers.py` | T 批次：正文容器词典（main/article/[role=main]/#content/#main/.content/.entry-content 等）+ main_content 选项默认开 |
 
 ## 文件转换
 

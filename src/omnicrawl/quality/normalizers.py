@@ -64,7 +64,7 @@ class NormalizePolicy:
 
     l1_enabled: bool = True
     l2_enabled: bool = True
-    l3_enabled: bool = False  # 保留槽位：LLM 受限修复（当前未实现，恒不生效）
+    l3_enabled: bool = False  # 设计预留：本模块不做 LLM 集成（见模块 docstring），受限 LLM 修复走 quality/shadow_repair
     money_unit: str = "元"
     date_format: str = "iso"
     strip_tracking: bool = True

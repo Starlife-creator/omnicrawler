@@ -106,6 +106,51 @@ class SceneStoreTest(unittest.TestCase):
                 self.assertEqual(len(accepted), 1)
                 self.assertEqual(accepted[0]["value"], "12.5")
 
+    def test_candidates_include_document_dimension(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            with self._store(temp) as store:
+                slot_id = store.upsert_slot(SlotDefinition(scene="s1", slot_key="price"))
+                doc_id = store.get_or_create_document(
+                    SceneDocument(document_hash="h1", source_url="https://x/1")
+                )
+                store.add_candidate(doc_id, slot_id, "12.5", confidence=0.9)
+                rows = store.candidates(scene="s1")
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["document_id"], doc_id)
+                self.assertEqual(rows[0]["source_url"], "https://x/1")
+                self.assertEqual(rows[0]["slot_key"], "price")
+
+    def test_accepted_values_document_pivot(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            with self._store(temp) as store:
+                company_id = store.upsert_slot(SlotDefinition(scene="s1", slot_key="company"))
+                revenue_id = store.upsert_slot(SlotDefinition(scene="s1", slot_key="revenue"))
+                doc_a = store.get_or_create_document(
+                    SceneDocument(document_hash="hA", source_url="https://x/a")
+                )
+                doc_b = store.get_or_create_document(
+                    SceneDocument(document_hash="hB", source_url="https://x/b")
+                )
+                # 未验收候选不应出现在透视中
+                store.add_candidate(doc_a, company_id, "旧值", confidence=0.8)
+                # 已验收：doc_a 两条（company/revenue）+ doc_b 一条
+                store.add_candidate(doc_a, company_id, "星辰科技", confidence=0.9)
+                store.add_candidate(doc_a, revenue_id, "12.5", confidence=1.0)
+                store.add_candidate(doc_b, company_id, "银河科技", confidence=0.95)
+                rows = store.candidates(scene="s1")
+                # rows[0]=b公司(最新) rows[1]=12.5 rows[2]=星辰科技(0.9) rows[3]=旧值(未验收)
+                store.accept_candidate(int(rows[0]["id"]))
+                store.accept_candidate(int(rows[1]["id"]))
+                store.accept_candidate(int(rows[2]["id"]))
+
+                pivots = store.accepted_values("s1")
+                self.assertEqual(len(pivots), 2)
+                by_url = {p["source_url"]: p for p in pivots}
+                self.assertEqual(by_url["https://x/a"]["company"], "星辰科技")
+                self.assertEqual(by_url["https://x/a"]["revenue"], "12.5")
+                self.assertEqual(by_url["https://x/b"]["company"], "银河科技")
+                self.assertNotIn("revenue", by_url["https://x/b"])
+
     def test_gene_fitness_and_top_ranking(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             with self._store(temp) as store:

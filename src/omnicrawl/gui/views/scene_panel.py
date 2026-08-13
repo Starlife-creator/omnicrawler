@@ -7,16 +7,22 @@
 
 from __future__ import annotations
 
+import csv
+import json
 from pathlib import Path
 
+import yaml
 from PyQt6.QtCore import pyqtSlot
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QComboBox,
+    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -100,6 +106,12 @@ class ScenePanel(QWidget):
         self._slot_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self._slot_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         slot_layout.addWidget(self._slot_table)
+        slot_row = QHBoxLayout()
+        slot_row.addStretch(1)
+        self._btn_fields = QPushButton(_("生成为任务字段"))
+        self._btn_fields.clicked.connect(self._export_slot_fields)
+        slot_row.addWidget(self._btn_fields)
+        slot_layout.addLayout(slot_row)
         root.addWidget(slot_box, 1)
 
         # 基因统计表
@@ -128,6 +140,9 @@ class ScenePanel(QWidget):
         cand_layout.addWidget(self._cand_table)
         cand_row = QHBoxLayout()
         cand_row.addStretch(1)
+        self._btn_export = QPushButton(_("导出已验收结果"))
+        self._btn_export.clicked.connect(self._export_accepted)
+        cand_row.addWidget(self._btn_export)
         self._btn_accept = QPushButton(_("接受所选候选"))
         self._btn_accept.clicked.connect(self._accept_selected)
         cand_row.addWidget(self._btn_accept)
@@ -241,3 +256,105 @@ class ScenePanel(QWidget):
         except Exception:  # noqa: BLE001
             return
         self._reload_scene_content()
+
+    @pyqtSlot()
+    def _export_accepted(self) -> None:
+        """导出当前场景已验收候选（文档级透视 JSON/CSV，标准库零依赖）。"""
+        scene = self._current_scene()
+        if not scene:
+            return
+        try:
+            store = self._get_store()
+            rows = store.accepted_values(scene)
+        except Exception:  # noqa: BLE001 — DB 不可用不阻断
+            rows = []
+        if not rows:
+            QMessageBox.information(self, _("导出已验收结果"), _("当前场景暂无已验收候选。"))
+            return
+
+        path, _selected = QFileDialog.getSaveFileName(
+            self,
+            _("导出已验收结果"),
+            str(Path.cwd() / f"{scene}_accepted.json"),
+            _("JSON (*.json);;CSV (*.csv)"),
+        )
+        if not path:
+            return
+        try:
+            suffix = Path(path).suffix.lower()
+            if suffix == ".csv":
+                headers = ["document_id", "source_url"]
+                for key in sorted({k for row in rows for k in row if k not in headers}):
+                    headers.append(key)
+                with open(path, "w", encoding="utf-8", newline="") as fh:
+                    writer = csv.DictWriter(fh, fieldnames=headers, extrasaction="ignore")
+                    writer.writeheader()
+                    writer.writerows(rows)
+            else:
+                if not suffix:
+                    path += ".json"
+                with open(path, "w", encoding="utf-8") as fh:
+                    json.dump(rows, fh, ensure_ascii=False, indent=2)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, _("导出失败"), _("写入文件失败：{0}").format(exc))
+            return
+        QMessageBox.information(
+            self, _("导出完成"),
+            _("已导出 {0} 条文档的已验收结果到：\n{1}").format(len(rows), path),
+        )
+
+    @pyqtSlot()
+    def _export_slot_fields(self) -> None:
+        """场景槽位定义 → 任务字段配置（对齐模板 extract.fields 格式）。
+
+        只导出不注入向导，避免破坏既有配置数据流；css/regex/jsonpath 直映射，
+        text 槽位（包含匹配）无字段对应，跳过。
+        """
+        scene = self._current_scene()
+        if not scene:
+            return
+        try:
+            store = self._get_store()
+            slots = store.get_slots(scene)
+        except Exception:  # noqa: BLE001 — DB 不可用不阻断
+            slots = []
+        fields: dict[str, dict[str, str]] = {}
+        skipped: list[str] = []
+        for slot in slots:
+            if slot.extractor_type == "text" or not slot.pattern:
+                skipped.append(slot.slot_key)
+                continue
+            fields[slot.slot_key] = {"selector": slot.pattern, "type": slot.extractor_type}
+        if not fields:
+            QMessageBox.information(
+                self, _("生成为任务字段"), _("当前场景没有可映射的槽位定义（css/regex/jsonpath）。")
+            )
+            return
+
+        body = yaml.safe_dump({"fields": fields}, allow_unicode=True, sort_keys=False)
+        text = (
+            f"# Generated from scene '{scene}' slot definitions; "
+            f"paste into task's extract.fields\n" + body
+        )
+        if skipped:
+            text += f"# Skipped text-type slots without field mapping: {', '.join(skipped)}\n"
+
+        path, _selected = QFileDialog.getSaveFileName(
+            self,
+            _("生成为任务字段"),
+            str(Path.cwd() / f"{scene}_fields.yaml"),
+            _("YAML (*.yaml)"),
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, _("导出失败"), _("写入文件失败：{0}").format(exc))
+            return
+        QApplication.clipboard().setText(text)
+        QMessageBox.information(
+            self, _("已生成"),
+            _("字段配置已保存到：\n{0}\n\n并已复制到剪贴板。").format(path),
+        )
