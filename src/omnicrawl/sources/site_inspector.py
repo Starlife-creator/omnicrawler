@@ -45,8 +45,13 @@ def inspect_url(
     *,
     timeout_seconds: float = 20.0,
     intent: str = "",
+    fetcher: Any | None = None,
 ) -> SiteInspection:
-    """Fetch one public page through the same SSRF/redirect/size/robots guards as a crawl."""
+    """Fetch one public page through the same SSRF/redirect/size/robots guards as a crawl.
+
+    ``fetcher`` 传入时复用其请求通道（例如 AsyncFetcher，内部经 EgressBroker
+    审计出网），否则回退为独立的 HTTPFetcher 实例。
+    """
     raw = copy.deepcopy(DEFAULTS)
     raw["project"] = {"name": "site_inspection", "workspace": "work/site_inspection"}
     raw["source"] = {"kind": "static_html", "seeds": [url]}
@@ -63,7 +68,11 @@ def inspect_url(
     if not RobotsPolicy(config).allowed(url):
         raise PermissionError("robots.txt does not allow automated inspection of this URL")
     request = CrawlRequest(url, meta={"root_url": url})
-    result = HTTPFetcher(config).fetch(request)
+    if fetcher is not None:
+        # 复用外部抓取器（须经 EgressBroker 审计），零额外连接开销
+        result = fetcher.fetch(request)
+    else:
+        result = HTTPFetcher(config).fetch(request)
     return inspect_result(result, catalog, intent=intent)
 
 

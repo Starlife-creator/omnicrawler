@@ -1,8 +1,9 @@
-"""B-2 Phase 1 MVP：Site Categorizer + 模板推荐引擎（三层漏斗，L1/L2 纯内存零网络）。
+"""Site Categorizer + 模板推荐引擎（三层漏斗：L1 硬止损 → L2 本地映射 → L3 受限嗅探）。
 
-执行顺序严格：L1 硬止损 → L2 本地 YAML 映射 → (Phase 2 L3) → generic_html 兜底，
-任意一层命中绝不进入下一层。人工确认闸门由 CLI/GUI 侧负责，本模块只产出「推荐 + 置信度
-+ 命中来源」结构化结果。
+执行顺序严格：L1 硬止损 → L2 本地 YAML 映射 → L3 受限嗅探 → generic_html 兜底，
+任意一层命中绝不进入下一层。L1/L2 纯内存零网络；L3 默认关闭（enable_sniffing=false），
+开启时必须注入经 EgressBroker 审计的 fetcher，串行执行、HEAD+Range:0-8192、2s 超时。
+人工确认闸门由 CLI/GUI 侧负责，本模块只产出「推荐 + 置信度 + 命中来源」结构化结果。
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ log = logging.getLogger(__name__)
 # ── 公开数据结构 ────────────────────────────────────────────────
 _HIT_SOURCE_L1 = "l1_stoploss"
 _HIT_SOURCE_L2 = "l2_mapping"
-_HIT_SOURCE_L3 = "l3_sniff"  # Phase 2 启用
+_HIT_SOURCE_L3 = "l3_sniff"  # enable_sniffing 开启且注入 fetcher 时启用
 _HIT_SOURCE_FALLBACK = "generic_fallback"
 
 _FINAL_FALLBACK_TEMPLATE = "builtin:generic/list_detail.yaml"
@@ -358,13 +359,13 @@ def _builtin_default_yaml_path() -> Path:
 
 @dataclass(slots=True)
 class SiteCategorizer:
-    """三层漏斗 Site Categorizer（Phase 1：L1+L2，零网络开销）。"""
+    """三层漏斗 Site Categorizer（L1+L2 零网络；L3 受限嗅探需显式开启）。"""
 
     # 映射（eTLD1 精确 key → raw template id）；合并后最终生效字典
     mappings: dict[str, str] = field(default_factory=dict)
     # 当 raw template id 在 catalog 中不存在时，raw → 大类兜底
     fallback_mapping: dict[str, str] = field(default_factory=dict)
-    # enable_sniffing：Phase 2 配置，MVP 默认 false（开启时若未实现 L3 也直接降级）
+    # enable_sniffing：默认 false（安全优先）；开启且注入 fetcher 时才执行 L3 嗅探
     enable_sniffing: bool = False
     # 命中率计数器（类级，多次 classify 累加）
     hits: Counter[str] = field(default_factory=Counter)
@@ -654,7 +655,7 @@ class SiteCategorizer:
                 fallback_used=fb, reason=f"L2: 本地映射 {eTLD1} → {raw}",
                 eTLD1=eTLD1,
             )
-        # Phase 2 L3 受限嗅探（enable_sniffing=true AND fetcher 已传入才尝试）
+        # L3 受限嗅探（enable_sniffing=true AND fetcher 已传入才尝试）
         if self.enable_sniffing:
             if fetcher is not None:
                 sniffed = self._try_l3_sniff_sync(url, fetcher=fetcher, timeout_s=l3_timeout_s)

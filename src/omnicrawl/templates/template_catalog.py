@@ -80,7 +80,7 @@ class TemplateCatalog:
     """Recursive template discovery, search, rendering and evidence-based recommendation.
 
     User templates override built-ins by stable template ID.  Legacy flat templates without
-    metadata remain available, which preserves 2.x/3.0 project compatibility.
+    metadata remain available for backward compatibility with older flat-template configs.
     """
 
     def __init__(self, builtin_dir: Path, user_dirs: Iterable[Path] = ()) -> None:

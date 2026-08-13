@@ -23,7 +23,7 @@ SOURCE_KINDS = {
     "site_wordpress", "site_drupal", "site_mediawiki", "site_discourse",
 }
 
-# AI defaults merged from former standalone AI_CONFIG_DEFAULTS (2.2.0)
+# AI defaults merged from former standalone AI_CONFIG_DEFAULTS
 DEFAULTS: dict[str, Any] = {
     "ai": {
     "mode": "disabled", "default_provider": "", "providers": {},

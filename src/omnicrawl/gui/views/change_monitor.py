@@ -6,7 +6,7 @@
     - ChangeEventDialog: 变化详情 diff 查看器
 
 GUI 接入链路:
-    - main.py 导航栏第 8 项
+    - main.py 侧栏导航项（NavIndex.CHANGE_MONITOR=9）
     - 系统托盘通知（桌面弹窗）
     - 设置持久化规则列表
 """
@@ -17,7 +17,7 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QThread, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -42,6 +42,7 @@ from omnicrawl.core.utils import user_agent
 from omnicrawl.gui.widgets.toast import ToastManager
 
 from ..i18n import _
+from ..widgets.empty_state import EmptyState
 
 if TYPE_CHECKING:
     from omnicrawl.gui.settings import AppSettings
@@ -456,10 +457,18 @@ class ChangeMonitorView(QWidget):
 
         layout.addLayout(toolbar)
 
-        # 规则列表
+        # 规则列表（P3：空态统一 EmptyState，空态有主 CTA「+ 新建规则」）
+        self._empty_state = EmptyState(
+            icon="📡",
+            title=_("暂无监控规则"),
+            description=_("点击「+ 新建规则」创建第一条变化监测；之后每次变化会在这里列出。"),
+            action_label=_("＋ 新建规则"),
+            action_callback=self._new_rule,
+        )
         self._rule_list = QListWidget()
         self._rule_list.setAlternatingRowColors(True)
         self._rule_list.setSpacing(2)
+        layout.addWidget(self._empty_state)
         layout.addWidget(self._rule_list)
 
         # 底部状态
@@ -498,11 +507,13 @@ class ChangeMonitorView(QWidget):
         self._rule_list.clear()
 
         if not self._rules_data:
-            empty_item = QListWidgetItem(_("暂无监控规则 — 点击「+ 新建规则」开始"))
-            empty_item.setFlags(empty_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
-            self._rule_list.addItem(empty_item)
+            # P3：空态统一 EmptyState（有主 CTA），隐藏空列表
+            self._rule_list.hide()
+            self._empty_state.show()
             return
 
+        self._rule_list.show()
+        self._empty_state.hide()
         for rule in self._rules_data:
             enabled = rule.get("enabled", True)
             name = rule.get("name", _("未命名"))

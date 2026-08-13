@@ -17,11 +17,16 @@ def test_five_step_gui_template_library_and_rebuild_start_offscreen(monkeypatch)
     from PyQt6.QtWidgets import QApplication
 
     from omnicrawl.gui.main import MainWindow, TemplateLibraryDialog
+    from omnicrawl.gui.views.task_canvas import TaskCanvas
 
     monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
     app = QApplication.instance() or QApplication([])
     window = MainWindow()
-    assert len(window._config_wizard.pageIds()) == 5
+    # P0：五步向导已替换为任务画布（Task Canvas）
+    assert isinstance(window._task_canvas, TaskCanvas)
+    for name in ("_intent_section", "_draft_section", "_fields_section",
+                 "_trial_section", "_delivery_section"):
+        assert hasattr(window._task_canvas, name)
 
     templates = window._template_loader.discover_templates(force=True)
     assert len(templates) >= 50
@@ -30,7 +35,7 @@ def test_five_step_gui_template_library_and_rebuild_start_offscreen(monkeypatch)
     assert dialog._list.count() >= 1
 
     window._rebuild_wizard()
-    assert len(window._config_wizard.pageIds()) == 5
+    assert isinstance(window._task_canvas, TaskCanvas)
     dialog.deleteLater()
     window.deleteLater()
     app.processEvents()

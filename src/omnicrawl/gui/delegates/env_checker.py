@@ -132,8 +132,8 @@ class EnvironmentChecker(_BaseDelegate):
     def show_welcome_dialog(self) -> None:
         mw = self._mw
         mw._nav.setCurrentRow(NavIndex.HOME)
-        mw._config_wizard.restart()
-        mw._config_wizard.step1_page.focus_primary_url()
+        mw._task_canvas.restart()
+        mw._task_canvas.focus_url_input()
         msg = QMessageBox(mw)
         msg.setWindowTitle(_("欢迎使用 OmniCrawler"))
         msg.setIcon(QMessageBox.Icon.Information)

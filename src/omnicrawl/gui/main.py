@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import logging
 import sys
@@ -79,7 +80,6 @@ if not _cli_mode():
             QProgressBar,
             QPushButton,
             QSpinBox,
-            QSplitter,
             QStackedWidget,
             QStatusBar,
             QSystemTrayIcon,
@@ -249,10 +249,12 @@ class SiteInspectionWorker(QObject):
     finished = pyqtSignal(object, str)
     failed = pyqtSignal(str)
 
-    def __init__(self, url: str, intent: str = "") -> None:
+    def __init__(self, url: str, intent: str = "", fetcher: Any | None = None) -> None:
         super().__init__()
         self.url = url
         self.intent = intent
+        # P2：探活复用共享 AsyncFetcher（内部经 EgressBroker 审计出网）
+        self.fetcher = fetcher
 
     @pyqtSlot()
     def run(self) -> None:
@@ -260,7 +262,7 @@ class SiteInspectionWorker(QObject):
             if _thread_interrupted():
                 return
             report = inspect_url(
-                self.url, bundled_template_catalog(), intent=self.intent
+                self.url, bundled_template_catalog(), intent=self.intent, fetcher=self.fetcher
             ).to_dict()
         except Exception as exc:
             if not _thread_interrupted():
@@ -559,8 +561,11 @@ class MainWindow(QMainWindow):
         self._task_elapsed_timer: QTimer | None = None
         self._inspection_jobs: list[tuple[QThread, SiteInspectionWorker]] = []
         self._sample_jobs: list[tuple[QThread, SampleRunWorker]] = []
+        self._probe_jobs: list[tuple[QThread, SiteInspectionWorker]] = []
         self._recorder_thread: QThread | None = None
         self._recorder_worker: ActionRecorderWorker | None = None
+        # P2：意图区 URL 探活共享抓取器（懒创建，关闭时释放）
+        self._probe_fetcher: Any | None = None
         self._close_after_background_jobs = False
         self._async_manager = AsyncWorkerManager()
 
@@ -659,6 +664,21 @@ class MainWindow(QMainWindow):
     def _on_first_launch(self) -> None:
         self._env_checker.on_first_launch()
         self._maybe_show_identity_welcome()
+        self._maybe_show_canvas_welcome_tip()
+
+    def _maybe_show_canvas_welcome_tip(self) -> None:
+        """P3：首启只讲 1 点（PRD §3.1）——无任何历史任务时画布气泡提示。"""
+        if self._has_saved_tasks():
+            return
+        self._task_canvas.maybe_show_welcome_tip()
+
+    def _has_saved_tasks(self) -> bool:
+        """是否有已保存任务（配置历史目录存在非空快照）。无法判断时保守不打扰。"""
+        try:
+            root = self._config_history.root
+            return root.exists() and any(root.rglob("*.yaml"))
+        except Exception:  # noqa: BLE001
+            return True
 
     def _show_welcome_dialog(self) -> None:
         self._env_checker.show_welcome_dialog()
@@ -830,15 +850,15 @@ class MainWindow(QMainWindow):
             ("⌂ " + _("首页"), 4),
             ("⚙ " + _("配置向导"), 0),
             ("📄 " + _("PDF 工作台"), 6),
-            ("🔁 " + _("格式互转"), 10),    # B-4：ConvertX 面板
+            ("🔁 " + _("格式互转"), 7),    # B-4：ConvertX 面板
             ("📝 " + _("YAML 编辑器"), 1),
             ("📋 " + _("任务监控"), 2),
             ("📊 " + _("结果与复核"), 3),
             ("🔍 " + _("证据查看器"), 5),
             ("🎯 " + _("场景管理"), 11),    # S4：场景/槽位/基因/候选
-            ("🔔 " + _("变更监控"), 7),
-            ("🧩 " + _("插件市场"), 8),
-            ("🛠 " + _("开发者检查器"), 9),
+            ("🔔 " + _("变更监控"), 8),
+            ("🧩 " + _("插件市场"), 9),
+            ("🛠 " + _("开发者检查器"), 10),
         ]
         for label, _idx in nav_items:
             item = QListWidgetItem(label)
@@ -859,31 +879,21 @@ class MainWindow(QMainWindow):
         self._advanced_summary.setProperty("status", "warning")
         wizard_layout.addWidget(self._advanced_summary)
 
-        # 拆分器：左侧配置向导 + 右侧信息面板
-        wizard_splitter = QSplitter(Qt.Orientation.Horizontal)
-        # S3.1.2：保存 splitter 引用——重建向导时操作 splitter 而非外层 layout
-        self._wizard_splitter = wizard_splitter
-        self._config_wizard = ConfigWizard(self._config)
-        wizard_splitter.addWidget(self._config_wizard)
+        # P0：任务画布替换五步向导（Task Canvas）
+        from .views.task_canvas import TaskCanvas
 
-        # 右侧信息面板（200px 宽，只读）
-        self._wizard_info_panel = QLabel("")
-        self._wizard_info_panel.setObjectName("wizardInfoPanel")
-        self._wizard_info_panel.setWordWrap(True)
-        self._wizard_info_panel.setMinimumWidth(200)
-        self._wizard_info_panel.setMaximumWidth(240)
-        self._wizard_info_panel.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self._wizard_info_panel.setTextFormat(Qt.TextFormat.RichText)
-        wizard_splitter.addWidget(self._wizard_info_panel)
-        wizard_splitter.setStretchFactor(0, 3)
-        wizard_splitter.setStretchFactor(1, 1)
-        wizard_splitter.setSizes([600, 200])
-
-        wizard_layout.addWidget(wizard_splitter)
+        self._task_canvas = TaskCanvas(self._config, project_root=str(self._project_root))
+        wizard_layout.addWidget(self._task_canvas)
         self._stack.addWidget(self._wizard_widget)
 
-        # 监听向导页面切换以更新信息面板
-        self._config_wizard.currentIdChanged.connect(self._update_wizard_info_panel)
+        # P0：画布信号接线（保存/试跑/运行/查看 YAML）
+        self._task_canvas.config_changed.connect(self._on_wizard_changed)
+        self._task_canvas.save_requested.connect(self._save_config)
+        self._task_canvas.trial_run_requested.connect(self._request_trial_run)
+        self._task_canvas.run_requested.connect(self._request_run)
+        self._task_canvas.yaml_view_requested.connect(self._open_yaml_view)
+        # P2：意图区 URL 探活（600ms 停顿由画布内部调度，这里只负责发起与回填）
+        self._task_canvas.probe_requested.connect(self._probe_site)
 
         self._yaml_editor = YamlEditor()
         self._yaml_editor.sync_to_form.connect(self._on_editor_sync_to_form)
@@ -977,7 +987,7 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._evidence_view)
         self._pdf_workbench = PdfWorkbenchView()
         self._stack.addWidget(self._pdf_workbench)
-        # B-4：ConvertX 格式互转工具页（stack index 10）
+        # B-4：ConvertX 格式互转工具页（stack index 7）
         self._convert_tool = ConvertView()
         self._stack.addWidget(self._convert_tool)
 
@@ -1064,23 +1074,12 @@ class MainWindow(QMainWindow):
     # ================================================================
 
     def _connect_signals(self) -> None:
-        for page_id in self._config_wizard.pageIds():
-            page = self._config_wizard.page(page_id)
-            if page is not None and hasattr(page, 'config_changed'):
-                page.config_changed.connect(self._on_wizard_changed)  # type: ignore[attr-defined]
-            if page is not None and hasattr(page, 'inspect_requested'):
-                page.inspect_requested.connect(self._inspect_site)  # type: ignore[attr-defined]
-            if page is not None and hasattr(page, 'record_requested'):
-                page.record_requested.connect(self._record_browser_actions)  # type: ignore[attr-defined]
-        self._connect_wizard_actions()
+        # P0：画布信号已在构建 TaskCanvas 时连接；这里保留占位以兼容调用点
+        pass
 
     def _connect_wizard_actions(self) -> None:
-        self._config_wizard.finish_requested.connect(self._save_config)
-        step5 = self._config_wizard.step5_page
-        step5.save_requested.connect(self._save_config)
-        step5.save_as_requested.connect(self._save_config_as)
-        step5.sample_requested.connect(self._show_preflight)
-        step5.run_requested.connect(self._run_task)
+        # P0：五步向导已退役，旧 step5 动作由画布信号替代
+        pass
 
     def _setup_global_shortcuts(self) -> None:
         self._shortcut_manager = GlobalShortcutManager(self)
@@ -1115,10 +1114,10 @@ class MainWindow(QMainWindow):
             ToastManager.instance().warning(_("请先切换到 YAML 编辑器"))
 
     def _on_nav_changed(self, index: int) -> None:
-        # nav index -> stack page: 首页(4), 配置向导(0), PDF工作台(6), 格式互转(10),
+        # nav row -> stack page: 首页(4), 配置向导(0), PDF工作台(6), 格式互转(7),
         # YAML编辑器(1), 任务监控(2), 结果复核(3), 证据查看器(5), 场景管理(11),
-        # 变更监控(7), 插件市场(8), 开发者检查器(9)
-        pages = (4, 0, 6, 10, 1, 2, 3, 5, 11, 7, 8, 9)
+        # 变更监控(8), 插件市场(9), 开发者检查器(10)
+        pages = (4, 0, 6, 7, 1, 2, 3, 5, 11, 8, 9, 10)
         page = pages[index] if 0 <= index < len(pages) else 4
         self._page_transition.show(page)
         if page == 1:
@@ -1127,10 +1126,10 @@ class MainWindow(QMainWindow):
             self._auto_load_results()
         elif page == 5:
             pass  # 证据查看器数据由 record_selected_for_review 信号加载
-        elif page == 9:
-            self._developer_inspector.refresh()
-        elif page == 10:
+        elif page == 7:
             pass  # 格式互转：进入即就绪，无需预加载数据
+        elif page == 10:
+            self._developer_inspector.refresh()
         elif page == 11:
             self._scene_panel.refresh_scenes()  # S4：进入场景面板时刷新
 
@@ -1216,68 +1215,6 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(300, self._sync_wizard_to_editor)
         self._updating_editor = False
 
-    def _update_wizard_info_panel(self, page_id: int) -> None:
-        """更新配置向导右侧信息面板，显示当前步骤的字段帮助。"""
-        tips: dict[int, str] = {
-            0: (
-                _("<h3>📌 Step 1：选择数据源</h3>") +
-
-                _("<p><b>是什么</b>：设定要采集的网站或本地文件路径。</p>") +
-
-                _("<p><b>为什么</b>：这是所有后续规则的根基——源类型决定了解析策略。</p>") +
-
-                _("<p><b>示例</b>：<code>https://example.com/news</code> 或 <code>./data/pdfs/</code></p>") +
-
-                _("<hr><p style='color:gray;font-size:11px'>💡 支持 HTTP/HTTPS 网页和本地 file:// 路径。</p>")
-            ),
-            1: (
-                _("<h3>🔗 Step 2：发现 URL</h3>") +
-
-                _("<p><b>是什么</b>：定义如何从首页发现更多目标页面。</p>") +
-
-                _("<p><b>为什么</b>：控制爬取范围和深度，避免无限扩展。</p>") +
-
-                _("<p><b>示例</b>：CSS 选择器 <code>a.article-link</code> 或正则 <code>/post/\\d+</code></p>") +
-
-                _("<hr><p style='color:gray;font-size:11px'>💡 默认限制同域名，防止意外跳转到外部站点。</p>")
-            ),
-            2: (
-                _("<h3>📋 Step 3：定义字段</h3>") +
-
-                _("<p><b>是什么</b>：指定要从每个页面提取的数据字段。</p>") +
-
-                _("<p><b>为什么</b>：字段是最小的数据单元，决定最终输出表格的列。</p>") +
-
-                _("<p><b>示例</b>：<code>标题</code> → <code>h1.article-title</code>、<code>日期</code> → <code>time.published</code></p>") +
-
-                _("<hr><p style='color:gray;font-size:11px'>💡 可选的 <b>AI 辅助设计</b> 能根据描述自动推荐字段规则。</p>")
-            ),
-            3: (
-                _("<h3>📥 Step 4：下载设置</h3>") +
-
-                _("<p><b>是什么</b>：配置附件下载和文件类型过滤。</p>") +
-
-                _("<p><b>为什么</b>：控制是否下载 PDF/图片/文档，避免下载不必要的大文件。</p>") +
-
-                _("<p><b>示例</b>：限制扩展名 <code>.pdf,.docx</code> 或最大文件大小 50MB</p>") +
-
-                _("<hr><p style='color:gray;font-size:11px'>💡 下载文件默认存储在 <code>output/downloads/</code> 子目录。</p>")
-            ),
-            4: (
-                _("<h3>✅ Step 5：预览与确认</h3>") +
-
-                _("<p><b>是什么</b>：在正式运行前检查所有配置，运行小样本试跑。</p>") +
-
-                _("<p><b>为什么</b>：避免配置错误导致的大规模失败——小样本验证是安全底线。</p>") +
-
-                _("<p><b>示例</b>：先采集 5 页，确认字段正确后再全量运行。</p>") +
-
-                _("<hr><p style='color:gray;font-size:11px'>💡 始终建议先试跑再全量执行。</p>")
-            ),
-        }
-        text = tips.get(page_id, "")
-        self._wizard_info_panel.setText(text)
-
     def _sync_wizard_to_editor(self) -> None:
         self._yaml_editor.update_from_config(self._config)
 
@@ -1286,9 +1223,9 @@ class MainWindow(QMainWindow):
             return
         self._updating_wizard = True
         self._config = config
-        self._rebuild_wizard()
+        # P0：外部（YAML 编辑器）编辑 → 画布外部编辑检测（无冲突静默同步，有冲突锁定二选一）
+        self._task_canvas.notify_external_edit(config)
         self._updating_wizard = False
-        ToastManager.instance().success(_("已从编辑器同步到表单"))
 
     def _on_editor_config_changed(self) -> None:
         pass
@@ -1296,6 +1233,32 @@ class MainWindow(QMainWindow):
     # ================================================================
     #  运行前检查与小样本试跑
     # ================================================================
+
+    def _request_trial_run(self) -> None:
+        """画布「先试跑 N 页」：先持久化配置，再用画布设定的页数试跑。"""
+        self._save_config()
+        if not self._config_path:
+            return
+        self._start_sample_run(self._task_canvas.trial_pages())
+
+    def _request_run(self) -> None:
+        """画布「保存并全量运行」：唯一运行出口，先保存配置再启动任务。"""
+        self._save_config()
+        if not self._config_path:
+            return
+        # P1：运行前 field_hash 一致校验（PRD §2.2.3）——试跑通过但字段集已变则拒绝
+        if not self._task_canvas.trial_matches_fields():
+            QMessageBox.warning(
+                self, _("试跑已失效"),
+                _("字段已变更，请重新试跑后再全量运行。"),
+            )
+            return
+        self._run_task()
+
+    def _open_yaml_view(self) -> None:
+        """画布「查看 YAML」：切到侧栏 YAML 编辑器页并载入当前配置。"""
+        self._yaml_editor.update_from_config(self._config)
+        self._nav.setCurrentRow(NavIndex.YAML_EDITOR)
 
     def _show_preflight(self) -> None:
         if not self._config_path:
@@ -1351,11 +1314,12 @@ class MainWindow(QMainWindow):
         if box.clickedButton() == sample_button and report["ok"]:
             self._start_sample_run()
 
-    def _start_sample_run(self) -> None:
+    def _start_sample_run(self, pages: int | None = None) -> None:
         if not self._config_path:
             return
+        pages = pages or 3
         thread = QThread(self)
-        worker = SampleRunWorker(self._config_path, 3)
+        worker = SampleRunWorker(self._config_path, pages)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
 
@@ -1364,11 +1328,16 @@ class MainWindow(QMainWindow):
                 thread.quit()
                 return
             sample = result.get("sample", {})
+            status = str(sample.get("status") or "")
+            processed = int(sample.get("processed", 0) or 0)
+            records = int(sample.get("records", 0) or 0)
+            ok = bool(status) and status != "failed" and processed > 0
+            summary = _(f"状态：{status}\n处理页面：{processed}\n提取记录：{records}")
+            # P0：试跑结果回填画布（决定「保存并全量运行」是否可用）
+            self._task_canvas.set_trial_result(ok, summary)
             QMessageBox.information(
                 self, _("小样本试跑完成"),
-                _(f"状态：{sample.get('status')}\n处理页面：{sample.get('processed', 0)}\n") +
-
-                _(f"提取记录：{sample.get('records', 0)}\n报告：{result.get('report', '')}"),
+                summary,
             )
             thread.quit()
 
@@ -1384,7 +1353,7 @@ class MainWindow(QMainWindow):
         thread.finished.connect(lambda: self._finish_sample_job(thread, worker))
         self._sample_jobs.append((thread, worker))
         thread.start()
-        ToastManager.instance().info(_("正在独立工作区试跑 3 页，不会改变正式任务断点"))
+        ToastManager.instance().info(_("正在独立工作区试跑 {0} 页，不会改变正式任务断点").format(pages))
 
     def _finish_sample_job(self, thread: QThread, worker: SampleRunWorker) -> None:
         self._sample_jobs = [job for job in self._sample_jobs if job != (thread, worker)]
@@ -1755,7 +1724,6 @@ class MainWindow(QMainWindow):
     # ================================================================
 
     def _inspect_site(self, url: str) -> None:
-        self._config_wizard.step2_page.set_inspecting(True)
         self._statusbar.showMessage(_("正在安全探测网址并识别模板…"))
         thread = QThread(self)
         worker = SiteInspectionWorker(url, self._config.task_intent)
@@ -1773,8 +1741,6 @@ class MainWindow(QMainWindow):
         self._inspection_jobs = [job for job in self._inspection_jobs if job != (thread, worker)]
         worker.deleteLater()
         thread.deleteLater()
-        if not self._close_after_background_jobs:
-            self._config_wizard.step2_page.set_inspecting(False)
         self._finish_deferred_close_if_safe()
 
     def _on_site_inspection_failed(self, message: str) -> None:
@@ -1852,6 +1818,80 @@ class MainWindow(QMainWindow):
         self._config_label.setText(_("智能模板: ") + record.metadata.name)
         self._rebuild_wizard()
         ToastManager.instance().info(_("智能模板已加载；请检查红色占位符后运行"))
+
+    # ================================================================
+    #  P2：意图区 URL 探活（画布徽标，失败静默降级）
+    # ================================================================
+
+    def _probe_site(self, url: str) -> None:
+        """收到画布探活请求：复用共享 AsyncFetcher（走 EgressBroker 审计）发起探测。"""
+        if self._close_after_background_jobs or not url:
+            return
+        if self._probe_fetcher is None:
+            try:
+                self._probe_fetcher = self._build_probe_fetcher()
+            except Exception as exc:  # noqa: BLE001
+                # 探活是增强功能：创建失败静默降级，绝不阻断主流程
+                self._task_canvas.set_probe_failed(url, str(exc))
+                return
+        thread = QThread(self)
+        worker = SiteInspectionWorker(url, self._config.task_intent, fetcher=self._probe_fetcher)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(lambda report, target: self._on_probe_finished(target, report))
+        worker.failed.connect(lambda message, target=url: self._on_probe_failed(target, message))
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(lambda: self._finish_probe_job(thread, worker))
+        self._probe_jobs.append((thread, worker))
+        thread.start()
+
+    def _build_probe_fetcher(self) -> Any:
+        """构建探活专用 AsyncFetcher：独立审计链，不污染任务配置。"""
+        from ..core.config import DEFAULTS, AppConfig, deep_merge
+        from ..fetching.async_fetcher import HTTPXAsyncFetcher
+
+        raw = deep_merge(copy.deepcopy(DEFAULTS), {
+            "project": {"name": "gui_url_probe", "workspace": "work/site_inspection"},
+            "source": {"kind": "static_html", "seeds": []},
+            "http": {
+                "timeout_seconds": 20.0,
+                "retries": 1,
+                "max_response_bytes": 10_000_000,
+                "respect_robots": True,
+                "robots_fail_closed": True,
+            },
+        })
+        root = self._project_root.resolve()
+        config = AppConfig(root / ".omnicrawl-inspector.yaml", root, raw, root / "work" / "site_inspection")
+        return HTTPXAsyncFetcher(config)
+
+    def _on_probe_finished(self, url: str, report: dict) -> None:
+        if self._close_after_background_jobs:
+            return
+        self._task_canvas.set_probe_result(url, report)
+
+    def _on_probe_failed(self, url: str, message: str) -> None:
+        if self._close_after_background_jobs:
+            return
+        # 静默降级：仅画布徽标提示，不弹窗、不改配置
+        self._task_canvas.set_probe_failed(url, message)
+
+    def _finish_probe_job(self, thread: QThread, worker: SiteInspectionWorker) -> None:
+        self._probe_jobs = [job for job in self._probe_jobs if job != (thread, worker)]
+        worker.deleteLater()
+        thread.deleteLater()
+        self._finish_deferred_close_if_safe()
+
+    def _release_probe_fetcher(self) -> None:
+        """关闭探活共享抓取器（窗口退出前释放连接池与事件循环）。"""
+        if self._probe_fetcher is None:
+            return
+        try:
+            self._probe_fetcher.close()
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("关闭探活抓取器失败: %s", exc)  # noqa
+        self._probe_fetcher = None
 
     # ================================================================
     #  历史记录
@@ -1947,6 +1987,7 @@ class MainWindow(QMainWindow):
     def _background_threads(self) -> list[QThread]:
         """Return unique auxiliary threads that must finish before window teardown."""
         threads = [thread for thread, _worker in self._inspection_jobs]
+        threads.extend(thread for thread, _worker in self._probe_jobs)
         threads.extend(thread for thread, _worker in self._sample_jobs)
         if self._recorder_thread is not None:
             threads.append(self._recorder_thread)
@@ -2013,33 +2054,12 @@ class MainWindow(QMainWindow):
             return
         self._async_manager.cancel_all()
         self._autosave.delete_draft()
+        self._release_probe_fetcher()
         event.accept()
 
     def _rebuild_wizard(self) -> None:
-        old_wizard = self._config_wizard
-        self._config_wizard = ConfigWizard(self._config)
-        for page_id in self._config_wizard.pageIds():
-            page = self._config_wizard.page(page_id)
-            if page is not None and hasattr(page, 'config_changed'):
-                page.config_changed.connect(self._on_wizard_changed)  # type: ignore[attr-defined]
-            if page is not None and hasattr(page, 'inspect_requested'):
-                page.inspect_requested.connect(self._inspect_site)  # type: ignore[attr-defined]
-            if page is not None and hasattr(page, 'record_requested'):
-                page.record_requested.connect(self._record_browser_actions)  # type: ignore[attr-defined]
-        self._connect_wizard_actions()
-        # A20：重建后重连 currentIdChanged（原 815 行仅初始连接一次，重建后信息面板不再更新）
-        self._config_wizard.currentIdChanged.connect(self._update_wizard_info_panel)
-        # S3.1.2：在 wizard_splitter 上替换旧向导（原代码操作外层 wizard_layout，
-        # 新向导从未真正显示）
-        index = self._wizard_splitter.indexOf(old_wizard)
-        if index >= 0:
-            self._wizard_splitter.replaceWidget(index, self._config_wizard)
-        else:  # pragma: no cover - 防御：splitter 找不到时回退旧路径
-            layout = self._wizard_widget.layout()
-            if layout is not None:
-                layout.removeWidget(old_wizard)
-                layout.addWidget(self._config_wizard)
-        old_wizard.deleteLater()
+        """刷新任务画布（兼容旧调用点：外部配置/模式切换后重载）。"""
+        self._task_canvas.load_config(self._config)
         if hasattr(self, "_resource_profile_combo"):
             for index in range(self._resource_profile_combo.count()):
                 if self._resource_profile_combo.itemData(index) == self._config.resource_profile:

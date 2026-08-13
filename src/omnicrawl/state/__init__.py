@@ -1,6 +1,6 @@
 """OmniCrawler 状态存储子包。
 
-通过 StateStore 门面类（在 ``state.py`` 模块中定义）提供统一的数据库访问，
+通过 StateStore 门面类（在 ``state_store.py`` 模块中定义）提供统一的数据库访问，
 内部委托给领域 Repository 类以分离职责。
 
 领域：

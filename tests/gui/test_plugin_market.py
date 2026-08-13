@@ -108,8 +108,8 @@ def test_main_window_wires_plugin_market_view(monkeypatch):
     monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
     window = MainWindow()
 
-    # 导航索引包含插件市场，且栈中已挂载对应视图
-    assert NavIndex.PLUGIN_MARKET == 8
+    # 导航索引包含插件市场（侧栏行号 10），且栈中已挂载对应视图
+    assert NavIndex.PLUGIN_MARKET == 10
     assert hasattr(window, "_plugin_market")
     assert window._plugin_market is not None
 

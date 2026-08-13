@@ -29,7 +29,7 @@ class RunRepository(Protocol):
 
 
 class SQLiteRunRepository:
-    # Deprecated: migrate to StateStore. Will be removed in 3.0.0.
+    # Deprecated: migrate to StateStore. Will be removed in a future major release.
     """Default repository adapter with an explicit lifecycle."""
 
     def __init__(self, path: Path) -> None:

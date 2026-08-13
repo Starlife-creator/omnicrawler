@@ -491,7 +491,7 @@ def _ocr_serial(
     dpi: int,
     summary: dict[str, int],
 ) -> dict[str, int]:
-    """串行 OCR 路径 — 与 2.7.0 行为一致。"""
+    """串行 OCR 路径 — 单进程逐页识别（默认；workers<=1 时的确定性低内存路径）。"""
     affected_docs: set[str] = set()
     for row in rows:
         doc_id, page_no = row["doc_id"], int(row["page_no"])

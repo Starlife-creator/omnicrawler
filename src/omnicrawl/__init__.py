@@ -2,7 +2,7 @@
 
 Public API::
 
-    from omnicrawl import AppConfig, Pipeline, StateStore, run_task
+    from omnicrawl import AppConfig, Pipeline, StateStore
 """
 
 from __future__ import annotations

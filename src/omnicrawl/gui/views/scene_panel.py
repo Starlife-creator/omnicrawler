@@ -29,7 +29,7 @@ from ..widgets.empty_state import EmptyState
 
 
 class ScenePanel(QWidget):
-    """场景管理面板（侧栏第 11 项）。"""
+    """场景管理面板（侧栏导航项，NavIndex.SCENE=8；页面栈 index 11）。"""
 
     def __init__(self, workspace: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)

@@ -46,8 +46,8 @@ class ThemeManager(_BaseDelegate):
             mw._resource_profile_combo.setVisible(mode != "simple")
         if hasattr(mw, "_resource_label"):
             mw._resource_label.setVisible(mode != "simple")
-        if hasattr(mw, "_config_wizard"):
-            mw._config_wizard.set_simple_mode(mode == "simple")
+        if hasattr(mw, "_task_canvas"):
+            mw._task_canvas.set_simple_mode(mode == "simple")
         from ...services.ux_service import advanced_rule_summary
         if hasattr(mw, "_advanced_summary"):
             count, sections = advanced_rule_summary(mw._config.passthrough)

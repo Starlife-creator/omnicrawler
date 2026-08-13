@@ -22,7 +22,7 @@ Standard 版：GUI + Chromium + 常规采集。Full 版：额外含 ChromeDriver
 
 ### 源码安装
 
-源码版支持 Python 3.10+；CI 覆盖 Windows/Linux 的 3.10、3.12 和 3.13。推荐使用当前可用的最新受支持 Python 版本。
+源码版支持 Python 3.10+；CI 覆盖 Windows/Linux/macOS 的 3.10、3.12 和 3.13。推荐使用当前可用的最新受支持 Python 版本。
 
 ```powershell
 py -3.10 -m venv .venv; .venv\Scripts\activate
@@ -83,8 +83,8 @@ omnicrawl reprocess -c config.yaml --run-id <id>
 │                  Desktop GUI (PyQt6)                   │
 │  Wizard(5-pages) │ Home │ Results │ Settings │ A11y    │
 ├────────────────────────────────────────────────────────┤
-│             CLI (registry pattern, ~20 cmds)           │
-│  run │ resume │ validate │ doctor │ export │ ...       │
+│             CLI (registry pattern, 47 cmds)             │
+│  run │ resume │ validate │ doctor │ export │ ...        │
 ├────────────────────────────────────────────────────────┤
 │               Pipeline (star orchestrator)             │
 │  plan → discover → fetch → parse → filter              │
@@ -102,7 +102,7 @@ omnicrawl reprocess -c config.yaml --run-id <id>
 | 配置模型 | AppConfig（运行时） + CrawlConfig（GUI 视图），不合并 |
 | Pipeline | 星型编排器，非五层线性管道 |
 | CLI | 字典注册表替代 if/elif 链 |
-| 错误处理 | `errors.py` 11 子类层次结构 + 单 URL 隔离 |
+| 错误处理 | `errors.py` 层次化异常（11 直接子类 + 3 二级子类） + 单 URL 隔离 |
 
 ---
 
@@ -122,6 +122,8 @@ omnicrawl reprocess -c config.yaml --run-id <id>
 | 能力 | 说明 |
 |------|------|
 | 提取引擎 | CSS / XPath / JSONPath / JSON-LD / OpenGraph / Meta |
+| 文档抽取 | doc_extractors 槽位抽取 + document_ir 统一中间表示（txt/html/docx/pptx/odt/epub/pdf，`document_type=auto`） |
+| 站点分类与模板推荐 | L1 硬止损 → L2 本地映射 → L3 受限嗅探 三层漏斗，输出命中来源 + 置信度，GUI/CLI 人工确认闸门 |
 | AI 智能提取 | LLM 驱动字段提取（分块 HTML → 结构化输出），AI 服务中心可配置 |
 | 智能模式 | AI 辅助字段推荐 + 自动选择器生成 |
 | 质量检查 | 字段证据链、类型校验、正则、跨字段、异常检测 |
@@ -132,6 +134,7 @@ omnicrawl reprocess -c config.yaml --run-id <id>
 | 格式 | 支持 |
 |------|------|
 | 输出 | JSONL / CSV / Excel / Parquet / DuckDB / Markdown |
+| 格式互转 | ConvertX：CSV/JSONL/Parquet/DuckDB/XLSX/文档族任意互转（Reader × Writer 矩阵，含 CLI 与 GUI 面板） |
 | 存储 | 本地文件 / S3 兼容对象存储 / PostgreSQL / OpenSearch |
 | 归档 | 原始响应归档 + 完整页面快照 + SHA-256 变更检测 + 审计记录 |
 
@@ -140,8 +143,16 @@ omnicrawl reprocess -c config.yaml --run-id <id>
 | 能力 | 说明 |
 |------|------|
 | 变更监控 | URL 定时检查 + 内容哈希对比 + 变化 diff + 桌面通知 |
+| 镜像注册表 | 多节点健康路由 + EWMA 评分 + 加权故障回退（经 SiteAliasRegistry 归一，EgressBroker 审计） |
 | 反检测隐身 | 四级隐身等级（off/low/medium/high），可控指纹随机化 |
 | 代理池 | 加权轮换 + 健康检查 + 按域绑定 |
+
+### 场景与基因
+
+| 能力 | 说明 |
+|------|------|
+| 场景管理 | 场景/槽位/选择器基因/候选验收闭环（SceneStore + 出厂场景幂等导入） |
+| 证据胶囊 | 运行内提取动作时间线 + 限定重放（capsule_store + replay） |
 
 ### 安全与治理
 
@@ -185,12 +196,12 @@ omnicrawl templates validate          # 校验完整性
 - 全局焦点可视化：所有可交互控件 2px 焦点框
 - 5 个 Wizard 步骤页 ARIA 标签补齐
 - 减帧模式（reduced-motion）支持
-- 16 个 SVG Feather 风格矢量图标
+- 16 个基础 SVG Feather 风格矢量图标（icon_registry 当前共 23 个，含状态/监控图标）
 
 ### 国际化
 
-- 556 条界面字符串已提取为 `.pot` 模板
-- 英文翻译 `.po` 就绪（部分覆盖）
+- 567 条界面字符串已提取为 `.pot` 模板
+- 英文翻译 `.po` 就绪（约 95% 覆盖）
 - 新增语言：`python tools/generate_en_po.py` → 翻译 → `python tools/compile_i18n.py`
 
 ---
@@ -354,33 +365,41 @@ pre-commit run --all-files
 
 ```
 src/omnicrawl/
-├── __init__.py, __main__.py     # 包入口
+├── __init__.py, __main__.py     # 包入口（含旧路径兼容重定向）
 ├── cli/                         # CLI 入口 (_main.py 参数 + _handlers.py 分发)
-├── core/                        # 配置、异常、迁移、路径工具
+├── core/                        # 配置、异常、迁移、站点分类器、编码、站点别名
 ├── pipeline/                    # 星型编排器 + 导出器
 ├── pipeline_ops/                # 任务 IR、计划、批处理
-├── commands/                    # CLI 子命令处理器 (13 modules)
-├── fetching/                    # HTTP/浏览器客户端、会话管理
+├── commands/                    # CLI 子命令处理器 (16 modules)
+├── fetching/                    # HTTP/浏览器客户端、镜像路由、会话管理
 ├── extraction/                  # CSS/XPath/JSONPath/AI 提取引擎
-├── quality/                     # 质量校验、证据链
+├── doc_extractors/              # 文档/PDF 槽位抽取（document_type=auto 归一）
+├── document_ir/                 # 统一文档中间表示（txt/html/docx/pptx/odt/epub）
+├── quality/                     # 质量校验、证据链、观测与自动应用
 ├── review/                      # 人工复核台、证据查看器
 ├── security/                    # Egress Broker、沙箱、脱敏
 ├── runtime/                     # 状态存储、仓库、锁定
-├── services/                    # 应用服务编排
-├── state/                       # SQLite WAL schema + store
+├── services/                    # 应用服务编排、统一进度协议、场景基因
+├── state/                       # SQLite WAL schema + StateStore/SceneStore/CapsuleStore
 ├── sdk/                         # 公共 API（稳定性标记）
-├── templates/                   # 78 套采集模板
+├── templates/                   # 78 套采集模板 + recipe
 ├── pdfx/                        # PDF 解析/OCR/抽取子系统
-├── sources/                     # 数据源适配器
+├── convertx/                    # 任意格式互转（CSV/JSONL/Parquet/DuckDB/文档族）
+├── sources/                     # 数据源适配器、镜像注册表
 ├── plugins/                     # 插件系统
+├── scenes/                      # 出厂场景定义（annual_report.yaml）
+├── data/                        # 内置数据（站点分类默认域名映射）
+├── apps/                        # PDF 处理独立 CLI（pdf-process / pdf-extract）
+├── visual_selector/             # 可视化选择器（WebSocket 服务 + 字段转换）
 ├── gui/                         # PyQt6 桌面界面
-│   ├── views/                   # 首页/向导/结果/设置/PDF工作台/证据查看器/变更监控/反检测设置
+│   ├── views/                   # 首页/向导/结果/设置/PDF工作台/证据/变更监控/反检测/场景/格式互转/插件市场/开发者检查器
 │   ├── widgets/                 # Toast, LogConsole, StatusIndicator, ...
 │   └── delegates/               # Menu, Toolbar, Theme, Config, ...
 ├── scheduling/                  # 变更检测引擎
-├── export/                      # Markdown 导出器
-└── locale/                      # .pot + 翻译文件
+└── export/                      # Markdown 导出器
 ```
+
+`locale/`（.pot + 翻译文件）位于仓库根目录，随 PyInstaller 便携包分发；源码形态由 i18n 沿父链自动发现。
 
 ### 质量门禁
 

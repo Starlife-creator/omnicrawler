@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..i18n import _
+from ..widgets.empty_state import EmptyState
 
 
 class FileList(QWidget):
@@ -54,10 +55,18 @@ class FileList(QWidget):
 
         layout.addLayout(info_layout)
 
-        # 文件列表
+        # 文件列表（P3：空态统一 EmptyState，空态有主 CTA「刷新」）
+        self._empty_state = EmptyState(
+            icon="📂",
+            title=_("暂无下载文件"),
+            description=_("任务下载的附件会出现在这里；点击「刷新」重新扫描目录。"),
+            action_label=_("刷新"),
+            action_callback=self.refresh,
+        )
         self._list = QListWidget()
         self._list.setAlternatingRowColors(True)
         self._list.itemDoubleClicked.connect(self._on_item_double_clicked)
+        layout.addWidget(self._empty_state)
         layout.addWidget(self._list)
 
     def set_directory(self, directory: Path) -> None:
@@ -71,6 +80,8 @@ class FileList(QWidget):
 
         if self._directory is None or not self._directory.is_dir():
             self._info_label.setText(_("未找到下载目录"))
+            self._list.hide()
+            self._empty_state.show()
             return
 
         files = sorted(self._directory.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)
@@ -84,6 +95,8 @@ class FileList(QWidget):
                 file_count += 1
 
         self._info_label.setText(_("共 {0} 个文件").format(file_count))
+        self._list.setVisible(file_count > 0)
+        self._empty_state.setVisible(file_count == 0)
 
     def _on_item_double_clicked(self, item: QListWidgetItem) -> None:
         """双击打开文件。"""

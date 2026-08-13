@@ -50,17 +50,21 @@ def test_help_center_unknown_id_does_not_update_current(tmp_path: Path) -> None:
     center._copy_example()  # 不再 KeyError
 
 
-# ── S3.1.2/15：NavIndex 常量 ────────────────────────────────────────
+# ── S3.1.2/15：NavIndex 常量（侧栏行号，0-based；须与 main.py nav_items 逐行一致） ──
 
 def test_nav_index_constants() -> None:
     assert NavIndex.HOME == 0
     assert NavIndex.WIZARD == 1
     assert NavIndex.PDF_WORKBENCH == 2
-    assert NavIndex.YAML_EDITOR == 3
-    assert NavIndex.MONITOR == 4
-    assert NavIndex.RESULTS == 5
-    assert NavIndex.EVIDENCE == 6
-    assert NavIndex.CHANGE_MONITOR == 7
+    assert NavIndex.CONVERT_TOOL == 3
+    assert NavIndex.YAML_EDITOR == 4
+    assert NavIndex.MONITOR == 5
+    assert NavIndex.RESULTS == 6
+    assert NavIndex.EVIDENCE == 7
+    assert NavIndex.SCENE == 8
+    assert NavIndex.CHANGE_MONITOR == 9
+    assert NavIndex.PLUGIN_MARKET == 10
+    assert NavIndex.DEVELOPER == 11
 
 
 # ── S3.1.4：日志缓存裁剪 ────────────────────────────────────────────

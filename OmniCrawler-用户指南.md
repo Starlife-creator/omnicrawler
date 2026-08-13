@@ -56,15 +56,15 @@ OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台�
 
 | 能力 | 说明 | 入口 |
 |------|------|------|
-| **五步向导** | GUI 问答式配置生成 | `omnicrawl wizard` 或 GUI 首页 |
-| **67 套内置模板** | 覆盖 CMS/电商/新闻/政务/论坛等 | `omnicrawl templates list` |
+| **五步向导** | GUI 五步问答 / CLI 六步问答生成配置 | `omnicrawl wizard` 或 GUI 首页 |
+| **78 套内置模板** | 覆盖 CMS/电商/新闻/政务/论坛等 | `omnicrawl templates list` |
 | **可视化选择器** | 浏览器中右键点选元素，自动生成配置 | `omnicrawl visual-select` |
 | **智能页面分析** | 零配置：贴 URL → 自动推断字段和分页 | `omnicrawl auto-analyze` |
 | **EasySpider 导入** | 兼容 EasySpider JSON 任务格式 | `omnicrawl import-easyspider` |
 | **Crawl4AI 渲染** | 轻量 JS 页面渲染（省 5-10x 资源） | `omnicrawl c4a-fetch` |
 | **反检测增强** | 10 维指纹随机化 + 代理轮换 + 行为模拟 | `omnicrawl stealth-fingerprint` |
 | **自适应执行** | 实时监测 → 自动调整并发/延迟/OCR | 内置 AutoPilot |
-| **统一诊断** | 13 种错误分类 + 自动修复建议 | CLI/GUI 自动触发 |
+| **统一诊断** | 12 类错误诊断 + 自动修复建议 | CLI/GUI 自动触发 |
 | **站点模板生成** | Apify 130+ 平台知识 → YAML 模板 | `omnicrawl gen-templates --all` |
 | **插件系统** | 子进程沙箱 + 权限白名单 | 开发者模式 |
 | **分布式支持** | Redis frontier/锁 + Scrapy 桥接 | 专业模式配置 |
@@ -744,7 +744,7 @@ omnicrawl status -c configs/my_site.yaml
 
 ### 自动诊断
 
-OmniCrawler 内置统一诊断系统，覆盖 13 种错误类型：
+OmniCrawler 内置统一诊断系统，覆盖 12 类错误类型：
 
 | HTTP 状态 | 诊断 | 自动修复 |
 |-----------|------|---------|
@@ -852,7 +852,7 @@ A: 菜单栏「视图 → 主题」可在明亮、暗黑和高对比度三种主
 A: 打开菜单栏「视图 → 减少动画」。开启后 Hero 背景光晕停止运动，状态指示器停止闪烁，页面切换淡入效果关闭。
 
 **Q: 支持英文界面吗？**
-A: 当前版本已建立国际化管道。开发者在 `locale/` 目录添加英文 `.po` 翻译并编译 `.mo` 后即可切换。目前约 13% 的界面文字已有英文翻译，欢迎贡献更多翻译。
+A: 当前版本已建立国际化管道。开发者在 `locale/` 目录添加英文 `.po` 翻译并编译 `.mo` 后即可切换。目前约 95% 的界面文字已有英文翻译，欢迎贡献更多翻译。
 
 ---
 
@@ -862,51 +862,44 @@ A: 当前版本已建立国际化管道。开发者在 `locale/` 目录添加英
 
 ```
 src/omnicrawl/
-├── cli.py                   # CLI 入口（30+ 命令）
-├── config.py                # 配置加载与验证
-├── pipeline.py              # 采集 Pipeline 编排
-├── state/state_store.py     # SQLite 状态持久化
-├── browser_fetcher.py       # Playwright/Selenium 浏览器引擎
-├── extractors.py            # CSS/XPath/JSON 多策略提取
-├── egress.py                # 网络安全边界（多层防护）
-├── async_fetcher.py         # HTTP 异步抓取
-├── sources.py               # 多种来源类型支持
-├── exporters.py             # 多格式导出
-├── task_ir.py               # 任务中间表示
-├── task_spec.py             # 任务规格编译
-├── adaptive_execution.py    # 自适应参数调整
-├── error_center.py          # 错误分类与报告
-├── credentials.py           # 凭据安全管理
-├── archives.py              # 安全存档解压
-├── site_inspector.py        # 站点探测
-├── api_discovery.py         # 浏览器 API 捕获
-├── action_recorder.py       # 浏览器操作录制
-├── plugin_sandbox.py        # 插件沙箱
-│
-├── auto_pilot.py            # 🆕 自适应执行闭环
-├── diagnostics.py           # 🆕 统一诊断系统
-├── intelligent_scraper.py   # 🆕 智能页面分析
-├── stealth_enhanced.py      # 🆕 反检测增强
-├── crawl4ai_bridge.py       # 🆕 Crawl4AI 桥接
-├── easyspider_bridge.py     # 🆕 EasySpider 导入
-├── captcha_ocr.py           # 🆕 验证码 OCR
-├── apify_templates.py       # 🆕 Apify 模板生成
-│
-├── visual_selector/         # 🆕 可视化选择器
-│   ├── __init__.py
+├── cli/                     # CLI 入口：_main.py 参数 + _handlers.py 分发（47 个顶层命令）
+├── core/                    # 配置、异常、迁移、站点分类器、编码、站点别名
+├── pipeline/                # 采集 Pipeline 编排（星型编排器）
+├── pipeline_ops/            # 任务 IR、计划、批处理
+├── commands/                # CLI 子命令处理器（16 个模块）
+├── fetching/                # HTTP 异步抓取、浏览器引擎、镜像路由、会话管理
+├── extraction/              # CSS/XPath/JSON 多策略提取、智能页面分析
+├── doc_extractors/          # 文档/PDF 槽位抽取（document_type=auto 归一）
+├── document_ir/             # 统一文档中间表示（txt/html/docx/pptx/odt/epub）
+├── quality/                 # 质量校验、证据链、观测与自动应用
+├── review/                  # 人工复核台、证据查看器
+├── security/                # Egress Broker、沙箱、脱敏
+├── runtime/                 # 状态存储、仓库、锁定
+├── services/                # 应用服务编排、统一进度协议、场景基因
+├── state/                   # SQLite WAL schema + StateStore/SceneStore/CapsuleStore
+├── sdk/                     # Python SDK（稳定性标记）
+├── templates/               # 78 套内置 YAML 模板 + recipe
+├── pdfx/                    # PDF 解析/OCR/抽取子系统
+├── convertx/                # 任意格式互转（CSV/JSONL/Parquet/DuckDB/文档族）
+├── sources/                 # 数据源适配器、镜像注册表
+├── plugins/                 # 插件系统（沙箱 + 签名）
+├── scenes/                  # 出厂场景定义（annual_report.yaml）
+├── data/                    # 内置数据（站点分类默认域名映射）
+├── apps/                    # PDF 处理独立 CLI（pdf-process / pdf-extract）
+├── visual_selector/         # 可视化选择器（WebSocket 服务 + 字段转换）
 │   ├── similarity.py        # 同类元素检测引擎
 │   ├── field_converter.py   # 选择器→字段转换
 │   └── server.py            # WebSocket 服务
-│
 ├── gui/                     # PyQt6 桌面 GUI
-│   ├── main.py              # 主窗口
+│   ├── main.py              # 主窗口 + 导航
 │   ├── home.py              # 首页（快速任务）
+│   ├── views/               # 结果/证据/场景/格式互转/插件市场/开发者检查器/变更监控/反检测
 │   └── wizard/              # 五步向导
-│
-├── templates/               # 67 套内置 YAML 模板
-├── sdk/                     # Python SDK
-└── state/                   # 状态存储
+├── scheduling/              # 变更检测引擎
+└── export/                  # Markdown 导出器
 ```
+
+`locale/`（.pot + 翻译文件）位于仓库根目录。旧路径兼容由 `omnicrawl/__init__.py` 的兼容重定向提供（如 `omnicrawl.config` → `omnicrawl.core.config`）。
 
 ### 数据流
 
