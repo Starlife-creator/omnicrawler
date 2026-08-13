@@ -85,7 +85,6 @@ if not _cli_mode():
             QSystemTrayIcon,
             QVBoxLayout,
             QWidget,
-            QWizard,
         )
     except ImportError as e:
         print(_(f"PyQt6 未安装，无法启动图形界面: {e}"), file=sys.stderr)
@@ -158,11 +157,6 @@ if not _cli_mode():
     from .widgets.resource_monitor import ResourceMonitor
     from .widgets.status_indicator import StatusIndicator
     from .widgets.toast import ToastManager
-    from .wizard.step1_source import Step1SourcePage
-    from .wizard.step2_urls import Step2UrlsPage
-    from .wizard.step3_fields import Step3FieldsPage
-    from .wizard.step4_download import Step4DownloadPage
-    from .wizard.step5_preview import Step5PreviewPage
 
     GUI_VERSION = APP_VERSION
 
@@ -171,78 +165,6 @@ def _thread_interrupted() -> bool:
     """Qt may return ``None`` before a QObject has entered its worker thread."""
     thread = QThread.currentThread()
     return thread is not None and thread.isInterruptionRequested()
-
-
-class ConfigWizard(QWizard):
-    """五步配置向导。"""
-
-    finish_requested = pyqtSignal()
-
-    def __init__(self, config: CrawlConfig, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._config = config
-
-        self.setWindowTitle(_("OmniCrawler 配置向导"))
-        self.setMinimumSize(0, 0)
-        self.setWizardStyle(QWizard.WizardStyle.ModernStyle)
-        self.setOption(QWizard.WizardOption.NoBackButtonOnStartPage, False)
-
-        self._step1 = Step1SourcePage(config)
-        self._step2 = Step2UrlsPage(config)
-        self._step3 = Step3FieldsPage(config)
-        self._step4 = Step4DownloadPage(config)
-        self._step5 = Step5PreviewPage(config)
-
-        self.addPage(self._step1)
-        self.addPage(self._step2)
-        self.addPage(self._step3)
-        self.addPage(self._step4)
-        self.addPage(self._step5)
-
-        self.setButtonText(QWizard.WizardButton.BackButton, _("← 上一步"))
-        self.setButtonText(QWizard.WizardButton.NextButton, _("下一步 →"))
-        self.setButtonText(QWizard.WizardButton.FinishButton, _("完成并保存"))
-        self.setButtonText(QWizard.WizardButton.CancelButton, _("取消"))
-        for button_id in (
-            QWizard.WizardButton.BackButton,
-            QWizard.WizardButton.NextButton,
-            QWizard.WizardButton.FinishButton,
-            QWizard.WizardButton.CancelButton,
-        ):
-            button = self.button(button_id)
-            if button is not None:
-                button.setMinimumHeight(36)
-        next_button = self.button(QWizard.WizardButton.NextButton)
-        if next_button is not None:
-            assert isinstance(next_button, QPushButton)
-            next_button.setDefault(True)
-            next_button.setProperty("primary", True)
-
-        for page in [self._step1, self._step2, self._step3, self._step4, self._step5]:
-            page.config_changed.connect(self._on_config_changed)  # type: ignore[attr-defined]
-
-    def accept(self) -> None:
-        self.finish_requested.emit()
-
-    def set_simple_mode(self, enabled: bool) -> None:
-        for page in (self._step2, self._step3, self._step4):
-            if hasattr(page, "set_simple_mode"):
-                page.set_simple_mode(enabled)
-
-    @property
-    def step5_page(self) -> Step5PreviewPage:
-        return self._step5
-
-    @property
-    def step2_page(self) -> Step2UrlsPage:
-        return self._step2
-
-    @property
-    def step1_page(self) -> Step1SourcePage:
-        return self._step1
-
-    def _on_config_changed(self) -> None:
-        pass
 
 
 class SiteInspectionWorker(QObject):
@@ -1154,7 +1076,7 @@ class MainWindow(QMainWindow):
         self._rebuild_wizard()
         self._nav.setCurrentRow(NavIndex.WIZARD)
         cadence = {"weekly": _("每周"), "daily": _("每天"), "monthly": _("每月"), "manual": _("手动")}
-        self._set_status(_("已从自然语言生成草案；建议频率：{0}。请确认第一页内容并先试跑。").format(
+        self._set_status(_("已从自然语言生成草案；建议频率：{0}。请确认画布内容并先试跑。").format(
             cadence.get(draft.schedule, draft.schedule)
         ))
 
@@ -1196,7 +1118,7 @@ class MainWindow(QMainWindow):
         elif current == 0:
             self._stack.setCurrentIndex(1)
             self._yaml_editor.update_from_config(self._config)
-            self._toggle_btn.setText(_("⇄ 向导"))
+            self._toggle_btn.setText(_("⇄ 画布"))
 
     def _bind_application_controllers(self) -> None:
         if self._config_path is None:

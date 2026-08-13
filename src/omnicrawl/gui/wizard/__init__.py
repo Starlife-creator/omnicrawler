@@ -1,4 +1,5 @@
-"""OmniCrawler GUI 五步配置向导模块。
+"""OmniCrawler GUI 字段选择对话框包。
 
-包含网站类型选择、URL 配置、字段提取、下载选项和预览保存五个步骤。
+五步向导已退役；本包保留被任务画布复用的字段选择组件
+（step3_fields.VisualFieldDialog 等）与 JSONPath 测试对话框。
 """

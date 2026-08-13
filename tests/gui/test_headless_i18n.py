@@ -5,7 +5,7 @@ import importlib.util
 import pytest
 
 # gui.main defines classes inheriting PyQt6 widgets at module level
-# (ConfigWizard, MainWindow, etc.) outside the _cli_mode() guard,
+# (MainWindow, etc.) outside the _cli_mode() guard,
 # so the module cannot be imported without PyQt6 installed.
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("PyQt6") is None,
