@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..i18n import _
+from ..widgets.toast import ToastManager
 
 HISTORY_FILE = "work/task_history.jsonl"
 DEFAULT_MAX_ENTRIES = 100
@@ -63,6 +64,14 @@ class TaskHistory(QWidget):
         title.setStyleSheet("font-weight: bold; font-size: 13px;")
         layout.addWidget(title)
 
+        # A3：空态提示——无历史记录时给出引导而非空白
+        self._empty_label = QLabel(_("暂无历史任务：完成一次任务后，这里会显示记录。"))
+        self._empty_label.setObjectName("muted")
+        self._empty_label.setWordWrap(True)
+        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_label.setVisible(False)
+        layout.addWidget(self._empty_label)
+
         self._list = QListWidget()
         self._list.setAlternatingRowColors(True)
         self._list.itemDoubleClicked.connect(self._on_item_double_clicked)
@@ -95,6 +104,8 @@ class TaskHistory(QWidget):
         """加载历史记录。"""
         self._records = []
         self._list.clear()
+        # A3：加载前先置为可见，无记录路径（含文件不存在）保持空态提示
+        self._empty_label.setVisible(True)
 
         fp = self.history_path
         if not fp.is_file():
@@ -131,6 +142,8 @@ class TaskHistory(QWidget):
             item.setToolTip(json.dumps(record, ensure_ascii=False, indent=2))
             self._list.addItem(item)
 
+        self._empty_label.setVisible(self._list.count() == 0)
+
     def add_record(self, task_id: str, project_name: str, config_path: str,
                    workspace: str, status: str = "running") -> None:
         """添加新的历史记录。"""
@@ -152,8 +165,9 @@ class TaskHistory(QWidget):
         try:
             with open(fp, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
-        except Exception:
-            pass
+        except Exception as exc:
+            # A3：写入失败不再静默——运行仍继续，但用户能看到历史未落盘
+            ToastManager.instance().error(_("写入历史记录失败：{0}").format(exc))
 
         self.load_history()
 
@@ -171,13 +185,26 @@ class TaskHistory(QWidget):
             with open(fp, "w", encoding="utf-8") as f:
                 for r in self._records:
                     f.write(json.dumps(r, ensure_ascii=False) + "\n")
-        except Exception:
-            pass
+        except Exception as exc:
+            # A3：更新失败不再静默
+            ToastManager.instance().error(_("更新历史记录失败：{0}").format(exc))
 
         self.load_history()
 
     def _cleanup(self) -> None:
         """清理过期记录（按 days + max_entries，S3.2.1 消费 max_days/max_entries）。"""
+        if not self._records:
+            return
+        # A3：清理为不可撤销操作，先确认再执行
+        reply = QMessageBox.question(
+            self, _("清理历史任务"),
+            _("将清理 {0} 条历史记录（含过期的），此操作不可撤销。是否继续？").format(len(self._records)),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
         cutoff = datetime.now() - timedelta(days=self._max_days)
         new_records = []
         for r in self._records:
@@ -190,6 +217,7 @@ class TaskHistory(QWidget):
                 new_records.append(r)
 
         # 限制条目数
+        removed = len(self._records) - len(new_records[: self._max_entries])
         self._records = new_records[: self._max_entries]
 
         # 重写文件
@@ -198,8 +226,9 @@ class TaskHistory(QWidget):
             with open(fp, "w", encoding="utf-8") as f:
                 for r in self._records:
                     f.write(json.dumps(r, ensure_ascii=False) + "\n")
-        except Exception:
-            pass
+            ToastManager.instance().info(_("已清理 {0} 条历史记录").format(removed))
+        except Exception as exc:
+            ToastManager.instance().error(_("清理历史记录失败：{0}").format(exc))
 
         self.load_history()
 

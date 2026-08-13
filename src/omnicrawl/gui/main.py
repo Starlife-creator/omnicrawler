@@ -506,7 +506,6 @@ class MainWindow(QMainWindow):
         self._install_plugin_ui()
 
         # ---- 连接信号 ----
-        self._connect_signals()
         self._setup_global_shortcuts()
         ToastManager.instance().bind(self)
         QTimer.singleShot(100, self._on_first_launch)
@@ -820,7 +819,6 @@ class MainWindow(QMainWindow):
         self._yaml_editor = YamlEditor()
         self._yaml_editor.sync_to_form.connect(self._on_editor_sync_to_form)
         self._yaml_editor.sync_status.connect(self._set_status)
-        self._yaml_editor.config_changed.connect(self._on_editor_config_changed)
         self._stack.addWidget(self._yaml_editor)
 
         monitor_widget = QWidget()
@@ -1001,14 +999,6 @@ class MainWindow(QMainWindow):
     #  信号连接
     # ================================================================
 
-    def _connect_signals(self) -> None:
-        # P0：画布信号已在构建 TaskCanvas 时连接；这里保留占位以兼容调用点
-        pass
-
-    def _connect_wizard_actions(self) -> None:
-        # P0：五步向导已退役，旧 step5 动作由画布信号替代
-        pass
-
     def _setup_global_shortcuts(self) -> None:
         self._shortcut_manager = GlobalShortcutManager(self)
         self._shortcut_manager.register_all({
@@ -1063,7 +1053,7 @@ class MainWindow(QMainWindow):
 
     def _apply_quick_task(self, draft: QuickTaskDraft) -> None:
         self._apply_task_draft(draft)
-        self._rebuild_wizard()
+        self._refresh_canvas()
         self._nav.setCurrentRow(NavIndex.WIZARD)
         self._set_status(_("快速草案已生成：请查看自动决定和修改入口，然后先试跑"))
 
@@ -1073,7 +1063,7 @@ class MainWindow(QMainWindow):
         self._config.task_description = draft.request
         if draft.topics:
             self._config.topic_include_any = list(dict.fromkeys(topic for topic in draft.topics if topic.strip()))
-        self._rebuild_wizard()
+        self._refresh_canvas()
         self._nav.setCurrentRow(NavIndex.WIZARD)
         cadence = {"weekly": _("每周"), "daily": _("每天"), "monthly": _("每月"), "manual": _("手动")}
         self._set_status(_("已从自然语言生成草案；建议频率：{0}。请确认画布内容并先试跑。").format(
@@ -1104,7 +1094,7 @@ class MainWindow(QMainWindow):
             self._config = load_yaml(demo.config)
             self._config_path = demo.config
             self._config_label.setText(str(demo.config))
-            self._rebuild_wizard()
+            self._refresh_canvas()
             self._nav.setCurrentRow(NavIndex.WIZARD)
             self._set_status(_("离线演示已准备：无需网络，可直接查看并试跑"))
         except (OSError, ValueError) as exc:
@@ -1154,9 +1144,6 @@ class MainWindow(QMainWindow):
         # P0：外部（YAML 编辑器）编辑 → 画布外部编辑检测（无冲突静默同步，有冲突锁定二选一）
         self._task_canvas.notify_external_edit(config)
         self._updating_wizard = False
-
-    def _on_editor_config_changed(self) -> None:
-        pass
 
     # ================================================================
     #  运行前检查与小样本试跑
@@ -1437,7 +1424,7 @@ class MainWindow(QMainWindow):
             self._config.source_kind = "browser"
             if url.strip() not in self._config.seed_urls:
                 self._config.seed_urls.insert(0, url.strip())
-            self._rebuild_wizard()
+            self._refresh_canvas()
             ToastManager.instance().success(_("网页操作已写入当前任务；密码值已替换为 secret:// 引用"))
             QMessageBox.information(
                 self, _("录制完成"),
@@ -1637,7 +1624,7 @@ class MainWindow(QMainWindow):
             self._config = from_yaml(yaml.safe_dump(application.after, allow_unicode=True, sort_keys=False))
             self._config_path = None
             self._config_label.setText(_("组合模板: ") + template.display_name)
-            self._rebuild_wizard()
+            self._refresh_canvas()
             if self._config.has_placeholders():
                 # B14：模板组合后存在 {{...}} 占位符需显式警告，避免带着未替换占位符直接运行
                 QMessageBox.warning(
@@ -1744,7 +1731,7 @@ class MainWindow(QMainWindow):
         self._config = from_yaml(yaml.safe_dump(composed, allow_unicode=True, sort_keys=False))
         self._config_path = None
         self._config_label.setText(_("智能模板: ") + record.metadata.name)
-        self._rebuild_wizard()
+        self._refresh_canvas()
         ToastManager.instance().info(_("智能模板已加载；请检查红色占位符后运行"))
 
     # ================================================================
@@ -1830,7 +1817,7 @@ class MainWindow(QMainWindow):
             self._config = load_yaml(Path(config_path))
             self._config_path = Path(config_path)
             self._config_label.setText(self._config_path.name)
-            self._rebuild_wizard()
+            self._refresh_canvas()
             ToastManager.instance().success(_("历史配置已加载"))
         except Exception as e:
             QMessageBox.critical(self, _("加载失败"), str(e))
@@ -1895,7 +1882,7 @@ class MainWindow(QMainWindow):
                 self._config = config
                 self._config_path = None
                 self._config_label.setText(_("已恢复的草稿"))
-                self._rebuild_wizard()
+                self._refresh_canvas()
                 ToastManager.instance().success(_("草稿已恢复"))
 
     # ================================================================
@@ -1985,8 +1972,8 @@ class MainWindow(QMainWindow):
         self._release_probe_fetcher()
         event.accept()
 
-    def _rebuild_wizard(self) -> None:
-        """刷新任务画布（兼容旧调用点：外部配置/模式切换后重载）。"""
+    def _refresh_canvas(self) -> None:
+        """外部配置/模式切换后重载任务画布。"""
         self._task_canvas.load_config(self._config)
         if hasattr(self, "_resource_profile_combo"):
             for index in range(self._resource_profile_combo.count()):
@@ -2022,7 +2009,7 @@ class MainWindow(QMainWindow):
                     self._config = load_yaml(path)
                     self._config_path = path
                     self._config_label.setText(path.name)
-                    self._rebuild_wizard()
+                    self._refresh_canvas()
                     ToastManager.instance().success(_("配置已加载: {0}").format(path.name))
                 except Exception as e:
                     QMessageBox.critical(self, _("加载失败"), str(e))

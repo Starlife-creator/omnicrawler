@@ -78,6 +78,39 @@ class StateTest(unittest.TestCase):
                 claimed = state.claim(2)
                 self.assertEqual([req.url for req in claimed], ["https://example.org/x3"])
 
+    def test_run_timeline_list_events_and_stages(self):
+        """D-lite：list_runs / run_events / run_stages 只读查询。"""
+        with tempfile.TemporaryDirectory() as temp:
+            with StateStore(Path(temp) / "state.sqlite3") as state:
+                first = state.start_run("demo", "one.yaml")
+                second = state.start_run("demo", "two.yaml")
+
+                # 状态迁移事件（start_run 自动写入 pending→running）
+                state.transition_run(second, "paused", reason="user_pause")
+                state.transition_run(second, "running", reason="user_resume")
+                state.finish_run(second, "succeeded", {"pages": 3})
+
+                # 阶段 checkpoint
+                state.save_checkpoint(second, "fetch", "f-1", {"n": 1}, status="succeeded")
+
+                runs = state.list_runs(10)
+                self.assertEqual([r["run_id"] for r in runs], [second, first])
+                self.assertEqual(runs[0]["project_name"], "demo")
+                self.assertEqual(runs[0]["status"], "succeeded")
+
+                events = state.run_events(second)
+                self.assertEqual(
+                    [e["to_state"] for e in events],
+                    ["running", "paused", "running", "succeeded"],
+                )
+                self.assertEqual(events[0]["reason"], "start")
+                self.assertEqual(events[-1]["reason"], "finish")
+
+                stages = state.run_stages(second)
+                self.assertEqual(stages[0]["stage"], "fetch")
+                self.assertEqual(stages[0]["idempotency_key"], "f-1")
+                self.assertEqual(stages[0]["status"], "succeeded")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -805,6 +805,37 @@ class StateStore:
             row = self.conn.execute("SELECT * FROM runs ORDER BY started_at DESC LIMIT 1").fetchone()
         return dict(row) if row else None
 
+    def list_runs(self, limit: int = 30) -> list[dict[str, Any]]:
+        """最近运行列表（按开始时间倒序），供只读检视/时间线选择。"""
+        limit = max(1, int(limit))
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT run_id, project_name, status, started_at, finished_at "
+                "FROM runs ORDER BY started_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def run_events(self, run_id: str) -> list[dict[str, Any]]:
+        """指定运行的状态迁移事件（时间线），按发生时间升序。"""
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT from_state, to_state, reason, details_json, created_at "
+                "FROM run_state_events WHERE run_id=? ORDER BY created_at ASC, rowid ASC",
+                (run_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def run_stages(self, run_id: str) -> list[dict[str, Any]]:
+        """指定运行的阶段 checkpoint（stage 事件），按更新时间升序。"""
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT stage, idempotency_key, status, updated_at "
+                "FROM stage_checkpoints WHERE run_id=? ORDER BY updated_at ASC, rowid ASC",
+                (run_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def rows(self, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
         """⚠ 调试/诊断用：执行原始 SQL 查询。
 

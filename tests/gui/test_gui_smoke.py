@@ -34,7 +34,7 @@ def test_five_step_gui_template_library_and_rebuild_start_offscreen(monkeypatch)
     dialog._search.setText("wordpress")
     assert dialog._list.count() >= 1
 
-    window._rebuild_wizard()
+    window._refresh_canvas()
     assert isinstance(window._task_canvas, TaskCanvas)
     dialog.deleteLater()
     window.deleteLater()

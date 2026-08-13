@@ -248,7 +248,7 @@ class EnvironmentChecker(_BaseDelegate):
         mw._config = config
         mw._config_path = None
         mw._config_label.setText(_("快速体验 - 未保存"))
-        mw._rebuild_wizard()
+        mw._refresh_canvas()
         ToastManager.instance().info(_("示例配置已加载，点击 ▶ 运行即可体验"))
         reply = QMessageBox.question(mw, _("快速体验"), _("示例配置已加载！是否立即运行此任务？"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)

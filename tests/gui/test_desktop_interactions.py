@@ -200,6 +200,8 @@ def test_task_history_persistence_cleanup_and_signals(qt_app, tmp_path, monkeypa
     old["started_at"] = (datetime.now() - timedelta(days=90)).isoformat()
     invalid = dict(old, task_id="invalid", started_at="not-a-date")
     history._records.extend([old, invalid])
+    # A3：清理前有确认门——测试中直接确认通过
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.Yes)
     history._cleanup()
     assert all(record["task_id"] != "old" for record in history._records)
     monkeypatch.setattr(QMessageBox, "information", lambda *args: QMessageBox.StandardButton.Ok)
