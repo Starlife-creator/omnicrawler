@@ -125,6 +125,19 @@ DEFAULTS: dict[str, Any] = {
         "detect_same_url_changes": True, "keep_versions": True,
         "confirm_missing_runs": 2,
     },
+    # AutoDataCleaner 值清洗：L1 幂等 + L2 规则默认开，L3（LLM）槽位默认关
+    "quality": {
+        "normalize": {
+            "enabled": True,
+            "l1_enabled": True,
+            "l2_enabled": True,
+            "l3_enabled": False,
+            "money_unit": "元",
+            "date_format": "iso",
+            "strip_tracking": True,
+            "types": {},
+        }
+    },
     "incremental": {"skip_unchanged": True, "archive_raw": True},
     "regression": {"enabled": True, "max_fixtures": 50},
     "processors": {
@@ -380,6 +393,7 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         "incremental": set(DEFAULTS["incremental"]) | {"since_date"},
         "outputs": set(DEFAULTS["outputs"]),
         "plugins": set(DEFAULTS["plugins"]),
+        "quality": set(DEFAULTS["quality"]),
         "resources": set(DEFAULTS["resources"]),
         "session": set(DEFAULTS["session"]),
         "updates": set(DEFAULTS["updates"]),
@@ -389,6 +403,8 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
             "login", "max_messages", "duration_seconds", "subscribe",
             "fields", "params", "variables", "arguments", "query",
             "query_file", "spider_file", "max_pages",
+            # B-2 闸门：逐 URL 模板强制覆盖（GUI 写入，Worker/Runner 消费）
+            "seed_template_overrides",
         },
     }
     for section, allowed in section_whitelist.items():
@@ -409,6 +425,7 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
             "retention": set(DEFAULTS["storage"]["retention"]),
         },
         "processors": {"pdf": set(DEFAULTS["processors"]["pdf"])},
+        "quality": {"normalize": set(DEFAULTS["quality"]["normalize"])},
     }
     for section, nested in nested_whitelist.items():
         raw_section = config.raw.get(section)
@@ -543,6 +560,28 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
                 errors.append("updates.confirm_missing_runs必须至少为1")
         except (TypeError, ValueError):
             errors.append("updates.confirm_missing_runs必须是整数")
+    quality = config.section("quality")
+    if quality and not isinstance(quality, dict):
+        errors.append("quality必须是YAML对象")
+    elif isinstance(quality, dict):
+        norm = quality.get("normalize", {})
+        if norm and not isinstance(norm, dict):
+            errors.append("quality.normalize必须是YAML对象")
+        elif isinstance(norm, dict):
+            from ..quality.normalizers import _TYPE_KINDS
+
+            for flag in ("enabled", "l1_enabled", "l2_enabled", "l3_enabled", "strip_tracking"):
+                if flag in norm and not isinstance(norm[flag], bool):
+                    errors.append(f"quality.normalize.{flag}必须是布尔")
+            types = norm.get("types", {})
+            if types and not isinstance(types, dict):
+                errors.append("quality.normalize.types必须是YAML对象")
+            elif isinstance(types, dict):
+                for key, value in types.items():
+                    if str(value) not in _TYPE_KINDS:
+                        errors.append(
+                            f"quality.normalize.types.{key}必须是{list(_TYPE_KINDS)}之一"
+                        )
     ai = config.section("ai")
     ai_mode = str(ai.get("mode", "disabled")).casefold()
     if ai_mode not in {"disabled", "local", "cloud", "custom"}:

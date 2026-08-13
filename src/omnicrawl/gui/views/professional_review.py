@@ -9,13 +9,16 @@ Phase 2 落地：完整证据链展示（原始数据 + 字段表格 + 置信度
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QFrame,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -119,12 +122,18 @@ class EvidenceView(QWidget):
     # 返回结果列表信号
     back_to_results = pyqtSignal()  # type: ignore[has-type]
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        workspace: Path | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setAccessibleName(_("证据查看器"))
 
         self._current_item: ReviewItem | None = None
         self._raw_record: dict[str, Any] | None = None
+        self._capsule_store = None  # 懒加载 CapsuleStore
+        self._capsule_workspace = Path(workspace) if workspace else None
 
         self._setup_ui()
         self._apply_style()
@@ -241,6 +250,76 @@ class EvidenceView(QWidget):
         splitter.setStretchFactor(0, 2)
         splitter.setStretchFactor(1, 3)
         root.addWidget(splitter, 1)
+
+        # ── 底部：证据胶囊时间线（S4，workspace 提供时启用）──
+        self._capsule_box = QGroupBox(_("证据胶囊时间线"))
+        capsule_layout = QVBoxLayout(self._capsule_box)
+        cap_row = QHBoxLayout()
+        cap_row.addWidget(QLabel(_("运行：")))
+        self._cap_run_combo = QComboBox()
+        cap_row.addWidget(self._cap_run_combo, 1)
+        self._btn_cap_refresh = QPushButton(_("刷新"))
+        self._btn_cap_refresh.clicked.connect(self._refresh_capsules)
+        cap_row.addWidget(self._btn_cap_refresh)
+        capsule_layout.addLayout(cap_row)
+        self._cap_table = QTableWidget(0, 4)
+        self._cap_table.setHorizontalHeaderLabels([_("时间"), _("动作"), _("名称"), _("输出摘要")])
+        cap_header = self._cap_table.horizontalHeader()
+        assert cap_header is not None
+        cap_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self._cap_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._cap_table.setMaximumHeight(180)
+        capsule_layout.addWidget(self._cap_table)
+        root.addWidget(self._capsule_box)
+        self._capsule_box.setVisible(self._capsule_workspace is not None)
+
+    # ── 胶囊时间线（S4）───────────────────────────────────
+    def _capsule_store_ref(self):
+        """懒加载 CapsuleStore（workspace/capsules）。"""
+        if self._capsule_store is None and self._capsule_workspace is not None:
+            from ...state.capsule_store import CapsuleStore
+
+            self._capsule_store = CapsuleStore(self._capsule_workspace / "capsules")
+        return self._capsule_store
+
+    @pyqtSlot()
+    def _refresh_capsules(self) -> None:
+        """扫描 capsules/*.log 填充运行下拉 + 当前运行胶囊表。"""
+        self._cap_run_combo.blockSignals(True)
+        self._cap_run_combo.clear()
+        run_ids: list[str] = []
+        if self._capsule_workspace is not None:
+            capsules_dir = self._capsule_workspace / "capsules"
+            if capsules_dir.is_dir():
+                run_ids = sorted(
+                    (p.stem for p in capsules_dir.glob("*.log")), reverse=True
+                )
+        for run_id in run_ids:
+            self._cap_run_combo.addItem(run_id, run_id)
+        self._cap_run_combo.blockSignals(False)
+        if run_ids:
+            self._cap_run_combo.setCurrentIndex(0)
+        self._load_capsules()
+
+    def _load_capsules(self) -> None:
+        self._cap_table.setRowCount(0)
+        store = self._capsule_store_ref()
+        run_id = str(self._cap_run_combo.currentData() or "")
+        if store is None or not run_id:
+            return
+        try:
+            capsules = store.read(run_id)
+        except Exception:  # noqa: BLE001
+            return
+        for cap in capsules:
+            row = self._cap_table.rowCount()
+            self._cap_table.insertRow(row)
+            self._cap_table.setItem(row, 0, QTableWidgetItem(str(cap.timestamp or "")))
+            self._cap_table.setItem(row, 1, QTableWidgetItem(str(cap.action_type or "")))
+            self._cap_table.setItem(row, 2, QTableWidgetItem(str(cap.action_name or "")))
+            output = cap.output or {}
+            summary = str(output.get("value", output.get("text", "")))[:120]
+            self._cap_table.setItem(row, 3, QTableWidgetItem(summary))
 
     # ── 样式 ───────────────────────────────────────────────────
     def _apply_style(self, *_args: Any) -> None:

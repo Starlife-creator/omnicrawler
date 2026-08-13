@@ -62,6 +62,9 @@ def to_yaml(config: CrawlConfig) -> str:
     """
     yaml_handler = _create_yaml_handler()
 
+    # B-2：序列化前清理 seed 变更后的孤儿覆盖键（避免 YAML 残留无意义映射）
+    config.prune_orphan_overrides()
+
     # 构建嵌套字典
     root = CommentedMap()
 
@@ -78,6 +81,8 @@ def to_yaml(config: CrawlConfig) -> str:
     source = CommentedMap()
     source["kind"] = "feed" if config.source_kind == "rss" else config.source_kind
     source["seeds"] = config.seed_urls
+    if config.per_url_template_overrides:
+        source["seed_template_overrides"] = CommentedMap(config.per_url_template_overrides)
     if config.pagination:
         source["pagination"] = config.pagination
     root["source"] = source
@@ -266,6 +271,12 @@ def from_yaml(yaml_str: str) -> CrawlConfig:
         seeds = source.get("seeds", [])
         if isinstance(seeds, list):
             config.seed_urls = [str(s) for s in seeds if s is not None]
+        # B-2 闸门：逐 URL 模板强制覆盖
+        overrides = source.get("seed_template_overrides")
+        if isinstance(overrides, dict):
+            config.per_url_template_overrides = {
+                str(k): str(v) for k, v in overrides.items() if v is not None
+            }
         pagination = source.get("pagination")
         if isinstance(pagination, dict):
             config.pagination = dict(pagination)

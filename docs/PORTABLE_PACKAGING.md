@@ -66,6 +66,20 @@ build-macos-portable   ─┘
 
 各平台各自生成带后缀的校验和与 SBOM：`SHA256SUMS-<platform>.txt`、`omnicrawler-sbom-<platform>.cdx.json`。
 
+## 构建自包含 vs 产物自包含
+
+两个「自包含」目标需要区分，避免误读：
+
+- **产物自包含（硬约束）**：打包后的便携 ZIP 运行时零外部依赖——Chromium、
+  ChromeDriver、Tesseract、PaddleOCR 模型全部捆绑进包内。这是不可妥协的
+  目标，CI 与本地构建都在满足它。
+- **构建自包含（软目标）**：构建过程是否零网络。目前 Python wheel 依赖始终
+  通过 `pip install` 联网安装；仅浏览器与 OCR 运行时等大资产支持本地缓存
+  复用（`build_cache/browsers`、`build_cache/runtime`），并非「从压缩包解压 wheel」。
+
+发布以 CI（`release.yml`）为主路径，联网构建；本地 `-Offline` 是 CI 不可用
+时的兜底，复用缓存而非从压缩包解压依赖。
+
 ## 完全离线重建
 
 Linux/macOS 脚本暂未提供与 Windows `-Offline` 完全等价的离线模式；离线场景先在本机构建好浏览器缓存（`PLAYWRIGHT_BROWSERS_PATH`），用 `--skip-browser-download` 传入。

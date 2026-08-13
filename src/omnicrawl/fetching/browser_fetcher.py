@@ -436,6 +436,22 @@ class BrowserFetcher:
         # Request a WebDriver BiDi endpoint before the session starts; the
         # egress guard must be installed before the first navigation.
         options.enable_bidi = True
+        # P2-2：可选持久化 Chromium profile（按 host+account 维度分配）。
+        # 开关：browser.persist_profile = true（默认 false，保持旧行为）
+        persist = bool(self.config.section("browser").get("persist_profile", False))
+        profile_dir: Path | None = None
+        if persist:
+            host = (urlsplit(request.url).hostname or "").casefold()
+            account = str(request.meta.get("account") or self.config.section("session").get("name", "default"))
+            try:
+                from .profile_registry import ProfileRegistry
+            except Exception:  # noqa: BLE001
+                ProfileRegistry = None  # type: ignore[assignment,misc]
+            if ProfileRegistry is not None and host:
+                registry = ProfileRegistry(self.config.workspace / "browser_profiles")
+                profile = registry.acquire(host, account=account)
+                profile_dir = profile.ensure()
+                options.add_argument(f"--user-data-dir={profile_dir}")
         chrome_binary = os.environ.get("OMNICRAWL_CHROME_BINARY", "").strip()
         if chrome_binary:
             options.binary_location = chrome_binary
@@ -459,7 +475,16 @@ class BrowserFetcher:
                 # F38：冻结模式只用内置驱动，绝不落到 Service() 的联网回退
                 driver_path = str(expected)
         service = Service(executable_path=driver_path) if driver_path else Service()
-        driver = webdriver.Chrome(service=service, options=options)
+        try:
+            driver = webdriver.Chrome(service=service, options=options)
+        except Exception:
+            # P2-2：profile_dir 下 Chromium 可能残留 SingletonLock，
+            # 回退到临时 profile（放弃持久化）保证主流程仍可运行
+            if profile_dir is not None:
+                options.arguments = [a for a in options.arguments if not a.startswith("--user-data-dir=")]
+                driver = webdriver.Chrome(service=service, options=options)
+            else:
+                raise
         try:
             self._install_selenium_guard(driver)
             driver.set_page_load_timeout(float(self.config.section("http").get("timeout_seconds", 25)))

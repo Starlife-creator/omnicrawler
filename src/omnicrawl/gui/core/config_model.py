@@ -81,6 +81,8 @@ class CrawlConfig:
     # ---- 数据源 ----
     source_kind: str = "static_html"
     seed_urls: list[str] = field(default_factory=list)
+    # B-2 闸门逐 URL 模板覆盖：URL → 强制模板 id（空串或 key 缺失 = 用 Categorizer 自动推荐）
+    per_url_template_overrides: dict[str, str] = field(default_factory=dict)
 
     # ---- 爬取参数 ----
     max_pages: int = 10
@@ -209,3 +211,22 @@ class CrawlConfig:
             if placeholder_pattern.search(f.selector):
                 return True
         return False
+
+    def prune_orphan_overrides(self) -> int:
+        """清理 seed_urls 变更后残留的 per_url_template_overrides 孤儿键。
+
+        覆盖键以精确 URL 匹配种子；种子被删除/改名后旧键不再生效，
+        序列化前清理可避免 YAML 中残留无意义映射。
+
+        Returns:
+            被清理的孤儿键数量。
+        """
+        if not self.per_url_template_overrides:
+            return 0
+        seeds = set(self.seed_urls)
+        orphan = [url for url in self.per_url_template_overrides if url not in seeds]
+        if not orphan:
+            return 0
+        for url in orphan:
+            del self.per_url_template_overrides[url]
+        return len(orphan)

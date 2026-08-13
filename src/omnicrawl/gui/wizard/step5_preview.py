@@ -6,14 +6,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFileDialog,
+    QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QPlainTextEdit,
     QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWizardPage,
 )
@@ -23,6 +28,10 @@ from ..core.config_serializer import save_yaml, to_yaml
 from ..design_system import FONT_FAMILY_MONO, FONT_SIZE, RADIUS, SPACING, ThemeManager
 from ..i18n import _
 from ..widgets.help_tooltip import HelpTooltip
+
+# 覆盖下拉第一项：代表「不覆盖，按 Categorizer 自动推荐」
+_AUTO_HINT_KEY = "__auto__"
+_AUTO_HINT_LABEL = _("（自动推荐 / 不覆盖）")
 
 
 class Step5PreviewPage(QWizardPage):
@@ -77,6 +86,47 @@ class Step5PreviewPage(QWizardPage):
         self._apply_summary_style()
         ThemeManager.instance().theme_changed.connect(self._apply_summary_style)
         layout.addWidget(self._summary)
+
+        # B-2：模板推荐闸门（L1+L2 本地规则，默认不启用 L3 嗅探，避免 GUI 内联网）
+        rec_box = QGroupBox(_("模板推荐闸门（B-2）"))
+        rec_layout = QVBoxLayout(rec_box)
+        rec_layout.setSpacing(8)
+        rec_head = QHBoxLayout()
+        self._rec_badge = QLabel(_("尚未分析"))
+        self._rec_badge.setObjectName("categorizeBadge")
+        self._rec_badge.setProperty("badge", "info")
+        self._rec_summary_label = QLabel(
+            _("点击右侧按钮，基于 L1 扩展名/L2 本地映射表，对 Seed URLs 做自动模板推荐并分流为「自动放行 / 待人工确认」。")
+        )
+        self._rec_summary_label.setWordWrap(True)
+        rec_refresh_btn = QPushButton(_("重新分析模板推荐"))
+        rec_refresh_btn.clicked.connect(self._refresh_recommendation_gate)
+        rec_head.addWidget(self._rec_badge)
+        rec_head.addWidget(self._rec_summary_label, 1)
+        rec_head.addWidget(rec_refresh_btn)
+        rec_layout.addLayout(rec_head)
+        self._rec_detail = QTableWidget(0, 6)
+        self._rec_detail.setHorizontalHeaderLabels([
+            _("URL"),
+            _("命中来源"),
+            _("置信度"),
+            _("推荐模板"),
+            _("闸门决策"),
+            _("覆盖模板（可手动指定）"),
+        ])
+        self._rec_detail.verticalHeader().setVisible(False)
+        self._rec_detail.setAlternatingRowColors(True)
+        self._rec_detail.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._rec_detail.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._rec_detail.setFixedHeight(240)
+        hdr = self._rec_detail.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for ci in (1, 2, 3, 4):
+            hdr.setSectionResizeMode(ci, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        self._rec_detail.setColumnWidth(2, 80)
+        rec_layout.addWidget(self._rec_detail)
+        layout.addWidget(rec_box)
 
         self._advanced_btn = QPushButton(_("显示高级 YAML 配置"))
         self._advanced_btn.setCheckable(True)
@@ -259,6 +309,238 @@ class Step5PreviewPage(QWizardPage):
         except Exception as e:
             self._preview.setPlainText(f"# YAML generation failed: {e}")
             self._summary.setText(_("Config preview failed: {0}").format(e))
+
+        # B-2 闸门：每次 refresh_preview 一并分析（异步感不重要；seed_urls 数量通常 <200）
+        try:
+            self._refresh_recommendation_gate()
+        except Exception as e:  # noqa: BLE001 — 闸门失败不影响任务预览主流程
+            self._rec_badge.setText(_("模板推荐失败"))
+            self._rec_badge.setProperty("badge", "warning")
+            self._rec_summary_label.setText(str(e))
+
+    def _refresh_recommendation_gate(self) -> None:
+        """运行 B-2 分类 + ConfirmationEngine 并刷新闸门 UI（表格 + 每行覆盖下拉）。
+
+        策略：GUI 侧默认**不传 fetcher** → 只用 L1（扩展名硬止损）+ L2（本地 YAML 映射表）。
+        需要 L3 受限嗅探（HEAD + Range 0-8192）的场景可由 CLI wizard 或单独的 Doctor 工具触发，
+        避免在 5 步 Wizard 里因网络请求卡顿或被审计拒绝而中断体验。
+        """
+        urls = list(getattr(self._config, "seed_urls", []) or [])
+        if not urls:
+            self._rec_badge.setText(_("无种子 URL"))
+            self._rec_badge.setProperty("badge", "info")
+            self._rec_summary_label.setText(_("请返回步骤 2 添加至少 1 条种子 URL。"))
+            self._rec_detail.setRowCount(0)
+            return
+
+        # Lazy 导入：避免 wizard 模块 import 时过早加载 Categorizer（它会在 __init__ 里读 YAML）
+        from omnicrawl.core import categorizer as _cat_mod
+        from omnicrawl.core.categorizer import (
+            RecommendationConfirmationEngine,
+            SiteCategorizer,
+        )
+        try:
+            sc = SiteCategorizer()
+        except Exception as exc:
+            self._rec_badge.setText(_("Categorizer 初始化失败"))
+            self._rec_badge.setProperty("badge", "warning")
+            self._rec_summary_label.setText(str(exc))
+            self._rec_detail.setRowCount(0)
+            return
+
+        classify_summary = sc.classify(urls, catalog=None, fetcher=None)
+        engine = RecommendationConfirmationEngine()
+        gate = engine.process(classify_summary)
+        self._gate_threshold = float(getattr(engine, "auto_threshold", engine.DEFAULT_THRESHOLD))
+
+        # 收集下拉模板选项：从 categorizer 模块扫描所有 _T_* + _FINAL_FALLBACK 常量，去重值，稳定排序
+        known_tpls: list[str] = []
+        seen = set()
+        for const_name in sorted(dir(_cat_mod)):
+            if const_name.startswith("_T_") or const_name == "_FINAL_FALLBACK_TEMPLATE":
+                v = getattr(_cat_mod, const_name)
+                if isinstance(v, str) and v and v not in seen:
+                    seen.add(v)
+                    known_tpls.append(v)
+        known_tpls.sort()
+
+        # 若存在 per_url_template_overrides，则对覆盖 URL 的 CategorizeResult 做强制替换，
+        # 并重新走 engine.decide 得到新的 ConfirmationDecision（覆盖=100% 置信，强制自动放行，类似 L1）
+        overrides = getattr(self._config, "per_url_template_overrides", None) or {}
+        ordered: list[tuple[Any, Any]] = []
+        auto_after = 0
+        human_after = 0
+        from omnicrawl.core.categorizer import CategorizeResult, ConfirmationDecision  # lazy
+        for r, d in list(gate.auto_rows) + list(gate.human_rows):
+            forced = overrides.get(r.url)
+            if forced and forced in known_tpls and forced != r.template_id:
+                new_r = CategorizeResult(
+                    url=r.url,
+                    template_id=forced,
+                    confidence=1.00,
+                    hit_source="MANUAL",
+                    fallback_used=False,
+                    reason=_("用户在 Step5 闸门手动覆盖模板"),
+                    raw_requested_template=forced,
+                )
+                new_d = ConfirmationDecision(
+                    auto_approved=True,
+                    approved_reason=_("手动覆盖视为强信号自动放行"),
+                    human_hint="",
+                    threshold_used=self._gate_threshold,
+                )
+                ordered.append((new_r, new_d))
+                auto_after += 1
+            else:
+                ordered.append((r, d))
+                if d.auto_approved:
+                    auto_after += 1
+                else:
+                    human_after += 1
+        total_after = auto_after + human_after
+        self._populate_gate_table(ordered, known_tpls, self._gate_threshold)
+
+        # Badge + summary（含人工覆盖计数叠加）
+        overrides_count = sum(1 for v in overrides.values() if v)
+        if total_after == 0:
+            badge = _("无可用结果")
+            level = "info"
+        elif human_after == 0:
+            badge = _("✓ 全部自动放行 {0}/{1}").format(auto_after, total_after)
+            level = "success"
+        elif auto_after == 0:
+            badge = _("⚠ {0}/{1} 需要人工确认").format(human_after, total_after)
+            level = "danger"
+        else:
+            badge = _("部分自动：{0}自动 / {1}待人工").format(auto_after, human_after)
+            level = "warning"
+        if overrides_count:
+            badge = _("{0} · 手动覆盖 {1} 条").format(badge, overrides_count)
+        self._rec_badge.setText(badge)
+        self._rec_badge.setProperty("badge", level)
+        self._rec_summary_label.setText(
+            _("闸门阈值 confidence ≥ {0:.2f}；L1 永远自动；fallback 兜底强制人工。"
+              "每行末列可下拉切换「覆盖模板」：空=留自动，选中=强制用该模板（写入 YAML source.seed_template_overrides）。"
+              "当前手动覆盖：{1} 条。").format(self._gate_threshold, overrides_count)
+        )
+
+        # _repolish：刷新 QSS 动态属性（badge info/warning/success/danger 变色）
+        style = self._rec_badge.style()
+        if style:
+            style.unpolish(self._rec_badge)
+            style.polish(self._rec_badge)
+        self._rec_badge.ensurePolished()
+
+    def _populate_gate_table(
+        self,
+        ordered_rows: list[tuple[Any, Any]],
+        template_options: list[str],
+        threshold: float,
+    ) -> None:
+        """把 (CategorizeResult, ConfirmationDecision) 对填入 QTableWidget，末列下拉。"""
+        overrides = getattr(self._config, "per_url_template_overrides", None) or {}
+        tw: QTableWidget = self._rec_detail
+        tw.setRowCount(0)
+        tw.setRowCount(len(ordered_rows))
+
+        _conf_label = lambda r, d: (
+            _("✓ 自动放行 · {0}").format(d.approved_reason) if d.auto_approved
+            else _("⚠ 待人工 · {0}").format(d.human_hint or _("置信度 < {0:.2f}").format(threshold))
+        )
+
+        for row_i, (r, d) in enumerate(ordered_rows):
+            # 0: URL
+            url_item = QTableWidgetItem(r.url)
+            url_item.setToolTip(r.url)
+            url_item.setData(Qt.ItemDataRole.UserRole, r.url)
+            tw.setItem(row_i, 0, url_item)
+
+            # 1: 命中来源
+            src_map = {
+                "L1": _("L1 扩展名/权威后缀"),
+                "L2": _("L2 本地 eTLD1 映射"),
+                "L3": _("L3 受限嗅探"),
+                "FALLBACK": _("Fallback 大类兜底"),
+            }
+            src_display = src_map.get(r.hit_source, r.hit_source)
+            src_item = QTableWidgetItem(f"{src_display} · {r.reason[:40]}")
+            src_item.setToolTip(r.reason or "")
+            tw.setItem(row_i, 1, src_item)
+
+            # 2: 置信度
+            pct = max(0.0, min(1.0, float(r.confidence or 0.0)))
+            conf_item = QTableWidgetItem(f"{pct * 100:.0f}%")
+            conf_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            conf_item.setToolTip(f"confidence = {pct:.3f}")
+            tw.setItem(row_i, 2, conf_item)
+
+            # 3: 推荐模板
+            rec = r.template_id
+            rec_item = QTableWidgetItem(rec)
+            if r.fallback_used:
+                rec_item.setToolTip(_("（大类兜底：原始 L2 映射结果 {0} 不存在于模板目录）").format(r.raw_requested_template))
+            tw.setItem(row_i, 3, rec_item)
+
+            # 4: 闸门决策
+            decision = _conf_label(r, d)
+            dec_item = QTableWidgetItem(decision)
+            dec_item.setForeground(
+                dec_item.foreground() if d.auto_approved else dec_item.background()
+            )
+            tw.setItem(row_i, 4, dec_item)
+
+            # 5: 覆盖模板（下拉）
+            cb = QComboBox()
+            cb.addItem(_AUTO_HINT_LABEL, _AUTO_HINT_KEY)
+            for tpl in template_options:
+                # 在下拉里加后缀：若当前自动推荐就是这个，标注「推荐」
+                suffix = ""
+                if tpl == rec:
+                    suffix = " " + _("※推荐")
+                cb.addItem(tpl + suffix, tpl)
+            # 若已有覆盖，预选对应项
+            existing = overrides.get(r.url, "")
+            if existing and existing in template_options:
+                idx = cb.findData(existing)
+                if idx >= 0:
+                    cb.setCurrentIndex(idx)
+            cb.setProperty("gate_url", r.url)
+            cb.currentIndexChanged.connect(lambda _i, url=r.url, c=cb: self._on_override_changed(url, c))
+            tw.setCellWidget(row_i, 5, cb)
+
+        tw.resizeRowsToContents()
+
+    def _on_override_changed(self, url: str, cb: QComboBox) -> None:
+        """用户切换覆盖下拉 → 更新 config.per_url_template_overrides → 刷新 Badge。"""
+        data = cb.currentData()
+        ov = getattr(self._config, "per_url_template_overrides", None)
+        if ov is None:
+            ov = {}
+            try:
+                self._config.per_url_template_overrides = ov
+            except Exception:  # noqa: BLE001 — dataclass 有槽/冻结时失败（CrawlConfig 是普通 dataclass）
+                return
+        if data == _AUTO_HINT_KEY or not data:
+            ov.pop(url, None)
+        else:
+            ov[url] = str(data)
+        # 增量刷新 Badge 文字（不重跑分类，只改 override 计数）
+        overrides_count = sum(1 for v in ov.values() if v)
+        base_text = self._rec_badge.text()
+        # 去掉旧的 · 手动覆盖段，若有
+        marker = _(" · 手动覆盖 ")
+        if marker in base_text:
+            base_text = base_text.split(marker)[0]
+        if overrides_count:
+            base_text = _("{0} · 手动覆盖 {1} 条").format(base_text, overrides_count)
+        self._rec_badge.setText(base_text)
+        # summary 文案末的 override 计数同步
+        threshold = getattr(self, "_gate_threshold", 0.85)
+        self._rec_summary_label.setText(
+            _("闸门阈值 confidence ≥ {0:.2f}；L1 永远自动；fallback 兜底强制人工。"
+              "每行末列可下拉切换「覆盖模板」：空=留自动，选中=强制用该模板（写入 YAML source.seed_template_overrides）。"
+              "当前手动覆盖：{1} 条。").format(threshold, overrides_count)
+        )
 
     def _toggle_advanced(self, checked: bool) -> None:
         self._preview.setVisible(checked)

@@ -1,0 +1,134 @@
+# OmniCrawler B-2 Site Categorizer — 出厂默认 Top N 站点映射
+# Schema v1（与 core/categorizer.py _reload_inner 解析一致）
+#
+# 说明：
+# 1. mappings 写「主域名 eTLD+1（全小写）」→「模板 template id / builtin: 相对路径」。
+#    精确匹配，不写子域名（子域名由 P2-5 SiteAliasRegistry 归并后再查表）。
+# 2. 所有模板 id 优先写 catalog 的元数据 id（如 cms/wordpress-rest、social/xiaohongshu-note）；
+#    若用户写的 id 在当前 catalog 不存在，fallback_mapping 会自动兜底到右侧
+#    「builtin:xxx/xxx.yaml」大类模板（代码级强制，不会崩溃或 KeyError）。
+# 3. 用户可在 <project_root>/config/b2_domain_mappings.yaml 放项目级覆盖，或在
+#    config.yaml 的 source.categorizer.mappings 节内直接写；优先级：节内 > 项目级 > 本默认。
+
+version: 1
+updated_at: 2026-08-13
+note: |
+  本文件随 OmniCrawler 版本升级自动发布。社区版 Top 2000 可另存为
+  b2_domain_mappings_custom.yaml，通过 --merge 合并至项目级配置。
+
+# ========================= 映射表：主域名 → 模板 id =========================
+mappings:
+  # --- 博客 / CMS / 内容社区 ---
+  wordpress.org:     cms/wordpress-rest
+  wordpress.com:     cms/wordpress-rest
+  zhihu.com:         social/zhihu-topic
+  jianshu.com:       builtin:industries/news_articles.yaml   # 简书
+  juejin.cn:         builtin:industries/news_articles.yaml   # 掘金
+  csdn.net:          builtin:industries/forum_threads.yaml   # CSDN
+  cnblogs.com:       builtin:industries/news_articles.yaml   # 博客园
+  medium.com:        builtin:industries/news_articles.yaml
+  dev.to:            builtin:industries/news_articles.yaml
+  oschina.net:       builtin:industries/forum_threads.yaml   # 开源中国
+  iteye.com:         builtin:industries/forum_threads.yaml
+  douban.com:        builtin:industries/forum_threads.yaml   # 豆瓣小组/书评
+
+  # --- 问答 / 论坛 ---
+  stackoverflow.com: builtin:industries/forum_threads.yaml
+  stackexchange.com: builtin:industries/forum_threads.yaml
+  v2ex.com:          builtin:industries/forum_threads.yaml
+
+  # --- 电商 / 商品 ---
+  amazon.com:        builtin:industries/ecommerce_products.yaml
+  amazon.cn:         builtin:industries/ecommerce_products.yaml
+  taobao.com:        builtin:industries/ecommerce_products.yaml
+  tmall.com:         builtin:industries/ecommerce_products.yaml
+  jd.com:            builtin:industries/ecommerce_products.yaml
+  shopify.com:       cms/shopify-public
+  yangkeduo.com:     builtin:industries/ecommerce_products.yaml   # 拼多多
+  pinduoduo.com:     builtin:industries/ecommerce_products.yaml
+  suning.com:        builtin:industries/ecommerce_products.yaml
+
+  # --- 代码托管 / 技术文档 ---
+  github.com:        sites/github-public-issues
+  gitlab.com:        builtin:generic/list_detail.yaml
+  gitee.com:         builtin:generic/list_detail.yaml
+
+  # --- 视频 / 媒体 / 社交 ---
+  youtube.com:       builtin:generic/media_gallery.yaml
+  bilibili.com:      builtin:generic/media_gallery.yaml
+  douyin.com:        social/xiaohongshu-note   # 复用 note 结构
+  weibo.com:         social/weibo-search
+  xiaohongshu.com:   social/xiaohongshu-note
+  mp.weixin.qq.com:  builtin:industries/news_articles.yaml   # 公众号文章
+  qq.com:            builtin:industries/news_articles.yaml   # 腾讯新闻/体育
+  sina.com.cn:       builtin:industries/news_articles.yaml
+  sohu.com:          builtin:industries/news_articles.yaml
+  163.com:           builtin:industries/news_articles.yaml
+  toutiao.com:       builtin:industries/news_articles.yaml
+  thepaper.cn:       builtin:industries/news_articles.yaml
+  caixin.com:        builtin:industries/company_announcements.yaml   # 财新
+  huxiu.com:         builtin:industries/news_articles.yaml
+  36kr.com:          builtin:industries/news_articles.yaml
+  ifanr.com:         builtin:industries/news_articles.yaml
+
+  # --- 文档 / 学术 / 开放数据 ---
+  wikipedia.org:     sites/wikipedia-category
+  zh.wikipedia.org:  sites/wikipedia-category
+  baidu.com:         builtin:generic/list_detail.yaml   # 百度搜索结果页
+  bing.com:          builtin:generic/list_detail.yaml
+  google.com:        builtin:generic/list_detail.yaml
+  crossref.org:      sites/crossref-works
+  openalex.org:      sites/openalex-works
+  arxiv.org:         builtin:industries/academic_papers.yaml
+  cnki.net:          builtin:industries/academic_papers.yaml   # 中国知网
+  wanfangdata.com.cn: builtin:industries/academic_papers.yaml  # 万方
+  cqvip.com:         builtin:industries/academic_papers.yaml   # 维普
+  data.gov.cn:       builtin:industries/open_data.yaml        # 国家数据开放平台
+
+  # --- 政府公共资源 / 政策 ---
+  beijing.gov.cn:    builtin:industries/government_policy.yaml
+  shanghai.gov.cn:   builtin:industries/government_policy.yaml
+  gov.cn:            builtin:industries/government_policy.yaml   # 中国政府网
+
+# ========================= 大类兜底：raw id 不存在时 → 合法模板 =========================
+# （写 template id → 对应 catalog 中确实存在的 builtin 大类模板相对路径，
+#  保证 100% 找到，不抛 KeyError）
+fallback_mapping:
+  # 博客 / CMS
+  cms/wordpress-rest:      builtin:industries/news_articles.yaml
+  cms/mediawiki-category:  builtin:industries/forum_threads.yaml
+  cms/shopify-public:      builtin:industries/ecommerce_products.yaml
+  cms/discourse-topics:    builtin:industries/forum_threads.yaml
+  cms/discuz-forum:        builtin:industries/forum_threads.yaml
+  cms/drupal-jsonapi:      builtin:protocols/rest_offset.yaml
+
+  # 内容 / 新闻 / 文章类
+  social/zhihu-topic:      builtin:industries/forum_threads.yaml
+  social/weibo-search:     builtin:industries/forum_threads.yaml
+  social/xiaohongshu-note: builtin:generic/single_page.yaml
+  builtin:industries/news_articles.yaml: builtin:industries/news_articles.yaml
+  builtin:industries/forum_threads.yaml: builtin:industries/forum_threads.yaml
+
+  # 电商 / 商品
+  builtin:industries/ecommerce_products.yaml: builtin:industries/ecommerce_products.yaml
+
+  # 代码 / 技术
+  sites/github-public-issues: builtin:generic/list_detail.yaml
+  sites/crossref-works:       builtin:industries/academic_papers.yaml
+  sites/openalex-works:       builtin:industries/academic_papers.yaml
+  sites/wikipedia-category:   builtin:generic/list_detail.yaml
+
+  # 学术 / 开放数据
+  builtin:industries/academic_papers.yaml:   builtin:industries/academic_papers.yaml
+  builtin:industries/government_policy.yaml: builtin:industries/government_policy.yaml
+  builtin:industries/open_data.yaml:         builtin:industries/open_data.yaml
+  builtin:industries/financial_disclosures.yaml: builtin:industries/financial_disclosures.yaml
+  builtin:industries/company_announcements.yaml: builtin:industries/company_announcements.yaml
+
+  # 下载 / 归档 / 媒体
+  builtin:documents/office_collection.yaml: builtin:documents/office_collection.yaml
+  builtin:documents/archive_collection.yaml: builtin:documents/archive_collection.yaml
+  builtin:generic/media_gallery.yaml:       builtin:generic/media_gallery.yaml
+  builtin:protocols/rest_offset.yaml:       builtin:protocols/rest_offset.yaml
+  builtin:generic/list_detail.yaml:         builtin:generic/list_detail.yaml
+  builtin:generic/single_page.yaml:         builtin:generic/single_page.yaml

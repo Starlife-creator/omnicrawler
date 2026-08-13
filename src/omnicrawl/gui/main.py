@@ -144,6 +144,7 @@ if not _cli_mode():
     from .shortcuts import GlobalShortcutManager
     from .views.change_monitor import ChangeMonitorView
     from .views.chart_view import ChartView
+    from .views.convert_tool import ConvertView  # B-4：ConvertX 格式互转面板
     from .views.developer_inspector import DeveloperInspector
     from .views.file_list import FileList
     from .views.pdf_region_selector import PdfRegionSelectorDialog
@@ -829,10 +830,12 @@ class MainWindow(QMainWindow):
             ("⌂ " + _("首页"), 4),
             ("⚙ " + _("配置向导"), 0),
             ("📄 " + _("PDF 工作台"), 6),
+            ("🔁 " + _("格式互转"), 10),    # B-4：ConvertX 面板
             ("📝 " + _("YAML 编辑器"), 1),
             ("📋 " + _("任务监控"), 2),
             ("📊 " + _("结果与复核"), 3),
             ("🔍 " + _("证据查看器"), 5),
+            ("🎯 " + _("场景管理"), 11),    # S4：场景/槽位/基因/候选
             ("🔔 " + _("变更监控"), 7),
             ("🧩 " + _("插件市场"), 8),
             ("🛠 " + _("开发者检查器"), 9),
@@ -957,13 +960,26 @@ class MainWindow(QMainWindow):
         self._home.import_task.connect(self._import_config_package)
         self._home.run_doctor.connect(self._recheck_env)
         self._home.create_demo.connect(self._create_offline_demo)
+        # B-4 ConvertX：首页按钮跳到格式互转面板（NavIndex.CONVERT_TOOL）
+        self._home.open_convert_tool.connect(
+            lambda: self._nav.setCurrentRow(NavIndex.CONVERT_TOOL)
+        )
+        # S4 场景管理：首页按钮跳到场景面板（NavIndex.SCENE）
+        self._home.open_scene.connect(
+            lambda: self._nav.setCurrentRow(NavIndex.SCENE)
+        )
+        # 运行对比：首页按钮复用菜单既有入口（review/run_compare）
+        self._home.open_run_compare.connect(self._show_run_comparison)
         self._stack.addWidget(self._home)
 
-        self._evidence_view = EvidenceView()
+        self._evidence_view = EvidenceView(workspace=Path(self._config.workspace).expanduser())
         self._evidence_view.back_to_results.connect(lambda: self._nav.setCurrentRow(NavIndex.RESULTS))  # 返回结果与复核页
         self._stack.addWidget(self._evidence_view)
         self._pdf_workbench = PdfWorkbenchView()
         self._stack.addWidget(self._pdf_workbench)
+        # B-4：ConvertX 格式互转工具页（stack index 10）
+        self._convert_tool = ConvertView()
+        self._stack.addWidget(self._convert_tool)
 
         self._change_monitor = ChangeMonitorView(settings=self._settings)
         self._change_monitor.desktop_notify.connect(self._on_monitor_desktop_notify)
@@ -974,6 +990,12 @@ class MainWindow(QMainWindow):
 
         self._developer_inspector = DeveloperInspector(self._config, self._project_root)
         self._stack.addWidget(self._developer_inspector)
+
+        # S4：场景管理面板（懒加载 SceneStore，workspace/scene.sqlite3）
+        from .views.scene_panel import ScenePanel
+
+        self._scene_panel = ScenePanel(Path(self._config.workspace).expanduser())
+        self._stack.addWidget(self._scene_panel)
 
         main_layout.addWidget(self._stack)
         self._page_transition = PageTransitionController(
@@ -1093,8 +1115,11 @@ class MainWindow(QMainWindow):
             ToastManager.instance().warning(_("请先切换到 YAML 编辑器"))
 
     def _on_nav_changed(self, index: int) -> None:
-        # nav index -> stack page: 首页(4), 配置向导(0), PDF工作台(6), YAML编辑器(1), 任务监控(2), 结果复核(3), 证据查看器(5), 变更监控(7), 插件市场(8), 开发者检查器(9)
-        page = (4, 0, 6, 1, 2, 3, 5, 7, 8, 9)[index] if 0 <= index < 10 else 4
+        # nav index -> stack page: 首页(4), 配置向导(0), PDF工作台(6), 格式互转(10),
+        # YAML编辑器(1), 任务监控(2), 结果复核(3), 证据查看器(5), 场景管理(11),
+        # 变更监控(7), 插件市场(8), 开发者检查器(9)
+        pages = (4, 0, 6, 10, 1, 2, 3, 5, 11, 7, 8, 9)
+        page = pages[index] if 0 <= index < len(pages) else 4
         self._page_transition.show(page)
         if page == 1:
             self._yaml_editor.update_from_config(self._config)
@@ -1104,6 +1129,10 @@ class MainWindow(QMainWindow):
             pass  # 证据查看器数据由 record_selected_for_review 信号加载
         elif page == 9:
             self._developer_inspector.refresh()
+        elif page == 10:
+            pass  # 格式互转：进入即就绪，无需预加载数据
+        elif page == 11:
+            self._scene_panel.refresh_scenes()  # S4：进入场景面板时刷新
 
     def _apply_quick_task(self, draft: QuickTaskDraft) -> None:
         self._apply_task_draft(draft)

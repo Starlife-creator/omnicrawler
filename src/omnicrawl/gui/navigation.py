@@ -16,3 +16,5 @@ class NavIndex:
     CHANGE_MONITOR = 7
     PLUGIN_MARKET = 8
     DEVELOPER = 9
+    CONVERT_TOOL = 10  # B-4：ConvertX 格式互转工具
+    SCENE = 11  # S4：场景管理面板

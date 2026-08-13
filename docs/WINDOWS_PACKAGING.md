@@ -56,6 +56,10 @@ OmniCrawler-{version}-Windows-Portable-{edition}.zip
 
 ## 完全离线重建
 
+`-Offline` 并非「从压缩包解压依赖」，而是复用两处已就绪资产：预先装好依赖矩阵的
+解释器（`-BuilderPythonPath`）+ 本地大资产缓存（`build_cache/browsers` 与
+`build_cache/runtime`）。Python wheel 依赖本身仍需在首次准备该解释器时联网安装一次。
+
 当依赖、Chromium 和 Full 版运行时资产已经在本地准备好时，使用 `-Offline`，而不是手工修改旧的
 便携目录。该模式不创建环境、不安装依赖、不下载浏览器或模型；它会先验证指定 Python 的依赖矩阵，
 再将缓存复制到新的版本化暂存目录并执行完整打包校验。构建期间 LiteLLM 也被强制使用包内价格表，

@@ -17,6 +17,21 @@ from ..security.egress import EgressBroker
 from ..security.policy import HostRateLimiter, NetworkTargetPolicy
 from .retry import backoff_seconds, parse_retry_config, retry_after_seconds
 
+# P2-3：按域名并发配额 + 三阶段钩子（延迟导入实例化，失败即回退默认）
+try:
+    from .domain_semaphore import DomainConcurrencyLimiter
+except Exception:  # noqa: BLE001
+    DomainConcurrencyLimiter = None  # type: ignore[assignment,misc]
+try:
+    from .hooks import FetchHooks
+except Exception:  # noqa: BLE001
+    FetchHooks = None  # type: ignore[assignment,misc]
+# P3-1：Mirror Registry 镜像路由（延迟导入；未启用时完全为 None，零开销直通）
+try:
+    from ..sources.mirror_registry import MirrorRegistry
+except Exception:  # noqa: BLE001
+    MirrorRegistry = None  # type: ignore[assignment,misc]
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -72,7 +87,14 @@ class _PinnedAsyncNetworkBackend:
 class HTTPXAsyncFetcher:
     """HTTPX异步抓取器；可由Pipeline选择，也可在插件中批量调用fetch_many。"""
 
-    def __init__(self, config: AppConfig, limiter=None, egress: EgressBroker | None = None) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        limiter=None,
+        egress: EgressBroker | None = None,
+        *,
+        hooks: Any | None = None,
+    ) -> None:
         self.config = config
         delay = float(config.section("http").get("delay_seconds", 1))
         # S2.5.48：单请求与批量请求共用同一限速器实例（按主机），
@@ -80,6 +102,31 @@ class HTTPXAsyncFetcher:
         self.limiter = limiter or HostRateLimiter(delay)
         self.target_policy = NetworkTargetPolicy(config)
         self.egress = egress or EgressBroker(config, policy=self.target_policy)
+        # P2-3：双层并发限速器（全局 + 按域名）
+        self._domain_limiter: Any = None
+        if DomainConcurrencyLimiter is not None:
+            try:
+                global_limit = int(config.section("crawl").get("concurrency", 4))
+                per_domain = int(config.section("crawl").get("per_domain_concurrency", 0))
+                self._domain_limiter = DomainConcurrencyLimiter(
+                    global_limit, per_domain_limit=per_domain
+                )
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("初始化 DomainConcurrencyLimiter 失败，回退单层 semaphore: %s", exc)
+                self._domain_limiter = None
+        # P2-3：三阶段钩子（类型兼容：FetchHooks 或自定义等价对象）
+        self.hooks = hooks if hooks is not None else (FetchHooks() if FetchHooks is not None else None)
+        # P3-1：Mirror Registry（mirrors.enabled=false 或缺省时 registry 为空实例，enabled=False，零开销）
+        self._mirror_registry: Any = None
+        if MirrorRegistry is not None:
+            try:
+                mr = MirrorRegistry(config)
+                if mr.enabled:
+                    self._mirror_registry = mr
+                    LOGGER.info("MirrorRegistry 已启用：%d 组镜像", mr.group_count)
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("初始化 MirrorRegistry 失败，跳过镜像路由: %s", exc)
+                self._mirror_registry = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._client: httpx.AsyncClient | None = None
         # 跨事件循环缓存：插件线程各自的 loop 各自持有客户端（S1.5.8）
@@ -170,18 +217,93 @@ class HTTPXAsyncFetcher:
     async def fetch_many(self, requests: list[CrawlRequest]) -> list[FetchResult | Exception]:
         running_loop = asyncio.get_running_loop()
         client = self._client_for(running_loop)
-        semaphore = asyncio.Semaphore(int(self.config.section("crawl").get("concurrency", 4)))
+        global_limit = int(self.config.section("crawl").get("concurrency", 4))
+        # P2-3：若 DomainConcurrencyLimiter 可用（双层限速），则不用单层 semaphore；
+        # 否则回退为原先的单层全局 semaphore
+        domain_limiter = self._domain_limiter
+        fallback_sem = (
+            asyncio.Semaphore(global_limit) if domain_limiter is None else None
+        )
 
         async def guarded(request: CrawlRequest):
             try:
-                async with semaphore:
-                    # S2.5.48：单/批统一同一限速器（to_thread 桥接同步等待）
-                    await asyncio.to_thread(self.limiter.wait, request.url)
-                    return await self._request(client, request)
+                if domain_limiter is not None:
+                    async with domain_limiter.acquire(request.url):
+                        return await self._guarded_one(client, request)
+                assert fallback_sem is not None
+                async with fallback_sem:
+                    return await self._guarded_one(client, request)
             except Exception as exc:  # Per-request result, not batch cancellation.
                 return exc
 
         return list(await asyncio.gather(*(guarded(request) for request in requests)))
+
+    async def _guarded_one(self, client, request: CrawlRequest) -> FetchResult:
+        # P2-3：before_fetch 钩子（异常隔离）
+        if self.hooks is not None and not getattr(self.hooks, "is_empty", lambda: False)():
+            try:
+                ctx: dict = {}
+                if hasattr(self.hooks, "emit_before_fetch"):
+                    request = await self.hooks.emit_before_fetch(request, ctx)
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("before_fetch 钩子分发失败，继续主流程: %s", exc)
+                ctx = {}
+        else:
+            ctx = {}
+        # P3-1：Mirror URL 改写；ctx 记录 canonical + 被选中 host，成功/失败回写健康分
+        mirror_canonical: str | None = None
+        mirror_picked_host: str | None = None
+        original_url = request.url
+        if self._mirror_registry is not None:
+            try:
+                rewritten, canonical = self._mirror_registry.rewrite_url(original_url)
+                if canonical is not None and rewritten != original_url:
+                    from urllib.parse import urlsplit as _urlsplit
+
+                    mirror_canonical = canonical
+                    mirror_picked_host = (_urlsplit(rewritten).hostname or "").casefold() or None
+                    request = request.with_url(rewritten)
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("Mirror 路由失败，回退原 URL: %s", exc)
+                mirror_canonical = None
+                mirror_picked_host = None
+        # S2.5.48：单/批统一同一限速器（to_thread 桥接同步等待）
+        await asyncio.to_thread(self.limiter.wait, request.url)
+        try:
+            result = await self._request(client, request)
+        except Exception as exc:
+            if mirror_canonical and mirror_picked_host:
+                try:
+                    self._mirror_registry.record_failure(mirror_canonical, mirror_picked_host)
+                except Exception as mr_exc:  # noqa: BLE001
+                    LOGGER.warning("Mirror 失败回写异常: %s", mr_exc)
+            if self.hooks is not None and hasattr(self.hooks, "emit_error"):
+                try:
+                    await self.hooks.emit_error(request, exc, ctx)
+                except Exception as hook_exc:  # noqa: BLE001
+                    LOGGER.warning("error hook 分发失败: %s", hook_exc)
+            raise
+        if mirror_canonical and mirror_picked_host:
+            try:
+                self._mirror_registry.record_success(mirror_canonical, mirror_picked_host)
+            except Exception as mr_exc:  # noqa: BLE001
+                LOGGER.warning("Mirror 成功回写异常: %s", mr_exc)
+        # Mirror 改写后结果 final_url 可能指向 mirror host：覆盖为 original_url，保持业务层感知一致
+        # （内部 record 的 "fetch from where" 仍保存在 meta["mirror_used"] 供审计）
+        if mirror_picked_host and original_url != request.url:
+            try:
+                result = result.with_meta_update({"mirror_used": mirror_picked_host})
+                if result.final_url == request.url:
+                    result = result.with_final_url(original_url)
+            except Exception:  # noqa: BLE001
+                # FetchResult 无 with_* 时（旧 API），保留原样
+                pass
+        if self.hooks is not None and hasattr(self.hooks, "emit_after_fetch"):
+            try:
+                await self.hooks.emit_after_fetch(request, result, ctx)
+            except Exception as hook_exc:  # noqa: BLE001
+                LOGGER.warning("after_fetch 钩子分发失败: %s", hook_exc)
+        return result
 
     async def _fetch_one(self, request: CrawlRequest) -> FetchResult:
         results = await self.fetch_many([request])

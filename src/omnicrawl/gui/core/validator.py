@@ -78,6 +78,13 @@ def validate_selector_format(field: FieldDef) -> list[str]:
     elif field.selector_type == "jsonpath":
         if not selector.startswith("$"):
             errors.append(_(f"字段 '{field.name}': JSONPath 应以 $ 开头"))
+        else:
+            from ...core.jsonpath import JsonPathSyntaxError, compile_path
+
+            try:
+                compile_path(selector)
+            except JsonPathSyntaxError as exc:
+                errors.append(_(f"字段 '{field.name}': JSONPath 语法错误: {exc}"))
 
     return errors
 

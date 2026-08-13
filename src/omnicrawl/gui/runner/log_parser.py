@@ -1,6 +1,9 @@
 """日志解析器模块。
 
 提供可配置的日志行解析，用于提取进度、统计信息等。
+
+P2-4：新增 PROGRESS2 JSON 行解析，还原为 TaskProgressEvent，
+同时保留旧式 PROGRESS: 正则分支，做到 CLI/GUI 双协议兼容。
 """
 
 from __future__ import annotations
@@ -8,6 +11,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from re import Pattern
+from typing import Any
 
 from ..i18n import _
 
@@ -16,10 +20,10 @@ class LogParser:
     """日志行解析器。
 
     通过可配置的正则表达式和回调函数解析日志行，
-    提取进度、错误、统计数据等信息。
+    提取进度、错误、统计数据等。
     """
 
-    # 默认进度正则：PROGRESS: 百分比 URL
+    # 默认进度正则：PROGRESS: 百分比 URL（旧式）
     DEFAULT_PROGRESS_PATTERN: Pattern = re.compile(
         r"PROGRESS:\s*(\d+)%?\s*(https?://\S+)?"
     )
@@ -41,15 +45,18 @@ class LogParser:
         self,
         progress_pattern: Pattern | None = None,
         on_progress: Callable[[int, str], None] | None = None,
+        on_progress_event: Callable[[Any], None] | None = None,
     ) -> None:
         """初始化日志解析器。
 
         Args:
             progress_pattern: 自定义进度解析正则。
-            on_progress: 进度回调函数 (percent, url)。
+            on_progress: 旧式进度回调 (percent, url)。
+            on_progress_event: P2-4：统一事件回调 (TaskProgressEvent)。
         """
         self._progress_pattern = progress_pattern or self.DEFAULT_PROGRESS_PATTERN
         self._on_progress = on_progress
+        self._on_progress_event = on_progress_event
         self._stats: dict[str, int] = {}
 
     def parse_line(self, line: str) -> dict:
@@ -62,11 +69,13 @@ class LogParser:
             包含解析结果的字典：
             - 'level': 日志级别 (info/warn/error)
             - 'progress': 进度信息 (percent, url) 或 None
+            - 'progress_event': P2-4：TaskProgressEvent 或 None
             - 'stats': 匹配到的统计信息字典
         """
         result: dict = {
             "level": "info",
             "progress": None,
+            "progress_event": None,
             "stats": {},
         }
 
@@ -84,17 +93,38 @@ class LogParser:
             elif any(kw in lower for kw in ("warn", "warning")):
                 result["level"] = "warn"
 
-        # 解析进度
-        progress_match = self._progress_pattern.search(line)
-        if progress_match:
+        # P2-4：优先尝试 PROGRESS2 JSON（新式，字段完整）
+        if "PROGRESS2:" in line:
             try:
-                percent = int(progress_match.group(1))
-                url = progress_match.group(2) or ""
-                result["progress"] = {"percent": percent, "url": url.strip()}
-                if self._on_progress:
-                    self._on_progress(percent, url.strip())
-            except (ValueError, IndexError):
-                pass
+                from ...services.progress import TaskProgressEvent  # 延迟导入，避免 GUI<->services 循环
+            except Exception:  # noqa: BLE001
+                TaskProgressEvent = None  # type: ignore[assignment,misc]
+            if TaskProgressEvent is not None:
+                ev = TaskProgressEvent.from_log_line(line)
+                if ev is not None:
+                    result["progress_event"] = ev
+                    # 旧式回调也一并触发（百分 + 可选 message/URL），消费方无需改
+                    if self._on_progress:
+                        url = ""
+                        if isinstance(ev.extra, dict):
+                            url = str(ev.extra.get("url", "") or "")
+                        self._on_progress(max(0, min(100, int(round(ev.percent)))), url)
+                    if self._on_progress_event:
+                        self._on_progress_event(ev)
+                    # 即使命中 PROGRESS2，仍继续向下解析 stats / level（不 return）
+
+        # 解析进度（旧式）
+        if result.get("progress_event") is None:
+            progress_match = self._progress_pattern.search(line)
+            if progress_match:
+                try:
+                    percent = int(progress_match.group(1))
+                    url = progress_match.group(2) or ""
+                    result["progress"] = {"percent": percent, "url": url.strip()}
+                    if self._on_progress:
+                        self._on_progress(percent, url.strip())
+                except (ValueError, IndexError):
+                    pass
 
         # 解析统计信息
         for key, pattern in self.STAT_PATTERNS.items():

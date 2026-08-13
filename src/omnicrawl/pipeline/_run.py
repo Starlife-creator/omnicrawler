@@ -15,12 +15,21 @@ from ..extraction import extractors
 from ..fetching.streams import collect_sse, collect_websocket
 from ..pipeline_ops.pdf_integration import run_pdf_pipeline
 from ..plugins.plugin_runtime import prepare_request, transform_record
-from ..runtime.resource_profiles import effective_concurrency, profile_for
+from ..runtime.resource_profiles import effective_concurrency
 from ..runtime.resources import ResourceLimitError
 from ..security.policy import is_private_target
+from ..services.progress import ProgressTracker, StageSpec, TaskProgressEvent
 from ._mixin_base import _PipelineBase
 
 LOGGER = logging.getLogger("omnicrawl")
+
+# Pipeline 四阶段权重（归一化后即 10% / 40% / 30% / 20%）
+_PIPELINE_STAGES = (
+    StageSpec(name="ingest",  weight=1.0, display_name="种子入队（Ingest）", has_items=True),
+    StageSpec(name="fetch",   weight=4.0, display_name="页面抓取（Fetch）",  has_items=True),
+    StageSpec(name="extract", weight=3.0, display_name="结构化提取（Extract）", has_items=True),
+    StageSpec(name="export",  weight=2.0, display_name="结果导出（Export）",  has_items=False),
+)
 
 
 class _PipelineRun(_PipelineBase):
@@ -33,6 +42,7 @@ class _PipelineRun(_PipelineBase):
         run_pdf: bool | None = None,
         callback: Callable[[str, dict[str, Any]], None] | None = None,
         should_stop: Callable[[], bool] | None = None,
+        on_progress: Callable[[TaskProgressEvent], None] | None = None,
     ) -> dict[str, Any]:
         """Execute the full crawl pipeline and return the export summary.
 
@@ -41,16 +51,21 @@ class _PipelineRun(_PipelineBase):
             retry_failed: Re-enqueue previously failed requests before crawling.
             max_pages: Override ``crawl.max_pages`` for this run.
             run_pdf: Force-enable or force-disable the PDF post-processing stage.
-            callback: Optional progress callback receiving ``(event, details)``.
+            callback: Optional legacy progress callback receiving ``(event, details)``.
             should_stop: Optional predicate; returning ``True`` cancels the run.
+            on_progress: New unified progress event callback.  Each
+                ``TaskProgressEvent`` covers stage weights (Ingest 10% / Fetch 40% /
+                Extract 30% / Export 20%), EMA ETA and per-document item counts.
 
         Returns:
             The assembled run summary dict, including export results.
         """
         if self.config.source_kind in {"websocket", "sse", "long_poll"}:
-            # S2.5.4：流式模式透传 max_pages/callback/should_stop（取消与进度回调生效）
             return self._run_stream(
-                max_pages=max_pages, callback=callback, should_stop=should_stop,
+                max_pages=max_pages,
+                callback=callback,
+                should_stop=should_stop,
+                on_progress=on_progress,
             )
         if self.config.source_kind == "redis":
             raise RuntimeError("Redis分布式模式请使用 omnicrawl.redis_frontier.RedisFrontier；参见 docs/DISTRIBUTED.md")
@@ -58,14 +73,27 @@ class _PipelineRun(_PipelineBase):
             from ..sources.frameworks import run_scrapy
             return run_scrapy(self.config)
 
+        # 进度协议初始化：task_id 先用 project_name，run_id 生成后再补
+        tracker_task_id = ""
+        try:
+            tracker_task_id = str(self.config.project_name)
+        except Exception:  # noqa: BLE001
+            tracker_task_id = ""
+        tracker = ProgressTracker(
+            list(_PIPELINE_STAGES),
+            task_id=tracker_task_id,
+            on_event=on_progress,
+        )
+
         # === Stage: Dispatch ===
         self.resource_guard.check(force=True)
         self.run_control.reset()
         self.egress.reconnect_task()
         run_id = self.state.start_run(self.config.project_name, str(self.config.path))
+        tracker._task_id = run_id
+        tracker.start()
         setup_started = time.monotonic()
         try:
-            # === Stage: Setup ===
             self._emit("before_run", run_id=run_id, resume=resume, retry_failed=retry_failed)
             updates = self.config.section("updates")
             reset_all = (
@@ -76,8 +104,17 @@ class _PipelineRun(_PipelineBase):
             if retry_failed:
                 self.state.retry_failed()
             if not resume:
+                tracker.begin_stage("ingest")
+                seeds_seen = 0
                 for request in self.source.seed():
                     self.state.enqueue(request, force=True)
+                    seeds_seen += 1
+                    tracker.set_item_progress(seeds_seen, max(seeds_seen, 1))
+                if seeds_seen:
+                    tracker.set_item_progress(seeds_seen, seeds_seen)
+                tracker.end_stage("ingest")
+            else:
+                tracker.end_stage("ingest")
             self.state.save_checkpoint(
                 run_id,
                 "setup",
@@ -86,6 +123,7 @@ class _PipelineRun(_PipelineBase):
             )
             self.metrics.record_stage("setup", time.monotonic() - setup_started)
         except Exception as exc:
+            tracker.fail(f"setup failed: {exc}")
             self.state.add_error(run_id, None, "setup", exc, retryable=False)
             self.diagnostics.failure(run_id, "setup", exc)
             self._emit("on_error", run_id=run_id, stage="setup", error=exc, request=None)
@@ -102,8 +140,6 @@ class _PipelineRun(_PipelineBase):
         strategy = str(crawl.get("strategy", "bfs"))
         maximum_depth = int(crawl.get("max_depth", 3))
         attempts = int(self.config.section("http").get("retries", 3))
-        # S1.2.4：max_pages 仍是“成功页”上限；max_requests 是总请求硬上限（默认 max_pages×5），
-        # 大面积 403/失败时请求总量也不会失控。
         max_requests = int(crawl.get("max_requests", limit * 5))
         if max_requests < 1:
             raise ValueError(f"max_requests 不能小于 1: {max_requests}")
@@ -115,13 +151,17 @@ class _PipelineRun(_PipelineBase):
         inflight: dict[Future[FetchResult], CrawlRequest] = {}
         frontier_exhausted = False
 
+        tracker.begin_stage("fetch", expected_items=max(1, limit))
+        extract_expected_items = max(1, limit)
+        extract_processed = 0
+
         def consume(future: Future[FetchResult]) -> None:
-            nonlocal processed, frontier_exhausted
+            nonlocal processed, frontier_exhausted, extract_processed
             request = inflight.pop(future)
             try:
                 result = future.result()
                 self._handle_result(run_id, result, maximum_depth)
-                frontier_exhausted = False  # discovery may have enqueued new URLs
+                frontier_exhausted = False
                 self.state.mark_done(request.fingerprint)
                 self.state.save_checkpoint(
                     run_id,
@@ -130,7 +170,12 @@ class _PipelineRun(_PipelineBase):
                     {"url": result.final_url, "status": result.status},
                 )
                 processed += 1
+                extract_processed += 1
                 LOGGER.info("[%s/%s] %s %s", processed, limit, result.status, result.final_url)
+                tracker.set_item_progress(processed, limit)
+                if tracker._current_stage != "extract":
+                    tracker.begin_stage("extract", expected_items=extract_expected_items)
+                tracker.set_item_progress(extract_processed, extract_expected_items)
                 if callback:
                     elapsed = max(0.001, time.monotonic() - started_monotonic)
                     rate = processed / elapsed
@@ -152,7 +197,6 @@ class _PipelineRun(_PipelineBase):
                 self.metrics.increment("omnicrawl_failures_total", stage="policy", error=type(exc).__name__)
                 self._emit("on_error", run_id=run_id, stage="policy", error=exc, request=request)
             except ExtractionError as exc:
-                # S2.5.33：提取阶段异常单独归类，日志语义与阶段一致
                 self.state.add_error(run_id, request, "extract", exc, retryable=False)
                 self.state.mark_done(request.fingerprint, status="failed", error=str(exc))
                 self.diagnostics.failure(run_id, "extract", exc, request=request)
@@ -169,20 +213,19 @@ class _PipelineRun(_PipelineBase):
                 self._emit("on_error", run_id=run_id, stage="fetch", error=exc, request=request)
 
         def drain() -> None:
-            # S1.2.1：收尾在途请求的单一出口，供正常/取消/异常/流式路径共用，
-            # 保证 frontier 不残留孤儿 in_progress 行（不丢请求、不重复处理）。
             for future in as_completed(list(inflight)):
                 consume(future)
 
         try:
-            # === Stage: Crawl ===
             executor = self._get_executor(max(1, concurrency))
 
             def control_notify(event: str, details: dict[str, Any]) -> None:
                 if event == "paused":
                     self.state.transition_run(run_id, "paused", reason="user_pause")
+                    tracker.pause()
                 elif event == "resumed":
                     self.state.transition_run(run_id, "running", reason="user_resume")
+                    tracker.resume()
                 if callback:
                     callback(event, details)
 
@@ -203,6 +246,7 @@ class _PipelineRun(_PipelineBase):
                     resource_snapshot = self.resource_guard.check()
                 except ResourceLimitError as exc:
                     status = "failed"
+                    tracker.fail(f"resource exceeded: {exc}")
                     self.state.add_error(run_id, None, "resources", exc, retryable=True)
                     self.diagnostics.failure(run_id, "resources", exc)
                     self.metrics.increment(
@@ -216,10 +260,6 @@ class _PipelineRun(_PipelineBase):
                         "omnicrawl_disk_free_bytes", float(resource_snapshot["disk_free_bytes"])
                     )
 
-                # Top up the window.  ``processed + len(inflight)`` never exceeds
-                # ``limit`` so successful pages cannot overshoot the cap, and each
-                # claim stays bounded by the remaining concurrency budget.  The
-                # S1.2.4 ``attempted`` budget bounds total dispatch (成功的+失败的).
                 while (
                     not frontier_exhausted
                     and len(inflight) < concurrency
@@ -242,16 +282,22 @@ class _PipelineRun(_PipelineBase):
                 if not inflight:
                     break
 
-                # S2.5.43：wait 带超时——任务挂起时不再无限阻塞（默认 60s 上限）
                 wait_timeout = float(crawl.get("wait_timeout_seconds", 60))
                 done, _pending = wait(inflight, return_when=FIRST_COMPLETED, timeout=wait_timeout)
                 for future in done:
                     consume(future)
 
-                # S2.5.37：增量统计——循环内用轻量索引 COUNT，不再全表聚合
                 self.metrics.gauge(
                     "omnicrawl_frontier_pending", float(self.state.pending_count())
                 )
+            try:
+                tracker.end_stage("fetch")
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                tracker.end_stage("extract")
+            except Exception:  # noqa: BLE001
+                pass
             crawl_status = {"processed": processed, **self.state.stats(run_id)}
             self.state.save_checkpoint(run_id, "crawl", "crawl", crawl_status)
             self.metrics.record_stage("crawl", time.monotonic() - started_monotonic)
@@ -285,22 +331,33 @@ class _PipelineRun(_PipelineBase):
                             self.metrics.gauge(f"omnicrawl_pdf_{key}", float(value))
                 self.state.save_checkpoint(run_id, "pdf", "pdf", pdf_summary)
                 self.metrics.record_stage("pdf", time.monotonic() - pdf_started)
+
             # === Stage: Export ===
+            tracker.begin_stage("export")
             exported = self._stage_exports(run_id, status, processed, pdf_summary, callback)
+            tracker.end_stage("export")
+            if status == "cancelled":
+                tracker.cancel()
+            elif status == "failed":
+                tracker.fail()
+            else:
+                tracker.finish()
             return exported
         except KeyboardInterrupt:
             status = "cancelled"
             self.run_control.request_stop()
             self.egress.disconnect_task()
-            drain()  # E5：与 cancel/stop/资源超限分支一致，收尾在途请求防孤儿 in_progress
+            drain()
             summary = {"run_id": run_id, "status": status, "processed": processed, **self.state.stats(run_id)}
             self._write_pipeline_summary(summary)
             self.state.finish_run(run_id, status, summary)
+            tracker.cancel()
             raise
         except Exception as exc:
             status = "failed"
             self.egress.disconnect_task()
-            drain()  # S1.2.1：任意异常路径先收尾在途请求，再落库，避免残留 in_progress
+            drain()
+            tracker.fail(f"pipeline failed: {exc}")
             self.state.add_error(run_id, None, "pipeline", exc, retryable=False)
             self.diagnostics.failure(run_id, "pipeline", exc)
             self._emit("on_error", run_id=run_id, stage="pipeline", error=exc, request=None)
@@ -309,8 +366,6 @@ class _PipelineRun(_PipelineBase):
             self.state.finish_run(run_id, status, summary)
             raise
         finally:
-            # S1.2.1：兜底出口——任何经由 break/return/raise 的路径都会执行 drain；
-            # 已在分支内 drain 的场景此处为空操作。
             drain()
 
     def reprocess_records(
@@ -318,8 +373,19 @@ class _PipelineRun(_PipelineBase):
         run_id: str | None = None,
         *,
         callback: Callable[[str, dict[str, Any]], None] | None = None,
+        on_progress: Callable[[TaskProgressEvent], None] | None = None,
     ) -> dict[str, Any]:
         """Re-run extraction, quality and export from archived responses without fetching."""
+
+        # 只在有新回调时启用 progress tracker（不影响旧的 callback 语义）
+        stages = (
+            StageSpec(name="reprocess_extract", weight=7.0, display_name="重提取", has_items=True),
+            StageSpec(name="reprocess_export",  weight=3.0, display_name="重导出", has_items=False),
+        )
+        tracker: ProgressTracker | None = None
+        if on_progress is not None:
+            tracker = ProgressTracker(list(stages), task_id=str(run_id or ""), on_event=on_progress)
+            tracker.start()
 
         reprocess_started = time.monotonic()
         if run_id is None:
@@ -363,6 +429,8 @@ class _PipelineRun(_PipelineBase):
         self._emit("before_reprocess", run_id=run_id, responses=len(prepared))
         processed = 0
         failures = 0
+        if tracker is not None:
+            tracker.begin_stage("reprocess_extract", expected_items=max(1, len(prepared)))
         for index, (row, path) in enumerate(prepared, 1):
             try:
                 request = CrawlRequest(
@@ -378,7 +446,6 @@ class _PipelineRun(_PipelineBase):
                     float(row["elapsed_seconds"] or 0),
                 )
             except Exception as exc:
-                # S1.2.2：单条坏记录（NULL status_code / 已删除文件）构造失败也计入 failures，继续下一条。
                 failures += 1
                 self.state.add_error(
                     run_id,
@@ -389,6 +456,8 @@ class _PipelineRun(_PipelineBase):
                 )
                 self.diagnostics.failure(run_id, "reprocess", exc)
                 self._emit("on_error", run_id=run_id, stage="reprocess", error=exc, request=None)
+                if tracker is not None:
+                    tracker.set_item_progress(index, len(prepared))
                 if callback:
                     callback(
                         "reprocess_progress",
@@ -405,12 +474,20 @@ class _PipelineRun(_PipelineBase):
                 self.state.add_error(run_id, request, "reprocess", exc, retryable=True)
                 self.diagnostics.failure(run_id, "reprocess", exc, request=request, result=result)
                 self._emit("on_error", run_id=run_id, stage="reprocess", error=exc, request=request)
+            if tracker is not None:
+                tracker.set_item_progress(index, len(prepared))
             if callback:
                 callback(
                     "reprocess_progress",
                     {"processed": index, "total": len(prepared), "failures": failures},
                 )
-        exported = self._run_exports(run_id, force=True)  # S2.5.2：reprocess 后强制刷新输出文件
+        if tracker is not None:
+            tracker.end_stage("reprocess_extract")
+            tracker.begin_stage("reprocess_export")
+        exported = self._run_exports(run_id, force=True)
+        if tracker is not None:
+            tracker.end_stage("reprocess_export")
+            tracker.finish()
         self.metrics.record_stage("reprocess", time.monotonic() - reprocess_started)
         summary = {
             "run_id": run_id,
@@ -437,11 +514,23 @@ class _PipelineRun(_PipelineBase):
         max_pages: int | None = None,
         callback: Callable[[str, dict[str, Any]], None] | None = None,
         should_stop: Callable[[], bool] | None = None,
+        on_progress: Callable[[TaskProgressEvent], None] | None = None,
     ) -> dict[str, Any]:
         self.resource_guard.check(force=True)
         self.run_control.reset()
         self.egress.reconnect_task()
         run_id = self.state.start_run(self.config.project_name, str(self.config.path))
+
+        stages = (
+            StageSpec(name="stream_ingest", weight=1.0, display_name="流式接收", has_items=True),
+            StageSpec(name="stream_export", weight=1.0, display_name="流式导出", has_items=False),
+        )
+        tracker: ProgressTracker | None = None
+        if on_progress is not None:
+            tracker = ProgressTracker(list(stages), task_id=run_id, on_event=on_progress)
+            tracker.start()
+            tracker.begin_stage("stream_ingest")
+
         total = 0
         completed = 0
         status = "succeeded"
@@ -452,7 +541,6 @@ class _PipelineRun(_PipelineBase):
                     status = "cancelled"
                     self.egress.disconnect_task()
                     break
-                # S2.5.4：should_stop 谓词在流式模式同样生效，触发即取消收尾
                 if should_stop and should_stop():
                     status = "cancelled"
                     self.egress.disconnect_task()
@@ -481,7 +569,6 @@ class _PipelineRun(_PipelineBase):
                             self.egress.disconnect_task()
                             stream_stopped = True
                             break
-                        # S2.5.4：内层消息循环同样响应 should_stop（取消即收尾）
                         if should_stop and should_stop():
                             status = "cancelled"
                             self.egress.disconnect_task()
@@ -505,6 +592,8 @@ class _PipelineRun(_PipelineBase):
                             count=len(collected), processor="stream",
                         )
                         completed += 1
+                        if tracker is not None:
+                            tracker.set_item_progress(completed, max(1, maximum if max_pages is None else max_pages))
                         if callback:
                             callback(
                                 "stream_progress",
@@ -518,59 +607,78 @@ class _PipelineRun(_PipelineBase):
                     if stream_stopped:
                         break
                 else:
-                    self._emit("before_fetch", run_id=run_id, request=request)
-                    should_continue = self.run_control.wait_if_paused
-                    records = (
-                        collect_websocket(self.config, request, should_continue, self.egress)
-                        if self.config.source_kind == "websocket"
-                        else collect_sse(self.config, request, should_continue, self.egress)
-                    )
-                    for transformer in self._transformers:
-                        records = [transform_record(transformer, record) for record in records]
-                    total += self.state.save_records(run_id, request, records)
-                    self.record_sinks.write(run_id, request, records)
-                    self._emit(
-                        "after_extract", run_id=run_id, result=None, records=records,
-                        count=len(records), processor="stream",
-                    )
-                    completed += 1
-                    if callback:
-                        callback(
-                            "stream_progress",
-                            {"processed": completed, "limit": max_pages, "messages": total},
+                    if self.config.source_kind == "sse":
+                        stream_results = collect_sse(
+                            request.url,
+                            self.config,
+                            self.egress,
+                            max_messages=max_pages,
+                            should_stop=should_stop,
                         )
-                    if self.run_control.read().get("stop_requested"):
-                        status = "cancelled"
-                        self.egress.disconnect_task()
-                        break
-            exported = self._run_exports(run_id)
-            summary = {
-                "run_id": run_id,
-                "status": status,
-                "messages": total,
-                "resource_profile": profile_for(self.config).to_dict(),
-                **self.state.stats(run_id),
-                "export": exported,
-            }
-            summary["metrics"] = self.metrics.write(self.workspace / "output", self.workspace)
-            summary["plugins"] = self.registry.describe()
-            summary["storage_warnings"] = list(self.record_sinks.errors)
-            self._emit("after_run", run_id=run_id, summary=summary)
-            self._write_pipeline_summary(summary)
-            self.state.finish_run(run_id, status, summary)
-            return summary
+                    elif self.config.source_kind == "websocket":
+                        stream_results = collect_websocket(
+                            request.url,
+                            self.config,
+                            self.egress,
+                            max_messages=max_pages,
+                            should_stop=should_stop,
+                        )
+                    else:
+                        stream_results = []
+                    for item in stream_results:
+                        message, meta = item if isinstance(item, tuple) and len(item) == 2 else (item, {})
+                        result = FetchResult(
+                            request, request.url, 200, {"content-type": "text/event-stream"},
+                            (message if isinstance(message, (bytes, bytearray)) else str(message).encode("utf-8")),
+                            float(meta.get("elapsed", 0) or 0),
+                        )
+                        result.meta.update(meta)
+                        processor_name = extractors.choose_processor(result)
+                        collected = []
+                        if processor_name in self.registry.processors:
+                            records = self._processor(processor_name).process(result).records
+                            for transformer in self._transformers:
+                                records = [transform_record(transformer, record) for record in records]
+                            collected.extend(records)
+                        total += self.state.save_records(run_id, request, collected)
+                        self.record_sinks.write(run_id, request, collected)
+                        completed += 1
+                        if tracker is not None:
+                            tracker.set_item_progress(
+                                completed, max(1, max_pages if max_pages is not None else completed)
+                            )
+                        if callback:
+                            callback(
+                                "stream_progress",
+                                {"processed": completed, "limit": max_pages, "messages": total},
+                            )
+            if tracker is not None:
+                tracker.end_stage("stream_ingest")
+                tracker.begin_stage("stream_export")
+            exported = self._stage_exports(run_id, status, completed, None, callback)
+            if tracker is not None:
+                tracker.end_stage("stream_export")
+                if status == "cancelled":
+                    tracker.cancel()
+                else:
+                    tracker.finish()
+            self.state.finish_run(run_id, status, {"processed": completed, **self.state.stats(run_id)})
+            return exported
         except KeyboardInterrupt:
-            # E6：流式模式 Ctrl+C 也按取消处理并收尾，避免 run 卡在 running
+            status = "cancelled"
             self.egress.disconnect_task()
-            summary = {"run_id": run_id, "status": "cancelled", "messages": total}
-            self._write_pipeline_summary(summary)
-            self.state.finish_run(run_id, "cancelled", summary)
+            self.state.finish_run(run_id, status, {"processed": completed})
+            if tracker is not None:
+                tracker.cancel()
             raise
         except Exception as exc:
-            self.state.add_error(run_id, None, "stream", exc, retryable=True)
+            status = "failed"
+            self.egress.disconnect_task()
             self.diagnostics.failure(run_id, "stream", exc)
             self._emit("on_error", run_id=run_id, stage="stream", error=exc, request=None)
-            summary = {"run_id": run_id, "status": "failed", "messages": total, "error": str(exc)}
-            self._write_pipeline_summary(summary)  # S1.2.1：流式失败路径补写 summary（源B P1#36）
-            self.state.finish_run(run_id, "failed", summary)
+            summary = {"run_id": run_id, "status": status, "processed": completed, "error": str(exc), **self.state.stats(run_id)}
+            self._write_pipeline_summary(summary)
+            self.state.finish_run(run_id, status, summary)
+            if tracker is not None:
+                tracker.fail(str(exc))
             raise

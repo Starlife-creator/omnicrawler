@@ -74,6 +74,7 @@ output/*
 *.sqlite3
 *.sqlite3-*
 tmp/
+tmp_proj/
 
 # === Environment & Secrets ===
 .env

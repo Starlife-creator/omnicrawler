@@ -39,6 +39,8 @@ _DEPRECATED_MODULE_MAP = {
     "application_service": "services.application_service",
     "archives": "fetching.archives",
     "artifact_integrity": "quality.artifact_integrity",
+    "auto_apply": "quality.auto_apply",
+    "llm_candidate_generator": "quality.llm_candidate_generator",
     "async_fetcher": "fetching.async_fetcher",
     "auto_pilot": "runtime.auto_pilot",
     "benchmark_corpus": "services.benchmark_corpus",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 
@@ -45,6 +45,24 @@ class CrawlRequest:
         self._fingerprint_cache = hashlib.sha256(stable.encode("utf-8")).hexdigest()
         return self._fingerprint_cache
 
+    def with_url(self, new_url: str) -> CrawlRequest:
+        """返回一个替换了 url 的新请求（其他字段浅拷贝，指纹缓存重置）。"""
+        if new_url == self.url:
+            return self
+        new = replace(self, url=new_url)
+        # init=False 的 _fingerprint_cache 必须走 object.__setattr__
+        object.__setattr__(new, "_fingerprint_cache", None)
+        return new
+
+    def with_meta_update(self, updates: dict[str, Any]) -> CrawlRequest:
+        """返回新请求，meta 合并 updates（值级覆盖），指纹缓存重置。"""
+        if not updates:
+            return self
+        new_meta = {**self.meta, **updates}
+        new = replace(self, meta=new_meta)
+        object.__setattr__(new, "_fingerprint_cache", None)
+        return new
+
 
 @dataclass(slots=True)
 class FetchResult:
@@ -67,6 +85,16 @@ class FetchResult:
         if self._content_hash_cache is None:
             self._content_hash_cache = hashlib.sha256(self.body).hexdigest()
         return self._content_hash_cache
+
+    def with_final_url(self, new_final_url: str) -> FetchResult:
+        if new_final_url == self.final_url:
+            return self
+        return replace(self, final_url=new_final_url)
+
+    def with_meta_update(self, updates: dict[str, Any]) -> FetchResult:
+        if not updates:
+            return self
+        return replace(self, meta={**self.meta, **updates})
 
 
 @dataclass(slots=True)

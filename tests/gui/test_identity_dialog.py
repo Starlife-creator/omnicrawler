@@ -28,6 +28,8 @@ def _make_dialog(monkeypatch, tmp_path):
     from omnicrawl.plugins import trust as trust_module
 
     monkeypatch.setattr(trust_module, "DEFAULT_TRUST_LIST", tmp_path / "trusted_users.json")
+    # 隔离身份存储：避免读到用户真实 ~/.omnicrawl/secrets.bin（测试期望空状态）
+    monkeypatch.setenv("OMNICRAWL_SECRET_STORE_PATH", str(tmp_path / "secrets.bin"))
     return IdentityDialog(parent=None)
 
 

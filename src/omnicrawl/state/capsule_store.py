@@ -1,0 +1,135 @@
+"""证据胶囊：append-only 单真源日志（阶段 0 H2）。
+
+设计决策（H2）：
+- 胶囊的唯一真源是「按 run_id 分片的追加日志文件」，决策树/时间线由
+  parent_id 现场构建，**不建 decision_graph 表**（避免双存储不一致）。
+- 行格式：每行一个 JSON 对象；坏行读取时跳过（追加日志允许容错）。
+- 轮转：单个 run 超过 max_lines 或超过 keep_days → gzip 压缩到 archive/。
+
+胶囊由 pipeline（OMNICRAWL_CAPSULE_ENABLED=true 时）写入，见批 B-1。
+"""
+
+from __future__ import annotations
+
+import gzip
+import json
+import os
+import shutil
+import time
+import uuid
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any
+
+from ..core.utils import utcnow
+
+_CAPSULE_KEEP_DAYS = 7
+_CAPSULE_MAX_LINES = 10_000
+
+
+@dataclass(slots=True)
+class Capsule:
+    """一条提取动作证据胶囊。"""
+
+    run_id: str
+    action_type: str  # extract_field | exception（http 不生成胶囊，用 raw 归档替代）
+    capsule_id: str = ""  # 缺省由 append() 自动生成
+    action_name: str = ""
+    parent_id: str | None = None
+    timestamp: str = ""
+    input: dict[str, Any] = field(default_factory=dict)
+    output: dict[str, Any] = field(default_factory=dict)
+    code_location: str = ""
+    environment: dict[str, str] = field(default_factory=dict)
+
+    def to_line(self) -> str:
+        return json.dumps(asdict(self), ensure_ascii=False, sort_keys=True, default=str)
+
+
+class CapsuleStore:
+    """胶囊日志读写与轮转。线程安全通过 append 的 O_APPEND 原子性 + 调用方串行保证。"""
+
+    def __init__(
+        self,
+        base_dir: Path,
+        *,
+        keep_days: int = _CAPSULE_KEEP_DAYS,
+        max_lines: int = _CAPSULE_MAX_LINES,
+    ) -> None:
+        self.base_dir = Path(base_dir)
+        self.keep_days = keep_days
+        self.max_lines = max_lines
+
+    # ── 写 ──────────────────────────────────────────────
+    def append(self, run_id: str, capsule: Capsule) -> Path:
+        """原子追加一条胶囊（单行写入 + fsync），返回日志文件路径。"""
+        if not capsule.timestamp:
+            capsule.timestamp = utcnow()
+        if not capsule.capsule_id:
+            capsule.capsule_id = uuid.uuid4().hex
+        path = self._run_file(run_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(capsule.to_line() + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        return path
+
+    # ── 读 ──────────────────────────────────────────────
+    def read(self, run_id: str) -> list[Capsule]:
+        """按写入顺序读取一个 run 的全部胶囊；坏行跳过。"""
+        path = self._run_file(run_id)
+        if not path.is_file():
+            return []
+        capsules: list[Capsule] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                capsules.append(Capsule(**json.loads(line)))
+            except (json.JSONDecodeError, TypeError):
+                continue  # 坏行容错
+        return capsules
+
+    def count(self, run_id: str) -> int:
+        path = self._run_file(run_id)
+        if not path.is_file():
+            return 0
+        return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+
+    # ── 轮转 ────────────────────────────────────────────
+    def rotate(self) -> int:
+        """行数超限或超时的 run 日志压缩到 archive/ 并删除原文件。
+
+        Returns:
+            被压缩/清理的日志文件数。
+        """
+        archive_dir = self.base_dir / "archive"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        now = time.time()
+        rotated = 0
+        for path in sorted(self.base_dir.glob("*.log")):
+            if not path.is_file():
+                continue
+            lines = sum(1 for _ in path.open("r", encoding="utf-8"))
+            expired = False
+            if lines > self.max_lines:
+                expired = True
+            else:
+                try:
+                    age = now - path.stat().st_mtime
+                except OSError:
+                    continue
+                expired = age > self.keep_days * 86400
+            if not expired:
+                continue
+            target = archive_dir / f"{path.stem}.log.gz"
+            with path.open("rb") as src, gzip.open(target, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+            path.unlink(missing_ok=True)
+            rotated += 1
+        return rotated
+
+    def _run_file(self, run_id: str) -> Path:
+        return self.base_dir / f"{run_id}.log"

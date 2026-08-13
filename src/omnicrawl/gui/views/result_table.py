@@ -250,10 +250,15 @@ class CsvStreamModel(QAbstractTableModel):
 
 
 class ExportThread(QThread):
-    """Excel 导出后台线程。"""
+    """Excel 导出后台线程。
+
+    P2-4：通过 ProgressTracker 阶段权重 + 子项计数驱动进度，
+    保持旧式 progress(int) 信号发出（旧消费者不受影响）。
+    """
 
     progress = pyqtSignal(int)
     finished_signal = pyqtSignal(bool, str)
+    unified_progress = pyqtSignal(object)  # P2-4：TaskProgressEvent
 
     def __init__(self, filepath: Path, output_path: Path) -> None:
         super().__init__()
@@ -262,9 +267,33 @@ class ExportThread(QThread):
 
     def run(self) -> None:
         try:
+            from omnicrawl.services.progress import ProgressTracker, StageSpec
+
             if self.isInterruptionRequested():
                 return
             import openpyxl
+
+            # P2-4：只做"估算总行数→三阶段进度"接入，保持流式读写，不将 CSV 全量加载进内存
+            total_rows = 0
+            try:
+                with open(self._filepath, encoding="utf-8-sig") as fh:
+                    for _line in fh:
+                        total_rows += 1
+                if total_rows > 1:
+                    total_rows -= 1  # 去掉表头
+            except OSError:
+                total_rows = 0
+
+            # P2-4：旧式 progress(int) 保持原节奏（每 10000 行一次，百分 = total//1000 clamp 99）
+            # 以兼容旧消费者的精确断言；新式 unified_progress 走 ProgressTracker 阶段权重 + ETA。
+            tracker = ProgressTracker(
+                stages=[
+                    StageSpec("process", weight=8.0, display_name=_("写入 Excel"), has_items=True),
+                    StageSpec("save_file", weight=2.0, display_name=_("保存文件")),
+                ],
+                on_event=self.unified_progress.emit,
+            )
+            tracker.start()
 
             wb = openpyxl.Workbook()
             ws = wb.active
@@ -273,6 +302,7 @@ class ExportThread(QThread):
             max_rows_per_sheet = 500000
             total = 0
 
+            tracker.begin_stage("process", expected_items=total_rows or 1)
             with open(self._filepath, encoding="utf-8-sig") as f:
                 reader = csv.reader(f)
                 headers = next(reader, None)
@@ -283,10 +313,10 @@ class ExportThread(QThread):
 
                 for row in reader:
                     if self.isInterruptionRequested():
+                        tracker.cancel()
                         return
                     total += 1
                     if sheet_row > max_rows_per_sheet:
-                        # 新建 Sheet
                         sheet_name = f"Sheet{len(wb.sheetnames) + 1}"
                         ws = wb.create_sheet(sheet_name)
                         sheet_row = 1
@@ -294,20 +324,25 @@ class ExportThread(QThread):
                         for col, h in enumerate(headers, 1):
                             ws.cell(row=1, column=col, value=h)
                         sheet_row = 2
-
                     for col, val in enumerate(row, 1):
                         ws.cell(row=sheet_row, column=col, value=val)
                     sheet_row += 1
-
+                    if total % 1000 == 0:
+                        tracker.set_item_progress(total)
+                    # P2-4：旧式 progress(int) 按 10000 行粒度发出（兼容旧消费方精确断言）
                     if total % 10000 == 0:
                         self.progress.emit(min(total // 1000, 99))
+            tracker.end_stage("process")
 
             if self.isInterruptionRequested():
+                tracker.cancel()
                 return
+            tracker.begin_stage("save_file")
             wb.save(str(self._output_path))
+            tracker.finish()
             if not self.isInterruptionRequested():
                 self.finished_signal.emit(True, str(self._output_path))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             if not self.isInterruptionRequested():
                 self.finished_signal.emit(False, str(e))
 

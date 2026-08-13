@@ -126,25 +126,22 @@ table.data-table td:nth-child(2)
   <tr><th>语法</th><th>说明</th><th>示例</th></tr>
   <tr><td><code>$</code></td><td>根对象</td><td><code>$</code></td></tr>
   <tr><td><code>.key</code></td><td>访问属性</td><td><code>$.data</code></td></tr>
-  <tr><td><code>..key</code></td><td>递归搜索</td><td><code>$..title</code> → 任意层级的 title</td></tr>
   <tr><td><code>[n]</code></td><td>数组索引</td><td><code>$.list[0]</code> → 第一个元素</td></tr>
   <tr><td><code>[*]</code></td><td>所有数组元素</td><td><code>$.data.list[*].title</code></td></tr>
-  <tr><td><code>[?(@.key=='val')]</code></td><td>过滤条件</td><td><code>$..items[?(@.price<100)]</code></td></tr>
-  <tr><td><code>[start:end]</code></td><td>数组切片</td><td><code>$.list[0:10]</code></td></tr>
+  <tr><td><code>..key</code></td><td>递归搜索（<strong>暂不支持</strong>，在线验证会直接报错）</td><td><code>$..title</code></td></tr>
+  <tr><td><code>[?(@.key=='val')]</code></td><td>过滤条件（<strong>暂不支持</strong>）</td><td><code>$.items[?(@.price&lt;100)]</code></td></tr>
+  <tr><td><code>[start:end]</code></td><td>数组切片（<strong>暂不支持</strong>，请改用逐项导航）</td><td><code>$.list[0:10]</code></td></tr>
 </table>
 
 <h3>真实示例</h3>
 <pre># REST API 返回数据中的所有标题
 $.data.items[*].title
 
-# 递归搜索所有 author 字段
-$..author
+# 访问嵌套属性（逐层导航）
+$.store.book[0].title
 
-# 过滤价格小于 100 的商品名
-$.products[?(@.price<100)].name
-
-# 获取列表前 5 条
-$.data.list[0:5]
+# 数组展开后取属性
+$.products[*].name
 </pre>
 
 <div class="tip">

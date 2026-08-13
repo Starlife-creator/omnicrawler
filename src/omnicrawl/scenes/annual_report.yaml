@@ -1,0 +1,47 @@
+# 年度报告场景（批 C-2 bundled 默认，只读出厂快照）
+#
+# 结构：scene 名 + slots（槽位定义）+ genes（初始选择器基因）。
+# 仅在初始化时经 SceneStore.import_bundled_scenes 幂等导入 DB；
+# 运行时所有数据（基因命中、槽位修改、用户场景）以 DB 为单一真源，
+# 本文件不再被读取。
+scene: annual_report
+name: 年度报告
+
+slots:
+  - key: company
+    name: 公司名称
+    extractor: regex
+    pattern: '公司(?:名称|全称)[：:]\s*([^\s，。,；]+)'
+    value_type: text
+    required: true
+  - key: revenue
+    name: 营业收入
+    extractor: regex
+    pattern: '营业收入[^0-9]{0,8}([\d,]+\.?\d*)\s*(亿元|万元|元)'
+    value_type: money
+    required: true
+  - key: net_profit
+    name: 归属于上市公司股东的净利润
+    extractor: regex
+    pattern: '归属于上市公司股东的净利润[^0-9]{0,8}([\d,]+\.?\d*)\s*(亿元|万元|元)'
+    value_type: money
+    required: true
+  - key: report_date
+    name: 报告日期
+    extractor: regex
+    pattern: '(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日'
+    value_type: date
+
+genes:
+  - slot: company
+    selector: '公司(?:名称|全称)[：:]\s*([^\s，。,；]+)'
+    selector_type: regex
+  - slot: revenue
+    selector: '营业收入[^0-9]{0,8}([\d,]+\.?\d*)'
+    selector_type: regex
+  - slot: net_profit
+    selector: '归属于上市公司股东的净利润[^0-9]{0,8}([\d,]+\.?\d*)'
+    selector_type: regex
+  - slot: report_date
+    selector: '(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日'
+    selector_type: regex

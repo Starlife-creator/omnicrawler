@@ -903,7 +903,14 @@ class Step3FieldsPage(QWizardPage):
             QMessageBox.warning(self, _("提示"), _("选择器为空"))
             return
 
-        # 获取测试 URL
+        # JSONPath：本地样本在线验证，无需测试 URL 与网络请求
+        if selector_type == "jsonpath":
+            from .jsonpath_dialog import JsonPathTestDialog
+
+            JsonPathTestDialog(selector, self).exec()
+            return
+
+        # 获取测试 URL（CSS/XPath 需抓取页面）
         from PyQt6.QtWidgets import QInputDialog
         test_url, ok = QInputDialog.getText(
             self, _("测试选择器"), _("输入测试页面 URL:"),

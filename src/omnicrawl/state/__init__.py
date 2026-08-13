@@ -12,6 +12,7 @@
 - checkpoint — 阶段检查点
 """
 
+from .capsule_store import Capsule, CapsuleStore
 from .state_store import StateStore
 
-__all__ = ["StateStore"]
+__all__ = ["StateStore", "Capsule", "CapsuleStore"]

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..plugins.plugin_runtime import build_extension
 from ._mixin_base import _PipelineBase
+
+if TYPE_CHECKING:
+    from ..core.config import AppConfig
 
 
 class _PipelineBuilders(_PipelineBase):
@@ -43,7 +46,14 @@ class _PipelineBuilders(_PipelineBase):
             instances.append(build_extension(self.registry.transformers[name], self.config, options))
         return instances
 
-    def _processor(self, name: str, *, parser: bool = False, extractor: bool = False) -> Any:
+    def _processor(
+        self,
+        name: str,
+        *,
+        parser: bool = False,
+        extractor: bool = False,
+        config: AppConfig | None = None,
+    ) -> Any:
         if parser and extractor:
             raise ValueError("An extension cannot be selected as both parser and extractor")
         bucket = (
@@ -52,6 +62,18 @@ class _PipelineBuilders(_PipelineBase):
             else self.registry.processors
         )
         kind = "parser" if parser else "extractor" if extractor else "processor"
+        if config is not None:
+            # B-2 闸门 per-URL 覆盖：配置与共享实例不同，走独立实例（不缓存，避免串文档）
+            if name not in bucket:
+                raise KeyError(f"Unknown {kind} plugin: {name}")
+            options = config.section("extract").get(f"{kind}_options", {})
+            if not isinstance(options, dict):
+                raise TypeError(f"extract.{kind}_options must be a mapping")
+            # 与下方缓存路径一致的命名 options 判定
+            named_form = bool(options) and all(key in bucket for key in options)
+            if named_form:
+                options = options.get(name, {})
+            return build_extension(bucket[name], config, options)
         cache_key = f"{kind}:{name}"
         # S2.5.41：实例缓存加锁，消除多线程 check-then-act 竞态
         with self._processor_lock:

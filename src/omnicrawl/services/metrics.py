@@ -10,6 +10,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from ..core.models import FetchResult
+from ..core.site_aliases import SiteAliasRegistry
+from ..core.structure_fingerprint import StructureFingerprintRegistry, structure_fingerprint
 from ..core.utils import atomic_write, utcnow
 
 MAX_TIMING_SAMPLES = 10_000
@@ -37,6 +39,8 @@ class RunMetrics:
         self._stage_totals: dict[str, float] = defaultdict(float)
         self._stage_maximums: dict[str, float] = defaultdict(float)
         self._gauges: dict[str, float] = {}
+        # P2-1：结构指纹注册表 — 跟踪本 run 内出现的记录结构模板
+        self._structure_registry = StructureFingerprintRegistry()
 
     def increment(self, name: str, value: int = 1, **labels: Any) -> None:
         normalized = tuple(sorted((str(key), str(item)) for key, item in labels.items()))
@@ -48,7 +52,13 @@ class RunMetrics:
             self._gauges[name] = float(value)
 
     def record_fetch(self, result: FetchResult, *, engine: str, escalated: bool = False) -> None:
-        host = (urlsplit(result.final_url).hostname or "unknown").casefold()
+        raw_host = (urlsplit(result.final_url).hostname or "unknown").casefold()
+        # P2-5：指标侧把多域名 / 多环境镜像归并为 canonical（例如 m.→主站、preview→prod）。
+        # 失败回退到 raw_host，绝对不让观测层影响抓取主流程。
+        try:
+            host = SiteAliasRegistry.default().resolve(raw_host) or raw_host
+        except Exception:  # noqa: BLE001 — 别名解析异常绝不影响主流程
+            host = raw_host
         self.increment("omnicrawl_requests_total", host=host, engine=engine, status=result.status)
         self.increment("omnicrawl_response_bytes_total", len(result.body), host=host)
         if escalated:
@@ -62,6 +72,25 @@ class RunMetrics:
                 host,
                 float(result.elapsed_seconds),
             )
+
+    def record_extracted(self, record: Any) -> None:
+        """P2-1：记录一条 ExtractedRecord 的结构指纹。
+
+        仅取 record.data 的键集合 + 类型签名做结构指纹，
+        不含值内容；用于"本 run 内有几种结构模板"聚合和结构漂移检测。
+        异常绝不影响主流程。
+        """
+        try:
+            data = record.data
+            rtype = getattr(record, "record_type", "")
+            source_url = getattr(record, "source_url", "")
+            sig = structure_fingerprint(data, record_type=rtype)
+            is_drift = self._structure_registry.observe(sig, source_url)
+            self.increment("omnicrawl_structure_templates_total", template=sig)
+            if is_drift:
+                self.increment("omnicrawl_structure_drift_total", url=source_url)
+        except Exception:  # noqa: BLE001 — 观测层异常不得影响提取主流程
+            pass
 
     def record_stage(self, stage: str, seconds: float) -> None:
         """Record a completed pipeline stage without retaining unbounded samples."""
@@ -126,6 +155,11 @@ class RunMetrics:
             "stage_durations": stages,
             "gauges": gauges,
             "system": system,
+            # P2-1：结构模板摘要（unique 模板数 + top 签名）
+            "structure_templates": {
+                "unique": self._structure_registry.unique_count(),
+                "top": self._structure_registry.top_signatures(5),
+            },
         }
 
     @staticmethod

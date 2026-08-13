@@ -107,6 +107,14 @@ class TemplateCatalog:
         records = self._records_by_id()
         if template_id in records:
             return records[template_id]
+        # builtin: 前缀 = 内置模板相对路径引用（YAML 双格式约定，见 b2_domain_mappings_default.yaml）。
+        # 解析为 builtin 目录下的文件路径，与元数据 id 等价可查。
+        if template_id.startswith("builtin:"):
+            rel = Path(template_id[len("builtin:") :])
+            target = (self.builtin_dir / rel).resolve()
+            for record in records.values():
+                if record.path.resolve() == target:
+                    return record
         matches = [r for r in records.values() if r.path.stem == template_id or r.metadata.name == template_id]
         return matches[0] if len(matches) == 1 else None
 

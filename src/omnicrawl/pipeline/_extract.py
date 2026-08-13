@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import mimetypes
+import re
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,24 @@ from ..quality.quality import assess_records
 from ._mixin_base import _PipelineBase
 
 LOGGER = logging.getLogger("omnicrawl")
+
+# B-2 闸门：模板渲染后可能残留的未填充占位符（如 {{list_selector}}）
+_PLACEHOLDER_RE = re.compile(r"\{\{.*?\}\}")
+
+
+def _strip_placeholders(value: Any) -> Any:
+    """递归清空模板渲染后残留的 {{...}} 占位符，避免字面文本泄漏进选择器。
+
+    占位符清空后把连续空白折叠为单个空格，避免选择器中出现无效的双空格分隔。
+    """
+    if isinstance(value, dict):
+        return {key: _strip_placeholders(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_strip_placeholders(item) for item in value]
+    if isinstance(value, str):
+        cleaned = _PLACEHOLDER_RE.sub("", value).strip()
+        return re.sub(r"\s+", " ", cleaned)
+    return value
 
 
 class _PipelineExtract(_PipelineBase):
@@ -93,12 +112,16 @@ class _PipelineExtract(_PipelineBase):
             return
 
         # === Stage: Extract ===
-        mode = str(self.config.section("extract").get("mode", "auto")).lower()
+        # B-2 闸门：逐 URL 模板强制覆盖（source.seed_template_overrides）。
+        # 命中时仅本条文档使用覆盖后的提取配置（临时 AppConfig，不改共享 self.config，线程安全）。
+        per_url_extract, per_url_config = self._per_url_extract_override(result)
+        extract_sec = per_url_extract if per_url_extract is not None else self.config.section("extract")
+        mode = str(extract_sec.get("mode", "auto")).lower()
         # S4.5 P3#136：复用上方 binary 判定的 processor_name（auto 模式）
         if mode != "auto":
             processor_name = mode
-        parser_name = str(self.config.section("extract").get("parser", "")).strip().casefold()
-        extractor_name = str(self.config.section("extract").get("extractor", "")).strip().casefold()
+        parser_name = str(extract_sec.get("parser", "")).strip().casefold()
+        extractor_name = str(extract_sec.get("extractor", "")).strip().casefold()
         if parser_name and extractor_name:
             raise ValueError("extract.parser and extract.extractor cannot both be selected")
         if parser_name or extractor_name or processor_name in self.registry.processors:
@@ -106,15 +129,20 @@ class _PipelineExtract(_PipelineBase):
                 # S2.5.33：提取阶段整体隔离——异常以 ExtractionError 上抛，
                 # 上游记为 stage="extract" 而非 "fetch"
                 processor = (
-                    self._processor(parser_name, parser=True)
+                    self._processor(parser_name, parser=True, config=per_url_config)
                     if parser_name
-                    else self._processor(extractor_name, extractor=True)
+                    else self._processor(extractor_name, extractor=True, config=per_url_config)
                     if extractor_name
-                    else self._processor(processor_name)
+                    else self._processor(processor_name, config=per_url_config)
                 )
                 outcome = processor.process(result)
                 for transformer in self._transformers:
                     outcome.records = [transform_record(transformer, record) for record in outcome.records]
+                # B-1 证据胶囊：提取后、归一化前（门控 OMNICRAWL_CAPSULE_ENABLED=true）
+                self._capture_capsules(run_id, result, outcome.records, extract_sec)
+                # AutoDataCleaner 值清洗：L1 幂等 + L2 规则（quality.normalize，默认开），
+                # 在主题筛选前执行，让 enrich/质量评估/导出消费已清洗的值
+                self._normalize_records(outcome.records)
                 topic_config = self.config.section("selection").get("topic", {})
                 if (
                     isinstance(topic_config, dict)
@@ -122,7 +150,8 @@ class _PipelineExtract(_PipelineBase):
                     and topic_config.get("filter_records", True)
                 ):
                     outcome.records = filter_records(outcome.records, topic_config)
-                extract_config = self.config.section("extract")
+                # B-2：质量评估使用覆盖后的提取段（fields/quality_threshold/unique_by 同步生效）
+                extract_config = extract_sec
                 fields = extract_config.get("fields", {})
                 # S4.5 P3#137：enrich 增加开关（extract.enrich 默认开，兼容现状）
                 intelligence = (
@@ -184,6 +213,153 @@ class _PipelineExtract(_PipelineBase):
             allowed, _reason = self.scope.allowed(child.url, str(root) if root else None)
             if allowed:
                 self.state.enqueue(child)
+
+    def _per_url_extract_override(
+        self, result: FetchResult
+    ) -> tuple[dict[str, Any] | None, Any | None]:
+        """B-2 闸门：命中 ``source.seed_template_overrides`` 时返回覆盖后的提取配置。
+
+        Returns:
+            ``(extract_sec, temp_config)``：
+            - 命中：``extract_sec`` 为「覆盖模板 extract 段 ⊕ 基础 extract 段」的合并结果
+              （模板优先，base 未定义字段保留）；``temp_config`` 为仅本条文档生效的
+              临时 AppConfig（供 ``_processor(config=...)`` 构建独立实例）。
+            - 未命中 / 模板缺失 / 应用失败：``(None, None)``，调用方按原逻辑使用共享
+              ``self.config``。
+
+        线程安全：全程只读 ``self.config`` 并新建临时对象，不改共享状态，多线程抓取下安全。
+        """
+        raw_source = self.config.raw.get("source", {})
+        if not isinstance(raw_source, dict):
+            return None, None
+        overrides = raw_source.get("seed_template_overrides", {})
+        if not isinstance(overrides, dict) or not overrides:
+            return None, None
+        # 先按原始请求 URL 匹配（种子页/重定向前的 URL），再按最终 URL 兜底
+        template_id = overrides.get(result.request.url)
+        if template_id is None:
+            template_id = overrides.get(result.final_url)
+        if not template_id or not str(template_id).strip():
+            return None, None
+        template_id = str(template_id).strip()
+        url = result.request.url or result.final_url
+        try:
+            from dataclasses import replace as _replace
+
+            from ..core.utils import deep_merge
+            from ..templates.template_catalog import bundled_template_catalog
+
+            catalog = bundled_template_catalog()
+            record = catalog.get(template_id)
+            if record is None:
+                LOGGER.warning("per-URL 覆盖模板 %r 不存在，URL %s 按默认提取", template_id, url)
+                return None, None
+            rendered = catalog.render(record, {"seed_url": url}, strict=False)
+            tpl_extract = rendered.get("extract", {})
+            if not isinstance(tpl_extract, dict):
+                tpl_extract = {}
+            merged = deep_merge(
+                self.config.section("extract"), _strip_placeholders(tpl_extract)
+            )
+            temp_raw = dict(self.config.raw)
+            temp_raw["extract"] = merged
+            temp_config = _replace(self.config, raw=temp_raw)
+            return merged, temp_config
+        except Exception as exc:  # noqa: BLE001 —— 覆盖失败不阻断采集，回退默认提取
+            LOGGER.warning("per-URL 覆盖 %s 应用失败，回退默认提取：%s", url, exc)
+            return None, None
+
+    def _capture_capsules(
+        self,
+        run_id: str,
+        result: FetchResult,
+        records: list[Any],
+        extract_sec: dict[str, Any],
+    ) -> None:
+        """B-1 证据胶囊埋点：为每个字段的提取动作写一条胶囊（默认关闭）。
+
+        门控：环境变量 ``OMNICRAWL_CAPSULE_ENABLED=true``。胶囊目录 = state 库
+        同目录 ``capsules/``（与 replay 默认一致）。记录原始提取输入（URL/规则）
+        与输出（dom_hash/值/证据），供 ``omnicrawl timeline`` 查看与
+        ``omnicrawl replay`` 限定重放。任何异常只 warning，绝不阻断采集。
+        """
+        import os
+
+        if str(os.environ.get("OMNICRAWL_CAPSULE_ENABLED", "")).casefold() != "true":
+            return
+        try:
+            from hashlib import sha256
+
+            from ..state.capsule_store import Capsule, CapsuleStore
+
+            fields = extract_sec.get("fields", {})
+            if not isinstance(fields, dict) or not fields:
+                return
+            store = CapsuleStore(Path(self.state.path).parent / "capsules")
+            dom_hash = sha256(result.body).hexdigest()
+            item_selector = str(extract_sec.get("item_selector", "") or "")
+            for field_name, rule in fields.items():
+                value: Any = None
+                trace: dict[str, Any] | None = None
+                for record in records:
+                    data = getattr(record, "data", None)
+                    if isinstance(data, dict) and field_name in data:
+                        value = data[field_name]
+                        evidence = getattr(record, "evidence", None)
+                        if isinstance(evidence, dict):
+                            trace = evidence.get(field_name)
+                        break
+                capsule = Capsule(
+                    run_id=run_id,
+                    action_type="extract_field",
+                    action_name=str(field_name),
+                    input={
+                        "url": result.final_url,
+                        "item_selector": item_selector,
+                        "rule": rule,
+                    },
+                    output={
+                        "dom_hash": dom_hash,
+                        "value": value,
+                        "trace": trace,
+                    },
+                    code_location="omnicrawl.pipeline._extract:_handle_result",
+                )
+                store.append(run_id, capsule)
+        except Exception as exc:  # noqa: BLE001 —— 埋点失败不阻断采集
+            LOGGER.warning("证据胶囊埋点跳过：%s", exc)
+
+    def _normalize_records(self, records: list[Any]) -> None:
+        """值级清洗（AutoDataCleaner 借鉴）：按 quality.normalize 配置执行。
+
+        任何异常都只记 warning，绝不阻断采集主流程。reprocess 复用
+        _handle_result 路径，自动获得相同清洗。
+        """
+        quality_cfg = self.config.section("quality")
+        norm_cfg = quality_cfg.get("normalize", {})
+        if not isinstance(norm_cfg, dict) or not norm_cfg.get("enabled", True):
+            return
+        if not records:
+            return
+        try:
+            from ..quality.normalizers import normalize_records, policy_from_config
+
+            fields = self.config.section("extract").get("fields", {})
+            report = normalize_records(
+                records,
+                fields=fields if isinstance(fields, dict) else None,
+                policy=policy_from_config(norm_cfg),
+            )
+            if report.total_changed:
+                LOGGER.debug(
+                    "值归一化：%d 个单元格变更（L1=%s L2=%s）：%s",
+                    report.total_changed,
+                    report.enabled_l1,
+                    report.enabled_l2,
+                    {f.name: f.kind for f in report.fields if f.changed_cells},
+                )
+        except Exception as exc:  # noqa: BLE001 —— 清洗失败不阻断采集
+            LOGGER.warning("值归一化跳过：%s", exc)
 
     def _stage_quality(
         self,

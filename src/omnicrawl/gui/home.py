@@ -170,6 +170,9 @@ class HomePage(QWidget):
     import_task = pyqtSignal()
     run_doctor = pyqtSignal()
     create_demo = pyqtSignal()
+    open_convert_tool = pyqtSignal()  # 格式互转：B-4 ConvertX 面板
+    open_scene = pyqtSignal()  # 场景管理：S4 场景/槽位/基因面板
+    open_run_compare = pyqtSignal()  # 运行对比：review/run_compare
 
     def __init__(self, parent: QWidget | None = None, project_root: str | None = None) -> None:
         super().__init__(parent)
@@ -271,7 +274,8 @@ class HomePage(QWidget):
             (_("新建任务"), self.open_wizard.emit), (_("最近任务"), self.open_recent.emit),
             (_("定时监测"), self.open_schedule.emit), (_("结果与复核"), self.open_results.emit),
             (_("导入任务"), self.import_task.emit), (_("系统体检"), self.run_doctor.emit),
-            (_("5分钟离线演示"), self.create_demo.emit),
+            (_("5分钟离线演示"), self.create_demo.emit), (_("格式互转（CSV/JSONL/Parquet…）"), self.open_convert_tool.emit),
+            (_("场景管理"), self.open_scene.emit), (_("运行对比"), self.open_run_compare.emit),
         )
         for index, (label, callback) in enumerate(actions):
             action_btn = QPushButton(label)

@@ -14,16 +14,19 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from ..commands import capsule as cmd_capsule
 from ..commands import components as cmd_components
 from ..commands import field as cmd_field
 from ..commands import init_project as cmd_init
 from ..commands import plan as cmd_plan
+from ..commands import queue as cmd_queue
 from ..commands import recovery as cmd_recovery
 from ..commands import run_status as cmd_status
 from ..commands import run_task as cmd_run
 from ..commands import schedule as cmd_schedule
 from ..commands import security as cmd_security
 from ..commands import template as cmd_template
+from ..commands import transform as cmd_transform
 from ..commands import worker as cmd_worker
 from ..commands import workspace as cmd_workspace
 from ..core.config import load_config, validate_config
@@ -368,6 +371,73 @@ def _run_worker(args: argparse.Namespace) -> None:
     _json(cmd_worker.execute(args.config, args.action, session=args.session or ""))
 
 
+@_register("queue")
+def _run_queue(args: argparse.Namespace) -> None:
+    # 嵌套子命令：config 仅 submit 携带，其余参数按需 getattr 兜底
+    _json(cmd_queue.execute(
+        getattr(args, "action", ""),
+        config=getattr(args, "config", ""),
+        redis_url=getattr(args, "redis_url", None),
+        local_path=getattr(args, "local_path", None),
+        worker_id=getattr(args, "worker_id", ""),
+        interval=getattr(args, "interval", 1.0),
+        max_tasks=getattr(args, "max_tasks", None),
+        executor=getattr(args, "executor", "backend"),
+    ))
+
+
+@_register("scene")
+def _run_scene(args: argparse.Namespace) -> None:
+    from ..commands import scene as cmd_scene
+
+    _json(cmd_scene.execute(
+        getattr(args, "scene_command", ""),
+        config=getattr(args, "config", ""),
+        scene=getattr(args, "scene", ""),
+        path=getattr(args, "path", ""),
+        candidate_id=getattr(args, "candidate_id", 0),
+        limit=getattr(args, "limit", 100),
+        pending_only=bool(getattr(args, "pending", False)),
+        accepted_only=bool(getattr(args, "accepted", False)),
+        min_fitness=getattr(args, "min_fitness", 0.2),
+        min_trials=getattr(args, "min_trials", 3),
+        apply=bool(getattr(args, "apply", False)),
+    ))
+
+
+@_register("timeline")
+def _run_timeline(args: argparse.Namespace) -> None:
+    _json(cmd_capsule.timeline(
+        args.config, run_id=args.run, capsule_dir=args.capsule_dir, limit=args.limit,
+    ))
+
+
+@_register("replay")
+def _run_replay(args: argparse.Namespace) -> None:
+    _json(cmd_capsule.replay(
+        args.config, run_id=args.run, field=args.field,
+        stage=args.stage, capsule_dir=args.capsule_dir, timeout=args.timeout,
+    ))
+
+
+@_register("transform")
+def _run_transform(args: argparse.Namespace) -> None:
+    _json(cmd_transform.execute(
+        args.source,
+        args.target,
+        maps=args.map,
+        transform_steps=args.transform_steps,
+        src_format=args.src_format,
+        dst_format=args.dst_format,
+        dry_run=args.dry_run,
+        confirm=args.confirm,
+        batch_size=args.batch_size,
+        max_records=args.max_records,
+        on_error=args.on_error,
+        preview_limit=args.preview_limit,
+    ))
+
+
 @_register("workspace")
 def _run_workspace(args: argparse.Namespace) -> None:
     from ..core.safe_action import require_explicit_apply
@@ -516,3 +586,42 @@ def _run_benchmark_cmd(args: argparse.Namespace) -> None:
 
     load_config(args.config)
     _run_benchmark(args)
+
+
+@_register("convert")
+def _run_convert(args: argparse.Namespace) -> None:
+    """P3-2 任意格式互转：Reader × Writer = N×N 矩阵。"""
+    from ..convertx import convert as convertx_convert
+
+    options: dict[str, Any] = {
+        "reader_jsonl": {"flat": bool(getattr(args, "flat", True))},
+        "writer_jsonl": {"nested": bool(getattr(args, "nested", False))},
+        "reader_duckdb": {"table": str(getattr(args, "table", "records"))},
+        "writer_duckdb": {"table": str(getattr(args, "table", "records"))},
+        "writer_parquet": {"compression": str(getattr(args, "compression", "zstd"))},
+    }
+    result = convertx_convert(
+        args.src,
+        args.dst,
+        src_format=getattr(args, "src_format", None) or None,
+        dst_format=getattr(args, "dst_format", None) or None,
+        options=options,
+    )
+    if not getattr(args, "quiet", False):
+        print(
+            f"✅ 转换完成: {result.source_format} → {result.target_format} "
+            f"共 {result.rows} 行, {len(result.columns)} 列 -> {result.output_path}"
+        )
+        for w in result.warnings:
+            print(f"  ⚠ {w}")
+    _json({
+        "ok": True,
+        "source_format": result.source_format,
+        "target_format": result.target_format,
+        "rows": result.rows,
+        "columns": result.columns,
+        "warnings": result.warnings,
+        "output": str(result.output_path) if result.output_path else None,
+        "extra": result.extra,
+    })
+

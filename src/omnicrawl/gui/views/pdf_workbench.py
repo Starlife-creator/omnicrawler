@@ -40,7 +40,11 @@ from ..widgets.toast import ToastManager
 
 # ── 工作线程 ──────────────────────────────────────────────────────
 class _PdfPipelineWorker(QThread):
-    """后台线程：执行 PDF 处理流水线，通过信号报告进度。"""
+    """后台线程：执行 PDF 处理流水线，通过信号报告进度。
+
+    P2-4：内部由 ProgressTracker 驱动（阶段权重 + 子项展开 + EMA ETA），
+    同时发出旧式 pyqtSignal，旧消费者代码无需修改。
+    """
 
     stage_started = pyqtSignal(str)       # 阶段名（中文）
     stage_finished = pyqtSignal(str, object)  # 阶段名, 结果 dict
@@ -49,6 +53,7 @@ class _PdfPipelineWorker(QThread):
     all_done = pyqtSignal(object)         # 全部结果 dict
     failed = pyqtSignal(str)              # 错误消息
     document_progress = pyqtSignal(int, int)  # B12：已处理文档数, 总文档数（抽取阶段实时汇报）
+    unified_progress = pyqtSignal(object)  # P2-4：TaskProgressEvent（新消费者可直接使用）
 
     def __init__(
         self,
@@ -68,6 +73,12 @@ class _PdfPipelineWorker(QThread):
     def run(self) -> None:
         try:
             from omnicrawl.pdfx.service import run_extraction
+            from omnicrawl.services.progress import (
+                ProgressTracker,
+                StageSpec,
+                event_to_percent,
+                event_to_stage_label,
+            )
 
             stage_names: dict[str, str] = {
                 "ingest_started": _("扫描 PDF 文件"),
@@ -77,18 +88,51 @@ class _PdfPipelineWorker(QThread):
                 "extract_started": _("结构化抽取"),
                 "export_started": _("导出 Excel/CSV"),
             }
-            stage_order = [
-                "ingest", "parse", "ocr", "text_export",
-                "extract", "export",
-            ]
-            total_stages = len(stage_order)
+            # P2-4：阶段权重声明（抽取通常是耗时主阶段，分配较大权重）
+            tracker = ProgressTracker(
+                stages=[
+                    StageSpec("ingest",      weight=1.0,  display_name=stage_names["ingest_started"],      has_items=True),
+                    StageSpec("parse",       weight=2.0,  display_name=stage_names["parse_started"]),
+                    StageSpec("ocr",         weight=3.5,  display_name=stage_names["ocr_started"]),
+                    StageSpec("text_export", weight=0.5,  display_name=stage_names["text_export_started"]),
+                    StageSpec("extract",     weight=4.0,  display_name=stage_names["extract_started"],      has_items=True),
+                    StageSpec("export",      weight=1.0,  display_name=stage_names["export_started"]),
+                ],
+                on_event=lambda ev: self.unified_progress.emit(ev),
+            )
+            tracker.start()
+            stage_order = ["ingest", "parse", "ocr", "text_export", "extract", "export"]
+            active_stage: str = ""
+
+            def _bridge(ev) -> None:
+                """把统一事件同时映射到旧式信号，老消费者保持稳定。"""
+                self.progress.emit(event_to_percent(ev))
+                label = event_to_stage_label(ev)
+                if label:
+                    # 用 stage_started 承载中文标签（带 ETA、子项），消费方直接显示
+                    # 仅当阶段/子项变化时才发，避免刷屏
+                    nonlocal active_stage
+                    if ev.display_stage and ev.display_stage != active_stage and ev.stage:
+                        active_stage = ev.display_stage
+                        self.stage_started.emit(ev.display_stage)
+
+            # 统一事件同时桥接到旧式信号
+            tracker._on_event = lambda ev: (_bridge(ev), self.unified_progress.emit(ev))
 
             def _callback(stage: str, result: dict[str, Any]) -> None:
                 if self._cancelled:
                     return
                 name = stage_names.get(stage, stage)
                 if stage.endswith("_started"):
-                    self.stage_started.emit(name)
+                    short = stage[:-8]  # 去掉 _started
+                    if short in stage_order:
+                        expected = 0
+                        if isinstance(result, dict):
+                            # ingest 阶段可从结果推断文档数；extract 后续由 _doc_callback 动态给出
+                            expected = int(result.get("total", 0) or 0)
+                        tracker.begin_stage(short, expected_items=expected)
+                    else:
+                        tracker.set_percent(tracker.last_event.percent if tracker.last_event else 0, message=name)
                 elif stage == "warnings":
                     # D3：关键警告（“大模型已启用但 Key 空”“OCR 未启用”）必须对用户可见
                     items = result.get("items", []) if isinstance(result, dict) else []
@@ -96,8 +140,7 @@ class _PdfPipelineWorker(QThread):
                         self.warnings_received.emit(list(items))
                 elif stage in stage_order:
                     self.stage_finished.emit(name, result)
-                    idx = stage_order.index(stage) + 1
-                    self.progress.emit(int(idx / total_stages * 100))
+                    tracker.end_stage(stage)
 
             def _should_stop() -> bool:
                 return self._cancelled
@@ -107,6 +150,7 @@ class _PdfPipelineWorker(QThread):
                 if self._cancelled:
                     return
                 self.document_progress.emit(processed, total)
+                tracker.set_item_progress(processed, total)
 
             result = run_extraction(
                 self._config_path,
@@ -119,6 +163,7 @@ class _PdfPipelineWorker(QThread):
 
             if self._cancelled:
                 # S3.1.6：取消路径统一发 all_done（带 stopped 标志），UI 恢复可操作
+                tracker.cancel()
                 self.all_done.emit({
                     "status": {"documents": {}, "pages": {}, "records": {}},
                     "stopped": True,
@@ -126,10 +171,15 @@ class _PdfPipelineWorker(QThread):
                 })
                 return
 
+            tracker.finish()
             self.all_done.emit(result)
 
         except Exception as exc:
             import traceback
+            try:
+                tracker.fail(str(exc))
+            except Exception:  # noqa: BLE001 — tracker 失败不得吞没原始异常
+                pass
             self.failed.emit(f"{exc}\n{traceback.format_exc()}")
 
 
@@ -177,6 +227,8 @@ class PdfWorkbenchView(QWidget):
         super().__init__(parent)
         self.setObjectName("pdfWorkbench")
         self.setAccessibleName(_("PDF 工作台"))
+        # P1-4：启用拖放，支持拖入 PDF 文件或目录直接进入批量处理流程
+        self.setAcceptDrops(True)
 
         self._state = "idle"          # idle | scanning | ready | running | done
         self._pdf_files: list[Path] = []
@@ -198,7 +250,7 @@ class PdfWorkbenchView(QWidget):
         title.setObjectName("homeTitle")
         root.addWidget(title)
 
-        subtitle = QLabel(_("选择 PDF 目录和模板，一键完成扫描 → 解析 → OCR → 抽取 → 导出全流程"))
+        subtitle = QLabel(_("选择 PDF 目录或拖入 PDF 文件，一键完成扫描 → 解析 → OCR → 抽取 → 导出全流程"))
         subtitle.setObjectName("sectionSubtitle")
         subtitle.setWordWrap(True)
         root.addWidget(subtitle)
@@ -217,6 +269,11 @@ class PdfWorkbenchView(QWidget):
         browse_btn = QPushButton(_("浏览..."))
         browse_btn.clicked.connect(self._browse_dir)
         dir_row.addWidget(browse_btn)
+
+        # P1-4：直接添加 PDF 文件（不限于整目录），与拖放共用暂存逻辑
+        add_files_btn = QPushButton(_("添加文件..."))
+        add_files_btn.clicked.connect(self._add_files)
+        dir_row.addWidget(add_files_btn)
 
         self._scan_btn = QPushButton(_("扫描 PDF 文件"))
         self._scan_btn.setProperty("primary", True)
@@ -389,6 +446,123 @@ class PdfWorkbenchView(QWidget):
         if path:
             self._dir_input.setText(path)
             self._scan_directory()
+
+    # ── P1-4：添加文件与拖放 ─────────────────────────────────
+    @pyqtSlot()
+    def _add_files(self) -> None:
+        """通过文件对话框多选 PDF 文件，暂存后扫描（与拖入文件共用归集逻辑）。"""
+        paths, _selected_filter = QFileDialog.getOpenFileNames(
+            self,
+            _("选择 PDF 文件"),
+            "",
+            _("PDF 文件 (*.pdf)"),
+        )
+        if not paths:
+            return
+        staging = self._stage_dropped_files([Path(p) for p in paths])
+        if staging is None:
+            return
+        self._dir_input.setText(str(staging))
+        toast = ToastManager.instance()
+        toast.success(_(f"已暂存 {len(paths)} 个 PDF 文件，开始扫描"))
+        self._scan_directory()
+
+    def _stage_dropped_files(self, files: list[Path]) -> Path | None:
+        """将拖入/添加的 PDF 归集到持久化暂存目录，返回该目录路径。
+
+        - 优先硬链接（同盘零成本，不复制大文件内容）
+        - 跨盘或权限不足时回退 shutil.copy2
+        - 每次调用前清空旧内容，避免上次拖入残留干扰本次扫描
+        - 同名冲突自动加序号后缀
+        """
+        import shutil
+
+        from ...core.runtime_paths import portable_data_root
+
+        staging = portable_data_root() / ".omnicrawl" / "pdf-workbench" / "dropped"
+        try:
+            if staging.exists():
+                shutil.rmtree(staging, ignore_errors=True)
+            staging.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            toast = ToastManager.instance()
+            toast.error(_(f"无法创建暂存目录: {exc}"))
+            return None
+
+        for src in files:
+            dst = staging / src.name
+            if dst.exists():
+                # 同名冲突：加序号 (1)、(2)...
+                stem, suffix = dst.stem, dst.suffix
+                idx = 1
+                while dst.exists():
+                    dst = staging / f"{stem} ({idx}){suffix}"
+                    idx += 1
+            try:
+                os.link(src, dst)  # 优先硬链接
+            except OSError:
+                try:
+                    shutil.copy2(src, dst)
+                except OSError as exc:
+                    # 单个文件失败不阻断整体，仅提示
+                    toast = ToastManager.instance()
+                    toast.warning(_(f"无法暂存 {src.name}: {exc}"))
+                    continue
+        return staging
+
+    # ── 拖放事件 ─────────────────────────────────────────────
+    def dragEnterEvent(self, event) -> None:  # noqa: N802 — Qt 命名
+        """接受含 PDF 文件或目录的拖放。"""
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if not url.isLocalFile():
+                    continue
+                path = Path(url.toLocalFile())
+                if path.is_file() and path.suffix.lower() == ".pdf":
+                    event.acceptProposedAction()
+                    return
+                if path.is_dir():
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802 — Qt 命名
+        """dragEnter 已校验类型，此处统一放行以维持拖放视觉反馈。"""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:  # noqa: N802 — Qt 命名
+        """拖入目录 → 直接扫描；拖入 PDF 文件 → 暂存后扫描。"""
+        pdf_files: list[Path] = []
+        dir_dropped: Path | None = None
+        for url in event.mimeData().urls():
+            if not url.isLocalFile():
+                continue
+            path = Path(url.toLocalFile())
+            if path.is_file() and path.suffix.lower() == ".pdf":
+                pdf_files.append(path)
+            elif path.is_dir() and dir_dropped is None:
+                dir_dropped = path
+
+        if dir_dropped is not None:
+            self._dir_input.setText(str(dir_dropped))
+            event.acceptProposedAction()
+            self._scan_directory()
+            return
+
+        if pdf_files:
+            staging = self._stage_dropped_files(pdf_files)
+            if staging is not None:
+                self._dir_input.setText(str(staging))
+                toast = ToastManager.instance()
+                toast.success(_(f"已暂存 {len(pdf_files)} 个 PDF 文件，开始扫描"))
+                self._scan_directory()
+            event.acceptProposedAction()
+            return
+
+        event.ignore()
 
     # ── 扫描目录 ──────────────────────────────────────────────
     @pyqtSlot()
