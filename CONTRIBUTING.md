@@ -33,7 +33,7 @@ python -m compileall src/ -q
 | mypy | 0 errors | 类型检查（GUI/pdfx/apps 暂排除） |
 | compileall | 0 errors | 语法编译检查 |
 | 覆盖率 | >= 66% | 全源码覆盖率，并通过分组门禁（下一目标 70%，长期目标 80%） |
-| pytest | 全部通过 | 1100+ 测试用例 |
+| pytest | 全部通过 | 1800+ 测试用例 |
 
 pre-commit hooks 会在提交时自动运行 ruff 和 mypy，从源头防止退化。
 
@@ -48,7 +48,7 @@ pre-commit hooks 会在提交时自动运行 ruff 和 mypy，从源头防止退�
 5. **持久化走 Repository Port** — 上层不得直接 import sqlite3
 6. **异常隔离** — 单 URL 失败不拖垮整轮 run
 
-详见项目根目录 `project-instructions`。
+详见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
 ## 提交流程
 

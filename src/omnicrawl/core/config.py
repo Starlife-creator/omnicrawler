@@ -240,8 +240,9 @@ class AppConfig:
         """插件市场 catalog 基址（单一可迁移配置）。
 
         所有 catalog 内部文件路径均为相对于此基址的相对路径。迁移到独立仓库或
-        自托管 HTTP 服务时，只需修改此值（见 registry/README.md），catalog 内部
-        无需任何改动。空串表示不配置远程市场，GUI 市场面板回退 bundled_catalog_dir。
+        自托管 HTTP 服务时，只需修改此值（见 market/ 离线快照或
+        OmniCrawler-market/README.md），catalog 内部无需任何改动。空串表示不配置
+        远程市场，GUI 市场面板回退 bundled_catalog_dir。
         """
 
         plugins = self.section("plugins")
@@ -252,8 +253,8 @@ class AppConfig:
     def plugin_bundled_catalog_dir(self) -> str:
         """离线/便携构建内置的 catalog 快照目录（相对或绝对路径）。
 
-        留空表示没有内置快照（市场仅在线可用）。便携包在构建期把 registry/ 打包进
-        应用并填此路径，可使市场离线也可用。路径相对于应用根目录解析。
+        留空表示没有内置快照（市场仅在线可用）。便携包在构建期把 market/ 离线快照
+        打包进应用并填此路径，可使市场离线也可用。路径相对于应用根目录解析。
         """
 
         plugins = self.section("plugins")

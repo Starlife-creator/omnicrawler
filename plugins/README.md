@@ -13,7 +13,7 @@
 | `examples/plugins/` | 官方示例/起步模板（含 `example_news`） | 项目维护者 |
 | `plugins/`（本目录） | **你自己的插件** | 你 |
 | `plugins_installed/` | `market.py install` 从市场下载验签后落盘处 | 安装命令 |
-| `registry/` | 策展式市场发布快照（供 `market.py` 拉取） | 审核后发布 |
+| `market/` | 主仓市场离线快照（catalog.json + authors/ + keys/，联网失败回退源） | 构建/同步时维护 |
 
 ## 开发流程
 1. 把 `examples/plugins/example_site.py` 复制成本目录下的新文件作为起点；
@@ -23,7 +23,7 @@
    python tools/sign_plugin.py sign plugins/your_plugin.py \
        --key /path/to/cold-storage/plugin_signing_private.pem
    ```
-4. 启动即自动加载；若要发布到市场，再走 `registry/` 的发布流程（复制+签名+`listing.md`）。
+4. 启动即自动加载；若要发布到市场，再走 `OmniCrawler-market` 仓库的发布流程（复制+签名+`listing.md`）。
 
 > 注意：本目录下的插件**必须签名**才能被加载。未签名文件会触发 fail-closed 拒绝。
 > 不要把私钥放进本目录，私钥只存冷存储（见 `configs/` 与 `CONTRIBUTING.md`）。

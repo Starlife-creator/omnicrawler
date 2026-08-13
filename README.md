@@ -122,7 +122,7 @@ omnicrawl reprocess -c config.yaml --run-id <id>
 | 能力 | 说明 |
 |------|------|
 | 提取引擎 | CSS / XPath / JSONPath / JSON-LD / OpenGraph / Meta |
-| 文档抽取 | doc_extractors 槽位抽取 + document_ir 统一中间表示（txt/html/docx/pptx/odt/epub/pdf，`document_type=auto`） |
+| 文档抽取 | doc_extractors 槽位抽取 + document_ir 统一中间表示（txt/html/docx/pptx/odt/epub/pdf，`document_type=auto`；HTML 正文容器抽取 main/article/#content 等，未命中回退全页） |
 | 站点分类与模板推荐 | L1 硬止损 → L2 本地映射 → L3 受限嗅探 三层漏斗，输出命中来源 + 置信度，GUI/CLI 人工确认闸门 |
 | AI 智能提取 | LLM 驱动字段提取（分块 HTML → 结构化输出），AI 服务中心可配置 |
 | 智能模式 | AI 辅助字段推荐 + 自动选择器生成 |
@@ -151,7 +151,7 @@ omnicrawl reprocess -c config.yaml --run-id <id>
 
 | 能力 | 说明 |
 |------|------|
-| 场景管理 | 场景/槽位/选择器基因/候选验收闭环（SceneStore + 出厂场景幂等导入） |
+| 场景管理 | 场景/槽位/选择器基因/候选验收闭环（SceneStore + 出厂场景幂等导入）；已验收候选文档级透视、导出已验收结果（JSON/CSV）与生成为任务字段（槽位→extract.fields YAML） |
 | 证据胶囊 | 运行内提取动作时间线 + 限定重放（capsule_store + replay） |
 
 ### 安全与治理
