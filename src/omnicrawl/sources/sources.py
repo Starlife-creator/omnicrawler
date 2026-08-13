@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import random
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -13,6 +14,8 @@ from ..extraction.extractors import decode_body, json_path
 from ..extraction.html_tools import discover_links, parse_html
 from ..fetching.http_client import encode_request_payload
 
+LOGGER = logging.getLogger(__name__)
+
 
 class GenericSource:
     def __init__(self, config: AppConfig) -> None:
@@ -24,7 +27,8 @@ class GenericSource:
         requests: list[CrawlRequest] = []
         for raw in self.source.get("seeds", []):
             request = self._seed_request(raw)
-            requests.append(request)
+            if request is not None:
+                requests.append(request)
         pagination = self.source.get("pagination", {})
         if pagination.get("type") == "page" and requests:
             start = int(pagination.get("start", 1))
@@ -49,7 +53,7 @@ class GenericSource:
             requests = paged
         return requests
 
-    def _seed_request(self, raw: Any) -> CrawlRequest:
+    def _seed_request(self, raw: Any) -> CrawlRequest | None:
         if isinstance(raw, dict):
             url = str(raw["url"])
             method = str(raw.get("method", "GET")).upper()
@@ -58,6 +62,19 @@ class GenericSource:
             headers = {**payload_headers, **headers}
             return CrawlRequest(url, method, headers, body, str(raw.get("kind", "page")), bool(raw.get("render", False)), meta={"root_url": url})
         url = str(raw)
+        # N2：url_list 导入源做状态化清洗，区分「协议不受支持」与「无法识别」，
+        # 不再静默丢弃（采集链路仅支持 http/https）
+        if self.kind == "url_list":
+            from .url_cleaner import clean_url_status
+
+            cleaned, status = clean_url_status(url)
+            if cleaned is None:
+                if status.startswith("unsupported:"):
+                    LOGGER.warning("url_list 跳过不受支持的协议 seed: %.80r（%s）", url, status)
+                elif status == "no_scheme":
+                    LOGGER.warning("url_list 跳过无法识别的 seed: %.80r", url)
+                return None
+            url = cleaned
         method = str(self.source.get("method", "GET")).upper()
         headers = {str(k): str(v) for k, v in self.source.get("headers", {}).items()}
         render = self.kind == "browser"

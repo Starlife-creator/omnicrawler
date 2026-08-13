@@ -140,6 +140,23 @@ class _PipelineExtract(_PipelineBase):
                     outcome.records = [transform_record(transformer, record) for record in outcome.records]
                 # B-1 证据胶囊：提取后、归一化前（门控 OMNICRAWL_CAPSULE_ENABLED=true）
                 self._capture_capsules(run_id, result, outcome.records, extract_sec)
+                # N1：场景基因增强（默认关闭：无 extract.scene 时零行为）
+                # 在归一化前补提缺失字段，让增强值经过 _normalize_records 收敛类型
+                scene_name = str(extract_sec.get("scene", "") or "")
+                if scene_name:
+                    try:
+                        from ..quality.gene_augment import gene_augment_html
+
+                        fields_map = extract_sec.get("fields", {})
+                        gene_augment_html(
+                            result,
+                            outcome.records,
+                            fields_map if isinstance(fields_map, dict) else {},
+                            scene_name,
+                            Path(self.config.workspace) / "scene.sqlite3",
+                        )
+                    except Exception:  # noqa: BLE001 — 基因增强失败绝不阻断提取
+                        LOGGER.warning("基因增强失败", exc_info=True)
                 # AutoDataCleaner 值清洗：L1 幂等 + L2 规则（quality.normalize，默认开），
                 # 在主题筛选前执行，让 enrich/质量评估/导出消费已清洗的值
                 self._normalize_records(outcome.records)

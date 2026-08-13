@@ -96,6 +96,55 @@ class GeneMaintenanceTest(unittest.TestCase):
                 self.assertGreaterEqual(genes[0]["fitness"], 0.5)
                 self.assertGreaterEqual(len(report["slots"]), 4)
 
+    # ── N5：maybe_maintain 惰性维护 ──────────────────────
+    @staticmethod
+    def _reset_maintain_clock() -> None:
+        import omnicrawl.services.gene_maintenance as gm
+
+        gm._LAST_CHECK = 0.0
+
+    def test_maybe_maintain_no_prune_below_threshold(self) -> None:
+        self._reset_maintain_clock()
+        with tempfile.TemporaryDirectory() as temp:
+            with SceneStore(Path(temp) / "g.sqlite3") as store:
+                pool = GenePool(store)
+                pool.record("s1", "t", "only", hit=True)
+                from omnicrawl.services.gene_maintenance import maybe_maintain
+
+                # total=1 < max_genes=100 → 不维护
+                self.assertFalse(maybe_maintain(store, max_genes=100))
+                self.assertEqual(store.gene_stats()["total"], 1)
+
+    def test_maybe_maintain_prunes_above_threshold(self) -> None:
+        self._reset_maintain_clock()
+        with tempfile.TemporaryDirectory() as temp:
+            with SceneStore(Path(temp) / "g.sqlite3") as store:
+                pool = GenePool(store)
+                # 播种 6 个弱基因（各 3 次 miss → fitness=0，尝试达标）
+                for i in range(6):
+                    pool.record("s1", "t", f"weak{i}", hit=False)
+                    pool.record("s1", "t", f"weak{i}", hit=False)
+                    pool.record("s1", "t", f"weak{i}", hit=False)
+                from omnicrawl.services.gene_maintenance import maybe_maintain
+
+                self.assertTrue(maybe_maintain(store, max_genes=5))
+                self.assertEqual(store.gene_stats()["total"], 0)  # 全部弱基因被淘汰
+
+    def test_maybe_maintain_ttl_throttle(self) -> None:
+        self._reset_maintain_clock()
+        with tempfile.TemporaryDirectory() as temp:
+            with SceneStore(Path(temp) / "g.sqlite3") as store:
+                pool = GenePool(store)
+                for i in range(6):
+                    pool.record("s1", "t", f"weak{i}", hit=False)
+                from omnicrawl.services.gene_maintenance import maybe_maintain
+
+                # 第一次触发维护
+                self.assertTrue(maybe_maintain(store, max_genes=5, ttl_seconds=300))
+                # TTL 内第二次调用 → 直接节流跳过（即使又膨胀）
+                pool.record("s1", "t", "again", hit=False)
+                self.assertFalse(maybe_maintain(store, max_genes=5, ttl_seconds=300))
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import QThread, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QColor
@@ -79,9 +79,16 @@ class _CheckWorker(QThread):
     finished = pyqtSignal(list)   # list[ChangeEvent]
     error = pyqtSignal(str)
 
-    def __init__(self, rules_json: list[dict], parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        rules_json: list[dict],
+        parent: QWidget | None = None,
+        *,
+        fetcher: Any = None,
+    ) -> None:
         super().__init__(parent)
         self._rules_json = rules_json
+        self._fetcher = fetcher
 
     def run(self) -> None:
         import asyncio
@@ -89,7 +96,7 @@ class _CheckWorker(QThread):
         try:
             from omnicrawl.scheduling.change_detector import ChangeDetector, MonitorRule
 
-            detector = ChangeDetector()
+            detector = ChangeDetector(fetcher=self._fetcher)
             for item in self._rules_json:
                 detector.add_rule(MonitorRule.from_dict(item))
 
@@ -409,9 +416,13 @@ class ChangeMonitorView(QWidget):
         self,
         settings: AppSettings | None = None,
         parent: QWidget | None = None,
+        *,
+        fetcher: Any = None,
     ) -> None:
         super().__init__(parent)
         self._settings = settings
+        # A3：可选共享 AsyncFetcher，检查时复用其连接池/EgressBroker 审计通道
+        self._fetcher = fetcher
         self._rules_data: list[dict] = []
         self._paused: bool = False
 
@@ -608,7 +619,7 @@ class ChangeMonitorView(QWidget):
         self._status_label.setText(_("检查中..."))
         self._status_label.setStyleSheet("color: #0078d4;")
 
-        self._worker = _CheckWorker(self._rules_data, self)
+        self._worker = _CheckWorker(self._rules_data, self, fetcher=self._fetcher)
         self._worker.finished.connect(self._on_check_finished)
         self._worker.error.connect(self._on_check_error)
         self._worker.start()
@@ -781,7 +792,7 @@ class ChangeMonitorView(QWidget):
             if rule.get("rule_id") == rule_id:
                 self._status_label.setText(_("检查中..."))
                 self._status_label.setStyleSheet("color: #0078d4;")
-                self._worker = _CheckWorker([rule], self)
+                self._worker = _CheckWorker([rule], self, fetcher=self._fetcher)
                 self._worker.finished.connect(self._on_check_finished)
                 self._worker.error.connect(self._on_check_error)
                 self._worker.start()

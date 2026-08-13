@@ -583,6 +583,8 @@ class TaskCanvas(QScrollArea):
         self._sync_ui_state()
         # P1：草稿生成后本地推断模板推荐（L1/L2，零网络）
         self._refresh_recommendation()
+        # N4：草稿生成后懒加载场景列表（选用场景 → 槽位字段 + 基因增强）
+        self._refresh_scenes()
         ToastManager.instance().success(_("已生成任务草稿：请复核后试跑"))
         # P4：有描述时后台生成 AI 计划供审核（未启用/失败不影响本地轨）
         self._start_plan_review()
@@ -733,6 +735,12 @@ class TaskCanvas(QScrollArea):
         self._template_combo.setToolTip(_("空=用自动推荐；选中=强制使用该模板（写入 YAML）"))
         self._template_combo.currentIndexChanged.connect(self._on_template_override_changed)
         rec_row.addWidget(self._template_combo)
+        # N4：选用场景（懒加载 SceneStore）——槽位定义生成字段 + 写 extract.scene
+        self._scene_combo = QComboBox()
+        self._scene_combo.setEnabled(False)
+        self._scene_combo.setToolTip(_("选用已验收场景：按槽位生成字段并启用基因增强"))
+        self._scene_combo.currentIndexChanged.connect(self._on_scene_changed)
+        rec_row.addWidget(self._scene_combo)
         self._ignore_rec_btn = QPushButton(_("忽略推荐"))
         self._ignore_rec_btn.setFlat(True)
         self._ignore_rec_btn.setEnabled(False)
@@ -1502,6 +1510,75 @@ class TaskCanvas(QScrollArea):
         else:
             badge = "👆 " + _("手动 / 本地生成")
         self._source_badge.setText(badge)
+
+    # ------------------------------------------------------------------
+    #  N4：选用场景（懒加载 SceneStore）——槽位生成字段 + 写 extract.scene
+    # ------------------------------------------------------------------
+    def _refresh_scenes(self) -> None:
+        """懒加载场景列表填充下拉；SceneStore 不可用则禁用，不阻断主流程。"""
+        self._scene_combo.blockSignals(True)
+        self._scene_combo.clear()
+        self._scene_combo.addItem(_("（不使用场景）"), "")
+        try:
+            from pathlib import Path
+
+            from ...state.scene_store import SceneStore
+
+            db = Path(self._config.workspace).expanduser() / "scene.sqlite3"
+            if db.exists():
+                with SceneStore(db) as store:
+                    for scene in store.list_scenes():
+                        self._scene_combo.addItem(scene["scene"], scene["scene"])
+                self._scene_combo.setEnabled(True)
+        except Exception:  # noqa: BLE001 — 场景不可用不阻断主流程
+            self._scene_combo.setEnabled(False)
+        self._scene_combo.blockSignals(False)
+
+    def _on_scene_changed(self, index: int) -> None:
+        """选定场景 → 槽位生成字段 + 写 extract.scene（passthrough 透传）。"""
+        if self._updating or self._locked:
+            return
+        scene = self._scene_combo.itemData(index) or ""
+        if not scene:
+            return
+        fields: list[FieldDef] = []
+        skipped: list[str] = []
+        try:
+            from pathlib import Path
+
+            from ...state.scene_store import SceneStore
+
+            db = Path(self._config.workspace).expanduser() / "scene.sqlite3"
+            if db.exists():
+                with SceneStore(db) as store:
+                    for slot in store.get_slots(scene):
+                        if slot.extractor_type not in ("css", "xpath", "jsonpath") or not slot.pattern:
+                            skipped.append(slot.slot_key)
+                            continue
+                        fields.append(FieldDef(
+                            name=slot.slot_key,
+                            selector=slot.pattern,
+                            selector_type=(
+                                slot.extractor_type
+                                if slot.extractor_type in ("css", "xpath", "jsonpath")
+                                else "css"
+                            ),
+                        ))
+        except Exception:  # noqa: BLE001 — 场景数据加载失败不阻断
+            ToastManager.instance().warning(_("场景数据加载失败"))
+            return
+        if fields:
+            self._fields_model.set_fields(fields)
+            self._on_field_changed()
+        # N4：extract.scene 经 passthrough 透传（config_serializer 深合并保留）
+        self._config.passthrough.setdefault("extract", {})["scene"] = scene
+        if skipped:
+            ToastManager.instance().info(
+                _("已应用场景 {0}；跳过不支持槽位：{1}").format(scene, "、".join(skipped))
+            )
+        else:
+            ToastManager.instance().success(_("已应用场景 {0} 的字段与基因增强").format(scene))
+        self._on_scope_changed()
 
     # ------------------------------------------------------------------
     #  P1：模板推荐闸门前移（本地 L1/L2，零网络；L3 嗅探默认关闭不注入 fetcher）

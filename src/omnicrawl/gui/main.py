@@ -991,7 +991,13 @@ class MainWindow(QMainWindow):
         self._convert_tool = ConvertView()
         self._stack.addWidget(self._convert_tool)
 
-        self._change_monitor = ChangeMonitorView(settings=self._settings)
+        # A3：变更监控复用共享探活 AsyncFetcher（惰性构建，走 EgressBroker 审计）
+        if self._probe_fetcher is None:
+            try:
+                self._probe_fetcher = self._build_probe_fetcher()
+            except Exception:  # noqa: BLE001 — 构建失败静默降级，监控回退 urllib
+                self._probe_fetcher = None
+        self._change_monitor = ChangeMonitorView(settings=self._settings, fetcher=self._probe_fetcher)
         self._change_monitor.desktop_notify.connect(self._on_monitor_desktop_notify)
         self._stack.addWidget(self._change_monitor)
 

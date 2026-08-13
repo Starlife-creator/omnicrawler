@@ -159,6 +159,7 @@ class ChangeDetector:
         on_notify: Callable[[ChangeEvent], None] | None = None,
         *,
         egress: Any = None,
+        fetcher: Any = None,
     ) -> None:
         self._rules: dict[str, MonitorRule] = {}
         self._history: dict[str, list[ChangeEvent]] = {}
@@ -167,6 +168,8 @@ class ChangeDetector:
         self._running: bool = True
         # 网络边界（S4.5 门禁）：注入 EgressBroker 后所有抓取走授权路径
         self._egress = egress
+        # A3：注入 AsyncFetcher 后复用其连接池/限速/隐身/EgressBroker 审计通道
+        self._fetcher = fetcher
         # S3.2.1：基线持久化——每轮重建规则对象也能恢复 last_hash，
         # 消除 GUI 侧 "__baseline__" 哨兵假哈希导致的每轮误报变化
         self._baselines: dict[str, dict[str, Any]] = {}
@@ -274,8 +277,27 @@ class ChangeDetector:
     async def _fetch_content(self, url: str) -> str | None:
         """获取页面内容。返回 HTML 字符串，失败时返回 None。
 
-        经 EgressBroker 授权（S4.5 网络边界门禁）：拒绝的 URL 不再发请求。
+        注入 AsyncFetcher 时复用其连接池/限速/EgressBroker 审计通道；
+        否则回退 urllib + EgressBroker（S4.5 网络边界门禁）。
         """
+        if self._fetcher is not None:
+            try:
+                from ..core.models import CrawlRequest
+
+                loop = asyncio.get_running_loop()
+                # fetch 内部 run_until_complete 自建 loop，不能在 running loop 内直调，
+                # 故经 executor 跨线程执行（无 running loop 冲突）
+                result = await loop.run_in_executor(
+                    None, self._fetcher.fetch, CrawlRequest(url, kind="page")
+                )
+                content_type = result.headers.get("content-type", "")
+                charset = "utf-8"
+                if "charset=" in content_type:
+                    charset = content_type.split("charset=", 1)[-1].split(";")[0].strip()
+                return result.body.decode(charset, errors="replace")
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("AsyncFetcher 获取页面失败 %s: %s", url, exc)
+                return None
         try:
             import urllib.request
 

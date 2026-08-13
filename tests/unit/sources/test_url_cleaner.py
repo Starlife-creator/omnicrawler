@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from omnicrawl.sources.url_cleaner import clean_url, extract_urls_from_text
+from omnicrawl.sources.url_cleaner import clean_url, clean_url_status, extract_urls_from_text
 
 
 # ── clean_url 基础 ───────────────────────────────────────
@@ -67,6 +67,33 @@ def test_clean_url_rejects_javascript() -> None:
 def test_clean_url_rejects_empty() -> None:
     assert clean_url("") is None
     assert clean_url(None) is None
+
+
+# ── clean_url_status（状态化清洗，消除静默丢弃）──────────
+def test_clean_url_status_ok() -> None:
+    assert clean_url_status("https://a.com/x") == ("https://a.com/x", "ok")
+
+
+def test_clean_url_status_ftp_unsupported() -> None:
+    assert clean_url_status("ftp://a.com") == (None, "unsupported:ftp")
+
+
+def test_clean_url_status_javascript_unsupported() -> None:
+    # 只有冒号无 ://，urlparse 也能识别协议
+    assert clean_url_status("javascript:void(0)") == (None, "unsupported:javascript")
+
+
+def test_clean_url_status_mailto_unsupported() -> None:
+    assert clean_url_status("mailto:x@a.com") == (None, "unsupported:mailto")
+
+
+def test_clean_url_status_no_scheme() -> None:
+    assert clean_url_status("example.com/path") == (None, "no_scheme")
+
+
+def test_clean_url_status_invalid() -> None:
+    assert clean_url_status("") == (None, "invalid")
+    assert clean_url_status(None) == (None, "invalid")
 
 
 # ── extract_urls_from_text ───────────────────────────────

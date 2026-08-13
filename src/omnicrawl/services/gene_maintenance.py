@@ -2,15 +2,25 @@
 
 - ``import_scenes``：把场景 YAML（用户文件或 bundled 出厂默认）幂等导入 DB。
 - ``run_maintenance``：淘汰低适应度基因、汇总统计。
+- ``maybe_maintain``：惰性维护（进程级 TTL 节流 + 膨胀阈值），供高频调用路径接入。
 - ``scene_report``：单场景体检（槽位数、候选验收、各槽位最优基因）。
 """
 
 from __future__ import annotations
 
+import logging
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
 from ..state.scene_store import SceneStore
+
+LOGGER = logging.getLogger(__name__)
+
+# N5：进程级维护节流（避免 GenePool.recommend 高频调用触发 COUNT 风暴）
+_MAINT_LOCK = threading.Lock()
+_LAST_CHECK = 0.0
 
 
 def import_scenes(store: SceneStore, *, path: str | None = None) -> dict[str, Any]:
@@ -37,6 +47,40 @@ def run_maintenance(
         scene, min_fitness=min_fitness, min_trials=min_trials,
     )
     return {"pruned": pruned, **store.gene_stats()}
+
+
+def maybe_maintain(
+    store: SceneStore,
+    *,
+    max_genes: int = 5000,
+    min_fitness: float = 0.2,
+    min_trials: int = 3,
+    ttl_seconds: float = 300.0,
+) -> bool:
+    """惰性维护：基因池膨胀到阈值才淘汰低适应度基因。
+
+    设计（避免 COUNT 风暴 / 避免在未膨胀时做无用清理）：
+    - 进程级 TTL 节流：TTL 内无论调用多少次，只检查一次 total。
+    - 膨胀阈值：``total < max_genes`` 时零 DELETE（仅一次 COUNT）。
+    - 任何异常静默降级，不影响调用方。
+
+    Returns:
+        ``True`` 表示本次执行了维护；否则 ``False``。
+    """
+    global _LAST_CHECK
+    now = time.monotonic()
+    with _MAINT_LOCK:
+        if now - _LAST_CHECK < ttl_seconds:
+            return False
+        _LAST_CHECK = now
+    try:
+        if store.gene_stats()["total"] < max_genes:
+            return False
+        store.prune_genes(min_fitness=min_fitness, min_trials=min_trials)
+        return True
+    except Exception:  # noqa: BLE001 — 维护失败不阻断调用方
+        LOGGER.warning("基因维护失败", exc_info=True)
+        return False
 
 
 def scene_report(store: SceneStore, scene: str) -> dict[str, Any]:
@@ -66,4 +110,4 @@ def scene_report(store: SceneStore, scene: str) -> dict[str, Any]:
     }
 
 
-__all__ = ["import_scenes", "run_maintenance", "scene_report"]
+__all__ = ["import_scenes", "maybe_maintain", "run_maintenance", "scene_report"]

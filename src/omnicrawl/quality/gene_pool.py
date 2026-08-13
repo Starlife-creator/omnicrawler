@@ -54,7 +54,17 @@ class GenePool:
         limit: int = 3,
         min_trials: int = 0,
     ) -> list[Gene]:
-        """按适应度降序返回最优基因（min_trials>0 过滤冷启动基因）。"""
+        """按适应度降序返回最优基因（min_trials>0 过滤冷启动基因）。
+
+        高频调用路径：惰性触发 N5 基因维护（进程级 TTL 节流 + 膨胀阈值，
+        未膨胀时仅一次 COUNT 开销，零 DELETE）。
+        """
+        try:
+            from ..services.gene_maintenance import maybe_maintain
+
+            maybe_maintain(self.store)
+        except Exception:  # noqa: BLE001 — 维护失败不影响推荐
+            pass
         rows = self.store.top_genes(
             scene, slot_key, limit=limit, min_trials=min_trials,
         )

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import urlparse
 
 #: 不可见/控制字符（含零宽）；注意保留 \t（CSV 制表符分隔，用于截断）
 _INVISIBLE_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u200b-\u200f\u2028-\u202f\ufeff]")
@@ -20,6 +21,8 @@ _TRAILING_RE = re.compile(r"[,;:<>\[\]{}()\"'，。；：、】）】」』！�
 _URL_RE = re.compile(r"https?://[^\s<>\"'，。；：、（）【】「」『』]+")
 
 _VALID_SCHEME = ("http://", "https://")
+#: 采集链路支持的协议（canonicalize_url / NetworkTargetPolicy 均只认 http/https）
+_SUPPORTED_SCHEMES = ("http", "https")
 
 
 def clean_url(raw: str | None) -> str | None:
@@ -54,6 +57,37 @@ def clean_url(raw: str | None) -> str | None:
     return text
 
 
+def clean_url_status(raw: str | None) -> tuple[str | None, str]:
+    """清洗 URL 并返回状态原因；``clean_url`` 契约不变。
+
+    供调用方做「非静默丢弃」：明确区分协议不受支持与无法识别，
+    而不是笼统返回 None。
+
+    Returns:
+        ``(cleaned, status)``：
+        - ``(url, "ok")``              清洗成功
+        - ``(None, "unsupported:ftp")`` 协议明确但非 http(s)（采集链路不支持）
+        - ``(None, "no_scheme")``      无协议/邮箱/纯路径，无法识别
+        - ``(None, "invalid")``        空/清洗后无效/畸形 http(s)
+    """
+    cleaned = clean_url(raw)
+    if cleaned is not None:
+        return cleaned, "ok"
+    if raw is None:
+        return None, "invalid"
+    text = _INVISIBLE_RE.sub("", raw).strip()
+    if not text:
+        return None, "invalid"
+    # 用 urlparse 判定协议，而非正则猜 ://（javascript:void(0) 只有冒号无 //）
+    parsed = urlparse(text)
+    if parsed.scheme:
+        if parsed.scheme.casefold() not in _SUPPORTED_SCHEMES:
+            return None, f"unsupported:{parsed.scheme.casefold()}"
+        # http(s) 但 clean_url 返回 None → 畸形（如缺 host），算 invalid
+        return None, "invalid"
+    return None, "no_scheme"
+
+
 def _split_marker(text: str) -> int:
     """返回第一个分隔符位置；无则返回 0。只考虑 CSV/制表符/空白粘连。"""
     for index, char in enumerate(text):
@@ -74,4 +108,4 @@ def extract_urls_from_text(text: str | None) -> list[str]:
     return out
 
 
-__all__ = ["clean_url", "extract_urls_from_text"]
+__all__ = ["clean_url", "clean_url_status", "extract_urls_from_text"]
