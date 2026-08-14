@@ -95,8 +95,9 @@ def test_b9_csv_index_no_100k_truncation(tmp_path) -> None:
     assert model.rowCount() == 7  # 尾页完整
 
     # 异步路径同样完整计数
-    from omnicrawl.gui.async_workers import CsvIndexWorker
     from PyQt6.QtTest import QSignalSpy
+
+    from omnicrawl.gui.async_workers import CsvIndexWorker
     worker = CsvIndexWorker(csv_path)
     spy = QSignalSpy(worker.finished_indexing)
     worker.run()
