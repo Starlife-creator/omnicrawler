@@ -189,7 +189,14 @@ class TestValidationSnapshot:
 
 
 class TestDNSPreflight:
-    def test_preflight_bad_host_raises(self, tmp_path) -> None:
+    def test_preflight_bad_host_raises(self, tmp_path, monkeypatch) -> None:
+        import socket
+
+        # 用假 DNS 替代真实解析，避免单元测试依赖外部 DNS/网络
+        def _fake_getaddrinfo(host, *_a, **_k):
+            raise socket.gaierror("mock NXDOMAIN")
+
+        monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo)
         cfg = _make_cfg(tmp_path, {
             "mirrors": {
                 "enabled": True,

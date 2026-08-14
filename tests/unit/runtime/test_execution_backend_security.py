@@ -12,6 +12,9 @@ from omnicrawl.runtime.execution_backend import WorkerSession, _write_session
 
 
 def test_session_file_roundtrips_auth_token(tmp_path: Path) -> None:
+    import os
+    import stat
+
     path = tmp_path / "worker-session.json"
     session = WorkerSession(
         session_id="s2", config_path="task.yaml", workspace=str(tmp_path),
@@ -20,6 +23,10 @@ def test_session_file_roundtrips_auth_token(tmp_path: Path) -> None:
     )
     _write_session(path, session)
     assert json.loads(path.read_text(encoding="utf-8"))["auth_token"] == "secret-token-abc"
+    # IPC 安全核心是随机 auth_token（连接须 authkey 匹配）；POSIX 上会话
+    # 文件尽力收紧为 0600（Windows 无 POSIX 权限语义，chmod 仅尽力而为）。
+    if os.name != "nt":
+        assert stat.S_IMODE(path.stat().st_mode) & 0o077 == 0
 
 
 def test_startup_timeout_error_is_never_empty(tmp_path: Path, monkeypatch) -> None:
