@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import tomllib
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from pathlib import Path
+
+import tomllib
 
 
 def _junit_counts(path: Path) -> dict[str, int]:
