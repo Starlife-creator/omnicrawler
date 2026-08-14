@@ -49,7 +49,6 @@ if not _cli_mode():
     try:
         from PyQt6.QtCore import (
             QObject,
-            QSettings,
             Qt,
             QThread,
             QTimer,
@@ -203,7 +202,9 @@ class TemplateLibraryDialog(QDialog):
         self.resize(720, 520)
         self._templates = templates
         self.selected_template: TemplateInfo | None = None
-        self._settings = QSettings("OmniCrawler", "GUIWorkbench")
+        from .settings import make_qsettings
+
+        self._settings = make_qsettings("OmniCrawler", "GUIWorkbench")
         stored_favorites = self._settings.value("templates/favorites", [])
         if isinstance(stored_favorites, str):
             stored_favorites = [stored_favorites]
@@ -2179,15 +2180,10 @@ def main() -> int:
     try:
         configure_logging(args.log_level, log_format="text")
 
-        if is_frozen():
-            settings_path = portable_data_root() / ".omnicrawler" / "settings"
-            settings_path.mkdir(parents=True, exist_ok=True)
-            QSettings.setDefaultFormat(QSettings.Format.IniFormat)
-            QSettings.setPath(
-                QSettings.Format.IniFormat,
-                QSettings.Scope.UserScope,
-                str(settings_path),
-            )
+        # 便携设置重定向不再使用 QSettings.setDefaultFormat/setPath：
+        # 已证实对 QSettings(org, app) 构造在 Windows 上无效（仍落注册表）。
+        # 统一由 gui/settings.make_qsettings 在 is_frozen() 下用带路径构造落
+        # 应用数据根 INI（F53 同语义）。
         app = QApplication(sys.argv)
         app.setApplicationName("OmniCrawler GUI")
         app.setOrganizationName("OmniCrawler")

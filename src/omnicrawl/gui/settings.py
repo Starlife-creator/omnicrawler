@@ -11,6 +11,25 @@ SETTINGS_ORG = "OmniCrawler"
 SETTINGS_APP = "OmniCrawlerGUI"
 
 
+def make_qsettings(org: str = SETTINGS_ORG, app: str = SETTINGS_APP) -> QSettings:
+    """构造便携安全的 QSettings 实例。
+
+    源码模式回退到 Qt 默认（注册表 / INI 由平台决定）；冻结便携模式下
+    一律落到应用数据根内的 INI——与 F53 同语义（脱离注册表，同机多份
+    便携包互不串扰）。注意：``QSettings.setPath``/``setDefaultFormat``
+    对 ``QSettings(org, app)`` 构造在 Windows 上不生效（仍走注册表），
+    必须用带路径的构造才能真正落盘。
+    """
+    from ..core.runtime_paths import is_frozen, portable_data_root
+
+    if is_frozen():
+        root = portable_data_root()
+        settings_dir = root / ".omnicrawler" / "settings"
+        settings_dir.mkdir(parents=True, exist_ok=True)
+        return QSettings(str(settings_dir / f"{org}-{app}.ini"), QSettings.Format.IniFormat)
+    return QSettings(org, app)
+
+
 class AppSettings:
     """应用设置管理器，封装 QSettings 读写。"""
 
@@ -25,7 +44,7 @@ class AppSettings:
             ini_path = portable_data_root() / "settings.ini"
             self._settings = QSettings(str(ini_path), QSettings.Format.IniFormat)
         else:
-            self._settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
+            self._settings = make_qsettings(SETTINGS_ORG, SETTINGS_APP)
         # Sandboxed Windows sessions can deny registry writes.  Keep settings
         # functional for the active session rather than silently ignoring user
         # actions such as theme and accessibility changes.
