@@ -24,7 +24,27 @@ def run(args: argparse.Namespace) -> int:
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
     environment["OMNICRAWL_BROWSER_TESTS"] = "1" if args.browser else "0"
     marker = "e2e" if args.browser else "e2e and not e2e_browser"
-    expected_tests = 4 if args.browser else 3
+    # P5-1：动态统计匹配 marker 的测试数——此前硬编码 4/3，新增 e2e
+    # 测试时不同步即误报总数不符。
+    collected = subprocess.run(
+        command(args.python, "-m", "pytest", "--collect-only", "-q", "-m", marker, "e2e/tests"),
+        cwd=root,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    count_lines = [
+        line for line in (collected.stdout or "").splitlines()
+        if "::" in line  # pytest 测试节点标识：<file>::<test>
+    ]
+    try:
+        expected_tests = len(count_lines)
+    except Exception:  # noqa: BLE001 — 收集失败退化为旧行为，不阻断 E2E
+        expected_tests = 0
+    if expected_tests == 0:
+        print("warning: 未能统计 e2e 测试数（pytest 收集输出异常），使用 0")
+        if collected.returncode:
+            print(collected.stderr or collected.stdout)
     if args.full_regression:
         regression = subprocess.run(
             command(

@@ -55,20 +55,38 @@ def test_a22_help_registry_unknown_id_raises_key_error() -> None:
         get_help("troubleshooting")  # 该 ID 未收录
 
 
-def test_a21_settings_clear_recent_is_public(monkeypatch) -> None:
-    """A21：AppSettings 提供公开 clear_recent()，不再被外部访问 _settings 私有成员。"""
+def test_a21_settings_clear_recent_is_public(monkeypatch, tmp_path) -> None:
+    """A21：AppSettings 提供公开 clear_recent()，不再被外部访问 _settings 私有成员。
+
+    P0-4：此前 AppSettings() 写真实 QSettings（Windows 注册表 / Linux
+    ~/.config）并硬编码 C:\\tmp\\a.yaml——测试污染真实用户配置且仅 Windows
+    有效。现 monkeypatch is_frozen + portable_data_root 走 F53 便携分支，
+    写入落到 tmp_path，且用 tmp_path 下文件替代硬编码路径。
+    """
     pytest.importorskip("PyQt6")
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
     from PyQt6.QtWidgets import QApplication
 
+    import omnicrawl.core.runtime_paths as runtime_paths
     from omnicrawl.gui.settings import AppSettings
 
+    runtime_paths.portable_data_root.cache_clear()
+    monkeypatch.setattr(runtime_paths, "is_frozen", lambda: True)
+    monkeypatch.setattr(runtime_paths, "portable_data_root", lambda: tmp_path)
+
     QApplication.instance() or QApplication([])
+    AppSettings.reset()
     settings = AppSettings()
-    settings.add_recent_file(r"C:\tmp\a.yaml")
+    recent = tmp_path / "a.yaml"
+    settings.add_recent_file(str(recent))
+    settings.sync()
     assert settings.recent_files
     settings.clear_recent()
+    settings.sync()
     assert settings.recent_files == []
+    # F53 便携分支：设置 INI 落在数据根（tmp_path）内，未污染真实配置
+    ini = tmp_path / "settings.ini"
+    assert ini.is_file(), "便携分支设置未落盘到数据根"
 
 
 def test_b9_csv_index_no_100k_truncation(tmp_path) -> None:

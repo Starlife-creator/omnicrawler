@@ -198,8 +198,8 @@ def cmd_templates_submit(args: argparse.Namespace) -> int:
     默认 fork/clone/push 并创建 PR（需 gh 登录）；``--no-pr`` 仅把文件集写入
     ``--out-dir``（默认市场仓）以供本地备好、手动提交。
     """
+    from omnicrawl.plugins.market_uploader import UploadError, create_market_pr
     from omnicrawl.plugins.plugin_packaging import build_template_upload
-    from omnicrawl.plugins.market_uploader import create_market_pr, UploadError
 
     tpl_dir = Path(args.template_dir)
     try:
