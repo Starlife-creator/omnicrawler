@@ -104,6 +104,7 @@ markers = [
   "e2e: full workflow test that exercises real local services and external runtime adapters",
   "e2e_browser: optional local Chromium extension; never accesses a remote service",
   "asyncio: mark a test as an async test",
+  "network: requires external network access; skipped by default, enable via env or -m network",
 ]
 asyncio_mode = "auto"
 
