@@ -35,7 +35,7 @@ class TestHelpTooltipSizing:
             Path(__file__).resolve().parents[2]
             / "src" / "omnicrawl" / "gui" / "widgets" / "help_tooltip.py"
         ).read_text(encoding="utf-8")
-        assert "setFixedSize(32, 32)" in source or "32" in source, \
+        assert "setFixedSize(32, 32)" in source, \
             "Help buttons must have at least 32x32 click area"
 
 

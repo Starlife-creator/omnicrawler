@@ -96,9 +96,15 @@ def test_b9_csv_index_no_100k_truncation(tmp_path) -> None:
 
     # 异步路径同样完整计数
     from omnicrawl.gui.async_workers import CsvIndexWorker
+    from PyQt6.QtTest import QSignalSpy
     worker = CsvIndexWorker(csv_path)
+    spy = QSignalSpy(worker.finished_indexing)
     worker.run()
-    assert worker is not None
+    assert len(spy) == 1, "异步索引未完成"
+    headers, total_rows, file_size = spy[0]
+    assert headers == ["a", "b", "c"]
+    assert total_rows == ROWS_PER_PAGE * 3 + 7  # 与同步路径一致，未被截断
+    assert file_size > 0
 
 
 def test_b9_csv_tail_reachable_beyond_100k_rows(tmp_path) -> None:

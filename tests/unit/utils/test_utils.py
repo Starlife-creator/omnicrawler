@@ -54,19 +54,39 @@ class UtilsTest(unittest.TestCase):
         self.assertFalse(is_private_target("https://example.com/"))
 
     def test_rate_limiter_does_not_serialize_different_hosts(self):
-        limiter = HostRateLimiter(0.15)
-        limiter.wait("https://a.example/first")
-        limiter.wait("https://b.example/first")
-        started = time.monotonic()
-        threads = [
-            threading.Thread(target=limiter.wait, args=("https://a.example/second",)),
-            threading.Thread(target=limiter.wait, args=("https://b.example/second",)),
-        ]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-        self.assertLess(time.monotonic() - started, 0.26)
+        # 用可控假时钟替代真实墙钟断言，消除 CI 负载下的 flaky（原 assertLess(<0.26) 依赖真实墙钟）
+        fake_clock = {"t": 1000.0}
+        real_monotonic = time.monotonic
+        real_sleep = time.sleep
+
+        def fake_monotonic():
+            return fake_clock["t"]
+
+        def fake_sleep(duration):
+            # 模拟阻塞：直接推进假时钟，不真正等待
+            fake_clock["t"] += duration
+
+        time.monotonic = fake_monotonic  # type: ignore[assignment]
+        time.sleep = fake_sleep  # type: ignore[assignment]
+        try:
+            limiter = HostRateLimiter(0.15)
+            limiter.wait("https://a.example/first")
+            limiter.wait("https://b.example/first")
+            started = fake_monotonic()
+            threads = [
+                threading.Thread(target=limiter.wait, args=("https://a.example/second",)),
+                threading.Thread(target=limiter.wait, args=("https://b.example/second",)),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+            elapsed = fake_monotonic() - started
+            # 不同 host 各有独立槽位：并行两段等待的模拟耗时 < 被串行化的 2×delay(=0.30)
+            self.assertLess(elapsed, 2 * limiter.delay)
+        finally:
+            time.monotonic = real_monotonic
+            time.sleep = real_sleep
 
     def test_compressed_response_limit_is_enforced_during_decode(self):
         body = gzip.compress(b"x" * 10_000)
