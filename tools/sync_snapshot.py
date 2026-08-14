@@ -37,15 +37,16 @@ SYNC_ITEMS = ("catalog.json", "authors", "keys")
 def _mirror(src: Path, dest: Path, stats: dict[str, int]) -> None:
     """把 src 目录镜像进 dest（src 有而 dest 无则拷贝，dest 多余则删除）。"""
     dest.mkdir(parents=True, exist_ok=True)
-    src_names = {p.name for p in src.iterdir()} if src.is_dir() else set()
     for item in SYNC_ITEMS:
         s = src / item
         d = dest / item
         if s.is_dir():
             d.mkdir(parents=True, exist_ok=True)
-            # 删除 dest 多余项
+            # 删除 dest 多余项（以对应源子目录内容为准，而非顶层 src_names；
+            # 否则子目录下所有文件都会被误判为「多余」而删空）
+            s_names = {p.name for p in s.iterdir()} if s.is_dir() else set()
             for old in d.iterdir():
-                if old.name not in src_names:
+                if old.name not in s_names:
                     if old.is_dir():
                         shutil.rmtree(old)
                     else:
