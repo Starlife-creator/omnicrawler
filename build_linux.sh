@@ -69,9 +69,9 @@ if [[ ! -x "$BUILDER_PYTHON" ]]; then
 fi
 "$BUILDER_PYTHON" -m pip install --upgrade pip setuptools wheel
 if [[ "$EDITION" == "Full" ]]; then
-  EXTRAS="full,dev"
+  EXTRAS="full"
 else
-  EXTRAS="gui,html,pdf,browser,async-http,security,dev"
+  EXTRAS="gui,html,pdf,browser,async-http,security"
 fi
 "$BUILDER_PYTHON" -m pip install -e "$PROJECT_ROOT[$EXTRAS]" pyinstaller
 

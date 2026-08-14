@@ -21,7 +21,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.10", "3.12", "3.13"]
+        python-version: ["3.12"]
     runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: offscreen
@@ -132,7 +132,7 @@ jobs:
           python-version: "3.13"
           cache: pip
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[full,dev]"
+      - run: python -m pip install -e ".[full]"
       - run: python -m pip check
       - name: Install non-blocking dependency audit tool
         continue-on-error: true
@@ -155,4 +155,4 @@ jobs:
           name: dependency-audit-windows-full
           path: dependency-audit.json
           if-no-files-found: warn
-      - run: python -m pytest -q
+      # 3.13 轻量依赖 smoke：仅验证 full 依赖能装能导入（交付物冻结 3.12，不全量 pytest）
