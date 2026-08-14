@@ -152,12 +152,40 @@ class ProductionFoundationTest(unittest.TestCase):
         self.assertLess(asyncio.run(run()), 0.17)
 
     def test_robots_fetches_different_origins_concurrently(self):
-        opener = _Opener()
+        # 确定性并发断言：记录两个 origin 抓取的重叠次数，取代真实墙钟阈值
+        # （macOS CI 负载下 0.18s 硬断言偶发超时，P0-7 同型问题）
+        state = {"active": 0, "max_active": 0}
+        guard = threading.Lock()
+
+        class _ConcurrentResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def read(self, _maximum):
+                with guard:
+                    state["active"] += 1
+                    state["max_active"] = max(state["max_active"], state["active"])
+                time.sleep(0.05)  # 给另一线程重叠机会
+                with guard:
+                    state["active"] -= 1
+                return b"User-agent: *\nAllow: /\n"
+
+        class _ConcurrentOpener:
+            def __init__(self):
+                self.urls = []
+
+            def open(self, request, timeout):
+                self.urls.append((request.full_url, timeout))
+                return _ConcurrentResponse()
+
+        opener = _ConcurrentOpener()
         policy = RobotsPolicy(
             self.config({"http": {"respect_robots": True}}), opener=opener
         )
         values = []
-        started = time.monotonic()
         threads = [
             threading.Thread(target=lambda url=url: values.append(policy.allowed(url)))
             for url in ("https://a.example/page", "https://b.example/page")
@@ -167,11 +195,12 @@ class ProductionFoundationTest(unittest.TestCase):
         for thread in threads:
             thread.join()
         self.assertTrue(all(values))
-        self.assertLess(time.monotonic() - started, 0.18)
         self.assertEqual(
             {url for url, _timeout in opener.urls},
             {"https://a.example/robots.txt", "https://b.example/robots.txt"},
         )
+        # 两个不同 origin 的 robots 抓取必须发生过重叠（并发），而非串行
+        self.assertGreaterEqual(state["max_active"], 2)
 
     def test_retry_after_accepts_http_date(self):
         now = datetime(2026, 1, 1, tzinfo=UTC)
