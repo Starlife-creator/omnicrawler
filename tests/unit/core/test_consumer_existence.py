@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -26,14 +27,51 @@ def source() -> str:
     return _source_text()
 
 
+def _docstring_nodes(tree: ast.AST) -> set[int]:
+    """收集作为 docstring 的字符串常量节点 id（模块/函数/类首条语句）。"""
+    doc_nodes: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            body = getattr(node, "body", None)
+            if body and isinstance(body[0], ast.Expr):
+                value = body[0].value
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    doc_nodes.add(id(value))
+    return doc_nodes
+
+
 def _usage(source: str, token: str) -> int:
-    """统计 token 在源码中的出现次数（不含定义处与注释）。"""
+    """统计 token 在源码中的真实引用次数（AST，排除注释与 docstring）。
+
+    原行扫描会把内联注释/docstring 续行/字符串里的同名符号误计为消费方，
+    导致「零消费即红」守卫可被纯文档符号绕过（P1-4）。AST 统计：
+    - ast.Name / ast.Attribute（标识符引用，含函数/属性/类名）
+    - 非 docstring 的字符串常量（覆盖 value_pattern 等配置键字面量）
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return 0
+    doc_nodes = _docstring_nodes(tree)
     count = 0
-    for line in source.splitlines():
-        stripped = line.strip()
-        if stripped.startswith(("#", '"""', "'''")):
-            continue
-        if token in line and "noqa" not in line:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id == token:
+            count += 1
+        elif isinstance(node, ast.Attribute) and node.attr == token:
+            count += 1
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            # 模块导入是真实引用：token 出现在任一导入名/模块路径的路径段中
+            names = [alias.name for alias in node.names]
+            if isinstance(node, ast.ImportFrom) and node.module:
+                names.append(node.module)
+            if any(token in n.split(".") for n in names if n):
+                count += 1
+        elif (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value == token
+            and id(node) not in doc_nodes
+        ):
             count += 1
     return count
 
