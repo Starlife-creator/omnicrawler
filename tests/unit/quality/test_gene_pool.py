@@ -101,7 +101,9 @@ class GeneMaintenanceTest(unittest.TestCase):
     def _reset_maintain_clock() -> None:
         import omnicrawl.services.gene_maintenance as gm
 
-        gm._LAST_CHECK = 0.0
+        # 用极大负值代替 0.0：time.monotonic() 是系统启动以来的时钟，
+        # 全新 CI runner（开机 < ttl=300s）上 0.0 会令首调被节流而误挂。
+        gm._LAST_CHECK = -1e9
 
     def test_maybe_maintain_no_prune_below_threshold(self) -> None:
         self._reset_maintain_clock()
