@@ -138,6 +138,9 @@ jobs:
       # 并显式探测 change_detector 走的 selectolax 路径可导入。
       - name: 依赖完整性门禁（P6-1）
         shell: bash
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
         run: |
           python - <<'PY'
           import importlib.metadata
@@ -158,9 +161,9 @@ jobs:
               except importlib.metadata.PackageNotFoundError:
                   missing.append(name.group(0))
           if missing:
-              raise SystemExit(f"P6-1 FAIL: full extra 有包未安装: {missing}")
+              raise SystemExit(f"P6-1 FAIL: full extra has uninstalled packages: {missing}")
           import selectolax  # change_detector 的 HTML 抽取路径
-          print(f"P6-1 OK: full extra {len(full)} 个包全部已安装；selectolax 可导入")
+          print(f"P6-1 OK: full extra {len(full)} packages installed; selectolax importable")
           PY
       - name: Install non-blocking dependency audit tool
         continue-on-error: true

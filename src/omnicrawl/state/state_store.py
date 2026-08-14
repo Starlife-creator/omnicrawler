@@ -811,7 +811,7 @@ class StateStore:
         with self._lock:
             rows = self.conn.execute(
                 "SELECT run_id, project_name, status, started_at, finished_at "
-                "FROM runs ORDER BY started_at DESC LIMIT ?",
+                "FROM runs ORDER BY started_at DESC, rowid DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         return [dict(row) for row in rows]
