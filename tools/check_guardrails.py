@@ -132,18 +132,24 @@ def check_sbom(sbom_path: Path | None) -> list[str]:
 
 
 def check_sig_bytes() -> list[str]:
-    """市场仓已发布插件的签名文件：工作区字节必须等于 git 索引字节。"""
-    sig = MARKET_ROOT / "plugins" / "example_news" / "plugin.py.sig"
-    if not sig.is_file():
-        return ["[5] 市场插件签名文件缺失: " + str(sig)]
-    working = sig.read_bytes()
-    try:
-        blob = _git_blob(MARKET_ROOT, sig)
-    except RuntimeError as exc:
-        return [f"[5] {exc}"]
-    if working != blob:
-        return ["[5] 签名文件工作区字节与 git 索引不一致（存在未提交漂移）: " + str(sig)]
-    return []
+    """市场仓已发布插件的签名文件：工作区字节必须等于 git 索引字节。
+
+    glob 全部 plugins/*/plugin.py.sig，避免硬编码示例插件名导致改名/删除
+    时脆性失败（P2-6）。无签名文件时无可比对，返回空。
+    """
+    issues: list[str] = []
+    plugins_root = MARKET_ROOT / "plugins"
+    sig_files = sorted(plugins_root.glob("*/plugin.py.sig")) if plugins_root.is_dir() else []
+    for sig in sig_files:
+        working = sig.read_bytes()
+        try:
+            blob = _git_blob(MARKET_ROOT, sig)
+        except RuntimeError as exc:
+            issues.append(f"[5] {exc}")
+            continue
+        if working != blob:
+            issues.append(f"[5] 签名文件工作区字节与 git 索引不一致（存在未提交漂移）: {sig}")
+    return issues
 
 
 def check_po(threshold: float) -> list[str]:

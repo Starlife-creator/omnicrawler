@@ -3,9 +3,9 @@
 Rules enforced here:
   R1  - dict(base) used as config merge (shallow copy) instead of deepcopy.
   R2  - "x or default" applied to a numeric/counting default.
-  R3  - bare json.loads / int() / float() on untrusted data.
-  R4  - destructive commands (reset / reset_stage / rollback-config) without
-        require_explicit_apply / ConfirmationRequired / --apply handling.
+
+(R3 裸 json.loads/int()/float() 于不可信数据、R4 破坏性命令无显式确认，
+需数据流/上下文分析，AST 朴素实现会大量误报，尚未启用。)
 
 Run locally:  python tools/check_coding_standards.py src
 """
@@ -18,8 +18,6 @@ from pathlib import Path
 
 OK_MARK = "[OK]"
 BAD_MARK = "[FAIL]"
-
-DESTRUCTIVE_HINTS = {"reset_stage", "rollback-config", ".reset(", "require_explicit_apply"}
 
 
 class Violation:
