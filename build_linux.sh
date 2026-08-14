@@ -156,14 +156,22 @@ for relative_dir in data/input data/pdfs work output logs; do
   mkdir -p "$RELEASE_ROOT/$relative_dir"
 done
 
-# ---- 产物级测试（CLI 冒烟 + 完整性清单）-------------------------------------
+# ---- 产物级测试（SBOM + CLI 冒烟 + portable 冒烟 + 完整性清单）--------------
+# P4-2：与 Windows 对齐，SBOM 写入包内
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/generate_sbom.py" --output "$RELEASE_ROOT/SBOM.json"
 "$RELEASE_ROOT/omnicrawl" --version
 "$RELEASE_ROOT/omnicrawl" templates validate
 "$RELEASE_ROOT/omnicrawl" capabilities --verify-imports --portable-paths
+# P4-3：portable 冒烟（浏览器/原生运行时）。其 cwd=releaseRoot 会写缓存，
+# 必须在完整性清单生成之前运行（与 Windows F11 同约束）。
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/portable_smoke_test.py" "$RELEASE_ROOT" --edition "$EDITION"
 
 # 完整性清单：复用仓库内跨平台实现（不依赖 Windows 专属工具）
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/create_runtime_manifest.py" --release-root "$RELEASE_ROOT"
 "$RELEASE_ROOT/omnicrawl" runtime-verify --root "$RELEASE_ROOT"
+# P4-1：Windows 对 zip 跑 check_release_integrity --portable-zip --portable-deep；
+# Linux tar.gz 暂不做同等深校验（工具仅支持 zipfile 容器，扩展为多格式是后续项）。
+# 结构对称性由上方 runtime-verify（RUNTIME-MANIFEST 双向核对）+ CLI 冒烟兜底。
 
 # ---- 打包 tar.gz --------------------------------------------------------------
 mkdir -p "$RELEASE_OUTPUT"
