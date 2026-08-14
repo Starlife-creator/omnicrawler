@@ -92,7 +92,8 @@ def translate_steps(steps: list[dict[str, Any]]) -> list[MapSpec]:
             raise ValueError(
                 f"transform 步骤 {step_type!r} 不是值级算子；记录级操作（如 dedupe）请改用插件 transformers"
             )
-        options = step.get("options") if isinstance(step.get("options"), dict) else {}
+        raw_options = step.get("options")
+        options: dict[str, Any] = raw_options if isinstance(raw_options, dict) else {}
         if step_type == "regex_extract":
             pattern = options.get("pattern") or options.get("regex")
             if not pattern:

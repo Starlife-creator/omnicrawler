@@ -493,7 +493,11 @@ def policy_from_config(cfg: dict[str, Any] | None) -> NormalizePolicy:
         date_format=str(cfg.get("date_format", "iso")) or "iso",
         strip_tracking=bool(cfg.get("strip_tracking", True)),
         max_cell_length=int(cfg.get("max_cell_length", _MAX_CELL_LENGTH)),
-        types={str(key): str(value) for key, value in types.items()} if isinstance(types, dict) else {},
+        types={
+            str(key): kind
+            for key, value in types.items()
+            if (kind := str(value)) in _TYPE_KINDS
+        } if isinstance(types, dict) else {},
     )
 
 

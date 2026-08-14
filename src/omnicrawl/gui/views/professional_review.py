@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QColor
@@ -35,6 +35,9 @@ from PyQt6.QtWidgets import (
 from ...review.review_workbench import ReviewField, ReviewItem
 from ..design_system import FONT_FAMILY_MONO, FONT_SIZE, RADIUS, ThemeManager
 from ..i18n import _
+
+if TYPE_CHECKING:
+    from ...state.capsule_store import CapsuleStore
 
 
 def _confidence_color(confidence: float) -> QColor:
@@ -132,7 +135,7 @@ class EvidenceView(QWidget):
 
         self._current_item: ReviewItem | None = None
         self._raw_record: dict[str, Any] | None = None
-        self._capsule_store = None  # 懒加载 CapsuleStore
+        self._capsule_store: CapsuleStore | None = None  # 懒加载 CapsuleStore
         self._capsule_workspace = Path(workspace) if workspace else None
 
         self._setup_ui()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -609,30 +610,31 @@ class _PipelineRun(_PipelineBase):
                 else:
                     if self.config.source_kind == "sse":
                         stream_results = collect_sse(
-                            request.url,
                             self.config,
-                            self.egress,
+                            request,
+                            should_continue=(lambda: not should_stop()) if should_stop else None,
+                            egress=self.egress,
                             max_messages=max_pages,
-                            should_stop=should_stop,
                         )
                     elif self.config.source_kind == "websocket":
                         stream_results = collect_websocket(
-                            request.url,
                             self.config,
-                            self.egress,
+                            request,
+                            should_continue=(lambda: not should_stop()) if should_stop else None,
+                            egress=self.egress,
                             max_messages=max_pages,
-                            should_stop=should_stop,
                         )
                     else:
                         stream_results = []
                     for item in stream_results:
-                        message, meta = item if isinstance(item, tuple) and len(item) == 2 else (item, {})
+                        # collect_sse/collect_websocket 返回结构化 ExtractedRecord；
+                        # 其 data 已是最终记录载荷，序列化为 JSON body 供 processor 处理。
                         result = FetchResult(
-                            request, request.url, 200, {"content-type": "text/event-stream"},
-                            (message if isinstance(message, (bytes, bytearray)) else str(message).encode("utf-8")),
-                            float(meta.get("elapsed", 0) or 0),
+                            request, request.url, 200, {"content-type": "application/json"},
+                            json.dumps(item.data, ensure_ascii=False).encode("utf-8"),
+                            float(item.evidence.get("elapsed", 0) or 0),
                         )
-                        result.meta.update(meta)
+                        result.meta.update(item.evidence)
                         processor_name = extractors.choose_processor(result)
                         collected = []
                         if processor_name in self.registry.processors:

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 LOGGER = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ def _repolish_widget(widget: QWidget) -> None:
     widget.ensurePolished()
 
 
-def _selector_kind(selector: str) -> str:
+def _selector_kind(selector: str) -> Literal["css", "xpath"]:
     """判断选择器是 XPath 还是 CSS（默认 css）；与 step3_fields.selector_kind 同语义。"""
     stripped = (selector or "").strip()
     if not stripped:
@@ -207,7 +207,10 @@ class _FieldTableModel(QAbstractTableModel):
         elif index.column() == 1:
             field.selector = text
         else:
-            field.selector_type = text if text in ("css", "xpath", "jsonpath") else "css"
+            field.selector_type = (
+                cast(Literal["css", "xpath", "jsonpath"], text)
+                if text in ("css", "xpath", "jsonpath") else "css"
+            )
         self.dataChanged.emit(index, index, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
         return True
 
@@ -865,12 +868,15 @@ class TaskCanvas(QScrollArea):
         self._fields_table.setModel(self._fields_model)
         self._fields_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self._fields_table.setWordWrap(False)
-        self._fields_table.verticalHeader().setVisible(False)
+        v_header = self._fields_table.verticalHeader()
+        if v_header is not None:
+            v_header.setVisible(False)
         header = self._fields_table.horizontalHeader()
-        header.setStretchLastSection(True)
-        header.resizeSection(0, 140)
-        header.resizeSection(1, 260)
-        header.resizeSection(2, 80)
+        if header is not None:
+            header.setStretchLastSection(True)
+            header.resizeSection(0, 140)
+            header.resizeSection(1, 260)
+            header.resizeSection(2, 80)
         body.addWidget(self._fields_table)
 
         # P2：渐进披露（PRD §3.3）——字段数 >10 时先显示前 10 条
@@ -1036,7 +1042,9 @@ class TaskCanvas(QScrollArea):
             fields.append(FieldDef(
                 name=str(name),
                 selector=str(spec.get("selector", "")),
-                selector_type=str(spec.get("type", "css")),
+                selector_type=cast(
+                    Literal["css", "xpath", "jsonpath"], str(spec.get("type", "css"))
+                ),
             ))
         return fields
 
@@ -1148,8 +1156,8 @@ class TaskCanvas(QScrollArea):
         fmt_row.addStretch()
         body.addLayout(fmt_row)
         self._format_checks: list[QCheckBox] = []
-        for fmt_id, fmt_label in _OUTPUT_FORMATS:
-            chk = QCheckBox(fmt_label)
+        for fmt_id, fmt_caption in _OUTPUT_FORMATS:
+            chk = QCheckBox(fmt_caption)
             chk.setProperty("fmt", fmt_id)
             chk.setChecked(True)
             chk.toggled.connect(self._on_output_changed)
@@ -1559,7 +1567,7 @@ class TaskCanvas(QScrollArea):
                             name=slot.slot_key,
                             selector=slot.pattern,
                             selector_type=(
-                                slot.extractor_type
+                                cast(Literal["css", "xpath", "jsonpath"], slot.extractor_type)
                                 if slot.extractor_type in ("css", "xpath", "jsonpath")
                                 else "css"
                             ),

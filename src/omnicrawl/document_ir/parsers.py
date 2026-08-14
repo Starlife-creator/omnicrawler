@@ -219,6 +219,8 @@ def _parse_eml(path: Path, options: dict[str, Any]) -> DocumentIR:
             payload = part.get_payload(decode=True)
             if payload:
                 charset = part.get_content_charset() or "utf-8"
+                if not isinstance(payload, bytes):
+                    payload = str(payload).encode("utf-8", errors="replace")
                 try:
                     body_parts.append(payload.decode(charset, errors="replace"))
                 except LookupError:
