@@ -21,7 +21,7 @@ from typing import Any, Literal, cast
 
 LOGGER = logging.getLogger(__name__)
 
-from PyQt6.QtCore import QAbstractTableModel, QModelIndex, QSettings, Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtCore import QAbstractTableModel, QModelIndex, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -549,7 +549,9 @@ class TaskCanvas(QScrollArea):
         """
         if self._config.seed_urls:
             return
-        settings = QSettings("OmniCrawler", "GUIWorkbench")
+        from ...gui.settings import make_qsettings
+
+        settings = make_qsettings("OmniCrawler", "GUIWorkbench")
         if settings.value(self._WELCOME_TIP_KEY, False, type=bool):
             return
         self._welcome_tip.setText(_("💡 试试粘贴一个网址开始"))
@@ -565,7 +567,9 @@ class TaskCanvas(QScrollArea):
         if self._url_edit.property("welcomeHighlight"):
             self._url_edit.setProperty("welcomeHighlight", False)
             _repolish_widget(self._url_edit)
-        settings = QSettings("OmniCrawler", "GUIWorkbench")
+        from ...gui.settings import make_qsettings
+
+        settings = make_qsettings("OmniCrawler", "GUIWorkbench")
         settings.setValue(self._WELCOME_TIP_KEY, True)
 
     def _on_start(self) -> None:
