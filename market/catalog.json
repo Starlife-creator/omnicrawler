@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-08-11T18:02:07+00:00",
+  "generated_at": "2026-08-14T13:41:38+00:00",
   "publisher": "Starlife-creator",
   "trust_model": "single-root-ed25519",
   "trust_public_key_ref": "keys/plugin_trust.pub.pem",
@@ -26,7 +26,9 @@
         "template"
       ],
       "updated_at": "2026-08-07",
-      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/example_news"
+      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/example_news",
+      "creator_signature_file": "plugins/example_news/creator.sig",
+      "creator_identity_file": "plugins/example_news/creator.identity"
     }
   ],
   "templates": [
