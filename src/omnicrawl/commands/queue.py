@@ -33,10 +33,10 @@ def _make_executor(kind: str):
 
     backend = LocalWorkerBackend()
 
-    def _run(task: TaskSpec) -> Any:
+    def _run_backend(task: TaskSpec) -> Any:
         return backend.start(task.config_path)
 
-    return _run
+    return _run_backend
 
 
 def execute(

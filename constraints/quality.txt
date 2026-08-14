@@ -8,3 +8,5 @@ pytest==9.1.1
 coverage==7.15.4
 ruff==0.16.2
 mypy==2.3.0
+# quality.yml 裸装 cryptography；与 pyproject security extra 同约束，防验签行为随大版本漂移
+cryptography>=44,<51

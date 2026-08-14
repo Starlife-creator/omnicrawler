@@ -103,7 +103,9 @@ class ScenePanel(QWidget):
             _("槽位"), _("名称"), _("抽取器"), _("模式/选择器"), _("值类型"), _("必填"),
         ])
         self._slot_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._slot_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        slot_header = self._slot_table.horizontalHeader()
+        if slot_header is not None:
+            slot_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self._slot_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         slot_layout.addWidget(self._slot_table)
         slot_row = QHBoxLayout()
@@ -123,7 +125,9 @@ class ScenePanel(QWidget):
             _("槽位"), _("选择器"), _("类型"), _("命中"), _("未中"), _("适应度"),
         ])
         self._gene_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._gene_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        gene_header = self._gene_table.horizontalHeader()
+        if gene_header is not None:
+            gene_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         gene_layout.addWidget(self._gene_table)
         root.addWidget(gene_box, 1)
 
@@ -136,7 +140,9 @@ class ScenePanel(QWidget):
             _("槽位"), _("值"), _("置信度"), _("状态"), _("时间"),
         ])
         self._cand_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._cand_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        cand_header = self._cand_table.horizontalHeader()
+        if cand_header is not None:
+            cand_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         cand_layout.addWidget(self._cand_table)
         cand_row = QHBoxLayout()
         cand_row.addStretch(1)
@@ -353,7 +359,9 @@ class ScenePanel(QWidget):
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self, _("导出失败"), _("写入文件失败：{0}").format(exc))
             return
-        QApplication.clipboard().setText(text)
+        clipboard = QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(text)
         QMessageBox.information(
             self, _("已生成"),
             _("字段配置已保存到：\n{0}\n\n并已复制到剪贴板。").format(path),

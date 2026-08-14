@@ -33,8 +33,34 @@ permissions:
   id-token: write        # OIDC，keyless 签名必需
   attestations: write    # 写入 Release 证明
 
+# 单一来源：交付物冻结的 Python 版本。三平台构建 job 与聚合发布 job 均引用此值；
+# verify-python-version job 会断言它与 pyproject 的 requires-python 下界一致，防止漂移。
+env:
+  BUILD_PYTHON_VERSION: "3.12"
+
 jobs:
+  verify-python-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "${{ env.BUILD_PYTHON_VERSION }}"
+      - name: 断言 requires-python 下界 == 构建 Python 版本
+        shell: bash
+        run: |
+          PY_MIN=$(python -c "import tomllib; v=tomllib.load(open('pyproject.toml','rb'))['project']['requires-python']; print(v.split('>=')[-1].split(',')[0].split('<')[0].strip())")
+          BUILD_VER="${BUILD_PYTHON_VERSION}"
+          if [ "$PY_MIN" != "$BUILD_VER" ]; then
+            echo "::error::pyproject requires-python 下界 ($PY_MIN) 与构建 Python 版本 ($BUILD_VER) 不一致，请同步"
+            exit 1
+          fi
+          echo "OK: requires-python 下界 $PY_MIN == 构建版本 $BUILD_VER"
+
   build-windows-portable:
+    needs: [verify-python-version]
     runs-on: windows-latest
     timeout-minutes: 120
     env:
@@ -46,7 +72,7 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "${{ env.BUILD_PYTHON_VERSION }}"
 
       - name: 读取源码版本号
         id: version
@@ -58,12 +84,21 @@ jobs:
 
       # 浏览器（Playwright Chromium）与 OCR 运行时（Tesseract/Paddle 模型）缓存，
       # 二次构建直接复用，避免每次从网络下载数百 MB。
+      # P4-4：playwright 约束 >=1.49,<2 非精确锁，新次要版会换 Chromium revision；
+      # 缓存 key 纳入实际解析的 playwright 版本，防旧版 Chromium 缓存与新版冲突。
+      - name: 解析 playwright 版本（缓存 key）
+        id: playwright-version
+        shell: pwsh
+        run: |
+          python -m pip install "playwright>=1.49,<2" --quiet
+          $v = (& python -c "import importlib.metadata; print(importlib.metadata.version('playwright'))").Trim()
+          Write-Output "version=$v" >> $env:GITHUB_OUTPUT
       - name: 缓存浏览器运行时
         id: browser-cache
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: .cache/playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-${{ hashFiles('pyproject.toml') }}
 
       - name: 缓存 OCR 运行时
         id: runtime-cache
@@ -147,6 +182,7 @@ jobs:
 
   # ── Linux 便携包（Standard + Full，tar.gz）────────────────────────
   build-linux-portable:
+    needs: [verify-python-version]
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -159,14 +195,19 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "${{ env.BUILD_PYTHON_VERSION }}"
 
+      - name: 解析 playwright 版本（缓存 key，P4-4）
+        id: playwright-version
+        run: |
+          python -m pip install "playwright>=1.49,<2" --quiet
+          echo "version=$(python -c 'import importlib.metadata; print(importlib.metadata.version("playwright"))')" >> "$GITHUB_OUTPUT"
       - name: 缓存浏览器运行时
         id: browser-cache
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: .cache/playwright
-          key: playwright-linux-${{ hashFiles('pyproject.toml') }}
+          key: playwright-linux-${{ steps.playwright-version.outputs.version }}-${{ hashFiles('pyproject.toml') }}
 
       - name: 构建 Standard 便携包
         shell: bash
@@ -209,6 +250,7 @@ jobs:
 
   # ── macOS 便携包（Standard + Full，dmg / tar.gz）──────────────────
   build-macos-portable:
+    needs: [verify-python-version]
     runs-on: macos-latest
     timeout-minutes: 120
     env:
@@ -221,14 +263,19 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "${{ env.BUILD_PYTHON_VERSION }}"
 
+      - name: 解析 playwright 版本（缓存 key，P4-4）
+        id: playwright-version
+        run: |
+          python -m pip install "playwright>=1.49,<2" --quiet
+          echo "version=$(python -c 'import importlib.metadata; print(importlib.metadata.version("playwright"))')" >> "$GITHUB_OUTPUT"
       - name: 缓存浏览器运行时
         id: browser-cache
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: .cache/playwright
-          key: playwright-macos-${{ hashFiles('pyproject.toml') }}
+          key: playwright-macos-${{ steps.playwright-version.outputs.version }}-${{ hashFiles('pyproject.toml') }}
 
       - name: 构建 Standard 便携包
         shell: bash
@@ -285,7 +332,7 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "${{ env.BUILD_PYTHON_VERSION }}"
 
       - name: 生成 provenance
         shell: bash

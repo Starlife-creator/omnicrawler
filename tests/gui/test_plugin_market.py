@@ -84,6 +84,43 @@ def test_installed_ids_enumerates_signed_plugin_dirs(tmp_path):
     assert ids == {"a", "b"}
 
 
+def test_installed_plugin_verify_fails_closed_with_real_signatures(tmp_path):
+    """安装目录的 .sig 用真实 ed25519 演练：未知信任根/篡改 → fail-closed。
+
+    与 GUI 视图 _on_verify 走同一路径（market_client.verify_installed），
+    此前测试仅用全零 .sig 验证「存在性」，未覆盖密码学验签（P1-11）。
+    """
+    from omnicrawl.plugins import signing
+    from omnicrawl.plugins.market_client import verify_installed
+
+    private_pem, public_pem = signing.generate_keypair()
+    dest_root = tmp_path / "plugins_installed"
+    dest = dest_root / "demo"
+    dest.mkdir(parents=True)
+    plugin = dest / "plugin.py"
+    plugin.write_text("PLUGIN_METADATA = {'name': 'demo'}\n", encoding="utf-8")
+    (dest / "plugin.py.sig").write_bytes(
+        signing.sign_bytes(plugin.read_bytes(), private_pem)
+    )
+    trust = tmp_path / "trust.pub.pem"
+    trust.write_bytes(public_pem)
+
+    ok, reason = verify_installed(dest_root, "demo", str(trust))
+    assert ok and reason == "verified"
+
+    # 未知信任根（插件未篡改）→ fail-closed
+    _, other_pub = signing.generate_keypair()
+    other_trust = tmp_path / "other.pub.pem"
+    other_trust.write_bytes(other_pub)
+    ok, reason = verify_installed(dest_root, "demo", str(other_trust))
+    assert not ok
+
+    # 篡改插件（正确信任根）→ fail-closed
+    plugin.write_bytes(plugin.read_bytes() + b"\n# tampered")
+    ok, reason = verify_installed(dest_root, "demo", str(trust))
+    assert not ok
+
+
 def test_offline_populate_lists_only_local_installs(tmp_path):
     from omnicrawl.gui.views.plugin_market import PluginMarketView
 

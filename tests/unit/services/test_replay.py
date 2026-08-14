@@ -58,7 +58,7 @@ class ReplayTest(unittest.TestCase):
                 capsule_dir = temp / "capsules"
                 CapsuleStore(capsule_dir).append(run_id, self._capsule(run_id))
                 result = replay_field(run_id, "title", store=state, capsule_dir=capsule_dir)
-                self.assertEqual(result["status"], "ok")
+                self.assertEqual(result["status"], "ok", msg=f"replay_field 返回: {result}")
                 self.assertEqual(result["value"], "标题")
                 self.assertEqual(result["url"], URL)
                 self.assertIsNotNone(result["dom_hash"])

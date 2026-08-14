@@ -39,7 +39,8 @@ def test_zero_records_run_snapshot() -> None:
 def test_exception_run_snapshot() -> None:
     parser, results = _parse("exception_run.log")
     assert any(r["level"] == "error" for r in results)
-    assert any("ExtractionError" in "" or r["level"] == "error" for r in results)
+    # 异常类型真实出现在 CLI 输出（parse_line 不保留原始行，直接校验 fixture）
+    assert "ExtractionError" in (FIXTURES / "exception_run.log").read_text(encoding="utf-8")
 
 
 def test_blocked_network_snapshot() -> None:

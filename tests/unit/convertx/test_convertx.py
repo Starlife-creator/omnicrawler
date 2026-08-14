@@ -318,7 +318,9 @@ class TestCLI:
         import os
         env = os.environ.copy()
         # 把 src 目录注入 PYTHONPATH，确保子进程能找到 omnicrawl 包
-        src_root = Path(__file__).resolve().parents[2] / "src"  # OmniCrawler/src
+        # __file__ = <repo>/tests/unit/convertx/test_convertx.py → parents[3] 是仓库根
+        repo_root = Path(__file__).resolve().parents[3]
+        src_root = repo_root / "src"
         existing_pp = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = str(src_root) + (os.pathsep + existing_pp if existing_pp else "")
         return subprocess.run(
@@ -326,7 +328,7 @@ class TestCLI:
             capture_output=True,
             text=True,
             timeout=120,
-            cwd=Path(__file__).resolve().parents[2],  # tests 上级：OmniCrawler
+            cwd=repo_root,
             env=env,
         )
 

@@ -25,7 +25,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ..core.utils import utcnow
 
@@ -180,18 +180,18 @@ class _RedisQueue:
         pipe.execute()
 
     def pop(self) -> TaskSpec | None:
-        rows = self.client.zpopmin(self._queue_key, 1)
+        rows = cast(list[tuple[str, float]], self.client.zpopmin(self._queue_key, 1))
         if not rows:
             return None
         task_id = rows[0][0]
-        raw = self.client.hget(self._payload_key, task_id)
+        raw = cast(str | None, self.client.hget(self._payload_key, task_id))
         self.client.hdel(self._payload_key, task_id)
         if raw is None:
             return None
         return TaskSpec(**json.loads(raw))
 
     def size(self) -> int:
-        return int(self.client.zcard(self._queue_key))
+        return int(cast(int, self.client.zcard(self._queue_key)))
 
     def register_worker(self, worker_id: str) -> None:
         self.client.hset(
@@ -213,7 +213,7 @@ class _RedisQueue:
     def list_workers(self, *, now: str | None = None) -> list[dict[str, Any]]:
         cutoff = _stale_cutoff(now)
         workers: list[dict[str, Any]] = []
-        raw = self.client.hgetall(self._workers_key) or {}
+        raw = cast(dict[Any, Any], self.client.hgetall(self._workers_key)) or {}
         for worker_id, payload in raw.items():
             try:
                 info = json.loads(payload)
@@ -227,6 +227,10 @@ class _RedisQueue:
                 "alive": heartbeat_at >= cutoff,
             })
         return workers
+
+    def close(self) -> None:
+        """关闭 Redis 连接（与 _LocalQueue.close 接口对齐）。"""
+        self.client.close()
 
 
 def _stale_cutoff(now: str | None) -> str:
@@ -271,13 +275,12 @@ class RemoteQueue:
         if _probe_redis(redis_url):
             self._backend: _RedisQueue | _LocalQueue = _RedisQueue(redis_url or "", namespace=namespace)
             self._kind = "redis"
+            self.local_path: Path | None = None
         else:
             path = local_path or Path.cwd() / ".omnicrawler" / "queue.sqlite3"
             self._backend = _LocalQueue(path)
             self._kind = "local"
-        self.local_path: Path | None = (
-            self._backend.path if self._kind == "local" else None
-        )
+            self.local_path = path
 
     def backend_kind(self) -> str:
         """当前后端：redis（共享队列）或 local（降级队列）。"""
@@ -325,8 +328,7 @@ class RemoteQueue:
         }
 
     def close(self) -> None:
-        if self._kind == "local":
-            self._backend.close()
+        self._backend.close()
 
 
 # ── 消费循环 ──────────────────────────────────────────────────

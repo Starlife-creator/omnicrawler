@@ -169,8 +169,11 @@ class _DropZone(QFrame):
         self.setProperty("dragHover", "1" if on else "")
         _repolish_widget(self)
 
-    def dragEnterEvent(self, ev: QDragEnterEvent) -> None:
-        if ev.mimeData().hasUrls():
+    def dragEnterEvent(self, ev: QDragEnterEvent | None) -> None:
+        if ev is None:
+            return
+        mime = ev.mimeData()
+        if mime is not None and mime.hasUrls():
             ev.acceptProposedAction()
             self.set_highlight(True)
         else:
@@ -179,12 +182,15 @@ class _DropZone(QFrame):
     def dragLeaveEvent(self, ev) -> None:
         self.set_highlight(False)
 
-    def dropEvent(self, ev: QDropEvent) -> None:
+    def dropEvent(self, ev: QDropEvent | None) -> None:
         self.set_highlight(False)
-        if not ev.mimeData().hasUrls():
+        if ev is None:
+            return
+        mime = ev.mimeData()
+        if mime is None or not mime.hasUrls():
             return
         paths: list[str] = []
-        for u in ev.mimeData().urls():
+        for u in mime.urls():
             if u.isLocalFile():
                 p = u.toLocalFile()
                 if Path(p).is_file():
@@ -512,7 +518,12 @@ class ConvertView(QWidget):
         worker.stage_started.connect(self._stage_label.setText)
         worker.succeeded.connect(self._on_succeeded)
         worker.failed.connect(self._on_failed)
-        worker.finished.connect(lambda: (worker.deleteLater(), self._clear_worker()))
+
+        def _finalize_worker() -> None:
+            worker.deleteLater()
+            self._clear_worker()
+
+        worker.finished.connect(_finalize_worker)
         self._worker = worker
         self._update_runnable_state()
         worker.start()
@@ -735,7 +746,12 @@ class _DocExtractTab(QWidget):
         worker.stage_started.connect(self._stage.setText)
         worker.succeeded.connect(self._on_doc_succeeded)
         worker.failed.connect(self._on_doc_failed)
-        worker.finished.connect(lambda: (worker.deleteLater(), self._clear_doc_worker()))
+
+        def _finalize_doc_worker() -> None:
+            worker.deleteLater()
+            self._clear_doc_worker()
+
+        worker.finished.connect(_finalize_doc_worker)
         self._worker = worker
         self._update_runnable_state()
         worker.start()

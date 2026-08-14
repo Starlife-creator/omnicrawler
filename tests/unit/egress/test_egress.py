@@ -40,6 +40,21 @@ def _config(tmp_path: Path, **egress) -> AppConfig:
     return AppConfig(tmp_path / "task.yaml", tmp_path, raw, tmp_path / "work")
 
 
+@pytest.fixture(autouse=True)
+def _restore_global_egress_kill_switch():
+    """每个测试后恢复全局出网 kill-switch（_global_disabled），防跨测试泄漏。
+
+    emergency_disconnect_all 会禁用进程内所有 broker 的出网；若测试中途
+    异常且未走到 finally，全局状态会污染后续测试（P1-5）。
+    """
+    was_set = EgressBroker._global_disabled.is_set()
+    yield
+    if was_set:
+        EgressBroker._global_disabled.set()
+    else:
+        EgressBroker._global_disabled.clear()
+
+
 def test_redaction_domain_port_scheme_and_audit(tmp_path: Path) -> None:
     policy = _Policy()
     broker = EgressBroker(

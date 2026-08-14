@@ -117,7 +117,11 @@ class _PdfPipelineWorker(QThread):
                         self.stage_started.emit(ev.display_stage)
 
             # 统一事件同时桥接到旧式信号
-            tracker._on_event = lambda ev: (_bridge(ev), self.unified_progress.emit(ev))
+            def _bridge_both(ev) -> None:
+                _bridge(ev)
+                self.unified_progress.emit(ev)
+
+            tracker._on_event = _bridge_both
 
             def _callback(stage: str, result: dict[str, Any]) -> None:
                 if self._cancelled:

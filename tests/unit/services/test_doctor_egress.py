@@ -33,7 +33,20 @@ def test_probe_private_target_rejected_by_policy(tmp_path: Path) -> None:
     assert "探活失败" in result["detail"]
 
 
-def test_probe_public_target_failure_is_graceful(tmp_path: Path) -> None:
+def test_probe_public_target_failure_is_graceful(tmp_path: Path, monkeypatch) -> None:
+    import urllib.error
+
+    from omnicrawl.fetching.http_client import build_safe_opener
+
+    def _fake_opener(*_a, **_k):
+        class _Opener:
+            def open(self, *_a, **_k):
+                raise urllib.error.URLError("mock network failure")
+
+        return _Opener()
+
+    # 用假 opener 替代真实 HTTP 探测，避免单元测试依赖 DNS/网络
+    monkeypatch.setattr(build_safe_opener.__module__ + ".build_safe_opener", _fake_opener)
     config = load_config(_config(tmp_path, base_url="https://llm.example.invalid"))
     result = _probe_models("https://llm.example.invalid/v1", "key", "model", config=config)
     assert result["ok"] is False

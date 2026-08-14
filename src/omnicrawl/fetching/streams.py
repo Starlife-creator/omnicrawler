@@ -19,9 +19,10 @@ def collect_sse(
     request: CrawlRequest,
     should_continue: Callable[[], bool] | None = None,
     egress: EgressBroker | None = None,
+    max_messages: int | None = None,
 ) -> list[ExtractedRecord]:
     source = config.section("source")
-    maximum = safe_int(source.get("max_messages"), default=100) or 100
+    maximum = max_messages if max_messages is not None else (safe_int(source.get("max_messages"), default=100) or 100)
     timeout = safe_float(source.get("duration_seconds"), default=60.0) or 60.0
     maximum_bytes = safe_int(config.section("http").get("max_response_bytes"), default=50_000_000) or 50_000_000
     headers = {
@@ -79,13 +80,14 @@ async def _websocket_collect(
     request: CrawlRequest,
     should_continue: Callable[[], bool] | None = None,
     egress: EgressBroker | None = None,
+    max_messages: int | None = None,
 ) -> list[ExtractedRecord]:
     try:
         import websockets
     except ImportError as exc:
         raise RuntimeError("缺少websockets，请安装 omnicrawl[streams]") from exc
     source = config.section("source")
-    maximum = safe_int(source.get("max_messages"), default=100) or 100
+    maximum = max_messages if max_messages is not None else (safe_int(source.get("max_messages"), default=100) or 100)
     duration = safe_float(source.get("duration_seconds"), default=60.0) or 60.0
     records: list[ExtractedRecord] = []
     started = time.monotonic()
@@ -124,5 +126,6 @@ def collect_websocket(
     request: CrawlRequest,
     should_continue: Callable[[], bool] | None = None,
     egress: EgressBroker | None = None,
+    max_messages: int | None = None,
 ) -> list[ExtractedRecord]:
-    return asyncio.run(_websocket_collect(config, request, should_continue, egress))
+    return asyncio.run(_websocket_collect(config, request, should_continue, egress, max_messages))

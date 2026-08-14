@@ -481,7 +481,11 @@ class BrowserFetcher:
             # P2-2：profile_dir 下 Chromium 可能残留 SingletonLock，
             # 回退到临时 profile（放弃持久化）保证主流程仍可运行
             if profile_dir is not None:
-                options.arguments = [a for a in options.arguments if not a.startswith("--user-data-dir=")]
+                # P2-2：arguments 是只读 property（getter 返回内部列表引用），
+                # 原地清掉 --user-data-dir= 以放弃 profile 持久化。
+                options.arguments[:] = [
+                    a for a in options.arguments if not a.startswith("--user-data-dir=")
+                ]
                 driver = webdriver.Chrome(service=service, options=options)
             else:
                 raise

@@ -61,9 +61,17 @@ def minimum_python(requires_python: str) -> str:
 
 
 def coverage_gate(root: Path) -> float:
-    namespace = {"__name__": "coverage_gate_check"}
-    exec((root / "tools" / "check_coverage_gates.py").read_text(encoding="utf-8"), namespace)
-    return float(namespace["OVERALL_COVERAGE_GATE"])
+    import importlib.util
+
+    # 用标准导入机制装载（而非裸 exec 源码），避免代码执行味道（P2-7）
+    spec = importlib.util.spec_from_file_location(
+        "check_coverage_gates", root / "tools" / "check_coverage_gates.py"
+    )
+    if spec is None or spec.loader is None:
+        raise ValueError("无法加载 tools/check_coverage_gates.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return float(module.OVERALL_COVERAGE_GATE)
 
 
 def current_config_version(root: Path) -> int:

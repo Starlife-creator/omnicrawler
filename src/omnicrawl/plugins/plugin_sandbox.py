@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -41,6 +42,11 @@ class IsolatedPluginRunner:
         if not self.plugin_root.is_dir() or any(part in {"..", ""} for part in entry_module.split(".")):
             raise ValueError("插件路径或入口无效")
         env = {"PYTHONIOENCODING": "utf-8", "PYTHONPATH": str(self.plugin_root), "OMNICRAWL_PLUGIN_SANDBOX": "1"}
+        # 仅在父进程显式设置哈希种子时透传给沙箱子进程：使子进程跳过 OS 熵读取，
+        # 规避 CI runner 熵不足导致的 _Py_HashRandomization_Init 偶发启动失败。
+        # 生产环境默认不设置该变量，行为保持不变（子进程仍用随机哈希）。
+        if "PYTHONHASHSEED" in os.environ:
+            env["PYTHONHASHSEED"] = os.environ["PYTHONHASHSEED"]
         host = Path(__file__).with_name("plugin_subprocess.py").resolve()
         command = [sys.executable, "-I", str(host), entry_module, str(self.plugin_root)]
         request = json.dumps({"operation": operation, "payload": payload}, ensure_ascii=False)

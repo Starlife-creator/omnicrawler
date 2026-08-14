@@ -38,10 +38,18 @@ def test_quality_report_survives_malformed_cells(tmp_path: Path) -> None:
                 ("r2", run_id, "fp2", "https://example.org/2", "item",
                  "{broken data json", "{broken evidence json", "now"),
             )
+            state.conn.execute(
+                "INSERT INTO records(record_id, run_id, request_fingerprint, source_url, record_type, data_json, evidence_json, created_at) "
+                "VALUES(?,?,?,?,?,?,?,?)",
+                ("r3", run_id, "fp3", "https://example.org/3", "item",
+                 json.dumps({"title": "ok2"}), json.dumps({"_quality": {"score": 0.5}}), "now"),
+            )
     report = build_quality_report(config, StateStore(config.workspace / "state.sqlite3"), run_id)
-    assert report["records"] == 2
+    # 畸形记录计入 total 但排除在平均之外：avg=(0.9+0.5)/2=0.7。
+    # 若畸形记录被错误按 0 计入平均，avg 将变为 0.4667 ≠ 0.7（判别式断言）。
+    assert report["records"] == 3
     assert report["skipped_malformed"] == 1
-    assert report["average_quality_score"] == 0.9
+    assert report["average_quality_score"] == 0.7
 
 
 def test_run_id_with_quotes_is_safe(tmp_path: Path) -> None:

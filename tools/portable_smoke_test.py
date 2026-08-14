@@ -95,16 +95,34 @@ extract:
     )
 
 
+def _resolve_executable(release_dir: Path, *, gui: bool = False) -> Path | None:
+    """按平台解析打包可执行文件（P4-3：不再硬编码 Windows .exe）。"""
+    if gui:
+        candidates = (
+            release_dir / "OmniCrawler.exe",  # Windows
+            release_dir / "OmniCrawler",  # Linux
+            release_dir / "OmniCrawler.app" / "Contents" / "MacOS" / "OmniCrawler",  # macOS
+        )
+    else:
+        candidates = (
+            release_dir / "omnicrawl.exe",  # Windows
+            release_dir / "omnicrawl",  # Linux
+            release_dir / "OmniCrawler.app" / "Contents" / "MacOS" / "omnicrawl",  # macOS
+        )
+    return next((candidate for candidate in candidates if candidate.is_file()), None)
+
+
 def run_smoke_test(release_dir: Path, edition: str = "Full") -> None:
     import os as _os
     _env = {**_os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
-    executable = release_dir / "omnicrawl.exe"
-    if not executable.is_file():
-        raise FileNotFoundError(executable)
-    # F21：GUI 壳（OmniCrawler.exe）也必须过冒烟——缺 PyQt 插件/Qt DLL 只会在
-    # 用户双击时才暴露。离屏启动：进程持续运行说明 GUI 正常初始化，然后主动退出。
-    gui = release_dir / "OmniCrawler.exe"
-    if gui.is_file():
+    executable = _resolve_executable(release_dir)
+    if executable is None:
+        raise FileNotFoundError(f"未找到 CLI 可执行文件（Windows/Linux/macOS 候选均不存在）: {release_dir}")
+    # F21：GUI 壳（OmniCrawler.exe / OmniCrawler）也必须过冒烟——缺 PyQt 插件/
+    # Qt DLL 只会在用户双击时才暴露。离屏启动：进程持续运行说明 GUI 正常初始化，
+    # 然后主动退出。
+    gui = _resolve_executable(release_dir, gui=True)
+    if gui is not None:
         gui_env = {**_env, "QT_QPA_PLATFORM": "offscreen"}
         gui_proc = subprocess.Popen([str(gui)], cwd=str(release_dir), env=gui_env)
         try:

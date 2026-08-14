@@ -5,7 +5,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PIP_CONSTRAINT: constraints/quality.txt
+  PIP_CONSTRAINT: ${{ github.workspace }}/constraints/quality.txt
 
 permissions:
   contents: read
@@ -21,7 +21,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.10", "3.12", "3.13"]
+        python-version: ["3.12"]
     runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: offscreen
@@ -50,7 +50,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[html,pdf,dev,async-http,gui,tls]" cryptography
+      - run: python -m pip install -e ".[html,pdf,dev,async-http,gui,tls]" cryptography "duckdb>=1.2,<2"
       - if: runner.os == 'Linux'
         name: Install Qt runtime dependencies
         run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0
@@ -132,8 +132,39 @@ jobs:
           python-version: "3.13"
           cache: pip
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[full,dev]"
+      - run: python -m pip install -e ".[full]"
       - run: python -m pip check
+      # P6-1：依赖完整性门禁——full extra 每个包都必须已安装（防止漏声明/漂移回归），
+      # 并显式探测 change_detector 走的 selectolax 路径可导入。
+      - name: 依赖完整性门禁（P6-1）
+        shell: bash
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
+        run: |
+          python - <<'PY'
+          import importlib.metadata
+          import re
+          import tomllib
+          from pathlib import Path
+
+          pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          full = pyproject["project"]["optional-dependencies"]["full"]
+          missing = []
+          for req in full:
+              name = re.match(r"[A-Za-z0-9_.-]+", req)
+              if not name:
+                  continue
+              norm = re.sub(r"[-_.]+", "-", name.group(0)).lower()
+              try:
+                  importlib.metadata.distribution(norm)
+              except importlib.metadata.PackageNotFoundError:
+                  missing.append(name.group(0))
+          if missing:
+              raise SystemExit(f"P6-1 FAIL: full extra has uninstalled packages: {missing}")
+          import selectolax  # change_detector 的 HTML 抽取路径
+          print(f"P6-1 OK: full extra {len(full)} packages installed; selectolax importable")
+          PY
       - name: Install non-blocking dependency audit tool
         continue-on-error: true
         run: python -m pip install pip-audit
@@ -155,4 +186,4 @@ jobs:
           name: dependency-audit-windows-full
           path: dependency-audit.json
           if-no-files-found: warn
-      - run: python -m pytest -q
+      # 3.13 轻量依赖 smoke：仅验证 full 依赖能装能导入（交付物冻结 3.12，不全量 pytest）

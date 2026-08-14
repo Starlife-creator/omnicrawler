@@ -68,3 +68,21 @@ def test_s3_sdk_calls_are_wrapped_by_audited_egress_boundary() -> None:
     broker.sdk_request.assert_any_call(
         "https://objects.example.com", transport="boto3-s3"
     )
+
+
+def test_s3_egress_denial_fails_closed() -> None:
+    """出网授权拒绝 → S3 SDK 调用被阻断，对象未写入（fail-closed）。"""
+    from omnicrawl.security.egress import EgressDisabledError
+
+    broker = MagicMock()
+    broker.sdk_request.side_effect = EgressDisabledError("denied for test")
+    fake = FakeS3()
+    remote = S3ObjectStore(
+        "bucket",
+        client=fake,
+        endpoint_url="https://objects.example.com",
+        egress=broker,
+    )
+    with pytest.raises(EgressDisabledError):
+        remote.put("item.bin", b"payload")
+    assert not fake.values

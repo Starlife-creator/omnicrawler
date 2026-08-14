@@ -106,7 +106,7 @@ class ReplayCommandTest(unittest.TestCase):
             _append(CapsuleStore(work / "capsules"), run_id)
 
             outcome = cmd_capsule.replay(str(config_path), run_id=run_id, field="title")
-            self.assertEqual(outcome["status"], "ok")
+            self.assertEqual(outcome["status"], "ok", msg=f"cmd_capsule.replay 返回: {outcome}")
             self.assertEqual(outcome["value"], "标题")
             self.assertEqual(outcome["url"], URL)
 

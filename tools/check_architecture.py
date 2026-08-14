@@ -47,7 +47,14 @@ def _targets(module: str, is_package: bool, tree: ast.AST) -> set[str]:
             targets.update(alias.name for alias in node.names if alias.name.startswith("omnicrawl."))
         elif isinstance(node, ast.ImportFrom):
             target = _relative_target(module, is_package, node)
-            if target and target.startswith("omnicrawl."):
+            if target == "omnicrawl":
+                # from omnicrawl import cli：别名是顶层子包，逐一展开才能被
+                # 顶层包匹配捕获（P2-4）。符号导入（如 AppConfig）的第二段
+                # 不在 forbidden 集合，不会误报。
+                for alias in node.names:
+                    if alias.name:
+                        targets.add(f"omnicrawl.{alias.name}")
+            elif target and target.startswith("omnicrawl."):
                 targets.add(target)
     return targets
 

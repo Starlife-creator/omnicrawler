@@ -15,7 +15,10 @@ class DynamicApiSource(GenericSource):
     """Base for APIs whose server response determines the next request."""
 
     def seed(self) -> list[CrawlRequest]:
-        seeds = [self._seed_request(raw) for raw in self.source.get("seeds", [])]
+        seeds = [
+            request for raw in self.source.get("seeds", [])
+            if (request := self._seed_request(raw)) is not None
+        ]
         for request in seeds:
             request.meta["page"] = self._page(request.url)
         return seeds

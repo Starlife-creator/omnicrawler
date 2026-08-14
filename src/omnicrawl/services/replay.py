@@ -31,11 +31,17 @@ _REPLAY_TIMEOUT = 10.0
 # 子进程脚本：sys.argv[1] = src 目录；stdin = {"html_path", "item_selector", "rule"}
 # stdout = {"status": "ok"|"error", ...}。stdout 是唯一可靠通道，import 失败也走 error。
 _REPLAY_SCRIPT = r"""
+import io
 import json
 import pathlib
 import sys
 
 sys.path.insert(0, sys.argv[1])
+# 统一 UTF-8 输出：Windows 管道下 Python 默认按 locale（cp1252）编码 stdout，
+# 打印含中文的 JSON（ensure_ascii=False）会抛 UnicodeEncodeError。
+stdout = sys.stdout
+if isinstance(stdout, io.TextIOWrapper):
+    stdout.reconfigure(encoding="utf-8", errors="replace")
 try:
     from omnicrawl.extraction.extractors import _apply_rule
     from omnicrawl.extraction.html_tools import parse_html, select_nodes

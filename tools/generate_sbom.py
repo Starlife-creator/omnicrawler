@@ -46,6 +46,11 @@ def _normalise_name(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower().replace("-", "_")
 
 
+def _purl_name(name: str) -> str:
+    # PEP 503 / CycloneDX purl：小写、-_. 运行折叠为连字符（pkg:pypi/foo-bar）
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
 def _license(metadata: Any) -> str:
     expression = metadata.get("License-Expression")
     if expression:
@@ -100,7 +105,7 @@ def build_sbom() -> dict[str, Any]:
             warnings.append(f"optional extra not installed, skipped: {raw_name}")
             continue
         version = distribution.version
-        ref = f"pkg:pypi/{key}@{version}"
+        ref = f"pkg:pypi/{_purl_name(raw_name)}@{version}"
         components[key] = {
             "type": "library",
             "name": distribution.metadata.get("Name") or raw_name,
@@ -114,6 +119,19 @@ def build_sbom() -> dict[str, Any]:
         for dep in deps:
             if _normalise_name(dep) not in seen:
                 queue.append(dep)
+
+    # 依赖图只保留已解析进 components 的引用，避免悬空名（P2-5）
+    ref_by_norm = {name: item["bom-ref"] for name, item in components.items()}
+    resolved_dependencies: dict[str, list[str]] = {}
+    for ref, raw_deps in dependencies.items():
+        resolved_dependencies[ref] = sorted(
+            {
+                ref_by_norm[_normalise_name(dep)]
+                for dep in raw_deps
+                if _normalise_name(dep) in ref_by_norm
+            }
+        )
+    dependencies = resolved_dependencies
 
     document = {
         "bomFormat": "CycloneDX",

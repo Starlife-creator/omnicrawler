@@ -305,7 +305,7 @@ def run_doctor(config: AppConfig, *, probe_ai: bool = True) -> dict[str, Any]:
             _L3_TIMEOUT_S_DEFAULT,
             SiteCategorizer,
         )
-        from ..templates.template_catalog import TemplateCatalog
+        from ..templates.template_catalog import bundled_template_catalog
 
         categorizer_info["l3_implemented"] = True
         categorizer_info["l3_default_timeout_s"] = float(_L3_TIMEOUT_S_DEFAULT)
@@ -326,27 +326,28 @@ def run_doctor(config: AppConfig, *, probe_ai: bool = True) -> dict[str, Any]:
                     "SiteCategorizer.classify(fetcher=...)，否则会回退 generic_html 兜底并提示 no-fetcher。"
                 )
             # YAML 加载错误 → 红牌（fail-fast：可能是用户手改 YAML 语法错）
-            if sc.last_error() is not None:
+            last_error = sc.last_error()
+            if last_error is not None:
                 errors.append(
-                    "B-2：Site Categorizer YAML 加载失败：" + sc.last_error()
+                    "B-2：Site Categorizer YAML 加载失败：" + last_error
                     + "（已保留上一份有效配置；若无，则 L2 映射为空，仅走 L1 + generic 兜底）"
                 )
             categorizer_info["last_error"] = sc.last_error()
             # 模板存在性校验：加载 catalog 后扫一遍 L2 mappings + fallback_mapping 的 values
             try:
-                catalog = TemplateCatalog.from_app_config(config)
-                missing: list[str] = []
+                catalog = bundled_template_catalog()
+                missing_template_ids: list[str] = []
                 all_template_ids = set(sc.mappings.values()) | set(sc.fallback_mapping.values())
                 for tid in sorted(all_template_ids):
                     if catalog.get(tid) is None:
-                        missing.append(tid)
-                categorizer_info["missing_templates"] = missing
-                if missing:
+                        missing_template_ids.append(tid)
+                categorizer_info["missing_templates"] = missing_template_ids
+                if missing_template_ids:
                     # 黄牌：模板不存在时会走 fallback_mapping → 最终 generic，不崩溃但可能抓不准
                     warnings.append(
                         "B-2：以下模板 ID 在 catalog 中不存在（将按 fallback_mapping → "
                         "generic_html 兜底，可能降低抓取质量）："
-                        + ", ".join(f"`{m}`" for m in missing)
+                        + ", ".join(f"`{m}`" for m in missing_template_ids)
                     )
             except Exception as exc:  # noqa: BLE001
                 warnings.append(f"B-2：TemplateCatalog 加载失败，跳过模板存在性校验：{exc}")

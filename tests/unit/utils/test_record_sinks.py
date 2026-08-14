@@ -2,6 +2,8 @@ from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from omnicrawl.core.config import load_config
 from omnicrawl.core.models import CrawlRequest, ExtractedRecord
 from omnicrawl.services.record_sinks import (
@@ -108,3 +110,17 @@ def test_opensearch_sdk_calls_are_preauthorized_and_audited():
     broker.sdk_request.assert_called_once_with(
         "https://search.example.com", transport="opensearch-py"
     )
+
+
+def test_opensearch_sink_fails_closed_when_egress_denies():
+    """出网授权拒绝 → sink 构造即失败，SDK 索引永不调用（fail-closed）。"""
+    from omnicrawl.security.egress import EgressDisabledError
+
+    broker = MagicMock()
+    broker.authorize.side_effect = EgressDisabledError("denied for test")
+    client = _SearchClient()
+    with pytest.raises(EgressDisabledError):
+        OpenSearchRecordSink(
+            ["https://search.example.com"], client=client, egress=broker
+        )
+    assert client.documents == []

@@ -571,9 +571,9 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         elif isinstance(norm, dict):
             from ..quality.normalizers import _TYPE_KINDS
 
-            for flag in ("enabled", "l1_enabled", "l2_enabled", "l3_enabled", "strip_tracking"):
-                if flag in norm and not isinstance(norm[flag], bool):
-                    errors.append(f"quality.normalize.{flag}必须是布尔")
+            for qflag in ("enabled", "l1_enabled", "l2_enabled", "l3_enabled", "strip_tracking"):
+                if qflag in norm and not isinstance(norm[qflag], bool):
+                    errors.append(f"quality.normalize.{qflag}必须是布尔")
             types = norm.get("types", {})
             if types and not isinstance(types, dict):
                 errors.append("quality.normalize.types必须是YAML对象")

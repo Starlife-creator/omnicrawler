@@ -214,7 +214,7 @@ def read_csv(path: Path, options: dict[str, Any]) -> CanonicalRecords:
         from ..core.encoding import smart_decode
 
         text, encoding = smart_decode(path.read_bytes())
-        fh = io.StringIO(text)
+        fh: io.TextIOBase = io.StringIO(text)
     else:
         fh = path.open("r", encoding=encoding, newline="")
     try:
