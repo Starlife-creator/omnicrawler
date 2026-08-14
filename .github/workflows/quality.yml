@@ -5,7 +5,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PIP_CONSTRAINT: constraints/quality.txt
+  PIP_CONSTRAINT: ${{ github.workspace }}/constraints/quality.txt
 
 permissions:
   contents: read

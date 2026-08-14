@@ -1232,7 +1232,7 @@ class MainWindow(QMainWindow):
     def _start_sample_run(self, pages: int | None = None) -> None:
         if not self._config_path:
             return
-        pages = pages or 3
+        pages = 3 if pages is None else pages
         thread = QThread(self)
         worker = SampleRunWorker(self._config_path, pages)
         worker.moveToThread(thread)
