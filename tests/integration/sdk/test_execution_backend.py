@@ -39,7 +39,28 @@ def test_in_process_and_future_backend_contracts(tmp_path: Path) -> None:
         FutureRemoteBackend().status()
 
 
-@pytest.mark.skip(reason="AF_UNIX socket path too long in CI environments")
+@pytest.fixture
+def _worker_socket_path_ok(tmp_path: Path) -> None:
+    """Windows AF_PIPE 无路径长度限制 → 直接运行；POSIX AF_UNIX 路径过长则跳过。
+
+    LocalWorkerBackend 的 socket 地址 = workspace/.worker-<uuidhex>.sock，
+    Linux sun_path 上限 108 字节；CI 长工作区路径下会超限。
+    """
+    import os
+    import socket as socket_module
+    import uuid
+
+    if os.name == "nt":
+        return
+    if not hasattr(socket_module, "AF_UNIX"):
+        pytest.skip("平台无 AF_UNIX 支持")
+    workspace = tmp_path / "workspace"
+    address = str(workspace / f".worker-{uuid.uuid4().hex}.sock")
+    if len(address.encode("utf-8")) >= 104:
+        pytest.skip("AF_UNIX socket 路径过长（CI 长工作区），跳过实时握手测试")
+
+
+@pytest.mark.usefixtures("_worker_socket_path_ok")
 def test_local_worker_is_authenticated_detached_and_reconnectable(tmp_path: Path) -> None:
     first = LocalWorkerBackend()
     started = first.start(_config(tmp_path))
