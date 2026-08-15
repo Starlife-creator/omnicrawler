@@ -278,7 +278,7 @@ class ProductionFoundationTest(unittest.TestCase):
             encoding="utf-8",
         )
         registry = Registry()
-        load_local_plugins(registry, [str(plugin)], self.root)
+        load_local_plugins(registry, [str(plugin)], self.root, signature_policy="developer")
         self.assertEqual(registry.describe()["plugins"], ["demo@1.2.3"])
         self.assertEqual(registry.describe()["plugin_details"][0]["execution_mode"], "in_process_trusted")
 

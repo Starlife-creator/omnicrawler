@@ -16,6 +16,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -246,6 +247,11 @@ class IdentityStore:
     def create(self, username: str, password: str) -> UserIdentity:
         if not password:
             raise IdentityError("密码不能为空")
+        # B01-014：USERNAME_RE 从"定义了却不生效"变为创建路径强制；username 参与文件/密钥构造。
+        if not re.fullmatch(USERNAME_RE, username):
+            raise IdentityError(
+                f"用户名非法（仅允许小写字母/数字/_-，长度 2-32）: {username!r}"
+            )
         if self.exists(username):
             raise IdentityError(f"用户名 {username} 已存在（同一台机器用户名唯一）")
         _ensure_crypto()

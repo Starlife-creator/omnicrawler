@@ -61,7 +61,7 @@ def test_local_plugin_ui_permissions_auto_approved(tmp_path: Path) -> None:
         "    registry.register_status_widget(lambda: None)\n",
     )
     registry = Registry()
-    load_local_plugins(registry, [str(plugin)], tmp_path)
+    load_local_plugins(registry, [str(plugin)], tmp_path, signature_policy="developer")
     assert registry.plugins[0].name == "ui-local"
     assert "t1" in registry.themes
     assert "a1" in registry.ui_actions
@@ -78,10 +78,10 @@ def test_market_plugin_ui_permissions_require_approval(tmp_path: Path) -> None:
     )
     registry = Registry()
     with pytest.raises(PermissionError, match="ui:theme"):
-        load_local_plugins(registry, [str(plugin)], tmp_path)
+        load_local_plugins(registry, [str(plugin)], tmp_path, signature_policy="developer")
     # 显式批准后放行
     approved = Registry()
-    load_local_plugins(approved, [str(plugin)], tmp_path, approved_permissions=("ui:theme",))
+    load_local_plugins(approved, [str(plugin)], tmp_path, approved_permissions=("ui:theme",), signature_policy="developer")
     assert "t2" in approved.themes
 
 

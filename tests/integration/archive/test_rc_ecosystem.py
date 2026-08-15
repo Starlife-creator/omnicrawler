@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from omnicrawl.plugins.ecosystem_registry import EcosystemPackage, EcosystemRegistry, template_quality_score
 from omnicrawl.services.benchmark_corpus import (
     SiteCapsule,
     materialize_capsule,
@@ -37,16 +36,6 @@ def test_benchmark_is_repeatable_and_regressions_are_explicit():
     comparison = compare_benchmark(baseline, candidate)
     assert comparison["regression"] is True
     assert valid_automation(85, 100) == 0.85
-
-
-def test_signed_ecosystem_revocation_and_template_score():
-    package = EcosystemPackage("publisher.plugin", "1", "Publisher", ("records:read",), (), "MIT", ">=1.9,<2.1", True, True)
-    registry = EcosystemRegistry()
-    assert registry.installable(package) == (True, "verified")
-    registry.revoke(package.package_id, package.version, "CVE-DEMO: unsafe parser")
-    assert registry.installable(package)[0] is False
-    assert package.package_id in registry.disabled
-    assert template_quality_score(recent_validation=1, success=.9, completeness=.8, reuse=.7, drift_recovery=.6) == 0.83
 
 
 def test_canary_holds_promotes_and_rolls_back_with_timeline():

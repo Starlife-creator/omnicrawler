@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import fnmatch
 import json
+import logging
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -11,6 +12,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 import yaml
+
+LOGGER = logging.getLogger(__name__)
 
 PLACEHOLDER_RE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 TOKEN_RE = re.compile(r"[\w.-]+", re.UNICODE)
@@ -87,20 +90,37 @@ class TemplateCatalog:
         self.builtin_dir = Path(builtin_dir)
         self.user_dirs = tuple(Path(path) for path in user_dirs)
         self._records: dict[str, TemplateRecord] | None = None
+        # B02-010：内置源真值索引（path.resolve() → record）。即使内置模板被用户/市场
+        # 同 id 覆盖，`builtin:` 逃生仍从这份真值解析，而非被覆盖的合并 dict。
+        self._builtin_by_path: dict[Path, TemplateRecord] | None = None
 
     def discover(self, refresh: bool = False) -> list[TemplateRecord]:
         if self._records is not None and not refresh:
             return self._sorted(self._records.values())
 
         records: dict[str, TemplateRecord] = {}
+        builtin_by_path: dict[Path, TemplateRecord] = {}
         for root, builtin in [(self.builtin_dir, True), *((path, False) for path in self.user_dirs)]:
             if not root.is_dir():
                 continue
             for path in sorted((*root.rglob("*.yaml"), *root.rglob("*.yml"))):
                 record = self._read_record(root, path, builtin)
-                if record is not None:
-                    records[record.metadata.template_id] = record
+                if record is None:
+                    continue
+                template_id = record.metadata.template_id
+                if builtin:
+                    builtin_by_path[record.path.resolve()] = record
+                existing = records.get(template_id)
+                if existing is not None and existing.builtin != builtin:
+                    # B02-010：信任等级不同的两个模板共享同一 id（内置 vs 用户/市场）。
+                    # 保留「用户/市场可覆盖内置」的既有设计，但覆盖不再静默——记录来源告警。
+                    LOGGER.warning(
+                        "模板 id 冲突：%r 已被来源不同的模板覆盖（%s → %s）",
+                        template_id, existing.path, record.path,
+                    )
+                records[template_id] = record
         self._records = records
+        self._builtin_by_path = builtin_by_path
         return self._sorted(records.values())
 
     def get(self, template_id: str) -> TemplateRecord | None:
@@ -109,14 +129,32 @@ class TemplateCatalog:
             return records[template_id]
         # builtin: 前缀 = 内置模板相对路径引用（YAML 双格式约定，见 b2_domain_mappings_default.yaml）。
         # 解析为 builtin 目录下的文件路径，与元数据 id 等价可查。
+        # B02-010：从内置源真值解析，而非遍历已被覆盖挤出的合并 dict。
         if template_id.startswith("builtin:"):
             rel = Path(template_id[len("builtin:") :])
             target = (self.builtin_dir / rel).resolve()
-            for record in records.values():
+            if self._builtin_by_path is None:
+                self._ensure_builtin_index()
+            builtin = self._builtin_by_path or {}
+            record = builtin.get(target)
+            if record is not None:
+                return record
+            # 兼容：真值索引未命中时回退到逐记录比对（覆盖旧的按 path 匹配行为）
+            for record in builtin.values():
                 if record.path.resolve() == target:
                     return record
         matches = [r for r in records.values() if r.path.stem == template_id or r.metadata.name == template_id]
         return matches[0] if len(matches) == 1 else None
+
+    def _ensure_builtin_index(self) -> None:
+        """独立构建内置源真值索引（不依赖 discover 的合并结果）。"""
+        builtin_by_path: dict[Path, TemplateRecord] = {}
+        if self.builtin_dir.is_dir():
+            for path in sorted((*self.builtin_dir.rglob("*.yaml"), *self.builtin_dir.rglob("*.yml"))):
+                record = self._read_record(self.builtin_dir, path, True)
+                if record is not None:
+                    builtin_by_path[record.path.resolve()] = record
+        self._builtin_by_path = builtin_by_path
 
     def search(
         self,

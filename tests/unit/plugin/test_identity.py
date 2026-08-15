@@ -46,6 +46,16 @@ def test_create_and_load_roundtrip(tmp_path: Path) -> None:
     assert store.list_usernames() == ["alice"]
 
 
+def test_create_rejects_invalid_username(tmp_path: Path) -> None:
+    """B01-014：USERNAME_RE 从定义变为创建路径强制——非法用户名必须被拒。"""
+    store = _make_store(tmp_path)
+    for bad in ("Alice", "a", "with space", "has/slash", "中文"):
+        with pytest.raises(IdentityError, match="用户名非法"):
+            store.create(bad, "pw")
+    # 合法用户名不受影响
+    store.create("bob_creator-2", "pw")
+
+
 def test_duplicate_username_rejected(tmp_path: Path) -> None:
     store = _make_store(tmp_path)
     store.create("alice", "password-a")

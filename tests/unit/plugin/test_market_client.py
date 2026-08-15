@@ -171,6 +171,6 @@ def test_directory_loading_recursive(tmp_path: Path) -> None:
             f'    registry.register_source("{name}", lambda *a, **k: None)\n'
         )
     registry = Registry()
-    load_local_plugins(registry, [str(tmp_path)], tmp_path, config=None)
+    load_local_plugins(registry, [str(tmp_path)], tmp_path, config=None, signature_policy="developer")
     assert "foo" in registry.sources
     assert "bar" in registry.sources

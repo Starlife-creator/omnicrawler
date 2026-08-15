@@ -68,3 +68,27 @@ def test_user_template_overrides_builtin_by_stable_id(tmp_path: Path) -> None:
     assert record is not None
     assert record.metadata.name == "User override"
     assert record.builtin is False
+
+
+def test_builtin_escape_still_resolves_after_user_override(tmp_path: Path) -> None:
+    """B02-010：内置模板被用户/市场同 id 覆盖后，`builtin:` 逃生仍应取到内置源真值。"""
+    builtin = tmp_path / "builtin"
+    user = tmp_path / "user"
+    builtin.mkdir()
+    user.mkdir()
+    base = {
+        "template": {"id": "sites/crossref-works", "name": "Built in"},
+        "project": {"name": "demo"},
+        "source": {"kind": "static_html", "seeds": ["https://example.org"]},
+    }
+    override = {**base, "template": {"id": "sites/crossref-works", "name": "Market override"}}
+    (builtin / "sites").mkdir(parents=True, exist_ok=True)
+    (builtin / "sites" / "crossref_works.yaml").write_text(yaml.safe_dump(base), encoding="utf-8")
+    (user / "crossref.yaml").write_text(yaml.safe_dump(override), encoding="utf-8")
+
+    catalog = TemplateCatalog(builtin, [user])
+    assert catalog.get("sites/crossref-works").metadata.name == "Market override"  # 覆盖仍生效
+    escape = catalog.get("builtin:sites/crossref_works.yaml")
+    assert escape is not None
+    assert escape.metadata.name == "Built in"  # 逃生取回内置真值
+    assert escape.builtin is True
