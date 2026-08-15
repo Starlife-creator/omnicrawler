@@ -11,8 +11,13 @@
 # 与运行时 omnicrawl.plugins.identity.derive_fingerprint 同源；
 # 旧的「PEM 文本字节 + CRLF 归一化」算法已废弃。
 
-username: Starlife-creator
-display_name: Starlife-creator
+# 注意：文件名虽带 -creator 后缀，但本文件持的是【维护者冷密钥】
+# （keys/plugin_trust.pub.pem，市场分发信任根）；真正的创作者热密钥
+# 由 authors/starlife.yaml 持有（creator.identity 指向 5dcd… 公钥）。
+# 文件名保留历史命名，角色以 roles 与 pubkey_ref 为准。
+
+username: starlife-creator
+display_name: starlife-creator
 pubkey_ref: ../keys/plugin_trust.pub.pem
 fingerprint: d92fa9fbf75e823a5d606211bf10fed1
-roles: [publisher]
+roles: [publisher, maintainer]

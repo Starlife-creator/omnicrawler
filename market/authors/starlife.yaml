@@ -1,5 +1,7 @@
+# 创作者热密钥（creator.identity 的 key_fingerprint 指向 5dcd… 公钥）；
+# 市场分发信任根冷密钥由 authors/starlife-creator.yaml 持有。
 username: starlife
 display_name: starlife
 pubkey_ref: ../keys/5dcd59f72fc0ac05bbd4c989e997e0d8.pub.pem
 fingerprint: 5dcd59f72fc0ac05bbd4c989e997e0d8
-roles: [publisher]
+roles: [creator]
