@@ -597,6 +597,12 @@ def step_git_operations(root: Path, new: str) -> None:
 
     _git(["add", "-u"], "暂存已跟踪变更（B12-003：不用 -A，避免未跟踪敏感文件被一并提交）")
 
+    # 版本化文档（COMPATIBILITY/OPTIMIZATION_PLAN/RELEASE_REPORT）走"删除旧 + 生成新"
+    # 而非 git mv，新文件为未跟踪状态，`git add -u` 不会暂存 → 需按白名单显式 add。
+    # 仅 add 已知的新版本化路径，保持 B12-003 不暂存未跟踪敏感文件的初衷。
+    new_docs = [pattern.format(new=new) for _, pattern in _VERSIONED_FILES]
+    _git(["add", "--"] + new_docs, f"暂存新版本化文档（{', '.join(new_docs)}）")
+
     message = f"release: bump to {new}"
     _git(["commit", "-m", message], "提交")
 
