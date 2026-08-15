@@ -67,6 +67,27 @@ def test_responses_csv_respects_csv_switch(tmp_path: Path) -> None:
     assert (output / "records.csv").exists() is False  # 主 CSV 也关闭
 
 
+def test_responses_csv_escapes_formula_injection(tmp_path: Path) -> None:
+    """B06-001：responses.csv 的 content_type（远程可控）必须以 excel_safe 转义。"""
+    config_path = _config(tmp_path, csv=True)
+    config = load_config(config_path)
+    config.workspace.mkdir(parents=True, exist_ok=True)
+    with StateStore(config.workspace / "state.sqlite3") as state:
+        run_id = state.start_run("exp", str(config_path))
+        with state.conn:
+            state.conn.execute(
+                "INSERT INTO responses(run_id, request_fingerprint, url, final_url, status_code, content_type, size_bytes, content_sha256, raw_path, changed, elapsed_seconds, fetched_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (run_id, "fp-csv", "https://example.org/", "https://example.org/", 200, "=cmd|' /C calc'!A1",
+                 5, "abc123", "/tmp/raw", 0, 0.1, "now"),
+            )
+        export_all(config, state, run_id)
+    lines = (config.workspace / "output" / "responses.csv").read_text(
+        encoding="utf-8-sig"
+    ).splitlines()
+    assert any("'=cmd|' /C calc'!A1" in line for line in lines)
+
+
 def test_infer_column_type() -> None:
     records = [
         {"a": 1, "b": 1.5, "c": True, "d": "x"},

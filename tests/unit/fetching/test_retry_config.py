@@ -147,6 +147,34 @@ def test_s214_fetch_retry_max_two_recovers(tmp_path: Path) -> None:
         assert fetcher.fetch(CrawlRequest("https://example.org")).body == b"recovered"
 
 
+def test_b03_002_retry_after_capped_in_sync_fetcher(tmp_path: Path) -> None:
+    """B03-002：同步 HTTPFetcher 的 Retry-After 必须封顶（默认 60s），防恶意头无限长睡。"""
+    fetcher = HTTPFetcher(_config(tmp_path, http={"retries": 2, "retry_on_status": [503]}))
+    fetcher.opener = _Opener([
+        _http_error(503, {"Retry-After": "2147483647"}),
+        _Response(b"after cap"),
+    ])
+    with patch("time.sleep") as sleeper:
+        body = fetcher.fetch(CrawlRequest("https://example.org")).body
+    assert body == b"after cap"
+    waits = [call.args[0] for call in sleeper.call_args_list]
+    assert waits and max(waits) <= 60.0
+
+
+def test_b03_002_retry_after_cap_respects_custom_cap(tmp_path: Path) -> None:
+    """B03-002：retry_after_cap_seconds 可自定义封顶值。"""
+    fetcher = HTTPFetcher(_config(tmp_path, http={"retries": 2, "retry_on_status": [503], "retry_after_cap_seconds": 5}))
+    fetcher.opener = _Opener([
+        _http_error(503, {"Retry-After": "100"}),
+        _Response(b"after custom cap"),
+    ])
+    with patch("time.sleep") as sleeper:
+        body = fetcher.fetch(CrawlRequest("https://example.org")).body
+    assert body == b"after custom cap"
+    waits = [call.args[0] for call in sleeper.call_args_list]
+    assert waits and max(waits) <= 5.0
+
+
 def test_s214_fetch_empty_status_list_raises_immediately(tmp_path: Path) -> None:
     fetcher = HTTPFetcher(_config(tmp_path, http={"retries": 3, "retry_on_status": []}))
     fetcher.opener = _Opener([_http_error(429)])

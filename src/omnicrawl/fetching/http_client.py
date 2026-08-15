@@ -291,6 +291,11 @@ class HTTPFetcher:
                         maximum=retry_cfg["max_seconds"],
                         jitter=retry_cfg["jitter"],
                     )
+                else:
+                    # B03-002：Retry-After 封顶（默认 60s），与异步路径对齐，防恶意头无限长睡。
+                    cap = float(self.http.get("retry_after_cap_seconds", 60))
+                    if wait > cap:
+                        wait = cap
                 time.sleep(wait)
             except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
                 last_error = exc

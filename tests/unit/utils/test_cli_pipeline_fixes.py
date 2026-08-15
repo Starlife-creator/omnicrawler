@@ -61,6 +61,23 @@ def test_e4_init_project_root_points_at_repo_root(tmp_path) -> None:
     assert result["created"].endswith("demo.yaml")
 
 
+def test_b09_002_init_project_rejects_path_traversal_name(tmp_path) -> None:
+    """B09-002：init 的 name 含路径分隔符/.. 必须被拒绝，防 CWE-22。"""
+    import pytest
+
+    from omnicrawl.commands.init_project import execute
+
+    with pytest.raises(ValueError):
+        execute("browser", str(tmp_path), "../../etc/evil")
+    with pytest.raises(ValueError):
+        execute("browser", str(tmp_path), "a/b")
+    with pytest.raises(ValueError):
+        execute("browser", str(tmp_path), "..")
+    # 合法名不受影响
+    result = execute("browser", str(tmp_path), "my-project_v2")
+    assert result["created"].endswith("my-project_v2.yaml")
+
+
 def test_e13_render_runs_validation(tmp_path) -> None:
     """E13：template render 后跑校验（合法渲染成功且返回校验提示）。"""
     from omnicrawl.commands.template import execute

@@ -14,6 +14,7 @@ from __future__ import annotations
 import gzip
 import json
 import os
+import re
 import shutil
 import time
 import uuid
@@ -22,6 +23,10 @@ from pathlib import Path
 from typing import Any
 
 from ..core.utils import utcnow
+
+# B04-001：run_id 参与文件路径构造，必须为纯安全字符（防路径穿越）。
+# 与 StateStore 的 uuid4().hex 生成约定对齐，同时兼容历史自定义 run_id。
+_RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 
 _CAPSULE_KEEP_DAYS = 7
 _CAPSULE_MAX_LINES = 10_000
@@ -132,4 +137,7 @@ class CapsuleStore:
         return rotated
 
     def _run_file(self, run_id: str) -> Path:
+        # B04-001：run_id 必须为纯安全字符，拒绝 / \ .. 等路径穿越成分。
+        if not isinstance(run_id, str) or not _RUN_ID_RE.fullmatch(run_id):
+            raise ValueError(f"run_id 含非法字符，禁止参与文件路径构造: {run_id!r}")
         return self.base_dir / f"{run_id}.log"

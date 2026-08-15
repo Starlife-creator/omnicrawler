@@ -7,7 +7,7 @@ extract: {mode: auto, fields: {title: {selector: title}, heading: {selector: h1}
 processors:
   pdf:
     enabled: true
-  config: builtin:pdf/announcement_fields.yaml
+    config: builtin:pdf/announcement_fields.yaml
     project_config: ""
     ocr_backend: none
     skip_ocr: false

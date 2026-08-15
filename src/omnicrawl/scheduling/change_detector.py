@@ -38,6 +38,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ..core.safe_data import safe_regex_search
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -353,11 +355,8 @@ class ChangeDetector:
             return target in content
         if condition.startswith("regex:"):
             pattern = condition[len("regex:"):]
-            try:
-                return bool(re.search(pattern, content, re.DOTALL))
-            except re.error as exc:
-                LOGGER.warning("无效正则 %s: %s", pattern, exc)
-                return False
+            # B08-001：统一走 safe_regex_search（防病态正则自 DOS），编译错误/可疑模式返回 None。
+            return bool(safe_regex_search(pattern, content, flags=re.DOTALL))
         if condition.startswith("equals:"):
             target = condition[len("equals:"):]
             return content.strip() == target.strip()

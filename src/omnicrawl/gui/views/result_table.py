@@ -41,6 +41,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ...core.utils import excel_safe
 from ..async_workers import CsvIndexWorker, JsonlSearchWorker
 from ..i18n import _
 
@@ -325,7 +326,7 @@ class ExportThread(QThread):
                             ws.cell(row=1, column=col, value=h)
                         sheet_row = 2
                     for col, val in enumerate(row, 1):
-                        ws.cell(row=sheet_row, column=col, value=val)
+                        ws.cell(row=sheet_row, column=col, value=excel_safe(val))
                     sheet_row += 1
                     if total % 1000 == 0:
                         tracker.set_item_progress(total)

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+# B09-002：name 参与文件路径构造，必须为纯文件名（拒绝路径分隔符与穿越段）。
+_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
 
 def execute(template: str, output: str, name: str) -> dict[str, Any]:
@@ -27,7 +31,14 @@ def execute(template: str, output: str, name: str) -> dict[str, Any]:
         )
     target_dir = Path(output).expanduser().resolve()
     target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / f"{name}.yaml"
+    # B09-002：name 必须为纯文件名（拒绝 / \ .. 与路径穿越）；写盘前断言落点仍在 target_dir 内。
+    if not _NAME_RE.fullmatch(name):
+        raise ValueError(
+            f"项目名非法（仅允许字母数字 _ . -，且不以 . 或 - 开头，最长 64 字符）: {name!r}"
+        )
+    target = (target_dir / f"{name}.yaml").resolve()
+    if target.parent != target_dir:
+        raise ValueError(f"目标路径越出输出目录: {target}")
     if target.exists():
         raise FileExistsError(f"目标已存在，不会覆盖: {target}")
     data = yaml.safe_load(source.read_text(encoding="utf-8"))

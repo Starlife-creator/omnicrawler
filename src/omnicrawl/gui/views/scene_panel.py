@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ...core.utils import excel_safe
 from ..i18n import _
 from ..widgets.empty_state import EmptyState
 
@@ -295,7 +296,7 @@ class ScenePanel(QWidget):
                 with open(path, "w", encoding="utf-8", newline="") as fh:
                     writer = csv.DictWriter(fh, fieldnames=headers, extrasaction="ignore")
                     writer.writeheader()
-                    writer.writerows(rows)
+                    writer.writerows({key: excel_safe(value) for key, value in row.items()} for row in rows)
             else:
                 if not suffix:
                     path += ".json"
