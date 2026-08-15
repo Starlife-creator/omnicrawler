@@ -75,6 +75,27 @@ def test_sign_writes_sig_and_transparency_log(tmp_path: Path) -> None:
     assert verified.returncode == 0, verified.stdout
 
 
+def test_sign_operator_override_and_posix_path(tmp_path: Path) -> None:
+    """B02-004：--operator 显式配置生效；日志 plugin 路径为正斜杠。"""
+    private, _ = _make_keypair(tmp_path)
+
+    plugin = _make_clean_plugin(tmp_path)
+    log = tmp_path / "signing_transparency.jsonl"
+    signed = _run(
+        "sign", str(plugin),
+        "--private-key", str(private),
+        "--log", str(log),
+        "--operator", "release-bot",
+    )
+    assert signed.returncode == 0, signed.stdout + signed.stderr
+
+    entries = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    assert len(entries) == 1
+    assert entries[0]["operator"] == "release-bot"
+    assert "\\" not in entries[0]["plugin"], "日志 plugin 路径必须用正斜杠"
+    assert entries[0]["plugin"].endswith("plugin.py")
+
+
 def test_sign_blocks_on_scan_failure(tmp_path: Path) -> None:
     private, _ = _make_keypair(tmp_path)
 

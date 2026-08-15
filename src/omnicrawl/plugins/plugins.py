@@ -136,7 +136,10 @@ class StatusWidgetRegistration:
 def _metadata(module: Any, path: Path) -> PluginMetadata:
     value = getattr(module, "PLUGIN_METADATA", None)
     if value is None:
-        return PluginMetadata(path.stem, description="legacy plugin")
+        # B02-025：市场插件统一入口名 plugin.py，path.stem 全是 "plugin" 无法区分；
+        # legacy 回退用父目录名（插件 id）。单文件插件（<name>.py）保持 path.stem。
+        legacy_name = path.parent.name if path.name == "plugin.py" else path.stem
+        return PluginMetadata(legacy_name, description="legacy plugin")
     if isinstance(value, PluginMetadata):
         result = value
     elif isinstance(value, dict):

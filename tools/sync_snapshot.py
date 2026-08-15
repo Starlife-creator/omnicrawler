@@ -28,6 +28,16 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MARKET_REPO = REPO_ROOT.parent / "OmniCrawler-market"
+
+
+def _content_equal(left: bytes, right: bytes) -> bool:
+    """B02-008：换行归一化内容比对。
+
+    Windows autocrlf 会把 git 检出的 LF 转成 CRLF，导致「全新检出快照 vs 市场仓
+    LF 源」全部误报漂移。签名/指纹相关文件必须内容级比对，因此按统一 LF 归一化
+    后比较字节，而不是降级为 mtime/size。
+    """
+    return left.replace(b"\r\n", b"\n") == right.replace(b"\r\n", b"\n")
 DEFAULT_DEST = REPO_ROOT / "market"
 
 # 只需同步元数据：catalog + 发布者身份 + 信任根，绝不拉插件/模板载荷。
@@ -56,13 +66,13 @@ def _mirror(src: Path, dest: Path, stats: dict[str, int]) -> None:
             for child in s.iterdir():
                 target = d / child.name
                 if child.is_file():
-                    if not target.exists() or child.read_bytes() != target.read_bytes():
+                    if not target.exists() or not _content_equal(child.read_bytes(), target.read_bytes()):
                         shutil.copy2(child, target)
                         stats["updated"] += 1
                 elif child.is_dir():
                     _mirror(child, target, stats)
         elif s.is_file():
-            if not d.exists() or s.read_bytes() != d.read_bytes():
+            if not d.exists() or not _content_equal(s.read_bytes(), d.read_bytes()):
                 shutil.copy2(s, d)
                 stats["updated"] += 1
 
@@ -102,14 +112,14 @@ def main() -> int:
             s = market_repo / item
             d = dest / item
             if s.is_file():
-                if not d.exists() or s.read_bytes() != d.read_bytes():
+                if not d.exists() or not _content_equal(s.read_bytes(), d.read_bytes()):
                     stats["updated"] += 1
             elif s.is_dir():
                 for child in s.rglob("*"):
                     if child.is_file():
                         rel = child.relative_to(s)
                         t = d / rel
-                        if not t.exists() or child.read_bytes() != t.read_bytes():
+                        if not t.exists() or not _content_equal(child.read_bytes(), t.read_bytes()):
                             stats["updated"] += 1
         print(f"[DRY-RUN] 将更新 {stats['updated']} 项，删除 {stats['removed']} 项（未写盘）")
         return 0
