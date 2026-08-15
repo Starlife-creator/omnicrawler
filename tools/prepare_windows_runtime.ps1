@@ -203,7 +203,7 @@ if (-not $SkipTesseract) {
 if (-not $SkipOcrModels) {
     Write-Host 'Prepare and verify all PPStructureV3 offline models...'
     $modelRoot = Join-Path $RuntimeRoot 'models\paddlex'
-    & $Python (Join-Path $ProjectRoot 'tools\download_ocr_models.py') $modelRoot --source aistudio
+    & $Python (Join-Path $ProjectRoot 'tools\download_and_smoke_test.py') $modelRoot --source aistudio
     if ($LASTEXITCODE -ne 0) { throw 'PaddleOCR model verification failed.' }
 }
 
