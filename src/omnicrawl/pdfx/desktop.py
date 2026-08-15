@@ -23,8 +23,22 @@ def suite_root() -> Path:
     return current
 
 
+# B07-001：可展示文件扩展名白名单。Windows os.startfile 按扩展名关联执行，
+# 拒绝 .exe/.bat/.cmd 等可执行件——防输出目录混入非预期文件被双击/自动执行。
+_OPENABLE_EXTENSIONS = {
+    ".txt", ".md", ".csv", ".xlsx", ".xls", ".json", ".jsonl", ".pdf",
+    ".html", ".htm", ".png", ".jpg", ".jpeg", ".log", ".yaml", ".yml",
+}
+
+
 def open_path(path: str | Path) -> None:
-    target = str(Path(path).expanduser().resolve())
+    target = Path(path).expanduser().resolve()
+    # 目录放行（文件管理器中打开安全）；文件必须落在可展示扩展名白名单。
+    if not target.is_dir() and target.suffix.lower() not in _OPENABLE_EXTENSIONS:
+        raise ValueError(
+            f"拒绝打开非展示型文件: {target}（扩展名 {target.suffix or '无'} 不在白名单）"
+        )
+    target = str(target)
     if sys.platform.startswith("win"):
         os.startfile(target)  # type: ignore[attr-defined]
     elif sys.platform == "darwin":

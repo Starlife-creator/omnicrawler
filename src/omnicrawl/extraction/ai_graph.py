@@ -278,6 +278,13 @@ class AIGraphExtractor:
 
         from ..services.ai_safety import mark_untrusted
 
+        # B13-002：未配置 API key 时 fail-closed——拒绝携带空 Bearer 对外发请求，
+        # 防止 ai 模式被误启用时向外部 API 泄露元数据（HTTP 客户端行为可见）。
+        if not self._provider.api_key:
+            raise RuntimeError(
+                "AIGraphExtractor: 未配置 AI API key（fail-closed，拒绝外发请求）"
+            )
+
         if session is None:
             async with aiohttp.ClientSession() as owned_session:
                 return await self._extract_chunk(html, fields, max_tokens, session=owned_session)

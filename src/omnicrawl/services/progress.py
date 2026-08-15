@@ -16,7 +16,7 @@ import json
 import math
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from typing import Any
 
 LOG_PREFIX = "PROGRESS2:"
@@ -84,7 +84,12 @@ class TaskProgressEvent:
             data = json.loads(body)
         except json.JSONDecodeError:
             return None
-        return cls(**data)
+        if not isinstance(data, dict):
+            return None
+        # B08-009：过滤到 dataclass 字段集——畸形/旧版本日志行含未知字段时
+        # 不再 TypeError（cls(**data) 不在 try 内），单事件解析失败不拖垮读取。
+        valid = {field.name for field in fields(cls)}
+        return cls(**{key: value for key, value in data.items() if key in valid})
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)

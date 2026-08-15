@@ -4,8 +4,10 @@ import json
 import logging
 import random
 import urllib.parse
-import xml.etree.ElementTree as ET
 from typing import Any
+from xml.etree.ElementTree import ParseError
+
+from defusedxml import ElementTree as SafeET
 
 from ..core.config import AppConfig
 from ..core.models import CrawlRequest, FetchResult
@@ -161,8 +163,9 @@ class GenericSource:
 
     def _discover_xml(self, result: FetchResult) -> list[CrawlRequest]:
         try:
-            root = ET.fromstring(result.body)
-        except ET.ParseError:
+            # B08-003：sitemap/feed 解析用 defusedxml（禁 DTD/外部实体，防 XXE/billion-laughs）
+            root = SafeET.fromstring(result.body)
+        except (ParseError, ValueError):
             return []
         urls: list[str] = []
         if self.kind == "sitemap":

@@ -20,6 +20,13 @@
 - 交付物：源码 ZIP、wheel、Windows Portable Standard ZIP、Windows Portable Full ZIP，以及各自完整的版本化暂存目录。
 - 每个 Windows 构建均执行依赖矩阵检查、运行时清单、SBOM、便携冒烟和 ZIP 完整性检查；发行目录中的 `SHA256SUMS-0.8.0.txt` 是 ZIP 哈希的权威来源。
 
+## 合规与诚实条款（B14-💭-3 固定字段）
+
+- **不绕过**：本版本遵守 robots.txt、只采已获授权站点，不绕过验证码、付费墙、
+  访问控制或站点安全策略；隐身/undetected 能力仅用于已授权站点并经 EgressBroker
+  统一出口。
+- **门禁不伪称**：外部门禁/审核状态如实标注 `pending`/`通过`，不伪称通过。
+
 ## 升级与回滚
 
 - 从 2.0+ 升级继续使用现有迁移流程，配置协议保持 v5。

@@ -28,3 +28,8 @@ def test_metrics_write_json_and_prometheus(tmp_path) -> None:
     assert 'omnicrawl_request_duration_seconds_max{host="example.org"} 0.250000' in prometheus
     assert "omnicrawl_frontier_pending 3.0" in prometheus
     assert 'omnicrawl_stage_duration_seconds_p95{stage="crawl"} 0.480000' in prometheus
+    # B13-003：标签值含双引号必须被转义（CWE-116 信息类），否则 .prom 输出不可解析
+    assert 'error="bad\\"value"' in prometheus, prometheus
+    assert 'bad"value' not in prometheus.replace('bad\\"value', ""), (
+        "标签值中的裸双引号必须全部转义"
+    )

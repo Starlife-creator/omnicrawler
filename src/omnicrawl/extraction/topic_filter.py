@@ -9,6 +9,7 @@ S2.5.31：
 from __future__ import annotations
 
 import copy
+import functools
 from dataclasses import dataclass
 from typing import Any
 
@@ -63,21 +64,19 @@ def filter_records(records: list[dict[str, Any]], config: dict[str, Any]) -> lis
 
 
 def _terms(value: Any) -> tuple[str, ...]:
-    # S4.5 P3#152：配置解析结果缓存——每条记录不再重复归一化词表
+    # S4.5 P3#152：配置解析结果缓存——每条记录不再重复归一化词表。
+    # B07-003：改用 functools.lru_cache（maxsize=256）限界，长运行服务下
+    # 词表组合频繁变化时缓存不无限增长。
     if not isinstance(value, list):
         return ()
-    key = tuple(value)
-    cached = _TERMS_CACHE.get(key)
-    if cached is not None:
-        return cached
-    result = tuple(
+    return _terms_cached(tuple(value))
+
+
+@functools.lru_cache(maxsize=256)
+def _terms_cached(key: tuple) -> tuple[str, ...]:
+    return tuple(
         dict.fromkeys(str(item).strip().casefold() for item in key if str(item).strip())
     )
-    _TERMS_CACHE[key] = result
-    return result
-
-
-_TERMS_CACHE: dict[tuple, tuple[str, ...]] = {}
 
 
 def _hit(term: str, texts: tuple[str, ...]) -> bool:

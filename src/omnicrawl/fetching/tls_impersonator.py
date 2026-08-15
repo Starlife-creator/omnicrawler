@@ -34,6 +34,13 @@ DEFAULT_IMPERSONATE = "chrome131"
 _IMPERSONATE_CHAIN = ("chrome131", "chrome130", "chrome124", "chrome120", "safari17_0", "edge101")
 
 
+def _bracket_ipv6(address: str) -> str:
+    """curl ``--resolve`` 的 IPv6 地址字面量需要 ``[...]`` 方括号（B13-005）。"""
+    if ":" in address and not address.startswith("["):
+        return f"[{address}]"
+    return address
+
+
 def _choose_impersonate(preferred: str) -> str:
     from curl_cffi import BrowserType
 
@@ -114,6 +121,7 @@ class TLSImpersonator:
 
         返回 curl ``--resolve`` 格式条目（bytes: "host:port:address"）；
         无可用地址（DNS 未解析出结果）时返回 None，由 curl 自行解析。
+        IPv6 地址带 ``[...]`` 括号（curl --resolve 语义），测试可确定性拆分。
         """
         parts = urlsplit(url)
         host = parts.hostname or ""
@@ -122,7 +130,7 @@ class TLSImpersonator:
         if not approved:
             return None
         return [
-            f"{host}:{port}:{address}".encode("ascii", errors="replace")
+            f"{host}:{port}:{_bracket_ipv6(address)}".encode("ascii", errors="replace")
             for address in approved
         ]
 

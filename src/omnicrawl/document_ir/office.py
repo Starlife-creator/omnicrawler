@@ -121,7 +121,7 @@ def _parse_odt(path: Path, options: dict[str, Any]) -> DocumentIR:
     _require_file(path)
     try:
         with zipfile.ZipFile(path) as zf:
-            content = zf.read("content.xml")
+            content = _read_zip_entry(zf, "content.xml")
     except (zipfile.BadZipFile, KeyError) as exc:
         raise ValueError(f"document_ir: 无效的 ODT 文件: {path} ({exc})") from exc
 
@@ -146,10 +146,26 @@ def _parse_odt(path: Path, options: dict[str, Any]) -> DocumentIR:
 
 
 # ── .epub ────────────────────────────────────────────────
+# B07-002：zip 单条目解压上限（64 MiB）——防 zip 炸弹/超大 content.xml 内存耗尽
+_ZIP_ENTRY_MAX_BYTES = 64 * 1024 * 1024
+
+
+def _read_zip_entry(
+    zf: zipfile.ZipFile, name: str, *, max_bytes: int = _ZIP_ENTRY_MAX_BYTES,
+) -> bytes:
+    """解压 zip 条目前检查 file_size 上限（defense-in-depth）。"""
+    info = zf.getinfo(name)
+    if info.file_size > max_bytes:
+        raise ValueError(
+            f"document_ir: zip 条目过大（{info.file_size} 字节 > 上限 {max_bytes}）: {name}"
+        )
+    return zf.read(name)
+
+
 def _epub_spine_order(zf: zipfile.ZipFile) -> list[str]:
     """按 EPUB 阅读顺序返回内容文件相对路径列表；无 OPF 时返回空。"""
     try:
-        container = ET.parse(io.BytesIO(zf.read("META-INF/container.xml")))
+        container = ET.parse(io.BytesIO(_read_zip_entry(zf, "META-INF/container.xml")))
     except (KeyError, ET.ParseError):
         return []
     ns = {"c": "urn:oasis:names:tc:opendocument:xmlns:container"}
@@ -160,7 +176,7 @@ def _epub_spine_order(zf: zipfile.ZipFile) -> list[str]:
     if not opf_path:
         return []
     try:
-        opf = ET.parse(io.BytesIO(zf.read(opf_path)))
+        opf = ET.parse(io.BytesIO(_read_zip_entry(zf, opf_path)))
     except (KeyError, ET.ParseError):
         return []
 
@@ -201,7 +217,7 @@ def _parse_epub(path: Path, options: dict[str, Any]) -> DocumentIR:
         paragraphs: list[str] = []
         title = path.stem
         for name in ordered:
-            raw = zf.read(name)
+            raw = _read_zip_entry(zf, name)
             text = raw.decode("utf-8", errors="replace")
             document = parse_html(text)
             for node in select_nodes(document, _CONTENT_SELECTOR):
