@@ -73,7 +73,7 @@ if [[ "$EDITION" == "Full" ]]; then
 else
   EXTRAS="gui,html,pdf,browser,async-http,security"
 fi
-"$BUILDER_PYTHON" -m pip install -e "$PROJECT_ROOT[$EXTRAS]" pyinstaller
+"$BUILDER_PYTHON" -m pip install -e "$PROJECT_ROOT[$EXTRAS]" pyinstaller==6.15.0
 
 # ---- 三重版本校验（src __version__ == pyproject == installed） -------------
 APP_VERSION="$("$BUILDER_PYTHON" -c 'from omnicrawl import __version__; print(__version__)')"
