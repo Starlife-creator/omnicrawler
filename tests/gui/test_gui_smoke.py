@@ -131,3 +131,56 @@ def test_export_thread_reports_progress_periodically_not_for_every_row(tmp_path,
 
     assert progress == [10]
     assert completed == [(True, str(tmp_path / "export.xlsx"))]
+
+
+def test_export_thread_xlsx_escapes_formula_injection(tmp_path, monkeypatch):
+    """B10 result_table：XLSX 单元格值必须以 excel_safe 转义，防 CWE-1236。"""
+    from omnicrawl.gui.views.result_table import ExportThread
+
+    source = tmp_path / "records.csv"
+    source.write_text("name\n=SUM(A1:A2)\nplain\n", encoding="utf-8")
+
+    captured: list[list] = []
+    workbooks: list = []
+
+    class FakeSheet:
+        title = ""
+
+        def __init__(self) -> None:
+            self.cells: list[list] = []
+
+        def cell(self, row, column, value=None):
+            while len(self.cells) < row:
+                self.cells.append([])
+            while len(self.cells[row - 1]) < column:
+                self.cells[row - 1].append(None)
+            if value is not None:
+                self.cells[row - 1][column - 1] = value
+            return self.cells[row - 1][column - 1]
+
+    class FakeWorkbook:
+        def __init__(self) -> None:
+            self.active = FakeSheet()
+            self.sheetnames = ["Sheet1"]
+            workbooks.append(self)
+
+        def create_sheet(self, _name):
+            sheet = FakeSheet()
+            sheet.title = _name
+            self.sheetnames.append(_name)
+            return sheet
+
+        @staticmethod
+        def save(_path: str) -> None:
+            return None
+
+    monkeypatch.setitem(sys.modules, "openpyxl", SimpleNamespace(Workbook=FakeWorkbook))
+    worker = ExportThread(source, tmp_path / "export.xlsx")
+    worker.finished_signal.connect(lambda ok, message: captured.append((ok, message)))
+    worker.run()
+
+    assert captured == [(True, str(tmp_path / "export.xlsx"))]
+    assert workbooks, "ExportThread 应创建 Workbook"
+    values = [cell for row in workbooks[0].active.cells for cell in row]
+    assert "'=SUM(A1:A2)" in values
+    assert "plain" in values

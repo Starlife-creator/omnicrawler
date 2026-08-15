@@ -37,7 +37,9 @@ def write_pdf_source_manifest(
     items: list[dict[str, Any]] = []
     missing = 0
     for row in rows:
-        path = Path(str(row["local_path"])).expanduser().resolve()
+        # B06-004：DB 内 local_path 不应含 `~`；去掉 expanduser 防止 DB 数据污染时
+        # 意外展开到用户目录。resolve() 保留用于相对路径规范化。
+        path = Path(str(row["local_path"])).resolve()
         if not path.is_file():
             missing += 1
             continue

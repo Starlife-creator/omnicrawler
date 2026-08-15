@@ -30,6 +30,15 @@ def test_typed_quality_rules_and_duplicate_detection() -> None:
     assert records[1].evidence["_quality"]["duplicate"] is True
 
 
+def test_pattern_rule_rejects_redos_pattern() -> None:
+    """B06-002：pattern 匹配必须走 safe_regex_search，嵌套量词类 ReDoS 模式被拒绝而非卡死。"""
+    fields = {"title": {"pattern": r"(a+)+$"}}
+    record = ExtractedRecord("https://example.org/1", "item", {"title": "a" * 100})
+    quality = assess_record(record, fields)
+    # 拒绝后可重试或判未匹配，但绝不能抛出/卡死；此处断言被标记为不符合 pattern
+    assert any("does not match pattern" in err for err in quality["validation_errors"])
+
+
 def test_manual_review_edit_is_audited(tmp_path) -> None:
     with StateStore(tmp_path / "state.sqlite3") as state:
         run_id = state.start_run("review", "project.yaml")

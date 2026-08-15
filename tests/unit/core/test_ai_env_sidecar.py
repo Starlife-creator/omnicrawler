@@ -2,7 +2,7 @@
 
 - C36：privacy/budget/routing/extraction 经 `save_ai_config_sidecar` 落盘，
   `load_ai_config_sidecar` 回读；api_key 绝不写入明文 JSON。
-- C37：`load_ai_privacy` 默认全允许（fail-open），并能从旁路 JSON 读取显式关闭项。
+- C37（B05-019）：`load_ai_privacy` 默认全禁止（fail-closed），显式开启项从旁路 JSON 读取。
 """
 
 from __future__ import annotations
@@ -73,21 +73,23 @@ def test_c36_sidecar_path_along_env(tmp_path) -> None:
     assert ai_config_sidecar_path(root).name == "ai_config.json"
 
 
-def test_c37_privacy_defaults_fail_open(tmp_path) -> None:
+def test_c37_privacy_defaults_fail_closed(tmp_path) -> None:
+    """B05-019：无旁路 JSON 时隐私默认全部禁止（fail-closed），与 config 默认一致。"""
     root = _write_env(tmp_path)  # 无旁路 JSON
     privacy = load_ai_privacy(root)
     assert privacy == {
-        "allow_page_text": True,
-        "allow_pdf_content": True,
-        "allow_screenshots": True,
-        "allow_cookies": True,
+        "allow_page_text": False,
+        "allow_pdf_content": False,
+        "allow_screenshots": False,
+        "allow_cookies": False,
     }
 
 
-def test_c37_privacy_reads_explicit_disable(tmp_path) -> None:
+def test_c37_privacy_reads_explicit_enable(tmp_path) -> None:
     root = _write_env(tmp_path)
-    save_ai_config_sidecar(root, {"privacy": {"allow_pdf_content": False}})
+    save_ai_config_sidecar(root, {"privacy": {"allow_pdf_content": True, "allow_page_text": True}})
     privacy = load_ai_privacy(root)
-    assert privacy["allow_pdf_content"] is False
-    # 未显式设置的项回退默认（允许）
+    assert privacy["allow_pdf_content"] is True
+    # 未显式设置的项回退默认（fail-closed：禁止）
     assert privacy["allow_page_text"] is True
+    assert privacy["allow_cookies"] is False

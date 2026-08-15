@@ -41,12 +41,15 @@ class IsolatedPluginRunner:
     def call(self, entry_module: str, operation: str, payload: dict[str, Any]) -> dict[str, Any]:
         if not self.plugin_root.is_dir() or any(part in {"..", ""} for part in entry_module.split(".")):
             raise ValueError("插件路径或入口无效")
-        env = {"PYTHONIOENCODING": "utf-8", "PYTHONPATH": str(self.plugin_root), "OMNICRAWL_PLUGIN_SANDBOX": "1"}
-        # 仅在父进程显式设置哈希种子时透传给沙箱子进程：使子进程跳过 OS 熵读取，
-        # 规避 CI runner 熵不足导致的 _Py_HashRandomization_Init 偶发启动失败。
-        # 生产环境默认不设置该变量，行为保持不变（子进程仍用随机哈希）。
-        if "PYTHONHASHSEED" in os.environ:
-            env["PYTHONHASHSEED"] = os.environ["PYTHONHASHSEED"]
+        # B01-016：`-I`（isolated mode）隐含 `-E`，会忽略所有 PYTHON* 环境变量，
+        # 故 PYTHONPATH/PYTHONIOENCODING/PYTHONHASHSEED 三行均为死配置——
+        # 删除以避免"自以为已配置"的假象。子进程侧显式 reconfigure stdout 编码。
+        env = {"OMNICRAWL_PLUGIN_SANDBOX": "1"}
+        # Windows 上解释器初始化依赖 SystemRoot；env 全量替换会丢它，
+        # 历史上引发 _Py_HashRandomization_Init 偶发失败（Q10 候选根因）。继承保留。
+        for key in ("SystemRoot", "SYSTEMROOT", "TEMP", "TMP"):
+            if key in os.environ:
+                env[key] = os.environ[key]
         host = Path(__file__).with_name("plugin_subprocess.py").resolve()
         command = [sys.executable, "-I", str(host), entry_module, str(self.plugin_root)]
         request = json.dumps({"operation": operation, "payload": payload}, ensure_ascii=False)

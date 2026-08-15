@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from ..core.models import ExtractedRecord
+from ..core.safe_data import safe_regex_search
 
 
 def _missing(value: Any) -> bool:
@@ -83,7 +84,8 @@ def assess_record(
         if not isinstance(raw_rule, dict) or _missing(value):
             continue
         rule = raw_rule
-        if rule.get("pattern") and not re.search(str(rule["pattern"]), str(value)):
+        # B06-002：pattern 匹配统一走 safe_regex_search（与 normalizers 对齐），防病态正则自 DOS。
+        if rule.get("pattern") and not safe_regex_search(str(rule["pattern"]), str(value)):
             errors.append(f"{field_name}: does not match pattern")
         expected = str(rule.get("type", "string")).casefold()
         if expected in {"int", "integer"}:

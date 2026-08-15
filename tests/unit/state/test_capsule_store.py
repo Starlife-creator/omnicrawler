@@ -14,6 +14,17 @@ from omnicrawl.state.capsule_store import Capsule, CapsuleStore
 
 
 class CapsuleStoreTest(unittest.TestCase):
+    def test_run_id_rejects_path_traversal(self) -> None:
+        """B04-001：run_id 含路径穿越成分必须被拒绝。"""
+        with tempfile.TemporaryDirectory() as temp:
+            store = CapsuleStore(Path(temp))
+            for evil in ("../../etc/cron.d/x", "a/b", "..\\evil", "a b"):
+                with self.assertRaises(ValueError):
+                    store.append(evil, Capsule(run_id="r1", action_type="extract_field", action_name="a"))
+            # 合法 run_id 不受影响
+            store.append("r1", Capsule(run_id="r1", action_type="extract_field", action_name="a"))
+            store.append("abc123XYZ_ok", Capsule(run_id="r1", action_type="extract_field", action_name="b"))
+
     def test_append_read_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             store = CapsuleStore(Path(temp))

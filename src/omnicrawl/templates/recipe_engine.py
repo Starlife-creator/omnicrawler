@@ -33,6 +33,17 @@ def compose_recipe(current: dict[str, Any], recipe: dict[str, Any]) -> dict[str,
     for section in ("task", "selection", "ai", "outputs"):
         if isinstance(current.get(section), dict):
             result[section] = deep_merge(result.get(section, {}), current[section])
+    # B11-007：与 apply_template 同款护栏——配方不得把 http 安全块翻转到宽松方向。
+    current_http = current.get("http", {})
+    result_http = result.get("http", {})
+    if isinstance(current_http, dict) and isinstance(result_http, dict):
+        for key in ("respect_robots", "allow_private_network", "verify_tls", "allow_unintercepted_selenium"):
+            if key in current_http:
+                result_http[key] = current_http[key]
+    current_egress = current.get("egress", {})
+    result_egress = result.get("egress", {})
+    if isinstance(current_egress, dict) and isinstance(result_egress, dict) and "enabled" in current_egress:
+        result_egress["enabled"] = current_egress["enabled"]
     return result
 
 

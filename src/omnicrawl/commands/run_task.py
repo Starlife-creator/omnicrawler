@@ -61,6 +61,26 @@ def execute(
         callback = None
 
     loaded = load_config(config)
+    # B02-026：CLI run 路径接入占位符门禁（fail-closed），与 GUI/worker 运行前检查对齐。
+    # 整棵配置树扫描，覆盖 source.params / http.headers / pagination / max_pages 等全部字符串值。
+    # 嵌入式/测试调用方若返回非标准配置对象（无 .raw），跳过检查不阻塞。
+    raw_config = getattr(loaded, "raw", None)
+    if isinstance(raw_config, dict):
+        hits = _unresolved_placeholders(raw_config)
+        if hits:
+            print("❌ 配置中存在未替换的模板占位符，请先填充后再运行：", file=sys.stderr)
+            for hit in hits:
+                print(f"   - {hit}", file=sys.stderr)
+            return {
+                "status": "failed",
+                "exit_code": 1,
+                "records": 0,
+                "errors": len(hits),
+                "processed": 0,
+                "elapsed_seconds": 0,
+                "export": {},
+                "workspace": str(getattr(loaded, "workspace", "")),
+            }
     # E9：统一走 ApplicationService（内部透传 max_pages/callback 到 Pipeline.run），
     # 不再出现 max_pages 分支走 Pipeline、无 max_pages 分支走 ApplicationService 的双路径不一致。
     result = ApplicationService(loaded.path).run(
@@ -96,6 +116,32 @@ _ZERO_RECORD_HINT = (
     "  2) 出网被拦截(403/robots 拒绝)——运行 omnicrawl doctor 检查\n"
     "  3) 模板与页面结构不匹配——运行 omnicrawl sample 试跑验证\n"
 )
+
+
+def _unresolved_placeholders(raw: dict[str, Any]) -> list[str]:
+    """B02-026：扫描整棵配置树，返回含未替换占位符的字符串值（含键路径）。
+
+    占位符形态复用 ``template_catalog.PLACEHOLDER_RE``（``{{identifier}}``），
+    与模板声明同源，避免 ``{{ 任意文本 }}`` 注释性用法被误报。
+    """
+    from ..templates.template_catalog import PLACEHOLDER_RE
+
+    hits: list[str] = []
+
+    def _walk(node: Any, path: str) -> None:
+        if isinstance(node, str):
+            if PLACEHOLDER_RE.search(node):
+                snippet = node[:80] + ("…" if len(node) > 80 else "")
+                hits.append(f"{path}: {snippet}")
+        elif isinstance(node, dict):
+            for key, value in node.items():
+                _walk(value, f"{path}.{key}" if path else str(key))
+        elif isinstance(node, (list, tuple)):
+            for index, value in enumerate(node):
+                _walk(value, f"{path}[{index}]")
+
+    _walk(raw, "")
+    return hits
 
 
 def _print_summary(result: dict[str, Any]) -> None:

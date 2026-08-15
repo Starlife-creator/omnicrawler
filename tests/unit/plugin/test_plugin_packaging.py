@@ -157,6 +157,7 @@ def test_build_template_upload(identity_env, tmp_path: Path, monkeypatch) -> Non
     creator = json.loads(files["templates/my/tpl/creator.identity"].decode("utf-8"))
     expected = hashlib.sha256(base64.b64decode(creator["public_key"])).hexdigest()[:32]
     assert fingerprint == expected
-    assert "templates/my/tpl/template.yaml.sig" in files
+    assert "templates/my/tpl/template.yaml.sig" not in files  # B01-013：不伪造维护者签名
+    assert "templates/my/tpl/creator.sig" in files
     assert "templates/my/tpl/creator.identity" in files
     assert "authors/alice.yaml" in files

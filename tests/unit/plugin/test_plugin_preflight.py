@@ -38,6 +38,7 @@ def _load(
         config=None,
         approved_permissions=approved_permissions,
         ast_allowed_patterns=ast_allowed_patterns,
+        signature_policy="developer",  # AST 门禁单测聚焦模式检查，不涉签名
     )
     return registry
 

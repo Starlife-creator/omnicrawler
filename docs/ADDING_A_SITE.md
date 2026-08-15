@@ -34,20 +34,19 @@ template:
 
 ```python
 from omnicrawl.models import CrawlRequest
-from omnicrawl.plugins import PluginMetadata
 from omnicrawl.sources import GenericSource
 
-PLUGIN_METADATA = PluginMetadata(
-    name="example-site",
-    version="1.0.0",
-    api_version=1,
-    plugin_types=("source",),
-    capabilities=("cursor-pagination",),
-    domains=("example.org",),
-    permissions=("network",),
-    license="MIT",
-    fallback="rest",
-)
+PLUGIN_METADATA = {
+    "name": "example-site",
+    "version": "1.0.0",
+    "api_version": 1,
+    "plugin_types": ("source",),
+    "capabilities": ("cursor-pagination",),
+    "domains": ("example.org",),
+    "permissions": ("network",),
+    "license": "MIT",
+    "fallback": "rest",
+}
 
 class ExampleSource(GenericSource):
     def seed(self):

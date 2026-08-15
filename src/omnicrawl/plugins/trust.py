@@ -324,7 +324,10 @@ def load_decision(decision: TrustDecision) -> tuple[bool, str]:
     if decision.level in (TrustLevel.MaintainerSigned, TrustLevel.CreatorTrusted):
         return True, decision.reason
     if decision.level == TrustLevel.CreatorUntrusted:
-        assert decision.creator is not None
+        # B01-008：显式检查替代 assert——python -O 下 assert 会被移除，避免
+        # NoneType 崩溃掩盖契约违反（信任评估逻辑缺陷应被明确暴露）。
+        if decision.creator is None:
+            raise RuntimeError("CreatorUntrusted 决策必须携带 creator，信任评估逻辑存在缺陷")
         return False, (
             f"插件作者：{decision.creator.username}，公钥指纹：{decision.creator.key_fingerprint}。"
             "该插件未经市场审核，可通过信任命令授权后加载。"

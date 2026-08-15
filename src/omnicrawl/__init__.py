@@ -61,7 +61,6 @@ _DEPRECATED_MODULE_MAP = {
     "diagnostics": "quality.diagnostics",
     "doctor": "services.doctor",
     "easyspider_bridge": "sources.easyspider_bridge",
-    "ecosystem_registry": "plugins.ecosystem_registry",
     "egress": "security.egress",
     "error_center": "quality.error_center",
     "errors": "core.errors",

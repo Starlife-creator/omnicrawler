@@ -198,6 +198,10 @@ def _require_file(path: Path) -> None:
         raise FileNotFoundError(f"ConvertX: 输入文件路径无效: {path}")
 
 
+# META：SQL 标识符白名单（表名/列名直插场景），仅允许 identifier 或 schema.identifier。
+_SQL_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?")
+
+
 def _ensure_parent_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -517,6 +521,10 @@ def _register_duckdb() -> None:
         _require_file(path)
         pe = _ProgressEmitter(options.get("on_line_progress"))
         table = str(options.get("table", "records"))
+        # META：table 标识符白名单——仅允许标识符或 schema.identifier，防 CLI
+        # 传入恶意标识符/子查询直插 SQL（convertx 本地-only，仍按 RC-6 同族收口）。
+        if not _SQL_IDENTIFIER_RE.fullmatch(table):
+            raise ValueError(f"无效的 duckdb 表名: {table!r}")
         # 先拿总行数，便于节流推进展示进度
         count_sql = f"SELECT COUNT(*) FROM {table}"
         read_sql = f"SELECT * FROM {table}"

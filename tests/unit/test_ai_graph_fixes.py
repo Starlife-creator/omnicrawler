@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("aiohttp")
 
-from omnicrawl.extraction.ai_graph import AIGraphExtractor, FieldDef, SplitStrategy
+from omnicrawl.extraction.ai_graph import AIGraphExtractor, FieldDef, Provider, SplitStrategy
 
 
 class _FakeResp:
@@ -95,7 +95,7 @@ async def test_d60_retry_on_429_then_success() -> None:
 
 @pytest.mark.asyncio
 async def test_c34_html_marked_untrusted_in_prompt() -> None:
-    ex = AIGraphExtractor()
+    ex = AIGraphExtractor(provider=Provider(api_key="sk-test"))
     session = _FakeSession(_FakeResp(200, '{"choices":[{"message":{"content":"{}"}}]}'))
     await ex._extract_chunk("<script>alert(1)</script>", [FieldDef(name="t")], 1000, session=session)
     assert len(session.post_calls) == 1

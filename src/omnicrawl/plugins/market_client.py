@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import urllib.request
 from datetime import datetime, timezone
@@ -22,6 +23,8 @@ from typing import Any
 
 from ..security.egress import EgressBroker
 from .signing import verify_bytes
+
+LOGGER = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 15.0
 _ID_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
@@ -117,9 +120,14 @@ def _write_install_meta(
     sig_name: str,
     main_bytes: bytes,
     sig_bytes: bytes,
+    extra_files: dict[str, bytes] | None = None,
 ) -> None:
-    """写安装元数据锁文件（插件/模板通用）。"""
-    meta = {
+    """写安装元数据锁文件（插件/模板通用）。
+
+    ``extra_files``：额外落盘文件（如创作者轨 creator.sig/creator.identity）的
+    {文件名: 字节} 映射，其 sha256 一并记录进锁文件，防被单独替换（B01-003）。
+    """
+    meta: dict[str, Any] = {
         "schema_version": 1,
         "plugin_id": plugin_id,
         "plugin_file": main_name,
@@ -128,6 +136,8 @@ def _write_install_meta(
         "signature_sha256": _sha256(sig_bytes),
         "installed_at": datetime.now(timezone.utc).isoformat(),
     }
+    if extra_files:
+        meta["extra_files"] = {name: _sha256(data) for name, data in extra_files.items()}
     (dest_dir / _INSTALL_META).write_text(
         json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
@@ -179,6 +189,19 @@ def download_and_verify(
     plugin_path = dest_dir / "plugin.py"
     plugin_path.write_bytes(plugin_bytes)
     (dest_dir / "plugin.py.sig").write_bytes(sig_bytes)
+    # B01-003：可选下载创作者轨（creator.sig + creator.identity），保留作者归属信息。
+    # 字段缺失时不影响安装（向后兼容）；下载失败仅告警，作者展示降级为不可用。
+    extra_files: dict[str, bytes] = {}
+    for field, filename in (("creator_signature_file", "creator.sig"),
+                            ("creator_identity_file", "creator.identity")):
+        rel = entry.get(field)
+        if not rel:
+            continue
+        try:
+            extra_files[filename] = fetch_resource(catalog_url, rel, timeout=timeout, egress=egress)
+            (dest_dir / filename).write_bytes(extra_files[filename])
+        except (FileNotFoundError, OSError) as exc:
+            LOGGER.warning("创作者轨资源缺失，作者归属将不可用: %s（%s）", rel, exc)
     _write_install_meta(
         dest_dir,
         plugin_id=plugin_id,
@@ -186,6 +209,7 @@ def download_and_verify(
         sig_name="plugin.py.sig",
         main_bytes=plugin_bytes,
         sig_bytes=sig_bytes,
+        extra_files=extra_files or None,
     )
     listing_rel = entry.get("description_file")
     if listing_rel:

@@ -51,18 +51,38 @@ def test_env_quote_roundtrip_unescapes_backslash_and_quote(tmp_path: Path) -> No
     """写端 \\ 与 \" 转义后，读端应对称反转义，往返不损坏配置值。"""
     project = tmp_path / "proj"
     project.mkdir(parents=True)
-    tricky_key = 'sk-abc\\def"ghi'
+    # 引号载体改用非秘钥键（API_KEY 现在会被强制 seal，见 test_api_key_sealed）
+    tricky_value = 'sk-abc\\def"ghi'
     tricky_url = "http://host/v1?x=a\\b"
     save_ai_env(
-        {"OMNICRAWL_AI_API_KEY": tricky_key, "OMNICRAWL_AI_BASE_URL": tricky_url},
+        {"OMNICRAWL_AI_MODEL": tricky_value, "OMNICRAWL_AI_BASE_URL": tricky_url},
         project_root=project,
     )
     parsed = parse_env_file(project / ".env")
-    assert parsed["OMNICRAWL_AI_API_KEY"] == tricky_key
+    assert parsed["OMNICRAWL_AI_MODEL"] == tricky_value
     assert parsed["OMNICRAWL_AI_BASE_URL"] == tricky_url
     # 再写入一次（更新路径）不改变值
-    save_ai_env({"OMNICRAWL_AI_API_KEY": tricky_key}, project_root=project)
-    assert parse_env_file(project / ".env")["OMNICRAWL_AI_API_KEY"] == tricky_key
+    save_ai_env({"OMNICRAWL_AI_MODEL": tricky_value}, project_root=project)
+    assert parse_env_file(project / ".env")["OMNICRAWL_AI_MODEL"] == tricky_value
+
+
+def test_api_key_is_sealed_on_save(tmp_path: Path, monkeypatch) -> None:
+    """B05-021：save_ai_env 写 OMNICRAWL_AI_API_KEY 明文时强制 seal，不落明文。"""
+    # seal_secret 依赖系统 keyring / OMNICRAWL_MASTER_PASSWORD（CI macOS runner 均无），
+    # mock 掉真实密钥库，仅验证"强制 seal 路径被触发且不落明文"。
+    monkeypatch.setattr(
+        "omnicrawl.core.credentials.seal_secret",
+        lambda key, value: "secret://sealed",
+    )
+    project = tmp_path / "proj"
+    project.mkdir(parents=True)
+    save_ai_env({"OMNICRAWL_AI_API_KEY": "sk-plain-secret"}, project_root=project)
+    written = (project / ".env").read_text(encoding="utf-8")
+    assert "sk-plain-secret" not in written
+    assert "secret://" in written
+    # 已是 secret:// 引用则原样保留（幂等）
+    save_ai_env({"OMNICRAWL_AI_API_KEY": "secret://OMNICRAWL_AI_API_KEY"}, project_root=project)
+    assert parse_env_file(project / ".env")["OMNICRAWL_AI_API_KEY"] == "secret://OMNICRAWL_AI_API_KEY"
 
 
 def test_load_ai_env_priority_project_over_user(project: Path, tmp_path: Path, monkeypatch) -> None:

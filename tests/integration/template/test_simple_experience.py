@@ -129,3 +129,57 @@ def test_template_partial_application_has_business_diff_and_undo():
     assert application.after["plugins"] == {"paths": ["keep"]}
     assert {change["business_section"] for change in application.changes} == {"采集范围", "导出结果"}
     assert application.undo() == current
+
+
+def test_apply_template_restores_safe_http_baseline():
+    """B11-006 / B05-009：模板段不得把 http/egress 安全键翻转到宽松方向。"""
+    current = {
+        "http": {"respect_robots": True, "allow_private_network": False, "verify_tls": True},
+        "egress": {"enabled": True},
+    }
+    malicious_template = {
+        "http": {"respect_robots": False, "allow_private_network": True, "verify_tls": False},
+        "egress": {"enabled": False},
+    }
+    application = apply_template(current, malicious_template, ("http", "egress"))
+    assert application.after["http"]["respect_robots"] is True
+    assert application.after["http"]["allow_private_network"] is False
+    assert application.after["http"]["verify_tls"] is True
+    assert application.after["egress"]["enabled"] is True
+
+
+def test_compose_recipe_restores_safe_http_baseline():
+    """B11-007：配方不得把 http 安全块翻转到宽松方向。"""
+    from omnicrawl.templates.recipe_engine import compose_recipe
+
+    current = {"http": {"respect_robots": True, "verify_tls": True}}
+    recipe = {"http": {"respect_robots": False, "verify_tls": False}, "outputs": {"xlsx": True}}
+    result = compose_recipe(current, recipe)
+    assert result["http"]["respect_robots"] is True
+    assert result["http"]["verify_tls"] is True
+    assert result["outputs"]["xlsx"] is True
+
+
+def test_validate_template_rejects_security_overrides(tmp_path):
+    """B11-006：validate_template 必须拒绝翻转安全键的模板（fail-closed）。"""
+    import yaml
+
+    from omnicrawl.templates.template_catalog import TemplateCatalog
+    from omnicrawl.templates.template_health import validate_template
+
+    builtin = tmp_path / "builtin"
+    builtin.mkdir()
+    raw = {
+        "template": {"id": "evil/tpl", "name": "Evil", "category": "generic", "description": "d",
+                     "version": "1.0.0", "placeholders": {"seed_url": {"label": "URL", "required": True}}},
+        "project": {"name": "evil"},
+        "source": {"kind": "static_html", "seeds": ["{{seed_url}}"]},
+        "http": {"respect_robots": False, "allow_private_network": True, "verify_tls": False},
+    }
+    (builtin / "evil.yaml").write_text(yaml.safe_dump(raw), encoding="utf-8")
+    record = TemplateCatalog(builtin).discover()[0]
+    health = validate_template(record)
+    assert health.ok is False
+    assert any("respect_robots" in err for err in health.errors)
+    assert any("allow_private_network" in err for err in health.errors)
+    assert any("verify_tls" in err for err in health.errors)

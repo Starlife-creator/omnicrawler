@@ -38,6 +38,22 @@ from ..widgets.status_indicator import StatusIndicator
 from ..widgets.toast import ToastManager
 
 
+def _market_egress(project_root: Path) -> Any:
+    """Lazily build a shared EgressBroker for curated template-market traffic.
+
+    B08-002 家族：与 plugin_market 对齐——模板目录下载/安装同样必须跨
+    EgressBroker 的策略/预算/审计边界，而不是裸 urlopen。默认 broker 安全，
+    因 egress 默认仅限制私网目标并计数请求。
+    """
+    from ...core.config import DEFAULTS, AppConfig, deep_merge
+    from ...security.egress import EgressBroker
+
+    raw = deep_merge(dict(DEFAULTS), {"egress": {"audit": True}})
+    raw.setdefault("project", {"name": "template-market", "workspace": str(project_root)})
+    config = AppConfig(Path("<template-market>"), project_root, raw, project_root)
+    return EgressBroker(config)
+
+
 class _TemplateCatalogWorker(BackgroundWorker):
     """后台拉取 catalog（模板页共用，仅读 templates 数组）。"""
 
@@ -120,6 +136,8 @@ class TemplateMarketView(QWidget):
         self._catalog_url = catalog_url
         self._bundled_catalog_dir = bundled_catalog_dir or ""
         self._trust_source = trust_source
+        # B08-002 家族：共享 EgressBroker（对齐 plugin_market），模板目录/安装均跨出口审计。
+        self._egress = _market_egress(self._base)
 
         self._state = "offline"
         self._catalog: dict[str, Any] | None = None
@@ -254,7 +272,7 @@ class TemplateMarketView(QWidget):
         self._status_label.setText(_("正在拉取..."))
         self._refresh_btn.setEnabled(False)
         self._catalog_worker = _TemplateCatalogWorker(
-            catalog_url, self._local_fallback, None, parent=self
+            catalog_url, self._local_fallback, self._egress, parent=self
         )
         self._catalog_worker.succeeded.connect(self._on_catalog_loaded)
         self._catalog_worker.failed.connect(self._on_catalog_error)
@@ -334,7 +352,7 @@ class TemplateMarketView(QWidget):
             source = (self._catalog or {}).get("_source", self._catalog_url)
             if source:
                 self._listing_worker = _TemplateListingWorker(
-                    source, entry["description_file"], None, parent=self
+                    source, entry["description_file"], self._egress, parent=self
                 )
                 self._listing_worker.succeeded.connect(
                     lambda text, tid=template_id: self._on_listing_loaded(tid, text)
@@ -360,7 +378,7 @@ class TemplateMarketView(QWidget):
         self._install_btn.setEnabled(False)
         self._footer.setText(_(f"正在下载并校验 {tid} ..."))
         self._install_worker = _TemplateInstallWorker(
-            tid, self._catalog_url, self._dest_root, self._trust_source, None, parent=self
+            tid, self._catalog_url, self._dest_root, self._trust_source, self._egress, parent=self
         )
         self._install_worker.succeeded.connect(self._on_installed)
         self._install_worker.failed.connect(self._on_install_error)

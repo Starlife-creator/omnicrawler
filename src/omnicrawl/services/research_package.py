@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import platform
+import re
 import sqlite3
 import tempfile
 import zipfile
@@ -31,6 +32,11 @@ _SENSITIVE = (
 )
 
 
+# B08-007：值内嵌 URL 凭据（scheme://user:pass@host）也须脱敏——研究包默认即分享，
+# 凭据可能藏在 jdbc:/http 连接串里而键名不含敏感词。
+_URL_CREDENTIAL_RE = re.compile(r"(//[^/\s:@]+):([^@/\s]+)@")
+
+
 def _redact(value: Any, key: str = "") -> Any:
     normalized_key = key.casefold().replace(" ", "_")
     if any(marker in normalized_key for marker in _SENSITIVE) and value not in (None, "", [], {}):
@@ -39,6 +45,8 @@ def _redact(value: Any, key: str = "") -> Any:
         return {str(name): _redact(item, str(name)) for name, item in value.items()}
     if isinstance(value, list):
         return [_redact(item) for item in value]
+    if isinstance(value, str) and _URL_CREDENTIAL_RE.search(value):
+        return _URL_CREDENTIAL_RE.sub(r"\1:<redacted>@", value)
     return value
 
 

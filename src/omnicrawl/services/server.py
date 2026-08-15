@@ -9,6 +9,12 @@ from ..state import StateStore
 
 
 def serve(config: AppConfig, host: str = "127.0.0.1", port: int = 8765) -> None:
+    """只读状态监控服务。
+
+    B08-010：默认仅绑定 localhost，只读（/api/status 等值比较、无文件服务、无 POST）。
+    请勿以 ``0.0.0.0`` 暴露到远程——本服务无认证；如需远程访问，必须前置 TLS/令牌
+    反代（如 Caddy/nginx），否则任何能到达该端口的人都能读取任务状态。
+    """
     database = config.workspace / "state.sqlite3"
 
     class Handler(BaseHTTPRequestHandler):

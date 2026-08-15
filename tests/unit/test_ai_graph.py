@@ -239,6 +239,13 @@ class TestExtractAsync:
             assert result["chunks_processed"] == 1
 
     @pytest.mark.asyncio
+    async def test_extract_chunk_fail_closed_without_api_key(self) -> None:
+        """B13-002：未配置 API key 时 fail-closed，拒绝携带空 Bearer 外发请求。"""
+        ex = AIGraphExtractor()  # Provider().api_key == ""
+        with pytest.raises(RuntimeError, match="fail-closed"):
+            await ex._extract_chunk("<html>x</html>", [FieldDef(name="title")], 100, session=object())
+
+    @pytest.mark.asyncio
     async def test_extract_with_failed_chunk_skipped(self) -> None:
         ex = AIGraphExtractor(chunk_size=10)
         html = "a" * 25  # will be split into 3 chunks

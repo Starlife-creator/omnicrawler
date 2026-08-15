@@ -105,14 +105,20 @@ class TestResolveOverride:
         config = _config(tmp_path)
         fake = _FakeFetcher(_fake_result(CrawlRequest("https://example.com")))
         imp = TLSImpersonator(config, fake)
+        # B13-005：mock 固定 IPv6 地址，避免本机真实 DNS 返回的地址族影响断言；
+        # 同时验证 IPv6 地址被 [ ] 括号包裹（curl --resolve 语义）。
+        monkeypatch.setattr(
+            imp.target_policy, "approved_addresses", lambda _h, _p: ("2606:4700::1111",)
+        )
         overrides = imp._resolve_override("https://example.com/path")
         assert isinstance(overrides, list)
         assert overrides is not None and len(overrides) >= 1
         entry = overrides[0]
         assert isinstance(entry, bytes)
-        host, port, _address = entry.decode("ascii").rsplit(":", 2)
+        host, port, address = entry.decode("ascii").split(":", 2)
         assert host == "example.com"
         assert port == "443"
+        assert address == "[2606:4700::1111]"
 
 
 class TestRealCurlCffiFetch:

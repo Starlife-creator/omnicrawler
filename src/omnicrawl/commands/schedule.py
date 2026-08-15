@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..core.config import load_config
+from ..core.config import load_config, require_config_path
 from ..pipeline import Pipeline
 from ..runtime.scheduler import ScheduleStore
 
@@ -40,7 +40,10 @@ def execute(
             return {"schedules": schedules.list()}
         if action == "run-due":
             def runner(path: Path) -> dict[str, Any]:
-                task_config = load_config(path)
+                # B09-003：run-due 的 config_path 来自调度库（--database 可指向任意库），
+                # 消费前先校验存在性，防止加载外部可控路径。
+                config_path = require_config_path(path)
+                task_config = load_config(config_path)
                 with Pipeline(task_config) as pipeline:
                     return pipeline.run()
             return {"results": schedules.run_due(runner, limit=limit)}

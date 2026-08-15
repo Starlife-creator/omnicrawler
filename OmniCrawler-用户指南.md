@@ -493,6 +493,11 @@ omnicrawl auto-analyze page.html --url https://example.com -o config.yaml
 
 ## 10. 反检测增强
 
+> **合规提示（B14-🟡-1）**：本章的隐身/undetected 能力属于**合规敏感**功能，
+> 仅应用于**你已获得授权访问**的站点，且须经 EgressBroker 统一出口并显式声明。
+> 项目立场不变：默认遵守 robots.txt、只采同域名，**不绕过验证码和付费墙**
+> （与 FAQ / PLUGIN_CONTRACT / 审计口径一致）。
+
 ### 多层防护
 
 ```
@@ -516,7 +521,7 @@ Layer 3 — 人类行为模拟
   └── 分段阅读停顿滚动
 
 Layer 4 — Crawl4AI Undetected 模式
-  └── Patchright 浏览器（绕过 Cloudflare/Akamai）
+  └── Patchright 浏览器（隐身模式；合规敏感：仅用于已授权站点、经 EgressBroker 出口）
 ```
 
 ### 使用方式
@@ -595,7 +600,7 @@ omnicrawl run -c config.yaml
 - **自适应爬取**：自动学习网站模式、探索相关内容
 - **BFS 深度爬取**：全站遍历 + 域名过滤
 - **LLM 提取**：用 AI 从页面提取结构化数据
-- **Undetected 模式**：绕过 Cloudflare/Akamai
+- **Undetected 模式**：隐身渲染（合规敏感——仅用于你已获授权访问的站点，须经 EgressBroker 统一出口并显式声明）
 - **虚拟滚动**：无限滚动页面全量加载
 - **内存自适应调度**：批量并发控制
 

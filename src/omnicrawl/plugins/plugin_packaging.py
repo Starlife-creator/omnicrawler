@@ -267,7 +267,10 @@ def build_template_upload(
 
     files: dict[str, bytes] = {
         f"templates/{template_id}/template.yaml": content,
-        f"templates/{template_id}/template.yaml.sig": user.sign_bytes(content),
+        # B01-013：模板分发签名轨对齐插件路径——上传包不伪造 template.yaml.sig。
+        # 模板强制要求维护者冷密钥签名（市场仓 generate_catalog 用信任根验签），
+        # 创作者热密钥签的这份 sig 必然被 CI 拒。这里只产创作者轨（creator.sig +
+        # creator.identity），template.yaml.sig 由维护者审核后补签，缺失状态显式可见。
         f"templates/{template_id}/creator.sig": user.sign_bytes(content),
         f"templates/{template_id}/creator.identity": (
             json.dumps(creator.to_dict(), ensure_ascii=False, indent=2) + "\n"

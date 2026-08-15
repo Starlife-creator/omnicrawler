@@ -49,11 +49,15 @@ from omnicrawl.plugins.signing import (  # noqa: E402
 # Designated private-key generation location (operator moves it to cold storage
 # immediately after generation). Override with --private-out.
 def _default_private_path() -> str:
-    """用户主目录下的 .omnicrawl/keys（无 HOME 时回退仓库内 .private_keys/）。"""
+    """用户主目录下的 .omnicrawl/keys。
+
+    B12-001：无 HOME 时返回空串并在使用处拒绝——私钥**绝不**回退仓库内
+    ``.private_keys/``（历史分支会引入私钥落仓风险）。
+    """
     try:
         return str(Path.home() / ".omnicrawl" / "keys" / "plugin_signing_private.pem")
     except RuntimeError:
-        return str(_REPO_ROOT / ".private_keys" / "plugin_signing_private.pem")
+        return ""
 
 
 PRIVATE_DEFAULT = _default_private_path()
@@ -123,8 +127,13 @@ def _run_scan_cli(plugin_dir: Path, manifest: Path | None) -> int:
     return subprocess.run(cmd).returncode
 
 
-def _current_operator() -> str:
-    """当前操作者（环境变量优先，getpass 兜底，失败返回 unknown）。"""
+def _current_operator(override: str | None = None) -> str:
+    """当前操作者（显式参数 > 环境变量 > getpass 兜底，失败返回 unknown）。
+
+    B02-004：操作者身份必须可显式配置（审计归属），不再仅靠机器用户名推断。
+    """
+    if override:
+        return override
     for var in ("USERNAME", "USER", "LOGNAME"):
         value = os.environ.get(var)
         if value:
@@ -135,14 +144,20 @@ def _current_operator() -> str:
         return "unknown"
 
 
-def _append_transparency_log(plugin: Path, log_path: Path) -> None:
-    """签名透明日志：时间 / 文件哈希 / 操作者 / 摘要（仅记录公开信息）。"""
+def _append_transparency_log(
+    plugin: Path, log_path: Path, operator: str | None = None,
+) -> None:
+    """签名透明日志：时间 / 文件哈希 / 操作者 / 摘要（仅记录公开信息）。
+
+    B02-004：写日志是冷密钥签名的必经步骤；日志写失败时异常向上传播，
+    使签名整体失败（fail-closed），确保每次冷密钥动用都留下公开记录。
+    """
     digest = hashlib.sha256(plugin.read_bytes()).hexdigest()
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "plugin": str(plugin),
+        "plugin": plugin.as_posix(),  # B02-004：正斜杠，跨平台稳定
         "plugin_sha256": digest,
-        "operator": _current_operator(),
+        "operator": _current_operator(operator),
         "operation": "sign",
         "note": "签名者私钥未导出；本日志仅记录公开元数据",
     }
@@ -218,6 +233,10 @@ def main(argv: list[str] | None = None) -> int:
     sg.add_argument("--manifest", default=None, help="插件清单 YAML 路径（扫描允许列表）")
     sg.add_argument("--skip-scan", action="store_true", help="跳过发布前扫描（不推荐）")
     sg.add_argument("--log", default=TRANSPARENCY_LOG_DEFAULT, help="签名透明日志路径")
+    sg.add_argument(
+        "--operator", default=None,
+        help="操作者标识（审计归属，B02-004；缺省回退环境变量/系统用户名）",
+    )
 
     cs = sub.add_parser(
         "creator-sign",
@@ -252,6 +271,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "generate-keys":
+        if not args.private_out:
+            print(
+                "FAIL 无法确定用户主目录（无 HOME）；私钥只允许写入用户主目录，"
+                "拒绝回退仓库内路径（B12-001）。请用 --private-out 显式指定冷存储位置。",
+                file=sys.stderr,
+            )
+            return 1
         _generate_keys(Path(args.private_out).expanduser(), Path(args.public_out).expanduser())
         return 0
     if args.command == "scan":
@@ -261,10 +287,17 @@ def main(argv: list[str] | None = None) -> int:
         plugin_path = Path(args.plugin)
         if not args.skip_scan:
             _run_scan(plugin_path.parent, Path(args.manifest) if args.manifest else None)
+        if not args.private_key:
+            print(
+                "FAIL 无法确定用户主目录（无 HOME）；私钥只允许从用户主目录读取，"
+                "拒绝回退仓库内路径（B12-001）。请用 --private-key 显式指定冷存储私钥。",
+                file=sys.stderr,
+            )
+            return 1
         private_pem = Path(args.private_key).expanduser().read_bytes()
         sig = sign_file(args.plugin, private_pem)
         print(f"已签名: {sig}")
-        _append_transparency_log(plugin_path, Path(args.log))
+        _append_transparency_log(plugin_path, Path(args.log), operator=args.operator)
         return 0
     if args.command == "creator-sign":
         plugin_dir = Path(args.plugin_dir)

@@ -1,6 +1,7 @@
 """Help, about, shortcuts, and capability dialogs."""
 from __future__ import annotations
 
+import html
 import tempfile
 
 from PyQt6.QtCore import QUrl
@@ -76,14 +77,18 @@ class HelpDialogManager(_BaseDelegate):
         runtime_mode = _("便携自包含") if is_frozen() else _("源码环境")
         browser_status = _("已就绪") if bundled_browser_available() else _("未随包提供")
         import sys as _sys
+        # B10-002：版本/路径等动态值在富文本上下文中做 HTML 转义
+        # （QMessageBox 受限富文本无 JS/远程加载，最坏视觉伪造，仍按规范处理）。
         text = (
             _("<h2>OmniCrawler GUI 工作台</h2>")
-            + _(f"<p>版本: v{APP_VERSION}</p>")
-            + _(f"<p>框架版本: {version_info}</p>")
-            + _(f"<p>运行模式: {runtime_mode}<br>")
-            + _(f"内置 Chromium: {browser_status}<br>")
-            + _(f"数据目录: {portable_data_root()}</p>")
-            + _(f"<p>项目目录: {mw._project_root}</p>")
+            + _("<p>版本: {0}</p>").format(html.escape(f"v{APP_VERSION}"))
+            + _("<p>框架版本: {0}</p>").format(html.escape(version_info))
+            + _("<p>运行模式: {0}<br>内置 Chromium: {1}<br>数据目录: {2}</p>").format(
+                html.escape(runtime_mode),
+                html.escape(browser_status),
+                html.escape(str(portable_data_root())),
+            )
+            + _("<p>项目目录: {0}</p>").format(html.escape(str(mw._project_root)))
             + "<hr>"
             + _("<p>模块化网站采集与 PDF 数据抽取平台</p>")
             + f"<p>Python {_sys.version.split()[0]} | PyQt6</p>"

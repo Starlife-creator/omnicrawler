@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from ..core.utils import excel_safe
 from .config import ProjectConfig
 from .database import Database
 from .utils import atomic_output_path
@@ -99,9 +100,9 @@ def export_text_stage(
                         text_stream.write("\n")
                 writer.writerow(
                     [
-                        document["doc_id"], document["filename"],
-                        document["primary_path"], document["source_url"] or "",
-                        len(pages), document["status"], str(text_path),
+                        excel_safe(document["doc_id"]), excel_safe(document["filename"]),
+                        excel_safe(document["primary_path"]), excel_safe(document["source_url"] or ""),
+                        len(pages), excel_safe(document["status"]), excel_safe(str(text_path)),
                     ]
                 )
                 exported += 1

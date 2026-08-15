@@ -225,6 +225,12 @@ class TestCheckCondition:
     def test_unknown_condition_falls_back_to_true(self) -> None:
         assert ChangeDetector._check_condition("anything", "bogus") is True
 
+    def test_regex_redos_pattern_rejected(self) -> None:
+        """B08-001：嵌套量词类 ReDoS 模式必须被 safe_regex 拒绝（不执行）。"""
+        assert ChangeDetector._check_condition("a" * 100, "regex:(a+)+$") is False
+        # 注：(a|a)* 类（组内无 +*）不在 safe_regex 启发式覆盖范围（B05-015 已标注），此处不测。断言普通模式不受影响。
+        assert ChangeDetector._check_condition("price: 99.9", "regex:price:\\s*\\d+\\.\\d+") is True
+
 
 # ── ChangeDetector — _build_diff_summary ──────────────────────────────
 

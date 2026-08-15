@@ -4,8 +4,10 @@ import json
 import logging
 import random
 import urllib.parse
-import xml.etree.ElementTree as ET
 from typing import Any
+from xml.etree.ElementTree import ParseError
+
+from defusedxml import ElementTree as SafeET
 
 from ..core.config import AppConfig
 from ..core.models import CrawlRequest, FetchResult
@@ -15,6 +17,22 @@ from ..extraction.html_tools import discover_links, parse_html
 from ..fetching.http_client import encode_request_payload
 
 LOGGER = logging.getLogger(__name__)
+
+# B02-027：source.kind 单一真源——GUI 白名单、内核注册共用，不再允许手抄副本漂移。
+# GENERIC_SOURCE_KINDS 由 sources.register 注册；SITE_ADAPTER_KINDS 由 site_adapters.register
+# 注册（专用类，重名冲突）。SUPPORTED_SOURCE_KINDS 是**校验用全量白名单**。
+GENERIC_SOURCE_KINDS: tuple[str, ...] = (
+    "static_html", "crawl", "focused", "incremental", "url_list", "rest",
+    "graphql", "form", "sitemap", "feed", "browser", "file", "media",
+    "websocket", "sse", "long_poll", "redis", "scrapy",
+)
+
+# 内置站点适配器（site_adapters.py 注册专用类）
+SITE_ADAPTER_KINDS: tuple[str, ...] = (
+    "site_wordpress", "site_drupal", "site_mediawiki", "site_discourse",
+)
+
+SUPPORTED_SOURCE_KINDS: tuple[str, ...] = GENERIC_SOURCE_KINDS + SITE_ADAPTER_KINDS
 
 
 class GenericSource:
@@ -145,8 +163,9 @@ class GenericSource:
 
     def _discover_xml(self, result: FetchResult) -> list[CrawlRequest]:
         try:
-            root = ET.fromstring(result.body)
-        except ET.ParseError:
+            # B08-003：sitemap/feed 解析用 defusedxml（禁 DTD/外部实体，防 XXE/billion-laughs）
+            root = SafeET.fromstring(result.body)
+        except (ParseError, ValueError):
             return []
         urls: list[str] = []
         if self.kind == "sitemap":
@@ -203,9 +222,5 @@ def _with_query(url: str, params: dict[str, Any]) -> str:
 
 
 def register(registry) -> None:
-    for name in (
-        "static_html", "crawl", "focused", "incremental", "url_list", "rest",
-        "graphql", "form", "sitemap", "feed", "browser", "file", "media",
-        "websocket", "sse", "long_poll", "redis", "scrapy",
-    ):
+    for name in GENERIC_SOURCE_KINDS:
         registry.register_source(name, GenericSource)

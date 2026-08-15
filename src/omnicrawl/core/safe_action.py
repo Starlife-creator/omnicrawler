@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import sys
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,38 +40,44 @@ def default_trash_root() -> Path:
     return portable_data_root() / "recycle"
 
 
-_WORKSPACE_MARKERS = {
-    "work",
-    "data",
-    ".runtime",
-    "configs",
-    "artifacts",
-    "output",
-    "uploads",
-    "workdir",
-    ".omnicrawler",
-}
+def is_workspace_path(path: Path, roots: Iterable[Path] = ()) -> bool:
+    """判断目标是否属于工作区目录（真实前缀包含，B05-010）。
+
+    替代旧的 ``_WORKSPACE_MARKERS`` 名称标记启发式（对任意含 ``work``/``output``
+    名称的目录产生假阳性、对自定义 workspace 名产生假阴性）。现在要求目标
+    解析后落在任一传入根（workspace/root）前缀内；未传入 roots 时保守回退
+    便携数据根（fail-closed）。
+    """
+    target = path.expanduser().resolve()
+    root_list = tuple(roots)
+    if not root_list:
+        from ..core.runtime_paths import portable_data_root
+
+        root_list = (portable_data_root(),)
+    for root in root_list:
+        root_path = Path(root).expanduser().resolve()
+        try:
+            target.relative_to(root_path)
+            return True
+        except ValueError:
+            continue
+    return False
 
 
-def is_workspace_path(path: Path) -> bool:
-    """判断目标是否属于项目工作区目录，避免误删任意系统文件。"""
-    parts = {part.casefold() for part in path.parts}
-    if any(marker in parts for marker in _WORKSPACE_MARKERS):
-        return True
-    return "omnicrawl" in parts or path.name.casefold() in {"recycle", ".runtime"}
-
-
-def move_to_recycle(source: Path, *, trash_root: Path | None = None) -> Path:
+def move_to_recycle(
+    source: Path, *, roots: Iterable[Path] = (), trash_root: Path | None = None,
+) -> Path:
     """把目标先移入回收站（保留可回滚），返回回收站内新路径。
 
     - 目标不存在 → 直接返回原路径（幂等）。
-    - 非工作区路径 → 拒绝执行并抛 ValueError（安全边界）。
+    - 非工作区路径 → 拒绝执行并抛 ValueError（安全边界；``roots`` 传入
+      配置解析后的 workspace/root 前缀列表，缺省回退便携数据根）。
     - 回收站同名冲突自动加时间戳后缀，不覆盖。
     """
     source = source.expanduser().resolve()
     if not source.exists():
         return source
-    if not is_workspace_path(source):
+    if not is_workspace_path(source, roots):
         raise ValueError(f"拒绝删除非工作区路径: {source}")
 
     root = (trash_root or default_trash_root()).expanduser().resolve()

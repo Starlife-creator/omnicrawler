@@ -38,6 +38,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ..core.safe_data import safe_regex_search
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -323,6 +325,17 @@ class ChangeDetector:
                             return resp.read().decode(
                                 resp.headers.get_content_charset("utf-8"), errors="replace"
                             )
+                # B08-002：egress=None 的回退路径同样必须过 SSRF 守卫（fail-closed），
+                # 拒绝私网/保留/回环目标，而不是裸 urlopen 直连。
+                from ..core.config import DEFAULTS, AppConfig, deep_merge
+                from ..security.policy import NetworkTargetPolicy
+
+                default_cfg = AppConfig(
+                    Path("<change-monitor>"), Path.cwd(),
+                    deep_merge(dict(DEFAULTS), {"http": {"resolve_dns": False}}),
+                    Path.cwd(),
+                )
+                NetworkTargetPolicy(default_cfg).require(url)
                 with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
                     return resp.read().decode(
                         resp.headers.get_content_charset("utf-8"), errors="replace"
@@ -353,11 +366,8 @@ class ChangeDetector:
             return target in content
         if condition.startswith("regex:"):
             pattern = condition[len("regex:"):]
-            try:
-                return bool(re.search(pattern, content, re.DOTALL))
-            except re.error as exc:
-                LOGGER.warning("无效正则 %s: %s", pattern, exc)
-                return False
+            # B08-001：统一走 safe_regex_search（防病态正则自 DOS），编译错误/可疑模式返回 None。
+            return bool(safe_regex_search(pattern, content, flags=re.DOTALL))
         if condition.startswith("equals:"):
             target = condition[len("equals:"):]
             return content.strip() == target.strip()

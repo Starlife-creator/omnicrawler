@@ -291,6 +291,8 @@ class EgressBroker:
             or not self.credential_domains
             or not _domain_matches(host, self.credential_domains)
         ):
+            # B01-012：凭据越权是最值得留痕的事件——补审计，避免"挡住了却查不到"。
+            self._audit("blocked", url=url, purpose=purpose, reason=f"凭据不能发送到{host}用于{purpose}")
             raise CredentialScopeError(f"凭据不能发送到{host}用于{purpose}")
 
         with self._lock:
@@ -300,15 +302,21 @@ class EgressBroker:
             capability_used = 0
             if capability is not None:
                 if capability.token not in self._capability_counts:
+                    self._audit("blocked", url=url, purpose=purpose, reason="网络能力令牌无效或已撤销")
                     raise EgressDisabledError("网络能力令牌无效或已撤销")
                 if not _domain_matches(host, capability.domains) or purpose not in capability.purposes:
+                    self._audit("blocked", url=url, purpose=purpose, reason="网络能力令牌不允许该域名或用途")
                     raise EgressDisabledError("网络能力令牌不允许该域名或用途")
                 capability_used = self._capability_counts[capability.token]
                 if capability.maximum_requests and capability_used >= capability.maximum_requests:
+                    # B01-012：预算超限补审计
+                    self._audit("blocked", url=url, purpose=purpose, reason="网络能力令牌请求预算已用尽")
                     raise EgressBudgetExceededError("网络能力令牌请求预算已用尽")
                 subject = capability.subject
             if count_request:
                 if self.maximum_requests and self._requests >= self.maximum_requests:
+                    # B01-012：预算超限补审计
+                    self._audit("blocked", url=url, purpose=purpose, reason="网络请求预算已用尽")
                     raise EgressBudgetExceededError("网络请求预算已用尽")
                 self._requests += 1
                 if capability is not None:

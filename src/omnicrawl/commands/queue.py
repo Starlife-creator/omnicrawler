@@ -18,22 +18,25 @@ from typing import Any
 from ..runtime.redis_worker import RemoteQueue, TaskSpec, consume_loop
 
 
-def _make_executor(kind: str):
+def _make_executor(kind: str, *, local_only: bool = False):
     """构造单任务执行回调。"""
     if kind == "pipeline":
-        from ..core.config import load_config
+        from ..core.config import load_config, require_config_path
         from ..pipeline import Pipeline
 
         def _run(task: TaskSpec) -> Any:
-            with Pipeline(load_config(task.config_path)) as pipeline:
+            config_path = require_config_path(task.config_path, require_inside_cwd=local_only)
+            with Pipeline(load_config(config_path)) as pipeline:
                 return pipeline.run()
 
         return _run
+    from ..core.config import require_config_path
     from ..runtime.execution_backend import LocalWorkerBackend
 
     backend = LocalWorkerBackend()
 
     def _run_backend(task: TaskSpec) -> Any:
+        require_config_path(task.config_path, require_inside_cwd=local_only)
         return backend.start(task.config_path)
 
     return _run_backend
@@ -68,9 +71,11 @@ def execute(
                 "queue_size": queue.size(),
             }
         if action == "consume":
+            # B09-003：本地降级队列的 config_path 必须位于 CWD 内（消费方与提交方同目录）。
+            local_only = queue.backend_kind() == "local"
             processed = consume_loop(
                 queue,
-                _make_executor(executor),
+                _make_executor(executor, local_only=local_only),
                 worker_id=worker_id or None,
                 interval=interval,
                 max_tasks=max_tasks,

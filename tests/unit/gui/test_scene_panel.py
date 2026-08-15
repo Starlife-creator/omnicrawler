@@ -66,3 +66,34 @@ def test_scene_panel_candidates_accept_roundtrip(qt_app, tmp_path: Path) -> None
     panel._cand_table.selectRow(0)
     panel._accept_selected()
     assert panel._cand_table.item(0, 3).text() == "已验收"
+
+
+def test_scene_panel_csv_export_escapes_formula(qt_app, tmp_path: Path, monkeypatch) -> None:
+    """B10-001：CSV 导出必须 excel_safe 转义抽取值，防止 CWE-1236。"""
+    from PyQt6.QtWidgets import QFileDialog, QMessageBox
+
+    from omnicrawl.gui.views.scene_panel import ScenePanel
+    from omnicrawl.state.scene_store import SceneDocument, SceneStore
+
+    store = SceneStore(tmp_path / "scene.sqlite3")
+    store.import_bundled_scenes()
+    slots = store.get_slots("annual_report")
+    doc_id = store.get_or_create_document(
+        SceneDocument(document_hash="hash-csv", source_url="=cmd|' /C calc'!A1")
+    )
+    slot_id = store.upsert_slot(slots[0])
+    store.add_candidate(doc_id, slot_id, "=SUM(A1:A2)", confidence=0.9)
+    store.close()
+
+    panel = ScenePanel(tmp_path)
+    panel.refresh_scenes()
+    panel._cand_table.selectRow(0)
+    panel._accept_selected()
+
+    out = tmp_path / "accepted.csv"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(out), "CSV (*.csv)")))
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    panel._export_accepted()
+    content = out.read_text(encoding="utf-8")
+    assert "'=SUM(A1:A2)" in content
+    assert "'=cmd|' /C calc'!A1" in content

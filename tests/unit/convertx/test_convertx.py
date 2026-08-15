@@ -311,6 +311,21 @@ class TestOptionalFormats:
         ids = sorted([b["record_id"] for b in back])
         assert ids == ["r1", "r2"]
 
+    def test_duckdb_table_whitelist_rejects_injection(self, tmp_path: Path) -> None:
+        """META：table 标识符白名单——SQL 注入形态表名必须被拒。"""
+        pytest.importorskip("duckdb")
+        import duckdb
+
+        from omnicrawl.convertx import READERS
+
+        db = tmp_path / "data.duckdb"
+        con = duckdb.connect(str(db))
+        con.execute("CREATE TABLE records AS SELECT 1 AS record_id")
+        con.close()
+        for bad in ("records; DROP TABLE x", "records--", "main.records.extra", "1;2"):
+            with pytest.raises(ValueError, match="无效的 duckdb 表名"):
+                READERS[".duckdb"](db, {"table": bad})
+
 
 # ── CLI 子命令：端到端 ─────────────────────────────────
 class TestCLI:

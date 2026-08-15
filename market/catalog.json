@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-08-14T13:41:38+00:00",
-  "publisher": "Starlife-creator",
-  "trust_model": "single-root-ed25519",
+  "generated_at": "2026-08-15T12:33:00+00:00",
+  "publisher": "starlife",
+  "trust_model": "dual-rail-ed25519",
   "trust_public_key_ref": "keys/plugin_trust.pub.pem",
   "plugins": [
     {
       "id": "example_news",
       "name": "示例新闻站点适配器",
       "version": "1.0.0",
-      "publisher": "Starlife-creator",
+      "publisher": "starlife",
       "category": "source",
       "summary": "为示例新闻站点强制附加 XHR 请求头并打站点标记，复用通用发现逻辑。",
       "description_file": "plugins/example_news/listing.md",
@@ -46,6 +46,8 @@
       "license": "Crossref metadata terms; abstracts may retain publisher copyright",
       "tags": [],
       "updated_at": "",
+      "creator_signature_file": "templates/crossref-works/creator.sig",
+      "creator_identity_file": "templates/crossref-works/creator.identity",
       "description_file": "templates/crossref-works/listing.md"
     },
     {
@@ -62,6 +64,8 @@
       "license": "GitHub API terms; repository content retains its original license",
       "tags": [],
       "updated_at": "",
+      "creator_signature_file": "templates/github-public-issues/creator.sig",
+      "creator_identity_file": "templates/github-public-issues/creator.identity",
       "description_file": "templates/github-public-issues/listing.md"
     },
     {
@@ -78,6 +82,8 @@
       "license": "OpenAlex data CC0; API subject to current service terms and usage budget",
       "tags": [],
       "updated_at": "",
+      "creator_signature_file": "templates/openalex-works/creator.sig",
+      "creator_identity_file": "templates/openalex-works/creator.identity",
       "description_file": "templates/openalex-works/listing.md"
     }
   ]

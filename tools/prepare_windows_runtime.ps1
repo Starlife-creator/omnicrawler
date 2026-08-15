@@ -21,6 +21,15 @@ New-Item -ItemType Directory -Path $RuntimeRoot, $CacheRoot -Force | Out-Null
 # 构建前必须由维护者填充/复核；`Get-Asset -RequireKnownHash` 的资产
 # 在表中找不到哈希时拒绝下载（fail-closed），不再"首次下载后自行记录"。
 # 获取方式：下载后运行 Get-FileHash -Algorithm SHA256。
+#
+# 哈希钉责任分工（B12-005）——哪些资产由谁钉哈希：
+#   - 本表 `$KNOWN_SHA256`：仅覆盖 3 个**手动 GitHub 资产**（tesseract 安装器、
+#     7zr、7z 解压器），由本脚本维护者钉死，任何更新必须同步复核哈希。
+#   - Chromium / chromedriver：由 Python 侧 Playwright `install chromium`
+#     管理（Playwright 自身维护二进制哈希），**不在本表**、不在此钉。
+#   - PaddleOCR 模型：由 `tools/download_and_smoke_test.py` 下载，CDN 分发、
+#     **无哈希钉**（仅冒烟验证，见该工具 docstring），属已知责任边界。
+#   - 后续新增手动下载资产：必须在本表登记真实哈希，否则 fail-closed 拒绝。
 $KNOWN_SHA256 = @{
     # 哈希于 2026-08-11 由官方 release 资产本地下载计算并核对大小登记
     # （tesseract 21,381,872 B / 7zr 602,112 B / 7z2602 1,657,896 B）。

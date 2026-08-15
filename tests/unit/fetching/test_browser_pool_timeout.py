@@ -94,3 +94,49 @@ def test_render_error_propagates_to_task(tmp_path: Path, monkeypatch) -> None:
     pool._handle_task(object(), {}, task)
     assert isinstance(task.error, RuntimeError)
     assert task.done.is_set()
+
+
+def test_playwright_launch_args_reject_tls_disable(tmp_path: Path, monkeypatch) -> None:
+    """B03-006：Playwright launch_args 含 --ignore-certificate-errors 必须被拒（不启动浏览器）。"""
+    import sys
+    import types
+
+    config_path = tmp_path / "task.yaml"
+    config_path.write_text(
+        "project: {name: b306, workspace: work}\n"
+        "source: {kind: browser, seeds: [https://example.org/]}\n"
+        "browser: {launch_args: ['--ignore-certificate-errors']}\n",
+        encoding="utf-8",
+    )
+    pool = object.__new__(PlaywrightPool)
+    pool.config = load_config(config_path)
+    pool._queues = [queue.Queue()]
+    pool._lock = threading.Lock()
+    pool._closed = False
+    pool._counter = 0
+
+    launched: list[dict] = []
+
+    class _FakeSyncPW:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return None
+
+        class Chromium:
+            @staticmethod
+            def launch(**kwargs):
+                launched.append(kwargs)
+                return object()
+
+    fake = types.ModuleType("playwright")
+    fake.sync_api = types.SimpleNamespace(sync_playwright=lambda: _FakeSyncPW())
+    monkeypatch.setitem(sys.modules, "playwright", fake)
+
+    work_queue = queue.Queue()
+    work_queue.put(None)  # 立即退出 worker
+    pool._worker(work_queue)
+    assert launched == [], "含 --ignore-certificate-errors 的 launch_args 不应真正启动浏览器"
+
+

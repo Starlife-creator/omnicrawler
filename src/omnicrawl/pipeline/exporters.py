@@ -149,7 +149,7 @@ def export_all(config: AppConfig, state: StateStore, run_id: str | None = None) 
         with response_path.open("w", encoding="utf-8-sig", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=response_headers)
             writer.writeheader()
-            writer.writerows(response_rows)
+            writer.writerows({key: excel_safe(value) for key, value in row.items()} for row in response_rows)
         files["responses_csv"] = str(response_path)
 
         error_path = output / "errors.csv"

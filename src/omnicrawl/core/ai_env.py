@@ -156,6 +156,24 @@ def _format_env_line(key: str, value: str) -> str:
     return f"{key}={value}"
 
 
+# B05-021：写入 .env 前必须密封的秘钥键（防调用方漏封 → 明文落盘）。
+_SECRET_ENV_KEYS = frozenset({"OMNICRAWL_AI_API_KEY"})
+
+
+def _seal_if_secret(key: str, value: str) -> str:
+    """秘钥键的值若非 ``secret://`` 引用则强制 seal_secret（B05-021）。
+
+    「api_key 仅以密文存于 .env」的保证此前完全依赖调用方预先 seal；
+    漏封即明文落盘（chmod 600 仅限本机特权用户）。此处写入前兜底。
+    """
+    value = str(value)
+    if key in _SECRET_ENV_KEYS and value and not value.startswith("secret://"):
+        from ..core.credentials import seal_secret
+
+        return seal_secret(key, value)
+    return value
+
+
 def save_ai_env(
     updates: dict[str, str | None],
     *,
@@ -171,7 +189,8 @@ def save_ai_env(
     remove_keys = set(remove or ())
     update_keys = set(updates) | remove_keys
 
-    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    # B05-020：既有 .env 可能非 UTF-8（如历史 ANSI 编码），读取容错不抛 UnicodeDecodeError
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines() if path.is_file() else []
     out: list[str] = []
     rewritten: set[str] = set()
     for line in lines:
@@ -184,7 +203,8 @@ def save_ai_env(
         if key in update_keys:
             value = updates.get(key)
             if value is not None:
-                out.append(_format_env_line(key, value))
+                # B05-021：秘钥键写入前强制 seal（明文兜底密封）
+                out.append(_format_env_line(key, _seal_if_secret(key, value)))
             rewritten.add(key)
         else:
             out.append(line)
@@ -192,7 +212,7 @@ def save_ai_env(
         if key in rewritten:
             continue
         if value is not None:
-            out.append(_format_env_line(key, value))
+            out.append(_format_env_line(key, _seal_if_secret(key, value)))
     path.write_text("\n".join(out) + ("\n" if out else ""), encoding="utf-8")
     # C40：收紧 .env 文件权限（POSIX 0600；Windows 尽力而为）
     try:
@@ -281,19 +301,21 @@ def load_ai_config_sidecar(project_root: str | Path | None = None) -> dict[str, 
         return {}
 
 
-# C37：AI 外发隐私开关默认值（fail-open 保持既有行为，显式关闭才生效）
+# C37/B05-019：AI 外发隐私开关默认值（fail-closed：未显式开启即拒绝外发正文/PDF/截图/Cookie）。
+# 与 config.DEFAULTS["ai"]["privacy"]（默认全禁）对齐；GUI 显式开启不受影响。
 DEFAULT_AI_PRIVACY: dict[str, bool] = {
-    "allow_page_text": True,
-    "allow_pdf_content": True,
-    "allow_screenshots": True,
-    "allow_cookies": True,
+    "allow_page_text": False,
+    "allow_pdf_content": False,
+    "allow_screenshots": False,
+    "allow_cookies": False,
 }
 
 
 def load_ai_privacy(project_root: str | Path | None = None) -> dict[str, bool]:
     """C37：读取 AI 外发隐私开关，供页面文本 / PDF 正文等外发闸门前置判断。
 
-    仅从旁路 JSON 读取用户显式设置；无配置时回退默认值（全部允许，兼容旧行为）。
+    从旁路 JSON 读取用户显式设置；无配置/缺失时回退默认值（fail-closed：全部拒绝）。
+    显式开启必须由用户写在 sidecar privacy 段。
     """
     sidecar = load_ai_config_sidecar(project_root)
     privacy = sidecar.get("privacy")

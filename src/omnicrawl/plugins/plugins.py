@@ -136,7 +136,10 @@ class StatusWidgetRegistration:
 def _metadata(module: Any, path: Path) -> PluginMetadata:
     value = getattr(module, "PLUGIN_METADATA", None)
     if value is None:
-        return PluginMetadata(path.stem, description="legacy plugin")
+        # B02-025：市场插件统一入口名 plugin.py，path.stem 全是 "plugin" 无法区分；
+        # legacy 回退用父目录名（插件 id）。单文件插件（<name>.py）保持 path.stem。
+        legacy_name = path.parent.name if path.name == "plugin.py" else path.stem
+        return PluginMetadata(legacy_name, description="legacy plugin")
     if isinstance(value, PluginMetadata):
         result = value
     elif isinstance(value, dict):
@@ -451,15 +454,15 @@ def load_local_plugins(
     fail_open: bool = False,
     approved_permissions: tuple[str, ...] = (),
     ast_allowed_patterns: tuple[str, ...] = (),
-    signature_policy: str = SIGNATURE_POLICY_DEVELOPER,
+    signature_policy: str = SIGNATURE_POLICY_STRICT,
     trust_prompter: TrustPrompter | None = None,
     config: AppConfig | None = None,
     egress: EgressBroker | None = None,
 ) -> None:
     """加载本地插件。
 
-    ``signature_policy`` 默认 developer（与 config=None 的程序化调用兼容，
-    仅测试/开发用途）；产品入口 ``build_registry`` 按配置传入 strict。
+    ``signature_policy`` 默认 strict（B01-004：安全门默认最严，放松必须显式声明）；
+    测试/开发用途需放宽时显式传 developer。
     """
     root = root.resolve()
     expanded: list[str] = []
@@ -477,12 +480,23 @@ def load_local_plugins(
             LOGGER.debug("跳过不存在的插件路径: %s", value)
             continue
         if candidate.is_dir():
-            # 目录模式：递归加载目录下所有插件（如 plugins_installed）。
-            # 仅取 .py，排除 __pycache__ 与 .sig。
-            for py in sorted(candidate.rglob("*.py")):
+            # 目录模式：递归加载目录下插件（如 plugins_installed）。
+            # B01-005（D9）：只认规范布局入口 plugin.py；辅助模块（helpers.py 等）交给
+            # 插件自己 import，游离 .py（conftest.py/test_*.py/编辑器临时文件）不当作插件，
+            # 记为 error 跳过——避免单文件残留打挂整批加载。
+            for py in sorted(candidate.rglob("plugin.py")):
                 if "__pycache__" in py.parts:
                     continue
                 expanded.append(str(py))
+            stray = [
+                str(path) for path in sorted(candidate.rglob("*.py"))
+                if path.name != "plugin.py" and "__pycache__" not in path.parts
+            ]
+            if stray:
+                LOGGER.warning(
+                    "目录模式忽略非入口 .py 文件（辅助模块请由插件自行 import，游离文件请移出插件目录）: %s",
+                    ", ".join(stray[:10]),
+                )
             continue
         expanded.append(value)
     for index, value in enumerate(expanded):

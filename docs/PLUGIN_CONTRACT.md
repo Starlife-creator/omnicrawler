@@ -4,25 +4,26 @@
 
 ## 元数据
 
-```python
-from omnicrawl.plugins import PluginMetadata
+> **注意**：`PLUGIN_METADATA` 是**静态 dict 字面量**（非 dataclass 实例）。加载器与静态检查器
+> 通过 `ast.literal_eval` 解析它，实例形态会被拒。无需 import。
 
-PLUGIN_METADATA = PluginMetadata(
-    name="my-plugin",
-    version="1.0.0",
-    api_version=1,
-    description="...",
-    plugin_types=("source", "transformer"),
-    capabilities=("cursor-pagination",),
-    domains=("example.org",),
-    permissions=("network",),
-    optional_dependencies=("vendor-sdk>=1,<2",),
-    license="MIT",
-    source_url="https://example.org/source",
-    min_core_version="1.0.0",
-    fallback="generic",
-    resource_limits={"max_concurrency": 4},
-)
+```python
+PLUGIN_METADATA = {
+    "name": "my-plugin",
+    "version": "1.0.0",
+    "api_version": 1,
+    "description": "...",
+    "plugin_types": ("source", "transformer"),
+    "capabilities": ("cursor-pagination",),
+    "domains": ("example.org",),
+    "permissions": ("network",),
+    "optional_dependencies": ("vendor-sdk>=1,<2",),
+    "license": "MIT",
+    "source_url": "https://example.org/source",
+    "min_core_version": "1.0.0",
+    "fallback": "generic",
+    "resource_limits": {"max_concurrency": 4},
+}
 ```
 
 ## 注册点
