@@ -322,3 +322,28 @@ def load_ai_privacy(project_root: str | Path | None = None) -> dict[str, bool]:
     if isinstance(privacy, dict):
         return {k: bool(privacy.get(k, DEFAULT_AI_PRIVACY[k])) for k in DEFAULT_AI_PRIVACY}
     return dict(DEFAULT_AI_PRIVACY)
+
+
+def require_ai_privacy(
+    project_root: str | Path | None,
+    *,
+    content_kind: str,
+    what: str,
+) -> None:
+    """AI 外发隐私闸门：未显式开启对应开关则拒发（fail-closed，B05-019 落点接线）。
+
+    Args:
+        project_root: 工作区路径（决定 ai_config.json sidecar 位置）。
+        content_kind: 隐私键（allow_page_text / allow_pdf_content / allow_screenshots / allow_cookies）。
+        what: 人类可读的内容描述，用于错误信息。
+
+    Raises:
+        AIPrivacyBlockedError: 对应 privacy 开关未显式开启。
+    """
+    from .errors import AIPrivacyBlockedError
+
+    if not load_ai_privacy(project_root).get(content_kind, False):
+        raise AIPrivacyBlockedError(
+            f"AI 外发被隐私策略拦截：{what} 需显式开启 privacy.{content_kind}。"
+            "默认 fail-closed，请在 ai_config.json privacy 中开启后重试。"
+        )

@@ -9,7 +9,7 @@ from ...core.utils import utcnow
 from ...runtime.execution_backend import LocalWorkerBackend
 from ..core.config_model import CrawlConfig
 from ..core.config_serializer import save_yaml
-from ..core.validator import validate_full_config
+from ..core.validator import plugin_source_kinds, validate_full_config
 from ..i18n import _
 from .log_parser import LogParser
 
@@ -81,7 +81,9 @@ class WorkerTaskRunner(QObject):
         self._backend = LocalWorkerBackend(worker_command=_derive_worker_command(command_path))
 
     def start(self, config: CrawlConfig, log_level: str = "INFO") -> bool:
-        errors, warnings = validate_full_config(config)
+        errors, warnings = validate_full_config(
+            config, extra_source_kinds=plugin_source_kinds(self._project_root)
+        )
         if errors:
             for error in errors:
                 self.log_line.emit(error, "error")

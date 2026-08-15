@@ -44,6 +44,31 @@ def test_unknown_kind_still_rejected(tmp_path) -> None:
     assert any("网站类型" in e or "source.kind" in e for e in errors)
 
 
+def test_extra_source_kinds_allows_plugin_registered_kind(tmp_path) -> None:
+    """D10-b：extra_source_kinds 传入插件注册源类型后不再误拒。"""
+    from omnicrawl.gui.core.config_model import CrawlConfig
+    from omnicrawl.gui.core.validator import validate_full_config
+
+    cfg = CrawlConfig(source_kind="my_plugin_source", seed_urls=["https://example.org/"])
+    # 未传入 extra → 拒绝
+    errors_no, _w = validate_full_config(cfg)
+    assert any("网站类型" in e for e in errors_no)
+    # 传入 extra（模拟插件注册源）→ 放行
+    errors_yes, _w = validate_full_config(cfg, extra_source_kinds={"my_plugin_source"})
+    assert not [e for e in errors_yes if "网站类型" in e]
+
+
+def test_plugin_source_kinds_returns_registered_kinds(tmp_path) -> None:
+    """D10-b：plugin_source_kinds 从项目根构建 registry 提取已注册源类型。"""
+    from omnicrawl.gui.core.validator import plugin_source_kinds
+    from omnicrawl.sources.sources import SUPPORTED_SOURCE_KINDS
+
+    kinds = plugin_source_kinds(str(tmp_path))
+    assert isinstance(kinds, set)
+    # 至少包含全部内置通用类型
+    assert set(SUPPORTED_SOURCE_KINDS) <= kinds
+
+
 def test_sources_register_uses_generic_kinds_only(tmp_path) -> None:
     """sources.register 只注册通用 kind；site_* 由 site_adapters 注册专用类。"""
     from omnicrawl.plugins.plugins import Registry

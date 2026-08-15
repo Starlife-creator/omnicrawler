@@ -121,6 +121,24 @@ class OpenAICompatibleProvider:
         if not self.model:
             raise ValueError(f"AI provider {name} 需要 base_url 和 model")
 
+    def check_content_allowed(self, content_kind: str, what: str) -> None:
+        """AI 外发隐私闸门（B05-019 接线）：未显式开启对应开关则拒发。
+
+        调用方在构造 messages 前调用，content_kind 取 privacy 键
+        （allow_page_text / allow_pdf_content / allow_screenshots / allow_cookies）。
+
+        Raises:
+            AIPrivacyBlockedError: privacy 开关未显式开启，或缺少 app_config 无法判定。
+        """
+        from ..core.ai_env import require_ai_privacy
+        from ..core.errors import AIPrivacyBlockedError
+
+        if self.app_config is None:
+            raise AIPrivacyBlockedError(
+                "AI provider 缺少 app_config，无法判定隐私策略；拒绝外发敏感内容。"
+            )
+        require_ai_privacy(self.app_config.workspace, content_kind=content_kind, what=what)
+
     def generate(
         self,
         messages: list[dict[str, str]],

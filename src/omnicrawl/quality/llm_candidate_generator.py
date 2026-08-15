@@ -181,11 +181,13 @@ class LLMCandidateGenerator:
         *,
         success_threshold: float = 0.7,
         max_prompt_chars: int = 4000,
+        project_root: str | None = None,
     ) -> None:
         self._extractor = AdaptiveExtractor(
             llm_generate=llm_generate,
             success_threshold=success_threshold,
             max_prompt_chars=max_prompt_chars,
+            project_root=project_root,
         )
         self._last_candidates: list[CandidateWithComparison] = []
 

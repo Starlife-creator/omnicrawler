@@ -222,12 +222,15 @@ class ConfigManager(_BaseDelegate):
         if _current is None:
             return
         # S3.1.26：恢复前先校验——坏配置不覆盖当前文件
-        from ..core.validator import validate_full_config
+        from ..core.validator import plugin_source_kinds, validate_full_config
 
         version_path = Path(str(_current.data(Qt.ItemDataRole.UserRole)))
         try:
             candidate = load_yaml(version_path)
-            errors, _warnings = validate_full_config(candidate)
+            errors, _warnings = validate_full_config(
+                candidate,
+                extra_source_kinds=plugin_source_kinds(mw._project_root),
+            )
         except Exception as exc:
             QMessageBox.critical(
                 mw, _("恢复失败"),

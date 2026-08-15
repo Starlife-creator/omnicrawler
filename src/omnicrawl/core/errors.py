@@ -58,6 +58,15 @@ class CredentialScopeError(PolicyBlockedError):
     suggestion = "凭据只能发送到任务明确批准的域名和用途。"
 
 
+class AIPrivacyBlockedError(PolicyBlockedError):
+    code = "ai_privacy_blocked"
+    suggestion = (
+        "AI 外发受隐私策略限制：请在工作区 ai_config.json 的 privacy 中显式开启"
+        "对应内容类型（allow_page_text/allow_pdf_content/allow_screenshots/allow_cookies），"
+        "或关闭该 AI 功能。默认 fail-closed，未显式开启即拒发。"
+    )
+
+
 class ConfigParseError(ValueError, OmniCrawlError):
     code = "config_parse_error"
     suggestion = "配置文件存在语法错误；请检查 YAML 缩进、引号匹配和字段名拼写，或运行 omnicrawl validate。"

@@ -94,7 +94,12 @@ async def test_d60_retry_on_429_then_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_c34_html_marked_untrusted_in_prompt() -> None:
+async def test_c34_html_marked_untrusted_in_prompt(monkeypatch) -> None:
+    # B05-019：外发隐私闸门默认 fail-closed，测试显式开启 allow_page_text
+    monkeypatch.setattr(
+        "omnicrawl.core.ai_env.require_ai_privacy",
+        lambda *a, **k: None,
+    )
     ex = AIGraphExtractor(provider=Provider(api_key="sk-test"))
     session = _FakeSession(_FakeResp(200, '{"choices":[{"message":{"content":"{}"}}]}'))
     await ex._extract_chunk("<script>alert(1)</script>", [FieldDef(name="t")], 1000, session=session)
