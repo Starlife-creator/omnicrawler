@@ -49,6 +49,29 @@ def read_installed_version(venv_python: Path) -> str | None:
     return result.stdout.strip() or None
 
 
+def _rebase_pth_lines(text: str, old: str, new: str) -> str:
+    """B12-006：.pth 行级精确替换，替代全局 ``replace``。
+
+    只替换**以旧路径为前缀**的整行路径，避免不同虚拟环境含同名路径片段时
+    全局误替；同时兼容反斜杠/正斜杠两种路径分隔符形态，并保留行尾换行。
+    """
+    variants = (old, old.replace("\\", "/")) if "\\" in old else (old,)
+    lines: list[str] = []
+    for line in text.splitlines(keepends=True):
+        body = line.rstrip("\r\n")
+        ending = line[len(body):]
+        stripped = body.strip()
+        replaced = line
+        for prefix in variants:
+            if stripped.startswith(prefix):
+                indent = body[: len(body) - len(body.lstrip())]
+                suffix = stripped[len(prefix):]
+                replaced = f"{indent}{new}{suffix}{ending}"
+                break
+        lines.append(replaced)
+    return "".join(lines)
+
+
 def reinstall_editable(venv_python: Path, project_root: Path) -> bool:
     """Re-run pip install -e . so dist-info/direct_url/scripts track the source.
 
@@ -167,7 +190,7 @@ def main() -> int:
                     text = pth.read_text(encoding="utf-8")
                 except (OSError, UnicodeError):
                     continue
-                replaced = text.replace(str(old_root), str(project_root))
+                replaced = _rebase_pth_lines(text, str(old_root), str(project_root))
                 if replaced != text:
                     try:
                         pth.write_text(replaced, encoding="utf-8")

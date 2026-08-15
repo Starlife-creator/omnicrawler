@@ -1,4 +1,9 @@
-"""Download and verify the exact PaddleOCR model set used by OmniCrawler."""
+"""Download the PaddleOCR model set and run an offline smoke test (B12-002).
+
+改名自 ``download_ocr_models.py``：本工具只做**功能冒烟**（PPStructureV3 推理空白
+合成图），**不是密码学完整性校验**——模型经 CDN 下载、无哈希钉，供应链篡改不可
+检出。语义以 ``smoke_verified`` 为准，勿误当作 ``verified``。
+"""
 
 from __future__ import annotations
 
@@ -23,7 +28,7 @@ def configure_cache(cache: Path, source: str) -> None:
     cache.mkdir(parents=True, exist_ok=True)
 
 
-def download_and_verify(cache: Path, source: str) -> dict[str, object]:
+def download_and_smoke_test(cache: Path, source: str) -> dict[str, object]:
     configure_cache(cache, source)
     import numpy as np
     from paddleocr import PPStructureV3
@@ -71,7 +76,7 @@ def main() -> int:
     parser.add_argument("cache", type=Path)
     parser.add_argument("--source", choices=["aistudio", "huggingface", "modelscope"], default="aistudio")
     args = parser.parse_args()
-    print(json.dumps(download_and_verify(args.cache, args.source), ensure_ascii=False, indent=2))
+    print(json.dumps(download_and_smoke_test(args.cache, args.source), ensure_ascii=False, indent=2))
     return 0
 
 

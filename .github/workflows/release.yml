@@ -342,6 +342,16 @@ jobs:
           python tools/generate_provenance.py --artifact-dir "$RUNNER_TEMP/artifacts" \
             --output "$RUNNER_TEMP/artifacts/omnicrawler-provenance.json"
 
+      # B14-💭-3：供应链完整性检查固化为 release 必跑步骤（任一失败 → 发布中止）。
+      - name: 供应链完整性检查（B14 强制）
+        shell: bash
+        run: |
+          python tools/check_network_boundaries.py --source-root src/omnicrawl
+          python tools/check_guardrails.py \
+            --sbom "$RUNNER_TEMP/artifacts/omnicrawler-sbom-windows.cdx.json"
+          python tools/check_release_integrity.py . \
+            --portable-zip-dir "$RUNNER_TEMP/artifacts"
+
       - name: 列出全部构建产物
         shell: bash
         run: ls -lh "$RUNNER_TEMP/artifacts"

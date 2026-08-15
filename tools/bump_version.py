@@ -33,7 +33,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import subprocess
 import sys
@@ -596,7 +595,7 @@ def step_git_operations(root: Path, new: str) -> None:
         if result.stdout.strip():
             print(f"       {result.stdout.strip()}")
 
-    _git(["add", "-A"], "暂存所有变更")
+    _git(["add", "-u"], "暂存已跟踪变更（B12-003：不用 -A，避免未跟踪敏感文件被一并提交）")
 
     message = f"release: bump to {new}"
     _git(["commit", "-m", message], "提交")
@@ -613,7 +612,8 @@ def main(argv: list[str] | None = None) -> int:
     _validate_version(new)
 
     root = _project_root()
-    os.chdir(str(root))
+    # B12-003：所有子进程已显式传 cwd=root，此处不再 os.chdir——
+    # 删除模块级 CWD 副作用，避免影响脚本外调用方；各 step_* 均以 root 参数定位文件。
 
     old = _read_old_version(root)
     if old == new:

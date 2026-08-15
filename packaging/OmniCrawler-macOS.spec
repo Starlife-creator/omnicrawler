@@ -8,6 +8,7 @@
 
 from pathlib import Path
 import sys
+import tomllib
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
 
@@ -16,6 +17,12 @@ project_root = Path(SPECPATH).parent
 src_root = project_root / "src"
 packaging_root = project_root / "packaging"
 sys.path.insert(0, str(src_root))
+
+# B12-004：bundle 版本从 pyproject.toml 读取，不再硬编码（防发布时 info.plist
+# 与包版本漂移）。bump_version.py 更新版本时 spec 无需手工同步。
+_bundle_version = str(
+    tomllib.loads((project_root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+)
 
 datas = [
     (str(src_root / "omnicrawl" / "templates"), "omnicrawl/templates"),
@@ -78,8 +85,8 @@ app = BUNDLE(
     info_plist={
         "CFBundleName": "OmniCrawler",
         "CFBundleDisplayName": "OmniCrawler",
-        "CFBundleShortVersionString": "0.8.0",
-        "CFBundleVersion": "0.8.0",
+        "CFBundleShortVersionString": _bundle_version,
+        "CFBundleVersion": _bundle_version,
         "LSMinimumSystemVersion": "11.0",
         "NSHighResolutionCapable": True,
         "NSHumanReadableCopyright": "AGPL-3.0-only",

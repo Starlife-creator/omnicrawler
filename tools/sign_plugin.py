@@ -49,11 +49,15 @@ from omnicrawl.plugins.signing import (  # noqa: E402
 # Designated private-key generation location (operator moves it to cold storage
 # immediately after generation). Override with --private-out.
 def _default_private_path() -> str:
-    """用户主目录下的 .omnicrawl/keys（无 HOME 时回退仓库内 .private_keys/）。"""
+    """用户主目录下的 .omnicrawl/keys。
+
+    B12-001：无 HOME 时返回空串并在使用处拒绝——私钥**绝不**回退仓库内
+    ``.private_keys/``（历史分支会引入私钥落仓风险）。
+    """
     try:
         return str(Path.home() / ".omnicrawl" / "keys" / "plugin_signing_private.pem")
     except RuntimeError:
-        return str(_REPO_ROOT / ".private_keys" / "plugin_signing_private.pem")
+        return ""
 
 
 PRIVATE_DEFAULT = _default_private_path()
@@ -267,6 +271,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "generate-keys":
+        if not args.private_out:
+            print(
+                "FAIL 无法确定用户主目录（无 HOME）；私钥只允许写入用户主目录，"
+                "拒绝回退仓库内路径（B12-001）。请用 --private-out 显式指定冷存储位置。",
+                file=sys.stderr,
+            )
+            return 1
         _generate_keys(Path(args.private_out).expanduser(), Path(args.public_out).expanduser())
         return 0
     if args.command == "scan":
@@ -276,6 +287,13 @@ def main(argv: list[str] | None = None) -> int:
         plugin_path = Path(args.plugin)
         if not args.skip_scan:
             _run_scan(plugin_path.parent, Path(args.manifest) if args.manifest else None)
+        if not args.private_key:
+            print(
+                "FAIL 无法确定用户主目录（无 HOME）；私钥只允许从用户主目录读取，"
+                "拒绝回退仓库内路径（B12-001）。请用 --private-key 显式指定冷存储私钥。",
+                file=sys.stderr,
+            )
+            return 1
         private_pem = Path(args.private_key).expanduser().read_bytes()
         sig = sign_file(args.plugin, private_pem)
         print(f"已签名: {sig}")

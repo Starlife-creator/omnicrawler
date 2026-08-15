@@ -225,9 +225,13 @@ def cmd_templates_submit(args: argparse.Namespace) -> int:
         return 1
 
     if args.no_pr:
-        out = Path(args.out_dir)
+        out = Path(args.out_dir).expanduser().resolve()
         for rel, content in files.items():
-            target = out / rel
+            # B12-007：写入路径必须落在 out_dir 内（防构建器返回的 rel 含 .. 穿越）。
+            target = (out / rel).resolve()
+            if not target.is_relative_to(out):
+                print(f"拒绝写入 out_dir 之外的路径: {rel}", file=sys.stderr)
+                return 1
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
         print(f"已本地备好上传包（未推 PR）：{out}")
