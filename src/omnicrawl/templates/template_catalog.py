@@ -13,6 +13,8 @@ from urllib.parse import urlparse
 
 import yaml
 
+from ..core.safe_data import safe_regex_search
+
 LOGGER = logging.getLogger(__name__)
 
 PLACEHOLDER_RE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
@@ -213,11 +215,11 @@ class TemplateCatalog:
                     reasons.append(f"domain:{domain}")
                     break
             for pattern in meta.url_patterns:
-                regex_match = False
-                try:
-                    regex_match = re.search(pattern, probe.url, re.IGNORECASE) is not None
-                except re.error:
-                    pass
+                # B11-004：url_patterns 来自模板元数据，正则可能病态 → 走 safe_regex_search
+                #（编译错误/ReDoS 启发式命中均返回 None，不抛异常）。
+                regex_match = (
+                    safe_regex_search(pattern, probe.url, flags=re.IGNORECASE) is not None
+                )
                 if fnmatch.fnmatch(url, pattern.casefold()) or regex_match:
                     score += 35
                     reasons.append(f"url:{pattern}")

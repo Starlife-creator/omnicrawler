@@ -99,8 +99,14 @@ def configure_data_mode(mode: str, custom_root: str = "") -> Path:
 
 
 def resolve_portable_path(value: str) -> Path:
+    # B05-018：只接受基于 ${APP_DIR}/${DATA_DIR} 的配置路径——展开后必须仍位于
+    # 应用目录或数据根内，拒绝任意绝对路径 / ../ 逃逸（防越界读写）。
     expanded = value.replace("${APP_DIR}", str(application_dir())).replace("${DATA_DIR}", str(portable_data_root()))
-    return Path(expanded).expanduser().resolve()
+    resolved = Path(expanded).expanduser().resolve()
+    roots = (application_dir(), portable_data_root())
+    if not any(resolved == root or root in resolved.parents for root in roots):
+        raise ValueError(f"路径越出应用/数据根目录: {resolved}")
+    return resolved
 
 
 def storage_advisory(path: Path) -> dict[str, object]:
@@ -230,15 +236,36 @@ def bundled_cli_path() -> Path | None:
     return None
 
 
+# B05-017：configured CLI 白名单——只接受项目 CLI 名或位于应用/项目根内的可执行文件，
+# 拒绝任意外部绝对路径被当作可信 CLI 加载。
+_ALLOWED_CLI_BASENAMES = {"omnicrawl", "omnicrawl.exe"}
+
+
+def _is_trusted_cli_path(path: Path) -> bool:
+    if path.name not in _ALLOWED_CLI_BASENAMES:
+        return False
+    if is_frozen():
+        return path.parent == application_dir()
+    project_root = Path(__file__).resolve().parents[3]
+    return path == project_root / ".venv" / "Scripts" / path.name or path.parent == project_root
+
+
 def resolve_cli_candidates(configured: str = "omnicrawl") -> tuple[str, list[str]]:
-    """返回 (选中命令, 已尝试候选路径列表)——供失败消息展示（F54）。"""
+    """返回 (选中命令, 已尝试候选路径列表)——供失败消息展示（F54）。
+
+    B05-017：configured 作为文件路径命中时，必须通过信任白名单校验
+    （名称 + 位置），防止配置被篡改为指向任意可执行文件。
+    """
     companion = bundled_cli_path()
     if companion is not None:
         return str(companion), [str(companion)]
 
     configured_path = Path(configured).expanduser()
     if configured_path.is_file():
-        return str(configured_path.resolve()), [str(configured_path.resolve())]
+        if _is_trusted_cli_path(configured_path):
+            return str(configured_path.resolve()), [str(configured_path.resolve())]
+        logger.warning("configured CLI 不在信任白名单内，忽略: %s", configured_path)
+        configured = "omnicrawl"
 
     discovered = shutil.which(configured)
     candidates = [configured]

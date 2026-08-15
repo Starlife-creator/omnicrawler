@@ -14,6 +14,15 @@ from pathlib import Path
 #: 检测置信度低于该值时回退 fallback（对齐 textract 的 0.80 阈值）
 _DETECT_THRESHOLD = 0.80
 
+#: B05-023：可接受的编码白名单——收窄 chardet 结果，只认常见文档编码，
+#: 拒绝怪异别名/私有编码名，降低 decode 面。
+_KNOWN_ENCODINGS = {
+    "utf-8", "utf8", "utf-16", "utf-16le", "utf-16be",
+    "gb18030", "gbk", "gb2312", "big5", "big5-hkscs",
+    "shift-jis", "sjis", "euc-jp", "euc-kr",
+    "latin-1", "latin1", "iso-8859-1", "windows-1252", "cp1252", "ascii",
+}
+
 
 def detect_encoding(data: bytes, *, fallback: str = "utf-8") -> str:
     """chardet 检测编码，置信度不足或无 chardet 时回退 fallback。"""
@@ -27,6 +36,8 @@ def detect_encoding(data: bytes, *, fallback: str = "utf-8") -> str:
     if not guess:
         return fallback
     if confidence < _DETECT_THRESHOLD:
+        return fallback
+    if guess.casefold().replace("_", "-") not in _KNOWN_ENCODINGS:
         return fallback
     try:
         # 校验编码名是否可被 Python 识别，避免 chardet 返回怪异别名

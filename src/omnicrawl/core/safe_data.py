@@ -13,10 +13,25 @@ from typing import Any
 
 LOGGER = logging.getLogger(__name__)
 
-# S2.5.14：启发式——嵌套量词（(a+)+、(a*)*、(a+){2} 等）几乎总是 bug，
-# 且 CPython 的 _sre 在 C 层执行不释放 GIL，线程超时方案无法抢回执行权，
+# S2.5.14 + P9-A4（B05-015）：ReDoS 启发式——命中即拒绝执行。
+# CPython 的 _sre 在 C 层执行不释放 GIL，线程超时方案无法抢回执行权，
 # 因此执行前直接拒绝（编译+执行均零开销路径不受影响）。
-_UNSAFE_REGEX = re.compile(r"\([^)]*(?:[+*][^)]*)\)[+*{]")
+# 检测家族：
+# 1. 嵌套量词：(a+)+、(a*)*、(a+){2} —— 组内带量词又被整体量词包裹
+_NESTED_QUANTIFIER = re.compile(r"\([^)]*(?:[+*][^)]*)\)[+*{]")
+# 2. 叠加量词：a++、a*+、a{1,3}{2} —— 量词后紧跟 * / + / 区间（再次加量）。
+#    注意 *? / +? / ?? 的 ? 是合法"非贪婪"后缀，不算叠加，故第二分支不含 ?。
+_STACKED_QUANTIFIER = re.compile(r"(?:[+*?]|{[0-9]+(?:,[0-9]*)?})(?:[+*]|{[0-9]+(?:,[0-9]*)?})")
+# 3. 大交替重复：(a|b|c|...){n} 且组内 3 个以上分支（指数级回溯面）
+_WIDE_ALTERNATION = re.compile(r"\(([^)]*\|[^)]*\|[^)]*)\)\{")
+
+
+def _unsafe_regex(raw: str) -> bool:
+    return bool(
+        _NESTED_QUANTIFIER.search(raw)
+        or _STACKED_QUANTIFIER.search(raw)
+        or _WIDE_ALTERNATION.search(raw)
+    )
 
 
 def safe_regex_search(
@@ -35,8 +50,8 @@ def safe_regex_search(
     except re.error as exc:
         LOGGER.warning("safe_regex_search 编译失败: %r (%s)", raw[:200], exc)
         return None
-    if _UNSAFE_REGEX.search(raw):
-        LOGGER.warning("safe_regex_search 拒绝可疑模式（嵌套量词）: %r", raw[:200])
+    if _unsafe_regex(raw):
+        LOGGER.warning("safe_regex_search 拒绝可疑模式（ReDoS 启发式）: %r", raw[:200])
         return None
     try:
         return compiled.search(text)
