@@ -62,13 +62,20 @@ fi
 # PyInstaller 在 macOS 打包 .app 必须用 framework 版 Python（--enable-framework），
 # 否则 .app/Contents/Frameworks/Python 缺失，运行时报 Failed to load Python shared
 # library（PYI-9229/2508/20814）。GitHub Actions setup-python 安装的是非 framework
-# build；runner 预装的 homebrew python 是 framework build。
-if [[ -x /opt/homebrew/bin/python3 ]]; then
-  FRAMEWORK_PYTHON=/opt/homebrew/bin/python3
-elif [[ -x /usr/local/bin/python3 ]]; then
-  FRAMEWORK_PYTHON=/usr/local/bin/python3
-else
-  echo "未找到 framework 版 Python（/opt/homebrew 或 /usr/local 的 python3）" >&2; exit 1
+# build；runner 预装 homebrew python 是 framework build。
+# ⚠ 版本必须与 PyInstaller 6.15.0 兼容：homebrew 默认 python3 已是 3.14（不受支持），
+# 优先用 python@3.12 / python@3.13（与 BUILD_PYTHON_VERSION=3.12 对齐）。
+FRAMEWORK_PYTHON=""
+for candidate in \
+  /opt/homebrew/opt/python@3.12/bin/python3.12 \
+  /opt/homebrew/opt/python@3.13/bin/python3.13 \
+  /opt/homebrew/bin/python3; do
+  if [[ -x "$candidate" ]]; then FRAMEWORK_PYTHON="$candidate"; break; fi
+done
+if [[ -z "$FRAMEWORK_PYTHON" ]]; then
+  echo "未找到 framework Python（python@3.12/3.13/默认），尝试 brew install python@3.12 ..." >&2
+  brew install python@3.12 || { echo "brew install python@3.12 失败" >&2; exit 1; }
+  FRAMEWORK_PYTHON=/opt/homebrew/opt/python@3.12/bin/python3.12
 fi
 echo "framework Python: $FRAMEWORK_PYTHON ($("$FRAMEWORK_PYTHON" --version 2>&1))"
 
