@@ -24,16 +24,18 @@ _BUSINESS_NAMES = {
 
 def _restore_safe_baseline(after: dict[str, Any], before: dict[str, Any]) -> None:
     """合并后把安全键回盖为用户既有值（模板段不得翻转安全方向）。"""
-    http_before = before.get("http") if isinstance(before.get("http"), dict) else {}
-    http_after = after.get("http") if isinstance(after.get("http"), dict) else {}
-    for key in _SAFE_HTTP_KEYS:
-        if key in http_before and key in http_after:
-            http_after[key] = http_before[key]
-    egress_before = before.get("egress") if isinstance(before.get("egress"), dict) else {}
-    egress_after = after.get("egress") if isinstance(after.get("egress"), dict) else {}
-    for key in _SAFE_EGRESS_KEYS:
-        if key in egress_before and key in egress_after:
-            egress_after[key] = egress_before[key]
+    http_before = before.get("http")
+    http_after = after.get("http")
+    if isinstance(http_before, dict) and isinstance(http_after, dict):
+        for key in _SAFE_HTTP_KEYS:
+            if key in http_before and key in http_after:
+                http_after[key] = http_before[key]
+    egress_before = before.get("egress")
+    egress_after = after.get("egress")
+    if isinstance(egress_before, dict) and isinstance(egress_after, dict):
+        for key in _SAFE_EGRESS_KEYS:
+            if key in egress_before and key in egress_after:
+                egress_after[key] = egress_before[key]
 
 
 @dataclass(frozen=True, slots=True)
