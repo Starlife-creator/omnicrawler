@@ -37,6 +37,35 @@ def test_e9_run_task_passes_config_path_to_application_service(monkeypatch, tmp_
     assert result["status"] == "succeeded"
 
 
+def test_b02_026_run_task_rejects_unresolved_placeholders(monkeypatch, tmp_path) -> None:
+    """B02-026：CLI run 遇到未替换占位符 fail-closed，不启动 ApplicationService。"""
+    from omnicrawl.commands import run_task
+
+    cfg = tmp_path / "p.yaml"
+    cfg.write_text(
+        "project:\n  name: p\n  workspace: work/p\n"
+        "source:\n  kind: rest\n  seeds: [https://api.example.org/items]\n"
+        "  params:\n    query: '{{query}}'\n"
+        "outputs:\n  jsonl: true\n",
+        encoding="utf-8",
+    )
+    called = []
+
+    class FakeService:
+        def __init__(self, _path):
+            called.append(True)
+
+        def run(self, **_kwargs):
+            called.append(True)
+            return {"status": "succeeded"}
+
+    monkeypatch.setattr(run_task, "ApplicationService", FakeService)
+    result = run_task.execute(str(cfg), "run")
+    assert called == [], "占位符未替换时不得启动 ApplicationService"
+    assert result["status"] == "failed"
+    assert result["exit_code"] == 1
+
+
 def test_e3_status_execute_carries_config_path(tmp_path) -> None:
     """E3：omnicrawl status 的 result 携带 config_path，不再永远打空。"""
     from omnicrawl.commands.run_status import execute

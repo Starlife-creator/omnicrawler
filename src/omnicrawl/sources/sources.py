@@ -16,6 +16,22 @@ from ..fetching.http_client import encode_request_payload
 
 LOGGER = logging.getLogger(__name__)
 
+# B02-027：source.kind 单一真源——GUI 白名单、内核注册共用，不再允许手抄副本漂移。
+# GENERIC_SOURCE_KINDS 由 sources.register 注册；SITE_ADAPTER_KINDS 由 site_adapters.register
+# 注册（专用类，重名冲突）。SUPPORTED_SOURCE_KINDS 是**校验用全量白名单**。
+GENERIC_SOURCE_KINDS: tuple[str, ...] = (
+    "static_html", "crawl", "focused", "incremental", "url_list", "rest",
+    "graphql", "form", "sitemap", "feed", "browser", "file", "media",
+    "websocket", "sse", "long_poll", "redis", "scrapy",
+)
+
+# 内置站点适配器（site_adapters.py 注册专用类）
+SITE_ADAPTER_KINDS: tuple[str, ...] = (
+    "site_wordpress", "site_drupal", "site_mediawiki", "site_discourse",
+)
+
+SUPPORTED_SOURCE_KINDS: tuple[str, ...] = GENERIC_SOURCE_KINDS + SITE_ADAPTER_KINDS
+
 
 class GenericSource:
     def __init__(self, config: AppConfig) -> None:
@@ -203,9 +219,5 @@ def _with_query(url: str, params: dict[str, Any]) -> str:
 
 
 def register(registry) -> None:
-    for name in (
-        "static_html", "crawl", "focused", "incremental", "url_list", "rest",
-        "graphql", "form", "sitemap", "feed", "browser", "file", "media",
-        "websocket", "sse", "long_poll", "redis", "scrapy",
-    ):
+    for name in GENERIC_SOURCE_KINDS:
         registry.register_source(name, GenericSource)

@@ -27,7 +27,8 @@ download:
 processors:
   pdf:
     enabled: true
-  config: builtin:pdf/generic_template.yaml
+    config: builtin:pdf/generic_template.yaml
+    project_config: ""
     skip_ocr: false
     ocr_backend: none
 updates:

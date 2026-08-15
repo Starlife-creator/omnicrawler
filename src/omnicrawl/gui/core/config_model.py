@@ -6,12 +6,13 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 from uuid import uuid4
 
 from ...core.utils import user_agent as _user_agent
+from ...templates.template_catalog import PLACEHOLDER_RE
 from ..i18n import _
 
 
@@ -202,15 +203,24 @@ class CrawlConfig:
         return len(self.validate()) == 0
 
     def has_placeholders(self) -> bool:
-        """检查是否存在未替换的模板占位符。"""
-        placeholder_pattern = re.compile(r"\{\{.*?\}\}")
-        for url in self.seed_urls:
-            if placeholder_pattern.search(url):
-                return True
-        for f in self.fields:
-            if placeholder_pattern.search(f.selector):
-                return True
-        return False
+        """检查是否存在未替换的模板占位符。
+
+        B02-026：从「仅扫 seed_urls + fields[].selector」升级为整棵配置树扫描，
+        覆盖 source.params / http.headers / source.login / pagination / max_pages /
+        extract.item_selector / browser.actions[*].selector / topic_include_any 及
+        passthrough 内嵌段等全部字符串值。占位符形态复用 template_catalog 的
+        PLACEHOLDER_RE（`{{identifier}}`），与模板声明同源，避免注释性 `{{...}}` 误报。
+        """
+        def _scan(value: Any) -> bool:
+            if isinstance(value, str):
+                return bool(PLACEHOLDER_RE.search(value))
+            if isinstance(value, dict):
+                return any(_scan(item) for item in value.values())
+            if isinstance(value, (list, tuple)):
+                return any(_scan(item) for item in value)
+            return False
+
+        return _scan(asdict(self))
 
     def prune_orphan_overrides(self) -> int:
         """清理 seed_urls 变更后残留的 per_url_template_overrides 孤儿键。

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -362,6 +363,35 @@ def _apply_retry_alias(merged: dict[str, Any], expanded: dict[str, Any]) -> None
     merged["http"]["retries"] = count
 
 
+def _check_contained(
+    key: str, resolved: Path, root: Path, flag: Callable[[str], None],
+) -> None:
+    """B05-010：校验绝对路径配置值解析后位于 root 内（真实前缀包含）。"""
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        flag(f"{key} 解析后位于项目根之外: {resolved}（项目根: {root}）")
+
+
+def require_config_path(path: str | Path, *, require_inside_cwd: bool = False) -> Path:
+    """B09-003：消费外部可控 config_path 前校验。
+
+    queue/schedule 的 config_path 来自入队 TaskSpec / 调度库，共享模式下可被
+    外部方控制。消费前必须：存在且可读；本地降级模式额外要求位于 CWD 内，
+    避免加载越界/攻击者构造的配置。
+    """
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.is_file():
+        raise ValueError(f"任务配置不存在或不可读: {resolved}")
+    if require_inside_cwd:
+        cwd = Path.cwd().resolve()
+        try:
+            resolved.relative_to(cwd)
+        except ValueError:
+            raise ValueError(f"本地队列模式下 config_path 必须位于当前目录内: {resolved}")
+    return resolved
+
+
 def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[str], list[str]]:
     """校验配置。
 
@@ -676,4 +706,21 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         )
         if not config.section("download").get("enabled", False) or ".pdf" not in extensions:
             warnings.append("PDF处理器已启用，但download未启用或extensions中没有.pdf")
+
+    # B05-010/B05-014：绝对路径配置值 contained-in-root 校验。
+    # 越界仅告警（多项目共享目录可能是合法用法），strict 时升级为 error。
+    root_resolved = config.root.resolve()
+    _check_contained("project.workspace", config.workspace, root_resolved, flag)
+    storage_objects = config.section("storage").get("objects", {})
+    storage_dir = storage_objects.get("local_directory", "") if isinstance(storage_objects, dict) else ""
+    if isinstance(storage_dir, str) and storage_dir.strip():
+        _check_contained(
+            "storage.objects.local_directory",
+            config.resolve(storage_dir), root_resolved, flag,
+        )
+    if pdf.get("enabled", False) and project_value:
+        _check_contained(
+            "processors.pdf.project_config",
+            config.resolve(project_value), root_resolved, flag,
+        )
     return errors, warnings

@@ -7,15 +7,9 @@ from __future__ import annotations
 
 import re
 
+from ...sources.sources import SUPPORTED_SOURCE_KINDS as VALID_SOURCE_KINDS
 from ..i18n import _
 from .config_model import CrawlConfig, FieldDef
-
-# 框架支持的 source.kind 值
-VALID_SOURCE_KINDS: set[str] = {
-    "static_html", "crawl", "focused", "incremental", "url_list", "rest",
-    "graphql", "form", "sitemap", "feed", "browser", "file", "media",
-    "websocket", "sse", "long_poll", "redis", "scrapy",
-}
 
 # 框架必需的顶层 key
 REQUIRED_TOP_KEYS: set[str] = {

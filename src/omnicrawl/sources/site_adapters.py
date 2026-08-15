@@ -86,10 +86,16 @@ class DiscourseSource(DynamicApiSource):
 
 
 def register(registry) -> None:
-    registry.register_source("site_wordpress", WordPressSource)
-    registry.register_source("site_drupal", DrupalJsonApiSource)
-    registry.register_source("site_mediawiki", MediaWikiSource)
-    registry.register_source("site_discourse", DiscourseSource)
+    from .sources import SITE_ADAPTER_KINDS
+
+    adapters = {
+        "site_wordpress": WordPressSource,
+        "site_drupal": DrupalJsonApiSource,
+        "site_mediawiki": MediaWikiSource,
+        "site_discourse": DiscourseSource,
+    }
+    for name in SITE_ADAPTER_KINDS:
+        registry.register_source(name, adapters[name])
     registry.plugins.append(PluginMetadata(
         name="builtin-site-adapters",
         version="1.0.0",
