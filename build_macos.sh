@@ -58,9 +58,23 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "build_macos.sh 只能在 macOS 上运行（PyInstaller 不支持交叉编译）。" >&2; exit 1
 fi
 
+# ---- framework Python 选择 --------------------------------------------------
+# PyInstaller 在 macOS 打包 .app 必须用 framework 版 Python（--enable-framework），
+# 否则 .app/Contents/Frameworks/Python 缺失，运行时报 Failed to load Python shared
+# library（PYI-9229/2508/20814）。GitHub Actions setup-python 安装的是非 framework
+# build；runner 预装的 homebrew python 是 framework build。
+if [[ -x /opt/homebrew/bin/python3 ]]; then
+  FRAMEWORK_PYTHON=/opt/homebrew/bin/python3
+elif [[ -x /usr/local/bin/python3 ]]; then
+  FRAMEWORK_PYTHON=/usr/local/bin/python3
+else
+  echo "未找到 framework 版 Python（/opt/homebrew 或 /usr/local 的 python3）" >&2; exit 1
+fi
+echo "framework Python: $FRAMEWORK_PYTHON ($("$FRAMEWORK_PYTHON" --version 2>&1))"
+
 # ---- 依赖安装（隔离 venv） ---------------------------------------------------
 if [[ ! -x "$BUILDER_PYTHON" ]]; then
-  python3 -m venv "$BUILDER_VENV"
+  "$FRAMEWORK_PYTHON" -m venv "$BUILDER_VENV"
 fi
 "$BUILDER_PYTHON" -m pip install --upgrade pip setuptools wheel
 if [[ "$EDITION" == "Full" ]]; then
