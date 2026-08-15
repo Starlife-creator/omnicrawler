@@ -239,8 +239,13 @@ class TestExtractAsync:
             assert result["chunks_processed"] == 1
 
     @pytest.mark.asyncio
-    async def test_extract_chunk_fail_closed_without_api_key(self) -> None:
+    async def test_extract_chunk_fail_closed_without_api_key(self, monkeypatch) -> None:
         """B13-002：未配置 API key 时 fail-closed，拒绝携带空 Bearer 外发请求。"""
+        # B05-019：privacy 闸门在 api_key 检查之前，先放行以聚焦 api_key 分支
+        monkeypatch.setattr(
+            "omnicrawl.core.ai_env.require_ai_privacy",
+            lambda *a, **k: None,
+        )
         ex = AIGraphExtractor()  # Provider().api_key == ""
         with pytest.raises(RuntimeError, match="fail-closed"):
             await ex._extract_chunk("<html>x</html>", [FieldDef(name="title")], 100, session=object())

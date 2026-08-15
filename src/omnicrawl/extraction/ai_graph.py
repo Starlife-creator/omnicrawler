@@ -276,6 +276,13 @@ class AIGraphExtractor:
         session: Any | None = None,
     ) -> dict[str, Any]:
         """调用 LLM 提取单个分块（分块大小已在 _split_html 统一控制，不再二次截断）。"""
+        # B05-019：发送 HTML 分块（页面内容）前过隐私闸门——未显式开启
+        # allow_page_text 即拒发（fail-closed）。放在最前，早于 aiohttp 导入：
+        # 未开启 privacy 时无需加载任何外部依赖即可被拦截。
+        from ..core.ai_env import require_ai_privacy
+
+        require_ai_privacy(self.project_root, content_kind="allow_page_text", what="页面 HTML 内容")
+
         import aiohttp
 
         from ..services.ai_safety import mark_untrusted
@@ -286,12 +293,6 @@ class AIGraphExtractor:
             raise RuntimeError(
                 "AIGraphExtractor: 未配置 AI API key（fail-closed，拒绝外发请求）"
             )
-
-        # B05-019：发送 HTML 分块（页面内容）前过隐私闸门——未显式开启
-        # allow_page_text 即拒发（fail-closed），与 pdfx/llm/adaptive 对齐。
-        from ..core.ai_env import require_ai_privacy
-
-        require_ai_privacy(self.project_root, content_kind="allow_page_text", what="页面 HTML 内容")
 
         if session is None:
             async with aiohttp.ClientSession() as owned_session:
