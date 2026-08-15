@@ -259,7 +259,10 @@ jobs:
   # ── macOS 便携包（Standard + Full，dmg / tar.gz）──────────────────
   build-macos-portable:
     needs: [verify-python-version]
-    runs-on: macos-latest
+    # 固定 runner 镜像版本：macos-latest 漂移会导致 PyInstaller 在 macOS 上
+    # 非确定性失败（PYI-9229/2508 Failed to load Python shared library），
+    # 相同代码+依赖一轮过一轮挂。macos-14 为稳定镜像。
+    runs-on: macos-14
     timeout-minutes: 120
     env:
       PYTHONIOENCODING: utf-8
