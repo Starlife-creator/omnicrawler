@@ -10,5 +10,5 @@ source:
   variables: {limit: 50}
   headers: {Authorization: "Bearer ${OMNICRAWL_API_TOKEN:-}"}
 crawl: {max_pages: 1, same_host: true}
-http: {user_agent: "OmniCrawler/0.8.0 (+contact: crawler@example.org)", respect_robots: true}
+http: {user_agent: "OmniCrawler/0.9.0 (+contact: crawler@example.org)", respect_robots: true}
 extract: {mode: json, item_path: "data.notices[*]", fields: {id: {path: id}, title: {path: title}}}
