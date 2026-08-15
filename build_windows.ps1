@@ -138,7 +138,7 @@ if (-not $SkipDependencyInstall) {
     & $builderPython -m pip install --upgrade pip setuptools wheel
     Assert-LastExit 'Could not upgrade build tooling.'
     $extras = if ($Edition -eq 'Full') { 'full' } else { 'gui,html,pdf,browser,async-http,security' }
-    & $builderPython -m pip install -e "$projectRoot[$extras]" pyinstaller
+    & $builderPython -m pip install -e "$projectRoot[$extras]" pyinstaller==6.15.0
     Assert-LastExit "Could not install the $Edition build dependency matrix."
 } else {
     if (-not $BuilderPythonPath) {
