@@ -43,12 +43,19 @@ def _run(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def _build_registry(tmp_path: Path) -> tuple[Path, Path, bytes]:
-    """构造最小 registry：一个签名插件 + 一个作者记录。返回 (registry, trust_pem)。"""
+    """构造最小 registry：一个签名插件 + 一个作者记录。返回 (registry, trust_pem, private_pem)。
+
+    B02-014/B02-024：信任根放在 ``registry/keys/plugin_trust.pub.pem`` 内——
+    文件引用包含性校验要求 pubkey_ref 解析后仍在 registry 内；generate 路径验签
+    也按 ``keys/plugin_trust.pub.pem`` 查找链自动定位。
+    """
     private_pem, public_pem = signing.generate_keypair()
     registry = tmp_path / "registry"
     plugin_dir = registry / "plugins" / "demo_plug"
     plugin_dir.mkdir(parents=True)
-    trust_pem = tmp_path / "trust.pub.pem"
+    keys_dir = registry / "keys"
+    keys_dir.mkdir(parents=True)
+    trust_pem = keys_dir / "plugin_trust.pub.pem"
     trust_pem.write_bytes(public_pem)
 
     # raw32 指纹：SHA-256(ed25519 公钥原始 32 字节) 前 16 字节 hex（与生成器同源）
@@ -64,7 +71,7 @@ def _build_registry(tmp_path: Path) -> tuple[Path, Path, bytes]:
 
     (registry / "authors").mkdir()
     (registry / "authors" / "alice.yaml").write_text(
-        f"username: alice\ndisplay_name: alice\npubkey_ref: ../../trust.pub.pem\n"
+        f"username: alice\ndisplay_name: alice\npubkey_ref: ../keys/plugin_trust.pub.pem\n"
         f"fingerprint: {fingerprint}\nroles: [publisher]\n",
         encoding="utf-8",
     )
@@ -234,10 +241,15 @@ def test_check_detects_unknown_field(tmp_path: Path) -> None:
 
 
 def _add_second_author(registry: Path, *, display_name: str) -> None:
+    """添加第二个作者：独立密钥放 registry/keys/（避免 B02-012 同公钥多 username 拦截）。"""
+    _private_pem, public_pem = signing.generate_keypair()
+    _key = serialization.load_pem_public_key(public_pem)
+    fp = hashlib.sha256(_key.public_bytes_raw()).hexdigest()[:32]
+    (registry / "keys" / f"{fp}.pub.pem").write_bytes(public_pem)
     (registry / "authors" / "alice2.yaml").write_text(
         f"username: alice2\ndisplay_name: {display_name}\n"
-        f"pubkey_ref: ../../trust.pub.pem\n"
-        f"fingerprint: {'0' * 32}\n"
+        f"pubkey_ref: ../keys/{fp}.pub.pem\n"
+        f"fingerprint: {fp}\n"
         f"roles: [publisher]\n",
         encoding="utf-8",
     )
