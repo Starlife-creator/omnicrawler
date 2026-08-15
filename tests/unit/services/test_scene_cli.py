@@ -20,6 +20,11 @@ URL = "https://example.com/report"
 SCENE = "annual_report"
 
 
+def _db_workspace(config: str) -> Path:
+    """scene 库所在工作区目录（B08-008：场景导入文件须位于其内）。"""
+    return load_config(config).workspace
+
+
 def _config(tmp: Path) -> Path:
     work = tmp / "work"
     config_path = tmp / "project.yaml"
@@ -57,7 +62,9 @@ class SceneCommandTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             tmp = Path(temp)
             config = str(_config(tmp))
-            scene_yaml = tmp / "custom.yaml"
+            # B08-008：场景导入文件须位于工作区内（scene.sqlite3 所在目录）
+            scene_yaml = Path(_db_workspace(config)) / "custom.yaml"
+            scene_yaml.parent.mkdir(parents=True, exist_ok=True)
             scene_yaml.write_text(yaml.safe_dump({
                 "scene": "custom",
                 "slots": [

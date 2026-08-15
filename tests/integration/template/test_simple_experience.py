@@ -71,6 +71,7 @@ def test_structured_diagnostic_and_redacted_bundle(tmp_path):
     bundle = create_redacted_support_bundle(
         tmp_path / "support.zip", diagnostic,
         ("token=secret-value", "Authorization: Bearer-secret", "normal line"),
+        root=tmp_path,
     )
     with zipfile.ZipFile(bundle) as archive:
         log = archive.read("logs-redacted.txt").decode()

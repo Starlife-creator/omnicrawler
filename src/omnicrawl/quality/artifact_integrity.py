@@ -4,16 +4,26 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
+from ..security.paths import require_workspace_path
 from ..state import StateStore
 
 
-def verify_artifacts(state: StateStore, run_id: str | None = None) -> dict[str, Any]:
+def verify_artifacts(
+    state: StateStore,
+    run_id: str | None = None,
+    *,
+    workspace: Path | None = None,
+) -> dict[str, Any]:
+    """B06-006：校验 artifacts.local_path 必须在工作区内（DB 中路径可能被外部写入）。"""
+    root = workspace if workspace is not None else state.path.parent
     where, params = (" WHERE run_id=?", (run_id,)) if run_id else ("", ())
     rows = state.rows(f"SELECT local_path, size_bytes, sha256, source_url FROM artifacts{where}", params)
     results: list[dict[str, Any]] = []
     valid = missing = corrupt = 0
     for row in rows:
-        path = Path(str(row["local_path"]))
+        path = require_workspace_path(
+            str(row["local_path"]), root=root, what="artifact local_path"
+        )
         status = "valid"
         actual_hash = ""
         if not path.is_file():

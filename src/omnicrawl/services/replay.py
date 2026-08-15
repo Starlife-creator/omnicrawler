@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from ..security.paths import require_workspace_path
 from ..state.capsule_store import CapsuleStore
 from ..state.state_store import StateStore
 
@@ -134,7 +135,13 @@ def replay_field(
             (url, url),
         )
     raw_path = str(rows[0]["raw_path"]) if rows and rows[0].get("raw_path") else ""
-    if not raw_path or not Path(raw_path).is_file():
+    if not raw_path:
+        return _result("archive_missing", run_id, field, stage, url=url)
+    # B08-006：raw_path 来自 state 库（可被外部写入），消费前强制位于工作区内。
+    raw_path = str(
+        require_workspace_path(raw_path, root=store.path.parent, what="replay 归档 raw_path")
+    )
+    if not Path(raw_path).is_file():
         return _result("archive_missing", run_id, field, stage, url=url)
 
     # ── dom_hash 完整性校验 ────────────────────────────────

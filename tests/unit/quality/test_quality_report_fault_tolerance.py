@@ -52,14 +52,19 @@ def test_quality_report_survives_malformed_cells(tmp_path: Path) -> None:
     assert report["average_quality_score"] == 0.7
 
 
-def test_run_id_with_quotes_is_safe(tmp_path: Path) -> None:
+def test_run_id_with_quotes_is_rejected(tmp_path: Path) -> None:
+    """B04-003：非法 run_id（SQL 注入形态）被集中形态校验拒绝（fail-closed）。
+
+    参数化仍保证注入不执行；集中校验更进一步在入口拒绝非法形态。
+    """
+    import pytest
+
     config = load_config(_config(tmp_path))
     config.workspace.mkdir(parents=True, exist_ok=True)
     with StateStore(config.workspace / "state.sqlite3") as state:
         state.start_run("qr", str(config.path))
-    report = build_quality_report(
-        config, StateStore(config.workspace / "state.sqlite3"),
-        "x' OR 1=1 --",
-    )
-    assert report["records"] == 0
-    assert report["run_id"] == "x' OR 1=1 --"
+    with pytest.raises(ValueError, match="run_id 含非法字符"):
+        build_quality_report(
+            config, StateStore(config.workspace / "state.sqlite3"),
+            "x' OR 1=1 --",
+        )

@@ -14,6 +14,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlsplit, urlunsplit
 
+# B11-003：${VAR} 展开的唯一真源——config 加载与安全工具共用此处，无重复实现。
+# 纯字符串替换、无路径参与，注入面不在此处；工作区包含性统一由
+# security/paths.require_workspace_path 收敛（见 P9-A3 收口）。
 _ENV_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
 

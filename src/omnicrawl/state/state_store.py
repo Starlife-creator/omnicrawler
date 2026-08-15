@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 import uuid
@@ -22,6 +23,10 @@ class _ClosedConnection:
 
 
 class StateStore:
+    # B04-003：run_id 参与 SQL 查询与 artifact/response 落盘路径构造，集中校验
+    # 防注入/穿越（与 capsule_store._RUN_ID_RE 同源约定：纯安全字符，最长 80）。
+    _RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
+
     def __init__(self, path: Path) -> None:
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -33,6 +38,15 @@ class StateStore:
         self.conn.executescript(SCHEMA)
         self._ensure_response_columns()
         self._lock = threading.RLock()
+
+    @staticmethod
+    def _require_run_id(run_id: str | None) -> str | None:
+        """集中校验 run_id（None 放行，用于可选过滤参数；非 None 必须匹配安全字符）。"""
+        if run_id is not None and (
+            not isinstance(run_id, str) or not StateStore._RUN_ID_RE.fullmatch(run_id)
+        ):
+            raise ValueError(f"run_id 含非法字符: {run_id!r}")
+        return run_id
 
     def _ensure_response_columns(self) -> None:
         """Upgrade existing 1.0 workspaces without rebuilding their state database."""
@@ -89,6 +103,7 @@ class StateStore:
         return run_id
 
     def finish_run(self, run_id: str, status: str, summary: dict[str, Any]) -> None:
+        self._require_run_id(run_id)
         target = canonical_run_state(status)
         if target not in TERMINAL_RUN_STATES:
             raise ValueError(f"完成任务必须使用终态: {target}")
@@ -116,6 +131,7 @@ class StateStore:
         reason: str = "manual",
         details: dict[str, Any] | None = None,
     ) -> str:
+        self._require_run_id(run_id)
         with self._lock, self.conn:
             row = self.conn.execute("SELECT status FROM runs WHERE run_id=?", (run_id,)).fetchone()
             if row is None:
@@ -178,6 +194,7 @@ class StateStore:
         *,
         status: str = "succeeded",
     ) -> None:
+        self._require_run_id(run_id)
         if not stage.strip() or not idempotency_key.strip():
             raise ValueError("stage和idempotency_key不能为空")
         with self._lock, self.conn:
@@ -192,6 +209,7 @@ class StateStore:
             )
 
     def checkpoint(self, run_id: str, stage: str, idempotency_key: str) -> dict[str, Any] | None:
+        self._require_run_id(run_id)
         with self._lock:
             row = self.conn.execute(
                 "SELECT status, payload_json, updated_at FROM stage_checkpoints "
@@ -209,6 +227,7 @@ class StateStore:
     def begin_export(
         self, run_id: str, exporter: str, idempotency_key: str, *, force: bool = False,
     ) -> bool:
+        self._require_run_id(run_id)
         with self._lock, self.conn:
             cursor = self.conn.execute(
                 "INSERT OR IGNORE INTO export_commits(idempotency_key, run_id, exporter, status, result_json, updated_at) "
@@ -395,6 +414,7 @@ class StateStore:
             )
 
     def save_response(self, run_id: str, result: FetchResult, raw_path: str | None) -> bool:
+        self._require_run_id(run_id)
         now = utcnow()
         with self._lock, self.conn:
             latest = self.conn.execute(
@@ -443,6 +463,7 @@ class StateStore:
         return changed
 
     def save_records(self, run_id: str, request: CrawlRequest, records: list[ExtractedRecord]) -> int:
+        self._require_run_id(run_id)
         if not records:
             return 0
         with self._lock, self.conn:
@@ -475,6 +496,7 @@ class StateStore:
         Returns a mapping of (source_url, record_type, identity) -> data_json | None.
         Uses a temporary table + LEFT JOIN so all lookups happen in a single SQL round-trip.
         """
+        self._require_run_id(run_id)
         if not records:
             return {}
         keys: list[tuple[str, str, str]] = []
@@ -528,6 +550,7 @@ class StateStore:
     ) -> list[dict[str, Any]]:
         """Persist semantic record versions and annotate meaningful field-level changes."""
 
+        self._require_run_id(run_id)
         changes: list[dict[str, Any]] = []
         now = utcnow()
         with self._lock, self.conn:
@@ -594,6 +617,7 @@ class StateStore:
         return changes
 
     def add_quality_stats(self, run_id: str, field_stats: dict[str, dict[str, int]]) -> None:
+        self._require_run_id(run_id)
         now = utcnow()
         rows = [
             (
@@ -627,6 +651,7 @@ class StateStore:
     def reset_record_stage(self, run_id: str) -> dict[str, int]:
         """Clear derived record outputs while preserving responses and raw archives."""
 
+        self._require_run_id(run_id)
         with self._lock, self.conn:
             record_count = self.conn.execute(
                 "SELECT COUNT(*) AS n FROM records WHERE run_id=?", (run_id,)
@@ -653,6 +678,7 @@ class StateStore:
         actor: str = "system",
         details: dict[str, Any] | None = None,
     ) -> None:
+        self._require_run_id(run_id)
         if not action.strip():
             raise ValueError("Audit action cannot be empty")
         with self._lock, self.conn:
@@ -663,6 +689,7 @@ class StateStore:
             )
 
     def quality_stats(self, run_id: str) -> list[dict[str, Any]]:
+        self._require_run_id(run_id)
         rows = self.rows(
             "SELECT field_name, total, present, valid, anomalies FROM quality_stats "
             "WHERE run_id=? ORDER BY field_name",
@@ -677,6 +704,7 @@ class StateStore:
 
     def review_queue(self, run_id: str | None = None) -> list[dict[str, Any]]:
         """Return low-confidence records without requiring SQLite's optional JSON extension."""
+        self._require_run_id(run_id)
         where, params = (" WHERE run_id=?", (run_id,)) if run_id else ("", ())
         with self._lock:
             rows = self.conn.execute(
@@ -751,6 +779,7 @@ class StateStore:
             )
 
     def save_artifact(self, run_id: str, result: FetchResult, path: Path) -> None:
+        self._require_run_id(run_id)
         with self._lock, self.conn:
             self.conn.execute(
                 """
@@ -846,5 +875,11 @@ class StateStore:
         prefix = sql.lstrip().upper()
         if not prefix.startswith(("SELECT", "WITH", "PRAGMA")):
             raise ValueError("rows() 仅允许只读查询（SELECT/WITH/PRAGMA）")
+        # B04-002：调试接口鉴权审计——每次原始查询留痕（action=raw_rows_query），
+        # 供事后追溯谁在什么阶段执行了什么只读查询。
+        try:
+            self.add_audit_event("raw_rows_query", actor="state_store.rows", details={"prefix": prefix.split()[0]})
+        except Exception:  # noqa: BLE001 — 审计失败不得阻断诊断查询
+            pass
         with self._lock:
             return [dict(row) for row in self.conn.execute(sql, params).fetchall()]

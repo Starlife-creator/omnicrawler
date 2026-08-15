@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import platform
-import re
 import sqlite3
 import tempfile
 import zipfile
@@ -17,6 +16,9 @@ from .. import __version__
 from ..core.config import AppConfig
 
 MANIFEST_NAME = "omnicrawler-package.json"
+# P9-A1（B08-007）：扩展非标准连接串键名——研究包默认即分享，凭据可能藏在
+# jdbc:/dsn/db_url 等键下而键名不含传统敏感词。注意不放 "url"/"uri" 这类宽泛键：
+# 正常网页 URL 字段太多，应保留信息，仅由值级 redact_url 隐藏内嵌凭据。
 _SENSITIVE = (
     "password",
     "passwd",
@@ -29,12 +31,19 @@ _SENSITIVE = (
     "api-key",
     "access_key",
     "client_secret",
+    "conn",
+    "connection",
+    "dsn",
+    "db_url",
+    "database_url",
+    "jdbc",
+    "endpoint",
 )
 
 
 # B08-007：值内嵌 URL 凭据（scheme://user:pass@host）也须脱敏——研究包默认即分享，
-# 凭据可能藏在 jdbc:/http 连接串里而键名不含敏感词。
-_URL_CREDENTIAL_RE = re.compile(r"(//[^/\s:@]+):([^@/\s]+)@")
+# 凭据可能藏在 jdbc:/http 连接串里而键名不含敏感词。P9-A1 起统一用共享工具。
+from ..security.redaction import redact_url as _redact_url
 
 
 def _redact(value: Any, key: str = "") -> Any:
@@ -45,8 +54,8 @@ def _redact(value: Any, key: str = "") -> Any:
         return {str(name): _redact(item, str(name)) for name, item in value.items()}
     if isinstance(value, list):
         return [_redact(item) for item in value]
-    if isinstance(value, str) and _URL_CREDENTIAL_RE.search(value):
-        return _URL_CREDENTIAL_RE.sub(r"\1:<redacted>@", value)
+    if isinstance(value, str):
+        return _redact_url(value)
     return value
 
 

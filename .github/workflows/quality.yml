@@ -60,6 +60,25 @@ jobs:
       - run: python tools/check_cli_docs.py
       - run: python tools/check_docs_consistency.py
       - run: python tools/check_network_boundaries.py
+      - name: 出口策略运行时验证（B13-001：egress 拦截被禁目标）
+        run: |
+          python - <<'PY'
+          import tempfile
+          from pathlib import Path
+
+          from omnicrawl.core.config import DEFAULTS, AppConfig
+          from omnicrawl.security.egress import EgressBroker
+          from omnicrawl.security.policy import PolicyBlockedError
+
+          with tempfile.TemporaryDirectory() as td:/n              cfg = AppConfig(Path('<ci>'), Path(td), DEFAULTS, Path(td))
+              broker = EgressBroker(cfg)
+              try:/n                  with broker.request('http://169.254.169.254/latest/meta-data', purpose='ci-test'):
+                      pass
+              except PolicyBlockedError:/n                  pass
+              else:/n                  raise SystemExit('BUG: 私网元数据目标未被 egress 拦截')
+          print('egress 出口策略运行时验证 OK（私网目标被拦截）')
+          PY
+
       - run: python tools/check_coding_standards.py src
       - run: python -m coverage run -m pytest -q
       - run: python -m coverage json -o coverage.json

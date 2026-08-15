@@ -109,3 +109,64 @@ async def test_c34_html_marked_untrusted_in_prompt(monkeypatch) -> None:
     assert "UNTRUSTED_EXTERNAL_CONTENT" in user_content
     # 分块阶段已控制长度：原文不被二次截断
     assert "<script>alert(1)</script>" in user_content
+
+
+# ── P9-A2（B13-002）：发送前强制过 EgressBroker 出口策略 ─────────────
+
+
+def _egress_broker(tmp_path):
+    """默认策略（禁私网）的 EgressBroker，供 ai_graph 注入。"""
+
+    from omnicrawl.core.config import DEFAULTS, AppConfig
+    from omnicrawl.security.egress import EgressBroker
+
+    raw = dict(DEFAULTS)
+    raw["http"] = dict(raw.get("http", {}))
+    raw["http"]["allow_private_network"] = False
+    cfg = AppConfig(tmp_path / "task.yaml", tmp_path, raw, tmp_path / "work")
+    return EgressBroker(cfg)
+
+
+async def _post_impl(extractor, url: str) -> dict:
+    from omnicrawl.security.policy import PolicyBlockedError
+
+    with pytest.raises(PolicyBlockedError):
+        await extractor._post_with_retry(
+            _FakeSession(_FakeResp(200, '{"choices":[]}')),
+            url,
+            payload={"model": "m"},
+            headers={},
+            timeout=None,
+        )
+    return {"blocked": True}
+
+
+def test_ai_graph_egress_blocks_private_target(tmp_path) -> None:
+    """注入 egress 后私网元数据目标在发送前即被拦截（不触网）。"""
+    from omnicrawl.security.policy import PolicyBlockedError
+
+    extractor = AIGraphExtractor(provider=Provider(api_key="sk-test"), egress=_egress_broker(tmp_path))
+    try:
+        import asyncio
+
+        asyncio.run(_post_impl(extractor, "http://169.254.169.254/latest/meta-data"))
+    except PolicyBlockedError:
+        raise AssertionError("应已在 _post_impl 内捕获")
+
+
+def test_ai_graph_without_egress_does_not_policy_check(tmp_path) -> None:
+    """未注入 egress 时保持原有行为（实验性组件可选集成）。"""
+    import asyncio
+
+    extractor = AIGraphExtractor(provider=Provider(api_key="sk-test"))
+
+    async def _run() -> dict:
+        return await extractor._post_with_retry(
+            _FakeSession(_FakeResp(200, '{"choices":[]}')),
+            "https://api.example.com/v1/chat/completions",
+            payload={"model": "m"},
+            headers={},
+            timeout=None,
+        )
+
+    assert asyncio.run(_run())["choices"] == []
