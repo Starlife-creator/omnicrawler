@@ -281,19 +281,21 @@ def load_ai_config_sidecar(project_root: str | Path | None = None) -> dict[str, 
         return {}
 
 
-# C37：AI 外发隐私开关默认值（fail-open 保持既有行为，显式关闭才生效）
+# C37/B05-019：AI 外发隐私开关默认值（fail-closed：未显式开启即拒绝外发正文/PDF/截图/Cookie）。
+# 与 config.DEFAULTS["ai"]["privacy"]（默认全禁）对齐；GUI 显式开启不受影响。
 DEFAULT_AI_PRIVACY: dict[str, bool] = {
-    "allow_page_text": True,
-    "allow_pdf_content": True,
-    "allow_screenshots": True,
-    "allow_cookies": True,
+    "allow_page_text": False,
+    "allow_pdf_content": False,
+    "allow_screenshots": False,
+    "allow_cookies": False,
 }
 
 
 def load_ai_privacy(project_root: str | Path | None = None) -> dict[str, bool]:
     """C37：读取 AI 外发隐私开关，供页面文本 / PDF 正文等外发闸门前置判断。
 
-    仅从旁路 JSON 读取用户显式设置；无配置时回退默认值（全部允许，兼容旧行为）。
+    从旁路 JSON 读取用户显式设置；无配置/缺失时回退默认值（fail-closed：全部拒绝）。
+    显式开启必须由用户写在 sidecar privacy 段。
     """
     sidecar = load_ai_config_sidecar(project_root)
     privacy = sidecar.get("privacy")

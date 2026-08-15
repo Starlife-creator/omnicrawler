@@ -457,8 +457,20 @@ class BrowserFetcher:
             options.binary_location = chrome_binary
         if self.config.section("browser").get("headless", True):
             options.add_argument("--headless=new")
+        # B03-006：浏览器路径显式尊重 verify_tls；且拒绝 launch_args 关闭 TLS 校验
+        # （把唯一的 TLS 放松点从"可审计的配置项"变成 launch_args 黑魔法是 MITM 面）。
+        verify_tls = bool(self.config.section("http").get("verify_tls", True))
         for argument in self.config.section("browser").get("launch_args", []):
-            options.add_argument(str(argument))
+            arg = str(argument)
+            if arg == "--ignore-certificate-errors" or "--ignore-certificate-errors=" in arg:
+                raise ValueError(
+                    "browser.launch_args 禁止关闭 TLS 校验（--ignore-certificate-errors）；"
+                    "如需关闭请用可审计的 http.verify_tls=false"
+                )
+            options.add_argument(arg)
+        if not verify_tls:
+            options.add_argument("--ignore-certificate-errors")
+            LOGGER.warning("浏览器路径 verify_tls=false：TLS 校验已关闭（仅限受控内网站点）")
         started = time.monotonic()
         driver_path = os.environ.get("OMNICRAWL_SELENIUM_DRIVER", "").strip()
         if not driver_path:
@@ -629,9 +641,24 @@ class PlaywrightPool:
             from playwright.sync_api import sync_playwright
             with sync_playwright() as playwright:
                 browser_config = self.config.section("browser")
+                # B03-006：Playwright 路径同样拒绝 launch_args 关闭 TLS 校验，
+                # 并显式尊重 http.verify_tls（默认开启）。
+                launch_args = []
+                for item in browser_config.get("launch_args", []):
+                    arg = str(item)
+                    if arg == "--ignore-certificate-errors" or "--ignore-certificate-errors=" in arg:
+                        raise ValueError(
+                            "browser.launch_args 禁止关闭 TLS 校验（--ignore-certificate-errors）；"
+                            "如需关闭请用可审计的 http.verify_tls=false"
+                        )
+                    launch_args.append(arg)
+                verify_tls = bool(self.config.section("http").get("verify_tls", True))
+                if not verify_tls:
+                    launch_args.append("--ignore-certificate-errors")
+                    LOGGER.warning("Playwright 路径 verify_tls=false：TLS 校验已关闭（仅限受控内网站点）")
                 browser = playwright.chromium.launch(
                     headless=bool(browser_config.get("headless", True)),
-                    args=[str(item) for item in browser_config.get("launch_args", [])],
+                    args=launch_args,
                 )
                 contexts: dict[str, Any] = {}
                 try:

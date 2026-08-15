@@ -93,7 +93,47 @@ def validate_template(record: TemplateRecord) -> TemplateHealth:
         errors.append("source.kind is required")
     if not isinstance(source, dict) or not isinstance(source.get("seeds"), list) or not source.get("seeds"):
         errors.append("source.seeds must contain at least one entry")
+    # B11-006 / B05-009：模板不得翻转安全关键配置——`deep_merge` 会把模板段覆盖进
+    # 用户配置，`validate_template` 是发布前最后一道闸。安全键只允许默认/更严方向。
+    safety_violations = _unsafe_security_overrides(record.config)
+    if safety_violations:
+        errors.extend(safety_violations)
     return TemplateHealth(meta.template_id, not errors, tuple(errors), tuple(warnings))
+
+
+def _unsafe_security_overrides(config: Any) -> list[str]:
+    """检查模板配置是否把安全键翻转到宽松方向（fail-open）。
+
+    安全默认方向（来自 DEFAULTS）：respect_robots=True, allow_private_network=False,
+    verify_tls=True, egress.enabled=True, allow_unintercepted_selenium=False。
+    模板不应覆盖为危险值（即使签过名，也应 fail-closed 拒绝）。
+    """
+    if not isinstance(config, dict):
+        return []
+    violations: list[str] = []
+
+    def _check(mapping: dict[str, Any], prefix: str) -> None:
+        if not isinstance(mapping, dict):
+            return
+        http = mapping.get("http")
+        if isinstance(http, dict):
+            if http.get("respect_robots") is False:
+                violations.append(f"{prefix}http.respect_robots=false（模板不得关闭 robots 合规）")
+            if http.get("allow_private_network") is True:
+                violations.append(f"{prefix}http.allow_private_network=true（模板不得开启私网访问）")
+            if http.get("verify_tls") is False:
+                violations.append(f"{prefix}http.verify_tls=false（模板不得关闭 TLS 校验）")
+        egress = mapping.get("egress")
+        if isinstance(egress, dict) and egress.get("enabled") is False:
+            violations.append(f"{prefix}egress.enabled=false（模板不得关闭出口审计）")
+        if isinstance(http, dict) and http.get("allow_unintercepted_selenium") is True:
+            violations.append(f"{prefix}http.allow_unintercepted_selenium=true（模板不得允许未拦截浏览器）")
+
+    _check(config, "")
+    for key, value in config.items():
+        if isinstance(value, dict):
+            _check(value, f"{key}.")
+    return violations
 
 
 def validate_catalog(catalog: TemplateCatalog, *, include_legacy: bool = False) -> list[TemplateHealth]:

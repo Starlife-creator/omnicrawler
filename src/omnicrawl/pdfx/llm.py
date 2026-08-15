@@ -131,6 +131,15 @@ class OpenAICompatibleClient:
         return f"{self.base_url}/chat/completions"
 
     def extract(self, user_content: str | list[dict[str, Any]]) -> dict[str, Any]:
+        # B05-019：PDF 正文外发前过隐私闸门（fail-closed：未显式开启 allow_pdf_content 即拒发）。
+        from ..core.ai_env import load_ai_privacy
+
+        privacy = load_ai_privacy(self.workspace)
+        if not privacy.get("allow_pdf_content", False):
+            raise RuntimeError(
+                "PDF 内容外发已被 AI 隐私设置禁用（allow_pdf_content=false）；"
+                "如需发送 PDF 正文请先在 AI 隐私配置中显式开启"
+            )
         payload = {
             "model": self.model,
             "messages": [

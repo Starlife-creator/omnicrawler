@@ -325,6 +325,17 @@ class ChangeDetector:
                             return resp.read().decode(
                                 resp.headers.get_content_charset("utf-8"), errors="replace"
                             )
+                # B08-002：egress=None 的回退路径同样必须过 SSRF 守卫（fail-closed），
+                # 拒绝私网/保留/回环目标，而不是裸 urlopen 直连。
+                from ..core.config import DEFAULTS, AppConfig, deep_merge
+                from ..security.policy import NetworkTargetPolicy
+
+                default_cfg = AppConfig(
+                    Path("<change-monitor>"), Path.cwd(),
+                    deep_merge(dict(DEFAULTS), {"http": {"resolve_dns": False}}),
+                    Path.cwd(),
+                )
+                NetworkTargetPolicy(default_cfg).require(url)
                 with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
                     return resp.read().decode(
                         resp.headers.get_content_charset("utf-8"), errors="replace"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import Callable
 from typing import Any
@@ -12,6 +13,8 @@ from ..core.models import CrawlRequest, ExtractedRecord
 from ..core.safe_data import safe_float, safe_int, safe_json_loads
 from ..security.egress import EgressBroker
 from .http_client import build_safe_opener
+
+LOGGER = logging.getLogger(__name__)
 
 
 def collect_sse(
@@ -95,8 +98,25 @@ async def _websocket_collect(
     maximum_bytes = safe_int(config.section("http").get("max_response_bytes"), default=50_000_000) or 50_000_000
     headers = {**config.section("http").get("headers", {}), **source.get("headers", {}), **request.headers}
     broker = egress or EgressBroker(config)
+    # B03-004：websockets 尊重 verify_tls（默认开启校验），与 HTTP 路径行为一致。
+    verify_tls = bool(config.section("http").get("verify_tls", True))
+    ssl_context = None
+    if request.url.startswith(("wss://", "wss:")):
+        import ssl
+
+        ssl_context = ssl.create_default_context()
+        if not verify_tls:
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            LOGGER.warning("WebSocket 路径 verify_tls=false：TLS 校验已关闭（仅限受控内网站点）")
     with broker.request(request.url, purpose="stream", headers=headers):
-        async with websockets.connect(request.url, additional_headers=headers or None) as socket:
+        # B03-003：补 open_timeout，避免握手阶段无限挂起（recv 已有 wait_for 兜底）。
+        async with websockets.connect(
+            request.url,
+            additional_headers=headers or None,
+            ssl=ssl_context,
+            open_timeout=max(0.1, min(30.0, safe_float(source.get("open_timeout_seconds"), default=30.0) or 30.0)),
+        ) as socket:
             subscribe = source.get("subscribe")
             if subscribe is not None:
                 await socket.send(json.dumps(subscribe, ensure_ascii=False) if isinstance(subscribe, (dict, list)) else str(subscribe))
