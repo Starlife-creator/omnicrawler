@@ -144,7 +144,10 @@ done
 # ---- 组装暂存目录 ------------------------------------------------------------
 rm -rf "$RELEASE_ROOT"
 mkdir -p "$RELEASE_ROOT"
-cp -r "$BUILT_FOLDER/." "$RELEASE_ROOT/"
+# -L：PyInstaller 6.15 Linux onedir 的 _internal/ 库是 symlink（指向构建 venv），
+# 原样复制时 create_runtime_manifest 的 resolve() 把它们解析到 venv 外部而跳过，
+# runtime-verify 报 unknown。dereference 后 portable 包自包含真实文件。
+cp -rL "$BUILT_FOLDER/." "$RELEASE_ROOT/"
 cp -r "$BROWSERS_ROOT" "$RELEASE_ROOT/browsers"
 cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/LICENSE" "$RELEASE_ROOT/"
 echo "OmniCrawler $EDITION portable edition" > "$RELEASE_ROOT/EDITION.txt"
