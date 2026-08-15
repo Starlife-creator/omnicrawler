@@ -176,6 +176,12 @@ def compile_with_ai(
     if not request.strip():
         raise ValueError("需求描述不能为空")
 
+    # B05-019：AI 任务设计输入（可能含页面摘录/URL）外发前过隐私闸门——
+    # 未显式开启 allow_page_text 即拒发（fail-closed）。mock/无该方法 provider 跳过。
+    check = getattr(provider, "check_content_allowed", None)
+    if callable(check):
+        check("allow_page_text", "AI 任务设计输入")
+
     messages = build_task_design_messages(request, available_components, mode)
 
     try:

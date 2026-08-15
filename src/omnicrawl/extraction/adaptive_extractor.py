@@ -70,6 +70,7 @@ class AdaptiveExtractor:
     llm_generate: Callable[[str], str] | None = None
     success_threshold: float = DEFAULT_SUCCESS_THRESHOLD
     max_prompt_chars: int = 4000
+    project_root: str | None = None
 
     # ── 1. 失效检测 ──────────────────────────────────────────────────
 
@@ -111,12 +112,16 @@ class AdaptiveExtractor:
         if self.llm_generate is None:
             from ..services.ai_providers import provider_from_env
 
-            provider = provider_from_env()
+            provider = provider_from_env(project_root=self.project_root)
             if provider is None:
                 LOGGER.info("AI 未启用，跳过 %s 选择器重新生成", field)
                 return ""
 
             def _call(prompt: str) -> str:
+                # B05-019：发送页面内容前过隐私闸门（未开启 allow_page_text 即拒发）
+                check = getattr(provider, "check_content_allowed", None)
+                if callable(check):
+                    check("allow_page_text", "自适应提取的页面内容")
                 result = provider.generate(
                     [
                         {"role": "system", "content": "你只输出 JSON，不输出任何其他文字。"},

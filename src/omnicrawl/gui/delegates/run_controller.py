@@ -24,13 +24,15 @@ class RunController(_BaseDelegate):
 
     def run_task(self) -> None:
         mw = self._mw
-        from ..core.validator import validate_full_config
+        from ..core.validator import plugin_source_kinds, validate_full_config
         if not mw._omnicrawl_available:
             mw._env_checker.check_environment(silent=False)
             if not mw._omnicrawl_available:
                 QMessageBox.warning(mw, _("无法运行"), _("omnicrawl 命令不可用，请先配置环境。"))
                 return
-        errors, warnings = validate_full_config(mw._config)
+        errors, warnings = validate_full_config(
+            mw._config, extra_source_kinds=plugin_source_kinds(mw._project_root)
+        )
         if errors:
             QMessageBox.warning(mw, _("配置校验失败"), "\n".join(errors))
             return

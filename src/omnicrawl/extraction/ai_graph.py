@@ -103,12 +103,14 @@ class AIGraphExtractor:
         chunk_size: int = 4000,
         concurrency: int = 4,
         max_retries: int = 3,
+        project_root: str | None = None,
     ) -> None:
         self._provider = provider or Provider()
         self._prompt_template = prompt_template or self.DEFAULT_PROMPT
         self._chunk_size = max(500, min(chunk_size, 32000))
         self._concurrency = max(1, concurrency)
         self._max_retries = max(1, max_retries)
+        self.project_root = project_root
 
     # ── 公共 API ─────────────────────────────────────────────────────
 
@@ -284,6 +286,12 @@ class AIGraphExtractor:
             raise RuntimeError(
                 "AIGraphExtractor: 未配置 AI API key（fail-closed，拒绝外发请求）"
             )
+
+        # B05-019：发送 HTML 分块（页面内容）前过隐私闸门——未显式开启
+        # allow_page_text 即拒发（fail-closed），与 pdfx/llm/adaptive 对齐。
+        from ..core.ai_env import require_ai_privacy
+
+        require_ai_privacy(self.project_root, content_kind="allow_page_text", what="页面 HTML 内容")
 
         if session is None:
             async with aiohttp.ClientSession() as owned_session:

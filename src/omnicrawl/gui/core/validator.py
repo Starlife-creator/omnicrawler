@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from ...sources.sources import SUPPORTED_SOURCE_KINDS as VALID_SOURCE_KINDS
 from ..i18n import _
@@ -83,7 +84,32 @@ def validate_selector_format(field: FieldDef) -> list[str]:
     return errors
 
 
-def validate_schema(config_dict: dict) -> tuple[list[str], list[str]]:
+def plugin_source_kinds(project_root: str | Path | None = None) -> set[str]:
+    """D10-b：从项目根构建插件 registry，返回已注册的 source.kind 集合。
+
+    GUI 校验 source.kind 时并入这些类型，避免误拒插件注册的动态源。
+    registry 构建失败（插件损坏/无插件目录）时返回空集，不影响内置校验。
+    """
+    from ...core.config import DEFAULTS, AppConfig, deep_merge
+
+    try:
+        raw = deep_merge({}, DEFAULTS)
+        raw["project"] = {"name": "validator", "workspace": "work"}
+        root = Path(project_root).expanduser() if project_root else Path.cwd()
+        config = AppConfig(Path("<validator>"), root, raw, root)
+        from ...pipeline import build_registry
+
+        registry = build_registry(config)
+        return set(registry.sources)
+    except Exception:  # noqa: BLE001 - 插件问题不阻塞校验
+        return set()
+
+
+def validate_schema(
+    config_dict: dict,
+    *,
+    extra_source_kinds: set[str] | None = None,
+) -> tuple[list[str], list[str]]:
     """对配置字典进行 Schema 白名单检查。
 
     Args:
@@ -112,13 +138,14 @@ def validate_schema(config_dict: dict) -> tuple[list[str], list[str]]:
 
     # 检查 source
     source = config_dict.get("source", {})
+    valid_kinds = set(VALID_SOURCE_KINDS) | (extra_source_kinds or set())
     if not isinstance(source, dict):
         errors.append(_("'source' 必须是映射"))
     else:
         if "kind" not in source:
             errors.append(_("'source.kind' 是必填项"))
-        elif source["kind"] not in VALID_SOURCE_KINDS:
-            errors.append(_(f"不支持的 source.kind: '{source['kind']}'，支持的值: {', '.join(sorted(VALID_SOURCE_KINDS))}"))
+        elif source["kind"] not in valid_kinds:
+            errors.append(_(f"不支持的 source.kind: '{source['kind']}'，支持的值: {', '.join(sorted(valid_kinds))}"))
         if "seeds" not in source:
             errors.append(_("'source.seeds' 是必填项"))
         elif not isinstance(source.get("seeds"), list):
@@ -138,7 +165,11 @@ def validate_schema(config_dict: dict) -> tuple[list[str], list[str]]:
     return errors, warnings
 
 
-def validate_full_config(config: CrawlConfig) -> tuple[list[str], list[str]]:
+def validate_full_config(
+    config: CrawlConfig,
+    *,
+    extra_source_kinds: set[str] | None = None,
+) -> tuple[list[str], list[str]]:
     """执行完整配置校验。
 
     包含 CrawlConfig.validate() 内置校验 + 选择器格式校验 + Schema 校验。
@@ -158,7 +189,8 @@ def validate_full_config(config: CrawlConfig) -> tuple[list[str], list[str]]:
         errors.extend(selector_errors)
 
     # source_kind 校验
-    if config.source_kind not in VALID_SOURCE_KINDS:
+    valid_kinds = set(VALID_SOURCE_KINDS) | (extra_source_kinds or set())
+    if config.source_kind not in valid_kinds:
         errors.append(_(f"不支持的网站类型: {config.source_kind}"))
 
     # 检查占位符
