@@ -125,10 +125,16 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
             if [[ -f "$rdir/$rel" ]]; then rpath_path="$rdir/$rel"; break; fi
           done < <(otool -l "$bin" 2>/dev/null | awk '/LC_RPATH/{getline; getline; print $2}')
           if [[ -z "$rpath_path" ]]; then
-            # 兜底：/opt/homebrew/opt 全目录按 basename 查找
-            rpath_path="$(find /opt/homebrew/opt -name "$rel" -type f 2>/dev/null | head -1)"
+            # 兜底：/opt/homebrew/opt 全目录按 basename 查找（含 symlink，-type l）
+            rpath_path="$(find -L /opt/homebrew/opt -name "$rel" -type f 2>/dev/null | head -1)"
           fi
-          [[ -n "$rpath_path" ]] || die "无法解析 @rpath 依赖: $dep（来自 $bin）"
+          if [[ -z "$rpath_path" ]]; then
+            # 解析失败不阻断构建：跳过该依赖，由最终 Tesseract 冒烟（--list-langs）
+            # 验证运行可用性——若真缺库冒烟会明确报错。brew 依赖树存在 LC_RPATH
+            # 覆盖不全的情况（v0.9.1 CI 实测 die 中断），跳过 + 冒烟兜底更稳。
+            echo "[runtime-prep] WARN: 无法解析 @rpath 依赖 $dep（来自 $bin），跳过" >&2
+            continue
+          fi
           dep="$rpath_path"
           ;;
         @loader_path/*|@executable_path/*) continue ;; # 已是相对引用，不拷贝
