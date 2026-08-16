@@ -247,7 +247,11 @@ def _is_trusted_cli_path(path: Path) -> bool:
     if is_frozen():
         return path.parent == application_dir()
     project_root = Path(__file__).resolve().parents[3]
-    return path == project_root / ".venv" / "Scripts" / path.name or path.parent == project_root
+    return (
+        path == project_root / ".venv" / "Scripts" / path.name
+        or path == project_root / ".venv" / "bin" / path.name
+        or path.parent == project_root
+    )
 
 
 def resolve_cli_candidates(configured: str = "omnicrawl") -> tuple[str, list[str]]:
@@ -272,12 +276,15 @@ def resolve_cli_candidates(configured: str = "omnicrawl") -> tuple[str, list[str
     if discovered:
         return discovered, [discovered, configured]
 
-    # 源码模式下自动探测项目根目录的 .venv 入口脚本（项目根 = core 的上级两级）
+    # 源码模式下自动探测项目根目录的 .venv 入口脚本（项目根 = core 的上级两级）。
+    # Windows venv 用 Scripts/，POSIX 用 bin/（P9-C 修 macOS 探测失败）。
     if not is_frozen():
         suffix = ".exe" if sys.platform == "win32" else ""
-        venv_cli = Path(__file__).resolve().parents[3] / ".venv" / "Scripts" / f"omnicrawl{suffix}"
-        if venv_cli.is_file():
-            return str(venv_cli), candidates + [str(venv_cli)]
+        venv_root = Path(__file__).resolve().parents[3] / ".venv"
+        for subdir in ("Scripts", "bin"):
+            venv_cli = venv_root / subdir / f"omnicrawl{suffix}"
+            if venv_cli.is_file():
+                return str(venv_cli), candidates + [str(venv_cli)]
 
     return configured, candidates
 
