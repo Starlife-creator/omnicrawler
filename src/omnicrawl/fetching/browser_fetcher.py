@@ -436,6 +436,11 @@ class BrowserFetcher:
         # Request a WebDriver BiDi endpoint before the session starts; the
         # egress guard must be installed before the first navigation.
         options.enable_bidi = True
+        # macOS/CI 渲染慢时 driver.get() 等待渲染进程可能超时（'Timed out
+        # receiving message from renderer'）。pageLoadStrategy=none 让 get()
+        # 在 HTML 下载完成后即返回，配合下方 actions 的显式等待取内容，
+        # 避免 chromedriver 新版本对慢渲染的卡死（v0.9.1 macOS CI 实测）。
+        options.page_load_strategy = "none"
         # P2-2：可选持久化 Chromium profile（按 host+account 维度分配）。
         # 开关：browser.persist_profile = true（默认 false，保持旧行为）
         persist = bool(self.config.section("browser").get("persist_profile", False))
@@ -506,7 +511,7 @@ class BrowserFetcher:
                 raise
         try:
             self._install_selenium_guard(driver)
-            driver.set_page_load_timeout(float(self.config.section("http").get("timeout_seconds", 25)))
+            driver.set_page_load_timeout(float(self.config.section("http").get("timeout_seconds", 60)))
             driver.get(request.url)
             self._run_selenium_actions(driver, self.config.section("browser").get("actions", []))
             body = driver.page_source.encode("utf-8")
