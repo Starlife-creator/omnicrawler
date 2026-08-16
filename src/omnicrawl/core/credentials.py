@@ -53,11 +53,22 @@ def get_secret(name: str) -> str:
 
 
 def resolve_secret_refs(value: Any) -> Any:
-    if isinstance(value, str):
-        match = _SECRET_REF.fullmatch(value.strip())
-        return get_secret(match.group(1)) if match else value
-    if isinstance(value, list):
-        return [resolve_secret_refs(item) for item in value]
-    if isinstance(value, dict):
-        return {key: resolve_secret_refs(item) for key, item in value.items()}
-    return value
+    """递归展开 ``secret://<name>`` 引用（B05-006：带环检测，防无限递归）。"""
+
+    def walk(item: Any, visited: frozenset[str]) -> Any:
+        if isinstance(item, str):
+            match = _SECRET_REF.fullmatch(item.strip())
+            if not match:
+                return item
+            name = match.group(1)
+            if name in visited:
+                chain = " -> ".join([*visited, name])
+                raise ValueError(f"secret:// 引用形成环: {chain}")
+            return walk(get_secret(name), visited | {name})
+        if isinstance(item, list):
+            return [walk(child, visited) for child in item]
+        if isinstance(item, dict):
+            return {key: walk(child, visited) for key, child in item.items()}
+        return item
+
+    return walk(value, frozenset())

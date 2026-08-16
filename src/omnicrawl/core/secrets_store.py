@@ -66,6 +66,9 @@ SERVICE = "omnicrawler"
 ACCOUNT = "secrets-master"
 ENV_PASSWORD = "OMNICRAWL_MASTER_PASSWORD"
 FILE_MAGIC = b"OMNICRWL-SECRETS-1\n"
+# B05-001：v2 格式在文件头带随机盐（16 字节），旧 v1 无盐段用 DERIVE_SALT 派生。
+FILE_MAGIC_V2 = b"OMNICRWL-SECRETS-2\n"
+SALT_LENGTH = 16
 PBKDF2_ITERATIONS = 600_000
 DERIVE_SALT = b"omnicrawler-secrets-v1"
 KEY_LENGTH = 32
@@ -109,8 +112,11 @@ class SecretsStore:
 
     # -- 密钥获取 ----------------------------------------------------------
 
-    def _master_key(self) -> bytes:
-        """OS keyring 优先；失败时自动 fallback 密码派生，绝不抛未捕获异常。"""
+    def _master_key(self, salt: bytes = DERIVE_SALT) -> bytes:
+        """OS keyring 优先；失败时自动 fallback 密码派生，绝不抛未捕获异常。
+
+        B05-001：密码派生使用文件头随机盐（新文件）或 DERIVE_SALT（旧 v1 兼容）。
+        """
         if self.keyring is not None:
             try:
                 encoded = self.keyring.get_password(SERVICE, ACCOUNT)
@@ -121,15 +127,15 @@ class SecretsStore:
                 return raw
             except Exception:
                 pass  # 后端不可用/权限失败 → 走密码派生
-        return self._password_derived_key()
+        return self._password_derived_key(salt)
 
-    def _password_derived_key(self) -> bytes:
+    def _password_derived_key(self, salt: bytes) -> bytes:
         password = os.environ.get(ENV_PASSWORD)
         if not password:
             raise SecretsStoreError(
                 f"系统 keyring 不可用且未设置环境变量 {ENV_PASSWORD}，无法安全存取凭据"
             )
-        return _derived_key(password)
+        return _derived_key(password, salt=salt)
 
     # -- 存储读写 ----------------------------------------------------------
 
@@ -140,11 +146,11 @@ class SecretsStore:
         entries: dict[str, bytes] = {}
         if self.path.is_file():
             raw = self.path.read_bytes()
-            if not raw.startswith(FILE_MAGIC):
+            if not (raw.startswith(FILE_MAGIC) or raw.startswith(FILE_MAGIC_V2)):
                 raise SecretsStoreError(f"secrets 文件格式损坏: {self.path}")
-            key = self._master_key()
-            nonce = raw[len(FILE_MAGIC) : len(FILE_MAGIC) + 12]
-            ciphertext = raw[len(FILE_MAGIC) + 12 :]
+            key, nonce_offset = self._read_header(raw)
+            nonce = raw[nonce_offset : nonce_offset + 12]
+            ciphertext = raw[nonce_offset + 12 :]
             try:
                 plaintext = AESGCM(key).decrypt(nonce, ciphertext, FILE_MAGIC)
             except Exception as exc:
@@ -154,12 +160,25 @@ class SecretsStore:
         self._cache = entries
         return entries
 
+    def _read_header(self, raw: bytes) -> tuple[bytes, int]:
+        """解析文件头，返回 (master_key, nonce 起始偏移)。
+
+        v2：MAGIC_V2 + salt(16) + nonce + ciphertext
+        v1：MAGIC + nonce + ciphertext（无盐段，用 DERIVE_SALT 派生）
+        """
+        if raw.startswith(FILE_MAGIC_V2):
+            salt = raw[len(FILE_MAGIC_V2) : len(FILE_MAGIC_V2) + SALT_LENGTH]
+            return self._master_key(salt), len(FILE_MAGIC_V2) + SALT_LENGTH
+        return self._master_key(DERIVE_SALT), len(FILE_MAGIC)
+
     def _save(self) -> None:
         if self._cache is None:
             raise SecretsStoreError("内部状态错误: 缓存未加载，无法写盘")
         _ensure_crypto()
         cache = self._cache
-        key = self._master_key()
+        # B05-001：每次写盘使用新的随机盐，派生密钥与文件绑定
+        salt = secrets.token_bytes(SALT_LENGTH)
+        key = self._master_key(salt)
         plaintext = json.dumps(
             {k: base64.b64encode(v).decode("ascii") for k, v in cache.items()}
         ).encode("utf-8")
@@ -167,7 +186,7 @@ class SecretsStore:
         ciphertext = AESGCM(key).encrypt(nonce, plaintext, FILE_MAGIC)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_name(self.path.name + ".tmp")
-        tmp.write_bytes(FILE_MAGIC + nonce + ciphertext)
+        tmp.write_bytes(FILE_MAGIC_V2 + salt + nonce + ciphertext)
         os.replace(tmp, self.path)
         try:
             os.chmod(self.path, 0o600)
