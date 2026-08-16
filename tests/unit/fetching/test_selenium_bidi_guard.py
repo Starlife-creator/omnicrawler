@@ -84,7 +84,7 @@ def test_bidi_guard_non_permission_error_passes_through(tmp_path: Path, monkeypa
 
 def test_bidi_guard_unavailable_raises_guidance(tmp_path: Path) -> None:
     fetcher = BrowserFetcher(load_config(_config(tmp_path)))
-    with pytest.raises(RuntimeError, match="allow_unintercepted_selenium"):
+    with pytest.raises(RuntimeError, match="BiDi 逐请求拦截不可用"):
         fetcher._install_selenium_guard(SimpleNamespace(network=None))
 
 
@@ -94,3 +94,17 @@ def test_explicit_disable_raises_guidance(tmp_path: Path) -> None:
     fetcher = BrowserFetcher(config)
     with pytest.raises(RuntimeError, match="已显式关闭"):
         fetcher._install_selenium_guard(SimpleNamespace(network=_FakeNetwork()))
+
+
+# ── P9-B2（B03-007/008）：opt-out 已废弃，强制拦截 ─────────────────
+
+
+def test_legacy_optout_is_ignored_and_guard_installed(tmp_path: Path) -> None:
+    """allow_unintercepted_selenium=true 不再放行——拦截仍强制安装（fail-closed）。"""
+    config = load_config(_config(tmp_path))
+    config.raw["egress"]["allow_unintercepted_selenium"] = True
+    fetcher = BrowserFetcher(config)
+    fetcher.egress = SimpleNamespace(authorize=lambda *_a, **_k: None)
+    network = _FakeNetwork()
+    fetcher._install_selenium_guard(SimpleNamespace(network=network))
+    assert network.handler is not None  # 拦截已安装，而非 return 跳过

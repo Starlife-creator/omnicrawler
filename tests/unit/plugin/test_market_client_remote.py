@@ -12,6 +12,7 @@ confirm the hosted catalog shape.
 """
 from __future__ import annotations
 
+import contextlib
 import functools
 import hashlib
 import http.server
@@ -92,11 +93,20 @@ def remote_market(tmp_path: Path):
         server.server_close()
 
 
+
+
+class _AllowAllEgress:
+    """B01-011: allow-all egress fake for tests."""
+
+    def request(self, url: str, *, purpose: str = "", headers: dict | None = None):
+        return contextlib.nullcontext()
+
+
 def test_fetch_catalog_remote_routes_to_url(remote_market) -> None:
     url, _ = remote_market
     # remote join must produce an http URL, not a filesystem path
     assert market_client._join(url, "catalog.json").startswith("http://")
-    catalog = market_client.fetch_catalog(url)
+    catalog = market_client.fetch_catalog(url, egress=_AllowAllEgress())
     assert catalog["schema_version"] == 1
     assert any(entry["id"] == "demo" for entry in catalog["plugins"])
 
@@ -104,7 +114,7 @@ def test_fetch_catalog_remote_routes_to_url(remote_market) -> None:
 def test_download_and_verify_remote(remote_market, tmp_path: Path) -> None:
     url, trust = remote_market
     dest = tmp_path / "installed"
-    path = market_client.download_and_verify("demo", url, dest, trust)
+    path = market_client.download_and_verify("demo", url, dest, trust, egress=_AllowAllEgress())
     assert path.is_file()
     assert (path.parent / "plugin.py.sig").is_file()
     assert (path.parent / "listing.md").is_file()
@@ -116,7 +126,7 @@ def test_download_and_verify_remote(remote_market, tmp_path: Path) -> None:
 def test_download_rejects_tampered_remote(remote_market, tmp_path: Path) -> None:
     url, trust = remote_market
     dest = tmp_path / "installed"
-    path = market_client.download_and_verify("demo", url, dest, trust)
+    path = market_client.download_and_verify("demo", url, dest, trust, egress=_AllowAllEgress())
     path.write_bytes(path.read_bytes() + b"\n# tampered")
     ok, _ = market_client.verify_installed(dest, "demo", trust)
     assert not ok
@@ -125,7 +135,7 @@ def test_download_rejects_tampered_remote(remote_market, tmp_path: Path) -> None
 def test_download_rejects_unknown_remote(remote_market, tmp_path: Path) -> None:
     url, trust = remote_market
     with pytest.raises(KeyError):
-        market_client.download_and_verify("nonexistent", url, tmp_path, trust)
+        market_client.download_and_verify("nonexistent", url, tmp_path, trust, egress=_AllowAllEgress())
 
 
 @pytest.mark.network
@@ -140,7 +150,7 @@ def test_fetch_catalog_live_remote() -> None:
     catalog = None
     for _ in range(3):
         try:
-            catalog = market_client.fetch_catalog(url)
+            catalog = market_client.fetch_catalog(url, egress=_AllowAllEgress())
             break
         except Exception as exc:  # noqa: BLE001 - transient network/rate-limit tolerance
             last_exc = exc

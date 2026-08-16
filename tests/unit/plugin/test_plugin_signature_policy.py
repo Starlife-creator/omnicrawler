@@ -203,3 +203,21 @@ def test_already_trusted_creator_loads_without_prompt(
     registry = Registry()
     load_local_plugins(registry, [str(plugin)], tmp_path, signature_policy=SIGNATURE_POLICY_STRICT)
     assert registry.plugins[0].name == "aliceplug"
+
+
+# ── P9-B3（B01-006）：is_market 祖先判定 ─────────────────────────
+
+
+def test_strict_nested_market_subdir_still_market(tmp_path: Path) -> None:
+    """嵌套路径 <root>/plugins_installed/<id>/sub/plugin.py 仍判为市场插件。"""
+    plugin = _write_plugin(tmp_path / "plugins_installed" / "demo" / "nested")
+    with pytest.raises(signing.PluginSignatureError, match="市场插件"):
+        load_local_plugins(Registry(), [str(plugin)], tmp_path, signature_policy=SIGNATURE_POLICY_STRICT)
+
+
+def test_strict_spoofed_market_segment_not_market(tmp_path: Path) -> None:
+    """伪造路径 <root>/vendor/plugins_installed/... 中的 plugins_installed 段不算市场。"""
+    plugin = _write_plugin(tmp_path / "vendor" / "plugins_installed" / "evil")
+    with pytest.raises(signing.PluginSignatureError) as exc_info:
+        load_local_plugins(Registry(), [str(plugin)], tmp_path, signature_policy=SIGNATURE_POLICY_STRICT)
+    assert "市场插件" not in str(exc_info.value)  # 按本地插件路径处理，而非市场目录
