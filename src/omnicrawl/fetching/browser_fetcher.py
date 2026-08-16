@@ -457,6 +457,9 @@ class BrowserFetcher:
             options.binary_location = chrome_binary
         if self.config.section("browser").get("headless", True):
             options.add_argument("--headless=new")
+            # macOS 无头模式下 GPU 进程可能挂起渲染（selenium+Chrome 151 arm64 CI 实测
+            # 'Timed out receiving message from renderer'），headless 下显式禁用 GPU 安全。
+            options.add_argument("--disable-gpu")
         # B03-006：浏览器路径显式尊重 verify_tls；且拒绝 launch_args 关闭 TLS 校验
         # （把唯一的 TLS 放松点从"可审计的配置项"变成 launch_args 黑魔法是 MITM 面）。
         verify_tls = bool(self.config.section("http").get("verify_tls", True))
