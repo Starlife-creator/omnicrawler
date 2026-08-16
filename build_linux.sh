@@ -59,7 +59,14 @@ if [[ -z "$RELEASE_OUTPUT" ]]; then
 fi
 BUILDER_VENV="$BUILD_ROOT/venv"
 BUILDER_PYTHON="$BUILDER_VENV/bin/python"
-SPEC_FILE="$PROJECT_ROOT/packaging/OmniCrawler-Linux.spec"
+# 按 edition 选择 spec：Full 用不 excludes 重型包的真 Full spec（含 paddle/selenium）
+if [[ "$EDITION" == "Full" ]]; then
+  SPEC_FILE="$PROJECT_ROOT/packaging/OmniCrawler-Linux-Full.spec"
+  RUNTIME_ROOT="$BUILD_ROOT/runtime"
+else
+  SPEC_FILE="$PROJECT_ROOT/packaging/OmniCrawler-Linux.spec"
+  RUNTIME_ROOT=""
+fi
 
 # ---- 架构断言：便携包仅面向 64 位 x86_64 / aarch64 -------------------------
 ARCH="$(uname -m)"
@@ -133,6 +140,13 @@ if [[ ! -d "$BROWSERS_ROOT" ]]; then
   echo "Bundled Chromium not found: $BROWSERS_ROOT" >&2; exit 1
 fi
 
+# ---- OCR 运行时制备（仅 Full：Tesseract/ChromeDriver/Paddle 模型）-----------
+if [[ "$EDITION" == "Full" ]]; then
+  echo "[Full] 制备 OCR 运行时 -> $RUNTIME_ROOT"
+  bash "$PROJECT_ROOT/packaging/prepare_linux_runtime.sh" \
+    --python "$BUILDER_PYTHON" --runtime-root "$RUNTIME_ROOT" --browsers-root "$BROWSERS_ROOT"
+fi
+
 # ---- PyInstaller 构建 --------------------------------------------------------
 rm -rf "$BINARY_ROOT" "$WORK_ROOT"
 mkdir -p "$BINARY_ROOT" "$WORK_ROOT"
@@ -154,6 +168,10 @@ mkdir -p "$RELEASE_ROOT"
 # runtime-verify 报 unknown。dereference 后 portable 包自包含真实文件。
 cp -rL "$BUILT_FOLDER/." "$RELEASE_ROOT/"
 cp -r "$BROWSERS_ROOT" "$RELEASE_ROOT/browsers"
+# Full：把制备的 OCR 运行时拷进包内（application_dir()/runtime，运行时自动探测）
+if [[ "$EDITION" == "Full" && -d "$RUNTIME_ROOT" ]]; then
+  cp -r "$RUNTIME_ROOT" "$RELEASE_ROOT/runtime"
+fi
 cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/packaging/THIRD_PARTY_NOTICES.md" "$RELEASE_ROOT/"
 echo "OmniCrawler $EDITION portable edition" > "$RELEASE_ROOT/EDITION.txt"
 for directory in configs docs examples; do
@@ -175,6 +193,16 @@ done
 # P4-3：portable 冒烟（浏览器/原生运行时）。其 cwd=releaseRoot 会写缓存，
 # 必须在完整性清单生成之前运行（与 Windows F11 同约束）。
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/portable_smoke_test.py" "$RELEASE_ROOT" --edition "$EDITION"
+
+# L5（Full）：产物内 OCR 运行时可调用冒烟——确保拷进包的 tesseract/chromedriver 真可用
+if [[ "$EDITION" == "Full" ]]; then
+  echo "[Full] OCR 运行时冒烟..."
+  "$RELEASE_ROOT/runtime/tesseract/tesseract" --tessdata-dir "$RELEASE_ROOT/runtime/tesseract/tessdata" \
+    --list-langs >/dev/null 2>&1 || { echo "产物内 Tesseract 不可用" >&2; exit 1; }
+  "$RELEASE_ROOT/runtime/selenium/chromedriver" --version >/dev/null 2>&1 \
+    || { echo "产物内 ChromeDriver 不可用" >&2; exit 1; }
+  echo "[Full] OCR 运行时冒烟通过"
+fi
 
 # 完整性清单：在新增 CAPABILITIES.json / RELEASE-INFO.json 之后生成，
 # 使清单覆盖这两个机器可读文件（与 Windows 同序：先加文件再刷清单）。

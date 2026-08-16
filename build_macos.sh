@@ -51,7 +51,14 @@ if [[ -z "$RELEASE_OUTPUT" ]]; then
 fi
 BUILDER_VENV="$BUILD_ROOT/venv"
 BUILDER_PYTHON="$BUILDER_VENV/bin/python"
-SPEC_FILE="$PROJECT_ROOT/packaging/OmniCrawler-macOS.spec"
+# 按 edition 选择 spec：Full 用不 excludes cv2/selenium 的真 Full spec（macOS 保留 paddle excludes）
+if [[ "$EDITION" == "Full" ]]; then
+  SPEC_FILE="$PROJECT_ROOT/packaging/OmniCrawler-macOS-Full.spec"
+  RUNTIME_ROOT="$BUILD_ROOT/runtime"
+else
+  SPEC_FILE="$PROJECT_ROOT/packaging/OmniCrawler-macOS.spec"
+  RUNTIME_ROOT=""
+fi
 
 # ---- 平台断言 ---------------------------------------------------------------
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -159,6 +166,13 @@ if [[ ! -d "$BROWSERS_ROOT" ]]; then
   echo "Bundled Chromium not found: $BROWSERS_ROOT" >&2; exit 1
 fi
 
+# ---- OCR 运行时制备（仅 Full：Tesseract/ChromeDriver，不制备 Paddle）---------
+if [[ "$EDITION" == "Full" ]]; then
+  echo "[Full] 制备 OCR 运行时 -> $RUNTIME_ROOT"
+  bash "$PROJECT_ROOT/packaging/prepare_macos_runtime.sh" \
+    --python "$BUILDER_PYTHON" --runtime-root "$RUNTIME_ROOT" --browsers-root "$BROWSERS_ROOT"
+fi
+
 # ---- PyInstaller 构建（.app bundle） -----------------------------------------
 rm -rf "$BINARY_ROOT" "$WORK_ROOT"
 mkdir -p "$BINARY_ROOT" "$WORK_ROOT"
@@ -174,6 +188,14 @@ for required in Contents/MacOS/OmniCrawler Contents/MacOS/omnicrawl Contents/Mac
     echo "PyInstaller output is incomplete: $required" >&2; exit 1
   fi
 done
+
+# Full：把 OCR 运行时拷进 .app/Contents/MacOS/runtime（= application_dir()/runtime，
+# 运行时经 configure_runtime_environment 自动探测；在 ad-hoc 签名之前拷入，
+# 使整棵 dylib 树被下方 codesign --deep 统一重签）。
+if [[ "$EDITION" == "Full" && -d "$RUNTIME_ROOT" ]]; then
+  mkdir -p "$APP_BUNDLE/Contents/MacOS/runtime"
+  cp -R "$RUNTIME_ROOT/." "$APP_BUNDLE/Contents/MacOS/runtime/"
+fi
 
 # ---- ad-hoc 签名（无需开发者证书） -------------------------------------------
 echo "codesign (ad-hoc): $APP_BUNDLE"
@@ -207,6 +229,17 @@ done
 # P4-3：portable 冒烟（浏览器/原生运行时）。其 cwd=releaseRoot 会写缓存，
 # 必须在完整性清单生成之前运行（与 Windows F11 同约束）。
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/portable_smoke_test.py" "$RELEASE_ROOT" --edition "$EDITION"
+
+# M6（Full）：产物内 OCR 运行时可调用冒烟（Tesseract/ChromeDriver；Paddle 不打包）
+if [[ "$EDITION" == "Full" ]]; then
+  echo "[Full] OCR 运行时冒烟..."
+  "$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/runtime/tesseract/tesseract" \
+    --tessdata-dir "$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/runtime/tesseract/tessdata" \
+    --list-langs >/dev/null 2>&1 || { echo "产物内 Tesseract 不可用" >&2; exit 1; }
+  "$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/runtime/selenium/chromedriver" --version >/dev/null 2>&1 \
+    || { echo "产物内 ChromeDriver 不可用" >&2; exit 1; }
+  echo "[Full] OCR 运行时冒烟通过"
+fi
 
 # 完整性清单：在新增 CAPABILITIES.json / RELEASE-INFO.json 之后生成，
 # 使清单覆盖这两个机器可读文件（与 Windows 同序：先加文件再刷清单）。
