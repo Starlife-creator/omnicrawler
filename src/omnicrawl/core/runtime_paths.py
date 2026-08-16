@@ -185,7 +185,10 @@ def configure_runtime_environment() -> None:
         os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "False")
     # F28：冻结模式下逐资产记录状态（缺失时 warning + runtime-status.json 供 GUI 展示）
     runtime_status: dict[str, str] = {}
-    tesseract = runtime_dir / "tesseract" / "tesseract.exe"
+    # 平台自适应可执行后缀：Windows 为 .exe，Linux/macOS 无后缀（此前硬编码 .exe
+    # 导致 Linux/macOS Full 运行时探测失败——2026-08-16 v0.9.1 CI 确认）。
+    _exe_suffix = ".exe" if sys.platform == "win32" else ""
+    tesseract = runtime_dir / "tesseract" / f"tesseract{_exe_suffix}"
     tessdata = runtime_dir / "tesseract" / "tessdata"
     if tesseract.is_file():
         os.environ.setdefault("TESSERACT_CMD", str(tesseract))
@@ -194,7 +197,7 @@ def configure_runtime_environment() -> None:
     elif is_frozen():
         logger.warning("内置 Tesseract 缺失: %s（中文 OCR 不可用，请重解压完整包）", tesseract)
         runtime_status["tesseract"] = "missing"
-    driver = runtime_dir / "selenium" / "chromedriver.exe"
+    driver = runtime_dir / "selenium" / f"chromedriver{_exe_suffix}"
     if driver.is_file():
         os.environ.setdefault("OMNICRAWL_SELENIUM_DRIVER", str(driver))
         runtime_status["chromedriver"] = "ok"
