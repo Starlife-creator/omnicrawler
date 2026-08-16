@@ -97,7 +97,16 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
   # 不能简单跳过 @rpath/*；需沿 LC_RPATH 解析真实路径再拷贝。
   # 对已拷贝的每个 dylib，把其 @rpath/x 依赖统一 -change 为 @loader_path/x，
   # 使整棵树脱离 brew 前缀（@loader_path 相对"加载者所在目录"，本树都在同目录）。
-  declare -A SEEN_LIB
+  # macOS runner 的 /bin/bash 是 3.2（GitHub Actions），不支持关联数组 declare -A，
+  # 用普通数组 + 辅助函数做已拷贝去重（兼容 bash 3.2）。
+  SEEN_LIBS=()
+  _seen() { # $1=路径，已记录返回 0，未记录返回 1
+    local item
+    for item in "${SEEN_LIBS[@]}"; do
+      if [[ "$item" == "$1" ]]; then return 0; fi
+    done
+    return 1
+  }
   resolve_dylibs() { # $1 = 二进制路径（otool 源）
     local bin="$1" dep rpath_path rel
     for dep in $(otool -L "$bin" 2>/dev/null | tail -n +2 | awk '{print $1}'); do
@@ -119,8 +128,8 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
           ;;
         @loader_path/*|@executable_path/*) continue ;; # 已是相对引用，不拷贝
       esac
-      if [[ -f "$dep" ]] && [[ -z "${SEEN_LIB["$dep"]:-}" ]]; then
-        SEEN_LIB["$dep"]=1
+      if [[ -f "$dep" ]] && ! _seen "$dep"; then
+        SEEN_LIBS+=("$dep")
         cp "$dep" "$TESS_ROOT/"
         resolve_dylibs "$dep"
       fi
