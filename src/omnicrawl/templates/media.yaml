@@ -2,6 +2,6 @@ template_version: 1
 project: {name: 示例项目-媒体下载, workspace: work/media}
 source: {kind: media, seeds: [https://example.com/]}
 crawl: {max_pages: 100, max_depth: 2, same_host: true}
-http: {user_agent: "OmniCrawler/0.9.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
+http: {user_agent: "OmniCrawler/0.9.1 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
 download: {enabled: true, extensions: [.pdf, .zip], media: true}
 extract: {mode: auto}

@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+## 0.9.1 - 2026-08-16
+
+### 变更
+
+构建链优化：跨平台对称性（M1-M4）+ 阶段A健全性（P2/P3/P8/P10/P11/S6）+ 阶段B Linux真Full/macOS弱Full 构建链（Full spec/运行时制备/冒烟）+ full-macos extras
+
 ## 0.9.0 - 2026-08-16
 
 ### 变更

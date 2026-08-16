@@ -26,7 +26,7 @@ crawl:
 
 # ── HTTP 请求设置 ──
 
-http: {user_agent: "OmniCrawler/0.9.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
+http: {user_agent: "OmniCrawler/0.9.1 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
 
 # ── 提取规则 ──
 
