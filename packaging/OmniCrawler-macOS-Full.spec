@@ -91,14 +91,18 @@ worker_exe = EXE(
     strip=False, upx=False, console=True, disable_windowed_traceback=False,
 )
 
+# macOS 标准结构：COLLECT 收集全部 EXE + binaries + datas，再由 BUNDLE 包装成 .app。
+# 直接 BUNDLE(3×EXE) 会缺 Contents/Frameworks（Python.framework 属 binaries 不会被
+# 放置）→ PYI-5670/PYI-43699（2026-08-16 v0.9.0/v0.9.1 CI 确认）。
+coll = COLLECT(
+    gui_exe, cli_exe, worker_exe,
+    gui_analysis.binaries, cli_analysis.binaries, worker_analysis.binaries,
+    gui_analysis.datas, cli_analysis.datas, worker_analysis.datas,
+    strip=False, upx=False, name="OmniCrawler",
+)
+
 app = BUNDLE(
-    gui_exe,
-    cli_exe,
-    worker_exe,
-    # 必须显式传 binaries（Python.framework 属 binaries，否则 .app 缺
-    # Contents/Frameworks/Python，运行时报 PYI-5670/PYI-43699）。datas 同理。
-    binaries=gui_analysis.binaries + cli_analysis.binaries + worker_analysis.binaries,
-    datas=gui_analysis.datas + cli_analysis.datas + worker_analysis.datas,
+    coll,
     name="OmniCrawler.app",
     icon=None,
     bundle_identifier="com.omnicrawler.desktop",
