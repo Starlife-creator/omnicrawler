@@ -234,7 +234,14 @@ class ProxyRotator:
             if latency_ms > 0:
                 self._latency[proxy] = latency_ms
 
-    def validate_proxy(self, proxy: str, test_url: str = "http://httpbin.org/ip", timeout: float = 5.0) -> tuple[bool, float]:
+    def validate_proxy(
+        self,
+        proxy: str,
+        # B03-010：测试 URL 默认 httpbin，调用方可通过配置传入自建/内网探针，
+        # 避免每次验证都打公共外部服务（也可经 egress 白名单校验）。
+        test_url: str = "http://httpbin.org/ip",
+        timeout: float = 5.0,
+    ) -> tuple[bool, float]:
         """主动验证代理可用性并测量延迟。"""
         try:
             from urllib.request import ProxyHandler, build_opener
@@ -426,7 +433,11 @@ class StealthEnhancer:
             LOGGER.warning("注入指纹脚本失败: %s", exc)
 
     def _build_init_script(self, fp: Fingerprint, level: StealthLevel) -> str:
-        """根据隐身等级生成注入脚本。"""
+        """根据隐身等级生成注入脚本。
+
+        B03-015：脚本由**常量** f-string 拼接（无不可信输入），注入内容
+        均来自内置 Fingerprint/等级定义，不拼接页面数据，无注入面。
+        """
         parts: list[str] = []
 
         # LOW+: WebDriver 隐藏

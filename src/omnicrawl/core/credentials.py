@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 from typing import Any
 
 from .secrets_store import SecretsStore, SecretsStoreError  # noqa: F401  re-export 供调用方捕获
 
+LOGGER = logging.getLogger(__name__)
+
 _SECRET_REF = re.compile(r"^secret://([A-Za-z0-9_.-]+)$")
 
 
 def _env_name(name: str) -> str:
+    # B05-005：非字母数字统一映射下划线——`a-b`/`a_b`/`a.b` 归一化后碰撞。
+    # 凭据名应避免仅靠 -/_/. 区分的命名；此处保留映射以保证确定性。
     return "OMNICRAWL_SECRET_" + re.sub(r"[^A-Za-z0-9]", "_", name).upper()
 
 
@@ -44,8 +49,8 @@ def get_secret(name: str) -> str:
         value = SecretsStore().get(name)
         if value is not None:
             return value
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - B05-004：吞异常但记录原因，供排查
+        LOGGER.info("SecretsStore 读取凭据 %r 失败，按未配置处理: %s", name, exc)
     raise ValueError(
         f"凭据 {name!r} 未配置；请设置环境变量 {_env_name(name)}，"
         "或安装 keyring 后在系统凭据库中保存 omnicrawl 凭据。"

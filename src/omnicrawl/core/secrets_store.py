@@ -15,6 +15,7 @@ import base64
 import json
 import os
 import secrets
+import threading
 import types
 from pathlib import Path
 from typing import Any, Protocol
@@ -109,6 +110,8 @@ class SecretsStore:
             else (_keyring if keyring_api is None else keyring_api)
         )
         self._cache: dict[str, bytes] | None = None
+        # B05-003：加载/保存/增删改统一串行化，防多线程并发写盘竞态
+        self._io_lock = threading.RLock()
 
     # -- 密钥获取 ----------------------------------------------------------
 
@@ -140,25 +143,26 @@ class SecretsStore:
     # -- 存储读写 ----------------------------------------------------------
 
     def _load(self) -> dict[str, bytes]:
-        if self._cache is not None:
-            return self._cache
-        _ensure_crypto()
-        entries: dict[str, bytes] = {}
-        if self.path.is_file():
-            raw = self.path.read_bytes()
-            if not (raw.startswith(FILE_MAGIC) or raw.startswith(FILE_MAGIC_V2)):
-                raise SecretsStoreError(f"secrets 文件格式损坏: {self.path}")
-            key, nonce_offset = self._read_header(raw)
-            nonce = raw[nonce_offset : nonce_offset + 12]
-            ciphertext = raw[nonce_offset + 12 :]
-            try:
-                plaintext = AESGCM(key).decrypt(nonce, ciphertext, FILE_MAGIC)
-            except Exception as exc:
-                raise SecretsStoreError(f"secrets 文件解密失败（密钥不匹配?）: {self.path}") from exc
-            stored = json.loads(plaintext.decode("utf-8"))
-            entries = {str(k): base64.b64decode(v) for k, v in stored.items()}
-        self._cache = entries
-        return entries
+        with self._io_lock:
+            if self._cache is not None:
+                return self._cache
+            _ensure_crypto()
+            entries: dict[str, bytes] = {}
+            if self.path.is_file():
+                raw = self.path.read_bytes()
+                if not (raw.startswith(FILE_MAGIC) or raw.startswith(FILE_MAGIC_V2)):
+                    raise SecretsStoreError(f"secrets 文件格式损坏: {self.path}")
+                key, nonce_offset = self._read_header(raw)
+                nonce = raw[nonce_offset : nonce_offset + 12]
+                ciphertext = raw[nonce_offset + 12 :]
+                try:
+                    plaintext = AESGCM(key).decrypt(nonce, ciphertext, FILE_MAGIC)
+                except Exception as exc:
+                    raise SecretsStoreError(f"secrets 文件解密失败（密钥不匹配?）: {self.path}") from exc
+                stored = json.loads(plaintext.decode("utf-8"))
+                entries = {str(k): base64.b64decode(v) for k, v in stored.items()}
+            self._cache = entries
+            return entries
 
     def _read_header(self, raw: bytes) -> tuple[bytes, int]:
         """解析文件头，返回 (master_key, nonce 起始偏移)。
@@ -172,26 +176,27 @@ class SecretsStore:
         return self._master_key(DERIVE_SALT), len(FILE_MAGIC)
 
     def _save(self) -> None:
-        if self._cache is None:
-            raise SecretsStoreError("内部状态错误: 缓存未加载，无法写盘")
-        _ensure_crypto()
-        cache = self._cache
-        # B05-001：每次写盘使用新的随机盐，派生密钥与文件绑定
-        salt = secrets.token_bytes(SALT_LENGTH)
-        key = self._master_key(salt)
-        plaintext = json.dumps(
-            {k: base64.b64encode(v).decode("ascii") for k, v in cache.items()}
-        ).encode("utf-8")
-        nonce = secrets.token_bytes(12)
-        ciphertext = AESGCM(key).encrypt(nonce, plaintext, FILE_MAGIC)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_name(self.path.name + ".tmp")
-        tmp.write_bytes(FILE_MAGIC_V2 + salt + nonce + ciphertext)
-        os.replace(tmp, self.path)
-        try:
-            os.chmod(self.path, 0o600)
-        except OSError:
-            pass  # Windows 无 POSIX 权限语义，靠 AES-GCM 兜底
+        with self._io_lock:
+            if self._cache is None:
+                raise SecretsStoreError("内部状态错误: 缓存未加载，无法写盘")
+            _ensure_crypto()
+            cache = self._cache
+            # B05-001：每次写盘使用新的随机盐，派生密钥与文件绑定
+            salt = secrets.token_bytes(SALT_LENGTH)
+            key = self._master_key(salt)
+            plaintext = json.dumps(
+                {k: base64.b64encode(v).decode("ascii") for k, v in cache.items()}
+            ).encode("utf-8")
+            nonce = secrets.token_bytes(12)
+            ciphertext = AESGCM(key).encrypt(nonce, plaintext, FILE_MAGIC)
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_name(self.path.name + ".tmp")
+            tmp.write_bytes(FILE_MAGIC_V2 + salt + nonce + ciphertext)
+            os.replace(tmp, self.path)
+            try:
+                os.chmod(self.path, 0o600)
+            except OSError:
+                pass  # Windows 无 POSIX 权限语义，靠 AES-GCM 兜底
 
     # -- API ---------------------------------------------------------------
 
@@ -200,27 +205,34 @@ class SecretsStore:
         return value.decode("utf-8") if value is not None else None
 
     def set(self, key: str, value: str) -> None:
-        cache = self._load()
-        cache[key] = value.encode("utf-8")
-        self._save()
+        # B05-003：load+save 原子化，避免并发读写交错
+        with self._io_lock:
+            cache = self._load()
+            cache[key] = value.encode("utf-8")
+            self._save()
 
     def delete(self, key: str) -> bool:
-        cache = self._load()
-        if key not in cache:
-            return False
-        del cache[key]
-        self._save()
-        return True
+        with self._io_lock:
+            cache = self._load()
+            if key not in cache:
+                return False
+            del cache[key]
+            self._save()
+            return True
 
     def keys(self) -> list[str]:
         return list(self._load())
 
-    def contains_plaintext(self) -> bool:
-        """当前文件是否为明文（调试/自检用）。"""
+    def has_plaintext_value(self) -> bool:
+        """当前文件是否为明文/未加密状态（调试/自检用）。
+
+        B05-002：原命名 contains_plaintext 有误导（易被理解为"包含明文值"），
+        实际语义是"文件未经加密（magic 缺失或过短）"。
+        """
         if not self.path.is_file():
             return False
         raw = self.path.read_bytes()
-        return FILE_MAGIC not in raw or len(raw) <= len(FILE_MAGIC) + 12
+        return not (raw.startswith(FILE_MAGIC) or raw.startswith(FILE_MAGIC_V2))
 
     # -- 单 blob 加解密（供 cookie 等独立文件加密，S2.2.3） --------------------
 

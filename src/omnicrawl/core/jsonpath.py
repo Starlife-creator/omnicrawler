@@ -131,6 +131,8 @@ def json_path(value: Any, path: str) -> list[Any]:
                 if isinstance(item, list) and 0 <= index < len(item):
                     next_values.append(item[index])
                 elif isinstance(item, dict) and token in item:
+                    # B05-026：数字 token 对 list 按索引、对 dict 按数字键双命中——
+                    # 与既有引擎语义一致，属预期行为，非 bug。
                     next_values.append(item[token])  # dict 的数字键（与引擎一致）
         else:
             for item in current:

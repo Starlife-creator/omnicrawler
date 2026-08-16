@@ -160,6 +160,8 @@ class TLSImpersonator:
                     request.url,
                     headers=headers,
                     timeout=timeout,
+                    # B03-009：显式不跟随重定向——重定向目标必须重新过 egress 策略
+                    #（出口策略按最终目标授权，跟随会绕过目标校验）。
                     allow_redirects=False,
                     verify=bool(http.get("verify_tls", True)),
                     proxy=proxy or None,

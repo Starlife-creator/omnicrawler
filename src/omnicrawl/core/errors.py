@@ -138,6 +138,8 @@ def describe_error(exc: BaseException) -> ErrorInfo:
             True,
             "TLS 握手失败；请检查目标 HTTPS 配置、本地时钟或证书信任设置。",
         )
+    # B05-016：PermissionError（含 PolicyBlockedError 多继承）统一归并到
+    # policy_blocked——策略拒绝与系统权限拒绝对用户呈现一致，不暴露内部细节。
     if isinstance(exc, PermissionError):
         return ErrorInfo("policy_blocked", _safe_message(exc), False, PolicyBlockedError.suggestion)
     if isinstance(exc, (TimeoutError, ConnectionError)):

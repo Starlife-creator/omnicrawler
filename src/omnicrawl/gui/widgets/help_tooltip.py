@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import html
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QMessageBox, QPushButton, QWidget
 
@@ -51,8 +53,10 @@ class HelpTooltip(QPushButton):
 
         # 悬停摘要
         short_text = self._entry.short(mode)
+        # B10-003：富文本字段（title/short_text 来自帮助注册表）统一转义——
+        # 防御纵深，防未来来源扩展后引入 HTML 注入。
         self.setToolTip(
-            f"<b>{self._entry.title}</b><br>{short_text}<br>" +
+            f"<b>{html.escape(self._entry.title)}</b><br>{html.escape(short_text)}<br>" +
 
             _("<i>点击查看完整说明；按 F1 打开帮助中心</i>")
         )

@@ -164,8 +164,8 @@ def _l3_deduce_from_headers(status_code: int, headers: dict[str, str]) -> Catego
 
     返回 None 表示「L3 没嗅出强信号，调用方回退 generic_html」。
     """
-    # 3xx：不跟随，返回带 redirect_needed 说明的 None → 调用方知道需要重新进 funnel
-    # 这里不改返回结构（保持 dataclass frozen 不新增字段），而是 reason 明确写入「重定向需要重分类」
+    # 3xx：不跟随，返回带 redirect 标记（raw_requested_template=<L3-redirect-required>）
+    # 的 result，上层据此识别需要重新进 funnel 的 URL。
     if 300 <= status_code < 400:
         loc = headers.get("location") or headers.get("Location") or ""
         return CategorizeResult(
@@ -173,7 +173,10 @@ def _l3_deduce_from_headers(status_code: int, headers: dict[str, str]) -> Catego
             confidence=_L3_SNIFF_CONFIDENCE,
             hit_source=_HIT_SOURCE_L3, raw_requested_template="<L3-redirect-required>",
             fallback_used=True,
-            reason=f"L3: 收到 3xx Status={status_code} Location={loc!r}，需把 Location 重新丢回 L1→L2→L3 漏斗",
+            reason=(
+                f"L3: 收到 3xx Status={status_code} Location={loc!r}，"
+                "返回 redirect 标记结果供上层重新入漏斗"
+            ),
         )
     ct_raw = headers.get("content-type") or headers.get("Content-Type") or ""
     ct = ct_raw.split(";", 1)[0].strip().lower()
@@ -486,9 +489,8 @@ class SiteCategorizer:
             self.enable_sniffing = sniff_cfg
             self._loaded_from = tuple(loaded_sources)
             self._last_error = None
-            if not force and self._yaml_mtime == old_mtime:
-                # mtime 没变视为「不用重新加载」，但不影响正确性（允许重复调用）
-                pass
+            # B05-028：删除 mtime 短路死代码——加载已在此完成，mtime 判断无操作；
+            # 热重载由调用方基于 _yaml_mtime 变化主动触发。
             return True, None
         except Exception as exc:  # noqa: BLE001
             # 原子回滚：恢复旧状态
@@ -543,11 +545,12 @@ class SiteCategorizer:
                 l3 += 1
             else:
                 generic += 1
+        # B05-029：快照与计数更新全部在锁内，避免并发下计数竞态
         with self._lock:
-            hits_snapshot: Counter[str] = Counter(self.hits)  # copy
-        hits_snapshot.update(r.hit_source for r in results)
-        self.hits = hits_snapshot
-        self.fallback_used_count += fallback_count
+            hits_snapshot = Counter(self.hits)
+            hits_snapshot.update(r.hit_source for r in results)
+            self.hits = hits_snapshot
+            self.fallback_used_count += fallback_count
         return CategorizeSummary(
             total=total, l1=l1, l2=l2, l3=l3, generic=generic,
             fallback_used=fallback_count,
@@ -664,6 +667,8 @@ class SiteCategorizer:
                     raw = sniffed.raw_requested_template
                     resolved, fb_used = self._resolve_template(raw, catalog=catalog)
                     # 当模板存在性校验有兜底时，保持 confidence 不变（L3 原始置信度是信号强度不是模板强度）
+                    # B05-030：raw 为 3xx redirect 标记时，此处解析为兜底模板（降级路径），
+                    # reason 保留 sniffed.reason 描述重定向来源，供上层区分触发场景。
                     return CategorizeResult(
                         url=sniffed.url, template_id=resolved, confidence=sniffed.confidence,
                         hit_source=sniffed.hit_source, raw_requested_template=raw,

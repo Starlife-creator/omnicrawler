@@ -24,6 +24,9 @@ def needs_browser(result: FetchResult) -> tuple[bool, str]:
     """Conservative HTTP-to-browser escalation decision."""
     if result.request.kind == "asset" or result.content_type not in {"", "text/html", "application/xhtml+xml"}:
         return False, ""
+    # B03-012：挑战标记只扫前 200KB（响应体开头）——已知权衡：绝大多数验证页
+    # 在头部即注入挑战脚本，扫全量在大响应上徒增开销；极端情况（挑战脚本后置）
+    # 会漏判，可接受。
     prefix = result.body[:200_000].lower()
     if any(marker in prefix for marker in _STRONG_CHALLENGE_MARKERS):
         return True, "检测到验证页或访问挑战"

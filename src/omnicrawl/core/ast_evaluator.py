@@ -71,10 +71,13 @@ def safe_eval(expression: str, variables: dict[str, Any]) -> Any:
 
     Args:
         expression: 值级表达式，如 ``trim(title) + " | " + parse_number(price)``。
-        variables: 字段值环境（ast.Name 的解析来源；字段名冲突时函数名优先）。
+        variables: 字段值环境（ast.Name 的解析来源）。
 
     Raises:
         ValueError: 语法错误，或表达式含非白名单节点 / 未允许函数。
+
+    B05-012：变量优先于函数——context 为 ``{**ALLOWED_FUNCTIONS, **variables}``，
+    字段名与函数重名时字段值生效（数据驱动，函数可被字段遮蔽）。
     """
     try:
         tree = ast.parse(expression, mode="eval")

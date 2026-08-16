@@ -273,6 +273,11 @@ def verify_plugin_trust(
                 verified_bytes=plugin_bytes,
                 trust_root_available=root_ok,
             )
+        # B01-007：区分「签名不存在」vs「验签失败」——不静默落创作者轨
+        if not sig_path.is_file():
+            LOGGER.info("维护者签名文件不存在，检查创作者签名: %s", plugin_dir)
+        else:
+            LOGGER.warning("维护者签名验签失败，检查创作者签名: %s", plugin_dir)
 
     # 层级 2：创作者签名 + 信任列表（不依赖信任根）
     creator = _load_creator_identity(plugin_dir)

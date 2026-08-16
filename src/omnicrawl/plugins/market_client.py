@@ -150,9 +150,16 @@ def _write_install_meta(
 
 
 def _verify_install_meta(dest_dir: Path, *, main_name: str) -> tuple[bool, str]:
-    """校验安装元数据；无元数据（旧版安装）退化为纯签名校验。"""
+    """校验安装元数据。
+
+    B01-010：元数据缺失时**显式记录并退化为纯签名校验**（旧版安装兼容），
+    而非静默通过——签名校验始终执行，锁文件仅提供哈希级防篡改的额外层。
+    """
     meta_path = dest_dir / _INSTALL_META
     if not meta_path.is_file():
+        LOGGER.info(
+            "安装元数据不存在（旧版安装或无锁文件），退化为纯签名校验: %s", dest_dir
+        )
         return True, ""
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
