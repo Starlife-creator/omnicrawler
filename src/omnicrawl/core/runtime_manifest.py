@@ -21,11 +21,16 @@ from .utils import atomic_write, utcnow
 
 RUNTIME_MANIFEST = "RUNTIME-MANIFEST.json"
 
-# 运行时可变目录：打包后的 exe 每次启动都会写入/追加日志（logs/），
-# 若纳入完整性清单，runtime-verify 自身启动写日志就会让哈希漂移而误报
-# corrupt（release CI 实测 corrupt: logs/omnicrawl.log）。创建与校验两侧
-# 都必须排除，保持一致。
-_EXCLUDED_RELATIVE_PREFIXES = ("logs/",)
+# 运行时可变目录：打包后的 exe 每次启动都会写入/追加日志，若纳入完整性
+# 清单，runtime-verify 自身启动写日志就会让哈希漂移而误报 corrupt（release
+# CI 实测）。创建与校验两侧都必须排除，保持一致。
+# 排除规则按**任意路径层级**名为 logs 的目录匹配——Windows/Linux 日志在顶层
+# logs/，macOS .app 日志在 Contents/MacOS/logs/，前缀匹配覆盖不到后者。
+_EXCLUDED_RELATIVE_DIRS = ("logs",)
+
+
+def _is_excluded_relative(relative: str) -> bool:
+    return any(part in _EXCLUDED_RELATIVE_DIRS for part in PurePosixPath(relative).parts)
 
 
 def create_runtime_manifest(root: Path, *, include: Iterable[Path] | None = None) -> dict[str, Any]:
@@ -42,7 +47,7 @@ def create_runtime_manifest(root: Path, *, include: Iterable[Path] | None = None
         # 相对路径扫描 → 大量 unknown（macOS release CI 实测）。Linux 已 cp -rL
         # 解引用、Windows 无 symlink，不受影响。
         relative = path.relative_to(root).as_posix()
-        if relative.startswith(_EXCLUDED_RELATIVE_PREFIXES):
+        if _is_excluded_relative(relative):
             continue
         files[relative] = {"sha256": _sha256(path), "bytes": path.stat().st_size}
     manifest = {"format": 1, "created_at": utcnow(), "files": files}
@@ -86,7 +91,7 @@ def verify_runtime_manifest(root: Path) -> dict[str, Any]:
         if not candidate.is_file() or candidate.name == RUNTIME_MANIFEST:
             continue
         relative = candidate.relative_to(root).as_posix()
-        if relative.startswith(_EXCLUDED_RELATIVE_PREFIXES):
+        if _is_excluded_relative(relative):
             continue
         if relative not in declared:
             unknown.append(relative)
