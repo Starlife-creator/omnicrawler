@@ -20,6 +20,7 @@ from typing import Any
 
 from ..convertx import READERS, WRITERS, sniff_format
 from ..core.ast_evaluator import ALLOWED_FUNCTIONS, safe_eval
+from ..security.paths import require_workspace_path
 
 #: 追加列的后缀（永不覆盖原列）
 PARSED_SUFFIX = "_parsed"
@@ -139,7 +140,10 @@ def build_specs(
 def _load_steps(value: str) -> list[dict[str, Any]]:
     raw: Any = value
     if value.startswith("@"):
-        raw = Path(value[1:]).read_text(encoding="utf-8")
+        # B08-004：@file 引用是外部可控路径，必须位于 CWD（工作区）内。
+        raw = require_workspace_path(
+            value[1:], root=Path.cwd(), what="--transform-steps @file"
+        ).read_text(encoding="utf-8")
     try:
         data = json.loads(raw) if isinstance(raw, str) else raw
     except json.JSONDecodeError as exc:

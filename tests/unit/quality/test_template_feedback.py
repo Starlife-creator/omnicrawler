@@ -29,7 +29,7 @@ def _snapshot(**overrides):
 
 def test_record_persists_jsonl(tmp_path):
     """完整快照落盘为 JSONL 一行，可读回。"""
-    store = TemplateFeedbackStore(tmp_path / "template_feedback.jsonl")
+    store = TemplateFeedbackStore(tmp_path / "template_feedback.jsonl", root=tmp_path)
     assert store.record(_snapshot()) is True
 
     records = list(store.iter_records())
@@ -44,7 +44,7 @@ def test_record_persists_jsonl(tmp_path):
 
 def test_record_requires_snapshot_fields(tmp_path):
     """缺必需字段（domain/template_id/action）→ 无快照不入库（PRD §3.2）。"""
-    store = TemplateFeedbackStore(tmp_path / "template_feedback.jsonl")
+    store = TemplateFeedbackStore(tmp_path / "template_feedback.jsonl", root=tmp_path)
     assert store.record(_snapshot(domain="")) is False
     assert store.record(_snapshot(template_id="")) is False
     assert store.record(_snapshot(action="")) is False
@@ -56,7 +56,7 @@ def test_record_requires_snapshot_fields(tmp_path):
 
 def test_multiple_records_append(tmp_path):
     """多次记录追加不覆盖；损坏行被跳过。"""
-    store = TemplateFeedbackStore(tmp_path / "template_feedback.jsonl")
+    store = TemplateFeedbackStore(tmp_path / "template_feedback.jsonl", root=tmp_path)
     store.record(_snapshot(reject_label="网址不匹配"))
     store.record(_snapshot(reject_label="结构过时"))
     with store.path.open("a", encoding="utf-8") as fh:
@@ -82,7 +82,7 @@ def test_default_path_under_workspace_logs(tmp_path, monkeypatch):
 
 def test_record_payload_is_valid_json_lines(tmp_path):
     """每行都是独立可解析的 JSON。"""
-    store = TemplateFeedbackStore(tmp_path / "template_feedback.jsonl")
+    store = TemplateFeedbackStore(tmp_path / "template_feedback.jsonl", root=tmp_path)
     store.record(_snapshot(reject_label="字段太少"))
     lines = store.path.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 1

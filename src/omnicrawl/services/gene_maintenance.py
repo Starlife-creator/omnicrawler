@@ -11,9 +11,9 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from pathlib import Path
 from typing import Any
 
+from ..security.paths import require_workspace_path
 from ..state.scene_store import SceneStore
 
 LOGGER = logging.getLogger(__name__)
@@ -24,9 +24,15 @@ _LAST_CHECK = 0.0
 
 
 def import_scenes(store: SceneStore, *, path: str | None = None) -> dict[str, Any]:
-    """导入场景定义。path 指定用户 YAML，否则导入包内 bundled 默认。"""
+    """导入场景定义。path 指定用户 YAML，否则导入包内 bundled 默认。
+
+    B08-008：path 是外部可控路径，必须位于 scene 库所在工作区内
+    （store._path.parent = config.workspace），防越界读取工作区外文件。
+    """
     if path:
-        yaml_text = Path(path).expanduser().resolve().read_text(encoding="utf-8")
+        yaml_text = require_workspace_path(
+            path, root=store._path.parent, what="场景导入 YAML"
+        ).read_text(encoding="utf-8")
         return store.import_scene_yaml(yaml_text)
     return store.import_bundled_scenes()
 

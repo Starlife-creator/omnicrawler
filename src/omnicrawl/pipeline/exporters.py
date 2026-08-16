@@ -254,7 +254,7 @@ def export_all(config: AppConfig, state: StateStore, run_id: str | None = None) 
     error_center = build_error_center(state, output, run_id)
     files["error_center_json"] = error_center["files"]["json"]
     files["error_center_html"] = error_center["files"]["html"]
-    artifact_integrity = verify_artifacts(state, run_id)
+    artifact_integrity = verify_artifacts(state, run_id, workspace=config.workspace)
     integrity_path = output / "artifact_integrity.json"
     integrity_path.write_text(
         json.dumps(artifact_integrity, ensure_ascii=False, indent=2), encoding="utf-8"

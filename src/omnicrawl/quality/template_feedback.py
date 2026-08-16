@@ -20,6 +20,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..security.paths import require_workspace_path
+
 LOGGER = logging.getLogger(__name__)
 
 # 预设拒绝标签（PRD §3.2 产品数据闭环）
@@ -57,9 +59,13 @@ class TemplateRejectionSnapshot:
 class TemplateFeedbackStore:
     """JSONL 追加写拒绝快照；`record()` 返回是否入库（无快照=False）。"""
 
-    def __init__(self, path: Path | str | None = None) -> None:
+    def __init__(self, path: Path | str | None = None, *, root: Path | None = None) -> None:
+        """B06-006：path 为外部可控时强制位于 root（默认 CWD）内，防越界写入。"""
         self._path = (
             (Path.cwd() / _DEFAULT_REL_PATH) if path is None else (path if isinstance(path, Path) else Path(path))
+        )
+        self._path = require_workspace_path(
+            self._path, root=root if root is not None else Path.cwd(), what="模板反馈快照路径"
         )
 
     @property

@@ -7,6 +7,7 @@ import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from ..security.paths import require_workspace_path
 from .diagnostics import diagnose as _diagnose
 from .diagnostics import redact_diagnostic_text, redact_diagnostic_value
 
@@ -45,8 +46,20 @@ def diagnose(message: str, attempts: tuple[str, ...] = ()) -> UserFacingDiagnost
     )
 
 
-def create_redacted_support_bundle(destination: Path, diagnostic: UserFacingDiagnostic, logs: tuple[str, ...]) -> Path:
-    """Create a local support ZIP; secrets are removed before any file is written."""
+def create_redacted_support_bundle(
+    destination: Path,
+    diagnostic: UserFacingDiagnostic,
+    logs: tuple[str, ...],
+    *,
+    root: Path | None = None,
+) -> Path:
+    """Create a local support ZIP; secrets are removed before any file is written.
+
+    B06-006：destination 为外部可控写入点，强制位于 root（默认 CWD）内。
+    """
+    destination = require_workspace_path(
+        destination, root=root if root is not None else Path.cwd(), what="支持包输出路径"
+    )
     destination.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(redact_diagnostic_value(asdict(diagnostic)), ensure_ascii=False, indent=2)
     redacted_logs = "\n".join(redact_diagnostic_text(line) for line in logs)

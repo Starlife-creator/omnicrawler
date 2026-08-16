@@ -40,9 +40,9 @@ def execute(
             return {"schedules": schedules.list()}
         if action == "run-due":
             def runner(path: Path) -> dict[str, Any]:
-                # B09-003：run-due 的 config_path 来自调度库（--database 可指向任意库），
-                # 消费前先校验存在性，防止加载外部可控路径。
-                config_path = require_config_path(path)
+                # B09-003：run-due 的 config_path 来自本地调度库，消费前强制校验
+                # 存在且位于 CWD 内（与 queue 本地降级模式对齐，防越界加载）。
+                config_path = require_config_path(path, require_inside_cwd=True)
                 task_config = load_config(config_path)
                 with Pipeline(task_config) as pipeline:
                     return pipeline.run()

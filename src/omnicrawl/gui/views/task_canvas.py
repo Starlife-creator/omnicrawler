@@ -1741,7 +1741,9 @@ class TaskCanvas(QScrollArea):
                 ToastManager.instance().warning(_("缺少诊断快照，未记录反馈"))
                 return
             root = Path(self._project_root) if self._project_root else Path.cwd()
-            store = TemplateFeedbackStore(root / "workspace" / "logs" / "template_feedback.jsonl")
+            store = TemplateFeedbackStore(
+                root / "workspace" / "logs" / "template_feedback.jsonl", root=root
+            )
             if store.record(snapshot):
                 ToastManager.instance().info(_("已记录反馈：{0}").format(label))
         except Exception as exc:  # noqa: BLE001 — 反馈采集绝不阻断主流程

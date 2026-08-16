@@ -60,6 +60,32 @@ jobs:
       - run: python tools/check_cli_docs.py
       - run: python tools/check_docs_consistency.py
       - run: python tools/check_network_boundaries.py
+      - name: egress policy runtime check (B13-001)
+        # Windows runner 默认 pwsh 不支持 bash heredoc → 显式用 bash
+        shell: bash
+        run: |
+          python - <<'PY'
+          import tempfile
+          from pathlib import Path
+
+          from omnicrawl.core.config import DEFAULTS, AppConfig
+          from omnicrawl.security.egress import EgressBroker
+          from omnicrawl.security.policy import PolicyBlockedError
+
+          with tempfile.TemporaryDirectory() as td:
+              cfg = AppConfig(Path('<ci>'), Path(td), DEFAULTS, Path(td))
+              broker = EgressBroker(cfg)
+              try:
+                  with broker.request('http://169.254.169.254/latest/meta-data', purpose='ci-test'):
+                      pass
+              except PolicyBlockedError:
+                  pass
+              else:
+                  raise SystemExit('BUG: private metadata target not blocked by egress')
+          print('egress runtime verification OK (private target blocked)')
+          PY
+
+
       - run: python tools/check_coding_standards.py src
       - run: python -m coverage run -m pytest -q
       - run: python -m coverage json -o coverage.json

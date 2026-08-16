@@ -150,7 +150,7 @@ class WorkspaceManager:
             finally:
                 connection.close()
             with StateStore(database) as state:
-                artifact_report = verify_artifacts(state)
+                artifact_report = verify_artifacts(state, workspace=self.root)
         usage = shutil.disk_usage(self.root)
         temporary = [str(path) for path in (self.root / "temp").rglob("*") if path.is_file()]
         missing_directories = [name for name in WORKSPACE_DIRECTORIES if not (self.root / name).is_dir()]

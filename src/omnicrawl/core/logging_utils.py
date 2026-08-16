@@ -20,15 +20,18 @@ _KNOWN_LEVELS = {
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
+        from ..security.redaction import redact_url
+
         value = {
             "timestamp": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": redact_url(record.getMessage()),
         }
         for key in ("run_id", "request_id", "task_id", "stage", "url", "site"):
             if hasattr(record, key):
-                value[key] = getattr(record, key)
+                # P9-A1（B05-024）：url/site 可能内嵌凭据（scheme://u:p@h），写 JSON 前脱敏
+                value[key] = redact_url(str(getattr(record, key)))
         if record.exc_info:
             value["exception"] = self.formatException(record.exc_info)
         return json.dumps(value, ensure_ascii=False, default=str)

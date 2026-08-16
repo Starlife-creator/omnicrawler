@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.config import AppConfig, resolve_pdf_template
+from ..security.paths import require_workspace_path
 from ..state import StateStore
 from .provenance import write_pdf_source_manifest
 
@@ -15,12 +16,17 @@ StopCallback = Callable[[], bool]
 
 def _pdf_input_dir(config: AppConfig) -> Path:
     """S2.3.5：PDF 附件输入目录——显式配置 storage.objects.local_directory（非默认 "."）时
-    以其驱动，不再被硬编码 artifacts/pdf 绕过。"""
+    以其驱动，不再被硬编码 artifacts/pdf 绕过。B06-003：local_dir 来自配置，
+    可能含 ``../`` 穿越成分，展开后必须仍在 workspace 内。"""
     objects = config.section("storage").get("objects", {})
     local_dir = str(objects.get("local_directory", "")).strip() if isinstance(objects, dict) else ""
     if local_dir and local_dir != ".":
-        return (config.workspace / local_dir / "pdf").resolve()
-    return (config.workspace / "artifacts" / "pdf").resolve()
+        return require_workspace_path(
+            config.workspace / local_dir / "pdf", root=config.workspace, what="PDF 附件输入目录"
+        )
+    return require_workspace_path(
+        config.workspace / "artifacts" / "pdf", root=config.workspace, what="PDF 附件输入目录"
+    )
 
 
 def ensure_pdf_project(config: AppConfig) -> tuple[Path, bool]:
