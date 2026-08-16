@@ -242,7 +242,8 @@ fi
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/create_runtime_manifest.py" --release-root "$RELEASE_ROOT"
 "$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawl" runtime-verify --root "$RELEASE_ROOT"
 # P4-1：Windows 对 zip 跑 check_release_integrity --portable-zip --portable-deep；
-# macOS dmg/tar.gz 暂不做同等深校验（工具仅支持 zipfile 容器，扩展为多格式是后续项）。
+# macOS dmg 是磁盘镜像（纯 Python 无法读内部），深校验由上方 runtime-verify 兜底；
+# tar.gz 回退产物跑容器级深校验（与 Linux 对齐）。
 # 结构对称性由上方 runtime-verify（RUNTIME-MANIFEST 双向核对）+ CLI 冒烟兜底。
 
 # ---- 打包 dmg（失败回退 tar.gz） ----------------------------------------------
@@ -253,11 +254,17 @@ DMG_ARCHIVE="$RELEASE_OUTPUT/OmniCrawler-$APP_VERSION-macOS-Portable-$EDITION.dm
 if hdiutil create -volname "OmniCrawler" -srcfolder "$BUILD_ROOT/release" \
     -ov -format UDZO "$DMG_ARCHIVE" >/dev/null 2>&1; then
   echo "Portable archive: $DMG_ARCHIVE"
+  # dmg 轻量校验：文件存在且非空（内部校验由 runtime-verify 在组装期完成）
+  [[ -s "$DMG_ARCHIVE" ]] || { echo "dmg 产物为空" >&2; exit 1; }
 else
   echo "[WARN] hdiutil 失败，回退 tar.gz"
   TAR_ARCHIVE="$RELEASE_OUTPUT/OmniCrawler-$APP_VERSION-macOS-Portable-$EDITION.tar.gz"
   tar -czf "$TAR_ARCHIVE" -C "$BUILD_ROOT/release" OmniCrawler
   echo "Portable archive: $TAR_ARCHIVE"
+  # P5：macOS tar.gz 回退产物跑容器级深校验（mac 平台弱 Full：不要求 Paddle）
+  "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/check_release_integrity.py" "$PROJECT_ROOT" \
+    --portable-tar "$TAR_ARCHIVE" --portable-platform mac --portable-deep \
+    || { echo "macOS portable tar.gz 深校验失败" >&2; exit 1; }
 fi
 
 echo "Build staging: $RELEASE_ROOT"

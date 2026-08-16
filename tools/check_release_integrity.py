@@ -11,7 +11,10 @@ import hashlib
 import io
 import json
 import re
+import tarfile
 import zipfile
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 try:
@@ -28,6 +31,95 @@ _WINDOWS_RESERVED_NAMES = {
     *(f"COM{number}" for number in range(1, 10)),
     *(f"LPT{number}" for number in range(1, 10)),
 }
+
+# 便携包平台布局（P5：Windows zip 已有深校验，Linux tar.gz / macOS dmg 补齐）
+# Linux/macOS 产物顶层是 OmniCrawler/（M4 对齐），入口可执行文件无 .exe 后缀。
+# macOS 是 .app bundle，入口在 Contents/MacOS/ 下。
+_PORTABLE_PLATFORM_ENTRYPOINTS: dict[str, tuple[str, ...]] = {
+    "win": ("OmniCrawler.exe", "omnicrawl.exe", "omnicrawl-worker.exe"),
+    "linux": ("OmniCrawler", "omnicrawl", "omnicrawl-worker"),
+    "mac": (
+        "OmniCrawler.app/Contents/MacOS/OmniCrawler",
+        "OmniCrawler.app/Contents/MacOS/omnicrawl",
+        "OmniCrawler.app/Contents/MacOS/omnicrawl-worker",
+    ),
+}
+# macOS 额外要求 .app 目录存在（bundle 根）
+_PORTABLE_PLATFORM_REQUIRED_DIRS: dict[str, tuple[str, ...]] = {
+    "win": (),
+    "linux": (),
+    "mac": ("OmniCrawler.app", "OmniCrawler.app/Contents", "OmniCrawler.app/Contents/MacOS"),
+}
+_PORTABLE_REQUIRED_EXTRA: dict[str, tuple[str, ...]] = {
+    "win": ("OmniCrawler-Launcher.bat", "PORTABLE_README.txt"),
+    "linux": (),
+    "mac": (),
+}
+# Chromium 可执行文件 glob（相对 OmniCrawler/ 根）；与 runtime_paths.py bundled_browser_executable 保持对称
+_PORTABLE_CHROMIUM_PATTERNS: dict[str, tuple[str, ...]] = {
+    "win": (
+        "browsers/chromium-*/chrome-win/chrome.exe",
+        "browsers/chromium-*/chrome-win64/chrome.exe",
+    ),
+    "linux": ("browsers/chromium-*/chrome-linux*/chrome",),
+    "mac": (
+        "browsers/chromium-*/chrome-mac/Chromium",
+        "browsers/chromium-*/chrome-mac*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+    ),
+}
+
+
+@dataclass(frozen=True)
+class _PortableEntry:
+    """统一 zip/tar 条目模型，供跨平台 portable 校验共用。"""
+    path: str  # 原始路径（含顶层 OmniCrawler/）
+    size: int
+    is_dir: bool
+    is_symlink: bool
+    encrypted: bool = False
+    read: Callable[[], bytes] | None = None  # 文件内容读取（deep 校验用）
+
+
+def _iter_zip_entries(archive: zipfile.ZipFile) -> Iterator[_PortableEntry]:
+    for info in archive.infolist():
+        _read = None
+
+        def _read(info=info) -> bytes:
+            with archive.open(info) as handle:
+                return handle.read()
+
+        yield _PortableEntry(
+            path=info.filename,
+            size=info.file_size,
+            is_dir=info.is_dir(),
+            is_symlink=_zip_entry_is_symlink(info),
+            encrypted=bool(info.flag_bits & 0x1),
+            read=_read if not info.is_dir() else None,
+        )
+
+
+def _iter_tar_entries(archive: tarfile.TarFile) -> Iterator[_PortableEntry]:
+    for member in archive.getmembers():
+        if member.issym() or member.islnk():
+            is_symlink = True
+        else:
+            is_symlink = False
+        _read = None
+        if member.isfile():
+
+            def _read(member=member) -> bytes:
+                extracted = archive.extractfile(member)
+                if extracted is None:
+                    return b""
+                return extracted.read()
+
+        yield _PortableEntry(
+            path=member.name,
+            size=member.size,
+            is_dir=member.isdir(),
+            is_symlink=is_symlink,
+            read=_read,
+        )
 
 
 def _module_file(package_root: Path, module: str) -> Path | None:
@@ -337,20 +429,22 @@ def _zip_entry_is_symlink(info: zipfile.ZipInfo) -> bool:
     return mode & 0o170000 == 0o120000
 
 
-def _read_small_zip_text(
-    archive: zipfile.ZipFile,
-    info: zipfile.ZipInfo,
+def _read_small_entry_text(
+    entry: _PortableEntry,
     *,
     limit: int,
     label: str,
     errors: list[str],
 ) -> str | None:
-    if info.file_size > limit:
-        errors.append(f"{label} is unexpectedly large: {info.file_size} bytes")
+    if entry.size > limit:
+        errors.append(f"{label} is unexpectedly large: {entry.size} bytes")
+        return None
+    if entry.read is None:
+        errors.append(f"cannot read {label}: unreadable entry")
         return None
     try:
-        return archive.read(info).decode("utf-8-sig")
-    except (UnicodeDecodeError, RuntimeError, zipfile.BadZipFile) as exc:
+        return entry.read().decode("utf-8-sig")
+    except (UnicodeDecodeError, RuntimeError, zipfile.BadZipFile, OSError) as exc:
         errors.append(f"cannot read {label}: {exc}")
         return None
 
@@ -364,26 +458,27 @@ def _append_path_examples(errors: list[str], prefix: str, paths: set[str]) -> No
 
 
 def _check_portable_archive(
-    archive: zipfile.ZipFile,
-    zip_path: Path,
+    entries: list[_PortableEntry],
+    archive_path: Path,
     expected_edition: str | None,
     verify_payloads: bool,
+    *,
+    platform: str = "win",
 ) -> list[str]:
     errors: list[str] = []
-    infos = archive.infolist()
-    if not infos:
+    if not entries:
         return ["portable archive is empty"]
-    if len(infos) > MAX_PORTABLE_ENTRIES:
-        errors.append(f"portable archive has too many entries: {len(infos)}")
-    expanded_bytes = sum(info.file_size for info in infos)
+    if len(entries) > MAX_PORTABLE_ENTRIES:
+        errors.append(f"portable archive has too many entries: {len(entries)}")
+    expanded_bytes = sum(entry.size for entry in entries)
     if expanded_bytes > MAX_PORTABLE_EXPANDED_BYTES:
         errors.append(f"portable archive expands beyond the safety limit: {expanded_bytes} bytes")
 
-    normalized: dict[str, zipfile.ZipInfo] = {}
+    normalized: dict[str, _PortableEntry] = {}
     roots: set[str] = set()
-    safe_entries: list[tuple[zipfile.ZipInfo, PurePosixPath]] = []
-    for info in infos:
-        raw = info.filename
+    safe_entries: list[tuple[_PortableEntry, PurePosixPath]] = []
+    for entry in entries:
+        raw = entry.path
         issue = _portable_path_issue(raw)
         if issue:
             errors.append(f"unsafe portable archive path ({issue}): {raw}")
@@ -392,14 +487,14 @@ def _check_portable_archive(
         roots.add(path.parts[0])
         key = _portable_path_key(raw)
         if key in normalized:
-            errors.append(f"duplicate portable archive path: {normalized[key].filename} / {raw}")
+            errors.append(f"duplicate portable archive path: {normalized[key].path} / {raw}")
         else:
-            normalized[key] = info
-        if info.flag_bits & 0x1:
+            normalized[key] = entry
+        if entry.encrypted:
             errors.append(f"encrypted portable archive entry: {raw}")
-        if _zip_entry_is_symlink(info):
+        if entry.is_symlink:
             errors.append(f"portable archive contains symlink: {raw}")
-        safe_entries.append((info, path))
+        safe_entries.append((entry, path))
 
     if len(roots) != 1:
         errors.append(f"portable archive must have one root directory, found {sorted(roots)}")
@@ -408,49 +503,65 @@ def _check_portable_archive(
     if root.casefold() != "omnicrawler":
         errors.append(f"portable archive root must be OmniCrawler, found {root}")
 
-    relative_infos: dict[str, zipfile.ZipInfo] = {}
+    relative_infos: dict[str, _PortableEntry] = {}
     relative_names: dict[str, str] = {}
-    for info, path in safe_entries:
+    for entry, path in safe_entries:
         if len(path.parts) < 2 or path.parts[0] != root:
             continue
         relative = PurePosixPath(*path.parts[1:]).as_posix()
         key = _portable_path_key(relative)
-        relative_infos[key] = info
+        relative_infos[key] = entry
         relative_names[key] = relative
 
-    def file_info(relative: str) -> zipfile.ZipInfo | None:
-        info = relative_infos.get(_portable_path_key(relative))
-        return info if info is not None and not info.is_dir() else None
+    def file_info(relative: str) -> _PortableEntry | None:
+        entry = relative_infos.get(_portable_path_key(relative))
+        return entry if entry is not None and not entry.is_dir else None
 
+    entrypoints = _PORTABLE_PLATFORM_ENTRYPOINTS[platform]
     required_files = (
-        "OmniCrawler.exe", "omnicrawl.exe", "omnicrawl-worker.exe",
+        *entrypoints,
         "PORTABLE.flag", "EDITION.txt", "RUNTIME-MANIFEST.json",
         "CAPABILITIES.json", "SBOM.json", "THIRD_PARTY_NOTICES.md",
-        # F23：便携包门禁必须含启动器/本地说明/发布信息，否则解压后无从下手
-        "OmniCrawler-Launcher.bat", "PORTABLE_README.txt", "RELEASE-INFO.json",
+        # F23：便携包门禁必须含本地说明/发布信息，否则解压后无从下手
+        "RELEASE-INFO.json",
+        *_PORTABLE_REQUIRED_EXTRA[platform],
     )
     for relative in required_files:
         if file_info(relative) is None:
             errors.append(f"portable archive missing required file: {relative}")
-    if not any(key.startswith("docs/") and not info.is_dir() for key, info in relative_infos.items()):
+    for relative_dir in _PORTABLE_PLATFORM_REQUIRED_DIRS[platform]:
+        if _portable_path_key(relative_dir) not in relative_infos:
+            errors.append(f"portable archive missing required directory: {relative_dir}")
+    if not any(key.startswith("docs/") and not entry.is_dir for key, entry in relative_infos.items()):
         errors.append("portable archive missing required directory content: docs")
-    if not any(key.startswith("_internal/") and not info.is_dir() for key, info in relative_infos.items()):
+    if not any(key.startswith("_internal/") and not entry.is_dir for key, entry in relative_infos.items()):
         errors.append("portable archive missing required directory content: _internal")
 
-    for executable in ("OmniCrawler.exe", "omnicrawl.exe", "omnicrawl-worker.exe"):
-        info = file_info(executable)
-        if info is not None:
-            try:
-                with archive.open(info) as handle:
-                    if handle.read(2) != b"MZ":
+    # Windows 校验 PE 头（MZ）；Linux/macOS 校验可执行位语义由 runtime-verify 兜底，
+    # 这里仅确认入口文件存在且非空。
+    for executable in entrypoints:
+        entry = file_info(executable)
+        if entry is None:
+            continue
+        if platform == "win":
+            if entry.read is None:
+                errors.append(f"cannot read portable executable {executable}")
+            else:
+                try:
+                    if entry.read()[:2] != b"MZ":
                         errors.append(f"portable executable has no PE signature: {executable}")
-            except (RuntimeError, zipfile.BadZipFile) as exc:
-                errors.append(f"cannot read portable executable {executable}: {exc}")
+                except (RuntimeError, zipfile.BadZipFile) as exc:
+                    errors.append(f"cannot read portable executable {executable}: {exc}")
+        elif entry.size == 0:
+            errors.append(f"portable executable is empty: {executable}")
     flag = file_info("PORTABLE.flag")
-    if flag is not None and flag.file_size != 0:
+    if flag is not None and flag.size != 0:
         errors.append("PORTABLE.flag must be empty")
 
-    filename_match = re.search(r"Windows-Portable-(Standard|Full)\.zip$", zip_path.name, re.IGNORECASE)
+    platform_label = {"win": "Windows", "linux": "Linux", "mac": "macOS"}[platform]
+    filename_match = re.search(
+        rf"{platform_label}-Portable-(Standard|Full)\.(zip|tar\.gz|dmg)$", archive_path.name, re.IGNORECASE,
+    )
     filename_edition = filename_match.group(1).title() if filename_match else None
     if expected_edition is not None:
         expected_edition = expected_edition.title()
@@ -463,10 +574,10 @@ def _check_portable_archive(
         )
 
     declared_edition: str | None = None
-    edition_info = file_info("EDITION.txt")
-    if edition_info is not None:
-        edition_text = _read_small_zip_text(
-            archive, edition_info, limit=4096, label="EDITION.txt", errors=errors,
+    edition_entry = file_info("EDITION.txt")
+    if edition_entry is not None:
+        edition_text = _read_small_entry_text(
+            edition_entry, limit=4096, label="EDITION.txt", errors=errors,
         )
         if edition_text is not None:
             match = re.fullmatch(r"OmniCrawler (Standard|Full) portable edition\s*", edition_text)
@@ -481,35 +592,45 @@ def _check_portable_archive(
         if edition and value and value != edition:
             errors.append(f"portable {source} declares {value}, expected {edition}")
 
-    chromium_pattern = re.compile(
-        r"^browsers/chromium-[^/]+/chrome-win(?:64)?/chrome\.exe$", re.IGNORECASE,
-    )
-    if not any(chromium_pattern.fullmatch(name) for name in relative_names.values()):
+    chromium_patterns = _PORTABLE_CHROMIUM_PATTERNS[platform]
+    chromium_ok = False
+    for pattern in chromium_patterns:
+        compiled = re.compile(
+            "^" + re.escape(pattern).replace(r"\*", "[^/]*") + "$", re.IGNORECASE,
+        )
+        if any(compiled.fullmatch(name) for name in relative_names.values()):
+            chromium_ok = True
+            break
+    if not chromium_ok:
         errors.append("portable archive missing bundled Playwright Chromium")
 
+    exe_suffix = ".exe" if platform == "win" else ""
+    # macOS 是弱 Full（无稳定 paddle wheel，方案 5.3），Full 只要求 Tesseract+ChromeDriver；
+    # Windows/Linux 真 Full 额外要求 Paddle 模型。
+    requires_paddle = platform != "mac"
     full_only_files = (
-        "runtime/selenium/chromedriver.exe",
-        "runtime/tesseract/tesseract.exe",
+        f"runtime/selenium/chromedriver{exe_suffix}",
+        f"runtime/tesseract/tesseract{exe_suffix}",
         "runtime/tesseract/tessdata/eng.traineddata",
         "runtime/tesseract/tessdata/chi_sim.traineddata",
         "runtime/tesseract/tessdata/osd.traineddata",
-        "runtime/models/paddlex/omnicrawler-model-manifest.json",
     )
+    if requires_paddle:
+        full_only_files += ("runtime/models/paddlex/omnicrawler-model-manifest.json",)
     if edition == "Full":
         for relative in full_only_files:
             if file_info(relative) is None:
                 errors.append(f"Full portable archive missing runtime asset: {relative}")
-        if not any(
+        if requires_paddle and not any(
             key.startswith("runtime/models/paddlex/official_models/")
             and key.endswith("/inference.pdiparams")
             for key in relative_infos
         ):
             errors.append("Full portable archive missing Paddle inference parameters")
-        model_manifest_info = file_info("runtime/models/paddlex/omnicrawler-model-manifest.json")
-        if model_manifest_info is not None:
-            model_manifest_text = _read_small_zip_text(
-                archive,
-                model_manifest_info,
+        model_manifest_entry = file_info("runtime/models/paddlex/omnicrawler-model-manifest.json")
+        if requires_paddle and model_manifest_entry is not None:
+            model_manifest_text = _read_small_entry_text(
+                model_manifest_entry,
                 limit=1024 * 1024,
                 label="Paddle model manifest",
                 errors=errors,
@@ -549,11 +670,10 @@ def _check_portable_archive(
         }
         _append_path_examples(errors, "Standard portable archive contains Full-only assets", unexpected)
 
-    manifest_info = file_info("RUNTIME-MANIFEST.json")
-    if manifest_info is not None:
-        manifest_text = _read_small_zip_text(
-            archive,
-            manifest_info,
+    manifest_entry = file_info("RUNTIME-MANIFEST.json")
+    if manifest_entry is not None:
+        manifest_text = _read_small_entry_text(
+            manifest_entry,
             limit=MAX_PORTABLE_MANIFEST_BYTES,
             label="RUNTIME-MANIFEST.json",
             errors=errors,
@@ -598,27 +718,28 @@ def _check_portable_archive(
                 if not isinstance(expected_hash, str) or not _SHA256_PATTERN.fullmatch(expected_hash):
                     errors.append(f"invalid runtime manifest SHA-256: {raw_name}")
                     continue
-                info = relative_infos.get(key)
-                if info is None or info.is_dir():
+                entry = relative_infos.get(key)
+                if entry is None or entry.is_dir:
                     errors.append(f"runtime manifest references missing file: {raw_name}")
                     continue
-                if info.file_size != expected_bytes:
+                if entry.size != expected_bytes:
                     errors.append(f"runtime manifest size mismatch: {raw_name}")
                 if verify_payloads:
-                    digest = hashlib.sha256()
-                    try:
-                        with archive.open(info) as handle:
-                            for block in iter(lambda: handle.read(1024 * 1024), b""):
-                                digest.update(block)
-                    except (RuntimeError, zipfile.BadZipFile) as exc:
-                        errors.append(f"cannot verify portable payload {raw_name}: {exc}")
+                    if entry.read is None:
+                        errors.append(f"cannot verify portable payload {raw_name}: unreadable entry")
                     else:
-                        if digest.hexdigest() != expected_hash.lower():
-                            errors.append(f"runtime manifest hash mismatch: {raw_name}")
+                        digest = hashlib.sha256()
+                        try:
+                            digest.update(entry.read())
+                        except (RuntimeError, zipfile.BadZipFile, OSError) as exc:
+                            errors.append(f"cannot verify portable payload {raw_name}: {exc}")
+                        else:
+                            if digest.hexdigest() != expected_hash.lower():
+                                errors.append(f"runtime manifest hash mismatch: {raw_name}")
 
             archive_keys = {
-                key for key, info in relative_infos.items()
-                if not info.is_dir() and key != _portable_path_key("RUNTIME-MANIFEST.json")
+                key for key, entry in relative_infos.items()
+                if not entry.is_dir and key != _portable_path_key("RUNTIME-MANIFEST.json")
             }
             _append_path_examples(
                 errors,
@@ -642,9 +763,30 @@ def check_portable_zip(
 ) -> list[str]:
     try:
         with zipfile.ZipFile(zip_path) as archive:
-            return _check_portable_archive(archive, zip_path, expected_edition, verify_payloads)
+            entries = list(_iter_zip_entries(archive))
+            return _check_portable_archive(
+                entries, zip_path, expected_edition, verify_payloads, platform="win",
+            )
     except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
         return [f"cannot inspect portable ZIP {zip_path}: {exc}"]
+
+
+def check_portable_tar(
+    tar_path: Path,
+    *,
+    expected_edition: str | None = None,
+    verify_payloads: bool = False,
+    platform: str = "linux",
+) -> list[str]:
+    """检查 Linux/macOS 便携包 tar.gz 容器（P5：与 Windows zip 深校验对齐）。"""
+    try:
+        with tarfile.open(tar_path, "r:*") as archive:
+            entries = list(_iter_tar_entries(archive))
+            return _check_portable_archive(
+                entries, tar_path, expected_edition, verify_payloads, platform=platform,
+            )
+    except (OSError, RuntimeError, tarfile.TarError) as exc:
+        return [f"cannot inspect portable tar {tar_path}: {exc}"]
 
 
 def _defined_names_from_text(text: str, filename: str) -> set[str]:
@@ -670,6 +812,9 @@ def main() -> int:
     parser.add_argument("--source-zip-dir", type=Path)
     parser.add_argument("--portable-zip", type=Path)
     parser.add_argument("--portable-zip-dir", type=Path)
+    parser.add_argument("--portable-tar", type=Path)
+    parser.add_argument("--portable-tar-dir", type=Path)
+    parser.add_argument("--portable-platform", choices=("linux", "mac"), default="linux")
     parser.add_argument("--portable-deep", action="store_true")
     args = parser.parse_args()
     project_root = args.project_root.resolve()
@@ -700,6 +845,27 @@ def main() -> int:
             errors.extend(
                 f"{archive.name}: {error}"
                 for error in check_portable_zip(archive, verify_payloads=args.portable_deep)
+            )
+    if args.portable_tar:
+        errors.extend(
+            check_portable_tar(
+                args.portable_tar.resolve(),
+                verify_payloads=args.portable_deep,
+                platform=args.portable_platform,
+            )
+        )
+    if args.portable_tar_dir:
+        archives = sorted(args.portable_tar_dir.resolve().glob("*.tar.gz"))
+        if not archives:
+            errors.append(f"no portable tar.gz found in {args.portable_tar_dir.resolve()}")
+        for archive in archives:
+            errors.extend(
+                f"{archive.name}: {error}"
+                for error in check_portable_tar(
+                    archive,
+                    verify_payloads=args.portable_deep,
+                    platform=args.portable_platform,
+                )
             )
     if errors:
         print("Release integrity check failed:")
