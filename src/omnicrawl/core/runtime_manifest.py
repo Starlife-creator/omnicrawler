@@ -1,3 +1,14 @@
+"""运行时完整性清单（自校验用途）。
+
+⚠ B05-022：本清单是**自签名、非信任边界**——清单与文件在本地同一目录生成，
+任何人都可同时替换清单与文件。它只用于：
+- release CI 对构建产物的完整性自检（防构建过程损坏/遗漏）；
+- 本地 `runtime-verify` 检测意外文件变更。
+
+**不得**用于离线校验发布包的签名、防篡改或供应链信任判定——那些场景必须
+使用签名 + 透明日志（见 plugins 信任链 / sign_plugin.py）。
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -18,6 +29,7 @@ _EXCLUDED_RELATIVE_PREFIXES = ("logs/",)
 
 
 def create_runtime_manifest(root: Path, *, include: Iterable[Path] | None = None) -> dict[str, Any]:
+    """创建运行时清单（自签名，非信任边界——见模块 docstring）。"""
     root = root.resolve()
     paths = include if include is not None else (path for path in root.rglob("*") if path.is_file())
     files: dict[str, dict[str, Any]] = {}
