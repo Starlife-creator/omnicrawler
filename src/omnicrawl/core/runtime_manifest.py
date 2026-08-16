@@ -33,9 +33,14 @@ def create_runtime_manifest(root: Path, *, include: Iterable[Path] | None = None
     root = root.resolve()
     paths = include if include is not None else (path for path in root.rglob("*") if path.is_file())
     files: dict[str, dict[str, Any]] = {}
-    for path in sorted((Path(item).resolve() for item in paths), key=str):
+    for path in sorted((Path(item) for item in paths), key=str):
         if path.name == RUNTIME_MANIFEST or root not in path.parents:
             continue
+        # 用不 resolve 的相对路径记录（与 verify_runtime_manifest 的磁盘扫描对称）。
+        # macOS .app 内 Frameworks/Python.framework 等为 symlink：若此处 resolve，
+        # 记录的是解析后路径（甚至落在 root 外被跳过），而 verify 侧按 symlink
+        # 相对路径扫描 → 大量 unknown（macOS release CI 实测）。Linux 已 cp -rL
+        # 解引用、Windows 无 symlink，不受影响。
         relative = path.relative_to(root).as_posix()
         if relative.startswith(_EXCLUDED_RELATIVE_PREFIXES):
             continue
