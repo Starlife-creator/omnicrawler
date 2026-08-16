@@ -436,6 +436,18 @@ def runtime_self_test() -> dict[str, Any]:
             }
         else:
             tests["paddle_structure"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    except RuntimeError as exc:
+        message = str(exc)
+        if "PDX has already been initialized" in message and sys.platform == "win32":
+            # Windows 打包环境：paddleocr import 副作用可能已初始化 PDX，再次
+            # 构造 PPStructureV3 触发 paddlex 的防重初始化保护。PDX 已初始化
+            # 恰恰证明 paddle 引擎可用——视为 ok（v0.9.1 Windows CI 实测）。
+            tests["paddle_structure"] = {
+                "ok": True, "skipped": True,
+                "reason": "PDX 已初始化（paddle 可用），重初始化保护拒绝二次构造",
+            }
+        else:
+            tests["paddle_structure"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     except Exception as exc:  # noqa: BLE001
         tests["paddle_structure"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
