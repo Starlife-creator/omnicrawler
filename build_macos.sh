@@ -71,27 +71,22 @@ fi
 # library（PYI-9229/2508/20814）。GitHub Actions setup-python 安装的是非 framework
 # build；runner 预装 homebrew python 是 framework build。
 # ⚠ 版本必须与 PyInstaller 6.15.0 兼容：homebrew 默认 python3 已是 3.14（不受支持），
-# 优先用 python@3.12 / python@3.13（与 BUILD_PYTHON_VERSION=3.12 对齐）。
+# **且 python@3.13 的 framework BUNDLE 有 PYI-5670 问题（.app 缺 Frameworks/Python，
+# 见 2026-08-16 v0.9.0/v0.9.1 构建失败）**——故强制用 python@3.12（与
+# BUILD_PYTHON_VERSION=3.12 对齐，v0.8.0 已验证可用），不再 fallback 3.13。
 FRAMEWORK_PYTHON=""
-for candidate in \
-  /opt/homebrew/opt/python@3.12/bin/python3.12 \
-  /opt/homebrew/opt/python@3.13/bin/python3.13 \
-  /opt/homebrew/bin/python3; do
-  if [[ ! -x "$candidate" ]]; then continue; fi
-  # P8：PyInstaller 6.15.0 仅支持 3.12/3.13；homebrew 默认 python3 已是 3.14，
-  # 即使存在也不选用（否则"存在即选用"会误选 3.14 且版本断言只卡下界、拦不住）。
-  _py_minor=$("$candidate" -c 'import sys; print(sys.version_info[1])' 2>/dev/null)
-  if [[ -z "$_py_minor" || "$_py_minor" -gt 13 ]]; then
-    echo "跳过 $candidate（Python 3.$_py_minor 不受 PyInstaller 6.15 支持）" >&2
-    continue
-  fi
-  FRAMEWORK_PYTHON="$candidate"
-  break
-done
-if [[ -z "$FRAMEWORK_PYTHON" ]]; then
-  echo "未找到 framework Python（python@3.12/3.13），尝试 brew install python@3.12 ..." >&2
+if [[ -x /opt/homebrew/opt/python@3.12/bin/python3.12 ]]; then
+  FRAMEWORK_PYTHON=/opt/homebrew/opt/python@3.12/bin/python3.12
+else
+  echo "未找到 python@3.12（framework），尝试 brew install python@3.12 ..." >&2
   brew install python@3.12 || { echo "brew install python@3.12 失败" >&2; exit 1; }
   FRAMEWORK_PYTHON=/opt/homebrew/opt/python@3.12/bin/python3.12
+fi
+# 上界硬断言：PyInstaller 6.15 不支持 3.14+；3.13 因 PYI-5670 也不采用
+_py_minor=$("$FRAMEWORK_PYTHON" -c 'import sys; print(sys.version_info[1])' 2>/dev/null)
+if [[ "$_py_minor" -ne 12 ]]; then
+  echo "framework Python 必须是 3.12，当前：$("$FRAMEWORK_PYTHON" --version 2>&1)" >&2
+  exit 1
 fi
 echo "framework Python: $FRAMEWORK_PYTHON ($("$FRAMEWORK_PYTHON" --version 2>&1))"
 

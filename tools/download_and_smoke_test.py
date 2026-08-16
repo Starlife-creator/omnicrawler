@@ -23,8 +23,10 @@ def configure_cache(cache: Path, source: str) -> None:
     os.environ["HF_HOME"] = str(generic / "huggingface")
     os.environ["MODELSCOPE_CACHE"] = str(generic / "modelscope")
     os.environ["PADDLE_PDX_MODEL_SOURCE"] = source
-    if sys.platform == "win32":
-        os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "False")
+    # Paddle 3.3 的 oneDNN/PIR 路径无法执行每个 PPStructureV3 detector（Linux/macOS
+    # 与 Windows 同样触发 ConvertPirAttribute2RuntimeAttribute NotImplementedError），
+    # 统一禁用 MKLDNN 走常规 CPU runner（与 core/runtime_paths.py:182-185 的 Windows 规避同因）。
+    os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "False")
     cache.mkdir(parents=True, exist_ok=True)
 
 
