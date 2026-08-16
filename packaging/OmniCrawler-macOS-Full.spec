@@ -95,6 +95,9 @@ app = BUNDLE(
     gui_exe,
     cli_exe,
     worker_exe,
+    # 必须显式传 binaries（Python.framework 属 binaries，否则 .app 缺
+    # Contents/Frameworks/Python，运行时报 PYI-5670/PYI-43699）。datas 同理。
+    binaries=gui_analysis.binaries + cli_analysis.binaries + worker_analysis.binaries,
     datas=gui_analysis.datas + cli_analysis.datas + worker_analysis.datas,
     name="OmniCrawler.app",
     icon=None,
