@@ -254,6 +254,19 @@ def _is_trusted_cli_path(path: Path) -> bool:
     )
 
 
+def _looks_like_path(value: str) -> bool:
+    """判断 configured 是路径形式（含路径分隔符或扩展名）而非裸命令名。"""
+    return bool(
+        value
+        and (
+            "/" in value
+            or "\\" in value
+            or os.sep in value
+            or value.endswith((".exe", ".bat", ".cmd", ".sh"))
+        )
+    )
+
+
 def resolve_cli_candidates(configured: str = "omnicrawl") -> tuple[str, list[str]]:
     """返回 (选中命令, 已尝试候选路径列表)——供失败消息展示（F54）。
 
@@ -269,6 +282,11 @@ def resolve_cli_candidates(configured: str = "omnicrawl") -> tuple[str, list[str
         if _is_trusted_cli_path(configured_path):
             return str(configured_path.resolve()), [str(configured_path.resolve())]
         logger.warning("configured CLI 不在信任白名单内，忽略: %s", configured_path)
+        configured = "omnicrawl"
+    elif _looks_like_path(configured):
+        # 配置为路径形式（含分隔符）但文件不存在/不可信 → 回退默认命令名，
+        # 绝不把外部路径字符串当作命令返回（B05-017）。
+        logger.warning("configured CLI 是路径但不可信/不存在，回退默认: %s", configured)
         configured = "omnicrawl"
 
     discovered = shutil.which(configured)
