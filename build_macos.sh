@@ -244,7 +244,9 @@ done
     --project-root "$PROJECT_ROOT" --release-root "$RELEASE_ROOT" --edition "$EDITION"
 # P4-3：portable 冒烟（浏览器/原生运行时）。其 cwd=releaseRoot 会写缓存，
 # 必须在完整性清单生成之前运行（与 Windows F11 同约束）。
-"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/portable_smoke_test.py" "$RELEASE_ROOT" --edition "$EDITION"
+# macOS 曾遇 selenium 引擎挂起（BiDi 事件流不返回），OMNICRAWL_SMOKE_LIVE=1
+# 实时透传子进程日志，失败时 CI 能看到卡住前的最后输出。
+OMNICRAWL_SMOKE_LIVE=1 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/portable_smoke_test.py" "$RELEASE_ROOT" --edition "$EDITION"
 
 # M6（Full）：产物内 OCR 运行时可调用冒烟（Tesseract/ChromeDriver；Paddle 不打包）
 if [[ "$EDITION" == "Full" ]]; then

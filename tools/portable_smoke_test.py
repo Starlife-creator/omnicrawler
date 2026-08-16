@@ -65,11 +65,51 @@ extract:
     )
     import os as _os
     _env = {**_os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
-    completed = subprocess.run(
-        [str(executable), "run", "-c", str(config)],
-        cwd=str(release_dir), capture_output=True, text=True, encoding="utf-8",
-        errors="replace", timeout=180, env=_env,
-    )
+    # OMNICRAWL_SMOKE_LIVE=1 时实时透传子进程输出到 stderr——CI 排查
+    # selenium 引擎挂起时能看到卡住前的最后日志（macOS BiDi 挂起诊断用）。
+    live = _os.environ.get("OMNICRAWL_SMOKE_LIVE", "") == "1"
+    if live:
+        import sys as _sys
+
+        proc = subprocess.Popen(
+            [str(executable), "run", "-c", str(config)],
+            cwd=str(release_dir), text=True, encoding="utf-8",
+            errors="replace", env=_env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        collected: dict[str, list[str]] = {"out": [], "err": []}
+
+        def _drain(handle: Any, kind: str) -> None:
+            if handle is None:
+                return
+            for line in iter(handle.readline, ""):
+                collected[kind].append(line)
+                print(f"[smoke-{engine}-{kind}] {line}", file=_sys.stderr, end="")
+            try:
+                handle.close()
+            except Exception:
+                pass
+
+        out_thread = threading.Thread(target=_drain, args=(proc.stdout, "out"), daemon=True)
+        err_thread = threading.Thread(target=_drain, args=(proc.stderr, "err"), daemon=True)
+        out_thread.start()
+        err_thread.start()
+        rc = proc.wait(timeout=180)
+        out_thread.join(timeout=5)
+        err_thread.join(timeout=5)
+        completed = type(
+            "Completed", (), {
+                "returncode": rc,
+                "stdout": "".join(collected["out"]),
+                "stderr": "".join(collected["err"]),
+            }
+        )()
+    else:
+        completed = subprocess.run(
+            [str(executable), "run", "-c", str(config)],
+            cwd=str(release_dir), capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=180, env=_env,
+        )
     # On Windows, the PyInstaller-bundled CLI may crash with UnicodeEncodeError
     # when printing emoji to a GBK-encoded pipe. If the crawl itself succeeded
  # (records exist and contain expected content), treat the encoding error as
