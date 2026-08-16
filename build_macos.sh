@@ -192,41 +192,29 @@ if [[ "$EDITION" == "Full" && -d "$RUNTIME_ROOT" ]]; then
   mkdir -p "$APP_BUNDLE/Contents/MacOS/runtime"
   cp -R "$RUNTIME_ROOT/." "$APP_BUNDLE/Contents/MacOS/runtime/"
 fi
-# browsers 与 PORTABLE.flag 必须放 Contents/MacOS/（= application_dir()，
-# 冻结模式下 sys.executable 父目录），且须在 ad-hoc 签名前拷入，
-# 否则 codesign --deep 后新增文件会破坏签名完整性，且运行时探测不到
-# （"内置 Chromium 缺失"/portable 判定失效，v0.9.1 CI 实测）。
-mkdir -p "$APP_BUNDLE/Contents/MacOS/browsers"
-cp -R "$BROWSERS_ROOT/." "$APP_BUNDLE/Contents/MacOS/browsers/"
+# PORTABLE.flag 放 Contents/MacOS/（= application_dir()，冻结模式下
+# sys.executable 父目录），且须在 ad-hoc 签名前创建，否则 portable 判定失效
+# （v0.9.1 CI 实测）。browsers 不放 .app 内——放 .app 同级 release 根，
+# 由 browsers_root() 上溯定位（见组装段），避免 codesign seal 冲突。
 touch "$APP_BUNDLE/Contents/MacOS/PORTABLE.flag"
 
 # ---- ad-hoc 签名（无需开发者证书） -------------------------------------------
-# browsers 内含 Playwright Chromium 的复杂 bundle（Google Chrome for Testing.app
-# 及 Contents/Frameworks/.../Versions/*/Helpers/*.app 多重 symlink），codesign
-# --deep 递归必报 "bundle format is ambiguous"（v0.9.1 CI 实测），故不用 --deep。
-# 改为：逐个签内层 .app → 逐个签 browsers 内非 bundle 可执行文件 → 签父 .app 壳。
-# 注意：内层 .app 已整体签名，其内部可执行文件不得再单独签（会破坏密封），
-# 因此可执行文件循环用 -not -path "*.app/*" 排除嵌套 bundle 内部。
+# browsers 不放 .app 内（在 .app 同级 release 根，见组装段），.app 只含
+# PyInstaller 产物 + runtime + PORTABLE.flag，--deep 递归无 Chromium 复杂
+# bundle 干扰，直接整体签名即可。
 echo "codesign (ad-hoc): $APP_BUNDLE"
-while IFS= read -r nested_app; do
-  echo "  codesign nested app: ${nested_app#"$APP_BUNDLE/"}"
-  codesign --force --sign - "$nested_app" || exit 1
-done < <(find "$APP_BUNDLE/Contents/MacOS/browsers" -name "*.app" -type d 2>/dev/null)
-while IFS= read -r executable; do
-  echo "  codesign executable: ${executable#"$APP_BUNDLE/"}"
-  codesign --force --sign - "$executable" || exit 1
-done < <(find "$APP_BUNDLE/Contents/MacOS/browsers" -type f -perm -111 \
-  -not -path "*.app/*" 2>/dev/null)
-codesign --force --sign - "$APP_BUNDLE"
-codesign --verify --strict "$APP_BUNDLE" \
+codesign --force --deep --sign - "$APP_BUNDLE"
+codesign --verify --deep --strict "$APP_BUNDLE" \
   && echo "codesign verify OK" || { echo "codesign verify 失败" >&2; exit 1; }
 
 # ---- 组装暂存目录（.app + 文档 + 运行时） ------------------------------------
 rm -rf "$BUILD_ROOT/release"
 mkdir -p "$RELEASE_ROOT"
 cp -R "$APP_BUNDLE" "$RELEASE_ROOT/"
-# browsers / PORTABLE.flag 已在 ad-hoc 签名前拷入 .app/Contents/MacOS/
-# （见上方 runtime 拷贝块；browsers 与 application_dir() 对齐）。
+# browsers 放 .app 同级 release 根（OmniCrawler/browsers），browsers_root()
+# 在 macOS 冻结模式下上溯 3 级定位（Contents/MacOS → ../../browsers）。
+# 不放 .app 内以避开 codesign seal 对 Chromium 复杂 bundle 的签名冲突。
+cp -R "$BROWSERS_ROOT" "$RELEASE_ROOT/browsers"
 cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/packaging/THIRD_PARTY_NOTICES.md" "$RELEASE_ROOT/"
 echo "OmniCrawler $EDITION portable edition" > "$RELEASE_ROOT/EDITION.txt"
 for directory in configs docs examples; do

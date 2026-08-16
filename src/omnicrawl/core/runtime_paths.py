@@ -150,9 +150,20 @@ def _data_mode_choice(root: Path) -> dict[str, object]:
 
 
 def browsers_root() -> Path:
-    """Bundled browsers 目录单一真源（F27：修复两处路径不一致）。"""
+    """Bundled browsers 目录单一真源（F27：修复两处路径不一致）。
+
+    macOS .app 特殊：browsers 放 .app 同级（Contents/MacOS/../../browsers），
+    而非塞进 .app 内——否则 codesign seal 会把 Chromium 的复杂 bundle
+    （Google Chrome for Testing.app 含多重 symlink 的 Helpers）纳入签名，
+    触发 ambiguous / code object not signed（v0.9.1 CI 实测）。
+    """
     if is_frozen():
-        return application_dir() / "browsers"
+        app_dir = application_dir()
+        if sys.platform == "darwin":
+            sibling = app_dir.parent.parent.parent / "browsers"
+            if sibling.is_dir():
+                return sibling
+        return app_dir / "browsers"
     app_dir = application_dir()
     for candidate in (app_dir / ".runtime" / "browsers", app_dir / "runtime" / "browsers"):
         if candidate.is_dir():
