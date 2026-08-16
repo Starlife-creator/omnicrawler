@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import logging
 import os
 import platform
 import shutil
@@ -17,6 +18,8 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__
+
+LOGGER = logging.getLogger(__name__)
 
 MODULES = {
     "core_yaml": "yaml",
@@ -378,8 +381,12 @@ def runtime_self_test() -> dict[str, Any]:
         from PIL import Image, ImageDraw
 
         command = os.environ.get("TESSERACT_CMD", "").strip()
-        if command:
+        # B05-031：TESSERACT_CMD 指定的可执行文件需真实存在才采用——
+        # 避免把不存在路径写入 pytesseract 导致探测崩溃，保留 shutil.which 默认探测。
+        if command and Path(command).is_file():
             pytesseract.pytesseract.tesseract_cmd = command
+        elif command:
+            LOGGER.warning("TESSERACT_CMD 指向不存在的文件，忽略该设置: %s", command)
         image = Image.new("RGB", (520, 100), "white")
         ImageDraw.Draw(image).text((20, 30), "OmniCrawler OCR 1.0", fill="black")
         text = pytesseract.image_to_string(image, lang="eng").strip()

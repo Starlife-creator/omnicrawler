@@ -172,6 +172,8 @@ def record_with_playwright(url: str, output: Path, *, timeout_seconds: int = 300
         page.add_init_script(_RECORDER_SCRIPT)
         page.route(
             "**/*",
+            # B03-016：policy.allowed 是域名层门禁（主机级别拦截）；
+            # 子资源 URL 的精细授权由上层 egress broker 在传输层执行。
             lambda route: route.continue_() if policy.allowed(route.request.url)[0] else route.abort(),
         )
         page.goto(url, wait_until="domcontentloaded")

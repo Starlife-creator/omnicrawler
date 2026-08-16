@@ -569,7 +569,7 @@ class TestL3HeaderDeduction:
         assert "attachment" in r.reason.lower()
 
     def test_3xx_redirect_not_followed_needs_reclassify(self) -> None:
-        """L3 不跟随 3xx；只返回带 redirect_needed 的结果，调用方重新丢回 L1/L2/L3。"""
+        """L3 不跟随 3xx；返回带 redirect 标记的结果，上层据此重新入漏斗（B05-030）。"""
         from omnicrawl.core.categorizer import _HIT_SOURCE_L3, _l3_deduce_from_headers
 
         r = _l3_deduce_from_headers(
@@ -578,7 +578,7 @@ class TestL3HeaderDeduction:
         assert r is not None
         assert r.hit_source == _HIT_SOURCE_L3
         assert "3xx" in r.reason
-        assert "重新丢回 L1→L2→L3 漏斗" in r.reason
+        assert "redirect 标记" in r.reason
 
     def test_no_signal_returns_none(self) -> None:
         from omnicrawl.core.categorizer import _l3_deduce_from_headers

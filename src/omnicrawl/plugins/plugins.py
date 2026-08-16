@@ -258,6 +258,8 @@ class Registry:
         self.status_widgets.append(StatusWidgetRegistration(widget_factory))
 
     def emit(self, event: str, *, fail_open: bool = False, **context: Any) -> list[Any]:
+        # B01-009：fail_open 指「事件回调容错」（回调抛错时吞掉继续，不致命），
+        # 与网络/信任的 fail-open（不安全）无关；本方法不涉及安全判定。
         event_name = event.strip().lower()
         results: list[Any] = []
         for callback in self.hooks.get(event_name, []):
@@ -451,6 +453,7 @@ def load_local_plugins(
     root: Path,
     *,
     allow_external_paths: bool = False,
+    # B01-009：fail_open 指「单个插件加载/回调失败时容错跳过继续」，非安全 fail-open。
     fail_open: bool = False,
     approved_permissions: tuple[str, ...] = (),
     ast_allowed_patterns: tuple[str, ...] = (),

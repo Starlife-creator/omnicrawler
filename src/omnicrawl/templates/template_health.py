@@ -144,7 +144,11 @@ def validate_catalog(catalog: TemplateCatalog, *, include_legacy: bool = False) 
 
 
 class TemplatePack:
-    """Safe import/export of template bundles with manifest hashes and no implicit overwrite."""
+    """Safe import/export of template bundles with manifest hashes and no implicit overwrite.
+
+    ⚠ B11-005：包内仅有 sha256 **完整性**校验，**不含签名**——本机制防传输损坏，
+    不构成信任边界；模板来源信任校验由签名链（sign_plugin）负责，勿混用。
+    """
 
     MANIFEST = "omnicrawl-template-pack.json"
 

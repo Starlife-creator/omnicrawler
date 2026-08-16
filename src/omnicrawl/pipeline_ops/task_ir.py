@@ -245,10 +245,15 @@ def api_candidate_fragment(candidate: Mapping[str, Any]) -> dict[str, Any]:
     url = str(candidate.get("url", "")).strip()
     if not url:
         raise ValueError("API候选缺少url")
+    # B06-005：HTTP method 白名单——API 候选的 method 只允许标准方法，
+    # 拒绝任意字符串注入（如带控制字符/自定义扩展方法）。
+    method = str(candidate.get("method", "GET")).upper()
+    if method not in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}:
+        raise ValueError(f"不支持的 HTTP method: {method!r}")
     source: dict[str, Any] = {
         "kind": "rest",
         "seeds": [url],
-        "method": str(candidate.get("method", "GET")).upper(),
+        "method": method,
     }
     for key in ("headers", "body", "item_path", "pagination"):
         if key in candidate:

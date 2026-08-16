@@ -473,6 +473,15 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
                     f"允许: {', '.join(sorted(allowed))}{hint}"
                 )
 
+    # B05-013：project.name / source.kind 类型守卫——非字符串直接报错，
+    # 避免 str() 强转掩盖类型错误（如数字/字典被转成 "..." 语义漂移）。
+    raw_project = config.raw.get("project", {})
+    if not isinstance(raw_project.get("name", ""), str):
+        errors.append("project.name必须是字符串")
+    raw_source_kind = config.raw.get("source", {}).get("kind", "")
+    if not isinstance(raw_source_kind, str):
+        errors.append("source.kind必须是字符串")
+
     if config.source_kind not in SOURCE_KINDS:
         if config.section("plugins").get("paths"):
             warnings.append(f"source.kind={config.source_kind}将由本地插件提供，运行时再验证")
