@@ -77,7 +77,7 @@ if [[ "$SKIP_SELENIUM" -eq 0 ]]; then
     || die "Selenium Manager failed"
   DRIVER_SOURCE="$(printf '%s' "$MANAGER_OUTPUT" | "$PYTHON" -c "import json,sys; print(json.load(sys.stdin)['result']['driver_path'])")"
   [[ -n "$DRIVER_SOURCE" && -f "$DRIVER_SOURCE" ]] || die "ChromeDriver was not downloaded: $DRIVER_SOURCE"
-  cp "$DRIVER_SOURCE" "$RUNTIME_ROOT/selenium/chromedriver"
+  cp -f "$DRIVER_SOURCE" "$RUNTIME_ROOT/selenium/chromedriver"
   chmod +x "$RUNTIME_ROOT/selenium/chromedriver"
   log "ChromeDriver: $("$RUNTIME_ROOT/selenium/chromedriver" --version)"
 fi
@@ -91,7 +91,7 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
   TESS_ROOT="$RUNTIME_ROOT/tesseract"
   TESSDATA_ROOT="$TESS_ROOT/tessdata"
   mkdir -p "$TESS_ROOT" "$TESSDATA_ROOT"
-  cp "$TESS_BIN" "$TESS_ROOT/tesseract"
+  cp -f "$TESS_BIN" "$TESS_ROOT/tesseract"
 
   # brew 的 tesseract 依赖多以 @rpath/libtesseract.5.dylib 形式引用，
   # 不能简单跳过 @rpath/*；需沿 LC_RPATH 解析真实路径再拷贝。
@@ -99,8 +99,10 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
   # 使整棵树脱离 brew 前缀（@loader_path 相对"加载者所在目录"，本树都在同目录）。
   # macOS runner 的 /bin/bash 是 3.2（GitHub Actions），不支持关联数组 declare -A，
   # 用普通数组 + 辅助函数做已拷贝去重（兼容 bash 3.2）。
+  # 按 basename 去重：同一物理库可能经 symlink/不同 LC_RPATH 解析为多个路径，
+  # 但拷到同一目录后短名唯一（也避免同名只读目标重复 cp）。
   SEEN_LIBS=()
-  _seen() { # $1=路径，已记录返回 0，未记录返回 1（set -u 下空数组展开需先查长度）
+  _seen() { # $1=basename，已记录返回 0，未记录返回 1（set -u 下空数组展开需先查长度）
     local item
     if [[ ${#SEEN_LIBS[@]} -eq 0 ]]; then return 1; fi
     for item in "${SEEN_LIBS[@]}"; do
@@ -109,7 +111,7 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
     return 1
   }
   resolve_dylibs() { # $1 = 二进制路径（otool 源）
-    local bin="$1" dep rpath_path rel
+    local bin="$1" dep rpath_path rel dep_base
     for dep in $(otool -L "$bin" 2>/dev/null | tail -n +2 | awk '{print $1}'); do
       case "$dep" in
         /usr/lib/*|/System/*|/Library/*) continue ;; # 系统库不打包
@@ -129,9 +131,10 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
           ;;
         @loader_path/*|@executable_path/*) continue ;; # 已是相对引用，不拷贝
       esac
-      if [[ -f "$dep" ]] && ! _seen "$dep"; then
-        SEEN_LIBS+=("$dep")
-        cp "$dep" "$TESS_ROOT/"
+      dep_base="$(basename "$dep")"
+      if [[ -f "$dep" ]] && ! _seen "$dep_base"; then
+        SEEN_LIBS+=("$dep_base")
+        cp -f "$dep" "$TESS_ROOT/"
         resolve_dylibs "$dep"
       fi
     done
