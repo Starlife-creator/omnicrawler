@@ -229,8 +229,21 @@ def bundled_browser_available() -> bool:
 def bundled_browser_executable() -> Path | None:
     """Return the bundled Chromium executable, if present."""
     browsers = browsers_root()
-    for pattern in ("chromium-*/chrome-win/chrome.exe", "chromium-*/chrome-win64/chrome.exe"):
-        match = next(browsers.glob(pattern), None) if browsers.is_dir() else None
+    if not browsers.is_dir():
+        return None
+    # 三平台 Playwright Chromium 可执行路径（此前仅匹配 Windows chrome-win，
+    # Linux/macOS 产物内是 chrome-linux/chrome 与 chrome-mac/Chromium → 探测失败）。
+    # 新版 Playwright 在 macOS 下载 chrome-mac-arm64.zip，可执行文件是
+    # Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing。
+    patterns = (
+        "chromium-*/chrome-win/chrome.exe",
+        "chromium-*/chrome-win64/chrome.exe",
+        "chromium-*/chrome-linux/chrome",
+        "chromium-*/chrome-mac/Chromium",
+        "chromium-*/chrome-mac*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+    )
+    for pattern in patterns:
+        match = next(browsers.glob(pattern), None)
         if match is not None:
             return match
     return None

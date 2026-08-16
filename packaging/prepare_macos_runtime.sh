@@ -52,10 +52,13 @@ log() { echo "[runtime-prep] $*"; }
 die() { echo "[runtime-prep] ERROR: $*" >&2; exit 1; }
 
 # ---- 定位 bundled Chromium（ChromeDriver 按它匹配）--------------------------
+# 新版 Playwright 在 macOS 下载 chrome-mac-arm64.zip，可执行文件是
+# chromium-*/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing
+# （旧版是 chrome-mac/Chromium）。find 按可执行文件名模糊匹配两者。
 CHROME_BIN=""
 while IFS= read -r candidate; do
   if [[ -n "$candidate" ]]; then CHROME_BIN="$candidate"; break; fi
-done < <(find "$BROWSERS_ROOT" -type f \( -name 'Chromium' -o -name 'chrome' \) 2>/dev/null)
+done < <(find "$BROWSERS_ROOT" -type f \( -name 'Chromium' -o -name 'chrome' -o -name 'Google Chrome for Testing' \) 2>/dev/null)
 if [[ -z "$CHROME_BIN" ]]; then
   die "Playwright Chromium was not found under $BROWSERS_ROOT"
 fi
