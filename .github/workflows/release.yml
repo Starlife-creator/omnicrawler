@@ -366,10 +366,48 @@ jobs:
             --sbom "$RUNNER_TEMP/artifacts/omnicrawler-sbom-windows.cdx.json"
           python tools/check_release_integrity.py . \
             --portable-zip-dir "$RUNNER_TEMP/artifacts"
+          # P5：Linux tar.gz 容器级深校验（聚合期兜底；macOS 主产物是 dmg，
+          # 其回退 tar.gz 已在 build_macos.sh 内做 mac 平台深校验，此处不重复）
+          for archive in "$RUNNER_TEMP"/artifacts/*Linux-Portable-*.tar.gz; do
+            [ -e "$archive" ] || continue
+            python tools/check_release_integrity.py . \
+              --portable-tar "$archive" --portable-platform linux --portable-deep
+          done
 
       - name: 列出全部构建产物
         shell: bash
         run: ls -lh "$RUNNER_TEMP/artifacts"
+
+      # 阶段 C-11：Linux GPG detached 签名（行业标配，见方案 5.6）。
+      # 需仓库配置 GPG_PRIVATE_KEY / GPG_PASSPHRASE secret 才生效；
+      # 未配置时跳过（不阻塞发布）。签名发布后，用户以公钥验证 SHA256SUMS。
+      - name: 生成 GPG 签名（可选，需配置 secret）
+        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 多行 secret 经环境变量传递，用 printf 落文件避免 heredoc 展开问题
+          printf '%s' "$GPG_PRIVATE_KEY" > gpg-import.key
+          if [ -n "${GPG_PASSPHRASE:-}" ]; then
+            printf '%s\n' "$GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
+              --passphrase-fd 0 --import gpg-import.key 2>/dev/null
+          else
+            gpg --batch --yes --import gpg-import.key 2>/dev/null
+          fi
+          for checksum in "$RUNNER_TEMP"/artifacts/SHA256SUMS-*.txt; do
+            [ -e "$checksum" ] || continue
+            if [ -n "${GPG_PASSPHRASE:-}" ]; then
+              printf '%s\n' "$GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
+                --passphrase-fd 0 --detach-sign --armor -o "$checksum.sig" "$checksum" 2>/dev/null
+            else
+              gpg --batch --yes --detach-sign --armor -o "$checksum.sig" "$checksum" 2>/dev/null
+            fi
+            echo "GPG 签名: $(basename "$checksum").sig"
+          done
+          rm -f gpg-import.key
 
       # ── 上传到 GitHub Release ──────────────────────────────────────
       - name: 发布到 GitHub Release
