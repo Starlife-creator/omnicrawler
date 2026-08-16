@@ -553,12 +553,13 @@ class BrowserFetcher:
         try:
             self._install_selenium_guard(driver)
             driver.set_page_load_timeout(float(self.config.section("http").get("timeout_seconds", 60)))
-            # 看门狗：BiDi 拦截事件流在个别平台（macOS arm64 CI 实测）可能静默
-            # 挂起——导航/actions 不抛异常也不返回，外层 subprocess 只能干等到
-            # 180s 超时。看门狗超时调用 driver.quit() 解除挂起，随后 fail-closed 报错。
+            # 看门狗：BiDi 拦截在 macOS 上 continue_request 可能超时挂起（selenium
+            # 4.47 + Chrome 151 组合问题），导航/actions 不返回。driver.quit() 也走
+            # WebSocket 同样阻塞——超时必须杀 chromedriver 进程（service.stop）强制
+            # 断开，主线程的 WebDriver 调用才会抛异常恢复，随后 fail-closed 报错。
             watchdog = _Watchdog(
                 float(self.config.section("http").get("selenium_watchdog_seconds", 90)),
-                on_timeout=driver.quit,
+                on_timeout=driver.service.stop,
             )
             with watchdog:
                 driver.get(request.url)
@@ -616,7 +617,22 @@ class BrowserFetcher:
                     )
                     request.continue_request()
                 else:
-                    request.continue_request()
+                    try:
+                        request.continue_request()
+                    except Exception as exc:
+                        # macOS 上 selenium BiDi continue_request 等待命令响应可能超时
+                        # （WebDriverException: Timed out waiting for response to BiDi
+                        # command，selenium 4.47 + Chrome 151 已知组合问题）。异常发生在
+                        # selenium 回调线程，不逃逸到主流程——记录并尝试 fail，避免请求
+                        # 永久挂起导致 driver.get() 卡死。
+                        LOGGER.error(
+                            "BiDi continue_request 失败（%s）: %s，尝试 fail_request",
+                            request.url, exc,
+                        )
+                        try:
+                            request.fail()
+                        except Exception as fail_exc:
+                            LOGGER.error("BiDi fail_request 也失败: %s", fail_exc)
 
             network.add_request_handler("before_request", guard)
         except Exception as exc:
