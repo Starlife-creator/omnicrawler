@@ -381,14 +381,18 @@ jobs:
       # 阶段 C-11：Linux GPG detached 签名（行业标配，见方案 5.6）。
       # 需仓库配置 GPG_PRIVATE_KEY / GPG_PASSPHRASE secret 才生效；
       # 未配置时跳过（不阻塞发布）。签名发布后，用户以公钥验证 SHA256SUMS。
+      # 注意：secrets 上下文不可用于 if: 条件（工作流解析报错），改在步骤内判断。
       - name: 生成 GPG 签名（可选，需配置 secret）
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "${GPG_PRIVATE_KEY:-}" ]; then
+            echo "未配置 GPG_PRIVATE_KEY secret，跳过 GPG 签名"
+            exit 0
+          fi
           # 多行 secret 经环境变量传递，用 printf 落文件避免 heredoc 展开问题
           printf '%s' "$GPG_PRIVATE_KEY" > gpg-import.key
           if [ -n "${GPG_PASSPHRASE:-}" ]; then
