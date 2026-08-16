@@ -53,7 +53,7 @@ for package in ("paddle", "paddleocr", "paddlex", "cv2", "selenium", "lxml", "pl
 # 显式收集全部动态库 + 把 libs 目录完整放进 datas 供运行时 _set_paddle_lib_path 找到。
 _paddle_dyn = collect_dynamic_libs("paddle")
 binaries += _paddle_dyn
-datas += collect_data_files("paddle", includes=["libs/*"], includes_py_files=False)
+datas += collect_data_files("paddle", includes=["libs/*"], include_py_files=False)
 
 for package in ("keyring.backends",):
     hiddenimports += collect_submodules(package)
