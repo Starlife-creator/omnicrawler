@@ -179,8 +179,9 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
     lang_path="$TESSDATA_ROOT/$language.traineddata"
     if [[ ! -f "$lang_path" || "$(stat -c %s "$lang_path")" -lt 100000 ]]; then
       log "Download tessdata_fast/$language.traineddata ..."
-      curl -fsSL "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$language.traineddata" \
-        -o "$lang_path.part"
+      curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
+        "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$language.traineddata" \
+        -o "$lang_path.part" || die "tessdata 下载失败: $language.traineddata"
       mv "$lang_path.part" "$lang_path"
     fi
     # 拒绝 HTML 错误页（GitHub 404/限流会返回 HTML 但超过最小值）
