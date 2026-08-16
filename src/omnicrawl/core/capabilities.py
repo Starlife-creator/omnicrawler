@@ -426,6 +426,16 @@ def runtime_self_test() -> dict[str, Any]:
         )
         results = list(pipeline.predict(np.asarray(image)))
         tests["paddle_structure"] = {"ok": bool(results), "results": len(results)}
+    except ModuleNotFoundError as exc:
+        if sys.platform == "darwin":
+            # macOS 是弱 Full（方案 5.3）：无稳定 paddle wheel，full-macos extra
+            # 排除 paddleocr/paddlepaddle，Paddle 结构化识别非本平台 Full 承诺项。
+            # 标记 skipped 而非 failed，避免 self-test 对设计内缺失误报。
+            tests["paddle_structure"] = {
+                "ok": True, "skipped": True, "reason": "macOS 弱 Full 不含 Paddle",
+            }
+        else:
+            tests["paddle_structure"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     except Exception as exc:  # noqa: BLE001
         tests["paddle_structure"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
