@@ -471,6 +471,12 @@ class BrowserFetcher:
         # Request a WebDriver BiDi endpoint before the session starts; the
         # egress guard must be installed before the first navigation.
         options.enable_bidi = True
+        # BiDi 需要 Chrome 显式开启 + 禁用后台定时器节流——macOS 节能会节流
+        # BiDi WebSocket 事件，导致拦截事件流静默挂起（v0.9.1 macOS CI 实测，
+        # Linux 无此行为故此前未暴露）。--enable-bidi 对应 ChromeDriver 129+
+        # 的 BiDi 握手要求。
+        options.add_argument("--enable-bidi")
+        options.add_argument("--disable-background-timer-throttling")
         # macOS/CI 渲染慢时 driver.get() 等待渲染进程可能超时（'Timed out
         # receiving message from renderer'）。pageLoadStrategy=none 让 get()
         # 在 HTML 下载完成后即返回，配合下方 actions 的显式等待取内容，
