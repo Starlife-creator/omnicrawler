@@ -244,3 +244,28 @@ def test_ai_fields_mapped(round_trip_pair):
 def test_resource_profile_mapped(round_trip_pair):
     config, app = round_trip_pair
     assert app.raw["resources"]["profile"] == config.resource_profile
+
+
+# ---- P9-B4（B05-006）：secret:// 引用环检测 ----
+def test_resolve_secret_refs_cycle_detection(monkeypatch) -> None:
+    """B05-006：secret:// 引用环必须被检测（不无限递归）。"""
+    from omnicrawl.core import credentials
+
+    def fake_get(name: str) -> str:
+        if name == "A":
+            return "secret://B"
+        if name == "B":
+            return "secret://A"
+        raise AssertionError("unexpected")
+
+    monkeypatch.setattr(credentials, "get_secret", fake_get)
+    with pytest.raises(ValueError, match="形成环"):
+        credentials.resolve_secret_refs("secret://A")
+
+
+def test_resolve_secret_refs_self_reference_detected(monkeypatch) -> None:
+    from omnicrawl.core import credentials
+
+    monkeypatch.setattr(credentials, "get_secret", lambda name: "secret://A")
+    with pytest.raises(ValueError, match="形成环"):
+        credentials.resolve_secret_refs("secret://A")
