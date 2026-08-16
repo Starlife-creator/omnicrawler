@@ -279,7 +279,9 @@ def test_selenium_bidi_guard_allows_or_fails_each_subrequest(tmp_path: Path) -> 
         fetcher._install_selenium_guard(driver)
 
     fetcher.config = _config(tmp_path / "legacy", allow_unintercepted_selenium=True)
-    fetcher._install_selenium_guard(SimpleNamespace())
+    # P9-B2（B03-007/008）：opt-out 已废弃并忽略——无 network 的 driver 仍 fail-closed
+    with pytest.raises(RuntimeError, match="逐请求拦截不可用"):
+        fetcher._install_selenium_guard(SimpleNamespace())
 
 
 class _PluginHandler(BaseHTTPRequestHandler):
