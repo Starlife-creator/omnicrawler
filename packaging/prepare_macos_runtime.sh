@@ -88,43 +88,61 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
   TESS_ROOT="$RUNTIME_ROOT/tesseract"
   TESSDATA_ROOT="$TESS_ROOT/tessdata"
   mkdir -p "$TESS_ROOT" "$TESSDATA_ROOT"
-
-  # 拷贝 tesseract 二进制 + 递归 dylib 树（otool -L 解析，含 leptonica 等）
   cp "$TESS_BIN" "$TESS_ROOT/tesseract"
+
+  # brew 的 tesseract 依赖多以 @rpath/libtesseract.5.dylib 形式引用，
+  # 不能简单跳过 @rpath/*；需沿 LC_RPATH 解析真实路径再拷贝。
+  # 对已拷贝的每个 dylib，把其 @rpath/x 依赖统一 -change 为 @loader_path/x，
+  # 使整棵树脱离 brew 前缀（@loader_path 相对"加载者所在目录"，本树都在同目录）。
   declare -A SEEN_LIB
-  resolve_dylibs() { # $1 = 二进制路径；$2 = 目标目录
-    local bin="$1" target="$2"
+  resolve_dylibs() { # $1 = 二进制路径（otool 源）
+    local bin="$1" dep rpath_path rel
     for dep in $(otool -L "$bin" 2>/dev/null | tail -n +2 | awk '{print $1}'); do
       case "$dep" in
-        /usr/lib/*|/System/*|@rpath/*|@loader_path/*|@executable_path/*) continue ;;
-        *)
-          if [[ -f "$dep" ]] && [[ -z "${SEEN_LIB["$dep"]:-}" ]]; then
-            SEEN_LIB["$dep"]=1
-            cp "$dep" "$target/"
-            resolve_dylibs "$dep" "$target"
+        /usr/lib/*|/System/*|/Library/*) continue ;; # 系统库不打包
+        @rpath/*)
+          # 沿二进制 LC_RPATH 解析 @rpath 真实文件（brew 路径 /opt/homebrew/opt/...）
+          rel="${dep#@rpath/}"
+          rpath_path=""
+          while IFS= read -r rdir; do
+            if [[ -f "$rdir/$rel" ]]; then rpath_path="$rdir/$rel"; break; fi
+          done < <(otool -l "$bin" 2>/dev/null | awk '/LC_RPATH/{getline; getline; print $2}')
+          if [[ -z "$rpath_path" ]]; then
+            # 兜底：/opt/homebrew/opt 全目录按 basename 查找
+            rpath_path="$(find /opt/homebrew/opt -name "$rel" -type f 2>/dev/null | head -1)"
           fi
+          [[ -n "$rpath_path" ]] || die "无法解析 @rpath 依赖: $dep（来自 $bin）"
+          dep="$rpath_path"
+          ;;
+        @loader_path/*|@executable_path/*) continue ;; # 已是相对引用，不拷贝
+      esac
+      if [[ -f "$dep" ]] && [[ -z "${SEEN_LIB["$dep"]:-}" ]]; then
+        SEEN_LIB["$dep"]=1
+        cp "$dep" "$TESS_ROOT/"
+        resolve_dylibs "$dep"
+      fi
+    done
+  }
+  resolve_dylibs "$TESS_BIN"
+
+  # 统一重写依赖引用：每个二进制/dylib 的 @rpath/x 依赖 → @loader_path/x
+  for target in "$TESS_ROOT/tesseract" "$TESS_ROOT"/*.dylib; do
+    [[ -e "$target" ]] || continue
+    for dep in $(otool -L "$target" 2>/dev/null | tail -n +2 | awk '{print $1}'); do
+      case "$dep" in
+        @rpath/*)
+          install_name_tool -change "$dep" "@loader_path/${dep#@rpath/}" "$target" 2>/dev/null || true
           ;;
       esac
     done
-  }
-  resolve_dylibs "$TESS_BIN" "$TESS_ROOT"
-
-  # 重写 dylib 安装名：让 tesseract 优先找本地 lib（install_name_tool 改 @loader_path）
-  for lib in "$TESS_ROOT"/*.dylib; do
-    [[ -e "$lib" ]] || continue
-    install_name_tool -id "@loader_path/$(basename "$lib")" "$lib" 2>/dev/null || true
+    # dylib 的 install_name 也统一为 @loader_path/短名，保证按同目录解析
+    install_name_tool -id "@loader_path/$(basename "$target")" "$target" 2>/dev/null || true
   done
-  # tesseract 自身对 libtesseract/liblept 的引用改指本地（不依赖 brew 前缀）
-  install_name_tool -change "$(otool -L "$TESS_BIN" | grep -o '/[^ ]*libtesseract[^ ]*' | head -1)" \
-      "@loader_path/libtesseract.dylib" "$TESS_ROOT/tesseract" 2>/dev/null || true
-  install_name_tool -change "$(otool -L "$TESS_BIN" | grep -o '/[^ ]*liblept[^ ]*' | head -1)" \
-      "@loader_path/liblept.dylib" "$TESS_ROOT/tesseract" 2>/dev/null || true
 
   # 逐个 ad-hoc 重签（Gatekeeper 会拦截未签名/失效签名的嵌入二进制）
-  codesign --force --sign - "$TESS_ROOT/tesseract" 2>/dev/null || true
-  for lib in "$TESS_ROOT"/*.dylib; do
-    [[ -e "$lib" ]] || continue
-    codesign --force --sign - "$lib" 2>/dev/null || true
+  for target in "$TESS_ROOT/tesseract" "$TESS_ROOT"/*.dylib; do
+    [[ -e "$target" ]] || continue
+    codesign --force --sign - "$target" 2>/dev/null || true
   done
 
   # tessdata 语言包（tessdata_fast）

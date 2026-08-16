@@ -107,7 +107,8 @@ if [[ ! -x "$BUILDER_PYTHON" ]]; then
 fi
 "$BUILDER_PYTHON" -m pip install --upgrade pip setuptools wheel
 if [[ "$EDITION" == "Full" ]]; then
-  EXTRAS="full"
+  # full-macos：full 去掉 paddleocr/paddlepaddle（macOS 无稳定 wheel）+ 显式 opencv
+  EXTRAS="full-macos"
 else
   EXTRAS="gui,html,pdf,browser,async-http,security"
 fi

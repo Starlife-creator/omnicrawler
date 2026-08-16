@@ -78,6 +78,25 @@ full = [
     "aiofiles>=25,<26",
     "python-docx>=1.1,<2", "python-pptx>=1.0,<2", "chardet>=5,<6",
 ]
+# macOS Full：同 full，但去掉 paddleocr/paddlepaddle（macOS 无稳定 wheel），
+# 显式补 opencv-contrib-python 供 cv2（macOS Full spec collect_all(cv2) 需要）。
+# 用于 build_macos.sh --edition Full 的依赖矩阵。
+full-macos = [
+  "beautifulsoup4>=4.12,<5", "lxml>=5,<7", "cssselect>=1.2,<2", "selectolax>=0.2,<1", "PyMuPDF>=1.24,<2", "openpyxl>=3.1,<4",
+  "playwright>=1.49,<2", "patchright>=1,<2", "selenium>=4.27,<5", "httpx>=0.27,<1",
+  "websockets>=14,<17", "redis>=5,<9", "Scrapy>=2.12,<3",
+  "pytesseract>=0.3.13,<1", "Pillow>=10,<13",
+  "numpy>=1.26,<3", "opencv-contrib-python>=4.10,<5",
+  "ddddocr>=1.5,<2", "onnxruntime>=1.17,<2",
+  "crawl4ai>=0.5,<1",
+  "PyQt6>=6.5", "ruamel.yaml>=0.17", "psutil>=5.9", "requests>=2.28",
+    "keyring>=25,<27", "cryptography>=44,<51",
+    "boto3>=1.35,<2", "duckdb>=1.2,<2", "pyarrow>=18,<26",
+    "psycopg[binary]>=3.2,<4", "opensearch-py>=2.8,<4",
+    "curl_cffi>=0.11,<1",
+    "aiofiles>=25,<26",
+    "python-docx>=1.1,<2", "python-pptx>=1.0,<2", "chardet>=5,<6",
+]
 
 [project.scripts]
 omnicrawl = "omnicrawl.cli:main"

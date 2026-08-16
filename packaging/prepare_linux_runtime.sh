@@ -98,18 +98,44 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
   rm -rf "$DEB_DIR"
   mkdir -p "$DEB_DIR"
 
-  # 下载 tesseract-ocr 及其直接 Depends（apt 源签名保证完整性）
-  DEB_PKGS=(tesseract-ocr)
-  DEB_PKGS+=($(apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts \
-      --no-breaks --no-replaces --no-enhances --no-pre-depends tesseract-ocr 2>/dev/null \
-      | awk '/^[a-z]/ {print $1}'))
-  # 只保留真实存在的包，避免 apt-get download 对虚拟包报错
-  EXISTING=()
-  for pkg in "${DEB_PKGS[@]}"; do
-    if apt-cache show "$pkg" >/dev/null 2>&1; then EXISTING+=("$pkg"); fi
-  done
-  log "Downloading ${#EXISTING[@]} apt packages: ${EXISTING[*]}"
-  (cd "$DEB_DIR" && apt-get download "${EXISTING[@]}" >/dev/null 2>&1) || die "apt-get download failed（需先 apt-get update）"
+  # 下载 tesseract-ocr 及其递归 Depends（apt 源签名保证完整性）。
+  # ⚠ 注意：apt-cache depends 输出是缩进的（"  Depends: libfoo"），
+  # 不能按顶格行过滤；递归收集 Depends 字段，去重、剔除虚拟/已存在的包。
+  # 先确保 apt 源元数据可用（CI 全新 runner 可能未 update；非 root 则容忍失败，
+  # 由后续 apt-cache 空结果显式报错）。
+  if command -v apt-get >/dev/null 2>&1; then
+    if [[ "$(id -u)" -eq 0 ]]; then
+      apt-get update >/dev/null 2>&1 || true
+    elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+      sudo apt-get update >/dev/null 2>&1 || true
+    fi
+  fi
+  DEB_PKGS=()
+  # 系统基础库：几乎所有目标发行版都有，捆绑本地副本反而危险（glibc/libstdc++
+  # ABI 冲突）。递归依赖时跳过，运行时由系统提供。
+  SYSTEM_BASE_LIBS="libc6 libgcc-s1 libstdc++6 zlib1g liblzma5 libgomp1 libzstd1 liblz4-1 libbz2-1.0 libpcre2-8-0"
+  _collect_deps() {
+    local pkg="$1" deps
+    deps="$(apt-cache depends --no-recommends --no-suggests --no-conflicts \
+        --no-breaks --no-replaces --no-enhances "$pkg" 2>/dev/null \
+        | awk '/^  Depends:/ {print $2}' | sed 's/:any$//' || true)"
+    for dep in $deps; do
+      case " $SYSTEM_BASE_LIBS " in
+        *" $dep "*) continue ;; # 系统基础库不捆绑
+      esac
+      case " ${DEB_PKGS[*]} " in
+        *" $dep "*) continue ;; # 已收集过，防环
+      esac
+      if apt-cache show "$dep" >/dev/null 2>&1; then
+        DEB_PKGS+=("$dep")
+        _collect_deps "$dep"
+      fi
+    done
+  }
+  _collect_deps tesseract-ocr
+  DEB_PKGS=(tesseract-ocr "${DEB_PKGS[@]}")
+  log "Downloading ${#DEB_PKGS[@]} apt packages: ${DEB_PKGS[*]}"
+  (cd "$DEB_DIR" && apt-get download "${DEB_PKGS[@]}" >/dev/null 2>&1) || die "apt-get download failed（需先 apt-get update）"
 
   # dpkg-deb 解包全部 .deb，合并 usr/ 前缀
   for deb in "$DEB_DIR"/*.deb; do
@@ -119,18 +145,26 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
     die "tesseract 二进制未从 apt 包解出"
   fi
 
-  # 拷贝二进制与共享库到运行时目录（排除系统级文档）
+  # 拷贝二进制与共享库到运行时目录（排除系统级文档）。
+  # dpkg 的 .so 是"短名 symlink → 版本号真身"成对出现，tesseract 的 DT_NEEDED
+  # 引用短名（如 libtesseract.so.5），故必须用 cp -a 保留 symlink，否则加载失败。
   cp "$EXTRACT_ROOT/usr/bin/tesseract" "$TESS_ROOT/"
-  find "$EXTRACT_ROOT/usr/lib" -type f -name '*.so*' 2>/dev/null | while read -r so; do
-    cp -L "$so" "$TESS_ROOT/"
+  find "$EXTRACT_ROOT/usr/lib" \( -type f -o -type l \) -name '*.so*' 2>/dev/null | while read -r so; do
+    cp -a "$so" "$TESS_ROOT/"
   done
   # lib 目录也可能在 usr/lib/x86_64-linux-gnu（dpkg-deb -x 合并后路径），
-  # 兜底：直接复制任何 .so 到 tesseract 同级
-  find "$EXTRACT_ROOT/usr/lib" -type f -name '*.so*' 2>/dev/null | wc -l | grep -q '^[1-9]' \
+  # 兜底：确认真实 .so 已拷入（symlink 不计）
+  find "$TESS_ROOT" -maxdepth 1 -type f -name '*.so*' | grep -q . \
     || die "apt 包未解出任何共享库"
 
-  # patchelf 指 rpath 到 $ORIGIN（本地 lib），保证不依赖系统包
-  patchelf --set-rpath '$ORIGIN' "$TESS_ROOT/tesseract" || true
+  # patchelf 指 rpath 到 $ORIGIN（本地 lib），保证不依赖系统包。
+  # RUNPATH 不沿依赖传播，故二进制与每个 .so 都需设（否则 .so 之间互依赖
+  # 时仍会 fallback 到系统路径）。
+  patchelf --set-rpath '$ORIGIN' "$TESS_ROOT/tesseract" 2>/dev/null || true
+  for so in "$TESS_ROOT"/*.so*; do
+    [[ -e "$so" ]] || continue
+    patchelf --set-rpath '$ORIGIN' "$so" 2>/dev/null || true
+  done
 
   # ldd 门禁：不得有 not found
   MISSING="$(ldd "$TESS_ROOT/tesseract" 2>/dev/null | grep -c 'not found' || true)"
