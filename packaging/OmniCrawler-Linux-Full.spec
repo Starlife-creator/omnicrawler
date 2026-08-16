@@ -13,7 +13,7 @@
 from pathlib import Path
 import sys
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_dynamic_libs, collect_submodules, copy_metadata
 
 
 project_root = Path(SPECPATH).parent
@@ -47,6 +47,13 @@ for package in ("paddle", "paddleocr", "paddlex", "cv2", "selenium", "lxml", "pl
     datas += package_datas
     binaries += package_binaries
     hiddenimports += package_hidden
+
+# Paddle 的 paddle/libs/*.so（libpaddle.so 等）collect_all 可能漏收集（PaddleOCR
+# discussion #11342：打包后 libs 文件比开发环境少，导致 frozen import 失败）。
+# 显式收集全部动态库 + 把 libs 目录完整放进 datas 供运行时 _set_paddle_lib_path 找到。
+_paddle_dyn = collect_dynamic_libs("paddle")
+binaries += _paddle_dyn
+datas += collect_data_files("paddle", includes=["libs/*"], includes_py_files=False)
 
 for package in ("keyring.backends",):
     hiddenimports += collect_submodules(package)
