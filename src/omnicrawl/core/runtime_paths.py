@@ -55,8 +55,17 @@ def portable_data_root() -> Path:
             probe = preferred / ".omnicrawler"
             probe.mkdir(parents=True, exist_ok=True)
             return preferred
-        except OSError:
-            pass
+        except OSError as exc:
+            # 应用目录不可写：本应留在应用文件夹内（portable 数据模式/冻结包），
+            # 但此处原逻辑会静默回退到系统用户数据目录，破坏"完全自包含"且用户无感知。
+            # 显式告警（不阻断，避免只读介质/Program Files 等合法场景崩溃），
+            # 提示用户解压到可写位置或改用 local/custom 数据模式。
+            logger.warning(
+                "应用目录不可写，可写数据无法留在应用文件夹内 (%s)：%s；"
+                "工作区将回退到系统用户数据目录，整体便携性失效。"
+                "请将应用解压到可写位置，或在设置中改用 local/custom 数据模式。",
+                preferred, exc,
+            )
 
     local_app_data = os.environ.get("LOCALAPPDATA")
     fallback = Path(local_app_data) / "OmniCrawler" if local_app_data else Path.home() / ".omnicrawler"

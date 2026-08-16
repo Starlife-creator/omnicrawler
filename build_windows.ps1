@@ -4,7 +4,7 @@ param(
     [switch]$SkipBrowserDownload,
     [switch]$SkipRuntimeAssetDownload,
     [string]$BuilderPythonPath = '',
-    [ValidateSet('Standard', 'Full')][string]$Edition = 'Full',
+    [ValidateSet('Standard', 'Full')][string]$Edition = 'Standard',
     [string]$CodeSigningThumbprint = '',
     [switch]$RequireCodeSigning,
     [switch]$Offline,
@@ -122,7 +122,12 @@ function Copy-VerifiedTree([string]$Source, [string]$Destination, [string]$Label
 # ---- 依赖安装（F1：版本读取必须在此之后，构建 venv 此时才可用）----
 if (-not $SkipDependencyInstall) {
     if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-        throw 'Python 3.10 or newer was not found.'
+        throw 'Python 3.12 or newer was not found.'
+    }
+    # 版本门槛：requires-python>=3.12，早失败避免 venv 建在旧解释器上（与 Linux/macOS M2 对齐）
+    $pythonVersion = (& python -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null).Trim()
+    if (-not $pythonVersion -or ([version]$pythonVersion -lt [version]'3.12')) {
+        throw "需 Python >=3.12，当前：$pythonVersion"
     }
     # F5：显式 -BuilderPythonPath 指向非构建 venv 的解释器时拒绝自动安装，
     # 避免把项目+PyInstaller+完整依赖矩阵灌入系统 Python。

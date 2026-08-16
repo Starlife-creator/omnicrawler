@@ -22,7 +22,6 @@ BUILD_ROOT=""
 RELEASE_OUTPUT=""
 BROWSER_CACHE_PATH=""
 SKIP_BROWSER_DOWNLOAD=0
-SKIP_RUNTIME_DOWNLOAD=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -31,7 +30,6 @@ while [[ $# -gt 0 ]]; do
     --release-output) RELEASE_OUTPUT="$2"; shift 2 ;;
     --browser-cache-path) BROWSER_CACHE_PATH="$2"; shift 2 ;;
     --skip-browser-download) SKIP_BROWSER_DOWNLOAD=1; shift ;;
-    --skip-runtime-download) SKIP_RUNTIME_DOWNLOAD=1; shift ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -42,6 +40,13 @@ case "$EDITION" in
 esac
 
 PROJECT_ROOT="$(pwd)"
+
+# ---- Python 版本断言（与 pyproject requires-python >=3.12 对齐）-----------
+if ! python3 -c 'import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)' 2>/dev/null; then
+  echo "需 Python ≥3.12，当前：$(python3 --version 2>&1 || echo '未找到 python3')" >&2
+  exit 1
+fi
+
 if [[ -z "$BUILD_ROOT" ]]; then
   BUILD_ROOT="${TMPDIR:-/tmp}/OmniCrawler-build-$(echo "$EDITION" | tr '[:upper:]' '[:lower:]')"
 fi
@@ -149,7 +154,7 @@ mkdir -p "$RELEASE_ROOT"
 # runtime-verify 报 unknown。dereference 后 portable 包自包含真实文件。
 cp -rL "$BUILT_FOLDER/." "$RELEASE_ROOT/"
 cp -r "$BROWSERS_ROOT" "$RELEASE_ROOT/browsers"
-cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/LICENSE" "$RELEASE_ROOT/"
+cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/packaging/THIRD_PARTY_NOTICES.md" "$RELEASE_ROOT/"
 echo "OmniCrawler $EDITION portable edition" > "$RELEASE_ROOT/EDITION.txt"
 for directory in configs docs examples; do
   cp -r "$PROJECT_ROOT/$directory" "$RELEASE_ROOT/"
@@ -160,16 +165,19 @@ for relative_dir in data/input data/pdfs work output logs; do
 done
 
 # ---- 产物级测试（SBOM + CLI 冒烟 + portable 冒烟 + 完整性清单）--------------
-# P4-2：与 Windows 对齐，SBOM 写入包内
+# 与 Windows 构建对齐：落盘 CAPABILITIES.json / RELEASE-INFO.json 并重刷清单
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/generate_sbom.py" --output "$RELEASE_ROOT/SBOM.json"
 "$RELEASE_ROOT/omnicrawl" --version
 "$RELEASE_ROOT/omnicrawl" templates validate
-"$RELEASE_ROOT/omnicrawl" capabilities --verify-imports --portable-paths
+"$RELEASE_ROOT/omnicrawl" capabilities --verify-imports --portable-paths > "$RELEASE_ROOT/CAPABILITIES.json"
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/generate_release_info.py" \
+    --project-root "$PROJECT_ROOT" --release-root "$RELEASE_ROOT" --edition "$EDITION"
 # P4-3：portable 冒烟（浏览器/原生运行时）。其 cwd=releaseRoot 会写缓存，
 # 必须在完整性清单生成之前运行（与 Windows F11 同约束）。
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/portable_smoke_test.py" "$RELEASE_ROOT" --edition "$EDITION"
 
-# 完整性清单：复用仓库内跨平台实现（不依赖 Windows 专属工具）
+# 完整性清单：在新增 CAPABILITIES.json / RELEASE-INFO.json 之后生成，
+# 使清单覆盖这两个机器可读文件（与 Windows 同序：先加文件再刷清单）。
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/create_runtime_manifest.py" --release-root "$RELEASE_ROOT"
 "$RELEASE_ROOT/omnicrawl" runtime-verify --root "$RELEASE_ROOT"
 # P4-1：Windows 对 zip 跑 check_release_integrity --portable-zip --portable-deep；

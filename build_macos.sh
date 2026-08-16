@@ -45,7 +45,7 @@ fi
 BINARY_ROOT="$BUILD_ROOT/bin"
 WORK_ROOT="$BUILD_ROOT/work"
 BROWSERS_ROOT="$BUILD_ROOT/browsers"
-RELEASE_ROOT="$BUILD_ROOT/release"
+RELEASE_ROOT="$BUILD_ROOT/release/OmniCrawler"
 if [[ -z "$RELEASE_OUTPUT" ]]; then
   RELEASE_OUTPUT="$PROJECT_ROOT/release"
 fi
@@ -70,14 +70,29 @@ for candidate in \
   /opt/homebrew/opt/python@3.12/bin/python3.12 \
   /opt/homebrew/opt/python@3.13/bin/python3.13 \
   /opt/homebrew/bin/python3; do
-  if [[ -x "$candidate" ]]; then FRAMEWORK_PYTHON="$candidate"; break; fi
+  if [[ ! -x "$candidate" ]]; then continue; fi
+  # P8：PyInstaller 6.15.0 仅支持 3.12/3.13；homebrew 默认 python3 已是 3.14，
+  # 即使存在也不选用（否则"存在即选用"会误选 3.14 且版本断言只卡下界、拦不住）。
+  _py_minor=$("$candidate" -c 'import sys; print(sys.version_info[1])' 2>/dev/null)
+  if [[ -z "$_py_minor" || "$_py_minor" -gt 13 ]]; then
+    echo "跳过 $candidate（Python 3.$_py_minor 不受 PyInstaller 6.15 支持）" >&2
+    continue
+  fi
+  FRAMEWORK_PYTHON="$candidate"
+  break
 done
 if [[ -z "$FRAMEWORK_PYTHON" ]]; then
-  echo "未找到 framework Python（python@3.12/3.13/默认），尝试 brew install python@3.12 ..." >&2
+  echo "未找到 framework Python（python@3.12/3.13），尝试 brew install python@3.12 ..." >&2
   brew install python@3.12 || { echo "brew install python@3.12 失败" >&2; exit 1; }
   FRAMEWORK_PYTHON=/opt/homebrew/opt/python@3.12/bin/python3.12
 fi
 echo "framework Python: $FRAMEWORK_PYTHON ($("$FRAMEWORK_PYTHON" --version 2>&1))"
+
+# ---- Python 版本断言（与 pyproject requires-python >=3.12 对齐）-----------
+if ! "$FRAMEWORK_PYTHON" -c 'import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)' 2>/dev/null; then
+  echo "需 Python ≥3.12，当前：$("$FRAMEWORK_PYTHON" --version 2>&1 || echo '未知')" >&2
+  exit 1
+fi
 
 # ---- 依赖安装（隔离 venv） ---------------------------------------------------
 if [[ ! -x "$BUILDER_PYTHON" ]]; then
@@ -167,11 +182,11 @@ codesign --verify --deep --strict "$APP_BUNDLE" \
   && echo "codesign verify OK" || { echo "codesign verify 失败" >&2; exit 1; }
 
 # ---- 组装暂存目录（.app + 文档 + 运行时） ------------------------------------
-rm -rf "$RELEASE_ROOT"
+rm -rf "$BUILD_ROOT/release"
 mkdir -p "$RELEASE_ROOT"
 cp -R "$APP_BUNDLE" "$RELEASE_ROOT/"
 cp -R "$BROWSERS_ROOT" "$RELEASE_ROOT/browsers"
-cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/LICENSE" "$RELEASE_ROOT/"
+cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/packaging/THIRD_PARTY_NOTICES.md" "$RELEASE_ROOT/"
 echo "OmniCrawler $EDITION portable edition" > "$RELEASE_ROOT/EDITION.txt"
 for directory in configs docs examples; do
   cp -R "$PROJECT_ROOT/$directory" "$RELEASE_ROOT/"
@@ -182,15 +197,19 @@ for relative_dir in data/input data/pdfs work output logs; do
 done
 
 # ---- 产物级测试（SBOM + CLI 冒烟 + portable 冒烟 + 完整性清单）--------------
-# P4-2：与 Windows 对齐，SBOM 写入包内
+# 与 Windows 构建对齐：落盘 CAPABILITIES.json / RELEASE-INFO.json 并重刷清单
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/generate_sbom.py" --output "$RELEASE_ROOT/SBOM.json"
 "$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawl" --version
 "$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawl" templates validate
-"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawl" capabilities --verify-imports --portable-paths
+"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawl" capabilities --verify-imports --portable-paths > "$RELEASE_ROOT/CAPABILITIES.json"
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/generate_release_info.py" \
+    --project-root "$PROJECT_ROOT" --release-root "$RELEASE_ROOT" --edition "$EDITION"
 # P4-3：portable 冒烟（浏览器/原生运行时）。其 cwd=releaseRoot 会写缓存，
 # 必须在完整性清单生成之前运行（与 Windows F11 同约束）。
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/portable_smoke_test.py" "$RELEASE_ROOT" --edition "$EDITION"
 
+# 完整性清单：在新增 CAPABILITIES.json / RELEASE-INFO.json 之后生成，
+# 使清单覆盖这两个机器可读文件（与 Windows 同序：先加文件再刷清单）。
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/create_runtime_manifest.py" --release-root "$RELEASE_ROOT"
 "$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawl" runtime-verify --root "$RELEASE_ROOT"
 # P4-1：Windows 对 zip 跑 check_release_integrity --portable-zip --portable-deep；
@@ -200,13 +219,15 @@ done
 # ---- 打包 dmg（失败回退 tar.gz） ----------------------------------------------
 mkdir -p "$RELEASE_OUTPUT"
 DMG_ARCHIVE="$RELEASE_OUTPUT/OmniCrawler-$APP_VERSION-macOS-Portable-$EDITION.dmg"
-if hdiutil create -volname "OmniCrawler" -srcfolder "$RELEASE_ROOT" \
+# -srcfolder 指向父目录，使 dmg 卷内含 OmniCrawler/ 顶层文件夹（与 Windows zip /
+# Linux tar.gz 的顶层 OmniCrawler/ 对齐）；tar.gz 回退同理。
+if hdiutil create -volname "OmniCrawler" -srcfolder "$BUILD_ROOT/release" \
     -ov -format UDZO "$DMG_ARCHIVE" >/dev/null 2>&1; then
   echo "Portable archive: $DMG_ARCHIVE"
 else
   echo "[WARN] hdiutil 失败，回退 tar.gz"
   TAR_ARCHIVE="$RELEASE_OUTPUT/OmniCrawler-$APP_VERSION-macOS-Portable-$EDITION.tar.gz"
-  tar -czf "$TAR_ARCHIVE" -C "$RELEASE_ROOT" .
+  tar -czf "$TAR_ARCHIVE" -C "$BUILD_ROOT/release" OmniCrawler
   echo "Portable archive: $TAR_ARCHIVE"
 fi
 

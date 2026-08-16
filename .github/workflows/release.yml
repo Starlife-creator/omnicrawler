@@ -40,7 +40,7 @@ env:
 
 jobs:
   verify-python-version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -183,7 +183,10 @@ jobs:
   # ── Linux 便携包（Standard + Full，tar.gz）────────────────────────
   build-linux-portable:
     needs: [verify-python-version]
-    runs-on: ubuntu-latest
+    # S6：固定 runner 版本——ubuntu-latest 漂移会改变 glibc（当前 24.04/glibc 2.39），
+    # 高版本构建机产出的 onedir 在旧系统（glibc<2.39）跑不了。ubuntu-22.04（glibc 2.35）
+    # 覆盖 Ubuntu 22.04+ / Debian 12+ / RHEL 9。
+    runs-on: ubuntu-22.04
     timeout-minutes: 120
     env:
       PYTHONIOENCODING: utf-8
@@ -330,7 +333,8 @@ jobs:
   # ── 聚合发布：下载三平台产物，统一生成 provenance 并发布 ──────────
   release:
     needs: [build-windows-portable, build-linux-portable, build-macos-portable]
-    runs-on: ubuntu-latest
+    # S6：聚合 job 与构建 job 同锁，保持环境一致（虽然只下载+发布，不产二进制）
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -381,10 +385,10 @@ jobs:
             ### 便携包
             - **Windows**（Standard/Full）：GUI + Chromium +（Full 含）ChromeDriver/Tesseract/PaddleOCR
               - 安装：解压 ZIP → 双击 `OmniCrawler-Launcher.bat`
-            - **Linux**（Standard/Full）：GUI + Chromium；Tesseract 由系统包提供
+            - **Linux**（Standard/Full）：GUI + Chromium +（Full 含）Tesseract/ChromeDriver/PaddleOCR（构建期打包，解压即用）
               - 安装：`tar -xzf <包> && ./OmniCrawler/omnicrawl --help`
-            - **macOS**（Standard/Full）：.app（ad-hoc 签名）；首次打开请右键 → 打开
-              - 安装：挂载 dmg → 拖入 Applications
+            - **macOS**（Standard/Full）：.app（ad-hoc 签名）+（Full 含）Tesseract/ChromeDriver（Paddle OCR 以 Transformers 后端替代）；首次打开请右键 → 打开
+              - 安装：挂载 dmg → 进入 OmniCrawler 文件夹 → 将 OmniCrawler.app 拖入 Applications
 
             ### 安全
             - 各平台产物附带 `SHA256SUMS-<platform>.txt` 校验和（与 `omnicrawler-provenance.json` 对应）
