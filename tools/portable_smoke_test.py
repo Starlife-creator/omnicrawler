@@ -89,9 +89,11 @@ extract:
     if completed.returncode != 0:
         output = (completed.stdout + "\n" + completed.stderr).strip()
         raise RuntimeError(f"portable {engine} smoke test failed:\n{output[-6000:]}")
+    stderr_tail = (completed.stderr or "").strip()[-4000:]
     raise RuntimeError(
         f"{engine} ran but dynamic content was not exported\n"
-        f"records={len(records)} payload={payload[-3000:]!r}"
+        f"records={len(records)} payload={payload[-3000:]!r}\n"
+        f"stderr={stderr_tail!r}"
     )
 
 

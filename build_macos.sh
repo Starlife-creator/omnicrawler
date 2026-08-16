@@ -215,6 +215,16 @@ cp -R "$APP_BUNDLE" "$RELEASE_ROOT/"
 # 在 macOS 冻结模式下上溯 3 级定位（Contents/MacOS → ../../browsers）。
 # 不放 .app 内以避开 codesign seal 对 Chromium 复杂 bundle 的签名冲突。
 cp -R "$BROWSERS_ROOT" "$RELEASE_ROOT/browsers"
+# browsers 不随 .app 签名（在 .app 外），Chromium 可执行文件须单独 ad-hoc
+# 签名，否则 macOS 拦截未签名二进制（selenium 冒烟启动 Chrome 失败）。
+# 逐个签 *.app 内可执行 + 顶层非 bundle 可执行；Chromium 的 framework 用
+# --deep 整体签（其内部是独立 bundle，--deep 无父 bundle seal 冲突）。
+while IFS= read -r nested_app; do
+  codesign --force --deep --sign - "$nested_app" 2>/dev/null || true
+done < <(find "$RELEASE_ROOT/browsers" -name "*.app" -type d 2>/dev/null)
+while IFS= read -r executable; do
+  codesign --force --sign - "$executable" 2>/dev/null || true
+done < <(find "$RELEASE_ROOT/browsers" -type f -perm -111 -not -path "*.app/*" 2>/dev/null)
 cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/packaging/THIRD_PARTY_NOTICES.md" "$RELEASE_ROOT/"
 echo "OmniCrawler $EDITION portable edition" > "$RELEASE_ROOT/EDITION.txt"
 for directory in configs docs examples; do
