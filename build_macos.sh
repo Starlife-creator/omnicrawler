@@ -192,6 +192,13 @@ if [[ "$EDITION" == "Full" && -d "$RUNTIME_ROOT" ]]; then
   mkdir -p "$APP_BUNDLE/Contents/MacOS/runtime"
   cp -R "$RUNTIME_ROOT/." "$APP_BUNDLE/Contents/MacOS/runtime/"
 fi
+# browsers 与 PORTABLE.flag 必须放 Contents/MacOS/（= application_dir()，
+# 冻结模式下 sys.executable 父目录），且须在 ad-hoc 签名前拷入，
+# 否则 codesign --deep 后新增文件会破坏签名完整性，且运行时探测不到
+# （"内置 Chromium 缺失"/portable 判定失效，v0.9.1 CI 实测）。
+mkdir -p "$APP_BUNDLE/Contents/MacOS/browsers"
+cp -R "$BROWSERS_ROOT/." "$APP_BUNDLE/Contents/MacOS/browsers/"
+touch "$APP_BUNDLE/Contents/MacOS/PORTABLE.flag"
 
 # ---- ad-hoc 签名（无需开发者证书） -------------------------------------------
 echo "codesign (ad-hoc): $APP_BUNDLE"
@@ -203,13 +210,13 @@ codesign --verify --deep --strict "$APP_BUNDLE" \
 rm -rf "$BUILD_ROOT/release"
 mkdir -p "$RELEASE_ROOT"
 cp -R "$APP_BUNDLE" "$RELEASE_ROOT/"
-cp -R "$BROWSERS_ROOT" "$RELEASE_ROOT/browsers"
+# browsers / PORTABLE.flag 已在 ad-hoc 签名前拷入 .app/Contents/MacOS/
+# （见上方 runtime 拷贝块；browsers 与 application_dir() 对齐）。
 cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/packaging/THIRD_PARTY_NOTICES.md" "$RELEASE_ROOT/"
 echo "OmniCrawler $EDITION portable edition" > "$RELEASE_ROOT/EDITION.txt"
 for directory in configs docs examples; do
   cp -R "$PROJECT_ROOT/$directory" "$RELEASE_ROOT/"
 done
-touch "$RELEASE_ROOT/PORTABLE.flag"
 for relative_dir in data/input data/pdfs work output logs; do
   mkdir -p "$RELEASE_ROOT/$relative_dir"
 done
