@@ -553,7 +553,7 @@ class BrowserFetcher:
         try:
             self._install_selenium_guard(driver)
             driver.set_page_load_timeout(float(self.config.section("http").get("timeout_seconds", 60)))
-            # 看门狗：BiDi 拦截在 macOS 上 continue_request 可能超时挂起（selenium
+            # 看门狗：BiDi 拦截在个别平台上 continue_request 可能超时挂起（selenium
             # 4.47 + Chrome 151 组合问题），导航/actions 不返回。driver.quit() 也走
             # WebSocket 同样阻塞——超时必须杀 chromedriver 进程（service.stop）强制
             # 断开，主线程的 WebDriver 调用才会抛异常恢复，随后 fail-closed 报错。
@@ -562,7 +562,13 @@ class BrowserFetcher:
                 on_timeout=driver.service.stop,
             )
             with watchdog:
-                driver.get(request.url)
+                # BiDi 订阅竞态：guard 注册后首导航偶发命令超时（Windows/macOS CI
+                # 实测），driver 通常仍存活——同 driver 重试一次通常可过。
+                try:
+                    driver.get(request.url)
+                except Exception:
+                    time.sleep(1.0)
+                    driver.get(request.url)
                 self._run_selenium_actions(driver, self.config.section("browser").get("actions", []))
                 body = driver.page_source.encode("utf-8")
                 final_url = driver.current_url
@@ -635,6 +641,12 @@ class BrowserFetcher:
                             LOGGER.error("BiDi fail_request 也失败: %s", fail_exc)
 
             network.add_request_handler("before_request", guard)
+            # BiDi 网络订阅广播与首个导航请求存在竞态：guard 刚注册完浏览器
+            # 事件流尚未完全稳定，首请求立即拦截时 continue_request 命令可能
+            # 超时（'Timed out waiting for response to BiDi command'，selenium
+            # 4.47 + Chrome 151，Windows/macOS CI 实测）。给事件流短暂稳定期，
+            # 显著降低首请求命中竞态的概率。
+            time.sleep(0.5)
         except Exception as exc:
             raise RuntimeError(
                 "Selenium BiDi 逐请求拦截不可用；请改用Playwright"
