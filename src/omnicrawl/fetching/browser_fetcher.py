@@ -522,13 +522,17 @@ class BrowserFetcher:
 
         egress_config = self.config.section("egress")
         if egress_config.get("allow_unintercepted_selenium", False):
-            return
-        # S2.5.12：默认启用 BiDi 拦截；仅当用户显式关闭时才提示风险
+            # P9-B2（B03-007/008）：opt-out 已废弃并忽略——Selenium 子请求强制
+            # BiDi 拦截（fail-closed），配置存在时显式告警而非静默放行。
+            LOGGER.warning(
+                "egress.allow_unintercepted_selenium=true 已废弃并忽略："
+                "Selenium 子请求强制经过 BiDi 拦截与出口策略，无法绕过"
+            )
+        # S2.5.12：默认启用 BiDi 拦截；experimental 显式关闭时 fail-closed 提示
         if not egress_config.get("experimental_selenium_bidi_guard", True):
             raise RuntimeError(
                 "Selenium逐请求拦截已显式关闭（egress.experimental_selenium_bidi_guard=false），"
-                "子请求将绕过网络策略；请改用Playwright，或显式设置"
-                "egress.allow_unintercepted_selenium=true"
+                "子请求将绕过网络策略；请改用Playwright"
             )
         try:
             network = driver.network
@@ -556,8 +560,7 @@ class BrowserFetcher:
             network.add_request_handler("before_request", guard)
         except Exception as exc:
             raise RuntimeError(
-                "Selenium BiDi 逐请求拦截不可用；请改用Playwright，或显式设置"
-                "egress.allow_unintercepted_selenium=true"
+                "Selenium BiDi 逐请求拦截不可用；请改用Playwright"
             ) from exc
 
     @staticmethod

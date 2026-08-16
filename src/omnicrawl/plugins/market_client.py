@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ..core.errors import PolicyBlockedError
 from ..security.egress import EgressBroker
 from .signing import verify_bytes
 
@@ -48,8 +49,13 @@ def _read(
     if _is_remote(url_or_path):
         request = urllib.request.Request(url_or_path, headers={"User-Agent": _USER_AGENT})
         if egress is None:
-            with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
-                return response.read()
+            # B01-011：egress=None 时拒绝出网（fail-closed）——市场下载必须显式
+            # 提供出口策略，杜绝裸 urlopen 绕过策略/预算/审计边界。
+            err = PolicyBlockedError(
+                f"市场下载缺少出口策略，已阻止访问: {url_or_path}"
+            )
+            err.suggestion = "请通过 GUI 市场面板发起下载（内部会构建 EgressBroker）"
+            raise err
         with egress.request(url_or_path, purpose="plugin", headers=request.headers):
             with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
                 return response.read()

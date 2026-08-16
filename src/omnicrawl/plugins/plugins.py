@@ -548,9 +548,15 @@ def _load_local_plugin(
     source = _decode_plugin_source(path, plugin_bytes)
 
     # 市场来源判定：规范安装位置 = <项目根>/<市场目录名>/<插件id>/plugin.py。
-    # 仅当父目录**精确等于**该位置时才视为市场插件；路径里任何别处出现
-    # "plugins_installed" 字样都不算（审查报告 B10）。
-    is_market = path.parent == (root / MARKET_DIR_NAME / path.parent.name)
+    # P9-B3（B01-006）：改为祖先判定——market 段必须是 root 之后的第一段
+    # （resolve 后无 ../ 逃逸），后续层级任意嵌套都算市场插件；
+    # 同时保留防伪造：任何把 plugins_installed 藏在更里层/别处的路径都不算。
+    try:
+        relative_parts = path.relative_to(root).parts
+    except ValueError:
+        is_market = False
+    else:
+        is_market = bool(relative_parts) and relative_parts[0] == MARKET_DIR_NAME
 
     requested = _preflight_permissions(path, source)
     approved = {item.casefold() for item in approved_permissions}
