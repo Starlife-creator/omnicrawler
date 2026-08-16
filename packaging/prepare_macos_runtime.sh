@@ -18,7 +18,9 @@
 #         --python <buildVenvPython> --runtime-root <path> --browsers-root <path>
 #         [--cache-root <path>] [--skip-tesseract] [--skip-selenium]
 # ---------------------------------------------------------------------------
-set -euo pipefail
+# bash 3.2（macOS 默认）下 set -u 与递归 local 变量/空数组展开存在兼容问题
+# （unbound variable，v0.9.1 CI 实测），移除 -u；未定义变量由显式 die 兜底。
+set -eo pipefail
 
 PYTHON=""
 RUNTIME_ROOT=""
