@@ -201,16 +201,24 @@ cp -R "$BROWSERS_ROOT/." "$APP_BUNDLE/Contents/MacOS/browsers/"
 touch "$APP_BUNDLE/Contents/MacOS/PORTABLE.flag"
 
 # ---- ad-hoc 签名（无需开发者证书） -------------------------------------------
-# browsers 内含 Playwright Chromium 自带的 .app bundle（Google Chrome for Testing.app），
-# 直接对父 .app --deep 递归签名会报 "bundle format is ambiguous"（v0.9.1 CI 实测）。
-# 先对内层 Chromium .app 逐个 ad-hoc 签名，再整体 --deep 签名（已签名嵌套 bundle 不再报错）。
+# browsers 内含 Playwright Chromium 的复杂 bundle（Google Chrome for Testing.app
+# 及 Contents/Frameworks/.../Versions/*/Helpers/*.app 多重 symlink），codesign
+# --deep 递归必报 "bundle format is ambiguous"（v0.9.1 CI 实测），故不用 --deep。
+# 改为：逐个签内层 .app → 逐个签 browsers 内非 bundle 可执行文件 → 签父 .app 壳。
+# 注意：内层 .app 已整体签名，其内部可执行文件不得再单独签（会破坏密封），
+# 因此可执行文件循环用 -not -path "*.app/*" 排除嵌套 bundle 内部。
 echo "codesign (ad-hoc): $APP_BUNDLE"
 while IFS= read -r nested_app; do
-  echo "  codesign nested: ${nested_app#"$APP_BUNDLE/"}"
+  echo "  codesign nested app: ${nested_app#"$APP_BUNDLE/"}"
   codesign --force --sign - "$nested_app" || exit 1
 done < <(find "$APP_BUNDLE/Contents/MacOS/browsers" -name "*.app" -type d 2>/dev/null)
-codesign --force --deep --sign - "$APP_BUNDLE"
-codesign --verify --deep --strict "$APP_BUNDLE" \
+while IFS= read -r executable; do
+  echo "  codesign executable: ${executable#"$APP_BUNDLE/"}"
+  codesign --force --sign - "$executable" || exit 1
+done < <(find "$APP_BUNDLE/Contents/MacOS/browsers" -type f -perm -111 \
+  -not -path "*.app/*" 2>/dev/null)
+codesign --force --sign - "$APP_BUNDLE"
+codesign --verify --strict "$APP_BUNDLE" \
   && echo "codesign verify OK" || { echo "codesign verify 失败" >&2; exit 1; }
 
 # ---- 组装暂存目录（.app + 文档 + 运行时） ------------------------------------
