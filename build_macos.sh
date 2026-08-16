@@ -201,7 +201,14 @@ cp -R "$BROWSERS_ROOT/." "$APP_BUNDLE/Contents/MacOS/browsers/"
 touch "$APP_BUNDLE/Contents/MacOS/PORTABLE.flag"
 
 # ---- ad-hoc 签名（无需开发者证书） -------------------------------------------
+# browsers 内含 Playwright Chromium 自带的 .app bundle（Google Chrome for Testing.app），
+# 直接对父 .app --deep 递归签名会报 "bundle format is ambiguous"（v0.9.1 CI 实测）。
+# 先对内层 Chromium .app 逐个 ad-hoc 签名，再整体 --deep 签名（已签名嵌套 bundle 不再报错）。
 echo "codesign (ad-hoc): $APP_BUNDLE"
+while IFS= read -r nested_app; do
+  echo "  codesign nested: ${nested_app#"$APP_BUNDLE/"}"
+  codesign --force --sign - "$nested_app" || exit 1
+done < <(find "$APP_BUNDLE/Contents/MacOS/browsers" -name "*.app" -type d 2>/dev/null)
 codesign --force --deep --sign - "$APP_BUNDLE"
 codesign --verify --deep --strict "$APP_BUNDLE" \
   && echo "codesign verify OK" || { echo "codesign verify 失败" >&2; exit 1; }
