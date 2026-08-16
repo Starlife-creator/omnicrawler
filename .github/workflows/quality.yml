@@ -60,7 +60,7 @@ jobs:
       - run: python tools/check_cli_docs.py
       - run: python tools/check_docs_consistency.py
       - run: python tools/check_network_boundaries.py
-      - name: 出口策略运行时验证（B13-001：egress 拦截被禁目标）
+      - name: egress policy runtime check (B13-001)
         # Windows runner 默认 pwsh 不支持 bash heredoc → 显式用 bash
         shell: bash
         run: |
@@ -81,8 +81,8 @@ jobs:
               except PolicyBlockedError:
                   pass
               else:
-                  raise SystemExit('BUG: 私网元数据目标未被 egress 拦截')
-          print('egress 出口策略运行时验证 OK（私网目标被拦截）')
+                  raise SystemExit('BUG: private metadata target not blocked by egress')
+          print('egress runtime verification OK (private target blocked)')
           PY
 
 
