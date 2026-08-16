@@ -61,6 +61,8 @@ jobs:
       - run: python tools/check_docs_consistency.py
       - run: python tools/check_network_boundaries.py
       - name: 出口策略运行时验证（B13-001：egress 拦截被禁目标）
+        # Windows runner 默认 pwsh 不支持 bash heredoc → 显式用 bash
+        shell: bash
         run: |
           python - <<'PY'
           import tempfile
