@@ -100,8 +100,9 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
   # macOS runner 的 /bin/bash 是 3.2（GitHub Actions），不支持关联数组 declare -A，
   # 用普通数组 + 辅助函数做已拷贝去重（兼容 bash 3.2）。
   SEEN_LIBS=()
-  _seen() { # $1=路径，已记录返回 0，未记录返回 1
+  _seen() { # $1=路径，已记录返回 0，未记录返回 1（set -u 下空数组展开需先查长度）
     local item
+    if [[ ${#SEEN_LIBS[@]} -eq 0 ]]; then return 1; fi
     for item in "${SEEN_LIBS[@]}"; do
       if [[ "$item" == "$1" ]]; then return 0; fi
     done
