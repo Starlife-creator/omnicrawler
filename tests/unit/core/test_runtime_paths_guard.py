@@ -18,10 +18,11 @@ def test_resolve_portable_path_allows_data_dir() -> None:
     assert rp.resolve_portable_path("${DATA_DIR}/项目").parent == rp.portable_data_root()
 
 
-def test_resolve_portable_path_rejects_absolute_outside() -> None:
+def test_resolve_portable_path_rejects_absolute_outside(tmp_path: Path) -> None:
     rp.portable_data_root.cache_clear()
+    outside = tmp_path.parent / "outside.exe"  # 平台无关的绝对越界路径
     with pytest.raises(ValueError, match="越出应用/数据根目录"):
-        rp.resolve_portable_path("C:/Windows/evil.exe")
+        rp.resolve_portable_path(str(outside))
 
 
 def test_resolve_portable_path_rejects_traversal() -> None:
@@ -30,9 +31,10 @@ def test_resolve_portable_path_rejects_traversal() -> None:
         rp.resolve_portable_path("${DATA_DIR}/../../etc/passwd")
 
 
-def test_cli_candidates_fallback_for_untrusted() -> None:
-    """不可信 CLI 配置（任意绝对路径）→ 回退默认探测，不直接执行外部文件。"""
-    command, candidates = rp.resolve_cli_candidates("C:/Windows/evil-cli.exe")
+def test_cli_candidates_fallback_for_untrusted(tmp_path: Path) -> None:
+    """不可信 CLI 配置（绝对路径不存在/不可信）→ 回退默认探测。"""
+    untrusted = tmp_path / "evil-cli"  # 平台无关
+    command, candidates = rp.resolve_cli_candidates(str(untrusted))
     assert "evil-cli" not in command
     assert candidates
 
