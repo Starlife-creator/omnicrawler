@@ -29,14 +29,12 @@ try:
 except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
-# 必须覆盖的发行物文件名模式（与 release.yml 实际产物一致；wheel/源码 ZIP
-# 等形态当前不由 release workflow 产出，故不在此列）
-REQUIRED_PATTERNS = [
-    "Windows-Portable-Standard.zip",
-    "Windows-Portable-Full.zip",
-    "SBOM.cdx.json",
-    "provenance.json",
-]
+# 平台产物 → 该平台 job 应覆盖的发行物（不要求其他平台产物）
+_PLATFORM_REQUIRED = {
+    "Windows-Portable": ("Windows-Portable-Standard.zip", "Windows-Portable-Full.zip"),
+    "Linux-Portable": ("Linux-Portable-Standard.tar.gz", "Linux-Portable-Full.tar.gz"),
+    "macOS-Portable": ("macOS-Portable-Standard.dmg", "macOS-Portable-Full.dmg"),
+}
 
 
 def _project_version() -> str:
@@ -54,13 +52,30 @@ def _sha256(path: Path) -> str:
 
 
 def _check_coverage(files: list[Path]) -> list[str]:
-    """Verify all required artifact categories are covered (case-insensitive:
-    actual artifacts use lowercase names, e.g. ``omnicrawler-sbom.cdx.json``)."""
+    """Verify required artifact categories are covered (case-insensitive:
+    actual artifacts use lowercase names, e.g. ``omnicrawler-sbom.cdx.json``).
+
+    按目录中实际包含的平台产物推导应覆盖项：只要求本平台的 Portable 双 edition
+    产物（Linux/macOS job 不应因缺 Windows zip 而失败），通用项（平台 SBOM/
+    provenance）按名称前缀接受（omnicrawler-sbom-<platform>.cdx.json /
+    omnicrawler-provenance.json）。
+    """
     filenames = " ".join(path.name for path in files).casefold()
-    missing = []
-    for pattern in REQUIRED_PATTERNS:
-        if pattern.casefold() not in filenames:
-            missing.append(pattern)
+    missing: list[str] = []
+
+    # 平台产物：本目录含某个平台标识，则要求该平台的双 edition 产物都在
+    for platform_marker, required in _PLATFORM_REQUIRED.items():
+        if platform_marker.casefold() in filenames:
+            for pattern in required:
+                if pattern.casefold() not in filenames:
+                    missing.append(pattern)
+            break
+
+    # 通用元数据：SBOM 按前缀匹配（平台 job 产出带平台名的 SBOM，如
+    # omnicrawler-sbom-macos.cdx.json）。provenance 由聚合 release job 单独
+    # 生成并校验（generate_provenance.py），不在各平台 job 的目录内，故不要求。
+    if not any("sbom" in name.casefold() and name.casefold().endswith(".cdx.json") for name in (p.name for p in files)):
+        missing.append("SBOM.cdx.json")
     return missing
 
 
