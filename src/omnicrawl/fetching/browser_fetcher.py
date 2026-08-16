@@ -13,6 +13,41 @@ from urllib.parse import urlsplit
 
 LOGGER = logging.getLogger(__name__)
 
+
+class _Watchdog:
+    """Fail-closed watchdog: call ``on_timeout`` after ``seconds`` if the guard
+    block hasn't finished, and record ``fired`` so the caller can raise precisely.
+
+    Selenium BiDi 事件流在个别平台可能静默挂起（导航/actions 不抛异常也不返回），
+    若不加看门狗，外层 subprocess 只能干等到超时。超时时 on_timeout（通常
+    driver.quit()）会解除挂起的 BiDi 调用，主线程恢复后检查 fired 抛明确错误。
+    """
+
+    def __init__(self, seconds: float, on_timeout: Any | None = None) -> None:
+        self._seconds = max(1.0, seconds)
+        self._on_timeout = on_timeout
+        self._timer: threading.Timer | None = None
+        self.fired = False
+
+    def __enter__(self) -> "_Watchdog":
+        self._timer = threading.Timer(self._seconds, self._fire)
+        self._timer.daemon = True
+        self._timer.start()
+        return self
+
+    def __exit__(self, *_exc_info: object) -> None:
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None
+
+    def _fire(self) -> None:
+        self.fired = True
+        if self._on_timeout is not None:
+            try:
+                self._on_timeout()
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("watchdog on_timeout 清理失败")
+
 from typing import Protocol, runtime_checkable
 
 from ..core.config import AppConfig
@@ -512,10 +547,22 @@ class BrowserFetcher:
         try:
             self._install_selenium_guard(driver)
             driver.set_page_load_timeout(float(self.config.section("http").get("timeout_seconds", 60)))
-            driver.get(request.url)
-            self._run_selenium_actions(driver, self.config.section("browser").get("actions", []))
-            body = driver.page_source.encode("utf-8")
-            final_url = driver.current_url
+            # 看门狗：BiDi 拦截事件流在个别平台（macOS arm64 CI 实测）可能静默
+            # 挂起——导航/actions 不抛异常也不返回，外层 subprocess 只能干等到
+            # 180s 超时。看门狗超时调用 driver.quit() 解除挂起，随后 fail-closed 报错。
+            watchdog = _Watchdog(
+                float(self.config.section("http").get("selenium_watchdog_seconds", 90)),
+                on_timeout=driver.quit,
+            )
+            with watchdog:
+                driver.get(request.url)
+                self._run_selenium_actions(driver, self.config.section("browser").get("actions", []))
+                body = driver.page_source.encode("utf-8")
+                final_url = driver.current_url
+            if watchdog.fired:
+                raise RuntimeError(
+                    f"Selenium 操作超过看门狗 {90:.0f}s 未完成（可能 BiDi 拦截事件流挂起）"
+                )
             self.egress.authorize(final_url, purpose="browser", count_request=False)
         finally:
             driver.quit()
