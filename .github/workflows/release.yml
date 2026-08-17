@@ -275,6 +275,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Homebrew 新版要求 tap trust；runner 预装的 aws/tap 与本项目无关
+      # （只用到 core tap 的 python@3.12/tesseract），移除它消除无关警告。
+      - name: 移除无关的 aws/tap（Homebrew tap trust 警告）
+        run: brew untap aws/tap 2>/dev/null || true
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "${{ env.BUILD_PYTHON_VERSION }}"

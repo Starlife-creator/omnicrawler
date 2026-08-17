@@ -29,7 +29,7 @@ class _Watchdog:
         self._timer: threading.Timer | None = None
         self.fired = False
 
-    def __enter__(self) -> "_Watchdog":
+    def __enter__(self) -> _Watchdog:
         self._timer = threading.Timer(self._seconds, self._fire)
         self._timer.daemon = True
         self._timer.start()
