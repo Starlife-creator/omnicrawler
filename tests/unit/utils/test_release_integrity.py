@@ -145,7 +145,7 @@ def test_portable_zip_detects_unsafe_duplicates_and_manifest_hashes(tmp_path):
     archive = tmp_path / "OmniCrawler-2.1.0-Windows-Portable-Standard.zip"
     _write_portable(archive, "Standard", corrupt_hash=True)
     with zipfile.ZipFile(archive, "a") as bundle:
-        bundle.writestr("OmniCrawler/OMNICRAWL.exe", b"MZ-duplicate")
+        bundle.writestr("OmniCrawler/OMNICRAWLER.exe", b"MZ-duplicate")
         bundle.writestr("../escape.txt", b"unsafe")
     issues = check_portable_zip(archive, verify_payloads=True)
     assert any("duplicate portable archive path" in issue for issue in issues)
