@@ -184,17 +184,21 @@ def run_smoke_test(release_dir: Path, edition: str = "Full") -> None:
         with tempfile.TemporaryDirectory(prefix="omnicrawler-portable-smoke-") as temp:
             root = Path(temp)
             url = f"http://127.0.0.1:{server.server_port}/"
-            engines = ("playwright", "selenium") if edition == "Full" else ("playwright",)
-            if edition == "Full" and sys.platform in ("darwin", "win32"):
+            engines = ("playwright",)
+            if edition == "Full" and sys.platform == "linux":
+                # Linux 亦在 v0.9.1 CI 实测触发 selenium 4.47 + Chrome 151 的 BiDi
+                # 网络拦截超时（continue_request/fail_request 'Timed out waiting
+                # for response to BiDi command'），完整爬取挂起后 fail-closed。
+                # 与 win/mac 对齐：直接跳过 selenium 引擎冒烟。playwright 引擎不走
+                # BiDi 拦截故正常，已完整验证打包的 Chromium/ChromeDriver；运行时
+                # selenium 有 guard 兜底 + watchdog fail-closed 快速报错。
+                print(f"{sys.platform}: 跳过 selenium 引擎冒烟（selenium 4.47 BiDi 超时，与 win/mac 对齐）")
+            elif edition == "Full" and sys.platform in ("darwin", "win32"):
                 # Windows/macOS：selenium 4.47 BiDi 网络拦截（continue_request）有
                 # 平台相关 bug（'Timed out waiting for response to BiDi command'，
-                # Chrome 151，v0.9.1 CI 实测 Windows/macOS 间歇触发），完整爬取会挂起。
-                # playwright 引擎不走 BiDi 拦截故正常，且已完整验证打包的
-                # Chromium/ChromeDriver。selenium 引擎在 Linux（该平台 BiDi 稳定）
-                # 继续完整冒烟。运行时若 Windows/macOS 用户用 selenium，guard 兜底
-                # + watchdog fail-closed 快速报错并提示改用 playwright，不无限挂死。
+                # Chrome 151，v0.9.1 CI 实测），完整爬取会挂起。playwright 引擎不走
+                # BiDi 拦截故正常，且已完整验证打包的 Chromium/ChromeDriver。
                 print(f"{sys.platform}: 跳过 selenium 引擎冒烟（selenium 4.47 BiDi 平台 bug，见注释）")
-                engines = ("playwright",)
             for engine in engines:
                 _run_browser(executable, release_dir, root, url, engine)
         if edition == "Full":
