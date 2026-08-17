@@ -10,7 +10,7 @@
 
 ## `PDF批量数据抽取系统_完整项目.zip`
 
-原生文字、OCR、候选页、规则/LLM、归一化、校验、复核和五表导出保留在 `src/omnicrawl/pdfx/`。PDF 模板的 `fields` 结构保持兼容。
+原生文字、OCR、候选页、规则/LLM、归一化、校验、复核和五表导出保留在 `src/omnicrawler/pdfx/`。PDF 模板的 `fields` 结构保持兼容。
 
 ## `PDF批量数据工作台_v5.0_融合模块化项目.zip`
 
@@ -29,8 +29,8 @@ v2 进一步融合了：
 ## 从 OmniCrawler v1 升级
 
 1. 保留 v1 工作目录作为备份。
-2. 将自定义 YAML 复制到 v2 的 `configs/`，先运行 `omnicrawl validate`。
-3. 站点插件复制到 `examples/plugins/`，通过 `omnicrawl plugins -c ...` 确认注册。
+2. 将自定义 YAML 复制到 v2 的 `configs/`，先运行 `omnicrawler validate`。
+3. 站点插件复制到 `examples/plugins/`，通过 `omnicrawler plugins -c ...` 确认注册。
 4. 不要直接复制 v1 `pdf/work/pipeline.sqlite3`；将 PDF 输入保留，由 v2 新项目扫描建库最稳妥。
 5. 如果必须延续旧 PDF 库，先备份，然后用 `pdf-process ... status` 触发新增列迁移并进行小样本复查。
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawl.runtime.scheduler import ScheduleStore
+from omnicrawler.runtime.scheduler import ScheduleStore
 
 
 def test_schedule_lease_recovery_and_next_run(tmp_path: Path) -> None:

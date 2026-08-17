@@ -190,8 +190,8 @@ if (-not $SkipTesseract) {
     # 实测（本机 Windows PowerShell 5.1）：$ErrorActionPreference='Stop' 下原生 stderr
     # （tesseract 的 "Estimating resolution..." 正常输出）无论 2>&1 还是 2>$null 都会抛
     # NativeCommandError；唯一有效的是临时切 SilentlyContinue。
-    $probePng = Join-Path $env:TEMP 'omnicrawl_ocr_probe.png'
-    & $Python -c "from PIL import Image, ImageDraw; import os; img = Image.new('RGB', (560, 100), 'white'); ImageDraw.Draw(img).text((20, 30), 'OmniCrawler OCR 123', fill='black'); img.save(os.environ['TEMP'] + '/omnicrawl_ocr_probe.png')"
+    $probePng = Join-Path $env:TEMP 'omnicrawler_ocr_probe.png'
+    & $Python -c "from PIL import Image, ImageDraw; import os; img = Image.new('RGB', (560, 100), 'white'); ImageDraw.Draw(img).text((20, 30), 'OmniCrawler OCR 123', fill='black'); img.save(os.environ['TEMP'] + '/omnicrawler_ocr_probe.png')"
     $oldEap = $ErrorActionPreference
     $ErrorActionPreference = 'SilentlyContinue'
     & (Join-Path $tesseractRoot 'tesseract.exe') $probePng stdout --tessdata-dir $tessdataRoot -l chi_sim 2>&1 | Out-Null

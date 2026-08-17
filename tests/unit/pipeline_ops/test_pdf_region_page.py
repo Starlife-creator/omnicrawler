@@ -10,7 +10,7 @@ pytest.importorskip("fitz")
 
 import fitz
 
-from omnicrawl.pipeline_ops.pdf_region import extract_region, make_region_rule
+from omnicrawler.pipeline_ops.pdf_region import extract_region, make_region_rule
 
 
 def _pdf(tmp_path: Path) -> Path:

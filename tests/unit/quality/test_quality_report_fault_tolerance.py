@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from omnicrawl.core.config import load_config
-from omnicrawl.quality.quality_report import build_quality_report
-from omnicrawl.state import StateStore
+from omnicrawler.core.config import load_config
+from omnicrawler.quality.quality_report import build_quality_report
+from omnicrawler.state import StateStore
 
 
 def _config(tmp_path: Path) -> Path:

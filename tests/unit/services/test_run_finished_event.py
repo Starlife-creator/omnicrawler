@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawl.services.application_service import ApplicationService
+from omnicrawler.services.application_service import ApplicationService
 
 
 def test_run_finished_emitted_on_exception(tmp_path: Path, monkeypatch) -> None:
@@ -19,7 +19,7 @@ def test_run_finished_emitted_on_exception(tmp_path: Path, monkeypatch) -> None:
         config_path, event_sink=lambda event: events.append((event["category"], event["name"]))
     )
 
-    import omnicrawl.services.application_service as module
+    import omnicrawler.services.application_service as module
 
     class _BoomPipeline:
         def __init__(self, _config):
@@ -55,7 +55,7 @@ def test_run_finished_emitted_on_success(tmp_path: Path, monkeypatch) -> None:
         config_path, event_sink=lambda event: events.append((event["category"], event["name"]))
     )
 
-    import omnicrawl.services.application_service as module
+    import omnicrawler.services.application_service as module
 
     class _OkPipeline:
         def __init__(self, _config):

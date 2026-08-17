@@ -8,7 +8,7 @@ OmniCrawler Windows 便携版
 4. 建议先点击“试跑检查”，确认少量样本正确后再正式运行。
 5. 配置、日志、断点和结果默认保存在当前应用文件夹中。
 
-请勿单独复制 OmniCrawler.exe 或 omnicrawl.exe。动态网页运行依赖同目录的
+请勿单独复制 OmniCrawler.exe 或 omnicrawler.exe。动态网页运行依赖同目录的
 browsers 文件夹，帮助依赖 docs 文件夹。
 
 Standard 版自包含 GUI、CLI、Python、HTTP/HTML、Playwright Chromium、PDF 原生

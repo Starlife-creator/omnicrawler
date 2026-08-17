@@ -4,7 +4,7 @@
 
 ## Redis frontier 与锁
 
-安装 `.[distributed]` 后使用 `omnicrawl.redis_frontier.RedisFrontier`。实现提供去重入队、claim/ack/fail 和带租约的 acquire/release lock；调用方必须保存锁 token，并只释放自己的锁。
+安装 `.[distributed]` 后使用 `omnicrawler.redis_frontier.RedisFrontier`。实现提供去重入队、claim/ack/fail 和带租约的 acquire/release lock；调用方必须保存锁 token，并只释放自己的锁。
 
 生产要求：
 

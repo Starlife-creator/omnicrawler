@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core import credentials
-from omnicrawl.core.ai_env import ai_env_path, load_ai_env, parse_env_file, save_ai_env
+from omnicrawler.core import credentials
+from omnicrawler.core.ai_env import ai_env_path, load_ai_env, parse_env_file, save_ai_env
 
 
 class FakeStore:

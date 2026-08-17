@@ -5,7 +5,7 @@ compares against stored baselines, and flags pixel-level differences.
 
 Prerequisites::
 
-    pip install omnicrawl-platform[gui] Pillow
+    pip install omnicrawler-platform[gui] Pillow
 
 Directory structure::
 

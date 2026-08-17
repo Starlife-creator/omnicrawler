@@ -9,10 +9,10 @@ import tempfile
 import time
 from pathlib import Path
 
-from omnicrawl.core.config import AppConfig
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.extraction.extractors import HTMLProcessor
-from omnicrawl.templates.template_catalog import bundled_template_catalog
+from omnicrawler.core.config import AppConfig
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.extraction.extractors import HTMLProcessor
+from omnicrawler.templates.template_catalog import bundled_template_catalog
 
 
 def measure(callback, repeats: int) -> dict[str, float]:

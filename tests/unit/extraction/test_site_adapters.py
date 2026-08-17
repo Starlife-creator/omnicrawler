@@ -5,9 +5,9 @@ from pathlib import Path
 
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.models import FetchResult
-from omnicrawl.sources.site_adapters import MediaWikiSource, WordPressSource
+from omnicrawler.core.config import load_config
+from omnicrawler.core.models import FetchResult
+from omnicrawler.sources.site_adapters import MediaWikiSource, WordPressSource
 
 
 def _config(tmp_path: Path, kind: str, seed: str, **source_values):

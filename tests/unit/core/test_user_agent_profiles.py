@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-import omnicrawl
-from omnicrawl.core.utils import (
+import omnicrawler
+from omnicrawler.core.utils import (
     UA_DEFAULT_PROFILE,
     UA_PROFILES,
     _validate_profile_honest,
@@ -28,7 +28,7 @@ from omnicrawl.core.utils import (
 
 class TestProfilesStructure:
     def test_all_official_profiles_contain_version(self) -> None:
-        expected = f"OmniCrawler/{omnicrawl.__version__}"
+        expected = f"OmniCrawler/{omnicrawler.__version__}"
         for name in UA_PROFILES:
             ua = build_user_agent(name)
             assert expected in ua, f"profile={name} 缺失诚实自报标识"
@@ -36,7 +36,7 @@ class TestProfilesStructure:
     def test_polite_bot_default_no_extra_tokens(self) -> None:
         # 默认 polite_bot 只留 OmniCrawler/version + 可选 suffix
         ua = build_user_agent("polite_bot")
-        assert ua == f"OmniCrawler/{omnicrawl.__version__}"
+        assert ua == f"OmniCrawler/{omnicrawler.__version__}"
 
     def test_minimal_same_as_polite_bot(self) -> None:
         # minimal 也是最小化：两档等价
@@ -58,7 +58,7 @@ class TestProfilesStructure:
     def test_suffix_is_preserved(self) -> None:
         ua = build_user_agent("polite_bot", suffix="+contact: team@example.com")
         assert ua.endswith("+contact: team@example.com")
-        assert f"OmniCrawler/{omnicrawl.__version__} +contact" in ua
+        assert f"OmniCrawler/{omnicrawler.__version__} +contact" in ua
 
     def test_case_insensitive_profile_name(self) -> None:
         ua1 = build_user_agent("DESKTOP")
@@ -97,7 +97,7 @@ class TestHonestyFence:
     def test_validate_chrome_fake_signature_raises(self) -> None:
         # 即使开头加了 OmniCrawler/ver 诚实标识，只要仍伪装 Chrome 精确签名（反指纹），铁则就拦下
         fake_with = (
-            f"OmniCrawler/{omnicrawl.__version__} "
+            f"OmniCrawler/{omnicrawler.__version__} "
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
         )
@@ -106,7 +106,7 @@ class TestHonestyFence:
 
     def test_validate_firefox_fake_signature_raises(self) -> None:
         fake = (
-            f"OmniCrawler/{omnicrawl.__version__} "
+            f"OmniCrawler/{omnicrawler.__version__} "
             "(X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
         )
         with pytest.raises(ValueError, match="包含疑似浏览器伪造签名"):
@@ -117,17 +117,17 @@ class TestBackwardCompatible:
     def test_default_user_agent_equals_baseline(self) -> None:
         """B-1 之前的基线行为：OmniCrawler/version + suffix 空格拼接。"""
         base_only = user_agent()
-        assert base_only == f"OmniCrawler/{omnicrawl.__version__}"
+        assert base_only == f"OmniCrawler/{omnicrawler.__version__}"
 
     def test_suffix_only_old_api_still_works(self) -> None:
         # 原调用方签名：user_agent(suffix) —— keyword= 或 positional 都可用
         ua = user_agent("+bot")
-        assert ua == f"OmniCrawler/{omnicrawl.__version__} +bot"
+        assert ua == f"OmniCrawler/{omnicrawler.__version__} +bot"
 
     def test_contact_suffix_matches_old_expected_form(self) -> None:
         suffix = "+contact: change-me@example.com"
         got = user_agent(suffix)
-        assert f"OmniCrawler/{omnicrawl.__version__} {suffix}" == got
+        assert f"OmniCrawler/{omnicrawler.__version__} {suffix}" == got
 
 
 class TestDoctorUACompliance:
@@ -150,7 +150,7 @@ class TestDoctorUACompliance:
         return FakeAppConfig(sections, root=project, workspace=ws, path=project / "config.yaml")
 
     def test_anti_fp_keywords_trigger_warning(self, tmp_path: Path) -> None:
-        from omnicrawl.core.utils import UA_PROFILES
+        from omnicrawler.core.utils import UA_PROFILES
 
         # 仿照 doctor 预检逻辑：profile 名不在官方 + 命中关键词 → warnings
         self._fake_cfg(tmp_path, user_agent_profile="random-canvas-spoof")
@@ -167,7 +167,7 @@ class TestDoctorUACompliance:
         )
 
     def test_doctor_manual_ua_honest_fence(self, tmp_path: Path) -> None:
-        from omnicrawl.core.utils import _validate_profile_honest
+        from omnicrawler.core.utils import _validate_profile_honest
 
         # 伪造 UA：即使用户手动写了个 Chrome UA 到 http.user_agent
         fake = (

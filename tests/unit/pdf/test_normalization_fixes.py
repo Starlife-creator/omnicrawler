@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from omnicrawl.pdfx.config import FieldSpec
-from omnicrawl.pdfx.normalization import normalize_amount, normalize_date, normalize_value
+from omnicrawler.pdfx.config import FieldSpec
+from omnicrawler.pdfx.normalization import normalize_amount, normalize_date, normalize_value
 
 
 def test_d49_accounting_bracket_negative() -> None:

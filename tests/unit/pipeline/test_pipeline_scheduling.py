@@ -7,9 +7,9 @@ from typing import Any
 
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.pipeline import Pipeline
+from omnicrawler.core.config import load_config
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.pipeline import Pipeline
 
 
 def _make_config(tmp_path: Path, *, concurrency: int, max_pages: int) -> Any:

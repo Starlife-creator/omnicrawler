@@ -4,15 +4,15 @@ import copy
 import threading
 from pathlib import Path
 
-from omnicrawl.core.config import DEFAULTS, AppConfig
-from omnicrawl.core.models import CrawlRequest, ExtractedRecord
-from omnicrawl.pipeline_ops.preflight import run_preflight
-from omnicrawl.quality.error_center import build_error_center, diagnose_error
-from omnicrawl.review.run_compare import compare_runs
-from omnicrawl.runtime.resource_profiles import effective_concurrency, profile_for
-from omnicrawl.runtime.run_control import RunControl
-from omnicrawl.services.config_history import ConfigHistory
-from omnicrawl.state import StateStore
+from omnicrawler.core.config import DEFAULTS, AppConfig
+from omnicrawler.core.models import CrawlRequest, ExtractedRecord
+from omnicrawler.pipeline_ops.preflight import run_preflight
+from omnicrawler.quality.error_center import build_error_center, diagnose_error
+from omnicrawler.review.run_compare import compare_runs
+from omnicrawler.runtime.resource_profiles import effective_concurrency, profile_for
+from omnicrawler.runtime.run_control import RunControl
+from omnicrawler.services.config_history import ConfigHistory
+from omnicrawler.state import StateStore
 
 
 def _config(tmp_path: Path, profile: str = "balanced") -> AppConfig:

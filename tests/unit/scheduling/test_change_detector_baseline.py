@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from omnicrawl.scheduling.change_detector import ChangeDetector, MonitorRule
+from omnicrawler.scheduling.change_detector import ChangeDetector, MonitorRule
 
 
 def _rule(**overrides) -> MonitorRule:

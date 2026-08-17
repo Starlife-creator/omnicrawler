@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 
-from omnicrawl.gui.core.validator import VALID_SOURCE_KINDS
-from omnicrawl.sources.sources import SITE_ADAPTER_KINDS, SUPPORTED_SOURCE_KINDS
+from omnicrawler.gui.core.validator import VALID_SOURCE_KINDS
+from omnicrawler.sources.sources import SITE_ADAPTER_KINDS, SUPPORTED_SOURCE_KINDS
 
 
 def test_gui_whitelist_is_single_source_of_truth() -> None:
@@ -26,8 +26,8 @@ def test_site_adapters_in_whitelist() -> None:
 
 def test_validate_full_config_accepts_site_adapter_kind(tmp_path) -> None:
     """GUI 校验器接受 site_* 适配器 kind（回归：曾被误拒）。"""
-    from omnicrawl.gui.core.config_model import CrawlConfig
-    from omnicrawl.gui.core.validator import validate_full_config
+    from omnicrawler.gui.core.config_model import CrawlConfig
+    from omnicrawler.gui.core.validator import validate_full_config
 
     cfg = CrawlConfig(source_kind="site_wordpress", seed_urls=["https://example.org/"])
     errors, _warnings = validate_full_config(cfg)
@@ -36,8 +36,8 @@ def test_validate_full_config_accepts_site_adapter_kind(tmp_path) -> None:
 
 def test_unknown_kind_still_rejected(tmp_path) -> None:
     """未知 kind 仍被拒（门禁没有放松）。"""
-    from omnicrawl.gui.core.config_model import CrawlConfig
-    from omnicrawl.gui.core.validator import validate_full_config
+    from omnicrawler.gui.core.config_model import CrawlConfig
+    from omnicrawler.gui.core.validator import validate_full_config
 
     cfg = CrawlConfig(source_kind="site_unknown", seed_urls=["https://example.org/"])
     errors, _warnings = validate_full_config(cfg)
@@ -46,8 +46,8 @@ def test_unknown_kind_still_rejected(tmp_path) -> None:
 
 def test_extra_source_kinds_allows_plugin_registered_kind(tmp_path) -> None:
     """D10-b：extra_source_kinds 传入插件注册源类型后不再误拒。"""
-    from omnicrawl.gui.core.config_model import CrawlConfig
-    from omnicrawl.gui.core.validator import validate_full_config
+    from omnicrawler.gui.core.config_model import CrawlConfig
+    from omnicrawler.gui.core.validator import validate_full_config
 
     cfg = CrawlConfig(source_kind="my_plugin_source", seed_urls=["https://example.org/"])
     # 未传入 extra → 拒绝
@@ -60,8 +60,8 @@ def test_extra_source_kinds_allows_plugin_registered_kind(tmp_path) -> None:
 
 def test_plugin_source_kinds_returns_registered_kinds(tmp_path) -> None:
     """D10-b：plugin_source_kinds 从项目根构建 registry 提取已注册源类型。"""
-    from omnicrawl.gui.core.validator import plugin_source_kinds
-    from omnicrawl.sources.sources import SUPPORTED_SOURCE_KINDS
+    from omnicrawler.gui.core.validator import plugin_source_kinds
+    from omnicrawler.sources.sources import SUPPORTED_SOURCE_KINDS
 
     kinds = plugin_source_kinds(str(tmp_path))
     assert isinstance(kinds, set)
@@ -71,8 +71,8 @@ def test_plugin_source_kinds_returns_registered_kinds(tmp_path) -> None:
 
 def test_sources_register_uses_generic_kinds_only(tmp_path) -> None:
     """sources.register 只注册通用 kind；site_* 由 site_adapters 注册专用类。"""
-    from omnicrawl.plugins.plugins import Registry
-    from omnicrawl.sources import site_adapters, sources
+    from omnicrawler.plugins.plugins import Registry
+    from omnicrawler.sources import site_adapters, sources
 
     registry = Registry()
     sources.register(registry)

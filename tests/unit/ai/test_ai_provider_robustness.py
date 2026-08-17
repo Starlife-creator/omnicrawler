@@ -18,9 +18,9 @@ from unittest.mock import patch
 
 import pytest
 
-from omnicrawl.core.config import AppConfig
-from omnicrawl.services import ai_providers
-from omnicrawl.services.ai_providers import AI_RETRY_ATTEMPTS, OpenAICompatibleProvider
+from omnicrawler.core.config import AppConfig
+from omnicrawler.services import ai_providers
+from omnicrawler.services.ai_providers import AI_RETRY_ATTEMPTS, OpenAICompatibleProvider
 
 
 class _FakeEgress:
@@ -86,7 +86,7 @@ def test_c10_max_tokens_written_into_payload() -> None:
             captured["body"] = json.loads(request.data.decode("utf-8"))
             return _FakeResponse(b'{"choices":[{"message":{"content":"ok"}}],"usage":{}}')
 
-    with patch("omnicrawl.services.ai_providers.build_safe_opener", return_value=_CaptureOpener()):
+    with patch("omnicrawler.services.ai_providers.build_safe_opener", return_value=_CaptureOpener()):
         provider.generate([{"role": "user", "content": "hi"}])
     assert captured["body"].get("max_tokens") == 512
 
@@ -106,7 +106,7 @@ def test_c6_http_error_surfaces_status_and_body(monkeypatch) -> None:
                 fp=fp,
             )
 
-    with patch("omnicrawl.services.ai_providers.build_safe_opener", return_value=_ErrOpener()):
+    with patch("omnicrawler.services.ai_providers.build_safe_opener", return_value=_ErrOpener()):
         with pytest.raises(RuntimeError, match="HTTP 429"):
             provider.generate([{"role": "user", "content": "hi"}])
 
@@ -121,7 +121,7 @@ def test_c5_socket_timeout_is_caught_and_surfaced(monkeypatch) -> None:
             calls["n"] += 1
             raise TimeoutError("timed out")
 
-    with patch("omnicrawl.services.ai_providers.build_safe_opener", return_value=_TimeoutOpener()):
+    with patch("omnicrawler.services.ai_providers.build_safe_opener", return_value=_TimeoutOpener()):
         with pytest.raises(RuntimeError, match="超时"):
             provider.generate([{"role": "user", "content": "hi"}])
     # C7：超时按指数退避重试至耗尽（不立即抛、也不无限）
@@ -140,7 +140,7 @@ def test_c7_retry_then_success(monkeypatch) -> None:
                 raise urllib.error.URLError(reason=ConnectionError("conn refused"))
             return _FakeResponse(b'{"choices":[{"message":{"content":"ok"}}],"usage":{"total_tokens":1}}')
 
-    with patch("omnicrawl.services.ai_providers.build_safe_opener", return_value=_FlakyOpener()):
+    with patch("omnicrawler.services.ai_providers.build_safe_opener", return_value=_FlakyOpener()):
         result = provider.generate([{"role": "user", "content": "hi"}])
     assert result.text == "ok"
     assert calls["n"] == 2  # 第一次失败，重试成功
@@ -154,6 +154,6 @@ def test_c5_non_json_response_surfaced_with_guidance(monkeypatch) -> None:
         def open(self, request, timeout=None):
             return _FakeResponse(b"<html>502 Bad Gateway</html>")
 
-    with patch("omnicrawl.services.ai_providers.build_safe_opener", return_value=_HtmlOpener()):
+    with patch("omnicrawler.services.ai_providers.build_safe_opener", return_value=_HtmlOpener()):
         with pytest.raises(RuntimeError, match="不是合法 JSON"):
             provider.generate([{"role": "user", "content": "hi"}])

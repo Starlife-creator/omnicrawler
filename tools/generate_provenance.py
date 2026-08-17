@@ -88,7 +88,7 @@ def build_provenance(
     return {
         "format": 1,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "project": {"name": "omnicrawl-platform", "version": _project_version(root)},
+        "project": {"name": "omnicrawler-platform", "version": _project_version(root)},
         "source": {"commit": source_commit or None, "tag": source_tag or None},
         "build": {"python": sys.version.split()[0], "platform": platform.platform()},
         "ci": {"run_url": workflow_url or None},

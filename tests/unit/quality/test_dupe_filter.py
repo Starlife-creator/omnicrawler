@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from omnicrawl.quality.dupe_filter import (
+from omnicrawler.quality.dupe_filter import (
     DualLayerDupeFilter,
     canonical_url,
     strip_tracking_params,

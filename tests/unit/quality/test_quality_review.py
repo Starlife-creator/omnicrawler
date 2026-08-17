@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 
-from omnicrawl.core.models import CrawlRequest, ExtractedRecord
-from omnicrawl.quality.quality import assess_record, assess_records
-from omnicrawl.state import StateStore
+from omnicrawler.core.models import CrawlRequest, ExtractedRecord
+from omnicrawler.quality.quality import assess_record, assess_records
+from omnicrawler.state import StateStore
 
 
 def test_typed_quality_rules_and_duplicate_detection() -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from omnicrawl.core.encoding import _KNOWN_ENCODINGS, detect_encoding, smart_decode
+from omnicrawler.core.encoding import _KNOWN_ENCODINGS, detect_encoding, smart_decode
 
 
 def test_known_encoding_accepted() -> None:

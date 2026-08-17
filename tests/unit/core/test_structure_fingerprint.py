@@ -9,7 +9,7 @@ from __future__ import annotations
 
 class TestTypeSignature:
     def test_scalars(self) -> None:
-        from omnicrawl.core.structure_fingerprint import type_signature
+        from omnicrawler.core.structure_fingerprint import type_signature
 
         assert type_signature(None) == "null"
         assert type_signature(True) == "bool"
@@ -20,12 +20,12 @@ class TestTypeSignature:
 
     def test_bool_before_int(self) -> None:
         """bool 是 int 子类，必须先判 bool 否则 True → 'int'。"""
-        from omnicrawl.core.structure_fingerprint import type_signature
+        from omnicrawler.core.structure_fingerprint import type_signature
 
         assert type_signature(True) != "int"
 
     def test_list(self) -> None:
-        from omnicrawl.core.structure_fingerprint import type_signature
+        from omnicrawler.core.structure_fingerprint import type_signature
 
         assert type_signature([]) == "[]"
         assert type_signature([1, 2, 3]) == "[int]"
@@ -33,14 +33,14 @@ class TestTypeSignature:
         assert type_signature([{"k": 1}]) == "[{k:int}]"
 
     def test_dict(self) -> None:
-        from omnicrawl.core.structure_fingerprint import type_signature
+        from omnicrawler.core.structure_fingerprint import type_signature
 
         assert type_signature({}) == "{}"
         assert type_signature({"name": "x"}) == "{name:str}"
         assert type_signature({"name": "x", "age": 30}) == "{age:int,name:str}"
 
     def test_nested(self) -> None:
-        from omnicrawl.core.structure_fingerprint import type_signature
+        from omnicrawler.core.structure_fingerprint import type_signature
 
         data = {"tags": ["a"], "meta": {"src": "x", "n": 1}}
         sig = type_signature(data)
@@ -48,7 +48,7 @@ class TestTypeSignature:
         assert "meta:{n:int,src:str}" in sig
 
     def test_other_types(self) -> None:
-        from omnicrawl.core.structure_fingerprint import type_signature
+        from omnicrawler.core.structure_fingerprint import type_signature
 
         assert type_signature(b"bytes") == "bytes"
         assert type_signature(object()) == "object"
@@ -56,7 +56,7 @@ class TestTypeSignature:
 
 class TestStructureFingerprint:
     def test_same_structure_different_values_same_fingerprint(self) -> None:
-        from omnicrawl.core.structure_fingerprint import structure_fingerprint
+        from omnicrawler.core.structure_fingerprint import structure_fingerprint
 
         d1 = {"name": "张三", "age": 30, "tags": ["a"]}
         d2 = {"name": "李四", "age": 25, "tags": ["x", "y"]}
@@ -66,21 +66,21 @@ class TestStructureFingerprint:
         )
 
     def test_different_keys_different_fingerprint(self) -> None:
-        from omnicrawl.core.structure_fingerprint import structure_fingerprint
+        from omnicrawler.core.structure_fingerprint import structure_fingerprint
 
         d1 = {"name": "x", "age": 30}
         d2 = {"name": "x", "price": 30}
         assert structure_fingerprint(d1) != structure_fingerprint(d2)
 
     def test_different_value_type_different_fingerprint(self) -> None:
-        from omnicrawl.core.structure_fingerprint import structure_fingerprint
+        from omnicrawler.core.structure_fingerprint import structure_fingerprint
 
         d1 = {"age": 30}       # int
         d2 = {"age": "30"}     # str
         assert structure_fingerprint(d1) != structure_fingerprint(d2)
 
     def test_different_record_type_different_fingerprint(self) -> None:
-        from omnicrawl.core.structure_fingerprint import structure_fingerprint
+        from omnicrawler.core.structure_fingerprint import structure_fingerprint
 
         data = {"name": "x", "age": 30}
         assert structure_fingerprint(data, record_type="html_item") != structure_fingerprint(
@@ -88,27 +88,27 @@ class TestStructureFingerprint:
         )
 
     def test_empty_data(self) -> None:
-        from omnicrawl.core.structure_fingerprint import structure_fingerprint
+        from omnicrawler.core.structure_fingerprint import structure_fingerprint
 
         sig = structure_fingerprint({}, record_type="html_item")
         assert sig == "v1:html_item:empty"
 
     def test_key_order_independent(self) -> None:
-        from omnicrawl.core.structure_fingerprint import structure_fingerprint
+        from omnicrawler.core.structure_fingerprint import structure_fingerprint
 
         d1 = {"name": "x", "age": 30}
         d2 = {"age": 30, "name": "x"}
         assert structure_fingerprint(d1) == structure_fingerprint(d2)
 
     def test_format(self) -> None:
-        from omnicrawl.core.structure_fingerprint import structure_fingerprint
+        from omnicrawler.core.structure_fingerprint import structure_fingerprint
 
         sig = structure_fingerprint({"name": "x"}, record_type="html_item")
         assert sig.startswith("v1:html_item:")
         assert len(sig.split(":")[-1]) == 16  # 16 hex chars
 
     def test_nested_dict_in_list(self) -> None:
-        from omnicrawl.core.structure_fingerprint import structure_fingerprint
+        from omnicrawler.core.structure_fingerprint import structure_fingerprint
 
         d1 = {"items": [{"name": "a", "qty": 1}]}
         d2 = {"items": [{"name": "b", "qty": 2}]}
@@ -119,7 +119,7 @@ class TestStructureFingerprint:
 
 class TestStructureFingerprintRegistry:
     def test_observe_and_count(self) -> None:
-        from omnicrawl.core.structure_fingerprint import (
+        from omnicrawler.core.structure_fingerprint import (
             StructureFingerprintRegistry,
             structure_fingerprint,
         )
@@ -137,7 +137,7 @@ class TestStructureFingerprintRegistry:
         assert reg.unique_count() == 2
 
     def test_drift_detection(self) -> None:
-        from omnicrawl.core.structure_fingerprint import (
+        from omnicrawler.core.structure_fingerprint import (
             StructureFingerprintRegistry,
             structure_fingerprint,
         )
@@ -154,7 +154,7 @@ class TestStructureFingerprintRegistry:
         assert reg.observe(sig_b, "https://example.com/page") is True
 
     def test_signatures_for_url(self) -> None:
-        from omnicrawl.core.structure_fingerprint import (
+        from omnicrawler.core.structure_fingerprint import (
             StructureFingerprintRegistry,
             structure_fingerprint,
         )
@@ -173,7 +173,7 @@ class TestStructureFingerprintRegistry:
         assert len(reg.signatures_for_url("https://nope.com")) == 0
 
     def test_top_signatures(self) -> None:
-        from omnicrawl.core.structure_fingerprint import (
+        from omnicrawler.core.structure_fingerprint import (
             StructureFingerprintRegistry,
             structure_fingerprint,
         )
@@ -194,7 +194,7 @@ class TestStructureFingerprintRegistry:
         assert top[1][1] == 1
 
     def test_clear(self) -> None:
-        from omnicrawl.core.structure_fingerprint import (
+        from omnicrawler.core.structure_fingerprint import (
             StructureFingerprintRegistry,
             structure_fingerprint,
         )
@@ -220,7 +220,7 @@ class TestMetricsConsumer:
         return FakeRecord()
 
     def test_record_extracted_counts_template(self) -> None:
-        from omnicrawl.services.metrics import RunMetrics
+        from omnicrawler.services.metrics import RunMetrics
 
         metrics = RunMetrics()
         r1 = self._make_record({"name": "张三", "age": 30})
@@ -233,7 +233,7 @@ class TestMetricsConsumer:
 
         snapshot = metrics.snapshot()
         template_counters = [
-            e for e in snapshot["counters"] if e["name"] == "omnicrawl_structure_templates_total"
+            e for e in snapshot["counters"] if e["name"] == "omnicrawler_structure_templates_total"
         ]
         # 两种结构模板（r1+r2 同结构，r3 不同）
         assert len(template_counters) == 2
@@ -241,7 +241,7 @@ class TestMetricsConsumer:
         assert snapshot["structure_templates"]["unique"] == 2
 
     def test_record_extracted_detects_drift(self) -> None:
-        from omnicrawl.services.metrics import RunMetrics
+        from omnicrawler.services.metrics import RunMetrics
 
         metrics = RunMetrics()
         # 同 URL 先后出现两种结构 → 漂移计数
@@ -254,13 +254,13 @@ class TestMetricsConsumer:
 
         snapshot = metrics.snapshot()
         drift_counters = [
-            e for e in snapshot["counters"] if e["name"] == "omnicrawl_structure_drift_total"
+            e for e in snapshot["counters"] if e["name"] == "omnicrawler_structure_drift_total"
         ]
         assert len(drift_counters) == 1
         assert drift_counters[0]["value"] == 1
 
     def test_record_extracted_exception_does_not_break(self) -> None:
-        from omnicrawl.services.metrics import RunMetrics
+        from omnicrawler.services.metrics import RunMetrics
 
         metrics = RunMetrics()
         # 传入非法对象（无 data 属性）→ 不抛

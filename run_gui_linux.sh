@@ -7,4 +7,4 @@ if [ ! -f ".venv/bin/python" ]; then
     exit 1
 fi
 
-exec .venv/bin/python -m omnicrawl.gui "$@"
+exec .venv/bin/python -m omnicrawler.gui "$@"

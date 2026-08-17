@@ -71,7 +71,7 @@ LOW  │  [7] browser_fetcher 宽带 catch  [8] 入口点残留 main 块
 **现状**：`cli.py` 和 `commands/components.py` 从 `gui.runtime_paths` 导入。核心 CLI 依赖 GUI 模块——架构层面的边界污染。
 
 **方案**：
-1. `git mv src/omnicrawl/gui/runtime_paths.py src/omnicrawl/runtime_paths.py`
+1. `git mv src/omnicrawler/gui/runtime_paths.py src/omnicrawler/runtime_paths.py`
 2. 更新 3 处导入：`cli.py`、`gui/main.py`、`commands/components.py`
 3. `runtime_paths.py` 本身零 Qt 依赖，纯路径计算
 
@@ -114,7 +114,7 @@ LOW  │  [7] browser_fetcher 宽带 catch  [8] 入口点残留 main 块
 **方案**：对标 `sdk/__init__.py` 标准（`__all__` + 稳定性标记），为以下包添加公开 API 面：
 
 ```python
-# src/omnicrawl/__init__.py 增量
+# src/omnicrawler/__init__.py 增量
 __all__ = ["__version__", "AppConfig", "Pipeline", "StateStore", "run_task"]
 from .config import AppConfig
 from .pipeline import Pipeline
@@ -122,12 +122,12 @@ from .state import StateStore
 ```
 
 ```python
-# src/omnicrawl/commands/__init__.py
+# src/omnicrawler/commands/__init__.py
 __all__ = ["run_task", "doctor", "export_all", "validate_config", "run_sample"]
 ```
 
 ```python
-# src/omnicrawl/apps/__init__.py
+# src/omnicrawler/apps/__init__.py
 __all__ = ["run_field_extractor", "run_pdf_processor"]
 ```
 
@@ -140,7 +140,7 @@ pdfx 子包需要 `try/except ImportError` 守卫（pdfx 是可选依赖）。
 **方案**：不用装饰器（避免 import 时机问题），用显式字典：
 
 ```python
-# src/omnicrawl/cli/_commands.py
+# src/omnicrawler/cli/_commands.py
 COMMANDS: dict[str, dict] = {
     "run":        {"module": ".commands.run_task",   "function": "run_task",   "help": "启动任务"},
     "resume":     {"module": ".commands.run_task",   "function": "resume_task","help": "继续任务"},

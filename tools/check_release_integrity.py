@@ -36,12 +36,12 @@ _WINDOWS_RESERVED_NAMES = {
 # Linux/macOS 产物顶层是 OmniCrawler/（M4 对齐），入口可执行文件无 .exe 后缀。
 # macOS 是 .app bundle，入口在 Contents/MacOS/ 下。
 _PORTABLE_PLATFORM_ENTRYPOINTS: dict[str, tuple[str, ...]] = {
-    "win": ("OmniCrawler.exe", "omnicrawl.exe", "omnicrawl-worker.exe"),
-    "linux": ("OmniCrawler", "omnicrawl", "omnicrawl-worker"),
+    "win": ("OmniCrawler.exe", "omnicrawler.exe", "omnicrawler-worker.exe"),
+    "linux": ("OmniCrawler", "omnicrawler", "omnicrawler-worker"),
     "mac": (
         "OmniCrawler.app/Contents/MacOS/OmniCrawler",
-        "OmniCrawler.app/Contents/MacOS/omnicrawl",
-        "OmniCrawler.app/Contents/MacOS/omnicrawl-worker",
+        "OmniCrawler.app/Contents/MacOS/omnicrawler",
+        "OmniCrawler.app/Contents/MacOS/omnicrawler-worker",
     ),
 }
 # macOS 额外要求 .app 目录存在（bundle 根）
@@ -159,7 +159,7 @@ def _resolved_module(current: str, node: ast.ImportFrom, *, is_package: bool) ->
 
 
 def check_local_imports(source_root: Path) -> list[str]:
-    package_root = source_root / "omnicrawl"
+    package_root = source_root / "omnicrawler"
     errors: list[str] = []
     cache: dict[Path, set[str]] = {}
     for path in package_root.rglob("*.py"):
@@ -173,7 +173,7 @@ def check_local_imports(source_root: Path) -> list[str]:
             if not isinstance(node, ast.ImportFrom):
                 continue
             module = _resolved_module(current, node, is_package=is_package)
-            if not module or not module.startswith("omnicrawl"):
+            if not module or not module.startswith("omnicrawler"):
                 continue
             target = _module_file(package_root, module)
             if target is None:
@@ -193,7 +193,7 @@ def check_entry_points(project_root: Path, metadata: dict) -> list[str]:
     errors: list[str] = []
     for name, target in metadata["project"].get("scripts", {}).items():
         module, _, symbol = target.partition(":")
-        path = _module_file(source_root / "omnicrawl", module)
+        path = _module_file(source_root / "omnicrawler", module)
         if path is None:
             errors.append(f"entry point {name}: missing module {module}")
         elif symbol and symbol not in _defined_names(path):
@@ -206,7 +206,7 @@ def check_project(project_root: Path) -> list[str]:
     metadata = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     errors = check_entry_points(project_root, metadata)
     errors.extend(check_local_imports(project_root / "src"))
-    required = ("README.md", "LICENSE", "src/omnicrawl/__init__.py")
+    required = ("README.md", "LICENSE", "src/omnicrawler/__init__.py")
     errors.extend(f"missing required file: {name}" for name in required if not (project_root / name).is_file())
     errors.extend(check_docker_compose_mounts(project_root))
     errors.extend(check_env_example_references(project_root))
@@ -272,7 +272,7 @@ def check_env_example_references(project_root: Path) -> list[str]:
 def _wheel_modules(archive: zipfile.ZipFile) -> dict[str, tuple[str, str]]:
     modules: dict[str, tuple[str, str]] = {}
     for name in archive.namelist():
-        if not name.startswith("omnicrawl/") or not name.endswith(".py"):
+        if not name.startswith("omnicrawler/") or not name.endswith(".py"):
             continue
         module = name[:-3].replace("/", ".")
         if module.endswith(".__init__"):
@@ -320,7 +320,7 @@ def check_wheel(wheel_path: Path) -> list[str]:
                 if not isinstance(node, ast.ImportFrom):
                     continue
                 target = _resolved_module(module, node, is_package=is_package)
-                if not target or not target.startswith("omnicrawl") or target not in modules:
+                if not target or not target.startswith("omnicrawler") or target not in modules:
                     continue
                 for alias in node.names:
                     if alias.name == "*" or alias.name in exported[target] or f"{target}.{alias.name}" in modules:
@@ -372,7 +372,7 @@ def check_source_zip(zip_path: Path) -> list[str]:
             return sorted(set(errors))
         root = next(iter(roots))
         required = (
-            "pyproject.toml", "README.md", "LICENSE", "src/omnicrawl/__init__.py",
+            "pyproject.toml", "README.md", "LICENSE", "src/omnicrawler/__init__.py",
             "tools/check_release_integrity.py",
         )
         names = set(archive.namelist())
@@ -383,7 +383,7 @@ def check_source_zip(zip_path: Path) -> list[str]:
         module_prefix = f"{root}/src/"
         modules: dict[str, tuple[str, str]] = {}
         for name in names:
-            if not name.startswith(f"{module_prefix}omnicrawl/") or not name.endswith(".py"):
+            if not name.startswith(f"{module_prefix}omnicrawler/") or not name.endswith(".py"):
                 continue
             module = name[len(module_prefix):-3].replace("/", ".")
             if module.endswith(".__init__"):
@@ -397,7 +397,7 @@ def check_source_zip(zip_path: Path) -> list[str]:
                 if not isinstance(node, ast.ImportFrom):
                     continue
                 target = _resolved_module(module, node, is_package=is_package)
-                if not target or not target.startswith("omnicrawl") or target not in modules:
+                if not target or not target.startswith("omnicrawler") or target not in modules:
                     continue
                 for alias in node.names:
                     if alias.name == "*" or alias.name in exported[target] or f"{target}.{alias.name}" in modules:

@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.runtime.repository import RunRepository, SQLiteRunRepository
-from omnicrawl.state import StateStore
+from omnicrawler.runtime.repository import RunRepository, SQLiteRunRepository
+from omnicrawler.state import StateStore
 
 
 def test_repository_port_and_sqlite_adapter(tmp_path: Path) -> None:

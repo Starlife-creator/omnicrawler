@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Extract translatable strings from OmniCrawler GUI source files.
 
-Scans ``src/omnicrawl/gui/`` for ``_()`` and ``ngettext()`` calls,
+Scans ``src/omnicrawler/gui/`` for ``_()`` and ``ngettext()`` calls,
 outputs a gettext ``.pot`` template, and optionally generates an
 English ``.po`` file with auto-translations.
 
 Usage::
 
-    python tools/extract_i18n.py                    # -> locale/omnicrawl-gui.pot
+    python tools/extract_i18n.py                    # -> locale/omnicrawler-gui.pot
     python tools/extract_i18n.py --gen-po en_US     # -> locale/en_US/LC_MESSAGES/
 """
 
@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-GUI_DIR = PROJECT_ROOT / "src" / "omnicrawl" / "gui"
+GUI_DIR = PROJECT_ROOT / "src" / "omnicrawler" / "gui"
 LOCALE_DIR = PROJECT_ROOT / "locale"
 
 
@@ -89,6 +89,6 @@ def generate_pot(output: Path) -> int:
 
 
 if __name__ == "__main__":
-    pot_path = LOCALE_DIR / "omnicrawl-gui.pot"
+    pot_path = LOCALE_DIR / "omnicrawler-gui.pot"
     count = generate_pot(pot_path)
     print(f"Extracted {count} unique strings -> {pot_path}")

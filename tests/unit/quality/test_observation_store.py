@@ -12,15 +12,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawl.quality.auto_apply import (
+from omnicrawler.quality.auto_apply import (
     AutoApplyPolicy,
     AutomationTier,
     classify_tier,
     observed_auto_apply,
     step_observe,
 )
-from omnicrawl.quality.observation_store import ObservationStore, RollbackDirective
-from omnicrawl.quality.shadow_repair import (
+from omnicrawler.quality.observation_store import ObservationStore, RollbackDirective
+from omnicrawler.quality.shadow_repair import (
     RepairCandidate,
     ShadowComparison,
     candidate_rule,

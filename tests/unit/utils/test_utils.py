@@ -6,7 +6,7 @@ import time
 import unittest
 from pathlib import Path
 
-from omnicrawl.core.utils import (
+from omnicrawler.core.utils import (
     atomic_write,
     canonicalize_url,
     deep_merge,
@@ -18,8 +18,8 @@ from omnicrawl.core.utils import (
     sha256_bytes,
     utcnow,
 )
-from omnicrawl.fetching.http_client import HTTPFetcher
-from omnicrawl.security.policy import HostRateLimiter, is_private_target
+from omnicrawler.fetching.http_client import HTTPFetcher
+from omnicrawler.security.policy import HostRateLimiter, is_private_target
 
 
 class UtilsTest(unittest.TestCase):
@@ -238,7 +238,7 @@ class UtilsMiscTest(unittest.TestCase):
         self.assertEqual(redacted, {"content-type": "text/html", "accept": "text/html"})
 
     def test_redact_headers_keeps_non_sensitive(self):
-        headers = {"content-type": "text/html", "user-agent": "omnicrawl"}
+        headers = {"content-type": "text/html", "user-agent": "omnicrawler"}
         self.assertEqual(redact_headers(headers), headers)
 
     def test_redact_headers_filters_suffix_api_key(self):

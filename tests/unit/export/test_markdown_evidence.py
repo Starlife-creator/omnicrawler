@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from omnicrawl.export.markdown_exporter import MarkdownExporter
+from omnicrawler.export.markdown_exporter import MarkdownExporter
 
 
 def test_render_card_with_dict_evidence() -> None:

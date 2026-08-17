@@ -6,9 +6,9 @@ from pathlib import Path
 
 import fitz
 
-from omnicrawl.pdfx.config import load_config
-from omnicrawl.pdfx.database import Database
-from omnicrawl.pdfx.ingest import ingest
+from omnicrawler.pdfx.config import load_config
+from omnicrawler.pdfx.database import Database
+from omnicrawler.pdfx.ingest import ingest
 
 
 def _pdf(tmp_path: Path, text: str, name: str = "doc.pdf") -> Path:

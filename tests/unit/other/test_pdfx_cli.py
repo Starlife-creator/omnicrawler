@@ -10,8 +10,8 @@ import pytest
 pytest.importorskip("openpyxl", reason="PDF review XLSX tests require the optional openpyxl dependency")
 from openpyxl import Workbook
 
-from omnicrawl.pdfx import cli
-from omnicrawl.pdfx.review import _rows_from_xlsx, apply_review
+from omnicrawler.pdfx import cli
+from omnicrawler.pdfx.review import _rows_from_xlsx, apply_review
 
 
 class _Database:

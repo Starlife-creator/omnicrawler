@@ -34,7 +34,7 @@
 
 ## 工程与发布结构
 
-- `src/omnicrawl` 保持模块化；插件 API v1 与配置迁移协议保留。
+- `src/omnicrawler` 保持模块化；插件 API v1 与配置迁移协议保留。
 - Windows、Linux、macOS、Docker 与直接 `python -m`/CLI 入口分别维护。
 - Windows 便携包只包含 Windows 二进制和用户/运维文档，不携带其他系统运行时。
 - 源码包排除 `.venv`、构建物、缓存和历史发布 ZIP；全部平台源码与脚本保留。

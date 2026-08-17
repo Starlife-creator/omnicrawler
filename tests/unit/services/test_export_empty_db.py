@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.services.application_service import ApplicationService
+from omnicrawler.services.application_service import ApplicationService
 
 
 def test_export_without_database_raises(tmp_path: Path) -> None:

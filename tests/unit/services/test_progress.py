@@ -17,7 +17,7 @@ import pytest
 
 class TestTaskProgressEvent:
     def test_roundtrip_log_line(self) -> None:
-        from omnicrawl.services.progress import TaskProgressEvent
+        from omnicrawler.services.progress import TaskProgressEvent
 
         ev = TaskProgressEvent(
             task_id="job-01",
@@ -42,14 +42,14 @@ class TestTaskProgressEvent:
         assert restored.extra.get("url") == "https://example.com/x"
 
     def test_from_log_line_returns_none_for_plain_lines(self) -> None:
-        from omnicrawl.services.progress import TaskProgressEvent
+        from omnicrawler.services.progress import TaskProgressEvent
 
         assert TaskProgressEvent.from_log_line("INFO: startup") is None
         assert TaskProgressEvent.from_log_line("PROGRESS: 42% https://x") is None
         assert TaskProgressEvent.from_log_line("PROGRESS2: {broken}") is None
 
     def test_as_dict_has_all_slots(self) -> None:
-        from omnicrawl.services.progress import TaskProgressEvent
+        from omnicrawler.services.progress import TaskProgressEvent
 
         d = TaskProgressEvent().as_dict()
         assert isinstance(d, dict)
@@ -59,7 +59,7 @@ class TestTaskProgressEvent:
 
 class TestProgressTracker:
     def test_stage_weights_normalize_to_100(self) -> None:
-        from omnicrawl.services.progress import ProgressTracker, StageSpec
+        from omnicrawler.services.progress import ProgressTracker, StageSpec
 
         events: list = []
         tracker = ProgressTracker(
@@ -82,7 +82,7 @@ class TestProgressTracker:
         assert tracker.last_event.state == "finished"
 
     def test_item_progress_spans_stage(self) -> None:
-        from omnicrawl.services.progress import ProgressTracker, StageSpec
+        from omnicrawler.services.progress import ProgressTracker, StageSpec
 
         tracker = ProgressTracker(stages=[
             StageSpec("only", weight=10.0, has_items=True),
@@ -97,19 +97,19 @@ class TestProgressTracker:
         assert tracker.last_event.percent >= 99.0
 
     def test_empty_stages_rejected(self) -> None:
-        from omnicrawl.services.progress import ProgressTracker
+        from omnicrawler.services.progress import ProgressTracker
 
         with pytest.raises(ValueError):
             ProgressTracker(stages=[])
 
     def test_zero_weight_sum_rejected(self) -> None:
-        from omnicrawl.services.progress import ProgressTracker, StageSpec
+        from omnicrawler.services.progress import ProgressTracker, StageSpec
 
         with pytest.raises(ValueError):
             ProgressTracker(stages=[StageSpec("x", weight=-1.0)])
 
     def test_cancel_fail_pause_resume_states(self) -> None:
-        from omnicrawl.services.progress import ProgressTracker, StageSpec
+        from omnicrawler.services.progress import ProgressTracker, StageSpec
 
         tracker = ProgressTracker(stages=[StageSpec("a")])
         tracker.start()
@@ -121,7 +121,7 @@ class TestProgressTracker:
         assert tracker.last_event.state == "cancelled"
 
     def test_eta_emerges_after_sufficient_samples(self, monkeypatch) -> None:
-        from omnicrawl.services.progress import ProgressTracker, StageSpec
+        from omnicrawler.services.progress import ProgressTracker, StageSpec
 
         tracker = ProgressTracker(stages=[StageSpec("a", has_items=True)])
         tracker.start()
@@ -149,7 +149,7 @@ class TestProgressTracker:
 
     def test_callback_exception_isolated(self) -> None:
         """on_event 回调抛错不得中断 tracker 本身。"""
-        from omnicrawl.services.progress import ProgressTracker, StageSpec
+        from omnicrawler.services.progress import ProgressTracker, StageSpec
 
         def bad(_ev): raise RuntimeError("boom")  # noqa: E704
 
@@ -163,7 +163,7 @@ class TestProgressTracker:
         assert tracker.last_event.state == "finished"
 
     def test_set_percent_bridge(self) -> None:
-        from omnicrawl.services.progress import ProgressTracker, StageSpec
+        from omnicrawler.services.progress import ProgressTracker, StageSpec
 
         tracker = ProgressTracker(stages=[StageSpec("a")])
         tracker.start()
@@ -174,7 +174,7 @@ class TestProgressTracker:
 
 class TestBridgeHelpers:
     def test_bridge_percent_roundtrip(self) -> None:
-        from omnicrawl.services.progress import bridge_percent_to_event, event_to_percent
+        from omnicrawler.services.progress import bridge_percent_to_event, event_to_percent
 
         ev = bridge_percent_to_event(75, task_id="t", stage="s", display_stage="阶段S")
         assert event_to_percent(ev) == 75
@@ -182,7 +182,7 @@ class TestBridgeHelpers:
         assert ev.display_stage == "阶段S"
 
     def test_bridge_items_spans_percent_range(self) -> None:
-        from omnicrawl.services.progress import bridge_items_to_event, event_to_percent
+        from omnicrawler.services.progress import bridge_items_to_event, event_to_percent
 
         ev = bridge_items_to_event(
             5, 10,
@@ -195,7 +195,7 @@ class TestBridgeHelpers:
         assert ev.item_total == 10
 
     def test_event_to_stage_label_shows_items_and_eta(self) -> None:
-        from omnicrawl.services.progress import TaskProgressEvent, event_to_stage_label
+        from omnicrawler.services.progress import TaskProgressEvent, event_to_stage_label
 
         ev = TaskProgressEvent(
             display_stage="抽取",
@@ -211,7 +211,7 @@ class TestBridgeHelpers:
         assert "分" in label and "秒" in label
 
     def test_event_to_stage_label_finished_failed_cancelled(self) -> None:
-        from omnicrawl.services.progress import TaskProgressEvent, event_to_stage_label
+        from omnicrawler.services.progress import TaskProgressEvent, event_to_stage_label
 
         ev = TaskProgressEvent(state="finished", display_stage="done")
         assert "✓" in event_to_stage_label(ev)
@@ -221,7 +221,7 @@ class TestBridgeHelpers:
         assert "取消" in event_to_stage_label(ev)
 
     def test_format_eta_ranges(self) -> None:
-        from omnicrawl.services.progress import format_eta
+        from omnicrawler.services.progress import format_eta
 
         assert "秒" in format_eta(30)
         label = format_eta(125)  # 2分5秒
@@ -232,7 +232,7 @@ class TestBridgeHelpers:
         assert "天" in label and "小时" in label
 
     def test_format_eta_zero_or_negative_is_zero_seconds(self) -> None:
-        from omnicrawl.services.progress import format_eta
+        from omnicrawler.services.progress import format_eta
 
         assert "0秒" in format_eta(0)
         assert "秒" in format_eta(-10)
@@ -243,8 +243,8 @@ class TestLogParserProgress2:
         pytest.importorskip("PyQt6")
         from PyQt6.QtWidgets import QApplication
 
-        from omnicrawl.gui.runner.log_parser import LogParser
-        from omnicrawl.services.progress import TaskProgressEvent
+        from omnicrawler.gui.runner.log_parser import LogParser
+        from omnicrawler.services.progress import TaskProgressEvent
 
         QApplication.instance() or QApplication([])
         legacy_calls: list = []
@@ -270,7 +270,7 @@ class TestLogParserProgress2:
         pytest.importorskip("PyQt6")
         from PyQt6.QtWidgets import QApplication
 
-        from omnicrawl.gui.runner.log_parser import LogParser
+        from omnicrawler.gui.runner.log_parser import LogParser
 
         QApplication.instance() or QApplication([])
         legacy: list = []
@@ -282,8 +282,8 @@ class TestLogParserProgress2:
         pytest.importorskip("PyQt6")
         from PyQt6.QtWidgets import QApplication
 
-        from omnicrawl.gui.runner.log_parser import LogParser
-        from omnicrawl.services.progress import TaskProgressEvent
+        from omnicrawler.gui.runner.log_parser import LogParser
+        from omnicrawler.services.progress import TaskProgressEvent
 
         QApplication.instance() or QApplication([])
         parser = LogParser()

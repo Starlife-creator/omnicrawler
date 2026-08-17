@@ -9,8 +9,8 @@ except ImportError:
     from datetime import datetime, timedelta, timezone
     UTC = timezone.utc
 
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.quality.diagnostics import DiagnosticRecorder
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.quality.diagnostics import DiagnosticRecorder
 
 
 def test_recorder_sanitizes_filename_redacts_strings_and_omits_bytes(tmp_path):

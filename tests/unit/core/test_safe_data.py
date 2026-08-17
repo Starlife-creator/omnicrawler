@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from omnicrawl.core.safe_data import (
+from omnicrawler.core.safe_data import (
     safe_bool,
     safe_float,
     safe_get,
@@ -91,7 +91,7 @@ def test_safe_bool_semantics():
 
 def test_safe_regex_search_accepts_common_patterns():
     """常见合法模式（含非贪婪量词）必须正常匹配。"""
-    from omnicrawl.core.safe_data import safe_regex_search
+    from omnicrawler.core.safe_data import safe_regex_search
 
     assert safe_regex_search(r"<h1>(.*?)</h1>", "<h1>x</h1>") is not None
     assert safe_regex_search(r"<p>(.+?)</p>", "<p>y</p>") is not None
@@ -103,21 +103,21 @@ def test_safe_regex_search_accepts_common_patterns():
 
 def test_safe_regex_search_rejects_nested_quantifier():
     """嵌套量词 (a+)+ 被拒绝（ReDoS 高危）。"""
-    from omnicrawl.core.safe_data import safe_regex_search
+    from omnicrawler.core.safe_data import safe_regex_search
 
     assert safe_regex_search(r"(a+)+", "aaaa") is None
 
 
 def test_safe_regex_search_rejects_wide_alternation():
     """大交替重复 (a|b|c){n} 被拒绝。"""
-    from omnicrawl.core.safe_data import safe_regex_search
+    from omnicrawler.core.safe_data import safe_regex_search
 
     assert safe_regex_search(r"(a|b|c){2,}", "ab") is None
 
 
 def test_safe_regex_search_rejects_stacked_quantifier():
     """叠加量词 a++ / a{1,3}{2} 被拒绝。"""
-    from omnicrawl.core.safe_data import safe_regex_search
+    from omnicrawler.core.safe_data import safe_regex_search
 
     assert safe_regex_search(r"a++", "aaaa") is None
     assert safe_regex_search(r"a{1,3}{2}", "aa") is None
@@ -125,6 +125,6 @@ def test_safe_regex_search_rejects_stacked_quantifier():
 
 
 def test_safe_regex_search_returns_none_on_compile_error():
-    from omnicrawl.core.safe_data import safe_regex_search
+    from omnicrawler.core.safe_data import safe_regex_search
 
     assert safe_regex_search(r"(", "x") is None

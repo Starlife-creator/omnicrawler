@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawl.core.runtime_manifest import create_runtime_manifest, verify_runtime_manifest
+from omnicrawler.core.runtime_manifest import create_runtime_manifest, verify_runtime_manifest
 
 
 def test_unknown_file_detected(tmp_path: Path) -> None:

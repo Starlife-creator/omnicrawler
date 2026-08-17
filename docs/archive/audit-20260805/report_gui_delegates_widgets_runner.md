@@ -1,6 +1,6 @@
 # 审查报告: gui delegates/widgets/runner
 
-> 审查范围：`src/omnicrawl/gui/delegates/`（10 文件）、`src/omnicrawl/gui/widgets/`（9 文件）、`src/omnicrawl/gui/runner/`（6 文件）。
+> 审查范围：`src/omnicrawler/gui/delegates/`（10 文件）、`src/omnicrawler/gui/widgets/`（9 文件）、`src/omnicrawler/gui/runner/`（6 文件）。
 > 方式：逐行人工审查 + 交叉核对 `main.py` / `settings.py` / `config_model.py` / `runtime_paths.py` / `core/utils.py`。
 > 环境：win32 / PyQt6。语法检查：`python -m py_compile` 全部 25 个文件 **通过（PY_COMPILE_OK）**。
 > 说明：本报告只审阅，未修改任何文件。
@@ -18,7 +18,7 @@
 | ux | 12 | 交互死区、无效控件、状态表达、启动副作用、i18n 不一致 |
 
 **要点：**
-- 7 个 high 中 3 个与"GUI 主线程同步执行子进程"相关（`check_omnicrawl` 最长 60s、`pip install` 最长 120s）。
+- 7 个 high 中 3 个与"GUI 主线程同步执行子进程"相关（`check_omnicrawler` 最长 60s、`pip install` 最长 120s）。
 - `ToastOverlay` 造成主窗口右侧约 360px 宽、近全高的**鼠标事件死区**（最严重的交互缺陷）。
 - `log_console` 的 `_all_logs` 无上限增长，配合"切过滤全量重渲染"，长任务下会内存膨胀 + 界面冻结。
 - `error_dialog.py:46` 与 `log_console.py:324` 的 `?` 正则会把普通问句文本错误改写，用户可见错误信息被污染。
@@ -85,7 +85,7 @@
 ## 3) delegates/env_checker.py
 
 ### [high] delegates/env_checker.py:52 - 环境检测同步阻塞 GUI 线程（最长 60s）
-- **现状**：`check_environment` 直接调用 `runner/env_checker.check_omnicrawl`，内部是 `subprocess.run(..., timeout=...)`，冻结模式下 timeout 可达 **60s**。被 `run_task`（run_controller.py:29）、`recheck_env`、`on_first_launch`、重试按钮等多处 GUI 路径直接调用。
+- **现状**：`check_environment` 直接调用 `runner/env_checker.check_omnicrawler`，内部是 `subprocess.run(..., timeout=...)`，冻结模式下 timeout 可达 **60s**。被 `run_task`（run_controller.py:29）、`recheck_env`、`on_first_launch`、重试按钮等多处 GUI 路径直接调用。
 - **问题**：环境检测期间主界面完全冻结（无响应/无法取消）。杀软慢扫或冷启动时体验极差。
 - **建议**：改用 `QThread`/`QFuture` + 信号回传结果，UI 上显示"检测中…"并允许取消；或至少将首次启动检测放到后台并限时。
 
@@ -211,7 +211,7 @@
 - **建议**：至少把 exit_code 写入日志/历史，或在槽内兜底触发一次状态刷新。
 
 ### [medium] delegates/run_controller.py:28-31 - 运行前再次阻塞式环境检测
-- **现状**：`if not mw._omnicrawl_available: mw._env_checker.check_environment(silent=False)`（见 env_checker 问题）。
+- **现状**：`if not mw._omnicrawler_available: mw._env_checker.check_environment(silent=False)`（见 env_checker 问题）。
 - **问题**：与 high 级 env_checker.py:52 同源——运行前最长可冻结 60s。
 - **建议**：环境状态在启动时已后台检测，运行前仅读缓存标志，或把复检放到后台。
 
@@ -415,7 +415,7 @@
 
 ## 18) runner/env_checker.py
 
-### [high] runner/env_checker.py:63-91 - `check_omnicrawl` 同步 `subprocess.run` 且超时最长 60s
+### [high] runner/env_checker.py:63-91 - `check_omnicrawler` 同步 `subprocess.run` 且超时最长 60s
 - **现状**：`subprocess.run([...], timeout=timeout, capture_output=True)`；`timeout = 10 if bundled else (60 if is_frozen() else 10)`。
 - **问题**：该函数被 GUI 主线程直接调用（见 delegates/env_checker 与 run_controller），冻结包未探测到 bundled 时最长卡 60s；每次"重试检测"都如此。
 - **建议**：封装为异步任务（QThread/future），GUI 侧只接收信号；或把探测降级为"文件存在 + 短超时(3s)"的强信号策略（已用于 bundled 场景，可推广）。
@@ -477,7 +477,7 @@
 ## 22) runner/worker_task_runner.py
 
 ### [low] runner/worker_task_runner.py:15-30 - `_derive_worker_command` 只认 `.exe`
-- **现状**：仅查找 `omnicrawl-worker.exe`。
+- **现状**：仅查找 `omnicrawler-worker.exe`。
 - **问题**：非 Windows 平台（或 Python 解释器场景）永远回退 backend 自动探测，用户手动指定的 worker 无效（当前目标平台 win32，影响低）。
 - **建议**：按 `sys.platform` 同时尝试无扩展名版本。
 

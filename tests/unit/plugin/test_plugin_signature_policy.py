@@ -17,16 +17,16 @@ import pytest
 
 pytest.importorskip("cryptography")
 
-from omnicrawl.plugins import signing
-from omnicrawl.plugins.identity import IdentityStore, UserIdentity
-from omnicrawl.plugins.plugins import (
+from omnicrawler.plugins import signing
+from omnicrawler.plugins.identity import IdentityStore, UserIdentity
+from omnicrawler.plugins.plugins import (
     SIGNATURE_POLICY_DEVELOPER,
     SIGNATURE_POLICY_STRICT,
     Registry,
     TrustPromptResult,
     load_local_plugins,
 )
-from omnicrawl.plugins.trust import TrustedUserList
+from omnicrawler.plugins.trust import TrustedUserList
 
 
 @pytest.fixture()
@@ -96,7 +96,7 @@ def test_strict_market_dir_rejects_creator_signed(tmp_path: Path, identity: User
 
 
 def test_strict_market_dir_accepts_maintainer_signed(tmp_path: Path) -> None:
-    from omnicrawl.core.config import AppConfig
+    from omnicrawler.core.config import AppConfig
 
     private_pem, public_pem = signing.generate_keypair()
     trust_path = tmp_path / "trust.pub.pem"
@@ -177,7 +177,7 @@ def test_prompt_trust_and_load_adds_to_trust_list(
     plugin = _write_plugin(plugin_dir)
     _creator_sign(plugin_dir, identity)
     trust_list_path = tmp_path / "trusted.json"
-    monkeypatch.setattr("omnicrawl.plugins.trust.DEFAULT_TRUST_LIST", trust_list_path)
+    monkeypatch.setattr("omnicrawler.plugins.trust.DEFAULT_TRUST_LIST", trust_list_path)
     registry = Registry()
     load_local_plugins(
         registry,
@@ -198,7 +198,7 @@ def test_already_trusted_creator_loads_without_prompt(
     plugin = _write_plugin(plugin_dir)
     _creator_sign(plugin_dir, identity)
     trust_list_path = tmp_path / "trusted.json"
-    monkeypatch.setattr("omnicrawl.plugins.trust.DEFAULT_TRUST_LIST", trust_list_path)
+    monkeypatch.setattr("omnicrawler.plugins.trust.DEFAULT_TRUST_LIST", trust_list_path)
     TrustedUserList().add(identity.export_identity(), source="manual")
     registry = Registry()
     load_local_plugins(registry, [str(plugin)], tmp_path, signature_policy=SIGNATURE_POLICY_STRICT)

@@ -148,9 +148,9 @@ def _resolve_executable(release_dir: Path, *, gui: bool = False) -> Path | None:
         )
     else:
         candidates = (
-            release_dir / "omnicrawl.exe",  # Windows
-            release_dir / "omnicrawl",  # Linux
-            release_dir / "OmniCrawler.app" / "Contents" / "MacOS" / "omnicrawl",  # macOS
+            release_dir / "omnicrawler.exe",  # Windows
+            release_dir / "omnicrawler",  # Linux
+            release_dir / "OmniCrawler.app" / "Contents" / "MacOS" / "omnicrawler",  # macOS
         )
     return next((candidate for candidate in candidates if candidate.is_file()), None)
 
@@ -181,7 +181,7 @@ def run_smoke_test(release_dir: Path, edition: str = "Full") -> None:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        with tempfile.TemporaryDirectory(prefix="omnicrawl-portable-smoke-") as temp:
+        with tempfile.TemporaryDirectory(prefix="omnicrawler-portable-smoke-") as temp:
             root = Path(temp)
             url = f"http://127.0.0.1:{server.server_port}/"
             engines = ("playwright", "selenium") if edition == "Full" else ("playwright",)

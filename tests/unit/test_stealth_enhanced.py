@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from omnicrawl.fetching.stealth_enhanced import (
+from omnicrawler.fetching.stealth_enhanced import (
     Fingerprint,
     HumanBehavior,
     ProxyRotator,
@@ -408,7 +408,7 @@ class TestCLIMain:
     def test_main_no_crash(self) -> None:
         import sys
 
-        from omnicrawl.fetching.stealth_enhanced import main
+        from omnicrawler.fetching.stealth_enhanced import main
         with patch.object(sys, "argv", ["stealth_enhanced", "--count", "1"]):
             # --count 1 with default (text) mode — should not crash
             main()

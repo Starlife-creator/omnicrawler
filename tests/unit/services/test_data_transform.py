@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.commands.transform import execute as transform_cli
-from omnicrawl.services.data_transform import (
+from omnicrawler.commands.transform import execute as transform_cli
+from omnicrawler.services.data_transform import (
     MapSpec,
     build_specs,
     parse_map,

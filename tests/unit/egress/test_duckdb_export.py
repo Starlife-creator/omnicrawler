@@ -13,9 +13,9 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.pipeline.exporters import _validate_column_names, export_all
-from omnicrawl.state import StateStore
+from omnicrawler.core.config import load_config
+from omnicrawler.pipeline.exporters import _validate_column_names, export_all
+from omnicrawler.state import StateStore
 
 # ── Column name validation (ADR-0001) ──────────────────────────
 

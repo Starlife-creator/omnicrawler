@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from omnicrawl.fetching.browser_fetcher import strip_cross_origin_credentials
+from omnicrawler.fetching.browser_fetcher import strip_cross_origin_credentials
 
 
 def test_same_origin_keeps_credentials() -> None:
@@ -30,7 +30,7 @@ def test_cross_origin_strips_auth_credentials() -> None:
 
 
 def test_cross_origin_no_credentials_returns_none() -> None:
-    headers = {"accept": "application/json", "user-agent": "omnicrawl"}
+    headers = {"accept": "application/json", "user-agent": "omnicrawler"}
     result = strip_cross_origin_credentials(headers, "https://a.example.org/", "https://cdn.example.net/x.js")
     assert result is None
 

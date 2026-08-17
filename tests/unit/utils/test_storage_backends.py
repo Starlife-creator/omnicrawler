@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from omnicrawl.services.storage_backends import (
+from omnicrawler.services.storage_backends import (
     LocalObjectStore,
     MirroredObjectStore,
     S3ObjectStore,
@@ -72,7 +72,7 @@ def test_s3_sdk_calls_are_wrapped_by_audited_egress_boundary() -> None:
 
 def test_s3_egress_denial_fails_closed() -> None:
     """出网授权拒绝 → S3 SDK 调用被阻断，对象未写入（fail-closed）。"""
-    from omnicrawl.security.egress import EgressDisabledError
+    from omnicrawler.security.egress import EgressDisabledError
 
     broker = MagicMock()
     broker.sdk_request.side_effect = EgressDisabledError("denied for test")

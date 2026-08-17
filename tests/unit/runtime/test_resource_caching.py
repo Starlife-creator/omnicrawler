@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawl.runtime.adaptive_execution import AdaptiveController, RuntimeSignals
-from omnicrawl.runtime.auto_pilot import AutoPilot
-from omnicrawl.runtime.resources import _SIZE_CACHE, _directory_size
+from omnicrawler.runtime.adaptive_execution import AdaptiveController, RuntimeSignals
+from omnicrawler.runtime.auto_pilot import AutoPilot
+from omnicrawler.runtime.resources import _SIZE_CACHE, _directory_size
 
 
 def test_directory_size_cache_avoids_rescan(tmp_path: Path) -> None:

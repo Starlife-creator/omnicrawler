@@ -44,24 +44,24 @@ def _targets(module: str, is_package: bool, tree: ast.AST) -> set[str]:
     targets: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            targets.update(alias.name for alias in node.names if alias.name.startswith("omnicrawl."))
+            targets.update(alias.name for alias in node.names if alias.name.startswith("omnicrawler."))
         elif isinstance(node, ast.ImportFrom):
             target = _relative_target(module, is_package, node)
-            if target == "omnicrawl":
-                # from omnicrawl import cli：别名是顶层子包，逐一展开才能被
+            if target == "omnicrawler":
+                # from omnicrawler import cli：别名是顶层子包，逐一展开才能被
                 # 顶层包匹配捕获（P2-4）。符号导入（如 AppConfig）的第二段
                 # 不在 forbidden 集合，不会误报。
                 for alias in node.names:
                     if alias.name:
-                        targets.add(f"omnicrawl.{alias.name}")
-            elif target and target.startswith("omnicrawl."):
+                        targets.add(f"omnicrawler.{alias.name}")
+            elif target and target.startswith("omnicrawler."):
                 targets.add(target)
     return targets
 
 
 def check(source_root: Path) -> list[str]:
     errors: list[str] = []
-    for path in sorted((source_root / "omnicrawl").rglob("*.py")):
+    for path in sorted((source_root / "omnicrawler").rglob("*.py")):
         module, is_package = _module_name(source_root, path)
         parts = module.split(".")
         if len(parts) < 2:

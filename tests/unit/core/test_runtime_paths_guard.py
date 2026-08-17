@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core import runtime_paths as rp
+from omnicrawler.core import runtime_paths as rp
 
 
 def test_resolve_portable_path_allows_app_dir() -> None:

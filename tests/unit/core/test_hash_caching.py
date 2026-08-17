@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 
-from omnicrawl.core.models import CrawlRequest, FetchResult
+from omnicrawler.core.models import CrawlRequest, FetchResult
 
 
 def test_fingerprint_cached(tmp_path: None = None) -> None:

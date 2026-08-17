@@ -20,7 +20,7 @@ def test_result_table_stream_filter_evidence_paging_and_exports(qt_app, tmp_path
     from PyQt6.QtGui import QDesktopServices
     from PyQt6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
 
-    from omnicrawl.gui.views.result_table import CsvStreamModel, ExportThread, ResultTable
+    from omnicrawler.gui.views.result_table import CsvStreamModel, ExportThread, ResultTable
 
     csv_path = tmp_path / "records.csv"
     with csv_path.open("w", encoding="utf-8", newline="") as handle:
@@ -109,8 +109,8 @@ def test_result_table_stream_filter_evidence_paging_and_exports(qt_app, tmp_path
 def test_yaml_editor_sync_diff_format_and_file_paths(qt_app, tmp_path, monkeypatch):
     from PyQt6.QtWidgets import QMessageBox
 
-    from omnicrawl.gui.core.config_model import CrawlConfig
-    from omnicrawl.gui.views.yaml_editor import YamlEditor
+    from omnicrawler.gui.core.config_model import CrawlConfig
+    from omnicrawler.gui.views.yaml_editor import YamlEditor
 
     config = CrawlConfig(project_name="visual_task", seed_urls=["https://example.com"], max_pages=5)
     editor = YamlEditor()
@@ -146,8 +146,8 @@ def test_log_console_filters_search_redaction_trim_and_export(qt_app, tmp_path, 
     from PyQt6.QtGui import QTextCursor
     from PyQt6.QtWidgets import QFileDialog
 
-    import omnicrawl.gui.widgets.log_console as module
-    from omnicrawl.gui.widgets.log_console import LogConsole
+    import omnicrawler.gui.widgets.log_console as module
+    from omnicrawler.gui.widgets.log_console import LogConsole
 
     console = LogConsole()
     console.append_log("GET https://secret.example/path?token=abc selector='.private'", "info")
@@ -179,7 +179,7 @@ def test_log_console_filters_search_redaction_trim_and_export(qt_app, tmp_path, 
 def test_task_history_persistence_cleanup_and_signals(qt_app, tmp_path, monkeypatch):
     from PyQt6.QtWidgets import QMessageBox
 
-    from omnicrawl.gui.views.task_history import TaskHistory
+    from omnicrawler.gui.views.task_history import TaskHistory
 
     config = tmp_path / "task.yaml"
     config.write_text("source: {}", encoding="utf-8")
@@ -211,8 +211,8 @@ def test_task_history_persistence_cleanup_and_signals(qt_app, tmp_path, monkeypa
 
 
 def test_desktop_validator_covers_schema_and_selector_errors():
-    from omnicrawl.gui.core.config_model import CrawlConfig, FieldDef
-    from omnicrawl.gui.core.validator import validate_full_config, validate_schema, validate_selector_format
+    from omnicrawler.gui.core.config_model import CrawlConfig, FieldDef
+    from omnicrawler.gui.core.validator import validate_full_config, validate_schema, validate_selector_format
 
     cases = (
         FieldDef("css_json", "$.item", "css"), FieldDef("css_xpath", "//h1", "css"),
@@ -230,7 +230,7 @@ def test_desktop_validator_covers_schema_and_selector_errors():
 
 
 def test_api_pagination_invalid_limit_falls_back_safely():
-    from omnicrawl.extraction.api_discovery import ApiEndpointProfile, _pagination_config
+    from omnicrawler.extraction.api_discovery import ApiEndpointProfile, _pagination_config
 
     profile = ApiEndpointProfile(
         "https://example.com/api", "https://example.com/api?offset=0&limit=bad", "GET", 200,

@@ -31,7 +31,7 @@ class _StubDB:
 
 
 def _project() -> object:
-    from omnicrawl.pdfx.config import ProjectConfig
+    from omnicrawler.pdfx.config import ProjectConfig
 
     return ProjectConfig(
         path=Path("x.yaml"), project_name="t", input_dir=Path("in"), work_dir=Path("work"),
@@ -43,7 +43,7 @@ def _project() -> object:
 
 def test_d16_parse_stage_filters_exhausted_documents() -> None:
     """D16：attempt_count 达到阈值的文档不再被拉起（防永久损坏 PDF 无限重试）。"""
-    from omnicrawl.pdfx.parser import MAX_PARSE_ATTEMPTS, parse_stage
+    from omnicrawler.pdfx.parser import MAX_PARSE_ATTEMPTS, parse_stage
 
     db = _StubDB()
     parse_stage(_project(), db, limit=None, workers=1)
@@ -55,7 +55,7 @@ def test_d16_parse_stage_filters_exhausted_documents() -> None:
 
 def test_d15_worker_returns_error_detail(monkeypatch) -> None:
     """D15：OCR worker 异常时把错误串带回主进程（而非仅 None）。"""
-    import omnicrawl.pdfx.ocr as ocr
+    import omnicrawler.pdfx.ocr as ocr
 
     class _Broken:
         def recognize(self, png):
@@ -91,7 +91,7 @@ def test_d48_csv_to_sheet_column_count_and_row_cap(tmp_path: Path) -> None:
     """D48：auto_filter.ref 按实际列数；超 Excel 行上限截断并在 sheet 内提示。"""
     from openpyxl import Workbook
 
-    from omnicrawl.pdfx.exporter import _csv_to_sheet
+    from omnicrawler.pdfx.exporter import _csv_to_sheet
 
     csv_path = tmp_path / "t.csv"
     csv_path.write_text("a,b,c,d\n1,2,3,4\n5,6,7,8\n", encoding="utf-8")
@@ -108,7 +108,7 @@ def test_d48_csv_to_sheet_row_cap(tmp_path: Path) -> None:
     """D48：超 1048576 行时写入截断提示而非让 xlsx save 抛异常。"""
     from openpyxl import Workbook
 
-    from omnicrawl.pdfx.exporter import _csv_to_sheet
+    from omnicrawler.pdfx.exporter import _csv_to_sheet
 
     csv_path = tmp_path / "big.csv"
     with csv_path.open("w", encoding="utf-8", newline="") as handle:
@@ -145,7 +145,7 @@ class _FakePage:
 
 def test_d8_table_markdown_preserves_columns() -> None:
     """D8：find_tables 结果渲染为 Markdown，列归属不丢失。"""
-    from omnicrawl.pdfx.parser import _extract_tables_markdown
+    from omnicrawler.pdfx.parser import _extract_tables_markdown
 
     page = _FakePage([
         _FakeTable([
@@ -162,7 +162,7 @@ def test_d8_table_markdown_preserves_columns() -> None:
 
 def test_d8_table_detection_failure_is_graceful() -> None:
     """D8：find_tables 抛异常时返回空串，不中断解析。"""
-    from omnicrawl.pdfx.parser import _extract_tables_markdown
+    from omnicrawler.pdfx.parser import _extract_tables_markdown
 
     class _Broken:
         def find_tables(self):
@@ -177,7 +177,7 @@ def test_d36_iter_pages_yields_and_wraps() -> None:
 
     import fitz
 
-    from omnicrawl.pdfx.parser import _iter_parsed_pages, parse_document
+    from omnicrawler.pdfx.parser import _iter_parsed_pages, parse_document
 
     # ignore_cleanup_errors：Windows runner 偶发对新建 p.pdf 的瞬时外部锁
     # （安全扫描），临时目录属一次性产物，清理失败不影响断言结果。
@@ -205,7 +205,7 @@ def test_d36_iter_pages_yields_and_wraps() -> None:
 
 def test_d12_high_image_coverage_forces_ocr(monkeypatch) -> None:
     """D12：有文字层但图片覆盖超 60% 的页面（夹带页眉页脚的表格页）强制 OCR。"""
-    import omnicrawl.pdfx.parser as parser
+    import omnicrawler.pdfx.parser as parser
 
     class _Rect:
         def __init__(self, width: float, height: float) -> None:
@@ -244,7 +244,7 @@ def test_d12_high_image_coverage_forces_ocr(monkeypatch) -> None:
 
 def test_d12_low_image_coverage_keeps_native(monkeypatch) -> None:
     """D12：图像覆盖低的正常文本页不被误判为 OCR。"""
-    import omnicrawl.pdfx.parser as parser
+    import omnicrawler.pdfx.parser as parser
 
     class _Rect:
         def __init__(self, width: float, height: float) -> None:
@@ -282,7 +282,7 @@ def test_d12_low_image_coverage_keeps_native(monkeypatch) -> None:
 
 def test_d9_tesseract_rebuilds_lines_and_columns() -> None:
     """D9：image_to_data 按 line 分行、left 分列重建，列归属不拍平。"""
-    from omnicrawl.pdfx.ocr import TesseractBackend
+    from omnicrawler.pdfx.ocr import TesseractBackend
 
     class _FakeImage:
         def open(self, *args, **kwargs):
@@ -320,7 +320,7 @@ def test_d9_tesseract_rebuilds_lines_and_columns() -> None:
 
 def test_d10_table_html_to_markdown() -> None:
     """D10：表格 HTML 转 Markdown，行列结构保留。"""
-    from omnicrawl.pdfx.ocr import _table_html_to_markdown
+    from omnicrawler.pdfx.ocr import _table_html_to_markdown
 
     html = (
         "<table><tr><th>项目</th><th>期末余额</th></tr>"

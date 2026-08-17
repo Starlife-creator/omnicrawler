@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.models import CrawlRequest
-from omnicrawl.fetching.browser_fetcher import PlaywrightPool
+from omnicrawler.core.config import load_config
+from omnicrawler.core.models import CrawlRequest
+from omnicrawler.fetching.browser_fetcher import PlaywrightPool
 
 
 def _config(tmp_path: Path, *, proxy: str = "") -> Path:

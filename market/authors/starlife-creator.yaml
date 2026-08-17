@@ -8,7 +8,7 @@
 # 必须能在 authors/ 中找到对应记录，且与 pubkey_ref 指向的公钥实际计算值一致。
 #
 # 指纹算法（2026-08 统一）：SHA-256(ed25519 公钥原始字节)[:32]，
-# 与运行时 omnicrawl.plugins.identity.derive_fingerprint 同源；
+# 与运行时 omnicrawler.plugins.identity.derive_fingerprint 同源；
 # 旧的「PEM 文本字节 + CRLF 归一化」算法已废弃。
 
 # 注意：文件名虽带 -creator 后缀，但本文件持的是【维护者冷密钥】

@@ -30,7 +30,7 @@
 
 ## 制品
 
-- `omnicrawl_platform-1.2.0-py3-none-any.whl`：390,913 字节；SHA-256
+- `omnicrawler_platform-1.2.0-py3-none-any.whl`：390,913 字节；SHA-256
   `f17d11ee7912decb8a87faecbc13ff76aaf824f65e9091deca20b7545633a7dd`
 - `omnicrawler-1.2.0-sbom.cdx.json`：34,965 字节；SHA-256
   `d666f8d86b66a069f10088ea289d4754dc6586d89428c6fef8e03fddd11a2c40`

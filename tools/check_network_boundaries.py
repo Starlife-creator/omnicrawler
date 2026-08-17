@@ -107,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-root", type=Path, default=Path("src/omnicrawl"))
+    parser.add_argument("--source-root", type=Path, default=Path("src/omnicrawler"))
     args = parser.parse_args(argv)
     findings = find_direct_calls(args.source_root)
     unexpected = [item for item in findings if item[0] not in APPROVED_DIRECT_CALLS]

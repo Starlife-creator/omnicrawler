@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from omnicrawl.quality.diagnostics import AutoFix, DiagnoseReport
+from omnicrawler.quality.diagnostics import AutoFix, DiagnoseReport
 
 
 def test_html_card_escapes_untrusted_error_and_fix_text() -> None:

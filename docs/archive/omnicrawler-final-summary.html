@@ -294,7 +294,7 @@ tr:hover { background: var(--card-hover); }
     <p><span class="location">core/logging_utils.py:24-34</span></p>
     <p><strong>问题：</strong>唯一 handler 是 <code>StreamHandler()</code>（输出到 stderr）。GUI 从不调用 <code>configure_logging</code>，打包后用 <code>pythonw.exe</code> 启动 stderr 不存在。所有 <code>logger.warning</code> 诊断信息 GUI 用户一条都看不到。用户报障时拿不出任何日志。</p>
     <div class="solution">
-      <code>configure_logging</code> 增加 <code>RotatingFileHandler</code>（写入 <code>portable_data_root()/logs/omnicrawl.log</code>，5MB 轮转保留3份）；GUI 启动时强制调用；stderr 兜底为 <code>sys.__stderr__ or io.StringIO()</code>。<strong>优化补充：</strong>配置层 warning 不再丢弃而是 <code>logger.warning</code> 输出；环境变量缺失收集为 warning 列表。<strong>后果：</strong>增加少量磁盘 IO（轮转机制已有）。项目已有 <code>portable_data_root()</code> 和 <code>atomic_write</code> 基础设施，直接复用。<strong>可优化性：极高。</strong>
+      <code>configure_logging</code> 增加 <code>RotatingFileHandler</code>（写入 <code>portable_data_root()/logs/omnicrawler.log</code>，5MB 轮转保留3份）；GUI 启动时强制调用；stderr 兜底为 <code>sys.__stderr__ or io.StringIO()</code>。<strong>优化补充：</strong>配置层 warning 不再丢弃而是 <code>logger.warning</code> 输出；环境变量缺失收集为 warning 列表。<strong>后果：</strong>增加少量磁盘 IO（轮转机制已有）。项目已有 <code>portable_data_root()</code> 和 <code>atomic_write</code> 基础设施，直接复用。<strong>可优化性：极高。</strong>
     </div>
   </div>
 </div>
@@ -322,7 +322,7 @@ tr:hover { background: var(--card-hover); }
   </div>
   <div class="issue-body">
     <p><span class="location">gui/main.py:1972-1988</span></p>
-    <p><strong>问题：</strong><code>_()</code> 只在 <code>if not _HEADLESS_MODE:</code> 块内 import。headless 模式跳过 import → <code>NameError</code>，<code>python -m omnicrawl.gui --run config.yaml</code> 必崩。</p>
+    <p><strong>问题：</strong><code>_()</code> 只在 <code>if not _HEADLESS_MODE:</code> 块内 import。headless 模式跳过 import → <code>NameError</code>，<code>python -m omnicrawler.gui --run config.yaml</code> 必崩。</p>
     <div class="solution">
       把 <code>from .i18n import _</code> 提到模块顶层。<strong>后果：</strong>顶层 import 无副作用。<strong>可优化性：极高——一行移动。</strong>
     </div>
@@ -592,7 +592,7 @@ tr:hover { background: var(--card-hover); }
   </div>
   <div class="issue-body">
     <p><span class="location">commands/__init__.py:5,11</span></p>
-    <p><strong>问题：</strong><code>__all__</code> 引用 <code>field_suggest</code>，但模块是 <code>field</code>。<code>from omnicrawl.commands import *</code> 报 <code>AttributeError</code>。</p>
+    <p><strong>问题：</strong><code>__all__</code> 引用 <code>field_suggest</code>，但模块是 <code>field</code>。<code>from omnicrawler.commands import *</code> 报 <code>AttributeError</code>。</p>
     <div class="solution">
       改 <code>__all__</code> 中的 <code>field_suggest</code> 为 <code>field</code>，或增加 <code>from .field import execute_field_suggest as field_suggest</code>。<strong>可优化性：极高。</strong>
     </div>
@@ -691,7 +691,7 @@ tr:hover { background: var(--card-hover); }
   <tr><td>GUI↔CLI 契约零端到端测试</td><td>LogParser 进度正则与 CLI 真实输出全不匹配 → GUI 进度条恒0%</td><td>文件A</td></tr>
   <tr><td>secrets 五处明文</td><td>passthrough 快照 / autosave / 配置包导出 / 代理池 settings.ini / AI key .env 全部明文</td><td>文件A</td></tr>
   <tr><td>16处孤儿代码</td><td>assert_no_raw_hex / history_max_entries / safe_regex validation / stealth_enhanced / archives.py / AIBudget 等写好但零消费</td><td>文件A</td></tr>
-  <tr><td>包根 eager 加载</td><td>import omnicrawl 287ms；116次 import 失败全被吞掉</td><td>文件A</td></tr>
+  <tr><td>包根 eager 加载</td><td>import omnicrawler 287ms；116次 import 失败全被吞掉</td><td>文件A</td></tr>
   <tr><td>默认值指向安装目录</td><td>--config default 指向安装目录；pdfx 相对路径解析为 site-packages</td><td>文件A</td></tr>
   <tr><td>导出器缺陷簇</td><td>records.jsonl 同一份数据写两遍；CSV列按字母排序；parquet/duckdb 全 str() 化；全量读进内存无分批</td><td>文件B</td></tr>
   <tr><td>配置错误信息极差</td><td>中英文混杂；多条错误挤一行；YAML语法错误抛原始栈；${VAR}缺失静默替换空串</td><td>文件B</td></tr>
@@ -755,8 +755,8 @@ tr:hover { background: var(--card-hover); }
 
 <div class="root-cause">
   <h3>根因 8：包根 eager 加载（文件A独有贡献）</h3>
-  <p><strong>影响范围：</strong>import omnicrawl 287ms；116次 import 失败全被吞掉；--version 净开销约300ms。</p>
-  <p><strong>根因分析：</strong><code>omnicrawl/__init__.py:192</code> 在包加载时无条件 <code>_setup_compat_aliases()</code>，eager-import 116 个兼容模块。已写好的 <code>__getattr__</code> 惰性重定向命中数恒为0（死代码）。</p>
+  <p><strong>影响范围：</strong>import omnicrawler 287ms；116次 import 失败全被吞掉；--version 净开销约300ms。</p>
+  <p><strong>根因分析：</strong><code>omnicrawler/__init__.py:192</code> 在包加载时无条件 <code>_setup_compat_aliases()</code>，eager-import 116 个兼容模块。已写好的 <code>__getattr__</code> 惰性重定向命中数恒为0（死代码）。</p>
   <p><strong>优化方案：</strong>详见优化方案8（包根惰性化）。</p>
 </div>
 
@@ -789,7 +789,7 @@ tr:hover { background: var(--card-hover); }
   <div class="issue-body">
     <p><strong>操作：</strong></p>
     <p>① <code>core/utils.py:35</code> 将 <code>result = dict(base)</code> 改为 <code>result = copy.deepcopy(base)</code>；<code>application_service.py:88-89</code> 删除就地改写</p>
-    <p>② <code>core/logging_utils.py</code> 增加 <code>RotatingFileHandler</code>（<code>portable_data_root()/logs/omnicrawl.log</code>，5MB轮转3份）；<code>gui/main.py</code> 启动时调用</p>
+    <p>② <code>core/logging_utils.py</code> 增加 <code>RotatingFileHandler</code>（<code>portable_data_root()/logs/omnicrawler.log</code>，5MB轮转3份）；<code>gui/main.py</code> 启动时调用</p>
     <p>③ <code>step3_fields.py</code> 三处 <code>etree.fromstring(x, etree.HTMLParser())</code> 改为 <code>lxml.html.fromstring(str)</code></p>
     <p>④ <code>gui/main.py</code> 把 <code>from .i18n import _</code> 提到模块顶层</p>
     <p>⑤ PDF 工作台等长任务视图补 <code>closeEvent</code>（requestInterruption + quit + wait(3000)）</p>
@@ -1000,7 +1000,7 @@ tr:hover { background: var(--card-hover); }
   </div>
   <div class="issue-body">
     <p><strong>操作：</strong></p>
-    <p>① <code>tests/fixtures/cli_outputs/</code> 5套真实 <code>omnicrawl run</code> 快照（正常/失败/0条/异常/被拦网络）</p>
+    <p>① <code>tests/fixtures/cli_outputs/</code> 5套真实 <code>omnicrawler run</code> 快照（正常/失败/0条/异常/被拦网络）</p>
     <p>② <code>tests/integration/test_cli_gui_contract.py</code> 用 fixture 断言 LogParser.parse_progress / parse_stats 输出</p>
     <p>③ <code>tests/integration/test_config_round_trip.py</code> "GUI 配的配置经 CLI 跑产N条"往返测试</p>
     <p>④ <code>tests/integration/test_validate.py</code> 10个拼写错误用例</p>
@@ -1021,10 +1021,10 @@ tr:hover { background: var(--card-hover); }
     <span class="issue-title">方案 12：包根惰性化（根因 8，删 _setup_compat_aliases）</span>
   </div>
   <div class="issue-body">
-    <p><strong>操作：</strong>① 删 <code>omnicrawl/__init__.py:192</code> 的 <code>_setup_compat_aliases()</code> 调用；② <code>__getattr__</code> 真正接管惰性重定向；③ 补 <code>MetaPathFinder</code> 处理子模块形式；④ import 失败改 <code>logger.warning</code>；⑤ 加启动耗时 CI 断言</p>
+    <p><strong>操作：</strong>① 删 <code>omnicrawler/__init__.py:192</code> 的 <code>_setup_compat_aliases()</code> 调用；② <code>__getattr__</code> 真正接管惰性重定向；③ 补 <code>MetaPathFinder</code> 处理子模块形式；④ import 失败改 <code>logger.warning</code>；⑤ 加启动耗时 CI 断言</p>
     <p><strong>后果评估：</strong>会暴露隐藏的"靠时序避免冲突"问题（plugins/sources/quality 同名映射键），需在 MetaPathFinder 中显式解析顺序。</p>
     <p><strong>可优化性：中——需处理同名映射键冲突。</strong></p>
-    <p><strong>预期收益：import omnicrawl 从287ms降至ms级；--version 净开销显著下降 + 根因 8。</strong></p>
+    <p><strong>预期收益：import omnicrawler 从287ms降至ms级；--version 净开销显著下降 + 根因 8。</strong></p>
   </div>
 </div>
 
@@ -1052,7 +1052,7 @@ tr:hover { background: var(--card-hover); }
     <p><strong>操作：</strong></p>
     <p>① 抽 <code>core/safe_action.py</code> 提供 <code>require_explicit_apply(action_name, args)</code> 装饰器；reset/reset_stage/rollback-config 全部接入</p>
     <p>② 未知 stage/action 显式 <code>raise ValueError</code> 替代静默 no-op</p>
-    <p>③ i18n domain 统一为 <code>omnicrawl-gui</code>，spec datas 加 <code>locale/</code>；CI 加 i18n gate 规则（中文字面量非 _() 包裹则红）</p>
+    <p>③ i18n domain 统一为 <code>omnicrawler-gui</code>，spec datas 加 <code>locale/</code>；CI 加 i18n gate 规则（中文字面量非 _() 包裹则红）</p>
     <p>④ <code>requires-python</code> 提升到 >=3.11 或补3.10兼容层</p>
     <p>⑤ <code>tools/prepare_windows_runtime.ps1</code> 顶部定义 <code>$KNOWN_SHA256</code>，无 expected 即 fail</p>
     <p>⑥ <code>OmniCrawler.spec</code> 启用 <code>windowed_traceback</code>，Launcher 补日志路径提示</p>
@@ -1113,7 +1113,7 @@ tr:hover { background: var(--card-hover); }
   <p><strong>4. <code>gui/widgets/</code> 设计令牌全覆盖组件</strong>—— status_indicator / empty_state / form_feedback / help_tooltip / calendar_popup，主题跟随、reduced-motion。</p>
   <p><strong>5. 核心库</strong>—— core/errors、logging_utils、models、run_state、runtime_paths、pipeline/core、_builders、_exports、registry、task_ir、pipeline_ops/provenance、pdfx/database、pdfx/exporter 等。</p>
   <p><strong>6. 安全修复</strong>—— egress 拒绝路径、zip 穿越/符号链接/压缩炸弹防护、builtin: 模板穿越防护、SHA256SUMS 篡改检测、归档整体验证后才发布等均有成体系断言。</p>
-  <p><strong>7. 全项目质量最高的函数</strong>—— <code>services/research_package.py:restore_package</code>（27行，要求目标目录为空 + 校验manifest + 防路径穿越 + 校验checksum 四道防线）；<code>gui/runner/env_checker.py:check_omnicrawl</code>（TimeoutExpired/FileNotFoundError/OSError 分类处理 + 冻结态兜底 + CREATE_NO_WINDOW 防闪窗 + 短超时防阻塞）；<code>gui/delegates/error_dialog.py</code> 脱敏错误对话框（全项目最好的错误 UX 设计）。</p>
+  <p><strong>7. 全项目质量最高的函数</strong>—— <code>services/research_package.py:restore_package</code>（27行，要求目标目录为空 + 校验manifest + 防路径穿越 + 校验checksum 四道防线）；<code>gui/runner/env_checker.py:check_omnicrawler</code>（TimeoutExpired/FileNotFoundError/OSError 分类处理 + 冻结态兜底 + CREATE_NO_WINDOW 防闪窗 + 短超时防阻塞）；<code>gui/delegates/error_dialog.py</code> 脱敏错误对话框（全项目最好的错误 UX 设计）。</p>
 </div>
 
 <div class="callout">

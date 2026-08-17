@@ -5,8 +5,8 @@ import time
 
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.services.retention import apply_retention, plan_retention
+from omnicrawler.core.config import load_config
+from omnicrawler.services.retention import apply_retention, plan_retention
 
 
 def test_retention_is_dry_run_until_explicitly_applied(tmp_path) -> None:

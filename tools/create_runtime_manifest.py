@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from omnicrawl.core.runtime_manifest import create_runtime_manifest
+from omnicrawler.core.runtime_manifest import create_runtime_manifest
 
 
 def main() -> int:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from omnicrawl.extraction.markdown_reducer import (
+from omnicrawler.extraction.markdown_reducer import (
     html_to_markdown,
     reduce_for_llm,
     semantic_chunks,

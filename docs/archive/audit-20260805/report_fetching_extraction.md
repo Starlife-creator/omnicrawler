@@ -1,6 +1,6 @@
 # 审查报告: fetching/extraction
 
-> 审查范围: `src/omnicrawl/fetching/` 12 个文件 + `src/omnicrawl/extraction/` 8 个文件，共 20 个文件，约 4730 行。
+> 审查范围: `src/omnicrawler/fetching/` 12 个文件 + `src/omnicrawler/extraction/` 8 个文件，共 20 个文件，约 4730 行。
 > 语法检查: 全部文件 `python -m py_compile` 通过，无编译失败。
 > 方式: 逐行人工审查；并交叉核对了 `security/egress.py`、`security/policy.py`、`core/errors.py`、`core/models.py`、`core/config.py`、`core/utils.py`、`runtime/resource_profiles.py`、`services/ai_safety.py` 以确认假设。
 
@@ -263,7 +263,7 @@
 
 ### [medium] extraction/__init__.py:3 - 包内使用绝对导入，命名不一致且破坏重定位
 
-- 现状: `from omnicrawl.extraction.ai_graph import AIGraphExtractor`。
+- 现状: `from omnicrawler.extraction.ai_graph import AIGraphExtractor`。
 - 问题: 全项目其它模块用相对导入；包被改名/内嵌时此处必然断链；且仅导出 AIGraphExtractor，其余提取器未导出。
 - 建议: 改为 `from .ai_graph import AIGraphExtractor` 并考虑统一导出。
 

@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.models import CrawlRequest
-from omnicrawl.fetching.browser_fetcher import BrowserFetcher
+from omnicrawler.core.config import load_config
+from omnicrawler.core.models import CrawlRequest
+from omnicrawler.fetching.browser_fetcher import BrowserFetcher
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("OMNICRAWL_BROWSER_TESTS") != "1",

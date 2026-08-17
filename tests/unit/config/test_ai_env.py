@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.ai_env import (
+from omnicrawler.core.ai_env import (
     bridge_pdfx_llm_env,
     load_ai_env,
     parse_env_file,
@@ -31,11 +31,11 @@ def _write(project: Path, content: str) -> None:
 
 
 def test_ai_env_path_true_source(tmp_path: Path) -> None:
-    from omnicrawl.core.ai_env import ai_env_path
+    from omnicrawler.core.ai_env import ai_env_path
 
     assert ai_env_path(tmp_path / "p") == tmp_path / "p" / ".env"
     # 无项目时回退用户级目录
-    assert str(ai_env_path(None)).endswith(".omnicrawl" + os.sep + ".env")
+    assert str(ai_env_path(None)).endswith(".omnicrawler" + os.sep + ".env")
 
 
 def test_parse_env_file_ignores_comments_and_quotes(tmp_path: Path) -> None:
@@ -71,7 +71,7 @@ def test_api_key_is_sealed_on_save(tmp_path: Path, monkeypatch) -> None:
     # seal_secret 依赖系统 keyring / OMNICRAWL_MASTER_PASSWORD（CI macOS runner 均无），
     # mock 掉真实密钥库，仅验证"强制 seal 路径被触发且不落明文"。
     monkeypatch.setattr(
-        "omnicrawl.core.credentials.seal_secret",
+        "omnicrawler.core.credentials.seal_secret",
         lambda key, value: "secret://sealed",
     )
     project = tmp_path / "proj"
@@ -87,7 +87,7 @@ def test_api_key_is_sealed_on_save(tmp_path: Path, monkeypatch) -> None:
 
 def test_load_ai_env_priority_project_over_user(project: Path, tmp_path: Path, monkeypatch) -> None:
     _write(project, "OMNICRAWL_AI_MODEL=project-model\nOMNICRAWL_AI_PROVIDER=openai_compatible\n")
-    user_env = tmp_path / ".omnicrawl"
+    user_env = tmp_path / ".omnicrawler"
     user_env.mkdir(parents=True)
     (user_env / ".env").write_text("OMNICRAWL_AI_MODEL=user-model\n", encoding="utf-8")
     monkeypatch.setenv("OMNICRAWL_AI_MODEL", "env-model")

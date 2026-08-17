@@ -8,13 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl import runtime_paths
-from omnicrawl.core.config import load_config
-from omnicrawl.core.runtime_manifest import create_runtime_manifest, verify_runtime_manifest
-from omnicrawl.services.component_manager import ComponentManager
-from omnicrawl.services.updater import UpgradeManager
-from omnicrawl.services.workspace import WORKSPACE_DIRECTORIES, WorkspaceManager
-from omnicrawl.state import StateStore
+from omnicrawler import runtime_paths
+from omnicrawler.core.config import load_config
+from omnicrawler.core.runtime_manifest import create_runtime_manifest, verify_runtime_manifest
+from omnicrawler.services.component_manager import ComponentManager
+from omnicrawler.services.updater import UpgradeManager
+from omnicrawler.services.workspace import WORKSPACE_DIRECTORIES, WorkspaceManager
+from omnicrawler.state import StateStore
 
 
 def _config(tmp_path: Path) -> Path:

@@ -10,9 +10,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from omnicrawl.quality.gene_pool import Gene, GenePool, fitness
-from omnicrawl.services.gene_maintenance import import_scenes, run_maintenance, scene_report
-from omnicrawl.state.scene_store import SceneStore
+from omnicrawler.quality.gene_pool import Gene, GenePool, fitness
+from omnicrawler.services.gene_maintenance import import_scenes, run_maintenance, scene_report
+from omnicrawler.state.scene_store import SceneStore
 
 
 class GenePoolTest(unittest.TestCase):
@@ -99,7 +99,7 @@ class GeneMaintenanceTest(unittest.TestCase):
     # ── N5：maybe_maintain 惰性维护 ──────────────────────
     @staticmethod
     def _reset_maintain_clock() -> None:
-        import omnicrawl.services.gene_maintenance as gm
+        import omnicrawler.services.gene_maintenance as gm
 
         # 用极大负值代替 0.0：time.monotonic() 是系统启动以来的时钟，
         # 全新 CI runner（开机 < ttl=300s）上 0.0 会令首调被节流而误挂。
@@ -111,7 +111,7 @@ class GeneMaintenanceTest(unittest.TestCase):
             with SceneStore(Path(temp) / "g.sqlite3") as store:
                 pool = GenePool(store)
                 pool.record("s1", "t", "only", hit=True)
-                from omnicrawl.services.gene_maintenance import maybe_maintain
+                from omnicrawler.services.gene_maintenance import maybe_maintain
 
                 # total=1 < max_genes=100 → 不维护
                 self.assertFalse(maybe_maintain(store, max_genes=100))
@@ -127,7 +127,7 @@ class GeneMaintenanceTest(unittest.TestCase):
                     pool.record("s1", "t", f"weak{i}", hit=False)
                     pool.record("s1", "t", f"weak{i}", hit=False)
                     pool.record("s1", "t", f"weak{i}", hit=False)
-                from omnicrawl.services.gene_maintenance import maybe_maintain
+                from omnicrawler.services.gene_maintenance import maybe_maintain
 
                 self.assertTrue(maybe_maintain(store, max_genes=5))
                 self.assertEqual(store.gene_stats()["total"], 0)  # 全部弱基因被淘汰
@@ -139,7 +139,7 @@ class GeneMaintenanceTest(unittest.TestCase):
                 pool = GenePool(store)
                 for i in range(6):
                     pool.record("s1", "t", f"weak{i}", hit=False)
-                from omnicrawl.services.gene_maintenance import maybe_maintain
+                from omnicrawler.services.gene_maintenance import maybe_maintain
 
                 # 第一次触发维护
                 self.assertTrue(maybe_maintain(store, max_genes=5, ttl_seconds=300))

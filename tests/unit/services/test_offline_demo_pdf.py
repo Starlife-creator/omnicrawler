@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.services.offline_demo import create_demo_workspace
+from omnicrawler.services.offline_demo import create_demo_workspace
 
 pytest.importorskip("fitz")
 
@@ -35,7 +35,7 @@ def test_demo_pdfs_are_valid_and_parseable(tmp_path: Path) -> None:
 
 
 def test_demo_pdfs_survive_pdfx_parse_pipeline(tmp_path: Path) -> None:
-    from omnicrawl.pdfx.parser import parse_document
+    from omnicrawler.pdfx.parser import parse_document
 
     demo = create_demo_workspace(tmp_path / "demo2")
     parsed = parse_document(str(demo.root / "report.pdf"), min_chars=10, max_garbled_ratio=0.4)

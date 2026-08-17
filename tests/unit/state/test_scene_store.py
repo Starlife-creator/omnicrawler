@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from omnicrawl.state.scene_store import (
+from omnicrawler.state.scene_store import (
     SceneDocument,
     SceneStore,
     SlotDefinition,

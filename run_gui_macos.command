@@ -6,4 +6,4 @@ if [ ! -x .venv/bin/python ]; then
   read -r -p "Press Enter to close..." _
   exit 1
 fi
-exec .venv/bin/python -m omnicrawl.gui "$@"
+exec .venv/bin/python -m omnicrawler.gui "$@"

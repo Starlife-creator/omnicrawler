@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from omnicrawl.cli._main import build_parser
-from omnicrawl.core.safe_action import (
+from omnicrawler.cli._main import build_parser
+from omnicrawler.core.safe_action import (
     ConfirmationRequiredError,
     require_explicit_apply,
     require_known_stage,
@@ -46,7 +46,7 @@ def test_parser_accepts_global_apply_flag() -> None:
     ],
 )
 def test_handlers_enforce_apply(monkeypatch, command, args, requires_apply) -> None:
-    from omnicrawl.cli import _handlers as handlers
+    from omnicrawler.cli import _handlers as handlers
 
     config_path = Path("task.yaml")
     monkeypatch.setattr(handlers, "load_config", lambda _p: SimpleNamespace(path=config_path))
@@ -60,11 +60,11 @@ def test_handlers_enforce_apply(monkeypatch, command, args, requires_apply) -> N
     ns = SimpleNamespace(command=name, action=command[1], config="task.yaml", target="", kind="",
                          limit=10, backup="", package="", name="ocr", allow_unsigned=False,
                          sha256="")
-    monkeypatch.setattr("sys.argv", ["omnicrawl", *command, *args])
+    monkeypatch.setattr("sys.argv", ["omnicrawler", *command, *args])
     if requires_apply:
         with pytest.raises(ConfirmationRequiredError):
             handler(ns)
-        monkeypatch.setattr("sys.argv", ["omnicrawl", *command, *args, "--apply"])
+        monkeypatch.setattr("sys.argv", ["omnicrawler", *command, *args, "--apply"])
         ns.apply = True
         handler(ns)  # 带 --apply 不抛
     else:

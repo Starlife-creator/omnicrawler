@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("PyQt6")
 
-from omnicrawl.gui.wizard.step3_fields import selector_kind, suggest_xpath_candidates
+from omnicrawler.gui.wizard.step3_fields import selector_kind, suggest_xpath_candidates
 
 requires_qt = pytest.mark.skipif(
     importlib.util.find_spec("PyQt6") is None,
@@ -20,7 +20,7 @@ def smart_dialog(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PyQt6.QtWidgets import QApplication
 
-    from omnicrawl.gui.wizard.step3_fields import SmartExtractDialog
+    from omnicrawler.gui.wizard.step3_fields import SmartExtractDialog
 
     app = QApplication.instance() or QApplication([])
     dialog = SmartExtractDialog()

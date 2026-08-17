@@ -1,4 +1,4 @@
-# 开箱验证配置。正式使用建议通过 `omnicrawl init` 创建独立文件。
+# 开箱验证配置。正式使用建议通过 `omnicrawler init` 创建独立文件。
 project:
   name: 示例项目
   workspace: work/default

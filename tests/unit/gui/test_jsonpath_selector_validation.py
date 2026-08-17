@@ -6,8 +6,8 @@ core/jsonpath.compile_path 严格语法校验（与在线验证引擎一致）�
 
 from __future__ import annotations
 
-from omnicrawl.gui.core.config_model import FieldDef
-from omnicrawl.gui.core.validator import validate_selector_format
+from omnicrawler.gui.core.config_model import FieldDef
+from omnicrawler.gui.core.validator import validate_selector_format
 
 
 def _field(selector: str) -> FieldDef:

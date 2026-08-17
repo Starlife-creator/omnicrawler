@@ -2,8 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.state import StateStore
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.state import StateStore
 
 
 class StateTest(unittest.TestCase):

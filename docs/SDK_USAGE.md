@@ -1,11 +1,11 @@
 # SDK 使用指南
 
-`omnicrawl.sdk` 包提供公共编程接口，可用于自动化采集任务。
+`omnicrawler.sdk` 包提供公共编程接口，可用于自动化采集任务。
 
 ## 快速入门
 
 ```python
-from omnicrawl import sdk
+from omnicrawler import sdk
 
 # 1. 校验并编译执行计划
 report = sdk.validate("configs/my_site.yaml")
@@ -25,7 +25,7 @@ print(f"统计: {status['totals']}")
 ## 从 TaskSpec 直接构建
 
 ```python
-from omnicrawl.sdk import TaskSpec, TaskIR, compile_task_plan
+from omnicrawler.sdk import TaskSpec, TaskIR, compile_task_plan
 
 # 从 YAML 加载 TaskSpec
 spec = TaskSpec.from_yaml("configs/my_site.yaml")
@@ -42,7 +42,7 @@ print(f"资源上限: {plan.resource_bounds}")
 ## 插件协议扩展
 
 ```python
-from omnicrawl.sdk.protocols import Fetcher, Extractor, Processor, Exporter
+from omnicrawler.sdk.protocols import Fetcher, Extractor, Processor, Exporter
 
 class MyExtractor(Extractor):
     def extract(self, document, result):
@@ -62,7 +62,7 @@ class MyExtractor(Extractor):
 ## 数据契约
 
 ```python
-from omnicrawl.sdk.data import DatasetReader
+from omnicrawler.sdk.data import DatasetReader
 
 reader = DatasetReader("work/my_project/state.sqlite3")
 records = reader.read_records(limit=50)

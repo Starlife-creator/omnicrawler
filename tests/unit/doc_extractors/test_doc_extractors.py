@@ -9,10 +9,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from omnicrawl.doc_extractors import extract_slots
-from omnicrawl.doc_extractors.base import JSONDocExtractor, TextDocExtractor
-from omnicrawl.doc_extractors.html import HTMLDocExtractor
-from omnicrawl.state.scene_store import SlotDefinition
+from omnicrawler.doc_extractors import extract_slots
+from omnicrawler.doc_extractors.base import JSONDocExtractor, TextDocExtractor
+from omnicrawler.doc_extractors.html import HTMLDocExtractor
+from omnicrawler.state.scene_store import SlotDefinition
 
 
 def _slot(key: str, extractor: str, pattern: str) -> SlotDefinition:
@@ -109,7 +109,7 @@ def test_pdf_extractor_requires_pymupdf() -> None:
 
     import pytest
 
-    from omnicrawl.doc_extractors.pdf import PDFDocExtractor
+    from omnicrawler.doc_extractors.pdf import PDFDocExtractor
 
     # 环境感知：无 PyMuPDF 时构造应报带安装提示的错误；有依赖则正常构造
     if importlib.util.find_spec("fitz") is None:

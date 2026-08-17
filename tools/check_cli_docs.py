@@ -6,10 +6,10 @@ import argparse
 import re
 from pathlib import Path
 
-from omnicrawl.cli import build_parser
+from omnicrawler.cli import build_parser
 
-COMMAND = re.compile(r"\bomnicrawl[ \t]+([a-z][a-z0-9-]*)\b")
-INVOCATION = re.compile(r"\bomnicrawl[ \t]+([a-z][a-z0-9-]*)([^\r\n`]*)")
+COMMAND = re.compile(r"\bomnicrawler[ \t]+([a-z][a-z0-9-]*)\b")
+INVOCATION = re.compile(r"\bomnicrawler[ \t]+([a-z][a-z0-9-]*)([^\r\n`]*)")
 OPTION = re.compile(r"(?<![\w-])(--[a-z][a-z0-9-]*|-[A-Za-z])\b")
 # 声明即承诺：DEFAULT_DOCS 里的文件**必须存在**（下方 check_docs 对缺失文件
 # 直接记为 issue，fail-closed）。曾把 docs/USER_GUIDE.md 与
@@ -78,18 +78,18 @@ def check_docs(project_root: Path, paths: tuple[str, ...] = DEFAULT_DOCS) -> lis
             continue
         text = path.read_text(encoding="utf-8")
         for command in sorted(documented_commands(text) - available):
-            issues.append(f"{label}: documented command does not exist: omnicrawl {command}")
+            issues.append(f"{label}: documented command does not exist: omnicrawler {command}")
         for command, remainder in documented_invocations(text):
             contract = contracts.get(command)
             if contract is None:
                 continue
             for option in sorted(set(OPTION.findall(remainder)) - contract["options"]):
-                issues.append(f"{label}: omnicrawl {command} documents unsupported option {option}")
+                issues.append(f"{label}: omnicrawler {command} documents unsupported option {option}")
             if contract["subcommands"]:
                 words = re.findall(r"(?<![-\w])[a-z][a-z0-9-]*", remainder)
                 candidate = next((word for word in words if not word.startswith("http")), "")
                 if candidate and candidate not in contract["subcommands"]:
-                    issues.append(f"{label}: omnicrawl {command} documents unsupported subcommand {candidate}")
+                    issues.append(f"{label}: omnicrawler {command} documents unsupported subcommand {candidate}")
     return issues
 
 

@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawl.pdfx.config import FieldSpec, ProjectConfig
-from omnicrawl.pdfx.extraction import (
+from omnicrawler.pdfx.config import FieldSpec, ProjectConfig
+from omnicrawler.pdfx.extraction import (
     _collapse_ws,
     _merge_rules,
     _observable_confidence,
     rule_extract_field,
 )
-from omnicrawl.pdfx.llm import build_user_content
-from omnicrawl.pdfx.retrieval import CandidatePage
+from omnicrawler.pdfx.llm import build_user_content
+from omnicrawler.pdfx.retrieval import CandidatePage
 
 
 def _config(fields: list[FieldSpec], extraction=None, llm=None) -> ProjectConfig:

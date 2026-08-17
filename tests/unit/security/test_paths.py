@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.security.paths import require_workspace_path
-from omnicrawl.state import StateStore
+from omnicrawler.security.paths import require_workspace_path
+from omnicrawler.state import StateStore
 
 
 class TestRequireWorkspacePath:

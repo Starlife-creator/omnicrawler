@@ -5,12 +5,12 @@ import json
 import zipfile
 from pathlib import Path
 
-from omnicrawl.core.config import DEFAULTS, AppConfig
-from omnicrawl.core.models import CrawlRequest, ExtractedRecord, FetchResult
-from omnicrawl.quality.quality_report import build_quality_report
-from omnicrawl.services.research_package import create_research_package, restore_package
-from omnicrawl.state import StateStore
-from omnicrawl.templates.template_monitor import TemplateMonitor
+from omnicrawler.core.config import DEFAULTS, AppConfig
+from omnicrawler.core.models import CrawlRequest, ExtractedRecord, FetchResult
+from omnicrawler.quality.quality_report import build_quality_report
+from omnicrawler.services.research_package import create_research_package, restore_package
+from omnicrawler.state import StateStore
+from omnicrawler.templates.template_monitor import TemplateMonitor
 
 
 def _config(tmp_path: Path) -> AppConfig:

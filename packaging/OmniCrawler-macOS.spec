@@ -25,14 +25,14 @@ _bundle_version = str(
 )
 
 datas = [
-    (str(src_root / "omnicrawl" / "templates"), "omnicrawl/templates"),
-    (str(src_root / "omnicrawl" / "gui" / "templates"), "omnicrawl/gui/templates"),
-    (str(src_root / "omnicrawl" / "gui" / "help"), "omnicrawl/gui/help"),
-    (str(src_root / "omnicrawl" / "fetching" / "stealth.min.js"), "omnicrawl/fetching"),
+    (str(src_root / "omnicrawler" / "templates"), "omnicrawler/templates"),
+    (str(src_root / "omnicrawler" / "gui" / "templates"), "omnicrawler/gui/templates"),
+    (str(src_root / "omnicrawler" / "gui" / "help"), "omnicrawler/gui/help"),
+    (str(src_root / "omnicrawler" / "fetching" / "stealth.min.js"), "omnicrawler/fetching"),
     (str(project_root / "plugins"), "plugins"),
-    (str(project_root / "locale"), "omnicrawl/locale"),
+    (str(project_root / "locale"), "omnicrawler/locale"),
 ]
-hiddenimports = sorted(set(collect_submodules("omnicrawl") + collect_submodules("keyring.backends")))
+hiddenimports = sorted(set(collect_submodules("omnicrawler") + collect_submodules("keyring.backends")))
 excludes = [
     "paddle", "paddleocr", "paddlex", "cv2", "torch", "torchvision",
     "pyarrow", "duckdb", "scrapy", "redis", "selenium", "psycopg", "opensearchpy",
@@ -62,7 +62,7 @@ gui_exe = EXE(
 cli_analysis = Analysis([str(packaging_root / "cli_entry.py")], **common)
 cli_pyz = PYZ(cli_analysis.pure)
 cli_exe = EXE(
-    cli_pyz, cli_analysis.scripts, [], exclude_binaries=True, name="omnicrawl",
+    cli_pyz, cli_analysis.scripts, [], exclude_binaries=True, name="omnicrawler",
     debug=False, bootloader_ignore_signals=False, strip=False, upx=False, console=True,
     disable_windowed_traceback=False,
 )
@@ -71,7 +71,7 @@ worker_analysis = Analysis([str(packaging_root / "worker_entry.py")], **common)
 worker_pyz = PYZ(worker_analysis.pure)
 worker_exe = EXE(
     worker_pyz, worker_analysis.scripts, [], exclude_binaries=True,
-    name="omnicrawl-worker", debug=False, bootloader_ignore_signals=False,
+    name="omnicrawler-worker", debug=False, bootloader_ignore_signals=False,
     strip=False, upx=False, console=True, disable_windowed_traceback=False,
 )
 

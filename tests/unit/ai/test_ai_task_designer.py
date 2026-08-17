@@ -15,10 +15,10 @@ from pathlib import Path
 
 import pytest
 
-# Allow importing omnicrawl from source tree
+# Allow importing omnicrawler from source tree
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from omnicrawl.services.ai_task_designer import (
+from omnicrawler.services.ai_task_designer import (
     ConfigChange,
     ConfigDiff,
     build_task_design_messages,

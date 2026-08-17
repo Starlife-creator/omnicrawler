@@ -44,8 +44,8 @@ def test_worker_task_runner_start_control_poll_and_attach(tmp_path: Path, monkey
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PyQt6.QtWidgets import QApplication
 
-    from omnicrawl.gui.core.config_model import CrawlConfig
-    from omnicrawl.gui.runner.worker_task_runner import WorkerTaskRunner
+    from omnicrawler.gui.core.config_model import CrawlConfig
+    from omnicrawler.gui.runner.worker_task_runner import WorkerTaskRunner
 
     app = QApplication.instance() or QApplication([])
     runner = WorkerTaskRunner(project_root=tmp_path)
@@ -74,7 +74,7 @@ def test_worker_zero_records_warns_but_still_succeeds(tmp_path: Path, monkeypatc
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PyQt6.QtWidgets import QApplication
 
-    from omnicrawl.gui.runner.worker_task_runner import WorkerTaskRunner
+    from omnicrawler.gui.runner.worker_task_runner import WorkerTaskRunner
 
     app = QApplication.instance() or QApplication([])
     runner = WorkerTaskRunner(project_root=tmp_path)
@@ -96,7 +96,7 @@ def test_worker_partial_success_is_recognized_as_finished(tmp_path: Path, monkey
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PyQt6.QtWidgets import QApplication
 
-    from omnicrawl.gui.runner.worker_task_runner import WorkerTaskRunner
+    from omnicrawler.gui.runner.worker_task_runner import WorkerTaskRunner
 
     app = QApplication.instance() or QApplication([])
     runner = WorkerTaskRunner(project_root=tmp_path)

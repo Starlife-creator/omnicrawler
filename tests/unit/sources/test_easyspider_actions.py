@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from omnicrawl.sources.easyspider_bridge import EasySpiderImporter
+from omnicrawler.sources.easyspider_bridge import EasySpiderImporter
 
 
 def _write_task(tmp_path: Path, graph: list[dict]) -> Path:
@@ -69,7 +69,7 @@ def test_s157_scroll_bottom_zero_type_uses_scroll_bottom(tmp_path: Path) -> None
 
 def test_s157_scroll_dispatch_reaches_engine() -> None:
     """S1.5.7：browser_fetcher 的 scroll 动作被分派到 scroll_bottom（times=value）。"""
-    from omnicrawl.fetching.browser_fetcher import BrowserAction, _dispatch_action
+    from omnicrawler.fetching.browser_fetcher import BrowserAction, _dispatch_action
 
     class _Engine:
         def __init__(self) -> None:
