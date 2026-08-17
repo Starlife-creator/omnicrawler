@@ -179,7 +179,7 @@ APP_BUNDLE="$BINARY_ROOT/OmniCrawler.app"
 if [[ ! -d "$APP_BUNDLE" ]]; then
   echo "PyInstaller .app bundle not found: $APP_BUNDLE" >&2; exit 1
 fi
-for required in Contents/MacOS/OmniCrawler Contents/MacOS/omnicrawler Contents/MacOS/omnicrawler-worker; do
+for required in Contents/MacOS/OmniCrawler Contents/MacOS/omnicrawler-cli Contents/MacOS/omnicrawler-worker; do
   if [[ ! -e "$APP_BUNDLE/$required" ]]; then
     echo "PyInstaller output is incomplete: $required" >&2; exit 1
   fi
@@ -237,9 +237,9 @@ done
 # ---- 产物级测试（SBOM + CLI 冒烟 + portable 冒烟 + 完整性清单）--------------
 # 与 Windows 构建对齐：落盘 CAPABILITIES.json / RELEASE-INFO.json 并重刷清单
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/generate_sbom.py" --output "$RELEASE_ROOT/SBOM.json"
-"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler" --version
-"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler" templates validate
-"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler" capabilities --verify-imports --portable-paths > "$RELEASE_ROOT/CAPABILITIES.json"
+"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli" --version
+"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli" templates validate
+"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli" capabilities --verify-imports --portable-paths > "$RELEASE_ROOT/CAPABILITIES.json"
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/generate_release_info.py" \
     --project-root "$PROJECT_ROOT" --release-root "$RELEASE_ROOT" --edition "$EDITION"
 # P4-3：portable 冒烟（浏览器/原生运行时）。其 cwd=releaseRoot 会写缓存，
@@ -262,7 +262,7 @@ fi
 # 完整性清单：在新增 CAPABILITIES.json / RELEASE-INFO.json 之后生成，
 # 使清单覆盖这两个机器可读文件（与 Windows 同序：先加文件再刷清单）。
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/create_runtime_manifest.py" --release-root "$RELEASE_ROOT"
-"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler" runtime-verify --root "$RELEASE_ROOT"
+"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli" runtime-verify --root "$RELEASE_ROOT"
 # P4-1：Windows 对 zip 跑 check_release_integrity --portable-zip --portable-deep；
 # macOS dmg 是磁盘镜像（纯 Python 无法读内部），深校验由上方 runtime-verify 兜底；
 # tar.gz 回退产物跑容器级深校验（与 Linux 对齐）。
@@ -291,4 +291,4 @@ else
 fi
 
 echo "Build staging: $RELEASE_ROOT"
-echo "CLI: $RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler --help"
+echo "CLI: $RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli --help"

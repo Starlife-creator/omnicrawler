@@ -148,9 +148,9 @@ def _resolve_executable(release_dir: Path, *, gui: bool = False) -> Path | None:
         )
     else:
         candidates = (
-            release_dir / "omnicrawler.exe",  # Windows
+            release_dir / "omnicrawler-cli.exe",  # Windows（CLI 与 GUI OmniCrawler.exe 大小写冲突，见 spec）
             release_dir / "omnicrawler",  # Linux
-            release_dir / "OmniCrawler.app" / "Contents" / "MacOS" / "omnicrawler",  # macOS
+            release_dir / "OmniCrawler.app" / "Contents" / "MacOS" / "omnicrawler-cli",  # macOS
         )
     return next((candidate for candidate in candidates if candidate.is_file()), None)
 

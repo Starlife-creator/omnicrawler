@@ -89,7 +89,7 @@ def _write_portable(
 ) -> None:
     files: dict[str, bytes] = {
         "OmniCrawler.exe": b"MZ-gui",
-        "omnicrawler.exe": b"MZ-cli",
+        "omnicrawler-cli.exe": b"MZ-cli",
         "omnicrawler-worker.exe": b"MZ-worker",
         "_internal/python312.dll": b"runtime",
         "PORTABLE.flag": b"",
@@ -121,7 +121,7 @@ def _write_portable(
     records = {}
     for name, content in files.items():
         digest = hashlib.sha256(content).hexdigest()
-        if corrupt_hash and name == "omnicrawler.exe":
+        if corrupt_hash and name == "omnicrawler-cli.exe":
             digest = "0" * 64
         records[name] = {"sha256": digest, "bytes": len(content)}
     files["RUNTIME-MANIFEST.json"] = json.dumps({
@@ -150,7 +150,7 @@ def test_portable_zip_detects_unsafe_duplicates_and_manifest_hashes(tmp_path):
     issues = check_portable_zip(archive, verify_payloads=True)
     assert any("duplicate portable archive path" in issue for issue in issues)
     assert any("unsafe portable archive path" in issue for issue in issues)
-    assert any("runtime manifest hash mismatch: omnicrawler.exe" in issue for issue in issues)
+    assert any("runtime manifest hash mismatch: omnicrawler-cli.exe" in issue for issue in issues)
 
 
 def test_portable_zip_requires_full_runtime_assets(tmp_path):

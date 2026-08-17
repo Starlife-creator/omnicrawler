@@ -91,12 +91,15 @@ gui_exe = EXE(
 
 cli_analysis = Analysis([str(packaging_root / "cli_entry.py")], **common)
 cli_pyz = PYZ(cli_analysis.pure)
+# CLI exe 名不能用 omnicrawler（与 GUI OmniCrawler.exe 在 Windows/macOS 大小写
+# 不敏感文件系统上冲突，COLLECT 里后写者覆盖先写者 → GUI 丢失，v0.9.1 CI 实测）。
+# 用 omnicrawler-cli 区分；GUI 保留品牌名 OmniCrawler.exe。
 cli_exe = EXE(
     cli_pyz,
     cli_analysis.scripts,
     [],
     exclude_binaries=True,
-    name="omnicrawler",
+    name="omnicrawler-cli",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

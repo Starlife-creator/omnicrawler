@@ -36,11 +36,11 @@ _WINDOWS_RESERVED_NAMES = {
 # Linux/macOS 产物顶层是 OmniCrawler/（M4 对齐），入口可执行文件无 .exe 后缀。
 # macOS 是 .app bundle，入口在 Contents/MacOS/ 下。
 _PORTABLE_PLATFORM_ENTRYPOINTS: dict[str, tuple[str, ...]] = {
-    "win": ("OmniCrawler.exe", "omnicrawler.exe", "omnicrawler-worker.exe"),
+    "win": ("OmniCrawler.exe", "omnicrawler-cli.exe", "omnicrawler-worker.exe"),
     "linux": ("OmniCrawler", "omnicrawler", "omnicrawler-worker"),
     "mac": (
         "OmniCrawler.app/Contents/MacOS/OmniCrawler",
-        "OmniCrawler.app/Contents/MacOS/omnicrawler",
+        "OmniCrawler.app/Contents/MacOS/omnicrawler-cli",
         "OmniCrawler.app/Contents/MacOS/omnicrawler-worker",
     ),
 }
