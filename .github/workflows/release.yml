@@ -95,14 +95,14 @@ jobs:
           Write-Output "version=$v" >> $env:GITHUB_OUTPUT
       - name: 缓存浏览器运行时
         id: browser-cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-${{ hashFiles('pyproject.toml') }}
 
       - name: 缓存 OCR 运行时
         id: runtime-cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/runtime
           key: ocr-runtime-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
@@ -215,7 +215,7 @@ jobs:
           echo "version=$(python -c 'import importlib.metadata; print(importlib.metadata.version("playwright"))')" >> "$GITHUB_OUTPUT"
       - name: 缓存浏览器运行时
         id: browser-cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/playwright
           key: playwright-linux-${{ steps.playwright-version.outputs.version }}-${{ hashFiles('pyproject.toml') }}
@@ -291,7 +291,7 @@ jobs:
           echo "version=$(python -c 'import importlib.metadata; print(importlib.metadata.version("playwright"))')" >> "$GITHUB_OUTPUT"
       - name: 缓存浏览器运行时
         id: browser-cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/playwright
           key: playwright-macos-${{ steps.playwright-version.outputs.version }}-${{ hashFiles('pyproject.toml') }}
