@@ -250,6 +250,10 @@ def bundled_browser_executable() -> Path | None:
         "chromium-*/chrome-win/chrome.exe",
         "chromium-*/chrome-win64/chrome.exe",
         "chromium-*/chrome-linux/chrome",
+        # 新版 Playwright（1.62+）Linux Chrome 目录为 chrome-linux64（非旧版
+        # chrome-linux），漏配导致 bundled_browser_executable 探测失败——
+        # "内置 Chromium 缺失"（v0.9.1 Linux CI 实测）。
+        "chromium-*/chrome-linux64/chrome",
         "chromium-*/chrome-mac/Chromium",
         "chromium-*/chrome-mac*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
     )
