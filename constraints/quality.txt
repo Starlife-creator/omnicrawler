@@ -1,12 +1,12 @@
 # Reproducible quality/build toolchain for OmniCrawler 0.9.1.
 # Update deliberately and record the change in CHANGELOG.md and docs/TEST_REPORT.md.
 pip==26.2.1
-setuptools==83.0.0
-wheel==0.47.0
-PyYAML==6.0.2
+setuptools==84.0.0
+wheel==0.48.0
+PyYAML==6.0.3
 pytest==9.1.1
 coverage==7.15.4
-ruff==0.16.2
+ruff==0.16.3
 mypy==2.3.0
 # quality.yml 裸装 cryptography；与 pyproject security extra 同约束，防验签行为随大版本漂移
 cryptography>=44,<51
