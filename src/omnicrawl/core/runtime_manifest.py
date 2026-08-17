@@ -24,13 +24,27 @@ RUNTIME_MANIFEST = "RUNTIME-MANIFEST.json"
 # 运行时可变目录：打包后的 exe 每次启动都会写入/追加日志，若纳入完整性
 # 清单，runtime-verify 自身启动写日志就会让哈希漂移而误报 corrupt（release
 # CI 实测）。创建与校验两侧都必须排除，保持一致。
-# 排除规则按**任意路径层级**名为 logs 的目录匹配——Windows/Linux 日志在顶层
-# logs/，macOS .app 日志在 Contents/MacOS/logs/，前缀匹配覆盖不到后者。
-_EXCLUDED_RELATIVE_DIRS = ("logs",)
+# 排除规则：只排除"运行期日志目录"——顶层 logs/（Windows/Linux），以及
+# macOS .app 内 Contents/MacOS/logs/。**不排除**任意层级的 logs：botocore 的
+# _internal/botocore/data/logs（AWS CloudWatch Logs 服务数据）、
+# runtime/**/xet/logs 等都是合法运行时资产，误排除会导致 ZIP/tar 与清单
+# 不一致触发完整性失败（v0.9.1 Windows CI 实测）。
+_EXCLUDED_LOG_DIRS = (
+    "logs",                       # 顶层运行期日志（Windows/Linux）
+    "Contents/MacOS/logs",        # macOS .app 内运行期日志
+)
 
 
 def _is_excluded_relative(relative: str) -> bool:
-    return any(part in _EXCLUDED_RELATIVE_DIRS for part in PurePosixPath(relative).parts)
+    parts = PurePosixPath(relative).parts
+    if len(parts) >= 1 and parts[0] == "logs":
+        return True
+    # macOS .app 结构：OmniCrawler.app/Contents/MacOS/logs（运行期日志在
+    # Contents/MacOS 之后任意层，如 run.log 直接在其下）
+    for index in range(len(parts) - 2):
+        if parts[index:index + 3] == ("Contents", "MacOS", "logs"):
+            return True
+    return False
 
 
 def create_runtime_manifest(root: Path, *, include: Iterable[Path] | None = None) -> dict[str, Any]:
