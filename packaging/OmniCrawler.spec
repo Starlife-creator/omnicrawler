@@ -34,10 +34,14 @@ for package in ("paddle", "paddleocr", "paddlex", "cv2", "selenium", "lxml", "pl
 for package in ("keyring.backends", "scrapy", "twisted.plugins"):
     hiddenimports += collect_submodules(package)
 
-# scipy._external.array_api_compat 是构建期生成的动态模块，静态扫描会漏
-# （paddleocr import 时报 'No module named scipy._external.array_api_compat.numpy.fft'，
-# v0.9.1 Windows CI 实测）。collect_submodules 全量收集。
+# scipy._external.array_api_compat 是 scipy 内嵌（vendored）的 array_api_compat，
+# 由构建期脚本生成，PyInstaller 的 collect_submodules("scipy") 静态扫描看不到
+# 其内部子模块（paddleocr import 时报 'No module named
+# scipy._external.array_api_compat.numpy.fft'，v0.9.1 Windows CI 实测）。
+# 显式按 vendored 子树收集；若模块不存在，collect_submodules 返回空不中断构建。
 hiddenimports += collect_submodules("scipy")
+hiddenimports += collect_submodules("scipy._external.array_api_compat")
+hiddenimports += collect_submodules("array_api_compat")
 
 # PaddleX checks its OCR extra through importlib.metadata before creating a
 # pipeline. PyInstaller may collect the importable modules while omitting their

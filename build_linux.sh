@@ -214,7 +214,9 @@ fi
 # ---- 打包 tar.gz --------------------------------------------------------------
 mkdir -p "$RELEASE_OUTPUT"
 RELEASE_ARCHIVE="$RELEASE_OUTPUT/OmniCrawler-$APP_VERSION-Linux-Portable-$EDITION.tar.gz"
-tar -czf "$RELEASE_ARCHIVE" -C "$BUILD_ROOT/release" OmniCrawler
+# 打包 tar.gz：排除运行期 logs/（与 RUNTIME-MANIFEST 的排除规则一致——
+# create_runtime_manifest 不记录 logs/，深校验要求 tar 与 manifest 双向一致）。
+tar -czf "$RELEASE_ARCHIVE" -C "$BUILD_ROOT/release" --exclude='OmniCrawler/logs' OmniCrawler
 
 # P5 完整版：Linux tar.gz 容器级深校验（与 Windows zip 对齐）。
 # --portable-deep 对包内每个文件做 SHA-256 与 RUNTIME-MANIFEST 双向核对。

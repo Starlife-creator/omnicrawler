@@ -281,7 +281,8 @@ if hdiutil create -volname "OmniCrawler" -srcfolder "$BUILD_ROOT/release" \
 else
   echo "[WARN] hdiutil 失败，回退 tar.gz"
   TAR_ARCHIVE="$RELEASE_OUTPUT/OmniCrawler-$APP_VERSION-macOS-Portable-$EDITION.tar.gz"
-  tar -czf "$TAR_ARCHIVE" -C "$BUILD_ROOT/release" OmniCrawler
+  # 排除运行期 logs/（与 RUNTIME-MANIFEST 排除规则一致，同 Linux tar 打包）
+  tar -czf "$TAR_ARCHIVE" -C "$BUILD_ROOT/release" --exclude='OmniCrawler/logs' OmniCrawler
   echo "Portable archive: $TAR_ARCHIVE"
   # P5：macOS tar.gz 回退产物跑容器级深校验（mac 平台弱 Full：不要求 Paddle）
   "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/check_release_integrity.py" "$PROJECT_ROOT" \
