@@ -58,6 +58,16 @@ datas += collect_data_files("paddle", includes=["libs/*"], include_py_files=Fals
 for package in ("keyring.backends",):
     hiddenimports += collect_submodules(package)
 
+# scipy._external.array_api_compat 是 scipy 内嵌（vendored）的 array_api_compat，
+# 由构建期脚本生成，PyInstaller 的 collect_submodules("scipy") 静态扫描看不到其
+# 内部子模块（paddleocr import 时缺 scipy._external.array_api_compat.*，v0.9.1
+# Linux CI 实测 hidden import "scipy._lib.array_api_compat.numpy.fft" not found）。
+# 显式按 vendored 子树收集；若模块不存在，collect_submodules 返回空不中断构建。
+# 镜像 Windows OmniCrawler.spec 的写法。
+hiddenimports += collect_submodules("scipy")
+hiddenimports += collect_submodules("scipy._external.array_api_compat")
+hiddenimports += collect_submodules("array_api_compat")
+
 # PaddleX 通过 importlib.metadata 检查 OCR extra，PyInstaller 可能收集了
 # 可 import 模块却漏掉发行元数据（镜像 Windows OmniCrawler.spec:37-48）。
 for distribution in (

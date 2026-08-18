@@ -18,7 +18,7 @@ DEFAULT_EXCLUDES = {
 
 PORTABLE_ROOT_FILES = {
     "OmniCrawler.exe",
-    "omnicrawler.exe",
+    "omnicrawler-cli.exe",
     "omnicrawler-worker.exe",
     "OmniCrawler-Launcher.bat",
     "PORTABLE.flag",

@@ -236,7 +236,7 @@ Reset-TemporaryDirectory $workRoot
 Assert-LastExit 'PyInstaller build failed.'
 
 $builtFolder = Join-Path $binaryRoot 'OmniCrawler'
-foreach ($required in @('OmniCrawler.exe', 'omnicrawler.exe', 'omnicrawler-worker.exe', '_internal')) {
+foreach ($required in @('OmniCrawler.exe', 'omnicrawler-cli.exe', 'omnicrawler-worker.exe', '_internal')) {
     if (-not (Test-Path -LiteralPath (Join-Path $builtFolder $required))) {
         throw "PyInstaller output is incomplete: $required"
     }
@@ -245,7 +245,7 @@ foreach ($required in @('OmniCrawler.exe', 'omnicrawler.exe', 'omnicrawler-worke
 if ($CodeSigningThumbprint) {
     $signTool = (Get-Command signtool.exe -ErrorAction SilentlyContinue).Source
     if (-not $signTool) { throw 'signtool.exe was not found for required Authenticode signing.' }
-    foreach ($binary in @('OmniCrawler.exe', 'omnicrawler.exe', 'omnicrawler-worker.exe')) {
+    foreach ($binary in @('OmniCrawler.exe', 'omnicrawler-cli.exe', 'omnicrawler-worker.exe')) {
         & $signTool sign /sha1 $CodeSigningThumbprint /fd SHA256 /tr 'http://timestamp.digicert.com' /td SHA256 (Join-Path $builtFolder $binary)
         Assert-LastExit "Authenticode signing failed: $binary"
     }
@@ -302,16 +302,16 @@ foreach ($relativeDir in @('data\input', 'data\pdfs', 'work', 'output', 'logs'))
 
 & $builderPython (Join-Path $projectRoot 'tools\generate_sbom.py') --output (Join-Path $releaseRoot 'SBOM.json')
 Assert-LastExit 'SBOM generation failed.'
-& (Join-Path $releaseRoot 'omnicrawler.exe') --version
+& (Join-Path $releaseRoot 'omnicrawler-cli.exe') --version
 Assert-LastExit 'Packaged CLI version verification failed.'
-& (Join-Path $releaseRoot 'omnicrawler.exe') templates validate
+& (Join-Path $releaseRoot 'omnicrawler-cli.exe') templates validate
 Assert-LastExit 'Packaged template verification failed.'
 # F11：冒烟测试先于清单生成——其 cwd=releaseRoot 会写 .omnicrawler 缓存，
 # 若在清单生成后跑会产出"不在清单中的新文件"导致完整性检查随机失败。
 & $builderPython (Join-Path $projectRoot 'tools\portable_smoke_test.py') $releaseRoot --edition $Edition
 Assert-LastExit 'Packaged browser/native runtime verification failed.'
 # F12：CAPABILITIES.json 无 BOM 写入（带 BOM 会让第三方 json.loads 失败）
-$capabilitiesOutput = & (Join-Path $releaseRoot 'omnicrawler.exe') capabilities --verify-imports --portable-paths
+$capabilitiesOutput = & (Join-Path $releaseRoot 'omnicrawler-cli.exe') capabilities --verify-imports --portable-paths
 Assert-LastExit 'Packaged capability import verification failed.'
 [IO.File]::WriteAllText((Join-Path $releaseRoot 'CAPABILITIES.json'), ($capabilitiesOutput -join "`n"), (New-Object Text.UTF8Encoding($false)))
 # F9：路径经命令行参数传递，不再把 PowerShell 变量插值进 Python 源码字符串
@@ -324,7 +324,7 @@ Assert-LastExit 'Portable release metadata generation failed.'
 # the machine-readable release description as well as executables and runtime.
 & $builderPython (Join-Path $projectRoot 'tools\create_runtime_manifest.py') --release-root $releaseRoot
 Assert-LastExit 'Runtime integrity manifest refresh failed.'
-& (Join-Path $releaseRoot 'omnicrawler.exe') runtime-verify --root $releaseRoot
+& (Join-Path $releaseRoot 'omnicrawler-cli.exe') runtime-verify --root $releaseRoot
 Assert-LastExit 'Packaged runtime integrity verification failed.'
 
 # $appVersion was already resolved at script startup — reuse it.
@@ -358,7 +358,7 @@ Write-Host "Build staging: $releaseRoot"
 Write-Host "Portable ZIP: $releaseArchive"
 Write-Host "SHA-256: $($archiveHash.Hash)"
 Write-Host 'GUI: OmniCrawler.exe'
-Write-Host 'CLI: omnicrawler.exe --help'
+Write-Host 'CLI: omnicrawler-cli.exe --help'
 # D3：构建成功后清理临时目录。仅当 $buildRoot 为默认 %TEMP% 路径时清理
 # （$builderVenv 始终位于 %TEMP%）；显式 -BuildRootPath 指向的版本化
 # 产物目录（artifacts/build/...）保留作"压缩前完整包"。失败路径不会到达此处。
