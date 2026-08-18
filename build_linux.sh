@@ -208,9 +208,11 @@ if [[ "$EDITION" == "Full" ]]; then
     _copied=0
     for so in "$_paddle_libs_dir"/*.so*; do
       [[ -f "$so" ]] || continue
-      # cp -n：仅当 _internal 根不存在同名文件时复制（避免覆盖 bootloader 已有库）
+      # cp -n：仅当 _internal 根不存在同名文件时复制（避免覆盖 bootloader 已有库）。
+      # 注意：用 _copied=$((_copied+1)) 而非 ((_copied++))——后者在 set -e 下，
+      # _copied=0 时表达式值为 0 返回退出码 1，会中断脚本。
       if cp -n -L "$so" "$RELEASE_ROOT/_internal/$(basename "$so")" 2>/dev/null; then
-        ((_copied++))
+        _copied=$((_copied + 1))
       fi
     done
     echo "[Full] 已复制 $_copied 个 Paddle 共享库到 _internal 根"
