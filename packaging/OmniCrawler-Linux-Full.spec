@@ -83,7 +83,8 @@ hiddenimports = sorted(set(hiddenimports))
 
 common = dict(
     pathex=[str(src_root)], binaries=binaries, datas=datas,
-    hiddenimports=hiddenimports, hookspath=[], hooksconfig={}, runtime_hooks=[],
+    hiddenimports=hiddenimports, hookspath=[],
+    hooksconfig={}, runtime_hooks=[str(packaging_root / "rthook_linux_paddle.py")],
     excludes=excludes, noarchive=False,
 )
 
