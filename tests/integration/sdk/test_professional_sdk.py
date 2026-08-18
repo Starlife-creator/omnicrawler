@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from omnicrawl.plugins.plugin_sandbox import IsolatedPluginRunner, PluginPackageManifest
-from omnicrawl.plugins.plugin_sdk import contract_check, scaffold_plugin
-from omnicrawl.review.review_workbench import ReviewDecision, ReviewField, ReviewItem, ReviewQueue
-from omnicrawl.sdk import API_STABILITY, SDK_VERSION, DatasetReader, compile, validate
-from omnicrawl.services.ai_safety import (
+from omnicrawler.plugins.plugin_sandbox import IsolatedPluginRunner, PluginPackageManifest
+from omnicrawler.plugins.plugin_sdk import contract_check, scaffold_plugin
+from omnicrawler.review.review_workbench import ReviewDecision, ReviewField, ReviewItem, ReviewQueue
+from omnicrawler.sdk import API_STABILITY, SDK_VERSION, DatasetReader, compile, validate
+from omnicrawler.services.ai_safety import (
     UNTRUSTED_PREFIX,
     AIBudget,
     ai_audit_record,

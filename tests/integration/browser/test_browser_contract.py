@@ -7,10 +7,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.fetching.browser_fetcher import BrowserFetcher, PlaywrightPool
-from omnicrawl.security.policy import NetworkTargetPolicy
+from omnicrawler.core.config import load_config
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.fetching.browser_fetcher import BrowserFetcher, PlaywrightPool
+from omnicrawler.security.policy import NetworkTargetPolicy
 
 
 def _config(tmp_path: Path, *, persist=False, capture_limit=1024):
@@ -361,7 +361,7 @@ def test_browser_fetcher_close_invalid_engine_and_playwright_pool(tmp_path: Path
         0.1,
     )
     pool_instance = SimpleNamespace(fetch=MagicMock(return_value=expected), close=MagicMock())
-    monkeypatch.setattr("omnicrawl.browser_fetcher.PlaywrightPool", lambda *_args: pool_instance)
+    monkeypatch.setattr("omnicrawler.browser_fetcher.PlaywrightPool", lambda *_args: pool_instance)
     fetcher._playwright_pool = None
     result = fetcher._playwright(CrawlRequest("https://example.org"))
     assert result is expected

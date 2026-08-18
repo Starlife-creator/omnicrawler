@@ -24,11 +24,11 @@ def _qt_app():
 
 def _make_dialog(monkeypatch, tmp_path):
     """构造隔离的身份对话框（信任列表指向临时文件，不碰真实用户数据）。"""
-    from omnicrawl.gui.views.identity_dialog import IdentityDialog
-    from omnicrawl.plugins import trust as trust_module
+    from omnicrawler.gui.views.identity_dialog import IdentityDialog
+    from omnicrawler.plugins import trust as trust_module
 
     monkeypatch.setattr(trust_module, "DEFAULT_TRUST_LIST", tmp_path / "trusted_users.json")
-    # 隔离身份存储：避免读到用户真实 ~/.omnicrawl/secrets.bin（测试期望空状态）
+    # 隔离身份存储：避免读到用户真实 ~/.omnicrawler/secrets.bin（测试期望空状态）
     monkeypatch.setenv("OMNICRAWL_SECRET_STORE_PATH", str(tmp_path / "secrets.bin"))
     return IdentityDialog(parent=None)
 
@@ -44,7 +44,7 @@ def test_dialog_instantiates_and_refreshes(monkeypatch, tmp_path) -> None:
 
 
 def test_trust_add_and_revoke(monkeypatch, tmp_path) -> None:
-    from omnicrawl.plugins import signing
+    from omnicrawler.plugins import signing
 
     dialog = _make_dialog(monkeypatch, tmp_path)
     _, public_pem = signing.generate_keypair()

@@ -5,10 +5,10 @@ from pathlib import Path
 
 import yaml
 
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.extraction.api_discovery import write_discovery_bundle
-from omnicrawl.extraction.topic_filter import evaluate_topic, filter_records
-from omnicrawl.pipeline_ops.task_spec import (
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.extraction.api_discovery import write_discovery_bundle
+from omnicrawler.extraction.topic_filter import evaluate_topic, filter_records
+from omnicrawler.pipeline_ops.task_spec import (
     AISpec,
     FileSpec,
     TaskSpec,
@@ -16,9 +16,9 @@ from omnicrawl.pipeline_ops.task_spec import (
     UpdateSpec,
     compile_execution_plan,
 )
-from omnicrawl.services.ai_providers import DisabledProvider, build_provider
-from omnicrawl.services.help_registry import HELP_ENTRIES
-from omnicrawl.state import StateStore
+from omnicrawler.services.ai_providers import DisabledProvider, build_provider
+from omnicrawler.services.help_registry import HELP_ENTRIES
+from omnicrawler.state import StateStore
 
 
 def test_task_spec_compiles_dynamic_topic_pdf_monitor() -> None:

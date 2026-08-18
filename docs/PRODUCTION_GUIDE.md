@@ -10,8 +10,8 @@ py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install -e ".[html,pdf,async,browser,gui,security,storage]"
 $env:PLAYWRIGHT_BROWSERS_PATH=(Join-Path (Get-Location) '.playwright-browsers')
 .venv\Scripts\python -m playwright install chromium
-omnicrawl doctor -c configs/project.yaml
-omnicrawl --log-format json run -c configs/project.yaml --max-pages 20
+omnicrawler doctor -c configs/project.yaml
+omnicrawler --log-format json run -c configs/project.yaml --max-pages 20
 ```
 
 ## 凭据
@@ -44,4 +44,4 @@ source:
 
 ## 发布
 
-发布物应包含源码包、wheel、SBOM、验证报告和变更记录。生产升级先复制工作目录，在副本执行 `omnicrawl migrate` 和小样本回归；不要直接覆盖唯一状态库。
+发布物应包含源码包、wheel、SBOM、验证报告和变更记录。生产升级先复制工作目录，在副本执行 `omnicrawler migrate` 和小样本回归；不要直接覆盖唯一状态库。

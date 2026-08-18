@@ -13,9 +13,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.pipeline import Pipeline
-from omnicrawl.state.capsule_store import CapsuleStore
+from omnicrawler.core.config import load_config
+from omnicrawler.pipeline import Pipeline
+from omnicrawler.state.capsule_store import CapsuleStore
 
 HTML = "<html><body><h1>标题</h1></body></html>"
 

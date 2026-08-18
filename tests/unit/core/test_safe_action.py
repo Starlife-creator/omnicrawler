@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.safe_action import (
+from omnicrawler.core.safe_action import (
     ConfirmationRequiredError,
     SafeActionContext,
     default_trash_root,

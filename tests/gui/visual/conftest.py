@@ -28,7 +28,7 @@ def qapp():
 @pytest.fixture
 def theme_manager(qapp):
     """Return the singleton ThemeManager, pre-applied on the QApplication."""
-    from omnicrawl.gui.design_system import ThemeManager
+    from omnicrawler.gui.design_system import ThemeManager
 
     mgr = ThemeManager.instance()
     mgr.apply(qapp, "light")

@@ -4,6 +4,8 @@
 
 > Copyright (C) 2026 Starlife-creator。本项目以 AGPL-3.0 授权，详见 [LICENSE](LICENSE)。
 
+> **商标与命名声明**：本项目（仓库名 `omnicrawler`、Python 包及 CLI 命令名 `omnicrawler`）由 Starlife-creator 独立开发与维护，为项目内部代号，**并非任何商业实体的产品或服务**。本项目与 [omnicrawl.dev](https://www.omnicrawl.dev/)（OmniCrawl 通用网页抓取服务）、学术基础设施 [OmniCrawl](https://github.com/jessejjohnson/OmniCrawl)（PETS'22）、[Oncrawl](https://www.oncrawl.com/)（法国 SEO 技术平台）等**无任何关联、授权、赞助或隶属关系**，亦不暗示与之存在任何联系。若上述名称的持有方主张权利，请通过仓库 Issues 联系作者协商。AGPL-3.0 仅授予代码使用与分发权利，不授予任何商标或名称使用权。
+
 OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台。从网站、API、动态页面和流式协议获取数据，下载附件，解析 PDF/OCR，完成结构化提取、质量检查、人工复核与多格式交付。
 
 **v0.9.1** 在可验证的本地采集、文档抽取与可恢复管线之上，进一步把 GUI 首页改为“先描述需求、再补充必要信息”的任务入口：所有运行前必填项集中在第一页，自然语言输入会编译为可审阅的任务草案。通知、动画、导出进度与关闭流程也补齐了生命周期保护；发布一致性治理、本地可复用 E2E、无障碍/i18n、CLI、性能指标和 Windows 便携构建能力继续保持。
@@ -54,24 +56,24 @@ git clone https://github.com/<owner>/OmniCrawler-market
 | GUI 插件/模板市场 | 无 `catalog_url` 配置时回退到 `../OmniCrawler-market` 本地浏览 |
 | `tests/unit/plugin/` | 市场相关测试引用同级市场仓库；未 clone 时自动跳过 |
 
-只 clone 主仓库时应用完全可用（本地回退目录缺失即视为无市场）；要使用插件市场需同时 clone 两个仓库。私有签名路径默认写入 `~/.omnicrawl/keys/`（可用 `--private-out` / `--private-key` 覆盖）。
+只 clone 主仓库时应用完全可用（本地回退目录缺失即视为无市场）；要使用插件市场需同时 clone 两个仓库。私有签名路径默认写入 `~/.omnicrawler/keys/`（可用 `--private-out` / `--private-key` 覆盖）。
 
 ### 三分钟命令行
 
 ```powershell
 # 模板发现与配置生成
-omnicrawl templates inspect https://example.org
-omnicrawl templates render generic/list-detail -o config.yaml --set seed_url=https://example.org
+omnicrawler templates inspect https://example.org
+omnicrawler templates render generic/list-detail -o config.yaml --set seed_url=https://example.org
 
 # 校验 → 计划 → 试跑 → 正式
-omnicrawl validate -c config.yaml
-omnicrawl plan -c config.yaml
-omnicrawl sample -c config.yaml --pages 3
-omnicrawl run -c config.yaml
+omnicrawler validate -c config.yaml
+omnicrawler plan -c config.yaml
+omnicrawler sample -c config.yaml --pages 3
+omnicrawler run -c config.yaml
 
 # 中断恢复 + 重新处理
-omnicrawl resume -c config.yaml
-omnicrawl reprocess -c config.yaml --run-id <id>
+omnicrawler resume -c config.yaml
+omnicrawler reprocess -c config.yaml --run-id <id>
 ```
 
 ---
@@ -168,9 +170,9 @@ omnicrawl reprocess -c config.yaml --run-id <id>
 ## 模板库（78 套）
 
 ```powershell
-omnicrawl templates list              # 按类别列出
-omnicrawl templates recommend <url>   # 智能推荐
-omnicrawl templates validate          # 校验完整性
+omnicrawler templates list              # 按类别列出
+omnicrawler templates recommend <url>   # 智能推荐
+omnicrawler templates validate          # 校验完整性
 ```
 
 覆盖场景：通用单页 · 列表详情 · 分页 · 无限滚动 · 表格 · 搜索 · 新闻 · 政务 · 电商 · 招聘 · 地产 · 金融 · 论文 · 社交媒体（Twitter/微博/知乎/小红书） · WordPress · Drupal · MediaWiki · Shopify · GitHub API · Crossref · OpenAlex
@@ -211,68 +213,68 @@ omnicrawl templates validate          # 校验完整性
 ### 任务执行
 
 ```powershell
-omnicrawl run -c config.yaml [--max-pages N] [--progress]
-omnicrawl resume -c config.yaml [--retry-failed]
-omnicrawl validate -c config.yaml
-omnicrawl doctor -c config.yaml
-omnicrawl sample -c config.yaml --pages 3
+omnicrawler run -c config.yaml [--max-pages N] [--progress]
+omnicrawler resume -c config.yaml [--retry-failed]
+omnicrawler validate -c config.yaml
+omnicrawler doctor -c config.yaml
+omnicrawler sample -c config.yaml --pages 3
 ```
 
 ### 状态与控制
 
 ```powershell
-omnicrawl status -c config.yaml [--format json|text]
-omnicrawl control -c config.yaml {pause|resume|stop}
-omnicrawl recovery -c config.yaml {overview|continue|retry-failed|relogin|reprocess|rollback-config}
+omnicrawler status -c config.yaml [--format json|text]
+omnicrawler control -c config.yaml {pause|resume|stop}
+omnicrawler recovery -c config.yaml {overview|continue|retry-failed|relogin|reprocess|rollback-config}
 ```
 
 ### 模板管理
 
 ```powershell
-omnicrawl templates {list|recommend|render|validate|inspect|diff|merge} ...
-omnicrawl templates export-pack <id...> --output pack.zip
-omnicrawl templates import-pack pack.zip
+omnicrawler templates {list|recommend|render|validate|inspect|diff|merge} ...
+omnicrawler templates export-pack <id...> --output pack.zip
+omnicrawler templates import-pack pack.zip
 ```
 
 ### 数据与导出
 
 ```powershell
-omnicrawl export -c config.yaml [--run-id <id>]
-omnicrawl reprocess -c config.yaml --run-id <id>
-omnicrawl compare-runs -c config.yaml <before> <after> -o diff.json
+omnicrawler export -c config.yaml [--run-id <id>]
+omnicrawler reprocess -c config.yaml --run-id <id>
+omnicrawler compare-runs -c config.yaml <before> <after> -o diff.json
 ```
 
 ### 安全与审计
 
 ```powershell
-omnicrawl security-report -c config.yaml
-omnicrawl preflight -c config.yaml
-omnicrawl research-package -c config.yaml -o research.zip [--include-raw]
+omnicrawler security-report -c config.yaml
+omnicrawler preflight -c config.yaml
+omnicrawler research-package -c config.yaml -o research.zip [--include-raw]
 ```
 
 ### 备份与恢复
 
 ```powershell
-omnicrawl backup create -c config.yaml -o backup.zip [--include-raw]
-omnicrawl backup restore backup.zip --target ./restored/
+omnicrawler backup create -c config.yaml -o backup.zip [--include-raw]
+omnicrawler backup restore backup.zip --target ./restored/
 ```
 
 ### 性能与诊断
 
 ```powershell
-omnicrawl benchmark -c config.yaml [--profile standard|high|all] [--output bench.json]
-omnicrawl capabilities [--verify-imports] [--self-test] [--portable-paths]
-omnicrawl regression -c config.yaml
+omnicrawler benchmark -c config.yaml [--profile standard|high|all] [--output bench.json]
+omnicrawler capabilities [--verify-imports] [--self-test] [--portable-paths]
+omnicrawler regression -c config.yaml
 ```
 
 ### 组件与管理
 
 ```powershell
-omnicrawl components list
-omnicrawl plugins -c config.yaml
-omnicrawl workspace {init|health|package|snapshot|rollback}
-omnicrawl migrate -c config.yaml -o migrated.yaml [--force]
-omnicrawl serve -c config.yaml [--host 127.0.0.1] [--port 8765]
+omnicrawler components list
+omnicrawler plugins -c config.yaml
+omnicrawler workspace {init|health|package|snapshot|rollback}
+omnicrawler migrate -c config.yaml -o migrated.yaml [--force]
+omnicrawler serve -c config.yaml [--host 127.0.0.1] [--port 8765]
 ```
 
 ---
@@ -309,7 +311,7 @@ run_windows.bat                       # 启动 CLI
 .venv\Scripts\python.exe tools\check_cli_docs.py               # CLI 文档一致性
 .venv\Scripts\python.exe tools\check_network_boundaries.py     # 网络边界
 .venv\Scripts\ruff.exe check src tests tools                   # lint
-.venv\Scripts\python.exe -m mypy src/omnicrawl                 # 类型检查
+.venv\Scripts\python.exe -m mypy src/omnicrawler                 # 类型检查
 .venv\Scripts\python.exe -m pytest -q                           # 测试
 .venv\Scripts\python.exe -m coverage run -m pytest -q && .venv\Scripts\python.exe -m coverage json && .venv\Scripts\python.exe tools\check_coverage_gates.py coverage.json
 ```
@@ -325,7 +327,7 @@ run_windows.bat                       # 启动 CLI
 
 发布时 `bump_version.py` 会自动运行环境版本对账；若本地 `.venv` 的 installed 版本
 与源码新版本不符会终止发布。正式发布前应确保 `artifacts/` 的产物版本
-== 当前版本（构建脚本会对 `omnicrawl.__version__` / `pyproject.toml` / installed
+== 当前版本（构建脚本会对 `omnicrawler.__version__` / `pyproject.toml` / installed
 元数据做三重一致校验，不一致即失败）。
 
 ### 便携包构建
@@ -364,7 +366,7 @@ pre-commit run --all-files
 ### 项目结构（v0.9.1）
 
 ```
-src/omnicrawl/
+src/omnicrawler/
 ├── __init__.py, __main__.py     # 包入口（含旧路径兼容重定向）
 ├── cli/                         # CLI 入口 (_main.py 参数 + _handlers.py 分发)
 ├── core/                        # 配置、异常、迁移、站点分类器、编码、站点别名
@@ -422,12 +424,12 @@ src/omnicrawl/
 ### 添加新 CLI 命令
 
 ```python
-# src/omnicrawl/cli/_main.py                # 参数定义
+# src/omnicrawler/cli/_main.py                # 参数定义
 my_cmd = sub.add_parser("my-command", help="命令描述")
 my_cmd.add_argument("--flag")
 
-# src/omnicrawl/cli/_handlers.py             # 执行逻辑
-from omnicrawl.cli._handlers import _register
+# src/omnicrawler/cli/_handlers.py             # 执行逻辑
+from omnicrawler.cli._handlers import _register
 
 @_register("my-command")
 def _handle_my_command(args: argparse.Namespace) -> None:

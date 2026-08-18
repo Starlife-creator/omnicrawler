@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.document_ir import DOCUMENT_PARSERS, DocumentIR, parse_document, sniff_document_format
+from omnicrawler.document_ir import DOCUMENT_PARSERS, DocumentIR, parse_document, sniff_document_format
 
 
 # ── 注册表 ───────────────────────────────────────────────

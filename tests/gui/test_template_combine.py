@@ -7,7 +7,7 @@ import yaml
 
 pytest.importorskip("ruamel.yaml")
 
-from omnicrawl.gui.core.template_loader import TemplateLoader
+from omnicrawler.gui.core.template_loader import TemplateLoader
 
 
 def _write_template(dir_path: Path, name: str, payload: dict) -> None:

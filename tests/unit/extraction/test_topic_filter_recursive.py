@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from omnicrawl.extraction.topic_filter import evaluate_topic, filter_records
+from omnicrawler.extraction.topic_filter import evaluate_topic, filter_records
 
 
 def test_nested_list_field_matches() -> None:

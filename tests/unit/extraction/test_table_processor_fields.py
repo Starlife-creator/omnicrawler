@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.extraction.extractors import TableProcessor
+from omnicrawler.core.config import load_config
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.extraction.extractors import TableProcessor
 
 
 def _config(tmp_path: Path, *, fields: dict | None = None) -> Path:

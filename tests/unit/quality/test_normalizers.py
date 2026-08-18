@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import json
 
-from omnicrawl.core.models import ExtractedRecord
-from omnicrawl.quality.normalizers import (
+from omnicrawler.core.models import ExtractedRecord
+from omnicrawler.quality.normalizers import (
     NormalizePolicy,
     infer_column_type,
     normalize_cell,
@@ -194,8 +194,8 @@ def test_pipeline_normalizes_extracted_values(tmp_path) -> None:  # noqa: ANN001
 
     import yaml
 
-    from omnicrawl.core.config import load_config
-    from omnicrawl.pipeline import Pipeline
+    from omnicrawler.core.config import load_config
+    from omnicrawler.pipeline import Pipeline
 
     html = "<html><body><span class='price'>¥1,299.00</span></body></html>".encode()
 
@@ -241,8 +241,8 @@ def test_pipeline_normalize_disabled_keeps_raw(tmp_path) -> None:  # noqa: ANN00
 
     import yaml
 
-    from omnicrawl.core.config import load_config
-    from omnicrawl.pipeline import Pipeline
+    from omnicrawler.core.config import load_config
+    from omnicrawler.pipeline import Pipeline
 
     html = "<html><body><span class='price'>¥1,299.00</span></body></html>".encode()
 
@@ -286,7 +286,7 @@ def test_pipeline_normalize_disabled_keeps_raw(tmp_path) -> None:  # noqa: ANN00
 
 
 def test_public_parse_money() -> None:
-    from omnicrawl.quality.normalizers import parse_money
+    from omnicrawler.quality.normalizers import parse_money
 
     assert parse_money("¥1,299 元") == "1299"
     assert parse_money("12.5万") == "125000"
@@ -295,7 +295,7 @@ def test_public_parse_money() -> None:
 
 
 def test_public_parse_time() -> None:
-    from omnicrawl.quality.normalizers import parse_time
+    from omnicrawler.quality.normalizers import parse_time
 
     assert parse_time("2026年8月13日") == "2026-08-13"
     assert parse_time("n/a") == "n/a"
@@ -303,7 +303,7 @@ def test_public_parse_time() -> None:
 
 
 def test_public_parse_number() -> None:
-    from omnicrawl.quality.normalizers import parse_number
+    from omnicrawler.quality.normalizers import parse_number
 
     assert parse_number("42") == "42"
     assert parse_number("1.50") == "1.5"
@@ -312,7 +312,7 @@ def test_public_parse_number() -> None:
 
 
 def test_public_trim_and_clean_html() -> None:
-    from omnicrawl.quality.normalizers import clean_html, trim
+    from omnicrawler.quality.normalizers import clean_html, trim
 
     assert trim("  x \n") == "x"
     assert trim(123) == 123
@@ -321,7 +321,7 @@ def test_public_trim_and_clean_html() -> None:
 
 
 def test_public_regex_extract() -> None:
-    from omnicrawl.quality.normalizers import regex_extract
+    from omnicrawler.quality.normalizers import regex_extract
 
     assert regex_extract("abc-123", r"-(\d+)") == "123"
     assert regex_extract("abc", r"-(\d+)") == "abc"  # 未命中返回原值
@@ -329,7 +329,7 @@ def test_public_regex_extract() -> None:
 
 
 def test_public_coalesce_and_concat() -> None:
-    from omnicrawl.quality.normalizers import coalesce, concat
+    from omnicrawler.quality.normalizers import coalesce, concat
 
     assert coalesce(None, "", "  ", "x") == "x"
     assert coalesce(None, "") is None

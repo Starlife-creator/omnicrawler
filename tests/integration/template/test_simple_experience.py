@@ -5,12 +5,12 @@ import zipfile
 
 import pytest
 
-from omnicrawl.fetching.action_recorder import ActionSequence, ApiCandidate
-from omnicrawl.quality.diagnostic_experience import create_redacted_support_bundle, diagnose
-from omnicrawl.services.natural_language_task import compile_natural_language
-from omnicrawl.services.offline_demo import create_demo_workspace
-from omnicrawl.services.ux_service import advanced_rule_summary, draft_quick_task
-from omnicrawl.templates.template_application import apply_template
+from omnicrawler.fetching.action_recorder import ActionSequence, ApiCandidate
+from omnicrawler.quality.diagnostic_experience import create_redacted_support_bundle, diagnose
+from omnicrawler.services.natural_language_task import compile_natural_language
+from omnicrawler.services.offline_demo import create_demo_workspace
+from omnicrawler.services.ux_service import advanced_rule_summary, draft_quick_task
+from omnicrawler.templates.template_application import apply_template
 
 
 @pytest.mark.parametrize(
@@ -95,7 +95,7 @@ def test_home_exposes_low_barrier_actions(monkeypatch):
     pytest.importorskip("PyQt6", reason="home-page UI test requires optional PyQt6")
     from PyQt6.QtWidgets import QApplication, QPushButton
 
-    from omnicrawl.gui.home import HomePage
+    from omnicrawler.gui.home import HomePage
 
     app = QApplication.instance() or QApplication([])
     home = HomePage()
@@ -151,7 +151,7 @@ def test_apply_template_restores_safe_http_baseline():
 
 def test_compose_recipe_restores_safe_http_baseline():
     """B11-007：配方不得把 http 安全块翻转到宽松方向。"""
-    from omnicrawl.templates.recipe_engine import compose_recipe
+    from omnicrawler.templates.recipe_engine import compose_recipe
 
     current = {"http": {"respect_robots": True, "verify_tls": True}}
     recipe = {"http": {"respect_robots": False, "verify_tls": False}, "outputs": {"xlsx": True}}
@@ -165,8 +165,8 @@ def test_validate_template_rejects_security_overrides(tmp_path):
     """B11-006：validate_template 必须拒绝翻转安全键的模板（fail-closed）。"""
     import yaml
 
-    from omnicrawl.templates.template_catalog import TemplateCatalog
-    from omnicrawl.templates.template_health import validate_template
+    from omnicrawler.templates.template_catalog import TemplateCatalog
+    from omnicrawler.templates.template_health import validate_template
 
     builtin = tmp_path / "builtin"
     builtin.mkdir()

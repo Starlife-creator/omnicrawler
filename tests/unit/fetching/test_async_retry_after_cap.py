@@ -13,11 +13,11 @@ pytest.importorskip("httpx")
 
 import httpx
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.errors import PermanentFetchError
-from omnicrawl.core.models import CrawlRequest
-from omnicrawl.fetching.async_fetcher import HTTPXAsyncFetcher
-from omnicrawl.fetching.retry import retry_after_seconds
+from omnicrawler.core.config import load_config
+from omnicrawler.core.errors import PermanentFetchError
+from omnicrawler.core.models import CrawlRequest
+from omnicrawler.fetching.async_fetcher import HTTPXAsyncFetcher
+from omnicrawler.fetching.retry import retry_after_seconds
 
 
 def _config(tmp_path: Path) -> Path:
@@ -67,7 +67,7 @@ class _Client:
 def _fetcher(tmp_path: Path, *, cap: float | None = None) -> HTTPXAsyncFetcher:
     path = _config(tmp_path)
     if cap is not None:
-        from omnicrawl.core.config import load_config as load
+        from omnicrawler.core.config import load_config as load
 
         config = load(path)
         config.raw["http"]["retry_after_cap_seconds"] = cap
@@ -84,7 +84,7 @@ def _fetcher(tmp_path: Path, *, cap: float | None = None) -> HTTPXAsyncFetcher:
 
 
 def test_retry_after_capped_at_60(monkeypatch, tmp_path: Path) -> None:
-    from omnicrawl.fetching import async_fetcher as module
+    from omnicrawler.fetching import async_fetcher as module
 
     sleeps: list[float] = []
 
@@ -99,7 +99,7 @@ def test_retry_after_capped_at_60(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_retry_after_within_cap_untouched(monkeypatch, tmp_path: Path) -> None:
-    from omnicrawl.fetching import async_fetcher as module
+    from omnicrawler.fetching import async_fetcher as module
 
     sleeps: list[float] = []
 
@@ -114,7 +114,7 @@ def test_retry_after_within_cap_untouched(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_retry_after_custom_cap(monkeypatch, tmp_path: Path) -> None:
-    from omnicrawl.fetching import async_fetcher as module
+    from omnicrawler.fetching import async_fetcher as module
 
     sleeps: list[float] = []
 

@@ -8,8 +8,8 @@ import pytest
 
 pytest.importorskip("cryptography")
 
-from omnicrawl.plugins import market_client
-from omnicrawl.plugins.plugins import Registry, load_local_plugins
+from omnicrawler.plugins import market_client
+from omnicrawler.plugins.plugins import Registry, load_local_plugins
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TRUST = str(REPO_ROOT / "configs" / "plugin_trust.pub.pem")
@@ -88,7 +88,7 @@ def test_download_template_and_verify(tmp_path: Path) -> None:
     import hashlib
     import json
 
-    from omnicrawl.plugins import signing
+    from omnicrawler.plugins import signing
 
     private_pem, public_pem = signing.generate_keypair()
     trust = tmp_path / "trust.pub.pem"
@@ -181,8 +181,8 @@ def test_directory_loading_recursive(tmp_path: Path) -> None:
 
 def test_remote_fetch_without_egress_is_blocked() -> None:
     """远程资源在缺少 egress 时 fail-closed 拒绝（不裸 urlopen 出网）。"""
-    from omnicrawl.core.errors import PolicyBlockedError
-    from omnicrawl.plugins.market_client import _read
+    from omnicrawler.core.errors import PolicyBlockedError
+    from omnicrawler.plugins.market_client import _read
 
     with pytest.raises(PolicyBlockedError, match="缺少出口策略"):
         _read("https://example.com/catalog.json")
@@ -190,7 +190,7 @@ def test_remote_fetch_without_egress_is_blocked() -> None:
 
 def test_local_fetch_still_works_without_egress(tmp_path: Path) -> None:
     """本地文件读取不受影响（无网络出口）。"""
-    from omnicrawl.plugins.market_client import _read
+    from omnicrawler.plugins.market_client import _read
 
     f = tmp_path / "local.json"
     f.write_text("{}", encoding="utf-8")

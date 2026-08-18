@@ -16,8 +16,8 @@ def test_five_step_gui_template_library_and_rebuild_start_offscreen(monkeypatch)
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PyQt6.QtWidgets import QApplication
 
-    from omnicrawl.gui.main import MainWindow, TemplateLibraryDialog
-    from omnicrawl.gui.views.task_canvas import TaskCanvas
+    from omnicrawler.gui.main import MainWindow, TemplateLibraryDialog
+    from omnicrawler.gui.views.task_canvas import TaskCanvas
 
     monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
     app = QApplication.instance() or QApplication([])
@@ -46,7 +46,7 @@ def test_toast_automatically_removes_itself_after_its_duration(monkeypatch):
     from PyQt6.QtTest import QTest
     from PyQt6.QtWidgets import QApplication, QMainWindow
 
-    from omnicrawl.gui.widgets.toast import ToastOverlay
+    from omnicrawler.gui.widgets.toast import ToastOverlay
 
     app = QApplication.instance() or QApplication([])
     window = QMainWindow()
@@ -79,7 +79,7 @@ def test_window_defers_close_until_auxiliary_thread_stops(monkeypatch):
     from PyQt6.QtTest import QTest
     from PyQt6.QtWidgets import QApplication
 
-    from omnicrawl.gui.main import MainWindow
+    from omnicrawler.gui.main import MainWindow
 
     monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
     app = QApplication.instance() or QApplication([])
@@ -99,7 +99,7 @@ def test_window_defers_close_until_auxiliary_thread_stops(monkeypatch):
 
 
 def test_export_thread_reports_progress_periodically_not_for_every_row(tmp_path, monkeypatch):
-    from omnicrawl.gui.views.result_table import ExportThread
+    from omnicrawler.gui.views.result_table import ExportThread
 
     source = tmp_path / "records.csv"
     source.write_text("name\n" + "item\n" * 10_000, encoding="utf-8")
@@ -135,7 +135,7 @@ def test_export_thread_reports_progress_periodically_not_for_every_row(tmp_path,
 
 def test_export_thread_xlsx_escapes_formula_injection(tmp_path, monkeypatch):
     """B10 result_table：XLSX 单元格值必须以 excel_safe 转义，防 CWE-1236。"""
-    from omnicrawl.gui.views.result_table import ExportThread
+    from omnicrawler.gui.views.result_table import ExportThread
 
     source = tmp_path / "records.csv"
     source.write_text("name\n=SUM(A1:A2)\nplain\n", encoding="utf-8")

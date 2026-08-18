@@ -15,13 +15,13 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.config import load_config, validate_config
-from omnicrawl.core.errors import (
+from omnicrawler.core.config import load_config, validate_config
+from omnicrawler.core.errors import (
     ConfigParseError,
     LoginFailedError,
     describe_error,
 )
-from omnicrawl.core.utils import expand_env, expand_env_checked
+from omnicrawler.core.utils import expand_env, expand_env_checked
 
 # ---------- ② YAML 语法错误友好包装 ----------
 
@@ -69,7 +69,7 @@ def test_s212_validation_errors_multiline_numbered(tmp_path: Path) -> None:
 
 
 def test_s212_english_error_messages_are_chinese(tmp_path: Path) -> None:
-    from omnicrawl.core.config import DEFAULTS, AppConfig, deep_merge
+    from omnicrawler.core.config import DEFAULTS, AppConfig, deep_merge
 
     raw = deep_merge(
         DEFAULTS,
@@ -186,7 +186,7 @@ def test_s212_login_failed_error_is_reachable() -> None:
 def test_s212_benchmark_help_shows_single_percent_sign() -> None:
     import argparse
 
-    from omnicrawl.cli._main import build_parser
+    from omnicrawler.cli._main import build_parser
 
     parser = build_parser()
     texts = [parser.format_help()]

@@ -9,8 +9,8 @@ import pytest
 
 pytest.importorskip("cryptography")
 
-from omnicrawl.core.secrets_store import SecretsStore
-from omnicrawl.plugins.identity import (
+from omnicrawler.core.secrets_store import SecretsStore
+from omnicrawler.plugins.identity import (
     CreatorIdentity,
     IdentityError,
     IdentityStore,

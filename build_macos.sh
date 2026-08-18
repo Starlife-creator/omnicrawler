@@ -110,14 +110,14 @@ fi
 "$BUILDER_PYTHON" -m pip install -e "$PROJECT_ROOT[$EXTRAS]" pyinstaller==6.15.0
 
 # ---- 三重版本校验 -----------------------------------------------------------
-APP_VERSION="$("$BUILDER_PYTHON" -c 'from omnicrawl import __version__; print(__version__)')"
+APP_VERSION="$("$BUILDER_PYTHON" -c 'from omnicrawler import __version__; print(__version__)')"
 PYPROJECT_VERSION="$("$BUILDER_PYTHON" -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
-INSTALLED_VERSION="$("$BUILDER_PYTHON" -c 'import importlib.metadata; print(importlib.metadata.version("omnicrawl-platform"))')"
+INSTALLED_VERSION="$("$BUILDER_PYTHON" -c 'import importlib.metadata; print(importlib.metadata.version("omnicrawler-platform"))')"
 if [[ -z "$APP_VERSION" || ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+ ]]; then
   echo "Invalid application version: '$APP_VERSION'" >&2; exit 1
 fi
 if [[ "$APP_VERSION" != "$PYPROJECT_VERSION" ]]; then
-  echo "版本不一致: pyproject=$PYPROJECT_VERSION vs omnicrawl.__version__=$APP_VERSION" >&2; exit 1
+  echo "版本不一致: pyproject=$PYPROJECT_VERSION vs omnicrawler.__version__=$APP_VERSION" >&2; exit 1
 fi
 if [[ "$INSTALLED_VERSION" != "$APP_VERSION" ]]; then
   echo "版本元数据漂移: installed=$INSTALLED_VERSION vs src=$APP_VERSION —— 需重跑 pip install -e ." >&2; exit 1
@@ -179,7 +179,7 @@ APP_BUNDLE="$BINARY_ROOT/OmniCrawler.app"
 if [[ ! -d "$APP_BUNDLE" ]]; then
   echo "PyInstaller .app bundle not found: $APP_BUNDLE" >&2; exit 1
 fi
-for required in Contents/MacOS/OmniCrawler Contents/MacOS/omnicrawl Contents/MacOS/omnicrawl-worker; do
+for required in Contents/MacOS/OmniCrawler Contents/MacOS/omnicrawler-cli Contents/MacOS/omnicrawler-worker; do
   if [[ ! -e "$APP_BUNDLE/$required" ]]; then
     echo "PyInstaller output is incomplete: $required" >&2; exit 1
   fi
@@ -237,9 +237,9 @@ done
 # ---- 产物级测试（SBOM + CLI 冒烟 + portable 冒烟 + 完整性清单）--------------
 # 与 Windows 构建对齐：落盘 CAPABILITIES.json / RELEASE-INFO.json 并重刷清单
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/generate_sbom.py" --output "$RELEASE_ROOT/SBOM.json"
-"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawl" --version
-"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawl" templates validate
-"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawl" capabilities --verify-imports --portable-paths > "$RELEASE_ROOT/CAPABILITIES.json"
+"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli" --version
+"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli" templates validate
+"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli" capabilities --verify-imports --portable-paths > "$RELEASE_ROOT/CAPABILITIES.json"
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/generate_release_info.py" \
     --project-root "$PROJECT_ROOT" --release-root "$RELEASE_ROOT" --edition "$EDITION"
 # P4-3：portable 冒烟（浏览器/原生运行时）。其 cwd=releaseRoot 会写缓存，
@@ -262,7 +262,7 @@ fi
 # 完整性清单：在新增 CAPABILITIES.json / RELEASE-INFO.json 之后生成，
 # 使清单覆盖这两个机器可读文件（与 Windows 同序：先加文件再刷清单）。
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/create_runtime_manifest.py" --release-root "$RELEASE_ROOT"
-"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawl" runtime-verify --root "$RELEASE_ROOT"
+"$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli" runtime-verify --root "$RELEASE_ROOT"
 # P4-1：Windows 对 zip 跑 check_release_integrity --portable-zip --portable-deep；
 # macOS dmg 是磁盘镜像（纯 Python 无法读内部），深校验由上方 runtime-verify 兜底；
 # tar.gz 回退产物跑容器级深校验（与 Linux 对齐）。
@@ -291,4 +291,4 @@ else
 fi
 
 echo "Build staging: $RELEASE_ROOT"
-echo "CLI: $RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawl --help"
+echo "CLI: $RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli --help"

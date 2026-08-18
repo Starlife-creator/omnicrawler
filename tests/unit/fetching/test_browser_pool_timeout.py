@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.models import CrawlRequest
-from omnicrawl.fetching.browser_fetcher import PlaywrightPool, _PoolTask
+from omnicrawler.core.config import load_config
+from omnicrawler.core.models import CrawlRequest
+from omnicrawler.fetching.browser_fetcher import PlaywrightPool, _PoolTask
 
 
 def _config(tmp_path: Path) -> Path:

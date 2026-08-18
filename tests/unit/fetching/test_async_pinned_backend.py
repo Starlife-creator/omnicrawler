@@ -5,9 +5,9 @@ from pathlib import Path
 
 import yaml
 
-from omnicrawl.core.config import AppConfig
-from omnicrawl.fetching.async_fetcher import _PinnedAsyncNetworkBackend
-from omnicrawl.security.policy import NetworkTargetPolicy
+from omnicrawler.core.config import AppConfig
+from omnicrawler.fetching.async_fetcher import _PinnedAsyncNetworkBackend
+from omnicrawler.security.policy import NetworkTargetPolicy
 
 
 class _FakeInner:

@@ -169,11 +169,11 @@ storage:
     backend: local        # local 或 s3
     local_directory: .
     bucket: ""
-    prefix: omnicrawl
+    prefix: omnicrawler
   records:
     backends:
-      - {kind: postgresql, dsn: "secret://postgres_dsn", table: omnicrawl_records}
-      - {kind: opensearch, hosts: [https://search.example], index: omnicrawl}
+      - {kind: postgresql, dsn: "secret://postgres_dsn", table: omnicrawler_records}
+      - {kind: opensearch, hosts: [https://search.example], index: omnicrawler}
     fail_open: true
     max_errors: 200
   retention:
@@ -215,7 +215,7 @@ egress:
 
 默认使用 Playwright 对浏览器每个子请求执行出口检查。Selenium 在当前兼容矩阵中不能稳定证明最终
 子请求拦截，因此默认拒绝启动；`allow_unintercepted_selenium` 是显式降级边界，会进入审计，
-不应在不可信目标上启用。用 `omnicrawl security-report -c <config>` 查看访问边界。
+不应在不可信目标上启用。用 `omnicrawler security-report -c <config>` 查看访问边界。
 
 ## plugins
 
@@ -234,4 +234,4 @@ plugins:
 
 - `${NAME}` 与 `${NAME:-default}` 在加载配置时展开。
 - `secret://name` 只解析完整字符串，不支持拼接。
-- 2.x/3.x 配置会在内存中迁移并产生迁移说明；用 `omnicrawl migrate` 输出新文件，原文件不会覆盖。
+- 2.x/3.x 配置会在内存中迁移并产生迁移说明；用 `omnicrawler migrate` 输出新文件，原文件不会覆盖。

@@ -94,7 +94,7 @@ PY_COMPILE_OK: 是（全部 26 个目标文件 `python -m py_compile` 通过）
 
 问题：XPath 字符串配上 `selector_type="css"` 后，`SelectorTestThread` 里 `CSSSelector(...)` 抛解析错误或匹配不到，提取链路同样失效；`fallback_xpath` 与 `selector` 相同也无法兜底。用户按"右键点选"生成字段后试跑为 0 命中。
 
-建议：导入时统一 `selector=spec["selector"]`、`selector_type="xpath"`、`fallback_xpath=None`；`field_converter` 已提供 `to_omnicrawl_fields()`，直接复用其产物，避免手拼字段。
+建议：导入时统一 `selector=spec["selector"]`、`selector_type="xpath"`、`fallback_xpath=None`；`field_converter` 已提供 `to_omnicrawler_fields()`，直接复用其产物，避免手拼字段。
 
 ### [high] step3_fields.py:715 - 高级可视化模式单次读取选择结果，未完成选择静默丢失
 

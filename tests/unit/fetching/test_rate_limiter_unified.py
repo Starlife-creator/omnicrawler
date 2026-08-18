@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.models import CrawlRequest
-from omnicrawl.fetching.async_fetcher import HTTPXAsyncFetcher
+from omnicrawler.core.config import load_config
+from omnicrawler.core.models import CrawlRequest
+from omnicrawler.fetching.async_fetcher import HTTPXAsyncFetcher
 
 
 def _config(tmp_path: Path) -> Path:

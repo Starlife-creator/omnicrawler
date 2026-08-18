@@ -13,8 +13,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from omnicrawl.pdfx import ocr
-from omnicrawl.pdfx.ocr import normalize_ocr_lang
+from omnicrawler.pdfx import ocr
+from omnicrawler.pdfx.ocr import normalize_ocr_lang
 
 # -- S2.3.1 OCR 降级 --------------------------------------------------------
 
@@ -140,7 +140,7 @@ def _pdf_config(tmp_path: Path) -> Path:
 
 
 def test_s234_ocr_stage_failure_is_isolated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    from omnicrawl.pdfx import service
+    from omnicrawler.pdfx import service
 
     monkeypatch.setattr(service, "ocr_stage", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("OCR 崩溃")))
     monkeypatch.setattr(service, "ingest", lambda *_a, **_k: {"new": 0})
@@ -153,7 +153,7 @@ def test_s234_ocr_stage_failure_is_isolated(monkeypatch: pytest.MonkeyPatch, tmp
 
 
 def test_s234_text_export_failure_is_isolated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    from omnicrawl.pdfx import service
+    from omnicrawler.pdfx import service
 
     monkeypatch.setattr(service, "ingest", lambda *_a, **_k: {"new": 0})
     monkeypatch.setattr(service, "parse_stage", lambda *_a, **_k: {"parsed": 0})
@@ -166,7 +166,7 @@ def test_s234_text_export_failure_is_isolated(monkeypatch: pytest.MonkeyPatch, t
 
 def test_s234_collect_failures_nested() -> None:
     pytest.importorskip("PyQt6")
-    from omnicrawl.gui.views.pdf_workbench import _collect_failures
+    from omnicrawler.gui.views.pdf_workbench import _collect_failures
 
     assert _collect_failures({}) == []
     assert _collect_failures({"status": {"documents": {}}}) == []
@@ -188,7 +188,7 @@ def test_s234_collect_failures_nested() -> None:
 
 
 def test_s235_pdf_input_dir_default_and_custom(tmp_path: Path) -> None:
-    from omnicrawl.core.config import load_config
+    from omnicrawler.core.config import load_config
 
     task_path = tmp_path / "task.yaml"
     task_path.write_text(
@@ -197,7 +197,7 @@ def test_s235_pdf_input_dir_default_and_custom(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     config = load_config(task_path)
-    from omnicrawl.pipeline_ops.pdf_integration import _pdf_input_dir
+    from omnicrawler.pipeline_ops.pdf_integration import _pdf_input_dir
 
     assert _pdf_input_dir(config) == (config.workspace / "artifacts" / "pdf").resolve()
     config.raw["storage"] = {"objects": {"local_directory": "pool"}}
@@ -205,7 +205,7 @@ def test_s235_pdf_input_dir_default_and_custom(tmp_path: Path) -> None:
 
 
 def test_s235_pdf_scan_recursive(tmp_path: Path) -> None:
-    from omnicrawl.pipeline_ops.pdf_integration import _pdf_input_dir
+    from omnicrawler.pipeline_ops.pdf_integration import _pdf_input_dir
 
     root = _pdf_input_dir(
         SimpleNamespace(
@@ -225,8 +225,8 @@ def test_s235_pdf_scan_recursive(tmp_path: Path) -> None:
 
 
 def test_s2367_boolean_entity_relationship_types_accepted(tmp_path: Path) -> None:
-    from omnicrawl.pdfx.config import load_config
-    from omnicrawl.pdfx.normalization import normalize_value
+    from omnicrawler.pdfx.config import load_config
+    from omnicrawler.pdfx.normalization import normalize_value
 
     config_path = _pdf_config(tmp_path)
     text = config_path.read_text(encoding="utf-8")
@@ -258,9 +258,9 @@ def test_s2367_boolean_entity_relationship_types_accepted(tmp_path: Path) -> Non
 def test_s232_llm_client_failure_degrades_to_rules(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from omnicrawl.pdfx import extraction
-    from omnicrawl.pdfx.config import load_config
-    from omnicrawl.pdfx.database import Database
+    from omnicrawler.pdfx import extraction
+    from omnicrawler.pdfx.config import load_config
+    from omnicrawler.pdfx.database import Database
 
     config = load_config(_pdf_config(tmp_path))
     db = Database(config.database)

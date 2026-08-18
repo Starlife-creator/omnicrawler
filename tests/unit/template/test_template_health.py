@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.templates.template_catalog import bundled_template_catalog
-from omnicrawl.templates.template_health import StructureSnapshot, TemplatePack, validate_catalog
+from omnicrawler.templates.template_catalog import bundled_template_catalog
+from omnicrawler.templates.template_health import StructureSnapshot, TemplatePack, validate_catalog
 
 
 def test_new_catalog_templates_pass_offline_health_checks() -> None:

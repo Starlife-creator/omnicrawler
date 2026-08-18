@@ -2,7 +2,7 @@
 
 ## 先用现有能力
 
-1. `omnicrawl templates inspect <url>` 探测内容类型、CMS、JSON-LD、动态壳和 API 线索。
+1. `omnicrawler templates inspect <url>` 探测内容类型、CMS、JSON-LD、动态壳和 API 线索。
 2. 在 GUI 模板库搜索行业、协议或 CMS。
 3. 用小样本配置 CSS/XPath/JSON path 字段并核对证据。
 4. 只有分页游标、签名、数据格式或导出确实特殊时才写插件。
@@ -28,13 +28,13 @@ template:
   verified_at: '2026-07-18'
 ```
 
-模板必须校验：`omnicrawl templates validate --include-legacy`。不要在模板保存 Cookie、Token、个人数据或抓取快照。
+模板必须校验：`omnicrawler templates validate --include-legacy`。不要在模板保存 Cookie、Token、个人数据或抓取快照。
 
 ## 最小 source 插件
 
 ```python
-from omnicrawl.models import CrawlRequest
-from omnicrawl.sources import GenericSource
+from omnicrawler.models import CrawlRequest
+from omnicrawler.sources import GenericSource
 
 PLUGIN_METADATA = {
     "name": "example-site",

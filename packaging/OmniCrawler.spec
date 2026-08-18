@@ -12,15 +12,15 @@ packaging_root = project_root / "packaging"
 sys.path.insert(0, str(src_root))
 
 datas = [
-    (str(src_root / "omnicrawl" / "templates"), "omnicrawl/templates"),
-    (str(src_root / "omnicrawl" / "gui" / "templates"), "omnicrawl/gui/templates"),
-    (str(src_root / "omnicrawl" / "gui" / "help"), "omnicrawl/gui/help"),
-    (str(src_root / "omnicrawl" / "fetching" / "stealth.min.js"), "omnicrawl/fetching"),
-    # 语言包：i18n._find_localedir 沿包父链找到 omnicrawl/locale（S42 打包登记）
-    (str(project_root / "locale"), "omnicrawl/locale"),
+    (str(src_root / "omnicrawler" / "templates"), "omnicrawler/templates"),
+    (str(src_root / "omnicrawler" / "gui" / "templates"), "omnicrawler/gui/templates"),
+    (str(src_root / "omnicrawler" / "gui" / "help"), "omnicrawler/gui/help"),
+    (str(src_root / "omnicrawler" / "fetching" / "stealth.min.js"), "omnicrawler/fetching"),
+    # 语言包：i18n._find_localedir 沿包父链找到 omnicrawler/locale（S42 打包登记）
+    (str(project_root / "locale"), "omnicrawler/locale"),
 ]
 binaries = []
-hiddenimports = collect_submodules("omnicrawl")
+hiddenimports = collect_submodules("omnicrawler")
 
 # PaddleOCR/PaddleX and plugin-based packages perform runtime imports that a
 # static scan cannot completely see. Their model weights stay outside the EXE
@@ -91,12 +91,15 @@ gui_exe = EXE(
 
 cli_analysis = Analysis([str(packaging_root / "cli_entry.py")], **common)
 cli_pyz = PYZ(cli_analysis.pure)
+# CLI exe 名不能用 omnicrawler（与 GUI OmniCrawler.exe 在 Windows/macOS 大小写
+# 不敏感文件系统上冲突，COLLECT 里后写者覆盖先写者 → GUI 丢失，v0.9.1 CI 实测）。
+# 用 omnicrawler-cli 区分；GUI 保留品牌名 OmniCrawler.exe。
 cli_exe = EXE(
     cli_pyz,
     cli_analysis.scripts,
     [],
     exclude_binaries=True,
-    name="omnicrawl",
+    name="omnicrawler-cli",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -109,7 +112,7 @@ worker_analysis = Analysis([str(packaging_root / "worker_entry.py")], **common)
 worker_pyz = PYZ(worker_analysis.pure)
 worker_exe = EXE(
     worker_pyz, worker_analysis.scripts, [], exclude_binaries=True,
-    name="omnicrawl-worker", debug=False, bootloader_ignore_signals=False,
+    name="omnicrawler-worker", debug=False, bootloader_ignore_signals=False,
     strip=False, upx=False, console=True, disable_windowed_traceback=False,
 )
 

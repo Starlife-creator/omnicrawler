@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.config import DEFAULTS, AppConfig
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.fetching.tls_impersonator import (
+from omnicrawler.core.config import DEFAULTS, AppConfig
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.fetching.tls_impersonator import (
     DEFAULT_IMPERSONATE,
     TLSImpersonator,
     _choose_impersonate,

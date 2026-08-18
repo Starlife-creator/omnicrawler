@@ -10,13 +10,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.errors import PermanentFetchError, ResponseTooLargeError
-from omnicrawl.core.models import CrawlRequest
-from omnicrawl.fetching.async_fetcher import HTTPXAsyncFetcher
-from omnicrawl.fetching.streams import collect_sse, collect_websocket
-from omnicrawl.runtime.redis_frontier import RedisFrontier
-from omnicrawl.sources.frameworks import run_scrapy
+from omnicrawler.core.config import load_config
+from omnicrawler.core.errors import PermanentFetchError, ResponseTooLargeError
+from omnicrawler.core.models import CrawlRequest
+from omnicrawler.fetching.async_fetcher import HTTPXAsyncFetcher
+from omnicrawler.fetching.streams import collect_sse, collect_websocket
+from omnicrawler.runtime.redis_frontier import RedisFrontier
+from omnicrawler.sources.frameworks import run_scrapy
 
 
 def _config(tmp_path: Path, *, source=None, http=None):
@@ -73,7 +73,7 @@ def test_sse_collects_events_and_honors_limits(tmp_path: Path) -> None:
     )
     opener = MagicMock()
     opener.open.return_value = response
-    with patch("omnicrawl.fetching.streams.build_safe_opener", return_value=opener):
+    with patch("omnicrawler.fetching.streams.build_safe_opener", return_value=opener):
         records = collect_sse(config, CrawlRequest("https://example.org/events"))
     assert len(records) == 2
     assert records[0].data == {"event": "update", "data": "one\ntwo"}
@@ -81,7 +81,7 @@ def test_sse_collects_events_and_honors_limits(tmp_path: Path) -> None:
 
     stopped = _LineResponse([b"data: ignored\n", b"\n"])
     opener.open.return_value = stopped
-    with patch("omnicrawl.fetching.streams.build_safe_opener", return_value=opener):
+    with patch("omnicrawler.fetching.streams.build_safe_opener", return_value=opener):
         assert collect_sse(
             config, CrawlRequest("https://example.org/events"), should_continue=lambda: False
         ) == []
@@ -89,7 +89,7 @@ def test_sse_collects_events_and_honors_limits(tmp_path: Path) -> None:
     tiny = _config(tmp_path, http={"max_response_bytes": 1024})
     oversized = _LineResponse([b"data: " + (b"x" * 1100) + b"\n"])
     opener.open.return_value = oversized
-    with patch("omnicrawl.fetching.streams.build_safe_opener", return_value=opener):
+    with patch("omnicrawler.fetching.streams.build_safe_opener", return_value=opener):
         with pytest.raises(ValueError, match="SSE"):
             collect_sse(tiny, CrawlRequest("https://example.org/events"))
 
@@ -99,7 +99,7 @@ def test_sse_breaks_out_of_busy_loop_on_eof(tmp_path: Path) -> None:
     hung_up = _LineResponse([])
     opener = MagicMock()
     opener.open.return_value = hung_up
-    with patch("omnicrawl.fetching.streams.build_safe_opener", return_value=opener):
+    with patch("omnicrawler.fetching.streams.build_safe_opener", return_value=opener):
         records = collect_sse(
             _config(tmp_path, source={"max_messages": 100, "duration_seconds": 60}),
             CrawlRequest("https://example.org/events"),
@@ -112,7 +112,7 @@ def test_sse_breaks_out_of_busy_loop_on_eof(tmp_path: Path) -> None:
         [b"data: keepalive\n", b"\n", b"\n", b"\n", b"data: still-alive\n", b"\n"]
     )
     opener.open.return_value = heartbeat
-    with patch("omnicrawl.fetching.streams.build_safe_opener", return_value=opener):
+    with patch("omnicrawler.fetching.streams.build_safe_opener", return_value=opener):
         records = collect_sse(
             _config(tmp_path, source={"max_messages": 10, "duration_seconds": 5}),
             CrawlRequest("https://example.org/events"),

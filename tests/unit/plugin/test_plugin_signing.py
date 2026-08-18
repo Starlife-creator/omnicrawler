@@ -7,9 +7,9 @@ import pytest
 
 pytest.importorskip("cryptography")
 
-from omnicrawl.core.config import load_config
-from omnicrawl.plugins import signing
-from omnicrawl.plugins.plugins import Registry, load_local_plugins
+from omnicrawler.core.config import load_config
+from omnicrawler.plugins import signing
+from omnicrawler.plugins.plugins import Registry, load_local_plugins
 
 
 class SigningPrimitiveTest(unittest.TestCase):

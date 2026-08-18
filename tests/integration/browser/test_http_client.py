@@ -10,10 +10,10 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.errors import PermanentFetchError, ResponseTooLargeError
-from omnicrawl.core.models import CrawlRequest
-from omnicrawl.fetching.http_client import HTTPFetcher, build_safe_opener, encode_request_payload
+from omnicrawler.core.config import load_config
+from omnicrawler.core.errors import PermanentFetchError, ResponseTooLargeError
+from omnicrawler.core.models import CrawlRequest
+from omnicrawler.fetching.http_client import HTTPFetcher, build_safe_opener, encode_request_payload
 
 
 def _config(tmp_path: Path, *, http=None, login=None):

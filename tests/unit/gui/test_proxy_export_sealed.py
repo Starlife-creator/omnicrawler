@@ -10,8 +10,8 @@ import pytest
 
 pytest.importorskip("PyQt6")
 
-from omnicrawl.core import credentials
-from omnicrawl.gui.views.stealth_settings import _seal_proxy_list
+from omnicrawler.core import credentials
+from omnicrawler.gui.views.stealth_settings import _seal_proxy_list
 
 
 class FakeStore:
@@ -93,7 +93,7 @@ def test_s222_proxy_list_property_resolves_ref(monkeypatch: pytest.MonkeyPatch) 
     )
     from PyQt6.QtWidgets import QApplication
 
-    from omnicrawl.gui.settings import AppSettings
+    from omnicrawler.gui.settings import AppSettings
 
     QApplication.instance() or QApplication([])
     settings = AppSettings()
@@ -110,7 +110,7 @@ def test_s222_proxy_list_property_unresolvable_returns_empty(
     monkeypatch.setattr(credentials, "get_secret", raising)
     from PyQt6.QtWidgets import QApplication
 
-    from omnicrawl.gui.settings import AppSettings
+    from omnicrawler.gui.settings import AppSettings
 
     QApplication.instance() or QApplication([])
     settings = AppSettings()
@@ -121,7 +121,7 @@ def test_s222_proxy_list_property_unresolvable_returns_empty(
 def test_s222_proxy_list_property_plaintext_passthrough() -> None:
     from PyQt6.QtWidgets import QApplication
 
-    from omnicrawl.gui.settings import AppSettings
+    from omnicrawler.gui.settings import AppSettings
 
     QApplication.instance() or QApplication([])
     settings = AppSettings()

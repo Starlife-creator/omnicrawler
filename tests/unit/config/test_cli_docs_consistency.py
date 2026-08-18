@@ -2,7 +2,7 @@ from tools.check_cli_docs import check_docs, cli_contracts, documented_commands
 
 
 def test_documented_command_parser_only_reads_top_level_command():
-    assert documented_commands("omnicrawl templates list\nomnicrawl run -c task.yaml") == {"templates", "run"}
+    assert documented_commands("omnicrawler templates list\nomnicrawler run -c task.yaml") == {"templates", "run"}
 
 
 def test_checked_project_docs_only_reference_real_commands():

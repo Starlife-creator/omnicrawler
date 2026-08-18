@@ -6,14 +6,14 @@ from typing import Any
 
 import pytest
 
-from omnicrawl.core.config import DEFAULTS, AppConfig
-from omnicrawl.core.errors import (
+from omnicrawler.core.config import DEFAULTS, AppConfig
+from omnicrawler.core.errors import (
     CredentialScopeError,
     EgressBudgetExceededError,
     EgressDisabledError,
 )
-from omnicrawl.security.egress import EgressBroker
-from omnicrawl.security.security_audit import egress_audit_report
+from omnicrawler.security.egress import EgressBroker
+from omnicrawler.security.security_audit import egress_audit_report
 
 
 class _Policy:

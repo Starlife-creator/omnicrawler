@@ -28,7 +28,7 @@ v5 YAML、简单 TaskSpec、模板、操作录制与 API 候选可无损进入�
 
 ## 制品
 
-- `omnicrawl_platform-1.3.0-py3-none-any.whl`：402,988 字节；SHA-256
+- `omnicrawler_platform-1.3.0-py3-none-any.whl`：402,988 字节；SHA-256
   `87cf05cd26472d8b3a973c5fdc5fb0cd530a617032e1962c294e1645a9e3daad`
 - `omnicrawler-1.3.0-sbom.cdx.json`：34,965 字节；SHA-256
   `f7d558e3dcfe5bac5331df7fc483541f02059deca760c0333dab11c99666cfaf`

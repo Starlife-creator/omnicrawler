@@ -13,13 +13,13 @@ import pytest
 
 class TestNormalizeHost:
     def test_casefold_and_dot(self) -> None:
-        from omnicrawl.core.site_aliases import normalize_host
+        from omnicrawler.core.site_aliases import normalize_host
 
         assert normalize_host("EXAMPLE.COM.") == "example.com"
         assert normalize_host("  m.Example.COM  ") == "m.example.com"
 
     def test_empty(self) -> None:
-        from omnicrawl.core.site_aliases import normalize_host
+        from omnicrawler.core.site_aliases import normalize_host
 
         assert normalize_host("") == ""
         assert normalize_host("   ") == ""
@@ -28,7 +28,7 @@ class TestNormalizeHost:
 
 class TestSiteAliasRegistry:
     def test_basic_alias_resolves(self) -> None:
-        from omnicrawl.core.site_aliases import SiteAliasRegistry
+        from omnicrawler.core.site_aliases import SiteAliasRegistry
 
         reg = SiteAliasRegistry()
         reg.add_alias("m.example.com", "example.com")
@@ -37,7 +37,7 @@ class TestSiteAliasRegistry:
         assert reg.resolve("unknown.example.com") == "unknown.example.com"
 
     def test_has_alias_matches(self) -> None:
-        from omnicrawl.core.site_aliases import SiteAliasRegistry
+        from omnicrawler.core.site_aliases import SiteAliasRegistry
 
         reg = SiteAliasRegistry()
         reg.add_alias("m.example.com", "example.com")
@@ -46,7 +46,7 @@ class TestSiteAliasRegistry:
         assert reg.has_alias("") is False
 
     def test_environment_scoped_alias(self) -> None:
-        from omnicrawl.core.site_aliases import SiteAliasRegistry
+        from omnicrawler.core.site_aliases import SiteAliasRegistry
 
         reg = SiteAliasRegistry()
         reg.add_alias("preview.example.com", "example.com", environments={"preview", "dev"})
@@ -61,7 +61,7 @@ class TestSiteAliasRegistry:
     def test_default_environment_from_ctor_and_env(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from omnicrawl.core.site_aliases import SiteAliasRegistry
+        from omnicrawler.core.site_aliases import SiteAliasRegistry
 
         # 显式构造
         reg = SiteAliasRegistry(default_environment="dev")
@@ -79,7 +79,7 @@ class TestSiteAliasRegistry:
         assert reg2.resolve("a.stg") == "a.stg"
 
     def test_transitive_resolve(self) -> None:
-        from omnicrawl.core.site_aliases import SiteAliasRegistry
+        from omnicrawler.core.site_aliases import SiteAliasRegistry
 
         reg = SiteAliasRegistry()
         reg.add_alias("b.example.com", "a.example.com")
@@ -88,7 +88,7 @@ class TestSiteAliasRegistry:
         assert reg.resolve("c.example.com") == "a.example.com"
 
     def test_self_alias_is_ignored(self) -> None:
-        from omnicrawl.core.site_aliases import SiteAliasRegistry
+        from omnicrawler.core.site_aliases import SiteAliasRegistry
 
         reg = SiteAliasRegistry()
         reg.add_alias("example.com", "example.com")
@@ -100,7 +100,7 @@ class TestSiteAliasRegistry:
 
     def test_add_alias_automatically_collapses_transitive_canonicals(self) -> None:
         """add_alias 在写入时已把 canonical 归并为 terminal，因此 API 层面不会产生环。"""
-        from omnicrawl.core.site_aliases import SiteAliasRegistry
+        from omnicrawler.core.site_aliases import SiteAliasRegistry
 
         reg = SiteAliasRegistry()
         reg.add_alias("a", "b")
@@ -115,20 +115,20 @@ class TestSiteAliasRegistry:
 
     def test_cycle_detected_on_resolve_after_manual_tamper(self) -> None:
         """通过底层 dict 手工构造循环，验证 resolve 侧兜底也会抛。"""
-        from omnicrawl.core.site_aliases import SiteAliasRegistry
+        from omnicrawler.core.site_aliases import SiteAliasRegistry
 
         reg = SiteAliasRegistry()
         reg.add_alias("a", "b")
         reg.add_alias("b", "c")
         # 手工注入（内部私有，仅为了验证 resolve 的防御分支）
-        from omnicrawl.core.site_aliases import _AliasEntry
+        from omnicrawler.core.site_aliases import _AliasEntry
 
         reg._aliases["c"] = _AliasEntry("a")  # type: ignore[assignment]
         with pytest.raises(ValueError, match="循环"):
             reg.resolve("a")
 
     def test_aliases_for_reverse_query(self) -> None:
-        from omnicrawl.core.site_aliases import SiteAliasRegistry
+        from omnicrawler.core.site_aliases import SiteAliasRegistry
 
         reg = SiteAliasRegistry()
         reg.add_alias("m.example.com", "example.com")
@@ -150,7 +150,7 @@ class TestSiteAliasRegistry:
         assert reg2.aliases_for("a") == ["b", "c"]
 
     def test_clear_and_default_singleton_is_isolated(self) -> None:
-        from omnicrawl.core.site_aliases import SiteAliasRegistry
+        from omnicrawler.core.site_aliases import SiteAliasRegistry
 
         reg1 = SiteAliasRegistry()
         reg1.add_alias("a", "b")
@@ -162,7 +162,7 @@ class TestSiteAliasRegistry:
         assert single is not reg1
 
     def test_merge_env_sets_when_same_alias_registered_twice(self) -> None:
-        from omnicrawl.core.site_aliases import SiteAliasRegistry
+        from omnicrawler.core.site_aliases import SiteAliasRegistry
 
         reg = SiteAliasRegistry()
         reg.add_alias("mirror.example.com", "example.com", environments={"dev"})
@@ -177,7 +177,7 @@ class TestSiteAliasRegistry:
 
 class TestDefaultRegistryLazy:
     def test_default_returns_same_instance(self) -> None:
-        from omnicrawl.core.site_aliases import SiteAliasRegistry
+        from omnicrawler.core.site_aliases import SiteAliasRegistry
 
         a = SiteAliasRegistry.default()
         b = SiteAliasRegistry.default()
@@ -209,8 +209,8 @@ class TestMetricsConsumer:
     def test_host_collapses_to_canonical_in_metrics(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from omnicrawl.core.site_aliases import SiteAliasRegistry
-        from omnicrawl.services.metrics import RunMetrics
+        from omnicrawler.core.site_aliases import SiteAliasRegistry
+        from omnicrawler.services.metrics import RunMetrics
 
         reg = SiteAliasRegistry()
         reg.add_alias("m.shop.example.com", "shop.example.com")
@@ -228,7 +228,7 @@ class TestMetricsConsumer:
         snapshot = metrics.snapshot()
         by_host: dict[str, int] = {}
         for entry in snapshot["counters"]:
-            if entry["name"] != "omnicrawl_requests_total":
+            if entry["name"] != "omnicrawler_requests_total":
                 continue
             host = entry["labels"].get("host", "")
             by_host[host] = by_host.get(host, 0) + entry["value"]
@@ -240,7 +240,7 @@ class TestMetricsConsumer:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """解析异常不会冒泡到抓取主流程（防御性编程）。"""
-        from omnicrawl.services.metrics import RunMetrics
+        from omnicrawler.services.metrics import RunMetrics
 
         class Evil:
             @staticmethod
@@ -252,7 +252,7 @@ class TestMetricsConsumer:
 
                 return R()
 
-        monkeypatch.setattr("omnicrawl.services.metrics.SiteAliasRegistry", Evil)
+        monkeypatch.setattr("omnicrawler.services.metrics.SiteAliasRegistry", Evil)
         metrics = RunMetrics()
         r = self._make_result("https://a.example.com/", body=b"x")
         # 不抛

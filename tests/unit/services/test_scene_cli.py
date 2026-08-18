@@ -12,9 +12,9 @@ from pathlib import Path
 
 import yaml
 
-from omnicrawl.commands import scene as cmd_scene
-from omnicrawl.core.config import load_config
-from omnicrawl.state.scene_store import SceneDocument, SceneStore
+from omnicrawler.commands import scene as cmd_scene
+from omnicrawler.core.config import load_config
+from omnicrawler.state.scene_store import SceneDocument, SceneStore
 
 URL = "https://example.com/report"
 SCENE = "annual_report"

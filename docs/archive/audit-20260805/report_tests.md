@@ -2,7 +2,7 @@
 
 ## 汇总
 
-- 审查范围：`tests\` 下全部 124 个测试文件（unit / integration / gui 全部子目录），逐行通读断言与 mock 目标，并核对对应 `src\omnicrawl\` 实现。
+- 审查范围：`tests\` 下全部 124 个测试文件（unit / integration / gui 全部子目录），逐行通读断言与 mock 目标，并核对对应 `src\omnicrawler\` 实现。
 - 运行验证：
   - 124 个文件 `python -m py_compile` 全部通过（**PY_COMPILE_OK**）。
   - 使用 `.venv\Scripts\python.exe`（Python 3.13.1 + pytest 9.1.1，系统 python 3.13 无 pytest）执行 `pytest tests --collect-only -q`：**696 tests collected in 0.89s，0 errors**。
@@ -15,14 +15,14 @@
 ### [medium] tests/gui/test_help_button.py:33-34 - 断言存在恒真分支，"32x32 可点击区"验证形同虚设
 
 - 现状：`assert "setFixedSize(32, 32)" in source or "32" in source`。
-- 问题：`or "32" in source` 是恒真兜底——源码字符串只要任意位置出现 `"32"`（数字、坐标、注释均可）断言即通过，无法检测 `setFixedSize` 缺失或尺寸退化。当前源码 `src/omnicrawl/gui/widgets/help_tooltip.py:48` 确实有 `setFixedSize(32, 32)`，测试只是碰巧通过，且与第 33 行描述的"至少 32x32 可点击区"意图不符。
+- 问题：`or "32" in source` 是恒真兜底——源码字符串只要任意位置出现 `"32"`（数字、坐标、注释均可）断言即通过，无法检测 `setFixedSize` 缺失或尺寸退化。当前源码 `src/omnicrawler/gui/widgets/help_tooltip.py:48` 确实有 `setFixedSize(32, 32)`，测试只是碰巧通过，且与第 33 行描述的"至少 32x32 可点击区"意图不符。
 - 建议：删除 `or "32" in source`，仅保留 `setFixedSize(32, 32)` 存在性断言（或改为解析 `setFixedSize(\d+, \d+)` 并校验 >= 32）。
 
 ### [medium] tests/gui/test_help_button.py:18 与 tests/unit/ai/test_ai_task_designer.py:19 - sys.path 插入路径错误（指向不存在的 tests/src）
 
 - 现状：两个文件均 `sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))`。文件分别在 `tests/gui/` 与 `tests/unit/ai/`，`parents[1]` 分别为 `tests/` 与 `tests/unit/`，拼接结果是 `tests/src`、`tests/unit/src`（不存在）。
-- 问题：注释声称"从源码树导入 omnicrawl"，实际路径根本不存在；测试之所以能跑，完全依赖 omnicrawl 已安装进 venv。脱离已安装环境（如 CI 只 checkout 源码、或未 pip install）即 ModuleNotFoundError。同文件 test_help_button.py:30 自己的 `parents[2] / "src"` 才是正确写法；正确路径应为 `parents[2]`（gui）与 `parents[3]`（unit/ai）。
-- 建议：改正 parents 层级，或直接删除该行（本项目测试普遍直接 `from omnicrawl.*` 导入，依赖已安装包）。
+- 问题：注释声称"从源码树导入 omnicrawler"，实际路径根本不存在；测试之所以能跑，完全依赖 omnicrawler 已安装进 venv。脱离已安装环境（如 CI 只 checkout 源码、或未 pip install）即 ModuleNotFoundError。同文件 test_help_button.py:30 自己的 `parents[2] / "src"` 才是正确写法；正确路径应为 `parents[2]`（gui）与 `parents[3]`（unit/ai）。
+- 建议：改正 parents 层级，或直接删除该行（本项目测试普遍直接 `from omnicrawler.*` 导入，依赖已安装包）。
 
 ### [medium] tests/gui/visual/test_snapshots.py:18-23 + conftest.py - 视觉回归套件整体处于休眠状态，无人生成基线
 
@@ -32,7 +32,7 @@
 
 ### [medium] tests/unit/other/test_pdfx_cli.py:10 - 模块级 importorskip("openpyxl") 使整个 CLI 模块测试被可选依赖"绑架"
 
-- 现状：模块顶层 `pytest.importorskip("openpyxl", ...)` 之后再 `from omnicrawl.pdfx import cli`。
+- 现状：模块顶层 `pytest.importorskip("openpyxl", ...)` 之后再 `from omnicrawler.pdfx import cli`。
 - 问题：pdfx CLI 本体并不依赖 openpyxl（仅 XLSX 审查回写用到），缺 openpyxl 时整个 CLI 模块测试（含命令行解析、导出等非 XLSX 路径）全部静默跳过，无法发现 CLI 回归。与 test_gui_smoke.py:184 的做法（`monkeypatch.setitem(sys.modules, "openpyxl", fake)` 注入假模块）相比明显更弱。
 - 建议：把 openpyxl 的 skip 下沉到依赖它的具体测试函数（或同样注入 FakeWorkbook），保留其余 CLI 用例常跑。
 
@@ -50,15 +50,15 @@
 
 ### [low] tests/integration/browser/test_strengthened_features.py:111-115 - 使用真实 datetime.now()，存在整点边界竞态
 
-- 现状：`disallowed = (datetime.now().hour + 1) % 24`，随后断言 `str(datetime.now().hour) in reason`；对比同功能 test_runtime_foundations.py:93-98 已用 `monkeypatch.setattr("omnicrawl.schedule_conditions.datetime", fixed)` 固定时间。
+- 现状：`disallowed = (datetime.now().hour + 1) % 24`，随后断言 `str(datetime.now().hour) in reason`；对比同功能 test_runtime_foundations.py:93-98 已用 `monkeypatch.setattr("omnicrawler.schedule_conditions.datetime", fixed)` 固定时间。
 - 问题：`disallowed` 取当前小时，`evaluate_conditions` 内部又是另一次 `datetime.now()`；两次调用若跨过整点（如 09:59:59.9→10:00:00.1），断言可能在极窄窗口失败。`assert allowed is False` 本身恒定成立，但 `in reason` 会随小时翻转失效。
 - 建议：复用 test_runtime_foundations 的做法，monkeypatch 固定 `datetime`，消除时间依赖。
 
-### [low] tests/integration/archive/test_runtime_foundations.py:96 - monkeypatch 走废弃别名路径 omnicrawl.schedule_conditions.datetime
+### [low] tests/integration/archive/test_runtime_foundations.py:96 - monkeypatch 走废弃别名路径 omnicrawler.schedule_conditions.datetime
 
-- 现状：`monkeypatch.setattr("omnicrawl.schedule_conditions.datetime", fixed)`，而测试本身从规范路径 `omnicrawl.runtime.schedule_conditions` 导入。
-- 问题：`omnicrawl.schedule_conditions` 是 `__init__.py` `_DEPRECATED_MODULE_MAP` 注册的兼容别名（依赖 `_setup_compat_aliases` 在 sys.modules 注册同一模块对象）。一旦移除兼容层，该 patch 立即抛 AttributeError。整个测试套件中这是唯一依赖旧别名的用例。
-- 建议：改为 patch `omnicrawl.runtime.schedule_conditions.datetime`（规范路径）。
+- 现状：`monkeypatch.setattr("omnicrawler.schedule_conditions.datetime", fixed)`，而测试本身从规范路径 `omnicrawler.runtime.schedule_conditions` 导入。
+- 问题：`omnicrawler.schedule_conditions` 是 `__init__.py` `_DEPRECATED_MODULE_MAP` 注册的兼容别名（依赖 `_setup_compat_aliases` 在 sys.modules 注册同一模块对象）。一旦移除兼容层，该 patch 立即抛 AttributeError。整个测试套件中这是唯一依赖旧别名的用例。
+- 建议：改为 patch `omnicrawler.runtime.schedule_conditions.datetime`（规范路径）。
 
 ### [low] tests/unit/egress/test_egress.py:28-29 与 tests/unit/egress/test_egress_security.py:28-29 - 真实 DNS 批准地址解析层从未被测试
 
@@ -92,7 +92,7 @@
 
 ## 观察项（暂不构成问题）
 
-- 测试普遍采用规范导入路径（`omnicrawl.quality.*`、`omnicrawl.sources.sources` 等均为新路径，非旧别名），兼容层依赖仅 1 处（见上）。
+- 测试普遍采用规范导入路径（`omnicrawler.quality.*`、`omnicrawler.sources.sources` 等均为新路径，非旧别名），兼容层依赖仅 1 处（见上）。
 - egress 负向路径覆盖非常完整：域名/端口/协议白名单、四维预算熔断（请求/流量/时长/费用）、凭据作用域、凭据外泄拦截、"逐请求安全拦截不可用/默认安全关闭"护栏。
 - 安全类回归到位：`safe_extract_archive` 整体校验通过后才发布输出；`SHA256SUMS` 拒绝篡改与穿越且清单为 UTF-8；`safe_object_key` 拒绝路径穿越；`builtin:` 模板引用与穿越拒绝、`%2f` 按字面处理（不误判）；`.env` POSIX 0600；C4A 引擎拒绝私网目标与明文凭据。
 - 恢复/可靠性：run 状态机 ALLOWED_TRANSITIONS 白名单、checkpoint 幂等 last-wins、begin_export 幂等、RecoveryCenter 续跑/重试/重新登录、LocalWorker 会话文件含 auth_token 且 AF_PIPE 可重连。

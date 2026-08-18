@@ -57,7 +57,7 @@ WebSocket、AI、插件和外部存储统一收口。出口同时执行网络目
 > 优化：Egress Broker 默认开启且不可关闭，含凭据作用域和熔断。
 
 `<workspace>/logs/egress-audit.jsonl` 是脱敏追加日志；敏感查询参数和 URL 用户信息只记录为安全形式，凭据头只记录
-字段名。审计目录不可写或磁盘已满时，出口策略、预算和停止开关仍继续生效，运行摘要的 `egress_audit.write_failures` 明确标记缺失的审计证据，不能将该任务视为审计完整。`omnicrawl security-report -c <config>` 可列出实际访问的协议、主机、端口、用途、插件主体、
+字段名。审计目录不可写或磁盘已满时，出口策略、预算和停止开关仍继续生效，运行摘要的 `egress_audit.write_failures` 明确标记缺失的审计证据，不能将该任务视为审计完整。`omnicrawler security-report -c <config>` 可列出实际访问的协议、主机、端口、用途、插件主体、
 拒绝次数和 SDK 传输例外。
 
 ### 浏览器与外部 SDK 明确例外

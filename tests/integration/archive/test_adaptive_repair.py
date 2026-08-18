@@ -4,9 +4,9 @@ import copy
 
 import pytest
 
-from omnicrawl.quality.shadow_repair import ShadowComparison, approve_repair, candidate_rule, shadow_config
-from omnicrawl.review.review_feedback import FeedbackCorpus, FeedbackSample
-from omnicrawl.runtime.adaptive_execution import AdaptiveController, RuntimeSignals, attachment_duplicate
+from omnicrawler.quality.shadow_repair import ShadowComparison, approve_repair, candidate_rule, shadow_config
+from omnicrawler.review.review_feedback import FeedbackCorpus, FeedbackSample
+from omnicrawler.runtime.adaptive_execution import AdaptiveController, RuntimeSignals, attachment_duplicate
 
 
 def test_shadow_candidate_never_mutates_active_and_requires_safe_approval():

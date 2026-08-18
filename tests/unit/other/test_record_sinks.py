@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from omnicrawl.core.config import DEFAULTS, AppConfig
-from omnicrawl.core.models import CrawlRequest
-from omnicrawl.services.record_sinks import RecordSinkManager, build_record_sink_manager
+from omnicrawler.core.config import DEFAULTS, AppConfig
+from omnicrawler.core.models import CrawlRequest
+from omnicrawler.services.record_sinks import RecordSinkManager, build_record_sink_manager
 
 
 class _FailingSink:

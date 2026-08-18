@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.sources.site_inspector import inspect_result
-from omnicrawl.templates.template_catalog import bundled_template_catalog
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.sources.site_inspector import inspect_result
+from omnicrawler.templates.template_catalog import bundled_template_catalog
 
 
 def test_inspector_detects_cms_page_type_and_assets() -> None:

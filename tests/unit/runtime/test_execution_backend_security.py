@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from omnicrawl.runtime.execution_backend import WorkerSession, _write_session
+from omnicrawler.runtime.execution_backend import WorkerSession, _write_session
 
 
 def test_session_file_roundtrips_auth_token(tmp_path: Path) -> None:
@@ -18,7 +18,7 @@ def test_session_file_roundtrips_auth_token(tmp_path: Path) -> None:
     path = tmp_path / "worker-session.json"
     session = WorkerSession(
         session_id="s2", config_path="task.yaml", workspace=str(tmp_path),
-        address=r"\\.\pipe\omnicrawl-s2", family="AF_PIPE",
+        address=r"\\.\pipe\omnicrawler-s2", family="AF_PIPE",
         auth_token="secret-token-abc", pid=1, status="starting", created_at="now",
     )
     _write_session(path, session)
@@ -31,7 +31,7 @@ def test_session_file_roundtrips_auth_token(tmp_path: Path) -> None:
 
 def test_startup_timeout_error_is_never_empty(tmp_path: Path, monkeypatch) -> None:
 
-    from omnicrawl.runtime import execution_backend as module
+    from omnicrawler.runtime import execution_backend as module
 
     config_path = tmp_path / "task.yaml"
     config_path.write_text(
@@ -63,7 +63,7 @@ def test_startup_timeout_error_is_never_empty(tmp_path: Path, monkeypatch) -> No
 
 def test_startup_timeout_includes_last_error(tmp_path: Path, monkeypatch) -> None:
 
-    from omnicrawl.runtime import execution_backend as module
+    from omnicrawler.runtime import execution_backend as module
 
     config_path = tmp_path / "task.yaml"
     config_path.write_text(

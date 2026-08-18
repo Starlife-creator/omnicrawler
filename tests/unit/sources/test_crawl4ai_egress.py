@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.models import CrawlRequest
-from omnicrawl.security.egress import EgressBroker
-from omnicrawl.sources.crawl4ai_bridge import C4AConfig, C4AResult, Crawl4AIEngine
+from omnicrawler.core.config import load_config
+from omnicrawler.core.models import CrawlRequest
+from omnicrawler.security.egress import EgressBroker
+from omnicrawler.sources.crawl4ai_bridge import C4AConfig, C4AResult, Crawl4AIEngine
 
 # ── 指纹含 headers ────────────────────────────────────────────────────
 
@@ -83,7 +83,7 @@ def test_engine_authorizes_through_broker(tmp_path: Path) -> None:
 
 
 def test_engine_budget_enforced_by_broker(tmp_path: Path) -> None:
-    from omnicrawl.core.errors import EgressBudgetExceededError
+    from omnicrawler.core.errors import EgressBudgetExceededError
 
     config_path = _config(tmp_path)
     config = load_config(config_path)

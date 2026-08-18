@@ -2,7 +2,7 @@
 # 用法: powershell -File tools\add_template_version.ps1 [-Base <相对路径>]
 [CmdletBinding()]
 param(
-    [string]$Base = "src\omnicrawl\templates"
+    [string]$Base = "src\omnicrawler\templates"
 )
 
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)

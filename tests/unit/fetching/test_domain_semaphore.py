@@ -7,26 +7,26 @@ import asyncio
 
 class TestResolveScope:
     def test_http_url_takes_host(self) -> None:
-        from omnicrawl.fetching.domain_semaphore import _resolve_scope
+        from omnicrawler.fetching.domain_semaphore import _resolve_scope
 
         s = _resolve_scope("https://shop.example.com/a/b")
         assert s == "shop.example.com"
 
     def test_strips_port_and_case(self) -> None:
-        from omnicrawl.fetching.domain_semaphore import _resolve_scope
+        from omnicrawler.fetching.domain_semaphore import _resolve_scope
 
         s = _resolve_scope("https://SHOP.example.COM:8443/x")
         assert s == "shop.example.com"
 
     def test_relative_or_blank_falls_to_global(self) -> None:
-        from omnicrawl.fetching.domain_semaphore import _resolve_scope
+        from omnicrawler.fetching.domain_semaphore import _resolve_scope
 
         assert _resolve_scope("") == "__global__"
         assert _resolve_scope("urn:isbn:xxx") == "__global__"
 
     def test_with_site_aliases_collapses(self, monkeypatch) -> None:
-        from omnicrawl.core.site_aliases import SiteAliasRegistry
-        from omnicrawl.fetching.domain_semaphore import _resolve_scope
+        from omnicrawler.core.site_aliases import SiteAliasRegistry
+        from omnicrawler.fetching.domain_semaphore import _resolve_scope
 
         reg = SiteAliasRegistry()
         reg.add_alias("m.shop.example.com", "shop.example.com")
@@ -36,7 +36,7 @@ class TestResolveScope:
 
 class TestDomainSemaphore:
     def test_defaults_match_convention(self) -> None:
-        from omnicrawl.fetching.domain_semaphore import DomainConcurrencyLimiter
+        from omnicrawler.fetching.domain_semaphore import DomainConcurrencyLimiter
 
         lim = DomainConcurrencyLimiter(global_limit=8, per_domain_limit=0)
         assert lim.global_limit == 8
@@ -46,13 +46,13 @@ class TestDomainSemaphore:
         assert lim2.per_domain_limit == 1
 
     def test_explicit_per_domain_wins(self) -> None:
-        from omnicrawl.fetching.domain_semaphore import DomainConcurrencyLimiter
+        from omnicrawler.fetching.domain_semaphore import DomainConcurrencyLimiter
 
         lim = DomainConcurrencyLimiter(global_limit=8, per_domain_limit=3)
         assert lim.per_domain_limit == 3
 
     def test_cache_eviction_clears_idle(self) -> None:
-        from omnicrawl.fetching.domain_semaphore import DomainConcurrencyLimiter
+        from omnicrawler.fetching.domain_semaphore import DomainConcurrencyLimiter
 
         lim = DomainConcurrencyLimiter(global_limit=4, per_domain_limit=2, max_cached_domains=4)
 
@@ -72,7 +72,7 @@ class TestDomainSemaphore:
 
     def test_per_domain_cap_prevents_big_site_starvation(self) -> None:
         """验证单域名不能同时超过 per_domain_limit。"""
-        from omnicrawl.fetching.domain_semaphore import DomainConcurrencyLimiter
+        from omnicrawler.fetching.domain_semaphore import DomainConcurrencyLimiter
 
         lim = DomainConcurrencyLimiter(global_limit=10, per_domain_limit=2)
 
@@ -95,7 +95,7 @@ class TestDomainSemaphore:
 
     def test_global_cap_enforced_across_domains(self) -> None:
         """全局上限必须被严格执行。"""
-        from omnicrawl.fetching.domain_semaphore import DomainConcurrencyLimiter
+        from omnicrawler.fetching.domain_semaphore import DomainConcurrencyLimiter
 
         G = 4
         lim = DomainConcurrencyLimiter(global_limit=G, per_domain_limit=99)

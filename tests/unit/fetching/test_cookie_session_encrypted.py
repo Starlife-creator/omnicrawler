@@ -15,8 +15,8 @@ import pytest
 
 pytest.importorskip("cryptography")
 
-from omnicrawl.core.secrets_store import FILE_MAGIC, SecretsStore
-from omnicrawl.fetching.session import CookieSession
+from omnicrawler.core.secrets_store import FILE_MAGIC, SecretsStore
+from omnicrawler.fetching.session import CookieSession
 
 
 class _FakeKeyring:
@@ -55,7 +55,7 @@ def _session(tmp_path: Path) -> CookieSession:
 
 def test_s223_save_writes_encrypted_blob_no_plaintext(tmp_path: Path) -> None:
     store = SecretsStore(tmp_path / "s.bin", keyring_api=_FakeKeyring())
-    with __import__("unittest.mock").mock.patch("omnicrawl.fetching.session.SecretsStore", return_value=store):
+    with __import__("unittest.mock").mock.patch("omnicrawler.fetching.session.SecretsStore", return_value=store):
         session = _session(tmp_path)
         session.jar.set_cookie(_cookie())
         session.save()
@@ -67,7 +67,7 @@ def test_s223_save_writes_encrypted_blob_no_plaintext(tmp_path: Path) -> None:
 
 def test_s223_reload_restores_cookies(tmp_path: Path) -> None:
     store = SecretsStore(tmp_path / "s.bin", keyring_api=_FakeKeyring())
-    with patch("omnicrawl.fetching.session.SecretsStore", return_value=store):
+    with patch("omnicrawler.fetching.session.SecretsStore", return_value=store):
         session = _session(tmp_path)
         session.jar.set_cookie(_cookie())
         session.save()
@@ -81,7 +81,7 @@ def test_s223_atomic_replace_preserves_previous_file(tmp_path: Path, monkeypatch
     import os as _os
 
     store = SecretsStore(tmp_path / "s.bin", keyring_api=_FakeKeyring())
-    with patch("omnicrawl.fetching.session.SecretsStore", return_value=store):
+    with patch("omnicrawler.fetching.session.SecretsStore", return_value=store):
         session = _session(tmp_path)
         session.jar.set_cookie(_cookie("first"))
         session.save()
@@ -103,7 +103,7 @@ def test_s223_load_failure_warns(caplog, tmp_path: Path) -> None:
     target = tmp_path / "bad.cookies"
     target.write_bytes(b"### THIS IS NOT VALID LWP DATA # broken")
     store = SecretsStore(tmp_path / "s.bin", keyring_api=_FakeKeyring())
-    with patch("omnicrawl.fetching.session.SecretsStore", return_value=store):
+    with patch("omnicrawler.fetching.session.SecretsStore", return_value=store):
         with caplog.at_level(logging.WARNING):
             CookieSession(target)
     assert any("cookie 文件加载失败" in record.message for record in caplog.records)
@@ -125,7 +125,7 @@ def test_s223_legacy_plaintext_lwp_still_loads(tmp_path: Path) -> None:
 def test_s223_encrypt_failure_skips_disk(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("OMNICRAWL_MASTER_PASSWORD", raising=False)
     store = SecretsStore(tmp_path / "s.bin", keyring_api=_BrokenKeyring())
-    with patch("omnicrawl.fetching.session.SecretsStore", return_value=store):
+    with patch("omnicrawler.fetching.session.SecretsStore", return_value=store):
         session = _session(tmp_path)
         session.jar.set_cookie(_cookie())
         session.save()

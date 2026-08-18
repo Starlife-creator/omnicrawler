@@ -16,8 +16,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from omnicrawl.core.models import CrawlRequest, ExtractedRecord, FetchResult
-from omnicrawl.state import StateStore
+from omnicrawler.core.models import CrawlRequest, ExtractedRecord, FetchResult
+from omnicrawler.state import StateStore
 
 
 def _make_request(url: str, **kwargs) -> CrawlRequest:

@@ -4,7 +4,7 @@ Covers the static scan that rejects subprocess/ctypes/eval/os.system-style
 patterns before plugin module-level code executes, plus the admin-controlled
 config allowlist (``plugins.ast_allowed_patterns``).
 
-``# omnicrawl: allow-ast`` 文件内自豁免注释已于 2026-08 移除（审查报告 S47）：
+``# omnicrawler: allow-ast`` 文件内自豁免注释已于 2026-08 移除（审查报告 S47）：
 豁免权在插件自己手里等于没有豁免门——插件写一行注释即可放行任何危险调用。
 如今只有运行配置能豁免。
 """
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.plugins.plugins import Registry, load_local_plugins
+from omnicrawler.plugins.plugins import Registry, load_local_plugins
 
 
 def _write_plugin(tmp_path: Path, name: str, body: str) -> Path:
@@ -147,7 +147,7 @@ def test_comment_self_exemption_no_longer_honored(tmp_path: Path) -> None:
     plugin = _write_plugin(
         tmp_path,
         "allowed",
-        "# omnicrawl: allow-ast os.system\nimport os\ndef register(registry):\n    os.system('echo ok')\n",
+        "# omnicrawler: allow-ast os.system\nimport os\ndef register(registry):\n    os.system('echo ok')\n",
     )
     with pytest.raises(PermissionError, match="os.system"):
         _load(plugin)

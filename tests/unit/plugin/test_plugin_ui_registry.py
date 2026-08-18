@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.plugins.plugins import (
+from omnicrawler.plugins.plugins import (
     MARKET_DIR_NAME,
     Registry,
     load_local_plugins,

@@ -1,4 +1,4 @@
-from omnicrawl.extraction.intelligent_scraper import _classify_field
+from omnicrawler.extraction.intelligent_scraper import _classify_field
 
 
 def test_price_rule_escaped_dollar_no_longer_matches_everything() -> None:

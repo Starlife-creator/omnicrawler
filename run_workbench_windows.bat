@@ -14,4 +14,4 @@ if exist ".runtime\python\python.exe" (
   echo [INFO] Bundled Python runtime not found; using the existing virtual environment directly.
 )
 
-".venv\Scripts\python.exe" -m omnicrawl workbench %*
+".venv\Scripts\python.exe" -m omnicrawler workbench %*

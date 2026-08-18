@@ -13,7 +13,7 @@ class FakeAppConfig:
 
 class TestMirrorRegistryBasics:
     def test_not_enabled_is_empty(self) -> None:
-        from omnicrawl.sources.mirror_registry import MirrorRegistry
+        from omnicrawler.sources.mirror_registry import MirrorRegistry
 
         cfg = FakeAppConfig({"mirrors": {"enabled": False}})
         reg = MirrorRegistry(cfg)
@@ -24,7 +24,7 @@ class TestMirrorRegistryBasics:
         assert canonical is None
 
     def test_enabled_loads_groups_preserves_canonical(self) -> None:
-        from omnicrawl.sources.mirror_registry import MirrorRegistry
+        from omnicrawler.sources.mirror_registry import MirrorRegistry
 
         cfg = FakeAppConfig({
             "mirrors": {
@@ -46,7 +46,7 @@ class TestMirrorRegistryBasics:
         assert picked == "mirrors.tuna.tsinghua.edu.cn"
 
     def test_unknown_host_passthrough(self) -> None:
-        from omnicrawl.sources.mirror_registry import MirrorRegistry
+        from omnicrawler.sources.mirror_registry import MirrorRegistry
 
         cfg = FakeAppConfig({"mirrors": {"enabled": True, "groups": {"pypi.org": [{"host": "pypi.org"}]}}})
         reg = MirrorRegistry(cfg)
@@ -57,7 +57,7 @@ class TestMirrorRegistryBasics:
 
 class TestHealthAndFailover:
     def test_failure_threshold_kicks_and_success_restores(self) -> None:
-        from omnicrawl.sources.mirror_registry import MirrorRegistry
+        from omnicrawler.sources.mirror_registry import MirrorRegistry
 
         cfg = FakeAppConfig({
             "mirrors": {
@@ -96,7 +96,7 @@ class TestHealthAndFailover:
 
 class TestUrlRewrite:
     def test_rewrite_preserves_path_port_and_query(self) -> None:
-        from omnicrawl.sources.mirror_registry import MirrorRegistry
+        from omnicrawler.sources.mirror_registry import MirrorRegistry
 
         cfg = FakeAppConfig({
             "mirrors": {
@@ -120,7 +120,7 @@ class TestUrlRewrite:
         assert rewritten.endswith("/api/v1/list?q=hello&x=1#top")
 
     def test_rewrite_same_host_no_op(self) -> None:
-        from omnicrawl.sources.mirror_registry import MirrorRegistry
+        from omnicrawler.sources.mirror_registry import MirrorRegistry
 
         cfg = FakeAppConfig({
             "mirrors": {
@@ -139,7 +139,7 @@ class TestUrlRewrite:
 
 class TestModelsWithCopy:
     def test_crawl_request_with_url_and_meta(self) -> None:
-        from omnicrawl.core.models import CrawlRequest
+        from omnicrawler.core.models import CrawlRequest
 
         r = CrawlRequest(url="https://orig/")
         fp_before = r.fingerprint
@@ -155,7 +155,7 @@ class TestModelsWithCopy:
         assert r.with_url("https://orig/") is r
 
     def test_fetch_result_with_final_and_meta(self) -> None:
-        from omnicrawl.core.models import CrawlRequest, FetchResult
+        from omnicrawler.core.models import CrawlRequest, FetchResult
 
         req = CrawlRequest(url="https://x/")
         fr = FetchResult(req, "https://x/final", 200, {}, b"ok", 0.01)

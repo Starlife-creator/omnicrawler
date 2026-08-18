@@ -41,7 +41,7 @@ def compile_all(lang: str | None = None) -> int:
     for po_path in sorted(LOCALE_DIR.rglob("*.po")):
         if lang and po_path.parent.parent.name != lang:
             continue
-        mo_path = po_path.parent / "LC_MESSAGES" / "omnicrawl-gui.mo"
+        mo_path = po_path.parent / "LC_MESSAGES" / "omnicrawler-gui.mo"
         if compile_po(po_path, mo_path):
             compiled += 1
             print(f"  {po_path.relative_to(PROJECT_ROOT)} -> {mo_path.relative_to(PROJECT_ROOT)}")

@@ -6,7 +6,7 @@ import csv
 import json
 from pathlib import Path
 
-from omnicrawl.export.markdown_exporter import MarkdownExporter
+from omnicrawler.export.markdown_exporter import MarkdownExporter
 
 # ── helpers ────────────────────────────────────────────────────────────
 

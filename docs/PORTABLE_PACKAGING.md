@@ -11,12 +11,12 @@
 构建脚本**不从命令行接收版本号**，直接从源码读取：
 
 ```
-src/omnicrawl/__init__.py  →  __version__
+src/omnicrawler/__init__.py  →  __version__
            ↓
 构建脚本启动时立刻读取并校验三重一致：
-  ① omnicrawl.__version__
+  ① omnicrawler.__version__
   ② pyproject.toml project.version
-  ③ 构建 venv 中 installed 的 omnicrawl-platform 版本
+  ③ 构建 venv 中 installed 的 omnicrawler-platform 版本
            ↓
 OmniCrawler-<version>-<Platform>-Portable-<Edition>.<ext>
 ```
@@ -41,8 +41,8 @@ OmniCrawler-<version>-<Platform>-Portable-<Edition>.<ext>
 - 在隔离 venv（`<BuildRoot>/venv`）安装 `.[full,dev]` 或 Standard extras 后构建。
 - 产物为 `OmniCrawler-<version>-Linux-Portable-<Edition>.tar.gz`，解压后：
   - GUI：`OmniCrawler`
-  - CLI：`omnicrawl`
-  - worker：`omnicrawl-worker`
+  - CLI：`omnicrawler`
+  - worker：`omnicrawler-worker`
 - Full 版的 OCR（Tesseract）依赖系统包：`tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim`（apt）或 `tesseract tesseract-langpack-*`（dnf）。
 - 服务器无桌面时用 CLI，不需要启动 GUI。
 

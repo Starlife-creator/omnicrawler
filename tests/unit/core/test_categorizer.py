@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 import yaml
 
-from omnicrawl.core.categorizer import (
+from omnicrawler.core.categorizer import (
     _FINAL_FALLBACK_TEMPLATE,
     _HIT_SOURCE_FALLBACK,
     _HIT_SOURCE_L1,
@@ -205,7 +205,7 @@ class TestL2TwoLevelMerge:
     def test_project_yaml_overwrites_builtin(self, tmp_path: Path) -> None:
         self._write_project_yaml(tmp_path, {"zhihu.com": "OVERRIDE_BY_PROJECT"})
         task = self._write_task_yaml(tmp_path)
-        from omnicrawl.core.config import load_config
+        from omnicrawler.core.config import load_config
 
         cfg = load_config(task)
         sc = SiteCategorizer.from_app_config(cfg, project_root=tmp_path)
@@ -222,7 +222,7 @@ class TestL2TwoLevelMerge:
                 "mappings": "{zhihu.com: CONFIG_SECTION_LEVEL}",
             },
         )
-        from omnicrawl.core.config import load_config
+        from omnicrawler.core.config import load_config
 
         cfg = load_config(task)
         sc = SiteCategorizer.from_app_config(cfg, project_root=tmp_path)
@@ -246,7 +246,7 @@ class TestBuiltinMappingsResolveAgainstCatalog:
 
     @pytest.fixture()
     def loaded(self) -> tuple[dict[str, str], dict[str, str]]:
-        from omnicrawl.templates.template_catalog import bundled_template_catalog
+        from omnicrawler.templates.template_catalog import bundled_template_catalog
 
         sc = SiteCategorizer()
         ok, _ = sc.reload(app_config=None, project_root=None, extra_yaml_paths=[])
@@ -528,7 +528,7 @@ class TestL3HeaderDeduction:
     """_l3_deduce_from_headers 纯函数单元：Content-Type/Server/3xx 断言。"""
 
     def test_content_type_pdf_maps_binary(self) -> None:
-        from omnicrawl.core.categorizer import _HIT_SOURCE_L3, _l3_deduce_from_headers
+        from omnicrawler.core.categorizer import _HIT_SOURCE_L3, _l3_deduce_from_headers
 
         r = _l3_deduce_from_headers(200, {"Content-Type": "application/pdf; charset=binary"})
         assert r is not None
@@ -537,28 +537,28 @@ class TestL3HeaderDeduction:
         assert "Content-Type application/pdf" in r.reason
 
     def test_content_type_video_prefix_matches(self) -> None:
-        from omnicrawl.core.categorizer import _l3_deduce_from_headers
+        from omnicrawler.core.categorizer import _l3_deduce_from_headers
 
         r = _l3_deduce_from_headers(206, {"content-type": "video/mp4; codecs=avc"})
         assert r is not None
         assert "视频流" in r.reason
 
     def test_content_type_json_api(self) -> None:
-        from omnicrawl.core.categorizer import _l3_deduce_from_headers
+        from omnicrawler.core.categorizer import _l3_deduce_from_headers
 
         r = _l3_deduce_from_headers(200, {"Content-Type": "application/json"})
         assert r is not None
         assert "application/json" in r.reason
 
     def test_server_amazons3_cloud(self) -> None:
-        from omnicrawl.core.categorizer import _l3_deduce_from_headers
+        from omnicrawler.core.categorizer import _l3_deduce_from_headers
 
         r = _l3_deduce_from_headers(200, {"Server": "AmazonS3", "Content-Type": "application/octet-stream"})
         assert r is not None
         assert "云存储直链" in r.reason
 
     def test_content_disposition_attachment(self) -> None:
-        from omnicrawl.core.categorizer import _l3_deduce_from_headers
+        from omnicrawler.core.categorizer import _l3_deduce_from_headers
 
         r = _l3_deduce_from_headers(
             200,
@@ -570,7 +570,7 @@ class TestL3HeaderDeduction:
 
     def test_3xx_redirect_not_followed_needs_reclassify(self) -> None:
         """L3 不跟随 3xx；返回带 redirect 标记的结果，上层据此重新入漏斗（B05-030）。"""
-        from omnicrawl.core.categorizer import _HIT_SOURCE_L3, _l3_deduce_from_headers
+        from omnicrawler.core.categorizer import _HIT_SOURCE_L3, _l3_deduce_from_headers
 
         r = _l3_deduce_from_headers(
             302, {"Location": "https://cdn.example.com/reports/2024.pdf"},
@@ -581,7 +581,7 @@ class TestL3HeaderDeduction:
         assert "redirect 标记" in r.reason
 
     def test_no_signal_returns_none(self) -> None:
-        from omnicrawl.core.categorizer import _l3_deduce_from_headers
+        from omnicrawler.core.categorizer import _l3_deduce_from_headers
 
         r = _l3_deduce_from_headers(200, {"Content-Type": "text/html; charset=utf-8", "Server": "nginx"})
         assert r is None, "普通 HTML 页不能触发 L3 映射，应由调用方走 generic_html 兜底"
@@ -606,7 +606,7 @@ class TestL3ClassifyWithFetcher:
         assert "classify(fetcher=...)" in r.reason
 
     def test_fetcher_pdf_hits_l3_binary(self) -> None:
-        from omnicrawl.core.categorizer import _HIT_SOURCE_L3
+        from omnicrawler.core.categorizer import _HIT_SOURCE_L3
 
         sc = self._sc_with_sniff()
         fetcher = _FakeFetcher(default_headers={"Content-Type": "application/pdf"})
@@ -687,7 +687,7 @@ class TestL3ClassifyWithFetcher:
         fetcher = _FakeFetcher(default_headers={"Content-Type": "application/pdf"})
         # 替换 CrawlRequest 构造器的影响：直接让 fetcher.calls[0] 被手动设置 meta 会太复杂，
         # 我们改为直接验证 _L3_SNIFF_META_TAG 常量值是预期的审计标签
-        from omnicrawl.core.categorizer import _L3_SNIFF_META_TAG
+        from omnicrawler.core.categorizer import _L3_SNIFF_META_TAG
         assert _L3_SNIFF_META_TAG["__categorizer_sniff"] == "l3_phase2"
         assert _L3_SNIFF_META_TAG["__audit_channel"] == "categorizer_l3"
         # 触发一次分类：若实际有 meta 字段则 fetch 收到的 request 会包含 tag
@@ -705,8 +705,8 @@ class TestDoctorReportsL3Implemented:
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).resolve().parents[2].parents[1] / "src"))
-        from omnicrawl.core.config import AppConfig
-        from omnicrawl.services.doctor import run_doctor
+        from omnicrawler.core.config import AppConfig
+        from omnicrawler.services.doctor import run_doctor
         # 构造最小 AppConfig（含必需的 raw 字段，避免 project_name/source_kind 属性访问崩）
         cfg_root = Path(__file__).resolve().parents[3]  # OmniCrawler dir
         raw_cfg = {

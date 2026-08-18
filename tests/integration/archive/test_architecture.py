@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.pipeline_ops.pipeline_stages import FunctionStage, StageContext, require_stage_order
-from omnicrawl.runtime.repository import RunRepository, SQLiteRunRepository
-from omnicrawl.services.application_service import ApplicationService
-from omnicrawl.services.controllers import ResultController, RunController, TaskController
+from omnicrawler.pipeline_ops.pipeline_stages import FunctionStage, StageContext, require_stage_order
+from omnicrawler.runtime.repository import RunRepository, SQLiteRunRepository
+from omnicrawler.services.application_service import ApplicationService
+from omnicrawler.services.controllers import ResultController, RunController, TaskController
 
 
 def test_repository_port_and_sqlite_adapter(tmp_path: Path) -> None:

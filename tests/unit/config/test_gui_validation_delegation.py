@@ -17,7 +17,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def _gui_config() -> object:
-    from omnicrawl.gui.core.config_serializer import from_yaml
+    from omnicrawler.gui.core.config_serializer import from_yaml
 
     return from_yaml(
         "project: {name: gui-t, workspace: work}\n"
@@ -27,7 +27,7 @@ def _gui_config() -> object:
 
 
 def test_s211_validate_full_config_passes_for_clean_config() -> None:
-    from omnicrawl.gui.core.validator import validate_full_config
+    from omnicrawler.gui.core.validator import validate_full_config
 
     config = _gui_config()
     config.user_agent = "OmniCrawler-Test/1.0 (+contact: tester@example.org)"
@@ -37,7 +37,7 @@ def test_s211_validate_full_config_passes_for_clean_config() -> None:
 
 
 def test_s211_validate_full_config_propagates_core_warnings() -> None:
-    from omnicrawl.gui.core.validator import validate_full_config
+    from omnicrawler.gui.core.validator import validate_full_config
 
     config = _gui_config()
     config.user_agent = "Bot/1.0 (+contact: change-me@example.com)"
@@ -47,7 +47,7 @@ def test_s211_validate_full_config_propagates_core_warnings() -> None:
 
 
 def test_s211_validate_full_config_reports_core_errors() -> None:
-    from omnicrawl.gui.core.validator import validate_full_config
+    from omnicrawler.gui.core.validator import validate_full_config
 
     config = _gui_config()
     config.user_agent = "Bot/1.0 (+contact: tester@example.org)"
@@ -58,8 +58,8 @@ def test_s211_validate_full_config_reports_core_errors() -> None:
 
 
 def test_s211_validate_full_config_skips_core_when_no_seeds() -> None:
-    from omnicrawl.gui.core.config_serializer import from_yaml
-    from omnicrawl.gui.core.validator import validate_full_config
+    from omnicrawler.gui.core.config_serializer import from_yaml
+    from omnicrawler.gui.core.validator import validate_full_config
 
     config = from_yaml("project: {name: t, workspace: work}\n")
     errors, warnings = validate_full_config(config)
@@ -67,8 +67,8 @@ def test_s211_validate_full_config_skips_core_when_no_seeds() -> None:
 
 
 def test_s211_gui_yaml_output_accepted_by_core_load_config(tmp_path) -> None:
-    from omnicrawl.core.config import load_config
-    from omnicrawl.gui.core.config_serializer import to_yaml
+    from omnicrawler.core.config import load_config
+    from omnicrawler.gui.core.config_serializer import to_yaml
 
     config = _gui_config()
     config.user_agent = "OmniCrawler-Test/1.0 (+contact: tester@example.org)"

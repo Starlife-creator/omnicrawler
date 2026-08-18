@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import inspect
 
-from omnicrawl.sdk import run as sdk_run
-from omnicrawl.services.application_service import ApplicationService
-from omnicrawl.services.controllers import RunController
+from omnicrawler.sdk import run as sdk_run
+from omnicrawler.services.application_service import ApplicationService
+from omnicrawler.services.controllers import RunController
 
 
 def test_sdk_default_matches_service_default() -> None:

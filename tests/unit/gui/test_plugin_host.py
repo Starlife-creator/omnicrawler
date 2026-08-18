@@ -12,9 +12,9 @@ pytest.importorskip("PyQt6")
 
 from PyQt6.QtWidgets import QApplication, QLabel, QMainWindow
 
-from omnicrawl.gui import design_system
-from omnicrawl.gui.plugin_host import install_plugin_ui
-from omnicrawl.plugins.plugins import Registry
+from omnicrawler.gui import design_system
+from omnicrawler.gui.plugin_host import install_plugin_ui
+from omnicrawler.plugins.plugins import Registry
 
 
 @pytest.fixture(scope="module")

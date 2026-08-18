@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.config import load_config
-from omnicrawl.security.security_audit import scan_config_text
-from omnicrawl.services.workspace import WorkspaceManager
+from omnicrawler.core.config import load_config
+from omnicrawler.security.security_audit import scan_config_text
+from omnicrawler.services.workspace import WorkspaceManager
 
 
 def _config(tmp_path: Path, *, http_headers=None, ai_key: str | None = None) -> Path:

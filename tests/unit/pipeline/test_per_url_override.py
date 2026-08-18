@@ -16,10 +16,10 @@ from pathlib import Path
 
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.pipeline import Pipeline
-from omnicrawl.pipeline._extract import _strip_placeholders
+from omnicrawler.core.config import load_config
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.pipeline import Pipeline
+from omnicrawler.pipeline._extract import _strip_placeholders
 
 _HTML = b"""<html><head><title>Page</title></head><body>
 <article><p>article text</p></article>

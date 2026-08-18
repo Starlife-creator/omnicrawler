@@ -4,9 +4,9 @@ from pathlib import Path
 
 import yaml
 
-from omnicrawl.core.config import AppConfig
-from omnicrawl.fetching.browser_fetcher import PlaywrightPool
-from omnicrawl.security.policy import NetworkTargetPolicy
+from omnicrawler.core.config import AppConfig
+from omnicrawler.fetching.browser_fetcher import PlaywrightPool
+from omnicrawler.security.policy import NetworkTargetPolicy
 
 
 class _FakeResponse:

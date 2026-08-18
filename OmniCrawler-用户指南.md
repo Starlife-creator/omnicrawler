@@ -56,16 +56,16 @@ OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台�
 
 | 能力 | 说明 | 入口 |
 |------|------|------|
-| **五步向导** | GUI 五步问答 / CLI 六步问答生成配置 | `omnicrawl wizard` 或 GUI 首页 |
-| **78 套内置模板** | 覆盖 CMS/电商/新闻/政务/论坛等 | `omnicrawl templates list` |
-| **可视化选择器** | 浏览器中右键点选元素，自动生成配置 | `omnicrawl visual-select` |
-| **智能页面分析** | 零配置：贴 URL → 自动推断字段和分页 | `omnicrawl auto-analyze` |
-| **EasySpider 导入** | 兼容 EasySpider JSON 任务格式 | `omnicrawl import-easyspider` |
-| **Crawl4AI 渲染** | 轻量 JS 页面渲染（省 5-10x 资源） | `omnicrawl c4a-fetch` |
-| **反检测增强** | 10 维指纹随机化 + 代理轮换 + 行为模拟 | `omnicrawl stealth-fingerprint` |
+| **五步向导** | GUI 五步问答 / CLI 六步问答生成配置 | `omnicrawler wizard` 或 GUI 首页 |
+| **78 套内置模板** | 覆盖 CMS/电商/新闻/政务/论坛等 | `omnicrawler templates list` |
+| **可视化选择器** | 浏览器中右键点选元素，自动生成配置 | `omnicrawler visual-select` |
+| **智能页面分析** | 零配置：贴 URL → 自动推断字段和分页 | `omnicrawler auto-analyze` |
+| **EasySpider 导入** | 兼容 EasySpider JSON 任务格式 | `omnicrawler import-easyspider` |
+| **Crawl4AI 渲染** | 轻量 JS 页面渲染（省 5-10x 资源） | `omnicrawler c4a-fetch` |
+| **反检测增强** | 10 维指纹随机化 + 代理轮换 + 行为模拟 | `omnicrawler stealth-fingerprint` |
 | **自适应执行** | 实时监测 → 自动调整并发/延迟/OCR | 内置 AutoPilot |
 | **统一诊断** | 12 类错误诊断 + 自动修复建议 | CLI/GUI 自动触发 |
-| **站点模板生成** | Apify 130+ 平台知识 → YAML 模板 | `omnicrawl gen-templates --all` |
+| **站点模板生成** | Apify 130+ 平台知识 → YAML 模板 | `omnicrawler gen-templates --all` |
 | **插件系统** | 子进程沙箱 + 权限白名单 | 开发者模式 |
 | **分布式支持** | Redis frontier/锁 + Scrapy 桥接 | 专业模式配置 |
 
@@ -125,37 +125,37 @@ pip install -e ".[search]"        # OpenSearch
 
 ```powershell
 # 1. 查看可用模板
-omnicrawl templates list
+omnicrawler templates list
 
 # 2. 探测目标网站并推荐模板
-omnicrawl templates inspect https://example.org
+omnicrawler templates inspect https://example.org
 
 # 3. 生成配置并校验
-omnicrawl templates render generic/list-detail -o configs/my_site.yaml --set seed_url=https://example.org
-omnicrawl validate -c configs/my_site.yaml
-omnicrawl doctor -c configs/my_site.yaml
+omnicrawler templates render generic/list-detail -o configs/my_site.yaml --set seed_url=https://example.org
+omnicrawler validate -c configs/my_site.yaml
+omnicrawler doctor -c configs/my_site.yaml
 
 # 4. 小样本试跑
-omnicrawl sample -c configs/my_site.yaml --pages 3
+omnicrawler sample -c configs/my_site.yaml --pages 3
 
 # 5. 正式运行
-omnicrawl run -c configs/my_site.yaml
+omnicrawler run -c configs/my_site.yaml
 ```
 
 ### 智能零配置流程（最快）
 
 ```powershell
 # 一行命令：分析页面 → 生成配置 → 试跑
-omnicrawl auto-analyze https://shop.example.com/products -o configs/shop.yaml
-omnicrawl sample -c configs/shop.yaml --pages 3
-omnicrawl run -c configs/shop.yaml
+omnicrawler auto-analyze https://shop.example.com/products -o configs/shop.yaml
+omnicrawler sample -c configs/shop.yaml --pages 3
+omnicrawler run -c configs/shop.yaml
 ```
 
 ### 可视化点选流程（最直观）
 
 ```powershell
 # 启动 WebSocket 服务
-omnicrawl visual-select --output configs/my_site.yaml
+omnicrawler visual-select --output configs/my_site.yaml
 
 # 然后在 Chrome 中：
 # 1. 打开目标网页
@@ -167,13 +167,13 @@ omnicrawl visual-select --output configs/my_site.yaml
 ### 中断后恢复
 
 ```powershell
-omnicrawl resume -c configs/my_site.yaml
+omnicrawler resume -c configs/my_site.yaml
 ```
 
 ### 规则修改后重新导出（不重新访问网站）
 
 ```powershell
-omnicrawl reprocess -c configs/my_site.yaml --run-id <run_id>
+omnicrawler reprocess -c configs/my_site.yaml --run-id <run_id>
 ```
 
 ---
@@ -184,76 +184,76 @@ omnicrawl reprocess -c configs/my_site.yaml --run-id <run_id>
 
 | 命令 | 说明 |
 |------|------|
-| `omnicrawl wizard` | 交互式配置向导（6 步问答） |
-| `omnicrawl run -c <config>` | 运行采集任务 |
-| `omnicrawl resume -c <config>` | 从断点恢复任务 |
-| `omnicrawl sample -c <config> --pages N` | 小样本试跑 N 页 |
-| `omnicrawl preflight -c <config>` | 运行前检查（依赖/磁盘/配置） |
-| `omnicrawl plan -c <config> -o plan.json` | 编译可解释执行计划 |
-| `omnicrawl control -c <config> pause/resume/stop` | 控制正在运行的任务 |
-| `omnicrawl status -c <config>` | 查看任务状态 |
-| `omnicrawl export -c <config>` | 重新导出数据 |
-| `omnicrawl reprocess -c <config> --run-id <id>` | 从归档重做提取（不重新访问） |
-| `omnicrawl recovery -c <config> overview` | 查看恢复中心 |
-| `omnicrawl recovery -c <config> retry-failed` | 重试失败项 |
+| `omnicrawler wizard` | 交互式配置向导（6 步问答） |
+| `omnicrawler run -c <config>` | 运行采集任务 |
+| `omnicrawler resume -c <config>` | 从断点恢复任务 |
+| `omnicrawler sample -c <config> --pages N` | 小样本试跑 N 页 |
+| `omnicrawler preflight -c <config>` | 运行前检查（依赖/磁盘/配置） |
+| `omnicrawler plan -c <config> -o plan.json` | 编译可解释执行计划 |
+| `omnicrawler control -c <config> pause/resume/stop` | 控制正在运行的任务 |
+| `omnicrawler status -c <config>` | 查看任务状态 |
+| `omnicrawler export -c <config>` | 重新导出数据 |
+| `omnicrawler reprocess -c <config> --run-id <id>` | 从归档重做提取（不重新访问） |
+| `omnicrawler recovery -c <config> overview` | 查看恢复中心 |
+| `omnicrawler recovery -c <config> retry-failed` | 重试失败项 |
 
 ### 智能工具
 
 | 命令 | 说明 |
 |------|------|
-| `omnicrawl auto-analyze <url\|file> -o config.yaml` | 智能分析页面结构，自动生成配置 |
-| `omnicrawl visual-select [--port 8084] [-o config.yaml]` | 启动可视化选择器 WebSocket 服务 |
-| `omnicrawl import-easyspider <task.json> -o config.yaml` | 导入 EasySpider 任务 |
-| `omnicrawl stealth-fingerprint [--count N] [--json]` | 生成随机浏览器指纹 |
-| `omnicrawl gen-templates --list` | 列出 Apify 130+ 已知平台 |
-| `omnicrawl gen-templates --all templates/sites/` | 批量生成平台模板 |
+| `omnicrawler auto-analyze <url\|file> -o config.yaml` | 智能分析页面结构，自动生成配置 |
+| `omnicrawler visual-select [--port 8084] [-o config.yaml]` | 启动可视化选择器 WebSocket 服务 |
+| `omnicrawler import-easyspider <task.json> -o config.yaml` | 导入 EasySpider 任务 |
+| `omnicrawler stealth-fingerprint [--count N] [--json]` | 生成随机浏览器指纹 |
+| `omnicrawler gen-templates --list` | 列出 Apify 130+ 已知平台 |
+| `omnicrawler gen-templates --all templates/sites/` | 批量生成平台模板 |
 
 ### 模板管理
 
 | 命令 | 说明 |
 |------|------|
-| `omnicrawl templates list` | 列出内置和用户模板 |
-| `omnicrawl templates inspect <url>` | 探测公开网址并推荐模板 |
-| `omnicrawl templates render <name> -o config.yaml --set key=value` | 填充模板变量生成配置 |
-| `omnicrawl templates validate [--include-legacy]` | 离线检查模板元数据 |
-| `omnicrawl templates recommend --url <url>` | 根据 URL 推荐模板 |
-| `omnicrawl templates diff <a> <b>` | 对比模板版本差异 |
-| `omnicrawl templates merge <base> <theirs> <ours>` | 三方合并模板升级 |
-| `omnicrawl templates export-pack <names...> --output pack.zip` | 导出可校验模板包 |
-| `omnicrawl templates import-pack <pack.zip> --target templates` | 导入模板包 |
+| `omnicrawler templates list` | 列出内置和用户模板 |
+| `omnicrawler templates inspect <url>` | 探测公开网址并推荐模板 |
+| `omnicrawler templates render <name> -o config.yaml --set key=value` | 填充模板变量生成配置 |
+| `omnicrawler templates validate [--include-legacy]` | 离线检查模板元数据 |
+| `omnicrawler templates recommend --url <url>` | 根据 URL 推荐模板 |
+| `omnicrawler templates diff <a> <b>` | 对比模板版本差异 |
+| `omnicrawler templates merge <base> <theirs> <ours>` | 三方合并模板升级 |
+| `omnicrawler templates export-pack <names...> --output pack.zip` | 导出可校验模板包 |
+| `omnicrawler templates import-pack <pack.zip> --target templates` | 导入模板包 |
 
 ### 定时与备份
 
 | 命令 | 说明 |
 |------|------|
-| `omnicrawl schedule add -c <config> --name daily --every-seconds 86400` | 添加定时任务 |
-| `omnicrawl schedule list` | 列出定时任务 |
-| `omnicrawl schedule run-due` | 运行到期任务 |
-| `omnicrawl backup create -c <config> -o backup.zip [--include-raw]` | 创建完整备份 |
-| `omnicrawl backup restore backup.zip --target <dir>` | 恢复备份 |
-| `omnicrawl research-package -c <config> -o research.zip` | 创建脱敏研究复现包 |
+| `omnicrawler schedule add -c <config> --name daily --every-seconds 86400` | 添加定时任务 |
+| `omnicrawler schedule list` | 列出定时任务 |
+| `omnicrawler schedule run-due` | 运行到期任务 |
+| `omnicrawler backup create -c <config> -o backup.zip [--include-raw]` | 创建完整备份 |
+| `omnicrawler backup restore backup.zip --target <dir>` | 恢复备份 |
+| `omnicrawler research-package -c <config> -o research.zip` | 创建脱敏研究复现包 |
 
 ### 工具与诊断
 
 | 命令 | 说明 |
 |------|------|
-| `omnicrawl doctor -c <config>` | 全面诊断 |
-| `omnicrawl validate -c <config>` | 校验配置 |
-| `omnicrawl capabilities` | 检查 Python/浏览器/OCR/存储能力 |
-| `omnicrawl security-report -c <config>` | 汇总网络访问边界 |
-| `omnicrawl compare-runs -c <config> <run_a> <run_b> -o diff.json` | 对比两次运行差异 |
-| `omnicrawl regression -c <config>` | 离线验证已保存样本 |
-| `omnicrawl cleanup -c <config>` | 预览或执行数据保留策略 |
-| `omnicrawl runtime-verify` | 验证便携运行时清单 |
-| `omnicrawl components list` | 查看已注册组件 |
-| `omnicrawl serve` | 启动可远程监控面板 |
-| `omnicrawl workbench` | 启动统一桌面工作台 |
-| `omnicrawl init` | 复制可编辑项目配置 |
-| `omnicrawl migrate` | 迁移旧配置到当前版本 |
-| `omnicrawl field-suggest` | 从保存的 HTML 自动推荐字段选择器 |
-| `omnicrawl record-actions` | 打开浏览器录制点击/输入/滚动 |
-| `omnicrawl api-discover` | 从浏览器 API 捕获 JSON 生成 REST 模板 |
-| `omnicrawl plugins` | 列出已注册插件 |
+| `omnicrawler doctor -c <config>` | 全面诊断 |
+| `omnicrawler validate -c <config>` | 校验配置 |
+| `omnicrawler capabilities` | 检查 Python/浏览器/OCR/存储能力 |
+| `omnicrawler security-report -c <config>` | 汇总网络访问边界 |
+| `omnicrawler compare-runs -c <config> <run_a> <run_b> -o diff.json` | 对比两次运行差异 |
+| `omnicrawler regression -c <config>` | 离线验证已保存样本 |
+| `omnicrawler cleanup -c <config>` | 预览或执行数据保留策略 |
+| `omnicrawler runtime-verify` | 验证便携运行时清单 |
+| `omnicrawler components list` | 查看已注册组件 |
+| `omnicrawler serve` | 启动可远程监控面板 |
+| `omnicrawler workbench` | 启动统一桌面工作台 |
+| `omnicrawler init` | 复制可编辑项目配置 |
+| `omnicrawler migrate` | 迁移旧配置到当前版本 |
+| `omnicrawler field-suggest` | 从保存的 HTML 自动推荐字段选择器 |
+| `omnicrawler record-actions` | 打开浏览器录制点击/输入/滚动 |
+| `omnicrawler api-discover` | 从浏览器 API 捕获 JSON 生成 REST 模板 |
+| `omnicrawler plugins` | 列出已注册插件 |
 
 ---
 
@@ -381,7 +381,7 @@ source:
 
 ```powershell
 $env:OMNICRAW_SECRET_API_KEY = "Bearer token123"
-omnicrawl run -c config.yaml
+omnicrawler run -c config.yaml
 ```
 
 ### 输出目录结构
@@ -420,7 +420,7 @@ work/<project>/
 
 ```powershell
 # 启动 WebSocket 服务
-omnicrawl visual-select --output configs/my_site.yaml
+omnicrawler visual-select --output configs/my_site.yaml
 
 # 打开 Chrome，加载 EasySpider 扩展
 # 在目标网页上右键点选元素 → "选中元素" → "选中全部" → "采集数据"
@@ -465,10 +465,10 @@ omnicrawl visual-select --output configs/my_site.yaml
 
 ```powershell
 # 从 URL 分析（需安装 crawl4ai）
-omnicrawl auto-analyze https://shop.example.com/products -o config.yaml
+omnicrawler auto-analyze https://shop.example.com/products -o config.yaml
 
 # 从本地 HTML 文件分析
-omnicrawl auto-analyze page.html --url https://example.com -o config.yaml
+omnicrawler auto-analyze page.html --url https://example.com -o config.yaml
 ```
 
 ### 支持的页面类型
@@ -528,19 +528,19 @@ Layer 4 — Crawl4AI Undetected 模式
 
 ```powershell
 # 生成随机指纹
-omnicrawl stealth-fingerprint --count 3 --json
+omnicrawler stealth-fingerprint --count 3 --json
 
 # 在配置中启用
 # browser_fetcher.py 自动注入 stealth.min.js + CDP 命令
 
 # 使用 Crawl4AI undetected 模式
-omnicrawl c4a-fetch https://protected-site.com --stealth
+omnicrawler c4a-fetch https://protected-site.com --stealth
 ```
 
 ### 代码集成
 
 ```python
-from omnicrawl.stealth_enhanced import StealthEnhancer
+from omnicrawler.stealth_enhanced import StealthEnhancer
 
 enhancer = StealthEnhancer(proxy_list=["http://proxy1:8080", "http://proxy2:8080"])
 fingerprint = enhancer.randomize()
@@ -569,13 +569,13 @@ enhancer.rotator.report_failure(proxy)   # 失败时调用
 
 ```powershell
 # 基础导入
-omnicrawl import-easyspider task.json -o config.yaml
+omnicrawler import-easyspider task.json -o config.yaml
 
 # 输出 Task IR 格式
-omnicrawl import-easyspider task.json --ir
+omnicrawler import-easyspider task.json --ir
 
 # 然后正常运行
-omnicrawl run -c config.yaml
+omnicrawler run -c config.yaml
 ```
 
 ### 支持的 EasySpider 操作映射
@@ -607,14 +607,14 @@ omnicrawl run -c config.yaml
 ### 安装依赖
 
 ```powershell
-pip install omnicrawl-platform[crawl4ai]
+pip install omnicrawler-platform[crawl4ai]
 crawl4ai-setup
 ```
 
 ### 使用方式
 
 ```python
-from omnicrawl.crawl4ai_bridge import Crawl4AIEngine, C4AConfig
+from omnicrawler.crawl4ai_bridge import Crawl4AIEngine, C4AConfig
 
 # 基础抓取
 engine = Crawl4AIEngine()
@@ -659,13 +659,13 @@ result = Crawl4AIEngine(C4AConfig(extraction_strategy="css", extraction_schema=s
 
 ```powershell
 # 列出所有已知平台
-omnicrawl gen-templates --list
+omnicrawler gen-templates --list
 
 # 批量生成模板文件
-omnicrawl gen-templates --all templates/sites/
+omnicrawler gen-templates --all templates/sites/
 
 # 查看某个平台
-omnicrawl gen-templates --generate amazon
+omnicrawler gen-templates --generate amazon
 ```
 
 生成的模板包含字段定义和注释，选择器需根据实际页面填写或配合 `auto-analyze` 自动生成。
@@ -699,7 +699,7 @@ omnicrawl gen-templates --generate amazon
 
 ```powershell
 # 查看复核队列
-omnicrawl status -c configs/my_site.yaml
+omnicrawler status -c configs/my_site.yaml
 
 # 导出复核队列
 # output/review_queue.csv — 在 Excel 中标注"有效/存疑/错误"
@@ -762,24 +762,24 @@ OmniCrawler 内置统一诊断系统，覆盖 12 类错误类型：
 ### 常用诊断命令
 
 ```powershell
-omnicrawl doctor -c config.yaml     # 全面体检
-omnicrawl validate -c config.yaml    # 配置校验
-omnicrawl capabilities               # 环境能力检查
-omnicrawl preflight -c config.yaml   # 运行前检查
-omnicrawl runtime-verify             # 便携版完整性检查
+omnicrawler doctor -c config.yaml     # 全面体检
+omnicrawler validate -c config.yaml    # 配置校验
+omnicrawler capabilities               # 环境能力检查
+omnicrawler preflight -c config.yaml   # 运行前检查
+omnicrawler runtime-verify             # 便携版完整性检查
 ```
 
 ### 错误恢复
 
 ```powershell
 # 查看恢复中心
-omnicrawl recovery -c config.yaml overview
+omnicrawler recovery -c config.yaml overview
 
 # 重试失败项
-omnicrawl recovery -c config.yaml retry-failed
+omnicrawler recovery -c config.yaml retry-failed
 
 # 从原始归档重做提取（不重新访问）
-omnicrawl reprocess -c config.yaml --run-id <run_id>
+omnicrawler reprocess -c config.yaml --run-id <run_id>
 ```
 
 ---
@@ -798,12 +798,12 @@ A: 便携版已内置。源码版运行 `python -m playwright install chromium`�
 A: Standard 版不含 OCR，下载 Full 版获取 Tesseract+PaddleOCR。文本 PDF 无需 OCR。
 
 **Q: Crawl4AI 不可用？**
-A: 安装 `pip install omnicrawl-platform[crawl4ai]` 后运行 `crawl4ai-setup`。
+A: 安装 `pip install omnicrawler-platform[crawl4ai]` 后运行 `crawl4ai-setup`。
 
 ### 采集配置
 
 **Q: 翻页但地址栏网址不变？**
-A: 切换到浏览器模式 → 使用可视化选择器（`omnicrawl visual-select`）自动捕获后台 API。
+A: 切换到浏览器模式 → 使用可视化选择器（`omnicrawler visual-select`）自动捕获后台 API。
 
 **Q: 采集速度太慢？**
 A: 增加 concurrency 到 4-8，减少 delay_seconds 到 0.5-1s。但过高会被限速。
@@ -820,13 +820,13 @@ A: 检查页面类型（HTML/JSON），切换到对应 mode。动态页面用浏
 ### 运行与恢复
 
 **Q: 任务中断了？**
-A: `omnicrawl resume -c <config>` 从中断点继续，进度在 SQLite 中不丢失。
+A: `omnicrawler resume -c <config>` 从中断点继续，进度在 SQLite 中不丢失。
 
 **Q: 改了规则重新导出？**
-A: `omnicrawl reprocess -c <config>` 从原始归档重新提取，不重新访问网站。
+A: `omnicrawler reprocess -c <config>` 从原始归档重新提取，不重新访问网站。
 
 **Q: 定期自动采集？**
-A: 专业模式启用定时任务，或系统调度器执行 `omnicrawl schedule run-due`。
+A: 专业模式启用定时任务，或系统调度器执行 `omnicrawler schedule run-due`。
 
 **Q: 复制到另一台电脑？**
 A: 便携版复制整个文件夹。源码版复制 `work/<project>/` 目录。
@@ -866,7 +866,7 @@ A: 当前版本已建立国际化管道。开发者在 `locale/` 目录添加英
 ### 核心模块
 
 ```
-src/omnicrawl/
+src/omnicrawler/
 ├── cli/                     # CLI 入口：_main.py 参数 + _handlers.py 分发（47 个顶层命令）
 ├── core/                    # 配置、异常、迁移、站点分类器、编码、站点别名
 ├── pipeline/                # 采集 Pipeline 编排（星型编排器）
@@ -904,7 +904,7 @@ src/omnicrawl/
 └── export/                  # Markdown 导出器
 ```
 
-`locale/`（.pot + 翻译文件）位于仓库根目录。旧路径兼容由 `omnicrawl/__init__.py` 的兼容重定向提供（如 `omnicrawl.config` → `omnicrawl.core.config`）。
+`locale/`（.pot + 翻译文件）位于仓库根目录。旧路径兼容由 `omnicrawler/__init__.py` 的兼容重定向提供（如 `omnicrawler.config` → `omnicrawler.core.config`）。
 
 ### 数据流
 

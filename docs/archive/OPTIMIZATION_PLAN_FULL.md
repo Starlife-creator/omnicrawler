@@ -5,7 +5,7 @@
 > - **源 A（终版）** `FINAL_FINDINGS_SUMMARY.md`：P0#1-24、P1#25-110、P2/P3 主题簇、优化 0-18、根因 1-10、5 条假数据
 > - **源 B（问题清单）** `问题清单与优化方案.html`：P0#1-15、P1#16-57、P2#58-125、P3#126-156、方案 1-13、5 根因
 > - 覆盖注册表：`docs/OPTIMIZATION_PLAN_TRACKING.md`（两源逐条映射，100%）
-> 适用范围：src/omnicrawl 及配套打包/测试/文档
+> 适用范围：src/omnicrawler 及配套打包/测试/文档
 > 目标：按"先止血、后治本、再增强、持续加固"四阶段，以**可验收、可回归**的工作包形式落地**全部**优化项与问题。**覆盖声明：源 A 110/110 条、源 B 156/156 条逐条可追溯。**
 
 ---
@@ -38,7 +38,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 操作 | ① 备份 `.runtime/`、`data/`、`configs/`、`docs/`；② 记录当前 `pytest tests/`、`pytest tests/integration/` 红绿基线；③ 记录 `import omnicrawl` 耗时基线（应约 287ms） |
+| 操作 | ① 备份 `.runtime/`、`data/`、`configs/`、`docs/`；② 记录当前 `pytest tests/`、`pytest tests/integration/` 红绿基线；③ 记录 `import omnicrawler` 耗时基线（应约 287ms） |
 | 验收标准 | 备份目录存在；基线测试报告存留；耗时基线写入阶段文档 |
 | 验证方式 | 查看备份目录；阅读 pytest 输出摘要 |
 
@@ -46,9 +46,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 操作 | ① 新建 `src/omnicrawl/core/safe_action.py`，提供 `require_explicit_apply(action_name, args)` 装饰器与"先入回收站再删除"工具；② 把 `reset` / `reset_stage` / `rollback-config` 三个命令入口先接入骨架（未实现确认流程则默认 dry-run） |
+| 操作 | ① 新建 `src/omnicrawler/core/safe_action.py`，提供 `require_explicit_apply(action_name, args)` 装饰器与"先入回收站再删除"工具；② 把 `reset` / `reset_stage` / `rollback-config` 三个命令入口先接入骨架（未实现确认流程则默认 dry-run） |
 | 验收标准 | 无 `--apply`/`--yes` 显式参数时，破坏性命令仅输出将执行的动作清单并退出 |
-| 验证方式 | 运行 `omnicrawl reset --help`；`omnicrawl reset` 不带确认参数不删除任何数据 |
+| 验证方式 | 运行 `omnicrawler reset --help`；`omnicrawler reset` 不带确认参数不删除任何数据 |
 | 预期收益 | 根因 10 提前止血，防优化过程中误删数据 |
 
 ### 任务 S0.3：编码规范落地
@@ -79,7 +79,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 位置 | `src/omnicrawl/core/utils.py:35-42`；`services/application_service.py:89` |
+| 位置 | `src/omnicrawler/core/utils.py:35-42`；`services/application_service.py:89` |
 | 操作 | ① `result = dict(base)` → `result = copy.deepcopy(base)`；② 删除 `application_service.py` 88-89 行就地改写 `config.raw["crawl"]["max_pages"]` |
 | 验收标准 | 任务A设 max_pages=50 后，任务B默认值仍为 100；深拷贝单元测试通过 |
 | 验证方式 | 新增测试：连续两次 `run()` 验证默认值不被污染；`pytest tests/core/test_utils.py -k deep_merge` |
@@ -89,10 +89,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 位置 | `src/omnicrawl/core/logging_utils.py:24-34`；`gui/main.py` 启动入口 |
-| 操作 | ① `configure_logging` 增加 `RotatingFileHandler`（`portable_data_root()/logs/omnicrawl.log`，5MB 轮转保留3份）；② stderr 兜底 `sys.__stderr__ or io.StringIO()`；③ GUI 启动时强制调用 `configure_logging`；④ 配置层 warning 改 `logger.warning` 输出，环境变量缺失收集为 warning 列表 |
+| 位置 | `src/omnicrawler/core/logging_utils.py:24-34`；`gui/main.py` 启动入口 |
+| 操作 | ① `configure_logging` 增加 `RotatingFileHandler`（`portable_data_root()/logs/omnicrawler.log`，5MB 轮转保留3份）；② stderr 兜底 `sys.__stderr__ or io.StringIO()`；③ GUI 启动时强制调用 `configure_logging`；④ 配置层 warning 改 `logger.warning` 输出，环境变量缺失收集为 warning 列表 |
 | 验收标准 | 打包后用 `pythonw.exe` 启动，日志写入文件；无 stderr 时不抛异常 |
-| 验证方式 | 手动运行 GUI → 查看 `logs/omnicrawl.log`；单元测试 mock 无 stderr 场景 |
+| 验证方式 | 手动运行 GUI → 查看 `logs/omnicrawler.log`；单元测试 mock 无 stderr 场景 |
 | 预期收益 | 源A P0#3、源B P0#3 + 根因 5 |
 
 **S1.1.2 后项**：非法日志级别不再 AttributeError（源B P2#64）——`setLevel` 前校验级别名，未知级别 fallback INFO + warning。
@@ -113,7 +113,7 @@
 |---|---|
 | 位置 | `gui/main.py:1972-1988` |
 | 操作 | `from .i18n import _` 移至模块顶层（移除 headless 条件分支内的 import） |
-| 验收标准 | `python -m omnicrawl.gui --run config.yaml` 正常执行；顶层 import 无副作用 |
+| 验收标准 | `python -m omnicrawler.gui --run config.yaml` 正常执行；顶层 import 无副作用 |
 | 验证方式 | headless 模式冒烟测试 |
 | 预期收益 | 源A P0#21、源B P0#5 |
 
@@ -173,7 +173,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 位置 | 新建 `src/omnicrawl/core/safe_data.py` |
+| 位置 | 新建 `src/omnicrawler/core/safe_data.py` |
 | 操作 | 提供 `safe_json_loads`、`safe_int`、`safe_float`、`safe_get`、`safe_slice`；全局替换裸 `json.loads`/`int()`/`float()` 调用点（优先 pipeline、extraction、LLM 响应解析） |
 | 验收标准 | 非法输入返回 None/默认值 + warning，不抛裸异常 |
 | 验证方式 | 工具函数单测；对替换点运行原有测试 |
@@ -185,7 +185,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 位置 | `src/omnicrawl/core/utils.py:121-125` |
+| 位置 | `src/omnicrawler/core/utils.py:121-125` |
 | 操作 | 判断改为 `value.lstrip("\t\r\n ").startswith(("=", "+", "-", "@"))` |
 | 验收标准 | `\t=cmd`、`\r@x` 等前缀绕过均被拦截 |
 | 验证方式 | 单元测试覆盖 4 种前缀 |
@@ -195,7 +195,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 位置 | `src/omnicrawl/core/archive_security.py:112`；`fetching/archives.py`；zip 成员处理 |
+| 位置 | `src/omnicrawler/core/archive_security.py:112`；`fetching/archives.py`；zip 成员处理 |
 | 操作 | ① 访问 `parts[0]` 前检查 `if path.parts:`；显式拒绝 `"."`；② 反斜杠穿越 `..\..\evil` 校验（Windows 目录穿越）；③ `copy_zip_member` 先写临时文件再原子 rename，已存在目标先确认；④ ZIP 成员大小写归一化去重仅在 case-insensitive 平台启用；⑤ `_safe_relative` 拒绝纯 `.` |
 | 验收标准 | `.` / `./` 成员不再抛 IndexError；反斜杠穿越被拦截；拷贝失败无半截文件 |
 | 验证方式 | 构造含 `./`、`..\..\evil` 的归档成员测试 |
@@ -342,7 +342,7 @@
 | 位置 | `pyproject.toml:12`；9 个 `datetime.UTC` 文件 + 8 个 `tomllib` 文件 |
 | 操作 | 方案A（推荐）：`from datetime import timezone` + `timezone.utc`；`tomllib` 补 fallback（pyproject 兼容 3.10） |
 | 验收标准 | Python 3.10 环境可 import 全部模块 |
-| 验证方式 | 3.10 venv 跑 `python -c "import omnicrawl"` |
+| 验证方式 | 3.10 venv 跑 `python -c "import omnicrawler"` |
 | 预期收益 | 源A P0#23、源B P1#28 |
 
 #### 任务 S1.5.4：commands __all__ 修正
@@ -351,7 +351,7 @@
 |---|---|
 | 位置 | `commands/__init__.py:5,11` |
 | 操作 | `field_suggest` → `field`，或增加别名导出 |
-| 验收标准 | `from omnicrawl.commands import *` 不报 AttributeError |
+| 验收标准 | `from omnicrawler.commands import *` 不报 AttributeError |
 | 验证方式 | import 冒烟 |
 | 预期收益 | 源A P0#14、源B P1#29 |
 
@@ -461,7 +461,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 位置 | 新建 `src/omnicrawl/core/secrets_store.py` |
+| 位置 | 新建 `src/omnicrawler/core/secrets_store.py` |
 | 操作 | AES-GCM + OS keyring 优先 / 用户密码派生 fallback；get/set/delete API；keyring 无可用后端时不抛未捕获异常（自动 fallback 密码派生） |
 | 验收标准 | 密钥可存取；OS keyring 不可用时走 fallback |
 | 验证方式 | 单元测试 |
@@ -1356,7 +1356,7 @@
 | 项 | 内容 |
 |---|---|
 | 位置 | 新建 `tests/fixtures/cli_outputs/`；`tests/integration/test_cli_gui_contract.py` |
-| 操作 | 5 套真实 `omnicrawl run` 快照（正常/失败/0条/异常/被拦网络）；断言 LogParser.parse_progress / parse_stats 输出匹配 |
+| 操作 | 5 套真实 `omnicrawler run` 快照（正常/失败/0条/异常/被拦网络）；断言 LogParser.parse_progress / parse_stats 输出匹配 |
 | 验收标准 | GUI 进度条/统计面板解析真实输出正确 |
 | 验证方式 | 跑新集成测试 |
 | 预期收益 | 源B P2（GUI↔CLI 契约簇，进度条恒0%） |
@@ -1403,9 +1403,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 位置 | `omnicrawl/__init__.py:192` 等 |
+| 位置 | `omnicrawler/__init__.py:192` 等 |
 | 操作 | ① 删 `_setup_compat_aliases()` 调用；② `__getattr__` 真正接管惰性重定向；③ 补 `MetaPathFinder` 处理子模块形式；④ import 失败改 `logger.warning`；⑤ 加启动耗时 CI 断言（<50ms 阈值）；⑥ pipeline 模块级重量级 fetcher/extractor import 下放（纯 HTTP 任务不全量加载） |
-| 验收标准 | `import omnicrawl` 从 287ms 降至 ms 级；`--version` 显著提速 |
+| 验收标准 | `import omnicrawler` 从 287ms 降至 ms 级；`--version` 显著提速 |
 | 验证方式 | 计时脚本对比；CI 断言 |
 | 预期收益 | 根因 8 + 源B P2#77 + P3 启动耗时簇 |
 
@@ -1436,7 +1436,7 @@
 | 项 | 内容 |
 |---|---|
 | 位置 | `gui/i18n.py:56`、spec、locale/ |
-| 操作 | ① domain 统一 `omnicrawl-gui`；② spec datas 加 `locale/`；③ 生成缺失 .mo 并纳入打包；④ CI 加 i18n gate（中文字面量非 `_()` 包裹则红） |
+| 操作 | ① domain 统一 `omnicrawler-gui`；② spec datas 加 `locale/`；③ 生成缺失 .mo 并纳入打包；④ CI 加 i18n gate（中文字面量非 `_()` 包裹则红） |
 | 验收标准 | 切换语言后界面真实切换 |
 | 验证方式 | 切换 en_US 断言界面文本 |
 | 预期收益 | 源A P1#102 + "假语言包" |
@@ -1481,7 +1481,7 @@
 | 预期收益 | 源B P3#126-156（31 条）+ 源A P3 500+ 项 |
 
 ### 阶段 4 退出条件
-- [x] `import omnicrawl` 耗时达标
+- [x] `import omnicrawler` 耗时达标
 - [x] 三环境默认路径一致
 - [x] i18n 切换生效
 - [x] 打包冒烟通过
@@ -1631,7 +1631,7 @@
 4. **gui/widgets/** 设计令牌全覆盖组件。
 5. **核心库** —— core/errors、logging_utils、models、run_state、runtime_paths、pipeline/core、task_ir、provenance、pdfx/database、pdfx/exporter。
 6. **安全修复** —— egress 拒绝路径、zip 防护、模板穿越、SHA256SUMS 篡改检测、归档整体验证。
-7. **全项目质量最高函数** —— `research_package.py:restore_package`（四道防线）、`env_checker.py:check_omnicrawl`（分类处理+短超时）、`error_dialog.py` 脱敏错误对话框。
+7. **全项目质量最高函数** —— `research_package.py:restore_package`（四道防线）、`env_checker.py:check_omnicrawler`（分类处理+短超时）、`error_dialog.py` 脱敏错误对话框。
 
 > 验收原则：任何修复若低于白名单对应能力水平，视为未完成。
 
