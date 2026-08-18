@@ -5,4 +5,4 @@ if [ ! -x .venv/bin/python ]; then
   echo "[ERROR] Virtual environment not found. Run ./setup_linux.sh first." >&2
   exit 1
 fi
-exec .venv/bin/python -m omnicrawl "$@"
+exec .venv/bin/python -m omnicrawler "$@"

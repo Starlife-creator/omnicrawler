@@ -26,8 +26,8 @@ def _qt_app():
 
 def _make_view(tmp_path):
     """构造一个隔离的插件市场视图（不触发联网）。"""
-    from omnicrawl.gui.motion_signal import MotionSignal
-    from omnicrawl.gui.views.plugin_market import PluginMarketView
+    from omnicrawler.gui.motion_signal import MotionSignal
+    from omnicrawler.gui.views.plugin_market import PluginMarketView
 
     # 确保 MotionSignal 单例绑定到当前存活的 QApplication
     MotionSignal._instance = None
@@ -51,7 +51,7 @@ def test_view_instantiates_offline_by_default(tmp_path):
 
 
 def test_is_installed_detects_signature_pair(tmp_path):
-    from omnicrawl.gui.views.plugin_market import PluginMarketView
+    from omnicrawler.gui.views.plugin_market import PluginMarketView
 
     view = PluginMarketView(project_root=str(tmp_path))
 
@@ -70,7 +70,7 @@ def test_is_installed_detects_signature_pair(tmp_path):
 
 
 def test_installed_ids_enumerates_signed_plugin_dirs(tmp_path):
-    from omnicrawl.gui.views.plugin_market import PluginMarketView
+    from omnicrawler.gui.views.plugin_market import PluginMarketView
 
     view = PluginMarketView(project_root=str(tmp_path))
 
@@ -90,8 +90,8 @@ def test_installed_plugin_verify_fails_closed_with_real_signatures(tmp_path):
     与 GUI 视图 _on_verify 走同一路径（market_client.verify_installed），
     此前测试仅用全零 .sig 验证「存在性」，未覆盖密码学验签（P1-11）。
     """
-    from omnicrawl.plugins import signing
-    from omnicrawl.plugins.market_client import verify_installed
+    from omnicrawler.plugins import signing
+    from omnicrawler.plugins.market_client import verify_installed
 
     private_pem, public_pem = signing.generate_keypair()
     dest_root = tmp_path / "plugins_installed"
@@ -122,7 +122,7 @@ def test_installed_plugin_verify_fails_closed_with_real_signatures(tmp_path):
 
 
 def test_offline_populate_lists_only_local_installs(tmp_path):
-    from omnicrawl.gui.views.plugin_market import PluginMarketView
+    from omnicrawler.gui.views.plugin_market import PluginMarketView
 
     view = PluginMarketView(project_root=str(tmp_path))
 
@@ -139,8 +139,8 @@ def test_offline_populate_lists_only_local_installs(tmp_path):
 def test_main_window_wires_plugin_market_view(monkeypatch):
     from PyQt6.QtWidgets import QApplication
 
-    from omnicrawl.gui.main import MainWindow
-    from omnicrawl.gui.navigation import NavIndex
+    from omnicrawler.gui.main import MainWindow
+    from omnicrawler.gui.navigation import NavIndex
 
     monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
     window = MainWindow()

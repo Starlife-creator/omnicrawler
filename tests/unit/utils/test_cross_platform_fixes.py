@@ -25,8 +25,8 @@ def test_a16_config_default_user_agent_tracks_package_version() -> None:
     """A16：ProjectConfig 默认 UA 不再硬编码 "OmniCrawler-GUI/1.1"。"""
     pytest.importorskip("PyQt6")
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
-    from omnicrawl import __version__
-    from omnicrawl.gui.core.config_model import CrawlConfig
+    from omnicrawler import __version__
+    from omnicrawler.gui.core.config_model import CrawlConfig
 
     cfg = CrawlConfig()
     assert cfg.user_agent.startswith("OmniCrawler/")
@@ -35,13 +35,13 @@ def test_a16_config_default_user_agent_tracks_package_version() -> None:
 
 
 def test_a16_home_version_fallback_uses_package_version(monkeypatch) -> None:
-    """A16：包版本读取失败时回退 omnicrawl.__version__ 而非硬编码 "2.7"。"""
+    """A16：包版本读取失败时回退 omnicrawler.__version__ 而非硬编码 "2.7"。"""
     pytest.importorskip("PyQt6")
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
     import importlib.metadata
 
-    from omnicrawl import __version__
-    from omnicrawl.gui.home import _package_version
+    from omnicrawler import __version__
+    from omnicrawler.gui.home import _package_version
     monkeypatch.setattr(importlib.metadata, "version", lambda name: (_ for _ in ()).throw(Exception("no dist")))
     assert _package_version() == __version__
 
@@ -49,7 +49,7 @@ def test_a16_home_version_fallback_uses_package_version(monkeypatch) -> None:
 def test_a22_help_registry_unknown_id_raises_key_error() -> None:
     """A22 前提：registry 对未知 ID 抛 KeyError（GUI show_help 已加兜底）。"""
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
-    from omnicrawl.services.help_registry import get_help
+    from omnicrawler.services.help_registry import get_help
 
     with pytest.raises(KeyError):
         get_help("troubleshooting")  # 该 ID 未收录
@@ -67,8 +67,8 @@ def test_a21_settings_clear_recent_is_public(monkeypatch, tmp_path) -> None:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
     from PyQt6.QtWidgets import QApplication
 
-    import omnicrawl.core.runtime_paths as runtime_paths
-    from omnicrawl.gui.settings import AppSettings
+    import omnicrawler.core.runtime_paths as runtime_paths
+    from omnicrawler.gui.settings import AppSettings
 
     runtime_paths.portable_data_root.cache_clear()
     monkeypatch.setattr(runtime_paths, "is_frozen", lambda: True)
@@ -95,7 +95,7 @@ def test_b9_csv_index_no_100k_truncation(tmp_path) -> None:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
     from PyQt6.QtWidgets import QApplication
 
-    from omnicrawl.gui.views.result_table import ROWS_PER_PAGE, CsvStreamModel
+    from omnicrawler.gui.views.result_table import ROWS_PER_PAGE, CsvStreamModel
 
     QApplication.instance() or QApplication([])
     csv_path = tmp_path / "big.csv"
@@ -115,7 +115,7 @@ def test_b9_csv_index_no_100k_truncation(tmp_path) -> None:
     # 异步路径同样完整计数
     from PyQt6.QtTest import QSignalSpy
 
-    from omnicrawl.gui.async_workers import CsvIndexWorker
+    from omnicrawler.gui.async_workers import CsvIndexWorker
     worker = CsvIndexWorker(csv_path)
     spy = QSignalSpy(worker.finished_indexing)
     worker.run()
@@ -131,7 +131,7 @@ def test_b9_csv_tail_reachable_beyond_100k_rows(tmp_path) -> None:
     pytest.importorskip("PyQt6")
     from PyQt6.QtWidgets import QApplication
 
-    from omnicrawl.gui.views.result_table import ROWS_PER_PAGE, CsvStreamModel
+    from omnicrawler.gui.views.result_table import ROWS_PER_PAGE, CsvStreamModel
 
     QApplication.instance() or QApplication([])
     total = 100_000 + 3
@@ -156,7 +156,7 @@ def test_b9_csv_tail_reachable_beyond_100k_rows(tmp_path) -> None:
 def test_b10_headless_runner_sets_pythonioencoding(tmp_path, monkeypatch) -> None:
     """B10：无头子进程须收到 PYTHONIOENCODING（旧代码拼作 PYTHONIOCODING 从未生效）。"""
     pytest.importorskip("ruamel.yaml")
-    from omnicrawl.gui.runner import headless_runner as hr
+    from omnicrawler.gui.runner import headless_runner as hr
 
     config_path = tmp_path / "task.yaml"
     config_path.write_text("project_name: demo\n", encoding="utf-8")
@@ -164,7 +164,7 @@ def test_b10_headless_runner_sets_pythonioencoding(tmp_path, monkeypatch) -> Non
         validate=lambda: [], project_name="demo", task_id="t-1"
     )
     monkeypatch.setattr(hr, "load_yaml", lambda _path: fake_config)
-    monkeypatch.setattr(hr, "check_omnicrawl", lambda _path: (True, "0.4.0"))
+    monkeypatch.setattr(hr, "check_omnicrawler", lambda _path: (True, "0.4.0"))
 
     captured: dict[str, dict[str, str]] = {}
 
@@ -192,8 +192,8 @@ def test_b11_worker_task_runner_tolerates_none_created_at(tmp_path, monkeypatch)
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PyQt6.QtWidgets import QApplication
 
-    from omnicrawl.gui.core.config_model import CrawlConfig
-    from omnicrawl.gui.runner.worker_task_runner import WorkerTaskRunner
+    from omnicrawler.gui.core.config_model import CrawlConfig
+    from omnicrawler.gui.runner.worker_task_runner import WorkerTaskRunner
 
     app = QApplication.instance() or QApplication([])
     runner = WorkerTaskRunner(project_root=tmp_path)

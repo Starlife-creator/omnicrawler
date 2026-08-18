@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from omnicrawl.pdfx.normalization import normalize_amount, normalize_date
+from omnicrawler.pdfx.normalization import normalize_amount, normalize_date
 
 
 class _FakeDB:
@@ -26,8 +26,8 @@ class PDFModuleTest(unittest.TestCase):
 
     def test_text_manifest_escapes_formula_injection(self):
         """B07-004：text_manifest.csv 的 filename/source_url 必须以 excel_safe 转义。"""
-        from omnicrawl.pdfx.config import load_config
-        from omnicrawl.pdfx.text_export import export_text_stage
+        from omnicrawler.pdfx.config import load_config
+        from omnicrawler.pdfx.text_export import export_text_stage
 
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -56,12 +56,12 @@ class PDFModuleTest(unittest.TestCase):
     def test_text_pdf_end_to_end(self):
         import fitz
 
-        from omnicrawl.pdfx.config import load_config
-        from omnicrawl.pdfx.database import Database
-        from omnicrawl.pdfx.exporter import export_stage
-        from omnicrawl.pdfx.extraction import extraction_stage
-        from omnicrawl.pdfx.ingest import ingest
-        from omnicrawl.pdfx.parser import parse_stage
+        from omnicrawler.pdfx.config import load_config
+        from omnicrawler.pdfx.database import Database
+        from omnicrawler.pdfx.exporter import export_stage
+        from omnicrawler.pdfx.extraction import extraction_stage
+        from omnicrawler.pdfx.ingest import ingest
+        from omnicrawler.pdfx.parser import parse_stage
 
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

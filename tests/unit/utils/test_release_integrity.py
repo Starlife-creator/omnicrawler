@@ -32,11 +32,11 @@ def _write_wheel(path: Path, files: dict[str, bytes]) -> None:
 def test_wheel_integrity_checks_record_imports_and_entry_points(tmp_path):
     wheel = tmp_path / "demo.whl"
     _write_wheel(wheel, {
-        "omnicrawl/__init__.py": b"",
-        "omnicrawl/quality/__init__.py": b"",
-        "omnicrawl/quality/diagnostics.py": b"class DiagnosticRecorder:\n    pass\n",
-        "omnicrawl/pipeline.py": b"from .quality.diagnostics import DiagnosticRecorder\ndef main():\n    pass\n",
-        "demo-1.0.dist-info/entry_points.txt": b"[console_scripts]\ndemo=omnicrawl.pipeline:main\n",
+        "omnicrawler/__init__.py": b"",
+        "omnicrawler/quality/__init__.py": b"",
+        "omnicrawler/quality/diagnostics.py": b"class DiagnosticRecorder:\n    pass\n",
+        "omnicrawler/pipeline.py": b"from .quality.diagnostics import DiagnosticRecorder\ndef main():\n    pass\n",
+        "demo-1.0.dist-info/entry_points.txt": b"[console_scripts]\ndemo=omnicrawler.pipeline:main\n",
     })
     assert check_wheel(wheel) == []
 
@@ -44,10 +44,10 @@ def test_wheel_integrity_checks_record_imports_and_entry_points(tmp_path):
 def test_wheel_integrity_detects_missing_imported_symbol(tmp_path):
     wheel = tmp_path / "broken.whl"
     _write_wheel(wheel, {
-        "omnicrawl/__init__.py": b"",
-        "omnicrawl/quality/__init__.py": b"",
-        "omnicrawl/quality/diagnostics.py": b"",
-        "omnicrawl/pipeline.py": b"from .quality.diagnostics import DiagnosticRecorder\n",
+        "omnicrawler/__init__.py": b"",
+        "omnicrawler/quality/__init__.py": b"",
+        "omnicrawler/quality/diagnostics.py": b"",
+        "omnicrawler/pipeline.py": b"from .quality.diagnostics import DiagnosticRecorder\n",
     })
     assert any("has no DiagnosticRecorder" in issue for issue in check_wheel(wheel))
 
@@ -59,10 +59,10 @@ def test_source_zip_checks_paths_generated_files_and_imported_symbols(tmp_path):
         "Demo/README.md": "demo",
         "Demo/LICENSE": "MIT",
         "Demo/tools/check_release_integrity.py": "",
-        "Demo/src/omnicrawl/__init__.py": "",
-        "Demo/src/omnicrawl/quality/__init__.py": "",
-        "Demo/src/omnicrawl/quality/diagnostics.py": "class DiagnosticRecorder:\n    pass\n",
-        "Demo/src/omnicrawl/pipeline.py": "from .quality.diagnostics import DiagnosticRecorder\n",
+        "Demo/src/omnicrawler/__init__.py": "",
+        "Demo/src/omnicrawler/quality/__init__.py": "",
+        "Demo/src/omnicrawler/quality/diagnostics.py": "class DiagnosticRecorder:\n    pass\n",
+        "Demo/src/omnicrawler/pipeline.py": "from .quality.diagnostics import DiagnosticRecorder\n",
     }
     with zipfile.ZipFile(source_zip, "w") as archive:
         for name, content in files.items():
@@ -89,8 +89,8 @@ def _write_portable(
 ) -> None:
     files: dict[str, bytes] = {
         "OmniCrawler.exe": b"MZ-gui",
-        "omnicrawl.exe": b"MZ-cli",
-        "omnicrawl-worker.exe": b"MZ-worker",
+        "omnicrawler-cli.exe": b"MZ-cli",
+        "omnicrawler-worker.exe": b"MZ-worker",
         "_internal/python312.dll": b"runtime",
         "PORTABLE.flag": b"",
         "EDITION.txt": f"OmniCrawler {edition} portable edition\n".encode(),
@@ -121,7 +121,7 @@ def _write_portable(
     records = {}
     for name, content in files.items():
         digest = hashlib.sha256(content).hexdigest()
-        if corrupt_hash and name == "omnicrawl.exe":
+        if corrupt_hash and name == "omnicrawler-cli.exe":
             digest = "0" * 64
         records[name] = {"sha256": digest, "bytes": len(content)}
     files["RUNTIME-MANIFEST.json"] = json.dumps({
@@ -145,12 +145,12 @@ def test_portable_zip_detects_unsafe_duplicates_and_manifest_hashes(tmp_path):
     archive = tmp_path / "OmniCrawler-2.1.0-Windows-Portable-Standard.zip"
     _write_portable(archive, "Standard", corrupt_hash=True)
     with zipfile.ZipFile(archive, "a") as bundle:
-        bundle.writestr("OmniCrawler/OMNICRAWL.exe", b"MZ-duplicate")
+        bundle.writestr("OmniCrawler/OMNICRAWLER.exe", b"MZ-duplicate")
         bundle.writestr("../escape.txt", b"unsafe")
     issues = check_portable_zip(archive, verify_payloads=True)
     assert any("duplicate portable archive path" in issue for issue in issues)
     assert any("unsafe portable archive path" in issue for issue in issues)
-    assert any("runtime manifest hash mismatch: omnicrawl.exe" in issue for issue in issues)
+    assert any("runtime manifest hash mismatch: omnicrawler-cli.exe" in issue for issue in issues)
 
 
 def test_portable_zip_requires_full_runtime_assets(tmp_path):

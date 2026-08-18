@@ -29,8 +29,8 @@ def _make_canvas(monkeypatch):
     monkeypatch.setenv(_OFFSCREEN, "offscreen")
     _ensure_app()
 
-    from omnicrawl.gui.core.config_model import CrawlConfig
-    from omnicrawl.gui.views.task_canvas import TaskCanvas
+    from omnicrawler.gui.core.config_model import CrawlConfig
+    from omnicrawler.gui.views.task_canvas import TaskCanvas
 
     # 不要 show()/processEvents()——offscreen 下 import gui.main 后
     # processEvents 会触发 PyQt 延迟删除使画布整树失效；本测试只断言状态属性。
@@ -40,7 +40,7 @@ def _make_canvas(monkeypatch):
 
 def _set_first_field(canvas, name="标题", selector="", kind="css"):
     """模拟用户添加并编辑首行字段（触发 model.dataChanged → 标 field 脏）。"""
-    from omnicrawl.gui.core.config_model import FieldDef
+    from omnicrawler.gui.core.config_model import FieldDef
 
     canvas._fields_model.append(FieldDef(name=name, selector=selector, selector_type=kind))
     canvas._fields_model.setData(canvas._fields_model.index(0, 0), name)
@@ -131,7 +131,7 @@ def test_external_edit_conflict_locks_and_blocks_save(monkeypatch):
     canvas._max_pages.setValue(5)
     assert canvas._dirty
 
-    from omnicrawl.gui.core.config_model import CrawlConfig
+    from omnicrawler.gui.core.config_model import CrawlConfig
 
     updated = CrawlConfig()
     updated.seed_urls = ["https://external.example.org"]
@@ -167,7 +167,7 @@ def test_external_edit_keep_canvas_preserves_draft(monkeypatch):
     canvas._max_pages.setValue(7)
     assert canvas._dirty
 
-    from omnicrawl.gui.core.config_model import CrawlConfig
+    from omnicrawler.gui.core.config_model import CrawlConfig
 
     updated = CrawlConfig()
     updated.seed_urls = ["https://external.example.org"]
@@ -457,7 +457,7 @@ def test_rejection_records_diagnostic_snapshot(monkeypatch, tmp_path):
     """拒绝理由采集（PRD §3.2）：👎 标签携带完整诊断快照落盘；无快照不入库。"""
     import json as _json
 
-    from omnicrawl.core.categorizer import CategorizeResult
+    from omnicrawler.core.categorizer import CategorizeResult
 
     canvas = _make_canvas(monkeypatch)
     canvas._url_edit.setText("https://example.org/news")
@@ -500,7 +500,7 @@ def test_rejection_records_diagnostic_snapshot(monkeypatch, tmp_path):
 
 def test_field_table_progressive_load(monkeypatch):
     """字段表格渐进披露（PRD §3.3）：50 字段默认只显示前 10 条，可展开全部。"""
-    from omnicrawl.gui.core.config_model import FieldDef
+    from omnicrawler.gui.core.config_model import FieldDef
 
     canvas = _make_canvas(monkeypatch)
     canvas._url_edit.setText("https://example.org/news")
@@ -528,7 +528,7 @@ def test_field_table_first_screen_render_baseline(monkeypatch):
     """计时口径（PRD §3.3）：50 字段数据就绪 → 首屏渲染 <500ms。"""
     import time
 
-    from omnicrawl.gui.core.config_model import FieldDef
+    from omnicrawler.gui.core.config_model import FieldDef
 
     canvas = _make_canvas(monkeypatch)
     canvas._url_edit.setText("https://example.org/news")
@@ -588,7 +588,7 @@ def test_visual_candidates_upsert_and_selector_kind(monkeypatch):
     """视觉点选候选 Upsert 追加（PRD §3.3）：同名加后缀不覆盖；XPath 正确识别。"""
     from types import SimpleNamespace
 
-    from omnicrawl.gui.core.config_model import FieldDef
+    from omnicrawler.gui.core.config_model import FieldDef
 
     canvas = _make_canvas(monkeypatch)
     canvas._ai_plan_enabled = False  # 避免 _on_start 启动真实后台线程
@@ -634,7 +634,7 @@ def test_visual_pick_without_url_degrades_gracefully(monkeypatch):
 
 def _emit_ai_plan(canvas, draft=None):
     """模拟后台 worker 返回 AI 计划：连接信号后 emit（sender 守卫可过）。"""
-    from omnicrawl.gui.views.task_canvas import _PlanReviewWorker
+    from omnicrawler.gui.views.task_canvas import _PlanReviewWorker
 
     worker = _PlanReviewWorker("https://example.org/news 采集新闻", canvas)
     worker.result_ready.connect(canvas._on_ai_plan_ready)

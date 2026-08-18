@@ -1,6 +1,6 @@
 # 审查报告
 
-审查范围：`src/omnicrawl` 九个子包共 75 个目标文件（services 28 / quality 13 / security 6 / sdk 3 / sources 7 / plugins 8 / review 4 / export 2 / visual_selector 4），全部至少精读一遍，行号以逐块复读为准。审查维度：逻辑、异常、资源泄漏、并发、安全、死代码、性能、跨平台、UX、一致性。项目安全防护整体优秀（EgressBroker 全链路、NetworkTargetPolicy DNS 固定 + fail-closed、secret:// 解析、证据哈希链、插件静态预检、路径包含校验等），本报告只列真实缺陷与改进点，已排除刻意防护设计。报告文件未经授权不修改任何源文件。
+审查范围：`src/omnicrawler` 九个子包共 75 个目标文件（services 28 / quality 13 / security 6 / sdk 3 / sources 7 / plugins 8 / review 4 / export 2 / visual_selector 4），全部至少精读一遍，行号以逐块复读为准。审查维度：逻辑、异常、资源泄漏、并发、安全、死代码、性能、跨平台、UX、一致性。项目安全防护整体优秀（EgressBroker 全链路、NetworkTargetPolicy DNS 固定 + fail-closed、secret:// 解析、证据哈希链、插件静态预检、路径包含校验等），本报告只列真实缺陷与改进点，已排除刻意防护设计。报告文件未经授权不修改任何源文件。
 
 ## 汇总（按严重级别计数）
 
@@ -141,7 +141,7 @@
 - 建议：精确匹配凭据样式而非子串，或降级为警告。
 
 ### [ux] visual_selector\field_converter.py:130,178 - 未设 seed_url 时默认 "https://example.com" 占位
-- 现状：`to_omnicrawl_yaml`/`to_yaml` 在 seed_url 为空时写入 `["https://example.com"]`。
+- 现状：`to_omnicrawler_yaml`/`to_yaml` 在 seed_url 为空时写入 `["https://example.com"]`。
 - 问题：生成指向陌生域名的可运行配置，可能被误执行。
 - 建议：缺省时在配置中显式标记"待填写"或直接报错提示。
 

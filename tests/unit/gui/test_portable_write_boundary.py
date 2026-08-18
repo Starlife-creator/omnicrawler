@@ -20,20 +20,20 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.gui.settings import AppSettings, make_qsettings
+from omnicrawler.gui.settings import AppSettings, make_qsettings
 
 
 @pytest.fixture()
 def portable_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """模拟冻结便携包：数据根指向 tmp_path/app（应用目录内）。"""
-    import omnicrawl.core.runtime_paths as rp
+    import omnicrawler.core.runtime_paths as rp
 
     # 先清缓存再替换：lru_cache wrapper 被替换后没有 cache_clear。
     rp.portable_data_root.cache_clear()
     data_root = tmp_path / "app"
     data_root.mkdir()
-    monkeypatch.setattr("omnicrawl.core.runtime_paths.is_frozen", lambda: True)
-    monkeypatch.setattr("omnicrawl.core.runtime_paths.portable_data_root", lambda: data_root)
+    monkeypatch.setattr("omnicrawler.core.runtime_paths.is_frozen", lambda: True)
+    monkeypatch.setattr("omnicrawler.core.runtime_paths.portable_data_root", lambda: data_root)
     return data_root
 
 
@@ -75,7 +75,7 @@ def test_app_settings_portable_writes_inside_data_root(portable_env: Path) -> No
 
 def test_make_qsettings_source_mode_keeps_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """源码（非冻结）模式回退 org/app 构造，不强制落数据根（避免误伤）。"""
-    monkeypatch.setattr("omnicrawl.core.runtime_paths.is_frozen", lambda: False)
+    monkeypatch.setattr("omnicrawler.core.runtime_paths.is_frozen", lambda: False)
     settings = make_qsettings("OmniCrawler", "GUIWorkbench")
     # 源码模式下 fileName 由 Qt 决定（平台相关），但不应指向便携数据根。
     assert "OmniCrawler" in settings.organizationName()
@@ -88,7 +88,7 @@ def test_main_window_qsettings_call_sites_use_portable_helper(portable_env: Path
     无法实例化真实对话框（需完整 QApplication + 布局），此处验证调用点
     所使用的工厂函数在 portable 下的落点，防止重新引入裸 QSettings。
     """
-    from omnicrawl.gui.settings import make_qsettings as factory
+    from omnicrawler.gui.settings import make_qsettings as factory
 
     settings = factory("OmniCrawler", "GUIWorkbench")
     assert Path(settings.fileName()).resolve().is_relative_to(portable_env.resolve())

@@ -14,18 +14,18 @@ except ImportError:
 
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.errors import PolicyBlockedError
-from omnicrawl.core.models import CrawlRequest, ExtractedRecord, FetchResult
-from omnicrawl.extraction.extractors import _apply_rule
-from omnicrawl.extraction.html_tools import MiniNode, _mini_select, parse_html
-from omnicrawl.fetching.http_client import PinnedHTTPConnection, PinnedHTTPSConnection, SafeRedirectHandler
-from omnicrawl.fetching.retry import retry_after_seconds
-from omnicrawl.fetching.routing import needs_browser
-from omnicrawl.plugins.plugins import Registry, load_local_plugins
-from omnicrawl.quality.diagnostics import DiagnosticRecorder
-from omnicrawl.quality.quality import assess_record
-from omnicrawl.security.policy import AsyncHostRateLimiter, NetworkTargetPolicy, RobotsPolicy
+from omnicrawler.core.config import load_config
+from omnicrawler.core.errors import PolicyBlockedError
+from omnicrawler.core.models import CrawlRequest, ExtractedRecord, FetchResult
+from omnicrawler.extraction.extractors import _apply_rule
+from omnicrawler.extraction.html_tools import MiniNode, _mini_select, parse_html
+from omnicrawler.fetching.http_client import PinnedHTTPConnection, PinnedHTTPSConnection, SafeRedirectHandler
+from omnicrawler.fetching.retry import retry_after_seconds
+from omnicrawler.fetching.routing import needs_browser
+from omnicrawler.plugins.plugins import Registry, load_local_plugins
+from omnicrawler.quality.diagnostics import DiagnosticRecorder
+from omnicrawler.quality.quality import assess_record
+from omnicrawler.security.policy import AsyncHostRateLimiter, NetworkTargetPolicy, RobotsPolicy
 
 
 class _Response:

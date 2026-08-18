@@ -15,7 +15,7 @@
 ```powershell
 .\setup_windows.bat
 .\run_gui_windows.bat
-.\.venv\Scripts\omnicrawl.exe capabilities --verify-imports
+.\.venv\Scripts\omnicrawler.exe capabilities --verify-imports
 ```
 
 默认下载完整 Python 依赖、Chromium 与 PaddleOCR 模型，并准备项目本地 Windows
@@ -48,13 +48,13 @@ Intel 与 Apple Silicon 均使用当前解释器对应的原生 wheel。Tesserac
 ## 通用 Python 入口
 
 ```bash
-python -m omnicrawl --help
-python -m omnicrawl capabilities --verify-imports
-python -m omnicrawl.gui
-python -m omnicrawl.pdfx --help
+python -m omnicrawler --help
+python -m omnicrawler capabilities --verify-imports
+python -m omnicrawler.gui
+python -m omnicrawler.pdfx --help
 ```
 
-所有平台使用同一 `src/omnicrawl` 核心、配置格式、插件 API、测试和文档。平台脚本
+所有平台使用同一 `src/omnicrawler` 核心、配置格式、插件 API、测试和文档。平台脚本
 只负责解释器路径、原生依赖与启动体验，不复制业务实现。
 
 ## 外部服务并非本机依赖

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from omnicrawl.services.ai_providers import OpenAICompatibleProvider
-from omnicrawl.services.ai_safety import AIBudget, AIBudgetExceededError
+from omnicrawler.services.ai_providers import OpenAICompatibleProvider
+from omnicrawler.services.ai_safety import AIBudget, AIBudgetExceededError
 
 
 class _FakeEgress:
@@ -40,7 +40,7 @@ class _FakeResponse:
 def _provider(budget: AIBudget) -> OpenAICompatibleProvider:
     from pathlib import Path
 
-    from omnicrawl.core.config import AppConfig
+    from omnicrawler.core.config import AppConfig
 
     config = {
         "base_url": "https://api.example.com/v1",
@@ -69,7 +69,7 @@ def _patch_opener(provider: OpenAICompatibleProvider) -> None:
             return _FakeResponse(payload.encode("utf-8"))
 
     return patch(
-        "omnicrawl.services.ai_providers.build_safe_opener",
+        "omnicrawler.services.ai_providers.build_safe_opener",
         return_value=_FakeOpener(),
     )
 

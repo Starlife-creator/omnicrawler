@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 pytest.importorskip("PyQt6", reason="visual design tests require the optional PyQt6 dependency")
-from omnicrawl.gui.design_system import (
+from omnicrawler.gui.design_system import (
     DARK,
     HIGH_CONTRAST,
     LIGHT,
@@ -42,8 +42,8 @@ def test_visual_theme_home_transition_and_help_visibility(monkeypatch, tmp_path)
     from PyQt6.QtTest import QTest
     from PyQt6.QtWidgets import QApplication, QFrame, QGraphicsDropShadowEffect
 
-    from omnicrawl.gui.home import AmbientHero
-    from omnicrawl.gui.main import MainWindow
+    from omnicrawler.gui.home import AmbientHero
+    from omnicrawler.gui.main import MainWindow
 
     monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
     app = QApplication.instance() or QApplication([])

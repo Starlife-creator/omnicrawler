@@ -9,8 +9,8 @@ from pathlib import Path
 
 import yaml
 
-from omnicrawl.commands.plan import execute
-from omnicrawl.pipeline_ops.plan_compiler import _redact_for_hash
+from omnicrawler.commands.plan import execute
+from omnicrawler.pipeline_ops.plan_compiler import _redact_for_hash
 
 
 def _task(tmp_path: Path, extra: str = "") -> Path:

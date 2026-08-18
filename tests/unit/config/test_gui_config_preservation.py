@@ -20,7 +20,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_gui_round_trip_preserves_advanced_template_sections() -> None:
-    from omnicrawl.gui.core.config_serializer import from_yaml, to_yaml
+    from omnicrawler.gui.core.config_serializer import from_yaml, to_yaml
 
     original = """
 template: {id: cms/example, version: 1.2.0}
@@ -53,7 +53,7 @@ extract: {mode: json, fields: {}}
 
 def test_prune_orphan_overrides_removes_stale_urls() -> None:
     """P2-5b：seed_urls 变更后，孤儿覆盖键被清理。"""
-    from omnicrawl.gui.core.config_model import CrawlConfig
+    from omnicrawler.gui.core.config_model import CrawlConfig
 
     config = CrawlConfig()
     config.seed_urls = ["https://a.example/list", "https://b.example/list"]
@@ -73,8 +73,8 @@ def test_prune_orphan_overrides_removes_stale_urls() -> None:
 
 def test_to_yaml_prunes_orphan_overrides_before_serialize() -> None:
     """P2-5b：序列化边界自动清理孤儿覆盖键（保存/运行前生效）。"""
-    from omnicrawl.gui.core.config_model import CrawlConfig
-    from omnicrawl.gui.core.config_serializer import to_yaml
+    from omnicrawler.gui.core.config_model import CrawlConfig
+    from omnicrawler.gui.core.config_serializer import to_yaml
 
     config = CrawlConfig()
     config.seed_urls = ["https://a.example/list"]

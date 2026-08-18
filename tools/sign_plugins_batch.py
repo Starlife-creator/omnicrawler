@@ -4,11 +4,11 @@
 Discovers plugin entry files (those defining a module-level
 ``register(registry)`` / ``register(registry, context)`` hook) and produces a
 detached ``<plugin>.py.sig`` next to each, using the offline ed25519 private
-key. The loader (``omnicrawl.plugins.plugins._verify_plugin_signature``) verifies
+key. The loader (``omnicrawler.plugins.plugins._verify_plugin_signature``) verifies
 exactly these ``.sig`` files, so signing a plugin entry file is what makes it
 pass the fail-closed gate once a trust root is configured.
 
-Framework registrations inside ``src/omnicrawl`` and build/test junk directories
+Framework registrations inside ``src/omnicrawler`` and build/test junk directories
 are excluded — they are first-party code, not user plugins, and are never subject
 to the signature gate.
 
@@ -33,22 +33,22 @@ import ast
 import sys
 from pathlib import Path
 
-# -- 自引导：让工具在直接用 `python tools/...` 时也能找到 omnicrawl --
+# -- 自引导：让工具在直接用 `python tools/...` 时也能找到 omnicrawler --
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 for _cand in (_REPO_ROOT / "src", _REPO_ROOT):
     _cand_str = str(_cand)
     if _cand_str not in sys.path:
         sys.path.insert(0, _cand_str)
 
-from omnicrawl.plugins.signing import sign_file, verify_plugin
+from omnicrawler.plugins.signing import sign_file, verify_plugin
 
 
 # Designated private-key location (operator cuts it to cold storage immediately
 # after generation). Override with --private-key.
 def _default_private_path() -> str:
-    """用户主目录下的 .omnicrawl/keys（无 HOME 时回退仓库内 .private_keys/）。"""
+    """用户主目录下的 .omnicrawler/keys（无 HOME 时回退仓库内 .private_keys/）。"""
     try:
-        return str(Path.home() / ".omnicrawl" / "keys" / "plugin_signing_private.pem")
+        return str(Path.home() / ".omnicrawler" / "keys" / "plugin_signing_private.pem")
     except RuntimeError:
         return str(_REPO_ROOT / ".private_keys" / "plugin_signing_private.pem")
 
@@ -65,7 +65,7 @@ _EXCLUDE_DIRS = {
 }
 # Framework package: its register() functions are first-party registrations,
 # not user plugins, and are not subject to the signature gate.
-_FRAMEWORK_MARKER = Path("src", "omnicrawl")
+_FRAMEWORK_MARKER = Path("src", "omnicrawler")
 
 
 def _is_plugin_entry(path: Path) -> bool:

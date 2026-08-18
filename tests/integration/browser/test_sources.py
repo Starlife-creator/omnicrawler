@@ -6,10 +6,10 @@ from unittest.mock import patch
 
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.plugins.plugins import Registry
-from omnicrawl.sources.sources import GenericSource, _with_query, register
+from omnicrawler.core.config import load_config
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.plugins.plugins import Registry
+from omnicrawler.sources.sources import GenericSource, _with_query, register
 
 
 def _config(tmp_path: Path, kind: str, source=None, crawl=None, download=None):

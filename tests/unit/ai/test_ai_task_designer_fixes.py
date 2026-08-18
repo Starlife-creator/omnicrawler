@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.services.ai_safety import UNTRUSTED_PREFIX
-from omnicrawl.services.ai_task_designer import (
+from omnicrawler.services.ai_safety import UNTRUSTED_PREFIX
+from omnicrawler.services.ai_task_designer import (
     _append_ai_audit,
     ai_task_design_audit,
     build_task_design_messages,
@@ -110,11 +110,11 @@ def test_c35_legacy_user_request_key_tolerated() -> None:
 
 def test_c32_audit_appended_to_jsonl(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "omnicrawl.core.runtime_paths.portable_data_root",
+        "omnicrawler.core.runtime_paths.portable_data_root",
         lambda: tmp_path,
     )
     _append_ai_audit({"provider": "p", "status": "ok"})
-    path = tmp_path / ".omnicrawl" / "ai-logs" / "ai-audit.jsonl"
+    path = tmp_path / ".omnicrawler" / "ai-logs" / "ai-audit.jsonl"
     assert path.is_file()
     lines = path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 1

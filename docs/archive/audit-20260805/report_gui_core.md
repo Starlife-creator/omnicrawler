@@ -7,19 +7,19 @@
 ### 审查范围（实际行数，与任务描述差异已在括号内标注）
 | 文件 | 实际行数 | 说明 |
 |---|---|---|
-| `src\omnicrawl\gui\__init__.py` | 12 | 仅版本再导出 |
-| `src\omnicrawl\gui\__main__.py` | 9 | 入口转发 |
-| `src\omnicrawl\gui\main.py` | 2034 | 用户标注 1779，实际 2034 |
-| `src\omnicrawl\gui\design_system.py` | 687 | 用户标注 569，实际 687 |
-| `src\omnicrawl\gui\async_workers.py` | 405 | 用户标注 340，实际 405 |
-| `src\omnicrawl\gui\home.py` | 413 | 用户标注 360，实际 413 |
-| `src\omnicrawl\gui\settings.py` | 330 | 用户标注 255，实际 330 |
-| `src\omnicrawl\gui\i18n.py` | 110 | 用户标注 78，实际 110 |
-| `src\omnicrawl\gui\icon_registry.py` | 125 | 用户标注 102，实际 125 |
-| `src\omnicrawl\gui\accessibility.py` | 35 | 用户标注 27，实际 35 |
-| `src\omnicrawl\gui\motion_signal.py` | 60 | 用户标注 42，实际 60 |
-| `src\omnicrawl\gui\shortcuts.py` | 98 | 用户标注 72，实际 98 |
-| `src\omnicrawl\gui\help_center.py` | 101 | 用户标注 90，实际 101 |
+| `src\omnicrawler\gui\__init__.py` | 12 | 仅版本再导出 |
+| `src\omnicrawler\gui\__main__.py` | 9 | 入口转发 |
+| `src\omnicrawler\gui\main.py` | 2034 | 用户标注 1779，实际 2034 |
+| `src\omnicrawler\gui\design_system.py` | 687 | 用户标注 569，实际 687 |
+| `src\omnicrawler\gui\async_workers.py` | 405 | 用户标注 340，实际 405 |
+| `src\omnicrawler\gui\home.py` | 413 | 用户标注 360，实际 413 |
+| `src\omnicrawler\gui\settings.py` | 330 | 用户标注 255，实际 330 |
+| `src\omnicrawler\gui\i18n.py` | 110 | 用户标注 78，实际 110 |
+| `src\omnicrawler\gui\icon_registry.py` | 125 | 用户标注 102，实际 125 |
+| `src\omnicrawler\gui\accessibility.py` | 35 | 用户标注 27，实际 35 |
+| `src\omnicrawler\gui\motion_signal.py` | 60 | 用户标注 42，实际 60 |
+| `src\omnicrawler\gui\shortcuts.py` | 98 | 用户标注 72，实际 98 |
+| `src\omnicrawler\gui\help_center.py` | 101 | 用户标注 90，实际 101 |
 
 ### 语法检查
 `python -m py_compile` 对全部 13 个文件执行：**全部通过，无语法错误**（PY_COMPILE_OK）。
@@ -50,7 +50,7 @@
 
 ### [critical] main.py:1972-1988 - `--headless/--run` 模式引用未定义 `_`，必然崩溃
 - 现状：`_()` 只在第 60-170 行的 `if not _HEADLESS_MODE:` 块内 import（`from .i18n import _`）。`main()` 在模块级定义，第 1972 行构造 `argparse.ArgumentParser(description=_("..."))`，第 1977-1988 行的 help 文本同样使用 `_()`。
-- 问题：`python -m omnicrawl.gui --run config.yaml` 或 `--headless` 时 `_HEADLESS_MODE=True`，跳过 import 块 → `main()` 一进入就 NameError: name '_' is not defined，无界面模式完全不可用（无 try/except 兜底，直接抛 traceback）。
+- 问题：`python -m omnicrawler.gui --run config.yaml` 或 `--headless` 时 `_HEADLESS_MODE=True`，跳过 import 块 → `main()` 一进入就 NameError: name '_' is not defined，无界面模式完全不可用（无 try/except 兜底，直接抛 traceback）。
 - 建议：把 `from .i18n import _` 提到模块顶层（import 无副作用），或 headless 分支不经过 `argparse`（如手写解析），并补一个 headless 冒烟测试。
 
 ### [critical] main.py:1807 / async_workers.py:395-405 - 关闭窗口时销毁仍在运行的 QThread
@@ -285,4 +285,4 @@
 - `MotionSignal.instance().notify(...)` 由 `delegates/theme.py:93` 在每次 refresh_accessibility 调用，home/status_indicator 的监听生效，无断链。
 - `WorkerTaskRunner` 基于 subprocess backend + 750ms QTimer 轮询（worker_task_runner.py:54-56），`is_running`/`stop` 语义与 closeEvent 基本匹配；主要缺口是"无托盘时静默停止"（见 high 项）。
 - `_format_yaml`（main.py:978）在 yaml_editor.py:528 存在，调用有效。
-- home 页 AmbientHero 在 MainWindow 构建 `_refresh_accessibility`（main.py:545）之后创建（L882），初始 `omnicrawlReducedMotion` 属性可用，时序正确。
+- home 页 AmbientHero 在 MainWindow 构建 `_refresh_accessibility`（main.py:545）之后创建（L882），初始 `omnicrawlerReducedMotion` 属性可用，时序正确。

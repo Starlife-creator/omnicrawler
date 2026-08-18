@@ -16,8 +16,8 @@ OmniCrawler 4 默认直接读取 2.x/3.x 配置。加载时迁移只发生在内
 ## 显式生成新版副本
 
 ```powershell
-omnicrawl migrate -c configs/old.yaml -o configs/old.v4.yaml
-omnicrawl validate -c configs/old.v4.yaml
+omnicrawler migrate -c configs/old.yaml -o configs/old.v4.yaml
+omnicrawler validate -c configs/old.v4.yaml
 ```
 
 命令默认拒绝覆盖目标；只有明确使用 `--force` 才允许覆盖。

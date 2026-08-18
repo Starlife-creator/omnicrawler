@@ -17,7 +17,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_ai_extraction_fields_round_trip() -> None:
-    from omnicrawl.gui.core.config_serializer import from_yaml, to_yaml
+    from omnicrawler.gui.core.config_serializer import from_yaml, to_yaml
 
     original = """
 project: {name: demo, workspace: work/demo}
@@ -50,7 +50,7 @@ ai:
 
 
 def test_ai_extraction_defaults_when_absent() -> None:
-    from omnicrawl.gui.core.config_serializer import from_yaml
+    from omnicrawler.gui.core.config_serializer import from_yaml
 
     original = """
 project: {name: demo, workspace: work/demo}

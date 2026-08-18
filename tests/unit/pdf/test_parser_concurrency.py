@@ -12,9 +12,9 @@ from pathlib import Path
 
 import fitz
 
-from omnicrawl.pdfx.config import ProjectConfig
-from omnicrawl.pdfx.database import Database
-from omnicrawl.pdfx.parser import MAX_PARSE_ATTEMPTS, parse_stage
+from omnicrawler.pdfx.config import ProjectConfig
+from omnicrawler.pdfx.database import Database
+from omnicrawler.pdfx.parser import MAX_PARSE_ATTEMPTS, parse_stage
 
 
 def _make_pdf(path: Path, pages: int = 3) -> None:

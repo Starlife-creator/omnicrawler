@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.convertx import (
+from omnicrawler.convertx import (
     READERS,
     WRITERS,
     CanonicalRecords,
@@ -272,7 +272,7 @@ class TestOptionalFormats:
     def test_xlsx_roundtrip(self, tmp_path: Path) -> None:
         pytest.importorskip("openpyxl")
         xlsx = tmp_path / "o.xlsx"
-        from omnicrawl.convertx import WRITERS as W
+        from omnicrawler.convertx import WRITERS as W
 
         assert ".xlsx" in W
         W[".xlsx"](SAMPLE, xlsx, {})
@@ -287,7 +287,7 @@ class TestOptionalFormats:
 
     def test_parquet_roundtrip(self, tmp_path: Path) -> None:
         pytest.importorskip("pyarrow")
-        from omnicrawl.convertx import WRITERS as W
+        from omnicrawler.convertx import WRITERS as W
 
         pq = tmp_path / "o.parquet"
         assert ".parquet" in W
@@ -299,7 +299,7 @@ class TestOptionalFormats:
 
     def test_duckdb_roundtrip(self, tmp_path: Path) -> None:
         pytest.importorskip("duckdb")
-        from omnicrawl.convertx import WRITERS as W
+        from omnicrawler.convertx import WRITERS as W
 
         db = tmp_path / "data.duckdb"
         assert ".duckdb" in W
@@ -316,7 +316,7 @@ class TestOptionalFormats:
         pytest.importorskip("duckdb")
         import duckdb
 
-        from omnicrawl.convertx import READERS
+        from omnicrawler.convertx import READERS
 
         db = tmp_path / "data.duckdb"
         con = duckdb.connect(str(db))
@@ -332,14 +332,14 @@ class TestCLI:
     def _cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         import os
         env = os.environ.copy()
-        # 把 src 目录注入 PYTHONPATH，确保子进程能找到 omnicrawl 包
+        # 把 src 目录注入 PYTHONPATH，确保子进程能找到 omnicrawler 包
         # __file__ = <repo>/tests/unit/convertx/test_convertx.py → parents[3] 是仓库根
         repo_root = Path(__file__).resolve().parents[3]
         src_root = repo_root / "src"
         existing_pp = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = str(src_root) + (os.pathsep + existing_pp if existing_pp else "")
         return subprocess.run(
-            [sys.executable, "-m", "omnicrawl.cli", *args],
+            [sys.executable, "-m", "omnicrawler.cli", *args],
             capture_output=True,
             text=True,
             timeout=120,

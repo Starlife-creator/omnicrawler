@@ -8,7 +8,7 @@ max_pages / passthrough 内嵌段等）中的 ``{{identifier}}`` 均被命中，
 
 from __future__ import annotations
 
-from omnicrawl.gui.core.config_model import CrawlConfig
+from omnicrawler.gui.core.config_model import CrawlConfig
 
 
 def test_placeholder_in_seed_url_still_detected() -> None:

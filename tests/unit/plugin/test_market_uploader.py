@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from omnicrawl.plugins import market_uploader
-from omnicrawl.plugins.market_uploader import (
+from omnicrawler.plugins import market_uploader
+from omnicrawler.plugins.market_uploader import (
     UploadError,
     create_market_pr,
     ensure_gh,

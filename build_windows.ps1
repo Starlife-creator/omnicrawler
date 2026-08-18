@@ -73,14 +73,14 @@ if ($Offline) {
 
 # =============================================================================
 # Version guard — version is read from source code, never hardcoded or guessed.
-# If you want a different version, bump __version__ in src/omnicrawl/__init__.py
+# If you want a different version, bump __version__ in src/omnicrawler/__init__.py
 # *before* running this script.  Do NOT edit __version__ as a side effect of
 # other work — that is a separate, deliberate operation.
 # F1：版本读取移到依赖安装之后（全新构建时构建 venv 尚未创建）。
 # F2：读取结果校验非空且形似版本号，否则立即中止。
 # =============================================================================
 function Read-AppVersion([string]$Python) {
-    $versionOutput = (& $Python -c 'from omnicrawl import __version__; print(__version__)').Trim()
+    $versionOutput = (& $Python -c 'from omnicrawler import __version__; print(__version__)').Trim()
     Assert-LastExit 'Could not read the application version from the source tree.'
     if (-not $versionOutput -or $versionOutput -notmatch '^\d+\.\d+') {
         throw "Invalid application version read from source: '$versionOutput'"
@@ -159,16 +159,16 @@ if (-not $SkipDependencyInstall) {
 
 # F1/F2：版本读取移到依赖安装后，并校验非空/形似版本号（内置于 Read-AppVersion）
 $appVersion = Read-AppVersion $builderPython
-# F26：便携包版本（omnicrawl.__version__）与源码包版本（pyproject）必须一致，
+# F26：便携包版本（omnicrawler.__version__）与源码包版本（pyproject）必须一致，
 # 否则同次发布产出版本号矛盾的产物
 $env:OMNICRAWL_PROJECT_ROOT = $projectRoot
 $pyprojectVersion = (& $builderPython -c "import os, tomllib; root = os.environ['OMNICRAWL_PROJECT_ROOT']; data = tomllib.loads(open(os.path.join(root, 'pyproject.toml'), encoding='utf-8').read()); print(data['project']['version'])").Trim()
 Remove-Item Env:OMNICRAWL_PROJECT_ROOT -ErrorAction SilentlyContinue
 if ($pyprojectVersion -and $pyprojectVersion -ne $appVersion) {
-    throw "版本不一致: pyproject=$pyprojectVersion vs omnicrawl.__version__=$appVersion"
+    throw "版本不一致: pyproject=$pyprojectVersion vs omnicrawler.__version__=$appVersion"
 }
 # F53：构建 venv 的 installed 元数据也必须与源码一致，否则产物会带漂移版本。
-$installedVersion = (& $builderPython -c "import importlib.metadata; print(importlib.metadata.version('omnicrawl-platform'))").Trim()
+$installedVersion = (& $builderPython -c "import importlib.metadata; print(importlib.metadata.version('omnicrawler-platform'))").Trim()
 Assert-LastExit 'Could not read the installed version from the build environment.'
 if ($installedVersion -and $installedVersion -ne $appVersion) {
     throw "版本元数据漂移: installed=$installedVersion vs src=$appVersion —— 构建环境需重跑 pip install -e . 对齐。"
@@ -236,7 +236,7 @@ Reset-TemporaryDirectory $workRoot
 Assert-LastExit 'PyInstaller build failed.'
 
 $builtFolder = Join-Path $binaryRoot 'OmniCrawler'
-foreach ($required in @('OmniCrawler.exe', 'omnicrawl.exe', 'omnicrawl-worker.exe', '_internal')) {
+foreach ($required in @('OmniCrawler.exe', 'omnicrawler-cli.exe', 'omnicrawler-worker.exe', '_internal')) {
     if (-not (Test-Path -LiteralPath (Join-Path $builtFolder $required))) {
         throw "PyInstaller output is incomplete: $required"
     }
@@ -245,7 +245,7 @@ foreach ($required in @('OmniCrawler.exe', 'omnicrawl.exe', 'omnicrawl-worker.ex
 if ($CodeSigningThumbprint) {
     $signTool = (Get-Command signtool.exe -ErrorAction SilentlyContinue).Source
     if (-not $signTool) { throw 'signtool.exe was not found for required Authenticode signing.' }
-    foreach ($binary in @('OmniCrawler.exe', 'omnicrawl.exe', 'omnicrawl-worker.exe')) {
+    foreach ($binary in @('OmniCrawler.exe', 'omnicrawler-cli.exe', 'omnicrawler-worker.exe')) {
         & $signTool sign /sha1 $CodeSigningThumbprint /fd SHA256 /tr 'http://timestamp.digicert.com' /td SHA256 (Join-Path $builtFolder $binary)
         Assert-LastExit "Authenticode signing failed: $binary"
     }
@@ -302,16 +302,16 @@ foreach ($relativeDir in @('data\input', 'data\pdfs', 'work', 'output', 'logs'))
 
 & $builderPython (Join-Path $projectRoot 'tools\generate_sbom.py') --output (Join-Path $releaseRoot 'SBOM.json')
 Assert-LastExit 'SBOM generation failed.'
-& (Join-Path $releaseRoot 'omnicrawl.exe') --version
+& (Join-Path $releaseRoot 'omnicrawler-cli.exe') --version
 Assert-LastExit 'Packaged CLI version verification failed.'
-& (Join-Path $releaseRoot 'omnicrawl.exe') templates validate
+& (Join-Path $releaseRoot 'omnicrawler-cli.exe') templates validate
 Assert-LastExit 'Packaged template verification failed.'
 # F11：冒烟测试先于清单生成——其 cwd=releaseRoot 会写 .omnicrawler 缓存，
 # 若在清单生成后跑会产出"不在清单中的新文件"导致完整性检查随机失败。
 & $builderPython (Join-Path $projectRoot 'tools\portable_smoke_test.py') $releaseRoot --edition $Edition
 Assert-LastExit 'Packaged browser/native runtime verification failed.'
 # F12：CAPABILITIES.json 无 BOM 写入（带 BOM 会让第三方 json.loads 失败）
-$capabilitiesOutput = & (Join-Path $releaseRoot 'omnicrawl.exe') capabilities --verify-imports --portable-paths
+$capabilitiesOutput = & (Join-Path $releaseRoot 'omnicrawler-cli.exe') capabilities --verify-imports --portable-paths
 Assert-LastExit 'Packaged capability import verification failed.'
 [IO.File]::WriteAllText((Join-Path $releaseRoot 'CAPABILITIES.json'), ($capabilitiesOutput -join "`n"), (New-Object Text.UTF8Encoding($false)))
 # F9：路径经命令行参数传递，不再把 PowerShell 变量插值进 Python 源码字符串
@@ -324,7 +324,7 @@ Assert-LastExit 'Portable release metadata generation failed.'
 # the machine-readable release description as well as executables and runtime.
 & $builderPython (Join-Path $projectRoot 'tools\create_runtime_manifest.py') --release-root $releaseRoot
 Assert-LastExit 'Runtime integrity manifest refresh failed.'
-& (Join-Path $releaseRoot 'omnicrawl.exe') runtime-verify --root $releaseRoot
+& (Join-Path $releaseRoot 'omnicrawler-cli.exe') runtime-verify --root $releaseRoot
 Assert-LastExit 'Packaged runtime integrity verification failed.'
 
 # $appVersion was already resolved at script startup — reuse it.
@@ -358,7 +358,7 @@ Write-Host "Build staging: $releaseRoot"
 Write-Host "Portable ZIP: $releaseArchive"
 Write-Host "SHA-256: $($archiveHash.Hash)"
 Write-Host 'GUI: OmniCrawler.exe'
-Write-Host 'CLI: omnicrawl.exe --help'
+Write-Host 'CLI: omnicrawler-cli.exe --help'
 # D3：构建成功后清理临时目录。仅当 $buildRoot 为默认 %TEMP% 路径时清理
 # （$builderVenv 始终位于 %TEMP%）；显式 -BuildRootPath 指向的版本化
 # 产物目录（artifacts/build/...）保留作"压缩前完整包"。失败路径不会到达此处。

@@ -1,6 +1,6 @@
 # OmniCrawler SDK 1.6 Preview
 
-入口：`omnicrawl.sdk`。
+入口：`omnicrawler.sdk`。
 
 - stable：`TaskSpec`、`TaskIR`、`TaskPlan`、`validate`、`compile`。
 - preview：`run`、`query`、`DatasetReader` 及 Source/Fetcher/Extractor/Processor/Exporter/CredentialProvider 协议。

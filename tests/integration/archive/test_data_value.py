@@ -4,20 +4,20 @@ import json
 
 import pytest
 
-from omnicrawl.quality.evidence_ledger import EvidenceLedger, FieldLineage
-from omnicrawl.quality.schema_registry import (
+from omnicrawler.quality.evidence_ledger import EvidenceLedger, FieldLineage
+from omnicrawler.quality.schema_registry import (
     DatasetContract,
     FieldContract,
     SchemaRegistry,
     analyse_contract_change,
 )
-from omnicrawl.quality.temporal_facts import (
+from omnicrawler.quality.temporal_facts import (
     EntityRegistry,
     TemporalFact,
     infer_business_event,
     stable_entity_id,
 )
-from omnicrawl.security.data_governance import (
+from omnicrawler.security.data_governance import (
     deletion_manifest,
     detect_sensitive_fields,
     export_privacy_summary,

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-SRC = Path(__file__).resolve().parents[3] / "src" / "omnicrawl"
+SRC = Path(__file__).resolve().parents[3] / "src" / "omnicrawler"
 
 
 def _source_text() -> str:
@@ -97,7 +97,7 @@ def test_guard_or_config_has_consumer(source: str, token: str) -> None:
 
 
 def test_deprecated_archives_still_importable() -> None:
-    from omnicrawl.fetching.archives import ArchiveLimits, safe_extract_archive  # noqa: F401
+    from omnicrawler.fetching.archives import ArchiveLimits, safe_extract_archive  # noqa: F401
 
     assert callable(safe_extract_archive)
     assert callable(ArchiveLimits)

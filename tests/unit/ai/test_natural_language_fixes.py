@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from omnicrawl.services.ai_safety import AISafetyViolationError
-from omnicrawl.services.natural_language_task import compile_natural_language, compile_with_ai
-from omnicrawl.services.ux_service import draft_quick_task
+from omnicrawler.services.ai_safety import AISafetyViolationError
+from omnicrawler.services.natural_language_task import compile_natural_language, compile_with_ai
+from omnicrawler.services.ux_service import draft_quick_task
 
 
 class _FakeProvider:

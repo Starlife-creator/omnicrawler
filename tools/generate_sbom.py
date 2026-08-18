@@ -84,7 +84,7 @@ def _find_distribution(name: str) -> importlib.metadata.Distribution:
 
 
 def build_sbom() -> dict[str, Any]:
-    project = importlib.metadata.distribution("omnicrawl-platform")
+    project = importlib.metadata.distribution("omnicrawler-platform")
     queue: deque[str] = deque(
         _requirement_name(requirement) for requirement in (project.requires or [])
     )
@@ -136,11 +136,11 @@ def build_sbom() -> dict[str, Any]:
     document = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
-        "serialNumber": "urn:uuid:" + _uuid_from_hash(f"omnicrawl-platform:{project.version}:transitive"),
+        "serialNumber": "urn:uuid:" + _uuid_from_hash(f"omnicrawler-platform:{project.version}:transitive"),
         "version": 1,
         "metadata": {
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "component": {"type": "application", "name": "omnicrawl-platform", "version": project.version},
+            "component": {"type": "application", "name": "omnicrawler-platform", "version": project.version},
         },
         "components": sorted(components.values(), key=lambda item: item["name"].casefold()),
         "dependencies": [

@@ -21,6 +21,6 @@ fi
 
 mkdir -p .runtime/models
 .venv/bin/python tools/download_ocr_models.py .runtime/models/paddlex --source modelscope
-.venv/bin/python -m omnicrawl capabilities --verify-imports
-VERSION=$(.venv/bin/python -c "import omnicrawl; print(omnicrawl.__version__)")
+.venv/bin/python -m omnicrawler capabilities --verify-imports
+VERSION=$(.venv/bin/python -c "import omnicrawler; print(omnicrawler.__version__)")
 echo "OmniCrawler $VERSION full Linux source environment is ready."

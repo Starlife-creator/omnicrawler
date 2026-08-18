@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.migrations import CURRENT_CONFIG_VERSION, migrate_file
+from omnicrawler.core.config import load_config
+from omnicrawler.core.migrations import CURRENT_CONFIG_VERSION, migrate_file
 
 
 def test_legacy_config_is_migrated_without_losing_unknown_fields(tmp_path) -> None:

@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.convertx import WRITERS, convert, sniff_format
-from omnicrawl.convertx.paths import enumerate_paths
+from omnicrawler.convertx import WRITERS, convert, sniff_format
+from omnicrawler.convertx.paths import enumerate_paths
 
 
 def _make_txt(path: Path) -> Path:

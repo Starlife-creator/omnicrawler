@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import copy
 
-from omnicrawl.quality.auto_apply import (
+from omnicrawler.quality.auto_apply import (
     AutoApplyPolicy,
     AutoApplyResult,
     AutomationTier,
@@ -22,7 +22,7 @@ from omnicrawl.quality.auto_apply import (
     is_reversible,
     should_rollback_on_quality_drop,
 )
-from omnicrawl.quality.shadow_repair import (
+from omnicrawler.quality.shadow_repair import (
     RepairCandidate,
     ShadowComparison,
     candidate_rule,

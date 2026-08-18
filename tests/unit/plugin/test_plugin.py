@@ -2,9 +2,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from omnicrawl.core.config import load_config
-from omnicrawl.pipeline import build_registry
-from omnicrawl.plugins.plugins import Registry
+from omnicrawler.core.config import load_config
+from omnicrawler.pipeline import build_registry
+from omnicrawler.plugins.plugins import Registry
 
 
 class PluginTest(unittest.TestCase):
@@ -70,7 +70,7 @@ class PluginTest(unittest.TestCase):
             plugin = root / "plugin.py"
             plugin.write_text(
                 """
-from omnicrawl.sources.sources import GenericSource
+from omnicrawler.sources.sources import GenericSource
 class CustomSource(GenericSource):
     pass
 def register(registry):

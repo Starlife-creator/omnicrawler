@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from omnicrawl.sources.url_cleaner import clean_url, clean_url_status, extract_urls_from_text
+from omnicrawler.sources.url_cleaner import clean_url, clean_url_status, extract_urls_from_text
 
 
 # ── clean_url 基础 ───────────────────────────────────────

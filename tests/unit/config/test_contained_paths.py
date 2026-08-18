@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.config import load_config, require_config_path, validate_config
+from omnicrawler.core.config import load_config, require_config_path, validate_config
 
 
 def _write_config(root: Path, *, workspace: str = "work/p", extra: str = "") -> Path:

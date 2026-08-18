@@ -4,7 +4,7 @@ import importlib.util
 
 import pytest
 
-from omnicrawl.services.help_registry import (
+from omnicrawler.services.help_registry import (
     HELP_ENTRIES,
     NON_OBVIOUS_CONTROL_HELP_IDS,
     contextual_advice,
@@ -32,8 +32,8 @@ def test_every_declared_non_obvious_control_is_bound_to_question_mark_and_help_c
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PyQt6.QtWidgets import QApplication
 
-    from omnicrawl.gui.main import MainWindow
-    from omnicrawl.gui.widgets.help_tooltip import HelpTooltip
+    from omnicrawler.gui.main import MainWindow
+    from omnicrawler.gui.widgets.help_tooltip import HelpTooltip
 
     monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
     app = QApplication.instance() or QApplication([])

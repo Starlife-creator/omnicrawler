@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from omnicrawl.core.ast_evaluator import ALLOWED_FUNCTIONS, safe_eval
+from omnicrawler.core.ast_evaluator import ALLOWED_FUNCTIONS, safe_eval
 
 
 def test_arithmetic_and_unary() -> None:

@@ -6,17 +6,17 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.config import DEFAULTS, AppConfig
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.fetching.browser_fetcher import BrowserFetcher
-from omnicrawl.pipeline_ops.pdf_region import extract_region, make_region_rule
-from omnicrawl.plugins.plugin_inspector import inspect_plugin
-from omnicrawl.quality.artifact_integrity import verify_artifacts
-from omnicrawl.runtime.schedule_conditions import evaluate_conditions
-from omnicrawl.security.security_audit import pii_summary, scan_config_file
-from omnicrawl.services.regression_library import RegressionLibrary, verify_regression_fixtures
-from omnicrawl.state import StateStore
-from omnicrawl.templates.template_diff import diff_templates, merge_template_upgrade
+from omnicrawler.core.config import DEFAULTS, AppConfig
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.fetching.browser_fetcher import BrowserFetcher
+from omnicrawler.pipeline_ops.pdf_region import extract_region, make_region_rule
+from omnicrawler.plugins.plugin_inspector import inspect_plugin
+from omnicrawler.quality.artifact_integrity import verify_artifacts
+from omnicrawler.runtime.schedule_conditions import evaluate_conditions
+from omnicrawler.security.security_audit import pii_summary, scan_config_file
+from omnicrawler.services.regression_library import RegressionLibrary, verify_regression_fixtures
+from omnicrawler.state import StateStore
+from omnicrawler.templates.template_diff import diff_templates, merge_template_upgrade
 
 
 def _config(tmp_path: Path) -> AppConfig:

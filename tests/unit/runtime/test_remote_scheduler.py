@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from omnicrawl.runtime.redis_worker import RemoteQueue, TaskSpec, consume_loop
+from omnicrawler.runtime.redis_worker import RemoteQueue, TaskSpec, consume_loop
 
 
 def _config_file(temp: Path, name: str = "task.yaml") -> Path:
@@ -93,7 +93,7 @@ class RemoteQueueLocalTest(unittest.TestCase):
             try:
                 from datetime import datetime, timedelta, timezone
 
-                from omnicrawl.runtime.redis_worker import WORKER_TTL_SECONDS
+                from omnicrawler.runtime.redis_worker import WORKER_TTL_SECONDS
 
                 queue.register_worker("old")
                 # 直接写入过去的心跳时间（模拟失联）
@@ -183,7 +183,7 @@ class RemoteQueueLocalTest(unittest.TestCase):
 
     def test_probe_redis_failure_uses_local(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
-            with patch("omnicrawl.runtime.redis_worker._probe_redis", return_value=False):
+            with patch("omnicrawler.runtime.redis_worker._probe_redis", return_value=False):
                 queue = RemoteQueue(redis_url="redis://x", local_path=Path(temp) / "q.sqlite3")
                 try:
                     self.assertEqual(queue.backend_kind(), "local")
@@ -191,7 +191,7 @@ class RemoteQueueLocalTest(unittest.TestCase):
                     queue.close()
 
     def test_default_worker_id_contains_hostname_and_pid(self) -> None:
-        from omnicrawl.runtime.redis_worker import default_worker_id
+        from omnicrawler.runtime.redis_worker import default_worker_id
 
         worker_id = default_worker_id()
         self.assertIn("-", worker_id)

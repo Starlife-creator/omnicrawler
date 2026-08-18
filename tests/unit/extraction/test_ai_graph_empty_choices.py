@@ -8,14 +8,14 @@ import pytest
 
 pytest.importorskip("aiohttp")
 
-from omnicrawl.extraction.ai_graph import AIGraphExtractor
+from omnicrawler.extraction.ai_graph import AIGraphExtractor
 
 
 @pytest.fixture(autouse=True)
 def _allow_privacy(monkeypatch):
     """B05-019：本测试聚焦 choices 降级，直接放行外发隐私闸门。"""
     monkeypatch.setattr(
-        "omnicrawl.core.ai_env.require_ai_privacy",
+        "omnicrawler.core.ai_env.require_ai_privacy",
         lambda *a, **k: None,
     )
 

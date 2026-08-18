@@ -2,11 +2,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from omnicrawl.core.config import load_config, resolve_pdf_template, validate_config
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.extraction.extractors import HTMLProcessor, JSONProcessor, TableProcessor
-from omnicrawl.pdfx.config import load_config as load_pdf_config
-from omnicrawl.pdfx.project import create_project_config
+from omnicrawler.core.config import load_config, resolve_pdf_template, validate_config
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.extraction.extractors import HTMLProcessor, JSONProcessor, TableProcessor
+from omnicrawler.pdfx.config import load_config as load_pdf_config
+from omnicrawler.pdfx.project import create_project_config
 
 
 class ConfigAndExtractorTest(unittest.TestCase):
@@ -41,7 +41,7 @@ http: {user_agent: 'Test/1.0 (+contact: test@example.org)'}
             config = load_config(path)
             template = resolve_pdf_template(config)
             self.assertTrue(template.is_file())
-            self.assertIn("omnicrawl/templates/pdf", template.as_posix())
+            self.assertIn("omnicrawler/templates/pdf", template.as_posix())
 
     def test_pdf_builtin_template_materializes_entity_asset_for_project(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -69,7 +69,7 @@ http: {user_agent: 'Test/1.0 (+contact: test@example.org)'}
             )
             template = resolve_pdf_template(load_config(path), "configs/pdf/generic_template.yaml")
             self.assertTrue(template.is_file())
-            self.assertIn("omnicrawl/templates/pdf", template.as_posix())
+            self.assertIn("omnicrawler/templates/pdf", template.as_posix())
 
     def test_html_item_extraction(self):
         with tempfile.TemporaryDirectory() as temp:

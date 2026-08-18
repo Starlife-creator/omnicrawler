@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "sr
 
 def test_f27_browsers_root_uses_runtime_dir_when_present(monkeypatch, tmp_path) -> None:
     """F27：browsers_root() 与 configure_runtime_environment 共用同一真源。"""
-    from omnicrawl.core import runtime_paths
+    from omnicrawler.core import runtime_paths
 
     app_dir = tmp_path / "app"
     runtime_browsers = app_dir / ".runtime" / "browsers"
@@ -23,7 +23,7 @@ def test_f27_browsers_root_uses_runtime_dir_when_present(monkeypatch, tmp_path) 
 
 def test_f28_frozen_runtime_status_written(monkeypatch, tmp_path) -> None:
     """F28：冻结模式缺失资产写入 runtime-status.json 供 GUI 展示。"""
-    from omnicrawl.core import runtime_paths
+    from omnicrawler.core import runtime_paths
 
     app_dir = tmp_path / "app"
     app_dir.mkdir()
@@ -61,7 +61,7 @@ def test_f39_tesseract_ready_requires_language_packs(monkeypatch, tmp_path) -> N
     for env_key in ("OMNICRAWL_SELENIUM_DRIVER", "OMNICRAWL_CHROME_BINARY", "PADDLE_PDX_CACHE_HOME"):
         monkeypatch.delenv(env_key, raising=False)
 
-    module = importlib.import_module("omnicrawl.core.capabilities")
+    module = importlib.import_module("omnicrawler.core.capabilities")
     report = module.capability_report(portable_paths=False)
     tesseract = report["native"]["tesseract"]
     assert tesseract["ready"] is True
@@ -88,7 +88,7 @@ def test_f41_paddle_ready_requires_inference_pdiparams(monkeypatch, tmp_path) ->
     for env_key in ("TESSERACT_CMD", "TESSDATA_PREFIX", "OMNICRAWL_SELENIUM_DRIVER", "OMNICRAWL_CHROME_BINARY"):
         monkeypatch.delenv(env_key, raising=False)
 
-    module = importlib.import_module("omnicrawl.core.capabilities")
+    module = importlib.import_module("omnicrawler.core.capabilities")
     report = module.capability_report(portable_paths=False)
     assert "PP-OCRv5_server_rec" in report["native"]["paddle_models"]["models"]
 
@@ -100,16 +100,16 @@ def test_f41_paddle_ready_requires_inference_pdiparams(monkeypatch, tmp_path) ->
 
 def test_f54_resolve_cli_candidates_lists_searched_paths(monkeypatch) -> None:
     """F54：resolve_cli_candidates 返回已尝试的候选路径，供失败消息展示。"""
-    from omnicrawl.core import runtime_paths
+    from omnicrawler.core import runtime_paths
 
     monkeypatch.setattr(runtime_paths, "is_frozen", lambda: False)
     monkeypatch.setattr(runtime_paths, "bundled_cli_path", lambda: None)
     monkeypatch.setattr(runtime_paths, "shutil", type("S", (), {"which": staticmethod(lambda n: None)}))
     # 屏蔽 .venv 入口探测，保证"无任何候选"分支可稳定回归
     monkeypatch.setattr(runtime_paths.Path, "is_file", lambda self: False)
-    resolved, candidates = runtime_paths.resolve_cli_candidates("omnicrawl")
-    assert resolved == "omnicrawl"
-    assert "omnicrawl" in candidates
+    resolved, candidates = runtime_paths.resolve_cli_candidates("omnicrawler")
+    assert resolved == "omnicrawler"
+    assert "omnicrawler" in candidates
 
 
 def test_f22_create_zip_source_date_epoch(tmp_path) -> None:

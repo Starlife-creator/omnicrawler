@@ -134,7 +134,7 @@ jobs:
             @browserArgs @runtimeArgs
 
       # ── 发布元数据（SBOM / provenance / 校验和）────────────────────
-      # SBOM/provenance/checksums 依赖包元数据（omnicrawl-platform.requires 与
+      # SBOM/provenance/checksums 依赖包元数据（omnicrawler-platform.requires 与
       # 各依赖的已装版本）；系统 python 是全新环境，先安装元数据依赖集。
       # 三平台各自生成带平台后缀的 SBOM 与校验和；provenance 由聚合发布
       # job 统一生成（覆盖全部产物）。
@@ -275,6 +275,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Homebrew 新版要求 tap trust；runner 预装的 aws/tap 与本项目无关
+      # （只用到 core tap 的 python@3.12/tesseract），移除它消除无关警告。
+      - name: 移除无关的 aws/tap（Homebrew tap trust 警告）
+        run: brew untap aws/tap 2>/dev/null || true
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "${{ env.BUILD_PYTHON_VERSION }}"
@@ -361,7 +366,7 @@ jobs:
       - name: 供应链完整性检查（B14 强制）
         shell: bash
         run: |
-          python tools/check_network_boundaries.py --source-root src/omnicrawl
+          python tools/check_network_boundaries.py --source-root src/omnicrawler
           python tools/check_guardrails.py \
             --sbom "$RUNNER_TEMP/artifacts/omnicrawler-sbom-windows.cdx.json"
           python tools/check_release_integrity.py . \
@@ -428,7 +433,7 @@ jobs:
             - **Windows**（Standard/Full）：GUI + Chromium +（Full 含）ChromeDriver/Tesseract/PaddleOCR
               - 安装：解压 ZIP → 双击 `OmniCrawler-Launcher.bat`
             - **Linux**（Standard/Full）：GUI + Chromium +（Full 含）Tesseract/ChromeDriver/PaddleOCR（构建期打包，解压即用）
-              - 安装：`tar -xzf <包> && ./OmniCrawler/omnicrawl --help`
+              - 安装：`tar -xzf <包> && ./OmniCrawler/omnicrawler --help`
             - **macOS**（Standard/Full）：.app（ad-hoc 签名）+（Full 含）Tesseract/ChromeDriver（Paddle OCR 以 Transformers 后端替代）；首次打开请右键 → 打开
               - 安装：挂载 dmg → 进入 OmniCrawler 文件夹 → 将 OmniCrawler.app 拖入 Applications
 

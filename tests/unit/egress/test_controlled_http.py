@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.security import controlled_http
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.security import controlled_http
 
 
 def test_scoped_network_config_restricts_endpoint_and_credentials(tmp_path: Path) -> None:

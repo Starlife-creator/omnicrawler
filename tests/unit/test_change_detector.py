@@ -14,7 +14,7 @@ except ImportError:
 
 import pytest
 
-from omnicrawl.scheduling.change_detector import (
+from omnicrawler.scheduling.change_detector import (
     ChangeDetector,
     ChangeEvent,
     MonitorRule,

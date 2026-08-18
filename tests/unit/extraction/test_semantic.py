@@ -2,10 +2,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from omnicrawl.core.config import AppConfig
-from omnicrawl.core.models import ExtractedRecord
-from omnicrawl.quality.data_intelligence import enrich_records, hamming_distance, normalize_entity, simhash
-from omnicrawl.quality.semantic_changes import compare_record_data, record_identity, semantic_hash
+from omnicrawler.core.config import AppConfig
+from omnicrawler.core.models import ExtractedRecord
+from omnicrawler.quality.data_intelligence import enrich_records, hamming_distance, normalize_entity, simhash
+from omnicrawler.quality.semantic_changes import compare_record_data, record_identity, semantic_hash
 
 
 class SemanticAndIntelligenceTest(unittest.TestCase):

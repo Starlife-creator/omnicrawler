@@ -99,14 +99,14 @@ HTTP 客户端行为核验自 [HTTPX Client/连接池](https://www.python-httpx.
 |---|---|---|---|
 | [llm-tab-cleaner](https://github.com/danieleschmidt/llm-tab-cleaner) | 规则失败→LLM 影子修复→人工复核三层 | quality/shadow_repair.py quality/auto_apply.py quality/llm_candidate_generator.py quality/observation_store.py | ✅ 已融合（L0-L3 分级自动化 + **P3-3 L2 观察期/L3 持久化**） |
 | [AutoDataCleaner](https://github.com/ELHoussineT/AutoDataCleaner) | 类型推断 + 分级修复（auto-idempotent / auto-llm / review） | `quality/normalizers.py` | ✅ 已融合（L1 幂等 + L2 规则默认开；L3 LLM 槽位默认关，无损性硬约束：推断失败/混合类型不猜） |
-| [datatoolkit](https://github.com/AtlasNexusTech/datatoolkit) / [Sieve](https://github.com/Bytosphere/Sieve) | 流式数据管道、算子组合 | services/data_transform.py + commands/transform.py | ✅ 已融合（`omnicrawl transform` 值级变换：--map / --transform-steps，写盘需 --confirm，仅 ALLOWED_FUNCTIONS 白名单算子） |
+| [datatoolkit](https://github.com/AtlasNexusTech/datatoolkit) / [Sieve](https://github.com/Bytosphere/Sieve) | 流式数据管道、算子组合 | services/data_transform.py + commands/transform.py | ✅ 已融合（`omnicrawler transform` 值级变换：--map / --transform-steps，写盘需 --confirm，仅 ALLOWED_FUNCTIONS 白名单算子） |
 
 ### 文件转换
 
 | 资源 | 关注重点 | 本项目对应模块 | 当前状态 |
 |---|---|---|---|
-| [VERT](https://github.com/VERT-sh/VERT) | 格式注册表 + 最短路径图搜索 + 零信任 + 流式分块 | convertx/paths.py + convertx/__main__.py | ✅ 已融合 P3-2（FORMAT_FAMILIES 族目录 + READERS/WRITERS 注册表 + `python -m omnicrawl.convertx --list-paths` 路径枚举） |
-| [ConvertX](https://github.com/xieren58/ConvertX) | 异步任务状态机 + 统一进度事件 + 幂等重试 | services/progress.py **&** omnicrawl/convertx/（CLI: `omnicrawl convert`） | ✅ 已融合 P2-4（ProgressTracker 统一进度协议）**+ P3-2（CSV/JSONL/XLSX/Parquet/DuckDB 5×5 互转）** |
+| [VERT](https://github.com/VERT-sh/VERT) | 格式注册表 + 最短路径图搜索 + 零信任 + 流式分块 | convertx/paths.py + convertx/__main__.py | ✅ 已融合 P3-2（FORMAT_FAMILIES 族目录 + READERS/WRITERS 注册表 + `python -m omnicrawler.convertx --list-paths` 路径枚举） |
+| [ConvertX](https://github.com/xieren58/ConvertX) | 异步任务状态机 + 统一进度事件 + 幂等重试 | services/progress.py **&** omnicrawler/convertx/（CLI: `omnicrawler convert`） | ✅ 已融合 P2-4（ProgressTracker 统一进度协议）**+ P3-2（CSV/JSONL/XLSX/Parquet/DuckDB 5×5 互转）** |
 | [everythingtohtml](https://github.com/He-wei-gui/everythingtohtml) | 统一文档中间表示 + 下游复用 | document_ir/（计划新建，不重构 pdfx） | 计划借鉴（仅处理 pdfx 不支持的格式） |
 
 ### 配置与网址

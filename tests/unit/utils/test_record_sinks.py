@@ -4,9 +4,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.models import CrawlRequest, ExtractedRecord
-from omnicrawl.services.record_sinks import (
+from omnicrawler.core.config import load_config
+from omnicrawler.core.models import CrawlRequest, ExtractedRecord
+from omnicrawler.services.record_sinks import (
     OpenSearchRecordSink,
     PostgreSQLRecordSink,
     build_record_sink_manager,
@@ -114,7 +114,7 @@ def test_opensearch_sdk_calls_are_preauthorized_and_audited():
 
 def test_opensearch_sink_fails_closed_when_egress_denies():
     """出网授权拒绝 → sink 构造即失败，SDK 索引永不调用（fail-closed）。"""
-    from omnicrawl.security.egress import EgressDisabledError
+    from omnicrawler.security.egress import EgressDisabledError
 
     broker = MagicMock()
     broker.authorize.side_effect = EgressDisabledError("denied for test")

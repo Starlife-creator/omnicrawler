@@ -28,56 +28,56 @@ GATES: dict[str, tuple[float, Matcher]] = {
     "security_and_state": (
         85.0,
         _is_one_of(
-            "src/omnicrawl/security/policy.py",
-            "src/omnicrawl/security/egress.py",  # 出口管控核心（S37 补漏）
-            "src/omnicrawl/fetching/archives.py",
-            "src/omnicrawl/state/state_store.py",
-            "src/omnicrawl/core/migrations.py",
+            "src/omnicrawler/security/policy.py",
+            "src/omnicrawler/security/egress.py",  # 出口管控核心（S37 补漏）
+            "src/omnicrawler/fetching/archives.py",
+            "src/omnicrawler/state/state_store.py",
+            "src/omnicrawler/core/migrations.py",
         ),
     ),
     "pipeline_http_sources": (
         75.0,
         _starts_with(
-            "src/omnicrawl/pipeline/",
+            "src/omnicrawler/pipeline/",
         ),
     ),
     "pipeline_http_client": (
         75.0,
         _is_one_of(
-            # 曾把不存在的 src/omnicrawl/http_client.py 列在此处——门禁在查空集合
+            # 曾把不存在的 src/omnicrawler/http_client.py 列在此处——门禁在查空集合
             # （S37 死路径），已移除；真实路径为 fetching/http_client.py
-            "src/omnicrawl/fetching/http_client.py",
-            "src/omnicrawl/sources/sources.py",
+            "src/omnicrawler/fetching/http_client.py",
+            "src/omnicrawler/sources/sources.py",
         ),
     ),
     "browser_and_api": (
         70.0,
         _is_one_of(
-            "src/omnicrawl/fetching/browser_fetcher.py",
-            "src/omnicrawl/extraction/api_discovery.py",
+            "src/omnicrawler/fetching/browser_fetcher.py",
+            "src/omnicrawler/extraction/api_discovery.py",
         ),
     ),
     "pdf_and_ocr": (
         65.0,
-        lambda path: path.startswith("src/omnicrawl/pdfx/")
+        lambda path: path.startswith("src/omnicrawler/pdfx/")
         or path
         in {
-            "src/omnicrawl/pipeline_ops/pdf_integration.py",
-            "src/omnicrawl/pipeline_ops/pdf_region.py",
-            "src/omnicrawl/apps/pdf_processor.py",
-            "src/omnicrawl/apps/field_extractor.py",
+            "src/omnicrawler/pipeline_ops/pdf_integration.py",
+            "src/omnicrawler/pipeline_ops/pdf_region.py",
+            "src/omnicrawler/apps/pdf_processor.py",
+            "src/omnicrawler/apps/field_extractor.py",
         },
     ),
     "desktop_core": (
         65.0,
-        lambda path: path.startswith("src/omnicrawl/gui/core/")
+        lambda path: path.startswith("src/omnicrawler/gui/core/")
         or path
         in {
-            "src/omnicrawl/gui/runner/worker_task_runner.py",
-            "src/omnicrawl/gui/wizard/step1_source.py",
-            "src/omnicrawl/gui/wizard/step2_urls.py",
-            "src/omnicrawl/gui/wizard/step4_download.py",
-            "src/omnicrawl/gui/wizard/step5_preview.py",
+            "src/omnicrawler/gui/runner/worker_task_runner.py",
+            "src/omnicrawler/gui/wizard/step1_source.py",
+            "src/omnicrawler/gui/wizard/step2_urls.py",
+            "src/omnicrawler/gui/wizard/step4_download.py",
+            "src/omnicrawler/gui/wizard/step5_preview.py",
         },
     ),
 }
@@ -89,11 +89,11 @@ OVERALL_COVERAGE_GATE = 66.0
 # 取值贴近 2026-08 实测水平，作为"禁止继续下滑"的护栏；
 # 提高这些下限需要配套补齐测试（见审查报告 §8 修复优先级）。
 _FILE_FLOORS: dict[str, float] = {
-    "src/omnicrawl/security/policy.py": 80.0,
-    "src/omnicrawl/security/egress.py": 80.0,
-    "src/omnicrawl/fetching/http_client.py": 70.0,
-    "src/omnicrawl/apps/field_extractor.py": 30.0,
-    "src/omnicrawl/apps/pdf_processor.py": 40.0,
+    "src/omnicrawler/security/policy.py": 80.0,
+    "src/omnicrawler/security/egress.py": 80.0,
+    "src/omnicrawler/fetching/http_client.py": 70.0,
+    "src/omnicrawler/apps/field_extractor.py": 30.0,
+    "src/omnicrawler/apps/pdf_processor.py": 40.0,
 }
 
 

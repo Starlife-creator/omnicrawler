@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawl.core.models import CrawlRequest
-from omnicrawl.state import StateStore
+from omnicrawler.core.models import CrawlRequest
+from omnicrawler.state import StateStore
 
 
 def test_retry_failed_batches_and_respects_limit(tmp_path: Path) -> None:

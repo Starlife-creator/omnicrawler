@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "omnicrawl-platform"
+name = "omnicrawler-platform"
 # ⚠️ 版本号的唯一权威来源。构建脚本 (build_windows.ps1) 和 bump_version.py
 #    都以此为据；不要手工修改此值，统一用 tools/bump_version.py 变更。
 version = "0.9.1"
@@ -99,19 +99,19 @@ full-macos = [
 ]
 
 [project.scripts]
-omnicrawl = "omnicrawl.cli:main"
-pdfx = "omnicrawl.pdfx.cli:main"
-pdf-process = "omnicrawl.apps.pdf_processor:main"
-pdf-extract = "omnicrawl.apps.field_extractor:main"
-omnicrawl-workbench = "omnicrawl.services.workbench:main"
-omnicrawl-gui = "omnicrawl.gui.main:main"
+omnicrawler = "omnicrawler.cli:main"
+pdfx = "omnicrawler.pdfx.cli:main"
+pdf-process = "omnicrawler.apps.pdf_processor:main"
+pdf-extract = "omnicrawler.apps.field_extractor:main"
+omnicrawler-workbench = "omnicrawler.services.workbench:main"
+omnicrawler-gui = "omnicrawler.gui.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-omnicrawl = ["templates/**/*.yaml", "templates/**/*.yml", "templates/**/*.csv", "templates/**/*.json", "data/*.yaml", "scenes/*.yaml"]
-"omnicrawl.gui" = ["templates/*.yaml", "help/*.html", "help/images/*"]
+omnicrawler = ["templates/**/*.yaml", "templates/**/*.yml", "templates/**/*.csv", "templates/**/*.json", "data/*.yaml", "scenes/*.yaml"]
+"omnicrawler.gui" = ["templates/*.yaml", "help/*.html", "help/images/*"]
 # 注：locale 语言包不在此登记——pip wheel 形态经 data-files 打包需配套
 # MANIFEST.in 与 Docker COPY，曾导致 docker/test CI 构建失败（2026-08-11）。
 # 语言包随 PyInstaller 便携包分发（packaging/*.spec datas 已登记），
@@ -128,8 +128,8 @@ markers = [
 asyncio_mode = "auto"
 
 [tool.coverage.run]
-source = ["src/omnicrawl"]
-omit = ["src/omnicrawl/visual_selector/*"]  # Browser E2E tool — integration gate, not unit
+source = ["src/omnicrawler"]
+omit = ["src/omnicrawler/visual_selector/*"]  # Browser E2E tool — integration gate, not unit
 
 [tool.coverage.report]
 skip_covered = true
@@ -161,13 +161,13 @@ ignore = [
 "tests/*" = ["N802", "N803", "N806", "N815", "N816", "B018"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["omnicrawl"]
+known-first-party = ["omnicrawler"]
 
 [tool.mypy]
 python_version = "3.13"
 ignore_missing_imports = true
 check_untyped_defs = true
-exclude = "^src/omnicrawl/(pdfx|apps)/"
+exclude = "^src/omnicrawler/(pdfx|apps)/"
 disable_error_code = ["import-untyped"]
 
 # Gradual GUI mypy inclusion — Phase 2 (2.3.0):
@@ -176,7 +176,7 @@ disable_error_code = ["import-untyped"]
 # Target: tighten widgets/ → views/ → wizard/ → runner/ → main/ → delegates/
 # in subsequent phases.
 [[tool.mypy.overrides]]
-module = "omnicrawl.gui.core.*"
+module = "omnicrawler.gui.core.*"
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 check_untyped_defs = true
@@ -184,7 +184,7 @@ warn_return_any = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = "omnicrawl.gui.*"
+module = "omnicrawler.gui.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 check_untyped_defs = true

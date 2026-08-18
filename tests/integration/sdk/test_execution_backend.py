@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from omnicrawl.runtime.execution_backend import (
+from omnicrawler.runtime.execution_backend import (
     ExecutionBackend,
     FutureRemoteBackend,
     InProcessBackend,
@@ -28,7 +28,7 @@ def _config(tmp_path: Path) -> Path:
 def test_in_process_and_future_backend_contracts(tmp_path: Path) -> None:
     backend = InProcessBackend()
     assert isinstance(backend, ExecutionBackend)
-    with patch("omnicrawl.application_service.ApplicationService.run", return_value={"status": "succeeded"}):
+    with patch("omnicrawler.application_service.ApplicationService.run", return_value={"status": "succeeded"}):
         backend.start(_config(tmp_path))
         deadline = time.monotonic() + 2
         while backend.status()["status"] == "running" and time.monotonic() < deadline:

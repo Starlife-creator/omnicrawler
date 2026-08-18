@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.core.safe_data import safe_regex_search
-from omnicrawl.extraction.extractors import JSONProcessor
-from omnicrawl.extraction.field_designer import analyze_html
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.core.safe_data import safe_regex_search
+from omnicrawler.extraction.extractors import JSONProcessor
+from omnicrawler.extraction.field_designer import analyze_html
 
 # ── safe_regex_search ─────────────────────────────────────────────────
 
@@ -39,12 +39,12 @@ def test_regex_group_out_of_range_skipped(tmp_path: Path) -> None:
         "extract: {mode: html, fields: {f: {selector: p, regex: '(\\\\d+)', group: 99}}}\n",
         encoding="utf-8",
     )
-    from omnicrawl.core.config import load_config
+    from omnicrawler.core.config import load_config
 
     config = load_config(config_path)
     processor = config.processors["html"] if hasattr(config, "processors") else None
     if processor is None:
-        from omnicrawl.extraction.extractors import HTMLProcessor
+        from omnicrawler.extraction.extractors import HTMLProcessor
 
         processor = HTMLProcessor(config)
     result = FetchResult(

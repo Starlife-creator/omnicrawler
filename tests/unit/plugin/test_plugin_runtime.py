@@ -7,10 +7,10 @@ from pathlib import Path
 
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.pipeline import Pipeline
-from omnicrawl.plugins.plugins import Registry
-from omnicrawl.runtime.resources import ResourceGuard, ResourceLimitError
+from omnicrawler.core.config import load_config
+from omnicrawler.pipeline import Pipeline
+from omnicrawler.plugins.plugins import Registry
+from omnicrawler.runtime.resources import ResourceGuard, ResourceLimitError
 
 
 class _StructuredHandler(BaseHTTPRequestHandler):

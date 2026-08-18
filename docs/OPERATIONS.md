@@ -2,9 +2,9 @@
 
 ## 上线顺序
 
-1. `omnicrawl validate -c <config>`：配置契约。
-2. `omnicrawl doctor -c <config>`：依赖、磁盘、浏览器和安全设置。
-3. `omnicrawl run -c <config> --max-pages 20`：小样本试跑。
+1. `omnicrawler validate -c <config>`：配置契约。
+2. `omnicrawler doctor -c <config>`：依赖、磁盘、浏览器和安全设置。
+3. `omnicrawler run -c <config> --max-pages 20`：小样本试跑。
 4. 核对 robots/条款、范围、字段证据、附件和质量统计。
 5. 逐步提高页数和并发，不在首次运行直接放大。
 
@@ -24,13 +24,13 @@ storage:
 
 ```powershell
 # 中断、断电或 worker 异常后恢复 frontier
-omnicrawl resume -c configs/project.yaml
+omnicrawler resume -c configs/project.yaml
 
 # 把失败且可重试的 URL 重新投入任务
-omnicrawl run -c configs/project.yaml --retry-failed
+omnicrawler run -c configs/project.yaml --retry-failed
 
 # 字段规则或 transformer 改变后，不访问网络重做派生阶段
-omnicrawl reprocess -c configs/project.yaml --run-id <run_id>
+omnicrawler reprocess -c configs/project.yaml --run-id <run_id>
 ```
 
 `reprocess` 在删除派生结果前验证每个既有记录都有位于工作区内的原始归档；缺失、软链接或越界路径会拒绝执行。开始和结束均写入 `audit_events`。
@@ -46,8 +46,8 @@ pdfx --config work/project/pdf/project.yaml reset extract
 ## 状态和诊断
 
 ```powershell
-omnicrawl status -c configs/project.yaml
-omnicrawl serve -c configs/project.yaml --host 127.0.0.1 --port 8765
+omnicrawler status -c configs/project.yaml
+omnicrawler serve -c configs/project.yaml --host 127.0.0.1 --port 8765
 ```
 
 - `state.sqlite3`：runs、frontier、responses、records、quality、errors、audit。
@@ -64,9 +64,9 @@ ResourceGuard 周期检查磁盘余量、工作区大小和运行时长。触发
 ## 调度
 
 ```powershell
-omnicrawl schedule add -c configs/project.yaml --name hourly --every-seconds 3600
-omnicrawl schedule list
-omnicrawl schedule run-due --limit 10
+omnicrawler schedule add -c configs/project.yaml --name hourly --every-seconds 3600
+omnicrawler schedule list
+omnicrawler schedule run-due --limit 10
 ```
 
 GUI 专业模式可添加、启用和停用相同任务。SQLite 调度库用租约防止多个触发进程重复领取；Windows 任务计划程序或 cron 只需周期执行 `run-due`。
@@ -91,8 +91,8 @@ GUI 专业模式可添加、启用和停用相同任务。SQLite 调度库用租
 先预览，再显式执行：
 
 ```powershell
-omnicrawl cleanup -c configs/project.yaml
-omnicrawl cleanup -c configs/project.yaml --apply
+omnicrawler cleanup -c configs/project.yaml
+omnicrawler cleanup -c configs/project.yaml --apply
 ```
 
 在确认重处理窗口结束前不要删除 raw；交付文件、审计库和 SBOM 应按组织保留政策独立备份。

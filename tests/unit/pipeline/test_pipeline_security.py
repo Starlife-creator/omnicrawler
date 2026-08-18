@@ -9,8 +9,8 @@ from typing import Any
 import pytest
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.pipeline import Pipeline
+from omnicrawler.core.config import load_config
+from omnicrawler.pipeline import Pipeline
 
 
 class _Handler(BaseHTTPRequestHandler):

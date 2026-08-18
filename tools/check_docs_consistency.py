@@ -75,7 +75,7 @@ def coverage_gate(root: Path) -> float:
 
 
 def current_config_version(root: Path) -> int:
-    source = (root / "src" / "omnicrawl" / "core" / "migrations.py").read_text(encoding="utf-8")
+    source = (root / "src" / "omnicrawler" / "core" / "migrations.py").read_text(encoding="utf-8")
     match = re.search(r"^CURRENT_CONFIG_VERSION\s*=\s*(\d+)\s*$", source, re.MULTILINE)
     if match is None:
         raise ValueError("CURRENT_CONFIG_VERSION is missing")
@@ -110,11 +110,11 @@ def check(root: Path) -> list[str]:
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     configured_gate = float(pyproject.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under", 0))
 
-    source = (root / "src" / "omnicrawl" / "__init__.py").read_text(encoding="utf-8")
+    source = (root / "src" / "omnicrawler" / "__init__.py").read_text(encoding="utf-8")
     source_match = re.search(r'^__version__\s*=\s*"([^"]+)"\s*$', source, re.MULTILINE)
     if source_match is None or source_match.group(1) != version:
         found = source_match.group(1) if source_match else "missing"
-        issues.append(f"src/omnicrawl/__init__.py: version {found} does not match pyproject {version}")
+        issues.append(f"src/omnicrawler/__init__.py: version {found} does not match pyproject {version}")
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     if not re.search(rf"^## {re.escape(version)}\s+-\s+\d{{4}}-\d{{2}}-\d{{2}}$", changelog, re.MULTILINE):
         issues.append(f"CHANGELOG.md: missing dated current release heading {version}")

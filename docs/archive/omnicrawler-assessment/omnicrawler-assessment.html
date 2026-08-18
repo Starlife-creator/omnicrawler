@@ -240,7 +240,7 @@
     <tr><th>维度</th><th>现状（核实时点 2026-08-06）</th></tr>
     <tr><td>版本与许可</td><td>0.3.0 · <span class="mono">AGPL-3.0-only</span> · <span class="mono">requires-python ≥3.10</span>（<span class="file">pyproject.toml</span>）</td></tr>
     <tr><td>依赖策略</td><td>默认依赖仅 <span class="mono">PyYAML</span>；能力全部通过 extras 提供（html / pdf / browser / selenium / async-http / streams / distributed / scrapy / ocr-* / crawl4ai / gui / storage / postgresql / search / full）</td></tr>
-    <tr><td>入口</td><td>6 个脚本入口：<span class="mono">omnicrawl</span>、<span class="mono">pdfx</span>、<span class="mono">pdf-process</span>、<span class="mono">pdf-extract</span>、<span class="mono">omnicrawl-workbench</span>、<span class="mono">omnicrawl-gui</span></td></tr>
+    <tr><td>入口</td><td>6 个脚本入口：<span class="mono">omnicrawler</span>、<span class="mono">pdfx</span>、<span class="mono">pdf-process</span>、<span class="mono">pdf-extract</span>、<span class="mono">omnicrawler-workbench</span>、<span class="mono">omnicrawler-gui</span></td></tr>
     <tr><td>分发形态</td><td>Windows 便携版双规格：Standard（GUI/CLI/Python/HTTP/Playwright Chromium/PDF 原生文本/Excel/异步/系统凭据）；Full（另含 Selenium/ChromeDriver、PaddleOCR/Tesseract、Parquet/DuckDB、Redis/Scrapy、S3/PG/OpenSearch）</td></tr>
     <tr><td>质量基线</td><td>coverage <span class="mono">fail_under = 66</span>，目标 72→80（整体）/85（核心）；GUI core 严格 mypy；ruff + pre-commit；每次发布生成 SBOM</td></tr>
   </table>
@@ -286,7 +286,7 @@
   <!-- P0 -->
   <div class="issue">
     <div class="title"><span class="sev p0">P0</span>插件签名形同虚设：只查非空，不验签</div>
-    <div class="loc"><span class="file">src/omnicrawl/plugins/plugin_sandbox.py</span>（manifest 与 validate）· <span class="file">plugins/ecosystem_registry.py</span></div>
+    <div class="loc"><span class="file">src/omnicrawler/plugins/plugin_sandbox.py</span>（manifest 与 validate）· <span class="file">plugins/ecosystem_registry.py</span></div>
     <ul>
       <li><span class="mono">PluginPackageManifest.signature</span> 在 <span class="mono">validate()</span> 中仅参与"非空"检查（第 25 行），<strong>没有任何密码学验签逻辑</strong>：无公钥信任链、无验签函数、无吊销机制。</li>
       <li><span class="mono">ecosystem_registry.py</span> 定义并门控了 <span class="mono">signature_valid</span> 字段（第 17、35 行），但该字段是独立 dataclass 属性，与沙箱 manifest 的 signature <strong>未打通</strong>，且全仓库检索不到任何实际执行验签的代码。</li>
@@ -365,7 +365,7 @@
     <div class="title"><span class="sev p3">P3</span>i18n 覆盖仅限 GUI</div>
     <div class="loc"><span class="file">locale/</span></div>
     <ul>
-      <li>仅存在 <span class="mono">omnicrawl-gui.pot</span> 与 <span class="mono">en_US/omnicrawl-gui.po</span>；CLI 输出、日志、模板文案未国际化。</li>
+      <li>仅存在 <span class="mono">omnicrawler-gui.pot</span> 与 <span class="mono">en_US/omnicrawler-gui.po</span>；CLI 输出、日志、模板文案未国际化。</li>
     </ul>
   </div>
 

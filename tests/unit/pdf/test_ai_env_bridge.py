@@ -9,8 +9,8 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from omnicrawl.pdfx.config import load_config
-from omnicrawl.pdfx.templates import builtin_pdf_resource
+from omnicrawler.pdfx.config import load_config
+from omnicrawler.pdfx.templates import builtin_pdf_resource
 
 
 def test_load_config_bridges_project_ai_env_from_non_cwd(tmp_path: Path, monkeypatch) -> None:

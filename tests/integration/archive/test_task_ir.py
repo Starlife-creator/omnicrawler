@@ -6,15 +6,15 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.pipeline_ops.plan_compiler import compile_task_plan, diff_plans
-from omnicrawl.pipeline_ops.task_ir import (
+from omnicrawler.core.config import load_config
+from omnicrawler.pipeline_ops.plan_compiler import compile_task_plan, diff_plans
+from omnicrawler.pipeline_ops.task_ir import (
     TaskIR,
     api_candidate_fragment,
     recording_fragment,
     template_fragment,
 )
-from omnicrawl.services.application_service import ApplicationService
+from omnicrawler.services.application_service import ApplicationService
 
 
 def _config(tmp_path: Path, *, pages: int = 12) -> Path:
@@ -136,7 +136,7 @@ def test_application_service_run_does_not_mutate_cached_config(tmp_path: Path) -
     service = ApplicationService(path)
     before = compile_task_plan(TaskIR.from_config(load_config(path).raw)).to_mapping()
 
-    with patch("omnicrawl.services.application_service.Pipeline") as mock_pipeline:
+    with patch("omnicrawler.services.application_service.Pipeline") as mock_pipeline:
         mock_pipeline.return_value.__enter__.return_value.run.return_value = {"status": "succeeded"}
         service.run(max_pages=50)
 
@@ -151,7 +151,7 @@ def test_application_service_plan_equivalence_and_sample_binding(tmp_path: Path)
     direct = compile_task_plan(TaskIR.from_config(load_config(path).raw)).to_mapping()
     assert service.compile() == direct
 
-    with patch("omnicrawl.application_service.run_sample", return_value={"status": "sampled"}):
+    with patch("omnicrawler.application_service.run_sample", return_value={"status": "sampled"}):
         sampled = service.sample(pages=3)
     assert sampled["plan_hash"] == direct["plan_hash"]
 

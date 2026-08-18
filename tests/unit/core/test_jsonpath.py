@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from omnicrawl.core.jsonpath import (
+from omnicrawler.core.jsonpath import (
     JsonPathSyntaxError,
     compile_path,
     describe_syntax,
@@ -99,7 +99,7 @@ def test_json_path_no_match_returns_empty() -> None:
 
 
 def test_equivalence_with_extract_engine() -> None:
-    from omnicrawl.extraction.extractors import json_path as engine_json_path
+    from omnicrawler.extraction.extractors import json_path as engine_json_path
 
     paths = ["$", "$.data", "$.count", "data.items[*].title", "$.data.items[0]", "$.missing"]
     for path in paths:

@@ -9,9 +9,9 @@ import pytest
 
 pytest.importorskip("cryptography")
 
-from omnicrawl.plugins import signing
-from omnicrawl.plugins.identity import CreatorIdentity
-from omnicrawl.plugins.trust import (
+from omnicrawler.plugins import signing
+from omnicrawler.plugins.identity import CreatorIdentity
+from omnicrawler.plugins.trust import (
     TrustedUser,
     TrustedUserList,
     TrustLevel,

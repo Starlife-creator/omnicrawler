@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.archive_security import (
+from omnicrawler.core.archive_security import (
     UnsafePackageError,
     copy_zip_member,
     validate_zip_archive,
@@ -63,7 +63,7 @@ def test_copy_zip_member_atomic_no_partial_file(tmp_path: Path) -> None:
     with zipfile.ZipFile(package) as archive:
         members = validate_zip_archive(archive, required=("good.bin",))
         good = members["good.bin"]
-        from omnicrawl.core.utils import sha256_bytes
+        from omnicrawler.core.utils import sha256_bytes
 
         digest = copy_zip_member(archive, good, tmp_path / "out" / "good.bin")
         assert (tmp_path / "out" / "good.bin").read_bytes() == b"hello" * 100

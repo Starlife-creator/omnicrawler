@@ -13,7 +13,7 @@ from pathlib import Path
 
 class TestSafeName:
     def test_empty_and_ascii(self) -> None:
-        from omnicrawl.fetching.profile_registry import _safe_name
+        from omnicrawler.fetching.profile_registry import _safe_name
 
         assert _safe_name("") == "default"
         assert _safe_name("shop.example.com").endswith(
@@ -23,7 +23,7 @@ class TestSafeName:
         assert _safe_name("shop.example.com") == _safe_name("shop.example.com")
 
     def test_unicode_and_illegal_chars(self) -> None:
-        from omnicrawl.fetching.profile_registry import _safe_name
+        from omnicrawler.fetching.profile_registry import _safe_name
 
         a = _safe_name("中文名/\\<>")
         for ch in "/\\<>":
@@ -32,7 +32,7 @@ class TestSafeName:
 
 class TestBrowserProfile:
     def test_ensure_creates_dir_and_manifest(self, tmp_path: Path) -> None:
-        from omnicrawl.fetching.profile_registry import BrowserProfile
+        from omnicrawler.fetching.profile_registry import BrowserProfile
 
         root = tmp_path / "profiles"
         p = BrowserProfile(scope="shop|default", root=root / "prof", manifest_path=root / "prof" / "_omnicrawler_profile.json")
@@ -47,7 +47,7 @@ class TestBrowserProfile:
         assert "created_at" in data
 
     def test_last_accessed_refresh(self, tmp_path: Path) -> None:
-        from omnicrawl.fetching.profile_registry import BrowserProfile
+        from omnicrawler.fetching.profile_registry import BrowserProfile
 
         root = tmp_path / "profiles"
         p = BrowserProfile(scope="a", root=root / "a", manifest_path=root / "a" / "_omnicrawler_profile.json")
@@ -59,7 +59,7 @@ class TestBrowserProfile:
         assert t2 >= t1
 
     def test_delete_removes_dir(self, tmp_path: Path) -> None:
-        from omnicrawl.fetching.profile_registry import BrowserProfile
+        from omnicrawler.fetching.profile_registry import BrowserProfile
 
         root = tmp_path / "profiles"
         p = BrowserProfile(scope="a", root=root / "a", manifest_path=root / "a" / "_omnicrawler_profile.json")
@@ -73,7 +73,7 @@ class TestBrowserProfile:
 
 class TestProfileRegistry:
     def test_scope_for_no_aliases(self) -> None:
-        from omnicrawl.fetching.profile_registry import ProfileRegistry
+        from omnicrawler.fetching.profile_registry import ProfileRegistry
 
         reg = ProfileRegistry(Path("/tmp/never-used"), max_profiles=16)
         # 无 account → default
@@ -87,7 +87,7 @@ class TestProfileRegistry:
         assert "alice" in s2
 
     def test_acquire_creates_profile_and_lookup(self, tmp_path: Path) -> None:
-        from omnicrawl.fetching.profile_registry import ProfileRegistry
+        from omnicrawler.fetching.profile_registry import ProfileRegistry
 
         reg = ProfileRegistry(tmp_path / "profiles")
         p = reg.acquire("shop.example.com", account="alice")
@@ -104,7 +104,7 @@ class TestProfileRegistry:
         assert len(reg.list_all()) == 2
 
     def test_purge_expired(self, tmp_path: Path) -> None:
-        from omnicrawl.fetching.profile_registry import ProfileRegistry
+        from omnicrawler.fetching.profile_registry import ProfileRegistry
 
         reg = ProfileRegistry(tmp_path / "profiles", ttl_seconds=600)
         now = time.time()
@@ -121,7 +121,7 @@ class TestProfileRegistry:
         assert p_b.exists
 
     def test_over_limit_gc_releases_oldest(self, tmp_path: Path) -> None:
-        from omnicrawl.fetching.profile_registry import ProfileRegistry
+        from omnicrawler.fetching.profile_registry import ProfileRegistry
 
         reg = ProfileRegistry(tmp_path / "profiles", max_profiles=2, ttl_seconds=0)
         p1 = reg.acquire("host1.example.com")
@@ -138,7 +138,7 @@ class TestProfileRegistry:
         assert p1.root.name not in still_have or (p2.root.name in still_have and p3.root.name in still_have)
 
     def test_clear_removes_all(self, tmp_path: Path) -> None:
-        from omnicrawl.fetching.profile_registry import ProfileRegistry
+        from omnicrawler.fetching.profile_registry import ProfileRegistry
 
         reg = ProfileRegistry(tmp_path / "profiles")
         reg.acquire("h1")
@@ -152,8 +152,8 @@ class TestWithSiteAliases:
     """验证 scope_for 会通过 SiteAliasRegistry 归并 host 后再分配 profile。"""
 
     def test_aliases_collapse_to_same_profile(self, tmp_path: Path, monkeypatch) -> None:
-        from omnicrawl.core.site_aliases import SiteAliasRegistry
-        from omnicrawl.fetching.profile_registry import ProfileRegistry
+        from omnicrawler.core.site_aliases import SiteAliasRegistry
+        from omnicrawler.fetching.profile_registry import ProfileRegistry
 
         reg_alias = SiteAliasRegistry()
         reg_alias.add_alias("m.shop.example.com", "shop.example.com")

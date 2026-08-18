@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.models import FetchResult
+from omnicrawler.core.config import load_config
+from omnicrawler.core.models import FetchResult
 
 
 def _fetch_factory(calls: list[int]):
@@ -33,7 +33,7 @@ def _long_poll_config(tmp_path: Path) -> Path:
 
 def test_long_poll_partial_failure_keeps_collected_data(tmp_path: Path, monkeypatch) -> None:
     """S2.5.46：中途失败保留已收集消息（增量落库）。"""
-    from omnicrawl.pipeline import Pipeline as PipelineCls
+    from omnicrawler.pipeline import Pipeline as PipelineCls
 
     calls: list[int] = []
 
@@ -55,7 +55,7 @@ def test_long_poll_partial_failure_keeps_collected_data(tmp_path: Path, monkeypa
 
 
 def test_stream_cancel_via_should_stop(tmp_path: Path, monkeypatch) -> None:
-    from omnicrawl.pipeline import Pipeline as PipelineCls
+    from omnicrawler.pipeline import Pipeline as PipelineCls
 
     calls: list[int] = []
     with PipelineCls(load_config(_long_poll_config(tmp_path))) as pipeline:
@@ -69,7 +69,7 @@ def test_stream_cancel_via_should_stop(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_stream_progress_callback_receives_events(tmp_path: Path, monkeypatch) -> None:
-    from omnicrawl.pipeline import Pipeline as PipelineCls
+    from omnicrawler.pipeline import Pipeline as PipelineCls
 
     events: list[dict] = []
 

@@ -5,9 +5,9 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from omnicrawl.core.config import load_config
-from omnicrawl.pipeline import Pipeline
-from omnicrawl.plugins import plugins as plugins_module
+from omnicrawler.core.config import load_config
+from omnicrawler.pipeline import Pipeline
+from omnicrawler.plugins import plugins as plugins_module
 
 
 def test_plugin_module_cache_avoids_recompile(tmp_path: Path, monkeypatch) -> None:

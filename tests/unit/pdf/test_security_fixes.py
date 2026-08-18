@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from omnicrawl.pdfx.templates import (
+from omnicrawler.pdfx.templates import (
     builtin_pdf_resource,
     resolve_builtin_pdf_reference,
 )
@@ -35,7 +35,7 @@ def test_c40_env_file_permissions(tmp_path) -> None:
     import os
     import stat
 
-    from omnicrawl.core.ai_env import parse_env_file, save_ai_env
+    from omnicrawler.core.ai_env import parse_env_file, save_ai_env
 
     project = tmp_path / "proj"
     project.mkdir()

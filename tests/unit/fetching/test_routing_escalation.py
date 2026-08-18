@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.fetching.routing import needs_browser
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.fetching.routing import needs_browser
 
 
 def _result(body: bytes, *, content_type: str = "text/html") -> FetchResult:

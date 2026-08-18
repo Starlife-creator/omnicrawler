@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawl.gui.runner.log_parser import LogParser
+from omnicrawler.gui.runner.log_parser import LogParser
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "cli_outputs"
 

@@ -2,7 +2,7 @@
 
 - 状态：已采纳（Accepted）
 - 日期：2026-08-07
-- 相关：C9 插件离线 ed25519 签名（`src/omnicrawl/plugins/signing.py`）、`EcosystemRegistry`、插件加载门（`src/omnicrawl/plugins/plugins.py`）
+- 相关：C9 插件离线 ed25519 签名（`src/omnicrawler/plugins/signing.py`）、`EcosystemRegistry`、插件加载门（`src/omnicrawler/plugins/plugins.py`）
 
 ## 背景 / Context
 
@@ -72,14 +72,14 @@ registry/
 ## 下一步 / Next Steps
 
 1. **CLI/SDK 取 catalog + 验签安装（✅ 已实现 2026-08-07）**：
-   - `src/omnicrawl/plugins/market_client.py`：`fetch_catalog`（远程/本地 catalog 基址）、
+   - `src/omnicrawler/plugins/market_client.py`：`fetch_catalog`（远程/本地 catalog 基址）、
      `download_and_verify`（下载 plugin+签名+listing，ed25519 验签 fail-closed，落盘
      `dest_root/<id>/`）、`verify_installed`、`fetch_resource`。仅标准库 urllib，零新依赖。
    - `tools/market.py` CLI：`list` / `info` / `install` / `verify`；`--catalog-url` 覆盖
      （指向镜像/新仓库即完成迁移），信任根默认 `configs/plugin_trust.pub.pem`。
    - 加载器增强：`load_local_plugins` 支持目录递归，使安装目录 `plugins_installed` 经
      `plugins.paths` 配置即可被加载。`.gitignore` 已忽略 `plugins_installed/`。
-2. **GUI 市场面板（✅ 已实现 2026-08-08）**：`src/omnicrawl/gui/views/plugin_market.py`
+2. **GUI 市场面板（✅ 已实现 2026-08-08）**：`src/omnicrawler/gui/views/plugin_market.py`
    `PluginMarketView`；经 `main.py` 的 `NavIndex.PLUGIN_MARKET = 8` 接入主导航（`🧩 插件市场`）。
    - 联网时从 `catalog_url` 拉取目录（远程失败回退本地 `registry/`），列表展示已审核插件
      （名称/版本/状态徽标/标签），详情面板展示 `listing.md` + 元数据。
@@ -94,7 +94,7 @@ registry/
 
 - `registry/catalog.json` + `CATALOG_SCHEMA.md` + `README.md`
 - `registry/plugins/example_news/`（plugin.py + plugin.py.sig + listing.md）——首个已签名条目
-- `src/omnicrawl/core/config.py`：`plugins.catalog_url` / `bundled_catalog_dir` 及 `AppConfig` 属性
+- `src/omnicrawler/core/config.py`：`plugins.catalog_url` / `bundled_catalog_dir` 及 `AppConfig` 属性
 
 ---
 
@@ -132,7 +132,7 @@ registry/
 ### 背景
 
 上一版 `registry/` 仍有一处跨仓库引用：`authors/*.yaml` 的 `pubkey_ref` 指向主仓库
-`configs/plugin_trust.pub.pem`，生成器依赖应用包 `omnicrawl.plugins.signing` 验签。
+`configs/plugin_trust.pub.pem`，生成器依赖应用包 `omnicrawler.plugins.signing` 验签。
 拆库时需要复制公钥并改引用，生成器也无法在独立仓库运行——"拷贝 + 改一个值"并不成立。
 
 ### 决策
@@ -165,7 +165,7 @@ registry/
 
 ### 决策
 
-1. **本地身份系统**（`src/omnicrawl/plugins/identity.py`）：首次使用创建本地身份
+1. **本地身份系统**（`src/omnicrawler/plugins/identity.py`）：首次使用创建本地身份
    （用户名 + 密码，纯本地），自动生成 Ed25519 密钥对；私钥经密码派生密钥
    （PBKDF2-HMAC-SHA256，60 万次迭代）二次加密后存入 OS keyring 保护的
    SecretsStore——私钥绝不落盘明文、绝不入库（对齐 Helios §13.7/§13.10）。
@@ -173,10 +173,10 @@ registry/
 2. **创建即签名**：`tools/sign_plugin.py creator-sign` 用本地身份生成
    `creator.sig` + `creator.identity`；`sign` 由维护者在冷机器生成
    `plugin.py.sig`（市场分发携带）。
-3. **三层信任模型**（`src/omnicrawl/plugins/trust.py`）：
+3. **三层信任模型**（`src/omnicrawler/plugins/trust.py`）：
    - 层级 1：`plugin.py.sig` 通过信任根验签 → 自动信任；（旧版 `maintainer.sig` 文件名已弃用，验证器不再兼容）
    - 层级 2：`creator.sig` + `creator.identity` 有效且指纹在本地信任列表
-     （`~/.omnicrawl/trusted_users.json`，纯本地决策）→ 信任；
+     （`~/.omnicrawler/trusted_users.json`，纯本地决策）→ 信任；
    - 层级 2b：创作者签名有效但未信任 → 拒绝加载并弹出信任确认弹窗（GUI 已通过 QMessageBox 实现，确认后写入 `trusted_users.json`）；
    - 层级 3：无有效签名 → 拒绝（配置信任根时）；未配置信任根保留开发者模式警告加载。
 4. **SecretsStore 环境隔离**：新增 `OMNICRAWL_SECRET_STORE_PATH` /

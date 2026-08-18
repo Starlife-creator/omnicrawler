@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.extraction.intelligent_scraper import analyze_to_config
+from omnicrawler.core.config import load_config
+from omnicrawler.extraction.intelligent_scraper import analyze_to_config
 
 LIST_PAGE = """<html><body>
 <div class="items">

@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.pdfx.config import FieldSpec, ProjectConfig, load_config
-from omnicrawl.pdfx.templates import builtin_pdf_resource
-from omnicrawl.pdfx.validation import validate_record
+from omnicrawler.pdfx.config import FieldSpec, ProjectConfig, load_config
+from omnicrawler.pdfx.templates import builtin_pdf_resource
+from omnicrawler.pdfx.validation import validate_record
 
 
 def _config(fields: list[FieldSpec]) -> ProjectConfig:
@@ -136,7 +136,7 @@ def test_announcement_template_still_loads() -> None:
 
 def test_d19_reviewed_document_skipped_in_extract(monkeypatch) -> None:
     """Blocking 回归：含 human_accepted 记录的文档不自动重抽（避免 record_id 冲突）。"""
-    from omnicrawl.pdfx.extraction import extract_document
+    from omnicrawler.pdfx.extraction import extract_document
 
     config = _config([])
     config.validation = {"auto_accept_confidence": 0.9}
@@ -150,5 +150,5 @@ def test_d19_reviewed_document_skipped_in_extract(monkeypatch) -> None:
     def boom(*args, **kwargs):
         raise AssertionError("不应走到候选页选择（复核文档应提前跳过）")
 
-    monkeypatch.setattr("omnicrawl.pdfx.extraction.select_candidates", boom)
+    monkeypatch.setattr("omnicrawler.pdfx.extraction.select_candidates", boom)
     assert extract_document(config, db, row, None, None) == 0

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from omnicrawl.services.benchmarking import (
+from omnicrawler.services.benchmarking import (
     PROFILES,
     BenchmarkHistory,
     BenchmarkProfile,

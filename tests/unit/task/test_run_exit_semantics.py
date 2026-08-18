@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from omnicrawl.commands import run_task
-from omnicrawl.core.run_state import (
+from omnicrawler.commands import run_task
+from omnicrawler.core.run_state import (
     ALLOWED_TRANSITIONS,
     RUN_STATES,
     TERMINAL_RUN_STATES,

@@ -13,12 +13,12 @@ import yaml
 
 pytest.importorskip("cryptography")
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.credentials import get_secret, resolve_secret_refs
-from omnicrawl.core.logging_utils import JsonFormatter, configure_logging
-from omnicrawl.fetching.session import CookieSession, get_cookie_session
-from omnicrawl.runtime.schedule_conditions import evaluate_conditions
-from omnicrawl.services.doctor import run_doctor
+from omnicrawler.core.config import load_config
+from omnicrawler.core.credentials import get_secret, resolve_secret_refs
+from omnicrawler.core.logging_utils import JsonFormatter, configure_logging
+from omnicrawler.fetching.session import CookieSession, get_cookie_session
+from omnicrawler.runtime.schedule_conditions import evaluate_conditions
+from omnicrawler.services.doctor import run_doctor
 
 
 def _config(tmp_path: Path, *, source_kind="static_html", session=None, extra=None):
@@ -68,7 +68,7 @@ def test_credentials_keyring_fallback(monkeypatch) -> None:
     monkeypatch.delenv("OMNICRAW_SECRET_DESKTOP", raising=False)
     fake = SimpleNamespace(get_password=lambda service, name: f"{service}:{name}")
     monkeypatch.setitem(sys.modules, "keyring", fake)
-    assert get_secret("desktop") == "omnicrawl:desktop"
+    assert get_secret("desktop") == "omnicrawler:desktop"
 
 
 def test_cookie_session_memory_persistence_corrupt_load_and_safe_name(tmp_path: Path, monkeypatch) -> None:
@@ -109,7 +109,7 @@ def test_schedule_conditions_hours_power_battery_and_network(monkeypatch) -> Non
         now=lambda tz=None: datetime(2026, 1, 1, 9, 0, 0, tzinfo=tz),
         timezone=_timezone,
     )
-    monkeypatch.setattr("omnicrawl.runtime.schedule_conditions.datetime", fixed)
+    monkeypatch.setattr("omnicrawler.runtime.schedule_conditions.datetime", fixed)
     assert evaluate_conditions({"allowed_hours": [10]})[0] is False
     assert evaluate_conditions({"allowed_hours": [9]}) == (True, "")
 
@@ -183,7 +183,7 @@ def test_doctor_calculates_required_capabilities(
         "importlib.util.find_spec", lambda name: None if name == missing_module else object()
     )
     monkeypatch.setattr(
-        "omnicrawl.doctor.capability_report",
+        "omnicrawler.doctor.capability_report",
         lambda: {"ok": True, "native": {"chromium": {"ready": False}}},
     )
     monkeypatch.setattr(

@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from omnicrawl.core.capabilities import capability_report
-from omnicrawl.core.migrations import CURRENT_CONFIG_VERSION, migrate_config, migrate_file
-from omnicrawl.services.config_history import ConfigHistory
-from omnicrawl.templates.template_diff import (
+from omnicrawler.core.capabilities import capability_report
+from omnicrawler.core.migrations import CURRENT_CONFIG_VERSION, migrate_config, migrate_file
+from omnicrawler.services.config_history import ConfigHistory
+from omnicrawler.templates.template_diff import (
     compare_template_files,
     diff_templates,
     merge_template_files,
@@ -144,7 +144,7 @@ def test_config_history_deduplicates_prunes_lists_and_restores(tmp_path: Path) -
 
 def test_gui_yaml_round_trip_preserves_all_advanced_sections() -> None:
     pytest.importorskip("ruamel.yaml")
-    from omnicrawl.gui.core.config_serializer import format_yaml, from_yaml, to_yaml
+    from omnicrawler.gui.core.config_serializer import format_yaml, from_yaml, to_yaml
 
     original = """
 vendor_extension: {keep: true}
@@ -218,7 +218,7 @@ def test_capability_report_shape_and_portable_paths(monkeypatch, tmp_path: Path)
 
     monkeypatch.setenv("OMNICRAWL_CHROME_BINARY", str(chrome))
     monkeypatch.setenv("OMNICRAWL_SELENIUM_DRIVER", str(external))
-    monkeypatch.setattr("sys.executable", str(tmp_path / "app" / "omnicrawl.exe"))
+    monkeypatch.setattr("sys.executable", str(tmp_path / "app" / "omnicrawler.exe"))
     report = capability_report(verify_imports=False, portable_paths=True)
 
     assert report["version"]

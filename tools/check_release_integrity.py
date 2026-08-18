@@ -36,12 +36,12 @@ _WINDOWS_RESERVED_NAMES = {
 # Linux/macOS 产物顶层是 OmniCrawler/（M4 对齐），入口可执行文件无 .exe 后缀。
 # macOS 是 .app bundle，入口在 Contents/MacOS/ 下。
 _PORTABLE_PLATFORM_ENTRYPOINTS: dict[str, tuple[str, ...]] = {
-    "win": ("OmniCrawler.exe", "omnicrawl.exe", "omnicrawl-worker.exe"),
-    "linux": ("OmniCrawler", "omnicrawl", "omnicrawl-worker"),
+    "win": ("OmniCrawler.exe", "omnicrawler-cli.exe", "omnicrawler-worker.exe"),
+    "linux": ("OmniCrawler", "omnicrawler", "omnicrawler-worker"),
     "mac": (
         "OmniCrawler.app/Contents/MacOS/OmniCrawler",
-        "OmniCrawler.app/Contents/MacOS/omnicrawl",
-        "OmniCrawler.app/Contents/MacOS/omnicrawl-worker",
+        "OmniCrawler.app/Contents/MacOS/omnicrawler-cli",
+        "OmniCrawler.app/Contents/MacOS/omnicrawler-worker",
     ),
 }
 # macOS 额外要求 .app 目录存在（bundle 根）
@@ -159,7 +159,7 @@ def _resolved_module(current: str, node: ast.ImportFrom, *, is_package: bool) ->
 
 
 def check_local_imports(source_root: Path) -> list[str]:
-    package_root = source_root / "omnicrawl"
+    package_root = source_root / "omnicrawler"
     errors: list[str] = []
     cache: dict[Path, set[str]] = {}
     for path in package_root.rglob("*.py"):
@@ -173,7 +173,7 @@ def check_local_imports(source_root: Path) -> list[str]:
             if not isinstance(node, ast.ImportFrom):
                 continue
             module = _resolved_module(current, node, is_package=is_package)
-            if not module or not module.startswith("omnicrawl"):
+            if not module or not module.startswith("omnicrawler"):
                 continue
             target = _module_file(package_root, module)
             if target is None:
@@ -193,7 +193,7 @@ def check_entry_points(project_root: Path, metadata: dict) -> list[str]:
     errors: list[str] = []
     for name, target in metadata["project"].get("scripts", {}).items():
         module, _, symbol = target.partition(":")
-        path = _module_file(source_root / "omnicrawl", module)
+        path = _module_file(source_root / "omnicrawler", module)
         if path is None:
             errors.append(f"entry point {name}: missing module {module}")
         elif symbol and symbol not in _defined_names(path):
@@ -206,7 +206,7 @@ def check_project(project_root: Path) -> list[str]:
     metadata = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     errors = check_entry_points(project_root, metadata)
     errors.extend(check_local_imports(project_root / "src"))
-    required = ("README.md", "LICENSE", "src/omnicrawl/__init__.py")
+    required = ("README.md", "LICENSE", "src/omnicrawler/__init__.py")
     errors.extend(f"missing required file: {name}" for name in required if not (project_root / name).is_file())
     errors.extend(check_docker_compose_mounts(project_root))
     errors.extend(check_env_example_references(project_root))
@@ -272,7 +272,7 @@ def check_env_example_references(project_root: Path) -> list[str]:
 def _wheel_modules(archive: zipfile.ZipFile) -> dict[str, tuple[str, str]]:
     modules: dict[str, tuple[str, str]] = {}
     for name in archive.namelist():
-        if not name.startswith("omnicrawl/") or not name.endswith(".py"):
+        if not name.startswith("omnicrawler/") or not name.endswith(".py"):
             continue
         module = name[:-3].replace("/", ".")
         if module.endswith(".__init__"):
@@ -320,7 +320,7 @@ def check_wheel(wheel_path: Path) -> list[str]:
                 if not isinstance(node, ast.ImportFrom):
                     continue
                 target = _resolved_module(module, node, is_package=is_package)
-                if not target or not target.startswith("omnicrawl") or target not in modules:
+                if not target or not target.startswith("omnicrawler") or target not in modules:
                     continue
                 for alias in node.names:
                     if alias.name == "*" or alias.name in exported[target] or f"{target}.{alias.name}" in modules:
@@ -372,7 +372,7 @@ def check_source_zip(zip_path: Path) -> list[str]:
             return sorted(set(errors))
         root = next(iter(roots))
         required = (
-            "pyproject.toml", "README.md", "LICENSE", "src/omnicrawl/__init__.py",
+            "pyproject.toml", "README.md", "LICENSE", "src/omnicrawler/__init__.py",
             "tools/check_release_integrity.py",
         )
         names = set(archive.namelist())
@@ -383,7 +383,7 @@ def check_source_zip(zip_path: Path) -> list[str]:
         module_prefix = f"{root}/src/"
         modules: dict[str, tuple[str, str]] = {}
         for name in names:
-            if not name.startswith(f"{module_prefix}omnicrawl/") or not name.endswith(".py"):
+            if not name.startswith(f"{module_prefix}omnicrawler/") or not name.endswith(".py"):
                 continue
             module = name[len(module_prefix):-3].replace("/", ".")
             if module.endswith(".__init__"):
@@ -397,7 +397,7 @@ def check_source_zip(zip_path: Path) -> list[str]:
                 if not isinstance(node, ast.ImportFrom):
                     continue
                 target = _resolved_module(module, node, is_package=is_package)
-                if not target or not target.startswith("omnicrawl") or target not in modules:
+                if not target or not target.startswith("omnicrawler") or target not in modules:
                     continue
                 for alias in node.names:
                     if alias.name == "*" or alias.name in exported[target] or f"{target}.{alias.name}" in modules:
@@ -420,8 +420,14 @@ def _portable_path_issue(raw: str) -> str | None:
     return None
 
 
-def _portable_path_key(raw: str) -> str:
-    return "/".join(part.rstrip(" .").casefold() for part in PurePosixPath(raw).parts)
+def _portable_path_key(raw: str, *, case_sensitive: bool = False) -> str:
+    # Linux 是大小写敏感文件系统，包内 OmniCrawler（GUI）与 omnicrawler（CLI）
+    # 是两个合法且必须共存的入口可执行文件（_PORTABLE_PLATFORM_ENTRYPOINTS）。
+    # 仅大小写不敏感平台（win/mac）才做 casefold 去重，避免误报 duplicate。
+    parts = PurePosixPath(raw).parts
+    if case_sensitive:
+        return "/".join(part.rstrip(" .") for part in parts)
+    return "/".join(part.rstrip(" .").casefold() for part in parts)
 
 
 def _zip_entry_is_symlink(info: zipfile.ZipInfo) -> bool:
@@ -474,6 +480,13 @@ def _check_portable_archive(
     if expanded_bytes > MAX_PORTABLE_EXPANDED_BYTES:
         errors.append(f"portable archive expands beyond the safety limit: {expanded_bytes} bytes")
 
+    # Linux 大小写敏感：OmniCrawler（GUI 入口）与 omnicrawler（CLI 入口）合法共存；
+    # win/mac 大小写不敏感才按 casefold 判重，防解压真冲突。
+    _case_sensitive = platform == "linux"
+
+    def _key(raw: str) -> str:
+        return _portable_path_key(raw, case_sensitive=_case_sensitive)
+
     normalized: dict[str, _PortableEntry] = {}
     roots: set[str] = set()
     safe_entries: list[tuple[_PortableEntry, PurePosixPath]] = []
@@ -485,7 +498,7 @@ def _check_portable_archive(
             continue
         path = PurePosixPath(raw)
         roots.add(path.parts[0])
-        key = _portable_path_key(raw)
+        key = _key(raw)
         if key in normalized:
             errors.append(f"duplicate portable archive path: {normalized[key].path} / {raw}")
         else:
@@ -509,12 +522,12 @@ def _check_portable_archive(
         if len(path.parts) < 2 or path.parts[0] != root:
             continue
         relative = PurePosixPath(*path.parts[1:]).as_posix()
-        key = _portable_path_key(relative)
+        key = _key(relative)
         relative_infos[key] = entry
         relative_names[key] = relative
 
     def file_info(relative: str) -> _PortableEntry | None:
-        entry = relative_infos.get(_portable_path_key(relative))
+        entry = relative_infos.get(_key(relative))
         return entry if entry is not None and not entry.is_dir else None
 
     entrypoints = _PORTABLE_PLATFORM_ENTRYPOINTS[platform]
@@ -530,7 +543,7 @@ def _check_portable_archive(
         if file_info(relative) is None:
             errors.append(f"portable archive missing required file: {relative}")
     for relative_dir in _PORTABLE_PLATFORM_REQUIRED_DIRS[platform]:
-        if _portable_path_key(relative_dir) not in relative_infos:
+        if _key(relative_dir) not in relative_infos:
             errors.append(f"portable archive missing required directory: {relative_dir}")
     if not any(key.startswith("docs/") and not entry.is_dir for key, entry in relative_infos.items()):
         errors.append("portable archive missing required directory content: docs")
@@ -665,7 +678,7 @@ def _check_portable_archive(
         unexpected = {
             relative_names[key]
             for key in relative_infos
-            if key in {_portable_path_key(name) for name in full_only_files}
+            if key in {_key(name) for name in full_only_files}
             or key.startswith("runtime/models/paddlex/")
         }
         _append_path_examples(errors, "Standard portable archive contains Full-only assets", unexpected)
@@ -695,8 +708,8 @@ def _check_portable_archive(
                 if not isinstance(raw_name, str) or _portable_path_issue(raw_name):
                     errors.append(f"unsafe runtime manifest path: {raw_name!r}")
                     continue
-                key = _portable_path_key(raw_name)
-                if key == _portable_path_key("RUNTIME-MANIFEST.json"):
+                key = _key(raw_name)
+                if key == _key("RUNTIME-MANIFEST.json"):
                     errors.append("runtime manifest must not list itself")
                     continue
                 if key in manifest_keys:
@@ -739,7 +752,7 @@ def _check_portable_archive(
 
             archive_keys = {
                 key for key, entry in relative_infos.items()
-                if not entry.is_dir and key != _portable_path_key("RUNTIME-MANIFEST.json")
+                if not entry.is_dir and key != _key("RUNTIME-MANIFEST.json")
             }
             _append_path_examples(
                 errors,
@@ -749,7 +762,7 @@ def _check_portable_archive(
             _append_path_examples(
                 errors,
                 "runtime manifest references absent portable files",
-                {str(name) for name in manifest_files if _portable_path_key(str(name)) in manifest_keys - archive_keys},
+                {str(name) for name in manifest_files if _key(str(name)) in manifest_keys - archive_keys},
             )
 
     return sorted(set(errors))

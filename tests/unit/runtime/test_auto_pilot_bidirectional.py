@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from omnicrawl.runtime.auto_pilot import AutoPilot
+from omnicrawler.runtime.auto_pilot import AutoPilot
 
 
 def test_low_load_recovers_concurrency(tmp_path: None = None) -> None:

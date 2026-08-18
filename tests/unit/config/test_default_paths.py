@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawl.cli._main import build_parser
-from omnicrawl.core.config import load_config
+from omnicrawler.cli._main import build_parser
+from omnicrawler.core.config import load_config
 
 
 def test_explicit_project_root_wins_over_detection(tmp_path: Path) -> None:
@@ -44,7 +44,7 @@ def test_cli_config_is_required_everywhere() -> None:
     )
     checked = 0
     for sub in subparsers.choices.values():
-        if sub.prog == "omnicrawl plugins":
+        if sub.prog == "omnicrawler plugins":
             continue  # plugins 列表命令允许不带 config
         for action in sub._actions:
             if action.dest == "config":

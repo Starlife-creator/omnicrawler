@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.config import DEFAULTS, AppConfig, deep_merge, load_config, validate_config
+from omnicrawler.core.config import DEFAULTS, AppConfig, deep_merge, load_config, validate_config
 
 
 def _config(**overrides: object) -> AppConfig:
@@ -154,7 +154,7 @@ def test_s211_load_config_keeps_warnings_for_typo(tmp_path: Path) -> None:
 
 
 def test_s211_seed_completion_never_mints_drive_path_urls() -> None:
-    from omnicrawl.cli._main import _complete_seed_scheme
+    from omnicrawler.cli._main import _complete_seed_scheme
 
     assert _complete_seed_scheme("example.com") == "https://example.com"
     assert _complete_seed_scheme("http://example.com/a") == "http://example.com/a"
@@ -167,7 +167,7 @@ def test_s211_seed_completion_never_mints_drive_path_urls() -> None:
 
 
 def test_s211_quick_mode_keeps_explicit_require_features() -> None:
-    from omnicrawl.core.capabilities import capability_report
+    from omnicrawler.core.capabilities import capability_report
 
     report = capability_report(mode="quick", require_features=["pdf", "core"])
     assert report["check"]["requested_features"] == ["pdf", "core"]

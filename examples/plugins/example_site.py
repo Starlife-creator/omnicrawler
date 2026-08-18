@@ -1,7 +1,7 @@
 """复制本文件即可开始编写真实网站适配器。"""
 
-from omnicrawl.models import CrawlRequest
-from omnicrawl.sources import GenericSource
+from omnicrawler.models import CrawlRequest
+from omnicrawler.sources import GenericSource
 
 
 class ExampleNewsSource(GenericSource):

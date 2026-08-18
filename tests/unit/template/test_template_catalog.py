@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from omnicrawl.templates.template_catalog import TemplateCatalog, TemplateProbe, bundled_template_catalog
+from omnicrawler.templates.template_catalog import TemplateCatalog, TemplateProbe, bundled_template_catalog
 
 
 def test_bundled_catalog_is_recursive_and_searchable() -> None:

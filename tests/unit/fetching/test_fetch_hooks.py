@@ -9,7 +9,7 @@ import pytest
 
 class TestFetchHooks:
     def test_empty_is_empty(self) -> None:
-        from omnicrawl.fetching.hooks import FetchHooks
+        from omnicrawler.fetching.hooks import FetchHooks
 
         h = FetchHooks()
         assert h.is_empty() is True
@@ -17,8 +17,8 @@ class TestFetchHooks:
         assert h.is_empty() is False
 
     def test_sync_before_and_after_run_in_order(self) -> None:
-        from omnicrawl.core.models import CrawlRequest, FetchResult
-        from omnicrawl.fetching.hooks import FetchHooks
+        from omnicrawler.core.models import CrawlRequest, FetchResult
+        from omnicrawler.fetching.hooks import FetchHooks
 
         h = FetchHooks()
         events: list[str] = []
@@ -43,8 +43,8 @@ class TestFetchHooks:
         assert events == ["b1", "a1"]
 
     def test_async_hooks_awaited(self) -> None:
-        from omnicrawl.core.models import CrawlRequest
-        from omnicrawl.fetching.hooks import FetchHooks
+        from omnicrawler.core.models import CrawlRequest
+        from omnicrawler.fetching.hooks import FetchHooks
 
         h = FetchHooks()
         order: list[int] = []
@@ -66,8 +66,8 @@ class TestFetchHooks:
         assert order == [1, 2]
 
     def test_single_hook_exception_isolated_no_affect_others(self) -> None:
-        from omnicrawl.core.models import CrawlRequest
-        from omnicrawl.fetching.hooks import FetchHooks
+        from omnicrawler.core.models import CrawlRequest
+        from omnicrawler.fetching.hooks import FetchHooks
 
         h = FetchHooks()
         @h.on_before_fetch
@@ -88,8 +88,8 @@ class TestFetchHooks:
         assert called[0] is True
 
     def test_error_hook_sees_exception(self) -> None:
-        from omnicrawl.core.models import CrawlRequest
-        from omnicrawl.fetching.hooks import FetchHooks
+        from omnicrawler.core.models import CrawlRequest
+        from omnicrawler.fetching.hooks import FetchHooks
 
         h = FetchHooks()
         seen: list[Exception] = []
@@ -110,8 +110,8 @@ class TestFetchHooks:
         assert isinstance(seen[0], ValueError)
 
     def test_error_hook_itself_failing_is_also_isolated(self) -> None:
-        from omnicrawl.core.models import CrawlRequest
-        from omnicrawl.fetching.hooks import FetchHooks
+        from omnicrawler.core.models import CrawlRequest
+        from omnicrawler.fetching.hooks import FetchHooks
 
         h = FetchHooks()
         @h.on_error
@@ -135,8 +135,8 @@ class TestFetchHooks:
         assert second_ok[0] is True
 
     def test_extend_composes_hooks(self) -> None:
-        from omnicrawl.core.models import CrawlRequest
-        from omnicrawl.fetching.hooks import FetchHooks
+        from omnicrawler.core.models import CrawlRequest
+        from omnicrawler.fetching.hooks import FetchHooks
 
         h1 = FetchHooks()
         h2 = FetchHooks()
