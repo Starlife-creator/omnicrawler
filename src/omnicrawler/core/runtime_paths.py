@@ -269,7 +269,9 @@ def bundled_cli_path() -> Path | None:
     if not is_frozen():
         return None
     suffix = ".exe" if sys.platform == "win32" else ""
-    for name in (f"omnicrawler{suffix}", f"OmniCrawler-cli{suffix}"):
+    # Windows/macOS：CLI exe 为 omnicrawler-cli（与 GUI OmniCrawler 大小写区分）。
+    # Linux 保持 omnicrawler（大小写敏感无冲突）。两者都尝试以兼容历史产物。
+    for name in (f"omnicrawler-cli{suffix}", f"omnicrawler{suffix}"):
         candidate = application_dir() / name
         if candidate.is_file():
             return candidate
@@ -278,7 +280,10 @@ def bundled_cli_path() -> Path | None:
 
 # B05-017：configured CLI 白名单——只接受项目 CLI 名或位于应用/项目根内的可执行文件，
 # 拒绝任意外部绝对路径被当作可信 CLI 加载。
-_ALLOWED_CLI_BASENAMES = {"omnicrawler", "omnicrawler.exe"}
+_ALLOWED_CLI_BASENAMES = {
+    "omnicrawler", "omnicrawler.exe",
+    "omnicrawler-cli", "omnicrawler-cli.exe",
+}
 
 
 def _is_trusted_cli_path(path: Path) -> bool:

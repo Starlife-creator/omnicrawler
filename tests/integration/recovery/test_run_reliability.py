@@ -6,7 +6,12 @@ import pytest
 
 from omnicrawler.core.config import load_config
 from omnicrawler.core.models import CrawlRequest
-from omnicrawler.core.run_state import ALLOWED_TRANSITIONS, RUN_STATES, canonical_run_state, require_transition
+from omnicrawler.core.run_state import (
+    ALLOWED_TRANSITIONS,
+    RUN_STATES,
+    canonical_run_state,
+    require_transition,
+)
 from omnicrawler.pipeline import Pipeline
 from omnicrawler.state import StateStore
 
