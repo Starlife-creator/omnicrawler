@@ -172,6 +172,31 @@ cp -r "$BROWSERS_ROOT" "$RELEASE_ROOT/browsers"
 if [[ "$EDITION" == "Full" && -d "$RUNTIME_ROOT" ]]; then
   cp -r "$RUNTIME_ROOT" "$RELEASE_ROOT/runtime"
 fi
+
+# Full：Paddle 的 .so 依赖解析修复——Linux 动态加载器不自动搜索
+# _internal/paddle/libs/，libpaddle.so 需靠 RPATH 找兄弟库（libmklml_intel.so
+# 等）。PyInstaller 收集时保留 wheel 原 RPATH，实际目标目录已变，导致
+# capabilities --self-test / runtime import paddle 报
+# 'libmklml_intel.so: cannot open shared object file'（v0.9.1 Linux CI 实测）。
+# 与 prepare_linux_runtime.sh 对 Tesseract 的处理对齐：patchelf 统一指 rpath
+# 到 $ORIGIN（相对库自身所在目录），保证 portable 包自包含、不依赖系统环境。
+if [[ "$EDITION" == "Full" ]]; then
+  echo "[Full] 修正 Paddle 共享库 RPATH（patchelf --set-rpath \$ORIGIN）..."
+  if command -v patchelf >/dev/null 2>&1; then
+    _paddle_libs_dir="$RELEASE_ROOT/_internal/paddle/libs"
+    if [[ -d "$_paddle_libs_dir" ]]; then
+      find "$_paddle_libs_dir" -maxdepth 1 -name '*.so*' -print0 2>/dev/null |
+        while IFS= read -r -d '' so; do
+          patchelf --set-rpath '$ORIGIN' "$so" 2>/dev/null || true
+        done
+      echo "[Full] Paddle RPATH 修正完成：$(find "$_paddle_libs_dir" -maxdepth 1 -name '*.so*' | wc -l) 个共享库"
+    else
+      echo "警告: 产物内未找到 _internal/paddle/libs，Paddle RPATH 修正跳过" >&2
+    fi
+  else
+    echo "警告: 未找到 patchelf，跳过 Paddle RPATH 修正（产物内 import paddle 可能失败）" >&2
+  fi
+fi
 cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/packaging/THIRD_PARTY_NOTICES.md" "$RELEASE_ROOT/"
 echo "OmniCrawler $EDITION portable edition" > "$RELEASE_ROOT/EDITION.txt"
 for directory in configs docs examples; do
