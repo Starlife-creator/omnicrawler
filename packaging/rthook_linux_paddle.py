@@ -2,50 +2,53 @@
 """
 PyInstaller runtime hook —— Linux Full 便携包启用 Paddle 共享库。
 
-背景：paddle 的 C++ 动态加载器（phi/backends/dynload/dynamic_loader.cc）用
-**裸名** dlopen（如 "libmklml_intel.so"）加载其第三方库。裸名 dlopen 的库
-搜索规则（glibc dl-load.c）依先后为：
+背景：paddle 的 C++ 动态加载器（phi/backends/dynload/dynamic_loader.cc）对
+部分第三方库用**裸名** dlopen（如 GetMKLMLDsoHandle → "libmklml_intel.so"、
+GetLAPACKDsoHandle → "liblapack.so.3"；FLAGS_mklml_dir / FLAGS_lapack_dir
+默认空，退化为裸名）。裸名 dlopen 的库搜索规则（glibc dl-load.c）：
   1. 已加载库列表（相同 SONAME 已存在则直接复用）；
-  2. LD_LIBRARY_PATH（**仅进程启动时**由 ld.so 解析一次缓存于
-     __rtld_env_path_list.dirs，运行中修改 os.environ 无效）；
+  2. LD_LIBRARY_PATH（仅进程启动时由 ld.so 解析一次缓存，运行中改
+     os.environ 无效）；
   3. DT_RPATH / DT_RUNPATH（仅作用于主程序加载其依赖，裸 dlopen 不查）；
   4. /etc/ld.so.cache 与系统默认目录。
 
 libmklml_intel.so 存在于 paddle wheel 的 paddle/libs/（v0.9.1 Linux CI
-实测），PyInstaller 已把它 collect 到 _internal/paddle/libs/，但裸 dlopen
-在产物环境（无 LD_LIBRARY_PATH 预置、RPATH 不参与）下找不到它。
+已确认），PyInstaller 已把它 collect 到 _internal/paddle/libs/，但裸 dlopen
+在产物环境（无启动时 LD_LIBRARY_PATH 预置、RPATH 不参与）下找不到。
 
 修复：本 hook 在 Python 启动早期（任何 import paddle 之前）用绝对路径
-ctypes.CDLL() **预加载** paddle/libs/ 下所有共享库。glibc 的 dlopen 对已
-加载库会直接复用（搜索规则第 1 条），此后 paddle 的裸名 dlopen 即可命中。
-按依赖顺序加载（先基础运行时库，再依赖它们的上层库）；单库失败容忍——
-若某库已由其它机制加载或本环境无关紧要，不阻塞启动（frozen 环境早期
-无失败处理上下文，也不可让 hook 抛异常）。
+ctypes.CDLL() **预加载** paddle 裸 dlopen 的那几个第三方库（libmklml_intel
+.so、liblapack.so.3）。glibc 的 dlopen 对已加载库直接复用（搜索规则第 1
+条），此后 paddle 的裸名 dlopen 即命中。
+
+**刻意不预加载** libphi.so / libphi_core.so 等 paddle 核心对象：它们由
+paddle 自身模块按既有路径加载，预先以绝对路径加载会与 paddle 内部的
+再加载产生两份全局状态——v0.9.1 Linux CI 实测报 paddle flags error:
+flag "enable_host_event_recorder_hook" defined both in profiler.cc（flag
+静态链接进 .so，重复加载同库不同句柄导致全局重复定义）。libwarpctc.so /
+libwarprnnt.so 走 SetPaddleLibPath 的 s_py_site_pkg_path 绝对路径，不需要
+预加载。
+
+依赖解析：CDLL 绝对路径加载 libmklml 时其依赖（libiomp5.so 等）经
+patchelf 已设的 $ORIGIN RPATH 在同目录解析（见 build_linux.sh 的 RPATH
+修正步骤）。单库失败容忍，不阻塞启动。
 
 frozen 环境下 sys._MEIPASS == onedir 的 _internal 目录。
 """
 import ctypes
-import glob
 import os
 import sys
 
-_LIBS_RELATIVE = os.path.join("paddle", "libs")
+_PADDLE_LIBS = ("libmklml_intel.so",)
 
 
 def _preload_paddle_libs() -> None:  # pragma: no cover - 仅 frozen Linux 生效
-    libs_dir = os.path.join(sys._MEIPASS, _LIBS_RELATIVE)  # noqa: SLF001 - PyInstaller 私有常量
+    libs_dir = os.path.join(sys._MEIPASS, os.path.join("paddle", "libs"))  # noqa: SLF001 - PyInstaller 私有常量
     if not os.path.isdir(libs_dir):
         return
-    # 基础运行时库先加载（上层库 dlopen 时 glibc 才能解析其依赖）；
-    # 其余按文件名排序，mklml/phi 等最后。失败容忍。
-    _ordering = [
-        "libiomp5*", "libgomp*", "libgfortran*", "libquadmath*",
-        "libblas*", "liblapack*", "libtbb*.so*", "libdnnl*",
-        "libcommon*", "libwarpctc*", "libwarprnnt*",
-        "libopenvino*", "libmklml*", "libphi*",
-    ]
-    for pattern in _ordering:
-        for path in sorted(glob.glob(os.path.join(libs_dir, pattern))):
+    for name in _PADDLE_LIBS:
+        path = os.path.join(libs_dir, name)
+        if os.path.isfile(path):
             try:
                 ctypes.CDLL(os.path.abspath(path))
             except OSError:
