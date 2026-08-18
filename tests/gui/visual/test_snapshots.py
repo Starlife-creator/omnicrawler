@@ -38,11 +38,11 @@ def _snap(widget, name: str, theme: str) -> None:
 
 
 def test_empty_state_snapshot(theme_manager):
-    from omnicrawl.gui.i18n import _
-    from omnicrawl.gui.widgets.empty_state import EmptyState
+    from omnicrawler.gui.i18n import _
+    from omnicrawler.gui.widgets.empty_state import EmptyState
 
     for theme in THEMES:
-        theme_manager._app.setProperty("omnicrawlTheme", theme)
+        theme_manager._app.setProperty("omnicrawlerTheme", theme)
         widget = EmptyState(
             icon="✓",
             title=_("专业复核台 · 功能开发中"),
@@ -53,10 +53,10 @@ def test_empty_state_snapshot(theme_manager):
 
 
 def test_status_indicator_snapshot(theme_manager):
-    from omnicrawl.gui.widgets.status_indicator import StatusIndicator
+    from omnicrawler.gui.widgets.status_indicator import StatusIndicator
 
     for theme in THEMES:
-        theme_manager._app.setProperty("omnicrawlTheme", theme)
+        theme_manager._app.setProperty("omnicrawlerTheme", theme)
         widget = StatusIndicator()
         for state in ("idle", "running", "finished", "error"):
             widget.state = state
@@ -64,11 +64,11 @@ def test_status_indicator_snapshot(theme_manager):
 
 
 def test_help_tooltip_snapshot(theme_manager, qapp):
-    from omnicrawl.gui.i18n import _
-    from omnicrawl.gui.widgets.help_tooltip import HelpTooltip
+    from omnicrawler.gui.i18n import _
+    from omnicrawler.gui.widgets.help_tooltip import HelpTooltip
 
     for theme in THEMES:
-        qapp.setProperty("omnicrawlTheme", theme)
+        qapp.setProperty("omnicrawlerTheme", theme)
         widget = HelpTooltip(help_id="test", label=_("帮助"))
         _snap(widget, "help_tooltip", theme)
 
@@ -76,7 +76,7 @@ def test_help_tooltip_snapshot(theme_manager, qapp):
 def test_navigation_bar_snapshot(theme_manager):
     from PyQt6.QtWidgets import QListWidget
 
-    from omnicrawl.gui.design_system import ThemeManager
+    from omnicrawler.gui.design_system import ThemeManager
 
     for theme in THEMES:
         ThemeManager.instance().apply(theme_manager._app, theme)
@@ -90,8 +90,8 @@ def test_navigation_bar_snapshot(theme_manager):
 
 
 def test_toast_snapshot(theme_manager, qapp):
-    from omnicrawl.gui.design_system import ThemeManager
-    from omnicrawl.gui.widgets.toast import Toast
+    from omnicrawler.gui.design_system import ThemeManager
+    from omnicrawler.gui.widgets.toast import Toast
 
     for theme in THEMES:
         ThemeManager.instance().apply(qapp, theme)

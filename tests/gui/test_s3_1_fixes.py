@@ -10,9 +10,9 @@ pytest.importorskip("PyQt6")
 
 from PyQt6.QtWidgets import QApplication
 
-from omnicrawl.gui.delegates.error_dialog import ErrorDialogHelper
-from omnicrawl.gui.help_center import HelpCenterDock
-from omnicrawl.gui.main import NavIndex
+from omnicrawler.gui.delegates.error_dialog import ErrorDialogHelper
+from omnicrawler.gui.help_center import HelpCenterDock
+from omnicrawler.gui.main import NavIndex
 
 _app = QApplication.instance() or QApplication([])
 
@@ -70,7 +70,7 @@ def test_nav_index_constants() -> None:
 # ── S3.1.4：日志缓存裁剪 ────────────────────────────────────────────
 
 def test_log_console_caps_cached_logs(tmp_path: Path) -> None:
-    from omnicrawl.gui.widgets.log_console import MAX_CACHED_LOGS, LogConsole
+    from omnicrawler.gui.widgets.log_console import MAX_CACHED_LOGS, LogConsole
 
     console = LogConsole()
     for index in range(MAX_CACHED_LOGS + 500):

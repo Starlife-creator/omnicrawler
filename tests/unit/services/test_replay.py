@@ -13,9 +13,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.services.replay import replay_field
-from omnicrawl.state import Capsule, CapsuleStore, StateStore
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.services.replay import replay_field
+from omnicrawler.state import Capsule, CapsuleStore, StateStore
 
 HTML = b"<html><body><h1>\xe6\xa0\x87\xe9\xa2\x98</h1></body></html>"  # <h1>标题</h1>
 URL = "https://example.com/page"
@@ -136,7 +136,7 @@ class ReplayTest(unittest.TestCase):
                 self._seed(state, run_id, raw_path=str(raw))
                 CapsuleStore(temp / "capsules").append(run_id, self._capsule(run_id))
                 with patch(
-                    "omnicrawl.services.replay.subprocess.run",
+                    "omnicrawler.services.replay.subprocess.run",
                     side_effect=subprocess.TimeoutExpired(cmd="replay", timeout=0.01),
                 ):
                     result = replay_field(run_id, "title", store=state, capsule_dir=temp / "capsules")

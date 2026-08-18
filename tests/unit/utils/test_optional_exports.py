@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.pipeline.exporters import export_all
-from omnicrawl.state import StateStore
+from omnicrawler.core.config import load_config
+from omnicrawler.pipeline.exporters import export_all
+from omnicrawler.state import StateStore
 
 
 def test_optional_analytics_outputs_have_explicit_fallback(tmp_path) -> None:

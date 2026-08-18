@@ -12,8 +12,8 @@ from pathlib import Path
 
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.fetching.async_fetcher import HTTPXAsyncFetcher
+from omnicrawler.core.config import load_config
+from omnicrawler.fetching.async_fetcher import HTTPXAsyncFetcher
 
 
 def _config(tmp_path: Path) -> object:

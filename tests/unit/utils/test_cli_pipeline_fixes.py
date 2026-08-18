@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "sr
 
 def test_e9_run_task_passes_config_path_to_application_service(monkeypatch, tmp_path) -> None:
     """E9：run_task 统一走 ApplicationService，传入正确配置路径且透传 max_pages/callback。"""
-    from omnicrawl.commands import run_task
+    from omnicrawler.commands import run_task
 
     cfg = tmp_path / "p.yaml"
     cfg.write_text(
@@ -39,7 +39,7 @@ def test_e9_run_task_passes_config_path_to_application_service(monkeypatch, tmp_
 
 def test_b02_026_run_task_rejects_unresolved_placeholders(monkeypatch, tmp_path) -> None:
     """B02-026：CLI run 遇到未替换占位符 fail-closed，不启动 ApplicationService。"""
-    from omnicrawl.commands import run_task
+    from omnicrawler.commands import run_task
 
     cfg = tmp_path / "p.yaml"
     cfg.write_text(
@@ -67,8 +67,8 @@ def test_b02_026_run_task_rejects_unresolved_placeholders(monkeypatch, tmp_path)
 
 
 def test_e3_status_execute_carries_config_path(tmp_path) -> None:
-    """E3：omnicrawl status 的 result 携带 config_path，不再永远打空。"""
-    from omnicrawl.commands.run_status import execute
+    """E3：omnicrawler status 的 result 携带 config_path，不再永远打空。"""
+    from omnicrawler.commands.run_status import execute
 
     cfg = tmp_path / "project.yaml"
     cfg.write_text(
@@ -83,7 +83,7 @@ def test_e3_status_execute_carries_config_path(tmp_path) -> None:
 
 def test_e4_init_project_root_points_at_repo_root(tmp_path) -> None:
     """E4：init-project 的 examples 回退路径基于仓库根而非 src/。"""
-    from omnicrawl.commands.init_project import execute
+    from omnicrawler.commands.init_project import execute
 
     # examples/configs/browser.yaml 在仓库根；若 parents[2]（src/）则找不到并抛 FileNotFoundError
     result = execute("browser", str(tmp_path), "demo")
@@ -94,7 +94,7 @@ def test_b09_002_init_project_rejects_path_traversal_name(tmp_path) -> None:
     """B09-002：init 的 name 含路径分隔符/.. 必须被拒绝，防 CWE-22。"""
     import pytest
 
-    from omnicrawl.commands.init_project import execute
+    from omnicrawler.commands.init_project import execute
 
     with pytest.raises(ValueError):
         execute("browser", str(tmp_path), "../../etc/evil")
@@ -109,7 +109,7 @@ def test_b09_002_init_project_rejects_path_traversal_name(tmp_path) -> None:
 
 def test_e13_render_runs_validation(tmp_path) -> None:
     """E13：template render 后跑校验（合法渲染成功且返回校验提示）。"""
-    from omnicrawl.commands.template import execute
+    from omnicrawler.commands.template import execute
 
     result = execute(
         "render", template_id="browser", sets=[],
@@ -123,7 +123,7 @@ def test_e14_rendered_value_placeholder_not_misreported(tmp_path) -> None:
     """E14：替换值本身含占位符不被误报为缺失键（missing 只记真正缺失的键）。"""
     import yaml
 
-    from omnicrawl.templates.template_catalog import TemplateCatalog
+    from omnicrawler.templates.template_catalog import TemplateCatalog
 
     # 用户模板：body 引用 {{title}}，我们把它替换成含 {{other}} 的值
     user_dir = tmp_path / "user_templates"
@@ -148,7 +148,7 @@ def test_e14_rendered_value_placeholder_not_misreported(tmp_path) -> None:
 
 def test_e15_all_exports_disabled_is_warning_not_error(tmp_path) -> None:
     """E15：关全部导出格式给出 warning，不阻止配置加载。"""
-    from omnicrawl.core.config import load_config, validate_config
+    from omnicrawler.core.config import load_config, validate_config
 
     cfg = tmp_path / "p.yaml"
     cfg.write_text(
@@ -165,11 +165,11 @@ def test_e15_all_exports_disabled_is_warning_not_error(tmp_path) -> None:
 
 def test_e16_apify_home_url_override() -> None:
     """E16：x_twitter 生成 x.com 入口而非 www.x_twitter.com。"""
-    from omnicrawl.templates.apify_templates import generate_omnicrawl_template
+    from omnicrawler.templates.apify_templates import generate_omnicrawler_template
 
-    template = generate_omnicrawl_template("x_twitter")
+    template = generate_omnicrawler_template("x_twitter")
     assert "https://x.com/" in template
     assert "www.x_twitter.com" not in template
     # 常规平台仍走默认
-    template2 = generate_omnicrawl_template("amazon")
+    template2 = generate_omnicrawler_template("amazon")
     assert "https://www.amazon.com/" in template2

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from omnicrawl.core.ai_env import (
+from omnicrawler.core.ai_env import (
     ai_config_sidecar_path,
     load_ai_config_sidecar,
     load_ai_privacy,

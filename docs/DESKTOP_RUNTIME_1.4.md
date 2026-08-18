@@ -7,11 +7,11 @@
 不监听 TCP 端口。GUI 只轮询状态和发送控制命令，关闭 GUI 不会主动结束 Worker。
 
 ```powershell
-omnicrawl worker -c task.yaml start
-omnicrawl worker -c task.yaml status
-omnicrawl worker -c task.yaml pause
-omnicrawl worker -c task.yaml resume
-omnicrawl worker -c task.yaml stop
+omnicrawler worker -c task.yaml start
+omnicrawler worker -c task.yaml status
+omnicrawler worker -c task.yaml pause
+omnicrawler worker -c task.yaml resume
+omnicrawler worker -c task.yaml stop
 ```
 
 ## 工作区
@@ -21,11 +21,11 @@ omnicrawl worker -c task.yaml stop
 raw；config 包只含配置。
 
 ```powershell
-omnicrawl workspace -c task.yaml init
-omnicrawl workspace -c task.yaml health
-omnicrawl workspace -c task.yaml package --kind full --target project.zip
-omnicrawl workspace -c task.yaml snapshot
-omnicrawl workspace -c task.yaml rollback --target <workspace>/snapshots/snapshot-....zip
+omnicrawler workspace -c task.yaml init
+omnicrawler workspace -c task.yaml health
+omnicrawler workspace -c task.yaml package --kind full --target project.zip
+omnicrawler workspace -c task.yaml snapshot
+omnicrawler workspace -c task.yaml rollback --target <workspace>/snapshots/snapshot-....zip
 ```
 
 ## 便携模式

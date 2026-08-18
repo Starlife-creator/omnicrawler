@@ -4,7 +4,7 @@ CPython's ``pyvenv.cfg`` stores the base interpreter as an absolute path.
 This helper is intentionally dependency-free and is run by the bundled base
 interpreter before any launcher invokes ``.venv``.
 
-It also reconciles the installed ``omnicrawl-platform`` metadata with the
+It also reconciles the installed ``omnicrawler-platform`` metadata with the
 source tree: if the editable install points at a stale directory or version
 (e.g. the whole project folder was moved, or ``bump_version.py`` advanced the
 version), this helper re-runs ``pip install -e .`` so the environment
@@ -25,8 +25,8 @@ _SOURCE_VERSION_RE = re.compile(r'^__version__\s*=\s*"([^"]+)"', re.MULTILINE)
 
 
 def read_source_version(project_root: Path) -> str | None:
-    """Read __version__ from src/omnicrawl/__init__.py (dependency-free)."""
-    init_path = project_root / "src" / "omnicrawl" / "__init__.py"
+    """Read __version__ from src/omnicrawler/__init__.py (dependency-free)."""
+    init_path = project_root / "src" / "omnicrawler" / "__init__.py"
     try:
         match = _SOURCE_VERSION_RE.search(init_path.read_text(encoding="utf-8"))
     except OSError:
@@ -35,11 +35,11 @@ def read_source_version(project_root: Path) -> str | None:
 
 
 def read_installed_version(venv_python: Path) -> str | None:
-    """Read the installed editable omnicrawl-platform version (or None)."""
+    """Read the installed editable omnicrawler-platform version (or None)."""
     try:
         result = subprocess.run(
             [str(venv_python), "-c",
-             "import importlib.metadata; print(importlib.metadata.version('omnicrawl-platform'))"],
+             "import importlib.metadata; print(importlib.metadata.version('omnicrawler-platform'))"],
             capture_output=True, text=True, timeout=60,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -89,12 +89,12 @@ def reinstall_editable(venv_python: Path, project_root: Path) -> bool:
     return result.returncode == 0
 
 
-_DIST_INFO_RE = re.compile(r"omnicrawl_platform-[^.]+\.dist-info$", re.IGNORECASE)
+_DIST_INFO_RE = re.compile(r"omnicrawler_platform-[^.]+\.dist-info$", re.IGNORECASE)
 _METADATA_VERSION_RE = re.compile(r"^Version:\s*.*$", re.MULTILINE)
 
 
 def reconcile_installed_version(venv_python: Path, project_root: Path) -> None:
-    """Ensure installed omnicrawl-platform metadata matches the source version.
+    """Ensure installed omnicrawler-platform metadata matches the source version.
 
     Runs on every launch; when the source version is unavailable (broken tree)
     it silently no-ops; when it differs from the installed metadata it first
@@ -118,9 +118,9 @@ def reconcile_installed_version(venv_python: Path, project_root: Path) -> None:
             return
         print(f"[WARN] pip 重装后仍不一致 (installed={refreshed!r})，尝试直接覆写 dist-info。")
     site_packages = project_root / ".venv" / "Lib" / "site-packages"
-    dist_info = next(site_packages.glob("omnicrawl_platform-*.dist-info"), None) if site_packages.is_dir() else None
+    dist_info = next(site_packages.glob("omnicrawler_platform-*.dist-info"), None) if site_packages.is_dir() else None
     if dist_info is None:
-        print("[ERROR] 找不到 omnicrawl_platform-*.dist-info，无法对齐版本。请手动重跑 pip install -e .")
+        print("[ERROR] 找不到 omnicrawler_platform-*.dist-info，无法对齐版本。请手动重跑 pip install -e .")
         return
     metadata_path = dist_info / "METADATA"
     direct_url = dist_info / "direct_url.json"
@@ -174,7 +174,7 @@ def main() -> int:
         print("[INFO] Rebased .venv for the current project directory.")
 
     # F51：一并重写 site-packages 内 editable/绝对路径引用（__editable__*.pth 等），
-    # 否则 pyvenv.cfg 已 rebase 但 import omnicrawl 仍指旧位置
+    # 否则 pyvenv.cfg 已 rebase 但 import omnicrawler 仍指旧位置
     if old_home:
         old_runtime = Path(old_home)
         old_root = (
@@ -202,7 +202,7 @@ def main() -> int:
         # 二进制 .exe 内嵌解释器路径无法安全改写——搬迁后若 import 仍指向旧路径，
         # 提示重新安装 editable 包
         if old_root is not None and old_root != project_root:
-            print("[INFO] 若 `import omnicrawl` 仍解析到旧位置，请重新执行: pip install -e .")
+            print("[INFO] 若 `import omnicrawler` 仍解析到旧位置，请重新执行: pip install -e .")
 
     # F53：版本对账——installed 元数据与源码 __version__ 不一致时自动收敛。
     reconcile_installed_version(venv_python, project_root)

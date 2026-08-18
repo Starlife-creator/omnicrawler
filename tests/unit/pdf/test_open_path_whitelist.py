@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.pdfx.desktop import open_path
+from omnicrawler.pdfx.desktop import open_path
 
 
 def test_open_path_rejects_executable_extension(tmp_path: Path) -> None:
@@ -35,7 +35,7 @@ def test_open_path_allows_directory(tmp_path: Path) -> None:
     # 非 Windows：Popen 命令不真正执行（mock），仅验证不抛白名单异常
     from unittest.mock import patch
 
-    with patch("omnicrawl.pdfx.desktop.subprocess.Popen") as popen:
+    with patch("omnicrawler.pdfx.desktop.subprocess.Popen") as popen:
         open_path(tmp_path)
         assert popen.called
 
@@ -47,6 +47,6 @@ def test_open_path_allows_openable_extension(tmp_path: Path) -> None:
         pytest.skip("Windows os.startfile 实际拉起关联程序，跳过")
     from unittest.mock import patch
 
-    with patch("omnicrawl.pdfx.desktop.subprocess.Popen") as popen:
+    with patch("omnicrawler.pdfx.desktop.subprocess.Popen") as popen:
         open_path(ok)
         assert popen.called

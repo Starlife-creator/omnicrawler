@@ -9,7 +9,7 @@ under their own licenses:
 - `tessdata_fast` language models — Apache License 2.0.
 - PaddlePaddle, PaddleOCR and PaddleX — Apache License 2.0.
 - Crawl4AI — Apache License 2.0. Used as an optional AI-driven crawling backend
-  (`omnicrawl[crawl4ai]`).
+  (`omnicrawler[crawl4ai]`).
 - Python packages listed in `SBOM.json` — each package's declared license applies.
 
 7-Zip is used only during the build to extract the Tesseract NSIS package and is not included

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.sources.mirror_registry import (
+from omnicrawler.sources.mirror_registry import (
     MirrorConfigError,
     MirrorRegistry,
 )

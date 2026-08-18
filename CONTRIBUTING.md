@@ -19,7 +19,7 @@ pytest
 
 # 运行质量门禁
 ruff check src/ && ruff format --check src/
-mypy src/omnicrawl/ --exclude 'src/omnicrawl/(gui|pdfx|apps)/'
+mypy src/omnicrawler/ --exclude 'src/omnicrawler/(gui|pdfx|apps)/'
 python -m compileall src/ -q
 ```
 
@@ -135,7 +135,7 @@ plugins:
 **Windows 便携版构建详见 [`docs/WINDOWS_PACKAGING.md`](docs/WINDOWS_PACKAGING.md)。**
 下面是最关键的规则：
 
-1. **版本号唯一来源**：`src/omnicrawl/__init__.py` 中的 `__version__`。构建脚本自动读取，
+1. **版本号唯一来源**：`src/omnicrawler/__init__.py` 中的 `__version__`。构建脚本自动读取，
    产物文件名由脚本生成，任何人（包括自动化工具）都不应在构建流程中手动修改版本号。
 2. **修改版本号是独立操作**：使用 `tools/bump_version.py`，不与构建、测试、修复混在一起。
 3. **产物归档**：所有构建产物放入 `artifacts/` 版本化目录，规则见 [`artifacts/README.md`](artifacts/README.md)。

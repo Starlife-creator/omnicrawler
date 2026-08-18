@@ -6,7 +6,7 @@ import threading
 from http.cookiejar import Cookie
 from pathlib import Path
 
-from omnicrawl.fetching.session import CookieSession, get_cookie_session
+from omnicrawler.fetching.session import CookieSession, get_cookie_session
 
 
 def test_concurrent_jar_reads_and_writes_no_loss(tmp_path: Path) -> None:
@@ -81,7 +81,7 @@ def test_concurrent_save_does_not_crash(tmp_path: Path) -> None:
 
 
 def test_singleton_session_returns_same_instance(tmp_path: Path) -> None:
-    from omnicrawl.core.config import load_config
+    from omnicrawler.core.config import load_config
 
     config_path = tmp_path / "task.yaml"
     config_path.write_text(

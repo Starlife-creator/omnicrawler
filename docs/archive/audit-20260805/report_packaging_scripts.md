@@ -17,21 +17,21 @@
 
 分级依据：critical = 必然触发且阻断用户主路径；high = 已打包/已发布产物存在明显功能缺陷或明显风险；medium = 不一致/不可复现/维护负担；low/ux = 提示与体验。
 
-亮点（无问题部分）：版本号主链一致（pyproject.toml:9 `0.3.0` = src/omnicrawl/__init__.py:14 `0.3.0` = CHANGELOG.md `0.3.0` = docs/COMPATIBILITY_0.3.0.md）；build_windows.ps1 采用 UTF-8 BOM + `$ErrorActionPreference='Stop'` + `Assert-LastExit` + 构建后 6 项自检（--version、templates validate、capabilities、runtime-verify）；prepare_windows_runtime.ps1 具备原子写、`.part` 临时文件、缓存哈希记录；Dockerfile 双阶段 + 固定镜像 sha256 + 非 root 用户；.env.example 全部为空占位无真实密钥；spec 采用共享 COLLECT 目录避免重复二进制。
+亮点（无问题部分）：版本号主链一致（pyproject.toml:9 `0.3.0` = src/omnicrawler/__init__.py:14 `0.3.0` = CHANGELOG.md `0.3.0` = docs/COMPATIBILITY_0.3.0.md）；build_windows.ps1 采用 UTF-8 BOM + `$ErrorActionPreference='Stop'` + `Assert-LastExit` + 构建后 6 项自检（--version、templates validate、capabilities、runtime-verify）；prepare_windows_runtime.ps1 具备原子写、`.part` 临时文件、缓存哈希记录；Dockerfile 双阶段 + 固定镜像 sha256 + 非 root 用户；.env.example 全部为空占位无真实密钥；spec 采用共享 COLLECT 目录避免重复二进制。
 
 ## 问题清单
 
 ### [critical] pyproject.toml:12 - 声明 Python >=3.10，但源码与工具大量使用 3.11+ 语法，3.10 用户与 CI 必失败
 
-- 现状：`requires-python = ">=3.10"`（pyproject.toml:12）；README.md:23 与 docs/SUPPORT_MATRIX.md:7 声明支持 3.10；.github/workflows/quality.yml:19 matrix 含 `3.10`。但以下文件顶层直接 `from datetime import UTC`（3.11+ API，3.10 下 ImportError）：src/omnicrawl/core/utils.py:10（`datetime.now(UTC)` :18）、src/omnicrawl/core/logging_utils.py:5、src/omnicrawl/fetching/retry.py:6、src/omnicrawl/pdfx/utils.py:11、src/omnicrawl/quality/diagnostics.py:21、src/omnicrawl/scheduling/change_detector.py:37、src/omnicrawl/services/research_package.py:9、src/omnicrawl/templates/template_health.py:9。tools/ 顶层 `import tomllib`（3.11+）：build_source_archive.py:6、bump_version.py:40、check_docs_consistency.py:12、check_release_integrity.py:14、generate_checksums.py:23、generate_provenance.py:19（另用 `from datetime import UTC`）、generate_sbom.py:8、generate_release_info.py:13；build_windows.ps1:147 构建时内联 `import tomllib`。tools 中 `from datetime import UTC` 无 fallback。本机 `py -0p` 显示 3.10 存在但运行崩溃（exit=-1073741515，解释器损坏），无法实测，属静态证据。
-- 问题：任何 `import omnicrawl.core.utils` 的模块在 3.10 下直接 ImportError；quality.yml 的 3.10 job 运行 pytest 必红（CI 实际只在 3.12/3.13 通过）；pip 在 3.10 下安装时虽能通过元数据检查，但运行即崩。`datetime.UTC` 无 `timezone.utc` 兼容层。
+- 现状：`requires-python = ">=3.10"`（pyproject.toml:12）；README.md:23 与 docs/SUPPORT_MATRIX.md:7 声明支持 3.10；.github/workflows/quality.yml:19 matrix 含 `3.10`。但以下文件顶层直接 `from datetime import UTC`（3.11+ API，3.10 下 ImportError）：src/omnicrawler/core/utils.py:10（`datetime.now(UTC)` :18）、src/omnicrawler/core/logging_utils.py:5、src/omnicrawler/fetching/retry.py:6、src/omnicrawler/pdfx/utils.py:11、src/omnicrawler/quality/diagnostics.py:21、src/omnicrawler/scheduling/change_detector.py:37、src/omnicrawler/services/research_package.py:9、src/omnicrawler/templates/template_health.py:9。tools/ 顶层 `import tomllib`（3.11+）：build_source_archive.py:6、bump_version.py:40、check_docs_consistency.py:12、check_release_integrity.py:14、generate_checksums.py:23、generate_provenance.py:19（另用 `from datetime import UTC`）、generate_sbom.py:8、generate_release_info.py:13；build_windows.ps1:147 构建时内联 `import tomllib`。tools 中 `from datetime import UTC` 无 fallback。本机 `py -0p` 显示 3.10 存在但运行崩溃（exit=-1073741515，解释器损坏），无法实测，属静态证据。
+- 问题：任何 `import omnicrawler.core.utils` 的模块在 3.10 下直接 ImportError；quality.yml 的 3.10 job 运行 pytest 必红（CI 实际只在 3.12/3.13 通过）；pip 在 3.10 下安装时虽能通过元数据检查，但运行即崩。`datetime.UTC` 无 `timezone.utc` 兼容层。
 - 建议：二选一。① 将 `requires-python` 提升为 `>=3.11`，同步 README.md:23、docs/SUPPORT_MATRIX.md、tools/check_release_integrity.py 与 quality.yml（去掉 3.10）；② 若必须保留 3.10，为 8 处 `datetime.UTC` 与 8 处 `tomllib` 增加 3.10 兼容（如 `from datetime import timezone, datetime` + `UTC = timezone.utc`；`try: import tomllib except ModuleNotFoundError: import tomli as tomllib`），并新增 requirements 声明 `tomli; python_version < "3.11"`。
 
-### [high] src/omnicrawl/gui/i18n.py:56 + tools/extract_i18n.py:92 + tools/compile_i18n.py:44 - GUI 多语言链路整体失效（domain 不匹配 + 目录多套一层 + locale 未打包 + 无 .mo）
+### [high] src/omnicrawler/gui/i18n.py:56 + tools/extract_i18n.py:92 + tools/compile_i18n.py:44 - GUI 多语言链路整体失效（domain 不匹配 + 目录多套一层 + locale 未打包 + 无 .mo）
 
-- 现状：i18n.py:8 文档声明产物名 `locale/<lang>/LC_MESSAGES/omnicrawler.mo`，:56-58 实际 `_gettext.translation("omnicrawler", ...)` 查找 domain `omnicrawler`。但 extract_i18n.py 生成的 pot、generate_en_po.py 生成的 po、compile_i18n.py:44 输出的 mo 全部命名为 `omnicrawl-gui.*`（见 locale/omnicrawl-gui.pot、locale/en_US/LC_MESSAGES/omnicrawl-gui.po）。compile_i18n.py:44 的 mo_path 为 `po_path.parent / "LC_MESSAGES"`，即写成 `locale/en_US/LC_MESSAGES/LC_MESSAGES/omnicrawl-gui.mo`，比 gettext 约定多套一层。两个 spec（OmniCrawler.spec:14-19、OmniCrawler-Standard.spec:14-19）的 datas 仅含 templates/gui/templates/gui/help/stealth.min.js，**不含 locale/**；pyproject.toml:77-78 package-data 同样不含 locale。仓库当前无任何 .mo（Find -Filter *.mo 为空）。compile_i18n.py 依赖系统 msgfmt 外部命令。
-- 问题：① domain `omnicrawler` vs 产物 `omnicrawl-gui` 永不匹配，翻译永远加载不到，切 en_US 界面仍显示中文；② 即使匹配，mo 放在 `LC_MESSAGES/LC_MESSAGES/` 下 gettext 也不认识；③ 便携版 datas 与 wheel 都不含 locale，修复 domain 后打包产物仍回退原文；④ 无 .mo 意味着当前 GUI 实际 100% 回退中文。
-- 建议：① 统一命名：将 domain 改为 `omnicrawl-gui`（i18n.py:56）并把 i18n.py:8 注释改为一致；② compile_i18n.py:44 改为 `po_path.parent / "omnicrawl-gui.mo"`（即 `locale/en_US/LC_MESSAGES/omnicrawl-gui.mo`）；③ 两个 spec 的 datas 各加 `(str(project_root / "locale"), "locale")`；④ 打包流程在 build_windows.ps1 构建前自动运行 compile_i18n.py（或 `omnicrawl i18n compile`），并在 CI 校验 .mo 存在。
+- 现状：i18n.py:8 文档声明产物名 `locale/<lang>/LC_MESSAGES/omnicrawler.mo`，:56-58 实际 `_gettext.translation("omnicrawler", ...)` 查找 domain `omnicrawler`。但 extract_i18n.py 生成的 pot、generate_en_po.py 生成的 po、compile_i18n.py:44 输出的 mo 全部命名为 `omnicrawler-gui.*`（见 locale/omnicrawler-gui.pot、locale/en_US/LC_MESSAGES/omnicrawler-gui.po）。compile_i18n.py:44 的 mo_path 为 `po_path.parent / "LC_MESSAGES"`，即写成 `locale/en_US/LC_MESSAGES/LC_MESSAGES/omnicrawler-gui.mo`，比 gettext 约定多套一层。两个 spec（OmniCrawler.spec:14-19、OmniCrawler-Standard.spec:14-19）的 datas 仅含 templates/gui/templates/gui/help/stealth.min.js，**不含 locale/**；pyproject.toml:77-78 package-data 同样不含 locale。仓库当前无任何 .mo（Find -Filter *.mo 为空）。compile_i18n.py 依赖系统 msgfmt 外部命令。
+- 问题：① domain `omnicrawler` vs 产物 `omnicrawler-gui` 永不匹配，翻译永远加载不到，切 en_US 界面仍显示中文；② 即使匹配，mo 放在 `LC_MESSAGES/LC_MESSAGES/` 下 gettext 也不认识；③ 便携版 datas 与 wheel 都不含 locale，修复 domain 后打包产物仍回退原文；④ 无 .mo 意味着当前 GUI 实际 100% 回退中文。
+- 建议：① 统一命名：将 domain 改为 `omnicrawler-gui`（i18n.py:56）并把 i18n.py:8 注释改为一致；② compile_i18n.py:44 改为 `po_path.parent / "omnicrawler-gui.mo"`（即 `locale/en_US/LC_MESSAGES/omnicrawler-gui.mo`）；③ 两个 spec 的 datas 各加 `(str(project_root / "locale"), "locale")`；④ 打包流程在 build_windows.ps1 构建前自动运行 compile_i18n.py（或 `omnicrawler i18n compile`），并在 CI 校验 .mo 存在。
 
 ### [high] tools/prepare_windows_runtime.ps1:20-71,113-115,139 - 第三方二进制下载无预置信任锚（供应链 TOFU）
 
@@ -41,7 +41,7 @@
 
 ### [high] tools/add_template_version.ps1:1 - 硬编码其他项目绝对路径（死脚本/遗留物，删除风险）
 
-- 现状：`$base = "E:\tool\biancheng\VScode project 3\omnicrawler2.1.0\source_extracted\OmniCrawler-2.1.0-Source\src\omnicrawl\templates"`，指向本机另一项目、且是 2.1.0 旧版本；脚本末尾 `Set-Content -NoNewline` 会用 PS5.1 UTF8 在文件头写 BOM。未被任何构建/CI 流程引用。
+- 现状：`$base = "E:\tool\biancheng\VScode project 3\omnicrawler2.1.0\source_extracted\OmniCrawler-2.1.0-Source\src\omnicrawler\templates"`，指向本机另一项目、且是 2.1.0 旧版本；脚本末尾 `Set-Content -NoNewline` 会用 PS5.1 UTF8 在文件头写 BOM。未被任何构建/CI 流程引用。
 - 问题：① 泄露本机路径、与当前仓库无关；② 若在仓库根执行，`Set-Content` 会往其他项目的模板文件写 BOM，损坏该仓库文件；③ PowerShell 5.1 无 BOM 参数，编码不可控。
 - 建议：删除该脚本；若确有"给模板写版本"需求，重写为仓库内路径 + `[IO.File]::WriteAllText(path, $content, [Text.UTF8Encoding]::new($false))`。
 
@@ -60,8 +60,8 @@
 ### [high] run_windows.bat:4-7 / run_workbench_windows.bat:4-7 与 run_gui_windows.bat:11-15 行为矛盾；run_workbench_*.sh/.bat 不转发参数
 
 - 现状：run_windows.bat 与 run_workbench_windows.bat 强制要求 `.runtime\python\python.exe`（bundled）存在，源码安装（用系统 python 建 .venv）时直接报错退出；run_gui_windows.bat:11-15 有 `rebase_venv.py` 回退到普通 .venv 的路径。run_workbench_windows.bat:13、run_workbench_linux.sh 不转发 `%*`/`"$@"`，而 run_linux.sh:8、run_gui_linux.sh:10 会转发。
-- 问题：同一安装来源下三个启动脚本对"无 bundled runtime"的处理不一致；`omnicrawl-workbench` 无法带参数启动，脚本行为与其余入口不统一。
-- 建议：统一三个 Windows 启动脚本的逻辑（存在 .runtime\python 时 rebase，否则直接 `.venv\Scripts\python.exe -m omnicrawl ...`）；run_workbench_windows.bat 与 run_workbench_linux.sh 补上参数转发。
+- 问题：同一安装来源下三个启动脚本对"无 bundled runtime"的处理不一致；`omnicrawler-workbench` 无法带参数启动，脚本行为与其余入口不统一。
+- 建议：统一三个 Windows 启动脚本的逻辑（存在 .runtime\python 时 rebase，否则直接 `.venv\Scripts\python.exe -m omnicrawler ...`）；run_workbench_windows.bat 与 run_workbench_linux.sh 补上参数转发。
 
 ### [high] packaging/OmniCrawler.spec:77 + OmniCrawler-Launcher.bat - 便携 GUI 崩溃无任何反馈
 
@@ -119,13 +119,13 @@
 
 ### [medium] Dockerfile:18-19 - 不可复现且遗漏 3 个 console scripts 入口
 
-- 现状：Dockerfile:18 `COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages` 整包拷贝，依赖版本仅受 pyproject 区间约束；:19 `COPY --from=builder /usr/local/bin/omnicrawl*` 的 glob 只匹配 `omnicrawl`、`omnicrawl-gui`、`omnicrawl-workbench`，而 pyproject.toml:66-69 还定义了 `pdfx`、`pdf-process`、`pdf-extract` 三个入口脚本，均未复制进最终镜像。
-- 问题：① 镜像重建结果随上游依赖漂移；② 镜像内 `omnicrawl pdf*` 相关命令缺失（若 CMD/用户按文档使用会 command not found）。
-- 建议：:18 前改为 `pip freeze`/lock 文件安装；:19 复制 `pdfx*`、`pdf-process*`、`pdf-extract*` 或直接 `COPY --from=builder /usr/local/bin/ /usr/local/bin/`（注意不要覆盖运行时 python 二进制）；并为镜像补充 `docker build` 后的 `omnicrawl --version` 自检。
+- 现状：Dockerfile:18 `COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages` 整包拷贝，依赖版本仅受 pyproject 区间约束；:19 `COPY --from=builder /usr/local/bin/omnicrawler*` 的 glob 只匹配 `omnicrawler`、`omnicrawler-gui`、`omnicrawler-workbench`，而 pyproject.toml:66-69 还定义了 `pdfx`、`pdf-process`、`pdf-extract` 三个入口脚本，均未复制进最终镜像。
+- 问题：① 镜像重建结果随上游依赖漂移；② 镜像内 `omnicrawler pdf*` 相关命令缺失（若 CMD/用户按文档使用会 command not found）。
+- 建议：:18 前改为 `pip freeze`/lock 文件安装；:19 复制 `pdfx*`、`pdf-process*`、`pdf-extract*` 或直接 `COPY --from=builder /usr/local/bin/ /usr/local/bin/`（注意不要覆盖运行时 python 二进制）；并为镜像补充 `docker build` 后的 `omnicrawler --version` 自检。
 
-### [medium] locale/en_US/LC_MESSAGES/omnicrawl-gui.po - 未翻译条目 msgstr 保留中文原文，English 界面仍显示中文
+### [medium] locale/en_US/LC_MESSAGES/omnicrawler-gui.po - 未翻译条目 msgstr 保留中文原文，English 界面仍显示中文
 
-- 现状：po 共 541 条 msgid；词典覆盖不全，未翻译条目 msgstr 与 msgid 相同（抽样如 `msgstr "%p% 非空"` 即中文原文）；extract_i18n.py 生成的 .pot 中 `#:` 路径为 Windows 反斜杠（如 `src\omnicrawl\gui\...`），跨平台 msgmerge 兼容但路径不一致。
+- 现状：po 共 541 条 msgid；词典覆盖不全，未翻译条目 msgstr 与 msgid 相同（抽样如 `msgstr "%p% 非空"` 即中文原文）；extract_i18n.py 生成的 .pot 中 `#:` 路径为 Windows 反斜杠（如 `src\omnicrawler\gui\...`），跨平台 msgmerge 兼容但路径不一致。
 - 问题：en_US locale 即便打包成功，仍有大量字符串以中文显示，多语言质量未达发布标准；反斜杠路径影响 msgmerge 去重。
 - 建议：补齐 en_US 翻译或对未翻译条目在代码层回退英文 UI 文案；extract_i18n.py 生成 posix 风格相对路径（用 `/`）。
 
@@ -143,13 +143,13 @@
 
 ### [medium] packaging/OmniCrawler.spec / OmniCrawler-Standard.spec - 三份独立 Analysis 重复收集 + 可选模块未隔离
 
-- 现状：两个 spec 均为 gui/cli/worker 各跑一次 `Analysis`（OmniCrawler.spec:65,81,97；Standard.spec:43,51,59），三次扫描同一源码树；`collect_submodules("omnicrawl")`（Standard.spec:20）会把全部 omnicrawl 子模块（含 omnicrawl.ocr.paddle、omnicrawl.apps.pdf_processor 等）纳入收集，而 excludes（Standard.spec:21-26、Full.spec:61）只能排除第三方包。
+- 现状：两个 spec 均为 gui/cli/worker 各跑一次 `Analysis`（OmniCrawler.spec:65,81,97；Standard.spec:43,51,59），三次扫描同一源码树；`collect_submodules("omnicrawler")`（Standard.spec:20）会把全部 omnicrawler 子模块（含 omnicrawler.ocr.paddle、omnicrawler.apps.pdf_processor 等）纳入收集，而 excludes（Standard.spec:21-26、Full.spec:61）只能排除第三方包。
 - 问题：① 构建时间三倍化（Full 版 paddle 等大数据被三份共享 COLLECT 收集一次二进制，但纯 Python 扫描三次）；② 若某可选模块顶层 import 被 exclude 的包（如 Full 排除 torch 但 paddle 生态依赖 torch），分析阶段即失败或运行时缺模块，且 Standard 版无法把我们的可选模块排除出包体。
-- 建议：仅对三个入口各建一个 `Analysis` 是 PyInstaller 标准做法，可接受；但建议给可选模块补 `try/except ImportError` 保护（spec 分析期即验证），并在 Standard 版用 `excludes` 列出 `omnicrawl.apps.pdf_processor` 等不必要模块以控制体积；CI 对 Standard/Full 各跑一次构建验证。
+- 建议：仅对三个入口各建一个 `Analysis` 是 PyInstaller 标准做法，可接受；但建议给可选模块补 `try/except ImportError` 保护（spec 分析期即验证），并在 Standard 版用 `excludes` 列出 `omnicrawler.apps.pdf_processor` 等不必要模块以控制体积；CI 对 Standard/Full 各跑一次构建验证。
 
 ### [low/ux] run_workbench_linux.sh:4 - 无 venv 存在性检查
 
-- 现状：直接 `".venv/bin/python" -m omnicrawl workbench`，而 run_linux.sh:4-7 有缺失检查与中文提示。
+- 现状：直接 `".venv/bin/python" -m omnicrawler workbench`，而 run_linux.sh:4-7 有缺失检查与中文提示。
 - 问题：未安装环境下报 "No such file or directory" 类晦涩错误。
 - 建议：补齐与 run_linux.sh 一致的检查与提示。
 

@@ -16,13 +16,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=builder /usr/local/bin/omnicrawl* /usr/local/bin/
+COPY --from=builder /usr/local/bin/omnicrawler* /usr/local/bin/
 COPY --from=builder /app /app
 
-RUN useradd --create-home --uid 10001 omnicrawl && \
-    mkdir -p /data && chown -R omnicrawl:omnicrawl /data /app
-USER omnicrawl
+RUN useradd --create-home --uid 10001 omnicrawler && \
+    mkdir -p /data && chown -R omnicrawler:omnicrawler /data /app
+USER omnicrawler
 WORKDIR /data
 
-ENTRYPOINT ["omnicrawl"]
+ENTRYPOINT ["omnicrawler"]
 CMD ["--help"]

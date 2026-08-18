@@ -14,11 +14,11 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from omnicrawl.core.config import DEFAULTS, load_config
-from omnicrawl.core.errors import ConfigParseError, PermanentFetchError
-from omnicrawl.core.models import CrawlRequest
-from omnicrawl.fetching.http_client import HTTPFetcher
-from omnicrawl.fetching.retry import RETRYABLE_STATUS, parse_retry_config
+from omnicrawler.core.config import DEFAULTS, load_config
+from omnicrawler.core.errors import ConfigParseError, PermanentFetchError
+from omnicrawler.core.models import CrawlRequest
+from omnicrawler.fetching.http_client import HTTPFetcher
+from omnicrawler.fetching.retry import RETRYABLE_STATUS, parse_retry_config
 
 
 def _config(tmp_path: Path, *, http=None) -> object:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from omnicrawl.core.errors import ResponseTooLargeError
-from omnicrawl.fetching.http_client import HTTPFetcher
+from omnicrawler.core.errors import ResponseTooLargeError
+from omnicrawler.fetching.http_client import HTTPFetcher
 
 
 def test_br_roundtrip(monkeypatch) -> None:

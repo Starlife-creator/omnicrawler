@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawl.pdfx.llm import OpenAICompatibleClient
+from omnicrawler.pdfx.llm import OpenAICompatibleClient
 
 
 def test_openai_compatible_client_uses_scoped_egress_request(monkeypatch, tmp_path: Path) -> None:
@@ -17,7 +17,7 @@ def test_openai_compatible_client_uses_scoped_egress_request(monkeypatch, tmp_pa
             ]
         }
 
-    monkeypatch.setattr("omnicrawl.pdfx.llm.scoped_json_request", fake_request)
+    monkeypatch.setattr("omnicrawler.pdfx.llm.scoped_json_request", fake_request)
     # B05-019：默认 fail-closed，需显式开启 allow_pdf_content 才允许 PDF 正文外发
     work = tmp_path / "work"
     work.mkdir(parents=True, exist_ok=True)
@@ -46,7 +46,7 @@ def test_pdf_content_externalization_blocked_by_default(monkeypatch, tmp_path: P
     """B05-019：未显式开启 allow_pdf_content 时，PDF 正文外发被拒（fail-closed）。"""
     import pytest
 
-    monkeypatch.setattr("omnicrawl.pdfx.llm.scoped_json_request", lambda *a, **k: {})
+    monkeypatch.setattr("omnicrawler.pdfx.llm.scoped_json_request", lambda *a, **k: {})
     work = tmp_path / "work"
     work.mkdir(parents=True, exist_ok=True)
     client = OpenAICompatibleClient(

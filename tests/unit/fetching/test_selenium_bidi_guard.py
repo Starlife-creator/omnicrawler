@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from omnicrawl.core.config import load_config
-from omnicrawl.fetching.browser_fetcher import BrowserFetcher
+from omnicrawler.core.config import load_config
+from omnicrawler.fetching.browser_fetcher import BrowserFetcher
 
 
 def _config(tmp_path: Path, *, extra: dict | None = None) -> Path:

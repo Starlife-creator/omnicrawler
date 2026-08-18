@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.encoding import detect_encoding, smart_decode
-from omnicrawl.document_ir import DOCUMENT_PARSERS, DocumentIR, parse_document, sniff_document_format
-from omnicrawl.services.progress import TaskProgressEvent
+from omnicrawler.core.encoding import detect_encoding, smart_decode
+from omnicrawler.document_ir import DOCUMENT_PARSERS, DocumentIR, parse_document, sniff_document_format
+from omnicrawler.services.progress import TaskProgressEvent
 
 
 # ── Fixtures ─────────────────────────────────────────────

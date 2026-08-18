@@ -6,7 +6,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from omnicrawl.fetching.archives import ArchiveLimits, UnsafeArchiveError, safe_extract_archive
+from omnicrawler.fetching.archives import ArchiveLimits, UnsafeArchiveError, safe_extract_archive
 
 
 class ArchiveSafetyTest(unittest.TestCase):

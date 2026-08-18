@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawl.core.config import load_config
-from omnicrawl.pipeline import Pipeline
+from omnicrawler.core.config import load_config
+from omnicrawler.pipeline import Pipeline
 
 
 def test_reprocess_export_force_refreshes_outputs(tmp_path: Path) -> None:

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from omnicrawl import cli
+from omnicrawler import cli
 
 
 def _config(tmp_path: Path) -> Path:

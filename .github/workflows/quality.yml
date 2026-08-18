@@ -68,9 +68,9 @@ jobs:
           import tempfile
           from pathlib import Path
 
-          from omnicrawl.core.config import DEFAULTS, AppConfig
-          from omnicrawl.security.egress import EgressBroker
-          from omnicrawl.security.policy import PolicyBlockedError
+          from omnicrawler.core.config import DEFAULTS, AppConfig
+          from omnicrawler.security.egress import EgressBroker
+          from omnicrawler.security.policy import PolicyBlockedError
 
           with tempfile.TemporaryDirectory() as td:
               cfg = AppConfig(Path('<ci>'), Path(td), DEFAULTS, Path(td))
@@ -91,9 +91,9 @@ jobs:
       - run: python -m coverage json -o coverage.json
       - run: python tools/check_coverage_gates.py coverage.json
       - run: python -m coverage report
-      - run: python -m omnicrawl.cli templates validate
+      - run: python -m omnicrawler.cli templates validate
       - run: python -m ruff check src tests
-      - run: python -m mypy src/omnicrawl
+      - run: python -m mypy src/omnicrawler
       - run: python -m pip wheel . --no-deps -w dist
       - run: python tools/check_release_integrity.py --wheel-dir dist
       - run: python tools/build_source_archive.py --output-dir dist
@@ -197,7 +197,7 @@ jobs:
       - name: Audit resolved full dependency environment
         continue-on-error: true
         run: pip-audit --local --format json --output dependency-audit.json
-      - run: python -m omnicrawl.cli capabilities --verify-imports
+      - run: python -m omnicrawler.cli capabilities --verify-imports
         env:
           PYTHONIOENCODING: utf-8
       - run: python -m compileall -q src tools tests

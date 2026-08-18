@@ -5,8 +5,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from omnicrawl.runtime.schedule_conditions import evaluate_conditions
-from omnicrawl.runtime.scheduler import ScheduleStore
+from omnicrawler.runtime.schedule_conditions import evaluate_conditions
+from omnicrawler.runtime.scheduler import ScheduleStore
 
 
 def test_run_due_runs_in_parallel(tmp_path: Path) -> None:

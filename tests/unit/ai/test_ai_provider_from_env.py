@@ -10,13 +10,13 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.services.ai_providers import OpenAICompatibleProvider, provider_from_env
+from omnicrawler.services.ai_providers import OpenAICompatibleProvider, provider_from_env
 
 
 @pytest.fixture(autouse=True)
 def _fake_data_root(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "omnicrawl.core.runtime_paths.portable_data_root",
+        "omnicrawler.core.runtime_paths.portable_data_root",
         lambda: tmp_path / "data",
     )
 

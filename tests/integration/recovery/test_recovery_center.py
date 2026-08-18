@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawl.core.config import load_config
-from omnicrawl.core.models import CrawlRequest
-from omnicrawl.runtime.recovery import RecoveryCenter
-from omnicrawl.state import StateStore
+from omnicrawler.core.config import load_config
+from omnicrawler.core.models import CrawlRequest
+from omnicrawler.runtime.recovery import RecoveryCenter
+from omnicrawler.state import StateStore
 
 
 def _task(tmp_path: Path, name: str = "recovery") -> Path:
@@ -69,7 +69,7 @@ def test_s2520_reset_login_twice_in_same_second_succeeds(tmp_path: Path) -> None
     (sessions / "default.cookies").write_text("private", encoding="utf-8")
 
     center = RecoveryCenter(config)
-    with mock.patch("omnicrawl.runtime.recovery.utcnow", return_value="2026-01-01T00:00:00+00:00"):
+    with mock.patch("omnicrawler.runtime.recovery.utcnow", return_value="2026-01-01T00:00:00+00:00"):
         first = center.reset_login()
         (sessions / "default.cookies").write_text("private-again", encoding="utf-8")
         second = center.reset_login()

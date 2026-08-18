@@ -31,7 +31,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# -- 自引导：让工具在直接用 `python tools/sign_plugin.py` 时也能找到 omnicrawl --
+# -- 自引导：让工具在直接用 `python tools/sign_plugin.py` 时也能找到 omnicrawler --
 # 即便没有可编辑安装（如全新 checkout），只要运行它的 Python 装了 cryptography 即可。
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 for _cand in (_REPO_ROOT / "src", _REPO_ROOT):
@@ -39,7 +39,7 @@ for _cand in (_REPO_ROOT / "src", _REPO_ROOT):
     if _cand_str not in sys.path:
         sys.path.insert(0, _cand_str)
 
-from omnicrawl.plugins.signing import (  # noqa: E402
+from omnicrawler.plugins.signing import (  # noqa: E402
     generate_keypair,
     sign_file,
     verify_plugin,
@@ -49,13 +49,13 @@ from omnicrawl.plugins.signing import (  # noqa: E402
 # Designated private-key generation location (operator moves it to cold storage
 # immediately after generation). Override with --private-out.
 def _default_private_path() -> str:
-    """用户主目录下的 .omnicrawl/keys。
+    """用户主目录下的 .omnicrawler/keys。
 
     B12-001：无 HOME 时返回空串并在使用处拒绝——私钥**绝不**回退仓库内
     ``.private_keys/``（历史分支会引入私钥落仓风险）。
     """
     try:
-        return str(Path.home() / ".omnicrawl" / "keys" / "plugin_signing_private.pem")
+        return str(Path.home() / ".omnicrawler" / "keys" / "plugin_signing_private.pem")
     except RuntimeError:
         return ""
 
@@ -177,7 +177,7 @@ def _resolve_password(password: str | None) -> str:
 
 def _creator_sign(plugin_dir: Path, username: str, password: str, target: str) -> Path:
     """创建即签名：用本地身份生成 creator.sig + creator.identity（三件套之二）。"""
-    from omnicrawl.plugins.identity import IdentityStore
+    from omnicrawler.plugins.identity import IdentityStore
 
     target_path = plugin_dir / target
     if not target_path.is_file():
@@ -204,8 +204,8 @@ def _local_sign(plugin_dir: Path, username: str, password: str, target: str) -> 
     自己签名后，本机加载立即可用且显示作者。
     """
     identity_path = _creator_sign(plugin_dir, username, password, target)
-    from omnicrawl.plugins.identity import CreatorIdentity
-    from omnicrawl.plugins.trust import TrustedUserList
+    from omnicrawler.plugins.identity import CreatorIdentity
+    from omnicrawler.plugins.trust import TrustedUserList
 
     creator = CreatorIdentity.from_dict(json.loads(identity_path.read_text(encoding="utf-8")))
     if TrustedUserList().add(creator, source="local", path_hint=f"（{plugin_dir}）"):

@@ -13,7 +13,7 @@ import pytest
 
 pytest.importorskip("cryptography")
 
-from omnicrawl.plugins import signing  # noqa: E402
+from omnicrawler.plugins import signing  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SIGN_TOOL = REPO_ROOT / "tools" / "sign_plugin.py"
@@ -125,7 +125,7 @@ def _identity_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, username: str, password: str
 ) -> dict[str, str]:
     """临时身份环境：隔离 secrets 文件 + 禁用真实 keyring（走密码派生主密钥）。"""
-    from omnicrawl.plugins.identity import IdentityStore
+    from omnicrawler.plugins.identity import IdentityStore
 
     secrets_path = tmp_path / "secrets.bin"
     env = {
@@ -144,8 +144,8 @@ def test_creator_sign_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     """创建即签名：creator-sign → 三层信任评估 → 信任 → 加载。"""
     import json
 
-    from omnicrawl.plugins import trust as trust_model
-    from omnicrawl.plugins.identity import CreatorIdentity
+    from omnicrawler.plugins import trust as trust_model
+    from omnicrawler.plugins.identity import CreatorIdentity
 
     env = _identity_env(tmp_path, monkeypatch, "alice", "pw")
     plugin_dir = tmp_path / "plug"
@@ -182,7 +182,7 @@ def test_creator_sign_targets_template_file(tmp_path: Path, monkeypatch: pytest.
     """创建即签名支持 --file template.yaml（模板入市的三件套之二）。"""
     import json
 
-    from omnicrawl.plugins.identity import CreatorIdentity
+    from omnicrawler.plugins.identity import CreatorIdentity
 
     env = _identity_env(tmp_path, monkeypatch, "tina", "pw")
     template_dir = tmp_path / "tpl"
@@ -227,9 +227,9 @@ def test_creator_sign_targets_template_file(tmp_path: Path, monkeypatch: pytest.
 
 def test_loader_rejects_untrusted_creator_plugin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """三层信任接入加载链：创作者签名未信任 → 拒绝加载。"""
-    from omnicrawl.core.config import AppConfig
-    from omnicrawl.plugins.plugins import Registry, load_local_plugins
-    from omnicrawl.plugins.signing import PluginSignatureError
+    from omnicrawler.core.config import AppConfig
+    from omnicrawler.plugins.plugins import Registry, load_local_plugins
+    from omnicrawler.plugins.signing import PluginSignatureError
 
     _identity_env(tmp_path, monkeypatch, "carol", "pw")
     env = {

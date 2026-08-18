@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from omnicrawl.core.config import load_config
-from omnicrawl.pipeline import Pipeline
+from omnicrawler.core.config import load_config
+from omnicrawler.pipeline import Pipeline
 
 
 def _config(tmp_path: Path) -> object:
@@ -41,7 +41,7 @@ class _CloseTracker:
 
 def test_s152_init_failure_closes_built_resources(monkeypatch, tmp_path: Path) -> None:
     """S1.5.2：构造中途失败时，已建子系统全部关闭（后建先关）。"""
-    import omnicrawl.pipeline.core as core
+    import omnicrawler.pipeline.core as core
 
     closed: list[str] = []
     monkeypatch.setattr(core, "StateStore", lambda _path: _CloseTracker("state", closed))

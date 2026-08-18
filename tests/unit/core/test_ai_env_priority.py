@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.ai_env import (
+from omnicrawler.core.ai_env import (
     AI_ENV_KEYS,
     load_ai_env,
     parse_env_file,
@@ -35,7 +35,7 @@ def _write_env(path: Path, content: str) -> None:
 
 
 def test_s213_project_env_overrides_user_env(tmp_path: Path, isolated_home: Path) -> None:
-    _write_env(isolated_home / ".omnicrawl" / ".env", "OMNICRAWL_AI_MODEL=user-model\n")
+    _write_env(isolated_home / ".omnicrawler" / ".env", "OMNICRAWL_AI_MODEL=user-model\n")
     project = tmp_path / "proj"
     _write_env(project / ".env", "OMNICRAWL_AI_MODEL=project-model\n")
 
@@ -44,7 +44,7 @@ def test_s213_project_env_overrides_user_env(tmp_path: Path, isolated_home: Path
 
 
 def test_s213_cwd_env_overrides_user_env(tmp_path: Path, isolated_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _write_env(isolated_home / ".omnicrawl" / ".env", "OMNICRAWL_AI_MODEL=user-model\n")
+    _write_env(isolated_home / ".omnicrawler" / ".env", "OMNICRAWL_AI_MODEL=user-model\n")
     cwd = tmp_path / "workspace"
     cwd.mkdir()
     _write_env(cwd / ".env", "OMNICRAWL_AI_MODEL=cwd-model\n")
@@ -64,7 +64,7 @@ def test_s213_process_env_overrides_project_env(tmp_path: Path, monkeypatch: pyt
 
 
 def test_s213_user_env_reachable_when_no_higher_layer(tmp_path: Path, isolated_home: Path) -> None:
-    _write_env(isolated_home / ".omnicrawl" / ".env", "OMNICRAWL_AI_MODEL=user-model\n")
+    _write_env(isolated_home / ".omnicrawler" / ".env", "OMNICRAWL_AI_MODEL=user-model\n")
     merged = load_ai_env()
     assert merged["OMNICRAWL_AI_MODEL"] == "user-model"
 
@@ -118,7 +118,7 @@ def test_s213_save_updates_export_style_line(tmp_path: Path) -> None:
 
 
 def test_s213_non_ai_keys_survive_priority_merge(tmp_path: Path, isolated_home: Path) -> None:
-    _write_env(isolated_home / ".omnicrawl" / ".env", "CUSTOM_USER=1\n")
+    _write_env(isolated_home / ".omnicrawler" / ".env", "CUSTOM_USER=1\n")
     project = tmp_path / "proj"
     _write_env(project / ".env", "CUSTOM_PROJECT=1\nOMNICRAWL_AI_MODEL=m\n")
     merged = load_ai_env(project)

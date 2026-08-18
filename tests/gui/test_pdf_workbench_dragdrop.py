@@ -18,7 +18,7 @@ pytest.importorskip("PyQt6.QtWidgets")
 from PyQt6.QtCore import QMimeData, QUrl
 from PyQt6.QtWidgets import QApplication
 
-from omnicrawl.gui.views.pdf_workbench import PdfWorkbenchView
+from omnicrawler.gui.views.pdf_workbench import PdfWorkbenchView
 
 _app = QApplication.instance() or QApplication([])
 
@@ -78,7 +78,7 @@ def test_stage_files_creates_hardlinks_or_copies(tmp_path: Path) -> None:
     staging_root = tmp_path / "staging_root"
     view = _make_view()
     with patch(
-        "omnicrawl.core.runtime_paths.portable_data_root",
+        "omnicrawler.core.runtime_paths.portable_data_root",
         return_value=staging_root,
     ):
         staging = view._stage_dropped_files([src1, src2])
@@ -97,13 +97,13 @@ def test_stage_files_clears_previous_content(tmp_path: Path) -> None:
     src.write_bytes(b"%PDF-1.4 new")
 
     staging_root = tmp_path / "staging_root"
-    staging_dir = staging_root / ".omnicrawl" / "pdf-workbench" / "dropped"
+    staging_dir = staging_root / ".omnicrawler" / "pdf-workbench" / "dropped"
     staging_dir.mkdir(parents=True)
     (staging_dir / "old.pdf").write_bytes(b"old residue")
 
     view = _make_view()
     with patch(
-        "omnicrawl.core.runtime_paths.portable_data_root",
+        "omnicrawler.core.runtime_paths.portable_data_root",
         return_value=staging_root,
     ):
         staging = view._stage_dropped_files([src])
@@ -127,7 +127,7 @@ def test_stage_files_resolves_name_conflict(tmp_path: Path) -> None:
     staging_root = tmp_path / "staging_root"
     view = _make_view()
     with patch(
-        "omnicrawl.core.runtime_paths.portable_data_root",
+        "omnicrawler.core.runtime_paths.portable_data_root",
         return_value=staging_root,
     ):
         staging = view._stage_dropped_files([src1, src2])
@@ -242,7 +242,7 @@ def test_drop_pdf_files_stages_and_scans(tmp_path: Path) -> None:
 
     with (
         patch(
-            "omnicrawl.core.runtime_paths.portable_data_root",
+            "omnicrawler.core.runtime_paths.portable_data_root",
             return_value=staging_root,
         ),
         patch.object(view, "_scan_directory", fake_scan),

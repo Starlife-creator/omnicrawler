@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from omnicrawl.quality.gene_augment import MAX_AUGMENT_FIELDS_PER_PAGE, gene_augment_html
-from omnicrawl.state.scene_store import SceneStore
+from omnicrawler.quality.gene_augment import MAX_AUGMENT_FIELDS_PER_PAGE, gene_augment_html
+from omnicrawler.state.scene_store import SceneStore
 
 
 def _html(body: str):

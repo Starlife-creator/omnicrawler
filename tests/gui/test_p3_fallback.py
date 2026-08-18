@@ -35,8 +35,8 @@ def _make_canvas(monkeypatch):
     monkeypatch.setenv(_OFFSCREEN, "offscreen")
     _ensure_app()
 
-    from omnicrawl.gui.core.config_model import CrawlConfig
-    from omnicrawl.gui.views.task_canvas import TaskCanvas
+    from omnicrawler.gui.core.config_model import CrawlConfig
+    from omnicrawler.gui.views.task_canvas import TaskCanvas
 
     canvas = TaskCanvas(CrawlConfig())
     return canvas
@@ -118,7 +118,7 @@ def test_help_question_tooltip_bound_to_yaml_editor(monkeypatch):
     """工具栏「?」以 HelpTooltip 绑定 yaml.editor（悬停摘要 + 点击打开帮助中心条目）。"""
     canvas = _make_canvas(monkeypatch)
 
-    from omnicrawl.gui.widgets.help_tooltip import HelpTooltip
+    from omnicrawler.gui.widgets.help_tooltip import HelpTooltip
 
     tooltips = {tip.help_id for tip in canvas.findChildren(HelpTooltip)}
     assert "yaml.editor" in tooltips
@@ -133,7 +133,7 @@ def test_change_monitor_empty_state(monkeypatch):
     """变更监控：无规则 → EmptyState 显示（含主 CTA），规则列表隐藏；有规则时相反。"""
     monkeypatch.setenv(_OFFSCREEN, "offscreen")
     _ensure_app()
-    from omnicrawl.gui.views.change_monitor import ChangeMonitorView
+    from omnicrawler.gui.views.change_monitor import ChangeMonitorView
 
     view = ChangeMonitorView()  # settings=None → 空规则
     assert not view._rules_data
@@ -153,7 +153,7 @@ def test_file_list_empty_state(monkeypatch, tmp_path):
     """文件列表：目录不存在/为空 → EmptyState 显示；有文件 → 列表显示。"""
     monkeypatch.setenv(_OFFSCREEN, "offscreen")
     _ensure_app()
-    from omnicrawl.gui.views.file_list import FileList
+    from omnicrawler.gui.views.file_list import FileList
 
     view = FileList()
     # 目录不存在

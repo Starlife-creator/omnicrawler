@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from omnicrawl import runtime_paths
+from omnicrawler import runtime_paths
 
 
 def test_source_application_dir_is_project_root() -> None:
@@ -20,14 +20,14 @@ def test_source_user_guide_is_found() -> None:
 @pytest.mark.xfail(reason="frozen build path resolution differs across platforms")
 def test_frozen_build_prefers_companion_cli(tmp_path: Path) -> None:
     gui = tmp_path / "OmniCrawler.exe"
-    cli = tmp_path / "omnicrawl.exe"
+    cli = tmp_path / "omnicrawler.exe"
     gui.touch()
     cli.touch()
     with (
         patch.object(runtime_paths.sys, "frozen", True, create=True),
         patch.object(runtime_paths.sys, "executable", str(gui)),
     ):
-        assert runtime_paths.resolve_cli_command("omnicrawl") == str(cli)
+        assert runtime_paths.resolve_cli_command("omnicrawler") == str(cli)
 
 
 def test_frozen_document_is_found_next_to_executable(tmp_path: Path) -> None:

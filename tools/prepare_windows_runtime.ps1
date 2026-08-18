@@ -164,7 +164,26 @@ if (-not $SkipTesseract) {
     $requiredLanguages = @('eng', 'chi_sim', 'osd')
     foreach ($language in $requiredLanguages) {
         $langPath = Join-Path $tessdataRoot "$language.traineddata"
-        Get-Asset ("https://github.com/tesseract-ocr/tessdata_fast/raw/main/$language.traineddata") $langPath 100000
+        # 多源 fallback：GitHub raw 服务偶发 404/503（v0.9.1 CI 实测），依次尝试
+        # 官方重定向 → raw 直链 → jsDelivr CDN。
+        $downloaded = $false
+        foreach ($base in @(
+            "https://github.com/tesseract-ocr/tessdata_fast/raw/main",
+            "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main",
+            "https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_fast@main"
+        )) {
+            try {
+                Get-Asset "$base/$language.traineddata" $langPath 100000
+                $downloaded = $true
+                break
+            } catch {
+                Write-Host "tessdata 源不可用，切换备用源: $base ($($_.Exception.Message))"
+                Remove-Item -LiteralPath $langPath -ErrorAction SilentlyContinue
+            }
+        }
+        if (-not $downloaded) {
+            throw "Tesseract language pack download failed from all sources: $language.traineddata"
+        }
         # Explicit post-download guard. Get-Asset reuses an existing file when it
         # already meets the minimum size, but a previous interrupted run may have
         # left a zero-byte/partial stub behind; fail loudly instead of letting a
@@ -190,8 +209,8 @@ if (-not $SkipTesseract) {
     # 实测（本机 Windows PowerShell 5.1）：$ErrorActionPreference='Stop' 下原生 stderr
     # （tesseract 的 "Estimating resolution..." 正常输出）无论 2>&1 还是 2>$null 都会抛
     # NativeCommandError；唯一有效的是临时切 SilentlyContinue。
-    $probePng = Join-Path $env:TEMP 'omnicrawl_ocr_probe.png'
-    & $Python -c "from PIL import Image, ImageDraw; import os; img = Image.new('RGB', (560, 100), 'white'); ImageDraw.Draw(img).text((20, 30), 'OmniCrawler OCR 123', fill='black'); img.save(os.environ['TEMP'] + '/omnicrawl_ocr_probe.png')"
+    $probePng = Join-Path $env:TEMP 'omnicrawler_ocr_probe.png'
+    & $Python -c "from PIL import Image, ImageDraw; import os; img = Image.new('RGB', (560, 100), 'white'); ImageDraw.Draw(img).text((20, 30), 'OmniCrawler OCR 123', fill='black'); img.save(os.environ['TEMP'] + '/omnicrawler_ocr_probe.png')"
     $oldEap = $ErrorActionPreference
     $ErrorActionPreference = 'SilentlyContinue'
     & (Join-Path $tesseractRoot 'tesseract.exe') $probePng stdout --tessdata-dir $tessdataRoot -l chi_sim 2>&1 | Out-Null

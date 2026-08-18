@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.gui.core.config_model import CrawlConfig
+from omnicrawler.gui.core.config_model import CrawlConfig
 
 # 依赖 ruamel.yaml（GUI 可选依赖）；缺包时整体跳过，与同目录其他测试一致
 pytestmark = pytest.mark.skipif(
@@ -46,7 +46,7 @@ def _build_full_config() -> CrawlConfig:
     - pdf_ocr="tesseract"：即使 process_pdf=False 也写入 ocr_backend，
       覆盖 pdf_ocr→ocr_backend 转换
     """
-    from omnicrawl.gui.core.config_model import DownloadConfig, FieldDef
+    from omnicrawler.gui.core.config_model import DownloadConfig, FieldDef
 
     return CrawlConfig(
         project_name="contract_test",
@@ -109,8 +109,8 @@ def round_trip_pair(tmp_path: Path):
 
     返回 (original_crawl_config, loaded_app_config)。
     """
-    from omnicrawl.core.config import load_config
-    from omnicrawl.gui.core.config_serializer import to_yaml
+    from omnicrawler.core.config import load_config
+    from omnicrawler.gui.core.config_serializer import to_yaml
 
     config = _build_full_config()
     yaml_str = to_yaml(config)
@@ -249,7 +249,7 @@ def test_resource_profile_mapped(round_trip_pair):
 # ---- P9-B4（B05-006）：secret:// 引用环检测 ----
 def test_resolve_secret_refs_cycle_detection(monkeypatch) -> None:
     """B05-006：secret:// 引用环必须被检测（不无限递归）。"""
-    from omnicrawl.core import credentials
+    from omnicrawler.core import credentials
 
     def fake_get(name: str) -> str:
         if name == "A":
@@ -264,7 +264,7 @@ def test_resolve_secret_refs_cycle_detection(monkeypatch) -> None:
 
 
 def test_resolve_secret_refs_self_reference_detected(monkeypatch) -> None:
-    from omnicrawl.core import credentials
+    from omnicrawler.core import credentials
 
     monkeypatch.setattr(credentials, "get_secret", lambda name: "secret://A")
     with pytest.raises(ValueError, match="形成环"):

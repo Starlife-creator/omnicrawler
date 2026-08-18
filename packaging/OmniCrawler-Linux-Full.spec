@@ -22,17 +22,17 @@ packaging_root = project_root / "packaging"
 sys.path.insert(0, str(src_root))
 
 datas = [
-    (str(src_root / "omnicrawl" / "templates"), "omnicrawl/templates"),
-    (str(src_root / "omnicrawl" / "gui" / "templates"), "omnicrawl/gui/templates"),
-    (str(src_root / "omnicrawl" / "gui" / "help"), "omnicrawl/gui/help"),
-    (str(src_root / "omnicrawl" / "fetching" / "stealth.min.js"), "omnicrawl/fetching"),
+    (str(src_root / "omnicrawler" / "templates"), "omnicrawler/templates"),
+    (str(src_root / "omnicrawler" / "gui" / "templates"), "omnicrawler/gui/templates"),
+    (str(src_root / "omnicrawler" / "gui" / "help"), "omnicrawler/gui/help"),
+    (str(src_root / "omnicrawler" / "fetching" / "stealth.min.js"), "omnicrawler/fetching"),
     # 用户插件工作目录：打包进便携版，用户可在便携环境里放自己的插件
     (str(project_root / "plugins"), "plugins"),
-    # 语言包：i18n._find_localedir 沿包父链找到 omnicrawl/locale（S42 打包登记）
-    (str(project_root / "locale"), "omnicrawl/locale"),
+    # 语言包：i18n._find_localedir 沿包父链找到 omnicrawler/locale（S42 打包登记）
+    (str(project_root / "locale"), "omnicrawler/locale"),
 ]
 binaries = []
-hiddenimports = collect_submodules("omnicrawl")
+hiddenimports = collect_submodules("omnicrawler")
 excludes = [
     # Standard 会排除这些重型包；Full 全部收集，仅排除非本平台可用的残余
     "torch", "torchvision", "pyarrow", "duckdb", "scrapy", "redis",
@@ -57,6 +57,16 @@ datas += collect_data_files("paddle", includes=["libs/*"], include_py_files=Fals
 
 for package in ("keyring.backends",):
     hiddenimports += collect_submodules(package)
+
+# scipy._external.array_api_compat 是 scipy 内嵌（vendored）的 array_api_compat，
+# 由构建期脚本生成，PyInstaller 的 collect_submodules("scipy") 静态扫描看不到其
+# 内部子模块（paddleocr import 时缺 scipy._external.array_api_compat.*，v0.9.1
+# Linux CI 实测 hidden import "scipy._lib.array_api_compat.numpy.fft" not found）。
+# 显式按 vendored 子树收集；若模块不存在，collect_submodules 返回空不中断构建。
+# 镜像 Windows OmniCrawler.spec 的写法。
+hiddenimports += collect_submodules("scipy")
+hiddenimports += collect_submodules("scipy._external.array_api_compat")
+hiddenimports += collect_submodules("array_api_compat")
 
 # PaddleX 通过 importlib.metadata 检查 OCR extra，PyInstaller 可能收集了
 # 可 import 模块却漏掉发行元数据（镜像 Windows OmniCrawler.spec:37-48）。
@@ -88,7 +98,7 @@ gui_exe = EXE(
 cli_analysis = Analysis([str(packaging_root / "cli_entry.py")], **common)
 cli_pyz = PYZ(cli_analysis.pure)
 cli_exe = EXE(
-    cli_pyz, cli_analysis.scripts, [], exclude_binaries=True, name="omnicrawl",
+    cli_pyz, cli_analysis.scripts, [], exclude_binaries=True, name="omnicrawler",
     debug=False, bootloader_ignore_signals=False, strip=False, upx=False, console=True,
     disable_windowed_traceback=False,
 )
@@ -97,7 +107,7 @@ worker_analysis = Analysis([str(packaging_root / "worker_entry.py")], **common)
 worker_pyz = PYZ(worker_analysis.pure)
 worker_exe = EXE(
     worker_pyz, worker_analysis.scripts, [], exclude_binaries=True,
-    name="omnicrawl-worker", debug=False, bootloader_ignore_signals=False,
+    name="omnicrawler-worker", debug=False, bootloader_ignore_signals=False,
     strip=False, upx=False, console=True, disable_windowed_traceback=False,
 )
 

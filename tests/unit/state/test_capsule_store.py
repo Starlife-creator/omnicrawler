@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from omnicrawl.state.capsule_store import Capsule, CapsuleStore
+from omnicrawler.state.capsule_store import Capsule, CapsuleStore
 
 
 class CapsuleStoreTest(unittest.TestCase):

@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.models import CrawlRequest
-from omnicrawl.state import StateStore
+from omnicrawler.core.models import CrawlRequest
+from omnicrawler.state import StateStore
 
 
 def test_operations_after_close_raise_controlled_error(tmp_path: Path) -> None:

@@ -18,7 +18,7 @@ repos:
       - id: mypy
         additional_dependencies: [types-PyYAML]
         args: [--config-file=pyproject.toml]
-        exclude: ^(src/omnicrawl/(gui|pdfx|apps)/|tests/)
+        exclude: ^(src/omnicrawler/(gui|pdfx|apps)/|tests/)
 
   # General file hygiene
   - repo: https://github.com/pre-commit/pre-commit-hooks

@@ -7,7 +7,7 @@ enabled 与注册表一致、path_matrix / describe 视图。
 
 from __future__ import annotations
 
-from omnicrawl.convertx.paths import (
+from omnicrawler.convertx.paths import (
     available_paths,
     describe,
     enumerate_paths,
@@ -51,7 +51,7 @@ def test_meta_note_overrides_default_hints() -> None:
 
 
 def test_optional_dep_paths_reflect_registry() -> None:
-    from omnicrawl.convertx import READERS, WRITERS
+    from omnicrawler.convertx import READERS, WRITERS
 
     by_key = {(p.src_family, p.dst_family): p for p in enumerate_paths()}
     for family, exts in {"xlsx": (".xlsx",), "parquet": (".parquet",), "duckdb": (".duckdb",)}.items():
@@ -75,7 +75,7 @@ def test_available_paths_enabled_only() -> None:
 
 
 def test_path_matrix_view() -> None:
-    from omnicrawl.convertx.paths import format_families
+    from omnicrawler.convertx.paths import format_families
 
     matrix = path_matrix()
     assert "csv" in matrix

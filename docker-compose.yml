@@ -1,5 +1,5 @@
 services:
-  omnicrawl:
+  omnicrawler:
     build: .
     volumes:
       - ./configs:/data/configs:ro

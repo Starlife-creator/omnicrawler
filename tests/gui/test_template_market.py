@@ -23,8 +23,8 @@ def _qt_app():
 
 
 def _make_view(tmp_path):
-    from omnicrawl.gui.motion_signal import MotionSignal
-    from omnicrawl.gui.views.template_market import TemplateMarketView
+    from omnicrawler.gui.motion_signal import MotionSignal
+    from omnicrawler.gui.views.template_market import TemplateMarketView
 
     MotionSignal._instance = None
     return TemplateMarketView(
@@ -62,9 +62,9 @@ def test_populate_lists_template_entries(tmp_path) -> None:
 
 
 def test_market_view_embeds_template_tab(tmp_path) -> None:
-    from omnicrawl.gui.motion_signal import MotionSignal
-    from omnicrawl.gui.views.plugin_market import PluginMarketView
-    from omnicrawl.gui.views.template_market import TemplateMarketView
+    from omnicrawler.gui.motion_signal import MotionSignal
+    from omnicrawler.gui.views.plugin_market import PluginMarketView
+    from omnicrawler.gui.views.template_market import TemplateMarketView
 
     MotionSignal._instance = None
     view = PluginMarketView(project_root=str(tmp_path))

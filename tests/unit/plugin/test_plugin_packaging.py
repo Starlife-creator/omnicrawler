@@ -9,9 +9,9 @@ import pytest
 
 pytest.importorskip("cryptography")
 
-from omnicrawl.plugins import plugin_packaging
-from omnicrawl.plugins.identity import IdentityStore
-from omnicrawl.plugins.plugin_packaging import (
+from omnicrawler.plugins import plugin_packaging
+from omnicrawler.plugins.identity import IdentityStore
+from omnicrawler.plugins.plugin_packaging import (
     build_plugin_upload,
     build_template_upload,
     scan_local_plugins,
@@ -45,7 +45,7 @@ def _make_plugin(plugins_dir: Path, name: str) -> Path:
 
 
 def test_sign_local_and_scan_status(identity_env, tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("omnicrawl.plugins.trust.DEFAULT_TRUST_LIST", tmp_path / "trusted.json")
+    monkeypatch.setattr("omnicrawler.plugins.trust.DEFAULT_TRUST_LIST", tmp_path / "trusted.json")
     IdentityStore().create("alice", "pw")
     plugin_dir = _make_plugin(tmp_path / "plugins", "demo")
 
@@ -64,14 +64,14 @@ def test_sign_local_and_scan_status(identity_env, tmp_path: Path, monkeypatch) -
 
 
 def test_scan_states(identity_env, tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("omnicrawl.plugins.trust.DEFAULT_TRUST_LIST", tmp_path / "trusted.json")
+    monkeypatch.setattr("omnicrawler.plugins.trust.DEFAULT_TRUST_LIST", tmp_path / "trusted.json")
     IdentityStore().create("alice", "pw")
     _make_plugin(tmp_path / "plugins", "unsigned_plug")
     other = _make_plugin(tmp_path / "plugins", "other_plug")
 
     # 签名自动入信任列表 → signed_by_me；撤销信任后 → signed_untrusted
     sign_plugin_local(other, username="alice", password="pw")
-    from omnicrawl.plugins.trust import TrustedUserList
+    from omnicrawler.plugins.trust import TrustedUserList
 
     fingerprint = json.loads((other / "creator.identity").read_text(encoding="utf-8"))["key_fingerprint"]
     TrustedUserList().revoke(fingerprint)
@@ -85,7 +85,7 @@ def test_scan_states(identity_env, tmp_path: Path, monkeypatch) -> None:
 
 
 def test_build_plugin_upload_payload(identity_env, tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("omnicrawl.plugins.trust.DEFAULT_TRUST_LIST", tmp_path / "trusted.json")
+    monkeypatch.setattr("omnicrawler.plugins.trust.DEFAULT_TRUST_LIST", tmp_path / "trusted.json")
     IdentityStore().create("alice", "pw")
     plugin_dir = _make_plugin(tmp_path / "plugins", "demo")
     sign_plugin_local(plugin_dir, username="alice", password="pw")
@@ -114,7 +114,7 @@ def test_build_plugin_upload_payload(identity_env, tmp_path: Path, monkeypatch) 
 
 
 def test_build_plugin_upload_requires_own_signature(identity_env, tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("omnicrawl.plugins.trust.DEFAULT_TRUST_LIST", tmp_path / "trusted.json")
+    monkeypatch.setattr("omnicrawler.plugins.trust.DEFAULT_TRUST_LIST", tmp_path / "trusted.json")
     IdentityStore().create("alice", "pw")
     plugin_dir = _make_plugin(tmp_path / "plugins", "demo")
     with pytest.raises(plugin_packaging.PackagingError, match="签名"):
@@ -122,7 +122,7 @@ def test_build_plugin_upload_requires_own_signature(identity_env, tmp_path: Path
 
 
 def test_build_template_upload(identity_env, tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("omnicrawl.plugins.trust.DEFAULT_TRUST_LIST", tmp_path / "trusted.json")
+    monkeypatch.setattr("omnicrawler.plugins.trust.DEFAULT_TRUST_LIST", tmp_path / "trusted.json")
     IdentityStore().create("alice", "pw")
     template_dir = tmp_path / "templates" / "my_tpl"
     template_dir.mkdir(parents=True)

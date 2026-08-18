@@ -5,8 +5,8 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from omnicrawl.runtime.execution_backend import InProcessBackend
-from omnicrawl.runtime.worker_main import WorkerRuntime
+from omnicrawler.runtime.execution_backend import InProcessBackend
+from omnicrawler.runtime.worker_main import WorkerRuntime
 
 
 def test_inprocess_backend_non_dict_result_reaches_terminal_state(tmp_path: Path, monkeypatch) -> None:
@@ -23,7 +23,7 @@ def test_inprocess_backend_non_dict_result_reaches_terminal_state(tmp_path: Path
             return "plain-value"
 
     monkeypatch.setattr(
-        "omnicrawl.runtime.execution_backend.ApplicationService", lambda _p: _FakeService()
+        "omnicrawler.runtime.execution_backend.ApplicationService", lambda _p: _FakeService()
     )
     backend.start(config_path)
     deadline = 0

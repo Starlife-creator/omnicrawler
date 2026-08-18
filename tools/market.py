@@ -22,11 +22,11 @@ import os
 import sys
 from pathlib import Path
 
-# 自引导：允许从仓库根直接运行（裸 python 也能找到 omnicrawl 包）
+# 自引导：允许从仓库根直接运行（裸 python 也能找到 omnicrawler 包）
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from omnicrawl.plugins.market_client import (  # noqa: E402
+from omnicrawler.plugins.market_client import (  # noqa: E402
     download_and_verify,
     download_template_and_verify,
     fetch_catalog,
@@ -44,7 +44,7 @@ def _resolve_catalog_url(arg: str | None) -> str:
     if arg:
         return arg
     try:
-        from omnicrawl.core.config import DEFAULTS
+        from omnicrawler.core.config import DEFAULTS
 
         url = DEFAULTS["plugins"]["catalog_url"]
         if url:
@@ -198,8 +198,8 @@ def cmd_templates_submit(args: argparse.Namespace) -> int:
     默认 fork/clone/push 并创建 PR（需 gh 登录）；``--no-pr`` 仅把文件集写入
     ``--out-dir``（默认市场仓）以供本地备好、手动提交。
     """
-    from omnicrawl.plugins.market_uploader import UploadError, create_market_pr
-    from omnicrawl.plugins.plugin_packaging import build_template_upload
+    from omnicrawler.plugins.market_uploader import UploadError, create_market_pr
+    from omnicrawler.plugins.plugin_packaging import build_template_upload
 
     tpl_dir = Path(args.template_dir)
     try:

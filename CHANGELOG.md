@@ -52,7 +52,7 @@ feat(extraction): L3 自适应提取闭环（失效检测→LLM 重生成→本�
 - chore: stop tracking stray tmp_es.json test artifact
 - chore(quality): close acceptance gates - mypy clean (240 files), network boundary approved, coverage gates pass
 - chore: remove stray tmp_es.json test artifact from repository
-- feat(runtime): track omnicrawl.runtime module (was git-ignored by runtime/)
+- feat(runtime): track omnicrawler.runtime module (was git-ignored by runtime/)
 - fix(build,portable): audit fixes Phases 2/5c — first-run UX, packaging tooling
 - fix(gui,pdf): audit fixes Phases 3/5a — PDF extraction accuracy, cross-platform GUI
 - fix(core,ai,cli): audit fixes Phases 0/1/5b — config single source, AI pipeline, CLI robustness
@@ -70,7 +70,7 @@ release 0.4.0：优化计划阶段 0-4 全部完成（基线 1114 测试通过�
 
 ### 变更
 
-- feat(runtime): 补跟踪 omnicrawl.runtime 模块（此前被 .gitignore 误忽略）
+- feat(runtime): 补跟踪 omnicrawler.runtime 模块（此前被 .gitignore 误忽略）
 - fix(build,portable): 审计修复 Phase 2/5c — 构建脚本、运行时准备、工具脚本、便携首启体验（F1-F55）
 - fix(gui,pdf): 审计修复 Phase 3/5a — PDF 抽取准确度、跨平台 GUI 稳健性（D8-D66、A13-B16）
 - fix(core,ai,cli): 审计修复 Phase 0/1/5b — 配置单一真源、AI 链路端到端、CLI 管线（C1-C50、E3-E16）
@@ -374,7 +374,7 @@ release 0.4.0：优化计划阶段 0-4 全部完成（基线 1114 测试通过�
 - 组件管理器显示用途、版本、大小、依赖和卸载影响，支持 Ed25519 签名、SHA-256、断点续传、离线导入、
   依赖保护、可恢复卸载和版本回滚。
 - 升级包先在独立目录验签/验哈希，禁止覆盖 work/data/output/logs 等用户路径，应用失败自动恢复旧文件。
-- Standard/Full 构建新增独立 `omnicrawl-worker.exe`、运行时完整性清单和 Edition 分层冒烟；Windows
+- Standard/Full 构建新增独立 `omnicrawler-worker.exe`、运行时完整性清单和 Edition 分层冒烟；Windows
   构建支持强制 Authenticode 签名，缺少证书时不能把制品标记为已签名。
 
 ## 1.3.0 - 2026-07-22
@@ -500,10 +500,10 @@ release 0.4.0：优化计划阶段 0-4 全部完成（基线 1114 测试通过�
   ChromeDriver、Tesseract 中英文字库与 PPStructureV3 全部离线模型。
 - 第一步直接粘贴网址，提供始终可见的蓝色主“下一步”按钮；高 DPI、小屏和长内容
   页面可滚动，不再卡在首步。
-- 修复冻结应用找不到 `omnicrawl` 命令和本地帮助文档的问题；GUI 与 CLI 共享应用
+- 修复冻结应用找不到 `omnicrawler` 命令和本地帮助文档的问题；GUI 与 CLI 共享应用
   本地配置、日志、断点、模型与结果路径。
 - 简单、专业、开发者三种模式渐进展示，切换模式不会删除未知字段或高级配置。
-- 新增 GUI“运行能力与自包含组件”页面以及 `omnicrawl capabilities --verify-imports`。
+- 新增 GUI“运行能力与自包含组件”页面以及 `omnicrawler capabilities --verify-imports`。
 
 ### 全量采集、解析与交付
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from omnicrawl.quality.template_feedback import (
+from omnicrawler.quality.template_feedback import (
     REJECT_LABELS,
     TemplateFeedbackStore,
     TemplateRejectionSnapshot,

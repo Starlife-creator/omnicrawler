@@ -13,8 +13,8 @@ from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-POT_PATH = PROJECT_ROOT / "locale" / "omnicrawl-gui.pot"
-PO_PATH = PROJECT_ROOT / "locale" / "en_US" / "LC_MESSAGES" / "omnicrawl-gui.po"
+POT_PATH = PROJECT_ROOT / "locale" / "omnicrawler-gui.pot"
+PO_PATH = PROJECT_ROOT / "locale" / "en_US" / "LC_MESSAGES" / "omnicrawler-gui.po"
 
 # -- Translation map: zh_CN → en_US ----------------------------
 _TRANSLATIONS: dict[str, str] = {
@@ -68,13 +68,13 @@ _TRANSLATIONS: dict[str, str] = {
     "配置历史": "Config History",
     "清除最近文件": "Clear Recent Files",
     "环境配置": "Environment Setup",
-    "未检测到 omnicrawl 命令。请选择配置方式：": "omnicrawl command not detected. Choose setup method:",
+    "未检测到 omnicrawler 命令。请选择配置方式：": "omnicrawler command not detected. Choose setup method:",
     "自动安装": "Auto Install",
     "手动指定路径": "Specify Path Manually",
     "跳过（仅编辑配置）": "Skip (Edit Only)",
     "安装成功！": "Installation Successful!",
     "安装失败": "Installation Failed",
-    "选择 omnicrawl 可执行文件": "Select omnicrawl executable",
+    "选择 omnicrawler 可执行文件": "Select omnicrawler executable",
     "可执行文件 (*.exe *.bat *.cmd);;所有文件 (*)": "Executables (*.exe *.bat *.cmd);;All Files (*)",
     "无效路径": "Invalid Path",
     "指定的路径无效": "The specified path is invalid",

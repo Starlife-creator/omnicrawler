@@ -8,11 +8,11 @@ from urllib.request import urlopen
 import pytest
 
 from e2e.harness import create_pdf_bytes, local_server, write_browser_config, write_pipeline_config
-from omnicrawl.cli import main as cli_main
-from omnicrawl.core.config import load_config
-from omnicrawl.core.models import CrawlRequest
-from omnicrawl.fetching.browser_fetcher import BrowserFetcher
-from omnicrawl.pipeline import Pipeline
+from omnicrawler.cli import main as cli_main
+from omnicrawler.core.config import load_config
+from omnicrawler.core.models import CrawlRequest
+from omnicrawler.fetching.browser_fetcher import BrowserFetcher
+from omnicrawler.pipeline import Pipeline
 
 
 @pytest.mark.e2e

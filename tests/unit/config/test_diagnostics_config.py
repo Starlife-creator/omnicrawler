@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from omnicrawl.core.config import load_config
+from omnicrawler.core.config import load_config
 
 
 def _write_config(path: Path, diagnostics: object | None = None) -> Path:

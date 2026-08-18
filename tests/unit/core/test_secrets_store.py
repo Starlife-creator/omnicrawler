@@ -11,7 +11,7 @@ import pytest
 
 pytest.importorskip("cryptography")
 
-from omnicrawl.core.secrets_store import (
+from omnicrawler.core.secrets_store import (
     ENV_PASSWORD,
     FILE_MAGIC,
     FILE_MAGIC_V2,
@@ -125,7 +125,7 @@ def test_s221_headers_and_api() -> None:
 
 def test_v1_file_still_readable_after_v2_upgrade(tmp_path: Path, monkeypatch) -> None:
     """旧 v1 文件（无盐段）仍可读——兼容升级不丢凭据。"""
-    from omnicrawl.core.secrets_store import DERIVE_SALT, _derived_key
+    from omnicrawler.core.secrets_store import DERIVE_SALT, _derived_key
 
     monkeypatch.setenv("OMNICRAWL_KEYRING_DISABLE", "1")
     monkeypatch.setenv("OMNICRAWL_MASTER_PASSWORD", "compat-pw")

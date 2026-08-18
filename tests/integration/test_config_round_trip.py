@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.core.config import load_config as load_core_config
+from omnicrawler.core.config import load_config as load_core_config
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -31,9 +31,9 @@ def test_gui_config_round_trip_runs_and_produces_records(tmp_path: Path) -> None
 
     _app = QApplication.instance() or QApplication([])
 
-    from omnicrawl.gui.core.config_model import CrawlConfig
-    from omnicrawl.gui.core.config_serializer import save_yaml
-    from omnicrawl.pipeline import Pipeline
+    from omnicrawler.gui.core.config_model import CrawlConfig
+    from omnicrawler.gui.core.config_serializer import save_yaml
+    from omnicrawler.pipeline import Pipeline
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -77,7 +77,7 @@ def test_gui_config_round_trip_runs_and_produces_records(tmp_path: Path) -> None
     ],
 )
 def test_ten_typos_are_all_rejected(typo: dict) -> None:
-    from omnicrawl.core.config import DEFAULTS, AppConfig, deep_merge, validate_config
+    from omnicrawler.core.config import DEFAULTS, AppConfig, deep_merge, validate_config
 
     raw = deep_merge(
         DEFAULTS,
@@ -99,7 +99,7 @@ def test_ten_typos_are_all_rejected(typo: dict) -> None:
 def test_export_single_record_styles_with_structured_evidence(
     tmp_path: Path, style: str,
 ) -> None:
-    from omnicrawl.export.markdown_exporter import MarkdownExporter
+    from omnicrawler.export.markdown_exporter import MarkdownExporter
 
     record = {
         "record_id": "rec-1",

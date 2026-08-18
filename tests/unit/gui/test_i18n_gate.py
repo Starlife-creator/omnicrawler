@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawl.gui import i18n
-from omnicrawl.gui.i18n import DOMAIN, get_available_languages, set_language
+from omnicrawler.gui import i18n
+from omnicrawler.gui.i18n import DOMAIN, get_available_languages, set_language
 
 LOCALE = Path(__file__).resolve().parents[3] / "locale"
 
@@ -44,17 +44,17 @@ def test_translation_actually_translates(tmp_path: Path) -> None:
         assert trans.gettext(msgid) == expected, f"{msgid!r} 翻译不一致"
 
     set_language("en_US")
-    from omnicrawl.gui.i18n import _
+    from omnicrawler.gui.i18n import _
 
     # 未知 msgid 回退原文；已知中文 msgid 必须取到英文译文
-    assert _("omnicrawl") == "omnicrawl"
+    assert _("omnicrawler") == "omnicrawler"
     assert _("运行任务") == "Run task"
     assert "en_US" in get_available_languages()
 
 
 def test_gui_source_has_no_unwrapped_chinese_literals() -> None:
     """i18n gate：gui 源码中 UI 中文字面量必须经 _() 包裹（注释/文档除外）。"""
-    gui = Path(__file__).resolve().parents[3] / "src" / "omnicrawl" / "gui"
+    gui = Path(__file__).resolve().parents[3] / "src" / "omnicrawler" / "gui"
     offenders: list[str] = []
     for path in sorted(gui.rglob("*.py")):
         wrap_depth = 0  # 跨行 _(...) 括号深度：>0 表示当前行位于 _() 多行包裹体内

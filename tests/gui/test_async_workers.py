@@ -4,7 +4,7 @@ import pytest
 
 pytest.importorskip("PyQt6")
 
-from omnicrawl.gui.async_workers import AsyncWorkerManager
+from omnicrawler.gui.async_workers import AsyncWorkerManager
 
 
 class _FakeThread:

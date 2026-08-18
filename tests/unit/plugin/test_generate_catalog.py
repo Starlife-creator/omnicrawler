@@ -16,7 +16,7 @@ pytest.importorskip("cryptography")
 
 from cryptography.hazmat.primitives import serialization  # noqa: E402
 
-from omnicrawl.plugins import signing  # noqa: E402
+from omnicrawler.plugins import signing  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GENERATOR = REPO_ROOT.parent / "OmniCrawler-market" / "tools" / "generate_catalog.py"

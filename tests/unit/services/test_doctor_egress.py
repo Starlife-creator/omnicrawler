@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawl.core.config import load_config
-from omnicrawl.services.doctor import _probe_models
+from omnicrawler.core.config import load_config
+from omnicrawler.services.doctor import _probe_models
 
 
 def _config(tmp_path: Path, *, base_url: str) -> Path:
@@ -36,7 +36,7 @@ def test_probe_private_target_rejected_by_policy(tmp_path: Path) -> None:
 def test_probe_public_target_failure_is_graceful(tmp_path: Path, monkeypatch) -> None:
     import urllib.error
 
-    from omnicrawl.fetching.http_client import build_safe_opener
+    from omnicrawler.fetching.http_client import build_safe_opener
 
     def _fake_opener(*_a, **_k):
         class _Opener:

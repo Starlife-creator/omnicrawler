@@ -13,10 +13,10 @@ from pathlib import Path
 
 import yaml
 
-from omnicrawl.commands import capsule as cmd_capsule
-from omnicrawl.core.config import load_config
-from omnicrawl.core.models import CrawlRequest, FetchResult
-from omnicrawl.state import Capsule, CapsuleStore, StateStore
+from omnicrawler.commands import capsule as cmd_capsule
+from omnicrawler.core.config import load_config
+from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.state import Capsule, CapsuleStore, StateStore
 
 HTML = "<html><body><h1>标题</h1></body></html>".encode()
 URL = "https://example.com/page"

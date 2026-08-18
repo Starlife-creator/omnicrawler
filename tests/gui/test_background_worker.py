@@ -11,7 +11,7 @@ pytest.importorskip("PyQt6")
 from PyQt6.QtCore import QThread
 from PyQt6.QtWidgets import QApplication
 
-from omnicrawl.gui.core.background_worker import BackgroundWorker, run_worker
+from omnicrawler.gui.core.background_worker import BackgroundWorker, run_worker
 
 _app = QApplication.instance() or QApplication([])
 

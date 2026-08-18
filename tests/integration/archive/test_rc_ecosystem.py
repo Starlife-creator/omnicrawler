@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from omnicrawl.services.benchmark_corpus import (
+from omnicrawler.services.benchmark_corpus import (
     SiteCapsule,
     materialize_capsule,
     minimum_catalog,
     validate_capsule,
 )
-from omnicrawl.services.benchmarking import BenchmarkResult, compare_benchmark, summarize_benchmarks
-from omnicrawl.services.product_metrics import valid_automation
-from omnicrawl.services.release_reliability import CanaryObservation, decide_rollout, incident_timeline
+from omnicrawler.services.benchmarking import BenchmarkResult, compare_benchmark, summarize_benchmarks
+from omnicrawler.services.product_metrics import valid_automation
+from omnicrawler.services.release_reliability import CanaryObservation, decide_rollout, incident_timeline
 
 
 def test_minimum_offline_corpus_meets_2_0_scale_and_capsule_contract(tmp_path):

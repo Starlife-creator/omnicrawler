@@ -10,14 +10,14 @@ from pathlib import Path
 
 import yaml
 
-from omnicrawl.apps.field_extractor import build_parser as extractor_parser
-from omnicrawl.apps.pdf_processor import build_parser as processor_parser
-from omnicrawl.core.config import load_config
-from omnicrawl.pdfx.config import load_config as load_pdf_config
-from omnicrawl.pdfx.database import Database
-from omnicrawl.pdfx.project import create_project_config, validate_project_template
-from omnicrawl.pdfx.safe_regex import search, validate_pattern
-from omnicrawl.pipeline import Pipeline
+from omnicrawler.apps.field_extractor import build_parser as extractor_parser
+from omnicrawler.apps.pdf_processor import build_parser as processor_parser
+from omnicrawler.core.config import load_config
+from omnicrawler.pdfx.config import load_config as load_pdf_config
+from omnicrawler.pdfx.database import Database
+from omnicrawler.pdfx.project import create_project_config, validate_project_template
+from omnicrawler.pdfx.safe_regex import search, validate_pattern
+from omnicrawler.pipeline import Pipeline
 
 
 class _PipelineHandler(BaseHTTPRequestHandler):

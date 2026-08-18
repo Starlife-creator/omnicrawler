@@ -7,8 +7,8 @@ import json
 import zipfile
 from pathlib import Path
 
-from omnicrawl.core.config import load_config
-from omnicrawl.services.workspace import WorkspaceManager
+from omnicrawler.core.config import load_config
+from omnicrawler.services.workspace import WorkspaceManager
 
 
 def _config(tmp_path: Path) -> Path:
@@ -22,7 +22,7 @@ def _config(tmp_path: Path) -> Path:
 
 
 def test_full_package_streams_large_files_and_excludes_output(tmp_path: Path) -> None:
-    from omnicrawl.state import StateStore
+    from omnicrawler.state import StateStore
 
     manager = WorkspaceManager(load_config(_config(tmp_path)))
     manager.initialize()

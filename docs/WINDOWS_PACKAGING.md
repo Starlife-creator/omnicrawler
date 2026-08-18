@@ -5,7 +5,7 @@
 构建脚本 **不会从命令行参数接收版本号**。它直接从源码读取：
 
 ```
-src/omnicrawl/__init__.py  →  __version__
+src/omnicrawler/__init__.py  →  __version__
            ↓
 build_windows.ps1（启动时立刻打印版本、产物命名使用该值）
            ↓
@@ -22,7 +22,7 @@ OmniCrawler-{version}-Windows-Portable-{edition}.zip
 构建脚本按当前项目版本和 Edition 生成 Windows Portable ZIP；不要手工依赖旧的固定文件名。
 
 - `OmniCrawler.exe`：无控制台图形工作台。
-- `omnicrawl.exe`：带控制台的完整 CLI 引擎，GUI 也通过它执行任务。
+- `omnicrawler.exe`：带控制台的完整 CLI 引擎，GUI 也通过它执行任务。
 - `_internal/`：两个入口共享的 Python 与全部功能模块。
 - `browsers/`：Playwright Chromium。
 - `runtime/selenium/`：与包内 Chromium 主版本匹配的 ChromeDriver。
@@ -85,9 +85,9 @@ $out = "$PWD\artifacts\release\0.9.1"
 ## 发布前检查
 
 ```powershell
-.\omnicrawl.exe --version
-.\omnicrawl.exe --help
-.\omnicrawl.exe capabilities --verify-imports
+.\omnicrawler.exe --version
+.\omnicrawler.exe --help
+.\omnicrawler.exe capabilities --verify-imports
 ```
 
 随后双击 `OmniCrawler-Launcher.bat`，验证第一步网址输入、两个“下一步”按钮、本地帮助、
@@ -114,7 +114,7 @@ wheel 为独立产物：构建环境（`.venv`）**未预装 `build` 模块**，
 
 产物落点：
 - `artifacts/python/{version}/OmniCrawler-{version}-Source.zip`（源码归档，由 `build_source_archive.py` 产出）
-- `artifacts/python/{version}/omnicrawl_platform-{version}-py3-none-any.whl`（wheel，由上方 `pip wheel` 生成，**非** `build_source_archive.py` 产出）
+- `artifacts/python/{version}/omnicrawler_platform-{version}-py3-none-any.whl`（wheel，由上方 `pip wheel` 生成，**非** `build_source_archive.py` 产出）
 
 ## 完整产物一览
 

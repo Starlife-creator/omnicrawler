@@ -3,14 +3,14 @@ import sys
 
 import pytest
 
-from omnicrawl import cli
-from omnicrawl.core.errors import PolicyBlockedError
-from omnicrawl.sources.crawl4ai_bridge import C4AConfig, Crawl4AIEngine
+from omnicrawler import cli
+from omnicrawler.core.errors import PolicyBlockedError
+from omnicrawler.sources.crawl4ai_bridge import C4AConfig, Crawl4AIEngine
 
 
 def test_crawl4ai_documented_command_is_registered_and_forwarded(monkeypatch):
     received = []
-    monkeypatch.setattr("omnicrawl.crawl4ai_bridge.main", lambda: received.append(sys.argv[1:]))
+    monkeypatch.setattr("omnicrawler.crawl4ai_bridge.main", lambda: received.append(sys.argv[1:]))
 
     cli.main(["c4a-fetch", "https://example.test", "--stealth", "--extract", "schema.json", "-o", "result.json"])
 
@@ -20,8 +20,8 @@ def test_crawl4ai_documented_command_is_registered_and_forwarded(monkeypatch):
 def test_stealth_json_and_template_generate_flags_are_forwarded(monkeypatch):
     stealth = []
     templates = []
-    monkeypatch.setattr("omnicrawl.stealth_enhanced.main", lambda: stealth.append(sys.argv[1:]))
-    monkeypatch.setattr("omnicrawl.apify_templates.main", lambda: templates.append(sys.argv[1:]))
+    monkeypatch.setattr("omnicrawler.stealth_enhanced.main", lambda: stealth.append(sys.argv[1:]))
+    monkeypatch.setattr("omnicrawler.apify_templates.main", lambda: templates.append(sys.argv[1:]))
 
     cli.main(["stealth-fingerprint", "--count", "3", "--json"])
     cli.main(["gen-templates", "--generate", "amazon"])

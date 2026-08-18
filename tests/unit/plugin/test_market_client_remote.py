@@ -25,7 +25,7 @@ import pytest
 
 pytest.importorskip("cryptography")
 
-from omnicrawl.plugins import market_client, signing
+from omnicrawler.plugins import market_client, signing
 
 
 def _build_synthetic_market(root: Path) -> Path:

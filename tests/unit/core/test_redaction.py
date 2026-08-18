@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from omnicrawl.core.logging_utils import JsonFormatter
-from omnicrawl.security.redaction import redact_url
-from omnicrawl.services.research_package import _redact
+from omnicrawler.core.logging_utils import JsonFormatter
+from omnicrawler.security.redaction import redact_url
+from omnicrawler.services.research_package import _redact
 
 # ── redact_url 工具 ───────────────────────────────────────────────
 

@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("aiohttp")
 
-from omnicrawl.extraction.ai_graph import (
+from omnicrawler.extraction.ai_graph import (
     AIGraphExtractor,
     FieldDef,
     Provider,
@@ -243,7 +243,7 @@ class TestExtractAsync:
         """B13-002：未配置 API key 时 fail-closed，拒绝携带空 Bearer 外发请求。"""
         # B05-019：privacy 闸门在 api_key 检查之前，先放行以聚焦 api_key 分支
         monkeypatch.setattr(
-            "omnicrawl.core.ai_env.require_ai_privacy",
+            "omnicrawler.core.ai_env.require_ai_privacy",
             lambda *a, **k: None,
         )
         ex = AIGraphExtractor()  # Provider().api_key == ""

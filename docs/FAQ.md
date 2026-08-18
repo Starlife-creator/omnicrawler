@@ -38,16 +38,16 @@ A: 检查页面内容类型（HTML/JSON），切换到对应 mode。动态页面
 ## 运行与恢复
 
 **Q: 任务中断了怎么办？**
-A: 运行 `omnicrawl resume -c <config>` 从中断点继续。所有进度保存在 SQLite 中不丢失。
+A: 运行 `omnicrawler resume -c <config>` 从中断点继续。所有进度保存在 SQLite 中不丢失。
 
 **Q: 改了提取规则如何重新导出？**
-A: 运行 `omnicrawl reprocess -c <config>`，从原始归档重新提取和导出，不重新访问网站。
+A: 运行 `omnicrawler reprocess -c <config>`，从原始归档重新提取和导出，不重新访问网站。
 
 **Q: 如何定期自动采集？**
-A: 专业模式下启用定时任务，或使用系统调度器（Windows 任务计划程序 / cron）执行 `omnicrawl schedule run-due`。
+A: 专业模式下启用定时任务，或使用系统调度器（Windows 任务计划程序 / cron）执行 `omnicrawler schedule run-due`。
 
 **Q: 如何复制项目到另一台电脑？**
-A: 便携版复制整个文件夹。源码版复制 `work/<project>/` 目录，重新安装 omnicrawl 即可。
+A: 便携版复制整个文件夹。源码版复制 `work/<project>/` 目录，重新安装 omnicrawler 即可。
 
 ---
 
@@ -74,4 +74,4 @@ A: 配置中用 `secret://name` 占位符，通过环境变量 `OMNICRAWL_SECRET
 
 ---
 
-更多帮助：`omnicrawl doctor`、F1 帮助中心、`docs/USER_GUIDE_2.0.md`
+更多帮助：`omnicrawler doctor`、F1 帮助中心、`docs/USER_GUIDE_2.0.md`

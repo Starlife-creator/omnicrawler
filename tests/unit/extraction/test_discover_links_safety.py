@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from omnicrawl.extraction.html_tools import discover_links, parse_html
+from omnicrawler.extraction.html_tools import discover_links, parse_html
 
 
 def test_pseudo_protocols_are_filtered() -> None:

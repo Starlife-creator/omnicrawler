@@ -115,7 +115,7 @@ Selenium 的逐请求拦截兼容降级只在测试进程拥有的回环服务�
 
 本次从 63% → 66% 采用「排除 + 补测」组合：
 
-1. **排除 browser E2E tool**：`pyproject.toml` 的 `[tool.coverage.run]` 添加 `omit = ["src/omnicrawl/visual_selector/*"]`，排除 328 stmts 的 Playwright/Chromium E2E 工具（这是测试架构工具而非生产功能，理应排除）
+1. **排除 browser E2E tool**：`pyproject.toml` 的 `[tool.coverage.run]` 添加 `omit = ["src/omnicrawler/visual_selector/*"]`，排除 328 stmts 的 Playwright/Chromium E2E 工具（这是测试架构工具而非生产功能，理应排除）
 2. **补充 4 个 Phase3 纯逻辑模块测试**（150 个测试用例，全部纯逻辑、零外部依赖）：
 
 | 测试文件 | 行数 | 用例数 | 覆盖模块 |

@@ -26,7 +26,7 @@
 
 架构说明:
     项目版本号唯一数据源在 pyproject.toml (project.version) 和
-    src/omnicrawl/__init__.py (__version__)。所有 User-Agent 字符串均通过
+    src/omnicrawler/__init__.py (__version__)。所有 User-Agent 字符串均通过
     core.utils.user_agent() 动态生成，无需手动维护各模块的版本号。
 """
 
@@ -150,8 +150,8 @@ def step_update_core_files(root: Path, old: str, new: str) -> None:
     )
     pyproject_path.write_text(updated, encoding="utf-8")
 
-    init_path = root / "src" / "omnicrawl" / "__init__.py"
-    print(f"  [core] src/omnicrawl/__init__.py: __version__ {old} → {new}")
+    init_path = root / "src" / "omnicrawler" / "__init__.py"
+    print(f"  [core] src/omnicrawler/__init__.py: __version__ {old} → {new}")
     _replace_in_file(init_path, f'__version__ = "{old}"', f'__version__ = "{new}"')
 
 
@@ -452,7 +452,7 @@ def step_fix_template_versions(root: Path, new: str) -> None:
     因此此处用正则自动替换为当前版本号。
     """
     print("\n  ── 修复 YAML 模板版本号 ──")
-    templates_dir = root / "src" / "omnicrawl" / "templates"
+    templates_dir = root / "src" / "omnicrawler" / "templates"
     ua_pattern = re.compile(r"OmniCrawler/[\d.]+")
     fixed_count = 0
     fixed_files: list[str] = []
@@ -506,7 +506,7 @@ def step_scan_hardcoded_py_versions(root: Path, new: str) -> None:
 
     # .py：应通过 user_agent() 动态生成；脚本：应通过 __version__ 动态读取。
     hardcoded_pattern = re.compile(r"OmniCrawler[/\s-](\d+\.\d+\.\d+)")
-    for pyfile in sorted((root / "src" / "omnicrawl").rglob("*.py")):
+    for pyfile in sorted((root / "src" / "omnicrawler").rglob("*.py")):
         if ".venv" in str(pyfile) or "__pycache__" in str(pyfile):
             continue
         _check_file(pyfile)
@@ -566,7 +566,7 @@ def step_self_validate(root: Path, new: str) -> None:
         # 校验收敛结果：installed 版本必须等于新的源码版本
         verify_result = subprocess.run(
             [str(venv_python), "-c",
-             "import importlib.metadata; print(importlib.metadata.version('omnicrawl-platform'))"],
+             "import importlib.metadata; print(importlib.metadata.version('omnicrawler-platform'))"],
             capture_output=True, text=True, cwd=str(root), timeout=60,
         )
         installed = verify_result.stdout.strip() if verify_result.returncode == 0 else ""

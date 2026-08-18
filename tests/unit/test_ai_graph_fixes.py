@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("aiohttp")
 
-from omnicrawl.extraction.ai_graph import AIGraphExtractor, FieldDef, Provider, SplitStrategy
+from omnicrawler.extraction.ai_graph import AIGraphExtractor, FieldDef, Provider, SplitStrategy
 
 
 class _FakeResp:
@@ -97,7 +97,7 @@ async def test_d60_retry_on_429_then_success() -> None:
 async def test_c34_html_marked_untrusted_in_prompt(monkeypatch) -> None:
     # B05-019：外发隐私闸门默认 fail-closed，测试显式开启 allow_page_text
     monkeypatch.setattr(
-        "omnicrawl.core.ai_env.require_ai_privacy",
+        "omnicrawler.core.ai_env.require_ai_privacy",
         lambda *a, **k: None,
     )
     ex = AIGraphExtractor(provider=Provider(api_key="sk-test"))
@@ -117,8 +117,8 @@ async def test_c34_html_marked_untrusted_in_prompt(monkeypatch) -> None:
 def _egress_broker(tmp_path):
     """默认策略（禁私网）的 EgressBroker，供 ai_graph 注入。"""
 
-    from omnicrawl.core.config import DEFAULTS, AppConfig
-    from omnicrawl.security.egress import EgressBroker
+    from omnicrawler.core.config import DEFAULTS, AppConfig
+    from omnicrawler.security.egress import EgressBroker
 
     raw = dict(DEFAULTS)
     raw["http"] = dict(raw.get("http", {}))
@@ -128,7 +128,7 @@ def _egress_broker(tmp_path):
 
 
 async def _post_impl(extractor, url: str) -> dict:
-    from omnicrawl.security.policy import PolicyBlockedError
+    from omnicrawler.security.policy import PolicyBlockedError
 
     with pytest.raises(PolicyBlockedError):
         await extractor._post_with_retry(
@@ -143,7 +143,7 @@ async def _post_impl(extractor, url: str) -> dict:
 
 def test_ai_graph_egress_blocks_private_target(tmp_path) -> None:
     """注入 egress 后私网元数据目标在发送前即被拦截（不触网）。"""
-    from omnicrawl.security.policy import PolicyBlockedError
+    from omnicrawler.security.policy import PolicyBlockedError
 
     extractor = AIGraphExtractor(provider=Provider(api_key="sk-test"), egress=_egress_broker(tmp_path))
     try:

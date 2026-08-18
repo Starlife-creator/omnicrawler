@@ -49,14 +49,14 @@ if (-not $SkipRuntimeAssets -and -not $Minimal) {
         -BrowsersRoot (Join-Path $ProjectDirectory '.runtime\browsers')
     if ($LASTEXITCODE -ne 0) { throw 'Failed to prepare the Windows runtime.' }
 }
-& $Python -m omnicrawl.cli --help | Out-Null
+& $Python -m omnicrawler.cli --help | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'CLI smoke check failed.' }
-& $Python -m omnicrawl.cli capabilities --verify-imports
+& $Python -m omnicrawler.cli capabilities --verify-imports
 if ($LASTEXITCODE -ne 0) { throw 'Capability import verification failed.' }
-$Version = & $Python -c "import importlib.metadata; print(importlib.metadata.version('omnicrawl-platform'))"
+$Version = & $Python -c "import importlib.metadata; print(importlib.metadata.version('omnicrawler-platform'))"
 if ($LASTEXITCODE -ne 0) { throw 'Failed to read the installed version.' }
 # F53：installed 元数据必须与源码 __version__ 一致；漂移即失败
-$SrcVersion = & $Python -c "from omnicrawl import __version__; print(__version__)"
+$SrcVersion = & $Python -c "from omnicrawler import __version__; print(__version__)"
 if ($LASTEXITCODE -ne 0) { throw 'Failed to read the source version.' }
 if ($Version -ne $SrcVersion) {
     throw "版本元数据漂移: installed=$Version vs src=$SrcVersion —— 请重跑 pip install -e '.[full,dev]' 对齐后再继续。"

@@ -20,7 +20,7 @@ except ModuleNotFoundError:  # Python < 3.11
 
 RELEASE_INFO = "RELEASE-INFO.json"
 RUNTIME_MANIFEST = "RUNTIME-MANIFEST.json"
-BASE_REQUIRED = ("OmniCrawler.exe", "omnicrawl.exe", "omnicrawl-worker.exe", "_internal")
+BASE_REQUIRED = ("OmniCrawler.exe", "omnicrawler.exe", "omnicrawler-worker.exe", "_internal")
 FULL_REQUIRED = (
     "runtime/selenium/chromedriver.exe",
     "runtime/tesseract/tesseract.exe",

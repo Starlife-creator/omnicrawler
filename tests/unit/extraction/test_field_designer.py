@@ -1,7 +1,7 @@
 import unittest
 
-from omnicrawl.extraction.field_designer import analyze_html
-from omnicrawl.fetching.action_recorder import ActionSequence
+from omnicrawler.extraction.field_designer import analyze_html
+from omnicrawler.fetching.action_recorder import ActionSequence
 
 
 class FieldDesignerTest(unittest.TestCase):

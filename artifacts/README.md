@@ -2,7 +2,7 @@
 
 ## 版本来源（必读）
 
-**构建产物的版本号唯一来源是 `src/omnicrawl/__init__.py` 中的 `__version__`。**
+**构建产物的版本号唯一来源是 `src/omnicrawler/__init__.py` 中的 `__version__`。**
 `build_windows.ps1` 启动时会自动读取，产物命名由脚本决定，严禁在构建
 过程中手动修改版本号。版本号的变更是一个独立操作（通过 `tools/bump_version.py`），
 绝对不与构建、修复、测试等其他操作混在一起。
@@ -33,7 +33,7 @@ artifacts/
 
 - #4 是 #1/#2 的压缩前完整文件夹（Windows 直接可运行；Linux/macOS 见 `docs/PORTABLE_PACKAGING.md`），可直接运行、调试。
 - #3 是纯源码归档（不含 `artifacts/`、`build_cache/`、`dist/` 等构建物）。
-- wheel（`omnicrawl_platform-0.8.0-py3-none-any.whl`）随 #3 同一目录产出。
+- wheel（`omnicrawler_platform-0.8.0-py3-none-any.whl`）随 #3 同一目录产出。
 - 三平台便携包构建总纲见 `docs/PORTABLE_PACKAGING.md`；Windows 细节见 `docs/WINDOWS_PACKAGING.md`。
 
 ## 历史归档

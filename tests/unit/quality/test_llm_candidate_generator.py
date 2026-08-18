@@ -18,20 +18,20 @@ import pytest
 
 pytest.importorskip("lxml")
 
-from omnicrawl.core.models import ExtractedRecord  # noqa: E402
-from omnicrawl.extraction.adaptive_extractor import RepairProposal  # noqa: E402
-from omnicrawl.quality.auto_apply import (  # noqa: E402
+from omnicrawler.core.models import ExtractedRecord  # noqa: E402
+from omnicrawler.extraction.adaptive_extractor import RepairProposal  # noqa: E402
+from omnicrawler.quality.auto_apply import (  # noqa: E402
     AutoApplyPolicy,
     AutomationTier,
 )
-from omnicrawl.quality.llm_candidate_generator import (  # noqa: E402
+from omnicrawler.quality.llm_candidate_generator import (  # noqa: E402
     CandidateWithComparison,
     LLMCandidateGenerator,
     build_comparison_from_proposal,
     generate_and_auto_apply,
     proposal_to_candidate,
 )
-from omnicrawl.quality.shadow_repair import (  # noqa: E402
+from omnicrawler.quality.shadow_repair import (  # noqa: E402
     RepairCandidate,
     ShadowComparison,
 )
@@ -450,7 +450,7 @@ class TestIntegrationScenarios:
         注：adaptive_extractor 当前只生成 css/xpath，这里直接构造
         RepairCandidate 测试 action 的 L0 分级。
         """
-        from omnicrawl.quality.shadow_repair import candidate_rule
+        from omnicrawler.quality.shadow_repair import candidate_rule
 
         candidate = candidate_rule(
             field="submit",

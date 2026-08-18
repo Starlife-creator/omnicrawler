@@ -26,8 +26,8 @@ for _cand in (_REPO_ROOT / "src", _REPO_ROOT):
     if _cand_str not in sys.path:
         sys.path.insert(0, _cand_str)
 
-from omnicrawl.plugins.identity import IdentityStore  # noqa: E402
-from omnicrawl.plugins.trust import TrustedUserList  # noqa: E402
+from omnicrawler.plugins.identity import IdentityStore  # noqa: E402
+from omnicrawler.plugins.trust import TrustedUserList  # noqa: E402
 
 
 def _resolve_password(password: str | None) -> str:
@@ -90,7 +90,7 @@ def cmd_delete(args: argparse.Namespace) -> int:
 
 
 def cmd_trust_add(args: argparse.Namespace) -> int:
-    from omnicrawl.plugins.identity import CreatorIdentity, public_key_bytes_from_pem
+    from omnicrawler.plugins.identity import CreatorIdentity, public_key_bytes_from_pem
 
     try:
         public_key = public_key_bytes_from_pem(args.pubkey)

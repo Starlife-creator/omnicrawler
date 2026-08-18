@@ -9,13 +9,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from omnicrawl.core.config import DEFAULTS, AppConfig, validate_config
-from omnicrawl.core.errors import CredentialScopeError, EgressBudgetExceededError, EgressDisabledError
-from omnicrawl.fetching.browser_fetcher import BrowserFetcher
-from omnicrawl.pipeline import build_registry
-from omnicrawl.security.egress import EgressBroker, redact_url
-from omnicrawl.security.security_audit import egress_audit_report
-from omnicrawl.services.ai_providers import build_provider
+from omnicrawler.core.config import DEFAULTS, AppConfig, validate_config
+from omnicrawler.core.errors import CredentialScopeError, EgressBudgetExceededError, EgressDisabledError
+from omnicrawler.fetching.browser_fetcher import BrowserFetcher
+from omnicrawler.pipeline import build_registry
+from omnicrawler.security.egress import EgressBroker, redact_url
+from omnicrawler.security.security_audit import egress_audit_report
+from omnicrawler.services.ai_providers import build_provider
 
 
 class _Policy:
@@ -318,7 +318,7 @@ def test_network_plugin_receives_only_scoped_client(tmp_path: Path) -> None:
             f"plugins: {{paths: ['{plugin}'], approved_permissions: [network], signature_policy: developer}}\n",
             encoding="utf-8",
         )
-        from omnicrawl.core.config import load_config
+        from omnicrawler.core.config import load_config
 
         config = load_config(config_path)
         broker = EgressBroker(config)
@@ -410,7 +410,7 @@ def test_ai_provider_is_fail_closed_without_broker_and_audited_with_it(tmp_path:
     response.__enter__.return_value = response
     opener = MagicMock()
     opener.open.return_value = response
-    with patch("omnicrawl.services.ai_providers.build_safe_opener", return_value=opener):
+    with patch("omnicrawler.services.ai_providers.build_safe_opener", return_value=opener):
         result = provider.generate([{"role": "user", "content": "hello"}])
     assert result.text == "ok"
     audit = broker.audit_path.read_text(encoding="utf-8")

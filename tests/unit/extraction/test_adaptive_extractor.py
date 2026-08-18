@@ -9,8 +9,8 @@ import pytest
 
 pytest.importorskip("lxml")
 
-from omnicrawl.core.models import ExtractedRecord  # noqa: E402
-from omnicrawl.extraction.adaptive_extractor import (  # noqa: E402
+from omnicrawler.core.models import ExtractedRecord  # noqa: E402
+from omnicrawler.extraction.adaptive_extractor import (  # noqa: E402
     MAX_RULE_LENGTH,
     AdaptiveExtractor,
     RepairProposal,

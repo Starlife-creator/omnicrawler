@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from omnicrawl.extraction.api_discovery import (
+from omnicrawler.extraction.api_discovery import (
     discover_api_endpoints,
     redact_payload,
     write_discovery_bundle,
