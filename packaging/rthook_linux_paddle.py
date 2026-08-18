@@ -57,15 +57,21 @@ def _preload_paddle_libs() -> None:  # pragma: no cover - 仅 frozen Linux 生�
     libs_dir = os.path.join(sys._MEIPASS, os.path.join("paddle", "libs"))  # noqa: SLF001 - PyInstaller 私有常量
     if not os.path.isdir(libs_dir):
         return
+    # 诊断输出（console CLI 可见；CI 日志用于定位预加载是否生效）
+    _log = lambda msg: print(f"[rthook] {msg}", flush=True)  # noqa: E731
+    _log(f"paddle libs dir: {libs_dir}")
     for pattern in _ORDERING:
         for path in sorted(glob.glob(os.path.join(libs_dir, pattern))):
             name = os.path.basename(path)
             if name in _EXCLUDED:
+                _log(f"skip (excluded): {name}")
                 continue
             try:
                 ctypes.CDLL(os.path.abspath(path))
-            except OSError:
-                pass  # 由其它机制加载或非必需，忽略
+                _log(f"loaded: {name}")
+            except OSError as exc:
+                _log(f"load FAILED: {name} -> {type(exc).__name__}: {exc}")
+    _log("preload finished")
 
 
 if getattr(sys, "frozen", False):
