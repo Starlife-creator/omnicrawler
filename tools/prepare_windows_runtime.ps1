@@ -164,7 +164,26 @@ if (-not $SkipTesseract) {
     $requiredLanguages = @('eng', 'chi_sim', 'osd')
     foreach ($language in $requiredLanguages) {
         $langPath = Join-Path $tessdataRoot "$language.traineddata"
-        Get-Asset ("https://github.com/tesseract-ocr/tessdata_fast/raw/main/$language.traineddata") $langPath 100000
+        # 多源 fallback：GitHub raw 服务偶发 404/503（v0.9.1 CI 实测），依次尝试
+        # 官方重定向 → raw 直链 → jsDelivr CDN。
+        $downloaded = $false
+        foreach ($base in @(
+            "https://github.com/tesseract-ocr/tessdata_fast/raw/main",
+            "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main",
+            "https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_fast@main"
+        )) {
+            try {
+                Get-Asset "$base/$language.traineddata" $langPath 100000
+                $downloaded = $true
+                break
+            } catch {
+                Write-Host "tessdata 源不可用，切换备用源: $base ($($_.Exception.Message))"
+                Remove-Item -LiteralPath $langPath -ErrorAction SilentlyContinue
+            }
+        }
+        if (-not $downloaded) {
+            throw "Tesseract language pack download failed from all sources: $language.traineddata"
+        }
         # Explicit post-download guard. Get-Asset reuses an existing file when it
         # already meets the minimum size, but a previous interrupted run may have
         # left a zero-byte/partial stub behind; fail loudly instead of letting a

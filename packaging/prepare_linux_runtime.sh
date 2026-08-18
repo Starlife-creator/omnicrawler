@@ -179,9 +179,24 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
     lang_path="$TESSDATA_ROOT/$language.traineddata"
     if [[ ! -f "$lang_path" || "$(stat -c %s "$lang_path")" -lt 100000 ]]; then
       log "Download tessdata_fast/$language.traineddata ..."
-      curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
-        "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$language.traineddata" \
-        -o "$lang_path.part" || die "tessdata 下载失败: $language.traineddata"
+      # 多源 fallback：GitHub raw 服务偶发 404/503（v0.9.1 CI 实测），依次尝试
+      # 官方重定向 → raw 直链 → jsDelivr CDN。
+      downloaded=0
+      for base in \
+        "https://github.com/tesseract-ocr/tessdata_fast/raw/main" \
+        "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main" \
+        "https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_fast@main"; do
+        if curl -fsSL --retry 2 --retry-delay 2 --retry-all-errors \
+            "$base/$language.traineddata" -o "$lang_path.part"; then
+          downloaded=1
+          break
+        fi
+        log "tessdata 源不可用，切换备用源: $base"
+        rm -f "$lang_path.part"
+      done
+      if [[ "$downloaded" -ne 1 ]]; then
+        die "tessdata 下载失败: $language.traineddata（全部源不可用）"
+      fi
       mv "$lang_path.part" "$lang_path"
     fi
     # 拒绝 HTML 错误页（GitHub 404/限流会返回 HTML 但超过最小值）
