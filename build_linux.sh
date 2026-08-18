@@ -196,6 +196,27 @@ if [[ "$EDITION" == "Full" ]]; then
   else
     echo "警告: 未找到 patchelf，跳过 Paddle RPATH 修正（产物内 import paddle 可能失败）" >&2
   fi
+
+  # L8：Paddle 裸 dlopen 可达性——bootloader 启动时会把 _internal（= sys._MEIPASS）
+  # 前置到进程的 LD_LIBRARY_PATH（PyInstaller 官方文档确认）。因此把
+  # paddle/libs 下的共享库复制到 _internal 根目录后，paddle 对
+  # libmklml_intel.so 等裸名 dlopen 会经 LD_LIBRARY_PATH 命中（此前
+  # runtime hook 预加载不可靠、RPATH 不参与裸 dlopen，v0.9.1 多轮 CI 实测）。
+  echo "[Full] 复制 Paddle 共享库到 _internal 根（bootloader LD_LIBRARY_PATH 覆盖裸 dlopen）..."
+  _paddle_libs_dir="$RELEASE_ROOT/_internal/paddle/libs"
+  if [[ -d "$_paddle_libs_dir" ]]; then
+    _copied=0
+    for so in "$_paddle_libs_dir"/*.so*; do
+      [[ -f "$so" ]] || continue
+      # cp -n：仅当 _internal 根不存在同名文件时复制（避免覆盖 bootloader 已有库）
+      if cp -n -L "$so" "$RELEASE_ROOT/_internal/$(basename "$so")" 2>/dev/null; then
+        ((_copied++))
+      fi
+    done
+    echo "[Full] 已复制 $_copied 个 Paddle 共享库到 _internal 根"
+  else
+    echo "警告: 产物内未找到 _internal/paddle/libs，Paddle 库复制跳过" >&2
+  fi
 fi
 cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/packaging/THIRD_PARTY_NOTICES.md" "$RELEASE_ROOT/"
 echo "OmniCrawler $EDITION portable edition" > "$RELEASE_ROOT/EDITION.txt"
