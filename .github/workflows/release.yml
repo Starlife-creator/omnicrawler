@@ -160,7 +160,7 @@ jobs:
       # 不需要任何私钥：签名身份 = 本 release.yml 在 tag 上由 GitHub OIDC 背书，
       # 证明存于 GitHub 证明库，用户用 `gh attestation verify <包> --owner Starlife-creator` 核验。
       - name: 为便携包生成 keyless 签名证明
-        uses: actions/attest@ce27ba3b4a9a139d9a20a4a07d69fabb52f1e5bc # v2.4.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             ${{ runner.temp }}/artifacts/OmniCrawler-${{ steps.version.outputs.version }}-Windows-Portable-Standard.zip
@@ -420,7 +420,7 @@ jobs:
 
       # ── 上传到 GitHub Release ──────────────────────────────────────
       - name: 发布到 GitHub Release
-        uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           tag_name: ${{ github.ref_name }}
           name: OmniCrawler ${{ github.ref_name }}
