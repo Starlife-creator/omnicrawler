@@ -77,7 +77,9 @@ class _PortableEntry:
     is_dir: bool
     is_symlink: bool
     encrypted: bool = False
-    read: Callable[[], bytes] | None = None  # 文件内容读取（deep 校验用）
+    read: Callable[[], bytes] | None = None  # 文件内容读取（zip 随机访问，deep 校验用）
+    sha256: str | None = None  # 预计算 SHA-256（tar 单遍收集，deep 校验免重读压缩流）
+    content: bytes | None = None  # 小元数据文件内容缓冲（tar 单遍收集，结构校验用）
 
 
 def _iter_zip_entries(archive: zipfile.ZipFile) -> Iterator[_PortableEntry]:
@@ -98,27 +100,56 @@ def _iter_zip_entries(archive: zipfile.ZipFile) -> Iterator[_PortableEntry]:
         )
 
 
-def _iter_tar_entries(archive: tarfile.TarFile) -> Iterator[_PortableEntry]:
-    for member in archive.getmembers():
-        if member.issym() or member.islnk():
-            is_symlink = True
-        else:
-            is_symlink = False
-        _read = None
+# tar 深校验需单遍缓存的小元数据文件（结构校验用；按路径后缀匹配，上限按
+# RUNTIME-MANIFEST 的门禁 MAX_PORTABLE_MANIFEST_BYTES 统一控制，防止超大文件撑爆内存）
+_TAR_BUFFERED_SUFFIXES = ("EDITION.txt", "RUNTIME-MANIFEST.json", "omnicrawler-model-manifest.json")
+
+
+def _iter_tar_entries(archive: tarfile.TarFile, *, collect_payloads: bool) -> Iterator[_PortableEntry]:
+    """单遍流式收集 tar 条目（gzip 压缩流友好）。
+
+    tar.gz 是顺序流：对 gzip 流做 extractfile() 随机访问时，每次反向定位都要
+    从流头重新解压（CPython GzipFile 反向 seek = rewind + 重新解压到目标偏移），
+    按 manifest 排序逐条读取退化为 O(条目数 x 包体积)。CI 实测：Standard 包
+    （1930 文件）深校验耗时 59 分钟，Full 包（10805 文件、约 2GB）在 120 分钟
+    job 超时内不可能跑完。
+
+    这里只做一次前向扫描：文件内容按存储顺序读出并流式计算 SHA-256（分块，
+    内存占用恒定），小元数据文件额外缓存原文供结构校验；深校验直接比对预计算
+    哈希，不再触碰压缩流。
+    """
+    for member in archive:
+        is_symlink = member.issym() or member.islnk()
+        sha256: str | None = None
+        content: bytes | None = None
         if member.isfile():
-
-            def _read(member=member) -> bytes:
-                extracted = archive.extractfile(member)
-                if extracted is None:
-                    return b""
-                return extracted.read()
-
+            buffer_content = (
+                member.name.endswith(_TAR_BUFFERED_SUFFIXES)
+                and member.size <= MAX_PORTABLE_MANIFEST_BYTES
+            )
+            digest = hashlib.sha256()
+            chunks: list[bytes] = []
+            extracted = archive.extractfile(member)
+            if extracted is not None:
+                while True:
+                    chunk = extracted.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+                    if buffer_content:
+                        chunks.append(chunk)
+            if buffer_content:
+                content = b"".join(chunks)
+            if collect_payloads:
+                sha256 = digest.hexdigest()
         yield _PortableEntry(
             path=member.name,
             size=member.size,
             is_dir=member.isdir(),
             is_symlink=is_symlink,
-            read=_read,
+            read=None,
+            sha256=sha256,
+            content=content,
         )
 
 
@@ -445,12 +476,21 @@ def _read_small_entry_text(
     if entry.size > limit:
         errors.append(f"{label} is unexpectedly large: {entry.size} bytes")
         return None
-    if entry.read is None:
+    raw: bytes | None = None
+    if entry.content is not None:
+        raw = entry.content
+    elif entry.read is not None:
+        try:
+            raw = entry.read()
+        except (RuntimeError, zipfile.BadZipFile, OSError) as exc:
+            errors.append(f"cannot read {label}: {exc}")
+            return None
+    else:
         errors.append(f"cannot read {label}: unreadable entry")
         return None
     try:
-        return entry.read().decode("utf-8-sig")
-    except (UnicodeDecodeError, RuntimeError, zipfile.BadZipFile, OSError) as exc:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
         errors.append(f"cannot read {label}: {exc}")
         return None
 
@@ -738,17 +778,21 @@ def _check_portable_archive(
                 if entry.size != expected_bytes:
                     errors.append(f"runtime manifest size mismatch: {raw_name}")
                 if verify_payloads:
-                    if entry.read is None:
-                        errors.append(f"cannot verify portable payload {raw_name}: unreadable entry")
-                    else:
+                    # tar 深校验在单遍收集时已预计算 SHA-256（gzip 流不可随机访问，
+                    # 重读会触发 O(条目数 x 包体积) 的重复解压）；zip 走随机读取。
+                    actual_hash = entry.sha256
+                    if actual_hash is None and entry.read is not None:
                         digest = hashlib.sha256()
                         try:
                             digest.update(entry.read())
                         except (RuntimeError, zipfile.BadZipFile, OSError) as exc:
                             errors.append(f"cannot verify portable payload {raw_name}: {exc}")
-                        else:
-                            if digest.hexdigest() != expected_hash.lower():
-                                errors.append(f"runtime manifest hash mismatch: {raw_name}")
+                            continue
+                        actual_hash = digest.hexdigest()
+                    if actual_hash is None:
+                        errors.append(f"cannot verify portable payload {raw_name}: unreadable entry")
+                    elif actual_hash != expected_hash.lower():
+                        errors.append(f"runtime manifest hash mismatch: {raw_name}")
 
             archive_keys = {
                 key for key, entry in relative_infos.items()
@@ -794,7 +838,7 @@ def check_portable_tar(
     """检查 Linux/macOS 便携包 tar.gz 容器（P5：与 Windows zip 深校验对齐）。"""
     try:
         with tarfile.open(tar_path, "r:*") as archive:
-            entries = list(_iter_tar_entries(archive))
+            entries = list(_iter_tar_entries(archive, collect_payloads=verify_payloads))
             return _check_portable_archive(
                 entries, tar_path, expected_edition, verify_payloads, platform=platform,
             )
