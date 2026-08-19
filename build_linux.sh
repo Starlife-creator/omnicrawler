@@ -169,8 +169,14 @@ mkdir -p "$RELEASE_ROOT"
 cp -rL "$BUILT_FOLDER/." "$RELEASE_ROOT/"
 cp -r "$BROWSERS_ROOT" "$RELEASE_ROOT/browsers"
 # Full：把制备的 OCR 运行时拷进包内（application_dir()/runtime，运行时自动探测）
+# -L：制备脚本（prepare_linux_runtime.sh）为让 tesseract 的 DT_NEEDED 短名命中，
+# 在暂存目录保留了「短名 symlink → 版本号真身」成对结构。但 portable 包必须
+# 自包含、不得含 symlink（深校验门禁；Windows 解压/部分 tar 工具也不友好），
+# 与上方 _internal 的 cp -rL 同理：解引用后短名成为真实文件副本，DT_NEEDED
+# 按名查找依然命中，RPATH $ORIGIN 不受影响。run 32257651374 实测：56 个
+# runtime/tesseract/*.so* symlink 原样进 tar → 深校验 symlink/size/unreadable 报错。
 if [[ "$EDITION" == "Full" && -d "$RUNTIME_ROOT" ]]; then
-  cp -r "$RUNTIME_ROOT" "$RELEASE_ROOT/runtime"
+  cp -rL "$RUNTIME_ROOT" "$RELEASE_ROOT/runtime"
 fi
 
 # Full：Paddle 的 .so 依赖解析修复——Linux 动态加载器不自动搜索
