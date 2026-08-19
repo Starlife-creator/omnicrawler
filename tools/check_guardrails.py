@@ -8,11 +8,19 @@
 5. `.sig` 工作区字节 == git blob 字节             —— 签名文件没有工作区漂移
 6. `locale/*.po` 非中文 msgstr 比例 > 阈值        —— en_US 语言包不是半成品（S42）
 
+市场仓缺席语义（release run 32264465809 修复）：
+OmniCrawler-market 定位是**联网市场**——运行时经 URL 访问，主仓流水线不必然
+本地 clone。quality 流水线显式 clone 同级市场仓（检查照常全强度执行）；
+release 聚合 job 不 clone（合法状态）。因此 [1] 的市场仓部分、[3]、[5]
+在 ``MARKET_ROOT`` 不存在时**打印 NOTE 并跳过**，而非失败；市场仓在场时
+判定标准一字不降。主仓自身的 [1] 部分与 [2]/[4]/[6] 与环境无关，始终执行。
+
 用法：
   python tools/check_guardrails.py [--sbom <cdx.json>] [--po-threshold 0.95]
 
 `--sbom` 缺省时读仓库根 `SBOM.json`；CI 里可在生成后立即传入同一路径，
-保证比对的是同一环境产物。
+保证比对的是同一环境产物（SBOM ⊆ pip freeze 的"同一环境"是门禁前提，
+跨平台/跨 runner 比对会因预装包差异误报）。
 """
 
 from __future__ import annotations
@@ -52,7 +60,13 @@ def _git_blob(repo: Path, path: Path) -> bytes:
 
 def check_gitattributes() -> list[str]:
     issues: list[str] = []
-    for label, root in (("主仓", REPO_ROOT), ("市场仓", MARKET_ROOT)):
+    targets: list[tuple[str, Path]] = [("主仓", REPO_ROOT)]
+    if MARKET_ROOT.is_dir():
+        targets.append(("市场仓", MARKET_ROOT))
+    else:
+        print(f"NOTE [1] 市场仓不在本地（{MARKET_ROOT}）：市场经 URL 联网访问，"
+              "跳过其 .gitattributes 检查（quality 流水线 clone 后照常校验）")
+    for label, root in targets:
         path = root / ".gitattributes"
         if not path.is_file():
             issues.append(f"[1] {label} 缺少 .gitattributes")
@@ -79,6 +93,10 @@ def check_docs() -> list[str]:
 
 
 def check_scanner() -> list[str]:
+    if not MARKET_ROOT.is_dir():
+        print(f"NOTE [3] 市场仓不在本地（{MARKET_ROOT}）：跳过扫描器存在性检查"
+              "（quality 流水线 clone 后照常校验）")
+        return []
     scanner = MARKET_ROOT / "tools" / "scan_plugin.py"
     if not scanner.is_file():
         return [f"[3] 发布前扫描器不存在: {scanner}"]
@@ -135,10 +153,15 @@ def check_sig_bytes() -> list[str]:
     """市场仓已发布插件的签名文件：工作区字节必须等于 git 索引字节。
 
     glob 全部 plugins/*/plugin.py.sig，避免硬编码示例插件名导致改名/删除
-    时脆性失败（P2-6）。无签名文件时无可比对，返回空。
+    时脆性失败（P2-6）。无签名文件时无可比对，返回空。市场仓不在本地
+    （联网市场定位）时同样无比对对象，打印 NOTE 后返回空。
     """
     issues: list[str] = []
     plugins_root = MARKET_ROOT / "plugins"
+    if not MARKET_ROOT.is_dir():
+        print(f"NOTE [5] 市场仓不在本地（{MARKET_ROOT}）：跳过签名文件漂移检查"
+              "（quality 流水线 clone 后照常校验）")
+        return []
     sig_files = sorted(plugins_root.glob("*/plugin.py.sig")) if plugins_root.is_dir() else []
     for sig in sig_files:
         working = sig.read_bytes()

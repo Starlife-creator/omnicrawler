@@ -363,12 +363,16 @@ jobs:
             --output "$RUNNER_TEMP/artifacts/omnicrawler-provenance.json"
 
       # B14-💭-3：供应链完整性检查固化为 release 必跑步骤（任一失败 → 发布中止）。
+      # SBOM ⊆ pip freeze 门禁的前提是"同一环境"：本聚合 job（ubuntu-22.04 +
+      # 3.12 + .[html,pdf,browser,async-http]）与 Linux 构建 job 的 SBOM 生成
+      # 环境完全一致，故比对 Linux SBOM。Windows/macOS SBOM 生成于不同平台，
+      # 跨平台比对会因 runner 预装包差异误报（release run 32264465809 根因之一）。
       - name: 供应链完整性检查（B14 强制）
         shell: bash
         run: |
           python tools/check_network_boundaries.py --source-root src/omnicrawler
           python tools/check_guardrails.py \
-            --sbom "$RUNNER_TEMP/artifacts/omnicrawler-sbom-windows.cdx.json"
+            --sbom "$RUNNER_TEMP/artifacts/omnicrawler-sbom-linux.cdx.json"
           python tools/check_release_integrity.py . \
             --portable-zip-dir "$RUNNER_TEMP/artifacts"
           # P5：Linux tar.gz 容器级深校验（聚合期兜底；macOS 主产物是 dmg，
