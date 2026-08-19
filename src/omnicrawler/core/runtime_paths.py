@@ -197,6 +197,23 @@ def configure_runtime_environment() -> None:
         # ConvertPirAttribute2RuntimeAttribute not support
         # [pir::ArrayAttribute<pir::DoubleAttribute>]），故 Linux 一并禁用。
         os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "False")
+    if sys.platform == "linux" and is_frozen():
+        # Paddle 用裸名 dlopen 加载 libmklml_intel.so / liblapack.so.3
+        # （GetDsoHandleFromSearchPath(FLAGS_*_dir, name)，FLAGS_*_dir 默认
+        # 空时退化为裸名 dlopen）。裸名 dlopen 在产物环境下找不到
+        # paddle/libs（bootloader 只把 _internal 根加入 LD_LIBRARY_PATH；
+        # RPATH 不参与裸名解析）。FLAGS_mklml_dir / FLAGS_lapack_dir 是
+        # paddle 官方导出 flag（PHI_DEFINE_EXPORTED_string，gflags 的
+        # flagsFromEnv 在 import paddle 时读取环境变量），设置后 paddle 用
+        # 绝对路径 dlopen（v0.9.1 Windows paddle 实证：get_flags 返回环境
+        # 变量值；libpaddle.so 含 flagsFromEnvEv，libphi_core.so 含
+        # mklml_dir/lapack_dir 字符串）。该方案取代了曾把 Linux Full 包推
+        # 过 GitHub Release 2GB 上限的"复制全部 paddle .so 到 _internal 根"
+        # 做法（v0.9.1 run 32290393108 发布失败）。
+        _paddle_libs = bundle_root() / "paddle" / "libs"
+        if _paddle_libs.is_dir():
+            os.environ.setdefault("FLAGS_mklml_dir", str(_paddle_libs))
+            os.environ.setdefault("FLAGS_lapack_dir", str(_paddle_libs))
     # F28：冻结模式下逐资产记录状态（缺失时 warning + runtime-status.json 供 GUI 展示）
     runtime_status: dict[str, str] = {}
     # 平台自适应可执行后缀：Windows 为 .exe，Linux/macOS 无后缀（此前硬编码 .exe
