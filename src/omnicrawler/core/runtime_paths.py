@@ -190,9 +190,12 @@ def configure_runtime_environment() -> None:
     os.environ.setdefault("XDG_CACHE_HOME", str(cache_dir))
     os.environ.setdefault("HF_HOME", str(cache_dir / "huggingface"))
     os.environ.setdefault("MODELSCOPE_CACHE", str(cache_dir / "modelscope"))
-    if sys.platform == "win32":
+    if sys.platform in ("win32", "linux"):
         # Paddle 3.3's oneDNN/PIR path cannot execute every PPStructureV3
         # detector on Windows; the regular CPU runner is complete and stable.
+        # Linux Full CI 实测同样命中（onednn_instruction.cc:116
+        # ConvertPirAttribute2RuntimeAttribute not support
+        # [pir::ArrayAttribute<pir::DoubleAttribute>]），故 Linux 一并禁用。
         os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "False")
     # F28：冻结模式下逐资产记录状态（缺失时 warning + runtime-status.json 供 GUI 展示）
     runtime_status: dict[str, str] = {}
