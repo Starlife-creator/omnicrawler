@@ -39,6 +39,23 @@ class PackagingError(ValueError):
     """插件打包/签名流程错误（fail-closed，消息面向用户）。"""
 
 
+def _require_license(metadata: dict[str, Any], kind: str) -> str:
+    """门 2（Phase 1，方案 A1）：license 必填，删除隐式默认。
+
+    插件：SPDX 白名单内标识（市场 CI 门 2 校验，此处只查非空）；
+    模板：数据/服务条款自由文本（必填即可）。未声明 → PackagingError，
+    迫使作者显式选择，而非静默落为 MIT。
+    """
+    value = str(metadata.get("license") or "").strip()
+    if not value:
+        raise PackagingError(
+            f"{kind}元数据缺少 license 声明（Phase 1 起必填，无隐式默认）。"
+            f"插件请从 SPDX 白名单选择（如 MIT / Apache-2.0）；"
+            f"模板填数据/服务条款说明。"
+        )
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class LocalPluginEntry:
     """本地目录中的一个插件条目（四态分类结果）。"""
@@ -186,7 +203,9 @@ def build_plugin_upload(
         "signature_algorithm": "ed25519",
         "permissions": list(metadata.get("permissions") or []),
         "compatible_core": f">={metadata.get('min_core_version') or '0.7.0'}",
-        "license": str(metadata.get("license") or "MIT"),
+        # 门 2（Phase 1，方案 A1）：license 必填——删除隐式 MIT 回退，
+        # 未声明即打包失败（fail-closed），迫使作者显式选择许可。
+        "license": _require_license(metadata, "插件"),
         "tags": list(metadata.get("tags") or []),
         "updated_at": date.today().isoformat(),
     }
@@ -253,9 +272,10 @@ def build_template_upload(
         "description": summary,
         "publisher": username,
         "author_fingerprint": "0" * 32,  # 占位：下方用创作者真实指纹覆盖
-        # G5：优先保留模板自带声明，缺省回退（与 build_plugin_upload 188-189 对齐）
+        # 门 2（Phase 1，方案 A1）：保留模板自带声明，缺失即报错（fail-closed，
+        # 与 build_plugin_upload 对齐）——不再隐式回退 MIT
         "min_core_version": str(source_block.get("min_core_version") or "0.7.0"),
-        "license": str(source_block.get("license") or "MIT"),
+        "license": _require_license(source_block, "模板"),
     }
 
     user = _load_user(username, password)

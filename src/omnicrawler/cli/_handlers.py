@@ -123,6 +123,24 @@ def _run_wizard(args: argparse.Namespace) -> None:
 
 @_register("plugins")
 def _run_plugins(args: argparse.Namespace) -> None:
+    command = getattr(args, "plugins_command", None)
+    if command == "audit":
+        # Phase 1（B5）：本地插件自检——许可+凭据，与 CI 门 2 同逻辑
+        from pathlib import Path as _Path
+
+        from ..plugins.plugin_audit import audit_local_directory
+
+        local = getattr(args, "local", None)
+        if not local:
+            _json({"ok": False, "error": "plugins audit 需要 --local <dir> 指定插件目录"})
+            raise SystemExit(2)
+        results = audit_local_directory(_Path(local))
+        if not results:
+            _json({"ok": False, "error": f"未在 {local} 找到插件（需含 plugin.py 的目录）"})
+            raise SystemExit(2)
+        payload = {"ok": all(r.ok for r in results), "audited": [r.to_dict() for r in results]}
+        _json(payload)
+        raise SystemExit(0 if payload["ok"] else 1)
     config = load_config(args.config) if args.config else None
     _json(build_registry(config).describe())
 

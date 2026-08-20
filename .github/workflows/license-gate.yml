@@ -1,0 +1,76 @@
+name: license-gate
+
+# Phase 1（方案 A7）：依赖许可防线。pip-licenses 全量扫描（含传递依赖）。
+#
+# 两档模式（随宿主许可阶段切换，--strict 控制）：
+# - 当前（AGPL 期）：拒绝 GPL-2.0 系 / CC-BY-NC-* / LicenseRef-* / 未知许可——
+#   这些与宿主任何阶段都不兼容；AGPL/GPL-3.0 依赖暂容（宿主本身 AGPL）。
+# - Phase 0 完成后：STRICT 置 true——零 GPL/AGPL 残留（宿主宽松化 Apache-2.0，
+#   方案验收项；同时叠加打包产物 SBOM 双扫描见 release.yml）。
+#
+# 注意：只扫依赖树（pip 元数据面）；打包产物面（Qt DLL/paddle .so/字体等
+# 无 pip 元数据文件）由 release 门禁的 CycloneDX SBOM 扫描覆盖（A7 双面验证）。
+
+concurrency:
+  group: license-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    paths:
+      - "pyproject.toml"
+      - "constraints/**"
+      - ".github/workflows/license-gate.yml"
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "constraints/**"
+      - ".github/workflows/license-gate.yml"
+  workflow_dispatch:
+
+jobs:
+  license-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - name: 安装项目依赖（full extras 闭包）
+        run: python -m pip install ".[html,pdf,browser,async-http,security]"
+      - name: 安装 pip-licenses
+        run: python -m pip install "pip-licenses>=5,<6"
+      - name: 依赖树许可扫描
+        run: |
+          # Phase 0 完成后改为 STRICT=true（宿主宽松化验收项，方案 A7/Phase 0）
+          STRICT=false
+          # 立即拒绝清单（任何阶段都不兼容）
+          DENY_ALWAYS="GPL-2.0-only|GPL-2.0-or-later|CC-BY-NC|LicenseRef|Unknown license"
+          # 严格档追加拒绝（Phase 0 后：零 copyleft 残留）
+          DENY_STRICT="AGPL|GPL"
+          DENY="$DENY_ALWAYS"
+          if [ "$STRICT" = "true" ]; then DENY="$DENY_STRICT"; fi
+          python -m pip licenses --format=json --with-urls > licenses.json
+          python - <<EOF
+          import json, re, sys
+          deny = re.compile(r"$DENY", re.IGNORECASE)
+          rows = json.load(open("licenses.json", encoding="utf-8"))
+          bad = [(r["Name"], r["License"]) for r in rows
+                 if deny.search(str(r.get("License", "")) or "Unknown license")]
+          # 自包豁免：本项目自身条目不在扫描拒绝范围
+          bad = [(n, l) for (n, l) in bad if n.lower() not in ("omnicrawler",)]
+          for name, lic in bad:
+              print(f"DENY {name}: {lic}")
+          if bad:
+              print(f"license-gate: {len(bad)} 个依赖命中拒绝清单")
+              sys.exit(1)
+          print(f"license-gate: OK（{len(rows)} 个依赖，无命中）")
+          EOF
+      - name: 上传许可清单
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: license-report
+          path: licenses.json

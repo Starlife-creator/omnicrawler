@@ -36,6 +36,8 @@ def _make_plugin(plugins_dir: Path, name: str) -> Path:
         "    'description': '示例插件介绍',\n"
         "    'plugin_types': ['source'],\n"
         "    'permissions': [],\n"
+        # Phase 1（门 2/A1）：license 必填，无隐式默认
+        "    'license': 'MIT',\n"
         "}\n"
         "def register(registry):\n"
         "    registry.register_source('demo_src', lambda *a, **k: None)\n",
@@ -128,7 +130,9 @@ def test_build_template_upload(identity_env, tmp_path: Path, monkeypatch) -> Non
     template_dir.mkdir(parents=True)
     (template_dir / "template.yaml").write_text(
         "project: {name: t, workspace: work/t}\n"
-        "source: {kind: static_html, seeds: ['https://example.com']}\n",
+        "source: {kind: static_html, seeds: ['https://example.com']}\n"
+        # Phase 1（门 2/A1）：模板 license 必填（数据条款自由文本）
+        "template: {license: Example data terms for tests}\n",
         encoding="utf-8",
     )
     files = build_template_upload(

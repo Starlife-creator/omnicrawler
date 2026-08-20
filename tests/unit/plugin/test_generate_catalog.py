@@ -113,6 +113,7 @@ def _add_market_template(
         "  publisher: alice\n"
         f"  author_fingerprint: {hashlib.sha256(serialization.load_pem_public_key(trust_pem.read_bytes()).public_bytes_raw()).hexdigest()[:32]}\n"
         "  min_core_version: '0.7.0'\n"
+        "  license: Example data terms; free text for templates\n"
         "  tags: [demo]\n"
         "project: {name: demo, workspace: work/demo}\n"
         "source: {kind: static_html, seeds: ['https://example.com']}\n",
@@ -182,8 +183,8 @@ def test_license_explicit_passthrough(tmp_path: Path) -> None:
     assert catalog["plugins"][0]["license"] == "Apache-2.0"
 
 
-def test_license_default_when_omitted(tmp_path: Path) -> None:
-    """未声明 license 时回退默认条款（与模板分支一致，避免'未知许可'）。"""
+def test_license_required_when_omitted(tmp_path: Path) -> None:
+    """Phase 1（门 2/A1）：未声明 license → 拒绝（删除隐式 OmniCrawler-MIT 回退）。"""
     registry, trust_pem, _ = _build_registry(tmp_path)
     manifest = registry / "plugins" / "demo_plug" / "plugin.yaml"
     manifest.write_text(
@@ -191,9 +192,85 @@ def test_license_default_when_omitted(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     result = _run("--registry", str(registry))
-    assert result.returncode == 0, result.stderr
-    catalog = json.loads((registry / "catalog.json").read_text(encoding="utf-8"))
-    assert catalog["plugins"][0]["license"] == "OmniCrawler-MIT"
+    assert result.returncode == 1, result.stdout
+    assert "license" in result.stdout
+
+
+def test_license_rejects_non_allowlisted(tmp_path: Path) -> None:
+    """Phase 1（门 2/A2）：白名单外许可（如 GPL-2.0-only）→ 拒绝。"""
+    registry, trust_pem, _ = _build_registry(tmp_path)
+    manifest = registry / "plugins" / "demo_plug" / "plugin.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace("license: MIT\n", "license: GPL-2.0-only\n"),
+        encoding="utf-8",
+    )
+    result = _run("--registry", str(registry))
+    assert result.returncode == 1, result.stdout
+    assert "白名单" in result.stdout
+
+
+# ── 门 4：license/execution_mode 变更必须升版（A5）──────────────
+
+
+def _snapshot_catalog(registry: Path) -> Path:
+    """把当前 catalog.json 存为基线快照文件（门 4 --prev-catalog 用）。"""
+    snapshot = registry / "prev_catalog.json"
+    snapshot.write_text((registry / "catalog.json").read_text(encoding="utf-8"), encoding="utf-8")
+    return snapshot
+
+
+def test_gate4_rejects_license_change_without_bump(tmp_path: Path) -> None:
+    """门 4：license 变更但版本未递增 → --check 拒绝。"""
+    registry, trust_pem, _ = _build_registry(tmp_path)
+    _run("--registry", str(registry))  # 生成 v1.0.0 catalog
+    snapshot = _snapshot_catalog(registry)
+
+    # 改 license 但不升版
+    manifest = registry / "plugins" / "demo_plug" / "plugin.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace("license: MIT\n", "license: Apache-2.0\n"),
+        encoding="utf-8",
+    )
+    _run("--registry", str(registry))  # 重新生成 catalog
+    result = _run("--check", "--registry", str(registry), "--trust", str(trust_pem),
+                  "--prev-catalog", str(snapshot))
+    assert result.returncode == 1, result.stdout
+    assert "门 4" in result.stdout
+
+
+def test_gate4_accepts_license_change_with_bump(tmp_path: Path) -> None:
+    """门 4：license 变更且版本递增 → 放行。"""
+    registry, trust_pem, _ = _build_registry(tmp_path)
+    _run("--registry", str(registry))
+    snapshot = _snapshot_catalog(registry)
+
+    manifest = registry / "plugins" / "demo_plug" / "plugin.yaml"
+    text = manifest.read_text(encoding="utf-8")
+    text = text.replace("license: MIT\n", "license: Apache-2.0\n")
+    text = text.replace("version: 1.0.0\n", "version: 1.1.0\n")
+    manifest.write_text(text, encoding="utf-8")
+    _run("--registry", str(registry))
+    result = _run("--check", "--registry", str(registry), "--trust", str(trust_pem),
+                  "--prev-catalog", str(snapshot))
+    assert result.returncode == 0, result.stdout or result.stderr
+
+
+def test_gate4_rejects_version_downgrade(tmp_path: Path) -> None:
+    """门 4：版本倒退 → 拒绝（即使无字段变更）。"""
+    registry, trust_pem, _ = _build_registry(tmp_path)
+    _run("--registry", str(registry))  # v1.0.0
+    snapshot = _snapshot_catalog(registry)
+
+    manifest = registry / "plugins" / "demo_plug" / "plugin.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace("version: 1.0.0\n", "version: 0.9.0\n"),
+        encoding="utf-8",
+    )
+    _run("--registry", str(registry))
+    result = _run("--check", "--registry", str(registry), "--trust", str(trust_pem),
+                  "--prev-catalog", str(snapshot))
+    assert result.returncode == 1, result.stdout
+    assert "倒退" in result.stdout
 
 
 def test_check_detects_drift(tmp_path: Path) -> None:

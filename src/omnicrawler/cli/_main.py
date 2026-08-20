@@ -71,8 +71,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     reprocess.add_argument("--config", "-c", required=True)
     reprocess.add_argument("--run-id")
-    plugins = sub.add_parser("plugins", help="列出已注册插件")
+    plugins = sub.add_parser("plugins", help="列出已注册插件 / 本地插件自检")
     plugins.add_argument("--config", "-c")
+    # Phase 1（B5）：plugins audit --local <dir> 本地自检（许可+凭据，与 CI 门 2 同逻辑）
+    plugins.add_argument("plugins_command", nargs="?", default=None, help="子命令：audit（可选）")
+    plugins.add_argument("--local", default=None, help="audit 子命令：审计的本地插件目录")
     templates = sub.add_parser("templates", help="搜索、识别和生成采集模板")
     templates_sub = templates.add_subparsers(dest="templates_command", required=True)
     template_list = templates_sub.add_parser("list", help="列出内置和用户模板")
