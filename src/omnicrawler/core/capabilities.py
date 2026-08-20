@@ -25,7 +25,7 @@ MODULES = {
     "core_yaml": "yaml",
     "html": "bs4",
     "xml": "lxml",
-    "pdf": "fitz",
+    "pdf": "pdfplumber",  # Phase 0：fitz(PyMuPDF) → pdfplumber 探测
     "xlsx": "openpyxl",
     "playwright": "playwright",
     "selenium": "selenium",
@@ -236,7 +236,7 @@ def _build_standard_capabilities(modules: dict[str, dict[str, Any]], native: dic
                                     "高性能网页和 API 请求", "standard")
     items["tls_impersonate"] = _cap_item("TLS 指纹伪装 (curl_cffi)", modules.get("tls_impersonate", {}).get("installed", False),
                                          "模拟浏览器 TLS 握手对抗检测", "standard")
-    items["pdf_text"] = _cap_item("PDF 文本解析 (PyMuPDF)", modules.get("pdf", {}).get("installed", False),
+    items["pdf_text"] = _cap_item("PDF 文本解析 (pdfplumber)", modules.get("pdf", {}).get("installed", False),
                                   "提取 PDF 文字、表格和元数据", "standard")
     items["xlsx"] = _cap_item("Excel 导出 (openpyxl)", modules.get("xlsx", {}).get("installed", False),
                               "生成 Excel 格式结果", "standard")
