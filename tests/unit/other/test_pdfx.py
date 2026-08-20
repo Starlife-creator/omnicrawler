@@ -52,10 +52,8 @@ class PDFModuleTest(unittest.TestCase):
             manifest = (config.output_dir / "text_manifest.csv").read_text(encoding="utf-8-sig")
             assert "'=cmd|' /C calc'!A0" in manifest
 
-    @unittest.skipUnless(importlib.util.find_spec("fitz") and importlib.util.find_spec("openpyxl"), "PDF依赖未安装")
+    @unittest.skipUnless(importlib.util.find_spec("pdfplumber") and importlib.util.find_spec("reportlab") and importlib.util.find_spec("openpyxl"), "PDF依赖未安装")
     def test_text_pdf_end_to_end(self):
-        import fitz
-
         from omnicrawler.pdfx.config import load_config
         from omnicrawler.pdfx.database import Database
         from omnicrawler.pdfx.exporter import export_stage
@@ -86,12 +84,19 @@ fields:
 """,
                 encoding="utf-8",
             )
+            # Phase 0：fitz → reportlab（CJK 用内置 CID 字体）
+            from reportlab.lib.pagesizes import A4
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+            from reportlab.pdfgen import canvas
+
             pdf = root / "data" / "pdfs" / "notice.pdf"
-            document = fitz.open()
-            page = document.new_page()
-            page.insert_text((72, 72), "担保金额：1.5亿元", fontname="china-s", fontsize=12)
-            document.save(pdf)
-            document.close()
+            pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+            c = canvas.Canvas(str(pdf), pagesize=A4)
+            c.setFont("STSong-Light", 12)
+            c.drawString(72, A4[1] - 72, "担保金额：1.5亿元")
+            c.showPage()
+            c.save()
             config = load_config(config_path)
             with Database(config.database) as database:
                 self.assertEqual(ingest(config, database)["new"], 1)

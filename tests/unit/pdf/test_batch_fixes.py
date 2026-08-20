@@ -162,21 +162,24 @@ def test_d8_table_detection_failure_is_graceful() -> None:
 
 def test_d36_iter_pages_yields_and_wraps() -> None:
     """D36：_iter_parsed_pages 逐页 yield；parse_document 兼容封装收集。"""
-    import gc
-
-    import fitz
-
     from omnicrawler.pdfx.parser import _iter_parsed_pages, parse_document
 
     # ignore_cleanup_errors：Windows runner 偶发对新建 p.pdf 的瞬时外部锁
     # （安全扫描），临时目录属一次性产物，清理失败不影响断言结果。
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp:
         pdf = Path(temp) / "p.pdf"
-        document = fitz.open()
-        page = document.new_page()
-        page.insert_text((72, 72), "担保金额：1.5亿元", fontname="china-s", fontsize=12)
-        document.save(pdf)
-        document.close()
+        # Phase 0：fitz → reportlab（CJK 用内置 CID 字体，pdfplumber 可抽取）
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+        from reportlab.pdfgen import canvas
+
+        pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+        c = canvas.Canvas(str(pdf), pagesize=A4)
+        c.setFont("STSong-Light", 12)
+        c.drawString(72, A4[1] - 72, "担保金额：1.5亿元")
+        c.showPage()
+        c.save()
 
         yielded = list(_iter_parsed_pages(str(pdf), 5, 0.1))
         assert len(yielded) == 1
@@ -187,15 +190,10 @@ def test_d36_iter_pages_yields_and_wraps() -> None:
         assert wrapped["page_count"] == 1
         assert wrapped["pages"][0]["needs_ocr"] == 0
 
-        # Windows：PyMuPDF 的文件句柄可能在 GC 后才释放，先清理引用再删除临时目录
-        del document, page, yielded, wrapped
-        gc.collect()
-
 
 def test_d12_high_image_coverage_forces_ocr(monkeypatch) -> None:
     """D12：有文字层但图片覆盖超 60% 的页面（夹带页眉页脚的表格页）强制 OCR。"""
     import pdfplumber
-    from pypdf import PdfReader
 
     class _FakePage:
         width = 100.0

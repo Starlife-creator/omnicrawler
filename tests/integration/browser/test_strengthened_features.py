@@ -119,13 +119,17 @@ def test_schedule_allowed_hours_can_defer() -> None:
 
 
 def test_pdf_rectangle_rule(tmp_path: Path) -> None:
-    fitz = pytest.importorskip("fitz")
+    pytest.importorskip("pdfplumber")
+    pytest.importorskip("reportlab")
+    # Phase 0：fitz → reportlab（页 300×200；insert_text 顶部 y=80 → drawString 底部 y=120）
+    from reportlab.pdfgen import canvas
+
     pdf = tmp_path / "sample.pdf"
-    document = fitz.open()
-    page = document.new_page(width=300, height=200)
-    page.insert_text((40, 80), "Selected Research Text")
-    document.save(pdf)
-    document.close()
+    c = canvas.Canvas(str(pdf), pagesize=(300, 200))
+    c.setFont("Helvetica", 12)
+    c.drawString(40, 120, "Selected Research Text")
+    c.showPage()
+    c.save()
     text = extract_region(pdf, 1, (20, 40, 280, 110))  # S3.1.17：1 基页码
     assert "Selected Research Text" in text
     rule = make_region_rule(pdf, "abstract", 1, (20, 40, 280, 110))

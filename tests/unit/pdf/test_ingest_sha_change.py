@@ -4,20 +4,26 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import fitz
-
 from omnicrawler.pdfx.config import load_config
 from omnicrawler.pdfx.database import Database
 from omnicrawler.pdfx.ingest import ingest
 
 
+def _write_pdf(path: Path, text: str) -> None:
+    # Phase 0：fitz → reportlab（测试 fixture 生成；无压缩便于 _same_size 对齐体积）
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(path), pagesize=A4, pageCompression=0)
+    c.setFont("Helvetica", 14)
+    c.drawString(72, A4[1] - 72, text)
+    c.showPage()
+    c.save()
+
+
 def _pdf(tmp_path: Path, text: str, name: str = "doc.pdf") -> Path:
     target = tmp_path / name
-    document = fitz.open()
-    page = document.new_page()
-    page.insert_text((72, 72), text, fontsize=14)
-    document.save(target)
-    document.close()
+    _write_pdf(target, text)
     return target
 
 
@@ -57,14 +63,24 @@ def test_ingest_detects_same_path_same_size_new_content(tmp_path: Path) -> None:
 
 
 def _same_size(original: Path, text: str) -> bytes:
-    """构造与原文件同字节大小的 PDF（用空格填充标题）。"""
-    target = original.parent / "replacement.pdf"
-    document = fitz.open()
-    page = document.new_page()
-    padding = len(original.read_bytes()) % 100
-    page.insert_text((72, 72), text + " " * padding, fontsize=14)
-    document.save(target)
-    document.close()
-    data = target.read_bytes()
-    target.unlink()
+    """构造与原文件同字节大小的 PDF（reportlab 无压缩，用空格填充对齐）。"""
+    import io
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    target_size = len(original.read_bytes())
+    # 无压缩渲染：向文本追加空格可线性增大体积，逐步逼近目标大小
+    for padding in range(0, 400):
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=A4, pageCompression=0)
+        c.setFont("Helvetica", 14)
+        c.drawString(72, A4[1] - 72, text + " " * padding)
+        c.showPage()
+        c.save()
+        data = buffer.getvalue()
+        if len(data) == target_size:
+            return data
+    # 兜底：最接近目标大小的版本（测试断言只要求 SHA 不同且 size 相同，
+    # 若无法精确对齐则返回最后一版——此分支正常不应命中）
     return data

@@ -10,20 +10,26 @@ import gc
 import tempfile
 from pathlib import Path
 
-import fitz
-
 from omnicrawler.pdfx.config import ProjectConfig
 from omnicrawler.pdfx.database import Database
 from omnicrawler.pdfx.parser import MAX_PARSE_ATTEMPTS, parse_stage
 
 
 def _make_pdf(path: Path, pages: int = 3) -> None:
-    document = fitz.open()
+    # Phase 0：fitz → reportlab（CJK 用内置 CID 字体，pdfplumber 可抽取）
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+    from reportlab.pdfgen import canvas
+
+    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+    _, page_height = A4
+    c = canvas.Canvas(str(path), pagesize=A4)
     for i in range(pages):
-        page = document.new_page()
-        page.insert_text((72, 72), f"第{i + 1}页 金额：{i + 1}00万元", fontname="china-s", fontsize=12)
-    document.save(path)
-    document.close()
+        c.setFont("STSong-Light", 12)
+        c.drawString(72, page_height - 72, f"第{i + 1}页 金额：{i + 1}00万元")
+        c.showPage()
+    c.save()
 
 
 def _project(database: Path) -> ProjectConfig:

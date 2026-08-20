@@ -6,21 +6,24 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("fitz")
-
-import fitz
+pytest.importorskip("pdfplumber")
 
 from omnicrawler.pipeline_ops.pdf_region import extract_region, make_region_rule
 
 
 def _pdf(tmp_path: Path) -> Path:
+    # Phase 0：fitz → reportlab（fixture；文本置于距顶部 72pt，与 fitz 插入位置等价）
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
     pdf = tmp_path / "multi.pdf"
-    document = fitz.open()
+    _, page_height = A4
+    c = canvas.Canvas(str(pdf), pagesize=A4)
     for index in range(3):
-        page = document.new_page()
-        page.insert_text((72, 72), f"Page {index + 1} content", fontsize=14)
-    document.save(pdf)
-    document.close()
+        c.setFont("Helvetica", 14)
+        c.drawString(72, page_height - 72, f"Page {index + 1} content")
+        c.showPage()
+    c.save()
     return pdf
 
 

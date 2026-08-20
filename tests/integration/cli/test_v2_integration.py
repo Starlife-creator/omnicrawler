@@ -43,19 +43,23 @@ class _PipelineHandler(BaseHTTPRequestHandler):
         return
 
 
-@unittest.skipUnless(importlib.util.find_spec("fitz") and importlib.util.find_spec("openpyxl"), "PDF依赖未安装")
+@unittest.skipUnless(importlib.util.find_spec("pdfplumber") and importlib.util.find_spec("reportlab") and importlib.util.find_spec("openpyxl"), "PDF依赖未安装")
 class UnifiedPipelineTest(unittest.TestCase):
     def test_crawl_to_pdf_provenance_extraction_and_resume(self) -> None:
-        import fitz
+        import io
 
-        with fitz.open() as document:
-            page = document.new_page()
-            page.insert_text(
-                (72, 72),
-                "Security code: 000001\nGuarantee amount: 150000000 yuan",
-                fontsize=12,
-            )
-            _PipelineHandler.pdf_bytes = document.tobytes()
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+
+        # Phase 0：fitz → reportlab（内存生成 PDF fixture）
+        _buffer = io.BytesIO()
+        _c = canvas.Canvas(_buffer, pagesize=A4)
+        _c.setFont("Helvetica", 12)
+        _c.drawString(72, A4[1] - 72, "Security code: 000001")
+        _c.drawString(72, A4[1] - 90, "Guarantee amount: 150000000 yuan")
+        _c.showPage()
+        _c.save()
+        _PipelineHandler.pdf_bytes = _buffer.getvalue()
 
         server = ThreadingHTTPServer(("127.0.0.1", 0), _PipelineHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)

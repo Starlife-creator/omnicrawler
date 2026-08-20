@@ -51,17 +51,23 @@ fetch('/api/items').then(response => response.json()).then(data => {
 
 
 def create_pdf_bytes() -> bytes:
-    """Create the tiny PDF fixture in memory; no download or cloud service is used."""
-    import fitz
+    """Create the tiny PDF fixture in memory; no download or cloud service is used.
 
-    with fitz.open() as document:
-        page = document.new_page()
-        page.insert_text(
-            (72, 72),
-            "Security code: 000001\nGuarantee amount: 150000000 yuan",
-            fontsize=12,
-        )
-        return document.tobytes()
+    Phase 0：fitz → reportlab。
+    """
+    import io
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    c.setFont("Helvetica", 12)
+    c.drawString(72, A4[1] - 72, "Security code: 000001")
+    c.drawString(72, A4[1] - 90, "Guarantee amount: 150000000 yuan")
+    c.showPage()
+    c.save()
+    return buffer.getvalue()
 
 
 @contextmanager
