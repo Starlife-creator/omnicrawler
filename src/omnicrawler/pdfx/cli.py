@@ -35,7 +35,8 @@ def doctor(config) -> dict[str, Any]:
         "dependencies": {},
         "warnings": validate_runtime_config(config),
     }
-    for module in ("fitz", "yaml", "openpyxl"):
+    # Phase 0：fitz(PyMuPDF) → pdfplumber/pypdf/reportlab 探测
+    for module in ("pdfplumber", "yaml", "openpyxl"):
         checks["dependencies"][module] = importlib.util.find_spec(module) is not None
     backend = str(config.ocr.get("backend", "none")).lower()
     if backend == "paddle":

@@ -177,7 +177,8 @@ def run_doctor(config: AppConfig, *, probe_ai: bool = True) -> dict[str, Any]:
         name: importlib.util.find_spec(module) is not None
         for name, module in {
             "yaml": "yaml", "beautifulsoup4": "bs4", "openpyxl": "openpyxl",
-            "pymupdf": "fitz", "playwright": "playwright", "selenium": "selenium",
+            # Phase 0：pymupdf → pdfplumber（PyMuPDF 已从依赖树移除）
+            "pdfplumber": "pdfplumber", "playwright": "playwright", "selenium": "selenium",
             "httpx_async": "httpx", "websockets": "websockets", "redis": "redis", "scrapy": "scrapy",
             "paddleocr": "paddleocr", "pytesseract": "pytesseract",
         }.items()
@@ -195,7 +196,7 @@ def run_doctor(config: AppConfig, *, probe_ai: bool = True) -> dict[str, Any]:
     if config.source_kind == "scrapy":
         required.append("scrapy")
     if config.section("processors").get("pdf", {}).get("enabled"):
-        required.extend(["pymupdf", "openpyxl"])
+        required.extend(["pdfplumber", "openpyxl"])
     missing = [name for name in dict.fromkeys(required) if not dependencies.get(name, False)]
     if missing:
         errors.append("缺少当前配置所需依赖: " + ", ".join(missing))

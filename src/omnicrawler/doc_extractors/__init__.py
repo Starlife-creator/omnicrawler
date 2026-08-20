@@ -32,7 +32,7 @@ def extract_slots(
         document_type: text | json | html | pdf | auto。
 
     Raises:
-        RuntimeError: PDF 缺 PyMuPDF 依赖。
+        RuntimeError: PDF 缺 pdfplumber 依赖。
     """
     kind = str(document_type).casefold()
     if kind == "auto":

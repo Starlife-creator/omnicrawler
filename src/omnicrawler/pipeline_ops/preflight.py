@@ -125,7 +125,8 @@ def _required_dependencies(config: AppConfig) -> list[tuple[str, str, str]]:
     if config.section("processors").get("pdf", {}).get("enabled"):
         result.extend(
             [
-                ("PyMuPDF", "fitz", "pip install omnicrawler-platform[pdf]"),
+                # Phase 0：PyMuPDF → pdfplumber/pypdf/reportlab（探测名取 pdfplumber）
+                ("pdfplumber", "pdfplumber", "pip install omnicrawler-platform[pdf]"),
                 ("openpyxl", "openpyxl", "pip install omnicrawler-platform[pdf]"),
             ]
         )
