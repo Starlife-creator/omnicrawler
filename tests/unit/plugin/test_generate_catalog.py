@@ -440,6 +440,45 @@ def test_dependencies_must_be_name_mappings(tmp_path: Path) -> None:
     assert "dependencies" in result.stdout
 
 
+# ── A5 tombstone：下架墓碑条目 ──────────────────────────────────
+
+
+def test_tombstone_included_in_catalog(tmp_path: Path) -> None:
+    """A5：合法 tombstones.json → catalog 增 tombstones 块（保留审计连续性）。"""
+    registry, trust_pem, _ = _build_registry(tmp_path)
+    (registry / "tombstones.json").write_text(
+        json.dumps([{"id": "gone_plugin", "removed_at": "2026-01-01", "reason": "恶意吊销"}]),
+        encoding="utf-8",
+    )
+    result = _run("--registry", str(registry))
+    assert result.returncode == 0, result.stderr
+    catalog = json.loads((registry / "catalog.json").read_text(encoding="utf-8"))
+    assert catalog["tombstones"][0]["id"] == "gone_plugin"
+
+
+def test_tombstone_conflict_with_existing_rejected(tmp_path: Path) -> None:
+    """A5：tombstone 与现存插件目录冲突 → 拒绝（下架条目不得在线）。"""
+    registry, trust_pem, _ = _build_registry(tmp_path)
+    (registry / "tombstones.json").write_text(
+        json.dumps([{"id": "demo_plug", "removed_at": "2026-01-01", "reason": "x"}]),
+        encoding="utf-8",
+    )
+    result = _run("--registry", str(registry))
+    assert result.returncode == 1, result.stdout
+    assert "冲突" in result.stdout
+
+
+def test_tombstone_missing_required_field_rejected(tmp_path: Path) -> None:
+    """A5：tombstone 缺 removed_at/reason → 拒绝。"""
+    registry, trust_pem, _ = _build_registry(tmp_path)
+    (registry / "tombstones.json").write_text(
+        json.dumps([{"id": "gone_plugin"}]), encoding="utf-8"
+    )
+    result = _run("--registry", str(registry))
+    assert result.returncode == 1, result.stdout
+    assert "tombstone" in result.stdout
+
+
 def test_check_detects_template_missing_publisher(tmp_path: Path) -> None:
     registry, trust_pem, private_pem = _build_registry(tmp_path)
     _add_market_template(registry, trust_pem, private_pem)
