@@ -10,7 +10,7 @@ version = "0.9.1"
 description = "从全类型网站采集、PDF解析/OCR到结构化导出和人工复核的模块化工作台"
 readme = "README.md"
 requires-python = ">=3.12"
-license = {text = "AGPL-3.0-only"}
+license = {text = "Apache-2.0"}  # Phase 0 验收（第 81 轮用户决策）：AGPL-3.0 → Apache-2.0
 authors = [{name = "Starlife-creator", email = "zqx666666@tutamail.com"}]
 maintainers = [{name = "Starlife-creator", email = "zqx666666@tutamail.com"}]
 dependencies = ["PyYAML>=6,<7", "defusedxml>=0.7,<1"]

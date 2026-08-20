@@ -99,6 +99,6 @@ app = BUNDLE(
         "CFBundleVersion": _bundle_version,
         "LSMinimumSystemVersion": "11.0",
         "NSHighResolutionCapable": True,
-        "NSHumanReadableCopyright": "AGPL-3.0-only",
+        "NSHumanReadableCopyright": "Apache-2.0",
     },
 )

@@ -1,7 +1,8 @@
 # Third-party runtime notices
 
-OmniCrawler is AGPL-3.0 licensed. The Windows full portable package also redistributes components
-under their own licenses:
+OmniCrawler is Apache-2.0 licensed (Phase 0 license-freedom milestone: migrated from
+AGPL-3.0 after removing all strong-copyleft runtime dependencies). The Windows full
+portable package also redistributes components under their own licenses:
 
 - Chromium / Chrome for Testing — Chromium/BSD and bundled component licenses.
 - ChromeDriver — Chromium/BSD license family.
@@ -10,6 +11,13 @@ under their own licenses:
 - PaddlePaddle, PaddleOCR and PaddleX — Apache License 2.0.
 - Crawl4AI — Apache License 2.0. Used as an optional AI-driven crawling backend
   (`omnicrawler[crawl4ai]`).
+- Qt 6 (via PySide6 / shiboken6) — LGPL-3.0. Used for the desktop GUI and linked
+  dynamically; Qt is not modified. Users may relink against a modified Qt build as
+  permitted by the LGPL. Upstream: https://www.qt.io/ — license text at
+  https://www.gnu.org/licenses/lgpl-3.0.txt
+- pdfplumber / pdfminer.six / pypdf / reportlab / pypdfium2 — MIT / BSD-3-Clause /
+  BSD-3-Clause / BSD / BSD-3-Clause+Apache-2.0 respectively (PDF parsing & rendering
+  stack introduced in Phase 0, replacing the former AGPL-licensed PyMuPDF).
 - Python packages listed in `SBOM.json` — each package's declared license applies.
 
 7-Zip is used only during the build to extract the Tesseract NSIS package and is not included

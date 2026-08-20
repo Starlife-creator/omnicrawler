@@ -2,9 +2,9 @@
 
 > 可配置 · 可恢复 · 可扩展 · 可审计
 
-> Copyright (C) 2026 Starlife-creator。本项目以 AGPL-3.0 授权，详见 [LICENSE](LICENSE)。
+> Copyright (C) 2026 Starlife-creator。本项目以 Apache-2.0 授权，详见 [LICENSE](LICENSE)。
 
-> **商标与命名声明**：本项目（仓库名 `omnicrawler`、Python 包及 CLI 命令名 `omnicrawler`）由 Starlife-creator 独立开发与维护，为项目内部代号，**并非任何商业实体的产品或服务**。本项目与 [omnicrawl.dev](https://www.omnicrawl.dev/)（OmniCrawl 通用网页抓取服务）、学术基础设施 [OmniCrawl](https://github.com/jessejjohnson/OmniCrawl)（PETS'22）、[Oncrawl](https://www.oncrawl.com/)（法国 SEO 技术平台）等**无任何关联、授权、赞助或隶属关系**，亦不暗示与之存在任何联系。若上述名称的持有方主张权利，请通过仓库 Issues 联系作者协商。AGPL-3.0 仅授予代码使用与分发权利，不授予任何商标或名称使用权。
+> **商标与命名声明**：本项目（仓库名 `omnicrawler`、Python 包及 CLI 命令名 `omnicrawler`）由 Starlife-creator 独立开发与维护，为项目内部代号，**并非任何商业实体的产品或服务**。本项目与 [omnicrawl.dev](https://www.omnicrawl.dev/)（OmniCrawl 通用网页抓取服务）、学术基础设施 [OmniCrawl](https://github.com/jessejjohnson/OmniCrawl)（PETS'22）、[Oncrawl](https://www.oncrawl.com/)（法国 SEO 技术平台）等**无任何关联、授权、赞助或隶属关系**，亦不暗示与之存在任何联系。若上述名称的持有方主张权利，请通过仓库 Issues 联系作者协商。Apache-2.0 仅授予代码使用与分发权利，不授予任何商标或名称使用权。
 
 OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台。从网站、API、动态页面和流式协议获取数据，下载附件，解析 PDF/OCR，完成结构化提取、质量检查、人工复核与多格式交付。
 
