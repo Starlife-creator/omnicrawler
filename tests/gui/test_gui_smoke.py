@@ -7,14 +7,14 @@ from types import SimpleNamespace
 import pytest
 
 pytestmark = pytest.mark.skipif(
-    importlib.util.find_spec("PyQt6") is None,
+    importlib.util.find_spec("PySide6") is None,
     reason="GUI smoke test requires PyQt6",
 )
 
 
 def test_five_step_gui_template_library_and_rebuild_start_offscreen(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     from omnicrawler.gui.main import MainWindow, TemplateLibraryDialog
     from omnicrawler.gui.views.task_canvas import TaskCanvas
@@ -43,8 +43,8 @@ def test_five_step_gui_template_library_and_rebuild_start_offscreen(monkeypatch)
 
 def test_toast_automatically_removes_itself_after_its_duration(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PyQt6.QtTest import QTest
-    from PyQt6.QtWidgets import QApplication, QMainWindow
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication, QMainWindow
 
     from omnicrawler.gui.widgets.toast import ToastOverlay
 
@@ -75,9 +75,9 @@ def test_toast_automatically_removes_itself_after_its_duration(monkeypatch):
 
 def test_window_defers_close_until_auxiliary_thread_stops(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PyQt6.QtCore import QThread
-    from PyQt6.QtTest import QTest
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtCore import QThread
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
 
     from omnicrawler.gui.main import MainWindow
 

@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PyQt6.QtCore import QTimer, pyqtSlot
-from PyQt6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
+from PySide6.QtCore import QTimer, Slot
+from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
 from ..i18n import _
 from ._base import _BaseDelegate
@@ -89,18 +89,18 @@ class RunController(_BaseDelegate):
             h, m, s = total_seconds // 3600, (total_seconds % 3600) // 60, total_seconds % 60
             mw._elapsed_label.setText(f"{h:02d}:{m:02d}:{s:02d}")
 
-    @pyqtSlot(str, str)
+    @Slot(str, str)
     def on_log_line(self, message: str, level: str) -> None:
         self._mw._log_console.append_log(message, level)
 
-    @pyqtSlot(int, str)
+    @Slot(int, str)
     def on_progress(self, percent: int, url: str) -> None:
         mw = self._mw
         mw._progress_bar.setRange(0, 100)
         mw._progress_bar.setValue(percent)
         mw._progress_url_label.setText(url)
 
-    @pyqtSlot(str)
+    @Slot(str)
     def on_task_state_changed(self, state: str) -> None:
         mw = self._mw
         mw._status_indicator.state = state
@@ -141,6 +141,6 @@ class RunController(_BaseDelegate):
                 mw._finish_label.setText(
                     _("完成: {0}").format(datetime.now().strftime("%H:%M")) + f" ({elapsed.total_seconds():.0f}s)")
 
-    @pyqtSlot(str, int)
+    @Slot(str, int)
     def on_task_finished(self, task_id: str, exit_code: int) -> None:
         pass  # state_changed handles everything

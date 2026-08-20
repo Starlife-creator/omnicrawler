@@ -5,7 +5,7 @@
 
 from typing import Optional
 
-from PyQt6.QtCore import QSettings
+from PySide6.QtCore import QSettings
 
 SETTINGS_ORG = "OmniCrawler"
 SETTINGS_APP = "OmniCrawlerGUI"
@@ -50,10 +50,22 @@ class AppSettings:
         # actions such as theme and accessibility changes.
         self._session_values: dict[str, object] = {}
 
+    # PySide6 的 QSettings.value(type=) 仅接受白名单类型（str/int/float/bool/
+    # bytes/list 及 Qt 派生类型），传 dict/自定义类型会抛 TypeError。
+    # PyQt6 时代允许任意 type= 参数，迁移到 PySide6 时须在此收敛（第 39 轮
+    # 核实的枚举/API 差异雷区之一）。
+    _QSETTINGS_TYPE_WHITELIST = (str, int, float, bool, bytes, list)
+
     def _value(self, key: str, default: object, value_type: type):
         if key in self._session_values:
             return self._session_values[key]
-        return self._settings.value(key, default, type=value_type)
+        if value_type in self._QSETTINGS_TYPE_WHITELIST:
+            return self._settings.value(key, default, type=value_type)
+        # 非白名单类型：取出原始值后手动做类型收敛（如 dict/list-of-dict）
+        raw = self._settings.value(key, default)
+        if isinstance(raw, value_type):
+            return raw
+        return default
 
     def _set_value(self, key: str, value: object) -> None:
         self._session_values[key] = value

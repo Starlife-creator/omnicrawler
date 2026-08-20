@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtWidgets import QCheckBox, QFileDialog, QInputDialog, QMessageBox
+from PySide6.QtWidgets import QCheckBox, QFileDialog, QInputDialog, QMessageBox
 
 from ..i18n import _
 from ..navigation import NavIndex

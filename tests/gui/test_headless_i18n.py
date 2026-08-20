@@ -8,7 +8,7 @@ import pytest
 # (MainWindow, etc.) outside the _cli_mode() guard,
 # so the module cannot be imported without PyQt6 installed.
 pytestmark = pytest.mark.skipif(
-    importlib.util.find_spec("PyQt6") is None,
+    importlib.util.find_spec("PySide6") is None,
     reason="gui.main requires PyQt6 at module level",
 )
 

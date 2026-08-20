@@ -10,8 +10,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -40,8 +40,8 @@ class TaskHistory(QWidget):
         view_results_requested: 请求查看结果 (workspace)。
     """
 
-    load_config_requested = pyqtSignal(str)  # config_path
-    view_results_requested = pyqtSignal(str)  # workspace
+    load_config_requested = Signal(str)  # config_path
+    view_results_requested = Signal(str)  # workspace
 
     def __init__(
         self,

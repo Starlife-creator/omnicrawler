@@ -21,9 +21,9 @@ import inspect
 import logging
 from typing import Any
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import QDockWidget, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QDockWidget, QWidget
 
 from .design_system import register_plugin_theme
 from .i18n import _

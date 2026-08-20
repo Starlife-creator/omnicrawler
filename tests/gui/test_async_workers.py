@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PyQt6")
+pytest.importorskip("PySide6")
 
 from omnicrawler.gui.async_workers import AsyncWorkerManager
 

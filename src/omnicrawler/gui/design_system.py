@@ -11,9 +11,9 @@ import logging
 import re
 from dataclasses import asdict, dataclass
 
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation
-from PyQt6.QtGui import QColor, QFont, QPalette
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation
+from PySide6.QtGui import QColor, QFont, QPalette
+from PySide6.QtWidgets import (
     QApplication,
     QGraphicsOpacityEffect,
     QStackedWidget,
@@ -308,7 +308,7 @@ def rgba_token_to_qcolor(rgba_str: str) -> QColor:
     All alpha-bearing VisualTokens values use this format so they
     can be used with QGraphicsDropShadowEffect and QPainter.
     """
-    from PyQt6.QtGui import QColor
+    from PySide6.QtGui import QColor
 
     match = re.fullmatch(r"rgba\((\d+),\s*(\d+),\s*(\d+),\s*([0-9.]+)\)", rgba_str)
     if not match:
@@ -642,10 +642,10 @@ def apply_font_strategy(app: QApplication, *, scale: int = 100) -> None:
 
 
 class _SignalProxy:
-    """纯 Python 信号代理，模拟 Qt pyqtSignal 的 .connect()/.disconnect()/.emit() API。
+    """纯 Python 信号代理，模拟 Qt Signal 的 .connect()/.disconnect()/.emit() API。
 
     不依赖 QObject/C++ 对象，避免 QApplication 销毁后信号失效。
-    当回调的目标 QObject 被删除时自动清理（通过 sip.isdeleted() 预检
+    当回调的目标 QObject 被删除时自动清理（通过 not shiboken6.isValid() 预检
     和 RuntimeError 捕获双重保障）。
     内置重入保护，防止回调链触发递归 emit 导致无限循环。
     """
@@ -666,16 +666,16 @@ class _SignalProxy:
             return  # 重入保护：回调执行期间的 emit 被静默丢弃
         self._emitting = True
         try:
-            from PyQt6 import sip as _sip
+            import shiboken6 as _sip
         except ImportError:
-            _sip = None  # type: ignore[assignment]  # 无 PyQt6 时降级
+            _sip = None  # type: ignore[assignment]  # 无 PySide6 时降级
         dead: list = []
         for callback in list(self._callbacks):
             # 检查 bound method 的目标对象是否已被 C++ 析构
             target = getattr(callback, "__self__", None)
             if target is not None and _sip is not None:
                 try:
-                    if _sip.isdeleted(target):
+                    if not _sip.isValid(target):
                         dead.append(callback)
                         continue
                 except (TypeError, AttributeError):
@@ -703,7 +703,7 @@ class ThemeManager:
     """主题管理：应用令牌 + 字体 + 广播变更信号，供组件监听刷新。
 
     纯 Python 实现，不继承 QObject，从根本上消除 C++ 对象生命周期导致的崩溃。
-    使用 _SignalProxy 替代 pyqtSignal，API 完全兼容（.connect()/.disconnect()/.emit()）。
+    使用 _SignalProxy 替代 Signal，API 完全兼容（.connect()/.disconnect()/.emit()）。
     """
 
     _instance: ThemeManager | None = None
@@ -844,9 +844,9 @@ class PageTransitionController:
         def _finish_transition() -> None:
             """Clear only the live effect; page deletion is normal in tests/navigation."""
             try:
-                from PyQt6 import sip
+                import shiboken6
 
-                if sip.isdeleted(page) or sip.isdeleted(effect):
+                if not shiboken6.isValid(page) or not shiboken6.isValid(effect):
                     return
                 if page.graphicsEffect() is effect:
                     page.setGraphicsEffect(None)

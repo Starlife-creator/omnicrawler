@@ -37,7 +37,7 @@ MODULES = {
     "tesseract_wrapper": "pytesseract",
     "paddle": "paddle",
     "paddleocr": "paddleocr",
-    "gui": "PyQt6",
+    "gui": "PySide6",  # Phase 0 M0b：PyQt6(GPL) → PySide6(LGPL) 探测
     "keyring": "keyring",
     "s3": "boto3",
     "duckdb": "duckdb",
@@ -244,7 +244,7 @@ def _build_standard_capabilities(modules: dict[str, dict[str, Any]], native: dic
                                     "动态页面渲染和交互", "standard")
     items["chromium"] = _cap_item("Chromium 浏览器引擎", native.get("chromium", {}).get("ready", False),
                                   "Playwright 的浏览器运行时", "standard")
-    items["gui"] = _cap_item("桌面界面 (PyQt6)", modules.get("gui", {}).get("installed", False),
+    items["gui"] = _cap_item("桌面界面 (PySide6)", modules.get("gui", {}).get("installed", False),
                              "图形化工作台", "standard")
     items["websocket"] = _cap_item("WebSocket 支持", modules.get("websocket", {}).get("installed", False),
                                    "实时数据流采集", "standard")

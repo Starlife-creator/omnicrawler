@@ -7,14 +7,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QTimer, pyqtSignal
-from PyQt6.QtGui import (
+from PySide6.QtCore import QTimer, Signal
+from PySide6.QtGui import (
     QColor,
     QFont,
     QSyntaxHighlighter,
     QTextCharFormat,
 )
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
@@ -243,9 +243,9 @@ class YamlEditor(QWidget):
     - 外部文件修改检测
     """
 
-    config_changed = pyqtSignal()  # 编辑器内容变更后
-    sync_to_form = pyqtSignal(object)  # 同步到表单 (CrawlConfig)
-    sync_status = pyqtSignal(str)  # 状态栏消息
+    config_changed = Signal()  # 编辑器内容变更后
+    sync_to_form = Signal(object)  # 同步到表单 (CrawlConfig)
+    sync_status = Signal(str)  # 状态栏消息
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -536,8 +536,8 @@ class YamlEditor(QWidget):
 
     def _open_external(self) -> None:
         """在系统编辑器中打开。"""
-        from PyQt6.QtCore import QUrl
-        from PyQt6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
         if self._filepath and self._filepath.is_file():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._filepath)))
             self._last_mtime = self._filepath.stat().st_mtime

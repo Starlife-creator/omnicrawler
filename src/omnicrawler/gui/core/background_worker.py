@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from PyQt6.QtCore import QObject, QThread, pyqtSignal
+from PySide6.QtCore import QObject, QThread, Signal
 
 
 class BackgroundWorker(QThread):
@@ -21,8 +21,8 @@ class BackgroundWorker(QThread):
     后不发射成功信号。
     """
 
-    succeeded = pyqtSignal(object)
-    failed = pyqtSignal(str)
+    succeeded = Signal(object)
+    failed = Signal(str)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)

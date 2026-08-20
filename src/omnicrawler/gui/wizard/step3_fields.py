@@ -9,8 +9,8 @@ from __future__ import annotations
 from difflib import SequenceMatcher
 from typing import Any, Literal
 
-from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QThread, Signal
+from PySide6.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
     QDialog,
@@ -75,8 +75,8 @@ def suggest_xpath_candidates(tree: Any, samples: list[str], *, top_n: int = 3) -
 
 
 class VisualFieldThread(QThread):
-    result_ready = pyqtSignal(list)
-    error_occurred = pyqtSignal(str)
+    result_ready = Signal(list)
+    error_occurred = Signal(str)
 
     def __init__(self, url: str) -> None:
         super().__init__()

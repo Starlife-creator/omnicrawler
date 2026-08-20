@@ -8,9 +8,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 
-pytest.importorskip("PyQt6")
+pytest.importorskip("PySide6")
 
-from PyQt6.QtWidgets import QApplication, QLabel, QMainWindow
+from PySide6.QtWidgets import QApplication, QLabel, QMainWindow
 
 from omnicrawler.gui import design_system
 from omnicrawler.gui.plugin_host import install_plugin_ui
@@ -49,7 +49,7 @@ def test_install_plugin_ui_theme_registered(app: QApplication) -> None:
 
 
 def test_install_plugin_ui_actions_panels(app: QApplication) -> None:
-    from PyQt6.QtWidgets import QDockWidget
+    from PySide6.QtWidgets import QDockWidget
 
     registry = _registry_with_ui()
     window = QMainWindow()

@@ -11,12 +11,12 @@ from pathlib import Path
 import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-pytest.importorskip("PyQt6")
+pytest.importorskip("PySide6")
 
 
 @pytest.fixture(scope="module")
 def qt_app():
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance() or QApplication([])
     yield app
@@ -70,7 +70,7 @@ def test_scene_panel_candidates_accept_roundtrip(qt_app, tmp_path: Path) -> None
 
 def test_scene_panel_csv_export_escapes_formula(qt_app, tmp_path: Path, monkeypatch) -> None:
     """B10-001：CSV 导出必须 excel_safe 转义抽取值，防止 CWE-1236。"""
-    from PyQt6.QtWidgets import QFileDialog, QMessageBox
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
 
     from omnicrawler.gui.views.scene_panel import ScenePanel
     from omnicrawler.state.scene_store import SceneDocument, SceneStore

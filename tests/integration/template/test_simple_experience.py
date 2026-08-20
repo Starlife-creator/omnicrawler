@@ -92,8 +92,8 @@ def test_offline_demo_contains_all_primary_routes(tmp_path):
 
 def test_home_exposes_low_barrier_actions(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    pytest.importorskip("PyQt6", reason="home-page UI test requires optional PyQt6")
-    from PyQt6.QtWidgets import QApplication, QPushButton
+    pytest.importorskip("PySide6", reason="home-page UI test requires optional PyQt6")
+    from PySide6.QtWidgets import QApplication, QPushButton
 
     from omnicrawler.gui.home import HomePage
 

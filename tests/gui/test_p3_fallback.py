@@ -12,7 +12,7 @@ import importlib.util
 import pytest
 
 pytestmark = pytest.mark.skipif(
-    importlib.util.find_spec("PyQt6") is None,
+    importlib.util.find_spec("PySide6") is None,
     reason="GUI smoke test requires PyQt6",
 )
 
@@ -26,7 +26,7 @@ _APP = None
 def _ensure_app() -> None:
     global _APP
     if _APP is None:
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
 
         _APP = QApplication.instance() or QApplication([])
 
@@ -44,7 +44,7 @@ def _make_canvas(monkeypatch):
 
 def _patch_settings(monkeypatch, seen: bool = False) -> dict:
     """将 QSettings 指向隔离的伪存储，避免测试污染用户真实本地偏好。"""
-    from PyQt6.QtCore import QSettings
+    from PySide6.QtCore import QSettings
 
     state = {"seen": seen}
 

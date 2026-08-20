@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("PyQt6")
+pytest.importorskip("PySide6")
 
 from omnicrawler.gui.runner.env_checker import check_omnicrawler
 from omnicrawler.gui.runner.worker_task_runner import _derive_worker_command

@@ -5,7 +5,7 @@ Delegates use ``__getattr__`` to transparently forward unknown attribute
 access to the main window, so method bodies copied from MainWindow work
 without modifying every ``self.`` reference.
 
-Only loaded when PyQt6 is available.
+Only loaded when PySide6 is available.
 """
 from ._base import _BaseDelegate as _BaseDelegate
 from .config_manager import ConfigManager as ConfigManager

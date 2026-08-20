@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PyQt6")
+pytest.importorskip("PySide6")
 
 from omnicrawler.core import credentials
 from omnicrawler.gui.views.stealth_settings import _seal_proxy_list
@@ -91,7 +91,7 @@ def test_s222_proxy_list_property_resolves_ref(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(
         credentials, "get_secret", lambda name: "http://user:pass@1.2.3.4:8080"
     )
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     from omnicrawler.gui.settings import AppSettings
 
@@ -108,7 +108,7 @@ def test_s222_proxy_list_property_unresolvable_returns_empty(
         raise ValueError(f"凭据 {name!r} 未配置")
 
     monkeypatch.setattr(credentials, "get_secret", raising)
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     from omnicrawler.gui.settings import AppSettings
 
@@ -119,7 +119,7 @@ def test_s222_proxy_list_property_unresolvable_returns_empty(
 
 
 def test_s222_proxy_list_property_plaintext_passthrough() -> None:
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     from omnicrawler.gui.settings import AppSettings
 

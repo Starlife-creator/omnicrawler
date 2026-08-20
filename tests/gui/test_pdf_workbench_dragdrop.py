@@ -13,10 +13,10 @@ from unittest.mock import patch
 
 import pytest
 
-pytest.importorskip("PyQt6.QtWidgets")
+pytest.importorskip("PySide6.QtWidgets")
 
-from PyQt6.QtCore import QMimeData, QUrl
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtCore import QMimeData, QUrl
+from PySide6.QtWidgets import QApplication
 
 from omnicrawler.gui.views.pdf_workbench import PdfWorkbenchView
 
@@ -309,7 +309,7 @@ def test_view_accepts_drops_by_default() -> None:
 
 def test_view_has_add_files_button() -> None:
     """P1-4：目录选择行应包含"添加文件..."按钮。"""
-    from PyQt6.QtWidgets import QPushButton
+    from PySide6.QtWidgets import QPushButton
 
     view = _make_view()
     buttons = view.findChildren(QPushButton)

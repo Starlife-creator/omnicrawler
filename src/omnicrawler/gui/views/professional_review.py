@@ -12,9 +12,9 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFrame,
@@ -123,7 +123,7 @@ class EvidenceView(QWidget):
     """
 
     # 返回结果列表信号
-    back_to_results = pyqtSignal()  # type: ignore[has-type]
+    back_to_results = Signal()  # type: ignore[has-type]
 
     def __init__(
         self,
@@ -285,7 +285,7 @@ class EvidenceView(QWidget):
             self._capsule_store = CapsuleStore(self._capsule_workspace / "capsules")
         return self._capsule_store
 
-    @pyqtSlot()
+    @Slot()
     def _refresh_capsules(self) -> None:
         """扫描 capsules/*.log 填充运行下拉 + 当前运行胶囊表。"""
         self._cap_run_combo.blockSignals(True)
@@ -379,7 +379,7 @@ class EvidenceView(QWidget):
         """)
 
     # ── 公开接口 ───────────────────────────────────────────────
-    @pyqtSlot(object)
+    @Slot(object)
     def show_record(self, record: dict[str, Any]) -> None:
         """从 JSONL 记录字典加载并展示完整证据链。"""
         self._raw_record = record
@@ -500,7 +500,7 @@ class EvidenceView(QWidget):
             self._field_table.setItem(row, 4, conf_item)
 
     # ── 导出 ───────────────────────────────────────────────────
-    @pyqtSlot()
+    @Slot()
     def _export_markdown(self) -> None:
         """导出当前记录证据为 Markdown 文件。"""
         if self._raw_record is None:
@@ -529,7 +529,7 @@ class EvidenceView(QWidget):
             QMessageBox.critical(self, _("导出失败"), str(exc))
 
     # ── 返回 ───────────────────────────────────────────────────
-    @pyqtSlot()
+    @Slot()
     def _on_back(self) -> None:
         self.back_to_results.emit()
 

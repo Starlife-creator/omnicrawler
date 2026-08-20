@@ -17,9 +17,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from PyQt6.QtCore import QByteArray, Qt
-from PyQt6.QtGui import QColor, QIcon, QPainter, QPixmap
-from PyQt6.QtSvg import QSvgRenderer
+from PySide6.QtCore import QByteArray, Qt
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 
 # -- SVG icon data (viewBox 0 0 24 24, fill="currentColor") ----------
 _SVG_ICONS: dict[str, str] = {

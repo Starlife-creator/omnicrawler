@@ -1,8 +1,8 @@
 """Theme, accessibility, and display scaling delegate."""
 from __future__ import annotations
 
-from PyQt6.QtGui import QPalette
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtGui import QPalette
+from PySide6.QtWidgets import QApplication
 
 from ..accessibility import AccessibilityProfile, apply_accessibility
 from ..design_system import apply_design_system

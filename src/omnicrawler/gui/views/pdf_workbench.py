@@ -11,9 +11,9 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import Qt, QThread, QUrl, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QThread, QUrl, Signal, Slot
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -43,17 +43,17 @@ class _PdfPipelineWorker(QThread):
     """后台线程：执行 PDF 处理流水线，通过信号报告进度。
 
     P2-4：内部由 ProgressTracker 驱动（阶段权重 + 子项展开 + EMA ETA），
-    同时发出旧式 pyqtSignal，旧消费者代码无需修改。
+    同时发出旧式 Signal，旧消费者代码无需修改。
     """
 
-    stage_started = pyqtSignal(str)       # 阶段名（中文）
-    stage_finished = pyqtSignal(str, object)  # 阶段名, 结果 dict
-    warnings_received = pyqtSignal(list)  # D3：运行时警告（如“大模型已启用但 Key 空”）
-    progress = pyqtSignal(int)            # 0-100
-    all_done = pyqtSignal(object)         # 全部结果 dict
-    failed = pyqtSignal(str)              # 错误消息
-    document_progress = pyqtSignal(int, int)  # B12：已处理文档数, 总文档数（抽取阶段实时汇报）
-    unified_progress = pyqtSignal(object)  # P2-4：TaskProgressEvent（新消费者可直接使用）
+    stage_started = Signal(str)       # 阶段名（中文）
+    stage_finished = Signal(str, object)  # 阶段名, 结果 dict
+    warnings_received = Signal(list)  # D3：运行时警告（如“大模型已启用但 Key 空”）
+    progress = Signal(int)            # 0-100
+    all_done = Signal(object)         # 全部结果 dict
+    failed = Signal(str)              # 错误消息
+    document_progress = Signal(int, int)  # B12：已处理文档数, 总文档数（抽取阶段实时汇报）
+    unified_progress = Signal(object)  # P2-4：TaskProgressEvent（新消费者可直接使用）
 
     def __init__(
         self,
@@ -444,7 +444,7 @@ class PdfWorkbenchView(QWidget):
         """)
 
     # ── 目录浏览 ──────────────────────────────────────────────
-    @pyqtSlot()
+    @Slot()
     def _browse_dir(self) -> None:
         path = QFileDialog.getExistingDirectory(self, _("选择 PDF 目录"))
         if path:
@@ -452,7 +452,7 @@ class PdfWorkbenchView(QWidget):
             self._scan_directory()
 
     # ── P1-4：添加文件与拖放 ─────────────────────────────────
-    @pyqtSlot()
+    @Slot()
     def _add_files(self) -> None:
         """通过文件对话框多选 PDF 文件，暂存后扫描（与拖入文件共用归集逻辑）。"""
         paths, _selected_filter = QFileDialog.getOpenFileNames(
@@ -569,7 +569,7 @@ class PdfWorkbenchView(QWidget):
         event.ignore()
 
     # ── 扫描目录 ──────────────────────────────────────────────
-    @pyqtSlot()
+    @Slot()
     def _scan_directory(self) -> None:
         dir_path = self._dir_input.text().strip()
         if not dir_path:
@@ -649,7 +649,7 @@ class PdfWorkbenchView(QWidget):
             return f"{size / (1024 * 1024 * 1024):.2f} GB"
 
     # ── 执行 ───────────────────────────────────────────────────
-    @pyqtSlot()
+    @Slot()
     def _execute(self) -> None:
         if self._state != "ready" or not self._pdf_files:
             return
@@ -844,16 +844,16 @@ class PdfWorkbenchView(QWidget):
             os.environ[key] = value
             self._injected_keys.append(key)
 
-    @pyqtSlot(str)
+    @Slot(str)
     def _on_stage_started(self, stage: str) -> None:
         self._stage_label.setText(f"⏳ {stage}...")
 
-    @pyqtSlot(str, object)
+    @Slot(str, object)
     def _on_stage_finished(self, stage: str, result: object) -> None:
         del result  # 无信息量载荷，仅通知到达
         self._stage_label.setText(_(f"✓ {stage} 完成"))
 
-    @pyqtSlot(int, int)
+    @Slot(int, int)
     def _on_document_progress(self, processed: int, total: int) -> None:
         """B12：抽取阶段实时把「已处理 X/Y 文档」混入进度条，避免大批量时卡死错觉。
 
@@ -868,7 +868,7 @@ class PdfWorkbenchView(QWidget):
         self._progress_bar.setValue(min(pct, 99))
         self._stage_label.setText(_(f"⏳ 抽取文档 {processed}/{total}..."))
 
-    @pyqtSlot(list)
+    @Slot(list)
     def _on_warnings(self, items: list) -> None:
         """D3：显示管线关键警告（AI Key 为空/OCR 未启用等），不再静默丢弃。"""
         for item in items:
@@ -877,7 +877,7 @@ class PdfWorkbenchView(QWidget):
         block = "\n".join(f"⚠ {item}" for item in items)
         self._result_text.setText(_(f"{existing}\n\n[运行警告]\n{block}") if existing else _(f"[运行警告]\n{block}"))
 
-    @pyqtSlot(object)
+    @Slot(object)
     def closeEvent(self, event) -> None:
         """S1.1.5：关闭前取消并等待 PDF 后台线程，避免 QThread 销毁时仍在运行。"""
         worker = getattr(self, "_worker", None)
@@ -968,7 +968,7 @@ class PdfWorkbenchView(QWidget):
             os.environ.pop(key, None)
         self._injected_keys = []
 
-    @pyqtSlot(str)
+    @Slot(str)
     def _on_failed(self, msg: str) -> None:
         self._clear_injected_env()
         self._state = "idle"
@@ -989,7 +989,7 @@ class PdfWorkbenchView(QWidget):
         toast.error(_(f"PDF 处理失败: {msg.split(chr(10))[0]}"))
 
     # ── 取消 ───────────────────────────────────────────────────
-    @pyqtSlot()
+    @Slot()
     def _cancel(self) -> None:
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
@@ -999,7 +999,7 @@ class PdfWorkbenchView(QWidget):
             self._clear_injected_env()
 
     # ── 打开结果 ──────────────────────────────────────────────
-    @pyqtSlot()
+    @Slot()
     def _open_output_dir(self) -> None:
         if self._temp_dir:
             output = os.path.join(self._temp_dir, "output")
@@ -1010,7 +1010,7 @@ class PdfWorkbenchView(QWidget):
         toast = ToastManager.instance()
         toast.warning(_("输出目录不存在或已被清理"))
 
-    @pyqtSlot()
+    @Slot()
     def _open_excel(self) -> None:
         if not self._temp_dir:
             return
@@ -1027,7 +1027,7 @@ class PdfWorkbenchView(QWidget):
             toast.warning(_("未找到 Excel/CSV 输出文件"))
 
     # ── 重置 ───────────────────────────────────────────────────
-    @pyqtSlot()
+    @Slot()
     def _reset(self) -> None:
         self._state = "idle"
         self._result_group.setVisible(False)

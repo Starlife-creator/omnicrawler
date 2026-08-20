@@ -4,9 +4,9 @@ from __future__ import annotations
 import html
 import tempfile
 
-from PyQt6.QtCore import QUrl
-from PyQt6.QtGui import QDesktopServices, QPalette
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices, QPalette
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from ... import __version__ as APP_VERSION  # noqa: N812
 from ..i18n import _
@@ -37,7 +37,7 @@ class HelpDialogManager(_BaseDelegate):
         # S3.1.13：延迟删除临时文件（浏览器读取后清理），不再每次泄漏 tmp
         from pathlib import Path as _Path
 
-        from PyQt6.QtCore import QTimer
+        from PySide6.QtCore import QTimer
 
         QTimer.singleShot(60_000, lambda: _Path(tmp.name).unlink(missing_ok=True))
 
@@ -91,7 +91,7 @@ class HelpDialogManager(_BaseDelegate):
             + _("<p>项目目录: {0}</p>").format(html.escape(str(mw._project_root)))
             + "<hr>"
             + _("<p>模块化网站采集与 PDF 数据抽取平台</p>")
-            + f"<p>Python {_sys.version.split()[0]} | PyQt6</p>"
+            + f"<p>Python {_sys.version.split()[0]} | PySide6</p>"
         )
         QMessageBox.about(mw, _("关于 OmniCrawler GUI"), text)
 

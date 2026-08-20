@@ -47,20 +47,20 @@ _GUI_APP_HOLD = None
 
 if not _cli_mode():
     try:
-        from PyQt6.QtCore import (
+        from PySide6.QtCore import (
             QObject,
             Qt,
             QThread,
             QTimer,
             QUrl,
-            pyqtSignal,
-            pyqtSlot,
+            Signal,
+            Slot,
         )
-        from PyQt6.QtGui import (
+        from PySide6.QtGui import (
             QAction,
             QDesktopServices,
         )
-        from PyQt6.QtWidgets import (
+        from PySide6.QtWidgets import (
             QApplication,
             QCheckBox,
             QComboBox,
@@ -86,7 +86,7 @@ if not _cli_mode():
             QWidget,
         )
     except ImportError as e:
-        print(_(f"PyQt6 未安装，无法启动图形界面: {e}"), file=sys.stderr)
+        print(_(f"PySide6 未安装，无法启动图形界面: {e}"), file=sys.stderr)
         print(_("请运行: pip install omnicrawler-platform[gui]"), file=sys.stderr)
         sys.exit(1)
 
@@ -167,8 +167,8 @@ def _thread_interrupted() -> bool:
 
 
 class SiteInspectionWorker(QObject):
-    finished = pyqtSignal(object, str)
-    failed = pyqtSignal(str)
+    finished = Signal(object, str)
+    failed = Signal(str)
 
     def __init__(self, url: str, intent: str = "", fetcher: Any | None = None) -> None:
         super().__init__()
@@ -177,7 +177,7 @@ class SiteInspectionWorker(QObject):
         # P2：探活复用共享 AsyncFetcher（内部经 EgressBroker 审计出网）
         self.fetcher = fetcher
 
-    @pyqtSlot()
+    @Slot()
     def run(self) -> None:
         try:
             if _thread_interrupted():
@@ -319,15 +319,15 @@ class TemplateLibraryDialog(QDialog):
 
 
 class ActionRecorderWorker(QObject):
-    finished = pyqtSignal(dict)
-    failed = pyqtSignal(str)
+    finished = Signal(dict)
+    failed = Signal(str)
 
     def __init__(self, url: str, output: Path) -> None:
         super().__init__()
         self._url = url
         self._output = output
 
-    @pyqtSlot()
+    @Slot()
     def run(self) -> None:
         try:
             from ..fetching.action_recorder import record_with_playwright
@@ -342,15 +342,15 @@ class ActionRecorderWorker(QObject):
 
 
 class SampleRunWorker(QObject):
-    finished = pyqtSignal(dict)
-    failed = pyqtSignal(str)
+    finished = Signal(dict)
+    failed = Signal(str)
 
     def __init__(self, config_path: Path, pages: int = 3) -> None:
         super().__init__()
         self._config_path = config_path
         self._pages = pages
 
-    @pyqtSlot()
+    @Slot()
     def run(self) -> None:
         try:
             if _thread_interrupted():
@@ -407,7 +407,7 @@ class MainWindow(QMainWindow):
         def _gui_trust_prompter(
             plugin_id: str, username: str, fingerprint: str
         ) -> TrustPromptResult:
-            from PyQt6.QtWidgets import QMessageBox
+            from PySide6.QtWidgets import QMessageBox
 
             box = QMessageBox(self)
             box.setWindowTitle(_("信任确认"))
@@ -643,19 +643,19 @@ class MainWindow(QMainWindow):
     def _update_elapsed(self) -> None:
         self._run_delegate.update_elapsed()
 
-    @pyqtSlot(str, str)
+    @Slot(str, str)
     def _on_log_line(self, message: str, level: str) -> None:
         self._run_delegate.on_log_line(message, level)
 
-    @pyqtSlot(int, str)
+    @Slot(int, str)
     def _on_progress(self, percent: int, url: str) -> None:
         self._run_delegate.on_progress(percent, url)
 
-    @pyqtSlot(str)
+    @Slot(str)
     def _on_task_state_changed(self, state: str) -> None:
         self._run_delegate.on_task_state_changed(state)
 
-    @pyqtSlot(str, int)
+    @Slot(str, int)
     def _on_task_finished(self, task_id: str, exit_code: int) -> None:
         self._run_delegate.on_task_finished(task_id, exit_code)
 
@@ -1870,7 +1870,7 @@ class MainWindow(QMainWindow):
         if workspace.is_dir():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(workspace)))
 
-    @pyqtSlot(str)
+    @Slot(str)
     def _on_draft_found(self, draft_path: str) -> None:
         reply = QMessageBox.question(
             self, _("恢复草稿"),

@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("PyQt6")
+pytest.importorskip("PySide6")
 
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 from omnicrawler.gui.delegates.error_dialog import ErrorDialogHelper
 from omnicrawler.gui.help_center import HelpCenterDock

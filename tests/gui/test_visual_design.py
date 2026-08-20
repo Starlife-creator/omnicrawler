@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PyQt6", reason="visual design tests require the optional PyQt6 dependency")
+pytest.importorskip("PySide6", reason="visual design tests require the optional PyQt6 dependency")
 from omnicrawler.gui.design_system import (
     DARK,
     HIGH_CONTRAST,
@@ -39,8 +39,8 @@ def test_visual_tokens_have_readable_text_focus_and_accessibility_variants():
 
 def test_visual_theme_home_transition_and_help_visibility(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PyQt6.QtTest import QTest
-    from PyQt6.QtWidgets import QApplication, QFrame, QGraphicsDropShadowEffect
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication, QFrame, QGraphicsDropShadowEffect
 
     from omnicrawler.gui.home import AmbientHero
     from omnicrawler.gui.main import MainWindow
@@ -74,7 +74,7 @@ def test_visual_theme_home_transition_and_help_visibility(monkeypatch, tmp_path)
 
 def test_page_transition_respects_reduced_motion(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PyQt6.QtWidgets import QApplication, QLabel, QStackedWidget
+    from PySide6.QtWidgets import QApplication, QLabel, QStackedWidget
 
     app = QApplication.instance() or QApplication([])
     stack = QStackedWidget()
@@ -90,8 +90,8 @@ def test_page_transition_respects_reduced_motion(monkeypatch):
 def test_page_transition_ignores_completion_after_its_page_is_deleted(monkeypatch):
     """Queued animation completion must not call into a Qt object after teardown."""
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PyQt6.QtTest import QTest
-    from PyQt6.QtWidgets import QApplication, QLabel, QStackedWidget
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication, QLabel, QStackedWidget
 
     app = QApplication.instance() or QApplication([])
     stack = QStackedWidget()

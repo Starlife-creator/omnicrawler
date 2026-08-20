@@ -5,7 +5,7 @@ import importlib.util
 import pytest
 
 pytestmark = pytest.mark.skipif(
-    importlib.util.find_spec("PyQt6") is None,
+    importlib.util.find_spec("PySide6") is None,
     reason="GUI test requires PyQt6",
 )
 
@@ -16,7 +16,7 @@ def _qt_app():
     import os
 
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance() or QApplication([])
     yield app

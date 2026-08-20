@@ -17,9 +17,9 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import QThread, QTimer, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QThread, QTimer, Signal, Slot
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
@@ -76,8 +76,8 @@ CONDITION_OPTIONS = [
 class _CheckWorker(QThread):
     """后台执行 change_detector.check_all()，避免阻塞 GUI。"""
 
-    finished = pyqtSignal(list)   # list[ChangeEvent]
-    error = pyqtSignal(str)
+    finished = Signal(list)   # list[ChangeEvent]
+    error = Signal(str)
 
     def __init__(
         self,
@@ -410,7 +410,7 @@ class ChangeMonitorView(QWidget):
     """
 
     # 信号：通知 main.py 弹出系统托盘消息
-    desktop_notify = pyqtSignal(str, str)  # title, message
+    desktop_notify = Signal(str, str)  # title, message
 
     def __init__(
         self,
@@ -652,7 +652,7 @@ class ChangeMonitorView(QWidget):
         if due:
             self._check_all()
 
-    @pyqtSlot(list)
+    @Slot(list)
     def _on_check_finished(self, events: list) -> None:
         self._worker = None
         events_list = list(events)
@@ -693,7 +693,7 @@ class ChangeMonitorView(QWidget):
             self._save_rules()
             self._refresh_list()
 
-    @pyqtSlot(str)
+    @Slot(str)
     def _on_check_error(self, error: str) -> None:
         self._worker = None
         self._status_label.setText(_("检查失败"))
@@ -769,7 +769,7 @@ class ChangeMonitorView(QWidget):
         if not rule_id:
             return
 
-        from PyQt6.QtWidgets import QMenu
+        from PySide6.QtWidgets import QMenu
 
         menu = QMenu(self)
         menu.addAction(_("编辑"), lambda: self._edit_rule(rule_id))

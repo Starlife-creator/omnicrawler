@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import html
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QMessageBox, QPushButton, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QMessageBox, QPushButton, QWidget
 
 from ...services.help_registry import get_help
 from ..design_system import RADIUS, ThemeManager

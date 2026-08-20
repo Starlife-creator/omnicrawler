@@ -5,7 +5,7 @@ import re
 import traceback
 from typing import Any
 
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from ..i18n import _
 from ._base import _BaseDelegate

@@ -10,15 +10,19 @@ import pytest
 
 @pytest.fixture(scope="module")
 def qt_app():
-    widgets = pytest.importorskip("PyQt6.QtWidgets")
+    widgets = pytest.importorskip("PySide6.QtWidgets")
+    # 测试隔离：前序单测可能改动 i18n 全局语言（如切英文），GUI 断言依赖中文
+    # 文案，故在此重置为默认 zh_CN，避免跨文件状态泄漏导致 flaky。
+    from omnicrawler.gui import i18n
 
+    i18n.set_language("zh_CN")
     return widgets.QApplication.instance() or widgets.QApplication([])
 
 
 def test_result_table_stream_filter_evidence_paging_and_exports(qt_app, tmp_path, monkeypatch):
-    from PyQt6.QtCore import QModelIndex
-    from PyQt6.QtGui import QDesktopServices
-    from PyQt6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
+    from PySide6.QtCore import QModelIndex
+    from PySide6.QtGui import QDesktopServices
+    from PySide6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
 
     from omnicrawler.gui.views.result_table import CsvStreamModel, ExportThread, ResultTable
 
@@ -39,7 +43,7 @@ def test_result_table_stream_filter_evidence_paging_and_exports(qt_app, tmp_path
     assert model.rowCount() == 1000 and model.columnCount() == 3
     assert model.data(QModelIndex()) is None
     assert model.data(model.index(0, 1)) == "title 0"
-    assert model.headerData(0, __import__("PyQt6.QtCore", fromlist=["Qt"]).Qt.Orientation.Horizontal) == "record_id"
+    assert model.headerData(0, __import__("PySide6.QtCore", fromlist=["Qt"]).Qt.Orientation.Horizontal) == "record_id"
     assert model.canFetchMore(QModelIndex()) is False
     model.go_to_page(999)
     model.go_to_page(1)
@@ -107,7 +111,7 @@ def test_result_table_stream_filter_evidence_paging_and_exports(qt_app, tmp_path
 
 
 def test_yaml_editor_sync_diff_format_and_file_paths(qt_app, tmp_path, monkeypatch):
-    from PyQt6.QtWidgets import QMessageBox
+    from PySide6.QtWidgets import QMessageBox
 
     from omnicrawler.gui.core.config_model import CrawlConfig
     from omnicrawler.gui.views.yaml_editor import YamlEditor
@@ -143,8 +147,8 @@ def test_yaml_editor_sync_diff_format_and_file_paths(qt_app, tmp_path, monkeypat
 
 
 def test_log_console_filters_search_redaction_trim_and_export(qt_app, tmp_path, monkeypatch):
-    from PyQt6.QtGui import QTextCursor
-    from PyQt6.QtWidgets import QFileDialog
+    from PySide6.QtGui import QTextCursor
+    from PySide6.QtWidgets import QFileDialog
 
     import omnicrawler.gui.widgets.log_console as module
     from omnicrawler.gui.widgets.log_console import LogConsole
@@ -177,7 +181,7 @@ def test_log_console_filters_search_redaction_trim_and_export(qt_app, tmp_path, 
 
 
 def test_task_history_persistence_cleanup_and_signals(qt_app, tmp_path, monkeypatch):
-    from PyQt6.QtWidgets import QMessageBox
+    from PySide6.QtWidgets import QMessageBox
 
     from omnicrawler.gui.views.task_history import TaskHistory
 

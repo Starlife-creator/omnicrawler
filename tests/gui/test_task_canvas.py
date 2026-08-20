@@ -6,7 +6,7 @@ import importlib.util
 import pytest
 
 pytestmark = pytest.mark.skipif(
-    importlib.util.find_spec("PyQt6") is None,
+    importlib.util.find_spec("PySide6") is None,
     reason="GUI smoke test requires PyQt6",
 )
 
@@ -20,7 +20,7 @@ _APP = None
 def _ensure_app() -> None:
     global _APP
     if _APP is None:
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
 
         _APP = QApplication.instance() or QApplication([])
 
@@ -48,7 +48,7 @@ def _set_first_field(canvas, name="标题", selector="", kind="css"):
 
 def _patch_editor_dialog(monkeypatch, choose_load: bool):
     """将外部编辑冲突对话框替换为无阻塞，并返回「被点按钮」引用。"""
-    from PyQt6.QtWidgets import QMessageBox
+    from PySide6.QtWidgets import QMessageBox
 
     captured: dict = {}
     real_add = QMessageBox.addButton  # 必须在 patch 前捕获原始方法
@@ -122,7 +122,7 @@ def test_trial_stale_invalidation(monkeypatch):
 
 def test_external_edit_conflict_locks_and_blocks_save(monkeypatch):
     """YAML 外部编辑冲突：锁定态禁保存/禁编辑，用户二选一后解锁。"""
-    from PyQt6.QtWidgets import QMessageBox
+    from PySide6.QtWidgets import QMessageBox
 
     canvas = _make_canvas(monkeypatch)
     canvas._url_edit.setText("https://example.org/news")

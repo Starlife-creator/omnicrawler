@@ -12,8 +12,8 @@ import json
 from pathlib import Path
 
 import yaml
-from PyQt6.QtCore import pyqtSlot
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Slot
+from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QComboBox,
@@ -157,7 +157,7 @@ class ScenePanel(QWidget):
         root.addWidget(cand_box, 1)
 
     # ── 行为 ──────────────────────────────────────────────
-    @pyqtSlot()
+    @Slot()
     def refresh_scenes(self) -> None:
         """重载场景下拉 + 首场景内容。"""
         current = self._current_scene()
@@ -247,7 +247,7 @@ class ScenePanel(QWidget):
             self._cand_table.setItem(row, 4, QTableWidgetItem(str(item.get("created_at", ""))))
         self._btn_accept.setEnabled(bool(candidates))
 
-    @pyqtSlot()
+    @Slot()
     def _accept_selected(self) -> None:
         """接受当前选中候选行（写回 SceneStore.accept_candidate）。"""
         row = self._cand_table.currentRow()
@@ -264,7 +264,7 @@ class ScenePanel(QWidget):
             return
         self._reload_scene_content()
 
-    @pyqtSlot()
+    @Slot()
     def _export_accepted(self) -> None:
         """导出当前场景已验收候选（文档级透视 JSON/CSV，标准库零依赖）。"""
         scene = self._current_scene()
@@ -310,7 +310,7 @@ class ScenePanel(QWidget):
             _("已导出 {0} 条文档的已验收结果到：\n{1}").format(len(rows), path),
         )
 
-    @pyqtSlot()
+    @Slot()
     def _export_slot_fields(self) -> None:
         """场景槽位定义 → 任务字段配置（对齐模板 extract.fields 格式）。
 

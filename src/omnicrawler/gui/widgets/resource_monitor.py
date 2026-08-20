@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QWidget
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from ..design_system import FONT_SIZE, ThemeManager
 from ..i18n import _

@@ -1,7 +1,7 @@
 """Toolbar construction delegate."""
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QComboBox, QLabel, QPushButton
+from PySide6.QtWidgets import QComboBox, QLabel, QPushButton
 
 from ..i18n import _
 from ._base import _BaseDelegate

@@ -15,8 +15,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -559,7 +559,7 @@ class PluginMarketView(QWidget):
 
     def _prompt_p2p_trust(self, plugin_id: str) -> None:
         """安装的插件仅带创作者签名（无维护者签名）时，询问是否信任该创作者。"""
-        from PyQt6.QtWidgets import QMessageBox
+        from PySide6.QtWidgets import QMessageBox
 
         from ...plugins.trust import TrustedUserList, TrustLevel, verify_plugin_trust
 
@@ -595,7 +595,7 @@ class PluginMarketView(QWidget):
         self._update_action_buttons()
 
     def _on_uninstall(self) -> None:
-        from PyQt6.QtWidgets import QMessageBox
+        from PySide6.QtWidgets import QMessageBox
 
         pid = self._selected_id
         if not pid or not self._is_installed(pid):

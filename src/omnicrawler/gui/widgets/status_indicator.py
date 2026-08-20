@@ -5,9 +5,9 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor, QPainter, QPaintEvent
-from PyQt6.QtWidgets import QWidget
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QColor, QPainter, QPaintEvent
+from PySide6.QtWidgets import QWidget
 
 from ..design_system import ThemeManager
 from ..i18n import _

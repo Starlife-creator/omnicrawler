@@ -101,3 +101,6 @@ logs/
 docker-compose.override.yml
 .omnicrawl_monitor/
 tmp_es.json
+
+# GUI 运行时监控基线（本地产物）
+.omnicrawler_monitor/

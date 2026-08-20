@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QApplication
 
 
 @dataclass(frozen=True, slots=True)

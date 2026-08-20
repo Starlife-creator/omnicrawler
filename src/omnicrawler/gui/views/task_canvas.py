@@ -21,8 +21,8 @@ from typing import Any, Literal, cast
 
 LOGGER = logging.getLogger(__name__)
 
-from PyQt6.QtCore import QAbstractTableModel, QModelIndex, Qt, QThread, QTimer, pyqtSignal
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, QThread, QTimer, Signal
+from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
@@ -106,9 +106,9 @@ class _PlanReviewWorker(QThread):
     采纳/忽略由画布纯 UI 处理，无 AI 时画布走本地轨不受影响。
     """
 
-    result_ready = pyqtSignal(object)  # NaturalLanguageDraft（ai_enhanced=True）
-    ai_unavailable = pyqtSignal(str)  # reason（未启用/隐私禁用）
-    ai_error = pyqtSignal(str)  # error message（调用失败/越权拦截）
+    result_ready = Signal(object)  # NaturalLanguageDraft（ai_enhanced=True）
+    ai_unavailable = Signal(str)  # reason（未启用/隐私禁用）
+    ai_error = Signal(str)  # error message（调用失败/越权拦截）
 
     def __init__(self, request: str, parent: QWidget | None = None, project_root: str | None = None) -> None:
         super().__init__(parent)
@@ -258,7 +258,7 @@ class _Section(QGroupBox):
     满足 PRD §2.4「验证区永不消失」）；其余 body 内容折叠时隐藏。
     """
 
-    toggled = pyqtSignal(bool)
+    toggled = Signal(bool)
 
     def __init__(
         self,
@@ -309,13 +309,13 @@ class _Section(QGroupBox):
 class TaskCanvas(QScrollArea):
     """五区域任务画布。"""
 
-    config_changed = pyqtSignal()
-    save_requested = pyqtSignal()
-    trial_run_requested = pyqtSignal()
-    run_requested = pyqtSignal()
-    yaml_view_requested = pyqtSignal()
+    config_changed = Signal()
+    save_requested = Signal()
+    trial_run_requested = Signal()
+    run_requested = Signal()
+    yaml_view_requested = Signal()
     # P2：意图区 URL 探活（600ms 停顿后触发；结果经 set_probe_result 回填徽标）
-    probe_requested = pyqtSignal(str)
+    probe_requested = Signal(str)
 
     # 探活停顿（毫秒）：用户停止输入后再发起轻量探测
     _PROBE_DEBOUNCE_MS = 600
@@ -1702,7 +1702,7 @@ class TaskCanvas(QScrollArea):
         """「👎 不准确」：弹出预设标签菜单，选择后记录诊断快照（PRD §3.2）。"""
         if self._recommendation is None:
             return
-        from PyQt6.QtWidgets import QMenu
+        from PySide6.QtWidgets import QMenu
 
         from ...quality.template_feedback import REJECT_LABELS
 

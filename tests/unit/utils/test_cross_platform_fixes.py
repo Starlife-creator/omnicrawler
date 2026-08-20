@@ -23,7 +23,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 def test_a16_config_default_user_agent_tracks_package_version() -> None:
     """A16：ProjectConfig 默认 UA 不再硬编码 "OmniCrawler-GUI/1.1"。"""
-    pytest.importorskip("PyQt6")
+    pytest.importorskip("PySide6")
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
     from omnicrawler import __version__
     from omnicrawler.gui.core.config_model import CrawlConfig
@@ -36,7 +36,7 @@ def test_a16_config_default_user_agent_tracks_package_version() -> None:
 
 def test_a16_home_version_fallback_uses_package_version(monkeypatch) -> None:
     """A16：包版本读取失败时回退 omnicrawler.__version__ 而非硬编码 "2.7"。"""
-    pytest.importorskip("PyQt6")
+    pytest.importorskip("PySide6")
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
     import importlib.metadata
 
@@ -63,9 +63,9 @@ def test_a21_settings_clear_recent_is_public(monkeypatch, tmp_path) -> None:
     有效。现 monkeypatch is_frozen + portable_data_root 走 F53 便携分支，
     写入落到 tmp_path，且用 tmp_path 下文件替代硬编码路径。
     """
-    pytest.importorskip("PyQt6")
+    pytest.importorskip("PySide6")
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     import omnicrawler.core.runtime_paths as runtime_paths
     from omnicrawler.gui.settings import AppSettings
@@ -91,9 +91,9 @@ def test_a21_settings_clear_recent_is_public(monkeypatch, tmp_path) -> None:
 
 def test_b9_csv_index_no_100k_truncation(tmp_path) -> None:
     """B9：结果表大文件不再截断——完整行数可索引。"""
-    pytest.importorskip("PyQt6")
+    pytest.importorskip("PySide6")
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     from omnicrawler.gui.views.result_table import ROWS_PER_PAGE, CsvStreamModel
 
@@ -113,14 +113,16 @@ def test_b9_csv_index_no_100k_truncation(tmp_path) -> None:
     assert model.rowCount() == 7  # 尾页完整
 
     # 异步路径同样完整计数
-    from PyQt6.QtTest import QSignalSpy
+    from PySide6.QtTest import QSignalSpy
 
     from omnicrawler.gui.async_workers import CsvIndexWorker
     worker = CsvIndexWorker(csv_path)
     spy = QSignalSpy(worker.finished_indexing)
     worker.run()
-    assert len(spy) == 1, "异步索引未完成"
-    headers, total_rows, file_size = spy[0]
+    # Phase 0 M0b：PySide6 的 QSignalSpy 无 __len__/__getitem__，
+    # 用 count()/at(i)（第 39 轮 API 差异）
+    assert spy.count() == 1, "异步索引未完成"
+    headers, total_rows, file_size = spy.at(0)
     assert headers == ["a", "b", "c"]
     assert total_rows == ROWS_PER_PAGE * 3 + 7  # 与同步路径一致，未被截断
     assert file_size > 0
@@ -128,8 +130,8 @@ def test_b9_csv_index_no_100k_truncation(tmp_path) -> None:
 
 def test_b9_csv_tail_reachable_beyond_100k_rows(tmp_path) -> None:
     """B9：超过 10 万行时尾页仍可达且内容正确（旧实现在第 100000 行 break 丢尾部）。"""
-    pytest.importorskip("PyQt6")
-    from PyQt6.QtWidgets import QApplication
+    pytest.importorskip("PySide6")
+    from PySide6.QtWidgets import QApplication
 
     from omnicrawler.gui.views.result_table import ROWS_PER_PAGE, CsvStreamModel
 
@@ -188,9 +190,9 @@ def test_b10_headless_runner_sets_pythonioencoding(tmp_path, monkeypatch) -> Non
 
 def test_b11_worker_task_runner_tolerates_none_created_at(tmp_path, monkeypatch) -> None:
     """B11：config.created_at 为 None 时 start() 不再 AttributeError。"""
-    pytest.importorskip("PyQt6")
+    pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     from omnicrawler.gui.core.config_model import CrawlConfig
     from omnicrawler.gui.runner.worker_task_runner import WorkerTaskRunner

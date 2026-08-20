@@ -9,8 +9,8 @@ import logging
 import re
 from datetime import datetime
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSlot
-from PyQt6.QtGui import (
+from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtGui import (
     QAction,
     QColor,
     QFont,
@@ -19,7 +19,7 @@ from PyQt6.QtGui import (
     QTextCursor,
     QTextDocument,
 )
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QHBoxLayout,
@@ -167,7 +167,7 @@ class LogConsole(QWidget):
             }}
         """)
 
-    @pyqtSlot(str, str)
+    @Slot(str, str)
     def append_log(self, message: str, level: str = "info") -> None:
         """追加日志行。
 

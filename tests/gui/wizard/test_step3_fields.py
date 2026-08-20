@@ -4,12 +4,12 @@ import importlib.util
 
 import pytest
 
-pytest.importorskip("PyQt6")
+pytest.importorskip("PySide6")
 
 from omnicrawler.gui.wizard.step3_fields import selector_kind, suggest_xpath_candidates
 
 requires_qt = pytest.mark.skipif(
-    importlib.util.find_spec("PyQt6") is None,
+    importlib.util.find_spec("PySide6") is None,
     reason="需要 PyQt6",
 )
 
@@ -18,7 +18,7 @@ requires_qt = pytest.mark.skipif(
 def smart_dialog(monkeypatch):
     """离屏构造 SmartExtractDialog。"""
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     from omnicrawler.gui.wizard.step3_fields import SmartExtractDialog
 
@@ -120,7 +120,7 @@ def test_heuristic_mode_label_does_not_claim_real_ai(smart_dialog) -> None:
 @requires_qt
 def test_accept_without_selection_is_rejected(smart_dialog, monkeypatch) -> None:
     """B8：未选中结果行时确认必须被拒绝，且不产生空 XPath。"""
-    from PyQt6.QtWidgets import QDialog, QMessageBox
+    from PySide6.QtWidgets import QDialog, QMessageBox
 
     warnings: list[str] = []
     monkeypatch.setattr(
@@ -141,7 +141,7 @@ def test_accept_without_selection_is_rejected(smart_dialog, monkeypatch) -> None
 @requires_qt
 def test_accept_rejects_row_with_empty_xpath(smart_dialog, monkeypatch) -> None:
     """B8：选中行但 XPath 为空（如"未找到匹配"行）同样应被拒绝。"""
-    from PyQt6.QtWidgets import QMessageBox, QTableWidgetItem
+    from PySide6.QtWidgets import QMessageBox, QTableWidgetItem
 
     monkeypatch.setattr(
         QMessageBox, "warning", lambda *args, **kwargs: QMessageBox.StandardButton.Ok
@@ -161,7 +161,7 @@ def test_accept_rejects_row_with_empty_xpath(smart_dialog, monkeypatch) -> None:
 @requires_qt
 def test_accept_with_valid_selection_binds_xpath(smart_dialog) -> None:
     """B8 回归：选中有效行时确认仍正常返回 XPath。"""
-    from PyQt6.QtWidgets import QTableWidgetItem
+    from PySide6.QtWidgets import QTableWidgetItem
 
     table = smart_dialog._result_table
     table.setRowCount(1)

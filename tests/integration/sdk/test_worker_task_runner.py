@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-pytestmark = pytest.mark.skipif(importlib.util.find_spec("PyQt6") is None, reason="PyQt6 required")
+pytestmark = pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 required")
 
 
 class _Backend:
@@ -42,7 +42,7 @@ class _Backend:
 
 def test_worker_task_runner_start_control_poll_and_attach(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     from omnicrawler.gui.core.config_model import CrawlConfig
     from omnicrawler.gui.runner.worker_task_runner import WorkerTaskRunner
@@ -72,7 +72,7 @@ def test_worker_task_runner_start_control_poll_and_attach(tmp_path: Path, monkey
 
 def test_worker_zero_records_warns_but_still_succeeds(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     from omnicrawler.gui.runner.worker_task_runner import WorkerTaskRunner
 
@@ -94,7 +94,7 @@ def test_worker_zero_records_warns_but_still_succeeds(tmp_path: Path, monkeypatc
 
 def test_worker_partial_success_is_recognized_as_finished(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     from omnicrawler.gui.runner.worker_task_runner import WorkerTaskRunner
 

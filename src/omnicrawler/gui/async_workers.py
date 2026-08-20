@@ -3,7 +3,7 @@
 将数据密集操作（CSV 加载、JSONL 解析、SQLite 查询、模板组合）
 移出 GUI 主线程，避免界面冻结。
 
-使用 QThread + pyqtSignal 模式，结果在主线程中安全消费。
+使用 QThread + Signal 模式，结果在主线程中安全消费。
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 
 class CsvLoadWorker(QThread):
@@ -24,8 +24,8 @@ class CsvLoadWorker(QThread):
     支持大文件抽样限制，避免内存溢出。
     """
 
-    finished_loading = pyqtSignal(list, list, dict, int)  # headers, sample_rows, completeness, total_rows
-    failed = pyqtSignal(str)
+    finished_loading = Signal(list, list, dict, int)  # headers, sample_rows, completeness, total_rows
+    failed = Signal(str)
 
     def __init__(
         self,
@@ -70,8 +70,8 @@ class JsonlLoadWorker(QThread):
     逐行解析 JSONL 文件，返回解析后的记录列表。
     """
 
-    finished_loading = pyqtSignal(list, int)  # records, total_count
-    failed = pyqtSignal(str)
+    finished_loading = Signal(list, int)  # records, total_count
+    failed = Signal(str)
 
     def __init__(
         self,
@@ -114,8 +114,8 @@ class SqliteQueryWorker(QThread):
     在后台线程执行 SQLite 查询，返回列名和行数据。
     """
 
-    finished_query = pyqtSignal(list, list)  # column_names, rows
-    failed = pyqtSignal(str)
+    finished_query = Signal(list, list)  # column_names, rows
+    failed = Signal(str)
 
     def __init__(
         self,
@@ -164,8 +164,8 @@ class TemplateCombineWorker(QThread):
     在后台执行模板组合逻辑，避免大量模板处理时阻塞 UI。
     """
 
-    finished_combining = pyqtSignal(object)  # combined_config
-    failed = pyqtSignal(str)
+    finished_combining = Signal(object)  # combined_config
+    failed = Signal(str)
 
     def __init__(
         self,
@@ -196,8 +196,8 @@ class CsvIndexWorker(QThread):
     大文件仅统计前 100000 行防止内存溢出。
     """
 
-    finished_indexing = pyqtSignal(list, int, float)  # headers, total_rows, file_size
-    failed = pyqtSignal(str)
+    finished_indexing = Signal(list, int, float)  # headers, total_rows, file_size
+    failed = Signal(str)
 
     def __init__(self, path: str | Path, parent=None, *, max_rows: int | None = None) -> None:
         super().__init__(parent)
@@ -237,9 +237,9 @@ class JsonlSearchWorker(QThread):
     在 records.jsonl 中查找指定 record_id，返回完整记录。
     """
 
-    found = pyqtSignal(str, dict)  # record_id, record
-    not_found = pyqtSignal(str)  # record_id
-    failed = pyqtSignal(str)
+    found = Signal(str, dict)  # record_id, record
+    not_found = Signal(str)  # record_id
+    failed = Signal(str)
 
     def __init__(self, jsonl_path: str | Path, record_id: str, *, parent=None) -> None:
         super().__init__(parent)

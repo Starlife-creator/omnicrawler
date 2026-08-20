@@ -9,7 +9,7 @@ import threading
 import time
 from pathlib import Path
 
-from PyQt6.QtCore import QObject, QTimer, pyqtSignal
+from PySide6.QtCore import QObject, QTimer, Signal
 
 from ..i18n import _
 from .config_model import CrawlConfig
@@ -31,8 +31,8 @@ class AutosaveManager(QObject):
         save_failed: 自动保存失败时发射，携带错误消息。
     """
 
-    draft_found = pyqtSignal(str)  # 草稿文件路径
-    save_failed = pyqtSignal(str)  # 保存失败消息
+    draft_found = Signal(str)  # 草稿文件路径
+    save_failed = Signal(str)  # 保存失败消息
 
     def __init__(
         self, project_root: Path, parent: QObject | None = None,

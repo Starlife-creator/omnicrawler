@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QThread, Signal, Slot
+from PySide6.QtGui import QDragEnterEvent, QDropEvent
+from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -46,11 +46,11 @@ def _repolish_widget(widget: QWidget) -> None:
 class _ConvertWorker(QThread):
     """后台线程：跑 convertx.convert(...)，把 P3-1 统一进度桥到 UI 信号。"""
 
-    progress = pyqtSignal(int)
-    unified_progress = pyqtSignal(object)  # TaskProgressEvent
-    succeeded = pyqtSignal(object)
-    failed = pyqtSignal(str)
-    stage_started = pyqtSignal(str)
+    progress = Signal(int)
+    unified_progress = Signal(object)  # TaskProgressEvent
+    succeeded = Signal(object)
+    failed = Signal(str)
+    stage_started = Signal(str)
 
     def __init__(
         self,
@@ -137,7 +137,7 @@ class _ConvertWorker(QThread):
 class _DropZone(QFrame):
     """拖拽接收区。点击自身等价于「选择文件」。"""
 
-    files_dropped = pyqtSignal(list)
+    files_dropped = Signal(list)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -213,7 +213,7 @@ class ConvertView(QWidget):
     外部可连接 open_output_folder_requested 打开输出目录；home.py 可直接跳转此处。
     """
 
-    open_output_folder_requested = pyqtSignal(str)
+    open_output_folder_requested = Signal(str)
 
     _SUPPORTED_FORMATS: list[tuple[str, str, str]] = [
         (_("CSV (.csv)"),         "csv",     ".csv"),
@@ -537,11 +537,11 @@ class ConvertView(QWidget):
         self._worker = None
         self._update_runnable_state()
 
-    @pyqtSlot(int)
+    @Slot(int)
     def _on_progress(self, pct: int) -> None:
         self._progress.setValue(max(0, min(100, int(pct))))
 
-    @pyqtSlot(object)
+    @Slot(object)
     def _on_succeeded(self, result: object) -> None:
         rows = int(getattr(result, "rows", 0) or 0)
         extra = getattr(result, "extra", {}) or {}
@@ -571,7 +571,7 @@ class ConvertView(QWidget):
             self.open_output_folder_requested.emit(str(Path(dst_str).parent))
         self._update_runnable_state()
 
-    @pyqtSlot(str)
+    @Slot(str)
     def _on_failed(self, message: str) -> None:
         self._stage_label.setText(_("\u274c 转换失败"))
         self._log.append(_("\u274c 错误：{0}").format(message))
@@ -582,10 +582,10 @@ class ConvertView(QWidget):
 class _DocWorker(QThread):
     """后台线程：文档 → 文本/Markdown（复用 convertx.convert + 统一进度协议）。"""
 
-    progress = pyqtSignal(int)
-    stage_started = pyqtSignal(str)
-    succeeded = pyqtSignal(object)
-    failed = pyqtSignal(str)
+    progress = Signal(int)
+    stage_started = Signal(str)
+    succeeded = Signal(object)
+    failed = Signal(str)
 
     def __init__(
         self,
@@ -770,7 +770,7 @@ class _DocExtractTab(QWidget):
         self._btn_run.setEnabled(not running and self._src_path is not None)
         self._btn_cancel.setEnabled(running)
 
-    @pyqtSlot(object)
+    @Slot(object)
     def _on_doc_succeeded(self, result: object) -> None:
         dst_fmt = str(getattr(result, "target_format", "") or "")
         output_path = getattr(result, "output_path", None)
@@ -786,7 +786,7 @@ class _DocExtractTab(QWidget):
         self._toast().success(msg)
         self._update_runnable_state()
 
-    @pyqtSlot(str)
+    @Slot(str)
     def _on_doc_failed(self, message: str) -> None:
         self._stage.setText(_("\u274c 抽取失败"))
         self._log.append(_("\u274c 错误：{0}").format(message))

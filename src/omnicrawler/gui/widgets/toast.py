@@ -9,13 +9,13 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable
 
-from PyQt6.QtCore import (
+from PySide6.QtCore import (
     QPropertyAnimation,
     Qt,
     QTimer,
-    pyqtSignal,
+    Signal,
 )
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
@@ -40,7 +40,7 @@ class Toast(QFrame):
     - 支持操作按钮回调
     """
 
-    closed = pyqtSignal()
+    closed = Signal()
 
     def __init__(
         self,
@@ -142,7 +142,7 @@ class Toast(QFrame):
         self.show()
 
         # 使用 QPropertyAnimation 做淡入
-        from PyQt6.QtCore import QEasingCurve
+        from PySide6.QtCore import QEasingCurve
         self._stop_animation("_enter_animation")
         anim = QPropertyAnimation(self, b"windowOpacity", self)
         anim.setDuration(200)
@@ -159,7 +159,7 @@ class Toast(QFrame):
             return
         self._closing = True
         self._timer.stop()
-        from PyQt6.QtCore import QEasingCurve
+        from PySide6.QtCore import QEasingCurve
         self._stop_animation("_enter_animation")
         anim = QPropertyAnimation(self, b"windowOpacity", self)
         anim.setDuration(150)
@@ -244,7 +244,7 @@ class ToastOverlay(QWidget):
         self._reposition()
 
     def eventFilter(self, obj, event) -> bool:
-        from PyQt6.QtCore import QEvent
+        from PySide6.QtCore import QEvent
         if event.type() in (QEvent.Type.Resize, QEvent.Type.Move):
             self._reposition()
         return super().eventFilter(obj, event)
@@ -353,9 +353,10 @@ class ToastManager:
         if self._overlay is None:
             return None
         # 检查 overlay 的 C++ 对象是否已被析构（窗口关闭后）
+        # Phase 0 M0b：sip.isdeleted(x) → not shiboken6.isValid(x)（语义取反，isValid=活着）
         try:
-            from PyQt6 import sip
-            if sip.isdeleted(self._overlay):
+            import shiboken6
+            if not shiboken6.isValid(self._overlay):
                 self._overlay = None
                 return None
         except (ImportError, TypeError):

@@ -240,8 +240,8 @@ class TestBridgeHelpers:
 
 class TestLogParserProgress2:
     def test_parses_progress2_and_invokes_both_callbacks(self) -> None:
-        pytest.importorskip("PyQt6")
-        from PyQt6.QtWidgets import QApplication
+        pytest.importorskip("PySide6")
+        from PySide6.QtWidgets import QApplication
 
         from omnicrawler.gui.runner.log_parser import LogParser
         from omnicrawler.services.progress import TaskProgressEvent
@@ -267,8 +267,8 @@ class TestLogParserProgress2:
         assert len(new_calls) == 1 and isinstance(new_calls[0], TaskProgressEvent)
 
     def test_legacy_progress_still_works_when_no_progress2(self) -> None:
-        pytest.importorskip("PyQt6")
-        from PyQt6.QtWidgets import QApplication
+        pytest.importorskip("PySide6")
+        from PySide6.QtWidgets import QApplication
 
         from omnicrawler.gui.runner.log_parser import LogParser
 
@@ -279,8 +279,8 @@ class TestLogParserProgress2:
         assert legacy == [(87, "https://example.org/page")]
 
     def test_stats_still_parsed_alongside_progress2(self) -> None:
-        pytest.importorskip("PyQt6")
-        from PyQt6.QtWidgets import QApplication
+        pytest.importorskip("PySide6")
+        from PySide6.QtWidgets import QApplication
 
         from omnicrawler.gui.runner.log_parser import LogParser
         from omnicrawler.services.progress import TaskProgressEvent

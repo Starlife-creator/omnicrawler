@@ -27,10 +27,10 @@ def test_help_registry_has_complete_eight_part_mode_aware_offline_content() -> N
         get_help("missing.help")
 
 
-@pytest.mark.skipif(importlib.util.find_spec("PyQt6") is None, reason="PyQt6 required")
+@pytest.mark.skipif(importlib.util.find_spec("PySide6") is None, reason="PySide6 required")
 def test_every_declared_non_obvious_control_is_bound_to_question_mark_and_help_center(monkeypatch) -> None:
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     from omnicrawler.gui.main import MainWindow
     from omnicrawler.gui.widgets.help_tooltip import HelpTooltip

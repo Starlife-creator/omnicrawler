@@ -3,7 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from PyQt6.QtCore import QObject, QTimer, pyqtSignal
+from PySide6.QtCore import QObject, QTimer, Signal
 
 from ...core.utils import utcnow
 from ...runtime.execution_backend import LocalWorkerBackend
@@ -35,10 +35,10 @@ def _derive_worker_command(omnicrawler_path: str) -> list[str] | None:
 class WorkerTaskRunner(QObject):
     """Qt adapter for the reconnectable LocalWorkerBackend."""
 
-    log_line = pyqtSignal(str, str)
-    progress = pyqtSignal(int, str)
-    state_changed = pyqtSignal(str)
-    task_finished = pyqtSignal(str, int)
+    log_line = Signal(str, str)
+    progress = Signal(int, str)
+    state_changed = Signal(str)
+    task_finished = Signal(str, int)
 
     def __init__(
         self,

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt
+from PySide6.QtWidgets import (
     QGraphicsOpacityEffect,
     QLabel,
     QProgressBar,

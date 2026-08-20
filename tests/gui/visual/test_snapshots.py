@@ -74,7 +74,7 @@ def test_help_tooltip_snapshot(theme_manager, qapp):
 
 
 def test_navigation_bar_snapshot(theme_manager):
-    from PyQt6.QtWidgets import QListWidget
+    from PySide6.QtWidgets import QListWidget
 
     from omnicrawler.gui.design_system import ThemeManager
 

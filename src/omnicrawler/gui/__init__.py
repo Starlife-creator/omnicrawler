@@ -1,4 +1,4 @@
-"""OmniCrawler GUI — PyQt6 可视化爬虫配置与管理工作台。
+"""OmniCrawler GUI — PySide6 可视化爬虫配置与管理工作台。
 
 作为 omnicrawler 核心引擎的增强前端，提供：
 - 五步配置向导

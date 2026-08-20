@@ -16,8 +16,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import QStandardPaths, QThread, pyqtSignal
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QStandardPaths, QThread, Signal
+from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
@@ -43,7 +43,7 @@ from ..i18n import _
 
 class AITestWorker(QThread):
     """测试 AI 连接（不在 UI 线程阻塞）。"""
-    test_done = pyqtSignal(bool, str)
+    test_done = Signal(bool, str)
 
     def __init__(self, base_url: str, api_key: str, model: str, timeout: int, workspace: Path) -> None:
         super().__init__()
@@ -87,7 +87,7 @@ class AITestWorker(QThread):
 
 class AIListModelsWorker(QThread):
     """获取可用模型列表。"""
-    models_ready = pyqtSignal(list, str)
+    models_ready = Signal(list, str)
 
     def __init__(self, base_url: str, api_key: str, timeout: int, workspace: Path) -> None:
         super().__init__()

@@ -5,9 +5,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFileDialog,

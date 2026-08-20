@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import logging
 
-from PyQt6.QtCore import QDate, Qt, pyqtSignal
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QDate, Qt, Signal
+from PySide6.QtWidgets import (
     QCalendarWidget,
     QDialog,
     QHBoxLayout,
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class CalendarPopup(QDialog):
     """弹出式日历日期选择器。"""
 
-    date_selected = pyqtSignal(str)  # "YYYY-MM-DD" 格式
+    date_selected = Signal(str)  # "YYYY-MM-DD" 格式
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)

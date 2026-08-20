@@ -15,7 +15,7 @@ Usage::
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PySide6.QtCore import QObject, Signal
 
 
 class _MotionSignal(QObject):
@@ -27,7 +27,7 @@ class _MotionSignal(QObject):
     paint event.
     """
 
-    reduced_motion_changed = pyqtSignal(bool)
+    reduced_motion_changed = Signal(bool)
 
     _instance: _MotionSignal | None = None
 

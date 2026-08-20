@@ -26,8 +26,8 @@ class _Handler(BaseHTTPRequestHandler):
 
 def test_gui_config_round_trip_runs_and_produces_records(tmp_path: Path) -> None:
     """GUI 配置序列化 → 核心 load_config → CLI 语义 run → 产出记录。"""
-    pytest.importorskip("PyQt6")
-    from PyQt6.QtWidgets import QApplication
+    pytest.importorskip("PySide6")
+    from PySide6.QtWidgets import QApplication
 
     _app = QApplication.instance() or QApplication([])
 

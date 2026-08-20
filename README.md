@@ -82,7 +82,7 @@ omnicrawler reprocess -c config.yaml --run-id <id>
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│                  Desktop GUI (PyQt6)                   │
+│                  Desktop GUI (PySide6)                 │
 │  Wizard(5-pages) │ Home │ Results │ Settings │ A11y    │
 ├────────────────────────────────────────────────────────┤
 │             CLI (registry pattern, 47 cmds)             │
@@ -393,7 +393,7 @@ src/omnicrawler/
 ├── data/                        # 内置数据（站点分类默认域名映射）
 ├── apps/                        # PDF 处理独立 CLI（pdf-process / pdf-extract）
 ├── visual_selector/             # 可视化选择器（WebSocket 服务 + 字段转换）
-├── gui/                         # PyQt6 桌面界面
+├── gui/                         # PySide6 桌面界面
 │   ├── views/                   # 首页/向导/结果/设置/PDF工作台/证据/变更监控/反检测/场景/格式互转/插件市场/开发者检查器
 │   ├── widgets/                 # Toast, LogConsole, StatusIndicator, ...
 │   └── delegates/               # Menu, Toolbar, Theme, Config, ...

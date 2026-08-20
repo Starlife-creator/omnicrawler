@@ -15,7 +15,7 @@ def qapp():
     """Session-scoped QApplication with dark/light/high_contrast switching."""
     import sys
 
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     os.environ.setdefault("OMNICRAWL_SKIP_FIRST_LAUNCH", "1")
     app = QApplication.instance()

@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QThread, Signal
+from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -52,8 +52,8 @@ def _seal_proxy_list(text: str) -> str:
 class _FingerprintCheckWorker(QThread):
     """后台检测当前浏览器指纹真实性。"""
 
-    result_ready = pyqtSignal(dict)
-    error_occurred = pyqtSignal(str)
+    result_ready = Signal(dict)
+    error_occurred = Signal(str)
 
     def run(self) -> None:
         try:

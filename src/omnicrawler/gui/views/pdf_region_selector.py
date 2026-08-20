@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from PyQt6.QtCore import QPoint, QRect, Qt, pyqtSignal
-from PyQt6.QtGui import QImage, QMouseEvent, QPainter, QPen, QPixmap
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QPoint, QRect, Qt, Signal
+from PySide6.QtGui import QImage, QMouseEvent, QPainter, QPen, QPixmap
+from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -26,7 +26,7 @@ from ..i18n import _
 
 
 class RegionCanvas(QLabel):
-    selected = pyqtSignal(tuple)
+    selected = Signal(tuple)
 
     def __init__(self) -> None:
         super().__init__()

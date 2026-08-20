@@ -18,9 +18,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PyQt6.QtCore import QObject, Qt
-from PyQt6.QtGui import QAction, QKeySequence
-from PyQt6.QtWidgets import QMainWindow
+from PySide6.QtCore import QObject, Qt
+from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtWidgets import QMainWindow
 
 from .i18n import _
 from .settings import AppSettings

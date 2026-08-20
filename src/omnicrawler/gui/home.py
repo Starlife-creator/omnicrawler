@@ -6,9 +6,9 @@ import importlib.metadata
 import logging
 import math
 
-from PyQt6.QtCore import QThread, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPaintEvent
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QThread, QTimer, Signal
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPaintEvent
+from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QComboBox,
@@ -41,10 +41,10 @@ class _AIEnrichWorker(QThread):
     失败不影响主流程 — 本地解析结果始终先展示。
     """
 
-    result_ready = pyqtSignal(object)  # NaturalLanguageDraft | None
+    result_ready = Signal(object)  # NaturalLanguageDraft | None
     # C13/C25：明确区分「未启用/已禁用」与「运行出错」，UI 可明示而非吞掉
-    ai_unavailable = pyqtSignal(str)  # reason
-    ai_error = pyqtSignal(str)  # error message
+    ai_unavailable = Signal(str)  # reason
+    ai_error = Signal(str)  # error message
 
     def __init__(self, request: str, parent: QWidget | None = None, project_root: str | None = None) -> None:
         super().__init__(parent)
@@ -161,18 +161,18 @@ class AmbientHero(QWidget):
 
 
 class HomePage(QWidget):
-    quick_task_ready = pyqtSignal(object)
-    natural_task_ready = pyqtSignal(object)
-    open_wizard = pyqtSignal()
-    open_recent = pyqtSignal()
-    open_results = pyqtSignal()
-    open_schedule = pyqtSignal()
-    import_task = pyqtSignal()
-    run_doctor = pyqtSignal()
-    create_demo = pyqtSignal()
-    open_convert_tool = pyqtSignal()  # 格式互转：B-4 ConvertX 面板
-    open_scene = pyqtSignal()  # 场景管理：S4 场景/槽位/基因面板
-    open_run_compare = pyqtSignal()  # 运行对比：review/run_compare
+    quick_task_ready = Signal(object)
+    natural_task_ready = Signal(object)
+    open_wizard = Signal()
+    open_recent = Signal()
+    open_results = Signal()
+    open_schedule = Signal()
+    import_task = Signal()
+    run_doctor = Signal()
+    create_demo = Signal()
+    open_convert_tool = Signal()  # 格式互转：B-4 ConvertX 面板
+    open_scene = Signal()  # 场景管理：S4 场景/槽位/基因面板
+    open_run_compare = Signal()  # 运行对比：review/run_compare
 
     def __init__(self, parent: QWidget | None = None, project_root: str | None = None) -> None:
         super().__init__(parent)

@@ -6,8 +6,8 @@ using ThemeManager tokens exclusively (no hardcoded colors).
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QSequentialAnimationGroup
-from PyQt6.QtWidgets import QWidget
+from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QSequentialAnimationGroup
+from PySide6.QtWidgets import QWidget
 
 
 def shake_widget(widget: QWidget, parent: QWidget | None = None) -> None:

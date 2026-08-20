@@ -11,7 +11,7 @@ import json
 import logging
 from pathlib import Path
 
-from PyQt6.QtCore import (
+from PySide6.QtCore import (
     QAbstractTableModel,
     QEasingCurve,
     QModelIndex,
@@ -20,9 +20,9 @@ from PyQt6.QtCore import (
     QSortFilterProxyModel,
     Qt,
     QThread,
-    pyqtSignal,
+    Signal,
 )
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QFileDialog,
     QGraphicsOpacityEffect,
     QHBoxLayout,
@@ -57,9 +57,9 @@ class CsvStreamModel(QAbstractTableModel):
     表头与行计数通过 CsvIndexWorker 异步获取，避免大文件阻塞 UI。
     """
 
-    indexing_started = pyqtSignal()
-    indexing_finished = pyqtSignal(int)  # total_rows
-    indexing_failed = pyqtSignal(str)
+    indexing_started = Signal()
+    indexing_finished = Signal(int)  # total_rows
+    indexing_failed = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -257,9 +257,9 @@ class ExportThread(QThread):
     保持旧式 progress(int) 信号发出（旧消费者不受影响）。
     """
 
-    progress = pyqtSignal(int)
-    finished_signal = pyqtSignal(bool, str)
-    unified_progress = pyqtSignal(object)  # P2-4：TaskProgressEvent
+    progress = Signal(int)
+    finished_signal = Signal(bool, str)
+    unified_progress = Signal(object)  # P2-4：TaskProgressEvent
 
     def __init__(self, filepath: Path, output_path: Path) -> None:
         super().__init__()
@@ -355,7 +355,7 @@ class ResultTable(QWidget):
     """
 
     # 用户请求在证据查看器中打开某条记录
-    record_selected_for_review = pyqtSignal(object)
+    record_selected_for_review = Signal(object)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -805,8 +805,8 @@ class ResultTable(QWidget):
 
     def _open_folder(self) -> None:
         """打开结果文件夹。"""
-        from PyQt6.QtCore import QUrl
-        from PyQt6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
 
         if self._filepath and self._filepath.parent.is_dir():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._filepath.parent)))
