@@ -8,8 +8,6 @@ import statistics
 import time
 from typing import Any, Protocol
 
-import fitz
-
 from .config import ProjectConfig
 from .database import Database
 from .parser import render_page, text_quality
@@ -295,11 +293,19 @@ def _ocr_worker_process(args: tuple[str, int, int]) -> tuple[str, int, str | Non
         if _worker_backend is None:
             raise RuntimeError("OCR backend 未初始化")
 
-        # D35：worker 内复用已打开的 PDF 句柄（同文档多页不再逐页 fitz.open）
+        # D35：worker 内复用已打开的 PDF 句柄（同文档多页不再逐页打开）
+        # Phase 0（M0a）：fitz.open → parser.open_document（pypdfium2 句柄）
         if _worker_document_path != primary_path:
+            if _worker_document is not None:
+                try:
+                    _worker_document.close()
+                except Exception:  # noqa: BLE001 - 句柄关闭失败不影响后续流程
+                    pass
             _worker_document = None
         if _worker_document is None:
-            _worker_document = fitz.open(primary_path)
+            from .parser import open_document
+
+            _worker_document = open_document(primary_path)
             _worker_document_path = primary_path
         png = render_page(primary_path, page_no, dpi=dpi, document=_worker_document)
         text, confidence = _worker_backend.recognize(png)

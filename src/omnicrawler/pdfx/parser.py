@@ -4,7 +4,8 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-import fitz
+import pypdfium2 as pdfium
+from pdfminer.layout import LAParams
 
 from .config import ProjectConfig
 from .database import Database
@@ -14,6 +15,10 @@ PARSER_VERSION = "native-1.0"
 
 # D16：同一文档解析失败最大次数，超过后置 parse_dead 排除
 MAX_PARSE_ATTEMPTS = 3
+
+# Phase 0（M0a）：pdfplumber 底层 pdfminer 的布局参数——sort 语义对齐原
+# fitz get_text(sort=True)（阅读顺序），laparams 控制词/行合并容差。
+_TEXT_LAPARAMS = LAParams(line_margin=0.3, word_margin=0.1, char_margin=2.0, boxes_flow=0.5)
 
 
 def text_quality(text: str) -> tuple[int, float]:
@@ -27,29 +32,54 @@ def text_quality(text: str) -> tuple[int, float]:
 
 
 def _image_coverage_ratio(page) -> float:
-    """页面图片总面积占比（D12：纯图表格页夹带页眉页脚时强制 OCR）。"""
+    """页面图片总面积占比（D12：纯图表格页夹带页眉页脚时强制 OCR）。
+
+    Phase 0：pdfplumber page.images（bbox 为 PDF 点坐标，与页面同坐标系）。
+    """
     try:
-        images = page.get_images(full=True)
+        images = page.images
         if not images:
             return 0.0
-        rect = page.rect
-        page_area = max(float(rect.width) * float(rect.height), 1.0)
+        page_area = max(float(page.width) * float(page.height), 1.0)
         covered = 0.0
-        for image_info in images:
-            for image_rect in page.get_image_rects(image_info[0]):
-                covered += float(image_rect.width) * float(image_rect.height)
+        for image in images:
+            width = float(image.get("x1", 0.0)) - float(image.get("x0", 0.0))
+            height = float(image.get("bottom", 0.0)) - float(image.get("top", 0.0))
+            covered += max(width, 0.0) * max(height, 0.0)
         return min(covered / page_area, 1.0)
     except Exception:  # noqa: BLE001 - 判据失败按无图处理
         return 0.0
 
 
-def _iter_parsed_pages(path: str, min_chars: int, max_garbled_ratio: float):
-    """D36：逐页 yield 解析结果，避免整文档 pages 列表常驻内存（数千页大文件内存峰值受控）。"""
-    with fitz.open(path) as document:
-        if document.needs_pass:
+def open_document(path: str):
+    """Phase 0（M0a）：打开 PDF 文档句柄（供渲染句柄复用，D35 语义保留）。
+
+    返回 pypdfium2.PdfDocument；调用方负责 close（或用 with 语义）。
+    加密检测前置：pypdfium2 打开加密文档渲染会失败，先显式拒绝保持原
+    PermissionError("PDF需要密码") 行为。
+    """
+    import pdfplumber
+
+    with pdfplumber.open(path) as probe:
+        if probe.is_locked:
             raise PermissionError("PDF需要密码")
-        for page_index, page in enumerate(document):
-            raw_text = page.get_text("text", sort=True)
+    return pdfium.PdfDocument(path)
+
+
+def _iter_parsed_pages(path: str, min_chars: int, max_garbled_ratio: float):
+    """D36：逐页 yield 解析结果，避免整文档 pages 列表常驻内存（数千页大文件内存峰值受控）。
+
+    Phase 0（M0a）：fitz → pdfplumber（文本/表格/图像）+ pypdf 前置加密检测。
+    """
+    import pdfplumber
+    from pypdf import PdfReader
+
+    reader = PdfReader(path)
+    if reader.is_encrypted:
+        raise PermissionError("PDF需要密码")
+    with pdfplumber.open(path) as document:
+        for page_index, page in enumerate(document.pages):
+            raw_text = page.extract_text(layout=False, laparams=_TEXT_LAPARAMS) or ""
             text = clean_text(raw_text, compress_ws=False)  # D11：保留原始空白（表格列对齐信号），检索时再压缩
             printable, garbled = text_quality(text)
             needs_ocr = printable < min_chars or garbled > max_garbled_ratio
@@ -62,11 +92,10 @@ def _iter_parsed_pages(path: str, min_chars: int, max_garbled_ratio: float):
                 table_md = _extract_tables_markdown(page)
                 if table_md:
                     final_text = f"{text}\n\n[表格结构]\n{table_md}".strip()
-            rect = page.rect
             yield {
                 "page_no": page_index + 1,
-                "width": float(rect.width),
-                "height": float(rect.height),
+                "width": float(page.width),
+                "height": float(page.height),
                 "native_text": text,
                 "final_text": final_text,
                 "parse_method": "native",
@@ -84,19 +113,20 @@ def parse_document(path: str, min_chars: int, max_garbled_ratio: float) -> dict[
 
 
 def _extract_tables_markdown(page) -> str:
-    """用 PyMuPDF find_tables 把页面表格恢复为 Markdown 表格。
+    """用 pdfplumber find_tables 把页面表格恢复为 Markdown 表格。
 
-    D8：get_text 只取纯文本会把表格行列压平；这里保留列结构，
+    D8：纯文本提取会把表格行列压平；这里保留列结构，
     供下游（LLM/规则/人工）按列归属读取财务数据。
+    Phase 0：fitz.find_tables → pdfplumber.find_tables（API 同构：extract() 返回行列二维数组）。
     """
     try:
         tables = page.find_tables()
     except Exception:  # noqa: BLE001 - 表格检测失败不应中断解析
         return ""
-    if not tables.tables:
+    if not tables:
         return ""
     parts: list[str] = []
-    for table in tables.tables:
+    for table in tables:
         data = table.extract()
         if not data:
             continue
@@ -264,13 +294,25 @@ def _parse_and_store(config: ProjectConfig, db: Database, row, min_chars: int, m
         return {"error": exc}
 
 
+def _render_to_png(page, dpi: int) -> bytes:
+    """Phase 0（M0a）：pypdfium2 单页渲染为 PNG 字节（BGRA→PIL，方案优化点）。"""
+    import io
+
+    bitmap = page.render(scale=dpi / 72)
+    pil = bitmap.to_pil()
+    buffer = io.BytesIO()
+    pil.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 def render_page(path: str, page_no: int, dpi: int = 220, document: Any | None = None) -> bytes:
-    """渲染指定页为 PNG。D35：传入已打开的 Document 时复用句柄，避免逐页重复打开 PDF。"""
+    """渲染指定页为 PNG。D35：传入已打开的 Document 时复用句柄，避免逐页重复打开 PDF。
+
+    Phase 0（M0a）：fitz get_pixmap → pypdfium2 render（scale=dpi/72，语义等价）。
+    """
     if document is not None:
-        page = document.load_page(page_no - 1)
-        pixmap = page.get_pixmap(dpi=dpi, alpha=False)
-        return pixmap.tobytes("png")
-    with fitz.open(path) as document:
-        page = document.load_page(page_no - 1)
-        pixmap = page.get_pixmap(dpi=dpi, alpha=False)
-        return pixmap.tobytes("png")
+        page = document[page_no - 1]
+        return _render_to_png(page, dpi)
+    with pdfium.PdfDocument(path) as document:
+        page = document[page_no - 1]
+        return _render_to_png(page, dpi)

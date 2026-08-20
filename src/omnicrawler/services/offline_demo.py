@@ -23,33 +23,69 @@ class DemoWorkspace:
 
 
 def _build_report_pdf(path: Path) -> None:
-    """S2.5.18：PyMuPDF 生成合法 PDF（文本层，可直抽文本）。"""
-    import fitz
+    """S2.5.18：生成合法 PDF（文本层，可直抽文本）。Phase 0：fitz → reportlab。"""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
 
-    document = fitz.open()
-    page = document.new_page()
-    page.insert_text((72, 72), "Offline Annual Report", fontsize=16)
-    page.insert_text((72, 110), "Revenue: 1,200,000", fontsize=12)
-    page.insert_text((72, 132), "Profits: 240,000", fontsize=12)
-    page.insert_text((72, 154), "Published: 2024-03-01", fontsize=12)
-    document.save(str(path))
-    document.close()
+    page_width, page_height = letter
+    c = canvas.Canvas(str(path), pagesize=letter)
+    # fitz insert_text 的 y 是顶部基线；reportlab 为底部基线，换算保持位置近似一致
+    c.setFont("Helvetica", 16)
+    c.drawString(72, page_height - 72, "Offline Annual Report")
+    c.setFont("Helvetica", 12)
+    c.drawString(72, page_height - 110, "Revenue: 1,200,000")
+    c.drawString(72, page_height - 132, "Profits: 240,000")
+    c.drawString(72, page_height - 154, "Published: 2024-03-01")
+    c.showPage()
+    c.save()
 
 
 def _build_scan_pdf(path: Path) -> None:
-    """S2.5.18：渲染成纯位图页（无文字层）——OCR 演示路径真实可走通。"""
-    import fitz
+    """S2.5.18：渲染成纯位图页（无文字层）——OCR 演示路径真实可走通。
 
-    document = fitz.open()
-    scratch = document.new_page()
-    scratch.insert_text((72, 72), "OCR DEMO 2024", fontsize=18)
-    scratch.insert_text((72, 110), "Scan Date: 2024-03-01", fontsize=12)
-    pixmap = scratch.get_pixmap(dpi=150)
-    document.delete_page(0)
-    page = document.new_page()
-    page.insert_image(page.rect, pixmap=pixmap)
-    document.save(str(path))
-    document.close()
+    Phase 0：fitz 写图 → reportlab 生成文本页 + pypdfium2 栅格化 + reportlab
+    重建纯图页（先栅格化后重建，保证最终 PDF 无文字层，OCR 路径可复现）。
+    """
+    import io
+    import tempfile
+
+    import pypdfium2 as pdfium
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas
+
+    # 1) 文本页临时文件（栅格化源，随后删除）
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as scratch_file:
+        scratch_path = Path(scratch_file.name)
+    try:
+        page_width, page_height = letter
+        c = canvas.Canvas(str(scratch_path), pagesize=letter)
+        c.setFont("Helvetica", 18)
+        c.drawString(72, page_height - 72, "OCR DEMO 2024")
+        c.setFont("Helvetica", 12)
+        c.drawString(72, page_height - 110, "Scan Date: 2024-03-01")
+        c.showPage()
+        c.save()
+
+        # 2) 栅格化为 PNG（对应原 scratch.get_pixmap(dpi=150)）
+        with pdfium.PdfDocument(str(scratch_path)) as doc:
+            pil = doc[0].render(scale=150 / 72).to_pil()
+        buffer = io.BytesIO()
+        pil.save(buffer, format="PNG")
+        buffer.seek(0)
+    finally:
+        try:
+            scratch_path.unlink()
+        except OSError:
+            pass
+
+    # 3) 纯图页重建（无文字层，等价原 delete_page + insert_image）
+    image = ImageReader(buffer)
+    img_w, img_h = image.getSize()
+    c2 = canvas.Canvas(str(path), pagesize=(img_w, img_h))
+    c2.drawImage(image, 0, 0, width=img_w, height=img_h)
+    c2.showPage()
+    c2.save()
 
 
 def create_demo_workspace(root: Path) -> DemoWorkspace:

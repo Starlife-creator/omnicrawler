@@ -66,22 +66,14 @@ def test_d15_worker_returns_error_detail(monkeypatch) -> None:
     monkeypatch.setattr(ocr, "_worker_document_path", None)
     monkeypatch.setattr(ocr, "render_page", lambda *a, **k: b"fake-png")
 
-    class _FakePixmap:
-        def tobytes(self, fmt="png"):
-            return b"png"
-
-    class _FakePage:
-        def get_pixmap(self, **kwargs):
-            return _FakePixmap()
-
+    # Phase 0：worker 句柄改为 parser.open_document（pypdfium2），mock 之
     class _FakeDocument:
-        def load_page(self, index):
-            return _FakePage()
-
         def close(self):
             pass
 
-    monkeypatch.setattr(ocr.fitz, "open", lambda *a, **k: _FakeDocument())
+    monkeypatch.setattr(
+        "omnicrawler.pdfx.parser.open_document", lambda *a, **k: _FakeDocument()
+    )
     result = ocr._ocr_worker_process(("a.pdf", 1, 144))
     assert result[2] is None
     assert result[6] == "tesseract 初始化失败"
@@ -130,17 +122,14 @@ class _FakeTable:
         return self._data
 
 
-class _FakeTables:
-    def __init__(self, tables) -> None:
-        self.tables = tables
-
-
 class _FakePage:
+    """Phase 0：pdfplumber page.find_tables() 直接返回 table 列表（无 .tables 包装）。"""
+
     def __init__(self, tables) -> None:
         self._tables = tables
 
     def find_tables(self):
-        return _FakeTables(self._tables)
+        return list(self._tables)
 
 
 def test_d8_table_markdown_preserves_columns() -> None:
@@ -205,27 +194,23 @@ def test_d36_iter_pages_yields_and_wraps() -> None:
 
 def test_d12_high_image_coverage_forces_ocr(monkeypatch) -> None:
     """D12：有文字层但图片覆盖超 60% 的页面（夹带页眉页脚的表格页）强制 OCR。"""
-    import omnicrawler.pdfx.parser as parser
-
-    class _Rect:
-        def __init__(self, width: float, height: float) -> None:
-            self.width = width
-            self.height = height
+    import pdfplumber
+    from pypdf import PdfReader
 
     class _FakePage:
-        rect = _Rect(100.0, 100.0)
+        width = 100.0
+        height = 100.0
+        # pdfplumber 图像 bbox（x0/x1/top/bottom）：80×80 = 覆盖 64%
+        images = [{"x0": 0, "x1": 80.0, "top": 0, "bottom": 80.0}]
 
-        def get_text(self, *args, **kwargs):
+        def extract_text(self, **kwargs):
             return "2026年公告 页眉 本公司董事会全体成员保证公告内容真实准确完整"
 
-        def get_images(self, full=True):
-            return [(1,)]
-
-        def get_image_rects(self, xref):
-            return [_Rect(80.0, 80.0)]  # 覆盖 64%
+        def find_tables(self):
+            return []
 
     class _FakeDoc:
-        needs_pass = False
+        pages = [_FakePage()]
 
         def __enter__(self):
             return self
@@ -233,10 +218,14 @@ def test_d12_high_image_coverage_forces_ocr(monkeypatch) -> None:
         def __exit__(self, *args):
             return False
 
-        def __iter__(self):
-            return iter([_FakePage()])
+    class _FakeReader:
+        is_encrypted = False
 
-    monkeypatch.setattr(parser.fitz, "open", lambda *a, **k: _FakeDoc())
+    monkeypatch.setattr(pdfplumber, "open", lambda *a, **k: _FakeDoc())
+    monkeypatch.setattr("pypdf.PdfReader", lambda *a, **k: _FakeReader())
+
+    from omnicrawler.pdfx import parser
+
     result = parser.parse_document("x.pdf", min_chars=40, max_garbled_ratio=0.03)
     assert result["pages"][0]["needs_ocr"] == 1
     assert result["pages"][0]["ocr_status"] == "pending"
@@ -244,27 +233,21 @@ def test_d12_high_image_coverage_forces_ocr(monkeypatch) -> None:
 
 def test_d12_low_image_coverage_keeps_native(monkeypatch) -> None:
     """D12：图像覆盖低的正常文本页不被误判为 OCR。"""
-    import omnicrawler.pdfx.parser as parser
-
-    class _Rect:
-        def __init__(self, width: float, height: float) -> None:
-            self.width = width
-            self.height = height
+    import pdfplumber
 
     class _FakePage:
-        rect = _Rect(100.0, 100.0)
+        width = 100.0
+        height = 100.0
+        images = [{"x0": 0, "x1": 10.0, "top": 0, "bottom": 10.0}]  # 覆盖 1%
 
-        def get_text(self, *args, **kwargs):
+        def extract_text(self, **kwargs):
             return "2026年公告 本公司董事会保证公告内容真实准确完整" * 3
 
-        def get_images(self, full=True):
-            return [(1,)]
-
-        def get_image_rects(self, xref):
-            return [_Rect(10.0, 10.0)]  # 覆盖 1%
+        def find_tables(self):
+            return []
 
     class _FakeDoc:
-        needs_pass = False
+        pages = [_FakePage()]
 
         def __enter__(self):
             return self
@@ -272,10 +255,14 @@ def test_d12_low_image_coverage_keeps_native(monkeypatch) -> None:
         def __exit__(self, *args):
             return False
 
-        def __iter__(self):
-            return iter([_FakePage()])
+    class _FakeReader:
+        is_encrypted = False
 
-    monkeypatch.setattr(parser.fitz, "open", lambda *a, **k: _FakeDoc())
+    monkeypatch.setattr(pdfplumber, "open", lambda *a, **k: _FakeDoc())
+    monkeypatch.setattr("pypdf.PdfReader", lambda *a, **k: _FakeReader())
+
+    from omnicrawler.pdfx import parser
+
     result = parser.parse_document("x.pdf", min_chars=40, max_garbled_ratio=0.03)
     assert result["pages"][0]["needs_ocr"] == 0
 

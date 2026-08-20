@@ -7,12 +7,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-import fitz
-
 from ..core.utils import user_agent
 from ..security.controlled_http import scoped_json_request
 from .config import ProjectConfig
-from .parser import render_page
+from .parser import open_document, render_page
 from .retrieval import CandidatePage
 from .utils import extract_json_object, retry
 
@@ -75,7 +73,8 @@ def build_user_content(
     content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
     dpi = int(config.llm.get("image_dpi", 144))
     # D35：复用已打开的 PDF 句柄，避免逐页重复打开
-    with fitz.open(pdf_path) as document:
+    # Phase 0（M0a）：fitz.open → open_document（pypdfium2 句柄）
+    with open_document(pdf_path) as document:
         for page in pages:
             png = render_page(pdf_path, page.page_no, dpi=dpi, document=document)
             encoded = base64.b64encode(png).decode("ascii")

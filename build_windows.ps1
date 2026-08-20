@@ -150,9 +150,9 @@ if (-not $SkipDependencyInstall) {
         throw '-SkipDependencyInstall requires -BuilderPythonPath.'
     }
     if ($Edition -eq 'Full') {
-        & $builderPython -c 'import PyInstaller, paddleocr, selenium, PyQt6, pyarrow, psycopg, opensearchpy'
+        & $builderPython -c 'import PyInstaller, paddleocr, selenium, PyQt6, pyarrow, psycopg, opensearchpy, pdfplumber, pypdfium2'
     } else {
-        & $builderPython -c 'import PyInstaller, PyQt6, playwright, fitz, openpyxl'
+        & $builderPython -c 'import PyInstaller, PyQt6, playwright, pdfplumber, pypdfium2, pypdf, reportlab, openpyxl'
     }
     Assert-LastExit "The selected builder Python does not contain all $Edition dependencies."
 }

@@ -120,10 +120,11 @@ class PdfRegionSelectorDialog(QDialog):
 
         class _OpenWorker(BackgroundWorker):
             def work(self) -> int:
-                import fitz
+                # Phase 0：fitz → pypdf（页数读取，加密文档按页数 0 交由上层提示）
+                from pypdf import PdfReader
 
-                with fitz.open(filename) as document:
-                    return document.page_count
+                reader = PdfReader(filename)
+                return len(reader.pages)
 
         run_worker(
             _OpenWorker(),
@@ -149,17 +150,21 @@ class PdfRegionSelectorDialog(QDialog):
 
         class _RenderWorker(BackgroundWorker):
             def work(self) -> tuple:
-                import fitz
+                # Phase 0：fitz get_pixmap → pypdfium2 render（scale=1.5 等价
+                # fitz.Matrix(1.5,1.5)）。pypdfium2 to_pil() 为 RGBA → Format_RGBA8888。
+                import pypdfium2 as pdfium
 
-                with fitz.open(pdf) as document:
-                    page = document.load_page(page_index)
-                    pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
-                    page_width, page_height = page.rect.width, page.rect.height
-                    image = QImage(
-                        pix.samples, pix.width, pix.height, pix.stride,
-                        QImage.Format.Format_RGB888,
-                    ).copy()
-                    return (image, page_width, page_height)
+                with pdfium.PdfDocument(str(pdf)) as document:
+                    page = document[page_index]
+                    bitmap = page.render(scale=1.5)
+                    pil = bitmap.to_pil()
+                    page_width, page_height = page.get_size()
+                data = pil.tobytes("raw", "RGBA")
+                image = QImage(
+                    data, pil.width, pil.height, pil.width * 4,
+                    QImage.Format.Format_RGBA8888,
+                ).copy()
+                return (image, page_width, page_height)
 
         run_worker(
             _RenderWorker(),

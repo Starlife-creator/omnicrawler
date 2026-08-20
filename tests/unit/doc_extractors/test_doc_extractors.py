@@ -111,9 +111,9 @@ def test_pdf_extractor_requires_pymupdf() -> None:
 
     from omnicrawler.doc_extractors.pdf import PDFDocExtractor
 
-    # 环境感知：无 PyMuPDF 时构造应报带安装提示的错误；有依赖则正常构造
-    if importlib.util.find_spec("fitz") is None:
-        with pytest.raises(RuntimeError, match="PyMuPDF"):
+    # 环境感知：无 pdfplumber 时构造应报带安装提示的错误；有依赖则正常构造
+    if importlib.util.find_spec("pdfplumber") is None:
+        with pytest.raises(RuntimeError, match="pdfplumber"):
             PDFDocExtractor()
     else:
         PDFDocExtractor()  # 不应抛错

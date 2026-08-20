@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import fitz
-
 from .config import ProjectConfig
 from .database import Database
 from .utils import iter_pdfs, sha256_file, stable_json, utcnow
@@ -59,10 +57,14 @@ def load_source_manifest(input_dir: Path) -> tuple[dict[str, dict], dict[str, di
 
 def inspect_pdf(path: Path) -> tuple[int | None, bool, str | None]:
     try:
-        with fitz.open(path) as document:
-            encrypted = bool(document.needs_pass)
-            pages = document.page_count if not encrypted else None
-            return pages, encrypted, None
+        # Phase 0：fitz → pypdf（加密检测 + 页数；pypdf 打开加密文档不抛异常，
+        # 以 is_encrypted 标志表达——与 fitz.needs_pass 语义等价）
+        from pypdf import PdfReader
+
+        document = PdfReader(str(path))
+        encrypted = bool(document.is_encrypted)
+        pages = None if encrypted else len(document.pages)
+        return pages, encrypted, None
     except Exception as exc:  # noqa: BLE001 - invalid PDFs must be catalogued
         return None, False, f"{type(exc).__name__}: {exc}"
 

@@ -1,7 +1,7 @@
 """PDF 文档槽位抽取器（批 C-1）。
 
-依赖可选 PyMuPDF（fitz）：缺依赖时构造/抽取抛出带安装提示的 RuntimeError。
-抽取流程：fitz 提取全文文本 → 复用 TextDocExtractor 的 regex/text 槽位。
+依赖可选 pdfplumber（Phase 0 替换 PyMuPDF/fitz）：缺依赖时构造/抽取抛出带安装提示的 RuntimeError。
+抽取流程：pdfplumber 提取全文文本 → 复用 TextDocExtractor 的 regex/text 槽位。
 """
 
 from __future__ import annotations
@@ -17,12 +17,12 @@ class PDFDocExtractor:
 
     def __init__(self) -> None:
         try:
-            import fitz  # noqa: F401 —— 可选依赖探测
+            import pdfplumber  # noqa: F401 —— 可选依赖探测
 
-            self._fitz = fitz
+            self._pdfplumber = pdfplumber
         except ImportError as exc:
             raise RuntimeError(
-                "PDF 槽位抽取需要 PyMuPDF；请安装 omnicrawler[pdf]（pip install PyMuPDF）"
+                "PDF 槽位抽取需要 pdfplumber；请安装 omnicrawler[pdf]（pip install pdfplumber）"
             ) from exc
 
     def extract(self, pdf_path: str | Path, definitions: list[Any]) -> list[SlotHit]:
@@ -34,9 +34,9 @@ class PDFDocExtractor:
 
     def _extract_text(self, path: Path) -> str:
         parts: list[str] = []
-        with self._fitz.open(str(path)) as document:
-            for page in document:
-                parts.append(page.get_text())
+        with self._pdfplumber.open(str(path)) as document:
+            for page in document.pages:
+                parts.append(page.extract_text(layout=False) or "")
         return "\n".join(parts)
 
 
