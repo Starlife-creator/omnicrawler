@@ -6,7 +6,7 @@ name: release
 #
 # 产物（每个平台包都含 SHA256SUMS 校验和 + SBOM + provenance）：
 #   OmniCrawler-<version>-Windows-Portable-{Standard,Full}.zip
-#   OmniCrawler-<version>-Linux-Portable-{Standard,Full}.tar.gz
+#   OmniCrawler-<version>-Linux-Portable-{Standard,Full}.tar.xz
 #   OmniCrawler-<version>-macOS-Portable-{Standard,Full}.dmg
 #   SHA256SUMS.txt / omnicrawler-sbom.cdx.json / omnicrawler-provenance.json
 #
@@ -180,7 +180,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # ── Linux 便携包（Standard + Full，tar.gz）────────────────────────
+  # ── Linux 便携包（Standard + Full，tar.xz）────────────────────────
   build-linux-portable:
     needs: [verify-python-version]
     # S6：固定 runner 版本——ubuntu-latest 漂移会改变 glibc（当前 24.04/glibc 2.39），
@@ -375,9 +375,9 @@ jobs:
             --sbom "$RUNNER_TEMP/artifacts/omnicrawler-sbom-linux.cdx.json"
           python tools/check_release_integrity.py . \
             --portable-zip-dir "$RUNNER_TEMP/artifacts"
-          # P5：Linux tar.gz 容器级深校验（聚合期兜底；macOS 主产物是 dmg，
+          # P5：Linux tar.xz 容器级深校验（聚合期兜底；macOS 主产物是 dmg，
           # 其回退 tar.gz 已在 build_macos.sh 内做 mac 平台深校验，此处不重复）
-          for archive in "$RUNNER_TEMP"/artifacts/*Linux-Portable-*.tar.gz; do
+          for archive in "$RUNNER_TEMP"/artifacts/*Linux-Portable-*.tar.xz; do
             [ -e "$archive" ] || continue
             python tools/check_release_integrity.py . \
               --portable-tar "$archive" --portable-platform linux --portable-deep
@@ -437,7 +437,7 @@ jobs:
             - **Windows**（Standard/Full）：GUI + Chromium +（Full 含）ChromeDriver/Tesseract/PaddleOCR
               - 安装：解压 ZIP → 双击 `OmniCrawler-Launcher.bat`
             - **Linux**（Standard/Full）：GUI + Chromium +（Full 含）Tesseract/ChromeDriver/PaddleOCR（构建期打包，解压即用）
-              - 安装：`tar -xzf <包> && ./OmniCrawler/omnicrawler --help`
+              - 安装：`tar -xJf <包> && ./OmniCrawler/omnicrawler --help`
             - **macOS**（Standard/Full）：.app（ad-hoc 签名）+（Full 含）Tesseract/ChromeDriver（Paddle OCR 以 Transformers 后端替代）；首次打开请右键 → 打开
               - 安装：挂载 dmg → 进入 OmniCrawler 文件夹 → 将 OmniCrawler.app 拖入 Applications
 

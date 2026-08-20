@@ -9,6 +9,7 @@ import configparser
 import csv
 import hashlib
 import io
+import itertools
 import json
 import re
 import tarfile
@@ -32,7 +33,7 @@ _WINDOWS_RESERVED_NAMES = {
     *(f"LPT{number}" for number in range(1, 10)),
 }
 
-# 便携包平台布局（P5：Windows zip 已有深校验，Linux tar.gz / macOS dmg 补齐）
+# 便携包平台布局（P5：Windows zip 已有深校验，Linux tar.xz / macOS dmg 补齐）
 # Linux/macOS 产物顶层是 OmniCrawler/（M4 对齐），入口可执行文件无 .exe 后缀。
 # macOS 是 .app bundle，入口在 Contents/MacOS/ 下。
 _PORTABLE_PLATFORM_ENTRYPOINTS: dict[str, tuple[str, ...]] = {
@@ -835,7 +836,7 @@ def check_portable_tar(
     verify_payloads: bool = False,
     platform: str = "linux",
 ) -> list[str]:
-    """检查 Linux/macOS 便携包 tar.gz 容器（P5：与 Windows zip 深校验对齐）。"""
+    """检查 Linux/macOS 便携包 tar.xz/tar.gz 容器（P5：与 Windows zip 深校验对齐）。"""
     try:
         with tarfile.open(tar_path, "r:*") as archive:
             entries = list(_iter_tar_entries(archive, collect_payloads=verify_payloads))
@@ -912,9 +913,16 @@ def main() -> int:
             )
         )
     if args.portable_tar_dir:
-        archives = sorted(args.portable_tar_dir.resolve().glob("*.tar.gz"))
+        # Linux 主产物为 tar.xz（v0.9.1：tar.gz 超 GitHub Release 2GiB
+        # 上限改用 xz）；macOS hdiutil 失败时回退 tar.gz，故两种都扫。
+        archives = sorted(
+            itertools.chain(
+                args.portable_tar_dir.resolve().glob("*.tar.xz"),
+                args.portable_tar_dir.resolve().glob("*.tar.gz"),
+            )
+        )
         if not archives:
-            errors.append(f"no portable tar.gz found in {args.portable_tar_dir.resolve()}")
+            errors.append(f"no portable tar.xz/tar.gz found in {args.portable_tar_dir.resolve()}")
         for archive in archives:
             errors.extend(
                 f"{archive.name}: {error}"

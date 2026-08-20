@@ -32,7 +32,7 @@ except ModuleNotFoundError:  # Python < 3.11
 # 平台产物 → 该平台 job 应覆盖的发行物（不要求其他平台产物）
 _PLATFORM_REQUIRED = {
     "Windows-Portable": ("Windows-Portable-Standard.zip", "Windows-Portable-Full.zip"),
-    "Linux-Portable": ("Linux-Portable-Standard.tar.gz", "Linux-Portable-Full.tar.gz"),
+    "Linux-Portable": ("Linux-Portable-Standard.tar.xz", "Linux-Portable-Full.tar.xz"),
     "macOS-Portable": ("macOS-Portable-Standard.dmg", "macOS-Portable-Full.dmg"),
 }
 

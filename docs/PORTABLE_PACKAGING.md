@@ -28,7 +28,7 @@ OmniCrawler-<version>-<Platform>-Portable-<Edition>.<ext>
 | 平台 | 脚本 | PyInstaller spec | 产物格式 | 运行时策略 |
 |---|---|---|---|---|
 | Windows | `build_windows.ps1` | `packaging/OmniCrawler[-Standard].spec` | ZIP（Standard/Full） | 捆绑 Chromium + ChromeDriver + Tesseract + PaddleOCR |
-| Linux | `build_linux.sh` | `packaging/OmniCrawler-Linux.spec` | tar.gz（Standard/Full） | 捆绑 Chromium；Tesseract 由系统包（apt/dnf）提供 |
+| Linux | `build_linux.sh` | `packaging/OmniCrawler-Linux.spec` | tar.xz（Standard/Full） | 捆绑 Chromium；Tesseract 由系统包（apt/dnf）提供 |
 | macOS | `build_macos.sh` | `packaging/OmniCrawler-macOS.spec` | dmg（Standard/Full） | 捆绑 Chromium；Tesseract 由 Homebrew 提供 |
 
 三个 spec 共享同一套 datas / hiddenimports / excludes 取舍（Standard 范围排除 paddle/torch 等重型可选包、显式收集 lxml 与 playwright driver）。改动跨平台行为时，**四个 spec 必须同步修改**。
@@ -39,7 +39,7 @@ OmniCrawler-<version>-<Platform>-Portable-<Edition>.<ext>
 
 - 仅支持 x86_64 / aarch64（脚本内 `uname -m` 断言）。
 - 在隔离 venv（`<BuildRoot>/venv`）安装 `.[full,dev]` 或 Standard extras 后构建。
-- 产物为 `OmniCrawler-<version>-Linux-Portable-<Edition>.tar.gz`，解压后：
+- 产物为 `OmniCrawler-<version>-Linux-Portable-<Edition>.tar.xz`，解压后：
   - GUI：`OmniCrawler`
   - CLI：`omnicrawler`
   - worker：`omnicrawler-worker`

@@ -10,7 +10,7 @@
 #   ./build_linux.sh --edition Full      # Full（含 OCR 依赖，系统包 + Paddle 模型）
 #
 # 产物：
-#   OmniCrawler-<version>-Linux-Portable-<Edition>.tar.gz
+#   OmniCrawler-<version>-Linux-Portable-<Edition>.tar.xz
 # 暂存目录（未压缩完整包）：
 #   <BuildRoot>/release/OmniCrawler/
 # =============================================================================
@@ -249,21 +249,24 @@ fi
 # 使清单覆盖这两个机器可读文件（与 Windows 同序：先加文件再刷清单）。
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/create_runtime_manifest.py" --release-root "$RELEASE_ROOT"
 "$RELEASE_ROOT/omnicrawler" runtime-verify --root "$RELEASE_ROOT"
-# P5 完整版：Linux tar.gz 的容器级深校验在打包后执行（见下方 check_release_integrity
+# P5 完整版：Linux tar.xz 的容器级深校验在打包后执行（见下方 check_release_integrity
 # --portable-tar --portable-deep），与 Windows 对 zip 的 --portable-zip --portable-deep 对齐。
 
-# ---- 打包 tar.gz --------------------------------------------------------------
+# ---- 打包 tar.xz --------------------------------------------------------------
+# 选 xz 而非 gzip：Linux Full 包 tar.gz -6 实测 2095MB，超 GitHub Release
+# 单文件 2GiB 上限（run 32290393108/32299759729 上传被拒）；同样内容
+# tar.xz -6 实测 1714MB（余量 334MB），零内容删减、零功能变化。
 mkdir -p "$RELEASE_OUTPUT"
-RELEASE_ARCHIVE="$RELEASE_OUTPUT/OmniCrawler-$APP_VERSION-Linux-Portable-$EDITION.tar.gz"
-# 打包 tar.gz：排除运行期 logs/（与 RUNTIME-MANIFEST 的排除规则一致——
+RELEASE_ARCHIVE="$RELEASE_OUTPUT/OmniCrawler-$APP_VERSION-Linux-Portable-$EDITION.tar.xz"
+# 打包 tar.xz：排除运行期 logs/（与 RUNTIME-MANIFEST 的排除规则一致——
 # create_runtime_manifest 不记录 logs/，深校验要求 tar 与 manifest 双向一致）。
-tar -czf "$RELEASE_ARCHIVE" -C "$BUILD_ROOT/release" --exclude='OmniCrawler/logs' OmniCrawler
+tar -cJf "$RELEASE_ARCHIVE" -C "$BUILD_ROOT/release" --exclude='OmniCrawler/logs' OmniCrawler
 
-# P5 完整版：Linux tar.gz 容器级深校验（与 Windows zip 对齐）。
+# P5 完整版：Linux tar.xz 容器级深校验（与 Windows zip 对齐）。
 # --portable-deep 对包内每个文件做 SHA-256 与 RUNTIME-MANIFEST 双向核对。
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/check_release_integrity.py" "$PROJECT_ROOT" \
   --portable-tar "$RELEASE_ARCHIVE" --portable-platform linux --portable-deep \
-  || { echo "Linux portable tar.gz 深校验失败" >&2; exit 1; }
+  || { echo "Linux portable tar.xz 深校验失败" >&2; exit 1; }
 
 echo "Build staging: $RELEASE_ROOT"
 echo "Portable archive: $RELEASE_ARCHIVE"
