@@ -90,6 +90,12 @@ class PluginMetadata:
     max_core_version: str = ""
     fallback: str = "generic"
     resource_limits: dict[str, Any] = field(default_factory=dict)
+    # Phase 1（B1 schema 扩展）：执行模式声明（in_process|subprocess，
+    # 缺省 subprocess 无兼容语义）+ 第三方依赖声明（门 3 双向一致性）
+    execution_mode: str = "subprocess"
+    dependencies: tuple[dict[str, Any], ...] = ()
+    # files:read 路径白名单（第 82 轮更名：原 files 与市场仓扫描允许列表冲突）
+    input_files: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +139,50 @@ class StatusWidgetRegistration:
     widget_factory: Callable[..., Any]
 
 
+def _normalize_schema_fields(result: PluginMetadata, path: Path) -> PluginMetadata:
+    """Phase 1（B1 schema 扩展）：execution_mode 枚举归一 + 新字段类型收敛。
+
+    - execution_mode 非法枚举 → 拒绝（无兼容语义）；未声明 = subprocess；
+    - dependencies / input_files 收敛为 tuple（兼容插件以 list 声明）。
+    """
+    mode = str(result.execution_mode or "").strip()
+    if mode == "":
+        mode = "subprocess"
+    if mode not in ("in_process", "subprocess"):
+        raise ValueError(
+            f"插件 {result.name} execution_mode 非法: {mode!r}（仅 in_process | subprocess）; file={path}"
+        )
+    deps = result.dependencies
+    if not isinstance(deps, tuple):
+        deps = tuple(deps)
+    input_files = result.input_files
+    if not isinstance(input_files, tuple):
+        input_files = tuple(str(item) for item in input_files)
+    if mode == result.execution_mode and deps is result.dependencies and input_files is result.input_files:
+        return result
+    return PluginMetadata(
+        name=result.name,
+        version=result.version,
+        api_version=result.api_version,
+        description=result.description,
+        plugin_types=result.plugin_types,
+        capabilities=result.capabilities,
+        domains=result.domains,
+        config_schema=result.config_schema,
+        permissions=result.permissions,
+        optional_dependencies=result.optional_dependencies,
+        license=result.license,
+        source_url=result.source_url,
+        min_core_version=result.min_core_version,
+        max_core_version=result.max_core_version,
+        fallback=result.fallback,
+        resource_limits=result.resource_limits,
+        execution_mode=mode,
+        dependencies=deps,
+        input_files=input_files,
+    )
+
+
 def _metadata(module: Any, path: Path) -> PluginMetadata:
     value = getattr(module, "PLUGIN_METADATA", None)
     if value is None:
@@ -146,6 +196,8 @@ def _metadata(module: Any, path: Path) -> PluginMetadata:
         result = PluginMetadata(**value)
     else:
         raise TypeError(f"PLUGIN_METADATA必须是PluginMetadata或字典: {path}")
+    # Phase 1（B1）：execution_mode 枚举归一化 + dependencies/input_files 类型归一
+    result = _normalize_schema_fields(result, path)
     if result.api_version != PLUGIN_API_VERSION:
         raise RuntimeError(f"插件API版本不兼容: {path} 需要{result.api_version}，当前为{PLUGIN_API_VERSION}")
     if not result.name.strip():
@@ -313,7 +365,10 @@ class Registry:
                     "domains": list(item.domains),
                     "license": item.license,
                     "fallback": item.fallback,
-                    "execution_mode": "in_process_trusted",
+                    # Phase 1（基线修复）：动态输出真实声明模式，不再硬编码
+                    # in_process_trusted（0.10 起运行期实际后端由路由矩阵裁决，
+                    # Phase 2 接线 B4 后此处输出运行态模式）
+                    "execution_mode": item.execution_mode,
                 }
                 for item in self.plugins
             ],

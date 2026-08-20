@@ -383,6 +383,63 @@ def test_generate_includes_templates(tmp_path: Path) -> None:
     assert checked.returncode == 0, checked.stdout
 
 
+# ── Phase 1 schema 扩展（B1：execution_mode/domains/dependencies）──
+
+
+def test_execution_mode_default_subprocess(tmp_path: Path) -> None:
+    """B1：未声明 execution_mode → catalog 写入缺省 subprocess（无兼容语义）。"""
+    registry, trust_pem, _ = _build_registry(tmp_path)
+    result = _run("--registry", str(registry))
+    assert result.returncode == 0, result.stderr
+    catalog = json.loads((registry / "catalog.json").read_text(encoding="utf-8"))
+    assert catalog["plugins"][0]["execution_mode"] == "subprocess"
+
+
+def test_execution_mode_invalid_rejected(tmp_path: Path) -> None:
+    """B1：execution_mode 非法枚举 → 拒绝。"""
+    registry, trust_pem, _ = _build_registry(tmp_path)
+    manifest = registry / "plugins" / "demo_plug" / "plugin.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            "license: MIT\n", "license: MIT\nexecution_mode: hybrid\n"
+        ),
+        encoding="utf-8",
+    )
+    result = _run("--registry", str(registry))
+    assert result.returncode == 1, result.stdout
+    assert "execution_mode" in result.stdout
+
+
+def test_domains_must_be_string_list(tmp_path: Path) -> None:
+    """B1：domains 非法类型 → 拒绝。"""
+    registry, trust_pem, _ = _build_registry(tmp_path)
+    manifest = registry / "plugins" / "demo_plug" / "plugin.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            "license: MIT\n", "license: MIT\ndomains: example.com\n"
+        ),
+        encoding="utf-8",
+    )
+    result = _run("--registry", str(registry))
+    assert result.returncode == 1, result.stdout
+    assert "domains" in result.stdout
+
+
+def test_dependencies_must_be_name_mappings(tmp_path: Path) -> None:
+    """B1：dependencies 条目须为含 name 的映射，否则拒绝。"""
+    registry, trust_pem, _ = _build_registry(tmp_path)
+    manifest = registry / "plugins" / "demo_plug" / "plugin.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            "license: MIT\n", "license: MIT\ndependencies:\n  - requests\n"
+        ),
+        encoding="utf-8",
+    )
+    result = _run("--registry", str(registry))
+    assert result.returncode == 1, result.stdout
+    assert "dependencies" in result.stdout
+
+
 def test_check_detects_template_missing_publisher(tmp_path: Path) -> None:
     registry, trust_pem, private_pem = _build_registry(tmp_path)
     _add_market_template(registry, trust_pem, private_pem)

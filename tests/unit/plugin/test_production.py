@@ -280,7 +280,8 @@ class ProductionFoundationTest(unittest.TestCase):
         registry = Registry()
         load_local_plugins(registry, [str(plugin)], self.root, signature_policy="developer")
         self.assertEqual(registry.describe()["plugins"], ["demo@1.2.3"])
-        self.assertEqual(registry.describe()["plugin_details"][0]["execution_mode"], "in_process_trusted")
+        # Phase 1（基线修复）：动态输出真实声明模式，未声明缺省 subprocess（无兼容语义）
+        self.assertEqual(registry.describe()["plugin_details"][0]["execution_mode"], "subprocess")
 
     def test_plugin_dynamic_metadata_cannot_bypass_approval_gate(self):
         """S1.3.7：动态计算的 PLUGIN_METADATA 无法绕过权限审批门。"""
