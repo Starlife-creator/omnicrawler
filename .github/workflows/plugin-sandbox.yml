@@ -1,0 +1,97 @@
+name: plugin-sandbox
+
+# Phase 2a F3：插件子进程运行时契约与穿透矩阵（CI 分级）。
+# - 双后端（源码 -I -S / 冻结宿主 exe 由 release 管线覆盖）跑同一套契约与穿透用例
+# - windows-latest AppContainer 探测 spike（fail-fast 探针，第 73 轮）
+# - AC 用例豁免语义：runner 无完整 AppContainer 能力时 skip + 缺口标注，不算门禁红（第 74 轮）
+#
+# 触发：插件运行时/契约相关代码变更；nightly 全量穿透矩阵（方案第 19 轮）。
+
+on:
+  push:
+    paths:
+      - "src/omnicrawler/plugins/**"
+      - "packaging/OmniCrawler-SandboxHost.spec"
+      - "tests/unit/plugin/**"
+      - ".github/workflows/plugin-sandbox.yml"
+  pull_request:
+    paths:
+      - "src/omnicrawler/plugins/**"
+      - "packaging/OmniCrawler-SandboxHost.spec"
+      - "tests/unit/plugin/**"
+      - ".github/workflows/plugin-sandbox.yml"
+  schedule:
+    # nightly 穿透矩阵
+    - cron: "30 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-matrix:
+    name: 契约/穿透矩阵 (${{ matrix.os }} / Py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]" cryptography pyinstaller
+      # F1 公共契约夹具 + F2 差分 + 隔离/路由/适配器/broker 全套
+      - name: 插件契约与穿透用例（源码后端）
+        run: |
+          python -m pytest tests/unit/plugin/test_sandbox_isolation.py \
+            tests/unit/plugin/test_capability_broker.py \
+            tests/unit/plugin/test_plugin_router.py \
+            tests/unit/plugin/test_subprocess_adapter.py \
+            tests/unit/plugin/test_contract_suite_example.py \
+            tests/unit/plugin/test_differential_equivalence.py \
+            -q -p no:cacheprovider
+        shell: bash
+
+  appcontainer-spike:
+    name: Windows AppContainer 探测 spike（fail-fast 探针）
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+      # 探针：检测 runner 是否具备完整 AppContainer 能力（第 73 轮）。
+      # 失败仅告警不红——AC 用例走豁免语义（skip + 缺口标注，H4），
+      # 由真实环境报告（--report）在具备 AC 的机器补验（第 74 轮）。
+      - name: AppContainer 能力探测
+        id: ac_probe
+        run: |
+          python - << 'PY'
+          import ctypes, sys
+          ok = True
+          try:
+              advapi = ctypes.windll.advapi32
+              sid = ctypes.c_void_p()
+              # CreateAppContainerProfile 存在性探测
+              if not hasattr(advapi, "CreateAppContainerProfile"):
+                  ok = False
+          except Exception as e:
+              print(f"探测异常: {e}")
+              ok = False
+          print(f"appcontainer_available={'true' if ok else 'false'}")
+          with open(__import__('os').environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"ac_ok={'true' if ok else 'false'}\n")
+          PY
+        shell: bash
+      - name: 缺口标注（AC 不可用时）
+        if: steps.ac_probe.outputs.ac_ok == 'false'
+        run: |
+          echo "::warning::windows-latest runner 无完整 AppContainer 能力；完整 AC 穿透用例标记 skip + 缺口标注（H4），待真实环境报告补验。"
+        shell: bash
