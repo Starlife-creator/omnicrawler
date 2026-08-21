@@ -181,3 +181,34 @@ def resolve_runtime_backend(plugins_section: dict[str, Any] | None) -> tuple[str
     if os.environ.get("OMNICRAWL_ALLOW_UNSANDBOXED_PLUGIN", "").strip() in ("1", "true", "yes"):
         escape = True
     return backend, escape
+
+
+def detect_contract_shape(source: str) -> int:
+    """静态检测插件契约形态（不执行代码，AST 顶层函数扫描）。
+
+    返回契约版本号：
+    - 契约 2：顶层定义 ``handle`` → 2（可 subprocess）
+    - 契约 1：顶层定义 ``register`` 无 ``handle`` → 1（仅 in_process/legacy）
+    - 两者皆无 → 0（非法，由调用方拒载）
+
+    契约 1 不能以 subprocess 运行（register/继承在子进程无宿主注册面，
+    方案第 17 轮）；此函数是加载器路由分流的静态依据。
+    """
+    import ast
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return 0
+    has_handle = has_register = False
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef):
+            if node.name == "handle":
+                has_handle = True
+            elif node.name == "register":
+                has_register = True
+    if has_handle:
+        return 2
+    if has_register:
+        return 1
+    return 0

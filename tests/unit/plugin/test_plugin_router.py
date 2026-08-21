@@ -154,3 +154,12 @@ def test_invalid_runtime_backend_rejected() -> None:
         r.validate_runtime_backend("banana")
     assert r.validate_runtime_backend("auto") == r.RUNTIME_BACKEND_AUTO
     assert r.validate_runtime_backend("FORCE_SUBPROCESS") == r.RUNTIME_BACKEND_FORCE_SUBPROCESS
+
+
+def test_detect_contract_shape() -> None:
+    assert r.detect_contract_shape("def handle(op, p): return {}") == 2
+    assert r.detect_contract_shape("def register(reg): pass") == 1
+    # 两者共存按契约 2（可 subprocess）
+    assert r.detect_contract_shape("def handle(op,p): return {}\ndef register(r): pass") == 2
+    assert r.detect_contract_shape("x = 1") == 0
+    assert r.detect_contract_shape("def broken(") == 0
