@@ -179,6 +179,31 @@ DEFAULTS: dict[str, Any] = {
         # 默认 "market"：仓库根 market/ 为内置快照（出包时打入 catalog.json + 信任根公钥 + 首发模板），
         # 用户开箱即可离线浏览/安装市场；找不到时回退 local_fallback（../OmniCrawler-market）或 catalog_url。
         "bundled_catalog_dir": "market",
+        # ---- Phase 2a B5：子进程运行时配置键 ----
+        # 三态：auto（按路由裁决）/ force_subprocess（总闸）/ legacy_in_process（逃生开关）。
+        "runtime_backend": "auto",
+        # 豁免表：[{plugin_id, version_range, reason, expires（必填，ISO8601）}]；
+        # 显式强制进程内（绕过批准矩阵）；解析损坏 → fail-closed 视为空表。
+        "in_process_allowlist": [],
+        # 逃生开关（另可用环境变量 OMNICRAWL_ALLOW_UNSANDBOXED_PLUGIN=1 双通道）；
+        # 每次启用写审计。
+        "sandbox_escape": False,
+        # 额外信任根公钥列表（企业私有市场/自建根场景，G1 联动 catalog 签名）。
+        "trust_roots": [],
+        # 启动时（有网）拉 catalog 检查已装插件版本是否被吊销（G2）。
+        "revocation_check": True,
+        # 会话调用超时；冻结冷启动握手单独放宽 60s（onefile 自解压，C1）。
+        "subprocess_timeout_seconds": 30,
+        # Job Object / rlimit 内存上限（MB）。
+        "subprocess_memory_mb": 512,
+        # 全局并发会话上限（N×512MB 资源总和控制；作用于会话）。
+        "subprocess_max_concurrent": 4,
+        # 会话崩溃后是否自动重 spawn（默认否，保持确定性）。
+        "session_restart_on_error": False,
+        # 插件每日请求/字节配额（E_QUOTA 来源；与 maximum_requests 构成双层量约束）。
+        "network_daily_quota": {},
+        # 数据外传关联检测策略：prompt（个人默认，共现提示）/ block（企业档，共现阻断）。
+        "egress_policy": "prompt",
     },
     "resources": {
         "profile": "balanced",
