@@ -169,7 +169,110 @@ def audit_local_plugin(plugin_dir: Path) -> AuditResult:
     # 凭据扫描
     result.findings.extend(_scan_credentials(plugin_dir))
 
+    # Phase 2a（B5）：契约形态与 execution_mode 一致性检查
+    result.findings.extend(_check_contract_consistency(plugin_dir))
+
     return result
+
+
+def _check_contract_consistency(plugin_dir: Path) -> list[AuditFinding]:
+    """契约形态 ↔ execution_mode 一致性（方案第 17 轮：契约 1 不能 subprocess）。
+
+    - 契约 1（仅 register）声明 execution_mode=subprocess → error（无宿主注册面，
+      无法子进程运行；须迁移契约 2 或改 in_process）
+    - 契约形态未知（无 handle 也无 register）→ warning
+    """
+    from .plugin_router import detect_contract_shape
+
+    findings: list[AuditFinding] = []
+    plugin_file = plugin_dir / "plugin.py"
+    if not plugin_file.is_file():
+        return findings
+    try:
+        source = plugin_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return findings
+    shape = detect_contract_shape(source)
+
+    execution_mode = ""
+    try:
+        tree = ast.parse(source)
+        for node in tree.body:
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == "PLUGIN_METADATA":
+                        meta = ast.literal_eval(node.value)
+                        if isinstance(meta, dict):
+                            execution_mode = str(meta.get("execution_mode") or "").strip()
+    except (SyntaxError, ValueError, TypeError):
+        pass
+
+    if shape == 0:
+        findings.append(
+            AuditFinding(
+                level="warning",
+                code="contract_unknown",
+                message="未检测到 handle（契约2）或 register（契约1）入口，契约形态未知",
+            )
+        )
+    if shape == 1 and (execution_mode == "" or execution_mode == "subprocess"):
+        # 契约 1 + subprocess（含缺省）：0.10 语义下拒载，本地自检给 error
+        findings.append(
+            AuditFinding(
+                level="error",
+                code="contract1_cannot_subprocess",
+                message="契约 1（register）插件不能以 subprocess 运行"
+                "（请迁移契约 2 或显式声明 execution_mode: in_process）",
+            )
+        )
+    if shape == 2:
+        findings.append(
+            AuditFinding(
+                level="info", code="contract2", message="契约 2（handle）：支持 subprocess 隔离运行"
+            )
+        )
+    return findings
+
+
+def probe_sandbox_backend() -> dict:
+    """沙箱可用性探测（B5：plugins audit 沙箱探测项；E_UNSUPPORTED_ENV 前置）。
+
+    返回 {backend, ok, detail}：
+    - 冻结模式：检查 omnicrawler-sandbox-host.exe 存在性
+    - 源码模式：实际 spawn 子进程跑一次 system.info 往返（最真实的可用性验证）
+    """
+    from . import plugin_backend
+
+    backend = plugin_backend.backend_name()
+    try:
+        command, _ = plugin_backend.resolve_backend_command()
+    except FileNotFoundError as exc:
+        return {"backend": backend, "ok": False, "detail": str(exc)}
+
+    # 源码模式实测：spawn + 一次最小往返（handle echo）
+    import json
+    import subprocess
+    import tempfile
+
+    probe_dir = Path(tempfile.mkdtemp(prefix="omnicrawler-probe-"))
+    probe_file = probe_dir / "probe.py"
+    probe_file.write_text("def handle(op, payload):\n    return {'ok': True}\n", encoding="utf-8")
+    full_command = [*command, "probe", str(probe_dir)]
+    try:
+        completed = subprocess.run(
+            full_command,
+            input=json.dumps({"v": 1, "operation": "ping", "payload": {}, "request_id": "probe"}),
+            capture_output=True, text=True, encoding="utf-8", timeout=20, check=False,
+        )
+        ok = completed.returncode == 0 and '"ok": true' in completed.stdout
+        detail = completed.stderr[-200:] if not ok else "subprocess 往返正常"
+    except Exception as exc:  # noqa: BLE001
+        ok, detail = False, f"探测失败: {exc}"
+    finally:
+        import shutil
+
+        shutil.rmtree(probe_dir, ignore_errors=True)
+    return {"backend": backend, "ok": ok, "detail": detail}
 
 
 def audit_local_directory(base_dir: Path) -> list[AuditResult]:
