@@ -289,3 +289,249 @@ def audit_local_directory(base_dir: Path) -> list[AuditResult]:
             if child.is_dir() and (child / "plugin.py").is_file():
                 results.append(audit_local_plugin(child))
     return results
+
+
+# ============================================================================
+# Phase 2a 门 1 / 门 3（方案第 26/67 轮；与 CI generate_catalog 同源逻辑）
+# ============================================================================
+
+# 门 3 依赖许可白名单（A2 单一权威来源：与 generate_catalog.py LICENSE_ALLOWLIST
+# 同源；变更须两侧同步 + I2 文档比对 job 校验）
+_DEPENDENCY_LICENSE_ALLOWLIST = {
+    "AGPL-3.0-only", "AGPL-3.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later",
+    "MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CC0-1.0", "Unlicense",
+}
+
+# 门 1：subprocess 插件禁 import 的宿主核心模块前缀（隔离边界）
+_HOST_CORE_PREFIXES = ("omnicrawler.", "omnicrawler")
+# 门 1：subprocess 禁声明的权限族（ui:*/hook 需 keepalive/in_process）
+_SUBPROCESS_FORBIDDEN_PERMISSION_PREFIXES = ("ui:", "hook")
+
+
+def _extract_imports(source: str) -> set[str]:
+    """AST 提取顶层模块名集合（import x / from x.y import z → 'x'）。"""
+    import ast
+
+    names: set[str] = set()
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return names
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add(alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                names.add(node.module.split(".")[0])
+    return names
+
+
+def _extract_static_metadata(plugin_dir: Path) -> dict | None:
+    """静态读 PLUGIN_METADATA 字面量（不执行代码）。"""
+    import ast
+
+    plugin_file = plugin_dir / "plugin.py"
+    if not plugin_file.is_file():
+        return None
+    try:
+        tree = ast.parse(plugin_file.read_text(encoding="utf-8"))
+    except (SyntaxError, OSError):
+        return None
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "PLUGIN_METADATA":
+                    try:
+                        value = ast.literal_eval(node.value)
+                        if isinstance(value, dict):
+                            return value
+                    except (ValueError, TypeError):
+                        return None
+    return None
+
+
+def gate_declaration_consistency(plugin_dir: Path) -> list[AuditFinding]:
+    """门 1：execution_mode 与代码/权限声明一致性（方案第 26/50 轮）。
+
+    - subprocess 声明却 import omnicrawler 核心 → error（隔离边界破坏）
+    - subprocess 声明 ui:* / hook 权限 → error（无宿主注册面/keepalive 未声明）
+    - network 权限无 domains 声明 → error
+    - files:read 权限无 input_files 白名单 → error（第 50 轮）
+    """
+    findings: list[AuditFinding] = []
+    meta = _extract_static_metadata(plugin_dir)
+    plugin_file = plugin_dir / "plugin.py"
+    if meta is None or not plugin_file.is_file():
+        return findings  # 无静态元数据（契约 1）不在此门裁决
+
+    execution_mode = str(meta.get("execution_mode", "subprocess")).strip() or "subprocess"
+    permissions = {str(p).casefold() for p in meta.get("permissions", [])}
+    source = plugin_file.read_text(encoding="utf-8")
+
+    if execution_mode == "subprocess":
+        imports = _extract_imports(source)
+        host_imports = {
+            name for name in imports
+            if name == "omnicrawler" or name.startswith(_HOST_CORE_PREFIXES)
+        }
+        if host_imports:
+            findings.append(
+                AuditFinding(
+                    level="error",
+                    code="gate1_subprocess_imports_host",
+                    message=(
+                        f"subprocess 插件禁止 import 宿主核心: {sorted(host_imports)}"
+                        "（隔离边界；请改用能力代理 omnicrawler_sdk）"
+                    ),
+                )
+            )
+        forbidden_perms = {
+            p for p in permissions
+            if any(p.startswith(prefix) for prefix in _SUBPROCESS_FORBIDDEN_PERMISSION_PREFIXES)
+        }
+        if forbidden_perms:
+            findings.append(
+                AuditFinding(
+                    level="error",
+                    code="gate1_subprocess_forbidden_permission",
+                    message=(
+                        f"subprocess 插件不得声明 ui:*/hook 权限: {sorted(forbidden_perms)}"
+                        "（无宿主注册面；hook 需 keepalive，ui 需 in_process）"
+                    ),
+                )
+            )
+
+    if "network" in permissions or "network:scoped" in permissions:
+        domains = meta.get("domains", [])
+        if not domains:
+            findings.append(
+                AuditFinding(
+                    level="error",
+                    code="gate1_network_without_domains",
+                    message="network 权限必须声明 domains（egress 边界）",
+                )
+            )
+
+    if "files:read" in permissions:
+        input_files = meta.get("input_files", [])
+        if not input_files:
+            findings.append(
+                AuditFinding(
+                    level="error",
+                    code="gate1_files_read_without_allowlist",
+                    message="files:read 权限必须声明 input_files 路径白名单（第 50 轮）",
+                )
+            )
+
+    return findings
+
+
+def gate_dependencies_consistency(plugin_dir: Path) -> list[AuditFinding]:
+    """门 3：dependencies 双向一致性（第 67 轮）。
+
+    - 声明的每个依赖（name/version/license）必须在实测导入图中存在
+    - 实测导入中出现但**未声明**的第三方依赖 → 拒
+    - dependencies 子字段 license 须在白名单内（A2）
+    空 dependencies（[]）合法——零第三方依赖插件。
+    """
+    findings: list[AuditFinding] = []
+    meta = _extract_static_metadata(plugin_dir)
+    plugin_file = plugin_dir / "plugin.py"
+    if meta is None or not plugin_file.is_file():
+        return findings
+
+    declared = meta.get("dependencies")
+    if declared is None:
+        # 第 67 轮：dependencies 必填，缺省视为非法（除非零依赖显式 []）
+        findings.append(
+            AuditFinding(
+                level="warning",
+                code="gate3_dependencies_missing",
+                message="PLUGIN_METADATA.dependencies 未声明（零依赖请显式填 []）",
+            )
+        )
+        declared = []
+    if not isinstance(declared, list):
+        findings.append(
+            AuditFinding(
+                level="error", code="gate3_dependencies_not_list",
+                message="dependencies 必须是列表 [{name, version, license}]",
+            )
+        )
+        return findings
+
+    declared_names: dict[str, dict] = {}
+    for dep in declared:
+        if not isinstance(dep, dict):
+            findings.append(
+                AuditFinding(
+                    level="error", code="gate3_dependency_not_dict",
+                    message=f"dependencies 条目非法: {dep!r}",
+                )
+            )
+            continue
+        name = str(dep.get("name", "")).strip()
+        if not name:
+            findings.append(
+                AuditFinding(level="error", code="gate3_dependency_no_name", message="依赖缺 name")
+            )
+            continue
+        declared_names[name] = dep
+        license_id = str(dep.get("license", "")).strip()
+        if not license_id:
+            findings.append(
+                AuditFinding(
+                    level="error", code="gate3_dependency_no_license",
+                    message=f"依赖 {name} 缺 license（门 2 白名单校验前提）",
+                )
+            )
+        elif license_id not in _DEPENDENCY_LICENSE_ALLOWLIST:
+            findings.append(
+                AuditFinding(
+                    level="error", code="gate3_dependency_license_not_allowlisted",
+                    message=f"依赖 {name} 许可 {license_id!r} 不在白名单",
+                )
+            )
+
+    # 实测导入图（AST）—— 与声明严格互证
+    import sys as _sys
+
+    source = plugin_file.read_text(encoding="utf-8")
+    actual_imports = _extract_imports(source)
+    stdlib = set(getattr(_sys, "stdlib_module_names", set()))
+    # 第三方 = 非标准库、非插件自身、非宿主（宿主由门 1 裁决）
+    third_party = {
+        name for name in actual_imports
+        if name not in stdlib
+        and name != "omnicrawler"
+        and name != plugin_file.stem
+        and not name.startswith("omnicrawler_sdk")
+    }
+
+    for name in sorted(declared_names):
+        if name not in third_party:
+            findings.append(
+                AuditFinding(
+                    level="error", code="gate3_declared_but_not_imported",
+                    message=f"声明的依赖 {name} 未在实测导入图中出现（声明与实现互证失败）",
+                )
+            )
+    for name in sorted(third_party):
+        if name not in declared_names:
+            findings.append(
+                AuditFinding(
+                    level="error", code="gate3_imported_but_not_declared",
+                    message=f"实测导入 {name} 未在 dependencies 声明（未声明即拒，第 67 轮）",
+                )
+            )
+
+    return findings
+
+
+def audit_local_plugin_full(plugin_dir: Path) -> AuditResult:
+    """完整审计：Phase 1（许可+凭据+契约一致性）+ Phase 2a 门 1/门 3。"""
+    result = audit_local_plugin(plugin_dir)  # 已含契约一致性检查
+    result.findings.extend(gate_declaration_consistency(plugin_dir))
+    result.findings.extend(gate_dependencies_consistency(plugin_dir))
+    return result
