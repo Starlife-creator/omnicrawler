@@ -197,6 +197,23 @@ def download_and_verify(
     if not verify_bytes(plugin_bytes, sig_bytes, trust_source):
         raise PermissionError(f"插件 {plugin_id} 签名校验失败（fail-closed 拒载）")
 
+    # G1（time-of-check 后门防线）：下载内容 sha256 vs catalog 固化哈希。
+    # CI 绿后作者改内容 → 此处发现即拒装（decision: hash_mismatch）。
+    from .catalog_trust import check_download_hash, check_revocation
+
+    hash_ok, hash_reason = check_download_hash(plugin_bytes, entry)
+    if not hash_ok:
+        raise PermissionError(f"插件 {plugin_id} 下载校验失败: {hash_reason}（fail-closed 拒装）")
+    if hash_reason and "sha256_unknown" in hash_reason:
+        LOGGER.info("插件 %s 存量无 sha256，跳过哈希校验: %s", plugin_id, hash_reason)
+
+    # G2：吊销/弃用状态裁决——命中吊销禁安装（优先级最高）。
+    allowed, revocation_reason = check_revocation(entry)
+    if not allowed:
+        raise PermissionError(f"插件 {plugin_id} 拒绝安装: {revocation_reason}")
+    if revocation_reason:
+        LOGGER.warning("插件 %s: %s", plugin_id, revocation_reason)
+
     dest_dir = Path(dest_root) / plugin_id
     dest_dir.mkdir(parents=True, exist_ok=True)
     plugin_path = dest_dir / "plugin.py"
