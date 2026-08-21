@@ -648,6 +648,59 @@ def _load_local_plugin(
         plugin_bytes=plugin_bytes,
         is_market=is_market,
     )
+
+    # ---- Phase 2a B4：运行模式路由分流（验签后、执行前）----
+    # 契约 2（handle）+ subprocess 模式 → 注册子进程适配器工厂，不在主进程 exec。
+    # 契约 1（register）无法 subprocess（无宿主注册面）→ 走既有 in_process 路径。
+    from . import plugin_router
+    from .plugin_subprocess_adapter import SubprocessSourceAdapter, _SubprocessSessionHost
+
+    contract_shape = plugin_router.detect_contract_shape(source)
+    static_meta = _static_plugin_metadata(path, source) if contract_shape == 2 else None
+    execution_mode = (
+        static_meta.execution_mode if static_meta is not None else "subprocess"
+    )
+    plugins_section = config.section("plugins") if config is not None else {}
+    backend_cfg, _escape = plugin_router.resolve_runtime_backend(plugins_section)
+    allowlist_entry: dict[str, Any] | None = None
+    plugin_id = static_meta.name if static_meta is not None else path.parent.name
+    if backend_cfg == plugin_router.RUNTIME_BACKEND_AUTO:
+        for entry in plugins_section.get("in_process_allowlist", []):
+            if isinstance(entry, dict) and entry.get("plugin_id") == plugin_id:
+                allowlist_entry = entry
+                break
+    route = plugin_router.decide_route(
+        execution_mode=execution_mode,
+        runtime_backend=backend_cfg,
+        allowlist_entry=allowlist_entry,
+        maintainer_signed=(
+            decision.level.name == "MaintainerSigned" if decision is not None else False
+        ),
+        contract_version=contract_shape,
+        approver=None,  # 加载器无头：in_process 申请 fail-closed 降级
+    )
+    if route.backend == "subprocess" and contract_shape == 2:
+        LOGGER.info("契约 2 插件走子进程沙箱: %s（%s）", path, route.reason)
+        host = _SubprocessSessionHost(
+            path.parent,
+            path.stem if path.name != "plugin.py" else "plugin",
+            permissions={str(p).casefold() for p in (static_meta.permissions if static_meta else ())},
+            input_files=tuple(static_meta.input_files) if static_meta else (),
+            config=config,
+            timeout_seconds=float(plugins_section.get("subprocess_timeout_seconds", 30)),
+            verified_bytes=(
+                decision.verified_bytes if decision is not None and decision.verified_bytes else None
+            ),
+        )
+        # 按 plugin_types 注册对应槽位的适配器工厂（缺省按 source 处理）
+        plugin_types = static_meta.plugin_types if static_meta else ()
+        if not plugin_types or "source" in plugin_types:
+            registry.sources[plugin_id] = lambda cfg, _h=host: SubprocessSourceAdapter(_h, cfg)
+        registry.plugins.append(
+            static_meta if static_meta is not None else PluginMetadata(plugin_id, description="contract-2 subprocess plugin")
+        )
+        return
+
     LOGGER.warning(
         "Loading trusted local plugin in the main process: %s. "
         "Do not use plugins.paths for untrusted code; signed subprocess plugins are the target migration path.",
@@ -966,3 +1019,35 @@ def _preflight_permissions(path: Path, source: str) -> set[str]:
                 return {str(item).casefold() for item in permissions}
         raise PermissionError(f"PLUGIN_METADATA 结构非法: {path}")
     return set()
+
+
+def _static_plugin_metadata(path: Path, source: str) -> PluginMetadata | None:
+    """契约 2 subprocess 插件的静态元数据提取（不执行代码）。
+
+    subprocess 插件不在主进程 import/exec，故无法走 ``_metadata(module)``；
+    这里用与 ``_preflight_permissions`` 相同的 AST literal_eval 读 PLUGIN_METADATA
+    字面量并构造 PluginMetadata（经 _normalize_schema_fields 归一）。无
+    PLUGIN_METADATA 的契约 2 插件返回 None（由调用方按 legacy 名兜底）。
+    fail-closed：字面量非法 → PermissionError（与权限预检同语义）。
+    """
+    try:
+        tree = ast.parse(source, filename=str(path))
+    except SyntaxError as exc:
+        raise PermissionError(f"插件源码解析失败，拒绝加载: {path}（{exc}）") from exc
+    for node in tree.body:
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        if not any(isinstance(target, ast.Name) and target.id == "PLUGIN_METADATA" for target in targets):
+            continue
+        try:
+            value = ast.literal_eval(node.value)
+        except (ValueError, TypeError) as exc:
+            raise PermissionError(f"PLUGIN_METADATA 必须是静态字面量: {path}（{exc}）") from exc
+        if not isinstance(value, dict):
+            raise PermissionError(f"PLUGIN_METADATA 结构非法: {path}")
+        legacy_name = path.parent.name if path.name == "plugin.py" else path.stem
+        value.setdefault("name", legacy_name)
+        result = PluginMetadata(**value)
+        return _normalize_schema_fields(result, path)
+    return None
