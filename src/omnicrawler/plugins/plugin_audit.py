@@ -535,3 +535,75 @@ def audit_local_plugin_full(plugin_dir: Path) -> AuditResult:
     result.findings.extend(gate_declaration_consistency(plugin_dir))
     result.findings.extend(gate_dependencies_consistency(plugin_dir))
     return result
+
+
+# ============================================================================
+# Phase 2a H4：环境诊断报告（plugins audit --report；第 68/69/71 轮）
+# ============================================================================
+
+# 报告 schema 版本（第 71 轮）：随字段集变更单调递增（H7 语义）。
+REPORT_SCHEMA_VERSION = 1
+
+# 报告字段白名单（第 69 轮：防隐私意外）——仅从固定字段清单生成，
+# 任何不在清单内的运行时数据（路径/插件名/记录内容/审计 payload/凭据引用）
+# 一律不进报告。改字段清单 = 改代码 + 测试同步（H7 规则变更语义）。
+REPORT_FIELD_WHITELIST = frozenset({
+    "report_schema",
+    "os",
+    "os_version",
+    "kernel",
+    "python_version",
+    "app_version",
+    "sandbox_backend",
+    "sandbox_available",
+    "sandbox_detail",
+    "sandbox_supported_range",
+    "host_exe_present",
+})
+
+
+def generate_environment_report() -> str:
+    """生成脱敏环境诊断报告（Markdown，零插件明细/零路径/零用户标识）。
+
+    H4 回传通道：用户遇 E_UNSUPPORTED_ENV 拒载/沙箱故障时自愿粘贴至
+    GitHub Issue。字段白名单 + 输出前自检断言（越界即报错不生成）。
+    """
+    import platform
+
+    from .. import __version__
+    from . import plugin_backend, plugin_os_sandbox
+
+    probe = plugin_os_sandbox.probe_os_sandbox()
+    # 冻结产物才有伴生宿主 exe；源码模式恒为 False
+    host_present = plugin_backend.is_frozen() and plugin_backend.bundled_sandbox_host() is not None
+
+    report: dict[str, object] = {
+        "report_schema": REPORT_SCHEMA_VERSION,
+        "os": platform.system(),
+        "os_version": platform.version(),
+        "kernel": platform.release(),
+        "python_version": platform.python_version(),
+        "app_version": __version__,
+        "sandbox_backend": probe.backend,
+        "sandbox_available": probe.available,
+        "sandbox_detail": probe.detail,
+        "sandbox_supported_range": probe.supported_range,
+        "host_exe_present": host_present,
+    }
+
+    # 自检断言：字段越界即报错不生成（第 69 轮防隐私意外）
+    out_of_whitelist = set(report) - REPORT_FIELD_WHITELIST
+    if out_of_whitelist:
+        raise ValueError(f"报告字段越界白名单（拒绝生成）: {sorted(out_of_whitelist)}")
+
+    lines = [
+        f"```report_schema: {REPORT_SCHEMA_VERSION}",
+        "| 字段 | 值 |",
+        "| --- | --- |",
+    ]
+    for key in sorted(report):
+        lines.append(f"| {key} | {report[key]} |")
+    lines.append("```")
+    lines.append("")
+    lines.append("<!-- 将以上内容粘贴至 GitHub Issue；本报告零插件明细/零路径/零用户标识 -->")
+    return "\n".join(lines)

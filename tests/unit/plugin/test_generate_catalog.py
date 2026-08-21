@@ -305,7 +305,10 @@ def test_check_detects_tampered_signature(tmp_path: Path) -> None:
     plugin_path.write_bytes(plugin_path.read_bytes() + b"\n# tampered\n")
     result = _run("--check", "--registry", str(registry), "--trust", str(trust_pem))
     assert result.returncode == 1
-    assert "签名" in result.stdout
+    # G1（sha256 固化）：plugin.py 内容篡改先被哈希漂移拦截（比签名校验更早），
+    # 报"源不一致"+漂移字段——time-of-check 后门防线的直接信号（检测仍 rc=1）。
+    assert "源不一致" in result.stdout
+    assert "漂移字段" in result.stdout
 
 
 def test_check_detects_unknown_field(tmp_path: Path) -> None:

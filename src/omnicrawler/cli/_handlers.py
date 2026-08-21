@@ -125,6 +125,12 @@ def _run_wizard(args: argparse.Namespace) -> None:
 def _run_plugins(args: argparse.Namespace) -> None:
     command = getattr(args, "plugins_command", None)
     if command == "audit":
+        # Phase 2a（B5/H4）：--report 优先生成脱敏环境诊断报告
+        if getattr(args, "report", False):
+            from ..plugins.plugin_audit import generate_environment_report
+
+            print(generate_environment_report())
+            raise SystemExit(0)
         # Phase 1（B5）：本地插件自检——许可+凭据，与 CI 门 2 同逻辑
         from pathlib import Path as _Path
 
