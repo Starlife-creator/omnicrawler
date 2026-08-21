@@ -124,6 +124,7 @@ markers = [
   "e2e_browser: optional local Chromium extension; never accesses a remote service",
   "asyncio: mark a test as an async test",
   "network: requires external network access; skipped by default, enable via env or -m network",
+  "plugin_contract: public contract-2 test suite shared by authors and CI (F1: local green = CI green)",
 ]
 asyncio_mode = "auto"
 
