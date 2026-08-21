@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import tempfile
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,9 @@ _CAPABILITY_PERMISSIONS: dict[str, str | None] = {
     "network.fetch": "network:scoped",
     "temp.open": "temp:write",
     "files.read": "files:read",
+    # O 例外路径（方案 O2 方案 B）：secrets.get 需 manifest 声明 secrets 白名单；
+    # 默认路径是网络经宿主代理密钥零暴露（O2 方案 C），secrets.get 仅显式例外。
+    "secrets.get": "secrets:read",
     "system.info": None,
 }
 
@@ -69,6 +73,11 @@ class CapabilityBroker:
         network_client: Any | None = None,
         input_files: tuple[str, ...] = (),
         temp_root: Path | None = None,
+        secrets_allowlist: tuple[str, ...] = (),
+        secret_resolver: Callable[[str], str | None] | None = None,
+        audit_hook: Callable[[str, dict[str, Any]], None] | None = None,
+        plugin_id: str = "",
+        trace_full: bool = False,
     ) -> None:
         self._permissions = {p.casefold() for p in permissions}
         self._system_info = dict(system_info)
@@ -79,6 +88,14 @@ class CapabilityBroker:
         self._input_files = tuple(input_files)
         self._temp_root = Path(temp_root) if temp_root else Path(tempfile.gettempdir())
         self._temp_dir: Path | None = None
+        # O 密钥零暴露：secrets 白名单 + 宿主解析器（插件进程不可见密钥库）
+        self._secrets_allowlist = {str(s) for s in secrets_allowlist}
+        self._secret_resolver = secret_resolver
+        # C6 审计：audit_hook(action, details)；trace_full=False 时降采样（op_counts）
+        self._audit_hook = audit_hook
+        self._plugin_id = plugin_id
+        self._trace_full = trace_full
+        self.trace_log: list[dict[str, Any]] = []  # 仅 trace_full 时填充
         # 调用轨迹降采样（C3 第 41 轮）：操作类型计数 + 会话首尾时间
         self.op_counts: dict[str, int] = {}
         self.temp_files_written: list[str] = []
@@ -95,7 +112,41 @@ class CapabilityBroker:
         handler: Callable[[dict[str, Any]], dict[str, Any]] = getattr(
             self, "_cap_" + operation.replace(".", "_")
         )
-        return handler(payload)
+        started = time.monotonic()
+        try:
+            result = handler(payload)
+        finally:
+            self._audit_call(operation, payload, started)
+        return result
+
+    def _audit_call(self, operation: str, payload: dict[str, Any], started: float) -> None:
+        """C6 审计留痕：每次能力调用记录（不阻断插件运行——钩子异常吞掉）。
+
+        trace_full=False 时降采样（仅 op_counts，已在本方法外累加）；
+        trace_full=True 记全序列（operation×时间×数据量，企业审计）。
+        """
+        duration_ms = int((time.monotonic() - started) * 1000)
+        if self._trace_full:
+            self.trace_log.append(
+                {
+                    "operation": operation,
+                    "timestamp": time.time(),
+                    "payload_bytes": len(json.dumps(payload, ensure_ascii=False)),
+                }
+            )
+        if self._audit_hook is None:
+            return
+        details = {
+            "plugin_id": self._plugin_id,
+            "operation": operation,
+            "execution_mode": "subprocess",
+            "duration_ms": duration_ms,
+            "decision": "executed",
+        }
+        try:
+            self._audit_hook("plugin.subprocess.call", details)
+        except Exception:  # noqa: BLE001 - 审计写入失败不阻断插件运行（第 35 轮）
+            LOGGER.warning("插件审计写入失败（不阻断运行）: plugin=%s op=%s", self._plugin_id, operation)
 
     def temp_dir(self) -> Path | None:
         return self._temp_dir
@@ -218,6 +269,34 @@ class CapabilityBroker:
         import base64
 
         return {"content_b64": base64.b64encode(data).decode("ascii"), "size": len(data)}
+
+    def _cap_secrets_get(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """O 例外路径（方案 O2-B）：secrets.get 显式例外，默认走代理密钥零暴露。
+
+        - manifest 必须声明 secrets 白名单（secrets_allowlist），否则拒绝
+        - 仅返回白名单内的 ref；越界 → E_PERMISSION
+        - 明文仅在单次调用返回，不缓存；调用即审计（decision=secret_accessed）
+        """
+        ref = str(payload.get("ref", "")).strip()
+        if not ref:
+            raise CapabilityError(E_CONTRACT, "secrets.get 需要 ref 参数")
+        if ref not in self._secrets_allowlist:
+            raise CapabilityError(E_PERMISSION, f"secrets ref 不在 manifest 白名单: {ref}")
+        if self._secret_resolver is None:
+            raise CapabilityError(E_INTERNAL, "宿主未提供密钥解析器（secrets.get 不可用）")
+        value = self._secret_resolver(ref)
+        if value is None:
+            raise CapabilityError(E_RESOURCE, f"密钥不存在或不可读: {ref}")
+        # 审计：密钥访问留痕（decision=secret_accessed，reason=ref；不记录明文）
+        if self._audit_hook is not None:
+            try:
+                self._audit_hook(
+                    "plugin.secret_accessed",
+                    {"plugin_id": self._plugin_id, "decision": "secret_accessed", "reason": ref},
+                )
+            except Exception:  # noqa: BLE001 - 审计失败不阻断
+                LOGGER.warning("密钥访问审计写入失败: plugin=%s ref=%s", self._plugin_id, ref)
+        return {"value": value}
 
 
 def drive_loop(
