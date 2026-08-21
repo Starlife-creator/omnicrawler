@@ -22,12 +22,51 @@ import importlib
 import json
 import sys
 import traceback
+import types
 
 PROTOCOL_VERSION = 1
 _MAX_OUTPUT_BYTES = 8 * 1024 * 1024  # stdout 单条上限 8MB（C4/N2 硬化同源）
 
 E_CONTRACT = "E_CONTRACT"
 E_INTERNAL = "E_INTERNAL"
+
+
+def _install_sdk_shim() -> None:
+    """注入 ``omnicrawler_sdk`` 能力代理客户端（C3）。
+
+    插件侧经它回调宿主能力（records/network/artifacts/temp/files/system.info）；
+    子进程不持有任何直接网络/文件 API。协议：写一行 capability 请求 →
+    阻塞读一行响应（宿主在同一 session 通道内同步应答）。
+    """
+    counter = [0]
+
+    def call(operation: str, payload: dict | None = None) -> dict:
+        counter[0] += 1
+        request = {
+            "capability": True,
+            "operation": str(operation),
+            "payload": payload if isinstance(payload, dict) else {},
+            "request_id": f"c{counter[0]}",
+        }
+        sys.stdout.write(json.dumps(request, ensure_ascii=False) + "\n")
+        sys.stdout.flush()
+        line = sys.stdin.readline()
+        if not line:
+            raise RuntimeError("E_RESOURCE: 能力代理通道已关闭")
+        response = json.loads(line)
+        if not isinstance(response, dict) or not response.get("ok", False):
+            error = response.get("error", {}) if isinstance(response, dict) else {}
+            raise RuntimeError(
+                f"{error.get('code', 'E_INTERNAL')}: {error.get('message', '能力代理调用失败')}"
+            )
+        result = response.get("result", {})
+        return result if isinstance(result, dict) else {}
+
+    sdk = types.ModuleType("omnicrawler_sdk")
+    sdk.call = call
+    sdk.system_info = lambda: call("system.info")
+    sdk.__doc__ = "OmniCrawler 契约 2 能力代理客户端：omnicrawler_sdk.call(operation, payload)"
+    sys.modules["omnicrawler_sdk"] = sdk
 
 
 def _error_response(request_id: object, code: str, message: str) -> dict:
@@ -63,17 +102,30 @@ def _dispatch(handler, operation: str, payload: dict, request_id: object) -> dic
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
+    # argv: entry_module plugin_root [verified_entry_dir]
+    # verified_entry_dir（C2 V2）：宿主把验签字节写入的临时入口目录，
+    # 优先于 plugin_root 插入 sys.path——子进程执行的永远是通过验签的
+    # 那份字节，磁盘原件在验签后被替换也不影响（TOCTOU 关闭）。
+    if len(sys.argv) not in (3, 4):
         return 2
-    # 父进程用 -I 启动时 PYTHONIOENCODING 不生效；stdout 恒 UTF-8 在此坐实。
+    # 父进程用 -I 启动时 PYTHONIOENCODING 不生效；stdout/stdin 恒 UTF-8
+    # 在此坐实——Windows 下 stdin 默认是控制台代码页（cp936），宿主写入的
+    # UTF-8 中文会被错误解码为 surrogates，导致响应写回时 UnicodeEncodeError。
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stdin, "reconfigure"):
+        sys.stdin.reconfigure(encoding="utf-8", errors="replace")
     entry_module, plugin_root = sys.argv[1], sys.argv[2]
+    verified_entry_dir = sys.argv[3] if len(sys.argv) == 4 else ""
     # 入口模块名受控校验（防路径注入，方案 C1：参数均为受控标识符）
     if not entry_module.isidentifier():
         return 2
 
     sys.path.insert(0, plugin_root)
+    if verified_entry_dir:
+        sys.path.insert(0, verified_entry_dir)
+    # 注入 omnicrawler_sdk 能力代理客户端（C3）——必须在 import 入口前就位
+    _install_sdk_shim()
     try:
         module = importlib.import_module(entry_module)
     except Exception as exc:  # noqa: BLE001

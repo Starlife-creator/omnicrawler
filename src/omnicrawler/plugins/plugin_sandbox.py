@@ -76,6 +76,7 @@ class PluginSubprocessSession:
         *,
         timeout_seconds: float = 30.0,
         handshake_timeout: float | None = None,
+        verified_bytes: bytes | None = None,
     ) -> None:
         root = plugin_root.resolve()
         if not root.is_dir():
@@ -89,12 +90,26 @@ class PluginSubprocessSession:
         self._proc: subprocess.Popen[str] | None = None
         self._handshake_timeout = handshake_timeout
         self._first_call = True
+        # C2 V2：验签字节 → 会话专属临时入口目录；子进程执行的永远是通过
+        # 验签的这份字节（磁盘原件验签后被替换也不影响，TOCTOU 关闭）。
+        self._verified_bytes = verified_bytes
+        self._verified_entry_dir: Path | None = None
 
     # ---- 生命周期 ----
 
     def start(self) -> None:
         command, default_handshake = plugin_backend.resolve_backend_command()
         command = [*command, self.entry_module, str(self.plugin_root)]
+        if self._verified_bytes is not None:
+            import tempfile
+
+            self._verified_entry_dir = Path(
+                tempfile.mkdtemp(prefix="omnicrawler-verified-entry-")
+            )
+            (self._verified_entry_dir / f"{self.entry_module}.py").write_bytes(
+                self._verified_bytes
+            )
+            command.append(str(self._verified_entry_dir))
         kwargs: dict[str, Any] = dict(
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -114,15 +129,17 @@ class PluginSubprocessSession:
         self._handshake_timeout = self._handshake_timeout or default_handshake
 
     def end(self) -> None:
-        """发送 session.end 并回收进程；已终止时静默。"""
+        """发送 session.end 并回收进程与临时入口；已终止时静默。"""
         if self._proc is None or self._proc.poll() is not None:
             self._proc = None
+            self._cleanup_verified_entry()
             return
         try:
             self._request("session.end", {}, expect_response=True)
         except (RuntimeError, ValueError, OSError):
             pass
         self._kill()
+        self._cleanup_verified_entry()
 
     def _kill(self) -> None:
         if self._proc is not None and self._proc.poll() is None:
@@ -132,6 +149,14 @@ class PluginSubprocessSession:
             except subprocess.TimeoutExpired:
                 pass
         self._proc = None
+
+    def _cleanup_verified_entry(self) -> None:
+        """会话结束即删验签临时入口（C2 V2：防残留被本地攻击者替换利用）。"""
+        if self._verified_entry_dir is not None:
+            import shutil
+
+            shutil.rmtree(self._verified_entry_dir, ignore_errors=True)
+            self._verified_entry_dir = None
 
     def __enter__(self) -> PluginSubprocessSession:
         self.start()
