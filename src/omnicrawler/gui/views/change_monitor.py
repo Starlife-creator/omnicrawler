@@ -42,6 +42,7 @@ from omnicrawler.core.utils import user_agent
 from omnicrawler.gui.widgets.toast import ToastManager
 
 from ..i18n import _
+from ..design_system import ThemeManager
 from ..widgets.empty_state import EmptyState
 
 if TYPE_CHECKING:
@@ -376,15 +377,17 @@ class ChangeEventDialog(QDialog):
         curr_set = set(curr_lines)
 
         result_parts: list[str] = ["<pre>"]
+        # 语义色取自设计令牌（弹窗为瞬态，构建时取当前主题即可）
+        tokens = ThemeManager.instance().tokens
         for line in prev_lines:
             if line not in curr_set and line.strip():
                 result_parts.append(
-                    f'<span style="background-color: #ffd7d7; color: #c00;">- {_escape_html(line)}</span>'
+                    f'<span style="background-color: {tokens.danger_bg}; color: {tokens.danger};">- {_escape_html(line)}</span>'
                 )
         for line in curr_lines:
             if line not in prev_set and line.strip():
                 result_parts.append(
-                    f'<span style="background-color: #d7ffd7; color: #060;">+ {_escape_html(line)}</span>'
+                    f'<span style="background-color: {tokens.success_bg}; color: {tokens.success};">+ {_escape_html(line)}</span>'
                 )
         result_parts.append("</pre>")
         return "\n".join(result_parts)
@@ -441,7 +444,10 @@ class ChangeMonitorView(QWidget):
         title_row.addStretch()
 
         self._status_label = QLabel(_("就绪"))
-        self._status_label.setStyleSheet("color: gray;")
+        self._status_token = "muted"  # 当前状态语义令牌名（info/warning/success/danger/muted）
+        self._status_bold = False
+        ThemeManager.instance().theme_changed.connect(self._apply_status_style)
+        self._apply_status_style()
         title_row.addWidget(self._status_label)
         layout.addLayout(title_row)
 
@@ -608,16 +614,31 @@ class ChangeMonitorView(QWidget):
 
     # ── 检查执行 ────────────────────────────────────────────────────
 
+    def _set_status_style(self, token: str, *, bold: bool = False) -> None:
+        """按设计令牌设置状态标签颜色；主题切换时自动跟随刷新。"""
+        self._status_token = token
+        self._status_bold = bold
+        self._apply_status_style()
+
+    def _apply_status_style(self, *_args: Any) -> None:
+        """应用当前状态令牌色（theme_changed 信号复用入口）。"""
+        tokens = ThemeManager.instance().tokens
+        color = getattr(tokens, self._status_token, tokens.muted)
+        style = f"color: {color};"
+        if self._status_bold:
+            style += " font-weight: bold;"
+        self._status_label.setStyleSheet(style)
+
     def _check_all(self) -> None:
         if self._worker is not None and self._worker.isRunning():
             ToastManager.instance().warning(_("检查仍在进行中，请稍候"))
             return
         if not self._rules_data:
-            QMessageBox.information(self, _("提示"), _("没有可检查的规则"))
+            ToastManager.instance().info(_("没有可检查的规则"))
             return
 
         self._status_label.setText(_("检查中..."))
-        self._status_label.setStyleSheet("color: #0078d4;")
+        self._set_status_style("info")
 
         self._worker = _CheckWorker(self._rules_data, self, fetcher=self._fetcher)
         self._worker.finished.connect(self._on_check_finished)
@@ -659,7 +680,7 @@ class ChangeMonitorView(QWidget):
 
         if events_list:
             self._status_label.setText(_(f"检测到 {len(events_list)} 个变化"))
-            self._status_label.setStyleSheet("color: #d83b01; font-weight: bold;")
+            self._set_status_style("warning", bold=True)
 
             # 更新 rules_data 中的 last_hash/last_checked
             for event in events_list:
@@ -684,7 +705,7 @@ class ChangeMonitorView(QWidget):
             self._show_event_detail(first_event.to_dict())
         else:
             self._status_label.setText(_("无变化"))
-            self._status_label.setStyleSheet("color: #107c10;")
+            self._set_status_style("success")
             # 更新检查时间（S3.2.1：不再写 "__baseline__" 哨兵假哈希——
             # 基线由 ChangeDetector 内部持久化，每轮比较真实哈希）
             now = datetime.now(tz=timezone.utc).isoformat()
@@ -697,7 +718,7 @@ class ChangeMonitorView(QWidget):
     def _on_check_error(self, error: str) -> None:
         self._worker = None
         self._status_label.setText(_("检查失败"))
-        self._status_label.setStyleSheet("color: #d83b01;")
+        self._set_status_style("danger")
         ToastManager.instance().error(_(f"变更检查失败: {error}"))
 
     def _show_event_detail(self, event_data: dict) -> None:
@@ -791,7 +812,7 @@ class ChangeMonitorView(QWidget):
         for rule in self._rules_data:
             if rule.get("rule_id") == rule_id:
                 self._status_label.setText(_("检查中..."))
-                self._status_label.setStyleSheet("color: #0078d4;")
+                self._set_status_style("info")
                 self._worker = _CheckWorker([rule], self, fetcher=self._fetcher)
                 self._worker.finished.connect(self._on_check_finished)
                 self._worker.error.connect(self._on_check_error)

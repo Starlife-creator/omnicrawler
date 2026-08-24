@@ -7,12 +7,18 @@
 - 结果合并与置信度评分
 
 用法:
+    from omnicrawler.core.config import load_config
     from omnicrawler.extraction.ai_graph import AIGraphExtractor
-    extractor = AIGraphExtractor(provider=AIGraphExtractor.Provider(
-        base_url="https://api.openai.com/v1",
-        api_key="sk-...",
-        model="gpt-4o",
-    ))
+    from omnicrawler.security.egress import EgressBroker
+
+    extractor = AIGraphExtractor(
+        provider=AIGraphExtractor.Provider(
+            base_url="https://api.openai.com/v1",
+            api_key="sk-...",
+            model="gpt-4o",
+        ),
+        egress=EgressBroker(load_config("project.yaml")),  # 必传：出口审计
+    )
     result = await extractor.extract(
         html="<html>...</html>",
         fields=[AIGraphExtractor.FieldDef(name="title", description="文章标题")],
@@ -112,7 +118,8 @@ class AIGraphExtractor:
         self._concurrency = max(1, concurrency)
         self._max_retries = max(1, max_retries)
         self.project_root = project_root
-        # P9-A2（B13-002）：注入 EgressBroker 后发送前过出口策略，杜绝绕过
+        # P9-A2（B13-002）：EgressBroker 出口审计；未注入时发送前
+        # fail-closed 拒绝外发（见 _post_with_retry）
         self._egress = egress
 
     # ── 公共 API ─────────────────────────────────────────────────────
@@ -248,10 +255,14 @@ class AIGraphExtractor:
         """POST 并解析 JSON；429/5xx/连接/超时指数退避重试，4xx 立即抛（D60）。"""
         import aiohttp
 
-        # P9-A2（B13-002）：注入 egress 时发送前强制过出口策略——被禁目标
-        # （私网/未批准域名）在首次请求前即抛 PolicyBlockedError，不走网络。
-        if self._egress is not None:
-            self._egress.authorize(url, purpose="ai")
+        # P9-A2（B13-002）：发送前强制过出口策略——被禁目标（私网/未批准
+        # 域名）在首次请求前即抛 PolicyBlockedError，不走网络。
+        # fail-closed：未注入 EgressBroker 时拒绝外发，杜绝绕过出口审计。
+        if self._egress is None:
+            raise RuntimeError(
+                "AIGraphExtractor: 未注入 EgressBroker（fail-closed，拒绝外发请求）"
+            )
+        self._egress.authorize(url, purpose="ai")
 
         last_error: Exception | None = None
         for attempt in range(self._max_retries):

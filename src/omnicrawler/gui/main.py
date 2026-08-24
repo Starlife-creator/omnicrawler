@@ -90,18 +90,10 @@ if not _cli_mode():
         print(_("请运行: pip install omnicrawler-platform[gui]"), file=sys.stderr)
         sys.exit(1)
 
-    from ..core.ai_env import (
-        load_ai_config_sidecar,
-        load_ai_env,
-        save_ai_config_sidecar,
-        save_ai_env,
-        sync_ai_env_to_os,
-    )
+    # 冷启动提速：低频功能（AI 设置/插件管理/运行对比）的重型依赖在
+    # 使用点函数内懒导入（ai_env≈70ms/plugin_inspector≈53ms/run_compare≈26ms）
     from ..core.config import load_config as load_core_config
-    from ..core.credentials import seal_secret
     from ..pipeline_ops.preflight import run_preflight, run_sample
-    from ..plugins.plugin_inspector import inspect_directory
-    from ..review.run_compare import compare_runs
     from ..services.application_service import ApplicationService
     from ..services.config_history import ConfigHistory
     from ..services.controllers import ResultController, RunController, TaskController
@@ -1298,22 +1290,24 @@ class MainWindow(QMainWindow):
         if path.is_file():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
         else:
-            QMessageBox.information(self, _("错误中心"), _("当前项目还没有错误中心报告；完成一次任务后会自动生成。"))
+            ToastManager.instance().info(_("当前项目还没有错误中心报告；完成一次任务后会自动生成。"))
 
     def _show_run_comparison(self) -> None:
+        from ..review.run_compare import compare_runs
+
         workspace = Path(self._config.workspace).expanduser()
         if not workspace.is_absolute():
             workspace = self._project_root / workspace
         database = workspace / "state.sqlite3"
         if not database.is_file():
-            QMessageBox.information(self, _("运行对比"), _("当前项目还没有可对比的运行记录。"))
+            ToastManager.instance().info(_("当前项目还没有可对比的运行记录。"))
             return
         with StateStore(database) as state:
             rows = state.rows(
                 "SELECT run_id, started_at, status FROM runs ORDER BY started_at DESC LIMIT 30"
             )
             if len(rows) < 2:
-                QMessageBox.information(self, _("运行对比"), _("至少完成两次运行后才能进行对比。"))
+                ToastManager.instance().info(_("至少完成两次运行后才能进行对比。"))
                 return
             labels = [f"{row['started_at']} · {row['status']} · {row['run_id']}" for row in rows]
             before_label, ok = QInputDialog.getItem(self, _("运行对比"), _("选择较早的一次运行："), labels, 1, False)
@@ -1339,6 +1333,8 @@ class MainWindow(QMainWindow):
         )
 
     def _manage_plugins(self) -> None:
+        from ..plugins.plugin_inspector import inspect_directory
+
         directory = self._project_root / "plugins"
         directory.mkdir(parents=True, exist_ok=True)
         inspections = inspect_directory(directory)
@@ -1601,7 +1597,7 @@ class MainWindow(QMainWindow):
     def _show_template_library(self) -> None:
         templates = self._template_loader.discover_templates(force=True)
         if not templates:
-            QMessageBox.information(self, _("模板库"), _("未找到任何模板"))
+            ToastManager.instance().info(_("未找到任何模板"))
             return
         dialog = TemplateLibraryDialog(templates, self)
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_template:
@@ -2113,6 +2109,8 @@ class MainWindow(QMainWindow):
 
     def _load_ai_config_from_env(self) -> dict[str, Any]:
         """从单一真源 .env 加载 AI 配置（优先级 os.environ > 项目 .env > 用户级 .env）。"""
+        from ..core.ai_env import load_ai_config_sidecar, load_ai_env
+
         env_vars = load_ai_env(self._project_root)
         config: dict[str, Any] = {"mode": "disabled"}
         provider = env_vars.get("OMNICRAWL_AI_PROVIDER", "disabled")
@@ -2146,6 +2144,9 @@ class MainWindow(QMainWindow):
         S2.2.2：OMNICRAWL_AI_API_KEY 明文先加密入 secrets_store，.env 只写
         ``secret://`` 引用（引用幂等，不可存时拒绝写入绝不回退明文）。
         """
+        from ..core.ai_env import save_ai_config_sidecar, save_ai_env, sync_ai_env_to_os
+        from ..core.credentials import seal_secret
+
         updates: dict[str, str | None] = {}
         if config.get("mode") == "disabled":
             updates["OMNICRAWL_AI_PROVIDER"] = "disabled"
