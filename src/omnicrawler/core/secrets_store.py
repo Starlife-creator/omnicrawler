@@ -48,12 +48,24 @@ def _ensure_crypto() -> None:
     PBKDF2HMAC = _PBKDF2HMAC
     _cryptography_imported = True
 
-try:
-    import keyring as _keyring_module
-except ImportError:  # pragma: no cover - 无 keyring 时依赖可选
-    _keyring_module = None  # type: ignore[assignment]  # try 绑定为 Module 类型
+_UNSET = object()
+_keyring: types.ModuleType | None | object = _UNSET
 
-_keyring: types.ModuleType | None = _keyring_module
+
+def _load_keyring() -> types.ModuleType | None:
+    """按需加载 keyring（模块导入零开销；冷启动 GUI 不拉起 keyring 链≈197ms）。
+
+    首次调用后缓存结果；keyring 未安装时返回 None（依赖可选）。
+    """
+    global _keyring
+    if _keyring is _UNSET:
+        try:
+            import keyring as _keyring_module
+        except ImportError:  # pragma: no cover - 无 keyring 时依赖可选
+            _keyring = None
+        else:
+            _keyring = _keyring_module
+    return _keyring  # type: ignore[return-value]
 
 
 class _KeyringBackend(Protocol):
@@ -107,7 +119,7 @@ class SecretsStore:
         self.keyring = (
             None
             if os.environ.get("OMNICRAWL_KEYRING_DISABLE")
-            else (_keyring if keyring_api is None else keyring_api)
+            else (_load_keyring() if keyring_api is None else keyring_api)
         )
         self._cache: dict[str, bytes] | None = None
         # B05-003：加载/保存/增删改统一串行化，防多线程并发写盘竞态
