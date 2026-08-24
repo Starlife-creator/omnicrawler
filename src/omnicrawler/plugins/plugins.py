@@ -96,6 +96,8 @@ class PluginMetadata:
     dependencies: tuple[dict[str, Any], ...] = ()
     # files:read 路径白名单（第 82 轮更名：原 files 与市场仓扫描允许列表冲突）
     input_files: tuple[str, ...] = ()
+    # Phase 3（B2）：契约形态（2=handle 契约 2 / 1=register 契约 1 / 0=未知）
+    contract_shape: int = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,6 +182,7 @@ def _normalize_schema_fields(result: PluginMetadata, path: Path) -> PluginMetada
         execution_mode=mode,
         dependencies=deps,
         input_files=input_files,
+        contract_shape=result.contract_shape,
     )
 
 
@@ -198,6 +201,19 @@ def _metadata(module: Any, path: Path) -> PluginMetadata:
         raise TypeError(f"PLUGIN_METADATA必须是PluginMetadata或字典: {path}")
     # Phase 1（B1）：execution_mode 枚举归一化 + dependencies/input_files 类型归一
     result = _normalize_schema_fields(result, path)
+    # Phase 3（B2）：契约形态静态判定（顶层 handle → 契约 2；仅 register → 契约 1）
+    # 放在归一化之后（归一化重建对象会丢字段）
+    try:
+        from dataclasses import replace
+
+        from .plugin_router import detect_contract_shape
+
+        result = replace(
+            result,
+            contract_shape=detect_contract_shape(path.read_text(encoding="utf-8")),
+        )
+    except OSError:
+        pass
     if result.api_version != PLUGIN_API_VERSION:
         raise RuntimeError(f"插件API版本不兼容: {path} 需要{result.api_version}，当前为{PLUGIN_API_VERSION}")
     if not result.name.strip():
@@ -369,6 +385,8 @@ class Registry:
                     # in_process_trusted（0.10 起运行期实际后端由路由矩阵裁决，
                     # Phase 2 接线 B4 后此处输出运行态模式）
                     "execution_mode": item.execution_mode,
+                    # Phase 3（B2）：契约形态列（2=契约 2 handle / 1=契约 1 register）
+                    "contract_shape": item.contract_shape,
                 }
                 for item in self.plugins
             ],
