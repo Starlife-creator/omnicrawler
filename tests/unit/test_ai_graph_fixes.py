@@ -44,6 +44,13 @@ class _FakeSession:
         return _FakeCM(self._responses.pop(0))
 
 
+class _AllowAllEgress:
+    """出口审计 stub：放行任意目标（测试聚焦 HTTP 语义，非出口策略）。"""
+
+    def authorize(self, url: str, **kwargs) -> tuple[str, ...]:
+        return ()
+
+
 @pytest.mark.asyncio
 async def test_d58_heading_split_keeps_prefix() -> None:
     ex = AIGraphExtractor()
@@ -68,7 +75,7 @@ async def test_d55_all_chunks_failed_raises() -> None:
 
 @pytest.mark.asyncio
 async def test_d54_http_error_raises_with_status() -> None:
-    ex = AIGraphExtractor()
+    ex = AIGraphExtractor(egress=_AllowAllEgress())
     session = _FakeSession(_FakeResp(401, '{"error":"bad key"}'))
     with pytest.raises(RuntimeError, match="HTTP 401"):
         await ex._post_with_retry(
@@ -80,7 +87,7 @@ async def test_d54_http_error_raises_with_status() -> None:
 
 @pytest.mark.asyncio
 async def test_d60_retry_on_429_then_success() -> None:
-    ex = AIGraphExtractor(max_retries=3)
+    ex = AIGraphExtractor(max_retries=3, egress=_AllowAllEgress())
     session = _FakeSession(
         _FakeResp(429, "rate limited"),
         _FakeResp(200, '{"choices":[{"message":{"content":"{}"}}]}'),
@@ -100,7 +107,7 @@ async def test_c34_html_marked_untrusted_in_prompt(monkeypatch) -> None:
         "omnicrawler.core.ai_env.require_ai_privacy",
         lambda *a, **k: None,
     )
-    ex = AIGraphExtractor(provider=Provider(api_key="sk-test"))
+    ex = AIGraphExtractor(provider=Provider(api_key="sk-test"), egress=_AllowAllEgress())
     session = _FakeSession(_FakeResp(200, '{"choices":[{"message":{"content":"{}"}}]}'))
     await ex._extract_chunk("<script>alert(1)</script>", [FieldDef(name="t")], 1000, session=session)
     assert len(session.post_calls) == 1
@@ -154,8 +161,8 @@ def test_ai_graph_egress_blocks_private_target(tmp_path) -> None:
         raise AssertionError("应已在 _post_impl 内捕获")
 
 
-def test_ai_graph_without_egress_does_not_policy_check(tmp_path) -> None:
-    """未注入 egress 时保持原有行为（实验性组件可选集成）。"""
+def test_ai_graph_without_egress_fails_closed(tmp_path) -> None:
+    """未注入 egress 时 fail-closed：发送前即拒绝，不走网络。"""
     import asyncio
 
     extractor = AIGraphExtractor(provider=Provider(api_key="sk-test"))
@@ -169,4 +176,5 @@ def test_ai_graph_without_egress_does_not_policy_check(tmp_path) -> None:
             timeout=None,
         )
 
-    assert asyncio.run(_run())["choices"] == []
+    with pytest.raises(RuntimeError, match="fail-closed"):
+        asyncio.run(_run())

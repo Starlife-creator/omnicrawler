@@ -170,8 +170,9 @@ def test_json_logging_with_context_and_exception() -> None:
                     }
                 }
             },
-            "pymupdf",
-            "fitz",
+            # Phase 0 迁移后 doctor 检查 pdfplumber（pymupdf/fitz 已移出依赖树）
+            "pdfplumber",
+            "pdfplumber",
         ),
     ],
 )

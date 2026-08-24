@@ -15,4 +15,9 @@ class TestExampleNewsContract(Contract2Suite):
     @pytest.fixture(scope="class")
     @staticmethod
     def contract_plugin_dir():
-        return Path(__file__).resolve().parents[3] / "plugins_installed" / "example_news"
+        # plugins_installed/ 是运行时安装目录（.gitignore 排除），
+        # CI/干净 clone 上不存在时跳过；本地安装 example_news 后全量生效。
+        plugin_dir = Path(__file__).resolve().parents[3] / "plugins_installed" / "example_news"
+        if not (plugin_dir / "plugin.py").is_file():
+            pytest.skip("plugins_installed/example_news 未安装（运行时目录，不在 git 内）")
+        return plugin_dir

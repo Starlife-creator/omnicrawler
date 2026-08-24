@@ -45,6 +45,13 @@ def _build_broker(
     run_id: str,
     dataset_reader: Any | None,
     network_client: Any | None,
+    secrets_allowlist: tuple[str, ...] = (),
+    secret_resolver: Any | None = None,
+    audit_hook: Any | None = None,
+    plugin_id: str = "",
+    trace_full: bool = False,
+    daily_quota: Any | None = None,
+    egress_policy: str = "prompt",
 ) -> CapabilityBroker:
     return CapabilityBroker(
         permissions=permissions,
@@ -54,6 +61,13 @@ def _build_broker(
         dataset_reader=dataset_reader,
         network_client=network_client,
         input_files=input_files,
+        secrets_allowlist=secrets_allowlist,
+        secret_resolver=secret_resolver,
+        audit_hook=audit_hook,
+        plugin_id=plugin_id,
+        trace_full=trace_full,
+        daily_quota=daily_quota,
+        egress_policy=egress_policy,
     )
 
 
@@ -74,6 +88,13 @@ class _SubprocessSessionHost:
         run_id: str = "",
         dataset_reader: Any | None = None,
         network_client: Any | None = None,
+        plugin_id: str = "",
+        secrets_allowlist: tuple[str, ...] = (),
+        secret_resolver: Any | None = None,
+        audit_hook: Any | None = None,
+        trace_full: bool = False,
+        daily_quota: Any | None = None,
+        egress_policy: str = "prompt",
     ) -> None:
         self._plugin_root = plugin_root
         self._entry_module = entry_module
@@ -86,6 +107,13 @@ class _SubprocessSessionHost:
         self._run_id = run_id
         self._dataset_reader = dataset_reader
         self._network_client = network_client
+        self._plugin_id = plugin_id
+        self._secrets_allowlist = secrets_allowlist
+        self._secret_resolver = secret_resolver
+        self._audit_hook = audit_hook
+        self._trace_full = trace_full
+        self._daily_quota = daily_quota
+        self._egress_policy = egress_policy
         self._session: PluginSubprocessSession | None = None
         self._broker: CapabilityBroker | None = None
 
@@ -98,6 +126,8 @@ class _SubprocessSessionHost:
                 verified_bytes=self._verified_bytes,
             )
             self._session.start()
+            self._broker = None  # 新建会话必重建 broker（run 依赖可能变化）
+        if self._broker is None:
             self._broker = _build_broker(
                 permissions=self._permissions,
                 input_files=self._input_files,
@@ -106,6 +136,13 @@ class _SubprocessSessionHost:
                 run_id=self._run_id,
                 dataset_reader=self._dataset_reader,
                 network_client=self._network_client,
+                secrets_allowlist=self._secrets_allowlist,
+                secret_resolver=self._secret_resolver,
+                audit_hook=self._audit_hook,
+                plugin_id=self._plugin_id,
+                trace_full=self._trace_full,
+                daily_quota=self._daily_quota,
+                egress_policy=self._egress_policy,
             )
         assert self._broker is not None
         return self._session, self._broker

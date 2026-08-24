@@ -78,6 +78,26 @@ def build_parser() -> argparse.ArgumentParser:
     plugins.add_argument("--local", default=None, help="audit 子命令：审计的本地插件目录")
     # Phase 2a（B5/H4）：plugins audit --report 生成脱敏环境诊断报告
     plugins.add_argument("--report", action="store_true", help="audit 子命令：生成脱敏环境诊断报告")
+    # Phase 2b（H4 第 66 轮④）：plugins audit --export-egress <file> SIEM 共现导出
+    plugins.add_argument(
+        "--export-egress", default=None, metavar="FILE",
+        help="audit 子命令：导出共现事件 JSONL（SIEM 关联分析，固定字段清单）",
+    )
+    # Phase 3（P1 第 67 轮）：plugins scaffold-contract2 —— 新建契约 2 工程骨架
+    plugins.add_argument(
+        "--plugin-id", default=None, help="scaffold-contract2 子命令：新插件 ID（小写字母开头）"
+    )
+    plugins.add_argument(
+        "--display-name", default=None, help="scaffold-contract2 子命令：插件显示名"
+    )
+    plugins.add_argument(
+        "--output-dir", default=".", help="scaffold-contract2 子命令：输出根目录（默认当前目录）"
+    )
+    # Phase 3（Q4/G3）：plugins review-analyze --local <file> 审核辅助分析
+    plugins.add_argument(
+        "--review", default=None, metavar="FILE",
+        help="review-analyze 子命令：对插件文件做静态审核辅助分析（AI 增强审核员）",
+    )
     templates = sub.add_parser("templates", help="搜索、识别和生成采集模板")
     templates_sub = templates.add_subparsers(dest="templates_command", required=True)
     template_list = templates_sub.add_parser("list", help="列出内置和用户模板")

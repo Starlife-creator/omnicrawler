@@ -50,7 +50,7 @@ def test_plugin_static_inspection_and_compatibility(tmp_path: Path) -> None:
         "PLUGIN_METADATA = {\n"
         "  'name': 'safe', 'version': '1.0.0', 'api_version': 1,\n"
         "  'permissions': ['network'], 'capabilities': ['fetcher'],\n"
-        "  'min_core_version': '0.0.1'\n"
+        "  'min_core_version': '0.0.1', 'execution_mode': 'in_process'\n"
         "}\n"
         "def register(registry):\n    return None\n",
         encoding="utf-8",

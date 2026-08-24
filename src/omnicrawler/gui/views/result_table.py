@@ -196,13 +196,13 @@ class CsvStreamModel(QAbstractTableModel):
             _logger.warning("Failed to load page %d: %s", page, exc)
             self.last_error = str(exc)
 
-    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: B008
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # type: ignore[override]  # noqa: B008
         return len(self._rows)
 
-    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: B008
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # type: ignore[override]  # noqa: B008
         return len(self._headers)
 
-    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):  # type: ignore[override]
         if not index.isValid():
             return None
         if role == Qt.ItemDataRole.DisplayRole:
@@ -221,7 +221,7 @@ class CsvStreamModel(QAbstractTableModel):
                 return self._headers[section]
         return super().headerData(section, orientation, role)
 
-    def canFetchMore(self, index: QModelIndex) -> bool:
+    def canFetchMore(self, index: QModelIndex) -> bool:  # type: ignore[override]
         return False
 
     @property

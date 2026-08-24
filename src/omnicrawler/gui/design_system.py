@@ -849,7 +849,8 @@ class PageTransitionController:
                 if not shiboken6.isValid(page) or not shiboken6.isValid(effect):
                     return
                 if page.graphicsEffect() is effect:
-                    page.setGraphicsEffect(None)
+                    # PySide6 存根不接受 None，但运行时传 None 是官方清除特效方式
+                    page.setGraphicsEffect(None)  # type: ignore[arg-type]
             except (ImportError, RuntimeError, TypeError):
                 # Qt may delete either wrapper before the queued completion runs.
                 pass

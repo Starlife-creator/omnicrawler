@@ -41,27 +41,25 @@ if TYPE_CHECKING:
 
 
 def _confidence_color(confidence: float) -> QColor:
-    """置信度 → 颜色渐变：绿(高) → 黄(中) → 红(低)。"""
+    """置信度 → 主题语义色：绿(高) → 琥珀(中) → 红(低)。"""
+    tokens = ThemeManager.instance().tokens
     if confidence >= 0.9:
-        return QColor("#22c55e")
-    elif confidence >= 0.7:
-        return QColor("#eab308")
+        return QColor(tokens.success)
     elif confidence >= 0.5:
-        return QColor("#f97316")
+        return QColor(tokens.warning)
     else:
-        return QColor("#ef4444")
+        return QColor(tokens.danger)
 
 
 def _risk_color(score: float) -> QColor:
-    """风险评分 → 颜色渐变。"""
+    """风险评分 → 主题语义色：绿(低) → 琥珀(中) → 红(高)。"""
+    tokens = ThemeManager.instance().tokens
     if score <= 20:
-        return QColor("#22c55e")
-    elif score <= 50:
-        return QColor("#eab308")
+        return QColor(tokens.success)
     elif score <= 80:
-        return QColor("#f97316")
+        return QColor(tokens.warning)
     else:
-        return QColor("#ef4444")
+        return QColor(tokens.danger)
 
 
 def _origin_label(origin: str) -> str:
@@ -377,6 +375,10 @@ class EvidenceView(QWidget):
                 color: {t.text};
             }}
         """)
+
+        # 主题切换时刷新置信度/风险徽章语义色
+        if self._current_item is not None:
+            self._render()
 
     # ── 公开接口 ───────────────────────────────────────────────
     @Slot(object)

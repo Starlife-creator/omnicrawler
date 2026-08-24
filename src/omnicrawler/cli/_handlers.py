@@ -124,12 +124,67 @@ def _run_wizard(args: argparse.Namespace) -> None:
 @_register("plugins")
 def _run_plugins(args: argparse.Namespace) -> None:
     command = getattr(args, "plugins_command", None)
+    if command == "scaffold-contract2":
+        # Phase 3（P1 第 67 轮）：新建契约 2 工程骨架（非原地改造）
+        from pathlib import Path as _ScaffoldPath
+
+        from ..plugins.plugin_sdk import scaffold_contract2
+
+        plugin_id = getattr(args, "plugin_id", None)
+        if not plugin_id:
+            _json({"ok": False, "error": "scaffold-contract2 需要 --plugin-id <id>"})
+            raise SystemExit(2)
+        display_name = getattr(args, "display_name", None) or ""
+        output_dir = _ScaffoldPath(getattr(args, "output_dir", "."))
+        try:
+            root = scaffold_contract2(
+                output_dir, plugin_id, display_name=display_name
+            )
+        except (ValueError, FileExistsError) as exc:
+            _json({"ok": False, "error": str(exc)})
+            raise SystemExit(2)
+        _json({
+            "ok": True,
+            "plugin_dir": str(root),
+            "next": ["omnicrawler plugins audit --local .", "pytest -m plugin_contract"],
+        })
+        raise SystemExit(0)
+    review_target = getattr(args, "review", None)
+    if review_target:
+        # Phase 3（Q4/G3）：审核辅助分析（AI 增强审核员，纯静态证据非门禁）
+        from pathlib import Path as _ReviewPath
+
+        from ..plugins.plugin_review import review_analyze
+
+        try:
+            analysis = review_analyze(_ReviewPath(review_target))
+        except (OSError, SyntaxError, UnicodeDecodeError) as exc:
+            _json({"ok": False, "error": f"分析失败: {exc}"})
+            raise SystemExit(2)
+        _json({"ok": True, "analysis": analysis.to_dict()})
+        raise SystemExit(0)
     if command == "audit":
         # Phase 2a（B5/H4）：--report 优先生成脱敏环境诊断报告
         if getattr(args, "report", False):
             from ..plugins.plugin_audit import generate_environment_report
 
             print(generate_environment_report())
+            raise SystemExit(0)
+        # Phase 2b（H4 第 66 轮④）：--export-egress 导出共现事件 JSONL（SIEM）
+        egress_export = getattr(args, "export_egress", None)
+        if egress_export:
+            from pathlib import Path as _ExportPath
+
+            from ..plugins.plugin_audit import export_egress_cooccurrence
+            from ..state.state_store import StateStore
+
+            config = load_config(args.config) if args.config else None
+            if config is None:
+                _json({"ok": False, "error": "--export-egress 需要 --config 指向工作区配置"})
+                raise SystemExit(2)
+            state = StateStore(config.workspace / "state.sqlite3")
+            count = export_egress_cooccurrence(state, _ExportPath(egress_export))
+            _json({"ok": True, "exported": count, "file": egress_export})
             raise SystemExit(0)
         # Phase 1（B5）：本地插件自检——许可+凭据，与 CI 门 2 同逻辑
         from pathlib import Path as _Path

@@ -41,7 +41,7 @@ def _probe_windows() -> SandboxProbe:
     try:
         import ctypes
 
-        k32 = ctypes.windll.kernel32
+        k32 = ctypes.windll.kernel32  # type: ignore[attr-defined]  # Windows 专属 API
         adv = k32.LoadLibraryW("advapi32.dll")
         try:
             ac_profile = bool(k32.GetProcAddress(adv, b"CreateAppContainerProfile"))
@@ -67,7 +67,7 @@ def _probe_linux() -> SandboxProbe:
     try:
         import os
 
-        release = os.uname().release
+        release = os.uname().release  # type: ignore[attr-defined]  # Unix 专属 API
         major, minor = (int(part) for part in release.split(".")[:2])
         kernel_ok = (major, minor) >= (5, 13)
         # user namespaces 可用性：试读 unprivileged userns 开关
