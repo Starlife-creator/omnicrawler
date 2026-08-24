@@ -3,10 +3,10 @@
 pip==26.2.1
 setuptools==84.0.0
 wheel==0.48.0
-PyYAML==6.0.2
+PyYAML==6.0.3
 pytest==9.1.1
 coverage==7.15.4
-ruff==0.16.3
+ruff==0.16.4
 mypy==2.3.1
 # quality.yml 裸装 cryptography；与 pyproject security extra 同约束，防验签行为随大版本漂移
 cryptography>=50.0.0,<51
