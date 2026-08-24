@@ -63,8 +63,9 @@ def _install_sdk_shim() -> None:
         return result if isinstance(result, dict) else {}
 
     sdk = types.ModuleType("omnicrawler_sdk")
-    sdk.call = call
-    sdk.system_info = lambda: call("system.info")
+    # setattr 动态挂载：ModuleType 的属性表是运行时构造，静态赋值 mypy 无法识别
+    setattr(sdk, "call", call)  # noqa: B010 - 常量 setattr 但为绕过 mypy 动态属性限制所必需
+    setattr(sdk, "system_info", lambda: call("system.info"))  # noqa: B010 - 同上
     sdk.__doc__ = "OmniCrawler 契约 2 能力代理客户端：omnicrawler_sdk.call(operation, payload)"
     sys.modules["omnicrawler_sdk"] = sdk
 
@@ -117,14 +118,14 @@ def _apply_resource_limits() -> None:
                          "relying on import isolation + frozen sandbox host\n")
         return
     _limits = {
-        resource.RLIMIT_AS: (512 * 1024 * 1024, 512 * 1024 * 1024),       # 地址空间 512MB
-        resource.RLIMIT_CPU: (60, 60),                                     # CPU 累计 60s
-        resource.RLIMIT_NOFILE: (256, 256),                                # 打开文件数 256
-        resource.RLIMIT_FSIZE: (256 * 1024 * 1024, 256 * 1024 * 1024),     # 单文件 256MB
+        resource.RLIMIT_AS: (512 * 1024 * 1024, 512 * 1024 * 1024),       # type: ignore[attr-defined]  # 地址空间 512MB
+        resource.RLIMIT_CPU: (60, 60),                                     # type: ignore[attr-defined]  # CPU 累计 60s
+        resource.RLIMIT_NOFILE: (256, 256),                                # type: ignore[attr-defined]  # 打开文件数 256
+        resource.RLIMIT_FSIZE: (256 * 1024 * 1024, 256 * 1024 * 1024),     # type: ignore[attr-defined]  # 单文件 256MB
     }
     for limit, (soft, hard) in _limits.items():
         try:
-            resource.setrlimit(limit, (soft, hard))
+            resource.setrlimit(limit, (soft, hard))  # type: ignore[attr-defined]
         except (ValueError, OSError):
             continue  # 个别限额不可设置时不阻断启动，尽力而为
 
