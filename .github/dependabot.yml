@@ -7,6 +7,10 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      # paddlex 3.7.2 精确锁 PyYAML==6.0.2；PIP_CONSTRAINT 全局作用于 matrix job 的
+      # ".[full]" 安装，升级 PyYAML 必致 ResolutionImpossible（PR #47/#51/#53 三次复现）。
+      - dependency-name: "PyYAML"
     groups:
       runtime:
         dependency-type: "production"
