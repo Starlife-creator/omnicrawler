@@ -149,6 +149,20 @@ def _run_plugins(args: argparse.Namespace) -> None:
             "next": ["omnicrawler plugins audit --local .", "pytest -m plugin_contract"],
         })
         raise SystemExit(0)
+    review_target = getattr(args, "review", None)
+    if review_target:
+        # Phase 3（Q4/G3）：审核辅助分析（AI 增强审核员，纯静态证据非门禁）
+        from pathlib import Path as _ReviewPath
+
+        from ..plugins.plugin_review import review_analyze
+
+        try:
+            analysis = review_analyze(_ReviewPath(review_target))
+        except (OSError, SyntaxError, UnicodeDecodeError) as exc:
+            _json({"ok": False, "error": f"分析失败: {exc}"})
+            raise SystemExit(2)
+        _json({"ok": True, "analysis": analysis.to_dict()})
+        raise SystemExit(0)
     if command == "audit":
         # Phase 2a（B5/H4）：--report 优先生成脱敏环境诊断报告
         if getattr(args, "report", False):

@@ -93,6 +93,11 @@ def build_parser() -> argparse.ArgumentParser:
     plugins.add_argument(
         "--output-dir", default=".", help="scaffold-contract2 子命令：输出根目录（默认当前目录）"
     )
+    # Phase 3（Q4/G3）：plugins review-analyze --local <file> 审核辅助分析
+    plugins.add_argument(
+        "--review", default=None, metavar="FILE",
+        help="review-analyze 子命令：对插件文件做静态审核辅助分析（AI 增强审核员）",
+    )
     templates = sub.add_parser("templates", help="搜索、识别和生成采集模板")
     templates_sub = templates.add_subparsers(dest="templates_command", required=True)
     template_list = templates_sub.add_parser("list", help="列出内置和用户模板")
