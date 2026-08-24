@@ -12,9 +12,11 @@
 from __future__ import annotations
 
 import ast
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 # 门 2 SPDX 白名单（与 OmniCrawler-market/tools/generate_catalog.py LICENSE_ALLOWLIST 同源；
 # 方案 A2 单一权威来源注：变更须两侧同步 + I2 文档比对 job 校验）
@@ -607,3 +609,57 @@ def generate_environment_report() -> str:
     lines.append("")
     lines.append("<!-- 将以上内容粘贴至 GitHub Issue；本报告零插件明细/零路径/零用户标识 -->")
     return "\n".join(lines)
+
+
+# ============================================================================
+# Phase 2b H4：共现事件 SIEM 导出（plugins audit --export-egress；第 66/70 轮）
+# ============================================================================
+
+# 共现事件导出字段（第 70 轮校准为企业化预留接口面，文档化落地）：
+# UTC 时间戳/plugin_id/version/路径/域名/判定/会话号——对齐 C6 审计 schema。
+_EGRESS_EXPORT_FIELDS = (
+    "timestamp_utc",
+    "plugin_id",
+    "plugin_version",
+    "operation",
+    "domain",
+    "decision",
+    "session_id",
+)
+
+
+def export_egress_cooccurrence(state_store: Any, output_path: Path) -> int:
+    """把审计库中的共现事件导出为 JSONL（SIEM 关联分析）。
+
+    broker 侧共现事件经 audit_hook 写入审计（action=plugin.egress_cooccurrence，
+    details 含 plugin_id/decision/records_read_before）。此处从审计库检索并
+    以固定字段清单输出（零插件明细外泄——只导出共现判定元数据）。
+
+    返回导出行数；无共现事件 → 空文件 + 0。
+    """
+    rows = state_store.rows(
+        "SELECT run_id, action, actor, details_json, created_at "
+        "FROM audit_events WHERE action=? ORDER BY created_at",
+        ("plugin.egress_cooccurrence",),
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    count = 0
+    with output_path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            try:
+                details = json.loads(row["details_json"])
+            except (json.JSONDecodeError, TypeError):
+                details = {}
+            entry = {
+                "timestamp_utc": str(row.get("created_at", "")),
+                "plugin_id": str(details.get("plugin_id", "")),
+                "plugin_version": str(details.get("plugin_version", "")),
+                "operation": "records.read->network.fetch",
+                "domain": str(details.get("domain", "")),
+                "decision": str(details.get("decision", "cooccurrence_risk")),
+                "session_id": str(details.get("session_id", row.get("run_id", ""))),
+            }
+            # 字段白名单导出：只写清单字段（防隐私意外，H7 语义）
+            handle.write(json.dumps({k: entry[k] for k in _EGRESS_EXPORT_FIELDS}, ensure_ascii=False) + "\n")
+            count += 1
+    return count

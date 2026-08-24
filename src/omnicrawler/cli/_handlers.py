@@ -131,6 +131,22 @@ def _run_plugins(args: argparse.Namespace) -> None:
 
             print(generate_environment_report())
             raise SystemExit(0)
+        # Phase 2b（H4 第 66 轮④）：--export-egress 导出共现事件 JSONL（SIEM）
+        egress_export = getattr(args, "export_egress", None)
+        if egress_export:
+            from pathlib import Path as _ExportPath
+
+            from ..plugins.plugin_audit import export_egress_cooccurrence
+            from ..state.state_store import StateStore
+
+            config = load_config(args.config) if args.config else None
+            if config is None:
+                _json({"ok": False, "error": "--export-egress 需要 --config 指向工作区配置"})
+                raise SystemExit(2)
+            state = StateStore(config.workspace / "state.sqlite3")
+            count = export_egress_cooccurrence(state, _ExportPath(egress_export))
+            _json({"ok": True, "exported": count, "file": egress_export})
+            raise SystemExit(0)
         # Phase 1（B5）：本地插件自检——许可+凭据，与 CI 门 2 同逻辑
         from pathlib import Path as _Path
 
