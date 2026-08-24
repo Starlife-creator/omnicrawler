@@ -1895,6 +1895,7 @@ class MainWindow(QMainWindow):
             return
 
         from omnicrawler.export.markdown_exporter import MarkdownExporter
+
         from .core.background_worker import BackgroundWorker, run_worker
 
         filepath = Path(csv_path)

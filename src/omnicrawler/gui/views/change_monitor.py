@@ -41,8 +41,8 @@ from PySide6.QtWidgets import (
 from omnicrawler.core.utils import user_agent
 from omnicrawler.gui.widgets.toast import ToastManager
 
-from ..i18n import _
 from ..design_system import ThemeManager
+from ..i18n import _
 from ..widgets.empty_state import EmptyState
 
 if TYPE_CHECKING:
