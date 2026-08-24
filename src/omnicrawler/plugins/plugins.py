@@ -681,6 +681,15 @@ def _load_local_plugin(
     )
     if route.backend == "subprocess" and contract_shape == 2:
         LOGGER.info("契约 2 插件走子进程沙箱: %s（%s）", path, route.reason)
+        # Phase 2b：配额与 egress_policy 从 plugins 配置节解析（daily 配额按
+        # plugin_id 配置；egress_policy 个人 prompt 默认 / 企业 block）
+        from .plugin_quota import DailyNetworkQuota
+
+        quota_rules = plugins_section.get("network_daily_quota", {}) or {}
+        daily_quota: DailyNetworkQuota | None = None
+        if isinstance(quota_rules, dict) and quota_rules.get(plugin_id):
+            daily_quota = DailyNetworkQuota({plugin_id: quota_rules[plugin_id]})
+        egress_policy = str(plugins_section.get("egress_policy", "prompt")).strip() or "prompt"
         host = _SubprocessSessionHost(
             path.parent,
             path.stem if path.name != "plugin.py" else "plugin",
@@ -691,6 +700,9 @@ def _load_local_plugin(
             verified_bytes=(
                 decision.verified_bytes if decision is not None and decision.verified_bytes else None
             ),
+            plugin_id=plugin_id,
+            daily_quota=daily_quota,
+            egress_policy=egress_policy,
         )
         # 按 plugin_types 注册对应槽位的适配器工厂（缺省按 source 处理）
         plugin_types = static_meta.plugin_types if static_meta else ()
