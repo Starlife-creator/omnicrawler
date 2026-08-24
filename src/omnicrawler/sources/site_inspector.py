@@ -45,6 +45,7 @@ def inspect_url(
     *,
     timeout_seconds: float = 20.0,
     intent: str = "",
+    robots_fail_closed: bool = True,  # P2-8：默认 fail-closed，可联动用户配置
     fetcher: Any | None = None,
 ) -> SiteInspection:
     """Fetch one public page through the same SSRF/redirect/size/robots guards as a crawl.
@@ -61,7 +62,7 @@ def inspect_url(
         "retries": 1,
         "max_response_bytes": 10_000_000,
         "respect_robots": True,
-        "robots_fail_closed": True,
+        "robots_fail_closed": bool(robots_fail_closed),
     })
     root = Path.cwd().resolve()
     config = AppConfig(root / ".omnicrawler-inspector.yaml", root, raw, root / "work" / "site_inspection")

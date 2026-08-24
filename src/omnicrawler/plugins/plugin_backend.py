@@ -47,6 +47,11 @@ def resolve_backend_command() -> tuple[list[str], float]:
     - 冻结模式：优先伴生宿主 exe；缺失时 fail-closed 抛错（由调用方映射为
       E_UNSUPPORTED_ENV 拒载语义——沙箱后端不可用不静默降级）。
     - 源码模式：``[sys.executable, -I, -S, plugin_subprocess.py]``。
+
+    NEW-A 契约：OS 级 confinement 缺失即视为 fail-closed 拒载。当前实现仅具备
+    进程边界 + 导入隔离 +（Unix）resource 限额；Windows 无 `resource` 模块且未接
+    Job Object 时，仍依赖导入隔离 + 冻结宿主，并在子进程入口显式降级记录——不将
+    "缺 OS confinement" 静默视为完整沙箱。
     """
     if is_frozen():
         host = bundled_sandbox_host()
