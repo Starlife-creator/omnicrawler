@@ -52,7 +52,9 @@ jobs:
           DENY_STRICT="AGPL|GPL"
           DENY="$DENY_ALWAYS"
           if [ "$STRICT" = "true" ]; then DENY="$DENY_STRICT"; fi
-          python -m pip licenses --format=json --with-urls > licenses.json
+          # pip 子命令插件机制已废弃（"pip licenses" 报 unknown command），
+          # 直接调用 pip-licenses 控制台命令（本地 pip-licenses 5.5.5 验证可用）。
+          pip-licenses --format=json --with-urls > licenses.json
           python - <<EOF
           import json, re, sys
           deny = re.compile(r"$DENY", re.IGNORECASE)
