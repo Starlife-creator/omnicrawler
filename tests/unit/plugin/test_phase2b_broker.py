@@ -198,3 +198,121 @@ def test_files_read_requires_allowlist_membership(tmp_path: Path) -> None:
     with pytest.raises(CapabilityError) as exc_info:
         broker.dispatch("files.read", {"path": str(tmp_path / "other.txt")})
     assert exc_info.value.code == "E_PERMISSION"
+
+
+def test_quota_propagates_through_session(tmp_path: Path) -> None:
+    """E2E：契约 2 插件经会话触发配额超限，E_QUOTA 透传到宿主。"""
+    import textwrap
+
+    from omnicrawler.plugins.plugin_quota import DailyNetworkQuota
+    from omnicrawler.plugins.plugins import (
+        SIGNATURE_POLICY_DEVELOPER,
+        Registry,
+        load_local_plugins,
+    )
+
+    plugin_dir = tmp_path / "plugins" / "quota_e2e"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.py").write_text(
+        textwrap.dedent(
+            """
+            PLUGIN_METADATA = {'name': 'quota_e2e', 'version': '1.0',
+                               'execution_mode': 'subprocess', 'plugin_types': ['source'],
+                               'permissions': ['network:scoped']}
+            import omnicrawler_sdk
+            def handle(op, p):
+                if op == 'source.seed':
+                    r = omnicrawler_sdk.call('network.fetch',
+                                             {'url': 'https://example.com/', 'method': 'GET'})
+                    return {'requests': [{'url': 'https://example.com/',
+                                          'meta': {'status': r.get('status')}}]}
+                return {}
+            """
+        ),
+        encoding="utf-8",
+    )
+    registry = Registry()
+    load_local_plugins(
+        registry, ["plugins/"], tmp_path,
+        signature_policy=SIGNATURE_POLICY_DEVELOPER,
+        fail_open=False,
+        approved_permissions=("network:scoped",),
+    )
+    adapter = registry.sources["quota_e2e"](None)
+    adapter._host._daily_quota = DailyNetworkQuota({"quota_e2e": {"requests": 1}})
+
+    class _FakeNetworkClient:
+        def fetch(self, url, method="GET", headers=None):
+            from omnicrawler.core.models import CrawlRequest, FetchResult
+
+            return FetchResult(
+                request=CrawlRequest(url=url), final_url=url, status=200,
+                headers={"content-type": "text/html"}, body=b"ok", elapsed_seconds=0.1,
+            )
+
+    adapter._host._network_client = _FakeNetworkClient()
+
+    requests = adapter.seed()
+    assert requests[0].meta["status"] == 200
+    with pytest.raises(RuntimeError, match="E_QUOTA"):
+        adapter.seed()
+    adapter.close()
+
+
+def test_quota_propagates_through_session(tmp_path: Path) -> None:
+    """E2E：契约 2 插件经会话触发配额超限，E_QUOTA 透传到宿主。"""
+    import textwrap
+
+    from omnicrawler.plugins.plugin_quota import DailyNetworkQuota
+    from omnicrawler.plugins.plugins import (
+        SIGNATURE_POLICY_DEVELOPER,
+        Registry,
+        load_local_plugins,
+    )
+
+    plugin_dir = tmp_path / "plugins" / "quota_e2e"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.py").write_text(
+        textwrap.dedent(
+            """
+            PLUGIN_METADATA = {'name': 'quota_e2e', 'version': '1.0',
+                               'execution_mode': 'subprocess', 'plugin_types': ['source'],
+                               'permissions': ['network:scoped']}
+            import omnicrawler_sdk
+            def handle(op, p):
+                if op == 'source.seed':
+                    r = omnicrawler_sdk.call('network.fetch',
+                                             {'url': 'https://example.com/', 'method': 'GET'})
+                    return {'requests': [{'url': 'https://example.com/',
+                                          'meta': {'status': r.get('status')}}]}
+                return {}
+            """
+        ),
+        encoding="utf-8",
+    )
+    registry = Registry()
+    load_local_plugins(
+        registry, ["plugins/"], tmp_path,
+        signature_policy=SIGNATURE_POLICY_DEVELOPER,
+        fail_open=False,
+        approved_permissions=("network:scoped",),
+    )
+    adapter = registry.sources["quota_e2e"](None)
+    adapter._host._daily_quota = DailyNetworkQuota({"quota_e2e": {"requests": 1}})
+
+    class _FakeNetworkClient:
+        def fetch(self, url, method="GET", headers=None):
+            from omnicrawler.core.models import CrawlRequest, FetchResult
+
+            return FetchResult(
+                request=CrawlRequest(url=url), final_url=url, status=200,
+                headers={"content-type": "text/html"}, body=b"ok", elapsed_seconds=0.1,
+            )
+
+    adapter._host._network_client = _FakeNetworkClient()
+
+    requests = adapter.seed()
+    assert requests[0].meta["status"] == 200
+    with pytest.raises(RuntimeError, match="E_QUOTA"):
+        adapter.seed()
+    adapter.close()
