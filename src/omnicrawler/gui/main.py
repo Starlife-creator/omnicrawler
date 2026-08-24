@@ -90,18 +90,10 @@ if not _cli_mode():
         print(_("请运行: pip install omnicrawler-platform[gui]"), file=sys.stderr)
         sys.exit(1)
 
-    from ..core.ai_env import (
-        load_ai_config_sidecar,
-        load_ai_env,
-        save_ai_config_sidecar,
-        save_ai_env,
-        sync_ai_env_to_os,
-    )
+    # 冷启动提速：低频功能（AI 设置/插件管理/运行对比）的重型依赖在
+    # 使用点函数内懒导入（ai_env≈70ms/plugin_inspector≈53ms/run_compare≈26ms）
     from ..core.config import load_config as load_core_config
-    from ..core.credentials import seal_secret
     from ..pipeline_ops.preflight import run_preflight, run_sample
-    from ..plugins.plugin_inspector import inspect_directory
-    from ..review.run_compare import compare_runs
     from ..services.application_service import ApplicationService
     from ..services.config_history import ConfigHistory
     from ..services.controllers import ResultController, RunController, TaskController
@@ -170,10 +162,12 @@ class SiteInspectionWorker(QObject):
     finished = Signal(object, str)
     failed = Signal(str)
 
-    def __init__(self, url: str, intent: str = "", fetcher: Any | None = None) -> None:
+    def __init__(self, url: str, intent: str = "", robots_fail_closed: bool = True, fetcher: Any | None = None) -> None:
         super().__init__()
         self.url = url
         self.intent = intent
+        # P2-8：探测/检测交由调用方从用户配置传入，替代硬编码 True
+        self.robots_fail_closed = robots_fail_closed
         # P2：探活复用共享 AsyncFetcher（内部经 EgressBroker 审计出网）
         self.fetcher = fetcher
 
@@ -183,7 +177,8 @@ class SiteInspectionWorker(QObject):
             if _thread_interrupted():
                 return
             report = inspect_url(
-                self.url, bundled_template_catalog(), intent=self.intent, fetcher=self.fetcher
+                self.url, bundled_template_catalog(), intent=self.intent,
+                robots_fail_closed=self.robots_fail_closed, fetcher=self.fetcher,
             ).to_dict()
         except Exception as exc:
             if not _thread_interrupted():
@@ -208,7 +203,9 @@ class TemplateLibraryDialog(QDialog):
         stored_favorites = self._settings.value("templates/favorites", [])
         if isinstance(stored_favorites, str):
             stored_favorites = [stored_favorites]
-        self._favorites = {str(value) for value in stored_favorites or []}
+        # QSettings.value 返回 object：显式收窄为 list 后再迭代
+        favorites = stored_favorites if isinstance(stored_favorites, list) else []
+        self._favorites = {str(value) for value in favorites}
 
         layout = QVBoxLayout(self)
         filters = QHBoxLayout()
@@ -910,6 +907,9 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._pdf_workbench)
         # B-4：ConvertX 格式互转工具页（stack index 7）
         self._convert_tool = ConvertView()
+        self._convert_tool.open_output_folder_requested.connect(
+            lambda p: QDesktopServices.openUrl(QUrl.fromLocalFile(p))
+        )
         self._stack.addWidget(self._convert_tool)
 
         # A3：变更监控复用共享探活 AsyncFetcher（惰性构建，走 EgressBroker 审计）
@@ -954,6 +954,9 @@ class MainWindow(QMainWindow):
 
         self._autosave = AutosaveManager(self._project_root)
         self._autosave.draft_found.connect(self._on_draft_found)
+        self._autosave.save_failed.connect(
+            lambda msg: ToastManager.instance().warning(msg)
+        )
 
         self._template_loader = TemplateLoader(
             builtin_dir=package_resource("omnicrawler", "templates"),
@@ -1289,22 +1292,24 @@ class MainWindow(QMainWindow):
         if path.is_file():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
         else:
-            QMessageBox.information(self, _("错误中心"), _("当前项目还没有错误中心报告；完成一次任务后会自动生成。"))
+            ToastManager.instance().info(_("当前项目还没有错误中心报告；完成一次任务后会自动生成。"))
 
     def _show_run_comparison(self) -> None:
+        from ..review.run_compare import compare_runs
+
         workspace = Path(self._config.workspace).expanduser()
         if not workspace.is_absolute():
             workspace = self._project_root / workspace
         database = workspace / "state.sqlite3"
         if not database.is_file():
-            QMessageBox.information(self, _("运行对比"), _("当前项目还没有可对比的运行记录。"))
+            ToastManager.instance().info(_("当前项目还没有可对比的运行记录。"))
             return
         with StateStore(database) as state:
             rows = state.rows(
                 "SELECT run_id, started_at, status FROM runs ORDER BY started_at DESC LIMIT 30"
             )
             if len(rows) < 2:
-                QMessageBox.information(self, _("运行对比"), _("至少完成两次运行后才能进行对比。"))
+                ToastManager.instance().info(_("至少完成两次运行后才能进行对比。"))
                 return
             labels = [f"{row['started_at']} · {row['status']} · {row['run_id']}" for row in rows]
             before_label, ok = QInputDialog.getItem(self, _("运行对比"), _("选择较早的一次运行："), labels, 1, False)
@@ -1330,6 +1335,8 @@ class MainWindow(QMainWindow):
         )
 
     def _manage_plugins(self) -> None:
+        from ..plugins.plugin_inspector import inspect_directory
+
         directory = self._project_root / "plugins"
         directory.mkdir(parents=True, exist_ok=True)
         inspections = inspect_directory(directory)
@@ -1592,7 +1599,7 @@ class MainWindow(QMainWindow):
     def _show_template_library(self) -> None:
         templates = self._template_loader.discover_templates(force=True)
         if not templates:
-            QMessageBox.information(self, _("模板库"), _("未找到任何模板"))
+            ToastManager.instance().info(_("未找到任何模板"))
             return
         dialog = TemplateLibraryDialog(templates, self)
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_template:
@@ -1642,7 +1649,12 @@ class MainWindow(QMainWindow):
     def _inspect_site(self, url: str) -> None:
         self._statusbar.showMessage(_("正在安全探测网址并识别模板…"))
         thread = QThread(self)
-        worker = SiteInspectionWorker(url, self._config.task_intent)
+        worker = SiteInspectionWorker(
+            url, self._config.task_intent,
+            robots_fail_closed=bool(
+                (self._config.passthrough.get("http") or {}).get("robots_fail_closed", True)
+            ),
+        )
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(self._on_site_inspected)
@@ -1701,7 +1713,7 @@ class MainWindow(QMainWindow):
         if record is None:
             QMessageBox.warning(self, _("模板不可用"), best_id)
             return
-        origin = QUrl(url).adjusted(QUrl.UrlFormattingOption.RemovePath).toString().rstrip("/")
+        origin = QUrl(url).adjusted(QUrl.UrlFormattingOption.RemovePath).toString().rstrip("/")  # type: ignore[arg-type]  # PySide6 存根枚举别名差异，运行时正确
         values = {}
         for key in record.metadata.placeholders:
             lowered = key.casefold()
@@ -1751,7 +1763,12 @@ class MainWindow(QMainWindow):
                 self._task_canvas.set_probe_failed(url, str(exc))
                 return
         thread = QThread(self)
-        worker = SiteInspectionWorker(url, self._config.task_intent, fetcher=self._probe_fetcher)
+        worker = SiteInspectionWorker(
+            url, self._config.task_intent,
+            robots_fail_closed=bool(
+                (self._config.passthrough.get("http") or {}).get("robots_fail_closed", True)
+            ),
+            fetcher=self._probe_fetcher)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(lambda report, target: self._on_probe_finished(target, report))
@@ -1862,6 +1879,52 @@ class MainWindow(QMainWindow):
         if download_dir.is_dir():
             self._file_list.set_directory(download_dir)
 
+    def _export_markdown(self) -> None:
+        """任务完成自动导出结果 Markdown（P1-2 修复）。
+
+        run_controller 在 finished 时无参调用本方法；复用 _auto_load_results 的同款
+        workspace 归一化逻辑自动定位 records.csv 并导出一份 records.md。
+        失败仅记日志，不弹框、不阻塞事件循环（自动路径）；带保存对话框的手动导出
+        仍由 result_table 视图独立承担。
+        """
+        workspace = Path(self._config.workspace).expanduser()
+        if not workspace.is_absolute():
+            workspace = self._project_root / workspace
+        csv_path = next(
+            (path for path in (workspace / "output" / "records.csv", workspace / "records.csv")
+             if path.is_file()),
+            None,
+        )
+        if csv_path is None:
+            logging.getLogger(__name__).warning(
+                _("自动导出 Markdown 跳过：未找到结果文件 records.csv 于 %s"), workspace)
+            return
+
+        from omnicrawler.export.markdown_exporter import MarkdownExporter
+
+        from .core.background_worker import BackgroundWorker, run_worker
+
+        filepath = Path(csv_path)
+        jsonl = filepath.with_name("records.jsonl")
+        target = filepath.with_name("records.md")
+
+        class _AutoMarkdownWorker(BackgroundWorker):
+            def work(self) -> str:
+                MarkdownExporter.export_results(
+                    csv_path=filepath,
+                    jsonl_path=jsonl if jsonl.is_file() else None,
+                    output_path=target,
+                    include_evidence=True,
+                )
+                return str(target)
+
+        run_worker(
+            _AutoMarkdownWorker(),
+            on_succeeded=lambda path: self._statusbar.showMessage(
+                _("已自动导出 Markdown：{0}").format(path), 6000),
+            on_failed=lambda err: logging.getLogger(__name__).warning(_("自动导出 Markdown 失败: %s"), err),
+        )
+
     def _open_result_folder(self) -> None:
         # A14：workspace 可能含 ~ 等用户目录标记，需 expanduser 后判断绝对路径
         workspace = Path(self._config.workspace).expanduser()
@@ -1931,29 +1994,20 @@ class MainWindow(QMainWindow):
         self.close()
 
     def closeEvent(self, event) -> None:
-        if self._tray_icon and self._tray_icon.isVisible() and self._task_runner.is_running:
-            reply = QMessageBox.question(
-                self, _("确认"),
-                _("任务正在运行中。是否最小化到系统托盘？\n\n" +
-
-                  _("选择「否」将终止任务并退出。")),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self.hide()
-                event.ignore()
-                return
         if self._task_runner.is_running:
-            # S3.1.5：无托盘图标时不再静默 stop()——给出三选一确认
+            # P2-2/1：合并为单次确认弹窗——有托盘 3 选 1，无托盘 2 选 1（无"隐藏"）
+            tray_visible = bool(self._tray_icon and self._tray_icon.isVisible())
             box = QMessageBox(self)
             box.setWindowTitle(_("确认退出"))
             box.setText(_("任务正在运行中。关闭窗口将如何处理？"))
             stop_btn = box.addButton(_("停止任务并退出"), QMessageBox.ButtonRole.DestructiveRole)
-            hide_btn = box.addButton(_("最小化到后台"), QMessageBox.ButtonRole.AcceptRole)
+            if tray_visible:
+                # 有托盘才允许隐藏到后台；无托盘时提供隐藏入口会导致窗口不可恢复（P2-1）
+                hide_btn = box.addButton(_("最小化到后台"), QMessageBox.ButtonRole.AcceptRole)
             box.addButton(_("取消"), QMessageBox.ButtonRole.RejectRole)
             box.exec()
             clicked = box.clickedButton()
-            if clicked == hide_btn:
+            if tray_visible and clicked == hide_btn:
                 self.hide()
                 event.ignore()
                 return
@@ -2062,6 +2116,8 @@ class MainWindow(QMainWindow):
 
     def _load_ai_config_from_env(self) -> dict[str, Any]:
         """从单一真源 .env 加载 AI 配置（优先级 os.environ > 项目 .env > 用户级 .env）。"""
+        from ..core.ai_env import load_ai_config_sidecar, load_ai_env
+
         env_vars = load_ai_env(self._project_root)
         config: dict[str, Any] = {"mode": "disabled"}
         provider = env_vars.get("OMNICRAWL_AI_PROVIDER", "disabled")
@@ -2095,6 +2151,9 @@ class MainWindow(QMainWindow):
         S2.2.2：OMNICRAWL_AI_API_KEY 明文先加密入 secrets_store，.env 只写
         ``secret://`` 引用（引用幂等，不可存时拒绝写入绝不回退明文）。
         """
+        from ..core.ai_env import save_ai_config_sidecar, save_ai_env, sync_ai_env_to_os
+        from ..core.credentials import seal_secret
+
         updates: dict[str, str | None] = {}
         if config.get("mode") == "disabled":
             updates["OMNICRAWL_AI_PROVIDER"] = "disabled"

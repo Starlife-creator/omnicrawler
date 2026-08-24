@@ -1,0 +1,44 @@
+# 企业部署配置模板（Phase 2b 第 66 轮④：egress_policy 企业档预置）
+#
+# 个人默认档：plugins.egress_policy = prompt（共现提示，不阻断）
+# 企业档：      plugins.egress_policy = block（read/fetch 共现阻断，E_EGRESS_BLOCKED）
+#
+# 本模板预置企业档 + 严格签名策略 + 信任根，供企业批量下发参考。
+# 所有密钥/路径请按实际环境替换；插件加载仍走信任根验签（fail-closed）。
+
+project:
+  name: 企业部署-插件沙箱
+  workspace: work/enterprise
+
+source:
+  kind: static_html
+  seeds: [https://example.invalid/]
+
+crawl: {max_pages: 1, same_host: true}
+
+http:
+  user_agent: "OmniCrawler/Enterprise (+contact: security@example.org)"
+  respect_robots: true
+  delay_seconds: 1.0
+
+plugins:
+  # 企业档：数据外传共现检测阻断（records.read 后 network.fetch → E_EGRESS_BLOCKED）
+  egress_policy: block
+  # 严格签名策略：本地插件须经信任根验签；不开放 developer 豁免
+  signature_policy: strict
+  # 信任根（发行前由安全团队验证指纹后固定；勿用示例值）
+  trust_public_key: configs/plugin_trust.pub.pem
+  # 每日网络配额：按 plugin_id 配置 {requests: N, bytes: N}（0 = 不限）
+  network_daily_quota:
+    # example_news: {requests: 1000, bytes: 104857600}
+    {}
+  # 会话资源上限
+  subprocess_max_concurrent: 2
+  subprocess_memory_mb: 512
+  subprocess_timeout_seconds: 30
+  # 默认手动更新（防作者账号被入侵后自动分发恶意版本，G1 第 42 轮）
+  # 自动更新：须显式开启，仍走 sha256 + 验签 + 吊销检查全链
+
+# 数据外传审计（企业 SIEM 关联）：
+#   plugins audit --export-egress 导出共现事件 JSONL（UTC 时间戳/plugin_id/
+#   version/路径/域名/判定/会话号，对齐 C6 审计 schema）

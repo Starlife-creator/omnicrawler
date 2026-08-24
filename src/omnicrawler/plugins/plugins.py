@@ -96,6 +96,8 @@ class PluginMetadata:
     dependencies: tuple[dict[str, Any], ...] = ()
     # files:read 路径白名单（第 82 轮更名：原 files 与市场仓扫描允许列表冲突）
     input_files: tuple[str, ...] = ()
+    # Phase 3（B2）：契约形态（2=handle 契约 2 / 1=register 契约 1 / 0=未知）
+    contract_shape: int = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,6 +182,7 @@ def _normalize_schema_fields(result: PluginMetadata, path: Path) -> PluginMetada
         execution_mode=mode,
         dependencies=deps,
         input_files=input_files,
+        contract_shape=result.contract_shape,
     )
 
 
@@ -198,6 +201,19 @@ def _metadata(module: Any, path: Path) -> PluginMetadata:
         raise TypeError(f"PLUGIN_METADATA必须是PluginMetadata或字典: {path}")
     # Phase 1（B1）：execution_mode 枚举归一化 + dependencies/input_files 类型归一
     result = _normalize_schema_fields(result, path)
+    # Phase 3（B2）：契约形态静态判定（顶层 handle → 契约 2；仅 register → 契约 1）
+    # 放在归一化之后（归一化重建对象会丢字段）
+    try:
+        from dataclasses import replace
+
+        from .plugin_router import detect_contract_shape
+
+        result = replace(
+            result,
+            contract_shape=detect_contract_shape(path.read_text(encoding="utf-8")),
+        )
+    except OSError:
+        pass
     if result.api_version != PLUGIN_API_VERSION:
         raise RuntimeError(f"插件API版本不兼容: {path} 需要{result.api_version}，当前为{PLUGIN_API_VERSION}")
     if not result.name.strip():
@@ -369,6 +385,8 @@ class Registry:
                     # in_process_trusted（0.10 起运行期实际后端由路由矩阵裁决，
                     # Phase 2 接线 B4 后此处输出运行态模式）
                     "execution_mode": item.execution_mode,
+                    # Phase 3（B2）：契约形态列（2=契约 2 handle / 1=契约 1 register）
+                    "contract_shape": item.contract_shape,
                 }
                 for item in self.plugins
             ],
@@ -681,6 +699,15 @@ def _load_local_plugin(
     )
     if route.backend == "subprocess" and contract_shape == 2:
         LOGGER.info("契约 2 插件走子进程沙箱: %s（%s）", path, route.reason)
+        # Phase 2b：配额与 egress_policy 从 plugins 配置节解析（daily 配额按
+        # plugin_id 配置；egress_policy 个人 prompt 默认 / 企业 block）
+        from .plugin_quota import DailyNetworkQuota
+
+        quota_rules = plugins_section.get("network_daily_quota", {}) or {}
+        daily_quota: DailyNetworkQuota | None = None
+        if isinstance(quota_rules, dict) and quota_rules.get(plugin_id):
+            daily_quota = DailyNetworkQuota({plugin_id: quota_rules[plugin_id]})
+        egress_policy = str(plugins_section.get("egress_policy", "prompt")).strip() or "prompt"
         host = _SubprocessSessionHost(
             path.parent,
             path.stem if path.name != "plugin.py" else "plugin",
@@ -691,6 +718,9 @@ def _load_local_plugin(
             verified_bytes=(
                 decision.verified_bytes if decision is not None and decision.verified_bytes else None
             ),
+            plugin_id=plugin_id,
+            daily_quota=daily_quota,
+            egress_policy=egress_policy,
         )
         # 按 plugin_types 注册对应槽位的适配器工厂（缺省按 source 处理）
         plugin_types = static_meta.plugin_types if static_meta else ()
@@ -1039,6 +1069,8 @@ def _static_plugin_metadata(path: Path, source: str) -> PluginMetadata | None:
             continue
         targets = node.targets if isinstance(node, ast.Assign) else [node.target]
         if not any(isinstance(target, ast.Name) and target.id == "PLUGIN_METADATA" for target in targets):
+            continue
+        if node.value is None:  # AnnAssign 无值形态（如 PLUGIN_METADATA: dict）无字面量可评估
             continue
         try:
             value = ast.literal_eval(node.value)
