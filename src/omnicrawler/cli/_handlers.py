@@ -124,6 +124,31 @@ def _run_wizard(args: argparse.Namespace) -> None:
 @_register("plugins")
 def _run_plugins(args: argparse.Namespace) -> None:
     command = getattr(args, "plugins_command", None)
+    if command == "scaffold-contract2":
+        # Phase 3（P1 第 67 轮）：新建契约 2 工程骨架（非原地改造）
+        from pathlib import Path as _ScaffoldPath
+
+        from ..plugins.plugin_sdk import scaffold_contract2
+
+        plugin_id = getattr(args, "plugin_id", None)
+        if not plugin_id:
+            _json({"ok": False, "error": "scaffold-contract2 需要 --plugin-id <id>"})
+            raise SystemExit(2)
+        display_name = getattr(args, "display_name", None) or ""
+        output_dir = _ScaffoldPath(getattr(args, "output_dir", "."))
+        try:
+            root = scaffold_contract2(
+                output_dir, plugin_id, display_name=display_name
+            )
+        except (ValueError, FileExistsError) as exc:
+            _json({"ok": False, "error": str(exc)})
+            raise SystemExit(2)
+        _json({
+            "ok": True,
+            "plugin_dir": str(root),
+            "next": ["omnicrawler plugins audit --local .", "pytest -m plugin_contract"],
+        })
+        raise SystemExit(0)
     if command == "audit":
         # Phase 2a（B5/H4）：--report 优先生成脱敏环境诊断报告
         if getattr(args, "report", False):

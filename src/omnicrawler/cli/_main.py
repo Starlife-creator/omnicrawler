@@ -83,6 +83,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--export-egress", default=None, metavar="FILE",
         help="audit 子命令：导出共现事件 JSONL（SIEM 关联分析，固定字段清单）",
     )
+    # Phase 3（P1 第 67 轮）：plugins scaffold-contract2 —— 新建契约 2 工程骨架
+    plugins.add_argument(
+        "--plugin-id", default=None, help="scaffold-contract2 子命令：新插件 ID（小写字母开头）"
+    )
+    plugins.add_argument(
+        "--display-name", default=None, help="scaffold-contract2 子命令：插件显示名"
+    )
+    plugins.add_argument(
+        "--output-dir", default=".", help="scaffold-contract2 子命令：输出根目录（默认当前目录）"
+    )
     templates = sub.add_parser("templates", help="搜索、识别和生成采集模板")
     templates_sub = templates.add_subparsers(dest="templates_command", required=True)
     template_list = templates_sub.add_parser("list", help="列出内置和用户模板")

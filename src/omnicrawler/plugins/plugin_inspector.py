@@ -19,6 +19,9 @@ class PluginInspection:
     capabilities: tuple[str, ...]
     compatible: bool
     errors: tuple[str, ...]
+    # Phase 3（B2 双契约适配）：契约形态（1=register/2=handle/0=未知）+ 声明模式
+    contract_shape: int = 0
+    execution_mode: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -32,8 +35,15 @@ def inspect_plugin(path: Path) -> PluginInspection:
     except (OSError, UnicodeError, SyntaxError) as exc:
         return PluginInspection(str(path), path.stem, "", 0, "", (), (), False, (str(exc),))
     has_register = any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "register" for node in tree.body)
-    if not has_register:
-        errors.append("缺少 register(registry) 函数")
+    # Phase 3（B2）：契约 2 = 顶层 handle 函数（可 subprocess）
+    has_handle = any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "handle" for node in tree.body)
+    if has_handle:
+        contract_shape = 2
+    elif has_register:
+        contract_shape = 1
+    else:
+        contract_shape = 0
+        errors.append("缺少 register(registry)（契约 1）或 handle(operation,payload)（契约 2）入口")
     for node in tree.body:
         if not isinstance(node, (ast.Assign, ast.AnnAssign)):
             continue
@@ -59,6 +69,12 @@ def inspect_plugin(path: Path) -> PluginInspection:
         errors.append(f"需要 OmniCrawler >= {min_core}")
     if max_core and _version(max_core) < _version(CORE_VERSION):
         errors.append(f"仅支持 OmniCrawler <= {max_core}")
+    execution_mode = str(metadata.get("execution_mode", "")).strip()
+    # Phase 3（B2）契约一致性：契约 1（register）+ subprocess 声明 → 不可运行
+    if contract_shape == 1 and execution_mode in ("", "subprocess"):
+        errors.append(
+            "契约 1（register）插件不能以 subprocess 运行（请迁移契约 2 或显式声明 execution_mode: in_process）"
+        )
     return PluginInspection(
         str(path.resolve()),
         str(metadata.get("name", path.stem)),
@@ -69,6 +85,8 @@ def inspect_plugin(path: Path) -> PluginInspection:
         tuple(str(item) for item in metadata.get("capabilities", [])),
         not errors,
         tuple(errors),
+        contract_shape=contract_shape,
+        execution_mode=execution_mode,
     )
 
 
