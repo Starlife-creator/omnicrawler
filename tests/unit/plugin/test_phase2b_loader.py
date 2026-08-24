@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -21,13 +20,13 @@ def _build_contract2_plugin(root: Path, name: str, *, permissions: list[str]) ->
     plugin_dir = root / "plugins" / name
     plugin_dir.mkdir(parents=True)
     (plugin_dir / "plugin.py").write_text(
-        "PLUGIN_METADATA = {'name': %r, 'version': '1.0', "
-        "'execution_mode': 'subprocess', 'plugin_types': ['source'], "
-        "'permissions': %r}\n"
+        f"PLUGIN_METADATA = {{'name': {name!r}, 'version': '1.0', "
+        f"'execution_mode': 'subprocess', 'plugin_types': ['source'], "
+        f"'permissions': {permissions!r}}}\n"
         "def handle(operation, payload):\n"
         "    if operation == 'source.seed':\n"
         "        return {'requests': [{'url': 'https://example.com/'}]}\n"
-        "    return {'operation': operation}\n" % (name, permissions),
+        "    return {'operation': operation}\n",
         encoding="utf-8",
     )
     return plugin_dir
@@ -37,8 +36,8 @@ def test_loader_wires_daily_quota_from_config(tmp_path: Path) -> None:
     """plugins.network_daily_quota 按 plugin_id 解析 → host 注入配额。"""
     plugin_dir = _build_contract2_plugin(tmp_path, "quota_demo", permissions=["network:scoped"])
     plugins_section = {"network_daily_quota": {"quota_demo": {"requests": 1}}}
-    from omnicrawler.plugins.plugins import _static_plugin_metadata
     from omnicrawler.plugins.plugin_router import detect_contract_shape
+    from omnicrawler.plugins.plugins import _static_plugin_metadata
 
     source = (plugin_dir / "plugin.py").read_text(encoding="utf-8")
     meta = _static_plugin_metadata(plugin_dir / "plugin.py", source)
@@ -76,7 +75,7 @@ def test_loader_wires_egress_policy_block(tmp_path: Path) -> None:
 
 def test_loader_end_to_end_contract2_still_loads(tmp_path: Path) -> None:
     """Phase 2b 参数接入后契约 2 插件端到端加载不回归。"""
-    plugin_dir = _build_contract2_plugin(tmp_path, "c2_demo", permissions=[])
+    _build_contract2_plugin(tmp_path, "c2_demo", permissions=[])
     registry = Registry()
     load_local_plugins(
         registry, ["plugins/"], tmp_path,
