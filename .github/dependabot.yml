@@ -20,6 +20,11 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      # paddlex 3.7.2 精确锁 PyYAML==6.0.2；quality.txt 经 PIP_CONSTRAINT 作用于
+      # windows-full-dependency-matrix 的 ".[full]" 安装，升级 PyYAML 必致
+      # ResolutionImpossible（PR #47/#51 已两次复现），故永久忽略直至 paddlex 放宽。
+      - dependency-name: "PyYAML"
 
   - package-ecosystem: "github-actions"
     directory: "/"
