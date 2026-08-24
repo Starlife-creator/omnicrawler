@@ -1070,6 +1070,8 @@ def _static_plugin_metadata(path: Path, source: str) -> PluginMetadata | None:
         targets = node.targets if isinstance(node, ast.Assign) else [node.target]
         if not any(isinstance(target, ast.Name) and target.id == "PLUGIN_METADATA" for target in targets):
             continue
+        if node.value is None:  # AnnAssign 无值形态（如 PLUGIN_METADATA: dict）无字面量可评估
+            continue
         try:
             value = ast.literal_eval(node.value)
         except (ValueError, TypeError) as exc:

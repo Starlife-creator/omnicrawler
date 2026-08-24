@@ -203,7 +203,9 @@ class TemplateLibraryDialog(QDialog):
         stored_favorites = self._settings.value("templates/favorites", [])
         if isinstance(stored_favorites, str):
             stored_favorites = [stored_favorites]
-        self._favorites = {str(value) for value in stored_favorites or []}
+        # QSettings.value 返回 object：显式收窄为 list 后再迭代
+        favorites = stored_favorites if isinstance(stored_favorites, list) else []
+        self._favorites = {str(value) for value in favorites}
 
         layout = QVBoxLayout(self)
         filters = QHBoxLayout()
@@ -1649,7 +1651,9 @@ class MainWindow(QMainWindow):
         thread = QThread(self)
         worker = SiteInspectionWorker(
             url, self._config.task_intent,
-            robots_fail_closed=bool(self._config.section("http").get("robots_fail_closed", True)),
+            robots_fail_closed=bool(
+                (self._config.passthrough.get("http") or {}).get("robots_fail_closed", True)
+            ),
         )
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
@@ -1709,7 +1713,7 @@ class MainWindow(QMainWindow):
         if record is None:
             QMessageBox.warning(self, _("模板不可用"), best_id)
             return
-        origin = QUrl(url).adjusted(QUrl.UrlFormattingOption.RemovePath).toString().rstrip("/")
+        origin = QUrl(url).adjusted(QUrl.UrlFormattingOption.RemovePath).toString().rstrip("/")  # type: ignore[arg-type]  # PySide6 存根枚举别名差异，运行时正确
         values = {}
         for key in record.metadata.placeholders:
             lowered = key.casefold()
@@ -1761,7 +1765,9 @@ class MainWindow(QMainWindow):
         thread = QThread(self)
         worker = SiteInspectionWorker(
             url, self._config.task_intent,
-            robots_fail_closed=bool(self._config.section("http").get("robots_fail_closed", True)),
+            robots_fail_closed=bool(
+                (self._config.passthrough.get("http") or {}).get("robots_fail_closed", True)
+            ),
             fetcher=self._probe_fetcher)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)

@@ -164,7 +164,7 @@ class _FieldTableModel(QAbstractTableModel):
         self._visible: int | None = self._INITIAL_VISIBLE_ROWS
 
     # ── Qt model API ────────────────────────────────────
-    def rowCount(self, parent: QModelIndex | None = None) -> int:
+    def rowCount(self, parent: QModelIndex | None = None) -> int:  # type: ignore[override]
         if parent is not None and parent.isValid():
             return 0
         total = len(self._fields)
@@ -172,10 +172,10 @@ class _FieldTableModel(QAbstractTableModel):
             return total
         return min(total, self._visible)
 
-    def columnCount(self, parent: QModelIndex | None = None) -> int:
+    def columnCount(self, parent: QModelIndex | None = None) -> int:  # type: ignore[override]
         return 3
 
-    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:  # type: ignore[override]
         if not index.isValid() or not 0 <= index.row() < len(self._fields):
             return None
         if role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
@@ -188,14 +188,14 @@ class _FieldTableModel(QAbstractTableModel):
             return self._HEADERS[section] if section < len(self._HEADERS) else None
         return None
 
-    def flags(self, index: QModelIndex) -> Qt.ItemFlag:
+    def flags(self, index: QModelIndex) -> Qt.ItemFlag:  # type: ignore[override]
         return (
             Qt.ItemFlag.ItemIsEnabled
             | Qt.ItemFlag.ItemIsSelectable
             | Qt.ItemFlag.ItemIsEditable
         )
 
-    def setData(self, index: QModelIndex, value: Any, role: int = Qt.ItemDataRole.EditRole) -> bool:
+    def setData(self, index: QModelIndex, value: Any, role: int = Qt.ItemDataRole.EditRole) -> bool:  # type: ignore[override]
         if not index.isValid() or role != Qt.ItemDataRole.EditRole:
             return False
         field = self._fields[index.row()]
@@ -1708,7 +1708,11 @@ class TaskCanvas(QScrollArea):
 
         menu = QMenu(self._reject_btn)
         for label in REJECT_LABELS:
-            menu.addAction(label, lambda lbl=label: self._record_rejection(lbl))
+            # 带默认参 lambda 供 mypy 推断失败：显式标注参数类型
+            def _reject(lbl: str = label) -> None:
+                self._record_rejection(lbl)
+
+            menu.addAction(label, _reject)
         menu.exec(self._reject_btn.mapToGlobal(self._reject_btn.rect().bottomLeft()))
 
     def _record_rejection(self, label: str) -> None:
