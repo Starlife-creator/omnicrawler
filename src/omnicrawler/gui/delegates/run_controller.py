@@ -132,6 +132,8 @@ class RunController(_BaseDelegate):
                     mw._open_result_folder()
                 if mw._settings.sound_enabled and not mw._dnd_mode:
                     QApplication.beep()
+                if mw._settings.markdown_export_enabled:
+                    mw._export_markdown()
                 if mw._tray_icon and mw._tray_icon.isVisible():
                     icon = QSystemTrayIcon.MessageIcon.Information
                     mw._tray_icon.showMessage(_("OmniCrawler"), _("任务已完成！"), icon, 5000)

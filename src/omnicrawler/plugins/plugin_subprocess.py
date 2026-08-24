@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import logging
 import sys
 import traceback
 import types
@@ -101,7 +102,37 @@ def _dispatch(handler, operation: str, payload: dict, request_id: object) -> dic
     return {"request_id": request_id, "ok": True, "result": result}
 
 
+def _apply_resource_limits() -> None:
+    """给子进程施加资源上限（NEW-A 沙箱硬化）。
+
+    - Unix/POSIX：经由 resource.setrlimit 施加地址空间/CPU/打开文件数/文件大小上限。
+    - Windows：`resource` 模块不存在，导入隔离 + 冻结宿主仍然有效，但 OS 级限额缺失，
+      仅记录显式日志，作为 fail-closed 契约的降级说明（不崩溃）。
+    本模块只依赖标准库（会被冻结进最小宿主 exe），故用 logging.getLogger 惰性记录。
+    """
+    try:
+        import resource
+    except ImportError:  # Windows 无 resource 模块
+        sys.stderr.write("OmniCrawler sandbox warning: "
+                         "resource limits unavailable on this OS; "
+                         "relying on import isolation + frozen sandbox host\n")
+        return
+    _limits = {
+        resource.RLIMIT_AS: (512 * 1024 * 1024, 512 * 1024 * 1024),       # 地址空间 512MB
+        resource.RLIMIT_CPU: (60, 60),                                     # CPU 累计 60s
+        resource.RLIMIT_NOFILE: (256, 256),                                # 打开文件数 256
+        resource.RLIMIT_FSIZE: (256 * 1024 * 1024, 256 * 1024 * 1024),     # 单文件 256MB
+    }
+    for limit, (soft, hard) in _limits.items():
+        try:
+            resource.setrlimit(limit, (soft, hard))
+        except (ValueError, OSError):
+            continue  # 个别限额不可设置时不阻断启动，尽力而为
+
+
 def main() -> int:
+    # NEW-A：进入子进程即施加资源上限（Unix 生效 / Windows 显式降级记录）
+    _apply_resource_limits()
     # argv: entry_module plugin_root [verified_entry_dir]
     # verified_entry_dir（C2 V2）：宿主把验签字节写入的临时入口目录，
     # 优先于 plugin_root 插入 sys.path——子进程执行的永远是通过验签的

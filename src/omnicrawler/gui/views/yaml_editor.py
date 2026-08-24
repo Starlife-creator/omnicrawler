@@ -250,6 +250,8 @@ class YamlEditor(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._updating = False
+        # P2-4：文本相对最近一次权威快照(diff 基线)，用于动态启停差异按钮
+        self._baseline_text = ""
         self._config: CrawlConfig | None = None
         self._filepath: Path | None = None
         self._last_mtime: float = 0.0
@@ -342,6 +344,8 @@ class YamlEditor(QWidget):
         try:
             yaml_str = filepath.read_text(encoding="utf-8")
             self._editor.setPlainText(yaml_str)
+            # P2-4：加载文件后以其内容为 diff 基线
+            self._baseline_text = yaml_str
             self._filepath = filepath
             self._last_mtime = filepath.stat().st_mtime if filepath.is_file() else 0.0
             self._external_check_timer.start()
@@ -375,10 +379,20 @@ class YamlEditor(QWidget):
         except Exception as e:
             self.sync_status.emit(_(f"生成 YAML 失败: {e}"))
 
+    def _sync_diff_btn_state(self) -> None:
+        """按「相对 diff 基线」动态启停差异按钮；无差异自动回灰（P2-4）。"""
+        if self._diff_btn is None:
+            return
+        self._diff_btn.setEnabled(self._editor.toPlainText() != self._baseline_text)
+
     def _on_editor_changed(self) -> None:
         """编辑器内容变更处理。"""
         if self._updating:
+            # 程序批量写入（表单/加载/格式化）：以当前全文为新基线，差异重置
+            self._baseline_text = self._editor.toPlainText()
+            self._sync_diff_btn_state()
             return
+        self._sync_diff_btn_state()
         self._sync_timer.start(500)  # 500ms 防抖
 
     def _try_sync_from_editor(self) -> None:

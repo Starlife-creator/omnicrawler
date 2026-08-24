@@ -355,4 +355,19 @@ def provider_from_env(
     workspace.mkdir(parents=True, exist_ok=True)
     app_config = AppConfig(Path("<home-quick-task>"), Path.cwd(), raw, workspace, ())
     egress = EgressBroker(app_config)
+
+    # WP-11（P1-1 收窄）：消费 sidecar 的 budget/routing/extraction 运行时接线。
+    # 未声明或 schema<1 时不覆盖，保持 DEFAULTS 默认；budget 超限回退仍由 AIBudget 兜底。
+    from ..core.ai_env import load_ai_config_sidecar
+
+    sidecar = load_ai_config_sidecar(project_root) or {}
+    try:
+        _schema = int(sidecar.get("schema", 0))
+    except (TypeError, ValueError):
+        _schema = 0
+    if _schema >= 1:
+        for _key in ("budget", "routing", "extraction"):
+            if isinstance(sidecar.get(_key), dict):
+                ai_config[_key] = sidecar[_key]
+
     return build_provider(ai_config, app_config=app_config, egress=egress)
