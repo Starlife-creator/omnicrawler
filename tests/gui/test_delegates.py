@@ -21,7 +21,6 @@ from omnicrawler.gui.delegates.env_checker import EnvironmentChecker  # noqa: E4
 from omnicrawler.gui.delegates.error_dialog import ErrorDialogHelper  # noqa: E402
 from omnicrawler.gui.delegates.help_dialog import HelpDialogManager  # noqa: E402
 from omnicrawler.gui.delegates.menu import MenuBuilder  # noqa: E402
-from omnicrawler.gui.delegates.run_controller import RunController  # noqa: E402
 from omnicrawler.gui.delegates.theme import ThemeManager  # noqa: E402
 from omnicrawler.gui.delegates.toolbar import ToolbarManager  # noqa: E402
 
