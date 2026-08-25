@@ -124,7 +124,9 @@ class ScheduleStore:
 
     def finish(self, schedule_id: str, *, ok: bool, error: str = "", now: float | None = None) -> None:
         now = time.time() if now is None else now
-        with self._lock:
+        # FINAL-R1：必须显式事务提交——run-due 为一次性进程，裸 UPDATE 在进程
+        # 退出时被回滚，导致 next_run_at 不推进、任务在租约过期后反复重复执行。
+        with self._lock, self.conn:
             row = self.conn.execute(
                 "SELECT interval_seconds FROM schedules WHERE schedule_id=?",
                 (schedule_id,),
@@ -141,7 +143,8 @@ class ScheduleStore:
             )
 
     def defer(self, schedule_id: str, reason: str, *, seconds: int = 300) -> None:
-        with self._lock:
+        # FINAL-R1：同 finish——defer 结果也必须落盘。
+        with self._lock, self.conn:
             self.conn.execute(
                 "UPDATE schedules SET lease_until=NULL, last_status='waiting_condition', last_error=?, next_run_at=? WHERE schedule_id=?",
                 (reason[:4000], time.time() + max(60, seconds), schedule_id),

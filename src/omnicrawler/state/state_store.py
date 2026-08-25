@@ -147,8 +147,16 @@ class StateStore:
             )
             return target
 
-    def recover_incomplete_runs(self) -> list[str]:
-        """Move crash-interrupted runs to retrying without claiming they succeeded."""
+    def recover_incomplete_runs(self, *, stale_seconds: float = 3600.0) -> list[str]:
+        """Move crash-interrupted runs to retrying without claiming they succeeded.
+
+        FINAL-D3：frontier 的全局 in_progress 重置加陈旧阈值门控——只回收
+        ``updated_at`` 早于 ``stale_seconds``（默认 1h）的行。WAL 允许多进程
+        共享同一 state 库，无差别重置会把**存活进程正在处理**的 URL 拉回
+        pending 造成重复抓取；刚认领/长耗时未到阈值的行视为活跃而跳过
+        （若确属崩溃残留，稍后再跑一次恢复即可回收）。
+        """
+        from datetime import UTC, datetime, timedelta
 
         recovered: list[str] = []
         with self._lock, self.conn:
@@ -179,9 +187,13 @@ class StateStore:
                     "WHERE run_id=? AND status='running'",
                     (utcnow(), row["run_id"]),
                 )
+            stale_cutoff = (
+                datetime.now(UTC) - timedelta(seconds=max(0.0, float(stale_seconds)))
+            ).isoformat(timespec="microseconds")
             self.conn.execute(
-                "UPDATE frontier SET status='pending', updated_at=? WHERE status='in_progress'",
-                (utcnow(),),
+                "UPDATE frontier SET status='pending', updated_at=? "
+                "WHERE status='in_progress' AND updated_at<=?",
+                (utcnow(), stale_cutoff),
             )
         return recovered
 

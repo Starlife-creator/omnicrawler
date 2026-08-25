@@ -200,3 +200,30 @@ class RemoteQueueLocalTest(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class LocalQueuePopExhaustsEachTaskExactlyOnce(unittest.TestCase):
+    """FINAL-R2 回归：pop 必须条件 DELETE + rowcount 校验，任务不重复派发。"""
+
+    def test_each_task_delivered_once_then_none(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            queue = RemoteQueue(local_path=Path(temp) / "q.sqlite3")
+            try:
+                cfg_a = _config_file(Path(temp), "a.yaml")
+                cfg_b = _config_file(Path(temp), "b.yaml")
+                queue.submit(str(cfg_a), source="unit")
+                queue.submit(str(cfg_b), source="unit")
+
+                first = queue.pop()
+                second = queue.pop()
+                third = queue.pop()
+
+                self.assertIsNotNone(first)
+                self.assertIsNotNone(second)
+                assert first is not None and second is not None
+                # FIFO：两次弹出不重复
+                self.assertNotEqual(first.task_id, second.task_id)
+                self.assertIsNone(third)
+                self.assertEqual(queue.size(), 0)
+            finally:
+                queue.close()

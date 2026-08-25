@@ -59,11 +59,16 @@ class _PipelineFetch(_PipelineBase):
         ):
             conditional = self.state.conditional_headers(request.url)
             if conditional:
+                # FINAL-D8：条件头参与 fingerprint 摘要，重建后的请求指纹会与
+                # frontier 认领时分叉。经 _fingerprint_override 钉住原指纹
+                # （models.CrawlRequest.fingerprint 原生支持），保证 frontier 与
+                # responses 两侧指纹同源，未来跨表 join 不漏配。
                 request = CrawlRequest(
                     url=request.url, method=request.method,
                     headers={**conditional, **request.headers}, body=request.body,
                     kind=request.kind, render=request.render, priority=request.priority,
-                    depth=request.depth, parent_url=request.parent_url, meta=request.meta,
+                    depth=request.depth, parent_url=request.parent_url,
+                    meta={**request.meta, "_fingerprint_override": request.fingerprint},
                 )
         http_engine = str(self.config.section("http").get("engine", "urllib")).lower()
         name = "browser" if request.render else ("httpx_async" if http_engine == "httpx_async" else "http")

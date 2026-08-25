@@ -453,6 +453,7 @@ class TestRecoverIncompleteRuns(unittest.TestCase):
                     self.assertEqual(row["status"], "retrying")
 
     def test_recover_resets_in_progress_frontier(self):
+        """FINAL-D3：陈旧 in_progress 行被回收，新鲜行（活跃进程）受保护。"""
         with tempfile.TemporaryDirectory() as temp:
             with StateStore(Path(temp) / "state.sqlite3") as state:
                 state.start_run("recover_test", "config.yaml")
@@ -461,7 +462,16 @@ class TestRecoverIncompleteRuns(unittest.TestCase):
                 state.claim(2)
                 in_progress = state.rows("SELECT url FROM frontier WHERE status='in_progress'")
                 self.assertEqual(len(in_progress), 2)
+
+                # 刚认领的行 = 活跃：默认阈值下不得被重置（防误伤存活进程）
                 state.recover_incomplete_runs()
+                still_in_progress = state.rows(
+                    "SELECT url FROM frontier WHERE status='in_progress'"
+                )
+                self.assertEqual(len(still_in_progress), 2)
+
+                # stale_seconds=0：视一切 in_progress 为崩溃残留 → 回收为 pending
+                state.recover_incomplete_runs(stale_seconds=0)
                 pending = state.rows("SELECT url FROM frontier WHERE status='pending'")
                 self.assertEqual(len(pending), 2)
                 in_progress = state.rows("SELECT url FROM frontier WHERE status='in_progress'")

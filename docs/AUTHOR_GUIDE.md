@@ -5,10 +5,15 @@
 
 ## 0. 前置：受支持环境
 
-| 平台 | 版本 | 沙箱后端 |
+| 平台 | 版本 | 实际隔离机制（v0.9.1） |
 |---|---|---|
-| Windows | Win10 22H2+ / Win11 | AppContainer（探测失败 → fail-closed + `--report` 回传） |
-| Linux | 内核 ≥5.13 主流发行版 | unshare + seccomp + Landlock |
+| Windows | Win10 22H2+ / Win11 | 子进程边界 + `-I -S` 导入隔离 + env 白名单（冻结形态用伴生宿主 exe） |
+| Linux | 内核 ≥5.13 主流发行版 | 同上 + `resource` rlimit 限额 |
+
+> 口径说明（FINAL-S1）：OS 级 confinement（AppContainer / unshare+seccomp+Landlock）
+> 属**远期蓝图，当前未接线**——`plugin_os_sandbox.probe_os_sandbox` 仅产出环境诊断
+> 报告，不参与 spawn 拒载裁决。插件能力收口由 broker 能力令牌 + 静态审批实现，
+> 不依赖 OS 沙箱；冻结宿主 exe 缺失时 fail-closed 拒载仍然生效。
 
 非受支持环境作者：**门禁/AST/逻辑用例本地照跑 + 沙箱用例 fork + PR 由 CI 矩阵代跑**
 （第 75 轮 CI 委托路径）——收窄不成为参与门槛。

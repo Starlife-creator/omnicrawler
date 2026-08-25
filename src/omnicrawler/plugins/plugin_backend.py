@@ -2,7 +2,8 @@
 
 生产路径（唯一）：``omnicrawler-sandbox-host.exe`` —— PyInstaller onefile，
 仅宿主脚本（plugin_subprocess.py）+ 标准库，**不打包 omnicrawler 与任何宿主
-依赖**；隔离由 bundle 构成 + OS 沙箱保证。模式同 omnicrawler-worker.exe。
+依赖**；隔离由 bundle 构成 + 子进程导入隔离构成。模式同 omnicrawler-worker.exe。
+（FINAL-S1 口径：OS 级 confinement 未接线，见 resolve_backend_command 注。）
 
 开发路径（源码模式）：``[sys.executable, "-I", "-S", plugin_subprocess.py]``
 ——实测 ``-I -S`` 后 sys.path 仅剩标准库（``-I`` 仅隐含 ``-E -s``，不禁

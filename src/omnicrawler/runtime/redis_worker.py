@@ -93,19 +93,30 @@ class _LocalQueue:
             )
 
     def pop(self) -> TaskSpec | None:
-        with self.conn:
-            row = self.conn.execute(
-                "SELECT * FROM tasks ORDER BY submitted_at ASC, rowid ASC LIMIT 1"
-            ).fetchone()
-            if row is None:
-                return None
-            self.conn.execute("DELETE FROM tasks WHERE task_id=?", (row["task_id"],))
-        return TaskSpec(
-            task_id=row["task_id"],
-            config_path=row["config_path"],
-            submitted_at=row["submitted_at"],
-            source=row["source"],
-        )
+        """原子弹出最早任务。
+
+        FINAL-R2：SELECT 后用条件 DELETE 并校验 rowcount——deferred 事务下两个
+        worker 可同时读到同一行，后提交者 DELETE 影响 0 行却仍返回 TaskSpec，
+        造成同一任务重复派发。rowcount!=1 时循环取下一条。
+        """
+        while True:
+            with self.conn:
+                row = self.conn.execute(
+                    "SELECT * FROM tasks ORDER BY submitted_at ASC, rowid ASC LIMIT 1"
+                ).fetchone()
+                if row is None:
+                    return None
+                cursor = self.conn.execute(
+                    "DELETE FROM tasks WHERE task_id=?", (row["task_id"],)
+                )
+                if cursor.rowcount == 1:
+                    return TaskSpec(
+                        task_id=row["task_id"],
+                        config_path=row["config_path"],
+                        submitted_at=row["submitted_at"],
+                        source=row["source"],
+                    )
+            # 该行被其他进程抢先消费，继续取下一条
 
     def size(self) -> int:
         row = self.conn.execute("SELECT COUNT(*) AS n FROM tasks").fetchone()
