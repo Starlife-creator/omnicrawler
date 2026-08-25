@@ -881,8 +881,10 @@ class PlaywrightPool:
         if state_path and state_path.is_file():
             options["storage_state"] = str(state_path)
         # S2.5.13：与 _context_key 同源——meta 代理优先，否则配置代理
-        # FINAL-S9：代理必须过 NetworkTargetPolicy 校验（HTTP/异步路径均校验，
-        # 此前 meta 注入的代理未校验，形成"借浏览器引流量去任意主机"的旁路）
+        # FINAL-S9：代理统一过 NetworkTargetPolicy——与 http/async 引擎既有
+        # 行为一致（二者自始即校验配置代理），浏览器路径此前是唯一未校验的旁路。
+        # 注意：本地网关代理（如 127.0.0.1:7890）属私网目标，默认被拒——
+        # 需要时在 http 段显式开启 allow_private_network: true（三引擎通用开关）。
         proxy = str(request.meta.get("proxy") or self.config.section("http").get("proxy", ""))
         if proxy:
             self.target_policy.require(proxy)

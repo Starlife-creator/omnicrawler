@@ -98,3 +98,33 @@ def test_new_context_meta_proxy_blocked_by_policy(tmp_path: Path) -> None:
     )
     with pytest.raises(PolicyBlockedError):
         pool._new_context(_Browser(), pool._context_key(request), request)
+
+
+def test_config_local_proxy_allowed_with_allow_private_network(tmp_path: Path) -> None:
+    """本地网关代理（clash/v2ray 形态）+ allow_private_network=true → 放行。
+
+    浏览器路径与 http/async 引擎同一 stance：代理=网络目标、过策略；
+    私网代理的合法逃生口是 http.allow_private_network（三引擎通用），
+    本测试钉住该开关在浏览器路径同样生效。
+    """
+    config_path = tmp_path / "task.yaml"
+    config_path.write_text(
+        "project: {name: s2513, workspace: work}\n"
+        "source: {kind: static_html, seeds: [https://example.org/]}\n"
+        'http: {proxy: "http://127.0.0.1:7890", allow_private_network: true}\n',
+        encoding="utf-8",
+    )
+    pool = object.__new__(PlaywrightPool)
+    pool.config = load_config(config_path)
+    pool.target_policy = NetworkTargetPolicy(pool.config)
+
+    calls: dict = {}
+
+    class _Browser:
+        def new_context(self, **options):
+            calls.update(options)
+            return SimpleNamespace()
+
+    request = CrawlRequest("https://example.org/")
+    pool._new_context(_Browser(), pool._context_key(request), request)
+    assert calls["proxy"] == {"server": "http://127.0.0.1:7890"}
