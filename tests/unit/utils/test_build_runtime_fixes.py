@@ -135,7 +135,6 @@ def test_f22_create_zip_source_date_epoch(tmp_path) -> None:
         os.environ.pop("SOURCE_DATE_EPOCH", None)
     with zipfile.ZipFile(archive_path) as archive:
         info = archive.getinfo("Demo/a.txt")
-    from datetime import timezone
-    _utc = getattr(datetime, 'UTC', timezone.utc)
+    _utc = getattr(datetime, 'UTC', datetime.UTC)
     expected = datetime.datetime.fromtimestamp(1700000000, tz=_utc).timetuple()[:6]
     assert info.date_time == expected

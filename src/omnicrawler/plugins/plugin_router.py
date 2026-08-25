@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 LOGGER = logging.getLogger(__name__)
@@ -76,8 +76,8 @@ def _allowlist_entry_active(entry: dict[str, Any] | None, now: datetime | None =
         LOGGER.warning("豁免表条目 expires 格式非法: %r", expires)
         return False
     if deadline.tzinfo is None:
-        deadline = deadline.replace(tzinfo=timezone.utc)
-    current = now or datetime.now(timezone.utc)
+        deadline = deadline.replace(tzinfo=UTC)
+    current = now or datetime.now(UTC)
     return current < deadline
 
 

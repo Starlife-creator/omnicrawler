@@ -18,7 +18,7 @@ import logging
 import re
 import traceback
 from dataclasses import dataclass, field, fields, is_dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from html import escape as html_escape
 from pathlib import Path
@@ -364,7 +364,7 @@ class DiagnosticRecorder:
         return parsed if parsed > 0 else default
 
     def failure(self, run_id: str, stage: str, error: BaseException, *, request: Any = None, result: Any = None) -> Path | None:
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
         trace = _redact_text("".join(traceback.format_exception(error)), _MAX_TRACEBACK_LENGTH)
         payload = {
             "run_id": str(run_id),
@@ -397,7 +397,7 @@ class DiagnosticRecorder:
 
     def cleanup(self, *, now: datetime | None = None, keep: Path | None = None) -> dict[str, int]:
         """Apply age, count and aggregate-size limits without touching non-diagnostic files."""
-        current = now or datetime.now(timezone.utc)
+        current = now or datetime.now(UTC)
         cutoff = current - timedelta(days=self.retention_days)
         removed_files = 0
         removed_bytes = 0
@@ -407,7 +407,7 @@ class DiagnosticRecorder:
                 if not path.is_file():
                     continue
                 stat = path.stat()
-                modified = datetime.fromtimestamp(stat.st_mtime, timezone.utc)
+                modified = datetime.fromtimestamp(stat.st_mtime, UTC)
                 if path != keep and modified < cutoff:
                     path.unlink()
                     removed_files += 1

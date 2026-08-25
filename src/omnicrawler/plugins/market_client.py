@@ -17,7 +17,7 @@ import json
 import logging
 import re
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -140,7 +140,7 @@ def _write_install_meta(
         "plugin_sha256": _sha256(main_bytes),
         "signature_file": sig_name,
         "signature_sha256": _sha256(sig_bytes),
-        "installed_at": datetime.now(timezone.utc).isoformat(),
+        "installed_at": datetime.now(UTC).isoformat(),
     }
     if extra_files:
         meta["extra_files"] = {name: _sha256(data) for name, data in extra_files.items()}

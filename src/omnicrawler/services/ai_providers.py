@@ -8,6 +8,7 @@ the existing ``secret://`` resolver.
 from __future__ import annotations
 
 import json
+import re
 import socket
 import ssl
 import time
@@ -42,6 +43,21 @@ _STATUS_GUIDANCE: dict[int, str] = {
 }
 
 
+# FINAL-S11：响应体是远端可控内容——base_url 配错指向回显端点时，Bearer/API key
+# 可能被回显进错误消息并落入日志。嵌入前对常见凭据形态做脱敏。
+_TOKEN_LIKE = (
+    re.compile(r"sk-[A-Za-z0-9_-]{8,}"),
+    re.compile(r"Bearer\s+[A-Za-z0-9._\-]+", re.IGNORECASE),
+    re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._\-]+"),
+)
+
+
+def _scrub_token_like(text: str) -> str:
+    for pattern in _TOKEN_LIKE:
+        text = pattern.sub("[REDACTED]", text)
+    return text
+
+
 def _read_error_body(exc: urllib.error.HTTPError) -> str:
     """读取 HTTPError 响应体前 1KB，用于透出 429/余额/密钥 等详情（C6）。"""
     try:
@@ -50,7 +66,7 @@ def _read_error_body(exc: urllib.error.HTTPError) -> str:
         return ""
     if not data:
         return ""
-    return data.decode("utf-8", errors="replace").strip()[:800]
+    return _scrub_token_like(data.decode("utf-8", errors="replace").strip()[:800])
 
 
 def _format_http_error(name: str, exc: urllib.error.HTTPError, body: str) -> str:

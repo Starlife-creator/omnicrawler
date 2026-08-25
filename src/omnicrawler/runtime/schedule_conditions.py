@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -8,7 +8,7 @@ def evaluate_conditions(conditions: dict[str, Any]) -> tuple[bool, str]:
     if not conditions:
         return True, ""
     # S2.5.44：allowed_hours 与 next_run_at 统一 UTC 基准（调度时间戳为 UTC epoch）
-    hour = datetime.now(timezone.utc).hour
+    hour = datetime.now(UTC).hour
     allowed_hours = conditions.get("allowed_hours")
     if isinstance(allowed_hours, list) and allowed_hours:
         hours = {int(value) % 24 for value in allowed_hours}

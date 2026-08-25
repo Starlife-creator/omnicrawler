@@ -28,7 +28,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 # -- 自引导：让工具在直接用 `python tools/sign_plugin.py` 时也能找到 omnicrawler --
@@ -154,7 +154,7 @@ def _append_transparency_log(
     """
     digest = hashlib.sha256(plugin.read_bytes()).hexdigest()
     entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
         "plugin": plugin.as_posix(),  # B02-004：正斜杠，跨平台稳定
         "plugin_sha256": digest,
         "operator": _current_operator(operator),

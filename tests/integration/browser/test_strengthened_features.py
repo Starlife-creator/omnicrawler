@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -109,9 +109,8 @@ def test_artifact_integrity_detects_change(tmp_path: Path) -> None:
 
 
 def test_schedule_allowed_hours_can_defer() -> None:
-    from datetime import timezone
 
-    utc_hour = datetime.now(timezone.utc).hour
+    utc_hour = datetime.now(UTC).hour
     disallowed = (utc_hour + 1) % 24
     allowed, reason = evaluate_conditions({"allowed_hours": [disallowed]})
     assert allowed is False

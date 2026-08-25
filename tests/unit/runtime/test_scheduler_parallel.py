@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import UTC
 from pathlib import Path
 
 from omnicrawler.runtime.schedule_conditions import evaluate_conditions
@@ -32,9 +33,9 @@ def test_run_due_runs_in_parallel(tmp_path: Path) -> None:
 
 
 def test_allowed_hours_uses_utc(tmp_path: None = None) -> None:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    utc_hour = datetime.now(timezone.utc).hour
+    utc_hour = datetime.now(UTC).hour
     allowed, reason = evaluate_conditions({"allowed_hours": [utc_hour]})
     assert allowed is True
     blocked, _reason = evaluate_conditions({"allowed_hours": [(utc_hour + 1) % 24]})

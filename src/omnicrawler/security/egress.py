@@ -30,7 +30,16 @@ LOGGER = logging.getLogger(__name__)
 
 def _domain_matches(host: str, allowed: tuple[str, ...]) -> bool:
     host = host.casefold().rstrip(".")
-    return any(host == domain or host.endswith("." + domain) for domain in allowed)
+    for domain in allowed:
+        if not domain:
+            continue
+        if host == domain:
+            return True
+        # FINAL-S8：后缀匹配要求白名单域为多标签（含点）——单标签如 "com" 若
+        # 允许 endswith 匹配，等于放行整个 TLD；精确相等仍放行（如 "localhost"）。
+        if "." in domain and host.endswith("." + domain):
+            return True
+    return False
 
 
 def _normalise_domains(values: Any) -> tuple[str, ...]:

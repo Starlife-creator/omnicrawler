@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -107,7 +107,7 @@ def test_approver_exception_treated_as_deny() -> None:
 
 
 def test_allowlist_expiry_required_and_respected() -> None:
-    now = datetime(2026, 8, 21, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 21, tzinfo=UTC)
     # expires 有效 → 强制 in_process（绕过批准矩阵）
     entry = {"expires": "2026-12-31T00:00:00+00:00"}
     d = r.decide_route(
@@ -128,7 +128,7 @@ def test_allowlist_expiry_required_and_respected() -> None:
 
 def test_force_subprocess_overrides_allowlist_and_in_process() -> None:
     entry = {"expires": "2026-12-31T00:00:00+00:00"}
-    now = datetime(2026, 8, 21, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 21, tzinfo=UTC)
     for mode, allow in (("in_process", entry), ("in_process", None), ("subprocess", entry)):
         d = r.decide_route(
             execution_mode=mode,

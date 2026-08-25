@@ -24,7 +24,7 @@ import base64
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -182,7 +182,7 @@ class TrustedUserList:
         self._users[fingerprint] = TrustedUser(
             username=creator.username,
             public_key=creator.public_key,
-            trusted_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            trusted_at=datetime.now(UTC).isoformat(timespec="seconds"),
             source=source,
         )
         self._save()

@@ -2,7 +2,8 @@
 
 执行顺序严格：L1 硬止损 → L2 本地 YAML 映射 → L3 受限嗅探 → generic_html 兜底，
 任意一层命中绝不进入下一层。L1/L2 纯内存零网络；L3 默认关闭（enable_sniffing=false），
-开启时必须注入经 EgressBroker 审计的 fetcher，串行执行、HEAD+Range:0-8192、2s 超时。
+开启时必须注入经 EgressBroker 审计的**同步** fetcher，串行执行、HEAD+Range:0-8192、
+严格超时（FINAL-U6：本地 future 截断，默认 2s；AsyncFetcher 不受支持且被显式拒绝）。
 人工确认闸门由 CLI/GUI 侧负责，本模块只产出「推荐 + 置信度 + 命中来源」结构化结果。
 """
 
@@ -569,6 +570,9 @@ class SiteCategorizer:
         """发起一次 L3 受限嗅探请求：HEAD + Range 0-8192，严格超时，异常安全（任何异常返回 None 让调用方兜底）。
 
         必须确保 fetcher 已绑定 EgressBroker/NetworkTargetPolicy 合规审计通道（上层调用方责任）。
+        FINAL-U6：仅支持**同步** fetcher（AsyncFetcher.fetch 返回协程，此处无法
+        await，显式拒绝）；严格超时由本地 future 硬性截断实现，不再依赖 fetcher
+        自身配置（其默认可达 25s，串行嗅探 N 个 URL 最坏拖 25N 秒）。
         """
         from urllib.parse import urlparse
 
@@ -581,6 +585,15 @@ class SiteCategorizer:
             headers: dict[str, str] = {"Range": "bytes=0-8192", "Accept": "*/*"}
             # 如果 fetcher 没有暴露 sync fetch 方法就回 None（避免 AttributeError 中断批处理）
             if not hasattr(fetcher, "fetch") or not callable(getattr(fetcher, "fetch", None)):
+                return None
+            # FINAL-U6：异步 fetcher 显式拒绝（协程未被 await 时请求根本不会发出）
+            fetcher_module = str(type(fetcher).__module__)
+            fetcher_name = type(fetcher).__name__
+            if fetcher_module.endswith("async_fetcher") or "Async" in fetcher_name:
+                log.debug(
+                    "L3 受限嗅探需要同步 fetcher，收到 %s（来自 %s），跳过 %s",
+                    fetcher_name, fetcher_module, url,
+                )
                 return None
             req = CrawlRequest(
                 url=url,
@@ -597,15 +610,34 @@ class SiteCategorizer:
                     req.meta.update(_L3_SNIFF_META_TAG)
             except Exception:  # noqa: BLE001
                 pass
-            # 超时：如果 fetcher 构造时是全局 timeout，这里用「单独一条小请求」方式不能修改，
-            # 所以 L3 要配合 AppConfig.http.timeout_seconds，但安全起见，我们通过 meta 里塞建议超时
-            # 让 hook 去实现（此处仅依赖 fetcher 自身默认超时 ≥ 2s 即可被 Categorizer 接受）
-            result = fetcher.fetch(req)
-            # FetchResult 含 status_code/headers（允许 dict-like 或属性），兼容两种访问方式
+            # FINAL-U6：兑现「严格超时」承诺——受控线程执行 + future 超时硬截断。
+            # 到点即放弃该 URL 嗅探；已启动的后台线程随其自身 I/O 超时自然结束，
+            # 结果被丢弃（解释器退出前至多延迟一个 fetcher 默认超时，属可接受代价）。
+            import concurrent.futures
+
+            def _do_fetch() -> Any:
+                return fetcher.fetch(req)
+
+            pool = concurrent.futures.ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="omnicrawler-l3-sniff",
+            )
+            try:
+                future = pool.submit(_do_fetch)
+                try:
+                    result = future.result(timeout=max(0.5, float(timeout_s)))
+                except concurrent.futures.TimeoutError:
+                    log.debug("L3 受限嗅探超时（%.1fs），放弃 %s", timeout_s, url)
+                    return None
+            finally:
+                pool.shutdown(wait=False, cancel_futures=True)
+            # FetchResult 兼容三种形态：status_code 属性 / .status 属性（真实
+            # FetchResult 字段）/ dict 键
             status_code: int = 0
             resp_headers: dict[str, str] = {}
             if hasattr(result, "status_code"):
                 status_code = int(result.status_code or 0)
+            elif hasattr(result, "status"):
+                status_code = int(result.status or 0)
             elif isinstance(result, dict):
                 status_code = int(result.get("status_code") or 0)
             if hasattr(result, "headers"):

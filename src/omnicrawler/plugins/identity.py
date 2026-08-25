@@ -19,7 +19,7 @@ import json
 import re
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -259,7 +259,7 @@ class IdentityStore:
         identity = UserIdentity(
             username=username,
             signing_key=signing_key,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         self.store.set(_IDENTITY_KEY_PREFIX + username, _payload_encode(identity, password))
         return identity

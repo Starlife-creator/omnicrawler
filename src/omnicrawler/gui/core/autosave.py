@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import copy
 import threading
 import time
 from pathlib import Path
@@ -82,12 +83,14 @@ class AutosaveManager(QObject):
         """
         if self._config is None or self._draft_path is None:
             return False
-        config = self._config
+        # FINAL-W3：主线程先深拷贝快照再交后台线程。原实现把活跃配置对象
+        # 直接传进写盘线程，与主线程的并发修改竞争，可能序列化出撕裂草稿。
+        snapshot = copy.deepcopy(self._config)
         draft_path = self._draft_path
 
         def _write() -> None:
             try:
-                save_yaml(config, draft_path)
+                save_yaml(snapshot, draft_path)
             except Exception as exc:  # noqa: BLE001 - 写盘失败提示不崩溃
                 self.save_failed.emit(_(f"自动保存失败: {exc}"))
 

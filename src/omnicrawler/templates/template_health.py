@@ -6,7 +6,7 @@ import re
 import zipfile
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -42,7 +42,7 @@ class StructureSnapshot:
     ) -> StructureSnapshot:
         return cls(
             template_id=template_id,
-            captured_at=datetime.now(timezone.utc).isoformat(),
+            captured_at=datetime.now(UTC).isoformat(),
             source_url=source_url,
             content_sha256=hashlib.sha256(html.encode("utf-8")).hexdigest(),
             features=tuple(sorted(_html_features(html))),
@@ -156,7 +156,7 @@ class TemplatePack:
     def export(cls, records: Iterable[TemplateRecord], target: Path) -> Path:
         selected = list(records)
         target.parent.mkdir(parents=True, exist_ok=True)
-        manifest: dict[str, Any] = {"format": 1, "created_at": datetime.now(timezone.utc).isoformat(), "files": {}}
+        manifest: dict[str, Any] = {"format": 1, "created_at": datetime.now(UTC).isoformat(), "files": {}}
         with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             for record in selected:
                 name = f"templates/{record.metadata.template_id}.yaml"

@@ -881,11 +881,19 @@ class PlaywrightPool:
         if state_path and state_path.is_file():
             options["storage_state"] = str(state_path)
         # S2.5.13：与 _context_key 同源——meta 代理优先，否则配置代理
+        # FINAL-S9：代理必须过 NetworkTargetPolicy 校验（HTTP/异步路径均校验，
+        # 此前 meta 注入的代理未校验，形成"借浏览器引流量去任意主机"的旁路）
         proxy = str(request.meta.get("proxy") or self.config.section("http").get("proxy", ""))
         if proxy:
+            self.target_policy.require(proxy)
             options["proxy"] = {"server": proxy}
         context = browser.new_context(**options)
         # -- 反检测增强：注入 stealth.min.js + 隐藏 webdriver 标记 --
+        # FINAL-U9 口径对齐（与 stealth_enhanced.py "实验性、仅显式启用"的注释不同）：
+        # 默认 Playwright 路径在 stealth.min.js 存在时即无条件注入并隐藏
+        # navigator.webdriver——这是**默认行为**而非仅实验分支；README 尾部
+        # "不绕过站点安全策略"的合规边界请以此实际行为为准评估。如需关闭，
+        # 移除安装目录中的 stealth.min.js 即可停用注入。
         stealth_path = Path(__file__).resolve().parent / "stealth.min.js"
         if stealth_path.is_file():
             try:

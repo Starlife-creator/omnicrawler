@@ -363,10 +363,30 @@ class HTTPFetcher:
             import brotli
         except ImportError as exc:
             raise ValueError("响应使用 br 压缩但未安装 brotli（pip install brotli）") from exc
-        result = brotli.decompress(body)
-        if len(result) > max_bytes:
-            raise ResponseTooLargeError(f"解压后响应超过大小限制: > {max_bytes}")
-        return result
+        # FINAL-S2：分块限流解压——原实现先全量 decompress 再查长度，50MB 压缩体
+        # 可膨胀出数十 GB 直接 OOM（gzip/zstd 均已限流，此处补齐对称防御）。
+        decompressor_cls = getattr(brotli, "Decompressor", None)
+        if decompressor_cls is None:
+            # 官方 brotli 与 brotlicffi 均提供增量 API；缺失时 fail-closed 而非回退全量解压
+            raise ValueError("当前 brotli 实现缺少增量解压 API，拒绝无上限解压")
+        decompressor = decompressor_cls()
+        chunks: list[bytes] = []
+        total = 0
+        view = memoryview(body)
+        step = 65536
+        try:
+            for offset in range(0, len(view), step):
+                piece = bytes(decompressor.process(view[offset:offset + step]))
+                if piece:
+                    total += len(piece)
+                    if total > max_bytes:
+                        raise ResponseTooLargeError(f"解压后响应超过大小限制: > {max_bytes}")
+                    chunks.append(piece)
+            if not bool(getattr(decompressor, "is_finished", lambda: True)()):
+                raise ValueError("压缩响应不完整")
+        except brotli.error as exc:
+            raise ValueError(f"brotli 解压失败: {exc}") from exc
+        return b"".join(chunks)
 
     @staticmethod
     def _decode_zstd(body: bytes, max_bytes: int) -> bytes:

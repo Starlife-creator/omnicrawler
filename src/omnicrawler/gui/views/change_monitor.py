@@ -14,7 +14,7 @@ GUI 接入链路:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QThread, QTimer, Signal, Slot
@@ -544,7 +544,7 @@ class ChangeMonitorView(QWidget):
             if isinstance(last_checked, str) and last_checked:
                 try:
                     dt = datetime.fromisoformat(last_checked)
-                    elapsed = (datetime.now(tz=timezone.utc) - dt).total_seconds()
+                    elapsed = (datetime.now(tz=UTC) - dt).total_seconds()
                     if elapsed < 60:
                         last_str = _("刚才")
                     elif elapsed < 3600:
@@ -651,7 +651,7 @@ class ChangeMonitorView(QWidget):
             return
 
         # 检查是否有到期的规则
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         due = False
         for rule in self._rules_data:
             if not rule.get("enabled", True):
@@ -708,7 +708,7 @@ class ChangeMonitorView(QWidget):
             self._set_status_style("success")
             # 更新检查时间（S3.2.1：不再写 "__baseline__" 哨兵假哈希——
             # 基线由 ChangeDetector 内部持久化，每轮比较真实哈希）
-            now = datetime.now(tz=timezone.utc).isoformat()
+            now = datetime.now(tz=UTC).isoformat()
             for rule in self._rules_data:
                 rule["last_checked"] = now
             self._save_rules()
@@ -751,7 +751,7 @@ class ChangeMonitorView(QWidget):
                     if isinstance(val, datetime):
                         d[key] = val.isoformat()
                     elif val is None and key == "created_at":
-                        d[key] = datetime.now(tz=timezone.utc).isoformat()
+                        d[key] = datetime.now(tz=UTC).isoformat()
                 serializable.append(d)
             try:
                 self._settings.set_value("monitor/rules", serializable)

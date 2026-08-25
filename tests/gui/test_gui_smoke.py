@@ -133,6 +133,36 @@ def test_export_thread_reports_progress_periodically_not_for_every_row(tmp_path,
     assert completed == [(True, str(tmp_path / "export.xlsx"))]
 
 
+def test_rebuild_project_components_keeps_new_components_alive(monkeypatch):
+    """FINAL-G1 回归：重建项目组件必须销毁旧实例、保留新实例。
+
+    原实现先重建后对 self._xxx（已指向新对象）deleteLater——新 TaskHistory
+    在事件循环处理后即被销毁，后续访问抛 "Internal C++ object already
+    deleted"，旧组件则整体泄漏。
+    """
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from omnicrawler.gui.main import MainWindow
+
+    monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    old_history = window._task_history
+    old_autosave = window._autosave
+
+    window._rebuild_project_components()
+    # deleteLater 在事件循环中执行；处理后旧对象被销毁、新对象必须存活
+    app.processEvents()
+
+    assert window._task_history is not old_history
+    assert window._autosave is not old_autosave
+    # 新组件 C++ 对象必须仍然可用
+    window._task_history.load_history()
+    window.deleteLater()
+    app.processEvents()
+
+
 def test_export_thread_xlsx_escapes_formula_injection(tmp_path, monkeypatch):
     """B10 result_table：XLSX 单元格值必须以 excel_safe 转义，防 CWE-1236。"""
     from omnicrawler.gui.views.result_table import ExportThread

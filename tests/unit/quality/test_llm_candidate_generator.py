@@ -34,9 +34,15 @@ from omnicrawler.quality.llm_candidate_generator import (  # noqa: E402
 from omnicrawler.quality.shadow_repair import (  # noqa: E402
     RepairCandidate,
     ShadowComparison,
+    candidate_rule,
 )
 
 # ── 测试夹具 ────────────────────────────────────────────────────────────
+
+
+def _safe_comparison_for(_candidate: RepairCandidate) -> ShadowComparison:
+    """质量安全改善的影子比较（配合 candidate_rule 构造的候选使用）。"""
+    return ShadowComparison(10, 10, 0.7, 0.9, 0, True)
 
 _HTML = """<html><body>
 <div class="card">
@@ -289,31 +295,12 @@ class TestLLMCandidateGenerator:
 
 
 class TestGenerateAndAutoApply:
-    def test_auto_applies_l1_when_llm_disabled(self) -> None:
-        """LLM 禁用时，候选降级 L1 自动应用。"""
-        generator = LLMCandidateGenerator(llm_generate=_mock_llm(".name"))
-        candidates = generator.generate_candidates(
-            _HTML,
-            _failing_records(),
-            _FIELDS,
-            old_quality=0.0,
-            new_quality=0.9,
-        )
-        # 候选可能置信度较低（样本少），但 L1 对可逆选择器仍自动应用
-        active = copy.deepcopy(ACTIVE_CONFIG)
-        policy = AutoApplyPolicy(llm_enabled=False)
-        results = generate_and_auto_apply(active, candidates, policy)
-        assert len(results) == len(candidates)
-        # 至少有一个自动应用（L1）
-        applied = [r for r in results if r is not None]
-        assert len(applied) >= 1
-        assert all(r.tier == AutomationTier.L1 for r in applied)
+    def test_llm_origin_low_confidence_requires_manual_approval(self) -> None:
+        """FINAL-S6：LLM 来源候选置信不足 L2 时降级 L0（人工批准），不走 L1。
 
-    def test_auto_applies_l2_when_high_confidence(self) -> None:
-        """高置信度 + LLM 启用 → L2 自动应用。
-
-        注：3 个样本 confidence=0.6，不达 0.85 阈值，会降级 L1。
-        这里测试的是 L2 启用时不阻断 L1 兜底。
+        原行为是降级 L1 自动应用——但 LLM 候选的规则内容源自不可信页面，
+        本地验证数据同样来自该页面，免审通道构成 prompt injection →
+        配置持久化的最短路径。
         """
         generator = LLMCandidateGenerator(llm_generate=_mock_llm(".name"))
         candidates = generator.generate_candidates(
@@ -323,13 +310,36 @@ class TestGenerateAndAutoApply:
             old_quality=0.0,
             new_quality=0.9,
         )
+        assert len(candidates) >= 1
+        # 转换器必须保留来源标记
+        assert all(item.candidate.origin == "llm" for item in candidates)
+
         active = copy.deepcopy(ACTIVE_CONFIG)
-        policy = AutoApplyPolicy(llm_enabled=True)
+        policy = AutoApplyPolicy(llm_enabled=False)
         results = generate_and_auto_apply(active, candidates, policy)
         assert len(results) == len(candidates)
-        # 3 样本 confidence=0.6 < 0.85，降级 L1
+        # 低置信 + LLM 来源 → 全部 L0 → None（等人工）
+        assert all(r is None for r in results)
+
+    def test_auto_applies_l2_when_high_confidence(self) -> None:
+        """高置信度 + LLM 启用 → L2 自动应用（观察期）。"""
+        from dataclasses import replace
+
+        base = candidate_rule(
+            field="title",
+            rule_type="css",
+            old_rule="h1.old",
+            new_rule=".name",
+            supporting=tuple(f"s{i}" for i in range(13)),
+            counterexamples=(),
+        )
+        llm_high = replace(base, origin="llm")
+        active = copy.deepcopy(ACTIVE_CONFIG)
+        policy = AutoApplyPolicy(llm_enabled=True)
+        results = generate_and_auto_apply(active, [CandidateWithComparison(llm_high, _safe_comparison_for(base))], policy)
         applied = [r for r in results if r is not None]
-        assert all(r.tier == AutomationTier.L1 for r in applied)
+        assert len(applied) == 1
+        assert applied[0].tier == AutomationTier.L2
 
     def test_conservative_policy_returns_all_none(self) -> None:
         """保守策略（全关闭）→ 全部 None，需人工。"""
@@ -365,19 +375,25 @@ class TestGenerateAndAutoApply:
         assert active == original
 
     def test_custom_actor_in_audit_log(self) -> None:
-        """自定义 actor 写入审计日志。"""
-        generator = LLMCandidateGenerator(llm_generate=_mock_llm(".name"))
-        candidates = generator.generate_candidates(
-            _HTML,
-            _failing_records(),
-            _FIELDS,
-            old_quality=0.0,
-            new_quality=0.9,
+        """自定义 actor 写入审计日志（经 L2 通道验证）。"""
+        from dataclasses import replace
+
+        base = candidate_rule(
+            field="title",
+            rule_type="css",
+            old_rule="h1.old",
+            new_rule=".name",
+            supporting=tuple(f"s{i}" for i in range(13)),
+            counterexamples=(),
         )
+        llm_high = replace(base, origin="llm")
         active = copy.deepcopy(ACTIVE_CONFIG)
-        policy = AutoApplyPolicy(llm_enabled=False)
+        policy = AutoApplyPolicy(llm_enabled=True)
         results = generate_and_auto_apply(
-            active, candidates, policy, actor="pipeline-xyz"
+            active,
+            [CandidateWithComparison(llm_high, _safe_comparison_for(base))],
+            policy,
+            actor="pipeline-xyz",
         )
         applied = [r for r in results if r is not None]
         assert applied
@@ -396,14 +412,18 @@ class TestGenerateAndAutoApply:
 
 class TestIntegrationScenarios:
     def test_full_workflow_detect_generate_apply(self) -> None:
-        """完整工作流：检测失效 → LLM 生成 → 本地验证 → 转候选 → 自动应用。"""
+        """完整工作流：检测失效 → LLM 生成 → 本地验证 → 转候选。
+
+        FINAL-S6：LLM 来源候选置信不足 L2 时不再自动应用（原走 L1 免审，
+        现降级 L0 等人工批准），活跃配置保持不变。
+        """
         # 1. 准备失效场景
         generator = LLMCandidateGenerator(
             llm_generate=_mock_llm(".name"),
             success_threshold=0.7,
         )
 
-        # 2. 生成候选
+        # 2. 生成候选（带来源标记）
         candidates = generator.generate_candidates(
             _HTML,
             _failing_records(),
@@ -412,20 +432,18 @@ class TestIntegrationScenarios:
             new_quality=0.9,
         )
         assert len(candidates) >= 1
+        assert all(item.candidate.origin == "llm" for item in candidates)
 
-        # 3. 自动应用
+        # 3. 自动应用（低置信 LLM 候选 → L0 → 不应用）
         active = copy.deepcopy(ACTIVE_CONFIG)
-        policy = AutoApplyPolicy(llm_enabled=False)  # 降级 L1
+        original = copy.deepcopy(active)
+        policy = AutoApplyPolicy(llm_enabled=False)
         results = generate_and_auto_apply(active, candidates, policy)
 
-        # 4. 验证应用结果
-        applied = [r for r in results if r is not None]
-        assert len(applied) >= 1
-        first = applied[0]
-        assert first.tier == AutomationTier.L1
-        assert first.config["_repair"]["rollback_config_sha256"]
-        # 新选择器已写入配置
-        assert first.config["extract"]["fields"]["title"]["selector"] == ".name"
+        # 4. 验证：全部等人工、活跃配置未被改动
+        assert len(results) == len(candidates)
+        assert all(r is None for r in results)
+        assert active == original
 
     def test_xpath_proposal_supported(self) -> None:
         """XPath 类型提议也支持转换。"""

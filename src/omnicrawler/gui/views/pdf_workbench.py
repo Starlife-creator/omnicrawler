@@ -71,6 +71,9 @@ class _PdfPipelineWorker(QThread):
         self._cancelled = True
 
     def run(self) -> None:
+        # FINAL-W1：tracker 在 try 内的 import 之后才创建；若 import 失败，
+        # except 块直接引用会抛 NameError 掩盖原始异常，故先置 None 再守卫。
+        tracker = None
         try:
             from omnicrawler.pdfx.service import run_extraction
             from omnicrawler.services.progress import (
@@ -180,10 +183,11 @@ class _PdfPipelineWorker(QThread):
 
         except Exception as exc:
             import traceback
-            try:
-                tracker.fail(str(exc))
-            except Exception:  # noqa: BLE001 — tracker 失败不得吞没原始异常
-                pass
+            if tracker is not None:
+                try:
+                    tracker.fail(str(exc))
+                except Exception:  # noqa: BLE001 — tracker 失败不得吞没原始异常
+                    pass
             self.failed.emit(f"{exc}\n{traceback.format_exc()}")
 
 

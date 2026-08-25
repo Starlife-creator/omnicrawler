@@ -439,15 +439,23 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         )
 
     # 固定结构段的白名单子键（未知键只能是用户拼写错误）
+    # FINAL-D2：与实际消费点对齐——以下键被运行时读取但不在 DEFAULTS
+    # （crawl.max_requests/_run.py、crawl.wait_timeout_seconds/_run.py、
+    # extract.enrich|scene/_extract.py、extract.{parser,processor,extractor}_options/
+    # _builders.py、outputs.exporter_options/_exports.py、source.categorizer/
+    # categorizer.py），此前会被误报"未知字段"，稀释拼写检查告警价值。
     section_whitelist = {
         "browser": set(DEFAULTS["browser"]),
-        "crawl": set(DEFAULTS["crawl"]),
+        "crawl": set(DEFAULTS["crawl"]) | {"max_requests", "wait_timeout_seconds"},
         "download": set(DEFAULTS["download"]) | {"output_dir"},
         "egress": set(DEFAULTS["egress"]),
-        "extract": set(DEFAULTS["extract"]) | {"item_path"},
+        "extract": set(DEFAULTS["extract"]) | {
+            "item_path", "enrich", "scene",
+            "parser_options", "processor_options", "extractor_options",
+        },
         "http": set(DEFAULTS["http"]) | {"retry_max"},
         "incremental": set(DEFAULTS["incremental"]) | {"since_date"},
-        "outputs": set(DEFAULTS["outputs"]),
+        "outputs": set(DEFAULTS["outputs"]) | {"exporter_options"},
         "plugins": set(DEFAULTS["plugins"]),
         "quality": set(DEFAULTS["quality"]),
         "resources": set(DEFAULTS["resources"]),
@@ -461,6 +469,8 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
             "query_file", "spider_file", "max_pages",
             # B-2 闸门：逐 URL 模板强制覆盖（GUI 写入，Worker/Runner 消费）
             "seed_template_overrides",
+            # FINAL-D2：站点分类器配置（categorizer.py 消费 enable_sniffing 等）
+            "categorizer",
         },
     }
     for section, allowed in section_whitelist.items():

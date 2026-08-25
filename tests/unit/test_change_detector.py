@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, patch
 try:
     from datetime import UTC, datetime  # Python 3.11+
 except ImportError:
-    from datetime import datetime, timezone
-    UTC = timezone.utc
+    from datetime import datetime
+    UTC = UTC
 
 import pytest
 

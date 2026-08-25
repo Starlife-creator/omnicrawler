@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import UTC
 from pathlib import Path
 from unittest.mock import patch
 
@@ -91,13 +92,13 @@ class RemoteQueueLocalTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             queue = RemoteQueue(local_path=Path(temp) / "q.sqlite3")
             try:
-                from datetime import datetime, timedelta, timezone
+                from datetime import datetime, timedelta
 
                 from omnicrawler.runtime.redis_worker import WORKER_TTL_SECONDS
 
                 queue.register_worker("old")
                 # 直接写入过去的心跳时间（模拟失联）
-                stale = (datetime.now(timezone.utc) - timedelta(seconds=WORKER_TTL_SECONDS + 10)).isoformat()
+                stale = (datetime.now(UTC) - timedelta(seconds=WORKER_TTL_SECONDS + 10)).isoformat()
                 queue._backend.conn.execute(
                     "UPDATE workers SET heartbeat_at=? WHERE worker_id='old'",
                     (stale,),

@@ -13,12 +13,15 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import secrets
 import threading
 import types
 from pathlib import Path
 from typing import Any, Protocol
+
+LOGGER = logging.getLogger(__name__)
 
 # cryptography is an optional dependency (pyproject.toml → [security]).
 # Lazy-import to allow importing secrets_store without cryptography installed
@@ -140,8 +143,14 @@ class SecretsStore:
                 raw = secrets.token_bytes(KEY_LENGTH)
                 self.keyring.set_password(SERVICE, ACCOUNT, base64.b64encode(raw).decode("ascii"))
                 return raw
-            except Exception:
-                pass  # 后端不可用/权限失败 → 走密码派生
+            except Exception as exc:
+                # FINAL-D6：fallback 不再完全静默——keyring 可用性切换会导致
+                # "同一文件换把钥匙"，后续解密失败时用户无从知道根因。留下线索。
+                LOGGER.warning(
+                    "keyring 主密钥读取失败（%s: %s），回落密码派生密钥；"
+                    "若此后解密失败，根因大概率是 keyring 后端切换",
+                    type(exc).__name__, exc,
+                )
         return self._password_derived_key(salt)
 
     def _password_derived_key(self, salt: bytes) -> bytes:
@@ -170,7 +179,13 @@ class SecretsStore:
                 try:
                     plaintext = AESGCM(key).decrypt(nonce, ciphertext, FILE_MAGIC)
                 except Exception as exc:
-                    raise SecretsStoreError(f"secrets 文件解密失败（密钥不匹配?）: {self.path}") from exc
+                    # FINAL-D6：列出两种可能根因，替代含糊的"密钥不匹配?"
+                    raise SecretsStoreError(
+                        f"secrets 文件解密失败: {self.path}。常见原因："
+                        "① 系统凭据后端（keyring）不可用或已切换——存储时使用 "
+                        "keyring 随机主密钥、本次运行回落到密码派生；"
+                        f"② 环境变量 {ENV_PASSWORD} 与加密时不一致。"
+                    ) from exc
                 stored = json.loads(plaintext.decode("utf-8"))
                 entries = {str(k): base64.b64decode(v) for k, v in stored.items()}
             self._cache = entries

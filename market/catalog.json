@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-08-15T17:51:36+00:00",
+  "generated_at": "2026-08-21T10:45:14+00:00",
+  "sequence": 1787309114,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "trust_public_key_ref": "keys/plugin_trust.pub.pem",
@@ -23,13 +24,19 @@
         "example",
         "source",
         "news",
-        "template"
+        "template",
+        "contract2"
       ],
-      "updated_at": "2026-08-07",
+      "updated_at": "2026-08-21",
       "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/example_news",
       "creator_signature_file": "plugins/example_news/creator.sig",
       "creator_identity_file": "plugins/example_news/creator.identity",
-      "execution_mode": "subprocess"
+      "execution_mode": "subprocess",
+      "versions": {
+        "1.0.0": {
+          "sha256": "2630ed2c32a15a9cc355251e1547a05b0b14b07ee0f94b6aed962f8e75f9db2c"
+        }
+      }
     }
   ],
   "templates": [

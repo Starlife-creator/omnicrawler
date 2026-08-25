@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 try:
     from datetime import UTC, datetime, timedelta  # Python 3.11+
 except ImportError:
-    from datetime import datetime, timedelta, timezone
-    UTC = timezone.utc
+    from datetime import datetime, timedelta
+    UTC = UTC
 
 import yaml
 

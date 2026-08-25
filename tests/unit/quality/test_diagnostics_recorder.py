@@ -6,8 +6,8 @@ from unittest.mock import patch
 try:
     from datetime import UTC, datetime, timedelta  # Python 3.11+
 except ImportError:
-    from datetime import datetime, timedelta, timezone
-    UTC = timezone.utc
+    from datetime import datetime, timedelta
+    UTC = UTC
 
 from omnicrawler.core.models import CrawlRequest, FetchResult
 from omnicrawler.quality.diagnostics import DiagnosticRecorder

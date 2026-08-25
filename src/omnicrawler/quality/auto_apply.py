@@ -170,7 +170,9 @@ def classify_tier(
         2. 未通过安全改善检查 → L0（improves_safely 必须为 True）
         3. L3：candidate.stable（观察轮数 ≥3 且误报风险 ≤0.1）→ L3
         4. L2：LLM 可用 + confidence ≥ 阈值 + 误报风险 ≤ 上限 + 可逆 → L2
-        5. L1：幂等修复（可逆选择器替换）+ l1_enabled → L1
+        5. L1：幂等修复（可逆选择器替换）+ l1_enabled + 非 LLM 来源 → L1
+           （FINAL-S6：origin=="llm" 的候选置信不足 L2 时降级 L0 人工批准，
+           防 prompt injection 经免审通道写入活跃配置）
         6. 默认 → L0
 
     Args:
@@ -207,7 +209,14 @@ def classify_tier(
             return AutomationTier.L2
 
     # L1：幂等修复（可逆选择器替换）
-    if policy.l1_enabled and is_reversible(candidate.rule_type):
+    # FINAL-S6：LLM 生成的候选不得走 L1 免审通道——其规则内容源自不可信页面，
+    # 本地验证数据同样来自该页面；置信不足 L2 时必须降级 L0 人工批准，
+    # 否则构成 prompt injection → 配置持久化的最短路径。
+    if (
+        policy.l1_enabled
+        and is_reversible(candidate.rule_type)
+        and candidate.origin != "llm"
+    ):
         return AutomationTier.L1
 
     # 默认：人工批准

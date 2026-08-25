@@ -24,6 +24,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+from datetime import UTC
 from pathlib import Path
 from typing import Any, cast
 
@@ -235,11 +236,11 @@ class _RedisQueue:
 
 def _stale_cutoff(now: str | None) -> str:
     """失联判定基准时间：now（ISO）或当前时间减去 WORKER_TTL。"""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     if now:
         return now
-    return (datetime.now(timezone.utc) - timedelta(seconds=WORKER_TTL_SECONDS)).isoformat()
+    return (datetime.now(UTC) - timedelta(seconds=WORKER_TTL_SECONDS)).isoformat()
 
 
 # ── 门面与探测 ────────────────────────────────────────────────

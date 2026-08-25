@@ -60,3 +60,24 @@ def test_file_logging_can_be_disabled(clean_root: None, tmp_path: Path, monkeypa
     configure_logging("INFO", file_logging=False)
     handlers = logging.getLogger().handlers
     assert not any(isinstance(handler, RotatingFileHandler) for handler in handlers)
+
+
+def test_text_file_log_redacts_credential_urls(
+    clean_root: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FINAL-S10：text formatter（文件日志）必须与 JSON formatter 同等脱敏。
+
+    原实现只有 JSON 路径脱敏——同一事件控制台干净、omnicrawler.log 明文
+    落盘 scheme://user:pass@host 形式的 URL。
+    """
+    monkeypatch.setattr(
+        "omnicrawler.core.logging_utils._log_file_path",
+        lambda: tmp_path / "logs" / "omnicrawler.log",
+    )
+    configure_logging("INFO")
+    secret_url = "https://alice:s3cret-pw@example.com/data?id=1"
+    logging.getLogger("test.fixture").warning("fetch failed: %s", secret_url)
+
+    written = (tmp_path / "logs" / "omnicrawler.log").read_text(encoding="utf-8")
+    assert "s3cret-pw" not in written, f"明文凭据泄漏进文件日志: {written}"
+    assert "example.com" in written

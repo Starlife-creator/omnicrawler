@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 import urllib.parse
 from typing import TYPE_CHECKING, Any
@@ -185,11 +186,25 @@ class HTTPXAsyncFetcher:
         return self._loop
 
     def _pin_transport_dns(self, transport: Any) -> None:
-        """把传输底层连接池的网络后端替换为 DNS 固定后端（S1.3.5）。"""
+        """把传输底层连接池的网络后端替换为 DNS 固定后端（S1.3.5）。
+
+        FINAL-S7：钉扎依赖 httpcore 私有属性（``_pool._network_backend``），
+        httpcore 内部结构变化时会静默失效。默认仅告警（保持可用性）；
+        设 ``OMNICRAWL_ASYNC_DNS_PIN_FAIL_CLOSED=1`` 时升级为硬错误
+        （fail-closed），供高安全场景选用，避免安全控制随依赖漂移而无感退化。
+        """
         import httpcore
 
         pool = getattr(transport, "_pool", None)
         if pool is None or not hasattr(pool, "_network_backend"):
+            message = (
+                "异步 DNS 固定未生效：httpcore 传输缺少 _pool/_network_backend"
+                f"（httpcore {getattr(httpcore, '__version__', '?')}，内部结构变化?），"
+                "回退为未钉扎传输。可设 OMNICRAWL_ASYNC_DNS_PIN_FAIL_CLOSED=1 改为硬失败。"
+            )
+            if os.environ.get("OMNICRAWL_ASYNC_DNS_PIN_FAIL_CLOSED", "").strip().lower() in {"1", "true", "yes"}:
+                raise RuntimeError(message)
+            LOGGER.warning("%s", message)
             return
         pool._network_backend = _PinnedAsyncNetworkBackend(
             httpcore.AsyncNetworkBackend(), self.target_policy

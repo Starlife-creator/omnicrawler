@@ -975,9 +975,14 @@ class MainWindow(QMainWindow):
 
     def _rebuild_project_components(self) -> None:
         """S3.1.27：切换项目后重建依赖项目根的组件（不再只改标签）。"""
+        # FINAL-G1：必须先捕获旧引用再重建。原实现先 _build_project_components()
+        # 让 self._autosave/_task_history 指向新对象，再对这些"新"对象 deleteLater：
+        # 新 TaskHistory 在下轮事件循环被销毁（后续调用抛 Internal C++ object
+        # already deleted），旧 AutosaveManager/TaskRunner 则整体泄漏。
+        old_autosave = self._autosave
+        old_task_history = self._task_history
         self._build_project_components()
-        # 三者均为 QObject 子类（模板加载器 QObject、自动保存/历史 QWidget）
-        for widget in (self._autosave, self._template_loader, self._task_history):
+        for widget in (old_autosave, old_task_history):
             if isinstance(widget, QWidget):
                 widget.deleteLater()
 

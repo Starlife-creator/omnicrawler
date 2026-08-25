@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from ..extraction.adaptive_extractor import AdaptiveExtractor, RepairProposal
@@ -102,13 +102,17 @@ def proposal_to_candidate(
 
     # candidate_rule 内部计算 confidence = n/(n+2) * (1 - risk)
     # proposal.sample_values 全部是验证命中的真实值，作为支持样本
-    candidate = candidate_rule(
-        field=proposal.field,
-        rule_type=proposal.rule_type,
-        old_rule=proposal.old_rule,
-        new_rule=proposal.new_rule,
-        supporting=proposal.sample_values,
-        counterexamples=(),
+    # FINAL-S6：必须标记 origin="llm"，auto_apply 据此禁止 LLM 候选走 L1 免审通道
+    candidate = replace(
+        candidate_rule(
+            field=proposal.field,
+            rule_type=proposal.rule_type,
+            old_rule=proposal.old_rule,
+            new_rule=proposal.new_rule,
+            supporting=proposal.sample_values,
+            counterexamples=(),
+        ),
+        origin="llm",
     )
 
     # 如果需要设置 observation_rounds，重新构造（candidate_rule 默认 0）
@@ -125,6 +129,7 @@ def proposal_to_candidate(
             expected_recovery=candidate.expected_recovery,
             false_positive_risk=candidate.false_positive_risk,
             observation_rounds=observation_rounds,
+            origin="llm",
         )
     return candidate
 

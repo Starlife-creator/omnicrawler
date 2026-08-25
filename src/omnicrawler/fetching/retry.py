@@ -3,7 +3,7 @@ from __future__ import annotations
 import email.utils
 import random
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
 
@@ -19,8 +19,8 @@ def retry_after_seconds(headers: Mapping[str, str], *, now: datetime | None = No
     try:
         target = email.utils.parsedate_to_datetime(value)
         if target.tzinfo is None:
-            target = target.replace(tzinfo=timezone.utc)
-        current = now or datetime.now(timezone.utc)
+            target = target.replace(tzinfo=UTC)
+        current = now or datetime.now(UTC)
         return max(0.0, (target - current).total_seconds())
     except (TypeError, ValueError, OverflowError):
         return None

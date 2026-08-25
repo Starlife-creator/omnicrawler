@@ -34,7 +34,7 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -87,7 +87,7 @@ class MonitorRule:
         if not self.rule_id:
             self.rule_id = uuid.uuid4().hex[:12]
         if self.created_at is None:
-            self.created_at = datetime.now(tz=timezone.utc)
+            self.created_at = datetime.now(tz=UTC)
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为可 JSON 存储的字典。"""
@@ -411,7 +411,7 @@ class ChangeDetector:
         if rule is None or not rule.enabled:
             return None
 
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
 
         # 检查间隔
         if rule.last_checked is not None:

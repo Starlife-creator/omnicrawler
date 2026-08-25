@@ -24,6 +24,9 @@ class RepairCandidate:
     expected_recovery: float
     false_positive_risk: float
     observation_rounds: int = 0
+    # FINAL-S6：候选来源（"local"=本地证据推断 / "llm"=LLM 生成）。
+    # auto_apply.classify_tier 据此禁止 LLM 候选走 L1 免审通道。
+    origin: str = "local"
 
     @property
     def stable(self) -> bool:

@@ -38,7 +38,7 @@ import importlib.metadata
 import json
 import re
 from collections import deque
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -192,7 +192,7 @@ def build_sbom() -> dict[str, Any]:
         "serialNumber": "urn:uuid:" + _uuid_from_hash(f"omnicrawler-platform:{project.version}:transitive"),
         "version": 1,
         "metadata": {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "component": {"type": "application", "name": "omnicrawler-platform", "version": project.version},
         },
         "components": sorted(components.values(), key=lambda item: item["name"].casefold()),

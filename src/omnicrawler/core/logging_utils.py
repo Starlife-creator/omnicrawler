@@ -4,7 +4,7 @@ import io
 import json
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -23,7 +23,7 @@ class JsonFormatter(logging.Formatter):
         from ..security.redaction import redact_url
 
         value = {
-            "timestamp": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+            "timestamp": datetime.now(UTC).isoformat(timespec="milliseconds"),
             "level": record.levelname,
             "logger": record.name,
             "message": redact_url(record.getMessage()),
@@ -37,8 +37,25 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(value, ensure_ascii=False, default=str)
 
 
+class _RedactingFormatter(logging.Formatter):
+    """文本 formatter：对最终消息做 redact_url 脱敏。
+
+    FINAL-S10：原实现只有 JsonFormatter 脱敏，文件日志（text formatter）
+    明文落盘带凭据 URL——同一事件控制台干净、omnicrawler.log 泄漏。
+    注意：父类 format() 会无条件用 getMessage() 覆写 record.message，
+    因此必须把脱敏结果写入 record.msg 并清空 args，而非预写 message。
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        from ..security.redaction import redact_url
+
+        record.msg = redact_url(record.getMessage())
+        record.args = None
+        return super().format(record)
+
+
 def _text_formatter() -> logging.Formatter:
-    return logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    return _RedactingFormatter("%(asctime)s %(levelname)s %(name)s %(message)s")
 
 
 def _log_file_path() -> Path:

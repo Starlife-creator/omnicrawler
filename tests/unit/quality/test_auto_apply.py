@@ -436,3 +436,42 @@ class TestIntegrationScenarios:
         )
         result = auto_apply_if_safe(active, shadow, candidate, comparison, policy)
         assert result is None
+
+# ── FINAL-S6：LLM 候选禁走 L1 免审通道 ──────────────────────────────────
+
+
+def test_llm_origin_candidate_never_gets_l1_free_pass() -> None:
+    """origin=="llm" 的低置信候选必须降级 L0，不得走 L1 免审。
+
+    攻击路径：攻击者构造页面使恶意选择器"本地验证命中"——验证数据本就
+    来自该页面。若允许 LLM 候选进 L1（默认启用），即无人批准写入活跃配置。
+    """
+    from dataclasses import replace
+
+    low_confidence = candidate_rule(
+        field="title",
+        rule_type="css",
+        old_rule="h1.old",
+        new_rule="main h1",
+        supporting=(),
+        counterexamples=(),
+    )
+    llm_low = replace(low_confidence, origin="llm")
+    policy = AutoApplyPolicy(l1_enabled=True, l2_enabled=True, llm_enabled=True)
+    comparison = _safe_comparison()
+
+    assert classify_tier(low_confidence, comparison, policy) is AutomationTier.L1
+    assert classify_tier(llm_low, comparison, policy) is AutomationTier.L0
+
+
+def test_llm_origin_high_confidence_still_reaches_l2() -> None:
+    """高置信 LLM 候选不受影响：仍按既有规则达 L2（观察期）。"""
+    from dataclasses import replace
+
+    base = _high_confidence_candidate()
+    llm_high = replace(base, origin="llm")
+    policy = AutoApplyPolicy(l1_enabled=True, l2_enabled=True, llm_enabled=True)
+
+    assert (
+        classify_tier(llm_high, _safe_comparison(), policy) is AutomationTier.L2
+    )
