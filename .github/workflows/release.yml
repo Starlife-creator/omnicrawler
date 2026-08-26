@@ -287,7 +287,7 @@ jobs:
           for f in "$RUNNER_TEMP/artifacts-linux"/*; do
             base="$(basename "$f")"
             case "$base" in SKIPPED-*) continue ;; esac
-            size=$(stat -c%s "$f")
+            size=$(python -c "import os,sys; print(os.path.getsize(sys.argv[1]))" "$f")
             if [ "$size" -gt "$max" ]; then
               mv "$f" "$skipped_dir/$base"
               line=$(printf '%s  %.1f MB' "$base" "$(echo "scale=1; $size/1048576" | bc)")
@@ -389,7 +389,7 @@ jobs:
           for f in "$RUNNER_TEMP/artifacts-macos"/*; do
             base="$(basename "$f")"
             case "$base" in SKIPPED-*) continue ;; esac
-            size=$(stat -c%s "$f")
+            size=$(python -c "import os,sys; print(os.path.getsize(sys.argv[1]))" "$f")
             if [ "$size" -gt "$max" ]; then
               mv "$f" "$skipped_dir/$base"
               line=$(printf '%s  %.1f MB' "$base" "$(echo "scale=1; $size/1048576" | bc)")

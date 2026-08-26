@@ -29,9 +29,10 @@ def test_a16_config_default_user_agent_tracks_package_version() -> None:
     from omnicrawler.gui.core.config_model import CrawlConfig
 
     cfg = CrawlConfig()
-    assert cfg.user_agent.startswith("OmniCrawler/")
-    assert __version__ in cfg.user_agent
-    assert "1.1" not in cfg.user_agent
+    # FINAL：精确断言 UA 模板，而非"旧字面量不在"——后者会被合法新版本号
+    # 误击穿（0.11.1 包含子串 "1.1"，v0.11.1 CI 实测）。跟踪语义已由
+    # 与 __version__ 的精确相等完整表达。
+    assert cfg.user_agent == f"OmniCrawler/{__version__} GUI"
 
 
 def test_a16_home_version_fallback_uses_package_version(monkeypatch) -> None:
