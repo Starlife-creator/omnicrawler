@@ -72,7 +72,9 @@ _L1_BINARY_EXT_RE = re.compile(
     re.IGNORECASE,
 )
 _L1_VIDEO_EXT_RE = re.compile(
-    r".*\.(mp4|m4v|webm|m3u8|ts|mov|avi|flv)$",
+    # FINAL-D1：不含裸 `ts`——TypeScript 源码会被以 confidence=1.0 误判为视频；
+    # HLS 场景已由 m3u8 覆盖，MPEG-TS 直链段由 L3 Content-Type(video/) 规则兜底。
+    r".*\.(mp4|m4v|webm|m3u8|mov|avi|flv)$",
     re.IGNORECASE,
 )
 _L1_API_EXT_RE = re.compile(r".*\.(json|geojson|ndjson)$", re.IGNORECASE)

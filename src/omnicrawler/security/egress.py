@@ -216,11 +216,24 @@ class EgressBroker:
             self._capability_counts.pop(capability.token, None)
 
     def _control_stopped(self) -> bool:
+        # FINAL-D4：run_control.json 以 mtime 缓存——此前每次 authorize 都
+        # 同步读盘+解析，高频抓取下每请求一次文件 IO。mtime 未变直接用缓存值。
+        path = self.config.workspace / "run_control.json"
         try:
-            state = json.loads((self.config.workspace / "run_control.json").read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+            mtime_ns = path.stat().st_mtime_ns
+        except OSError:
+            self._control_cache = (None, False)
             return False
-        return bool(isinstance(state, dict) and state.get("stop_requested"))
+        cached = getattr(self, "_control_cache", None)
+        if cached is not None and cached[0] == mtime_ns:
+            return cached[1]
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+            stopped = bool(isinstance(state, dict) and state.get("stop_requested"))
+        except (OSError, json.JSONDecodeError):
+            stopped = False
+        self._control_cache = (mtime_ns, stopped)
+        return stopped
 
     def _check_switches(self) -> None:
         if not self.enabled or self._task_disabled.is_set() or self._global_disabled.is_set():

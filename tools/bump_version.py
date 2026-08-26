@@ -107,7 +107,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="高级：断点续跑时显式指定真实旧版本号（崩溃后 pyproject 已是"
              "目标版本、脚本按 current==target 早退时的恢复入口）。文件级步骤"
-             "具备跳过语义，但 CHANGELOG 可能重复条目，续跑后请人工复核。",
+             "具备跳过语义；CHANGELOG 区间取自该旧版本号，同日重跑自动去重。",
     )
     return parser.parse_args(argv)
 
@@ -419,6 +419,7 @@ def _generate_change_report(root: Path, old_version: str) -> str:
 
 def step_update_changelog(
     root: Path, new: str, custom_message: str | None = None,
+    *, old_override: str | None = None,
 ) -> None:
     """Step 7: 在 CHANGELOG.md 插入新版本条目。"""
     print("\n  ── 更新 CHANGELOG.md ──")
@@ -436,7 +437,9 @@ def step_update_changelog(
     if custom_message:
         summary = custom_message
     else:
-        old_version = _read_old_version(root)
+        # FINAL 修复E1：区间旧版号由调用方传入（--from 续跑时 pyproject 已是
+        # 新版，内部重读会得到 new ⇒ 空 commit 区间 ⇒ 空摘要）。
+        old_version = old_override or _read_old_version(root)
         summary = _get_changelog_entries(root, old_version)
 
     entry = f"\n{heading}\n\n### 变更\n\n{summary}\n"
@@ -681,7 +684,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── Step 7: 更新 CHANGELOG.md ──
     print("\n[6/7] 更新 CHANGELOG.md")
-    step_update_changelog(root, new, args.message)
+    step_update_changelog(root, new, args.message, old_override=old)
 
     # ── Step 7a: 修复 YAML 模板版本号 ──
     print("\n[7/9] 修复 YAML 模板版本号")

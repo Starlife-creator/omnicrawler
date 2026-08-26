@@ -998,9 +998,21 @@ class PdfWorkbenchView(QWidget):
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
             self._stage_label.setText(_("正在取消..."))
-            # S3.1.6：等待线程结束并清理注入环境变量（PDFX_LLM_API_KEY 无残留）
-            self._worker.wait(5000)
-            self._clear_injected_env()
+            self._cancel_btn.setEnabled(False)
+            # FINAL W-2：Qt 官方明确"UI 线程不应 wait()，应监听 finished 信号"——
+            # 原 wait(5000) 最长冻结事件循环 5 秒。改为信号驱动异步收尾；
+            # closeEvent 路径保留有界 wait（析构顺序需要确定性，属文档允许的例外）。
+            def _on_cancel_finished() -> None:
+                self._clear_injected_env()
+                self._stage_label.setText(_("已取消"))
+                self._cancel_btn.setEnabled(True)
+                self._cancel_btn.setVisible(False)
+
+            try:
+                self._worker.finished.disconnect(_on_cancel_finished)
+            except (RuntimeError, TypeError):
+                pass  # 尚未连接/已销毁
+            self._worker.finished.connect(_on_cancel_finished)
 
     # ── 打开结果 ──────────────────────────────────────────────
     @Slot()

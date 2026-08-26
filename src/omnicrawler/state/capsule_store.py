@@ -67,7 +67,12 @@ class CapsuleStore:
 
     # ── 写 ──────────────────────────────────────────────
     def append(self, run_id: str, capsule: Capsule) -> Path:
-        """原子追加一条胶囊（单行写入 + fsync），返回日志文件路径。"""
+        """原子追加一条胶囊（单行写入）；持久化屏障移至 rotate（FINAL-D5）。
+
+        胶囊是诊断/重放证据而非事务数据：逐条 fsync 在高频抽取下造成
+        显著 I/O 放大（每条 2 次）。POSIX 追加写的行原子性足以保证读取侧
+        不见半行；崩溃窗口内最后若干条丢失可接受。rotate() 落盘前统一 fsync。
+        """
         if not capsule.timestamp:
             capsule.timestamp = utcnow()
         if not capsule.capsule_id:
@@ -77,7 +82,6 @@ class CapsuleStore:
         with path.open("a", encoding="utf-8") as handle:
             handle.write(capsule.to_line() + "\n")
             handle.flush()
-            os.fsync(handle.fileno())
         return path
 
     # ── 读 ──────────────────────────────────────────────
@@ -114,6 +118,18 @@ class CapsuleStore:
         archive_dir.mkdir(parents=True, exist_ok=True)
         now = time.time()
         rotated = 0
+        # FINAL-D5：压缩前对活跃日志统一 fsync——把 append 侧省下的持久化
+        # 屏障在低频路径补上，归档内容与已刷写数据一致。
+        for path in sorted(self.base_dir.glob("*.log")):
+            if path.is_file():
+                try:
+                    fd = os.open(path, os.O_RDONLY)
+                    try:
+                        os.fsync(fd)
+                    finally:
+                        os.close(fd)
+                except OSError:
+                    pass
         for path in sorted(self.base_dir.glob("*.log")):
             if not path.is_file():
                 continue

@@ -557,8 +557,10 @@ class BrowserFetcher:
             # 4.47 + Chrome 151 组合问题），导航/actions 不返回。driver.quit() 也走
             # WebSocket 同样阻塞——超时必须杀 chromedriver 进程（service.stop）强制
             # 断开，主线程的 WebDriver 调用才会抛异常恢复，随后 fail-closed 报错。
+            # FINAL-D2：秒数提为局部变量，超时消息与构造同源（不再硬编码 90）
+            watchdog_seconds = float(self.config.section("http").get("selenium_watchdog_seconds", 90))
             watchdog = _Watchdog(
-                float(self.config.section("http").get("selenium_watchdog_seconds", 90)),
+                watchdog_seconds,
                 on_timeout=driver.service.stop,
             )
             with watchdog:
@@ -573,8 +575,9 @@ class BrowserFetcher:
                 body = driver.page_source.encode("utf-8")
                 final_url = driver.current_url
             if watchdog.fired:
+                # FINAL-D2：秒数取自实际配置，不再硬编码 90（与 :561 构造同源）
                 raise RuntimeError(
-                    f"Selenium 操作超过看门狗 {90:.0f}s 未完成（可能 BiDi 拦截事件流挂起）"
+                    f"Selenium 操作超过看门狗 {watchdog_seconds:.0f}s 未完成（可能 BiDi 拦截事件流挂起）"
                 )
             self.egress.authorize(final_url, purpose="browser", count_request=False)
         finally:

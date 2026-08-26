@@ -713,15 +713,31 @@ class StateStore:
             row["validation_pass_rate"] = round(int(row["valid"]) / max(1, present), 4)
         return rows
 
-    def review_queue(self, run_id: str | None = None) -> list[dict[str, Any]]:
-        """Return low-confidence records without requiring SQLite's optional JSON extension."""
+    def review_queue(
+        self, run_id: str | None = None, *, limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return low-confidence records without requiring SQLite's optional JSON extension.
+
+        FINAL-D6：`review_required` 判定下推为 evidence_json LIKE 谓词——
+        此前全表拉取后逐行 json.loads 过滤，大库上 OOM 风险。LIKE 依赖
+        json_text 的默认分隔符（`"review_required": true` 带空格）。
+        `limit` 可选限制返回条数（None=全部，保持既有语义）。
+        """
         self._require_run_id(run_id)
-        where, params = (" WHERE run_id=?", (run_id,)) if run_id else ("", ())
+        clauses: list[str] = ['evidence_json LIKE \'%"review_required": true\'']
+        params: list[Any] = []
+        if run_id:
+            clauses.append("run_id=?")
+            params.append(run_id)
+        sql = (
+            "SELECT record_id, run_id, source_url, data_json, evidence_json FROM records"
+            + (" WHERE " + " AND ".join(clauses) if clauses else "")
+            + (" LIMIT ?" if limit is not None else "")
+        )
+        if limit is not None:
+            params.append(limit)
         with self._lock:
-            rows = self.conn.execute(
-                f"SELECT record_id, run_id, source_url, data_json, evidence_json FROM records{where}",
-                params,
-            ).fetchall()
+            rows = self.conn.execute(sql, params).fetchall()
         queue: list[dict[str, Any]] = []
         for row in rows:
             evidence = json.loads(row["evidence_json"])

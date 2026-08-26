@@ -44,15 +44,26 @@ def run_preflight(config: AppConfig) -> dict[str, Any]:
         )
 
     parent = config.workspace.parent if config.workspace.parent.exists() else config.root
-    usage = shutil.disk_usage(parent)
-    minimum = int(config.section("resources").get("minimum_free_disk_bytes", 536_870_912))
+    # FINAL-D3：root 亦不存在时 disk_usage 抛 OSError 会使整个 preflight 崩溃——
+    # 降级为 unknown 检查项而非中断（磁盘检查不应比依赖检查更致命）。
+    try:
+        usage = shutil.disk_usage(parent)
+        minimum_free = int(config.section("resources").get("minimum_free_disk_bytes", 536_870_912))
+        disk_ok = usage.free >= minimum_free
+        disk_detail = f"可用 {usage.free / 1024 ** 3:.2f} GB；安全保留 {minimum_free / 1024 ** 3:.2f} GB"
+        disk_meta = {"action": "open_folder", "path": str(parent)} if not disk_ok else None
+    except OSError as exc:
+        disk_ok = True  # 未知不阻断（与依赖缺失的 warn 语义对齐）
+        disk_detail = f"无法读取磁盘空间（目标不存在？）：{exc}"
+        disk_meta = None
+    minimum_free = int(config.section("resources").get("minimum_free_disk_bytes", 536_870_912))
     checks.append(
         PreflightCheck(
             "disk_space",
-            "ok" if usage.free >= minimum else "error",
+            "ok" if disk_ok else "error",
             "磁盘空间",
-            f"可用 {usage.free / 1024 ** 3:.2f} GB；安全保留 {minimum / 1024 ** 3:.2f} GB",
-            {"action": "open_folder", "path": str(parent)} if usage.free < minimum else None,
+            disk_detail,
+            disk_meta,
         )
     )
     requirements = _required_dependencies(config)
