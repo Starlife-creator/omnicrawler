@@ -1,6 +1,70 @@
 # Changelog
 
 ## Unreleased
+## 0.11.0 - 2026-08-26
+
+### 变更
+
+- ci(release): 发布闸门三层漏斗——单包超限不再劫持整次发布
+- fix: 补提交三处修复——修 CI quality 红（release_integrity 静态导入门禁）
+- test: 白名单防漂移守卫指向 catalog_lib/common.py（拆分后的单一事实源）
+- chore(security): 透明日志诚实降级为 informational-only（长期债 #5 方案 B）
+- refactor(gui): 抽离 MainWindow 三个内联对话框至 views/project_dialogs（长期债 #1 Phase A）
+- refactor(cli): build_parser 335 行单体函数按域拆分至 _parsers/ 包
+- style: 移除 delegates 测试中未用的 RunController 导入（services 同名类为准）
+- test: 补 CLI 注册表契约与 delegates 布线测试；收编 tests/unit/other 杂物桶
+- fix: 路线图第三梯队低成本项落地（R-1/R-2/D-3/D-8/S-1 口径）
+- fix: 审查 FINAL 路线图梯队一/二 13 项落地（GUI 生命周期 + 安全卫生 + 数据正确性）
+- chore(deps): 根生态也忽略 PyYAML——PR #53 来自 / 生态 runtime 组，补齐 #52 未覆盖面
+- chore(deps): dependabot 忽略 PyYAML——paddlex 精确锁 6.0.2，升级必撞 PIP_CONSTRAINT
+- chore(deps): bump ruff from 0.16.3 to 0.16.4 in /constraints (#46)
+- chore(deps): bump mypy from 2.3.0 to 2.3.1 in /constraints
+- chore(deps): update reportlab requirement
+- chore(ci): bump actions/checkout from 4.2.2 to 7.0.1
+- fix(types): mypy 修复——CI quality 门禁 mypy 步骤全绿（存量 16 + 本 PR 9 处）
+- style: ruff 修复——导入排序（main.py/change_monitor.py）+ 移除未用 logging
+- fix(ci): license-gate 修复 pip licenses 子命令调用——pip 子命令插件已废弃
+- fix(deps/tests): 修复 main 存量 CI 失败——pypdfium2 约束对齐 5.x + 测试适配
+- fix(gui/core): 项目审查 P0-P2——安全加固、设计令牌统一、冷启动提速、GUI 单测
+- feat(plugins/gui): v22 收尾——沙箱资源上限、AI sidecar 接线、自动导出 Markdown
+- feat(plugins): Phase 3 B2——plugins list 契约形态列 + PluginMetadata.contract_shape
+- feat(plugins): Phase 3 Q4/G3——审核辅助分析（AI 增强审核员，纯静态证据非门禁）
+- docs(plugins): Phase 3——契约 2 双契约文档 + 作者指南 + 审核清单
+- feat(plugins): Phase 3——scaffold-contract2 脚手架 + inspector 双契约识别 + CLI 接入
+- fix(test): 去除 test_phase2b_broker 重复函数定义（F811）
+- test(plugins): Phase 2b 配额经会话透传 E2E——契约 2 插件触发 E_QUOTA
+- feat(plugins): Phase 2b H4——共现事件 SIEM 导出 + 企业模板预置 + CLI --export-egress
+- style(test): phase2b loader 测试 ruff 修复（未用变量/import 排序）
+- feat(plugins): Phase 2b loader 接线——daily_quota/egress_policy 配置解析生效
+- feat(plugins): Phase 2b N3 keepalive 长驻会话池——跨 run 复用 + idle 回收 + hook 分发
+- feat(plugins): Phase 2b broker 层三项——daily 配额 / egress_policy 共现 / files 逃逸拒绝
+- feat(plugins): Phase 2a H1 安全指标全集 + H4 环境诊断报告（plugins audit --report）
+- feat(plugins): Phase 2a G1/G2/G3 客户端 catalog 信任链（验签+哈希+吊销+防重放）
+- feat(plugins): Phase 2a D4 沙箱内纵深防御——脱敏/配额/AST 门（OS 层第二道防线）
+- feat(plugins): Phase 2a D2/D3 OS 沙箱抽象层——能力探测 + fail-closed 裁决
+- feat(plugins): Phase 2a C6 审计留痕 + O 密钥零暴露（secrets.get 例外）
+- feat(plugins): Phase 2a 门 1/门 3 落地——声明一致性 + dependencies 双向互证
+- feat(ci): Phase 2a F3 插件沙箱 CI 矩阵 workflow（契约/穿透 + AC spike）
+- test(plugins): Phase 2a F2 差分等价测试——能力代理不改插件语义
+- feat(plugins): Phase 2a F1 公共契约测试夹具（本地绿 = CI 绿）
+- feat(plugins): Phase 2a B5 audit 扩展——契约形态一致性 + 沙箱可用性探测
+- feat(plugins): Phase 2a B4 加载器路由接线——契约 2 subprocess 插件真正走沙箱
+- feat(plugins): Phase 2a B4 契约形态静态检测（加载器路由分流依据）
+- feat(plugins): Phase 2a B4 集成层——子进程组件适配器（pipeline ↔ 契约 2 会话桥接）
+- feat(plugins): Phase 2a B4 路由矩阵裁决器 + B5 配置键（runtime_backend 三态）
+- feat(plugins): Phase 2a C2 验签接线 V2 + C3 能力代理 + C4 IPC 循环（C2/C3/C4/N）
+- feat(plugins): Phase 2a C1 双后端隔离启动 + session 生命周期（C1a）+ IPC v1（C4）
+- feat(license): Phase 0 验收——宿主许可 AGPL-3.0 → Apache-2.0（第 81 轮用户决策）
+- refactor(gui): Phase 0 M0b——PyQt6(GPL) → PySide6(LGPL) 全量迁移，许可自由完成
+- fix(deps): 依赖探测点全面去 PyMuPDF 化（Phase 0 联动盲区清扫）
+- fix(capabilities): pdf 特性探测 fitz → pdfplumber（Phase 0 依赖替换收尾）
+- test(pdf): 测试 fixture 全面去 fitz 化——PyMuPDF 从依赖树彻底移除（Phase 0 许可收尾）
+- refactor(pdf): Phase 0 M0a——PyMuPDF(fitz) → pypdfium2/pdfplumber/pypdf/reportlab 分治替换
+- feat(market): 离线快照同步（Phase 1 schema）+ tombstone 测试
+- feat(schema): Phase 1 B1 schema 扩展主仓接线——execution_mode/dependencies/input_files
+- feat(plugins): Phase 1 许可治理——license 必填 + 门 2 SPDX 白名单 + license-gate + 本地 audit
+- docs: 发布流水线故障排查手册——v0.9.1 全轮次复盘（40+ 轮/90+ 提交）
+
 ## 0.9.1 - 2026-08-16
 
 ### 变更

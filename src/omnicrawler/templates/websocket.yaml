@@ -7,4 +7,4 @@ source:
   max_messages: 100
   duration_seconds: 60
 crawl: {max_pages: 100, same_host: true}
-http: {user_agent: "OmniCrawler/0.9.1 (+contact: crawler@example.org)", allow_private_network: false}
+http: {user_agent: "OmniCrawler/0.11.0 (+contact: crawler@example.org)", allow_private_network: false}

@@ -22,7 +22,7 @@ crawl: {max_pages: 500, same_host: false}  # allow cross-domain for multiple fee
 
 http:
 
-  user_agent: "OmniCrawler/0.9.1 (+contact: change-me@example.com)"
+  user_agent: "OmniCrawler/0.11.0 (+contact: change-me@example.com)"
 
   respect_robots: true
 

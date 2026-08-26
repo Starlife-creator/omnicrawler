@@ -2,5 +2,5 @@ template_version: 1
 project: {name: 示例项目-HTML�ㄦ牸, workspace: work/table}
 source: {kind: static_html, seeds: [https://example.com/table.html]}
 crawl: {max_pages: 1, same_host: true}
-http: {user_agent: "OmniCrawler/0.9.1 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
+http: {user_agent: "OmniCrawler/0.11.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
 extract: {mode: table, table_selector: table}

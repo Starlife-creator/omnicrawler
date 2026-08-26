@@ -6,5 +6,5 @@ source:
     - https://example.com/
     - https://www.iana.org/help/example-domains
 crawl: {max_pages: 2, same_host: false, allow_domains: [example.com, iana.org]}
-http: {user_agent: "OmniCrawler/0.9.1 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
+http: {user_agent: "OmniCrawler/0.11.0 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
 extract: {mode: auto}
