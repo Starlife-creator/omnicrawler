@@ -95,13 +95,23 @@ def _discover(registry: Path) -> list[Path]:
 
 
 def _append_log(target: Path, operator: str) -> None:
+    """追加透明日志条目。
+
+    FINAL-U5（方案 B）：informational-only 日志——只记录公开元数据；
+    路径字段用相对 _REGISTRY 的正斜杠或裸文件名，绝不写绝对路径
+    （此前实现曾泄露操作者本机目录结构，与 docstring 承诺相悖）。
+    """
+    try:
+        display = target.resolve().relative_to(_REGISTRY.resolve()).as_posix()
+    except ValueError:
+        display = target.name
     entry = {
         "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
-        "plugin": target.as_posix(),
+        "plugin": display,
         "plugin_sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
         "operator": operator,
         "operation": "sign",
-        "note": "签名者私钥未导出；本日志仅记录公开元数据",
+        "note": "签名者私钥未导出；本日志仅记录公开元数据（informational-only）",
     }
     with TRANSPARENCY_LOG.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry, ensure_ascii=False) + "\n")

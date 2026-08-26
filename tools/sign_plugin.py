@@ -151,11 +151,20 @@ def _append_transparency_log(
 
     B02-004：写日志是冷密钥签名的必经步骤；日志写失败时异常向上传播，
     使签名整体失败（fail-closed），确保每次冷密钥动用都留下公开记录。
+    FINAL-U5（方案 B）：本日志为 **informational-only**——无哈希链/无防篡改
+    能力，不作为审计证据，仅为人工回溯提供线索（远期蓝图见
+    MARKET_ECOSYSTEM §5）。路径字段只记录相对/文件名，绝不写绝对路径。
     """
     digest = hashlib.sha256(plugin.read_bytes()).hexdigest()
+    # FINAL-U5：优先相对 cwd 的正斜杠路径；否则退化为裸文件名（sha256 可区分同名），
+    # 绝不把操作者机器的绝对目录结构写进仓库文件。
+    try:
+        display_path = plugin.resolve().relative_to(Path.cwd()).as_posix()
+    except ValueError:
+        display_path = plugin.name
     entry = {
         "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
-        "plugin": plugin.as_posix(),  # B02-004：正斜杠，跨平台稳定
+        "plugin": display_path,
         "plugin_sha256": digest,
         "operator": _current_operator(operator),
         "operation": "sign",

@@ -58,8 +58,10 @@
 
 - **密钥隔离**：维护者私钥只存离线 HSM / 加密 USB Key，从不接触网络；签名管道
   代码开源（market-server 的 `src/signing/` 定义 `trait Signer`，实现部署在离线机）。
-- **签名可审计**：每次签名操作记录时间、插件 SHA-256、操作者，写入透明性日志
-  （当前 `tools/sign_plugin.py` 已实现 `signing_transparency.jsonl`）。
+- **签名可审计（远期蓝图）**：目标态为带哈希链的透明性日志，可由第三方验证
+  "未被事后删改"。当前 `tools/sign_plugin.py` 写入的 `signing_transparency.jsonl`
+  为 **informational-only** 追加日志——无防篡改能力、无消费者校验，仅作人工
+  回溯线索；路径字段已脱敏为相对/文件名。
 - **密钥轮换**：新公钥随应用发布内置（`configs/plugin_trust.pub.pem` +
   `registry/keys/` 副本同步），旧签名仍可验证。
 - **灾难恢复**：私钥 Shamir Secret Sharing 分片（N-of-M 恢复）。
