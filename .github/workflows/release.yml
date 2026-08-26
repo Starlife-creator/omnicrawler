@@ -563,6 +563,9 @@ jobs:
       - name: 逐文件挂载资产（意外错误硬失败；超限项已在源头剔除）
         env:
           GH_TOKEN: ${{ github.token }}
+          # FINAL 修复：循环会 cd 进 artifacts 目录（无 .git），gh 解析仓库
+          # 依赖 GH_REPO 显式指定，否则报 "not a git repository"（v0.11.1 实测）
+          GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
