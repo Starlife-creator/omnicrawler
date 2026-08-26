@@ -69,14 +69,23 @@ def test_license_non_allowlisted_is_error() -> None:
 
 
 def test_allowlist_matches_market_gate() -> None:
-    """本地 audit 白名单与市场仓 generate_catalog.LICENSE_ALLOWLIST 同源一致（防漂移）。"""
-    market_generator = (
-        Path(__file__).resolve().parents[3].parent
-        / "OmniCrawler-market" / "tools" / "generate_catalog.py"
+    """本地 audit 白名单与市场仓 LICENSE_ALLOWLIST 同源一致（防漂移）。
+
+    FINAL 长期债 #3：generate_catalog 拆分为 tools/catalog_lib 包后，
+    白名单的单一事实源位于 catalog_lib/common.py；旧单文件路径保留为回退
+    （兼容未拆分的旧检出）。
+    """
+    market_root = (
+        Path(__file__).resolve().parents[3].parent / "OmniCrawler-market"
     )
-    if not market_generator.is_file():
+    candidates = [
+        market_root / "tools" / "catalog_lib" / "common.py",
+        market_root / "tools" / "generate_catalog.py",
+    ]
+    source = next((p for p in candidates if p.is_file()), None)
+    if source is None:
         pytest.skip("OmniCrawler-market 未 clone（需与主仓库同级）")
-    text = market_generator.read_text(encoding="utf-8")
+    text = source.read_text(encoding="utf-8")
     for identifier in LICENSE_ALLOWLIST:
         assert f'"{identifier}"' in text, f"市场仓白名单缺少 {identifier}（两侧漂移）"
 
