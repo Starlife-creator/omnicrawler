@@ -12,6 +12,13 @@ name: release
 #
 # 结构：三个平台构建 job 各自打包并上传 Actions artifact，聚合 release job
 # 下载全部产物后统一发布到 GitHub Release（避免多 job 并发写同一 Release）。
+#
+# FINAL 发布闸门（三层漏斗）：
+#   L0 构建门禁：任一平台 job 失败 ⇒ 聚合 job 不启动，发布不存在（needs 语义）
+#   L1 尺寸预分类：各平台构建后本地比对 ASSET_MAX_BYTES（默认 1.9 GiB），
+#      超限产物移出发布集并写入 SKIPPED-<platform>.txt 清单
+#   L2 逐文件挂载：聚合期按文件循环上传——意外错误硬失败（先修再发），
+#      仅"L1 已预判的超限缺席"允许降级；缺席自动写入 Release 说明
 
 on:
   push:
@@ -37,6 +44,9 @@ permissions:
 # verify-python-version job 会断言它与 pyproject 的 requires-python 下界一致，防止漂移。
 env:
   BUILD_PYTHON_VERSION: "3.12"
+  # FINAL 发布闸门阈值：单资产字节上限（≈1.9 GiB），低于 GitHub 硬限 2 GiB，
+  # 为签名/计量误差留余量。超限产物在平台 job 内被移出发布集。
+  ASSET_MAX_BYTES: "2039693706"
 
 jobs:
   verify-python-version:
@@ -133,6 +143,31 @@ jobs:
             -ReleaseOutputPath "$env:RUNNER_TEMP/artifacts" `
             @browserArgs @runtimeArgs
 
+      # ── FINAL L1 尺寸预分类：超限产物移出发布集 ───────────────────
+      - name: 尺寸预分类（超限移出，写缺席清单）
+        shell: pwsh
+        run: |
+          $max = [int64]'${{ env.ASSET_MAX_BYTES }}'
+          $skippedDir = Join-Path $env:RUNNER_TEMP "skipped-windows"
+          New-Item -ItemType Directory -Force -Path $skippedDir | Out-Null
+          Get-ChildItem "$env:RUNNER_TEMP/artifacts" -File |
+            Where-Object { $_.Name -notlike "SKIPPED-*" } |
+            ForEach-Object {
+              if ($_.Length -gt $max) {
+                Move-Item $_.FullName (Join-Path $skippedDir $_.Name)
+                $line = "{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB)
+                Add-Content -Path "$env:RUNNER_TEMP/artifacts/SKIPPED-windows.txt" `
+                  -Value $line -Encoding utf8
+                Write-Output "::warning::产物超过发布上限，已从发布集剔除: $line"
+              }
+            }
+          if (Test-Path "$env:RUNNER_TEMP/artifacts/SKIPPED-windows.txt") {
+            Write-Output "── 缺席清单 ──"
+            Get-Content "$env:RUNNER_TEMP/artifacts/SKIPPED-windows.txt"
+          } else {
+            Write-Output "全部产物在发布尺寸限制内"
+          }
+
       # ── 发布元数据（SBOM / provenance / 校验和）────────────────────
       # SBOM/provenance/checksums 依赖包元数据（omnicrawler-platform.requires 与
       # 各依赖的已装版本）；系统 python 是全新环境，先安装元数据依赖集。
@@ -162,9 +197,9 @@ jobs:
       - name: 为便携包生成 keyless 签名证明
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
+          # FINAL L1：glob 匹配现存归档——超限被剔除的产物自动不参与签名证明
           subject-path: |
-            ${{ runner.temp }}/artifacts/OmniCrawler-${{ steps.version.outputs.version }}-Windows-Portable-Standard.zip
-            ${{ runner.temp }}/artifacts/OmniCrawler-${{ steps.version.outputs.version }}-Windows-Portable-Full.zip
+            ${{ runner.temp }}/artifacts/OmniCrawler-*Portable-*.zip
           predicate-type: "https://in-toto.io/attestation/release/v0.1"
           predicate: "{}"
 
@@ -239,6 +274,32 @@ jobs:
           fi
           bash build_linux.sh --edition Full \
             --release-output "$RUNNER_TEMP/artifacts-linux" "${browserArgs[@]}"
+
+      # ── FINAL L1 尺寸预分类：超限产物移出发布集 ───────────────────
+      - name: 尺寸预分类（超限移出，写缺席清单）
+        shell: bash
+        run: |
+          set -euo pipefail
+          max="${ASSET_MAX_BYTES}"
+          skipped_dir="$RUNNER_TEMP/skipped-linux"
+          mkdir -p "$skipped_dir"
+          shopt -s nullglob
+          for f in "$RUNNER_TEMP/artifacts-linux"/*; do
+            base="$(basename "$f")"
+            case "$base" in SKIPPED-*) continue ;; esac
+            size=$(stat -c%s "$f")
+            if [ "$size" -gt "$max" ]; then
+              mv "$f" "$skipped_dir/$base"
+              line=$(printf '%s  %.1f MB' "$base" "$(echo "scale=1; $size/1048576" | bc)")
+              echo "$line" >> "$RUNNER_TEMP/artifacts-linux/SKIPPED-linux.txt"
+              echo "::warning::产物超过发布上限，已从发布集剔除: $line"
+            fi
+          done
+          if [ -f "$RUNNER_TEMP/artifacts-linux/SKIPPED-linux.txt" ]; then
+            echo "── 缺席清单 ──"; cat "$RUNNER_TEMP/artifacts-linux/SKIPPED-linux.txt"
+          else
+            echo "全部产物在发布尺寸限制内"
+          fi
 
       - name: 生成 SBOM 与校验和
         shell: bash
@@ -315,6 +376,32 @@ jobs:
           fi
           bash build_macos.sh --edition Full \
             --release-output "$RUNNER_TEMP/artifacts-macos" "${browserArgs[@]}"
+
+      # ── FINAL L1 尺寸预分类：超限产物移出发布集 ───────────────────
+      - name: 尺寸预分类（超限移出，写缺席清单）
+        shell: bash
+        run: |
+          set -euo pipefail
+          max="${ASSET_MAX_BYTES}"
+          skipped_dir="$RUNNER_TEMP/skipped-macos"
+          mkdir -p "$skipped_dir"
+          shopt -s nullglob
+          for f in "$RUNNER_TEMP/artifacts-macos"/*; do
+            base="$(basename "$f")"
+            case "$base" in SKIPPED-*) continue ;; esac
+            size=$(stat -c%s "$f")
+            if [ "$size" -gt "$max" ]; then
+              mv "$f" "$skipped_dir/$base"
+              line=$(printf '%s  %.1f MB' "$base" "$(echo "scale=1; $size/1048576" | bc)")
+              echo "$line" >> "$RUNNER_TEMP/artifacts-macos/SKIPPED-macos.txt"
+              echo "::warning::产物超过发布上限，已从发布集剔除: $line"
+            fi
+          done
+          if [ -f "$RUNNER_TEMP/artifacts-macos/SKIPPED-macos.txt" ]; then
+            echo "── 缺席清单 ──"; cat "$RUNNER_TEMP/artifacts-macos/SKIPPED-macos.txt"
+          else
+            echo "全部产物在发布尺寸限制内"
+          fi
 
       - name: 生成 SBOM 与校验和
         shell: bash
@@ -423,31 +510,87 @@ jobs:
           rm -f gpg-import.key
 
       # ── 上传到 GitHub Release ──────────────────────────────────────
-      - name: 发布到 GitHub Release
+      # FINAL L2：先组装说明（含 L1 缺席声明），创建 Release 元数据，
+      # 再按文件循环挂载——任何"非预判"上传错误立即硬失败（fail-fast）。
+      - name: 组装发布说明（含缺席声明）
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIR="$RUNNER_TEMP/artifacts"
+          TAG="${GITHUB_REF_NAME}"
+          BODY="$DIR/RELEASE_BODY.md"
+          {
+            echo "## OmniCrawler ${TAG}"
+            echo
+            echo "> 由 CI 自动构建（GitHub Actions 三平台 runner）。"
+            echo
+            echo "### 便携包"
+            echo "- **Windows**（Standard/Full）：GUI + Chromium +（Full 含）ChromeDriver/Tesseract/PaddleOCR"
+            echo "  - 安装：解压 ZIP → 双击 OmniCrawler-Launcher.bat"
+            echo "- **Linux**（Standard/Full）：GUI + Chromium +（Full 含）Tesseract/ChromeDriver/PaddleOCR（构建期打包，解压即用）"
+            echo "  - 安装：tar -xJf 包名 && ./OmniCrawler/omnicrawler --help"
+            echo "- **macOS**（Standard/Full）：.app（ad-hoc 签名）+（Full 含）Tesseract/ChromeDriver（Paddle OCR 以 Transformers 后端替代）；首次打开请右键 → 打开"
+            echo "  - 安装：挂载 dmg → 进入 OmniCrawler 文件夹 → 将 OmniCrawler.app 拖入 Applications"
+            echo
+            echo "### 安全"
+            echo "- 各平台产物附带 SHA256SUMS-platform.txt 校验和（与 omnicrawler-provenance.json 对应）"
+            echo "- omnicrawler-sbom-platform.cdx.json：各平台依赖物料清单（CycloneDX）"
+            echo "- 可用 gh attestation verify 包名 --owner Starlife-creator 验证构建来源（keyless 签名，无需导入任何密钥）"
+            echo "- 本版本未做代码签名（Windows Authenticode / macOS Developer ID）；校验完整性请以 SHA-256 为准"
+            shopt -s nullglob
+            manifests=("$DIR"/SKIPPED-*.txt)
+            if [ ${#manifests[@]} -gt 0 ]; then
+              echo
+              echo "### ⚠️ 本次未随发布的包（超过 GitHub 单文件上限 2 GiB）"
+              echo
+              cat "${manifests[@]}"
+              echo
+              echo "替代路径：下载对应平台 Standard 包，使用 omnicrawler components import 加装 OCR 组件；或源码安装 full 依赖集获得完整能力。"
+            fi
+          } > "$BODY"
+          echo "── RELEASE_BODY.md ──"
+          cat "$BODY"
+
+      - name: 发布到 GitHub Release（元数据）
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           tag_name: ${{ github.ref_name }}
           name: OmniCrawler ${{ github.ref_name }}
-          body: |
-            ## OmniCrawler ${{ github.ref_name }}
-
-            > 由 CI 自动构建（GitHub Actions 三平台 runner）。
-
-            ### 便携包
-            - **Windows**（Standard/Full）：GUI + Chromium +（Full 含）ChromeDriver/Tesseract/PaddleOCR
-              - 安装：解压 ZIP → 双击 `OmniCrawler-Launcher.bat`
-            - **Linux**（Standard/Full）：GUI + Chromium +（Full 含）Tesseract/ChromeDriver/PaddleOCR（构建期打包，解压即用）
-              - 安装：`tar -xJf <包> && ./OmniCrawler/omnicrawler --help`
-            - **macOS**（Standard/Full）：.app（ad-hoc 签名）+（Full 含）Tesseract/ChromeDriver（Paddle OCR 以 Transformers 后端替代）；首次打开请右键 → 打开
-              - 安装：挂载 dmg → 进入 OmniCrawler 文件夹 → 将 OmniCrawler.app 拖入 Applications
-
-            ### 安全
-            - 各平台产物附带 `SHA256SUMS-<platform>.txt` 校验和（与 `omnicrawler-provenance.json` 对应）
-            - `omnicrawler-sbom-<platform>.cdx.json`：各平台依赖物料清单（CycloneDX）
-            - 可用 `gh attestation verify <包名> --owner Starlife-creator` 验证构建来源（keyless 签名，无需导入任何密钥）
-            - 本版本未做代码签名（Windows Authenticode / macOS Developer ID）；校验完整性请以 SHA-256 为准
-          files: |
-            ${{ runner.temp }}/artifacts/*
-          fail_on_unmatched_files: true
+          body_path: ${{ runner.temp }}/artifacts/RELEASE_BODY.md
           generate_release_notes: true
           prerelease: ${{ inputs.prerelease || startsWith(github.ref_name, 'v') && contains(github.ref_name, '-') }}
+
+      - name: 逐文件挂载资产（意外错误硬失败；超限项已在源头剔除）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          cd "$RUNNER_TEMP/artifacts"
+          shopt -s nullglob
+          mounted=0
+          for f in *; do
+            case "$f" in
+              SKIPPED-*.txt|RELEASE_BODY.md) continue ;;
+            esac
+            gh release upload "$TAG" "$f" --clobber
+            echo "已挂载: $f"
+            mounted=$((mounted + 1))
+          done
+          echo "共挂载 $mounted 个资产"
+
+      - name: 缺席汇总告警（黄灯语义：成功但需知悉）
+        shell: bash
+        run: |
+          shopt -s nullglob
+          found=0
+          for m in "$RUNNER_TEMP/artifacts"/SKIPPED-*.txt; do
+            found=1
+            while IFS= read -r line; do
+              [ -n "$line" ] && echo "::warning::发布缺席（超限降级）: $line"
+            done < "$m"
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "无缺席产物，全部资产已挂载"
+          fi
