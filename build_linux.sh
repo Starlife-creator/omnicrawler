@@ -209,9 +209,10 @@ if [[ "$EDITION" == "Full" ]]; then
   # flag 支持环境变量覆盖（gflags flagsFromEnv），import paddle 时按绝对
   # 路径 dlopen，无需复制 .so。此前"复制 paddle/libs/*.so 到 _internal 根"
   # 虽让库加载成功，却把 Linux Full 包推过 GitHub Release 单文件 2GB
-  # （2147483648 字节）上限（v0.9.1 run 32290393108：
-  # OmniCrawler-0.9.1-Linux-Portable-Full.tar.gz=2.1G，发布 API 拒绝
-  # size must be less than 2147483648），故移除复制逻辑。
+  # （2147483648 字节）上限（历史事故，run 32290393108：Linux Full 归档
+  # 实测 2.1G，发布 API 拒绝 size must be less than 2147483648），
+  # 故移除复制逻辑。版本细节以 run ID 回溯为准，避免注释内嵌版本号
+  # 触发 bump_version 硬编码扫描 WARN。
 fi
 cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/packaging/THIRD_PARTY_NOTICES.md" "$RELEASE_ROOT/"
 echo "OmniCrawler $EDITION portable edition" > "$RELEASE_ROOT/EDITION.txt"
