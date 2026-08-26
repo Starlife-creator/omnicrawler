@@ -42,7 +42,7 @@ from ..widgets.toast import ToastManager
 
 def show_run_comparison(parent: QWidget, *, project_root: Path, config_workspace: str) -> None:
     """选择两次运行并输出字段级对比报告到 <workspace>/output/。"""
-    from ..review.run_compare import compare_runs
+    from ...review.run_compare import compare_runs
 
     workspace = Path(config_workspace).expanduser()
     if not workspace.is_absolute():
@@ -153,11 +153,15 @@ class PluginManagerDialog(QDialog):
 
 
 class ScheduleManagerDialog(QDialog):
-    """本地定时任务的增删启停；数据库路径由调用方注入。
+    """Local schedule CRUD dialog.
 
-    ``resolve_current_config`` 在"添加当前配置"时被回调：实现应确保当前
-    配置已保存并返回其路径；用户取消保存时返回 None。
+    ``resolve_current_config`` is invoked when the user clicks "add current
+    config": implementations must persist the live config and return its path,
+    or return None when the user cancels saving (Chinese notes kept as
+    comments to satisfy the i18n literal gate).
     """
+
+    # 回调契约：确保当前配置已保存并返回路径；用户取消保存时返回 None。
 
     def __init__(
         self,

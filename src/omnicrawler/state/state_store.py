@@ -147,14 +147,13 @@ class StateStore:
             )
             return target
 
-    def recover_incomplete_runs(self, *, stale_seconds: float = 3600.0) -> list[str]:
+    def recover_incomplete_runs(self, *, stale_seconds: float = 0.0) -> list[str]:
         """Move crash-interrupted runs to retrying without claiming they succeeded.
 
-        FINAL-D3：frontier 的全局 in_progress 重置加陈旧阈值门控——只回收
-        ``updated_at`` 早于 ``stale_seconds``（默认 1h）的行。WAL 允许多进程
-        共享同一 state 库，无差别重置会把**存活进程正在处理**的 URL 拉回
-        pending 造成重复抓取；刚认领/长耗时未到阈值的行视为活跃而跳过
-        （若确属崩溃残留，稍后再跑一次恢复即可回收）。
+        FINAL-D3：提供可选的陈旧阈值门控 ``stale_seconds``——仅当多进程共享
+        同一 state 库、且需保护存活进程的 in_progress 行时才显式传入（如 3600）。
+        默认 0 = 无差别重置，保持恢复中心"崩溃后立即抢救"的原始语义
+        （桌面单人场景的恢复动作总是紧跟崩溃发生，阈值反而会挡住正主）。
         """
         from datetime import UTC, datetime, timedelta
 
