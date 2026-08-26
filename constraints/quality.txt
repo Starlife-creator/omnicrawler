@@ -1,4 +1,4 @@
-# Reproducible quality/build toolchain for OmniCrawler 0.11.0.
+# Reproducible quality/build toolchain for OmniCrawler 0.11.1.
 # Update deliberately and record the change in CHANGELOG.md and docs/TEST_REPORT.md.
 pip==26.2.1
 setuptools==84.0.0

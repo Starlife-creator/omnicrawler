@@ -102,6 +102,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--report", action="store_true",
         help="输出结构化变更报告并退出（供 AI 生成摘要后通过 -m 传入）",
     )
+    parser.add_argument(
+        "--from-version", dest="from_version", metavar="OLD",
+        default=None,
+        help="高级：断点续跑时显式指定真实旧版本号（崩溃后 pyproject 已是"
+             "目标版本、脚本按 current==target 早退时的恢复入口）。文件级步骤"
+             "具备跳过语义，但 CHANGELOG 可能重复条目，续跑后请人工复核。",
+    )
     return parser.parse_args(argv)
 
 
@@ -578,7 +585,7 @@ def step_self_validate(root: Path, new: str) -> None:
         print("  [info] 未发现本地运行时/venv（.runtime 或 .venv 缺失），跳过环境版本对账。")
 
 
-def step_git_operations(root: Path, new: str) -> None:
+def step_git_operations(root: Path, new: str, renamed: dict[str, str]) -> None:
     """Step 9: git add / commit / tag。"""
     print("\n  ── Git 操作 ──")
 
@@ -597,11 +604,14 @@ def step_git_operations(root: Path, new: str) -> None:
 
     _git(["add", "-u"], "暂存已跟踪变更（B12-003：不用 -A，避免未跟踪敏感文件被一并提交）")
 
-    # 版本化文档（COMPATIBILITY/OPTIMIZATION_PLAN/RELEASE_REPORT）走"删除旧 + 生成新"
-    # 而非 git mv，新文件为未跟踪状态，`git add -u` 不会暂存 → 需按白名单显式 add。
-    # 仅 add 已知的新版本化路径，保持 B12-003 不暂存未跟踪敏感文件的初衷。
-    new_docs = [pattern.format(new=new) for _, pattern in _VERSIONED_FILES]
-    _git(["add", "--"] + new_docs, f"暂存新版本化文档（{', '.join(new_docs)}）")
+    # FINAL 修复②：只暂存实际发生的重命名目标——白名单中"旧源本就不存在"
+    # 的条目（如 OPTIMIZATION_PLAN 首次引入前）会让整条 git add 失败并中断
+    # 收尾，致 commit/tag 未创建（0.11.0 bump 实测）。
+    staged_docs = sorted({rel for rel in renamed.values() if (root / rel).is_file()})
+    if staged_docs:
+        _git(["add", "--"] + staged_docs, f"暂存新版本化文档（{', '.join(staged_docs)}）")
+    else:
+        print("     [info] 无新版本化文档需要暂存")
 
     message = f"release: bump to {new}"
     _git(["commit", "-m", message], "提交")
@@ -614,6 +624,14 @@ def step_git_operations(root: Path, new: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+
+    # FINAL 修复①：Windows GBK 控制台无法编码 ✓/→/─ 等输出字符，
+    # 曾在重命名步骤中途触发 UnicodeEncodeError 使流程半途而废
+    # （0.11.0 bump 实测）。统一将输出流重配置为 UTF-8 并替换不可编码字符。
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+
     new = args.version
     _validate_version(new)
 
@@ -621,7 +639,12 @@ def main(argv: list[str] | None = None) -> int:
     # B12-003：所有子进程已显式传 cwd=root，此处不再 os.chdir——
     # 删除模块级 CWD 副作用，避免影响脚本外调用方；各 step_* 均以 root 参数定位文件。
 
+    # FINAL 修复③：断点续跑入口——崩溃后 pyproject 已是目标版本，
+    # 默认按 current==target 早退；显式 --from-version 覆盖真实旧版号后可续跑。
     old = _read_old_version(root)
+    if getattr(args, "from_version", None):
+        old = args.from_version
+        print(f"[resume] 以 --from-version 指定旧版本号: {old} → {new}")
     if old == new:
         print(f"当前版本已是 {new}，无需更新。")
         return 0
@@ -646,7 +669,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── Step 4: 重命名版本化文件 ──
     print("\n[3/7] 重命名版本化文件")
-    step_rename_versioned_files(root, old, new)
+    renamed = step_rename_versioned_files(root, old, new)
 
     # ── Step 5: 替换文档正文 ──
     print("\n[4/7] 替换文档正文中的版本号")
@@ -676,7 +699,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.no_git:
         print("\n  --no-git: 跳过 git 操作")
     else:
-        step_git_operations(root, new)
+        step_git_operations(root, new, renamed)
 
     print(f"\n{'=' * 60}")
     print(f"✓ 版本号更新完成: {old} → {new}")

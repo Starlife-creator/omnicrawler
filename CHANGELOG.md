@@ -1,6 +1,25 @@
 # Changelog
 
 ## Unreleased
+## 0.11.1 - 2026-08-26
+
+### 变更
+
+- ci(release): 发布闸门三层漏斗——单包超限不再劫持整次发布
+- fix: 补提交三处修复——修 CI quality 红（release_integrity 静态导入门禁）
+- test: 白名单防漂移守卫指向 catalog_lib/common.py（拆分后的单一事实源）
+- chore(security): 透明日志诚实降级为 informational-only（长期债 #5 方案 B）
+- refactor(gui): 抽离 MainWindow 三个内联对话框至 views/project_dialogs（长期债 #1 Phase A）
+- refactor(cli): build_parser 335 行单体函数按域拆分至 _parsers/ 包
+- style: 移除 delegates 测试中未用的 RunController 导入（services 同名类为准）
+- test: 补 CLI 注册表契约与 delegates 布线测试；收编 tests/unit/other 杂物桶
+- fix: 路线图第三梯队低成本项落地（R-1/R-2/D-3/D-8/S-1 口径）
+- fix: 审查 FINAL 路线图梯队一/二 13 项落地（GUI 生命周期 + 安全卫生 + 数据正确性）
+- chore(deps): 根生态也忽略 PyYAML——PR #53 来自 / 生态 runtime 组，补齐 #52 未覆盖面
+- chore(deps): dependabot 忽略 PyYAML——paddlex 精确锁 6.0.2，升级必撞 PIP_CONSTRAINT
+- chore(deps): bump ruff from 0.16.3 to 0.16.4 in /constraints (#46)
+- chore(deps): bump mypy from 2.3.0 to 2.3.1 in /constraints
+
 ## 0.11.0 - 2026-08-26
 
 ### 变更
