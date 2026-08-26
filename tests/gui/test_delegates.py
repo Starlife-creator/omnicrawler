@@ -69,6 +69,19 @@ def test_delegate_backref_points_to_main_window(main_window) -> None:  # type: i
         assert delegate._mw is main_window, f"{attr}._mw 未回指主窗口"
 
 
+def test_base_delegate_has_no_implicit_forwarding() -> None:
+    """FINAL Phase B 防回归：__getattr__ 全量转发不得复活。
+
+    复活即意味着委托可以无声翻改主窗口任意私有状态（对象级耦合回归）。
+    """
+    from omnicrawler.gui.delegates._base import _BaseDelegate
+
+    assert not hasattr(_BaseDelegate, "__getattr__"), (
+        "_BaseDelegate 重新引入了 __getattr__ 隐式转发——显式 self._mw.X "
+        "契约被破坏（长期债 #1 Phase B）"
+    )
+
+
 def test_run_controller_binds_when_project_loaded(main_window, tmp_path) -> None:  # type: ignore[no-untyped-def]
     """RunController 为懒构建：绑定项目（_bind_application_controllers）后出现。
 

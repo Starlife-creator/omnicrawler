@@ -87,15 +87,9 @@ def _repolish_widget(widget: QWidget) -> None:
     widget.ensurePolished()
 
 
-def _selector_kind(selector: str) -> Literal["css", "xpath"]:
-    """判断选择器是 XPath 还是 CSS（默认 css）；与 step3_fields.selector_kind 同语义。"""
-    stripped = (selector or "").strip()
-    if not stripped:
-        return "css"
-    # XPath 通常以 / .// ( @ [ 或 // 开头；CSS 选择器不会
-    if stripped.startswith(("/", ".//", "(", "@", "//")) or "[@" in stripped:
-        return "xpath"
-    return "css"
+# FINAL Phase C：纯逻辑缝外置（Strangler 第一刀）——指纹与选择器判定
+# 移入 task_canvas_logic，本模块仅保留 UI 装配与信号接线。
+from .task_canvas_logic import field_fingerprint, selector_kind as _selector_kind
 
 
 class _PlanReviewWorker(QThread):
@@ -1354,13 +1348,8 @@ class TaskCanvas(QScrollArea):
         )
 
     def _field_fingerprint(self) -> str:
-        """字段指纹：字段名 + 选择器 + 类型的有序序列化 MD5（忽略顺序无关字段属性）。"""
-        import hashlib
-
-        parts = [
-            f"{f.name}\x1f{f.selector}\x1f{f.selector_type}" for f in self._config.fields
-        ]
-        return hashlib.md5("\n".join(parts).encode("utf-8")).hexdigest()
+        """字段指纹：委托纯逻辑缝（task_canvas_logic.field_fingerprint）。"""
+        return field_fingerprint(self._config.fields)
 
     def notify_external_edit(self, updated_config: CrawlConfig | None) -> None:
         """YAML 编辑器外部编辑回调：无冲突静默同步，有冲突锁定 + 二选一。"""
