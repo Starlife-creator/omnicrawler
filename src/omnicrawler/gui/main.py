@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-import json
 import logging
 import sys
 import traceback
@@ -66,7 +65,6 @@ if not _cli_mode():
             QComboBox,
             QDialog,
             QDialogButtonBox,
-            QFormLayout,
             QHBoxLayout,
             QInputDialog,
             QLabel,
@@ -78,7 +76,6 @@ if not _cli_mode():
             QMessageBox,
             QProgressBar,
             QPushButton,
-            QSpinBox,
             QStackedWidget,
             QStatusBar,
             QSystemTrayIcon,
@@ -101,7 +98,6 @@ if not _cli_mode():
     from ..services.offline_demo import create_demo_workspace
     from ..services.ux_service import QuickTaskDraft
     from ..sources.site_inspector import inspect_url
-    from ..state import StateStore
     from ..templates.recipe_engine import compose_recipe, diff_config
     from ..templates.template_catalog import bundled_template_catalog
     from .async_workers import AsyncWorkerManager
@@ -1300,95 +1296,36 @@ class MainWindow(QMainWindow):
             ToastManager.instance().info(_("当前项目还没有错误中心报告；完成一次任务后会自动生成。"))
 
     def _show_run_comparison(self) -> None:
-        from ..review.run_compare import compare_runs
+        # FINAL-①A：流程下沉至 views.project_dialogs（原内联 40 行）
+        from .views.project_dialogs import show_run_comparison
 
-        workspace = Path(self._config.workspace).expanduser()
-        if not workspace.is_absolute():
-            workspace = self._project_root / workspace
-        database = workspace / "state.sqlite3"
-        if not database.is_file():
-            ToastManager.instance().info(_("当前项目还没有可对比的运行记录。"))
-            return
-        with StateStore(database) as state:
-            rows = state.rows(
-                "SELECT run_id, started_at, status FROM runs ORDER BY started_at DESC LIMIT 30"
-            )
-            if len(rows) < 2:
-                ToastManager.instance().info(_("至少完成两次运行后才能进行对比。"))
-                return
-            labels = [f"{row['started_at']} · {row['status']} · {row['run_id']}" for row in rows]
-            before_label, ok = QInputDialog.getItem(self, _("运行对比"), _("选择较早的一次运行："), labels, 1, False)
-            if not ok:
-                return
-            after_label, ok = QInputDialog.getItem(self, _("运行对比"), _("选择较新的一次运行："), labels, 0, False)
-            if not ok:
-                return
-            before_id = rows[labels.index(before_label)]["run_id"]
-            after_id = rows[labels.index(after_label)]["run_id"]
-            if before_id == after_id:
-                QMessageBox.warning(self, _("运行对比"), _("请选择两次不同的运行。"))
-                return
-            report = compare_runs(state, str(before_id), str(after_id))
-        output = workspace / "output" / f"run_comparison_{str(before_id)[:8]}_{str(after_id)[:8]}.json"
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-        QMessageBox.information(
-            self, _("运行对比完成"),
-            _(f"新增：{report['added']}\n修改：{report['modified']}\n") +
-
-            _(f"确认删除：{report['removed']}\n可能删除：{report['possibly_removed']}\n\n报告：{output}"),
+        show_run_comparison(
+            self, project_root=self._project_root,
+            config_workspace=str(self._config.workspace),
         )
 
     def _manage_plugins(self) -> None:
+        # FINAL-①A：清单 UI 下沉至 PluginManagerDialog；权限批准与配置
+        # 持久化属于主窗口职责，保留在此。
         from ..plugins.plugin_inspector import inspect_directory
+        from .views.project_dialogs import PluginManagerDialog
 
         directory = self._project_root / "plugins"
         directory.mkdir(parents=True, exist_ok=True)
         inspections = inspect_directory(directory)
-        dialog = QDialog(self)
-        dialog.setWindowTitle(_("插件管理与权限"))
-        dialog.resize(760, 460)
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel(_("插件启用前只做静态检查；所需权限会明确列出，不会自动批准。")))
-        listing = QListWidget(dialog)
         configured = self._config.passthrough.get("plugins", {})
         current_paths = configured.get("paths", []) if isinstance(configured, dict) else []
         current_resolved = {
             str((self._project_root / str(path)).resolve()) if not Path(str(path)).is_absolute() else str(Path(str(path)).resolve())
             for path in current_paths
         }
-        for inspection in inspections:
-            state = _("兼容") if inspection.compatible else _("不可用")
-            permissions = ", ".join(inspection.permissions) or _("无额外权限")
-            item = QListWidgetItem(_(f"{inspection.name} {inspection.version} · {state} · 权限: {permissions}"))
-            item.setData(Qt.ItemDataRole.UserRole, inspection)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            checked = inspection.path in current_resolved and inspection.compatible
-            item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
-            item.setToolTip(inspection.description + ("\n" + "\n".join(inspection.errors) if inspection.errors else ""))
-            if not inspection.compatible:
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
-            listing.addItem(item)
-        layout.addWidget(listing)
-        open_button = QPushButton(_("打开插件目录"))
-        open_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory))))
-        layout.addWidget(open_button)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
+        dialog = PluginManagerDialog(
+            self, project_root=self._project_root,
+            current_paths=current_resolved, inspections=inspections,
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        selected = []
-        requested_permissions: set[str] = set()
-        for row in range(listing.count()):
-            row_item = listing.item(row)
-            assert row_item is not None
-            if row_item.checkState() != Qt.CheckState.Checked:
-                continue
-            inspection = row_item.data(Qt.ItemDataRole.UserRole)
-            selected.append(str(Path(inspection.path).resolve().relative_to(self._project_root.resolve())))
-            requested_permissions.update(inspection.permissions)
+        selected, requested_permissions = dialog.collect_selection()
         if requested_permissions:
             answer = QMessageBox.question(
                 self, _("批准插件权限"),
@@ -1480,125 +1417,23 @@ class MainWindow(QMainWindow):
         self._finish_deferred_close_if_safe()
 
     def _manage_schedules(self) -> None:
-        from ..runtime.scheduler import ScheduleStore
+        # FINAL-①A：CRUD UI 下沉至 ScheduleManagerDialog；"保存当前配置"
+        # 经回调交回主窗口（配置对象归主窗口所有）。
+        from .views.project_dialogs import ScheduleManagerDialog
 
-        dialog = QDialog(self)
-        dialog.setWindowTitle(_("定时任务"))
-        dialog.resize(680, 420)
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel(_(
-            _("任务保存在本地；请用系统计划任务定期执行 omnicrawler schedule run-due。")
-        )))
-        schedule_list = QListWidget(dialog)
-        layout.addWidget(schedule_list)
-
-        form = QFormLayout()
-        interval = QSpinBox(dialog)
-        interval.setRange(1, 10080)
-        interval.setValue(60)
-        interval.setSuffix(_(" 分钟"))
-        form.addRow(_("运行间隔"), interval)
-        # CalendarPopup 接入：选择首次运行日期
-        start_row = QHBoxLayout()
-        start_date_label = QLineEdit()
-        start_date_label.setReadOnly(True)
-        start_date_label.setPlaceholderText(_("立即开始（点击选择日期）"))
-        start_row.addWidget(start_date_label)
-        start_date_btn = QPushButton("📅")
-        start_date_btn.setFixedWidth(36)
-        start_date_btn.setToolTip(_("选择首次运行日期"))
-
-        def _pick_date() -> None:
-            from .widgets.calendar_popup import CalendarPopup
-            popup = CalendarPopup(dialog)
-            # A15：走公开信号 date_selected，不再访问私有 _calendar
-            popup.date_selected.connect(start_date_label.setText)
-            popup.exec()
-
-        start_date_btn.clicked.connect(_pick_date)
-        start_row.addWidget(start_date_btn)
-        form.addRow(_("首次运行"), start_row)
-        require_ac = QCheckBox(_("仅接通电源时运行"), dialog)
-        require_ac.setChecked(True)
-        form.addRow(_("电源条件"), require_ac)
-        require_network = QCheckBox(_("需要可用网络接口"), dialog)
-        require_network.setChecked(True)
-        form.addRow(_("网络条件"), require_network)
-        minimum_battery = QSpinBox(dialog)
-        minimum_battery.setRange(0, 100)
-        minimum_battery.setValue(30)
-        minimum_battery.setSuffix("%")
-        form.addRow(_("最低电量"), minimum_battery)
-        layout.addLayout(form)
-
-        buttons = QHBoxLayout()
-        add_button = QPushButton(_("添加当前配置"), dialog)
-        toggle_button = QPushButton(_("启用/停用选中任务"), dialog)
-        close_button = QPushButton(_("关闭"), dialog)
-        buttons.addWidget(add_button)
-        buttons.addWidget(toggle_button)
-        buttons.addStretch(1)
-        buttons.addWidget(close_button)
-        layout.addLayout(buttons)
-
-        database = self._project_root / "work" / "schedules.sqlite3"
-
-        def refresh() -> None:
-            schedule_list.clear()
-            with ScheduleStore(database) as store:
-                for value in store.list():
-                    state = _("启用") if value["enabled"] else _("停用")
-                    minutes = max(1, int(value["interval_seconds"]) // 60)
-                    item = QListWidgetItem(
-                        f"[{state}] {value['name']} — {minutes} {_('分钟')} — {value['config_path']}"
-                    )
-                    item.setData(Qt.ItemDataRole.UserRole, value["schedule_id"])
-                    item.setData(Qt.ItemDataRole.UserRole + 1, bool(value["enabled"]))
-                    schedule_list.addItem(item)
-
-        def add_current() -> None:
+        def _resolve_current_config() -> Path | None:
             if not self._config_path:
                 self._save_config_as()
             if not self._config_path:
-                return
+                return None
             self._save_config()
-            try:
-                with ScheduleStore(database) as store:
-                    store.add(
-                        self._config_path.stem,
-                        self._config_path,
-                        interval.value() * 60,
-                        conditions={
-                            "require_ac": require_ac.isChecked(),
-                            "require_network": require_network.isChecked(),
-                            "minimum_battery_percent": minimum_battery.value(),
-                        },
-                    )
-            except Exception as exc:
-                QMessageBox.critical(dialog, _("添加失败"), str(exc))
-                return
-            refresh()
+            return self._config_path
 
-        def toggle_current() -> None:
-            item = schedule_list.currentItem()
-            if item is None:
-                QMessageBox.information(dialog, _("提示"), _("请先选择一个任务。"))
-                return
-            try:
-                with ScheduleStore(database) as store:
-                    store.set_enabled(
-                        str(item.data(Qt.ItemDataRole.UserRole)),
-                        not bool(item.data(Qt.ItemDataRole.UserRole + 1)),
-                    )
-            except Exception as exc:
-                QMessageBox.critical(dialog, _("更新失败"), str(exc))
-                return
-            refresh()
-
-        add_button.clicked.connect(add_current)
-        toggle_button.clicked.connect(toggle_current)
-        close_button.clicked.connect(dialog.accept)
-        refresh()
+        dialog = ScheduleManagerDialog(
+            self,
+            database=self._project_root / "work" / "schedules.sqlite3",
+            resolve_current_config=_resolve_current_config,
+        )
         dialog.exec()
 
     def _show_template_library(self) -> None:
