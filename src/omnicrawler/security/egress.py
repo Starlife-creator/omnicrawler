@@ -222,7 +222,7 @@ class EgressBroker:
         try:
             mtime_ns = path.stat().st_mtime_ns
         except OSError:
-            self._control_cache = (None, False)
+            self._control_cache: tuple[int | None, bool] = (None, False)
             return False
         cached = getattr(self, "_control_cache", None)
         if cached is not None and cached[0] == mtime_ns:
@@ -232,7 +232,8 @@ class EgressBroker:
             stopped = bool(isinstance(state, dict) and state.get("stop_requested"))
         except (OSError, json.JSONDecodeError):
             stopped = False
-        self._control_cache = (mtime_ns, stopped)
+        cache: tuple[int | None, bool] = (mtime_ns, stopped)
+        self._control_cache = cache
         return stopped
 
     def _check_switches(self) -> None:

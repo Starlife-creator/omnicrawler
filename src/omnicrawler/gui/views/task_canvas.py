@@ -89,7 +89,8 @@ def _repolish_widget(widget: QWidget) -> None:
 
 # FINAL Phase C：纯逻辑缝外置（Strangler 第一刀）——指纹与选择器判定
 # 移入 task_canvas_logic，本模块仅保留 UI 装配与信号接线。
-from .task_canvas_logic import field_fingerprint, selector_kind as _selector_kind
+from .task_canvas_logic import field_fingerprint
+from .task_canvas_logic import selector_kind as _selector_kind
 
 
 class _PlanReviewWorker(QThread):
