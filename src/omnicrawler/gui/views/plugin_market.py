@@ -32,8 +32,9 @@ from PySide6.QtWidgets import (
 
 from ...core.config import DEFAULTS
 from ...plugins.market_client import (
+    catalog_cache_path,
     download_and_verify,
-    fetch_catalog,
+    fetch_catalog_verified,
     fetch_resource,
     verify_installed,
 )
@@ -75,21 +76,40 @@ def _market_egress(project_root: Path) -> Any:
 class _CatalogWorker(BackgroundWorker):
     """后台拉取 catalog：先远程，失败回退本地 OmniCrawler-market/。"""
 
-    def __init__(self, catalog_url: str, local_fallback: Path, egress: Any, parent=None) -> None:
+    def __init__(
+        self,
+        catalog_url: str,
+        local_fallback: Path,
+        trust_source: str,
+        cache_root: Path,
+        egress: Any,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self._catalog_url = catalog_url
         self._local_fallback = local_fallback
+        self._trust_source = trust_source
+        self._cache_root = cache_root
         self._egress = egress
 
     def work(self) -> dict[str, Any]:
         try:
-            catalog = fetch_catalog(self._catalog_url, egress=self._egress)
+            catalog = fetch_catalog_verified(
+                self._catalog_url,
+                self._trust_source,
+                cache_path=catalog_cache_path(self._cache_root, self._catalog_url),
+                egress=self._egress,
+            )
             catalog["_source"] = self._catalog_url
             return catalog
         except Exception:
             if self._local_fallback.is_dir():
                 local = str(self._local_fallback)
-                catalog = fetch_catalog(local)
+                catalog = fetch_catalog_verified(
+                    local,
+                    self._trust_source,
+                    cache_path=catalog_cache_path(self._cache_root, local),
+                )
                 catalog["_source"] = local
                 return catalog
             raise
@@ -395,7 +415,14 @@ class PluginMarketView(QWidget):
         self._refresh_btn.setEnabled(False)
 
         catalog_url = self._catalog_url or (self._bundled_catalog_dir or str(self._local_fallback))
-        self._catalog_worker = _CatalogWorker(catalog_url, self._local_fallback, self._egress, parent=self)
+        self._catalog_worker = _CatalogWorker(
+            catalog_url,
+            self._local_fallback,
+            self._trust_source,
+            self._base / ".omnicrawler" / "catalog-cache",
+            self._egress,
+            parent=self,
+        )
         self._catalog_worker.succeeded.connect(self._on_catalog_loaded)
         self._catalog_worker.failed.connect(self._on_catalog_error)
         self._catalog_worker.finished.connect(self._catalog_worker.deleteLater)

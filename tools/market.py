@@ -27,9 +27,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from omnicrawler.plugins.market_client import (  # noqa: E402
+    catalog_cache_path,
     download_and_verify,
     download_template_and_verify,
-    fetch_catalog,
+    fetch_catalog_verified,
     fetch_resource,
     verify_installed,
     verify_installed_template,
@@ -63,8 +64,14 @@ def _resolve_trust(arg: str | None) -> str:
     sys.exit("错误：未配置信任根公钥，无法验签。请在 plugins.trust_public_key 配置 ed25519 公钥。")
 
 
+def _trusted_catalog(catalog_url: str) -> dict:
+    trust = _resolve_trust(None)
+    cache = catalog_cache_path(Path.home() / ".omnicrawler" / "catalog-cache", catalog_url)
+    return fetch_catalog_verified(catalog_url, trust, cache_path=cache)
+
+
 def cmd_list(args: argparse.Namespace) -> int:
-    catalog = fetch_catalog(_resolve_catalog_url(args.catalog_url))
+    catalog = _trusted_catalog(_resolve_catalog_url(args.catalog_url))
     entries = catalog.get("plugins", [])
     if not entries:
         print("catalog 中暂无插件。")
@@ -84,7 +91,7 @@ def cmd_list(args: argparse.Namespace) -> int:
 
 def cmd_info(args: argparse.Namespace) -> int:
     catalog_url = _resolve_catalog_url(args.catalog_url)
-    catalog = fetch_catalog(catalog_url)
+    catalog = _trusted_catalog(catalog_url)
     entry = None
     for candidate in catalog.get("plugins", []):
         if candidate["id"] == args.id:
@@ -134,7 +141,7 @@ def _entries(catalog: dict, key: str) -> list[dict]:
 
 
 def cmd_templates_list(args: argparse.Namespace) -> int:
-    catalog = fetch_catalog(_resolve_catalog_url(args.catalog_url))
+    catalog = _trusted_catalog(_resolve_catalog_url(args.catalog_url))
     entries = _entries(catalog, "templates")
     if not entries:
         print("catalog 中暂无模板。")
@@ -150,7 +157,7 @@ def cmd_templates_list(args: argparse.Namespace) -> int:
 
 def cmd_templates_info(args: argparse.Namespace) -> int:
     catalog_url = _resolve_catalog_url(args.catalog_url)
-    catalog = fetch_catalog(catalog_url)
+    catalog = _trusted_catalog(catalog_url)
     entry = next((item for item in _entries(catalog, "templates") if item["id"] == args.id), None)
     if entry is None:
         print(f"catalog 中无此模板: {args.id}")
@@ -199,7 +206,7 @@ def cmd_templates_submit(args: argparse.Namespace) -> int:
     ``--out-dir``（默认市场仓）以供本地备好、手动提交。
     """
     from omnicrawler.plugins.market_uploader import UploadError, create_market_pr
-    from omnicrawler.plugins.plugin_packaging import build_template_upload
+    from omnicrawler.plugins.plugin_packaging import build_template_submission
 
     tpl_dir = Path(args.template_dir)
     try:
@@ -209,7 +216,7 @@ def cmd_templates_submit(args: argparse.Namespace) -> int:
         return 1
     password = args.password or os.environ.get("OMNICRAWL_IDENTITY_PASSWORD", "")
     try:
-        files = build_template_upload(
+        files = build_template_submission(
             tpl_dir,
             username=args.username,
             password=password,
@@ -240,7 +247,13 @@ def cmd_templates_submit(args: argparse.Namespace) -> int:
     title = args.title or f"模板提交：{args.id}"
     body = f"类型：template\nID：{args.id}\n由 {args.username} 通过 CLI 提交。"
     try:
-        url = create_market_pr(files=files, title=title, body=body)
+        url = create_market_pr(
+            files=files,
+            title=title,
+            body=body,
+            dco_confirmed=args.accept_dco,
+            draft=True,
+        )
     except UploadError as exc:
         print(f"提交 PR 失败: {exc}")
         return 1
@@ -292,6 +305,11 @@ def build_parser() -> argparse.ArgumentParser:
     t_sub.add_argument("--username", required=True, help="创作者身份用户名")
     t_sub.add_argument("--password", default=None, help="身份密码（默认读 OMNICRAWL_IDENTITY_PASSWORD）")
     t_sub.add_argument("--title", default=None, help="PR 标题")
+    t_sub.add_argument(
+        "--accept-dco",
+        action="store_true",
+        help="明确确认 DCO 后创建带 Signed-off-by 的 Draft PR",
+    )
     t_sub.add_argument("--no-pr", action="store_true", help="只本地备好上传包，不推 PR")
     t_sub.add_argument(
         "--out-dir", default=str(ROOT.parent / "OmniCrawler-market"), help="--no-pr 写入根目录（默认市场仓）"

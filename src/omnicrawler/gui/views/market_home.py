@@ -9,13 +9,16 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
+    QFileDialog,
     QFormLayout,
     QFrame,
     QHBoxLayout,
@@ -34,10 +37,11 @@ from PySide6.QtWidgets import (
 
 from ...plugins.identity import IdentityStore
 from ...plugins.market_uploader import create_market_pr, pr_body
+from ...plugins.package_importer import import_package_folder, inspect_package
 from ...plugins.plugin_packaging import (
     LocalPluginEntry,
-    build_plugin_upload,
-    build_template_upload,
+    build_plugin_submission,
+    build_template_submission,
     scan_local_plugins,
     sign_plugin_local,
 )
@@ -85,7 +89,13 @@ class _UploadWorker(BackgroundWorker):
         self._body = body
 
     def work(self) -> str:
-        return create_market_pr(files=self._payload, title=self._title, body=self._body)
+        return create_market_pr(
+            files=self._payload,
+            title=self._title,
+            body=self._body,
+            dco_confirmed=True,
+            draft=True,
+        )
 
 
 def _status_badge(entry: LocalPluginEntry) -> str:
@@ -288,7 +298,9 @@ class _LocalPluginsPane(QWidget):
         listing = dialog.listing()
         self._upload_btn.setEnabled(False)
         try:
-            payload = build_plugin_upload(entry.path, username=username, password=password, listing=listing)
+            payload = build_plugin_submission(
+                entry.path, username=username, password=password, listing=listing
+            )
         except Exception as exc:  # noqa: BLE001
             ToastManager.instance().error(_(f"打包失败：{exc}"))
             self._upload_btn.setEnabled(True)
@@ -495,13 +507,13 @@ class _LocalTemplatesPane(QWidget):
         fields = dialog.template_fields()
         self._upload_btn.setEnabled(False)
         try:
-            payload = build_template_upload(
+            payload = build_template_submission(
                 template_dir,
                 username=username,
                 password=password,
                 template_id=fields["id"],
-                name=fields["name"],
                 version=fields["version"],
+                name=fields["name"],
                 category=fields["category"],
                 summary=fields["summary"],
                 listing=dialog.listing(),
@@ -573,6 +585,11 @@ class UploadMarketDialog(QDialog):
         note.setWordWrap(True)
         layout.addWidget(note)
 
+        self._dco = QCheckBox(
+            _("我确认有权提交这些内容，并同意 Developer Certificate of Origin（DCO）。")
+        )
+        layout.addWidget(self._dco)
+
         buttons = QHBoxLayout()
         buttons.addStretch(1)
         cancel_btn = QPushButton(_("取消"))
@@ -580,12 +597,25 @@ class UploadMarketDialog(QDialog):
         buttons.addWidget(cancel_btn)
         self._ok_btn = QPushButton(_("提交审核"))
         self._ok_btn.setProperty("primary", True)
-        self._ok_btn.clicked.connect(self.accept)
+        self._ok_btn.clicked.connect(self._accept_submission)
         buttons.addWidget(self._ok_btn)
         layout.addLayout(buttons)
 
     def listing(self) -> str:
         return self._listing.toPlainText().strip()
+
+    def _accept_submission(self) -> None:
+        if not self.listing():
+            QMessageBox.warning(self, _("缺少说明"), _("请填写展示给接收者和审核者的功能说明。"))
+            return
+        if not self._dco.isChecked():
+            QMessageBox.warning(
+                self,
+                _("需要贡献确认"),
+                _("DCO 是贡献者本人的声明，工具不能静默代签；请阅读并主动确认。"),
+            )
+            return
+        self.accept()
 
     def template_fields(self) -> dict[str, str]:
         return {
@@ -595,6 +625,90 @@ class UploadMarketDialog(QDialog):
             "category": self._tpl_category.text().strip() or "generic",
             "summary": self._tpl_summary.text().strip(),
         }
+
+
+class _SharedImportPane(QWidget):
+    """P2P import: verify first, then separately confirm identity and permissions."""
+
+    def __init__(self, root: Path) -> None:
+        super().__init__()
+        self._root = root
+        layout = QVBoxLayout(self)
+        title = QLabel(_("导入其他用户直接分享的创作者签名包"))
+        title.setObjectName("sectionTitle")
+        layout.addWidget(title)
+        help_text = QLabel(
+            _(
+                "第三方分享包不经过市场审核。导入前会验证整个文件夹、显示作者公钥指纹与权限；"
+                "默认只信任该作者的这个插件，不会自动信任其全部作品。"
+            )
+        )
+        help_text.setWordWrap(True)
+        layout.addWidget(help_text)
+        button = QPushButton(_("选择插件或模板文件夹…"))
+        button.setProperty("primary", True)
+        button.clicked.connect(self._import_folder)
+        layout.addWidget(button)
+        layout.addStretch(1)
+
+    def _import_folder(self) -> None:
+        selected = QFileDialog.getExistingDirectory(self, _("选择创作者签名包"))
+        if not selected:
+            return
+        package_dir = Path(selected)
+        try:
+            inspection = inspect_package(package_dir, source="p2p")
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, _("无法导入"), _(f"插件包验证失败：\n{exc}"))
+            return
+        permissions = "\n".join(f"- {item}" for item in inspection.permissions) or _("- 无")
+        domains = "\n".join(f"- {item}" for item in inspection.domains) or _("- 无")
+        message = _(
+            "该内容未经 OmniCrawler 市场审核。\n\n"
+            f"类型：{inspection.package_type}\n"
+            f"ID：{inspection.package_id}\n"
+            f"版本：{inspection.version}\n"
+            f"作者请求名：{inspection.requested_username}\n"
+            f"公钥指纹：{inspection.creator_fingerprint}\n\n"
+            f"权限：\n{permissions}\n\n允许域名：\n{domains}\n\n"
+            "确认后仅信任该公钥签署的这个 ID，并批准以上权限。"
+        )
+        reply = QMessageBox.question(
+            self,
+            _("确认第三方分享包"),
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        destination = self._root / (
+            "plugins_shared" if inspection.package_type == "plugin" else "templates_shared"
+        )
+        try:
+            installed, imported_inspection = import_package_folder(
+                package_dir,
+                destination,
+                source="p2p",
+                approved_permissions=set(inspection.permissions),
+            )
+            if imported_inspection.manifest_sha256 != inspection.manifest_sha256:
+                raise RuntimeError(_("导入期间包哈希发生变化，已拒绝信任"))
+            creator_data = json.loads(
+                (installed / "creator.identity").read_text(encoding="utf-8")
+            )
+            creator = CreatorIdentity.from_dict(creator_data)
+            TrustedUserList().add(
+                creator,
+                source="p2p",
+                scope="plugin",
+                plugin_id=inspection.package_id,
+                path_hint=f"（{installed}）",
+            )
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, _("导入失败"), _(str(exc)))
+            return
+        ToastManager.instance().success(_(f"已安全导入：{installed}"))
 
 
 def build_market_home_tabs(root: Path, tabs: QTabWidget) -> None:
@@ -615,3 +729,4 @@ def build_market_home_tabs(root: Path, tabs: QTabWidget) -> None:
     local_tabs.addTab(_LocalPluginsPane(root, "local"), _("插件"))
     local_layout.addWidget(local_tabs)
     tabs.addTab(local_pane, _("本地"))
+    tabs.addTab(_SharedImportPane(root), _("第三方分享"))

@@ -285,11 +285,11 @@ def audit_local_directory(base_dir: Path) -> list[AuditResult]:
         return results
     # 目录本身是插件（含 plugin.py）→ 审计自身；否则遍历子目录
     if (base_dir / "plugin.py").is_file() or (base_dir / "plugin.yaml").is_file():
-        results.append(audit_local_plugin(base_dir))
+        results.append(audit_local_plugin_full(base_dir))
     else:
         for child in sorted(base_dir.iterdir()):
             if child.is_dir() and (child / "plugin.py").is_file():
-                results.append(audit_local_plugin(child))
+                results.append(audit_local_plugin_full(child))
     return results
 
 

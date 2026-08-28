@@ -29,6 +29,12 @@ from pathlib import Path
 from typing import Any
 
 from .identity import IdentityStore, UserIdentity
+from .package_manifest import (
+    CREATOR_SIGNATURE_NAME,
+    MANIFEST_NAME,
+    sign_creator_package,
+    verify_package,
+)
 from .trust import TrustedUserList
 
 _PLUGIN_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
@@ -111,7 +117,7 @@ def _read_metadata(plugin_file: Path) -> dict[str, Any]:
 
 
 def sign_plugin_local(plugin_dir: Path, *, username: str, password: str, target: str = "plugin.py") -> str:
-    """本地一键签名：creator.sig + creator.identity + 自动加入信任列表。
+    """完成可分享包：整包 manifest 签名 + 旧 creator.sig 兼容轨。
 
     返回客户端身份指纹（显示用）。
     """
@@ -120,14 +126,135 @@ def sign_plugin_local(plugin_dir: Path, *, username: str, password: str, target:
     if not target_path.is_file():
         raise PackagingError(f"缺少待签名文件 {target}: {target_path}")
     user = _load_user(username, password)
-    creator = user.export_identity()
-    (plugin_dir / "creator.sig").write_bytes(user.sign_bytes(target_path.read_bytes()))
-    (plugin_dir / "creator.identity").write_text(
-        json.dumps(creator.to_dict(), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
+    metadata = _read_metadata(target_path) if target == "plugin.py" else {}
+    package_type = "plugin" if target == "plugin.py" else "template"
+    package_id = _plugin_id_from_dir(plugin_dir) if package_type == "plugin" else plugin_dir.name
+    version = str(metadata.get("version") or "0.1.0")
+    signed = sign_creator_package(
+        plugin_dir,
+        package_type=package_type,
+        package_id=package_id,
+        version=version,
+        identity=user,
+        legacy_target=target,
     )
-    TrustedUserList().add(creator, source="local", path_hint=f"（{plugin_dir}）")
-    return creator.key_fingerprint
+    TrustedUserList().add(signed.creator, source="local", path_hint=f"（{plugin_dir}）")
+    return signed.creator.key_fingerprint
+
+
+def _submission_files(
+    package_dir: Path,
+    prefix: str,
+    *,
+    market_metadata: dict[str, str] | None = None,
+) -> dict[str, bytes]:
+    """Return the exact creator-signed folder as a market submission payload."""
+    verification = verify_package(package_dir)
+    manifest = json.loads((package_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
+    relative_files = set(str(name) for name in manifest["files"])
+    relative_files.update({MANIFEST_NAME, CREATOR_SIGNATURE_NAME, "creator.sig"})
+    result: dict[str, bytes] = {}
+    for rel in sorted(relative_files):
+        source = package_dir / Path(*rel.split("/"))
+        if source.is_file():
+            result[f"{prefix}/{rel}"] = source.read_bytes()
+    submission = {
+        "schema_version": 1,
+        "status": "creator_signed",
+        "requested_username": verification.creator.username,
+        "creator_fingerprint": verification.creator.key_fingerprint,
+        "package_manifest_sha256": verification.manifest_sha256,
+    }
+    if market_metadata:
+        submission["market_metadata"] = market_metadata
+    result[f"{prefix}/submission.json"] = (
+        json.dumps(
+            submission,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+    return result
+
+
+def build_plugin_submission(
+    plugin_dir: Path,
+    *,
+    username: str,
+    password: str,
+    listing: str | None = None,
+) -> dict[str, bytes]:
+    """Finalize and return a distribution-neutral Draft-PR submission."""
+    plugin_dir = plugin_dir.resolve()
+    plugin_file = plugin_dir / "plugin.py"
+    if not plugin_file.is_file():
+        raise PackagingError(f"缺少 plugin.py: {plugin_file}")
+    metadata = _read_metadata(plugin_file)
+    plugin_id = _plugin_id_from_dir(plugin_dir)
+    version = str(metadata.get("version") or "0.1.0")
+    if listing is not None:
+        (plugin_dir / "listing.md").write_text(listing, encoding="utf-8")
+    if not (plugin_dir / "listing.md").is_file():
+        raise PackagingError("缺少 listing.md：完成并签名前必须填写插件说明")
+    user = _load_user(username, password)
+    signed = sign_creator_package(
+        plugin_dir,
+        package_type="plugin",
+        package_id=plugin_id,
+        version=version,
+        identity=user,
+        legacy_target="plugin.py",
+    )
+    TrustedUserList().add(signed.creator, source="local", path_hint=f"（{plugin_dir}）")
+    return _submission_files(
+        plugin_dir,
+        f"submissions/plugins/{signed.creator.key_fingerprint}/{plugin_id}",
+    )
+
+
+def build_template_submission(
+    template_dir: Path,
+    *,
+    username: str,
+    password: str,
+    template_id: str,
+    version: str,
+    name: str = "",
+    category: str = "",
+    summary: str = "",
+    listing: str | None = None,
+) -> dict[str, bytes]:
+    """Template counterpart of :func:`build_plugin_submission`."""
+    template_dir = template_dir.resolve()
+    if not (template_dir / "template.yaml").is_file():
+        raise PackagingError(f"缺少 template.yaml: {template_dir / 'template.yaml'}")
+    if not _TEMPLATE_ID_RE.match(template_id) or ".." in template_id:
+        raise PackagingError(f"非法模板 ID: {template_id}")
+    if listing is not None:
+        (template_dir / "listing.md").write_text(listing, encoding="utf-8")
+    if not (template_dir / "listing.md").is_file():
+        raise PackagingError("缺少 listing.md：完成并签名前必须填写模板说明")
+    user = _load_user(username, password)
+    signed = sign_creator_package(
+        template_dir,
+        package_type="template",
+        package_id=template_id,
+        version=version,
+        identity=user,
+        legacy_target="template.yaml",
+    )
+    TrustedUserList().add(signed.creator, source="local", path_hint=f"（{template_dir}）")
+    return _submission_files(
+        template_dir,
+        f"submissions/templates/{signed.creator.key_fingerprint}/{template_id}",
+        market_metadata={
+            "name": name.strip(),
+            "category": category.strip(),
+            "summary": summary.strip(),
+        },
+    )
 
 
 def _plugin_id_from_dir(plugin_dir: Path) -> str:
@@ -321,14 +448,13 @@ def scan_local_plugins(root: Path) -> list[LocalPluginEntry]:
 
     entries: list[LocalPluginEntry] = []
     trusted = TrustedUserList()
-    for plugins_dir in ("plugins", "plugins_installed"):
+    for plugins_dir in ("plugins", "plugins_local", "plugins_shared", "plugins_installed"):
         base = root / plugins_dir
         if not base.is_dir():
             continue
-        for plugin_dir in sorted(base.iterdir()):
+        candidates = sorted(path.parent for path in base.rglob("plugin.py"))
+        for plugin_dir in candidates:
             plugin_file = plugin_dir / "plugin.py"
-            if not plugin_dir.is_dir() or not plugin_file.is_file():
-                continue
             metadata = _read_metadata(plugin_file)
             decision = verify_plugin_trust(plugin_dir, "", trusted)
             status = "unsigned"

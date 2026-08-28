@@ -63,7 +63,7 @@ class TrustDecision:
     trust_root_available: bool = False
 
 
-TRUST_LIST_SCHEMA_VERSION = 2
+TRUST_LIST_SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +72,8 @@ class TrustedUser:
     public_key: bytes
     trusted_at: str
     source: str  # "p2p" | "manual" | "local"
+    scope: str = "author"  # "author" | "plugin"
+    plugin_ids: tuple[str, ...] = ()
 
     @property
     def key_fingerprint(self) -> str:
@@ -124,6 +126,8 @@ class TrustedUserList:
                     public_key=public_key,
                     trusted_at=str(item.get("trusted_at", "")),
                     source=str(item.get("source", "manual")),
+                    scope=str(item.get("scope", "author")),
+                    plugin_ids=tuple(str(value) for value in item.get("plugin_ids", [])),
                 )
             except (ValueError, TypeError, IdentityError) as exc:
                 LOGGER.error("信任条目公钥非法，已丢弃（%s）：%s", item.get("username", "?"), exc)
@@ -150,6 +154,8 @@ class TrustedUserList:
                     "key_fingerprint": user.key_fingerprint,
                     "trusted_at": user.trusted_at,
                     "source": user.source,
+                    "scope": user.scope,
+                    "plugin_ids": list(user.plugin_ids),
                 }
                 for user in sorted(self._users.values(), key=lambda u: u.key_fingerprint)
             ],
@@ -161,12 +167,17 @@ class TrustedUserList:
     def contains(self, fingerprint: str) -> bool:
         return fingerprint in self._users
 
-    def contains_key(self, public_key: bytes) -> bool:
+    def contains_key(self, public_key: bytes, *, plugin_id: str | None = None) -> bool:
         """按公钥判定信任（推荐入口）：调用方连指纹字符串都不必经手。"""
         try:
-            return derive_fingerprint(public_key) in self._users
+            user = self._users.get(derive_fingerprint(public_key))
         except IdentityError:
             return False
+        if user is None:
+            return False
+        if user.scope == "author":
+            return True
+        return bool(plugin_id) and plugin_id in user.plugin_ids
 
     def add(
         self,
@@ -174,16 +185,35 @@ class TrustedUserList:
         *,
         source: str = "manual",
         path_hint: str = "",
+        scope: str = "author",
+        plugin_id: str | None = None,
     ) -> bool:
         # creator.key_fingerprint 是公钥的纯函数，构造 CreatorIdentity 时已校验公钥合法
         fingerprint = creator.key_fingerprint
-        if self.contains(fingerprint):
-            return False
+        if scope not in ("author", "plugin"):
+            raise ValueError(f"不支持的信任范围: {scope}")
+        if scope == "plugin" and not plugin_id:
+            raise ValueError("插件级信任必须提供 plugin_id")
+        existing = self._users.get(fingerprint)
+        if existing is not None:
+            if existing.scope == "author":
+                return False
+            plugin_ids = set(existing.plugin_ids)
+            if scope == "plugin" and plugin_id in plugin_ids:
+                return False
+            if scope == "author":
+                plugin_ids.clear()
+            elif plugin_id:
+                plugin_ids.add(plugin_id)
+        else:
+            plugin_ids = {plugin_id} if plugin_id else set()
         self._users[fingerprint] = TrustedUser(
             username=creator.username,
             public_key=creator.public_key,
             trusted_at=datetime.now(UTC).isoformat(timespec="seconds"),
             source=source,
+            scope=scope,
+            plugin_ids=tuple(sorted(plugin_ids)),
         )
         self._save()
         LOGGER.info("已信任创作者 %s（指纹 %s）%s", creator.username, fingerprint, path_hint)
@@ -248,6 +278,15 @@ def verify_plugin_trust(
     if plugin_bytes is None:
         plugin_bytes = plugin_path.read_bytes()
 
+    plugin_id = plugin_dir.name
+    package_manifest = plugin_dir / "package.manifest.json"
+    if package_manifest.is_file():
+        try:
+            package_data = json.loads(package_manifest.read_text(encoding="utf-8"))
+            plugin_id = str(package_data.get("package_id") or plugin_id)
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            pass
+
     # 层级 1：维护者签名（信任根验证）
     trust_root = None
     if trust_source:
@@ -296,7 +335,7 @@ def verify_plugin_trust(
             # 关键：用来验签的公钥与用来查信任列表的公钥是**同一个对象**，
             # 指纹由它现场推导。包里自称的指纹在 from_dict 阶段已被比对并丢弃，
             # 攻击者无法再用「自己的私钥 + 别人的指纹」冒名过关（B1）。
-            if trusted.contains_key(creator.public_key):
+            if trusted.contains_key(creator.public_key, plugin_id=plugin_id):
                 return TrustDecision(
                     TrustLevel.CreatorTrusted,
                     "创作者签名有效且公钥在信任列表",

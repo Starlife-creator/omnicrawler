@@ -16,7 +16,8 @@ from omnicrawler.plugins.market_uploader import (
 def test_pr_body_mentions_maintainer_signature() -> None:
     body = pr_body("插件", "demo", "alice")
     assert "demo" in body
-    assert "sign_plugin.py" in body
+    assert "package manifest" in body
+    assert "Draft PR" in body
 
 
 def test_create_market_pr_rejects_unsafe_paths() -> None:
@@ -26,6 +27,11 @@ def test_create_market_pr_rejects_unsafe_paths() -> None:
         create_market_pr(files={"/abs.txt": b"x"}, title="t", body="b")
     with pytest.raises(UploadError, match="为空"):
         create_market_pr(files={}, title="t", body="b")
+
+
+def test_create_market_pr_requires_explicit_dco_confirmation() -> None:
+    with pytest.raises(UploadError, match="DCO"):
+        create_market_pr(files={"submissions/demo.txt": b"x"}, title="t", body="b")
 
 
 def test_ensure_gh_reports_missing_cli(monkeypatch: pytest.MonkeyPatch) -> None:

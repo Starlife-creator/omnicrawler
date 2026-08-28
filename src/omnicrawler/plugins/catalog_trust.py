@@ -136,5 +136,8 @@ def load_cached_catalog(cache_path: Path) -> dict[str, Any] | None:
 
 
 def save_cached_catalog(cache_path: Path, catalog: dict[str, Any]) -> None:
+    """Atomically persist the last trusted catalog used for replay checks."""
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    cache_path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary = cache_path.with_name(cache_path.name + ".tmp")
+    temporary.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(cache_path)

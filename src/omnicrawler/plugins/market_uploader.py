@@ -85,6 +85,8 @@ def create_market_pr(
     title: str,
     body: str,
     target_repo: str = DEFAULT_MARKET_REPO,
+    dco_confirmed: bool = False,
+    draft: bool = True,
 ) -> str:
     """把文件集提交到市场仓库并创建 PR，返回 PR URL。
 
@@ -95,6 +97,8 @@ def create_market_pr(
     for rel in files:
         if ".." in rel.split("/") or rel.startswith("/"):
             raise UploadError(f"非法文件路径: {rel}")
+    if not dco_confirmed:
+        raise UploadError("提交市场前必须由贡献者明确确认 DCO，不能由工具静默代签")
 
     me = ensure_gh()
     fork_repo = _ensure_fork(target_repo, me)
@@ -112,10 +116,9 @@ def create_market_pr(
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
         _run(["git", "add", "-A"], cwd=work)
-        _run(["git", "commit", "-m", title], cwd=work)
+        _run(["git", "commit", "--signoff", "-m", title], cwd=work)
         _run(["git", "push", "origin", branch], cwd=work)
-        pr = _run(
-            [
+        pr_command = [
                 "gh",
                 "pr",
                 "create",
@@ -127,9 +130,10 @@ def create_market_pr(
                 title,
                 "--body",
                 body,
-            ],
-            cwd=work,
-        )
+            ]
+        if draft:
+            pr_command.append("--draft")
+        pr = _run(pr_command, cwd=work)
     return pr.stdout.strip() or f"https://github.com/{target_repo}/pulls"
 
 
@@ -140,25 +144,12 @@ def _branch_suffix() -> str:
 
 
 def pr_body(payload_kind: str, plugin_id: str, username: str) -> str:
-    """标准 PR 描述（含维护者签名提示，按 payload 类型分支）。"""
-    if payload_kind == "template":
-        sign_hint = (
-            "python tools/sign_plugin.py sign templates/<id>/template.yaml "
-            "--private-key <冷存储信任根私钥>"
-        )
-    else:
-        sign_hint = (
-            "python tools/sign_plugin.py sign plugins/<id>/plugin.py "
-            "--private-key <冷存储信任根私钥>"
-        )
+    """Standard Draft-PR description without exposing internal catalog work."""
     return (
         f"提交者：{username}\n"
         f"类型：{payload_kind}\n"
         f"ID：{plugin_id}\n\n"
-        "本 PR 仅含创作者签名（审核材料）。审核通过后请维护者执行（用冷存储信任根私钥"
-        "覆盖 <file>.sig，下载端/CI 校验此文件。签名命令：\n"
-        "```\n"
-        f"{sign_hint}\n"
-        "```\n"
-        "补充维护者签名后 CI 签名校验通过，再合并并更新 catalog.json。\n"
+        "本 Draft PR 包含创作者签署的完整、可直接分享插件包，不包含正式市场目录变更。\n"
+        "维护者将固定包哈希、人工审核并在隔离环境测试；通过后对同一 package manifest "
+        "追加市场背书并生成、签署正式 catalog。\n"
     )

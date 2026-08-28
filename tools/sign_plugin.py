@@ -185,23 +185,41 @@ def _resolve_password(password: str | None) -> str:
 
 
 def _creator_sign(plugin_dir: Path, username: str, password: str, target: str) -> Path:
-    """创建即签名：用本地身份生成 creator.sig + creator.identity（三件套之二）。"""
+    """Create a shareable whole-package signature plus the legacy signature."""
     from omnicrawler.plugins.identity import IdentityStore
+    from omnicrawler.plugins.package_manifest import sign_creator_package
 
     target_path = plugin_dir / target
     if not target_path.is_file():
         raise FileNotFoundError(f"缺少待签名文件 {target}: {target_path}")
     identity = IdentityStore().load(username, password)
-    creator = identity.export_identity()
-    signature = identity.sign_bytes(target_path.read_bytes())
-    (plugin_dir / "creator.sig").write_bytes(signature)
-    (plugin_dir / "creator.identity").write_text(
-        json.dumps(creator.to_dict(), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
+    package_type = "template" if target == "template.yaml" else "plugin"
+    package_id = plugin_dir.name
+    version = "0.1.0"
+    if package_type == "plugin":
+        from omnicrawler.plugins.plugin_packaging import _read_metadata
+
+        metadata = _read_metadata(target_path)
+        version = str(metadata.get("version") or version)
+    else:
+        import yaml
+
+        raw = yaml.safe_load(target_path.read_text(encoding="utf-8")) or {}
+        block = raw.get("template", {}) if isinstance(raw, dict) else {}
+        if isinstance(block, dict):
+            package_id = str(block.get("id") or package_id)
+            version = str(block.get("version") or version)
+    signed = sign_creator_package(
+        plugin_dir,
+        package_type=package_type,
+        package_id=package_id,
+        version=version,
+        identity=identity,
+        legacy_target=target,
     )
     print(
-        f"[创作者签名] 已生成 creator.sig + creator.identity（作者: {username}，"
-        f"指纹: {creator.key_fingerprint}，目标: {target}）"
+        f"[创作者签名] 已生成完整可分享包 + creator.sig 兼容轨（作者: {username}，"
+        f"指纹: {signed.creator.key_fingerprint}，包哈希: {signed.manifest_sha256[:16]}…）"
     )
     return plugin_dir / "creator.identity"
 

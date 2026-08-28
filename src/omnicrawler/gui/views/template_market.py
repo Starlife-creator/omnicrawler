@@ -26,8 +26,9 @@ from PySide6.QtWidgets import (
 )
 
 from ...plugins.market_client import (
+    catalog_cache_path,
     download_template_and_verify,
-    fetch_catalog,
+    fetch_catalog_verified,
     fetch_resource,
     verify_installed_template,
 )
@@ -57,20 +58,40 @@ def _market_egress(project_root: Path) -> Any:
 class _TemplateCatalogWorker(BackgroundWorker):
     """后台拉取 catalog（模板页共用，仅读 templates 数组）。"""
 
-    def __init__(self, catalog_url: str, local_fallback: Path, egress: Any, parent=None) -> None:
+    def __init__(
+        self,
+        catalog_url: str,
+        local_fallback: Path,
+        trust_source: str,
+        cache_root: Path,
+        egress: Any,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self._catalog_url = catalog_url
         self._local_fallback = local_fallback
+        self._trust_source = trust_source
+        self._cache_root = cache_root
         self._egress = egress
 
     def work(self) -> dict[str, Any]:
         try:
-            catalog = fetch_catalog(self._catalog_url, egress=self._egress)
+            catalog = fetch_catalog_verified(
+                self._catalog_url,
+                self._trust_source,
+                cache_path=catalog_cache_path(self._cache_root, self._catalog_url),
+                egress=self._egress,
+            )
             catalog["_source"] = self._catalog_url
             return catalog
         except Exception:
             if self._local_fallback.is_dir():
-                catalog = fetch_catalog(str(self._local_fallback))
+                local = str(self._local_fallback)
+                catalog = fetch_catalog_verified(
+                    local,
+                    self._trust_source,
+                    cache_path=catalog_cache_path(self._cache_root, local),
+                )
                 catalog["_source"] = str(self._local_fallback)
                 return catalog
             raise
@@ -272,7 +293,12 @@ class TemplateMarketView(QWidget):
         self._status_label.setText(_("正在拉取..."))
         self._refresh_btn.setEnabled(False)
         self._catalog_worker = _TemplateCatalogWorker(
-            catalog_url, self._local_fallback, self._egress, parent=self
+            catalog_url,
+            self._local_fallback,
+            self._trust_source,
+            self._base / ".omnicrawler" / "catalog-cache",
+            self._egress,
+            parent=self,
         )
         self._catalog_worker.succeeded.connect(self._on_catalog_loaded)
         self._catalog_worker.failed.connect(self._on_catalog_error)

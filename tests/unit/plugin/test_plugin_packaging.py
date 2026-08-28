@@ -12,7 +12,9 @@ pytest.importorskip("cryptography")
 from omnicrawler.plugins import plugin_packaging
 from omnicrawler.plugins.identity import IdentityStore
 from omnicrawler.plugins.plugin_packaging import (
+    build_plugin_submission,
     build_plugin_upload,
+    build_template_submission,
     build_template_upload,
     scan_local_plugins,
     sign_plugin_local,
@@ -121,6 +123,46 @@ def test_build_plugin_upload_requires_own_signature(identity_env, tmp_path: Path
     plugin_dir = _make_plugin(tmp_path / "plugins", "demo")
     with pytest.raises(plugin_packaging.PackagingError, match="签名"):
         build_plugin_upload(plugin_dir, username="alice", password="pw", listing="#")
+
+
+def test_build_plugin_submission_is_shareable_and_does_not_claim_market_identity(
+    identity_env, tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("omnicrawler.plugins.trust.DEFAULT_TRUST_LIST", tmp_path / "trusted.json")
+    IdentityStore().create("alice", "pw")
+    plugin_dir = _make_plugin(tmp_path / "plugins", "demo")
+    files = build_plugin_submission(
+        plugin_dir, username="alice", password="pw", listing="# Demo\n"
+    )
+    prefix = next(key.rsplit("/", 1)[0] for key in files if key.endswith("submission.json"))
+    assert prefix.startswith("submissions/plugins/")
+    assert f"{prefix}/package.manifest.json" in files
+    assert f"{prefix}/package.manifest.creator.sig" in files
+    assert not any(key.startswith("authors/") for key in files)
+    assert "catalog.json" not in files
+
+
+def test_build_template_submission_uses_same_creator_package_protocol(
+    identity_env, tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("omnicrawler.plugins.trust.DEFAULT_TRUST_LIST", tmp_path / "trusted.json")
+    IdentityStore().create("alice", "pw")
+    template_dir = tmp_path / "templates" / "demo"
+    template_dir.mkdir(parents=True)
+    (template_dir / "template.yaml").write_text(
+        "project: {name: demo}\nsource: {kind: static_html}\n",
+        encoding="utf-8",
+    )
+    files = build_template_submission(
+        template_dir,
+        username="alice",
+        password="pw",
+        template_id="demo/template",
+        version="1.0.0",
+        listing="# Demo\n",
+    )
+    assert any(key.endswith("package.manifest.creator.sig") for key in files)
+    assert not any(key.startswith("authors/") for key in files)
 
 
 def test_build_template_upload(identity_env, tmp_path: Path, monkeypatch) -> None:
