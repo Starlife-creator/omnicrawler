@@ -48,8 +48,7 @@ def _build_synthetic_market(root: Path) -> Path:
     signature = signing.sign_bytes(plugin_path.read_bytes(), private_pem)
     (plugin_dir / "plugin.py.sig").write_bytes(signature)
     (plugin_dir / "listing.md").write_text("# demo\n", encoding="utf-8")
-    (root / "catalog.json").write_text(
-        json.dumps(
+    catalog_bytes = json.dumps(
             {
                 "schema_version": 1,
                 "plugins": [
@@ -70,9 +69,9 @@ def _build_synthetic_market(root: Path) -> Path:
                 ],
                 "templates": [],
             }
-        ),
-        encoding="utf-8",
-    )
+        ).encode("utf-8")
+    (root / "catalog.json").write_bytes(catalog_bytes)
+    (root / "catalog.json.sig").write_bytes(signing.sign_bytes(catalog_bytes, private_pem))
     return trust
 
 

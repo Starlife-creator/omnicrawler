@@ -58,6 +58,12 @@ git clone https://github.com/<owner>/OmniCrawler-market
 
 只 clone 主仓库时应用完全可用（本地回退目录缺失即视为无市场）；要使用插件市场需同时 clone 两个仓库。私有签名路径默认写入 `~/.omnicrawler/keys/`（可用 `--private-out` / `--private-key` 覆盖）。
 
+插件与模板完成后会先形成一份创作者整包签名目录，可直接私下分享，也可由作者自主选择投稿
+市场；上传不是获得可分享状态的前置条件。身份归属认公钥指纹，不认用户名；重名只在正式
+市场发布时分配稳定后缀。市场客户端会先验证目录签名并防回放，再验证创作者/维护者整包
+双签。完整流程见 [插件作者指南](docs/AUTHOR_GUIDE.md) 与
+[市场生态与分发协议](docs/MARKET_ECOSYSTEM.md)。
+
 ### 三分钟命令行
 
 ```powershell

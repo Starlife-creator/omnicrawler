@@ -21,6 +21,25 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.fixture
+def preverified_legacy_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Isolate legacy payload-signature tests from catalog-authentication tests.
+
+    The sibling checkout intentionally has a stale catalog signature until the
+    maintainer next uses the cold key. Catalog authentication and replay are
+    covered with generated keys in test_market_catalog_verification.py.
+    """
+    raw_fetch = market_client.fetch_catalog
+    monkeypatch.setattr(
+        market_client,
+        "fetch_catalog_verified",
+        lambda url, _trust, **kwargs: raw_fetch(
+            url, timeout=kwargs.get("timeout", market_client.DEFAULT_TIMEOUT),
+            egress=kwargs.get("egress")
+        ),
+    )
+
+
 def test_fetch_catalog_local() -> None:
     catalog = market_client.fetch_catalog(str(REGISTRY_DIR))
     assert catalog["schema_version"] == 1
@@ -28,7 +47,7 @@ def test_fetch_catalog_local() -> None:
     assert "example_news" in ids
 
 
-def test_download_and_verify(tmp_path: Path) -> None:
+def test_download_and_verify(tmp_path: Path, preverified_legacy_catalog: None) -> None:
     dest = tmp_path / "installed"
     path = market_client.download_and_verify("example_news", str(REGISTRY_DIR), dest, TRUST)
     assert path.is_file()
@@ -39,7 +58,7 @@ def test_download_and_verify(tmp_path: Path) -> None:
     assert ok and reason == "verified"
 
 
-def test_install_writes_hash_lockfile(tmp_path: Path) -> None:
+def test_install_writes_hash_lockfile(tmp_path: Path, preverified_legacy_catalog: None) -> None:
     import hashlib
     import json
 
@@ -53,7 +72,9 @@ def test_install_writes_hash_lockfile(tmp_path: Path) -> None:
     assert meta["signature_sha256"] == hashlib.sha256((plugin_dir / "plugin.py.sig").read_bytes()).hexdigest()
 
 
-def test_verify_rejects_hash_tamper_before_signature(tmp_path: Path) -> None:
+def test_verify_rejects_hash_tamper_before_signature(
+    tmp_path: Path, preverified_legacy_catalog: None
+) -> None:
     dest = tmp_path / "installed"
     path = market_client.download_and_verify("example_news", str(REGISTRY_DIR), dest, TRUST)
     path.write_bytes(path.read_bytes() + b"\n# tampered")
@@ -62,7 +83,9 @@ def test_verify_rejects_hash_tamper_before_signature(tmp_path: Path) -> None:
     assert "哈希" in reason
 
 
-def test_verify_falls_back_to_signature_without_lockfile(tmp_path: Path) -> None:
+def test_verify_falls_back_to_signature_without_lockfile(
+    tmp_path: Path, preverified_legacy_catalog: None
+) -> None:
     dest = tmp_path / "installed"
     market_client.download_and_verify("example_news", str(REGISTRY_DIR), dest, TRUST)
     (dest / "example_news" / market_client._INSTALL_META).unlink()
@@ -70,7 +93,7 @@ def test_verify_falls_back_to_signature_without_lockfile(tmp_path: Path) -> None
     assert ok and reason == "verified"
 
 
-def test_download_rejects_tampered(tmp_path: Path) -> None:
+def test_download_rejects_tampered(tmp_path: Path, preverified_legacy_catalog: None) -> None:
     dest = tmp_path / "installed"
     path = market_client.download_and_verify("example_news", str(REGISTRY_DIR), dest, TRUST)
     path.write_bytes(path.read_bytes() + b"\n# tampered")
@@ -78,7 +101,7 @@ def test_download_rejects_tampered(tmp_path: Path) -> None:
     assert not ok
 
 
-def test_fetch_missing_plugin_raises(tmp_path: Path) -> None:
+def test_fetch_missing_plugin_raises(tmp_path: Path, preverified_legacy_catalog: None) -> None:
     with pytest.raises(KeyError):
         market_client.download_and_verify("nonexistent", str(REGISTRY_DIR), tmp_path, TRUST)
 
@@ -115,8 +138,7 @@ def test_download_template_and_verify(tmp_path: Path) -> None:
     signature = signing.sign_bytes(template_path.read_bytes(), private_pem)
     (template_dir / "template.yaml.sig").write_bytes(signature)
     (template_dir / "listing.md").write_text("# demo\n模板说明。\n", encoding="utf-8")
-    (registry / "catalog.json").write_text(
-        json.dumps(
+    catalog_bytes = json.dumps(
             {
                 "schema_version": 1,
                 "plugins": [],
@@ -136,9 +158,9 @@ def test_download_template_and_verify(tmp_path: Path) -> None:
                     }
                 ],
             }
-        ),
-        encoding="utf-8",
-    )
+        ).encode("utf-8")
+    (registry / "catalog.json").write_bytes(catalog_bytes)
+    (registry / "catalog.json.sig").write_bytes(signing.sign_bytes(catalog_bytes, private_pem))
 
     dest = tmp_path / "templates_installed"
     path = market_client.download_template_and_verify("demo/template", str(registry), dest, str(trust))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,6 +10,7 @@ import pytest
 pytest.importorskip("cryptography")
 
 from omnicrawler.plugins.identity import IdentityStore
+from omnicrawler.plugins.market_client import download_and_verify, verify_installed
 from omnicrawler.plugins.plugin_packaging import build_plugin_submission
 from omnicrawler.plugins.signing import generate_keypair
 
@@ -70,3 +72,62 @@ def test_maintainer_finalize_preserves_creator_package_and_publishes(
     assert (published / "package.manifest.maintainer.sig").is_file()
     assert (market / "authors" / "alice.yaml").is_file()
     assert (market / "catalog.json.sig").is_file()
+
+    # A later release is stored beside, not over, the original signed bytes.
+    update_package = tmp_path / "author-update" / "demo"
+    update_package.mkdir(parents=True)
+    (update_package / "plugin.py").write_text(
+        "PLUGIN_METADATA={\n"
+        "'name':'Demo','version':'1.1.0','description':'safe update',\n"
+        "'plugin_types':['source'],'permissions':[],'license':'MIT',\n"
+        "'execution_mode':'subprocess','dependencies':[]}\n"
+        "def handle(operation, payload): return {'updated': True}\n",
+        encoding="utf-8",
+    )
+    update_payload = build_plugin_submission(
+        update_package,
+        username="alice",
+        password="pw",
+        listing="# Demo 1.1\n",
+    )
+    for rel, content in update_payload.items():
+        target = market / Path(*rel.split("/"))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+    update_submission_key = next(key for key in update_payload if key.endswith("submission.json"))
+    update_submission = market / Path(*update_submission_key.split("/")).parent
+    update_manifest = (update_submission / "package.manifest.json").read_bytes()
+
+    assert module.finalize(
+        SimpleNamespace(
+            submission_dir=str(update_submission),
+            reviewed_manifest_sha256=__import__("hashlib").sha256(update_manifest).hexdigest(),
+            maintainer_key=str(private_path),
+            market_id=None,
+        )
+    ) == 0
+    assert (published / "package.manifest.json").read_bytes() == manifest_before
+    versioned = published / "versions" / "1.1.0"
+    assert (versioned / "package.manifest.json").read_bytes() == update_manifest
+    catalog = json.loads((market / "catalog.json").read_text(encoding="utf-8"))
+    assert catalog["plugins"][0]["version"] == "1.1.0"
+    assert catalog["plugins"][0]["plugin_file"].endswith("versions/1.1.0/plugin.py")
+
+    installed_root = tmp_path / "installed"
+    installed = download_and_verify(
+        "demo", str(market), installed_root, public.decode("utf-8")
+    )
+    assert "updated" in installed.read_text(encoding="utf-8")
+    assert verify_installed(installed_root, "demo", public.decode("utf-8")) == (
+        True,
+        "verified-package",
+    )
+    with pytest.raises(ValueError, match="must increase monotonically"):
+        module.finalize(
+            SimpleNamespace(
+                submission_dir=str(update_submission),
+                reviewed_manifest_sha256=__import__("hashlib").sha256(update_manifest).hexdigest(),
+                maintainer_key=str(private_path),
+                market_id=None,
+            )
+        )

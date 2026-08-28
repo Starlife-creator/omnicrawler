@@ -140,8 +140,8 @@ def test_standalone_copy_passes_check(tmp_path: Path) -> None:
     assert (standalone / "catalog.json").is_file()
 
 
-def test_real_registry_list_through_market_tool() -> None:
-    """catalog.json 作为生成物仍可被市场 CLI 消费。"""
+def test_real_registry_list_through_market_tool_requires_current_signature() -> None:
+    """CLI consumes only a catalog whose detached signature matches its bytes."""
     result = subprocess.run(
         [sys.executable, str(REPO_ROOT / "tools" / "market.py"), "--catalog-url", str(REAL_REGISTRY), "list"],
         cwd=REPO_ROOT,
@@ -150,8 +150,17 @@ def test_real_registry_list_through_market_tool() -> None:
         encoding="utf-8",
         env=_UTF8_ENV,
     )
-    assert result.returncode == 0, result.stderr or result.stdout
-    assert "example_news" in result.stdout
+    signature_current = signing.verify_bytes(
+        (REAL_REGISTRY / "catalog.json").read_bytes(),
+        (REAL_REGISTRY / "catalog.json.sig").read_bytes(),
+        str(TRUST_ROOT),
+    )
+    if signature_current:
+        assert result.returncode == 0, result.stderr or result.stdout
+        assert "example_news" in result.stdout
+    else:
+        assert result.returncode != 0
+        assert "catalog.json" in (result.stderr or result.stdout)
 
 
 def test_generate_writes_catalog_and_check_passes(tmp_path: Path) -> None:

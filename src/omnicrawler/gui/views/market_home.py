@@ -125,7 +125,7 @@ class _LocalPluginsPane(QWidget):
         hint = QLabel(
             _("项目 plugins/ 目录中的插件。复制他人插件文件夹粘贴到此处即可出现在列表。")
             if self._kind == "local"
-            else _("自制插件放入项目 plugins/ 目录后在此签名；签名后即可上传市场。")
+            else _("自制插件放入项目 plugins/ 目录后点击“完成并签名”；随后可私下分享或自主投稿市场。")
         )
         hint.setObjectName("mutedLabel")
         hint.setWordWrap(True)
@@ -163,7 +163,7 @@ class _LocalPluginsPane(QWidget):
         detail_layout.addWidget(self._detail_desc, 1)
 
         buttons = QHBoxLayout()
-        self._sign_btn = QPushButton(_("签名"))
+        self._sign_btn = QPushButton(_("完成并签名"))
         self._sign_btn.setProperty("primary", True)
         self._sign_btn.clicked.connect(self._on_sign)
         buttons.addWidget(self._sign_btn)
@@ -272,7 +272,9 @@ class _LocalPluginsPane(QWidget):
         worker = _SignWorker(entry.path, username, password, "plugin.py", parent=self)
 
         def _done(fingerprint: str) -> None:
-            ToastManager.instance().success(_(f"已签名（指纹 {fingerprint}），作者自动加入信任列表"))
+            ToastManager.instance().success(
+                _(f"已完成整包签名（指纹 {fingerprint}），现在可私下分享或投稿市场")
+            )
             self.refresh()
 
         def _failed(message: str) -> None:
@@ -371,7 +373,7 @@ class _LocalTemplatesPane(QWidget):
 
         hint = QLabel(
             _("自制模板：把 template.yaml 放入项目根 templates/ 或 templates_installed/ 目录"
-              "（每个子目录一份），在此签名后上传市场。")
+              "（每个子目录一份），完成整包签名后可私下分享或投稿市场。")
         )
         hint.setObjectName("mutedLabel")
         hint.setWordWrap(True)
@@ -387,7 +389,7 @@ class _LocalTemplatesPane(QWidget):
         root_layout.addWidget(self._meta)
 
         buttons = QHBoxLayout()
-        self._sign_btn = QPushButton(_("签名"))
+        self._sign_btn = QPushButton(_("完成并签名"))
         self._sign_btn.setProperty("primary", True)
         self._sign_btn.clicked.connect(self._on_sign)
         buttons.addWidget(self._sign_btn)
@@ -481,7 +483,9 @@ class _LocalTemplatesPane(QWidget):
         worker = _SignWorker(template_dir, username, password, "template.yaml", parent=self)
 
         def _done(fingerprint: str) -> None:
-            ToastManager.instance().success(_(f"模板已签名（指纹 {fingerprint}）"))
+            ToastManager.instance().success(
+                _(f"模板已完成整包签名（指纹 {fingerprint}），现在可私下分享或投稿市场")
+            )
             self.refresh()
 
         def _failed(message: str) -> None:
