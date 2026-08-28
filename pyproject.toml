@@ -70,7 +70,7 @@ full = [
   "paddleocr[doc-parser]>=3.3,<4", "paddlepaddle>=3,<4", "numpy>=1.26,<3",
   "ddddocr>=1.5,<2", "onnxruntime>=1.17,<2",
   "crawl4ai>=0.5,<1",
-  "PySide6>=6.5", "ruamel.yaml>=0.17", "psutil>=5.9", "requests>=2.28",
+  "PySide6>=6.5,<7", "ruamel.yaml>=0.17,<1", "psutil>=5.9,<8", "requests>=2.28,<3",
     "keyring>=25,<27", "cryptography>=44,<51",
     "boto3>=1.35,<2", "duckdb>=1.2,<2", "pyarrow>=18,<26",
     "psycopg[binary]>=3.2,<4", "opensearch-py>=2.8,<4",
@@ -89,7 +89,7 @@ full-macos = [
   "numpy>=1.26,<3", "opencv-contrib-python>=4.10,<6",
   "ddddocr>=1.5,<2", "onnxruntime>=1.17,<2",
   "crawl4ai>=0.5,<1",
-  "PySide6>=6.5", "ruamel.yaml>=0.17", "psutil>=5.9", "requests>=2.28",
+  "PySide6>=6.5,<7", "ruamel.yaml>=0.17,<1", "psutil>=5.9,<8", "requests>=2.28,<3",
     "keyring>=25,<27", "cryptography>=44,<51",
     "boto3>=1.35,<2", "duckdb>=1.2,<2", "pyarrow>=18,<26",
     "psycopg[binary]>=3.2,<4", "opensearch-py>=2.8,<4",
@@ -166,7 +166,7 @@ ignore = [
 known-first-party = ["omnicrawler"]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
 exclude = "^src/omnicrawler/(pdfx|apps)/"

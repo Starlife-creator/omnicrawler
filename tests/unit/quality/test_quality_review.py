@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from omnicrawler.core.models import CrawlRequest, ExtractedRecord
 from omnicrawler.quality.quality import assess_record, assess_records
 from omnicrawler.state import StateStore
@@ -60,6 +62,70 @@ def test_manual_review_edit_is_audited(tmp_path) -> None:
         assert json.loads(saved["data_json"])["title"] == "corrected"
         assert json.loads(saved["evidence_json"])["_review"]["edits"][0]["old_value"] == "old"
         assert audit == {"field_name": "title", "actor": "reviewer"}
+
+
+def test_review_queue_filters_by_run_and_honors_limit(tmp_path) -> None:
+    with StateStore(tmp_path / "state.sqlite3") as state:
+        first_run = state.start_run("first", "project.yaml")
+        second_run = state.start_run("second", "project.yaml")
+        for run_id, suffix in ((first_run, "a"), (first_run, "b"), (second_run, "c")):
+            request = CrawlRequest(f"https://example.org/{suffix}")
+            state.save_records(
+                run_id,
+                request,
+                [
+                    ExtractedRecord(
+                        request.url,
+                        "item",
+                        {"title": suffix},
+                        {"_quality": {"review_required": True, "score": 0.4}},
+                    )
+                ],
+            )
+
+        assert len(state.review_queue(first_run)) == 2
+        assert len(state.review_queue(first_run, limit=1)) == 1
+        assert len(state.review_queue()) == 3
+
+
+def test_review_queue_applies_limit_after_exact_quality_filter(tmp_path) -> None:
+    with StateStore(tmp_path / "state.sqlite3") as state:
+        run_id = state.start_run("exact-review", "project.yaml")
+        decoy_request = CrawlRequest("https://example.org/decoy")
+        state.save_records(
+            run_id,
+            decoy_request,
+            [
+                ExtractedRecord(
+                    decoy_request.url,
+                    "item",
+                    {"title": "decoy"},
+                    {
+                        "metadata": {"review_required": True},
+                        "_quality": {"review_required": False},
+                    },
+                )
+            ],
+        )
+        real_request = CrawlRequest("https://example.org/real")
+        state.save_records(
+            run_id,
+            real_request,
+            [
+                ExtractedRecord(
+                    real_request.url,
+                    "item",
+                    {"title": "real"},
+                    {"_quality": {"review_required": True}},
+                )
+            ],
+        )
+
+        queue = state.review_queue(run_id, limit=1)
+        assert [item["source_url"] for item in queue] == [real_request.url]
+        assert state.review_queue(run_id, limit=0) == []
+        with pytest.raises(ValueError, match="negative"):
+            state.review_queue(run_id, limit=-1)
 
 
 def test_conditional_cross_field_anomaly_and_persisted_rule_stats(tmp_path) -> None:

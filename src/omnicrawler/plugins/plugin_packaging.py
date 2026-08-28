@@ -32,6 +32,7 @@ from .identity import IdentityStore, UserIdentity
 from .package_manifest import (
     CREATOR_SIGNATURE_NAME,
     MANIFEST_NAME,
+    PackageType,
     sign_creator_package,
     verify_package,
 )
@@ -127,7 +128,7 @@ def sign_plugin_local(plugin_dir: Path, *, username: str, password: str, target:
         raise PackagingError(f"缺少待签名文件 {target}: {target_path}")
     user = _load_user(username, password)
     metadata = _read_metadata(target_path) if target == "plugin.py" else {}
-    package_type = "plugin" if target == "plugin.py" else "template"
+    package_type: PackageType = "plugin" if target == "plugin.py" else "template"
     package_id = _plugin_id_from_dir(plugin_dir) if package_type == "plugin" else plugin_dir.name
     version = str(metadata.get("version") or "0.1.0")
     signed = sign_creator_package(

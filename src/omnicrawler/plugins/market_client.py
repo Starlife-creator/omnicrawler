@@ -371,6 +371,10 @@ def download_and_verify(
         LOGGER.warning("插件 %s: %s", plugin_id, revocation_reason)
 
     dest_dir = Path(dest_root) / plugin_id
+    if (dest_dir / "package.manifest.json").is_file():
+        raise PermissionError(
+            f"插件 {plugin_id} 已安装完整签名包，拒绝用旧式单文件目录覆盖"
+        )
     dest_dir.mkdir(parents=True, exist_ok=True)
     plugin_path = dest_dir / "plugin.py"
     plugin_path.write_bytes(plugin_bytes)
@@ -482,18 +486,9 @@ def download_template_and_verify(
 
     dest_dir = Path(dest_root) / template_id
     if (dest_dir / "package.manifest.json").is_file():
-        try:
-            from .identity import public_key_bytes_from_pem
-            from .package_manifest import verify_package
-
-            verify_package(
-                dest_dir,
-                maintainer_public_key=public_key_bytes_from_pem(trust_source),
-                require_maintainer=True,
-            )
-        except Exception as exc:  # noqa: BLE001
-            return False, f"完整包校验失败: {exc}"
-        return True, "verified-package"
+        raise PermissionError(
+            f"模板 {template_id} 已安装完整签名包，拒绝用旧式单文件目录覆盖"
+        )
     dest_dir.mkdir(parents=True, exist_ok=True)
     template_path = dest_dir / "template.yaml"
     template_path.write_bytes(template_bytes)

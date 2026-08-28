@@ -131,6 +131,25 @@ def test_download_rejects_tampered_remote(remote_market, tmp_path: Path) -> None
     assert not ok
 
 
+def test_legacy_download_cannot_replace_complete_signed_package(
+    remote_market, tmp_path: Path
+) -> None:
+    url, trust = remote_market
+    dest = tmp_path / "installed"
+    protected = dest / "demo"
+    protected.mkdir(parents=True)
+    manifest = protected / "package.manifest.json"
+    manifest.write_text('{"package_format": 1}', encoding="utf-8")
+
+    with pytest.raises(PermissionError, match="完整签名包"):
+        market_client.download_and_verify(
+            "demo", url, dest, trust, egress=_AllowAllEgress()
+        )
+
+    assert manifest.read_text(encoding="utf-8") == '{"package_format": 1}'
+    assert not (protected / "plugin.py").exists()
+
+
 def test_download_rejects_unknown_remote(remote_market, tmp_path: Path) -> None:
     url, trust = remote_market
     with pytest.raises(KeyError):

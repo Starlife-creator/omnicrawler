@@ -119,6 +119,65 @@ function Copy-VerifiedTree([string]$Source, [string]$Destination, [string]$Label
         Copy-Item -Destination $resolvedDestination -Recurse -Force
 }
 
+function Sync-VerifiedTreeToCache([string]$Source, [string]$Destination, [string]$Label) {
+    if (-not $Destination) { return }
+    $resolvedSource = [IO.Path]::GetFullPath($Source)
+    $resolvedDestination = [IO.Path]::GetFullPath($Destination)
+    $volumeRoot = [IO.Path]::GetPathRoot($resolvedDestination).TrimEnd('\')
+    if (-not (Test-Path -LiteralPath $resolvedSource -PathType Container)) {
+        throw "$Label staging directory was not found: $resolvedSource"
+    }
+    if ($resolvedSource.TrimEnd('\') -eq $resolvedDestination.TrimEnd('\')) {
+        return
+    }
+    if (
+        $resolvedDestination.TrimEnd('\') -eq $volumeRoot -or
+        $resolvedDestination.TrimEnd('\') -eq [IO.Path]::GetFullPath($projectRoot).TrimEnd('\')
+    ) {
+        throw "Refusing to replace an unsafe $Label cache path: $resolvedDestination"
+    }
+    # 只在全部资产验证成功后，以同级临时目录组装并替换缓存。
+    # 替换期间保留旧缓存备份，任何失败都回滚，避免 Actions 保存半成品。
+    $incoming = "$resolvedDestination.incoming"
+    $backup = "$resolvedDestination.backup"
+    if (Test-Path -LiteralPath $incoming) {
+        Remove-Item -LiteralPath $incoming -Recurse -Force
+    }
+    if (Test-Path -LiteralPath $backup) {
+        if (Test-Path -LiteralPath $resolvedDestination) {
+            Remove-Item -LiteralPath $backup -Recurse -Force
+        } else {
+            Move-Item -LiteralPath $backup -Destination $resolvedDestination
+        }
+    }
+    New-Item -ItemType Directory -Path (Split-Path -Parent $incoming) -Force | Out-Null
+    New-Item -ItemType Directory -Path $incoming -Force | Out-Null
+    Get-ChildItem -LiteralPath $resolvedSource -Force |
+        Copy-Item -Destination $incoming -Recurse -Force
+    $hadExistingCache = Test-Path -LiteralPath $resolvedDestination
+    try {
+        if ($hadExistingCache) {
+            Move-Item -LiteralPath $resolvedDestination -Destination $backup
+        }
+        Move-Item -LiteralPath $incoming -Destination $resolvedDestination
+        if (Test-Path -LiteralPath $backup) {
+            Remove-Item -LiteralPath $backup -Recurse -Force
+        }
+    } catch {
+        if (Test-Path -LiteralPath $resolvedDestination) {
+            Remove-Item -LiteralPath $resolvedDestination -Recurse -Force
+        }
+        if (Test-Path -LiteralPath $backup) {
+            Move-Item -LiteralPath $backup -Destination $resolvedDestination
+        }
+        if (Test-Path -LiteralPath $incoming) {
+            Remove-Item -LiteralPath $incoming -Recurse -Force
+        }
+        throw
+    }
+    Write-Host "$Label cache refreshed: $resolvedDestination"
+}
+
 # ---- 依赖安装（F1：版本读取必须在此之后，构建 venv 此时才可用）----
 if (-not $SkipDependencyInstall) {
     if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
@@ -198,6 +257,9 @@ $chromeProbe = Get-ChildItem -LiteralPath $browsersRoot -Recurse -Filter 'chrome
 if (-not $chromeProbe) {
     throw "Bundled Chromium executable was not found under: $browsersRoot"
 }
+if (-not $SkipBrowserDownload -and $BrowserCachePath) {
+    Sync-VerifiedTreeToCache $browsersRoot $BrowserCachePath 'Browser'
+}
 
 if ($Edition -eq 'Full' -and -not $SkipRuntimeAssetDownload) {
     & (Join-Path $projectRoot 'tools\prepare_windows_runtime.ps1') `
@@ -228,6 +290,9 @@ if ($Edition -eq 'Full') {
             throw "Tesseract language pack is not a valid traineddata blob: $trained"
         }
     }
+}
+if ($Edition -eq 'Full' -and -not $SkipRuntimeAssetDownload -and $RuntimeCachePath) {
+    Sync-VerifiedTreeToCache $runtimeRoot $RuntimeCachePath 'Runtime asset'
 }
 
 Reset-TemporaryDirectory $binaryRoot

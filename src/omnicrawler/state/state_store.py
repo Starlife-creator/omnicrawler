@@ -713,55 +713,53 @@ class StateStore:
             row["validation_pass_rate"] = round(int(row["valid"]) / max(1, present), 4)
         return rows
 
-def review_queue(
+    def review_queue(
         self, run_id: str | None = None, *, limit: int | None = None,
     ) -> list[dict[str, Any]]:
         """Return low-confidence records without requiring SQLite's optional JSON extension.
 
-FINAL-D6：`review_required` 判定下推为 evidence_json LIKE 谓词——
+        FINAL-D6：`review_required` 判定下推为 evidence_json LIKE 谓词——
         此前全表拉取后逐行 json.loads 过滤，大库上 OOM 风险。LIKE 依赖
         json_text 的默认分隔符（`"review_required": true` 带空格）。
         `limit` 可选限制返回条数（None=全部，保持既有语义）。
         """
-        def review_queue(
-            self, run_id: str | None = None, *, limit: int | None = None,
-        ) -> list[dict[str, Any]]:
-            """Return low-confidence records without requiring SQLite's optional JSON extension.
-
-            FINAL-D6：`review_required` 判定下推为 evidence_json LIKE 谓词——
-            此前全表拉取后逐行 json.loads 过滤，大库上 OOM 风险。LIKE 依赖
-            json_text 的默认分隔符（`"review_required": true` 带空格）。
-            `limit` 可选限制返回条数（None=全部，保持既有语义）。
-            """
-            self._require_run_id(run_id)
-        where_parts = ['evidence_json LIKE \'%"review_required": true\'']
-        params = []
-        if run_id:
-            where_parts = ['evidence_json LIKE \'%"review_required": true\'', 'run_id=?']
-            params = [run_id]
-        else:
-            where_parts = ['evidence_json LIKE \'%"review_required": true\'']
-            params = []
-        where_sql = " WHERE " + " AND ".join(where_parts)
-        sql = "SELECT record_id, run_id, source_url, data_json, evidence_json FROM records" + (" WHERE " + " AND ".join(where_parts) if where_parts else "")
-        params = [run_id] if run_id else []
+        self._require_run_id(run_id)
         if limit is not None:
-            sql = sql + " LIMIT ?"
-            params.append(limit)
-        with self._lock:
-            rows = self.conn.execute(sql, params).fetchall()
+            if isinstance(limit, bool) or not isinstance(limit, int):
+                raise TypeError("limit must be an integer or None")
+            if limit < 0:
+                raise ValueError("limit cannot be negative")
+            if limit == 0:
+                return []
+        clauses: list[str] = ['evidence_json LIKE \'%"review_required": true%\'']
+        params: list[Any] = []
+        if run_id:
+            clauses.append("run_id=?")
+            params.append(run_id)
+        sql = (
+            "SELECT record_id, run_id, source_url, data_json, evidence_json FROM records"
+            + " WHERE "
+            + " AND ".join(clauses)
+        )
         queue: list[dict[str, Any]] = []
-        for row in rows:
-            evidence = json.loads(row["evidence_json"])
-            quality = evidence.get("_quality", {}) if isinstance(evidence, dict) else {}
-            if quality.get("review_required"):
-                queue.append({
-                    "record_id": row["record_id"],
-                    "run_id": row["run_id"],
-                    "source_url": row["source_url"],
-                    "data": json.loads(row["data_json"]),
-                    "evidence": evidence,
-                })
+        batch_size = 256 if limit is None else max(64, min(1024, limit * 2))
+        with self._lock:
+            cursor = self.conn.execute(sql, params)
+            while rows := cursor.fetchmany(batch_size):
+                for row in rows:
+                    evidence = json.loads(row["evidence_json"])
+                    quality = evidence.get("_quality", {}) if isinstance(evidence, dict) else {}
+                    if not quality.get("review_required"):
+                        continue
+                    queue.append({
+                        "record_id": row["record_id"],
+                        "run_id": row["run_id"],
+                        "source_url": row["source_url"],
+                        "data": json.loads(row["data_json"]),
+                        "evidence": evidence,
+                    })
+                    if limit is not None and len(queue) >= limit:
+                        return queue
         return queue
 
     def edit_record(

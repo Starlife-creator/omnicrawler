@@ -177,6 +177,18 @@ def test_download_template_and_verify(tmp_path: Path) -> None:
     ok, _ = market_client.verify_installed_template(dest, "demo/template", str(trust))
     assert not ok
 
+    protected_root = tmp_path / "protected_templates"
+    protected = protected_root / "demo" / "template"
+    protected.mkdir(parents=True)
+    manifest = protected / "package.manifest.json"
+    manifest.write_text('{"package_format": 1}', encoding="utf-8")
+    with pytest.raises(PermissionError, match="完整签名包"):
+        market_client.download_template_and_verify(
+            "demo/template", str(registry), protected_root, str(trust)
+        )
+    assert manifest.read_text(encoding="utf-8") == '{"package_format": 1}'
+    assert not (protected / "template.yaml").exists()
+
 
 def test_download_template_rejects_unsafe_id(tmp_path: Path) -> None:
     with pytest.raises(ValueError):

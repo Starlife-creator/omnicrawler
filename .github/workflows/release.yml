@@ -2,7 +2,7 @@ name: release
 
 # 云端打包构建并发布：
 #   - push v* tag（如 v0.7.0）→ 自动构建 Windows / Linux / macOS 便携包并发布正式 Release
-#   - workflow_dispatch → 手动构建（预发布），用于正式发布前的验证
+#   - workflow_dispatch → 手动构建验证，只保留 Actions artifacts，不创建 GitHub Release
 #
 # 产物（每个平台包都含 SHA256SUMS 校验和 + SBOM + provenance）：
 #   OmniCrawler-<version>-Windows-Portable-{Standard,Full}.zip
@@ -25,20 +25,13 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
-    inputs:
-      prerelease:
-        description: "发布为预发布（pre-release）"
-        type: boolean
-        default: true
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  id-token: write        # OIDC，keyless 签名必需
-  attestations: write    # 写入 Release 证明
+  contents: read
 
 # 单一来源：交付物冻结的 Python 版本。三平台构建 job 与聚合发布 job 均引用此值；
 # verify-python-version job 会断言它与 pyproject 的 requires-python 下界一致，防止漂移。
@@ -58,6 +51,8 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "${{ env.BUILD_PYTHON_VERSION }}"
+          cache: pip
+          cache-dependency-path: constraints/quality.txt
       - name: 断言 requires-python 下界 == 构建 Python 版本
         shell: bash
         run: |
@@ -69,10 +64,39 @@ jobs:
           fi
           echo "OK: requires-python 下界 $PY_MIN == 构建版本 $BUILD_VER"
 
+      - name: 断言发布 tag == 项目版本
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          PROJECT_VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          EXPECTED_TAG="v${PROJECT_VERSION}"
+          if [ "${GITHUB_REF_NAME}" != "$EXPECTED_TAG" ]; then
+            echo "::error::发布 tag (${GITHUB_REF_NAME}) 与项目版本 ($EXPECTED_TAG) 不一致"
+            exit 1
+          fi
+          echo "OK: 发布 tag ${GITHUB_REF_NAME} == 项目版本 $PROJECT_VERSION"
+
+      - name: 安装快速门禁工具
+        run: python -m pip install --constraint constraints/quality.txt ruff
+
+      - name: 发布前快速门禁
+        shell: bash
+        run: |
+          python -m compileall -q src tests examples tools
+          python -m ruff check src tests tools
+          python tools/check_release_integrity.py
+          python tools/check_architecture.py
+          python tools/check_docs_consistency.py
+          python tools/check_network_boundaries.py --source-root src/omnicrawler
+
   build-windows-portable:
     needs: [verify-python-version]
     runs-on: windows-latest
     timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       PYTHONIOENCODING: utf-8
     steps:
@@ -83,6 +107,8 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "${{ env.BUILD_PYTHON_VERSION }}"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: 读取源码版本号
         id: version
@@ -108,14 +134,14 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-${{ hashFiles('pyproject.toml') }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
 
       - name: 缓存 OCR 运行时
         id: runtime-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/runtime
-          key: ocr-runtime-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          key: ocr-runtime-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-${{ hashFiles('tools/prepare_windows_runtime.ps1', 'tools/download_and_smoke_test.py') }}
 
       # ── Standard 便携包 ────────────────────────────────────────────
       # 首次构建（无浏览器缓存）走联网下载；命中缓存则跳过下载直接复制。
@@ -124,7 +150,9 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/playwright
         run: |
-          $browserArgs = if (Test-Path ".cache/playwright") { "-BrowserCachePath", ".cache/playwright", "-SkipBrowserDownload" } else { @() }
+          $browserArgs = @("-BrowserCachePath", ".cache/playwright")
+          $cachedChrome = Get-ChildItem ".cache/playwright" -Recurse -Filter "chrome.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($cachedChrome) { $browserArgs += "-SkipBrowserDownload" }
           powershell -ExecutionPolicy Bypass -File build_windows.ps1 `
             -Edition Standard `
             -ReleaseOutputPath "$env:RUNNER_TEMP/artifacts" `
@@ -136,8 +164,13 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/playwright
         run: |
-          $browserArgs = if (Test-Path ".cache/playwright") { "-BrowserCachePath", ".cache/playwright", "-SkipBrowserDownload" } else { @() }
-          $runtimeArgs = if (Test-Path ".cache/runtime") { "-RuntimeCachePath", ".cache/runtime", "-SkipRuntimeAssetDownload" } else { @() }
+          $browserArgs = @("-BrowserCachePath", ".cache/playwright")
+          $cachedChrome = Get-ChildItem ".cache/playwright" -Recurse -Filter "chrome.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($cachedChrome) { $browserArgs += "-SkipBrowserDownload" }
+          $runtimeArgs = @("-RuntimeCachePath", ".cache/runtime")
+          $runtimeManifest = ".cache/runtime/models/paddlex/omnicrawler-model-manifest.json"
+          $cachedRuntime = (Test-Path $runtimeManifest) -and (Test-Path ".cache/runtime/tesseract/tesseract.exe") -and (Test-Path ".cache/runtime/selenium/chromedriver.exe")
+          if ($cachedRuntime) { $runtimeArgs += "-SkipRuntimeAssetDownload" }
           powershell -ExecutionPolicy Bypass -File build_windows.ps1 `
             -Edition Full `
             -ReleaseOutputPath "$env:RUNNER_TEMP/artifacts" `
@@ -223,6 +256,10 @@ jobs:
     # 覆盖 Ubuntu 22.04+ / Debian 12+ / RHEL 9。
     runs-on: ubuntu-22.04
     timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       PYTHONIOENCODING: utf-8
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/playwright
@@ -234,6 +271,8 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "${{ env.BUILD_PYTHON_VERSION }}"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: 安装 Qt6 运行库（GUI 冒烟测试依赖，P4 跨平台对称）
         run: |
@@ -253,7 +292,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/playwright
-          key: playwright-linux-${{ steps.playwright-version.outputs.version }}-${{ hashFiles('pyproject.toml') }}
+          key: playwright-linux-${{ steps.playwright-version.outputs.version }}
 
       - name: 构建 Standard 便携包
         shell: bash
@@ -312,6 +351,14 @@ jobs:
           python tools/generate_checksums.py "$RUNNER_TEMP/artifacts-linux" \
             --output "$RUNNER_TEMP/artifacts-linux/SHA256SUMS-linux.txt" --check
 
+      - name: 为便携包生成 keyless 签名证明
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/artifacts-linux/OmniCrawler-*Portable-*.tar.xz
+          predicate-type: "https://in-toto.io/attestation/release/v0.1"
+          predicate: "{}"
+
       - name: 上传构建产物（供聚合发布 job 使用）
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -328,6 +375,10 @@ jobs:
     # 相同代码+依赖一轮过一轮挂。macos-14 为稳定镜像。
     runs-on: macos-14
     timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       PYTHONIOENCODING: utf-8
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/playwright
@@ -344,6 +395,8 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "${{ env.BUILD_PYTHON_VERSION }}"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: 解析 playwright 版本（缓存 key，P4-4）
         id: playwright-version
@@ -355,7 +408,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/playwright
-          key: playwright-macos-${{ steps.playwright-version.outputs.version }}-${{ hashFiles('pyproject.toml') }}
+          key: playwright-macos-${{ steps.playwright-version.outputs.version }}
 
       - name: 构建 Standard 便携包
         shell: bash
@@ -414,6 +467,14 @@ jobs:
           python tools/generate_checksums.py "$RUNNER_TEMP/artifacts-macos" \
             --output "$RUNNER_TEMP/artifacts-macos/SHA256SUMS-macos.txt" --check
 
+      - name: 为便携包生成 keyless 签名证明
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/artifacts-macos/OmniCrawler-*Portable-*.dmg
+          predicate-type: "https://in-toto.io/attestation/release/v0.1"
+          predicate: "{}"
+
       - name: 上传构建产物（供聚合发布 job 使用）
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -427,6 +488,8 @@ jobs:
     needs: [build-windows-portable, build-linux-portable, build-macos-portable]
     # S6：聚合 job 与构建 job 同锁，保持环境一致（虽然只下载+发布，不产二进制）
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -440,6 +503,8 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "${{ env.BUILD_PYTHON_VERSION }}"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: 生成 provenance
         shell: bash
@@ -552,15 +617,17 @@ jobs:
           cat "$BODY"
 
       - name: 发布到 GitHub Release（元数据）
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           tag_name: ${{ github.ref_name }}
           name: OmniCrawler ${{ github.ref_name }}
           body_path: ${{ runner.temp }}/artifacts/RELEASE_BODY.md
           generate_release_notes: true
-          prerelease: ${{ inputs.prerelease || startsWith(github.ref_name, 'v') && contains(github.ref_name, '-') }}
+          prerelease: ${{ startsWith(github.ref_name, 'v') && contains(github.ref_name, '-') }}
 
       - name: 逐文件挂载资产（意外错误硬失败；超限项已在源头剔除）
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
           # FINAL 修复：循环会 cd 进 artifacts 目录（无 .git），gh 解析仓库
@@ -584,6 +651,7 @@ jobs:
           echo "共挂载 $mounted 个资产"
 
       - name: 缺席汇总告警（黄灯语义：成功但需知悉）
+        if: github.event_name == 'push'
         shell: bash
         run: |
           shopt -s nullglob
