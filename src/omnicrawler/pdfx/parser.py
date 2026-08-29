@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, TypedDict
 
 import pypdfium2 as pdfium
 from pdfminer.layout import LAParams
 
+from .concurrency import iter_bounded_futures
 from .config import ProjectConfig
 from .database import Database
 from .utils import clean_text, utcnow
@@ -15,6 +17,12 @@ PARSER_VERSION = "native-1.0"
 
 # D16：同一文档解析失败最大次数，超过后置 parse_dead 排除
 MAX_PARSE_ATTEMPTS = 3
+
+
+class ParseOutcome(TypedDict, total=False):
+    page_count: int
+    ocr_pages: int
+    error: Exception
 
 # Phase 0（M0a）：pdfplumber 底层 pdfminer 的布局参数——sort 语义对齐原
 # fitz get_text(sort=True)（阅读顺序），laparams 控制词/行合并容差。
@@ -58,11 +66,10 @@ def open_document(path: str):
     加密检测前置：pypdfium2 打开加密文档渲染会失败，先显式拒绝保持原
     PermissionError("PDF需要密码") 行为。
     """
-    import pdfplumber
+    from pypdf import PdfReader
 
-    with pdfplumber.open(path) as probe:
-        if probe.is_locked:
-            raise PermissionError("PDF需要密码")
+    if PdfReader(path).is_encrypted:
+        raise PermissionError("PDF需要密码")
     return pdfium.PdfDocument(path)
 
 
@@ -155,7 +162,8 @@ def parse_stage(
     db: Database,
     limit: int | None = None,
     workers: int | None = None,
-) -> dict[str, int]:
+    should_stop: Callable[[], bool] | None = None,
+) -> dict[str, Any]:
     if limit is not None and limit < 0:
         raise ValueError("limit 不能为负数")
     parser_config = config.parser
@@ -164,16 +172,34 @@ def parse_stage(
     workers = int(parser_config.get("workers", 4)) if workers is None else workers
     if not 1 <= workers <= 64:
         raise ValueError("workers 必须在1到64之间")
-    rows = db.fetchall(
+    select_sql = (
         "SELECT doc_id, primary_path, attempt_count FROM documents "
         "WHERE status IN ('ingested','parse_failed') AND attempt_count < ? "
-        "ORDER BY filename",
-        (MAX_PARSE_ATTEMPTS,),
+        "ORDER BY filename, doc_id"
     )
-    if limit is not None:
-        rows = rows[:limit]
-    summary = {"selected": len(rows), "parsed": 0, "failed": 0, "ocr_pages": 0}
-    if not rows:
+    select_params: tuple[Any, ...] = (MAX_PARSE_ATTEMPTS,)
+    if hasattr(db, "iter_rows"):
+        total_row = db.fetchone(
+            "SELECT COUNT(*) AS n FROM documents "
+            "WHERE status IN ('ingested','parse_failed') AND attempt_count < ?",
+            (MAX_PARSE_ATTEMPTS,),
+        )
+        selected = int(total_row["n"] if total_row else 0)
+        if limit is not None:
+            selected = min(selected, limit)
+            select_sql += " LIMIT ?"
+            select_params += (limit,)
+        rows = db.iter_rows(select_sql, select_params)
+    else:  # Lightweight test doubles and third-party Database adapters.
+        buffered_rows = db.fetchall(select_sql, select_params)
+        if limit is not None:
+            buffered_rows = buffered_rows[:limit]
+        selected = len(buffered_rows)
+        rows = iter(buffered_rows)
+    summary: dict[str, Any] = {
+        "selected": selected, "parsed": 0, "failed": 0, "ocr_pages": 0,
+    }
+    if not selected:
         return summary
 
     # S1.5.1：每线程复用独立数据库连接（参照 extraction.py 每线程 DB 模式），
@@ -189,14 +215,19 @@ def parse_stage(
             _thread_connections.append(worker_db)  # GIL 下 list.append 线程安全
         return _parse_and_store(config, worker_db, row, min_chars, max_garbled)
 
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        try:
-            futures = {
-                pool.submit(work, row): row
-                for row in rows
-            }
-            for future in as_completed(futures):
-                row = futures[future]
+    def mark_stopped() -> None:
+        summary["stopped"] = True
+
+    try:
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+            completed = iter_bounded_futures(
+                rows,
+                lambda row: pool.submit(work, row),
+                max_in_flight=max(1, workers * 4),
+                should_stop=should_stop,
+                on_stop=mark_stopped,
+            )
+            for future, row in completed:
                 doc_id = row["doc_id"]
                 try:
                     outcome = future.result()
@@ -231,16 +262,22 @@ def parse_stage(
                             str(exc)[:4000], utcnow(), doc_id,
                         ),
                     )
-        finally:
-            for conn in _thread_connections:
-                try:
-                    conn.close()
-                except Exception:  # noqa: BLE001 - 线程连接关闭失败不应影响调用方
-                    pass
+    finally:
+        for conn in _thread_connections:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001 - 线程连接关闭失败不应影响调用方
+                pass
     return summary
 
 
-def _parse_and_store(config: ProjectConfig, db: Database, row, min_chars: int, max_garbled: float) -> dict[str, int]:
+def _parse_and_store(
+    config: ProjectConfig,
+    db: Database,
+    row,
+    min_chars: int,
+    max_garbled: float,
+) -> ParseOutcome:
     """先流式解析到内存页列表，再开单事务 executemany（S1.5.1 短事务批写）。
 
     长事务覆盖整个解析会与其他线程互相阻塞；改为把解析（纯内存，无锁）与

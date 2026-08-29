@@ -21,7 +21,7 @@ from typing import Any, Literal, cast
 
 LOGGER = logging.getLogger(__name__)
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -87,163 +87,11 @@ def _repolish_widget(widget: QWidget) -> None:
     widget.ensurePolished()
 
 
-# FINAL Phase C：纯逻辑缝外置（Strangler 第一刀）——指纹与选择器判定
-# 移入 task_canvas_logic，本模块仅保留 UI 装配与信号接线。
+# Compatibility aliases keep the canvas's private API stable for existing tests/plugins.
+from .task_canvas_components import FieldTableModel as _FieldTableModel
+from .task_canvas_components import PlanReviewWorker as _PlanReviewWorker
 from .task_canvas_logic import field_fingerprint
 from .task_canvas_logic import selector_kind as _selector_kind
-
-
-class _PlanReviewWorker(QThread):
-    """P4：后台生成 AI 任务计划（复用 natural_language_task.compile_with_ai）。
-
-    与 home.py _AIEnrichWorker 同模式：隐私闸门 → provider 单一真源 → 失败/未启用
-    显式区分信号。审核动作本身与 AI 解耦——本 worker 只负责产出「AI 计划」内容，
-    采纳/忽略由画布纯 UI 处理，无 AI 时画布走本地轨不受影响。
-    """
-
-    result_ready = Signal(object)  # NaturalLanguageDraft（ai_enhanced=True）
-    ai_unavailable = Signal(str)  # reason（未启用/隐私禁用）
-    ai_error = Signal(str)  # error message（调用失败/越权拦截）
-
-    def __init__(self, request: str, parent: QWidget | None = None, project_root: str | None = None) -> None:
-        super().__init__(parent)
-        self._request = request
-        self._project_root = project_root
-
-    def run(self) -> None:
-        try:
-            # 隐私闸门：页面文本外发被禁用时直接跳过 AI，不静默发走
-            from ...core.ai_env import load_ai_privacy
-
-            privacy = load_ai_privacy(self._project_root)
-            if not privacy.get("allow_page_text", True):
-                self.ai_unavailable.emit(_("AI 页面文本外发已按隐私设置禁用，已使用本地解析"))
-                return
-
-            from ...services.natural_language_task import compile_with_ai
-
-            provider = self._load_provider()
-            if provider is None:
-                self.ai_unavailable.emit(_("AI 未启用：请在「AI 服务中心」配置后重试"))
-                return
-
-            result = compile_with_ai(self._request, provider)
-            self.result_ready.emit(result)
-        except Exception as exc:  # noqa: BLE001 - 错误需上抛给 UI，不再是静默 None
-            reason = str(exc).strip() or type(exc).__name__
-            self.ai_error.emit(reason)
-        finally:
-            self.deleteLater()
-
-    def _load_provider(self) -> object | None:
-        """从单一真源构造 AI provider（含 Egress 审计；未启用返回 None）。"""
-        from ...services.ai_providers import provider_from_env
-
-        return provider_from_env(project_root=self._project_root)
-
-
-class _FieldTableModel(QAbstractTableModel):
-    """字段表格 model（PRD §3.3：QAbstractTableModel + QTableView 虚拟滚动内建）。
-
-    渐进披露：数据就绪后默认只显示前 ``_INITIAL_VISIBLE_ROWS`` 行，
-    「还有 N 个字段，点击加载」触发 ``show_all()`` 展开全部——
-    50 字段场景首屏只绘制可见行，满足数据就绪 → 首屏 <500ms 与滚动 ≥30fps 基线。
-    """
-
-    _HEADERS: tuple[str, ...] = (_("名称"), _("选择器"), _("类型"))
-    _INITIAL_VISIBLE_ROWS = 10
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._fields: list[FieldDef] = []
-        self._visible: int | None = self._INITIAL_VISIBLE_ROWS
-
-    # ── Qt model API ────────────────────────────────────
-    def rowCount(self, parent: QModelIndex | None = None) -> int:  # type: ignore[override]
-        if parent is not None and parent.isValid():
-            return 0
-        total = len(self._fields)
-        if self._visible is None:
-            return total
-        return min(total, self._visible)
-
-    def columnCount(self, parent: QModelIndex | None = None) -> int:  # type: ignore[override]
-        return 3
-
-    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:  # type: ignore[override]
-        if not index.isValid() or not 0 <= index.row() < len(self._fields):
-            return None
-        if role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
-            return None
-        field = self._fields[index.row()]
-        return (field.name, field.selector, field.selector_type)[index.column()]
-
-    def headerData(self, section: int, orientation, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
-            return self._HEADERS[section] if section < len(self._HEADERS) else None
-        return None
-
-    def flags(self, index: QModelIndex) -> Qt.ItemFlag:  # type: ignore[override]
-        return (
-            Qt.ItemFlag.ItemIsEnabled
-            | Qt.ItemFlag.ItemIsSelectable
-            | Qt.ItemFlag.ItemIsEditable
-        )
-
-    def setData(self, index: QModelIndex, value: Any, role: int = Qt.ItemDataRole.EditRole) -> bool:  # type: ignore[override]
-        if not index.isValid() or role != Qt.ItemDataRole.EditRole:
-            return False
-        field = self._fields[index.row()]
-        text = str(value)
-        if index.column() == 0:
-            if not text.strip():
-                return False
-            field.name = text.strip()
-        elif index.column() == 1:
-            field.selector = text
-        else:
-            field.selector_type = (
-                cast(Literal["css", "xpath", "jsonpath"], text)
-                if text in ("css", "xpath", "jsonpath") else "css"
-            )
-        self.dataChanged.emit(index, index, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
-        return True
-
-    # ── 画布专用 API ────────────────────────────────────
-    def set_fields(self, fields: list[FieldDef]) -> None:
-        """数据就绪后整体替换（一次性 layoutChanged，首屏只绘制可见行）。"""
-        self._fields = list(fields)
-        self._visible = self._INITIAL_VISIBLE_ROWS
-        self.layoutChanged.emit()
-
-    def rows(self) -> list[FieldDef]:
-        return list(self._fields)
-
-    def append(self, field: FieldDef) -> None:
-        row = len(self._fields)
-        self.beginInsertRows(QModelIndex(), row, row)
-        self._fields.append(field)
-        self.endInsertRows()
-
-    def remove_row(self, row: int) -> None:
-        if 0 <= row < len(self._fields):
-            self.beginRemoveRows(QModelIndex(), row, row)
-            del self._fields[row]
-            self.endRemoveRows()
-
-    def show_all(self) -> None:
-        if self._visible is None:
-            return
-        self._visible = None
-        self.layoutChanged.emit()
-
-    def hidden_count(self) -> int:
-        if self._visible is None:
-            return 0
-        return max(0, len(self._fields) - self._visible)
-
-    def field_names(self) -> set[str]:
-        return {f.name for f in self._fields if f.name.strip()}
 
 
 class _Section(QGroupBox):

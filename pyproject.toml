@@ -127,6 +127,11 @@ markers = [
   "plugin_contract: public contract-2 test suite shared by authors and CI (F1: local green = CI green)",
 ]
 asyncio_mode = "auto"
+xfail_strict = true
+filterwarnings = [
+  "error::pytest.PytestUnhandledThreadExceptionWarning",
+  "error::pytest.PytestUnraisableExceptionWarning",
+]
 
 [tool.coverage.run]
 source = ["src/omnicrawler"]
@@ -169,7 +174,7 @@ known-first-party = ["omnicrawler"]
 python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
-exclude = "^src/omnicrawler/(pdfx|apps)/"
+exclude = "^src/omnicrawler/apps/"
 disable_error_code = ["import-untyped"]
 
 # Gradual GUI mypy inclusion — Phase 2 (2.3.0):

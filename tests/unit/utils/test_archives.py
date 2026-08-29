@@ -3,13 +3,38 @@ import stat
 import tarfile
 import tempfile
 import unittest
+import warnings
 import zipfile
 from pathlib import Path
 
-from omnicrawler.fetching.archives import ArchiveLimits, UnsafeArchiveError, safe_extract_archive
+from omnicrawler.fetching.archives import (
+    ArchiveLimits,
+    UnsafeArchiveError,
+)
+from omnicrawler.fetching.archives import safe_extract_archive as _deprecated_safe_extract_archive
+
+
+def safe_extract_archive(*args, **kwargs):
+    """Exercise the compatibility implementation without leaking its expected warning."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="fetching.archives 已废弃.*",
+            category=DeprecationWarning,
+        )
+        return _deprecated_safe_extract_archive(*args, **kwargs)
 
 
 class ArchiveSafetyTest(unittest.TestCase):
+    def test_legacy_entrypoint_declares_deprecation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            archive = root / "safe.zip"
+            with zipfile.ZipFile(archive, "w") as output:
+                output.writestr("data.txt", "safe")
+            with self.assertWarnsRegex(DeprecationWarning, "fetching.archives 已废弃"):
+                _deprecated_safe_extract_archive(archive, root / "deprecated-output")
+
     def test_extracts_safe_zip(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

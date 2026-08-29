@@ -338,10 +338,16 @@ class TestCLI:
         src_root = repo_root / "src"
         existing_pp = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = str(src_root) + (os.pathsep + existing_pp if existing_pp else "")
+        # CLI stdout 是机器可读 JSON 协议；生产者与消费者必须显式约定 UTF-8，
+        # 不能依赖 Windows 当前代码页，也不能用 errors=replace 掩盖损坏。
+        env["PYTHONUTF8"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
         return subprocess.run(
             [sys.executable, "-m", "omnicrawler.cli", *args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="strict",
             timeout=120,
             cwd=repo_root,
             env=env,

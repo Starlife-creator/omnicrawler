@@ -123,7 +123,8 @@ def validate_record(
             if len(fields) >= 3:
                 numbers = [_as_float(values.get(name, {}).get("normalized_value")) for name in fields]
                 if all(number is not None for number in numbers):
-                    if abs(sum(numbers[:-1]) - numbers[-1]) > 0.005:
+                    checked_numbers = [number for number in numbers if number is not None]
+                    if abs(sum(checked_numbers[:-1]) - checked_numbers[-1]) > 0.005:
                         messages.append(f"跨字段勾稽失败：{message}")
                         invalid = True
         elif check_type == "less_equal":

@@ -40,7 +40,8 @@ def database_status(db: Database) -> dict[str, Any]:
                   COALESCE(SUM(CASE WHEN validation_status='invalid' THEN 1 ELSE 0 END),0) AS invalid
            FROM records"""
     )
-    errors = db.fetchone("SELECT COUNT(*) AS n FROM errors")["n"]
+    error_row = db.fetchone("SELECT COUNT(*) AS n FROM errors")
+    errors = int(error_row["n"] if error_row else 0)
     return {
         "documents": documents,
         "pages": dict(pages) if pages else {},
@@ -84,7 +85,12 @@ def run_processing(
     with Database(config.database) as db:
         for stage, operation in (
             ("ingest", lambda: ingest(config, db, limit)),
-            ("parse", lambda: parse_stage(config, db, limit, workers)),
+            (
+                "parse",
+                lambda: parse_stage(
+                    config, db, limit, workers, should_stop=should_stop,
+                ),
+            ),
         ):
             if _stopped(should_stop):
                 results["stopped"] = True
@@ -101,11 +107,19 @@ def run_processing(
                 return results
             results[stage] = result
             _emit(callback, stage, result)
+            if result.get("stopped"):
+                results["stopped"] = True
+                return results
         if run_ocr and not _stopped(should_stop):
             _emit(callback, "ocr_started", {})
             # D39：透传 ocr_workers，GUI/CLI 并行 OCR 才真正生效
             try:
-                result = ocr_stage(config, db, ocr_workers=ocr_workers or 1)
+                result = ocr_stage(
+                    config,
+                    db,
+                    ocr_workers=ocr_workers or 1,
+                    should_stop=should_stop,
+                )
             except Exception as exc:  # noqa: BLE001 - stage isolation keeps partial results
                 LOGGER.exception("PDF 管线阶段 ocr 失败")
                 results["ocr"] = {"failed": True, "error": str(exc)}
@@ -114,6 +128,9 @@ def run_processing(
                 return results
             results["ocr"] = result
             _emit(callback, "ocr", result)
+            if result.get("stopped"):
+                results["stopped"] = True
+                return results
         if _stopped(should_stop):
             results["stopped"] = True
             return results

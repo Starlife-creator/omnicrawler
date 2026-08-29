@@ -86,35 +86,58 @@ def write_query_csv(
     return count
 
 
-def _csv_to_sheet(workbook: Workbook, path: Path, title: str) -> None:
+_EXCEL_MAX_ROWS = 1_048_576
+
+
+def _csv_to_sheet(
+    workbook: Workbook,
+    path: Path,
+    title: str,
+    *,
+    max_rows: int = _EXCEL_MAX_ROWS,
+) -> None:
     from openpyxl.utils import get_column_letter
 
+    if max_rows < 2:
+        raise ValueError("max_rows 必须至少容纳表头和一行数据")
     sheet = workbook.create_sheet(title=title)
     sheet.freeze_panes = "A2"
     column_count = 0
     row_count = 0
+
+    def append_row(row: list[str], row_index: int) -> None:
+        nonlocal column_count, row_count
+        if row_index == 1:
+            cells = []
+            for value in row:
+                cell = WriteOnlyCell(sheet, value=safe_cell(value))
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = PatternFill("solid", fgColor="1F4E78")
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                cells.append(cell)
+            sheet.append(cells)
+        else:
+            sheet.append([safe_cell(value) for value in row])
+        column_count = max(column_count, len(row))
+        row_count += 1
+
+    held_last_row: list[str] | None = None
+    truncated = False
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.reader(handle)
         for row_index, row in enumerate(reader, start=1):
-            if row_index == 1:
-                cells = []
-                for value in row:
-                    cell = WriteOnlyCell(sheet, value=safe_cell(value))
-                    cell.font = Font(bold=True, color="FFFFFF")
-                    cell.fill = PatternFill("solid", fgColor="1F4E78")
-                    cell.alignment = Alignment(horizontal="center", vertical="center")
-                    cells.append(cell)
-                sheet.append(cells)
-                column_count = max(column_count, len(row))
+            if row_index < max_rows:
+                append_row(row, row_index)
+            elif row_index == max_rows:
+                # 保留第 N 行，只有读到 N+1 行才能确认确实发生溢出。
+                held_last_row = row
             else:
-                sheet.append([safe_cell(value) for value in row])
-                if len(row) > column_count:
-                    column_count = len(row)
-            row_count += 1
-            # D48：超过 Excel 行上限（1048576）时停止写入，完整数据保留在 CSV
-            if row_count >= 1_048_576:
-                sheet.append([f"[已截断：超过 Excel 1048576 行上限，完整数据见 {path.name}]"])
+                sheet.append([f"[已截断：超过 Excel {max_rows} 行上限，完整数据见 {path.name}]"])
+                row_count += 1
+                truncated = True
                 break
+    if held_last_row is not None and not truncated:
+        append_row(held_last_row, max_rows)
     # D48：auto_filter.ref 按实际列数计算，字段超 115 时不再筛选错位
     if column_count:
         last_column = get_column_letter(column_count)

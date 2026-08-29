@@ -38,10 +38,10 @@ def open_path(path: str | Path) -> None:
         raise ValueError(
             f"拒绝打开非展示型文件: {target}（扩展名 {target.suffix or '无'} 不在白名单）"
         )
-    target = str(target)
+    target_text = str(target)
     if sys.platform.startswith("win"):
-        os.startfile(target)  # type: ignore[attr-defined]
+        os.startfile(target_text)  # type: ignore[attr-defined]
     elif sys.platform == "darwin":
-        subprocess.Popen(["open", target])
+        subprocess.Popen(["open", target_text])
     else:
-        subprocess.Popen(["xdg-open", target])
+        subprocess.Popen(["xdg-open", target_text])

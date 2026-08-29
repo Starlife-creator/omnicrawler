@@ -47,12 +47,10 @@ _GUI_APP_HOLD = None
 if not _cli_mode():
     try:
         from PySide6.QtCore import (
-            QObject,
             Qt,
             QThread,
             QTimer,
             QUrl,
-            Signal,
             Slot,
         )
         from PySide6.QtGui import (
@@ -61,14 +59,11 @@ if not _cli_mode():
         )
         from PySide6.QtWidgets import (
             QApplication,
-            QCheckBox,
             QComboBox,
             QDialog,
-            QDialogButtonBox,
             QHBoxLayout,
             QInputDialog,
             QLabel,
-            QLineEdit,
             QListWidget,
             QListWidgetItem,
             QMainWindow,
@@ -90,21 +85,25 @@ if not _cli_mode():
     # 冷启动提速：低频功能（AI 设置/插件管理/运行对比）的重型依赖在
     # 使用点函数内懒导入（ai_env≈70ms/plugin_inspector≈53ms/run_compare≈26ms）
     from ..core.config import load_config as load_core_config
-    from ..pipeline_ops.preflight import run_preflight, run_sample
+    from ..pipeline_ops.preflight import run_preflight
     from ..services.application_service import ApplicationService
     from ..services.config_history import ConfigHistory
     from ..services.controllers import ResultController, RunController, TaskController
     from ..services.natural_language_task import NaturalLanguageDraft
     from ..services.offline_demo import create_demo_workspace
     from ..services.ux_service import QuickTaskDraft
-    from ..sources.site_inspector import inspect_url
     from ..templates.recipe_engine import compose_recipe, diff_config
     from ..templates.template_catalog import bundled_template_catalog
     from .async_workers import AsyncWorkerManager
+    from .background_workers import (
+        ActionRecorderWorker,
+        SampleRunWorker,
+        SiteInspectionWorker,
+    )
     from .core.autosave import AutosaveManager
     from .core.config_model import CrawlConfig
     from .core.config_serializer import from_yaml, load_yaml, to_yaml
-    from .core.template_loader import TemplateInfo, TemplateLoader
+    from .core.template_loader import TemplateLoader
     from .delegates import (
         ConfigManager as ConfigDelegate,
     )
@@ -128,6 +127,7 @@ if not _cli_mode():
     from .runner.worker_task_runner import WorkerTaskRunner as TaskRunner
     from .settings import AppSettings
     from .shortcuts import GlobalShortcutManager
+    from .template_library_dialog import TemplateLibraryDialog
     from .views.change_monitor import ChangeMonitorView
     from .views.chart_view import ChartView
     from .views.convert_tool import ConvertView  # B-4：ConvertX 格式互转面板
@@ -146,214 +146,6 @@ if not _cli_mode():
     from .widgets.toast import ToastManager
 
     GUI_VERSION = APP_VERSION
-
-
-def _thread_interrupted() -> bool:
-    """Qt may return ``None`` before a QObject has entered its worker thread."""
-    thread = QThread.currentThread()
-    return thread is not None and thread.isInterruptionRequested()
-
-
-class SiteInspectionWorker(QObject):
-    finished = Signal(object, str)
-    failed = Signal(str)
-
-    def __init__(self, url: str, intent: str = "", robots_fail_closed: bool = True, fetcher: Any | None = None) -> None:
-        super().__init__()
-        self.url = url
-        self.intent = intent
-        # P2-8：探测/检测交由调用方从用户配置传入，替代硬编码 True
-        self.robots_fail_closed = robots_fail_closed
-        # P2：探活复用共享 AsyncFetcher（内部经 EgressBroker 审计出网）
-        self.fetcher = fetcher
-
-    @Slot()
-    def run(self) -> None:
-        try:
-            if _thread_interrupted():
-                return
-            report = inspect_url(
-                self.url, bundled_template_catalog(), intent=self.intent,
-                robots_fail_closed=self.robots_fail_closed, fetcher=self.fetcher,
-            ).to_dict()
-        except Exception as exc:
-            if not _thread_interrupted():
-                self.failed.emit(f"{type(exc).__name__}: {exc}")
-        else:
-            if not _thread_interrupted():
-                self.finished.emit(report, self.url)
-
-
-class TemplateLibraryDialog(QDialog):
-    """Searchable category view that remains usable with hundreds of templates."""
-
-    def __init__(self, templates: list[TemplateInfo], parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle(_("模板库"))
-        self.resize(720, 520)
-        self._templates = templates
-        self.selected_template: TemplateInfo | None = None
-        from .settings import make_qsettings
-
-        self._settings = make_qsettings("OmniCrawler", "GUIWorkbench")
-        stored_favorites = self._settings.value("templates/favorites", [])
-        if isinstance(stored_favorites, str):
-            stored_favorites = [stored_favorites]
-        # QSettings.value 返回 object：显式收窄为 list 后再迭代
-        favorites = stored_favorites if isinstance(stored_favorites, list) else []
-        self._favorites = {str(value) for value in favorites}
-
-        layout = QVBoxLayout(self)
-        filters = QHBoxLayout()
-        self._search = QLineEdit()
-        self._search.setPlaceholderText(_("搜索名称、说明或标签…"))
-        self._category = QComboBox()
-        self._category.addItem(_("全部分类"), "")
-        for category in sorted({item.category for item in templates}):
-            self._category.addItem(category, category)
-        self._favorite_only = QCheckBox(_("只看收藏"))
-        filters.addWidget(self._search, 1)
-        filters.addWidget(self._category)
-        filters.addWidget(self._favorite_only)
-        layout.addLayout(filters)
-
-        self._list = QListWidget()
-        self._list.setAlternatingRowColors(True)
-        layout.addWidget(self._list, 1)
-        self._description = QLabel()
-        self._description.setWordWrap(True)
-        self._description.setMinimumHeight(55)
-        layout.addWidget(self._description)
-        self._favorite_button = QPushButton(_("☆ 收藏/取消收藏"))
-        self._favorite_button.clicked.connect(self._toggle_favorite)
-        layout.addWidget(self._favorite_button)
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Open | QDialogButtonBox.StandardButton.Cancel
-        )
-        _open_btn = buttons.button(QDialogButtonBox.StandardButton.Open)
-        assert _open_btn is not None
-        _open_btn.setText(_("加载模板"))
-        buttons.accepted.connect(self._accept_selected)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-        self._search.textChanged.connect(self._refresh)
-        self._category.currentIndexChanged.connect(self._refresh)
-        self._favorite_only.toggled.connect(self._refresh)
-        self._list.currentItemChanged.connect(self._show_description)
-        self._list.itemDoubleClicked.connect(lambda _item: self._accept_selected())
-        self._refresh()
-
-    def _refresh(self) -> None:
-        query = self._search.text().strip().casefold()
-        category = str(self._category.currentData() or "")
-        self._list.clear()
-        templates = sorted(
-            self._templates,
-            key=lambda item: (item.template_id not in self._favorites, item.category, item.display_name),
-        )
-        for template in templates:
-            haystack = " ".join(
-                (template.name, template.description, template.category, *template.tags)
-            ).casefold()
-            if query and query not in haystack:
-                continue
-            if category and template.category != category:
-                continue
-            if self._favorite_only.isChecked() and template.template_id not in self._favorites:
-                continue
-            item = QListWidgetItem(
-                f"{template.display_name}  ·  {template.category}  ·  v{template.version}"
-                + (_(f"  ·  验证 {template.verified_at}") if template.verified_at else _("  ·  未标注验证日期"))
-            )
-            item.setText(("★ " if template.template_id in self._favorites else "☆ ") + item.text())
-            item.setData(Qt.ItemDataRole.UserRole, template.template_id)
-            item.setToolTip(template.description)
-            self._list.addItem(item)
-        if self._list.count():
-            self._list.setCurrentRow(0)
-        else:
-            self._description.setText(_("没有匹配的模板"))
-
-    def _show_description(self, item: QListWidgetItem | None, _previous=None) -> None:
-        template = self._find(item)
-        if template:
-            capabilities = "、".join(template.capabilities) or _("未声明")
-            source = _("内置模板") if template.is_builtin else _("用户模板")
-            self._description.setText(
-                f"{template.description}\n"
-                + _(f"适用：{template.recommended_when or '请结合目标网址试跑判断'}\n")
-                + _(f"为什么推荐：{template.why or '由网址、页面结构、数据源和所需能力综合判断'}\n")
-                + _(f"限制：{template.limitations or '未声明特殊限制'}\n")
-                + _(f"能力：{capabilities}\n来源：{source}；文件：{template.filepath}")
-            )
-        else:
-            self._description.setText("")
-
-    def _find(self, item: QListWidgetItem | None) -> TemplateInfo | None:
-        template_id = item.data(Qt.ItemDataRole.UserRole) if item else None
-        return next((value for value in self._templates if value.template_id == template_id), None)
-
-    def _accept_selected(self) -> None:
-        self.selected_template = self._find(self._list.currentItem())
-        if self.selected_template is not None:
-            self.accept()
-
-    def _toggle_favorite(self) -> None:
-        template = self._find(self._list.currentItem())
-        if template is None:
-            return
-        if template.template_id in self._favorites:
-            self._favorites.remove(template.template_id)
-        else:
-            self._favorites.add(template.template_id)
-        self._settings.setValue("templates/favorites", sorted(self._favorites))
-        self._refresh()
-
-
-class ActionRecorderWorker(QObject):
-    finished = Signal(dict)
-    failed = Signal(str)
-
-    def __init__(self, url: str, output: Path) -> None:
-        super().__init__()
-        self._url = url
-        self._output = output
-
-    @Slot()
-    def run(self) -> None:
-        try:
-            from ..fetching.action_recorder import record_with_playwright
-            if _thread_interrupted():
-                return
-            result = record_with_playwright(self._url, self._output)
-            if not _thread_interrupted():
-                self.finished.emit(result)
-        except Exception as exc:
-            if not _thread_interrupted():
-                self.failed.emit(str(exc))
-
-
-class SampleRunWorker(QObject):
-    finished = Signal(dict)
-    failed = Signal(str)
-
-    def __init__(self, config_path: Path, pages: int = 3) -> None:
-        super().__init__()
-        self._config_path = config_path
-        self._pages = pages
-
-    @Slot()
-    def run(self) -> None:
-        try:
-            if _thread_interrupted():
-                return
-            result = run_sample(load_core_config(self._config_path), pages=self._pages)
-            if not _thread_interrupted():
-                self.finished.emit(result)
-        except Exception as exc:
-            if not _thread_interrupted():
-                self.failed.emit(str(exc))
 
 
 class MainWindow(QMainWindow):

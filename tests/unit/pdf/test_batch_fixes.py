@@ -93,25 +93,62 @@ def test_d48_csv_to_sheet_column_count_and_row_cap(tmp_path: Path) -> None:
     # 4 列 → 列字母 D；2 行数据
     sheet = workbook["测试"]
     assert sheet.auto_filter.ref == "A1:D3"
-    workbook.close()
+    output = tmp_path / "columns.xlsx"
+    workbook.save(output)
+    from openpyxl import load_workbook
+
+    reopened = load_workbook(output, read_only=True)
+    try:
+        rows = list(reopened["测试"].iter_rows(values_only=True))
+        assert len(rows) == 3
+    finally:
+        reopened.close()
 
 
 def test_d48_csv_to_sheet_row_cap(tmp_path: Path) -> None:
-    """D48：超 1048576 行时写入截断提示而非让 xlsx save 抛异常。"""
-    from openpyxl import Workbook
+    """D48：超行限时把最后一行用于截断提示，保存后总行数不越界。"""
+    from openpyxl import Workbook, load_workbook
 
     from omnicrawler.pdfx.exporter import _csv_to_sheet
 
     csv_path = tmp_path / "big.csv"
-    with csv_path.open("w", encoding="utf-8", newline="") as handle:
-        handle.write("a\n")
-        for _ in range(1_048_600):
-            handle.write("x\n")
+    csv_path.write_text("a\n1\n2\n3\n4\n5\n", encoding="utf-8")
     workbook = Workbook(write_only=True)
-    _csv_to_sheet(workbook, csv_path, "大表")
-    # 不抛异常即通过；write_only sheet 无法直接读行数，这里仅验证未崩溃
-    assert workbook.sheetnames == ["大表"]
-    workbook.close()
+    _csv_to_sheet(workbook, csv_path, "大表", max_rows=4)
+    output = tmp_path / "capped.xlsx"
+    workbook.save(output)
+
+    reopened = load_workbook(output, read_only=True, data_only=True)
+    try:
+        sheet = reopened["大表"]
+        rows = list(sheet.iter_rows(values_only=True))
+        assert len(rows) == 4
+        assert "已截断" in str(rows[-1][0])
+    finally:
+        reopened.close()
+
+
+def test_d48_exact_row_cap_keeps_last_data_row(tmp_path: Path) -> None:
+    """恰好达到行限不是溢出，不得误报截断或丢弃最后一行。"""
+    from openpyxl import Workbook, load_workbook
+
+    from omnicrawler.pdfx.exporter import _csv_to_sheet
+
+    csv_path = tmp_path / "exact.csv"
+    csv_path.write_text("a\n1\n2\n3\n", encoding="utf-8")
+    workbook = Workbook(write_only=True)
+    _csv_to_sheet(workbook, csv_path, "精确", max_rows=4)
+    output = tmp_path / "exact.xlsx"
+    workbook.save(output)
+
+    reopened = load_workbook(output, read_only=True, data_only=True)
+    try:
+        sheet = reopened["精确"]
+        rows = list(sheet.iter_rows(values_only=True))
+        assert len(rows) == 4
+        assert rows[-1][0] == "3"
+    finally:
+        reopened.close()
 
 
 class _FakeTable:

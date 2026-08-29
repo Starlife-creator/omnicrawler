@@ -177,6 +177,25 @@ class Database:
     def fetchall(self, sql: str, params: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
         return list(self.connection.execute(sql, params).fetchall())
 
+    def iter_rows(
+        self,
+        sql: str,
+        params: tuple[Any, ...] = (),
+        *,
+        fetch_size: int = 256,
+    ) -> Iterator[sqlite3.Row]:
+        """Stream a stable query snapshot in bounded batches.
+
+        ``fetchall`` is still useful for genuinely small result sets.  Pipeline
+        stages use this method for potentially unbounded document/page queues so
+        their memory use depends on ``fetch_size`` rather than corpus size.
+        """
+        if fetch_size < 1:
+            raise ValueError("fetch_size 必须大于等于1")
+        cursor = self.connection.execute(sql, params)
+        while batch := cursor.fetchmany(fetch_size):
+            yield from batch
+
     def fetchone(self, sql: str, params: tuple[Any, ...] = ()) -> sqlite3.Row | None:
         return self.connection.execute(sql, params).fetchone()
 

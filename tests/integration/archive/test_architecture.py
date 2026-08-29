@@ -5,13 +5,14 @@ from pathlib import Path
 import pytest
 
 from omnicrawler.pipeline_ops.pipeline_stages import FunctionStage, StageContext, require_stage_order
-from omnicrawler.runtime.repository import RunRepository, SQLiteRunRepository
+from omnicrawler.runtime.repository import RunRepository
 from omnicrawler.services.application_service import ApplicationService
 from omnicrawler.services.controllers import ResultController, RunController, TaskController
+from omnicrawler.state import StateStore
 
 
-def test_repository_port_and_sqlite_adapter(tmp_path: Path) -> None:
-    with SQLiteRunRepository(tmp_path / "state.sqlite3") as repository:
+def test_repository_port_and_state_store(tmp_path: Path) -> None:
+    with StateStore(tmp_path / "state.sqlite3") as repository:
         assert isinstance(repository, RunRepository)
         assert repository.latest_run() is None
         assert repository.stats()["frontier"] == {}

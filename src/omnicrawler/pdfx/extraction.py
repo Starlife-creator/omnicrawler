@@ -7,9 +7,10 @@ import logging
 import re
 import threading
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from .concurrency import iter_bounded_futures
 from .config import FieldSpec, ProjectConfig
 from .database import Database
 from .llm import build_user_content, create_llm_client
@@ -66,10 +67,10 @@ def rule_extract_field(
                 }
         for alias in spec.search_terms:
             # D23：alias 兜底必须存在分隔符（：:），且按字段类型校验值形态
-            pattern = re.compile(
+            alias_pattern = re.compile(
                 rf"{re.escape(alias)}\s*[：:]\s*(?P<value>[^\n；;]{{1,100}})", re.I
             )
-            match = pattern.search(text)
+            match = alias_pattern.search(text)
             if match:
                 candidate = match.group("value").strip(" ：:")
                 if not candidate or not _shape_plausible(candidate, spec.type):
@@ -144,7 +145,8 @@ def _observable_confidence(value: dict[str, Any], pages_by_no: dict[int, Candida
     raw = str(value.get("raw_value") or "").strip()
     evidence = str(value.get("evidence") or "").strip()
     page_no = value.get("page_no")
-    page = pages_by_no.get(int(page_no)) if str(page_no).isdigit() else None
+    page_no_text = str(page_no) if page_no is not None else ""
+    page = pages_by_no.get(int(page_no_text)) if page_no_text.isdigit() else None
     if method in {"filename_rule", "content_rule"}:
         if value.get("matched_by_pattern"):
             return 0.98
@@ -297,25 +299,41 @@ def extraction_stage(
     db: Database,
     limit: int | None = None,
     workers: int | None = None,
-    should_stop=None,
+    should_stop: Callable[[], bool] | None = None,
     on_document: Callable[[int, int], None] | None = None,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     if limit is not None and limit < 0:
         raise ValueError("limit 不能为负数")
-    rows = db.fetchall(
-        """
+    select_sql = """
         SELECT doc_id, filename, primary_path FROM documents
         WHERE status IN ('parsed','parsed_partial','parsed_native','extract_failed')
-        ORDER BY filename
+        ORDER BY filename, doc_id
         """
-    )
-    if limit is not None:
-        rows = rows[:limit]
+    select_params: tuple[Any, ...] = ()
+    if hasattr(db, "iter_rows"):
+        total_row = db.fetchone(
+            "SELECT COUNT(*) AS n FROM documents "
+            "WHERE status IN ('parsed','parsed_partial','parsed_native','extract_failed')"
+        )
+        selected = int(total_row["n"] if total_row else 0)
+        if limit is not None:
+            selected = min(selected, limit)
+            select_sql += " LIMIT ?"
+            select_params = (limit,)
+        rows = db.iter_rows(select_sql, select_params)
+    else:  # Lightweight test doubles and third-party Database adapters.
+        buffered_rows = db.fetchall(select_sql, select_params)
+        if limit is not None:
+            buffered_rows = buffered_rows[:limit]
+        selected = len(buffered_rows)
+        rows = iter(buffered_rows)
     workers = int(config.extraction.get("workers", 4)) if workers is None else workers
     if not 1 <= workers <= 64:
         raise ValueError("workers 必须在1到64之间")
-    summary = {"selected": len(rows), "documents": 0, "records": 0, "no_data": 0, "failed": 0}
-    if not rows:
+    summary: dict[str, Any] = {
+        "selected": selected, "documents": 0, "records": 0, "no_data": 0, "failed": 0,
+    }
+    if not selected:
         return summary
     # S2.3.2：LLM 客户端构造失败（Key 空/参数非法/依赖缺失）降级为纯规则模式，不中断抽取
     try:
@@ -338,18 +356,26 @@ def extraction_stage(
             _thread_connections.append(worker_db)  # list.append 在 GIL 下线程安全
         return extract_document(config, worker_db, row, client, resolver)
 
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        futures = {pool.submit(work, row): row for row in rows}
-        try:
-            for future in as_completed(futures):
-                row = futures[future]
+    def mark_stopped() -> None:
+        summary["stopped"] = True
+
+    try:
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+            completed = iter_bounded_futures(
+                rows,
+                lambda row: pool.submit(work, row),
+                max_in_flight=max(1, workers * 4),
+                should_stop=should_stop,
+                on_stop=mark_stopped,
+            )
+            for future, row in completed:
                 try:
                     count = future.result()
                     summary["documents"] += 1
                     summary["records"] += count
                     if on_document is not None:
                         # B12：实时汇报已处理文档数，避免大批量时进度条长时间不动误以为卡死
-                        on_document(summary["documents"], len(rows))
+                        on_document(summary["documents"], selected)
                     if count == 0:
                         summary["no_data"] += 1
                 except Exception as exc:  # noqa: BLE001
@@ -359,19 +385,13 @@ def extraction_stage(
                         "UPDATE documents SET status='extract_failed', error=?, updated_at=? WHERE doc_id=?",
                         (str(exc)[:4000], utcnow(), row["doc_id"]),
                     )
-                # B15：尊重取消——用户停止后不再继续提交新文档
-                if should_stop and should_stop():
-                    summary["stopped"] = True
-                    break
-        finally:
-            for future in futures:
-                future.cancel()
-    # D40：executor 退出（shutdown 完成）后关闭线程连接，避免 sqlite 文件锁残留
-    for conn in _thread_connections:
-        try:
-            conn.close()
-        except Exception as exc:  # noqa: BLE001
-            LOGGER.warning("关闭抽取线程数据库连接失败: %s", exc)
+    finally:
+        # executor 退出（在途窗口排空）后关闭线程连接，避免 sqlite 文件锁残留
+        for conn in _thread_connections:
+            try:
+                conn.close()
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("关闭抽取线程数据库连接失败: %s", exc)
     # C49/D2：抽取方式分布（rules / hybrid / rules_fallback），供 GUI 明示"是否真的用了大模型"
     summary["extraction_methods"] = {
         row["method"]: row["n"]

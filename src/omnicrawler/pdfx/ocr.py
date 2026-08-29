@@ -6,8 +6,10 @@ import logging
 import os
 import statistics
 import time
+from collections.abc import Callable, Iterable, Iterator
 from typing import Any, Protocol
 
+from .concurrency import iter_bounded_futures
 from .config import ProjectConfig
 from .database import Database
 from .parser import render_page, text_quality
@@ -279,7 +281,9 @@ _worker_document: Any | None = None
 _worker_document_path: str | None = None
 
 
-def _ocr_worker_process(args: tuple[str, int, int]) -> tuple[str, int, str | None, float | None, int, float]:
+def _ocr_worker_process(
+    args: tuple[str, int, int],
+) -> tuple[str, int, str | None, float | None, int, float, str | None]:
     """单个 worker 进程的处理函数：渲染 + OCR 识别。
 
     Returns:
@@ -322,7 +326,8 @@ def ocr_stage(
     limit_pages: int | None = None,
     *,
     ocr_workers: int = 1,
-) -> dict[str, int]:
+    should_stop: Callable[[], bool] | None = None,
+) -> dict[str, Any]:
     """OCR 阶段：对缺少文字层的页面执行 OCR 识别。
 
     Args:
@@ -333,18 +338,34 @@ def ocr_stage(
     """
     if limit_pages is not None and limit_pages < 0:
         raise ValueError("limit_pages 不能为负数")
-    rows = db.fetchall(
-        """
+    select_sql = """
         SELECT p.doc_id, p.page_no, d.primary_path
         FROM pages p JOIN documents d ON d.doc_id=p.doc_id
         WHERE p.needs_ocr=1 AND p.ocr_status IN ('pending','failed')
         ORDER BY p.doc_id, p.page_no
         """
-    )
-    if limit_pages is not None:
-        rows = rows[:limit_pages]
-    summary: dict[str, int] = {"selected": len(rows), "recognized": 0, "failed": 0, "skipped": 0}
-    if not rows:
+    select_params: tuple[Any, ...] = ()
+    if hasattr(db, "iter_rows"):
+        total_row = db.fetchone(
+            """SELECT COUNT(*) AS n FROM pages p
+               WHERE p.needs_ocr=1 AND p.ocr_status IN ('pending','failed')"""
+        )
+        selected = int(total_row["n"] if total_row else 0)
+        if limit_pages is not None:
+            selected = min(selected, limit_pages)
+            select_sql += " LIMIT ?"
+            select_params = (limit_pages,)
+        rows: Iterable[Any] = db.iter_rows(select_sql, select_params)
+    else:  # Lightweight test doubles and third-party Database adapters.
+        buffered_rows = db.fetchall(select_sql, select_params)
+        if limit_pages is not None:
+            buffered_rows = buffered_rows[:limit_pages]
+        selected = len(buffered_rows)
+        rows = buffered_rows
+    summary: dict[str, Any] = {
+        "selected": selected, "recognized": 0, "failed": 0, "skipped": 0,
+    }
+    if not selected:
         return summary
     dpi = int(config.ocr.get("dpi", 220))
     workers = adaptive_ocr_workers(ocr_workers)
@@ -361,12 +382,14 @@ def ocr_stage(
                     "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
                     (utcnow(), row["doc_id"], row["page_no"]),
                 )
-            summary["skipped"] = len(rows)
+            summary["skipped"] = selected
             return summary
         if backend is None:
-            summary["skipped"] = len(rows)
+            summary["skipped"] = selected
             return summary
-        return _ocr_serial(config, db, rows, backend, dpi, summary)
+        return _ocr_serial(
+            config, db, rows, backend, dpi, summary, should_stop=should_stop,
+        )
 
     # 多进程路径：D39 父进程不保留 backend 实例（PPStructureV3 占 1-2GB），
     # 但 S2.3.1 要求进入进程池前在本进程预检一次依赖（缺依赖/GPU 不可用早失败，
@@ -382,45 +405,78 @@ def ocr_stage(
                 "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
                 (utcnow(), row["doc_id"], row["page_no"]),
             )
-        summary["skipped"] = len(rows)
+        summary["skipped"] = selected
         return summary
     if precheck_backend is None:
-        summary["skipped"] = len(rows)
+        summary["skipped"] = selected
         return summary
     del precheck_backend  # 预检实例即刻释放，父进程不驻留模型
 
     logger.info("OCR 阶段启动 %d 个 worker 进程", workers)
-    work_items: list[tuple[str, int, int, str, int]] = []
-    for row in rows:
-        doc_id = row["doc_id"]
-        page_no = int(row["page_no"])
-        path = row["primary_path"]
-        work_items.append((doc_id, page_no, path, dpi))
-
     ocr_config = dict(config.ocr)
     start_time = time.monotonic()
-    completed = 0
+    affected_docs: set[str] = set()
+    pending_items: set[tuple[str, int]] = set()
+    failed_submission: tuple[str, int] | None = None
+
+    def mark_failed_items(items: Iterable[tuple[str, int]], exc: Exception) -> None:
+        for doc_id, page_no in items:
+            db.add_error(doc_id, "ocr", RuntimeError(f"OCR 多进程崩溃: {exc}"[:4000]))
+            db.execute(
+                "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
+                (utcnow(), doc_id, page_no),
+            )
+            summary["skipped"] += 1
+
+    def iter_work_items() -> Iterator[tuple[str, int, str, int]]:
+        for index, row in enumerate(rows):
+            if index and index % 500 == 0 and not _check_temperature():
+                logger.warning("温度过高，暂停提交新 OCR 页面")
+                for _ in range(30):
+                    if should_stop is not None and should_stop():
+                        summary["stopped"] = True
+                        return
+                    time.sleep(1)
+            yield row["doc_id"], int(row["page_no"]), row["primary_path"], dpi
+
+    def mark_stopped() -> None:
+        summary["stopped"] = True
 
     try:
-        with concurrent.futures.ProcessPoolExecutor(
+        executor = concurrent.futures.ProcessPoolExecutor(
             max_workers=workers,
             initializer=_ocr_worker_init,
             initargs=(ocr_config,),
-        ) as executor:
-            # D37：按批提交（每批 500），避免百万页 futures 常驻；批间结果即时落库
-            batch_size = 500
-            for batch_start in range(0, len(work_items), batch_size):
-                batch = work_items[batch_start:batch_start + batch_size]
-                futures: dict[concurrent.futures.Future, tuple[str, int]] = {}
-                for doc_id, page_no, path, _dpi in batch:
-                    fut = executor.submit(_ocr_worker_process, (path, page_no, _dpi))
-                    futures[fut] = (doc_id, page_no)
-                # D38：温度保护前移到提交侧——每批提交后检查，任务不再满载后才 sleep
-                if not _check_temperature():
-                    logger.warning("温度过高，等待 30 秒后处理下一批...")
-                    time.sleep(30)
-                for fut in concurrent.futures.as_completed(futures):
-                    doc_id, page_no = futures[fut]
+        )
+    except Exception as exc:  # Pool construction failed before any row was submitted.
+        logger.error("OCR 多进程池初始化失败，%d 页标记跳过: %s", selected, exc)
+        mark_failed_items(
+            ((row["doc_id"], int(row["page_no"])) for row in rows), exc,
+        )
+    else:
+        try:
+            with executor:
+                def submit(item: tuple[str, int, str, int]):
+                    nonlocal failed_submission
+                    doc_id, page_no, path, item_dpi = item
+                    try:
+                        future = executor.submit(_ocr_worker_process, (path, page_no, item_dpi))
+                    except Exception:
+                        failed_submission = (doc_id, page_no)
+                        raise
+                    pending_items.add((doc_id, page_no))
+                    affected_docs.add(doc_id)
+                    return future
+
+                completed = iter_bounded_futures(
+                    iter_work_items(),
+                    submit,
+                    max_in_flight=max(1, workers * 2),
+                    should_stop=should_stop,
+                    on_stop=mark_stopped,
+                )
+                for fut, item in completed:
+                    doc_id, page_no, _path, _dpi = item
                     try:
                         results = fut.result()
                         text, confidence, printable, garbled = results[2], results[3], results[4], results[5]
@@ -431,7 +487,7 @@ def ocr_stage(
                             (utcnow(), doc_id, page_no),
                         )
                         summary["failed"] += 1
-                        completed += 1
+                        pending_items.discard((doc_id, page_no))
                         continue
 
                     if text is None:
@@ -453,16 +509,13 @@ def ocr_stage(
                             (text, text, printable, garbled, confidence, utcnow(), doc_id, page_no),
                         )
                         summary["recognized"] += 1
-                    completed += 1
-    except Exception as exc:  # noqa: BLE001 - S2.3.1: worker 池崩溃（BrokenProcessPool 等）降级不崩管线
-        logger.error("OCR 多进程池崩溃，剩余 %d 页标记跳过: %s", len(rows) - completed, exc)
-        for row in rows[completed:]:
-            db.add_error(row["doc_id"], "ocr", RuntimeError(f"OCR 多进程崩溃: {exc}"[:4000]))
-            db.execute(
-                "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
-                (utcnow(), row["doc_id"], row["page_no"]),
-            )
-            summary["skipped"] += 1
+                    pending_items.discard((doc_id, page_no))
+        except Exception as exc:  # noqa: BLE001 - broken worker pool degrades without corrupting completed rows
+            uncertain = set(pending_items)
+            if failed_submission is not None:
+                uncertain.add(failed_submission)
+            logger.error("OCR 多进程池崩溃，%d 个在途页面标记跳过: %s", len(uncertain), exc)
+            mark_failed_items(uncertain, exc)
 
     elapsed = time.monotonic() - start_time
     logger.info(
@@ -471,16 +524,17 @@ def ocr_stage(
     )
 
     # 更新文档状态
-    affected_docs: set[str] = {row["doc_id"] for row in rows}
     for doc_id in affected_docs:
-        pending = db.fetchone(
+        pending_row = db.fetchone(
             "SELECT COUNT(*) AS n FROM pages WHERE doc_id=? AND needs_ocr=1 AND ocr_status!='done'",
             (doc_id,),
-        )["n"]
-        done = db.fetchone(
+        )
+        done_row = db.fetchone(
             "SELECT COUNT(*) AS n FROM pages WHERE doc_id=? AND ocr_status='done'",
             (doc_id,),
-        )["n"]
+        )
+        pending = int(pending_row["n"] if pending_row else 0)
+        done = int(done_row["n"] if done_row else 0)
         status = "parsed" if pending == 0 else "parsed_partial"
         db.execute(
             "UPDATE documents SET status=?, ocr_page_count=?, updated_at=? WHERE doc_id=?",
@@ -492,14 +546,19 @@ def ocr_stage(
 def _ocr_serial(
     config: ProjectConfig,
     db: Database,
-    rows: list[dict[str, Any]],
+    rows: Iterable[Any],
     backend: OCRBackend,
     dpi: int,
-    summary: dict[str, int],
-) -> dict[str, int]:
+    summary: dict[str, Any],
+    *,
+    should_stop: Callable[[], bool] | None = None,
+) -> dict[str, Any]:
     """串行 OCR 路径 — 单进程逐页识别（默认；workers<=1 时的确定性低内存路径）。"""
     affected_docs: set[str] = set()
     for row in rows:
+        if should_stop is not None and should_stop():
+            summary["stopped"] = True
+            break
         doc_id, page_no = row["doc_id"], int(row["page_no"])
         affected_docs.add(doc_id)
         try:
@@ -524,14 +583,16 @@ def _ocr_serial(
             summary["failed"] += 1
 
     for doc_id in affected_docs:
-        pending = db.fetchone(
+        pending_row = db.fetchone(
             "SELECT COUNT(*) AS n FROM pages WHERE doc_id=? AND needs_ocr=1 AND ocr_status!='done'",
             (doc_id,),
-        )["n"]
-        done = db.fetchone(
+        )
+        done_row = db.fetchone(
             "SELECT COUNT(*) AS n FROM pages WHERE doc_id=? AND ocr_status='done'",
             (doc_id,),
-        )["n"]
+        )
+        pending = int(pending_row["n"] if pending_row else 0)
+        done = int(done_row["n"] if done_row else 0)
         status = "parsed" if pending == 0 else "parsed_partial"
         db.execute(
             "UPDATE documents SET status=?, ocr_page_count=?, updated_at=? WHERE doc_id=?",

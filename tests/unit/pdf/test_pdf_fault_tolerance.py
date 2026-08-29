@@ -164,6 +164,31 @@ def test_s234_text_export_failure_is_isolated(monkeypatch: pytest.MonkeyPatch, t
     assert result.get("stopped") is True
 
 
+def test_s234_stop_callback_reaches_parse_and_ocr(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    from omnicrawler.pdfx import service
+
+    received: list[object] = []
+    stop = lambda: False
+    monkeypatch.setattr(service, "ingest", lambda *_a, **_k: {"new": 0})
+    monkeypatch.setattr(
+        service,
+        "parse_stage",
+        lambda *_a, **kwargs: received.append(kwargs.get("should_stop")) or {"parsed": 0},
+    )
+    monkeypatch.setattr(
+        service,
+        "ocr_stage",
+        lambda *_a, **kwargs: received.append(kwargs.get("should_stop")) or {"recognized": 0},
+    )
+    monkeypatch.setattr(service, "export_text_stage", lambda *_a, **_k: {"pages": 0})
+
+    service.run_processing(_pdf_config(tmp_path), should_stop=stop)
+
+    assert received == [stop, stop]
+
+
 def test_s234_collect_failures_nested() -> None:
     pytest.importorskip("PySide6")
     from omnicrawler.gui.views.pdf_workbench import _collect_failures

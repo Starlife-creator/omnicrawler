@@ -145,6 +145,9 @@ class TestRealCurlCffiFetch:
         server.shutdown()
         thread.join(timeout=5)
 
+    @pytest.mark.filterwarnings(
+        r"ignore:\s*Proactor event loop does not implement add_reader:curl_cffi.utils.CurlCffiWarning"
+    )
     def test_impersonate_fetch_local(self, tmp_path: Path, local_server: str) -> None:
         pytest.importorskip("curl_cffi")
         raw = copy.deepcopy(DEFAULTS)

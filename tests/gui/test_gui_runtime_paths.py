@@ -1,7 +1,6 @@
+import sys
 from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from omnicrawler import runtime_paths
 
@@ -17,10 +16,10 @@ def test_source_user_guide_is_found() -> None:
     )
 
 
-@pytest.mark.xfail(reason="frozen build path resolution differs across platforms")
 def test_frozen_build_prefers_companion_cli(tmp_path: Path) -> None:
-    gui = tmp_path / "OmniCrawler.exe"
-    cli = tmp_path / "omnicrawler.exe"
+    suffix = ".exe" if sys.platform == "win32" else ""
+    gui = tmp_path / f"OmniCrawler{suffix}"
+    cli = tmp_path / f"omnicrawler{suffix}"
     gui.touch()
     cli.touch()
     with (
