@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "omnicrawler-platform"
 # ⚠️ 版本号的唯一权威来源。构建脚本 (build_windows.ps1) 和 bump_version.py
 #    都以此为据；不要手工修改此值，统一用 tools/bump_version.py 变更。
-version = "0.11.1"
+version = "0.11.2"
 description = "从全类型网站采集、PDF解析/OCR到结构化导出和人工复核的模块化工作台"
 readme = "README.md"
 requires-python = ">=3.12"

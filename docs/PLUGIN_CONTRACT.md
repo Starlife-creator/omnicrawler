@@ -32,7 +32,7 @@ PLUGIN_METADATA = {
     "dependencies": [],                   # 必填（空 [] 合法，第 67 轮 P3）
     "license": "MIT",                     # 必填（门 2 SPDX 白名单）
     "execution_mode": "subprocess",       # subprocess（缺省）| in_process（特权申请）
-    "min_core_version": "0.11.1",
+    "min_core_version": "0.11.2",
     "source_url": "https://example.org/source",
 }
 ```
@@ -99,7 +99,7 @@ PLUGIN_METADATA = {
 ## 兼容与安全
 
 - 名称在同类型内唯一并转为小写。
-- `api_version` 必须等于 1；核心版本范围必须包含当前 0.11.1。
+- `api_version` 必须等于 1；核心版本范围必须包含当前 0.11.2。
 - 契约 2 插件运行于隔离沙箱（-I -S + OS 沙箱探测 fail-closed）；契约 1 的 `plugins.paths`
   仅适用于受信任的本地开发插件——**不能当作操作系统级沙箱**。
 - 插件不应直接读取配置中的明文密钥；使用 `secret://`、系统 keyring 或 auth 注入。

@@ -1,4 +1,4 @@
-# OmniCrawler 0.11.1 — 桌面专业数据采集平台
+# OmniCrawler 0.11.2 — 桌面专业数据采集平台
 
 > 可配置 · 可恢复 · 可扩展 · 可审计
 
@@ -8,7 +8,7 @@
 
 OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台。从网站、API、动态页面和流式协议获取数据，下载附件，解析 PDF/OCR，完成结构化提取、质量检查、人工复核与多格式交付。
 
-**v0.11.1** 在可验证的本地采集、文档抽取与可恢复管线之上，进一步把 GUI 首页改为“先描述需求、再补充必要信息”的任务入口：所有运行前必填项集中在第一页，自然语言输入会编译为可审阅的任务草案。通知、动画、导出进度与关闭流程也补齐了生命周期保护；发布一致性治理、本地可复用 E2E、无障碍/i18n、CLI、性能指标和 Windows 便携构建能力继续保持。
+**v0.11.2** 在可验证的本地采集、文档抽取与可恢复管线之上，进一步把 GUI 首页改为“先描述需求、再补充必要信息”的任务入口：所有运行前必填项集中在第一页，自然语言输入会编译为可审阅的任务草案。通知、动画、导出进度与关闭流程也补齐了生命周期保护；发布一致性治理、本地可复用 E2E、无障碍/i18n、CLI、性能指标和 Windows 便携构建能力继续保持。
 
 ---
 
@@ -16,7 +16,7 @@ OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台�
 
 ### Windows 便携版（零依赖）
 
-1. 解压当前构建生成的 `OmniCrawler-0.11.1-Windows-Portable-<Edition>.zip` 到可写目录（建议 `D:\OmniCrawler`）
+1. 解压当前构建生成的 `OmniCrawler-0.11.2-Windows-Portable-<Edition>.zip` 到可写目录（建议 `D:\OmniCrawler`）
 2. 双击 `OmniCrawler-Launcher.bat`
 3. 按五步向导完成配置 → 试跑 3 页 → 正式运行
 
@@ -348,7 +348,7 @@ run_windows.bat                       # 启动 CLI
 # 离线复用本地缓存（不访问网络，browser/runtime 走本地缓存）
 .\build_windows.ps1 -Edition Full -Offline -BuilderPythonPath .venv\Scripts\python.exe
 # 显式产物目录（默认写入 release/，建议写进 artifacts/）
-.\build_windows.ps1 -Edition Standard -ReleaseOutputPath .\artifacts\release\0.11.1
+.\build_windows.ps1 -Edition Standard -ReleaseOutputPath .\artifacts\release\0.11.2
 ```
 
 ```bash
@@ -369,7 +369,7 @@ pre-commit run --all-files
 
 ## 开发者指南
 
-### 项目结构（v0.11.1）
+### 项目结构（v0.11.2）
 
 ```
 src/omnicrawler/

@@ -6,6 +6,6 @@ source: {kind: feed, seeds: [https://example.com/feed.xml]}
 
 crawl: {max_pages: 100, max_depth: 1, same_host: true}
 
-http: {user_agent: "OmniCrawler/0.11.1 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
+http: {user_agent: "OmniCrawler/0.11.2 (+contact: crawler@example.org)", respect_robots: true, delay_seconds: 1.0}
 
 extract: {mode: auto, fields: {title: {selector: title}, heading: {selector: h1}}}

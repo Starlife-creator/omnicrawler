@@ -14,6 +14,6 @@ source:
 
 crawl: {max_pages: 1, same_host: true}
 
-http: {user_agent: "OmniCrawler/0.11.1 (+contact: crawler@example.org)", respect_robots: true}
+http: {user_agent: "OmniCrawler/0.11.2 (+contact: crawler@example.org)", respect_robots: true}
 
 extract: {mode: html, item_selector: ".result", fields: {title: {selector: h2}, link: {selector: "a[href]", attr: href}}}
