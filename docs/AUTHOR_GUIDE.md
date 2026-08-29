@@ -1,22 +1,22 @@
 # 插件作者指南
 
-本文档覆盖**契约 2 插件**从零到发布的完整旅程。作者本地验证 = CI 验证（F1"本地绿 = CI 绿"，
-同一批测试、任一执行位置结果等价）。
+本文档覆盖**契约 2 插件**从零到发布的完整旅程。本地验证与 CI 使用同一套契约检查；
+作者应在签名和分享前完成本地验证。
 
 ## 0. 前置：受支持环境
 
-| 平台 | 版本 | 实际隔离机制（v0.9.1） |
+| 平台 | 版本 | 当前实际隔离机制 |
 |---|---|---|
 | Windows | Win10 22H2+ / Win11 | 子进程边界 + `-I -S` 导入隔离 + env 白名单（冻结形态用伴生宿主 exe） |
 | Linux | 内核 ≥5.13 主流发行版 | 同上 + `resource` rlimit 限额 |
 
-> 口径说明（FINAL-S1）：OS 级 confinement（AppContainer / unshare+seccomp+Landlock）
+> 安全边界说明：OS 级 confinement（AppContainer / unshare+seccomp+Landlock）
 > 属**远期蓝图，当前未接线**——`plugin_os_sandbox.probe_os_sandbox` 仅产出环境诊断
 > 报告，不参与 spawn 拒载裁决。插件能力收口由 broker 能力令牌 + 静态审批实现，
 > 不依赖 OS 沙箱；冻结宿主 exe 缺失时 fail-closed 拒载仍然生效。
 
 非受支持环境作者：**门禁/AST/逻辑用例本地照跑 + 沙箱用例 fork + PR 由 CI 矩阵代跑**
-（第 75 轮 CI 委托路径）——收窄不成为参与门槛。
+由 PR 的 CI 矩阵代跑受支持平台上的沙箱测试，避免开发者因本地平台差异无法参与。
 
 ## 1. 生成脚手架
 
@@ -37,11 +37,11 @@ omnicrawler plugins scaffold-contract2 --plugin-id my_plugin --display-name "我
 ## 3. 本地验证（发布前必做）
 
 ```bash
-omnicrawler plugins audit --local .        # 门 1/门 2/门 3 + 契约一致性 + 沙箱探测
-pytest -m plugin_contract                  # F1 公共契约套件（沙箱隔离/协议/越权拦截）
+omnicrawler plugins audit --local .        # 元数据、许可、契约一致性与环境探测
+pytest -m plugin_contract                  # 公共契约套件（隔离/协议/越权拦截）
 ```
 
-- `PLUGIN_METADATA` 与 `plugin.yaml` **逐字段一致**（门 3）；`dependencies` 与实测导入图
+- `PLUGIN_METADATA` 与 `plugin.yaml` **逐字段一致**；`dependencies` 与实测导入图
   **双向互证**（声明未导入 / 导入未声明均拒）。
 - `license` 在 SPDX 白名单内（门 2）。
 
@@ -85,10 +85,12 @@ GUI 的“完成并签名”会隐藏 manifest 和 ed25519 操作，但会在执
 
 ## 7. 常见问题
 
-- **我的环境不支持沙箱？** 运行 `omnicrawler plugins audit --report`，把报告粘贴至
-  GitHub Issue（第 68 轮回传通道）；沙箱用例委托 CI 矩阵代跑（第 75 轮）。
-- **契约 1 插件怎么办？** 市场侧 0.10 起要求契约 2；用 `scaffold-contract2` 新建契约 2 工程，
-  业务逻辑按 SDK 指引迁移。迁移完成前仅本地显式信任 + 豁免表可申请 in_process（T3 最严格档）。
+- **我的环境不支持沙箱？** 运行 `omnicrawler plugins audit --report`，把脱敏报告粘贴至
+  GitHub Issue；受支持平台上的沙箱用例由 CI 矩阵代跑。
+- **契约 1 插件怎么办？** 市场只接受契约 2；用 `scaffold-contract2` 新建契约 2 工程，
+  业务逻辑按 SDK 指引迁移。迁移完成前只能作为本地明确导入的旧插件使用；申请
+  `in_process` 时采用最高风险审批档并设置限时豁免。
 - **权限变化？** 权限变化必须重新获得用户批准（静态审批面），不得运行期静默扩大。
-- **数据外传？** 插件可访问的数据 = 可外传的数据（威胁模型诚实边界）；`egress_policy: block`
-  企业档阻断 records.read → network.fetch 共现。低频外传当前不可防，审计留痕供检视。
+- **数据外传？** 插件可访问的数据原则上都存在被外传的可能；`egress_policy: block`
+  会阻断读取 records 后再请求网络的组合。域名白名单和审计能降低风险，但当前无法保证
+  识别所有低频隐蔽外传。

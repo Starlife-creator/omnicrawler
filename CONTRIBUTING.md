@@ -66,51 +66,44 @@ pre-commit hooks 会在提交时自动运行 ruff 和 mypy，从源头防止退�
 - **不引入未使用导入**，不吞咽异常
 - **日志用英文**，GUI 用户提示用中文，异常消息用英文
 
-## 插件提交与签名
+## 插件与模板贡献
 
-OmniCrawler 对第三方插件采用 **ed25519 离线单信任根签名**。只有维护者持有签名私钥（冷存储），**贡献者无法、也不需要自己签名**——签名意味着维护者为该插件代码背书。
+插件和模板首先是作者拥有的文件夹。作者完成内容并签署整个目录后，既可以私下分享，
+也可以选择投稿市场；上传不是生成可分享包的前置条件。
 
-### 贡献者（提交插件）
+### 普通贡献者
 
-1. 将插件放在 `examples/plugins/`（单文件 `.py`，含模块级 `def register(registry)` 入口）。
-2. **不要生成或提交 `.sig` 文件**——你签不了，必须由维护者签名。
-3. PR 描述说明：插件用途、所需 `permissions`/`domains`、是否有网络访问。
-4. 通过常规 PR 流程等待代码审查与签名。
+1. 新插件使用契约 2 脚手架，入口为 `handle(operation, payload) -> dict`；不要为新插件使用
+   `register(registry)` 旧契约。
+2. 在本地工作目录完成 `plugin.py`、`plugin.yaml`、`listing.md` 和测试；模板完成
+   `template.yaml`、`listing.md` 和必要的验证素材。
+3. 运行本地审计和契约测试，确认权限、域名、输入文件、依赖、许可与实际行为一致。
+4. 使用自己的本地身份签署整个目录，生成 `package.manifest.json`、
+   `package.manifest.creator.sig` 和 `creator.identity`。
+5. 需要市场发布时，明确接受 DCO，把同一份创作者签名包提交到市场仓库的
+   `submissions/`。贡献者不得修改正式目录、作者记录、catalog 或维护者签名。
 
-### 维护者（审查与签名）
+创作者签名证明包来自某把创作者密钥，但不代表市场审核或项目背书。
 
-签名动作**仅在持有私钥的冷机器**进行（私钥位于维护者冷存储介质，绝不进仓库 / 构建 / 便携包）。
+### 市场发布
 
-1. **代码 / 安全审查**：确认无越权导入、无 `eval`/`exec`、网络权限声明合理。
-2. 在冷机器用项目 venv 的 Python 签名（裸 `python` 缺 `cryptography` 会失败）：
+外部 PR 的 CI 只进行规范 JSON、签名、哈希、路径、AST/YAML、依赖、许可、凭据泄漏和
+DCO 静态检查，不 import 或执行投稿插件。维护者人工固定 manifest 哈希并完成审核后，
+才在冷签名环境对同一份 manifest 原始字节复签。只有维护者整包签名和 catalog 签名都
+有效的条目才属于市场发布态。
 
-```powershell
-# 单文件
-.\.venv\Scripts\python.exe tools/sign_plugin.py sign examples/plugins/your_plugin.py `
-    --private-key /path/to/cold-storage/plugin_signing_private.pem
+更新必须由同一创作者指纹签名，使用严格递增的 SemVer；禁止同版本覆盖、降级和换密钥
+接管。完整流程见 [`docs/AUTHOR_GUIDE.md`](docs/AUTHOR_GUIDE.md) 和市场仓库的
+[`CONTRIBUTING.md`](../OmniCrawler-market/CONTRIBUTING.md)。
 
-# 或批量（自动发现插件入口，排除框架 / 构建目录）
-.\.venv\Scripts\python.exe tools/sign_plugins_batch.py --scan-dir examples/plugins --verify
-```
+### 安全边界
 
-3. 将插件 `.py` 与其 `.py.sig` **一并合入同一 PR/commit**（审计轨迹原子化）。
-4. **先签最终审查版**：签名绑定文件字节，合入后再改文件会导致 `.sig` 失配、加载被拒。
-
-### 生产环境启用 fail-closed
-
-加载门默认"未配信任根则告警并放行"（过渡期，不误伤现有 dev 插件）。要真正强制验签，在运行时配置中设置信任根：
-
-```yaml
-plugins:
-  trust_public_key: configs/plugin_trust.pub.pem   # 或内联 ed25519 公钥 PEM
-```
-
-配置后：缺少 `.sig` 或签名不符的插件将被 **fail-closed 直接拒载**。
-
-### 已知边界
-
-- 签名仅覆盖插件**入口 `.py`** 一个文件；多文件目录包只有入口被签（加载门只 `exec` 被签模块，风险受限）。
-- 私钥为单点信任源：维护者不在场时无法签名，这是可控供应链的有意设计。
+- 插件默认在独立子进程中运行，能力通过 SDK 代理；`in_process` 是限时、显式的高风险申请。
+- 当前没有完整的 AppContainer/seccomp/Landlock 级 OS confinement，不能把子进程边界描述成
+  对任意恶意代码的绝对隔离。
+- 私钥、Token、Cookie 和真实凭据不得进入包、日志、测试素材或仓库。
+- 网络和文件访问必须使用最小权限与精确白名单；权限扩大需要用户重新确认。
+- 模板虽然不执行 Python，也必须经过整包签名、凭据、域名和数据来源条款检查。
 
 ## 测试规范
 
@@ -172,8 +165,7 @@ $python = "$PWD\.venv\Scripts\python.exe"
 | 1 | Standard 便携 ZIP | `artifacts/release/{version}/OmniCrawler-{version}-Windows-Portable-Standard.zip` |
 | 2 | Full 便携 ZIP | `artifacts/release/{version}/OmniCrawler-{version}-Windows-Portable-Full.zip` |
 | 3 | 源码 ZIP + wheel | `artifacts/python/{version}/OmniCrawler-{version}-Source.zip` |
-| 4 | 完整便携目录 | `artifacts/build/{version}-{edition}-rN/release/OmniCrawler/` |
-| 4 | 完整便携目录（压缩前） | `artifacts/build/{version}-{edition}-rN/release/OmniCrawler/`
+| 4 | 完整便携目录（压缩前） | `artifacts/build/{version}-{edition}-rN/release/OmniCrawler/` |
 
 ## ADR（架构决策记录）
 

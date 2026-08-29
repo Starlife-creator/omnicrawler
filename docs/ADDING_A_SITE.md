@@ -33,47 +33,49 @@ template:
 ## 最小 source 插件
 
 ```python
-from omnicrawler.models import CrawlRequest
-from omnicrawler.sources import GenericSource
-
 PLUGIN_METADATA = {
     "name": "example-site",
     "version": "1.0.0",
     "api_version": 1,
+    "description": "从 Example 公开 API 生成抓取请求",
     "plugin_types": ("source",),
-    "capabilities": ("cursor-pagination",),
+    "permissions": ("network:scoped",),
     "domains": ("example.org",),
-    "permissions": ("network",),
+    "input_files": (),
+    "dependencies": [],
     "license": "MIT",
-    "fallback": "rest",
+    "execution_mode": "subprocess",
+    "min_core_version": "0.11.2",
+    "source_url": "https://example.org/api-docs",
 }
 
-class ExampleSource(GenericSource):
-    def seed(self):
-        return [CrawlRequest(
-            "https://example.org/api/notices",
-            headers={"Accept": "application/json"},
-            meta={"root_url": "https://example.org/"},
-        )]
-
-    def discover(self, result):
-        # 解析服务端游标，返回下一页 CrawlRequest；必须有终止条件。
-        return super().discover(result)
-
-def register(registry):
-    registry.register_source("example_site", ExampleSource)
+def handle(operation, payload):
+    if operation == "source.seed":
+        return {
+            "requests": [
+                {
+                    "url": "https://example.org/api/notices",
+                    "method": "GET",
+                    "headers": {"Accept": "application/json"},
+                }
+            ]
+        }
+    return {"error": "unsupported_operation", "operation": operation}
 ```
 
-配置：
+需要网络响应或宿主数据时，通过 `omnicrawler_sdk.call(...)` 请求已声明的能力；不要导入
+`omnicrawler` 内部模块。分页游标等状态必须通过纯数据 payload 传递，并设置终止条件和最大页数。
 
-```yaml
-source: {kind: example_site, seeds: [https://example.org/]}
-plugins:
-  paths: [plugins/example_site.py]
-  approved_permissions: [network]
+生成同类插件的推荐起点：
+
+```powershell
+python -m omnicrawler.cli plugins scaffold-contract2 `
+  --plugin-id example_site `
+  --display-name "Example Site" `
+  --output-dir plugins
 ```
 
-完整插件类型和签名见 `PLUGIN_CONTRACT.md`。
+完整插件契约、权限和签名流程见 `PLUGIN_CONTRACT.md` 与 `AUTHOR_GUIDE.md`。
 
 ## 验收清单
 

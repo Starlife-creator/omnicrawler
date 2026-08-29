@@ -74,4 +74,5 @@ A: 配置中用 `secret://name` 占位符，通过环境变量 `OMNICRAWL_SECRET
 
 ---
 
-更多帮助：`omnicrawler doctor`、F1 帮助中心、`docs/USER_GUIDE_2.0.md`
+更多帮助：`omnicrawler doctor`、F1 帮助中心和项目根目录的
+[`OmniCrawler-用户指南.md`](../OmniCrawler-用户指南.md)。

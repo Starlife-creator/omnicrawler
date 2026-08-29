@@ -41,14 +41,36 @@ print(f"资源上限: {plan.resource_bounds}")
 
 ## 插件协议扩展
 
-```python
-from omnicrawler.sdk.protocols import Fetcher, Extractor, Processor, Exporter
+新插件使用契约 2，不继承或导入宿主内部类型。入口、元数据和返回值保持为静态可审查的
+纯 Python/JSON 数据：
 
-class MyExtractor(Extractor):
-    def extract(self, document, result):
-        # 自定义提取逻辑
-        return {"my_field": "value"}
+```python
+PLUGIN_METADATA = {
+    "name": "my-source",
+    "version": "1.0.0",
+    "api_version": 1,
+    "description": "生成公开数据源的抓取请求",
+    "plugin_types": ("source",),
+    "permissions": (),
+    "domains": (),
+    "input_files": (),
+    "dependencies": [],
+    "license": "MIT",
+    "execution_mode": "subprocess",
+    "min_core_version": "0.11.2",
+    "source_url": "https://example.org/api-docs",
+}
+
+def handle(operation, payload):
+    if operation == "source.seed":
+        return {"requests": [{"url": "https://example.org/items", "method": "GET"}]}
+    return {"error": "unsupported_operation", "operation": operation}
 ```
+
+插件需要读取记录、访问网络或使用临时文件时，只能通过 `omnicrawler_sdk.call(...)` 请求
+`PLUGIN_METADATA` 已声明的能力。当前契约 2 加载器只把 `source` 插件自动接入执行管线；
+Catalog 中的其他类别是兼容或扩展预留，不能仅凭枚举值假定已经可运行。完整约束见
+`PLUGIN_CONTRACT.md`。
 
 ## SDK 公共 API
 

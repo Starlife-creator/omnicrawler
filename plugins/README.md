@@ -1,29 +1,76 @@
-# `plugins/` —— 用户插件工作目录
+# `plugins/`：本地插件工作目录
 
-这是**你自己的插件目录**，不是示例、也不是市场快照。
+本目录用于存放你正在开发或通过第三方分享导入的插件，不是市场正式发布目录。
 
-## 用途
-- 把你开发的插件 `.py` 放在这里（可再分子目录，加载器会递归发现）。
-- 启动时会自动加载本目录下所有已签名的插件（fail-closed：未签名/签名不符的会被拒绝并记入 `plugin_errors`）。
-- 默认 `plugins.paths` 已包含本目录，无需额外配置。
+## 与其他目录的区别
 
-## 与另外两个目录的区别
-| 目录 | 角色 | 谁维护 |
+| 目录 | 用途 | 内容来源 |
 |---|---|---|
-| `examples/plugins/` | 官方示例/起步模板（含 `example_news`） | 项目维护者 |
-| `plugins/`（本目录） | **你自己的插件** | 你 |
-| `plugins_installed/` | `market.py install` 从市场下载验签后落盘处 | 安装命令 |
-| `market/` | 主仓市场离线快照（catalog.json + authors/ + keys/，联网失败回退源） | 构建/同步时维护 |
+| `plugins/` | 本地开发和私下分享插件 | 当前用户 |
+| `plugins_installed/` | 从市场验签安装的插件 | 市场客户端 |
+| `examples/plugins/` | 示例和测试素材 | 项目仓库 |
+| `market/` | 随应用提供的离线市场快照 | 发布流程 |
 
-## 开发流程
-1. 把 `examples/plugins/example_site.py` 复制成本目录下的新文件作为起点；
-2. 实现你的 `register(registry)` 逻辑；
-3. 用冷私钥签名：
-   ```bash
-   python tools/sign_plugin.py sign plugins/your_plugin.py \
-       --key /path/to/cold-storage/plugin_signing_private.pem
-   ```
-4. 启动即自动加载；若要发布到市场，再走 `OmniCrawler-market` 仓库的发布流程（复制+签名+`listing.md`）。
+## 新插件的唯一推荐形态
 
-> 注意：本目录下的插件**必须签名**才能被加载。未签名文件会触发 fail-closed 拒绝。
-> 不要把私钥放进本目录，私钥只存冷存储（见 `configs/` 与 `CONTRIBUTING.md`）。
+新插件必须采用[插件契约 2](../docs/PLUGIN_CONTRACT.md)：
+
+- 顶层入口为 `handle(operation, payload) -> dict`；
+- `PLUGIN_METADATA` 是可由 AST 静态读取的 `dict` 字面量；
+- 默认 `execution_mode` 为 `subprocess`；
+- 不导入 `omnicrawler`，宿主能力统一通过 `omnicrawler_sdk.call(...)` 请求；
+- 权限、域名、输入文件和依赖必须完整且最小化声明。
+
+生成脚手架：
+
+```powershell
+python -m omnicrawler.cli plugins scaffold-contract2 `
+  --plugin-id my_plugin `
+  --display-name "My Plugin" `
+  --output-dir plugins
+```
+
+## 开发与验证
+
+实现插件后，在仓库根目录运行：
+
+```powershell
+python -m omnicrawler.cli plugins audit --local plugins\my_plugin
+python -m pytest -m plugin_contract
+```
+
+审计会核对静态元数据、`plugin.yaml`、依赖、权限、域名、输入文件、许可和运行环境。
+未通过审计的插件不应签名或分享。
+
+## 完成并签名
+
+创作者签名覆盖整个插件目录，而不只是 `plugin.py`。签名包至少包括：
+
+- `plugin.py`、`plugin.yaml` 和 `listing.md`；
+- `creator.identity`；
+- `package.manifest.json`；
+- `package.manifest.creator.sig`。
+
+完成签名后，该文件夹已经可以私下分享。接收方必须先验证整包签名，再查看创作者指纹、
+权限和域名并明确确认。私下分享不代表市场审核，也不会自动信任该作者未来发布的其他插件。
+
+## 投稿市场
+
+投稿是签名后的可选步骤。应用会把同一份创作者签名包放入市场仓库的
+`submissions/plugins/<creator_fingerprint>/<plugin_id>/`，贡献者不能直接修改正式
+`plugins/`、`authors/`、`catalog.json` 或维护者签名。
+
+投稿前必须填写 `listing.md` 并明确接受 DCO。正式发布还需要 CI 静态检查、人工审核、
+维护者对同一份 manifest 复签以及已签名 catalog 收录。
+
+完整流程见[插件作者指南](../docs/AUTHOR_GUIDE.md)和
+[市场生态与分发协议](../docs/MARKET_ECOSYSTEM.md)。
+
+## 安全边界
+
+- 不要把私钥、Token、Cookie 或真实凭据放进插件目录；
+- 网络访问必须声明 `network:scoped` 和精确 `domains`；
+- 文件读取必须声明 `files:read` 和精确 `input_files`；
+- 优先使用宿主认证注入，避免插件进程接触明文密钥；
+- 权限扩大必须重新获得用户确认；
+- 未签名、签名不符、文件集合不符或越权的插件应失败关闭。

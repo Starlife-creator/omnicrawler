@@ -730,10 +730,12 @@ omnicrawler status -c configs/my_site.yaml
 
 ### 插件沙箱
 
-- 子进程隔离
-- 权限白名单（network/filesystem/execute）
-- 10 秒超时机制
-- fail-closed：未批准的能力不执行
+- 新插件默认在独立子进程运行，并使用 Python `-I -S`、环境白名单和能力代理
+- 网络、记录、工件、临时文件、输入文件和密钥访问按声明权限控制
+- 网络和输入文件必须分别受 `domains`、`input_files` 精确白名单限制
+- 超时、配额、签名不符和未批准能力均失败关闭
+- 当前尚未接入完整的 AppContainer/seccomp/Landlock 级 OS confinement；子进程隔离不能保证
+  任意恶意原生代码绝对安全
 
 ### 存档安全
 

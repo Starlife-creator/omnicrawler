@@ -26,26 +26,15 @@ artifacts/
 
 | # | 产物类型 | 示例文件名 | 输出目录 |
 |---|---|---|---|
-| 1 | **Standard 便携包** | `OmniCrawler-0.8.0-Windows-Portable-Standard.zip` / `...-Linux-Portable-Standard.tar.gz` / `...-macOS-Portable-Standard.dmg` | `artifacts/release/{version}/` |
-| 2 | **Full 便携包** | `OmniCrawler-0.8.0-Windows-Portable-Full.zip` / 同规则 Linux / macOS | `artifacts/release/{version}/` |
-| 3 | **源码 ZIP** | `OmniCrawler-0.8.0-Source.zip` | `artifacts/python/{version}/` |
+| 1 | **Standard 便携包** | `OmniCrawler-{version}-Windows-Portable-Standard.zip` / 对应 Linux tar.gz / macOS dmg | `artifacts/release/{version}/` |
+| 2 | **Full 便携包** | `OmniCrawler-{version}-Windows-Portable-Full.zip` / 对应 Linux / macOS 文件 | `artifacts/release/{version}/` |
+| 3 | **源码 ZIP** | `OmniCrawler-{version}-Source.zip` | `artifacts/python/{version}/` |
 | 4 | **完整便携目录**（压缩前）| `release/OmniCrawler/` | `artifacts/build/{version}-{edition}-rN/` |
 
 - #4 是 #1/#2 的压缩前完整文件夹（Windows 直接可运行；Linux/macOS 见 `docs/PORTABLE_PACKAGING.md`），可直接运行、调试。
 - #3 是纯源码归档（不含 `artifacts/`、`build_cache/`、`dist/` 等构建物）。
-- wheel（`omnicrawler_platform-0.8.0-py3-none-any.whl`）随 #3 同一目录产出。
+- wheel（`omnicrawler_platform-{version}-py3-none-any.whl`）随 #3 同一目录产出。
 - 三平台便携包构建总纲见 `docs/PORTABLE_PACKAGING.md`；Windows 细节见 `docs/WINDOWS_PACKAGING.md`。
-
-## 历史归档
-
-当前已归档的版本：
-
-- `2.3.1`：历史 Standard/Full 便携目录、两个 ZIP、校验清单、源码 ZIP 和 wheel。
-- `2.6.0`：Standard/Full 便携目录、两个 ZIP、校验清单、源码 ZIP 和 wheel。
-- `2.7.0`：当前离线构建的 Standard/Full 便携 ZIP（664MB / 1.9GB）、SHA-256 校验清单、
-  源码 ZIP（6.7MB）和 wheel（602KB）。两个完整便携目录位于
-  `artifacts/build/2.7.0-standard-r1/release/OmniCrawler/` 和
-  `artifacts/build/2.7.0-full-r1/release/OmniCrawler/`。
 
 使用 ZIP 前，先在其版本目录中读取 `SHA256SUMS*.txt`，并用 PowerShell 的
 `Get-FileHash -Algorithm SHA256` 核对。完整目录与 ZIP 是同一版本的两种交付形式；
@@ -55,7 +44,7 @@ artifacts/
 显式输出至本目录的版本化路径；`build/`、`build_dist/` 和 `build_cache/` 是构建中间物或
 缓存，不属于版本发行归档。
 
-## 单一输出规则（F53，必须遵守）
+## 单一输出规则
 
 - **可保留发布物的唯一归档位置是 `artifacts/` 下的版本化目录**（`build/`、`release/`、`python/`）。
 - **`dist/` 只允许作为 CI（quality.yml）的临时构建工作区**：CI 每次从全新 checkout 生成并

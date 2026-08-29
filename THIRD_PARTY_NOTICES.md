@@ -1,7 +1,7 @@
 # Third-party runtime notices
 
-OmniCrawler is Apache-2.0 licensed (Phase 0 license-freedom milestone: migrated from
-AGPL-3.0 after removing all strong-copyleft runtime dependencies). The Windows full
+OmniCrawler is Apache-2.0 licensed. The project migrated from AGPL-3.0 after removing
+all strong-copyleft runtime dependencies. The Windows full
 portable package also redistributes components under their own licenses:
 
 - Chromium / Chrome for Testing — Chromium/BSD and bundled component licenses.
@@ -16,8 +16,8 @@ portable package also redistributes components under their own licenses:
   permitted by the LGPL. Upstream: https://www.qt.io/ — license text at
   https://www.gnu.org/licenses/lgpl-3.0.txt
 - pdfplumber / pdfminer.six / pypdf / reportlab / pypdfium2 — MIT / BSD-3-Clause /
-  BSD-3-Clause / BSD / BSD-3-Clause+Apache-2.0 respectively (PDF parsing & rendering
-  stack introduced in Phase 0, replacing the former AGPL-licensed PyMuPDF).
+  BSD-3-Clause / BSD / BSD-3-Clause+Apache-2.0 respectively. This PDF parsing and rendering
+  stack replaced the former AGPL-licensed PyMuPDF dependency.
 - Python packages listed in `SBOM.json` — each package's declared license applies.
 
 Bundled static assets redistributed inside this repository (see `docs/archive/`):
