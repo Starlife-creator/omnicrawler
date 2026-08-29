@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-08-21T10:45:14+00:00",
-  "sequence": 1787309114,
+  "generated_at": "2026-08-26T03:03:00+00:00",
+  "sequence": 1787713380,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "trust_public_key_ref": "keys/plugin_trust.pub.pem",
