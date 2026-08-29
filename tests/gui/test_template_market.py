@@ -6,7 +6,7 @@ import pytest
 
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("PySide6") is None,
-    reason="GUI test requires PyQt6",
+    reason="GUI test requires PySide6",
 )
 
 
@@ -68,7 +68,7 @@ def test_market_view_embeds_template_tab(tmp_path) -> None:
 
     MotionSignal._instance = None
     view = PluginMarketView(project_root=str(tmp_path))
-    assert view._tabs.count() == 3
+    assert view._tabs.count() == 4
     market_pane = view._tabs.widget(0)
     assert isinstance(view._template_market, TemplateMarketView)
     assert market_pane.findChild(TemplateMarketView) is view._template_market
