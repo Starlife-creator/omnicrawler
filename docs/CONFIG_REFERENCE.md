@@ -221,13 +221,24 @@ egress:
 
 ```yaml
 plugins:
-  paths: [plugins/site.py]
+  paths: [plugins/, plugins_installed/]
   allow_external_paths: false
-  approved_permissions: [network]
+  enabled_market_plugins: [site]
+  permission_grants:
+    site:
+      version: 1.0.0
+      artifact_sha256: "<64位SHA-256>"
+      creator_fingerprint: "<有签名身份时填写>"
+      permissions: [network:scoped]
   fail_open: false
   hook_fail_open: true
 ```
 
+权限授权绑定插件 ID、版本和载荷哈希；插件代码或整包 manifest 变化后必须重新批准。旧字段
+`approved_permissions` 仅在只启用一个插件时临时兼容，多插件配置必须迁移，避免权限横向复用。
+`enabled_market_plugins` 是当前项目允许加载的市场插件 ID 白名单。缺失或 `null` 时保留旧项目
+“已安装即启用”的兼容行为；市场 GUI 首次发生安装或卸载后会写入显式列表。新下载插件只有
+完成版本、载荷、作者与权限绑定后才加入白名单。
 路径默认必须位于项目目录。生命周期事件包括 `before_run/before_fetch/after_fetch/after_extract/before_export/after_export/after_run/on_error/before_reprocess/after_reprocess`。
 
 ## 环境变量与迁移

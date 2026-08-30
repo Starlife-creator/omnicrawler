@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib.util
 import inspect
 import io
+import json
 import logging
 import threading
 import tokenize
@@ -30,8 +32,39 @@ LOGGER = logging.getLogger(__name__)
 MARKET_DIR_NAME = "plugins_installed"
 
 # UI 权限族：本地来源插件自动放行（GUI 插件宿主按注册类型挂载）；
-# 市场来源插件仍需 approved_permissions 显式批准。
+# 市场来源插件仍需 permission_grants 按插件和载荷显式批准。
 UI_PERMISSIONS = frozenset({"ui:theme", "ui:action", "ui:panel", "ui:status"})
+
+# 运行扩展点由宿主定义，不能由插件任意发明。业务分类与检索标签分别使用
+# PluginMetadata.category / tags；二者不参与运行路由。
+OFFICIAL_PLUGIN_TYPES = frozenset(
+    {
+        "source",
+        "fetcher",
+        "processor",
+        "exporter",
+        "auth_provider",
+        "parser",
+        "extractor",
+        "transformer",
+        "hook",
+        "ui",
+    }
+)
+# 当前契约 2 已具备并接入 subprocess adapter 的扩展点。
+SUBPROCESS_ADAPTER_PLUGIN_TYPES = frozenset(
+    {
+        "source",
+        "fetcher",
+        "processor",
+        "exporter",
+        "auth_provider",
+        "parser",
+        "extractor",
+        "transformer",
+        "hook",
+    }
+)
 
 SIGNATURE_POLICY_STRICT = "strict"
 SIGNATURE_POLICY_DEVELOPER = "developer"
@@ -79,6 +112,9 @@ class PluginMetadata:
     api_version: int = PLUGIN_API_VERSION
     description: str = ""
     plugin_types: tuple[str, ...] = ()
+    # 市场业务分类与标签只用于展示/检索，不决定加载到哪个 Registry 槽位。
+    category: str = ""
+    tags: tuple[str, ...] = ()
     capabilities: tuple[str, ...] = ()
     domains: tuple[str, ...] = ()
     config_schema: dict[str, Any] = field(default_factory=dict)
@@ -145,7 +181,8 @@ def _normalize_schema_fields(result: PluginMetadata, path: Path) -> PluginMetada
     """Phase 1（B1 schema 扩展）：execution_mode 枚举归一 + 新字段类型收敛。
 
     - execution_mode 非法枚举 → 拒绝（无兼容语义）；未声明 = subprocess；
-    - dependencies / input_files 收敛为 tuple（兼容插件以 list 声明）。
+    - plugin_types 归一为宿主受控的小写扩展点；未知类型拒绝；
+    - tags / dependencies / input_files 收敛为 tuple（兼容插件以 list 声明）。
     """
     mode = str(result.execution_mode or "").strip()
     if mode == "":
@@ -154,20 +191,46 @@ def _normalize_schema_fields(result: PluginMetadata, path: Path) -> PluginMetada
         raise ValueError(
             f"插件 {result.name} execution_mode 非法: {mode!r}（仅 in_process | subprocess）; file={path}"
         )
+    if not isinstance(result.plugin_types, (list, tuple)):
+        raise ValueError(f"插件 {result.name} plugin_types 必须是列表或元组; file={path}")
+    plugin_types = tuple(
+        dict.fromkeys(str(item).strip().casefold() for item in result.plugin_types if str(item).strip())
+    )
+    unknown_types = set(plugin_types) - OFFICIAL_PLUGIN_TYPES
+    if unknown_types:
+        raise ValueError(
+            f"插件 {result.name} 声明未知运行扩展点: {sorted(unknown_types)}；"
+            "自定义业务分类请使用 category/tags，能力名称请使用 capabilities; "
+            f"file={path}"
+        )
+    tags = result.tags
+    if isinstance(tags, str) or not isinstance(tags, (list, tuple)):
+        raise ValueError(f"插件 {result.name} tags 必须是列表或元组; file={path}")
+    if not isinstance(tags, tuple):
+        tags = tuple(str(item) for item in tags)
     deps = result.dependencies
     if not isinstance(deps, tuple):
         deps = tuple(deps)
     input_files = result.input_files
     if not isinstance(input_files, tuple):
         input_files = tuple(str(item) for item in input_files)
-    if mode == result.execution_mode and deps is result.dependencies and input_files is result.input_files:
+    if (
+        mode == result.execution_mode
+        and plugin_types == result.plugin_types
+        and str(result.category or "").strip() == result.category
+        and tags is result.tags
+        and deps is result.dependencies
+        and input_files is result.input_files
+    ):
         return result
     return PluginMetadata(
         name=result.name,
         version=result.version,
         api_version=result.api_version,
         description=result.description,
-        plugin_types=result.plugin_types,
+        plugin_types=plugin_types,
+        category=str(result.category or "").strip(),
+        tags=tags,
         capabilities=result.capabilities,
         domains=result.domains,
         config_schema=result.config_schema,
@@ -250,6 +313,7 @@ class Registry:
         self.status_widgets: list[StatusWidgetRegistration] = []
         self.plugins: list[PluginMetadata] = []
         self.plugin_errors: list[dict[str, str]] = []
+        self._resources: list[Any] = []
         self._error_lock = threading.Lock()
 
     def register_source(self, name: str, factory: Factory) -> None:
@@ -345,6 +409,25 @@ class Registry:
                     )
         return results
 
+    def track_resource(self, resource: Any) -> None:
+        if not any(existing is resource for existing in self._resources):
+            self._resources.append(resource)
+
+    def close(self) -> None:
+        """关闭由契约 2 adapter 共享的子进程资源。"""
+        errors: list[Exception] = []
+        for resource in reversed(self._resources):
+            close = getattr(resource, "close", None)
+            if not callable(close):
+                continue
+            try:
+                close()
+            except Exception as exc:  # noqa: BLE001 - 逐资源隔离关闭
+                errors.append(exc)
+        self._resources.clear()
+        if errors:
+            raise RuntimeError("插件资源关闭失败: " + "; ".join(str(item) for item in errors))
+
     @staticmethod
     def _register(bucket: dict[str, Factory], name: str, factory: Factory) -> None:
         key = name.strip().lower()
@@ -377,6 +460,8 @@ class Registry:
                     "name": item.name,
                     "version": item.version,
                     "types": list(item.plugin_types),
+                    "category": item.category,
+                    "tags": list(item.tags),
                     "capabilities": list(item.capabilities),
                     "domains": list(item.domains),
                     "license": item.license,
@@ -529,6 +614,8 @@ def load_local_plugins(
     # B01-009：fail_open 指「单个插件加载/回调失败时容错跳过继续」，非安全 fail-open。
     fail_open: bool = False,
     approved_permissions: tuple[str, ...] = (),
+    permission_grants: dict[str, Any] | None = None,
+    enabled_market_plugins: set[str] | None = None,
     ast_allowed_patterns: tuple[str, ...] = (),
     signature_policy: str = SIGNATURE_POLICY_STRICT,
     trust_prompter: TrustPrompter | None = None,
@@ -584,6 +671,9 @@ def load_local_plugins(
                 index,
                 allow_external_paths,
                 approved_permissions,
+                permission_grants,
+                enabled_market_plugins,
+                len(expanded) == 1,
                 ast_allowed_patterns,
                 signature_policy,
                 trust_prompter,
@@ -603,6 +693,9 @@ def _load_local_plugin(
     index: int,
     allow_external_paths: bool,
     approved_permissions: tuple[str, ...],
+    permission_grants: dict[str, Any] | None,
+    enabled_market_plugins: set[str] | None,
+    allow_legacy_permissions: bool,
     ast_allowed_patterns: tuple[str, ...],
     signature_policy: str,
     trust_prompter: TrustPrompter | None,
@@ -634,15 +727,44 @@ def _load_local_plugin(
     else:
         is_market = bool(relative_parts) and relative_parts[0] == MARKET_DIR_NAME
 
-    requested = _preflight_permissions(path, source)
-    approved = {item.casefold() for item in approved_permissions}
+    metadata = _preflight_metadata(path, source)
+    requested = _permissions_from_metadata(path, metadata)
+    plugin_id = str(metadata.get("name") or (path.parent.name if path.name == "plugin.py" else path.stem))
+    if is_market and enabled_market_plugins is not None and plugin_id not in enabled_market_plugins:
+        registry.plugin_errors.append(
+            {"path": str(path), "error": f"skipped: 市场插件 {plugin_id} 未在当前项目启用", "level": "skipped"}
+        )
+        return
+    version = str(metadata.get("version") or "0.0.0")
+    artifact_sha256 = _permission_artifact_sha256(path, plugin_bytes)
+    creator_fingerprint = _declared_creator_fingerprint(path)
+    approved = _resolve_plugin_permission_grant(
+        plugin_id=plugin_id,
+        version=version,
+        artifact_sha256=artifact_sha256,
+        creator_fingerprint=creator_fingerprint,
+        permission_grants=permission_grants,
+    )
+    if not approved and approved_permissions:
+        if allow_legacy_permissions and permission_grants is None:
+            LOGGER.warning(
+                "插件 %s 使用旧版全局 approved_permissions；请迁移到 permission_grants",
+                plugin_id,
+            )
+            approved = {str(item).casefold() for item in approved_permissions}
+        elif requested:
+            raise PermissionError(
+                "检测到旧版全局 approved_permissions，但当前启用了多个插件；"
+                "为防止权限横向复用，请改用 plugins.permission_grants"
+            )
     if not is_market:
-        # 本地来源插件：ui:* 权限族自动放行（GUI 插件宿主按注册类型挂载）
+        # 本地原生 UI 是高信任兼容能力；其余权限仍必须绑定到当前插件授权。
         approved |= UI_PERMISSIONS
     denied = requested - approved
     if denied:
         raise PermissionError(
-            f"Plugin permissions were not approved: {', '.join(sorted(denied))}; file={path}"
+            f"Plugin permissions were not approved for {plugin_id}: "
+            f"{', '.join(sorted(denied))}; artifact_sha256={artifact_sha256}; file={path}"
         )
     network_imports, dangerous_patterns = _preflight_forbidden_patterns(
         path, source, allowed=set(ast_allowed_patterns)
@@ -671,7 +793,17 @@ def _load_local_plugin(
     # 契约 2（handle）+ subprocess 模式 → 注册子进程适配器工厂，不在主进程 exec。
     # 契约 1（register）无法 subprocess（无宿主注册面）→ 走既有 in_process 路径。
     from . import plugin_router
-    from .plugin_subprocess_adapter import SubprocessSourceAdapter, _SubprocessSessionHost
+    from .plugin_subprocess_adapter import (
+        CONTRACT2_HOOK_EVENTS,
+        SubprocessAuthProviderAdapter,
+        SubprocessExporterAdapter,
+        SubprocessFetcherAdapter,
+        SubprocessHookAdapter,
+        SubprocessProcessorAdapter,
+        SubprocessSourceAdapter,
+        SubprocessTransformerAdapter,
+        _SubprocessSessionHost,
+    )
 
     contract_shape = plugin_router.detect_contract_shape(source)
     static_meta = _static_plugin_metadata(path, source) if contract_shape == 2 else None
@@ -681,7 +813,7 @@ def _load_local_plugin(
     plugins_section = config.section("plugins") if config is not None else {}
     backend_cfg, _escape = plugin_router.resolve_runtime_backend(plugins_section)
     allowlist_entry: dict[str, Any] | None = None
-    plugin_id = static_meta.name if static_meta is not None else path.parent.name
+    plugin_id = static_meta.name if static_meta is not None else plugin_id
     if backend_cfg == plugin_router.RUNTIME_BACKEND_AUTO:
         for entry in plugins_section.get("in_process_allowlist", []):
             if isinstance(entry, dict) and entry.get("plugin_id") == plugin_id:
@@ -722,10 +854,55 @@ def _load_local_plugin(
             daily_quota=daily_quota,
             egress_policy=egress_policy,
         )
-        # 按 plugin_types 注册对应槽位的适配器工厂（缺省按 source 处理）
+        # 按 plugin_types 注册对应槽位的适配器工厂（缺省按 source 处理）。
+        # 只对已经具备契约 2 adapter 的类型接线；其余官方预留类型给出明确诊断，
+        # 避免“元数据声明成功”等同于“运行时已经支持”。
         plugin_types = static_meta.plugin_types if static_meta else ()
-        if not plugin_types or "source" in plugin_types:
+        effective_types = plugin_types or ("source",)
+        if "source" in effective_types:
             registry.sources[plugin_id] = lambda cfg, _h=host: SubprocessSourceAdapter(_h, cfg)
+        if "fetcher" in effective_types:
+            registry.fetchers[plugin_id] = lambda cfg, _h=host: SubprocessFetcherAdapter(_h, cfg)
+        if "processor" in effective_types:
+            registry.processors[plugin_id] = (
+                lambda cfg, options=None, _h=host: SubprocessProcessorAdapter(_h, cfg, options)
+            )
+        if "parser" in effective_types:
+            registry.parsers[plugin_id] = (
+                lambda cfg, options=None, _h=host: SubprocessProcessorAdapter(
+                    _h, cfg, options, operation="parser.process"
+                )
+            )
+        if "extractor" in effective_types:
+            registry.extractors[plugin_id] = (
+                lambda cfg, options=None, _h=host: SubprocessProcessorAdapter(
+                    _h, cfg, options, operation="extractor.process"
+                )
+            )
+        if "auth_provider" in effective_types:
+            registry.auth_providers[plugin_id] = (
+                lambda cfg, options=None, _h=host: SubprocessAuthProviderAdapter(_h, cfg, options)
+            )
+        if "transformer" in effective_types:
+            registry.transformers[plugin_id] = (
+                lambda cfg, options=None, _h=host: SubprocessTransformerAdapter(_h, cfg, options)
+            )
+        if "exporter" in effective_types:
+            registry.exporters[plugin_id] = SubprocessExporterAdapter(host)
+        if "hook" in effective_types:
+            hook_adapter = SubprocessHookAdapter(host)
+            for event in CONTRACT2_HOOK_EVENTS:
+                registry.register_hook(event, hook_adapter.callback(event))
+        registry.track_resource(host)
+        unsupported_types = set(effective_types) - SUBPROCESS_ADAPTER_PLUGIN_TYPES
+        if unsupported_types:
+            message = (
+                "契约 2 插件声明了当前尚未接入 subprocess adapter 的扩展点: "
+                f"{sorted(unsupported_types)}"
+            )
+            LOGGER.warning("%s; file=%s", message, path)
+            with registry._error_lock:
+                registry.plugin_errors.append({"path": str(path), "error": message})
         registry.plugins.append(
             static_meta if static_meta is not None else PluginMetadata(plugin_id, description="contract-2 subprocess plugin")
         )
@@ -1022,11 +1199,8 @@ def _resolve_module_of_attribute(node: ast.Attribute, alias: dict[str, str]) -> 
     return None
 
 
-def _preflight_permissions(path: Path, source: str) -> set[str]:
-    """Read literal metadata from the AST before importing and executing plugin code.
-
-    fail-closed：解析/求值失败一律抛 PermissionError，绝不返回空集放行。
-    """
+def _preflight_metadata(path: Path, source: str) -> dict[str, Any]:
+    """静态读取 PLUGIN_METADATA；插件代码执行前失败关闭。"""
     try:
         tree = ast.parse(source, filename=str(path))
     except SyntaxError as exc:
@@ -1044,11 +1218,83 @@ def _preflight_permissions(path: Path, source: str) -> set[str]:
         except (ValueError, TypeError) as exc:
             raise PermissionError(f"PLUGIN_METADATA 必须是静态字面量: {path}（{exc}）") from exc
         if isinstance(value, dict):
-            permissions = value.get("permissions", [])
-            if isinstance(permissions, (list, tuple)):
-                return {str(item).casefold() for item in permissions}
+            return value
         raise PermissionError(f"PLUGIN_METADATA 结构非法: {path}")
-    return set()
+    return {}
+
+
+def _permissions_from_metadata(path: Path, metadata: dict[str, Any]) -> set[str]:
+    permissions = metadata.get("permissions", [])
+    if not isinstance(permissions, (list, tuple)):
+        raise PermissionError(f"PLUGIN_METADATA.permissions 必须是列表或元组: {path}")
+    return {str(item).casefold() for item in permissions}
+
+
+def _preflight_permissions(path: Path, source: str) -> set[str]:
+    """兼容入口：静态读取插件请求权限。"""
+    return _permissions_from_metadata(path, _preflight_metadata(path, source))
+
+
+def _permission_artifact_sha256(path: Path, plugin_bytes: bytes) -> str:
+    """权限授权绑定的稳定载荷哈希：整包优先绑定 manifest，单文件绑定源码。"""
+    manifest = path.parent / "package.manifest.json"
+    try:
+        payload = manifest.read_bytes() if manifest.is_file() else plugin_bytes
+    except OSError as exc:
+        raise PermissionError(f"无法读取插件权限绑定载荷: {manifest}（{exc}）") from exc
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _declared_creator_fingerprint(path: Path) -> str:
+    """读取随载荷绑定的作者指纹；缺失时返回空串用于旧式单文件插件。"""
+    for candidate, key in (
+        (path.parent / "package.manifest.json", "creator_fingerprint"),
+        (path.parent / "creator.identity", "key_fingerprint"),
+    ):
+        if not candidate.is_file():
+            continue
+        try:
+            data = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict) and data.get(key):
+            return str(data[key]).strip().casefold()
+    return ""
+
+
+def _resolve_plugin_permission_grant(
+    *,
+    plugin_id: str,
+    version: str,
+    artifact_sha256: str,
+    creator_fingerprint: str,
+    permission_grants: dict[str, Any] | None,
+) -> set[str]:
+    """解析插件级授权并核对版本、载荷哈希及可用的作者指纹。"""
+    if permission_grants is None:
+        return set()
+    if not isinstance(permission_grants, dict):
+        raise PermissionError("plugins.permission_grants 必须是映射")
+    grant = permission_grants.get(plugin_id)
+    if grant is None:
+        return set()
+    if not isinstance(grant, dict):
+        raise PermissionError(f"插件 {plugin_id} 的 permission_grants 条目必须是映射")
+    granted_hash = str(grant.get("artifact_sha256") or "").strip().casefold()
+    if not granted_hash or granted_hash != artifact_sha256.casefold():
+        raise PermissionError(f"插件 {plugin_id} 的授权载荷哈希不匹配，插件可能已更新")
+    granted_version = str(grant.get("version") or "").strip()
+    if granted_version and granted_version != version:
+        raise PermissionError(
+            f"插件 {plugin_id} 的授权版本为 {granted_version}，当前版本为 {version}"
+        )
+    granted_creator = str(grant.get("creator_fingerprint") or "").strip().casefold()
+    if granted_creator and granted_creator != creator_fingerprint:
+        raise PermissionError(f"插件 {plugin_id} 的授权作者指纹不匹配")
+    permissions = grant.get("permissions", [])
+    if not isinstance(permissions, (list, tuple)):
+        raise PermissionError(f"插件 {plugin_id} 的授权 permissions 必须是列表")
+    return {str(item).casefold() for item in permissions}
 
 
 def _static_plugin_metadata(path: Path, source: str) -> PluginMetadata | None:

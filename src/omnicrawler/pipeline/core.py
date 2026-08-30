@@ -61,7 +61,7 @@ class Pipeline(_PipelineBuilders, _PipelineExports, _PipelineFetch, _PipelineRun
 
         try:
             self.egress = EgressBroker(config)
-            self.registry = build_registry(config, self.egress)
+            self.registry = track(build_registry(config, self.egress))
             self.state = track(StateStore(self.workspace / "state.sqlite3"))
             self.object_store = track(build_object_store(config, self.egress))
             self.record_sinks = track(build_record_sink_manager(config, self.egress))

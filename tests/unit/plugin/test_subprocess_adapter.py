@@ -13,8 +13,11 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawler.core.models import CrawlRequest
+from omnicrawler.core.models import CrawlRequest, FetchResult
 from omnicrawler.plugins.plugin_subprocess_adapter import (
+    SubprocessExporterAdapter,
+    SubprocessHookAdapter,
+    SubprocessProcessorAdapter,
     SubprocessSourceAdapter,
     _SubprocessSessionHost,
     dict_to_request,
@@ -108,3 +111,92 @@ def test_adapter_close_reclaims_session(c2_source_plugin: Path) -> None:
     assert session is not None and session._proc is not None
     adapter.close()
     assert host._session is None
+
+
+@pytest.fixture()
+def c2_extension_plugin(tmp_path: Path) -> Path:
+    (tmp_path / "c2_extensions.py").write_text(
+        textwrap.dedent(
+            """
+            def handle(operation, payload):
+                if operation == "processor.process":
+                    result = payload["result"]
+                    request = result["request"]
+                    return {"records": [{
+                        "source_url": result["final_url"],
+                        "record_type": "contract2",
+                        "data": {
+                            "title": "isolated",
+                            "authorization": request["headers"].get("Authorization"),
+                            "request_body_present": "body_b64" in request,
+                        },
+                        "evidence": {"title": {"method": "fixture"}},
+                    }], "requests": []}
+                if operation == "exporter.export":
+                    return {"run_id": payload["run_id"], "format": payload["options"].get("format")}
+                if operation == "hook.before_fetch":
+                    return {"payload": payload}
+                return {}
+            """
+        ),
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def _result() -> FetchResult:
+    request = CrawlRequest(
+        "https://example.com/",
+        headers={"Authorization": "Bearer secret", "Accept": "text/html"},
+        body=b"password=secret",
+    )
+    return FetchResult(
+        request=request,
+        final_url=request.url,
+        status=200,
+        headers={"content-type": "text/html", "set-cookie": "session=secret"},
+        body=b"<title>isolated</title>",
+        elapsed_seconds=0.1,
+    )
+
+
+def test_c2_processor_adapter_returns_process_result(c2_extension_plugin: Path) -> None:
+    host = _SubprocessSessionHost(
+        c2_extension_plugin, "c2_extensions", permissions=set(), timeout_seconds=15
+    )
+    adapter = SubprocessProcessorAdapter(host, options={"mode": "fixture"})
+    outcome = adapter.process(_result())
+    assert outcome.records[0].record_type == "contract2"
+    assert outcome.records[0].data == {
+        "title": "isolated",
+        "authorization": "<redacted>",
+        "request_body_present": False,
+    }
+    adapter.close()
+
+
+def test_c2_exporter_adapter_binds_run_context(c2_extension_plugin: Path) -> None:
+    host = _SubprocessSessionHost(
+        c2_extension_plugin, "c2_extensions", permissions=set(), timeout_seconds=15
+    )
+    adapter = SubprocessExporterAdapter(host)
+    assert adapter(None, object(), "run-1", {"format": "json"}) == {
+        "run_id": "run-1",
+        "format": "json",
+    }
+    assert host._run_id == "run-1"
+    adapter.close()
+
+
+def test_c2_hook_adapter_redacts_credentials_and_host_objects(c2_extension_plugin: Path) -> None:
+    host = _SubprocessSessionHost(
+        c2_extension_plugin, "c2_extensions", permissions=set(), timeout_seconds=15
+    )
+    callback = SubprocessHookAdapter(host).callback("before_fetch")
+    response = callback(run_id="run-2", request=_result().request, pipeline=object())
+    payload = response["payload"]
+    assert payload["request"]["headers"]["Authorization"] == "<redacted>"
+    assert payload["request"]["headers"]["Accept"] == "text/html"
+    assert "body_b64" not in payload["request"]
+    assert payload["pipeline"] == {"type": "object"}
+    host.close()

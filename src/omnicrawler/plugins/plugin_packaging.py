@@ -77,6 +77,11 @@ class LocalPluginEntry:
     #: 作者公钥原始字节（存在时可用）：信任操作必须绑定公钥本体，
     #: 而不是把 fingerprint 字符串当凭据（审查报告 N23①/N26）。
     public_key: bytes = b""
+    plugin_types: tuple[str, ...] = ()
+    category: str = ""
+    tags: tuple[str, ...] = ()
+    permissions: tuple[str, ...] = ()
+    execution_mode: str = "subprocess"
 
 
 def _load_user(username: str, password: str) -> UserIdentity:
@@ -115,6 +120,13 @@ def _read_metadata(plugin_file: Path) -> dict[str, Any]:
             return value
         raise PackagingError("PLUGIN_METADATA 必须是字典")
     return {}
+
+
+def _metadata_strings(metadata: dict[str, Any], key: str) -> tuple[str, ...]:
+    value = metadata.get(key, [])
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(str(item).strip() for item in value if str(item).strip())
 
 
 def sign_plugin_local(plugin_dir: Path, *, username: str, password: str, target: str = "plugin.py") -> str:
@@ -302,7 +314,9 @@ def build_plugin_upload(
     metadata = _read_metadata(plugin_file)
     name = str(metadata.get("name") or plugin_id)
     version = str(metadata.get("version") or "0.1.0")
-    category = str((metadata.get("plugin_types") or ["source"])[0])
+    # category 是自由的市场业务分类；plugin_types 才是宿主受控的运行扩展点。
+    # 未声明 category 的旧插件继续回退到首个 plugin_type，保持上传兼容。
+    category = str(metadata.get("category") or (metadata.get("plugin_types") or ["source"])[0])
     summary = str(metadata.get("description") or "")
     if not summary:
         raise PackagingError("插件缺少介绍：请在 PLUGIN_METADATA 中填写 description")
@@ -329,7 +343,12 @@ def build_plugin_upload(
         # （审查报告 S50）。
         "signature_file": f"plugins/{plugin_id}/plugin.py.sig",
         "signature_algorithm": "ed25519",
+        "plugin_types": list(metadata.get("plugin_types") or ["source"]),
         "permissions": list(metadata.get("permissions") or []),
+        "execution_mode": str(metadata.get("execution_mode") or "subprocess"),
+        "domains": list(metadata.get("domains") or []),
+        "input_files": list(metadata.get("input_files") or []),
+        "dependencies": list(metadata.get("dependencies") or []),
         "compatible_core": f">={metadata.get('min_core_version') or '0.7.0'}",
         # 门 2（Phase 1，方案 A1）：license 必填——删除隐式 MIT 回退，
         # 未声明即打包失败（fail-closed），迫使作者显式选择许可。
@@ -482,6 +501,13 @@ def scan_local_plugins(root: Path) -> list[LocalPluginEntry]:
                     author_username=author,
                     fingerprint=fingerprint,
                     public_key=public_key,
+                    plugin_types=tuple(
+                        item.casefold() for item in _metadata_strings(metadata, "plugin_types")
+                    ),
+                    category=str(metadata.get("category") or ""),
+                    tags=_metadata_strings(metadata, "tags"),
+                    permissions=_metadata_strings(metadata, "permissions"),
+                    execution_mode=str(metadata.get("execution_mode") or "subprocess"),
                 )
             )
     return entries

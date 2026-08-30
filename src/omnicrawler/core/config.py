@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -161,7 +162,12 @@ DEFAULTS: dict[str, Any] = {
     },
     "plugins": {
         "paths": ["plugins/", "plugins_installed/"], "allow_external_paths": False, "fail_open": False,
-        "hook_fail_open": False, "approved_permissions": [],
+        "hook_fail_open": False,
+        # 旧版全局权限池仅用于单插件迁移兼容；新授权必须绑定插件与载荷哈希。
+        "approved_permissions": [],
+        "permission_grants": {},
+        # None 保持旧项目“已安装即启用”；GUI 首次管理市场插件后写入显式 ID 列表。
+        "enabled_market_plugins": None,
         "trust_public_key": "",
         # 签名策略：strict（默认）= 未签名拒载、本地创作者签名经信任询问确认；
         # developer = 未验签/未信任作者时警告放行（仅测试与本地开发）。
@@ -522,6 +528,38 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
             warnings.append(f"source.kind={config.source_kind}将由本地插件提供，运行时再验证")
         else:
             errors.append(f"source.kind不支持: {config.source_kind}")
+    plugins = config.section("plugins")
+    permission_grants = plugins.get("permission_grants", {})
+    if not isinstance(permission_grants, dict):
+        errors.append("plugins.permission_grants必须是按插件ID索引的映射")
+    else:
+        for plugin_id, grant in permission_grants.items():
+            if not isinstance(plugin_id, str) or not plugin_id.strip() or not isinstance(grant, dict):
+                errors.append("plugins.permission_grants条目必须是非空插件ID到授权映射")
+                continue
+            permissions = grant.get("permissions", [])
+            if not isinstance(permissions, list) or not all(
+                isinstance(permission, str) for permission in permissions
+            ):
+                errors.append(f"plugins.permission_grants.{plugin_id}.permissions必须是数组")
+            artifact_sha256 = grant.get("artifact_sha256", "")
+            if not isinstance(artifact_sha256, str) or not re.fullmatch(
+                r"[0-9a-fA-F]{64}", artifact_sha256
+            ):
+                errors.append(
+                    f"plugins.permission_grants.{plugin_id}.artifact_sha256必须是64位SHA-256"
+                )
+            for binding in ("version", "creator_fingerprint"):
+                if binding in grant and not isinstance(grant[binding], str):
+                    errors.append(
+                        f"plugins.permission_grants.{plugin_id}.{binding}必须是字符串"
+                    )
+    enabled_market_plugins = plugins.get("enabled_market_plugins")
+    if enabled_market_plugins is not None and (
+        not isinstance(enabled_market_plugins, list)
+        or not all(isinstance(item, str) and item.strip() for item in enabled_market_plugins)
+    ):
+        errors.append("plugins.enabled_market_plugins必须是插件ID字符串数组或null")
     seeds = config.section("source").get("seeds", [])
     if config.source_kind not in {"redis", "scrapy"} and not isinstance(seeds, list):
         errors.append("source.seeds必须是URL数组")

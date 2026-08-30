@@ -38,6 +38,8 @@ class _Inspection:
         self.path = path
         self.compatible = compatible
         self.permissions = ["network:scoped"]
+        self.artifact_sha256 = "a" * 64
+        self.creator_fingerprint = "creator-1"
         self.description = "demo plugin"
         self.errors: list[str] = []
 
@@ -62,6 +64,14 @@ def test_plugin_manager_dialog_collects_checked_only(qapp, tmp_path: Path) -> No
     # relative_to 输出随平台分隔符变化，用 PurePath 归一比较
     assert Path(selected[0]) == Path("plugins") / "a"
     assert permissions == {"network:scoped"}
+    assert dialog.collect_permission_grants() == {
+        "demo": {
+            "version": "1.0.0",
+            "artifact_sha256": "a" * 64,
+            "creator_fingerprint": "creator-1",
+            "permissions": ["network:scoped"],
+        }
+    }
     dialog.deleteLater()
 
 

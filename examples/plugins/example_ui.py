@@ -7,8 +7,9 @@
      （local-sign = 创作者签名 + 自动加入本地信任列表）
   3. 启动 GUI 后主题出现在 设置 → 主题 菜单，动作出现在 插件 菜单。
 
-权限：ui:theme / ui:action / ui:panel / ui:status —— 本地来源插件自动放行；
-市场来源插件需用户在插件管理中显式批准。
+权限：ui:theme / ui:action / ui:panel / ui:status。
+本示例属于契约 1 原生 UI，只适用于本地高信任、in-process 场景；当前公开市场只接受契约 2，
+不能把本示例直接作为市场 GUI 插件投稿。
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ PLUGIN_METADATA = {
 
 def _make_panel(mw):
     """侧栏面板：一个简单的欢迎面板。"""
-    from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
+    from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
     widget = QWidget(mw)
     layout = QVBoxLayout(widget)
@@ -33,7 +34,7 @@ def _make_panel(mw):
 
 def _make_status_widget():
     """状态栏常驻小部件。"""
-    from PyQt6.QtWidgets import QLabel
+    from PySide6.QtWidgets import QLabel
 
     return QLabel("  UI 插件已加载  ")
 
@@ -67,7 +68,7 @@ def register(registry):
     )
 
     def _greet(mw):
-        from PyQt6.QtWidgets import QMessageBox
+        from PySide6.QtWidgets import QMessageBox
 
         QMessageBox.information(mw, "示例插件", "你好，OmniCrawler！")
 

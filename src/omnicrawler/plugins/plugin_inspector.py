@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+import hashlib
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,8 @@ class PluginInspection:
     # Phase 3（B2 双契约适配）：契约形态（1=register/2=handle/0=未知）+ 声明模式
     contract_shape: int = 0
     execution_mode: str = ""
+    artifact_sha256: str = ""
+    creator_fingerprint: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -75,6 +79,23 @@ def inspect_plugin(path: Path) -> PluginInspection:
         errors.append(
             "契约 1（register）插件不能以 subprocess 运行（请迁移契约 2 或显式声明 execution_mode: in_process）"
         )
+    manifest_path = path.parent / "package.manifest.json"
+    artifact_bytes = manifest_path.read_bytes() if manifest_path.is_file() else path.read_bytes()
+    artifact_sha256 = hashlib.sha256(artifact_bytes).hexdigest()
+    creator_fingerprint = ""
+    for identity_path, key in (
+        (manifest_path, "creator_fingerprint"),
+        (path.parent / "creator.identity", "key_fingerprint"),
+    ):
+        if not identity_path.is_file():
+            continue
+        try:
+            identity = json.loads(identity_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if isinstance(identity, dict) and identity.get(key):
+            creator_fingerprint = str(identity[key]).strip().casefold()
+            break
     return PluginInspection(
         str(path.resolve()),
         str(metadata.get("name", path.stem)),
@@ -87,6 +108,8 @@ def inspect_plugin(path: Path) -> PluginInspection:
         tuple(errors),
         contract_shape=contract_shape,
         execution_mode=execution_mode,
+        artifact_sha256=artifact_sha256,
+        creator_fingerprint=creator_fingerprint,
     )
 
 

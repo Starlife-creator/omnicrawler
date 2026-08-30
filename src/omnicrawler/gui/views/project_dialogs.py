@@ -148,6 +148,25 @@ class PluginManagerDialog(QDialog):
             requested_permissions.update(inspection.permissions)
         return selected, requested_permissions
 
+    def collect_permission_grants(self) -> dict[str, dict[str, object]]:
+        """为勾选插件生成绑定版本、载荷哈希和作者指纹的权限授权。"""
+        grants: dict[str, dict[str, object]] = {}
+        for row in range(self._listing.count()):
+            row_item = self._listing.item(row)
+            assert row_item is not None
+            if row_item.checkState() != Qt.CheckState.Checked:
+                continue
+            inspection = row_item.data(Qt.ItemDataRole.UserRole)
+            if not inspection.permissions:
+                continue
+            grants[inspection.name] = {
+                "version": inspection.version,
+                "artifact_sha256": inspection.artifact_sha256,
+                "creator_fingerprint": inspection.creator_fingerprint,
+                "permissions": sorted(set(inspection.permissions)),
+            }
+        return grants
+
 
 # ── 定时任务 ────────────────────────────────────────────────────────────
 

@@ -15,11 +15,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
@@ -30,6 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ... import __version__
 from ...core.config import DEFAULTS
 from ...plugins.market_client import (
     catalog_cache_path,
@@ -38,6 +41,7 @@ from ...plugins.market_client import (
     fetch_resource,
     verify_installed,
 )
+from ...plugins.plugins import OFFICIAL_PLUGIN_TYPES
 from ..core.background_worker import BackgroundWorker
 from ..design_system import FONT_FAMILY_MONO, FONT_SIZE, RADIUS, ThemeManager
 from ..i18n import _
@@ -53,6 +57,113 @@ def _project_root_of(base: str | Path | None) -> Path:
 
 
 _CATALOG_PURPOSE = "plugin"
+
+_TYPE_LABELS = {
+    "source": _("数据源"),
+    "fetcher": _("抓取器"),
+    "processor": _("处理器"),
+    "parser": _("解析器"),
+    "extractor": _("提取器"),
+    "auth_provider": _("认证"),
+    "transformer": _("转换器"),
+    "exporter": _("导出器"),
+    "hook": _("生命周期"),
+    "ui": _("原生界面"),
+}
+
+
+def _entry_strings(entry: dict[str, Any], key: str) -> tuple[str, ...]:
+    raw = entry.get(key, [])
+    if not isinstance(raw, (list, tuple)):
+        return ()
+    return tuple(str(item).strip() for item in raw if str(item).strip())
+
+
+def _entry_plugin_types(entry: dict[str, Any]) -> tuple[str, ...]:
+    """读取运行扩展点；旧 catalog 从 category/tags 做保守兼容推断。"""
+    raw = entry.get("plugin_types")
+    if isinstance(raw, (list, tuple)):
+        values = [str(item).strip().casefold() for item in raw]
+        return tuple(dict.fromkeys(item for item in values if item in OFFICIAL_PLUGIN_TYPES))
+    candidates = [entry.get("category"), *_entry_strings(entry, "tags")]
+    inferred = [str(item).strip().casefold() for item in candidates]
+    return tuple(dict.fromkeys(item for item in inferred if item in OFFICIAL_PLUGIN_TYPES))
+
+
+def _permission_risk(entry: dict[str, Any]) -> tuple[str, str]:
+    permissions = {
+        str(item).strip().casefold()
+        for item in _entry_strings(entry, "permissions")
+        if str(item).strip()
+    }
+    if str(entry.get("execution_mode") or "subprocess") == "in_process" or "secrets:read" in permissions:
+        return "high", _("高风险")
+    if permissions & {"network:scoped", "records:write", "files:read", "temp:write"}:
+        return "medium", _("需授权")
+    return "low", _("低风险")
+
+
+def _version_tuple(value: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in value.split(".") if part.isdigit())
+
+
+def _compatibility(entry: dict[str, Any], current: str = __version__) -> tuple[str, str]:
+    """覆盖市场现用的简单版本约束；无法判断时明确显示未知而不误拦截。"""
+    constraint = str(entry.get("compatible_core") or "").strip()
+    if not constraint:
+        return "unknown", _("兼容性未知")
+    current_version = _version_tuple(current)
+    if not current_version:
+        return "unknown", _("兼容性未知")
+    for clause in (item.strip() for item in constraint.split(",")):
+        matched = False
+        for operator in (">=", "<=", "==", ">", "<"):
+            if not clause.startswith(operator):
+                continue
+            target = _version_tuple(clause[len(operator):].strip())
+            if not target:
+                return "unknown", _("兼容性未知")
+            comparisons = {
+                ">=": current_version >= target,
+                "<=": current_version <= target,
+                "==": current_version == target,
+                ">": current_version > target,
+                "<": current_version < target,
+            }
+            if not comparisons[operator]:
+                return "incompatible", _("不兼容当前版本")
+            matched = True
+            break
+        if not matched:
+            return "unknown", _("兼容性未知")
+    return "compatible", _("兼容")
+
+
+def _install_block_reason(entry: dict[str, Any]) -> str:
+    if _compatibility(entry)[0] == "incompatible":
+        return _("该插件与当前 OmniCrawler 版本不兼容")
+    if "ui" in _entry_plugin_types(entry):
+        return _("原生 UI 插件仅允许作为受信任本地插件使用，不能从市场安装")
+    return ""
+
+
+def _install_review_text(entry: dict[str, Any]) -> str:
+    plugin_types = _entry_plugin_types(entry)
+    type_text = ", ".join(_TYPE_LABELS.get(item, item) for item in plugin_types) or _("未知")
+    mode = str(entry.get("execution_mode") or "subprocess")
+    mode_text = _("隔离子进程") if mode == "subprocess" else _("进程内（高风险）")
+    permissions = list(_entry_strings(entry, "permissions"))
+    domains = list(_entry_strings(entry, "domains"))
+    return _(
+        "插件：{0}\n运行扩展点：{1}\n执行模式：{2}\n请求权限：{3}\n允许域名：{4}\n\n"
+        "安装仅下载并验签；启用这些权限时仍需在项目插件管理中逐项批准。"
+    ).format(
+        entry.get("name") or entry.get("id") or "—",
+        type_text,
+        mode_text,
+        ", ".join(permissions) if permissions else _("无"),
+        ", ".join(domains) if domains else _("无"),
+    )
 
 
 def _market_egress(project_root: Path) -> Any:
@@ -165,6 +276,10 @@ class PluginMarketView(QWidget):
     状态: offline | loading | ready | error
     """
 
+    installation_completed = Signal(str)
+    activation_requested = Signal(str)
+    uninstall_completed = Signal(str)
+
     def __init__(self, project_root: str | Path | None = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("pluginMarket")
@@ -188,6 +303,7 @@ class PluginMarketView(QWidget):
         self._state = "offline"
         self._catalog: dict[str, Any] | None = None
         self._selected_id: str | None = None
+        self._enabled_plugin_ids: set[str] = set()
         self._auto_loaded = False
         self._catalog_worker: _CatalogWorker | None = None
         self._listing_worker: _ListingWorker | None = None
@@ -279,6 +395,34 @@ class PluginMarketView(QWidget):
         list_header.setObjectName("sectionSubtitle")
         list_layout.addWidget(list_header)
 
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText(_("搜索名称、分类、标签或扩展点"))
+        self._search_edit.setClearButtonEnabled(True)
+        self._search_edit.textChanged.connect(self._populate_list)
+        list_layout.addWidget(self._search_edit)
+
+        filters = QHBoxLayout()
+        self._type_filter = QComboBox()
+        self._type_filter.addItem(_("全部类型"), "")
+        for plugin_type in sorted(OFFICIAL_PLUGIN_TYPES):
+            self._type_filter.addItem(_TYPE_LABELS.get(plugin_type, plugin_type), plugin_type)
+        self._type_filter.currentIndexChanged.connect(self._populate_list)
+        filters.addWidget(self._type_filter)
+        self._mode_filter = QComboBox()
+        self._mode_filter.addItem(_("全部模式"), "")
+        self._mode_filter.addItem(_("隔离运行"), "subprocess")
+        self._mode_filter.addItem(_("进程内运行"), "in_process")
+        self._mode_filter.currentIndexChanged.connect(self._populate_list)
+        filters.addWidget(self._mode_filter)
+        self._risk_filter = QComboBox()
+        self._risk_filter.addItem(_("全部风险"), "")
+        self._risk_filter.addItem(_("低风险"), "low")
+        self._risk_filter.addItem(_("需授权"), "medium")
+        self._risk_filter.addItem(_("高风险"), "high")
+        self._risk_filter.currentIndexChanged.connect(self._populate_list)
+        filters.addWidget(self._risk_filter)
+        list_layout.addLayout(filters)
+
         self._list = QListWidget()
         self._list.setAlternatingRowColors(True)
         self._list.currentItemChanged.connect(self._on_selection_changed)
@@ -305,6 +449,11 @@ class PluginMarketView(QWidget):
         self._detail_tags.setWordWrap(True)
         detail_layout.addWidget(self._detail_tags)
 
+        self._detail_capabilities = QLabel("")
+        self._detail_capabilities.setObjectName("capabilityLabel")
+        self._detail_capabilities.setWordWrap(True)
+        detail_layout.addWidget(self._detail_capabilities)
+
         self._detail_summary = QLabel("")
         self._detail_summary.setWordWrap(True)
         detail_layout.addWidget(self._detail_summary)
@@ -328,6 +477,10 @@ class PluginMarketView(QWidget):
         self._uninstall_btn = QPushButton(_("卸载"))
         self._uninstall_btn.clicked.connect(self._on_uninstall)
         btn_row.addWidget(self._uninstall_btn)
+
+        self._enable_btn = QPushButton(_("启用到当前项目"))
+        self._enable_btn.clicked.connect(self._on_enable)
+        btn_row.addWidget(self._enable_btn)
 
         self._verify_btn = QPushButton(_("校验"))
         self._verify_btn.clicked.connect(self._on_verify)
@@ -365,12 +518,19 @@ class PluginMarketView(QWidget):
             QLabel#detailTitle {{
                 font-size: {FONT_SIZE["title"]}px;
             }}
-            QLabel#mutedLabel, QLabel#tagLabel {{
+            QLabel#mutedLabel, QLabel#tagLabel, QLabel#capabilityLabel {{
                 font-size: {FONT_SIZE["small"]}px;
                 color: {t.muted};
             }}
             QLabel#tagLabel {{
                 color: {t.primary};
+            }}
+            QLabel#capabilityLabel {{
+                color: {t.text};
+                padding: 6px 8px;
+                border: 1px solid {t.border};
+                border-radius: {RADIUS["sm"]}px;
+                background: {t.nav};
             }}
             QListWidget {{
                 border: 1px solid {t.border};
@@ -460,17 +620,27 @@ class PluginMarketView(QWidget):
         self._list.blockSignals(True)
         self._list.clear()
         plugins = (self._catalog or {}).get("plugins", []) if self._catalog else []
-        for entry in plugins:
+        visible = [entry for entry in plugins if self._matches_filters(entry)]
+        for entry in visible:
             pid = entry.get("id", "")
             name = entry.get("name", pid)
             version = entry.get("version", "")
             installed = self._is_installed(pid)
+            plugin_types = _entry_plugin_types(entry)
+            mode = str(entry.get("execution_mode") or "subprocess")
+            _risk_key, risk_label = _permission_risk(entry)
+            type_label = "/".join(_TYPE_LABELS.get(item, item) for item in plugin_types) or _("类型未知")
+            mode_label = _("隔离") if mode == "subprocess" else _("进程内")
             label = f"{name}  v{version}" if version else name
+            label += f"  ·  {type_label} · {mode_label} · {risk_label}"
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, pid)
             if installed:
                 item.setText(f"✓ {label}")
-            item.setToolTip(pid)
+            if pid in self._enabled_plugin_ids:
+                item.setText(f"● {item.text()}")
+            compatibility = _compatibility(entry)[1]
+            item.setToolTip(f"{pid}\n{type_label} · {mode_label} · {risk_label} · {compatibility}")
             self._list.addItem(item)
 
         # 离线时补充展示本地已安装但不在目录中的插件
@@ -483,8 +653,40 @@ class PluginMarketView(QWidget):
                     self._list.addItem(item)
 
         self._list.blockSignals(False)
+        if self._state == "ready":
+            self._footer.setText(_(f"显示 {len(visible)} / {len(plugins)} 个已审核插件。"))
         if self._list.count() > 0:
             self._list.setCurrentRow(0)
+        else:
+            self._show_detail(None)
+
+    def _matches_filters(self, entry: dict[str, Any]) -> bool:
+        query = self._search_edit.text().strip().casefold()
+        plugin_types = _entry_plugin_types(entry)
+        if query:
+            searchable = " ".join(
+                [
+                    str(entry.get("id", "")),
+                    str(entry.get("name", "")),
+                    str(entry.get("category", "")),
+                    str(entry.get("summary", "")),
+                    *_entry_strings(entry, "tags"),
+                    *plugin_types,
+                ]
+            ).casefold()
+            if query not in searchable:
+                return False
+        selected_type = str(self._type_filter.currentData() or "")
+        if selected_type and selected_type not in plugin_types:
+            return False
+        selected_mode = str(self._mode_filter.currentData() or "")
+        mode = str(entry.get("execution_mode") or "subprocess")
+        if selected_mode and selected_mode != mode:
+            return False
+        selected_risk = str(self._risk_filter.currentData() or "")
+        if selected_risk and selected_risk != _permission_risk(entry)[0]:
+            return False
+        return True
 
     def _on_selection_changed(self, current, _previous) -> None:
         if current is None:
@@ -498,6 +700,7 @@ class PluginMarketView(QWidget):
             self._detail_name.setText(_("未选择插件"))
             self._detail_meta.setText("")
             self._detail_tags.setText("")
+            self._detail_capabilities.setText("")
             self._detail_summary.setText("")
             self._detail_listing.setText("")
             self._update_action_buttons()
@@ -511,8 +714,14 @@ class PluginMarketView(QWidget):
         category = (entry or {}).get("category", "")
         compat = (entry or {}).get("compatible_core", "")
         license_ = (entry or {}).get("license", "")
-        tags = (entry or {}).get("tags", [])
+        tags = _entry_strings(entry or {}, "tags")
         summary = (entry or {}).get("summary", "")
+        plugin_types = _entry_plugin_types(entry or {})
+        mode = str((entry or {}).get("execution_mode") or "subprocess")
+        permissions = list(_entry_strings(entry or {}, "permissions"))
+        domains = list(_entry_strings(entry or {}, "domains"))
+        risk_label = _permission_risk(entry or {})[1]
+        compatibility = _compatibility(entry or {})[1]
 
         self._detail_name.setText(name)
         meta_parts = [
@@ -521,9 +730,30 @@ class PluginMarketView(QWidget):
             category,
             _(f"兼容 {compat}") if compat else "",
             license_,
+            _("当前项目已启用") if plugin_id in self._enabled_plugin_ids else _("当前项目未启用"),
         ]
         self._detail_meta.setText(" · ".join(p for p in meta_parts if p))
         self._detail_tags.setText(_("标签: ") + (", ".join(tags) if tags else "—"))
+        type_text = ", ".join(_TYPE_LABELS.get(item, item) for item in plugin_types) or _("未知")
+        mode_text = _("隔离子进程") if mode == "subprocess" else _("进程内（高风险审批）")
+        permission_text = ", ".join(permissions) if permissions else _("无额外权限")
+        domain_text = _("；域名：") + ", ".join(domains) if domains else ""
+        ui_notice = (
+            _("\n⚠ 原生 UI 只能作为受信任本地进程内插件运行。")
+            if "ui" in plugin_types
+            else ""
+        )
+        self._detail_capabilities.setText(
+            _("运行扩展点：{0}\n执行模式：{1}\n权限：{2}（{3}）{4}\n兼容性：{5}").format(
+                type_text,
+                mode_text,
+                permission_text,
+                risk_label,
+                domain_text,
+                compatibility,
+            )
+            + ui_notice
+        )
         self._detail_summary.setText(summary)
         self._detail_listing.setText(
             _(
@@ -557,14 +787,35 @@ class PluginMarketView(QWidget):
 
     # ── 安装 / 卸载 / 校验 ────────────────────────────────────
     def _on_install(self) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
         pid = self._selected_id
         if not pid or self._state != "ready":
             ToastManager.instance().warning(_("请先联网刷新并选择插件"))
             return
+        entry = self._entry_of(pid)
+        if entry is None:
+            ToastManager.instance().error(_("目录中找不到所选插件"))
+            return
+        block_reason = _install_block_reason(entry)
+        if block_reason:
+            ToastManager.instance().warning(block_reason)
+            return
+        if _permission_risk(entry)[0] != "low":
+            reply = QMessageBox.question(
+                self,
+                _("安装前权限审查"),
+                _install_review_text(entry) + _("\n\n确认继续安装？"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
         self._install_btn.setEnabled(False)
         self._footer.setText(_(f"正在下载并校验 {pid} ..."))
+        source = str((self._catalog or {}).get("_source") or self._catalog_url)
         self._install_worker = _InstallWorker(
-            pid, self._catalog_url, self._dest_root, self._trust_source, self._egress, parent=self
+            pid, source, self._dest_root, self._trust_source, self._egress, parent=self
         )
         self._install_worker.succeeded.connect(self._on_installed)
         self._install_worker.failed.connect(self._on_install_error)
@@ -572,11 +823,38 @@ class PluginMarketView(QWidget):
         self._install_worker.start()
 
     def _on_installed(self, plugin_id: str) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
         ToastManager.instance().success(_(f"已安装并校验通过：{plugin_id}"))
-        self._footer.setText(_(f"已安装 {plugin_id} 到 {self._dest_root / plugin_id}"))
+        self._footer.setText(
+            _(f"已安装 {plugin_id} 到 {self._dest_root / plugin_id}；请求的权限仍需在项目插件管理中批准")
+        )
         self._populate_list()
         self._update_action_buttons(installed=True)
+        self.installation_completed.emit(plugin_id)
         self._prompt_p2p_trust(plugin_id)
+        reply = QMessageBox.question(
+            self,
+            _("启用插件"),
+            _("插件已安全安装，但尚未在当前项目启用。是否现在绑定版本、载荷和权限并启用？"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.activation_requested.emit(plugin_id)
+
+    def _on_enable(self) -> None:
+        pid = self._selected_id
+        if not pid or not self._is_installed(pid):
+            ToastManager.instance().warning(_("请先安装插件"))
+            return
+        entry = self._entry_of(pid)
+        if entry:
+            block_reason = _install_block_reason(entry)
+            if block_reason:
+                ToastManager.instance().warning(block_reason)
+                return
+        self.activation_requested.emit(pid)
 
     def _open_identity_dialog(self) -> None:
         from .identity_dialog import IdentityDialog
@@ -642,6 +920,8 @@ class PluginMarketView(QWidget):
         target = self._dest_root / pid
         try:
             shutil.rmtree(target, ignore_errors=True)
+            self._enabled_plugin_ids.discard(pid)
+            self.uninstall_completed.emit(pid)
             ToastManager.instance().success(_(f"已卸载：{pid}"))
             self._footer.setText(_(f"已卸载 {pid}"))
         except OSError as exc:
@@ -684,15 +964,27 @@ class PluginMarketView(QWidget):
         if pid is None:
             self._install_btn.setEnabled(False)
             self._uninstall_btn.setEnabled(False)
+            self._enable_btn.setEnabled(False)
             self._verify_btn.setEnabled(False)
             return
         if installed is None:
             installed = self._is_installed(pid)
         can_network = self._state == "ready"
-        self._install_btn.setEnabled(can_network and not installed)
+        entry = self._entry_of(pid)
+        block_reason = _install_block_reason(entry) if entry else ""
+        self._install_btn.setEnabled(can_network and not installed and not block_reason)
         self._install_btn.setText(_("重装") if installed else _("安装"))
+        self._install_btn.setToolTip(block_reason)
         self._uninstall_btn.setEnabled(installed)
+        self._enable_btn.setEnabled(installed and not block_reason)
+        self._enable_btn.setText(
+            _("重新授权") if pid in self._enabled_plugin_ids else _("启用到当前项目")
+        )
         self._verify_btn.setEnabled(installed)
+
+    def set_enabled_plugins(self, plugin_ids: set[str] | list[str] | tuple[str, ...]) -> None:
+        self._enabled_plugin_ids = {str(item) for item in plugin_ids}
+        self._populate_list()
 
     def _set_offline_state(self, message: str) -> None:
         self._state = "offline"

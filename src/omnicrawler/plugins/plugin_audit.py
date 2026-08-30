@@ -306,7 +306,7 @@ _DEPENDENCY_LICENSE_ALLOWLIST = {
 
 # 门 1：subprocess 插件禁 import 的宿主核心模块前缀（隔离边界）
 _HOST_CORE_PREFIXES = ("omnicrawler.", "omnicrawler")
-# 门 1：subprocess 禁声明的权限族（ui:*/hook 需 keepalive/in_process）
+# 门 1：subprocess 禁声明的权限族（原生 ui 必须 in_process；hook 是扩展类型而非权限）
 _SUBPROCESS_FORBIDDEN_PERMISSION_PREFIXES = ("ui:", "hook")
 
 
@@ -357,7 +357,7 @@ def gate_declaration_consistency(plugin_dir: Path) -> list[AuditFinding]:
     """门 1：execution_mode 与代码/权限声明一致性（方案第 26/50 轮）。
 
     - subprocess 声明却 import omnicrawler 核心 → error（隔离边界破坏）
-    - subprocess 声明 ui:* / hook 权限 → error（无宿主注册面/keepalive 未声明）
+    - subprocess 声明 ui:* / 旧式 hook 权限 → error（hook 应写入 plugin_types）
     - network 权限无 domains 声明 → error
     - files:read 权限无 input_files 白名单 → error（第 50 轮）
     """
@@ -369,6 +369,41 @@ def gate_declaration_consistency(plugin_dir: Path) -> list[AuditFinding]:
 
     execution_mode = str(meta.get("execution_mode", "subprocess")).strip() or "subprocess"
     permissions = {str(p).casefold() for p in meta.get("permissions", [])}
+    from .plugins import OFFICIAL_PLUGIN_TYPES, SUBPROCESS_ADAPTER_PLUGIN_TYPES
+
+    raw_plugin_types = meta.get("plugin_types", [])
+    if not isinstance(raw_plugin_types, (list, tuple)):
+        findings.append(
+            AuditFinding(
+                level="error",
+                code="gate1_plugin_types_not_list",
+                message="plugin_types 必须是运行扩展点列表",
+            )
+        )
+        plugin_types: set[str] = set()
+    else:
+        plugin_types = {str(item).strip().casefold() for item in raw_plugin_types if str(item).strip()}
+    unknown_types = plugin_types - OFFICIAL_PLUGIN_TYPES
+    if unknown_types:
+        findings.append(
+            AuditFinding(
+                level="error",
+                code="gate1_unknown_plugin_type",
+                message=(
+                    f"未知运行扩展点: {sorted(unknown_types)}；"
+                    "自定义业务分类请使用 category/tags"
+                ),
+            )
+        )
+    unsupported_types = plugin_types - SUBPROCESS_ADAPTER_PLUGIN_TYPES
+    if execution_mode == "subprocess" and unsupported_types and not unknown_types:
+        findings.append(
+            AuditFinding(
+                level="warning",
+                code="gate1_plugin_type_not_wired",
+                message=f"当前版本尚未接入这些契约 2 扩展点: {sorted(unsupported_types)}",
+            )
+        )
     source = plugin_file.read_text(encoding="utf-8")
 
     if execution_mode == "subprocess":
@@ -398,8 +433,8 @@ def gate_declaration_consistency(plugin_dir: Path) -> list[AuditFinding]:
                     level="error",
                     code="gate1_subprocess_forbidden_permission",
                     message=(
-                        f"subprocess 插件不得声明 ui:*/hook 权限: {sorted(forbidden_perms)}"
-                        "（无宿主注册面；hook 需 keepalive，ui 需 in_process）"
+                        f"subprocess 插件不得声明 ui:*/旧式 hook 权限: {sorted(forbidden_perms)}"
+                        "（hook 应声明为 plugin_types 扩展点；ui 需 in_process）"
                     ),
                 )
             )

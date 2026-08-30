@@ -13,7 +13,12 @@ from omnicrawler.plugins.identity import IdentityStore
 from omnicrawler.plugins.plugin_packaging import build_plugin_submission
 
 
-def _payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, bytes]:
+def _payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    plugin_types: list[str] | None = None,
+) -> dict[str, bytes]:
     monkeypatch.setattr("omnicrawler.plugins.trust.DEFAULT_TRUST_LIST", tmp_path / "trusted.json")
     monkeypatch.setenv("OMNICRAWL_SECRET_STORE_PATH", str(tmp_path / "secrets.bin"))
     monkeypatch.setenv("OMNICRAWL_KEYRING_DISABLE", "1")
@@ -22,8 +27,11 @@ def _payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, bytes
     assert identity.key_fingerprint
     package = tmp_path / "demo"
     package.mkdir()
+    types_field = "" if plugin_types is None else f",'plugin_types':{plugin_types!r}"
     (package / "plugin.py").write_text(
-        "PLUGIN_METADATA={'name':'demo','version':'1.0.0','description':'d','license':'MIT'}\n"
+        "PLUGIN_METADATA={'name':'demo','version':'1.0.0','description':'d','license':'MIT'"
+        + types_field
+        + "}\n"
         "def handle(operation, payload): return {}\n",
         encoding="utf-8",
     )
@@ -73,3 +81,20 @@ def test_market_submission_validator_rejects_tampering(
     )
     assert result.returncode == 1
     assert "哈希不一致" in result.stdout
+
+
+def test_market_submission_validator_rejects_native_ui(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = tmp_path / "market"
+    _write(registry, _payload(tmp_path, monkeypatch, plugin_types=["ui"]))
+    script = Path(__file__).resolve().parents[4] / "OmniCrawler-market" / "tools" / "validate_submission.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--registry", str(registry)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    )
+    assert result.returncode == 1
+    assert "native ui plugins are local-only" in result.stdout

@@ -196,7 +196,11 @@ class _LocalPluginsPane(QWidget):
             if (entry.status == "signed_by_me") == (self._kind == "private")
         ]
         for entry in self._entries:
-            item = QListWidgetItem(_(f"{entry.name} @ {entry.version}  ·  {_status_badge(entry)}"))
+            type_text = "/".join(entry.plugin_types) or _("类型未知")
+            mode_text = _("隔离") if entry.execution_mode == "subprocess" else _("进程内")
+            item = QListWidgetItem(
+                _(f"{entry.name} @ {entry.version}  ·  {type_text} · {mode_text} · {_status_badge(entry)}")
+            )
             item.setData(Qt.ItemDataRole.UserRole, entry)
             item.setToolTip(entry.description or entry.path.name)
             self._list.addItem(item)
@@ -216,7 +220,18 @@ class _LocalPluginsPane(QWidget):
             self._detail_desc.setText("")
         else:
             self._detail_name.setText(_(f"{entry.name} @ {entry.version}"))
-            self._detail_meta.setText(_(f"状态：{_status_badge(entry)}"))
+            type_text = ", ".join(entry.plugin_types) or _("未知")
+            permissions = ", ".join(entry.permissions) or _("无额外权限")
+            mode_text = _("隔离子进程") if entry.execution_mode == "subprocess" else _("进程内（高风险）")
+            self._detail_meta.setText(
+                _("状态：{0}\n分类：{1}\n运行扩展点：{2}\n执行模式：{3}\n权限：{4}").format(
+                    _status_badge(entry),
+                    entry.category or _("未分类"),
+                    type_text,
+                    mode_text,
+                    permissions,
+                )
+            )
             self._detail_desc.setText(entry.description or _("（无介绍）"))
         self._update_buttons()
 

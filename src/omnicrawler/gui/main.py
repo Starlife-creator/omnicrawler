@@ -711,6 +711,10 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._change_monitor)
 
         self._plugin_market = PluginMarketView(project_root=self._project_root)
+        self._plugin_market.installation_completed.connect(self._on_market_plugin_installed)
+        self._plugin_market.activation_requested.connect(self._activate_market_plugin)
+        self._plugin_market.uninstall_completed.connect(self._on_market_plugin_uninstalled)
+        self._plugin_market.set_enabled_plugins(self._configured_market_plugin_ids())
         self._stack.addWidget(self._plugin_market)
 
         self._developer_inspector = DeveloperInspector(self._config, self._project_root)
@@ -1118,6 +1122,7 @@ class MainWindow(QMainWindow):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         selected, requested_permissions = dialog.collect_selection()
+        selected_grants = dialog.collect_permission_grants()
         if requested_permissions:
             answer = QMessageBox.question(
                 self, _("批准插件权限"),
@@ -1129,9 +1134,135 @@ class MainWindow(QMainWindow):
                 return
         plugins = self._config.passthrough.setdefault("plugins", {})
         if isinstance(plugins, dict):
-            plugins["paths"] = selected
-            plugins["approved_permissions"] = sorted(requested_permissions)
+            managed_paths = list(selected)
+            if isinstance(plugins.get("enabled_market_plugins"), list):
+                managed_paths.append("plugins_installed/")
+            plugins["paths"] = list(dict.fromkeys(managed_paths))
+            existing_grants = plugins.get("permission_grants", {})
+            merged_grants = dict(existing_grants) if isinstance(existing_grants, dict) else {}
+            # 本对话框管理项目 plugins/ 下的本地插件；保留其他来源插件的授权。
+            for inspection in inspections:
+                merged_grants.pop(inspection.name, None)
+            merged_grants.update(selected_grants)
+            plugins["permission_grants"] = merged_grants
+            plugins.pop("approved_permissions", None)
         ToastManager.instance().info(_("已启用 {0} 个插件；运行前仍会执行兼容性和权限检查").format(len(selected)))
+
+    def _configured_market_plugin_ids(self) -> set[str]:
+        plugins = self._config.passthrough.get("plugins", {})
+        configured = plugins.get("enabled_market_plugins") if isinstance(plugins, dict) else None
+        if isinstance(configured, list):
+            return {str(item) for item in configured}
+        # 旧配置没有白名单时保持“已安装即启用”的历史语义，直到首次市场变更。
+        market = getattr(self, "_plugin_market", None)
+        return set(market._installed_ids()) if market is not None else set()  # noqa: SLF001
+
+    def _on_market_plugin_installed(self, plugin_id: str) -> None:
+        """首次市场变更建立显式白名单，新下载插件默认不启用。"""
+        plugins = self._config.passthrough.setdefault("plugins", {})
+        if not isinstance(plugins, dict):
+            return
+        configured = plugins.get("enabled_market_plugins")
+        if isinstance(configured, list):
+            enabled = {str(item) for item in configured}
+        else:
+            enabled = set(self._plugin_market._installed_ids())  # noqa: SLF001
+            enabled.discard(plugin_id)
+        plugins["enabled_market_plugins"] = sorted(enabled)
+        grants = plugins.get("permission_grants", {})
+        if isinstance(grants, dict):
+            grants.pop(plugin_id, None)
+        self._commit_plugin_config_change()
+        self._plugin_market.set_enabled_plugins(enabled)
+
+    def _activate_market_plugin(self, plugin_id: str) -> None:
+        from ..plugins.market_client import verify_installed
+        from ..plugins.plugin_inspector import inspect_plugin
+
+        ok, reason = verify_installed(
+            self._plugin_market._dest_root,  # noqa: SLF001
+            plugin_id,
+            self._plugin_market._trust_source,  # noqa: SLF001
+        )
+        if not ok:
+            ToastManager.instance().error(_("启用失败，签名复核未通过：{0}").format(reason))
+            return
+        inspection = inspect_plugin(
+            self._plugin_market._dest_root / plugin_id / "plugin.py"  # noqa: SLF001
+        )
+        if not inspection.compatible:
+            ToastManager.instance().error(
+                _("启用失败：{0}").format("；".join(inspection.errors) or _("插件不兼容"))
+            )
+            return
+        if inspection.permissions:
+            answer = QMessageBox.question(
+                self,
+                _("批准插件级权限"),
+                _(
+                    "即将为插件 {0} 绑定以下授权：\n\n版本：{1}\n载荷：{2}\n作者：{3}\n权限：\n{4}\n\n"
+                    "插件更新、载荷变化或作者变化后，此授权会自动失效。确认启用？"
+                ).format(
+                    inspection.name,
+                    inspection.version,
+                    inspection.artifact_sha256,
+                    inspection.creator_fingerprint or _("未声明"),
+                    "\n".join(f"- {item}" for item in inspection.permissions),
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        plugins = self._config.passthrough.setdefault("plugins", {})
+        if not isinstance(plugins, dict):
+            ToastManager.instance().error(_("插件配置段结构异常，无法启用"))
+            return
+        enabled = self._configured_market_plugin_ids()
+        enabled.add(inspection.name)
+        plugins["enabled_market_plugins"] = sorted(enabled)
+        grants = plugins.get("permission_grants", {})
+        grants = dict(grants) if isinstance(grants, dict) else {}
+        grants[inspection.name] = {
+            "version": inspection.version,
+            "artifact_sha256": inspection.artifact_sha256,
+            "creator_fingerprint": inspection.creator_fingerprint,
+            "permissions": list(inspection.permissions),
+        }
+        plugins["permission_grants"] = grants
+        plugins.pop("approved_permissions", None)
+        paths = plugins.get("paths")
+        if not isinstance(paths, list):
+            paths = ["plugins/", "plugins_installed/"]
+        elif not any(str(path).replace("\\", "/").rstrip("/") == "plugins_installed" for path in paths):
+            paths = [*paths, "plugins_installed/"]
+        plugins["paths"] = paths
+        self._commit_plugin_config_change()
+        self._plugin_market.set_enabled_plugins(enabled)
+        ToastManager.instance().success(_("已为当前项目启用插件：{0}").format(plugin_id))
+
+    def _on_market_plugin_uninstalled(self, plugin_id: str) -> None:
+        plugins = self._config.passthrough.setdefault("plugins", {})
+        if not isinstance(plugins, dict):
+            return
+        enabled = self._configured_market_plugin_ids()
+        enabled.discard(plugin_id)
+        plugins["enabled_market_plugins"] = sorted(enabled)
+        grants = plugins.get("permission_grants", {})
+        if isinstance(grants, dict):
+            grants.pop(plugin_id, None)
+        self._commit_plugin_config_change()
+        self._plugin_market.set_enabled_plugins(enabled)
+
+    def _commit_plugin_config_change(self) -> None:
+        """同步编辑器并持久化；无正式配置路径时至少写入崩溃恢复草稿。"""
+        self._sync_wizard_to_editor()
+        self._autosave.set_config(self._config)
+        self._autosave.save_now()
+        if self._config_path is not None:
+            self._save_config()
+        else:
+            self._config_label.setText(_("未保存（插件配置已写入草稿）"))
 
     def _record_browser_actions(self, initial_url: object = None) -> None:
         default_url = str(initial_url) if isinstance(initial_url, str) else (

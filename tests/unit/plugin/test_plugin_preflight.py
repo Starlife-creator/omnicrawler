@@ -11,6 +11,8 @@ config allowlist (``plugins.ast_allowed_patterns``).
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -140,6 +142,177 @@ def test_legitimate_file_io_still_allowed(tmp_path: Path) -> None:
     )
     registry = _load(plugin, approved_permissions=("filesystem_write",))
     assert registry.plugins[0].name == "io"
+
+
+def test_plugin_scoped_permission_grant_allows_exact_artifact(tmp_path: Path) -> None:
+    plugin = _write_plugin(
+        tmp_path,
+        "scoped",
+        "PLUGIN_METADATA = {'name': 'scoped', 'version': '1.0.0', "
+        "'permissions': ['filesystem_write']}\n"
+        "def register(registry): pass\n",
+    )
+    digest = hashlib.sha256(plugin.read_bytes()).hexdigest()
+    registry = Registry()
+    load_local_plugins(
+        registry,
+        [str(plugin)],
+        tmp_path,
+        permission_grants={
+            "scoped": {
+                "version": "1.0.0",
+                "artifact_sha256": digest,
+                "permissions": ["filesystem_write"],
+            }
+        },
+        signature_policy="developer",
+    )
+    assert registry.plugins[0].name == "scoped"
+
+
+def test_permission_grant_is_invalidated_when_plugin_changes(tmp_path: Path) -> None:
+    plugin = _write_plugin(
+        tmp_path,
+        "changed",
+        "PLUGIN_METADATA = {'name': 'changed', 'version': '1.0.0', "
+        "'permissions': ['filesystem_write']}\n"
+        "def register(registry): pass\n",
+    )
+    digest = hashlib.sha256(plugin.read_bytes()).hexdigest()
+    plugin.write_text(plugin.read_text(encoding="utf-8") + "# changed\n", encoding="utf-8")
+    with pytest.raises(PermissionError, match="载荷哈希不匹配"):
+        load_local_plugins(
+            Registry(),
+            [str(plugin)],
+            tmp_path,
+            permission_grants={
+                "changed": {
+                    "version": "1.0.0",
+                    "artifact_sha256": digest,
+                    "permissions": ["filesystem_write"],
+                }
+            },
+            signature_policy="developer",
+        )
+
+
+def test_permission_grant_is_invalidated_when_version_changes(tmp_path: Path) -> None:
+    plugin = _write_plugin(
+        tmp_path,
+        "versioned",
+        "PLUGIN_METADATA = {'name': 'versioned', 'version': '2.0.0', "
+        "'permissions': ['filesystem_write']}\n"
+        "def register(registry): pass\n",
+    )
+    with pytest.raises(PermissionError, match="授权版本为 1.0.0，当前版本为 2.0.0"):
+        load_local_plugins(
+            Registry(),
+            [str(plugin)],
+            tmp_path,
+            permission_grants={
+                "versioned": {
+                    "version": "1.0.0",
+                    "artifact_sha256": hashlib.sha256(plugin.read_bytes()).hexdigest(),
+                    "permissions": ["filesystem_write"],
+                }
+            },
+            signature_policy="developer",
+        )
+
+
+def test_permission_grant_is_invalidated_when_creator_changes(tmp_path: Path) -> None:
+    plugin = _write_plugin(
+        tmp_path,
+        "authored",
+        "PLUGIN_METADATA = {'name': 'authored', 'version': '1.0.0', "
+        "'permissions': ['filesystem_write']}\n"
+        "def register(registry): pass\n",
+    )
+    (tmp_path / "creator.identity").write_text(
+        json.dumps({"key_fingerprint": "creator-current"}),
+        encoding="utf-8",
+    )
+    with pytest.raises(PermissionError, match="授权作者指纹不匹配"):
+        load_local_plugins(
+            Registry(),
+            [str(plugin)],
+            tmp_path,
+            permission_grants={
+                "authored": {
+                    "version": "1.0.0",
+                    "artifact_sha256": hashlib.sha256(plugin.read_bytes()).hexdigest(),
+                    "creator_fingerprint": "creator-previous",
+                    "permissions": ["filesystem_write"],
+                }
+            },
+            signature_policy="developer",
+        )
+
+
+def test_permission_grant_does_not_leak_to_another_plugin(tmp_path: Path) -> None:
+    first = _write_plugin(
+        tmp_path,
+        "first",
+        "PLUGIN_METADATA = {'name': 'first', 'permissions': ['filesystem_write']}\n"
+        "def register(registry): pass\n",
+    )
+    second = _write_plugin(
+        tmp_path,
+        "second",
+        "PLUGIN_METADATA = {'name': 'second', 'permissions': ['filesystem_write']}\n"
+        "def register(registry): pass\n",
+    )
+    with pytest.raises(PermissionError, match="not approved for second"):
+        load_local_plugins(
+            Registry(),
+            [str(first), str(second)],
+            tmp_path,
+            permission_grants={
+                "first": {
+                    "artifact_sha256": hashlib.sha256(first.read_bytes()).hexdigest(),
+                    "permissions": ["filesystem_write"],
+                }
+            },
+            signature_policy="developer",
+        )
+
+
+def test_legacy_global_permissions_rejected_for_multiple_plugins(tmp_path: Path) -> None:
+    body = (
+        "PLUGIN_METADATA = {'name': %r, 'permissions': ['filesystem_write']}\n"
+        "def register(registry): pass\n"
+    )
+    first = _write_plugin(tmp_path, "legacy_one", body % "legacy_one")
+    second = _write_plugin(tmp_path, "legacy_two", body % "legacy_two")
+    with pytest.raises(PermissionError, match="旧版全局 approved_permissions"):
+        load_local_plugins(
+            Registry(),
+            [str(first), str(second)],
+            tmp_path,
+            approved_permissions=("filesystem_write",),
+            signature_policy="developer",
+        )
+
+
+def test_disabled_market_plugin_is_skipped_before_execution(tmp_path: Path) -> None:
+    plugin_dir = tmp_path / "plugins_installed" / "disabled_demo"
+    plugin_dir.mkdir(parents=True)
+    plugin = _write_plugin(
+        plugin_dir,
+        "plugin",
+        "PLUGIN_METADATA = {'name': 'disabled_demo', 'version': '1.0.0'}\n"
+        "def handle(operation, payload): return {}\n",
+    )
+    registry = Registry()
+    load_local_plugins(
+        registry,
+        [str(plugin)],
+        tmp_path,
+        enabled_market_plugins=set(),
+        signature_policy="developer",
+    )
+    assert registry.plugins == []
+    assert any("未在当前项目启用" in item["error"] for item in registry.plugin_errors)
 
 
 def test_comment_self_exemption_no_longer_honored(tmp_path: Path) -> None:

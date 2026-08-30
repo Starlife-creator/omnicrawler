@@ -14,11 +14,39 @@
 
 ### 当前可用的扩展类型
 
-当前契约 2 加载器只会把 `plugin_types` 包含 `source` 的插件自动注册到执行管线，调用
-`handle("source.seed", payload)`。代码库虽然包含 fetcher 子进程适配器，Catalog Schema 也
-保留了 fetcher、processor、exporter、auth_provider、parser、extractor、transformer 和 hook
-等类别，但这些类别尚未全部接入契约 2 的加载路由。新插件不得仅凭 Schema 枚举宣称未接线
-类别已经可运行；发布说明必须与当前实际接入能力一致。
+当前契约 2 加载器会自动接入：
+
+- `source` → `handle("source.seed", payload)`；
+- `fetcher` → `handle("fetcher.fetch", payload)`；
+- `processor` → `handle("processor.process", payload)`；
+- `parser` → `handle("parser.process", payload)`；
+- `extractor` → `handle("extractor.process", payload)`；
+- `auth_provider` → `handle("auth.prepare", payload)`；
+- `transformer` → `handle("transformer.transform", payload)`；
+- `exporter` → `handle("exporter.export", payload)`；
+- `hook` → `handle("hook.<event>", payload)`。
+
+`ui` 是唯一保留但不接入契约 2 subprocess adapter 的官方运行扩展点：原生 QWidget 不能跨
+进程序列化，只允许明确受信任的本地契约 1 插件使用。未知运行类型仍会报错；业务分类必须写入
+`category/tags`。
+
+### processor / exporter 返回约定
+
+- `processor.process` 接收 `{"result": FetchResult字典, "options": {...}}`，返回
+  `{"records": [...], "requests": [...], "artifact_path": null}`。每条 record 使用
+  `source_url / record_type / data / evidence`；响应正文使用 `body_b64`。宿主会移除原始请求体，
+  并脱敏 Authorization、Cookie、X-Api-Key 等认证头。
+- `exporter.export` 接收 `{"run_id": "...", "options": {...}}` 并返回 JSON 对象。需要读取记录
+  时声明并审批 `records:read`，通过 `omnicrawler_sdk.call("records.read", ...)` 获取；宿主不会
+  把 StateStore 或工作区路径直接传入插件进程。
+- `parser.process` / `extractor.process` 与 processor 使用相同返回结构；
+  `auth.prepare` 返回 `{"request": CrawlRequest字典}` 或 null；`transformer.transform` 返回
+  `{"record": 完整记录}`、`{"data": 新数据}` 或空对象（保持原记录）。
+  auth 输入中的既有认证头会被脱敏，原始请求体只提供大小与 SHA-256；宿主合并返回值时会保留
+  未被插件替换的原认证头和请求体。
+
+`plugin_types` 只描述运行扩展点，不能由开发者自由命名。自由业务分类使用 `category`，检索词
+使用 `tags`，自定义能力使用带命名空间的 `capabilities`。
 
 ## 元数据
 
@@ -88,8 +116,9 @@ PLUGIN_METADATA = {
 事件：`before_run`、`before_fetch`、`after_fetch`、`after_extract`、`before_export`、
 `after_export`、`after_run`、`on_error`、`before_reprocess`、`after_reprocess`。
 
-- 契约 2 插件经 keepalive 长驻会话接收 hook 事件：`handle("hook.<event>", payload)`。
-  事件载荷必须经过代理并保持为纯数据，不得包含宿主对象引用。
+- 契约 2 插件在注册表生命周期内复用隔离会话接收 hook 事件：
+  `handle("hook.<event>", payload)`。事件载荷经过宿主序列化，只包含纯 JSON 数据；pipeline 等
+  宿主对象不会跨边界，请求认证头会脱敏，响应正文只提供哈希和大小摘要。
 - `plugins.hook_fail_open: true` 时单个 hook 异常记录到插件错误，不阻止主流程；
   认证、主 exporter 和核心 processor 默认失败关闭。
 

@@ -39,8 +39,9 @@ def build_registry(
     exporters.register(registry)
     registry.register_fetcher("http", HTTPFetcher)
     if config:
-        paths = [str(item) for item in config.section("plugins").get("paths", [])]
-        policy = str(config.section("plugins").get("signature_policy", SIGNATURE_POLICY_STRICT))
+        plugins_config = config.section("plugins")
+        paths = [str(item) for item in plugins_config.get("paths", [])]
+        policy = str(plugins_config.get("signature_policy", SIGNATURE_POLICY_STRICT))
         if policy not in SIGNATURE_POLICIES:
             raise ValueError(f"plugins.signature_policy 非法: {policy}")
         if trust_prompter is None:
@@ -49,13 +50,24 @@ def build_registry(
             registry,
             paths,
             config.root,
-            allow_external_paths=bool(config.section("plugins").get("allow_external_paths", False)),
-            fail_open=bool(config.section("plugins").get("fail_open", False)),
-            approved_permissions=tuple(
-                str(item) for item in config.section("plugins").get("approved_permissions", [])
+            allow_external_paths=bool(plugins_config.get("allow_external_paths", False)),
+            fail_open=bool(plugins_config.get("fail_open", False)),
+            approved_permissions=tuple(str(item) for item in plugins_config.get("approved_permissions", [])),
+            permission_grants=(
+                dict(plugins_config.get("permission_grants", {}))
+                if plugins_config.get("permission_grants")
+                else None if plugins_config.get("approved_permissions") else {}
+            ),
+            enabled_market_plugins=(
+                {
+                    str(item)
+                    for item in plugins_config.get("enabled_market_plugins", [])
+                }
+                if plugins_config.get("enabled_market_plugins") is not None
+                else None
             ),
             ast_allowed_patterns=tuple(
-                str(item) for item in config.section("plugins").get("ast_allowed_patterns", [])
+                str(item) for item in plugins_config.get("ast_allowed_patterns", [])
             ),
             signature_policy=policy,
             trust_prompter=trust_prompter,

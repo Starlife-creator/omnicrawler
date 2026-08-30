@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+from types import SimpleNamespace
 
 import pytest
 
@@ -136,6 +137,117 @@ def test_offline_populate_lists_only_local_installs(tmp_path):
     assert any("local_only" in lab for lab in labels)
 
 
+def test_market_entry_capability_helpers_support_legacy_and_new_catalogs():
+    from omnicrawler.gui.views.plugin_market import (
+        _compatibility,
+        _entry_plugin_types,
+        _install_block_reason,
+        _install_review_text,
+        _permission_risk,
+    )
+
+    assert _entry_plugin_types({"category": "source"}) == ("source",)
+    assert _entry_plugin_types(
+        {"plugin_types": ["processor", "exporter", "processor"]}
+    ) == ("processor", "exporter")
+    assert _permission_risk({"permissions": []})[0] == "low"
+    assert _permission_risk({"permissions": ["network:scoped"]})[0] == "medium"
+    assert _permission_risk({"execution_mode": "in_process"})[0] == "high"
+    assert _compatibility({"compatible_core": ">=0.1.0,<99.0.0"})[0] == "compatible"
+    assert _compatibility({"compatible_core": ">99.0.0"})[0] == "incompatible"
+    assert _install_block_reason({"plugin_types": ["ui"]})
+    review = _install_review_text(
+        {
+            "name": "Exporter",
+            "plugin_types": ["exporter"],
+            "permissions": ["network:scoped"],
+            "domains": ["api.example.com"],
+        }
+    )
+    assert "导出器" in review
+    assert "network:scoped" in review
+    assert "api.example.com" in review
+    assert "逐项批准" in review
+
+
+def test_market_filters_by_type_mode_risk_and_search(tmp_path):
+    view = _make_view(tmp_path)
+    view._state = "ready"
+    view._catalog = {
+        "plugins": [
+            {
+                "id": "safe_source",
+                "name": "Safe Source",
+                "version": "1.0.0",
+                "category": "news",
+                "plugin_types": ["source"],
+                "execution_mode": "subprocess",
+                "permissions": [],
+                "tags": ["public"],
+                "compatible_core": ">=0.1.0",
+            },
+            {
+                "id": "network_exporter",
+                "name": "Network Exporter",
+                "version": "1.0.0",
+                "category": "delivery",
+                "plugin_types": ["exporter"],
+                "execution_mode": "subprocess",
+                "permissions": ["network:scoped"],
+                "tags": ["cloud"],
+                "compatible_core": ">=0.1.0",
+            },
+        ]
+    }
+    view._populate_list()
+    assert view._list.count() == 2
+
+    view._type_filter.setCurrentIndex(view._type_filter.findData("exporter"))
+    assert view._list.count() == 1
+    assert "Network Exporter" in view._list.item(0).text()
+
+    view._risk_filter.setCurrentIndex(view._risk_filter.findData("low"))
+    assert view._list.count() == 0
+    view._risk_filter.setCurrentIndex(view._risk_filter.findData("medium"))
+    assert view._list.count() == 1
+
+    view._type_filter.setCurrentIndex(0)
+    view._risk_filter.setCurrentIndex(0)
+    view._search_edit.setText("public")
+    assert view._list.count() == 1
+    assert "Safe Source" in view._list.item(0).text()
+
+
+def test_market_detail_previews_permissions_and_blocks_incompatible_install(tmp_path):
+    view = _make_view(tmp_path)
+    view._state = "ready"
+    view._catalog = {
+        "plugins": [
+            {
+                "id": "future_exporter",
+                "name": "Future Exporter",
+                "version": "9.0.0",
+                "category": "delivery",
+                "plugin_types": ["exporter"],
+                "execution_mode": "subprocess",
+                "permissions": ["network:scoped"],
+                "domains": ["api.example.com"],
+                "compatible_core": ">99.0.0",
+                "tags": [],
+            }
+        ]
+    }
+    view._populate_list()
+    view._show_detail("future_exporter")
+    detail = view._detail_capabilities.text()
+    assert "导出器" in detail
+    assert "network:scoped" in detail
+    assert "api.example.com" in detail
+    assert "不兼容当前版本" in detail
+    assert not view._install_btn.isEnabled()
+    assert "不兼容" in view._install_btn.toolTip()
+
+
 def test_main_window_wires_plugin_market_view(monkeypatch):
     from PySide6.QtWidgets import QApplication
 
@@ -149,6 +261,78 @@ def test_main_window_wires_plugin_market_view(monkeypatch):
     assert NavIndex.PLUGIN_MARKET == 10
     assert hasattr(window, "_plugin_market")
     assert window._plugin_market is not None
+
+    window.deleteLater()
+    QApplication.instance().processEvents()
+
+
+def test_market_install_then_activation_updates_scoped_project_config(monkeypatch):
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from omnicrawler.gui.main import MainWindow
+
+    monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
+    window = MainWindow()
+    window._commit_plugin_config_change = lambda: None
+    window._plugin_market._installed_ids = lambda: ["legacy", "new_plugin"]
+
+    # 安装完成先建立白名单，并明确排除尚未批准的新插件。
+    window._on_market_plugin_installed("new_plugin")
+    plugins = window._config.passthrough["plugins"]
+    assert plugins["enabled_market_plugins"] == ["legacy"]
+
+    monkeypatch.setattr(
+        "omnicrawler.plugins.market_client.verify_installed",
+        lambda *_args, **_kwargs: (True, "verified"),
+    )
+    monkeypatch.setattr(
+        "omnicrawler.plugins.plugin_inspector.inspect_plugin",
+        lambda _path: SimpleNamespace(
+            name="new_plugin",
+            version="2.0.0",
+            artifact_sha256="a" * 64,
+            creator_fingerprint="creator-1",
+            permissions=("network:scoped",),
+            compatible=True,
+            errors=(),
+        ),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    window._activate_market_plugin("new_plugin")
+
+    assert plugins["enabled_market_plugins"] == ["legacy", "new_plugin"]
+    assert plugins["permission_grants"]["new_plugin"] == {
+        "version": "2.0.0",
+        "artifact_sha256": "a" * 64,
+        "creator_fingerprint": "creator-1",
+        "permissions": ["network:scoped"],
+    }
+    assert "plugins_installed/" in plugins["paths"]
+
+    window.deleteLater()
+    QApplication.instance().processEvents()
+
+
+def test_market_uninstall_removes_enablement_and_grant(monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    from omnicrawler.gui.main import MainWindow
+
+    monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
+    window = MainWindow()
+    window._commit_plugin_config_change = lambda: None
+    window._config.passthrough["plugins"] = {
+        "enabled_market_plugins": ["demo", "keep"],
+        "permission_grants": {"demo": {"permissions": []}, "keep": {"permissions": []}},
+    }
+    window._on_market_plugin_uninstalled("demo")
+    plugins = window._config.passthrough["plugins"]
+    assert plugins["enabled_market_plugins"] == ["keep"]
+    assert "demo" not in plugins["permission_grants"]
 
     window.deleteLater()
     QApplication.instance().processEvents()

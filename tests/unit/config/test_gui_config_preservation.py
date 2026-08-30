@@ -33,7 +33,16 @@ http:
   delay_seconds: 2
   headers: {Accept: application/json}
 session: {persist_cookies: false, name: isolated}
-plugins: {paths: [plugins/site.py], fail_open: true}
+plugins:
+  paths: [plugins/site.py, plugins_installed/]
+  fail_open: true
+  enabled_market_plugins: [demo]
+  permission_grants:
+    demo:
+      version: 1.0.0
+      artifact_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      creator: example-publisher
+      permissions: [network]
 processors: {pdf: {enabled: false, config: configs/pdf/generic_template.yaml}}
 extract: {mode: json, fields: {}}
 """
@@ -49,6 +58,17 @@ extract: {mode: json, fields: {}}
     assert loaded.passthrough["http"]["headers"]["Accept"] == "application/json"
     assert loaded.passthrough["session"]["name"] == "isolated"
     assert loaded.passthrough["plugins"]["fail_open"] is True
+    assert loaded.passthrough["plugins"]["paths"] == [
+        "plugins/site.py",
+        "plugins_installed/",
+    ]
+    assert loaded.passthrough["plugins"]["enabled_market_plugins"] == ["demo"]
+    assert loaded.passthrough["plugins"]["permission_grants"]["demo"] == {
+        "version": "1.0.0",
+        "artifact_sha256": "a" * 64,
+        "creator": "example-publisher",
+        "permissions": ["network"],
+    }
 
 
 def test_prune_orphan_overrides_removes_stale_urls() -> None:

@@ -37,6 +37,8 @@ def _make_plugin(plugins_dir: Path, name: str) -> Path:
         "    'name': 'demo', 'version': '1.0.0',\n"
         "    'description': '示例插件介绍',\n"
         "    'plugin_types': ['source'],\n"
+        "    'category': 'academic-research',\n"
+        "    'tags': ['literature', 'citation'],\n"
         "    'permissions': [],\n"
         # Phase 1（门 2/A1）：license 必填，无隐式默认
         "    'license': 'MIT',\n"
@@ -65,6 +67,11 @@ def test_sign_local_and_scan_status(identity_env, tmp_path: Path, monkeypatch) -
     assert entries[0].status == "signed_by_me"
     assert entries[0].author_username == "alice"
     assert entries[0].description == "示例插件介绍"
+    assert entries[0].plugin_types == ("source",)
+    assert entries[0].category == "academic-research"
+    assert entries[0].tags == ("literature", "citation")
+    assert entries[0].permissions == ()
+    assert entries[0].execution_mode == "subprocess"
 
 
 def test_scan_states(identity_env, tmp_path: Path, monkeypatch) -> None:
@@ -110,6 +117,13 @@ def test_build_plugin_upload_payload(identity_env, tmp_path: Path, monkeypatch) 
     manifest = yaml.safe_load(files["plugins/demo/plugin.yaml"].decode("utf-8"))
     assert manifest["id"] == "demo"
     assert manifest["publisher"] == "alice"
+    assert manifest["category"] == "academic-research"
+    assert manifest["plugin_types"] == ["source"]
+    assert manifest["execution_mode"] == "subprocess"
+    assert manifest["domains"] == []
+    assert manifest["input_files"] == []
+    assert manifest["dependencies"] == []
+    assert manifest["tags"] == ["literature", "citation"]
     assert manifest["author_fingerprint"] == pem_keys[0].split("/")[1].split(".")[0]
 
     author = yaml.safe_load(files["authors/alice.yaml"].decode("utf-8"))

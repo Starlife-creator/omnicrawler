@@ -140,3 +140,63 @@ def test_audit_missing_dir() -> None:
         result = audit_local_plugin(Path(tmp) / "nonexistent")
         assert not result.ok
         assert result.findings[0].code == "dir_missing"
+
+
+def test_full_audit_rejects_unknown_runtime_type(tmp_path: Path) -> None:
+    """开发者自由分类应使用 category/tags，未知 plugin_types 必须在发布前失败。"""
+    from omnicrawler.plugins.plugin_audit import audit_local_plugin_full
+
+    plugin_dir = _make_plugin(tmp_path)
+    plugin_file = plugin_dir / "plugin.py"
+    plugin_file.write_text(
+        plugin_file.read_text(encoding="utf-8").replace(
+            "'plugin_types': ['source']", "'plugin_types': ['academic_ai']"
+        ),
+        encoding="utf-8",
+    )
+    result = audit_local_plugin_full(plugin_dir)
+    assert not result.ok
+    assert "gate1_unknown_plugin_type" in {finding.code for finding in result.findings}
+
+
+def test_full_audit_accepts_all_non_ui_contract2_types(tmp_path: Path) -> None:
+    from omnicrawler.plugins.plugin_audit import audit_local_plugin_full
+
+    plugin_dir = _make_plugin(tmp_path)
+    plugin_file = plugin_dir / "plugin.py"
+    supported = [
+        "source",
+        "fetcher",
+        "processor",
+        "exporter",
+        "auth_provider",
+        "parser",
+        "extractor",
+        "transformer",
+        "hook",
+    ]
+    plugin_file.write_text(
+        plugin_file.read_text(encoding="utf-8").replace(
+            "'plugin_types': ['source']", f"'plugin_types': {supported!r}"
+        ),
+        encoding="utf-8",
+    )
+    result = audit_local_plugin_full(plugin_dir)
+    assert "gate1_plugin_type_not_wired" not in {
+        finding.code for finding in result.findings
+    }
+
+
+def test_full_audit_warns_for_native_ui_contract2_type(tmp_path: Path) -> None:
+    from omnicrawler.plugins.plugin_audit import audit_local_plugin_full
+
+    plugin_dir = _make_plugin(tmp_path)
+    plugin_file = plugin_dir / "plugin.py"
+    plugin_file.write_text(
+        plugin_file.read_text(encoding="utf-8").replace(
+            "'plugin_types': ['source']", "'plugin_types': ['ui']"
+        ),
+        encoding="utf-8",
+    )
+    result = audit_local_plugin_full(plugin_dir)
+    assert "gate1_plugin_type_not_wired" in {finding.code for finding in result.findings}

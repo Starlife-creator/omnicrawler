@@ -110,6 +110,41 @@ def test_s211_defaults_expose_http_engine_and_pdf_ocr_backend() -> None:
     assert config.section("processors")["pdf"]["ocr_backend"] == "none"
 
 
+def test_plugin_permission_grant_requires_artifact_hash() -> None:
+    config = _config(
+        plugins={
+            "permission_grants": {
+                "example": {"version": "1.0.0", "permissions": ["filesystem_write"]}
+            }
+        }
+    )
+    errors, _warnings = validate_config(config)
+    assert any("artifact_sha256必须是64位SHA-256" in item for item in errors)
+
+
+def test_plugin_permission_grant_accepts_bound_entry() -> None:
+    config = _config(
+        plugins={
+            "permission_grants": {
+                "example": {
+                    "version": "1.0.0",
+                    "artifact_sha256": "a" * 64,
+                    "creator_fingerprint": "creator-1",
+                    "permissions": ["filesystem_write"],
+                }
+            }
+        }
+    )
+    errors, _warnings = validate_config(config)
+    assert errors == []
+
+
+def test_enabled_market_plugins_must_be_id_list_or_null() -> None:
+    config = _config(plugins={"enabled_market_plugins": "demo"})
+    errors, _warnings = validate_config(config)
+    assert any("enabled_market_plugins" in item for item in errors)
+
+
 def test_s211_unknown_engine_value_is_explicit_error() -> None:
     config = _config(http={"engine": "requests"})
     errors, _warnings = validate_config(config)

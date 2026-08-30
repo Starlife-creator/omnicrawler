@@ -239,7 +239,18 @@ class DeveloperInspector(QWidget):
         rows: list[list[str]] = []
         plugins = self._section("plugins")
         rows.append([_("插件签名策略"), str(plugins.get("signature_policy", ""))])
-        rows.append([_("已审批权限"), self._truthy(plugins.get("approved_permissions"))])
+        rows.append([_("插件级权限授权"), self._truthy(plugins.get("permission_grants"))])
+        enabled_market = plugins.get("enabled_market_plugins")
+        rows.append(
+            [
+                _("已启用市场插件"),
+                _("兼容模式（全部已安装）")
+                if enabled_market is None
+                else ", ".join(str(item) for item in enabled_market) or _("无"),
+            ]
+        )
+        if plugins.get("approved_permissions"):
+            rows.append([_("旧版全局权限（待迁移）"), self._truthy(plugins.get("approved_permissions"))])
         rows.append([_("AST 豁免模式"), self._truthy(plugins.get("ast_allowed_patterns"))])
         trust_key = getattr(c, "plugin_trust_public_key", "") or ""
         rows.append([_("信任根公钥"), _("已接线(内置)") if trust_key else _("（未配置）")])
