@@ -727,15 +727,18 @@ def _load_local_plugin(
     else:
         is_market = bool(relative_parts) and relative_parts[0] == MARKET_DIR_NAME
 
-    metadata = _preflight_metadata(path, source)
-    requested = _permissions_from_metadata(path, metadata)
-    plugin_id = str(metadata.get("name") or (path.parent.name if path.name == "plugin.py" else path.stem))
+    preflight_metadata = _preflight_metadata(path, source)
+    requested = _permissions_from_metadata(path, preflight_metadata)
+    plugin_id = str(
+        preflight_metadata.get("name")
+        or (path.parent.name if path.name == "plugin.py" else path.stem)
+    )
     if is_market and enabled_market_plugins is not None and plugin_id not in enabled_market_plugins:
         registry.plugin_errors.append(
             {"path": str(path), "error": f"skipped: 市场插件 {plugin_id} 未在当前项目启用", "level": "skipped"}
         )
         return
-    version = str(metadata.get("version") or "0.0.0")
+    version = str(preflight_metadata.get("version") or "0.0.0")
     artifact_sha256 = _permission_artifact_sha256(path, plugin_bytes)
     creator_fingerprint = _declared_creator_fingerprint(path)
     approved = _resolve_plugin_permission_grant(
