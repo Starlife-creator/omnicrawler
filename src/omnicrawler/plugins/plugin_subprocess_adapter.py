@@ -309,7 +309,7 @@ def _hook_json_value(value: Any) -> Any:
         return {str(key): _hook_json_value(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [_hook_json_value(item) for item in value]
-    if is_dataclass(value):
+    if is_dataclass(value) and not isinstance(value, type):
         return _hook_json_value(asdict(value))
     # pipeline/state/config 等宿主对象不得越过隔离边界。
     return {"type": type(value).__name__}
