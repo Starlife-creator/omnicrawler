@@ -53,6 +53,7 @@ def test_creator_package_roundtrip_covers_every_payload_file(tmp_path: Path) -> 
     assert (root / MANIFEST_NAME).is_file()
     assert (root / CREATOR_SIGNATURE_NAME).is_file()
     assert (root / "creator.sig").is_file()
+    assert b"\r\n" not in (root / "creator.identity").read_bytes()
     verified = verify_package(root)
     assert verified.manifest_sha256 == signed.manifest_sha256
     assert verified.creator.username == "alice"

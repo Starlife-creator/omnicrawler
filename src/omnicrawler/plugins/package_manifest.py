@@ -135,9 +135,11 @@ def sign_creator_package(
     package_dir = package_dir.resolve()
     package_dir.mkdir(parents=True, exist_ok=True)
     creator = identity.export_identity()
-    (package_dir / "creator.identity").write_text(
-        json.dumps(creator.to_dict(), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
+    (package_dir / "creator.identity").write_bytes(
+        (
+            json.dumps(creator.to_dict(), ensure_ascii=False, indent=2)
+            + "\n"
+        ).encode("utf-8")
     )
     manifest = build_manifest(
         package_dir,
