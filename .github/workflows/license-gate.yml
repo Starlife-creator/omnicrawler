@@ -17,6 +17,7 @@ concurrency:
 
 on:
   push:
+    branches: [main]
     paths:
       - "pyproject.toml"
       - "constraints/**"
