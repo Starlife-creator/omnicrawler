@@ -134,3 +134,27 @@ def test_scan_skips_sig_and_md_files(tmp_path: Path) -> None:
     )
     result = _run_scan(str(plugin))
     assert result.returncode == 0, result.stdout
+
+
+def test_rescan_skips_generated_package_metadata(tmp_path: Path) -> None:
+    digest = "04b06d3fa0a54174877ad2b5cbb26d195216be31889d936a995d5213f0d269c8"
+    plugin = _make_plugin_dir(
+        tmp_path,
+        "resign",
+        files={
+            "plugin.py": "def handle(operation, payload): return {}\n",
+            "package.manifest.json": (
+                '{"creator_fingerprint":"4c3014804d85de2568f85e62a3048429",'
+                f'"files":{{"plugin.py":"sha256:{digest}"}}}}\n'
+            ),
+            "submission.json": (
+                '{"package_manifest_sha256":"'
+                + digest
+                + '"}\n'
+            ),
+        },
+    )
+
+    result = _run_scan(str(plugin))
+
+    assert result.returncode == 0, result.stdout
