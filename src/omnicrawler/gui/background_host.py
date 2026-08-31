@@ -193,7 +193,7 @@ class BackgroundController(QtCore.QObject):
         """Display host-rendered image bytes without exposing a filesystem path."""
 
         pixmap = QtGui.QPixmap()
-        if not png or not pixmap.loadFromData(png, "PNG"):
+        if not png or not pixmap.loadFromData(png, b"PNG"):
             raise ValueError("宿主渲染结果不是有效 PNG")
         current = getattr(self.main_window, "_active_plugin_background", None)
         if current is not None and current is not self:
