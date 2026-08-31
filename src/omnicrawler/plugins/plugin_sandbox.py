@@ -27,7 +27,9 @@ from typing import Any
 from . import plugin_backend
 
 ALLOWED_PERMISSIONS = {
-    "records:read", "records:write", "artifacts:read", "network:scoped", "temp:write",
+    "records:read", "records:write", "artifacts:read", "artifacts:write",
+    "responses:read", "responses:payload", "network:scoped", "temp:write",
+    "state:read", "state:write",
     # Phase 2a：files:read（manifest input_files 白名单，Phase 2b 正式化）；
     # secrets:read（O 例外路径，方案 O2-B；默认走代理密钥零暴露）
     "files:read", "secrets:read",

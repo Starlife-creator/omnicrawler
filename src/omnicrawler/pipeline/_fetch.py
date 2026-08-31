@@ -8,6 +8,7 @@ from pathlib import Path
 from ..core.models import CrawlRequest, FetchResult
 from ..core.utils import safe_filename
 from ..fetching.routing import needs_browser
+from ..plugins.plugin_advice import choose_fetch_advice
 from ..plugins.plugin_runtime import prepare_request
 from ._mixin_base import _PipelineBase
 
@@ -44,7 +45,8 @@ class _PipelineFetch(_PipelineBase):
         # === Stage: Fetch ===
         if self._auth_provider is not None:
             request = prepare_request(self._auth_provider, request)
-        self._emit("before_fetch", run_id=run_id, request=request)
+        hook_results = self._emit("before_fetch", run_id=run_id, request=request)
+        fetch_advice = choose_fetch_advice(hook_results)
         root = request.meta.get("root_url")
         allowed, reason = self.scope.allowed(request.url, str(root) if root else None)
         if not allowed:
@@ -52,11 +54,23 @@ class _PipelineFetch(_PipelineBase):
         if not self.robots.allowed(request.url):
             raise PermissionError("robots.txt不允许抓取此地址，或robots检查失败且配置为fail-closed")
         updates = self.config.section("updates")
-        if (
+        should_use_conditional = (
             request.method.upper() == "GET"
-            and updates.get("enabled", False)
-            and updates.get("use_conditional_requests", True)
-        ):
+            and (
+                (
+                    updates.get("enabled", False)
+                    and updates.get("use_conditional_requests", True)
+                )
+                or (
+                    fetch_advice is not None
+                    and fetch_advice["action"] == "conditional_revalidate"
+                )
+            )
+            and not (
+                fetch_advice is not None and fetch_advice["action"] == "force_fetch"
+            )
+        )
+        if should_use_conditional:
             conditional = self.state.conditional_headers(request.url)
             if conditional:
                 # FINAL-D8：条件头参与 fingerprint 摘要，重建后的请求指纹会与
@@ -68,7 +82,13 @@ class _PipelineFetch(_PipelineBase):
                     headers={**conditional, **request.headers}, body=request.body,
                     kind=request.kind, render=request.render, priority=request.priority,
                     depth=request.depth, parent_url=request.parent_url,
-                    meta={**request.meta, "_fingerprint_override": request.fingerprint},
+                    meta={
+                        **request.meta,
+                        "_fingerprint_override": request.fingerprint,
+                        "_plugin_fetch_advice": (
+                            fetch_advice["action"] if fetch_advice is not None else "core-policy"
+                        ),
+                    },
                 )
         http_engine = str(self.config.section("http").get("engine", "urllib")).lower()
         name = "browser" if request.render else ("httpx_async" if http_engine == "httpx_async" else "http")

@@ -20,8 +20,14 @@ IPC 循环（drive_loop）：子进程 stdout 混排「能力代理请求」与�
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
 import json
 import logging
+import os
+import re
+import secrets
 import tempfile
 import time
 from collections.abc import Callable
@@ -30,11 +36,70 @@ from typing import Any
 
 LOGGER = logging.getLogger(__name__)
 
+# Contract 2 capability protocol versions.  A version changes only when the
+# request/response semantics change incompatibly; adding optional fields does
+# not bump it.  Plugins discover this mapping through ``system.info`` and may
+# declare fail-closed requirements in PLUGIN_METADATA.required_capabilities.
+CAPABILITY_VERSIONS: dict[str, int] = {
+    "system.info": 1,
+    "records.read": 1,
+    "records.page": 1,
+    "records.write": 1,
+    "responses.page": 1,
+    "responses.payload": 1,
+    "state.get": 1,
+    "state.set": 1,
+    "state.delete": 1,
+    "state.migrate": 1,
+    "artifacts.read": 1,
+    "artifact.stream.open": 1,
+    "artifact.stream.write": 1,
+    "artifact.stream.commit": 1,
+    "artifact.stream.abort": 1,
+    "network.fetch": 1,
+    "temp.open": 1,
+    "files.read": 1,
+    "secrets.get": 1,
+}
+
+_CAPABILITY_REQUIREMENT = re.compile(r"^(?:>=)?([1-9][0-9]*)$")
+
+
+def validate_required_capabilities(required: dict[str, Any]) -> None:
+    """Reject a Contract 2 plugin whose broker protocol cannot satisfy it."""
+
+    for name, raw_requirement in required.items():
+        capability = str(name).strip()
+        match = _CAPABILITY_REQUIREMENT.fullmatch(str(raw_requirement).strip())
+        if not capability or match is None:
+            raise ValueError(
+                f"能力版本要求非法: {name!r}={raw_requirement!r}（仅支持正整数或 >=正整数）"
+            )
+        minimum = int(match.group(1))
+        available = CAPABILITY_VERSIONS.get(capability)
+        if available is None:
+            raise ValueError(f"宿主不支持插件要求的能力: {capability}")
+        if available < minimum:
+            raise ValueError(
+                f"宿主能力版本不足: {capability}>={minimum}，当前为 {available}"
+            )
+
 # 能力 → 所需 manifest 权限（None = 内置，无需声明）
 _CAPABILITY_PERMISSIONS: dict[str, str | None] = {
     "records.read": "records:read",
+    "records.page": "records:read",
     "records.write": "records:write",
+    "responses.page": "responses:read",
+    "responses.payload": "responses:payload",
+    "state.get": "state:read",
+    "state.set": "state:write",
+    "state.delete": "state:write",
+    "state.migrate": "state:write",
     "artifacts.read": "artifacts:read",
+    "artifact.stream.open": "artifacts:write",
+    "artifact.stream.write": "artifacts:write",
+    "artifact.stream.commit": "artifacts:write",
+    "artifact.stream.abort": "artifacts:write",
     "network.fetch": "network:scoped",
     "temp.open": "temp:write",
     "files.read": "files:read",
@@ -75,10 +140,15 @@ class CapabilityBroker:
         network_client: Any | None = None,
         input_files: tuple[str, ...] = (),
         temp_root: Path | None = None,
+        artifact_root: Path | None = None,
+        maximum_artifact_bytes: int = 256 * 1024 * 1024,
         secrets_allowlist: tuple[str, ...] = (),
         secret_resolver: Callable[[str], str | None] | None = None,
         audit_hook: Callable[[str, dict[str, Any]], None] | None = None,
         plugin_id: str = "",
+        plugin_author_fingerprint: str = "local",
+        plugin_state_schema: int = 1,
+        project_scope: str = "",
         trace_full: bool = False,
         daily_quota: Any | None = None,
         egress_policy: str = "prompt",
@@ -92,12 +162,22 @@ class CapabilityBroker:
         self._input_files = tuple(input_files)
         self._temp_root = Path(temp_root) if temp_root else Path(tempfile.gettempdir())
         self._temp_dir: Path | None = None
+        self._artifact_root = Path(artifact_root) if artifact_root else self._temp_root
+        self._maximum_artifact_bytes = max(1, int(maximum_artifact_bytes))
+        self._artifact_streams: dict[str, dict[str, Any]] = {}
+        self.committed_artifacts: list[dict[str, Any]] = []
+        self._record_cursors: dict[str, dict[str, Any]] = {}
+        self._response_cursors: dict[str, int] = {}
+        self._response_refs: dict[str, str] = {}
         # O 密钥零暴露：secrets 白名单 + 宿主解析器（插件进程不可见密钥库）
         self._secrets_allowlist = {str(s) for s in secrets_allowlist}
         self._secret_resolver = secret_resolver
         # C6 审计：audit_hook(action, details)；trace_full=False 时降采样（op_counts）
         self._audit_hook = audit_hook
         self._plugin_id = plugin_id
+        self._plugin_author_fingerprint = plugin_author_fingerprint or "local"
+        self._plugin_state_schema = int(plugin_state_schema)
+        self._project_scope = project_scope
         self._trace_full = trace_full
         self.trace_log: list[dict[str, Any]] = []  # 仅 trace_full 时填充
         # Phase 2b D4.4：每日网络配额（E_QUOTA 来源）；egress_policy 共现检测
@@ -158,10 +238,18 @@ class CapabilityBroker:
     def temp_dir(self) -> Path | None:
         return self._temp_dir
 
+    def close(self) -> None:
+        """Close and erase every uncommitted opaque artifact stream."""
+
+        for handle in tuple(self._artifact_streams):
+            self._abort_artifact_stream(handle)
+
     # ---- 各能力宿主实现 ----
 
     def _cap_system_info(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return dict(self._system_info)
+        result = dict(self._system_info)
+        result["capability_versions"] = dict(CAPABILITY_VERSIONS)
+        return result
 
     def _cap_records_read(self, payload: dict[str, Any]) -> dict[str, Any]:
         if self._state is None:
@@ -187,6 +275,65 @@ class CapabilityBroker:
                 data = {}
             records.append({"record_id": row["record_id"], "source_url": row["source_url"], "data": data})
         return {"records": records, "count": len(records)}
+
+    def _cap_records_page(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Read a stable current-run page without exposing SQL offsets or row ids."""
+
+        if self._state is None:
+            raise CapabilityError(E_INTERNAL, "宿主未提供 StateStore")
+        try:
+            limit = int(payload.get("limit", 250))
+        except (TypeError, ValueError) as exc:
+            raise CapabilityError(E_CONTRACT, "records.page limit 必须是整数") from exc
+        if not 1 <= limit <= 1000:
+            raise CapabilityError(E_CONTRACT, "records.page limit 必须介于 1 和 1000")
+        cursor = str(payload.get("cursor", "")).strip()
+        if cursor:
+            state = self._record_cursors.pop(cursor, None)
+            if state is None:
+                raise CapabilityError(E_CONTRACT, "records.page cursor 无效、过期或已使用")
+            source_url = state["source_url"]
+            last_rowid = int(state["last_rowid"])
+        else:
+            source_url = str(payload.get("source_url", "")).strip()
+            last_rowid = 0
+        sql = (
+            "SELECT rowid, record_id, source_url, data_json FROM records "
+            "WHERE run_id=? AND rowid>?"
+        )
+        params: tuple[Any, ...] = (self._run_id, last_rowid)
+        if source_url:
+            sql += " AND source_url=?"
+            params = (*params, source_url)
+        sql += " ORDER BY rowid ASC LIMIT ?"
+        params = (*params, limit + 1)
+        rows = list(self._state.rows(sql, params))
+        visible = rows[:limit]
+        records = []
+        for row in visible:
+            try:
+                data = json.loads(row["data_json"])
+            except (json.JSONDecodeError, KeyError, TypeError):
+                data = {}
+            records.append(
+                {
+                    "record_id": row["record_id"],
+                    "source_url": row["source_url"],
+                    "data": data,
+                }
+            )
+        next_cursor = None
+        if len(rows) > limit and visible:
+            next_cursor = secrets.token_urlsafe(24)
+            self._record_cursors[next_cursor] = {
+                "source_url": source_url,
+                "last_rowid": visible[-1]["rowid"],
+            }
+        return {
+            "records": records,
+            "count": len(records),
+            "next_cursor": next_cursor,
+        }
 
     def _cap_records_write(self, payload: dict[str, Any]) -> dict[str, Any]:
         if self._state is None:
@@ -214,11 +361,258 @@ class CapabilityBroker:
         saved = self._state.save_records(self._run_id, request, extracted)
         return {"saved": saved}
 
+    def _cap_responses_page(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Page response metadata; archived payload paths never cross the IPC boundary."""
+
+        if self._state is None:
+            raise CapabilityError(E_INTERNAL, "宿主未提供 StateStore")
+        try:
+            limit = int(payload.get("limit", 100))
+        except (TypeError, ValueError) as exc:
+            raise CapabilityError(E_CONTRACT, "responses.page limit 必须是整数") from exc
+        if not 1 <= limit <= 500:
+            raise CapabilityError(E_CONTRACT, "responses.page limit 必须介于 1 和 500")
+        cursor = str(payload.get("cursor", "")).strip()
+        if cursor:
+            last_id = self._response_cursors.pop(cursor, None)
+            if last_id is None:
+                raise CapabilityError(E_CONTRACT, "responses.page cursor 无效、过期或已使用")
+        else:
+            last_id = 0
+        rows = list(
+            self._state.rows(
+                "SELECT id, url, final_url, status_code, content_type, size_bytes, "
+                "content_sha256, raw_path, changed, elapsed_seconds, fetched_at "
+                "FROM responses WHERE run_id=? AND id>? ORDER BY id ASC LIMIT ?",
+                (self._run_id, last_id, limit + 1),
+            )
+        )
+        visible = rows[:limit]
+        responses = []
+        for row in visible:
+            item = {
+                "url": row["url"],
+                "final_url": row["final_url"],
+                "status": row["status_code"],
+                "content_type": row["content_type"],
+                "size": row["size_bytes"],
+                "sha256": row["content_sha256"],
+                "changed": bool(row["changed"]),
+                "elapsed_seconds": row["elapsed_seconds"],
+                "fetched_at": row["fetched_at"],
+                "payload_available": bool(row["raw_path"]),
+            }
+            if row["raw_path"]:
+                response_ref = secrets.token_urlsafe(24)
+                self._response_refs[response_ref] = str(row["raw_path"])
+                item["response_ref"] = response_ref
+            responses.append(item)
+        next_cursor = None
+        if len(rows) > limit and visible:
+            next_cursor = secrets.token_urlsafe(24)
+            self._response_cursors[next_cursor] = int(visible[-1]["id"])
+        return {
+            "responses": responses,
+            "count": len(responses),
+            "next_cursor": next_cursor,
+        }
+
+    def _cap_responses_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if self._state is None:
+            raise CapabilityError(E_INTERNAL, "宿主未提供 StateStore")
+        response_ref = str(payload.get("response_ref", "")).strip()
+        raw_path = self._response_refs.get(response_ref)
+        if raw_path is None:
+            raise CapabilityError(E_CONTRACT, "responses.payload response_ref 无效或过期")
+        try:
+            maximum = int(payload.get("maximum_bytes", 5 * 1024 * 1024))
+        except (TypeError, ValueError) as exc:
+            raise CapabilityError(E_CONTRACT, "responses.payload maximum_bytes 必须是整数") from exc
+        if not 1 <= maximum <= 16 * 1024 * 1024:
+            raise CapabilityError(E_CONTRACT, "responses.payload maximum_bytes 超出 1 B–16 MiB")
+        from ..security.paths import require_workspace_path
+
+        try:
+            path = require_workspace_path(
+                raw_path,
+                root=self._state.path.parent,
+                what="插件读取响应归档路径",
+            )
+            with path.open("rb") as stream:
+                content = stream.read(maximum + 1)
+        except (OSError, ValueError) as exc:
+            raise CapabilityError(E_RESOURCE, f"响应归档不可读: {exc}") from exc
+        truncated = len(content) > maximum
+        if truncated:
+            content = content[:maximum]
+        return {
+            "content_b64": base64.b64encode(content).decode("ascii"),
+            "size": len(content),
+            "truncated": truncated,
+        }
+
+    def _cap_state_get(self, payload: dict[str, Any]) -> dict[str, Any]:
+        state, namespace = self._plugin_state_namespace()
+        key = str(payload.get("key", ""))
+        try:
+            found, value = state.plugin_state_get(namespace, key)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise CapabilityError(E_CONTRACT, str(exc)) from exc
+        return {"found": found, "value": value}
+
+    def _cap_state_set(self, payload: dict[str, Any]) -> dict[str, Any]:
+        state, namespace = self._plugin_state_namespace()
+        key = str(payload.get("key", ""))
+        try:
+            state.plugin_state_set(namespace, key, payload.get("value"))
+        except (TypeError, ValueError) as exc:
+            raise CapabilityError(E_CONTRACT, str(exc)) from exc
+        return {"saved": True}
+
+    def _cap_state_delete(self, payload: dict[str, Any]) -> dict[str, Any]:
+        state, namespace = self._plugin_state_namespace()
+        key = str(payload.get("key", ""))
+        try:
+            deleted = state.plugin_state_delete(namespace, key)
+        except (TypeError, ValueError) as exc:
+            raise CapabilityError(E_CONTRACT, str(exc)) from exc
+        return {"deleted": deleted}
+
+    def _cap_state_migrate(self, payload: dict[str, Any]) -> dict[str, Any]:
+        state, namespace = self._plugin_state_namespace()
+        if str(payload.get("strategy", "copy")) != "copy":
+            raise CapabilityError(E_CONTRACT, "state.migrate 当前仅支持显式 copy 策略")
+        try:
+            source_schema = int(str(payload.get("source_schema", "")))
+            copied = state.plugin_state_copy_schema(namespace, source_schema)
+        except (TypeError, ValueError) as exc:
+            raise CapabilityError(E_CONTRACT, str(exc)) from exc
+        return {"copied": copied, "schema_version": self._plugin_state_schema}
+
+    def _plugin_state_namespace(self) -> tuple[Any, tuple[str, str, str, int]]:
+        if self._state is None:
+            raise CapabilityError(E_INTERNAL, "宿主未提供 StateStore")
+        if not self._plugin_id or not self._project_scope or self._plugin_state_schema < 1:
+            raise CapabilityError(E_INTERNAL, "宿主未提供完整插件状态命名空间")
+        return self._state, (
+            self._project_scope,
+            self._plugin_id,
+            self._plugin_author_fingerprint,
+            self._plugin_state_schema,
+        )
+
     def _cap_artifacts_read(self, payload: dict[str, Any]) -> dict[str, Any]:
         if self._dataset is None:
             raise CapabilityError(E_INTERNAL, "宿主未提供 DatasetReader")
         infos = self._dataset.artifacts()
         return {"artifacts": [{"name": a.name, "size": a.size_bytes} for a in infos]}
+
+    def _cap_artifact_stream_open(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if len(self._artifact_streams) >= 8:
+            raise CapabilityError(E_QUOTA, "单个插件会话最多同时打开 8 个工件流")
+        name = str(payload.get("name", "")).strip()
+        if (
+            not name
+            or len(name) > 180
+            or Path(name).name != name
+            or name in {".", ".."}
+            or any(char in name for char in "\x00\r\n")
+        ):
+            raise CapabilityError(E_CONTRACT, "artifact.stream.open 文件名非法")
+        media_type = str(payload.get("media_type", "application/octet-stream")).strip()
+        if not media_type or len(media_type) > 200 or any(char in media_type for char in "\r\n"):
+            raise CapabilityError(E_CONTRACT, "artifact.stream.open media_type 非法")
+        self._artifact_root.mkdir(parents=True, exist_ok=True)
+        target = self._artifact_root / name
+        if target.exists():
+            raise CapabilityError(E_RESOURCE, f"工件已存在，拒绝覆盖: {name}")
+        handle = secrets.token_urlsafe(24)
+        partial = self._artifact_root / f".omnicrawler-{handle}.part"
+        try:
+            stream = partial.open("xb")
+        except OSError as exc:
+            raise CapabilityError(E_RESOURCE, f"无法创建工件流: {exc}") from exc
+        self._artifact_streams[handle] = {
+            "stream": stream,
+            "partial": partial,
+            "target": target,
+            "name": name,
+            "media_type": media_type,
+            "size": 0,
+            "sha256": hashlib.sha256(),
+        }
+        return {"handle": handle, "maximum_bytes": self._maximum_artifact_bytes}
+
+    def _cap_artifact_stream_write(self, payload: dict[str, Any]) -> dict[str, Any]:
+        handle, entry = self._artifact_stream(payload)
+        encoded = payload.get("content_b64")
+        if not isinstance(encoded, str):
+            raise CapabilityError(E_CONTRACT, "artifact.stream.write 需要 content_b64")
+        try:
+            chunk = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise CapabilityError(E_CONTRACT, "artifact.stream.write content_b64 非法") from exc
+        if len(chunk) > 1024 * 1024:
+            raise CapabilityError(E_QUOTA, "单个工件写入分块不得超过 1 MiB")
+        new_size = int(entry["size"]) + len(chunk)
+        if new_size > self._maximum_artifact_bytes:
+            self._abort_artifact_stream(handle)
+            raise CapabilityError(E_QUOTA, "工件超过会话允许的最大字节数，未提交内容已删除")
+        try:
+            entry["stream"].write(chunk)
+        except OSError as exc:
+            self._abort_artifact_stream(handle)
+            raise CapabilityError(E_RESOURCE, f"工件流写入失败: {exc}") from exc
+        entry["sha256"].update(chunk)
+        entry["size"] = new_size
+        return {"written": len(chunk), "size": new_size}
+
+    def _cap_artifact_stream_commit(self, payload: dict[str, Any]) -> dict[str, Any]:
+        handle, entry = self._artifact_stream(payload)
+        stream = entry["stream"]
+        try:
+            stream.flush()
+            os.fsync(stream.fileno())
+            stream.close()
+            os.replace(entry["partial"], entry["target"])
+        except OSError as exc:
+            self._abort_artifact_stream(handle)
+            raise CapabilityError(E_RESOURCE, f"工件提交失败: {exc}") from exc
+        digest = entry["sha256"].hexdigest()
+        result = {
+            "artifact_id": "sha256:" + digest,
+            "name": entry["name"],
+            "media_type": entry["media_type"],
+            "size": entry["size"],
+            "sha256": digest,
+        }
+        self.committed_artifacts.append({**result, "path": str(entry["target"])})
+        del self._artifact_streams[handle]
+        return result
+
+    def _cap_artifact_stream_abort(self, payload: dict[str, Any]) -> dict[str, Any]:
+        handle, _entry = self._artifact_stream(payload)
+        self._abort_artifact_stream(handle)
+        return {"aborted": True}
+
+    def _artifact_stream(self, payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        handle = str(payload.get("handle", ""))
+        entry = self._artifact_streams.get(handle)
+        if entry is None:
+            raise CapabilityError(E_CONTRACT, "未知或已关闭的工件流句柄")
+        return handle, entry
+
+    def _abort_artifact_stream(self, handle: str) -> None:
+        entry = self._artifact_streams.pop(handle, None)
+        if entry is None:
+            return
+        try:
+            entry["stream"].close()
+        finally:
+            try:
+                Path(entry["partial"]).unlink(missing_ok=True)
+            except OSError:
+                LOGGER.warning("未能删除未提交插件工件: %s", entry["partial"])
 
     def _cap_network_fetch(self, payload: dict[str, Any]) -> dict[str, Any]:
         if self._network is None:
@@ -240,7 +634,12 @@ class CapabilityBroker:
 
         # Phase 2b J2：data_egress_policy 共现检测——records.read 后 fetch 即
         # 潜在数据外传；默认 prompt 提示，block 档阻断（E_EGRESS_BLOCKED）。
-        read_calls = self.op_counts.get("records.read", 0)
+        read_calls = (
+            self.op_counts.get("records.read", 0)
+            + self.op_counts.get("records.page", 0)
+            + self.op_counts.get("responses.page", 0)
+            + self.op_counts.get("responses.payload", 0)
+        )
         if read_calls > 0:
             if self._egress_policy == "block":
                 raise CapabilityError(

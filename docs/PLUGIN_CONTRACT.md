@@ -1,14 +1,14 @@
 # 插件契约（API v1）
 
 > 本文档是插件的**强制功能契约**。市场只接受契约 2（`handle`）。契约 1
->（`register`/继承）仅用于兼容明确导入的旧插件，不得用于新插件或市场投稿。
+>（`register`/继承）仅用于明确受信任的本地原生 UI 等进程内扩展，不接受公共市场投稿。
 
 ## 契约形态
 
 | 形态 | 入口 | 运行模式 | 说明 |
 |---|---|---|---|
 | **契约 2**（推荐） | 顶层 `handle(operation, payload) -> dict` | 缺省 `subprocess`（隔离沙箱） | 自包含、无 `import omnicrawler`、能力经 `omnicrawler_sdk` 代理 |
-| **契约 1**（旧版兼容） | `register(registry)` | 仅 `in_process`（最高风险审批档） | 只供明确导入的存量插件；不接受新投稿 |
+| **契约 1**（本地特权） | `register(registry)` | 仅 `in_process`（最高风险审批档） | 仅供明确受信任的本地扩展；不接受公共市场投稿 |
 
 契约形态由加载器静态检测（顶层 `handle` → 契约 2；仅 `register` → 契约 1）；两者共存按契约 2。
 
@@ -30,6 +30,11 @@
 进程序列化，只允许明确受信任的本地契约 1 插件使用。未知运行类型仍会报错；业务分类必须写入
 `category/tags`。
 
+本地 UI 插件应优先使用声明式宿主扩展点。`register_background(...)` 只登记 ID、名称和有界默认值；
+目录选择、格式白名单、扫描上限、Qt 绘制和播放器生命周期均由应用本体控制，不接受插件提供
+QWidget、绘制器或播放器回调。确实需要自定义 QWidget 时才使用 `register_ui_panel`，并维持最高
+风险提示。
+
 ### processor / exporter 返回约定
 
 - `processor.process` 接收 `{"result": FetchResult字典, "options": {...}}`，返回
@@ -37,7 +42,7 @@
   `source_url / record_type / data / evidence`；响应正文使用 `body_b64`。宿主会移除原始请求体，
   并脱敏 Authorization、Cookie、X-Api-Key 等认证头。
 - `exporter.export` 接收 `{"run_id": "...", "options": {...}}` 并返回 JSON 对象。需要读取记录
-  时声明并审批 `records:read`，通过 `omnicrawler_sdk.call("records.read", ...)` 获取；宿主不会
+  时声明并审批 `records:read`，优先通过 `omnicrawler_sdk.call("records.page", ...)` 分页获取；宿主不会
   把 StateStore 或工作区路径直接传入插件进程。
 - `parser.process` / `extractor.process` 与 processor 使用相同返回结构；
   `auth.prepare` 返回 `{"request": CrawlRequest字典}` 或 null；`transformer.transform` 返回
@@ -62,6 +67,8 @@ PLUGIN_METADATA = {
     "description": "...",
     "plugin_types": ("source",),
     "permissions": ("records:read", "network:scoped"),
+    "required_capabilities": {"records.page": ">=1"},
+    "state_schema_version": 1,
     "domains": ("example.org",),          # network:scoped 权限必填
     "input_files": ("data/seed.json",),   # files:read 权限必填
     "dependencies": [],                   # 必填；没有依赖时使用空列表
@@ -86,8 +93,14 @@ PLUGIN_METADATA = {
 | 能力 | 所需权限 | 说明 |
 |---|---|---|
 | `system.info` | 内置 | 宿主版本/后端/平台 |
-| `records.read` / `records.write` | `records:read` / `records:write` | 记录读取（固定 SQL 模板）/写入 |
+| `records.read` / `records.write` | `records:read` / `records:write` | 兼容性记录读取（最多 1000 条）/写入 |
+| `records.page` | `records:read` | 当前运行记录的稳定分页；游标不透明、单次使用 |
+| `responses.page` | `responses:read` | 响应元数据分页；不暴露数据库 ID 与归档路径 |
+| `responses.payload` | `responses:payload` | 通过 `response_ref` 有界读取归档正文；独立高风险权限 |
 | `artifacts.read` | `artifacts:read` | 工件清单 |
+| `artifact.stream.open/write/commit/abort` | `artifacts:write` | 不透明分块工件流；插件看不到路径，不能覆盖文件 |
+| `state.get` | `state:read` | 读取插件私有状态键 |
+| `state.set/delete/migrate` | `state:write` | 写入、删除或显式复制迁移私有状态 schema |
 | `network.fetch` | `network:scoped` | 网络经宿主代理；默认不向插件暴露密钥，且受 domains 和配额约束 |
 | `temp.open` | `temp:write` | 会话临时文件（配额约束） |
 | `files.read` | `files:read` | 仅允许读取 input_files 白名单中的文件，拒绝路径逃逸 |
@@ -98,6 +111,12 @@ PLUGIN_METADATA = {
 - **secrets.get 为显式例外**：返回明文仅限单次调用，不缓存；调用即审计
   （decision=secret_accessed）。优先使用 auth 注入。
 - 未声明权限的越权调用 → `E_PERMISSION`；未知能力 → `E_CONTRACT`。
+- `system.info.capability_versions` 返回宿主协议版本表。插件用静态
+  `required_capabilities` 声明最低版本（正整数或 `>=正整数`）；不满足时在启动插件代码前拒载。
+- 状态命名空间绑定项目、插件 ID、作者指纹与 `state_schema_version`，不绑定插件版本或载荷哈希。
+  因此正常升级可延续状态，换作者不会继承；schema 升级需调用 `state.migrate` 明确迁移，目标非空
+  时拒绝覆盖。单值最大 64 KiB。
+- 工件流单块最大 1 MiB、单会话最多同时打开 8 个；未提交、超限或异常流会由宿主删除。
 
 ## 错误码（C4 权威清单，I2 比对源）
 
@@ -119,6 +138,10 @@ PLUGIN_METADATA = {
 - 契约 2 插件在注册表生命周期内复用隔离会话接收 hook 事件：
   `handle("hook.<event>", payload)`。事件载荷经过宿主序列化，只包含纯 JSON 数据；pipeline 等
   宿主对象不会跨边界，请求认证头会脱敏，响应正文只提供哈希和大小摘要。
+- `before_fetch` hook 只能返回建议。目前宿主认可
+  `{"fetch_advice":{"action":"conditional_revalidate"|"force_fetch","reason":"..."}}`；
+  冲突、未知或畸形建议会被忽略。条件头只能从宿主 StateStore 取得，插件不能跳过请求、注入
+  URL/请求头，且 ScopePolicy、robots 与重定向校验仍在建议之后执行。
 - `plugins.hook_fail_open: true` 时单个 hook 异常记录到插件错误，不阻止主流程；
   认证、主 exporter 和核心 processor 默认失败关闭。
 

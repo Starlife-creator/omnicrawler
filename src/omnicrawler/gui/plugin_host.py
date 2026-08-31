@@ -5,6 +5,7 @@ Four registration kinds (see omnicrawler.plugins.plugins):
 - ui_actions      -> QAction under the "Plugins" menu (callback takes mw or none)
 - ui_panels       -> QDockWidget side panels (widget_factory(mw) returns QWidget)
 - status_widgets  -> permanent status-bar widgets (widget_factory() returns QWidget)
+- backgrounds     -> host-rendered local image/video layer from a data-only declaration
 
 Safety boundaries:
 - Single-item failures are fail-open: they never break main-window assembly,
@@ -128,6 +129,18 @@ def _install_status_widgets(mw: Any, registry: Any, errors: list[str]) -> None:
             errors.append(_(f"状态小部件 {index}: {exc}"))
 
 
+def _install_backgrounds(mw: Any, registry: Any, errors: list[str]) -> None:
+    from .background_host import install_background
+
+    controllers = getattr(mw, "_plugin_background_controllers", [])
+    for background_id, registration in sorted(registry.backgrounds.items()):
+        try:
+            controllers.append(install_background(mw, registration))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(_(f"背景 {background_id}: {exc}"))
+    mw._plugin_background_controllers = controllers
+
+
 def install_plugin_ui(mw: Any, registry: Any) -> list[str]:
     """把 registry 中的 UI 注册安装到主窗口；返回安装错误列表（fail-open）。"""
     errors: list[str] = []
@@ -135,6 +148,7 @@ def install_plugin_ui(mw: Any, registry: Any) -> list[str]:
     _install_actions(mw, registry, errors)
     _install_panels(mw, registry, errors)
     _install_status_widgets(mw, registry, errors)
+    _install_backgrounds(mw, registry, errors)
     if errors:
         LOGGER.warning("Plugin UI install partially failed: %s", "; ".join(errors))
     return errors

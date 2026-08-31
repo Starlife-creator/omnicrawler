@@ -58,6 +58,34 @@ def test_maintainer_finalize_preserves_creator_package_and_publishes(
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "REGISTRY", market)
+
+    # A wrong maintainer key must fail before creating or changing any market file.
+    wrong_private, _ = generate_keypair()
+    wrong_private_path = tmp_path / "wrong-maintainer-private.pem"
+    wrong_private_path.write_bytes(wrong_private)
+    before_wrong_key = {
+        path.relative_to(market).as_posix(): path.read_bytes()
+        for path in market.rglob("*")
+        if path.is_file()
+    }
+    with pytest.raises(ValueError, match="维护者私钥与市场信任根不匹配"):
+        module.finalize(
+            SimpleNamespace(
+                submission_dir=str(submission_dir),
+                reviewed_manifest_sha256=__import__("hashlib")
+                .sha256(manifest_before)
+                .hexdigest(),
+                maintainer_key=str(wrong_private_path),
+                market_id=None,
+            )
+        )
+    after_wrong_key = {
+        path.relative_to(market).as_posix(): path.read_bytes()
+        for path in market.rglob("*")
+        if path.is_file()
+    }
+    assert after_wrong_key == before_wrong_key
+
     result = module.finalize(
         SimpleNamespace(
             submission_dir=str(submission_dir),

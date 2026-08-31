@@ -30,6 +30,7 @@ def _registry_with_ui() -> Registry:
     registry.register_ui_panel("demo.panel", "演示面板", lambda mw: QLabel("面板", mw))
     registry.register_status_widget(lambda: QLabel("状态"))
     registry.register_status_widget(lambda: "not-a-widget")  # 失败项
+    registry.register_background("demo.background", "演示背景")
     return registry
 
 
@@ -66,6 +67,7 @@ def test_install_plugin_ui_actions_panels(app: QApplication) -> None:
         assert any(dock.objectName() == "pluginPanel_demo.panel" for dock in docks)
         status_widgets = window.statusBar().findChildren(QLabel)
         assert any(widget.text() == "状态" for widget in status_widgets)
+        assert window.findChild(QDockWidget, "pluginBackgroundPanel_demo.background") is not None
     finally:
         window.close()
 
@@ -75,3 +77,28 @@ def test_theme_value_validation_rejects_injection() -> None:
         design_system.register_plugin_theme("evil", "注入", {"primary": "url(javascript:alert(1))"})
     with pytest.raises(ValueError, match="未知主题令牌字段"):
         design_system.register_plugin_theme("evil2", "注入", {"not_a_field": "#112233"})
+
+
+def test_background_host_scans_only_bounded_local_media(tmp_path) -> None:
+    from omnicrawler.gui.background_host import discover_local_media
+
+    (tmp_path / "ambient.png").write_bytes(b"image")
+    (tmp_path / "motion.mp4").write_bytes(b"video")
+    (tmp_path / "page.html").write_text("<script>alert(1)</script>", encoding="utf-8")
+    (tmp_path / "program.exe").write_bytes(b"not allowed")
+    items = discover_local_media(tmp_path)
+    assert [item.path.name for item in items] == ["ambient.png", "motion.mp4"]
+    assert [item.kind for item in items] == ["image", "video"]
+
+
+def test_market_blocks_unavailable_required_capability() -> None:
+    from omnicrawler.gui.views.plugin_market import _install_block_reason
+
+    reason = _install_block_reason(
+        {
+            "id": "future-plugin",
+            "compatible_core": ">=0.1",
+            "required_capabilities": {"future.magic": ">=1"},
+        }
+    )
+    assert "不支持" in reason

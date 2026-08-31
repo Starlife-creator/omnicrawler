@@ -69,10 +69,23 @@ def _build_broker(
     secret_resolver: Any | None = None,
     audit_hook: Any | None = None,
     plugin_id: str = "",
+    plugin_author_fingerprint: str = "local",
+    plugin_state_schema: int = 1,
     trace_full: bool = False,
     daily_quota: Any | None = None,
     egress_policy: str = "prompt",
 ) -> CapabilityBroker:
+    workspace = getattr(config, "workspace", None)
+    project_root = getattr(config, "root", None)
+    project_scope = str(
+        Path(project_root or getattr(state_store, "path", Path.cwd()).parent).resolve()
+    )
+    plugin_storage_id = hashlib.sha256((plugin_id or "anonymous").encode("utf-8")).hexdigest()[:32]
+    artifact_root = (
+        Path(workspace) / "output" / "plugin-artifacts" / plugin_storage_id / (run_id or "session")
+        if workspace is not None
+        else None
+    )
     return CapabilityBroker(
         permissions=permissions,
         system_info=_system_info(config),
@@ -81,10 +94,14 @@ def _build_broker(
         dataset_reader=dataset_reader,
         network_client=network_client,
         input_files=input_files,
+        artifact_root=artifact_root,
         secrets_allowlist=secrets_allowlist,
         secret_resolver=secret_resolver,
         audit_hook=audit_hook,
         plugin_id=plugin_id,
+        plugin_author_fingerprint=plugin_author_fingerprint,
+        plugin_state_schema=plugin_state_schema,
+        project_scope=project_scope,
         trace_full=trace_full,
         daily_quota=daily_quota,
         egress_policy=egress_policy,
@@ -109,6 +126,8 @@ class _SubprocessSessionHost:
         dataset_reader: Any | None = None,
         network_client: Any | None = None,
         plugin_id: str = "",
+        plugin_author_fingerprint: str = "local",
+        plugin_state_schema: int = 1,
         secrets_allowlist: tuple[str, ...] = (),
         secret_resolver: Any | None = None,
         audit_hook: Any | None = None,
@@ -128,6 +147,8 @@ class _SubprocessSessionHost:
         self._dataset_reader = dataset_reader
         self._network_client = network_client
         self._plugin_id = plugin_id
+        self._plugin_author_fingerprint = plugin_author_fingerprint
+        self._plugin_state_schema = plugin_state_schema
         self._secrets_allowlist = secrets_allowlist
         self._secret_resolver = secret_resolver
         self._audit_hook = audit_hook
@@ -161,6 +182,8 @@ class _SubprocessSessionHost:
                 secret_resolver=self._secret_resolver,
                 audit_hook=self._audit_hook,
                 plugin_id=self._plugin_id,
+                plugin_author_fingerprint=self._plugin_author_fingerprint,
+                plugin_state_schema=self._plugin_state_schema,
                 trace_full=self._trace_full,
                 daily_quota=self._daily_quota,
                 egress_policy=self._egress_policy,
@@ -175,12 +198,31 @@ class _SubprocessSessionHost:
             session, broker = self._ensure()
             return drive_loop(session, broker, operation, payload, timeout_seconds=0)
 
+    def invalidate_broker(self) -> None:
+        """Rebind host-owned run/config/state context without leaking open streams."""
+
+        if self._broker is not None:
+            self._broker.close()
+        self._broker = None
+
+    def bind_runtime(self, *, config: Any, state_store: Any) -> None:
+        self._config = config
+        self._state_store = state_store
+        self.invalidate_broker()
+
+    def bind_run(self, run_id: str) -> None:
+        if run_id != self._run_id:
+            self._run_id = run_id
+            self.invalidate_broker()
+
     def close(self) -> None:
         with self._call_lock:
+            if self._broker is not None:
+                self._broker.close()
             if self._session is not None:
                 self._session.end()
                 self._session = None
-                self._broker = None
+            self._broker = None
 
     def __del__(self) -> None:  # pragma: no cover - 兜底清理
         try:
@@ -499,7 +541,7 @@ class SubprocessExporterAdapter:
         self._host._config = config
         self._host._state_store = state
         self._host._run_id = run_id
-        self._host._broker = None
+        self._host.invalidate_broker()
         return self._host.call(
             "exporter.export",
             {"run_id": run_id, "options": dict(options or {})},
@@ -517,10 +559,14 @@ class SubprocessHookAdapter:
 
     def callback(self, event: str) -> Any:
         def dispatch(**context: Any) -> dict[str, Any]:
+            pipeline = context.get("pipeline")
+            if pipeline is not None:
+                self._host._state_store = getattr(pipeline, "state", self._host._state_store)
+                self._host._config = getattr(pipeline, "config", self._host._config)
             run_id = context.get("run_id")
             if run_id is not None and str(run_id) != self._host._run_id:
                 self._host._run_id = str(run_id)
-                self._host._broker = None
+                self._host.invalidate_broker()
             return self._host.call(
                 f"hook.{event}",
                 {key: _hook_json_value(value) for key, value in context.items()},

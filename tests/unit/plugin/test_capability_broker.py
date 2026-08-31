@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import base64
 import textwrap
 from pathlib import Path
 
@@ -58,7 +59,150 @@ def test_system_info_builtin_no_permission(cap_plugin: Path) -> None:
         session.start()
         result = plugin_broker.drive_loop(session, broker, "info", {}, timeout_seconds=0)
     assert result["version"] == "test"
+    assert result["capability_versions"]["system.info"] == 1
+    assert result["capability_versions"]["records.read"] == 1
     assert broker.op_counts["system.info"] == 1
+
+
+def test_required_capability_versions_fail_closed() -> None:
+    plugin_broker.validate_required_capabilities(
+        {"system.info": 1, "records.read": ">=1"}
+    )
+    with pytest.raises(ValueError, match="不支持"):
+        plugin_broker.validate_required_capabilities({"future.magic": 1})
+    with pytest.raises(ValueError, match="版本不足"):
+        plugin_broker.validate_required_capabilities({"records.read": ">=2"})
+    with pytest.raises(ValueError, match="版本要求非法"):
+        plugin_broker.validate_required_capabilities({"records.read": "latest"})
+
+
+def test_opaque_artifact_stream_commits_without_exposing_path(tmp_path: Path) -> None:
+    broker = _make_broker(
+        permissions={"artifacts:write"},
+        artifact_root=tmp_path / "artifacts",
+    )
+    opened = broker.dispatch(
+        "artifact.stream.open", {"name": "export.jsonl", "media_type": "application/jsonl"}
+    )
+    assert set(opened) == {"handle", "maximum_bytes"}
+    broker.dispatch(
+        "artifact.stream.write",
+        {
+            "handle": opened["handle"],
+            "content_b64": base64.b64encode(b'{"ok":true}\n').decode("ascii"),
+        },
+    )
+    committed = broker.dispatch("artifact.stream.commit", {"handle": opened["handle"]})
+    assert "path" not in committed
+    assert committed["artifact_id"].startswith("sha256:")
+    assert (tmp_path / "artifacts" / "export.jsonl").read_bytes() == b'{"ok":true}\n'
+    assert broker.committed_artifacts[0]["path"].endswith("export.jsonl")
+
+
+def test_opaque_artifact_stream_aborts_and_enforces_quota(tmp_path: Path) -> None:
+    broker = _make_broker(
+        permissions={"artifacts:write"},
+        artifact_root=tmp_path / "artifacts",
+        maximum_artifact_bytes=3,
+    )
+    opened = broker.dispatch("artifact.stream.open", {"name": "small.bin"})
+    with pytest.raises(plugin_broker.CapabilityError, match="最大字节数"):
+        broker.dispatch(
+            "artifact.stream.write",
+            {
+                "handle": opened["handle"],
+                "content_b64": base64.b64encode(b"four").decode("ascii"),
+            },
+        )
+    assert not list((tmp_path / "artifacts").glob("*"))
+
+
+def test_opaque_artifact_stream_requires_explicit_permission(tmp_path: Path) -> None:
+    broker = _make_broker(artifact_root=tmp_path)
+    with pytest.raises(plugin_broker.CapabilityError) as error:
+        broker.dispatch("artifact.stream.open", {"name": "blocked.bin"})
+    assert error.value.code == plugin_broker.E_PERMISSION
+
+
+def test_records_page_uses_single_use_opaque_cursor() -> None:
+    class State:
+        def rows(self, _sql, params):
+            after = int(params[1])
+            limit = int(params[-1])
+            rows = [
+                {
+                    "rowid": index,
+                    "record_id": f"r{index}",
+                    "source_url": "https://example.test/",
+                    "data_json": f'{{"index":{index}}}',
+                }
+                for index in range(after + 1, 6)
+            ]
+            return rows[:limit]
+
+    broker = _make_broker(
+        permissions={"records:read"}, state_store=State(), run_id="run-1"
+    )
+    first = broker.dispatch("records.page", {"limit": 2})
+    assert [item["record_id"] for item in first["records"]] == ["r1", "r2"]
+    assert first["next_cursor"] and "rowid" not in first["next_cursor"]
+    cursor = first["next_cursor"]
+    second = broker.dispatch("records.page", {"limit": 2, "cursor": cursor})
+    assert [item["record_id"] for item in second["records"]] == ["r3", "r4"]
+    with pytest.raises(plugin_broker.CapabilityError, match="已使用"):
+        broker.dispatch("records.page", {"limit": 2, "cursor": cursor})
+
+
+def test_response_metadata_and_payload_are_separate_permissions(tmp_path: Path) -> None:
+    archive = tmp_path / "raw" / "page.html"
+    archive.parent.mkdir()
+    archive.write_bytes(b"<html>safe archive</html>")
+
+    class State:
+        path = tmp_path / "state.db"
+
+        def rows(self, _sql, _params):
+            return [
+                {
+                    "id": 1,
+                    "url": "https://example.test/",
+                    "final_url": "https://example.test/",
+                    "status_code": 200,
+                    "content_type": "text/html",
+                    "size_bytes": archive.stat().st_size,
+                    "content_sha256": "a" * 64,
+                    "raw_path": str(archive),
+                    "changed": 1,
+                    "elapsed_seconds": 0.1,
+                    "fetched_at": "2026-08-31T00:00:00Z",
+                }
+            ]
+
+    metadata_only = _make_broker(
+        permissions={"responses:read"}, state_store=State(), run_id="run-1"
+    )
+    page = metadata_only.dispatch("responses.page", {"limit": 10})
+    response = page["responses"][0]
+    assert response["payload_available"] is True
+    assert "raw_path" not in response
+    with pytest.raises(plugin_broker.CapabilityError) as error:
+        metadata_only.dispatch(
+            "responses.payload", {"response_ref": response["response_ref"]}
+        )
+    assert error.value.code == plugin_broker.E_PERMISSION
+
+    with_payload = _make_broker(
+        permissions={"responses:read", "responses:payload"},
+        state_store=State(),
+        run_id="run-1",
+    )
+    page = with_payload.dispatch("responses.page", {})
+    payload = with_payload.dispatch(
+        "responses.payload",
+        {"response_ref": page["responses"][0]["response_ref"]},
+    )
+    assert base64.b64decode(payload["content_b64"]) == archive.read_bytes()
+    assert payload["truncated"] is False
 
 
 def test_permission_denied_without_declaration(cap_plugin: Path) -> None:

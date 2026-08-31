@@ -9,6 +9,7 @@ name: plugin-sandbox
 
 on:
   push:
+    branches: [main]
     paths:
       - "src/omnicrawler/plugins/**"
       - "packaging/OmniCrawler-SandboxHost.spec"

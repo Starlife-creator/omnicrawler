@@ -63,6 +63,7 @@ class Pipeline(_PipelineBuilders, _PipelineExports, _PipelineFetch, _PipelineRun
             self.egress = EgressBroker(config)
             self.registry = track(build_registry(config, self.egress))
             self.state = track(StateStore(self.workspace / "state.sqlite3"))
+            self.registry.bind_plugin_runtime(config=config, state_store=self.state)
             self.object_store = track(build_object_store(config, self.egress))
             self.record_sinks = track(build_record_sink_manager(config, self.egress))
             self.metrics = RunMetrics()

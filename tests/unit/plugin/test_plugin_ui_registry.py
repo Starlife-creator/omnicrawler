@@ -30,6 +30,7 @@ def test_registry_ui_buckets_and_describe() -> None:
     registry.register_theme("demo", "演示", tokens={"primary": "#112233"})
     registry.register_ui_action("demo.act", "动作", lambda mw: None, section="plugins")
     registry.register_ui_panel("demo.panel", "面板", lambda mw: None)
+    registry.register_background("demo.background", "演示背景")
     registry.register_status_widget(lambda: None)
 
     info = registry.describe()["ui"]
@@ -37,6 +38,7 @@ def test_registry_ui_buckets_and_describe() -> None:
     assert info["actions"] == ["demo.act"]
     assert info["panels"] == ["demo.panel"]
     assert info["status_widgets"] == 1
+    assert info["backgrounds"] == ["demo.background"]
 
 
 def test_registry_rejects_duplicates() -> None:
@@ -47,6 +49,28 @@ def test_registry_rejects_duplicates() -> None:
     registry.register_ui_action("a", "A", lambda: None)
     with pytest.raises(ValueError, match="重复"):
         registry.register_ui_action("a", "B", lambda: None)
+
+
+def test_registry_binds_runtime_and_run_to_isolated_resources() -> None:
+    calls = []
+
+    class Resource:
+        def bind_runtime(self, **kwargs) -> None:
+            calls.append(("runtime", kwargs))
+
+        def bind_run(self, run_id) -> None:
+            calls.append(("run", run_id))
+
+    registry = Registry()
+    registry.track_resource(Resource())
+    config = object()
+    state = object()
+    registry.bind_plugin_runtime(config=config, state_store=state)
+    registry.bind_plugin_run("run-1")
+    assert calls == [
+        ("runtime", {"config": config, "state_store": state}),
+        ("run", "run-1"),
+    ]
 
 
 def test_local_plugin_ui_permissions_auto_approved(tmp_path: Path) -> None:
