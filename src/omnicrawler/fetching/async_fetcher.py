@@ -143,7 +143,8 @@ class HTTPXAsyncFetcher:
             "User-Agent": str(http.get("user_agent", user_agent())),
             **http.get("headers", {}), **self.config.section("source").get("headers", {}),
         }
-        proxy = str(http.get("proxy")) or None
+        raw_proxy = http.get("proxy")
+        proxy = str(raw_proxy).strip() if raw_proxy else None
         if proxy:
             self.target_policy.require(proxy)
         transport = httpx.AsyncHTTPTransport(
@@ -151,10 +152,7 @@ class HTTPXAsyncFetcher:
             proxy=proxy,
             limits=limits,
         )
-        try:
-            self._pin_transport_dns(transport)
-        except Exception as exc:  # 传输内部结构变化时回退默认行为，不阻断抓取
-            LOGGER.warning("无法启用异步 DNS 固定，回退默认传输: %s", exc)
+        self._pin_transport_dns(transport)
         return httpx.AsyncClient(
             headers=headers,
             timeout=float(http.get("timeout_seconds", 25)),
@@ -188,10 +186,10 @@ class HTTPXAsyncFetcher:
     def _pin_transport_dns(self, transport: Any) -> None:
         """把传输底层连接池的网络后端替换为 DNS 固定后端（S1.3.5）。
 
-        FINAL-S7：钉扎依赖 httpcore 私有属性（``_pool._network_backend``），
-        httpcore 内部结构变化时会静默失效。默认仅告警（保持可用性）；
-        设 ``OMNICRAWL_ASYNC_DNS_PIN_FAIL_CLOSED=1`` 时升级为硬错误
-        （fail-closed），供高安全场景选用，避免安全控制随依赖漂移而无感退化。
+        FINAL-S7：钉扎依赖 httpcore 私有属性（``_pool._network_backend``）。
+        默认按 ``http.dns_fail_closed=true`` 硬失败，避免安全控制随依赖漂移
+        无感退化；只有用户显式接受风险并配置为 false 时才告警降级。
+        ``OMNICRAWL_ASYNC_DNS_PIN_FAIL_CLOSED=1`` 可在外层环境强制恢复硬失败。
         """
         import httpcore
 
@@ -200,9 +198,13 @@ class HTTPXAsyncFetcher:
             message = (
                 "异步 DNS 固定未生效：httpcore 传输缺少 _pool/_network_backend"
                 f"（httpcore {getattr(httpcore, '__version__', '?')}，内部结构变化?），"
-                "回退为未钉扎传输。可设 OMNICRAWL_ASYNC_DNS_PIN_FAIL_CLOSED=1 改为硬失败。"
+                "拒绝回退为未钉扎传输；仅在明确接受风险时设置 http.dns_fail_closed=false。"
             )
-            if os.environ.get("OMNICRAWL_ASYNC_DNS_PIN_FAIL_CLOSED", "").strip().lower() in {"1", "true", "yes"}:
+            fail_closed = bool(self.config.section("http").get("dns_fail_closed", True))
+            force_fail_closed = os.environ.get(
+                "OMNICRAWL_ASYNC_DNS_PIN_FAIL_CLOSED", ""
+            ).strip().lower() in {"1", "true", "yes"}
+            if fail_closed or force_fail_closed:
                 raise RuntimeError(message)
             LOGGER.warning("%s", message)
             return

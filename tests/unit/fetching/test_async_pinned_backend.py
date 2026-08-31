@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import pytest
 import yaml
 
 from omnicrawler.core.config import AppConfig
-from omnicrawler.fetching.async_fetcher import _PinnedAsyncNetworkBackend
+from omnicrawler.fetching.async_fetcher import HTTPXAsyncFetcher, _PinnedAsyncNetworkBackend
 from omnicrawler.security.policy import NetworkTargetPolicy
 
 
@@ -45,6 +46,22 @@ def _policy(tmp_path: Path) -> NetworkTargetPolicy:
     return NetworkTargetPolicy(config)
 
 
+def _fetcher(tmp_path: Path, *, dns_fail_closed: bool) -> HTTPXAsyncFetcher:
+    workspace = tmp_path / "work"
+    config_path = tmp_path / "project.yaml"
+    raw = {
+        "project": {"name": "pinned-client", "workspace": str(workspace)},
+        "source": {"kind": "incremental", "seeds": []},
+        "http": {
+            "allow_private_network": True,
+            "resolve_dns": True,
+            "dns_fail_closed": dns_fail_closed,
+        },
+    }
+    config_path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+    return HTTPXAsyncFetcher(AppConfig(config_path, tmp_path, raw, workspace))
+
+
 def test_pinned_backend_connects_ip_literal_not_hostname(tmp_path: Path) -> None:
     """S1.3.5：connect_tcp 只收到批准地址字面量，不再出现主机名（防 DNS 重绑定）。"""
     policy = _policy(tmp_path)
@@ -75,3 +92,49 @@ def test_pinned_backend_forwards_unix_and_sleep(tmp_path: Path) -> None:
     backend = _PinnedAsyncNetworkBackend(inner, policy)
     assert asyncio.run(backend.connect_unix_socket("/tmp/x.sock")) == ("unix", "/tmp/x.sock")
     assert asyncio.run(backend.sleep(0.001)) is None
+
+
+def test_async_fetcher_missing_dns_backend_is_fail_closed(tmp_path: Path) -> None:
+    """httpcore 内部结构变化时，默认不得静默退回未钉扎网络。"""
+    fetcher = _fetcher(tmp_path, dns_fail_closed=True)
+    try:
+        with pytest.raises(RuntimeError, match="DNS 固定未生效"):
+            fetcher._pin_transport_dns(object())
+    finally:
+        fetcher.close()
+
+
+def test_async_fetcher_dns_pin_opt_out_is_explicit(tmp_path: Path, caplog) -> None:
+    fetcher = _fetcher(tmp_path, dns_fail_closed=False)
+    try:
+        fetcher._pin_transport_dns(object())
+        assert "DNS 固定未生效" in caplog.text
+    finally:
+        fetcher.close()
+
+
+def test_async_fetcher_missing_proxy_stays_disabled(tmp_path: Path, monkeypatch) -> None:
+    """缺省值 None 不得被字符串化为一个名为 ``None`` 的代理地址。"""
+    fetcher = _fetcher(tmp_path, dns_fail_closed=True)
+    required: list[str] = []
+    monkeypatch.setattr(fetcher.target_policy, "require", required.append)
+    client = fetcher._build_client()
+    try:
+        assert required == []
+    finally:
+        asyncio.run(client.aclose())
+        fetcher.close()
+
+
+def test_async_fetcher_does_not_swallow_unexpected_pin_error(tmp_path: Path, monkeypatch) -> None:
+    fetcher = _fetcher(tmp_path, dns_fail_closed=False)
+
+    def fail(_transport) -> None:
+        raise OSError("backend construction failed")
+
+    monkeypatch.setattr(fetcher, "_pin_transport_dns", fail)
+    try:
+        with pytest.raises(OSError, match="backend construction failed"):
+            fetcher._build_client()
+    finally:
+        fetcher.close()
