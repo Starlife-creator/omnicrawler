@@ -47,7 +47,9 @@ outputs: {jsonl: true, csv: true, xlsx: true}
 - `respect_robots/robots_fail_closed/robots_cache_ttl_seconds/robots_max_bytes`。
 - `verify_tls/max_redirects/max_response_bytes`。
 - `allow_private_network`：默认 `false`；仅对自有或已授权内网站点开启。
-- `resolve_dns/dns_fail_closed/dns_cache_ttl_seconds`：DNS 结果安全检查。
+- `resolve_dns/dns_fail_closed/dns_cache_ttl_seconds`：DNS 结果安全检查。异步 HTTP 传输无法安装
+  DNS 固定后端时默认 `dns_fail_closed: true` 并拒绝启动；只有明确接受 DNS 重绑定降级风险时
+  才可设为 `false`，其他后端初始化异常不会被该开关吞掉。
 - `auto_browser_fallback`：检测到空壳动态页面时升级到浏览器。
 - `engine`：`urllib` 或 `httpx_async`。
 - `headers/proxy`：全局请求头和单个授权代理。未填写 `proxy` 时不会继承环境代理变量；显式代理

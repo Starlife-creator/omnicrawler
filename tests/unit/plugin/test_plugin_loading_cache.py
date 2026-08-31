@@ -15,6 +15,9 @@ def test_plugin_module_cache_avoids_recompile(tmp_path: Path, monkeypatch) -> No
     plugin_dir.mkdir()
     plugin = plugin_dir / "site.py"
     plugin.write_text(
+        "PLUGIN_METADATA = {'name': 'Cache Test', 'version': '1.0.0', "
+        "'permissions': (), 'plugin_types': ('processor',), 'execution_mode': 'in_process', "
+        "'required_capabilities': {}, 'state_schema_version': 1}\n"
         "def register(registry):\n"
         "    registry.register_processor('cache_test', lambda config, options: object())\n",
         encoding="utf-8",
@@ -23,7 +26,7 @@ def test_plugin_module_cache_avoids_recompile(tmp_path: Path, monkeypatch) -> No
     config_path.write_text(
         f"project: {{name: pc, workspace: '{tmp_path / 'work'}'}}\n"
         "source: {kind: static_html, seeds: [https://example.org/]}\n"
-        f"plugins: {{paths: [plugins/site.py], fail_open: false, signature_policy: developer}}\n",
+        f"plugins: {{paths: ['{plugin.as_posix()}'], fail_open: false, signature_policy: developer}}\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(plugins_module, "_PLUGIN_MODULE_CACHE", {})

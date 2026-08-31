@@ -28,6 +28,11 @@ def _write_config(root: Path, *, workspace: str = "work/p", extra: str = "") -> 
     return cfg
 
 
+def _outside_test_root(path: Path) -> Path:
+    """Return an absolute path outside any repository detected above tmp_path."""
+    return Path(path.anchor) / f"omnicrawler-test-outside-{path.name}"
+
+
 def test_workspace_inside_root_no_warning(tmp_path: Path) -> None:
     cfg = _write_config(tmp_path, workspace="work/p")
     loaded = load_config(cfg)
@@ -35,16 +40,14 @@ def test_workspace_inside_root_no_warning(tmp_path: Path) -> None:
 
 
 def test_workspace_outside_root_warns(tmp_path: Path) -> None:
-    outside = tmp_path.parent / f"{tmp_path.name}-outside"
-    outside.mkdir(exist_ok=True)
+    outside = _outside_test_root(tmp_path)
     cfg = _write_config(tmp_path, workspace=str(outside / "shared"))
     loaded = load_config(cfg)
     assert any("project.workspace" in w and "项目根之外" in w for w in loaded.warnings)
 
 
 def test_workspace_outside_root_strict_errors(tmp_path: Path) -> None:
-    outside = tmp_path.parent / f"{tmp_path.name}-outside"
-    outside.mkdir(exist_ok=True)
+    outside = _outside_test_root(tmp_path)
     cfg = _write_config(tmp_path, workspace=str(outside / "shared"))
     loaded = load_config(cfg)
     errors, _warnings = validate_config(loaded, strict=True)
@@ -52,8 +55,7 @@ def test_workspace_outside_root_strict_errors(tmp_path: Path) -> None:
 
 
 def test_storage_local_directory_outside_root_warns(tmp_path: Path) -> None:
-    outside = tmp_path.parent / f"{tmp_path.name}-outside"
-    outside.mkdir(exist_ok=True)
+    outside = _outside_test_root(tmp_path)
     cfg = _write_config(
         tmp_path,
         extra=(

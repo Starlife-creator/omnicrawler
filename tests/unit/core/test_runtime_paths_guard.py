@@ -20,7 +20,7 @@ def test_resolve_portable_path_allows_data_dir() -> None:
 
 def test_resolve_portable_path_rejects_absolute_outside(tmp_path: Path) -> None:
     rp.portable_data_root.cache_clear()
-    outside = tmp_path.parent / "outside.exe"  # 平台无关的绝对越界路径
+    outside = Path(tmp_path.anchor) / "omnicrawler-audit-outside.exe"
     with pytest.raises(ValueError, match="越出应用/数据根目录"):
         rp.resolve_portable_path(str(outside))
 

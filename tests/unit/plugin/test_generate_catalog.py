@@ -28,7 +28,11 @@ pytestmark = pytest.mark.skipif(
     reason="OmniCrawler-market 仓库未 clone（需与主仓库同级），跳过目录生成测试",
 )
 
-_UTF8_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+_UTF8_ENV = {
+    **os.environ,
+    "PYTHONIOENCODING": "utf-8",
+    "OMNICRAWLER_CACHE_DIR": str((REPO_ROOT / ".tmp" / "catalog-cache").resolve()),
+}
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
