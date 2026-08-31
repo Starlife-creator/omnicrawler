@@ -18,7 +18,7 @@ from omnicrawler.core.errors import AIPrivacyBlockedError
 def _config(tmp_path: Path) -> Path:
     config_path = tmp_path / "task.yaml"
     config_path.write_text(
-        "project: {name: b5019, workspace: work}\n"
+        f"project: {{name: b5019, workspace: {str(tmp_path / 'work').replace(chr(92), '/')}}}\n"
         "source: {kind: static_html, seeds: [https://example.org/]}\n",
         encoding="utf-8",
     )

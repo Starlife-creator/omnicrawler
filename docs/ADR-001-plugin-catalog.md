@@ -81,7 +81,8 @@ registry/
      `download_and_verify`（下载 plugin+签名+listing，ed25519 验签 fail-closed，落盘
      `dest_root/<id>/`）、`verify_installed`、`fetch_resource`。仅标准库 urllib，零新依赖。
    - `tools/market.py` CLI：`list` / `info` / `install` / `verify`；`--catalog-url` 覆盖
-     （指向镜像/新仓库即完成迁移），信任根默认 `configs/plugin_trust.pub.pem`。
+     （指向镜像/新仓库即完成迁移），信任根默认 `configs/plugin_trust.pub.pem`；缓存目录
+     默认位于用户目录，可用 `OMNICRAWLER_CACHE_DIR` 覆盖，便于便携环境和受限测试隔离写入。
    - 加载器增强：`load_local_plugins` 支持目录递归，使安装目录 `plugins_installed` 经
      `plugins.paths` 配置即可被加载。`.gitignore` 已忽略 `plugins_installed/`。
 2. **GUI 市场面板（✅ 已实现 2026-08-08）**：`src/omnicrawler/gui/views/plugin_market.py`

@@ -14,7 +14,7 @@ def _config(tmp_path: Path, **outputs: object) -> Path:
     path = tmp_path / "task.yaml"
     flags = " ".join(f"{key}: {value}" for key, value in outputs.items())
     path.write_text(
-        "project: {name: exp, workspace: work}\n"
+        f"project: {{name: exp, workspace: {str(tmp_path / 'work').replace(chr(92), '/')}}}\n"
         "source: {kind: static_html, seeds: [https://example.org/]}\n"
         f"extract:\n  mode: html\n  fields:\n    title: {{selector: title}}\n    amount: {{selector: .amount}}\n"
         f"outputs:\n  jsonl: true\n  csv: true\n  xlsx: false\n  {flags}\n",

@@ -66,7 +66,13 @@ def _resolve_trust(arg: str | None) -> str:
 
 def _trusted_catalog(catalog_url: str) -> dict:
     trust = _resolve_trust(None)
-    cache = catalog_cache_path(Path.home() / ".omnicrawler" / "catalog-cache", catalog_url)
+    cache_root = Path(
+        os.environ.get(
+            "OMNICRAWLER_CACHE_DIR",
+            str(Path.home() / ".omnicrawler" / "catalog-cache"),
+        )
+    )
+    cache = catalog_cache_path(cache_root, catalog_url)
     return fetch_catalog_verified(catalog_url, trust, cache_path=cache)
 
 

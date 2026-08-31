@@ -23,7 +23,7 @@ def _fetch_factory(calls: list[int]):
 def _long_poll_config(tmp_path: Path) -> Path:
     config_path = tmp_path / "task.yaml"
     config_path.write_text(
-        "project: {name: s254, workspace: work}\n"
+        f"project: {{name: s254, workspace: {str(tmp_path / 'work').replace(chr(92), '/')}}}\n"
         "source: {kind: long_poll, seeds: [https://example.org/feed], max_messages: 5, duration_seconds: 60}\n"
         "http: {respect_robots: false, allow_private_network: true}\n",
         encoding="utf-8",

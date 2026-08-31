@@ -25,6 +25,7 @@ def test_explicit_project_root_wins_over_detection(tmp_path: Path) -> None:
 def test_project_root_detection_is_deterministic(tmp_path: Path) -> None:
     root = tmp_path / "proj"
     (root / "configs").mkdir(parents=True)
+    (root / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
     config_path = root / "configs" / "task.yaml"
     config_path.write_text(
         "project: {name: x, workspace: work}\n"
@@ -56,6 +57,7 @@ def test_cli_config_is_required_everywhere() -> None:
 def test_workspace_resolves_relative_to_project_root(tmp_path: Path) -> None:
     root = tmp_path / "proj"
     (root / "configs").mkdir(parents=True)
+    (root / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
     config_path = root / "configs" / "task.yaml"
     config_path.write_text(
         "project: {name: x, workspace: 'data/work'}\n"
