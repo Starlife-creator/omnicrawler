@@ -25,6 +25,9 @@ from typing import Any
 
 from ..core.models import CrawlRequest, ExtractedRecord, FetchResult, ProcessResult
 from .plugin_broker import CapabilityBroker, drive_loop
+from .plugin_declarative import validate_view_descriptor
+from .plugin_render import RenderBroker
+from .plugin_resources import ResourceGrantBroker
 from .plugin_sandbox import PluginSubprocessSession
 
 CONTRACT2_HOOK_EVENTS = (
@@ -74,6 +77,9 @@ def _build_broker(
     trace_full: bool = False,
     daily_quota: Any | None = None,
     egress_policy: str = "prompt",
+    resource_broker: ResourceGrantBroker | None = None,
+    render_broker: RenderBroker | None = None,
+    surface_service: Any | None = None,
 ) -> CapabilityBroker:
     workspace = getattr(config, "workspace", None)
     project_root = getattr(config, "root", None)
@@ -105,6 +111,9 @@ def _build_broker(
         trace_full=trace_full,
         daily_quota=daily_quota,
         egress_policy=egress_policy,
+        resource_broker=resource_broker,
+        render_broker=render_broker,
+        surface_service=surface_service,
     )
 
 
@@ -155,6 +164,9 @@ class _SubprocessSessionHost:
         self._trace_full = trace_full
         self._daily_quota = daily_quota
         self._egress_policy = egress_policy
+        self._resource_broker = ResourceGrantBroker()
+        self._render_broker = RenderBroker()
+        self._surface_service: Any | None = None
         self._session: PluginSubprocessSession | None = None
         self._broker: CapabilityBroker | None = None
         self._call_lock = threading.RLock()
@@ -187,6 +199,9 @@ class _SubprocessSessionHost:
                 trace_full=self._trace_full,
                 daily_quota=self._daily_quota,
                 egress_policy=self._egress_policy,
+                resource_broker=self._resource_broker,
+                render_broker=self._render_broker,
+                surface_service=self._surface_service,
             )
         assert self._broker is not None
         return self._session, self._broker
@@ -215,6 +230,15 @@ class _SubprocessSessionHost:
             self._run_id = run_id
             self.invalidate_broker()
 
+    def grant_directory(self, path: str | Path, *, label: str = "") -> str:
+        """Create a host-authorized directory grant for this plugin only."""
+
+        return self._resource_broker.grant_directory(path, label=label)
+
+    def bind_surface(self, service: Any | None) -> None:
+        self._surface_service = service
+        self.invalidate_broker()
+
     def close(self) -> None:
         with self._call_lock:
             if self._broker is not None:
@@ -223,6 +247,7 @@ class _SubprocessSessionHost:
                 self._session.end()
                 self._session = None
             self._broker = None
+            self._render_broker.close()
 
     def __del__(self) -> None:  # pragma: no cover - 兜底清理
         try:
@@ -573,6 +598,56 @@ class SubprocessHookAdapter:
             )
 
         return dispatch
+
+    def close(self) -> None:
+        self._host.close()
+
+
+class SubprocessResourceProviderAdapter:
+    """Generic Contract 2 resource provider entrypoint."""
+
+    def __init__(self, host: _SubprocessSessionHost) -> None:
+        self._host = host
+
+    def inventory(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self._host.call("resource.inventory", dict(payload or {}))
+
+    def action(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._host.call("resource.action", dict(payload))
+
+    def close(self) -> None:
+        self._host.close()
+
+
+class SubprocessViewAdapter:
+    """Host-rendered declarative view backed by a Contract 2 subprocess."""
+
+    def __init__(self, host: _SubprocessSessionHost) -> None:
+        self._host = host
+
+    def describe(self) -> dict[str, Any]:
+        response = self._host.call("view.describe", {})
+        descriptor = response.get("view", response)
+        return validate_view_descriptor(descriptor)
+
+    def action(self, action: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        response = self._host.call(
+            "view.action",
+            {"action": str(action), "payload": dict(payload or {})},
+        )
+        if "view" in response:
+            response = dict(response)
+            response["view"] = validate_view_descriptor(response["view"])
+        return response
+
+    def grant_directory(self, path: str | Path, *, label: str = "") -> str:
+        return self._host.grant_directory(path, label=label)
+
+    def discover_directory(self, kind: str, identifier: str) -> str:
+        return self._host._resource_broker.discover_directory(kind, identifier)
+
+    def bind_surface(self, service: Any | None) -> None:
+        self._host.bind_surface(service)
 
     def close(self) -> None:
         self._host.close()

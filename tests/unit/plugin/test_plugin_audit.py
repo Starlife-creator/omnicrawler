@@ -191,6 +191,8 @@ def test_full_audit_accepts_all_non_ui_contract2_types(tmp_path: Path) -> None:
         "extractor",
         "transformer",
         "hook",
+        "resource_provider",
+        "view",
     ]
     plugin_file.write_text(
         plugin_file.read_text(encoding="utf-8").replace(

@@ -25,15 +25,26 @@
 - `transformer` → `handle("transformer.transform", payload)`；
 - `exporter` → `handle("exporter.export", payload)`；
 - `hook` → `handle("hook.<event>", payload)`。
+- `resource_provider` → `handle("resource.inventory"|"resource.action", payload)`；
+- `view` → `handle("view.describe"|"view.action", payload)`，由宿主渲染固定组件。
 
-`ui` 是唯一保留但不接入契约 2 subprocess adapter 的官方运行扩展点：原生 QWidget 不能跨
-进程序列化，只允许明确受信任的本地契约 1 插件使用。未知运行类型仍会报错；业务分类必须写入
-`category/tags`。
+`ui` 专指原生 QWidget/QSS/绘制回调，不能跨进程序列化，只允许明确受信任的本地契约 1 插件
+使用。公共市场的界面使用契约 2 `view`：插件只返回数据描述，不能提供宿主对象或执行 GUI 代码。
+未知运行类型仍会报错；业务分类必须写入 `category/tags`。
 
 本地 UI 插件应优先使用声明式宿主扩展点。`register_background(...)` 只登记 ID、名称和有界默认值；
 目录选择、格式白名单、扫描上限、Qt 绘制和播放器生命周期均由应用本体控制，不接受插件提供
 QWidget、绘制器或播放器回调。确实需要自定义 QWidget 时才使用 `register_ui_panel`，并维持最高
 风险提示。
+
+市场 `view` 当前只允许 label、button、directory_picker、slider、select 和 resource_list。面板可在
+宿主允许的左、右、底部区域移动、浮动和调整尺寸；插件不能覆盖核心菜单、中央工作区或安全提示。
+目录选择返回插件会话专属的不透明句柄。媒体背景由 `surface.background.*` 控制，不暴露 QWidget；
+本地 HTML 默认经 `render.html.snapshot` 在独立 Chromium context 中转为 PNG，断网并禁用脚本。
+`render.html.live.start` 可生成宿主轮询的受限 PNG 帧流，但另需 `render:scripted`，且单插件单流、
+最高 5 FPS/1920×1080；两种模式都禁止外部网络、下载、服务工作线程和页面交互。
+相对 CSS、JS、图片等子资源只能由宿主从同一授权句柄代理，单资源、数量和总字节均有上限；
+绝对路径、符号链接、目录联接和授权目录逃逸失败关闭。
 
 ### processor / exporter 返回约定
 
@@ -104,6 +115,10 @@ PLUGIN_METADATA = {
 | `network.fetch` | `network:scoped` | 网络经宿主代理；默认不向插件暴露密钥，且受 domains 和配额约束 |
 | `temp.open` | `temp:write` | 会话临时文件（配额约束） |
 | `files.read` | `files:read` | 仅允许读取 input_files 白名单中的文件，拒绝路径逃逸 |
+| `resources.describe/enumerate/read` | `resources:read` | 访问用户明确授予的会话目录句柄；有扫描、深度、数量和读取大小上限 |
+| `render.html.snapshot` | `render:local`；脚本模式另需 `render:scripted` | 独立、断网 Chromium 把本地 UTF-8 HTML 转成不透明 PNG 结果 |
+| `render.html.live.start/stop` | `render:scripted` | 断网脚本页转为有界 PNG 帧流；单插件单流，停止/卸载时回收 Chromium |
+| `surface.background.set/configure/clear` | `surfaces:background` | 控制宿主背景表面；仅接受已授权媒体或宿主渲染结果 |
 | `secrets.get` | `secrets:read` | 明文密钥访问的显式例外：需要 manifest 白名单并记录审计；优先用 auth 注入 |
 
 - **网络密钥默认零暴露**：`network.fetch` 可用 `auth: {secret_ref, header}`，宿主代理侧

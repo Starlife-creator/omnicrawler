@@ -30,6 +30,10 @@ ALLOWED_PERMISSIONS = {
     "records:read", "records:write", "artifacts:read", "artifacts:write",
     "responses:read", "responses:payload", "network:scoped", "temp:write",
     "state:read", "state:write",
+    # 用户在宿主界面明确选择的目录，仅通过不透明句柄做有界访问；
+    # background surface 始终由宿主渲染，插件不能注入 QWidget/网页脚本。
+    "resources:read", "surfaces:background",
+    "render:local", "render:scripted",
     # Phase 2a：files:read（manifest input_files 白名单，Phase 2b 正式化）；
     # secrets:read（O 例外路径，方案 O2-B；默认走代理密钥零暴露）
     "files:read", "secrets:read",

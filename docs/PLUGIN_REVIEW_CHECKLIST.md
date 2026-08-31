@@ -41,6 +41,9 @@
 - [ ] 代码实际使用的能力不超过 `permissions`；
 - [ ] 网络访问声明 `network:scoped` 和精确、必要的 `domains`；
 - [ ] 文件访问声明 `files:read` 和精确、必要的 `input_files`；
+- [ ] 用户资源只经 `resources:read` 不透明句柄访问，没有绝对路径泄漏、符号链接逃逸或无界扫描；
+- [ ] 声明式 `view` 只使用宿主白名单组件；`surfaces:background` 不能注入 QWidget 或自定义绘制代码；
+- [ ] HTML 静态快照与脚本快照分别声明 `render:local`、`render:scripted`，默认禁用脚本和网络；
 - [ ] `dependencies` 与实际 import 双向一致；
 - [ ] 默认使用 `subprocess`；如申请 `in_process`，已说明不可替代性、风险和到期时间；
 - [ ] 权限相较上一版本没有未说明的扩大；

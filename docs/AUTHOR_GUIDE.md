@@ -33,6 +33,10 @@ omnicrawler plugins scaffold-contract2 --plugin-id my_plugin --display-name "我
 - 能力调用经 `omnicrawler_sdk.call(...)`；**不要 import omnicrawler**（沙箱内不可用，门 1）。
 - 需要网络 → `network:scoped` + `domains`；需要读文件 → `files:read` + `input_files` 白名单；
   需要密钥 → 优先 `auth` 注入（零暴露），`secrets.get` 是显式例外。
+- 需要市场界面 → `plugin_types: [view]` 并返回宿主白名单组件；需要用户目录 →
+  `resource_provider` + `resources:read`；需要媒体背景 → `surfaces:background`。
+- 本地 HTML 默认只申请 `render:local` 静态快照；确需脚本时另申请 `render:scripted`，并说明
+  为什么静态、图片或视频不能满足。原生 `ui`/QWidget 仍不能投稿市场。
 
 ## 3. 本地验证（发布前必做）
 

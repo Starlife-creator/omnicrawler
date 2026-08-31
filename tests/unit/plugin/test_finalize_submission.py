@@ -7,6 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from .conftest import MARKET_TOOLS
+
 pytest.importorskip("cryptography")
 
 from omnicrawler.plugins.identity import IdentityStore
@@ -52,7 +54,7 @@ def test_maintainer_finalize_preserves_creator_package_and_publishes(
     submission_dir = next((market / "submissions").rglob("submission.json")).parent
     manifest_before = (submission_dir / "package.manifest.json").read_bytes()
 
-    script = Path(__file__).resolve().parents[4] / "OmniCrawler-market" / "tools" / "finalize_submission.py"
+    script = MARKET_TOOLS / "finalize_submission.py"
     spec = importlib.util.spec_from_file_location("finalize_submission_test", script)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
