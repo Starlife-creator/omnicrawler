@@ -305,7 +305,7 @@ _DEPENDENCY_LICENSE_ALLOWLIST = {
 }
 
 # 门 1：subprocess 插件禁 import 的宿主核心模块前缀（隔离边界）
-_HOST_CORE_PREFIXES = ("omnicrawler.", "omnicrawler")
+_HOST_CORE_PREFIXES = ("omnicrawler.",)
 # 门 1：subprocess 禁声明的权限族（原生 ui 必须 in_process；hook 是扩展类型而非权限）
 _SUBPROCESS_FORBIDDEN_PERMISSION_PREFIXES = ("ui:", "hook")
 
@@ -369,7 +369,51 @@ def gate_declaration_consistency(plugin_dir: Path) -> list[AuditFinding]:
 
     execution_mode = str(meta.get("execution_mode", "subprocess")).strip() or "subprocess"
     permissions = {str(p).casefold() for p in meta.get("permissions", [])}
-    from .plugins import OFFICIAL_PLUGIN_TYPES, SUBPROCESS_ADAPTER_PLUGIN_TYPES
+    from .plugin_broker import validate_required_capabilities
+    from .plugin_sandbox import ALLOWED_PERMISSIONS
+    from .plugins import OFFICIAL_PLUGIN_TYPES, SUBPROCESS_ADAPTER_PLUGIN_TYPES, UI_PERMISSIONS
+
+    allowed_permissions = set(ALLOWED_PERMISSIONS)
+    if execution_mode == "in_process":
+        allowed_permissions |= set(UI_PERMISSIONS)
+    unknown_permissions = permissions - allowed_permissions
+    if unknown_permissions:
+        findings.append(
+            AuditFinding(
+                level="error",
+                code="gate1_unknown_permission",
+                message=f"声明了宿主不支持的权限: {sorted(unknown_permissions)}",
+            )
+        )
+    required_capabilities = meta.get("required_capabilities", {})
+    if not isinstance(required_capabilities, dict):
+        findings.append(
+            AuditFinding(
+                level="error",
+                code="gate1_required_capabilities_not_mapping",
+                message="required_capabilities 必须是映射",
+            )
+        )
+    else:
+        try:
+            validate_required_capabilities(required_capabilities)
+        except ValueError as exc:
+            findings.append(
+                AuditFinding(
+                    level="error",
+                    code="gate1_required_capability_incompatible",
+                    message=str(exc),
+                )
+            )
+    state_schema_version = meta.get("state_schema_version", 1)
+    if not isinstance(state_schema_version, int) or state_schema_version < 1:
+        findings.append(
+            AuditFinding(
+                level="error",
+                code="gate1_state_schema_invalid",
+                message="state_schema_version 必须是正整数",
+            )
+        )
 
     raw_plugin_types = meta.get("plugin_types", [])
     if not isinstance(raw_plugin_types, (list, tuple)):

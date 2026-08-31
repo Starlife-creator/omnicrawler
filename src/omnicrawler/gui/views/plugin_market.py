@@ -2,12 +2,13 @@
 
 联网后从 ``catalog_url`` 拉取审核通过的插件目录，展示名称/版本/说明，
 用户按需下载安装；每份插件均经 ed25519 离线验签（fail-closed）后才落盘到
-``plugins_installed/``。离线时仅展示已安装列表并禁用联网操作。
+``plugins_installed/``。离线时仅展示已安装列表并禁用联网操作。安装不等于启用；新项目通过
+``enabled_market_plugins`` 显式选择后，运行时才会加载。
 
 设计约束（见 docs/ADR-001-plugin-catalog.md）：
 - 仅联网时从远程拉取；远程失败可回退到本地 ``OmniCrawler-market/``（开发态便利）。
 - 所有下载均用打包内的信任根公钥验签，绝不信任网络本身。
-- 安装目录 ``plugins_installed/<id>/`` 已被默认 ``plugins.paths`` 覆盖，落盘即自动加载。
+- 安装目录 ``plugins_installed/<id>/`` 位于默认扫描范围，但显式启用白名单仍是执行前置条件。
 """
 
 from __future__ import annotations
@@ -96,9 +97,19 @@ def _permission_risk(entry: dict[str, Any]) -> tuple[str, str]:
         for item in _entry_strings(entry, "permissions")
         if str(item).strip()
     }
-    if str(entry.get("execution_mode") or "subprocess") == "in_process" or "secrets:read" in permissions:
+    if (
+        str(entry.get("execution_mode") or "subprocess") == "in_process"
+        or permissions & {"secrets:read", "responses:payload"}
+    ):
         return "high", _("高风险")
-    if permissions & {"network:scoped", "records:write", "files:read", "temp:write"}:
+    if permissions & {
+        "network:scoped",
+        "records:write",
+        "responses:read",
+        "artifacts:write",
+        "files:read",
+        "temp:write",
+    }:
         return "medium", _("需授权")
     return "low", _("低风险")
 
@@ -109,6 +120,15 @@ def _version_tuple(value: str) -> tuple[int, ...]:
 
 def _compatibility(entry: dict[str, Any], current: str = __version__) -> tuple[str, str]:
     """覆盖市场现用的简单版本约束；无法判断时明确显示未知而不误拦截。"""
+    from ...plugins.plugin_broker import validate_required_capabilities
+
+    required_capabilities = entry.get("required_capabilities", {})
+    if not isinstance(required_capabilities, dict):
+        return "blocked", _("能力版本声明无效")
+    try:
+        validate_required_capabilities(required_capabilities)
+    except ValueError as exc:
+        return "blocked", _("宿主能力不兼容：") + str(exc)
     constraint = str(entry.get("compatible_core") or "").strip()
     if not constraint:
         return "unknown", _("兼容性未知")
@@ -140,8 +160,9 @@ def _compatibility(entry: dict[str, Any], current: str = __version__) -> tuple[s
 
 
 def _install_block_reason(entry: dict[str, Any]) -> str:
-    if _compatibility(entry)[0] == "incompatible":
-        return _("该插件与当前 OmniCrawler 版本不兼容")
+    compatibility, detail = _compatibility(entry)
+    if compatibility in {"incompatible", "blocked"}:
+        return detail
     if "ui" in _entry_plugin_types(entry):
         return _("原生 UI 插件仅允许作为受信任本地插件使用，不能从市场安装")
     return ""

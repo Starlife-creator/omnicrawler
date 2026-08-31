@@ -349,6 +349,8 @@ def build_plugin_upload(
         "domains": list(metadata.get("domains") or []),
         "input_files": list(metadata.get("input_files") or []),
         "dependencies": list(metadata.get("dependencies") or []),
+        "required_capabilities": dict(metadata.get("required_capabilities") or {}),
+        "state_schema_version": int(metadata.get("state_schema_version") or 1),
         "compatible_core": f">={metadata.get('min_core_version') or '0.7.0'}",
         # 门 2（Phase 1，方案 A1）：license 必填——删除隐式 MIT 回退，
         # 未声明即打包失败（fail-closed），迫使作者显式选择许可。

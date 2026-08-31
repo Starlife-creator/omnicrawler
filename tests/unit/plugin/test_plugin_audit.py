@@ -159,6 +159,23 @@ def test_full_audit_rejects_unknown_runtime_type(tmp_path: Path) -> None:
     assert "gate1_unknown_plugin_type" in {finding.code for finding in result.findings}
 
 
+def test_full_audit_rejects_unknown_permission_and_future_capability(tmp_path: Path) -> None:
+    from omnicrawler.plugins.plugin_audit import audit_local_plugin_full
+
+    plugin_dir = _make_plugin(tmp_path)
+    plugin_file = plugin_dir / "plugin.py"
+    source = plugin_file.read_text(encoding="utf-8").replace(
+        "'permissions': [],",
+        "'permissions': ['system:root'],\n"
+        "    'required_capabilities': {'records.page': '>=99'},",
+    )
+    plugin_file.write_text(source, encoding="utf-8")
+    result = audit_local_plugin_full(plugin_dir)
+    codes = {finding.code for finding in result.findings}
+    assert "gate1_unknown_permission" in codes
+    assert "gate1_required_capability_incompatible" in codes
+
+
 def test_full_audit_accepts_all_non_ui_contract2_types(tmp_path: Path) -> None:
     from omnicrawler.plugins.plugin_audit import audit_local_plugin_full
 
@@ -183,6 +200,43 @@ def test_full_audit_accepts_all_non_ui_contract2_types(tmp_path: Path) -> None:
     )
     result = audit_local_plugin_full(plugin_dir)
     assert "gate1_plugin_type_not_wired" not in {
+        finding.code for finding in result.findings
+    }
+
+
+def test_full_audit_allows_contract2_capability_sdk(tmp_path: Path) -> None:
+    """能力代理 SDK 不是宿主核心导入，契约 2 必须可以正规调用。"""
+    from omnicrawler.plugins.plugin_audit import audit_local_plugin_full
+
+    plugin_dir = _make_plugin(tmp_path)
+    plugin_file = plugin_dir / "plugin.py"
+    plugin_file.write_text(
+        plugin_file.read_text(encoding="utf-8").replace(
+            "def handle(operation, payload):",
+            "import omnicrawler_sdk\n\ndef handle(operation, payload):",
+        ),
+        encoding="utf-8",
+    )
+    result = audit_local_plugin_full(plugin_dir)
+    assert "gate1_subprocess_imports_host" not in {
+        finding.code for finding in result.findings
+    }
+
+
+def test_full_audit_still_rejects_host_core_import(tmp_path: Path) -> None:
+    from omnicrawler.plugins.plugin_audit import audit_local_plugin_full
+
+    plugin_dir = _make_plugin(tmp_path)
+    plugin_file = plugin_dir / "plugin.py"
+    plugin_file.write_text(
+        plugin_file.read_text(encoding="utf-8").replace(
+            "def handle(operation, payload):",
+            "import omnicrawler.core\n\ndef handle(operation, payload):",
+        ),
+        encoding="utf-8",
+    )
+    result = audit_local_plugin_full(plugin_dir)
+    assert "gate1_subprocess_imports_host" in {
         finding.code for finding in result.findings
     }
 

@@ -33,7 +33,9 @@ MARKET_DIR_NAME = "plugins_installed"
 
 # UI 权限族：本地来源插件自动放行（GUI 插件宿主按注册类型挂载）；
 # 市场来源插件仍需 permission_grants 按插件和载荷显式批准。
-UI_PERMISSIONS = frozenset({"ui:theme", "ui:action", "ui:panel", "ui:status"})
+UI_PERMISSIONS = frozenset(
+    {"ui:theme", "ui:action", "ui:panel", "ui:status", "ui:background"}
+)
 
 # 运行扩展点由宿主定义，不能由插件任意发明。业务分类与检索标签分别使用
 # PluginMetadata.category / tags；二者不参与运行路由。
@@ -116,6 +118,10 @@ class PluginMetadata:
     category: str = ""
     tags: tuple[str, ...] = ()
     capabilities: tuple[str, ...] = ()
+    # Contract 2 宿主能力协议的最低版本，例如 {"records.read": ">=1"}。
+    # 它不同于 capabilities（展示用能力标签），会在启动子进程前 fail-closed。
+    required_capabilities: dict[str, int | str] = field(default_factory=dict)
+    state_schema_version: int = 1
     domains: tuple[str, ...] = ()
     config_schema: dict[str, Any] = field(default_factory=dict)
     permissions: tuple[str, ...] = ()
@@ -177,6 +183,16 @@ class StatusWidgetRegistration:
     widget_factory: Callable[..., Any]
 
 
+@dataclass(frozen=True, slots=True)
+class BackgroundRegistration:
+    """声明式本地媒体背景；绘制、文件选择和多媒体生命周期均由宿主管理。"""
+
+    background_id: str
+    label: str
+    default_opacity: float = 0.24
+    default_dim: float = 0.30
+
+
 def _normalize_schema_fields(result: PluginMetadata, path: Path) -> PluginMetadata:
     """Phase 1（B1 schema 扩展）：execution_mode 枚举归一 + 新字段类型收敛。
 
@@ -214,6 +230,17 @@ def _normalize_schema_fields(result: PluginMetadata, path: Path) -> PluginMetada
     input_files = result.input_files
     if not isinstance(input_files, tuple):
         input_files = tuple(str(item) for item in input_files)
+    required_capabilities = result.required_capabilities
+    if not isinstance(required_capabilities, dict):
+        raise ValueError(f"插件 {result.name} required_capabilities 必须是映射; file={path}")
+    required_capabilities = {
+        str(name).strip(): requirement for name, requirement in required_capabilities.items()
+    }
+    from .plugin_broker import validate_required_capabilities
+
+    validate_required_capabilities(required_capabilities)
+    if not isinstance(result.state_schema_version, int) or result.state_schema_version < 1:
+        raise ValueError(f"插件 {result.name} state_schema_version 必须是正整数; file={path}")
     if (
         mode == result.execution_mode
         and plugin_types == result.plugin_types
@@ -221,6 +248,7 @@ def _normalize_schema_fields(result: PluginMetadata, path: Path) -> PluginMetada
         and tags is result.tags
         and deps is result.dependencies
         and input_files is result.input_files
+        and required_capabilities == result.required_capabilities
     ):
         return result
     return PluginMetadata(
@@ -232,6 +260,8 @@ def _normalize_schema_fields(result: PluginMetadata, path: Path) -> PluginMetada
         category=str(result.category or "").strip(),
         tags=tags,
         capabilities=result.capabilities,
+        required_capabilities=required_capabilities,
+        state_schema_version=result.state_schema_version,
         domains=result.domains,
         config_schema=result.config_schema,
         permissions=result.permissions,
@@ -311,6 +341,7 @@ class Registry:
         self.ui_actions: dict[str, UIActionRegistration] = {}
         self.ui_panels: dict[str, UIPanelRegistration] = {}
         self.status_widgets: list[StatusWidgetRegistration] = []
+        self.backgrounds: dict[str, BackgroundRegistration] = {}
         self.plugins: list[PluginMetadata] = []
         self.plugin_errors: list[dict[str, str]] = []
         self._resources: list[Any] = []
@@ -389,6 +420,32 @@ class Registry:
             raise TypeError("状态小部件工厂必须是可调用对象")
         self.status_widgets.append(StatusWidgetRegistration(widget_factory))
 
+    def register_background(
+        self,
+        background_id: str,
+        label: str,
+        *,
+        default_opacity: float = 0.24,
+        default_dim: float = 0.30,
+    ) -> None:
+        """注册由宿主渲染的本地媒体背景，不接受 QWidget 或绘制回调。"""
+
+        normalized = background_id.strip().casefold()
+        if not normalized or not label.strip():
+            raise ValueError("背景 ID 与名称不能为空")
+        if normalized in self.backgrounds:
+            raise ValueError(f"背景重复: {normalized}")
+        opacity = float(default_opacity)
+        dim = float(default_dim)
+        if not 0.05 <= opacity <= 0.85 or not 0.0 <= dim <= 0.85:
+            raise ValueError("背景默认透明度或遮罩强度超出宿主安全范围")
+        self.backgrounds[normalized] = BackgroundRegistration(
+            normalized,
+            label.strip(),
+            opacity,
+            dim,
+        )
+
     def emit(self, event: str, *, fail_open: bool = False, **context: Any) -> list[Any]:
         # B01-009：fail_open 指「事件回调容错」（回调抛错时吞掉继续，不致命），
         # 与网络/信任的 fail-open（不安全）无关；本方法不涉及安全判定。
@@ -412,6 +469,22 @@ class Registry:
     def track_resource(self, resource: Any) -> None:
         if not any(existing is resource for existing in self._resources):
             self._resources.append(resource)
+
+    def bind_plugin_runtime(self, *, config: Any, state_store: Any) -> None:
+        """Attach host-owned runtime services to isolated plugin resources."""
+
+        for resource in self._resources:
+            bind = getattr(resource, "bind_runtime", None)
+            if callable(bind):
+                bind(config=config, state_store=state_store)
+
+    def bind_plugin_run(self, run_id: str) -> None:
+        """Update the current run namespace before any adapter invocation."""
+
+        for resource in self._resources:
+            bind = getattr(resource, "bind_run", None)
+            if callable(bind):
+                bind(run_id)
 
     def close(self) -> None:
         """关闭由契约 2 adapter 共享的子进程资源。"""
@@ -453,6 +526,7 @@ class Registry:
                 "actions": sorted(self.ui_actions),
                 "panels": sorted(self.ui_panels),
                 "status_widgets": len(self.status_widgets),
+                "backgrounds": sorted(self.backgrounds),
             },
             "plugins": [f"{item.name}@{item.version}" for item in self.plugins],
             "plugin_details": [
@@ -836,7 +910,12 @@ def _load_local_plugin(
         LOGGER.info("契约 2 插件走子进程沙箱: %s（%s）", path, route.reason)
         # Phase 2b：配额与 egress_policy 从 plugins 配置节解析（daily 配额按
         # plugin_id 配置；egress_policy 个人 prompt 默认 / 企业 block）
+        from .plugin_broker import validate_required_capabilities
         from .plugin_quota import DailyNetworkQuota
+
+        validate_required_capabilities(
+            dict(static_meta.required_capabilities) if static_meta is not None else {}
+        )
 
         quota_rules = plugins_section.get("network_daily_quota", {}) or {}
         daily_quota: DailyNetworkQuota | None = None
@@ -854,6 +933,8 @@ def _load_local_plugin(
                 decision.verified_bytes if decision is not None and decision.verified_bytes else None
             ),
             plugin_id=plugin_id,
+            plugin_author_fingerprint=creator_fingerprint or "local",
+            plugin_state_schema=(static_meta.state_schema_version if static_meta else 1),
             daily_quota=daily_quota,
             egress_policy=egress_policy,
         )

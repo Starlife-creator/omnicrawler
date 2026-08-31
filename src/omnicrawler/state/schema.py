@@ -188,6 +188,17 @@ CREATE TABLE IF NOT EXISTS errors (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS plugin_state (
+    project_scope TEXT NOT NULL,
+    plugin_id TEXT NOT NULL,
+    author_fingerprint TEXT NOT NULL,
+    schema_version INTEGER NOT NULL,
+    state_key TEXT NOT NULL,
+    value_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(project_scope, plugin_id, author_fingerprint, schema_version, state_key)
+);
+
 CREATE INDEX IF NOT EXISTS idx_frontier_status ON frontier(status, priority, depth);
 CREATE INDEX IF NOT EXISTS idx_responses_run ON responses(run_id);
 CREATE INDEX IF NOT EXISTS idx_records_run ON records(run_id);
@@ -200,4 +211,6 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_run ON audit_events(run_id, created_
 CREATE INDEX IF NOT EXISTS idx_errors_run ON errors(run_id);
 CREATE INDEX IF NOT EXISTS idx_run_state_events_run ON run_state_events(run_id, id);
 CREATE INDEX IF NOT EXISTS idx_stage_checkpoints_run ON stage_checkpoints(run_id, stage);
+CREATE INDEX IF NOT EXISTS idx_plugin_state_namespace
+    ON plugin_state(project_scope, plugin_id, author_fingerprint, schema_version);
 """

@@ -91,6 +91,7 @@ class _PipelineRun(_PipelineBase):
         self.run_control.reset()
         self.egress.reconnect_task()
         run_id = self.state.start_run(self.config.project_name, str(self.config.path))
+        self.registry.bind_plugin_run(run_id)
         tracker._task_id = run_id
         tracker.start()
         setup_started = time.monotonic()
@@ -521,6 +522,7 @@ class _PipelineRun(_PipelineBase):
         self.run_control.reset()
         self.egress.reconnect_task()
         run_id = self.state.start_run(self.config.project_name, str(self.config.path))
+        self.registry.bind_plugin_run(run_id)
 
         stages = (
             StageSpec(name="stream_ingest", weight=1.0, display_name="流式接收", has_items=True),
