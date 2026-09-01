@@ -51,6 +51,8 @@ OFFICIAL_PLUGIN_TYPES = frozenset(
         "transformer",
         "hook",
         "ui",
+        "resource_provider",
+        "view",
     }
 )
 # 当前契约 2 已具备并接入 subprocess adapter 的扩展点。
@@ -65,6 +67,8 @@ SUBPROCESS_ADAPTER_PLUGIN_TYPES = frozenset(
         "extractor",
         "transformer",
         "hook",
+        "resource_provider",
+        "view",
     }
 )
 
@@ -336,6 +340,8 @@ class Registry:
         self.parsers: dict[str, Factory] = {}
         self.extractors: dict[str, Factory] = {}
         self.transformers: dict[str, Factory] = {}
+        self.resource_providers: dict[str, Any] = {}
+        self.declarative_views: dict[str, Any] = {}
         self.hooks: dict[str, list[Factory]] = {}
         self.themes: dict[str, ThemeRegistration] = {}
         self.ui_actions: dict[str, UIActionRegistration] = {}
@@ -520,6 +526,8 @@ class Registry:
             "parsers": sorted(self.parsers),
             "extractors": sorted(self.extractors),
             "transformers": sorted(self.transformers),
+            "resource_providers": sorted(self.resource_providers),
+            "declarative_views": sorted(self.declarative_views),
             "hooks": {name: len(callbacks) for name, callbacks in sorted(self.hooks.items())},
             "ui": {
                 "themes": sorted(self.themes),
@@ -877,8 +885,10 @@ def _load_local_plugin(
         SubprocessFetcherAdapter,
         SubprocessHookAdapter,
         SubprocessProcessorAdapter,
+        SubprocessResourceProviderAdapter,
         SubprocessSourceAdapter,
         SubprocessTransformerAdapter,
+        SubprocessViewAdapter,
         _SubprocessSessionHost,
     )
 
@@ -977,6 +987,10 @@ def _load_local_plugin(
             hook_adapter = SubprocessHookAdapter(host)
             for event in CONTRACT2_HOOK_EVENTS:
                 registry.register_hook(event, hook_adapter.callback(event))
+        if "resource_provider" in effective_types:
+            registry.resource_providers[plugin_id] = SubprocessResourceProviderAdapter(host)
+        if "view" in effective_types:
+            registry.declarative_views[plugin_id] = SubprocessViewAdapter(host)
         registry.track_resource(host)
         unsupported_types = set(effective_types) - SUBPROCESS_ADAPTER_PLUGIN_TYPES
         if unsupported_types:

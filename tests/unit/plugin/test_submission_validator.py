@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 
+from .conftest import MARKET_TOOLS
+
 pytest.importorskip("cryptography")
+if MARKET_TOOLS is None:
+    pytest.skip("OmniCrawler-market 未 clone，跳过跨仓投稿验证", allow_module_level=True)
+assert MARKET_TOOLS is not None
 
 from omnicrawler.plugins.identity import IdentityStore
 from omnicrawler.plugins.plugin_packaging import build_plugin_submission
@@ -18,6 +23,7 @@ def _payload(
     monkeypatch: pytest.MonkeyPatch,
     *,
     plugin_types: list[str] | None = None,
+    permissions: list[str] | None = None,
 ) -> dict[str, bytes]:
     monkeypatch.setattr("omnicrawler.plugins.trust.DEFAULT_TRUST_LIST", tmp_path / "trusted.json")
     monkeypatch.setenv("OMNICRAWL_SECRET_STORE_PATH", str(tmp_path / "secrets.bin"))
@@ -28,9 +34,11 @@ def _payload(
     package = tmp_path / "demo"
     package.mkdir()
     types_field = "" if plugin_types is None else f",'plugin_types':{plugin_types!r}"
+    permissions_field = "" if permissions is None else f",'permissions':{permissions!r}"
     (package / "plugin.py").write_text(
         "PLUGIN_METADATA={'name':'demo','version':'1.0.0','description':'d','license':'MIT'"
         + types_field
+        + permissions_field
         + "}\n"
         "def handle(operation, payload): return {}\n",
         encoding="utf-8",
@@ -52,7 +60,7 @@ def test_market_submission_validator_accepts_gui_payload(
 ) -> None:
     registry = tmp_path / "market"
     _write(registry, _payload(tmp_path, monkeypatch))
-    script = Path(__file__).resolve().parents[4] / "OmniCrawler-market" / "tools" / "validate_submission.py"
+    script = MARKET_TOOLS / "validate_submission.py"
     result = subprocess.run(
         [sys.executable, str(script), "--registry", str(registry)],
         capture_output=True,
@@ -71,7 +79,7 @@ def test_market_submission_validator_rejects_tampering(
     plugin_key = next(key for key in files if key.endswith("/plugin.py"))
     files[plugin_key] += b"\n# changed"
     _write(registry, files)
-    script = Path(__file__).resolve().parents[4] / "OmniCrawler-market" / "tools" / "validate_submission.py"
+    script = MARKET_TOOLS / "validate_submission.py"
     result = subprocess.run(
         [sys.executable, str(script), "--registry", str(registry)],
         capture_output=True,
@@ -88,7 +96,7 @@ def test_market_submission_validator_rejects_native_ui(
 ) -> None:
     registry = tmp_path / "market"
     _write(registry, _payload(tmp_path, monkeypatch, plugin_types=["ui"]))
-    script = Path(__file__).resolve().parents[4] / "OmniCrawler-market" / "tools" / "validate_submission.py"
+    script = MARKET_TOOLS / "validate_submission.py"
     result = subprocess.run(
         [sys.executable, str(script), "--registry", str(registry)],
         capture_output=True,
@@ -98,3 +106,26 @@ def test_market_submission_validator_rejects_native_ui(
     )
     assert result.returncode == 1
     assert "native ui plugins are local-only" in result.stdout
+
+
+def test_market_submission_validator_accepts_declarative_view_permissions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = tmp_path / "market"
+    _write(
+        registry,
+        _payload(
+            tmp_path,
+            monkeypatch,
+            plugin_types=["resource_provider", "view"],
+            permissions=["resources:read", "surfaces:background", "render:local"],
+        ),
+    )
+    result = subprocess.run(
+        [sys.executable, str(MARKET_TOOLS / "validate_submission.py"), "--registry", str(registry)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

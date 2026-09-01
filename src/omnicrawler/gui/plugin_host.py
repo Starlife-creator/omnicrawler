@@ -1,11 +1,12 @@
 """GUI plugin host: mount UI registrations from the Registry onto the main window.
 
-Four registration kinds (see omnicrawler.plugins.plugins):
+Host registration kinds (see omnicrawler.plugins.plugins):
 - themes          -> design-system theme registration (whitelisted color tokens)
 - ui_actions      -> QAction under the "Plugins" menu (callback takes mw or none)
 - ui_panels       -> QDockWidget side panels (widget_factory(mw) returns QWidget)
 - status_widgets  -> permanent status-bar widgets (widget_factory() returns QWidget)
 - backgrounds     -> host-rendered local image/video layer from a data-only declaration
+- declarative_views -> fixed host widgets backed by an isolated Contract 2 process
 
 Safety boundaries:
 - Single-item failures are fail-open: they never break main-window assembly,
@@ -141,6 +142,18 @@ def _install_backgrounds(mw: Any, registry: Any, errors: list[str]) -> None:
     mw._plugin_background_controllers = controllers
 
 
+def _install_declarative_views(mw: Any, registry: Any, errors: list[str]) -> None:
+    from .declarative_view_host import install_declarative_view
+
+    controllers = getattr(mw, "_declarative_plugin_view_controllers", [])
+    for plugin_id, adapter in sorted(registry.declarative_views.items()):
+        try:
+            controllers.append(install_declarative_view(mw, plugin_id, adapter))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(_(f"声明式视图 {plugin_id}: {exc}"))
+    mw._declarative_plugin_view_controllers = controllers
+
+
 def install_plugin_ui(mw: Any, registry: Any) -> list[str]:
     """把 registry 中的 UI 注册安装到主窗口；返回安装错误列表（fail-open）。"""
     errors: list[str] = []
@@ -149,6 +162,7 @@ def install_plugin_ui(mw: Any, registry: Any) -> list[str]:
     _install_panels(mw, registry, errors)
     _install_status_widgets(mw, registry, errors)
     _install_backgrounds(mw, registry, errors)
+    _install_declarative_views(mw, registry, errors)
     if errors:
         LOGGER.warning("Plugin UI install partially failed: %s", "; ".join(errors))
     return errors

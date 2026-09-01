@@ -102,3 +102,40 @@ def test_market_blocks_unavailable_required_capability() -> None:
         }
     )
     assert "不支持" in reason
+
+
+def test_contract2_declarative_view_mounts_host_owned_widgets(app: QApplication) -> None:
+    from PySide6.QtWidgets import QDockWidget, QPushButton
+
+    class Adapter:
+        surface = None
+
+        def describe(self):
+            return {
+                "view_id": "safe.main", "title": "Safe View", "preferred_zone": "right",
+                "movable": True, "resizable": True, "floatable": True,
+                "default_width": 320, "default_height": 360,
+                "minimum_width": 240, "minimum_height": 160,
+                "components": [{
+                    "type": "button", "id": "refresh", "label": "Refresh", "action": "refresh",
+                }],
+            }
+
+        def bind_surface(self, surface):
+            self.surface = surface
+
+        def action(self, action, payload):
+            return {"message": action}
+
+    registry = Registry()
+    adapter = Adapter()
+    registry.declarative_views["safe-plugin"] = adapter
+    window = QMainWindow()
+    install_plugin_ui(window, registry)
+    try:
+        dock = window.findChild(QDockWidget, "declarativePluginView_safe-plugin_safe.main")
+        assert dock is not None
+        assert dock.findChild(QPushButton).text() == "Refresh"
+        assert adapter.surface is not None
+    finally:
+        window.close()

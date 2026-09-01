@@ -21,8 +21,9 @@
 - 不导入 `omnicrawler`，宿主能力统一通过 `omnicrawler_sdk.call(...)` 请求；
 - 权限、域名、输入文件和依赖必须完整且最小化声明。
 
-唯一例外是明确受信任、只在本机加载的原生 UI 扩展。它使用契约 1 且不得投稿公共市场；
-应优先选择 `register_background(...)` 等声明式宿主，避免插件自行创建绘制层或管理播放器。
+需要市场界面的插件使用契约 2 `view` 和宿主固定组件；资源目录使用 `resource_provider` 与用户授权
+句柄，背景媒体使用宿主 `surface.background.*`。唯一例外是明确受信任、只在本机加载的原生 UI
+扩展；它使用契约 1 且不得投稿公共市场。
 契约 2 插件如果依赖特定代理协议，应声明 `required_capabilities`，持久状态则声明
 `state_schema_version`，不要自行打开数据库或隐藏状态文件。
 
@@ -76,6 +77,9 @@ python -m pytest -m plugin_contract
 - 不要把私钥、Token、Cookie 或真实凭据放进插件目录；
 - 网络访问必须声明 `network:scoped` 和精确 `domains`；
 - 文件读取必须声明 `files:read` 和精确 `input_files`；
+- 用户选择的资源目录使用 `resources:read` 不透明句柄，不得把绝对路径传入插件；
+- 背景表面使用 `surfaces:background`；本地 HTML 快照使用 `render:local`，脚本模式另需
+  `render:scripted` 高风险授权；
 - 响应元数据与正文分别使用 `responses:read`、`responses:payload`；正文权限属于高风险；
 - 导出使用 `artifact.stream.*` 与 `artifacts:write`，不要依赖宿主真实输出路径；
 - 跨运行状态使用 `state:*`，状态迁移必须显式且不得覆盖非空目标；

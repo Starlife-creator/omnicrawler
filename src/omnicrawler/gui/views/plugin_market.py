@@ -99,7 +99,7 @@ def _permission_risk(entry: dict[str, Any]) -> tuple[str, str]:
     }
     if (
         str(entry.get("execution_mode") or "subprocess") == "in_process"
-        or permissions & {"secrets:read", "responses:payload"}
+        or permissions & {"secrets:read", "responses:payload", "render:scripted"}
     ):
         return "high", _("高风险")
     if permissions & {
@@ -109,6 +109,9 @@ def _permission_risk(entry: dict[str, Any]) -> tuple[str, str]:
         "artifacts:write",
         "files:read",
         "temp:write",
+        "resources:read",
+        "surfaces:background",
+        "render:local",
     }:
         return "medium", _("需授权")
     return "low", _("低风险")

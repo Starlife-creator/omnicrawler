@@ -170,6 +170,48 @@ class BackgroundController(QtCore.QObject):
             self.settings.setValue("library", str(Path(root).resolve()))
         return len(self.items)
 
+    def set_media(self, path: str | Path) -> None:
+        """Display one host-resolved media file without persisting its parent path."""
+
+        candidate = Path(path)
+        if candidate.is_symlink() or not candidate.is_file():
+            raise ValueError(_("背景媒体必须是存在的真实文件"))
+        suffix = candidate.suffix.casefold()
+        if suffix not in SUPPORTED_EXTENSIONS:
+            raise ValueError(_(f"背景表面不支持此媒体格式: {suffix or '(无扩展名)'}"))
+        self.items = [
+            LocalMedia(
+                candidate.resolve(),
+                "video" if suffix in VIDEO_EXTENSIONS else "image",
+            )
+        ]
+        self.index = 0
+        if not self.enable():
+            raise ValueError(_("背景媒体无法启用"))
+
+    def set_rendered_image(self, png: bytes) -> None:
+        """Display host-rendered image bytes without exposing a filesystem path."""
+
+        pixmap = QtGui.QPixmap()
+        if not png or not pixmap.loadFromData(png, b"PNG"):
+            raise ValueError(_("宿主渲染结果不是有效 PNG"))
+        current = getattr(self.main_window, "_active_plugin_background", None)
+        if current is not None and current is not self:
+            current.disable()
+        self.main_window._active_plugin_background = self
+        self.items = []
+        self.index = -1
+        self.active = True
+        self.player.stop()
+        self.video.hide()
+        if self.movie is not None:
+            self.movie.stop()
+            self.movie = None
+        self.layer.pixmap = pixmap
+        self.layer.show()
+        self._sync_geometry()
+        self.layer.update()
+
     def set_opacity(self, value: int) -> None:
         self.layer.opacity = max(0.05, min(value / 100, 0.85))
         self.settings.setValue("opacity", self.layer.opacity)

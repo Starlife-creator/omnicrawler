@@ -62,7 +62,17 @@ def _default_private_path() -> str:
 
 PRIVATE_DEFAULT = _default_private_path()
 PUBLIC_DEFAULT = "configs/plugin_trust.pub.pem"
-SCANNER = _REPO_ROOT.parent / "OmniCrawler-market" / "tools" / "scan_plugin.py"
+def _market_tool(name: str) -> Path:
+    """Locate the sibling market checkout from a checkout or nested Git worktree."""
+
+    for parent in (_REPO_ROOT, *_REPO_ROOT.parents):
+        candidate = parent / "OmniCrawler-market" / "tools" / name
+        if candidate.is_file():
+            return candidate
+    return _REPO_ROOT.parent / "OmniCrawler-market" / "tools" / name
+
+
+SCANNER = _market_tool("scan_plugin.py")
 TRANSPARENCY_LOG_DEFAULT = "signing_transparency.jsonl"
 
 

@@ -67,10 +67,10 @@ def handle(operation, payload):
     return {"error": "unsupported_operation", "operation": operation}
 ```
 
-插件需要读取记录、访问网络或使用临时文件时，只能通过 `omnicrawler_sdk.call(...)` 请求
-`PLUGIN_METADATA` 已声明的能力。当前契约 2 加载器只把 `source` 插件自动接入执行管线；
-Catalog 中的其他类别是兼容或扩展预留，不能仅凭枚举值假定已经可运行。完整约束见
-`PLUGIN_CONTRACT.md`。
+插件需要读取记录、访问网络、使用临时文件、用户资源或宿主媒体表面时，只能通过
+`omnicrawler_sdk.call(...)` 请求 `PLUGIN_METADATA` 已声明的能力。契约 2 已接入全部正式数据类型，
+以及 `resource_provider` 和宿主渲染的声明式 `view`；原生 `ui` 仍只属于本地高信任契约 1。
+完整约束见 `PLUGIN_CONTRACT.md`。
 
 ## SDK 公共 API
 

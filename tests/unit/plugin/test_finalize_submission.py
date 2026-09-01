@@ -7,7 +7,12 @@ from types import SimpleNamespace
 
 import pytest
 
+from .conftest import MARKET_TOOLS
+
 pytest.importorskip("cryptography")
+if MARKET_TOOLS is None:
+    pytest.skip("OmniCrawler-market 未 clone，跳过跨仓发布验证", allow_module_level=True)
+assert MARKET_TOOLS is not None
 
 from omnicrawler.plugins.identity import IdentityStore
 from omnicrawler.plugins.market_client import download_and_verify, verify_installed
@@ -52,7 +57,7 @@ def test_maintainer_finalize_preserves_creator_package_and_publishes(
     submission_dir = next((market / "submissions").rglob("submission.json")).parent
     manifest_before = (submission_dir / "package.manifest.json").read_bytes()
 
-    script = Path(__file__).resolve().parents[4] / "OmniCrawler-market" / "tools" / "finalize_submission.py"
+    script = MARKET_TOOLS / "finalize_submission.py"
     spec = importlib.util.spec_from_file_location("finalize_submission_test", script)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)

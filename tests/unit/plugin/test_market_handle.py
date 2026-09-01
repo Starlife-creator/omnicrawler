@@ -1,14 +1,6 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
-
-MARKET_TOOLS = Path(__file__).resolve().parents[4] / "OmniCrawler-market" / "tools"
-if str(MARKET_TOOLS) not in sys.path:
-    sys.path.insert(0, str(MARKET_TOOLS))
-
 from catalog_lib.authors import assign_market_handle  # noqa: E402
 
 

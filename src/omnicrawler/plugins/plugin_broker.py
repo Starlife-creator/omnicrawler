@@ -11,6 +11,9 @@
 | network:scoped  | network.fetch  | PluginNetworkClient.fetch（egress 内置）   |
 | temp:write      | temp.open      | 会话专属临时目录                           |
 | files:read      | files.read     | manifest input_files 白名单（Phase 2b）    |
+| resources:read  | resources.*    | 用户明确授权目录的不透明句柄               |
+| render:local    | render.html.snapshot | 隔离 Chromium 本地 HTML 快照          |
+| surfaces:background | surface.background.* | 宿主拥有的媒体背景表面          |
 | （内置）        | system.info    | 宿主版本/平台/后端（无需声明）             |
 
 IPC 循环（drive_loop）：子进程 stdout 混排「能力代理请求」与「handle 响应」，
@@ -59,6 +62,15 @@ CAPABILITY_VERSIONS: dict[str, int] = {
     "network.fetch": 1,
     "temp.open": 1,
     "files.read": 1,
+    "resources.describe": 1,
+    "resources.enumerate": 1,
+    "resources.read": 1,
+    "render.html.snapshot": 1,
+    "render.html.live.start": 1,
+    "render.html.live.stop": 1,
+    "surface.background.set": 1,
+    "surface.background.configure": 1,
+    "surface.background.clear": 1,
     "secrets.get": 1,
 }
 
@@ -103,6 +115,15 @@ _CAPABILITY_PERMISSIONS: dict[str, str | None] = {
     "network.fetch": "network:scoped",
     "temp.open": "temp:write",
     "files.read": "files:read",
+    "resources.describe": "resources:read",
+    "resources.enumerate": "resources:read",
+    "resources.read": "resources:read",
+    "render.html.snapshot": "render:local",
+    "render.html.live.start": "render:scripted",
+    "render.html.live.stop": "render:scripted",
+    "surface.background.set": "surfaces:background",
+    "surface.background.configure": "surfaces:background",
+    "surface.background.clear": "surfaces:background",
     # O 例外路径（方案 O2 方案 B）：secrets.get 需 manifest 声明 secrets 白名单；
     # 默认路径是网络经宿主代理密钥零暴露（O2 方案 C），secrets.get 仅显式例外。
     "secrets.get": "secrets:read",
@@ -152,6 +173,9 @@ class CapabilityBroker:
         trace_full: bool = False,
         daily_quota: Any | None = None,
         egress_policy: str = "prompt",
+        resource_broker: Any | None = None,
+        render_broker: Any | None = None,
+        surface_service: Any | None = None,
     ) -> None:
         self._permissions = {p.casefold() for p in permissions}
         self._system_info = dict(system_info)
@@ -183,6 +207,9 @@ class CapabilityBroker:
         # Phase 2b D4.4：每日网络配额（E_QUOTA 来源）；egress_policy 共现检测
         self._daily_quota = daily_quota
         self._egress_policy = egress_policy
+        self._resource_broker = resource_broker
+        self._render_broker = render_broker
+        self._surface_service = surface_service
         # 调用轨迹降采样（C3 第 41 轮）：操作类型计数 + 会话首尾时间
         self.op_counts: dict[str, int] = {}
         self.temp_files_written: list[str] = []
@@ -750,6 +777,115 @@ class CapabilityBroker:
         import base64
 
         return {"content_b64": base64.b64encode(data).decode("ascii"), "size": len(data)}
+
+    def _cap_resources_describe(self, payload: dict[str, Any]) -> dict[str, Any]:
+        broker = self._require_resource_broker()
+        try:
+            return broker.describe(str(payload.get("handle", "")))
+        except ValueError as exc:
+            raise CapabilityError(E_RESOURCE, str(exc)) from exc
+
+    def _cap_resources_enumerate(self, payload: dict[str, Any]) -> dict[str, Any]:
+        broker = self._require_resource_broker()
+        try:
+            items = broker.enumerate(
+                str(payload.get("handle", "")),
+                relative=str(payload.get("relative", "")),
+                recursive=bool(payload.get("recursive", False)),
+                limit=int(payload.get("limit", 500)),
+            )
+        except (TypeError, ValueError) as exc:
+            raise CapabilityError(E_RESOURCE, str(exc)) from exc
+        return {"items": items, "count": len(items)}
+
+    def _cap_resources_read(self, payload: dict[str, Any]) -> dict[str, Any]:
+        broker = self._require_resource_broker()
+        try:
+            data = broker.read(
+                str(payload.get("handle", "")),
+                str(payload.get("relative", "")),
+                maximum_bytes=int(payload.get("maximum_bytes", 4 * 1024 * 1024)),
+            )
+        except (TypeError, ValueError) as exc:
+            raise CapabilityError(E_RESOURCE, str(exc)) from exc
+        return {"content_b64": base64.b64encode(data).decode("ascii"), "size": len(data)}
+
+    def _cap_surface_background_set(self, payload: dict[str, Any]) -> dict[str, Any]:
+        surface = self._require_surface_service()
+        try:
+            render_handle = str(payload.get("render_handle", "")).strip()
+            if render_handle:
+                surface.set_rendered(self._require_render_broker(), render_handle)
+            else:
+                surface.set_media(
+                    self._require_resource_broker(),
+                    str(payload.get("handle", "")),
+                    str(payload.get("relative", "")),
+                )
+        except ValueError as exc:
+            raise CapabilityError(E_RESOURCE, str(exc)) from exc
+        return {"active": True}
+
+    def _cap_render_html_snapshot(self, payload: dict[str, Any]) -> dict[str, Any]:
+        scripted = bool(payload.get("scripted", False))
+        if scripted and "render:scripted" not in self._permissions:
+            raise CapabilityError(E_PERMISSION, "脚本化本地渲染需要 render:scripted 权限")
+        try:
+            return self._require_render_broker().snapshot_html(
+                self._require_resource_broker(),
+                str(payload.get("handle", "")),
+                str(payload.get("relative", "")),
+                width=int(payload.get("width", 1920)),
+                height=int(payload.get("height", 1080)),
+                scripted=scripted,
+            )
+        except (RuntimeError, TypeError, ValueError) as exc:
+            raise CapabilityError(E_RESOURCE, str(exc)) from exc
+
+    def _cap_render_html_live_start(self, payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return self._require_render_broker().start_html_live(
+                self._require_resource_broker(),
+                str(payload.get("handle", "")),
+                str(payload.get("relative", "")),
+                width=int(payload.get("width", 1280)),
+                height=int(payload.get("height", 720)),
+            )
+        except (RuntimeError, TypeError, ValueError) as exc:
+            raise CapabilityError(E_RESOURCE, str(exc)) from exc
+
+    def _cap_render_html_live_stop(self, payload: dict[str, Any]) -> dict[str, Any]:
+        del payload
+        self._require_render_broker().stop_live()
+        return {"active": False}
+
+    def _cap_surface_background_configure(self, payload: dict[str, Any]) -> dict[str, Any]:
+        surface = self._require_surface_service()
+        try:
+            return dict(surface.configure(dict(payload)))
+        except (TypeError, ValueError) as exc:
+            raise CapabilityError(E_CONTRACT, str(exc)) from exc
+
+    def _cap_surface_background_clear(self, payload: dict[str, Any]) -> dict[str, Any]:
+        del payload
+        surface = self._require_surface_service()
+        surface.clear()
+        return {"active": False}
+
+    def _require_resource_broker(self) -> Any:
+        if self._resource_broker is None:
+            raise CapabilityError(E_INTERNAL, "宿主未绑定资源授权服务")
+        return self._resource_broker
+
+    def _require_surface_service(self) -> Any:
+        if self._surface_service is None:
+            raise CapabilityError(E_INTERNAL, "当前入口未绑定媒体表面")
+        return self._surface_service
+
+    def _require_render_broker(self) -> Any:
+        if self._render_broker is None:
+            raise CapabilityError(E_INTERNAL, "宿主未绑定隔离渲染服务")
+        return self._render_broker
 
     def _cap_secrets_get(self, payload: dict[str, Any]) -> dict[str, Any]:
         """O 例外路径（方案 O2-B）：secrets.get 显式例外，默认走代理密钥零暴露。
