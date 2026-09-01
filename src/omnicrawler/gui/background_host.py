@@ -175,10 +175,10 @@ class BackgroundController(QtCore.QObject):
 
         candidate = Path(path)
         if candidate.is_symlink() or not candidate.is_file():
-            raise ValueError("背景媒体必须是存在的真实文件")
+            raise ValueError(_("背景媒体必须是存在的真实文件"))
         suffix = candidate.suffix.casefold()
         if suffix not in SUPPORTED_EXTENSIONS:
-            raise ValueError(f"背景表面不支持此媒体格式: {suffix or '(无扩展名)'}")
+            raise ValueError(_(f"背景表面不支持此媒体格式: {suffix or '(无扩展名)'}"))
         self.items = [
             LocalMedia(
                 candidate.resolve(),
@@ -187,14 +187,14 @@ class BackgroundController(QtCore.QObject):
         ]
         self.index = 0
         if not self.enable():
-            raise ValueError("背景媒体无法启用")
+            raise ValueError(_("背景媒体无法启用"))
 
     def set_rendered_image(self, png: bytes) -> None:
         """Display host-rendered image bytes without exposing a filesystem path."""
 
         pixmap = QtGui.QPixmap()
         if not png or not pixmap.loadFromData(png, b"PNG"):
-            raise ValueError("宿主渲染结果不是有效 PNG")
+            raise ValueError(_("宿主渲染结果不是有效 PNG"))
         current = getattr(self.main_window, "_active_plugin_background", None)
         if current is not None and current is not self:
             current.disable()

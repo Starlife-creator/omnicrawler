@@ -10,6 +10,9 @@ import pytest
 from .conftest import MARKET_TOOLS
 
 pytest.importorskip("cryptography")
+if MARKET_TOOLS is None:
+    pytest.skip("OmniCrawler-market 未 clone，跳过跨仓发布验证", allow_module_level=True)
+assert MARKET_TOOLS is not None
 
 from omnicrawler.plugins.identity import IdentityStore
 from omnicrawler.plugins.market_client import download_and_verify, verify_installed

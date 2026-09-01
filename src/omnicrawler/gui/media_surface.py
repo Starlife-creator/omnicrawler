@@ -8,6 +8,7 @@ from typing import Any
 from PySide6 import QtCore
 
 from .background_host import BackgroundController
+from .i18n import _
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,7 +65,7 @@ class MediaSurfaceService:
         allowed = {"opacity", "dim", "fit", "paused", "rotation_seconds"}
         unknown = set(payload) - allowed
         if unknown:
-            raise ValueError(f"背景表面包含未知配置: {sorted(unknown)}")
+            raise ValueError(_(f"背景表面包含未知配置: {sorted(unknown)}"))
         if "opacity" in payload:
             self._controller.set_opacity(int(payload["opacity"]))
         if "dim" in payload:
@@ -72,7 +73,7 @@ class MediaSurfaceService:
         if "fit" in payload:
             fit = str(payload["fit"])
             if fit not in {"cover", "contain", "stretch"}:
-                raise ValueError("背景 fit 必须是 cover、contain 或 stretch")
+                raise ValueError(_("背景 fit 必须是 cover、contain 或 stretch"))
             self._controller.set_fit(fit)
         if "paused" in payload:
             self._controller.set_paused(bool(payload["paused"]))

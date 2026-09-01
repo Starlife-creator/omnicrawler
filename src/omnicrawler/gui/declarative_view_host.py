@@ -168,7 +168,7 @@ class DeclarativeViewController(QtCore.QObject):
             self._report(exc)
 
     def _report(self, exc: Exception) -> None:
-        LOGGER.exception("声明式插件视图 %s 操作失败", self._plugin_id)
+        LOGGER.exception(_("声明式插件视图 %s 操作失败"), self._plugin_id)
         try:
             ToastManager.instance().error(_(f"插件 {self._plugin_id} 操作失败：{exc}"))
         except Exception:  # noqa: BLE001

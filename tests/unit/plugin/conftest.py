@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 
-def _market_tools() -> Path:
+def _market_tools() -> Path | None:
     configured = os.environ.get("OMNICRAWL_MARKET_TOOLS", "").strip()
     if configured:
         candidate = Path(configured).resolve()
@@ -17,9 +17,9 @@ def _market_tools() -> Path:
         candidate = parent / "OmniCrawler-market" / "tools"
         if (candidate / "validate_submission.py").is_file():
             return candidate
-    raise RuntimeError("测试需要相邻的 OmniCrawler-market checkout")
+    return None
 
 
 MARKET_TOOLS = _market_tools()
-if str(MARKET_TOOLS) not in sys.path:
+if MARKET_TOOLS is not None and str(MARKET_TOOLS) not in sys.path:
     sys.path.insert(0, str(MARKET_TOOLS))
