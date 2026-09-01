@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+
+### 变更
+
+- refactor(architecture): 拆除 core→pdfx 与 services→gui 反向依赖，并加入依赖方向和循环复杂度预算门禁
+- feat(pipeline): 增加 `PipelineDependencies` 显式资源注入，支持由宿主控制状态库、对象存储和记录 sink 生命周期
+- feat(contracts): 将对象存储、记录 sink 与 OCR 后端固化为可运行时检查的 Protocol，并补跨实现契约测试
+- ci(deps): 增加最小安装与分 feature extras 的隔离安装验证，防止可选依赖泄漏到核心启动路径
+- ci(sdk): 增加 SDK 公共导出快照，阻止未声明的破坏性 API 漂移
+- ci(release): 增加跨平台 Standard/Full 产物预算和 Standard 重型依赖污染检查
+
 ## 0.11.2 - 2026-08-30
 
 ### 变更

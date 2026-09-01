@@ -351,6 +351,8 @@ class HomePage(QWidget):
         """刷新首页最近任务卡片；数据来自 TaskHistory 的公开快照。"""
         while self._recent_tasks_layout.count():
             item = self._recent_tasks_layout.takeAt(0)
+            if item is None:
+                continue
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()

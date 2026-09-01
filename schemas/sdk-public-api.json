@@ -1,0 +1,40 @@
+{
+  "sdk_version": "1.0-preview",
+  "sdk_exports": [
+    "API_STABILITY",
+    "ApplicationService",
+    "ArtifactInfo",
+    "CredentialProvider",
+    "DatasetReader",
+    "Exporter",
+    "Extractor",
+    "Fetcher",
+    "Processor",
+    "SDK_VERSION",
+    "Source",
+    "TaskIR",
+    "TaskPlan",
+    "TaskSpec",
+    "compile",
+    "compile_task_plan",
+    "query",
+    "run",
+    "validate"
+  ],
+  "stability": {
+    "TaskSpec": "stable",
+    "TaskIR": "stable",
+    "TaskPlan": "stable",
+    "validate": "stable",
+    "compile": "stable",
+    "run": "preview",
+    "query": "preview",
+    "protocols": "preview"
+  },
+  "plugin_sdk_exports": [
+    "contract_check",
+    "scaffold_contract2",
+    "scaffold_plugin",
+    "validate_plugin_id"
+  ]
+}

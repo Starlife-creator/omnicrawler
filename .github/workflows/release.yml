@@ -176,6 +176,13 @@ jobs:
             -ReleaseOutputPath "$env:RUNNER_TEMP/artifacts" `
             @browserArgs @runtimeArgs
 
+      - name: 校验分版本体积预算
+        shell: pwsh
+        run: |
+          python tools/check_artifact_budget.py --platform Windows `
+            --directory "$env:RUNNER_TEMP/artifacts" `
+            --output "$env:RUNNER_TEMP/artifacts/artifact-size-report-windows.json"
+
       # ── FINAL L1 尺寸预分类：超限产物移出发布集 ───────────────────
       - name: 尺寸预分类（超限移出，写缺席清单）
         shell: pwsh
@@ -314,6 +321,12 @@ jobs:
           bash build_linux.sh --edition Full \
             --release-output "$RUNNER_TEMP/artifacts-linux" "${browserArgs[@]}"
 
+      - name: 校验分版本体积预算
+        run: |
+          python tools/check_artifact_budget.py --platform Linux \
+            --directory "$RUNNER_TEMP/artifacts-linux" \
+            --output "$RUNNER_TEMP/artifacts-linux/artifact-size-report-linux.json"
+
       # ── FINAL L1 尺寸预分类：超限产物移出发布集 ───────────────────
       - name: 尺寸预分类（超限移出，写缺席清单）
         shell: bash
@@ -429,6 +442,12 @@ jobs:
           fi
           bash build_macos.sh --edition Full \
             --release-output "$RUNNER_TEMP/artifacts-macos" "${browserArgs[@]}"
+
+      - name: 校验分版本体积预算
+        run: |
+          python tools/check_artifact_budget.py --platform macOS \
+            --directory "$RUNNER_TEMP/artifacts-macos" \
+            --output "$RUNNER_TEMP/artifacts-macos/artifact-size-report-macos.json"
 
       # ── FINAL L1 尺寸预分类：超限产物移出发布集 ───────────────────
       - name: 尺寸预分类（超限移出，写缺席清单）

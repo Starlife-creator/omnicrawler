@@ -405,9 +405,7 @@ def format_eta(seconds: float) -> str:
 
 
 def _(text: str) -> str:
-    """延迟导入 i18n，避免 import services.progress 时 GUI 环境未就绪。"""
-    try:
-        from ..gui.i18n import _ as __translate  # type: ignore[attr-defined]
-    except Exception:  # noqa: BLE001
-        return text
+    """Translate without depending on the GUI delivery layer."""
+    from ..i18n import _ as __translate
+
     return __translate(text)

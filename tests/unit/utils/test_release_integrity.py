@@ -86,6 +86,7 @@ def _write_portable(
     *,
     corrupt_hash: bool = False,
     unverified_models: bool = False,
+    extra_files: dict[str, bytes] | None = None,
 ) -> None:
     files: dict[str, bytes] = {
         "OmniCrawler.exe": b"MZ-gui",
@@ -118,6 +119,7 @@ def _write_portable(
             }).encode(),
             f"runtime/models/paddlex/official_models/{model}/inference.pdiparams": b"model",
         })
+    files.update(extra_files or {})
     records = {}
     for name, content in files.items():
         digest = hashlib.sha256(content).hexdigest()
@@ -165,3 +167,24 @@ def test_portable_zip_requires_verified_paddle_model_manifest(tmp_path):
     archive = tmp_path / "OmniCrawler-2.1.0-Windows-Portable-Full.zip"
     _write_portable(archive, "Full", unverified_models=True)
     assert any("not marked verified" in issue for issue in check_portable_zip(archive))
+
+
+def test_standard_portable_rejects_full_only_python_packages(tmp_path):
+    archive = tmp_path / "OmniCrawler-2.1.0-Windows-Portable-Standard.zip"
+    _write_portable(
+        archive,
+        "Standard",
+        extra_files={"_internal/paddleocr/__init__.py": b""},
+    )
+    issues = check_portable_zip(archive)
+    assert any("Standard portable archive contains Full-only assets" in issue for issue in issues)
+
+
+def test_standard_portable_allows_internal_modules_with_similar_names(tmp_path):
+    archive = tmp_path / "OmniCrawler-2.1.0-Windows-Portable-Standard.zip"
+    _write_portable(
+        archive,
+        "Standard",
+        extra_files={"_internal/omnicrawler/services/duckdb_store.py": b""},
+    )
+    assert check_portable_zip(archive) == []

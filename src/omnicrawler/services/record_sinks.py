@@ -7,7 +7,7 @@ import threading
 import urllib.parse
 from contextlib import nullcontext
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from ..core.config import AppConfig
 from ..core.models import CrawlRequest, ExtractedRecord
@@ -15,6 +15,7 @@ from ..core.utils import utcnow
 from ..security.egress import EgressBroker
 
 
+@runtime_checkable
 class RecordSink(Protocol):
     def write(self, run_id: str, request: CrawlRequest, records: list[ExtractedRecord]) -> int: ...
     def close(self) -> None: ...

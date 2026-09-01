@@ -7,7 +7,7 @@ import os
 import statistics
 import time
 from collections.abc import Callable, Iterable, Iterator
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from .concurrency import iter_bounded_futures
 from .config import ProjectConfig
@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 _OCR_MAX_TEMP = float(os.environ.get("OMNICRAWL_OCR_MAX_TEMP", "85"))
 
 
+@runtime_checkable
 class OCRBackend(Protocol):
     def recognize(self, png_bytes: bytes) -> tuple[str, float | None]: ...
 

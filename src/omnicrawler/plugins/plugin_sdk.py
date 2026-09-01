@@ -11,6 +11,13 @@ from .plugin_sandbox import PluginPackageManifest
 
 _ID = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
 
+__all__ = [
+    "contract_check",
+    "scaffold_contract2",
+    "scaffold_plugin",
+    "validate_plugin_id",
+]
+
 
 def validate_plugin_id(plugin_id: str) -> None:
     if not _ID.fullmatch(plugin_id):

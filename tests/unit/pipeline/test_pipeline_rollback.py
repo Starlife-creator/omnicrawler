@@ -12,7 +12,7 @@ import pytest
 import yaml
 
 from omnicrawler.core.config import load_config
-from omnicrawler.pipeline import Pipeline
+from omnicrawler.pipeline import Pipeline, PipelineDependencies
 
 
 def _config(tmp_path: Path) -> object:
@@ -93,3 +93,43 @@ def test_s152_close_success_raises_nothing(tmp_path: Path) -> None:
     pipeline = Pipeline(_config(tmp_path))
     pipeline.close()  # 正常路径
     pipeline.close()  # 幂等路径（executor 已置空、state 已防护）
+
+
+def test_injected_resources_remain_caller_owned(tmp_path: Path) -> None:
+    closed: list[str] = []
+    state = _CloseTracker("state", closed)
+    object_store = _CloseTracker("object_store", closed)
+    sinks = _CloseTracker("sinks", closed)
+
+    pipeline = Pipeline(
+        _config(tmp_path),
+        dependencies=PipelineDependencies(
+            state=state,  # type: ignore[arg-type]
+            object_store=object_store,  # type: ignore[arg-type]
+            record_sinks=sinks,  # type: ignore[arg-type]
+        ),
+    )
+    assert pipeline.state is state
+    assert pipeline.object_store is object_store
+    assert pipeline.record_sinks is sinks
+    pipeline.close()
+    assert closed == []
+
+
+def test_pipeline_can_take_ownership_of_injected_resources(tmp_path: Path) -> None:
+    closed: list[str] = []
+    state = _CloseTracker("state", closed)
+    object_store = _CloseTracker("object_store", closed)
+    sinks = _CloseTracker("sinks", closed)
+
+    pipeline = Pipeline(
+        _config(tmp_path),
+        dependencies=PipelineDependencies(
+            state=state,  # type: ignore[arg-type]
+            object_store=object_store,  # type: ignore[arg-type]
+            record_sinks=sinks,  # type: ignore[arg-type]
+            close_injected=True,
+        ),
+    )
+    pipeline.close()
+    assert {"state", "object_store", "sinks"}.issubset(closed)

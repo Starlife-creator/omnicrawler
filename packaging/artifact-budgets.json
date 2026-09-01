@@ -1,0 +1,14 @@
+{
+  "Windows": {
+    "Standard": {"baseline_mib": 477, "max_bytes": 587202560},
+    "Full": {"baseline_mib": 1878, "max_bytes": 2040109465}
+  },
+  "Linux": {
+    "Standard": {"baseline_mib": 379, "max_bytes": 471859200},
+    "Full": {"baseline_mib": 1714, "max_bytes": 2039480320}
+  },
+  "macOS": {
+    "Standard": {"baseline_mib": 825, "max_bytes": 996147200},
+    "Full": {"baseline_mib": 1082, "max_bytes": 1363148800}
+  }
+}

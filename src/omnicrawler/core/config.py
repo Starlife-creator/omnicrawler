@@ -10,7 +10,11 @@ from typing import Any
 
 import yaml
 
-from ..pdfx.templates import DEFAULT_PDF_TEMPLATE, LEGACY_DEFAULT_PDF_TEMPLATE, resolve_builtin_pdf_reference
+from .builtin_references import (
+    DEFAULT_PDF_TEMPLATE,
+    LEGACY_DEFAULT_PDF_TEMPLATE,
+    resolve_builtin_pdf_reference,
+)
 from .credentials import resolve_secret_refs
 from .errors import ConfigParseError
 from .migrations import CURRENT_CONFIG_VERSION, migrate_config

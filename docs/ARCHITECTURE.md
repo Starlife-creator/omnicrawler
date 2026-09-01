@@ -66,3 +66,22 @@ Registry 分类型保存 factory；同类型名称唯一。工厂支持 `(config
 - Task IR 与计划编译器不依赖 GUI、CLI、数据库或网络实现。
 - 持久化由 Repository 端口隔离；SQLite 是默认适配器而不是公共接口。
 - Pipeline 按 plan/policy/fetch/archive/parse/filter/attachments_pdf/quality/export 顺序执行。
+- `core` 不依赖 `pdfx`，`services` 不依赖 `gui`；共享常量和国际化能力放在顶层稳定模块。
+- 核心启动路径不得静态导入 extras 中的可选运行时。能力探测统一通过 `core.capabilities` 延迟执行。
+
+`tools/check_architecture.py` 同时执行依赖方向检查和循环复杂度预算。预算位于
+`tools/architecture-cycle-budget.json`：循环减少可直接合入；只有确认新增循环不可避免时，才应连同架构说明一起更新基线。
+
+## 组合根与资源所有权
+
+`Pipeline(config)` 保持默认行为，由 Pipeline 创建并关闭运行资源。需要嵌入宿主、替换后端或进行轻量测试时，使用
+`Pipeline(config, dependencies=PipelineDependencies(...))` 注入 `egress`、`state`、`object_store` 或 `record_sinks`。
+注入资源默认由调用者持有并关闭；只有显式设置 `close_injected=True` 时才转移给 Pipeline。对象存储、记录 sink 与 OCR
+后端依赖 Protocol 契约，新增实现必须通过 `tests/unit/services/test_capability_contracts.py`。
+
+## 发布与兼容门禁
+
+- `tools/check_minimal_install.py` 验证核心包在无 extras 环境可导入，且 CLI 帮助不会加载浏览器、PDF、OCR 或云存储运行时。
+- `tools/check_extra_install.py` 在 CI 中按 feature profile 隔离安装并验证声明的 extras。
+- `schemas/sdk-public-api.json` 是公共 SDK 导出快照；有意变更公共 API 时需同步版本策略和快照。
+- `packaging/artifact-budgets.json` 保存六个跨平台产物的体积上限；发布构建会生成体积报告，并拒绝 Standard 包混入 Full 专属重型依赖。

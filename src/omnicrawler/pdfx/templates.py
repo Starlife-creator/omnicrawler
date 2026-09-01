@@ -4,36 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-BUILTIN_PREFIX = "builtin:pdf/"
-DEFAULT_PDF_TEMPLATE = f"{BUILTIN_PREFIX}generic_template.yaml"
-LEGACY_DEFAULT_PDF_TEMPLATE = "configs/pdf/generic_template.yaml"
+from ..core.builtin_references import (
+    BUILTIN_PDF_PREFIX,
+    DEFAULT_PDF_TEMPLATE,
+    LEGACY_DEFAULT_PDF_TEMPLATE,
+    builtin_pdf_resource,
+    is_builtin_pdf_reference,
+    resolve_builtin_pdf_reference,
+)
 
-
-def builtin_pdf_resource(name: str = "generic_template.yaml") -> Path:
-    """Return an installed PDF template resource without depending on a repo root."""
-    candidate = Path(__file__).resolve().parent.parent / "templates" / "pdf" / name
-    if not candidate.is_file():
-        raise FileNotFoundError(f"内置 PDF 模板不存在: {name}")
-    return candidate
-
-
-def is_builtin_pdf_reference(value: str | Path) -> bool:
-    return str(value).strip().replace("\\", "/").startswith(BUILTIN_PREFIX)
-
-
-def resolve_builtin_pdf_reference(value: str | Path) -> Path:
-    raw = str(value).strip().replace("\\", "/")
-    if not raw.startswith(BUILTIN_PREFIX):
-        raise ValueError(f"不是内置 PDF 资源引用: {value}")
-    name = raw[len(BUILTIN_PREFIX):]
-    # D66：拒绝路径穿越（builtin:pdf/../../../x 逃逸模板目录）
-    base = builtin_pdf_resource("generic_template.yaml").resolve().parent
-    resolved = (base / name).resolve()
-    if base not in resolved.parents:
-        raise ValueError(f"内置 PDF 资源引用越界: {value}")
-    if not resolved.is_file():
-        raise FileNotFoundError(f"内置 PDF 模板不存在: {name}")
-    return resolved
+# Historical public name retained for callers of omnicrawler.pdfx.templates.
+BUILTIN_PREFIX = BUILTIN_PDF_PREFIX
 
 
 def resolve_pdf_project_config(value: str | Path) -> Path:

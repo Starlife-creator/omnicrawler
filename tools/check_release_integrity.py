@@ -69,6 +69,28 @@ _PORTABLE_CHROMIUM_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+_STANDARD_FORBIDDEN_PACKAGE_ROOTS = frozenset(
+    {
+        "cv2",
+        "duckdb",
+        "opensearchpy",
+        "paddle",
+        "paddleocr",
+        "paddlex",
+        "psycopg",
+        "pyarrow",
+        "selenium",
+    }
+)
+
+
+def _contains_forbidden_standard_package(path: str) -> bool:
+    for part in path.casefold().split("/"):
+        for package in _STANDARD_FORBIDDEN_PACKAGE_ROOTS:
+            if part == package or part.startswith((f"{package}.", f"{package}-")):
+                return True
+    return False
+
 
 @dataclass(frozen=True)
 class _PortableEntry:
@@ -721,6 +743,7 @@ def _check_portable_archive(
             for key in relative_infos
             if key in {_key(name) for name in full_only_files}
             or key.startswith("runtime/models/paddlex/")
+            or _contains_forbidden_standard_package(relative_names[key])
         }
         _append_path_examples(errors, "Standard portable archive contains Full-only assets", unexpected)
 
