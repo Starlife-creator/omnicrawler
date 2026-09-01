@@ -229,7 +229,7 @@ class MainWindow(QMainWindow):
         self._run_controller: RunController | None = None
         self._result_controller: ResultController | None = None
         self._updating_editor = False
-        self._updating_wizard = False
+        self._updating_workspace = False
         self._dnd_mode = self._settings.dnd_enabled
 
         # ---- 创建 delegates ----
@@ -553,22 +553,32 @@ class MainWindow(QMainWindow):
         self._nav.setAccessibleName(_("主导航"))
         self._nav.setFixedWidth(190)
 
-        nav_items = [
+        nav_items: list[tuple[str, int | None]] = [
+            (_("工作"), None),
             ("⌂ " + _("首页"), 4),
-            ("⚙ " + _("配置向导"), 0),
-            ("📄 " + _("PDF 工作台"), 6),
-            ("🔁 " + _("格式互转"), 7),    # B-4：ConvertX 面板
-            ("📝 " + _("YAML 编辑器"), 1),
-            ("📋 " + _("任务监控"), 2),
+            ("⚙ " + _("任务工作台"), 0),
+            ("▶ " + _("运行与历史"), 2),
             ("📊 " + _("结果与复核"), 3),
-            ("🔍 " + _("证据查看器"), 5),
-            ("🎯 " + _("场景管理"), 11),    # S4：场景/槽位/基因/候选
+            (_("自动化"), None),
             ("🔔 " + _("变更监控"), 8),
+            (_("工具"), None),
+            ("📄 " + _("PDF 工作台"), 6),
+            ("🔁 " + _("格式互转"), 7),
+            ("🎯 " + _("场景与模板"), 11),
+            (_("高级"), None),
+            ("📝 " + _("YAML 编辑器"), 1),
+            ("🔍 " + _("证据查看器"), 5),
             ("🧩 " + _("插件市场"), 9),
             ("🛠 " + _("开发者检查器"), 10),
         ]
-        for label, _idx in nav_items:
+        self._nav_pages: dict[int, int] = {}
+        for row, (label, page) in enumerate(nav_items):
             item = QListWidgetItem(label)
+            if page is None:
+                item.setFlags(Qt.ItemFlag.NoItemFlags)
+                item.setData(Qt.ItemDataRole.AccessibleDescriptionRole, _("导航分组"))
+            else:
+                self._nav_pages[row] = page
             self._nav.addItem(item)
 
         self._nav.currentRowChanged.connect(self._on_nav_changed)
@@ -576,25 +586,26 @@ class MainWindow(QMainWindow):
 
         self._stack = QStackedWidget()
 
-        self._wizard_widget = QWidget()
-        wizard_layout = QVBoxLayout(self._wizard_widget)
-        wizard_layout.setContentsMargins(0, 0, 0, 0)
+        self._workspace_widget = QWidget()
+        workspace_layout = QVBoxLayout(self._workspace_widget)
+        workspace_layout.setContentsMargins(0, 0, 0, 0)
         self._advanced_summary = QLabel("")
         self._advanced_summary.setWordWrap(True)
         self._advanced_summary.setAccessibleName(_("已启用高级规则摘要"))
         self._advanced_summary.setObjectName("advancedSummary")
         self._advanced_summary.setProperty("status", "warning")
-        wizard_layout.addWidget(self._advanced_summary)
+        workspace_layout.addWidget(self._advanced_summary)
 
-        # P0：任务画布替换五步向导（Task Canvas）
+        # P0：任务工作台（Task Canvas）
         from .views.task_canvas import TaskCanvas
 
         self._task_canvas = TaskCanvas(self._config, project_root=str(self._project_root))
-        wizard_layout.addWidget(self._task_canvas)
-        self._stack.addWidget(self._wizard_widget)
+        workspace_layout.addWidget(self._task_canvas)
+        workspace_layout.addWidget(self._task_canvas.persistent_action_bar())
+        self._stack.addWidget(self._workspace_widget)
 
         # P0：画布信号接线（保存/试跑/运行/查看 YAML）
-        self._task_canvas.config_changed.connect(self._on_wizard_changed)
+        self._task_canvas.config_changed.connect(self._on_workspace_changed)
         self._task_canvas.save_requested.connect(self._save_config)
         self._task_canvas.trial_run_requested.connect(self._request_trial_run)
         self._task_canvas.run_requested.connect(self._request_run)
@@ -638,7 +649,7 @@ class MainWindow(QMainWindow):
 
         ctrl_layout = QHBoxLayout()
         ctrl_run = QPushButton(_("▶ 运行"))
-        ctrl_run.clicked.connect(self._run_task)
+        ctrl_run.clicked.connect(self._request_run)
         ctrl_layout.addWidget(ctrl_run)
         ctrl_stop = QPushButton(_("■ 停止"))
         ctrl_stop.clicked.connect(self._stop_task)
@@ -668,8 +679,14 @@ class MainWindow(QMainWindow):
         self._home = HomePage(project_root=str(self._project_root))
         self._home.quick_task_ready.connect(self._apply_quick_task)
         self._home.natural_task_ready.connect(self._apply_natural_task)
-        self._home.open_wizard.connect(lambda: self._nav.setCurrentRow(NavIndex.WIZARD))
-        self._home.open_recent.connect(lambda: self._nav.setCurrentRow(NavIndex.YAML_EDITOR))
+        self._home.open_workspace.connect(lambda: self._nav.setCurrentRow(NavIndex.WORKSPACE))
+        self._home.open_recent.connect(lambda: self._nav.setCurrentRow(NavIndex.MONITOR))
+        self._home.open_recent_config.connect(self._load_history_config)
+        self._home.open_recent_results.connect(self._load_history_results)
+        self._home.set_recent_tasks(self._task_history.recent_records())
+        self._task_history.history_changed.connect(
+            lambda: self._home.set_recent_tasks(self._task_history.recent_records())
+        )
         # S3.1.2：修复"结果与复核"错页（原误用 NavIndex.MONITOR）
         self._home.open_results.connect(lambda: self._nav.setCurrentRow(NavIndex.RESULTS))
         self._home.open_schedule.connect(self._manage_schedules)
@@ -804,9 +821,9 @@ class MainWindow(QMainWindow):
         self._shortcut_manager = GlobalShortcutManager(self)
         self._shortcut_manager.register_all({
             "save": self._save_config,
-            "run": self._run_task,
+            "run": self._request_run,
             "stop": self._stop_task,
-            "toggle_editor": self._toggle_wizard_editor,
+            "toggle_editor": self._toggle_workspace_editor,
             "open_templates": self._show_template_library,
             "refresh": self._refresh_results_page,
             "format_yaml": self._format_yaml_from_shortcut,
@@ -833,11 +850,9 @@ class MainWindow(QMainWindow):
             ToastManager.instance().warning(_("请先切换到 YAML 编辑器"))
 
     def _on_nav_changed(self, index: int) -> None:
-        # nav row -> stack page: 首页(4), 配置向导(0), PDF工作台(6), 格式互转(7),
-        # YAML编辑器(1), 任务监控(2), 结果复核(3), 证据查看器(5), 场景管理(11),
-        # 变更监控(8), 插件市场(9), 开发者检查器(10)
-        pages = (4, 0, 6, 7, 1, 2, 3, 5, 11, 8, 9, 10)
-        page = pages[index] if 0 <= index < len(pages) else 4
+        page = self._nav_pages.get(index)
+        if page is None:
+            return
         self._page_transition.show(page)
         if page == 1:
             self._yaml_editor.update_from_config(self._config)
@@ -855,7 +870,7 @@ class MainWindow(QMainWindow):
     def _apply_quick_task(self, draft: QuickTaskDraft) -> None:
         self._apply_task_draft(draft)
         self._refresh_canvas()
-        self._nav.setCurrentRow(NavIndex.WIZARD)
+        self._nav.setCurrentRow(NavIndex.WORKSPACE)
         self._set_status(_("快速草案已生成：请查看自动决定和修改入口，然后先试跑"))
 
     def _apply_natural_task(self, draft: NaturalLanguageDraft) -> None:
@@ -865,9 +880,9 @@ class MainWindow(QMainWindow):
         if draft.topics:
             self._config.topic_include_any = list(dict.fromkeys(topic for topic in draft.topics if topic.strip()))
         self._refresh_canvas()
-        self._nav.setCurrentRow(NavIndex.WIZARD)
+        self._nav.setCurrentRow(NavIndex.WORKSPACE)
         cadence = {"weekly": _("每周"), "daily": _("每天"), "monthly": _("每月"), "manual": _("手动")}
-        self._set_status(_("已从自然语言生成草案；建议频率：{0}。请确认画布内容并先试跑。").format(
+        self._set_status(_("已从自然语言生成草案；建议频率：{0}。请确认工作台内容并先试跑。").format(
             cadence.get(draft.schedule, draft.schedule)
         ))
 
@@ -896,12 +911,12 @@ class MainWindow(QMainWindow):
             self._config_path = demo.config
             self._config_label.setText(str(demo.config))
             self._refresh_canvas()
-            self._nav.setCurrentRow(NavIndex.WIZARD)
+            self._nav.setCurrentRow(NavIndex.WORKSPACE)
             self._set_status(_("离线演示已准备：无需网络，可直接查看并试跑"))
         except (OSError, ValueError) as exc:
             self._show_error_dialog(exc, _("创建离线演示"))
 
-    def _toggle_wizard_editor(self) -> None:
+    def _toggle_workspace_editor(self) -> None:
         current = self._stack.currentIndex()
         if current == 1:
             self._stack.setCurrentIndex(0)
@@ -909,7 +924,7 @@ class MainWindow(QMainWindow):
         elif current == 0:
             self._stack.setCurrentIndex(1)
             self._yaml_editor.update_from_config(self._config)
-            self._toggle_btn.setText(_("⇄ 画布"))
+            self._toggle_btn.setText(_("⇄ 工作台"))
 
     def _bind_application_controllers(self) -> None:
         if self._config_path is None:
@@ -924,27 +939,27 @@ class MainWindow(QMainWindow):
             self._task_runner.attach(session_file)
 
     # ================================================================
-    #  向导/编辑器同步
+    #  任务工作台/YAML 编辑器同步
     # ================================================================
 
-    def _on_wizard_changed(self) -> None:
+    def _on_workspace_changed(self) -> None:
         if self._updating_editor:
             return
         self._updating_editor = True
-        QTimer.singleShot(300, self._sync_wizard_to_editor)
+        QTimer.singleShot(300, self._sync_workspace_to_editor)
         self._updating_editor = False
 
-    def _sync_wizard_to_editor(self) -> None:
+    def _sync_workspace_to_editor(self) -> None:
         self._yaml_editor.update_from_config(self._config)
 
     def _on_editor_sync_to_form(self, config: CrawlConfig) -> None:
-        if self._updating_wizard:
+        if self._updating_workspace:
             return
-        self._updating_wizard = True
+        self._updating_workspace = True
         self._config = config
         # P0：外部（YAML 编辑器）编辑 → 画布外部编辑检测（无冲突静默同步，有冲突锁定二选一）
         self._task_canvas.notify_external_edit(config)
-        self._updating_wizard = False
+        self._updating_workspace = False
 
     # ================================================================
     #  运行前检查与小样本试跑
@@ -958,15 +973,15 @@ class MainWindow(QMainWindow):
         self._start_sample_run(self._task_canvas.trial_pages())
 
     def _request_run(self) -> None:
-        """画布「保存并全量运行」：唯一运行出口，先保存配置再启动任务。"""
+        """工作台「开始全量运行」：唯一运行出口，先保存配置再启动任务。"""
         self._save_config()
         if not self._config_path:
             return
-        # P1：运行前 field_hash 一致校验（PRD §2.2.3）——试跑通过但字段集已变则拒绝
+        # 运行前一致校验：采集范围/字段需与试跑一致，交付设置需本地验证通过。
         if not self._task_canvas.trial_matches_fields():
             QMessageBox.warning(
                 self, _("试跑已失效"),
-                _("字段已变更，请重新试跑后再全量运行。"),
+                _("采集范围或字段规则已变更，或交付设置无效。请修正后重新验证。"),
             )
             return
         self._run_task()
@@ -1049,19 +1064,24 @@ class MainWindow(QMainWindow):
             records = int(sample.get("records", 0) or 0)
             ok = bool(status) and status != "failed" and processed > 0
             summary = _(f"状态：{status}\n处理页面：{processed}\n提取记录：{records}")
-            # P0：试跑结果回填画布（决定「保存并全量运行」是否可用）
-            self._task_canvas.set_trial_result(ok, summary)
-            QMessageBox.information(
-                self, _("小样本试跑完成"),
-                summary,
-            )
+            # P0：试跑结果回填工作台（决定「开始全量运行」是否可用）
+            self._task_canvas.set_trial_result(ok, summary, sample)
+            if ok:
+                ToastManager.instance().success(_("小样本试跑完成：请在工作台查看结果"))
+            else:
+                ToastManager.instance().warning(_("试跑未通过：请按工作台中的诊断建议修正"))
             thread.quit()
 
         def failed(message: str) -> None:
             if self._close_after_background_jobs:
                 thread.quit()
                 return
-            QMessageBox.warning(self, _("小样本试跑失败"), message)
+            self._task_canvas.set_trial_result(
+                False,
+                _("试跑失败：{0}").format(message),
+                {"status": "failed", "processed": 0, "records": 0, "error": message},
+            )
+            ToastManager.instance().warning(_("小样本试跑失败：请在工作台查看诊断"))
             thread.quit()
 
         worker.finished.connect(completed)
@@ -1256,7 +1276,7 @@ class MainWindow(QMainWindow):
 
     def _commit_plugin_config_change(self) -> None:
         """同步编辑器并持久化；无正式配置路径时至少写入崩溃恢复草稿。"""
-        self._sync_wizard_to_editor()
+        self._sync_workspace_to_editor()
         self._autosave.set_config(self._config)
         self._autosave.save_now()
         if self._config_path is not None:
@@ -1599,6 +1619,7 @@ class MainWindow(QMainWindow):
             self._config_path = Path(config_path)
             self._config_label.setText(self._config_path.name)
             self._refresh_canvas()
+            self._nav.setCurrentRow(NavIndex.WORKSPACE)
             ToastManager.instance().success(_("历史配置已加载"))
         except Exception as e:
             QMessageBox.critical(self, _("加载失败"), str(e))
@@ -1620,7 +1641,7 @@ class MainWindow(QMainWindow):
                 ws_path,
             )
             self._file_list.set_directory(files)
-            self._stack.setCurrentIndex(3)
+            self._nav.setCurrentRow(NavIndex.RESULTS)
 
     def _auto_load_results(self) -> None:
         # A14：workspace 可能含 ~ 等用户目录标记，需 expanduser 后判断绝对路径

@@ -12,21 +12,48 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_five_step_gui_template_library_and_rebuild_start_offscreen(monkeypatch):
+def test_task_workspace_template_library_and_rebuild_start_offscreen(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from omnicrawler.gui.main import MainWindow, TemplateLibraryDialog
+    from omnicrawler.gui.main import MainWindow, NavIndex, TemplateLibraryDialog
     from omnicrawler.gui.views.task_canvas import TaskCanvas
 
     monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
     app = QApplication.instance() or QApplication([])
     window = MainWindow()
-    # P0：五步向导已替换为任务画布（Task Canvas）
+    # P0：旧向导已替换为持续可编辑的任务工作台。
     assert isinstance(window._task_canvas, TaskCanvas)
     for name in ("_intent_section", "_draft_section", "_fields_section",
                  "_trial_section", "_delivery_section"):
         assert hasattr(window._task_canvas, name)
+    assert "任务工作台" in window._nav.item(NavIndex.WORKSPACE).text()
+    assert window._task_canvas._intent_section._title_label.text() == "任务目标"
+    assert window._task_canvas._draft_section._title_label.text() == "采集方案"
+    assert window._task_canvas._fields_section._title_label.text() == "字段规则"
+    assert window._task_canvas._trial_section._title_label.text() == "试跑验证"
+    assert window._task_canvas._delivery_section._title_label.text() == "输出与交付"
+    assert window._task_canvas.persistent_action_bar().parent() is window._workspace_widget
+    assert not window._task_canvas.isAncestorOf(window._task_canvas.persistent_action_bar())
+
+    # 首页入口必须路由到语义一致的工作区，最近任务进入含任务历史的监控页。
+    window._home.open_workspace.emit()
+    assert window._nav.currentRow() == NavIndex.WORKSPACE
+    window._home.open_recent.emit()
+    assert window._nav.currentRow() == NavIndex.MONITOR
+
+    # 简单模式保留完整核心闭环，专业/开发者工具按能力渐进披露。
+    window._apply_ui_mode("simple")
+    for index in (NavIndex.HOME, NavIndex.WORKSPACE, NavIndex.MONITOR, NavIndex.RESULTS):
+        assert not window._nav.item(index).isHidden()
+    for index in (NavIndex.YAML_EDITOR, NavIndex.EVIDENCE, NavIndex.PLUGIN_MARKET, NavIndex.DEVELOPER):
+        assert window._nav.item(index).isHidden()
+    window._apply_ui_mode("professional")
+    assert not window._nav.item(NavIndex.YAML_EDITOR).isHidden()
+    assert not window._nav.item(NavIndex.RESULTS).isHidden()
+    assert window._nav.item(NavIndex.DEVELOPER).isHidden()
+    window._apply_ui_mode("developer")
+    assert all(not window._nav.item(index).isHidden() for index in range(window._nav.count()))
 
     templates = window._template_loader.discover_templates(force=True)
     assert len(templates) >= 50

@@ -36,7 +36,7 @@ from ..widgets.empty_state import EmptyState
 
 
 class ScenePanel(QWidget):
-    """场景管理面板（侧栏导航项，NavIndex.SCENE=8；页面栈 index 11）。"""
+    """场景管理面板（侧栏导航项由 NavIndex.SCENE 统一定位）。"""
 
     def __init__(self, workspace: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)

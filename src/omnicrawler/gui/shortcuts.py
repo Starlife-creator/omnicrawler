@@ -7,7 +7,7 @@
 - Ctrl+S       保存配置
 - Ctrl+R       运行任务
 - Ctrl+Shift+S 停止任务
-- Ctrl+E       切换向导/编辑器
+- Ctrl+E       切换任务工作台/YAML 编辑器
 - Ctrl+T       打开模板库
 - F5           刷新结果页
 - Ctrl+Shift+F 格式化 YAML
@@ -53,7 +53,7 @@ class GlobalShortcutManager(QObject):
             "save": _("保存配置"),
             "run": _("运行任务"),
             "stop": _("停止任务"),
-            "toggle_editor": _("切换向导/编辑器"),
+            "toggle_editor": _("切换任务工作台/YAML 编辑器"),
             "open_templates": _("打开模板库"),
             "refresh": _("刷新结果页"),
             "format_yaml": _("格式化 YAML"),

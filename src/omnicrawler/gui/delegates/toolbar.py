@@ -26,7 +26,7 @@ class ToolbarManager(_BaseDelegate):
         toolbar.addSeparator()
 
         mw._run_btn = QPushButton(_("▶ 运行"))
-        mw._run_btn.clicked.connect(mw._run_task)
+        mw._run_btn.clicked.connect(mw._request_run)
         mw._run_btn.setProperty("success", True)
         mw._run_btn.setToolTip(_("运行任务 ({0})").format(shortcuts["run"]))
         toolbar.addWidget(mw._run_btn)
@@ -44,8 +44,8 @@ class ToolbarManager(_BaseDelegate):
         toolbar.addSeparator()
 
         mw._toggle_btn = QPushButton(_("⇄ 编辑器"))
-        mw._toggle_btn.clicked.connect(mw._toggle_wizard_editor)
-        mw._toggle_btn.setToolTip(_("切换向导/编辑器 ({0})").format(shortcuts["toggle_editor"]))
+        mw._toggle_btn.clicked.connect(mw._toggle_workspace_editor)
+        mw._toggle_btn.setToolTip(_("切换任务工作台/YAML 编辑器 ({0})").format(shortcuts["toggle_editor"]))
         toolbar.addWidget(mw._toggle_btn)
         toolbar.addSeparator()
 

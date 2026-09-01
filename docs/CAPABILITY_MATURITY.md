@@ -14,7 +14,7 @@
 | 持久事件循环、批量 DB 操作、连接池化 | Stable | 当前版本优化：异步组件复用持久事件循环，DB 批量（executemany/preload/pipeline），S3/HTTP 连接池化 |
 | BrowserAction + BrowserEngine Protocol | Stable | 统一浏览器操作协议（PlaywrightAdapter/SeleniumAdapter） |
 | 共享重试配置 | Stable | 统一 parse_retry_config()，不在 http_client 和 async_fetcher 分别内联 |
-| 五步向导、首页、模板、PDF/OCR、监测、导出 | Stable | OCR 质量取决于版式/组件 |
+| 任务工作台、首页、模板、PDF/OCR、监测、导出 | Stable | OCR 质量取决于版式/组件 |
 | 专业复核、证据账本、Schema 契约 | Stable | 业务契约需项目维护者定义 |
 | 配置 v1-v5 迁移、未知字段保留 | Stable | 有往返和迁移测试；旧配置可升级，不做破坏性丢弃 |
 | 静态 HTML、REST、Sitemap、Feed | Stable | 仍需按目标站点条款试跑 |

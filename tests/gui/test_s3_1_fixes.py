@@ -53,18 +53,20 @@ def test_help_center_unknown_id_does_not_update_current(tmp_path: Path) -> None:
 # ── S3.1.2/15：NavIndex 常量（侧栏行号，0-based；须与 main.py nav_items 逐行一致） ──
 
 def test_nav_index_constants() -> None:
-    assert NavIndex.HOME == 0
-    assert NavIndex.WIZARD == 1
-    assert NavIndex.PDF_WORKBENCH == 2
-    assert NavIndex.CONVERT_TOOL == 3
-    assert NavIndex.YAML_EDITOR == 4
-    assert NavIndex.MONITOR == 5
-    assert NavIndex.RESULTS == 6
-    assert NavIndex.EVIDENCE == 7
-    assert NavIndex.SCENE == 8
-    assert NavIndex.CHANGE_MONITOR == 9
-    assert NavIndex.PLUGIN_MARKET == 10
-    assert NavIndex.DEVELOPER == 11
+    assert NavIndex.WORK_HEADER == 0
+    assert NavIndex.HOME == 1
+    assert NavIndex.WORKSPACE == 2
+    assert NavIndex.WIZARD == NavIndex.WORKSPACE  # 旧扩展兼容别名
+    assert NavIndex.MONITOR == 3
+    assert NavIndex.RESULTS == 4
+    assert NavIndex.CHANGE_MONITOR == 6
+    assert NavIndex.PDF_WORKBENCH == 8
+    assert NavIndex.CONVERT_TOOL == 9
+    assert NavIndex.SCENE == 10
+    assert NavIndex.YAML_EDITOR == 12
+    assert NavIndex.EVIDENCE == 13
+    assert NavIndex.PLUGIN_MARKET == 14
+    assert NavIndex.DEVELOPER == 15
 
 
 # ── S3.1.4：日志缓存裁剪 ────────────────────────────────────────────

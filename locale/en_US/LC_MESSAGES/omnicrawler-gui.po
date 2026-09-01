@@ -1742,8 +1742,8 @@ msgid "简单模式隐藏技术配置；随时可以切换，项目内容不会�
 msgstr "Simple mode hides technical settings; you can switch anytime without changing project content"
 
 #: src\omnicrawler\gui\delegates.py:378
-msgid "简单模式：技术参数已隐藏，使用五步向导即可完成任务"
-msgstr "Simple mode: technical parameters hidden; use the five-step wizard to complete the task"
+msgid "简单模式：仅显示创建、试跑、运行和结果等核心操作"
+msgstr "Simple mode: only core create, trial, run, and results actions are shown"
 
 #: src\omnicrawler\gui\wizard\step3_fields.py:354
 msgid "类型"
@@ -2124,8 +2124,29 @@ msgid "配置历史"
 msgstr "Config History"
 
 #: src\omnicrawler\gui\main.py:714
-msgid "配置向导"
-msgstr "Config wizard"
+msgid "任务工作台"
+msgstr "Task Workspace"
+
+msgid "打开空白任务"
+msgstr "Open Blank Task"
+
+msgid "任务目标"
+msgstr "Task Goal"
+
+msgid "采集方案"
+msgstr "Crawl Plan"
+
+msgid "字段规则"
+msgstr "Field Rules"
+
+msgid "试跑验证"
+msgstr "Trial Validation"
+
+msgid "输出与交付"
+msgstr "Output & Delivery"
+
+msgid "输出与存储在此配置；全量运行前需要先通过试跑验证。"
+msgstr "Configure output and storage here. Trial validation is required before a full run."
 
 #: src\omnicrawler\gui\views\yaml_editor.py:117
 msgid "配置差异对比"
@@ -2257,3 +2278,170 @@ msgstr "🗂 Templates"
 msgid "🚀 快速体验"
 msgstr "🚀 Quick demo"
 
+msgid "你想采集什么？"
+msgstr "What do you want to collect?"
+
+msgid "任务网址或描述"
+msgstr "Task URL or description"
+
+msgid "创建任务"
+msgstr "Create Task"
+
+msgid "创建任务并准备试跑"
+msgstr "Create task and prepare a trial run"
+
+msgid "采集新闻标题"
+msgstr "Collect News Headlines"
+
+msgid "采集新闻栏目中的标题、日期和链接"
+msgstr "Collect titles, dates, and links from a news section"
+
+msgid "下载 PDF"
+msgstr "Download PDFs"
+
+msgid "下载网页中的新增 PDF 附件"
+msgstr "Download new PDF attachments from web pages"
+
+msgid "监测变化"
+msgstr "Monitor Changes"
+
+msgid "每周监测网页内容变化"
+msgstr "Monitor web page changes weekly"
+
+msgid "查看全部"
+msgstr "View All"
+
+msgid "继续编辑"
+msgstr "Continue Editing"
+
+msgid "暂无最近任务。创建并运行一次任务后，可从这里继续编辑或查看结果。"
+msgstr "No recent tasks. After creating and running a task, continue editing or view results here."
+
+msgid "工作"
+msgstr "Work"
+
+msgid "自动化"
+msgstr "Automation"
+
+msgid "工具"
+msgstr "Tools"
+
+msgid "高级"
+msgstr "Advanced"
+
+msgid "运行与历史"
+msgstr "Runs & History"
+
+msgid "场景与模板"
+msgstr "Scenes & Templates"
+
+msgid "导航分组"
+msgstr "Navigation group"
+
+msgid "试跑 {0} 页"
+msgstr "Trial Run {0} Pages"
+
+msgid "开始全量运行"
+msgstr "Start Full Run"
+
+msgid "尚未试跑：填写网址并生成草稿后开始小样本验证"
+msgstr "No trial run yet. Enter a URL and generate a draft to start sample validation."
+
+msgid "完成试跑后，这里会显示页面数、记录数和诊断建议。"
+msgstr "After a trial run, page count, record count, and diagnostic suggestions appear here."
+
+msgid "这里显示最近试跑的字段命中、页面处理和错误详情。"
+msgstr "Recent field matches, processed pages, and error details appear here."
+
+msgid "检查网址与范围"
+msgstr "Check URL & Scope"
+
+msgid "修正字段规则"
+msgstr "Fix Field Rules"
+
+msgid "✓ 交付配置有效"
+msgstr "✓ Delivery configuration is valid"
+
+msgid "⚠ 至少选择一种输出格式"
+msgstr "⚠ Select at least one output format"
+
+msgid "请先修复输出与交付设置"
+msgstr "Fix output and delivery settings first"
+
+msgid "采集范围或字段规则已变更，请重新试跑"
+msgstr "Crawl scope or field rules changed. Run another trial."
+
+msgid "✓ 试跑通过：可以开始全量运行"
+msgstr "✓ Trial passed. You can start the full run."
+
+msgid "试跑通过：可以开始全量运行"
+msgstr "Trial passed. You can start the full run."
+
+msgid "<b>第一次创建任务</b><br>"
+msgstr "<b>Create Your First Task</b><br>"
+
+msgid "跳过引导"
+msgstr "Skip Guide"
+
+msgid "粘贴网址"
+msgstr "Paste a URL"
+
+msgid "确认采集方案"
+msgstr "Confirm Crawl Plan"
+
+msgid "试跑少量页面"
+msgstr "Trial Run a Few Pages"
+
+msgid "可以全量运行"
+msgstr "Ready for Full Run"
+
+msgid "切换任务工作台/YAML 编辑器"
+msgstr "Switch Task Workspace/YAML Editor"
+
+msgid "切换任务工作台/YAML 编辑器 ({0})"
+msgstr "Switch Task Workspace/YAML Editor ({0})"
+
+msgid "⇄ 工作台"
+msgstr "⇄ Workspace"
+
+msgid "小样本试跑完成：请在工作台查看结果"
+msgstr "Sample trial completed. View results in the workspace."
+
+msgid "小样本试跑失败：请在工作台查看诊断"
+msgstr "Sample trial failed. View diagnostics in the workspace."
+
+msgid "试跑未通过：请按工作台中的诊断建议修正"
+msgstr "Trial did not pass. Follow the workspace diagnostics."
+
+msgid "页面可以访问，但没有提取到记录。请检查字段选择器、列表容器或页面类型。"
+msgstr "The page is accessible, but no records were extracted. Check field selectors, list containers, or page type."
+
+msgid "没有成功处理页面。请检查网址、访问权限、robots 设置或页面是否需要浏览器渲染。"
+msgstr "No pages were processed successfully. Check the URL, access permissions, robots settings, or browser rendering requirements."
+
+msgid "工作台锁定中，请先完成当前操作"
+msgstr "The workspace is locked. Finish the current operation first."
+
+msgid "放弃 YAML，保留工作台修改"
+msgstr "Discard YAML and keep workspace changes"
+
+msgid "粘贴网址，或用一句话说明目标、范围、下载和监测要求。"
+msgstr "Paste a URL, or describe the goal, scope, downloads, and monitoring requirements."
+
+msgid "系统会自动选择安全起点，生成可修改草案，并始终先试跑。"
+msgstr "The system chooses a safe starting point, creates an editable draft, and always runs a trial first."
+
+msgid "粘贴 https://example.com，或输入：采集这个新闻栏目中的标题、日期和链接"
+msgstr "Paste https://example.com, or enter: collect titles, dates, and links from this news section"
+
+msgid "示例："
+msgstr "Examples:"
+
+msgid "请粘贴网址或描述你的任务"
+msgstr "Paste a URL or describe your task"
+
+msgid "请修改：{0}"
+msgstr "Please fix: {0}"
+
+msgid "<b>试跑概览</b><br>状态：{0}<br>处理页面：{1}<br>提取记录：{2}<br>平均每页：{3:.1f} 条"
+msgstr "<b>Trial Summary</b><br>Status: {0}<br>Pages processed: {1}<br>Records extracted: {2}<br>Average per page: {3:.1f}"

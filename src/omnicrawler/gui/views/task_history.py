@@ -42,6 +42,7 @@ class TaskHistory(QWidget):
 
     load_config_requested = Signal(str)  # config_path
     view_results_requested = Signal(str)  # workspace
+    history_changed = Signal()
 
     def __init__(
         self,
@@ -109,6 +110,7 @@ class TaskHistory(QWidget):
 
         fp = self.history_path
         if not fp.is_file():
+            self.history_changed.emit()
             return
 
         try:
@@ -122,6 +124,7 @@ class TaskHistory(QWidget):
                         except json.JSONDecodeError:
                             continue
         except Exception:
+            self.history_changed.emit()
             return
 
         # 按时间倒序
@@ -143,6 +146,11 @@ class TaskHistory(QWidget):
             self._list.addItem(item)
 
         self._empty_label.setVisible(self._list.count() == 0)
+        self.history_changed.emit()
+
+    def recent_records(self, limit: int = 4) -> list[dict[str, Any]]:
+        """返回只读用途的最近任务快照，避免首页依赖内部列表。"""
+        return [dict(record) for record in self._records[:max(0, limit)]]
 
     def add_record(self, task_id: str, project_name: str, config_path: str,
                    workspace: str, status: str = "running") -> None:

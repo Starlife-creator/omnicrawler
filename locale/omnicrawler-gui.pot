@@ -1,5 +1,5 @@
 # OmniCrawler GUI translation template
-# Generated: 2026-08-26T20:42:15.035439
+# Generated: 2026-09-01T20:39:09.980621
 #
 msgid ""
 msgstr ""
@@ -87,7 +87,12 @@ msgstr ""
 msgid "+ 新建规则"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:405
+#: src\omnicrawler\gui\views\market_home.py:683
+#: src\omnicrawler\gui\views\market_home.py:684
+msgid "- 无"
+msgstr ""
+
+#: src\omnicrawler\gui\home.py:436
 msgid "--- AI 增强（在线模型，非本地规则）---"
 msgstr ""
 
@@ -143,7 +148,7 @@ msgstr ""
 msgid "5 分钟"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:277
+#: src\omnicrawler\gui\home.py:262
 msgid "5分钟离线演示"
 msgstr ""
 
@@ -153,6 +158,14 @@ msgstr ""
 
 #: src\omnicrawler\gui\views\change_monitor.py:442
 msgid "<b style=\"font-size: 16px;\">🔔 变更监控</b>"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:454
+msgid "<b>第一次创建任务</b><br>"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:1058
+msgid "<b>试跑概览</b><br>状态：{0}<br>处理页面：{1}<br>提取记录：{2}<br>平均每页：{3:.1f} 条"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\help_dialog.py:83
@@ -195,7 +208,7 @@ msgstr ""
 msgid "?"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1508
+#: src\omnicrawler\gui\views\task_canvas.py:1512
 msgid "AI 推荐"
 msgstr ""
 
@@ -207,8 +220,8 @@ msgstr ""
 msgid "AI 服务中心..."
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:69
-#: src\omnicrawler\gui\views\task_canvas.py:126
+#: src\omnicrawler\gui\home.py:64
+#: src\omnicrawler\gui\views\task_canvas_components.py:51
 msgid "AI 未启用：请在「AI 服务中心」配置后重试"
 msgstr ""
 
@@ -216,20 +229,20 @@ msgstr ""
 msgid "AI 模式无效"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:640
+#: src\omnicrawler\gui\views\task_canvas.py:536
 msgid "AI 生成 · 建议仅供参考"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:644
+#: src\omnicrawler\gui\views\task_canvas.py:540
 msgid "AI 计划已生成：可采纳或忽略"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:61
-#: src\omnicrawler\gui\views\task_canvas.py:119
+#: src\omnicrawler\gui\home.py:56
+#: src\omnicrawler\gui\views\task_canvas_components.py:44
 msgid "AI 页面文本外发已按隐私设置禁用，已使用本地解析"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:2014
+#: src\omnicrawler\gui\main.py:1958
 msgid "API key 无法加密存储（secrets_store 不可用），已拒绝写入明文，请检查系统凭据库或设置 {var}。"
 msgstr ""
 
@@ -241,7 +254,7 @@ msgstr ""
 msgid "API 地址："
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:243
+#: src\omnicrawler\gui\views\developer_inspector.py:254
 msgid "AST 豁免模式"
 msgstr ""
 
@@ -257,7 +270,7 @@ msgstr ""
 msgid "Canvas 指纹随机化"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1530
+#: src\omnicrawler\gui\main.py:1473
 msgid "CMS:"
 msgstr ""
 
@@ -279,6 +292,10 @@ msgstr ""
 
 #: src\omnicrawler\gui\views\result_table.py:642
 msgid "CSV 文件 (*.csv)"
+msgstr ""
+
+#: src\omnicrawler\gui\views\market_home.py:634
+msgid "DCO 是贡献者本人的声明，工具不能静默代签；请阅读并主动确认。"
 msgstr ""
 
 #: src\omnicrawler\gui\views\convert_tool.py:223
@@ -354,15 +371,15 @@ msgstr ""
 msgid "OmniCrawler"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:988
+#: src\omnicrawler\gui\main.py:801
 msgid "OmniCrawler GUI 工作台"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:390
+#: src\omnicrawler\gui\main.py:182
 msgid "OmniCrawler GUI 工作台 v{0}"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:2053
+#: src\omnicrawler\gui\main.py:1997
 msgid "OmniCrawler GUI 工作台 — 可视化爬虫配置与管理工具"
 msgstr ""
 
@@ -390,7 +407,7 @@ msgstr ""
 msgid "omnicrawler 探测超时（%ss），路径: %s"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:181
+#: src\omnicrawler\gui\home.py:178
 msgid "OmniCrawler 首页"
 msgstr ""
 
@@ -427,11 +444,11 @@ msgstr ""
 msgid "PDF 内容外发确认"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1483
+#: src\omnicrawler\gui\views\task_canvas.py:1486
 msgid "PDF 处理"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:767
+#: src\omnicrawler\gui\main.py:565
 #: src\omnicrawler\gui\views\pdf_workbench.py:237
 #: src\omnicrawler\gui\views\pdf_workbench.py:257
 msgid "PDF 工作台"
@@ -486,7 +503,7 @@ msgstr ""
 msgid "RSS/Feed"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:262
+#: src\omnicrawler\gui\views\developer_inspector.py:273
 msgid "Selenium BiDi 守卫"
 msgstr ""
 
@@ -541,12 +558,12 @@ msgstr ""
 msgid "YAML 文件 (*.yaml *.yml);;所有文件 (*)"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:769
+#: src\omnicrawler\gui\main.py:569
 msgid "YAML 编辑器"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1364
-msgid "YAML 编辑器已修改配置，而画布也有未提交的修改。"
+#: src\omnicrawler\gui\views\task_canvas.py:1367
+msgid "YAML 编辑器已修改配置，而任务工作台也有未提交的修改。"
 msgstr ""
 
 #: src\omnicrawler\gui\core\config_serializer.py:250
@@ -565,11 +582,11 @@ msgstr ""
 msgid "{0}（槽位 {1} / 基因 {2}）"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1134
+#: src\omnicrawler\gui\views\task_canvas.py:1100
 msgid "{mark} #{index}  {time}  {first_line}"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:267
+#: src\omnicrawler\gui\template_library_dialog.py:108
 msgid "·  未标注验证日期"
 msgstr ""
 
@@ -589,16 +606,12 @@ msgstr ""
 msgid "· 静态网页：使用向导输入网址即可"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:264
+#: src\omnicrawler\gui\views\developer_inspector.py:275
 msgid "— AI 隐私 —"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:247
+#: src\omnicrawler\gui\views\developer_inspector.py:258
 msgid "— Egress 出口策略 —"
-msgstr ""
-
-#: src\omnicrawler\gui\home.py:431
-msgid "— 最近使用 —"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\run_controller.py:48
@@ -607,7 +620,7 @@ msgstr ""
 msgid "Ⅱ 暂停"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:854
+#: src\omnicrawler\gui\main.py:657
 msgid "Ⅱ 暂停/继续"
 msgstr ""
 
@@ -619,12 +632,12 @@ msgstr ""
 msgid "→ 同步到表单"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1116
-msgid "⇄ 画布"
+#: src\omnicrawler\gui\main.py:927
+msgid "⇄ 工作台"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\toolbar.py:46
-#: src\omnicrawler\gui\main.py:1112
+#: src\omnicrawler\gui\main.py:923
 msgid "⇄ 编辑器"
 msgstr ""
 
@@ -633,28 +646,8 @@ msgstr ""
 msgid "⏸ 暂停监控"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:370
-msgid "① 从网址或描述开始"
-msgstr ""
-
-#: src\omnicrawler\gui\views\task_canvas.py:375
-msgid "② 任务草稿"
-msgstr ""
-
-#: src\omnicrawler\gui\views\task_canvas.py:380
-msgid "③ 字段（复核式）"
-msgstr ""
-
-#: src\omnicrawler\gui\views\task_canvas.py:385
-msgid "④ 验证与运行"
-msgstr ""
-
-#: src\omnicrawler\gui\views\task_canvas.py:390
-msgid "⑤ 交付"
-msgstr ""
-
 #: src\omnicrawler\gui\delegates\toolbar.py:34
-#: src\omnicrawler\gui\main.py:851
+#: src\omnicrawler\gui\main.py:654
 msgid "■ 停止"
 msgstr ""
 
@@ -694,20 +687,20 @@ msgid "▶ 继续监控"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\toolbar.py:28
-#: src\omnicrawler\gui\main.py:848
+#: src\omnicrawler\gui\main.py:651
 msgid "▶ 运行"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:227
+#: src\omnicrawler\gui\template_library_dialog.py:63
 msgid "☆ 收藏/取消收藏"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:847
+#: src\omnicrawler\gui\views\task_canvas.py:743
 msgid "⚙️ 启发式补全字段"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1086
-msgid "⚠ 字段或草稿已变更，请重新试跑"
+#: src\omnicrawler\gui\views\plugin_market.py:766
+msgid "⚠ 原生 UI 只能作为受信任本地进程内插件运行。"
 msgstr ""
 
 #: src\omnicrawler\gui\views\ai_service_center.py:514
@@ -723,16 +716,24 @@ msgstr ""
 msgid "⚠ 未配置代理地址"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:572
-#: src\omnicrawler\gui\views\task_canvas.py:489
+#: src\omnicrawler\gui\views\task_canvas.py:467
+#: src\omnicrawler\gui\views\task_canvas.py:358
 msgid "⚠ 网址格式不完整"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:1232
+msgid "⚠ 至少选择一种输出格式"
 msgstr ""
 
 #: src\omnicrawler\gui\views\pdf_workbench.py:903
 msgid "⚠ 部分阶段失败"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:412
+#: src\omnicrawler\gui\views\task_canvas.py:1015
+msgid "⚠ 采集范围或字段规则已变更，请重新试跑"
+msgstr ""
+
+#: src\omnicrawler\gui\home.py:443
 msgid "⚠ 风险提示："
 msgstr ""
 
@@ -749,19 +750,23 @@ msgid "✅ 转换完成：{0} 行"
 msgstr ""
 
 #: src\omnicrawler\gui\views\stealth_settings.py:325
-#: src\omnicrawler\gui\views\task_canvas.py:1132
+#: src\omnicrawler\gui\views\task_canvas.py:1098
 msgid "✓"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:1232
+msgid "✓ 交付配置有效"
 msgstr ""
 
 #: src\omnicrawler\gui\views\pdf_workbench.py:905
 msgid "✓ 全部完成！"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:521
+#: src\omnicrawler\gui\views\task_canvas.py:391
 msgid "✓ 可访问 · %(page)s · %(kind)s · %(pagination)s"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:489
+#: src\omnicrawler\gui\views\task_canvas.py:358
 msgid "✓ 已识别网址"
 msgstr ""
 
@@ -773,12 +778,12 @@ msgstr ""
 msgid "✓ 试跑检查"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1261
-msgid "✓ 试跑通过：可保存并全量运行"
+#: src\omnicrawler\gui\views\task_canvas.py:1250
+msgid "✓ 试跑通过：可以开始全量运行"
 msgstr ""
 
 #: src\omnicrawler\gui\views\stealth_settings.py:325
-#: src\omnicrawler\gui\views\task_canvas.py:1132
+#: src\omnicrawler\gui\views\task_canvas.py:1098
 msgid "✗"
 msgstr ""
 
@@ -815,13 +820,25 @@ msgstr ""
 msgid "一键加载示例配置并运行演示任务"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:160
-#: src\omnicrawler\gui\views\market_home.py:382
+#: src\omnicrawler\gui\background_host.py:339
+msgid "上一个"
+msgstr ""
+
+#: src\omnicrawler\gui\views\market_home.py:170
+#: src\omnicrawler\gui\views\market_home.py:411
 msgid "上传市场"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:541
+#: src\omnicrawler\gui\views\market_home.py:572
 msgid "上传市场（提交审核）"
+msgstr ""
+
+#: src\omnicrawler\gui\background_host.py:340
+msgid "下一个"
+msgstr ""
+
+#: src\omnicrawler\gui\home.py:215
+msgid "下载 PDF"
 msgstr ""
 
 #: src\omnicrawler\gui\core\config_model.py:61
@@ -837,16 +854,20 @@ msgstr ""
 msgid "下载开关"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:804
+#: src\omnicrawler\gui\home.py:215
+msgid "下载网页中的新增 PDF 附件"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:700
 msgid "下载附件 / PDF"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:244
-msgid "下载附件/PDF"
+#: src\omnicrawler\gui\views\developer_inspector.py:292
+msgid "不兼容:"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:281
-msgid "不兼容:"
+#: src\omnicrawler\gui\views\plugin_market.py:157
+msgid "不兼容当前版本"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\env_checker.py:150
@@ -857,11 +878,15 @@ msgstr ""
 msgid "不可用"
 msgstr ""
 
+#: src\omnicrawler\gui\background_host.py:360
+msgid "不轮播"
+msgstr ""
+
 #: src\omnicrawler\gui\delegates\toolbar.py:87
 msgid "专业模式"
 msgstr ""
 
-#: src\omnicrawler\gui\delegates\theme.py:62
+#: src\omnicrawler\gui\delegates\theme.py:83
 msgid "专业模式：可编辑 YAML 和高级采集规则"
 msgstr ""
 
@@ -869,7 +894,7 @@ msgstr ""
 msgid "中 — + Canvas/WebGL 指纹 + 插件模拟（推荐）"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:761
+#: src\omnicrawler\gui\main.py:553
 msgid "主导航"
 msgstr ""
 
@@ -878,7 +903,7 @@ msgid "主工具栏"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\menu.py:112
-#: src\omnicrawler\gui\views\task_canvas.py:630
+#: src\omnicrawler\gui\views\task_canvas.py:526
 msgid "主题"
 msgstr ""
 
@@ -906,12 +931,16 @@ msgstr ""
 msgid "仅在确认信任该服务后继续。拒绝后将使用规则抽取。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:203
+#: src\omnicrawler\gui\views\project_dialogs.py:222
 msgid "仅接通电源时运行"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:416
+#: src\omnicrawler\gui\main.py:208
 msgid "仅本次加载"
+msgstr ""
+
+#: src\omnicrawler\gui\background_host.py:332
+msgid "仅渲染你明确选择的本地图片、GIF 与视频；网页和脚本不会执行。"
 msgstr ""
 
 #: src\omnicrawler\gui\widgets\calendar_popup.py:45
@@ -922,7 +951,7 @@ msgstr ""
 msgid "仍无法启动内置引擎，请重新解压完整便携包或检查安全软件拦截。"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:125
+#: src\omnicrawler\gui\home.py:120
 msgid "从一个地址开始。自动设置会解释原因，全量运行前始终先试跑。"
 msgstr ""
 
@@ -946,12 +975,8 @@ msgstr ""
 msgid "任务下载的附件会出现在这里；点击「刷新」重新扫描目录。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:181
+#: src\omnicrawler\gui\views\project_dialogs.py:200
 msgid "任务保存在本地；请用系统计划任务定期执行 omnicrawler schedule run-due。"
-msgstr ""
-
-#: src\omnicrawler\gui\home.py:226
-msgid "任务入口网址"
 msgstr ""
 
 #: src\omnicrawler\gui\runner\worker_task_runner.py:197
@@ -970,11 +995,16 @@ msgstr ""
 msgid "任务完成声音提示"
 msgstr ""
 
+#: src\omnicrawler\gui\main.py:559
+#: src\omnicrawler\gui\views\task_canvas.py:265
+msgid "任务工作台"
+msgstr ""
+
 #: src\omnicrawler\gui\delegates\run_controller.py:139
 msgid "任务已完成！"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1842
+#: src\omnicrawler\gui\main.py:1786
 msgid "任务正在运行中。关闭窗口将如何处理？"
 msgstr ""
 
@@ -987,12 +1017,12 @@ msgstr ""
 msgid "任务状态指示器"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:410
-msgid "任务画布"
+#: src\omnicrawler\gui\views\task_canvas.py:222
+msgid "任务目标"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:770
-msgid "任务监控"
+#: src\omnicrawler\gui\home.py:206
+msgid "任务网址或描述"
 msgstr ""
 
 #: src\omnicrawler\gui\views\ai_service_center.py:365
@@ -1023,12 +1053,21 @@ msgstr ""
 msgid "低 — 基础 WebDriver 隐藏 + UA 轮换"
 msgstr ""
 
+#: src\omnicrawler\gui\views\plugin_market.py:117
+#: src\omnicrawler\gui\views\plugin_market.py:443
+msgid "低风险"
+msgstr ""
+
 #: src\omnicrawler\gui\views\task_canvas.py:76
 msgid "作者"
 msgstr ""
 
 #: src\omnicrawler\gui\views\identity_welcome.py:40
 msgid "你可以在 OmniCrawler 中制作自己的插件与模板。本应用将用你的用户名和密码自动生成一对加密密钥：公钥用于署名与分享，私钥加密后存入系统密钥库，绝不落盘明文。"
+msgstr ""
+
+#: src\omnicrawler\gui\home.py:194
+msgid "你想采集什么？"
 msgstr ""
 
 #: src\omnicrawler\gui\views\pdf_workbench.py:273
@@ -1061,10 +1100,6 @@ msgstr ""
 msgid "保存完成"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1108
-msgid "保存并全量运行"
-msgstr ""
-
 #: src\omnicrawler\gui\views\result_table.py:293
 msgid "保存文件"
 msgstr ""
@@ -1073,16 +1108,12 @@ msgstr ""
 msgid "保存第二个版本后即可在这里恢复。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:421
+#: src\omnicrawler\gui\views\task_canvas.py:276
 msgid "保存草稿"
 msgstr ""
 
 #: src\omnicrawler\gui\views\ai_service_center.py:167
 msgid "保存设置"
-msgstr ""
-
-#: src\omnicrawler\gui\home.py:243
-msgid "保存这个页面"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\help_dialog.py:66
@@ -1098,7 +1129,7 @@ msgstr ""
 msgid "保留完整嵌套（nested pipeline 原始格式）"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:328
+#: src\omnicrawler\gui\views\market_home.py:357
 msgid "信任作者"
 msgstr ""
 
@@ -1110,20 +1141,24 @@ msgstr ""
 msgid "信任创作者"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:413
+#: src\omnicrawler\gui\main.py:205
 msgid "信任并加载"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:245
+#: src\omnicrawler\gui\views\developer_inspector.py:256
 msgid "信任根公钥"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:406
+#: src\omnicrawler\gui\main.py:198
 msgid "信任确认"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:163
+#: src\omnicrawler\gui\views\market_home.py:173
 msgid "信任该作者"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:1008
+msgid "修正字段规则"
 msgstr ""
 
 #: src\omnicrawler\gui\views\developer_inspector.py:130
@@ -1136,7 +1171,7 @@ msgstr ""
 msgid "值类型"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:636
+#: src\omnicrawler\gui\views\task_canvas.py:532
 msgid "假设"
 msgstr ""
 
@@ -1149,23 +1184,27 @@ msgstr ""
 msgid "停止任务 ({0})"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1843
+#: src\omnicrawler\gui\main.py:1787
 msgid "停止任务并退出"
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:244
+#: src\omnicrawler\gui\views\project_dialogs.py:263
 msgid "停用"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:268
+#: src\omnicrawler\gui\background_host.py:389
+msgid "停用背景"
+msgstr ""
+
+#: src\omnicrawler\gui\views\developer_inspector.py:279
 msgid "允许 Cookie"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:266
+#: src\omnicrawler\gui\views\developer_inspector.py:277
 msgid "允许 PDF 内容"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:249
+#: src\omnicrawler\gui\views\developer_inspector.py:260
 msgid "允许协议"
 msgstr ""
 
@@ -1185,37 +1224,28 @@ msgstr ""
 msgid "允许发送网页正文给 AI"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:251
+#: src\omnicrawler\gui\views\developer_inspector.py:262
 msgid "允许域名"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:267
+#: src\omnicrawler\gui\views\developer_inspector.py:278
 msgid "允许截图"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:261
+#: src\omnicrawler\gui\views\developer_inspector.py:272
 msgid "允许未拦截 Selenium"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:250
+#: src\omnicrawler\gui\views\developer_inspector.py:261
 msgid "允许端口"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:265
+#: src\omnicrawler\gui\views\developer_inspector.py:276
 msgid "允许页面文本"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:197
-msgid "先描述你的任务"
-msgstr ""
-
-#: src\omnicrawler\gui\views\task_canvas.py:830
-#: src\omnicrawler\gui\views\task_canvas.py:1078
-msgid "先试跑 {0} 页"
-msgstr ""
-
-#: src\omnicrawler\gui\views\task_canvas.py:628
-#: src\omnicrawler\gui\views\task_canvas.py:1476
+#: src\omnicrawler\gui\views\task_canvas.py:524
+#: src\omnicrawler\gui\views\task_canvas.py:1479
 msgid "入口"
 msgstr ""
 
@@ -1227,7 +1257,7 @@ msgstr ""
 msgid "全速"
 msgstr ""
 
-#: src\omnicrawler\gui\delegates\theme.py:79
+#: src\omnicrawler\gui\delegates\theme.py:100
 msgid "全速模式：建议插电并保持散热"
 msgstr ""
 
@@ -1235,8 +1265,16 @@ msgstr ""
 msgid "全部"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:211
+#: src\omnicrawler\gui\template_library_dialog.py:47
 msgid "全部分类"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:436
+msgid "全部模式"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:430
+msgid "全部类型"
 msgstr ""
 
 #: src\omnicrawler\gui\views\yaml_editor.py:161
@@ -1245,6 +1283,10 @@ msgstr ""
 
 #: src\omnicrawler\gui\views\yaml_editor.py:165
 msgid "全部选表单"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:442
+msgid "全部风险"
 msgstr ""
 
 #: src\omnicrawler\gui\views\pdf_workbench.py:221
@@ -1272,7 +1314,7 @@ msgid "关于 OmniCrawler GUI"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\error_dialog.py:34
-#: src\omnicrawler\gui\main.py:1232
+#: src\omnicrawler\gui\main.py:1043
 #: src\omnicrawler\gui\views\change_monitor.py:365
 msgid "关闭"
 msgstr ""
@@ -1285,9 +1327,20 @@ msgstr ""
 msgid "关闭 — 不做任何伪装"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:283
+#: src\omnicrawler\gui\views\developer_inspector.py:294
+#: src\omnicrawler\gui\views\plugin_market.py:162
 #: src\omnicrawler\gui\views\project_dialogs.py:111
 msgid "兼容"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:137
+#: src\omnicrawler\gui\views\plugin_market.py:140
+#: src\omnicrawler\gui\views\plugin_market.py:161
+msgid "兼容性未知"
+msgstr ""
+
+#: src\omnicrawler\gui\views\developer_inspector.py:247
+msgid "兼容模式（全部已安装）"
 msgstr ""
 
 #: src\omnicrawler\gui\widgets\resource_monitor.py:50
@@ -1323,7 +1376,7 @@ msgstr ""
 msgid "内置 CLI 探测返回非零（rc=%s），仍按已就绪处理; 路径: %s"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:282
+#: src\omnicrawler\gui\template_library_dialog.py:126
 msgid "内置模板"
 msgstr ""
 
@@ -1331,7 +1384,7 @@ msgstr ""
 msgid "写入 Excel"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_history.py:170
+#: src\omnicrawler\gui\views\task_history.py:178
 msgid "写入历史记录失败：{0}"
 msgstr ""
 
@@ -1349,7 +1402,7 @@ msgstr ""
 msgid "减少动画"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:252
+#: src\omnicrawler\gui\views\developer_inspector.py:263
 msgid "凭据域名"
 msgstr ""
 
@@ -1365,38 +1418,30 @@ msgstr ""
 msgid "分析失败"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:256
-msgid "分析并准备试跑"
-msgstr ""
-
 #: src\omnicrawler\gui\wizard\step3_fields.py:227
 msgid "分析推荐 XPath"
-msgstr ""
-
-#: src\omnicrawler\gui\home.py:257
-msgid "分析网址并准备试跑"
 msgstr ""
 
 #: src\omnicrawler\gui\wizard\step3_fields.py:110
 msgid "分析网页"
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:190
-#: src\omnicrawler\gui\views\project_dialogs.py:247
+#: src\omnicrawler\gui\views\project_dialogs.py:209
+#: src\omnicrawler\gui\views\project_dialogs.py:266
 msgid "分钟"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1531
+#: src\omnicrawler\gui\main.py:1474
 msgid "分页:"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\help_dialog.py:67
 #: src\omnicrawler\gui\shortcuts.py:56
-msgid "切换向导/编辑器"
+msgid "切换任务工作台/YAML 编辑器"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\toolbar.py:48
-msgid "切换向导/编辑器 ({0})"
+msgid "切换任务工作台/YAML 编辑器 ({0})"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\help_dialog.py:69
@@ -1408,7 +1453,7 @@ msgstr ""
 msgid "切换项目目录..."
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:512
+#: src\omnicrawler\gui\views\task_canvas.py:382
 msgid "列表页"
 msgstr ""
 
@@ -1428,11 +1473,19 @@ msgstr ""
 msgid "创作者显示名"
 msgstr ""
 
+#: src\omnicrawler\gui\home.py:227
+msgid "创建任务"
+msgstr ""
+
+#: src\omnicrawler\gui\home.py:228
+msgid "创建任务并准备试跑"
+msgstr ""
+
 #: src\omnicrawler\gui\views\identity_welcome.py:34
 msgid "创建你的插件作者身份"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1106
+#: src\omnicrawler\gui\main.py:917
 msgid "创建离线演示"
 msgstr ""
 
@@ -1445,7 +1498,7 @@ msgstr ""
 msgid "删除"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:912
+#: src\omnicrawler\gui\views\task_canvas.py:808
 msgid "删除字段"
 msgstr ""
 
@@ -1480,11 +1533,11 @@ msgstr ""
 msgid "功能开发中"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:292
+#: src\omnicrawler\gui\views\plugin_market.py:485
 msgid "功能说明"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:562
+#: src\omnicrawler\gui\views\market_home.py:593
 msgid "功能说明（listing.md，展示给所有用户）"
 msgstr ""
 
@@ -1492,13 +1545,13 @@ msgstr ""
 msgid "加权随机（推荐）"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1366
+#: src\omnicrawler\gui\views\task_canvas.py:1369
 msgid "加载 YAML 覆盖草稿"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\config_manager.py:68
-#: src\omnicrawler\gui\main.py:1681
-#: src\omnicrawler\gui\main.py:1910
+#: src\omnicrawler\gui\main.py:1625
+#: src\omnicrawler\gui\main.py:1854
 msgid "加载失败"
 msgstr ""
 
@@ -1507,7 +1560,7 @@ msgstr ""
 msgid "加载失败：{0}"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:235
+#: src\omnicrawler\gui\template_library_dialog.py:71
 msgid "加载模板"
 msgstr ""
 
@@ -1519,11 +1572,11 @@ msgstr ""
 msgid "动态浏览器"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:517
+#: src\omnicrawler\gui\views\task_canvas.py:387
 msgid "动态页面"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1529
+#: src\omnicrawler\gui\main.py:1472
 msgid "动态页面:"
 msgstr ""
 
@@ -1539,24 +1592,36 @@ msgstr ""
 msgid "单次任务 AI 调用的费用上限；超过后自动回退到本地模式。"
 msgstr ""
 
+#: src\omnicrawler\gui\main.py:1223
+msgid "即将为插件 {0} 绑定以下授权：
+
+版本：{1}
+载荷：{2}
+作者：{3}
+权限：
+{4}
+
+插件更新、载荷变化或作者变化后，此授权会自动失效。确认启用？"
+msgstr ""
+
 #: src\omnicrawler\gui\delegates\config_manager.py:179
 msgid "即将导入配置 '{0}'，当前配置将被覆盖，是否继续？"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:308
-#: src\omnicrawler\gui\views\template_market.py:212
+#: src\omnicrawler\gui\views\plugin_market.py:501
+#: src\omnicrawler\gui\views\template_market.py:233
 msgid "卸载"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:606
+#: src\omnicrawler\gui\views\plugin_market.py:935
 msgid "卸载插件"
 msgstr ""
 
-#: src\omnicrawler\gui\views\template_market.py:406
+#: src\omnicrawler\gui\views\template_market.py:432
 msgid "卸载模板"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1679
+#: src\omnicrawler\gui\main.py:1623
 msgid "历史配置已加载"
 msgstr ""
 
@@ -1572,6 +1637,14 @@ msgstr ""
 msgid "原始证据"
 msgstr ""
 
+#: src\omnicrawler\gui\views\plugin_market.py:170
+msgid "原生 UI 插件仅允许作为受信任本地插件使用，不能从市场安装"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:72
+msgid "原生界面"
+msgstr ""
+
 #: src\omnicrawler\gui\views\stealth_settings.py:93
 msgid "反检测与隐身设置"
 msgstr ""
@@ -1580,7 +1653,7 @@ msgstr ""
 msgid "反检测与隐身设置..."
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1744
+#: src\omnicrawler\gui\views\task_canvas.py:1748
 msgid "反馈记录失败"
 msgstr ""
 
@@ -1588,21 +1661,21 @@ msgstr ""
 msgid "发生错误"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:336
-#: src\omnicrawler\gui\main.py:1847
+#: src\omnicrawler\gui\home.py:321
+#: src\omnicrawler\gui\main.py:1791
 #: src\omnicrawler\gui\views\convert_tool.py:357
 msgid "取消"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1485
+#: src\omnicrawler\gui\views\task_canvas.py:1488
 msgid "变化监测"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:816
+#: src\omnicrawler\gui\views\task_canvas.py:712
 msgid "变化监测（定时比较同址内容）"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:774
+#: src\omnicrawler\gui\main.py:563
 msgid "变更监控"
 msgstr ""
 
@@ -1619,15 +1692,19 @@ msgstr ""
 msgid "另存为..."
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:214
+#: src\omnicrawler\gui\template_library_dialog.py:50
 msgid "只看收藏"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:416
+#: src\omnicrawler\gui\views\task_canvas.py:271
 msgid "只读源码视图；编辑请用侧栏 YAML 编辑器"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1474
+#: src\omnicrawler\gui\views\task_canvas.py:451
+msgid "可以全量运行"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:1477
 msgid "可修改"
 msgstr ""
 
@@ -1643,7 +1720,7 @@ msgstr ""
 msgid "可用变量: {fields_spec}, {html_chunk}"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:258
+#: src\omnicrawler\gui\views\plugin_market.py:418
 msgid "可用插件"
 msgstr ""
 
@@ -1668,17 +1745,17 @@ msgid "同源限制"
 msgstr ""
 
 #: src\omnicrawler\gui\views\developer_inspector.py:133
-#: src\omnicrawler\gui\views\market_home.py:555
+#: src\omnicrawler\gui\views\market_home.py:586
 #: src\omnicrawler\gui\views\professional_review.py:267
 msgid "名称"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1529
+#: src\omnicrawler\gui\main.py:1472
 #: src\omnicrawler\gui\views\developer_inspector.py:185
 msgid "否"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:519
+#: src\omnicrawler\gui\views\task_canvas.py:389
 msgid "含分页线索"
 msgstr ""
 
@@ -1687,8 +1764,8 @@ msgid "启动失败"
 msgstr ""
 
 #: src\omnicrawler\gui\views\change_monitor.py:802
-#: src\omnicrawler\gui\views\developer_inspector.py:248
-#: src\omnicrawler\gui\views\project_dialogs.py:244
+#: src\omnicrawler\gui\views\developer_inspector.py:259
+#: src\omnicrawler\gui\views\project_dialogs.py:263
 msgid "启用"
 msgstr ""
 
@@ -1700,8 +1777,30 @@ msgstr ""
 msgid "启用 OCR（扫描件/图片 PDF 建议开启）"
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:218
+#: src\omnicrawler\gui\views\project_dialogs.py:237
 msgid "启用/停用选中任务"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:505
+#: src\omnicrawler\gui\views\plugin_market.py:1005
+msgid "启用到当前项目"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:1208
+msgid "启用失败，签名复核未通过：{0}"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:1215
+msgid "启用失败：{0}"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:862
+msgid "启用插件"
+msgstr ""
+
+#: src\omnicrawler\gui\background_host.py:337
+#: src\omnicrawler\gui\background_host.py:389
+msgid "启用背景"
 msgstr ""
 
 #: src\omnicrawler\gui\views\scene_panel.py:126
@@ -1712,7 +1811,7 @@ msgstr ""
 msgid "在当前页面测试选择器"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1080
+#: src\omnicrawler\gui\views\task_canvas.py:967
 msgid "在独立工作区试跑，不会改变正式任务断点"
 msgstr ""
 
@@ -1724,13 +1823,12 @@ msgstr ""
 msgid "场景 = 槽位定义 + 选择器基因。基因按适应度进化，候选可人工验收。数据源：workspace/scene.sqlite3"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1569
-msgid "场景数据加载失败"
+#: src\omnicrawler\gui\main.py:567
+msgid "场景与模板"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:278
-#: src\omnicrawler\gui\main.py:773
-msgid "场景管理"
+#: src\omnicrawler\gui\views\task_canvas.py:1573
+msgid "场景数据加载失败"
 msgstr ""
 
 #: src\omnicrawler\gui\views\scene_panel.py:78
@@ -1741,15 +1839,19 @@ msgstr ""
 msgid "均衡"
 msgstr ""
 
-#: src\omnicrawler\gui\delegates\theme.py:78
+#: src\omnicrawler\gui\delegates\theme.py:99
 msgid "均衡模式：笔记本日常推荐"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1353
+#: src\omnicrawler\gui\main.py:1296
 msgid "填写浏览器地址栏中的入口。打开后请正常搜索、点击下一页或滚动；完成时关闭窗口："
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:810
+#: src\omnicrawler\gui\declarative_view_host.py:171
+msgid "声明式插件视图 %s 操作失败"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:706
 msgid "处理 PDF（OCR）"
 msgstr ""
 
@@ -1758,7 +1860,11 @@ msgstr ""
 msgid "处理中"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:335
+#: src\omnicrawler\gui\views\plugin_market.py:65
+msgid "处理器"
+msgstr ""
+
+#: src\omnicrawler\gui\home.py:320
 msgid "处理本地文件（PDF/文档）"
 msgstr ""
 
@@ -1787,7 +1893,7 @@ msgstr ""
 msgid "失败"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:560
+#: src\omnicrawler\gui\views\market_home.py:591
 msgid "如 my/tpl（小写字母/数字/斜杠）"
 msgstr ""
 
@@ -1796,12 +1902,12 @@ msgid "如: 监控 Product Hunt 首页"
 msgstr ""
 
 #: src\omnicrawler\gui\views\professional_review.py:234
-#: src\omnicrawler\gui\views\task_canvas.py:991
+#: src\omnicrawler\gui\views\task_canvas.py:887
 #: src\omnicrawler\gui\views\yaml_editor.py:137
 msgid "字段"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:840
+#: src\omnicrawler\gui\views\task_canvas.py:736
 msgid "字段可留空——内核会自动提取标题、正文等通用内容"
 msgstr ""
 
@@ -1821,16 +1927,8 @@ msgstr ""
 msgid "字段完整率：{0} 行，{1} 列{2}"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1173
-msgid "字段已变更，请重新试跑后再全量运行。"
-msgstr ""
-
-#: src\omnicrawler\gui\views\task_canvas.py:962
+#: src\omnicrawler\gui\views\task_canvas.py:858
 msgid "字段已完整，无需补充（跳过 {0} 个同名项）"
-msgstr ""
-
-#: src\omnicrawler\gui\views\task_canvas.py:1189
-msgid "字段或草稿已变更，请重新试跑"
 msgstr ""
 
 #: src\omnicrawler\gui\views\yaml_editor.py:497
@@ -1840,6 +1938,10 @@ msgstr ""
 
 #: src\omnicrawler\gui\views\ai_service_center.py:355
 msgid "字段理解和推荐使用的 Provider"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:232
+msgid "字段规则"
 msgstr ""
 
 #: src\omnicrawler\gui\views\ai_service_center.py:356
@@ -1857,11 +1959,11 @@ msgid "字段配置已保存到：
 并已复制到剪贴板。"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1479
+#: src\omnicrawler\gui\main.py:1422
 msgid "存在占位符"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1352
+#: src\omnicrawler\gui\main.py:1295
 msgid "学习网页操作"
 msgstr ""
 
@@ -1869,13 +1971,17 @@ msgstr ""
 msgid "安全与隐私"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:303
-#: src\omnicrawler\gui\views\plugin_market.py:666
-#: src\omnicrawler\gui\views\template_market.py:208
+#: src\omnicrawler\gui\views\plugin_market.py:496
+#: src\omnicrawler\gui\views\plugin_market.py:1000
+#: src\omnicrawler\gui\views\template_market.py:229
 msgid "安装"
 msgstr ""
 
-#: src\omnicrawler\gui\views\template_market.py:225
+#: src\omnicrawler\gui\views\plugin_market.py:831
+msgid "安装前权限审查"
+msgstr ""
+
+#: src\omnicrawler\gui\views\template_market.py:246
 msgid "安装后由模板库自动发现（templates_installed/）。"
 msgstr ""
 
@@ -1908,12 +2014,25 @@ msgstr ""
 msgid "完成: {0}"
 msgstr ""
 
+#: src\omnicrawler\gui\views\market_home.py:166
+#: src\omnicrawler\gui\views\market_home.py:407
+msgid "完成并签名"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:992
+msgid "完成试跑后，这里会显示页面数、记录数和诊断建议。"
+msgstr ""
+
+#: src\omnicrawler\gui\background_host.py:352
+msgid "完整包含"
+msgstr ""
+
 #: src\omnicrawler\gui\views\task_canvas.py:58
-#: src\omnicrawler\gui\views\task_canvas.py:625
+#: src\omnicrawler\gui\views\task_canvas.py:521
 msgid "定向采集"
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:174
+#: src\omnicrawler\gui\views\project_dialogs.py:193
 msgid "定时任务"
 msgstr ""
 
@@ -1921,11 +2040,7 @@ msgstr ""
 msgid "定时任务..."
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:275
-msgid "定时监测"
-msgstr ""
-
-#: src\omnicrawler\gui\views\plugin_market.py:218
+#: src\omnicrawler\gui\views\plugin_market.py:378
 msgid "审核通过的插件，联网后按需下载安装。每份插件均经 ed25519 签名校验，安装后自动加载。"
 msgstr ""
 
@@ -1933,17 +2048,25 @@ msgstr ""
 msgid "审计与成本控制"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:260
+#: src\omnicrawler\gui\views\developer_inspector.py:271
 msgid "审计日志"
+msgstr ""
+
+#: src\omnicrawler\gui\background_host.py:197
+msgid "宿主渲染结果不是有效 PNG"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:134
+msgid "宿主能力不兼容："
 msgstr ""
 
 #: src\omnicrawler\gui\views\identity_dialog.py:67
 #: src\omnicrawler\gui\views\identity_welcome.py:52
-#: src\omnicrawler\gui\views\market_home.py:234
+#: src\omnicrawler\gui\views\market_home.py:259
 msgid "密码"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1383
+#: src\omnicrawler\gui\main.py:1326
 msgid "密码不会明文保存，请在运行前配置 browser_password 密钥。"
 msgstr ""
 
@@ -1963,12 +2086,21 @@ msgstr ""
 msgid "对比两次运行..."
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:276
+#: src\omnicrawler\gui\home.py:261
 msgid "导入任务"
 msgstr ""
 
+#: src\omnicrawler\gui\views\market_home.py:656
+msgid "导入其他用户直接分享的创作者签名包"
+msgstr ""
+
 #: src\omnicrawler\gui\delegates\config_manager.py:189
+#: src\omnicrawler\gui\views\market_home.py:728
 msgid "导入失败"
+msgstr ""
+
+#: src\omnicrawler\gui\views\market_home.py:715
+msgid "导入期间包哈希发生变化，已拒绝信任"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\config_manager.py:178
@@ -2000,6 +2132,10 @@ msgstr ""
 
 #: src\omnicrawler\gui\views\convert_tool.py:664
 msgid "导出为："
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:70
+msgid "导出器"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\config_manager.py:153
@@ -2059,6 +2195,10 @@ msgstr ""
 msgid "导出配置包含明文凭据（第 {} 行），已拒绝导出；请改用 secret:// 引用或环境变量。"
 msgstr ""
 
+#: src\omnicrawler\gui\main.py:579
+msgid "导航分组"
+msgstr ""
+
 #: src\omnicrawler\gui\views\result_table.py:402
 msgid "将完整抓取结果导出为 Markdown 文件"
 msgstr ""
@@ -2067,19 +2207,19 @@ msgstr ""
 msgid "将当前记录的完整证据链导出为 Markdown 文件"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1651
+#: src\omnicrawler\gui\views\task_canvas.py:1655
 msgid "将按「{0}」模板配置（置信度 {1:.2f}，来源 {2}）"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1466
+#: src\omnicrawler\gui\main.py:1409
 msgid "将模板能力组合到当前任务，不覆盖名称、入口网址、主题、已有字段和输出选择。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_history.py:201
+#: src\omnicrawler\gui\views\task_history.py:209
 msgid "将清理 {0} 条历史记录（含过期的），此操作不可撤销。是否继续？"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:913
+#: src\omnicrawler\gui\views\task_canvas.py:809
 msgid "将移除字段「{0}」及已抓取数据。确定删除？"
 msgstr ""
 
@@ -2087,15 +2227,15 @@ msgstr ""
 msgid "将编辑器内容解析后同步到向导表单"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1268
-msgid "小样本试跑失败"
+#: src\omnicrawler\gui\main.py:1084
+msgid "小样本试跑失败：请在工作台查看诊断"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1259
-msgid "小样本试跑完成"
+#: src\omnicrawler\gui\main.py:1070
+msgid "小样本试跑完成：请在工作台查看结果"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:329
+#: src\omnicrawler\gui\views\plugin_market.py:526
 msgid "尚未加载。点击「刷新」从插件目录拉取（需联网）。"
 msgstr ""
 
@@ -2109,9 +2249,13 @@ msgstr ""
 msgid "尚未开始"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1060
-#: src\omnicrawler\gui\views\task_canvas.py:1274
-msgid "尚未试跑：填写网址并生成草稿后，展开此区点「先试跑」"
+#: src\omnicrawler\gui\views\task_canvas.py:956
+#: src\omnicrawler\gui\views\task_canvas.py:1266
+msgid "尚未试跑：填写网址并生成草稿后开始小样本验证"
+msgstr ""
+
+#: src\omnicrawler\gui\background_host.py:334
+msgid "尚未选择媒体目录"
 msgstr ""
 
 #: src\omnicrawler\gui\views\convert_tool.py:279
@@ -2124,8 +2268,8 @@ msgstr ""
 msgid "就绪"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:293
-#: src\omnicrawler\gui\views\task_canvas.py:1759
+#: src\omnicrawler\gui\views\task_canvas.py:142
+#: src\omnicrawler\gui\views\task_canvas.py:1763
 msgid "展开"
 msgstr ""
 
@@ -2133,7 +2277,7 @@ msgstr ""
 msgid "展开嵌套 JSON（flat 模式，默认）"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1066
+#: src\omnicrawler\gui\views\task_canvas.py:962
 msgid "展开验证区查看完整试跑结果"
 msgstr ""
 
@@ -2141,16 +2285,32 @@ msgstr ""
 msgid "属性"
 msgstr ""
 
+#: src\omnicrawler\gui\main.py:557
+msgid "工作"
+msgstr ""
+
 #: src\omnicrawler\gui\views\yaml_editor.py:487
 #: src\omnicrawler\gui\views\yaml_editor.py:513
 msgid "工作区"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1074
-msgid "已从自然语言生成草案；建议频率：{0}。请确认画布内容并先试跑。"
+#: src\omnicrawler\gui\views\task_canvas.py:1271
+msgid "工作台锁定中，请先完成当前操作"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1012
+#: src\omnicrawler\gui\main.py:564
+msgid "工具"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:1262
+msgid "已为当前项目启用插件：{0}"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:885
+msgid "已从自然语言生成草案；建议频率：{0}。请确认工作台内容并先试跑。"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:908
 msgid "已从视觉点选添加 {0} 个字段"
 msgstr ""
 
@@ -2158,19 +2318,19 @@ msgstr ""
 msgid "已保存"
 msgstr ""
 
-#: src\omnicrawler\gui\delegates\theme.py:56
+#: src\omnicrawler\gui\delegates\theme.py:76
 msgid "已保留 {0} 项高级规则：{1}。切换到专业模式可查看。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:53
+#: src\omnicrawler\gui\views\market_home.py:57
 msgid "已信任"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:346
+#: src\omnicrawler\gui\home.py:330
 msgid "已切换为文件处理模式。请前往「📄 PDF 工作台」选择目录和模板。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1372
+#: src\omnicrawler\gui\views\task_canvas.py:1375
 msgid "已加载外部配置，挂起的 AI 建议已清除"
 msgstr ""
 
@@ -2195,25 +2355,26 @@ msgstr ""
 msgid "已启用 AI 但未填写 API 地址或模型名称，无法保存。请补全后再保存，或先用「测试连接」验证。"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1342
+#: src\omnicrawler\gui\main.py:1169
 msgid "已启用 {0} 个插件；运行前仍会执行兼容性和权限检查"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:792
+#: src\omnicrawler\gui\views\developer_inspector.py:246
+msgid "已启用市场插件"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:594
 msgid "已启用高级规则摘要"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:362
+#: src\omnicrawler\gui\home.py:346
 msgid "已安全限制在入口站点；将先试跑。为什么："
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\run_controller.py:109
+#: src\omnicrawler\gui\home.py:366
 #: src\omnicrawler\gui\widgets\status_indicator.py:80
 msgid "已完成"
-msgstr ""
-
-#: src\omnicrawler\gui\views\developer_inspector.py:242
-msgid "已审批权限"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\config_manager.py:185
@@ -2229,23 +2390,23 @@ msgstr ""
 msgid "已就绪"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1581
+#: src\omnicrawler\gui\views\task_canvas.py:1585
 msgid "已应用场景 {0} 的字段与基因增强"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1578
+#: src\omnicrawler\gui\views\task_canvas.py:1582
 msgid "已应用场景 {0}；跳过不支持槽位：{1}"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1688
+#: src\omnicrawler\gui\views\task_canvas.py:1692
 msgid "已忽略模板推荐，按当前草稿手动配置"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1788
+#: src\omnicrawler\gui\main.py:1732
 msgid "已恢复的草稿"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:959
+#: src\omnicrawler\gui\views\task_canvas.py:855
 msgid "已按{0}补充 {1} 个字段（跳过 {2} 个重复）"
 msgstr ""
 
@@ -2253,8 +2414,12 @@ msgstr ""
 msgid "已按选择合并字段"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:245
+#: src\omnicrawler\gui\views\developer_inspector.py:256
 msgid "已接线(内置)"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:1074
+msgid "已提取数据，但有 {0} 个请求失败。建议检查分页范围和访问频率。"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\run_controller.py:108
@@ -2270,7 +2435,7 @@ msgstr ""
 msgid "已检查 {n} 个代理地址的格式"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_history.py:229
+#: src\omnicrawler\gui\views\task_history.py:237
 msgid "已清理 {0} 条历史记录"
 msgstr ""
 
@@ -2282,15 +2447,15 @@ msgstr ""
 msgid "已生成"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:589
+#: src\omnicrawler\gui\views\task_canvas.py:484
 msgid "已生成任务草稿：请复核后试跑"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1764
+#: src\omnicrawler\gui\main.py:1708
 msgid "已自动导出 Markdown：{0}"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1741
+#: src\omnicrawler\gui\views\task_canvas.py:1745
 msgid "已记录反馈：{0}"
 msgstr ""
 
@@ -2299,8 +2464,8 @@ msgstr ""
 msgid "已请求取消，等待当前阶段安全退出..."
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:409
-#: src\omnicrawler\gui\views\template_market.py:286
+#: src\omnicrawler\gui\views\plugin_market.py:620
+#: src\omnicrawler\gui\views\template_market.py:312
 msgid "已连接"
 msgstr ""
 
@@ -2312,7 +2477,7 @@ msgstr ""
 msgid "已采用表单值"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:672
+#: src\omnicrawler\gui\views\task_canvas.py:568
 msgid "已采纳 AI 计划，请复核字段后试跑"
 msgstr ""
 
@@ -2324,12 +2489,12 @@ msgstr ""
 msgid "已验收"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:186
-#: src\omnicrawler\gui\views\plugin_market.py:208
+#: src\omnicrawler\gui\views\plugin_market.py:346
+#: src\omnicrawler\gui\views\plugin_market.py:368
 msgid "市场"
 msgstr ""
 
-#: src\omnicrawler\gui\views\template_market.py:179
+#: src\omnicrawler\gui\views\template_market.py:200
 msgid "市场模板"
 msgstr ""
 
@@ -2358,12 +2523,12 @@ msgstr ""
 msgid "平台：{v}"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1490
+#: src\omnicrawler\gui\views\task_canvas.py:1493
 msgid "并发"
 msgstr ""
 
 #: src\omnicrawler\gui\views\developer_inspector.py:219
-#: src\omnicrawler\gui\views\task_canvas.py:795
+#: src\omnicrawler\gui\views\task_canvas.py:691
 #: src\omnicrawler\gui\views\yaml_editor.py:492
 msgid "并发数"
 msgstr ""
@@ -2377,11 +2542,11 @@ msgid "应用程序遇到一个错误: {0}"
 msgstr ""
 
 #: src\omnicrawler\gui\views\stealth_settings.py:175
-#: src\omnicrawler\gui\views\task_canvas.py:1491
+#: src\omnicrawler\gui\views\task_canvas.py:1494
 msgid "延迟"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:638
+#: src\omnicrawler\gui\views\task_canvas.py:534
 msgid "建议"
 msgstr ""
 
@@ -2397,7 +2562,7 @@ msgstr ""
 msgid "开发者可运行：omnicrawler capabilities --verify-imports"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:776
+#: src\omnicrawler\gui\main.py:572
 #: src\omnicrawler\gui\views\developer_inspector.py:119
 msgid "开发者检查器"
 msgstr ""
@@ -2406,12 +2571,16 @@ msgstr ""
 msgid "开发者模式"
 msgstr ""
 
-#: src\omnicrawler\gui\delegates\theme.py:63
+#: src\omnicrawler\gui\delegates\theme.py:84
 msgid "开发者模式：显示完整配置与诊断工具"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:471
+#: src\omnicrawler\gui\views\task_canvas.py:340
 msgid "开始"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:970
+msgid "开始全量运行"
 msgstr ""
 
 #: src\omnicrawler\gui\views\result_table.py:563
@@ -2446,28 +2615,40 @@ msgstr ""
 msgid "当前页显示 {0} / {1} 行"
 msgstr ""
 
+#: src\omnicrawler\gui\views\plugin_market.py:757
+msgid "当前项目已启用"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:757
+msgid "当前项目未启用"
+msgstr ""
+
 #: src\omnicrawler\gui\views\project_dialogs.py:52
 msgid "当前项目还没有可对比的运行记录。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:351
+#: src\omnicrawler\gui\views\developer_inspector.py:362
 msgid "当前项目还没有运行数据库（state.sqlite3）。"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1296
+#: src\omnicrawler\gui\main.py:1112
 msgid "当前项目还没有错误中心报告；完成一次任务后会自动生成。"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1393
+#: src\omnicrawler\gui\main.py:1336
 msgid "录制失败"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1380
+#: src\omnicrawler\gui\main.py:1323
 msgid "录制完成"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\menu.py:101
 msgid "录制网页操作..."
+msgstr ""
+
+#: src\omnicrawler\gui\home.py:377
+msgid "待处理"
 msgstr ""
 
 #: src\omnicrawler\gui\views\scene_panel.py:245
@@ -2491,7 +2672,7 @@ msgstr ""
 msgid "快速上手指南"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:268
+#: src\omnicrawler\gui\home.py:239
 msgid "快速任务分析结果"
 msgstr ""
 
@@ -2504,23 +2685,23 @@ msgstr ""
 msgid "快速体验 - 未保存"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1063
+#: src\omnicrawler\gui\main.py:874
 msgid "快速草案已生成：请查看自动决定和修改入口，然后先试跑"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:710
+#: src\omnicrawler\gui\views\task_canvas.py:606
 msgid "忽略"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:712
+#: src\omnicrawler\gui\views\task_canvas.py:608
 msgid "忽略 AI 计划，保留当前本地草稿"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:745
+#: src\omnicrawler\gui\views\task_canvas.py:641
 msgid "忽略推荐"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:748
+#: src\omnicrawler\gui\views\task_canvas.py:644
 msgid "忽略模板推荐，按当前草稿手动配置"
 msgstr ""
 
@@ -2545,16 +2726,16 @@ msgstr ""
 msgid "恢复所选版本"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1779
+#: src\omnicrawler\gui\main.py:1723
 msgid "恢复草稿"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:629
+#: src\omnicrawler\gui\views\task_canvas.py:525
 msgid "意图"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:221
-msgid "或者只填写网址并选择任务类型："
+#: src\omnicrawler\gui\views\market_home.py:608
+msgid "我确认有权提交这些内容，并同意 Developer Certificate of Origin（DCO）。"
 msgstr ""
 
 #: src\omnicrawler\gui\views\convert_tool.py:383
@@ -2562,15 +2743,15 @@ msgstr ""
 msgid "所有文件 (*.*)"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1332
+#: src\omnicrawler\gui\main.py:1149
 msgid "所选插件请求以下权限："
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1073
+#: src\omnicrawler\gui\main.py:884
 msgid "手动"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1512
+#: src\omnicrawler\gui\views\task_canvas.py:1516
 msgid "手动 / 本地生成"
 msgstr ""
 
@@ -2590,7 +2771,7 @@ msgstr ""
 msgid "打开 YAML 配置"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:853
+#: src\omnicrawler\gui\views\task_canvas.py:749
 msgid "打开可视化选字段：输入网址后点选目标元素生成字段；只追加不覆盖"
 msgstr ""
 
@@ -2616,6 +2797,11 @@ msgstr ""
 msgid "打开浏览器，正常点击和输入；关闭窗口后自动写入当前配置"
 msgstr ""
 
+#: src\omnicrawler\gui\home.py:232
+#: src\omnicrawler\gui\home.py:260
+msgid "打开空白任务"
+msgstr ""
+
 #: src\omnicrawler\gui\delegates\menu.py:85
 msgid "打开统一错误中心"
 msgstr ""
@@ -2637,16 +2823,24 @@ msgstr ""
 msgid "扫描 PDF 文件"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1331
+#: src\omnicrawler\gui\main.py:1148
 msgid "批准插件权限"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:707
+#: src\omnicrawler\gui\main.py:1221
+msgid "批准插件级权限"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:603
 msgid "把 AI 计划应用到画布，随后照常复核字段并试跑"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:121
+#: src\omnicrawler\gui\home.py:116
 msgid "把网页、PDF 和接口变成可复核的数据"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:64
+msgid "抓取器"
 msgstr ""
 
 #: src\omnicrawler\gui\views\scene_panel.py:136
@@ -2665,7 +2859,11 @@ msgstr ""
 msgid "抽取模式"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:419
+#: src\omnicrawler\gui\background_host.py:353
+msgid "拉伸"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:211
 msgid "拒绝"
 msgstr ""
 
@@ -2705,7 +2903,7 @@ msgstr ""
 msgid "探测"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:530
+#: src\omnicrawler\gui\views\task_canvas.py:400
 msgid "探测不可用（网络受限或站点拒绝自动访问）；可继续手动配置"
 msgstr ""
 
@@ -2721,11 +2919,11 @@ msgstr ""
 msgid "接受所选候选"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:755
+#: src\omnicrawler\gui\views\task_canvas.py:651
 msgid "推荐不准确？记录原因，帮助改进后续推荐"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1533
+#: src\omnicrawler\gui\main.py:1476
 msgid "推荐模板:"
 msgstr ""
 
@@ -2733,20 +2931,20 @@ msgstr ""
 msgid "推荐结果:"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:207
-msgid "描述你的任务，例如：分析合同 PDF 中的金额和日期，或每周监测某网站的动态"
-msgstr ""
-
-#: src\omnicrawler\gui\views\market_home.py:564
+#: src\omnicrawler\gui\views\market_home.py:595
 msgid "描述这个插件/模板做什么、何时用、要什么权限。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:569
+#: src\omnicrawler\gui\views\market_home.py:600
 msgid "提交后维护者将收到 PR 并审核；审核通过后由维护者用其密钥补充签名并发布到市场，所有用户即可看到。需要本机安装并登录 GitHub CLI（gh auth login）。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:581
+#: src\omnicrawler\gui\views\market_home.py:617
 msgid "提交审核"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:67
+msgid "提取器"
 msgstr ""
 
 #: src\omnicrawler\gui\wizard\step3_fields.py:234
@@ -2765,24 +2963,28 @@ msgstr ""
 msgid "提示音"
 msgstr ""
 
-#: src\omnicrawler\gui\plugin_host.py:78
-#: src\omnicrawler\gui\views\market_home.py:606
-#: src\omnicrawler\gui\views\market_home.py:615
+#: src\omnicrawler\gui\plugin_host.py:80
+#: src\omnicrawler\gui\views\market_home.py:739
+#: src\omnicrawler\gui\views\market_home.py:748
 msgid "插件"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:329
+#: src\omnicrawler\gui\views\market_home.py:358
 msgid "插件 {0} 由 {1}（指纹 {2}）签名。信任后该作者的全部插件将自动加载。"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:408
+#: src\omnicrawler\gui\main.py:200
 msgid "插件 {0} 的作者 {1}（公钥指纹 {2}）不在本地信任列表。
 
 信任后该作者后续发布的插件将自动加载。"
 msgstr ""
 
-#: src\omnicrawler\gui\plugin_host.py:84
+#: src\omnicrawler\gui\plugin_host.py:86
 msgid "插件(&P)"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:1215
+msgid "插件不兼容"
 msgstr ""
 
 #: src\omnicrawler\gui\views\stealth_settings.py:136
@@ -2793,8 +2995,12 @@ msgstr ""
 msgid "插件启用前只做静态检查；所需权限会明确列出，不会自动批准。"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:775
-#: src\omnicrawler\gui\views\plugin_market.py:151
+#: src\omnicrawler\gui\views\plugin_market.py:863
+msgid "插件已安全安装，但尚未在当前项目启用。是否现在绑定版本、载荷和权限并启用？"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:571
+#: src\omnicrawler\gui\views\plugin_market.py:310
 msgid "插件市场"
 msgstr ""
 
@@ -2814,11 +3020,33 @@ msgstr ""
 msgid "插件管理与权限..."
 msgstr ""
 
+#: src\omnicrawler\gui\views\developer_inspector.py:242
+msgid "插件级权限授权"
+msgstr ""
+
 #: src\omnicrawler\gui\views\identity_dialog.py:152
 msgid "插件身份系统不可用（缺少 cryptography）"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:209
+#: src\omnicrawler\gui\main.py:1239
+msgid "插件配置段结构异常，无法启用"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:182
+msgid "插件：{0}
+运行扩展点：{1}
+执行模式：{2}
+请求权限：{3}
+允许域名：{4}
+
+安装仅下载并验签；启用这些权限时仍需在项目插件管理中逐项批准。"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:423
+msgid "搜索名称、分类、标签或扩展点"
+msgstr ""
+
+#: src\omnicrawler\gui\template_library_dialog.py:45
 msgid "搜索名称、说明或标签…"
 msgstr ""
 
@@ -2834,7 +3062,7 @@ msgstr ""
 msgid "搜索离线帮助"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:514
+#: src\omnicrawler\gui\views\task_canvas.py:384
 msgid "搜索页"
 msgstr ""
 
@@ -2862,22 +3090,26 @@ msgstr ""
 msgid "支持：CSV、JSONL、NDJSON、XLSX、Parquet、DuckDB（.db/.duckdb）"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:272
-#: src\omnicrawler\gui\views\task_canvas.py:293
-#: src\omnicrawler\gui\views\task_canvas.py:1759
+#: src\omnicrawler\gui\views\task_canvas.py:121
+#: src\omnicrawler\gui\views\task_canvas.py:142
+#: src\omnicrawler\gui\views\task_canvas.py:1763
 msgid "收起"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1117
+#: src\omnicrawler\gui\views\task_canvas.py:1039
 msgid "收起试跑记录"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1367
-msgid "放弃 YAML，保留画布"
+#: src\omnicrawler\gui\views\task_canvas.py:1370
+msgid "放弃 YAML，保留工作台修改"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\env_checker.py:80
 msgid "数据位置未保存"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:63
+msgid "数据源"
 msgstr ""
 
 #: src\omnicrawler\gui\views\developer_inspector.py:212
@@ -2927,12 +3159,8 @@ msgstr ""
 msgid "文档来源"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:898
+#: src\omnicrawler\gui\views\task_canvas.py:794
 msgid "新字段"
-msgstr ""
-
-#: src\omnicrawler\gui\home.py:274
-msgid "新建任务"
 msgstr ""
 
 #: src\omnicrawler\gui\views\change_monitor.py:121
@@ -2953,15 +3181,15 @@ msgstr ""
 msgid "无"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:2061
+#: src\omnicrawler\gui\main.py:2005
 msgid "无 GUI 模式（与 --run 等效，不显示图形界面）"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:2057
+#: src\omnicrawler\gui\main.py:2001
 msgid "无 GUI 模式：直接执行指定的 YAML 配置文件"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:519
+#: src\omnicrawler\gui\views\task_canvas.py:389
 msgid "无分页线索"
 msgstr ""
 
@@ -2998,11 +3226,11 @@ msgstr ""
 msgid "无法加载 news 模板"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:2013
+#: src\omnicrawler\gui\main.py:1957
 msgid "无法安全保存"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1520
+#: src\omnicrawler\gui\main.py:1463
 msgid "无法安全完成探测。原配置没有改变。"
 msgstr ""
 
@@ -3010,11 +3238,15 @@ msgstr ""
 msgid "无法对比"
 msgstr ""
 
+#: src\omnicrawler\gui\views\market_home.py:681
+msgid "无法导入"
+msgstr ""
+
 #: src\omnicrawler\gui\views\pdf_region_selector.py:132
 msgid "无法打开 PDF"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:333
+#: src\omnicrawler\gui\home.py:318
 msgid "无法自动判断你的意图。
 你想做什么？"
 msgstr ""
@@ -3031,12 +3263,16 @@ msgstr ""
 msgid "无法运行"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:423
+#: src\omnicrawler\gui\views\plugin_market.py:634
 msgid "无法连接插件目录（可能离线）：{0}。已安装插件仍可使用；联网后点「刷新」重试。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\template_market.py:295
+#: src\omnicrawler\gui\views\template_market.py:321
 msgid "无法连接模板目录：{0}"
+msgstr ""
+
+#: src\omnicrawler\gui\background_host.py:416
+msgid "无网络、无网页脚本、无插件自定义绘制层"
 msgstr ""
 
 #: src\omnicrawler\gui\views\ai_service_center.py:329
@@ -3047,6 +3283,8 @@ msgstr ""
 msgid "无障碍与显示"
 msgstr ""
 
+#: src\omnicrawler\gui\views\market_home.py:224
+#: src\omnicrawler\gui\views\plugin_market.py:763
 #: src\omnicrawler\gui\views\project_dialogs.py:112
 msgid "无额外权限"
 msgstr ""
@@ -3059,7 +3297,7 @@ msgstr ""
 msgid "日志导出失败: {0}"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:2066
+#: src\omnicrawler\gui\main.py:2010
 msgid "日志级别（默认: INFO）"
 msgstr ""
 
@@ -3074,6 +3312,10 @@ msgstr ""
 
 #: src\omnicrawler\gui\core\template_loader.py:260
 msgid "日期 CSS 选择器"
+msgstr ""
+
+#: src\omnicrawler\gui\views\developer_inspector.py:253
+msgid "旧版全局权限（待迁移）"
 msgstr ""
 
 #: src\omnicrawler\gui\views\stealth_settings.py:144
@@ -3094,7 +3336,7 @@ msgstr ""
 msgid "明亮"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1529
+#: src\omnicrawler\gui\main.py:1472
 #: src\omnicrawler\gui\views\developer_inspector.py:185
 #: src\omnicrawler\gui\views\scene_panel.py:222
 msgid "是"
@@ -3104,15 +3346,15 @@ msgstr ""
 msgid "是否仍继续（本次仅规则抽取，不执行 OCR）？"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1547
+#: src\omnicrawler\gui\main.py:1490
 msgid "是否套用第一项模板？"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1332
+#: src\omnicrawler\gui\main.py:1149
 msgid "是否批准？"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:992
+#: src\omnicrawler\gui\main.py:805
 msgid "显示主窗口"
 msgstr ""
 
@@ -3144,22 +3386,26 @@ msgstr ""
 msgid "智能提取 — XPath 推荐"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1586
+#: src\omnicrawler\gui\main.py:1529
 msgid "智能模板:"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1588
+#: src\omnicrawler\gui\main.py:1531
 msgid "智能模板已加载；请检查红色占位符后运行"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1517
-#: src\omnicrawler\gui\main.py:1519
+#: src\omnicrawler\gui\main.py:1460
+#: src\omnicrawler\gui\main.py:1462
 msgid "智能识别失败"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1546
-#: src\omnicrawler\gui\main.py:1542
+#: src\omnicrawler\gui\main.py:1489
+#: src\omnicrawler\gui\main.py:1485
 msgid "智能识别结果"
+msgstr ""
+
+#: src\omnicrawler\gui\background_host.py:362
+msgid "暂停视频"
 msgstr ""
 
 #: src\omnicrawler\gui\views\convert_tool.py:393
@@ -3170,7 +3416,7 @@ msgstr ""
 msgid "暂无下载文件"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_history.py:68
+#: src\omnicrawler\gui\views\task_history.py:69
 msgid "暂无历史任务：完成一次任务后，这里会显示记录。"
 msgstr ""
 
@@ -3178,7 +3424,7 @@ msgstr ""
 msgid "暂无可用的帮助内容。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:964
+#: src\omnicrawler\gui\views\task_canvas.py:860
 msgid "暂无可补充的字段"
 msgstr ""
 
@@ -3186,19 +3432,27 @@ msgstr ""
 msgid "暂无场景数据"
 msgstr ""
 
+#: src\omnicrawler\gui\home.py:359
+msgid "暂无最近任务。创建并运行一次任务后，可从这里继续编辑或查看结果。"
+msgstr ""
+
 #: src\omnicrawler\gui\views\change_monitor.py:480
 msgid "暂无监控规则"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_history.py:190
+#: src\omnicrawler\gui\background_host.py:369
+msgid "暗色遮罩"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_history.py:198
 msgid "更新历史记录失败：{0}"
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:290
+#: src\omnicrawler\gui\views\project_dialogs.py:309
 msgid "更新失败"
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:213
+#: src\omnicrawler\gui\views\project_dialogs.py:232
 msgid "最低电量"
 msgstr ""
 
@@ -3206,11 +3460,11 @@ msgstr ""
 msgid "最大响应长度："
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:254
+#: src\omnicrawler\gui\views\developer_inspector.py:265
 msgid "最大字节数"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:255
+#: src\omnicrawler\gui\views\developer_inspector.py:266
 msgid "最大并发"
 msgstr ""
 
@@ -3218,20 +3472,20 @@ msgstr ""
 msgid "最大深度"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:257
+#: src\omnicrawler\gui\views\developer_inspector.py:268
 msgid "最大花费"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:253
+#: src\omnicrawler\gui\views\developer_inspector.py:264
 msgid "最大请求数"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:256
+#: src\omnicrawler\gui\views\developer_inspector.py:267
 msgid "最大运行时(秒)"
 msgstr ""
 
 #: src\omnicrawler\gui\views\developer_inspector.py:217
-#: src\omnicrawler\gui\views\task_canvas.py:781
+#: src\omnicrawler\gui\views\task_canvas.py:677
 #: src\omnicrawler\gui\views\yaml_editor.py:490
 msgid "最大页数"
 msgstr ""
@@ -3240,27 +3494,19 @@ msgstr ""
 msgid "最大页数必须大于 0"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1846
+#: src\omnicrawler\gui\main.py:1790
 msgid "最小化到后台"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:231
-msgid "最近:"
-msgstr ""
-
-#: src\omnicrawler\gui\home.py:274
+#: src\omnicrawler\gui\home.py:244
 msgid "最近任务"
-msgstr ""
-
-#: src\omnicrawler\gui\home.py:234
-msgid "最近使用的网址"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\menu.py:33
 msgid "最近文件"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1268
+#: src\omnicrawler\gui\views\task_canvas.py:1260
 msgid "最近试跑：{0}"
 msgstr ""
 
@@ -3273,12 +3519,20 @@ msgid "未中"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\config_manager.py:43
-#: src\omnicrawler\gui\main.py:701
+#: src\omnicrawler\gui\main.py:493
 msgid "未保存"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:54
+#: src\omnicrawler\gui\main.py:1285
+msgid "未保存（插件配置已写入草稿）"
+msgstr ""
+
+#: src\omnicrawler\gui\views\market_home.py:58
 msgid "未信任"
+msgstr ""
+
+#: src\omnicrawler\gui\views\market_home.py:229
+msgid "未分类"
 msgstr ""
 
 #: src\omnicrawler\gui\views\file_list.py:44
@@ -3291,8 +3545,12 @@ msgstr ""
 
 #: src\omnicrawler\gui\views\change_monitor.py:536
 #: src\omnicrawler\gui\views\change_monitor.py:596
-#: src\omnicrawler\gui\views\task_canvas.py:910
+#: src\omnicrawler\gui\views\task_canvas.py:806
 msgid "未命名"
+msgstr ""
+
+#: src\omnicrawler\gui\home.py:375
+msgid "未命名任务"
 msgstr ""
 
 #: src\omnicrawler\gui\views\change_monitor.py:286
@@ -3300,7 +3558,8 @@ msgstr ""
 msgid "未命名规则"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:281
+#: src\omnicrawler\gui\main.py:1229
+#: src\omnicrawler\gui\template_library_dialog.py:125
 msgid "未声明"
 msgstr ""
 
@@ -3328,7 +3587,7 @@ msgstr ""
 msgid "未找到下载目录"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1442
+#: src\omnicrawler\gui\main.py:1385
 msgid "未找到任何模板"
 msgstr ""
 
@@ -3353,7 +3612,7 @@ msgstr ""
 msgid "未找到结果目录"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:626
+#: src\omnicrawler\gui\views\task_canvas.py:522
 msgid "未指定主题"
 msgstr ""
 
@@ -3367,42 +3626,42 @@ msgstr ""
 msgid "未知"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:55
+#: src\omnicrawler\gui\views\market_home.py:59
 msgid "未签名"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1530
-#: src\omnicrawler\gui\main.py:1531
+#: src\omnicrawler\gui\main.py:1473
+#: src\omnicrawler\gui\main.py:1474
 msgid "未识别"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:228
-#: src\omnicrawler\gui\views\template_market.py:163
+#: src\omnicrawler\gui\views\plugin_market.py:388
+#: src\omnicrawler\gui\views\template_market.py:184
 msgid "未连接"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1488
+#: src\omnicrawler\gui\views\task_canvas.py:1491
 msgid "未选"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:144
-#: src\omnicrawler\gui\views\market_home.py:372
-#: src\omnicrawler\gui\views\market_home.py:204
+#: src\omnicrawler\gui\views\market_home.py:154
+#: src\omnicrawler\gui\views\market_home.py:401
+#: src\omnicrawler\gui\views\market_home.py:218
 msgid "未选择"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:602
-#: src\omnicrawler\gui\views\plugin_market.py:628
+#: src\omnicrawler\gui\views\plugin_market.py:931
+#: src\omnicrawler\gui\views\plugin_market.py:959
 msgid "未选择已安装插件"
 msgstr ""
 
-#: src\omnicrawler\gui\views\template_market.py:402
-#: src\omnicrawler\gui\views\template_market.py:423
+#: src\omnicrawler\gui\views\template_market.py:428
+#: src\omnicrawler\gui\views\template_market.py:449
 msgid "未选择已安装模板"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:274
-#: src\omnicrawler\gui\views\plugin_market.py:471
+#: src\omnicrawler\gui\views\plugin_market.py:462
+#: src\omnicrawler\gui\views\plugin_market.py:724
 msgid "未选择插件"
 msgstr ""
 
@@ -3410,12 +3669,12 @@ msgstr ""
 msgid "未选择文件"
 msgstr ""
 
-#: src\omnicrawler\gui\views\template_market.py:192
-#: src\omnicrawler\gui\views\template_market.py:326
+#: src\omnicrawler\gui\views\template_market.py:213
+#: src\omnicrawler\gui\views\template_market.py:352
 msgid "未选择模板"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:389
+#: src\omnicrawler\gui\views\plugin_market.py:593
 msgid "未配置 catalog_url，且无本地 OmniCrawler-market/ 回退。"
 msgstr ""
 
@@ -3423,7 +3682,7 @@ msgstr ""
 msgid "未随包提供"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:617
+#: src\omnicrawler\gui\views\market_home.py:750
 msgid "本地"
 msgstr ""
 
@@ -3451,24 +3710,29 @@ msgstr ""
 msgid "来源"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:414
+#: src\omnicrawler\gui\views\task_canvas.py:269
 msgid "查看 YAML"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1097
-#: src\omnicrawler\gui\views\task_canvas.py:1117
+#: src\omnicrawler\gui\views\task_canvas.py:1026
+#: src\omnicrawler\gui\views\task_canvas.py:1039
 msgid "查看上次试跑记录"
+msgstr ""
+
+#: src\omnicrawler\gui\home.py:246
+msgid "查看全部"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\error_dialog.py:30
 msgid "查看帮助"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_history.py:87
+#: src\omnicrawler\gui\home.py:389
+#: src\omnicrawler\gui\views\task_history.py:88
 msgid "查看结果"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1064
+#: src\omnicrawler\gui\views\task_canvas.py:960
 msgid "查看详情"
 msgstr ""
 
@@ -3476,7 +3740,7 @@ msgstr ""
 msgid "标准 100%"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:499
+#: src\omnicrawler\gui\views\plugin_market.py:760
 msgid "标签:"
 msgstr ""
 
@@ -3492,8 +3756,8 @@ msgstr ""
 msgid "栏目发现"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:312
-#: src\omnicrawler\gui\views\template_market.py:215
+#: src\omnicrawler\gui\views\plugin_market.py:509
+#: src\omnicrawler\gui\views\template_market.py:236
 msgid "校验"
 msgstr ""
 
@@ -3501,21 +3765,17 @@ msgstr ""
 msgid "校验 TLS"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:849
+#: src\omnicrawler\gui\views\task_canvas.py:745
 msgid "根据站点类型/模板补充常见字段；只去重追加，绝不覆盖你已有的字段"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:486
+#: src\omnicrawler\gui\views\task_canvas.py:355
 msgid "根据网址生成任务草稿"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:768
+#: src\omnicrawler\gui\main.py:566
 #: src\omnicrawler\gui\views\convert_tool.py:256
 msgid "格式互转"
-msgstr ""
-
-#: src\omnicrawler\gui\home.py:277
-msgid "格式互转（CSV/JSONL/Parquet…）"
 msgstr ""
 
 #: src\omnicrawler\gui\views\yaml_editor.py:278
@@ -3551,7 +3811,7 @@ msgstr ""
 msgid "检查依赖、磁盘与配置，并可独立试跑 3 页"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1229
+#: src\omnicrawler\gui\main.py:1040
 msgid "检查发现阻止运行的问题。"
 msgstr ""
 
@@ -3559,7 +3819,11 @@ msgstr ""
 msgid "检查失败"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1229
+#: src\omnicrawler\gui\views\task_canvas.py:1004
+msgid "检查网址与范围"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:1040
 msgid "检查通过，可以先用 3 页小样本验证。"
 msgstr ""
 
@@ -3567,7 +3831,7 @@ msgstr ""
 msgid "检查间隔:"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:575
+#: src\omnicrawler\gui\views\plugin_market.py:904
 msgid "检测到创作者签名的插件：{0}
 
 插件作者：{1}
@@ -3581,15 +3845,15 @@ msgstr ""
 msgid "检测到变化"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1363
+#: src\omnicrawler\gui\views\task_canvas.py:1366
 msgid "检测到外部 YAML 编辑"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:573
+#: src\omnicrawler\gui\views\plugin_market.py:902
 msgid "检测到外部插件"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1780
+#: src\omnicrawler\gui\main.py:1724
 msgid "检测到未保存的更改，是否恢复？
 
 草稿文件: {0}"
@@ -3621,18 +3885,18 @@ msgstr ""
 msgid "模式/选择器"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:607
-#: src\omnicrawler\gui\views\market_home.py:517
-#: src\omnicrawler\gui\views\plugin_market.py:206
+#: src\omnicrawler\gui\views\market_home.py:740
+#: src\omnicrawler\gui\views\market_home.py:548
+#: src\omnicrawler\gui\views\plugin_market.py:366
 msgid "模板"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:554
+#: src\omnicrawler\gui\views\market_home.py:585
 msgid "模板 ID"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1554
-#: src\omnicrawler\gui\main.py:1454
+#: src\omnicrawler\gui\main.py:1497
+#: src\omnicrawler\gui\main.py:1397
 msgid "模板不可用"
 msgstr ""
 
@@ -3640,31 +3904,31 @@ msgstr ""
 msgid "模板加载失败"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1480
+#: src\omnicrawler\gui\main.py:1423
 msgid "模板包含尚未替换的占位符（{{...}}），直接运行可能采集不到数据，请先在编辑器中替换。"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1575
+#: src\omnicrawler\gui\main.py:1518
 msgid "模板只会补充所需能力；任务名称、入口网址、主题、已有字段和输出选择将保留。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\template_market.py:131
+#: src\omnicrawler\gui\views\template_market.py:152
 msgid "模板市场"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:192
+#: src\omnicrawler\gui\template_library_dialog.py:31
 msgid "模板库"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1617
+#: src\omnicrawler\gui\views\task_canvas.py:1621
 msgid "模板推荐不可用"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1510
+#: src\omnicrawler\gui\views\task_canvas.py:1514
 msgid "模板生成"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1483
+#: src\omnicrawler\gui\main.py:1426
 msgid "模板能力已组合；建议先试跑 3 页"
 msgstr ""
 
@@ -3700,11 +3964,11 @@ msgstr ""
 msgid "正在安全停止"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1490
+#: src\omnicrawler\gui\main.py:1433
 msgid "正在安全探测网址并识别模板…"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1861
+#: src\omnicrawler\gui\main.py:1805
 msgid "正在安全结束后台操作，完成后将自动退出"
 msgstr ""
 
@@ -3712,7 +3976,7 @@ msgstr ""
 msgid "正在导出 Excel..."
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1404
+#: src\omnicrawler\gui\main.py:1347
 msgid "正在录制网页操作；完成后关闭录制浏览器窗口"
 msgstr ""
 
@@ -3720,15 +3984,15 @@ msgstr ""
 msgid "正在扫描..."
 msgstr ""
 
-#: src\omnicrawler\gui\views\template_market.py:272
+#: src\omnicrawler\gui\views\template_market.py:293
 msgid "正在拉取..."
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:393
+#: src\omnicrawler\gui\views\plugin_market.py:597
 msgid "正在拉取插件目录..."
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:504
+#: src\omnicrawler\gui\views\task_canvas.py:374
 msgid "正在探测…"
 msgstr ""
 
@@ -3740,7 +4004,7 @@ msgstr ""
 msgid "正在测试连接…"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1276
+#: src\omnicrawler\gui\main.py:1092
 msgid "正在独立工作区试跑 {0} 页，不会改变正式任务断点"
 msgstr ""
 
@@ -3752,7 +4016,7 @@ msgstr ""
 msgid "正在获取模型列表…"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:394
+#: src\omnicrawler\gui\views\plugin_market.py:598
 msgid "正在连接插件目录..."
 msgstr ""
 
@@ -3764,15 +4028,19 @@ msgstr ""
 msgid "每 N 次请求更换："
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1073
+#: src\omnicrawler\gui\main.py:884
 msgid "每周"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1073
+#: src\omnicrawler\gui\home.py:216
+msgid "每周监测网页内容变化"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:884
 msgid "每天"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1073
+#: src\omnicrawler\gui\main.py:884
 msgid "每月"
 msgstr ""
 
@@ -3794,20 +4062,28 @@ msgstr ""
 msgid "每行一个字段：字段名=描述（如: title=文章标题）"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:276
+#: src\omnicrawler\gui\template_library_dialog.py:120
 msgid "没有匹配的模板"
+msgstr ""
+
+#: src\omnicrawler\gui\background_host.py:384
+msgid "没有受支持媒体"
 msgstr ""
 
 #: src\omnicrawler\gui\views\change_monitor.py:637
 msgid "没有可检查的规则"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1580
-#: src\omnicrawler\gui\main.py:1468
+#: src\omnicrawler\gui\views\task_canvas.py:1068
+msgid "没有成功处理页面。请检查网址、访问权限、robots 设置或页面是否需要浏览器渲染。"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:1523
+#: src\omnicrawler\gui\main.py:1411
 msgid "没有需要修改的配置"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:628
+#: src\omnicrawler\gui\views\task_canvas.py:524
 msgid "沿用当前网址"
 msgstr ""
 
@@ -3835,7 +4111,7 @@ msgstr ""
 msgid "浏览..."
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:272
+#: src\omnicrawler\gui\views\project_dialogs.py:291
 msgid "添加失败"
 msgstr ""
 
@@ -3843,7 +4119,7 @@ msgstr ""
 msgid "添加字段"
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:217
+#: src\omnicrawler\gui\views\project_dialogs.py:236
 msgid "添加当前配置"
 msgstr ""
 
@@ -3851,15 +4127,15 @@ msgstr ""
 msgid "添加文件..."
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_history.py:91
+#: src\omnicrawler\gui\views\task_history.py:92
 msgid "清理"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_history.py:200
+#: src\omnicrawler\gui\views\task_history.py:208
 msgid "清理历史任务"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_history.py:231
+#: src\omnicrawler\gui\views\task_history.py:239
 msgid "清理历史记录失败：{0}"
 msgstr ""
 
@@ -3911,11 +4187,11 @@ msgstr ""
 msgid "点击开始转换后自动补默认路径；也可手动指定"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:259
+#: src\omnicrawler\gui\views\developer_inspector.py:270
 msgid "熔断恢复(秒)"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:258
+#: src\omnicrawler\gui\views\developer_inspector.py:269
 msgid "熔断阈值"
 msgstr ""
 
@@ -3923,12 +4199,12 @@ msgstr ""
 msgid "爬取策略"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:334
+#: src\omnicrawler\gui\home.py:319
 msgid "爬取网页数据"
 msgstr ""
 
 #: src\omnicrawler\gui\views\developer_inspector.py:133
-#: src\omnicrawler\gui\views\market_home.py:556
+#: src\omnicrawler\gui\views\market_home.py:587
 msgid "版本"
 msgstr ""
 
@@ -3942,8 +4218,16 @@ msgstr ""
 msgid "状态"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:376
+#: src\omnicrawler\gui\views\developer_inspector.py:387
 msgid "状态: {0} → {1}"
+msgstr ""
+
+#: src\omnicrawler\gui\views\market_home.py:227
+msgid "状态：{0}
+分类：{1}
+运行扩展点：{2}
+执行模式：{3}
+权限：{4}"
 msgstr ""
 
 #: src\omnicrawler\gui\runner\worker_task_runner.py:119
@@ -3972,18 +4256,14 @@ msgstr ""
 msgid "环境配置"
 msgstr ""
 
+#: src\omnicrawler\gui\views\plugin_market.py:71
+msgid "生命周期"
+msgstr ""
+
 #: src\omnicrawler\gui\views\scene_panel.py:114
 #: src\omnicrawler\gui\views\scene_panel.py:351
 #: src\omnicrawler\gui\views\scene_panel.py:337
 msgid "生成为任务字段"
-msgstr ""
-
-#: src\omnicrawler\gui\home.py:214
-msgid "生成安全草案"
-msgstr ""
-
-#: src\omnicrawler\gui\home.py:199
-msgid "用一句话说明你想采集什么、范围有多大、是否下载文件或监测变化。"
 msgstr ""
 
 #: src\omnicrawler\gui\views\ai_service_center.py:309
@@ -4005,13 +4285,13 @@ msgstr ""
 
 #: src\omnicrawler\gui\views\identity_dialog.py:66
 #: src\omnicrawler\gui\views\identity_welcome.py:51
-#: src\omnicrawler\gui\views\market_home.py:233
+#: src\omnicrawler\gui\views\market_home.py:258
 msgid "用户名"
 msgstr ""
 
 #: src\omnicrawler\gui\views\identity_dialog.py:157
 #: src\omnicrawler\gui\views\identity_welcome.py:75
-#: src\omnicrawler\gui\views\market_home.py:249
+#: src\omnicrawler\gui\views\market_home.py:274
 msgid "用户名与密码不能为空"
 msgstr ""
 
@@ -4023,23 +4303,19 @@ msgstr ""
 msgid "用户名（本地唯一，2-32 位小写字母/数字/下划线/短横线）"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:282
+#: src\omnicrawler\gui\template_library_dialog.py:126
 msgid "用户模板"
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:205
+#: src\omnicrawler\gui\views\project_dialogs.py:224
 msgid "电源条件"
-msgstr ""
-
-#: src\omnicrawler\gui\views\task_canvas.py:1279
-msgid "画布锁定中，请先完成当前操作"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\toolbar.py:84
 msgid "界面:"
 msgstr ""
 
-#: src\omnicrawler\gui\delegates\theme.py:119
+#: src\omnicrawler\gui\delegates\theme.py:140
 msgid "界面缩放已应用；部分控件将在重新打开窗口后达到最佳布局"
 msgstr ""
 
@@ -4059,8 +4335,12 @@ msgstr ""
 msgid "留空表示使用默认 Provider 或关闭该能力的 AI 增强。"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:244
-msgid "监测内容变化"
+#: src\omnicrawler\gui\home.py:216
+msgid "监测变化"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:822
+msgid "目录中找不到所选插件"
 msgstr ""
 
 #: src\omnicrawler\gui\views\change_monitor.py:142
@@ -4091,7 +4371,7 @@ msgstr ""
 msgid "省电"
 msgstr ""
 
-#: src\omnicrawler\gui\delegates\theme.py:77
+#: src\omnicrawler\gui\delegates\theme.py:98
 msgid "省电模式：最多 2 个并发、1 个浏览器实例"
 msgstr ""
 
@@ -4099,8 +4379,8 @@ msgstr ""
 msgid "省电适合电池；均衡适合日常；全速建议插电使用"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:236
-#: src\omnicrawler\gui\views\market_home.py:447
+#: src\omnicrawler\gui\views\market_home.py:261
+#: src\omnicrawler\gui\views\market_home.py:476
 msgid "确定"
 msgstr ""
 
@@ -4112,8 +4392,20 @@ msgstr ""
 msgid "确认清空"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1841
+#: src\omnicrawler\gui\views\market_home.py:697
+msgid "确认第三方分享包"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:832
+msgid "确认继续安装？"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:1785
 msgid "确认退出"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:449
+msgid "确认采集方案"
 msgstr ""
 
 #: src\omnicrawler\gui\widgets\resource_monitor.py:54
@@ -4146,17 +4438,21 @@ msgstr ""
 msgid "示例配置已加载，点击 ▶ 运行即可体验"
 msgstr ""
 
+#: src\omnicrawler\gui\home.py:212
+msgid "示例："
+msgstr ""
+
 #: src\omnicrawler\gui\views\change_monitor.py:802
 msgid "禁用"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:420
-#: src\omnicrawler\gui\views\plugin_market.py:673
-#: src\omnicrawler\gui\views\template_market.py:293
+#: src\omnicrawler\gui\views\plugin_market.py:631
+#: src\omnicrawler\gui\views\plugin_market.py:1016
+#: src\omnicrawler\gui\views\template_market.py:319
 msgid "离线"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1104
+#: src\omnicrawler\gui\main.py:915
 msgid "离线演示已准备：无需网络，可直接查看并试跑"
 msgstr ""
 
@@ -4164,11 +4460,11 @@ msgstr ""
 msgid "离线规则匹配（meta / h1-h3 等），不调用大模型，结果需人工核对。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:609
+#: src\omnicrawler\gui\views\market_home.py:742
 msgid "私人"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:52
+#: src\omnicrawler\gui\views\market_home.py:56
 msgid "私人（已签名）"
 msgstr ""
 
@@ -4178,6 +4474,7 @@ msgstr ""
 msgid "种子 URL"
 msgstr ""
 
+#: src\omnicrawler\gui\background_host.py:359
 #: src\omnicrawler\gui\views\ai_service_center.py:283
 msgid "秒"
 msgstr ""
@@ -4190,17 +4487,17 @@ msgstr ""
 msgid "稳定度"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:736
+#: src\omnicrawler\gui\views\task_canvas.py:632
 msgid "空=用自动推荐；选中=强制使用该模板（写入 YAML）"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\run_controller.py:108
-#: src\omnicrawler\gui\main.py:706
-#: src\omnicrawler\gui\main.py:825
+#: src\omnicrawler\gui\main.py:498
+#: src\omnicrawler\gui\main.py:628
 msgid "空闲"
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:195
+#: src\omnicrawler\gui\views\project_dialogs.py:214
 msgid "立即开始（点击选择日期）"
 msgstr ""
 
@@ -4208,12 +4505,15 @@ msgstr ""
 msgid "立即检查"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:156
-#: src\omnicrawler\gui\views\market_home.py:378
-msgid "签名"
+#: src\omnicrawler\gui\views\market_home.py:751
+msgid "第三方分享"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:558
+#: src\omnicrawler\gui\views\market_home.py:661
+msgid "第三方分享包不经过市场审核。导入前会验证整个文件夹、显示作者公钥指纹与权限；默认只信任该作者的这个插件，不会自动信任其全部作品。"
+msgstr ""
+
+#: src\omnicrawler\gui\views\market_home.py:589
 msgid "简介"
 msgstr ""
 
@@ -4225,41 +4525,50 @@ msgstr ""
 msgid "简单模式隐藏技术配置；随时可以切换，项目内容不会改变"
 msgstr ""
 
-#: src\omnicrawler\gui\delegates\theme.py:61
-msgid "简单模式：技术参数已隐藏，使用五步向导即可完成任务"
+#: src\omnicrawler\gui\delegates\theme.py:82
+msgid "简单模式：仅显示创建、试跑、运行和结果等核心操作"
 msgstr ""
 
 #: src\omnicrawler\gui\views\pdf_workbench.py:208
 msgid "管线已停止（用户取消或前序阶段失败）"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:557
+#: src\omnicrawler\gui\views\market_home.py:588
 msgid "类别"
 msgstr ""
 
 #: src\omnicrawler\gui\views\scene_panel.py:126
-#: src\omnicrawler\gui\views\task_canvas.py:152
+#: src\omnicrawler\gui\views\task_canvas_components.py:69
 msgid "类型"
+msgstr ""
+
+#: src\omnicrawler\gui\views\market_home.py:199
+#: src\omnicrawler\gui\views\plugin_market.py:656
+msgid "类型未知"
+msgstr ""
+
+#: src\omnicrawler\gui\home.py:204
+msgid "粘贴 https://example.com/news，或描述：每周监测该网站并下载新增 PDF"
 msgstr ""
 
 #: src\omnicrawler\gui\wizard\step3_fields.py:196
 msgid "粘贴目标网页的 HTML 代码:"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:225
-msgid "粘贴网页地址，例如 https://example.com/news"
+#: src\omnicrawler\gui\views\task_canvas.py:448
+msgid "粘贴网址"
+msgstr ""
+
+#: src\omnicrawler\gui\home.py:196
+msgid "粘贴网址，或用一句话说明目标、范围、下载和监测要求。"
 msgstr ""
 
 #: src\omnicrawler\gui\views\change_monitor.py:71
 msgid "精确等于某个值"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:200
-msgid "系统会生成可修改的安全草案，并始终先试跑。"
-msgstr ""
-
-#: src\omnicrawler\gui\home.py:276
-msgid "系统体检"
+#: src\omnicrawler\gui\home.py:197
+msgid "系统会自动选择安全起点，生成可修改草案，并始终先试跑。"
 msgstr ""
 
 #: src\omnicrawler\gui\views\yaml_editor.py:282
@@ -4270,15 +4579,15 @@ msgstr ""
 msgid "紧凑 90%"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1574
+#: src\omnicrawler\gui\main.py:1517
 msgid "组合建议预览"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1465
+#: src\omnicrawler\gui\main.py:1408
 msgid "组合模板"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1474
+#: src\omnicrawler\gui\main.py:1417
 msgid "组合模板:"
 msgstr ""
 
@@ -4286,8 +4595,8 @@ msgstr ""
 msgid "结构化抽取"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:516
-#: src\omnicrawler\gui\views\task_canvas.py:515
+#: src\omnicrawler\gui\views\task_canvas.py:386
+#: src\omnicrawler\gui\views\task_canvas.py:385
 msgid "结构未知"
 msgstr ""
 
@@ -4295,8 +4604,7 @@ msgstr ""
 msgid "结构漂移"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:275
-#: src\omnicrawler\gui\main.py:771
+#: src\omnicrawler\gui\main.py:561
 msgid "结果与复核"
 msgstr ""
 
@@ -4304,16 +4612,20 @@ msgstr ""
 msgid "结果文件为空"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1915
+#: src\omnicrawler\gui\main.py:1859
 msgid "结果文件已加载: {0}"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1031
+#: src\omnicrawler\gui\main.py:844
 msgid "结果页已刷新"
 msgstr ""
 
 #: src\omnicrawler\gui\views\ai_service_center.py:318
 msgid "绝大多数情况下应关闭。仅在需要 AI 帮助调整认证流程时临时开启。"
+msgstr ""
+
+#: src\omnicrawler\gui\home.py:383
+msgid "继续编辑"
 msgstr ""
 
 #: src\omnicrawler\gui\views\change_monitor.py:796
@@ -4342,8 +4654,12 @@ msgstr ""
 msgid "编辑器和表单配置完全一致。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1734
+#: src\omnicrawler\gui\views\task_canvas.py:1738
 msgid "缺少诊断快照，未记录反馈"
+msgstr ""
+
+#: src\omnicrawler\gui\views\market_home.py:628
+msgid "缺少说明"
 msgstr ""
 
 #: src\omnicrawler\gui\views\yaml_editor.py:488
@@ -4351,7 +4667,7 @@ msgstr ""
 msgid "网站类型"
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:208
+#: src\omnicrawler\gui\views\project_dialogs.py:227
 msgid "网络条件"
 msgstr ""
 
@@ -4359,7 +4675,7 @@ msgstr ""
 msgid "网页内容预览"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1378
+#: src\omnicrawler\gui\main.py:1321
 msgid "网页操作已写入当前任务；密码值已替换为 secret:// 引用"
 msgstr ""
 
@@ -4372,20 +4688,44 @@ msgstr ""
 msgid "翻页失败: {0}"
 msgstr ""
 
+#: src\omnicrawler\gui\media_surface.py:76
+msgid "背景 fit 必须是 cover、contain 或 stretch"
+msgstr ""
+
+#: src\omnicrawler\gui\background_host.py:368
+msgid "背景可见度"
+msgstr ""
+
+#: src\omnicrawler\gui\background_host.py:178
+msgid "背景媒体必须是存在的真实文件"
+msgstr ""
+
+#: src\omnicrawler\gui\background_host.py:190
+msgid "背景媒体无法启用"
+msgstr ""
+
 #: src\omnicrawler\gui\views\developer_inspector.py:133
 msgid "能力"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:130
+msgid "能力版本声明无效"
 msgstr ""
 
 #: src\omnicrawler\gui\views\ai_service_center.py:350
 msgid "能力路由"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:118
-msgid "自制插件放入项目 plugins/ 目录后在此签名；签名后即可上传市场。"
+#: src\omnicrawler\gui\views\market_home.py:128
+msgid "自制插件放入项目 plugins/ 目录后点击“完成并签名”；随后可私下分享或自主投稿市场。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:361
-msgid "自制模板：把 template.yaml 放入项目根 templates/ 或 templates_installed/ 目录（每个子目录一份），在此签名后上传市场。"
+#: src\omnicrawler\gui\views\market_home.py:390
+msgid "自制模板：把 template.yaml 放入项目根 templates/ 或 templates_installed/ 目录（每个子目录一份），完成整包签名后可私下分享或投稿市场。"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:562
+msgid "自动化"
 msgstr ""
 
 #: src\omnicrawler\gui\views\yaml_editor.py:157
@@ -4396,12 +4736,16 @@ msgstr ""
 msgid "自动安装"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1765
+#: src\omnicrawler\gui\main.py:1709
 msgid "自动导出 Markdown 失败: %s"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1740
+#: src\omnicrawler\gui\main.py:1684
 msgid "自动导出 Markdown 跳过：未找到结果文件 records.csv 于 %s"
+msgstr ""
+
+#: src\omnicrawler\gui\background_host.py:371
+msgid "自动轮播"
 msgstr ""
 
 #: src\omnicrawler\gui\views\ai_service_center.py:400
@@ -4414,10 +4758,6 @@ msgstr ""
 
 #: src\omnicrawler\gui\views\ai_service_center.py:242
 msgid "自定义 API 地址"
-msgstr ""
-
-#: src\omnicrawler\gui\home.py:209
-msgid "自然语言任务描述"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\env_checker.py:53
@@ -4444,7 +4784,7 @@ msgstr ""
 msgid "色盲友好配色"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1790
+#: src\omnicrawler\gui\main.py:1734
 msgid "草稿已恢复"
 msgstr ""
 
@@ -4460,6 +4800,10 @@ msgstr ""
 
 #: src\omnicrawler\gui\views\stealth_settings.py:145
 msgid "覆盖 Date.getTimezoneOffset() 返回值"
+msgstr ""
+
+#: src\omnicrawler\gui\background_host.py:351
+msgid "覆盖裁剪"
 msgstr ""
 
 #: src\omnicrawler\gui\views\professional_review.py:67
@@ -4478,12 +4822,20 @@ msgstr ""
 msgid "规则命中"
 msgstr ""
 
+#: src\omnicrawler\gui\views\plugin_market.py:66
+msgid "解析器"
+msgstr ""
+
 #: src\omnicrawler\gui\wizard\step3_fields.py:321
 msgid "解析失败"
 msgstr ""
 
 #: src\omnicrawler\gui\views\pdf_workbench.py:88
 msgid "解析文字层"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:68
+msgid "认证"
 msgstr ""
 
 #: src\omnicrawler\gui\views\ai_service_center.py:334
@@ -4502,7 +4854,7 @@ msgstr ""
 msgid "证据"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:772
+#: src\omnicrawler\gui\main.py:570
 #: src\omnicrawler\gui\views\professional_review.py:132
 msgid "证据查看器"
 msgstr ""
@@ -4511,36 +4863,61 @@ msgstr ""
 msgid "证据胶囊时间线"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:442
+#: src\omnicrawler\gui\views\task_canvas.py:311
 msgid "试试粘贴一个网址开始，例如 https://example.org/news"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1491
+#: src\omnicrawler\gui\views\task_canvas.py:1494
 msgid "试跑"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1231
+#: src\omnicrawler\gui\main.py:1042
 msgid "试跑 3 页"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1172
+#: src\omnicrawler\gui\views\task_canvas.py:726
+#: src\omnicrawler\gui\views\task_canvas.py:965
+msgid "试跑 {0} 页"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:1081
+msgid "试跑失败：{0}"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:450
+msgid "试跑少量页面"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:983
 msgid "试跑已失效"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:802
+#: src\omnicrawler\gui\views\task_canvas.py:1077
+msgid "试跑报告了错误：{0}"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:1072
+msgid "试跑未通过：请按工作台中的诊断建议修正"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:698
 msgid "试跑消耗流量/触发反爬的上限，与全量运行页数分离"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1263
+#: src\omnicrawler\gui\views\task_canvas.py:1255
 msgid "试跑通过后可运行"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1267
-msgid "试跑通过：可保存并全量运行"
+#: src\omnicrawler\gui\views\task_canvas.py:1259
+msgid "试跑通过：可以开始全量运行"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:799
+#: src\omnicrawler\gui\views\task_canvas.py:695
 msgid "试跑页数"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:237
+msgid "试跑验证"
 msgstr ""
 
 #: src\omnicrawler\gui\views\pdf_region_selector.py:197
@@ -4559,7 +4936,7 @@ msgstr ""
 msgid "详情"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:513
+#: src\omnicrawler\gui\views\task_canvas.py:383
 msgid "详情页"
 msgstr ""
 
@@ -4571,16 +4948,25 @@ msgstr ""
 msgid "说明：本模式使用本地启发式规则匹配，不调用大模型；结果仅供参考，请核对后使用。"
 msgstr ""
 
+#: src\omnicrawler\gui\home.py:284
+msgid "请修改：{0}"
+msgstr ""
+
 #: src\omnicrawler\gui\delegates\config_manager.py:195
 msgid "请先保存当前配置。"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1037
+#: src\omnicrawler\gui\views\task_canvas.py:1253
+#: src\omnicrawler\gui\views\task_canvas.py:1239
+msgid "请先修复输出与交付设置"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:850
 msgid "请先切换到 YAML 编辑器"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:224
-#: src\omnicrawler\gui\views\market_home.py:436
+#: src\omnicrawler\gui\views\market_home.py:249
+#: src\omnicrawler\gui\views\market_home.py:465
 msgid "请先创建身份：市场页顶部「身份与信任」"
 msgstr ""
 
@@ -4589,7 +4975,7 @@ msgstr ""
 msgid "请先加载 CSV 文件"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:976
+#: src\omnicrawler\gui\views\task_canvas.py:872
 msgid "请先在意图区填写网址，再使用视觉点选"
 msgstr ""
 
@@ -4601,15 +4987,19 @@ msgstr ""
 msgid "请先在推荐结果中选择一行"
 msgstr ""
 
+#: src\omnicrawler\gui\views\plugin_market.py:873
+msgid "请先安装插件"
+msgstr ""
+
 #: src\omnicrawler\gui\wizard\step3_fields.py:296
 msgid "请先粘贴 HTML 代码"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:535
+#: src\omnicrawler\gui\views\plugin_market.py:818
 msgid "请先联网刷新并选择插件"
 msgstr ""
 
-#: src\omnicrawler\gui\views\template_market.py:376
+#: src\omnicrawler\gui\views\template_market.py:402
 msgid "请先联网刷新并选择模板"
 msgstr ""
 
@@ -4626,7 +5016,7 @@ msgstr ""
 msgid "请先输入目标 URL"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:907
+#: src\omnicrawler\gui\views\task_canvas.py:803
 msgid "请先选中要删除的字段"
 msgstr ""
 
@@ -4634,7 +5024,7 @@ msgstr ""
 msgid "请先选择 PDF 并框选字段区域。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:281
+#: src\omnicrawler\gui\views\project_dialogs.py:300
 msgid "请先选择一个任务。"
 msgstr ""
 
@@ -4658,12 +5048,12 @@ msgstr ""
 msgid "请先选择要撤销的信任"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1111
-#: src\omnicrawler\gui\views\task_canvas.py:1263
+#: src\omnicrawler\gui\views\task_canvas.py:973
+#: src\omnicrawler\gui\views\task_canvas.py:1255
 msgid "请先通过试跑"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:357
+#: src\omnicrawler\gui\home.py:341
 msgid "请前往「📄 PDF 工作台」开始处理。"
 msgstr ""
 
@@ -4671,12 +5061,12 @@ msgstr ""
 msgid "请勿打扰模式"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:343
-msgid "请在下方输入目标网址后点击「分析并准备试跑」"
+#: src\omnicrawler\gui\home.py:327
+msgid "请在任务描述中补充目标网址，然后点击“创建任务”"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:305
-msgid "请描述你的任务"
+#: src\omnicrawler\gui\views\market_home.py:628
+msgid "请填写展示给接收者和审核者的功能说明。"
 msgstr ""
 
 #: src\omnicrawler\gui\views\stealth_settings.py:370
@@ -4689,7 +5079,7 @@ msgid "请求延迟"
 msgstr ""
 
 #: src\omnicrawler\gui\views\developer_inspector.py:226
-#: src\omnicrawler\gui\views\task_canvas.py:790
+#: src\omnicrawler\gui\views\task_canvas.py:686
 msgid "请求延迟(秒)"
 msgstr ""
 
@@ -4709,6 +5099,14 @@ msgstr ""
 msgid "请确保 OmniCrawler 框架已安装。"
 msgstr ""
 
+#: src\omnicrawler\gui\home.py:276
+msgid "请粘贴网址或描述你的任务"
+msgstr ""
+
+#: src\omnicrawler\gui\home.py:290
+msgid "请补充：{0}"
+msgstr ""
+
 #: src\omnicrawler\gui\views\change_monitor.py:290
 msgid "请输入目标 URL"
 msgstr ""
@@ -4721,7 +5119,7 @@ msgstr ""
 msgid "请输入要提取的字段定义"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:87
+#: src\omnicrawler\gui\main.py:82
 msgid "请运行: pip install omnicrawler-platform[gui]"
 msgstr ""
 
@@ -4729,7 +5127,7 @@ msgstr ""
 msgid "请选择两次不同的运行。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:359
+#: src\omnicrawler\gui\views\developer_inspector.py:370
 msgid "读取运行时间线失败：{0}"
 msgstr ""
 
@@ -4749,7 +5147,7 @@ msgstr ""
 msgid "资源模式必须是省电、均衡或全速"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1490
+#: src\omnicrawler\gui\views\task_canvas.py:1493
 msgid "资源预算"
 msgstr ""
 
@@ -4765,13 +5163,17 @@ msgstr ""
 msgid "路由与预算"
 msgstr ""
 
+#: src\omnicrawler\gui\views\task_canvas.py:295
+msgid "跳过引导"
+msgstr ""
+
 #: src\omnicrawler\gui\delegates\env_checker.py:199
 #: src\omnicrawler\gui\delegates\env_checker.py:177
 msgid "跳过（仅编辑配置）"
 msgstr ""
 
 #: src\omnicrawler\gui\views\identity_dialog.py:35
-#: src\omnicrawler\gui\views\plugin_market.py:239
+#: src\omnicrawler\gui\views\plugin_market.py:399
 msgid "身份与信任"
 msgstr ""
 
@@ -4785,9 +5187,13 @@ msgid "身份已创建。你的公钥指纹：{0}
 从市场页「私人」栏制作插件：把插件放入项目 plugins/ 目录 → 签名 → 上传市场。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:227
-#: src\omnicrawler\gui\views\market_home.py:439
+#: src\omnicrawler\gui\views\market_home.py:252
+#: src\omnicrawler\gui\views\market_home.py:468
 msgid "身份签名"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:69
+msgid "转换器"
 msgstr ""
 
 #: src\omnicrawler\gui\views\convert_tool.py:578
@@ -4818,16 +5224,20 @@ msgstr ""
 msgid "输入网页地址，系统会列出最稳定、最像业务字段的内容；选中需要的行后点击“添加字段”。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1145
-msgid "输出与存储在此配置；运行入口唯一在「④ 验证与运行」（需先通过试跑）"
+#: src\omnicrawler\gui\views\task_canvas.py:242
+msgid "输出与交付"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:1111
+msgid "输出与存储在此配置；全量运行前需要先通过试跑验证。"
 msgstr ""
 
 #: src\omnicrawler\gui\views\professional_review.py:267
 msgid "输出摘要"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1151
-#: src\omnicrawler\gui\views\task_canvas.py:1488
+#: src\omnicrawler\gui\views\task_canvas.py:1117
+#: src\omnicrawler\gui\views\task_canvas.py:1491
 msgid "输出格式"
 msgstr ""
 
@@ -4840,13 +5250,17 @@ msgstr ""
 msgid "输出路径："
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:364
+#: src\omnicrawler\gui\views\developer_inspector.py:375
 msgid "运行 {0} · {1} · 状态 {2} · 开始 {3}"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:560
+msgid "运行与历史"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\run_controller.py:108
 #: src\omnicrawler\gui\delegates\run_controller.py:69
-#: src\omnicrawler\gui\widgets\status_indicator.py:79
+#: src\omnicrawler\gui\home.py:368
 msgid "运行中"
 msgstr ""
 
@@ -4859,7 +5273,7 @@ msgstr ""
 msgid "运行任务 ({0})"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1227
+#: src\omnicrawler\gui\main.py:1038
 msgid "运行前检查"
 msgstr ""
 
@@ -4867,18 +5281,29 @@ msgstr ""
 msgid "运行前检查与小样本试跑..."
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1210
+#: src\omnicrawler\gui\main.py:1021
 msgid "运行前检查失败"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:278
+#: src\omnicrawler\gui\home.py:367
+msgid "运行失败"
+msgstr ""
+
 #: src\omnicrawler\gui\views\project_dialogs.py:62
 #: src\omnicrawler\gui\views\project_dialogs.py:65
+#: src\omnicrawler\gui\views\project_dialogs.py:71
 msgid "运行对比"
 msgstr ""
 
 #: src\omnicrawler\gui\views\project_dialogs.py:78
 msgid "运行对比完成"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:771
+msgid "运行扩展点：{0}
+执行模式：{1}
+权限：{2}（{3}）{4}
+兼容性：{5}"
 msgstr ""
 
 #: src\omnicrawler\gui\views\developer_inspector.py:159
@@ -4893,7 +5318,7 @@ msgstr ""
 msgid "运行能力与自包含组件..."
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:191
+#: src\omnicrawler\gui\views\project_dialogs.py:210
 msgid "运行间隔"
 msgstr ""
 
@@ -4902,11 +5327,11 @@ msgstr ""
 msgid "运行："
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:881
+#: src\omnicrawler\gui\views\task_canvas.py:777
 msgid "还有 0 个字段，点击加载"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:926
+#: src\omnicrawler\gui\views\task_canvas.py:822
 msgid "还有 {0} 个字段，点击加载"
 msgstr ""
 
@@ -4914,13 +5339,31 @@ msgstr ""
 msgid "这会清除所有规则的检测历史（保留规则定义），确定吗？"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:261
-msgid "进入完整五步向导"
+#: src\omnicrawler\gui\views\task_canvas.py:987
+msgid "这里显示最近试跑的字段命中、页面处理和错误详情。"
 msgstr ""
 
 #: src\omnicrawler\gui\views\convert_tool.py:338
 #: src\omnicrawler\gui\views\convert_tool.py:677
 msgid "进度"
+msgstr ""
+
+#: src\omnicrawler\gui\views\market_home.py:200
+#: src\omnicrawler\gui\views\plugin_market.py:657
+msgid "进程内"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:438
+msgid "进程内运行"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:762
+msgid "进程内（高风险审批）"
+msgstr ""
+
+#: src\omnicrawler\gui\views\market_home.py:225
+#: src\omnicrawler\gui\views\plugin_market.py:178
+msgid "进程内（高风险）"
 msgstr ""
 
 #: src\omnicrawler\gui\runner\remote_runner.py:33
@@ -4929,7 +5372,7 @@ msgstr ""
 msgid "远程执行后端尚未发布"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:995
+#: src\omnicrawler\gui\main.py:808
 msgid "退出"
 msgstr ""
 
@@ -4939,6 +5382,10 @@ msgstr ""
 
 #: src\omnicrawler\gui\views\scene_panel.py:126
 msgid "适应度"
+msgstr ""
+
+#: src\omnicrawler\gui\background_host.py:370
+msgid "适配方式"
 msgstr ""
 
 #: src\omnicrawler\gui\views\ai_service_center.py:234
@@ -4981,16 +5428,20 @@ msgstr ""
 msgid "选择一条记录后，这里显示原始数据、字段证据和质量信息。"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:347
+#: src\omnicrawler\gui\views\developer_inspector.py:358
 msgid "选择一次运行查看其事件时间线。"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:332
+#: src\omnicrawler\gui\home.py:317
 msgid "选择任务类型"
 msgstr ""
 
+#: src\omnicrawler\gui\views\market_home.py:674
+msgid "选择创作者签名包"
+msgstr ""
+
 #: src\omnicrawler\gui\views\scene_panel.py:126
-#: src\omnicrawler\gui\views\task_canvas.py:152
+#: src\omnicrawler\gui\views\task_canvas_components.py:69
 msgid "选择器"
 msgstr ""
 
@@ -5018,8 +5469,12 @@ msgstr ""
 msgid "选择器语法帮助"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1365
+#: src\omnicrawler\gui\views\task_canvas.py:1368
 msgid "选择如何处理："
+msgstr ""
+
+#: src\omnicrawler\gui\background_host.py:336
+msgid "选择媒体目录…"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\env_checker.py:64
@@ -5028,6 +5483,10 @@ msgstr ""
 
 #: src\omnicrawler\gui\delegates\env_checker.py:145
 msgid "选择开始使用的方式："
+msgstr ""
+
+#: src\omnicrawler\gui\views\market_home.py:667
+msgid "选择插件或模板文件夹…"
 msgstr ""
 
 #: src\omnicrawler\gui\views\convert_tool.py:280
@@ -5046,8 +5505,20 @@ msgstr ""
 msgid "选择日期"
 msgstr ""
 
+#: src\omnicrawler\gui\background_host.py:378
+msgid "选择本地媒体目录"
+msgstr ""
+
 #: src\omnicrawler\gui\views\convert_tool.py:386
 msgid "选择源文件"
+msgstr ""
+
+#: src\omnicrawler\gui\declarative_view_host.py:84
+msgid "选择目录…"
+msgstr ""
+
+#: src\omnicrawler\gui\declarative_view_host.py:143
+msgid "选择资源目录"
 msgstr ""
 
 #: src\omnicrawler\gui\views\project_dialogs.py:65
@@ -5058,11 +5529,11 @@ msgstr ""
 msgid "选择较早的一次运行："
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:199
+#: src\omnicrawler\gui\views\project_dialogs.py:218
 msgid "选择首次运行日期"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:742
+#: src\omnicrawler\gui\views\task_canvas.py:638
 msgid "选用已验收场景：按槽位生成字段并启用基因增强"
 msgstr ""
 
@@ -5070,7 +5541,7 @@ msgstr ""
 msgid "通用字段抽取模板，适合合同、年报、论文等"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:957
+#: src\omnicrawler\gui\views\task_canvas.py:853
 msgid "通用规则"
 msgstr ""
 
@@ -5119,10 +5590,6 @@ msgstr ""
 msgid "配置历史与恢复..."
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:766
-msgid "配置向导"
-msgstr ""
-
 #: src\omnicrawler\gui\views\yaml_editor.py:126
 msgid "配置差异对比"
 msgstr ""
@@ -5135,11 +5602,11 @@ msgstr ""
 msgid "配置已加载"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1908
+#: src\omnicrawler\gui\main.py:1852
 msgid "配置已加载: {0}"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_history.py:245
+#: src\omnicrawler\gui\views\task_history.py:253
 msgid "配置文件已不存在"
 msgstr ""
 
@@ -5155,24 +5622,40 @@ msgstr ""
 msgid "采用"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:705
+#: src\omnicrawler\gui\views\task_canvas.py:601
 msgid "采纳计划"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:243
-msgid "采集整个栏目"
+#: src\omnicrawler\gui\home.py:214
+msgid "采集新闻标题"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:629
-#: src\omnicrawler\gui\views\task_canvas.py:1477
+#: src\omnicrawler\gui\home.py:214
+msgid "采集新闻栏目中的标题、日期和链接"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:525
+#: src\omnicrawler\gui\views\task_canvas.py:1480
 msgid "采集方式"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:227
+msgid "采集方案"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:984
+msgid "采集范围或字段规则已变更，或交付设置无效。请修正后重新验证。"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:1159
+msgid "采集范围或字段规则已变更，请重新试跑"
 msgstr ""
 
 #: src\omnicrawler\gui\views\professional_review.py:450
 msgid "重复"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_history.py:83
+#: src\omnicrawler\gui\views\task_history.py:84
 msgid "重新加载配置"
 msgstr ""
 
@@ -5184,12 +5667,16 @@ msgstr ""
 msgid "重新执行"
 msgstr ""
 
+#: src\omnicrawler\gui\views\plugin_market.py:1005
+msgid "重新授权"
+msgstr ""
+
 #: src\omnicrawler\gui\delegates\menu.py:69
 msgid "重新检测环境"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:666
-#: src\omnicrawler\gui\views\template_market.py:448
+#: src\omnicrawler\gui\views\plugin_market.py:1000
+#: src\omnicrawler\gui\views\template_market.py:474
 msgid "重装"
 msgstr ""
 
@@ -5218,20 +5705,20 @@ msgstr ""
 msgid "错误"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:2074
+#: src\omnicrawler\gui\main.py:2018
 msgid "错误: --headless 模式下需要指定 --run <yaml_path>"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:382
+#: src\omnicrawler\gui\views\developer_inspector.py:393
 msgid "阶段: {0}"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1481
+#: src\omnicrawler\gui\views\task_canvas.py:1484
 msgid "附件与PDF"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:423
-#: src\omnicrawler\gui\views\task_canvas.py:1279
+#: src\omnicrawler\gui\views\task_canvas.py:278
+#: src\omnicrawler\gui\views\task_canvas.py:1271
 msgid "随时可保存，无需先试跑；不改变编辑状态"
 msgstr ""
 
@@ -5247,24 +5734,48 @@ msgstr ""
 msgid "隐身等级"
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:206
+#: src\omnicrawler\gui\views\market_home.py:200
+#: src\omnicrawler\gui\views\plugin_market.py:657
+msgid "隔离"
+msgstr ""
+
+#: src\omnicrawler\gui\views\market_home.py:225
+#: src\omnicrawler\gui\views\plugin_market.py:178
+#: src\omnicrawler\gui\views\plugin_market.py:762
+msgid "隔离子进程"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:437
+msgid "隔离运行"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:116
+#: src\omnicrawler\gui\views\plugin_market.py:444
+msgid "需授权"
+msgstr ""
+
+#: src\omnicrawler\gui\views\project_dialogs.py:225
 msgid "需要可用网络接口"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:474
-#: src\omnicrawler\gui\views\task_canvas.py:486
+#: src\omnicrawler\gui\views\task_canvas.py:343
+#: src\omnicrawler\gui\views\task_canvas.py:355
 msgid "需要有效网址"
+msgstr ""
+
+#: src\omnicrawler\gui\views\market_home.py:633
+msgid "需要贡献确认"
 msgstr ""
 
 #: src\omnicrawler\gui\views\task_canvas.py:53
 msgid "静态网页"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:517
+#: src\omnicrawler\gui\views\task_canvas.py:387
 msgid "静态页面"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1491
+#: src\omnicrawler\gui\views\task_canvas.py:1494
 msgid "页"
 msgstr ""
 
@@ -5272,7 +5783,11 @@ msgstr ""
 msgid "页码"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:1528
+#: src\omnicrawler\gui\views\task_canvas.py:1071
+msgid "页面可以访问，但没有提取到记录。请检查字段选择器、列表容器或页面类型。"
+msgstr ""
+
+#: src\omnicrawler\gui\main.py:1471
 msgid "页面类型:"
 msgstr ""
 
@@ -5281,7 +5796,7 @@ msgstr ""
 msgid "项"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:116
+#: src\omnicrawler\gui\views\market_home.py:126
 msgid "项目 plugins/ 目录中的插件。复制他人插件文件夹粘贴到此处即可出现在列表。"
 msgstr ""
 
@@ -5295,7 +5810,7 @@ msgstr ""
 msgid "项目目录已切换"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1478
+#: src\omnicrawler\gui\views\task_canvas.py:1481
 msgid "预计页数"
 msgstr ""
 
@@ -5307,11 +5822,11 @@ msgstr ""
 msgid "首次启动：选择数据位置"
 msgstr ""
 
-#: src\omnicrawler\gui\views\project_dialogs.py:202
+#: src\omnicrawler\gui\views\project_dialogs.py:221
 msgid "首次运行"
 msgstr ""
 
-#: src\omnicrawler\gui\main.py:765
+#: src\omnicrawler\gui\main.py:558
 msgid "首页"
 msgstr ""
 
@@ -5327,17 +5842,26 @@ msgstr ""
 msgid "高对比度"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:767
-#: src\omnicrawler\gui\views\task_canvas.py:827
+#: src\omnicrawler\gui\main.py:568
+msgid "高级"
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:663
+#: src\omnicrawler\gui\views\task_canvas.py:723
 msgid "高级设置 ▶"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:827
+#: src\omnicrawler\gui\views\task_canvas.py:723
 msgid "高级设置 ▼"
 msgstr ""
 
 #: src\omnicrawler\gui\views\stealth_settings.py:121
 msgid "高级选项"
+msgstr ""
+
+#: src\omnicrawler\gui\views\plugin_market.py:104
+#: src\omnicrawler\gui\views\plugin_market.py:445
+msgid "高风险"
 msgstr ""
 
 #: src\omnicrawler\gui\delegates\menu.py:113
@@ -5348,7 +5872,7 @@ msgstr ""
 msgid "默认 Prompt 模板"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1522
+#: src\omnicrawler\gui\views\task_canvas.py:1526
 msgid "（不使用场景）"
 msgstr ""
 
@@ -5360,12 +5884,12 @@ msgstr ""
 msgid "（内置引擎版本探测失败）"
 msgstr ""
 
-#: src\omnicrawler\gui\views\plugin_market.py:529
-#: src\omnicrawler\gui\views\template_market.py:370
+#: src\omnicrawler\gui\views\plugin_market.py:810
+#: src\omnicrawler\gui\views\template_market.py:396
 msgid "（功能说明加载失败）"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:451
+#: src\omnicrawler\gui\views\task_canvas.py:320
 msgid "（可选）一句话描述任务，如：采集新闻标题并监测变化"
 msgstr ""
 
@@ -5373,15 +5897,15 @@ msgstr ""
 msgid "（抽样）"
 msgstr ""
 
-#: src\omnicrawler\gui\views\market_home.py:210
+#: src\omnicrawler\gui\views\market_home.py:235
 msgid "（无介绍）"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1133
+#: src\omnicrawler\gui\views\task_canvas.py:1099
 msgid "（无摘要）"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:330
+#: src\omnicrawler\gui\views\developer_inspector.py:341
 msgid "（无运行记录）"
 msgstr ""
 
@@ -5389,7 +5913,7 @@ msgstr ""
 msgid "（暂无场景，点击刷新导入出厂默认）"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:278
+#: src\omnicrawler\gui\views\developer_inspector.py:289
 msgid "（未扫描到插件）"
 msgstr ""
 
@@ -5397,11 +5921,11 @@ msgstr ""
 msgid "（未找到内置 CLI）"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:353
+#: src\omnicrawler\gui\home.py:337
 msgid "（未检测到具体文件路径）"
 msgstr ""
 
-#: src\omnicrawler\gui\views\developer_inspector.py:245
+#: src\omnicrawler\gui\views\developer_inspector.py:256
 msgid "（未配置）"
 msgstr ""
 
@@ -5410,7 +5934,7 @@ msgstr ""
 msgid "（空）"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1629
+#: src\omnicrawler\gui\views\task_canvas.py:1633
 msgid "（自动推荐）"
 msgstr ""
 
@@ -5418,7 +5942,7 @@ msgstr ""
 msgid "＋ 新建规则"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:888
+#: src\omnicrawler\gui\views\task_canvas.py:784
 msgid "＋ 添加字段"
 msgstr ""
 
@@ -5430,32 +5954,36 @@ msgstr ""
 msgid "，输出大小 {0} MB"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:891
+#: src\omnicrawler\gui\views\task_canvas.py:787
 msgid "－ 删除选中"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1647
-#: src\omnicrawler\gui\views\task_canvas.py:1669
+#: src\omnicrawler\gui\views\plugin_market.py:764
+msgid "；域名："
+msgstr ""
+
+#: src\omnicrawler\gui\views\task_canvas.py:1651
+#: src\omnicrawler\gui\views\task_canvas.py:1673
 msgid "👆 手动覆盖：{0}"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1686
+#: src\omnicrawler\gui\views\task_canvas.py:1690
 msgid "👆 手动配置"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:852
+#: src\omnicrawler\gui\views\task_canvas.py:748
 msgid "👆 视觉点选"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:752
+#: src\omnicrawler\gui\views\task_canvas.py:648
 msgid "👎 不准确"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:417
+#: src\omnicrawler\gui\home.py:448
 msgid "💡 建议操作："
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:551
+#: src\omnicrawler\gui\views\task_canvas.py:424
 msgid "💡 试试粘贴一个网址开始"
 msgstr ""
 
@@ -5471,11 +5999,11 @@ msgstr ""
 msgid "📂 格式互转（ConvertX）"
 msgstr ""
 
-#: src\omnicrawler\gui\home.py:355
+#: src\omnicrawler\gui\home.py:339
 msgid "📄 检测为文件处理任务"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_history.py:63
+#: src\omnicrawler\gui\views\task_history.py:64
 msgid "📋 历史任务"
 msgstr ""
 
@@ -5487,7 +6015,7 @@ msgstr ""
 msgid "📝 场景管理（Scene）"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:1658
+#: src\omnicrawler\gui\views\task_canvas.py:1662
 msgid "📦 模板 {0}（置信度 {1:.2f}）"
 msgstr ""
 
@@ -5503,7 +6031,7 @@ msgstr ""
 msgid "🚀 快速体验"
 msgstr ""
 
-#: src\omnicrawler\gui\views\task_canvas.py:639
+#: src\omnicrawler\gui\views\task_canvas.py:535
 msgid "🤖 AI 计划已生成"
 msgstr ""
 

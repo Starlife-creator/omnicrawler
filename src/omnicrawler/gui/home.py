@@ -10,18 +10,13 @@ from PySide6.QtCore import QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
     QApplication,
-    QButtonGroup,
-    QComboBox,
     QFrame,
     QGraphicsDropShadowEffect,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
-    QRadioButton,
     QVBoxLayout,
     QWidget,
 )
@@ -163,8 +158,10 @@ class AmbientHero(QWidget):
 class HomePage(QWidget):
     quick_task_ready = Signal(object)
     natural_task_ready = Signal(object)
-    open_wizard = Signal()
+    open_workspace = Signal()
     open_recent = Signal()
+    open_recent_config = Signal(str)
+    open_recent_results = Signal(str)
     open_results = Signal()
     open_schedule = Signal()
     import_task = Signal()
@@ -194,72 +191,46 @@ class HomePage(QWidget):
         card.setGraphicsEffect(shadow)
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(20, 18, 20, 18)
-        card_layout.addWidget(QLabel(_("先描述你的任务")))
+        card_layout.addWidget(QLabel(_("你想采集什么？")))
         description_hint = QLabel(
-            _("用一句话说明你想采集什么、范围有多大、是否下载文件或监测变化。")
-            + _("系统会生成可修改的安全草案，并始终先试跑。")
+            _("粘贴网址，或用一句话说明目标、范围、下载和监测要求。")
+            + _("系统会自动选择安全起点，生成可修改草案，并始终先试跑。")
         )
         description_hint.setWordWrap(True)
         description_hint.setObjectName("muted")
         card_layout.addWidget(description_hint)
-        self.natural_language = QPlainTextEdit()
-        self.natural_language.setPlaceholderText(
-            _("描述你的任务，例如：分析合同 PDF 中的金额和日期，或每周监测某网站的动态")
+        self.task_input = QPlainTextEdit()
+        self.task_input.setPlaceholderText(
+            _("粘贴 https://example.com/news，或描述：每周监测该网站并下载新增 PDF")
         )
-        self.natural_language.setAccessibleName(_("自然语言任务描述"))
-        self.natural_language.setMinimumHeight(82)
-        self.natural_language.setMaximumHeight(130)
-        card_layout.addWidget(self.natural_language)
-        natural_actions = QHBoxLayout()
-        nl_button = QPushButton(_("生成安全草案"))
-        nl_button.setProperty("primary", True)
-        nl_button.clicked.connect(self._draft_natural_language)
-        natural_actions.addWidget(nl_button)
-        natural_actions.addStretch()
-        card_layout.addLayout(natural_actions)
+        self.task_input.setAccessibleName(_("任务网址或描述"))
+        self.task_input.setMinimumHeight(96)
+        self.task_input.setMaximumHeight(150)
+        card_layout.addWidget(self.task_input)
 
-        url_hint = QLabel(_("或者只填写网址并选择任务类型："))
-        url_hint.setObjectName("muted")
-        card_layout.addWidget(url_hint)
-        self.url = QLineEdit()
-        self.url.setPlaceholderText(_("粘贴网页地址，例如 https://example.com/news"))
-        self.url.setAccessibleName(_("任务入口网址"))
-        self.url.setClearButtonEnabled(True)
-        card_layout.addWidget(self.url)
-        # 最近使用的 URL 下拉
-        recent_row = QHBoxLayout()
-        recent_row.addWidget(QLabel(_("最近:")))
-        self.recent_combo = QComboBox()
-        self.recent_combo.setMinimumWidth(200)
-        self.recent_combo.setAccessibleName(_("最近使用的网址"))
-        self.recent_combo.currentTextChanged.connect(self._on_recent_selected)
-        recent_row.addWidget(self.recent_combo)
-        recent_row.addStretch()
-        card_layout.addLayout(recent_row)
-        self._load_recent_urls()
-        intent_row = QHBoxLayout()
-        self.intent_group = QButtonGroup(self)
-        options = (
-            (_("保存这个页面"), "save_page"), (_("采集整个栏目"), "collect_section"),
-            (_("下载附件/PDF"), "download_files"), (_("监测内容变化"), "monitor_changes"),
-        )
-        for index, (label, value) in enumerate(options):
-            button = QRadioButton(label)
-            button.setProperty("intent", value)
-            button.setAccessibleName(_(f"任务类型：{label}"))
-            self.intent_group.addButton(button)
-            intent_row.addWidget(button)
-            if index == 0:
-                button.setChecked(True)
-        card_layout.addLayout(intent_row)
+        examples = QHBoxLayout()
+        examples.addWidget(QLabel(_("示例：")))
+        for label, text in (
+            (_("采集新闻标题"), _("采集新闻栏目中的标题、日期和链接")),
+            (_("下载 PDF"), _("下载网页中的新增 PDF 附件")),
+            (_("监测变化"), _("每周监测网页内容变化")),
+        ):
+            chip = QPushButton(label)
+            chip.setFlat(True)
+            chip.setProperty("exampleChip", True)
+            chip.clicked.connect(lambda _checked=False, value=text: self.task_input.setPlainText(value))
+            examples.addWidget(chip)
+        examples.addStretch()
+        card_layout.addLayout(examples)
+
         action_row = QHBoxLayout()
-        self.analyse_button = QPushButton(_("分析并准备试跑"))
-        self.analyse_button.setAccessibleName(_("分析网址并准备试跑"))
-        self.analyse_button.setProperty("primary", True)
-        self.analyse_button.clicked.connect(self._draft_quick)
-        action_row.addWidget(self.analyse_button)
-        edit = QPushButton(_("进入完整五步向导"))
-        edit.clicked.connect(self.open_wizard.emit)
+        self.create_button = QPushButton(_("创建任务"))
+        self.create_button.setAccessibleName(_("创建任务并准备试跑"))
+        self.create_button.setProperty("primary", True)
+        self.create_button.clicked.connect(self._create_task)
+        action_row.addWidget(self.create_button)
+        edit = QPushButton(_("打开空白任务"))
+        edit.clicked.connect(self.open_workspace.emit)
         action_row.addWidget(edit)
         action_row.addStretch()
         card_layout.addLayout(action_row)
@@ -269,45 +240,54 @@ class HomePage(QWidget):
         card_layout.addWidget(self.feedback)
         layout.addWidget(card)
 
-        grid = QGridLayout()
-        actions = (
-            (_("新建任务"), self.open_wizard.emit), (_("最近任务"), self.open_recent.emit),
-            (_("定时监测"), self.open_schedule.emit), (_("结果与复核"), self.open_results.emit),
-            (_("导入任务"), self.import_task.emit), (_("系统体检"), self.run_doctor.emit),
-            (_("5分钟离线演示"), self.create_demo.emit), (_("格式互转（CSV/JSONL/Parquet…）"), self.open_convert_tool.emit),
-            (_("场景管理"), self.open_scene.emit), (_("运行对比"), self.open_run_compare.emit),
-        )
-        for index, (label, callback) in enumerate(actions):
-            action_btn = QPushButton(label)
-            action_btn.setProperty("homeAction", True)
-            action_btn.setMinimumHeight(42)
-            action_btn.setAccessibleName(label)
-            action_btn.clicked.connect(callback)
-            grid.addWidget(action_btn, index // 4, index % 4)
-        layout.addLayout(grid)
+        recent_header = QHBoxLayout()
+        recent_header.addWidget(QLabel(_("最近任务")))
+        recent_header.addStretch()
+        all_recent = QPushButton(_("查看全部"))
+        all_recent.setFlat(True)
+        all_recent.clicked.connect(self.open_recent.emit)
+        recent_header.addWidget(all_recent)
+        layout.addLayout(recent_header)
+        self._recent_tasks_host = QWidget()
+        self._recent_tasks_layout = QVBoxLayout(self._recent_tasks_host)
+        self._recent_tasks_layout.setContentsMargins(0, 0, 0, 0)
+        self._recent_tasks_layout.setSpacing(6)
+        layout.addWidget(self._recent_tasks_host)
+        self.set_recent_tasks([])
+
+        secondary = QHBoxLayout()
+        for label, callback in (
+            (_("打开空白任务"), self.open_workspace.emit),
+            (_("导入任务"), self.import_task.emit),
+            (_("5分钟离线演示"), self.create_demo.emit),
+        ):
+            button = QPushButton(label)
+            button.setProperty("homeAction", True)
+            button.clicked.connect(callback)
+            secondary.addWidget(button)
+        secondary.addStretch()
+        layout.addLayout(secondary)
         layout.addStretch()
 
-    def _draft_quick(self) -> None:
-        try:
-            selected = self.intent_group.checkedButton()
-            intent = str(selected.property("intent")) if selected else "save_page"
-            draft = draft_quick_task(self.url.text(), intent)
-        except ValueError as exc:
-            self.feedback.setText(_(f"请修改：{exc}"))
-            return
-        self._save_recent_url(self.url.text())
-        self._show_draft(draft)
-
-    def _draft_natural_language(self) -> None:
-        """三层判定处理自然语言输入：URL → 文件路径 → 二选一对话框。"""
-        request = self.natural_language.toPlainText().strip()
+    def _create_task(self) -> None:
+        """从统一输入框创建网址任务或自然语言任务草稿。"""
+        request = self.task_input.toPlainText().strip()
         if not request:
-            self.feedback.setText(_("请描述你的任务"))
+            self.feedback.setText(_("请粘贴网址或描述你的任务"))
             return
+
+        # 纯 URL 走最小、可预测的本地草稿；包含说明的输入交给自然语言编译器。
+        if request.startswith(("http://", "https://")) and not any(char.isspace() for char in request):
+            try:
+                self._show_draft(draft_quick_task(request, "save_page"))
+            except ValueError as exc:
+                self.feedback.setText(_("请修改：{0}").format(exc))
+            return
+
         try:
-            compiled = compile_natural_language(request, fallback_url=self.url.text().strip())
+            compiled = compile_natural_language(request, fallback_url="")
         except ValueError as exc:
-            self.feedback.setText(_(f"请补充：{exc}"))
+            self.feedback.setText(_("请补充：{0}").format(exc))
             return
 
         # Layer 3: 都没命中 → 二选一对话框
@@ -320,11 +300,16 @@ class HomePage(QWidget):
             return
 
         # crawl 模式（现有逻辑）
-        self.url.setText(compiled.task.url)
-        self._save_recent_url(compiled.task.url)
         self._show_draft(compiled.task, emit=False)
         self.natural_task_ready.emit(compiled)
         self._try_ai_enrich(compiled)
+
+    # 兼容旧快捷入口；统一转入单一创建流程。
+    def _draft_quick(self) -> None:
+        self._create_task()
+
+    def _draft_natural_language(self) -> None:
+        self._create_task()
 
     def _show_mode_dialog(self, request: str) -> None:
         """弹出二选一对话框，让用户选择爬虫还是 PDF 模式。"""
@@ -338,9 +323,8 @@ class HomePage(QWidget):
 
         clicked = msg.clickedButton()
         if clicked == crawl_btn:
-            # 用户选择爬虫 → 弹出 URL 输入
-            self.url.setFocus()
-            self.feedback.setText(_("请在下方输入目标网址后点击「分析并准备试跑」"))
+            self.task_input.setFocus()
+            self.feedback.setText(_("请在任务描述中补充目标网址，然后点击“创建任务”"))
         elif clicked == pdf_btn:
             # 用户选择 PDF → 引导到 PDF 工作台
             self.feedback.setText(_("已切换为文件处理模式。请前往「📄 PDF 工作台」选择目录和模板。"))
@@ -362,6 +346,53 @@ class HomePage(QWidget):
         self.feedback.setText(_("已安全限制在入口站点；将先试跑。为什么：") + "；".join(draft.decisions))
         if emit:
             self.quick_task_ready.emit(draft)
+
+    def set_recent_tasks(self, records: list[dict[str, object]]) -> None:
+        """刷新首页最近任务卡片；数据来自 TaskHistory 的公开快照。"""
+        while self._recent_tasks_layout.count():
+            item = self._recent_tasks_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        if not records:
+            empty = QLabel(_("暂无最近任务。创建并运行一次任务后，可从这里继续编辑或查看结果。"))
+            empty.setObjectName("muted")
+            empty.setWordWrap(True)
+            self._recent_tasks_layout.addWidget(empty)
+            return
+
+        status_names = {
+            "finished": _("已完成"),
+            "error": _("运行失败"),
+            "running": _("运行中"),
+        }
+        for record in records[:4]:
+            row = QFrame()
+            row.setProperty("card", True)
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(12, 8, 12, 8)
+            name = str(record.get("project_name") or _("未命名任务"))
+            started = str(record.get("started_at") or "")[:16].replace("T", " ")
+            status = status_names.get(str(record.get("status") or ""), _("待处理"))
+            summary = QLabel(f"<b>{name}</b><br><small>{status}　{started}</small>")
+            row_layout.addWidget(summary, 1)
+
+            config_path = str(record.get("config_path") or "")
+            workspace = str(record.get("workspace") or "")
+            edit = QPushButton(_("继续编辑"))
+            edit.setEnabled(bool(config_path))
+            edit.clicked.connect(
+                lambda _checked=False, path=config_path: self.open_recent_config.emit(path)
+            )
+            row_layout.addWidget(edit)
+            results = QPushButton(_("查看结果"))
+            results.setEnabled(bool(workspace))
+            results.clicked.connect(
+                lambda _checked=False, path=workspace: self.open_recent_results.emit(path)
+            )
+            row_layout.addWidget(results)
+            self._recent_tasks_layout.addWidget(row)
 
     def _try_ai_enrich(self, compiled: object) -> None:
         """双路径：本地解析已出结果，异步启动 AI 增强。"""
@@ -420,36 +451,3 @@ class HomePage(QWidget):
 
         if len(parts) > 1:
             self.feedback.setText("\n".join(parts))
-
-    def _load_recent_urls(self) -> None:
-        """从本地缓存加载最近使用的 URL。"""
-        try:
-            from pathlib import Path
-            cache = Path.home() / ".omnicrawler_recent_urls.txt"
-            if cache.exists():
-                urls = [u.strip() for u in cache.read_text().split("\n") if u.strip()]
-                self.recent_combo.addItem(_("— 最近使用 —"))
-                for u in urls[-10:]:
-                    short = u[:60] + ("…" if len(u) > 60 else "")
-                    self.recent_combo.addItem(short, u)
-        except Exception:
-            logger.debug("Failed to load recent URLs cache", exc_info=True)
-
-    def _save_recent_url(self, url: str) -> None:
-        """保存 URL 到本地缓存。"""
-        try:
-            from pathlib import Path
-            cache = Path.home() / ".omnicrawler_recent_urls.txt"
-            existing = set()
-            if cache.exists():
-                existing = {u.strip() for u in cache.read_text().split("\n") if u.strip()}
-            existing.add(url.strip())
-            cache.write_text("\n".join(existing), encoding="utf-8")
-        except Exception:
-            logger.debug("Failed to save recent URL cache", exc_info=True)
-
-    def _on_recent_selected(self, text: str) -> None:
-        if text and not text.startswith("—"):
-            data = self.recent_combo.currentData()
-            if data:
-                self.url.setText(data)

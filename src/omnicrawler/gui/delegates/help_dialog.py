@@ -64,7 +64,7 @@ class HelpDialogManager(_BaseDelegate):
         shortcuts = mw._settings.shortcuts
         text = _("快捷键列表:\n\n")
         for key, label in [("save", _("保存配置")), ("run", _("运行任务")), ("stop", _("停止任务")),
-                           ("toggle_editor", _("切换向导/编辑器")), ("open_templates", _("打开模板库")),
+                           ("toggle_editor", _("切换任务工作台/YAML 编辑器")), ("open_templates", _("打开模板库")),
                            ("refresh", _("刷新结果页")), ("format_yaml", _("格式化 YAML（编辑器模式）")),
                            ("toggle_dnd", _("切换请勿打扰模式"))]:
             text += f"  {shortcuts[key]:20s}  {label}\n"

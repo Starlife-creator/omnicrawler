@@ -47,7 +47,7 @@ def test_empty_state_snapshot(theme_manager):
             icon="✓",
             title=_("专业复核台 · 功能开发中"),
             description=_("此处将提供按风险优先排序的字段复核界面"),
-            action_label=_("返回配置向导"),
+            action_label=_("返回任务工作台"),
         )
         _snap(widget, "empty_state", theme)
 

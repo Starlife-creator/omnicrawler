@@ -9,10 +9,11 @@ UI 结构性拆分（五区子控件）待视觉回归基线建立后再行推�
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Iterable
 from typing import Literal
 
-from ..core.config_model import FieldDef
+from ..core.config_model import CrawlConfig, FieldDef
 
 
 def field_fingerprint(fields: Iterable[FieldDef]) -> str:
@@ -25,6 +26,59 @@ def field_fingerprint(fields: Iterable[FieldDef]) -> str:
         f"{f.name}\x1f{f.selector}\x1f{f.selector_type}" for f in fields
     ]
     return hashlib.md5("\n".join(parts).encode("utf-8")).hexdigest()
+
+
+def crawl_fingerprint(config: CrawlConfig) -> str:
+    """生成会影响采集/提取结果的稳定指纹，排除名称、调度和交付设置。"""
+    passthrough_keys = (
+        "source", "crawl", "http", "browser", "pagination", "extract", "processors",
+    )
+    payload = {
+        "seed_urls": config.seed_urls,
+        "source_kind": config.source_kind,
+        "max_pages": config.max_pages,
+        "delay": config.delay,
+        "concurrency": config.concurrency,
+        "resource_profile": config.resource_profile,
+        "pagination": config.pagination,
+        "fields": [
+            {
+                "name": field.name,
+                "selector": field.selector,
+                "selector_type": field.selector_type,
+                "attribute": field.attribute,
+                "regex": field.regex,
+                "required": field.required,
+                "fallback_xpath": field.fallback_xpath,
+            }
+            for field in config.fields
+        ],
+        "download": {
+            "enabled": config.download.enabled,
+            "extensions": config.download.extensions,
+        },
+        "process_pdf": config.process_pdf,
+        "pdf_ocr": config.pdf_ocr,
+        "snapshot_mode": config.snapshot_mode,
+        "extraction_mode": config.extraction_mode,
+        "ai_extraction_prompt": config.ai_extraction_prompt,
+        "ai_chunk_strategy": config.ai_chunk_strategy,
+        "ai_max_tokens_per_chunk": config.ai_max_tokens_per_chunk,
+        "respect_robots": config.respect_robots,
+        "topics": {
+            "any": config.topic_include_any,
+            "all": config.topic_include_all,
+            "exclude": config.topic_exclude,
+            "keep_uncertain": config.keep_uncertain_topics,
+        },
+        "advanced": {
+            key: config.passthrough[key]
+            for key in passthrough_keys
+            if key in config.passthrough
+        },
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def selector_kind(selector: str) -> Literal["css", "xpath"]:

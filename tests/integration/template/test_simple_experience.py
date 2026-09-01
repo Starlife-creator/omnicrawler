@@ -100,9 +100,30 @@ def test_home_exposes_low_barrier_actions(monkeypatch):
     app = QApplication.instance() or QApplication([])
     home = HomePage()
     labels = {button.text() for button in home.findChildren(QPushButton)}
-    assert {"新建任务", "最近任务", "定时监测", "结果与复核", "导入任务", "系统体检", "5分钟离线演示"} <= labels
-    assert home.url.accessibleName()
-    assert home.natural_language.accessibleName()
+    assert {"创建任务", "打开空白任务", "查看全部", "导入任务", "5分钟离线演示"} <= labels
+    assert home.task_input.accessibleName()
+
+    drafts = []
+    home.quick_task_ready.connect(drafts.append)
+    home.task_input.setPlainText("https://example.com/news")
+    home._create_task()
+    assert drafts and drafts[0].url == "https://example.com/news"
+
+    configs, results = [], []
+    home.open_recent_config.connect(configs.append)
+    home.open_recent_results.connect(results.append)
+    home.set_recent_tasks([{
+        "project_name": "news",
+        "status": "finished",
+        "started_at": "2026-09-01T12:00:00",
+        "config_path": "configs/news.yaml",
+        "workspace": "work/news",
+    }])
+    recent_buttons = {button.text(): button for button in home._recent_tasks_host.findChildren(QPushButton)}
+    recent_buttons["继续编辑"].click()
+    recent_buttons["查看结果"].click()
+    assert configs == ["configs/news.yaml"]
+    assert results == ["work/news"]
     home.deleteLater()
     app.processEvents()
 

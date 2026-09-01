@@ -2,7 +2,7 @@
 
 五区域渐进布局：意图区 → 草稿区 → 字段区 → 验证区 → 交付区。
 全手动轨全流程，含 P0 硬约束：
-- 运行唯一出口（交付区无运行按钮，试跑通过后验证区才出现「保存并全量运行」）
+- 运行唯一出口（交付区无运行按钮，常驻操作栏在试跑通过后启用全量运行）
 - 字段/草稿变更 → 试跑状态失效（stale 警告条 + 运行按钮禁用）
 - 锁定态（外部 YAML 编辑冲突）禁保存、禁编辑
 - 「保存草稿」不清除脏标记（脏标记是内存编辑态与回写冲突的控制器）
@@ -90,7 +90,7 @@ def _repolish_widget(widget: QWidget) -> None:
 # Compatibility aliases keep the canvas's private API stable for existing tests/plugins.
 from .task_canvas_components import FieldTableModel as _FieldTableModel
 from .task_canvas_components import PlanReviewWorker as _PlanReviewWorker
-from .task_canvas_logic import field_fingerprint
+from .task_canvas_logic import crawl_fingerprint, field_fingerprint
 from .task_canvas_logic import selector_kind as _selector_kind
 
 
@@ -150,7 +150,7 @@ class _Section(QGroupBox):
 
 
 class TaskCanvas(QScrollArea):
-    """五区域任务画布。"""
+    """持续可编辑的任务工作台。"""
 
     config_changed = Signal()
     save_requested = Signal()
@@ -165,6 +165,7 @@ class TaskCanvas(QScrollArea):
     # P3：首启引导气泡时长（毫秒），3 秒自动消失（PRD §3.1）
     _WELCOME_TIP_MS = 3000
     _WELCOME_TIP_KEY = "canvas/welcome_tip_seen"
+    _ONBOARDING_KEY = "canvas/onboarding_complete"
 
     def __init__(
         self,
@@ -183,6 +184,8 @@ class TaskCanvas(QScrollArea):
         self._locked = False
         self._trial_ok = False
         self._trial_field_hash: str | None = None
+        self._trial_config_hash: str | None = None
+        self._delivery_ok = True
         # P2：试跑历史（最近 3 次，PRD §3.4）
         self._trial_history: list[dict[str, Any]] = []
         self._recommendation: Any | None = None
@@ -215,30 +218,33 @@ class TaskCanvas(QScrollArea):
 
         layout.addLayout(self._build_toolbar())
 
-        # ① 意图区（常驻）
-        self._intent_section = _Section(_("① 从网址或描述开始"))
+        # 任务目标（常驻）
+        self._intent_section = _Section(_("任务目标"))
         self._build_intent_area()
         layout.addWidget(self._intent_section)
 
-        # ② 草稿区
-        self._draft_section = _Section(_("② 任务草稿"))
+        # 采集方案
+        self._draft_section = _Section(_("采集方案"))
         self._build_draft_area()
         layout.addWidget(self._draft_section)
 
-        # ③ 字段区
-        self._fields_section = _Section(_("③ 字段（复核式）"))
+        # 字段规则
+        self._fields_section = _Section(_("字段规则"))
         self._build_fields_area()
         layout.addWidget(self._fields_section)
 
-        # ④ 验证区（sticky：折叠时保留底部状态栏，PRD §2.4 验证区永不消失）
-        self._trial_section = _Section(_("④ 验证与运行"), sticky=self._build_trial_statusbar())
+        # 试跑验证；状态和主操作由工作台外层常驻操作栏承载。
+        self._trial_section = _Section(_("试跑验证"))
         self._build_trial_area()
         layout.addWidget(self._trial_section)
 
-        # ⑤ 交付区
-        self._delivery_section = _Section(_("⑤ 交付"))
+        # 输出与交付
+        self._delivery_section = _Section(_("输出与交付"))
         self._build_delivery_area()
         layout.addWidget(self._delivery_section)
+
+        # 创建后由 MainWindow 放在滚动区外，确保长任务配置下仍始终可见。
+        self._action_bar = self._build_persistent_action_bar()
 
         layout.addStretch()
 
@@ -256,7 +262,7 @@ class TaskCanvas(QScrollArea):
     def _build_toolbar(self) -> QHBoxLayout:
         bar = QHBoxLayout()
         bar.addWidget(HelpTooltip("task.name"))
-        title = QLabel(_("任务画布"))
+        title = QLabel(_("任务工作台"))
         title.setObjectName("pageTitle")
         bar.addWidget(title)
         bar.addStretch()
@@ -279,6 +285,20 @@ class TaskCanvas(QScrollArea):
     # ------------------------------------------------------------------
     def _build_intent_area(self) -> None:
         body = self._intent_section.body()
+        self._onboarding_card = QFrame()
+        self._onboarding_card.setObjectName("onboardingCard")
+        onboarding_layout = QHBoxLayout(self._onboarding_card)
+        onboarding_layout.setContentsMargins(SPACING["md"], SPACING["sm"], SPACING["md"], SPACING["sm"])
+        self._onboarding_text = QLabel("")
+        self._onboarding_text.setWordWrap(True)
+        onboarding_layout.addWidget(self._onboarding_text, 1)
+        onboarding_skip = QPushButton(_("跳过引导"))
+        onboarding_skip.setFlat(True)
+        onboarding_skip.clicked.connect(self._dismiss_onboarding)
+        onboarding_layout.addWidget(onboarding_skip)
+        self._onboarding_card.setVisible(False)
+        body.addWidget(self._onboarding_card)
+
         # P3：首启引导气泡（默认隐藏；maybe_show_welcome_tip 触发）
         self._welcome_tip = QLabel("")
         self._welcome_tip.setObjectName("welcomeTip")
@@ -344,6 +364,7 @@ class TaskCanvas(QScrollArea):
             self._probe_timer.stop()
             self._set_probe_badge("")
         self._on_scope_changed()
+        self._update_onboarding()
 
     def _fire_probe(self) -> None:
         """防抖期满：意图区当前 URL 仍有效才发起探活（锁定态/输入变更时不发）。"""
@@ -390,11 +411,14 @@ class TaskCanvas(QScrollArea):
 
         已看过（本地偏好）或画布已有草稿则跳过；关闭后不再重复。
         """
-        if self._config.seed_urls:
-            return
         from ...gui.settings import make_qsettings
 
         settings = make_qsettings("OmniCrawler", "GUIWorkbench")
+        if not settings.value(self._ONBOARDING_KEY, False, type=bool):
+            self._onboarding_card.setVisible(True)
+            self._update_onboarding()
+        if self._config.seed_urls:
+            return
         if settings.value(self._WELCOME_TIP_KEY, False, type=bool):
             return
         self._welcome_tip.setText(_("💡 试试粘贴一个网址开始"))
@@ -414,6 +438,28 @@ class TaskCanvas(QScrollArea):
 
         settings = make_qsettings("OmniCrawler", "GUIWorkbench")
         settings.setValue(self._WELCOME_TIP_KEY, True)
+
+    def _update_onboarding(self) -> None:
+        if not hasattr(self, "_onboarding_card") or self._onboarding_card.isHidden():
+            return
+        has_url = bool(self._url_edit.text().strip())
+        has_draft = bool(self._config.seed_urls)
+        marks = (
+            ("✓" if has_url else "○", _("粘贴网址")),
+            ("✓" if has_draft else "○", _("确认采集方案")),
+            ("✓" if self._trial_ok else "○", _("试跑少量页面")),
+            ("✓" if self._trial_ok else "○", _("可以全量运行")),
+        )
+        self._onboarding_text.setText(
+            _("<b>第一次创建任务</b><br>")
+            + "　".join(f"{mark} {label}" for mark, label in marks)
+        )
+
+    def _dismiss_onboarding(self) -> None:
+        self._onboarding_card.setVisible(False)
+        from ...gui.settings import make_qsettings
+
+        make_qsettings("OmniCrawler", "GUIWorkbench").setValue(self._ONBOARDING_KEY, True)
 
     def _on_start(self) -> None:
         url = self._url_edit.text().strip()
@@ -438,6 +484,7 @@ class TaskCanvas(QScrollArea):
         ToastManager.instance().success(_("已生成任务草稿：请复核后试跑"))
         # P4：有描述时后台生成 AI 计划供审核（未启用/失败不影响本地轨）
         self._start_plan_review()
+        self._update_onboarding()
 
     # ------------------------------------------------------------------
     #  P4：AI 计划审核卡片（PRD §5：审核动作与 AI 解耦）
@@ -676,10 +723,10 @@ class TaskCanvas(QScrollArea):
         self._advanced_btn.setText(_("高级设置 ▼") if visible else _("高级设置 ▶"))
 
     def _on_trial_pages_changed(self) -> None:
-        self._trial_btn.setText(_("先试跑 {0} 页").format(self._trial_pages_spin.value()))
+        self._trial_btn.setText(_("试跑 {0} 页").format(self._trial_pages_spin.value()))
 
     # ------------------------------------------------------------------
-    #  ③ 字段区
+    #  字段规则
     # ------------------------------------------------------------------
     def _build_fields_area(self) -> None:
         body = self._fields_section.body()
@@ -896,17 +943,17 @@ class TaskCanvas(QScrollArea):
         return fields
 
     # ------------------------------------------------------------------
-    #  ④ 验证区
+    #  试跑验证
     # ------------------------------------------------------------------
-    def _build_trial_statusbar(self) -> QWidget:
-        """验证区底部状态栏（PRD §2.4）：折叠时仍常驻，显示最近试跑摘要 + 查看详情。"""
-        bar = QFrame()
-        bar.setObjectName("trialStatusbar")
+    def _build_persistent_action_bar(self) -> QWidget:
+        """构建工作台常驻操作栏：验证状态、试跑和全量运行唯一出口。"""
+        bar = QFrame(self)
+        bar.setObjectName("workspaceActionBar")
         row = QHBoxLayout(bar)
-        row.setContentsMargins(SPACING["md"], SPACING["xs"], SPACING["md"], SPACING["xs"])
+        row.setContentsMargins(SPACING["lg"], SPACING["sm"], SPACING["lg"], SPACING["sm"])
         self._status_icon = QLabel("")
         row.addWidget(self._status_icon)
-        self._status_text = QLabel(_("尚未试跑：填写网址并生成草稿后，展开此区点「先试跑」"))
+        self._status_text = QLabel(_("尚未试跑：填写网址并生成草稿后开始小样本验证"))
         self._status_text.setObjectName("muted")
         self._status_text.setWordWrap(True)
         row.addWidget(self._status_text, 1)
@@ -915,24 +962,58 @@ class TaskCanvas(QScrollArea):
         self._status_view_btn.setToolTip(_("展开验证区查看完整试跑结果"))
         self._status_view_btn.clicked.connect(self._expand_trial_section)
         row.addWidget(self._status_view_btn)
+        self._trial_btn = QPushButton(_("试跑 {0} 页").format(_TRIAL_PAGES_DEFAULT))
+        self._trial_btn.setProperty("primary", True)
+        self._trial_btn.setToolTip(_("在独立工作区试跑，不会改变正式任务断点"))
+        self._trial_btn.clicked.connect(self.trial_run_requested)
+        row.addWidget(self._trial_btn)
+        row.addWidget(HelpTooltip("tryrun.plan"))
+        self._run_btn = QPushButton(_("开始全量运行"))
+        self._run_btn.setProperty("primary", True)
+        self._run_btn.setEnabled(False)
+        self._run_btn.setToolTip(_("请先通过试跑"))
+        self._run_btn.clicked.connect(self.run_requested)
+        row.addWidget(self._run_btn)
         return bar
+
+    def persistent_action_bar(self) -> QWidget:
+        """返回由主窗口安放在滚动区外的常驻操作栏。"""
+        return self._action_bar
 
     def _expand_trial_section(self) -> None:
         self._collapse_section(self._trial_section, False)
 
     def _build_trial_area(self) -> None:
         body = self._trial_section.body()
-        trial_row = QHBoxLayout()
-        trial_row.addWidget(HelpTooltip("tryrun.plan"))
-        self._trial_btn = QPushButton(_("先试跑 {0} 页").format(_TRIAL_PAGES_DEFAULT))
-        self._trial_btn.setProperty("primary", True)
-        self._trial_btn.setToolTip(_("在独立工作区试跑，不会改变正式任务断点"))
-        self._trial_btn.clicked.connect(self.trial_run_requested)
-        trial_row.addWidget(self._trial_btn)
-        trial_row.addStretch()
-        body.addLayout(trial_row)
+        detail_hint = QLabel(_("这里显示最近试跑的字段命中、页面处理和错误详情。"))
+        detail_hint.setObjectName("muted")
+        detail_hint.setWordWrap(True)
+        body.addWidget(detail_hint)
 
-        self._stale_warning = QLabel(_("⚠ 字段或草稿已变更，请重新试跑"))
+        self._trial_metrics_label = QLabel(_("完成试跑后，这里会显示页面数、记录数和诊断建议。"))
+        self._trial_metrics_label.setObjectName("summaryText")
+        self._trial_metrics_label.setWordWrap(True)
+        body.addWidget(self._trial_metrics_label)
+
+        self._trial_diagnosis_label = QLabel("")
+        self._trial_diagnosis_label.setObjectName("staleWarning")
+        self._trial_diagnosis_label.setWordWrap(True)
+        self._trial_diagnosis_label.setVisible(False)
+        body.addWidget(self._trial_diagnosis_label)
+
+        fix_row = QHBoxLayout()
+        self._fix_scope_btn = QPushButton(_("检查网址与范围"))
+        self._fix_scope_btn.clicked.connect(self._focus_scope_settings)
+        self._fix_scope_btn.setVisible(False)
+        fix_row.addWidget(self._fix_scope_btn)
+        self._fix_fields_btn = QPushButton(_("修正字段规则"))
+        self._fix_fields_btn.clicked.connect(self._focus_field_settings)
+        self._fix_fields_btn.setVisible(False)
+        fix_row.addWidget(self._fix_fields_btn)
+        fix_row.addStretch()
+        body.addLayout(fix_row)
+
+        self._stale_warning = QLabel(_("⚠ 采集范围或字段规则已变更，请重新试跑"))
         self._stale_warning.setObjectName("staleWarning")
         self._stale_warning.setVisible(False)
         body.addWidget(self._stale_warning)
@@ -954,16 +1035,53 @@ class TaskCanvas(QScrollArea):
         self._history_box.setVisible(False)
         body.addWidget(self._history_box)
 
-        self._run_btn = QPushButton(_("保存并全量运行"))
-        self._run_btn.setProperty("primary", True)
-        self._run_btn.setEnabled(False)
-        self._run_btn.setToolTip(_("请先通过试跑"))
-        self._run_btn.clicked.connect(self.run_requested)
-        body.addWidget(self._run_btn)
-
     def _toggle_trial_history(self) -> None:
         self._history_box.setVisible(not self._history_box.isVisible())
         self._history_btn.setText(_("收起试跑记录") if self._history_box.isVisible() else _("查看上次试跑记录"))
+
+    def _focus_scope_settings(self) -> None:
+        self._url_edit.setFocus()
+        self._url_edit.selectAll()
+
+    def _focus_field_settings(self) -> None:
+        self._collapse_section(self._fields_section, False)
+        self._fields_table.setFocus()
+
+    def _render_trial_details(self, details: dict[str, Any] | None) -> None:
+        if not details:
+            return
+        status = str(details.get("status") or _("未知"))
+        processed = int(details.get("processed", 0) or 0)
+        records = int(details.get("records", 0) or 0)
+        failed = int(details.get("failed", 0) or 0)
+        per_page = records / processed if processed else 0.0
+        self._trial_metrics_label.setText(
+            _("<b>试跑概览</b><br>状态：{0}<br>处理页面：{1}<br>提取记录：{2}<br>平均每页：{3:.1f} 条").format(
+                status, processed, records, per_page,
+            )
+        )
+
+        diagnosis = ""
+        show_scope = False
+        show_fields = False
+        error = str(details.get("error") or "").strip()
+        if processed <= 0:
+            diagnosis = _("没有成功处理页面。请检查网址、访问权限、robots 设置或页面是否需要浏览器渲染。")
+            show_scope = True
+        elif records <= 0:
+            diagnosis = _("页面可以访问，但没有提取到记录。请检查字段选择器、列表容器或页面类型。")
+            show_fields = True
+        elif failed > 0:
+            diagnosis = _("已提取数据，但有 {0} 个请求失败。建议检查分页范围和访问频率。").format(failed)
+            show_scope = True
+        elif error:
+            diagnosis = _("试跑报告了错误：{0}").format(error)
+            show_scope = True
+
+        self._trial_diagnosis_label.setText(diagnosis)
+        self._trial_diagnosis_label.setVisible(bool(diagnosis))
+        self._fix_scope_btn.setVisible(show_scope)
+        self._fix_fields_btn.setVisible(show_fields)
 
     def _record_trial_history(self, ok: bool, summary: str) -> None:
         """保留最近 3 次试跑报告（PRD §3.4 可回溯）。"""
@@ -987,11 +1105,11 @@ class TaskCanvas(QScrollArea):
         self._history_btn.setVisible(bool(self._trial_history))
 
     # ------------------------------------------------------------------
-    #  ⑤ 交付区
+    #  输出与交付
     # ------------------------------------------------------------------
     def _build_delivery_area(self) -> None:
         body = self._delivery_section.body()
-        note = QLabel(_("输出与存储在此配置；运行入口唯一在「④ 验证与运行」（需先通过试跑）"))
+        note = QLabel(_("输出与存储在此配置；全量运行前需要先通过试跑验证。"))
         note.setObjectName("muted")
         note.setWordWrap(True)
         body.addWidget(note)
@@ -1010,6 +1128,10 @@ class TaskCanvas(QScrollArea):
             chk.toggled.connect(self._on_output_changed)
             self._format_checks.append(chk)
             body.addWidget(chk)
+        self._delivery_status = QLabel("")
+        self._delivery_status.setObjectName("muted")
+        body.addWidget(self._delivery_status)
+        self._validate_delivery()
 
     # ------------------------------------------------------------------
     #  状态机（按域脏标记 + 试跑 field_hash 绑定，PRD §2.2.1 / §2.2.3）
@@ -1034,8 +1156,8 @@ class TaskCanvas(QScrollArea):
         if self._locked:
             return
         self._dirty_domains.add(domain)
-        if self._trial_ok:
-            self._set_trial_state(False, _("字段或草稿已变更，请重新试跑"))
+        if self._trial_ok and domain in {self._DOMAIN_SCOPE, self._DOMAIN_FIELD}:
+            self._set_trial_state(False, _("采集范围或字段规则已变更，请重新试跑"))
         self.config_changed.emit()
 
     def _sync_form_to_config(self) -> None:
@@ -1092,6 +1214,7 @@ class TaskCanvas(QScrollArea):
         if self._updating or self._locked:
             return
         self._sync_form_to_config()
+        self._validate_delivery()
         self._mark_dirty(self._DOMAIN_OUTPUT)
 
     def _on_schedule_changed(self, *_args: Any) -> None:
@@ -1101,31 +1224,52 @@ class TaskCanvas(QScrollArea):
         self._sync_form_to_config()
         self._mark_dirty(self._DOMAIN_SCHEDULE)
 
+    def _validate_delivery(self) -> bool:
+        """本地验证交付设置；不触发网页重新试跑。"""
+        selected = [chk for chk in getattr(self, "_format_checks", []) if chk.isChecked()]
+        self._delivery_ok = bool(selected)
+        if hasattr(self, "_delivery_status"):
+            self._delivery_status.setText(
+                _("✓ 交付配置有效") if self._delivery_ok else _("⚠ 至少选择一种输出格式")
+            )
+            self._delivery_status.setProperty("status", "success" if self._delivery_ok else "warning")
+            _repolish_widget(self._delivery_status)
+        if hasattr(self, "_run_btn"):
+            self._run_btn.setEnabled(self._trial_ok and self._delivery_ok and not self._locked)
+            if self._trial_ok and not self._delivery_ok:
+                self._run_btn.setToolTip(_("请先修复输出与交付设置"))
+        return self._delivery_ok
+
     def _set_trial_state(self, ok: bool, summary: str = "") -> None:
         self._trial_ok = ok
         self._stale_warning.setVisible(not ok and bool(summary))
+        if not ok and summary:
+            self._stale_warning.setText(summary)
         if summary:
             self._trial_result_label.setText(summary)
         elif ok:
-            self._trial_result_label.setText(_("✓ 试跑通过：可保存并全量运行"))
-        self._run_btn.setEnabled(ok and not self._locked)
-        self._run_btn.setToolTip(_("试跑通过后可运行") if ok else _("请先通过试跑"))
+            self._trial_result_label.setText(_("✓ 试跑通过：可以开始全量运行"))
+        self._run_btn.setEnabled(ok and self._delivery_ok and not self._locked)
+        if ok and not self._delivery_ok:
+            self._run_btn.setToolTip(_("请先修复输出与交付设置"))
+        else:
+            self._run_btn.setToolTip(_("试跑通过后可运行") if ok else _("请先通过试跑"))
         # P2：折叠态底部状态栏始终同步最新状态（PRD §2.4 验证区永不消失）
         if ok:
             self._status_icon.setText("✓ ")
-            first_line = str(summary).splitlines()[0] if summary else _("试跑通过：可保存并全量运行")
+            first_line = str(summary).splitlines()[0] if summary else _("试跑通过：可以开始全量运行")
             self._status_text.setText(_("最近试跑：{0}").format(first_line))
         elif summary:
             self._status_icon.setText("⚠ ")
             self._status_text.setText(str(summary).splitlines()[0])
         else:
             self._status_icon.setText("")
-            self._status_text.setText(_("尚未试跑：填写网址并生成草稿后，展开此区点「先试跑」"))
+            self._status_text.setText(_("尚未试跑：填写网址并生成草稿后开始小样本验证"))
 
     def _sync_ui_state(self) -> None:
         locked = self._locked
         self._save_btn.setEnabled(not locked)
-        self._save_btn.setToolTip(_("画布锁定中，请先完成当前操作") if locked else _("随时可保存，无需先试跑；不改变编辑状态"))
+        self._save_btn.setToolTip(_("工作台锁定中，请先完成当前操作") if locked else _("随时可保存，无需先试跑；不改变编辑状态"))
         self._start_btn.setEnabled(bool(self._url_edit.text().strip()) and not locked)
         for widget in (self._url_edit, self._desc_edit, self._fields_table,
                        self._max_pages, self._delay_spin, self._concurrency_spin,
@@ -1135,7 +1279,7 @@ class TaskCanvas(QScrollArea):
         for chk in self._format_checks:
             chk.setEnabled(not locked)
         self._trial_btn.setEnabled(not locked)
-        self._run_btn.setEnabled(self._trial_ok and not locked)
+        self._run_btn.setEnabled(self._trial_ok and self._delivery_ok and not locked)
         if locked:
             self._advanced_box.setVisible(True)  # 锁定态不隐藏高级区，避免状态漂移
 
@@ -1178,22 +1322,33 @@ class TaskCanvas(QScrollArea):
         self._set_trial_state(False)
         self._sync_ui_state()
 
-    def set_trial_result(self, ok: bool, summary: str) -> None:
-        """main 侧试跑完成后的回调；ok 时记录本次试跑的字段指纹（PRD §2.2.3）。"""
+    def set_trial_result(self, ok: bool, summary: str, details: dict[str, Any] | None = None) -> None:
+        """试跑完成回调：绑定配置指纹并渲染结构化诊断。"""
         if ok:
             self._trial_field_hash = self._field_fingerprint()
+            self._trial_config_hash = crawl_fingerprint(self._config)
         else:
             self._trial_field_hash = None
+            self._trial_config_hash = None
         # P2：每次试跑都入历史（最近 3 次可回溯，PRD §3.4）
         self._record_trial_history(ok, summary)
+        self._render_trial_details(details)
         self._set_trial_state(ok, summary)
+        self._collapse_section(self._trial_section, False)
+        self._update_onboarding()
+        if ok and not self._onboarding_card.isHidden():
+            from ...gui.settings import make_qsettings
+
+            make_qsettings("OmniCrawler", "GUIWorkbench").setValue(self._ONBOARDING_KEY, True)
+            QTimer.singleShot(1800, self._onboarding_card.hide)
 
     def trial_matches_fields(self) -> bool:
-        """运行前一致校验：试跑通过 且 试跑时的字段集与当前字段集指纹一致。"""
+        """兼容旧 API：验证试跑时的采集范围/规则仍与当前配置一致。"""
         return (
             bool(self._trial_ok)
-            and self._trial_field_hash is not None
-            and self._trial_field_hash == self._field_fingerprint()
+            and self._trial_config_hash is not None
+            and self._trial_config_hash == crawl_fingerprint(self._config)
+            and self._delivery_ok
         )
 
     def _field_fingerprint(self) -> str:
@@ -1210,10 +1365,10 @@ class TaskCanvas(QScrollArea):
         self.set_locked(True)
         box = QMessageBox(self)
         box.setWindowTitle(_("检测到外部 YAML 编辑"))
-        box.setText(_("YAML 编辑器已修改配置，而画布也有未提交的修改。"))
+        box.setText(_("YAML 编辑器已修改配置，而任务工作台也有未提交的修改。"))
         box.setInformativeText(_("选择如何处理："))
         load_btn = box.addButton(_("加载 YAML 覆盖草稿"), QMessageBox.ButtonRole.AcceptRole)
-        box.addButton(_("放弃 YAML，保留画布"), QMessageBox.ButtonRole.RejectRole)
+        box.addButton(_("放弃 YAML，保留工作台修改"), QMessageBox.ButtonRole.RejectRole)
         box.exec()
         if box.clickedButton() == load_btn:
             self.load_config(updated_config)
@@ -1349,6 +1504,7 @@ class TaskCanvas(QScrollArea):
         formats = set(cfg.output_formats)
         for chk in self._format_checks:
             chk.setChecked(chk.property("fmt") in formats)
+        self._validate_delivery()
 
     def _set_source_badge(self, draft: Any) -> None:
         source = getattr(draft, "hit_source", "") or ""
@@ -1684,6 +1840,11 @@ class TaskCanvas(QScrollArea):
                 border-radius: {RADIUS['md']}px;
                 border: 1px solid {t.primary};
             }}
+            QFrame#onboardingCard {{
+                background: {t.selection};
+                border-radius: {RADIUS['md']}px;
+                border: 1px solid {t.primary};
+            }}
             QLabel#planCardTitle {{
                 font-size: {FONT_SIZE['body']}px;
                 font-weight: 700;
@@ -1696,6 +1857,15 @@ class TaskCanvas(QScrollArea):
             }}
             QLabel#muted {{ color: {t.muted}; }}
         """)
+        if hasattr(self, "_action_bar"):
+            self._action_bar.setStyleSheet(f"""
+                QFrame#workspaceActionBar {{
+                    background: {t.surface};
+                    border-top: 1px solid {t.border};
+                    border-radius: {RADIUS['md']}px;
+                }}
+                QLabel#muted {{ color: {t.muted}; }}
+            """)
 
 
 def _form_row(

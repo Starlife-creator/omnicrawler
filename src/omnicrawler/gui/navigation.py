@@ -7,18 +7,26 @@ class NavIndex:
     """主导航列表行号（0-based）。替换魔法数字，杜绝"结果与复核"错页。
 
     取值必须与 main.py 中 nav_items 的逐行顺序一致；页面栈的映射由
-    main._on_nav_changed 的 pages 元组负责。
+    main._nav_pages 字典负责。
     """
 
-    HOME = 0
-    WIZARD = 1
-    PDF_WORKBENCH = 2
-    CONVERT_TOOL = 3  # B-4：ConvertX 格式互转工具
-    YAML_EDITOR = 4
-    MONITOR = 5
-    RESULTS = 6
-    EVIDENCE = 7
-    SCENE = 8  # S4：场景管理面板
-    CHANGE_MONITOR = 9
-    PLUGIN_MARKET = 10
-    DEVELOPER = 11
+    WORK_HEADER = 0
+    HOME = 1
+    WORKSPACE = 2
+    # Backward-compatible alias for extensions/tests that still import the old name.
+    WIZARD = WORKSPACE
+    MONITOR = 3
+    RESULTS = 4
+    AUTOMATION_HEADER = 5
+    CHANGE_MONITOR = 6
+    TOOLS_HEADER = 7
+    PDF_WORKBENCH = 8
+    CONVERT_TOOL = 9  # B-4：ConvertX 格式互转工具
+    SCENE = 10  # S4：场景管理面板
+    ADVANCED_HEADER = 11
+    YAML_EDITOR = 12
+    EVIDENCE = 13
+    PLUGIN_MARKET = 14
+    DEVELOPER = 15
+
+    HEADERS = frozenset({WORK_HEADER, AUTOMATION_HEADER, TOOLS_HEADER, ADVANCED_HEADER})

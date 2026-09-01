@@ -29,16 +29,36 @@ class ThemeManager(_BaseDelegate):
             })
         if not hasattr(mw, "_nav"):
             return
-        # S3.1.15：固定行号 2/5/6 改 NavIndex 常量——导航结构调整不再 AssertionError
-        _nav2 = mw._nav.item(NavIndex.PDF_WORKBENCH)
-        _nav5 = mw._nav.item(NavIndex.RESULTS)
-        _nav6 = mw._nav.item(NavIndex.EVIDENCE)
-        assert _nav2 is not None
-        assert _nav5 is not None
-        assert _nav6 is not None
-        _nav2.setHidden(mode == "simple")
-        _nav5.setHidden(mode == "simple")
-        _nav6.setHidden(mode != "developer")
+        # 核心工作流在所有模式都可见；技术工具随用户能力渐进披露。
+        simple_hidden = {
+            NavIndex.PDF_WORKBENCH,
+            NavIndex.CONVERT_TOOL,
+            NavIndex.YAML_EDITOR,
+            NavIndex.EVIDENCE,
+            NavIndex.SCENE,
+            NavIndex.CHANGE_MONITOR,
+            NavIndex.PLUGIN_MARKET,
+            NavIndex.DEVELOPER,
+        }
+        developer_only = {
+            NavIndex.EVIDENCE,
+            NavIndex.PLUGIN_MARKET,
+            NavIndex.DEVELOPER,
+        }
+        for index in range(mw._nav.count()):
+            item = mw._nav.item(index)
+            assert item is not None
+            if index == NavIndex.WORK_HEADER:
+                hidden = False
+            elif index in (NavIndex.AUTOMATION_HEADER, NavIndex.TOOLS_HEADER):
+                hidden = mode == "simple"
+            elif index == NavIndex.ADVANCED_HEADER:
+                hidden = mode == "simple"
+            else:
+                hidden = index in simple_hidden if mode == "simple" else (
+                    index in developer_only if mode == "professional" else False
+                )
+            item.setHidden(hidden)
         mw._toggle_btn.setVisible(mode != "simple")
         if hasattr(mw, "_schedule_action"):
             mw._schedule_action.setVisible(mode != "simple")
@@ -55,10 +75,11 @@ class ThemeManager(_BaseDelegate):
             mw._advanced_summary.setText(
                 _("已保留 {0} 项高级规则：{1}。切换到专业模式可查看。").format(count, "、".join(sections))
             )
-        if mode == "simple" and mw._stack.currentIndex() == 1:
-            mw._nav.setCurrentRow(NavIndex.WIZARD)
+        current_item = mw._nav.currentItem()
+        if current_item is not None and current_item.isHidden():
+            mw._nav.setCurrentRow(NavIndex.WORKSPACE)
         messages = {
-            "simple": _("简单模式：技术参数已隐藏，使用五步向导即可完成任务"),
+            "simple": _("简单模式：仅显示创建、试跑、运行和结果等核心操作"),
             "professional": _("专业模式：可编辑 YAML 和高级采集规则"),
             "developer": _("开发者模式：显示完整配置与诊断工具"),
         }

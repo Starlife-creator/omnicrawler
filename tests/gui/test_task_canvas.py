@@ -84,7 +84,7 @@ def test_manual_flow_without_ai(monkeypatch):
     assert not canvas._draft_section.collapsed()
     assert "example.org/news" in canvas._summary_label.text()
 
-    # ③ 试跑按钮可用；试跑通过后「保存并全量运行」出现并启用
+    # ③ 试跑按钮可用；试跑和交付配置均通过后「开始全量运行」启用
     assert canvas._trial_btn.isEnabled()
     assert not canvas._run_btn.isEnabled()
     canvas.set_trial_result(True, "状态：ok\n处理页面：3")
@@ -711,4 +711,64 @@ def test_plan_review_skipped_when_disabled(monkeypatch):
     canvas._on_start()
     assert canvas._plan_worker is None
     assert not canvas._plan_card.isVisibleTo(canvas)
+    canvas.deleteLater()
+
+
+def test_delivery_and_schedule_changes_do_not_stale_crawl_trial(monkeypatch):
+    """输出/调度有独立验证，不应要求重新访问网站；范围变化仍必须重试跑。"""
+    canvas = _make_canvas(monkeypatch)
+    canvas._url_edit.setText("https://example.org/news")
+    canvas._on_start()
+    canvas.set_trial_result(True, "状态：ok\n处理页面：3", {"status": "ok", "processed": 3, "records": 6})
+
+    canvas._format_checks[0].setChecked(False)
+    assert canvas._trial_ok
+    assert canvas.trial_matches_fields()
+
+    canvas._monitor_chk.setChecked(not canvas._monitor_chk.isChecked())
+    assert canvas._trial_ok
+    assert canvas.trial_matches_fields()
+
+    for checkbox in canvas._format_checks:
+        checkbox.setChecked(False)
+    assert canvas._trial_ok  # 采集验证仍有效
+    assert not canvas._delivery_ok
+    assert not canvas._run_btn.isEnabled()
+    assert not canvas.trial_matches_fields()
+
+    canvas._format_checks[0].setChecked(True)
+    assert canvas._delivery_ok
+    assert canvas._run_btn.isEnabled()
+    canvas._max_pages.setValue(canvas._max_pages.value() + 1)
+    assert not canvas._trial_ok
+    assert not canvas._run_btn.isEnabled()
+    canvas.deleteLater()
+
+
+def test_trial_details_explain_zero_records_and_offer_repair(monkeypatch):
+    canvas = _make_canvas(monkeypatch)
+    canvas._url_edit.setText("https://example.org/news")
+    canvas._on_start()
+    canvas.set_trial_result(
+        False,
+        "状态：finished\n处理页面：2\n提取记录：0",
+        {"status": "finished", "processed": 2, "records": 0},
+    )
+    assert "平均每页" in canvas._trial_metrics_label.text()
+    assert "没有提取到记录" in canvas._trial_diagnosis_label.text()
+    assert canvas._fix_fields_btn.isVisibleTo(canvas)
+    assert not canvas._fix_scope_btn.isVisibleTo(canvas)
+    canvas.deleteLater()
+
+
+def test_onboarding_checklist_tracks_goal_draft_and_trial(monkeypatch):
+    canvas = _make_canvas(monkeypatch)
+    canvas._onboarding_card.setVisible(True)
+    canvas._update_onboarding()
+    assert "○ 粘贴网址" in canvas._onboarding_text.text()
+    canvas._url_edit.setText("https://example.org/news")
+    canvas._on_start()
+    assert "✓ 确认采集方案" in canvas._onboarding_text.text()
+    canvas.set_trial_result(True, "状态：ok", {"status": "ok", "processed": 1, "records": 1})
+    assert "✓ 试跑少量页面" in canvas._onboarding_text.text()
     canvas.deleteLater()
