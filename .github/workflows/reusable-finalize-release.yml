@@ -1,0 +1,199 @@
+name: reusable-finalize-release
+
+on:
+  workflow_call:
+    inputs:
+      build_python_version:
+        description: Python version used to validate and finalize release artifacts
+        required: true
+        type: string
+    secrets:
+      gpg_private_key:
+        required: false
+      gpg_passphrase:
+        required: false
+
+env:
+  BUILD_PYTHON_VERSION: ${{ inputs.build_python_version }}
+
+jobs:
+  finalize:
+    # S6：聚合 job 与构建 job 同锁，保持环境一致（虽然只下载+发布，不产二进制）
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: ${{ runner.temp }}/artifacts
+          merge-multiple: true
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "${{ env.BUILD_PYTHON_VERSION }}"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: 生成 provenance
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[html,pdf,browser,async-http]"
+          python tools/generate_provenance.py --artifact-dir "$RUNNER_TEMP/artifacts" \
+            --output "$RUNNER_TEMP/artifacts/omnicrawler-provenance.json"
+
+      # B14-💭-3：供应链完整性检查固化为 release 必跑步骤（任一失败 → 发布中止）。
+      # SBOM ⊆ pip freeze 门禁的前提是"同一环境"：本聚合 job（ubuntu-22.04 +
+      # 3.12 + .[html,pdf,browser,async-http]）与 Linux 构建 job 的 SBOM 生成
+      # 环境完全一致，故比对 Linux SBOM。Windows/macOS SBOM 生成于不同平台，
+      # 跨平台比对会因 runner 预装包差异误报（release run 32264465809 根因之一）。
+      - name: 供应链完整性检查（B14 强制）
+        shell: bash
+        run: |
+          python tools/check_network_boundaries.py --source-root src/omnicrawler
+          python tools/check_guardrails.py \
+            --sbom "$RUNNER_TEMP/artifacts/omnicrawler-sbom-linux.cdx.json"
+          python tools/check_release_integrity.py . \
+            --portable-zip-dir "$RUNNER_TEMP/artifacts"
+          # P5：Linux tar.xz 容器级深校验（聚合期兜底；macOS 主产物是 dmg，
+          # 其回退 tar.gz 已在 build_macos.sh 内做 mac 平台深校验，此处不重复）
+          for archive in "$RUNNER_TEMP"/artifacts/*Linux-Portable-*.tar.xz; do
+            [ -e "$archive" ] || continue
+            python tools/check_release_integrity.py . \
+              --portable-tar "$archive" --portable-platform linux --portable-deep
+          done
+
+      - name: 列出全部构建产物
+        shell: bash
+        run: ls -lh "$RUNNER_TEMP/artifacts"
+
+      # 阶段 C-11：Linux GPG detached 签名（行业标配，见方案 5.6）。
+      # 需仓库配置 GPG_PRIVATE_KEY / GPG_PASSPHRASE secret 才生效；
+      # 未配置时跳过（不阻塞发布）。签名发布后，用户以公钥验证 SHA256SUMS。
+      # 注意：secrets 上下文不可用于 if: 条件（工作流解析报错），改在步骤内判断。
+      - name: 生成 GPG 签名（可选，需配置 secret）
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.gpg_private_key }}
+          GPG_PASSPHRASE: ${{ secrets.gpg_passphrase }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GPG_PRIVATE_KEY:-}" ]; then
+            echo "未配置 GPG_PRIVATE_KEY secret，跳过 GPG 签名"
+            exit 0
+          fi
+          # 多行 secret 经环境变量传递，用 printf 落文件避免 heredoc 展开问题
+          printf '%s' "$GPG_PRIVATE_KEY" > gpg-import.key
+          if [ -n "${GPG_PASSPHRASE:-}" ]; then
+            printf '%s\n' "$GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
+              --passphrase-fd 0 --import gpg-import.key 2>/dev/null
+          else
+            gpg --batch --yes --import gpg-import.key 2>/dev/null
+          fi
+          for checksum in "$RUNNER_TEMP"/artifacts/SHA256SUMS-*.txt; do
+            [ -e "$checksum" ] || continue
+            if [ -n "${GPG_PASSPHRASE:-}" ]; then
+              printf '%s\n' "$GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
+                --passphrase-fd 0 --detach-sign --armor -o "$checksum.sig" "$checksum" 2>/dev/null
+            else
+              gpg --batch --yes --detach-sign --armor -o "$checksum.sig" "$checksum" 2>/dev/null
+            fi
+            echo "GPG 签名: $(basename "$checksum").sig"
+          done
+          rm -f gpg-import.key
+
+      # ── 上传到 GitHub Release ──────────────────────────────────────
+      # FINAL L2：先组装说明（含 L1 缺席声明），创建 Release 元数据，
+      # 再按文件循环挂载——任何"非预判"上传错误立即硬失败（fail-fast）。
+      - name: 组装发布说明（含缺席声明）
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIR="$RUNNER_TEMP/artifacts"
+          TAG="${GITHUB_REF_NAME}"
+          BODY="$DIR/RELEASE_BODY.md"
+          {
+            echo "## OmniCrawler ${TAG}"
+            echo
+            echo "> 由 CI 自动构建（GitHub Actions 三平台 runner）。"
+            echo
+            echo "### 便携包"
+            echo "- **Windows**（Standard/Full）：GUI + Chromium +（Full 含）ChromeDriver/Tesseract/PaddleOCR"
+            echo "  - 安装：解压 ZIP → 双击 OmniCrawler-Launcher.bat"
+            echo "- **Linux**（Standard/Full）：GUI + Chromium +（Full 含）Tesseract/ChromeDriver/PaddleOCR（构建期打包，解压即用）"
+            echo "  - 安装：tar -xJf 包名 && ./OmniCrawler/omnicrawler --help"
+            echo "- **macOS**（Standard/Full）：.app（ad-hoc 签名）+（Full 含）Tesseract/ChromeDriver（Paddle OCR 以 Transformers 后端替代）；首次打开请右键 → 打开"
+            echo "  - 安装：挂载 dmg → 进入 OmniCrawler 文件夹 → 将 OmniCrawler.app 拖入 Applications"
+            echo
+            echo "### 安全"
+            echo "- 各平台产物附带 SHA256SUMS-platform.txt 校验和（与 omnicrawler-provenance.json 对应）"
+            echo "- omnicrawler-sbom-platform.cdx.json：各平台依赖物料清单（CycloneDX）"
+            echo "- 可用 gh attestation verify 包名 --owner Starlife-creator 验证标准 SLSA 构建来源证明（无需导入任何密钥）"
+            echo "- 本版本未做代码签名（Windows Authenticode / macOS Developer ID）；校验完整性请以 SHA-256 为准"
+            shopt -s nullglob
+            manifests=("$DIR"/SKIPPED-*.txt)
+            if [ ${#manifests[@]} -gt 0 ]; then
+              echo
+              echo "### ⚠️ 本次未随发布的包（超过 GitHub 单文件上限 2 GiB）"
+              echo
+              cat "${manifests[@]}"
+              echo
+              echo "替代路径：下载对应平台 Standard 包，使用 omnicrawler components import 加装 OCR 组件；或源码安装 full 依赖集获得完整能力。"
+            fi
+          } > "$BODY"
+          echo "── RELEASE_BODY.md ──"
+          cat "$BODY"
+
+      - name: 发布到 GitHub Release（元数据）
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: OmniCrawler ${{ github.ref_name }}
+          body_path: ${{ runner.temp }}/artifacts/RELEASE_BODY.md
+          generate_release_notes: true
+          prerelease: ${{ startsWith(github.ref_name, 'v') && contains(github.ref_name, '-') }}
+
+      - name: 逐文件挂载资产（意外错误硬失败；超限项已在源头剔除）
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # FINAL 修复：循环会 cd 进 artifacts 目录（无 .git），gh 解析仓库
+          # 依赖 GH_REPO 显式指定，否则报 "not a git repository"（v0.11.1 实测）
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          cd "$RUNNER_TEMP/artifacts"
+          shopt -s nullglob
+          mounted=0
+          for f in *; do
+            case "$f" in
+              SKIPPED-*.txt|RELEASE_BODY.md) continue ;;
+            esac
+            gh release upload "$TAG" "$f" --clobber
+            echo "已挂载: $f"
+            mounted=$((mounted + 1))
+          done
+          echo "共挂载 $mounted 个资产"
+
+      - name: 缺席汇总告警（黄灯语义：成功但需知悉）
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          found=0
+          for m in "$RUNNER_TEMP/artifacts"/SKIPPED-*.txt; do
+            found=1
+            while IFS= read -r line; do
+              [ -n "$line" ] && echo "::warning::发布缺席（超限降级）: $line"
+            done < "$m"
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "无缺席产物，全部资产已挂载"
+          fi

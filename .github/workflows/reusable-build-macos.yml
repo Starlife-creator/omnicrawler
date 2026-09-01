@@ -1,0 +1,135 @@
+name: reusable-build-macos
+
+on:
+  workflow_call:
+    inputs:
+      build_python_version:
+        description: Python version used for portable release builds
+        required: true
+        type: string
+      asset_max_bytes:
+        description: Maximum size in bytes for a publishable release asset
+        required: true
+        type: string
+
+env:
+  BUILD_PYTHON_VERSION: ${{ inputs.build_python_version }}
+  ASSET_MAX_BYTES: ${{ inputs.asset_max_bytes }}
+
+jobs:
+  build:
+    # 固定 runner OS 代际：macos-latest 会漂移；macos-14 将于 2026-11-02
+    # 退役，迁移到同为 arm64 的 macos-15，并以完整便携包构建验证兼容性。
+    runs-on: macos-15
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      PYTHONIOENCODING: utf-8
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/playwright
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # Homebrew 新版要求 tap trust；runner 预装的 aws/tap 与本项目无关
+      # （只用到 core tap 的 python@3.12/tesseract），移除它消除无关警告。
+      - name: 移除无关的 aws/tap（Homebrew tap trust 警告）
+        run: brew untap aws/tap 2>/dev/null || true
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "${{ env.BUILD_PYTHON_VERSION }}"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: 解析 playwright 版本（缓存 key，P4-4）
+        id: playwright-version
+        run: |
+          python -m pip install "playwright>=1.49,<2" --quiet
+          echo "version=$(python -c 'import importlib.metadata; print(importlib.metadata.version("playwright"))')" >> "$GITHUB_OUTPUT"
+      - name: 缓存浏览器运行时
+        id: browser-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/playwright
+          key: playwright-macos-${{ steps.playwright-version.outputs.version }}
+
+      - name: 构建 Standard 便携包
+        shell: bash
+        run: |
+          browserArgs=()
+          if [ -d ".cache/playwright" ]; then
+            browserArgs=(--browser-cache-path .cache/playwright)
+          fi
+          bash build_macos.sh --edition Standard \
+            --release-output "$RUNNER_TEMP/artifacts-macos" "${browserArgs[@]}"
+
+      - name: 构建 Full 便携包
+        shell: bash
+        run: |
+          browserArgs=()
+          if [ -d ".cache/playwright" ]; then
+            browserArgs=(--browser-cache-path .cache/playwright)
+          fi
+          bash build_macos.sh --edition Full \
+            --release-output "$RUNNER_TEMP/artifacts-macos" "${browserArgs[@]}"
+
+      - name: 校验分版本体积预算
+        run: |
+          python tools/check_artifact_budget.py --platform macOS \
+            --directory "$RUNNER_TEMP/artifacts-macos" \
+            --output "$RUNNER_TEMP/artifacts-macos/artifact-size-report-macos.json"
+
+      # ── FINAL L1 尺寸预分类：超限产物移出发布集 ───────────────────
+      - name: 尺寸预分类（超限移出，写缺席清单）
+        shell: bash
+        run: |
+          set -euo pipefail
+          max="${ASSET_MAX_BYTES}"
+          skipped_dir="$RUNNER_TEMP/skipped-macos"
+          mkdir -p "$skipped_dir"
+          shopt -s nullglob
+          for f in "$RUNNER_TEMP/artifacts-macos"/*; do
+            base="$(basename "$f")"
+            case "$base" in SKIPPED-*) continue ;; esac
+            size=$(python -c "import os,sys; print(os.path.getsize(sys.argv[1]))" "$f")
+            if [ "$size" -gt "$max" ]; then
+              mv "$f" "$skipped_dir/$base"
+              line=$(printf '%s  %.1f MB' "$base" "$(echo "scale=1; $size/1048576" | bc)")
+              echo "$line" >> "$RUNNER_TEMP/artifacts-macos/SKIPPED-macos.txt"
+              echo "::warning::产物超过发布上限，已从发布集剔除: $line"
+            fi
+          done
+          if [ -f "$RUNNER_TEMP/artifacts-macos/SKIPPED-macos.txt" ]; then
+            echo "── 缺席清单 ──"; cat "$RUNNER_TEMP/artifacts-macos/SKIPPED-macos.txt"
+          else
+            echo "全部产物在发布尺寸限制内"
+          fi
+
+      - name: 生成 SBOM 与校验和
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[html,pdf,browser,async-http]"
+          python tools/generate_sbom.py --output "$RUNNER_TEMP/artifacts-macos/omnicrawler-sbom-macos.cdx.json"
+          python tools/generate_checksums.py "$RUNNER_TEMP/artifacts-macos" \
+            --output "$RUNNER_TEMP/artifacts-macos/SHA256SUMS-macos.txt" --verify
+          python tools/generate_checksums.py "$RUNNER_TEMP/artifacts-macos" \
+            --output "$RUNNER_TEMP/artifacts-macos/SHA256SUMS-macos.txt" --check
+
+      - name: 为便携包生成 SLSA provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/artifacts-macos/OmniCrawler-*Portable-*.dmg
+
+      - name: 上传构建产物（供聚合发布 job 使用）
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: artifacts-macos
+          path: ${{ runner.temp }}/artifacts-macos/*
+          if-no-files-found: error
+          retention-days: 1

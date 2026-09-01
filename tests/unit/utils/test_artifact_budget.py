@@ -31,9 +31,13 @@ def test_artifact_budget_reports_and_rejects_growth(tmp_path: Path) -> None:
 
 def test_release_workflow_enforces_all_platform_budgets() -> None:
     project_root = Path(__file__).resolve().parents[3]
-    workflow = (project_root / ".github" / "workflows" / "release.yml").read_text(
-        encoding="utf-8"
-    )
-    assert workflow.count("python tools/check_artifact_budget.py --platform") == 3
-    for platform in ("Windows", "Linux", "macOS"):
+    workflow_root = project_root / ".github" / "workflows"
+    platform_workflows = {
+        "Windows": "reusable-build-windows.yml",
+        "Linux": "reusable-build-linux.yml",
+        "macOS": "reusable-build-macos.yml",
+    }
+    for platform, filename in platform_workflows.items():
+        workflow = (workflow_root / filename).read_text(encoding="utf-8")
+        assert workflow.count("python tools/check_artifact_budget.py --platform") == 1
         assert f"--platform {platform}" in workflow

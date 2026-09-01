@@ -13,7 +13,9 @@ push main
   → quality.yml（6 job：test×3 平台 / docker / windows-full-dependency-matrix / gui-and-browser）
   → e2e.yml（Python 3.12 / Chromium E2E）
   → 两者全绿后才可：git tag -f v<ver> <commit> && git push --force origin refs/tags/v<ver>
-  → release.yml（verify-python-version → build-{windows,linux,macos}-portable → release 聚合 job）
+  → release.yml（版本/快速门禁 + reusable workflow 编排）
+    → reusable-build-{windows,linux,macos}.yml（三平台并行）
+    → reusable-finalize-release.yml（provenance + B14 完整性检查 + 发布）
   → softprops/action-gh-release 发布到 GitHub Release
 ```
 
@@ -215,7 +217,7 @@ hash/size/symlink/duplicate/missing 检出逻辑全部保留；修复产物不�
 - **正解**：tar.gz → **tar.xz**（preset=6 实测 2095→1714MB，余量 334MB），
   零内容删减。联动改 5 处：build_linux.sh（tar -cJf）、check_release_integrity
   （glob *.tar.xz+*.tar.gz，macOS 回退兼容）、generate_checksums
-  （_PLATFORM_REQUIRED）、release.yml（深校验 glob+安装说明 tar -xJf）、
+  （_PLATFORM_REQUIRED）、reusable-finalize-release.yml（深校验 glob+安装说明 tar -xJf）、
   docs/PORTABLE_PACKAGING.md。
 - `tarfile.open(path, "r:*")` 自动检测 xz，单遍流式深校验无需改。
 - **体积预算意识**：任何往包里加内容的改动（如复制 .so），先算压缩后增量。
@@ -234,8 +236,10 @@ hash/size/symlink/duplicate/missing 检出逻辑全部保留；修复产物不�
   `[ -z "${GPG_PRIVATE_KEY:-}" ]` 跳过。
 
 ### 6.4 workflow_dispatch 不可用于发布
-- release.yml 发布步骤 `tag_name: ${{ github.ref_name }}` 对 dispatch 会误用
-  分支名当 tag → **发布只能走 tag push**。
+- `workflow_dispatch` 允许完整验证三平台构建、provenance 与 B14 门禁，但
+  `reusable-finalize-release.yml` 中创建 Release、挂载资产和发布告警步骤必须以
+  `if: github.event_name == 'push'` 限制；因此手动运行只保留 Actions artifacts，
+  不会把分支名误作 tag 发布。
 
 ### 6.5 tag 更新流程
 - `git tag -f v<ver> <commit>` **先更新本地 tag**，再

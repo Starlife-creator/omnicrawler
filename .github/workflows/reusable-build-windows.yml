@@ -1,0 +1,182 @@
+name: reusable-build-windows
+
+on:
+  workflow_call:
+    inputs:
+      build_python_version:
+        description: Python version used for portable release builds
+        required: true
+        type: string
+      asset_max_bytes:
+        description: Maximum size in bytes for a publishable release asset
+        required: true
+        type: string
+
+env:
+  BUILD_PYTHON_VERSION: ${{ inputs.build_python_version }}
+  ASSET_MAX_BYTES: ${{ inputs.asset_max_bytes }}
+
+jobs:
+  build:
+    # 固定 OS 代际，避免 windows-latest 后续迁移到新镜像时改变打包环境。
+    runs-on: windows-2025
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "${{ env.BUILD_PYTHON_VERSION }}"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: 读取源码版本号
+        id: version
+        shell: pwsh
+        run: |
+          $version = (& python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])").Trim()
+          Write-Output "version=$version"
+          Write-Output "version=$version" >> $env:GITHUB_OUTPUT
+
+      # 浏览器（Playwright Chromium）与 OCR 运行时（Tesseract/Paddle 模型）缓存，
+      # 二次构建直接复用，避免每次从网络下载数百 MB。
+      # P4-4：playwright 约束 >=1.49,<2 非精确锁，新次要版会换 Chromium revision；
+      # 缓存 key 纳入实际解析的 playwright 版本，防旧版 Chromium 缓存与新版冲突。
+      - name: 解析 playwright 版本（缓存 key）
+        id: playwright-version
+        shell: pwsh
+        run: |
+          python -m pip install "playwright>=1.49,<2" --quiet
+          $v = (& python -c "import importlib.metadata; print(importlib.metadata.version('playwright'))").Trim()
+          Write-Output "version=$v" >> $env:GITHUB_OUTPUT
+      - name: 缓存浏览器运行时
+        id: browser-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: 缓存 OCR 运行时
+        id: runtime-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/runtime
+          key: ocr-runtime-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-${{ hashFiles('tools/prepare_windows_runtime.ps1', 'tools/download_and_smoke_test.py') }}
+
+      # ── Standard 便携包 ────────────────────────────────────────────
+      # 首次构建（无浏览器缓存）走联网下载；命中缓存则跳过下载直接复制。
+      - name: 构建 Standard 便携包
+        shell: pwsh
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/playwright
+        run: |
+          $browserArgs = @("-BrowserCachePath", ".cache/playwright")
+          $cachedChrome = Get-ChildItem ".cache/playwright" -Recurse -Filter "chrome.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($cachedChrome) { $browserArgs += "-SkipBrowserDownload" }
+          powershell -ExecutionPolicy Bypass -File build_windows.ps1 `
+            -Edition Standard `
+            -ReleaseOutputPath "$env:RUNNER_TEMP/artifacts" `
+            -SkipRuntimeAssetDownload @browserArgs
+
+      # ── Full 便携包 ────────────────────────────────────────────────
+      - name: 构建 Full 便携包
+        shell: pwsh
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/playwright
+        run: |
+          $browserArgs = @("-BrowserCachePath", ".cache/playwright")
+          $cachedChrome = Get-ChildItem ".cache/playwright" -Recurse -Filter "chrome.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($cachedChrome) { $browserArgs += "-SkipBrowserDownload" }
+          $runtimeArgs = @("-RuntimeCachePath", ".cache/runtime")
+          $runtimeManifest = ".cache/runtime/models/paddlex/omnicrawler-model-manifest.json"
+          $cachedRuntime = (Test-Path $runtimeManifest) -and (Test-Path ".cache/runtime/tesseract/tesseract.exe") -and (Test-Path ".cache/runtime/selenium/chromedriver.exe")
+          if ($cachedRuntime) { $runtimeArgs += "-SkipRuntimeAssetDownload" }
+          powershell -ExecutionPolicy Bypass -File build_windows.ps1 `
+            -Edition Full `
+            -ReleaseOutputPath "$env:RUNNER_TEMP/artifacts" `
+            @browserArgs @runtimeArgs
+
+      - name: 校验分版本体积预算
+        shell: pwsh
+        run: |
+          python tools/check_artifact_budget.py --platform Windows `
+            --directory "$env:RUNNER_TEMP/artifacts" `
+            --output "$env:RUNNER_TEMP/artifacts/artifact-size-report-windows.json"
+
+      # ── FINAL L1 尺寸预分类：超限产物移出发布集 ───────────────────
+      - name: 尺寸预分类（超限移出，写缺席清单）
+        shell: pwsh
+        run: |
+          $max = [int64]'${{ env.ASSET_MAX_BYTES }}'
+          $skippedDir = Join-Path $env:RUNNER_TEMP "skipped-windows"
+          New-Item -ItemType Directory -Force -Path $skippedDir | Out-Null
+          Get-ChildItem "$env:RUNNER_TEMP/artifacts" -File |
+            Where-Object { $_.Name -notlike "SKIPPED-*" } |
+            ForEach-Object {
+              if ($_.Length -gt $max) {
+                Move-Item $_.FullName (Join-Path $skippedDir $_.Name)
+                $line = "{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB)
+                Add-Content -Path "$env:RUNNER_TEMP/artifacts/SKIPPED-windows.txt" `
+                  -Value $line -Encoding utf8
+                Write-Output "::warning::产物超过发布上限，已从发布集剔除: $line"
+              }
+            }
+          if (Test-Path "$env:RUNNER_TEMP/artifacts/SKIPPED-windows.txt") {
+            Write-Output "── 缺席清单 ──"
+            Get-Content "$env:RUNNER_TEMP/artifacts/SKIPPED-windows.txt"
+          } else {
+            Write-Output "全部产物在发布尺寸限制内"
+          }
+
+      # ── 发布元数据（SBOM / provenance / 校验和）────────────────────
+      # SBOM/provenance/checksums 依赖包元数据（omnicrawler-platform.requires 与
+      # 各依赖的已装版本）；系统 python 是全新环境，先安装元数据依赖集。
+      # 三平台各自生成带平台后缀的 SBOM 与校验和；provenance 由聚合发布
+      # job 统一生成（覆盖全部产物）。
+      - name: 安装发布元数据依赖
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[html,pdf,browser,async-http]"
+
+      - name: 生成 SBOM
+        shell: pwsh
+        run: python tools/generate_sbom.py --output "$env:RUNNER_TEMP/artifacts/omnicrawler-sbom-windows.cdx.json"
+
+      - name: 生成并校验 SHA-256 清单
+        shell: pwsh
+        run: |
+          python tools/generate_checksums.py "$env:RUNNER_TEMP/artifacts" `
+            --output "$env:RUNNER_TEMP/artifacts/SHA256SUMS-windows.txt" --verify
+          python tools/generate_checksums.py "$env:RUNNER_TEMP/artifacts" `
+            --output "$env:RUNNER_TEMP/artifacts/SHA256SUMS-windows.txt" --check
+
+      # ── 标准 SLSA provenance（Sigstore / gh attestation）────────────
+      # 不传自定义 predicate：actions/attest 会生成 https://slsa.dev/provenance/v1，
+      # 与 `gh attestation verify` 的默认验证类型一致。
+      - name: 为便携包生成 SLSA provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          # FINAL L1：glob 匹配现存归档——超限被剔除的产物自动不参与证明
+          subject-path: |
+            ${{ runner.temp }}/artifacts/OmniCrawler-*Portable-*.zip
+
+      - name: 列出构建产物
+        shell: pwsh
+        run: Get-ChildItem "$env:RUNNER_TEMP/artifacts" | Select-Object Name, @{N='MB';E={[math]::Round($_.Length/1MB,1)}}
+
+      - name: 上传构建产物（供聚合发布 job 使用）
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: artifacts-windows
+          path: ${{ runner.temp }}/artifacts/*
+          if-no-files-found: error
+          retention-days: 1

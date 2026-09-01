@@ -56,13 +56,16 @@ OmniCrawler-<version>-<Platform>-Portable-<Edition>.<ext>
 
 ## 发布链路
 
-`release.yml` 的 `v*` tag 会并行触发三个构建 job（Windows/Linux/macOS），产物经 `actions/upload-artifact` 汇入聚合 `release` job，统一生成 provenance 并发布到 GitHub Release：
+`release.yml` 是薄编排层：完成版本与快速门禁后，并行调用三个本地 reusable workflow。平台产物经 `actions/upload-artifact` 汇入最终 reusable workflow，统一执行 provenance、供应链完整性检查和发布：
 
 ```
-build-windows-portable ─┐
-build-linux-portable   ─┼─▶ release（下载三平台产物 → provenance → 发布）
-build-macos-portable   ─┘
+release.yml
+  ├─ reusable-build-windows.yml ─┐
+  ├─ reusable-build-linux.yml   ─┼─▶ reusable-finalize-release.yml
+  └─ reusable-build-macos.yml   ─┘   （下载产物 → 安全门禁 → 发布）
 ```
+
+调用边界使用显式 `workflow_call` inputs 传递 Python 版本与单资产体积上限；构建 job 只获得 `contents: read`、`id-token: write` 和 `attestations: write`，最终发布 job 才获得 `contents: write`。可选 GPG 密钥逐项传递，不使用 `secrets: inherit`。
 
 各平台各自生成带后缀的校验和与 SBOM：`SHA256SUMS-<platform>.txt`、`omnicrawler-sbom-<platform>.cdx.json`。
 
@@ -77,7 +80,7 @@ build-macos-portable   ─┘
   通过 `pip install` 联网安装；仅浏览器与 OCR 运行时等大资产支持本地缓存
   复用（`build_cache/browsers`、`build_cache/runtime`），并非「从压缩包解压 wheel」。
 
-发布以 CI（`release.yml`）为主路径，联网构建；本地 `-Offline` 是 CI 不可用
+发布以 CI（`release.yml` 及其 reusable workflows）为主路径，联网构建；本地 `-Offline` 是 CI 不可用
 时的兜底，复用缓存而非从压缩包解压依赖。
 
 ## 完全离线重建
