@@ -91,7 +91,8 @@ jobs:
 
   build-windows-portable:
     needs: [verify-python-version]
-    runs-on: windows-latest
+    # 固定 OS 代际，避免 windows-latest 后续迁移到新镜像时改变打包环境。
+    runs-on: windows-2025
     timeout-minutes: 120
     permissions:
       contents: read
@@ -231,17 +232,15 @@ jobs:
           python tools/generate_checksums.py "$env:RUNNER_TEMP/artifacts" `
             --output "$env:RUNNER_TEMP/artifacts/SHA256SUMS-windows.txt" --check
 
-      # ── keyless 签名证明（Sigstore / gh attestation）────────────────
-      # 不需要任何私钥：签名身份 = 本 release.yml 在 tag 上由 GitHub OIDC 背书，
-      # 证明存于 GitHub 证明库，用户用 `gh attestation verify <包> --owner Starlife-creator` 核验。
-      - name: 为便携包生成 keyless 签名证明
+      # ── 标准 SLSA provenance（Sigstore / gh attestation）────────────
+      # 不传自定义 predicate：actions/attest 会生成 https://slsa.dev/provenance/v1，
+      # 与 `gh attestation verify` 的默认验证类型一致。
+      - name: 为便携包生成 SLSA provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          # FINAL L1：glob 匹配现存归档——超限被剔除的产物自动不参与签名证明
+          # FINAL L1：glob 匹配现存归档——超限被剔除的产物自动不参与证明
           subject-path: |
             ${{ runner.temp }}/artifacts/OmniCrawler-*Portable-*.zip
-          predicate-type: "https://in-toto.io/attestation/release/v0.1"
-          predicate: "{}"
 
       - name: 列出构建产物
         shell: pwsh
@@ -364,13 +363,11 @@ jobs:
           python tools/generate_checksums.py "$RUNNER_TEMP/artifacts-linux" \
             --output "$RUNNER_TEMP/artifacts-linux/SHA256SUMS-linux.txt" --check
 
-      - name: 为便携包生成 keyless 签名证明
+      - name: 为便携包生成 SLSA provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             ${{ runner.temp }}/artifacts-linux/OmniCrawler-*Portable-*.tar.xz
-          predicate-type: "https://in-toto.io/attestation/release/v0.1"
-          predicate: "{}"
 
       - name: 上传构建产物（供聚合发布 job 使用）
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -383,10 +380,9 @@ jobs:
   # ── macOS 便携包（Standard + Full，dmg / tar.gz）──────────────────
   build-macos-portable:
     needs: [verify-python-version]
-    # 固定 runner 镜像版本：macos-latest 漂移会导致 PyInstaller 在 macOS 上
-    # 非确定性失败（PYI-9229/2508 Failed to load Python shared library），
-    # 相同代码+依赖一轮过一轮挂。macos-14 为稳定镜像。
-    runs-on: macos-14
+    # 固定 runner OS 代际：macos-latest 会漂移；macos-14 将于 2026-11-02
+    # 退役，迁移到同为 arm64 的 macos-15，并以完整便携包构建验证兼容性。
+    runs-on: macos-15
     timeout-minutes: 120
     permissions:
       contents: read
@@ -486,13 +482,11 @@ jobs:
           python tools/generate_checksums.py "$RUNNER_TEMP/artifacts-macos" \
             --output "$RUNNER_TEMP/artifacts-macos/SHA256SUMS-macos.txt" --check
 
-      - name: 为便携包生成 keyless 签名证明
+      - name: 为便携包生成 SLSA provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             ${{ runner.temp }}/artifacts-macos/OmniCrawler-*Portable-*.dmg
-          predicate-type: "https://in-toto.io/attestation/release/v0.1"
-          predicate: "{}"
 
       - name: 上传构建产物（供聚合发布 job 使用）
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -619,7 +613,7 @@ jobs:
             echo "### 安全"
             echo "- 各平台产物附带 SHA256SUMS-platform.txt 校验和（与 omnicrawler-provenance.json 对应）"
             echo "- omnicrawler-sbom-platform.cdx.json：各平台依赖物料清单（CycloneDX）"
-            echo "- 可用 gh attestation verify 包名 --owner Starlife-creator 验证构建来源（keyless 签名，无需导入任何密钥）"
+            echo "- 可用 gh attestation verify 包名 --owner Starlife-creator 验证标准 SLSA 构建来源证明（无需导入任何密钥）"
             echo "- 本版本未做代码签名（Windows Authenticode / macOS Developer ID）；校验完整性请以 SHA-256 为准"
             shopt -s nullglob
             manifests=("$DIR"/SKIPPED-*.txt)

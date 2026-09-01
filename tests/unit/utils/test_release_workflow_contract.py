@@ -36,12 +36,25 @@ def test_all_portable_platforms_receive_attestations_and_stable_cache_keys() -> 
         encoding="utf-8"
     )
     assert workflow.count("uses: actions/attest@") == 3
+    assert "predicate-type:" not in workflow
+    assert 'predicate: "{}"' not in workflow
+    assert workflow.count("为便携包生成 SLSA provenance") == 3
     assert "Portable-*.zip" in workflow
     assert "Portable-*.tar.xz" in workflow
     assert "Portable-*.dmg" in workflow
     playwright_keys = [line for line in workflow.splitlines() if "key: playwright-" in line]
     assert len(playwright_keys) == 3
     assert all("hashFiles('pyproject.toml')" not in line for line in playwright_keys)
+
+
+def test_release_builds_use_explicit_supported_runner_generations() -> None:
+    workflow = (PROJECT_ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "runs-on: windows-2025" in workflow
+    assert "runs-on: macos-15" in workflow
+    assert "runs-on: windows-latest" not in workflow
+    assert "runs-on: macos-14" not in workflow
 
 
 def test_release_permissions_are_scoped_to_the_jobs_that_need_them() -> None:

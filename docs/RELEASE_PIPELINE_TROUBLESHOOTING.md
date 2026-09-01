@@ -250,7 +250,7 @@ hash/size/symlink/duplicate/missing 检出逻辑全部保留；修复产物不�
 | 问题 | 解法 |
 |---|---|
 | ubuntu-latest 漂移（glibc 2.39→产物旧系统跑不了） | Linux 三处锁 `ubuntu-22.04`（glibc 2.35） |
-| macos-latest 非确定性失败 | 锁 `macos-14` |
+| macos-latest 非确定性失败 | 固定 OS 代际；`macos-14` 退役前迁移并锁定 `macos-15`（arm64） |
 | macOS framework Python | homebrew python@3.12 硬断言（3.13 有 PYI-5670；3.14 不支持） |
 | Ubuntu runner apt-get 偶发挂死（archive.ubuntu.com） | 基础设施偶发，`gh run rerun --failed` 即可；连续 2 次同点挂死才考虑 apt 镜像源/超时参数 |
 | tessdata 下载 404/503/Connection reset | 多源 fallback（github 重定向→raw 直链→jsDelivr）+ curl `--retry 3 --retry-delay 2 --retry-all-errors` |
