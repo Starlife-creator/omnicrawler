@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +50,8 @@ from ..i18n import _
 from ..widgets.status_indicator import StatusIndicator
 from ..widgets.toast import ToastManager
 
+LOGGER = logging.getLogger(__name__)
+
 
 def _project_root_of(base: str | Path | None) -> Path:
     if base:
@@ -70,6 +73,8 @@ _TYPE_LABELS = {
     "exporter": _("导出器"),
     "hook": _("生命周期"),
     "ui": _("原生界面"),
+    "resource_provider": _("本地资源"),
+    "view": _("声明式界面"),
 }
 
 
@@ -302,6 +307,7 @@ class PluginMarketView(QWidget):
 
     installation_completed = Signal(str)
     activation_requested = Signal(str)
+    deactivation_requested = Signal(str)
     uninstall_completed = Signal(str)
 
     def __init__(self, project_root: str | Path | None = None, parent: QWidget | None = None) -> None:
@@ -506,6 +512,10 @@ class PluginMarketView(QWidget):
         self._enable_btn.clicked.connect(self._on_enable)
         btn_row.addWidget(self._enable_btn)
 
+        self._disable_btn = QPushButton(_("在当前项目禁用"))
+        self._disable_btn.clicked.connect(self._on_disable)
+        btn_row.addWidget(self._disable_btn)
+
         self._verify_btn = QPushButton(_("校验"))
         self._verify_btn.clicked.connect(self._on_verify)
         btn_row.addWidget(self._verify_btn)
@@ -659,12 +669,23 @@ class PluginMarketView(QWidget):
             label += f"  ·  {type_label} · {mode_label} · {risk_label}"
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, pid)
-            if installed:
-                item.setText(f"✓ {label}")
-            if pid in self._enabled_plugin_ids:
-                item.setText(f"● {item.text()}")
+            enabled = pid in self._enabled_plugin_ids
+            if enabled:
+                item.setText(_(f"● [已启用] ✓ {label}"))
+            elif installed:
+                item.setText(_(f"○ [已禁用] ✓ {label}"))
+            else:
+                item.setText(_(f"— [未安装] {label}"))
             compatibility = _compatibility(entry)[1]
-            item.setToolTip(f"{pid}\n{type_label} · {mode_label} · {risk_label} · {compatibility}")
+            project_state = (
+                _("当前项目已启用")
+                if enabled
+                else (_("已安装，但在当前项目禁用") if installed else _("尚未安装"))
+            )
+            item.setToolTip(
+                f"{pid}\n{project_state}\n"
+                f"{type_label} · {mode_label} · {risk_label} · {compatibility}"
+            )
             self._list.addItem(item)
 
         # 离线时补充展示本地已安装但不在目录中的插件
@@ -880,6 +901,16 @@ class PluginMarketView(QWidget):
                 return
         self.activation_requested.emit(pid)
 
+    def _on_disable(self) -> None:
+        pid = self._selected_id
+        if not pid or not self._is_installed(pid):
+            ToastManager.instance().warning(_("所选插件尚未安装"))
+            return
+        if pid not in self._enabled_plugin_ids:
+            ToastManager.instance().info(_("所选插件已经在当前项目禁用"))
+            return
+        self.deactivation_requested.emit(pid)
+
     def _open_identity_dialog(self) -> None:
         from .identity_dialog import IdentityDialog
 
@@ -968,12 +999,28 @@ class PluginMarketView(QWidget):
     # ── 辅助 ───────────────────────────────────────────────────
     def _is_installed(self, plugin_id: str) -> bool:
         target = self._dest_root / plugin_id
-        return (target / "plugin.py").is_file() and (target / "plugin.py.sig").is_file()
+        try:
+            return (target / "plugin.py").is_file() and (target / "plugin.py.sig").is_file()
+        except OSError as exc:
+            LOGGER.warning(_("无法读取已安装插件目录 %s: %s"), target, exc)
+            return False
 
     def _installed_ids(self) -> list[str]:
         if not self._dest_root.is_dir():
             return []
-        return [d.name for d in self._dest_root.iterdir() if d.is_dir() and (d / "plugin.py.sig").is_file()]
+        installed: list[str] = []
+        try:
+            candidates = list(self._dest_root.iterdir())
+        except OSError as exc:
+            LOGGER.warning(_("无法读取插件安装根目录 %s: %s"), self._dest_root, exc)
+            return installed
+        for candidate in candidates:
+            try:
+                if candidate.is_dir() and (candidate / "plugin.py.sig").is_file():
+                    installed.append(candidate.name)
+            except OSError as exc:
+                LOGGER.warning(_("忽略不可读的插件安装项 %s: %s"), candidate, exc)
+        return installed
 
     def _entry_of(self, plugin_id: str) -> dict[str, Any] | None:
         if not self._catalog:
@@ -989,6 +1036,7 @@ class PluginMarketView(QWidget):
             self._install_btn.setEnabled(False)
             self._uninstall_btn.setEnabled(False)
             self._enable_btn.setEnabled(False)
+            self._disable_btn.setEnabled(False)
             self._verify_btn.setEnabled(False)
             return
         if installed is None:
@@ -1004,6 +1052,7 @@ class PluginMarketView(QWidget):
         self._enable_btn.setText(
             _("重新授权") if pid in self._enabled_plugin_ids else _("启用到当前项目")
         )
+        self._disable_btn.setEnabled(installed and pid in self._enabled_plugin_ids)
         self._verify_btn.setEnabled(installed)
 
     def set_enabled_plugins(self, plugin_ids: set[str] | list[str] | tuple[str, ...]) -> None:

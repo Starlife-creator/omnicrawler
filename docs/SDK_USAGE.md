@@ -70,6 +70,9 @@ def handle(operation, payload):
 插件需要读取记录、访问网络、使用临时文件、用户资源或宿主媒体表面时，只能通过
 `omnicrawler_sdk.call(...)` 请求 `PLUGIN_METADATA` 已声明的能力。契约 2 已接入全部正式数据类型，
 以及 `resource_provider` 和宿主渲染的声明式 `view`；原生 `ui` 仍只属于本地高信任契约 1。
+视觉类契约 2 插件使用 `surface.background` v2 请求语义底层背景：插件提交不透明资源句柄和有界
+显示偏好，宿主负责层级、输入穿透、透明主题、最小化暂停与清理。插件不能获得 QWidget、真实
+资源路径或任意 z-index。未安装插件时，用户仍可通过“设置 → 工作台背景”使用同一宿主能力。
 完整约束见 `PLUGIN_CONTRACT.md`。
 
 ## SDK 公共 API

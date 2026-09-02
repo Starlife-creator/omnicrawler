@@ -68,9 +68,10 @@ CAPABILITY_VERSIONS: dict[str, int] = {
     "render.html.snapshot": 1,
     "render.html.live.start": 1,
     "render.html.live.stop": 1,
-    "surface.background.set": 1,
-    "surface.background.configure": 1,
+    "surface.background.set": 2,
+    "surface.background.configure": 2,
     "surface.background.clear": 1,
+    "surface.background.capabilities": 1,
     "secrets.get": 1,
 }
 
@@ -124,6 +125,7 @@ _CAPABILITY_PERMISSIONS: dict[str, str | None] = {
     "surface.background.set": "surfaces:background",
     "surface.background.configure": "surfaces:background",
     "surface.background.clear": "surfaces:background",
+    "surface.background.capabilities": "surfaces:background",
     # O 例外路径（方案 O2 方案 B）：secrets.get 需 manifest 声明 secrets 白名单；
     # 默认路径是网络经宿主代理密钥零暴露（O2 方案 C），secrets.get 仅显式例外。
     "secrets.get": "secrets:read",
@@ -871,6 +873,16 @@ class CapabilityBroker:
         surface = self._require_surface_service()
         surface.clear()
         return {"active": False}
+
+    def _cap_surface_background_capabilities(
+        self, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        del payload
+        surface = self._require_surface_service()
+        try:
+            return dict(surface.capabilities())
+        except (TypeError, ValueError) as exc:
+            raise CapabilityError(E_CONTRACT, str(exc)) from exc
 
     def _require_resource_broker(self) -> Any:
         if self._resource_broker is None:

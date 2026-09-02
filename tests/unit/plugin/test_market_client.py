@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -208,6 +211,88 @@ def test_directory_loading_recursive(tmp_path: Path) -> None:
     load_local_plugins(registry, [str(tmp_path)], tmp_path, config=None, signature_policy="developer")
     assert "foo" in registry.sources
     assert "bar" in registry.sources
+
+
+def test_directory_loading_records_unreadable_plugin_without_hiding_siblings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    denied = tmp_path / "denied"
+    denied.mkdir()
+
+    def fake_walk(root, *, topdown, onerror, followlinks):
+        assert Path(root) == tmp_path
+        assert topdown and not followlinks
+        onerror(PermissionError(13, "denied", str(denied)))
+        return iter(())
+
+    monkeypatch.setattr("omnicrawler.plugins.plugins.os.walk", fake_walk)
+    registry = Registry()
+    load_local_plugins(registry, [str(tmp_path)], tmp_path, fail_open=True)
+
+    assert len(registry.plugin_errors) == 1
+    assert registry.plugin_errors[0]["path"] == str(denied)
+    assert "PermissionError" in registry.plugin_errors[0]["error"]
+
+
+def test_complete_package_uses_inherited_acl_sibling_staging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from omnicrawler.plugins import identity, package_manifest
+
+    manifest_bytes = json.dumps(
+        {
+            "package_id": "demo",
+            "version": "1.0.0",
+            "files": {"plugin.py": "sha256:ignored"},
+        },
+        separators=(",", ":"),
+    ).encode()
+    expected_hash = hashlib.sha256(manifest_bytes).hexdigest()
+    resources = {
+        "plugins/demo/package.manifest.json": manifest_bytes,
+        "plugins/demo/package.manifest.creator.sig": b"creator-package",
+        "plugins/demo/package.manifest.maintainer.sig": b"maintainer-package",
+        "plugins/demo/creator.sig": b"creator",
+        "plugins/demo/plugin.py.sig": b"plugin",
+        "plugins/demo/plugin.py": b"PLUGIN_METADATA = {}\n",
+    }
+    entry = {
+        "id": "demo",
+        "version": "1.0.0",
+        "package_manifest_file": "plugins/demo/package.manifest.json",
+        "creator_package_signature_file": "plugins/demo/package.manifest.creator.sig",
+        "maintainer_package_signature_file": "plugins/demo/package.manifest.maintainer.sig",
+        "creator_signature_file": "plugins/demo/creator.sig",
+        "signature_file": "plugins/demo/plugin.py.sig",
+        "package_manifest_sha256": expected_hash,
+    }
+    monkeypatch.setattr(
+        market_client,
+        "fetch_resource",
+        lambda _base, rel, **_kwargs: resources[rel],
+    )
+    monkeypatch.setattr(identity, "public_key_bytes_from_pem", lambda _value: b"trust")
+    monkeypatch.setattr(
+        package_manifest,
+        "verify_package",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            manifest_sha256=expected_hash, package_id="demo", version="1.0.0"
+        ),
+    )
+    monkeypatch.setattr(
+        market_client.uuid,
+        "uuid4",
+        lambda: SimpleNamespace(hex="fixed"),
+    )
+
+    destination = tmp_path / "installed" / "demo"
+    result = market_client._download_manifest_package(
+        entry, "market", destination, "trust", main_name="plugin.py", timeout=1, egress=None
+    )
+
+    assert result == destination / "plugin.py"
+    assert result.read_bytes() == resources["plugins/demo/plugin.py"]
+    assert not (destination.parent / ".demo.staging-fixed").exists()
 
 
 # ── P9-B1（B01-011）：egress=None 拒绝出网 ─────────────────────────

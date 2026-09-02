@@ -12,6 +12,17 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(autouse=True)
+def _use_chinese_ui_language():
+    """Keep GUI text assertions independent from earlier language-switch tests."""
+
+    from omnicrawler.gui import i18n
+
+    i18n.set_language("zh_CN")
+    yield
+    i18n.set_language("zh_CN")
+
+
 def test_task_workspace_template_library_and_rebuild_start_offscreen(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
@@ -123,6 +134,28 @@ def test_window_defers_close_until_auxiliary_thread_stops(monkeypatch):
     app.processEvents()
     assert not thread.isRunning()
     assert not window.isVisible()
+
+
+def test_unsaved_window_close_preserves_recovery_draft(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from omnicrawler.gui.main import MainWindow
+
+    monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    calls: list[str] = []
+    window._config_path = None
+    monkeypatch.setattr(window._autosave, "stop", lambda: calls.append("stop"))
+    monkeypatch.setattr(
+        window._autosave, "delete_draft", lambda: calls.append("delete")
+    )
+
+    window.close()
+    app.processEvents()
+
+    assert calls == ["stop"]
 
 
 def test_export_thread_reports_progress_periodically_not_for_every_row(tmp_path, monkeypatch):

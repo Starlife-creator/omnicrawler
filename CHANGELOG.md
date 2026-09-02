@@ -10,6 +10,9 @@
 - ci(deps): 增加最小安装与分 feature extras 的隔离安装验证，防止可选依赖泄漏到核心启动路径
 - ci(sdk): 增加 SDK 公共导出快照，阻止未声明的破坏性 API 漂移
 - ci(release): 增加跨平台 Standard/Full 产物预算和 Standard 重型依赖污染检查
+- feat(gui): 增加宿主管理的语义底层视觉表面、透明前景预设和无需插件的本地工作台背景
+- feat(plugins): `surface.background` v2 支持范围、面板不透明度、遮罩、静态模糊、暂停与能力发现，同时保持输入穿透和宿主渲染边界
+- fix(plugins): 市场插件启用后立即按当前项目授权热加载，并修复 Windows 完整包安装目录继承临时 ACL 的问题
 
 ## 0.11.2 - 2026-08-30
 

@@ -18,8 +18,8 @@ import logging
 import os
 import re
 import shutil
-import tempfile
 import urllib.request
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -258,9 +258,14 @@ def _download_manifest_package(
         raise PermissionError("市场 package manifest 的 files 非法")
     base = PurePosixPath(manifest_rel).parent
     dest_dir.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="omnicrawl-market-", dir=dest_dir.parent) as temp:
-        staging = Path(temp) / "package"
-        staging.mkdir()
+    # Do not move a child of TemporaryDirectory into the final install path.
+    # Python creates that container with owner-only ACLs on Windows; moving its
+    # child preserves the restrictive ACL and can make the installed plugin
+    # unreadable to later host/sandbox processes. A direct sibling mkdir uses
+    # the normal inherited ACL while retaining an atomic final rename.
+    staging = dest_dir.with_name(f".{dest_dir.name}.staging-{uuid.uuid4().hex}")
+    staging.mkdir()
+    try:
         (staging / MANIFEST_NAME).write_bytes(manifest_bytes)
         signatures = {
             CREATOR_SIGNATURE_NAME: str(entry["creator_package_signature_file"]),
@@ -309,6 +314,9 @@ def _download_manifest_package(
             shutil.rmtree(backup)
         else:
             os.replace(staging, dest_dir)
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
     return dest_dir / main_name
 
 

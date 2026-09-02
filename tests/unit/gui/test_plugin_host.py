@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -13,7 +14,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtWidgets import QApplication, QLabel, QMainWindow
 
 from omnicrawler.gui import design_system
-from omnicrawler.gui.plugin_host import install_plugin_ui
+from omnicrawler.gui.plugin_host import clear_plugin_ui, install_plugin_ui
 from omnicrawler.plugins.plugins import Registry
 
 
@@ -91,6 +92,79 @@ def test_background_host_scans_only_bounded_local_media(tmp_path) -> None:
     assert [item.kind for item in items] == ["image", "video"]
 
 
+def test_background_surface_stays_below_controls_and_applies_safe_theme(
+    app: QApplication, tmp_path
+) -> None:
+    from PySide6 import QtCore, QtGui
+    from PySide6.QtWidgets import QPushButton, QWidget
+
+    from omnicrawler.gui.background_host import BackgroundController
+
+    image = tmp_path / "background.png"
+    assert QtGui.QImage(32, 32, QtGui.QImage.Format.Format_RGB32).save(str(image))
+    window = QMainWindow()
+    window._settings = SimpleNamespace(high_contrast=False)
+    central = QWidget(window)
+    button = QPushButton("Run", central)
+    button.setGeometry(20, 20, 100, 40)
+    window.setCentralWidget(central)
+    window.resize(400, 240)
+    controller = BackgroundController(
+        window,
+        SimpleNamespace(
+            background_id="test.safe", label="Safe", default_opacity=1.0,
+            default_dim=0.15,
+        ),
+    )
+    try:
+        window.show()
+        controller.set_scope("application")
+        controller.set_media(image)
+        app.processEvents()
+
+        point = button.mapTo(window, button.rect().center())
+        assert window.childAt(point) is not controller.layer
+        assert controller.layer.testAttribute(
+            QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents
+        )
+        assert window.property("ambientBackground") is True
+        controller.set_panel_opacity(76)
+        assert "0.76" in window.styleSheet()
+    finally:
+        controller.close()
+        window.close()
+        QApplication.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
+        app.processEvents()
+
+
+def test_media_surface_v2_capabilities_are_bounded(app: QApplication) -> None:
+    from omnicrawler.gui.media_surface import MediaSurfaceService
+
+    window = QMainWindow()
+    window._settings = SimpleNamespace(high_contrast=False)
+    service = MediaSurfaceService(window, "demo", "Demo")
+    try:
+        capabilities = service.capabilities()
+        assert capabilities["version"] == 2
+        assert capabilities["input_passthrough"] is True
+        assert capabilities["scopes"] == ["application", "workspace", "canvas"]
+        assert capabilities["panel_opacity"]["minimum"] == 65
+        configured = service.configure({
+            "scope": "canvas", "panel_opacity": 70, "blur": 20,
+            "opacity": 100,
+        })
+        assert configured["scope"] == "canvas"
+        assert configured["panel_opacity"] == 70
+        assert configured["blur"] == 20
+    finally:
+        service.close()
+        window.close()
+        from PySide6 import QtCore
+
+        QApplication.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
+        app.processEvents()
+
+
 def test_market_blocks_unavailable_required_capability() -> None:
     from omnicrawler.gui.views.plugin_market import _install_block_reason
 
@@ -139,3 +213,38 @@ def test_contract2_declarative_view_mounts_host_owned_widgets(app: QApplication)
         assert adapter.surface is not None
     finally:
         window.close()
+
+
+def test_clear_plugin_ui_unmounts_declarative_view(app: QApplication) -> None:
+    from PySide6 import QtCore
+    from PySide6.QtWidgets import QDockWidget
+
+    class Adapter:
+        def describe(self):
+            return {
+                "view_id": "reload.main", "title": "Reload View", "preferred_zone": "right",
+                "movable": True, "resizable": True, "floatable": True,
+                "default_width": 320, "default_height": 360,
+                "minimum_width": 240, "minimum_height": 160,
+                "components": [],
+            }
+
+        def bind_surface(self, _surface):
+            return None
+
+    registry = Registry()
+    registry.declarative_views["reload-plugin"] = Adapter()
+    window = QMainWindow()
+    install_plugin_ui(window, registry)
+    assert window.findChild(
+        QDockWidget, "declarativePluginView_reload-plugin_reload.main"
+    ) is not None
+
+    clear_plugin_ui(window)
+    QApplication.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
+
+    assert window.findChild(
+        QDockWidget, "declarativePluginView_reload-plugin_reload.main"
+    ) is None
+    assert window._declarative_plugin_view_controllers == []
+    window.close()

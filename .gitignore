@@ -63,6 +63,8 @@ Desktop.ini
 .uploads/
 
 # === Runtime Data (运行期产出) ===
+# GUI 崩溃恢复草稿可能包含项目路径、目标 URL 与权限授权，绝不能误提交。
+**/.autosave_*.yaml
 data/input/*
 !data/input/.gitkeep
 data/pdfs/*

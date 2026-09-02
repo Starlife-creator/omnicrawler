@@ -52,6 +52,8 @@ class MediaSurfaceService:
     def _refresh_rendered(self) -> None:
         if self._render_broker is None or not self._render_handle:
             return
+        if self._controller.paused or self._controller._host_paused:
+            return
         try:
             frame = self._render_broker.read_output(self._render_handle)
         except ValueError:
@@ -62,7 +64,10 @@ class MediaSurfaceService:
             self._controller.set_rendered_image(frame)
 
     def configure(self, payload: dict[str, Any]) -> dict[str, Any]:
-        allowed = {"opacity", "dim", "fit", "paused", "rotation_seconds"}
+        allowed = {
+            "opacity", "dim", "fit", "paused", "rotation_seconds",
+            "scope", "panel_opacity", "blur", "preset",
+        }
         unknown = set(payload) - allowed
         if unknown:
             raise ValueError(_(f"背景表面包含未知配置: {sorted(unknown)}"))
@@ -79,12 +84,39 @@ class MediaSurfaceService:
             self._controller.set_paused(bool(payload["paused"]))
         if "rotation_seconds" in payload:
             self._controller.set_rotation(int(payload["rotation_seconds"]))
+        if "scope" in payload:
+            self._controller.set_scope(str(payload["scope"]))
+        if "panel_opacity" in payload:
+            self._controller.set_panel_opacity(int(payload["panel_opacity"]))
+        if "blur" in payload:
+            self._controller.set_blur(int(payload["blur"]))
+        if "preset" in payload:
+            self._controller.apply_preset(str(payload["preset"]))
         return {
             "active": self._controller.active,
             "opacity": round(self._controller.layer.opacity * 100),
             "dim": round(self._controller.dim * 100),
             "fit": self._controller.fit_mode,
             "paused": self._controller.paused,
+            "scope": self._controller.scope,
+            "panel_opacity": self._controller.panel_opacity,
+            "blur": self._controller.layer.blur,
+        }
+
+    def capabilities(self) -> dict[str, Any]:
+        """Describe the host-enforced background vocabulary to plugins."""
+
+        return {
+            "version": 2,
+            "scopes": ["application", "workspace", "canvas"],
+            "fit_modes": ["cover", "contain", "stretch"],
+            "presets": ["clear", "balanced", "focus", "immersive", "solid"],
+            "opacity": {"minimum": 5, "maximum": 100},
+            "panel_opacity": {"minimum": 65, "maximum": 100},
+            "dim": {"minimum": 0, "maximum": 85},
+            "blur": {"minimum": 0, "maximum": 20, "static_only": True},
+            "input_passthrough": True,
+            "host_owned_rendering": True,
         }
 
     def clear(self) -> None:
@@ -95,3 +127,9 @@ class MediaSurfaceService:
         self._render_handle = ""
         self._last_frame = b""
         self._controller.disable()
+
+    def close(self) -> None:
+        """Release the rendered surface and its host-owned Qt objects."""
+
+        self.clear()
+        self._controller.close()

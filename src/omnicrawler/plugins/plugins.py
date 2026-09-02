@@ -7,6 +7,7 @@ import inspect
 import io
 import json
 import logging
+import os
 import threading
 import tokenize
 from collections.abc import Callable
@@ -729,14 +730,32 @@ def load_local_plugins(
             # B01-005（D9）：只认规范布局入口 plugin.py；辅助模块（helpers.py 等）交给
             # 插件自己 import，游离 .py（conftest.py/test_*.py/编辑器临时文件）不当作插件，
             # 记为 error 跳过——避免单文件残留打挂整批加载。
-            for py in sorted(candidate.rglob("plugin.py")):
-                if "__pycache__" in py.parts:
-                    continue
-                expanded.append(str(py))
-            stray = [
-                str(path) for path in sorted(candidate.rglob("*.py"))
-                if path.name != "plugin.py" and "__pycache__" not in path.parts
-            ]
+            entries: list[Path] = []
+            stray: list[str] = []
+            walk_errors: list[OSError] = []
+            for directory, dirnames, filenames in os.walk(
+                candidate, topdown=True, onerror=walk_errors.append, followlinks=False
+            ):
+                dirnames[:] = sorted(name for name in dirnames if name != "__pycache__")
+                base = Path(directory)
+                for filename in sorted(filenames):
+                    if not filename.endswith(".py"):
+                        continue
+                    path = base / filename
+                    if filename == "plugin.py":
+                        entries.append(path)
+                    elif "tests" not in path.relative_to(candidate).parts:
+                        stray.append(str(path))
+            expanded.extend(str(path) for path in entries)
+            for error in walk_errors:
+                registry.plugin_errors.append(
+                    {
+                        "path": str(getattr(error, "filename", None) or candidate),
+                        "error": f"{type(error).__name__}: {error}",
+                    }
+                )
+            if walk_errors and not fail_open:
+                raise walk_errors[0]
             if stray:
                 LOGGER.warning(
                     "目录模式忽略非入口 .py 文件（辅助模块请由插件自行 import，游离文件请移出插件目录）: %s",

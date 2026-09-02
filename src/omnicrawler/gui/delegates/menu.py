@@ -129,6 +129,18 @@ class MenuBuilder(_BaseDelegate):
             pass
         settings_menu.addMenu(theme_menu)
 
+        background_menu = QMenu(_("工作台背景"), mw)
+        choose_background = QAction(_("选择本地图片或视频..."), mw)
+        choose_background.triggered.connect(mw._select_workspace_background)
+        background_menu.addAction(choose_background)
+        background_settings = QAction(_("背景显示设置..."), mw)
+        background_settings.triggered.connect(mw._show_workspace_background_settings)
+        background_menu.addAction(background_settings)
+        clear_background = QAction(_("清除工作台背景"), mw)
+        clear_background.triggered.connect(mw._clear_workspace_background)
+        background_menu.addAction(clear_background)
+        settings_menu.addMenu(background_menu)
+
         # Accessibility submenu
         accessibility_menu = QMenu(_("无障碍与显示"), mw)
         for label, scale in ((_('紧凑 90%'), 90), (_('标准 100%'), 100), (_('大字体 125%'), 125), (_('特大字体 150%'), 150)):

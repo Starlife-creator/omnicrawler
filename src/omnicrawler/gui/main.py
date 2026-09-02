@@ -276,6 +276,8 @@ class MainWindow(QMainWindow):
         self._probe_fetcher: Any | None = None
         self._close_after_background_jobs = False
         self._async_manager = AsyncWorkerManager()
+        self._plugin_registry: Any | None = None
+        self._builtin_background_controller: Any | None = None
 
         # ---- 构建 UI ----
         self._refresh_accessibility()
@@ -286,6 +288,7 @@ class MainWindow(QMainWindow):
         self._setup_toolbar()
         self._setup_status_bar()
         self._setup_central_area()
+        self._restore_workspace_background()
         self._setup_help_center()
         self._apply_ui_mode(self._settings.ui_mode)
         self._setup_system_tray()
@@ -338,6 +341,134 @@ class MainWindow(QMainWindow):
 
     def _set_theme(self, theme: str) -> None:
         self._theme_manager.set_theme(theme)
+
+    def _builtin_background(self) -> Any:
+        """Lazily create the plugin-independent host visual surface."""
+
+        if self._builtin_background_controller is None:
+            from types import SimpleNamespace
+
+            from .background_host import BackgroundController
+
+            self._builtin_background_controller = BackgroundController(
+                self,
+                SimpleNamespace(
+                    background_id="builtin.workspace",
+                    label=_("工作台背景"),
+                    default_opacity=1.0,
+                    default_dim=0.15,
+                ),
+            )
+        return self._builtin_background_controller
+
+    def _select_workspace_background(self) -> None:
+        """Choose a host-rendered local background without installing a plugin."""
+
+        from PySide6.QtWidgets import QFileDialog
+
+        selected, _filter = QFileDialog.getOpenFileName(
+            self,
+            _("选择工作台背景"),
+            self._settings.workspace_background_path,
+            _("背景媒体 (*.png *.jpg *.jpeg *.webp *.gif *.bmp *.mp4 *.webm *.mov *.mkv)"),
+        )
+        if not selected:
+            return
+        try:
+            self._builtin_background().set_media(selected)
+            self._settings.workspace_background_path = selected
+            ToastManager.instance().success(_("工作台背景已启用"))
+        except (OSError, ValueError) as exc:
+            ToastManager.instance().error(_(f"无法启用工作台背景：{exc}"))
+
+    def _clear_workspace_background(self) -> None:
+        controller = self._builtin_background_controller
+        if controller is not None:
+            controller.disable()
+        self._settings.workspace_background_path = ""
+        ToastManager.instance().info(_("工作台背景已清除"))
+
+    def _show_workspace_background_settings(self) -> None:
+        """Edit the same bounded visual vocabulary exposed to plugins."""
+
+        from PySide6.QtCore import Qt as CoreQt
+        from PySide6.QtWidgets import (
+            QComboBox as DialogComboBox,
+        )
+        from PySide6.QtWidgets import (
+            QDialogButtonBox,
+            QFormLayout,
+            QSlider,
+        )
+
+        controller = self._builtin_background_controller
+        if controller is None or not controller.active:
+            ToastManager.instance().info(_("请先选择一个本地工作台背景"))
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle(_("工作台背景显示设置"))
+        form = QFormLayout(dialog)
+
+        preset = DialogComboBox(dialog)
+        for label, value in (
+            (_("清晰"), "clear"), (_("平衡"), "balanced"),
+            (_("专注"), "focus"), (_("沉浸"), "immersive"),
+            (_("纯背景"), "solid"),
+        ):
+            preset.addItem(label, value)
+        scope = DialogComboBox(dialog)
+        for label, value in (
+            (_("整个应用客户区"), "application"),
+            (_("完整工作区"), "workspace"),
+            (_("当前内容画布"), "canvas"),
+        ):
+            scope.addItem(label, value)
+        scope.setCurrentIndex(max(0, scope.findData(controller.scope)))
+
+        def slider(minimum: int, maximum: int, value: int) -> Any:
+            widget = QSlider(CoreQt.Orientation.Horizontal, dialog)
+            widget.setRange(minimum, maximum)
+            widget.setValue(value)
+            return widget
+
+        opacity = slider(5, 100, round(controller.layer.opacity * 100))
+        panel = slider(65, 100, controller.panel_opacity)
+        dim = slider(0, 85, round(controller.dim * 100))
+        blur = slider(0, 20, controller.layer.blur)
+        form.addRow(_("视觉预设"), preset)
+        form.addRow(_("背景范围"), scope)
+        form.addRow(_("背景可见度"), opacity)
+        form.addRow(_("前景面板不透明度"), panel)
+        form.addRow(_("暗色遮罩"), dim)
+        form.addRow(_("静态背景模糊"), blur)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, parent=dialog)
+        form.addRow(buttons)
+        def apply_dialog_preset(_index: int) -> None:
+            controller.apply_preset(str(preset.currentData()))
+            opacity.setValue(round(controller.layer.opacity * 100))
+            panel.setValue(controller.panel_opacity)
+            dim.setValue(round(controller.dim * 100))
+            blur.setValue(controller.layer.blur)
+
+        preset.activated.connect(apply_dialog_preset)
+        scope.activated.connect(
+            lambda _index: controller.set_scope(str(scope.currentData()))
+        )
+        opacity.valueChanged.connect(controller.set_opacity)
+        panel.valueChanged.connect(controller.set_panel_opacity)
+        dim.valueChanged.connect(controller.set_dim)
+        blur.valueChanged.connect(controller.set_blur)
+        buttons.rejected.connect(dialog.reject)
+        dialog.exec()
+
+    def _restore_workspace_background(self) -> None:
+        selected = self._settings.workspace_background_path
+        if not selected:
+            return
+        try:
+            self._builtin_background().set_media(selected)
+        except (OSError, ValueError):
+            self._settings.workspace_background_path = ""
 
     def _toggle_dnd(self, enabled: bool) -> None:
         self._theme_manager.toggle_dnd(enabled)
@@ -505,36 +636,77 @@ class MainWindow(QMainWindow):
         self._finish_label.setObjectName("muted")
         self._statusbar.addPermanentWidget(self._finish_label)
 
-    def _install_plugin_ui(self) -> None:
-        """装配完成后加载本地插件并挂载 UI 注册（主题/动作/面板/状态栏）。
+    def _plugin_app_config(self) -> Any:
+        """Build the plugin runtime config from the current GUI project state."""
 
-        插件来源：项目根下 plugins/ 与 plugins_installed/（核心配置默认路径）。
-        strict 策略下未签名/未信任插件拒绝加载；加载失败 fail-open，不阻塞启动。
-        """
         from ..core.config import DEFAULTS, AppConfig, deep_merge
+
+        serialized = yaml.safe_load(to_yaml(self._config)) or {}
+        if not isinstance(serialized, dict):
+            raise ValueError(_("当前项目配置无法转换为插件运行配置"))
+        raw = deep_merge(copy.deepcopy(DEFAULTS), serialized)
+        plugins = raw.setdefault("plugins", {})
+        if not isinstance(plugins, dict):
+            raise ValueError(_("当前项目的 plugins 配置段必须是对象"))
+        # GUI isolates a broken plugin without relaxing signature, permission, or
+        # sandbox gates. Other approved plugins and the workbench remain usable.
+        plugins["fail_open"] = True
+        root = self._project_root.resolve()
+        workspace = Path(self._config.workspace).expanduser()
+        if not workspace.is_absolute():
+            workspace = (root / workspace).resolve()
+        path = self._config_path or (root / ".omnicrawler-gui.yaml")
+        return AppConfig(path, root, raw, workspace)
+
+    def _clear_plugin_ui(self) -> None:
+        from .plugin_host import clear_plugin_ui
+
+        clear_plugin_ui(self)
+        registry = getattr(self, "_plugin_registry", None)
+        self._plugin_registry = None
+        if registry is not None:
+            try:
+                registry.close()
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning(_("关闭 GUI 插件运行资源失败: %s"), exc)
+
+    def _install_plugin_ui(self, *, notify: bool = False) -> bool:
+        """Reload plugin UI from the active project config and expose failures."""
+
         from ..pipeline import build_registry
         from ..plugins.plugins import Registry
         from .plugin_host import install_plugin_ui as _install_plugin_ui
 
+        self._clear_plugin_ui()
+        registry = Registry()
+        load_errors: list[str] = []
         try:
-            raw = deep_merge({}, DEFAULTS)
-            raw["project"] = {
-                "name": "gui",
-                "workspace": str(self._project_root / "work"),
-            }
-            config = AppConfig(
-                Path("<gui>"), self._project_root, raw, self._project_root
-            )
-            registry = build_registry(config)
+            registry = build_registry(self._plugin_app_config())
         except Exception as exc:  # noqa: BLE001 - 插件问题不阻塞 GUI 启动
             LOGGER.warning("GUI startup plugin load failed: %s", exc)
-            registry = Registry()
+            load_errors.append(_(f"插件运行配置加载失败：{exc}"))
+        for item in registry.plugin_errors:
+            path = str(item.get("path", _("插件")))
+            reason = str(item.get("error", _("未知错误")))
+            if item.get("level") != "skipped" or _("未在当前项目启用") not in reason:
+                load_errors.append(f"{path}: {reason}")
         try:
-            errors = _install_plugin_ui(self, registry)
-            if errors:
-                self._plugin_ui_errors = errors
+            load_errors.extend(_install_plugin_ui(self, registry))
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("Plugin UI install failed: %s", exc)
+            load_errors.append(_(f"插件界面装配失败：{exc}"))
+        self._plugin_registry = registry
+        self._plugin_ui_errors = load_errors
+        if load_errors:
+            LOGGER.warning("GUI plugin reload completed with errors: %s", "; ".join(load_errors))
+            if notify:
+                ToastManager.instance().error(
+                    _("插件配置已保存，但有 {0} 个插件未能加载：{1}").format(
+                        len(load_errors), load_errors[0]
+                    )
+                )
+            return False
+        return True
 
     def _setup_help_center(self) -> None:
         self._help_center = HelpCenterDock(self)
@@ -730,6 +902,7 @@ class MainWindow(QMainWindow):
         self._plugin_market = PluginMarketView(project_root=self._project_root)
         self._plugin_market.installation_completed.connect(self._on_market_plugin_installed)
         self._plugin_market.activation_requested.connect(self._activate_market_plugin)
+        self._plugin_market.deactivation_requested.connect(self._deactivate_market_plugin)
         self._plugin_market.uninstall_completed.connect(self._on_market_plugin_uninstalled)
         self._plugin_market.set_enabled_plugins(self._configured_market_plugin_ids())
         self._stack.addWidget(self._plugin_market)
@@ -1259,7 +1432,10 @@ class MainWindow(QMainWindow):
         plugins["paths"] = paths
         self._commit_plugin_config_change()
         self._plugin_market.set_enabled_plugins(enabled)
-        ToastManager.instance().success(_("已为当前项目启用插件：{0}").format(plugin_id))
+        if self._install_plugin_ui(notify=True):
+            ToastManager.instance().success(
+                _("已为当前项目启用并加载插件：{0}").format(plugin_id)
+            )
 
     def _on_market_plugin_uninstalled(self, plugin_id: str) -> None:
         plugins = self._config.passthrough.setdefault("plugins", {})
@@ -1273,6 +1449,43 @@ class MainWindow(QMainWindow):
             grants.pop(plugin_id, None)
         self._commit_plugin_config_change()
         self._plugin_market.set_enabled_plugins(enabled)
+        self._install_plugin_ui(notify=True)
+
+    def _deactivate_market_plugin(self, plugin_id: str) -> None:
+        """Disable one installed market plugin for this project only."""
+
+        enabled = self._configured_market_plugin_ids()
+        if plugin_id not in enabled:
+            ToastManager.instance().info(_("插件已经在当前项目禁用：{0}").format(plugin_id))
+            return
+        answer = QMessageBox.question(
+            self,
+            _("在当前项目禁用插件"),
+            _(
+                "将立即停止在当前项目加载插件 {0}，并撤销这个项目授予它的权限。\n\n"
+                "插件文件会继续保留，其他项目不受影响；以后重新启用时需要再次确认权限。"
+                "\n\n确认禁用？"
+            ).format(plugin_id),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        plugins = self._config.passthrough.setdefault("plugins", {})
+        if not isinstance(plugins, dict):
+            ToastManager.instance().error(_("插件配置段结构异常，无法禁用"))
+            return
+        enabled.discard(plugin_id)
+        plugins["enabled_market_plugins"] = sorted(enabled)
+        grants = plugins.get("permission_grants", {})
+        if isinstance(grants, dict):
+            grants.pop(plugin_id, None)
+        self._commit_plugin_config_change()
+        self._plugin_market.set_enabled_plugins(enabled)
+        if self._install_plugin_ui(notify=True):
+            ToastManager.instance().success(
+                _("已在当前项目禁用插件并撤销授权：{0}").format(plugin_id)
+            )
 
     def _commit_plugin_config_change(self) -> None:
         """同步编辑器并持久化；无正式配置路径时至少写入崩溃恢复草稿。"""
@@ -1619,6 +1832,7 @@ class MainWindow(QMainWindow):
             self._config_path = Path(config_path)
             self._config_label.setText(self._config_path.name)
             self._refresh_canvas()
+            self._install_plugin_ui(notify=True)
             self._nav.setCurrentRow(NavIndex.WORKSPACE)
             ToastManager.instance().success(_("历史配置已加载"))
         except Exception as e:
@@ -1731,6 +1945,7 @@ class MainWindow(QMainWindow):
                 self._config_path = None
                 self._config_label.setText(_("已恢复的草稿"))
                 self._refresh_canvas()
+                self._install_plugin_ui(notify=True)
                 ToastManager.instance().success(_("草稿已恢复"))
 
     # ================================================================
@@ -1807,8 +2022,17 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self._async_manager.cancel_all()
-        self._autosave.delete_draft()
+        self._autosave.stop()
+        # An unsaved or recovered draft is the only durable copy of the user's
+        # work. Closing the window must not erase it. Saved configurations may
+        # discard their redundant crash-recovery draft.
+        if self._config_path is not None:
+            self._autosave.delete_draft()
         self._release_probe_fetcher()
+        self._clear_plugin_ui()
+        if self._builtin_background_controller is not None:
+            self._builtin_background_controller.close()
+            self._builtin_background_controller = None
         event.accept()
 
     def _refresh_canvas(self) -> None:

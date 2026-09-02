@@ -230,6 +230,12 @@ def register_plugin_theme(theme_id: str, label: str, overrides: dict[str, str]) 
     _PLUGIN_THEMES[theme_id] = (label, normalized)
 
 
+def unregister_plugin_theme(theme_id: str) -> None:
+    """Remove one dynamically loaded plugin theme during a GUI plugin reload."""
+
+    _PLUGIN_THEMES.pop(theme_id.strip().lower(), None)
+
+
 def plugin_theme_labels() -> list[tuple[str, str]]:
     """返回 [(显示名, theme_id)]，供主题选择器追加插件主题项。"""
     return [(label, theme_id) for theme_id, (label, _) in sorted(_PLUGIN_THEMES.items())]
@@ -549,6 +555,71 @@ def stylesheet(tokens: VisualTokens) -> str:
     QFrame[emptyState="true"] {{
         background: transparent; border: 2px dashed {tokens.border};
         border-radius: {RADIUS["lg"]}px; padding: {SPACING["xl"]}px;
+    }}
+    """
+
+
+def _rgba(color: str, alpha_percent: int) -> str:
+    """Convert one opaque theme token into a bounded QSS rgba color."""
+
+    value = QColor(color)
+    alpha = max(0, min(100, int(alpha_percent))) / 100
+    return f"rgba({value.red()}, {value.green()}, {value.blue()}, {alpha:.2f})"
+
+
+def ambient_surface_stylesheet(
+    tokens: VisualTokens, *, panel_opacity: int = 88
+) -> str:
+    """Return a main-window-scoped translucent theme for visual backgrounds.
+
+    The stylesheet is applied only while a host-owned background is active.
+    Dialogs, menus and safety-critical transient surfaces stay opaque; passive
+    containers become transparent and interactive controls retain a bounded
+    panel surface so text and focus indicators remain readable.
+    """
+
+    panel = max(65, min(100, int(panel_opacity)))
+    canvas = _rgba(tokens.canvas, max(28, panel - 24))
+    surface = _rgba(tokens.surface, panel)
+    nav = _rgba(tokens.nav, min(100, panel + 4))
+    elevated = _rgba(tokens.elevated, max(92, panel))
+    return f"""
+    QMainWindow[ambientBackground="true"] {{ background: transparent; }}
+    QMainWindow[ambientBackground="true"] QWidget {{ background-color: transparent; }}
+    QMainWindow[ambientBackground="true"] QStackedWidget,
+    QMainWindow[ambientBackground="true"] QScrollArea,
+    QMainWindow[ambientBackground="true"] QAbstractScrollArea::viewport {{
+        background-color: {canvas};
+    }}
+    QMainWindow[ambientBackground="true"] QToolBar,
+    QMainWindow[ambientBackground="true"] QStatusBar,
+    QMainWindow[ambientBackground="true"] QMenuBar,
+    QMainWindow[ambientBackground="true"] QDockWidget::title {{
+        background-color: {surface};
+    }}
+    QMainWindow[ambientBackground="true"] QFrame[card="true"],
+    QMainWindow[ambientBackground="true"] QFrame#quickTaskCard,
+    QMainWindow[ambientBackground="true"] QPushButton,
+    QMainWindow[ambientBackground="true"] QLineEdit,
+    QMainWindow[ambientBackground="true"] QTextEdit,
+    QMainWindow[ambientBackground="true"] QPlainTextEdit,
+    QMainWindow[ambientBackground="true"] QComboBox,
+    QMainWindow[ambientBackground="true"] QSpinBox,
+    QMainWindow[ambientBackground="true"] QDoubleSpinBox,
+    QMainWindow[ambientBackground="true"] QListWidget,
+    QMainWindow[ambientBackground="true"] QTreeWidget,
+    QMainWindow[ambientBackground="true"] QTableWidget,
+    QMainWindow[ambientBackground="true"] QTabWidget::pane,
+    QMainWindow[ambientBackground="true"] QGroupBox {{
+        background-color: {surface};
+    }}
+    QMainWindow[ambientBackground="true"] QListWidget#mainNavigation {{
+        background-color: {nav};
+    }}
+    QMainWindow[ambientBackground="true"] QMenu,
+    QMainWindow[ambientBackground="true"] QDialog,
+    QMainWindow[ambientBackground="true"] QMessageBox {{
+        background-color: {elevated};
     }}
     """
 

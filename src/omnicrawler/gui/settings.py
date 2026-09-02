@@ -158,6 +158,16 @@ class AppSettings:
     def theme(self, value: str) -> None:
         self._set_value("appearance/theme", value)
 
+    @property
+    def workspace_background_path(self) -> str:
+        """Host-owned local background selected without any plugin."""
+
+        return self._value("appearance/workspace_background_path", "", str)
+
+    @workspace_background_path.setter
+    def workspace_background_path(self, value: str) -> None:
+        self._set_value("appearance/workspace_background_path", value)
+
     # ---- 快捷键 ----
     @property
     def shortcuts(self) -> dict[str, str]:

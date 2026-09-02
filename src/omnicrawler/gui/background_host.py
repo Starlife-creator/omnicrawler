@@ -61,7 +61,9 @@ class _BackgroundLayer(QtWidgets.QWidget):
         self.pixmap: QtGui.QPixmap | None = None
         self.opacity = 0.24
         self.fit_mode = "cover"
+        self.blur = 0
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:
         super().paintEvent(event)
@@ -74,6 +76,22 @@ class _BackgroundLayer(QtWidgets.QWidget):
         scaled = self.pixmap.scaled(
             self.size(), aspect, QtCore.Qt.TransformationMode.SmoothTransformation
         )
+        # A bounded downscale/upscale pass gives static images and host-rendered
+        # HTML frames an inexpensive blur without adding a graphics effect to
+        # the whole layer (which would also blur the safety scrim).
+        if self.blur:
+            divisor = 1 + min(self.blur, 20) / 3
+            small = scaled.scaled(
+                max(1, round(scaled.width() / divisor)),
+                max(1, round(scaled.height() / divisor)),
+                QtCore.Qt.AspectRatioMode.IgnoreAspectRatio,
+                QtCore.Qt.TransformationMode.SmoothTransformation,
+            )
+            scaled = small.scaled(
+                scaled.size(),
+                QtCore.Qt.AspectRatioMode.IgnoreAspectRatio,
+                QtCore.Qt.TransformationMode.SmoothTransformation,
+            )
         point = QtCore.QPoint(
             (self.width() - scaled.width()) // 2,
             (self.height() - scaled.height()) // 2,
@@ -90,10 +108,13 @@ class BackgroundController(QtCore.QObject):
         super().__init__(main_window)
         self.main_window = main_window
         self.registration = registration
+        self.dock: QtWidgets.QDockWidget | None = None
+        self.status_widget: QtWidgets.QLabel | None = None
         self.items: list[LocalMedia] = []
         self.index = -1
         self.active = False
         self.paused = False
+        self._host_paused = False
         self.settings = QtCore.QSettings(
             "Starlife", f"OmniCrawler-Background-{registration.background_id}"
         )
@@ -101,6 +122,7 @@ class BackgroundController(QtCore.QObject):
         self.layer.setObjectName(f"pluginBackground_{registration.background_id}")
         self.video = QtMultimediaWidgets.QVideoWidget(self.layer)
         self.video.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.video.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         self.video_effect = QtWidgets.QGraphicsOpacityEffect(self.video)
         self.video.setGraphicsEffect(self.video_effect)
         self.audio = QtMultimedia.QAudioOutput(self.layer)
@@ -115,7 +137,12 @@ class BackgroundController(QtCore.QObject):
         self.timer = QtCore.QTimer(self.layer)
         self.timer.timeout.connect(self.next)
         main_window.installEventFilter(self)
+        stack = getattr(main_window, "_stack", None)
+        if stack is not None:
+            stack.currentChanged.connect(self._page_changed)
         self._restore()
+        settings = getattr(main_window, "_settings", None)
+        self._host_paused = bool(getattr(settings, "reduced_motion", False))
         self._sync_geometry()
         self.layer.hide()
 
@@ -126,12 +153,24 @@ class BackgroundController(QtCore.QObject):
             QtCore.QEvent.Type.Show,
         }:
             QtCore.QTimer.singleShot(0, self._sync_geometry)
+        if watched is self.main_window and event.type() in {
+            QtCore.QEvent.Type.Hide,
+            QtCore.QEvent.Type.WindowStateChange,
+        }:
+            window: Any = self.main_window
+            minimized = bool(
+                window.windowState() & QtCore.Qt.WindowState.WindowMinimized
+            ) or not window.isVisible()
+            self._set_host_paused(minimized)
         return False
+
+    def _page_changed(self, _index: int) -> None:
+        QtCore.QTimer.singleShot(0, self._sync_geometry)
 
     def _restore(self) -> None:
         self.layer.opacity = max(
             0.05,
-            min(float(str(self.settings.value("opacity", self.registration.default_opacity))), 0.85),
+            min(float(str(self.settings.value("opacity", self.registration.default_opacity))), 1.0),
         )
         self.dim = max(
             0.0,
@@ -141,27 +180,74 @@ class BackgroundController(QtCore.QObject):
         if self.fit_mode not in {"cover", "contain", "stretch"}:
             self.fit_mode = "cover"
         self.layer.fit_mode = self.fit_mode
+        self.scope = str(self.settings.value("scope", "workspace"))
+        if self.scope not in {"application", "workspace", "canvas"}:
+            self.scope = "workspace"
+        self.panel_opacity = max(
+            65, min(int(str(self.settings.value("panel_opacity", 88))), 100)
+        )
+        self.layer.blur = max(0, min(int(str(self.settings.value("blur", 0))), 20))
         library = str(self.settings.value("library", ""))
         if library:
             self.set_library(library)
         self._apply_effects()
 
     def _sync_geometry(self) -> None:
-        central = self.main_window.centralWidget()
-        if central is None:
+        target = None
+        if self.scope == "canvas":
+            stack = getattr(self.main_window, "_stack", None)
+            if stack is not None:
+                target = stack.currentWidget()
+        if target is None and self.scope == "workspace":
+            target = self.main_window.centralWidget()
+        if target is None:
             self.layer.setGeometry(self.main_window.rect())
         else:
-            top_left = central.mapTo(self.main_window, QtCore.QPoint(0, 0))
-            self.layer.setGeometry(top_left.x(), top_left.y(), central.width(), central.height())
+            top_left = target.mapTo(self.main_window, QtCore.QPoint(0, 0))
+            self.layer.setGeometry(top_left.x(), top_left.y(), target.width(), target.height())
         self.video.setGeometry(self.layer.rect())
         self.scrim.setGeometry(self.layer.rect())
         self.scrim.raise_()
         if self.active:
-            self.layer.raise_()
+            # This is a semantic background surface. It must never cover or
+            # receive input ahead of the workbench controls.
+            self.layer.lower()
 
     def _apply_effects(self) -> None:
         self.video_effect.setOpacity(self.layer.opacity)
         self.scrim.setStyleSheet(f"background-color: rgba(0, 0, 0, {round(255 * self.dim)});")
+
+    def _apply_host_surface_theme(self, active: bool) -> None:
+        if active:
+            from .design_system import ThemeManager, ambient_surface_stylesheet
+
+            tokens = ThemeManager.instance().tokens
+            settings = getattr(self.main_window, "_settings", None)
+            panel = 100 if getattr(settings, "high_contrast", False) else self.panel_opacity
+            self.main_window.setProperty("ambientBackground", True)
+            self.main_window.setStyleSheet(
+                ambient_surface_stylesheet(tokens, panel_opacity=panel)
+            )
+        else:
+            self.main_window.setProperty("ambientBackground", False)
+            self.main_window.setStyleSheet("")
+        style = self.main_window.style()
+        style.unpolish(self.main_window)
+        style.polish(self.main_window)
+
+    def _set_host_paused(self, paused: bool) -> None:
+        if paused == self._host_paused:
+            return
+        self._host_paused = paused
+        if paused:
+            self.player.pause()
+            if self.movie is not None:
+                self.movie.setPaused(True)
+        elif self.active and not self.paused:
+            if self.movie is not None:
+                self.movie.setPaused(False)
+            if not self.player.source().isEmpty():
+                self.player.play()
 
     def set_library(self, root: str | Path) -> int:
         self.items = discover_local_media(root)
@@ -192,6 +278,7 @@ class BackgroundController(QtCore.QObject):
     def set_rendered_image(self, png: bytes) -> None:
         """Display host-rendered image bytes without exposing a filesystem path."""
 
+        was_active = self.active
         pixmap = QtGui.QPixmap()
         if not png or not pixmap.loadFromData(png, b"PNG"):
             raise ValueError(_("宿主渲染结果不是有效 PNG"))
@@ -210,10 +297,12 @@ class BackgroundController(QtCore.QObject):
         self.layer.pixmap = pixmap
         self.layer.show()
         self._sync_geometry()
+        if not was_active:
+            self._apply_host_surface_theme(True)
         self.layer.update()
 
     def set_opacity(self, value: int) -> None:
-        self.layer.opacity = max(0.05, min(value / 100, 0.85))
+        self.layer.opacity = max(0.05, min(value / 100, 1.0))
         self.settings.setValue("opacity", self.layer.opacity)
         self._apply_effects()
         self.layer.update()
@@ -236,6 +325,41 @@ class BackgroundController(QtCore.QObject):
         self.settings.setValue("fit", mode)
         self.layer.update()
 
+    def set_scope(self, scope: str) -> None:
+        if scope not in {"application", "workspace", "canvas"}:
+            raise ValueError(_("背景范围必须是 application、workspace 或 canvas"))
+        self.scope = scope
+        self.settings.setValue("scope", scope)
+        self._sync_geometry()
+
+    def set_panel_opacity(self, value: int) -> None:
+        self.panel_opacity = max(65, min(int(value), 100))
+        self.settings.setValue("panel_opacity", self.panel_opacity)
+        if self.active:
+            self._apply_host_surface_theme(True)
+
+    def set_blur(self, value: int) -> None:
+        self.layer.blur = max(0, min(int(value), 20))
+        self.settings.setValue("blur", self.layer.blur)
+        self.layer.update()
+
+    def apply_preset(self, preset: str) -> None:
+        values = {
+            "clear": (100, 90, 0, 0),
+            "balanced": (100, 88, 15, 4),
+            "focus": (72, 96, 32, 10),
+            "immersive": (100, 74, 8, 0),
+            "solid": (55, 100, 35, 8),
+        }
+        if preset not in values:
+            raise ValueError(_("未知背景视觉预设"))
+        opacity, panel, dim, blur = values[preset]
+        self.set_opacity(opacity)
+        self.set_panel_opacity(panel)
+        self.set_dim(dim)
+        self.set_blur(blur)
+        self.settings.setValue("preset", preset)
+
     def set_rotation(self, seconds: int) -> None:
         bounded = max(0, min(int(seconds), 3600))
         self.settings.setValue("rotation_seconds", bounded)
@@ -254,6 +378,7 @@ class BackgroundController(QtCore.QObject):
         self.active = True
         self.layer.show()
         self._sync_geometry()
+        self._apply_host_surface_theme(True)
         self.show_index(max(0, self.index))
         self.set_rotation(int(str(self.settings.value("rotation_seconds", 0))))
         return True
@@ -268,6 +393,7 @@ class BackgroundController(QtCore.QObject):
         self.layer.hide()
         if getattr(self.main_window, "_active_plugin_background", None) is self:
             self.main_window._active_plugin_background = None
+            self._apply_host_surface_theme(False)
 
     def toggle(self) -> bool:
         if self.active:
@@ -288,7 +414,7 @@ class BackgroundController(QtCore.QObject):
             self.layer.pixmap = None
             self.video.show()
             self.player.setSource(QtCore.QUrl.fromLocalFile(str(item.path)))
-            if not self.paused:
+            if not self.paused and not self._host_paused:
                 self.player.play()
         else:
             self.video.hide()
@@ -298,6 +424,8 @@ class BackgroundController(QtCore.QObject):
                     lambda _frame: self._show_movie_frame()
                 )
                 self.movie.start()
+                if self.paused or self._host_paused:
+                    self.movie.setPaused(True)
             else:
                 self.layer.pixmap = QtGui.QPixmap(str(item.path))
             self.layer.update()
@@ -319,8 +447,24 @@ class BackgroundController(QtCore.QObject):
         self.paused = paused
         if paused:
             self.player.pause()
-        elif self.active and not self.player.source().isEmpty():
+            if self.movie is not None:
+                self.movie.setPaused(True)
+        elif self.active and not self._host_paused and not self.player.source().isEmpty():
             self.player.play()
+            if self.movie is not None:
+                self.movie.setPaused(False)
+
+    def close(self) -> None:
+        self.disable()
+        stack = getattr(self.main_window, "_stack", None)
+        if stack is not None:
+            try:
+                stack.currentChanged.disconnect(self._page_changed)
+            except (RuntimeError, TypeError):
+                pass
+        self.main_window.removeEventFilter(self)
+        self.layer.deleteLater()
+        self.deleteLater()
 
     def _media_status_changed(self, status: Any) -> None:
         if status == QtMultimedia.QMediaPlayer.MediaStatus.EndOfMedia and self.active:
@@ -341,8 +485,11 @@ class BackgroundController(QtCore.QObject):
         row.addWidget(previous)
         row.addWidget(following)
         opacity = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        opacity.setRange(5, 85)
+        opacity.setRange(5, 100)
         opacity.setValue(round(self.layer.opacity * 100))
+        panel_opacity = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        panel_opacity.setRange(65, 100)
+        panel_opacity.setValue(self.panel_opacity)
         dim = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         dim.setRange(0, 85)
         dim.setValue(round(self.dim * 100))
@@ -354,6 +501,26 @@ class BackgroundController(QtCore.QObject):
         ):
             fit.addItem(label, value)
         fit.setCurrentIndex(max(0, fit.findData(self.fit_mode)))
+        scope = QtWidgets.QComboBox()
+        for label, value in (
+            (_("整个应用客户区"), "application"),
+            (_("完整工作区"), "workspace"),
+            (_("当前内容画布"), "canvas"),
+        ):
+            scope.addItem(label, value)
+        scope.setCurrentIndex(max(0, scope.findData(self.scope)))
+        preset = QtWidgets.QComboBox()
+        for label, value in (
+            (_("清晰"), "clear"), (_("平衡"), "balanced"),
+            (_("专注"), "focus"), (_("沉浸"), "immersive"),
+            (_("纯背景"), "solid"),
+        ):
+            preset.addItem(label, value)
+        stored_preset = str(self.settings.value("preset", "balanced"))
+        preset.setCurrentIndex(max(0, preset.findData(stored_preset)))
+        blur = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        blur.setRange(0, 20)
+        blur.setValue(self.layer.blur)
         rotation = QtWidgets.QSpinBox()
         rotation.setRange(0, 3600)
         rotation.setSuffix(_(" 秒"))
@@ -366,7 +533,11 @@ class BackgroundController(QtCore.QObject):
         layout.addWidget(pause)
         for label, setting_widget in (
             (_("背景可见度"), opacity),
+            (_("前景面板不透明度"), panel_opacity),
             (_("暗色遮罩"), dim),
+            (_("静态背景模糊"), blur),
+            (_("背景范围"), scope),
+            (_("视觉预设"), preset),
             (_("适配方式"), fit),
             (_("自动轮播"), rotation),
         ):
@@ -394,7 +565,21 @@ class BackgroundController(QtCore.QObject):
         following.clicked.connect(self.next)
         pause.toggled.connect(self.set_paused)
         opacity.valueChanged.connect(self.set_opacity)
+        panel_opacity.valueChanged.connect(self.set_panel_opacity)
         dim.valueChanged.connect(self.set_dim)
+        blur.valueChanged.connect(self.set_blur)
+        scope.currentIndexChanged.connect(
+            lambda _index: self.set_scope(str(scope.currentData()))
+        )
+
+        def apply_selected_preset(_index: int) -> None:
+            self.apply_preset(str(preset.currentData()))
+            opacity.setValue(round(self.layer.opacity * 100))
+            panel_opacity.setValue(self.panel_opacity)
+            dim.setValue(round(self.dim * 100))
+            blur.setValue(self.layer.blur)
+
+        preset.currentIndexChanged.connect(apply_selected_preset)
         fit.currentIndexChanged.connect(lambda _index: self.set_fit(str(fit.currentData())))
         rotation.valueChanged.connect(self.set_rotation)
         return panel
@@ -415,4 +600,6 @@ def install_background(main_window: Any, registration: Any) -> BackgroundControl
     status = QtWidgets.QLabel(_(f"  {registration.label} · 本地宿主模式  "))
     status.setToolTip(_("无网络、无网页脚本、无插件自定义绘制层"))
     main_window.statusBar().addPermanentWidget(status)
+    controller.dock = dock
+    controller.status_widget = status
     return controller

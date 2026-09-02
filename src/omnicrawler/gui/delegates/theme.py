@@ -1,6 +1,7 @@
 """Theme, accessibility, and display scaling delegate."""
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QApplication
 
@@ -132,6 +133,13 @@ class ThemeManager(_BaseDelegate):
             high_contrast=mw._settings.high_contrast,
             color_blind_friendly=mw._settings.color_blind_friendly,
         )
+        background = getattr(mw, "_active_plugin_background", None)
+        if background is not None and background.active:
+            background._apply_host_surface_theme(True)
+            minimized = bool(
+                mw.windowState() & Qt.WindowState.WindowMinimized
+            ) or not mw.isVisible()
+            background._set_host_paused(mw._settings.reduced_motion or minimized)
 
     def set_interface_scale(self, value: int) -> None:
         mw = self._mw

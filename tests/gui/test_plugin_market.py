@@ -48,6 +48,8 @@ def test_view_instantiates_offline_by_default(tmp_path):
     view._update_action_buttons()
     assert not view._install_btn.isEnabled()
     assert not view._uninstall_btn.isEnabled()
+    assert not view._enable_btn.isEnabled()
+    assert not view._disable_btn.isEnabled()
     assert not view._verify_btn.isEnabled()
 
 
@@ -274,6 +276,8 @@ def test_market_install_then_activation_updates_scoped_project_config(monkeypatc
     monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
     window = MainWindow()
     window._commit_plugin_config_change = lambda: None
+    reloads = []
+    window._install_plugin_ui = lambda *, notify=False: reloads.append(notify) or True
     window._plugin_market._installed_ids = lambda: ["legacy", "new_plugin"]
 
     # 安装完成先建立白名单，并明确排除尚未批准的新插件。
@@ -312,6 +316,39 @@ def test_market_install_then_activation_updates_scoped_project_config(monkeypatc
         "permissions": ["network:scoped"],
     }
     assert "plugins_installed/" in plugins["paths"]
+    assert reloads == [True]
+
+    window.deleteLater()
+    QApplication.instance().processEvents()
+
+
+def test_plugin_runtime_config_uses_current_gui_project_grants(monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    from omnicrawler.gui.main import MainWindow
+
+    monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
+    window = MainWindow()
+    window._config.passthrough["plugins"] = {
+        "paths": ["plugins_installed/"],
+        "enabled_market_plugins": ["lumen-drift"],
+        "permission_grants": {
+            "lumen-drift": {
+                "version": "0.3.0",
+                "artifact_sha256": "a" * 64,
+                "creator_fingerprint": "creator-1",
+                "permissions": ["resources:read"],
+            }
+        },
+    }
+
+    core = window._plugin_app_config()
+    plugins = core.section("plugins")
+
+    assert plugins["enabled_market_plugins"] == ["lumen-drift"]
+    assert plugins["permission_grants"]["lumen-drift"]["artifact_sha256"] == "a" * 64
+    assert plugins["paths"] == ["plugins_installed/"]
+    assert plugins["fail_open"] is True
 
     window.deleteLater()
     QApplication.instance().processEvents()
@@ -333,6 +370,74 @@ def test_market_uninstall_removes_enablement_and_grant(monkeypatch):
     plugins = window._config.passthrough["plugins"]
     assert plugins["enabled_market_plugins"] == ["keep"]
     assert "demo" not in plugins["permission_grants"]
+
+    window.deleteLater()
+    QApplication.instance().processEvents()
+
+
+def test_market_view_exposes_explicit_project_state_and_disable_action(tmp_path):
+    view = _make_view(tmp_path)
+    view._state = "ready"
+    view._catalog = {
+        "plugins": [
+            {"id": "enabled", "name": "Enabled", "version": "1.0.0"},
+            {"id": "disabled", "name": "Disabled", "version": "1.0.0"},
+        ]
+    }
+    for plugin_id in ("enabled", "disabled"):
+        target = tmp_path / "plugins_installed" / plugin_id
+        target.mkdir(parents=True)
+        (target / "plugin.py").write_text("", encoding="utf-8")
+        (target / "plugin.py.sig").write_bytes(b"signature")
+
+    view.set_enabled_plugins({"enabled"})
+    labels = [view._list.item(index).text() for index in range(view._list.count())]
+    assert any("[已启用]" in label and "Enabled" in label for label in labels)
+    assert any("[已禁用]" in label and "Disabled" in label for label in labels)
+
+    view._show_detail("enabled")
+    assert view._enable_btn.text() == "重新授权"
+    assert view._disable_btn.isEnabled()
+    requested = []
+    view.deactivation_requested.connect(requested.append)
+    view._on_disable()
+    assert requested == ["enabled"]
+
+    view._show_detail("disabled")
+    assert view._enable_btn.text() == "启用到当前项目"
+    assert not view._disable_btn.isEnabled()
+
+
+def test_market_deactivation_keeps_install_but_revokes_project_access(monkeypatch):
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from omnicrawler.gui.main import MainWindow
+
+    monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    window = MainWindow()
+    window._commit_plugin_config_change = lambda: None
+    reloads = []
+    window._install_plugin_ui = lambda *, notify=False: reloads.append(notify) or True
+    window._config.passthrough["plugins"] = {
+        "enabled_market_plugins": ["demo", "keep"],
+        "permission_grants": {
+            "demo": {"permissions": ["network:scoped"]},
+            "keep": {"permissions": []},
+        },
+    }
+
+    window._deactivate_market_plugin("demo")
+
+    plugins = window._config.passthrough["plugins"]
+    assert plugins["enabled_market_plugins"] == ["keep"]
+    assert "demo" not in plugins["permission_grants"]
+    assert "keep" in plugins["permission_grants"]
+    assert reloads == [True]
 
     window.deleteLater()
     QApplication.instance().processEvents()

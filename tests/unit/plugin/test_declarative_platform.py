@@ -66,6 +66,10 @@ class _Surface:
         self.config = payload
         return {"active": True}
 
+    @staticmethod
+    def capabilities() -> dict:
+        return {"version": 2, "input_passthrough": True}
+
 
 def test_surface_capability_requires_permission() -> None:
     surface = _Surface()
@@ -77,6 +81,8 @@ def test_surface_capability_requires_permission() -> None:
     )
     assert allowed.dispatch("surface.background.configure", {"opacity": 20})["active"]
     assert surface.config == {"opacity": 20}
+    capabilities = allowed.dispatch("surface.background.capabilities", {})
+    assert capabilities == {"version": 2, "input_passthrough": True}
 
 
 def test_scripted_render_needs_second_permission() -> None:

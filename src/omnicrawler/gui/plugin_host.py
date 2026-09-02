@@ -27,11 +27,26 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QDockWidget, QWidget
 
-from .design_system import register_plugin_theme
+from .design_system import register_plugin_theme, unregister_plugin_theme
 from .i18n import _
 from .widgets.toast import ToastManager
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _ui_state(mw: Any) -> dict[str, list[Any]]:
+    state = getattr(mw, "_plugin_ui_state", None)
+    if not isinstance(state, dict):
+        state = {
+            "themes": [],
+            "actions": [],
+            "docks": [],
+            "status_widgets": [],
+            "backgrounds": [],
+            "declarative_views": [],
+        }
+        mw._plugin_ui_state = state
+    return state
 
 
 def _safe_call(callback: Any, action_id: str, *arguments: Any) -> Any:
@@ -95,6 +110,7 @@ def _install_actions(mw: Any, registry: Any, errors: list[str]) -> None:
 
             action.triggered.connect(_run)
             plugin_menu.addAction(action)
+            _ui_state(mw)["actions"].append((plugin_menu, action))
         except Exception as exc:  # noqa: BLE001
             errors.append(_(f"动作 {action_id}: {exc}"))
 
@@ -110,6 +126,7 @@ def _install_panels(mw: Any, registry: Any, errors: list[str]) -> None:
             dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
             dock.setWidget(widget)
             mw.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+            _ui_state(mw)["docks"].append(dock)
         except Exception as exc:  # noqa: BLE001
             errors.append(_(f"面板 {panel_id}: {exc}"))
 
@@ -126,6 +143,7 @@ def _install_status_widgets(mw: Any, registry: Any, errors: list[str]) -> None:
             if not isinstance(widget, QWidget):
                 raise TypeError(_(f"状态小部件 {index} 工厂未返回 QWidget: {type(widget).__name__}"))
             statusbar.addPermanentWidget(widget)
+            _ui_state(mw)["status_widgets"].append(widget)
         except Exception as exc:  # noqa: BLE001
             errors.append(_(f"状态小部件 {index}: {exc}"))
 
@@ -140,6 +158,7 @@ def _install_backgrounds(mw: Any, registry: Any, errors: list[str]) -> None:
         except Exception as exc:  # noqa: BLE001
             errors.append(_(f"背景 {background_id}: {exc}"))
     mw._plugin_background_controllers = controllers
+    _ui_state(mw)["backgrounds"] = controllers
 
 
 def _install_declarative_views(mw: Any, registry: Any, errors: list[str]) -> None:
@@ -152,11 +171,16 @@ def _install_declarative_views(mw: Any, registry: Any, errors: list[str]) -> Non
         except Exception as exc:  # noqa: BLE001
             errors.append(_(f"声明式视图 {plugin_id}: {exc}"))
     mw._declarative_plugin_view_controllers = controllers
+    _ui_state(mw)["declarative_views"] = controllers
 
 
 def install_plugin_ui(mw: Any, registry: Any) -> list[str]:
     """把 registry 中的 UI 注册安装到主窗口；返回安装错误列表（fail-open）。"""
     errors: list[str] = []
+    state = _ui_state(mw)
+    state["themes"].extend(
+        theme_id for theme_id in registry.themes if theme_id not in state["themes"]
+    )
     _install_themes(registry, errors)
     _install_actions(mw, registry, errors)
     _install_panels(mw, registry, errors)
@@ -166,3 +190,44 @@ def install_plugin_ui(mw: Any, registry: Any) -> list[str]:
     if errors:
         LOGGER.warning("Plugin UI install partially failed: %s", "; ".join(errors))
     return errors
+
+
+def clear_plugin_ui(mw: Any) -> None:
+    """Unmount dynamically installed plugin UI objects before rebuilding."""
+
+    state = _ui_state(mw)
+    for controller in reversed(state["declarative_views"]):
+        try:
+            controller.close()
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning(_("关闭声明式插件视图失败: %s"), exc)
+    for controller in reversed(state["backgrounds"]):
+        try:
+            dock = getattr(controller, "dock", None)
+            if dock is not None:
+                mw.removeDockWidget(dock)
+                dock.deleteLater()
+            status = getattr(controller, "status_widget", None)
+            if status is not None and mw.statusBar() is not None:
+                mw.statusBar().removeWidget(status)
+                status.deleteLater()
+            controller.close()
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning(_("关闭插件背景失败: %s"), exc)
+    for dock in reversed(state["docks"]):
+        mw.removeDockWidget(dock)
+        dock.deleteLater()
+    statusbar = mw.statusBar()
+    for widget in reversed(state["status_widgets"]):
+        if statusbar is not None:
+            statusbar.removeWidget(widget)
+        widget.deleteLater()
+    for menu, action in reversed(state["actions"]):
+        menu.removeAction(action)
+        action.deleteLater()
+    for theme_id in state["themes"]:
+        unregister_plugin_theme(theme_id)
+    for values in state.values():
+        values.clear()
+    mw._plugin_background_controllers = []
+    mw._declarative_plugin_view_controllers = []

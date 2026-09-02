@@ -174,6 +174,13 @@ class DeclarativeViewController(QtCore.QObject):
         except Exception:  # noqa: BLE001
             pass
 
+    def close(self) -> None:
+        """Unmount this view before a plugin reload and release its media surface."""
+
+        self._surface.close()
+        self._main_window.removeDockWidget(self.dock)
+        self.dock.deleteLater()
+
 
 def install_declarative_view(
     main_window: Any, plugin_id: str, adapter: Any

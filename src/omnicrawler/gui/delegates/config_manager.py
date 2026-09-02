@@ -42,6 +42,7 @@ class ConfigManager(_BaseDelegate):
         mw._config_path = None
         mw._config_label.setText(_("未保存"))
         mw._refresh_canvas()
+        mw._install_plugin_ui(notify=True)
 
     def open_config(self) -> None:
         mw = self._mw
@@ -63,6 +64,7 @@ class ConfigManager(_BaseDelegate):
             mw._settings.add_recent_file(filepath)
             mw._refresh_recent_menu()
             mw._refresh_canvas()
+            mw._install_plugin_ui(notify=True)
             ToastManager.instance().success(_("配置已加载"))
         except Exception as e:
             QMessageBox.critical(mw, _("加载失败"), str(e))
@@ -246,5 +248,6 @@ class ConfigManager(_BaseDelegate):
         mw._config_history.snapshot(mw._config_path, reason="before_restore")
         mw._config_history.restore(version_path, mw._config_path)
         mw._config = load_yaml(mw._config_path)
+        mw._install_plugin_ui(notify=True)
         mw._refresh_canvas()
         ToastManager.instance().success(_("历史配置已恢复；如需撤销，可再次打开配置历史"))
