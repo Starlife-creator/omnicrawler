@@ -1,4 +1,4 @@
-# OmniCrawler 0.11.2 架构
+# OmniCrawler 0.12.0 架构
 
 ## 原则
 
