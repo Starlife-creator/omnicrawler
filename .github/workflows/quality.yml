@@ -64,28 +64,15 @@ jobs:
       QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # 市场仓库与主仓库同级（tests 与 tools 按 "../OmniCrawler-market" 相对布局引用）。
-      # checkout action 的 path 不能逃逸 workspace，故用 git clone 替代；
-      # 市场仓库为 public：有 PAT（MARKET_REPO_TOKEN secret）时用它，无 token（如 fork PR）走公开 URL。
-      - name: Checkout OmniCrawler-market (sibling)
-        shell: pwsh
-        run: |
-          # 签名/指纹按字节校验：必须按 LF 检出，禁止 Windows autocrlf 转 CRLF
-          git config core.autocrlf false
-          $token = "${{ secrets.MARKET_REPO_TOKEN }}"
-          $url = "https://github.com/${{ github.repository_owner }}/OmniCrawler-market.git"
-          if ($token) {
-            $url = "https://x-access-token:$token@github.com/${{ github.repository_owner }}/OmniCrawler-market.git"
-          }
-          git clone --depth 1 --branch main $url ../OmniCrawler-market
-          if (-not (Test-Path "../OmniCrawler-market")) {
-            Write-Error "市场仓库 clone 失败。若仓库为 private，请在仓库 Settings -> Secrets 配置 MARKET_REPO_TOKEN（PAT，权限 repo）。"
-            exit 1
-          }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+      # 固定市场 SHA；保留同级目录和 LF 字节，不改用户的本地市场 checkout。
+      - name: Checkout pinned OmniCrawler-market (sibling)
+        env:
+          MARKET_REPO_TOKEN: ${{ secrets.MARKET_REPO_TOKEN }}
+        run: python tools/checkout_market.py
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[html,pdf,dev,async-http,gui,tls]" cryptography "duckdb>=1.2,<2"
       - if: runner.os == 'Linux'
@@ -174,27 +161,14 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # 市场仓库与主仓库同级（tests 引用 "../OmniCrawler-market"）；
-      # 市场仓库为 public：有 PAT 用它，无 token（如 fork PR）走公开 URL。
-      - name: Checkout OmniCrawler-market (sibling)
-        shell: pwsh
-        run: |
-          # 签名/指纹按字节校验：必须按 LF 检出，禁止 Windows autocrlf 转 CRLF
-          git config core.autocrlf false
-          $token = "${{ secrets.MARKET_REPO_TOKEN }}"
-          $url = "https://github.com/${{ github.repository_owner }}/OmniCrawler-market.git"
-          if ($token) {
-            $url = "https://x-access-token:$token@github.com/${{ github.repository_owner }}/OmniCrawler-market.git"
-          }
-          git clone --depth 1 --branch main $url ../OmniCrawler-market
-          if (-not (Test-Path "../OmniCrawler-market")) {
-            Write-Error "市场仓库 clone 失败。若仓库为 private，请在仓库 Settings -> Secrets 配置 MARKET_REPO_TOKEN（PAT，权限 repo）。"
-            exit 1
-          }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
           cache: pip
+      - name: Checkout pinned OmniCrawler-market (sibling)
+        env:
+          MARKET_REPO_TOKEN: ${{ secrets.MARKET_REPO_TOKEN }}
+        run: python tools/checkout_market.py
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[full]"
       - run: python -m pip check

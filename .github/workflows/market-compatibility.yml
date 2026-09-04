@@ -1,0 +1,40 @@
+name: market compatibility
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: market-compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_CONSTRAINT: ${{ github.workspace }}/constraints/quality.txt
+
+jobs:
+  latest-market:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Checkout latest market and record exact SHA
+        env:
+          MARKET_REPO_TOKEN: ${{ secrets.MARKET_REPO_TOKEN }}
+        run: python tools/checkout_market.py --latest --report market-checkout.json
+      - run: python -m pip install -e ".[html,dev,security]"
+      # Reuse the plugin suite from normal quality CI, not a second full matrix.
+      - run: python -m pytest tests/unit/plugin -q --junitxml=market-tests.xml
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: market-compatibility
+          path: |
+            market-checkout.json
+            market-tests.xml
+          if-no-files-found: warn
