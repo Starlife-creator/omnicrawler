@@ -43,6 +43,7 @@ import logging
 import re
 import time
 from collections.abc import Callable, Iterable
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -53,6 +54,7 @@ from ..services.progress import (
     StageSpec,
     TaskProgressEvent,
 )
+from ._io import ConversionCancelledError, atomic_output, check_cancel
 
 LOGGER = logging.getLogger(__name__)
 
@@ -94,6 +96,7 @@ __all__ = [
     "READERS",
     "WRITERS",
     "CanonicalRecords",
+    "ConversionCancelledError",
     "ConvertResult",
     "ProgressTracker",
     "ReaderFn",
@@ -119,6 +122,12 @@ WriterFn = Callable[[CanonicalRecords, Path, dict[str, Any]], dict[str, Any]]
 
 @dataclass(slots=True)
 class ConvertResult:
+    """`rows` retains the accepted-record count for existing callers.
+
+    `extra['written_records']` reports committed rows when the writer supplies
+    a count; unknown writer/rejection counts are None, never an inferred zero.
+    """
+
     source_format: str
     target_format: str
     rows: int
@@ -206,10 +215,21 @@ def _ensure_parent_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _record_rejection(options: dict[str, Any], line: int, reason: str) -> None:
+    stats = options.get("_read_stats")
+    if stats is not None:
+        stats["rejected_records"] += 1
+        if len(stats["rejection_samples"]) < 10:
+            stats["rejection_samples"].append({"line": line, "reason": reason})
+
+
 # ── CSV ──────────────────────────────────────────────────
 @register_reader(".csv")
 def read_csv(path: Path, options: dict[str, Any]) -> CanonicalRecords:
     _require_file(path)
+    check_cancel(options)
+    if "_read_stats" in options:
+        options["_read_stats"]["complete"] = True
     encoding = str(options.get("encoding", "utf-8-sig"))
     on_error = str(options.get("on_error", "skip")).lower()  # skip | abort
     pe = _ProgressEmitter(options.get("on_line_progress"))
@@ -226,12 +246,14 @@ def read_csv(path: Path, options: dict[str, Any]) -> CanonicalRecords:
         records: CanonicalRecords = []
         line_num = 0
         for row in reader:
+            check_cancel(options)
             line_num += 1
             try:
                 records.append(dict(row))
             except Exception as exc:  # csv 一般不含异常；保留以对齐 on_error 语义
                 if on_error == "abort":
                     raise ValueError(f"CSV 解析失败（逻辑行 {line_num}）: {exc}") from exc
+                _record_rejection(options, line_num, "CSV 记录无法解析")
                 continue
             pe.emit(line_num=line_num, records_so_far=len(records))
     finally:
@@ -247,22 +269,30 @@ def write_csv(rows: CanonicalRecords, path: Path, options: dict[str, Any]) -> di
     encoding = str(options.get("encoding", "utf-8-sig"))
     pe = _ProgressEmitter(options.get("on_write_progress"))
     total = len(rows)
-    tmp = path.with_suffix(path.suffix + ".tmp")
     written = 0
-    try:
+    truncated_cells = 0
+
+    def safe_cell(value: Any) -> Any:
+        nonlocal truncated_cells
+        if isinstance(value, str) and len(value) > 32700:
+            truncated_cells += 1
+        return excel_safe(value)
+
+    with atomic_output(path, options) as tmp:
         with tmp.open("w", encoding=encoding, newline="") as fh:
             writer = csv.DictWriter(fh, fieldnames=columns, extrasaction="ignore")
             writer.writeheader()
             if total <= _PROGRESS_CHUNK * 2:
                 # 小文件仍可一次性 writerows（最快路径），写后直接 flush
-                out = [{k: excel_safe(row.get(k, "")) for k in columns} for row in rows]
+                out = [{k: safe_cell(row.get(k, "")) for k in columns} for row in rows]
                 writer.writerows(out)
                 written = total
             else:
                 # 大文件按 chunk 写出，节流推进度
                 buf: list[dict[str, Any]] = []
                 for row in rows:
-                    buf.append({k: excel_safe(row.get(k, "")) for k in columns})
+                    check_cancel(options)
+                    buf.append({k: safe_cell(row.get(k, "")) for k in columns})
                     if len(buf) >= _PROGRESS_CHUNK:
                         writer.writerows(buf)
                         written += len(buf)
@@ -272,21 +302,18 @@ def write_csv(rows: CanonicalRecords, path: Path, options: dict[str, Any]) -> di
                     writer.writerows(buf)
                     written += len(buf)
                     buf.clear()
-        tmp.replace(path)
-    finally:
-        if tmp.exists():
-            try:
-                tmp.unlink()
-            except OSError:
-                pass
-    pe.flush(written=written, total=total)
-    return {"rows": written, "columns": columns, "encoding": encoding}
+        pe.flush(written=written, total=total)
+    warnings = [f"CSV 有 {truncated_cells} 个单元格超过应用字符上限，内容已截断"] if truncated_cells else []
+    return {"rows": written, "columns": columns, "encoding": encoding, "truncated_cells": truncated_cells, "warnings": warnings}
 
 
 # ── JSONL ─────────────────────────────────────────────────
 @register_reader(".jsonl", ".ndjson")
 def read_jsonl(path: Path, options: dict[str, Any]) -> CanonicalRecords:
     _require_file(path)
+    check_cancel(options)
+    if "_read_stats" in options:
+        options["_read_stats"]["complete"] = True
     flat_mode = bool(options.get("flat", True))  # 默认把 .data 展开为 flat dict
     on_error = str(options.get("on_error", "skip")).lower()  # skip | abort
     pe = _ProgressEmitter(options.get("on_line_progress"))
@@ -294,6 +321,7 @@ def read_jsonl(path: Path, options: dict[str, Any]) -> CanonicalRecords:
     last_line = 0
     with path.open("r", encoding="utf-8") as fh:
         for line_num, line in enumerate(fh, 1):
+            check_cancel(options)
             last_line = line_num
             line = line.strip()
             if not line:
@@ -304,8 +332,12 @@ def read_jsonl(path: Path, options: dict[str, Any]) -> CanonicalRecords:
                 if on_error == "abort":
                     raise ValueError(f"JSONL 解析失败（行 {line_num}）: {e}") from e
                 # skip 默认行为
+                _record_rejection(options, line_num, "JSON 语法错误")
                 continue
             if not isinstance(obj, dict):
+                if on_error == "abort":
+                    raise ValueError(f"JSONL 记录无效（行 {line_num}）: 必须是 JSON 对象")
+                _record_rejection(options, line_num, "必须是 JSON 对象")
                 continue
             if flat_mode and isinstance(obj.get("data"), dict):
                 flat: dict[str, Any] = {
@@ -328,12 +360,12 @@ def write_jsonl(rows: CanonicalRecords, path: Path, options: dict[str, Any]) -> 
     nested = bool(options.get("nested", False))  # True 时按 pipeline 原始 records.jsonl 结构
     pe = _ProgressEmitter(options.get("on_write_progress"))
     total = len(rows)
-    tmp = path.with_suffix(path.suffix + ".tmp")
     written = 0
-    try:
+    with atomic_output(path, options) as tmp:
         with tmp.open("w", encoding="utf-8") as fh:
             if nested:
                 for row in rows:
+                    check_cancel(options)
                     base = {k: row.get(k) for k in _BASE_COLUMNS if k in row}
                     data = {k: v for k, v in row.items() if k not in _BASE_COLUMNS and k != "evidence_json"}
                     evidence = {}
@@ -350,17 +382,11 @@ def write_jsonl(rows: CanonicalRecords, path: Path, options: dict[str, Any]) -> 
                     pe.emit(written=written, total=total)
             else:
                 for row in rows:
+                    check_cancel(options)
                     fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
                     written += 1
                     pe.emit(written=written, total=total)
-        tmp.replace(path)
-    finally:
-        if tmp.exists():
-            try:
-                tmp.unlink()
-            except OSError:
-                pass
-    pe.flush(written=written, total=total)
+        pe.flush(written=written, total=total)
     return {"rows": written, "nested": nested}
 
 
@@ -393,21 +419,25 @@ def _register_parquet() -> None:
         import pyarrow.parquet as pq
 
         _require_file(path)
+        check_cancel(options)
+        if "_read_stats" in options:
+            options["_read_stats"]["complete"] = True
         pe = _ProgressEmitter(options.get("on_line_progress"))
-        pf = pq.ParquetFile(path)
-        total_rows = int(getattr(pf.metadata, "num_rows", 0) or 0)
         records: CanonicalRecords = []
         row_cursor = 0
-        for batch in pf.iter_batches(batch_size=max(1, _PROGRESS_CHUNK)):
-            for obj in batch.to_pylist():
-                if isinstance(obj, dict):
-                    records.append(obj)
-            row_cursor += batch.num_rows
-            pe.emit(
-                line_num=row_cursor,
-                records_so_far=len(records),
-                total_rows=total_rows,
-            )
+        with pq.ParquetFile(path) as pf:
+            total_rows = int(getattr(pf.metadata, "num_rows", 0) or 0)
+            for batch in pf.iter_batches(batch_size=max(1, _PROGRESS_CHUNK)):
+                check_cancel(options)
+                for obj in batch.to_pylist():
+                    if isinstance(obj, dict):
+                        records.append(obj)
+                row_cursor += batch.num_rows
+                pe.emit(
+                    line_num=row_cursor,
+                    records_so_far=len(records),
+                    total_rows=total_rows,
+                )
         pe.flush(
             line_num=row_cursor,
             records_so_far=len(records),
@@ -428,8 +458,9 @@ def _register_parquet() -> None:
         if not rows:
             schema = pa.schema([pa.field("record_id", pa.string())])
             empty_table = pa.table({"record_id": pa.array([], type=pa.string())}, schema=schema)
-            pq.write_table(empty_table, path, compression=compression)
-            pe.flush(written=0, total=0)
+            with atomic_output(path, options) as tmp:
+                pq.write_table(empty_table, tmp, compression=compression)
+                pe.flush(written=0, total=0)
             return {"rows": 0, "columns": schema.names, "compression": compression}
 
         # 为了列稳定，先拿完整列集合，首批用它创建 writer schema
@@ -444,26 +475,22 @@ def _register_parquet() -> None:
             schema = pa.schema(fields)
 
         written = 0
-        writer = pq.ParquetWriter(path, schema, compression=compression)
-        try:
-            for start in range(0, total, _PROGRESS_CHUNK):
-                chunk = rows[start:start + _PROGRESS_CHUNK]
-                try:
-                    batch_table = pa.Table.from_pylist(chunk, schema=schema)
-                except Exception:  # noqa: BLE001 — 类型不一致时强制转 string（按 schema 创建 writer 已锁）
-                    normalized: list[dict[str, Any]] = []
-                    for row in chunk:
-                        normalized.append({c: (row[c] if c in row and row[c] is not None else None) for c in columns})
-                    batch_table = pa.Table.from_pylist(normalized)
-                writer.write_table(batch_table)
-                written += len(chunk)
-                pe.emit(written=written, total=total)
+        with atomic_output(path, options) as tmp:
+            with pq.ParquetWriter(tmp, schema, compression=compression) as writer:
+                for start in range(0, total, _PROGRESS_CHUNK):
+                    check_cancel(options)
+                    chunk = rows[start:start + _PROGRESS_CHUNK]
+                    try:
+                        batch_table = pa.Table.from_pylist(chunk, schema=schema)
+                    except Exception:  # noqa: BLE001 — 保留既有类型回退规则
+                        normalized: list[dict[str, Any]] = []
+                        for row in chunk:
+                            normalized.append({c: (row[c] if c in row and row[c] is not None else None) for c in columns})
+                        batch_table = pa.Table.from_pylist(normalized)
+                    writer.write_table(batch_table)
+                    written += len(chunk)
+                    pe.emit(written=written, total=total)
             pe.flush(written=written, total=total)
-        finally:
-            try:
-                writer.close()
-            except Exception:  # noqa: BLE001
-                pass
         return {"rows": written, "columns": list(schema.names), "compression": compression}
 
 
@@ -519,6 +546,9 @@ def _register_duckdb() -> None:
         import duckdb
 
         _require_file(path)
+        check_cancel(options)
+        if "_read_stats" in options:
+            options["_read_stats"]["complete"] = True
         pe = _ProgressEmitter(options.get("on_line_progress"))
         table = str(options.get("table", "records"))
         # META：table 标识符白名单——仅允许标识符或 schema.identifier，防 CLI
@@ -542,6 +572,7 @@ def _register_duckdb() -> None:
             records: CanonicalRecords = []
             fetched = 0
             while True:
+                check_cancel(options)
                 chunk = cursor.fetchmany(_PROGRESS_CHUNK)
                 if not chunk:
                     break
@@ -567,9 +598,12 @@ def _register_duckdb() -> None:
         import duckdb
 
         _ensure_parent_dir(path)
+        check_cancel(options)
         pe = _ProgressEmitter(options.get("on_write_progress"))
         total = len(rows)
         table = str(options.get("table", "records"))
+        if not _SQL_IDENTIFIER_RE.fullmatch(table):
+            raise ValueError(f"无效的 duckdb 表名: {table!r}")
         safe_cols = _ordered_columns(rows, prefer=options.get("columns") or [])
         if not safe_cols:
             safe_cols = ["record_id"]
@@ -580,22 +614,33 @@ def _register_duckdb() -> None:
         ]
         ddl = ", ".join(f'"{c}" {t}' for c, t in zip(typed_cols, col_types, strict=True))
         placeholders = ", ".join("?" for _ in typed_cols)
-        con = duckdb.connect(str(path))
         written = 0
-        try:
-            con.execute(f"DROP TABLE IF EXISTS {table}")
-            con.execute(f"CREATE TABLE {table} ({ddl})")
-            if rows:
-                for start in range(0, total, _PROGRESS_CHUNK):
-                    chunk = rows[start:start + _PROGRESS_CHUNK]
-                    values = [[row.get(k) for k in safe_cols] for row in chunk]
-                    if values:
-                        con.executemany(f"INSERT INTO {table} VALUES ({placeholders})", values)
-                    written += len(chunk)
-                    pe.emit(written=written, total=total)
-            pe.flush(written=written, total=total)
-        finally:
-            con.close()
+        existing = path.exists()
+        with (nullcontext(path) if existing else atomic_output(path, options)) as db_path:
+            if not existing:
+                # DuckDB creates its own header; mkstemp's empty file is not a database.
+                db_path.unlink()
+            con = duckdb.connect(str(db_path))
+            try:
+                con.execute("BEGIN TRANSACTION")
+                con.execute(f"DROP TABLE IF EXISTS {table}")
+                con.execute(f"CREATE TABLE {table} ({ddl})")
+                if rows:
+                    for start in range(0, total, _PROGRESS_CHUNK):
+                        check_cancel(options)
+                        chunk = rows[start:start + _PROGRESS_CHUNK]
+                        values = [[row.get(k) for k in safe_cols] for row in chunk]
+                        if values:
+                            con.executemany(f"INSERT INTO {table} VALUES ({placeholders})", values)
+                        written += len(chunk)
+                        pe.emit(written=written, total=total)
+                pe.flush(written=written, total=total)
+                check_cancel(options)
+                con.execute("COMMIT")
+            finally:
+                # Closing an uncommitted connection rolls back DDL and inserts,
+                # including KeyboardInterrupt; unrelated tables stay untouched.
+                con.close()
         return {"rows": written, "columns": safe_cols, "table": table}
 
 
@@ -617,6 +662,9 @@ def _register_xlsx() -> None:
         from openpyxl import load_workbook
 
         _require_file(path)
+        check_cancel(options)
+        if "_read_stats" in options:
+            options["_read_stats"]["complete"] = True
         sheet_name = options.get("sheet")
         data_only = bool(options.get("data_only", True))
         on_error = str(options.get("on_error", "skip")).lower()  # skip | abort
@@ -634,6 +682,7 @@ def _register_xlsx() -> None:
             records: CanonicalRecords = []
             row_num = 1  # 表头为 0，第一个数据行从 1 起算
             for row in rows_iter:
+                check_cancel(options)
                 row_num += 1
                 if row is None or all(v is None or v == "" for v in row):
                     continue
@@ -646,6 +695,7 @@ def _register_xlsx() -> None:
                 except Exception as exc:
                     if on_error == "abort":
                         raise ValueError(f"XLSX 解析失败（行 {row_num}）: {exc}") from exc
+                    _record_rejection(options, row_num, "XLSX 记录无法解析")
                     continue
                 pe.emit(line_num=row_num, records_so_far=len(records))
             pe.flush(line_num=row_num, records_so_far=len(records))
@@ -673,32 +723,43 @@ def _register_xlsx() -> None:
         data_rows = rows
         if len(data_rows) > XLSX_ROW_LIMIT:
             warnings.append(
-                f"XLSX 单表超过 {XLSX_ROW_LIMIT} 行硬限，仅写前 {XLSX_ROW_LIMIT} 行（Excel 不支持更多）"
+                f"XLSX 超过应用单表上限 {XLSX_ROW_LIMIT} 条，仅写前 {XLSX_ROW_LIMIT} 条，"
+                f"省略 {len(rows) - XLSX_ROW_LIMIT} 条"
             )
             LOGGER.warning(warnings[-1])
             data_rows = data_rows[:XLSX_ROW_LIMIT]
         total = len(data_rows)
         written = 0
-        for row in data_rows:
-            ws.append([_xlsx_cell(row.get(k, ""), k) for k in columns])
-            written += 1
-            pe.emit(written=written, total=total)
-        pe.flush(written=written, total=total)
+        truncated_cells = 0
         try:
-            wb.save(path)
+            with atomic_output(path, options) as tmp:
+                for row in data_rows:
+                    check_cancel(options)
+                    values = []
+                    for k in columns:
+                        value = row.get(k, "")
+                        safe = excel_safe(value)
+                        if isinstance(value, str) and (len(value) > 32700 or len(safe) > 32700):
+                            truncated_cells += 1
+                        if isinstance(safe, str):
+                            safe = safe[:32700]
+                        values.append(safe)
+                    ws.append(values)
+                    written += 1
+                    pe.emit(written=written, total=total)
+                check_cancel(options)
+                wb.save(tmp)
+                pe.flush(written=written, total=total)
         except (PermissionError, OSError) as exc:
             raise RuntimeError(f"无法写入 Excel 文件 {path}（可能被其他程序占用或目录不可写）: {exc}") from exc
-        return {"rows": written, "columns": columns, "warnings": warnings, "sheet": "结构化记录"}
-
-
-def _xlsx_cell(value: Any, column: str) -> Any:
-    v = excel_safe(value)
-    if isinstance(v, str):
-        # Excel 单元格硬限 32767 字符
-        if len(v) > 32700:
-            v = v[:32700]
-        return v
-    return v
+        finally:
+            wb.close()
+        if truncated_cells:
+            warnings.append(f"XLSX 有 {truncated_cells} 个单元格超过应用字符上限，内容已截断")
+        return {
+            "rows": written, "columns": columns, "warnings": warnings, "sheet": "结构化记录",
+            "omitted_records": len(rows) - written, "truncated_cells": truncated_cells,
+        }
 
 
 _register_xlsx()
@@ -728,6 +789,7 @@ def convert(
     on_write_progress: Callable[[Any], None] | None = None,
     on_error: str = "skip",
     on_progress: Callable[[TaskProgressEvent], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> ConvertResult:
     """核心入口：A → B 互转。
 
@@ -745,6 +807,9 @@ def convert(
     on_read_progress:  读取阶段进度回调（接收 dict: {line_num, records_so_far}）
     on_write_progress: 写入阶段进度回调（旧式 dict hooks，保持兼容）
     on_error: 解析错误策略 'skip'（默认）| 'abort'
+    should_stop: 协作取消检查；内置组件在读写期间及提交前检查。
+                 第三方不可中断操作需等返回；自定义 Reader/Writer 可通过
+                 options['_should_stop'] 接入同一检查。
     on_progress: **统一进度事件回调**（推荐）。接收 ``TaskProgressEvent``：
                  阶段=read(60%) / write(40%)，含 EMA ETA、瞬时速率、状态机。
 
@@ -809,14 +874,20 @@ def convert(
     writer_key = f"writer{dst_fmt.replace('.', '_')}"
 
     # Reader 通用选项：按实际 reader_key 单点注入即可（不再对不存在的 key 做 fallback）
-    r_opts = opts.setdefault(reader_key, {})
+    r_opts = dict(opts.get(reader_key) or {})
+    opts[reader_key] = r_opts
+    read_stats: dict[str, Any] = {"complete": False, "rejected_records": 0, "rejection_samples": []}
+    r_opts["_read_stats"] = read_stats
+    r_opts["_should_stop"] = should_stop
     r_opts.setdefault("flat", flat)
     r_opts.setdefault("on_error", on_error)
     if tracker is not None or on_read_progress is not None:
         r_opts["on_line_progress"] = _wrapped_read_hook
 
     # Writer 通用选项：单点注入 + 格式特定默认
-    w_opts = opts.setdefault(writer_key, {})
+    w_opts = dict(opts.get(writer_key) or {})
+    opts[writer_key] = w_opts
+    w_opts["_should_stop"] = should_stop
     w_opts.setdefault("nested", nested)
     if tracker is not None or on_write_progress is not None:
         w_opts["on_write_progress"] = _wrapped_write_hook
@@ -839,7 +910,13 @@ def convert(
         tracker.begin_stage("read", expected_items=est_read_items)
     reader_opts = opts.get(reader_key, {}) or {}
     try:
+        check_cancel(reader_opts)
         rows = READERS[src_fmt](src, reader_opts)
+        check_cancel(reader_opts)
+    except (ConversionCancelledError, KeyboardInterrupt):
+        if tracker is not None:
+            tracker.cancel()
+        raise
     except Exception:
         if tracker is not None:
             tracker.fail("读取阶段出错")
@@ -855,7 +932,12 @@ def convert(
     writer_opts = dict(opts.get(writer_key, {}) or {})
     writer_opts.setdefault("columns", cols)
     try:
+        check_cancel(writer_opts)
         writer_meta = WRITERS[dst_fmt](rows, dst, writer_opts)
+    except (ConversionCancelledError, KeyboardInterrupt):
+        if tracker is not None:
+            tracker.cancel()
+        raise
     except Exception:
         if tracker is not None:
             tracker.fail("写入阶段出错")
@@ -864,8 +946,21 @@ def convert(
         tracker.end_stage("write")
         tracker.finish()
 
-    warnings: list[str] = []
-    warnings.extend(writer_meta.pop("warnings") if isinstance(writer_meta, dict) and "warnings" in writer_meta else [])
+    writer_meta = dict(writer_meta) if isinstance(writer_meta, dict) else {}
+    warnings: list[str] = list(writer_meta.pop("warnings", []))
+    rejected = read_stats["rejected_records"] if read_stats["complete"] else None
+    if rejected:
+        examples = "；".join(
+            f"第 {sample['line']} 行：{sample['reason']}" for sample in read_stats["rejection_samples"][:3]
+        )
+        warnings.insert(0, f"读取时跳过 {rejected} 条无效记录（示例：{examples}）")
+    written = writer_meta.get("rows")
+    writer_meta.update(
+        accepted_records=len(rows),
+        written_records=written if isinstance(written, int) and not isinstance(written, bool) else None,
+        rejected_records=rejected,
+        rejection_samples=read_stats["rejection_samples"],
+    )
     return ConvertResult(
         source_format=src_fmt,
         target_format=dst_fmt,
@@ -873,5 +968,5 @@ def convert(
         columns=cols,
         warnings=warnings,
         output_path=dst,
-        extra=writer_meta if isinstance(writer_meta, dict) else {},
+        extra=writer_meta,
     )

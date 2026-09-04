@@ -686,9 +686,11 @@ def _run_convert(args: argparse.Namespace) -> None:
         options=options,
     )
     if not getattr(args, "quiet", False):
+        written = result.extra.get("written_records")
+        status = "⚠ 转换完成（有异常）" if result.warnings else "✅ 转换完成"
         print(
-            f"✅ 转换完成: {result.source_format} → {result.target_format} "
-            f"共 {result.rows} 行, {len(result.columns)} 列 -> {result.output_path}"
+            f"{status}: {result.source_format} → {result.target_format} "
+            f"写入 {written if written is not None else '未知'} 行, {len(result.columns)} 列 -> {result.output_path}"
         )
         for w in result.warnings:
             print(f"  ⚠ {w}")
@@ -697,6 +699,7 @@ def _run_convert(args: argparse.Namespace) -> None:
         "source_format": result.source_format,
         "target_format": result.target_format,
         "rows": result.rows,
+        "written_records": result.extra.get("written_records"),
         "columns": result.columns,
         "warnings": result.warnings,
         "output": str(result.output_path) if result.output_path else None,

@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from . import (
+    ConversionCancelledError,
     ConvertResult,
     TaskProgressEvent,
     convert,  # lazy-import OK，避免 __init__ 里启动时执行所有 register
@@ -205,7 +206,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"[cx] ERROR: 参数/数据错误: {exc}", file=sys.stderr)
         return 4
-    except KeyboardInterrupt:
+    except (ConversionCancelledError, KeyboardInterrupt):
         print("\n[cx] 已中断 (cancelled)", file=sys.stderr)
         return 130
     except Exception as exc:  # noqa: BLE001
@@ -218,12 +219,14 @@ def main(argv: list[str] | None = None) -> int:
         "source_format": result.source_format,
         "target_format": result.target_format,
         "rows": result.rows,
+        "written_records": result.extra.get("written_records"),
         "columns": result.columns,
         "warnings": result.warnings,
         "extra": result.extra or {},
     }
     if args.on_progress != "none":
-        print("[cx] OK  " + json.dumps(summary_payload, ensure_ascii=False))
+        label = "WARN" if result.warnings else "OK"
+        print(f"[cx] {label}  " + json.dumps(summary_payload, ensure_ascii=False))
     return 0
 
 

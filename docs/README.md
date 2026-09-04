@@ -11,5 +11,6 @@
 - [插件作者指南](AUTHOR_GUIDE.md)：契约 2 插件从创建、私下分享至可选市场投稿的完整流程。
 - [插件审核清单](PLUGIN_REVIEW_CHECKLIST.md)：`reviewed` 质量档的人工审核流程。
 - [Windows 便携构建](WINDOWS_PACKAGING.md)。
+- [2026-09 优化实施方案](OPTIMIZATION_PLAN_2026-09.md)：转换可信度、取消与安全提交首批已落实；性能基线、CI 复现和渐进架构优化仍待实施。
 
 `archive/` 和 `releases/` 下的资料是历史记录，不作为当前行为依据。

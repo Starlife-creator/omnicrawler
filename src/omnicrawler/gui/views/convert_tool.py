@@ -6,6 +6,7 @@ P3-2 `omnicrawler.convertx` 模块的 GUI 化入口；不影响 CLI 用法。
 from __future__ import annotations
 
 from pathlib import Path
+from threading import Event
 
 from PySide6.QtCore import Qt, QThread, Signal, Slot
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
@@ -50,6 +51,7 @@ class _ConvertWorker(QThread):
     unified_progress = Signal(object)  # TaskProgressEvent
     succeeded = Signal(object)
     failed = Signal(str)
+    cancelled = Signal()
     stage_started = Signal(str)
 
     def __init__(
@@ -74,10 +76,13 @@ class _ConvertWorker(QThread):
         self._nested = nested
         self._table = table
         self._compression = compression
-        self._cancelled = False
+        self._cancelled = Event()
 
     def cancel(self) -> None:
-        self._cancelled = True
+        self._cancelled.set()
+
+    def _should_stop(self) -> bool:
+        return self._cancelled.is_set() or self.isInterruptionRequested()
 
     def run(self) -> None:  # noqa: D401
         try:
@@ -115,17 +120,22 @@ class _ConvertWorker(QThread):
 
             # ConvertX 内部的 ProgressTracker（权重 read 60% + write 40%）
             # 通过 on_progress 回调推送 TaskProgressEvent，这里只负责桥信号
-            result = convertx.convert(
-                self._src,
-                self._dst,
-                src_format=self._src_fmt,
-                dst_format=self._dst_fmt,
-                flat=self._flat,
-                nested=self._nested,
-                table=self._table,
-                compression=self._compression,
-                on_progress=_on_progress,
-            )
+            try:
+                result = convertx.convert(
+                    self._src,
+                    self._dst,
+                    src_format=self._src_fmt,
+                    dst_format=self._dst_fmt,
+                    flat=self._flat,
+                    nested=self._nested,
+                    table=self._table,
+                    compression=self._compression,
+                    on_progress=_on_progress,
+                    should_stop=self._should_stop,
+                )
+            except convertx.ConversionCancelledError:
+                self.cancelled.emit()
+                return
 
             # 确保完成态覆盖一次（即使 tracker.finish() 已推 100%，这里保险）
             self.progress.emit(100)
@@ -469,13 +479,15 @@ class ConvertView(QWidget):
 
     def _update_runnable_state(self) -> None:
         src_ok = self._src_path is not None
-        running = self._worker is not None and self._worker.isRunning()
+        running = self._worker is not None
         self._btn_run.setEnabled(src_ok and not running)
         self._btn_cancel.setEnabled(running)
         if not running and src_ok and not self._dst_path_edit.text().strip():
             self._auto_suggest_dst()
 
     def _start_conversion(self) -> None:
+        if self._worker is not None:
+            return
         if self._src_path is None:
             self._toast().warning(_("请先选择源文件"))
             return
@@ -518,6 +530,7 @@ class ConvertView(QWidget):
         worker.stage_started.connect(self._stage_label.setText)
         worker.succeeded.connect(self._on_succeeded)
         worker.failed.connect(self._on_failed)
+        worker.cancelled.connect(self._on_cancelled)
 
         def _finalize_worker() -> None:
             worker.deleteLater()
@@ -531,6 +544,8 @@ class ConvertView(QWidget):
     def _cancel_conversion(self) -> None:
         if self._worker is not None and self._worker.isRunning():
             self._worker.cancel()
+            self._btn_cancel.setEnabled(False)
+            self._stage_label.setText(_("正在停止，等待当前操作结束..."))
             self._toast().info(_("已请求取消，等待当前阶段安全退出..."))
 
     def _clear_worker(self) -> None:
@@ -543,8 +558,9 @@ class ConvertView(QWidget):
 
     @Slot(object)
     def _on_succeeded(self, result: object) -> None:
-        rows = int(getattr(result, "rows", 0) or 0)
         extra = getattr(result, "extra", {}) or {}
+        rows = extra.get("written_records", extra.get("rows")) if isinstance(extra, dict) else None
+        warnings = getattr(result, "warnings", []) or []
         bytes_written = extra.get("bytes", 0) if isinstance(extra, dict) else 0
         src_fmt = str(getattr(result, "source_format", "") or "")
         dst_fmt = str(getattr(result, "target_format", "") or "")
@@ -554,7 +570,9 @@ class ConvertView(QWidget):
             size_mb = round(float(bytes_written) / (1024 * 1024), 2) if bytes_written else None
         except (TypeError, ValueError):
             size_mb = None
-        msg = _("\u2705 转换完成：{0} 行").format(rows)
+        msg = _("转换完成：写入 {0} 行").format(rows if rows is not None else _("未知"))
+        if warnings:
+            msg += _("（有异常，请查看下方详情）")
         if size_mb is not None:
             msg += _("，输出大小 {0} MB").format(size_mb)
         self._stage_label.setText(msg)
@@ -562,11 +580,13 @@ class ConvertView(QWidget):
         self._log.append(f"dst_fmt: {dst_fmt}")
         self._log.append(f"output:  {dst_str}")
         self._log.append(msg)
-        warnings = getattr(result, "warnings", []) or []
         for w in warnings:
             self._log.append(f"warn:  {w}")
         self._progress.setValue(100)
-        self._toast().success(msg)
+        if warnings:
+            self._toast().warning(msg)
+        else:
+            self._toast().success(msg)
         if dst_str:
             self.open_output_folder_requested.emit(str(Path(dst_str).parent))
         self._update_runnable_state()
@@ -578,6 +598,12 @@ class ConvertView(QWidget):
         self._toast().error(_("转换失败：{0}").format(message))
         self._update_runnable_state()
 
+    @Slot()
+    def _on_cancelled(self) -> None:
+        self._stage_label.setText(_("转换已取消"))
+        self._log.append(_("转换已取消，未提交新的输出文件"))
+        self._update_runnable_state()
+
 
 class _DocWorker(QThread):
     """后台线程：文档 → 文本/Markdown（复用 convertx.convert + 统一进度协议）。"""
@@ -586,6 +612,7 @@ class _DocWorker(QThread):
     stage_started = Signal(str)
     succeeded = Signal(object)
     failed = Signal(str)
+    cancelled = Signal()
 
     def __init__(
         self,
@@ -597,10 +624,13 @@ class _DocWorker(QThread):
         super().__init__(parent)
         self._src = Path(src_path)
         self._dst = Path(dst_path)
-        self._cancelled = False
+        self._cancelled = Event()
 
     def cancel(self) -> None:
-        self._cancelled = True
+        self._cancelled.set()
+
+    def _should_stop(self) -> bool:
+        return self._cancelled.is_set() or self.isInterruptionRequested()
 
     def run(self) -> None:  # noqa: D401
         try:
@@ -627,7 +657,13 @@ class _DocWorker(QThread):
                     active_stage = label
                     self.stage_started.emit(label)
 
-            result = convertx.convert(self._src, self._dst, on_progress=_on_progress)
+            try:
+                result = convertx.convert(
+                    self._src, self._dst, on_progress=_on_progress, should_stop=self._should_stop,
+                )
+            except convertx.ConversionCancelledError:
+                self.cancelled.emit()
+                return
             self.progress.emit(100)
             self.succeeded.emit(result)
         except Exception as exc:  # noqa: BLE001
@@ -726,6 +762,8 @@ class _DocExtractTab(QWidget):
         return self._src_path.with_suffix(ext)
 
     def _start_doc(self) -> None:
+        if self._worker is not None:
+            return
         if self._src_path is None:
             self._toast().error(_("请先选择文档"))
             return
@@ -746,6 +784,7 @@ class _DocExtractTab(QWidget):
         worker.stage_started.connect(self._stage.setText)
         worker.succeeded.connect(self._on_doc_succeeded)
         worker.failed.connect(self._on_doc_failed)
+        worker.cancelled.connect(self._on_doc_cancelled)
 
         def _finalize_doc_worker() -> None:
             worker.deleteLater()
@@ -759,6 +798,8 @@ class _DocExtractTab(QWidget):
     def _cancel_doc(self) -> None:
         if self._worker is not None and self._worker.isRunning():
             self._worker.cancel()
+            self._btn_cancel.setEnabled(False)
+            self._stage.setText(_("正在停止，等待当前操作结束..."))
             self._toast().info(_("已请求取消，等待当前阶段安全退出..."))
 
     def _clear_doc_worker(self) -> None:
@@ -766,7 +807,7 @@ class _DocExtractTab(QWidget):
         self._update_runnable_state()
 
     def _update_runnable_state(self) -> None:
-        running = self._worker is not None and self._worker.isRunning()
+        running = self._worker is not None
         self._btn_run.setEnabled(not running and self._src_path is not None)
         self._btn_cancel.setEnabled(running)
 
@@ -791,4 +832,10 @@ class _DocExtractTab(QWidget):
         self._stage.setText(_("\u274c 抽取失败"))
         self._log.append(_("\u274c 错误：{0}").format(message))
         self._toast().error(_("抽取失败：{0}").format(message))
+        self._update_runnable_state()
+
+    @Slot()
+    def _on_doc_cancelled(self) -> None:
+        self._stage.setText(_("抽取已取消"))
+        self._log.append(_("抽取已取消，未提交新的输出文件"))
         self._update_runnable_state()
