@@ -11,8 +11,8 @@
         例 3. 跨系统对接：需要 Parquet/DuckDB 列式 + 压缩（AI/BI 常用），但别人只给 CSV。
 
     因此新增 `omnicrawler.convertx` 模块，定位 = 「文件级 A → B 互转」：
-        - 中间表示 CanonicalRecords = list[flat dict]（与 export_all 展开后的 flat records 完全一致，
-          列序稳定为：record_id, source_url, record_type, created_at, [展开 data_json]）
+        - 公共 Reader 的兼容表示仍为 CanonicalRecords = list[flat dict]（与 export_all 展开后的
+          flat records 完全一致）；已验证的内置文本路径可在 convert() 内逐条传递，不保留整表。
         - 核心入口 convert(src, dst, options)：按后缀名（或显式 fmt 指定）自动选 Reader/Writer。
         - **不影响** export_all 管道默认的多输出（用户的 config 行为保持不变），convertx 作为
           独立的 CLI/GUI 工具层提供。
@@ -42,7 +42,7 @@ import json
 import logging
 import re
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -226,6 +226,11 @@ def _record_rejection(options: dict[str, Any], line: int, reason: str) -> None:
 # ── CSV ──────────────────────────────────────────────────
 @register_reader(".csv")
 def read_csv(path: Path, options: dict[str, Any]) -> CanonicalRecords:
+    return list(_iter_csv(path, options))
+
+
+def _iter_csv(path: Path, options: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    """Yield CSV records; the public reader keeps its historical list result."""
     _require_file(path)
     check_cancel(options)
     if "_read_stats" in options:
@@ -243,23 +248,24 @@ def read_csv(path: Path, options: dict[str, Any]) -> CanonicalRecords:
         fh = path.open("r", encoding=encoding, newline="")
     try:
         reader = csv.DictReader(fh)
-        records: CanonicalRecords = []
+        accepted = 0
         line_num = 0
         for row in reader:
             check_cancel(options)
             line_num += 1
             try:
-                records.append(dict(row))
+                record = dict(row)
             except Exception as exc:  # csv 一般不含异常；保留以对齐 on_error 语义
                 if on_error == "abort":
                     raise ValueError(f"CSV 解析失败（逻辑行 {line_num}）: {exc}") from exc
                 _record_rejection(options, line_num, "CSV 记录无法解析")
                 continue
-            pe.emit(line_num=line_num, records_so_far=len(records))
+            accepted += 1
+            yield record
+            pe.emit(line_num=line_num, records_so_far=accepted)
     finally:
         fh.close()
-    pe.flush(line_num=line_num, records_so_far=len(records))
-    return records
+    pe.flush(line_num=line_num, records_so_far=accepted)
 
 
 @register_writer(".csv")
@@ -356,10 +362,19 @@ def read_jsonl(path: Path, options: dict[str, Any]) -> CanonicalRecords:
 
 @register_writer(".jsonl", ".ndjson")
 def write_jsonl(rows: CanonicalRecords, path: Path, options: dict[str, Any]) -> dict[str, Any]:
+    return _write_jsonl_iter(rows, path, options, total=len(rows))
+
+
+def _write_jsonl_iter(
+    rows: Iterable[dict[str, Any]],
+    path: Path,
+    options: dict[str, Any],
+    *,
+    total: int | None,
+) -> dict[str, Any]:
     _ensure_parent_dir(path)
     nested = bool(options.get("nested", False))  # True 时按 pipeline 原始 records.jsonl 结构
     pe = _ProgressEmitter(options.get("on_write_progress"))
-    total = len(rows)
     written = 0
     with atomic_output(path, options) as tmp:
         with tmp.open("w", encoding="utf-8") as fh:
@@ -379,14 +394,14 @@ def write_jsonl(rows: CanonicalRecords, path: Path, options: dict[str, Any]) -> 
                     base["evidence"] = evidence
                     fh.write(json.dumps(base, ensure_ascii=False) + "\n")
                     written += 1
-                    pe.emit(written=written, total=total)
+                    pe.emit(written=written, total=total or 0)
             else:
                 for row in rows:
                     check_cancel(options)
                     fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
                     written += 1
-                    pe.emit(written=written, total=total)
-        pe.flush(written=written, total=total)
+                    pe.emit(written=written, total=total or 0)
+        pe.flush(written=written, total=total or 0)
     return {"rows": written, "nested": nested}
 
 
@@ -811,7 +826,8 @@ def convert(
                  第三方不可中断操作需等返回；自定义 Reader/Writer 可通过
                  options['_should_stop'] 接入同一检查。
     on_progress: **统一进度事件回调**（推荐）。接收 ``TaskProgressEvent``：
-                 阶段=read(60%) / write(40%)，含 EMA ETA、瞬时速率、状态机。
+                 分阶段路径为 read(60%) / write(40%)；单遍流式路径为 convert(100%)。
+                 事件包含 EMA ETA、瞬时速率和状态机。
 
     Raises
     ------
@@ -823,19 +839,39 @@ def convert(
     if src.resolve() == dst.resolve():
         raise ValueError(f"ConvertX: 源与目标路径相同，拒绝覆盖: {src}")
 
+    opts = dict(options or {})
+    src_fmt = (src_format or "").lower() or sniff_format(src)
+    dst_fmt = (dst_format or "").lower() or sniff_format(dst)
+    if not src_fmt or src_fmt not in READERS:
+        raise KeyError(f"ConvertX: 不支持的源格式 {src_fmt!r}（已注册: {sorted(READERS)}）")
+    if not dst_fmt or dst_fmt not in WRITERS:
+        raise KeyError(f"ConvertX: 不支持的目标格式 {dst_fmt!r}（已注册: {sorted(WRITERS)}）")
+    reader_key = f"reader{src_fmt.replace('.', '_')}"
+    writer_key = f"writer{dst_fmt.replace('.', '_')}"
+    configured_reader_options = dict(opts.get(reader_key) or {})
+    stream_path = (
+        src_fmt == ".csv"
+        and dst_fmt == ".jsonl"
+        and READERS[src_fmt] is read_csv
+        and WRITERS[dst_fmt] is write_jsonl
+        and str(configured_reader_options.get("encoding", "utf-8-sig")) != "auto"
+    )
+
     # ── 统一进度 tracker（仅在 on_progress 显式传入时启用，避免副作用）──
     tracker: ProgressTracker | None = None
     if on_progress is not None:
         tracker = ProgressTracker(
-            stages=[
-                StageSpec("read",  weight=60, display_name="读取格式", has_items=True),
-                StageSpec("write", weight=40, display_name="写出格式", has_items=True),
-            ],
+            stages=(
+                [StageSpec("convert", weight=100, display_name="转换格式", has_items=True)]
+                if stream_path
+                else [
+                    StageSpec("read", weight=60, display_name="读取格式", has_items=True),
+                    StageSpec("write", weight=40, display_name="写出格式", has_items=True),
+                ]
+            ),
             on_event=on_progress,
         )
         tracker.start()
-
-    opts = dict(options or {})
 
     def _wrapped_read_hook(payload: dict[str, Any]) -> None:
         # 1) 先调用用户原始 hook（若有）
@@ -845,7 +881,7 @@ def convert(
             except Exception:  # noqa: BLE001 — hook 错误不得中断转换
                 pass
         # 2) 再更新 tracker：records_so_far 当前处理条数
-        if tracker is not None:
+        if tracker is not None and not stream_path:
             records_so_far = int(payload.get("records_so_far") or 0)
             tracker.set_item_progress(records_so_far, max(records_so_far, tracker._items_total or 0))  # type: ignore[attr-defined]
 
@@ -855,23 +891,10 @@ def convert(
                 on_write_progress(payload)
             except Exception:  # noqa: BLE001
                 pass
-        if tracker is not None:
+        if tracker is not None and not stream_path:
             current = int(payload.get("written") or payload.get("records_written") or 0)
             total = int(payload.get("total") or tracker._items_total or current)  # type: ignore[attr-defined]
             tracker.set_item_progress(current, total)
-
-    # 先解析实际 fmt（否则当用户没显式传 src_format/dst_format 时，key 为 None，
-    # 通用选项的 fallback key 又用了「点分隔符」，会导致 hooks / columns 完全没注入）
-    src_fmt = (src_format or "").lower() or sniff_format(src)
-    dst_fmt = (dst_format or "").lower() or sniff_format(dst)
-    if not src_fmt or src_fmt not in READERS:
-        raise KeyError(f"ConvertX: 不支持的源格式 {src_fmt!r}（已注册: {sorted(READERS)}）")
-    if not dst_fmt or dst_fmt not in WRITERS:
-        raise KeyError(f"ConvertX: 不支持的目标格式 {dst_fmt!r}（已注册: {sorted(WRITERS)}）")
-
-    # 真实 key（下划线分隔：如 .csv → reader_csv / writer_csv；.jsonl → reader_jsonl）
-    reader_key = f"reader{src_fmt.replace('.', '_')}"
-    writer_key = f"writer{dst_fmt.replace('.', '_')}"
 
     # Reader 通用选项：按实际 reader_key 单点注入即可（不再对不存在的 key 做 fallback）
     r_opts = dict(opts.get(reader_key) or {})
@@ -898,53 +921,84 @@ def convert(
     if src_fmt in {".duckdb", ".db"}:
         r_opts.setdefault("table", table)
 
-    # ── 阶段 1：Read（权重 60%）──────────────────────────────
     est_read_items: int = 0
-    if tracker is not None:
-        # 纯文本格式：按文件字节 / 平均行字节 粗略估算行数（仅给 read 阶段一个有意义的分母）
+    if tracker is not None and not stream_path:
         if src_fmt in {".csv", ".jsonl", ".ndjson"}:
             try:
                 est_read_items = max(1, src.stat().st_size // _PROGRESS_EST_AVG_BYTES_PER_LINE)
             except OSError:
                 est_read_items = 0
-        tracker.begin_stage("read", expected_items=est_read_items)
-    reader_opts = opts.get(reader_key, {}) or {}
-    try:
-        check_cancel(reader_opts)
-        rows = READERS[src_fmt](src, reader_opts)
-        check_cancel(reader_opts)
-    except (ConversionCancelledError, KeyboardInterrupt):
-        if tracker is not None:
-            tracker.cancel()
-        raise
-    except Exception:
-        if tracker is not None:
-            tracker.fail("读取阶段出错")
-        raise
-    if tracker is not None:
-        tracker.end_stage("read")
 
-    cols = _ordered_columns(rows, prefer=opts.get("columns") or [])
+    if stream_path:
+        if tracker is not None:
+            # CSV 的逻辑记录数不能由字节数准确推导（字段可含换行）；保持不定进度，
+            # 由旧式 hook 报告已处理条数，完成提交后再推进到 100%。
+            tracker.begin_stage("convert")
+        try:
+            seen_columns: dict[str, None] = {}
 
-    # ── 阶段 2：Write（权重 40%）──────────────────────────────
-    if tracker is not None:
-        tracker.begin_stage("write", expected_items=len(rows))
-    writer_opts = dict(opts.get(writer_key, {}) or {})
-    writer_opts.setdefault("columns", cols)
-    try:
-        check_cancel(writer_opts)
-        writer_meta = WRITERS[dst_fmt](rows, dst, writer_opts)
-    except (ConversionCancelledError, KeyboardInterrupt):
+            def rows_with_columns() -> Iterator[dict[str, Any]]:
+                for row in _iter_csv(src, r_opts):
+                    for key in row:
+                        seen_columns[str(key)] = None
+                    yield row
+
+            writer_meta = _write_jsonl_iter(rows_with_columns(), dst, w_opts, total=None)
+            cols = _ordered_columns(
+                [], prefer=[*(opts.get("columns") or []), *seen_columns]
+            )
+        except (ConversionCancelledError, KeyboardInterrupt):
+            if tracker is not None:
+                tracker.cancel()
+            raise
+        except Exception:
+            if tracker is not None:
+                tracker.fail("转换阶段出错")
+            raise
+        accepted_count = int(writer_meta.get("rows", 0))
         if tracker is not None:
-            tracker.cancel()
-        raise
-    except Exception:
+            tracker.end_stage("convert")
+            tracker.finish()
+    else:
+        # ── 阶段 1：Read（权重 60%）──────────────────────────
         if tracker is not None:
-            tracker.fail("写入阶段出错")
-        raise
-    if tracker is not None:
-        tracker.end_stage("write")
-        tracker.finish()
+            tracker.begin_stage("read", expected_items=est_read_items)
+        try:
+            check_cancel(r_opts)
+            rows = READERS[src_fmt](src, r_opts)
+            check_cancel(r_opts)
+        except (ConversionCancelledError, KeyboardInterrupt):
+            if tracker is not None:
+                tracker.cancel()
+            raise
+        except Exception:
+            if tracker is not None:
+                tracker.fail("读取阶段出错")
+            raise
+        if tracker is not None:
+            tracker.end_stage("read")
+
+        accepted_count = len(rows)
+        cols = _ordered_columns(rows, prefer=opts.get("columns") or [])
+
+        # ── 阶段 2：Write（权重 40%）─────────────────────────
+        if tracker is not None:
+            tracker.begin_stage("write", expected_items=accepted_count)
+        w_opts.setdefault("columns", cols)
+        try:
+            check_cancel(w_opts)
+            writer_meta = WRITERS[dst_fmt](rows, dst, w_opts)
+        except (ConversionCancelledError, KeyboardInterrupt):
+            if tracker is not None:
+                tracker.cancel()
+            raise
+        except Exception:
+            if tracker is not None:
+                tracker.fail("写入阶段出错")
+            raise
+        if tracker is not None:
+            tracker.end_stage("write")
+            tracker.finish()
 
     writer_meta = dict(writer_meta) if isinstance(writer_meta, dict) else {}
     warnings: list[str] = list(writer_meta.pop("warnings", []))
@@ -956,7 +1010,7 @@ def convert(
         warnings.insert(0, f"读取时跳过 {rejected} 条无效记录（示例：{examples}）")
     written = writer_meta.get("rows")
     writer_meta.update(
-        accepted_records=len(rows),
+        accepted_records=accepted_count,
         written_records=written if isinstance(written, int) and not isinstance(written, bool) else None,
         rejected_records=rejected,
         rejection_samples=read_stats["rejection_samples"],
@@ -964,7 +1018,7 @@ def convert(
     return ConvertResult(
         source_format=src_fmt,
         target_format=dst_fmt,
-        rows=len(rows),
+        rows=accepted_count,
         columns=cols,
         warnings=warnings,
         output_path=dst,

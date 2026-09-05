@@ -207,6 +207,94 @@ def test_cancellation_after_commit_does_not_report_false_cancel(tmp_path, monkey
         assert len(list(csv.DictReader(fh))) == 700
 
 
+def test_csv_to_jsonl_streams_with_compatible_results_and_progress(tmp_path):
+    source = tmp_path / "input.csv"
+    with source.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["record_id", "title", "note"])
+        writer.writeheader()
+        writer.writerows([
+            {"record_id": "1", "title": "甲", "note": "first\nsecond"},
+            {"record_id": "2", "title": "乙", "note": "plain"},
+        ])
+    assert isinstance(convertx.read_csv(source, {}), list)
+    events = []
+    read_updates = []
+    write_updates = []
+    target = tmp_path / "output.jsonl"
+
+    result = convertx.convert(
+        source,
+        target,
+        on_progress=events.append,
+        on_read_progress=read_updates.append,
+        on_write_progress=write_updates.append,
+    )
+
+    values = [json.loads(line) for line in target.read_text(encoding="utf-8").splitlines()]
+    assert values == [
+        {"record_id": "1", "title": "甲", "note": "first\nsecond"},
+        {"record_id": "2", "title": "乙", "note": "plain"},
+    ]
+    assert result.rows == result.extra["accepted_records"] == result.extra["written_records"] == 2
+    assert result.columns == ["record_id", "source_url", "record_type", "created_at", "title", "note"]
+    assert read_updates[-1]["records_so_far"] == 2
+    assert write_updates[-1]["written"] == 2
+    assert {event.stage for event in events if event.stage} == {"convert"}
+    assert [event.state for event in events if event.state == "finished"] == ["finished"]
+    assert events[-1].state == "finished"
+
+    nested_target = tmp_path / "nested.jsonl"
+    convertx.convert(source, nested_target, nested=True)
+    nested = json.loads(nested_target.read_text(encoding="utf-8").splitlines()[0])
+    assert nested == {
+        "record_id": "1",
+        "data": {"title": "甲", "note": "first\nsecond"},
+        "evidence": {},
+    }
+
+
+def test_csv_to_jsonl_stream_cancel_preserves_existing_output(tmp_path):
+    source = tmp_path / "input.csv"
+    with source.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["record_id", "value"])
+        writer.writeheader()
+        writer.writerows({"record_id": str(index), "value": "x" * 20} for index in range(1000))
+    target = tmp_path / "output.jsonl"
+    target.write_bytes(b"old")
+    stopped = Event()
+    events = []
+
+    with pytest.raises(convertx.ConversionCancelledError):
+        convertx.convert(
+            source,
+            target,
+            should_stop=stopped.is_set,
+            on_progress=events.append,
+            on_write_progress=lambda _payload: stopped.set(),
+        )
+
+    assert target.read_bytes() == b"old"
+    assert [event.state for event in events if event.state in {"finished", "cancelled", "failed"}] == ["cancelled"]
+    assert len(list(tmp_path.iterdir())) == 2
+
+
+def test_csv_stream_path_respects_registered_reader_override(tmp_path, monkeypatch):
+    source = tmp_path / "input.csv"
+    source.write_text("ignored\n", encoding="utf-8")
+    target = tmp_path / "output.jsonl"
+    called = []
+
+    def custom_reader(path, options):
+        called.append((path, options))
+        return [{"custom": "kept"}]
+
+    monkeypatch.setitem(convertx.READERS, ".csv", custom_reader)
+    result = convertx.convert(source, target)
+
+    assert called and result.rows == 1
+    assert json.loads(target.read_text(encoding="utf-8")) == {"custom": "kept"}
+
+
 def test_xlsx_partial_save_does_not_replace_previous_workbook(tmp_path, monkeypatch):
     openpyxl = pytest.importorskip("openpyxl")
     source = source_file(tmp_path)

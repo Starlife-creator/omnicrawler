@@ -118,7 +118,7 @@ class _ConvertWorker(QThread):
                     active_stage = label
                     self.stage_started.emit(label)
 
-            # ConvertX 内部的 ProgressTracker（权重 read 60% + write 40%）
+            # ConvertX 内部 ProgressTracker；分阶段与单遍流式路径会选择各自准确的阶段。
             # 通过 on_progress 回调推送 TaskProgressEvent，这里只负责桥信号
             try:
                 result = convertx.convert(
