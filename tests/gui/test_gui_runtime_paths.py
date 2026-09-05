@@ -1,6 +1,9 @@
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
 
 from omnicrawler import runtime_paths
 
@@ -39,3 +42,27 @@ def test_frozen_document_is_found_next_to_executable(tmp_path: Path) -> None:
         patch.object(runtime_paths.sys, "executable", str(gui)),
     ):
         assert runtime_paths.find_document("USER_GUIDE.md") == guide
+
+
+def test_resource_monitor_counts_worker_process_tree_rss(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("psutil")
+    from omnicrawler.gui.widgets import resource_monitor
+
+    class FakeProcess:
+        def __init__(self, pid: int, rss: int, children: list["FakeProcess"] | None = None) -> None:
+            self.pid = pid
+            self._rss = rss
+            self._children = children or []
+
+        def children(self, recursive: bool = False) -> list["FakeProcess"]:
+            assert recursive
+            return self._children
+
+        def memory_info(self) -> SimpleNamespace:
+            return SimpleNamespace(rss=self._rss)
+
+    child = FakeProcess(2, 30)
+    root = FakeProcess(1, 70, [child, child])
+    monkeypatch.setattr(resource_monitor.psutil, "Process", lambda _pid: root)
+
+    assert resource_monitor._process_tree_rss(1) == 100

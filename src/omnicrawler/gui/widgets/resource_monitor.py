@@ -21,6 +21,40 @@ except ImportError:
     _PSUTIL_AVAILABLE = False
 
 
+def _process_tree_rss(pid: int) -> int:
+    """Return RSS for a worker and its descendants.
+
+    Browser and crawler backends commonly run as child processes.  Summing the
+    process tree keeps the warning meaningful while tolerating processes that
+    exit or become inaccessible during a refresh.
+    """
+    if not _PSUTIL_AVAILABLE:
+        return 0
+
+    try:
+        root = psutil.Process(pid)
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return 0
+
+    try:
+        processes = [root, *root.children(recursive=True)]
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        processes = [root]
+
+    total = 0
+    seen: set[int] = set()
+    for process in processes:
+        process_pid = process.pid
+        if process_pid in seen:
+            continue
+        seen.add(process_pid)
+        try:
+            total += int(process.memory_info().rss)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return total
+
+
 class ResourceMonitor(QWidget):
     """资源占用指示器。
 
@@ -90,22 +124,22 @@ class ResourceMonitor(QWidget):
 
         # 内存
         if self._pid is not None:
-            try:
-                proc = psutil.Process(self._pid)
-                mem_info = proc.memory_info()
-                mem_mb = mem_info.rss / (1024 * 1024)
+            rss = _process_tree_rss(self._pid)
+            if rss > 0:
+                mem_mb = rss / (1024 * 1024)
                 if mem_mb >= 1024:
                     self._mem_label.setText(_("内存: {:.1f} GB").format(mem_mb / 1024))
                 else:
                     self._mem_label.setText(_("内存: {:.0f} MB").format(mem_mb))
 
                 # 超阈值警告
-                if mem_info.rss > self.MEMORY_WARN_THRESHOLD:
+                if rss > self.MEMORY_WARN_THRESHOLD:
                     self._mem_label.setStyleSheet(self._warn_style)
                 else:
                     self._mem_label.setStyleSheet(self._normal_style)
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+            else:
                 self._mem_label.setText(_("内存: --"))
+                self._mem_label.setStyleSheet(self._normal_style)
 
         # 磁盘
         try:
