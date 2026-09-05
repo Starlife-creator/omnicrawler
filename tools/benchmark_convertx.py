@@ -21,7 +21,13 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-CASES = ("csv-jsonl", "jsonl-csv", "jsonl-jsonl")
+CASE_FORMATS = {
+    "csv-jsonl": ("csv", "jsonl"),
+    "csv-jsonl-auto": ("csv", "jsonl"),
+    "jsonl-csv": ("jsonl", "csv"),
+    "jsonl-jsonl": ("jsonl", "jsonl"),
+}
+CASES = tuple(CASE_FORMATS)
 
 
 def _record(index: int, rows: int) -> dict[str, str]:
@@ -137,9 +143,10 @@ def run_worker(case: str, source: Path, target: Path, rows: int) -> dict[str, An
     """Run one measured conversion; called only in a fresh subprocess."""
     from omnicrawler.convertx import convert
 
-    source_format, target_format = case.split("-")
+    source_format, target_format = CASE_FORMATS[case]
     started = time.perf_counter()
-    result = convert(source, target, on_error="abort")
+    options = {"reader_csv": {"encoding": "auto"}} if case == "csv-jsonl-auto" else None
+    result = convert(source, target, on_error="abort", options=options)
     elapsed = time.perf_counter() - started
     peak_rss = _peak_rss_bytes()
     correctness = _validate_output(target, format_name=target_format, rows=rows)
@@ -184,7 +191,7 @@ def run_suite(
         for name, path in inputs.items():
             generate_fixture(path, format_name=name, rows=rows)
         for case in selected_cases:
-            source_format, target_format = case.split("-")
+            source_format, target_format = CASE_FORMATS[case]
             for repeat in range(1, repeats + 1):
                 target = work_dir / f"output-{case}-{rows}-{repeat}.{target_format}"
                 command = [

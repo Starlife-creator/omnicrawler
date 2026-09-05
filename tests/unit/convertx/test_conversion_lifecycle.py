@@ -278,6 +278,68 @@ def test_csv_to_jsonl_stream_cancel_preserves_existing_output(tmp_path):
     assert len(list(tmp_path.iterdir())) == 2
 
 
+def test_csv_auto_encoding_streams_without_whole_file_read(tmp_path, monkeypatch):
+    source = tmp_path / "input.csv"
+    with source.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["record_id", "名称"])
+        writer.writeheader()
+        writer.writerows({"record_id": str(index), "名称": f"商品{index}"} for index in range(600))
+    target = tmp_path / "output.jsonl"
+    events = []
+
+    def reject_read_bytes(_self):
+        raise AssertionError("auto encoding must not load the complete file with Path.read_bytes")
+
+    monkeypatch.setattr(Path, "read_bytes", reject_read_bytes)
+    result = convertx.convert(
+        source,
+        target,
+        options={"reader_csv": {"encoding": "auto"}},
+        on_progress=events.append,
+    )
+
+    with target.open("r", encoding="utf-8") as handle:
+        first = json.loads(next(handle))
+    assert first == {"record_id": "0", "名称": "商品0"}
+    assert result.rows == result.extra["written_records"] == 600
+    assert {event.stage for event in events if event.stage} == {"convert"}
+
+
+def test_csv_auto_encoding_validation_can_cancel_before_commit(tmp_path, monkeypatch):
+    source = tmp_path / "input.csv"
+    source.write_text("record_id,value\n" + "1,内容\n" * 100, encoding="utf-8")
+    target = tmp_path / "output.jsonl"
+    target.write_bytes(b"old")
+    checks = 0
+
+    def should_stop():
+        nonlocal checks
+        checks += 1
+        return checks >= 5
+
+    monkeypatch.setattr(convertx, "_DECODE_CHUNK_BYTES", 32)
+    with pytest.raises(convertx.ConversionCancelledError):
+        convertx.convert(
+            source,
+            target,
+            options={"reader_csv": {"encoding": "auto"}},
+            should_stop=should_stop,
+        )
+
+    assert target.read_bytes() == b"old"
+    assert len(list(tmp_path.iterdir())) == 2
+
+
+def test_csv_auto_encoding_retries_when_non_utf_bytes_appear_after_sample(tmp_path, monkeypatch):
+    source = tmp_path / "late-gbk.csv"
+    source.write_bytes("name,value\nascii,1\n中文,2\n".encode("gb18030"))
+    monkeypatch.setattr(convertx, "_ENCODING_SAMPLE_BYTES", len(b"name,value\nascii,1\n"))
+
+    rows = convertx.read_csv(source, {"encoding": "auto"})
+
+    assert rows == [{"name": "ascii", "value": "1"}, {"name": "中文", "value": "2"}]
+
+
 def test_csv_stream_path_respects_registered_reader_override(tmp_path, monkeypatch):
     source = tmp_path / "input.csv"
     source.write_text("ignored\n", encoding="utf-8")

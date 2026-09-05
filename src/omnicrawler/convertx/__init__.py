@@ -36,8 +36,8 @@
 
 from __future__ import annotations
 
+import codecs
 import csv
-import io
 import json
 import logging
 import re
@@ -62,6 +62,8 @@ LOGGER = logging.getLogger(__name__)
 _PROGRESS_CHUNK: int = 250          # 至少每 250 条 1 次（小文件 2k 行也会推 8 次，视觉丝滑）
 _PROGRESS_MIN_INTERVAL_S: float = 0.03  # 上限 30ms/次（大文件 2M 行也只 ~33 次/秒，GUI 完全无感）
 _PROGRESS_EST_AVG_BYTES_PER_LINE: int = 180  # 读取阶段估算总行数的平均行字节启发式（含 csv 逗号/引号）
+_ENCODING_SAMPLE_BYTES: int = 256 * 1024
+_DECODE_CHUNK_BYTES: int = 1024 * 1024
 
 
 class _ProgressEmitter:
@@ -223,6 +225,45 @@ def _record_rejection(options: dict[str, Any], line: int, reason: str) -> None:
             stats["rejection_samples"].append({"line": line, "reason": reason})
 
 
+def _file_decodes_strictly(path: Path, encoding: str, options: dict[str, Any]) -> bool:
+    """Validate a candidate incrementally so late bad bytes cannot corrupt output."""
+    try:
+        decoder = codecs.getincrementaldecoder(encoding)(errors="strict")
+    except LookupError:
+        return False
+    try:
+        with path.open("rb") as handle:
+            while chunk := handle.read(_DECODE_CHUNK_BYTES):
+                check_cancel(options)
+                decoder.decode(chunk)
+            decoder.decode(b"", final=True)
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
+def _detect_csv_encoding(path: Path, options: dict[str, Any]) -> str:
+    """Detect from a bounded sample, then validate the complete file by chunks."""
+    with path.open("rb") as handle:
+        sample = handle.read(_ENCODING_SAMPLE_BYTES)
+    utf_candidate = "utf-8-sig" if sample.startswith(codecs.BOM_UTF8) else "utf-8"
+    # UTF-8 is the common case and validating it by chunks is cheaper than
+    # importing the optional statistical detector. Non-UTF files take the
+    # compatibility detection/fallback path below.
+    if _file_decodes_strictly(path, utf_candidate, options):
+        return utf_candidate
+
+    from ..core.encoding import detect_encoding
+
+    detected = detect_encoding(sample)
+    candidates = dict.fromkeys((detected, "gb18030", "latin-1"))
+    for candidate in candidates:
+        if _file_decodes_strictly(path, candidate, options):
+            return candidate
+    # latin-1 decodes every byte; this is defensive against an unavailable codec.
+    raise UnicodeError(f"CSV 无法使用受支持编码解码: {path}")
+
+
 # ── CSV ──────────────────────────────────────────────────
 @register_reader(".csv")
 def read_csv(path: Path, options: dict[str, Any]) -> CanonicalRecords:
@@ -239,13 +280,8 @@ def _iter_csv(path: Path, options: dict[str, Any]) -> Iterator[dict[str, Any]]:
     on_error = str(options.get("on_error", "skip")).lower()  # skip | abort
     pe = _ProgressEmitter(options.get("on_line_progress"))
     if encoding == "auto":
-        # S3：自动编码检测（chardet），检测失败走 utf-8→gb18030→latin-1 兜底链
-        from ..core.encoding import smart_decode
-
-        text, encoding = smart_decode(path.read_bytes())
-        fh: io.TextIOBase = io.StringIO(text)
-    else:
-        fh = path.open("r", encoding=encoding, newline="")
+        encoding = _detect_csv_encoding(path, options)
+    fh = path.open("r", encoding=encoding, newline="")
     try:
         reader = csv.DictReader(fh)
         accepted = 0
@@ -854,7 +890,6 @@ def convert(
         raise KeyError(f"ConvertX: 不支持的目标格式 {dst_fmt!r}（已注册: {sorted(WRITERS)}）")
     reader_key = f"reader{src_fmt.replace('.', '_')}"
     writer_key = f"writer{dst_fmt.replace('.', '_')}"
-    configured_reader_options = dict(opts.get(reader_key) or {})
     stream_path = (
         dst_fmt == ".jsonl"
         and WRITERS[dst_fmt] is write_jsonl
@@ -862,7 +897,6 @@ def convert(
             (
                 src_fmt == ".csv"
                 and READERS[src_fmt] is read_csv
-                and str(configured_reader_options.get("encoding", "utf-8-sig")) != "auto"
             )
             or (src_fmt == ".jsonl" and READERS[src_fmt] is read_jsonl)
         )

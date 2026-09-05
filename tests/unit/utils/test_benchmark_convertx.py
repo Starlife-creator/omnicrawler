@@ -10,7 +10,7 @@ from tools import benchmark_convertx
 
 @pytest.mark.parametrize("case", benchmark_convertx.CASES)
 def test_worker_measures_and_validates_conversion(case, tmp_path):
-    source_format, target_format = case.split("-")
+    source_format, target_format = benchmark_convertx.CASE_FORMATS[case]
     source = tmp_path / f"input.{source_format}"
     target = tmp_path / f"output.{target_format}"
     benchmark_convertx.generate_fixture(source, format_name=source_format, rows=25)
@@ -36,10 +36,11 @@ def test_suite_uses_fresh_processes_and_writes_machine_readable_report(tmp_path)
     assert payload["parameters"] == {
         "sizes": [12],
         "repeats": 1,
-        "cases": ["csv-jsonl", "jsonl-csv", "jsonl-jsonl"],
+        "cases": ["csv-jsonl", "csv-jsonl-auto", "jsonl-csv", "jsonl-jsonl"],
     }
     assert {(sample["case"], sample["rows"]) for sample in payload["samples"]} == {
         ("csv-jsonl", 12),
+        ("csv-jsonl-auto", 12),
         ("jsonl-csv", 12),
         ("jsonl-jsonl", 12),
     }
