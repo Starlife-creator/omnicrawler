@@ -26,6 +26,7 @@ CASE_FORMATS = {
     "csv-jsonl-auto": ("csv", "jsonl"),
     "jsonl-csv": ("jsonl", "csv"),
     "jsonl-jsonl": ("jsonl", "jsonl"),
+    "jsonl-xlsx": ("jsonl", "xlsx"),
 }
 CASES = tuple(CASE_FORMATS)
 
@@ -124,6 +125,20 @@ def _validate_output(path: Path, *, format_name: str, rows: int) -> dict[str, An
                 first = first or value
                 last = value
                 count += 1
+    elif format_name == "xlsx":
+        from openpyxl import load_workbook
+
+        workbook = load_workbook(path, read_only=True, data_only=True)
+        try:
+            values = workbook.active.iter_rows(values_only=True)
+            header = [str(value) for value in next(values)]
+            for cells in values:
+                value = dict(zip(header, cells, strict=False))
+                first = first or value
+                last = value
+                count += 1
+        finally:
+            workbook.close()
     else:
         raise ValueError(f"unknown output format: {format_name}")
     if count != rows:

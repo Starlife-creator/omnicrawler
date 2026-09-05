@@ -98,6 +98,14 @@ def test_xlsx_reports_actual_rows_and_cell_truncation(tmp_path, monkeypatch):
         assert len(rows[1][rows[0].index("text")]) == 32700
     finally:
         wb.close()
+    styled = openpyxl.load_workbook(target)
+    try:
+        sheet = styled["结构化记录"]
+        assert sheet.freeze_panes == "A2"
+        assert all(cell.font.bold and cell.font.color.rgb == "00FFFFFF" for cell in sheet[1])
+        assert all(cell.fill.fgColor.rgb == "001F4E78" for cell in sheet[1])
+    finally:
+        styled.close()
 
 
 def test_csv_reports_existing_cell_truncation_without_changing_formula_protection(tmp_path):

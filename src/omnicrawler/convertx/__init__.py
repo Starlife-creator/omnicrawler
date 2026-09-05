@@ -763,19 +763,21 @@ def _register_xlsx() -> None:
     @register_writer(".xlsx")
     def write_xlsx(rows: CanonicalRecords, path: Path, options: dict[str, Any]) -> dict[str, Any]:
         from openpyxl import Workbook
+        from openpyxl.cell import WriteOnlyCell
         from openpyxl.styles import Font, PatternFill
 
         _ensure_parent_dir(path)
         columns = _ordered_columns(rows, prefer=options.get("columns") or [])
         pe = _ProgressEmitter(options.get("on_write_progress"))
-        wb = Workbook()
-        ws = wb.active
+        wb = Workbook(write_only=True)
+        ws = wb.create_sheet()
         ws.title = "结构化记录"
         ws.freeze_panes = "A2"
-        ws.append(columns)
-        for cell in ws[1]:
+        header = [WriteOnlyCell(ws, value=column) for column in columns]
+        for cell in header:
             cell.font = Font(bold=True, color="FFFFFF")
             cell.fill = PatternFill("solid", fgColor="1F4E78")
+        ws.append(header)
         warnings: list[str] = []
         data_rows = rows
         if len(data_rows) > XLSX_ROW_LIMIT:
@@ -810,6 +812,11 @@ def _register_xlsx() -> None:
         except (PermissionError, OSError) as exc:
             raise RuntimeError(f"无法写入 Excel 文件 {path}（可能被其他程序占用或目录不可写）: {exc}") from exc
         finally:
+            if not ws.closed:
+                try:
+                    ws.close()
+                except Exception:  # noqa: BLE001 - cleanup must not mask the conversion error
+                    LOGGER.warning("无法完整关闭 XLSX 流式工作表", exc_info=True)
             wb.close()
         if truncated_cells:
             warnings.append(f"XLSX 有 {truncated_cells} 个单元格超过应用字符上限，内容已截断")
