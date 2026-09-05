@@ -343,6 +343,16 @@ class PluginMarketView(QWidget):
         self._apply_style()
         ThemeManager.instance().theme_changed.connect(self._apply_style)
 
+    @property
+    def installed_root(self) -> Path:
+        """Directory containing installed market plugins for this project."""
+        return self._dest_root
+
+    @property
+    def trust_source(self) -> str:
+        """Trust root used for installed market plugin verification."""
+        return self._trust_source
+
     # ── UI 搭建 ────────────────────────────────────────────────
     def _setup_ui(self) -> None:
         root = QVBoxLayout(self)

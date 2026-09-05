@@ -1350,45 +1350,50 @@ class MainWindow(QMainWindow):
         market = getattr(self, "_plugin_market", None)
         return set(market._installed_ids()) if market is not None else set()  # noqa: SLF001
 
+    def _plugin_application_service(self) -> Any:
+        """Build the Qt-free service for the current market view."""
+        from ..services.plugin_application import PluginApplicationService
+
+        return PluginApplicationService(
+            self._plugin_market.installed_root,
+            self._plugin_market.trust_source,
+        )
+
+    def _replace_plugin_config(self, updated: dict[str, Any]) -> None:
+        """Apply a service result while preserving the existing config mapping."""
+        current = self._config.passthrough.get("plugins")
+        if isinstance(current, dict):
+            current.clear()
+            current.update(updated)
+        else:
+            self._config.passthrough["plugins"] = updated
+
     def _on_market_plugin_installed(self, plugin_id: str) -> None:
         """首次市场变更建立显式白名单，新下载插件默认不启用。"""
-        plugins = self._config.passthrough.setdefault("plugins", {})
-        if not isinstance(plugins, dict):
+        plugins = self._config.passthrough.get("plugins")
+        if plugins is not None and not isinstance(plugins, dict):
             return
-        configured = plugins.get("enabled_market_plugins")
-        if isinstance(configured, list):
-            enabled = {str(item) for item in configured}
-        else:
-            enabled = set(self._plugin_market._installed_ids())  # noqa: SLF001
-            enabled.discard(plugin_id)
-        plugins["enabled_market_plugins"] = sorted(enabled)
-        grants = plugins.get("permission_grants", {})
-        if isinstance(grants, dict):
-            grants.pop(plugin_id, None)
+        from ..services.plugin_application import PluginApplicationService
+
+        updated = PluginApplicationService.mark_installed_plugin(
+            plugins,
+            plugin_id,
+            installed_ids=self._plugin_market._installed_ids(),  # noqa: SLF001
+        )
+        self._replace_plugin_config(updated)
         self._commit_plugin_config_change()
-        self._plugin_market.set_enabled_plugins(enabled)
+        self._plugin_market.set_enabled_plugins(set(updated["enabled_market_plugins"]))
 
     def _activate_market_plugin(self, plugin_id: str) -> None:
-        from ..plugins.market_client import verify_installed
-        from ..plugins.plugin_inspector import inspect_plugin
+        from ..services.plugin_application import PluginApplicationError
 
-        ok, reason = verify_installed(
-            self._plugin_market._dest_root,  # noqa: SLF001
-            plugin_id,
-            self._plugin_market._trust_source,  # noqa: SLF001
-        )
-        if not ok:
-            ToastManager.instance().error(_("启用失败，签名复核未通过：{0}").format(reason))
+        service = self._plugin_application_service()
+        try:
+            preview = service.preview_activation(plugin_id)
+        except PluginApplicationError as exc:
+            ToastManager.instance().error(_("启用失败：{0}").format(exc))
             return
-        inspection = inspect_plugin(
-            self._plugin_market._dest_root / plugin_id / "plugin.py"  # noqa: SLF001
-        )
-        if not inspection.compatible:
-            ToastManager.instance().error(
-                _("启用失败：{0}").format("；".join(inspection.errors) or _("插件不兼容"))
-            )
-            return
-        if inspection.permissions:
+        if preview.permissions:
             answer = QMessageBox.question(
                 self,
                 _("批准插件级权限"),
@@ -1396,40 +1401,30 @@ class MainWindow(QMainWindow):
                     "即将为插件 {0} 绑定以下授权：\n\n版本：{1}\n载荷：{2}\n作者：{3}\n权限：\n{4}\n\n"
                     "插件更新、载荷变化或作者变化后，此授权会自动失效。确认启用？"
                 ).format(
-                    inspection.name,
-                    inspection.version,
-                    inspection.artifact_sha256,
-                    inspection.creator_fingerprint or _("未声明"),
-                    "\n".join(f"- {item}" for item in inspection.permissions),
+                    preview.name,
+                    preview.version,
+                    preview.artifact_sha256,
+                    preview.creator_fingerprint or _("未声明"),
+                    "\n".join(f"- {item}" for item in preview.permissions),
                 ),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
-        plugins = self._config.passthrough.setdefault("plugins", {})
-        if not isinstance(plugins, dict):
-            ToastManager.instance().error(_("插件配置段结构异常，无法启用"))
+        try:
+            confirmed = service.authorize_activation(preview)
+            plugins = self._config.passthrough.get("plugins")
+            updated = service.enable_project_plugin(
+                plugins,
+                confirmed,
+                default_enabled=self._configured_market_plugin_ids(),
+            )
+        except PluginApplicationError as exc:
+            ToastManager.instance().error(_("启用失败：{0}").format(exc))
             return
-        enabled = self._configured_market_plugin_ids()
-        enabled.add(inspection.name)
-        plugins["enabled_market_plugins"] = sorted(enabled)
-        grants = plugins.get("permission_grants", {})
-        grants = dict(grants) if isinstance(grants, dict) else {}
-        grants[inspection.name] = {
-            "version": inspection.version,
-            "artifact_sha256": inspection.artifact_sha256,
-            "creator_fingerprint": inspection.creator_fingerprint,
-            "permissions": list(inspection.permissions),
-        }
-        plugins["permission_grants"] = grants
-        plugins.pop("approved_permissions", None)
-        paths = plugins.get("paths")
-        if not isinstance(paths, list):
-            paths = ["plugins/", "plugins_installed/"]
-        elif not any(str(path).replace("\\", "/").rstrip("/") == "plugins_installed" for path in paths):
-            paths = [*paths, "plugins_installed/"]
-        plugins["paths"] = paths
+        enabled = set(updated["enabled_market_plugins"])
+        self._replace_plugin_config(updated)
         self._commit_plugin_config_change()
         self._plugin_market.set_enabled_plugins(enabled)
         if self._install_plugin_ui(notify=True):
@@ -1438,17 +1433,19 @@ class MainWindow(QMainWindow):
             )
 
     def _on_market_plugin_uninstalled(self, plugin_id: str) -> None:
-        plugins = self._config.passthrough.setdefault("plugins", {})
-        if not isinstance(plugins, dict):
+        plugins = self._config.passthrough.get("plugins")
+        if plugins is not None and not isinstance(plugins, dict):
             return
-        enabled = self._configured_market_plugin_ids()
-        enabled.discard(plugin_id)
-        plugins["enabled_market_plugins"] = sorted(enabled)
-        grants = plugins.get("permission_grants", {})
-        if isinstance(grants, dict):
-            grants.pop(plugin_id, None)
+        from ..services.plugin_application import PluginApplicationService
+
+        updated = PluginApplicationService.disable_project_plugin(
+            plugins,
+            plugin_id,
+            default_enabled=self._configured_market_plugin_ids(),
+        )
+        self._replace_plugin_config(updated)
         self._commit_plugin_config_change()
-        self._plugin_market.set_enabled_plugins(enabled)
+        self._plugin_market.set_enabled_plugins(set(updated["enabled_market_plugins"]))
         self._install_plugin_ui(notify=True)
 
     def _deactivate_market_plugin(self, plugin_id: str) -> None:
@@ -1471,17 +1468,20 @@ class MainWindow(QMainWindow):
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
-        plugins = self._config.passthrough.setdefault("plugins", {})
-        if not isinstance(plugins, dict):
+        plugins = self._config.passthrough.get("plugins")
+        if plugins is not None and not isinstance(plugins, dict):
             ToastManager.instance().error(_("插件配置段结构异常，无法禁用"))
             return
-        enabled.discard(plugin_id)
-        plugins["enabled_market_plugins"] = sorted(enabled)
-        grants = plugins.get("permission_grants", {})
-        if isinstance(grants, dict):
-            grants.pop(plugin_id, None)
+        from ..services.plugin_application import PluginApplicationService
+
+        updated = PluginApplicationService.disable_project_plugin(
+            plugins,
+            plugin_id,
+            default_enabled=enabled,
+        )
+        self._replace_plugin_config(updated)
         self._commit_plugin_config_change()
-        self._plugin_market.set_enabled_plugins(enabled)
+        self._plugin_market.set_enabled_plugins(set(updated["enabled_market_plugins"]))
         if self._install_plugin_ui(notify=True):
             ToastManager.instance().success(
                 _("已在当前项目禁用插件并撤销授权：{0}").format(plugin_id)
