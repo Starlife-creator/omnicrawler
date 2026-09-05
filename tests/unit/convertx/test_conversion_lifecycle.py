@@ -524,6 +524,33 @@ def test_empty_jsonl_to_duckdb_stream_creates_empty_table(tmp_path):
     assert result.rows == result.extra["written_records"] == 0
 
 
+def test_jsonl_to_xlsx_stream_discovers_late_columns(tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+    source = tmp_path / "input.jsonl"
+    source.write_text(
+        "\n".join(
+            json.dumps({"record_id": str(index), "value": index, **({"tail_only": "kept"} if index == 699 else {})})
+            for index in range(700)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    target = tmp_path / "output.xlsx"
+
+    result = convertx.convert(source, target)
+
+    workbook = openpyxl.load_workbook(target, read_only=True, data_only=True)
+    try:
+        values = list(workbook.active.iter_rows(values_only=True))
+    finally:
+        workbook.close()
+    header = list(values[0])
+    assert result.rows == result.extra["written_records"] == 700
+    assert header[-1] == "tail_only"
+    assert values[1][-1] is None
+    assert values[-1][-1] == "kept"
+
+
 def test_jsonl_stream_abort_preserves_existing_output(tmp_path):
     source = tmp_path / "input.jsonl"
     source.write_text('{"record_id":"1"}\ninvalid\n', encoding="utf-8")

@@ -876,6 +876,79 @@ def _iter_xlsx(path: Path, options: dict[str, Any]) -> Iterator[dict[str, Any]]:
         workbook.close()
 
 
+def _write_xlsx_iter(
+    rows: Iterable[dict[str, Any]],
+    path: Path,
+    options: dict[str, Any],
+    *,
+    columns: list[str],
+    total: int,
+) -> dict[str, Any]:
+    from openpyxl import Workbook
+    from openpyxl.cell import WriteOnlyCell
+    from openpyxl.styles import Font, PatternFill
+
+    _ensure_parent_dir(path)
+    pe = _ProgressEmitter(options.get("on_write_progress"))
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet()
+    ws.title = "结构化记录"
+    ws.freeze_panes = "A2"
+    header = [WriteOnlyCell(ws, value=column) for column in columns]
+    for cell in header:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="1F4E78")
+    ws.append(header)
+    warnings: list[str] = []
+    if total > XLSX_ROW_LIMIT:
+        warnings.append(
+            f"XLSX 超过应用单表上限 {XLSX_ROW_LIMIT} 条，仅写前 {XLSX_ROW_LIMIT} 条，"
+            f"省略 {total - XLSX_ROW_LIMIT} 条"
+        )
+        LOGGER.warning(warnings[-1])
+    written = 0
+    seen = 0
+    truncated_cells = 0
+    try:
+        with atomic_output(path, options) as tmp:
+            for row in rows:
+                check_cancel(options)
+                seen += 1
+                if written >= XLSX_ROW_LIMIT:
+                    pe.emit(written=written, total=total)
+                    continue
+                values = []
+                for key in columns:
+                    value = row.get(key, "")
+                    safe = excel_safe(value)
+                    if isinstance(value, str) and (len(value) > 32700 or len(safe) > 32700):
+                        truncated_cells += 1
+                    if isinstance(safe, str):
+                        safe = safe[:32700]
+                    values.append(safe)
+                ws.append(values)
+                written += 1
+                pe.emit(written=written, total=total)
+            check_cancel(options)
+            wb.save(tmp)
+            pe.flush(written=written, total=total)
+    except (PermissionError, OSError) as exc:
+        raise RuntimeError(f"无法写入 Excel 文件 {path}（可能被其他程序占用或目录不可写）: {exc}") from exc
+    finally:
+        if not ws.closed:
+            try:
+                ws.close()
+            except Exception:  # noqa: BLE001 - cleanup must not mask the conversion error
+                LOGGER.warning("无法完整关闭 XLSX 流式工作表", exc_info=True)
+        wb.close()
+    if truncated_cells:
+        warnings.append(f"XLSX 有 {truncated_cells} 个单元格超过应用字符上限，内容已截断")
+    return {
+        "rows": written, "columns": columns, "warnings": warnings, "sheet": "结构化记录",
+        "omitted_records": seen - written, "truncated_cells": truncated_cells,
+    }
+
+
 def _register_xlsx() -> None:
     try:
         from openpyxl import Workbook  # noqa: F401
@@ -888,72 +961,13 @@ def _register_xlsx() -> None:
 
     @register_writer(".xlsx")
     def write_xlsx(rows: CanonicalRecords, path: Path, options: dict[str, Any]) -> dict[str, Any]:
-        from openpyxl import Workbook
-        from openpyxl.cell import WriteOnlyCell
-        from openpyxl.styles import Font, PatternFill
-
-        _ensure_parent_dir(path)
         columns = _ordered_columns(rows, prefer=options.get("columns") or [])
-        pe = _ProgressEmitter(options.get("on_write_progress"))
-        wb = Workbook(write_only=True)
-        ws = wb.create_sheet()
-        ws.title = "结构化记录"
-        ws.freeze_panes = "A2"
-        header = [WriteOnlyCell(ws, value=column) for column in columns]
-        for cell in header:
-            cell.font = Font(bold=True, color="FFFFFF")
-            cell.fill = PatternFill("solid", fgColor="1F4E78")
-        ws.append(header)
-        warnings: list[str] = []
-        data_rows = rows
-        if len(data_rows) > XLSX_ROW_LIMIT:
-            warnings.append(
-                f"XLSX 超过应用单表上限 {XLSX_ROW_LIMIT} 条，仅写前 {XLSX_ROW_LIMIT} 条，"
-                f"省略 {len(rows) - XLSX_ROW_LIMIT} 条"
-            )
-            LOGGER.warning(warnings[-1])
-            data_rows = data_rows[:XLSX_ROW_LIMIT]
-        total = len(data_rows)
-        written = 0
-        truncated_cells = 0
-        try:
-            with atomic_output(path, options) as tmp:
-                for row in data_rows:
-                    check_cancel(options)
-                    values = []
-                    for k in columns:
-                        value = row.get(k, "")
-                        safe = excel_safe(value)
-                        if isinstance(value, str) and (len(value) > 32700 or len(safe) > 32700):
-                            truncated_cells += 1
-                        if isinstance(safe, str):
-                            safe = safe[:32700]
-                        values.append(safe)
-                    ws.append(values)
-                    written += 1
-                    pe.emit(written=written, total=total)
-                check_cancel(options)
-                wb.save(tmp)
-                pe.flush(written=written, total=total)
-        except (PermissionError, OSError) as exc:
-            raise RuntimeError(f"无法写入 Excel 文件 {path}（可能被其他程序占用或目录不可写）: {exc}") from exc
-        finally:
-            if not ws.closed:
-                try:
-                    ws.close()
-                except Exception:  # noqa: BLE001 - cleanup must not mask the conversion error
-                    LOGGER.warning("无法完整关闭 XLSX 流式工作表", exc_info=True)
-            wb.close()
-        if truncated_cells:
-            warnings.append(f"XLSX 有 {truncated_cells} 个单元格超过应用字符上限，内容已截断")
-        return {
-            "rows": written, "columns": columns, "warnings": warnings, "sheet": "结构化记录",
-            "omitted_records": len(rows) - written, "truncated_cells": truncated_cells,
-        }
+        return _write_xlsx_iter(rows, path, options, columns=columns, total=len(rows))
 
 
 _register_xlsx()
 _BUILTIN_XLSX_READER: ReaderFn | None = READERS.get(".xlsx")
+_BUILTIN_XLSX_WRITER: WriterFn | None = WRITERS.get(".xlsx")
 
 
 def _register_document() -> None:
@@ -1070,11 +1084,19 @@ def convert(
         and _BUILTIN_DUCKDB_WRITER is not None
         and WRITERS[dst_fmt] is _BUILTIN_DUCKDB_WRITER
     )
+    jsonl_xlsx_stream_path = (
+        src_fmt in {".jsonl", ".ndjson"}
+        and READERS[src_fmt] is read_jsonl
+        and dst_fmt == ".xlsx"
+        and _BUILTIN_XLSX_WRITER is not None
+        and WRITERS[dst_fmt] is _BUILTIN_XLSX_WRITER
+    )
     stream_path = (
         jsonl_output_stream_path
         or jsonl_csv_stream_path
         or jsonl_parquet_stream_path
         or jsonl_duckdb_stream_path
+        or jsonl_xlsx_stream_path
     )
 
     # ── 统一进度 tracker（仅在 on_progress 显式传入时启用，避免副作用）──
@@ -1226,6 +1248,31 @@ def convert(
                     total=accepted_count,
                 )
                 cols = safe_columns
+            elif jsonl_xlsx_stream_path:
+                scan_hasher = hashlib.sha256()
+                r_opts["_content_hasher"] = scan_hasher
+                xlsx_seen_columns: dict[str, None] = {}
+                accepted_count = 0
+                for row in _iter_jsonl(src, r_opts):
+                    for key in row:
+                        xlsx_seen_columns[str(key)] = None
+                    accepted_count += 1
+                expected_digest = scan_hasher.digest()
+                preferred_columns = w_opts.get("columns") or opts.get("columns") or []
+                cols = _ordered_columns([], prefer=[*preferred_columns, *xlsx_seen_columns])
+
+                write_hasher = hashlib.sha256()
+                second_read_opts = dict(r_opts)
+                second_read_opts.pop("_read_stats", None)
+                second_read_opts.pop("on_line_progress", None)
+                second_read_opts["_content_hasher"] = write_hasher
+                writer_meta = _write_xlsx_iter(
+                    _iter_jsonl_with_digest(src, second_read_opts, write_hasher, expected_digest),
+                    dst,
+                    w_opts,
+                    columns=cols,
+                    total=accepted_count,
+                )
             else:
                 def rows_with_columns() -> Iterator[dict[str, Any]]:
                     if src_fmt == ".csv":
@@ -1255,7 +1302,12 @@ def convert(
             if tracker is not None:
                 tracker.fail("转换阶段出错")
             raise
-        if not jsonl_csv_stream_path:
+        if not (
+            jsonl_csv_stream_path
+            or jsonl_parquet_stream_path
+            or jsonl_duckdb_stream_path
+            or jsonl_xlsx_stream_path
+        ):
             accepted_count = int(writer_meta.get("rows", 0))
         if tracker is not None:
             tracker.end_stage("convert")
