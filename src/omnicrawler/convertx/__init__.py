@@ -517,16 +517,40 @@ def _register_parquet() -> None:
                 pe.flush(written=0, total=0)
             return {"rows": 0, "columns": schema.names, "compression": compression}
 
-        # 为了列稳定，先拿完整列集合，首批用它创建 writer schema
-        columns = _ordered_columns(rows, prefer=options.get("columns") or [])
-        # 从首批构造 schema（None 的用 STRING，其余 pyarrow 自动推断）
-        probe = rows[:min(50, len(rows))]
-        try:
-            probe_table = pa.Table.from_pylist(probe)
-            schema = probe_table.schema
-        except Exception:  # noqa: BLE001 — 混合类型回退成通用 schema
-            fields = [pa.field(c, pa.string()) for c in columns]
-            schema = pa.schema(fields)
+        # Arrow 从首条 mapping 推断结构，会忽略后续才出现的字段。先按小批次
+        # 扫描全部记录并统一 schema，确认不会丢列或发生类型冲突后再创建输出。
+        schema = None
+        for start in range(0, total, _PROGRESS_CHUNK):
+            check_cancel(options)
+            chunk = rows[start:start + _PROGRESS_CHUNK]
+            chunk_columns: dict[str, None] = {}
+            for row in chunk:
+                for column in row:
+                    if not isinstance(column, str):
+                        raise ValueError("Parquet 字段名必须是字符串")
+                    chunk_columns.setdefault(column, None)
+            try:
+                chunk_table = pa.table(
+                    {
+                        column: pa.array([row.get(column) for row in chunk])
+                        for column in chunk_columns
+                    }
+                )
+                schema = (
+                    chunk_table.schema
+                    if schema is None
+                    else pa.unify_schemas(
+                        [schema, chunk_table.schema], promote_options="permissive"
+                    )
+                )
+            except (pa.ArrowException, TypeError, ValueError) as exc:
+                raise ValueError(f"Parquet 字段类型不兼容，无法安全写入: {exc}") from exc
+
+        if schema is None:  # pragma: no cover — total > 0 guarantees a batch
+            raise ValueError("Parquet schema 规划失败")
+        if len(schema) == 0:
+            # Parquet 无法表达“有行但零列”；沿用空输出的最小占位列以保留行数。
+            schema = pa.schema([pa.field("record_id", pa.string())])
 
         written = 0
         with atomic_output(path, options) as tmp:
@@ -536,11 +560,8 @@ def _register_parquet() -> None:
                     chunk = rows[start:start + _PROGRESS_CHUNK]
                     try:
                         batch_table = pa.Table.from_pylist(chunk, schema=schema)
-                    except Exception:  # noqa: BLE001 — 保留既有类型回退规则
-                        normalized: list[dict[str, Any]] = []
-                        for row in chunk:
-                            normalized.append({c: (row[c] if c in row and row[c] is not None else None) for c in columns})
-                        batch_table = pa.Table.from_pylist(normalized)
+                    except (pa.ArrowException, TypeError, ValueError) as exc:
+                        raise ValueError(f"Parquet 数据无法按规划类型写入: {exc}") from exc
                     writer.write_table(batch_table)
                     written += len(chunk)
                     pe.emit(written=written, total=total)

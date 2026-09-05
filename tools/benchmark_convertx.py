@@ -28,6 +28,7 @@ CASE_FORMATS = {
     "jsonl-jsonl": ("jsonl", "jsonl"),
     "jsonl-xlsx": ("jsonl", "xlsx"),
     "xlsx-jsonl": ("xlsx", "jsonl"),
+    "jsonl-parquet": ("jsonl", "parquet"),
     "parquet-jsonl": ("parquet", "jsonl"),
     "duckdb-jsonl": ("duckdb", "jsonl"),
 }
@@ -59,7 +60,10 @@ def generate_fixture(path: Path, *, format_name: str, rows: int) -> None:
     if format_name == "jsonl":
         with path.open("w", encoding="utf-8") as handle:
             for index in range(rows):
-                handle.write(json.dumps(_record(index, rows), ensure_ascii=False) + "\n")
+                record = _record(index, rows)
+                if index != rows - 1:
+                    record.pop("tail_only")
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
         return
     if format_name == "xlsx":
         from openpyxl import Workbook
@@ -184,6 +188,15 @@ def _validate_output(path: Path, *, format_name: str, rows: int) -> dict[str, An
                 count += 1
         finally:
             workbook.close()
+    elif format_name == "parquet":
+        import pyarrow.parquet as pq
+
+        with pq.ParquetFile(path) as parquet_file:
+            for batch in parquet_file.iter_batches(batch_size=10_000):
+                for value in batch.to_pylist():
+                    first = first or value
+                    last = value
+                    count += 1
     else:
         raise ValueError(f"unknown output format: {format_name}")
     if count != rows:

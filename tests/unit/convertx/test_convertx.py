@@ -297,6 +297,65 @@ class TestOptionalFormats:
         # zstd 通常压缩比 > 4x（对于这种小样本可能不一样，但至少有内容）
         assert 0 < pq.stat().st_size
 
+    def test_parquet_preserves_fields_first_seen_in_later_batches(self, tmp_path: Path) -> None:
+        pytest.importorskip("pyarrow")
+        from omnicrawler.convertx import WRITERS as W
+
+        target = tmp_path / "late-field.parquet"
+        rows = [{"record_id": f"r{index}", "value": index} for index in range(300)]
+        rows[-1]["late_field"] = "kept"
+        rows[-1]["metadata"] = {"source": "late", "rank": 1}
+
+        result = W[".parquet"](rows, target, {})
+        back = READERS[".parquet"](target, {})
+
+        assert result["columns"] == ["record_id", "value", "late_field", "metadata"]
+        assert back[0]["late_field"] is None
+        assert back[-1]["late_field"] == "kept"
+        assert back[-1]["metadata"] == {"source": "late", "rank": 1}
+
+    def test_parquet_rejects_incompatible_late_type_before_replacing_output(
+        self, tmp_path: Path
+    ) -> None:
+        pytest.importorskip("pyarrow")
+        from omnicrawler.convertx import WRITERS as W
+
+        target = tmp_path / "type-conflict.parquet"
+        original = b"existing output"
+        target.write_bytes(original)
+        rows = [{"record_id": f"r{index}", "value": index} for index in range(300)]
+        rows[-1]["value"] = "incompatible"
+
+        with pytest.raises(ValueError, match="Parquet 字段类型不兼容"):
+            W[".parquet"](rows, target, {})
+
+        assert target.read_bytes() == original
+
+    def test_parquet_promotes_compatible_numeric_types_across_batches(self, tmp_path: Path) -> None:
+        pytest.importorskip("pyarrow")
+        from omnicrawler.convertx import WRITERS as W
+
+        target = tmp_path / "numeric-promotion.parquet"
+        rows = [{"record_id": f"r{index}", "value": index} for index in range(300)]
+        rows[-1]["value"] = 299.5
+
+        W[".parquet"](rows, target, {})
+        back = READERS[".parquet"](target, {})
+
+        assert back[0]["value"] == 0.0
+        assert back[-1]["value"] == 299.5
+
+    def test_parquet_preserves_count_for_records_without_fields(self, tmp_path: Path) -> None:
+        pytest.importorskip("pyarrow")
+        from omnicrawler.convertx import WRITERS as W
+
+        target = tmp_path / "empty-records.parquet"
+        result = W[".parquet"]([{}, {}], target, {})
+        back = READERS[".parquet"](target, {})
+
+        assert result["rows"] == 2
+        assert back == [{"record_id": None}, {"record_id": None}]
+
     def test_duckdb_roundtrip(self, tmp_path: Path) -> None:
         pytest.importorskip("duckdb")
         from omnicrawler.convertx import WRITERS as W
