@@ -556,6 +556,44 @@ _BUILTIN_PARQUET_READER: ReaderFn | None = READERS.get(".parquet")
 _VALID_COLUMN_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
+def _iter_duckdb(path: Path, options: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    """Yield DuckDB cursor batches while keeping one read-only connection."""
+    import duckdb
+
+    _require_file(path)
+    check_cancel(options)
+    if "_read_stats" in options:
+        options["_read_stats"]["complete"] = True
+    pe = _ProgressEmitter(options.get("on_line_progress"))
+    table = str(options.get("table", "records"))
+    if not _SQL_IDENTIFIER_RE.fullmatch(table):
+        raise ValueError(f"无效的 duckdb 表名: {table!r}")
+    total_rows = 0
+    connection = duckdb.connect(str(path), read_only=True)
+    try:
+        try:
+            count_row = connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+            if count_row is not None:
+                total_rows = int(count_row[0] or 0)
+        except Exception:  # noqa: BLE001 - count is optional progress metadata
+            total_rows = 0
+        cursor = connection.execute(f"SELECT * FROM {table}")
+        columns = [description[0] for description in cursor.description or []]
+        accepted = 0
+        while True:
+            check_cancel(options)
+            chunk = cursor.fetchmany(_PROGRESS_CHUNK)
+            if not chunk:
+                break
+            for row in chunk:
+                accepted += 1
+                yield dict(zip(columns, row, strict=True))
+            pe.emit(line_num=accepted, records_so_far=accepted, total_rows=total_rows)
+        pe.flush(line_num=accepted, records_so_far=accepted, total_rows=total_rows)
+    finally:
+        connection.close()
+
+
 def _register_duckdb() -> None:
     try:
         import duckdb  # noqa: F401
@@ -598,55 +636,7 @@ def _register_duckdb() -> None:
 
     @register_reader(".duckdb", ".db")
     def read_duckdb(path: Path, options: dict[str, Any]) -> CanonicalRecords:
-        import duckdb
-
-        _require_file(path)
-        check_cancel(options)
-        if "_read_stats" in options:
-            options["_read_stats"]["complete"] = True
-        pe = _ProgressEmitter(options.get("on_line_progress"))
-        table = str(options.get("table", "records"))
-        # META：table 标识符白名单——仅允许标识符或 schema.identifier，防 CLI
-        # 传入恶意标识符/子查询直插 SQL（convertx 本地-only，仍按 RC-6 同族收口）。
-        if not _SQL_IDENTIFIER_RE.fullmatch(table):
-            raise ValueError(f"无效的 duckdb 表名: {table!r}")
-        # 先拿总行数，便于节流推进展示进度
-        count_sql = f"SELECT COUNT(*) FROM {table}"
-        read_sql = f"SELECT * FROM {table}"
-        total_rows = 0
-        con = duckdb.connect(str(path), read_only=True)
-        try:
-            try:
-                count_row = con.execute(count_sql).fetchone()
-                if count_row is not None:
-                    total_rows = int(count_row[0] or 0)
-            except Exception:  # noqa: BLE001 — 视图/权限问题取不到 count 就按 0 处理（仍推进）
-                total_rows = 0
-            cursor = con.execute(read_sql)
-            cols = [d[0] for d in cursor.description or []]
-            records: CanonicalRecords = []
-            fetched = 0
-            while True:
-                check_cancel(options)
-                chunk = cursor.fetchmany(_PROGRESS_CHUNK)
-                if not chunk:
-                    break
-                for row in chunk:
-                    records.append(dict(zip(cols, row, strict=True)))
-                fetched += len(chunk)
-                pe.emit(
-                    line_num=fetched,
-                    records_so_far=len(records),
-                    total_rows=total_rows,
-                )
-            pe.flush(
-                line_num=fetched,
-                records_so_far=len(records),
-                total_rows=total_rows,
-            )
-            return records
-        finally:
-            con.close()
+        return list(_iter_duckdb(path, options))
 
     @register_writer(".duckdb", ".db")
     def write_duckdb(rows: CanonicalRecords, path: Path, options: dict[str, Any]) -> dict[str, Any]:
@@ -700,6 +690,7 @@ def _register_duckdb() -> None:
 
 
 _register_duckdb()
+_BUILTIN_DUCKDB_READER: ReaderFn | None = READERS.get(".duckdb")
 
 
 # ── XLSX ─────────────────────────────────────────────────
@@ -917,6 +908,11 @@ def convert(
                 and _BUILTIN_PARQUET_READER is not None
                 and READERS[src_fmt] is _BUILTIN_PARQUET_READER
             )
+            or (
+                src_fmt == ".duckdb"
+                and _BUILTIN_DUCKDB_READER is not None
+                and READERS[src_fmt] is _BUILTIN_DUCKDB_READER
+            )
         )
     )
 
@@ -1007,8 +1003,10 @@ def convert(
                     source_rows = _iter_jsonl(src, r_opts)
                 elif src_fmt == ".xlsx":
                     source_rows = _iter_xlsx(src, r_opts)
-                else:
+                elif src_fmt == ".parquet":
                     source_rows = _iter_parquet(src, r_opts)
+                else:
+                    source_rows = _iter_duckdb(src, r_opts)
                 for row in source_rows:
                     for key in row:
                         seen_columns[str(key)] = None

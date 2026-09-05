@@ -491,6 +491,30 @@ def test_parquet_to_jsonl_stream_cancel_closes_reader_and_preserves_output(tmp_p
     assert len(list(tmp_path.iterdir())) == 2
 
 
+def test_duckdb_to_jsonl_stream_cancel_closes_connection_and_preserves_output(tmp_path):
+    duckdb = pytest.importorskip("duckdb")
+    source = tmp_path / "input.duckdb"
+    with duckdb.connect(str(source)) as connection:
+        connection.execute("CREATE TABLE records AS SELECT range::VARCHAR AS record_id FROM range(1000)")
+    assert isinstance(convertx.READERS[".duckdb"](source, {}), list)
+    target = tmp_path / "output.jsonl"
+    target.write_bytes(b"old")
+    stopped = Event()
+
+    with pytest.raises(convertx.ConversionCancelledError):
+        convertx.convert(
+            source,
+            target,
+            should_stop=stopped.is_set,
+            on_write_progress=lambda _payload: stopped.set(),
+        )
+
+    assert target.read_bytes() == b"old"
+    with duckdb.connect(str(source), read_only=True) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM records").fetchone() == (1000,)
+    assert len(list(tmp_path.iterdir())) == 2
+
+
 def test_xlsx_partial_save_does_not_replace_previous_workbook(tmp_path, monkeypatch):
     openpyxl = pytest.importorskip("openpyxl")
     source = source_file(tmp_path)

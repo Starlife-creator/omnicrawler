@@ -29,6 +29,7 @@ CASE_FORMATS = {
     "jsonl-xlsx": ("jsonl", "xlsx"),
     "xlsx-jsonl": ("xlsx", "jsonl"),
     "parquet-jsonl": ("parquet", "jsonl"),
+    "duckdb-jsonl": ("duckdb", "jsonl"),
 }
 CASES = tuple(CASE_FORMATS)
 
@@ -86,6 +87,21 @@ def generate_fixture(path: Path, *, format_name: str, rows: int) -> None:
         finally:
             if parquet_writer is not None:
                 parquet_writer.close()
+        return
+    if format_name == "duckdb":
+        import duckdb
+
+        connection = duckdb.connect(str(path))
+        try:
+            connection.execute(
+                "CREATE TABLE records (record_id VARCHAR, source_url VARCHAR, record_type VARCHAR, "
+                "created_at VARCHAR, title VARCHAR, note VARCHAR, tail_only VARCHAR)"
+            )
+            for start in range(0, rows, 10_000):
+                batch = [_record(index, rows) for index in range(start, min(rows, start + 10_000))]
+                connection.executemany("INSERT INTO records VALUES (?, ?, ?, ?, ?, ?, ?)", [list(row.values()) for row in batch])
+        finally:
+            connection.close()
         return
     raise ValueError(f"unknown fixture format: {format_name}")
 
