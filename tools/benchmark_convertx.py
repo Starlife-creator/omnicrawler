@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-CASES = ("csv-jsonl", "jsonl-csv")
+CASES = ("csv-jsonl", "jsonl-csv", "jsonl-jsonl")
 
 
 def _record(index: int, rows: int) -> dict[str, str]:
@@ -174,13 +174,16 @@ def _dependency_versions() -> dict[str, str]:
     return found
 
 
-def run_suite(*, sizes: list[int], repeats: int, work_dir: Path) -> dict[str, Any]:
+def run_suite(
+    *, sizes: list[int], repeats: int, work_dir: Path, cases: list[str] | None = None
+) -> dict[str, Any]:
+    selected_cases = list(cases or CASES)
     samples: list[dict[str, Any]] = []
     for rows in sizes:
         inputs = {name: work_dir / f"input-{rows}.{name}" for name in ("csv", "jsonl")}
         for name, path in inputs.items():
             generate_fixture(path, format_name=name, rows=rows)
-        for case in CASES:
+        for case in selected_cases:
             source_format, target_format = case.split("-")
             for repeat in range(1, repeats + 1):
                 target = work_dir / f"output-{case}-{rows}-{repeat}.{target_format}"
@@ -213,7 +216,7 @@ def run_suite(*, sizes: list[int], repeats: int, work_dir: Path) -> dict[str, An
             "application_sha": _git_revision(),
             "dependencies": _dependency_versions(),
         },
-        "parameters": {"sizes": sizes, "repeats": repeats, "cases": list(CASES)},
+        "parameters": {"sizes": sizes, "repeats": repeats, "cases": selected_cases},
         "samples": samples,
         "note": "Informational baseline; timing and RSS are not machine-independent pass/fail thresholds.",
     }
@@ -229,6 +232,7 @@ def _positive(value: str) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sizes", nargs="+", type=_positive, default=[10_000, 100_000, 1_000_000])
+    parser.add_argument("--cases", nargs="+", choices=CASES, default=list(CASES))
     parser.add_argument("--repeats", type=_positive, default=1)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--work-dir", type=Path)
@@ -249,10 +253,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.work_dir is not None:
         args.work_dir.mkdir(parents=True, exist_ok=True)
-        payload = run_suite(sizes=args.sizes, repeats=args.repeats, work_dir=args.work_dir)
+        payload = run_suite(sizes=args.sizes, repeats=args.repeats, work_dir=args.work_dir, cases=args.cases)
     else:
         with tempfile.TemporaryDirectory(prefix="omnicrawler-convertx-benchmark-") as temp:
-            payload = run_suite(sizes=args.sizes, repeats=args.repeats, work_dir=Path(temp))
+            payload = run_suite(sizes=args.sizes, repeats=args.repeats, work_dir=Path(temp), cases=args.cases)
     text = json.dumps(payload, ensure_ascii=False, indent=2)
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)

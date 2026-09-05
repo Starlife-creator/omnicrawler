@@ -295,6 +295,59 @@ def test_csv_stream_path_respects_registered_reader_override(tmp_path, monkeypat
     assert json.loads(target.read_text(encoding="utf-8")) == {"custom": "kept"}
 
 
+def test_jsonl_to_jsonl_stream_preserves_flattening_errors_and_columns(tmp_path):
+    source = tmp_path / "input.jsonl"
+    source.write_text(
+        '\n'.join([
+            json.dumps({
+                "record_id": "1",
+                "data": {"title": "甲", "details": {"score": 9}},
+                "evidence": {"title": {"source": "text"}},
+            }, ensure_ascii=False),
+            "not-json",
+            "[]",
+            json.dumps({"record_id": "2", "tail_only": "present"}, ensure_ascii=False),
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    target = tmp_path / "output.jsonl"
+    events = []
+
+    result = convertx.convert(source, target, on_progress=events.append)
+
+    values = [json.loads(line) for line in target.read_text(encoding="utf-8").splitlines()]
+    assert values == [
+        {
+            "record_id": "1",
+            "title": "甲",
+            "details": '{"score": 9}',
+            "evidence_json": '{"title": {"source": "text"}}',
+        },
+        {"record_id": "2", "tail_only": "present"},
+    ]
+    assert result.rows == result.extra["accepted_records"] == result.extra["written_records"] == 2
+    assert result.extra["rejected_records"] == 2
+    assert result.columns == [
+        "record_id", "source_url", "record_type", "created_at",
+        "title", "details", "evidence_json", "tail_only",
+    ]
+    assert result.warnings and "跳过 2 条" in result.warnings[0]
+    assert {event.stage for event in events if event.stage} == {"convert"}
+
+
+def test_jsonl_stream_abort_preserves_existing_output(tmp_path):
+    source = tmp_path / "input.jsonl"
+    source.write_text('{"record_id":"1"}\ninvalid\n', encoding="utf-8")
+    target = tmp_path / "output.jsonl"
+    target.write_bytes(b"old")
+
+    with pytest.raises(ValueError, match="JSONL 解析失败"):
+        convertx.convert(source, target, on_error="abort")
+
+    assert target.read_bytes() == b"old"
+    assert len(list(tmp_path.iterdir())) == 2
+
+
 def test_xlsx_partial_save_does_not_replace_previous_workbook(tmp_path, monkeypatch):
     openpyxl = pytest.importorskip("openpyxl")
     source = source_file(tmp_path)

@@ -316,6 +316,11 @@ def write_csv(rows: CanonicalRecords, path: Path, options: dict[str, Any]) -> di
 # ── JSONL ─────────────────────────────────────────────────
 @register_reader(".jsonl", ".ndjson")
 def read_jsonl(path: Path, options: dict[str, Any]) -> CanonicalRecords:
+    return list(_iter_jsonl(path, options))
+
+
+def _iter_jsonl(path: Path, options: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    """Yield validated JSONL records while retaining public list compatibility."""
     _require_file(path)
     check_cancel(options)
     if "_read_stats" in options:
@@ -323,7 +328,7 @@ def read_jsonl(path: Path, options: dict[str, Any]) -> CanonicalRecords:
     flat_mode = bool(options.get("flat", True))  # 默认把 .data 展开为 flat dict
     on_error = str(options.get("on_error", "skip")).lower()  # skip | abort
     pe = _ProgressEmitter(options.get("on_line_progress"))
-    records: CanonicalRecords = []
+    accepted = 0
     last_line = 0
     with path.open("r", encoding="utf-8") as fh:
         for line_num, line in enumerate(fh, 1):
@@ -352,12 +357,13 @@ def read_jsonl(path: Path, options: dict[str, Any]) -> CanonicalRecords:
                 _flatten_to("", obj["data"], flat)
                 if obj.get("evidence"):
                     flat["evidence_json"] = json.dumps(obj["evidence"], ensure_ascii=False)
-                records.append(flat)
+                record = flat
             else:
-                records.append(dict(obj))
-            pe.emit(line_num=line_num, records_so_far=len(records))
-    pe.flush(line_num=last_line, records_so_far=len(records))
-    return records
+                record = dict(obj)
+            accepted += 1
+            yield record
+            pe.emit(line_num=line_num, records_so_far=accepted)
+    pe.flush(line_num=last_line, records_so_far=accepted)
 
 
 @register_writer(".jsonl", ".ndjson")
@@ -850,11 +856,16 @@ def convert(
     writer_key = f"writer{dst_fmt.replace('.', '_')}"
     configured_reader_options = dict(opts.get(reader_key) or {})
     stream_path = (
-        src_fmt == ".csv"
-        and dst_fmt == ".jsonl"
-        and READERS[src_fmt] is read_csv
+        dst_fmt == ".jsonl"
         and WRITERS[dst_fmt] is write_jsonl
-        and str(configured_reader_options.get("encoding", "utf-8-sig")) != "auto"
+        and (
+            (
+                src_fmt == ".csv"
+                and READERS[src_fmt] is read_csv
+                and str(configured_reader_options.get("encoding", "utf-8-sig")) != "auto"
+            )
+            or (src_fmt == ".jsonl" and READERS[src_fmt] is read_jsonl)
+        )
     )
 
     # ── 统一进度 tracker（仅在 on_progress 显式传入时启用，避免副作用）──
@@ -938,7 +949,8 @@ def convert(
             seen_columns: dict[str, None] = {}
 
             def rows_with_columns() -> Iterator[dict[str, Any]]:
-                for row in _iter_csv(src, r_opts):
+                source_rows = _iter_csv(src, r_opts) if src_fmt == ".csv" else _iter_jsonl(src, r_opts)
+                for row in source_rows:
                     for key in row:
                         seen_columns[str(key)] = None
                     yield row
