@@ -29,6 +29,7 @@ CASE_FORMATS = {
     "jsonl-xlsx": ("jsonl", "xlsx"),
     "xlsx-jsonl": ("xlsx", "jsonl"),
     "jsonl-parquet": ("jsonl", "parquet"),
+    "jsonl-duckdb": ("jsonl", "duckdb"),
     "parquet-jsonl": ("parquet", "jsonl"),
     "duckdb-jsonl": ("duckdb", "jsonl"),
 }
@@ -194,6 +195,18 @@ def _validate_output(path: Path, *, format_name: str, rows: int) -> dict[str, An
         with pq.ParquetFile(path) as parquet_file:
             for batch in parquet_file.iter_batches(batch_size=10_000):
                 for value in batch.to_pylist():
+                    first = first or value
+                    last = value
+                    count += 1
+    elif format_name == "duckdb":
+        import duckdb
+
+        with duckdb.connect(str(path), read_only=True) as connection:
+            cursor = connection.execute("SELECT * FROM records")
+            columns = [item[0] for item in cursor.description or []]
+            while batch := cursor.fetchmany(10_000):
+                for cells in batch:
+                    value = dict(zip(columns, cells, strict=True))
                     first = first or value
                     last = value
                     count += 1

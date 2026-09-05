@@ -409,6 +409,17 @@ def _iter_jsonl(path: Path, options: dict[str, Any]) -> Iterator[dict[str, Any]]
     pe.flush(line_num=last_line, records_so_far=accepted)
 
 
+def _iter_jsonl_with_digest(
+    path: Path,
+    options: dict[str, Any],
+    hasher: Any,
+    expected_digest: bytes,
+) -> Iterator[dict[str, Any]]:
+    yield from _iter_jsonl(path, options)
+    if hasher.digest() != expected_digest:
+        raise RuntimeError("JSONL 源文件在转换期间发生变化，已取消输出提交")
+
+
 @register_writer(".jsonl", ".ndjson")
 def write_jsonl(rows: CanonicalRecords, path: Path, options: dict[str, Any]) -> dict[str, Any]:
     return _write_jsonl_iter(rows, path, options, total=len(rows))
@@ -671,45 +682,128 @@ def _iter_duckdb(path: Path, options: dict[str, Any]) -> Iterator[dict[str, Any]
         connection.close()
 
 
+def _duckdb_validate_columns(columns: Iterable[str]) -> list[str]:
+    out: list[str] = []
+    for column in columns:
+        safe = re.sub(r"[^a-zA-Z0-9_]", "_", str(column))
+        if not safe:
+            safe = "col"
+        if not safe[0].isalpha() and safe[0] != "_":
+            safe = "c_" + safe
+        out.append(safe)
+    return out
+
+
+def _duckdb_type_name(kinds: set[str]) -> str:
+    if not kinds:
+        return "VARCHAR"
+    if kinds <= {"bool"}:
+        return "BOOLEAN"
+    if kinds <= {"int"}:
+        return "BIGINT"
+    if kinds <= {"float", "int"}:
+        return "DOUBLE"
+    return "VARCHAR"
+
+
+def _duckdb_add_kind(kinds: set[str], value: Any) -> None:
+    if value is None or value == "":
+        return
+    if isinstance(value, bool):
+        kinds.add("bool")
+    elif isinstance(value, int):
+        kinds.add("int")
+    elif isinstance(value, float):
+        kinds.add("float")
+    else:
+        kinds.add("other")
+
+
+def _plan_duckdb_schema(
+    rows: Iterable[dict[str, Any]], options: dict[str, Any]
+) -> tuple[list[str], list[str], list[str], int]:
+    """Discover columns and scalar types without retaining the input records."""
+    preferred = options.get("columns") or []
+    seen: dict[str, None] = {}
+    kinds: dict[str, set[str]] = {}
+    total = 0
+    for row in rows:
+        check_cancel(options)
+        total += 1
+        for key, value in row.items():
+            column = str(key)
+            seen.setdefault(column, None)
+            _duckdb_add_kind(kinds.setdefault(column, set()), value)
+    safe_columns = _ordered_columns([], prefer=[*preferred, *seen])
+    typed_columns = _duckdb_validate_columns(safe_columns)
+    column_types = [_duckdb_type_name(kinds.get(column, set())) for column in safe_columns]
+    return safe_columns, typed_columns, column_types, total
+
+
+def _write_duckdb_batches(
+    rows: Iterable[dict[str, Any]],
+    path: Path,
+    options: dict[str, Any],
+    *,
+    safe_columns: list[str],
+    typed_columns: list[str],
+    column_types: list[str],
+    total: int,
+) -> dict[str, Any]:
+    """Insert planned rows in transactions while retaining only one batch."""
+    import duckdb
+
+    _ensure_parent_dir(path)
+    check_cancel(options)
+    pe = _ProgressEmitter(options.get("on_write_progress"))
+    table = str(options.get("table", "records"))
+    if not _SQL_IDENTIFIER_RE.fullmatch(table):
+        raise ValueError(f"无效的 duckdb 表名: {table!r}")
+    ddl = ", ".join(
+        f'"{column}" {column_type}'
+        for column, column_type in zip(typed_columns, column_types, strict=True)
+    )
+    placeholders = ", ".join("?" for _ in typed_columns)
+    written = 0
+    existing = path.exists()
+    with (nullcontext(path) if existing else atomic_output(path, options)) as db_path:
+        if not existing:
+            # DuckDB creates its own header; mkstemp's empty file is not a database.
+            db_path.unlink()
+        con = duckdb.connect(str(db_path))
+        try:
+            con.execute("BEGIN TRANSACTION")
+            con.execute(f"DROP TABLE IF EXISTS {table}")
+            con.execute(f"CREATE TABLE {table} ({ddl})")
+            batch: list[dict[str, Any]] = []
+            for row in rows:
+                check_cancel(options)
+                batch.append(row)
+                if len(batch) < _PROGRESS_CHUNK:
+                    continue
+                values = [[row.get(column) for column in safe_columns] for row in batch]
+                con.executemany(f"INSERT INTO {table} VALUES ({placeholders})", values)
+                written += len(batch)
+                batch.clear()
+                pe.emit(written=written, total=total)
+            if batch:
+                values = [[row.get(column) for column in safe_columns] for row in batch]
+                con.executemany(f"INSERT INTO {table} VALUES ({placeholders})", values)
+                written += len(batch)
+                batch.clear()
+            pe.flush(written=written, total=total)
+            check_cancel(options)
+            con.execute("COMMIT")
+        finally:
+            con.close()
+    return {"rows": written, "columns": safe_columns, "table": table}
+
+
 def _register_duckdb() -> None:
     try:
         import duckdb  # noqa: F401
     except ImportError:
         return
-
-    def _validate_columns(columns: list[str]) -> list[str]:
-        out: list[str] = []
-        for c in columns:
-            nc = re.sub(r"[^a-zA-Z0-9_]", "_", str(c))
-            if not nc:
-                nc = "col"
-            if not nc[0].isalpha() and nc[0] != "_":
-                nc = "c_" + nc
-            out.append(nc)
-        return out
-
-    def _infer_py_type(values: list[Any]) -> str:
-        kinds: set[str] = set()
-        for v in values:
-            if v is None or v == "":
-                continue
-            if isinstance(v, bool):
-                kinds.add("bool")
-            elif isinstance(v, int):
-                kinds.add("int")
-            elif isinstance(v, float):
-                kinds.add("float")
-            else:
-                return "VARCHAR"
-        if not kinds:
-            return "VARCHAR"
-        if kinds <= {"bool"}:
-            return "BOOLEAN"
-        if kinds <= {"int"}:
-            return "BIGINT"
-        if kinds <= {"float", "int"}:
-            return "DOUBLE"
-        return "VARCHAR"
 
     @register_reader(".duckdb", ".db")
     def read_duckdb(path: Path, options: dict[str, Any]) -> CanonicalRecords:
@@ -717,57 +811,21 @@ def _register_duckdb() -> None:
 
     @register_writer(".duckdb", ".db")
     def write_duckdb(rows: CanonicalRecords, path: Path, options: dict[str, Any]) -> dict[str, Any]:
-        import duckdb
-
-        _ensure_parent_dir(path)
-        check_cancel(options)
-        pe = _ProgressEmitter(options.get("on_write_progress"))
-        total = len(rows)
-        table = str(options.get("table", "records"))
-        if not _SQL_IDENTIFIER_RE.fullmatch(table):
-            raise ValueError(f"无效的 duckdb 表名: {table!r}")
-        safe_cols = _ordered_columns(rows, prefer=options.get("columns") or [])
-        if not safe_cols:
-            safe_cols = ["record_id"]
-        typed_cols = _validate_columns(safe_cols)
-        col_types = [
-            _infer_py_type([row.get(raw_col) for row in rows if raw_col in row])
-            for raw_col in safe_cols
-        ]
-        ddl = ", ".join(f'"{c}" {t}' for c, t in zip(typed_cols, col_types, strict=True))
-        placeholders = ", ".join("?" for _ in typed_cols)
-        written = 0
-        existing = path.exists()
-        with (nullcontext(path) if existing else atomic_output(path, options)) as db_path:
-            if not existing:
-                # DuckDB creates its own header; mkstemp's empty file is not a database.
-                db_path.unlink()
-            con = duckdb.connect(str(db_path))
-            try:
-                con.execute("BEGIN TRANSACTION")
-                con.execute(f"DROP TABLE IF EXISTS {table}")
-                con.execute(f"CREATE TABLE {table} ({ddl})")
-                if rows:
-                    for start in range(0, total, _PROGRESS_CHUNK):
-                        check_cancel(options)
-                        chunk = rows[start:start + _PROGRESS_CHUNK]
-                        values = [[row.get(k) for k in safe_cols] for row in chunk]
-                        if values:
-                            con.executemany(f"INSERT INTO {table} VALUES ({placeholders})", values)
-                        written += len(chunk)
-                        pe.emit(written=written, total=total)
-                pe.flush(written=written, total=total)
-                check_cancel(options)
-                con.execute("COMMIT")
-            finally:
-                # Closing an uncommitted connection rolls back DDL and inserts,
-                # including KeyboardInterrupt; unrelated tables stay untouched.
-                con.close()
-        return {"rows": written, "columns": safe_cols, "table": table}
+        safe_cols, typed_cols, col_types, planned = _plan_duckdb_schema(iter(rows), options)
+        return _write_duckdb_batches(
+            rows,
+            path,
+            options,
+            safe_columns=safe_cols,
+            typed_columns=typed_cols,
+            column_types=col_types,
+            total=planned,
+        )
 
 
 _register_duckdb()
 _BUILTIN_DUCKDB_READER: ReaderFn | None = READERS.get(".duckdb")
+_BUILTIN_DUCKDB_WRITER: WriterFn | None = WRITERS.get(".duckdb")
 
 
 # ── XLSX ─────────────────────────────────────────────────
@@ -1005,7 +1063,19 @@ def convert(
         and _BUILTIN_PARQUET_WRITER is not None
         and WRITERS[dst_fmt] is _BUILTIN_PARQUET_WRITER
     )
-    stream_path = jsonl_output_stream_path or jsonl_csv_stream_path or jsonl_parquet_stream_path
+    jsonl_duckdb_stream_path = (
+        src_fmt in {".jsonl", ".ndjson"}
+        and READERS[src_fmt] is read_jsonl
+        and dst_fmt == ".duckdb"
+        and _BUILTIN_DUCKDB_WRITER is not None
+        and WRITERS[dst_fmt] is _BUILTIN_DUCKDB_WRITER
+    )
+    stream_path = (
+        jsonl_output_stream_path
+        or jsonl_csv_stream_path
+        or jsonl_parquet_stream_path
+        or jsonl_duckdb_stream_path
+    )
 
     # ── 统一进度 tracker（仅在 on_progress 显式传入时启用，避免副作用）──
     tracker: ProgressTracker | None = None
@@ -1105,13 +1175,12 @@ def convert(
                 second_read_opts.pop("on_line_progress", None)
                 second_read_opts["_content_hasher"] = write_hasher
 
-                def stable_rows() -> Iterator[dict[str, Any]]:
-                    yield from _iter_jsonl(src, second_read_opts)
-                    if write_hasher.digest() != expected_digest:
-                        raise RuntimeError("JSONL 源文件在转换期间发生变化，已取消输出提交")
-
                 writer_meta = _write_csv_iter(
-                    stable_rows(), dst, w_opts, columns=cols, total=accepted_count
+                    _iter_jsonl_with_digest(src, second_read_opts, write_hasher, expected_digest),
+                    dst,
+                    w_opts,
+                    columns=cols,
+                    total=accepted_count,
                 )
             elif jsonl_parquet_stream_path:
                 scan_hasher = hashlib.sha256()
@@ -1125,15 +1194,38 @@ def convert(
                 second_read_opts.pop("on_line_progress", None)
                 second_read_opts["_content_hasher"] = write_hasher
 
-                def stable_rows() -> Iterator[dict[str, Any]]:
-                    yield from _iter_jsonl(src, second_read_opts)
-                    if write_hasher.digest() != expected_digest:
-                        raise RuntimeError("JSONL 源文件在转换期间发生变化，已取消输出提交")
-
                 writer_meta = _write_parquet_batches(
-                    stable_rows(), dst, w_opts, schema=schema, total=accepted_count
+                    _iter_jsonl_with_digest(src, second_read_opts, write_hasher, expected_digest),
+                    dst,
+                    w_opts,
+                    schema=schema,
+                    total=accepted_count,
                 )
                 cols = list(schema.names)
+            elif jsonl_duckdb_stream_path:
+                scan_hasher = hashlib.sha256()
+                r_opts["_content_hasher"] = scan_hasher
+                safe_columns, typed_columns, column_types, accepted_count = _plan_duckdb_schema(
+                    _iter_jsonl(src, r_opts), r_opts
+                )
+                expected_digest = scan_hasher.digest()
+
+                write_hasher = hashlib.sha256()
+                second_read_opts = dict(r_opts)
+                second_read_opts.pop("_read_stats", None)
+                second_read_opts.pop("on_line_progress", None)
+                second_read_opts["_content_hasher"] = write_hasher
+
+                writer_meta = _write_duckdb_batches(
+                    _iter_jsonl_with_digest(src, second_read_opts, write_hasher, expected_digest),
+                    dst,
+                    w_opts,
+                    safe_columns=safe_columns,
+                    typed_columns=typed_columns,
+                    column_types=column_types,
+                    total=accepted_count,
+                )
+                cols = safe_columns
             else:
                 def rows_with_columns() -> Iterator[dict[str, Any]]:
                     if src_fmt == ".csv":

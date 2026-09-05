@@ -484,6 +484,46 @@ def test_empty_jsonl_to_parquet_keeps_empty_output_contract(tmp_path):
     assert values == []
 
 
+def test_jsonl_to_duckdb_stream_discovers_late_columns(tmp_path):
+    duckdb = pytest.importorskip("duckdb")
+    source = tmp_path / "input.jsonl"
+    source.write_text(
+        "\n".join(
+            json.dumps({"record_id": str(index), "value": index, **({"tail_only": "kept"} if index == 699 else {})})
+            for index in range(700)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    target = tmp_path / "output.duckdb"
+
+    result = convertx.convert(source, target)
+
+    with duckdb.connect(str(target), read_only=True) as connection:
+        columns = [item[0] for item in connection.execute("DESCRIBE records").fetchall()]
+        values = connection.execute(
+            'SELECT "tail_only" FROM records ORDER BY CAST("record_id" AS INTEGER)'
+        ).fetchall()
+    assert result.rows == result.extra["written_records"] == 700
+    assert result.columns[-1] == "tail_only"
+    assert columns[-1] == "tail_only"
+    assert values[0] == (None,)
+    assert values[-1] == ("kept",)
+
+
+def test_empty_jsonl_to_duckdb_stream_creates_empty_table(tmp_path):
+    duckdb = pytest.importorskip("duckdb")
+    source = tmp_path / "input.jsonl"
+    source.write_text("", encoding="utf-8")
+    target = tmp_path / "output.duckdb"
+
+    result = convertx.convert(source, target)
+
+    with duckdb.connect(str(target), read_only=True) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM records").fetchone() == (0,)
+    assert result.rows == result.extra["written_records"] == 0
+
+
 def test_jsonl_stream_abort_preserves_existing_output(tmp_path):
     source = tmp_path / "input.jsonl"
     source.write_text('{"record_id":"1"}\ninvalid\n', encoding="utf-8")
