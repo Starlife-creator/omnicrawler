@@ -708,6 +708,50 @@ _register_duckdb()
 XLSX_ROW_LIMIT = 1_000_000
 
 
+def _iter_xlsx(path: Path, options: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    """Yield worksheet records from openpyxl's read-only row iterator."""
+    from openpyxl import load_workbook
+
+    _require_file(path)
+    check_cancel(options)
+    if "_read_stats" in options:
+        options["_read_stats"]["complete"] = True
+    sheet_name = options.get("sheet")
+    data_only = bool(options.get("data_only", True))
+    on_error = str(options.get("on_error", "skip")).lower()
+    pe = _ProgressEmitter(options.get("on_line_progress"))
+    workbook = load_workbook(filename=str(path), read_only=True, data_only=data_only)
+    try:
+        sheet = workbook[sheet_name] if sheet_name else workbook.active
+        rows_iter = sheet.iter_rows(values_only=True)
+        try:
+            header = list(next(rows_iter))
+        except StopIteration:
+            pe.flush(line_num=0, records_so_far=0)
+            return
+        header = [str(value) if value is not None else f"col_{index}" for index, value in enumerate(header)]
+        accepted = 0
+        row_num = 1
+        for row in rows_iter:
+            check_cancel(options)
+            row_num += 1
+            if row is None or all(value is None or value == "" for value in row):
+                continue
+            try:
+                record = {key: row[index] for index, key in enumerate(header) if index < len(row)}
+            except Exception as exc:
+                if on_error == "abort":
+                    raise ValueError(f"XLSX 解析失败（行 {row_num}）: {exc}") from exc
+                _record_rejection(options, row_num, "XLSX 记录无法解析")
+                continue
+            accepted += 1
+            yield record
+            pe.emit(line_num=row_num, records_so_far=accepted)
+        pe.flush(line_num=row_num, records_so_far=accepted)
+    finally:
+        workbook.close()
+
+
 def _register_xlsx() -> None:
     try:
         from openpyxl import Workbook  # noqa: F401
@@ -716,49 +760,7 @@ def _register_xlsx() -> None:
 
     @register_reader(".xlsx")
     def read_xlsx(path: Path, options: dict[str, Any]) -> CanonicalRecords:
-        from openpyxl import load_workbook
-
-        _require_file(path)
-        check_cancel(options)
-        if "_read_stats" in options:
-            options["_read_stats"]["complete"] = True
-        sheet_name = options.get("sheet")
-        data_only = bool(options.get("data_only", True))
-        on_error = str(options.get("on_error", "skip")).lower()  # skip | abort
-        pe = _ProgressEmitter(options.get("on_line_progress"))
-        wb = load_workbook(filename=str(path), read_only=True, data_only=data_only)
-        try:
-            ws = wb[sheet_name] if sheet_name else wb.active
-            rows_iter = ws.iter_rows(values_only=True)
-            try:
-                header = list(next(rows_iter))
-            except StopIteration:
-                pe.flush(line_num=0, records_so_far=0)
-                return []
-            header = [str(h) if h is not None else f"col_{idx}" for idx, h in enumerate(header)]
-            records: CanonicalRecords = []
-            row_num = 1  # 表头为 0，第一个数据行从 1 起算
-            for row in rows_iter:
-                check_cancel(options)
-                row_num += 1
-                if row is None or all(v is None or v == "" for v in row):
-                    continue
-                try:
-                    rec: dict[str, Any] = {}
-                    for i, key in enumerate(header):
-                        if i < len(row):
-                            rec[key] = row[i]
-                    records.append(rec)
-                except Exception as exc:
-                    if on_error == "abort":
-                        raise ValueError(f"XLSX 解析失败（行 {row_num}）: {exc}") from exc
-                    _record_rejection(options, row_num, "XLSX 记录无法解析")
-                    continue
-                pe.emit(line_num=row_num, records_so_far=len(records))
-            pe.flush(line_num=row_num, records_so_far=len(records))
-            return records
-        finally:
-            wb.close()
+        return list(_iter_xlsx(path, options))
 
     @register_writer(".xlsx")
     def write_xlsx(rows: CanonicalRecords, path: Path, options: dict[str, Any]) -> dict[str, Any]:
@@ -827,6 +829,7 @@ def _register_xlsx() -> None:
 
 
 _register_xlsx()
+_BUILTIN_XLSX_READER: ReaderFn | None = READERS.get(".xlsx")
 
 
 def _register_document() -> None:
@@ -906,6 +909,11 @@ def convert(
                 and READERS[src_fmt] is read_csv
             )
             or (src_fmt == ".jsonl" and READERS[src_fmt] is read_jsonl)
+            or (
+                src_fmt == ".xlsx"
+                and _BUILTIN_XLSX_READER is not None
+                and READERS[src_fmt] is _BUILTIN_XLSX_READER
+            )
         )
     )
 
@@ -990,7 +998,12 @@ def convert(
             seen_columns: dict[str, None] = {}
 
             def rows_with_columns() -> Iterator[dict[str, Any]]:
-                source_rows = _iter_csv(src, r_opts) if src_fmt == ".csv" else _iter_jsonl(src, r_opts)
+                if src_fmt == ".csv":
+                    source_rows = _iter_csv(src, r_opts)
+                elif src_fmt == ".jsonl":
+                    source_rows = _iter_jsonl(src, r_opts)
+                else:
+                    source_rows = _iter_xlsx(src, r_opts)
                 for row in source_rows:
                     for key in row:
                         seen_columns[str(key)] = None

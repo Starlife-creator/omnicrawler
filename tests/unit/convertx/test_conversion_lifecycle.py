@@ -418,6 +418,54 @@ def test_jsonl_stream_abort_preserves_existing_output(tmp_path):
     assert len(list(tmp_path.iterdir())) == 2
 
 
+def test_xlsx_to_jsonl_stream_cancel_closes_reader_and_preserves_output(tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+    source = tmp_path / "input.xlsx"
+    workbook = openpyxl.Workbook(write_only=True)
+    sheet = workbook.create_sheet()
+    sheet.append(["record_id", "value"])
+    for index in range(1000):
+        sheet.append([str(index), f"value-{index}"])
+    workbook.save(source)
+    workbook.close()
+    assert isinstance(convertx.READERS[".xlsx"](source, {}), list)
+    target = tmp_path / "output.jsonl"
+    target.write_bytes(b"old")
+    stopped = Event()
+    events = []
+
+    with pytest.raises(convertx.ConversionCancelledError):
+        convertx.convert(
+            source,
+            target,
+            should_stop=stopped.is_set,
+            on_progress=events.append,
+            on_write_progress=lambda _payload: stopped.set(),
+        )
+
+    assert target.read_bytes() == b"old"
+    assert [event.state for event in events if event.state in {"finished", "cancelled", "failed"}] == ["cancelled"]
+    assert len(list(tmp_path.iterdir())) == 2
+
+
+def test_xlsx_stream_path_respects_registered_reader_override(tmp_path, monkeypatch):
+    pytest.importorskip("openpyxl")
+    source = tmp_path / "input.xlsx"
+    source.write_bytes(b"custom reader does not inspect this")
+    target = tmp_path / "output.jsonl"
+    called = []
+
+    def custom_reader(path, options):
+        called.append((path, options))
+        return [{"custom": "xlsx"}]
+
+    monkeypatch.setitem(convertx.READERS, ".xlsx", custom_reader)
+    result = convertx.convert(source, target)
+
+    assert called and result.rows == 1
+    assert json.loads(target.read_text(encoding="utf-8")) == {"custom": "xlsx"}
+
+
 def test_xlsx_partial_save_does_not_replace_previous_workbook(tmp_path, monkeypatch):
     openpyxl = pytest.importorskip("openpyxl")
     source = source_file(tmp_path)

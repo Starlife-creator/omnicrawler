@@ -27,6 +27,7 @@ CASE_FORMATS = {
     "jsonl-csv": ("jsonl", "csv"),
     "jsonl-jsonl": ("jsonl", "jsonl"),
     "jsonl-xlsx": ("jsonl", "xlsx"),
+    "xlsx-jsonl": ("xlsx", "jsonl"),
 }
 CASES = tuple(CASE_FORMATS)
 
@@ -57,6 +58,17 @@ def generate_fixture(path: Path, *, format_name: str, rows: int) -> None:
         with path.open("w", encoding="utf-8") as handle:
             for index in range(rows):
                 handle.write(json.dumps(_record(index, rows), ensure_ascii=False) + "\n")
+        return
+    if format_name == "xlsx":
+        from openpyxl import Workbook
+
+        workbook = Workbook(write_only=True)
+        sheet = workbook.create_sheet()
+        sheet.append(list(_record(0, rows)))
+        for index in range(rows):
+            sheet.append(list(_record(index, rows).values()))
+        workbook.save(path)
+        workbook.close()
         return
     raise ValueError(f"unknown fixture format: {format_name}")
 
@@ -202,7 +214,8 @@ def run_suite(
     selected_cases = list(cases or CASES)
     samples: list[dict[str, Any]] = []
     for rows in sizes:
-        inputs = {name: work_dir / f"input-{rows}.{name}" for name in ("csv", "jsonl")}
+        source_formats = {CASE_FORMATS[case][0] for case in selected_cases}
+        inputs = {name: work_dir / f"input-{rows}.{name}" for name in source_formats}
         for name, path in inputs.items():
             generate_fixture(path, format_name=name, rows=rows)
         for case in selected_cases:
