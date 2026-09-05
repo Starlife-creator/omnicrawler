@@ -66,3 +66,18 @@ def test_resource_monitor_counts_worker_process_tree_rss(monkeypatch: pytest.Mon
     monkeypatch.setattr(resource_monitor.psutil, "Process", lambda _pid: root)
 
     assert resource_monitor._process_tree_rss(1) == 100
+
+
+def test_resource_monitor_clears_memory_when_pid_is_removed() -> None:
+    from PySide6.QtWidgets import QApplication
+
+    from omnicrawler.gui.widgets.resource_monitor import ResourceMonitor
+
+    app = QApplication.instance() or QApplication([])
+    monitor = ResourceMonitor()
+    monitor._mem_label.setText("内存: 128 MB")
+    monitor.set_pid(None)
+
+    assert monitor._mem_label.text() == "内存: --"
+    monitor.deleteLater()
+    app.processEvents()

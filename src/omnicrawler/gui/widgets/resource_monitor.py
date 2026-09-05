@@ -116,6 +116,8 @@ class ResourceMonitor(QWidget):
             self._refresh_timer.start()
         else:
             self._refresh_timer.stop()
+            self._mem_label.setText(_("内存: --"))
+            self._mem_label.setStyleSheet(self._normal_style)
 
     def refresh(self) -> None:
         """刷新资源数据显示。"""
