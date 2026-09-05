@@ -405,6 +405,49 @@ def test_jsonl_to_jsonl_stream_preserves_flattening_errors_and_columns(tmp_path)
     assert {event.stage for event in events if event.stage} == {"convert"}
 
 
+def test_jsonl_to_csv_stream_discovers_late_columns_without_retaining_rows(tmp_path):
+    source = tmp_path / "input.jsonl"
+    source.write_text(
+        "\n".join(
+            json.dumps({"record_id": str(index), "value": index, **({"tail_only": "kept"} if index == 699 else {})})
+            for index in range(700)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    target = tmp_path / "output.csv"
+
+    result = convertx.convert(source, target)
+
+    with target.open(encoding="utf-8-sig", newline="") as handle:
+        values = list(csv.DictReader(handle))
+    assert result.rows == result.extra["written_records"] == 700
+    assert result.columns[-1] == "tail_only"
+    assert values[0]["tail_only"] == ""
+    assert values[-1]["tail_only"] == "kept"
+
+
+def test_jsonl_to_csv_rejects_source_changes_between_schema_scan_and_write(tmp_path):
+    source = tmp_path / "input.jsonl"
+    original = "\n".join(json.dumps({"record_id": str(index)}) for index in range(3)) + "\n"
+    source.write_text(original, encoding="utf-8")
+    target = tmp_path / "output.csv"
+    target.write_bytes(b"old")
+    changed = False
+
+    def mutate_after_scan(payload):
+        nonlocal changed
+        if not changed and payload.get("records_so_far") == 3:
+            changed = True
+            source.write_text(original.replace('"record_id": "2"', '"record_id": "changed"'), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="源文件在转换期间发生变化"):
+        convertx.convert(source, target, on_read_progress=mutate_after_scan)
+
+    assert target.read_bytes() == b"old"
+    assert len(list(tmp_path.iterdir())) == 2
+
+
 def test_jsonl_stream_abort_preserves_existing_output(tmp_path):
     source = tmp_path / "input.jsonl"
     source.write_text('{"record_id":"1"}\ninvalid\n', encoding="utf-8")

@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import codecs
 import csv
+import hashlib
 import json
 import logging
 import re
@@ -306,11 +307,21 @@ def _iter_csv(path: Path, options: dict[str, Any]) -> Iterator[dict[str, Any]]:
 
 @register_writer(".csv")
 def write_csv(rows: CanonicalRecords, path: Path, options: dict[str, Any]) -> dict[str, Any]:
-    _ensure_parent_dir(path)
     columns = _ordered_columns(rows, prefer=options.get("columns") or [])
+    return _write_csv_iter(rows, path, options, columns=columns, total=len(rows))
+
+
+def _write_csv_iter(
+    rows: Iterable[dict[str, Any]],
+    path: Path,
+    options: dict[str, Any],
+    *,
+    columns: list[str],
+    total: int | None,
+) -> dict[str, Any]:
+    _ensure_parent_dir(path)
     encoding = str(options.get("encoding", "utf-8-sig"))
     pe = _ProgressEmitter(options.get("on_write_progress"))
-    total = len(rows)
     written = 0
     truncated_cells = 0
 
@@ -324,27 +335,20 @@ def write_csv(rows: CanonicalRecords, path: Path, options: dict[str, Any]) -> di
         with tmp.open("w", encoding=encoding, newline="") as fh:
             writer = csv.DictWriter(fh, fieldnames=columns, extrasaction="ignore")
             writer.writeheader()
-            if total <= _PROGRESS_CHUNK * 2:
-                # 小文件仍可一次性 writerows（最快路径），写后直接 flush
-                out = [{k: safe_cell(row.get(k, "")) for k in columns} for row in rows]
-                writer.writerows(out)
-                written = total
-            else:
-                # 大文件按 chunk 写出，节流推进度
-                buf: list[dict[str, Any]] = []
-                for row in rows:
-                    check_cancel(options)
-                    buf.append({k: safe_cell(row.get(k, "")) for k in columns})
-                    if len(buf) >= _PROGRESS_CHUNK:
-                        writer.writerows(buf)
-                        written += len(buf)
-                        buf.clear()
-                        pe.emit(written=written, total=total)
-                if buf:
+            buf: list[dict[str, Any]] = []
+            for row in rows:
+                check_cancel(options)
+                buf.append({k: safe_cell(row.get(k, "")) for k in columns})
+                if len(buf) >= _PROGRESS_CHUNK:
                     writer.writerows(buf)
                     written += len(buf)
                     buf.clear()
-        pe.flush(written=written, total=total)
+                    pe.emit(written=written, total=total or 0)
+            if buf:
+                writer.writerows(buf)
+                written += len(buf)
+                buf.clear()
+        pe.flush(written=written, total=total or 0)
     warnings = [f"CSV 有 {truncated_cells} 个单元格超过应用字符上限，内容已截断"] if truncated_cells else []
     return {"rows": written, "columns": columns, "encoding": encoding, "truncated_cells": truncated_cells, "warnings": warnings}
 
@@ -364,11 +368,14 @@ def _iter_jsonl(path: Path, options: dict[str, Any]) -> Iterator[dict[str, Any]]
     flat_mode = bool(options.get("flat", True))  # 默认把 .data 展开为 flat dict
     on_error = str(options.get("on_error", "skip")).lower()  # skip | abort
     pe = _ProgressEmitter(options.get("on_line_progress"))
+    content_hasher = options.get("_content_hasher")
     accepted = 0
     last_line = 0
-    with path.open("r", encoding="utf-8") as fh:
+    with path.open("r", encoding="utf-8", newline="") as fh:
         for line_num, line in enumerate(fh, 1):
             check_cancel(options)
+            if content_hasher is not None:
+                content_hasher.update(line.encode("utf-8"))
             last_line = line_num
             line = line.strip()
             if not line:
@@ -910,7 +917,7 @@ def convert(
         raise KeyError(f"ConvertX: 不支持的目标格式 {dst_fmt!r}（已注册: {sorted(WRITERS)}）")
     reader_key = f"reader{src_fmt.replace('.', '_')}"
     writer_key = f"writer{dst_fmt.replace('.', '_')}"
-    stream_path = (
+    jsonl_output_stream_path = (
         dst_fmt == ".jsonl"
         and WRITERS[dst_fmt] is write_jsonl
         and (
@@ -936,6 +943,13 @@ def convert(
             )
         )
     )
+    jsonl_csv_stream_path = (
+        src_fmt in {".jsonl", ".ndjson"}
+        and READERS[src_fmt] is read_jsonl
+        and dst_fmt == ".csv"
+        and WRITERS[dst_fmt] is write_csv
+    )
+    stream_path = jsonl_output_stream_path or jsonl_csv_stream_path
 
     # ── 统一进度 tracker（仅在 on_progress 显式传入时启用，避免副作用）──
     tracker: ProgressTracker | None = None
@@ -1017,26 +1031,53 @@ def convert(
         try:
             seen_columns: dict[str, None] = {}
 
-            def rows_with_columns() -> Iterator[dict[str, Any]]:
-                if src_fmt == ".csv":
-                    source_rows = _iter_csv(src, r_opts)
-                elif src_fmt == ".jsonl":
-                    source_rows = _iter_jsonl(src, r_opts)
-                elif src_fmt == ".xlsx":
-                    source_rows = _iter_xlsx(src, r_opts)
-                elif src_fmt == ".parquet":
-                    source_rows = _iter_parquet(src, r_opts)
-                else:
-                    source_rows = _iter_duckdb(src, r_opts)
-                for row in source_rows:
+            if jsonl_csv_stream_path:
+                scan_hasher = hashlib.sha256()
+                r_opts["_content_hasher"] = scan_hasher
+                accepted_count = 0
+                for row in _iter_jsonl(src, r_opts):
                     for key in row:
                         seen_columns[str(key)] = None
-                    yield row
+                    accepted_count += 1
+                expected_digest = scan_hasher.digest()
+                preferred_columns = w_opts.get("columns") or opts.get("columns") or []
+                cols = _ordered_columns([], prefer=[*preferred_columns, *seen_columns])
 
-            writer_meta = _write_jsonl_iter(rows_with_columns(), dst, w_opts, total=None)
-            cols = _ordered_columns(
-                [], prefer=[*(opts.get("columns") or []), *seen_columns]
-            )
+                write_hasher = hashlib.sha256()
+                second_read_opts = dict(r_opts)
+                second_read_opts.pop("_read_stats", None)
+                second_read_opts.pop("on_line_progress", None)
+                second_read_opts["_content_hasher"] = write_hasher
+
+                def stable_rows() -> Iterator[dict[str, Any]]:
+                    yield from _iter_jsonl(src, second_read_opts)
+                    if write_hasher.digest() != expected_digest:
+                        raise RuntimeError("JSONL 源文件在转换期间发生变化，已取消输出提交")
+
+                writer_meta = _write_csv_iter(
+                    stable_rows(), dst, w_opts, columns=cols, total=accepted_count
+                )
+            else:
+                def rows_with_columns() -> Iterator[dict[str, Any]]:
+                    if src_fmt == ".csv":
+                        source_rows = _iter_csv(src, r_opts)
+                    elif src_fmt == ".jsonl":
+                        source_rows = _iter_jsonl(src, r_opts)
+                    elif src_fmt == ".xlsx":
+                        source_rows = _iter_xlsx(src, r_opts)
+                    elif src_fmt == ".parquet":
+                        source_rows = _iter_parquet(src, r_opts)
+                    else:
+                        source_rows = _iter_duckdb(src, r_opts)
+                    for row in source_rows:
+                        for key in row:
+                            seen_columns[str(key)] = None
+                        yield row
+
+                writer_meta = _write_jsonl_iter(rows_with_columns(), dst, w_opts, total=None)
+                cols = _ordered_columns(
+                    [], prefer=[*(opts.get("columns") or []), *seen_columns]
+                )
         except (ConversionCancelledError, KeyboardInterrupt):
             if tracker is not None:
                 tracker.cancel()
@@ -1045,7 +1086,8 @@ def convert(
             if tracker is not None:
                 tracker.fail("转换阶段出错")
             raise
-        accepted_count = int(writer_meta.get("rows", 0))
+        if not jsonl_csv_stream_path:
+            accepted_count = int(writer_meta.get("rows", 0))
         if tracker is not None:
             tracker.end_stage("convert")
             tracker.finish()
