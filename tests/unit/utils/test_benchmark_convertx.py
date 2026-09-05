@@ -38,6 +38,7 @@ def test_suite_uses_fresh_processes_and_writes_machine_readable_report(tmp_path)
         "repeats": 1,
         "cases": [
             "csv-jsonl", "csv-jsonl-auto", "jsonl-csv", "jsonl-jsonl", "jsonl-xlsx", "xlsx-jsonl",
+            "jsonl-parquet", "jsonl-duckdb",
             "parquet-jsonl",
             "duckdb-jsonl",
         ],
@@ -49,6 +50,8 @@ def test_suite_uses_fresh_processes_and_writes_machine_readable_report(tmp_path)
         ("jsonl-jsonl", 12),
         ("jsonl-xlsx", 12),
         ("xlsx-jsonl", 12),
+        ("jsonl-parquet", 12),
+        ("jsonl-duckdb", 12),
         ("parquet-jsonl", 12),
         ("duckdb-jsonl", 12),
     }
