@@ -448,6 +448,42 @@ def test_jsonl_to_csv_rejects_source_changes_between_schema_scan_and_write(tmp_p
     assert len(list(tmp_path.iterdir())) == 2
 
 
+def test_jsonl_to_parquet_stream_discovers_late_columns(tmp_path):
+    pytest.importorskip("pyarrow")
+    source = tmp_path / "input.jsonl"
+    source.write_text(
+        "\n".join(
+            json.dumps({"record_id": str(index), "value": index, **({"tail_only": "kept"} if index == 699 else {})})
+            for index in range(700)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    target = tmp_path / "output.parquet"
+
+    result = convertx.convert(source, target)
+    values = convertx.READERS[".parquet"](target, {})
+
+    assert result.rows == result.extra["written_records"] == 700
+    assert result.columns[-1] == "tail_only"
+    assert values[0]["tail_only"] is None
+    assert values[-1]["tail_only"] == "kept"
+
+
+def test_empty_jsonl_to_parquet_keeps_empty_output_contract(tmp_path):
+    pytest.importorskip("pyarrow")
+    source = tmp_path / "input.jsonl"
+    source.write_text("", encoding="utf-8")
+    target = tmp_path / "output.parquet"
+
+    result = convertx.convert(source, target)
+    values = convertx.READERS[".parquet"](target, {})
+
+    assert result.rows == result.extra["written_records"] == 0
+    assert result.columns == ["record_id"]
+    assert values == []
+
+
 def test_jsonl_stream_abort_preserves_existing_output(tmp_path):
     source = tmp_path / "input.jsonl"
     source.write_text('{"record_id":"1"}\ninvalid\n', encoding="utf-8")

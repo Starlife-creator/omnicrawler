@@ -495,6 +495,103 @@ def _iter_parquet(path: Path, options: dict[str, Any]) -> Iterator[dict[str, Any
     pe.flush(line_num=row_cursor, records_so_far=accepted, total_rows=total_rows)
 
 
+def _parquet_chunk_table(chunk: list[dict[str, Any]]) -> Any:
+    """Build a table after discovering every top-level key in a bounded chunk."""
+    import pyarrow as pa
+
+    columns: dict[str, None] = {}
+    for row in chunk:
+        for column in row:
+            if not isinstance(column, str):
+                raise ValueError("Parquet 字段名必须是字符串")
+            columns.setdefault(column, None)
+    return pa.table({column: pa.array([row.get(column) for row in chunk]) for column in columns})
+
+
+def _plan_parquet_schema(
+    rows: Iterable[dict[str, Any]], options: dict[str, Any]
+) -> tuple[Any, int]:
+    """Scan bounded chunks and return a complete, compatible Arrow schema and count."""
+    import pyarrow as pa
+
+    schema: Any = None
+    accepted = 0
+    chunk: list[dict[str, Any]] = []
+
+    def merge_chunk(values: list[dict[str, Any]]) -> None:
+        nonlocal schema
+        if not values:
+            return
+        try:
+            chunk_schema = _parquet_chunk_table(values).schema
+            schema = (
+                chunk_schema
+                if schema is None
+                else pa.unify_schemas([schema, chunk_schema], promote_options="permissive")
+            )
+        except (pa.ArrowException, TypeError, ValueError) as exc:
+            raise ValueError(f"Parquet 字段类型不兼容，无法安全写入: {exc}") from exc
+
+    for row in rows:
+        check_cancel(options)
+        chunk.append(row)
+        accepted += 1
+        if len(chunk) >= _PROGRESS_CHUNK:
+            merge_chunk(chunk)
+            chunk.clear()
+    merge_chunk(chunk)
+    if schema is None:
+        schema = pa.schema([pa.field("record_id", pa.string())])
+    if len(schema) == 0:
+        # Parquet 无法表达“有行但零列”；沿用空输出的最小占位列以保留行数。
+        schema = pa.schema([pa.field("record_id", pa.string())])
+    return schema, accepted
+
+
+def _write_parquet_batches(
+    rows: Iterable[dict[str, Any]],
+    path: Path,
+    options: dict[str, Any],
+    *,
+    schema: Any,
+    total: int,
+) -> dict[str, Any]:
+    """Write already-planned rows while retaining only one bounded batch."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    _ensure_parent_dir(path)
+    pe = _ProgressEmitter(options.get("on_write_progress"))
+    compression = str(options.get("compression", "zstd"))
+    written = 0
+    chunk: list[dict[str, Any]] = []
+    with atomic_output(path, options) as tmp:
+        with pq.ParquetWriter(tmp, schema, compression=compression) as writer:
+            for row in rows:
+                check_cancel(options)
+                chunk.append(row)
+                if len(chunk) < _PROGRESS_CHUNK:
+                    continue
+                try:
+                    batch_table = pa.Table.from_pylist(chunk, schema=schema)
+                except (pa.ArrowException, TypeError, ValueError) as exc:
+                    raise ValueError(f"Parquet 数据无法按规划类型写入: {exc}") from exc
+                writer.write_table(batch_table)
+                written += len(chunk)
+                chunk.clear()
+                pe.emit(written=written, total=total)
+            if chunk:
+                try:
+                    batch_table = pa.Table.from_pylist(chunk, schema=schema)
+                except (pa.ArrowException, TypeError, ValueError) as exc:
+                    raise ValueError(f"Parquet 数据无法按规划类型写入: {exc}") from exc
+                writer.write_table(batch_table)
+                written += len(chunk)
+                chunk.clear()
+        pe.flush(written=written, total=total)
+    return {"rows": written, "columns": list(schema.names), "compression": compression}
+
+
 def _register_parquet() -> None:
     try:
         import pyarrow as pa  # noqa: F401
@@ -512,11 +609,10 @@ def _register_parquet() -> None:
         import pyarrow.parquet as pq
 
         _ensure_parent_dir(path)
-        pe = _ProgressEmitter(options.get("on_write_progress"))
-        total = len(rows)
         compression = str(options.get("compression", "zstd"))
 
         if not rows:
+            pe = _ProgressEmitter(options.get("on_write_progress"))
             schema = pa.schema([pa.field("record_id", pa.string())])
             empty_table = pa.table({"record_id": pa.array([], type=pa.string())}, schema=schema)
             with atomic_output(path, options) as tmp:
@@ -524,60 +620,13 @@ def _register_parquet() -> None:
                 pe.flush(written=0, total=0)
             return {"rows": 0, "columns": schema.names, "compression": compression}
 
-        # Arrow 从首条 mapping 推断结构，会忽略后续才出现的字段。先按小批次
-        # 扫描全部记录并统一 schema，确认不会丢列或发生类型冲突后再创建输出。
-        schema = None
-        for start in range(0, total, _PROGRESS_CHUNK):
-            check_cancel(options)
-            chunk = rows[start:start + _PROGRESS_CHUNK]
-            chunk_columns: dict[str, None] = {}
-            for row in chunk:
-                for column in row:
-                    if not isinstance(column, str):
-                        raise ValueError("Parquet 字段名必须是字符串")
-                    chunk_columns.setdefault(column, None)
-            try:
-                chunk_table = pa.table(
-                    {
-                        column: pa.array([row.get(column) for row in chunk])
-                        for column in chunk_columns
-                    }
-                )
-                schema = (
-                    chunk_table.schema
-                    if schema is None
-                    else pa.unify_schemas(
-                        [schema, chunk_table.schema], promote_options="permissive"
-                    )
-                )
-            except (pa.ArrowException, TypeError, ValueError) as exc:
-                raise ValueError(f"Parquet 字段类型不兼容，无法安全写入: {exc}") from exc
-
-        if schema is None:  # pragma: no cover — total > 0 guarantees a batch
-            raise ValueError("Parquet schema 规划失败")
-        if len(schema) == 0:
-            # Parquet 无法表达“有行但零列”；沿用空输出的最小占位列以保留行数。
-            schema = pa.schema([pa.field("record_id", pa.string())])
-
-        written = 0
-        with atomic_output(path, options) as tmp:
-            with pq.ParquetWriter(tmp, schema, compression=compression) as writer:
-                for start in range(0, total, _PROGRESS_CHUNK):
-                    check_cancel(options)
-                    chunk = rows[start:start + _PROGRESS_CHUNK]
-                    try:
-                        batch_table = pa.Table.from_pylist(chunk, schema=schema)
-                    except (pa.ArrowException, TypeError, ValueError) as exc:
-                        raise ValueError(f"Parquet 数据无法按规划类型写入: {exc}") from exc
-                    writer.write_table(batch_table)
-                    written += len(chunk)
-                    pe.emit(written=written, total=total)
-            pe.flush(written=written, total=total)
-        return {"rows": written, "columns": list(schema.names), "compression": compression}
+        schema, planned = _plan_parquet_schema(iter(rows), options)
+        return _write_parquet_batches(rows, path, options, schema=schema, total=planned)
 
 
 _register_parquet()
 _BUILTIN_PARQUET_READER: ReaderFn | None = READERS.get(".parquet")
+_BUILTIN_PARQUET_WRITER: WriterFn | None = WRITERS.get(".parquet")
 
 
 # ── DuckDB ────────────────────────────────────────────────
@@ -949,7 +998,14 @@ def convert(
         and dst_fmt == ".csv"
         and WRITERS[dst_fmt] is write_csv
     )
-    stream_path = jsonl_output_stream_path or jsonl_csv_stream_path
+    jsonl_parquet_stream_path = (
+        src_fmt in {".jsonl", ".ndjson"}
+        and READERS[src_fmt] is read_jsonl
+        and dst_fmt == ".parquet"
+        and _BUILTIN_PARQUET_WRITER is not None
+        and WRITERS[dst_fmt] is _BUILTIN_PARQUET_WRITER
+    )
+    stream_path = jsonl_output_stream_path or jsonl_csv_stream_path or jsonl_parquet_stream_path
 
     # ── 统一进度 tracker（仅在 on_progress 显式传入时启用，避免副作用）──
     tracker: ProgressTracker | None = None
@@ -1057,6 +1113,27 @@ def convert(
                 writer_meta = _write_csv_iter(
                     stable_rows(), dst, w_opts, columns=cols, total=accepted_count
                 )
+            elif jsonl_parquet_stream_path:
+                scan_hasher = hashlib.sha256()
+                r_opts["_content_hasher"] = scan_hasher
+                schema, accepted_count = _plan_parquet_schema(_iter_jsonl(src, r_opts), r_opts)
+                expected_digest = scan_hasher.digest()
+
+                write_hasher = hashlib.sha256()
+                second_read_opts = dict(r_opts)
+                second_read_opts.pop("_read_stats", None)
+                second_read_opts.pop("on_line_progress", None)
+                second_read_opts["_content_hasher"] = write_hasher
+
+                def stable_rows() -> Iterator[dict[str, Any]]:
+                    yield from _iter_jsonl(src, second_read_opts)
+                    if write_hasher.digest() != expected_digest:
+                        raise RuntimeError("JSONL 源文件在转换期间发生变化，已取消输出提交")
+
+                writer_meta = _write_parquet_batches(
+                    stable_rows(), dst, w_opts, schema=schema, total=accepted_count
+                )
+                cols = list(schema.names)
             else:
                 def rows_with_columns() -> Iterator[dict[str, Any]]:
                     if src_fmt == ".csv":
