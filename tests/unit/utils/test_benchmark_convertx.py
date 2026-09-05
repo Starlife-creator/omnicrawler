@@ -38,6 +38,7 @@ def test_suite_uses_fresh_processes_and_writes_machine_readable_report(tmp_path)
         "repeats": 1,
         "cases": [
             "csv-jsonl", "csv-jsonl-auto", "jsonl-csv", "jsonl-jsonl", "jsonl-xlsx", "xlsx-jsonl",
+            "parquet-jsonl",
         ],
     }
     assert {(sample["case"], sample["rows"]) for sample in payload["samples"]} == {
@@ -47,6 +48,7 @@ def test_suite_uses_fresh_processes_and_writes_machine_readable_report(tmp_path)
         ("jsonl-jsonl", 12),
         ("jsonl-xlsx", 12),
         ("xlsx-jsonl", 12),
+        ("parquet-jsonl", 12),
     }
     assert all(sample["peak_rss_bytes"] is None or sample["peak_rss_bytes"] > 0 for sample in payload["samples"])
 

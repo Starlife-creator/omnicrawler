@@ -464,6 +464,30 @@ def _flatten_to(prefix: str, value: Any, out: dict[str, Any]) -> None:
 
 
 # ── Parquet ───────────────────────────────────────────────
+def _iter_parquet(path: Path, options: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    """Yield Parquet batches without retaining the complete Python row list."""
+    import pyarrow.parquet as pq
+
+    _require_file(path)
+    check_cancel(options)
+    if "_read_stats" in options:
+        options["_read_stats"]["complete"] = True
+    pe = _ProgressEmitter(options.get("on_line_progress"))
+    accepted = 0
+    row_cursor = 0
+    with pq.ParquetFile(path) as parquet_file:
+        total_rows = int(getattr(parquet_file.metadata, "num_rows", 0) or 0)
+        for batch in parquet_file.iter_batches(batch_size=max(1, _PROGRESS_CHUNK)):
+            check_cancel(options)
+            for value in batch.to_pylist():
+                if isinstance(value, dict):
+                    accepted += 1
+                    yield value
+            row_cursor += batch.num_rows
+            pe.emit(line_num=row_cursor, records_so_far=accepted, total_rows=total_rows)
+    pe.flush(line_num=row_cursor, records_so_far=accepted, total_rows=total_rows)
+
+
 def _register_parquet() -> None:
     try:
         import pyarrow as pa  # noqa: F401
@@ -473,34 +497,7 @@ def _register_parquet() -> None:
 
     @register_reader(".parquet")
     def read_parquet(path: Path, options: dict[str, Any]) -> CanonicalRecords:
-        import pyarrow.parquet as pq
-
-        _require_file(path)
-        check_cancel(options)
-        if "_read_stats" in options:
-            options["_read_stats"]["complete"] = True
-        pe = _ProgressEmitter(options.get("on_line_progress"))
-        records: CanonicalRecords = []
-        row_cursor = 0
-        with pq.ParquetFile(path) as pf:
-            total_rows = int(getattr(pf.metadata, "num_rows", 0) or 0)
-            for batch in pf.iter_batches(batch_size=max(1, _PROGRESS_CHUNK)):
-                check_cancel(options)
-                for obj in batch.to_pylist():
-                    if isinstance(obj, dict):
-                        records.append(obj)
-                row_cursor += batch.num_rows
-                pe.emit(
-                    line_num=row_cursor,
-                    records_so_far=len(records),
-                    total_rows=total_rows,
-                )
-        pe.flush(
-            line_num=row_cursor,
-            records_so_far=len(records),
-            total_rows=total_rows,
-        )
-        return records
+        return list(_iter_parquet(path, options))
 
     @register_writer(".parquet")
     def write_parquet(rows: CanonicalRecords, path: Path, options: dict[str, Any]) -> dict[str, Any]:
@@ -552,6 +549,7 @@ def _register_parquet() -> None:
 
 
 _register_parquet()
+_BUILTIN_PARQUET_READER: ReaderFn | None = READERS.get(".parquet")
 
 
 # ── DuckDB ────────────────────────────────────────────────
@@ -914,6 +912,11 @@ def convert(
                 and _BUILTIN_XLSX_READER is not None
                 and READERS[src_fmt] is _BUILTIN_XLSX_READER
             )
+            or (
+                src_fmt == ".parquet"
+                and _BUILTIN_PARQUET_READER is not None
+                and READERS[src_fmt] is _BUILTIN_PARQUET_READER
+            )
         )
     )
 
@@ -1002,8 +1005,10 @@ def convert(
                     source_rows = _iter_csv(src, r_opts)
                 elif src_fmt == ".jsonl":
                     source_rows = _iter_jsonl(src, r_opts)
-                else:
+                elif src_fmt == ".xlsx":
                     source_rows = _iter_xlsx(src, r_opts)
+                else:
+                    source_rows = _iter_parquet(src, r_opts)
                 for row in source_rows:
                     for key in row:
                         seen_columns[str(key)] = None

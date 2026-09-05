@@ -466,6 +466,31 @@ def test_xlsx_stream_path_respects_registered_reader_override(tmp_path, monkeypa
     assert json.loads(target.read_text(encoding="utf-8")) == {"custom": "xlsx"}
 
 
+def test_parquet_to_jsonl_stream_cancel_closes_reader_and_preserves_output(tmp_path):
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+    source = tmp_path / "input.parquet"
+    pq.write_table(pa.table({"record_id": [str(index) for index in range(1000)]}), source)
+    assert isinstance(convertx.READERS[".parquet"](source, {}), list)
+    target = tmp_path / "output.jsonl"
+    target.write_bytes(b"old")
+    stopped = Event()
+    events = []
+
+    with pytest.raises(convertx.ConversionCancelledError):
+        convertx.convert(
+            source,
+            target,
+            should_stop=stopped.is_set,
+            on_progress=events.append,
+            on_write_progress=lambda _payload: stopped.set(),
+        )
+
+    assert target.read_bytes() == b"old"
+    assert [event.state for event in events if event.state in {"finished", "cancelled", "failed"}] == ["cancelled"]
+    assert len(list(tmp_path.iterdir())) == 2
+
+
 def test_xlsx_partial_save_does_not_replace_previous_workbook(tmp_path, monkeypatch):
     openpyxl = pytest.importorskip("openpyxl")
     source = source_file(tmp_path)

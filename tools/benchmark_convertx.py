@@ -28,6 +28,7 @@ CASE_FORMATS = {
     "jsonl-jsonl": ("jsonl", "jsonl"),
     "jsonl-xlsx": ("jsonl", "xlsx"),
     "xlsx-jsonl": ("xlsx", "jsonl"),
+    "parquet-jsonl": ("parquet", "jsonl"),
 }
 CASES = tuple(CASE_FORMATS)
 
@@ -69,6 +70,22 @@ def generate_fixture(path: Path, *, format_name: str, rows: int) -> None:
             sheet.append(list(_record(index, rows).values()))
         workbook.save(path)
         workbook.close()
+        return
+    if format_name == "parquet":
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        parquet_writer: Any = None
+        try:
+            for start in range(0, rows, 10_000):
+                batch = [_record(index, rows) for index in range(start, min(rows, start + 10_000))]
+                table = pa.Table.from_pylist(batch)
+                if parquet_writer is None:
+                    parquet_writer = pq.ParquetWriter(path, table.schema, compression="zstd")
+                parquet_writer.write_table(table)
+        finally:
+            if parquet_writer is not None:
+                parquet_writer.close()
         return
     raise ValueError(f"unknown fixture format: {format_name}")
 
