@@ -1,5 +1,7 @@
 # OmniCrawler 0.12.0 架构
 
+> 适用版本：0.12.0 · 配置协议：v5 · 维护状态：现行
+
 ## 原则
 
 站点差异放在 source/template，传输差异放在 fetcher，语法差异放在 parser/extractor/processor，业务清洗放在 transformer，交付差异放在 exporter/record sink。Pipeline 只负责编排、安全、状态、质量、资源和生命周期。

@@ -1,5 +1,7 @@
 # OmniCrawler 桌面运行、工作区与组件（0.12.0）
 
+> 适用版本：0.12.0 · 配置协议：v5 · 维护状态：现行
+
 ## Worker
 
 桌面默认 `LocalWorkerBackend`，源码开发可显式使用 `InProcessBackend`。Worker 会话写入

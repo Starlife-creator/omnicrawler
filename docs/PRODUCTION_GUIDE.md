@@ -1,5 +1,7 @@
 # OmniCrawler 0.12.0 生产部署指南
 
+> 适用版本：0.12.0 · 配置协议：v5 · 维护状态：现行
+
 ## 推荐拓扑
 
 单机优先使用 Python 3.12、独立虚拟环境、SQLite WAL 和本地 raw 副本。只有数据量或吞吐确实超出单机时，再启用 Redis frontier、Scrapy worker、S3、PostgreSQL 或 OpenSearch；外部组件不替代本地恢复状态。

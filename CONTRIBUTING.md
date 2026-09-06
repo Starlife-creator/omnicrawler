@@ -2,6 +2,16 @@
 
 感谢你对 OmniCrawler 项目的关注！本文档描述了参与开发需要遵循的规范和流程。
 
+## 文档在哪里
+
+完整文档索引见 **[docs/README.md](docs/README.md)**，按架构、安装运维、桌面交互、插件生态、
+安全打包、质量报告、ADR 分区组织。改文档前先去那里定位，别在 `docs/` 里翻。
+
+- **新增或删除 `docs/` 顶层 Markdown 时，必须同步更新 `docs/README.md` 的索引**，
+  否则 `tools/check_docs_consistency.py` 会判定为孤儿页并让门禁失败。
+- `docs/archive/` 是历史归档，描述过去状态，不作为当前行为依据。
+- `docs/releases/` 由 `tools/bump_version.py` 自动生成，不要手写编辑。
+
 ## 快速开始
 
 ```bash

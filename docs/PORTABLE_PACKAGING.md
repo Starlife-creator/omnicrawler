@@ -1,5 +1,7 @@
 # 便携版构建（Windows / Linux / macOS）
 
+> 适用版本：0.12.0 · 配置协议：v5 · 维护状态：现行
+
 本文是三平台便携包构建的**总纲**。各平台细节与历史沿革见：
 
 - Windows：`docs/WINDOWS_PACKAGING.md`（build_windows.ps1，两 Edition，含 OCR 运行时打包）

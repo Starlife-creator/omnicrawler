@@ -3,6 +3,11 @@
 Historical release notes and archived compatibility documents deliberately retain
 their original versions, so this checker only reads documents that describe the
 current release and its supported runtime matrix.
+
+It also enforces the documentation governance rules in ``docs/README.md``: the
+index must be reachable from the repository entry points, every current-facing
+document must be indexed and carry a version metadata line, and the archive /
+release directories must keep their gate pages.
 """
 
 from __future__ import annotations
@@ -41,6 +46,12 @@ CURRENT_METADATA = (
     "constraints/quality.txt",
     "constraints/README.md",
 )
+
+# 文档治理规则：防止导航页与文档互相脱钩，避免 docs/ 变成第二个归档场。
+DOC_INDEX = "docs/README.md"
+INDEX_ENTRYPOINTS = ("README.md", "CONTRIBUTING.md")
+GATE_PAGES = ("docs/archive/README.md", "docs/releases/README.md")
+METADATA_MARKER = "> 适用版本："
 
 
 def project_root() -> Path:
@@ -82,6 +93,33 @@ def current_config_version(root: Path) -> int:
     return int(match.group(1))
 
 
+def check_docs_governance(root: Path, texts: dict[str, str]) -> list[str]:
+    """Keep docs/ navigable: the index, its entry points and per-doc metadata."""
+    issues: list[str] = []
+    index = texts.get(DOC_INDEX, "")
+
+    for entry in INDEX_ENTRYPOINTS:
+        if DOC_INDEX not in texts.get(entry, ""):
+            issues.append(f"{entry}: missing entry link to {DOC_INDEX}")
+    for gate in GATE_PAGES:
+        if not (root / gate).is_file():
+            issues.append(f"missing docs gate page: {gate}")
+    if not index:
+        return issues
+
+    docs_dir = root / "docs"
+    for path in sorted(p for p in docs_dir.glob("*.md") if p.name != "README.md"):
+        name = f"docs/{path.name}"
+        if f"]({path.name})" not in index:
+            issues.append(f"{DOC_INDEX}: missing index entry for {name}")
+        if METADATA_MARKER not in path.read_text(encoding="utf-8"):
+            issues.append(f"{name}: missing version metadata line ({METADATA_MARKER}...)")
+    for path in sorted((docs_dir / "adr").glob("*.md")):
+        if f"](adr/{path.name})" not in index:
+            issues.append(f"{DOC_INDEX}: missing index entry for docs/adr/{path.name}")
+    return issues
+
+
 def check(root: Path) -> list[str]:
     version, requires_python = load_project_metadata(root)
     python_version = minimum_python(requires_python)
@@ -108,7 +146,9 @@ def check(root: Path) -> list[str]:
     contributing = texts.get("CONTRIBUTING.md", "")
     workflow = (root / ".github" / "workflows" / "quality.yml").read_text(encoding="utf-8")
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-    configured_gate = float(pyproject.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under", 0))
+    configured_gate = float(
+        pyproject.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under", 0)
+    )
 
     source = (root / "src" / "omnicrawler" / "__init__.py").read_text(encoding="utf-8")
     source_match = re.search(r'^__version__\s*=\s*"([^"]+)"\s*$', source, re.MULTILINE)
@@ -171,6 +211,8 @@ def check(root: Path) -> list[str]:
                 issues.append(f"PORTABLE_README.txt 提到 {mentioned_name} 但 packaging 下不存在")
         if re.search(r"OmniCrawler\s+\d+\.\d+(?:\.\d+)?", readme_text):
             issues.append("PORTABLE_README.txt 硬编码版本号，应去掉或由构建渲染")
+
+    issues.extend(check_docs_governance(root, texts))
     return issues
 
 

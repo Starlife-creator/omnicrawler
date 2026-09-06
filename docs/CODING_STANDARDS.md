@@ -1,5 +1,7 @@
 # 编码规范（CODING_STANDARDS）
 
+> 适用版本：0.12.0 · 配置协议：v5 · 维护状态：现行
+
 > 本规范是各阶段优化必须遵循的全局纪律，源于审计根因 1（浅拷贝/可变默认值）。
 > CI 层由 `tools/check_coding_standards.py` 强制执行；本地可运行 `python tools/check_coding_standards.py src tools cli`（默认扫 `src`）。
 

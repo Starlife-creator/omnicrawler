@@ -1,5 +1,7 @@
 # 新增站点：优先模板，必要时插件
 
+> 适用版本：0.12.0 · 配置协议：v5 · 维护状态：现行
+
 ## 先用现有能力
 
 1. `omnicrawler templates inspect <url>` 探测内容类型、CMS、JSON-LD、动态壳和 API 线索。

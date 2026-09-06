@@ -371,6 +371,9 @@ pre-commit run --all-files
 
 ## 开发者指南
 
+完整文档索引见 **[docs/README.md](docs/README.md)**——架构、配置协议 v5、插件契约、打包发布、
+ADR 与质量报告都从那里进入。`docs/archive/` 是历史归档，描述过去状态，不作为当前行为依据。
+
 ### 项目结构（v0.12.0）
 
 ```
