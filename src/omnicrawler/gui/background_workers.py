@@ -1,21 +1,24 @@
-"""Short-lived Qt workers used by the GUI composition root."""
+"""Short-lived Qt workers used by the GUI composition root.
+
+统一接入 :class:`~omnicrawler.gui.core.background_worker.BackgroundWorker`
+（QThread 子类 + ``succeeded``/``failed`` 信号 + ``requestInterruption``
+取消 + ``finished`` 自动清理），与 views 层共用同一后台任务模式（S3.1.1）。
+原先基于 ``QObject`` + ``moveToThread`` 的三套样板已收敛到本模块的薄封装。
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from .core.background_worker import BackgroundWorker
 
 
-def _thread_interrupted() -> bool:
-    thread = QThread.currentThread()
-    return thread is not None and thread.isInterruptionRequested()
+class SiteInspectionWorker(BackgroundWorker):
+    """站点智能识别后台任务。
 
-
-class SiteInspectionWorker(QObject):
-    finished = Signal(object, str)
-    failed = Signal(str)
+    ``succeeded`` 载荷为 ``(report_dict, url)`` 元组；``failed`` 载荷为错误文本。
+    """
 
     def __init__(
         self,
@@ -23,79 +26,52 @@ class SiteInspectionWorker(QObject):
         intent: str = "",
         robots_fail_closed: bool = True,
         fetcher: Any | None = None,
+        parent=None,
     ) -> None:
-        super().__init__()
+        super().__init__(parent)
         self.url = url
         self.intent = intent
         self.robots_fail_closed = robots_fail_closed
         self.fetcher = fetcher
 
-    @Slot()
-    def run(self) -> None:
-        try:
-            if _thread_interrupted():
-                return
-            from ..sources.site_inspector import inspect_url
-            from ..templates.template_catalog import bundled_template_catalog
+    def work(self) -> Any:
+        from ..sources.site_inspector import inspect_url
+        from ..templates.template_catalog import bundled_template_catalog
 
-            report = inspect_url(
-                self.url,
-                bundled_template_catalog(),
-                intent=self.intent,
-                robots_fail_closed=self.robots_fail_closed,
-                fetcher=self.fetcher,
-            ).to_dict()
-        except Exception as exc:  # noqa: BLE001 - worker errors are emitted to the UI
-            if not _thread_interrupted():
-                self.failed.emit(f"{type(exc).__name__}: {exc}")
-        else:
-            if not _thread_interrupted():
-                self.finished.emit(report, self.url)
+        report = inspect_url(
+            self.url,
+            bundled_template_catalog(),
+            intent=self.intent,
+            robots_fail_closed=self.robots_fail_closed,
+            fetcher=self.fetcher,
+        ).to_dict()
+        return report, self.url
 
 
-class ActionRecorderWorker(QObject):
-    finished = Signal(dict)
-    failed = Signal(str)
+class ActionRecorderWorker(BackgroundWorker):
+    """网页操作录制后台任务。"""
 
-    def __init__(self, url: str, output: Path) -> None:
-        super().__init__()
+    def __init__(self, url: str, output: Path, parent=None) -> None:
+        super().__init__(parent)
         self._url = url
         self._output = output
 
-    @Slot()
-    def run(self) -> None:
-        try:
-            from ..fetching.action_recorder import record_with_playwright
+    def work(self) -> Any:
+        from ..fetching.action_recorder import record_with_playwright
 
-            if _thread_interrupted():
-                return
-            result = record_with_playwright(self._url, self._output)
-            if not _thread_interrupted():
-                self.finished.emit(result)
-        except Exception as exc:  # noqa: BLE001 - worker errors are emitted to the UI
-            if not _thread_interrupted():
-                self.failed.emit(str(exc))
+        return record_with_playwright(self._url, self._output)
 
-class SampleRunWorker(QObject):
-    finished = Signal(dict)
-    failed = Signal(str)
 
-    def __init__(self, config_path: Path, pages: int = 3) -> None:
-        super().__init__()
+class SampleRunWorker(BackgroundWorker):
+    """小样本试跑后台任务（独立工作区，不改变正式任务断点）。"""
+
+    def __init__(self, config_path: Path, pages: int = 3, parent=None) -> None:
+        super().__init__(parent)
         self._config_path = config_path
         self._pages = pages
 
-    @Slot()
-    def run(self) -> None:
-        try:
-            if _thread_interrupted():
-                return
-            from ..core.config import load_config
-            from ..pipeline_ops.preflight import run_sample
+    def work(self) -> Any:
+        from ..core.config import load_config
+        from ..pipeline_ops.preflight import run_sample
 
-            result = run_sample(load_config(self._config_path), pages=self._pages)
-            if not _thread_interrupted():
-                self.finished.emit(result)
-        except Exception as exc:  # noqa: BLE001 - worker errors are emitted to the UI
-            if not _thread_interrupted():
-                self.failed.emit(str(exc))
+        return run_sample(load_config(self._config_path), pages=self._pages)

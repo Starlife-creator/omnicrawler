@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import CanonicalRecords, _ensure_parent_dir, register_reader, register_writer
+from ._core import CanonicalRecords, _ensure_parent_dir, register_reader, register_writer
 from ._io import atomic_output, check_cancel
 
 _DOCUMENT_EXTENSIONS = (

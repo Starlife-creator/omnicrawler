@@ -267,10 +267,9 @@ class MainWindow(QMainWindow):
         # ---- 运行状态 ----
         self._task_start_time: datetime | None = None
         self._task_elapsed_timer: QTimer | None = None
-        self._inspection_jobs: list[tuple[QThread, SiteInspectionWorker]] = []
-        self._sample_jobs: list[tuple[QThread, SampleRunWorker]] = []
-        self._probe_jobs: list[tuple[QThread, SiteInspectionWorker]] = []
-        self._recorder_thread: QThread | None = None
+        self._inspection_jobs: list[SiteInspectionWorker] = []
+        self._sample_jobs: list[SampleRunWorker] = []
+        self._probe_jobs: list[SiteInspectionWorker] = []
         self._recorder_worker: ActionRecorderWorker | None = None
         # P2：意图区 URL 探活共享抓取器（懒创建，关闭时释放）
         self._probe_fetcher: Any | None = None
@@ -1222,14 +1221,10 @@ class MainWindow(QMainWindow):
         if not self._config_path:
             return
         pages = 3 if pages is None else pages
-        thread = QThread(self)
-        worker = SampleRunWorker(self._config_path, pages)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
+        worker = SampleRunWorker(self._config_path, pages, parent=self)
 
         def completed(result: dict) -> None:
             if self._close_after_background_jobs:
-                thread.quit()
                 return
             sample = result.get("sample", {})
             status = str(sample.get("status") or "")
@@ -1243,11 +1238,9 @@ class MainWindow(QMainWindow):
                 ToastManager.instance().success(_("小样本试跑完成：请在工作台查看结果"))
             else:
                 ToastManager.instance().warning(_("试跑未通过：请按工作台中的诊断建议修正"))
-            thread.quit()
 
         def failed(message: str) -> None:
             if self._close_after_background_jobs:
-                thread.quit()
                 return
             self._task_canvas.set_trial_result(
                 False,
@@ -1255,19 +1248,17 @@ class MainWindow(QMainWindow):
                 {"status": "failed", "processed": 0, "records": 0, "error": message},
             )
             ToastManager.instance().warning(_("小样本试跑失败：请在工作台查看诊断"))
-            thread.quit()
 
-        worker.finished.connect(completed)
+        worker.succeeded.connect(completed)
         worker.failed.connect(failed)
-        thread.finished.connect(lambda: self._finish_sample_job(thread, worker))
-        self._sample_jobs.append((thread, worker))
-        thread.start()
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(lambda: self._finish_sample_job(worker))
+        self._sample_jobs.append(worker)
+        worker.start()
         ToastManager.instance().info(_("正在独立工作区试跑 {0} 页，不会改变正式任务断点").format(pages))
 
-    def _finish_sample_job(self, thread: QThread, worker: SampleRunWorker) -> None:
-        self._sample_jobs = [job for job in self._sample_jobs if job != (thread, worker)]
-        worker.deleteLater()
-        thread.deleteLater()
+    def _finish_sample_job(self, worker: SampleRunWorker) -> None:
+        self._sample_jobs = [job for job in self._sample_jobs if job is not worker]
         self._finish_deferred_close_if_safe()
 
     # ================================================================
@@ -1513,15 +1504,10 @@ class MainWindow(QMainWindow):
             return
         output = self._project_root / "work" / "action_recordings" / f"{self._config.task_id}.yaml"
         output.parent.mkdir(parents=True, exist_ok=True)
-        self._recorder_thread = QThread(self)
-        self._recorder_worker = ActionRecorderWorker(url.strip(), output)
-        self._recorder_worker.moveToThread(self._recorder_thread)
-        self._recorder_thread.started.connect(self._recorder_worker.run)
+        self._recorder_worker = ActionRecorderWorker(url.strip(), output, parent=self)
 
         def completed(result: dict) -> None:
             if self._close_after_background_jobs:
-                if self._recorder_thread is not None:
-                    self._recorder_thread.quit()
                 return
             browser = self._config.passthrough.setdefault("browser", {})
             if isinstance(browser, dict):
@@ -1538,38 +1524,21 @@ class MainWindow(QMainWindow):
 
                 _("密码不会明文保存，请在运行前配置 browser_password 密钥。"),
             )
-            if self._recorder_thread is not None:
-                self._recorder_thread.quit()
 
         def failed(message: str) -> None:
             if self._close_after_background_jobs:
-                if self._recorder_thread is not None:
-                    self._recorder_thread.quit()
                 return
             QMessageBox.warning(self, _("录制失败"), message)
-            if self._recorder_thread is not None:
-                self._recorder_thread.quit()
 
-        self._recorder_worker.finished.connect(completed)
+        self._recorder_worker.succeeded.connect(completed)
         self._recorder_worker.failed.connect(failed)
-        self._recorder_thread.finished.connect(
-            lambda thread=self._recorder_thread, worker=self._recorder_worker:
-            self._finish_recorder_job(thread, worker)
-        )
-        self._recorder_thread.start()
+        self._recorder_worker.finished.connect(self._recorder_worker.deleteLater)
+        self._recorder_worker.finished.connect(self._finish_recorder_job)
+        self._recorder_worker.start()
         ToastManager.instance().info(_("正在录制网页操作；完成后关闭录制浏览器窗口"))
 
-    def _finish_recorder_job(
-        self, thread: QThread | None, worker: ActionRecorderWorker | None,
-    ) -> None:
-        if self._recorder_thread is thread:
-            self._recorder_thread = None
-        if self._recorder_worker is worker:
-            self._recorder_worker = None
-        if worker is not None:
-            worker.deleteLater()
-        if thread is not None:
-            thread.deleteLater()
+    def _finish_recorder_job(self) -> None:
+        self._recorder_worker = None
         self._finish_deferred_close_if_safe()
 
     def _manage_schedules(self) -> None:
@@ -1644,27 +1613,22 @@ class MainWindow(QMainWindow):
 
     def _inspect_site(self, url: str) -> None:
         self._statusbar.showMessage(_("正在安全探测网址并识别模板…"))
-        thread = QThread(self)
         worker = SiteInspectionWorker(
             url, self._config.task_intent,
             robots_fail_closed=bool(
                 (self._config.passthrough.get("http") or {}).get("robots_fail_closed", True)
             ),
+            parent=self,
         )
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.finished.connect(self._on_site_inspected)
+        worker.succeeded.connect(self._on_site_inspected)
         worker.failed.connect(self._on_site_inspection_failed)
-        worker.finished.connect(thread.quit)
-        worker.failed.connect(thread.quit)
-        thread.finished.connect(lambda: self._finish_inspection_job(thread, worker))
-        self._inspection_jobs.append((thread, worker))
-        thread.start()
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(lambda: self._finish_inspection_job(worker))
+        self._inspection_jobs.append(worker)
+        worker.start()
 
-    def _finish_inspection_job(self, thread: QThread, worker: SiteInspectionWorker) -> None:
-        self._inspection_jobs = [job for job in self._inspection_jobs if job != (thread, worker)]
-        worker.deleteLater()
-        thread.deleteLater()
+    def _finish_inspection_job(self, worker: SiteInspectionWorker) -> None:
+        self._inspection_jobs = [job for job in self._inspection_jobs if job is not worker]
         self._finish_deferred_close_if_safe()
 
     def _on_site_inspection_failed(self, message: str) -> None:
@@ -1676,9 +1640,11 @@ class MainWindow(QMainWindow):
             _("无法安全完成探测。原配置没有改变。\n\n") + message,
         )
 
-    def _on_site_inspected(self, report: dict, url: str) -> None:
+    def _on_site_inspected(self, payload: tuple) -> None:
+        """SiteInspectionWorker 成功回调；载荷为 (report, url) 元组。"""
         if self._close_after_background_jobs:
             return
+        report, url = payload
         recommendations = list(report.get("recommendations", []))
         lines = [
             _("页面类型: ") + str(report.get("page_type", "unknown")),
@@ -1758,22 +1724,19 @@ class MainWindow(QMainWindow):
                 # 探活是增强功能：创建失败静默降级，绝不阻断主流程
                 self._task_canvas.set_probe_failed(url, str(exc))
                 return
-        thread = QThread(self)
         worker = SiteInspectionWorker(
             url, self._config.task_intent,
             robots_fail_closed=bool(
                 (self._config.passthrough.get("http") or {}).get("robots_fail_closed", True)
             ),
-            fetcher=self._probe_fetcher)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.finished.connect(lambda report, target: self._on_probe_finished(target, report))
+            fetcher=self._probe_fetcher,
+            parent=self)
+        worker.succeeded.connect(lambda payload: self._on_probe_finished(payload[1], payload[0]))
         worker.failed.connect(lambda message, target=url: self._on_probe_failed(target, message))
-        worker.finished.connect(thread.quit)
-        worker.failed.connect(thread.quit)
-        thread.finished.connect(lambda: self._finish_probe_job(thread, worker))
-        self._probe_jobs.append((thread, worker))
-        thread.start()
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(lambda: self._finish_probe_job(worker))
+        self._probe_jobs.append(worker)
+        worker.start()
 
     def _build_probe_fetcher(self) -> Any:
         """构建探活专用 AsyncFetcher：独立审计链，不污染任务配置。"""
@@ -1806,10 +1769,8 @@ class MainWindow(QMainWindow):
         # 静默降级：仅画布徽标提示，不弹窗、不改配置
         self._task_canvas.set_probe_failed(url, message)
 
-    def _finish_probe_job(self, thread: QThread, worker: SiteInspectionWorker) -> None:
-        self._probe_jobs = [job for job in self._probe_jobs if job != (thread, worker)]
-        worker.deleteLater()
-        thread.deleteLater()
+    def _finish_probe_job(self, worker: SiteInspectionWorker) -> None:
+        self._probe_jobs = [job for job in self._probe_jobs if job is not worker]
         self._finish_deferred_close_if_safe()
 
     def _release_probe_fetcher(self) -> None:
@@ -1964,11 +1925,12 @@ class MainWindow(QMainWindow):
 
     def _background_threads(self) -> list[QThread]:
         """Return unique auxiliary threads that must finish before window teardown."""
-        threads = [thread for thread, _worker in self._inspection_jobs]
-        threads.extend(thread for thread, _worker in self._probe_jobs)
-        threads.extend(thread for thread, _worker in self._sample_jobs)
-        if self._recorder_thread is not None:
-            threads.append(self._recorder_thread)
+        # worker 已是 QThread 子类（统一 BackgroundWorker 模式，长期债收敛）
+        threads: list[QThread] = list(self._inspection_jobs)
+        threads.extend(self._probe_jobs)
+        threads.extend(self._sample_jobs)
+        if self._recorder_worker is not None:
+            threads.append(self._recorder_worker)
         # Views and child dialogs own additional QThread subclasses.  Include
         # every descendant so closing the main window never destroys one while
         # its ``run()`` method is still active.
