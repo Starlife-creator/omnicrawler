@@ -62,7 +62,7 @@ class ConfigManager(_BaseDelegate):
             mw._bind_application_controllers()
             mw._config_label.setText(str(mw._config_path.name))
             mw._settings.add_recent_file(filepath)
-            mw._refresh_recent_menu()
+            self.refresh_recent_menu()
             mw._refresh_canvas()
             mw._install_plugin_ui(notify=True)
             ToastManager.instance().success(_("配置已加载"))
@@ -102,7 +102,7 @@ class ConfigManager(_BaseDelegate):
             mw._bind_application_controllers()
             mw._config_label.setText(mw._config_path.name)
             mw._settings.add_recent_file(filepath)
-            mw._refresh_recent_menu()
+            self.refresh_recent_menu()
             ToastManager.instance().success(_("配置已保存"))
         except Exception as e:
             QMessageBox.critical(mw, _("保存失败"), str(e))

@@ -20,7 +20,7 @@ class ToolbarManager(_BaseDelegate):
         shortcuts = mw._settings.shortcuts
 
         save_btn = QPushButton(_("💾 保存"))
-        save_btn.clicked.connect(mw._save_config)
+        save_btn.clicked.connect(mw._config_delegate.save_config)
         save_btn.setToolTip(_("保存配置 ({0})").format(shortcuts["save"]))
         toolbar.addWidget(save_btn)
         toolbar.addSeparator()
@@ -32,13 +32,13 @@ class ToolbarManager(_BaseDelegate):
         toolbar.addWidget(mw._run_btn)
 
         mw._stop_btn = QPushButton(_("■ 停止"))
-        mw._stop_btn.clicked.connect(mw._stop_task)
+        mw._stop_btn.clicked.connect(mw._run_delegate.stop_task)
         mw._stop_btn.setEnabled(False)
         mw._stop_btn.setToolTip(_("停止任务 ({0})").format(shortcuts["stop"]))
         toolbar.addWidget(mw._stop_btn)
 
         mw._pause_btn = QPushButton(_("Ⅱ 暂停"))
-        mw._pause_btn.clicked.connect(mw._toggle_pause)
+        mw._pause_btn.clicked.connect(mw._run_delegate.toggle_pause)
         mw._pause_btn.setEnabled(False)
         toolbar.addWidget(mw._pause_btn)
         toolbar.addSeparator()
@@ -50,7 +50,7 @@ class ToolbarManager(_BaseDelegate):
         toolbar.addSeparator()
 
         quick_btn = QPushButton(_("🚀 快速体验"))
-        quick_btn.clicked.connect(mw._quick_experience)
+        quick_btn.clicked.connect(mw._env_checker.quick_experience)
         quick_btn.setToolTip(_("一键加载示例配置并运行演示任务"))
         toolbar.addWidget(quick_btn)
         toolbar.addSeparator()
@@ -76,7 +76,7 @@ class ToolbarManager(_BaseDelegate):
             if mw._resource_profile_combo.itemData(index) == mw._config.resource_profile:
                 mw._resource_profile_combo.setCurrentIndex(index)
                 break
-        mw._resource_profile_combo.currentIndexChanged.connect(mw._change_resource_profile)
+        mw._resource_profile_combo.currentIndexChanged.connect(mw._theme_manager.change_resource_profile)
         mw._resource_profile_combo.setToolTip(_("省电适合电池；均衡适合日常；全速建议插电使用"))
         toolbar.addWidget(mw._resource_profile_combo)
         toolbar.addSeparator()
@@ -91,7 +91,7 @@ class ToolbarManager(_BaseDelegate):
                 mw._mode_combo.setCurrentIndex(index)
                 break
         mw._mode_combo.currentIndexChanged.connect(
-            lambda: mw._apply_ui_mode(str(mw._mode_combo.currentData()))
+            lambda: mw._theme_manager.apply_ui_mode(str(mw._mode_combo.currentData()))
         )
         mw._mode_combo.setToolTip(_("简单模式隐藏技术配置；随时可以切换，项目内容不会改变"))
         toolbar.addWidget(mw._mode_combo)

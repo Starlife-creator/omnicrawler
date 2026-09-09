@@ -279,8 +279,8 @@ class MainWindow(QMainWindow):
         self._builtin_background_controller: Any | None = None
 
         # ---- 构建 UI ----
-        self._refresh_accessibility()
-        self._ensure_data_mode_choice()
+        self._theme_manager.refresh_accessibility()
+        self._env_checker.ensure_data_mode_choice()
         # F53：数据模式弹窗可能重置设置单例（settings.ini 换目录），重新绑定当前实例
         self._settings = AppSettings.instance()
         self._setup_menu_bar()
@@ -289,14 +289,14 @@ class MainWindow(QMainWindow):
         self._setup_central_area()
         self._restore_workspace_background()
         self._setup_help_center()
-        self._apply_ui_mode(self._settings.ui_mode)
+        self._theme_manager.apply_ui_mode(self._settings.ui_mode)
         self._setup_system_tray()
         self._install_plugin_ui()
 
         # ---- 连接信号 ----
         self._setup_global_shortcuts()
         ToastManager.instance().bind(self)
-        QTimer.singleShot(100, self._on_first_launch)
+        QTimer.singleShot(100, self._on_first_launch)  # 复合方法（含画布/身份欢迎），保留
 
     def _maybe_show_identity_welcome(self) -> None:
         """首启检查：无本地身份时引导创建（插件生态签名身份）。"""
@@ -320,23 +320,10 @@ class MainWindow(QMainWindow):
         self._toolbar_manager.setup()
 
     # --- ThemeManager ---
+    # 兼容转发（保留）：tests/gui 直接调用 window._apply_ui_mode/_set_theme；
+    # 域内其余调用点（menu/toolbar/main 内部）已直连 self._theme_manager。
     def _apply_ui_mode(self, mode: str) -> None:
         self._theme_manager.apply_ui_mode(mode)
-
-    def _change_resource_profile(self) -> None:
-        self._theme_manager.change_resource_profile()
-
-    def _refresh_accessibility(self) -> None:
-        self._theme_manager.refresh_accessibility()
-
-    def _apply_visual_theme(self) -> None:
-        self._theme_manager.apply_visual_theme()
-
-    def _set_interface_scale(self, value: int) -> None:
-        self._theme_manager.set_interface_scale(value)
-
-    def _set_accessibility_option(self, name: str, value: bool) -> None:
-        self._theme_manager.set_accessibility_option(name, value)
 
     def _set_theme(self, theme: str) -> None:
         self._theme_manager.set_theme(theme)
@@ -469,35 +456,11 @@ class MainWindow(QMainWindow):
         except (OSError, ValueError):
             self._settings.workspace_background_path = ""
 
-    def _toggle_dnd(self, enabled: bool) -> None:
-        self._theme_manager.toggle_dnd(enabled)
-
-    def _update_dnd_label(self) -> None:
-        self._theme_manager.update_dnd_label()
-
     # --- ErrorDialogHelper ---
     def _show_error_dialog(self, exc: Exception, context: str = "", *, retry_callback=None) -> None:
         self._error_helper.show_error_dialog(exc, context, retry_callback=retry_callback)
 
-    def _redact_error(self, text: str) -> str:
-        return self._error_helper.redact_error(text)
-
     # --- EnvironmentChecker ---
-    def _ensure_data_mode_choice(self) -> None:
-        self._env_checker.ensure_data_mode_choice()
-
-    def _check_environment(self, silent: bool = True) -> bool:
-        return self._env_checker.check_environment(silent)
-
-    def _recheck_env(self) -> None:
-        self._env_checker.recheck_env()
-
-    def _switch_project(self) -> None:
-        self._env_checker.switch_project()
-
-    def _update_project_label(self) -> None:
-        self._env_checker.update_project_label()
-
     def _on_first_launch(self) -> None:
         self._env_checker.on_first_launch()
         self._maybe_show_identity_welcome()
@@ -517,97 +480,6 @@ class MainWindow(QMainWindow):
         except Exception:  # noqa: BLE001
             return True
 
-    def _show_welcome_dialog(self) -> None:
-        self._env_checker.show_welcome_dialog()
-
-    def _show_env_setup_dialog(self) -> None:
-        self._env_checker.show_env_setup_dialog()
-
-    def _quick_experience(self) -> None:
-        self._env_checker.quick_experience()
-
-    # --- HelpDialogManager ---
-    def _show_selector_help(self) -> None:
-        self._help_dialogs.show_selector_help()
-
-    def _show_quick_start(self) -> None:
-        self._help_dialogs.show_quick_start()
-
-    def _show_faq(self) -> None:
-        self._help_dialogs.show_faq()
-
-    def _show_shortcuts(self) -> None:
-        self._help_dialogs.show_shortcuts()
-
-    def _show_about(self) -> None:
-        self._help_dialogs.show_about()
-
-    def _show_capabilities(self) -> None:
-        self._help_dialogs.show_capabilities()
-
-    # --- RunDelegate ---
-    def _toggle_pause(self) -> None:
-        self._run_delegate.toggle_pause()
-
-    def _run_task(self) -> None:
-        self._run_delegate.run_task()
-
-    def _stop_task(self) -> None:
-        self._run_delegate.stop_task()
-
-    def _update_elapsed(self) -> None:
-        self._run_delegate.update_elapsed()
-
-    @Slot(str, str)
-    def _on_log_line(self, message: str, level: str) -> None:
-        self._run_delegate.on_log_line(message, level)
-
-    @Slot(int, str)
-    def _on_progress(self, percent: int, url: str) -> None:
-        self._run_delegate.on_progress(percent, url)
-
-    @Slot(str)
-    def _on_task_state_changed(self, state: str) -> None:
-        self._run_delegate.on_task_state_changed(state)
-
-    @Slot(str, int)
-    def _on_task_finished(self, task_id: str, exit_code: int) -> None:
-        self._run_delegate.on_task_finished(task_id, exit_code)
-
-    # --- ConfigDelegate ---
-    def _new_config(self) -> None:
-        self._config_delegate.new_config()
-
-    def _open_config(self) -> None:
-        self._config_delegate.open_config()
-
-    def _open_recent(self, filepath: str) -> None:
-        self._config_delegate._open_recent(filepath)
-
-    def _save_config(self) -> None:
-        self._config_delegate.save_config()
-
-    def _save_config_as(self) -> None:
-        self._config_delegate.save_config_as()
-
-    def _refresh_recent_menu(self) -> None:
-        self._config_delegate.refresh_recent_menu()
-
-    def _clear_recent(self) -> None:
-        self._config_delegate.clear_recent()
-
-    def _export_config_package(self) -> None:
-        self._config_delegate.export_config_package()
-
-    def _import_config_package(self) -> None:
-        self._config_delegate.import_config_package()
-
-    def _import_config_package_from_path(self, path: Path) -> None:
-        self._config_delegate._import_from_path(path)
-
-    def _show_config_history(self) -> None:
-        self._config_delegate.show_config_history()
-
     # ================================================================
     #  UI 构建
     # ================================================================
@@ -618,7 +490,7 @@ class MainWindow(QMainWindow):
         self._statusbar = sb
         self._project_label = QLabel()
         self._project_label.setObjectName("muted")
-        self._update_project_label()
+        self._env_checker.update_project_label()
         self._statusbar.addWidget(self._project_label)
         self._config_label = QLabel(_("未保存"))
         self._config_label.setObjectName("muted")
@@ -630,7 +502,7 @@ class MainWindow(QMainWindow):
         self._dnd_label = QLabel()
         self._dnd_label.setVisible(self._dnd_mode)
         self._statusbar.addPermanentWidget(self._dnd_label)
-        self._update_dnd_label()
+        self._theme_manager.update_dnd_label()
         self._finish_label = QLabel()
         self._finish_label.setObjectName("muted")
         self._statusbar.addPermanentWidget(self._finish_label)
@@ -777,7 +649,7 @@ class MainWindow(QMainWindow):
 
         # P0：画布信号接线（保存/试跑/运行/查看 YAML）
         self._task_canvas.config_changed.connect(self._on_workspace_changed)
-        self._task_canvas.save_requested.connect(self._save_config)
+        self._task_canvas.save_requested.connect(self._config_delegate.save_config)
         self._task_canvas.trial_run_requested.connect(self._request_trial_run)
         self._task_canvas.run_requested.connect(self._request_run)
         self._task_canvas.yaml_view_requested.connect(self._open_yaml_view)
@@ -823,10 +695,10 @@ class MainWindow(QMainWindow):
         ctrl_run.clicked.connect(self._request_run)
         ctrl_layout.addWidget(ctrl_run)
         ctrl_stop = QPushButton(_("■ 停止"))
-        ctrl_stop.clicked.connect(self._stop_task)
+        ctrl_stop.clicked.connect(self._run_delegate.stop_task)
         ctrl_layout.addWidget(ctrl_stop)
         ctrl_pause = QPushButton(_("Ⅱ 暂停/继续"))
-        ctrl_pause.clicked.connect(self._toggle_pause)
+        ctrl_pause.clicked.connect(self._run_delegate.toggle_pause)
         ctrl_layout.addWidget(ctrl_pause)
         ctrl_layout.addStretch()
         monitor_layout.addLayout(ctrl_layout)
@@ -861,8 +733,8 @@ class MainWindow(QMainWindow):
         # S3.1.2：修复"结果与复核"错页（原误用 NavIndex.MONITOR）
         self._home.open_results.connect(lambda: self._nav.setCurrentRow(NavIndex.RESULTS))
         self._home.open_schedule.connect(self._manage_schedules)
-        self._home.import_task.connect(self._import_config_package)
-        self._home.run_doctor.connect(self._recheck_env)
+        self._home.import_task.connect(self._config_delegate.import_config_package)
+        self._home.run_doctor.connect(self._env_checker.recheck_env)
         self._home.create_demo.connect(self._create_offline_demo)
         # B-4 ConvertX：首页按钮跳到格式互转面板（NavIndex.CONVERT_TOOL）
         self._home.open_convert_tool.connect(
@@ -928,10 +800,10 @@ class MainWindow(QMainWindow):
             omnicrawler_path=self._omnicrawler_path,
             project_root=self._project_root,
         )
-        self._task_runner.log_line.connect(self._on_log_line)
-        self._task_runner.progress.connect(self._on_progress)
-        self._task_runner.state_changed.connect(self._on_task_state_changed)
-        self._task_runner.task_finished.connect(self._on_task_finished)
+        self._task_runner.log_line.connect(self._run_delegate.on_log_line)
+        self._task_runner.progress.connect(self._run_delegate.on_progress)
+        self._task_runner.state_changed.connect(self._run_delegate.on_task_state_changed)
+        self._task_runner.task_finished.connect(self._run_delegate.on_task_finished)
 
         self._autosave = AutosaveManager(self._project_root)
         self._autosave.draft_found.connect(self._on_draft_found)
@@ -992,14 +864,14 @@ class MainWindow(QMainWindow):
     def _setup_global_shortcuts(self) -> None:
         self._shortcut_manager = GlobalShortcutManager(self)
         self._shortcut_manager.register_all({
-            "save": self._save_config,
+            "save": self._config_delegate.save_config,
             "run": self._request_run,
-            "stop": self._stop_task,
+            "stop": self._run_delegate.stop_task,
             "toggle_editor": self._toggle_workspace_editor,
             "open_templates": self._show_template_library,
             "refresh": self._refresh_results_page,
             "format_yaml": self._format_yaml_from_shortcut,
-            "toggle_dnd": lambda: self._toggle_dnd(not self._dnd_mode),
+            "toggle_dnd": lambda: self._theme_manager.toggle_dnd(not self._dnd_mode),
         })
 
     # ================================================================
@@ -1086,7 +958,7 @@ class MainWindow(QMainWindow):
             self._nav.setCurrentRow(NavIndex.WORKSPACE)
             self._set_status(_("离线演示已准备：无需网络，可直接查看并试跑"))
         except (OSError, ValueError) as exc:
-            self._show_error_dialog(exc, _("创建离线演示"))
+            self._error_helper.show_error_dialog(exc, _("创建离线演示"))
 
     def _toggle_workspace_editor(self) -> None:
         current = self._stack.currentIndex()
@@ -1139,14 +1011,14 @@ class MainWindow(QMainWindow):
 
     def _request_trial_run(self) -> None:
         """画布「先试跑 N 页」：先持久化配置，再用画布设定的页数试跑。"""
-        self._save_config()
+        self._config_delegate.save_config()
         if not self._config_path:
             return
         self._start_sample_run(self._task_canvas.trial_pages())
 
     def _request_run(self) -> None:
         """工作台「开始全量运行」：唯一运行出口，先保存配置再启动任务。"""
-        self._save_config()
+        self._config_delegate.save_config()
         if not self._config_path:
             return
         # 运行前一致校验：采集范围/字段需与试跑一致，交付设置需本地验证通过。
@@ -1156,7 +1028,7 @@ class MainWindow(QMainWindow):
                 _("采集范围或字段规则已变更，或交付设置无效。请修正后重新验证。"),
             )
             return
-        self._run_task()
+        self._run_delegate.run_task()
 
     def _open_yaml_view(self) -> None:
         """画布「查看 YAML」：切到侧栏 YAML 编辑器页并载入当前配置。"""
@@ -1165,10 +1037,10 @@ class MainWindow(QMainWindow):
 
     def _show_preflight(self) -> None:
         if not self._config_path:
-            self._save_config_as()
+            self._config_delegate.save_config_as()
         if not self._config_path:
             return
-        self._save_config()
+        self._config_delegate.save_config()
         # S3.1.1：预检移入后台线程，避免冻结界面
         from .core.background_worker import BackgroundWorker, run_worker
 
@@ -1484,7 +1356,7 @@ class MainWindow(QMainWindow):
         self._autosave.set_config(self._config)
         self._autosave.save_now()
         if self._config_path is not None:
-            self._save_config()
+            self._config_delegate.save_config()
         else:
             self._config_label.setText(_("未保存（插件配置已写入草稿）"))
 
@@ -1548,10 +1420,10 @@ class MainWindow(QMainWindow):
 
         def _resolve_current_config() -> Path | None:
             if not self._config_path:
-                self._save_config_as()
+                self._config_delegate.save_config_as()
             if not self._config_path:
                 return None
-            self._save_config()
+            self._config_delegate.save_config()
             return self._config_path
 
         dialog = ScheduleManagerDialog(
@@ -2007,7 +1879,7 @@ class MainWindow(QMainWindow):
                     self._resource_profile_combo.setCurrentIndex(index)
                     self._resource_profile_combo.blockSignals(False)
                     break
-        self._apply_ui_mode(self._settings.ui_mode)
+        self._theme_manager.apply_ui_mode(self._settings.ui_mode)
 
     def _set_status(self, text: str) -> None:
         self._statusbar.showMessage(text, 5000)
@@ -2044,7 +1916,7 @@ class MainWindow(QMainWindow):
                 self._stack.setCurrentIndex(3)
                 ToastManager.instance().success(_("结果文件已加载: {0}").format(path.name))
             elif suffix == ".zip":
-                self._import_config_package_from_path(path)
+                self._config_delegate._import_from_path(path)
         event.acceptProposedAction()
 
     # ================================================================

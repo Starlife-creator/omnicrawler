@@ -1,0 +1,364 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-04T07:13:58+00:00",
+  "sequence": 1788506038,
+  "publisher": "starlife",
+  "trust_model": "dual-rail-ed25519",
+  "trust_public_key_ref": "keys/plugin_trust.pub.pem",
+  "plugins": [
+    {
+      "id": "chronicle-capsule",
+      "name": "chronicle-capsule",
+      "version": "0.2.0",
+      "publisher": "starlife",
+      "category": "exporter",
+      "plugin_types": [
+        "exporter"
+      ],
+      "summary": "以隐私、元数据或原始保全模式生成有界 WARC 1.1 归档",
+      "description_file": "plugins/chronicle-capsule/listing.md",
+      "plugin_file": "plugins/chronicle-capsule/plugin.py",
+      "signature_file": "plugins/chronicle-capsule/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [
+        "records:read",
+        "responses:read",
+        "responses:payload",
+        "artifacts:write"
+      ],
+      "compatible_core": ">=0.11.2",
+      "license": "MIT",
+      "tags": [
+        "warc",
+        "evidence",
+        "offline",
+        "sha256",
+        "streaming"
+      ],
+      "updated_at": "2026-08-31",
+      "creator_signature_file": "plugins/chronicle-capsule/creator.sig",
+      "creator_identity_file": "plugins/chronicle-capsule/creator.identity",
+      "execution_mode": "subprocess",
+      "domains": [],
+      "input_files": [],
+      "required_capabilities": {
+        "records.page": ">=1",
+        "responses.page": ">=1",
+        "responses.payload": ">=1",
+        "artifact.stream.open": ">=1",
+        "artifact.stream.write": ">=1",
+        "artifact.stream.commit": ">=1",
+        "artifact.stream.abort": ">=1"
+      },
+      "state_schema_version": 1,
+      "dependencies": [],
+      "package_manifest_file": "plugins/chronicle-capsule/package.manifest.json",
+      "creator_package_signature_file": "plugins/chronicle-capsule/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/chronicle-capsule/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "3d1b1fcb3c61ba69b6d2d65ab24239e7bf9f18da0095b9eab79e3fe6341a73e3",
+      "versions": {
+        "0.2.0": {
+          "sha256": "6bf1ebd1139b2675f45a9f65765fc469ada9b48449cc7b951c978a8b009fce77"
+        }
+      }
+    },
+    {
+      "id": "example_news",
+      "name": "示例新闻站点适配器",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "source",
+      "summary": "为示例新闻站点强制附加 XHR 请求头并打站点标记，复用通用发现逻辑。",
+      "description_file": "plugins/example_news/listing.md",
+      "plugin_file": "plugins/example_news/plugin.py",
+      "signature_file": "plugins/example_news/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [],
+      "compatible_core": ">=0.7.0",
+      "license": "MIT",
+      "tags": [
+        "example",
+        "source",
+        "news",
+        "template",
+        "contract2"
+      ],
+      "updated_at": "2026-08-21",
+      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/example_news",
+      "creator_signature_file": "plugins/example_news/creator.sig",
+      "creator_identity_file": "plugins/example_news/creator.identity",
+      "execution_mode": "subprocess",
+      "versions": {
+        "1.0.0": {
+          "sha256": "2630ed2c32a15a9cc355251e1547a05b0b14b07ee0f94b6aed962f8e75f9db2c"
+        }
+      }
+    },
+    {
+      "id": "lumen-drift",
+      "name": "Lumen Drift",
+      "version": "0.4.0",
+      "publisher": "starlife",
+      "category": "appearance",
+      "plugin_types": [
+        "resource_provider",
+        "view"
+      ],
+      "summary": "安全发现、预览并呈现本地媒体与 Wallpaper Engine 创意工坊资源",
+      "description_file": "plugins/lumen-drift/versions/0.4.0/listing.md",
+      "plugin_file": "plugins/lumen-drift/versions/0.4.0/plugin.py",
+      "signature_file": "plugins/lumen-drift/versions/0.4.0/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [
+        "resources:read",
+        "surfaces:background",
+        "render:local",
+        "render:scripted"
+      ],
+      "compatible_core": ">=0.12.0",
+      "license": "MIT",
+      "tags": [
+        "wallpaper",
+        "ambient",
+        "video",
+        "wallpaper-engine",
+        "declarative-ui"
+      ],
+      "updated_at": "2026-09-04",
+      "creator_signature_file": "plugins/lumen-drift/versions/0.4.0/creator.sig",
+      "creator_identity_file": "plugins/lumen-drift/versions/0.4.0/creator.identity",
+      "execution_mode": "subprocess",
+      "domains": [],
+      "input_files": [],
+      "required_capabilities": {
+        "resources.enumerate": ">=1",
+        "resources.read": ">=1",
+        "render.html.snapshot": ">=1",
+        "render.html.live.start": ">=1",
+        "surface.background.set": ">=2",
+        "surface.background.configure": ">=2",
+        "surface.background.capabilities": ">=1",
+        "surface.background.clear": ">=1"
+      },
+      "state_schema_version": 1,
+      "dependencies": [],
+      "package_manifest_file": "plugins/lumen-drift/versions/0.4.0/package.manifest.json",
+      "creator_package_signature_file": "plugins/lumen-drift/versions/0.4.0/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/lumen-drift/versions/0.4.0/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "9ba159289c9a9b156bd516f28a43659a97591c04aa2aa500de78e4c27e47e5e7",
+      "versions": {
+        "0.4.0": {
+          "sha256": "044fdc841155f17512f40e53bbe262defea1c3ca8cdef6760d89d8c1ad8dcfd2"
+        }
+      }
+    },
+    {
+      "id": "signal-sieve",
+      "name": "signal-sieve",
+      "version": "0.2.0",
+      "publisher": "starlife",
+      "category": "extractor",
+      "plugin_types": [
+        "extractor",
+        "transformer"
+      ],
+      "summary": "融合文本密度、语义标签与 JSON-LD 提取正文、元数据和可解释诊断",
+      "description_file": "plugins/signal-sieve/listing.md",
+      "plugin_file": "plugins/signal-sieve/plugin.py",
+      "signature_file": "plugins/signal-sieve/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [],
+      "compatible_core": ">=0.11.2",
+      "license": "MIT",
+      "tags": [
+        "html",
+        "article",
+        "metadata",
+        "explainable"
+      ],
+      "updated_at": "2026-08-31",
+      "creator_signature_file": "plugins/signal-sieve/creator.sig",
+      "creator_identity_file": "plugins/signal-sieve/creator.identity",
+      "execution_mode": "subprocess",
+      "domains": [],
+      "input_files": [],
+      "required_capabilities": {},
+      "state_schema_version": 1,
+      "dependencies": [],
+      "package_manifest_file": "plugins/signal-sieve/package.manifest.json",
+      "creator_package_signature_file": "plugins/signal-sieve/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/signal-sieve/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "c5d47641523244a97f6b6aaadbe67efcb46e9ab9ac3cb4fe15cfc36ae451eeb2",
+      "versions": {
+        "0.2.0": {
+          "sha256": "b0843e71e07ad34ba464f4e616166a30bb7211dc161fedbb38c8fa6c62860f4f"
+        }
+      }
+    },
+    {
+      "id": "tideprint-gate",
+      "name": "tideprint-gate",
+      "version": "0.2.0",
+      "publisher": "starlife",
+      "category": "processor",
+      "plugin_types": [
+        "processor",
+        "hook"
+      ],
+      "summary": "以持久指纹建议条件重验证，并输出当前运行的可解释变化分类",
+      "description_file": "plugins/tideprint-gate/listing.md",
+      "plugin_file": "plugins/tideprint-gate/plugin.py",
+      "signature_file": "plugins/tideprint-gate/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [
+        "state:read",
+        "state:write"
+      ],
+      "compatible_core": ">=0.11.2",
+      "license": "MIT",
+      "tags": [
+        "fingerprint",
+        "deduplication",
+        "change-detection",
+        "bounded-state"
+      ],
+      "updated_at": "2026-08-31",
+      "creator_signature_file": "plugins/tideprint-gate/creator.sig",
+      "creator_identity_file": "plugins/tideprint-gate/creator.identity",
+      "execution_mode": "subprocess",
+      "domains": [],
+      "input_files": [],
+      "required_capabilities": {
+        "state.get": ">=1",
+        "state.set": ">=1"
+      },
+      "state_schema_version": 1,
+      "dependencies": [],
+      "package_manifest_file": "plugins/tideprint-gate/package.manifest.json",
+      "creator_package_signature_file": "plugins/tideprint-gate/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/tideprint-gate/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "cd27ebec8a1879e569ea76ee2f9881e444c3fae5edbc35355fba99a8ce11c4a3",
+      "versions": {
+        "0.2.0": {
+          "sha256": "37e6c1b116ec80488fd5867149c7c12545ffeb17d188a069121921d98d338a7a"
+        }
+      }
+    },
+    {
+      "id": "upstream-lantern",
+      "name": "upstream-lantern",
+      "version": "0.1.0",
+      "publisher": "starlife",
+      "category": "source",
+      "plugin_types": [
+        "source"
+      ],
+      "summary": "将 GitHub 项目转换为发布、提交、工作流和安全公告抓取请求",
+      "description_file": "plugins/upstream-lantern/listing.md",
+      "plugin_file": "plugins/upstream-lantern/plugin.py",
+      "signature_file": "plugins/upstream-lantern/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [],
+      "compatible_core": ">=0.11.2",
+      "license": "MIT",
+      "tags": [
+        "github",
+        "releases",
+        "commits",
+        "actions",
+        "community",
+        "security-advisories",
+        "monitoring"
+      ],
+      "updated_at": "2026-08-30",
+      "creator_signature_file": "plugins/upstream-lantern/creator.sig",
+      "creator_identity_file": "plugins/upstream-lantern/creator.identity",
+      "execution_mode": "subprocess",
+      "domains": [
+        "api.github.com"
+      ],
+      "input_files": [],
+      "dependencies": [],
+      "package_manifest_file": "plugins/upstream-lantern/package.manifest.json",
+      "creator_package_signature_file": "plugins/upstream-lantern/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/upstream-lantern/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "9ab766ea9f66b2a53633bf3fcf79695eb950858976e5763231e72c9c18f3196c",
+      "versions": {
+        "0.1.0": {
+          "sha256": "13c6a6fbc09acc49d37b340afb0ce992da5bb3f5185519181cdbca10c7eab8ec"
+        }
+      }
+    }
+  ],
+  "templates": [
+    {
+      "id": "sites/market/crossref-works",
+      "name": "Crossref 学术文献元数据",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "sites/academic",
+      "summary": "使用 Crossref 官方 REST API 按关键词检索论文元数据，并保留 DOI、作者、出版商等结构化信息",
+      "template_file": "templates/crossref-works/template.yaml",
+      "signature_file": "templates/crossref-works/template.yaml.sig",
+      "signature_algorithm": "ed25519",
+      "compatible_core": ">=0.7.0",
+      "license": "Crossref metadata terms; abstracts may retain publisher copyright",
+      "tags": [
+        "Crossref",
+        "DOI",
+        "学术",
+        "开放元数据"
+      ],
+      "updated_at": "2026-07-18",
+      "creator_signature_file": "templates/crossref-works/creator.sig",
+      "creator_identity_file": "templates/crossref-works/creator.identity",
+      "description_file": "templates/crossref-works/listing.md"
+    },
+    {
+      "id": "sites/market/github-public-issues",
+      "name": "GitHub 公开仓库 Issues",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "sites/development",
+      "summary": "使用 GitHub 官方 REST API 获取公开仓库 Issue/PR 列表，支持分页和并发控制以遵守速率额度",
+      "template_file": "templates/github-public-issues/template.yaml",
+      "signature_file": "templates/github-public-issues/template.yaml.sig",
+      "signature_algorithm": "ed25519",
+      "compatible_core": ">=0.7.0",
+      "license": "GitHub API terms; repository content retains its original license",
+      "tags": [
+        "GitHub",
+        "Issues",
+        "REST",
+        "开源项目"
+      ],
+      "updated_at": "2026-07-18",
+      "creator_signature_file": "templates/github-public-issues/creator.sig",
+      "creator_identity_file": "templates/github-public-issues/creator.identity",
+      "description_file": "templates/github-public-issues/listing.md"
+    },
+    {
+      "id": "sites/market/openalex-works",
+      "name": "OpenAlex 学术目录",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "sites/academic",
+      "summary": "使用 OpenAlex 官方 API 检索论文目录；API Key 可按需换取，但默认匿名请求也可使用，限制为每分钟 100 次请求",
+      "template_file": "templates/openalex-works/template.yaml",
+      "signature_file": "templates/openalex-works/template.yaml.sig",
+      "signature_algorithm": "ed25519",
+      "compatible_core": ">=0.7.0",
+      "license": "OpenAlex data CC0; API subject to current service terms and usage budget",
+      "tags": [
+        "OpenAlex",
+        "学术",
+        "CC0",
+        "API"
+      ],
+      "updated_at": "2026-07-18",
+      "creator_signature_file": "templates/openalex-works/creator.sig",
+      "creator_identity_file": "templates/openalex-works/creator.identity",
+      "description_file": "templates/openalex-works/listing.md"
+    }
+  ]
+}

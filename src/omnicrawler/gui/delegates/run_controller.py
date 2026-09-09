@@ -39,7 +39,7 @@ class RunController(_BaseDelegate):
         for w in warnings:
             mw._log_console.append_log(w, "warn")
         if not mw._config_path:
-            mw._save_config_as()
+            mw._config_delegate.save_config_as()
             if not mw._config_path:
                 return
         mw._run_btn.setEnabled(False)
@@ -53,7 +53,7 @@ class RunController(_BaseDelegate):
         mw._log_console.clear()
         mw._task_start_time = datetime.now()
         mw._task_elapsed_timer = QTimer(mw)
-        mw._task_elapsed_timer.timeout.connect(mw._update_elapsed)
+        mw._task_elapsed_timer.timeout.connect(mw._run_delegate.update_elapsed)
         mw._task_elapsed_timer.start(1000)
         mw._resource_monitor.set_pid(None)
         ok = mw._task_runner.start(mw._config)

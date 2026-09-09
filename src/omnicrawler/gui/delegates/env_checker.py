@@ -109,7 +109,7 @@ class EnvironmentChecker(_BaseDelegate):
             # S3.1.27：重建依赖项目根的组件（task_runner/autosave/history/template_loader），
             # 不再只改标签
             mw._rebuild_project_components()
-            mw._update_project_label()
+            self.update_project_label()
             ToastManager.instance().info(_("项目目录已切换"))
 
     def update_project_label(self) -> None:
@@ -253,4 +253,4 @@ class EnvironmentChecker(_BaseDelegate):
         reply = QMessageBox.question(mw, _("快速体验"), _("示例配置已加载！是否立即运行此任务？"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
-            mw._run_task()
+            mw._run_delegate.run_task()
