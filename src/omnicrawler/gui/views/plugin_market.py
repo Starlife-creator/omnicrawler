@@ -35,12 +35,12 @@ from PySide6.QtWidgets import (
 )
 
 from ...core.config import DEFAULTS
-from ...plugins.market_client import verify_installed
 from ...plugins.plugins import OFFICIAL_PLUGIN_TYPES
 from ..design_system import FONT_FAMILY_MONO, FONT_SIZE, RADIUS, ThemeManager
 from ..i18n import _
 from ..widgets.status_indicator import StatusIndicator
 from ..widgets.toast import ToastManager
+from .plugin_market_actions import MarketActionsMixin
 from .plugin_market_logic import (
     _CATALOG_PURPOSE as _CATALOG_PURPOSE,
 )
@@ -67,7 +67,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 # ── 视图 ──────────────────────────────────────────────────────────
-class PluginMarketView(QWidget):
+class PluginMarketView(MarketActionsMixin, QWidget):
     """策展式插件市场面板。
 
     状态: offline | loading | ready | error
@@ -666,28 +666,6 @@ class PluginMarketView(QWidget):
         if reply == QMessageBox.StandardButton.Yes:
             self.activation_requested.emit(plugin_id)
 
-    def _on_enable(self) -> None:
-        pid = self._selected_id
-        if not pid or not self._is_installed(pid):
-            ToastManager.instance().warning(_("请先安装插件"))
-            return
-        entry = self._entry_of(pid)
-        if entry:
-            block_reason = _install_block_reason(entry)
-            if block_reason:
-                ToastManager.instance().warning(block_reason)
-                return
-        self.activation_requested.emit(pid)
-
-    def _on_disable(self) -> None:
-        pid = self._selected_id
-        if not pid or not self._is_installed(pid):
-            ToastManager.instance().warning(_("所选插件尚未安装"))
-            return
-        if pid not in self._enabled_plugin_ids:
-            ToastManager.instance().info(_("所选插件已经在当前项目禁用"))
-            return
-        self.deactivation_requested.emit(pid)
 
     def _open_identity_dialog(self) -> None:
         from .identity_dialog import IdentityDialog
@@ -732,73 +710,9 @@ class PluginMarketView(QWidget):
         self._footer.setText(_(f"安装失败：{msg.split(chr(10))[0]}"))
         self._update_action_buttons()
 
-    def _on_uninstall(self) -> None:
-        from PySide6.QtWidgets import QMessageBox
-
-        pid = self._selected_id
-        if not pid or not self._is_installed(pid):
-            ToastManager.instance().warning(_("未选择已安装插件"))
-            return
-        reply = QMessageBox.question(
-            self,
-            _("卸载插件"),
-            _(f"确定卸载插件 {pid}？\n将从 {self._dest_root / pid} 移除。"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        import shutil
-
-        target = self._dest_root / pid
-        try:
-            shutil.rmtree(target, ignore_errors=True)
-            self._enabled_plugin_ids.discard(pid)
-            self.uninstall_completed.emit(pid)
-            ToastManager.instance().success(_(f"已卸载：{pid}"))
-            self._footer.setText(_(f"已卸载 {pid}"))
-        except OSError as exc:
-            ToastManager.instance().error(_(f"卸载失败：{exc}"))
-        self._populate_list()
-        self._update_action_buttons(installed=False)
-
-    def _on_verify(self) -> None:
-        pid = self._selected_id
-        if not pid or not self._is_installed(pid):
-            ToastManager.instance().warning(_("未选择已安装插件"))
-            return
-        ok, reason = verify_installed(self._dest_root, pid, self._trust_source)
-        if ok:
-            ToastManager.instance().success(_(f"{pid} 签名校验通过"))
-        else:
-            ToastManager.instance().error(_(f"{pid} 校验失败：{reason}"))
-        self._footer.setText(_(f"校验 {pid}：{reason}"))
 
     # ── 辅助 ───────────────────────────────────────────────────
-    def _is_installed(self, plugin_id: str) -> bool:
-        target = self._dest_root / plugin_id
-        try:
-            return (target / "plugin.py").is_file() and (target / "plugin.py.sig").is_file()
-        except OSError as exc:
-            LOGGER.warning(_("无法读取已安装插件目录 %s: %s"), target, exc)
-            return False
 
-    def _installed_ids(self) -> list[str]:
-        if not self._dest_root.is_dir():
-            return []
-        installed: list[str] = []
-        try:
-            candidates = list(self._dest_root.iterdir())
-        except OSError as exc:
-            LOGGER.warning(_("无法读取插件安装根目录 %s: %s"), self._dest_root, exc)
-            return installed
-        for candidate in candidates:
-            try:
-                if candidate.is_dir() and (candidate / "plugin.py.sig").is_file():
-                    installed.append(candidate.name)
-            except OSError as exc:
-                LOGGER.warning(_("忽略不可读的插件安装项 %s: %s"), candidate, exc)
-        return installed
 
     def _entry_of(self, plugin_id: str) -> dict[str, Any] | None:
         if not self._catalog:
@@ -833,9 +747,6 @@ class PluginMarketView(QWidget):
         self._disable_btn.setEnabled(installed and pid in self._enabled_plugin_ids)
         self._verify_btn.setEnabled(installed)
 
-    def set_enabled_plugins(self, plugin_ids: set[str] | list[str] | tuple[str, ...]) -> None:
-        self._enabled_plugin_ids = {str(item) for item in plugin_ids}
-        self._populate_list()
 
     def _set_offline_state(self, message: str) -> None:
         self._state = "offline"
