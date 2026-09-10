@@ -1,23 +1,44 @@
 from __future__ import annotations
 
-import ast
-import hashlib
 import importlib.util
 import inspect
-import io
-import json
 import logging
 import os
 import threading
-import tokenize
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .. import __version__
 from ..core.config import AppConfig
 from ..security.egress import EgressBroker
+from .plugin_contracts import (
+    CORE_VERSION,
+    MARKET_DIR_NAME,
+    PLUGIN_API_VERSION,
+    SUBPROCESS_ADAPTER_PLUGIN_TYPES,
+    UI_PERMISSIONS,
+    BackgroundRegistration,
+    PluginContext,
+    PluginMetadata,
+    StatusWidgetRegistration,
+    ThemeRegistration,
+    UIActionRegistration,
+    UIPanelRegistration,
+    _normalize_schema_fields,
+)
+from .plugin_contracts import (
+    OFFICIAL_PLUGIN_TYPES as OFFICIAL_PLUGIN_TYPES,
+)
+from .plugin_preflight import (
+    _declared_creator_fingerprint,
+    _decode_plugin_source,
+    _permission_artifact_sha256,
+    _permissions_from_metadata,
+    _preflight_forbidden_patterns,
+    _preflight_metadata,
+    _resolve_plugin_permission_grant,
+    _static_plugin_metadata,
+)
 from .plugin_signature import SIGNATURE_POLICIES as SIGNATURE_POLICIES
 from .plugin_signature import SIGNATURE_POLICY_DEVELOPER as SIGNATURE_POLICY_DEVELOPER
 from .plugin_signature import SIGNATURE_POLICY_STRICT, _verify_plugin_signature
@@ -27,56 +48,10 @@ from .plugin_trust_prompt import get_default_trust_prompter as get_default_trust
 from .plugin_trust_prompt import set_default_trust_prompter as set_default_trust_prompter
 
 Factory = Callable[..., Any]
-PLUGIN_API_VERSION = 1
-CORE_VERSION = __version__
 LOGGER = logging.getLogger(__name__)
 
-# 市场安装目录名：位于**项目根下该目录**的插件视为市场来源
-# （维护者签名+信任根门禁）。市场来源判定必须是「规范的安装位置」，
-# 而不是"路径里碰巧出现这个名字"——后者可被任意目录名伪造
-# （审查报告 B10：把市场插件挪进 plugins/ 即逃脱维护者签名要求）。
-MARKET_DIR_NAME = "plugins_installed"
 
-# UI 权限族：本地来源插件自动放行（GUI 插件宿主按注册类型挂载）；
-# 市场来源插件仍需 permission_grants 按插件和载荷显式批准。
-UI_PERMISSIONS = frozenset(
-    {"ui:theme", "ui:action", "ui:panel", "ui:status", "ui:background"}
-)
 
-# 运行扩展点由宿主定义，不能由插件任意发明。业务分类与检索标签分别使用
-# PluginMetadata.category / tags；二者不参与运行路由。
-OFFICIAL_PLUGIN_TYPES = frozenset(
-    {
-        "source",
-        "fetcher",
-        "processor",
-        "exporter",
-        "auth_provider",
-        "parser",
-        "extractor",
-        "transformer",
-        "hook",
-        "ui",
-        "resource_provider",
-        "view",
-    }
-)
-# 当前契约 2 已具备并接入 subprocess adapter 的扩展点。
-SUBPROCESS_ADAPTER_PLUGIN_TYPES = frozenset(
-    {
-        "source",
-        "fetcher",
-        "processor",
-        "exporter",
-        "auth_provider",
-        "parser",
-        "extractor",
-        "transformer",
-        "hook",
-        "resource_provider",
-        "view",
-    }
-)
 
 # S2.5.41：插件模块加载缓存——同一文件（mtime 未变）只 exec_module 一次，
 # 多 Pipeline 不再重复编译执行插件代码。键 = (路径, mtime_ns)。
@@ -84,176 +59,20 @@ _PLUGIN_MODULE_CACHE: dict[tuple[Path, int], Any] = {}
 _PLUGIN_CACHE_LOCK = threading.Lock()
 
 
-@dataclass(frozen=True, slots=True)
-class PluginMetadata:
-    name: str
-    version: str = "0.0.0"
-    api_version: int = PLUGIN_API_VERSION
-    description: str = ""
-    plugin_types: tuple[str, ...] = ()
-    # 市场业务分类与标签只用于展示/检索，不决定加载到哪个 Registry 槽位。
-    category: str = ""
-    tags: tuple[str, ...] = ()
-    capabilities: tuple[str, ...] = ()
-    # Contract 2 宿主能力协议的最低版本，例如 {"records.read": ">=1"}。
-    # 它不同于 capabilities（展示用能力标签），会在启动子进程前 fail-closed。
-    required_capabilities: dict[str, int | str] = field(default_factory=dict)
-    state_schema_version: int = 1
-    domains: tuple[str, ...] = ()
-    config_schema: dict[str, Any] = field(default_factory=dict)
-    permissions: tuple[str, ...] = ()
-    optional_dependencies: tuple[str, ...] = ()
-    license: str = ""
-    source_url: str = ""
-    min_core_version: str = "0.0.1"
-    max_core_version: str = ""
-    fallback: str = "generic"
-    resource_limits: dict[str, Any] = field(default_factory=dict)
-    # Phase 1（B1 schema 扩展）：执行模式声明（in_process|subprocess，
-    # 缺省 subprocess 无兼容语义）+ 第三方依赖声明（门 3 双向一致性）
-    execution_mode: str = "subprocess"
-    dependencies: tuple[dict[str, Any], ...] = ()
-    # files:read 路径白名单（第 82 轮更名：原 files 与市场仓扫描允许列表冲突）
-    input_files: tuple[str, ...] = ()
-    # Phase 3（B2）：契约形态（2=handle 契约 2 / 1=register 契约 1 / 0=未知）
-    contract_shape: int = 2
 
 
-@dataclass(frozen=True, slots=True)
-class PluginContext:
-    metadata: PluginMetadata
-    network: Any | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class ThemeRegistration:
-    """UI 主题注册：覆盖 VisualTokens 令牌的色值（#RRGGBB/#RRGGBBAA 或 rgba()）。"""
-
-    theme_id: str
-    label: str
-    tokens: dict[str, str]
 
 
-@dataclass(frozen=True, slots=True)
-class UIActionRegistration:
-    """菜单动作注册：点击回调（可接受 mw 参数或空参）。"""
-
-    action_id: str
-    label: str
-    callback: Callable[..., Any]
-    section: str = "plugins"
 
 
-@dataclass(frozen=True, slots=True)
-class UIPanelRegistration:
-    """侧栏面板注册：widget_factory 返回 QWidget。"""
-
-    panel_id: str
-    title: str
-    widget_factory: Callable[..., Any]
 
 
-@dataclass(frozen=True, slots=True)
-class StatusWidgetRegistration:
-    """状态栏小部件注册：widget_factory 返回 QWidget。"""
-
-    widget_factory: Callable[..., Any]
 
 
-@dataclass(frozen=True, slots=True)
-class BackgroundRegistration:
-    """声明式本地媒体背景；绘制、文件选择和多媒体生命周期均由宿主管理。"""
-
-    background_id: str
-    label: str
-    default_opacity: float = 0.24
-    default_dim: float = 0.30
 
 
-def _normalize_schema_fields(result: PluginMetadata, path: Path) -> PluginMetadata:
-    """Phase 1（B1 schema 扩展）：execution_mode 枚举归一 + 新字段类型收敛。
-
-    - execution_mode 非法枚举 → 拒绝（无兼容语义）；未声明 = subprocess；
-    - plugin_types 归一为宿主受控的小写扩展点；未知类型拒绝；
-    - tags / dependencies / input_files 收敛为 tuple（兼容插件以 list 声明）。
-    """
-    mode = str(result.execution_mode or "").strip()
-    if mode == "":
-        mode = "subprocess"
-    if mode not in ("in_process", "subprocess"):
-        raise ValueError(
-            f"插件 {result.name} execution_mode 非法: {mode!r}（仅 in_process | subprocess）; file={path}"
-        )
-    if not isinstance(result.plugin_types, (list, tuple)):
-        raise ValueError(f"插件 {result.name} plugin_types 必须是列表或元组; file={path}")
-    plugin_types = tuple(
-        dict.fromkeys(str(item).strip().casefold() for item in result.plugin_types if str(item).strip())
-    )
-    unknown_types = set(plugin_types) - OFFICIAL_PLUGIN_TYPES
-    if unknown_types:
-        raise ValueError(
-            f"插件 {result.name} 声明未知运行扩展点: {sorted(unknown_types)}；"
-            "自定义业务分类请使用 category/tags，能力名称请使用 capabilities; "
-            f"file={path}"
-        )
-    tags = result.tags
-    if isinstance(tags, str) or not isinstance(tags, (list, tuple)):
-        raise ValueError(f"插件 {result.name} tags 必须是列表或元组; file={path}")
-    if not isinstance(tags, tuple):
-        tags = tuple(str(item) for item in tags)
-    deps = result.dependencies
-    if not isinstance(deps, tuple):
-        deps = tuple(deps)
-    input_files = result.input_files
-    if not isinstance(input_files, tuple):
-        input_files = tuple(str(item) for item in input_files)
-    required_capabilities = result.required_capabilities
-    if not isinstance(required_capabilities, dict):
-        raise ValueError(f"插件 {result.name} required_capabilities 必须是映射; file={path}")
-    required_capabilities = {
-        str(name).strip(): requirement for name, requirement in required_capabilities.items()
-    }
-    from .plugin_broker import validate_required_capabilities
-
-    validate_required_capabilities(required_capabilities)
-    if not isinstance(result.state_schema_version, int) or result.state_schema_version < 1:
-        raise ValueError(f"插件 {result.name} state_schema_version 必须是正整数; file={path}")
-    if (
-        mode == result.execution_mode
-        and plugin_types == result.plugin_types
-        and str(result.category or "").strip() == result.category
-        and tags is result.tags
-        and deps is result.dependencies
-        and input_files is result.input_files
-        and required_capabilities == result.required_capabilities
-    ):
-        return result
-    return PluginMetadata(
-        name=result.name,
-        version=result.version,
-        api_version=result.api_version,
-        description=result.description,
-        plugin_types=plugin_types,
-        category=str(result.category or "").strip(),
-        tags=tags,
-        capabilities=result.capabilities,
-        required_capabilities=required_capabilities,
-        state_schema_version=result.state_schema_version,
-        domains=result.domains,
-        config_schema=result.config_schema,
-        permissions=result.permissions,
-        optional_dependencies=result.optional_dependencies,
-        license=result.license,
-        source_url=result.source_url,
-        min_core_version=result.min_core_version,
-        max_core_version=result.max_core_version,
-        fallback=result.fallback,
-        resource_limits=result.resource_limits,
-        execution_mode=mode,
-        dependencies=deps,
-        input_files=input_files,
-        contract_shape=result.contract_shape,
-    )
 
 
 def _metadata(module: Any, path: Path) -> PluginMetadata:
@@ -984,311 +803,3 @@ def _signature_accepts(signature: inspect.Signature, *arguments: Any) -> bool:
     return True
 
 
-_NETWORK_MODULES = {
-    "socket",
-    "requests",
-    "httpx",
-    "aiohttp",
-    "websockets",
-    "urllib.request",
-    "http.client",
-}
-
-# 危险模块导入：直接导入即拒绝（加载前静态检查，不执行插件代码）
-_FORBIDDEN_MODULES = {"subprocess", "ctypes", "winreg", "builtins"}
-
-# 危险属性调用：module.attr 形态（含 from module import attr）
-_FORBIDDEN_ATTR_CALLS = {
-    ("os", "system"),
-    ("os", "startfile"),
-    ("os", "remove"),
-    ("os", "unlink"),
-    ("os", "rmdir"),
-    ("os", "removedirs"),
-    ("os", "kill"),
-    ("os", "popen"),
-    ("os", "execl"),
-    ("os", "execle"),
-    ("os", "execv"),
-    ("os", "execve"),
-    ("os", "execvp"),
-    ("os", "execvpe"),
-    ("os", "spawnl"),
-    ("os", "spawnle"),
-    ("os", "spawnlp"),
-    ("os", "spawnlpe"),
-    ("os", "spawnv"),
-    ("os", "spawnve"),
-    ("os", "spawnvp"),
-    ("os", "spawnvpe"),
-    ("os", "posix_spawn"),
-    ("shutil", "rmtree"),
-    ("importlib", "import_module"),
-    ("importlib.util", "spec_from_file_location"),
-    ("importlib.util", "spec_from_loader"),
-}
-
-# 危险内建调用（eval/exec 动态执行）
-_FORBIDDEN_BUILTIN_CALLS = {"eval", "exec"}
-# 动态导入函数：`__import__` / `importlib.import_module` 是绕过 AST 门的
-# 常规入口（`__import__('os').system('id')` 的 func.value 是 Call 而非 Name，
-# 旧实现因此漏判——审查报告 B2）。任何出现都直接判危险，杜绝"借道导入"。
-_FORBIDDEN_IMPORT_FUNCS = {"__import__", "import_module"}
-
-
-def _decode_plugin_source(path: Path, data: bytes) -> str:
-    """按 PEP 263 编码声明解码插件源码。
-
-    尊重文件头 ``# -*- coding: xxx -*-``（tokenize.detect_encoding 负责），
-    解码失败即抛 PermissionError——**绝不**返回空内容蒙混过关
-    （审查报告 B2：旧实现用 utf-8 硬解，latin-1 文件抛 UnicodeDecodeError
-    后被吞掉、预检返回空集 = fail-open）。
-    """
-    try:
-        encoding, _ = tokenize.detect_encoding(io.BytesIO(data).readline)
-    except (SyntaxError, LookupError) as exc:
-        raise PermissionError(f"插件源码编码声明非法，拒绝加载: {path}（{exc}）") from exc
-    try:
-        return data.decode(encoding)
-    except UnicodeDecodeError as exc:
-        raise PermissionError(
-            f"插件源码无法按声明的编码解码（{encoding}），拒绝加载: {path}（{exc}）"
-        ) from exc
-
-
-def _preflight_forbidden_patterns(path: Path, source: str, allowed: set[str]) -> tuple[set[str], set[str]]:
-    """AST 静态检查插件源码，返回 (网络导入, 其他危险模式)。
-
-    两类均为空才允许加载。``allowed`` 提供豁免的 pattern id（模块名、
-    调用名如 ``os.system``），**唯一**来源：``plugins.ast_allowed_patterns``
-    配置——由管理员（运行配置）控制，不由插件自己声明。
-
-    任何解析失败都抛 PermissionError（fail-closed）；语法错误的文件本来
-    也无法执行，此处显式拒绝而非静默放行。
-    """
-    allowed = set(allowed)
-    try:
-        tree = ast.parse(source, filename=str(path))
-    except SyntaxError as exc:
-        raise PermissionError(f"插件源码解析失败，拒绝加载: {path}（{exc}）") from exc
-
-    network: set[str] = set()
-    dangerous: set[str] = set()
-    alias: dict[str, str] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for item in node.names:
-                top = item.name.split(".")[0]
-                alias[item.asname or top] = top
-                if top in _FORBIDDEN_MODULES and top not in allowed:
-                    dangerous.add(top)
-                if top not in allowed and any(
-                    item.name == m or item.name.startswith(m + ".") for m in _NETWORK_MODULES
-                ):
-                    network.add(item.name)
-        elif isinstance(node, ast.ImportFrom):
-            module = node.module or ""
-            top = module.split(".")[0]
-            if top in _FORBIDDEN_MODULES and top not in allowed:
-                dangerous.add(top)
-            if top not in allowed and any(
-                module == m or module.startswith(m + ".") for m in _NETWORK_MODULES
-            ):
-                network.add(module)
-            for item in node.names:
-                if item.name == "*":
-                    continue
-                if top in _FORBIDDEN_MODULES and top not in allowed:
-                    dangerous.add(top)
-                pair = f"{top}.{item.name}"
-                if (top, item.name) in _FORBIDDEN_ATTR_CALLS and pair not in allowed:
-                    dangerous.add(pair)
-                if item.name in _FORBIDDEN_IMPORT_FUNCS:
-                    dangerous.add(f"{top}.{item.name}")
-                alias[item.asname or item.name] = pair
-        elif isinstance(node, ast.Call):
-            func = node.func
-            if isinstance(func, ast.Name):
-                if func.id in _FORBIDDEN_BUILTIN_CALLS and func.id not in allowed:
-                    dangerous.add(func.id)
-                if func.id == "__import__":
-                    # __import__ 本身即动态导入入口：无论参数是否字面量，
-                    # 一律拒绝（旧实现只在参数为常量字符串时检查网络模块，
-                    # 其余情况漏过）。
-                    dangerous.add("__import__")
-            elif isinstance(func, ast.Attribute):
-                if func.attr in _FORBIDDEN_IMPORT_FUNCS:
-                    dangerous.add(f"<call>.{func.attr}")
-                # 常规形态：<模块>.<属性>(...) —— 属性链逐层向上解析模块名
-                resolved_module = _resolve_module_of_attribute(func, alias)
-                if resolved_module is not None:
-                    pair = f"{resolved_module}.{func.attr}"
-                    if (resolved_module, func.attr) in _FORBIDDEN_ATTR_CALLS and pair not in allowed:
-                        dangerous.add(pair)
-    return network, dangerous
-
-
-def _resolve_module_of_attribute(node: ast.Attribute, alias: dict[str, str]) -> str | None:
-    """从属性调用链解析「模块.属性」中的模块名。
-
-    覆盖三种形态：
-    - ``os.system(...)``         → func.value 是 Name → "os"
-    - ``alias.system(...)``      → func.value 是 Name，经 import as 别名映射
-    - ``__import__('os').system(...)`` → func.value 是 Call —— 旧实现漏判
-      的关键形态（审查报告 B2）：此处把 `__import__('<字面量>')` 的参数字面量
-      当作模块名返回，命中 _FORBIDDEN_ATTR_CALLS 即拒绝。
-    解析不出明确模块名时返回 None（不误报，交由其它规则兜底）。
-    """
-    value = node.value
-    if isinstance(value, ast.Name):
-        return alias.get(value.id, value.id)
-    if isinstance(value, ast.Call):
-        inner = value.func
-        if isinstance(inner, ast.Name) and inner.id == "__import__":
-            if (
-                value.args
-                and isinstance(value.args[0], ast.Constant)
-                and isinstance(value.args[0].value, str)
-            ):
-                return value.args[0].value.split(".")[0]
-        if (
-            isinstance(inner, ast.Attribute)
-            and inner.attr in _FORBIDDEN_IMPORT_FUNCS
-            and value.args
-            and isinstance(value.args[0], ast.Constant)
-            and isinstance(value.args[0].value, str)
-        ):
-            return value.args[0].value.split(".")[0]
-    return None
-
-
-def _preflight_metadata(path: Path, source: str) -> dict[str, Any]:
-    """静态读取 PLUGIN_METADATA；插件代码执行前失败关闭。"""
-    try:
-        tree = ast.parse(source, filename=str(path))
-    except SyntaxError as exc:
-        raise PermissionError(f"插件源码解析失败，拒绝加载: {path}（{exc}）") from exc
-    for node in tree.body:
-        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
-            continue
-        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-        if not any(isinstance(target, ast.Name) and target.id == "PLUGIN_METADATA" for target in targets):
-            continue
-        if node.value is None:
-            raise PermissionError(f"PLUGIN_METADATA 不能为空: {path}")
-        try:
-            value = ast.literal_eval(node.value)
-        except (ValueError, TypeError) as exc:
-            raise PermissionError(f"PLUGIN_METADATA 必须是静态字面量: {path}（{exc}）") from exc
-        if isinstance(value, dict):
-            return value
-        raise PermissionError(f"PLUGIN_METADATA 结构非法: {path}")
-    return {}
-
-
-def _permissions_from_metadata(path: Path, metadata: dict[str, Any]) -> set[str]:
-    permissions = metadata.get("permissions", [])
-    if not isinstance(permissions, (list, tuple)):
-        raise PermissionError(f"PLUGIN_METADATA.permissions 必须是列表或元组: {path}")
-    return {str(item).casefold() for item in permissions}
-
-
-def _preflight_permissions(path: Path, source: str) -> set[str]:
-    """兼容入口：静态读取插件请求权限。"""
-    return _permissions_from_metadata(path, _preflight_metadata(path, source))
-
-
-def _permission_artifact_sha256(path: Path, plugin_bytes: bytes) -> str:
-    """权限授权绑定的稳定载荷哈希：整包优先绑定 manifest，单文件绑定源码。"""
-    manifest = path.parent / "package.manifest.json"
-    try:
-        payload = manifest.read_bytes() if manifest.is_file() else plugin_bytes
-    except OSError as exc:
-        raise PermissionError(f"无法读取插件权限绑定载荷: {manifest}（{exc}）") from exc
-    return hashlib.sha256(payload).hexdigest()
-
-
-def _declared_creator_fingerprint(path: Path) -> str:
-    """读取随载荷绑定的作者指纹；缺失时返回空串用于旧式单文件插件。"""
-    for candidate, key in (
-        (path.parent / "package.manifest.json", "creator_fingerprint"),
-        (path.parent / "creator.identity", "key_fingerprint"),
-    ):
-        if not candidate.is_file():
-            continue
-        try:
-            data = json.loads(candidate.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            continue
-        if isinstance(data, dict) and data.get(key):
-            return str(data[key]).strip().casefold()
-    return ""
-
-
-def _resolve_plugin_permission_grant(
-    *,
-    plugin_id: str,
-    version: str,
-    artifact_sha256: str,
-    creator_fingerprint: str,
-    permission_grants: dict[str, Any] | None,
-) -> set[str]:
-    """解析插件级授权并核对版本、载荷哈希及可用的作者指纹。"""
-    if permission_grants is None:
-        return set()
-    if not isinstance(permission_grants, dict):
-        raise PermissionError("plugins.permission_grants 必须是映射")
-    grant = permission_grants.get(plugin_id)
-    if grant is None:
-        return set()
-    if not isinstance(grant, dict):
-        raise PermissionError(f"插件 {plugin_id} 的 permission_grants 条目必须是映射")
-    granted_hash = str(grant.get("artifact_sha256") or "").strip().casefold()
-    if not granted_hash or granted_hash != artifact_sha256.casefold():
-        raise PermissionError(f"插件 {plugin_id} 的授权载荷哈希不匹配，插件可能已更新")
-    granted_version = str(grant.get("version") or "").strip()
-    if granted_version and granted_version != version:
-        raise PermissionError(
-            f"插件 {plugin_id} 的授权版本为 {granted_version}，当前版本为 {version}"
-        )
-    granted_creator = str(grant.get("creator_fingerprint") or "").strip().casefold()
-    if granted_creator and granted_creator != creator_fingerprint:
-        raise PermissionError(f"插件 {plugin_id} 的授权作者指纹不匹配")
-    permissions = grant.get("permissions", [])
-    if not isinstance(permissions, (list, tuple)):
-        raise PermissionError(f"插件 {plugin_id} 的授权 permissions 必须是列表")
-    return {str(item).casefold() for item in permissions}
-
-
-def _static_plugin_metadata(path: Path, source: str) -> PluginMetadata | None:
-    """契约 2 subprocess 插件的静态元数据提取（不执行代码）。
-
-    subprocess 插件不在主进程 import/exec，故无法走 ``_metadata(module)``；
-    这里用与 ``_preflight_permissions`` 相同的 AST literal_eval 读 PLUGIN_METADATA
-    字面量并构造 PluginMetadata（经 _normalize_schema_fields 归一）。无
-    PLUGIN_METADATA 的契约 2 插件返回 None（由调用方按 legacy 名兜底）。
-    fail-closed：字面量非法 → PermissionError（与权限预检同语义）。
-    """
-    try:
-        tree = ast.parse(source, filename=str(path))
-    except SyntaxError as exc:
-        raise PermissionError(f"插件源码解析失败，拒绝加载: {path}（{exc}）") from exc
-    for node in tree.body:
-        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
-            continue
-        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-        if not any(isinstance(target, ast.Name) and target.id == "PLUGIN_METADATA" for target in targets):
-            continue
-        if node.value is None:  # AnnAssign 无值形态（如 PLUGIN_METADATA: dict）无字面量可评估
-            continue
-        try:
-            value = ast.literal_eval(node.value)
-        except (ValueError, TypeError) as exc:
-            raise PermissionError(f"PLUGIN_METADATA 必须是静态字面量: {path}（{exc}）") from exc
-        if not isinstance(value, dict):
-            raise PermissionError(f"PLUGIN_METADATA 结构非法: {path}")
-        legacy_name = path.parent.name if path.name == "plugin.py" else path.stem
-        value.setdefault("name", legacy_name)
-        result = PluginMetadata(**value)
-        return _normalize_schema_fields(result, path)
-    return None
