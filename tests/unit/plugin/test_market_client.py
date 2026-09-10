@@ -225,7 +225,7 @@ def test_directory_loading_records_unreadable_plugin_without_hiding_siblings(
         onerror(PermissionError(13, "denied", str(denied)))
         return iter(())
 
-    monkeypatch.setattr("omnicrawler.plugins.plugins.os.walk", fake_walk)
+    monkeypatch.setattr("omnicrawler.plugins.plugin_loader.os.walk", fake_walk)
     registry = Registry()
     load_local_plugins(registry, [str(tmp_path)], tmp_path, fail_open=True)
 

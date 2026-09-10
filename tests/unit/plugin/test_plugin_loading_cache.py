@@ -7,7 +7,7 @@ from pathlib import Path
 
 from omnicrawler.core.config import load_config
 from omnicrawler.pipeline import Pipeline
-from omnicrawler.plugins import plugins as plugins_module
+from omnicrawler.plugins import plugin_loader as plugins_module
 
 
 def test_plugin_module_cache_avoids_recompile(tmp_path: Path, monkeypatch) -> None:
