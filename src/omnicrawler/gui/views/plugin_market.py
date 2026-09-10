@@ -40,6 +40,7 @@ from ..i18n import _
 from ..widgets.status_indicator import StatusIndicator
 from .plugin_market_actions import MarketActionsMixin
 from .plugin_market_browse import MarketBrowseMixin
+from .plugin_market_catalog import MarketCatalogMixin
 from .plugin_market_install import MarketInstallMixin
 from .plugin_market_logic import (
     _CATALOG_PURPOSE as _CATALOG_PURPOSE,
@@ -79,7 +80,9 @@ LOGGER = logging.getLogger(__name__)
 
 
 # ── 视图 ──────────────────────────────────────────────────────────
-class PluginMarketView(MarketInstallMixin, MarketBrowseMixin, MarketActionsMixin, QWidget):
+class PluginMarketView(
+    MarketCatalogMixin, MarketInstallMixin, MarketBrowseMixin, MarketActionsMixin, QWidget
+):
     """策展式插件市场面板。
 
     状态: offline | loading | ready | error
@@ -381,63 +384,9 @@ class PluginMarketView(MarketInstallMixin, MarketBrowseMixin, MarketActionsMixin
         """)
 
     # ── 生命周期 ──────────────────────────────────────────────
-    def showEvent(self, event) -> None:  # noqa: N802 - Qt 命名
-        super().showEvent(event)
-        if not self._auto_loaded:
-            self._auto_loaded = True
-            self.refresh()
 
     # ── 拉取目录 ──────────────────────────────────────────────
-    def refresh(self) -> None:
-        if not self._catalog_url and not self._bundled_catalog_dir and not self._local_fallback.is_dir():
-            self._set_offline_state(_("未配置 catalog_url，且无本地 OmniCrawler-market/ 回退。"))
-            return
-        self._state = "loading"
-        self._status_indicator.state = "running"
-        self._status_label.setText(_("正在拉取插件目录..."))
-        self._footer.setText(_("正在连接插件目录..."))
-        self._refresh_btn.setEnabled(False)
 
-        catalog_url = self._catalog_url or (self._bundled_catalog_dir or str(self._local_fallback))
-        self._catalog_worker = _CatalogWorker(
-            catalog_url,
-            self._local_fallback,
-            self._trust_source,
-            self._base / ".omnicrawler" / "catalog-cache",
-            self._egress,
-            parent=self,
-        )
-        self._catalog_worker.succeeded.connect(self._on_catalog_loaded)
-        self._catalog_worker.failed.connect(self._on_catalog_error)
-        self._catalog_worker.finished.connect(self._catalog_worker.deleteLater)
-        self._catalog_worker.start()
-
-    def _on_catalog_loaded(self, catalog: dict[str, Any]) -> None:
-        self._catalog = catalog
-        self._state = "ready"
-        self._status_indicator.state = "finished"
-        source = catalog.get("_source", self._catalog_url)
-        self._status_label.setText(_("已连接"))
-        # 截断显示来源，避免过长挤占布局
-        shown = source if len(source) <= 64 else "…" + source[-62:]
-        self._source_label.setText(shown)
-        self._footer.setText(_(f"共 {len(catalog.get('plugins', []))} 个已审核插件。"))
-        self._refresh_btn.setEnabled(True)
-        self._populate_list()
-
-    def _on_catalog_error(self, msg: str) -> None:
-        self._state = "offline"
-        self._status_indicator.state = "error"
-        self._status_label.setText(_("离线"))
-        self._source_label.setText("")
-        self._footer.setText(
-            _("无法连接插件目录（可能离线）：{0}。已安装插件仍可使用；联网后点「刷新」重试。").format(
-                msg.split(chr(10))[0]
-            )
-        )
-        self._refresh_btn.setEnabled(True)
-        # 离线也展示已安装列表，便于管理
-        self._populate_list()
 
     # ── 列表与详情 ────────────────────────────────────────────
 
@@ -448,10 +397,3 @@ class PluginMarketView(MarketInstallMixin, MarketBrowseMixin, MarketActionsMixin
     # ── 辅助 ───────────────────────────────────────────────────
 
 
-    def _set_offline_state(self, message: str) -> None:
-        self._state = "offline"
-        self._status_indicator.state = "error"
-        self._status_label.setText(_("离线"))
-        self._footer.setText(message)
-        self._refresh_btn.setEnabled(True)
-        self._populate_list()
