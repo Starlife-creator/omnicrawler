@@ -17,14 +17,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..async_workers import AsyncWorkerManager, CsvLoadWorker
+from ..core.workers import CsvLoadWorker
 from ..i18n import _
 
 
 class ChartView(QWidget):
     """Show sampled field completeness as accessible native progress bars.
 
-    通过 AsyncWorkerManager 异步加载 CSV，加载期间显示进度提示。
+    通过 CsvLoadWorker（统一 BackgroundWorker 模式）异步加载 CSV，加载期间显示进度提示。
     可重复调用 load_csv，旧任务会被自动清理。
     """
 
@@ -46,7 +46,6 @@ class ChartView(QWidget):
 
         self._bars: list[tuple[QLabel, QProgressBar]] = []
         self._worker: CsvLoadWorker | None = None
-        self._async = AsyncWorkerManager()
         self._filepath: Path | None = None
         self._showing_data = False
         self.setVisible(False)
@@ -59,7 +58,7 @@ class ChartView(QWidget):
         """异步加载 CSV 文件并绘制字段完整率条形图。
 
         保持原同步签名的兼容入口：立即返回 True 表示已派发加载任务。
-        真正的结果通过 finished_loading 信号回到主线程后渲染。
+        真正的结果通过 ``finished_loading`` 信号回到主线程后渲染。
         """
         path = Path(path)
         if not path.is_file():
@@ -84,6 +83,7 @@ class ChartView(QWidget):
         self._worker = CsvLoadWorker(path, sample_limit=sample_limit, parent=self)
         self._worker.finished_loading.connect(self._on_loaded)
         self._worker.failed.connect(self._on_failed)
+        self._worker.interrupted.connect(self._on_interrupted)
         # 线程结束时自动清理引用
         self._worker.finished.connect(self._on_worker_finished)
         self._worker.start()
@@ -95,6 +95,7 @@ class ChartView(QWidget):
             self._worker.requestInterruption()
             self._worker.quit()
             self._worker.wait(1000)
+        self._worker = None
         self._remove_bars()
         self._loading_bar.setVisible(False)
         self._summary.setText(_("尚未加载结果统计"))
@@ -161,6 +162,13 @@ class ChartView(QWidget):
         self._loading_bar.setVisible(False)
         self._remove_bars()
         self._summary.setText(_("加载失败：{0}").format(message))
+
+    def _on_interrupted(self) -> None:
+        """任务被取消：复位进行中状态（不改变已渲染的图表）。"""
+        if self.sender() is not self._worker:
+            return  # 旧任务迟到的取消信号，已被新任务取代
+        self._loading_bar.setVisible(False)
+        self._summary.setText(_("加载已取消"))
         self.setVisible(True)
 
     def _on_worker_finished(self) -> None:

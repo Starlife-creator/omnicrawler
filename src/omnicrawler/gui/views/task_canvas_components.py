@@ -1,4 +1,4 @@
-"""Reusable worker and model components for :mod:`task_canvas`."""
+"""Reusable worker, model and UI primitives for :mod:`task_canvas`."""
 
 from __future__ import annotations
 
@@ -12,10 +12,20 @@ from PySide6.QtCore import (
     QThread,
     Signal,
 )
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import (
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QStyle,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ..core.config_model import FieldDef
+from ..design_system import SPACING
 from ..i18n import _
+from ..widgets.help_tooltip import HelpTooltip
 
 
 class PlanReviewWorker(QThread):
@@ -165,3 +175,88 @@ class FieldTableModel(QAbstractTableModel):
 
     def field_names(self) -> set[str]:
         return {field.name for field in self._fields if field.name.strip()}
+
+
+# ---------------------------------------------------------------------------
+# UI primitives extracted from task_canvas.py (P1-3 first split)
+# ---------------------------------------------------------------------------
+
+
+def _repolish_widget(widget: QWidget) -> None:
+    """按 QSS 动态属性刷新控件外观。"""
+    style = widget.style()
+    if isinstance(style, QStyle):
+        style.unpolish(widget)
+        style.polish(widget)
+    widget.ensurePolished()
+
+
+class _Section(QGroupBox):
+    """可折叠区域容器：标题 + 折叠按钮 + 内容。
+
+    ``sticky`` 为折叠时仍常驻显示的状态条（如验证区试跑状态栏，
+    满足 PRD §2.4「验证区永不消失」）；其余 body 内容折叠时隐藏。
+    """
+
+    toggled = Signal(bool)
+
+    def __init__(
+        self,
+        title: str,
+        parent: QWidget | None = None,
+        *,
+        sticky: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._collapsed = False
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        self._title_label = QLabel(title)
+        self._title_label.setObjectName("sectionTitle")
+        header.addWidget(self._title_label)
+        header.addStretch()
+        self._fold_btn = QPushButton(_("收起"))
+        self._fold_btn.setObjectName("foldBtn")
+        self._fold_btn.setFlat(True)
+        self._fold_btn.clicked.connect(self._toggle)
+        header.addWidget(self._fold_btn)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(SPACING["lg"], SPACING["sm"], SPACING["lg"], SPACING["md"])
+        outer.addLayout(header)
+        self._body_host = QWidget()
+        self._body = QVBoxLayout(self._body_host)
+        self._body.setSpacing(SPACING["md"])
+        outer.addWidget(self._body_host)
+        self._sticky_widget = sticky
+        if sticky is not None:
+            outer.addWidget(sticky)
+
+    def body(self) -> QVBoxLayout:
+        return self._body
+
+    def _toggle(self) -> None:
+        self._collapsed = not self._collapsed
+        self._fold_btn.setText(_("展开") if self._collapsed else _("收起"))
+        # 折叠只隐藏 body 内容；sticky 状态条保持常驻
+        self._body_host.setVisible(not self._collapsed)
+        self.toggled.emit(self._collapsed)
+        _repolish_widget(self)
+
+    def collapsed(self) -> bool:
+        return self._collapsed
+
+
+def _form_row(
+    label_text: str,
+    widget: QWidget,
+    help_id: str | None = None,
+) -> QHBoxLayout:
+    row = QHBoxLayout()
+    if help_id:
+        row.addWidget(HelpTooltip(help_id))
+    label = QLabel(label_text)
+    label.setObjectName("muted")
+    row.addWidget(label)
+    row.addStretch()
+    row.addWidget(widget)
+    return row

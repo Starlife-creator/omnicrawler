@@ -42,7 +42,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...core.utils import excel_safe
-from ..async_workers import CsvIndexWorker, JsonlSearchWorker
+from ..core.workers import CsvIndexWorker, JsonlSearchWorker
 from ..i18n import _
 
 ROWS_PER_PAGE = 1000
@@ -60,6 +60,7 @@ class CsvStreamModel(QAbstractTableModel):
     indexing_started = Signal()
     indexing_finished = Signal(int)  # total_rows
     indexing_failed = Signal(str)
+    indexing_cancelled = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -77,7 +78,7 @@ class CsvStreamModel(QAbstractTableModel):
         """异步加载 CSV 文件。
 
         立即返回 True 表示已派发索引任务。
-        表头和行计数通过 indexing_finished 信号通知；失败通过 indexing_failed。
+        表头和行计数通过 finished_indexing 信号通知；失败通过 failed。
         """
         # 取消尚未完成的旧索引任务
         if self._index_worker is not None and self._index_worker.isRunning():
@@ -102,6 +103,7 @@ class CsvStreamModel(QAbstractTableModel):
         self._index_worker = CsvIndexWorker(filepath, parent=self)
         self._index_worker.finished_indexing.connect(self._on_indexed)
         self._index_worker.failed.connect(self._on_index_failed)
+        self._index_worker.interrupted.connect(self._on_index_worker_interrupted)
         self._index_worker.finished.connect(self._on_index_worker_finished)
         self._index_worker.start()
         return True
@@ -120,6 +122,12 @@ class CsvStreamModel(QAbstractTableModel):
     def _on_index_failed(self, message: str) -> None:
         """索引失败回调（主线程）。"""
         self.indexing_failed.emit(message)
+
+    def _on_index_worker_interrupted(self) -> None:
+        """索引任务被取消（主线程）。仅当前任务有效。"""
+        if self.sender() is not self._index_worker:
+            return  # 旧任务迟到的取消信号，已被新任务取代
+        self.indexing_cancelled.emit()
 
     def _on_index_worker_finished(self) -> None:
         """线程结束后清理引用。"""
@@ -363,6 +371,7 @@ class ResultTable(QWidget):
         self._model.indexing_started.connect(self._on_indexing_started)
         self._model.indexing_finished.connect(self._on_indexing_finished)
         self._model.indexing_failed.connect(self._on_indexing_failed)
+        self._model.indexing_cancelled.connect(self._on_indexing_cancelled)
 
         self._proxy = QSortFilterProxyModel(self)
         self._proxy.setSourceModel(self._model)
@@ -547,6 +556,11 @@ class ResultTable(QWidget):
         self._loading_bar.setVisible(False)
         self._info_label.setText(_("加载失败：{0}").format(message))
 
+    def _on_indexing_cancelled(self) -> None:
+        """索引任务被取消：复位加载指示。"""
+        self._loading_bar.setVisible(False)
+        self._info_label.setText(_("索引已取消"))
+
     def _apply_filter(self, text: str) -> None:
         self._proxy.setFilterRegularExpression(QRegularExpression(QRegularExpression.escape(text)))
         self._info_label.setText(
@@ -598,6 +612,7 @@ class ResultTable(QWidget):
         self._evidence_worker.found.connect(self._on_evidence_found)
         self._evidence_worker.not_found.connect(self._on_evidence_not_found)
         self._evidence_worker.failed.connect(self._on_evidence_failed)
+        self._evidence_worker.interrupted.connect(self._on_evidence_interrupted)
         self._evidence_worker.finished.connect(self._on_evidence_worker_finished)
         self._evidence_worker.start()
 
@@ -622,6 +637,15 @@ class ResultTable(QWidget):
         self._open_evidence_btn.setEnabled(False)
         self._evidence.setPlaceholderText(_("选择一条记录后，这里显示原始数据、字段证据和质量信息。"))
         self._evidence.setPlainText(_(f"证据加载失败：{message}"))
+
+    def _on_evidence_interrupted(self) -> None:
+        """证据查找被取消（主线程）。仅当前任务有效。"""
+        if self.sender() is not self._evidence_worker:
+            return  # 旧任务迟到的取消信号，已被新任务取代
+        self._current_evidence_record = None
+        self._open_evidence_btn.setEnabled(False)
+        self._evidence.setPlaceholderText(_("选择一条记录后，这里显示原始数据、字段证据和质量信息。"))
+        self._evidence.setPlainText(_("证据查找已取消"))
 
     def _on_evidence_worker_finished(self) -> None:
         """线程结束后清理引用。"""

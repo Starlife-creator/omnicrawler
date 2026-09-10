@@ -116,7 +116,7 @@ def test_b9_csv_index_no_100k_truncation(tmp_path) -> None:
     # 异步路径同样完整计数
     from PySide6.QtTest import QSignalSpy
 
-    from omnicrawler.gui.async_workers import CsvIndexWorker
+    from omnicrawler.gui.core.workers import CsvIndexWorker
     worker = CsvIndexWorker(csv_path)
     spy = QSignalSpy(worker.finished_indexing)
     worker.run()

@@ -6,7 +6,11 @@
 """
 
 from ._core import *  # noqa: F403
-from ._core import __all__  # noqa: F401
 
 # 向后兼容垫片：历史上这些名字可从包级导入（document.py 曾如此使用）。
-from ._core import _ensure_parent_dir, atomic_output, check_cancel  # noqa: F401
+from ._core import (  # noqa: F401
+    __all__,
+    _ensure_parent_dir,
+    atomic_output,
+    check_cancel,
+)

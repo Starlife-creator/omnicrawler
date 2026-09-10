@@ -94,16 +94,15 @@ if not _cli_mode():
     from ..services.ux_service import QuickTaskDraft
     from ..templates.recipe_engine import compose_recipe, diff_config
     from ..templates.template_catalog import bundled_template_catalog
-    from .async_workers import AsyncWorkerManager
-    from .background_workers import (
-        ActionRecorderWorker,
-        SampleRunWorker,
-        SiteInspectionWorker,
-    )
     from .core.autosave import AutosaveManager
     from .core.config_model import CrawlConfig
     from .core.config_serializer import from_yaml, load_yaml, to_yaml
     from .core.template_loader import TemplateLoader
+    from .core.workers import (
+        ActionRecorderWorker,
+        SampleRunWorker,
+        SiteInspectionWorker,
+    )
     from .delegates import (
         ConfigManager as ConfigDelegate,
     )
@@ -274,7 +273,6 @@ class MainWindow(QMainWindow):
         # P2：意图区 URL 探活共享抓取器（懒创建，关闭时释放）
         self._probe_fetcher: Any | None = None
         self._close_after_background_jobs = False
-        self._async_manager = AsyncWorkerManager()
         self._plugin_registry: Any | None = None
         self._builtin_background_controller: Any | None = None
 
@@ -1855,7 +1853,6 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(100, self._finish_deferred_close_if_safe)
             event.ignore()
             return
-        self._async_manager.cancel_all()
         self._autosave.stop()
         # An unsaved or recovered draft is the only durable copy of the user's
         # work. Closing the window must not erase it. Saved configurations may
