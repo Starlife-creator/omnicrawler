@@ -38,18 +38,15 @@ from ...plugins.plugins import OFFICIAL_PLUGIN_TYPES
 from ..design_system import FONT_FAMILY_MONO, FONT_SIZE, RADIUS, ThemeManager
 from ..i18n import _
 from ..widgets.status_indicator import StatusIndicator
-from ..widgets.toast import ToastManager
 from .plugin_market_actions import MarketActionsMixin
 from .plugin_market_browse import MarketBrowseMixin
+from .plugin_market_install import MarketInstallMixin
 from .plugin_market_logic import (
     _CATALOG_PURPOSE as _CATALOG_PURPOSE,
 )
 from .plugin_market_logic import (
     _TYPE_LABELS,
-    _install_block_reason,
-    _install_review_text,
     _market_egress,
-    _permission_risk,
     _project_root_of,
 )
 from .plugin_market_logic import (
@@ -60,6 +57,15 @@ from .plugin_market_logic import (
 )
 from .plugin_market_logic import (
     _entry_strings as _entry_strings,
+)
+from .plugin_market_logic import (
+    _install_block_reason as _install_block_reason,
+)
+from .plugin_market_logic import (
+    _install_review_text as _install_review_text,
+)
+from .plugin_market_logic import (
+    _permission_risk as _permission_risk,
 )
 from .plugin_market_logic import (
     _version_tuple as _version_tuple,
@@ -73,7 +79,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 # ── 视图 ──────────────────────────────────────────────────────────
-class PluginMarketView(MarketBrowseMixin, MarketActionsMixin, QWidget):
+class PluginMarketView(MarketInstallMixin, MarketBrowseMixin, MarketActionsMixin, QWidget):
     """策展式插件市场面板。
 
     状态: offline | loading | ready | error
@@ -437,106 +443,6 @@ class PluginMarketView(MarketBrowseMixin, MarketActionsMixin, QWidget):
 
 
     # ── 安装 / 卸载 / 校验 ────────────────────────────────────
-    def _on_install(self) -> None:
-        from PySide6.QtWidgets import QMessageBox
-
-        pid = self._selected_id
-        if not pid or self._state != "ready":
-            ToastManager.instance().warning(_("请先联网刷新并选择插件"))
-            return
-        entry = self._entry_of(pid)
-        if entry is None:
-            ToastManager.instance().error(_("目录中找不到所选插件"))
-            return
-        block_reason = _install_block_reason(entry)
-        if block_reason:
-            ToastManager.instance().warning(block_reason)
-            return
-        if _permission_risk(entry)[0] != "low":
-            reply = QMessageBox.question(
-                self,
-                _("安装前权限审查"),
-                _install_review_text(entry) + _("\n\n确认继续安装？"),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-        self._install_btn.setEnabled(False)
-        self._footer.setText(_(f"正在下载并校验 {pid} ..."))
-        source = str((self._catalog or {}).get("_source") or self._catalog_url)
-        self._install_worker = _InstallWorker(
-            pid, source, self._dest_root, self._trust_source, self._egress, parent=self
-        )
-        self._install_worker.succeeded.connect(self._on_installed)
-        self._install_worker.failed.connect(self._on_install_error)
-        self._install_worker.finished.connect(self._install_worker.deleteLater)
-        self._install_worker.start()
-
-    def _on_installed(self, plugin_id: str) -> None:
-        from PySide6.QtWidgets import QMessageBox
-
-        ToastManager.instance().success(_(f"已安装并校验通过：{plugin_id}"))
-        self._footer.setText(
-            _(f"已安装 {plugin_id} 到 {self._dest_root / plugin_id}；请求的权限仍需在项目插件管理中批准")
-        )
-        self._populate_list()
-        self._update_action_buttons(installed=True)
-        self.installation_completed.emit(plugin_id)
-        self._prompt_p2p_trust(plugin_id)
-        reply = QMessageBox.question(
-            self,
-            _("启用插件"),
-            _("插件已安全安装，但尚未在当前项目启用。是否现在绑定版本、载荷和权限并启用？"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            self.activation_requested.emit(plugin_id)
-
-
-    def _open_identity_dialog(self) -> None:
-        from .identity_dialog import IdentityDialog
-
-        dialog = IdentityDialog(parent=self)
-        dialog.exec()
-
-    def _prompt_p2p_trust(self, plugin_id: str) -> None:
-        """安装的插件仅带创作者签名（无维护者签名）时，询问是否信任该创作者。"""
-        from PySide6.QtWidgets import QMessageBox
-
-        from ...plugins.trust import TrustedUserList, TrustLevel, verify_plugin_trust
-
-        plugin_dir = self._dest_root / plugin_id
-        decision = verify_plugin_trust(plugin_dir, self._trust_source, TrustedUserList())
-        if decision.level != TrustLevel.CreatorUntrusted or decision.creator is None:
-            return
-        creator = decision.creator
-        reply = QMessageBox.question(
-            self,
-            _("检测到外部插件"),
-            _(
-                "检测到创作者签名的插件：{0}\n\n"
-                "插件作者：{1}\n公钥指纹：{2}\n\n"
-                "该插件未经市场审核（无维护者签名）。是否信任此用户？\n"
-                "信任后，该用户的所有插件将自动信任。"
-            ).format(plugin_id, creator.username, creator.key_fingerprint),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        if TrustedUserList().add(creator, source="p2p", path_hint=f"（{plugin_id}）"):
-            ToastManager.instance().success(
-                _(f"已信任创作者 {creator.username}（指纹 {creator.key_fingerprint}）")
-            )
-        else:
-            ToastManager.instance().info(_(f"创作者 {creator.username} 已在信任列表"))
-
-    def _on_install_error(self, msg: str) -> None:
-        ToastManager.instance().error(_(f"安装失败：{msg.split(chr(10))[0]}"))
-        self._footer.setText(_(f"安装失败：{msg.split(chr(10))[0]}"))
-        self._update_action_buttons()
 
 
     # ── 辅助 ───────────────────────────────────────────────────
