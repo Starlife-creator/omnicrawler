@@ -148,6 +148,8 @@ jobs:
       - run: python tools/check_lint_budget.py
       # 设计体系继承约定（a11y / 内联样式 / 裸色值）：新文件零容忍，存量只降不升
       - run: python tools/check_gui_conventions.py
+      # 市场内容质量：审查清单里可机器判定的部分（需要 checkout_market.py 拉来的同级市场）
+      - run: python tools/check_market_content.py
       - run: python -m mypy src/omnicrawler
       - run: python -m pip wheel . --no-deps -w dist
       - run: python tools/check_release_integrity.py --wheel-dir dist

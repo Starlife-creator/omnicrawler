@@ -99,8 +99,8 @@ def _skip_reason(gate: Gate) -> str | None:
     if gate.needs_args:
         names = "、".join(gate.needs_args)
         return f"需要调用方提供参数 {names}" + (f"（{gate.ci_note}）" if gate.ci_note else "")
-    if gate.requires_file and not (REPO_ROOT / gate.requires_file).is_file():
-        return f"缺少前置文件 {gate.requires_file}"
+    if gate.requires_file and not (REPO_ROOT / gate.requires_file).exists():
+        return f"缺少前置路径 {gate.requires_file}"
     return None
 
 

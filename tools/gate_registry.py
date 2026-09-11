@@ -41,7 +41,7 @@ class Gate:
         sets: 所属集合（见模块文档）。
         description: 这条门禁在防什么。
         script: ``tools/check_*.py`` 的相对路径；非空则参与「与 CI 双向一致」的校验。
-        requires_file: 运行前必须存在的文件；缺失则**显式跳过**并说明原因。
+        requires_file: 运行前必须存在的**路径**（文件或目录）；缺失则**显式跳过**并说明原因。
         needs_args: 必须由调用方在运行期提供的参数名；非空表示本地自证无法直接执行。
         ci_note: 与 CI 的差异说明——如实写，不掩盖。
     """
@@ -163,6 +163,15 @@ GATES: tuple[Gate, ...] = (
         description="核心能力不依赖可选 extras",
         script="tools/check_minimal_install.py",
         ci_note="CI 在**最小安装**环境里跑（只 pip install -e .），证据更强；本地通常在完整 dev 环境里跑。",
+    ),
+    Gate(
+        name="check_market_content",
+        args=("tools/check_market_content.py",),
+        sets=_STATIC,
+        description="市场内容质量（审查清单里可机器判定的部分 → gates_evidence / review_depth）",
+        script="tools/check_market_content.py",
+        requires_file="../OmniCrawler-market",
+        ci_note="需要市场 checkout（CI 由 checkout_market.py 拷到同级目录）；缺失时显式跳过。",
     ),
     # ---------- tests ----------
     Gate(
