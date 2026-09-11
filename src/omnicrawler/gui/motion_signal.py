@@ -49,8 +49,8 @@ class _MotionSignal(QObject):
     def notify(self, reduced: bool) -> None:
         """Emit ``reduced_motion_changed`` if the value has changed.
 
-        Called by :class:`delegates.ThemeManager` after the
-        accessibility profile is updated.
+        Called by :class:`omnicrawler.gui.delegates.theme.ThemeManager`（主题/无障碍
+        委托）after the accessibility profile is updated.
         """
         if reduced != self._current:
             self._current = reduced

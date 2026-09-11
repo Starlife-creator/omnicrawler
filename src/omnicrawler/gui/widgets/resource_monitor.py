@@ -11,7 +11,7 @@ from pathlib import Path
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
-from ..design_system import FONT_SIZE, ThemeManager
+from ..design_system import ThemeManager, scaled_font_px
 from ..i18n import _
 
 try:
@@ -103,10 +103,10 @@ class ResourceMonitor(QWidget):
     def _apply_token_style(self, *_args: object) -> None:
         """从设计令牌生成标签样式，自动跟随主题。"""
         t = ThemeManager.instance().tokens
-        normal = f"font-size: {FONT_SIZE['caption']}px; color: {t.muted};"
+        normal = f"font-size: {scaled_font_px("caption")}px; color: {t.muted};"
         self._normal_style = normal
         self._warn_style = (
-            f"font-size: {FONT_SIZE['caption']}px; color: {t.danger}; font-weight: bold;"
+            f"font-size: {scaled_font_px("caption")}px; color: {t.danger}; font-weight: bold;"
         )
         self._mem_label.setStyleSheet(normal)
         self._disk_label.setStyleSheet(normal)

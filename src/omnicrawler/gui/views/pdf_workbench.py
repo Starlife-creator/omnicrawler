@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..design_system import FONT_FAMILY_MONO, FONT_SIZE, RADIUS, ThemeManager
+from ..design_system import FONT_FAMILY_MONO, RADIUS, ThemeManager, scaled_font_px
 from ..i18n import _
 from .pdf_workbench_logic import _PDF_TEMPLATES
 from .pdf_workbench_logic import (
@@ -50,6 +50,7 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._pending_request = ""
         self.setObjectName("pdfWorkbench")
         self.setAccessibleName(_("PDF 工作台"))
         # P1-4：启用拖放，支持拖入 PDF 文件或目录直接进入批量处理流程
@@ -65,6 +66,17 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
         ThemeManager.instance().theme_changed.connect(self._apply_style)
 
     # ── UI 搭建 ────────────────────────────────────────────────
+    def set_pending_request(self, request: str) -> None:
+        """接收首页自然语言入口带来的需求原文（§A-27）。
+
+        以前首页把需求写进一个**无人读取**的 widget property，于是「请前往 PDF 工作台」
+        这条指引是死胡同：用户跳过来后，系统不记得他说过什么。
+        """
+        self._pending_request = request.strip()
+        status = getattr(self, "_scan_status", None)
+        if status is not None and self._pending_request:
+            status.setText(_("来自首页的需求：{0}").format(self._pending_request))
+
     def _setup_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 20)
@@ -227,17 +239,17 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
         t = ThemeManager.instance().tokens
         self.setStyleSheet(f"""
             QLabel#homeTitle {{
-                font-size: {FONT_SIZE["heading"]}px;
+                font-size: {scaled_font_px("heading")}px;
                 font-weight: 700;
                 color: {t.text};
             }}
             QLabel#sectionSubtitle {{
-                font-size: {FONT_SIZE["body"]}px;
+                font-size: {scaled_font_px("body")}px;
                 color: {t.text};
                 font-weight: 600;
             }}
             QLabel#mutedLabel {{
-                font-size: {FONT_SIZE["small"]}px;
+                font-size: {scaled_font_px("small")}px;
                 color: {t.muted};
             }}
             QListWidget {{
@@ -260,7 +272,7 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
                 padding: 8px;
                 background: {t.surface};
                 font-family: {FONT_FAMILY_MONO};
-                font-size: {FONT_SIZE["small"]}px;
+                font-size: {scaled_font_px("small")}px;
             }}
         """)
 

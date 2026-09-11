@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
 
 from ...core.config import DEFAULTS
 from ...plugins.plugins import OFFICIAL_PLUGIN_TYPES
-from ..design_system import FONT_FAMILY_MONO, FONT_SIZE, RADIUS, ThemeManager
+from ..design_system import FONT_FAMILY_MONO, RADIUS, ThemeManager, scaled_font_px
 from ..i18n import _
 from ..widgets.status_indicator import StatusIndicator
 from .plugin_market_actions import MarketActionsMixin
@@ -333,20 +333,20 @@ class PluginMarketView(
         t = ThemeManager.instance().tokens
         self.setStyleSheet(f"""
             QLabel#homeTitle {{
-                font-size: {FONT_SIZE["heading"]}px;
+                font-size: {scaled_font_px("heading")}px;
                 font-weight: 700;
                 color: {t.text};
             }}
             QLabel#sectionSubtitle, QLabel#detailTitle {{
-                font-size: {FONT_SIZE["body"]}px;
+                font-size: {scaled_font_px("body")}px;
                 color: {t.text};
                 font-weight: 600;
             }}
             QLabel#detailTitle {{
-                font-size: {FONT_SIZE["title"]}px;
+                font-size: {scaled_font_px("title")}px;
             }}
             QLabel#mutedLabel, QLabel#tagLabel, QLabel#capabilityLabel {{
-                font-size: {FONT_SIZE["small"]}px;
+                font-size: {scaled_font_px("small")}px;
                 color: {t.muted};
             }}
             QLabel#tagLabel {{
@@ -379,7 +379,7 @@ class PluginMarketView(
                 padding: 8px;
                 background: {t.surface};
                 font-family: {FONT_FAMILY_MONO};
-                font-size: {FONT_SIZE["small"]}px;
+                font-size: {scaled_font_px("small")}px;
             }}
         """)
 

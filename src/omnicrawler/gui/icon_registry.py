@@ -57,13 +57,8 @@ class IconRegistry:
     All method calls are static; the registry holds no per-instance state.
     """
 
-    _color_map: dict[str, str] = {
-        "primary": "primary",
-        "muted": "muted",
-        "text": "text",
-        "danger": "danger",
-        "success": "success",
-    }
+    # （原 `_color_map` 类属性已删除：全仓从未被读取，真正的映射在 _resolve_color 内，
+    #   见 audit-20260805 §A-41。）
 
     @staticmethod
     def icon(name: str, *, size: int = 24, color: str = "primary") -> QIcon:

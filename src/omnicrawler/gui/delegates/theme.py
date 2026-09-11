@@ -132,6 +132,9 @@ class ThemeManager(_BaseDelegate):
             app, theme,
             high_contrast=mw._settings.high_contrast,
             color_blind_friendly=mw._settings.color_blind_friendly,
+            # 缩放必须传进来：QSS 里的绝对 px 会覆盖 app 字体，
+            # 不传给设计系统的话「界面缩放」对 QSS 控件无效（§A-23）。
+            scale=mw._settings.interface_scale,
         )
         background = getattr(mw, "_active_plugin_background", None)
         if background is not None and background.active:

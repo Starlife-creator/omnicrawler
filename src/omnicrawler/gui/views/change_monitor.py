@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
 from omnicrawler.core.utils import user_agent
 from omnicrawler.gui.widgets.toast import ToastManager
 
-from ..design_system import FONT_FAMILY_MONO, FONT_SIZE, SPACING, ThemeManager
+from ..design_system import FONT_FAMILY_MONO, SPACING, ThemeManager, scaled_font_px
 from ..i18n import _
 from ..widgets.empty_state import EmptyState
 
@@ -358,7 +358,7 @@ class ChangeEventDialog(QDialog):
 
         diff_text = QTextEdit()
         diff_text.setReadOnly(True)
-        diff_text.setStyleSheet(f"font-family: {FONT_FAMILY_MONO}; font-size: {FONT_SIZE['small']}px;")
+        diff_text.setStyleSheet(f"font-family: {FONT_FAMILY_MONO}; font-size: {scaled_font_px("small")}px;")
         diff_html = self._build_diff_html(prev_content, curr_content)
         diff_text.setHtml(diff_html)
         layout.addWidget(diff_text)

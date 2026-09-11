@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from ...plugins.identity import IdentityStore
 from ...plugins.trust import TrustedUserList
-from ..design_system import FONT_SIZE, RADIUS, ThemeManager
+from ..design_system import RADIUS, ThemeManager, scaled_font_px
 from ..i18n import _
 from ..widgets.toast import ToastManager
 
@@ -118,7 +118,7 @@ class IdentityDialog(QDialog):
         t = ThemeManager.instance().tokens
         self.setStyleSheet(f"""
             QLabel#sectionSubtitle {{
-                font-size: {FONT_SIZE["body"]}px;
+                font-size: {scaled_font_px("body")}px;
                 color: {t.text};
                 font-weight: 600;
             }}

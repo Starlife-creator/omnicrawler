@@ -52,6 +52,11 @@ def test_translation_actually_translates(tmp_path: Path) -> None:
     assert "en_US" in get_available_languages()
 
 
+#: 真正的 ``_()`` 翻译调用：前一个字符不能是单词字符或点号。
+#: （否则 ``super().__init__(`` / ``self._value(`` 里的 ``_(`` 会被误当成包裹）
+_WRAPPED_CALL = re.compile(r"(?<![\w.])_\(")
+
+
 def scan_unwrapped_chinese_literals(source: str) -> list[tuple[int, str]]:
     """扫描源码，返回「含中文的字符串字面量且未经 _() 包裹」的 (行号, 内容)。
 
@@ -88,9 +93,15 @@ def scan_unwrapped_chinese_literals(source: str) -> list[tuple[int, str]]:
         if wrap_depth > 0:
             wrap_depth += line.count("(") - line.count(")")
             continue
-        # 跳过 _() 包裹、import、noqa 行
-        if "_(" in line or "noqa" in line or "import " in line:
-            if "_(" in line:
+        # 跳过 _() 包裹、import、noqa 行。
+        # ★ 2026-09-11 修正漏报：原判定用子串 `"_(" in line`，于是**任何私有方法调用**
+        #   （`super().__init__(`、`self._value(`、`self._set_value(` …）都含 `_(`，
+        #   整行被当成「已包裹」而豁免——`super().__init__("帮助中心", parent)` 就是这样
+        #   长期逃过门禁的（见 audit-20260805 §A-28）。改为要求 `_(` 是真正的调用：
+        #   前一个字符不能是单词字符或点号。
+        wrapped = _WRAPPED_CALL.search(line) is not None
+        if wrapped or "noqa" in line or "import " in line:
+            if wrapped:
                 delta = line.count("(") - line.count(")")
                 if delta > 0:
                     wrap_depth = delta
@@ -120,6 +131,21 @@ class TestI18nGateScanner:
     def test_flags_plain_chinese_setText(self) -> None:
         source = 'label.setText("中文标题")\n'
         assert scan_unwrapped_chinese_literals(source) == [(1, 'label.setText("中文标题")')]
+
+    def test_does_not_exempt_dunder_init_call(self) -> None:
+        """★ 回归：`super().__init__(` 里的 `_(` 不是翻译调用（§A-28）。
+
+        原判定用子串 `"_(" in line`，任何私有方法调用都含 `_(`，整行被当成「已包裹」
+        而豁免——`super().__init__("帮助中心", parent)` 就这样长期逃过门禁。
+        """
+        source = '        super().__init__("帮助中心", parent)\n'
+        assert scan_unwrapped_chinese_literals(source) == [
+            (1, 'super().__init__("帮助中心", parent)')
+        ]
+
+    def test_does_not_exempt_private_method_call(self) -> None:
+        source = '        self._value("中文标题")\n'
+        assert scan_unwrapped_chinese_literals(source) == [(1, 'self._value("中文标题")')]
 
     def test_allows_translated_literal(self) -> None:
         assert scan_unwrapped_chinese_literals('label.setText(_("中文标题"))\n') == []

@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..design_system import FONT_SIZE, RADIUS, SPACING, ThemeManager
+from ..design_system import RADIUS, SPACING, ThemeManager, scaled_font_px
 from ..i18n import _
 
 
@@ -101,16 +101,16 @@ class EmptyState(QFrame):
                 border-radius: {RADIUS["lg"]}px;
             }}
             QLabel#emptyStateIcon {{
-                font-size: {FONT_SIZE["hero"]}px;
+                font-size: {scaled_font_px("hero")}px;
                 color: {t.muted};
             }}
             QLabel#emptyStateTitle {{
-                font-size: {FONT_SIZE["title"]}px;
+                font-size: {scaled_font_px("title")}px;
                 font-weight: 700;
                 color: {t.text};
             }}
             QLabel#emptyStateDesc {{
-                font-size: {FONT_SIZE["body"]}px;
+                font-size: {scaled_font_px("body")}px;
                 color: {t.muted};
                 max-width: 420px;
             }}

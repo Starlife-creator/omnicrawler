@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 from ..core.config_model import CrawlConfig
 from ..core.config_serializer import format_yaml, from_yaml, to_yaml
 from ..core.validator import validate_schema
-from ..design_system import FONT_FAMILY_MONO, FONT_SIZE, RADIUS, ThemeManager
+from ..design_system import FONT_FAMILY_MONO, RADIUS, ThemeManager, scaled_font_px
 from ..i18n import _
 from ..widgets.help_tooltip import HelpTooltip
 
@@ -436,7 +436,7 @@ class YamlEditor(QWidget):
                 border: 1px solid {t.code_border};
                 border-radius: {RADIUS["sm"]}px;
                 font-family: {FONT_FAMILY_MONO};
-                font-size: {FONT_SIZE["small"]}px;
+                font-size: {scaled_font_px("small")}px;
             }}
         """)
 
@@ -450,7 +450,7 @@ class YamlEditor(QWidget):
                 border: 2px solid {t.danger};
                 border-radius: {RADIUS["sm"]}px;
                 font-family: {FONT_FAMILY_MONO};
-                font-size: {FONT_SIZE["small"]}px;
+                font-size: {scaled_font_px("small")}px;
             }}
         """)
 

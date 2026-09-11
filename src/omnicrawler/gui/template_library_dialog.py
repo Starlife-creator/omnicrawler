@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from .core.template_loader import TemplateInfo
 from .i18n import _
-from .settings import make_qsettings
+from .settings import AppSettings
 
 
 class TemplateLibraryDialog(QDialog):
@@ -33,12 +33,11 @@ class TemplateLibraryDialog(QDialog):
         self.resize(720, 520)
         self._templates = templates
         self.selected_template: TemplateInfo | None = None
-        self._settings = make_qsettings("OmniCrawler", "GUIWorkbench")
-        stored_favorites = self._settings.value("templates/favorites", [])
-        if isinstance(stored_favorites, str):
-            stored_favorites = [stored_favorites]
-        favorites = stored_favorites if isinstance(stored_favorites, list) else []
-        self._favorites = {str(value) for value in favorites}
+        # §A-36：改用 AppSettings 这一唯一真源。此前这里另开一个
+        # `make_qsettings("OmniCrawler", "GUIWorkbench")`——源码模式下它落注册表、
+        # 与其他设置走的 INI（便携模式）分叉，同一份「设置」存在两处。
+        self._settings = AppSettings.instance()
+        self._favorites = set(self._settings.favorite_templates)
 
         layout = QVBoxLayout(self)
         filters = QHBoxLayout()
@@ -156,5 +155,5 @@ class TemplateLibraryDialog(QDialog):
             self._favorites.remove(template.template_id)
         else:
             self._favorites.add(template.template_id)
-        self._settings.setValue("templates/favorites", sorted(self._favorites))
+        self._settings.favorite_templates = sorted(self._favorites)
         self._refresh()

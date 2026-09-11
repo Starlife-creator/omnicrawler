@@ -510,6 +510,11 @@ class ResultTable(QWidget):
 
     # ---- 公共 API ----
 
+    @property
+    def current_path(self) -> Path | None:
+        """当前已加载的 CSV 路径（无则 None）——供主窗口刷新结果页使用（§A-34）。"""
+        return self._filepath
+
     def load_csv(self, filepath: Path) -> bool:
         """异步加载 CSV 文件。
 

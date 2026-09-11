@@ -234,6 +234,11 @@ class MainWindow(QMainWindow):
         self._result_controller: ResultController | None = None
         self._updating_editor = False
         self._updating_workspace = False
+        # 画布→编辑器同步的去抖定时器（§A-11：单个可重启，不随每次编辑新建）
+        self._workspace_sync_timer = QTimer(self)
+        self._workspace_sync_timer.setSingleShot(True)
+        self._workspace_sync_timer.setInterval(300)
+        self._workspace_sync_timer.timeout.connect(self._sync_workspace_to_editor)
         self._dnd_mode = self._settings.dnd_enabled
 
         # ---- 创建 delegates ----
@@ -737,6 +742,8 @@ class MainWindow(QMainWindow):
         )
         # S3.1.2：修复"结果与复核"错页（原误用 NavIndex.MONITOR）
         self._home.open_results.connect(lambda: self._nav.setCurrentRow(NavIndex.RESULTS))
+        # §A-27：首页 PDF 指引 → 真跳转，并把需求原文交给 PDF 工作台
+        self._home.open_pdf_workbench.connect(self._open_pdf_workbench)
         self._home.open_schedule.connect(self._manage_schedules)
         self._home.import_task.connect(self._config_delegate.import_config_package)
         self._home.run_doctor.connect(self._env_checker.recheck_env)
@@ -886,10 +893,11 @@ class MainWindow(QMainWindow):
     def _refresh_results_page(self) -> None:
         if self._result_controller is not None:
             self._result_controller.query()
-        if hasattr(self, "_result_table") and self._result_table._filepath:
+        # 走公开的 current_path，不再跨对象读私有 `_filepath`（§A-34）
+        if hasattr(self, "_result_table") and self._result_table.current_path:
             self._result_table.refresh()
-        if hasattr(self, "_chart_view") and self._chart_view._filepath:
-            self._chart_view.load_csv(self._chart_view._filepath)
+        if hasattr(self, "_chart_view") and self._chart_view.current_path:
+            self._chart_view.load_csv(self._chart_view.current_path)
         ToastManager.instance().success(_("结果页已刷新"))
 
     def _format_yaml_from_shortcut(self) -> None:
@@ -897,6 +905,11 @@ class MainWindow(QMainWindow):
             self._yaml_editor._format_yaml()
         else:
             ToastManager.instance().warning(_("请先切换到 YAML 编辑器"))
+
+    def _open_pdf_workbench(self, request: str) -> None:
+        """从首页跳到 PDF 工作台，并带上自然语言需求（§A-27）。"""
+        self._nav.setCurrentRow(NavIndex.PDF_WORKBENCH)
+        self._pdf_workbench.set_pending_request(request)
 
     def _on_nav_changed(self, index: int) -> None:
         page = self._nav_pages.get(index)
@@ -909,6 +922,13 @@ class MainWindow(QMainWindow):
             self._auto_load_results()
         elif page == 5:
             pass  # 证据查看器数据由 record_selected_for_review 信号加载
+        elif page == self._nav_pages.get(NavIndex.PDF_WORKBENCH):
+            # §A-27：从侧栏进来也要带上首页记录的需求，否则指引仍是死胡同。
+            # 加 hasattr 守卫：导航处理器可能在页面创建完成前被触发。
+            if hasattr(self, "_pdf_workbench"):
+                self._pdf_workbench.set_pending_request(
+                    str(self._home.property("last_nl_request") or "")
+                )
         elif page == 7:
             pass  # 格式互转：进入即就绪，无需预加载数据
         elif page == 10:
@@ -966,13 +986,17 @@ class MainWindow(QMainWindow):
             self._error_helper.show_error_dialog(exc, _("创建离线演示"))
 
     def _toggle_workspace_editor(self) -> None:
-        current = self._stack.currentIndex()
-        if current == 1:
-            self._stack.setCurrentIndex(0)
+        """在工作台与 YAML 编辑器之间切换。
+
+        ★ 修 §A-24：原实现直接改页面栈（`_stack.setCurrentIndex`），侧栏选中态不会跟着走
+        ——用户看到的是「停在『任务工作台』但内容是 YAML 编辑器」。改为走导航
+        （`_nav.setCurrentRow`），由 `_on_nav_changed` 统一负责页面切换与编辑器回填。
+        """
+        if self._stack.currentIndex() == 1:
+            self._nav.setCurrentRow(NavIndex.WORKSPACE)
             self._toggle_btn.setText(_("⇄ 编辑器"))
-        elif current == 0:
-            self._stack.setCurrentIndex(1)
-            self._yaml_editor.update_from_config(self._config)
+        elif self._stack.currentIndex() == 0:
+            self._nav.setCurrentRow(NavIndex.YAML_EDITOR)
             self._toggle_btn.setText(_("⇄ 工作台"))
 
     def _bind_application_controllers(self) -> None:
@@ -992,14 +1016,21 @@ class MainWindow(QMainWindow):
     # ================================================================
 
     def _on_workspace_changed(self) -> None:
-        if self._updating_editor:
-            return
-        self._updating_editor = True
-        QTimer.singleShot(300, self._sync_workspace_to_editor)
-        self._updating_editor = False
+        """画布变更 → 延迟同步到 YAML 编辑器（300ms 去抖）。
+
+        ★ 修 §A-11：原实现把 `_updating_editor` 在同一函数里置真又立刻置假，
+        标志形同虚设；同时每次触发都 `QTimer.singleShot` 新建一个 300ms 定时器，
+        连续编辑会堆积多个。现在改用**单个可重启的定时器**做去抖，标志只在
+        「真正在写编辑器」的那一小段里为真（那才是它要挡的回声）。
+        """
+        self._workspace_sync_timer.start()
 
     def _sync_workspace_to_editor(self) -> None:
-        self._yaml_editor.update_from_config(self._config)
+        self._updating_editor = True
+        try:
+            self._yaml_editor.update_from_config(self._config)
+        finally:
+            self._updating_editor = False
 
     def _on_editor_sync_to_form(self, config: CrawlConfig) -> None:
         if self._updating_workspace:
@@ -1694,6 +1725,12 @@ class MainWindow(QMainWindow):
             )
             self._file_list.set_directory(files)
             self._nav.setCurrentRow(NavIndex.RESULTS)
+        else:
+            # ★ 修 §A-25：此前没有 else —— 缺 results.csv 时点了「查看结果」毫无反应，
+            # 用户无法区分「没结果」与「按钮坏了」。
+            ToastManager.instance().warning(
+                _("该任务下没有找到结果文件（records.csv）：{0}").format(ws_path)
+            )
 
     def _auto_load_results(self) -> None:
         # A14：workspace 可能含 ~ 等用户目录标记，需 expanduser 后判断绝对路径
@@ -1791,7 +1828,12 @@ class MainWindow(QMainWindow):
     # ================================================================
 
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+        # ★ 修 §A-37：此前只处理双击，单击托盘图标毫无反应（多数平台的默认预期是单击
+        # 唤回窗口）。单击与双击都给同一反馈，重复触发是无害的幂等操作。
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        ):
             self.show()
             self.raise_()
             self.activateWindow()
@@ -1917,7 +1959,8 @@ class MainWindow(QMainWindow):
             elif suffix == ".csv":
                 self._result_table.load_csv(path)
                 self._chart_view.load_csv(path)
-                self._stack.setCurrentIndex(3)
+                # 走导航而不是直接改栈：否则侧栏仍停在原页面（§A-24）
+                self._nav.setCurrentRow(NavIndex.RESULTS)
                 ToastManager.instance().success(_("结果文件已加载: {0}").format(path.name))
             elif suffix == ".zip":
                 self._config_delegate._import_from_path(path)

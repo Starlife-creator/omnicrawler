@@ -167,6 +167,9 @@ class HomePage(QWidget):
     open_recent_results = Signal(str)
     open_results = Signal()
     open_schedule = Signal()
+    #: §A-27：把自然语言入口识别到的需求原文交给 PDF 工作台（此前只写了
+    #: 一个无人读取的 widget property，用户跳过去后系统「不记得」他说过什么）。
+    open_pdf_workbench = Signal(str)
     import_task = Signal()
     run_doctor = Signal()
     create_demo = Signal()
@@ -235,6 +238,14 @@ class HomePage(QWidget):
         edit = QPushButton(_("打开空白任务"))
         edit.clicked.connect(self.open_workspace.emit)
         action_row.addWidget(edit)
+        # §A-27：识别为「文件处理」时才出现——把「请前往 PDF 工作台」从一句死指引
+        # 变成一次真跳转，并把需求原文一起带过去。
+        self.pdf_button = QPushButton(_("前往 PDF 工作台"))
+        self.pdf_button.setVisible(False)
+        self.pdf_button.clicked.connect(
+            lambda: self.open_pdf_workbench.emit(str(self.property("last_nl_request") or ""))
+        )
+        action_row.addWidget(self.pdf_button)
         action_row.addStretch()
         card_layout.addLayout(action_row)
         self.feedback = QLabel("")
@@ -341,12 +352,15 @@ class HomePage(QWidget):
         self.feedback.setText(
             _("📄 检测为文件处理任务\n")
             + _(f"检测到的文件：\n{paths_text}\n")
-            + _("请前往「📄 PDF 工作台」开始处理。")
+            + _("点击下方按钮直接前往「📄 PDF 工作台」（你的需求会一并带过去）。")
         )
+        self.pdf_button.setVisible(True)
         self.setProperty("last_nl_request", draft.request)  # type: ignore[attr-defined]
 
     def _show_draft(self, draft: QuickTaskDraft, *, emit: bool = True) -> None:
         self.feedback.setText(_("已安全限制在入口站点；将先试跑。为什么：") + "；".join(draft.decisions))
+        # 非文件处理路径：把 PDF 跳转按钮收起来（§A-27）
+        self.pdf_button.setVisible(False)
         if emit:
             self.quick_task_ready.emit(draft)
 

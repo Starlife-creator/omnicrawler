@@ -17,18 +17,23 @@ from PySide6.QtWidgets import (
 )
 
 from ..services.help_registry import HelpEntry, contextual_advice, get_help, search_help
-from .design_system import FONT_SIZE
+from .design_system import scaled_font_px
 from .i18n import _
+from .widgets.toast import ToastManager
 
 
 class HelpCenterDock(QDockWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__("帮助中心", parent)
+        super().__init__(_("帮助中心"), parent)
         self.setObjectName("help_center_dock")
         self.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         self._mode = "simple"
         self._task: dict[str, Any] = {}
         self._current_id = "task.intent"
+        # 当前**正在显示**的条目：复制示例以它为准。
+        # 此前复制走 `get_help(self._current_id)`——而 `_current_id` 在未知 id 时不更新，
+        # 于是会静默复制「上一条」的示例（内容不对，但不报错，§A-8）。
+        self._current_entry: HelpEntry | None = None
         body = QWidget()
         layout = QVBoxLayout(body)
         self.search = QLineEdit()
@@ -40,7 +45,7 @@ class HelpCenterDock(QDockWidget):
         self.results.currentRowChanged.connect(self._select_result)
         layout.addWidget(self.results, 1)
         self.title = QLabel()
-        self.title.setStyleSheet(f"font-size: {FONT_SIZE['subtitle']}px; font-weight: 600;")
+        self.title.setStyleSheet(f"font-size: {scaled_font_px("subtitle")}px; font-weight: 600;")
         layout.addWidget(self.title)
         self.details = QTextBrowser()
         self.details.setOpenExternalLinks(False)
@@ -74,6 +79,8 @@ class HelpCenterDock(QDockWidget):
         else:
             # S3.1.12：仅已知 id 写入 _current_id——复制示例不再 KeyError
             self._current_id = entry.help_id
+        # 无论命中与否都记下「当前显示的是什么」，复制以此为准
+        self._current_entry = entry
         self.title.setText(entry.title)
         advice = contextual_advice(help_id, self._task)
         self.details.setPlainText(entry.full_text(self._mode, advice))
@@ -99,6 +106,12 @@ class HelpCenterDock(QDockWidget):
             self.show_help(self._matches[row].help_id, reveal=self.isVisible())
 
     def _copy_example(self) -> None:
+        entry = self._current_entry
+        example = entry.example if entry is not None else ""
+        if not example:
+            # 不静默复制空串：点了「复制示例」却什么都没进剪贴板，用户会以为按钮坏了
+            ToastManager.instance().info(_("当前帮助条目没有可复制的示例"))
+            return
         clipboard = QApplication.clipboard()
         assert clipboard is not None
-        clipboard.setText(get_help(self._current_id).example)
+        clipboard.setText(example)

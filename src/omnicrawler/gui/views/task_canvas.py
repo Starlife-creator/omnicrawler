@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.config_model import CrawlConfig, FieldDef
-from ..design_system import FONT_SIZE, RADIUS, SPACING, ThemeManager
+from ..design_system import RADIUS, SPACING, ThemeManager, scaled_font_px
 from ..i18n import _
 from ..widgets.help_tooltip import HelpTooltip
 from ..widgets.toast import ToastManager
@@ -834,38 +834,38 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
                 color: {t.text};
             }}
             QLabel#pageTitle {{
-                font-size: {FONT_SIZE['heading']}px;
+                font-size: {scaled_font_px("heading")}px;
                 font-weight: 700;
                 color: {t.text};
             }}
             QLabel#sectionTitle {{
-                font-size: {FONT_SIZE['subtitle']}px;
+                font-size: {scaled_font_px("subtitle")}px;
                 font-weight: 600;
                 color: {t.text};
             }}
             QLabel#summaryText {{
-                font-size: {FONT_SIZE['body']}px;
+                font-size: {scaled_font_px("body")}px;
                 color: {t.text};
                 background: {t.canvas};
                 border-radius: {RADIUS['md']}px;
                 padding: {SPACING['md']}px;
             }}
             QLabel#badge {{
-                font-size: {FONT_SIZE['small']}px;
+                font-size: {scaled_font_px("small")}px;
                 color: {t.primary};
                 background: {t.selection};
                 border-radius: {RADIUS['pill']}px;
                 padding: 2px {SPACING['md']}px;
             }}
             QLabel#staleWarning {{
-                font-size: {FONT_SIZE['body']}px;
+                font-size: {scaled_font_px("body")}px;
                 color: {t.warning};
                 background: {t.warning_bg};
                 border-radius: {RADIUS['md']}px;
                 padding: {SPACING['sm']}px;
             }}
             QLabel#welcomeTip {{
-                font-size: {FONT_SIZE['body']}px;
+                font-size: {scaled_font_px("body")}px;
                 color: {t.primary};
                 background: {t.selection};
                 border-radius: {RADIUS['md']}px;
@@ -885,7 +885,7 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
                 border: 1px solid {t.primary};
             }}
             QLabel#planCardTitle {{
-                font-size: {FONT_SIZE['body']}px;
+                font-size: {scaled_font_px("body")}px;
                 font-weight: 700;
                 color: {t.primary};
             }}

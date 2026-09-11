@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -278,11 +279,30 @@ class ScheduleManagerDialog(QDialog):
         if config_path is None:
             return
         try:
+            # §A-17：把「首次运行」日期真正传下去。此前该输入框只在界面上显示所选日期，
+            # 从未进入调度——而调度器正是用 next_run_at 判断到期的（scheduler.py
+            # `WHERE enabled=1 AND next_run_at<=?`），于是用户设的「首次运行」被静默忽略。
+            text = self._start_date_label.text().strip()
+            start_at: float | None = None
+            if text:
+                try:
+                    # 日期由本地日历控件产生（YYYY-MM-DD），按本地时区解释才是用户的本意
+                    start_at = datetime.strptime(text, "%Y-%m-%d").timestamp()
+                except ValueError:
+                    QMessageBox.warning(
+                        self, _("日期无效"), _("无法解析首次运行日期：{0}").format(text)
+                    )
+                    return
+        except Exception as exc:
+            QMessageBox.critical(self, _("添加失败"), str(exc))
+            return
+        try:
             with ScheduleStore(self._database) as store:
                 store.add(
                     config_path.stem,
                     config_path,
                     self._interval.value() * 60,
+                    start_at=start_at,
                     conditions={
                         "require_ac": self._require_ac.isChecked(),
                         "require_network": self._require_network.isChecked(),

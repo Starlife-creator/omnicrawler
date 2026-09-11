@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 import re
 from collections.abc import Callable
@@ -324,7 +325,11 @@ def rgba_token_to_qcolor(rgba_str: str) -> QColor:
 
     match = re.fullmatch(r"rgba\((\d+),\s*(\d+),\s*(\d+),\s*([0-9.]+)\)", rgba_str)
     if not match:
-        return QColor(0, 0, 0, 40)
+        # 不做静默回退：输入只可能是本模块的 shadow 类令牌（实测全部为 rgba 格式），
+        # 格式不对属于编程错误——静默返回一个猜测的透明黑会把它变成「看起来正常但不对」。
+        raise ValueError(
+            _("非法的 rgba 令牌：{0}。alpha 类令牌必须写成 rgba(r,g,b,a) 形式。").format(rgba_str)
+        )
     r, g, b = int(match.group(1)), int(match.group(2)), int(match.group(3))
     a = round(float(match.group(4)) * 255)
     return QColor(r, g, b, max(0, min(255, a)))
@@ -335,28 +340,58 @@ def rgba_token_to_qcolor(rgba_str: str) -> QColor:
 # ---------------------------------------------------------------------------
 
 
-def stylesheet(tokens: VisualTokens) -> str:
-    """生成完整 QSS，所有颜色引用令牌，覆盖 40+ 控件与全状态。"""
+#: 界面缩放的取值范围（**唯一来源**：accessibility.AccessibilityProfile 也取它）。
+SCALE_MIN = 80
+SCALE_MAX = 160
+
+
+def _scale_factor(scale: int) -> float:
+    return max(SCALE_MIN, min(SCALE_MAX, scale)) / 100.0
+
+
+def scaled_font_px(key: str, *, scale: int | None = None) -> int:
+    """按界面缩放取字号（px）。
+
+    ``FONT_SIZE`` 是 100% 缩放下的 px 刻度；本函数是**唯一的取用入口**。
+
+    为什么必须有它：Qt 中 QSS 的 ``font-size`` 会**覆盖** ``QApplication.setFont``，
+    而主 QSS 里有 ``QMainWindow, QDialog, QWidget { font-size: …px }`` 这条几乎命中所有
+    控件的规则。此前 QSS 写死绝对值、只有 app 字体跟缩放，于是「界面缩放」改了设置却
+    **看不到任何变化**（实测：scale 100→150，app 字体 14→21pt，QSS 恒为 14px）。
+
+    ``scale=None`` 时取当前已应用的缩放（未应用过按 100）。
+    """
+    if scale is None:
+        scale = ThemeManager.instance().scale
+    return max(8, round(FONT_SIZE[key] * _scale_factor(scale)))
+
+
+def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
+    """生成完整 QSS，所有颜色引用令牌，覆盖 40+ 控件与全状态。
+
+    ``scale`` 为界面缩放百分比（80–160）；所有字号经 :func:`scaled_font_px` 换算，
+    因此缩放对 QSS 控件真实生效。
+    """
     return f"""
     /* === 基础容器 === */
     QMainWindow, QDialog, QWidget {{
         background-color: {tokens.canvas}; color: {tokens.text};
         font-family: {FONT_FAMILY_UI};
-        font-size: {FONT_SIZE["body"]}px;
+        font-size: {scaled_font_px("body", scale=scale)}px;
     }}
     QLabel, QRadioButton, QCheckBox {{ background: transparent; }}
     QLabel#muted, QLabel[role="muted"] {{ color: {tokens.muted}; }}
 
-    /* === 全局焦点可视化 === */
-    QPushButton:focus-visible, QRadioButton:focus-visible, QCheckBox:focus-visible,
-    QListWidget::item:focus, QComboBox:focus-visible, QSpinBox:focus-visible,
-    QTabBar::tab:focus {{
-        outline: 2px solid {tokens.border_strong};
-        outline-offset: 1px;
+    /* === 全局焦点可视化（§A-18）===
+       只用 Qt **实现**的伪状态与属性：`:focus-visible` 与 `outline` / `outline-offset`
+       都不被 Qt 支持，原先这一整块是死规则 —— 键盘用户因此看不到焦点。
+       改法：按控件类别用 `:focus`，并以「边框 +1px ⇒ 内边距 −1px」加粗焦点框，
+       **保证控件外框尺寸不变**（否则聚焦瞬间内容会跳 1px，见 §A-31）。 */
+    QListWidget:focus, QTreeWidget:focus, QTableWidget:focus, QTableView:focus,
+    QTextEdit:focus, QPlainTextEdit:focus {{
+        border-color: {tokens.border_strong};
     }}
-    QPushButton:focus-visible, QListWidget::item:focus {{
-        border-radius: {RADIUS["sm"]}px;
-    }}
+    QTabBar::tab:focus {{ border-color: {tokens.border_strong}; color: {tokens.primary}; }}
 
     /* === 菜单栏 / 菜单 === */
     QMenuBar {{
@@ -387,7 +422,7 @@ def stylesheet(tokens: VisualTokens) -> str:
     QListWidget#mainNavigation {{
         background: {tokens.nav}; border: 0;
         border-right: 1px solid {tokens.border};
-        outline: 0; padding: {SPACING["md"]}px {SPACING["sm"]}px;
+        padding: {SPACING["md"]}px {SPACING["sm"]}px;
     }}
     QListWidget#mainNavigation::item {{
         padding: 11px 12px; margin: 2px 0;
@@ -405,12 +440,12 @@ def stylesheet(tokens: VisualTokens) -> str:
     }}
 
     /* === 首页标题 === */
-    QLabel#homeTitle {{ color: {tokens.text}; font-size: {FONT_SIZE["display"]}px; font-weight: 700; }}
-    QLabel#eyebrow {{ color: {tokens.primary}; font-size: {FONT_SIZE["small"]}px; font-weight: 700; letter-spacing: 1px; }}
+    QLabel#homeTitle {{ color: {tokens.text}; font-size: {scaled_font_px("display", scale=scale)}px; font-weight: 700; }}
+    QLabel#eyebrow {{ color: {tokens.primary}; font-size: {scaled_font_px("small", scale=scale)}px; font-weight: 700; }}
     /* 区块/侧栏标题：页面与面板统一用它，避免各页面自写 font-weight/font-size 内联样式 */
     QLabel#sectionTitle {{
         color: {tokens.text};
-        font-size: {FONT_SIZE["subtitle"]}px;
+        font-size: {scaled_font_px("subtitle", scale=scale)}px;
         font-weight: 600;
     }}
 
@@ -423,7 +458,7 @@ def stylesheet(tokens: VisualTokens) -> str:
     }}
     QPushButton:hover {{ border-color: {tokens.primary}; background: {tokens.selection}; }}
     QPushButton:pressed {{ background: {tokens.border}; }}
-    QPushButton:focus {{ border: 2px solid {tokens.primary}; }}
+    QPushButton:focus {{ border: 2px solid {tokens.primary}; padding: 6px 13px; }}
     QPushButton:disabled {{ color: {tokens.muted}; background: {tokens.canvas}; border-color: {tokens.border}; }}
 
     QPushButton[primary="true"] {{
@@ -458,14 +493,14 @@ def stylesheet(tokens: VisualTokens) -> str:
     QSplitter::handle {{ background: {tokens.border}; width: 1px; height: 1px; }}
 
     /* === 输入控件：全状态 === */
-    QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTableWidget, QTableWidget {{
+    QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTableWidget {{
         background: {tokens.surface}; color: {tokens.text};
         border: 1px solid {tokens.border}; border-radius: {RADIUS["sm"]}px;
         padding: 6px; selection-background-color: {tokens.primary};
         selection-color: #FFFFFF;
     }}
     QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
-        border: 2px solid {tokens.primary};
+        border: 2px solid {tokens.primary}; padding: 5px;
     }}
     QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled {{ color: {tokens.muted}; background: {tokens.canvas}; }}
     QLineEdit[validation="error"], QTextEdit[validation="error"], QPlainTextEdit[validation="error"],
@@ -542,7 +577,7 @@ def stylesheet(tokens: VisualTokens) -> str:
     QPlainTextEdit[codeEditor="true"] {{
         background: {tokens.code_bg}; color: {tokens.code_fg};
         border: 1px solid {tokens.code_border}; border-radius: {RADIUS["sm"]}px;
-        font-family: {FONT_FAMILY_MONO}; font-size: {FONT_SIZE["small"]}px;
+        font-family: {FONT_FAMILY_MONO}; font-size: {scaled_font_px("small", scale=scale)}px;
         selection-background-color: {tokens.primary};
     }}
 
@@ -561,7 +596,7 @@ def stylesheet(tokens: VisualTokens) -> str:
     }}
 
     /* === 占位符提示 === */
-    QLabel#placeholderHint {{ color: {tokens.danger}; font-size: {FONT_SIZE["caption"]}px; }}
+    QLabel#placeholderHint {{ color: {tokens.danger}; font-size: {scaled_font_px("caption", scale=scale)}px; }}
 
     /* === 空状态容器 === */
     QFrame[emptyState="true"] {{
@@ -643,8 +678,17 @@ def ambient_surface_stylesheet(
 _HEX_PATTERN = re.compile(r"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b")
 
 # 令牌白名单（允许在 setStyleSheet 中出现的十六进制值）
+# 注意：**必须**遍历实际会用到的全部调色板，而不是只遍历 LIGHT/DARK/HIGH_CONTRAST 三个
+# 常量——色盲友好主题是在 theme_tokens() 里另行构造的（§A-20）。此前只遍历三个常量，
+# 导致「开启色盲友好 + 开发期严格色值检查」时 stylesheet 里出现 33~37 处「非法裸 hex」
+# 而直接抛 ValueError（实测三种主题全部崩溃）。
 _TOKEN_HEX_WHITELIST: set[str] = set()
-for _t in (LIGHT, DARK, HIGH_CONTRAST):
+_PALETTES = [
+    theme_tokens(_name, color_blind_friendly=_cb)
+    for _name in ("light", "dark", "high_contrast")
+    for _cb in (False, True)
+]
+for _t in _PALETTES:
     for _f in (
         _t.canvas,
         _t.surface,
@@ -678,6 +722,60 @@ for _t in (LIGHT, DARK, HIGH_CONTRAST):
 _TOKEN_HEX_WHITELIST.update({"#FFFFFF", "#ffffff", "#FFF", "#fff"})
 
 
+#: Qt QSS **不实现**的 CSS 属性：写了不会报错，会**静默无效**。
+#: 只收「确定不支持」的（依据 Qt 样式表参考的属性清单），宁缺勿滥以免误报。
+_UNSUPPORTED_QSS_PROPERTIES = frozenset(
+    {
+        "outline", "outline-color", "outline-style", "outline-width", "outline-offset",
+        "letter-spacing", "word-spacing", "line-height", "text-transform", "white-space",
+        "transition", "animation", "box-shadow", "text-shadow",
+        "gap", "column-gap", "row-gap", "box-sizing", "transform", "opacity", "z-index",
+        "display", "float", "flex", "flex-direction",
+    }
+)
+
+#: Qt QSS **不实现**的伪状态。`:focus-visible` 是重灾区——写它等于没写焦点样式，
+#: 而键盘用户因此看不到焦点（§A-18）。
+_UNSUPPORTED_QSS_PSEUDO = frozenset(
+    {
+        "focus-visible", "focus-within", "first-child", "last-child", "only-child",
+        "nth-child", "nth-of-type", "visited", "link", "target", "root",
+        "placeholder-shown", "before", "after",
+    }
+)
+
+_QSS_BLOCK = re.compile(r"\{([^{}]*)\}", re.S)
+_QSS_DECL = re.compile(r"^\s*([a-z-]+)\s*:", re.M)
+
+
+def assert_qss_supported(qss: str, *, context: str = "") -> None:
+    """守卫：QSS 里不得出现 Qt 不支持的属性或伪状态。
+
+    这类写法的共同点是**不报错、静默无效**——本项目曾因此让整块「全局焦点可视化」
+    变成死规则（`:focus-visible` + `outline` / `outline-offset`），键盘用户看不到焦点，
+    而没有任何测试会失败（§A-18）。把它变成会抛错的守卫，才是真的修掉。
+    """
+    body = re.sub(r"/\*.*?\*/", " ", qss, flags=re.S)
+
+    bad_props: list[str] = []
+    for block in _QSS_BLOCK.findall(body):
+        bad_props.extend(p for p in _QSS_DECL.findall(block) if p in _UNSUPPORTED_QSS_PROPERTIES)
+    bad_pseudo = sorted(
+        {m.group(1) for m in re.finditer(r":([a-z-]+)", body) if m.group(1) in _UNSUPPORTED_QSS_PSEUDO}
+    )
+
+    if bad_props or bad_pseudo:
+        parts: list[str] = []
+        if bad_props:
+            parts.append(_("不支持的属性：") + ", ".join(sorted(set(bad_props))))
+        if bad_pseudo:
+            parts.append(_("不支持的伪状态：") + ", ".join(":" + name for name in bad_pseudo))
+        raise ValueError(
+            _(f"QSS 含 Qt 不实现的选择器/属性（{context}）：") + "；".join(parts)
+            + _("。这类写法不报错但静默无效，请改用 Qt 支持的等价属性。")
+        )
+
+
 def assert_no_raw_hex(qss_or_style: str, *, context: str = "") -> None:
     """守卫：扫描样式串中的裸十六进制色值，非令牌白名单则抛 ValueError。
 
@@ -708,14 +806,13 @@ def assert_no_raw_hex(qss_or_style: str, *, context: str = "") -> None:
 def apply_font_strategy(app: QApplication, *, scale: int = 100) -> None:
     """应用字体族策略。scale 为百分比（80–160）。
 
-    S3.1.22：保留 accessibility 缩放比例——移除 0.75 稀释魔数，
-    字体大小 = 正文基准 × 缩放因子，80–160% 缩放真实生效。
+    单位口径统一为 **px**：``FONT_SIZE`` 是 px 刻度（见其定义处的说明），QSS 也用 px，
+    因此这里必须用 :meth:`QFont.setPixelSize`——此前用 ``setPointSize`` 把 px 数字当成
+    「点」应用，同一条令牌在两条路径下渲染成不同大小（§A-23）。
     """
-    factor = max(0.8, min(1.6, scale / 100.0))
-    base_size = FONT_SIZE["body"]
     font = QFont()
     font.setFamilies(FONT_FAMILY_UI.split(", "))
-    font.setPointSize(max(8, round(base_size * factor)))
+    font.setPixelSize(scaled_font_px("body", scale=scale))
     app.setFont(font)
 
 
@@ -726,6 +823,24 @@ def apply_font_strategy(app: QApplication, *, scale: int = 100) -> None:
 
 #: 信号代理的回调类型：Qt 槽可以是任意可调用对象。
 _Callback = Callable[..., None]
+
+
+def _accepts_no_args(callback: _Callback) -> bool:
+    """该回调能否以「零实参」调用（用于区分实参裁剪与回调内部 TypeError）。"""
+    try:
+        signature = inspect.signature(callback)
+    except (TypeError, ValueError):
+        return True  # 取不到签名（C 实现/内建）→ 保守按可裁剪处理
+    for parameter in signature.parameters.values():
+        if parameter.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+            continue
+        if parameter.default is inspect.Parameter.empty and parameter.kind in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
+        ):
+            return False
+    return True
 
 
 class _SignalProxy:
@@ -753,6 +868,14 @@ class _SignalProxy:
             return  # 重入保护：回调执行期间的 emit 被静默丢弃
         self._emitting = True
         try:
+            self._emit_to_all(*args)
+        finally:
+            # 必须放 finally：此前若回调抛出未捕获的 BaseException（如 Ctrl-C），
+            # `_emitting` 会永久为 True —— 信号总线从此**完全静默**。
+            self._emitting = False
+
+    def _emit_to_all(self, *args: object) -> None:
+        try:
             import shiboken6 as _sip
         except ImportError:
             _sip = None  # type: ignore[assignment]  # 无 PySide6 时降级
@@ -770,20 +893,26 @@ class _SignalProxy:
             try:
                 callback(*args)
             except RuntimeError:
-                dead.append(callback)
+                dead.append(callback)  # C++ 对象已销毁：摘除该订阅者
             except TypeError:
-                try:
-                    callback()
-                except Exception:
-                    logger.debug("Callback no-arg fallback failed", exc_info=True)
+                # Qt 会按槽的形参个数裁剪实参，纯 Python 不能，故这里退化为无参重试。
+                # 但必须区分两种 TypeError：
+                #   ① 实参多于形参（真的需要裁剪）→ 无参重试；
+                #   ② **回调内部自己**抛 TypeError（真 bug）→ 不能伪装成 ①，否则被降级掩盖。
+                if _accepts_no_args(callback):
+                    try:
+                        callback()
+                    except Exception:
+                        logger.warning(_("信号回调无参重试仍失败"), exc_info=True)
+                else:
+                    logger.warning(_("信号回调调用失败（回调内部 TypeError）"), exc_info=True)
             except Exception:
-                logger.debug("Callback invocation failed", exc_info=True)
+                logger.warning(_("信号回调调用失败"), exc_info=True)
         for callback in dead:
             try:
                 self._callbacks.remove(callback)
             except ValueError:
                 pass
-        self._emitting = False
 
 
 class ThemeManager:
@@ -800,7 +929,9 @@ class ThemeManager:
         self._current_tokens: VisualTokens = LIGHT
         self._app: QApplication | None = None
         self._qss_cache: str | None = None
-        self._qss_cache_key: int = 0
+        self._current_scale = 100
+        # 键 = （令牌哈希, 缩放）：两者任一变化都要重建 QSS。
+        self._qss_cache_key: tuple[int, int] | None = None
         self._theme_changed_signal = _SignalProxy()
 
     @classmethod
@@ -817,6 +948,11 @@ class ThemeManager:
     @property
     def tokens(self) -> VisualTokens:
         return self._current_tokens
+
+    @property
+    def scale(self) -> int:
+        """当前已应用的界面缩放百分比（未应用过为 100）。"""
+        return self._current_scale
 
     @property
     def theme_name(self) -> str:
@@ -841,6 +977,7 @@ class ThemeManager:
         tokens = theme_tokens(theme, high_contrast=high_contrast, color_blind_friendly=color_blind_friendly)
         self._current_theme = theme
         self._current_tokens = tokens
+        self._current_scale = scale
 
         # 调色板
         palette = QPalette()
@@ -862,10 +999,13 @@ class ThemeManager:
         apply_font_strategy(app, scale=scale)
 
         # QSS (with cache — regenerated only when tokens change)
-        tk_hash = hash(tuple(asdict(tokens).items()))
+        # 缓存键必须含 scale：否则只改缩放时令牌哈希不变，会直接复用旧 QSS，
+        # 缩放看起来「设置了但没反应」。
+        tk_hash = (hash(tuple(asdict(tokens).items())), scale)
         if self._qss_cache is None or self._qss_cache_key != tk_hash:
-            qss = stylesheet(tokens)
+            qss = stylesheet(tokens, scale=scale)
             assert_no_raw_hex(qss, context="design_system.stylesheet")
+            assert_qss_supported(qss)
             self._qss_cache = qss
             self._qss_cache_key = tk_hash
         app.setStyleSheet(self._qss_cache)
@@ -881,7 +1021,12 @@ class ThemeManager:
 
 # 向后兼容：保留原函数签名
 def apply_design_system(
-    app: QApplication, theme: str, *, high_contrast: bool = False, color_blind_friendly: bool = False
+    app: QApplication,
+    theme: str,
+    *,
+    high_contrast: bool = False,
+    color_blind_friendly: bool = False,
+    scale: int = 100,
 ) -> VisualTokens:
     """向后兼容入口，委托 ThemeManager。"""
     return ThemeManager.instance().apply(
@@ -889,6 +1034,7 @@ def apply_design_system(
         theme,
         high_contrast=high_contrast,
         color_blind_friendly=color_blind_friendly,
+        scale=scale,
     )
 
 

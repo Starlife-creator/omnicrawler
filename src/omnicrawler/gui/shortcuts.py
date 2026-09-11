@@ -90,6 +90,8 @@ class GlobalShortcutManager(QObject):
         if action is None:
             return False
         action.setShortcut(QKeySequence(new_sequence))
+        # §A-43：改键必须落盘，否则重启后静默还原成默认值
+        self._settings.set_shortcut(key, new_sequence)
         return True
 
     @property

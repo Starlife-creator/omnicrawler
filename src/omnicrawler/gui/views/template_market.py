@@ -34,7 +34,7 @@ from ...plugins.market_client import (
     verify_installed_template,
 )
 from ..core.background_worker import BackgroundWorker
-from ..design_system import FONT_FAMILY_MONO, FONT_SIZE, RADIUS, ThemeManager
+from ..design_system import FONT_FAMILY_MONO, RADIUS, ThemeManager, scaled_font_px
 from ..i18n import _
 from ..widgets.status_indicator import StatusIndicator
 from ..widgets.toast import ToastManager
@@ -257,12 +257,12 @@ class TemplateMarketView(QWidget):
         t = ThemeManager.instance().tokens
         self.setStyleSheet(f"""
             QLabel#sectionSubtitle, QLabel#detailTitle {{
-                font-size: {FONT_SIZE["body"]}px;
+                font-size: {scaled_font_px("body")}px;
                 color: {t.text};
                 font-weight: 600;
             }}
-            QLabel#detailTitle {{ font-size: {FONT_SIZE["title"]}px; }}
-            QLabel#mutedLabel {{ font-size: {FONT_SIZE["small"]}px; color: {t.muted}; }}
+            QLabel#detailTitle {{ font-size: {scaled_font_px("title")}px; }}
+            QLabel#mutedLabel {{ font-size: {scaled_font_px("small")}px; color: {t.muted}; }}
             QListWidget {{
                 border: 1px solid {t.border};
                 border-radius: {RADIUS["sm"]}px;
@@ -277,7 +277,7 @@ class TemplateMarketView(QWidget):
                 padding: 8px;
                 background: {t.surface};
                 font-family: {FONT_FAMILY_MONO};
-                font-size: {FONT_SIZE["small"]}px;
+                font-size: {scaled_font_px("small")}px;
             }}
         """)
 

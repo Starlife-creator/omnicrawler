@@ -68,11 +68,17 @@ class AppSettings:
             # isinstance 收敛：保持既有语义——若读取端声明的类型与存入类型不一致，
             # 仍是「原样返回」而不是「静默换成默认值」。
             return cast("_T", self._session_values[key])
-        if value_type in self._QSETTINGS_TYPE_WHITELIST:
-            # QSettings.value(type=) 已按白名单类型返回值，无需二次收敛。
-            return cast("_T", self._settings.value(key, default, type=value_type))
-        # 非白名单类型：取出原始值后手动做类型收敛（如 dict/list-of-dict）
-        raw = self._settings.value(key, default)
+        try:
+            if value_type in self._QSETTINGS_TYPE_WHITELIST:
+                # QSettings.value(type=) 已按白名单类型返回值，无需二次收敛。
+                return cast("_T", self._settings.value(key, default, type=value_type))
+            # 非白名单类型：取出原始值后手动做类型收敛（如 dict/list-of-dict）
+            raw = self._settings.value(key, default)
+        except RuntimeError:
+            # §A-22：Qt 侧对象可能已被销毁（测试、插件重载、「退出到启动器」后重建应用）。
+            # 会话回退里若没有该键，就回落默认值——不要把一个已失效的底层对象
+            # 变成调用方要处理的异常。
+            return default
         if isinstance(raw, value_type):
             return raw
         return default
@@ -193,6 +199,28 @@ class AppSettings:
         }
         stored = self._value("shortcuts", defaults, dict)
         return {**defaults, **{k: v for k, v in stored.items() if isinstance(v, str)}}
+
+    def set_shortcut(self, key: str, sequence: str) -> None:
+        """持久化单个快捷键绑定（§A-43）。
+
+        此前 `GlobalShortcutManager.rebind()` 只改了 QAction 的快捷键，从不写回设置，
+        重启后用户的自定义绑定会静默丢失。
+        """
+        current = dict(self._value("shortcuts", {}, dict))
+        current[key] = sequence
+        self._set_value("shortcuts", current)
+
+    # ---- 模板收藏 ----
+    @property
+    def favorite_templates(self) -> list[str]:
+        stored = self._value("templates/favorites", [], list)
+        if not isinstance(stored, list):
+            return []
+        return [str(item) for item in stored if isinstance(item, str)]
+
+    @favorite_templates.setter
+    def favorite_templates(self, value: list[str]) -> None:
+        self._set_value("templates/favorites", sorted({str(item) for item in value}))
 
     # ---- 隐私选项 ----
     @property
@@ -396,4 +424,8 @@ class AppSettings:
         return self._value("history/max_days", 30, int)
 
     def sync(self) -> None:
-        self._settings.sync()
+        try:
+            self._settings.sync()
+        except RuntimeError:
+            # §A-22：QSettings 已销毁时没有可落盘的内容，静默跳过（与 _set_value 同策略）。
+            pass

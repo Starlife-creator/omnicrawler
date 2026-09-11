@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...review.review_workbench import ReviewField, ReviewItem
-from ..design_system import FONT_FAMILY_MONO, FONT_SIZE, RADIUS, ThemeManager
+from ..design_system import FONT_FAMILY_MONO, RADIUS, ThemeManager, scaled_font_px
 from ..i18n import _
 
 if TYPE_CHECKING:
@@ -327,21 +327,21 @@ class EvidenceView(QWidget):
         t = ThemeManager.instance().tokens
         self.setStyleSheet(f"""
             QLabel#homeTitle {{
-                font-size: {FONT_SIZE["heading"]}px;
+                font-size: {scaled_font_px("heading")}px;
                 font-weight: 700;
                 color: {t.text};
             }}
             QLabel#sectionSubtitle {{
-                font-size: {FONT_SIZE["body"]}px;
+                font-size: {scaled_font_px("body")}px;
                 color: {t.text};
                 font-weight: 600;
             }}
             QLabel#mutedLabel {{
-                font-size: {FONT_SIZE["small"]}px;
+                font-size: {scaled_font_px("small")}px;
                 color: {t.muted};
             }}
             QLabel#riskBadge {{
-                font-size: {FONT_SIZE["subtitle"]}px;
+                font-size: {scaled_font_px("subtitle")}px;
                 font-weight: 700;
                 color: white;
                 border-radius: {RADIUS["lg"]}px;
@@ -353,14 +353,14 @@ class EvidenceView(QWidget):
                 padding: 8px;
                 background: {t.surface};
                 font-family: {FONT_FAMILY_MONO};
-                font-size: {FONT_SIZE["small"]}px;
+                font-size: {scaled_font_px("small")}px;
             }}
             QTableWidget {{
                 border: 1px solid {t.border};
                 border-radius: {RADIUS["sm"]}px;
                 gridline-color: {t.border};
                 background: {t.surface};
-                font-size: {FONT_SIZE["small"]}px;
+                font-size: {scaled_font_px("small")}px;
             }}
             QTableWidget::item {{
                 padding: 4px 8px;
@@ -371,7 +371,7 @@ class EvidenceView(QWidget):
                 border: none;
                 border-bottom: 2px solid {t.border};
                 font-weight: 600;
-                font-size: {FONT_SIZE["small"]}px;
+                font-size: {scaled_font_px("small")}px;
                 color: {t.text};
             }}
         """)
