@@ -45,11 +45,6 @@
       "inline": 0,
       "raw_hex": 0
     },
-    "src/omnicrawler/gui/views/convert_tool.py": {
-      "a11y": 3,
-      "inline": 0,
-      "raw_hex": 0
-    },
     "src/omnicrawler/gui/views/file_list.py": {
       "a11y": 1,
       "inline": 0,
@@ -57,11 +52,6 @@
     },
     "src/omnicrawler/gui/views/identity_welcome.py": {
       "a11y": 1,
-      "inline": 0,
-      "raw_hex": 0
-    },
-    "src/omnicrawler/gui/views/market_home.py": {
-      "a11y": 4,
       "inline": 0,
       "raw_hex": 0
     },

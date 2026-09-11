@@ -151,6 +151,7 @@ class _DropZone(QFrame):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("拖放文件区"))
         self.setObjectName("ConvertDropZone")
         self.setAcceptDrops(True)
         self.setMinimumHeight(160)
@@ -235,6 +236,7 @@ class ConvertView(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("格式转换"))
         self.setObjectName("ConvertToolView")
         self._src_path: Path | None = None
         self._src_format_sniffed: str | None = None
@@ -675,6 +677,7 @@ class _DocExtractTab(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("文档抽取"))
         self._src_path: Path | None = None
         self._worker: _DocWorker | None = None
         self._build_ui()

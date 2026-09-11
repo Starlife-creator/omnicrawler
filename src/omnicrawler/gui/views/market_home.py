@@ -110,6 +110,7 @@ class _LocalPluginsPane(QWidget):
 
     def __init__(self, root: Path, kind: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("本地插件"))
         self._root = root
         self._kind = kind
         self._entries: list[LocalPluginEntry] = []
@@ -376,6 +377,7 @@ class _LocalTemplatesPane(QWidget):
 
     def __init__(self, root: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("本地模板"))
         self._root = root
         self._templates: list[Path] = []
         self._build_ui()
@@ -568,6 +570,7 @@ class UploadMarketDialog(QDialog):
 
     def __init__(self, parent: QWidget | None, *, kind: str, defaults: dict[str, Any], username: str) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("上传到市场"))
         self._kind = kind
         self.setWindowTitle(_("上传市场（提交审核）"))
         self.setModal(True)
@@ -651,6 +654,7 @@ class _SharedImportPane(QWidget):
 
     def __init__(self, root: Path) -> None:
         super().__init__()
+        self.setAccessibleName(_("P2P 导入"))
         self._root = root
         layout = QVBoxLayout(self)
         title = QLabel(_("导入其他用户直接分享的创作者签名包"))
