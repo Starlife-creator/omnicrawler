@@ -52,30 +52,99 @@ def test_translation_actually_translates(tmp_path: Path) -> None:
     assert "en_US" in get_available_languages()
 
 
+def scan_unwrapped_chinese_literals(source: str) -> list[tuple[int, str]]:
+    """扫描源码，返回「含中文的字符串字面量且未经 _() 包裹」的 (行号, 内容)。
+
+    跳过：注释、**三引号串**（docstring / QSS / HTML）、import 行、`_(...)` 包裹体。
+
+    2026-09-11 修正：原实现只按**行首是否以三引号开头**来识别串，docstring 的**续行**
+    因此逃过豁免——只要续行的中文里带引号，就会被当成 UI 字面量误报
+    （实例：`core/view_base.py` 的模块 docstring）。现改为跟踪三引号串状态。
+    """
+    offenders: list[tuple[int, str]] = []
+    in_triple = False
+    wrap_depth = 0  # 跨行 _(...) 括号深度：>0 表示当前行位于 _() 多行包裹体内
+    for lineno, line in enumerate(source.splitlines(), 1):
+        stripped = line.lstrip()
+        if in_triple:
+            # 处于三引号串内部：仅在遇到闭合标记（出现次数为奇数）时退出
+            if line.count('"""') % 2 or line.count("'''") % 2:
+                in_triple = False
+            continue
+        if stripped.startswith("#"):
+            continue
+        # 行首三引号：单行成串直接跳过，未闭合则进入跨行串状态
+        if stripped.startswith('"""') or stripped.startswith("'''"):
+            marker = '"""' if stripped.startswith('"""') else "'''"
+            if stripped.count(marker) % 2:
+                in_triple = True
+            continue
+        # 赋值右侧开启的未闭合三引号（如 QSS/HTML 串）→ 进入跨行串
+        if line.count('"""') % 2 or line.count("'''") % 2:
+            in_triple = True
+            continue
+        if stripped.startswith("*"):
+            continue
+        if wrap_depth > 0:
+            wrap_depth += line.count("(") - line.count(")")
+            continue
+        # 跳过 _() 包裹、import、noqa 行
+        if "_(" in line or "noqa" in line or "import " in line:
+            if "_(" in line:
+                delta = line.count("(") - line.count(")")
+                if delta > 0:
+                    wrap_depth = delta
+            continue
+        if re.search(r'[\u4e00-\u9fff]', line) and not re.search(r'["\'].*[\u4e00-\u9fff]', line):
+            continue
+        # 字符串字面量含中文且非 _() 包裹
+        if re.search(r'["\'][^"\']*[\u4e00-\u9fff][^"\']*["\']', line):
+            offenders.append((lineno, line.strip()[:80]))
+    return offenders
+
+
 def test_gui_source_has_no_unwrapped_chinese_literals() -> None:
     """i18n gate：gui 源码中 UI 中文字面量必须经 _() 包裹（注释/文档除外）。"""
     gui = Path(__file__).resolve().parents[3] / "src" / "omnicrawler" / "gui"
     offenders: list[str] = []
     for path in sorted(gui.rglob("*.py")):
-        wrap_depth = 0  # 跨行 _(...) 括号深度：>0 表示当前行位于 _() 多行包裹体内
-        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            stripped = line.lstrip()
-            if stripped.startswith(("#", '"""', "'''", "*")):
-                continue
-            if wrap_depth > 0:
-                wrap_depth += line.count("(") - line.count(")")
-                continue
-            # 跳过 _() 包裹、import、中文注释行、QSS 样式串与 HTML 文档串
-            if "_(" in line or "noqa" in line or "import " in line:
-                if "_(" in line:
-                    delta = line.count("(") - line.count(")")
-                    if delta > 0:
-                        wrap_depth = delta
-                continue
-            if re.search(r'[\u4e00-\u9fff]', line) and not re.search(r'["\'].*[\u4e00-\u9fff]', line):
-                continue
-            # 字符串字面量含中文且非 _() 包裹
-            if re.search(r'["\'][^"\']*[\u4e00-\u9fff][^"\']*["\']', line):
-                offenders.append(f"{path.relative_to(gui)}:{lineno}: {line.strip()[:80]}")
+        for lineno, text in scan_unwrapped_chinese_literals(path.read_text(encoding="utf-8")):
+            offenders.append(f"{path.relative_to(gui)}:{lineno}: {text}")
     if offenders:
         pytest.fail(f"gui 源码存在未包裹 _() 的中文字面量（{len(offenders)} 处）:\n" + "\n".join(offenders[:15]))
+
+
+class TestI18nGateScanner:
+    """门禁自身的判定必须有测试兜住——否则它会「静默漏报」或「误报到没人敢用」。"""
+
+    def test_flags_plain_chinese_setText(self) -> None:
+        source = 'label.setText("中文标题")\n'
+        assert scan_unwrapped_chinese_literals(source) == [(1, 'label.setText("中文标题")')]
+
+    def test_allows_translated_literal(self) -> None:
+        assert scan_unwrapped_chinese_literals('label.setText(_("中文标题"))\n') == []
+
+    def test_allows_multi_line_translation(self) -> None:
+        source = 'label.setText(\n    _(\n        "中文标题"\n    )\n)\n'
+        assert scan_unwrapped_chinese_literals(source) == []
+
+    def test_ignores_comment(self) -> None:
+        assert scan_unwrapped_chinese_literals('    # 这是"中文"注释\n') == []
+
+    def test_ignores_docstring_continuation_with_quotes(self) -> None:
+        # 原实现的正解：docstring 续行里带引号的中文曾造成误报
+        # （实例 core/view_base.py:5 —— 即"资产齐全、继承路径缺失"）。
+        source = '"""模块说明。\n\n即"资产齐全、继承路径缺失"。\n"""\n'
+        assert scan_unwrapped_chinese_literals(source) == []
+
+    def test_ignores_triple_quoted_stylesheet(self) -> None:
+        source = 'QSS = """\nQLabel { color: "红"; }\n"""\n'
+        assert scan_unwrapped_chinese_literals(source) == []
+
+    def test_resumes_scanning_after_docstring(self) -> None:
+        source = '"""说明\n含"中文引号"\n"""\nlabel.setText("未包裹")\n'
+        offenders = scan_unwrapped_chinese_literals(source)
+        assert offenders == [(4, 'label.setText("未包裹")')]
+
+    def test_ignores_import_line(self) -> None:
+        assert scan_unwrapped_chinese_literals('from a import "中文"  # noqa\n') == []
