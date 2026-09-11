@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.workers import CsvLoadWorker
+from ..design_system import ThemeManager
 from ..i18n import _
 
 
@@ -77,7 +78,7 @@ class ChartView(QWidget):
         # 进入加载态
         self._remove_bars()
         self._loading_bar.setVisible(True)
-        self._summary.setText(_("正在加载结果统计…"))
+        self._set_summary(_("正在加载结果统计…"))
         self._showing_data = False
         self.setVisible(True)
 
@@ -99,7 +100,7 @@ class ChartView(QWidget):
         self._worker = None
         self._remove_bars()
         self._loading_bar.setVisible(False)
-        self._summary.setText(_("尚未加载结果统计"))
+        self._set_summary(_("尚未加载结果统计"))
         self._filepath = None
         self.setVisible(False)
 
@@ -115,14 +116,14 @@ class ChartView(QWidget):
 
         rows = total_rows
         if not headers or rows == 0:
-            self._summary.setText(_("结果文件为空"))
+            self._set_summary(_("结果文件为空"))
             self.setVisible(False)
             self._showing_data = False
             return
 
         sampled = rows > len(sample_rows)
         suffix = _("（抽样）") if sampled else ""
-        self._summary.setText(
+        self._set_summary(
             _("字段完整率：{0} 行，{1} 列{2}").format(rows, len(headers), suffix)
         )
 
@@ -158,18 +159,31 @@ class ChartView(QWidget):
         anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
+    def _set_summary(self, text: str, *, error: bool = False) -> None:
+        """统一设置摘要区文案。
+
+        错误态用危险色与「空/未加载」区分——此前四态（加载中/未加载/为空/失败）共用同一种
+        灰色小字，「加载失败」会被读成「没有数据」，违反「错误不伪装成没数据」（§1.2）。
+        """
+        self._summary.setText(text)
+        if error:
+            self._summary.setStyleSheet(f"color: {ThemeManager.instance().tokens.danger};")
+        else:
+            self._summary.setStyleSheet("")
+
+
     def _on_failed(self, message: str) -> None:
         """CSV 加载失败回调。"""
         self._loading_bar.setVisible(False)
         self._remove_bars()
-        self._summary.setText(_("加载失败：{0}").format(message))
+        self._set_summary(_("加载失败：{0}").format(message), error=True)
 
     def _on_interrupted(self) -> None:
         """任务被取消：复位进行中状态（不改变已渲染的图表）。"""
         if self.sender() is not self._worker:
             return  # 旧任务迟到的取消信号，已被新任务取代
         self._loading_bar.setVisible(False)
-        self._summary.setText(_("加载已取消"))
+        self._set_summary(_("加载已取消"))
         self.setVisible(True)
 
     def _on_worker_finished(self) -> None:

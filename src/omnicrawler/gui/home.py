@@ -26,6 +26,7 @@ from ..services.ux_service import QuickTaskDraft, draft_quick_task
 from .design_system import ThemeManager, rgba_token_to_qcolor
 from .i18n import _
 from .motion_signal import MotionSignal
+from .widgets.empty_state import EmptyState
 
 logger = logging.getLogger(__name__)
 
@@ -359,10 +360,14 @@ class HomePage(QWidget):
                 widget.deleteLater()
 
         if not records:
-            empty = QLabel(_("暂无最近任务。创建并运行一次任务后，可从这里继续编辑或查看结果。"))
-            empty.setObjectName("muted")
-            empty.setWordWrap(True)
-            self._recent_tasks_layout.addWidget(empty)
+            # 统一空态组件：图标 + 标题 + 引导文案（此前是纯文字标签，与其它空态视觉不一致）
+            self._recent_tasks_layout.addWidget(
+                EmptyState(
+                    "📋",
+                    _("暂无最近任务"),
+                    _("创建并运行一次任务后，可从这里继续编辑或查看结果。"),
+                )
+            )
             return
 
         status_names = {
