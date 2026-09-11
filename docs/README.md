@@ -66,6 +66,9 @@
 
 ### 质量报告
 
+- [首个任务旅程 · 人工走查清单](MANUAL_WALKTHROUGH.md)：第四阶段「人工走查」部分的可执行步骤，
+  与自动回归 `tests/integration/test_first_task_journey.py` 构成双证据。
+
 - [测试报告](TEST_REPORT.md)：全项目回归基线。
 - [E2E 测试结果](E2E_TEST_REPORT.md)：本地 E2E 结论。
 
