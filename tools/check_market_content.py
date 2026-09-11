@@ -34,6 +34,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import sys
@@ -49,6 +50,22 @@ DEFAULT_MARKET = REPO_ROOT.parent / "OmniCrawler-market"
 #: 许可白名单（与 `docs/PLUGIN_REVIEW_CHECKLIST.md` 的门 2 一致）。
 SPDX_ALLOWLIST = frozenset(
     {"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MPL-2.0", "0BSD", "Unlicense"}
+)
+
+#: 模块级导入这些**顶层包**意味着「导入期就可能触网」。
+_ALWAYS_NETWORK = frozenset(
+    {
+        "socket", "ssl", "ftplib", "smtplib", "telnetlib", "paramiko",
+        "requests", "httpx", "aiohttp", "websockets", "websocket",
+    }
+)
+
+#: 只有这些**子模块**才做网络 I/O。
+#:
+#: 刻意精确到子模块：`urllib.parse` 只是字符串解析、`urllib.error` 只是异常类型，
+#: 把它们一并算作「触网」会造成误报——实测两个市场插件就因此被误判（首版规则的教训）。
+_NETWORK_SUBMODULES = frozenset(
+    {"urllib.request", "http.client", "http.server", "xmlrpc.client", "asyncio.streams"}
 )
 
 #: 条目里声明的、必须真实存在的文件字段。
@@ -68,6 +85,39 @@ def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     digest.update(path.read_bytes())
     return digest.hexdigest()
+
+
+def _is_network_module(name: str) -> bool:
+    """该模块名是否会在导入期触网。"""
+    if name.split(".")[0] in _ALWAYS_NETWORK:
+        return True
+    return any(name == module or name.startswith(module + ".") for module in _NETWORK_SUBMODULES)
+
+
+def _module_level_network_imports(plugin_py: Path) -> list[str]:
+    """返回 ``plugin.py`` **模块级**导入的网络库名。
+
+    只看模块级：函数体内部按需导入不算「导入期触网」。
+    """
+    try:
+        tree = ast.parse(plugin_py.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return []
+    found: list[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            found.extend(alias.name for alias in node.names if _is_network_module(alias.name))
+        elif isinstance(node, ast.ImportFrom) and _is_network_module(node.module or ""):
+            found.append(node.module or "")
+    return found
+
+
+def _declares_network(entry: dict[str, Any]) -> bool:
+    """插件是否声明了网络能力（这类插件按定义「需要网络」，离线可用不适用）。"""
+    permissions = entry.get("permissions") or []
+    if any("network" in str(item) for item in permissions if isinstance(item, str)):
+        return True
+    return bool(entry.get("domains"))
 
 
 def _check_plugin(entry: dict[str, Any], market: Path) -> dict[str, bool]:
@@ -104,6 +154,15 @@ def _check_plugin(entry: dict[str, Any], market: Path) -> dict[str, bool]:
     plugin_dir = market / "plugins" / str(entry.get("id", ""))
     checks["readme_present"] = (plugin_dir / "README.md").is_file()
     checks["tests_present"] = (plugin_dir / "tests").is_dir()
+
+    # 6) 离线可用（仅对未声明网络能力的插件适用）
+    #    规则：模块级不得导入网络库——否则「没有网络就装不上/跑不起来」。
+    #    声明了网络能力的插件按定义需要网络，本项不适用（因此不进证据，避免恒真的假信号）。
+    if not _declares_network(entry):
+        plugin_py = market / str(entry.get("plugin_file", "") or "")
+        checks["offline_import_safe"] = bool(plugin_py.is_file()) and not _module_level_network_imports(
+            plugin_py
+        )
     return checks
 
 
@@ -112,6 +171,7 @@ def gates_evidence(entry: dict[str, Any], market: Path) -> dict[str, Any]:
     checks = _check_plugin(entry, market)
     return {
         "checks": checks,
+        "needs_network": _declares_network(entry),
         "passed": all(checks.values()),
         "failed_checks": sorted(name for name, ok in checks.items() if not ok),
         "checked_at": datetime.now(UTC).isoformat(timespec="seconds"),

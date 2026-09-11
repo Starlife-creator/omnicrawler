@@ -18,6 +18,11 @@ omnicrawler 仓库根: python tools/check_market_content.py
 许可是否在白名单内、`README.md` 与 `tests/` 是否存在），并据此推导 `review_depth`；
 **当 catalog 的声明与机器证据不一致时直接失败**。
 
+其中**离线可用**按「模块级是否导入网络库」判定（`import socket` / `requests` 等）；
+该规则**精确到子模块**——`urllib.parse` 只是字符串解析，不算触网
+（首版按顶层包判定，曾把两个市场插件误判）。声明了网络能力的插件按定义需要网络，
+该项不适用，也不会出现在证据里（避免恒真的假信号）。
+
 这填补了一个长期空缺：`plugin_router.classify_in_process_tier` 用 `gates_evidence`
 决定信任档位（证据齐全 → T1），catalog schema 也允许该字段，
 但此前**没有任何代码写过它**——于是那条通路永远走不到。现在证据有了生产者，

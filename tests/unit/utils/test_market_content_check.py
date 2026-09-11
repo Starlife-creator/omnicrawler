@@ -27,7 +27,13 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _build_market(tmp_path: Path, *, status: str = "ok") -> tuple[Path, dict]:
+def _build_market(
+    tmp_path: Path,
+    *,
+    status: str = "ok",
+    plugin_source: str = "def handle(op, payload): return {}\n",
+    permissions: list[str] | None = None,
+) -> tuple[Path, dict]:
     """构造一个最小但**真实可校验**的市场 checkout。``status`` 用来注入缺陷。"""
     market = tmp_path / "market"
     plugin_dir = market / "plugins" / "demo"
@@ -35,7 +41,7 @@ def _build_market(tmp_path: Path, *, status: str = "ok") -> tuple[Path, dict]:
 
     manifest_text = json.dumps({"package_id": "demo", "version": "1.0.0"})
     files = {
-        "plugins/demo/plugin.py": "def handle(op, payload): return {}\n",
+        "plugins/demo/plugin.py": plugin_source,
         "plugins/demo/plugin.py.sig": "signature-bytes",
         "plugins/demo/listing.md": "# demo\n",
         "plugins/demo/creator.identity": "identity\n",
@@ -62,6 +68,8 @@ def _build_market(tmp_path: Path, *, status: str = "ok") -> tuple[Path, dict]:
         "maintainer_package_signature_file": "plugins/demo/package.manifest.maintainer.sig",
         "package_manifest_sha256": _sha256(manifest_text),
     }
+    if permissions is not None:
+        entry["permissions"] = permissions
 
     if status == "missing_file":
         (market / "plugins/demo/README.md").unlink()
@@ -156,6 +164,57 @@ def test_undeclared_review_depth_is_not_an_issue(tmp_path: Path) -> None:
     """未声明不算违规：本工具提供的正是「要填什么」的输入。"""
     market, _entry = _build_market(tmp_path)
     assert audit_market(market)["issues"] == []
+
+
+# --------------------------------------------------------------------------
+# 离线可用：只对「未声明网络能力」的插件适用，且不得误报 URL 解析
+# --------------------------------------------------------------------------
+
+
+def test_url_parsing_is_not_flagged_as_network(tmp_path: Path) -> None:
+    """★ 误报守卫：`urllib.parse` 只是字符串解析，不是网络 I/O。
+
+    首版规则按顶层包 `urllib` 判定，把市场里两个插件误判为「非离线可用」——
+    这条用例锁住那个教训。
+    """
+    source = "from urllib.parse import urlencode\n\ndef handle(op, payload): return {}\n"
+    market, entry = _build_market(tmp_path, plugin_source=source)
+    evidence = gates_evidence(entry, market)
+    assert evidence["checks"]["offline_import_safe"] is True, evidence["failed_checks"]
+
+
+def test_module_level_network_import_is_flagged(tmp_path: Path) -> None:
+    market, entry = _build_market(tmp_path, plugin_source="import socket\n\n\ndef handle(o, p): return {}\n")
+    assert gates_evidence(entry, market)["checks"]["offline_import_safe"] is False
+
+
+def test_network_import_inside_function_is_allowed(tmp_path: Path) -> None:
+    """只有**模块级**导入算「导入期触网」；函数内按需导入不算。"""
+    source = "def handle(op, payload):\n    import socket\n    return {}\n"
+    market, entry = _build_market(tmp_path, plugin_source=source)
+    assert gates_evidence(entry, market)["checks"]["offline_import_safe"] is True
+
+
+def test_network_declaring_plugin_is_exempt_and_flagged_as_needing_network(tmp_path: Path) -> None:
+    """声明了网络能力的插件按定义需要网络——该项不适用（不能拿它当「通过」）。"""
+    market, entry = _build_market(
+        tmp_path,
+        plugin_source="import socket\n\n\ndef handle(o, p): return {}\n",
+        permissions=["network:scoped"],
+    )
+    evidence = gates_evidence(entry, market)
+    assert evidence["needs_network"] is True
+    assert "offline_import_safe" not in evidence["checks"], "不适用项不应进证据（否则是恒真的假信号）"
+
+
+@pytest.mark.skipif(not (DEFAULT_MARKET / "catalog.json").is_file(), reason="没有市场 checkout")
+def test_real_market_has_no_offline_false_positive() -> None:
+    """真实市场里没有插件因 `urllib.parse` 之类被误判为「非离线可用」。"""
+    report = audit_market(DEFAULT_MARKET)
+    for name, item in report["plugins"].items():
+        assert "offline_import_safe" not in item["evidence"]["failed_checks"], (
+            f"{name} 被判定为导入期触网——先确认不是 URL 解析之类的误报"
+        )
 
 
 def test_missing_catalog_raises(tmp_path: Path) -> None:
