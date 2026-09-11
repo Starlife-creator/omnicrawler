@@ -85,11 +85,29 @@ def _json(value: Any) -> None:
 # ── Simple commands (no config needed) ──────────────────────────
 
 
+@_register("pdf")
+def _run_pdf_command(args: argparse.Namespace) -> None:
+    """PDF 子命令：把参数原样转发给 PDF 子系统。
+
+    转发而不是复制选项定义——复制就是第二个真源，必然与 pdfx 漂移。
+    """
+    from ._main import _dispatch_pdf
+
+    extra = list(getattr(args, "pdf_args", None) or [])
+    if getattr(args, "pdf_help", False):
+        extra = ["--help", *extra]
+    if not extra:
+        extra = ["--help"]
+    _dispatch_pdf(["pdf", *extra])
+
+
 @_register("workbench")
 def _run_workbench(args: argparse.Namespace) -> None:
     from ..services.workbench import main as workbench_main
 
-    raise SystemExit(workbench_main())
+    # 显式传空：工作台自己解析参数，不能让它读到 `omnicrawler` 的 argv
+    # （否则 `omnicrawler workbench` 会被当成「未知参数」）。
+    raise SystemExit(workbench_main([]))
 
 
 @_register("field-suggest")

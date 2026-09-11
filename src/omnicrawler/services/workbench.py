@@ -2,15 +2,35 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import queue
+import sys
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 
-def main() -> int:
+def _build_parser() -> argparse.ArgumentParser:
+    """工作台自身的参数。
+
+    2026-09-11：入口此前 `main()` 不收参数，于是 `omnicrawler-workbench --help` 之类会被
+    **静默忽略**并直接开窗——与其它 5 个入口的行为不一致（审计 report_packaging_scripts 已记录）。
+    """
+    from .._version import __version__
+
+    parser = argparse.ArgumentParser(
+        prog="omnicrawler-workbench",
+        description="从网站采集到 PDF 字段结果的统一桌面工作台",
+    )
+    parser.add_argument("--version", action="version", version=f"omnicrawler {__version__}")
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    _build_parser().parse_args(args)
     try:
         import tkinter as tk
         from tkinter import filedialog, messagebox, ttk

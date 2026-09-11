@@ -49,9 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-format", default="text", choices=["text", "json"])
     sub = parser.add_subparsers(dest="command", required=True)
 
-    from ._parsers import data, extraction, ops, plugins, project, task, templates
+    from ._parsers import data, extraction, ops, pdf, plugins, project, task, templates
 
-    for section in (task, templates, project, plugins, extraction, data, ops):
+    for section in (task, templates, project, plugins, extraction, data, ops, pdf):
         section.configure(sub)
     return parser
 
@@ -68,8 +68,11 @@ def main(argv: list[str] | None = None) -> None:
     if isinstance(stdout, io.TextIOWrapper) and isinstance(stderr, io.TextIOWrapper):
         stdout.reconfigure(encoding="utf-8", errors="replace")
         stderr.reconfigure(encoding="utf-8", errors="replace")
-    # PDF sub-commands use their own entry points
-    if argv and argv[0] in {"pdf", "pdf-process", "pdf-extract"}:
+    # 已发布的 PDF console script 别名（`pdf-process` / `pdf-extract`）：它们不是
+    # `omnicrawler` 的子命令，但历史命令行习惯允许这样调用，保留为兼容入口。
+    # `pdf` 本身已是真子命令（见 _parsers/pdf.py），不再走嗅探——否则
+    # `omnicrawler --help` 与 CLI 文档契约都看不到它。
+    if argv and argv[0] in {"pdf-process", "pdf-extract"}:
         _dispatch_pdf(argv)
         return
     if not argv:

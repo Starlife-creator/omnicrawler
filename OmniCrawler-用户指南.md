@@ -254,6 +254,25 @@ omnicrawler reprocess -c configs/my_site.yaml --run-id <run_id>
 | `omnicrawler record-actions` | 打开浏览器录制点击/输入/滚动 |
 | `omnicrawler api-discover` | 从浏览器 API 捕获 JSON 生成 REST 模板 |
 | `omnicrawler plugins` | 列出已注册插件 |
+| `omnicrawler pdf --help` | PDF 子系统：解析、OCR、字段抽取、导出与人工复核 |
+
+### 命令入口与别名
+
+装好之后一共有 6 个可执行入口。它们**不是 6 套命令**，而是「一个统一 CLI + 若干别名」：
+
+| 入口 | 定位 |
+|---|---|
+| `omnicrawler` | 唯一的主入口，全部能力都是它的子命令 |
+| `omnicrawler pdf <子命令>` | PDF 子系统（等价 `pdfx`），参数原样转发 |
+| `pdfx` | PDF 子系统的独立入口（等价 `omnicrawler pdf`） |
+| `pdf-process` | PDF 解析/OCR/文本导出入口（已发布，保留为别名） |
+| `pdf-extract` | PDF 字段抽取/复核入口（已发布，保留为别名） |
+| `omnicrawler-workbench` | 统一桌面工作台（等价 `omnicrawler workbench`） |
+| `omnicrawler-gui` | 主 GUI 启动器 |
+
+说明：`pdf-process` / `pdf-extract` 是**已发布的入口**，为不破坏既有脚本与文档而保留；
+新写的命令请优先用 `omnicrawler pdf ...`（它出现在 `omnicrawler --help` 里，
+也受 CLI 文档一致性门禁的约束）。
 
 ---
 

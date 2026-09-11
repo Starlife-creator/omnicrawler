@@ -16,7 +16,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+# 全部 console scripts：omnicrawler / omnicrawler-gui / omnicrawler-workbench /
+# pdfx / pdf-process / pdf-extract。此前只 COPY 了 `omnicrawler*`，
+# 镜像里因此缺了 3 个 PDF 入口（审计 report_packaging_scripts 已记录）。
 COPY --from=builder /usr/local/bin/omnicrawler* /usr/local/bin/
+COPY --from=builder /usr/local/bin/pdf* /usr/local/bin/
 COPY --from=builder /app /app
 
 RUN useradd --create-home --uid 10001 omnicrawler && \

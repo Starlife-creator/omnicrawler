@@ -50,8 +50,21 @@ def test_every_registered_handler_is_callable() -> None:
 
 @pytest.mark.parametrize("command", sorted(_registry))
 def test_command_help_runs_clean(command: str) -> None:
-    """每个命令的 --help 必须可构建且以退出码 0 结束（参数定义无损坏）。"""
+    """每个命令的 --help 必须可构建且以退出码 0 结束（参数定义无损坏）。
+
+    参数**转发型**子命令（见 `_parsers.pdf.FORWARDING_COMMANDS`）例外：它们刻意把
+    `-h/--help` 声明为普通开关并转发给被包装的子系统，好让用户看到子系统真正的帮助，
+    因此这里不会走 argparse 的 SystemExit——改为断言「解析成功且转发开关被置位」。
+    """
+    from omnicrawler.cli._parsers.pdf import FORWARDING_COMMANDS
+
     parser = build_parser()
+    if command in FORWARDING_COMMANDS:
+        forwarded = parser.parse_args([command, "--help"])
+        assert getattr(forwarded, f"{command}_help", False) is True, (
+            f"命令 {command} 属于转发型，但其 --help 未被置位"
+        )
+        return
     buffer = io.StringIO()
     with contextlib.redirect_stdout(buffer), pytest.raises(SystemExit) as excinfo:
         parser.parse_args([command, "--help"])
