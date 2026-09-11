@@ -10,7 +10,12 @@ from concurrent.futures import FIRST_COMPLETED, Future, as_completed, wait
 from pathlib import Path
 from typing import Any
 
-from ..core.errors import ExtractionError, PolicyBlockedError, describe_error
+from ..core.errors import (
+    EgressDisabledError,
+    ExtractionError,
+    PolicyBlockedError,
+    describe_error,
+)
 from ..core.models import CrawlRequest, FetchResult
 from ..extraction import extractors
 from ..fetching.streams import collect_sse, collect_websocket
@@ -152,6 +157,10 @@ class _PipelineRun(_PipelineBase):
         pdf_summary: dict[str, Any] | None = None
         inflight: dict[Future[FetchResult], CrawlRequest] = {}
         frontier_exhausted = False
+        # 出网是否被我们**主动**关停（取消/中断）。用于区分「这个 URL 被策略拒绝」与
+        # 「我们正在停，请求没机会发出去」——后者不能记成终态 blocked，否则 resume 不再重试，
+        # 用户会静默丢掉一部分待抓页面。
+        network_stopped = False
 
         tracker.begin_stage("fetch", expected_items=max(1, limit))
         extract_expected_items = max(1, limit)
@@ -192,6 +201,13 @@ class _PipelineRun(_PipelineBase):
                         },
                     )
             except (PermissionError, PolicyBlockedError) as exc:
+                if network_stopped and isinstance(exc, EgressDisabledError):
+                    # 出网是被我们自己关的，不是这个 URL 被策略拒绝。
+                    # 退回 pending（可重试），而不是 blocked（终态、resume 不会重试）——
+                    # 宁可下次运行再判一次，也不要静默丢失这部分 URL。
+                    self.state.mark_done(request.fingerprint, status="pending")
+                    LOGGER.info("出网已按请求停用，%s 退回待处理", request.url)
+                    return
                 self.state.mark_done(request.fingerprint, status="blocked", error=str(exc))
                 self.state.add_error(run_id, request, "policy", exc, retryable=False)
                 self.diagnostics.failure(run_id, "policy", exc, request=request)
@@ -235,11 +251,13 @@ class _PipelineRun(_PipelineBase):
 
                 if not self.run_control.wait_if_paused(notify=control_notify):
                     status = "cancelled"
+                    network_stopped = True
                     self.egress.disconnect_task()
                     drain()
                     break
                 if should_stop and should_stop():
                     status = "cancelled"
+                    network_stopped = True
                     self.run_control.request_stop()
                     self.egress.disconnect_task()
                     drain()
@@ -380,6 +398,7 @@ class _PipelineRun(_PipelineBase):
             return exported
         except KeyboardInterrupt:
             status = "cancelled"
+            network_stopped = True
             self.run_control.request_stop()
             self.egress.disconnect_task()
             # 收尾必须**在任何中断下都完成**：否则 run 会永远停在 running，

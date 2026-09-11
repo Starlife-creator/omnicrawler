@@ -32,7 +32,7 @@ from omnicrawler.runtime.recovery import RecoveryCenter
 from omnicrawler.runtime.run_control import RunControl
 from omnicrawler.services.application_service import ApplicationService
 from omnicrawler.state import StateStore
-from tests.support.fault_injection import inject_fetch_faults
+from tests.support.fault_injection import fail_urls, inject_fetch_faults
 
 _PAGES = 20
 _LINKS = "".join(f'<a href="/p{i}">{i}</a>' for i in range(1, _PAGES + 1))
@@ -150,23 +150,19 @@ def test_cancelled_run_is_resumable_to_completion(site, tmp_path: Path) -> None:
 def test_interrupt_is_recorded_as_cancellation(site, tmp_path: Path, monkeypatch) -> None:
     """中断（模拟 Ctrl-C）必须被记为取消，并留下可恢复的状态。"""
     path = _write_config(tmp_path, site)
-    calls = {"n": 0}
-
-    def should_fail(index: int, _request: object) -> bool:
-        calls["n"] = index
-        return index == 2  # 只中断第 3 个请求——一次 Ctrl-C 的现实模型
-
-    inject_fetch_faults(
+    # **按 URL 注入**而不是按「第几次调用」：并发池下调用序号与时序相关，
+    # 按序号写会让测试时通时不通（实测：单独跑全过、全量套件里必失败）。
+    # 选非种子页——种子必须先成功，否则发现不到链接。
+    faults = inject_fetch_faults(
         monkeypatch,
-        should_fail=should_fail,
+        should_fail=fail_urls("/p10"),
         exc_factory=lambda _index, _request: KeyboardInterrupt(),
     )
 
     with pytest.raises(KeyboardInterrupt):
         ApplicationService(path).run()
 
-    # 并发池使实际被拦截的次数与时序有关，只需确认"确实走到了中断点"。
-    assert calls["n"] >= 2, "注入没有执行到预期位置"
+    assert faults.injected, "注入没有发生——这条测试会在空跑中假通过"
 
     with StateStore(_workspace(tmp_path) / "state.sqlite3") as state:
         runs = state.rows("SELECT status FROM runs ORDER BY rowid DESC LIMIT 1")
@@ -178,6 +174,10 @@ def test_interrupt_is_recorded_as_cancellation(site, tmp_path: Path, monkeypatch
     # 中断不丢工作：完成的不回退，没轮到的仍在队列里。
     assert counts.get("done", 0) >= 1, counts
     assert counts.get("pending", 0) >= 1, counts
+    # ★ 被中断时「已提交但尚未开始」的请求，会因为出网已被我们停用而拿不到响应。
+    # 那不是这个 URL 被策略拒绝，**不能记成终态 blocked**——resume 不会重试 blocked，
+    # 用户会静默丢掉这部分待抓页面（实测踩到过：{'blocked': 1, 'done': 20}）。
+    assert counts.get("blocked", 0) == 0, f"取消把待抓页面判成了终态: {counts}"
 
 
 def test_interrupted_run_is_resumable_to_completion(site, tmp_path: Path, monkeypatch) -> None:
@@ -185,13 +185,14 @@ def test_interrupted_run_is_resumable_to_completion(site, tmp_path: Path, monkey
     path = _write_config(tmp_path, site)
 
     with monkeypatch.context() as scoped:
-        inject_fetch_faults(
+        faults = inject_fetch_faults(
             scoped,
-            should_fail=lambda index, _request: index == 2,
+            should_fail=fail_urls("/p3"),
             exc_factory=lambda _index, _request: KeyboardInterrupt(),
         )
         with pytest.raises(KeyboardInterrupt):
             ApplicationService(path).run()
+    assert faults.injected, "注入没有发生"
 
     resumed = ApplicationService(path).run(resume=True)
 
@@ -211,17 +212,18 @@ def test_repeated_interrupt_still_finalizes_the_run(site, tmp_path: Path, monkey
     """
     path = _write_config(tmp_path, site)
 
-    # index >= 2：第 3 个请求起**每次**抓取都中断 —— 于是 drain() 收尾时也会被中断。
-    # 注入必须**作用域化**：否则它在后面的恢复运行里仍然生效，
-    # 那次运行就会再次中断（实测表现为「幽灵 KeyboardInterrupt」在测试收尾时才冒出来）。
+    # 让**多个**链接页中断：这样 drain() 收尾时手头仍有失败的在途请求，
+    # 收尾本身也会被打断——正是要覆盖的路径。注入按 URL（确定性），且**作用域化**
+    # （否则它在后面的恢复运行里仍然生效，表现为测试收尾时冒出幽灵 KeyboardInterrupt）。
     with monkeypatch.context() as scoped:
-        inject_fetch_faults(
+        faults = inject_fetch_faults(
             scoped,
-            should_fail=lambda index, _request: index >= 2,
+            should_fail=fail_urls("/p2", "/p4", "/p6", "/p8", "/p10", "/p12"),
             exc_factory=lambda _index, _request: KeyboardInterrupt(),
         )
         with pytest.raises(KeyboardInterrupt):
             ApplicationService(path).run()
+    assert faults.injected, "注入没有发生"
 
     with StateStore(_workspace(tmp_path) / "state.sqlite3") as state:
         runs = state.rows("SELECT status FROM runs ORDER BY rowid DESC LIMIT 1")
