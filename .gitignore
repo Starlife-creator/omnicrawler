@@ -31,6 +31,9 @@ _empty_*/
 # === Testing & Coverage ===
 .pytest_cache/
 .test-tmp/
+# 审计/复核用的临时工作区（项目约定的临时目录，内容不具长期价值；
+# 与 .test-tmp/ 同性质——此前只忽略了后者，导致前者长期挂在 git status 上）
+.audit-tmp/
 .coverage
 .coverage.*
 coverage.xml
