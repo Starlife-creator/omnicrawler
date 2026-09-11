@@ -10,6 +10,7 @@ from typing import Any
 
 import yaml
 
+from ..security import tls_scope
 from .builtin_references import (
     DEFAULT_PDF_TEMPLATE,
     LEGACY_DEFAULT_PDF_TEMPLATE,
@@ -67,6 +68,8 @@ DEFAULTS: dict[str, Any] = {
         "respect_robots": True, "robots_fail_closed": True,
         "robots_cache_ttl_seconds": 3600, "robots_max_bytes": 2_000_000,
         "verify_tls": True, "max_response_bytes": 50_000_000,
+        # P2-5：关闭 TLS 校验时必须点名的免校验主机（作用域收紧，见 security/tls_scope.py）。
+        "tls_insecure_domains": [],
         "allow_private_network": False, "resolve_dns": True,
         "dns_fail_closed": True, "dns_cache_ttl_seconds": 60,
         "headers": {}, "proxy": "",
@@ -589,6 +592,35 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
             errors.append("http.max_redirects必须在0到50之间")
         if float(http.get("retry_max_seconds", 30)) < 0:
             errors.append("http.retry_max_seconds不能为负数")
+        # P2-5：TLS 校验降级必须是**有作用域**的。
+        # `verify_tls` 是全局开关（6 条抓取路径共用），只为访问一台自签证书的内网机器而关掉它，
+        # 会连带把公网目标一起降级。因此要求显式声明允许免校验的主机，并在出网收口处强制该作用域。
+        raw_scope = http.get("tls_insecure_domains", [])
+        raw_entries = list(raw_scope) if isinstance(raw_scope, (list, tuple)) else []
+        if not isinstance(raw_scope, (list, tuple)):
+            errors.append("http.tls_insecure_domains必须是主机名数组")
+        for entry in raw_entries:
+            reason = tls_scope.invalid_entry_reason(entry)
+            if reason:
+                errors.append(f"http.tls_insecure_domains 条目非法 {entry!r}: {reason}")
+        scope = tls_scope.normalized(raw_entries)
+        if http.get("verify_tls", True) is False:
+            if not scope:
+                errors.append(
+                    "http.verify_tls=false 必须同时用 http.tls_insecure_domains 显式声明"
+                    "允许免校验的主机（TLS 校验只对已声明的主机关闭）；"
+                    "若无需关闭请设回 http.verify_tls=true"
+                )
+            for host in scope:
+                if not tls_scope.looks_internal(host):
+                    warnings.append(
+                        f"http.tls_insecure_domains 中的 {host} 看起来不是内网主机；"
+                        "对它关闭 TLS 校验会使其面临中间人风险"
+                    )
+        elif scope:
+            warnings.append(
+                "http.tls_insecure_domains 已配置但 http.verify_tls=true，该名单当前不生效"
+            )
         if http.get("retry_max") is not None:
             if isinstance(http.get("retry_max"), bool):
                 errors.append("http.retry_max必须是大于等于0的整数（0 表示不重试）")

@@ -16,11 +16,17 @@ from omnicrawler.fetching.browser_fetcher import BrowserFetcher
 def _config(tmp_path: Path, *, launch_args: list[str], verify_tls: bool = True) -> object:
     config_path = tmp_path / "task.yaml"
     args_line = "launch_args: [" + ", ".join(repr(a) for a in launch_args) + "]"
+    # P2-5：verify_tls=false 必须点名允许免校验的主机（作用域收紧），否则配置校验 fail-closed。
+    http_line = (
+        "http: {verify_tls: true}"
+        if verify_tls
+        else "http: {verify_tls: false, tls_insecure_domains: [example.org]}"
+    )
     config_path.write_text(
         "project: {name: b306, workspace: work}\n"
         "source: {kind: static_html, seeds: [https://example.org/]}\n"
         f"browser: {{{args_line}}}\n"
-        f"http: {{verify_tls: {str(verify_tls).lower()}}}\n",
+        f"{http_line}\n",
         encoding="utf-8",
     )
     return load_config(config_path)

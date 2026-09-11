@@ -13,8 +13,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..core.config import AppConfig
-from ..core.errors import CredentialScopeError, EgressBudgetExceededError, EgressDisabledError
+from ..core.errors import (
+    CredentialScopeError,
+    EgressBudgetExceededError,
+    EgressDisabledError,
+    PolicyBlockedError,
+)
 from ..core.utils import utcnow
+from . import tls_scope
 from .policy import NetworkTargetPolicy
 
 _SENSITIVE_HEADER = re.compile(
@@ -144,6 +150,12 @@ class EgressBroker:
         self.circuit_threshold = int(settings.get("circuit_failure_threshold", 5))
         self.circuit_recovery = float(settings.get("circuit_recovery_seconds", 30))
         self.audit_enabled = bool(settings.get("audit", True))
+        # P2-5：TLS 校验降级的作用域。关闭校验时只允许访问显式声明的主机——
+        # 传输栈的校验开关是客户端级的，无法按请求逐主机切换，
+        # 因此在出网收口处强制作用域（宁可明确不可混用，也不要看不见的全局降级）。
+        _http = config.section("http")
+        self._tls_scope = tls_scope.scope_of(_http)
+        self._tls_scope_disabled = tls_scope.verification_disabled(_http)
         self.audit_path = config.workspace / "logs" / "egress-audit.jsonl"
         self._started = time.monotonic()
         self._requests = 0
@@ -300,6 +312,11 @@ class EgressBroker:
                 raise EgressDisabledError(f"端口未获批准: {port}")
             if self.allowed_domains and not _domain_matches(host, self.allowed_domains):
                 raise EgressDisabledError(f"域名未获批准: {host}")
+            if self._tls_scope_disabled and not tls_scope.allows_unverified(host, self._tls_scope):
+                raise PolicyBlockedError(
+                    f"TLS 校验已关闭（http.verify_tls=false），而 {host} 不在 http.tls_insecure_domains 内；"
+                    "请设回 http.verify_tls=true，或把该主机加入该名单"
+                )
             network_url = urllib.parse.urlunsplit(
                 ("https" if scheme == "wss" else "http" if scheme == "ws" else scheme, parts.netloc, parts.path, parts.query, "")
             )

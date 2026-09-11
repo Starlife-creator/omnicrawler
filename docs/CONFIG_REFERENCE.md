@@ -47,7 +47,16 @@ outputs: {jsonl: true, csv: true, xlsx: true}
 - `retry_on_status`：发生重试的状态码列表，默认 `[408, 425, 429, 500, 502, 503, 504]`；设为空数组 `[]` 表示不重试任何 HTTP 状态码。
 - `retry_max`：旧轨兼容别名，等价 `retries`，仅在未写 `retries` 时生效（非负整数，0 表示不重试）。
 - `respect_robots/robots_fail_closed/robots_cache_ttl_seconds/robots_max_bytes`。
-- `verify_tls/max_redirects/max_response_bytes`。
+- `max_redirects/max_response_bytes`。
+- `verify_tls`（默认 `true`）与 `tls_insecure_domains`：**TLS 校验降级必须是有作用域的**。
+  这两个键共同构成一个开关，不能被单独使用：
+  - `verify_tls: true`（默认）：一切照旧，`tls_insecure_domains` 不生效（若配了会提示「不生效」）。
+  - `verify_tls: false`：**必须**用 `tls_insecure_domains` 逐台声明允许免校验的主机，
+    否则配置校验直接失败。免校验只对名单内主机生效，**访问名单外主机会被出网层拦截**。
+  - 条目只写主机名（不带协议/路径/端口，不支持通配符）；看起来不像内网的主机会产生风险提示。
+  - 为什么不能只关全局开关：校验开关在传输栈里是**客户端级**的（httpx / Playwright 无法
+    按请求逐主机切换）。若只做一半，就会出现「以为只对 A 放宽、其实对 B 也放宽」。
+    因此这里选择明确不可混用，而不是留下看不见的全局降级。
 - `allow_private_network`：默认 `false`；仅对自有或已授权内网站点开启。
 - `resolve_dns/dns_fail_closed/dns_cache_ttl_seconds`：DNS 结果安全检查。异步 HTTP 传输无法安装
   DNS 固定后端时默认 `dns_fail_closed: true` 并拒绝启动；只有明确接受 DNS 重绑定降级风险时
