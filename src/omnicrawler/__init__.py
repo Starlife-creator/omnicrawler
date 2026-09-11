@@ -12,9 +12,10 @@ import importlib.abc
 import logging
 from typing import Any
 
-# Keep this value import-safe for source checkouts. Packaging metadata is
-# verified against it by tools/check_docs_consistency.py before release.
-__version__ = "0.12.0"
+# 版本号真源：src/omnicrawler/_version.py（本模块经 __getattr__ 惰性暴露，
+# 不在此处 eager 导入，见文件末尾的模块级 __getattr__ 实现）。
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -232,6 +233,14 @@ def __getattr__(name: str):
             raise AttributeError(f"module 'omnicrawler' has no attribute {name!r}") from exc
         sys.modules[f"omnicrawler.{name}"] = module
         return module
+
+    # 版本号：真源在叶子模块 _version.py —— 既避免包因 __version__ 成为导入环枢纽
+    # （见 tools/check_architecture.py 的 cycle budget），也保持“import omnicrawler
+    # 不 eager 加载任何顶层子模块”的契约（tests/unit/core/test_lazy_import.py）。
+    if name == "__version__":
+        from ._version import __version__
+
+        return __version__
 
     # 原有的延迟导入逻辑
     if name == "AppConfig":

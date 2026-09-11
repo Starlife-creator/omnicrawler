@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from ... import __version__ as APP_VERSION  # noqa: N812
+from ..._version import __version__ as APP_VERSION  # noqa: N812
 from ..i18n import _
 from ..widgets.toast import ToastManager
 from ._base import _BaseDelegate

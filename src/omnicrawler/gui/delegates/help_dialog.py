@@ -8,7 +8,7 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices, QPalette
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from ... import __version__ as APP_VERSION  # noqa: N812
+from ..._version import __version__ as APP_VERSION  # noqa: N812
 from ..i18n import _
 from ._base import _BaseDelegate
 

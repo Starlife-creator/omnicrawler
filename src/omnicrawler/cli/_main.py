@@ -10,7 +10,7 @@ from typing import Any
 
 import yaml
 
-from .. import __version__
+from .._version import __version__
 from ..core.logging_utils import configure_logging
 from ..core.runtime_paths import configure_runtime_environment
 from ..core.utils import user_agent

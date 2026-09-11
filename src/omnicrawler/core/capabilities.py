@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .. import __version__
+from .._version import __version__
 
 LOGGER = logging.getLogger(__name__)
 

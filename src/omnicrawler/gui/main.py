@@ -21,7 +21,7 @@ from typing import Any
 
 import yaml
 
-from .. import __version__ as APP_VERSION  # noqa: N812
+from .._version import __version__ as APP_VERSION  # noqa: N812
 from ..core.logging_utils import configure_logging
 from ..core.runtime_paths import (
     application_dir,

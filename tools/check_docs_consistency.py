@@ -150,11 +150,12 @@ def check(root: Path) -> list[str]:
         pyproject.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under", 0)
     )
 
-    source = (root / "src" / "omnicrawler" / "__init__.py").read_text(encoding="utf-8")
+    # 版本真源自 P1-3 收尾起位于叶子模块 _version.py（__init__ 惰性 re-export）
+    source = (root / "src" / "omnicrawler" / "_version.py").read_text(encoding="utf-8")
     source_match = re.search(r'^__version__\s*=\s*"([^"]+)"\s*$', source, re.MULTILINE)
     if source_match is None or source_match.group(1) != version:
         found = source_match.group(1) if source_match else "missing"
-        issues.append(f"src/omnicrawler/__init__.py: version {found} does not match pyproject {version}")
+        issues.append(f"src/omnicrawler/_version.py: version {found} does not match pyproject {version}")
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     if not re.search(rf"^## {re.escape(version)}\s+-\s+\d{{4}}-\d{{2}}-\d{{2}}$", changelog, re.MULTILINE):
         issues.append(f"CHANGELOG.md: missing dated current release heading {version}")

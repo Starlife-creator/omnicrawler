@@ -1,7 +1,9 @@
 """宿主侧 IPC 循环驱动：能力代理请求与 handle 响应的混排分流。
 
-从 plugin_broker.py 迁出（P1-3 第二批）。``CapabilityBroker`` 仅出现在类型注解中
-（运行期只做属性调用），故以 TYPE_CHECKING 导入避免循环。
+从 plugin_broker.py 迁出（P1-3 第二批）。为**避免与 plugin_broker 形成静态导入环**
+（架构门禁 tools/check_architecture.py 会遍历 TYPE_CHECKING 内的导入），
+本模块不导入 ``CapabilityBroker``，而是用下面的 ``_BrokerLike`` 结构协议描述
+所需的最小契约（仅 ``dispatch``）；运行期只做属性调用，行为不变。
 外部引用方（plugin_contract_suite / plugin_subprocess_adapter / 测试）继续从
 plugin_broker 导入 drive_loop（已再导出）。
 """
@@ -9,18 +11,22 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any, Protocol
 
 from .plugin_broker_contracts import E_CONTRACT, E_INTERNAL, E_RESOURCE, CapabilityError
 
-if TYPE_CHECKING:
-    from .plugin_broker import CapabilityBroker
-
 LOGGER = logging.getLogger(__name__)
+
+
+class _BrokerLike(Protocol):
+    """CapabilityBroker 的最小结构契约（避免与 plugin_broker 形成静态导入环）。"""
+
+    def dispatch(self, operation: str, payload: dict[str, Any]) -> dict[str, Any]: ...
+
 
 def drive_loop(
     session: Any,
-    broker: CapabilityBroker,
+    broker: _BrokerLike,
     operation: str,
     payload: dict[str, Any],
     *,
@@ -97,7 +103,7 @@ def _read_line(proc: Any, timeout: float) -> tuple[str, Exception | None]:
         return "", holder["error"]
     return holder.get("line", ""), None
 
-def _answer_capability(proc: Any, broker: CapabilityBroker, message: dict[str, Any]) -> None:
+def _answer_capability(proc: Any, broker: _BrokerLike, message: dict[str, Any]) -> None:
     operation = str(message.get("operation", ""))
     payload = message.get("payload")
     if not isinstance(payload, dict):

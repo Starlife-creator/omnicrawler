@@ -18,7 +18,7 @@ def main() -> int:
         print(f"无法启动图形界面: {exc}")
         return 1
 
-    from .. import __version__
+    from .._version import __version__
     from ..core.config import load_config
     from ..pdfx.config import load_config as load_pdf_config
     from ..pdfx.database import Database

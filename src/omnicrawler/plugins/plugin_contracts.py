@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .. import __version__
+from .._version import __version__
 
 PLUGIN_API_VERSION = 1
 CORE_VERSION = __version__

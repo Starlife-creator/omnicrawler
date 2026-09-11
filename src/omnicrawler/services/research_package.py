@@ -12,7 +12,7 @@ from typing import Any
 
 import yaml
 
-from .. import __version__
+from .._version import __version__
 from ..core.config import AppConfig
 
 MANIFEST_NAME = "omnicrawler-package.json"

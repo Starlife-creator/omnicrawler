@@ -49,7 +49,7 @@ _SENSITIVE_HEADERS = frozenset(
 
 
 def _system_info(config: Any | None) -> dict[str, Any]:
-    from .. import __version__
+    from .._version import __version__
     from . import plugin_backend
 
     return {

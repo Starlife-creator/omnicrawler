@@ -15,7 +15,7 @@ from typing import Any
 import ruamel.yaml
 from ruamel.yaml.comments import CommentedMap
 
-from ... import __version__ as GUI_VERSION  # noqa: N812
+from ..._version import __version__ as GUI_VERSION  # noqa: N812
 from ...core.secrets_store import SecretsStore
 from ..i18n import _
 from .config_model import CrawlConfig, DownloadConfig, FieldDef

@@ -9,4 +9,4 @@
 通过 ``omnicrawler-gui`` 命令或 ``python -m omnicrawler.gui`` 启动。
 """
 
-from omnicrawler import __version__ as __version__
+from omnicrawler._version import __version__ as __version__

@@ -651,7 +651,7 @@ def generate_environment_report() -> str:
     """
     import platform
 
-    from .. import __version__
+    from .._version import __version__
     from . import plugin_backend, plugin_os_sandbox
 
     probe = plugin_os_sandbox.probe_os_sandbox()

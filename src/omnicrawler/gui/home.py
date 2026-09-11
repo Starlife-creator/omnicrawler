@@ -88,7 +88,7 @@ def _package_version() -> str:
         return importlib.metadata.version("omnicrawler-platform")
     except Exception:
         # A16：回退用 omnicrawler.__version__，不再硬编码 "2.7"
-        from .. import __version__
+        from .._version import __version__
         return __version__
 
 

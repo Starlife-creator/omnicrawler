@@ -157,8 +157,9 @@ def step_update_core_files(root: Path, old: str, new: str) -> None:
     )
     pyproject_path.write_text(updated, encoding="utf-8")
 
-    init_path = root / "src" / "omnicrawler" / "__init__.py"
-    print(f"  [core] src/omnicrawler/__init__.py: __version__ {old} → {new}")
+    # 版本真源自 P1-3 收尾起位于叶子模块 _version.py（__init__ 只做惰性 re-export）
+    init_path = root / "src" / "omnicrawler" / "_version.py"
+    print(f"  [core] src/omnicrawler/_version.py: __version__ {old} → {new}")
     _replace_in_file(init_path, f'__version__ = "{old}"', f'__version__ = "{new}"')
 
 

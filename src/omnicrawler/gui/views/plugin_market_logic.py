@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ... import __version__
+from ..._version import __version__
 from ...plugins.plugins import OFFICIAL_PLUGIN_TYPES
 from ..i18n import _
 

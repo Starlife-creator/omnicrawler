@@ -209,7 +209,7 @@ UA_DEFAULT_PROFILE = "polite_bot"
 
 def _validate_profile_honest(ua: str, *, profile_name: str) -> None:
     """铁则：生成 UA 后再验证一次，防止后续重构意外滑入浏览器伪造。"""
-    from .. import __version__
+    from .._version import __version__
 
     must_contain = f"OmniCrawler/{__version__}"
     if must_contain not in ua:
@@ -243,7 +243,7 @@ def build_user_agent(profile: str, suffix: str = "") -> str:
     suffix:
         原 user_agent(suffix=...) 语义不变；典型："+contact: a@b.c"、"+bot"、"PDF LLM extraction"。
     """
-    from .. import __version__
+    from .._version import __version__
 
     key = (profile or UA_DEFAULT_PROFILE).strip().lower() or UA_DEFAULT_PROFILE
     if key not in UA_PROFILES:
