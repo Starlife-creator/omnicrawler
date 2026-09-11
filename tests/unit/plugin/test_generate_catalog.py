@@ -23,6 +23,17 @@ GENERATOR = REPO_ROOT.parent / "OmniCrawler-market" / "tools" / "generate_catalo
 REAL_REGISTRY = REPO_ROOT.parent / "OmniCrawler-market"
 TRUST_ROOT = REPO_ROOT / "configs" / "plugin_trust.pub.pem"
 
+# 拆库演练拷贝源码时应排除的目录：缓存/版本控制与本仓库无关，
+# 且 .pytest_cache 等在 Windows 上可能带上拒绝访问的 ACL（WinError 5）使拷贝失败。
+_COPY_IGNORE = shutil.ignore_patterns(
+    ".git",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+    ".venv",
+    "*.pyc",
+)
+
 pytestmark = pytest.mark.skipif(
     not REAL_REGISTRY.is_dir(),
     reason="OmniCrawler-market 仓库未 clone（需与主仓库同级），跳过目录生成测试",
@@ -136,7 +147,7 @@ def test_real_registry_passes_check() -> None:
 def test_standalone_copy_passes_check(tmp_path: Path) -> None:
     """拆库演练：整个 registry/ 复制到新位置后自包含可校验（工具 + keys/ 随库走）。"""
     standalone = tmp_path / "registry-standalone"
-    shutil.copytree(REAL_REGISTRY, standalone)
+    shutil.copytree(REAL_REGISTRY, standalone, ignore=_COPY_IGNORE)
     result = _run("--check", "--registry", str(standalone))
     assert result.returncode == 0, result.stderr or result.stdout
     generated = _run("--registry", str(standalone))
