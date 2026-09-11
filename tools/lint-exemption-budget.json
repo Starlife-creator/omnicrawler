@@ -1,0 +1,16 @@
+{
+  "_meta": {
+    "purpose": "ruff 豁免规则（pyproject.toml [tool.ruff.lint] ignore）的存量违规预算：只降不升。",
+    "mechanism": "对照 tools/check_architecture.py 的 architecture-cycle-budget 范式：budget 存当前实测值，语义是“不得高于”。任何新增违规都会让 check_lint_budget.py 失败。",
+    "measured": "2026-09-11（P2-2 落地当日，ruff 0.16.4，src + tests，per-file-ignores 生效）",
+    "raise": "提高预算需在 PR 里说明理由（例如新增平台适配不得已）；反向清理后应同步下调本文件，保持零余量。",
+    "note": "N803 / N816 / B028 当前为零违规，未列入——一旦出现即为新增违规。",
+    "scope": "src tests"
+  },
+  "E402": 59,
+  "N802": 28,
+  "B904": 17,
+  "N806": 12,
+  "E731": 1,
+  "N815": 1
+}
