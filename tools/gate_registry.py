@@ -149,6 +149,14 @@ GATES: tuple[Gate, ...] = (
         script="tools/check_gui_conventions.py",
     ),
     Gate(
+        name="check_lockfile_consistency",
+        args=("tools/check_lockfile_consistency.py",),
+        sets=_STATIC,
+        description="依赖锁一致性（pyproject ↔ uv.lock，无需安装 uv）",
+        script="tools/check_lockfile_consistency.py",
+        ci_note="权威复现由专门的 lockfile CI job 负责（uv lock --check + uv sync --locked）；本门禁在无 uv 环境下也能跑。",
+    ),
+    Gate(
         name="check_minimal_install",
         args=("tools/check_minimal_install.py",),
         sets=_STATIC,
