@@ -107,12 +107,41 @@ omnicrawler benchmark -c config.yaml --profile standard
    > 详见 `docs/OPERATIONS.md` 的「终态语义」。
 3. **`bytes_transferred` 的口径是落库字节**：从状态库聚合 `responses.size_bytes`，
    不含被丢弃的响应、压缩前体积与响应头。
-4. **本模块测的是流水线吞吐，不是抽取质量**：数据完整性 / 准确性属于「可复现的任务基准」
-   的下一层（见 §1.2 采集能力的完整表述），尚未建设。
+4. **本模块测的是流水线吞吐，不是抽取质量**：数据完整性 / 准确性的测量在
+   **任务质量基准**里（见「任务质量基准」一节），两者口径不同、互不替代。
+
+## 任务质量基准：完整、准确、有来源证据
+
+吞吐回答「跑得多快」，质量回答「采到的数据对不对」。两者都是 §1.2 采集能力的要求
+（「稳定获得完整、准确、有来源证据的数据；并具备可复现的任务基准与公平对比能力」）。
+
+```bash
+python tools/benchmark_quality.py                  # 跑全部内置任务（离线）
+python tools/benchmark_quality.py --json report.json
+```
+
+| 口径 | 含义 |
+|---|---|
+| **完整性** | 期望的记录有多少条真被采到 |
+| **准确性** | 期望字段值有多少个与真值逐字相符 |
+| **来源证据** | 采到的记录里有多少条带 `source_url` |
+| **字段自报完整度** | 流水线自己在 `evidence._quality.completeness` 里报的完整度均值 |
+
+最后一项是**互证**设计：前两项是外部按真值比对，这一项是流水线自己的口径；
+两者都满分才说明「测到的」与「自报的」一致。
+
+**为什么结果可比**：任务页面、抽取规则与期望结果都是
+`omnicrawler.services.quality_benchmark` 里的常量，配置由代码确定性生成，
+全程走本地 HTTP 服务——同一版本必然跑出同一任务。结果随带配置指纹与环境信息。
+
+**怎么扩展**：在 `TASKS` 里加一个 `BenchmarkTask` 即可（页面结构、字段数、页数都可不同）。
+注意**种子页必须含匹配块**：否则模板会在第一次抓取时被判「关键字段成功率下降」而失效，
+整轮抽取退化为通用抽取——实测会得到 0 条记录。
 
 ## 相关
 
 - 微基准（模板发现、HTML 抽取耗时）：`tools/benchmark_core.py`
 - 转换专项基准：`tools/benchmark_convertx.py`
+- 任务质量基准：`tools/benchmark_quality.py`（离线，跑内置任务并打分）
 - 端到端公平性回归：`tests/integration/test_benchmark_fairness.py`
 - 单元测试：`tests/unit/utils/test_benchmarking.py`
