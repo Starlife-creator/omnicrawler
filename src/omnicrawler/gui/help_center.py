@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .design_system import FONT_SIZE
 from ..services.help_registry import HelpEntry, contextual_advice, get_help, search_help
 from .i18n import _
 
@@ -39,7 +40,7 @@ class HelpCenterDock(QDockWidget):
         self.results.currentRowChanged.connect(self._select_result)
         layout.addWidget(self.results, 1)
         self.title = QLabel()
-        self.title.setStyleSheet("font-size: 16px; font-weight: 600;")
+        self.title.setStyleSheet(f"font-size: {FONT_SIZE['subtitle']}px; font-weight: 600;")
         layout.addWidget(self.title)
         self.details = QTextBrowser()
         self.details.setOpenExternalLinks(False)

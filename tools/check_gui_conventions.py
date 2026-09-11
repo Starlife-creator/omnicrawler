@@ -102,7 +102,12 @@ def scan_file(path: Path, whitelist: set[str]) -> dict[str, int]:
         func = node.func
         if not (isinstance(func, ast.Attribute) and func.attr == "setStyleSheet"):
             continue
-        if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+        if not node.args or not isinstance(node.args[0], ast.Constant):
+            continue
+        value = node.args[0].value
+        # 仅统计「非空」字面量样式串：`setStyleSheet("")` 是清除样式（状态复位），
+        # 不是写死样式，不应计入（2026-09-11 修正，见 professional_review 的徽章复位）。
+        if isinstance(value, str) and value.strip():
             inline += 1
     raw_hex = sum(1 for m in HEX_PATTERN.finditer(text) if m.group().upper() not in whitelist)
     return {"a11y": missing_a11y, "inline": inline, "raw_hex": raw_hex}

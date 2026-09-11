@@ -58,6 +58,7 @@ def discover_local_media(root: str | Path) -> list[LocalMedia]:
 class _BackgroundLayer(QtWidgets.QWidget):
     def __init__(self, owner: QtWidgets.QWidget) -> None:
         super().__init__(owner)
+        self.setAccessibleName(_("背景"))
         self.pixmap: QtGui.QPixmap | None = None
         self.opacity = 0.24
         self.fit_mode = "cover"

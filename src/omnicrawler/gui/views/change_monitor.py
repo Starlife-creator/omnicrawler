@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
 from omnicrawler.core.utils import user_agent
 from omnicrawler.gui.widgets.toast import ToastManager
 
-from ..design_system import ThemeManager
+from ..design_system import FONT_FAMILY_MONO, FONT_SIZE, SPACING, ThemeManager
 from ..i18n import _
 from ..widgets.empty_state import EmptyState
 
@@ -118,6 +118,7 @@ class NewRuleDialog(QDialog):
         rule_data: dict | None = None,
     ) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("新建监控规则"))
         self.setWindowTitle(_("新建变更监控规则") if rule_data is None else _("编辑变更监控规则"))
         self.setMinimumSize(480, 420)
         self._rule_data = rule_data
@@ -331,6 +332,7 @@ class ChangeEventDialog(QDialog):
 
     def __init__(self, event_data: dict, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("变更详情"))
         self.setWindowTitle(_(f"变化详情 — {event_data.get('rule_name', '')}"))
         self.setMinimumSize(680, 480)
 
@@ -347,7 +349,7 @@ class ChangeEventDialog(QDialog):
 
         summary = event_data.get("diff_summary", _("无摘要"))
         summary_label = QLabel(_(f"变化摘要: {summary}"))
-        summary_label.setStyleSheet("font-weight: bold; padding: 4px 0;")
+        summary_label.setStyleSheet(f"font-weight: 600; padding: {SPACING['xs']}px 0;")
         layout.addWidget(summary_label)
 
         # Diff 视图
@@ -356,7 +358,7 @@ class ChangeEventDialog(QDialog):
 
         diff_text = QTextEdit()
         diff_text.setReadOnly(True)
-        diff_text.setStyleSheet("font-family: 'Consolas', 'Courier New', monospace; font-size: 12px;")
+        diff_text.setStyleSheet(f"font-family: {FONT_FAMILY_MONO}; font-size: {FONT_SIZE['small']}px;")
         diff_html = self._build_diff_html(prev_content, curr_content)
         diff_text.setHtml(diff_html)
         layout.addWidget(diff_text)
@@ -423,6 +425,7 @@ class ChangeMonitorView(QWidget):
         fetcher: Any = None,
     ) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("变更监控"))
         self._settings = settings
         # A3：可选共享 AsyncFetcher，检查时复用其连接池/EgressBroker 审计通道
         self._fetcher = fetcher
@@ -732,11 +735,11 @@ class ChangeMonitorView(QWidget):
         if self._paused:
             self._pause_btn.setText(_("▶ 继续监控"))
             self._status_label.setText(_("已暂停"))
-            self._status_label.setStyleSheet("color: gray;")
+            self._status_label.setStyleSheet(f"color: {ThemeManager.instance().tokens.muted};")
         else:
             self._pause_btn.setText(_("⏸ 暂停监控"))
             self._status_label.setText(_("就绪"))
-            self._status_label.setStyleSheet("color: gray;")
+            self._status_label.setStyleSheet(f"color: {ThemeManager.instance().tokens.muted};")
 
     # ── 持久化 ────────────────────────────────────────────────────
 

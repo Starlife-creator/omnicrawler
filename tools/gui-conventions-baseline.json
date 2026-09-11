@@ -5,16 +5,6 @@
     "measured": "见文件内容生成时间"
   },
   "files": {
-    "src/omnicrawler/gui/background_host.py": {
-      "a11y": 1,
-      "inline": 1,
-      "raw_hex": 0
-    },
-    "src/omnicrawler/gui/help_center.py": {
-      "a11y": 0,
-      "inline": 1,
-      "raw_hex": 0
-    },
     "src/omnicrawler/gui/home.py": {
       "a11y": 1,
       "inline": 0,
@@ -35,11 +25,6 @@
       "inline": 0,
       "raw_hex": 0
     },
-    "src/omnicrawler/gui/views/change_monitor.py": {
-      "a11y": 3,
-      "inline": 4,
-      "raw_hex": 0
-    },
     "src/omnicrawler/gui/views/chart_view.py": {
       "a11y": 1,
       "inline": 0,
@@ -58,11 +43,6 @@
     "src/omnicrawler/gui/views/pdf_region_selector.py": {
       "a11y": 1,
       "inline": 0,
-      "raw_hex": 0
-    },
-    "src/omnicrawler/gui/views/professional_review.py": {
-      "a11y": 0,
-      "inline": 1,
       "raw_hex": 0
     },
     "src/omnicrawler/gui/views/project_dialogs.py": {
