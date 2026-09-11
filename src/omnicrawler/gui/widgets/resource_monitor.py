@@ -72,6 +72,8 @@ class ResourceMonitor(QWidget):
         project_root: Path | None = None,
     ) -> None:
         super().__init__(parent)
+        # 无障碍：资源指示器需可被屏幕阅读器定位
+        self.setAccessibleName(_("资源占用"))
         self._project_root = project_root or Path.cwd()
         self._pid: int | None = None
 

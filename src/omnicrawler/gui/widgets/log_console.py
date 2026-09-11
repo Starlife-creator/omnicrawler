@@ -93,6 +93,8 @@ class LogConsole(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        # 无障碍：日志区需可被屏幕阅读器定位
+        self.setAccessibleName(_("日志"))
 
         # 过滤按钮栏
         self._filter_bar = QHBoxLayout()

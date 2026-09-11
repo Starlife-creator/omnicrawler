@@ -41,6 +41,8 @@ class EmptyState(QFrame):
         action_callback=None,
     ) -> None:
         super().__init__(parent)
+        # 无障碍：空态的名字＝其标题；set_message 会随状态切换同步更新
+        self.setAccessibleName(title or _("空状态"))
         self.setProperty("emptyState", True)
         self._action_btn: QPushButton | None = None
 
@@ -121,4 +123,5 @@ class EmptyState(QFrame):
         self._icon_label.setText(icon)
         self._title_label.setText(title)
         self._desc_label.setText(description)
+        self.setAccessibleName(title or _("空状态"))
         self._desc_label.setVisible(bool(description.strip()))

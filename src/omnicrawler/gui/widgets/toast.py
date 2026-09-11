@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..design_system import ThemeManager, rgba_token_to_qcolor
+from ..i18n import _
 from ..icon_registry import IconRegistry
 
 
@@ -53,6 +54,8 @@ class Toast(QFrame):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        # 无障碍：通知内容即其名字，屏幕阅读器读到具体消息而非“某控件”
+        self.setAccessibleName(message or _("通知"))
         self.setObjectName("toast")
         self.setProperty("toastKind", kind)
         self.setFrameShape(QFrame.Shape.StyledPanel)
@@ -225,6 +228,8 @@ class ToastOverlay(QWidget):
 
     def __init__(self, parent: QMainWindow) -> None:
         super().__init__(parent)
+        # 无障碍：容器对外报“通知”，屏幕阅读器可定位到通知区域
+        self.setAccessibleName(_("通知"))
         # 设为透明背景但接收鼠标事件
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
 

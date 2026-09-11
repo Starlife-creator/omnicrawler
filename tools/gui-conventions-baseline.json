@@ -110,31 +110,6 @@
       "inline": 0,
       "raw_hex": 0
     },
-    "src/omnicrawler/gui/widgets/calendar_popup.py": {
-      "a11y": 1,
-      "inline": 0,
-      "raw_hex": 0
-    },
-    "src/omnicrawler/gui/widgets/empty_state.py": {
-      "a11y": 1,
-      "inline": 0,
-      "raw_hex": 0
-    },
-    "src/omnicrawler/gui/widgets/log_console.py": {
-      "a11y": 1,
-      "inline": 0,
-      "raw_hex": 0
-    },
-    "src/omnicrawler/gui/widgets/resource_monitor.py": {
-      "a11y": 1,
-      "inline": 0,
-      "raw_hex": 0
-    },
-    "src/omnicrawler/gui/widgets/toast.py": {
-      "a11y": 2,
-      "inline": 0,
-      "raw_hex": 0
-    },
     "src/omnicrawler/gui/wizard/step3_fields.py": {
       "a11y": 2,
       "inline": 0,

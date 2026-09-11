@@ -29,6 +29,8 @@ class CalendarPopup(QDialog):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        # 无障碍：日期选择对话框需可被屏幕阅读器定位
+        self.setAccessibleName(_("选择日期"))
         self.setWindowTitle(_("选择日期"))
         self.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
         self.setModal(True)
