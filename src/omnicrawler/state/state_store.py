@@ -10,9 +10,11 @@ from typing import Any
 
 from ..core.models import CrawlRequest, ExtractedRecord, FetchResult
 from ..core.run_state import TERMINAL_RUN_STATES, canonical_run_state, require_transition
-from ..core.utils import json_text, redact_headers, utcnow
+from ..core.utils import json_text, utcnow
 from ..quality.semantic_changes import compare_record_data, record_identity, semantic_hash
 from .schema import SCHEMA
+from .state_store_plugin_state import PluginStateMixin
+from .state_store_queue import QueueMixin
 
 
 class _ClosedConnection:
@@ -22,11 +24,10 @@ class _ClosedConnection:
         raise RuntimeError("StateStore 已关闭，禁止继续操作")
 
 
-class StateStore:
+class StateStore(QueueMixin, PluginStateMixin):
     # B04-003：run_id 参与 SQL 查询与 artifact/response 落盘路径构造，集中校验
     # 防注入/穿越（与 capsule_store._RUN_ID_RE 同源约定：纯安全字符，最长 80）。
     _RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
-    _PLUGIN_STATE_KEY_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
 
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -74,92 +75,6 @@ class StateStore:
             headers["If-Modified-Since"] = str(row["last_modified"])
         return headers
 
-    def plugin_state_get(
-        self,
-        namespace: tuple[str, str, str, int],
-        key: str,
-    ) -> tuple[bool, Any | None]:
-        self._require_plugin_state_key(key)
-        with self._lock:
-            row = self.conn.execute(
-                "SELECT value_json FROM plugin_state WHERE project_scope=? AND plugin_id=? "
-                "AND author_fingerprint=? AND schema_version=? AND state_key=?",
-                (*namespace, key),
-            ).fetchone()
-        if row is None:
-            return False, None
-        return True, json.loads(row["value_json"])
-
-    def plugin_state_set(
-        self,
-        namespace: tuple[str, str, str, int],
-        key: str,
-        value: Any,
-    ) -> None:
-        self._require_plugin_state_key(key)
-        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        if len(encoded.encode("utf-8")) > 64 * 1024:
-            raise ValueError("单个插件状态值不得超过 64 KiB")
-        with self._lock, self.conn:
-            self.conn.execute(
-                "INSERT INTO plugin_state(project_scope, plugin_id, author_fingerprint, "
-                "schema_version, state_key, value_json, updated_at) VALUES(?,?,?,?,?,?,?) "
-                "ON CONFLICT(project_scope, plugin_id, author_fingerprint, schema_version, state_key) "
-                "DO UPDATE SET value_json=excluded.value_json, updated_at=excluded.updated_at",
-                (*namespace, key, encoded, utcnow()),
-            )
-
-    def plugin_state_delete(
-        self,
-        namespace: tuple[str, str, str, int],
-        key: str,
-    ) -> bool:
-        self._require_plugin_state_key(key)
-        with self._lock, self.conn:
-            cursor = self.conn.execute(
-                "DELETE FROM plugin_state WHERE project_scope=? AND plugin_id=? "
-                "AND author_fingerprint=? AND schema_version=? AND state_key=?",
-                (*namespace, key),
-            )
-        return cursor.rowcount > 0
-
-    def plugin_state_copy_schema(
-        self,
-        namespace: tuple[str, str, str, int],
-        source_schema: int,
-    ) -> int:
-        project_scope, plugin_id, author_fingerprint, target_schema = namespace
-        if source_schema < 1 or source_schema >= target_schema:
-            raise ValueError("插件状态迁移源版本必须小于当前 schema_version")
-        with self._lock, self.conn:
-            occupied = self.conn.execute(
-                "SELECT 1 FROM plugin_state WHERE project_scope=? AND plugin_id=? "
-                "AND author_fingerprint=? AND schema_version=? LIMIT 1",
-                namespace,
-            ).fetchone()
-            if occupied is not None:
-                raise ValueError("目标插件状态命名空间非空，拒绝覆盖迁移")
-            cursor = self.conn.execute(
-                "INSERT INTO plugin_state(project_scope, plugin_id, author_fingerprint, "
-                "schema_version, state_key, value_json, updated_at) "
-                "SELECT project_scope, plugin_id, author_fingerprint, ?, state_key, value_json, ? "
-                "FROM plugin_state WHERE project_scope=? AND plugin_id=? "
-                "AND author_fingerprint=? AND schema_version=?",
-                (
-                    target_schema,
-                    utcnow(),
-                    project_scope,
-                    plugin_id,
-                    author_fingerprint,
-                    source_schema,
-                ),
-            )
-        return cursor.rowcount
-
-    @classmethod
-    def _require_plugin_state_key(cls, key: str) -> None:
-        if not isinstance(key, str) or cls._PLUGIN_STATE_KEY_RE.fullmatch(key) is None:
-            raise ValueError(f"插件状态键非法: {key!r}")
 
     def close(self) -> None:
         with self._lock:
@@ -388,129 +303,9 @@ class StateStore:
             "updated_at": row["updated_at"],
         }
 
-    def prepare_cycle(self, *, reset_all: bool = False) -> None:
-        with self._lock, self.conn:
-            self.conn.execute("UPDATE frontier SET status='pending', updated_at=? WHERE status='in_progress'", (utcnow(),))
-            if reset_all:
-                self.conn.execute(
-                    "UPDATE frontier SET status='pending', attempts=0, last_error=NULL, updated_at=? WHERE status IN ('done','failed','blocked')",
-                    (utcnow(),),
-                )
-
-    def retry_failed(self, limit: int | None = None) -> int:
-        """Move dead-letter frontier entries back to pending without resetting completed work.
-
-        S2.5.38：分批拉取（每批 1000），大规模失败场景内存可控。
-        """
-        total = 0
-        batch = 1000
-        while True:
-            with self._lock, self.conn:
-                remaining = None if limit is None else max(0, limit - total)
-                if remaining == 0:
-                    break
-                want = batch if remaining is None else min(batch, remaining)
-                rows = self.conn.execute(
-                    "SELECT fingerprint FROM frontier WHERE status='failed' ORDER BY updated_at LIMIT ?",
-                    (want,),
-                ).fetchall()
-                if not rows:
-                    break
-                self.conn.executemany(
-                    "UPDATE frontier SET status='pending', attempts=0, last_error=NULL, updated_at=? WHERE fingerprint=?",
-                    [(utcnow(), row["fingerprint"]) for row in rows],
-                )
-            total += len(rows)
-            if len(rows) < want:
-                break
-        return total
-
-    def enqueue(self, request: CrawlRequest, *, force: bool = False) -> bool:
-        now = utcnow()
-        values = (
-            request.fingerprint, request.url, request.method.upper(), json_text(redact_headers(request.headers)),
-            request.body, request.kind, int(request.render), request.priority, request.depth,
-            request.parent_url, json_text(request.meta), now, now,
-        )
-        with self._lock, self.conn:
-            cursor = self.conn.execute(
-                """
-                INSERT OR IGNORE INTO frontier(
-                    fingerprint, url, method, headers_json, body, kind, render, priority,
-                    depth, parent_url, meta_json, created_at, updated_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                values,
-            )
-            inserted = cursor.rowcount > 0
-            if force and not inserted:
-                # S2.5.42：force 重入队不再重置 attempts（保留重试计数），
-                # 仅把状态拉回 pending 并清错误
-                self.conn.execute(
-                    "UPDATE frontier SET status='pending', last_error=NULL, priority=?, updated_at=? WHERE fingerprint=?",
-                    (request.priority, now, request.fingerprint),
-                )
-            return inserted
 
     # -- 安全白名单：ORDER BY 从句紧邻 SQL 执行点 --
-    _CLAIM_ORDER: dict[str, str] = {
-        "bfs": "priority DESC, depth ASC, id ASC",
-        "dfs": "depth DESC, priority DESC, id DESC",
-        "priority": "priority DESC, depth ASC, id ASC",
-        "random": "RANDOM()",
-    }
 
-    def claim(self, limit: int, strategy: str = "bfs") -> list[CrawlRequest]:
-        order = self._CLAIM_ORDER.get(strategy)
-        if order is None:
-            order = self._CLAIM_ORDER["bfs"]
-        claimed: list[sqlite3.Row] = []
-        with self._lock, self.conn:
-            # S2.5.3：候选先 SELECT 排序，再用条件 UPDATE（WHERE status='pending'）原子认领；
-            # 被并发进程抢走的行 UPDATE 影响 0 行，跳过重取，杜绝 SELECT→UPDATE 双重认领。
-            while len(claimed) < limit:
-                rows = self.conn.execute(
-                    f"SELECT * FROM frontier WHERE status='pending' ORDER BY {order} LIMIT ?",
-                    (limit - len(claimed),),
-                ).fetchall()
-                if not rows:
-                    break
-                for row in rows:
-                    cursor = self.conn.execute(
-                        "UPDATE frontier SET status='in_progress', attempts=attempts+1, updated_at=? "
-                        "WHERE fingerprint=? AND status='pending'",
-                        (utcnow(), row["fingerprint"]),
-                    )
-                    if cursor.rowcount == 1:
-                        claimed.append(row)
-                        if len(claimed) >= limit:
-                            break
-        return [self._row_to_request(row) for row in claimed]
-
-    @staticmethod
-    def _row_to_request(row: sqlite3.Row) -> CrawlRequest:
-        return CrawlRequest(
-            url=row["url"], method=row["method"], headers=json.loads(row["headers_json"]),
-            body=row["body"], kind=row["kind"], render=bool(row["render"]),
-            priority=float(row["priority"]), depth=int(row["depth"]),
-            parent_url=row["parent_url"], meta=json.loads(row["meta_json"]),
-        )
-
-    def mark_done(self, fingerprint: str, *, status: str = "done", error: str | None = None) -> None:
-        with self._lock, self.conn:
-            self.conn.execute(
-                "UPDATE frontier SET status=?, last_error=?, updated_at=? WHERE fingerprint=?",
-                (status, error, utcnow(), fingerprint),
-            )
-
-    def mark_failed(self, request: CrawlRequest, exc: Exception, max_attempts: int, retryable: bool = True) -> None:
-        with self._lock, self.conn:
-            row = self.conn.execute("SELECT attempts FROM frontier WHERE fingerprint=?", (request.fingerprint,)).fetchone()
-            retry = bool(row and int(row["attempts"]) < max_attempts and retryable)
-            self.conn.execute(
-                "UPDATE frontier SET status=?, last_error=?, updated_at=? WHERE fingerprint=?",
-                ("pending" if retry else "failed", str(exc)[:4000], utcnow(), request.fingerprint),
-            )
 
     def save_response(self, run_id: str, result: FetchResult, raw_path: str | None) -> bool:
         self._require_run_id(run_id)
@@ -945,14 +740,6 @@ class StateStore:
             result["quality"] = self.quality_stats(run_id)
         return result
 
-    def pending_count(self) -> int:
-        """S2.5.37：轻量单表 COUNT（走 idx_frontier_status 索引），
-        替代 stats() 的五表全量聚合——高频循环内不再全表扫描。"""
-        with self._lock:
-            row = self.conn.execute(
-                "SELECT COUNT(*) AS n FROM frontier WHERE status='pending'"
-            ).fetchone()
-            return int(row["n"])
 
     def latest_run(self) -> dict[str, Any] | None:
         with self._lock:
