@@ -246,17 +246,24 @@ class JsonlSearchWorker(BackgroundWorker):
 
 
 # ---------------------------------------------------------------------------
-# 以下三类为「已建成、当前未接线」的能力——**保留，不删除**。
-# 它们各自对应一条仍然开放的文档化需求；删除代码等于删除需求，故显式标注为待接线。
+# 以下三类曾是「已建成、当前未接线」的能力。2026-09-11 逐项做了**测量**，
+# 结论不再是推测，而是可复核的定论（每类的 docstring 里带实测数字与出处）。
+#
+# 保留策略：**一律保留，不删除**。P0-1 首版曾以「零调用点」为由删除它们
+# （见《审查记录》§6.2 之 6），那是一次方法论错误——「零调用点」不等于「不需要」。
 # ---------------------------------------------------------------------------
 
 
 class JsonlLoadWorker(BackgroundWorker):
     """异步 JSONL 加载（``finished_loading`` 载荷 ``(records, total_count)``）。
 
-    **当前未接线**：``views/task_history.py`` 仍在主线程逐行 ``json.loads`` 解析
-    JSONL——正是本类要消除的阻塞。出处见 ``docs/archive/audit-20260805/report_gui_core.md``
-    中「同步耗时操作阻塞 UI 线程」条目。接线时直接替换那段同步解析即可。
+    **已接线（2026-09-11）**：``views/task_history.py`` 现在**按文件大小分流**——
+    512 KiB 以内保持同步（维持「调用后即可读 ``_records``」的既有契约，4 处调用点
+    与 3 个测试依赖它），超过则交给本类在后台解析。
+
+    接线的实测依据：历史文件只增不减，同步逐行 ``json.loads`` 的耗时随行数线性增长——
+    100 行 6.5 ms / 10k 行 29.5 ms / **100k 行 214.6 ms**，最后一种会让界面明显卡住，
+    正是 ``audit-20260805/report_gui_core.md``「同步耗时操作阻塞 UI 线程」所指。
     """
 
     finished_loading = Signal(list, int)
@@ -298,8 +305,17 @@ class JsonlLoadWorker(BackgroundWorker):
 class SqliteQueryWorker(BackgroundWorker):
     """异步 SQLite 查询（``finished_query`` 载荷 ``(column_names, rows)``）。
 
-    **当前未接线**：0.12.0 计划 §7 / W9 判定「在找到真实调用方与工作负载前不做
-    schema、索引与分页改造」——属**暂缓**而非作废，故保留本类作为该路径的实现就位。
+    **当前未接线——测量后维持「暂缓」判定（2026-09-11）**：
+    0.12.0 计划 §7 / W9 的门槛是「找到真实调用方与工作负载」。现在调用方确实存在
+    （``gui/views/developer_inspector.py`` 在 GUI 线程里直接开 ``StateStore``
+    读运行列表与时间线），于是对它做了负载测量——构造 **200 次运行 / 100k 条状态事件**：
+
+    * ``list_runs(50)`` / ``list_runs(500)``：**0.3 / 0.5 ms**
+    * ``run_events(run_id)``（502 条）：**0.7 ms**
+    * ``run_stages(run_id)``：0.0 ms
+
+    即真实工作负载下该路径不构成 UI 阻塞，因此**不接线**（保留本类作为路径实现就位）。
+    若将来状态库规模或查询复杂度显著上升，应重新测量后再决定。
     """
 
     finished_query = Signal(list, list)
@@ -344,9 +360,16 @@ class SqliteQueryWorker(BackgroundWorker):
 class TemplateCombineWorker(BackgroundWorker):
     """异步模板组合（``finished_combining`` 载荷为合并后的配置对象）。
 
-    **当前未接线**：审计建议「模板发现走后台线程（复用 AsyncWorkerManager 模式）」，
-    而 ``main.py`` 的 ``discover_templates(force=True)`` 与 ``bundled_template_catalog(...)``
-    仍在主线程执行。保留本类即保留该修复路径的实现就位。
+    **当前未接线——但这是测量后的结论，不是遗漏（2026-09-11）**：
+    审计建议「模板发现走后台线程」，而 ``main.py`` 的 ``discover_templates(force=True)``
+    与 ``bundled_template_catalog(...)`` 仍在主线程执行。实测其成本：
+
+    * ``bundled_template_catalog()`` + ``discover()``：**76 个模板 / 0.4 ms**；
+    * 用户模板目录按 50 个文件估算，量级仍在毫秒内。
+
+    主线程成本低于一帧预算，异步化只会增加状态与竞态而无用户可感收益，故**不接线**。
+    若将来模板规模或磁盘延迟显著变化（例如目录含数百个大文件或位于慢速网络盘），
+    应重新测量后再决定。
     """
 
     finished_combining = Signal(object)

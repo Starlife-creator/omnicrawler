@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.view_base import BaseView
+from ..core.workers import JsonlLoadWorker
 from ..i18n import _
 from ..widgets.toast import ToastManager
 
@@ -31,6 +32,26 @@ DEFAULT_MAX_ENTRIES = 100
 DEFAULT_MAX_DAYS = 30
 # S3.2.1：内存有界上限（防超长文件全量驻留），显示/清理按 max_entries 截断
 MAX_LOADED_RECORDS = 5000
+
+#: 同步解析的大小上限。超过则改走后台线程——实测同步解析 10 万行约 **215 ms**
+#: （10k 行 ≈ 30 ms），而历史文件只增不减。512 KiB 约合 4k 行（≈12 ms），
+#: 低于一帧的预算，因此小文件继续同步以保持既有契约。
+_SYNC_PARSE_MAX_BYTES = 512 * 1024
+
+
+def _parse_history_file(fp: Path) -> list[dict[str, Any]]:
+    """逐行解析历史文件；坏行跳过。同步与后台两条路径共用同一解析语义。"""
+    records: list[dict[str, Any]] = []
+    with open(fp, encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return records
 
 
 class TaskHistory(BaseView):
@@ -67,6 +88,11 @@ class TaskHistory(BaseView):
         self._max_entries = max(1, int(max_entries))
         self._max_days = max(1, int(max_days))
         self._records: list[dict[str, Any]] = []
+        # 后台加载句柄：必须持有引用，否则 QThread 会被 GC 掉（Qt 经典崩溃点）。
+        # 生命周期由父子关系管理，**不要**显式 deleteLater（见 _load_history_in_background）。
+        self._load_worker: JsonlLoadWorker | None = None
+        # 加载期间又收到加载请求 → 结束后再读一次（避免并发 worker 与竞态）。
+        self._reload_pending = False
         self.finish_setup()
 
     def build_ui(self, container: QWidget) -> None:
@@ -104,7 +130,25 @@ class TaskHistory(BaseView):
         return self._project_root / HISTORY_FILE
 
     def load_history(self) -> None:
-        """加载历史记录。"""
+        """加载历史记录。
+
+        2026-09-11 起**按文件大小分流**（实测依据见下）：
+
+        * 小文件**同步**解析——保持调用方「调用后即可读 ``_records``」的既有契约
+          （4 处调用点与 3 个测试都依赖它）；
+        * 大文件交给 :class:`JsonlLoadWorker` **后台**解析——历史文件是只增不减的，
+          实测同步解析 10 万行需 **215 ms**，足以让界面明显卡住，
+          而这正是该 worker 被建成的原因（`audit-20260805/report_gui_core.md`
+          「同步耗时操作阻塞 UI 线程」）。
+        """
+        if self._load_worker is not None:
+            # 已有后台加载在跑：只记「待重载」，等它结束后再读一次（那时文件已写完）。
+            # **不在这里清空 `_records`**——清空会丢掉「加载期间新增的记录」；
+            # 也不打断/等待在跑的那个 worker：对已结束的 QThread 调 wait() 会直接崩
+            # （Windows access violation，实测踩到过）。
+            self._reload_pending = True
+            return
+
         self._records = []
         self._list.clear()
         # A3：无记录（含文件不存在）时走统一空态；有记录则在末尾切回内容态
@@ -116,19 +160,59 @@ class TaskHistory(BaseView):
             return
 
         try:
-            with open(fp, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line:
-                        try:
-                            record = json.loads(line)
-                            self._records.append(record)
-                        except json.JSONDecodeError:
-                            continue
-        except Exception:
+            too_big = fp.stat().st_size > _SYNC_PARSE_MAX_BYTES
+        except OSError:
             self.history_changed.emit()
             return
 
+        if too_big:
+            self._load_history_in_background(fp)
+            return
+
+        try:
+            records = _parse_history_file(fp)
+        except Exception:
+            self.history_changed.emit()
+            return
+        self._apply_records(records)
+
+    def _load_history_in_background(self, fp: Path) -> None:
+        """大文件走后台解析；完成后合并「加载期间新增的记录」再刷新界面。
+
+        worker **挂在 self 上由父子关系管理生命周期**（不再显式 `deleteLater`）：
+        显式删除会让 Python 侧残留一个指向已销毁 C++ 对象的引用，再次触碰即崩。
+        """
+        worker = JsonlLoadWorker(fp, parent=self)
+        self._load_worker = worker
+        worker.finished_loading.connect(self._on_history_loaded)
+        worker.failed.connect(self._on_history_failed)
+        worker.start()
+
+    def _on_history_failed(self, _message: str) -> None:
+        # 解析失败不阻塞：保持空态并通知关心历史的调用方。
+        self._load_worker = None
+        self._after_background_load()
+
+    def _on_history_loaded(self, records: list[dict[str, Any]], _total: int) -> None:
+        self._load_worker = None
+        # 加载期间可能已有新记录写入（add_record）——按 task_id 合并，别覆盖掉它。
+        merged = {str(record.get("task_id", "")): record for record in self._records}
+        for record in records:
+            merged.setdefault(str(record.get("task_id", "")), record)
+        self._apply_records(list(merged.values()))
+        self._after_background_load()
+
+    def _after_background_load(self) -> None:
+        """加载期间若有人再次请求（`_reload_pending`），此刻文件已写完，重读一次收敛。"""
+        if not self._reload_pending:
+            self.history_changed.emit()
+            return
+        self._reload_pending = False
+        self.load_history()
+
+    def _apply_records(self, records: list[dict[str, Any]]) -> None:
+        """排序、截断并渲染记录（同步与后台路径共用，保证两条路径行为一致）。"""
+        self._records = list(records)
         # 按时间倒序
         self._records.sort(key=lambda r: r.get("started_at", ""), reverse=True)
         # S3.2.1：内存有界（MAX_LOADED_RECORDS）；显示按 max_entries 截断，
@@ -136,6 +220,7 @@ class TaskHistory(BaseView):
         self._records = self._records[:MAX_LOADED_RECORDS]
         shown = self._records[: self._max_entries]
 
+        self._list.clear()
         for record in shown:
             time_str = record.get("started_at", "?")[:19]
             name = record.get("project_name", "?")
