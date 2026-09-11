@@ -279,6 +279,13 @@ def _dispatch_action(action: BrowserAction, engine: BrowserEngine) -> None:
         case _:
             raise ValueError(f"不支持的浏览器动作: {action.name}")
 
+def run_actions_for_page(page: Any, actions: list[dict[str, Any]]) -> None:
+    """对 Playwright page 执行动作序列（run_actions + PlaywrightAdapter 的组合）。
+
+    自 BrowserFetcher._run_actions 迁出实现；宿主保留同名静态委托以兼容测试调用点。
+    """
+    run_actions(actions, PlaywrightAdapter(page))
+
 def run_actions(actions: list[dict], engine: BrowserEngine) -> None:
     """Iterate over raw action dicts, convert to :class:`BrowserAction`, and dispatch."""
     for index, raw in enumerate(actions, 1):
