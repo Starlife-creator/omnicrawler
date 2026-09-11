@@ -120,6 +120,8 @@ jobs:
       - run: python -m ruff check src tests
       # P2-2：被豁免规则的存量违规预算（存量违规只降不升，新代码不许搭便车）
       - run: python tools/check_lint_budget.py
+      # 设计体系继承约定（a11y / 内联样式 / 裸色值）：新文件零容忍，存量只降不升
+      - run: python tools/check_gui_conventions.py
       - run: python -m mypy src/omnicrawler
       - run: python -m pip wheel . --no-deps -w dist
       - run: python tools/check_release_integrity.py --wheel-dir dist
