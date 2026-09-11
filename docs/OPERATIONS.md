@@ -57,6 +57,40 @@ omnicrawler serve -c configs/project.yaml --host 127.0.0.1 --port 8765
 - `output/pipeline_summary.json`：任务状态、计数、插件、导出与存储警告。
 - `output/metrics.json`、`metrics.prom`：指标快照与 Prometheus 文本。
 
+### 终态语义：异常不得伪装成功
+
+一轮任务的终态只有四种，由 `omnicrawler/core/run_state.py` 统一定义：
+
+| 终态 | 含义 | 产生条件 |
+|---|---|---|
+| `succeeded` | 正常完成 | 没有错误记录 |
+| `partial_success` | 完成但有错误记录（别名 `completed_with_errors`） | 有页面交付，同时 `errors` 非空 |
+| `failed` | 什么都没交付 | 有请求被尝试，但一页都没成功 |
+| `cancelled` | 被取消 | 暂停/停止或收到中断 |
+
+判定发生在爬取阶段结束、导出阶段之前，依据是流水线**自己写入的 `errors` 记录**
+（与 GUI 文案「任务部分成功(存在错误记录)」同源）。三条容易踩错的边界：
+
+- **逐请求失败是隔离处理的**——一个坏 URL 不该毁掉整轮；但隔离之后必须聚合到终态，
+  否则「全部抓取失败」也会报成 `succeeded`，即**异常伪装成功**。
+- **空 frontier 不是失败**：增量重跑时无事可做（没有任何请求被尝试），终态仍是 `succeeded`。
+  判据区分「没做事」与「做事全失败」，两者不可混为一谈。
+- **`failed` 且 `errors` 为空时会补写一条阶段级错误**（例如失败发生在请求发出之前），
+  避免出现「任务失败但查不到为什么」。
+
+终态直接决定 CLI 退出码：`failed` / `cancelled` 一律为 1；严格模式（`--strict`）下
+只有 `succeeded` 且有效记录 > 0 才是 0，因此 `partial_success` 在严格模式下也计为 1。
+
+### 定位一次失败
+
+1. `runs.status` 与 `output/pipeline_summary.json`：本轮终态与错误计数；
+2. `frontier.status`：哪些 URL 落到 `failed`（重试次数耗尽）或 `blocked`（策略拦截），
+   各自带 `last_error`；
+3. `errors` 表：每次失败的 `run_id` / `url` / `stage` / `error_type` / `message`；
+4. `diagnostics/<run_id>/`：脱敏后的失败上下文。
+
+恢复：`omnicrawler run -c <配置> --retry-failed` 会把 `frontier` 中 `failed` 的记录
+重新投入 `pending`，且**不重置已完成的工作**。
 核心指标包括请求数/错误数/时延、浏览器升级、frontier pending、记录数、字段完整率/校验通过率、磁盘余量、PDF 文档和 OCR/处理计数。标签限制为主机、阶段、引擎和错误类别，避免 URL 级高基数。
 
 ## 资源保护

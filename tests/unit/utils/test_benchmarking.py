@@ -215,6 +215,29 @@ class TestUsable(unittest.TestCase):
     def test_failure_is_not_usable(self):
         self.assertFalse(BenchmarkResult("low", 10, 5.0, 0, 0, 0, ok=False, status="failed").usable)
 
+    def test_partial_success_is_still_acceptable(self):
+        # partial_success = 有交付但存在错误记录。它交付了页面，吞吐量
+        # 因此仍是一次有效测量，不该被排除在基线之外。
+        result = BenchmarkResult("low", 10, 5.0, 0, 0, 1, status="partial_success")
+        self.assertTrue(result.ok)
+        self.assertTrue(result.usable)
+
+    def test_failed_or_cancelled_is_not_acceptable(self):
+        for status in ("failed", "cancelled"):
+            result = BenchmarkResult("low", 10, 5.0, 0, 0, 0, ok=False, status=status)
+            self.assertFalse(result.ok, status)
+            self.assertFalse(result.usable, status)
+
+    def test_inconsistent_hand_built_result_is_not_usable(self):
+        # ok 与 status 是独立字段，手工构造可能给出矛盾组合；
+        # usable 把它们的一致性当作判据的一部分，而不是信任调用方。
+        self.assertFalse(
+            BenchmarkResult("low", 10, 5.0, 0, 0, 1, status="failed").usable
+        )
+        self.assertFalse(
+            BenchmarkResult("low", 10, 5.0, 0, 0, 0, ok=False, status="succeeded").usable
+        )
+
     def test_zero_pages_is_not_usable(self):
         # 实测：种子全部连接失败时流水线仍报 succeeded，pages=0。
         # 这种空白运行若被当作基线，该档位的退化检测就形同虚设。

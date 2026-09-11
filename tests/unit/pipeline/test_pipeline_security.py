@@ -106,8 +106,9 @@ def test_stage_exception_caught_and_other_urls_continue(
         pipeline._handle_result = patched  # type: ignore[method-assign]
         summary = pipeline.run()
 
-        # Run itself succeeds despite one URL's stage failure
-        assert summary["status"] == "succeeded"
+        # 单 URL 的阶段失败不会中断整轮（隔离语义）——2026-09-11 起终态是
+        # partial_success（有交付但存在错误记录），而不是含混的 succeeded。
+        assert summary["status"] == "partial_success"
         assert summary["processed"] >= 2
 
         # Error is recorded with the correct type
@@ -141,8 +142,9 @@ def test_single_url_failure_isolated_from_run(
         pipeline._fetch_checked = patched  # type: ignore[method-assign]
         summary = pipeline.run()
 
-        # Run succeeds; other URLs are processed normally
-        assert summary["status"] == "succeeded"
+        # 单 URL 失败被隔离、其余照常处理（隔离语义未变）；
+        # 2026-09-11 起终态为 partial_success —— 不再把「有错误记录」报成 succeeded。
+        assert summary["status"] == "partial_success"
         assert summary["processed"] >= 2
 
         # The connection error is recorded

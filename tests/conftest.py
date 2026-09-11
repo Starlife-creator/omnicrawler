@@ -34,3 +34,25 @@ def _sys_path_snapshot():
     snapshot = list(sys.path)
     yield
     sys.path[:] = snapshot
+
+
+@pytest.fixture(autouse=True)
+def _restore_i18n_language():
+    """隔离 i18n 的全局语言状态（它是进程级量，不还原就会跨测试泄漏）。
+
+    实测：`tests/unit/gui/test_i18n_gate.py` 会调用 `set_language("en_US")` 而不还原，
+    于是同一进程里后跑的 `tests/integration/template/test_simple_experience.py`
+    断言中文文案时失败——测试结果**取决于先跑了哪些目录**。
+    这里按测试快照并还原，让套件对运行顺序不敏感。
+    """
+    try:
+        from omnicrawler import i18n
+    except ImportError:  # pragma: no cover - i18n 不可用时不影响其它测试
+        yield
+        return
+    previous = i18n.get_current_language()
+    try:
+        yield
+    finally:
+        if isinstance(previous, str) and previous:
+            i18n.set_language(previous)

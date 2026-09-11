@@ -300,6 +300,39 @@ class _PipelineRun(_PipelineBase):
                 tracker.end_stage("extract")
             except Exception:  # noqa: BLE001
                 pass
+            # === 终态聚合：异常不得伪装成功 ===
+            # 逐请求失败被隔离是**正确的健壮性**（一个坏 URL 不该毁掉整轮），
+            # 但隔离之后必须把结果反映到终态，否则「全部抓取失败」也会对外报告 succeeded。
+            # 判据取自流水线自己写的 errors 记录（与 GUI 文案「任务部分成功(存在错误记录)」同源，
+            # 也与 core/run_state.py 的别名 completed_with_errors → partial_success 一致）：
+            #   * 有请求被尝试、却一页都没交付 → failed
+            #   * 有交付但存在错误记录         → partial_success
+            #   * 无尝试（空 frontier，例如增量重跑无事可做）→ 维持 succeeded
+            if status == "succeeded":
+                error_total = int(self.state.stats(run_id).get("errors", 0) or 0)
+                if attempted > 0 and processed == 0:
+                    status = "failed"
+                    no_delivery = RuntimeError(
+                        f"本轮未交付任何页面（已尝试 {attempted} 次，错误记录 {error_total} 条）"
+                    )
+                    LOGGER.error("%s —— 终态记为 failed", no_delivery)
+                    if error_total == 0:
+                        # 失败了却没有留下可定位的原因：补一条阶段级错误，
+                        # 避免出现「任务失败但查不到为什么」。
+                        self.state.add_error(run_id, None, "crawl", no_delivery, retryable=True)
+                    self.diagnostics.failure(run_id, "crawl", no_delivery)
+                    self.metrics.increment(
+                        "omnicrawler_failures_total", stage="crawl", error="NoPageDelivered"
+                    )
+                    self._emit("on_error", run_id=run_id, stage="crawl", error=no_delivery, request=None)
+                elif error_total > 0:
+                    status = "partial_success"
+                    LOGGER.warning(
+                        "本轮已交付 %d 页，但存在 %d 条错误记录 —— 终态记为 partial_success",
+                        processed,
+                        error_total,
+                    )
+
             crawl_status = {"processed": processed, **self.state.stats(run_id)}
             self.state.save_checkpoint(run_id, "crawl", "crawl", crawl_status)
             self.metrics.record_stage("crawl", time.monotonic() - started_monotonic)

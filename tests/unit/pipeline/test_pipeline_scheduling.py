@@ -171,7 +171,10 @@ def test_per_url_failure_isolated_under_concurrency(tmp_path: Path) -> None:
         _install_frontier(pipeline, total=9, fetch=fetch)
         summary = pipeline.run()
 
-        assert summary["status"] == "succeeded"
+        # 2026-09-11 终态语义：有页面交付、但同时存在错误记录 → partial_success
+        # （即 completed_with_errors）。逐 URL 失败的**隔离**语义未变，
+        # 变的只是终态标签——不再把它含混地报成 succeeded。
+        assert summary["status"] == "partial_success"
         by_status = _frontier_by_status(pipeline)
         # indices 0,3,6 fail (retries=1 -> permanent failed); the other 6 succeed.
         assert by_status.get("failed", 0) == 3
@@ -297,7 +300,9 @@ def test_max_requests_hard_caps_total_dispatch_on_failures(tmp_path: Path) -> No
         summary = pipeline.run()
 
         assert calls["n"] == 6  # 总请求被 max_requests=6 封顶，而不是 max_pages=10
-        assert summary["status"] == "succeeded"
+        # 2026-09-11 终态语义：本例 6 次请求全部失败，一页都没交付 → failed
+        # （此前会报 succeeded，属「异常伪装成功」）。
+        assert summary["status"] == "failed"
         by_status = _frontier_by_status(pipeline)
         assert by_status.get("in_progress", 0) == 0
 

@@ -49,9 +49,9 @@ class BenchmarkResult:
         peak_memory_bytes: Peak process memory (RSS) in bytes.
         bytes_transferred: Total network bytes received.
         errors: Number of errors encountered.
-        ok: 流水线是否以成功状态结束。``False`` 表示抛错或 ``status`` 非
-            ``succeeded``。它只陈述运行结局，不判断能不能当作测量——
-            基准适用的判据见 :attr:`usable`。
+        ok: 运行终态是否可采信（``succeeded`` 或 ``partial_success``）。
+            ``partial_success`` 意味着有交付但存在错误记录，吞吐量依然是一次
+            有效测量。它不判断能不能当作测量——那由 :attr:`usable` 负责。
         status: 流水线终态（``succeeded`` / ``failed`` / ``cancelled``）；
             抛错时为空串。便于仅凭历史文件定位失败原因。
         config_sha256: 源配置内容的 SHA-256（空字符串表示读取失败）。
@@ -97,8 +97,12 @@ class BenchmarkResult:
         实测（2026-09-11）：种子全部连接失败时流水线仍以 ``succeeded`` 结束、
         ``pages=0``、``errors=0``；若只按 ``ok`` 判定，这种空白运行会成为基线，
         使该档位的退化检测从此形同虚设。
+
+        ``ok`` 与 ``status`` 要求**同时**成立：两者是独立字段，手工构造的结果对象
+        完全可能给出互相矛盾的组合（``status="failed"`` 而 ``ok`` 取默认 ``True``）。
+        与其信任调用方自觉，不如在这里把一致性当作判据的一部分。
         """
-        return self.ok and self.pages > 0
+        return self.ok and self.status in _USABLE_STATUSES and self.pages > 0
 
     def to_mapping(self) -> dict[str, object]:
         return {
@@ -175,6 +179,14 @@ PROFILES: dict[str, BenchmarkProfile] = {
 _CONFIG_SUBDIR = ".benchmark"
 #: 运行期采样 RSS 的最小间隔（秒）。逐事件调用 psutil 本身会污染被测负载。
 _RSS_SAMPLE_INTERVAL = 0.05
+
+#: 能被基准采信的终态。`partial_success` 表示「有交付但存在错误记录」——
+#: 它确实交付了页面，吞吐量因此仍是一次有效测量，不应被排除在基线之外。
+#: 2026-09-11：流水线开始发出该终态（此前从不发出），故此处同步放宽 `ok`。
+_OK_STATUSES = frozenset({"succeeded", "partial_success"})
+#: `usable` 额外接受空状态——2026-09-11 之前写入的历史条目没有 `status` 字段，
+#: 无法回溯判定，只能沿用其 `ok` 字段。
+_USABLE_STATUSES = _OK_STATUSES | {""}
 
 
 def apply_profile(config_raw: Mapping[str, Any], profile: BenchmarkProfile) -> dict[str, Any]:
@@ -288,9 +300,10 @@ class BenchmarkRunner:
             errors += 1
             _benchmark_logger.warning("Benchmark run failed: %s", exc)
 
-        # ok 只陈述流水线终态；「能不能当测量」由 BenchmarkResult.usable 判定
-        # （ok ∧ pages > 0）—— 两件事分开表达，失败原因才不会被混淆。
-        ok = status == "succeeded"
+        # ok 只陈述「这次运行的终态是否可采信」；「能不能当测量」由
+        # BenchmarkResult.usable 判定（ok ∧ pages > 0）—— 两件事分开表达，
+        # 失败原因才不会被混淆。
+        ok = status in _OK_STATUSES
         if not ok:
             _benchmark_logger.warning(
                 "Benchmark run did not succeed: status=%r pages=%d errors=%d",
