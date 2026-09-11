@@ -40,6 +40,7 @@ class ScenePanel(QWidget):
 
     def __init__(self, workspace: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("场景管理"))
         self._workspace = Path(workspace)
         self._store = None  # 懒加载
         self._build_ui()

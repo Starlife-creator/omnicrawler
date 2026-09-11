@@ -69,6 +69,7 @@ class RegionCanvas(QLabel):
 class PdfRegionSelectorDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("PDF 区域选择"))
         self.setWindowTitle(_("PDF 页面框选字段"))
         self.resize(1000, 760)
         self._pdf: Path | None = None

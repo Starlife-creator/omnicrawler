@@ -101,6 +101,7 @@ class PluginManagerDialog(QDialog):
         inspections: list,
     ) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("插件管理"))
         self.setWindowTitle(_("插件管理与权限"))
         self.resize(760, 460)
         self._project_root = project_root
@@ -190,6 +191,7 @@ class ScheduleManagerDialog(QDialog):
         resolve_current_config: Callable[[], Path | None],
     ) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("定时计划管理"))
         self.setWindowTitle(_("定时任务"))
         self.resize(680, 420)
         self._database = database

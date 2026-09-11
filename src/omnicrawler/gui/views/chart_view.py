@@ -30,6 +30,7 @@ class ChartView(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("字段完整度图表"))
         self._layout = QVBoxLayout(self)
         self._summary = QLabel(_("尚未加载结果统计"))
         self._summary.setAlignment(Qt.AlignmentFlag.AlignCenter)

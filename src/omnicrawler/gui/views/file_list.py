@@ -34,6 +34,7 @@ class FileList(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("下载文件列表"))
         self._directory: Path | None = None
 
         layout = QVBoxLayout(self)

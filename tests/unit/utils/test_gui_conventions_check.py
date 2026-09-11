@@ -79,7 +79,8 @@ def test_baseline_is_zero_slack_and_lists_existing_offenders() -> None:
     checker = _load_checker()
     payload = json.loads((REPO_ROOT / "tools" / "gui-conventions-baseline.json").read_text("utf-8"))
     baseline = payload.get("files", {})
-    assert baseline, "baseline 不应为空——存量违规需要被如实登记"
+    # 允许为空：存量为 0 是本门禁的目标状态（2026-09-11 已达成）。
+    # 但仍需校验「登记了什么就必须真的存在」，以及实测不得多于登记。
     actual = checker.collect(checker._token_hex_whitelist())
     for rel, counts in baseline.items():
         current = actual.get(rel)

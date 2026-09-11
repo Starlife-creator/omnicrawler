@@ -28,6 +28,7 @@ class TemplateLibraryDialog(QDialog):
 
     def __init__(self, templates: list[TemplateInfo], parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("模板库"))
         self.setWindowTitle(_("模板库"))
         self.resize(720, 520)
         self._templates = templates

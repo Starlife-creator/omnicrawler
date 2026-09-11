@@ -129,6 +129,7 @@ class AIServiceCenterDialog(QDialog):
         workspace: str | Path | None = None,
     ) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("AI 服务设置"))
         self._ai_config = ai_config
         self._workspace = Path(workspace).expanduser().resolve() if workspace else None
         self.setWindowTitle(_("AI 服务中心"))

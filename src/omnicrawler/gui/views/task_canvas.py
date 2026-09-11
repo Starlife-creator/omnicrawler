@@ -80,6 +80,7 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
         project_root: str | None = None,
     ) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("任务工作台"))
         self._config = config
         self._project_root = project_root
         self._updating = False

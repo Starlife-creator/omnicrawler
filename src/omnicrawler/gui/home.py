@@ -97,6 +97,7 @@ class AmbientHero(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("首页背景"))
         self.setMinimumHeight(132)
         self._phase = 0.0
         app = QApplication.instance()

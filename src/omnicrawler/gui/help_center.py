@@ -16,8 +16,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .design_system import FONT_SIZE
 from ..services.help_registry import HelpEntry, contextual_advice, get_help, search_help
+from .design_system import FONT_SIZE
 from .i18n import _
 
 

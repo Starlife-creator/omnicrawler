@@ -367,6 +367,7 @@ class ResultTable(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("结果查看"))
         self._model = CsvStreamModel(self)
         self._model.indexing_started.connect(self._on_indexing_started)
         self._model.indexing_finished.connect(self._on_indexing_finished)

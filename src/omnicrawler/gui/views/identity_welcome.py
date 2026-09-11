@@ -23,6 +23,7 @@ class IdentityWelcomeDialog(QDialog):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("创建本地身份"))
         self.setWindowTitle(_("欢迎使用插件生态"))
         self.setModal(True)
         self.resize(480, 360)

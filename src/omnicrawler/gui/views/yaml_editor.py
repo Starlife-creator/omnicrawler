@@ -123,6 +123,7 @@ class DiffDialog(QDialog):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("差异对比"))
         self.setWindowTitle(_("配置差异对比"))
         self.setMinimumSize(700, 400)
 
@@ -249,6 +250,7 @@ class YamlEditor(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("YAML 编辑器"))
         self._updating = False
         # P2-4：文本相对最近一次权威快照(diff 基线)，用于动态启停差异按钮
         self._baseline_text = ""

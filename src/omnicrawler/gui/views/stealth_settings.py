@@ -89,6 +89,7 @@ class StealthSettingsDialog(QDialog):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("隐身设置"))
         self._settings = settings
         self.setWindowTitle(_("反检测与隐身设置"))
         self.setMinimumSize(680, 580)

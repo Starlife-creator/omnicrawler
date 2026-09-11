@@ -99,6 +99,7 @@ class VisualFieldDialog(QDialog):
 
     def __init__(self, url: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("可视点选字段"))
         self.setWindowTitle(_("可视化选字段"))
         self.setMinimumSize(900, 560)
         self._thread: VisualFieldThread | None = None
@@ -170,6 +171,7 @@ class SmartExtractDialog(QDialog):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName(_("智能提取"))
         self.setWindowTitle(_("智能提取 — XPath 推荐"))
         self.setMinimumSize(650, 550)
 

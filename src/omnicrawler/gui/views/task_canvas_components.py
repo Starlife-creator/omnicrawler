@@ -208,6 +208,7 @@ class _Section(QGroupBox):
         sticky: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self.setAccessibleName(str(title))
         self._collapsed = False
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)

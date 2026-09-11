@@ -50,6 +50,11 @@ RADIUS = {"xs": 4, "sm": 6, "md": 8, "lg": 12, "xl": 16, "pill": 999}
 # 间距刻度（4 的倍数）
 SPACING = {"xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24, "xxl": 32}
 
+#: 图标内嵌强调色（监控激活态）。图标 SVG 直接引用它，避免在图标字符串里写裸色值。
+ICON_ACCENT_MONITOR = "#D83B01"
+#: 主题不可用时的兜底强调色（仅当 ThemeManager 取令牌失败时使用，故必须零依赖）。
+FALLBACK_ACCENT = "#176B87"
+
 
 @dataclass(frozen=True, slots=True)
 class VisualTokens:
