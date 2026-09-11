@@ -92,7 +92,18 @@ def scan_file(path: Path, whitelist: set[str]) -> dict[str, int]:
         if not any(marker in body for marker in A11Y_MARKERS):
             missing_a11y += 1
 
-    inline = len(re.findall(r"\.setStyleSheet\(", text))
+    # 规则 B（2026-09-11 收紧）：只拦**纯字面量**样式串——
+    # 用令牌拼出来的 f-string（如 f"color: {t.text}"）是设计体系的正确用法，应放行；
+    # 写死的颜色无论如何都会被规则 C（裸十六进制）独立拦住。
+    inline = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not (isinstance(func, ast.Attribute) and func.attr == "setStyleSheet"):
+            continue
+        if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+            inline += 1
     raw_hex = sum(1 for m in HEX_PATTERN.finditer(text) if m.group().upper() not in whitelist)
     return {"a11y": missing_a11y, "inline": inline, "raw_hex": raw_hex}
 

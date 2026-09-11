@@ -7,7 +7,7 @@
   "files": {
     "src/omnicrawler/gui/background_host.py": {
       "a11y": 1,
-      "inline": 3,
+      "inline": 1,
       "raw_hex": 0
     },
     "src/omnicrawler/gui/help_center.py": {
@@ -37,7 +37,7 @@
     },
     "src/omnicrawler/gui/views/change_monitor.py": {
       "a11y": 3,
-      "inline": 5,
+      "inline": 4,
       "raw_hex": 0
     },
     "src/omnicrawler/gui/views/chart_view.py": {
@@ -55,11 +55,6 @@
       "inline": 0,
       "raw_hex": 0
     },
-    "src/omnicrawler/gui/views/identity_dialog.py": {
-      "a11y": 0,
-      "inline": 1,
-      "raw_hex": 0
-    },
     "src/omnicrawler/gui/views/identity_welcome.py": {
       "a11y": 1,
       "inline": 0,
@@ -75,19 +70,9 @@
       "inline": 0,
       "raw_hex": 0
     },
-    "src/omnicrawler/gui/views/pdf_workbench.py": {
-      "a11y": 0,
-      "inline": 1,
-      "raw_hex": 0
-    },
-    "src/omnicrawler/gui/views/plugin_market.py": {
-      "a11y": 0,
-      "inline": 1,
-      "raw_hex": 0
-    },
     "src/omnicrawler/gui/views/professional_review.py": {
       "a11y": 0,
-      "inline": 3,
+      "inline": 1,
       "raw_hex": 0
     },
     "src/omnicrawler/gui/views/project_dialogs.py": {
@@ -112,7 +97,7 @@
     },
     "src/omnicrawler/gui/views/task_canvas.py": {
       "a11y": 1,
-      "inline": 2,
+      "inline": 0,
       "raw_hex": 0
     },
     "src/omnicrawler/gui/views/task_canvas_components.py": {
@@ -120,19 +105,9 @@
       "inline": 0,
       "raw_hex": 0
     },
-    "src/omnicrawler/gui/views/task_history.py": {
-      "a11y": 1,
-      "inline": 1,
-      "raw_hex": 0
-    },
-    "src/omnicrawler/gui/views/template_market.py": {
-      "a11y": 0,
-      "inline": 1,
-      "raw_hex": 0
-    },
     "src/omnicrawler/gui/views/yaml_editor.py": {
       "a11y": 2,
-      "inline": 2,
+      "inline": 0,
       "raw_hex": 0
     },
     "src/omnicrawler/gui/widgets/calendar_popup.py": {
@@ -142,22 +117,17 @@
     },
     "src/omnicrawler/gui/widgets/empty_state.py": {
       "a11y": 1,
-      "inline": 1,
-      "raw_hex": 0
-    },
-    "src/omnicrawler/gui/widgets/help_tooltip.py": {
-      "a11y": 0,
-      "inline": 1,
+      "inline": 0,
       "raw_hex": 0
     },
     "src/omnicrawler/gui/widgets/log_console.py": {
       "a11y": 1,
-      "inline": 1,
+      "inline": 0,
       "raw_hex": 0
     },
     "src/omnicrawler/gui/widgets/resource_monitor.py": {
       "a11y": 1,
-      "inline": 8,
+      "inline": 0,
       "raw_hex": 0
     },
     "src/omnicrawler/gui/widgets/toast.py": {

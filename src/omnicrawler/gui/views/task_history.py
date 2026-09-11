@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..core.view_base import BaseView
 from ..i18n import _
 from ..widgets.toast import ToastManager
 
@@ -32,8 +33,11 @@ DEFAULT_MAX_DAYS = 30
 MAX_LOADED_RECORDS = 5000
 
 
-class TaskHistory(QWidget):
+class TaskHistory(BaseView):
     """任务历史侧边栏。
+
+    继承 `BaseView`：无障碍名/对象名由骨架统一提供，空态走统一状态区
+    （`EmptyState`），不再自绘提示标签、不再写内联样式。
 
     Signals:
         load_config_requested: 请求加载历史配置 (config_path)。
@@ -52,26 +56,26 @@ class TaskHistory(QWidget):
         max_entries: int = DEFAULT_MAX_ENTRIES,
         max_days: int = DEFAULT_MAX_DAYS,
     ) -> None:
-        super().__init__(parent)
+        super().__init__(
+            accessible_name=_("历史任务"),
+            object_name="taskHistory",
+            parent=parent,
+            margins=4,  # 侧边栏：紧凑内边距（原实现为 4px）
+        )
         self._project_root = project_root
         # S3.2.1：history_max_entries 消费方——不再硬编码 100
         self._max_entries = max(1, int(max_entries))
         self._max_days = max(1, int(max_days))
+        self._records: list[dict[str, Any]] = []
+        self.finish_setup()
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
+    def build_ui(self, container: QWidget) -> None:
+        """搭建面板；空态/内容切换交给 BaseView 的状态区。"""
+        layout = QVBoxLayout(container)
 
         title = QLabel(_("📋 历史任务"))
-        title.setStyleSheet("font-weight: bold; font-size: 13px;")
+        title.setObjectName("sectionTitle")  # 区块标题语义类（见 design_system）
         layout.addWidget(title)
-
-        # A3：空态提示——无历史记录时给出引导而非空白
-        self._empty_label = QLabel(_("暂无历史任务：完成一次任务后，这里会显示记录。"))
-        self._empty_label.setObjectName("muted")
-        self._empty_label.setWordWrap(True)
-        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_label.setVisible(False)
-        layout.addWidget(self._empty_label)
 
         self._list = QListWidget()
         self._list.setAlternatingRowColors(True)
@@ -95,8 +99,6 @@ class TaskHistory(QWidget):
 
         layout.addLayout(btn_layout)
 
-        self._records: list[dict[str, Any]] = []
-
     @property
     def history_path(self) -> Path:
         return self._project_root / HISTORY_FILE
@@ -105,8 +107,8 @@ class TaskHistory(QWidget):
         """加载历史记录。"""
         self._records = []
         self._list.clear()
-        # A3：加载前先置为可见，无记录路径（含文件不存在）保持空态提示
-        self._empty_label.setVisible(True)
+        # A3：无记录（含文件不存在）时走统一空态；有记录则在末尾切回内容态
+        self.show_empty(_("暂无历史任务"), _("完成一次任务后，这里会显示记录。"))
 
         fp = self.history_path
         if not fp.is_file():
@@ -145,7 +147,10 @@ class TaskHistory(QWidget):
             item.setToolTip(json.dumps(record, ensure_ascii=False, indent=2))
             self._list.addItem(item)
 
-        self._empty_label.setVisible(self._list.count() == 0)
+        if self._list.count() == 0:
+            self.show_empty(_("暂无历史任务"), _("完成一次任务后，这里会显示记录。"))
+        else:
+            self.show_content()
         self.history_changed.emit()
 
     def recent_records(self, limit: int = 4) -> list[dict[str, Any]]:

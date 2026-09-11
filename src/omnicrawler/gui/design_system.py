@@ -401,6 +401,12 @@ def stylesheet(tokens: VisualTokens) -> str:
     /* === 首页标题 === */
     QLabel#homeTitle {{ color: {tokens.text}; font-size: {FONT_SIZE["display"]}px; font-weight: 700; }}
     QLabel#eyebrow {{ color: {tokens.primary}; font-size: {FONT_SIZE["small"]}px; font-weight: 700; letter-spacing: 1px; }}
+    /* 区块/侧栏标题：页面与面板统一用它，避免各页面自写 font-weight/font-size 内联样式 */
+    QLabel#sectionTitle {{
+        color: {tokens.text};
+        font-size: {FONT_SIZE["subtitle"]}px;
+        font-weight: 600;
+    }}
 
     /* === 按钮：完整状态体系 === */
     QPushButton {{

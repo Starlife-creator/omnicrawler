@@ -113,8 +113,12 @@ class EmptyState(QFrame):
         """)
 
     def set_message(self, icon: str, title: str, description: str = "") -> None:
-        """动态更新空状态内容。"""
+        """动态更新空状态内容（空描述会清空并隐藏描述行）。
+
+        2026-09-11 修正：原实现 `if description:` 使得「从有描述切到无描述」时残留旧文案，
+        BaseView 的三态切换依赖本方法，故改为总是写入并据内容显隐。
+        """
         self._icon_label.setText(icon)
         self._title_label.setText(title)
-        if description:
-            self._desc_label.setText(description)
+        self._desc_label.setText(description)
+        self._desc_label.setVisible(bool(description.strip()))
