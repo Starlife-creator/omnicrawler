@@ -1,4 +1,11 @@
-"""User-visible loss reporting and cancellation must preserve committed output."""
+"""User-visible loss reporting and cancellation must preserve committed output.
+
+★ monkeypatch 注入点约定（P0-2 下沉后的坑）：本文件补丁的三个内部常量
+（XLSX_ROW_LIMIT / _DECODE_CHUNK_BYTES / _ENCODING_SAMPLE_BYTES）由
+``convertx._core`` 内的函数在运行期读取，因此补丁必须打在
+**调用点所在模块** ``convertx._core`` 上。打在包门面 ``convertx`` 上只会改包属性、
+实现仍读旧值（包只是 re-export，补丁不过门面）。
+"""
 
 from __future__ import annotations
 
@@ -81,7 +88,7 @@ def test_multiline_csv_counts_logical_records(tmp_path):
 
 def test_xlsx_reports_actual_rows_and_cell_truncation(tmp_path, monkeypatch):
     openpyxl = pytest.importorskip("openpyxl")
-    monkeypatch.setattr(convertx, "XLSX_ROW_LIMIT", 2)
+    monkeypatch.setattr(convertx._core, "XLSX_ROW_LIMIT", 2)
     source = tmp_path / "input.jsonl"
     source.write_text('\n'.join(json.dumps({"id": i, "text": "x" * 33000 if i == 0 else "ok"}) for i in range(3)), encoding="utf-8")
     target = tmp_path / "out.xlsx"
@@ -128,7 +135,7 @@ def test_both_cli_entry_points_report_actual_written_rows(tmp_path, monkeypatch,
     from omnicrawler.convertx.__main__ import main
 
     pytest.importorskip("openpyxl")
-    monkeypatch.setattr(convertx, "XLSX_ROW_LIMIT", 2)
+    monkeypatch.setattr(convertx._core, "XLSX_ROW_LIMIT", 2)
     source = source_file(tmp_path)
     target = tmp_path / "out.xlsx"
     assert main([str(source), str(target)]) == 0
@@ -325,7 +332,7 @@ def test_csv_auto_encoding_validation_can_cancel_before_commit(tmp_path, monkeyp
         checks += 1
         return checks >= 5
 
-    monkeypatch.setattr(convertx, "_DECODE_CHUNK_BYTES", 32)
+    monkeypatch.setattr(convertx._core, "_DECODE_CHUNK_BYTES", 32)
     with pytest.raises(convertx.ConversionCancelledError):
         convertx.convert(
             source,
@@ -341,7 +348,7 @@ def test_csv_auto_encoding_validation_can_cancel_before_commit(tmp_path, monkeyp
 def test_csv_auto_encoding_retries_when_non_utf_bytes_appear_after_sample(tmp_path, monkeypatch):
     source = tmp_path / "late-gbk.csv"
     source.write_bytes("name,value\nascii,1\n中文,2\n".encode("gb18030"))
-    monkeypatch.setattr(convertx, "_ENCODING_SAMPLE_BYTES", len(b"name,value\nascii,1\n"))
+    monkeypatch.setattr(convertx._core, "_ENCODING_SAMPLE_BYTES", len(b"name,value\nascii,1\n"))
 
     rows = convertx.read_csv(source, {"encoding": "auto"})
 
