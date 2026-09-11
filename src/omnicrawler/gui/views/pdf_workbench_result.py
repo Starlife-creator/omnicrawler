@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QUrl, Slot
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QCloseEvent, QDesktopServices
 
 from ..i18n import _
 from ..widgets.toast import ToastManager
@@ -96,7 +96,7 @@ class PdfResultMixin(_Base):
         self._result_text.setText(_(f"{existing}\n\n[运行警告]\n{block}") if existing else _(f"[运行警告]\n{block}"))
 
     @Slot(object)
-    def closeEvent(self, event) -> None:
+    def closeEvent(self, event: QCloseEvent) -> None:
         """S1.1.5：关闭前取消并等待 PDF 后台线程，避免 QThread 销毁时仍在运行。"""
         worker = getattr(self, "_worker", None)
         if worker is not None and worker.isRunning():

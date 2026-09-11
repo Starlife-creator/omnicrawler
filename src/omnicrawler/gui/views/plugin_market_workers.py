@@ -8,6 +8,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from PySide6.QtWidgets import QWidget
+
 from ...plugins.market_client import (
     catalog_cache_path,
     download_and_verify,
@@ -27,7 +29,7 @@ class _CatalogWorker(BackgroundWorker):
         trust_source: str,
         cache_root: Path,
         egress: Any,
-        parent=None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._catalog_url = catalog_url
@@ -61,7 +63,9 @@ class _CatalogWorker(BackgroundWorker):
 class _ListingWorker(BackgroundWorker):
     """后台拉取单个插件的 listing.md 说明。"""
 
-    def __init__(self, catalog_url: str, rel: str, egress: Any, parent=None) -> None:
+    def __init__(
+        self, catalog_url: str, rel: str, egress: Any, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self._catalog_url = catalog_url
         self._rel = rel
@@ -80,7 +84,7 @@ class _InstallWorker(BackgroundWorker):
         dest_root: Path,
         trust_source: str,
         egress: Any,
-        parent=None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._plugin_id = plugin_id

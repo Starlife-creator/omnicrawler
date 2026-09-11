@@ -3,12 +3,18 @@
 管理应用持久化设置：最近文件、主题、快捷键、项目根目录、隐私选项等。
 """
 
-from typing import Optional
+from typing import Optional, TypeVar, cast
 
 from PySide6.QtCore import QSettings
 
 SETTINGS_ORG = "OmniCrawler"
 SETTINGS_APP = "OmniCrawlerGUI"
+
+
+#: 读取值的类型参数：由调用点传入的 ``value_type`` 推出来。
+#: 这让 ``_value`` / ``value`` 能把「返回什么类型」传递给调用方——
+#: 否则它们返回 ``Any``，35 个属性的 ``no-any-return`` 会全部触发。
+_T = TypeVar("_T")
 
 
 def make_qsettings(org: str = SETTINGS_ORG, app: str = SETTINGS_APP) -> QSettings:
@@ -56,11 +62,15 @@ class AppSettings:
     # 核实的枚举/API 差异雷区之一）。
     _QSETTINGS_TYPE_WHITELIST = (str, int, float, bool, bytes, list)
 
-    def _value(self, key: str, default: object, value_type: type):
+    def _value(self, key: str, default: _T, value_type: type[_T]) -> _T:
         if key in self._session_values:
-            return self._session_values[key]
+            # 会话回退值由 ``_set_value`` 原样存入，类型由调用方保证。此处**刻意不做**
+            # isinstance 收敛：保持既有语义——若读取端声明的类型与存入类型不一致，
+            # 仍是「原样返回」而不是「静默换成默认值」。
+            return cast("_T", self._session_values[key])
         if value_type in self._QSETTINGS_TYPE_WHITELIST:
-            return self._settings.value(key, default, type=value_type)
+            # QSettings.value(type=) 已按白名单类型返回值，无需二次收敛。
+            return cast("_T", self._settings.value(key, default, type=value_type))
         # 非白名单类型：取出原始值后手动做类型收敛（如 dict/list-of-dict）
         raw = self._settings.value(key, default)
         if isinstance(raw, value_type):
@@ -78,7 +88,7 @@ class AppSettings:
 
     # ---- S3.1.16：公共读写接口（消费方不再直调私有方法） ----
 
-    def value(self, key: str, default: object, value_type: type):
+    def value(self, key: str, default: _T, value_type: type[_T]) -> _T:
         return self._value(key, default, value_type)
 
     def set_value(self, key: str, value: object) -> None:

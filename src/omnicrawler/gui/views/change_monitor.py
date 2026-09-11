@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QThread, QTimer, Signal, Slot
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QContextMenuEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -782,7 +782,7 @@ class ChangeMonitorView(QWidget):
 
     # ── 右键菜单 ────────────────────────────────────────────────────
 
-    def contextMenuEvent(self, event) -> None:
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         viewport = self._rule_list.viewport()
         if viewport is None:
             return

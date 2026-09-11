@@ -180,7 +180,7 @@ class DeveloperInspector(QWidget):
             tree.addTopLevelItem(QTreeWidgetItem([str(cell) for cell in row]))
 
     @staticmethod
-    def _truthy(value) -> str:
+    def _truthy(value: object) -> str:
         if isinstance(value, bool):
             return _("是") if value else _("否")
         if value in (None, "", [], {}):

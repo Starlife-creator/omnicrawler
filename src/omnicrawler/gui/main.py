@@ -15,8 +15,10 @@ import copy
 import logging
 import sys
 import traceback
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from types import TracebackType
 from typing import Any
 
 import yaml
@@ -55,7 +57,10 @@ if not _cli_mode():
         )
         from PySide6.QtGui import (
             QAction,
+            QCloseEvent,
             QDesktopServices,
+            QDragEnterEvent,
+            QDropEvent,
         )
         from PySide6.QtWidgets import (
             QApplication,
@@ -455,7 +460,9 @@ class MainWindow(QMainWindow):
             self._settings.workspace_background_path = ""
 
     # --- ErrorDialogHelper ---
-    def _show_error_dialog(self, exc: Exception, context: str = "", *, retry_callback=None) -> None:
+    def _show_error_dialog(
+        self, exc: BaseException, context: str = "", *, retry_callback: Callable[[], None] | None = None
+    ) -> None:
         self._error_helper.show_error_dialog(exc, context, retry_callback=retry_callback)
 
     # --- EnvironmentChecker ---
@@ -1045,7 +1052,7 @@ class MainWindow(QMainWindow):
         config_path = self._config_path
 
         class _PreflightWorker(BackgroundWorker):
-            def __init__(self, path: str, parent=None) -> None:
+            def __init__(self, path: str, parent: QWidget | None = None) -> None:
                 super().__init__(parent)
                 self._config_path = path
 
@@ -1824,7 +1831,7 @@ class MainWindow(QMainWindow):
         self._close_after_background_jobs = False
         self.close()
 
-    def closeEvent(self, event) -> None:
+    def closeEvent(self, event: QCloseEvent) -> None:
         if self._task_runner.is_running:
             # P2-2/1：合并为单次确认弹窗——有托盘 3 选 1，无托盘 2 选 1（无"隐藏"）
             tray_visible = bool(self._tray_icon and self._tray_icon.isVisible())
@@ -1882,7 +1889,7 @@ class MainWindow(QMainWindow):
         self._statusbar.showMessage(text, 5000)
         ToastManager.instance().info(text)
 
-    def dragEnterEvent(self, event) -> None:
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if event.mimeData().hasUrls():
             for url in event.mimeData().urls():
                 if url.isLocalFile():
@@ -1892,7 +1899,7 @@ class MainWindow(QMainWindow):
                         return
         event.ignore()
 
-    def dropEvent(self, event) -> None:
+    def dropEvent(self, event: QDropEvent) -> None:
         for url in event.mimeData().urls():
             if not url.isLocalFile():
                 continue
@@ -2090,7 +2097,11 @@ def main() -> int:
         window = MainWindow()
         window.show()
 
-        def _global_exception_hook(exc_type, exc_value, exc_tb):
+        def _global_exception_hook(
+            exc_type: type[BaseException],
+            exc_value: BaseException,
+            exc_tb: TracebackType | None,
+        ) -> None:
             traceback.print_exception(exc_type, exc_value, exc_tb)
             if hasattr(window, '_show_error_dialog'):
                 window._show_error_dialog(exc_value)

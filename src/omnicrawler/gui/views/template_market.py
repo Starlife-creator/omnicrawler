@@ -8,9 +8,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -65,7 +66,7 @@ class _TemplateCatalogWorker(BackgroundWorker):
         trust_source: str,
         cache_root: Path,
         egress: Any,
-        parent=None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._catalog_url = catalog_url
@@ -98,7 +99,9 @@ class _TemplateCatalogWorker(BackgroundWorker):
 
 
 class _TemplateListingWorker(BackgroundWorker):
-    def __init__(self, catalog_url: str, rel: str, egress: Any, parent=None) -> None:
+    def __init__(
+        self, catalog_url: str, rel: str, egress: Any, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self._catalog_url = catalog_url
         self._rel = rel
@@ -116,7 +119,7 @@ class _TemplateInstallWorker(BackgroundWorker):
         dest_root: Path,
         trust_source: str,
         egress: Any,
-        parent=None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._template_id = template_id
@@ -279,7 +282,7 @@ class TemplateMarketView(QWidget):
         """)
 
     # ── 生命周期 ────────────────────────────────────────
-    def showEvent(self, event) -> None:  # noqa: N802 - Qt 命名
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 - Qt 命名
         super().showEvent(event)
         if not self._auto_loaded:
             self._auto_loaded = True
@@ -341,7 +344,9 @@ class TemplateMarketView(QWidget):
         if self._list.count() > 0:
             self._list.setCurrentRow(0)
 
-    def _on_selection_changed(self, current, _previous) -> None:
+    def _on_selection_changed(
+        self, current: QListWidgetItem | None, _previous: QListWidgetItem | None
+    ) -> None:
         if current is None:
             return
         self._show_detail(current.data(Qt.ItemDataRole.UserRole))
@@ -463,7 +468,7 @@ class TemplateMarketView(QWidget):
             return None
         for entry in self._catalog.get("templates", []):
             if entry.get("id") == template_id:
-                return entry
+                return cast("dict[str, Any]", entry)
         return None
 
     def _update_action_buttons(self) -> None:

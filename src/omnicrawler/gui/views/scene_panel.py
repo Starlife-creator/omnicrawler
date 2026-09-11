@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 from PySide6.QtCore import Slot
@@ -34,6 +35,9 @@ from ...core.utils import excel_safe
 from ..i18n import _
 from ..widgets.empty_state import EmptyState
 
+if TYPE_CHECKING:
+    from ...state.scene_store import SceneStore
+
 
 class ScenePanel(QWidget):
     """场景管理面板（侧栏导航项由 NavIndex.SCENE 统一定位）。"""
@@ -42,20 +46,21 @@ class ScenePanel(QWidget):
         super().__init__(parent)
         self.setAccessibleName(_("场景管理"))
         self._workspace = Path(workspace)
-        self._store = None  # 懒加载
+        self._store: SceneStore | None = None  # 懒加载
         self._build_ui()
         self.refresh_scenes()
 
     # ── 数据访问（懒加载）────────────────────────────────
-    def _get_store(self):
+    def _get_store(self) -> SceneStore:
         """懒加载 SceneStore（含幂等导入出厂场景）。"""
-        if self._store is None:
+        store = self._store
+        if store is None:
             from ...state.scene_store import SceneStore
 
             store = SceneStore(self._workspace / "scene.sqlite3")
             store.import_bundled_scenes()
             self._store = store
-        return self._store
+        return store
 
     def _current_scene(self) -> str:
         return str(self._scene_combo.currentData() or "")

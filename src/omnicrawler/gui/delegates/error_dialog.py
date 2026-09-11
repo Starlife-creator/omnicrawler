@@ -14,7 +14,9 @@ from ._base import _BaseDelegate
 class ErrorDialogHelper(_BaseDelegate):
     """Error dialog display with privacy redaction."""
 
-    def show_error_dialog(self, exc: Exception, context: str = "", *, retry_callback: Any = None) -> None:
+    def show_error_dialog(
+        self, exc: BaseException, context: str = "", *, retry_callback: Any = None
+    ) -> None:
         """Show an error dialog with privacy redaction."""
         mw = self._mw
         tb = traceback.format_exc()

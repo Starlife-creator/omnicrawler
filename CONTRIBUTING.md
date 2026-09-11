@@ -27,10 +27,10 @@ pip install pre-commit && pre-commit install
 # 运行测试
 pytest
 
-# 运行质量门禁
-ruff check src/ && ruff format --check src/
-mypy src/omnicrawler/ --exclude 'src/omnicrawler/(gui|pdfx|apps)/'
-python -m compileall src/ -q
+# 运行质量门禁（与 CI 同一范围；清单唯一来源是 tools/gate_registry.py）
+ruff check src tests tools
+mypy src/omnicrawler            # 全量，含 gui（已全包严格档）；仅 apps/ 在 pyproject 里排除
+python -m compileall -q src tests examples
 ```
 
 ## 质量门禁（红线）

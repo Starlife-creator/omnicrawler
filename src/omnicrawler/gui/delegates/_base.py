@@ -10,7 +10,7 @@ FINAL 长期债 #1 Phase B：显式耦合契约——委托对主窗口的一切
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from ..main import MainWindow
@@ -24,7 +24,7 @@ class _BaseDelegate:
 
     @property
     def _mw(self) -> MainWindow:
-        return self.__dict__["_mw"]
+        return cast("MainWindow", self.__dict__["_mw"])
 
     @_mw.setter
     def _mw(self, value: MainWindow) -> None:

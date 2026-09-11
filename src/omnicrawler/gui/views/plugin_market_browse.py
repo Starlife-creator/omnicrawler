@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QListWidgetItem
@@ -159,7 +159,9 @@ class MarketBrowseMixin(_Base):
             return False
         return True
 
-    def _on_selection_changed(self, current, _previous) -> None:
+    def _on_selection_changed(
+        self, current: QListWidgetItem | None, _previous: QListWidgetItem | None
+    ) -> None:
         if current is None:
             return
         pid = current.data(Qt.ItemDataRole.UserRole)
@@ -261,7 +263,7 @@ class MarketBrowseMixin(_Base):
             return None
         for entry in self._catalog.get("plugins", []):
             if entry.get("id") == plugin_id:
-                return entry
+                return cast("dict[str, Any]", entry)
         return None
 
     def _update_action_buttons(self, installed: bool | None = None) -> None:

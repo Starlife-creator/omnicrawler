@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -46,7 +46,7 @@ _YAML_ONLY_HELP_IDS = (
 class YamlHighlighter(QSyntaxHighlighter):
     """YAML 语法高亮器。颜色跟随设计令牌主题。"""
 
-    def __init__(self, parent) -> None:
+    def __init__(self, parent: QObject) -> None:
         super().__init__(parent)
         self._refresh_formats()
         ThemeManager.instance().theme_changed.connect(self._on_theme_changed)
@@ -70,7 +70,7 @@ class YamlHighlighter(QSyntaxHighlighter):
         self._list_fmt = QTextCharFormat()
         self._list_fmt.setForeground(QColor(t.info))
 
-    def _on_theme_changed(self, *_args) -> None:
+    def _on_theme_changed(self, *_args: object) -> None:
         self._refresh_formats()
 
     def highlightBlock(self, text: str | None) -> None:
@@ -426,7 +426,7 @@ class YamlEditor(QWidget):
         """手动触发同步到表单。"""
         self._try_sync_from_editor()
 
-    def _apply_editor_style(self, *_args) -> None:
+    def _apply_editor_style(self, *_args: object) -> None:
         """从设计令牌生成编辑器正常样式，自动跟随主题。"""
         t = ThemeManager.instance().tokens
         self._editor.setStyleSheet(f"""

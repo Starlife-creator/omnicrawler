@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Slot
+from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtWidgets import QFileDialog, QListWidgetItem
 
 from ..i18n import _
@@ -120,7 +121,7 @@ class PdfScanMixin(_Base):
                     continue
         return staging
 
-    def dragEnterEvent(self, event) -> None:  # noqa: N802 — Qt 命名
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802 — Qt 命名
         """接受含 PDF 文件或目录的拖放。"""
         if event.mimeData().hasUrls():
             for url in event.mimeData().urls():
@@ -135,14 +136,14 @@ class PdfScanMixin(_Base):
                     return
         event.ignore()
 
-    def dragMoveEvent(self, event) -> None:  # noqa: N802 — Qt 命名
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # noqa: N802 — Qt 命名
         """dragEnter 已校验类型，此处统一放行以维持拖放视觉反馈。"""
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
         else:
             event.ignore()
 
-    def dropEvent(self, event) -> None:  # noqa: N802 — Qt 命名
+    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802 — Qt 命名
         """拖入目录 → 直接扫描；拖入 PDF 文件 → 暂存后扫描。"""
         pdf_files: list[Path] = []
         dir_dropped: Path | None = None
@@ -193,7 +194,7 @@ class PdfScanMixin(_Base):
         from ..core.background_worker import BackgroundWorker, run_worker
 
         class _ScanWorker(BackgroundWorker):
-            def __init__(self, root: Path, parent=None) -> None:
+            def __init__(self, root: Path, parent: QWidget | None = None) -> None:
                 super().__init__(parent)
                 self._root = root
 

@@ -70,7 +70,7 @@ class HelpTooltip(QPushButton):
         self._apply_token_style()
         ThemeManager.instance().theme_changed.connect(self._apply_token_style)
 
-    def _apply_token_style(self, *_args) -> None:
+    def _apply_token_style(self, *_args: object) -> None:
         """从设计令牌生成样式，自动跟随主题。"""
         t = ThemeManager.instance().tokens
         self.setStyleSheet(f"""

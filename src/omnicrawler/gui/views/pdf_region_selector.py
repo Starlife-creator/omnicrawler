@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 from PySide6.QtCore import QPoint, QRect, Qt, Signal
-from PySide6.QtGui import QImage, QMouseEvent, QPainter, QPen, QPixmap
+from PySide6.QtGui import QImage, QMouseEvent, QPainter, QPaintEvent, QPen, QPixmap
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -58,7 +58,7 @@ class RegionCanvas(QLabel):
             self.selected.emit((self._rect.left(), self._rect.top(), self._rect.right(), self._rect.bottom()))
             self.update()
 
-    def paintEvent(self, event) -> None:
+    def paintEvent(self, event: QPaintEvent) -> None:
         super().paintEvent(event)
         if not self._rect.isNull():
             painter = QPainter(self)

@@ -100,7 +100,7 @@ class ResourceMonitor(QWidget):
         self._apply_token_style()
         ThemeManager.instance().theme_changed.connect(self._apply_token_style)
 
-    def _apply_token_style(self, *_args) -> None:
+    def _apply_token_style(self, *_args: object) -> None:
         """从设计令牌生成标签样式，自动跟随主题。"""
         t = ThemeManager.instance().tokens
         normal = f"font-size: {FONT_SIZE['caption']}px; color: {t.muted};"

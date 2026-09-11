@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.metadata
 import logging
 import math
+from typing import cast
 
 from PySide6.QtCore import QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPaintEvent
@@ -80,7 +81,7 @@ class _AIEnrichWorker(QThread):
         """从单一真源构造 AI provider（含 Egress 审计；未启用返回 None）。"""
         from ..services.ai_providers import provider_from_env
 
-        return provider_from_env(project_root=self._project_root)
+        return cast("object | None", provider_from_env(project_root=self._project_root))
 
 
 def _package_version() -> str:
@@ -335,7 +336,7 @@ class HomePage(QWidget):
 
     def _handle_pdf_mode(self, compiled: object) -> None:
         """处理 PDF 模式：展示检测到的文件路径和解析结果。"""
-        draft = compiled  # type: ignore[assignment]
+        draft = compiled
         paths_text = "\n".join(f"  • {p}" for p in draft.file_paths) if hasattr(draft, 'file_paths') and draft.file_paths else _("（未检测到具体文件路径）")
         self.feedback.setText(
             _("📄 检测为文件处理任务\n")
@@ -404,7 +405,7 @@ class HomePage(QWidget):
 
     def _try_ai_enrich(self, compiled: object) -> None:
         """双路径：本地解析已出结果，异步启动 AI 增强。"""
-        draft = compiled  # type: ignore[assignment]
+        draft = compiled
         request = draft.request if hasattr(draft, 'request') else ""
         if not request:
             return
@@ -438,7 +439,7 @@ class HomePage(QWidget):
         if ai_draft is None:
             return
 
-        draft = ai_draft  # type: ignore[assignment]
+        draft = ai_draft
         parts = [self.feedback.text()]
         # C18：标注 AI 增强来源，避免与本地规则解析混淆
         parts.append(_("\n--- AI 增强（在线模型，非本地规则）---"))

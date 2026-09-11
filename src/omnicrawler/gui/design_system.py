@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation
@@ -723,6 +724,10 @@ def apply_font_strategy(app: QApplication, *, scale: int = 100) -> None:
 # ---------------------------------------------------------------------------
 
 
+#: 信号代理的回调类型：Qt 槽可以是任意可调用对象。
+_Callback = Callable[..., None]
+
+
 class _SignalProxy:
     """纯 Python 信号代理，模拟 Qt Signal 的 .connect()/.disconnect()/.emit() API。
 
@@ -733,17 +738,17 @@ class _SignalProxy:
     """
 
     def __init__(self) -> None:
-        self._callbacks: list = []
+        self._callbacks: list[_Callback] = []
         self._emitting = False
 
-    def connect(self, callback) -> None:
+    def connect(self, callback: _Callback) -> None:
         self._callbacks.append(callback)
 
-    def disconnect(self, callback) -> None:
+    def disconnect(self, callback: _Callback) -> None:
         if callback in self._callbacks:
             self._callbacks.remove(callback)
 
-    def emit(self, *args) -> None:
+    def emit(self, *args: object) -> None:
         if self._emitting:
             return  # 重入保护：回调执行期间的 emit 被静默丢弃
         self._emitting = True
@@ -751,7 +756,7 @@ class _SignalProxy:
             import shiboken6 as _sip
         except ImportError:
             _sip = None  # type: ignore[assignment]  # 无 PySide6 时降级
-        dead: list = []
+        dead: list[_Callback] = []
         for callback in list(self._callbacks):
             # 检查 bound method 的目标对象是否已被 C++ 析构
             target = getattr(callback, "__self__", None)

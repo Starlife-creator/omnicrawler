@@ -120,7 +120,9 @@ class TemplateLibraryDialog(QDialog):
         else:
             self._description.setText(_("没有匹配的模板"))
 
-    def _show_description(self, item: QListWidgetItem | None, _previous=None) -> None:
+    def _show_description(
+        self, item: QListWidgetItem | None, _previous: QListWidgetItem | None = None
+    ) -> None:
         template = self._find(item)
         if template:
             capabilities = "、".join(template.capabilities) or _("未声明")

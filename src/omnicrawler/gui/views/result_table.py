@@ -10,11 +10,13 @@ import csv
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from PySide6.QtCore import (
     QAbstractTableModel,
     QEasingCurve,
     QModelIndex,
+    QPersistentModelIndex,
     QPropertyAnimation,
     QRegularExpression,
     QSortFilterProxyModel,
@@ -210,7 +212,11 @@ class CsvStreamModel(QAbstractTableModel):
     def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # type: ignore[override]  # noqa: B008
         return len(self._headers)
 
-    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):  # type: ignore[override]
+    def data(
+        self,
+        index: QModelIndex | QPersistentModelIndex,
+        role: int = Qt.ItemDataRole.DisplayRole,
+    ) -> Any:
         if not index.isValid():
             return None
         if role == Qt.ItemDataRole.DisplayRole:
@@ -222,8 +228,9 @@ class CsvStreamModel(QAbstractTableModel):
                 return ""
         return None
 
-    def headerData(self, section: int, orientation: Qt.Orientation,
-                   role: int = Qt.ItemDataRole.DisplayRole):
+    def headerData(
+        self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole
+    ) -> Any:
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
             if section < len(self._headers):
                 return self._headers[section]

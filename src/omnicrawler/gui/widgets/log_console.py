@@ -9,7 +9,7 @@ import logging
 import re
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtCore import QPoint, Qt, QTimer, Slot
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -65,7 +65,7 @@ class LogHighlighter(QSyntaxHighlighter):
             fmt.setForeground(color)
             self._formats[level] = fmt
 
-    def _on_theme_changed(self, *_args) -> None:
+    def _on_theme_changed(self, *_args: object) -> None:
         """主题变更时刷新格式。"""
         self._refresh_formats()
 
@@ -155,7 +155,7 @@ class LogConsole(QWidget):
         self._all_logs: list[tuple[str, str]] = []  # [(message, level), ...]
         self._search_term: str = ""
 
-    def _apply_token_style(self, *_args) -> None:
+    def _apply_token_style(self, *_args: object) -> None:
         """从设计令牌生成日志控制台样式，自动跟随主题。"""
         t = ThemeManager.instance().tokens
         self._editor.setStyleSheet(f"""
@@ -232,7 +232,7 @@ class LogConsole(QWidget):
         self._editor.clear()
         self._all_logs.clear()
 
-    def _show_context_menu(self, pos) -> None:
+    def _show_context_menu(self, pos: QPoint) -> None:
         """显示右键菜单。"""
         menu = QMenu(self)
 

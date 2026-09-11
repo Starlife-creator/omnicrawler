@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
@@ -38,7 +40,7 @@ class EmptyState(QFrame):
         parent: QWidget | None = None,
         *,
         action_label: str = "",
-        action_callback=None,
+        action_callback: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
         # 无障碍：空态的名字＝其标题；set_message 会随状态切换同步更新
@@ -89,7 +91,7 @@ class EmptyState(QFrame):
         self._apply_style()
         ThemeManager.instance().theme_changed.connect(self._apply_style)
 
-    def _apply_style(self, *_args) -> None:
+    def _apply_style(self, *_args: object) -> None:
         """从设计令牌生成空状态样式。"""
         t = ThemeManager.instance().tokens
         self.setStyleSheet(f"""

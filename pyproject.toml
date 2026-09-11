@@ -180,23 +180,21 @@ check_untyped_defs = true
 exclude = "^src/omnicrawler/apps/"
 disable_error_code = ["import-untyped"]
 
-# Gradual GUI mypy inclusion — Phase 2 (2.3.0):
-# gui/core is now fully strict (disallow_untyped_defs).
-# Other GUI subdirectories remain at Phase 1 relaxed rules.
-# Target: tighten widgets/ → views/ → wizard/ → runner/ → main/ → delegates/
-# in subsequent phases.
+# Gradual GUI mypy inclusion — 已完成（2026-09-11）。
+#
+# 原计划按 widgets/ → views/ → wizard/ → runner/ → main/ → delegates/ 逐段收紧。
+# 实测后改为一次性收紧：整个 gui 包在严格档下只余 **104 处**违规，且其中 37 处
+# 是同一根因（`settings._value` 返回 Any，35 个属性跟着触发 no-any-return）——
+# 逐段推进已无必要，分段反而要把 5 项设置复制多份。
+#
+# 严格档定义沿用原 gui/core 的口径（5 项）：缺任何一项都会让「类型完整性」
+# 出现可乘之机（例如只禁未注解 def，却不拦 Any 直接当返回值用）。
+# 注意：本块之后**不得**再为 gui 模块追加更宽松的 override——
+# `tests/unit/tools/test_mypy_strict_scope.py` 会按磁盘上的实际模块逐一验算生效规则。
 [[tool.mypy.overrides]]
-module = "omnicrawler.gui.core.*"
+module = "omnicrawler.gui.*"
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 check_untyped_defs = true
 warn_return_any = true
 warn_unused_ignores = true
-
-[[tool.mypy.overrides]]
-module = "omnicrawler.gui.*"
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
-check_untyped_defs = true
-warn_return_any = false
-warn_unused_ignores = false

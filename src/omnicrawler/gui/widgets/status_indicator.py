@@ -63,7 +63,7 @@ class StatusIndicator(QWidget):
         self._blink_on = not self._blink_on
         self.update()
 
-    def _refresh_colors(self, *_args) -> None:
+    def _refresh_colors(self, *_args: object) -> None:
         tokens = ThemeManager.instance().tokens
         self._colors = {
             "idle": QColor(tokens.indicator_idle),

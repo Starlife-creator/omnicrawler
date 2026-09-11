@@ -17,6 +17,7 @@ from ..i18n import _
 from .plugin_market_workers import _CatalogWorker
 
 if TYPE_CHECKING:
+    from PySide6.QtGui import QShowEvent
     from PySide6.QtWidgets import QLabel, QPushButton, QWidget
 
     from ..widgets.status_indicator import StatusIndicator
@@ -50,7 +51,7 @@ class MarketCatalogMixin(_Base):
     # ---- 宿主契约：方法（由 MarketBrowseMixin 提供）----
     if TYPE_CHECKING:
         def _populate_list(self) -> None: ...
-    def showEvent(self, event) -> None:  # noqa: N802 - Qt 命名
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 - Qt 命名
         super().showEvent(event)
         if not self._auto_loaded:
             self._auto_loaded = True

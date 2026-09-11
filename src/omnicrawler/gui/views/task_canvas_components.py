@@ -70,7 +70,7 @@ class PlanReviewWorker(QThread):
     def _load_provider(self) -> object | None:
         from ...services.ai_providers import provider_from_env
 
-        return provider_from_env(project_root=self._project_root)
+        return cast("object | None", provider_from_env(project_root=self._project_root))
 
 
 class FieldTableModel(QAbstractTableModel):
@@ -97,7 +97,7 @@ class FieldTableModel(QAbstractTableModel):
         self,
         index: QModelIndex | QPersistentModelIndex,
         role: int = Qt.ItemDataRole.DisplayRole,
-    ) -> Any:  # type: ignore[override]
+    ) -> Any:
         if not index.isValid() or not 0 <= index.row() < len(self._fields):
             return None
         if role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
@@ -108,7 +108,7 @@ class FieldTableModel(QAbstractTableModel):
     def headerData(
         self,
         section: int,
-        orientation,
+        orientation: Qt.Orientation,
         role: int = Qt.ItemDataRole.DisplayRole,
     ) -> Any:
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
@@ -123,7 +123,7 @@ class FieldTableModel(QAbstractTableModel):
         index: QModelIndex | QPersistentModelIndex,
         value: Any,
         role: int = Qt.ItemDataRole.EditRole,
-    ) -> bool:  # type: ignore[override]
+    ) -> bool:
         if not index.isValid() or role != Qt.ItemDataRole.EditRole:
             return False
         field = self._fields[index.row()]

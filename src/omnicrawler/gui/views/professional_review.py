@@ -121,7 +121,7 @@ class EvidenceView(QWidget):
     """
 
     # 返回结果列表信号
-    back_to_results = Signal()  # type: ignore[has-type]
+    back_to_results = Signal()
 
     def __init__(
         self,
@@ -275,7 +275,7 @@ class EvidenceView(QWidget):
         self._capsule_box.setVisible(self._capsule_workspace is not None)
 
     # ── 胶囊时间线（S4）───────────────────────────────────
-    def _capsule_store_ref(self):
+    def _capsule_store_ref(self) -> CapsuleStore | None:
         """懒加载 CapsuleStore（workspace/capsules）。"""
         if self._capsule_store is None and self._capsule_workspace is not None:
             from ...state.capsule_store import CapsuleStore

@@ -818,7 +818,7 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
             return bool(parsed.path)
         return False
 
-    def _apply_style(self, *_args) -> None:
+    def _apply_style(self, *_args: object) -> None:
         t = ThemeManager.instance().tokens
         self.setStyleSheet(f"""
             QGroupBox#taskCanvas QGroupBox {{

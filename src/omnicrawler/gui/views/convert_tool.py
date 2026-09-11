@@ -9,7 +9,7 @@ from pathlib import Path
 from threading import Event
 
 from PySide6.QtCore import Qt, QThread, Signal, Slot
-from PySide6.QtGui import QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QDragEnterEvent, QDragLeaveEvent, QDropEvent, QMouseEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -190,7 +190,7 @@ class _DropZone(QFrame):
         else:
             ev.ignore()
 
-    def dragLeaveEvent(self, ev) -> None:
+    def dragLeaveEvent(self, ev: QDragLeaveEvent) -> None:
         self.set_highlight(False)
 
     def dropEvent(self, ev: QDropEvent | None) -> None:
@@ -212,7 +212,7 @@ class _DropZone(QFrame):
         else:
             ev.ignore()
 
-    def mousePressEvent(self, ev) -> None:
+    def mousePressEvent(self, ev: QMouseEvent) -> None:
         if ev.button() == Qt.MouseButton.LeftButton:
             self.files_dropped.emit(["__PICK__"])
         super().mousePressEvent(ev)

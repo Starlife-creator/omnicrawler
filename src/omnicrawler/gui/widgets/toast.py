@@ -10,6 +10,8 @@ from collections import deque
 from collections.abc import Callable
 
 from PySide6.QtCore import (
+    QEvent,
+    QObject,
     QPropertyAnimation,
     Qt,
     QTimer,
@@ -195,7 +197,7 @@ class Toast(QFrame):
             return
         self._close_fallback_timer.stop()
         self._close_animation = None
-        anim.deleteLater()  # type: ignore[union-attr]  # PyQt6 stub 缺失时推断为 Any|None
+        anim.deleteLater()
         self._finish_close()
 
     def _finish_close_after_timeout(self) -> None:
@@ -248,7 +250,7 @@ class ToastOverlay(QWidget):
         parent.installEventFilter(self)
         self._reposition()
 
-    def eventFilter(self, obj, event) -> bool:
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         from PySide6.QtCore import QEvent
         if event.type() in (QEvent.Type.Resize, QEvent.Type.Move):
             self._reposition()
@@ -292,7 +294,7 @@ class ToastOverlay(QWidget):
         # Check if message was seen recently
         if any(msg == message for msg, _ in self._recent_messages):
             # S3.1.4：返回类型标注一致（去重路径可能无 toast 可见）
-            return self._toasts[-1] if self._toasts else None  # type: ignore[return-value]
+            return self._toasts[-1] if self._toasts else None
         self._recent_messages.append((message, now_ms))
 
         # 限流：超过最大数量时同步移除最旧的（而非仅启动异步动画）
@@ -385,5 +387,5 @@ class ToastManager:
     def warning(self, message: str, *, duration: int = 4000) -> Toast | None:
         return self.show(message, kind="warning", duration=duration)
 
-    def error(self, message: str, *, duration: int = 5000, action_text: str = "", action_callback=None) -> Toast | None:
+    def error(self, message: str, *, duration: int = 5000, action_text: str = "", action_callback: Callable[[], None] | None = None) -> Toast | None:
         return self.show(message, kind="error", duration=duration, action_text=action_text, action_callback=action_callback)

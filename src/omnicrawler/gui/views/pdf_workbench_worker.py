@@ -6,12 +6,16 @@ document_progress / unified_progress / warnings_received / all_done / failed）�
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import QWidget
 
 from ..i18n import _
+
+if TYPE_CHECKING:
+    # 仅类型检查期导入：services.progress 属重依赖，运行期仍在函数内懒加载。
+    from omnicrawler.services.progress import TaskProgressEvent
 
 
 # ── 工作线程 ──────────────────────────────────────────────────────
@@ -83,7 +87,7 @@ class _PdfPipelineWorker(QThread):
             stage_order = ["ingest", "parse", "ocr", "text_export", "extract", "export"]
             active_stage: str = ""
 
-            def _bridge(ev) -> None:
+            def _bridge(ev: TaskProgressEvent) -> None:
                 """把统一事件同时映射到旧式信号，老消费者保持稳定。"""
                 self.progress.emit(event_to_percent(ev))
                 label = event_to_stage_label(ev)
@@ -96,7 +100,7 @@ class _PdfPipelineWorker(QThread):
                         self.stage_started.emit(ev.display_stage)
 
             # 统一事件同时桥接到旧式信号
-            def _bridge_both(ev) -> None:
+            def _bridge_both(ev: TaskProgressEvent) -> None:
                 _bridge(ev)
                 self.unified_progress.emit(ev)
 

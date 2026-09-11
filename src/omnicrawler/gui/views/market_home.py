@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -63,7 +63,14 @@ _STATUS_TEXT = {
 class _SignWorker(BackgroundWorker):
     """后台执行本地签名（creator-sign + 自动信任）。"""
 
-    def __init__(self, plugin_dir: Path, username: str, password: str, target: str, parent=None) -> None:
+    def __init__(
+        self,
+        plugin_dir: Path,
+        username: str,
+        password: str,
+        target: str,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._plugin_dir = plugin_dir
         self._username = username
@@ -80,7 +87,12 @@ class _UploadWorker(BackgroundWorker):
     """后台生成上传包并提交 PR。"""
 
     def __init__(
-        self, payload_kind: str, payload: dict[str, bytes], title: str, body: str, parent=None
+        self,
+        payload_kind: str,
+        payload: dict[str, bytes],
+        title: str,
+        body: str,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._payload_kind = payload_kind
@@ -211,7 +223,7 @@ class _LocalPluginsPane(QWidget):
         item = self._list.currentItem()
         if item is None:
             return None
-        return item.data(Qt.ItemDataRole.UserRole)
+        return cast("LocalPluginEntry | None", item.data(Qt.ItemDataRole.UserRole))
 
     def _on_selection(self, _current: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
         entry = self._current()
