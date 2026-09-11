@@ -33,6 +33,9 @@ from PySide6.QtWidgets import (
 from ..design_system import FONT_FAMILY_MONO, FONT_SIZE, RADIUS, ThemeManager
 from ..i18n import _
 from .pdf_workbench_logic import _PDF_TEMPLATES
+from .pdf_workbench_logic import (
+    _collect_failures as _collect_failures,
+)
 from .pdf_workbench_result import PdfResultMixin
 from .pdf_workbench_scan import PdfScanMixin
 from .pdf_workbench_worker import _PdfPipelineWorker
