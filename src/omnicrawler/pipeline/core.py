@@ -176,7 +176,13 @@ class Pipeline(_PipelineBuilders, _PipelineExports, _PipelineFetch, _PipelineRun
                 errors.append(exc)
         if self._executor is not None:
             try:
-                self._executor.shutdown(wait=False)
+                # cancel_futures=True：**已提交但尚未开始**的请求不再执行。
+                # 2026-09-11：此前只有 wait=False，排队中的任务仍会被调度——
+                # 即「关闭之后进程还可能继续抓取，并在运行终态落库之后再写状态」，
+                # 与「取消真实有效」相悖（收尾被二次中断时尤其明显：drain 没跑完，
+                # 队列里剩下的请求仍会自行开跑）。
+                # 未开始的请求留在 frontier 里，由下次运行的 prepare_cycle 退回待处理，不会丢。
+                self._executor.shutdown(wait=False, cancel_futures=True)
             except Exception as exc:  # noqa: BLE001
                 errors.append(exc)
             self._executor = None

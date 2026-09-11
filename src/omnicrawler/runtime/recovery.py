@@ -78,6 +78,7 @@ class RecoveryCenter:
         frontier = totals.get("frontier", {})
         in_progress = int(frontier.get("in_progress", 0))
         failed = int(frontier.get("failed", 0))
+        pending = int(frontier.get("pending", 0))
         incomplete_runs = state.rows(
             "SELECT run_id, status FROM runs WHERE status IN ('running', 'paused', 'retrying') ORDER BY started_at"
         )
@@ -85,13 +86,22 @@ class RecoveryCenter:
         session_files = [path for path in sessions.iterdir() if path.is_file()] if sessions.is_dir() else []
         return {
             "continue": {
-                "available": bool(incomplete_runs or in_progress),
+                # 2026-09-11：`pending` 也算「可继续」。取消/停止是**正常终态**，
+                # 但往往留下大量待处理请求；此前只看「中断中的运行 + 处理中请求」，
+                # 于是取消后的任务被判为「无可继续」，recommended_action 会去推荐
+                # 别的动作（如 reprocess）——把用户引到错误的操作上。
+                "available": bool(incomplete_runs or in_progress or pending),
                 "affected": {
                     "runs": len(incomplete_runs),
                     "frontier_requests": in_progress,
+                    "pending_requests": pending,
                     "run_ids": [str(row["run_id"]) for row in incomplete_runs[:20]],
                 },
-                "effect": "将中断中的运行标记为可恢复，并把处理中请求安全退回待处理；已完成记录、原始档案和导出不会被删除。",
+                "effect": (
+                    "将中断中的运行标记为可恢复、把处理中请求安全退回待处理；"
+                    "若仍有待处理请求，可用 resume 继续。"
+                    "已完成记录、原始档案和导出不会被删除。"
+                ),
             },
             "retry-failed": {
                 "available": bool(failed),

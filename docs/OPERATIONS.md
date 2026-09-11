@@ -81,6 +81,20 @@ omnicrawler serve -c configs/project.yaml --host 127.0.0.1 --port 8765
 终态直接决定 CLI 退出码：`failed` / `cancelled` 一律为 1；严格模式（`--strict`）下
 只有 `succeeded` 且有效记录 > 0 才是 0，因此 `partial_success` 在严格模式下也计为 1。
 
+### 取消与中断：两条容易只做一半的性质
+
+- **取消真实有效**：请求停止后运行**真的会停**，而不是「标记一下继续跑完」。
+  判定依据是停止时仍有未完成记录、且已完成的少于总量；同时在途请求会被收尾
+  （不留下 `in_progress` 孤儿），未轮到的请求保持 `pending`——**工作不会被丢掉**。
+  关闭时执行器按 `cancel_futures` 处理：**已提交但尚未开始**的请求不再执行，
+  避免「关闭之后进程还在抓取、甚至在终态落库之后又写状态」。
+- **中断可恢复**：Ctrl-C 属于取消，运行会被记为 `cancelled` 并写下停止请求；
+  `resume` 之后每一条记录都会到达 `done`。收尾阶段若再次收到中断，终态仍会落库
+  （否则运行会永远停在 `running`——一个会误导运维的状态）；此时未能收尾的在途请求
+  会留在 `in_progress`，由下次运行的 `prepare_cycle` 退回 `pending`，同样不会丢。
+
+取消本身是**正常终态**，不表示任务白做：恢复中心会把仍待处理的任务识别为「可继续」
+（`recovery` 的 `continue` 动作），而不是把用户引向别的操作。
 ### 定位一次失败
 
 1. `runs.status` 与 `output/pipeline_summary.json`：本轮终态与错误计数；

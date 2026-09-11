@@ -382,23 +382,32 @@ class _PipelineRun(_PipelineBase):
             status = "cancelled"
             self.run_control.request_stop()
             self.egress.disconnect_task()
-            drain()
-            summary = {"run_id": run_id, "status": status, "processed": processed, **self.state.stats(run_id)}
-            self._write_pipeline_summary(summary)
-            self.state.finish_run(run_id, status, summary)
-            tracker.cancel()
+            # 收尾必须**在任何中断下都完成**：否则 run 会永远停在 running，
+            # 运维侧看到的是「还在跑」——一个会误导人的状态。
+            # 二次 Ctrl-C 是常见操作，而 drain() 会把在途请求的异常一并抛出，
+            # 因此这里用 try/finally 保证终态落库，而不吞掉异常。
+            try:
+                drain()
+            finally:
+                summary = {"run_id": run_id, "status": status, "processed": processed, **self.state.stats(run_id)}
+                self._write_pipeline_summary(summary)
+                self.state.finish_run(run_id, status, summary)
+                tracker.cancel()
             raise
         except Exception as exc:
             status = "failed"
             self.egress.disconnect_task()
-            drain()
-            tracker.fail(f"pipeline failed: {exc}")
-            self.state.add_error(run_id, None, "pipeline", exc, retryable=False)
-            self.diagnostics.failure(run_id, "pipeline", exc)
-            self._emit("on_error", run_id=run_id, stage="pipeline", error=exc, request=None)
-            summary = {"run_id": run_id, "status": status, "processed": processed, "error": str(exc), **self.state.stats(run_id)}
-            self._write_pipeline_summary(summary)
-            self.state.finish_run(run_id, status, summary)
+            try:
+                drain()
+            finally:
+                # 同上：错误收尾期间若再收到中断，终态仍须落库。
+                tracker.fail(f"pipeline failed: {exc}")
+                self.state.add_error(run_id, None, "pipeline", exc, retryable=False)
+                self.diagnostics.failure(run_id, "pipeline", exc)
+                self._emit("on_error", run_id=run_id, stage="pipeline", error=exc, request=None)
+                summary = {"run_id": run_id, "status": status, "processed": processed, "error": str(exc), **self.state.stats(run_id)}
+                self._write_pipeline_summary(summary)
+                self.state.finish_run(run_id, status, summary)
             raise
         finally:
             drain()
