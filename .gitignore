@@ -106,3 +106,6 @@ tmp_es.json
 
 # GUI 运行时监控基线（本地产物）
 .omnicrawler_monitor/
+# 基准运行产物：派生配置（.benchmark/）与历史记录
+.benchmark/
+bench_history.json

@@ -397,7 +397,11 @@ def _run_benchmark(args: argparse.Namespace) -> None:
                 result, threshold=float(args.regression_threshold)
             )
             print(f"完成 — {result.pages} 页, {result.pages_per_second:.1f} 页/秒")
-            if check.get("regression"):
+            # 不可用运行（未取到页面或未成功结束）会入库但不成为基线；
+            # 若不显式说明，用户会误以为「首次基准记录」是正常状态。
+            if not result.usable:
+                print(f"  ⚠ 本次运行不可作为基准（status={result.status or '异常'}，pages={result.pages}）——已记录，但不参与基线对比")
+            elif check.get("regression"):
                 change = float(str(check.get("throughput_change", 0))) * 100
                 print(f"  ⚠ 性能退化: 吞吐量下降 {abs(change):.1f}% (阈值 {args.regression_threshold * 100:.0f}%)")
             elif check.get("reason") == "no_baseline":

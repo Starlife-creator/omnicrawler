@@ -71,6 +71,7 @@
 
 - [测试报告](TEST_REPORT.md)：全项目回归基线。
 - [E2E 测试结果](E2E_TEST_REPORT.md)：本地 E2E 结论。
+- [性能基准：可复现与公平对比](BENCHMARKING.md)：档位语义、复现方式、`ok`/`usable` 判据与已知限制。
 
 ### 架构决策记录（ADR）
 
