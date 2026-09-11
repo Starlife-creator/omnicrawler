@@ -243,6 +243,11 @@ def check(source_root: Path) -> list[str]:
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
     errors = check(root / "src")
+    # 单调复杂度预算：json 里存**实测值**，语义是"不得高于"——任何新增环都会红。
+    # 2026-09-11 重设：版本号下沉叶子模块（_version.py）+ 拆包级导入后，最大环由 62
+    # 降到 11 模块，故 modules/edges/largest_component 三项按实测**大幅收紧**；
+    # components（环的个数）因巨环被打散成 4 个中小环而由 3 升到 7（该值越大不代表越差，
+    # 判据以 largest_component 与 modules 为主）。
     budget_path = root / "tools" / "architecture-cycle-budget.json"
     budget = json.loads(budget_path.read_text(encoding="utf-8"))
     errors.extend(check_cycle_budget(root / "src", budget))
