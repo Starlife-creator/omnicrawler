@@ -117,7 +117,9 @@ jobs:
       - run: python tools/check_coverage_gates.py coverage.json
       - run: python -m coverage report
       - run: python -m omnicrawler.cli templates validate
-      - run: python -m ruff check src tests
+      # 范围与 tools/gate_registry.py 的 ruff 门禁保持一致（含 tools）；
+      # 本地 `python tools/self_verify.py` 跑的就是同一集合。
+      - run: python -m ruff check src tests tools
       # P2-2：被豁免规则的存量违规预算（存量违规只降不升，新代码不许搭便车）
       - run: python tools/check_lint_budget.py
       # 设计体系继承约定（a11y / 内联样式 / 裸色值）：新文件零容忍，存量只降不升
