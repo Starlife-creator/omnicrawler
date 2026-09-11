@@ -140,8 +140,11 @@ omit = ["src/omnicrawler/visual_selector/*"]  # Browser E2E tool — integration
 [tool.coverage.report]
 skip_covered = true
 show_missing = true
-# Phase 1 (2.3.0): baseline at 66% after subpackage splitting expanded total LOC.
-# Target: 72% by next patch, 80% overall, 85% core by next minor release.
+# P2-1（2026-09-11）：本地实测 74.46%，但 CI quality job（Ubuntu、无 browser extras）
+# 会 skip 部分 GUI/browser 测试、覆盖率系统性低于本地（原 66 与本地 74.46 的差距即源于此）。
+# 故全局阈值暂维持 66；ratchet 落在 tools/check_coverage_gates.py 的
+# PACKAGE_FLOORS / _FILE_FLOORS（按包与关键模块设下限），取值已预留 CI 环境余量。
+# 待 CI 实测覆盖率回收后，再按实测把全局与各包下限一并收紧。
 fail_under = 66
 
 [tool.ruff]
