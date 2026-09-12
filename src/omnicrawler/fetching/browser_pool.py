@@ -23,6 +23,7 @@ from ..core.config import AppConfig
 from ..core.errors import EgressBudgetExceededError, ResponseTooLargeError
 from ..core.models import CrawlRequest, FetchResult
 from ..core.safe_data import safe_json_loads
+from ..core.utils import canonicalize_url
 from ..security.egress import EgressBroker
 from ..security.policy import NetworkTargetPolicy
 from .browser_engines import run_actions_for_page
@@ -185,6 +186,7 @@ class PlaywrightPool:
                 started = time.monotonic()
                 browser_config = self.config.section("browser")
                 wait_until = str(browser_config.get("wait_until", "networkidle"))
+                navigation_timed_out = False
                 try:
                     response = page.goto(
                         request.url,
@@ -200,6 +202,11 @@ class PlaywrightPool:
                     # 真实失败照旧上抛，不掩盖。
                     if "timeout" not in type(exc).__name__.lower():
                         raise
+                    # 只有浏览器已经提交到一个 HTTP(S) 文档，才能使用当前 DOM。
+                    # about:blank / chrome-error:// 等表示导航尚未成功，必须保留原超时。
+                    if canonicalize_url(request.url, str(page.url)) is None:
+                        raise
+                    navigation_timed_out = True
                     LOGGER.warning(
                         "等待条件超时，改用已加载 DOM 继续: %s (wait_until=%s)",
                         request.url, wait_until,
@@ -216,6 +223,9 @@ class PlaywrightPool:
                 self._save_context(context, context_key)
                 headers = {
                     "content-type": "text/html; charset=utf-8",
+                    "x-omnicrawler-navigation-status": (
+                        "timeout-dom-recovered" if navigation_timed_out else "complete"
+                    ),
                     "x-omnicrawler-api-candidates": json.dumps(
                         [
                             {key: value for key, value in item.items() if key not in {"json", "text"}}
@@ -227,11 +237,16 @@ class PlaywrightPool:
                 return FetchResult(
                     request,
                     final_url,
-                    response.status if response else 200,
+                    # goto 超时没有 HTTP Response，不能伪造 200；0 明确表示状态未知，
+                    # DOM 可用性与降级原因由 header/meta 单独陈述。
+                    response.status if response else 0,
                     headers,
                     body,
                     time.monotonic() - started,
-                    {"api_responses": api_candidates},
+                    {
+                        "api_responses": api_candidates,
+                        "navigation_timed_out": navigation_timed_out,
+                    },
                 )
             except Exception as exc:
                 if attempt == 0:

@@ -145,10 +145,15 @@ def test_playwright_launch_args_reject_tls_disable(tmp_path: Path, monkeypatch) 
 class _FakePage:
     """最小 page 替身：只实现 _render 会用到的方法。"""
 
-    def __init__(self, *, goto_error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        goto_error: Exception | None = None,
+        url: str = "https://example.org/final",
+    ) -> None:
         self.goto_error = goto_error
         self.closed = False
-        self.url = "https://example.org/final"
+        self.url = url
         self.waits: list[tuple[str | None, int | None]] = []
 
     def route(self, _pattern, _handler) -> None:
@@ -223,7 +228,9 @@ def test_wait_until_timeout_uses_loaded_dom(tmp_path: Path, monkeypatch) -> None
     result = pool._render(object(), contexts, request)
 
     assert result.body == b"<html><body>rendered</body></html>"
-    assert result.status == 200  # goto 未返回 response 时回落 200
+    assert result.status == 0  # goto 未返回 response，状态必须如实保持未知
+    assert result.headers["x-omnicrawler-navigation-status"] == "timeout-dom-recovered"
+    assert result.meta["navigation_timed_out"] is True
     assert page.waits and page.waits[0][0] == "networkidle"
     assert saved, "成功渲染后应保存 context 状态"
 
@@ -235,4 +242,19 @@ def test_non_timeout_goto_error_still_fails(tmp_path: Path, monkeypatch) -> None
 
     # 重试的第 2 次也复用同一个假 page/context，最终仍抛原始类型异常
     with pytest.raises(RuntimeError):
+        pool._render(_FakeBrowser(page), contexts, request)
+
+
+@pytest.mark.parametrize("failed_url", ["about:blank", "chrome-error://chromewebdata/"])
+def test_timeout_before_http_navigation_commit_still_fails(
+    tmp_path: Path, monkeypatch, failed_url: str
+) -> None:
+    """超时时仍停在空白页或浏览器错误页，不能把其 DOM 伪装成成功响应。"""
+    page = _FakePage(
+        goto_error=TimeoutError("Page.goto: Timeout 25000ms exceeded"),
+        url=failed_url,
+    )
+    pool, request, contexts, _saved = _renderable_pool(tmp_path, monkeypatch, page)
+
+    with pytest.raises(TimeoutError):
         pool._render(_FakeBrowser(page), contexts, request)
