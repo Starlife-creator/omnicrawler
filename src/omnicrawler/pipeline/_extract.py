@@ -109,6 +109,10 @@ class _PipelineExtract(_PipelineBase):
             return
 
         if not changed and self.config.section("incremental").get("skip_unchanged", True):
+            # 未变化只表示无需重复提取，不表示无需重建发现链。游标 API 的派生
+            # 请求会在新周期清理；若在这里提前返回，种子未变化时后续页永远不再
+            # 访问。普通 HTML 发现到的既有 URL 仍由 frontier 指纹去重。
+            self._enqueue_discovered(result, maximum_depth, discover=discover)
             return
 
         # === Stage: Extract ===
@@ -212,6 +216,16 @@ class _PipelineExtract(_PipelineBase):
                 raise ExtractionError(f"{type(exc).__name__}: {exc}") from exc
 
         # === Stage: Discover ===
+        self._enqueue_discovered(result, maximum_depth, discover=discover)
+
+    def _enqueue_discovered(
+        self,
+        result: FetchResult,
+        maximum_depth: int,
+        *,
+        discover: bool,
+    ) -> None:
+        """按统一的主题与作用域规则发现并入队子请求。"""
         if not discover or result.request.depth >= maximum_depth:
             return
         for child in self.source.discover(result):

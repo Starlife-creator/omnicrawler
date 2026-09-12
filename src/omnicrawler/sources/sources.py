@@ -214,14 +214,19 @@ class GenericSource:
         next_value = str(values[0])
         parameter = str(pagination.get("parameter", "")).strip()
         if parameter:
-            url = _with_query(result.request.url, {parameter: next_value})
+            # 游标代表同一个查询参数的下一状态，必须替换旧值。旧实现逐页追加，
+            # 第二跳会得到 cursor=old&cursor=new；读取首值的服务端会重复旧页。
+            url = _replace_query(result.request.url, {parameter: next_value})
         else:
             url = canonicalize_url(result.final_url, next_value) or ""
         if not url:
             return []
         return [CrawlRequest(
             url, method=result.request.method, headers=dict(result.request.headers),
-            body=result.request.body, meta=result.request.meta,
+            body=result.request.body, kind=result.request.kind, render=result.request.render,
+            priority=result.request.priority, depth=result.request.depth + 1,
+            parent_url=result.final_url,
+            meta={**result.request.meta, "_api_pagination_generated": True},
         )]
 
 
@@ -230,6 +235,24 @@ def _with_query(url: str, params: dict[str, Any]) -> str:
     current = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
     current.extend((str(k), str(item)) for k, value in params.items() for item in (value if isinstance(value, list) else [value]))
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, urllib.parse.urlencode(current), parts.fragment))
+
+
+def _replace_query(url: str, params: dict[str, Any]) -> str:
+    """替换指定查询参数，同时保留其它参数、重复值和片段。"""
+    parts = urllib.parse.urlsplit(url)
+    replacing = {str(key) for key in params}
+    current = [
+        (key, value)
+        for key, value in urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+        if key not in replacing
+    ]
+    current.extend(
+        (str(key), str(item))
+        for key, value in params.items()
+        for item in (value if isinstance(value, list) else [value])
+    )
+    query = urllib.parse.urlencode(current)
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
 
 
 def register(registry) -> None:

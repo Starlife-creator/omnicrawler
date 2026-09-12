@@ -216,16 +216,45 @@ def test_api_next_page_parameter_url_and_invalid_payloads(tmp_path: Path) -> Non
             source={"pagination": {"next_path": "$.next", "parameter": "cursor"}},
         )
     )
-    request = CrawlRequest("https://example.org/api?existing=1", headers={"X-Test": "1"})
+    request = CrawlRequest(
+        "https://example.org/api?existing=1&cursor=old",
+        headers={"X-Test": "1"},
+        kind="api",
+        render=True,
+        priority=3,
+        depth=4,
+        meta={"root_url": "https://example.org/api"},
+    )
     result = _result(
-        "https://example.org/api?existing=1",
+        "https://example.org/api?existing=1&cursor=old",
         b'{"next": "abc"}',
         request=request,
         content_type="application/json",
     )
     next_request = source.discover(result)[0]
-    assert "existing=1" in next_request.url and "cursor=abc" in next_request.url
+    assert next_request.url == "https://example.org/api?existing=1&cursor=abc"
+    assert next_request.url.count("cursor=") == 1
     assert next_request.headers == {"X-Test": "1"}
+    assert next_request.kind == "api"
+    assert next_request.render is True
+    assert next_request.priority == 3
+    assert next_request.depth == 5
+    assert next_request.parent_url == result.final_url
+    assert next_request.meta == {
+        "root_url": "https://example.org/api",
+        "_api_pagination_generated": True,
+    }
+
+    second_result = _result(
+        next_request.url,
+        b'{"next": "def"}',
+        request=next_request,
+        content_type="application/json",
+    )
+    second_request = source.discover(second_result)[0]
+    assert second_request.url == "https://example.org/api?existing=1&cursor=def"
+    assert second_request.url.count("cursor=") == 1
+    assert second_request.depth == 6
 
     url_source = GenericSource(
         _config(tmp_path, "rest", source={"pagination": {"next_path": "$.next"}})

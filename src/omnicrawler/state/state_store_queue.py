@@ -29,9 +29,22 @@ class QueueMixin:
         "priority": "priority DESC, depth ASC, id ASC",
         "random": "RANDOM()",
     }
-    def prepare_cycle(self, *, reset_all: bool = False) -> None:
+    def prepare_cycle(
+        self,
+        *,
+        reset_all: bool = False,
+        reset_api_pagination: bool = False,
+    ) -> None:
         with self._lock, self.conn:
             self.conn.execute("UPDATE frontier SET status='pending', updated_at=? WHERE status='in_progress'", (utcnow(),))
+            if reset_api_pagination:
+                # 游标子页属于上一轮响应派生出的临时链。新运行必须从种子返回的
+                # 当前游标重新建立，否则 done 子页不会复访，后续变化会永久漏掉。
+                # resume=False 时才启用；恢复运行仍沿用尚未完成的原链。
+                self.conn.execute(
+                    "DELETE FROM frontier "
+                    "WHERE json_extract(meta_json, '$._api_pagination_generated') = 1"
+                )
             if reset_all:
                 # 重定向别名只表示“原请求在本周期已取得该最终 URL”。新周期应由
                 # 原始请求重新验证重定向，不应把原请求和旧别名一起拉回 pending。

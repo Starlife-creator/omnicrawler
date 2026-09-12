@@ -107,7 +107,16 @@ class _PipelineRun(_PipelineBase):
                 self.config.source_kind == "incremental"
                 or bool(updates.get("enabled") and updates.get("revisit_completed", True))
             ) and not resume
-            self.state.prepare_cycle(reset_all=reset_all)
+            source_pagination = self.config.section("source").get("pagination", {})
+            reset_api_pagination = (
+                isinstance(source_pagination, dict)
+                and bool(source_pagination.get("next_path"))
+                and not resume
+            )
+            self.state.prepare_cycle(
+                reset_all=reset_all,
+                reset_api_pagination=reset_api_pagination,
+            )
             if retry_failed:
                 self.state.retry_failed()
             if not resume:

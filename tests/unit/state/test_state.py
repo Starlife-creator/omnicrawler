@@ -183,6 +183,28 @@ class StateTest(unittest.TestCase):
                 self.assertEqual(rows[0]["url"], "https://www.example.org/items")
                 self.assertNotEqual(rows[0]["fingerprint"], original.fingerprint)
 
+    def test_new_cycle_rebuilds_only_generated_api_pagination_requests(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with StateStore(Path(temp) / "state.sqlite3") as state:
+                seed = CrawlRequest("https://example.org/api")
+                generated = CrawlRequest(
+                    "https://example.org/api?cursor=next",
+                    meta={"_api_pagination_generated": True},
+                )
+                ordinary = CrawlRequest("https://example.org/other")
+                for request in (seed, generated, ordinary):
+                    self.assertTrue(state.enqueue(request))
+                    state.mark_done(request.fingerprint)
+
+                # resume 路径不启用清理，上一轮游标请求必须原样保留。
+                state.prepare_cycle(reset_api_pagination=False)
+                self.assertEqual(len(state.rows("SELECT url FROM frontier")), 3)
+
+                # 新周期只删除运行时派生的游标页；种子与普通页面不受影响。
+                state.prepare_cycle(reset_api_pagination=True)
+                urls = {row["url"] for row in state.rows("SELECT url FROM frontier")}
+                self.assertEqual(urls, {seed.url, ordinary.url})
+
     def test_run_timeline_list_events_and_stages(self):
         """D-lite：list_runs / run_events / run_stages 只读查询。"""
         with tempfile.TemporaryDirectory() as temp:
