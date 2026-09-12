@@ -173,6 +173,10 @@ class _PipelineRun(_PipelineBase):
                 result = future.result()
                 self._handle_result(run_id, result, maximum_depth)
                 frontier_exhausted = False
+                # 已成功处理重定向响应后，把精确最终 URL 记为同一请求的已完成别名。
+                # _handle_result 可能已从页面发现该 URL 并入队，因此这里同时收敛
+                # 新插入的 pending 项；不做 apex/www 全局折叠，不改变安全范围语义。
+                self.state.mark_redirect_target_done(request, result.final_url)
                 self.state.mark_done(request.fingerprint)
                 self.state.save_checkpoint(
                     run_id,

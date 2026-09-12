@@ -15,6 +15,11 @@ from omnicrawler.pipeline import Pipeline
 
 class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
+        if self.path == "/redirect":
+            self.send_response(302)
+            self.send_header("Location", "/target")
+            self.end_headers()
+            return
         pages = {
             "/page1": (
                 b"<html><title>Page1</title><h1>First</h1>"
@@ -22,6 +27,10 @@ class _Handler(BaseHTTPRequestHandler):
             ),
             "/page2": b"<html><title>Page2</title><h1>Second</h1></html>",
             "/page3": b"<html><title>Page3</title><h1>Third</h1></html>",
+            "/target": (
+                b"<html><title>Target</title><h1>Only once</h1>"
+                b"<a href='/target'>Self</a></html>"
+            ),
         }
         if self.path not in pages:
             self.send_error(404)
@@ -123,6 +132,40 @@ def test_stage_exception_caught_and_other_urls_continue(
         statuses = {row["url"]: row["status"] for row in frontier}
         assert any(v == "done" for v in statuses.values())
         assert any(v == "failed" for v in statuses.values())
+
+
+def test_redirect_target_link_is_not_fetched_or_delivered_twice(
+    tmp_path: Path, http_server: ThreadingHTTPServer
+) -> None:
+    """真实302响应的最终页含自身链接时，只抓取并交付一次。"""
+    pytest.importorskip("bs4")
+    config = _make_config(tmp_path, http_server.server_port)
+    config.raw["source"]["seeds"] = [
+        f"http://127.0.0.1:{http_server.server_port}/redirect"
+    ]
+
+    with Pipeline(config) as pipeline:
+        summary = pipeline.run()
+        responses = pipeline.state.rows(
+            "SELECT url, final_url FROM responses WHERE run_id=?",
+            (summary["run_id"],),
+        )
+        records = pipeline.state.rows(
+            "SELECT source_url, data_json FROM records WHERE run_id=?",
+            (summary["run_id"],),
+        )
+        frontier = {
+            row["url"]: row["status"]
+            for row in pipeline.state.rows("SELECT url, status FROM frontier")
+        }
+
+    target = f"http://127.0.0.1:{http_server.server_port}/target"
+    assert summary["status"] == "succeeded"
+    assert len(responses) == 1
+    assert len(records) == 1
+    assert responses[0]["final_url"] == target
+    assert records[0]["source_url"] == target
+    assert frontier[target] == "done"
 
 
 def test_single_url_failure_isolated_from_run(

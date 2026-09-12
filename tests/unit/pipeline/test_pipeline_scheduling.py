@@ -94,6 +94,54 @@ def _frontier_by_status(pipeline: Pipeline) -> dict[str, int]:
     return {row["status"]: row["n"] for row in rows}
 
 
+def test_successful_redirect_target_discovered_during_handling_is_not_refetched(
+    tmp_path: Path,
+) -> None:
+    """真实调度链应在下一轮 claim 前把精确重定向目标收敛为 done。"""
+    config = _make_config(tmp_path, concurrency=1, max_pages=5)
+    original = CrawlRequest("http://example.org/items?page=1")
+    redirected = "http://www.example.org/items?page=1"
+    calls: list[str] = []
+
+    with Pipeline(config) as pipeline:
+        pipeline.source.seed = lambda: iter((original,))  # type: ignore[method-assign]
+
+        def fetch(_run_id: str, request: CrawlRequest) -> FetchResult:
+            calls.append(request.url)
+            return FetchResult(
+                request,
+                redirected,
+                200,
+                {"content-type": "text/html; charset=utf-8"},
+                b"<html><title>items</title></html>",
+                0.0,
+            )
+
+        def handle(_run_id: str, result: FetchResult, _maximum_depth: int, **_kw: Any) -> None:
+            # 对应真实 source.discover：从重定向后的 DOM 再次看到当前页。
+            pipeline.state.enqueue(result.request.with_url(result.final_url))
+
+        pipeline._fetch_checked = fetch  # type: ignore[method-assign]
+        pipeline._handle_result = handle  # type: ignore[method-assign]
+        pipeline._stage_exports = (  # type: ignore[method-assign]
+            lambda run_id, status, processed, pdf_summary, callback: {
+                "run_id": run_id,
+                "status": status,
+                "processed": processed,
+            }
+        )
+
+        summary = pipeline.run()
+        frontier = {
+            row["url"]: row["status"]
+            for row in pipeline.state.rows("SELECT url, status FROM frontier")
+        }
+
+    assert summary["status"] == "succeeded"
+    assert calls == [original.url]
+    assert frontier[redirected] == "done"
+
+
 def test_rolling_window_never_exceeds_concurrency_and_stops_at_limit(
     tmp_path: Path,
 ) -> None:

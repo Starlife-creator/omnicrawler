@@ -13,7 +13,7 @@ import sqlite3
 from typing import Any
 
 from ..core.models import CrawlRequest
-from ..core.utils import json_text, redact_headers, utcnow
+from ..core.utils import canonicalize_url, json_text, redact_headers, utcnow
 
 
 class QueueMixin:
@@ -33,6 +33,12 @@ class QueueMixin:
         with self._lock, self.conn:
             self.conn.execute("UPDATE frontier SET status='pending', updated_at=? WHERE status='in_progress'", (utcnow(),))
             if reset_all:
+                # 重定向别名只表示“原请求在本周期已取得该最终 URL”。新周期应由
+                # 原始请求重新验证重定向，不应把原请求和旧别名一起拉回 pending。
+                self.conn.execute(
+                    "DELETE FROM frontier "
+                    "WHERE json_extract(meta_json, '$._redirect_alias_of') IS NOT NULL"
+                )
                 self.conn.execute(
                     "UPDATE frontier SET status='pending', attempts=0, last_error=NULL, updated_at=? WHERE status IN ('done','failed','blocked')",
                     (utcnow(),),
@@ -92,6 +98,62 @@ class QueueMixin:
                     (request.priority, now, request.fingerprint),
                 )
             return inserted
+
+    def mark_redirect_target_done(self, request: CrawlRequest, final_url: str) -> bool:
+        """把已成功处理的安全重定向目标登记为同一请求的已完成别名。
+
+        只处理无请求体的 GET/HEAD。目标请求保留原请求的方法、头、类型和渲染语义；
+        URL 仅做既有的语法规范化，不合并 ``www``、其它子域、查询参数或路径。
+        这样页面随后发现精确的最终 URL 时，frontier 不会再次抓取并重复交付。
+
+        已在执行中的目标不改状态，避免并发请求仍运行时伪报完成。
+        """
+        if request.method.upper() not in {"GET", "HEAD"} or request.body:
+            return False
+        target_url = canonicalize_url(request.url, final_url)
+        source_url = canonicalize_url(request.url, request.url)
+        if target_url is None or target_url == source_url:
+            return False
+
+        alias_meta = {
+            key: value
+            for key, value in request.meta.items()
+            if key != "_fingerprint_override"
+        }
+        alias_meta["_redirect_alias_of"] = request.fingerprint
+        alias = CrawlRequest(
+            url=target_url,
+            method=request.method,
+            headers=dict(request.headers),
+            body=request.body,
+            kind=request.kind,
+            render=request.render,
+            priority=request.priority,
+            depth=request.depth,
+            parent_url=request.parent_url,
+            meta=alias_meta,
+        )
+        now = utcnow()
+        values = (
+            alias.fingerprint, alias.url, alias.method.upper(),
+            json_text(redact_headers(alias.headers)), alias.body, alias.kind,
+            int(alias.render), alias.priority, alias.depth, alias.parent_url,
+            json_text(alias.meta), "done", now, now,
+        )
+        with self._lock, self.conn:
+            cursor = self.conn.execute(
+                """
+                INSERT INTO frontier(
+                    fingerprint, url, method, headers_json, body, kind, render, priority,
+                    depth, parent_url, meta_json, status, created_at, updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(fingerprint) DO UPDATE SET
+                    status='done', last_error=NULL, updated_at=excluded.updated_at
+                WHERE frontier.status IN ('pending', 'failed', 'blocked')
+                """,
+                values,
+            )
+            return cursor.rowcount > 0
 
     def claim(self, limit: int, strategy: str = "bfs") -> list[CrawlRequest]:
         order = self._CLAIM_ORDER.get(strategy)

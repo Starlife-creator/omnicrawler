@@ -78,6 +78,111 @@ class StateTest(unittest.TestCase):
                 claimed = state.claim(2)
                 self.assertEqual([req.url for req in claimed], ["https://example.org/x3"])
 
+    def test_redirect_target_is_marked_done_before_discovery_can_refetch_it(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with StateStore(Path(temp) / "state.sqlite3") as state:
+                original = CrawlRequest(
+                    "https://example.org/items?page=1",
+                    headers={"Accept": "text/html"},
+                    render=True,
+                )
+                state.enqueue(original)
+                state.claim(1)
+
+                # 模拟结果处理期间从最终 DOM 发现了 www 形式的当前页。
+                discovered = original.with_url("https://www.example.org/items?page=1")
+                self.assertTrue(state.enqueue(discovered))
+                self.assertTrue(
+                    state.mark_redirect_target_done(original, discovered.url)
+                )
+
+                row = state.rows(
+                    "SELECT status FROM frontier WHERE fingerprint=?",
+                    (discovered.fingerprint,),
+                )[0]
+                self.assertEqual(row["status"], "done")
+                self.assertEqual(state.claim(1), [])
+
+    def test_redirect_alias_keeps_query_subdomain_and_request_identity_distinct(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with StateStore(Path(temp) / "state.sqlite3") as state:
+                original = CrawlRequest(
+                    "https://example.org/items?page=1",
+                    headers={"Accept-Language": "zh-CN"},
+                )
+                self.assertTrue(
+                    state.mark_redirect_target_done(
+                        original, "https://www.example.org/items?page=1"
+                    )
+                )
+
+                distinct = (
+                    original.with_url("https://www.example.org/items?page=2"),
+                    original.with_url("https://cdn.example.org/items?page=1"),
+                    CrawlRequest(
+                        "https://www.example.org/items?page=1",
+                        headers={"Accept-Language": "en-US"},
+                    ),
+                )
+                self.assertTrue(all(state.enqueue(request) for request in distinct))
+                self.assertEqual(len(state.claim(3)), 3)
+
+    def test_redirect_alias_does_not_collapse_requests_with_a_body(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with StateStore(Path(temp) / "state.sqlite3") as state:
+                request = CrawlRequest(
+                    "https://example.org/submit",
+                    method="POST",
+                    body=b"page=1",
+                )
+                self.assertFalse(
+                    state.mark_redirect_target_done(
+                        request, "https://www.example.org/result"
+                    )
+                )
+                self.assertTrue(
+                    state.enqueue(request.with_url("https://www.example.org/result"))
+                )
+
+    def test_redirect_alias_survives_resume_but_is_rebuilt_for_a_new_cycle(self):
+        with tempfile.TemporaryDirectory() as temp:
+            database = Path(temp) / "state.sqlite3"
+            original = CrawlRequest("https://example.org/items")
+            target = "https://www.example.org/items"
+            with StateStore(database) as state:
+                state.enqueue(original)
+                state.mark_done(original.fingerprint)
+                state.mark_redirect_target_done(original, target)
+
+                state.prepare_cycle(reset_all=False)
+                self.assertFalse(state.enqueue(original.with_url(target)))
+                self.assertEqual(state.claim(1), [])
+
+            with StateStore(database) as state:
+                state.prepare_cycle(reset_all=True)
+                rows = state.rows("SELECT url, status FROM frontier")
+                self.assertEqual(
+                    [(row["url"], row["status"]) for row in rows],
+                    [(original.url, "pending")],
+                )
+
+    def test_redirect_alias_ignores_conditional_request_fingerprint_override(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with StateStore(Path(temp) / "state.sqlite3") as state:
+                original = CrawlRequest("https://example.org/items")
+                conditional = original.with_meta_update(
+                    {"_fingerprint_override": original.fingerprint}
+                )
+                self.assertTrue(
+                    state.mark_redirect_target_done(
+                        conditional, "https://www.example.org/items"
+                    )
+                )
+                rows = state.rows("SELECT fingerprint, url FROM frontier")
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["url"], "https://www.example.org/items")
+                self.assertNotEqual(rows[0]["fingerprint"], original.fingerprint)
+
     def test_run_timeline_list_events_and_stages(self):
         """D-lite：list_runs / run_events / run_stages 只读查询。"""
         with tempfile.TemporaryDirectory() as temp:
