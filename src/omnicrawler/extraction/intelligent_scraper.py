@@ -980,9 +980,33 @@ def verify_config(config: dict[str, Any], html: str) -> dict[str, Any]:
     extract = config.get("extract", {})
     if str(extract.get("mode", "")) == "json":
         payload = _maybe_json_payload(html)
-        ok = 1 if payload is not None else 0
-        return {"mode": "json", "items": ok, "records": ok,
-                "fields": {str(name): ok for name in extract.get("fields", {})}}
+        fields = extract.get("fields", {})
+        if not isinstance(fields, dict):
+            fields = {}
+        json_filled: dict[str, int] = {str(name): 0 for name in fields}
+        if payload is None:
+            return {"mode": "json", "items": 0, "records": 0, "fields": json_filled}
+
+        # 与 JSONProcessor 使用同一个 JSONPath 求值器，并按相同的 paths/path
+        # 回退顺序试跑字段。旧实现只要响应能 json.loads 就把 item、record 和
+        # 每个字段都伪报为 1，错误 item_path / 字段路径也会通过自动配置门禁。
+        from .extractors import json_field_values, json_path
+
+        items = json_path(payload, str(extract.get("item_path", "$")))
+        records = 0
+        for item in items:
+            if not fields:
+                records += 1
+                continue
+            has_value = False
+            for name, rule in fields.items():
+                _path, values = json_field_values(item, name, rule)
+                if values:
+                    json_filled[str(name)] += 1
+                    has_value = True
+            if has_value:
+                records += 1
+        return {"mode": "json", "items": len(items), "records": records, "fields": json_filled}
 
     from ..extraction.html_tools import node_attr, node_text, parse_html, select_nodes
 

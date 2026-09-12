@@ -5,7 +5,12 @@ import yaml
 
 from omnicrawler.core.config import DEFAULTS, AppConfig, load_config
 from omnicrawler.core.models import CrawlRequest, FetchResult
-from omnicrawler.extraction.intelligent_scraper import analyze_to_config
+from omnicrawler.extraction.intelligent_scraper import (
+    AutoConfigUnverifiedError,
+    _check_verified,
+    analyze_to_config,
+    verify_config,
+)
 from omnicrawler.sources.sources import GenericSource
 
 LIST_PAGE = """<html><body>
@@ -54,6 +59,74 @@ def test_analyze_to_config_passes_core_validation(tmp_path) -> None:
     loaded = load_config(path)  # 契约校验通过，不抛 ValueError
     assert loaded.source_kind == "browser"
     assert loaded.section("source").get("seeds")
+
+
+def test_analyze_single_json_object_generates_verified_rest_config(tmp_path) -> None:
+    body = '{"id": 7, "name": "Ada", "active": true}'
+
+    config = analyze_to_config(body, url="https://api.example/users/7", project_name="api-demo")
+
+    assert config["source"] == {"kind": "rest", "seeds": ["https://api.example/users/7"]}
+    assert config["extract"]["item_path"] == "$"
+    assert config["extract"]["fields"] == {
+        "编号": {"path": "id"},
+        "名称": {"path": "name"},
+        "active": {"path": "active"},
+    }
+    report = verify_config(config, body)
+    assert report == {
+        "mode": "json",
+        "items": 1,
+        "records": 1,
+        "fields": {"编号": 1, "名称": 1, "active": 1},
+    }
+
+    path = tmp_path / "api.yaml"
+    path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
+    assert load_config(path).source_kind == "rest"
+
+
+def test_verify_json_config_executes_item_and_field_paths() -> None:
+    body = '{"items": [{"id": 1}, {"id": 2}]}'
+    config = {
+        "extract": {
+            "mode": "json",
+            "item_path": "$.items[*]",
+            "fields": {"编号": {"path": "id"}, "缺失": {"path": "missing"}},
+        }
+    }
+
+    assert verify_config(config, body) == {
+        "mode": "json",
+        "items": 2,
+        "records": 2,
+        "fields": {"编号": 2, "缺失": 0},
+    }
+
+    config["extract"]["item_path"] = "$.missing[*]"
+    assert verify_config(config, body)["items"] == 0
+    with pytest.raises(AutoConfigUnverifiedError, match="只得到 0 条记录"):
+        _check_verified(config, body)
+
+
+def test_verify_json_config_rejects_records_with_no_extracted_fields() -> None:
+    body = '[{"id": 1}, {"id": 2}]'
+    config = {
+        "extract": {
+            "mode": "json",
+            "item_path": "$[*]",
+            "fields": {"名称": {"path": "missing"}},
+        }
+    }
+
+    assert verify_config(config, body) == {
+        "mode": "json",
+        "items": 2,
+        "records": 0,
+        "fields": {"名称": 0},
+    }
+    with pytest.raises(AutoConfigUnverifiedError, match=r"字段填充情况 = 名称\(0\)"):
+        _check_verified(config, body)
 
 
 NEXT_LINK_PAGE = """<html><body>

@@ -336,6 +336,24 @@ def json_path(value: Any, path: str) -> list[Any]:
     return current
 
 
+def json_field_values(item: Any, name: Any, rule: Any) -> tuple[str, list[Any]]:
+    """按 JSONProcessor 的候选路径顺序返回首个有值的字段匹配。"""
+    candidates = rule.get("paths") if isinstance(rule, dict) else None
+    paths = (
+        [str(value) for value in candidates]
+        if isinstance(candidates, list) and candidates
+        else [str(rule.get("path", name)) if isinstance(rule, dict) else str(rule)]
+    )
+    selected = paths[0]
+    values: list[Any] = []
+    for candidate in paths:
+        values = json_path(item, candidate)
+        if values:
+            selected = candidate
+            break
+    return selected, values
+
+
 class JSONProcessor:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
@@ -354,17 +372,7 @@ class JSONProcessor:
                 data: dict[str, Any] = {}
                 evidence: dict[str, Any] = {}
                 for name, rule in fields.items():
-                    candidates = rule.get("paths") if isinstance(rule, dict) else None
-                    paths = [str(value) for value in candidates] if isinstance(candidates, list) else [
-                        str(rule.get("path", name)) if isinstance(rule, dict) else str(rule)
-                    ]
-                    values: list[Any] = []
-                    path = paths[0]
-                    for candidate in paths:
-                        values = json_path(item, candidate)
-                        if values:
-                            path = candidate
-                            break
+                    path, values = json_field_values(item, name, rule)
                     value: Any = values if isinstance(rule, dict) and rule.get("all") else (values[0] if values else None)
                     if value is not None:
                         data[str(name)] = value
