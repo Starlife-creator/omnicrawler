@@ -4,21 +4,21 @@ template:
 
   id: cms/shopify-public
 
-  name: Shopify�公开�����ҳ��
+  name: Shopify 公开商品与集合
 
   category: cms/shopify
 
-  description: �ɼ���公开商品和集合页面；串�ʹ甼��或绕过商店后台接口
+  description: 采集仅公开的商品与集合页面；不使用或绕过商店后台接口
 
   version: 1.0.0
 
-  tags: [Shopify, ����, 商品]
+  tags: [Shopify, 电商, 商品]
 
   capabilities: [crawl, product-schema, json-ld, evidence]
 
   placeholders:
 
-    collection_url: {label: �公开集合地址, required: true}
+    collection_url: {label: 公开集合地址, required: true}
 
   url_patterns: ['*/collections/*', '*/products/*']
 

@@ -4,21 +4,23 @@ template:
 
   id: cms/wordpress-rest
 
-  name: WordPress�公开������API
+  name: WordPress 公开文章 REST API
 
   category: cms/wordpress
 
-  description: "ʹ��WordPress REST API按页�ɼ���公开�����£�Ĭ��认每顯���?00�?  version: 1.0.0"
+  description: 使用 WordPress REST API 按页采集公开文章，默认每页 100 条
 
-  tags: [WordPress, CMS, REST, ����]
+  version: 1.0.0
+
+  tags: [WordPress, CMS, REST, 文章]
 
   capabilities: [rest, json, numbered-pagination]
 
   placeholders:
 
-    site_url: {label: WordPress站点根地坢�, required: true}
+    site_url: {label: WordPress 站点根地址, required: true}
 
-    end_page: "{label: �朢�大页�? default: 20}"
+    end_page: "{label: 最大页码, default: 20}"
 
   url_patterns: ['*/wp-json/wp/v2/*']
 
@@ -34,7 +36,7 @@ template:
 
     - https://developer.wordpress.org/rest-api/using-the-rest-api/pagination/
 
-  license: OmniCrawler-MIT; API行为依据WordPress�ٷ���斡�
+  license: OmniCrawler-MIT; API 行为依据 WordPress 官方文档
 
   verified_at: '2026-07-17'
 

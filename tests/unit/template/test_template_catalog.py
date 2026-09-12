@@ -92,3 +92,33 @@ def test_builtin_escape_still_resolves_after_user_override(tmp_path: Path) -> No
     assert escape is not None
     assert escape.metadata.name == "Built in"  # 逃生取回内置真值
     assert escape.builtin is True
+
+
+def test_bundled_templates_are_encoding_clean() -> None:
+    """内置模板必须编码干净：无 U+FFFD，且每个 template 块显式声明 version。
+
+    背景：历史上一次 GBK/UTF-8 往返把 25 个内置模板的 name/description 中文写成
+    U+FFFD，并把 description 与 version 挤到同一行，导致 version 被静默回落到默认值。
+    本测试作为回归护栏，阻止该类损坏再次进入仓库。
+    """
+    catalog = bundled_template_catalog()
+    records = catalog.discover()
+    assert records
+
+    replacement_char_issues: list[str] = []
+    missing_version: list[str] = []
+    for record in records:
+        relative = record.path.name
+        if "\ufffd" in record.path.read_text(encoding="utf-8"):
+            replacement_char_issues.append(relative)
+        block = record.config.get("template")
+        if isinstance(block, dict) and "version" not in block:
+            missing_version.append(relative)
+
+    assert not replacement_char_issues, (
+        "内置模板含替换字符 U+FFFD（编码往返损坏）：" + ", ".join(replacement_char_issues)
+    )
+    assert not missing_version, (
+        "template 块缺少显式 version 键（会被静默回落到默认 1.0.0）："
+        + ", ".join(missing_version)
+    )

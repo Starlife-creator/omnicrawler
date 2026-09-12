@@ -4,9 +4,13 @@ template:
 
   id: authenticated/form-login
 
-  name: "表单癵�¼��־û�会?  category: authenticated/session"
+  name: 表单登录后保持会话
 
-  description: "���Ꮠ交登录表单，再复��?Cookie ץȡ��Ȩҳ�棻�û���������ֻ�Ӱ��密�凭据引甼����读取��?  version: 1.0.0"
+  category: authenticated/session
+
+  description: "提交登录表单，再复用 Cookie 抓取授权页面；用户名与密码仅以密钥引用注入，不落盘明文"
+
+  version: 1.0.0
 
   tags: [登录, 表单, Cookie, 会话]
 
@@ -16,11 +20,11 @@ template:
 
     login_url: {label: 登录提交地址, required: true}
 
-    target_url: {label: 登录后采集地坢�, required: true}
+    target_url: {label: 登录后采集地址, required: true}
 
-    username_field: {label: �用户名字段名, default: username}
+    username_field: {label: 用户名字段名, default: username}
 
-    password_field: "{label: 密码字段�? default: password}"
+    password_field: "{label: 密码字段名, default: password}"
 
   verified_at: '2026-07-18'
 

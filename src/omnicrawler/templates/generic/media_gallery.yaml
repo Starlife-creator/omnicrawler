@@ -4,11 +4,11 @@ template:
 
   id: generic/media-gallery
 
-  name: ͼƬ�����ӟ���ҳ��
+  name: 图片、音频与视频资源页面
 
   category: generic/assets
 
-  description: ����ҳ��面�的图片、音频和视频资源并保留页面上�����
+  description: 采集页面上公开的图片、音频和视频资源，并保留页面上的原始上下文
 
   version: 1.0.0
 
@@ -18,7 +18,7 @@ template:
 
   placeholders:
 
-    seed_url: {label: ý��ҳ���ַ, required: true}
+    seed_url: {label: 媒体页面地址, required: true}
 
   html_contains: ['<picture', '<video', '<audio']
 

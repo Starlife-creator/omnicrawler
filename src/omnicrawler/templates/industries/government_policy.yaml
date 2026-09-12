@@ -4,17 +4,21 @@ template:
 
   id: industries/government-policy
 
-  name: "���������빫与�?  category: industries/government"
+  name: 政府政策与公示
 
-  description: "�ɼ����ߡ���ʾ�����知和附件，保留来源���ԭ��֤���?  version: 1.0.0"
+  category: industries/government
 
-  tags: [政府, 政策, �公示, 附件]
+  description: 采集政策、公示与通知和附件，保留来源与原文证据链
+
+  version: 1.0.0
+
+  tags: [政府, 政策, 公示, 附件]
 
   capabilities: [crawl, focused-crawl, attachment-download, pdf, evidence, incremental]
 
   placeholders:
 
-    channel_url: {label: ���߻�ʾ��示�地坢�, required: true}
+    channel_url: {label: 政策或公示栏目地址, required: true}
 
   verified_at: '2026-07-17'
 
@@ -26,7 +30,7 @@ crawl:
 
   strategy: priority
 
-  focus_keywords: [政策, �公示, �公告, ֪ͨ, �ļ�, 解读, 附件]
+  focus_keywords: [政策, 公示, 公告, 通知, 文件, 解读, 附件]
 
   max_pages: 3000
 

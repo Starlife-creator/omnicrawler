@@ -8,7 +8,9 @@ template:
 
   category: authenticated/browser
 
-  description: "ʹ�ø�隦��������Context�Ϳ�ѡ�Ự�־û�����化�户��ѻ���Ȩ��皡��?  version: 1.0.0"
+  description: "使用高隐匿浏览器 Context，可选会话持久化，复用登录用户身份与授权状态"
+
+  version: 1.0.0
 
   tags: [登录, Cookie, 会话, 浏览器]
 
@@ -16,7 +18,7 @@ template:
 
   placeholders:
 
-    seed_url: {label: 已授权页面地坢�, required: true}
+    seed_url: {label: 已授权页面地址, required: true}
 
   source_urls: [https://playwright.dev/docs/auth]
 

@@ -4,19 +4,21 @@ template:
 
   id: industries/forum-threads
 
-  name: "��̳��两�区主�?  category: industries/community"
+  name: 论坛与社区主题
 
-  description: �ɼ���公开����̳������颢�楼层������ߺ�ʱ�䣬��������¼�ƹ�����֤���ƿ���
+  category: industries/community
+
+  description: 采集公开论坛帖子、楼层、作者和时间，不包含登录与验证码绕过
 
   version: 1.0.0
 
-  tags: [��̳, 社区, ���题, 帖子]
+  tags: [论坛, 社区, 主题, 帖子]
 
   capabilities: [crawl, pagination, incremental, evidence]
 
   placeholders:
 
-    forum_url: {label: �公开����̳����ַ, required: true}
+    forum_url: {label: 公开论坛版块地址, required: true}
 
   html_contains: [discussion, thread, post]
 
@@ -26,7 +28,7 @@ project: {name: forum_threads, workspace: work/forum_threads}
 
 source: {kind: incremental, seeds: ['{{forum_url}}']}
 
-crawl: {strategy: priority, focus_keywords: [thread, topic, post, ���题, 帖子], max_pages: 5000, max_depth: 5, same_host: true, concurrency: 3}
+crawl: {strategy: priority, focus_keywords: [thread, topic, post, 主题, 帖子], max_pages: 5000, max_depth: 5, same_host: true, concurrency: 3}
 
 http: {respect_robots: true, delay_seconds: 1.5, auto_browser_fallback: true}
 

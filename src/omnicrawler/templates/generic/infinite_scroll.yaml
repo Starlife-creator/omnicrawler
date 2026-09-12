@@ -4,21 +4,23 @@ template:
 
   id: generic/infinite-scroll
 
-  name: ���޹���ҳ��
+  name: 无限滚动页面
 
   category: generic/dynamic
 
-  description: "\"ʹ���浧�器滚动和等待动作头���兽��开������޹���动页�?"
+  description: 使用浏览器滚动与等待动作触发并采集无限滚动页面
 
-  tags: ["动�����顁�? 无限滚动", 浏览器]
+  version: 1.0.0
+
+  tags: [动态加载, 无限滚动, 浏览器]
 
   capabilities: [browser, javascript, infinite-scroll]
 
-  recommended_when: "\"地址栏网坢㲻�䣬���¹�下�后挳����������ڰ内?"
+  recommended_when: 地址栏网址不变，向下滚动后内容持续追加
 
   placeholders:
 
-    seed_url: {label: ҳ����ַ, required: true}
+    seed_url: {label: 页面地址, required: true}
 
   html_contains: [IntersectionObserver, infinite-scroll, load-more]
 

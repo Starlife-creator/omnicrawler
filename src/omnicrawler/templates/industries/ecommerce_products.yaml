@@ -4,19 +4,21 @@ template:
 
   id: industries/ecommerce-products
 
-  name: ������Ʒ�品�开信息
+  name: 电商商品公开信息
 
   category: industries/ecommerce
 
-  description: "��ȡ��公开商品标题、价格��库存状态��SKU、图片和结构化数�?  version: 1.0.0"
+  description: 获取公开商品标题、价格、库存状态、SKU、图片和结构化数据
 
-  tags: [����, 商品, 价格, JSON-LD]
+  version: 1.0.0
+
+  tags: [电商, 商品, 价格, JSON-LD]
 
   capabilities: [crawl, product-schema, json-ld, incremental, evidence]
 
   placeholders:
 
-    category_url: {label: ��Ʒ�����ַ, required: true}
+    category_url: {label: 商品分类地址, required: true}
 
   html_contains: [Product, offers, priceCurrency]
 

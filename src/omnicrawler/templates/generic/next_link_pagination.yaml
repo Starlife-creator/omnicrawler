@@ -5,6 +5,7 @@ template:
   name: 下一页链接型分页
   category: generic/pagination
   description: "自动发现列表页中的下一页链接并限制在同站点，支持由服务器生成的固定栏目"
+  version: 1.0.0
   tags: [pagination, next-link, list-page]
   capabilities: [http, link-discovery, next-link-pagination]
 

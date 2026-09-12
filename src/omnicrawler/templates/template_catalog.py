@@ -20,6 +20,11 @@ LOGGER = logging.getLogger(__name__)
 PLACEHOLDER_RE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 TOKEN_RE = re.compile(r"[\w.-]+", re.UNICODE)
 
+# url_patterns 约定为 glob 语法（*/products/*、*sitemap*.xml* 等）。
+# 仅当模式含正则专属元字符（^ $ \ ( ) —— glob 里不用）时才额外尝试正则，
+# 既兼容自定义模板写正则，又不把 glob 字符串喂给正则引擎产生无谓告警。
+_REGEX_LIKE_PATTERN = re.compile(r"[\^$\\()]")
+
 
 @dataclass(frozen=True, slots=True)
 class TemplateMetadata:
@@ -215,12 +220,17 @@ class TemplateCatalog:
                     reasons.append(f"domain:{domain}")
                     break
             for pattern in meta.url_patterns:
-                # B11-004：url_patterns 来自模板元数据，正则可能病态 → 走 safe_regex_search
-                #（编译错误/ReDoS 启发式命中均返回 None，不抛异常）。
+                # url_patterns 是 glob 语法（如 */products/*）：先用 fnmatch 匹配。
+                # 仅当 glob 未命中且模式含正则专属元字符时才额外尝试正则（兼容自定义
+                # 模板写正则）；glob 字符串不再进正则引擎，避免 "safe_regex_search
+                # 编译失败" 噪声告警，同时保留 B11-004 对病态正则的防护。
+                glob_match = fnmatch.fnmatch(url, pattern.casefold())
                 regex_match = (
-                    safe_regex_search(pattern, probe.url, flags=re.IGNORECASE) is not None
+                    not glob_match
+                    and _REGEX_LIKE_PATTERN.search(pattern) is not None
+                    and safe_regex_search(pattern, probe.url, flags=re.IGNORECASE) is not None
                 )
-                if fnmatch.fnmatch(url, pattern.casefold()) or regex_match:
+                if glob_match or regex_match:
                     score += 35
                     reasons.append(f"url:{pattern}")
                     break

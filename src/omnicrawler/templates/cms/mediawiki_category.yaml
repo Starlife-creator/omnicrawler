@@ -4,23 +4,23 @@ template:
 
   id: cms/mediawiki-category
 
-  name: MediaWiki�����Ա
+  name: MediaWiki 分类成员
 
   category: cms/mediawiki
 
-  description: ͨ��MediaWiki Action API�ɼ������Ա������Ｍ令牌由站点插件增强处理
+  description: 通过 MediaWiki Action API 采集分类成员列表，续令牌由站点插件增强处理
 
   version: 1.0.0
 
-  tags: [MediaWiki, Wiki, ����, API]
+  tags: [MediaWiki, Wiki, 分类, API]
 
   capabilities: [rest, json, continuation-token, plugin-recommended]
 
   placeholders:
 
-    site_url: {label: Wiki站点根地坢�, required: true}
+    site_url: {label: Wiki 站点根地址, required: true}
 
-    category_name: {label: ������吧�, required: true}
+    category_name: {label: 分类名称, required: true}
 
   url_patterns: ['*/w/api.php*', '*/api.php*action=query*']
 
@@ -34,7 +34,7 @@ template:
 
     - https://www.mediawiki.org/wiki/API:Lists
 
-  license: OmniCrawler-MIT; API行为依据MediaWiki�ٷ���斡�
+  license: OmniCrawler-MIT; API 行为依据 MediaWiki 官方文档
 
   verified_at: '2026-07-17'
 

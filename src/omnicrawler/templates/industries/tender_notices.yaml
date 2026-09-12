@@ -4,19 +4,21 @@ template:
 
   id: industries/tender-notices
 
-  name: �б�ɹ��购�告
+  name: 招标采购公告
 
   category: industries/procurement
 
-  description: "面向招标、采购��成交和更正�公告皵Ķ���ɼ�雨��?  version: 1.0.0"
+  description: 面向招标、采购、成交和更正公告的证据化采集
 
-  tags: [招标, �ɹ�, �中标, �公告]
+  version: 1.0.0
+
+  tags: [招标, 采购, 中标, 公告]
 
   capabilities: [focused-crawl, attachment-download, pdf, evidence, incremental]
 
   placeholders:
 
-    channel_url: {label: �公告栏目地址, required: true}
+    channel_url: {label: 公告栏目地址, required: true}
 
   verified_at: '2026-07-17'
 
@@ -28,7 +30,7 @@ crawl:
 
   strategy: priority
 
-  focus_keywords: [招标, �ɹ�, �中标, 成交, 更正, 变更, 资格预审, 询价]
+  focus_keywords: [招标, 采购, 中标, 成交, 更正, 变更, 资格预审, 询价]
 
   max_pages: 5000
 

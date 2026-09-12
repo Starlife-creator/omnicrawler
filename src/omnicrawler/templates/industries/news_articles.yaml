@@ -4,19 +4,21 @@ template:
 
   id: industries/news-articles
 
-  name: "������ý����体�?  category: industries/news"
+  name: 新闻与媒体文章
 
-  description: 面向�������Ŀ�����ȼ����ć��作者��发布时间�����盁�和原始证据
+  category: industries/news
+
+  description: 面向新闻类栏目，优先提取标题、作者、发布时间、正文和原始证据
 
   version: 1.0.0
 
-  tags: [����, 媒体, ����, 增量]
+  tags: [新闻, 媒体, 正文, 增量]
 
   capabilities: [crawl, auto-extraction, incremental, evidence, attachment-download]
 
   placeholders:
 
-    channel_url: {label: ������Ŀ��ַ, required: true}
+    channel_url: {label: 新闻栏目地址, required: true}
 
   html_contains: [article:published_time, NewsArticle, datePublished]
 
@@ -30,7 +32,7 @@ crawl:
 
   strategy: priority
 
-  focus_keywords: [news, article, content, detail, ����, 资讯]
+  focus_keywords: [news, article, content, detail, 新闻, 资讯]
 
   max_pages: 2000
 

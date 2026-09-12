@@ -8,7 +8,9 @@ template:
 
   category: authenticated/api
 
-  description: "�ӻ���������ϵͳ��糭据库读取Token�������܊密�写兆����配�?  version: 1.0.0"
+  description: "从环境变量或系统凭据库读取 Token，通过 Authorization 头携带，避免密钥明文写入配置"
+
+  version: 1.0.0
 
   tags: [授权, Bearer, Token, API]
 

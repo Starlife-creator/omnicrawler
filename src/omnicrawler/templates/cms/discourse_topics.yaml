@@ -4,23 +4,23 @@ template:
 
   id: cms/discourse-topics
 
-  name: Discourse�公开��������
+  name: Discourse 公开话题列表
 
   category: cms/discourse
 
-  description: �ɼ�Discourse�公开���������З表及详情JSON
+  description: 采集 Discourse 公开话题列表及详情 JSON
 
   version: 1.0.0
 
-  tags: [Discourse, ��̳, 社区, JSON]
+  tags: [Discourse, 论坛, 社区, JSON]
 
   capabilities: [rest, json, community]
 
   placeholders:
 
-    site_url: {label: Discourse站点根地坢�, required: true}
+    site_url: {label: Discourse 站点根地址, required: true}
 
-    end_page: "{label: �朢�大页�? default: 20}"
+    end_page: "{label: 最大页码, default: 20}"
 
   url_patterns: ['*/latest.json*', '*/top.json*', '*/c/*/*.json*']
 
@@ -32,7 +32,7 @@ template:
 
   source_urls: [https://docs.discourse.org/]
 
-  license: OmniCrawler-MIT; API行为依据Discourse�ٷ���斡�
+  license: OmniCrawler-MIT; API 行为依据 Discourse 官方文档
 
   verified_at: '2026-07-17'
 

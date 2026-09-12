@@ -4,11 +4,11 @@ template:
 
   id: cms/drupal-jsonapi
 
-  name: Drupal JSON API内容
+  name: Drupal JSON:API 内容
 
   category: cms/drupal
 
-  description: ʹ��Drupal核心JSON:API�ɼ���公开内容���ϲ�����links.next
+  description: 使用 Drupal 核心 JSON:API 采集公开内容，并处理 links.next 分页
 
   version: 1.0.0
 
@@ -18,9 +18,9 @@ template:
 
   placeholders:
 
-    site_url: {label: Drupal站点根地坢�, required: true}
+    site_url: {label: Drupal 站点根地址, required: true}
 
-    content_type: "{label: 内容���ͻ����器? default: article}"
+    content_type: "{label: 内容类型机器名, default: article}"
 
   url_patterns: ['*/jsonapi/*']
 
@@ -34,7 +34,7 @@ template:
 
     - https://www.drupal.org/docs/core-modules-and-themes/core-modules/jsonapi-module/pagination
 
-  license: OmniCrawler-MIT; API行为依据Drupal�ٷ���斡�
+  license: OmniCrawler-MIT; API 行为依据 Drupal 官方文档
 
   verified_at: '2026-07-17'
 

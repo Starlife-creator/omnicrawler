@@ -1,5 +1,5 @@
 template_version: 1
-project: {name: 示例项目-HTTPX异步�ュ彛, workspace: work/httpx_async}
+project: {name: 示例项目-HTTPX异步接口, workspace: work/httpx_async}
 source:
   kind: url_list
   seeds:

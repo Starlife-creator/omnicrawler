@@ -4,17 +4,21 @@ template:
 
   id: industries/financial-disclosures
 
-  name: "���ڞ�披露��붨�ڱ����?  category: industries/finance"
+  name: 金融信息披露与定期报告
 
-  description: "�ɼ���公开披露〡����ڱ���呢�临时公告及PDF������������留�证�?  version: 1.0.0"
+  category: industries/finance
 
-  tags: [����, 披露, ���ڜ�报告, PDF]
+  description: 采集公开披露、定期报告与临时公告及 PDF 附件，并保留证据链
+
+  version: 1.0.0
+
+  tags: [金融, 披露, 定期报告, PDF]
 
   capabilities: [focused-crawl, attachment-download, pdf, incremental, evidence]
 
   placeholders:
 
-    disclosure_url: {label: �公开披露栏目地址, required: true}
+    disclosure_url: {label: 公开披露栏目地址, required: true}
 
   verified_at: '2026-07-17'
 
@@ -22,7 +26,7 @@ project: {name: financial_disclosures, workspace: work/financial_disclosures}
 
 source: {kind: focused, seeds: ['{{disclosure_url}}']}
 
-crawl: {strategy: priority, focus_keywords: [披露, �公告, 年报, 季报, report, filing], max_pages: 5000, max_depth: 5, same_host: true, concurrency: 4}
+crawl: {strategy: priority, focus_keywords: [披露, 公告, 年报, 季报, report, filing], max_pages: 5000, max_depth: 5, same_host: true, concurrency: 4}
 
 http: {respect_robots: true, delay_seconds: 1.5, auto_browser_fallback: true}
 

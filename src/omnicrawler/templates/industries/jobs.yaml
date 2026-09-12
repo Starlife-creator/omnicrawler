@@ -4,21 +4,21 @@ template:
 
   id: industries/jobs
 
-  name: ��Ƹְλ�位�开信息
+  name: 招聘职位公开信息
 
   category: industries/jobs
 
-  description: 抽取职位名称、公司��地点��薪资��巢�����ں�ְλ����
+  description: 抽取职位名称、公司、地点、薪资、发布日期和职位描述
 
   version: 1.0.0
 
-  tags: [招聘, 职位, �公司, JSON-LD]
+  tags: [招聘, 职位, 公司, JSON-LD]
 
   capabilities: [crawl, job-posting-schema, incremental, evidence]
 
   placeholders:
 
-    listing_url: {label: ְλ��刡�地址, required: true}
+    listing_url: {label: 职位列表地址, required: true}
 
   html_contains: [JobPosting, hiringOrganization, datePosted]
 

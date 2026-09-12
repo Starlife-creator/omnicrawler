@@ -4,21 +4,21 @@ template:
 
   id: industries/real-estate
 
-  name: 房地产公弢�房源
+  name: 房地产公开房源
 
   category: industries/real-estate
 
-  description: ��ȡ��公开�㷿Դ�ı���颢�位置��面积��价格��户型和发布时间
+  description: 获取公开房源标题、位置、面积、价格、户型和发布时间
 
   version: 1.0.0
 
-  tags: [房产, 房源, 价格, ����λ��]
+  tags: [房产, 房源, 价格, 位置]
 
   capabilities: [crawl, offer-schema, incremental, evidence]
 
   placeholders:
 
-    listing_url: {label: �公开�㷿Դ�З表地址, required: true}
+    listing_url: {label: 公开房源列表地址, required: true}
 
   html_contains: [RealEstateListing, floorSize, addressLocality]
 

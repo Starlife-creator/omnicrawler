@@ -5,6 +5,7 @@ template:
   name: PDF文档集合
   category: documents/pdf
   description: "从指定栏目按条件发现PDF链接，对文件下载并分类入PDF解析、OCR和人工复核流程"
+  version: 1.0.0
   tags: [PDF, OCR, table, attachment]
   capabilities: [crawl, attachment-download, pdf, ocr, review]
   intents: [documents]

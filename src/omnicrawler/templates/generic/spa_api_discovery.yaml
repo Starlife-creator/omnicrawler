@@ -5,6 +5,7 @@ template:
   name: SPA 动态页面与接口发现
   category: generic/dynamic
   description: "用浏览器执行页面脚本，等待渲染完成后捕获XHR/fetch JSON，从中发现站点发送的实际数据接口"
+  version: 1.0.0
   tags: [SPA, dynamic-render, XHR, api-discovery]
   capabilities: [browser, javascript, network-capture, evidence]
 

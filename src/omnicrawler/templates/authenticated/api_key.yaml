@@ -8,7 +8,9 @@ template:
 
   category: authenticated/api
 
-  description: "�ӻ���������ϵͳ��糭据库读�?API Key�����������ͷ���调�授权接口，������ļ������������ܘ�斥��?  version: 1.0.0"
+  description: "从环境变量或系统凭据库读取 API Key，用于请求头发送调用授权接口，避免密钥明文硬编码"
+
+  version: 1.0.0
 
   tags: [授权, API-Key, 凭据库]
 
@@ -18,7 +20,7 @@ template:
 
     api_url: {label: API 地址, required: true}
 
-    header_name: "{label: 密钥请求头名�? default: X-API-Key}"
+    header_name: "{label: 密钥请求头名称, default: X-API-Key}"
 
     secret_name: {label: OmniCrawler 凭据名称, default: api_key}
 

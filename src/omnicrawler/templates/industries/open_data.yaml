@@ -4,6 +4,7 @@ template:
   id: industries/open-data
   name: 政府开放数据门户
   description: "发现开放数据目录中的CSV、JSON、Excel、压缩包和数据集元数据"
+  version: 1.0.0
   tags: [open-data, dataset, CSV, JSON]
   capabilities: [crawl, attachment-download, metadata, incremental]
 
