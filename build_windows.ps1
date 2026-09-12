@@ -183,6 +183,9 @@ if (-not $SkipDependencyInstall) {
     if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
         throw 'Python 3.12 or newer was not found.'
     }
+    if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+        throw 'uv was not found. Install the version pinned in constraints/quality.txt before building.'
+    }
     # 版本门槛：requires-python>=3.12，早失败避免 venv 建在旧解释器上（与 Linux/macOS M2 对齐）
     $pythonVersion = (& python -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null).Trim()
     if (-not $pythonVersion -or ([version]$pythonVersion -lt [version]'3.12')) {
@@ -195,15 +198,21 @@ if (-not $SkipDependencyInstall) {
     if ($BuilderPythonPath -and $resolvedBuilder -ne $resolvedVenvPython) {
         throw '-BuilderPythonPath 指向非构建 venv 的解释器；自动安装会污染该系统 Python，请改用 -SkipDependencyInstall。'
     }
-    if (-not (Test-Path -LiteralPath $builderPython)) {
-        python -m venv $builderVenv
-        Assert-LastExit 'Could not create the isolated build environment.'
-    }
-    & $builderPython -m pip install --upgrade pip setuptools wheel
-    Assert-LastExit 'Could not upgrade build tooling.'
     $extras = if ($Edition -eq 'Full') { 'full' } else { 'gui,html,pdf,browser,async-http,security' }
-    & $builderPython -m pip install -e "$projectRoot[$extras]" pyinstaller==6.15.0
-    Assert-LastExit "Could not install the $Edition build dependency matrix."
+    $syncArgs = @('sync', '--locked', '--no-dev', '--python', 'python', '--extra', 'dev')
+    foreach ($extra in $extras.Split(',')) { $syncArgs += @('--extra', $extra) }
+    $previousUvProjectEnvironment = $env:UV_PROJECT_ENVIRONMENT
+    try {
+        $env:UV_PROJECT_ENVIRONMENT = $builderVenv
+        & uv @syncArgs
+        Assert-LastExit "Could not install the locked $Edition build dependency matrix."
+    } finally {
+        if ($null -eq $previousUvProjectEnvironment) {
+            Remove-Item Env:UV_PROJECT_ENVIRONMENT -ErrorAction SilentlyContinue
+        } else {
+            $env:UV_PROJECT_ENVIRONMENT = $previousUvProjectEnvironment
+        }
+    }
 } else {
     if (-not $BuilderPythonPath) {
         throw '-SkipDependencyInstall requires -BuilderPythonPath.'
@@ -230,7 +239,7 @@ if ($pyprojectVersion -and $pyprojectVersion -ne $appVersion) {
 $installedVersion = (& $builderPython -c "import importlib.metadata; print(importlib.metadata.version('omnicrawler-platform'))").Trim()
 Assert-LastExit 'Could not read the installed version from the build environment.'
 if ($installedVersion -and $installedVersion -ne $appVersion) {
-    throw "版本元数据漂移: installed=$installedVersion vs src=$appVersion —— 构建环境需重跑 pip install -e . 对齐。"
+    throw "版本元数据漂移: installed=$installedVersion vs src=$appVersion —— 构建环境需重跑 uv sync --locked 对齐。"
 }
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host "  OmniCrawler $appVersion — $Edition edition portable build" -ForegroundColor Cyan
@@ -367,6 +376,9 @@ foreach ($relativeDir in @('data\input', 'data\pdfs', 'work', 'output', 'logs'))
 
 & $builderPython (Join-Path $projectRoot 'tools\generate_sbom.py') --output (Join-Path $releaseRoot 'SBOM.json')
 Assert-LastExit 'SBOM generation failed.'
+& $builderPython (Join-Path $projectRoot 'tools\check_sbom_lock.py') `
+    --sbom (Join-Path $releaseRoot 'SBOM.json') --lock (Join-Path $projectRoot 'uv.lock')
+Assert-LastExit 'Installed dependency versions do not match uv.lock.'
 & (Join-Path $releaseRoot 'omnicrawler-cli.exe') --version
 Assert-LastExit 'Packaged CLI version verification failed.'
 & (Join-Path $releaseRoot 'omnicrawler-cli.exe') templates validate

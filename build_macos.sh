@@ -82,7 +82,7 @@ else
   brew install python@3.12 || { echo "brew install python@3.12 失败" >&2; exit 1; }
   FRAMEWORK_PYTHON=/opt/homebrew/opt/python@3.12/bin/python3.12
 fi
-# 上界硬断言：PyInstaller 6.15 不支持 3.14+；3.13 因 PYI-5670 也不采用
+# 构建锁与便携运行时当前只验收 framework Python 3.12。
 _py_minor=$("$FRAMEWORK_PYTHON" -c 'import sys; print(sys.version_info[1])' 2>/dev/null)
 if [[ "$_py_minor" -ne 12 ]]; then
   echo "framework Python 必须是 3.12，当前：$("$FRAMEWORK_PYTHON" --version 2>&1)" >&2
@@ -96,18 +96,21 @@ if ! "$FRAMEWORK_PYTHON" -c 'import sys; sys.exit(0 if sys.version_info>=(3,12) 
   exit 1
 fi
 
-# ---- 依赖安装（隔离 venv） ---------------------------------------------------
-if [[ ! -x "$BUILDER_PYTHON" ]]; then
-  "$FRAMEWORK_PYTHON" -m venv "$BUILDER_VENV"
+# ---- 依赖安装（uv.lock → 隔离 venv） -----------------------------------------
+if ! command -v uv >/dev/null 2>&1; then
+  echo "缺少 uv；请安装 constraints/quality.txt 固定的版本后再构建。" >&2
+  exit 1
 fi
-"$BUILDER_PYTHON" -m pip install --upgrade pip setuptools wheel
 if [[ "$EDITION" == "Full" ]]; then
   # full-macos：full 去掉 paddleocr/paddlepaddle（macOS 无稳定 wheel）+ 显式 opencv
   EXTRAS="full-macos"
 else
   EXTRAS="gui,html,pdf,browser,async-http,security"
 fi
-"$BUILDER_PYTHON" -m pip install -e "$PROJECT_ROOT[$EXTRAS]" pyinstaller==6.15.0
+SYNC_ARGS=(sync --locked --no-dev --python "$FRAMEWORK_PYTHON" --extra dev)
+IFS=',' read -r -a EXTRA_LIST <<< "$EXTRAS"
+for extra in "${EXTRA_LIST[@]}"; do SYNC_ARGS+=(--extra "$extra"); done
+UV_PROJECT_ENVIRONMENT="$BUILDER_VENV" uv "${SYNC_ARGS[@]}"
 
 # ---- 三重版本校验 -----------------------------------------------------------
 APP_VERSION="$("$BUILDER_PYTHON" -c 'from omnicrawler import __version__; print(__version__)')"
@@ -120,7 +123,7 @@ if [[ "$APP_VERSION" != "$PYPROJECT_VERSION" ]]; then
   echo "版本不一致: pyproject=$PYPROJECT_VERSION vs omnicrawler.__version__=$APP_VERSION" >&2; exit 1
 fi
 if [[ "$INSTALLED_VERSION" != "$APP_VERSION" ]]; then
-  echo "版本元数据漂移: installed=$INSTALLED_VERSION vs src=$APP_VERSION —— 需重跑 pip install -e ." >&2; exit 1
+  echo "版本元数据漂移: installed=$INSTALLED_VERSION vs src=$APP_VERSION —— 需重跑 uv sync --locked。" >&2; exit 1
 fi
 
 echo "============================================================"
@@ -237,6 +240,8 @@ done
 # ---- 产物级测试（SBOM + CLI 冒烟 + portable 冒烟 + 完整性清单）--------------
 # 与 Windows 构建对齐：落盘 CAPABILITIES.json / RELEASE-INFO.json 并重刷清单
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/generate_sbom.py" --output "$RELEASE_ROOT/SBOM.json"
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/check_sbom_lock.py" \
+  --sbom "$RELEASE_ROOT/SBOM.json" --lock "$PROJECT_ROOT/uv.lock"
 "$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli" --version
 "$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli" templates validate
 "$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli" capabilities --verify-imports --portable-paths > "$RELEASE_ROOT/CAPABILITIES.json"

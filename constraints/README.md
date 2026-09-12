@@ -4,10 +4,11 @@
 sets `PIP_CONSTRAINT` so build isolation and direct installations use the same
 versions.
 
-Runtime dependencies remain bounded in `pyproject.toml` because several extras
-are platform-specific. Per-platform, hash-locked runtime manifests remain a
-planned hardening item; portable components already use signed manifests and
-file hashes.
+Portable builds use `uv sync --locked` with the edition-specific extras, so the
+runtime and PyInstaller versions come from `uv.lock` on each target platform.
+The uv executable itself and the bootstrap packaging tools are pinned in
+`quality.txt`; portable components additionally use signed manifests and file
+hashes.
 
 ## Market test snapshot
 

@@ -123,3 +123,24 @@ def test_windows_build_refreshes_verified_asset_caches() -> None:
     assert '$backup = "$resolvedDestination.backup"' in script
     assert "Move-Item -LiteralPath $resolvedDestination -Destination $backup" in script
     assert "Move-Item -LiteralPath $backup -Destination $resolvedDestination" in script
+
+
+def test_portable_builds_install_and_verify_locked_dependencies() -> None:
+    scripts = [
+        (PROJECT_ROOT / "build_windows.ps1").read_text(encoding="utf-8"),
+        (PROJECT_ROOT / "build_linux.sh").read_text(encoding="utf-8"),
+        (PROJECT_ROOT / "build_macos.sh").read_text(encoding="utf-8"),
+    ]
+    for script in scripts:
+        assert "sync" in script and "--locked" in script
+        assert "check_sbom_lock.py" in script
+        assert "pip install -e" not in script
+
+    for filename in (*BUILD_WORKFLOWS.values(), FINALIZE):
+        workflow = _workflow(filename)
+        assert "version: \"0.12.13\"" in workflow
+        assert "uv sync --locked" in workflow
+        assert "pip install -e" not in workflow
+
+    constraints = (PROJECT_ROOT / "constraints" / "quality.txt").read_text(encoding="utf-8")
+    assert "uv==0.12.13" in constraints

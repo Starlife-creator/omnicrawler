@@ -75,17 +75,20 @@ case "$ARCH" in
   *) echo "OmniCrawler Linux 便携包仅支持 x86_64 / aarch64，检测到 $ARCH" >&2; exit 1 ;;
 esac
 
-# ---- 依赖安装（隔离 venv） ---------------------------------------------------
-if [[ ! -x "$BUILDER_PYTHON" ]]; then
-  python3 -m venv "$BUILDER_VENV"
+# ---- 依赖安装（uv.lock → 隔离 venv） -----------------------------------------
+if ! command -v uv >/dev/null 2>&1; then
+  echo "缺少 uv；请安装 constraints/quality.txt 固定的版本后再构建。" >&2
+  exit 1
 fi
-"$BUILDER_PYTHON" -m pip install --upgrade pip setuptools wheel
 if [[ "$EDITION" == "Full" ]]; then
   EXTRAS="full"
 else
   EXTRAS="gui,html,pdf,browser,async-http,security"
 fi
-"$BUILDER_PYTHON" -m pip install -e "$PROJECT_ROOT[$EXTRAS]" pyinstaller==6.15.0
+SYNC_ARGS=(sync --locked --no-dev --python python3 --extra dev)
+IFS=',' read -r -a EXTRA_LIST <<< "$EXTRAS"
+for extra in "${EXTRA_LIST[@]}"; do SYNC_ARGS+=(--extra "$extra"); done
+UV_PROJECT_ENVIRONMENT="$BUILDER_VENV" uv "${SYNC_ARGS[@]}"
 
 # ---- 三重版本校验（src __version__ == pyproject == installed） -------------
 APP_VERSION="$("$BUILDER_PYTHON" -c 'from omnicrawler import __version__; print(__version__)')"
@@ -98,7 +101,7 @@ if [[ "$APP_VERSION" != "$PYPROJECT_VERSION" ]]; then
   echo "版本不一致: pyproject=$PYPROJECT_VERSION vs omnicrawler.__version__=$APP_VERSION" >&2; exit 1
 fi
 if [[ "$INSTALLED_VERSION" != "$APP_VERSION" ]]; then
-  echo "版本元数据漂移: installed=$INSTALLED_VERSION vs src=$APP_VERSION —— 需重跑 pip install -e ." >&2; exit 1
+  echo "版本元数据漂移: installed=$INSTALLED_VERSION vs src=$APP_VERSION —— 需重跑 uv sync --locked。" >&2; exit 1
 fi
 
 echo "============================================================"
@@ -227,6 +230,8 @@ done
 # ---- 产物级测试（SBOM + CLI 冒烟 + portable 冒烟 + 完整性清单）--------------
 # 与 Windows 构建对齐：落盘 CAPABILITIES.json / RELEASE-INFO.json 并重刷清单
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/generate_sbom.py" --output "$RELEASE_ROOT/SBOM.json"
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/check_sbom_lock.py" \
+  --sbom "$RELEASE_ROOT/SBOM.json" --lock "$PROJECT_ROOT/uv.lock"
 "$RELEASE_ROOT/omnicrawler" --version
 "$RELEASE_ROOT/omnicrawler" templates validate
 "$RELEASE_ROOT/omnicrawler" capabilities --verify-imports --portable-paths > "$RELEASE_ROOT/CAPABILITIES.json"

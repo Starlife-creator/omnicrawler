@@ -210,6 +210,15 @@ GATES: tuple[Gate, ...] = (
         ci_note="需先构建产物并生成 SBOM。",
     ),
     Gate(
+        name="check_sbom_lock",
+        args=("tools/check_sbom_lock.py",),
+        sets=frozenset({"release"}),
+        description="发布环境实际安装版本与 uv.lock 逐包一致",
+        script="tools/check_sbom_lock.py",
+        needs_args=("sbom", "lock"),
+        ci_note="需先在目标平台按 edition 构建并生成 SBOM。",
+    ),
+    Gate(
         name="check_artifact_budget",
         args=("tools/check_artifact_budget.py",),
         sets=frozenset({"release"}),

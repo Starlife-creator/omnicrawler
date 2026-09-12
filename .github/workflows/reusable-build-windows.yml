@@ -38,6 +38,11 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.13"
+          enable-cache: false
+
       - name: 读取源码版本号
         id: version
         shell: pwsh
@@ -54,8 +59,7 @@ jobs:
         id: playwright-version
         shell: pwsh
         run: |
-          python -m pip install "playwright>=1.49,<2" --quiet
-          $v = (& python -c "import importlib.metadata; print(importlib.metadata.version('playwright'))").Trim()
+          $v = (& python -c "import tomllib; data=tomllib.load(open('uv.lock','rb')); print(next(p['version'] for p in data['package'] if p['name']=='playwright'))").Trim()
           Write-Output "version=$v" >> $env:GITHUB_OUTPUT
       - name: 缓存浏览器运行时
         id: browser-cache
@@ -144,12 +148,17 @@ jobs:
       - name: 安装发布元数据依赖
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[html,pdf,browser,async-http]"
+          $env:UV_PROJECT_ENVIRONMENT = "$env:RUNNER_TEMP\metadata-venv"
+          uv sync --locked --no-dev --python python `
+            --extra html --extra pdf --extra browser --extra async-http
 
       - name: 生成 SBOM
         shell: pwsh
-        run: python tools/generate_sbom.py --output "$env:RUNNER_TEMP/artifacts/omnicrawler-sbom-windows.cdx.json"
+        run: |
+          & "$env:RUNNER_TEMP\metadata-venv\Scripts\python.exe" tools/generate_sbom.py `
+            --output "$env:RUNNER_TEMP/artifacts/omnicrawler-sbom-windows.cdx.json"
+          python tools/check_sbom_lock.py `
+            --sbom "$env:RUNNER_TEMP/artifacts/omnicrawler-sbom-windows.cdx.json" --lock uv.lock
 
       - name: 生成并校验 SHA-256 清单
         shell: pwsh

@@ -38,12 +38,17 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.13"
+          enable-cache: false
+
       - name: 生成 provenance
         shell: bash
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[html,pdf,browser,async-http]"
-          python tools/generate_provenance.py --artifact-dir "$RUNNER_TEMP/artifacts" \
+          UV_PROJECT_ENVIRONMENT="$RUNNER_TEMP/finalize-venv" uv sync --locked --no-dev --python python \
+            --extra html --extra pdf --extra browser --extra async-http
+          "$RUNNER_TEMP/finalize-venv/bin/python" tools/generate_provenance.py --artifact-dir "$RUNNER_TEMP/artifacts" \
             --output "$RUNNER_TEMP/artifacts/omnicrawler-provenance.json"
 
       # B14-💭-3：供应链完整性检查固化为 release 必跑步骤（任一失败 → 发布中止）。
@@ -55,7 +60,7 @@ jobs:
         shell: bash
         run: |
           python tools/check_network_boundaries.py --source-root src/omnicrawler
-          python tools/check_guardrails.py \
+          "$RUNNER_TEMP/finalize-venv/bin/python" tools/check_guardrails.py \
             --sbom "$RUNNER_TEMP/artifacts/omnicrawler-sbom-linux.cdx.json"
           python tools/check_release_integrity.py . \
             --portable-zip-dir "$RUNNER_TEMP/artifacts"
