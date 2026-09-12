@@ -124,7 +124,12 @@ class GenericSource:
         discovered: list[CrawlRequest] = []
         if "html" in result.content_type:
             document = parse_html(decode_body(result))
-            can_crawl = self.kind in {"crawl", "focused", "incremental", "media"}
+            # browser 也参与链接发现：浏览器源同样受 crawl.max_pages / max_depth /
+            # same_host 约束（既有模板 authenticated/cookie-session、
+            # generic/infinite-scroll 都声明了 max_depth），把它排除在外会让
+            # "用浏览器抓分页列表"根本无法翻页——分析器只好退化成"点击下一页"
+            # 动作，而该动作在入口页也执行，反而毁掉第一页。
+            can_crawl = self.kind in {"crawl", "focused", "incremental", "media", "browser"}
             download = self.config.section("download")
             extensions = tuple(str(item).lower() for item in download.get("extensions", []))
             for href, label, link_kind in discover_links(document):
@@ -157,6 +162,12 @@ class GenericSource:
             priority = float(score)
         return CrawlRequest(
             url=url, kind=kind, priority=priority, depth=result.request.depth + 1,
+            # 继承父请求的 render：浏览器源发现的子页必须同样渲染。否则同一页在
+            # "种子（渲染）"与"子链接（HTTP）"两条路径下产出不同字节 → 内容哈希
+            # 不同 → 去重失效、同一页被重复采集（实测 scrapethissite：apex 种子
+            # 重定向到 www 后，页面自链接又被当新页抓一次 → 250 条变 500 条），
+            # 且 JS 渲染的分页页（quotes.toscrape.com/js/page/N）拿不到内容。
+            render=result.request.render,
             parent_url=result.final_url,
             meta={"root_url": result.request.meta.get("root_url", result.request.url), "anchor": label},
         )

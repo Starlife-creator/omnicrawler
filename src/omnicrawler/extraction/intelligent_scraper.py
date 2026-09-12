@@ -1088,18 +1088,19 @@ def analyze_to_config(html: str, url: str = "", project_name: str = "auto_task")
         config["extract"]["item_selector"] = item_selector
 
     # 分页：契约位置 source.pagination，type=page + parameter（page 语义统一）
-    if analysis.pagination:
-        pag = analysis.pagination
-        if pag["type"] == "url_param":
-            config["source"]["pagination"] = {
-                "type": "page",
-                "parameter": pag["param"],
-            }
-        elif pag["type"] == "next_link":
-            config["browser"]["actions"] = [
-                {"action": "click", "selector": pag.get("xpath", ""),
-                 "description": "点击下一页"},
-            ]
+    # 分页：契约位置 source.pagination，type=page + parameter（page 语义统一）。
+    #
+    # next_link 型**不写任何配置**：“下一页”就是同站 <a href>，由
+    # source.discover 的通用链接发现处理即可。历史实现把它写成
+    # ``browser.actions`` 的“点击下一页”，而 actions 对**每个**渲染页都执行 ——
+    # 入口页一点即跳走，第一页内容全丢（实测 quotes.toscrape.com/js：最终 URL
+    # 变成 /js/page/2/、正文只剩未渲染骨架、0 条记录；分析期自校验不跑 actions，
+    # 所以校验通过 10 条 —— 分析与运行结果不一致的根源就在这里）。
+    if analysis.pagination and analysis.pagination["type"] == "url_param":
+        config["source"]["pagination"] = {
+            "type": "page",
+            "parameter": analysis.pagination["param"],
+        }
 
     _check_verified(config, html)
     return config
