@@ -184,11 +184,27 @@ class PlaywrightPool:
                 page.on("response", lambda response, ac=api_candidates: self._capture_response(response, ac))
                 started = time.monotonic()
                 browser_config = self.config.section("browser")
-                response = page.goto(
-                    request.url,
-                    wait_until=str(browser_config.get("wait_until", "networkidle")),
-                    timeout=int(float(self.config.section("http").get("timeout_seconds", 25)) * 1000),
-                )
+                wait_until = str(browser_config.get("wait_until", "networkidle"))
+                try:
+                    response = page.goto(
+                        request.url,
+                        wait_until=wait_until,
+                        timeout=int(float(self.config.section("http").get("timeout_seconds", 25)) * 1000),
+                    )
+                except Exception as exc:  # noqa: BLE001 —— 只吞「等待条件超时」，其余原样抛出
+                    # wait_until 超时**不等于**导航失败：页面通常已加载完，只是
+                    # networkidle 永不静默（轮询 / 埋点 / 长连接）。旧实现把这种超时
+                    # 当抓取失败 → 整页 0 条记录（实测 scrapethissite 国家列表：
+                    # Page.goto: Timeout 25000ms exceeded, waiting until "networkidle"）。
+                    # 仅超时类异常降级为"用已加载的 DOM 继续"；DNS / 证书 / 被拦截等
+                    # 真实失败照旧上抛，不掩盖。
+                    if "timeout" not in type(exc).__name__.lower():
+                        raise
+                    LOGGER.warning(
+                        "等待条件超时，改用已加载 DOM 继续: %s (wait_until=%s)",
+                        request.url, wait_until,
+                    )
+                    response = None
                 run_actions_for_page(page, browser_config.get("actions", []))
                 body = page.content().encode("utf-8")
                 final_url = page.url
