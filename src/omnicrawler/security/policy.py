@@ -254,6 +254,10 @@ class RobotsPolicy:
         return self._opener
 
 
+def _site_key(host: str) -> str:
+    """站点标识：归一化 ``www.`` 前缀，使 apex 与 ``www.`` 视为同一站点。"""
+    return host[4:] if host.startswith("www.") else host
+
 @dataclass(slots=True)
 class ScopePolicy:
     config: AppConfig
@@ -274,7 +278,10 @@ class ScopePolicy:
             return False, "域名不在allow_domains中"
         if root_url and crawl.get("same_host", True):
             root_host = (urlsplit(root_url).hostname or "").lower()
-            if host != root_host:
+            # apex ⇄ www 的 301 是最常见的重定向形式（scrapethissite.com →
+            # www.scrapethissite.com）。严格比较主机名会把这种重定向判成
+            # "超出种子站点"，整轮 run 因"无页面交付"失败——归一化 www. 前缀。
+            if _site_key(host) != _site_key(root_host):
                 return False, "超出种子站点"
         for pattern in crawl.get("deny_patterns", []):
             if re.search(str(pattern), url):
