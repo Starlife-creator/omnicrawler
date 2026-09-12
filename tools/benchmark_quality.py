@@ -1,4 +1,4 @@
-"""任务质量基准入口：在本地固定任务上测「完整、准确、有来源证据」。
+"""任务质量基准入口：在本地固定任务上核对精确交付契约。
 
 与 `tools/benchmark_quality.py` 的关系：吞吐基准（`omnicrawler benchmark`）回答「跑得多快」，
 本工具回答「采到的数据对不对、全不全、有没有来源证据」——`优化方案.md` §1.2 采集能力的另一半。
@@ -32,7 +32,9 @@ _COLUMNS = (
     ("completeness", 13),
     ("accuracy", 10),
     ("evidence_ratio", 15),
-    ("mean_field_completeness", 23),
+    ("mean_field_completeness", 24),
+    ("unexpected", 12),
+    ("duplicates", 11),
 )
 
 
@@ -67,12 +69,14 @@ def main(argv: list[str] | None = None) -> int:
                 + f"{mapping['accuracy']:.2f}".ljust(10)
                 + f"{mapping['evidence_ratio']:.2f}".ljust(15)
                 + f"{mapping['mean_field_completeness']:.2f}".ljust(23)
+                + str(mapping["unexpected_records"]).ljust(12)
+                + str(mapping["duplicate_records"]).ljust(11)
             )
 
     failed = [score.task for score in scores if not score.ok]
     print()
-    print(f"结论：{len(scores) - len(failed)}/{len(scores)} 个任务满分（完整性与准确性均 1.0）")
-    print("说明：'字段自报完整度' 是流水线自己在 evidence._quality 里报的口径，与外部比对互证。")
+    print(f"结论：{len(scores) - len(failed)}/{len(scores)} 个任务满足精确交付契约")
+    print("说明：通过要求完整、准确、来源匹配、无额外/重复交付，且字段自报完整度可信。")
 
     if args.json_path:
         target = Path(args.json_path)

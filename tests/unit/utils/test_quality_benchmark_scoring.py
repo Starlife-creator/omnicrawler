@@ -28,6 +28,8 @@ _TASK = BenchmarkTask(
         {"title": "A", "price": "1"},
         {"title": "B", "price": "2"},
     ),
+    expected_source_paths=("/x", "/x"),
+    expected_source_origin="https://example.org",
 )
 
 
@@ -74,6 +76,7 @@ def test_pipeline_reported_completeness_is_aggregated() -> None:
         [_record("A", "1", completeness=0.5), _record("B", "2", completeness=1.0)],
     )
     assert score.mean_field_completeness == 0.75
+    assert score.ok is False
 
 
 def test_records_without_quality_evidence_do_not_crash() -> None:
@@ -87,6 +90,62 @@ def test_extra_records_do_not_inflate_scores() -> None:
     score = score_records(_TASK, [_record("A", "1"), _record("Z", "9")])
     assert score.found_records == 2
     assert score.completeness == 0.5
+    assert score.unexpected_records == 1
+
+
+def test_extra_wrong_record_fails_even_when_all_expected_records_exist() -> None:
+    score = score_records(
+        _TASK,
+        [_record("A", "1"), _record("B", "2"), _record("Z", "9")],
+    )
+    assert score.completeness == 1.0
+    assert score.unexpected_records == 1
+    assert score.duplicate_records == 0
+    assert score.ok is False
+
+
+def test_duplicate_record_is_not_overwritten_by_identity_index() -> None:
+    score = score_records(
+        _TASK,
+        [_record("A", "1"), _record("A", "1"), _record("B", "2")],
+    )
+    assert score.completeness == 1.0
+    assert score.unexpected_records == 1
+    assert score.duplicate_records == 1
+    assert score.ok is False
+
+
+def test_wrong_source_path_is_not_accepted_as_evidence() -> None:
+    score = score_records(
+        _TASK,
+        [_record("A", "1", url="https://wrong.example/not-x"), _record("B", "2")],
+    )
+    assert score.evidence_ratio == 0.5
+    assert score.ok is False
+
+
+def test_wrong_source_origin_is_not_accepted_as_evidence() -> None:
+    score = score_records(
+        _TASK,
+        [_record("A", "1", url="https://wrong.example/x"), _record("B", "2")],
+    )
+    assert score.evidence_ratio == 0.5
+    assert score.ok is False
+
+
+def test_missing_field_cannot_be_hidden_by_reported_full_completeness() -> None:
+    score = score_records(
+        _TASK,
+        [_record("A", "", completeness=1.0), _record("B", "2")],
+    )
+    assert score.reported_completeness_violations == 1
+    assert score.ok is False
+
+
+def test_matching_is_independent_of_actual_record_order() -> None:
+    expected = score_records(_TASK, [_record("A", "1"), _record("B", "2")]).to_mapping()
+    reversed_records = score_records(_TASK, [_record("B", "2"), _record("A", "1")]).to_mapping()
+    assert reversed_records == expected
 
 
 def test_empty_records_score_zero() -> None:
@@ -103,7 +162,14 @@ def test_builtin_tasks_are_well_formed() -> None:
         assert task.pages, f"{task.name} 没有页面"
         assert task.fields, f"{task.name} 没有字段"
         assert task.expected, f"{task.name} 没有期望结果"
+        assert task.identity_fields, f"{task.name} 没有声明记录身份字段"
         seeds = {path for path, _ in task.pages}
         assert "/" in seeds, f"{task.name} 缺少种子页"
+        assert not task.expected_source_paths or len(task.expected_source_paths) == len(task.expected)
+        identities = {
+            tuple(entry.get(name, "") for name in task.identity_fields)
+            for entry in task.expected
+        }
+        assert len(identities) == len(task.expected), f"{task.name} 真值身份不唯一"
         for entry in task.expected:
             assert set(entry) == {name for name, _ in task.fields}, f"{task.name} 真值字段与抽取字段不一致"

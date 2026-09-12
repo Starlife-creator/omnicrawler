@@ -66,6 +66,7 @@
 
 ### 质量报告
 
+- [代表性任务验收账本](TASK_ACCEPTANCE_LEDGER.md)：六条核心工作流的当前证据、未知项与下一验收动作。
 - [首个任务旅程 · 人工走查清单](MANUAL_WALKTHROUGH.md)：第四阶段「人工走查」部分的可执行步骤，
   与自动回归 `tests/integration/test_first_task_journey.py` 构成双证据。
 

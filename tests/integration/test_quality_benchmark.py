@@ -22,6 +22,9 @@ def test_builtin_task_scores_full_marks(task, tmp_path: Path) -> None:
     assert score.accuracy == 1.0, f"准确性不足：{score.matched_records} 条记录的字段与真值不符"
     assert score.evidence_ratio == 1.0, "有记录缺少 source_url（来源证据）"
     assert score.mean_field_completeness == 1.0, "流水线自报的字段完整度未达 1.0"
+    assert score.unexpected_records == 0, "交付了任务真值之外的记录"
+    assert score.duplicate_records == 0, "同一业务记录被重复交付"
+    assert score.reported_completeness_violations == 0, "字段自报完整度与实际字段存在性矛盾"
     assert score.ok is True
 
 

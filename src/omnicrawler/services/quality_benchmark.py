@@ -7,7 +7,7 @@
 「**稳定获得完整、准确、有来源证据的数据**；并具备可复现的任务基准与公平对比能力」。
 
 本模块提供那另一半：在**本地固定任务**（页面内容与期望结果都是代码里的常量）上跑真实流水线，
-然后按四个口径打分：
+然后按交付契约打分：
 
 | 口径 | 含义 |
 |---|---|
@@ -15,6 +15,7 @@
 | **准确性** | 期望字段值有多少个与真实值逐字相符 |
 | **来源证据** | 采到的记录里有多少条带 `source_url` |
 | **字段自报完整度** | 流水线自己在 `evidence._quality.completeness` 里报的完整度均值（与外部比对**互证**） |
+| **额外与重复交付** | 真值之外的记录、同一业务身份被重复交付的记录 |
 
 任务用本地 HTTP 服务提供，**全程离线**；配置由代码生成，因此「同一版本 → 同一任务 → 可比结果」。
 
@@ -28,12 +29,14 @@ from __future__ import annotations
 
 import json
 import threading
+from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..core.config import load_config
 from ..pipeline import Pipeline
@@ -73,11 +76,14 @@ class BenchmarkTask:
     item_selector: str
     fields: tuple[tuple[str, str], ...]
     expected: tuple[dict[str, str], ...]
+    identity_fields: tuple[str, ...] = ("title",)
+    expected_source_paths: tuple[str, ...] = ()
+    expected_source_origin: str = ""
 
 
 @dataclass(frozen=True, slots=True)
 class QualityScore:
-    """一次任务的质量得分。``ok`` 表示四项口径是否全部满分。"""
+    """一次任务的质量得分。``ok`` 表示交付结果满足精确任务契约。"""
 
     task: str
     expected_records: int
@@ -87,6 +93,9 @@ class QualityScore:
     accuracy: float
     evidence_ratio: float
     mean_field_completeness: float
+    unexpected_records: int = 0
+    duplicate_records: int = 0
+    reported_completeness_violations: int = 0
     environment: tuple[tuple[str, str], ...] = ()
     config_sha256: str = ""
 
@@ -96,6 +105,10 @@ class QualityScore:
             self.completeness >= 1.0
             and self.accuracy >= 1.0
             and self.evidence_ratio >= 1.0
+            and self.unexpected_records == 0
+            and self.duplicate_records == 0
+            and self.mean_field_completeness >= 1.0
+            and self.reported_completeness_violations == 0
         )
 
     def to_mapping(self) -> dict[str, Any]:
@@ -108,6 +121,9 @@ class QualityScore:
             "accuracy": round(self.accuracy, 4),
             "evidence_ratio": round(self.evidence_ratio, 4),
             "mean_field_completeness": round(self.mean_field_completeness, 4),
+            "unexpected_records": self.unexpected_records,
+            "duplicate_records": self.duplicate_records,
+            "reported_completeness_violations": self.reported_completeness_violations,
             "ok": self.ok,
             "environment": dict(self.environment),
             "config_sha256": self.config_sha256,
@@ -134,6 +150,8 @@ TASKS: tuple[BenchmarkTask, ...] = (
             {"title": "明细二", "price": "20"},
             {"title": "明细三", "price": "30"},
         ),
+        identity_fields=("title",),
+        expected_source_paths=("/", "/", "/", "/detail-1", "/detail-2", "/detail-3"),
     ),
 )
 
@@ -153,43 +171,83 @@ def score_records(
     *,
     environment: tuple[tuple[str, str], ...] = (),
     config_sha256: str = "",
+    source_origin: str = "",
 ) -> QualityScore:
-    """把实际记录与任务真值比对，算出四项口径（**纯函数，便于单独测试**）。
+    """把实际记录与任务真值比对（**纯函数，便于用反例验证**）。
 
-    记录按 ``data`` 里的 ``title`` 与真值配对——真值里的 title 唯一，因此不会错配。
+    身份字段由任务声明；同一身份的实际记录保留为列表，不再被字典静默覆盖。每条真值
+    消费最接近的一条候选，未消费记录作为额外交付，其中身份已出现的另计为重复。
     """
-    by_title: dict[str, dict[str, Any]] = {}
+    if not task.identity_fields:
+        raise ValueError(f"{task.name}: identity_fields 不能为空")
+    if task.expected_source_paths and len(task.expected_source_paths) != len(task.expected):
+        raise ValueError(f"{task.name}: expected_source_paths 必须与 expected 等长")
+
+    def identity(data: Mapping[str, Any]) -> tuple[str, ...]:
+        return tuple(str(data.get(name, "")) for name in task.identity_fields)
+
+    by_identity: dict[tuple[str, ...], list[dict[str, Any]]] = defaultdict(list)
     for record in records:
-        found_data = _as_mapping(record.get("data"))
-        if str(found_data.get("title", "")):
-            by_title[str(found_data["title"])] = record
+        by_identity[identity(_as_mapping(record.get("data")))].append(record)
 
     field_names = [name for name, _ in task.fields]
     matched_records = 0
     matched_fields = 0
     evidenced = 0
     quality_scores: list[float] = []
+    reported_completeness_violations = 0
+    expected_identities = {identity(expected) for expected in task.expected}
 
-    for expected in task.expected:
-        # 名字刻意与上面的 `record` 区分：那是 dict，这里是 dict | None，
-        # 复用同名会让 mypy 报「赋值类型不兼容」。
-        matched = by_title.get(str(expected.get("title", "")))
-        if matched is None:
+    for index, expected in enumerate(task.expected):
+        candidates = by_identity.get(identity(expected), [])
+        if not candidates:
             continue
+        matched = max(
+            candidates,
+            key=lambda candidate: sum(
+                str(_as_mapping(candidate.get("data")).get(name, ""))
+                == str(expected.get(name, ""))
+                for name, _ in task.fields
+            ),
+        )
+        candidates.remove(matched)
         matched_records += 1
         data = _as_mapping(matched.get("data"))
         for name in field_names:
             if str(data.get(name, "")) == str(expected.get(name, "")):
                 matched_fields += 1
-        if str(matched.get("source_url", "") or ""):
+        source_url = str(matched.get("source_url", "") or "")
+        expected_source = task.expected_source_paths[index] if task.expected_source_paths else ""
+        parsed_source = urlsplit(source_url)
+        expected_origin = urlsplit(source_origin or task.expected_source_origin)
+        source_matches_origin = not expected_origin.netloc or (
+            parsed_source.scheme == expected_origin.scheme
+            and parsed_source.netloc == expected_origin.netloc
+        )
+        if (
+            source_url
+            and source_matches_origin
+            and (not expected_source or parsed_source.path == expected_source)
+        ):
             evidenced += 1
         quality = _as_mapping(_as_mapping(matched.get("evidence")).get("_quality"))
-        completeness = quality.get("completeness")
-        if isinstance(completeness, int | float):
-            quality_scores.append(float(completeness))
+        reported = quality.get("completeness")
+        present_fields = sum(bool(str(data.get(name, "") or "")) for name, _ in task.fields)
+        actual_field_completeness = present_fields / max(1, len(task.fields))
+        if isinstance(reported, int | float):
+            reported_value = float(reported)
+            quality_scores.append(reported_value)
+            if abs(reported_value - actual_field_completeness) > 1e-9:
+                reported_completeness_violations += 1
+        else:
+            reported_completeness_violations += 1
 
     expected_total = len(task.expected)
     denominator_fields = expected_total * max(1, len(field_names))
+    leftovers = [record for candidates in by_identity.values() for record in candidates]
+    duplicate_records = sum(
+        identity(_as_mapping(record.get("data"))) in expected_identities for record in leftovers
+    )
     return QualityScore(
         task=task.name,
         expected_records=expected_total,
@@ -199,6 +257,9 @@ def score_records(
         accuracy=matched_fields / denominator_fields if denominator_fields else 0.0,
         evidence_ratio=evidenced / matched_records if matched_records else 0.0,
         mean_field_completeness=(sum(quality_scores) / len(quality_scores)) if quality_scores else 0.0,
+        unexpected_records=len(leftovers),
+        duplicate_records=duplicate_records,
+        reported_completeness_violations=reported_completeness_violations,
         environment=environment,
         config_sha256=config_sha256,
     )
@@ -264,9 +325,8 @@ def run_task(task: BenchmarkTask, *, workdir: Path) -> QualityScore:
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        config_data = _task_config(
-            task, base_url=f"http://127.0.0.1:{server.server_port}/", workspace=workdir / "work"
-        )
+        base_url = f"http://127.0.0.1:{server.server_port}/"
+        config_data = _task_config(task, base_url=base_url, workspace=workdir / "work")
         config_path = workdir / "task.yaml"
         config_path.write_text(yaml.safe_dump(config_data, sort_keys=False), encoding="utf-8")
         with Pipeline(load_config(config_path)) as pipeline:
@@ -286,4 +346,5 @@ def run_task(task: BenchmarkTask, *, workdir: Path) -> QualityScore:
         records,
         environment=_environment(),
         config_sha256=_sha256_file(config_path),
+        source_origin=base_url,
     )
