@@ -21,6 +21,14 @@ from typing import Any
 
 from ..core.utils import user_agent
 
+#: `infer_fields` 会在前这么多个重复模式之间择优（见该函数的"多候选择优"说明）。
+_FIELD_CANDIDATES = 3
+
+#: 构成"列表"所需的最少同类元素数。与 `detect_repeating_patterns` 自身"至少 3 个同类元素"
+#: 的口径一致：少于 3 个不叫列表，而应报"未识别出列表"。
+_MIN_LIST_ITEMS = 3
+
+
 # ── DOM 特征提取 ──────────────────────────────────────────────────────
 
 @dataclass
@@ -217,7 +225,7 @@ def _is_heading_key(key: str) -> bool:
 def _node_signature(node: DOMNode) -> list[str]:
     """与 ``detect_repeating_patterns`` 分组时一致的子元素签名。"""
     keys = node.children_keys or node.children_tags
-    return list(keys[:5]) if keys else ["leaf"]
+    return list(keys[:5]) if keys else [f"leaf:{node.tag.lower()}"]
 
 
 def _items_by_signature(children: list[DOMNode], child_structure: list[str]) -> list[DOMNode]:
@@ -230,6 +238,7 @@ def _items_by_signature(children: list[DOMNode], child_structure: list[str]) -> 
     旧实现取 items[0]=h3 生成 ``... > h3.country-name`` 作 item 选择器）。
     """
     want = list(child_structure)
+    # `["leaf"]` 是旧口径（全部叶子不分标签）的产物：保留"不过滤"的兼容行为。
     if not want or want == ["leaf"]:
         return children
     return [child for child in children if _node_signature(child) == want]
@@ -297,7 +306,11 @@ def detect_repeating_patterns(nodes: list[DOMNode]) -> list[RepeatingPattern]:
         signature_groups: dict[str, list[DOMNode]] = {}
         for child in children:
             keys = child.children_keys or child.children_tags
-            sig = "|".join(keys[:5]) if keys else "leaf"
+            # 叶子元素按**标签**区分（`leaf:h1` / `leaf:span`），不能一律叫 `leaf`：
+            # 否则 h1 + span.price + p.desc 这种"三种不同叶子"会被当成同一组，
+            # 凭空造出一个"重复模式"（实测详情页：容器被选成 `body > article > h1`，
+            # 只抽得到标题；且因为"有模式"，本该走的单页兜底反而走不到）。
+            sig = "|".join(keys[:5]) if keys else f"leaf:{child.tag.lower()}"
             signature_groups.setdefault(sig, []).append(child)
 
         for sig, group in signature_groups.items():
@@ -669,25 +682,58 @@ def infer_fields(
     nodes: list[DOMNode],
     url: str = "",
 ) -> list[dict[str, Any]]:
-    """从重复模式中推断字段定义。"""
+    """从重复模式中推断字段定义。
+
+    **多候选择优（2026-09-13 修正）**：不再无条件取 ``patterns[0]``（分数最高者）。
+    实测 woocommerce ``/shop/``：商品卡里 ``<a>``（含 ``img`` + ``h2``）与 ``<li>``
+    （含 ``a`` + ``span.price``）都能构成重复模式，而 ``detect_repeating_patterns``
+    的"直接子元素含标题"加分（+0.15）让 ``<a>`` 压过 ``<li>`` —— 但**价格在 ``<a>`` 之外**，
+    于是字段只剩「标题 + 图片地址」，价格永远取不到（真实场景报告已登记）。
+
+    处置：在**前 ``_FIELD_CANDIDATES`` 个**候选之间按「能推断出多少可用字段」择优，
+    同分时保留分数更高者（即先出现的那个）。选这个方案而不是调打分口径，是因为
+    打分口径被多处用例与实测站点标定过，动它会牵连其它站点；而"字段更全"是
+    该场景的**直接判据**。
+    """
     if not patterns:
         # 尝试全页面推断（单页模式）
         return _infer_single_page_fields(nodes, url)
 
-    # 取最高分模式
-    best = patterns[0]
-    # 找到该模式下的所有子节点来分析
-    parent_css = best.css_path
+    best_fields: list[dict[str, Any]] = []
+    best_key: tuple[int, int] | None = None
+    for pattern in patterns[:_FIELD_CANDIDATES]:
+        fields = _fields_for_pattern(pattern, nodes)
+        if not fields:
+            continue
+        key = (_usable_field_count(fields), pattern.count)
+        if best_key is None or key > best_key:
+            best_key, best_fields = key, fields
+    if best_fields:
+        return best_fields
+
+    return _infer_single_page_fields(nodes, url)
+
+
+def _usable_field_count(fields: list[dict[str, Any]]) -> int:
+    """可用字段数——不含「列表容器」这类结构性条目。"""
+    return sum(1 for field in fields if not field.get("is_container"))
+
+
+def _fields_for_pattern(pattern: RepeatingPattern, nodes: list[DOMNode]) -> list[dict[str, Any]]:
+    """按**单个**重复模式推断字段（原 ``infer_fields`` 的主体）。
+
+    抽成独立函数是为了让多候选之间可以分别求值再择优。
+    """
+    parent_css = pattern.css_path
 
     # 收集所有属于该模式的直接子元素，并按模式签名只保留真正的重复分组
     children = [n for n in nodes if _parent_css(n.css_path) == parent_css]
-    items = _items_by_signature(children, best.child_structure) or children
+    items = _items_by_signature(children, pattern.child_structure) or children
 
     if not items:
-        return _infer_single_page_fields(nodes, url)
+        return []
 
-    has_children = any(n.children_tags for n in items[:20])
-    if has_children:
+    if any(n.children_tags for n in items[:20]):
         fields = _infer_item_fields(parent_css, items, nodes)
         if fields:
             return fields
@@ -1036,29 +1082,73 @@ def verify_config(config: dict[str, Any], html: str) -> dict[str, Any]:
 
 
 def _check_verified(config: dict[str, Any], html: str) -> dict[str, Any]:
-    """试跑生成的配置；采不到记录即抛错（不再静默产出不可用配置）。
+    """试跑生成的配置；采不到足够记录即抛错（不再静默产出不可用配置）。
 
-    门槛不是"至少 1 条"——列表页只采到 1 条通常说明容器/字段选错了
-    （例如 10 条里只有 1 条命中），所以有多个列表项时要求至少 2 条。
+    三道门槛（前两条 2026-09-13 新增，起因是实测 scrapeme.live 首页"商品其实在 ``/shop/``"）：
+
+    1. **容器落在页面框架（导航 / 侧边栏 / 页脚）⇒ 判为"没找到列表"**。旧实现会产出
+       一份指向 ``aside.sidebar > a`` 的配置并"试跑通过"（4 条记录）——用户拿到的是侧边栏。
+    2. **列表项过少 ⇒ 同样判为"没找到列表"**。已写入 ``item_selector`` 却只匹配到 1–2 个
+       元素，那不是"一个很小的列表"，而是容器选错了；旧逻辑在 ``items <= 2`` 时把门槛
+       降到 1，于是 1 条也放行。
+       ⚠️ **单页 / 单对象模式不适用前两条**：没有 ``item_selector`` 时 ``items`` 恒为 1
+       （整页即"一个对象"），那是另一种模式，不是选错容器。
+    3. 门槛不是"至少 1 条"——列表页只采到 1 条通常说明容器/字段选错了（例如 10 条里
+       只有 1 条命中），所以有多个列表项时要求至少 2 条。
     """
     report = verify_config(config, html)
     items = int(report.get("items") or 0)
+    extract = config.get("extract", {})
+    empty = ", ".join(f"{k}({v})" for k, v in report["fields"].items()) or "（无字段）"
+
+    item_selector = str(extract.get("item_selector", "") or "")
+    is_html_list = str(extract.get("mode", "")) != "json" and bool(item_selector)
+
+    # 3. 容器落在**页面框架**（导航 / 侧边栏 / 页脚）里 ⇒ 那不是业务列表。
+    #    实测（本轮复现）：只含侧边栏链接的页面会产出一份指向 `aside.sidebar > a` 的配置并
+    #    "试跑通过"（4 条记录）—— 用户拿到的是侧边栏，不是商品列表。与其如此，不如明确报错。
+    #    判据复用打分层已有的 `_is_chrome_path`（_CHROME_TOKENS = aside / nav / footer），
+    #    作用面很窄：真正的业务列表极少落在这些容器里；真落在里面时下面的建议给出出路。
+    if is_html_list and _is_chrome_path(item_selector):
+        raise AutoConfigUnverifiedError(
+            "未识别出列表：只在页面框架（导航 / 侧边栏 / 页脚）里找到重复元素。"
+            f"\n  item_selector = {item_selector}"
+            f"\n  字段填充情况 = {empty}"
+            "\n  建议：先确认目标 URL 就是列表页（商品列表常在 /shop、/products 等路径下，"
+            "首页往往只有导航与侧边栏）；若该页面确实有列表但结构不常规，"
+            "请用 `omnicrawler visual-select` 手动圈选字段。"
+        )
+
+    if is_html_list and items < _MIN_LIST_ITEMS:
+        raise AutoConfigUnverifiedError(
+            f"未识别出列表：`item_selector` 只匹配到 {items} 个元素"
+            f"（少于 {_MIN_LIST_ITEMS} 个），不构成列表。"
+            f"\n  item_selector = {item_selector}"
+            f"\n  字段填充情况 = {empty}"
+            "\n  建议：先确认目标 URL 就是列表页（商品列表常在 /shop、/products 等路径下，"
+            "首页往往只有导航与侧边栏）；若确有列表但结构不常规，可用 "
+            "`omnicrawler visual-select` 手动圈选字段，或 `omnicrawler templates inspect <URL>` 查看识别结果。"
+        )
+
     floor = 1 if items <= 2 else 2
     if report["records"] >= floor:
         return report
 
-    extract = config.get("extract", {})
-    empty = ", ".join(f"{k}({v})" for k, v in report["fields"].items()) or "（无字段）"
+    # 说清"到底识别到了什么"：没有 item_selector 时 items 恒为 1（整页即一个对象），
+    # 说成"识别出 1 个列表项"会误导排查方向。
+    scope = (
+        f"识别出 {items} 个列表项，至少需要 {floor} 条"
+        if item_selector
+        else "未识别出列表容器，已按整页单对象模式试跑"
+    )
     raise AutoConfigUnverifiedError(
-        f"自动分析未能产出可用配置：在目标页面上试跑只得到 {report['records']} 条记录"
-        f"（识别出 {items} 个列表项，至少需要 {floor} 条）。"
+        f"自动分析未能产出可用配置：在目标页面上试跑只得到 {report['records']} 条记录（{scope}）。"
         f"\n  item_selector = {extract.get('item_selector', '') or '（未识别出列表容器）'}"
         f"\n  字段填充情况 = {empty}"
         "\n  建议：该页面可能是 JS 动态渲染、需要登录，或列表结构不常规——"
         "可改用 `omnicrawler templates inspect <URL>` 查看站点识别结果，"
         "或 `omnicrawler visual-select` 手动圈选字段。"
     )
-    return report
 
 
 def analyze_to_config(html: str, url: str = "", project_name: str = "auto_task") -> dict[str, Any]:

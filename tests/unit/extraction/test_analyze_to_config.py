@@ -7,8 +7,12 @@ from omnicrawler.core.config import DEFAULTS, AppConfig, load_config
 from omnicrawler.core.models import CrawlRequest, FetchResult
 from omnicrawler.extraction.intelligent_scraper import (
     AutoConfigUnverifiedError,
+    RepeatingPattern,
     _check_verified,
+    _parse_dom,
     analyze_to_config,
+    detect_repeating_patterns,
+    infer_fields,
     verify_config,
 )
 from omnicrawler.sources.sources import GenericSource
@@ -182,3 +186,111 @@ def test_browser_source_discovers_links_and_inherits_render(tmp_path) -> None:
 
     assert children, "浏览器源应发现同站链接"
     assert all(child.render is True for child in children), "子请求应继承 render"
+
+
+# ── 2026-09-13：链接外字段 + 「未识别出列表」明确诊断 ──────────────────────
+
+SHOP_PAGE = """<html><body>
+<ul class="products">
+  <li class="product"><a href="/p/1"><img src="/i1.jpg"><h2 class="title">Alpha</h2></a><span class="price">$10.00</span></li>
+  <li class="product"><a href="/p/2"><img src="/i2.jpg"><h2 class="title">Beta</h2></a><span class="price">$20.00</span></li>
+  <li class="product"><a href="/p/3"><img src="/i3.jpg"><h2 class="title">Gamma</h2></a><span class="price">$30.00</span></li>
+  <li class="product"><a href="/p/4"><img src="/i4.jpg"><h2 class="title">Delta</h2></a><span class="price">$40.00</span></li>
+</ul>
+</body></html>"""
+
+SIDEBAR_ONLY_PAGE = (
+    '<html><body><aside class="sidebar">'
+    + "".join(f'<a href="/{c}">{c}</a>' for c in "abcd")
+    + "</aside></body></html>"
+)
+
+
+def test_price_outside_link_is_inferred(tmp_path) -> None:
+    """价格在 `<a>` 之外时也要采到（woocommerce `/shop/` 形态）。
+
+    背景：`detect_repeating_patterns` 的"直接子元素含标题"加分（+0.15）会让 `<a>`
+    （含 img + h2）压过外层 `<li>`（含 a + span.price），而**价格在 `<a>` 之外** ——
+    旧实现无条件取 `patterns[0]`，于是字段只剩「标题 + 图片地址」，价格永远取不到。
+    现在 `infer_fields` 在前几个候选之间按「能推断出多少可用字段」择优。
+    """
+    config = analyze_to_config(SHOP_PAGE, url="https://shop.example/products/")
+
+    assert config["extract"]["item_selector"] == "body > ul.products > li.product", (
+        "容器应落在 <li>（整张卡片）而不是卡片内的 <a>，否则卡片外字段永远取不到"
+    )
+    fields = config["extract"]["fields"]
+    assert "价格" in fields, f"价格必须被推断出来：{list(fields)}"
+    assert fields["价格"]["examples"][0] == "$10.00"
+    assert fields["价格"]["selector"] == "span.price"
+
+
+def test_infer_fields_prefers_richer_candidate() -> None:
+    """契约级：把「字段更全」的候选故意排在后面，仍应被选中。
+
+    这条不依赖 `detect_repeating_patterns` 的打分（打分被多处用例与实测站点标定过），
+    只锁 `infer_fields` 的择优判据本身。
+    """
+    nodes = _parse_dom(SHOP_PAGE)
+    poor = RepeatingPattern(
+        css_path="body > ul.products > li.product",  # 指向卡片内的 <a>：只有 图片/标题
+        count=4,
+        sample_texts=[],
+        child_structure=["img", "h2.title"],
+        depth=4,
+        score=0.9,                                   # 分数更高，但字段更少
+    )
+    rich = RepeatingPattern(
+        css_path="body > ul.products",               # 指向整张卡片：多出「价格」
+        count=4,
+        sample_texts=[],
+        child_structure=["a", "span.price"],
+        depth=3,
+        score=0.5,
+    )
+
+    names = [
+        field["name"]
+        for field in infer_fields([poor, rich], nodes)
+        if not field.get("is_container")
+    ]
+    assert "价格" in names, f"应选字段更全的候选：{names}"
+
+
+def test_page_without_business_list_reports_missing_list() -> None:
+    """页面只在页面框架（导航/侧边栏/页脚）里有重复元素 ⇒ 明确报「未识别出列表」。
+
+    背景：旧实现会产出一份指向 `aside.sidebar > a` 的配置并"试跑通过"（4 条记录）——
+    用户拿到的是侧边栏，不是业务列表（真实场景报告 S4）。
+    """
+    with pytest.raises(AutoConfigUnverifiedError, match="未识别出列表"):
+        analyze_to_config(SIDEBAR_ONLY_PAGE, url="https://shop.example/")
+
+
+def test_small_but_real_list_is_not_rejected() -> None:
+    """**反向守卫**：3 条的真实列表必须照常通过，别把门槛设成"误杀"。
+
+    （测试用 4 条形态另见 `LIST_PAGE`；这里用 3 条压住边界。）
+    """
+    html = """<html><body><div class="items">
+      <div class="item"><h2>名称一</h2><span class="price">100</span></div>
+      <div class="item"><h2>名称二</h2><span class="price">200</span></div>
+      <div class="item"><h2>名称三</h2><span class="price">300</span></div>
+    </div></body></html>"""
+    config = analyze_to_config(html, url="https://shop.example/list/")
+    assert config["extract"]["item_selector"]
+    assert "价格" in config["extract"]["fields"]
+
+
+def test_heterogeneous_leaf_siblings_are_not_a_pattern() -> None:
+    """**反向守卫**：h1 + span + p 这种"三种不同叶子"不构成重复模式。
+
+    旧的 `leaf` 签名把它们并成一组（`count=3`），于是详情页被当成"列表"、容器落到
+    `body > article > h1`，只抽得到标题 —— 且因为"有模式"，本该走的单页兜底反而走不到。
+    """
+    detail = (
+        "<html><body><article><h1>商品名</h1><span class=\"price\">99</span>"
+        "<p class=\"desc\">描述文本足够长以通过筛选</p></article></body></html>"
+    )
+    nodes = _parse_dom(detail)
+    assert detect_repeating_patterns(nodes) == [], "不同标签的叶子不应被当成重复组"
