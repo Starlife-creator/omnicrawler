@@ -48,14 +48,28 @@
     有提示），`test_gui_worker_local_task.py` 用例 5 改断言独立终态。
   - 遗留（设计层，未做）：GUI 用 UI 本地名（`finished`/`error`）而核心用规范名
     （`succeeded`/`failed`），本次只把 `cancelled` 对齐规范名，词表统一属后续重构。
-- **INV-008「删除需连续确认」缺实现与证据**（2026-09-13 实测登记，**待决策**）。
+- **INV-008 曾「声明引用不存在的证据」**（2026-09-13 实测 → 同日**已按方案 B 修正**）。
   `docs/SECURITY_AND_COMPLIANCE.md` 把该不变量标注为由 `updates.confirm_missing_runs`
   及变化追踪实现、证据为 `test_v110_features.py` 的连续缺失测试。实测：
   ① 该测试文件**不存在**（全仓无 `test_v110_features.py`，INV-004 也引用同一不存在的文件）；
   ② `updates.confirm_missing_runs` 在 `src` 中**只有默认值与校验**，**没有任何消费点**；
   ③ 全仓无任何测试涉及「连续缺失」/`possibly_removed`。
-  即：这是一条**文档声称已实现、但代码与证据都不支撑**的不变量。处置属产品/合规决定
-  （补齐连续确认，或修正该不变量与引用），不宜由 AI 单方面改写合规声明。
+  即：这是一条**文档声称已实现、但代码与证据都不支撑**的不变量。
+
+  **已修（2026-09-13，用户拍板方案 B：修正声明）**：
+  - `docs/SECURITY_AND_COMPLIANCE.md` 的 INV-008 按**实际实现**重写为
+    「记录消失只在**完整运行之间**确认（后一次运行未完成则降级为待确认）」，
+    实现列改为 `review.run_compare.compare_runs` 的 `removed` / `possibly_removed`；
+  - 新增 `tests/integration/test_run_compare_deletions.py` 作为证据（3 条：完整运行间确认删除、
+    未完成降级为 possibly_removed、同名不同身份不合并）。**对照实验**：同一场景仅"后一次
+    是否收尾"之差 → `removed` 0→1、`possibly_removed` 1→0，证明断言真的在测完备性闸门；
+  - 同一份文档里 **INV-004 也引用了同一个不存在的文件**，一并修正：其契约由
+    `reset_record_stage` 的 docstring 明确（只清派生输出、保留 responses 与原始归档），
+    新增 `tests/unit/state/test_reprocess_preserves_raw_evidence.py` 作为直接证据
+    （并做注入实验：破坏"保留原始证据"后该用例精确失败），配套 `test_replay.py` /
+    `test_pipeline.py`；
+  - `updates.confirm_missing_runs` **保留以兼容既有配置**，但在 `core/config.py` 注明
+    "预留未实现、无任何消费点"，不再声称它实现任何不变量。
 - **变更检测的两条路径语义不同，且主路径不产出「删除」**（2026-09-13 实测）。
   `state.track_semantic_changes()` 只遍历**本次**记录，`after` 永远非 None ⇒
   **永远产不出 `removed`**，只能报 `added` / `modified`；「记录消失」由

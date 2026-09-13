@@ -76,12 +76,29 @@ S3、OpenSearch 与 PostgreSQL SDK 在调用前经过同一出口策略和预算
 | INV-001 | 未批准 URL 不进入传输层 | `EgressBroker.authorize/request`、安全 opener、Playwright route | `test_egress_v120.py`、`test_security_regressions.py` |
 | INV-002 | 凭据只发送到批准域名和用途 | `credential_domains/purposes` | `test_credentials_are_bound_to_domain_and_purpose` |
 | INV-003 | 已停止任务不再联网 | `RunControl` + Egress stop/kill switch | `test_task_global_switches_and_stopped_run_are_fail_closed` |
-| INV-004 | 重处理不覆盖原始证据 | raw archive 按响应哈希归档、派生阶段重置 | `test_v110_features.py` 重处理/原始归档测试 |
+| INV-004 | 重处理不覆盖原始证据 | raw archive 按响应哈希归档、派生阶段重置（`reset_record_stage` 只清派生输出） | `test_reprocess_preserves_raw_evidence.py`、`test_replay.py`、`test_pipeline.py`（archive_raw 落盘） |
 | INV-005 | 人工修改不伪装为原始抽取 | 修订表与审计事件独立于原始记录 | `test_quality_review.py` 人工编辑审计测试 |
 | INV-006 | 配置迁移保留未知字段 | 深合并、迁移与 GUI 往返保留扩展段 | `test_migrations.py`、`test_compatibility_v112.py` |
 | INV-007 | 非幂等导出不重复提交 | `export_commits` 提交锁和稳定幂等键 | `test_run_reliability_v120.py` |
-| INV-008 | 删除需连续确认 | `updates.confirm_missing_runs` 及变化追踪 | `test_v110_features.py` 连续缺失测试 |
+| INV-008 | 记录消失只在**完整运行之间**确认（后一次运行未完成则降级为「待确认」） | `review.run_compare.compare_runs` 的 `removed` / `possibly_removed` | `test_run_compare_deletions.py` |
 | INV-009 | 状态机、故障注入验证全部规则 | 七态穷举、崩溃恢复、预算/熔断/插件越权测试 | `test_run_reliability_v120.py`、`test_egress_v120.py` |
+
+> **2026-09-13 纠偏说明（INV-004 / INV-008）**：这两行的证据此前写作
+> `test_v110_features.py`，但**该测试文件在全仓不存在**（同时核对确认），
+> 属"声明引用了不存在证据"。本次按实际实现重写：
+>
+> - **INV-004**：契约由 `reset_record_stage` 的 docstring 明确（"Clear derived record
+>   outputs while preserving responses and raw archives"）。补 `/tests/unit/state/`
+>   `test_reprocess_preserves_raw_evidence.py` 作为直接证据；并以 `test_replay.py`
+>   （归档缺失 / DOM 哈希不符的完整性判定）与 `test_pipeline.py`（`archive_raw` 真实落
+>   `raw_path`）为配套证据。
+> - **INV-008**：原表述"删除需**连续确认**，由 `updates.confirm_missing_runs` 实现"
+>   **与代码不符** —— 该配置键只有默认值与一条校验、**没有任何消费点**，
+>   全仓也无任何测试涉及"连续缺失"。实际实现是在**两次运行对比**时判定，且
+>   **后一次运行未完成就降级为 `possibly_removed`**（"不轻判删除"的保护）。
+>   故按实际语义重写本行，并新增 `tests/integration/test_run_compare_deletions.py`
+>   作为证据（含对照：仅"后一次是否收尾"之差即令 `removed` 与 `possibly_removed` 互换）。
+>   `updates.confirm_missing_runs` 保留以兼容既有配置，但已标注为**预留未实现**。
 
 每次发布必须运行全量测试、上述专项文件、真实浏览器门禁、Mypy、Ruff、源码编译及
 分组覆盖率门禁。外部 SDK 最终 Socket 与 Selenium 未拦截兼容模式属于明确例外，必须在安全报告中

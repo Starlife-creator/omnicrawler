@@ -132,6 +132,10 @@ DEFAULTS: dict[str, Any] = {
     "updates": {
         "enabled": False, "revisit_completed": False,
         "detect_same_url_changes": True, "keep_versions": True,
+        # ★ 预留未实现：本键当前**没有任何消费点**，只有这里与 validate_config 的校验。
+        #   "删除"的实际判定在 review/run_compare.compare_runs（后一次运行完成才确认
+        #   removed，未完成则 possibly_removed），与"连续 N 次缺失"无关（2026-09-13 核实）。
+        #   保留键值是为兼容既有配置文件；不要再声称它实现了任何不变量。
         "confirm_missing_runs": 2,
     },
     # AutoDataCleaner 值清洗：L1 幂等 + L2 规则默认开，L3（LLM）槽位默认关
