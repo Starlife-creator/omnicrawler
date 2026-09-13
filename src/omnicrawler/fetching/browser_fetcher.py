@@ -8,9 +8,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-LOGGER = logging.getLogger(__name__)
-
-
 from ..core.config import AppConfig
 from ..core.errors import ResponseTooLargeError
 from ..core.models import CrawlRequest, FetchResult
@@ -41,6 +38,8 @@ from .browser_pool import PlaywrightPool
 from .browser_pool import (
     _PoolTask as _PoolTask,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Unified browser action protocol
