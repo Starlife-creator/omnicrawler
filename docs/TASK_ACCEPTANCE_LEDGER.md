@@ -7,7 +7,7 @@
 
 | 工作流 | 固定输入与正确答案 | 当前自动证据 | 当前状态 | 下一项验收 |
 |---|---|---|---|---|
-| 静态列表→详情→结构化结果 | `quality_benchmark.py` 的 `list-three-details`，6条记录、title/price、逐条来源路径 | 本地HTTP真实流水线；精确评分含漏采、错值、错来源、额外及重复记录 | 已验证（JSONL核心链） | 经GUI创建并导出可重开Excel |
+| 静态列表→详情→结构化结果 | `quality_benchmark.py` 的 `list-three-details`，6条记录、title/price、逐条来源路径 | 本地HTTP真实流水线；精确评分含漏采、错值、错来源、额外及重复记录；**2026-09-13 新增 GUI 闭环**：`test_gui_worker_local_task.py` 经真实 `WorkerTaskRunner` + 真实 worker 子进程跑本地站点，校验恰好3条、字段真值、来源URL、进程退出 | 已验证（JSONL/CSV 核心链，含 GUI 子进程路径） | 详情页层级；导出后 Excel 可重新打开 |
 | 动态页面→分页/滚动→去重 | 今日真实场景报告含 quotes/js；输入依赖公网，无冻结真值快照 | 最近单元回归覆盖浏览器发现链接和子请求继承渲染 | 部分验证 | 固定动态样例核对首末页、总数、重复率与浏览器回收 |
 | API→游标分页→增量 | 本地HTTP固定3页：首次交付ID 1/2/3；二次仅末页值变化，应只交付ID 3新值 | 自动分析按正式JSONPath试跑；真实流水线核对游标替换、末页停止、来源URL及二次同步；恢复保留未完成游标 | 已验证（JSONL核心链） | 经GUI创建任务，并在便携产物中复跑 |
 | 附件→PDF/OCR→人工复核 | 尚无贯穿复核修改与最终输出的固定任务 | PDF/OCR专项测试存在 | 未知 | 固定附件、字段位置、不确定性、人工修改及导出 |
@@ -16,10 +16,16 @@
 
 ## 当前已知缺口
 
-- **GUI 路径尚无「打开配置 → 运行 → 结果可见 → 进程退出」的闭环证据**（2026-09-13 登记）。
-  `tests/integration/sdk/test_execution_backend.py` 只验证控制面（握手／会话文件／pause-resume-shutdown，
-  种子指向不可达地址，不断言产出）；`test_worker_task_runner.py` 用**假 backend** 只验证 Qt 接线。
-  因此"GUI 点运行后真的采到并对得上真值"仍属**部分验证**。
+- **GUI 路径的「运行→结果」闭环已补首条证据，但覆盖面仍窄**（2026-09-13 更新）。
+  新增 `tests/integration/test_gui_worker_local_task.py`：真实 `WorkerTaskRunner` + 真实
+  `LocalWorkerBackend` 子进程（断言 pid ≠ 当前进程、且事后退出无残留）→ 本地固定 HTTP 站点
+  → 断言 JSONL 恰好 3 条、字段与真值一致、`source_url` 正确、CSV 同时产出。
+  已做**注入实验**：模拟修复前行为（透传取不到）时该用例退化为 1 条并失败，
+  证明它不是假通过。
+  仍未覆盖：真实按钮点击（本用例直接调用按钮所调用的同一函数）、详情页层级、
+  导出后 Excel 可重新打开、便携产物内复跑。
+  参考：`tests/integration/sdk/test_execution_backend.py` 仍只验控制面，
+  `test_worker_task_runner.py` 仍用假 backend。
 - 2026-09-13 已修并登记：**GUI 配置往返曾静默降级**（提交 `a5bdfbd`）。`save_yaml` 把
   `extract.mode` 写死 `"html"`、`extract.item_selector` 写死 `""`、`http.auto_browser_fallback`
   写死 `True`，而 `_deep_overlay` 让 root 胜出 ⇒ 在 GUI 里打开一个可用的列表/JSON 配置再运行，
