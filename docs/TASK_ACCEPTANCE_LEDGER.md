@@ -16,6 +16,16 @@
 
 ## 当前已知缺口
 
+- **GUI 路径尚无「打开配置 → 运行 → 结果可见 → 进程退出」的闭环证据**（2026-09-13 登记）。
+  `tests/integration/sdk/test_execution_backend.py` 只验证控制面（握手／会话文件／pause-resume-shutdown，
+  种子指向不可达地址，不断言产出）；`test_worker_task_runner.py` 用**假 backend** 只验证 Qt 接线。
+  因此"GUI 点运行后真的采到并对得上真值"仍属**部分验证**。
+- 2026-09-13 已修并登记：**GUI 配置往返曾静默降级**（提交 `a5bdfbd`）。`save_yaml` 把
+  `extract.mode` 写死 `"html"`、`extract.item_selector` 写死 `""`、`http.auto_browser_fallback`
+  写死 `True`，而 `_deep_overlay` 让 root 胜出 ⇒ 在 GUI 里打开一个可用的列表/JSON 配置再运行，
+  会退化成"整页当一条记录"或"JSON 任务走 HTML 抽取"。触发面是**每次运行**
+  （`WorkerTaskRunner.start()` 先 `save_yaml` 再交给 worker），不只是"另存为"。
+  已改为"passthrough 有显式值就用原值"，并补断言 + 注入实验证明护栏有效。
 - 2026-09-12真实场景报告的汇总口径是“产出大于0”，不能证明满足原始字段和范围需求。
 - apex/www 重定向场景曾出现250条变500条；当前已实现“成功重定向的精确最终URL在本周期
   登记为已完成别名”，并以真实本地302、恢复和新周期回归验证。公网原场景复测仍待执行。
