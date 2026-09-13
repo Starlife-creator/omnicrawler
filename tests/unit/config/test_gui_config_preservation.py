@@ -57,6 +57,9 @@ extract: {mode: json, fields: {}}
     assert loaded.passthrough["source"]["max_pages"] == 40
     assert loaded.passthrough["http"]["headers"]["Accept"] == "application/json"
     assert loaded.passthrough["session"]["name"] == "isolated"
+    # 2026-09-13 补：本测试 fixture 原本就含 `extract: {mode: json, ...}`，
+    # 却漏断言 mode —— 而 save_yaml 曾把它写死成 "html"，漏掉的正好是缺陷所在。
+    assert loaded.passthrough["extract"]["mode"] == "json"
     assert loaded.passthrough["plugins"]["fail_open"] is True
     assert loaded.passthrough["plugins"]["paths"] == [
         "plugins/site.py",
@@ -106,3 +109,53 @@ def test_to_yaml_prunes_orphan_overrides_before_serialize() -> None:
     assert "https://a.example/list" in yaml_str
     assert "https://stale.example/list" not in yaml_str
     assert config.per_url_template_overrides == {"https://a.example/list": "generic/html-table"}
+
+
+def test_gui_round_trip_keeps_unmodelled_extract_and_http_keys() -> None:
+    """往返不得用硬编码默认值覆盖 B 类透传键。
+
+    历史缺陷：`save_yaml` 把 `extract.mode` 写死 `"html"`、`extract.item_selector`
+    写死 `""`、`http.auto_browser_fallback` 写死 `True`，而 `_deep_overlay` 让 root
+    胜出 ⇒ **在 GUI 里打开一个可用的配置再运行，会被静默降级**：
+    `item_selector` 变空（整页当成一条记录）、`mode` 变 html（JSON API 任务失效）。
+
+    注意触发面：GUI 不是只在"另存为"时重写 YAML——`WorkerTaskRunner.start()`
+    在把配置交给 worker 之前就调用 `save_yaml`，所以**每次运行都会发生**。
+    """
+    from omnicrawler.gui.core.config_serializer import from_yaml, to_yaml
+
+    original = """
+project: {name: demo, workspace: work/demo}
+source: {kind: static_html, seeds: [https://example.org/list]}
+http: {auto_browser_fallback: false}
+extract:
+  mode: html
+  item_selector: div.item
+  fields: {title: {selector: h1}}
+"""
+    config = from_yaml(original)
+    loaded = from_yaml(to_yaml(config))
+
+    assert loaded.passthrough["extract"]["item_selector"] == "div.item"
+    assert loaded.passthrough["extract"]["mode"] == "html"
+    assert loaded.passthrough["http"]["auto_browser_fallback"] is False
+    assert "title" in loaded.passthrough["extract"]["fields"]
+
+
+def test_gui_round_trip_does_not_invent_auto_browser_fallback_when_absent() -> None:
+    """配置未声明 auto_browser_fallback 时，默认仍按应用默认（True）输出。
+
+    这一条锁定"只在 passthrough 有显式值时才让原值胜出"的语义：
+    缺失 ≠ 被覆盖成 False。
+    """
+    from omnicrawler.gui.core.config_serializer import from_yaml, to_yaml
+
+    original = """
+project: {name: demo, workspace: work/demo}
+source: {kind: static_html, seeds: [https://example.org/list]}
+extract: {mode: json, fields: {}}
+"""
+    loaded = from_yaml(to_yaml(from_yaml(original)))
+
+    assert loaded.passthrough["http"]["auto_browser_fallback"] is True
+    assert loaded.passthrough["extract"]["mode"] == "json"

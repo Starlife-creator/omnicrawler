@@ -98,13 +98,24 @@ def to_yaml(config: CrawlConfig) -> str:
     http["user_agent"] = config.user_agent
     http["respect_robots"] = config.respect_robots
     http["delay_seconds"] = config.delay
-    http["auto_browser_fallback"] = True
+    # 未被 GUI 建模的键（B 类透传）必须让 passthrough 原值胜出——
+    # `_deep_overlay` 让 root 胜出，写死默认值会静默覆盖用户配置（同 extract 段说明）。
+    http["auto_browser_fallback"] = _passthrough_section(config, "http").get(
+        "auto_browser_fallback", True
+    )
     root["http"] = http
 
     # extract
+    # GUI 目前只能编辑 fields（A 类）；mode / item_selector 属 B 类透传字段。
+    # 旧实现把它们写死为 "html" / ""，而 _deep_overlay 让 root 胜出 ⇒
+    # **在 GUI 里打开一个可用的配置并运行，会被静默降级**：
+    #   item_selector 变空 → 整页当成一条记录（列表任务失效）；
+    #   mode 变 html    → JSON API 任务不再走 JSON 抽取。
+    # 这里改为「passthrough 有值就用原值，否则用默认值」。
+    _extract_passthrough = _passthrough_section(config, "extract")
     extract = CommentedMap()
-    extract["mode"] = "html"
-    extract["item_selector"] = ""
+    extract["mode"] = str(_extract_passthrough.get("mode") or "html")
+    extract["item_selector"] = str(_extract_passthrough.get("item_selector") or "")
     fields_map = CommentedMap()
     for f in config.fields:
         field_value = CommentedMap()
@@ -473,6 +484,15 @@ def format_yaml(yaml_str: str) -> str:
     yaml_handler.dump(data, stream)
     return stream.getvalue()
 
+
+def _passthrough_section(config: CrawlConfig, name: str) -> dict:
+    """取出 passthrough 中某个顶层段（非映射或缺失时返回空字典）。
+
+    B 类字段（GUI 不编辑、但 AppConfig 需要）在往返时必须原样保留——
+    见 tests/unit/config/test_gui_config_preservation.py 的契约。
+    """
+    section = config.passthrough.get(name)
+    return section if isinstance(section, dict) else {}
 
 def _deep_overlay(base: Any, overlay: Any) -> Any:
     if isinstance(base, dict) and isinstance(overlay, dict):
