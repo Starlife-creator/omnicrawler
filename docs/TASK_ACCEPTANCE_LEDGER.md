@@ -9,7 +9,7 @@
 |---|---|---|---|---|
 | 静态列表→详情→结构化结果 | `quality_benchmark.py` 的 `list-three-details`，6条记录、title/price、逐条来源路径 | 本地HTTP真实流水线；精确评分含漏采、错值、错来源、额外及重复记录；**2026-09-13 新增 GUI 闭环两条**：`test_gui_worker_local_task.py` 经真实 `WorkerTaskRunner` + 真实 worker 子进程（pid≠当前进程、事后退出无残留）跑本地站点——① 单页列表恰好3条真值+CSV；② **列表→详情两级 4 页 6 条**、来源覆盖 4 个 URL、**XLSX 可重新打开** | 已验证（JSONL/CSV/XLSX 核心链，含 GUI 子进程与两级抓取） | 真实按钮点击；便携产物内复跑 |
 | 动态页面→分页/滚动→去重 | 今日真实场景报告含 quotes/js；输入依赖公网，无冻结真值快照 | 最近单元回归覆盖浏览器发现链接和子请求继承渲染 | 部分验证 | 固定动态样例核对首末页、总数、重复率与浏览器回收 |
-| API→游标分页→增量 | 本地HTTP固定3页：首次交付ID 1/2/3；二次仅末页值变化，应只交付ID 3新值 | 自动分析按正式JSONPath试跑；真实流水线核对游标替换、末页停止、来源URL及二次同步；恢复保留未完成游标 | 已验证（JSONL核心链） | 经GUI创建任务，并在便携产物中复跑 |
+| API→游标分页→增量 | 本地HTTP固定3页：首次交付ID 1/2/3；二次仅末页值变化，应只交付ID 3新值 | 自动分析按正式JSONPath试跑；真实流水线核对游标替换、末页停止、来源URL及二次同步；恢复保留未完成游标；**2026-09-13 新增 GUI 路径**：同场景经真实 GUI 运行器 + worker 子进程跑通（3 条含游标来源、游标链恰好一遍、二次只交付变化那条） | 已验证（JSONL核心链，含 GUI 运行路径） | 经 GUI 表单**创建**任务；便携产物内复跑 |
 | 附件→PDF/OCR→人工复核 | 尚无贯穿复核修改与最终输出的固定任务 | PDF/OCR专项测试存在 | 未知 | 固定附件、字段位置、不确定性、人工修改及导出 |
 | 定期采集→变更检测→差异导出 | 尚无当前版本端到端真值任务 | 组件级测试存在 | 未知 | 固定两版输入，核对新增、修改、删除及无变化 |
 | 长任务→中断→恢复 | 故障注入与取消恢复用例已有，未通过真实GUI子进程与便携包 | 核心生命周期自动测试 | 部分验证 | GUI发起停止、重启恢复、最终无漏采重复、资源回收 |
@@ -27,12 +27,15 @@
   仍未覆盖：真实按钮点击（用例直接调用按钮所调用的同一函数）、便携产物内复跑。
   参考：`tests/integration/sdk/test_execution_backend.py` 仍只验控制面，
   `test_worker_task_runner.py` 仍用假 backend。
-- 2026-09-13 已修并登记：**GUI 配置往返曾静默降级**（提交 `a5bdfbd`）。`save_yaml` 把
-  `extract.mode` 写死 `"html"`、`extract.item_selector` 写死 `""`、`http.auto_browser_fallback`
-  写死 `True`，而 `_deep_overlay` 让 root 胜出 ⇒ 在 GUI 里打开一个可用的列表/JSON 配置再运行，
-  会退化成"整页当一条记录"或"JSON 任务走 HTML 抽取"。触发面是**每次运行**
-  （`WorkerTaskRunner.start()` 先 `save_yaml` 再交给 worker），不只是"另存为"。
-  已改为"passthrough 有显式值就用原值"，并补断言 + 注入实验证明护栏有效。
+- 2026-09-13 已修并登记（两条同源：GUI 模型未建模的键与核心契约脱节，提交 `a5bdfbd`、`4a546ec`）：
+  ① **配置往返静默降级**：`save_yaml` 把 `extract.mode` 写死 `"html"`、`extract.item_selector`
+  写死 `""`、`http.auto_browser_fallback` 写死 `True`，而 `_deep_overlay` 让 root 胜出 ⇒
+  在 GUI 里打开一个可用的列表/JSON 配置再运行会被降级。触发面是**每次运行**。
+  ② **合法 JSON 配置无法从 GUI 启动**：JSON 字段契约是 `path`/`paths`，而 GUI 模型只有
+  `selector`（`path` 属透传键）⇒ 模型里 selector 恒空，`FieldDef.validate()` 与
+  `validate_selector_format()` 一律要求选择器非空 ⇒ `runner.start()` 直接返回 False。
+  已引入 `CrawlConfig.extract_mode()` 作为"当前模式"的唯一来源，校验按模式区分，
+  HTML 模式仍严格要求选择器（有反向护栏断言）。
 - 2026-09-12真实场景报告的汇总口径是“产出大于0”，不能证明满足原始字段和范围需求。
 - apex/www 重定向场景曾出现250条变500条；当前已实现“成功重定向的精确最终URL在本周期
   登记为已完成别名”，并以真实本地302、恢复和新周期回归验证。公网原场景复测仍待执行。
