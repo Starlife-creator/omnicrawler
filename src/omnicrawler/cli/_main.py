@@ -68,11 +68,20 @@ def main(argv: list[str] | None = None) -> None:
     if isinstance(stdout, io.TextIOWrapper) and isinstance(stderr, io.TextIOWrapper):
         stdout.reconfigure(encoding="utf-8", errors="replace")
         stderr.reconfigure(encoding="utf-8", errors="replace")
-    # 已发布的 PDF console script 别名（`pdf-process` / `pdf-extract`）：它们不是
+    # PDF 子系统的**执行**入口（转发型）。
+    #
+    # `pdf-process` / `pdf-extract` 是已发布的 console script 别名：它们不是
     # `omnicrawler` 的子命令，但历史命令行习惯允许这样调用，保留为兼容入口。
-    # `pdf` 本身已是真子命令（见 _parsers/pdf.py），不再走嗅探——否则
-    # `omnicrawler --help` 与 CLI 文档契约都看不到它。
-    if argv and argv[0] in {"pdf-process", "pdf-extract"}:
+    #
+    # `pdf` **是真子命令**（见 _parsers/pdf.py），注册照旧保留 —— 所以
+    # `omnicrawler --help` 与 CLI 文档契约仍然看得到它，这一点没有变。
+    # 但**执行**时不能再经 argparse 二次解析它的参数：转发层用 `REMAINDER` 捕获，
+    # 而 REMAINDER **不捕获以选项开头的参数**；偏偏 PDF 子系统的 `--config` 必须位于
+    # 其子命令**之前**。于是 `omnicrawler pdf --config X doctor` 会在顶层直接报
+    # "unrecognized arguments: --config"，自定义 PDF 项目从顶层 CLI 完全不可达
+    # （只能用内置模板）。因此这里把 `pdf` 之后的 token 原样交给子系统：
+    # **发现路径与执行路径分离，子命令定义仍是唯一真源**。
+    if argv and argv[0] in {"pdf", "pdf-process", "pdf-extract"}:
         _dispatch_pdf(argv)
         return
     if not argv:
