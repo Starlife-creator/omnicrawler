@@ -68,14 +68,14 @@ fields:
     label: 合同编号
     type: text
     source: content
-    required: true
+    required: true{no_extra}
     patterns:
       - '{no_pattern}\\s*[：:]\\s*(?P<value>[^\\n]+)'
   - name: contract_name
     label: 合同名称
     type: text
     source: content
-    required: true
+    required: true{name_extra}
     patterns:
       - '{name_pattern}\\s*[：:]\\s*(?P<value>[^\\n]+)'
   - name: amount
@@ -171,6 +171,7 @@ def _write_config(
     ocr_backend: str = "none",
     ocr_command: str = "",
     strict_patterns: bool = False,
+    collapse_whitespace: bool = False,
 ) -> None:
     """写 pdfx 项目配置。
 
@@ -186,6 +187,9 @@ def _write_config(
             # 严格模式 = 逐字匹配（不宽容 OCR 插入的空白）；默认模式 = 容忍空白
             no_pattern="合同编号" if strict_patterns else r"合同\s*编号",
             name_pattern="合同名称" if strict_patterns else r"合同\s*名\s*称",
+            # 逐字段声明：默认关；只有显式打开才归一 OCR 空白（既有产出不变）
+            no_extra="\n    collapse_whitespace: true" if collapse_whitespace else "",
+            name_extra="\n    collapse_whitespace: true" if collapse_whitespace else "",
         ),
         encoding="utf-8",
     )
@@ -377,3 +381,36 @@ def test_human_review_correction_reaches_final_export(tmp_path: Path) -> None:
     assert exported[0]["合同编号"] == CONTRACT_NO, "人工补齐的编号必须出现在最终导出里"
     assert exported[0]["合同名称"] == CONTRACT_NAME
     assert exported[0]["复核状态"] == "human_accepted"
+
+
+def test_ocr_whitespace_collapse_is_opt_in(tmp_path: Path) -> None:
+    """OCR 空白归一是**显式选项**：开启后取值与真值逐字符相等。
+
+    默认关（既有产出不变）由 `tests/unit/pdf/test_collapse_whitespace_option.py` 锁住；
+    这里证明"开启后问题真的解决"：同一份**图片版**样本（OCR 必然在汉字间插空格），
+    两个文本字段声明 `collapse_whitespace` 后，取值应等于真值、不再需要空白归一比较。
+    """
+    font = _require_ocr_env()
+
+    project = tmp_path / "proj"
+    _make_image_only_pdf(project / "in" / "scan.pdf", font)
+    config = tmp_path / "pdf.yaml"
+    _write_config(
+        config,
+        project,
+        ocr_backend="tesseract",
+        ocr_command=TESSERACT.as_posix(),
+        collapse_whitespace=True,
+    )
+
+    for stage in ("ingest", "parse", "ocr", "extract", "export"):
+        _run_pdfx(config, stage)
+
+    rows = _rows(project / "out" / "results.csv")
+    assert len(rows) == 1, rows
+    # 关键差异：逐字符相等，不再需要 _squash（空白已按字段声明归一）
+    assert rows[0]["合同编号"] == CONTRACT_NO, rows[0]
+    assert rows[0]["合同名称"] == CONTRACT_NAME, rows[0]
+    # 归一不改证据：原始值仍在
+    assert rows[0]["合同名称_原始值"], "原始值必须仍保留（归一不动证据）"
+    assert rows[0]["合同名称_页码"] == "1"

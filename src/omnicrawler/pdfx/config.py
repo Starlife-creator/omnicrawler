@@ -54,6 +54,11 @@ class FieldSpec:
     maximum: float | None = None
     # 校验用白名单正则（D28：code 等字段的取值形态约束，与提取 patterns 分离）
     value_pattern: str | None = None
+    #: **显式开关，默认关**：把值里的连续空白折叠成单个空格。
+    #: 针对 OCR 文本 —— chi_sim 常在汉字之间插空格（"示例服务合同" → "示例  服务  合同"），
+    #: 而取值模式 `(?P<value>[^\n]+)` 会把整行余下内容连同空格一起收进来。
+    #: 默认关是为了**不改既有产出**；需要时逐字段声明（原始值仍在"…_原始值"与原文证据里）。
+    collapse_whitespace: bool = False
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> FieldSpec:
@@ -63,6 +68,7 @@ class FieldSpec:
             "name", "label", "description", "type", "aliases", "patterns",
             "source", "required", "target_unit", "value_aliases",
             "allowed_values", "minimum", "maximum", "value_pattern",
+            "collapse_whitespace",
         }
         unknown = set(raw) - known
         if unknown:
@@ -114,8 +120,22 @@ class FieldSpec:
             raise ValueError(f"字段 {name} 设置了 target_unit 但 type 不是数值类型（当前 {spec_type}）")
         if raw.get("allowed_values") and spec_type != "enum":
             raise ValueError(f"字段 {name} 设置了 allowed_values 但 type 不是 enum（当前 {spec_type}）")
+        # OCR 空白折叠只对"文本类"取值有意义；配在数值/日期类型上会静默失效，
+        # 按本文件既有原则（D26/D27：配置配错不许静默失效）直接报错。
+        if raw.get("collapse_whitespace") and spec_type not in {
+            "text", "code", "enum", "entity", "relationship",
+        }:
+            raise ValueError(
+                f"字段 {name} 设置了 collapse_whitespace 但 type 是 {spec_type}（仅文本类字段适用）"
+            )
         return cls(
-            **{**raw, "minimum": minimum, "maximum": maximum, "type": spec_type},
+            **{
+                **raw,
+                "minimum": minimum,
+                "maximum": maximum,
+                "type": spec_type,
+                "collapse_whitespace": bool(raw.get("collapse_whitespace", False)),
+            },
         )
 
     @property

@@ -197,6 +197,25 @@ class EntityResolver:
         return self._direct.get(key, raw.strip())
 
 
+#: 汉字（含扩展 A、兼容区）——用于识别"汉字紧邻汉字"的 OCR 空格噪声
+_CJK_RANGE = r"\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
+
+
+def _collapse_whitespace(value: str) -> str:
+    """OCR 空白归一（两步，顺序有意义）：
+
+    1. **折叠连续空白**为单个空格 —— 与语言无关的常规化；
+    2. 删掉**相邻汉字之间**的那一个空格 —— chi_sim 会在汉字之间插空格
+       （实测 "示例服务合同" → "示例  服务  合同"），只做第 1 步仍得到
+       "示例 服务 合同"，与真值不一致。
+
+    第 2 步**只删"汉字紧邻汉字"**那一类：英文/数字之间的空白必须保留
+    （"Sample Service Contract"、"总额 1234 元" 里的空格是有意义的）。
+    """
+    collapsed = re.sub(r"\s+", " ", value)
+    return re.sub(rf"(?<=[{_CJK_RANGE}]) (?=[{_CJK_RANGE}])", "", collapsed)
+
+
 def normalize_value(
     raw: str | None,
     spec: FieldSpec,
@@ -250,4 +269,9 @@ def normalize_value(
         return text, None
     if kind == "entity" and entity_resolver:
         return entity_resolver.resolve(text), None
+    # 文本类兜底：默认原样返回（只去过首尾空白）；字段显式声明 collapse_whitespace
+    # 时才折叠连续空白 —— 主要给 OCR 文本用（chi_sim 会在汉字间插空格）。
+    # 注意：只影响**返回值**，不影响 enum/entity 的匹配（那些走上面各自的分支）。
+    if spec.collapse_whitespace:
+        return _collapse_whitespace(text), spec.target_unit
     return text, spec.target_unit
