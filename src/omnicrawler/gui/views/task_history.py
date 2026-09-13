@@ -225,7 +225,8 @@ class TaskHistory(BaseView):
             time_str = record.get("started_at", "?")[:19]
             name = record.get("project_name", "?")
             status = record.get("status", "?")
-            status_icon = {"finished": "✅", "error": "❌", "running": "⏳"}.get(status, "⬜")
+            status_icon = {"finished": "✅", "error": "❌", "running": "⏳",
+                           "cancelled": "⏹"}.get(status, "⬜")
             text = f"{status_icon} {time_str}  {name}"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, record)

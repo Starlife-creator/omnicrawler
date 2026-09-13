@@ -16,7 +16,7 @@
 
 ## 当前已知缺口
 
-- **「取消」被 GUI 呈现为「错误」**（2026-09-13 实测，**待决策**）。
+- **「取消」曾与「失败」合并为「错误」**（2026-09-13 实测 → 同日**已修**）。
   `gui/runner/worker_task_runner.py::_poll` 的终态分支里，`partial_success` 与
   `succeeded` 各有专门分支，而 **`cancelled` 与 `failed` 共用一个 `else`**：
 
@@ -34,6 +34,20 @@
   修法方向：为 `cancelled` 增加独立终态（如"已取消"），与 `failed` 分开；
   退出码语义需一并明确（取消 ≠ 成功，也 ≠ 失败）。**属交互语义变更，须先定调**，
   故本轮只在用例中按现状断言并标注（`test_gui_worker_local_task.py` 用例 5）。
+
+  **已修（2026-09-13，用户拍板方案 A）**：
+  - `_poll` 增加 `cancelled` 独立分支 → 终态用核心状态机的**规范名** `cancelled`
+    （`core/run_state.py` 的 `RUN_STATES`／`TERMINAL_RUN_STATES` 均含它，
+    `running→cancelled` 也是合法转换），不再与 `failed` 合并；
+  - **退出码保持 1**：与 CLI 一致（`commands/run_task.py`：`{failed, cancelled} → exit_code 1`），
+    不自创别的码值；同时补一条用户可见提示「任务已取消，已完成的成果已保留」；
+  - 状态词表补齐四处：状态栏文案「已取消」、状态指示器颜色（中性色，与 error 红区分）与
+    tooltip、任务历史图标 `⏹`；**取消时也把已采到的结果载入结果页**（"已有有效输出受保护"），
+    但自动打开目录/自动导出/提示音仍只属于正常完成。
+  - 回归护栏：`test_worker_task_runner.py` 新增终态映射用例（cancelled → 独立终态 + 退出码 1 +
+    有提示），`test_gui_worker_local_task.py` 用例 5 改断言独立终态。
+  - 遗留（设计层，未做）：GUI 用 UI 本地名（`finished`/`error`）而核心用规范名
+    （`succeeded`/`failed`），本次只把 `cancelled` 对齐规范名，词表统一属后续重构。
 - **INV-008「删除需连续确认」缺实现与证据**（2026-09-13 实测登记，**待决策**）。
   `docs/SECURITY_AND_COMPLIANCE.md` 把该不变量标注为由 `updates.confirm_missing_runs`
   及变化追踪实现、证据为 `test_v110_features.py` 的连续缺失测试。实测：

@@ -70,6 +70,9 @@ class StatusIndicator(QWidget):
             "running": QColor(tokens.indicator_running),
             "finished": QColor(tokens.indicator_finished),
             "error": QColor(tokens.indicator_error),
+            # 取消不是错误：用中性色（与 error 的红明确区分）。若要专属色，
+            # 应在设计系统里新增 indicator_cancelled 令牌，而不是借用 error。
+            "cancelled": QColor(tokens.indicator_idle),
         }
         self.update()
 
@@ -79,6 +82,7 @@ class StatusIndicator(QWidget):
             "running": _("运行中"),
             "finished": _("已完成"),
             "error": _("错误"),
+            "cancelled": _("已取消"),
         }
         self.setToolTip(f"{_('任务状态')}: {tips.get(self._state, self._state)}")
         self.setAccessibleDescription(tips.get(self._state, self._state))

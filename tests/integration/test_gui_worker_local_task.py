@@ -602,7 +602,8 @@ def test_gui_stop_is_effective_and_restart_recovers_without_duplicates(tmp_path:
         assert len(state["hits"]) >= 3, f"应有进展后才取消：{state['hits']}"
 
         runner.stop()
-        terminal = {"finished", "error"}
+        # 终态集合必须含 cancelled：取消有独立终态（不再落进 error）
+        terminal = {"finished", "error", "cancelled"}
         deadline = time.monotonic() + 90
         while time.monotonic() < deadline and runner.state not in terminal:
             app.processEvents()
@@ -621,12 +622,10 @@ def test_gui_stop_is_effective_and_restart_recovers_without_duplicates(tmp_path:
         assert status["processed"] < total_pages, f"取消时应有页面未完成：{status['processed']}"
         assert status["frontier"].get("pending", 0) > 0, "取消时应仍有 pending 页面"
 
-        # GUI 呈现（**现状**，见账本缺口「取消被呈现为错误」）：
-        # _poll 把 cancelled 与 failed 共用同一个 else 分支 ⇒ 状态置 error、退出码 1。
-        # 用户点「停止」却看到「错误」，与"取消 ≠ 失败"的语义不符。
-        # 这里按现状断言；将来区分出独立的"已取消"状态时，本断言应随之更新。
-        assert runner.state in {"error", "finished"}, f"当前终态：{runner.state}"
-        assert _finished and _finished[0][1] != 0, f"取消不应被当作成功：{_finished}"
+        # GUI 呈现：取消有**独立终态**「已取消」，不再与 failed 合并成 error。
+        # 退出码保持 1（非 0）：与 CLI 的 `status in {failed,cancelled} → exit_code 1` 一致。
+        assert runner.state == "cancelled", f"取消应有独立终态 cancelled：{runner.state}"
+        assert _finished and _finished[0][1] == 1, f"取消退出码应为 1：{_finished}"
 
         # ③a 记录第一次运行已交付的来源，供"两次合起来是否全覆盖"使用
         first_urls: set[str] = set()

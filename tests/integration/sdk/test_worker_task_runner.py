@@ -112,3 +112,38 @@ def test_worker_partial_success_is_recognized_as_finished(tmp_path: Path, monkey
     assert any("部分成功" in text for text in logs)
     runner._poller.stop()
     app.processEvents()
+
+
+def test_worker_cancelled_is_a_distinct_terminal_state(tmp_path: Path, monkeypatch) -> None:
+    """取消必须是独立终态「已取消」，不能与失败的「错误」合并。
+
+    历史缺陷：`_poll` 里 `cancelled` 与 `failed` 共用一个 `else` ⇒ 状态置 `error`、
+    退出码 1，且没有任何提示 —— 用户**主动点「停止」**却看到「错误」。
+
+    退出码保持 1 是**有意为之**：与 CLI 一致（`commands/run_task.py` 把 failed 与
+    cancelled 都映射为 exit_code 1），不自创别的码值。
+    """
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from omnicrawler.gui.runner.worker_task_runner import WorkerTaskRunner
+
+    app = QApplication.instance() or QApplication([])
+    runner = WorkerTaskRunner(project_root=tmp_path)
+    backend = _Backend()
+    runner._backend = backend
+    logs: list[str] = []
+    states: list[str] = []
+    finished: list[tuple[str, int]] = []
+    runner.log_line.connect(lambda text, _level: logs.append(text))
+    runner.state_changed.connect(states.append)
+    runner.task_finished.connect(lambda task, code: finished.append((task, code)))
+
+    backend.next_status = {"status": "cancelled", "records": 3}
+    runner._poll()
+
+    assert states[-1] == "cancelled", f"应进入独立的 cancelled 终态：{states}"
+    assert finished and finished[0][1] == 1, f"取消退出码应为 1：{finished}"
+    assert any("已取消" in text for text in logs), f"应给用户可见提示：{logs}"
+    runner._poller.stop()
+    app.processEvents()

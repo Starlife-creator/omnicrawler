@@ -198,6 +198,15 @@ class WorkerTaskRunner(QObject):
                     )
                 self._set_state("finished")
                 self.task_finished.emit(self._current_task_id, 0)
+            elif status == "cancelled":
+                # 取消是**用户意图的结果**，不是失败：用核心状态机的规范名
+                # "cancelled"（core/run_state.py 的 RUN_STATES 与 TERMINAL_RUN_STATES
+                # 均含它，running→cancelled 也是合法转换），不再与 failed 合并成 error。
+                # 退出码仍为 1：与 CLI 一致（commands/run_task.py：
+                # status in {"failed","cancelled"} → exit_code = 1），不自创别的码值。
+                self.log_line.emit(_("任务已取消，已完成的成果已保留。"), "warn")
+                self._set_state("cancelled")
+                self.task_finished.emit(self._current_task_id, 1)
             else:
                 self._set_state("error")
                 self.task_finished.emit(self._current_task_id, 1)
