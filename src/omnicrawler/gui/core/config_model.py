@@ -28,12 +28,18 @@ class FieldDef:
     required: bool = False
     fallback_xpath: str | None = None
 
-    def validate(self) -> list[str]:
-        """校验单个字段定义的合法性。"""
+    def validate(self, *, require_selector: bool = True) -> list[str]:
+        """校验单个字段定义的合法性。
+
+        ``require_selector=False`` 用于 JSON 抽取模式：该模式的字段契约是
+        ``path`` / ``paths``（见 extraction.jsonpath.json_field_values），而 ``path``
+        属 GUI 不建模的透传键 ⇒ 模型里的 ``selector`` 恒为空。若仍强制要求选择器，
+        合法 JSON 配置将无法从 GUI 启动（实测报「字段 xx 的选择器不能为空」）。
+        """
         errors: list[str] = []
         if not self.name or not self.name.strip():
             errors.append(_("字段名不能为空"))
-        if not self.selector or not self.selector.strip():
+        if require_selector and (not self.selector or not self.selector.strip()):
             errors.append(_(f"字段 '{self.name}' 的选择器不能为空"))
         if self.selector_type not in ("css", "xpath", "jsonpath"):
             errors.append(_(f"字段 '{self.name}' 的选择器类型无效: {self.selector_type}"))
@@ -135,6 +141,17 @@ class CrawlConfig:
     # back on save so advanced pagination, plugins, sessions and processors are never lost.
     passthrough: dict[str, Any] = field(default_factory=dict, repr=False)
 
+    def extract_mode(self) -> str:
+        """有效抽取模式（html / json / auto …）。
+
+        ``extract.mode`` 是 GUI 不建模的 B 类透传键，真值只存在于 passthrough；
+        save_yaml 与校验器都必须走这个方法，避免两处各自解释「当前是什么模式」。
+        """
+        section = self.passthrough.get("extract")
+        if isinstance(section, dict):
+            return str(section.get("mode") or "html")
+        return "html"
+
     def validate(self) -> list[str]:
         """校验完整配置，返回错误列表，空列表表示校验通过。
 
@@ -155,9 +172,11 @@ class CrawlConfig:
 
         # 字段
         if self.fields:
+            # JSON 模式的字段用 path/paths 定位，不适用「选择器必填」
+            require_selector = self.extract_mode() != "json"
             field_names = []
             for f in self.fields:
-                errors.extend(f.validate())
+                errors.extend(f.validate(require_selector=require_selector))
                 field_names.append(f.name)
             if len(field_names) != len(set(field_names)):
                 errors.append(_("字段名不能重复"))

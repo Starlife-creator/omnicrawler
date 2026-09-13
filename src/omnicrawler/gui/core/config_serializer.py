@@ -112,14 +112,16 @@ def to_yaml(config: CrawlConfig) -> str:
     #   item_selector 变空 → 整页当成一条记录（列表任务失效）；
     #   mode 变 html    → JSON API 任务不再走 JSON 抽取。
     # 这里改为「passthrough 有值就用原值，否则用默认值」。
-    _extract_passthrough = _passthrough_section(config, "extract")
     extract = CommentedMap()
-    extract["mode"] = str(_extract_passthrough.get("mode") or "html")
-    extract["item_selector"] = str(_extract_passthrough.get("item_selector") or "")
+    extract["mode"] = config.extract_mode()
+    extract["item_selector"] = str(_passthrough_section(config, "extract").get("item_selector") or "")
     fields_map = CommentedMap()
     for f in config.fields:
         field_value = CommentedMap()
-        field_value["selector"] = f.selector
+        # 空选择器不落盘：JSON 模式的规则用 path/paths，GUI 模型里 selector 恒空，
+        # 若照样输出会往合法规则里塞一个无意义的 selector: ""。
+        if f.selector:
+            field_value["selector"] = f.selector
         if f.fallback_xpath:
             field_value["selectors"] = [
                 {"selector": f.selector},

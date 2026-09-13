@@ -183,10 +183,11 @@ def validate_full_config(
     errors = config.validate()
     warnings: list[str] = []
 
-    # 选择器格式校验
-    for field in config.fields:
-        selector_errors = validate_selector_format(field)
-        errors.extend(selector_errors)
+    # 选择器格式校验（JSON 模式的字段契约是 path / paths，不适用选择器规则）
+    if config.extract_mode() != "json":
+        for field in config.fields:
+            selector_errors = validate_selector_format(field)
+            errors.extend(selector_errors)
 
     # source_kind 校验
     valid_kinds = set(VALID_SOURCE_KINDS) | (extra_source_kinds or set())

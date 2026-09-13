@@ -159,3 +159,44 @@ extract: {mode: json, fields: {}}
 
     assert loaded.passthrough["http"]["auto_browser_fallback"] is True
     assert loaded.passthrough["extract"]["mode"] == "json"
+
+
+def test_json_mode_fields_validate_and_keep_paths() -> None:
+    """JSON 模式：GUI 不得用「选择器必填」卡住合法配置，也不得注入空 selector。
+
+    历史缺陷：JSON 字段契约是 path / paths（见 extraction.jsonpath.json_field_values），
+    而 GUI 模型只有 selector（未建模 path）⇒ 模型里 selector 恒空。两个后果：
+    ① validate_full_config 直接拒绝，**合法 JSON 配置无法从 GUI 启动**；
+    ② save_yaml 照样输出 selector 空串，往合法规则里塞无意义键。
+    """
+    from omnicrawler.gui.core.config_serializer import from_yaml, to_yaml
+    from omnicrawler.gui.core.validator import validate_full_config
+
+    json_config = from_yaml(
+        '''project: {name: api, workspace: work/api}
+source: {kind: rest, seeds: [https://example.org/items]}
+extract:
+  mode: json
+  item_path: $.items[*]
+  fields:
+    id: {path: id}
+    value: {path: value}
+'''
+    )
+    errors, _warnings = validate_full_config(json_config)
+    assert not [e for e in errors if "选择器" in e], f"JSON 模式不应要求选择器：{errors}"
+
+    loaded = from_yaml(to_yaml(json_config))
+    fields = loaded.passthrough["extract"]["fields"]
+    assert fields["id"]["path"] == "id"
+    assert "selector" not in fields["id"], "不应往 JSON 字段规则里注入空 selector"
+
+    # 反向护栏：修 JSON 不能顺带放松 HTML 的「选择器必填」
+    html_config = from_yaml(
+        '''project: {name: h, workspace: work/h}
+source: {kind: static_html, seeds: [https://example.org/]}
+extract: {mode: html, fields: {title: {selector: ''}}}
+'''
+    )
+    html_errors, _ = validate_full_config(html_config)
+    assert any("选择器" in e for e in html_errors), "HTML 模式仍应要求选择器"

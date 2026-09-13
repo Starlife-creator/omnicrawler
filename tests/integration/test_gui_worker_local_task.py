@@ -259,3 +259,117 @@ def test_gui_run_two_level_list_to_detail_delivers_and_exports_xlsx(tmp_path: Pa
     for title, price in TWO_LEVEL_EXPECTED:
         assert title in flat, f"XLSX 缺少记录 {title}"
         assert price in flat, f"XLSX 缺少价格 {price}"
+
+
+# ── 用例 3：API → 游标分页 → 增量（走 GUI 路径）────────────────────────────
+
+#: 游标 API 的固定页；第二次同步会把最后一页改成 last-updated。
+CURSOR_PAGES_FIRST = {
+    "": ({"id": 1, "value": "first"}, "page-2"),
+    "page-2": ({"id": 2, "value": "middle"}, "page-3"),
+    "page-3": ({"id": 3, "value": "last"}, None),
+}
+
+
+def _make_cursor_handler(state: dict):
+    """刻意只读取首个 cursor 值，复现常见服务端分页语义。"""
+
+    class _CursorApi(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            import urllib.parse
+
+            parsed = urllib.parse.urlsplit(self.path)
+            cursor = urllib.parse.parse_qs(parsed.query).get("cursor", [""])[0]
+            state["hits"].append(self.path)
+            item, next_cursor = state["pages"][cursor]
+            body = json.dumps({"items": [item], "next": next_cursor}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):  # noqa: N802
+            return
+
+    return _CursorApi
+
+
+@contextlib.contextmanager
+def _serve_cursor_api():
+    state = {"hits": [], "pages": dict(CURSOR_PAGES_FIRST)}
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _make_cursor_handler(state))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", state
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _cursor_config_yaml(seed: str, workspace: Path) -> str:
+    """REST + 游标分页 + JSON 抽取。mode/item_path 属 B 类透传键。"""
+    return f"""project:
+  name: cursor-api
+  workspace: {workspace.as_posix()}
+source:
+  kind: rest
+  seeds: [{seed}]
+  pagination: {{next_path: $.next, parameter: cursor}}
+crawl: {{max_pages: 10, max_depth: 5, same_host: true, concurrency: 1}}
+http:
+  respect_robots: false
+  delay_seconds: 0.0
+  timeout_seconds: 10
+  retries: 0
+  allow_private_network: true
+extract:
+  mode: json
+  item_path: $.items[*]
+  fields:
+    id: {{path: id}}
+    value: {{path: value}}
+outputs: {{jsonl: true, csv: false, xlsx: false}}
+"""
+
+
+def test_gui_run_cursor_api_paginates_and_is_incremental(tmp_path: Path) -> None:
+    """API→游标分页→增量 走 GUI 路径：游标链完整、末页停止、二次仅交付变化。
+
+    这条同时是 JSON 模式的端到端护栏：mode=json / item_path 都是 GUI 不建模的
+    透传键，若往返把它们打回 html，本用例会拿不到任何记录。
+    """
+    workspace = (tmp_path / "ws").resolve()
+    with _serve_cursor_api() as (base, state):
+        seed = f"{base}/items?scope=all"
+        yaml_text = _cursor_config_yaml(seed, workspace)
+
+        config, _logs = _drive_gui_worker(tmp_path, yaml_text)
+        assert config.passthrough["extract"]["mode"] == "json", "GUI 往返不应把 JSON 模式打回 html"
+        assert config.passthrough["extract"]["item_path"] == "$.items[*]"
+
+        records = _read_records(workspace)
+        assert [r["data"] for r in records] == [
+            {"id": 1, "value": "first"},
+            {"id": 2, "value": "middle"},
+            {"id": 3, "value": "last"},
+        ], f"首次同步应交付三页各一条：{records}"
+        assert [r["source_url"] for r in records] == [
+            seed,
+            f"{seed}&cursor=page-2",
+            f"{seed}&cursor=page-3",
+        ], "每条记录应指向它真正的来源页（含游标）"
+        chain = ["/items?scope=all", "/items?scope=all&cursor=page-2", "/items?scope=all&cursor=page-3"]
+        assert state["hits"] == chain, "游标链应恰好走一遍并在末页停止"
+        assert all(hit.count("cursor=") <= 1 for hit in state["hits"]), "不得重复叠加游标"
+
+        # 第二次同步：末页内容变化 —— 游标链仍要完整重建，但只交付变化的那条
+        state["hits"].clear()
+        state["pages"]["page-3"] = ({"id": 3, "value": "last-updated"}, None)
+        _drive_gui_worker(tmp_path, yaml_text)
+
+        assert state["hits"] == chain, "新同步周期必须重建整条游标链"
+        changed = _read_records(workspace)
+        assert [r["data"] for r in changed] == [{"id": 3, "value": "last-updated"}], (
+            f"未变化页不应重复交付，末页变化只交付一次：{changed}"
+        )
