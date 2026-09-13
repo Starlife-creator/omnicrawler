@@ -66,17 +66,30 @@ def test_page_contract_matches_expected_counts(site) -> None:
 
 
 def test_detail_pages_and_attachment_are_served(site) -> None:
-    """详情页可打开；附件是一份**真 PDF**（走查要能试附件链路）。"""
+    """详情页可打开；附件在**装了 reportlab** 时必须是真 PDF，否则降级为 404 + 补齐说明。
+
+    这条同时锁住"跨机降级"：缺 `reportlab`（`pdf` extra）时**不许崩**，
+    也不许假装附件可用 —— 要给出补齐命令。
+    """
     demo, base = site
 
     status, detail = _get(f"{base}/detail/1")
     assert status == 200 and b'class="title"' in detail, "详情页应可打开并有标题"
 
-    status, attachment = _get(f"{base}{demo.ATTACHMENT_PATH}")
-    assert status == 200
-    assert attachment[:4] == b"%PDF", "附件必须是真 PDF（否则走查的附件环节没有意义）"
-    assert len(attachment) > 1024, f"附件过小，可能生成失败：{len(attachment)} 字节"
-    assert demo.EXPECTED["attachments"] == 1
+    if demo.attachment_available():
+        status, attachment = _get(f"{base}{demo.ATTACHMENT_PATH}")
+        assert status == 200
+        assert attachment[:4] == b"%PDF", "附件必须是真 PDF（否则走查的附件环节没有意义）"
+        assert len(attachment) > 1024, f"附件过小，可能生成失败：{len(attachment)} 字节"
+        assert demo.EXPECTED["attachments"] == 1
+        return
+
+    # 降级路径：站点照常可用，附件 404，且说明里必须带**可执行**的补齐命令
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _get(f"{base}{demo.ATTACHMENT_PATH}")
+    assert exc.value.code == 404
+    reason = demo.attachment_skip_reason()
+    assert 'pip install -e ".[pdf]"' in reason, f"降级说明必须给出补齐命令：{reason}"
 
 
 def test_unknown_path_returns_404(site) -> None:

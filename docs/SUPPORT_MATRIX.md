@@ -20,6 +20,20 @@
 | 可选 | Redis、Scrapy、S3、DuckDB、Parquet、PostgreSQL、OpenSearch | 按依赖安装后通过 `omnicrawler capabilities` 检查 |
 | 显式例外 | 私网、代理、未拦截 Selenium、外部插件与外部 AI | 用户配置确认、出口审计与安全报告 |
 
+### clone 之后先跑到哪一层
+
+**依赖是可选的**（base 只有 `PyYAML` + `defusedxml`），所以不必一次装全：
+
+| 层 | 一条命令 | 立刻能做 |
+|---|---|---|
+| 最小 | `pip install -e ".[dev]"` | 全部单元测试；走查演示站点的列表 / 详情 / 翻页 |
+| 推荐 | 一键脚本（见 [安装、运行与平台矩阵](INSTALLATION.md)）| 完整 8 步人工走查（含浏览器与 tesseract） |
+| 按需 | `pip install -e ".[dev,pdf,gui,html]"` | 在最小层之上补 PDF 附件与 GUI 走查 |
+
+补齐不必靠猜：`python tools/walkthrough_env.py` 会打印**当前机器的能力清单**
+（哪项缺、一条补齐命令）。缺可选依赖只**降级**对应步骤（并说明怎么补），
+不会让其余步骤不可用 —— 这条原则见 [人工走查清单](MANUAL_WALKTHROUGH.md)。
+
 ## 质量与性能
 
 - 全源码覆盖率门禁为 >= 66%；下一阶段目标为 >= 70%，安全、状态、管线、PDF/OCR、桌面核心另有分组门禁。

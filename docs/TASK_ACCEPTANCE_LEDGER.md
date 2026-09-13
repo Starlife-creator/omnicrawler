@@ -49,15 +49,23 @@
     有提示），`test_gui_worker_local_task.py` 用例 5 改断言独立终态。
   - 遗留（设计层，未做）：GUI 用 UI 本地名（`finished`/`error`）而核心用规范名
     （`succeeded`/`failed`），本次只把 `cancelled` 对齐规范名，词表统一属后续重构。
-- **`omnicrawler pdf` 转发层传不了 `--config`**（2026-09-13 实测，**待决策**）。
-  `cli/_parsers/pdf.py` 用 `argparse.REMAINDER` 原样转发给 PDF 子系统，但 REMAINDER
-  **不捕获以选项开头的参数**，而 pdfx 的 `--config` 又必须位于子命令**之前**。三种写法都失败：
-  `pdf --config X doctor`（顶层报 unrecognized arguments）、`pdf doctor --config X`
-  与 `pdf -- --config X doctor`（pdfx 报错）。**结果：`omnicrawler pdf` 只能用内置模板**；
-  自定义项目只能走 console script `pdfx`（`pyproject.toml` 的 `pdfx = omnicrawler.pdfx.cli:main`）
-  或进程内调用。本轮端到端用例用的是**进程内调用**（与顶层 `pdf` 子命令内部同一条路径）。
-  修法方向：在转发层把全局选项（当前仅 `--config`）提到子命令之前，或在 `_main` 里对 `pdf`
-  做受控预切分。**属 CLI 行为变更，须先定调**（这份文件自己强调过"不要出现第二个真源"）。
+- **等宽字体链不含中文字形**（2026-09-13 读代码发现，**待实机确认后再定是否修**）。
+  `gui/design_system.py`：UI 链 `PingFang SC → Microsoft YaHei → Noto Sans CJK SC → Segoe UI`
+  有跨平台中文回退 ✓；但
+  `FONT_FAMILY_MONO = "JetBrains Mono, Consolas, Cascadia Code, Menlo, monospace"`
+  **不含任何带中文字形的字体**。GUI 不随包自带字体 ⇒ 中文出现在**等宽控件**
+  （YAML 编辑器、日志控制台、转换工具日志）时只能靠 Qt / fontconfig 的逐字隐式回退，
+  **部分 Linux 上可能显示为方块**。属**产品级隐患**（不是资产问题），且离屏测试根本覆盖不到
+  ⇒ **须由人工走查在非 Windows 平台上确认**（截一张中文出现在等宽控件的图），
+  确认后再决定是否把 `Noto Sans Mono CJK SC` 之类加进该链。
+- **`omnicrawler pdf` 曾转发不了 `--config`**（2026-09-13 实测 → 同日**已修** `bbc6728`）。
+  `cli/_parsers/pdf.py` 用 `argparse.REMAINDER` 原样转发，而 REMAINDER **不捕获以选项开头的
+  参数**；pdfx 的 `--config` 又必须位于子命令**之前** ⇒ 三种写法都失败，**自定义 PDF 项目从顶层
+  完全不可达**（只能用内置模板；而 console script `pdfx` 在便携产物里未必存在）。
+  **已修**：把 `pdf` 纳入 `_main.py` 里**已有的执行路径预切分**（原只给 `pdf-process`/`pdf-extract`），
+  **只切执行路径、不碰发现路径** —— `pdf` 仍是注册子命令，`--help` 与 CLI 文档契约照旧。
+  刻意**不做**"带顶层全局选项也能用"的形态（那要复制一套 pdfx 选项知识＝第二个真源）。
+  证据：`tests/unit/cli/test_pdf_forwarding.py`（3 条，锁可用形态 + 默认行为 + 仍是注册子命令）。
 - **OCR 文本的汉字间空格会原样进入 `text` 字段值**（2026-09-13 实测 → 同日**提供显式开关**）。
   `chi_sim` 会在汉字之间插空格（`示例服务合同` → `示例  服务  合同`），而取值模式
   `(?P<value>[^\n]+)` 会把整行余下内容都收进来，于是值里保留空格。
