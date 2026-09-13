@@ -34,7 +34,16 @@ def normalize_value(value: Any) -> Any:
 
 
 def record_identity(data: dict[str, Any], source_url: str = "") -> str:
-    for key in ("id", "identifier", "uuid", "doi", "url", "link", "title", "name"):
+    # 中英文等价键都要认：本项目分析器产出的字段名是中文（标题/编号/链接地址/名称），
+    # 而这里原先只认英文键 ⇒ 中文配置下退化成"按内容哈希取身份"，
+    # 于是**任何字段变化（如改价）都会被判成「删除+新增」而不是「修改」**，
+    # 变更语义静默失真（实测：{"标题":"甲","价格":"1"} → 改价后身份从 hash:A 变 hash:B）。
+    # 中文键插在对应英文键之后，保证英文配置的身份取值顺序不变。
+    for key in (
+        "id", "identifier", "uuid", "doi", "编号",
+        "url", "link", "链接地址",
+        "title", "标题", "name", "名称",
+    ):
         value = data.get(key)
         if value not in (None, "", []):
             return f"{key}:{normalize_value(value)}"

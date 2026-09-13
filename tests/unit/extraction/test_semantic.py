@@ -39,3 +39,29 @@ class SemanticAndIntelligenceTest(unittest.TestCase):
             self.assertEqual(summary["near_duplicates"], 1)
             self.assertEqual(hamming_distance(simhash("same text"), simhash("same text")), 0)
             self.assertEqual(normalize_entity("示例科技有限公司"), "示例科技")
+
+
+def test_record_identity_recognizes_chinese_field_names() -> None:
+    """中文键必须参与身份判定，否则改价会被误判成「删除+新增」。
+
+    本项目分析器产出的字段名是中文（见 intelligent_scraper 的 _FIELD_RULES 与
+    _ITEMPROP_NAMES：标题 / 名称 / 编号 / 链接地址）。``record_identity`` 原先只认
+    英文键 ⇒ 中文配置下退化成"按内容哈希取身份" ⇒ 任何字段变化都会换身份 ⇒
+    变更语义从「修改」静默失真为「删除+新增」。
+    """
+    from omnicrawler.quality.semantic_changes import record_identity
+
+    url = "http://example.org/list"
+    assert record_identity({"标题": "甲", "价格": "1"}, url) == record_identity(
+        {"标题": "甲", "价格": "10"}, url
+    ), "改价不应换身份"
+    assert record_identity({"编号": "A1", "价格": "1"}, url) == record_identity(
+        {"编号": "A1", "价格": "10"}, url
+    ), "编号应作为身份"
+    assert record_identity({"链接地址": "/p1", "价格": "1"}, url) == record_identity(
+        {"链接地址": "/p1", "价格": "10"}, url
+    ), "链接地址应作为身份"
+    # 英文键行为不变（不因本次修复而改变既有取值顺序）
+    assert record_identity({"title": "甲"}, url) == "title:甲"
+    # 真不同的记录仍要能区分
+    assert record_identity({"标题": "甲"}, url) != record_identity({"标题": "乙"}, url)

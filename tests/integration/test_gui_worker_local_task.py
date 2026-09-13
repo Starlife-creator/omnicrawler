@@ -146,7 +146,7 @@ outputs: {{jsonl: true, csv: true, xlsx: {str(xlsx).lower()}}}
 """
 
 
-def _drive_gui_worker(tmp_path: Path, yaml_text: str):
+def _drive_gui_worker(tmp_path: Path, yaml_text: str, *, allow_zero_records: bool = False):
     """经 GUI 侧运行器 + 真实 worker 子进程跑一次任务，返回观测结果。"""
     from PySide6.QtWidgets import QApplication
 
@@ -177,7 +177,9 @@ def _drive_gui_worker(tmp_path: Path, yaml_text: str):
     try:
         assert finished, f"任务未在时限内结束：state={runner.state} 末尾日志={logs[-5:]}"
         assert finished[0][1] == 0, f"退出码应为 0：{finished}"
-        assert not any("0 条记录" in text for text in logs), "不应出现零记录告警"
+        if not allow_zero_records:
+            # 例外见 allow_zero_records：内容未变化时「交付 0 条」是正确语义，不是缺陷
+            assert not any("0 条记录" in text for text in logs), "不应出现零记录告警"
     finally:
         # —— 进程正确退出：不留后台残留 ——
         with contextlib.suppress(Exception):
@@ -373,3 +375,101 @@ def test_gui_run_cursor_api_paginates_and_is_incremental(tmp_path: Path) -> None
         assert [r["data"] for r in changed] == [{"id": 3, "value": "last-updated"}], (
             f"未变化页不应重复交付，末页变化只交付一次：{changed}"
         )
+
+
+# ── 用例 4：定期采集 → 变更检测 → 差异（走 GUI 路径）──────────────────────
+#
+# 对应账本「定期采集→变更检测→差异导出」一行（此前为"未知"：只有组件级测试，
+# 没有端到端真值任务）。
+
+
+def _items_html(rows: tuple[tuple[str, str], ...]) -> str:
+    body = "".join(
+        f'<div class="item"><h2 class="t">{title}</h2><span class="p">{price}</span></div>'
+        for title, price in rows
+    )
+    return f'<html><body><div class="list">{body}</div></body></html>'
+
+
+def _change_config_yaml(seed: str, workspace: Path) -> str:
+    """定期重跑用的固定配置：字段名用产品自身产出的中文键（标题/价格）。"""
+    return f"""project:
+  name: change-detect
+  workspace: {workspace.as_posix()}
+source:
+  kind: static_html
+  seeds: [{seed}]
+crawl: {{max_pages: 5, concurrency: 1, same_host: true}}
+http:
+  respect_robots: false
+  delay_seconds: 0.0
+  timeout_seconds: 10
+  retries: 0
+  allow_private_network: true
+updates: {{enabled: true, detect_same_url_changes: true}}
+extract:
+  mode: html
+  item_selector: div.item
+  fields:
+    标题: {{selector: h2.t}}
+    价格: {{selector: span.p}}
+outputs: {{jsonl: true, csv: false, xlsx: false}}
+"""
+
+
+def _read_quality_report(workspace: Path) -> dict:
+    path = workspace / "output" / "quality_report.json"
+    assert path.is_file(), (
+        f"应有质量报告：{sorted(p.name for p in (workspace / 'output').glob('*'))}"
+    )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_gui_run_change_detection_reports_added_modified_removed(tmp_path: Path) -> None:
+    """定期重跑：新增 / 修改 / 删除按任务语义区分，且无变化不产生假差异。
+
+    这条同时是「中文键身份」的端到端护栏：字段名是 标题/价格（产品自身产出），
+    若 ``record_identity`` 不认中文键，改价会退化成「删除+新增」，
+    下面的 modified == 1 与 removed == 1 会立刻不成立。
+    """
+    workspace = (tmp_path / "ws").resolve()
+    pages = {"/list": _items_html((("甲", "1"), ("乙", "2"), ("丙", "3")))}
+    with _serve(pages) as base:
+        seed = f"{base}/list"
+        yaml_text = _change_config_yaml(seed, workspace)
+
+        # 第一次同步：没有可比的历史版本。**当前产品语义**是把初始记录记成 added
+        # （已在账本登记，是否需要"首次不报变更"另行决策）。
+        # 真正要守的是"无变化不产生假差异"，由下面的第三次运行断言。
+        _drive_gui_worker(tmp_path, yaml_text)
+        first = _read_quality_report(workspace)
+        assert (first.get("semantic_changes") or {}) == {"added": 3}, (
+            f"首次同步当前语义 = 初始记录全部记 added：{first.get('semantic_changes')}"
+        )
+
+        # 第二次：甲改价（修改）、乙不变、丙移除、丁新增
+        pages["/list"] = _items_html((("甲", "10"), ("乙", "2"), ("丁", "4")))
+        _drive_gui_worker(tmp_path, yaml_text)
+        second = _read_quality_report(workspace)
+        changes = second.get("semantic_changes") or {}
+        assert changes.get("modified") == 1, f"改价应判为「修改」而非「删除+新增」：{changes}"
+        assert changes.get("added") == 1, f"丁应判为「新增」：{changes}"
+        # 记录消失**不由**这条路径负责：track_semantic_changes 只遍历**本次**记录，
+        # after 永远非 None ⇒ 永远产不出 removed。删除由产品自身的"两次运行对比"
+        # （CLI run-compare / GUI 菜单「对比两次运行」同源）给出，见下面的断言。
+        assert "removed" not in changes, f"主路径不产出 removed：{changes}"
+
+        # 「删除」按任务语义：用产品自己的 run_compare 对比两次运行
+        from omnicrawler.review.run_compare import compare_runs
+        from omnicrawler.state import StateStore
+
+        with StateStore(workspace / "state.sqlite3") as state:
+            diff = compare_runs(state, str(first["run_id"]), str(second["run_id"]))
+        assert diff["removed"] == 1, f"两次运行对比应检出「丙」被删除：{diff}"
+        assert diff["modified"] == 1 and diff["added"] == 1, f"对比口径应与主路径一致：{diff}"
+        assert diff["possibly_removed"] == 0, f"after run 正常完成，删除应被确认为 removed：{diff}"
+
+        # 第三次：页面内容完全不变 —— 不得产生任何假差异
+        _drive_gui_worker(tmp_path, yaml_text, allow_zero_records=True)
+        third = _read_quality_report(workspace).get("semantic_changes") or {}
+        assert not third, f"无变化不应产生假差异：{third}"
