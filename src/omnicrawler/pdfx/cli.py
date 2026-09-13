@@ -52,6 +52,39 @@ def status(db: Database) -> dict[str, Any]:
     return database_status(db)
 
 
+#: 父解析器（顶层）选项：argparse 要求它们位于子命令**之前**。
+_PARENT_OPTIONS = ("--config",)
+
+
+def _hoist_parent_options(argv: list[str]) -> list[str]:
+    """把写在子命令**之后**的父级选项搬到它前面（只搬位置，不改选项定义）。
+
+    为什么需要：`argparse` 的父解析器选项必须写在子命令之前，于是
+    `pdfx doctor --config X` 会报 `unrecognized arguments: --config X`；
+    而从 `omnicrawler pdf …` 转进来的命令行里，用户很自然会写在后面。
+
+    为什么**不**在顶层 CLI 里做"选项提升"：那需要复制一份 pdfx 的选项知识，
+    等于第二个真源。这里只有**一条**关于**一个**选项的搬迁规则，选项本身仍只由
+    :func:`build_parser` 定义 —— 不构成第二真源，也不会随 pdfx 演进而漂移。
+    """
+    hoisted: list[str] = []
+    rest: list[str] = []
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token in _PARENT_OPTIONS and index + 1 < len(argv):
+            hoisted += [token, argv[index + 1]]
+            index += 2
+            continue
+        if any(token.startswith(name + "=") for name in _PARENT_OPTIONS):
+            hoisted.append(token)
+            index += 1
+            continue
+        rest.append(token)
+        index += 1
+    return hoisted + rest
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pdf-core",
@@ -100,7 +133,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    args = build_parser().parse_args()
+    args = build_parser().parse_args(_hoist_parent_options(sys.argv[1:]))
     try:
         if args.command == "validate":
             result = validate_project_template(args.config)

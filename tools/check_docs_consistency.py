@@ -120,6 +120,78 @@ def check_docs_governance(root: Path, texts: dict[str, str]) -> list[str]:
     return issues
 
 
+def _walkthrough_expected(root: Path) -> dict[str, int]:
+    """从 `tools/walkthrough_demo_site.py` 取样本真值（唯一来源）。"""
+    import importlib.util
+
+    path = root / "tools" / "walkthrough_demo_site.py"
+    if not path.is_file():
+        return {}
+    spec = importlib.util.spec_from_file_location("_walkthrough_demo_site_for_gate", path)
+    if spec is None or spec.loader is None:  # pragma: no cover - 环境异常
+        return {}
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return dict(getattr(module, "EXPECTED", {}))
+
+
+def check_walkthrough_sample_numbers(root: Path) -> list[str]:
+    """`docs/MANUAL_WALKTHROUGH.md` 的样本数字必须是 `EXPECTED` 的**投影**。
+
+    该文档写着"样本固定：列表第 1 页 6 条、翻页后合计 8 条、附件 1 个"，
+    并声称这些数字由 `EXPECTED` 提供、"不会与文档悄悄漂移"—— 但此前**没有任何门禁
+    校验文档文字本身**：改一个样本常量，文档会静默过期，走查者会按过期数字
+    误判"翻页失败"。这里把它变成机器校验的投影。
+    """
+    doc = root / "docs" / "MANUAL_WALKTHROUGH.md"
+    if not doc.is_file():
+        return []   # 文档缺失由其它检查负责，这里不重复报
+    expected = _walkthrough_expected(root)
+    if not expected:
+        # 文档明确指向该文件；文件缺失或没有 EXPECTED ⇒ 门禁**不能静默放过**
+        return [
+            "docs/MANUAL_WALKTHROUGH.md 引用的样本来源 tools/walkthrough_demo_site.py "
+            "缺失或没有 EXPECTED —— 样本数字无法校验"
+        ]
+    text = doc.read_text(encoding="utf-8").replace("\r\n", "\n")
+    issues: list[str] = []
+
+    sample = re.search(
+        r"列表第 1 页 \*\*(?P<page1>\d+)\*\* 条、翻页后合计 \*\*(?P<total>\d+)\*\* 条、"
+        r"附件 \*\*(?P<attachments>\d+)\*\* 个",
+        text,
+    )
+    if sample is None:
+        issues.append(
+            "docs/MANUAL_WALKTHROUGH.md: 找不到「样本固定：列表第 1 页 … 条、翻页后合计 … 条、附件 … 个」"
+            " 这句 —— 它必须存在且与 EXPECTED 一致，文档结构若改动请同步本门禁"
+        )
+    else:
+        for key, group in (
+            ("list_items", "page1"),
+            ("all_items", "total"),
+            ("attachments", "attachments"),
+        ):
+            if int(sample.group(group)) != expected.get(key):
+                issues.append(
+                    f"docs/MANUAL_WALKTHROUGH.md: 样本数字与 EXPECTED 不一致 —— "
+                    f"{group}={sample.group(group)}，EXPECTED[{key!r}]={expected.get(key)}"
+                )
+
+    step = re.search(r"列表任务应含翻页后的合计 (?P<total>\d+) 条", text)
+    if step is None:
+        issues.append(
+            "docs/MANUAL_WALKTHROUGH.md: 找不到第 5 步「列表任务应含翻页后的合计 … 条」——"
+            " 该数字也必须与 EXPECTED[all_items] 一致"
+        )
+    elif int(step.group("total")) != expected.get("all_items"):
+        issues.append(
+            f"docs/MANUAL_WALKTHROUGH.md: 第 5 步写「合计 {step.group('total')} 条」，"
+            f"EXPECTED[all_items]={expected.get('all_items')}"
+        )
+    return issues
+
+
 def check(root: Path) -> list[str]:
     version, requires_python = load_project_metadata(root)
     python_version = minimum_python(requires_python)
@@ -213,6 +285,7 @@ def check(root: Path) -> list[str]:
         if re.search(r"OmniCrawler\s+\d+\.\d+(?:\.\d+)?", readme_text):
             issues.append("PORTABLE_README.txt 硬编码版本号，应去掉或由构建渲染")
 
+    issues.extend(check_walkthrough_sample_numbers(root))
     issues.extend(check_docs_governance(root, texts))
     return issues
 
