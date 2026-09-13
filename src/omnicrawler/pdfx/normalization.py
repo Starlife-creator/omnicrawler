@@ -33,25 +33,78 @@ _FOREIGN_CURRENCY_RE = re.compile(
 )
 
 
-def _number(text: str) -> float | None:
-    """提取数字；识别会计负数括号 (1,234) / （1,234）（D49）。"""
-    stripped = text.strip()
-    bracket = re.search(r"[(（]\s*([\d,，.]+)\s*[)）]", stripped)
-    if bracket:
-        value_str = bracket.group(1)
-        sign = -1.0
-    else:
-        match = re.search(r"[-+]?\d[\d,，]*(?:\.\d+)?", text)
-        if not match:
+#: 分隔符归一映射：全角/中文标点先收敛到 ASCII —— `．`/`。` 都是 OCR 的常见形态，
+#: 不先收敛会让同一份文本走不同分支。
+_SEPARATOR_TRANSLATION = str.maketrans({"，": ",", "．": ".", "。": ".", "｡": "."})
+
+
+def _grouping_valid(token: str) -> bool:
+    """千分位分组是否规范：首段 1–3 位数字，其后每段**恰好** 3 位。"""
+    parts = re.split(r"[,.]", token)
+    if not parts or not all(part.isdigit() for part in parts):
+        return False
+    if len(parts) == 1:
+        return bool(parts[0])
+    return 1 <= len(parts[0]) <= 3 and all(len(part) == 3 for part in parts[1:])
+
+
+def _parse_numeric_token(token: str) -> float | None:
+    """把数字串转成 float；**多个分隔符时做结构性判定，绝不静默截断**。
+
+    旧实现用 ``[-+]?\\d[\\d,，]*(?:\\.\\d+)?`` 抓数字，遇到被 OCR 误读的
+    ``12.345.67``（真值 ``12,345.67``）**只会匹配到 ``12.345``** —— 一个看起来完全合理、
+    却错误的值，且不留任何痕迹（同一个函数会把 ``1.234.567`` 截成 ``1.234``，
+    欧式 ``1.234,56`` 截成 ``1.234``）。这违反本项目"异常不得伪装成功／产出不许静默失效"
+    的既有原则，因此改为先判结构：
+
+    * 分隔符 ≤ 1 个：沿用常规读法（``1,234`` → 1234；``1.234`` → 1.234）；
+    * 分隔符 ≥ 2 个：只接受两种**可判定**的读法 ——
+      ① 全部当千分位（分组规范：``1.234.567`` → 1234567）；
+      ② 最右为小数点、其余为千分位（整数部分分组规范：``12.345.67`` → 12345.67，
+         欧式 ``1.234,56`` → 1234.56）；
+      两种都成立时取 ①（``1.234.567`` 在美式与欧式下同为 1234567）；
+      **都不成立则返回 None** —— 上层据此交人工复核，而不是交付一个猜出来的数。
+    """
+    normalized = token.translate(_SEPARATOR_TRANSLATION)
+    if sum(character in ",." for character in normalized) <= 1:
+        try:
+            return float(normalized.replace(",", ""))
+        except ValueError:
             return None
-        value_str = match.group(0)
-        sign = -1.0 if value_str.startswith("-") else 1.0
-        if value_str.startswith(("-", "+")):
-            value_str = value_str[1:]
-    try:
-        return sign * float(value_str.replace(",", "").replace("，", ""))
-    except ValueError:
+    if _grouping_valid(normalized):
+        try:
+            return float(normalized.replace(",", "").replace(".", ""))
+        except ValueError:
+            return None
+    cut = max(normalized.rfind(","), normalized.rfind("."))
+    integer_part, fraction = normalized[:cut], normalized[cut + 1 :]
+    if integer_part and fraction.isdigit() and _grouping_valid(integer_part):
+        digits = integer_part.replace(",", "").replace(".", "")
+        try:
+            return float(f"{digits}.{fraction}")
+        except ValueError:
+            return None
+    return None
+
+
+def _number(text: str) -> float | None:
+    """提取数字；识别会计负数括号 (1,234) / （1,234）（D49）。
+
+    多分隔符的读法判定见 :func:`_parse_numeric_token`：OCR 造成的千分位误读会被
+    **恢复**（可判定时）或**交人工复核**（不可判定时），不再静默截断。
+    """
+    stripped = text.strip()
+    bracket = re.search(r"[(（]\s*([\d,，.．。]+)\s*[)）]", stripped)
+    if bracket:
+        value = _parse_numeric_token(bracket.group(1))
+        return None if value is None else -value
+    match = re.search(r"[-+]?\d[\d,，.．。]*", text)
+    if not match:
         return None
+    token = match.group(0).rstrip(",，．。")
+    sign = -1.0 if token.startswith("-") else 1.0
+    value = _parse_numeric_token(token.lstrip("+-"))
+    return None if value is None else sign * value
 
 
 def _format_decimal(value: object) -> str:
