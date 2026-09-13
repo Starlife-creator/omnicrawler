@@ -7,7 +7,7 @@
 
 | 工作流 | 固定输入与正确答案 | 当前自动证据 | 当前状态 | 下一项验收 |
 |---|---|---|---|---|
-| 静态列表→详情→结构化结果 | `quality_benchmark.py` 的 `list-three-details`，6条记录、title/price、逐条来源路径 | 本地HTTP真实流水线；精确评分含漏采、错值、错来源、额外及重复记录；**2026-09-13 新增 GUI 闭环两条**：`test_gui_worker_local_task.py` 经真实 `WorkerTaskRunner` + 真实 worker 子进程（pid≠当前进程、事后退出无残留）跑本地站点——① 单页列表恰好3条真值+CSV；② **列表→详情两级 4 页 6 条**、来源覆盖 4 个 URL、**XLSX 可重新打开** | 已验证（JSONL/CSV/XLSX 核心链，含 GUI 子进程与两级抓取） | 真实按钮点击；便携产物内复跑 |
+| 静态列表→详情→结构化结果 | `quality_benchmark.py` 的 `list-three-details`，6条记录、title/price、逐条来源路径 | 本地HTTP真实流水线；精确评分含漏采、错值、错来源、额外及重复记录；**2026-09-13 新增 GUI 闭环两条**：`test_gui_worker_local_task.py` 经真实 `WorkerTaskRunner` + 真实 worker 子进程（pid≠当前进程、事后退出无残留）跑本地站点——① 单页列表恰好3条真值+CSV；② **列表→详情两级 4 页 6 条**、来源覆盖 4 个 URL、**XLSX 可重新打开** | 已验证（JSONL/CSV/XLSX 核心链，含 GUI 子进程、两级抓取与**真实运行按钮入口**） | 便携产物内复跑（按约定留 CI / 受控环境） |
 | 动态页面→分页/滚动→去重 | 今日真实场景报告含 quotes/js；输入依赖公网，无冻结真值快照 | 最近单元回归覆盖浏览器发现链接和子请求继承渲染 | 部分验证 | 固定动态样例核对首末页、总数、重复率与浏览器回收 |
 | API→游标分页→增量 | 本地HTTP固定3页：首次交付ID 1/2/3；二次仅末页值变化，应只交付ID 3新值 | 自动分析按正式JSONPath试跑；真实流水线核对游标替换、末页停止、来源URL及二次同步；恢复保留未完成游标；**2026-09-13 新增 GUI 路径**：同场景经真实 GUI 运行器 + worker 子进程跑通（3 条含游标来源、游标链恰好一遍、二次只交付变化那条） | 已验证（JSONL核心链，含 GUI 运行路径） | 经 GUI 表单**创建**任务；便携产物内复跑 |
 | 附件→PDF/OCR→人工复核 | 尚无贯穿复核修改与最终输出的固定任务 | PDF/OCR专项测试存在 | 未知 | 固定附件、字段位置、不确定性、人工修改及导出 |
@@ -62,9 +62,17 @@
   已做两次**独立性核对**（都不是假通过）：一是模拟修复前行为时用例① 退化为 1 条并失败；
   二是把用例② 的 `source_kind` 换成 `static_html`（不跟随链接）时只剩 3 条 —— 说明 6 条
   只有真正走两级 `crawl` 才拿得到。
-  仍未覆盖：真实按钮点击（用例直接调用按钮所调用的同一函数）、便携产物内复跑。
+  仍未覆盖：便携产物内复跑（按约定留 CI / 受控环境）。
   参考：`tests/integration/sdk/test_execution_backend.py` 仍只验控制面，
   `test_worker_task_runner.py` 仍用假 backend。
+- **GUI 真实入口已补证据**（2026-09-13，`tests/integration/test_gui_entry_run.py`）。
+  走用户真正点的那条路：工具栏「运行」按钮 → `MainWindow._request_run` → 配置校验与
+  「试跑一致」闸门 → `RunController.run_task` → worker 子进程 → 状态栏「已完成」→
+  结果页自动载入本次 `records.csv`（行数到位、内容等于真值）。用 `QPushButton.click()`
+  触发**真实信号链**，不伪造槽函数调用；并加反向护栏断言「未试跑时运行按钮禁用」，
+  以证明启动确实通过了试跑闸门。
+  仍未覆盖：真实鼠标点击（这里用 `click()` 触发信号）、试跑本身（由
+  `test_first_task_journey.py` 覆盖）、便携产物内运行。
 - 2026-09-13 已修并登记（两条同源：GUI 模型未建模的键与核心契约脱节，提交 `a5bdfbd`、`4a546ec`）：
   ① **配置往返静默降级**：`save_yaml` 把 `extract.mode` 写死 `"html"`、`extract.item_selector`
   写死 `""`、`http.auto_browser_fallback` 写死 `True`，而 `_deep_overlay` 让 root 胜出 ⇒
