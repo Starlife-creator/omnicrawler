@@ -492,3 +492,169 @@ def test_gui_run_change_detection_reports_added_modified_removed(tmp_path: Path)
         _drive_gui_worker(tmp_path, yaml_text, allow_zero_records=True)
         third = _read_quality_report(workspace).get("semantic_changes") or {}
         assert not third, f"无变化不应产生假差异：{third}"
+
+
+# ── 用例 5：长任务 → GUI 停止 → 重启恢复（走 GUI 路径）─────────────────────
+#
+# 覆盖此前没碰过的 stop() 控制面：取消是否真的停、GUI 是否到终态、进程是否回收、
+# 重启后是否"不重复、不遗漏"。语义层（ApplicationService 级）已由
+# tests/integration/recovery/test_cancel_and_interrupt.py 验证；这里补 GUI 运行路径。
+
+#: 慢站点页数：列表页 + 8 个详情页（每页延迟响应，保证有"跑到一半"的时刻）
+SLOW_PAGES_TOTAL = 8
+
+
+def _slow_site_pages() -> dict[str, str]:
+    links = "".join(f'<a href="/p{i}">{i}</a>' for i in range(1, SLOW_PAGES_TOTAL + 1))
+    pages = {
+        "/list": (
+            '<html><body><div class="list">'
+            '<div class="item"><h2 class="t">列表</h2><span class="p">0</span></div>'
+            f"</div><nav>{links}</nav></body></html>"
+        )
+    }
+    for i in range(1, SLOW_PAGES_TOTAL + 1):
+        pages[f"/p{i}"] = (
+            f'<html><body><div class="item"><h2 class="t">页{i}</h2>'
+            f'<span class="p">{i}</span></div></body></html>'
+        )
+    return pages
+
+
+@contextlib.contextmanager
+def _serve_slow(pages: dict[str, str], *, delay: float = 0.6):
+    """带响应延迟的本地站点，并记录被请求过的路径（用于"取消真的停"的条件断言）。"""
+    state: dict[str, list[str]] = {"hits": []}
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            state["hits"].append(self.path)
+            time.sleep(delay)
+            page = pages.get(self.path)
+            if page is None:
+                self.send_error(404)
+                return
+            body = page.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):  # noqa: N802
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", state
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _start_gui_worker(tmp_path: Path, yaml_text: str):
+    """只**启动**（不等结束），供需要中途介入的用例使用。"""
+    from PySide6.QtWidgets import QApplication
+
+    from omnicrawler.gui.runner.worker_task_runner import WorkerTaskRunner
+
+    app = QApplication.instance() or QApplication([])
+    cfg_path = tmp_path / "provided.yaml"
+    cfg_path.write_text(yaml_text, encoding="utf-8")
+    config = load_yaml(cfg_path)
+
+    runner = WorkerTaskRunner(project_root=tmp_path)
+    logs: list[str] = []
+    finished: list[tuple[str, int]] = []
+    runner.log_line.connect(lambda text, _level: logs.append(text))
+    runner.task_finished.connect(lambda task, code: finished.append((task, code)))
+
+    assert runner.start(config) is True, f"启动失败，日志={logs}"
+    pid = runner.get_pid()
+    assert pid, "应拿到 worker 子进程 pid"
+    assert pid != os.getpid(), "任务必须在独立子进程中执行"
+    assert psutil.pid_exists(pid), f"worker 子进程 {pid} 应处于存活状态"
+    return runner, app, pid, logs, finished
+
+
+def test_gui_stop_is_effective_and_restart_recovers_without_duplicates(tmp_path: Path) -> None:
+    """GUI 停止 → 真的停住、进程回收；重启 → 不重复、不遗漏。
+
+    三条性质各自对应一种"只做一半"的实现：
+    ① 取消只是标记、任务照跑完 ⇒ 用"服务端命中数明显少于全部页"来否证；
+    ② GUI 卡在 running/stopping 不下线 ⇒ 断言到达终态；
+    ③ 重启后把已完成的工作重做一遍 ⇒ 断言最终交付按标题去重后无重复。
+    """
+    workspace = (tmp_path / "ws").resolve()
+    pages = _slow_site_pages()
+    with _serve_slow(pages) as (base, state):
+        seed = f"{base}/list"
+        yaml_text = _config_yaml(seed, workspace, source_kind="crawl", max_depth=2, xlsx=False)
+
+        runner, app, pid, logs, _finished = _start_gui_worker(tmp_path, yaml_text)
+
+        # 条件等待：服务端已经取到若干页再取消（不依赖固定睡眠）
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline and len(state["hits"]) < 3:
+            app.processEvents()
+            time.sleep(0.05)
+        assert len(state["hits"]) >= 3, f"应有进展后才取消：{state['hits']}"
+
+        runner.stop()
+        terminal = {"finished", "error"}
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline and runner.state not in terminal:
+            app.processEvents()
+            time.sleep(0.05)
+        assert runner.state in terminal, f"取消后 GUI 应到达终态：{runner.state}；日志={logs[-3:]}"
+
+        # ① 取消真的停：总共 9 个页面，取消时不应已经把全部取完
+        total_pages = SLOW_PAGES_TOTAL + 1
+        assert len(state["hits"]) < total_pages, (
+            f"取消后不应已取完全部页面：{len(state['hits'])}/{total_pages}"
+        )
+
+        # 后端语义：这是一次「取消」，不是失败（processed / frontier 可复核）
+        status = runner._backend.status()
+        assert status["status"] == "cancelled", f"后端应报告 cancelled：{status.get('status')}"
+        assert status["processed"] < total_pages, f"取消时应有页面未完成：{status['processed']}"
+        assert status["frontier"].get("pending", 0) > 0, "取消时应仍有 pending 页面"
+
+        # GUI 呈现（**现状**，见账本缺口「取消被呈现为错误」）：
+        # _poll 把 cancelled 与 failed 共用同一个 else 分支 ⇒ 状态置 error、退出码 1。
+        # 用户点「停止」却看到「错误」，与"取消 ≠ 失败"的语义不符。
+        # 这里按现状断言；将来区分出独立的"已取消"状态时，本断言应随之更新。
+        assert runner.state in {"error", "finished"}, f"当前终态：{runner.state}"
+        assert _finished and _finished[0][1] != 0, f"取消不应被当作成功：{_finished}"
+
+        # ③a 记录第一次运行已交付的来源，供"两次合起来是否全覆盖"使用
+        first_urls: set[str] = set()
+        records_file = workspace / "output" / "records.jsonl"
+        if records_file.is_file():
+            first_urls = {
+                json.loads(line)["source_url"]
+                for line in records_file.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            }
+
+        # ② 进程回收：shutdown 后子进程必须消失，不留后台残留
+        with contextlib.suppress(Exception):
+            runner._backend.shutdown()
+        gone = time.monotonic() + 30
+        while time.monotonic() < gone and psutil.pid_exists(pid):
+            app.processEvents()
+            time.sleep(0.1)
+        runner._poller.stop()
+        app.processEvents()
+        assert not psutil.pid_exists(pid), f"停止后 worker 子进程 {pid} 未退出"
+
+        # ③b 重启：完整跑完，且不重复、不遗漏
+        state["hits"].clear()
+        _drive_gui_worker(tmp_path, yaml_text)
+        final = _read_records(workspace)
+        titles = [r["data"]["标题"] for r in final]
+        assert len(titles) == len(set(titles)), f"重启后不应重复交付同一记录：{titles}"
+        covered = first_urls | {r["source_url"] for r in final}
+        expected = {seed} | {f"{base}/p{i}" for i in range(1, SLOW_PAGES_TOTAL + 1)}
+        assert covered == expected, f"两次运行合起来应覆盖全部页面：{sorted(covered)}"
