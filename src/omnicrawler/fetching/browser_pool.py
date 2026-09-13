@@ -28,6 +28,7 @@ from ..security.egress import EgressBroker
 from ..security.policy import NetworkTargetPolicy
 from .browser_engines import run_actions_for_page
 from .browser_guards import strip_cross_origin_credentials
+from .browser_launch import build_launch_args
 
 LOGGER = logging.getLogger(__name__)
 
@@ -107,23 +108,18 @@ class PlaywrightPool:
                 browser_config = self.config.section("browser")
                 # B03-006：Playwright 路径同样拒绝 launch_args 关闭 TLS 校验，
                 # 并显式尊重 http.verify_tls（默认开启）。
-                launch_args = []
-                for item in browser_config.get("launch_args", []):
-                    arg = str(item)
-                    if arg == "--ignore-certificate-errors" or "--ignore-certificate-errors=" in arg:
-                        raise ValueError(
-                            "browser.launch_args 禁止关闭 TLS 校验（--ignore-certificate-errors）；"
-                            "如需关闭请用可审计的 http.verify_tls=false"
-                        )
-                    launch_args.append(arg)
+                # 启动参数（含无头"保真"参数）统一由 browser_launch.build_launch_args 生成，
+                # 不再与 Selenium 路径各存一份同样的规则。
+                headless = bool(browser_config.get("headless", True))
                 verify_tls = bool(self.config.section("http").get("verify_tls", True))
-                if not verify_tls:
-                    launch_args.append("--ignore-certificate-errors")
-                    LOGGER.warning("Playwright 路径 verify_tls=false：TLS 校验已关闭（仅限受控内网站点）")
-                browser = playwright.chromium.launch(
-                    headless=bool(browser_config.get("headless", True)),
-                    args=launch_args,
+                launch_args = build_launch_args(
+                    browser_config.get("launch_args", []),
+                    headless=headless,
+                    verify_tls=verify_tls,
                 )
+                if not verify_tls:
+                    LOGGER.warning("Playwright 路径 verify_tls=false：TLS 校验已关闭（仅限受控内网站点）")
+                browser = playwright.chromium.launch(headless=headless, args=launch_args)
                 contexts: dict[str, Any] = {}
                 try:
                     while True:

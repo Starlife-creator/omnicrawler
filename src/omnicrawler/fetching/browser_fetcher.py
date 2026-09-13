@@ -36,6 +36,7 @@ from .browser_guards import _Watchdog
 from .browser_guards import (
     strip_cross_origin_credentials as strip_cross_origin_credentials,
 )
+from .browser_launch import build_launch_args
 from .browser_pool import PlaywrightPool
 from .browser_pool import (
     _PoolTask as _PoolTask,
@@ -177,24 +178,24 @@ class BrowserFetcher:
         chrome_binary = os.environ.get("OMNICRAWL_CHROME_BINARY", "").strip()
         if chrome_binary:
             options.binary_location = chrome_binary
-        if self.config.section("browser").get("headless", True):
+        headless = bool(self.config.section("browser").get("headless", True))
+        if headless:
             options.add_argument("--headless=new")
             # macOS 无头模式下 GPU 进程可能挂起渲染（selenium+Chrome 151 arm64 CI 实测
             # 'Timed out receiving message from renderer'），headless 下显式禁用 GPU 安全。
             options.add_argument("--disable-gpu")
         # B03-006：浏览器路径显式尊重 verify_tls；且拒绝 launch_args 关闭 TLS 校验
         # （把唯一的 TLS 放松点从"可审计的配置项"变成 launch_args 黑魔法是 MITM 面）。
+        # 启动参数（含无头"保真"参数）统一由 browser_launch.build_launch_args 生成，
+        # 不再与 Playwright 路径各存一份同样的规则。
         verify_tls = bool(self.config.section("http").get("verify_tls", True))
-        for argument in self.config.section("browser").get("launch_args", []):
-            arg = str(argument)
-            if arg == "--ignore-certificate-errors" or "--ignore-certificate-errors=" in arg:
-                raise ValueError(
-                    "browser.launch_args 禁止关闭 TLS 校验（--ignore-certificate-errors）；"
-                    "如需关闭请用可审计的 http.verify_tls=false"
-                )
-            options.add_argument(arg)
+        for argument in build_launch_args(
+            self.config.section("browser").get("launch_args", []),
+            headless=headless,
+            verify_tls=verify_tls,
+        ):
+            options.add_argument(argument)
         if not verify_tls:
-            options.add_argument("--ignore-certificate-errors")
             LOGGER.warning("浏览器路径 verify_tls=false：TLS 校验已关闭（仅限受控内网站点）")
         started = time.monotonic()
         driver_path = os.environ.get("OMNICRAWL_SELENIUM_DRIVER", "").strip()
