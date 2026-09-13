@@ -23,6 +23,8 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -468,6 +470,23 @@ def test_gui_run_change_detection_reports_added_modified_removed(tmp_path: Path)
         assert diff["removed"] == 1, f"两次运行对比应检出「丙」被删除：{diff}"
         assert diff["modified"] == 1 and diff["added"] == 1, f"对比口径应与主路径一致：{diff}"
         assert diff["possibly_removed"] == 0, f"after run 正常完成，删除应被确认为 removed：{diff}"
+
+        # 「差异导出」：产品自身的 compare-runs 命令能把差异写成文件（GUI「对比两次运行」同源函数）
+        diff_file = tmp_path / "diff.json"
+        proc = subprocess.run(
+            [
+                sys.executable, "-m", "omnicrawler", "compare-runs",
+                "-c", str(tmp_path / "provided.yaml"),
+                str(first["run_id"]), str(second["run_id"]),
+                "-o", str(diff_file),
+            ],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180,
+        )
+        assert proc.returncode == 0, f"compare-runs 应成功：{proc.stderr[-400:]}"
+        assert diff_file.is_file(), "compare-runs -o 应写出差异文件"
+        exported = json.loads(diff_file.read_text(encoding="utf-8"))
+        assert exported["removed"] == 1, f"导出的差异应含 1 条删除：{exported}"
+        assert exported["modified"] == 1 and exported["added"] == 1, f"导出差异口径应一致：{exported}"
 
         # 第三次：页面内容完全不变 —— 不得产生任何假差异
         _drive_gui_worker(tmp_path, yaml_text, allow_zero_records=True)
