@@ -100,7 +100,7 @@ def _pump(app, predicate, *, timeout: float = 180.0, what: str) -> None:
     assert predicate(), f"等待超时：{what}"
 
 
-def test_gui_run_button_starts_task_and_shows_results(tmp_path: Path) -> None:
+def test_gui_run_button_starts_task_and_shows_results(tmp_path: Path, monkeypatch) -> None:
     """点真实「运行」按钮 → worker 子进程 → 状态「已完成」→ 结果页看到真值。"""
     from PySide6.QtWidgets import QApplication
 
@@ -108,9 +108,9 @@ def test_gui_run_button_starts_task_and_shows_results(tmp_path: Path) -> None:
 
     app = QApplication.instance() or QApplication([])
 
-    # 让首次启动向导不弹（与既有 GUI 测试同款做法）
-    with contextlib.suppress(Exception):
-        MainWindow._on_first_launch = lambda self: None  # type: ignore[method-assign]
+    # 让首次启动向导不弹（与既有 GUI 测试同款做法）。
+    # 必须用 monkeypatch：直接给类属性赋值会**泄漏**给同进程的后续用例。
+    monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
 
     window = MainWindow()
     window._project_root = tmp_path
