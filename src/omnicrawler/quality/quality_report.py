@@ -14,6 +14,28 @@ from ..state import StateStore
 LOGGER = logging.getLogger(__name__)
 
 
+def notifiable_changes(report: dict[str, Any]) -> dict[str, int]:
+    """给 UI / 通知层的**显式入口**：需要提示用户的变化（已排除首轮基线）。
+
+    语义分工（2026-09-13，用户裁决方案 C）：
+
+    - ``semantic_changes`` 是**全部事实**，包含首轮把初始记录记为 ``added`` 的部分；
+    - ``semantic_changes_baseline`` 标出其中属于**首个同步周期基线**的部分；
+    - **要不要提示由消费方决定**——要提示就调本函数；报表 / 看板需要完整事实时
+      直接读 ``semantic_changes``（基线也计入）。数据层不替用户判断"是否打扰"。
+    """
+    total = {str(key): int(value) for key, value in (report.get("semantic_changes") or {}).items()}
+    baseline = {
+        str(key): int(value)
+        for key, value in (report.get("semantic_changes_baseline") or {}).items()
+    }
+    return {
+        key: value - baseline.get(key, 0)
+        for key, value in total.items()
+        if value - baseline.get(key, 0) > 0
+    }
+
+
 def build_quality_report(config: AppConfig, state: StateStore, run_id: str | None) -> dict[str, Any]:
     where, params = (" WHERE run_id=?", (run_id,)) if run_id else ("", ())
     rows = state.rows(f"SELECT data_json, evidence_json FROM records{where}", params)
@@ -35,6 +57,16 @@ def build_quality_report(config: AppConfig, state: StateStore, run_id: str | Non
         f"SELECT change_type, COUNT(*) AS count FROM semantic_changes{where} GROUP BY change_type",
         params,
     )
+    # 首轮同步会把初始记录记为 added —— 那是**基线**而不是"发生了变化"。这里单独计数，
+    # 让消费方可以自行取舍（见 notifiable_changes）；数据层不替用户判断"要不要提示"。
+    baseline_where, baseline_params = (
+        (" WHERE run_id=? AND baseline=1", (run_id,)) if run_id else (" WHERE baseline=1", ())
+    )
+    baseline_changes = state.rows(
+        f"SELECT change_type, COUNT(*) AS count FROM semantic_changes{baseline_where} "
+        "GROUP BY change_type",
+        baseline_params,
+    )
     fields = state.quality_stats(run_id) if run_id else []
     total = len(rows)
     review = sum(bool(item.get("review_required")) for item in qualities)
@@ -51,6 +83,9 @@ def build_quality_report(config: AppConfig, state: StateStore, run_id: str | Non
         "near_duplicates": near_duplicates,
         "entities_resolved": resolved_entities,
         "semantic_changes": {row["change_type"]: row["count"] for row in changes},
+        "semantic_changes_baseline": {
+            row["change_type"]: row["count"] for row in baseline_changes
+        },
         "fields": fields,
         "pii_candidates": pii_summary(
             [

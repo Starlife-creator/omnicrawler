@@ -40,6 +40,7 @@ pytest.importorskip("PySide6")
 import psutil  # noqa: E402
 
 from omnicrawler.gui.core.config_serializer import load_yaml  # noqa: E402
+from omnicrawler.quality.quality_report import notifiable_changes  # noqa: E402
 
 #: 用例 1 真值：单页列表 3 条。以集合比对，避免依赖抓取顺序。
 SINGLE_PAGE_EXPECTED = (("苹果", "11"), ("香蕉", "22"), ("樱桃", "33"))
@@ -448,6 +449,10 @@ def test_gui_run_change_detection_reports_added_modified_removed(tmp_path: Path)
         assert (first.get("semantic_changes") or {}) == {"added": 3}, (
             f"首次同步当前语义 = 初始记录全部记 added：{first.get('semantic_changes')}"
         )
+        # 方案 C：首轮的 added 属**基线**，单独标注；「要不要提示」由消费方决定 ⇒
+        # 走显式入口 notifiable_changes() 时应为空（不被首轮刷屏）。
+        assert first.get("semantic_changes_baseline") == {"added": 3}, first
+        assert notifiable_changes(first) == {}, "首轮基线不应产生需要提示的变化"
 
         # 第二次：甲改价（修改）、乙不变、丙移除、丁新增
         pages["/list"] = _items_html((("甲", "10"), ("乙", "2"), ("丁", "4")))
@@ -456,6 +461,10 @@ def test_gui_run_change_detection_reports_added_modified_removed(tmp_path: Path)
         changes = second.get("semantic_changes") or {}
         assert changes.get("modified") == 1, f"改价应判为「修改」而非「删除+新增」：{changes}"
         assert changes.get("added") == 1, f"丁应判为「新增」：{changes}"
+        assert second.get("semantic_changes_baseline") == {}, "非首轮没有基线变化"
+        assert notifiable_changes(second) == {"modified": 1, "added": 1}, (
+            f"真实变化必须能被「要提示」的场景看到：{notifiable_changes(second)}"
+        )
         # 记录消失**不由**这条路径负责：track_semantic_changes 只遍历**本次**记录，
         # after 永远非 None ⇒ 永远产不出 removed。删除由产品自身的"两次运行对比"
         # （CLI run-compare / GUI 菜单「对比两次运行」同源）给出，见下面的断言。

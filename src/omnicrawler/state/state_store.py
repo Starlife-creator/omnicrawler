@@ -44,6 +44,7 @@ class StateStore(
         self.conn.execute("PRAGMA synchronous=NORMAL")
         self.conn.executescript(SCHEMA)
         self._ensure_response_columns()
+        self._ensure_semantic_change_columns()
         self._lock = threading.RLock()
 
     @staticmethod
@@ -64,6 +65,19 @@ class StateStore(
             if "last_modified" not in columns:
                 self.conn.execute("ALTER TABLE responses ADD COLUMN last_modified TEXT")
 
+
+    def _ensure_semantic_change_columns(self) -> None:
+        """为旧工作区补 `semantic_changes.baseline`（不重建库）。
+
+        与 `_ensure_response_columns` 同一套做法：先 `PRAGMA table_info` 查列，
+        缺则 `ALTER TABLE ... ADD COLUMN`；默认 0 表示"非基线"，与旧数据语义一致。
+        """
+        columns = {row[1] for row in self.conn.execute("PRAGMA table_info(semantic_changes)")}
+        if "baseline" not in columns:
+            with self.conn:
+                self.conn.execute(
+                    "ALTER TABLE semantic_changes ADD COLUMN baseline INTEGER NOT NULL DEFAULT 0"
+                )
 
     def close(self) -> None:
         with self._lock:

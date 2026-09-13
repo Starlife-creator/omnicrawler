@@ -18,6 +18,10 @@ class SemanticChange:
     modified_fields: tuple[str, ...] = ()
     before: dict[str, Any] | None = None
     after: dict[str, Any] | None = None
+    #: 该变化是否属于**首个同步周期的基线**（首轮把初始记录记为 added 时置 True）。
+    #: 它是**事实**：数据层只如实标注；是否据此提示用户由 UI / 通知层决定
+    #: （见 quality_report.notifiable_changes）。放在字段末尾以免既有位置参数构造错位。
+    baseline: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

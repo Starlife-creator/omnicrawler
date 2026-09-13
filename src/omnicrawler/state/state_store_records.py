@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from ..core.models import CrawlRequest, ExtractedRecord, FetchResult
@@ -162,6 +163,24 @@ class RecordsMixin:
                 result[key] = row["data_json"]
         return result
 
+    def _is_first_record_cycle(self, run_id: str) -> bool:
+        """本 run 是否是该任务的**首个产出记录周期**（决定初始记录算不算"基线"）。
+
+        ★ 按 **project_name** 判定，**不能按 config_path**：GUI 每次运行都会把配置另存为
+        `configs/<项目名>_<时间戳>.yaml`（见 `WorkerTaskRunner.start`），因此 config_path
+        每次都是新的 —— 用它判定会把"同一任务的第二轮"误当首轮（实测：第二轮的新增记录
+        被错标为基线，端到端用例当场失败）。同一工作区里不同任务由 project_name 区分。
+
+        `LIMIT 1` 只做存在性判断，成本低。
+        """
+        row = self.conn.execute(
+            "SELECT 1 FROM records r JOIN runs u ON u.run_id = r.run_id "
+            "WHERE r.run_id != ? "
+            "AND u.project_name = (SELECT project_name FROM runs WHERE run_id = ?) LIMIT 1",
+            (run_id, run_id),
+        ).fetchone()
+        return row is None
+
     def track_semantic_changes(
         self,
         run_id: str,
@@ -174,6 +193,9 @@ class RecordsMixin:
         now = utcnow()
         with self._lock, self.conn:
             version_cache = self._preload_versions(run_id, records)
+            # 首轮同步：本次是该任务的第一个产出记录的周期 ⇒ 初始记录的 added 属"基线"，
+            # 不是"发生了变化"。只标事实，不在数据层判断"要不要提示用户"。
+            first_cycle = self._is_first_record_cycle(run_id)
             for record in records:
                 identity = record_identity(record.data, record.source_url)
                 digest = semantic_hash(record.data)
@@ -181,6 +203,8 @@ class RecordsMixin:
                 before_json = version_cache.get(cache_key)
                 before = json.loads(before_json) if before_json else None
                 change = compare_record_data(before, record.data, identity=identity)
+                if first_cycle and change.change_type == "added":
+                    change = replace(change, baseline=True)
                 change_data = change.to_dict()
                 record.evidence["_semantic_change"] = {
                     key: value
@@ -194,8 +218,8 @@ class RecordsMixin:
                         INSERT INTO semantic_changes(
                             run_id, source_url, record_type, identity, change_type,
                             similarity, added_json, removed_json, modified_json,
-                            before_json, after_json, created_at
-                        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                            before_json, after_json, baseline, created_at
+                        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
                         """,
                         (
                             run_id,
@@ -209,6 +233,7 @@ class RecordsMixin:
                             json_text(change.modified_fields),
                             json_text(change.before) if change.before is not None else None,
                             json_text(change.after) if change.after is not None else None,
+                            1 if change.baseline else 0,
                             now,
                         ),
                     )

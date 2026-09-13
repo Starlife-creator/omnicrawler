@@ -123,6 +123,7 @@ CREATE TABLE IF NOT EXISTS semantic_changes (
     identity TEXT NOT NULL,
     change_type TEXT NOT NULL,
     similarity REAL NOT NULL,
+    baseline INTEGER NOT NULL DEFAULT 0,
     added_json TEXT NOT NULL,
     removed_json TEXT NOT NULL,
     modified_json TEXT NOT NULL,

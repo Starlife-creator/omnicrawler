@@ -78,8 +78,20 @@
   需用产品自身的 `omnicrawler compare-runs -c <cfg> <before> <after> -o <file>` 写出差异文件
   （与 GUI 菜单「对比两次运行」同源函数）；2026-09-13 已把该导出路径纳入端到端用例。
   （更正：本条此前写作"差异导出产物当前未见到"，不准确。）
-- **首次同步把初始记录全部记为 `added`**（2026-09-13 观测）。无历史可比时的当前语义；
-  是否需要"首次不报变更"（把首轮当作基线）属产品语义决定，已在本轮测试中按现状断言。
+- **首次同步把初始记录全部记为 `added`**（2026-09-13 观测 → 同日按**方案 C** 落地）。
+  原状：无历史可比时 `semantic_changes = {"added": N}`，下游无法区分"首轮基线"与"真的变化"。
+  按用户裁决（方案 C）**不再改变记录本身，而是把事实标出来并把决定权交给消费方**：
+  - 数据层：`semantic_changes.baseline` 列（+ 旧库自动迁移），首轮的新增记为**基线**；
+    `SemanticChange.baseline` 同时进入每条记录的 `evidence._semantic_change`；
+  - 报告层：`semantic_changes`（完整事实，**不变**）之外新增 `semantic_changes_baseline`
+    （其中属基线的部分）；报表/看板读前者不受影响；
+  - 消费层：新增**显式入口** `quality_report.notifiable_changes(report)` —— 要提示就调它
+    （已排除基线），不要提示就用完整事实。**数据层不替用户判断"是否打扰"**。
+  - 证据：`tests/unit/quality/test_semantic_change_baseline.py`（首轮标基线且不可提示、
+    次轮不标且可提示、旧库迁移）＋ GUI 端到端用例（首轮 baseline 有值、次轮为空）。
+  - ★ 实测教训（已写进代码注释与回归护栏）：**"首轮"必须按 `project_name` 判定，不能按
+    `config_path`** —— GUI 每次运行都会把配置另存为 `configs/<项目名>_<时间戳>.yaml`，
+    用 config_path 判定会把第二轮误当首轮（该错误被端到端用例当场抓到）。
 - **GUI 路径的闭环证据已扩到 4 条用例**（2026-09-13）。
   `tests/integration/test_gui_worker_local_task.py`：真实 `WorkerTaskRunner` + 真实
   `LocalWorkerBackend` 子进程（断言 pid ≠ 当前进程、且事后退出无残留）→ 本地固定 HTTP 站点 →
