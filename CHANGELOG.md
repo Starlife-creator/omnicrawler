@@ -4,6 +4,7 @@
 
 ### 变更
 
+- fix(packaging): `install_windows.ps1` 在装依赖前校验解释器版本（>=3.12，取值来自 `pyproject.requires-python`）——此前 `py -3` 没有版本上界，可能选到 3.10/3.11，venv 建得起来但依赖装不上，报错点离原因很远；同时修掉过时提示语「Python 3.10 or newer」
 - feat(pagination): 分页形状收成唯一契约 `src/omnicrawler/core/pagination.py`（核心校验与 GUI 共用）；游标配置缺 `next_path` 从「静默只采一批」改为**加载时即报错**
 - feat(gui): 「高级设置 → 分页方式」支持按页码/偏移与按游标/下一页值，并保留 `location` 等表单不渲染的分页键 ⇒ 从零在表单里可建分页任务（含游标），无需手写 YAML
 
