@@ -39,6 +39,76 @@ class SiteInspection:
         return asdict(self)
 
 
+def build_inspection_config(
+    url: str,
+    *,
+    timeout_seconds: float = 20.0,
+    robots_fail_closed: bool = True,
+    allow_private_network: bool = False,
+) -> AppConfig:
+    """构造"巡检 / 分析页面用"的 AppConfig：守卫与 crawl 完全一致。
+
+    `inspect_url`（站点识别）与 `fetch_page_html`（分析页面并填字段）都走这里 ——
+    否则会出现**第二条不带 SSRF/重定向/大小/robots 守卫的抓取路径**，
+    那正是本项目反复避免的东西。
+    """
+    raw = copy.deepcopy(DEFAULTS)
+    raw["project"] = {"name": "site_inspection", "workspace": "work/site_inspection"}
+    raw["source"] = {"kind": "static_html", "seeds": [url]}
+    raw["http"].update({
+        "user_agent": user_agent("Inspector (+contact: local-user)"),
+        "timeout_seconds": timeout_seconds,
+        "retries": 1,
+        "max_response_bytes": 10_000_000,
+        "respect_robots": True,
+        "robots_fail_closed": bool(robots_fail_closed),
+        # 沿用调用方（任务）的出网策略：默认仍禁止本机/内网/保留地址，
+        # 用户在配置里显式放行时才跟着放行 —— 分析不该比运行更宽松，也不该更严格。
+        "allow_private_network": bool(allow_private_network),
+    })
+    root = Path.cwd().resolve()
+    return AppConfig(
+        root / ".omnicrawler-inspector.yaml", root, raw, root / "work" / "site_inspection"
+    )
+
+
+def _guarded_fetch(url: str, config: AppConfig, fetcher: Any | None = None) -> FetchResult:
+    """按 robots 策略放行后抓一页。
+
+    传入 `fetcher` 时要求**它自身经 EgressBroker 审计**（例如 AsyncFetcher）；
+    否则回退为独立的 HTTPFetcher 实例。
+    """
+    if not RobotsPolicy(config).allowed(url):
+        raise PermissionError("robots.txt does not allow automated inspection of this URL")
+    request = CrawlRequest(url, meta={"root_url": url})
+    if fetcher is not None:
+        return fetcher.fetch(request)
+    return HTTPFetcher(config).fetch(request)
+
+
+def fetch_page_html(
+    url: str,
+    *,
+    timeout_seconds: float = 20.0,
+    robots_fail_closed: bool = True,
+    allow_private_network: bool = False,
+    fetcher: Any | None = None,
+) -> tuple[str, str]:
+    """抓一页 HTML，返回 ``(html, final_url)`` —— **守卫与 crawl 完全一致**。
+
+    供 GUI 的「分析页面并填字段」使用：它必须看到与真实运行**同一份内容**，
+    否则会出现"分析说得通、运行跑不通"。
+    """
+    config = build_inspection_config(
+        url,
+        timeout_seconds=timeout_seconds,
+        robots_fail_closed=robots_fail_closed,
+        allow_private_network=allow_private_network,
+    )
+    result = _guarded_fetch(url, config, fetcher=fetcher)
+    return decode_body(result), (result.final_url or url)
+
+
 def inspect_url(
     url: str,
     catalog: TemplateCatalog,
@@ -53,27 +123,10 @@ def inspect_url(
     ``fetcher`` 传入时复用其请求通道（例如 AsyncFetcher，内部经 EgressBroker
     审计出网），否则回退为独立的 HTTPFetcher 实例。
     """
-    raw = copy.deepcopy(DEFAULTS)
-    raw["project"] = {"name": "site_inspection", "workspace": "work/site_inspection"}
-    raw["source"] = {"kind": "static_html", "seeds": [url]}
-    raw["http"].update({
-        "user_agent": user_agent("Inspector (+contact: local-user)"),
-        "timeout_seconds": timeout_seconds,
-        "retries": 1,
-        "max_response_bytes": 10_000_000,
-        "respect_robots": True,
-        "robots_fail_closed": bool(robots_fail_closed),
-    })
-    root = Path.cwd().resolve()
-    config = AppConfig(root / ".omnicrawler-inspector.yaml", root, raw, root / "work" / "site_inspection")
-    if not RobotsPolicy(config).allowed(url):
-        raise PermissionError("robots.txt does not allow automated inspection of this URL")
-    request = CrawlRequest(url, meta={"root_url": url})
-    if fetcher is not None:
-        # 复用外部抓取器（须经 EgressBroker 审计），零额外连接开销
-        result = fetcher.fetch(request)
-    else:
-        result = HTTPFetcher(config).fetch(request)
+    config = build_inspection_config(
+        url, timeout_seconds=timeout_seconds, robots_fail_closed=robots_fail_closed
+    )
+    result = _guarded_fetch(url, config, fetcher=fetcher)
     return inspect_result(result, catalog, intent=intent)
 
 

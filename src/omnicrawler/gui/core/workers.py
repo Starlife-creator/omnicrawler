@@ -77,6 +77,72 @@ class SiteInspectionWorker(BackgroundWorker):
         return report, self.url
 
 
+class PageAnalyzeWorker(BackgroundWorker):
+    """抓一页并用**产品自带分析器**推断列表容器与字段（「分析页面并填字段」）。
+
+    为什么要有它：GUI 的「启发式补全字段」只追加**通用**规则（`h1`/`a`/`.author`…），
+    与目标页无关；而产品其实有一套能按页面结构推断容器与真实选择器的分析器
+    （`extraction/intelligent_scraper.py`，CLI 的 `analyze` 用的就是它），
+    此前**在 GUI 里完全用不到**。这个 worker 把它接进表单。
+
+    取页面走 `sources.site_inspector.fetch_page_html` —— **SSRF / 重定向 / 大小 / robots
+    守卫与 crawl 完全一致**，避免出现第二条无守卫的抓取路径。
+
+    ``succeeded`` 载荷：``(report, url)``；report 形如
+    ``{"item_selector": "div.item", "fields": [{"name", "selector", "attribute"}], ...}``。
+    """
+
+    def __init__(
+        self,
+        url: str,
+        *,
+        timeout_seconds: float = 20.0,
+        robots_fail_closed: bool = True,
+        allow_private_network: bool = False,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.url = url
+        self.timeout_seconds = timeout_seconds
+        self.robots_fail_closed = robots_fail_closed
+        self.allow_private_network = allow_private_network
+
+    def work(self) -> Any:
+        from ...extraction.intelligent_scraper import _is_chrome_path, analyze_page
+        from ...sources.site_inspector import fetch_page_html
+
+        html, final_url = fetch_page_html(
+            self.url,
+            timeout_seconds=self.timeout_seconds,
+            robots_fail_closed=self.robots_fail_closed,
+            allow_private_network=self.allow_private_network,
+        )
+        analysis = analyze_page(html, final_url or self.url)
+        fields: list[dict[str, Any]] = []
+        item_selector = ""
+        for field in analysis.fields:
+            if field.get("is_container"):
+                item_selector = str(field.get("selector") or "")
+                continue
+            fields.append({
+                "name": str(field.get("name") or ""),
+                "selector": str(field.get("selector") or ""),
+                "attribute": str(field.get("attribute") or ""),
+            })
+        return {
+            "url": final_url or self.url,
+            "page_type": analysis.page_type,
+            "confidence": analysis.confidence,
+            "item_selector": item_selector,
+            "fields": fields,
+            "pagination": analysis.pagination,
+            # 复用分析器自己的"页面框架"判据（`_is_chrome_path`：aside/nav/footer）：
+            # 只在导航/侧边栏里找到重复元素时，那不是业务列表 ——
+            # GUI 据此**不填容器并警告**，而不是把侧边栏当成列表交给用户。
+            "container_is_chrome": bool(item_selector) and _is_chrome_path(item_selector),
+        }, self.url
+
+
 class ActionRecorderWorker(BackgroundWorker):
     """网页操作录制后台任务。"""
 

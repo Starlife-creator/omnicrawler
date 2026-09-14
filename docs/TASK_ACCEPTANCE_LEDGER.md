@@ -17,6 +17,35 @@
 
 ## 当前已知缺口
 
+- **GUI 此前完全用不到产品自带的 DOM 分析器**（2026-09-14 补上「分析页面并填字段」）。
+  在此之前，GUI 里唯一能"补字段"的入口是「启发式补全字段」，它只追加**通用**规则
+  （`h1`/`a`/`time`/`.author`/`.description`，与目标页无关）；而 CLI 的 `analyze` 一直能用
+  同一套分析器推断出真实容器与选择器 —— **能力存在，但 GUI 没有通路**。
+
+  **已补**：
+  - 表单字段区新增主按钮「**🔍 分析页面并填字段**」（原「启发式补全字段」降为离线后备）；
+  - 抓取走 `sources/site_inspector.fetch_page_html` —— **SSRF / 重定向 / 大小 / robots 守卫与 crawl 完全一致**
+    （顺带把 `inspect_url` 的守卫配置抽成 `build_inspection_config`，避免第二条无守卫抓取路径）；
+  - **沿用任务自身的出网策略**（`allow_private_network` / `robots_fail_closed`）：分析不比运行更宽松，也不更严格；
+  - **失败不假装成功**：如实报错，并用 Toast 的 action 给出「改用通用规则」的去路；
+  - **容器落在页面框架时不填**：复用分析器自己的 `_is_chrome_path`（aside/nav/footer）判据，
+    只在导航/侧边栏里找到重复元素时**不填容器并警告**（避免把侧边栏当列表交给用户）；
+  - 只**追加**不覆盖（与启发式补全同一 Upsert 语义）；结果经控件写入 ⇒ 自动标脏 ⇒ 试跑闸门失效。
+
+  **证据**：`tests/integration/test_gui_form_create_task.py` 增至 11 例，其中三条新用例：
+  ① 列表页 ⇒ 填入真实容器 `… div.item` 与真实选择器 `h2.t`/`span.p`（**不是**通用规则）；
+  ② 只有侧边栏的页面 ⇒ **不填容器** + 明确警告；③ 没有网址 ⇒ 只提示、不抓取、不假装成功。
+  **承重性核对**：把 `apply_analysis` 改成空实现 ⇒ 用例①失败；把 `_is_chrome_path` 改成恒假 ⇒ 用例②失败。
+
+  **过程教训（门禁抓到我自己）**：新按钮要配帮助条目，而 `get_help()` 对未知 ID 会抛 `KeyError`，
+  于是先在 `HELP_ENTRIES` 里加了 `fields.analyze_page` —— 但**只加条目、没把 `HelpTooltip` 绑上界面**，
+  被 `tests/integration/template/test_help_ux.py` 判红（它断言"每个声明的帮助条目都真的挂在界面上"）。
+  这已是本项目第 N 次抓到"定义了没有生产者"；本次由门禁在合并前拦下，未逃逸。
+
+  **仍未闭环（如实登记）**：
+  - 选择器为空的字段（如"元素自身 href"这类 `selector=""` + `attr=href` 的规则）会被**跳过** ——
+    GUI 的 `FieldDef` 要求选择器非空，这类规则目前只能靠 YAML 表达；
+  - `extract.mode` / `source.kind=rest` 仍无表单入口 ⇒ **JSON API 任务仍须导入 YAML**（本次未动）。
 - **GUI 曾无法创建（author）`extract.item_selector`**（2026-09-13 实测 → **2026-09-14 已修**）：从零在表单里建不出"列表"任务。**现已闭环**——
   核实方式：逐条查 GUI 的输入路径 ——
   ① 表单（TaskCanvas）没有该控件；② 「启发式补全字段」只追加**通用**字段规则

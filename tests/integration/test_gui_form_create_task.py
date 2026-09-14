@@ -423,3 +423,144 @@ def test_draft_intent_controls_scope_budget(tmp_path: Path, monkeypatch, intent:
     finally:
         window.close()
         app.processEvents()
+
+
+# ── 2026-09-14：「分析页面并填字段」（把产品自带分析器接进表单） ──────────────
+
+_SIDEBAR_HTML = (
+    '<html><body><aside class="sidebar">'
+    + "".join(f'<a href="/{c}">{c}</a>' for c in "abcd")
+    + "</aside></body></html>"
+)
+
+
+@contextlib.contextmanager
+def _serve_html(html: str):
+    """起一个只返回给定 HTML 的本地站点。"""
+    handler = type(
+        "_H", (BaseHTTPRequestHandler,), {
+            "do_GET": lambda self: (
+                self.send_response(200),
+                self.send_header("Content-Type", "text/html; charset=utf-8"),
+                self.send_header("Content-Length", str(len(html.encode("utf-8")))),
+                self.end_headers(),
+                self.wfile.write(html.encode("utf-8")),
+            ),
+            "log_message": lambda self, *_a: None,
+        },
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/list"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _record_toasts(monkeypatch) -> dict[str, list[str]]:
+    """把 Toast 换成记录器，便于断言"到底告诉了用户什么"。"""
+    from omnicrawler.gui.widgets.toast import ToastManager
+
+    seen: dict[str, list[str]] = {"success": [], "info": [], "warning": [], "error": []}
+
+    def _make(kind: str):
+        def _recorder(self, message, **_kwargs):
+            seen[kind].append(str(message))
+            return None
+
+        return _recorder
+
+    for kind in seen:
+        monkeypatch.setattr(ToastManager, kind, _make(kind))
+    return seen
+
+
+def _allow_private(window) -> None:
+    """本机站点需显式放行（`allow_private_network` 是安全默认，无表单控件）。"""
+    window._config.passthrough.setdefault("http", {})["allow_private_network"] = True
+
+
+def test_analyze_page_fills_container_and_real_selectors(tmp_path: Path, monkeypatch) -> None:
+    """点「分析页面并填字段」→ 填入**真实**容器与选择器（不是通用规则）。
+
+    对照：同一场景点「启发式补全字段」只会得到 `h1`/`a`/`time`/`.author`/`.description`
+    这类与目标页无关的通用规则；本按钮走的是产品自带 DOM 分析器（CLI `analyze` 同源）。
+    """
+    seen = _record_toasts(monkeypatch)
+    with _serve() as seed:
+        app, window = _window(tmp_path, monkeypatch)
+        _silence_side_effects(window)
+        try:
+            window._config_delegate.new_config()
+            canvas = window._task_canvas
+            assert not canvas._analyze_btn.isEnabled(), "没有网址时分析按钮应禁用"
+            canvas._url_edit.setText(seed)
+            assert canvas._analyze_btn.isEnabled(), "填了网址后分析按钮应可用"
+
+            _allow_private(window)
+            canvas._analyze_btn.click()
+            _pump(app, lambda: bool(window._config.fields), timeout=120, what="分析完成")
+
+            assert canvas._item_selector_edit.text().endswith("div.item"), (
+                f"应填入真实容器：{canvas._item_selector_edit.text()!r}"
+            )
+            selectors = {f.selector for f in window._config.fields}
+            assert {"h2.t", "span.p"} <= selectors, f"应填入页面真实选择器：{selectors}"
+            # 按钮复位（同一按钮可再次使用）
+            assert canvas._analyze_btn.text() == "🔍 分析页面并填字段"
+            assert canvas._analyze_btn.isEnabled()
+            assert seen["success"], "应给出成功提示"
+        finally:
+            window.close()
+            app.processEvents()
+
+
+def test_analyze_page_refuses_navigation_only_container(tmp_path: Path, monkeypatch) -> None:
+    """只在页面框架（侧边栏 / 导航 / 页脚）里找到重复元素 ⇒ **不填容器**并明确警告。
+
+    复用分析器/自动配置门禁的同一判据（`_is_chrome_path`）：把侧边栏当列表交给用户，
+    比"什么都不填"更糟。
+    """
+    seen = _record_toasts(monkeypatch)
+    with _serve_html(_SIDEBAR_HTML) as seed:
+        app, window = _window(tmp_path, monkeypatch)
+        _silence_side_effects(window)
+        try:
+            window._config_delegate.new_config()
+            canvas = window._task_canvas
+            canvas._url_edit.setText(seed)
+            _allow_private(window)
+            canvas._analyze_btn.click()
+            _pump(
+                app,
+                lambda: canvas._analyze_btn.text() == "🔍 分析页面并填字段",
+                timeout=120,
+                what="分析结束",
+            )
+            app.processEvents()
+
+            assert canvas._item_selector_edit.text() == "", "页面框架容器不应被填入"
+            assert seen["warning"], "应明确警告：只在页面框架里找到重复元素"
+        finally:
+            window.close()
+            app.processEvents()
+
+
+def test_analyze_page_without_url_only_informs(tmp_path: Path, monkeypatch) -> None:
+    """没有网址时不发起抓取，只提示 —— 不假装分析过。"""
+    seen = _record_toasts(monkeypatch)
+    app, window = _window(tmp_path, monkeypatch)
+    _silence_side_effects(window)
+    try:
+        window._config_delegate.new_config()
+        canvas = window._task_canvas
+        canvas._url_edit.setText("")
+        canvas._analyze_btn.click()
+        app.processEvents()
+        assert seen["info"], "应提示先填入口网址"
+        assert not seen["success"], "不该假装成功"
+        assert window._config.fields == []
+    finally:
+        window.close()
+        app.processEvents()

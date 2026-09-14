@@ -149,6 +149,7 @@ class IntentAreaMixin:
             self._set_probe_badge("")
         self._on_scope_changed()
         self._update_onboarding()
+        self._update_analyze_button()
 
     def _fire_probe(self) -> None:
         """防抖期满：意图区当前 URL 仍有效才发起探活（锁定态/输入变更时不发）。"""

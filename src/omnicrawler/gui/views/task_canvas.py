@@ -548,11 +548,26 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
             self._status_icon.setText("")
             self._status_text.setText(_("尚未试跑：填写网址并生成草稿后开始小样本验证"))
 
+    def _update_analyze_button(self) -> None:
+        """「分析页面并填字段」的可用性：**跟随网址与锁定态**。
+
+        收敛成唯一实现，并在 URL 变化（`_on_intent_changed`）、锁定态变化
+        （`_sync_ui_state`）与分析结束后分别调用 —— 只挂在 `_sync_ui_state` 上不够，
+        `new_config()` 那条路径不会经过它（实测踩到）。
+        """
+        button = getattr(self, "_analyze_btn", None)
+        if button is None:
+            # 意图区（`_build_intent_area`）比字段区先构建，而它已连上 URL 变化回调 ——
+            # 构建期间若有任何 `setText`，这里会被调用到而按钮还不存在。
+            return
+        button.setEnabled(bool(self._url_edit.text().strip()) and not self._locked)
+
     def _sync_ui_state(self) -> None:
         locked = self._locked
         self._save_btn.setEnabled(not locked)
         self._save_btn.setToolTip(_("工作台锁定中，请先完成当前操作") if locked else _("随时可保存，无需先试跑；不改变编辑状态"))
         self._start_btn.setEnabled(bool(self._url_edit.text().strip()) and not locked)
+        self._update_analyze_button()
         for widget in (self._url_edit, self._desc_edit, self._fields_table,
                        self._item_selector_edit,
                        self._max_pages, self._delay_spin, self._concurrency_spin,
