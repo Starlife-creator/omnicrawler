@@ -236,3 +236,70 @@ def test_html_mode_field_still_written_as_selector() -> None:
     loaded = from_yaml(to_yaml(config))
     assert loaded.passthrough["extract"]["fields"]["title"]["selector"] == "h1.t"
     assert "path" not in loaded.passthrough["extract"]["fields"]["title"]
+
+
+def test_pagination_survives_round_trip_including_unmodelled_keys() -> None:
+    """`source.pagination` 往返必须**逐键保留**（含 GUI 没建模的 `location`）。
+
+    分页属「配了却没生效」里最难自查的一类：页码形态少了 `end` 就只抓一页、
+    游标形态少了 `next_path` 就只抓一批 —— 任一键被往返吞掉，任务会安静地少采。
+    """
+    from omnicrawler.gui.core.config_serializer import from_yaml, to_yaml
+
+    source = {
+        "kind": "rest",
+        "seeds": ["https://api.example/items"],
+        "pagination": {
+            "type": "page",
+            "parameter": "offset",
+            "start": 0,
+            "end": 100,
+            "step": 50,
+            "location": "body",
+        },
+    }
+    loaded = from_yaml(
+        "\n".join(
+            [
+                "source:",
+                "  kind: rest",
+                '  seeds: ["https://api.example/items"]',
+                "  pagination:",
+                "    type: page",
+                "    parameter: offset",
+                "    start: 0",
+                "    end: 100",
+                "    step: 50",
+                "    location: body",
+                'extract: {mode: json, item_path: "$.items[*]"}',
+                "",
+            ]
+        )
+    )
+    assert loaded.pagination == source["pagination"]
+
+    again = from_yaml(to_yaml(loaded))
+    assert again.pagination == source["pagination"], "往返不得丢键"
+
+
+def test_legacy_cursor_pagination_without_type_is_kept() -> None:
+    """历史游标写法（没有 `type`，只有 `next_path`）往返后必须一字不变。
+
+    仓库内的基准任务与既有端到端用例都写作 `{next_path: $.next, parameter: cursor}`；
+    序列化层若按 `type` 重建分页，就会把这类配置改写成别的形状。
+    """
+    from omnicrawler.gui.core.config_serializer import from_yaml, to_yaml
+
+    legacy = {"next_path": "$.next", "parameter": "cursor"}
+    loaded = from_yaml(
+        "\n".join(
+            [
+                "source:",
+                "  kind: rest",
+                "  pagination: {next_path: $.next, parameter: cursor}",
+                "",
+            ]
+        )
+    )
+    assert loaded.pagination == legacy
+    assert from_yaml(to_yaml(loaded)).pagination == legacy

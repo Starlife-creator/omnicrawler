@@ -50,6 +50,8 @@ class FieldsAreaMixin(_Base):
     # ---- 宿主契约：实例属性 ----
     _config: CrawlConfig
     _locked: bool
+    _updating: bool
+    _DOMAIN_FIELD: str
     _fields_section: _Section
     _fields_model: _FieldTableModel
     _fields_table: QTableView
@@ -62,6 +64,9 @@ class FieldsAreaMixin(_Base):
     if TYPE_CHECKING:
         # 由 TaskCanvas / 其他 Mixin 提供；仅类型检查期可见，运行期不存在，故不遮蔽宿主实现。
         def _on_field_changed(self, *_args: Any) -> None: ...
+        def _sync_form_to_config(self) -> None: ...
+        def _mark_dirty(self, domain: str = ...) -> None: ...
+        def _update_analyze_button(self) -> None: ...
 
     # ------------------------------------------------------------------
     #  字段规则

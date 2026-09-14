@@ -461,6 +461,10 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
         # 否则会把"打开来的 JSON 配置"在保存时悄悄改成 html。
         cfg.source_kind = str(self._source_kind_combo.currentData() or cfg.source_kind)
         cfg.set_item_path(self._item_path_edit.text())
+        # 分页：形状来自 core.pagination 契约，控件只是它的载体。
+        # 走「保持原样」时**不碰**已加载的分页配置（插件形状/契约外键不许被表单改写）。
+        if not self._pagination_keep_original:
+            cfg.pagination = self._pagination_from_form()
         cfg.max_pages = self._max_pages.value()
         cfg.delay = self._delay_spin.value()
         cfg.concurrency = self._concurrency_spin.value()
@@ -580,7 +584,10 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
                        self._item_selector_edit,
                        self._max_pages, self._delay_spin, self._concurrency_spin,
                        self._trial_pages_spin, self._download_chk, self._pdf_chk,
-                       self._monitor_chk):
+                       self._monitor_chk,
+                       # 分页控件没有「由 URL/业务状态算出」的禁用态，放进这个循环是安全的
+                       # （该循环统一 setEnabled(not locked)；有状态禁用的控件不能放进来）。
+                       self._pagination_combo, *self._pagination_edits.values()):
             widget.setEnabled(not locked)
         for chk in self._format_checks:
             chk.setEnabled(not locked)
@@ -780,6 +787,7 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
             self._item_path_edit.setText(cfg.item_path())
             self._item_path_edit.blockSignals(False)
             self._update_item_path_visibility()
+            self._load_pagination(cfg.pagination)
             self._max_pages.setValue(cfg.max_pages)
             self._delay_spin.setValue(cfg.delay)
             self._concurrency_spin.setValue(cfg.concurrency)

@@ -9,13 +9,38 @@
 |---|---|---|---|---|
 | 静态列表→详情→结构化结果 | `quality_benchmark.py` 的 `list-three-details`，6条记录、title/price、逐条来源路径 | 本地HTTP真实流水线；精确评分含漏采、错值、错来源、额外及重复记录；**2026-09-13 新增 GUI 闭环两条**：`test_gui_worker_local_task.py` 经真实 `WorkerTaskRunner` + 真实 worker 子进程（pid≠当前进程、事后退出无残留）跑本地站点——① 单页列表恰好3条真值+CSV；② **列表→详情两级 4 页 6 条**、来源覆盖 4 个 URL、**XLSX 可重新打开** | 已验证（JSONL/CSV/XLSX 核心链，含 GUI 子进程、两级抓取与**真实运行按钮入口**） | 便携产物内复跑（按约定留 CI / 受控环境） |
 | 动态页面→分页/滚动→去重 | **程序自造的固定样例**：3 页 × 4 条，条目由页面**内联 JS 注入**（只有真渲染才看得到），页面间用静态 `rel="next"` 相连；真值 = 12 条且互不相同 | **2026-09-13 新增端到端**（`tests/integration/browser/test_dynamic_pagination_fixed_sample.py`）：本地 JS 站点经真实流水线（浏览器引擎）⇒ `processed=3`（首末页齐全）、12 条、**无重复**、来源覆盖 3 个页面；**浏览器进程回收**独立成一条用例核对。**独立性核对**：断掉"浏览器源链接发现"后 `processed` 由 3 掉到 1（证明断言承重）。门禁 `OMNICRAWL_BROWSER_TESTS=1`（与仓库既有浏览器用例同款），跳过时给出安装命令。**2026-09-13 再补滚动样例**（`test_infinite_scroll_fixed_sample.py`）：单页 3 批 × 4 条，内容**只在页面被滚动过之后**才追加 ⇒ `processed=1` 且 12 条、无重复；**去掉滚动动作只剩首屏 4 条**（承重性做成常驻用例，非一次性核对）。样例刻意**不依赖 scroll 事件 / IntersectionObserver**（无头下二者派发不稳定，见缺口节） | 已验证（**分页 + 滚动**） | 便携产物内复跑（按约定留 CI / 受控环境） |
-| API→游标分页→增量 | 本地HTTP固定3页：首次交付ID 1/2/3；二次仅末页值变化，应只交付ID 3新值 | 自动分析按正式JSONPath试跑；真实流水线核对游标替换、末页停止、来源URL及二次同步；恢复保留未完成游标；**2026-09-13 新增 GUI 路径**：同场景经真实 GUI 运行器 + worker 子进程跑通（3 条含游标来源、游标链恰好一遍、二次只交付变化那条） | 已验证（JSONL核心链，含 GUI 运行路径） | 经 GUI 表单创建本任务（**表单已可 author 列表项选择器**；`allow_private_network` 仍须在配置中声明）；便携产物内复跑 |
+| API→游标分页→增量 | 本地HTTP固定3页：首次交付ID 1/2/3；二次仅末页值变化，应只交付ID 3新值 | 自动分析按正式JSONPath试跑；真实流水线核对游标替换、末页停止、来源URL及二次同步；恢复保留未完成游标；**2026-09-13 新增 GUI 路径**：同场景经真实 GUI 运行器 + worker 子进程跑通（3 条含游标来源、游标链恰好一遍、二次只交付变化那条）；**2026-09-14 新增「经 GUI 表单创建」**：`test_form_created_cursor_api_task_runs_end_to_end` —— **空白表单**选「API / JSON」+「按游标」分页、填记录路径与字段 → 保存 → 运行 → 三页全交付、游标链恰好一遍、二次只交付末页变化那条（与 YAML 路径同一组真值） | 已验证（JSONL核心链，含 GUI 运行路径与**表单创建**路径） | 便携产物内复跑（按约定留 CI / 受控环境） |
 | 附件→PDF/OCR→复核（**自动部分**） | 程序自造样本（零第三方内容）：数字版=reportlab 中英文+表格；图片版=PIL 渲染的**无文字层** PDF（用来逼出 OCR）。真值：`HT-2026-0001` / `示例服务合同` / `12,345.67 元` | **2026-09-13 新增端到端**（`tests/integration/pdf/test_pdf_ocr_review_workflow.py`）：① 数字版取到中英文与表格（还原为 Markdown 表）、金额标准化为「元」、字段带**页码 + 原文证据**、校验 `valid`；② 图片版 `parse_method=ocr`、`ocr_status=done`、置信度 > 0.5（用**项目内置 tesseract** `.runtime/tesseract/`），OCR 文本还原出编号与名称，宽容模式抽取 `valid`，**金额经结构判定恢复为真值并逐字符核对**（`12.345.67` → `12345.67`；原始值仍保留）；③ 故意用严格模式制造失败 → `invalid`/`needs_review` + 校验信息说明缺哪些必填字段 → 复核队列 → 人工补齐并确认 → `apply-review` 写入 `human_review` 值 → **再导出可见** | 已验证（自动部分） | — |
 | 附件→PDF/OCR→复核（**人工部分**） | 同上样本与真值 | 无自动证据（按定义不可自动） | 未知（须人工走查） | 用**可复用走查包**走一遍：`python tools/walkthrough_env.py`（固定样本 + 隔离工作区）配合 `docs/MANUAL_WALKTHROUGH.md` 的 8 步清单，结论填《审查记录》§二十。样本期望值由 `tools/walkthrough_demo_site.py` 的 `EXPECTED` 提供并被 `tests/unit/tools/test_walkthrough_demo_site.py` 锁定（不会与文档漂移） |
 | 定期采集→变更检测→差异导出 | 本地固定两版输入：v1=甲乙丙；v2=甲改价、乙不变、丙移除、丁新增 | **2026-09-13 新增端到端**：经真实 GUI 运行器 + worker 子进程连跑三次——v2 报 `modified=1`、`added=1`（中文键身份生效）；「删除」经 `run_compare` 检出 `removed=1`、`possibly_removed=0`；**差异导出**经产品自身 `compare-runs -o <file>` 写出文件且计数一致；第三次内容不变 → **零差异（无假差异）** | 已验证（变动识别 + 删除 + 差异导出 + 无假差异；删除走 run_compare 而非主路径） | `updates.confirm_missing_runs` 的连续确认（见缺口）；首次同步是否应报变更（待决策） |
 | 长任务→中断→恢复 | 故障注入与取消恢复用例已有；**2026-09-13 新增 GUI 路径**：慢站点（列表 + 8 详情），运行中经 GUI 停止 | 真实 GUI 运行器 + worker 子进程：**取消时服务端仅命中 3/9 页（对照实验：不取消 = 9/9）**、后端 `status=cancelled` 且 `pending>0`（证明确为中途停止）；停止后子进程回收无残留；重启后按标题去重**无重复**、两次运行合起来**覆盖全部页面** | 已验证（GUI 停止真实有效 + 进程回收 + 重启不重复不遗漏）；「resume 只交付剩余」由 ApplicationService 级用例覆盖 | 便携产物内复跑 |
 
 ## 当前已知缺口
+
+- **表单曾无法 author `source.pagination`，且分页的形状知识散在三处**（2026-09-14 收拢 → **同日已闭环**）。
+  原状：`core/config.py` 只校验 `type == page`；`sources/sources.py` 消费 `type == page` 与
+  `next_path`；`extraction/api_discovery.py` 产出 `page` / `next` / `cursor` 三种形态。
+  于是 **GUI 没有任何分页入口** —— 表单建出的 API 任务只能抓第一批结果，**且没有任何提示**；
+  更糟的是游标配置缺 `next_path` 时**既不报错也不翻页**，运行成功、产物看起来正常，只是少了后几页。
+
+  **已收拢**：新增 `core/pagination.py` 作为分页的**唯一真源**（形状 + 字段 + 校验），
+  三方改为共用它：
+  - `core/config.py` 的校验改为 `validate_pagination()` ⇒ 顺带补上游标侧：缺 `next_path` 现在**加载时即报错**；
+  - GUI 由契约**渲染**控件（`高级设置 → 分页方式`：不翻页 / 按页码·偏移 / 按游标·下一页值），
+    字段名与取值类型全部来自契约，GUI 只保留中文标签（表现层）⇒ **不再有第二份分页词典**；
+  - 判定形状用 `detect_shape()` 而不是读 `type`：既有游标配置（`{next_path, parameter}`，无 `type`）
+    与基准任务都属这种写法，判定条件刻意与**取数引擎的生效条件**对齐（死键不报错）。
+
+  **两条防再分叉的机器检查**（`tests/unit/core/test_pagination_contract.py`）：
+  ① 契约 → 引擎：每个声明形状都在真实引擎上验一次（页码 ⇒ `seed()` 展开，游标 ⇒ `_discover_api_next()` 替换参数）；② 引擎 → 契约：**扫描 `sources.py` / `pipeline/_run.py`**
+  里 `pagination.get("…")` 的键，断言全部在契约里声明过（先断言「确实扫到了」，防假通过）。
+
+  **GUI 侧的证据**：`test_form_authored_pagination_reaches_config_and_survives_extras`（换形状＝该组参数重填，避免把页码参数名 `page` 带到游标形状写成 `?page=<游标值>`；契约外/表单不渲染的键如 `location` 表单同步后仍在；未知形状 `type: scroll` 进「保持原样」不改写）；`test_form_created_cursor_api_task_runs_end_to_end`（空白表单 → 保存 → 运行 → 真值）；`tests/unit/config/test_gui_config_preservation.py` 两条往返用例（含历史无 `type` 写法）。
+  **承重性核对（三处注入，全部会红）**：① 让 `_pagination_from_form()` 恒返回 `None` ⇒ 端到端用例失败（只抓第一批）；② 清空 `_pagination_extras` ⇒ 契约外键保留用例失败；③ 把契约校验打空（退回只认 `type=page`）⇒ 校验用例 `DID NOT RAISE` 而失败。
+
+  **仍未闭环（如实登记）**：`location: body` 需要 `source.payload` 配套，表单**仍不渲染**它
+  （契约里标 `editable=False`，原样透传）；`extract.mode`/`source.kind` 的表单入口属另一条
+  （见下方 GUI 条目）。
 
 - **「release 产物依赖与锁一致」此前只覆盖可安装性**（2026-09-14 补上**严格口径**）。
   原状：`uv sync --locked` 成功 + 可导入即算闭环，**没有核对产物自己声明了什么** ——

@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+
+### 变更
+
+- feat(pagination): 分页形状收成唯一契约 `src/omnicrawler/core/pagination.py`（核心校验与 GUI 共用）；游标配置缺 `next_path` 从「静默只采一批」改为**加载时即报错**
+- feat(gui): 「高级设置 → 分页方式」支持按页码/偏移与按游标/下一页值，并保留 `location` 等表单不渲染的分页键 ⇒ 从零在表单里可建分页任务（含游标），无需手写 YAML
+
 ## 0.12.0 - 2026-09-02
 
 ### 变更

@@ -19,6 +19,7 @@ from .builtin_references import (
 from .credentials import resolve_secret_refs
 from .errors import ConfigParseError
 from .migrations import CURRENT_CONFIG_VERSION, migrate_config
+from .pagination import validate_pagination
 from .utils import deep_merge, expand_env_checked, user_agent
 
 LOGGER = logging.getLogger("omnicrawler")
@@ -676,19 +677,10 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         errors.append("egress.experimental_selenium_bidi_guard必须是true或false")
     if config.source_kind == "browser" and not config.section("browser").get("engine"):
         errors.append("browser.engine不能为空")
-    pagination = config.section("source").get("pagination", {})
-    if pagination and not isinstance(pagination, dict):
-        errors.append("source.pagination必须是YAML对象")
-    elif isinstance(pagination, dict) and pagination.get("type") == "page":
-        try:
-            start = int(pagination.get("start", 1))
-            end = int(pagination.get("end", start))
-            if start < 0 or end < start:
-                errors.append("source.pagination页码范围无效")
-        except (TypeError, ValueError):
-            errors.append("source.pagination.start/end必须是整数")
-        if not str(pagination.get("parameter", "page")).strip():
-            errors.append("source.pagination.parameter不能为空")
+    # 分页形状由 core.pagination 的契约统一判定与校验（唯一真源）；
+    # 这里只负责把结果并入 errors —— 此前核心只校验 type=page，
+    # 游标配置缺 next_path 时既不报错也不翻页（静默少采几页）。
+    errors.extend(validate_pagination(config.section("source").get("pagination", {})))
     fields = config.section("extract").get("fields", {})
     if fields and not isinstance(fields, dict):
         errors.append("extract.fields必须是字段名到规则的映射")

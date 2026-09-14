@@ -36,6 +36,8 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from omnicrawler.gui.core.config_serializer import to_yaml  # noqa: E402
+
 EXPECTED_FIELDS_SELECTORS = {"h1", "a", "time", ".author", ".description"}
 
 #: 演示站点的真值（与 `_LIST_HTML` 一致）
@@ -698,6 +700,274 @@ def test_form_created_api_task_runs_end_to_end(tmp_path: Path, monkeypatch) -> N
             )
             rows = list(_csv.DictReader(records_csv.open(encoding="utf-8-sig")))
             assert {(r["id"], r["value"]) for r in rows} == set(EXPECTED_API), rows
+        finally:
+            with contextlib.suppress(Exception):
+                window._task_runner._backend.shutdown()
+            with contextlib.suppress(Exception):
+                window._task_runner._poller.stop()
+            window.close()
+            app.processEvents()
+
+# ── 2026-09-14：表单可 author 分页（含游标）────────────────────────────────
+
+#: 游标接口的固定页：只有真的翻页才看得到后两条（键为请求里的 cursor 值）。
+CURSOR_PAGES_FIRST = {
+    "": ({"id": "1", "value": "first"}, "page-2"),
+    "page-2": ({"id": "2", "value": "middle"}, "page-3"),
+    "page-3": ({"id": "3", "value": "last"}, None),
+}
+
+
+@contextlib.contextmanager
+def _serve_cursor_api(pages: dict):
+    """返回 `{"items": [...], "next": <游标>}` 的本地接口；记录每次请求路径用于核对游标链。
+
+    只读取第一个 `cursor` 值 —— 复现常见服务端语义，也能暴露「逐页追加参数」这类缺陷。
+    """
+    state = {"hits": [], "pages": dict(pages)}
+
+    class _CursorApi(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 —— http.server 回调命名约定
+            import urllib.parse
+
+            parsed = urllib.parse.urlsplit(self.path)
+            cursor = urllib.parse.parse_qs(parsed.query).get("cursor", [""])[0]
+            state["hits"].append(self.path)
+            item, next_cursor = state["pages"][cursor]
+            body = json.dumps({"items": [item], "next": next_cursor}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):  # 静音访问日志
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _CursorApi)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/items?scope=all", state
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _read_records(workspace: Path) -> list[dict]:
+    """读 `records.csv`（`utf-8-sig`：GUI 产物带 BOM）。"""
+    import csv as _csv
+
+    with (workspace / "output" / "records.csv").open(encoding="utf-8-sig") as handle:
+        return list(_csv.DictReader(handle))
+
+def _business_hits(state: dict) -> list[str]:
+    """只取业务请求：`respect_robots` 默认开着，抓取前会先请求 `/robots.txt`（正常行为）。"""
+    return [hit for hit in state["hits"] if hit.startswith("/items")]
+
+
+def test_form_authored_pagination_reaches_config_and_survives_extras(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """表单里选的「分页方式」要落进配置；**表单管不到的键不许被改写**。
+
+    同一件事的两个方向：换形状必须真的生效（否则用户以为配了却没翻页），而 `location`、
+    插件自带键这类表单管不到的键必须原样留着 —— 本仓库出过「打开一个能用的配置、
+    存一下就被删掉几个键」的事故。
+    """
+    app, window = _window(tmp_path, monkeypatch)
+    _silence_side_effects(window)
+    try:
+        window._config_delegate.new_config()
+        canvas = window._task_canvas
+        assert not canvas._pagination_rows["next_path"].isVisibleTo(canvas), "不翻页时不该出现分页字段"
+
+        canvas._pagination_combo.setCurrentIndex(canvas._pagination_combo.findData("page"))
+        app.processEvents()
+        assert window._config.pagination == {
+            "type": "page",
+            "parameter": "page",
+            "start": 1,
+            "end": 1,
+            "step": 1,
+        }, window._config.pagination
+        assert canvas._pagination_rows["end"].isVisibleTo(canvas)
+        assert not canvas._pagination_rows["next_path"].isVisibleTo(canvas)
+
+        canvas._pagination_edits["end"].setText("3")
+        app.processEvents()
+        assert window._config.pagination["end"] == 3
+
+        # 换形状＝这组参数重新填：页码参数名「page」不许被带到游标形状里，
+        # 否则运行时会变成 ?page=<游标值> —— 看起来正常、其实取错页。
+        canvas._pagination_combo.setCurrentIndex(canvas._pagination_combo.findData("cursor"))
+        app.processEvents()
+        assert window._config.pagination == {"type": "cursor"}, window._config.pagination
+        assert canvas._pagination_rows["next_path"].isVisibleTo(canvas)
+        assert not canvas._pagination_rows["end"].isVisibleTo(canvas)
+
+        canvas._pagination_edits["next_path"].setText("$.next")
+        canvas._pagination_edits["parameter"].setText("cursor")
+        app.processEvents()
+        assert window._config.pagination == {
+            "type": "cursor",
+            "next_path": "$.next",
+            "parameter": "cursor",
+        }
+
+        # 配置「保存 → 重新打开」：分页仍在，下拉回到正确形状
+        saved = tmp_path / "pagination.yaml"
+        saved.write_text(to_yaml(window._config), encoding="utf-8")
+        window._config_delegate._open_recent(str(saved))
+        app.processEvents()
+        assert window._config.pagination["next_path"] == "$.next"
+        assert canvas._pagination_combo.currentData() == "cursor"
+
+        # 契约外/表单不渲染的键（location）：一次表单同步之后仍要在
+        exotic = tmp_path / "exotic.yaml"
+        exotic.write_text(
+            "\n".join(
+                [
+                    "source:",
+                    "  kind: rest",
+                    '  seeds: ["https://api.example/items"]',
+                    "  pagination:",
+                    "    type: page",
+                    "    parameter: offset",
+                    "    start: 0",
+                    "    end: 100",
+                    "    step: 50",
+                    "    location: body",
+                    'extract: {mode: json, item_path: "$.items[*]"}',
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        window._config_delegate._open_recent(str(exotic))
+        app.processEvents()
+        assert canvas._pagination_extras == {"location": "body"}, canvas._pagination_extras
+        canvas._desc_edit.setText("改一下描述，触发一次表单→配置同步")
+        app.processEvents()
+        assert window._config.pagination["location"] == "body", "location 属表单管不到的键，不许被删"
+        assert window._config.pagination["step"] == 50
+
+        # 未知形状（插件自带）：进「保持原样」，不猜、不改写
+        unknown = tmp_path / "unknown.yaml"
+        unknown.write_text(
+            "\n".join(
+                [
+                    "source:",
+                    "  kind: browser",
+                    '  seeds: ["https://example.org"]',
+                    "  pagination: {type: scroll, batches: 3}",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        window._config_delegate._open_recent(str(unknown))
+        app.processEvents()
+        assert canvas._pagination_combo.currentData() == "__keep__"
+        canvas._desc_edit.setText("再改一次")
+        app.processEvents()
+        assert window._config.pagination == {"type": "scroll", "batches": 3}, "未知形状必须原样保留"
+    finally:
+        window.close()
+        app.processEvents()
+
+
+def test_form_created_cursor_api_task_runs_end_to_end(tmp_path: Path, monkeypatch) -> None:
+    """**空白表单 → 选 API + 按游标分页 → 保存 → 运行 → 三页全交付、二次只交付变化那条。**
+
+    这是账本 API 工作流「经 GUI 表单创建本任务」的正面证据。此前的 GUI 证据都是"把写好的
+    YAML 交给窗口"——而分页**根本没有表单入口**，从零建出的 API 任务只能抓第一批结果，
+    且没有任何提示。
+    """
+    from PySide6.QtWidgets import QFileDialog
+
+    from omnicrawler.gui.core.config_model import FieldDef
+
+    saved_path = tmp_path / "cursor_task.yaml"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(saved_path), ""))
+    )
+    chain = [
+        "/items?scope=all",
+        "/items?scope=all&cursor=page-2",
+        "/items?scope=all&cursor=page-3",
+    ]
+
+    with _serve_cursor_api(CURSOR_PAGES_FIRST) as (seed, state):
+        app, window = _window(tmp_path, monkeypatch)
+        _silence_side_effects(window)
+        window._omnicrawler_available = True
+        try:
+            window._config_delegate.new_config()
+            canvas = window._task_canvas
+            canvas._source_kind_combo.setCurrentIndex(canvas._source_kind_combo.findData("rest"))
+            canvas._url_edit.setText(seed)
+            canvas._item_path_edit.setText("$.items[*]")
+            canvas._pagination_combo.setCurrentIndex(canvas._pagination_combo.findData("cursor"))
+            canvas._pagination_edits["next_path"].setText("$.next")
+            canvas._pagination_edits["parameter"].setText("cursor")
+            for name in ("id", "value"):
+                canvas._fields_model.append(FieldDef(name=name, selector=name, selector_type="css"))
+                canvas._on_field_changed()
+            _allow_private(window)
+            canvas._save_btn.click()
+            _pump(app, lambda: saved_path.is_file(), what="配置落盘")
+
+            raw_yaml = saved_path.read_text(encoding="utf-8")
+            assert "type: cursor" in raw_yaml, raw_yaml
+            assert "next_path: $.next" in raw_yaml, raw_yaml
+            assert "parameter: cursor" in raw_yaml, raw_yaml
+
+            canvas.set_trial_result(True, "试跑通过：3 条记录", {})
+            window._run_btn.click()
+            _pump(
+                app,
+                lambda: window._task_runner.state in {"finished", "error"},
+                timeout=240,
+                what="任务到达终态",
+            )
+            assert window._task_runner.state == "finished", (
+                f"表单创建的游标任务应成功结束：{window._task_runner.state}"
+            )
+
+            workspace = tmp_path / window._config.workspace
+            records = _read_records(workspace)
+            assert [(r["id"], r["value"]) for r in records] == [
+                ("1", "first"),
+                ("2", "middle"),
+                ("3", "last"),
+            ], f"首次同步应交付三页各一条：{records}"
+            assert [r["source_url"] for r in records] == [
+                seed,
+                f"{seed}&cursor=page-2",
+                f"{seed}&cursor=page-3",
+            ], "每条记录要指向它真正的来源页（含游标）"
+            assert _business_hits(state) == chain, (
+                f"游标链应恰好走一遍并在末页停止：{state['hits']}"
+            )
+            assert all(hit.count("cursor=") <= 1 for hit in _business_hits(state)), "不得重复叠加游标"
+
+            # 第二次同步：末页内容变化 —— 游标链仍完整重建，但只交付变化的那条
+            state["hits"].clear()
+            state["pages"]["page-3"] = ({"id": "3", "value": "last-updated"}, None)
+            canvas.set_trial_result(True, "试跑通过：3 条记录", {})
+            window._run_btn.click()
+            _pump(
+                app,
+                lambda: window._task_runner.state in {"finished", "error"},
+                timeout=240,
+                what="第二次任务到达终态",
+            )
+            assert window._task_runner.state == "finished"
+            assert _business_hits(state) == chain, "新同步周期必须重建整条游标链"
+            changed = _read_records(workspace)
+            assert [(r["id"], r["value"]) for r in changed] == [("3", "last-updated")], (
+                f"未变化页不应重复交付，末页变化只交付一次：{changed}"
+            )
         finally:
             with contextlib.suppress(Exception):
                 window._task_runner._backend.shutdown()
