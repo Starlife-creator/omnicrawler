@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 import pytest
@@ -141,3 +142,81 @@ def test_emit_result_override_replaces_generic_succeeded() -> None:
     worker.run()
     assert typed == [7]
     assert seen == [], "覆写 _emit_result 后不应再发通用 succeeded"
+
+
+class _CleanupRecorder(BackgroundWorker):
+    """记录 cleanup 调用次数/线程/顺序；可选让 cleanup 抛异常。"""
+
+    def __init__(self, *, result: Any = 42, raise_in_work: bool = False, cleanup_raises: bool = False) -> None:
+        super().__init__()
+        self._result = result
+        self._raise_in_work = raise_in_work
+        self._cleanup_raises = cleanup_raises
+        self.order: list[str] = []
+        self.cleanup_calls = 0
+        self.cleanup_thread_ident: int | None = None
+
+    def work(self) -> Any:
+        if self._raise_in_work:
+            raise OSError()
+        if self._result == "wait-for-interrupt":
+            for _ in range(600):
+                if self.isInterruptionRequested():
+                    break
+                QThread.msleep(5)
+        return self._result
+
+    def _emit_result(self, result: Any) -> None:
+        self.order.append("terminal")
+        super()._emit_result(result)
+
+    def cleanup(self) -> None:
+        self.cleanup_calls += 1
+        self.cleanup_thread_ident = threading.get_ident()
+        self.order.append("cleanup")
+        if self._cleanup_raises:
+            raise RuntimeError("cleanup 故意失败")
+
+
+def test_cleanup_runs_on_success() -> None:
+    """成功路径也要收尾：钩子此前声明了但从未被调用（全历史无调用点）。"""
+    worker = _CleanupRecorder()
+    worker.run()  # 逻辑断言用 run()（同步、无需事件循环）
+    assert worker.cleanup_calls == 1, "成功路径未调用 cleanup"
+
+
+def test_cleanup_runs_on_failure() -> None:
+    worker = _CleanupRecorder(raise_in_work=True)
+    worker.run()
+    assert worker.cleanup_calls == 1, "失败路径未调用 cleanup"
+
+
+def test_cleanup_runs_on_interruption_in_the_worker_thread() -> None:
+    """取消路径同样收尾，且**在工作线程内**执行（docstring 承诺的语义）。"""
+    worker = _CleanupRecorder(result="wait-for-interrupt")
+    _start_then_interrupt(worker)
+    assert worker.cleanup_calls == 1, "取消路径未调用 cleanup"
+    assert worker.cleanup_thread_ident is not None
+    assert worker.cleanup_thread_ident != threading.get_ident(), (
+        "cleanup 必须在工作线程内执行，而不是主线程"
+    )
+
+
+def test_cleanup_runs_after_the_terminal_signal() -> None:
+    """顺序契约：先发终态信号，再收尾（调用方可凭终态立即复位进行中状态）。"""
+    worker = _CleanupRecorder()
+    worker.run()
+    assert worker.order == ["terminal", "cleanup"], worker.order
+
+
+def test_cleanup_failure_does_not_change_the_terminal_state() -> None:
+    """清理抛异常不得改变终态、也不得让它逃出 run()（否则会盖掉真正的失败原因）。"""
+    seen: list[str] = []
+    worker = _CleanupRecorder(cleanup_raises=True)
+    worker.succeeded.connect(lambda *_a: seen.append("succeeded"))
+    worker.failed.connect(lambda *_a: seen.append("failed"))
+
+    worker.run()  # 若清理异常逃逸，这里会直接抛错 ⇒ 用例失败
+
+    assert seen == ["succeeded"], seen
+    assert worker.cleanup_calls == 1

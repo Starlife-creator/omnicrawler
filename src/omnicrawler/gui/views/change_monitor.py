@@ -684,7 +684,7 @@ class ChangeMonitorView(QWidget):
         worker.cancel()
         if not worker.wait(wait_ms):
             LOGGER.warning(
-                "变更检查未在 %sms 内结束，放弃等待（结果将被丢弃）", wait_ms
+                _("变更检查未在 %sms 内结束，放弃等待（结果将被丢弃）"), wait_ms
             )
 
     def _check_all(self) -> None:
