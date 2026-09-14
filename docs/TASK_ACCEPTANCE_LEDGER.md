@@ -17,6 +17,31 @@
 
 ## 当前已知缺口
 
+- **「release 产物依赖与锁一致」此前只覆盖可安装性**（2026-09-14 补上**严格口径**）。
+  原状：`uv sync --locked` 成功 + 可导入即算闭环，**没有核对产物自己声明了什么** ——
+  而 `[project.optional-dependencies]` 与构建后端都可能把 extras 丢掉或改名，
+  pyproject↔lock 的同步检查（`check_lockfile_consistency.py`）看不到产物这一层。
+
+  **已补**：`tools/check_release_integrity.py` 新增 `check_wheel_requirements_against_lock()`，
+  把 wheel 的 `Requires-Dist` 与 `uv.lock` 里项目自身的 `requires-dist` **逐条对账**
+  （不依赖 `packaging`：锁里每条自带 `specifier`，归一后逐条相同即已保证版本满足约束）。
+  CLI 新增 `--lock`（默认 `<project_root>/uv.lock`）⇒ **CI 里已有的**
+  `check_release_integrity.py --wheel-dir dist` 步骤**自动获得该检查**，无需改 workflow。
+
+  归一规则（缺一条就会误报，实测各踩一次）：① 包名 PEP 503 归一；② 版本约束**按子句排序**
+  （产物 `PyYAML<7,>=6` vs 锁 `>=6,<7`）；③ 去掉 `name[extra]` 的方括号段但**保留其后约束**
+  （`psycopg[binary]>=3.2,<4`，早先按 `split("[")` 会丢掉约束）；④ marker 的
+  `python_version` 与 `python_full_version` 视为等价（uv 会改写）；⑤ 兼容 PEP 508 与旧式
+  `name (spec)` 两种渲染。
+
+  证据：`tests/unit/utils/test_release_integrity.py` 新增 7 例（格式差异不算不一致、方括号、
+  marker 归一、约束改动**两向都报**、版本不一致、缺锁文件不许静默、不传 `lock_path` 时向后兼容）。
+  **实测**：对本仓库真实构建的 wheel 对账 **0 问题**；把锁里一个 specifier 改一个字后
+  CLI **退出码 1** 并给出"产物声明了锁里没有的依赖 / 锁里有的依赖产物没声明"两向提示。
+
+  **顺带发现（维护者体验，未修）**：`pip wheel .` 在同一工作树里**第二次**会失败 ——
+  setuptools 复用的 `build/` 里已有上次的 `.dist-info`，报 `[WinError 183] 当文件已存在时，
+  无法创建该文件`。`rm -rf build` 后正常。CI 每次是干净检出，因此不受影响。
 - **质量基准曾只有 1 个任务、1 种形态**（2026-09-14 扩到 **4 个任务 / 3 种取数形态**）。
   原状：`services/quality_benchmark.TASKS` 只有 `list-three-details`（HTML 列表 + 详情链接）；
   分页**配置**、API 通道、单页卡片这些形态在基准里**没有任何代表** —— 而"可复现的任务基准"

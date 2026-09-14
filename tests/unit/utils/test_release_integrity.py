@@ -9,6 +9,7 @@ from tools.check_release_integrity import (
     check_project,
     check_source_zip,
     check_wheel,
+    check_wheel_requirements_against_lock,
 )
 
 
@@ -188,3 +189,107 @@ def test_standard_portable_allows_internal_modules_with_similar_names(tmp_path):
         extra_files={"_internal/omnicrawler/services/duckdb_store.py": b""},
     )
     assert check_portable_zip(archive) == []
+
+# ── 产物依赖 ↔ 锁：逐条对账（《优化方案》§5.5 严格口径）─────────────────────
+
+
+def _metadata(requires: tuple[str, ...], *, name: str = "demo", version: str = "1.0") -> bytes:
+    # 注意顺序：所有头字段之后才是空行 + 正文（空行放早了 `Requires-Dist` 会落进 body）。
+    lines = ["Metadata-Version: 2.1", f"Name: {name}", f"Version: {version}"]
+    lines.extend(f"Requires-Dist: {item}" for item in requires)
+    return ("\n".join(lines) + "\n\n").encode("utf-8")
+
+
+def _write_lock(
+    path: Path,
+    requires: tuple[tuple[str, str, str], ...],
+    *,
+    name: str = "demo",
+    version: str = "1.0",
+) -> None:
+    """最小 `uv.lock`（**TOML**，与真实锁同格式）：只放对账需要读的字段。"""
+    lines = ["version = 1", "", "[[package]]", f'name = "{name}"', f'version = "{version}"']
+    if requires:
+        lines += [
+            "",
+            "[package.metadata]",
+            "requires-dist = [",
+        ]
+        lines += [
+            f'    {{ name = "{item_name}", specifier = "{specifier}", marker = "{marker}" }},'
+            for item_name, specifier, marker in requires
+        ]
+        lines.append("]")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _wheel(tmp_path: Path, requires: tuple[str, ...]) -> Path:
+    wheel = tmp_path / "demo-1.0-py3-none-any.whl"
+    _write_wheel(wheel, {"demo-1.0.dist-info/METADATA": _metadata(requires)})
+    return wheel
+
+
+def test_wheel_requirements_match_lock_despite_formatting(tmp_path) -> None:
+    """顺序/引号不同不算不一致：产物 `PyYAML<7,>=6` 与锁 `>=6,<7` 等价。"""
+    wheel = _wheel(tmp_path, ("PyYAML<7,>=6", 'lxml<7,>=5; extra == "html"'))
+    lock = tmp_path / "uv.lock"
+    _write_lock(lock, (("PyYAML", ">=6,<7", ""), ("lxml", ">=5,<7", "extra == 'html'")))
+
+    assert check_wheel_requirements_against_lock(wheel, lock) == []
+
+
+def test_requirement_with_bracket_extras_keeps_its_specifier(tmp_path) -> None:
+    """`psycopg[binary]>=3.2,<4`：去掉方括号段后**必须保留版本约束**。
+
+    （早先按 `split("[")` 处理会把约束一起丢掉，从而对真实产物误报 5 条。）
+    """
+    wheel = _wheel(tmp_path, ("psycopg[binary]>=3.2,<4",))
+    lock = tmp_path / "uv.lock"
+    _write_lock(lock, (("psycopg", ">=3.2,<4", ""),))
+
+    assert check_wheel_requirements_against_lock(wheel, lock) == []
+
+
+def test_python_version_marker_is_normalized(tmp_path) -> None:
+    """uv 把 `python_version` 存成 `python_full_version`，两者必须视为等价。"""
+    wheel = _wheel(tmp_path, ("tomli>=2,<3; python_version < '3.11'",))
+    lock = tmp_path / "uv.lock"
+    _write_lock(lock, (("tomli", ">=2,<3", "python_full_version < '3.11'"),))
+
+    assert check_wheel_requirements_against_lock(wheel, lock) == []
+
+
+def test_changed_specifier_is_reported(tmp_path) -> None:
+    """约束被改动（两个方向）都要报出来 —— 这是本检查存在的意义。"""
+    wheel = _wheel(tmp_path, ("requests>=2.28,<3",))
+    lock = tmp_path / "uv.lock"
+    _write_lock(lock, (("requests", ">=2.30,<3", ""),))
+
+    issues = check_wheel_requirements_against_lock(wheel, lock)
+    assert len(issues) == 2, issues
+    assert any("产物声明了锁里没有的依赖" in issue for issue in issues)
+    assert any("锁里有的依赖产物没声明" in issue for issue in issues)
+
+
+def test_wheel_version_must_match_lock(tmp_path) -> None:
+    wheel = _wheel(tmp_path, ())
+    lock = tmp_path / "uv.lock"
+    _write_lock(lock, (), version="0.9")
+
+    issues = check_wheel_requirements_against_lock(wheel, lock)
+    assert any("产物版本与锁不一致" in issue for issue in issues), issues
+
+
+def test_missing_lock_is_reported_not_silently_skipped(tmp_path) -> None:
+    """缺锁文件必须**明确报错**，不能静默放过（否则门禁形同虚设）。"""
+    wheel = _wheel(tmp_path, ("requests>=2.28,<3",))
+
+    issues = check_wheel_requirements_against_lock(wheel, tmp_path / "missing.lock")
+    assert issues and "缺少锁文件" in issues[0], issues
+
+
+def test_check_wheel_only_compares_when_lock_is_provided(tmp_path) -> None:
+    """不传 `lock_path` 时行为与从前一致（向后兼容）。"""
+    wheel = _wheel(tmp_path, ("requests>=2.28,<3",))
+    assert check_wheel(wheel) == []
+

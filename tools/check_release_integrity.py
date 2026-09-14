@@ -7,6 +7,7 @@ import ast
 import base64
 import configparser
 import csv
+import email.parser
 import hashlib
 import io
 import itertools
@@ -335,7 +336,119 @@ def _wheel_modules(archive: zipfile.ZipFile) -> dict[str, tuple[str, str]]:
     return modules
 
 
-def check_wheel(wheel_path: Path) -> list[str]:
+_REQ_NAME_NORMALIZER = re.compile(r"[-_.]+")
+
+
+def _normalize_requirement(name: str, specifier: str, marker: str) -> tuple[str, str, str]:
+    """把一条依赖声明归一成可比较的三元组 `(包名, 版本约束, 环境标记)`。
+
+    * **包名**按 PEP 503 归一（小写；`-` / `_` / `.` 视为同一字符）；
+    * **版本约束按子句排序** —— 产物渲染成 `PyYAML<7,>=6`，锁里存 `>=6,<7`，
+      顺序不同但语义相同，不排序会报假不一致；
+    * **环境标记**归一引号与空白 —— 产物用 `extra == "html"`，锁用 `extra == 'html'`。
+    """
+    normalized_name = _REQ_NAME_NORMALIZER.sub("-", name.strip().casefold())
+    clauses = sorted(part.strip() for part in specifier.split(",") if part.strip())
+    # marker 归一：引号、空白，以及 `uv` 会把 `python_version` 改写成 `python_full_version`
+    # （`uv.lock` 里就是这样存的）—— 不归一会在 `tomli>=2,<3; python_version < '3.11'`
+    # 这类声明上误报。两者的语义边界对"本检查要判的"足够一致。
+    normalized_marker = " ".join(marker.replace('"', "'").split())
+    normalized_marker = normalized_marker.replace("python_full_version", "python_version")
+    return normalized_name, ",".join(clauses), normalized_marker
+
+
+def _wheel_requirements(wheel_path: Path) -> list[tuple[str, str, str]] | None:
+    """从 wheel 的 METADATA 里取出 `Requires-Dist`（归一后）；读不到返回 None。"""
+    with zipfile.ZipFile(wheel_path) as archive:
+        metadata_names = [n for n in archive.namelist() if n.endswith(".dist-info/METADATA")]
+        if len(metadata_names) != 1:
+            return None
+        text = archive.read(metadata_names[0]).decode("utf-8")
+    message = email.parser.Parser().parsestr(text)
+    entries: list[tuple[str, str, str]] = []
+    for raw in message.get_all("Requires-Dist") or ():
+        # 两种渲染都要认：PEP 508 `name<7,>=6; marker`（现代构建后端）
+        # 与旧式 `name (<7,>=6); marker`。
+        head, _, marker = str(raw).partition(";")
+        # 去掉 `name[extra1,extra2]` 里的方括号段，但**保留其后的版本约束**
+        # （`paddleocr[doc-parser]>=3.3,<4` —— 早先按 `split("[")` 处理会把约束一起丢掉）。
+        head = re.sub(r"\[[^\]]*\]", "", head)
+        match = re.match(r"\s*([A-Za-z0-9._\-]+)\s*(?:\(([^)]*)\)|([^;\s()]*))", head)
+        if not match:
+            continue
+        specifier = match.group(2) if match.group(2) is not None else match.group(3) or ""
+        entries.append(_normalize_requirement(match.group(1), specifier, marker))
+    return entries
+
+
+def check_wheel_requirements_against_lock(wheel_path: Path, lock_path: Path) -> list[str]:
+    """wheel 的 `Requires-Dist` 必须与 `uv.lock` 里项目自身的 `requires-dist` **逐条一致**。
+
+    这是《优化方案》§5.5「release 产物依赖与锁一致」的**严格口径**：此前只覆盖
+    「可安装性」（`uv sync --locked` 成功 + 可导入），没有核对**产物自己声明了什么**。
+    `[project.optional-dependencies]` 与构建后端都可能把 extras 弄丢或改名，而
+    pyproject↔lock 的同步检查看不到产物这一层。
+
+    **不需要 `packaging`**：锁里每条 `requires-dist` 自带 `specifier`，与产物归一后逐条相同，
+    即已保证 `uv lock` 解析出的版本满足该约束 —— 因此不做版本可满足性推导，只做精确对账。
+    """
+    errors: list[str] = []
+    if not lock_path.is_file():
+        return [f"缺少锁文件 {lock_path.name}，无法核对产物依赖与锁一致（运行 `uv lock` 生成）"]
+    lock = tomllib.loads(lock_path.read_text(encoding="utf-8"))
+    lock_packages = lock.get("package", [])
+    wheel_requirements = _wheel_requirements(wheel_path)
+    if wheel_requirements is None:
+        return ["wheel 里找不到唯一的 METADATA，无法核对依赖声明"]
+
+    declared: dict[tuple[str, str, str], int] = {}
+    for entry in wheel_requirements:
+        declared[entry] = declared.get(entry, 0) + 1
+
+    with zipfile.ZipFile(wheel_path) as archive:
+        metadata_name = next(n for n in archive.namelist() if n.endswith(".dist-info/METADATA"))
+        metadata = email.parser.Parser().parsestr(archive.read(metadata_name).decode("utf-8"))
+    project_name = _REQ_NAME_NORMALIZER.sub("-", str(metadata.get("Name", "")).casefold())
+    project_version = str(metadata.get("Version", ""))
+
+    locked_package = next(
+        (
+            package
+            for package in lock_packages
+            if _REQ_NAME_NORMALIZER.sub("-", str(package.get("name", "")).casefold()) == project_name
+        ),
+        None,
+    )
+    if locked_package is None:
+        return [f"锁文件里没有 {project_name!r} 自身的条目 —— 产物与锁不是同一次构建"]
+    if str(locked_package.get("version", "")) != project_version:
+        errors.append(
+            f"产物版本与锁不一致：wheel={project_version!r} lock={locked_package.get('version')!r}"
+        )
+
+    locked_requirements: dict[tuple[str, str, str], int] = {}
+    raw_locked = locked_package.get("metadata", {}).get("requires-dist", [])
+    for item in raw_locked if isinstance(raw_locked, list) else []:
+        entry = _normalize_requirement(
+            str(item.get("name", "")), str(item.get("specifier", "")), str(item.get("marker", ""))
+        )
+        locked_requirements[entry] = locked_requirements.get(entry, 0) + 1
+
+    for entry, count in sorted(declared.items()):
+        locked_count = locked_requirements.get(entry, 0)
+        if locked_count < count:
+            errors.append(
+                "产物声明了锁里没有的依赖："
+                f"{entry[0]}{entry[1]}{'; ' + entry[2] if entry[2] else ''}"
+            )
+    for entry, count in sorted(locked_requirements.items()):
+        if declared.get(entry, 0) < count:
+            errors.append(
+                "锁里有的依赖产物没声明（构建时可能丢了 extras 或改名）："
+                f"{entry[0]}{entry[1]}{'; ' + entry[2] if entry[2] else ''}"
+            )
+    return errors
+def check_wheel(wheel_path: Path, *, lock_path: Path | None = None) -> list[str]:
     errors: list[str] = []
     with zipfile.ZipFile(wheel_path) as archive:
         names = set(archive.namelist())
@@ -392,6 +505,10 @@ def check_wheel(wheel_path: Path) -> list[str]:
                     errors.append(f"entry point {command}: missing module {module}")
                 elif symbol and symbol not in exported[module]:
                     errors.append(f"entry point {command}: {module} has no {symbol}")
+    if lock_path is not None:
+        # 严格口径：产物声明的依赖闭包必须与锁逐条一致（见函数 docstring）
+        errors.extend(check_wheel_requirements_against_lock(wheel_path, lock_path))
+
     return sorted(set(errors))
 
 
@@ -888,6 +1005,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("project_root", nargs="?", type=Path, default=Path.cwd())
     parser.add_argument("--wheel", type=Path)
+    parser.add_argument(
+        "--lock",
+        type=Path,
+        help="锁文件路径（默认 <project_root>/uv.lock）；用于核对产物依赖与锁一致",
+    )
     parser.add_argument("--wheel-dir", type=Path)
     parser.add_argument("--source-zip", type=Path)
     parser.add_argument("--source-zip-dir", type=Path)
@@ -899,15 +1021,19 @@ def main() -> int:
     parser.add_argument("--portable-deep", action="store_true")
     args = parser.parse_args()
     project_root = args.project_root.resolve()
+    lock_path = (args.lock or (project_root / "uv.lock")).resolve()
     errors = check_project(project_root)
     if args.wheel:
-        errors.extend(check_wheel(args.wheel.resolve()))
+        errors.extend(check_wheel(args.wheel.resolve(), lock_path=lock_path))
     if args.wheel_dir:
         wheels = sorted(args.wheel_dir.resolve().glob("*.whl"))
         if not wheels:
             errors.append(f"no wheel found in {args.wheel_dir.resolve()}")
         for wheel in wheels:
-            errors.extend(f"{wheel.name}: {error}" for error in check_wheel(wheel))
+            errors.extend(
+                f"{wheel.name}: {error}"
+                for error in check_wheel(wheel, lock_path=lock_path)
+            )
     if args.source_zip:
         errors.extend(check_source_zip(args.source_zip.resolve()))
     if args.source_zip_dir:
