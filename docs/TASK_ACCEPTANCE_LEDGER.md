@@ -9,7 +9,7 @@
 |---|---|---|---|---|
 | 静态列表→详情→结构化结果 | `quality_benchmark.py` 的 `list-three-details`，6条记录、title/price、逐条来源路径 | 本地HTTP真实流水线；精确评分含漏采、错值、错来源、额外及重复记录；**2026-09-13 新增 GUI 闭环两条**：`test_gui_worker_local_task.py` 经真实 `WorkerTaskRunner` + 真实 worker 子进程（pid≠当前进程、事后退出无残留）跑本地站点——① 单页列表恰好3条真值+CSV；② **列表→详情两级 4 页 6 条**、来源覆盖 4 个 URL、**XLSX 可重新打开** | 已验证（JSONL/CSV/XLSX 核心链，含 GUI 子进程、两级抓取与**真实运行按钮入口**） | 便携产物内复跑（按约定留 CI / 受控环境） |
 | 动态页面→分页/滚动→去重 | **程序自造的固定样例**：3 页 × 4 条，条目由页面**内联 JS 注入**（只有真渲染才看得到），页面间用静态 `rel="next"` 相连；真值 = 12 条且互不相同 | **2026-09-13 新增端到端**（`tests/integration/browser/test_dynamic_pagination_fixed_sample.py`）：本地 JS 站点经真实流水线（浏览器引擎）⇒ `processed=3`（首末页齐全）、12 条、**无重复**、来源覆盖 3 个页面；**浏览器进程回收**独立成一条用例核对。**独立性核对**：断掉"浏览器源链接发现"后 `processed` 由 3 掉到 1（证明断言承重）。门禁 `OMNICRAWL_BROWSER_TESTS=1`（与仓库既有浏览器用例同款），跳过时给出安装命令。**2026-09-13 再补滚动样例**（`test_infinite_scroll_fixed_sample.py`）：单页 3 批 × 4 条，内容**只在页面被滚动过之后**才追加 ⇒ `processed=1` 且 12 条、无重复；**去掉滚动动作只剩首屏 4 条**（承重性做成常驻用例，非一次性核对）。样例刻意**不依赖 scroll 事件 / IntersectionObserver**（无头下二者派发不稳定，见缺口节） | 已验证（**分页 + 滚动**） | 便携产物内复跑（按约定留 CI / 受控环境） |
-| API→游标分页→增量 | 本地HTTP固定3页：首次交付ID 1/2/3；二次仅末页值变化，应只交付ID 3新值 | 自动分析按正式JSONPath试跑；真实流水线核对游标替换、末页停止、来源URL及二次同步；恢复保留未完成游标；**2026-09-13 新增 GUI 路径**：同场景经真实 GUI 运行器 + worker 子进程跑通（3 条含游标来源、游标链恰好一遍、二次只交付变化那条） | 已验证（JSONL核心链，含 GUI 运行路径） | 经 GUI 表单**创建**任务；便携产物内复跑 |
+| API→游标分页→增量 | 本地HTTP固定3页：首次交付ID 1/2/3；二次仅末页值变化，应只交付ID 3新值 | 自动分析按正式JSONPath试跑；真实流水线核对游标替换、末页停止、来源URL及二次同步；恢复保留未完成游标；**2026-09-13 新增 GUI 路径**：同场景经真实 GUI 运行器 + worker 子进程跑通（3 条含游标来源、游标链恰好一遍、二次只交付变化那条） | 已验证（JSONL核心链，含 GUI 运行路径） | 经 GUI 表单创建**本任务**（受下方能力缺口阻塞，当前只能"导入 YAML / 用带该字段的模板"）；便携产物内复跑 |
 | 附件→PDF/OCR→复核（**自动部分**） | 程序自造样本（零第三方内容）：数字版=reportlab 中英文+表格；图片版=PIL 渲染的**无文字层** PDF（用来逼出 OCR）。真值：`HT-2026-0001` / `示例服务合同` / `12,345.67 元` | **2026-09-13 新增端到端**（`tests/integration/pdf/test_pdf_ocr_review_workflow.py`）：① 数字版取到中英文与表格（还原为 Markdown 表）、金额标准化为「元」、字段带**页码 + 原文证据**、校验 `valid`；② 图片版 `parse_method=ocr`、`ocr_status=done`、置信度 > 0.5（用**项目内置 tesseract** `.runtime/tesseract/`），OCR 文本还原出编号与名称，宽容模式抽取 `valid`，**金额经结构判定恢复为真值并逐字符核对**（`12.345.67` → `12345.67`；原始值仍保留）；③ 故意用严格模式制造失败 → `invalid`/`needs_review` + 校验信息说明缺哪些必填字段 → 复核队列 → 人工补齐并确认 → `apply-review` 写入 `human_review` 值 → **再导出可见** | 已验证（自动部分） | — |
 | 附件→PDF/OCR→复核（**人工部分**） | 同上样本与真值 | 无自动证据（按定义不可自动） | 未知（须人工走查） | 用**可复用走查包**走一遍：`python tools/walkthrough_env.py`（固定样本 + 隔离工作区）配合 `docs/MANUAL_WALKTHROUGH.md` 的 8 步清单，结论填《审查记录》§二十。样本期望值由 `tools/walkthrough_demo_site.py` 的 `EXPECTED` 提供并被 `tests/unit/tools/test_walkthrough_demo_site.py` 锁定（不会与文档漂移） |
 | 定期采集→变更检测→差异导出 | 本地固定两版输入：v1=甲乙丙；v2=甲改价、乙不变、丙移除、丁新增 | **2026-09-13 新增端到端**：经真实 GUI 运行器 + worker 子进程连跑三次——v2 报 `modified=1`、`added=1`（中文键身份生效）；「删除」经 `run_compare` 检出 `removed=1`、`possibly_removed=0`；**差异导出**经产品自身 `compare-runs -o <file>` 写出文件且计数一致；第三次内容不变 → **零差异（无假差异）** | 已验证（变动识别 + 删除 + 差异导出 + 无假差异；删除走 run_compare 而非主路径） | `updates.confirm_missing_runs` 的连续确认（见缺口）；首次同步是否应报变更（待决策） |
@@ -17,6 +17,56 @@
 
 ## 当前已知缺口
 
+- **GUI 无法创建（author）`extract.item_selector` ⇒ 从零在表单里建不出"列表"任务**（2026-09-13 实测，能力缺口）。
+  核实方式：逐条查 GUI 的输入路径 ——
+  ① 表单（TaskCanvas）没有该控件；② 「启发式补全字段」只追加**通用**字段规则
+  （`h1`/`a`/`time`/`.author`/`.description`，与目标页无关）；③ `visual_selector` 整个模块没有
+  "容器 / 列表项"概念；④ 向导只有 `step3_fields.py`；⑤ 序列化器把 `item_selector`（与 `extract.mode`）
+  当 **B 类透传字段**——只保留、不改写。
+  实测产物（新任务 → 填网址与描述 → 「开始」→ 「启发式补全字段」→ 「保存草稿」）：
+  `source.kind: crawl`、`max_pages: 30`、`extract.item_selector: ""`、字段为通用规则。
+  即：**表单能创建任务，但创建不出"列表/API"这类需要容器或 `mode` 的任务**；
+  用户必须靠"导入已有 YAML"或"带该字段的模板"绕行。
+
+  **证据**：`tests/integration/test_gui_form_create_task.py`（7 例）：
+  - 表单创建 → 保存 的往返（网址 / 描述 / 来源类型 / 页数预算 / 字段都落盘且对得上）；
+  - 「开始」的意图映射（单页 → `static_html`+1 页；采集栏目 → `crawl`+30 页）；
+  - **透传保留**：打开带 `item_selector` 的列表配置、或在表单里改一改再保存，
+    `item_selector` / `mode` / `item_path` 都**不被清空**（把既有修复钉在"表单保存"这条路径上，
+    此前只验过"加载"）；
+  - **限制钉住**：纯表单创建的配置里 `item_selector` 为空 —— 修好后请改断言并同步本条目。
+
+  **承重性核对**：注入"表单→配置同步被破坏"后往返用例失败；注入"透传读不到"后保留用例失败。
+
+  **顺带发现的测试卫生问题（已修）**：GUI 委托出错时走 `QMessageBox.critical`（模态），
+  离屏测试里会**永久挂起**（本轮真的踩到：一个写坏的 YAML 让用例挂死，靠 `faulthandler` 才定位）。
+  新增文件里已用 autouse fixture 把模态框换成记录器，并加"守卫自身有效"的自检用例。
+- **自动配置曾丢「链接外字段」，且会拿侧边栏当列表**（2026-09-13 实测 → 同日**已修**）。
+  两项都来自真实场景报告，均已复现并修掉：
+
+  ① **价格落在 `<a>` 之外时取不到**。`detect_repeating_patterns` 的"直接子元素含标题"
+  加分（+0.15）让卡片内的 `<a>`（含 img + h2）压过外层 `<li>`（含 a + span.price），
+  而 `infer_fields` **无条件取 `patterns[0]`** ⇒ 容器选成 `<a>`、字段只剩「标题 + 图片地址」。
+  **已修**：`infer_fields` 在前 3 个候选之间按「能推断出多少可用字段」择优。
+  实测（woocommerce 形态）修复后 `item_selector = body > ul.products > li.product`，
+  字段 = 价格 / 标题 / 图片地址，`价格.examples[0] == "$10.00"`。
+
+  ② **页面没有业务列表时交出的却是侧边栏**。只含 4 个链接的侧边栏页面会产出
+  `item_selector = body > aside.sidebar > a` 并"试跑通过"（`items=4 / records=4`）——
+  旧门槛只看记录数（`items <= 2` 时降到 1），**会放行**。
+  **已修**：`_check_verified` 增加两道门禁（仅作用于 HTML 且已写入 `item_selector`）：
+  容器落在页面框架（`aside`/`nav`/`footer`）或列表项 < 3 个 ⇒ 明确报「未识别出列表」；
+  单页/单对象模式（无 `item_selector`）不适用。
+
+  ③ 顺带修掉：旧的 `leaf` 签名把 h1 + span + p 并成一组（`count=3`），使详情页被当成"列表"、
+  容器落到 `body > article > h1`，且因"有模式"而走不到本该走的单页兜底。现按标签区分签名。
+
+  证据：`tests/unit/extraction/test_analyze_to_config.py` 新增 5 例（含两条反向守卫：3 条小列表
+  不被误杀、异质叶子不构成重复模式）。**承重性核对**：注入旧 `infer_fields` 后"链接外价格"
+  用例失败；侧边栏配置在旧门槛下确实 `records=4` 会被放行 ⇒ 新门禁必要。
+
+  ④ **仍未闭环（本轮新观察）**：详情页改走单页模式后**字段偏少** —— `_infer_single_page_fields`
+  要求文本长度 ≥5，于是"商品名"(3 字符) / "99" 这类短字段被滤掉。属既有启发式，本轮未动。
 - **无头浏览器：事件驱动型懒加载尚未验证（有实测依据，不掩盖）**（2026-09-13）。
   实测（Windows 无头 Chromium，同一页面、同一动作序列重复跑）：`window.scrollTo` 能改变滚动位置，
   但 **scroll 事件的派发不稳定**（同一参数多次运行，计数时有时无）；**IntersectionObserver 亦不稳定**
