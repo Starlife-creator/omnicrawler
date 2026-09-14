@@ -13,9 +13,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from omnicrawler.services.quality_benchmark import (
     TASKS,
     BenchmarkTask,
+    _task_config,
     score_records,
 )
 
@@ -173,3 +176,39 @@ def test_builtin_tasks_are_well_formed() -> None:
         assert len(identities) == len(task.expected), f"{task.name} 真值身份不唯一"
         for entry in task.expected:
             assert set(entry) == {name for name, _ in task.fields}, f"{task.name} 真值字段与抽取字段不一致"
+
+
+def test_builtin_tasks_cover_the_shapes_the_benchmark_claims() -> None:
+    """任务覆盖面本身要被机器检查 —— 否则"覆盖了哪些形态"只是口头声明。
+
+    2026-09-14 扩展后的覆盖面：
+    * HTML 多页（站内链接发现）；
+    * HTML **分页**（`source.pagination` 的 `type=page` 通路）；
+    * **API 游标**（`source.kind=rest` + `extract.mode=json` + `next_path`）；
+    * 单页卡片（`static_html`，且字段分散在链接内外）。
+    """
+    assert {task.extract_mode for task in TASKS} == {"html", "json"}
+    assert {"crawl", "static_html", "rest"} <= {task.source_kind for task in TASKS}
+    assert any(task.pagination for task in TASKS), "缺少分页任务（source.pagination 无代表）"
+    assert any(len(task.pages) > 2 for task in TASKS), "缺少多页任务"
+
+
+def test_task_config_follows_the_declared_shape() -> None:
+    """配置生成按形态走：json 任务用 `item_path` + `path` 字段；分页原样透传。"""
+    json_task = next(task for task in TASKS if task.extract_mode == "json")
+    cfg = _task_config(json_task, base_url="http://127.0.0.1:1/", workspace=Path("/w"))
+    assert cfg["source"]["kind"] == "rest"
+    assert cfg["extract"]["mode"] == "json"
+    assert cfg["extract"]["item_path"] == json_task.item_path
+    assert cfg["extract"]["fields"]
+    assert all("path" in rule for rule in cfg["extract"]["fields"].values())
+
+    paged_task = next(task for task in TASKS if task.pagination)
+    paged_cfg = _task_config(paged_task, base_url="http://127.0.0.1:1/", workspace=Path("/w"))
+    assert paged_cfg["source"]["pagination"] == dict(paged_task.pagination)
+    # HTML 任务仍走选择器（不能被 json 分支污染）
+    html_task = next(task for task in TASKS if task.extract_mode == "html")
+    html_cfg = _task_config(html_task, base_url="http://127.0.0.1:1/", workspace=Path("/w"))
+    assert html_cfg["extract"]["item_selector"] == html_task.item_selector
+    assert all("selector" in rule for rule in html_cfg["extract"]["fields"].values())
+

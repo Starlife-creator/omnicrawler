@@ -65,6 +65,35 @@ def _detail_html(title: str, price: str) -> str:
         f'<span class="p">{escape(price)}</span></div>'
         "</body></html>"
     )
+def _paged_list_html(page: int) -> str:
+    """分页列表的一页：每页 2 条，标题跨页唯一（真值因此可判"翻页后总数正确"）。"""
+    first = (page - 1) * 2 + 1
+    return "<html><body>" + "".join(
+        f'<div class="item"><h1 class="t">列表{index}</h1>'
+        f'<span class="p">{index * 11}</span></div>'
+        for index in (first, first + 1)
+    ) + "</body></html>"
+
+
+def _api_body(item_id: str, value: str, next_cursor: str | None) -> str:
+    """REST 一页的响应体：`items` + `next`（游标，null 表示末页）。"""
+    return json.dumps(
+        {"items": [{"id": item_id, "value": value}], "next": next_cursor},
+        ensure_ascii=False,
+    )
+
+
+#: 卡片内字段分散：`<a>` 只包图片与标题，**价格在 `<a>` 之外**（woocommerce 常见形态）。
+_CARD_HTML = (
+    "<html><body><ul class=\"products\">"
+    + "".join(
+        f'<li class="product"><a href="/p/{index}"><img src="/i{index}.jpg">'
+        f'<h2 class="title">卡片{index}</h2></a>'
+        f'<span class="price">{index}9</span></li>'
+        for index in (1, 2, 3)
+    )
+    + "</ul></body></html>"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +108,19 @@ class BenchmarkTask:
     identity_fields: tuple[str, ...] = ("title",)
     expected_source_paths: tuple[str, ...] = ()
     expected_source_origin: str = ""
+
+    # ---- 形态声明（默认值 = 原 HTML/爬取形态 ⇒ 既有任务零行为变化）----
+    #: `crawl`（跟随站内链接）/ `static_html`（只抓种子页）/ `rest`（API）
+    source_kind: str = "crawl"
+    #: `html` / `json`；决定 `fields` 的第二项是 CSS 选择器还是 JSONPath
+    extract_mode: str = "html"
+    #: json 模式的记录路径（如 `$.items[*]`）
+    item_path: str = ""
+    #: 本地站点响应的 Content-Type（json 任务需要 `application/json`）
+    content_type: str = "text/html; charset=utf-8"
+    #: **原样透传**给 `source.pagination`（如 `(("type","page"),("parameter","page"),("start","1"),("end","2"))`）
+    #: —— 不在这里重新编码键名，避免出现第二份分页词典。
+    pagination: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,6 +194,71 @@ TASKS: tuple[BenchmarkTask, ...] = (
         ),
         identity_fields=("title",),
         expected_source_paths=("/", "/", "/", "/detail-1", "/detail-2", "/detail-3"),
+    ),
+    # ① 分页列表：`source.pagination`（type=page + start/end）—— 覆盖"翻页后总数正确"。
+    #    既有任务靠"站内链接发现"多页，分页**配置**这条通路此前没有任何任务覆盖。
+    BenchmarkTask(
+        name="list-two-pages",
+        pages=(
+            ("/", _paged_list_html(1)),
+            ("/?page=1", _paged_list_html(1)),
+            ("/?page=2", _paged_list_html(2)),
+        ),
+        item_selector="div.item",
+        fields=(("title", "h1.t"), ("price", "span.p")),
+        expected=(
+            {"title": "列表1", "price": "11"},
+            {"title": "列表2", "price": "22"},
+            {"title": "列表3", "price": "33"},
+            {"title": "列表4", "price": "44"},
+        ),
+        identity_fields=("title",),
+        expected_source_paths=("/", "/", "/", "/"),
+        pagination=(
+            ("type", "page"),
+            ("parameter", "page"),
+            ("start", "1"),
+            ("end", "2"),
+            ("step", "1"),
+        ),
+    ),
+    # ② REST 游标：`source.pagination`（next_path + parameter）+ `extract.mode=json`。
+    #    API 取数通道此前在基准里完全没有代表。
+    BenchmarkTask(
+        name="api-cursor-two-pages",
+        pages=(
+            ("/", _api_body("1", "first", "p2")),
+            ("/?cursor=p2", _api_body("2", "second", None)),
+        ),
+        item_selector="",
+        fields=(("id", "id"), ("value", "value")),
+        expected=(
+            {"id": "1", "value": "first"},
+            {"id": "2", "value": "second"},
+        ),
+        identity_fields=("id",),
+        expected_source_paths=("/", "/"),
+        source_kind="rest",
+        extract_mode="json",
+        item_path="$.items[*]",
+        content_type="application/json",
+        pagination=(("next_path", "$.next"), ("parameter", "cursor")),
+    ),
+    # ③ 卡片内字段分散（价格在 `<a>` 之外）+ `static_html`：覆盖"单页、不跟随链接"的形态，
+    #    以及 woocommerce 那种"链接只包标题、价格在旁边"的卡片结构。
+    BenchmarkTask(
+        name="card-price-outside-link",
+        pages=(("/", _CARD_HTML),),
+        item_selector="li.product",
+        fields=(("title", "a > h2.title"), ("price", "span.price")),
+        expected=(
+            {"title": "卡片1", "price": "19"},
+            {"title": "卡片2", "price": "29"},
+            {"title": "卡片3", "price": "39"},
+        ),
+        identity_fields=("title",),
+        expected_source_paths=("/", "/", "/"),
+        source_kind="static_html",
     ),
 )
 
@@ -267,6 +374,8 @@ def score_records(
 
 class _Site(BaseHTTPRequestHandler):
     """把任务页面挂在本地 HTTP 上（离线、可复现）。"""
+    #: 由 `run_task` 按任务声明覆盖（json 任务需 `application/json`）
+    content_type: str = "text/html; charset=utf-8"
 
     pages: dict[str, str] = {}
 
@@ -278,7 +387,7 @@ class _Site(BaseHTTPRequestHandler):
             return
         raw = body.encode("utf-8")
         self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Type", self.content_type)
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
@@ -288,11 +397,27 @@ class _Site(BaseHTTPRequestHandler):
 
 
 def _task_config(task: BenchmarkTask, *, base_url: str, workspace: Path) -> dict[str, Any]:
-    """由任务生成确定性配置——同一版本跑出同一任务，结果才可比。"""
+    """由任务生成确定性配置——同一版本跑出同一任务，结果才可比。
+
+    形态由任务声明：HTML 默认 `crawl`（跟随站内链接，覆盖多页抓取）；
+    `rest` 走 API 通道；分页**原样透传** `task.pagination` 给 `source.pagination`
+    （不在这里重新编码键名，避免出现第二份分页词典）。
+    """
+    source: dict[str, Any] = {"kind": task.source_kind, "seeds": [base_url]}
+    if task.pagination:
+        source["pagination"] = dict(task.pagination)
+
+    extract: dict[str, Any] = {"mode": task.extract_mode}
+    if task.extract_mode == "json":
+        extract["item_path"] = task.item_path
+        extract["fields"] = {name: {"path": path} for name, path in task.fields}
+    else:
+        extract["item_selector"] = task.item_selector
+        extract["fields"] = {name: {"selector": selector} for name, selector in task.fields}
+
     return {
         "project": {"name": f"qbench-{task.name}", "workspace": str(workspace)},
-        # `crawl` 才会跟随站内链接；`static_html` 只抓种子页——任务因此覆盖多页抓取。
-        "source": {"kind": "crawl", "seeds": [base_url]},
+        "source": source,
         "crawl": {
             "max_pages": len(task.pages) + 1,
             "max_depth": 2,
@@ -307,11 +432,7 @@ def _task_config(task: BenchmarkTask, *, base_url: str, workspace: Path) -> dict
             "allow_private_network": True,
             "retries": 0,
         },
-        "extract": {
-            "mode": "html",
-            "item_selector": task.item_selector,
-            "fields": {name: {"selector": selector} for name, selector in task.fields},
-        },
+        "extract": extract,
         "outputs": {"jsonl": True, "csv": False, "xlsx": False},
     }
 
@@ -321,7 +442,7 @@ def run_task(task: BenchmarkTask, *, workdir: Path) -> QualityScore:
     import yaml
 
     workdir.mkdir(parents=True, exist_ok=True)
-    handler = type("_TaskSite", (_Site,), {"pages": dict(task.pages)})
+    handler = type("_TaskSite", (_Site,), {"pages": dict(task.pages), "content_type": task.content_type})
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:

@@ -17,6 +17,35 @@
 
 ## 当前已知缺口
 
+- **质量基准曾只有 1 个任务、1 种形态**（2026-09-14 扩到 **4 个任务 / 3 种取数形态**）。
+  原状：`services/quality_benchmark.TASKS` 只有 `list-three-details`（HTML 列表 + 详情链接）；
+  分页**配置**、API 通道、单页卡片这些形态在基准里**没有任何代表** —— 而"可复现的任务基准"
+  正是 §1.2 采集能力的验收方式，只有一种形态等于只有一种证据。
+
+  **已扩**（`BenchmarkTask` 增加形态声明：`source_kind` / `extract_mode` / `item_path` /
+  `content_type` / `pagination`；**默认值 = 原 HTML/爬取形态 ⇒ 既有任务零行为变化**）：
+
+  | 任务 | 形态 | 覆盖点 |
+  |---|---|---|
+  | `list-three-details`（原有） | `crawl` + HTML | 列表 + 站内链接到详情页 |
+  | `list-two-pages` | `crawl` + HTML + `source.pagination{type=page}` | **翻页配置**通路、跨页总数正确 |
+  | `api-cursor-two-pages` | `rest` + `json` + `pagination{next_path,parameter}` | **API 取数通道**、游标推进到末页即停 |
+  | `card-price-outside-link` | `static_html` + HTML | **单页不跟随链接**、字段分散在链接内外（价格在 `<a>` 之外） |
+
+  分页键名**原样透传**给 `source.pagination`（不在基准里重新编码，避免第二份分页词典）；
+  json 任务的页面由本地服务按 `application/json` 提供。四个任务实测**全部满分**
+  （完整性/准确性/来源证据 = 1.0，意外与重复 = 0）。
+
+  **判据侧**（上一批 `c64e709` 已闭环，本次未动）：反例集 12 例 —— 删一条 / 重复一条 / 加错记录 /
+  填错字段 / 缺 `source_url` / 错来源路径 / 错来源域 / 缺字段却自报满分 / 匹配与记录顺序无关 …
+  任一都必须让 `ok=False`。
+
+  **覆盖面成为机器检查**：新增单测断言 `extract_mode` 集合、`source_kind` 集合、分页任务与多页任务
+  都**有代表** —— 删掉 API 任务会被判红。避免"覆盖了哪些形态"退化成口头声明。
+
+  **仍未闭环（如实登记）**：
+  - **OCR / 模糊抽取的专项标准**未做：它属 **pdfx 侧**的判据（crawler 基准混不进 OCR，
+    混进去就会变成"用精确结构化标准要求模糊抽取"）；`TASKS` 里也还没有"附件 / PDF"形态。
 - **GUI 此前完全用不到产品自带的 DOM 分析器**（2026-09-14 补上「分析页面并填字段」）。
   在此之前，GUI 里唯一能"补字段"的入口是「启发式补全字段」，它只追加**通用**规则
   （`h1`/`a`/`time`/`.author`/`.description`，与目标页无关）；而 CLI 的 `analyze` 一直能用
