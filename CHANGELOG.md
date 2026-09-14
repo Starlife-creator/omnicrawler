@@ -4,6 +4,9 @@
 
 ### 变更
 
+- fix(gui): 变更监测在关窗后不再留下在飞工作——补 `ChangeDetector.cancel()` 与 `ChangeMonitorView.shutdown()`（先停 30s 轮询、再取消并有界等待），关闭流程后再触发轮询/手动检查都不再启动新工作；旧 worker 的迟到终态信号被忽略
+- fix(gui): 接线 `BackgroundWorker.cleanup()`——该钩子自仓库初始提交起就存在却**从未被调用**（全历史无 `self.cleanup()`）；现在成功/失败/取消三条路径都会在工作线程内执行，晚于终态信号，且清理异常不会改变任务终态
+- fix(licensing): 为随仓（且随便携包）分发的 6 个字体补 `_shared/fonts/OFL.txt`（逐字上游文本 + 三家版权行），并在 `THIRD_PARTY_NOTICES.md` 补声明 JetBrains Mono 与 Outfit；新增守卫按字体 `name` 表核对声明与版权行
 - fix(packaging): `install_windows.ps1` 在装依赖前校验解释器版本（>=3.12，取值来自 `pyproject.requires-python`）——此前 `py -3` 没有版本上界，可能选到 3.10/3.11，venv 建得起来但依赖装不上，报错点离原因很远；同时修掉过时提示语「Python 3.10 or newer」
 - feat(pagination): 分页形状收成唯一契约 `src/omnicrawler/core/pagination.py`（核心校验与 GUI 共用）；游标配置缺 `next_path` 从「静默只采一批」改为**加载时即报错**
 - feat(gui): 「高级设置 → 分页方式」支持按页码/偏移与按游标/下一页值，并保留 `location` 等表单不渲染的分页键 ⇒ 从零在表单里可建分页任务（含游标），无需手写 YAML

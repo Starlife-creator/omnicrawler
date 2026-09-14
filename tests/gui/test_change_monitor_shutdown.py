@@ -38,13 +38,8 @@ def _wait_until(predicate, *, timeout: float = 5.0, interval: float = 0.02) -> b
     return predicate()
 
 
-def _pool_threads() -> list[str]:
-    """仍在运行的 asyncio/线程池线程（抓取真正在飞的标志）。"""
-    return [
-        thread.name
-        for thread in threading.enumerate()
-        if "asyncio" in thread.name or "ThreadPoolExecutor" in thread.name
-    ]
+# 注意：不要用 `threading.enumerate()` 判断「还有没有在飞工作」——那是**全进程**视图，
+# 其它用例留下的线程会让它非空（单跑绿、全量红的典型）。这里只断言**本次抓取**的状态。
 
 
 def _rule(url: str, rule_id: str = "r-1") -> dict:
@@ -52,16 +47,34 @@ def _rule(url: str, rule_id: str = "r-1") -> dict:
 
 
 class _StubFetcher:
-    """桩抓取：每个 URL 睡 `FETCH_SECONDS`，并记录被请求过的 URL。"""
+    """桩抓取：每个 URL 睡 `FETCH_SECONDS`，记录被请求过的 URL 与**在飞计数**。
+
+    在飞计数是本用例组判断"还有没有在飞工作"的依据：只反映**本次抓取**，
+    不受其它用例遗留线程影响。
+    """
 
     def __init__(self) -> None:
         self.requested: list[str] = []
         self._lock = threading.Lock()
+        self._inflight = 0
+        self.finished = threading.Event()
+
+    @property
+    def inflight(self) -> int:
+        with self._lock:
+            return self._inflight
 
     def fetch(self, request):  # noqa: ANN001, ANN201
         with self._lock:
             self.requested.append(str(request.url))
-        time.sleep(FETCH_SECONDS)
+            self._inflight += 1
+        try:
+            time.sleep(FETCH_SECONDS)
+        finally:
+            with self._lock:
+                self._inflight -= 1
+                if self._inflight == 0:
+                    self.finished.set()
 
         class _Body:
             headers = {"content-type": "text/html; charset=utf-8"}
@@ -138,7 +151,7 @@ def test_cancel_mid_flight_drops_payload_and_skips_remaining_rules() -> None:
         f"取消后不应抓取后续规则：{fetcher.requested}"
     )
     assert delivered == [[]], f"取消时不得把（截断的）结果当成功交付：{delivered}"
-    assert _wait_until(lambda: not _pool_threads(), timeout=5), "worker 结束后仍有残留线程"
+    assert _wait_until(lambda: fetcher.inflight == 0, timeout=5), "worker 结束后本次抓取仍在飞"
     app.processEvents()
 
 
@@ -163,7 +176,7 @@ def test_view_shutdown_stops_polling_and_leaves_no_inflight_work() -> None:
     view.shutdown()
     assert view._timer.isActive() is False, "shutdown 必须停掉 30s 轮询"
     assert view._worker is None or not view._worker.isRunning(), "shutdown 后不得仍有检查在跑"
-    assert _wait_until(lambda: not _pool_threads(), timeout=5), f"仍有残留线程：{_pool_threads()}"
+    assert _wait_until(lambda: fetcher.inflight == 0, timeout=5), "shutdown 返回后本次抓取仍在飞"
 
     # 关闭后再触发一次轮询/手动检查，都不得启动新工作
     fetcher.requested.clear()
@@ -207,8 +220,8 @@ def test_main_window_close_leaves_no_inflight_monitor_work(tmp_path: Path, monke
     assert monitor._shutting_down is True, "关闭流程必须停掉变更监测"
     assert monitor._timer.isActive() is False
     assert monitor._worker is None or not monitor._worker.isRunning()
-    assert _wait_until(lambda: not _pool_threads(), timeout=5), (
-        f"关窗后仍有在飞的后台工作：{_pool_threads()}"
+    assert _wait_until(lambda: fetcher.inflight == 0, timeout=5), (
+        "关窗返回后本次监测抓取仍在飞（正是 CI 那条失败的形状）"
     )
 
 
@@ -254,6 +267,6 @@ def test_shutdown_wait_is_bounded(wait_ms: int) -> None:
     elapsed = time.monotonic() - started
 
     assert elapsed < FETCH_SECONDS, f"有界等待失效：阻塞了 {elapsed:.2f}s"
-    # 收尾：让在飞抓取自然结束，避免影响后续用例
-    assert _wait_until(lambda: not _pool_threads(), timeout=5)
+    # 收尾：等在飞抓取自然结束，避免影响后续用例
+    assert _wait_until(lambda: fetcher.inflight == 0, timeout=5)
     app.processEvents()
