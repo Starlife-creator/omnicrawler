@@ -163,13 +163,41 @@ class CrawlConfig:
             return str(section.get("item_selector") or "")
         return ""
 
-    def set_item_selector(self, value: str) -> None:
-        """写入列表项容器选择器（原地更新 ``passthrough['extract']``）。"""
+    def set_extract_mode(self, value: str) -> None:
+        """设置抽取模式（``extract.mode``，与 ``item_selector`` 同为 B 类透传键）。
+
+        GUI 自 2026-09-14 起可编辑：**没有它就无法从表单创建 API 任务** ——
+        只有 ``mode=json`` 才会走 JSON 字段契约（``path``），
+        且校验器在 JSON 模式下跳过 CSS 选择器格式检查。
+        """
+        section = self._extract_passthrough()
+        section["mode"] = (value or "html").strip() or "html"
+
+    def item_path(self) -> str:
+        """JSON 记录路径（``extract.item_path``，如 ``$.data[*]``）。"""
+        section = self.passthrough.get("extract")
+        return str(section.get("item_path") or "") if isinstance(section, dict) else ""
+
+    def set_item_path(self, value: str) -> None:
+        """写入 JSON 记录路径；**清空时移除该键**（避免给 HTML 任务留下无意义的空键）。"""
+        section = self._extract_passthrough()
+        text = (value or "").strip()
+        if text:
+            section["item_path"] = text
+        else:
+            section.pop("item_path", None)
+
+    def _extract_passthrough(self) -> dict[str, Any]:
+        """取（必要时创建）``passthrough['extract']``。B 类键都写在这里。"""
         section = self.passthrough.get("extract")
         if not isinstance(section, dict):
             section = {}
             self.passthrough["extract"] = section
-        section["item_selector"] = (value or "").strip()
+        return section
+
+    def set_item_selector(self, value: str) -> None:
+        """写入列表项容器选择器（原地更新 ``passthrough['extract']``）。"""
+        self._extract_passthrough()["item_selector"] = (value or "").strip()
 
     def validate(self) -> list[str]:
         """校验完整配置，返回错误列表，空列表表示校验通过。

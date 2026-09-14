@@ -96,10 +96,26 @@
   被 `tests/integration/template/test_help_ux.py` 判红（它断言"每个声明的帮助条目都真的挂在界面上"）。
   这已是本项目第 N 次抓到"定义了没有生产者"；本次由门禁在合并前拦下，未逃逸。
 
+  **进一步（2026-09-14）**：**`source.kind` / `extract.mode` / `item_path` 也补上了表单入口**，
+  于是"从零在表单里建 API 任务"成立（此前只能建网页任务）：
+  - 意图区新增「**数据来源**」下拉（网页（静态单页）/ 网页（跟随站内链接）/ **API / JSON**）；
+  - 选 API ⇒ `extract.mode=json` 并**显示**「JSON 记录路径」输入（`extract.item_path`），
+    其余来源 ⇒ 回到 `html` 且该行隐藏（§4.5 渐进呈现）；
+  - **用户显式选过的来源不再被「开始」的草稿覆盖**（`_source_kind_overridden`）；
+  - **未知来源类型原样加入下拉**（插件可注册自己的 kind，不能静默改写）；
+  - 序列化器按**模式**翻译字段键：JSON 模式写 `path`（`json_field_values` 只认 `path`/`paths`），
+    HTML 模式仍写 `selector` —— 用户在表单"选择器"列填的 JSONPath 因此能真正生效；
+  - `extract.mode` **刻意不在每次保存时写**：只在用户切换来源时改，否则会把"打开来的 JSON 配置"
+    在保存时悄悄改成 html。
+  证据：`test_form_created_api_task_runs_end_to_end`（**空白表单 → 保存 → 运行 → `records.csv`
+  等于真值**）、`test_form_can_choose_api_source_and_record_path`（切换语义 / 记录路径行可见性 /
+  显式选择不被覆盖），以及 `test_form_authored_json_field_is_written_as_path` + HTML 反向护栏。
+  **承重性核对**：让 `extract_mode()` 恒返回 `html` ⇒ 端到端用例失败（JSON 字段被写成 selector、
+  取不到值）；让 `_on_source_kind_changed` 变空实现 ⇒ 控件用例失败。
+
   **仍未闭环（如实登记）**：
   - 选择器为空的字段（如"元素自身 href"这类 `selector=""` + `attr=href` 的规则）会被**跳过** ——
-    GUI 的 `FieldDef` 要求选择器非空，这类规则目前只能靠 YAML 表达；
-  - `extract.mode` / `source.kind=rest` 仍无表单入口 ⇒ **JSON API 任务仍须导入 YAML**（本次未动）。
+    GUI 的 `FieldDef` 要求选择器非空，这类规则目前只能靠 YAML 表达。
 - **GUI 曾无法创建（author）`extract.item_selector`**（2026-09-13 实测 → **2026-09-14 已修**）：从零在表单里建不出"列表"任务。**现已闭环**——
   核实方式：逐条查 GUI 的输入路径 ——
   ① 表单（TaskCanvas）没有该控件；② 「启发式补全字段」只追加**通用**字段规则

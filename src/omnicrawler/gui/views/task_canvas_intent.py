@@ -17,7 +17,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QWidget,
+)
 
 from ..design_system import SPACING
 from ..i18n import _
@@ -43,6 +51,9 @@ class IntentAreaMixin:
     _url_badge: QLabel
     _desc_edit: QLineEdit
     _start_btn: QPushButton
+    _source_kind_combo: QComboBox
+    _item_path_row: QWidget
+    _item_path_edit: QLineEdit
     _probe_badge: QLabel
     _probe_timer: QTimer
     _welcome_tip: QLabel
@@ -116,6 +127,40 @@ class IntentAreaMixin:
         probe_row.addStretch()
         body.addLayout(probe_row)
 
+        # 数据来源（`source.kind`）+ JSON 记录路径（`extract.item_path`）：2026-09-14 起可编辑。
+        # 没有它们，**从零在表单里建不出 API 任务**（此前只有 draft/模板/导入 YAML 能设定）。
+        kind_row = QHBoxLayout()
+        kind_row.addWidget(HelpTooltip("source.kind"))
+        self._source_kind_combo = QComboBox()
+        self._source_kind_combo.setObjectName("sourceKindCombo")
+        for label, kind in (
+            (_("网页（静态单页）"), "static_html"),
+            (_("网页（跟随站内链接）"), "crawl"),
+            (_("API / JSON"), "rest"),
+        ):
+            self._source_kind_combo.addItem(label, kind)
+        self._source_kind_combo.setAccessibleName(_("数据来源"))
+        self._source_kind_combo.setAccessibleDescription(
+            _("决定用网页还是 API 取数；选 API / JSON 时字段填 JSONPath。")
+        )
+        self._source_kind_combo.currentIndexChanged.connect(self._on_source_kind_changed)
+        kind_row.addWidget(self._source_kind_combo, 1)
+        body.addLayout(kind_row)
+
+        # JSON 记录路径：**只在 API 来源下显示**，不给常规网页任务添乱（§4.5 渐进呈现）
+        self._item_path_row = QWidget()
+        item_path_layout = QHBoxLayout(self._item_path_row)
+        item_path_layout.setContentsMargins(0, 0, 0, 0)
+        item_path_layout.addWidget(HelpTooltip("extract.mode"))
+        self._item_path_edit = QLineEdit()
+        self._item_path_edit.setObjectName("itemPathEdit")
+        self._item_path_edit.setPlaceholderText(_("JSON 记录路径，例如 $.data[*]"))
+        self._item_path_edit.setClearButtonEnabled(True)
+        self._item_path_edit.setAccessibleName(_("JSON 记录路径"))
+        self._item_path_edit.textChanged.connect(self._on_scope_changed)
+        item_path_layout.addWidget(self._item_path_edit, 1)
+        self._item_path_row.setVisible(False)
+        body.addWidget(self._item_path_row)
         row = QHBoxLayout()
         self._url_badge = QLabel("")
         self._url_badge.setObjectName("badge")
@@ -128,6 +173,29 @@ class IntentAreaMixin:
         self._start_btn.clicked.connect(self._on_start)
         row.addWidget(self._start_btn)
         body.addLayout(row)
+
+    def _on_source_kind_changed(self, *_args: Any) -> None:
+        """切换数据来源：写 `source.kind`，并把抽取模式与 JSON 路径入口一并调整。
+
+        - 「API / JSON」⇒ `extract.mode=json`（JSON 字段契约是 `path`，校验器也会跳过
+          CSS 选择器格式检查）；
+        - 其余 ⇒ `extract.mode=html`；
+        - 记录「用户显式选过」⇒ 之后点「开始」时**不再被草稿覆盖**（见 `_apply_draft`）。
+        """
+        if self._updating or self._locked:
+            return
+        kind = str(self._source_kind_combo.currentData() or "static_html")
+        self._source_kind_overridden = True
+        self._config.source_kind = kind
+        self._config.set_extract_mode("json" if kind == "rest" else "html")
+        self._update_item_path_visibility()
+        self._sync_form_to_config()
+        self._mark_dirty(self._DOMAIN_SCOPE)
+
+    def _update_item_path_visibility(self) -> None:
+        """只在 API 来源下显示「JSON 记录路径」——常规网页任务不该看到它。"""
+        kind = str(self._source_kind_combo.currentData() or "")
+        self._item_path_row.setVisible(kind == "rest")
 
     def _on_intent_changed(self) -> None:
         url = self._url_edit.text().strip()

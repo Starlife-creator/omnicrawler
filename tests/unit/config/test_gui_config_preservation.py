@@ -200,3 +200,39 @@ extract: {mode: html, fields: {title: {selector: ''}}}
     )
     html_errors, _ = validate_full_config(html_config)
     assert any("选择器" in e for e in html_errors), "HTML 模式仍应要求选择器"
+def test_form_authored_json_field_is_written_as_path() -> None:
+    """表单里那一列在 JSON 模式下装的是 JSONPath ⇒ 落盘必须写成 `path`。
+
+    用户在表单里**没有**填 `path` 的地方（GUI 模型只有 selector）。若按 HTML 那样写
+    `selector`，`json_field_values` 取不到值 —— 配置"看起来合法"、运行却是空字段。
+    """
+    from omnicrawler.gui.core.config_model import CrawlConfig, FieldDef
+    from omnicrawler.gui.core.config_serializer import from_yaml, to_yaml
+
+    config = CrawlConfig()
+    config.seed_urls = ["https://api.example/items"]
+    config.source_kind = "rest"
+    config.set_extract_mode("json")
+    config.set_item_path("$.items[*]")
+    config.fields = [FieldDef(name="id", selector="id"), FieldDef(name="value", selector="value")]
+
+    loaded = from_yaml(to_yaml(config))
+    extract = loaded.passthrough["extract"]
+    assert extract["item_path"] == "$.items[*]"
+    assert loaded.extract_mode() == "json"
+    assert extract["fields"]["id"]["path"] == "id", extract["fields"]
+    assert "selector" not in extract["fields"]["id"], "JSON 字段不许写成 selector"
+
+
+def test_html_mode_field_still_written_as_selector() -> None:
+    """反向护栏：HTML 模式仍写 `selector`，不能被 JSON 分支带偏。"""
+    from omnicrawler.gui.core.config_model import CrawlConfig, FieldDef
+    from omnicrawler.gui.core.config_serializer import from_yaml, to_yaml
+
+    config = CrawlConfig()
+    config.seed_urls = ["https://example.org/list"]
+    config.fields = [FieldDef(name="title", selector="h1.t")]
+
+    loaded = from_yaml(to_yaml(config))
+    assert loaded.passthrough["extract"]["fields"]["title"]["selector"] == "h1.t"
+    assert "path" not in loaded.passthrough["extract"]["fields"]["title"]

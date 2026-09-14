@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import threading
 import time
@@ -564,3 +565,143 @@ def test_analyze_page_without_url_only_informs(tmp_path: Path, monkeypatch) -> N
     finally:
         window.close()
         app.processEvents()
+# ── 2026-09-14：表单可创建 API（JSON）任务 ──────────────────────────────────
+
+_JSON_API_BODY = json.dumps(
+    {"items": [{"id": "1", "value": "first"}, {"id": "2", "value": "second"}]},
+    ensure_ascii=False,
+)
+EXPECTED_API = (("1", "first"), ("2", "second"))
+
+
+@contextlib.contextmanager
+def _serve_json(body: str):
+    """起一个返回 JSON 的本地站点（`Content-Type: application/json`）。"""
+
+    class _JsonHandler(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            raw = body.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def log_message(self, *_args):  # noqa: N802
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _JsonHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_form_can_choose_api_source_and_record_path(tmp_path: Path, monkeypatch) -> None:
+    """表单能选「API / JSON」并填记录路径；**显式选择不被之后点「开始」覆盖**。
+
+    `isVisibleTo` 而非 `isVisible`：离屏测试里窗口自身未显示，`isVisible()` 恒为 False
+    （它取决于整条祖先链），`isVisibleTo(parent)` 才反映"这一行自己是否被隐藏"。
+    """
+    app, window = _window(tmp_path, monkeypatch)
+    _silence_side_effects(window)
+    try:
+        window._config_delegate.new_config()
+        canvas = window._task_canvas
+        assert not canvas._item_path_row.isVisibleTo(canvas), "默认（网页）不该显示 JSON 记录路径"
+
+        canvas._source_kind_combo.setCurrentIndex(canvas._source_kind_combo.findData("rest"))
+        app.processEvents()
+        assert window._config.source_kind == "rest"
+        assert window._config.extract_mode() == "json"
+        assert canvas._item_path_row.isVisibleTo(canvas), "选 API 后应显示 JSON 记录路径"
+
+        # 显式选过来源之后再点「开始」：草稿不得把它改回网页
+        canvas._url_edit.setText("https://api.example/items")
+        canvas._desc_edit.setText("采集整个栏目")
+        canvas._start_btn.click()
+        _pump(app, lambda: bool(window._config.seed_urls), what="草稿落到配置")
+        assert window._config.source_kind == "rest", "用户显式选过的来源不应被草稿覆盖"
+        assert window._config.extract_mode() == "json"
+
+        # 切回网页 ⇒ 模式跟着回到 html，记录路径行隐藏
+        canvas._source_kind_combo.setCurrentIndex(canvas._source_kind_combo.findData("crawl"))
+        app.processEvents()
+        assert window._config.source_kind == "crawl"
+        assert window._config.extract_mode() == "html"
+        assert not canvas._item_path_row.isVisibleTo(canvas)
+    finally:
+        window.close()
+        app.processEvents()
+
+
+def test_form_created_api_task_runs_end_to_end(tmp_path: Path, monkeypatch) -> None:
+    """**从空白表单建一个 API 任务 → 保存 → 运行 → 产物等于真值。**
+
+    账本 API 工作流「经 GUI 表单创建任务」此前**做不到**：GUI 没有 `source.kind` /
+    `extract.mode` / `item_path` 入口，从零只能建网页任务（JSON 字段还会被写成 selector）。
+    """
+    import csv as _csv
+
+    from PySide6.QtWidgets import QFileDialog
+
+    from omnicrawler.gui.core.config_model import FieldDef
+
+    saved_path = tmp_path / "api_task.yaml"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(saved_path), ""))
+    )
+
+    with _serve_json(_JSON_API_BODY) as seed:
+        app, window = _window(tmp_path, monkeypatch)
+        _silence_side_effects(window)
+        window._omnicrawler_available = True
+        try:
+            window._config_delegate.new_config()
+            canvas = window._task_canvas
+            canvas._source_kind_combo.setCurrentIndex(canvas._source_kind_combo.findData("rest"))
+            canvas._url_edit.setText(seed)
+            canvas._item_path_edit.setText("$.items[*]")
+            for name in ("id", "value"):
+                canvas._fields_model.append(
+                    FieldDef(name=name, selector=name, selector_type="css")
+                )
+                canvas._on_field_changed()
+            _allow_private(window)
+            canvas._save_btn.click()
+            _pump(app, lambda: saved_path.is_file(), what="配置落盘")
+
+            raw_yaml = saved_path.read_text(encoding="utf-8")
+            assert "kind: rest" in raw_yaml, raw_yaml
+            assert "mode: json" in raw_yaml, raw_yaml
+            assert "item_path: $.items[*]" in raw_yaml, raw_yaml
+            assert "path: id" in raw_yaml, f"JSON 字段应落盘为 path：\n{raw_yaml}"
+
+            canvas.set_trial_result(True, "试跑通过：2 条记录", {})
+            window._run_btn.click()
+            _pump(
+                app,
+                lambda: window._task_runner.state in {"finished", "error"},
+                timeout=180,
+                what="任务到达终态",
+            )
+            assert window._task_runner.state == "finished", (
+                f"表单创建的 API 任务应成功结束：{window._task_runner.state}"
+            )
+
+            workspace = tmp_path / window._config.workspace
+            records_csv = workspace / "output" / "records.csv"
+            assert records_csv.is_file(), (
+                f"应产出 records.csv：{sorted(p.name for p in (workspace / 'output').glob('*'))}"
+            )
+            rows = list(_csv.DictReader(records_csv.open(encoding="utf-8-sig")))
+            assert {(r["id"], r["value"]) for r in rows} == set(EXPECTED_API), rows
+        finally:
+            with contextlib.suppress(Exception):
+                window._task_runner._backend.shutdown()
+            with contextlib.suppress(Exception):
+                window._task_runner._poller.stop()
+            window.close()
+            app.processEvents()

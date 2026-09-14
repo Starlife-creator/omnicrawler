@@ -87,6 +87,8 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
         # 按域脏标记（PRD §2.2.1）：scope=URL/范围/预算，field=字段规则，
         # output=输出格式/存储，schedule=调度/监测。AI 回写只受其对应域约束。
         self._dirty_domains: set[str] = set()
+        # 「数据来源」是否被用户显式改过：改过后点「开始」不再让草稿覆盖它
+        self._source_kind_overridden = False
         self._locked = False
         self._trial_ok = False
         self._trial_field_hash: str | None = None
@@ -454,6 +456,11 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
         elif cfg.seed_urls:
             cfg.seed_urls = []
         cfg.task_description = self._desc_edit.text().strip()
+        # 数据来源与 JSON 记录路径：与其它表单值一样「表单→配置」单向同步；
+        # `extract.mode` 刻意**不在这里**写 —— 它只在用户切换来源时改，
+        # 否则会把"打开来的 JSON 配置"在保存时悄悄改成 html。
+        cfg.source_kind = str(self._source_kind_combo.currentData() or cfg.source_kind)
+        cfg.set_item_path(self._item_path_edit.text())
         cfg.max_pages = self._max_pages.value()
         cfg.delay = self._delay_spin.value()
         cfg.concurrency = self._concurrency_spin.value()
@@ -569,6 +576,7 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
         self._start_btn.setEnabled(bool(self._url_edit.text().strip()) and not locked)
         self._update_analyze_button()
         for widget in (self._url_edit, self._desc_edit, self._fields_table,
+                       self._source_kind_combo, self._item_path_edit,
                        self._item_selector_edit,
                        self._max_pages, self._delay_spin, self._concurrency_spin,
                        self._trial_pages_spin, self._download_chk, self._pdf_chk,
@@ -601,7 +609,9 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
         intent = getattr(draft, "intent", "") or ""
         self._config.seed_urls = [url] if url else []
         self._config.task_intent = intent
-        self._config.source_kind = getattr(draft, "source_kind", "static_html") or "static_html"
+        if not self._source_kind_overridden:
+            # 草稿只在用户没显式选过来源时生效（否则「开始」会把 API 选择改回网页）
+            self._config.source_kind = getattr(draft, "source_kind", "static_html") or "static_html"
         self._config.max_pages = int(getattr(draft, "max_pages", 10) or 10)
         self._config.download.enabled = bool(getattr(draft, "download_files", False))
         self._config.process_pdf = bool(getattr(draft, "process_pdf", False))
@@ -738,6 +748,21 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
     # ------------------------------------------------------------------
     #  渲染
     # ------------------------------------------------------------------
+    def _set_source_kind(self, kind: str) -> None:
+        """把「数据来源」下拉切到 *kind*；**未知类型原样加入**，不静默改成别的类型。
+
+        插件可以注册自己的 source_kind（校验器支持 `extra_source_kinds`），
+        这类配置在 GUI 里也要能原样保留 —— 因此找不到就追加一个选项。
+        """
+        index = self._source_kind_combo.findData(kind)
+        if index < 0 and kind:
+            self._source_kind_combo.addItem(kind, kind)
+            index = self._source_kind_combo.findData(kind)
+        self._source_kind_combo.blockSignals(True)
+        self._source_kind_combo.setCurrentIndex(max(0, index))
+        self._source_kind_combo.blockSignals(False)
+
+
     def _rebuild_from_config(self) -> None:
         self._updating = True
         try:
@@ -750,6 +775,11 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
                 self._desc_edit.blockSignals(True)
                 self._desc_edit.setText(cfg.task_description)
                 self._desc_edit.blockSignals(False)
+            self._set_source_kind(cfg.source_kind)
+            self._item_path_edit.blockSignals(True)
+            self._item_path_edit.setText(cfg.item_path())
+            self._item_path_edit.blockSignals(False)
+            self._update_item_path_visibility()
             self._max_pages.setValue(cfg.max_pages)
             self._delay_spin.setValue(cfg.delay)
             self._concurrency_spin.setValue(cfg.concurrency)

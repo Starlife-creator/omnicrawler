@@ -121,7 +121,13 @@ def to_yaml(config: CrawlConfig) -> str:
         # 空选择器不落盘：JSON 模式的规则用 path/paths，GUI 模型里 selector 恒空，
         # 若照样输出会往合法规则里塞一个无意义的 selector: ""。
         if f.selector:
-            field_value["selector"] = f.selector
+            if config.extract_mode() == "json":
+                # JSON 字段的契约键是 `path`（`json_field_values` 只认 `path` / `paths`），
+                # 不是 `selector`。用户在表单"选择器"列里填的是 JSONPath —— 按模式翻译，
+                # 而不是把 jsonpath 塞进 selector（那样运行时取不到值）。
+                field_value["path"] = f.selector
+            else:
+                field_value["selector"] = f.selector
         if f.fallback_xpath:
             field_value["selectors"] = [
                 {"selector": f.selector},
