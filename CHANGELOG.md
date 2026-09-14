@@ -4,6 +4,7 @@
 
 ### 变更
 
+- feat(pdfx): 新增 PDF 侧质量基准 `services/pdf_quality_benchmark.py`（数字版 + 图片版两用例，样本程序自造、离线、可复现；与 crawler 侧**分开记分**）。判据＝**要么对，要么进复核**：归一后逐字比对 + 每字段带页码与原文证据 + 低置信（`validation.auto_accept_confidence`）必须 `needs_review` + 错值不得被 `auto_accepted` 放行；11 条反例单测 + 3 条真跑集成用例（含真 OCR，缺字体或 tesseract 时跳过并登记）
 - fix(gui): 变更监测在关窗后不再留下在飞工作——补 `ChangeDetector.cancel()` 与 `ChangeMonitorView.shutdown()`（先停 30s 轮询、再取消并有界等待），关闭流程后再触发轮询/手动检查都不再启动新工作；旧 worker 的迟到终态信号被忽略
 - fix(gui): 接线 `BackgroundWorker.cleanup()`——该钩子自仓库初始提交起就存在却**从未被调用**（全历史无 `self.cleanup()`）；现在成功/失败/取消三条路径都会在工作线程内执行，晚于终态信号，且清理异常不会改变任务终态
 - fix(licensing): 为随仓（且随便携包）分发的 6 个字体补 `_shared/fonts/OFL.txt`（逐字上游文本 + 三家版权行），并在 `THIRD_PARTY_NOTICES.md` 补声明 JetBrains Mono 与 Outfit；新增守卫按字体 `name` 表核对声明与版权行
