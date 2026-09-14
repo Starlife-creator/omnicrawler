@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QTableView,
@@ -90,6 +91,23 @@ class FieldsAreaMixin(_Base):
         pick_row.addWidget(self._visual_pick_btn)
         body.addLayout(pick_row)
 
+        # 列表项选择器（`extract.item_selector`）：2026-09-14 起 GUI 可**编辑**它。
+        # 此前它是只保留不改写的 B 类透传键，于是"从零在表单里建不出列表任务"
+        # ——整页会被当成一条记录，跑出来只有 1 条且字段错位。
+        container_row = QHBoxLayout()
+        container_row.addWidget(QLabel(_("列表项选择器")))
+        self._item_selector_edit = QLineEdit()
+        self._item_selector_edit.setObjectName("itemSelectorEdit")
+        self._item_selector_edit.setPlaceholderText(_("例如 div.item；留空＝整页按一条记录"))
+        self._item_selector_edit.setClearButtonEnabled(True)
+        self._item_selector_edit.setAccessibleName(_("列表项选择器"))
+        self._item_selector_edit.setAccessibleDescription(
+            _("填写每条记录对应的容器选择器；留空表示整页按单个对象处理。")
+        )
+        self._item_selector_edit.textChanged.connect(self._on_item_selector_changed)
+        container_row.addWidget(self._item_selector_edit, 1)
+        container_row.addWidget(HelpTooltip("fields.item_selector"))
+        body.addLayout(container_row)
         self._fields_model = _FieldTableModel(self)
         # 用户编辑单元格 → 标 field 脏（dataChanged；增删由显式调用方负责）
         self._fields_model.dataChanged.connect(self._on_field_changed)
@@ -126,6 +144,17 @@ class FieldsAreaMixin(_Base):
         row.addWidget(del_btn)
         row.addStretch()
         body.addLayout(row)
+
+    def _on_item_selector_changed(self, *_args: Any) -> None:
+        """列表项选择器变更：同步配置 + 标 field 脏。
+
+        与字段表同域：容器决定"一条记录"的边界，改了它却用旧试跑结果放行，
+        等于让用户拿错配置去跑全量 —— `_mark_dirty(_DOMAIN_FIELD)` 会让试跑闸门失效。
+        """
+        if self._updating or self._locked:
+            return
+        self._sync_form_to_config()
+        self._mark_dirty(self._DOMAIN_FIELD)
 
     def _add_field(self) -> None:
         self._fields_model.append(FieldDef(name=_("新字段"), selector=".example", selector_type="css"))

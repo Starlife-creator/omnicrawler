@@ -470,6 +470,7 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
                 selector=f.selector,
                 selector_type=f.selector_type if f.selector_type in ("css", "xpath", "jsonpath") else "css",
             ))
+        cfg.set_item_selector(self._item_selector_edit.text())
         cfg.fields = fields
         cfg.output_formats = [
             chk.property("fmt") for chk in self._format_checks if chk.isChecked()
@@ -553,6 +554,7 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
         self._save_btn.setToolTip(_("工作台锁定中，请先完成当前操作") if locked else _("随时可保存，无需先试跑；不改变编辑状态"))
         self._start_btn.setEnabled(bool(self._url_edit.text().strip()) and not locked)
         for widget in (self._url_edit, self._desc_edit, self._fields_table,
+                       self._item_selector_edit,
                        self._max_pages, self._delay_spin, self._concurrency_spin,
                        self._trial_pages_spin, self._download_chk, self._pdf_chk,
                        self._monitor_chk):
@@ -739,6 +741,9 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
             self._download_chk.setChecked(cfg.download.enabled)
             self._pdf_chk.setChecked(cfg.process_pdf)
             self._monitor_chk.setChecked(cfg.monitor_same_url)
+            self._item_selector_edit.blockSignals(True)
+            self._item_selector_edit.setText(cfg.item_selector())
+            self._item_selector_edit.blockSignals(False)
             self._render_fields(cfg)
             self._render_formats(cfg)
             self._render_summary()

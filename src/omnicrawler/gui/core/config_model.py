@@ -152,6 +152,25 @@ class CrawlConfig:
             return str(section.get("mode") or "html")
         return "html"
 
+    def item_selector(self) -> str:
+        """列表项容器选择器（``extract.item_selector``）——与 ``extract_mode`` 同为 B 类透传键。
+
+        **GUI 自 2026-09-14 起可以编辑它**（此前只能保留）：没有它，从零在表单里
+        建不出"列表"任务——整页会被当成**一条记录**。留空表示"非列表任务"。
+        """
+        section = self.passthrough.get("extract")
+        if isinstance(section, dict):
+            return str(section.get("item_selector") or "")
+        return ""
+
+    def set_item_selector(self, value: str) -> None:
+        """写入列表项容器选择器（原地更新 ``passthrough['extract']``）。"""
+        section = self.passthrough.get("extract")
+        if not isinstance(section, dict):
+            section = {}
+            self.passthrough["extract"] = section
+        section["item_selector"] = (value or "").strip()
+
     def validate(self) -> list[str]:
         """校验完整配置，返回错误列表，空列表表示校验通过。
 

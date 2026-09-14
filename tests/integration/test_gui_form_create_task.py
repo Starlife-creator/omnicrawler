@@ -6,7 +6,7 @@
 |---|---|
 | `test_gui_entry_run.py` | **注入**写好的 YAML → 点「运行」→ 子进程 → 结果页 |
 | `test_gui_worker_local_task.py` | 运行器 + worker 子进程（4 种任务形态、产物正确性）|
-| **本文件** | **表单 → 配置 → YAML** 这一段（新建 / 填表 / 补全字段 / 保存草稿），并钉住一条当前限制 |
+| **本文件** | **表单 → 配置 → YAML** 这一段（新建 / 填表 / 填列表项选择器 / 保存草稿），并**跑到产物** |
 
 ## 为什么"表单创建"要单独验
 
@@ -14,12 +14,12 @@
 **把写好的 YAML 交给窗口**（`load_config`），并没有验过"用户从空白表单填出来"这条路 ——
 而它恰恰是新手的第一条路径（§4.5 主流程：创建任务 → 小样预览 → 正式运行 → …）。
 
-## 顺带得到的结论（已登记为缺口，见 `test_form_created_task_has_no_list_container`）
+## 本轮顺带补上的能力（2026-09-14）
 
-`extract.item_selector`（列表项 CSS 选择器）在 GUI 里是**只保留、不可编辑**的透传字段：
-表单、启发式补全、视觉点选、向导都**没有**它的输入口。于是**从零在表单里建不出"列表"任务**
-（只能靠模板占位符或导入已有 YAML）。这不是 bug，而是能力缺口 —— 本文件把它钉成断言，
-以免"以为表单能建列表任务"。
+上一轮实测发现：**GUI 没有任何路径可以 author `extract.item_selector`**，于是"从零在表单里
+建不出列表任务"（整页会被当成一条记录）。本轮给表单加了「列表项选择器」输入口，
+`CrawlConfig` 也配了一对 `item_selector()` / `set_item_selector()`（与 `extract_mode()` 同源），
+因此下面 `test_form_created_list_task_runs_end_to_end` 才成立：**从空白表单建列表任务 → 保存 → 运行 → 产物等于真值**。
 """
 
 from __future__ import annotations
@@ -36,6 +36,9 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 EXPECTED_FIELDS_SELECTORS = {"h1", "a", "time", ".author", ".description"}
+
+#: 演示站点的真值（与 `_LIST_HTML` 一致）
+EXPECTED = (("苹果", "11"), ("香蕉", "22"), ("樱桃", "33"))
 
 _LIST_HTML = """<html><body><div class="list">
 <div class="item"><h2 class="t">苹果</h2><span class="p">11</span></div>
@@ -286,17 +289,14 @@ def test_form_edit_preserves_extract_mode_and_item_path(
         app.processEvents()
 
 
-def test_form_created_task_has_no_list_container(tmp_path: Path, monkeypatch) -> None:
-    """**当前限制（钉住，不是期望行为）**：纯表单创建**不含** `extract.item_selector`。
+def test_form_can_author_list_container_and_trial_gate_rearms(
+    tmp_path: Path, monkeypatch, _no_blocking_dialogs
+) -> None:
+    """表单能**写**列表项选择器，且改它会**让试跑失效**（不能拿旧试跑结果放行）。
 
-    核实过程（2026-09-13）：GUI 里**没有任何**路径可以 author 它 ——
-    表单没有该控件、「启发式补全字段」只追加通用字段规则、`visual_selector` 整个模块
-    没有"容器/列表项"概念、向导只有 `step3_fields.py`；序列化器把 `item_selector`
-    当 **B 类透传字段**（只保留、不改写）。
-
-    ⇒ **从零在表单里建不出"列表"任务**：只能靠模板占位符或导入已有 YAML。
-    这是能力缺口（已登记到账本、《优化方案》§5.3、`审查记录.md` §2.2）。
-    **修好后请把下面的断言改成 `!= ""`，并同步更新那三处登记。**
+    上一轮这里钉的是"GUI 无法 author `item_selector`"这条限制；本轮补上输入口后，
+    该限制不再成立，于是改成正面契约 + 一条安全约束：
+    **容器决定"一条记录"的边界，改了它必须重新试跑**。
     """
     app, window = _window(tmp_path, monkeypatch)
     _silence_side_effects(window)
@@ -304,24 +304,102 @@ def test_form_created_task_has_no_list_container(tmp_path: Path, monkeypatch) ->
         window._config_delegate.new_config()
         canvas = window._task_canvas
         canvas._url_edit.setText("https://example.org/list")
-        canvas._desc_edit.setText("采集整个栏目")
-        canvas._start_btn.click()
-        _pump(app, lambda: window._config.source_kind == "crawl", what="draft 应用")
-        canvas._complete_btn.click()               # 补全字段也不会带来容器
-        _pump(app, lambda: len(window._config.fields) > 0, what="字段补全")
+        canvas._item_selector_edit.setText("div.item")          # 表单：列表项选择器
+        assert window._config.item_selector() == "div.item", "表单值应同步进配置"
 
-        from omnicrawler.gui.core.config_serializer import save_yaml
-
-        out = tmp_path / "no_container.yaml"
-        save_yaml(window._config, out)
-        raw = out.read_text(encoding="utf-8")
-        assert "item_selector: ''" in raw, (
-            "限制已变化：表单创建现在能表达列表项选择器了 —— "
-            f"请改断言并同步账本／《优化方案》§5.3／审查记录 §2.2。写出的配置：\n{raw}"
+        # 闸门：试跑通过后运行按钮可用；改容器 ⇒ 立刻失效（与字段表同域）
+        canvas.set_trial_result(True, "试跑通过", {})
+        assert canvas._run_btn.isEnabled(), "试跑一致后运行按钮应可用"
+        canvas._item_selector_edit.setText("li.product")
+        assert not canvas._run_btn.isEnabled(), (
+            "改了列表项选择器却仍可运行 —— 等于让用户拿旧试跑结果去跑全量"
         )
+        assert window._config.item_selector() == "li.product"
+        assert _no_blocking_dialogs == [], _no_blocking_dialogs
     finally:
         window.close()
         app.processEvents()
+
+
+def test_form_created_list_task_runs_end_to_end(tmp_path: Path, monkeypatch) -> None:
+    """**从空白表单建一个列表任务 → 保存 → 运行 → 产物等于真值。**
+
+    这是账本里「经 GUI 表单**创建**任务」这条验收的正面证据：全程不注入任何写好的配置 ——
+    网址、列表项选择器、字段规则都由**表单控件**产生，保存成 YAML 后交给真实 worker
+    子进程运行，最后核对 `records.csv` 的三条真值。
+
+    （试跑本身由 `test_first_task_journey.py` 覆盖；这里用官方 API
+    `set_trial_result` 满足"试跑一致"闸门，不伪造按钮状态。）
+    """
+    import csv as _csv
+
+    from PySide6.QtWidgets import QFileDialog
+
+    from omnicrawler.gui.core.config_model import FieldDef
+
+    saved_path = tmp_path / "form_list_task.yaml"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(saved_path), ""))
+    )
+
+    with _serve() as seed:
+        app, window = _window(tmp_path, monkeypatch)
+        _silence_side_effects(window)
+        window._omnicrawler_available = True
+        try:
+            window._config_delegate.new_config()
+            canvas = window._task_canvas
+            canvas._url_edit.setText(seed)                    # 表单：网址
+            canvas._desc_edit.setText("单页")                 # 表单：一句话描述
+            canvas._start_btn.click()                         # 表单：「开始」
+            _pump(app, lambda: window._config.seed_urls == [seed], what="草稿落到配置")
+
+            canvas._item_selector_edit.setText("div.item")    # 表单：列表项选择器
+            for name, selector in (("标题", "h2.t"), ("价格", "span.p")):
+                # 与「＋ 添加字段」按钮同一条路径（模型 append → 标脏）
+                canvas._fields_model.append(
+                    FieldDef(name=name, selector=selector, selector_type="css")
+                )
+                canvas._on_field_changed()
+            # 本机站点需**显式放行**：`http.allow_private_network` 是安全默认，
+            # 产品**故意不**为它提供表单控件（默认禁止访问本机 / 内网 / 保留地址）。
+            # 这里与 `test_first_task_journey.py` 同款处理；除此之外，任务形状
+            # （网址 / 列表项选择器 / 字段）全部由表单控件产生。
+            window._config.passthrough.setdefault("http", {})["allow_private_network"] = True
+            canvas._save_btn.click()                          # 表单：「保存草稿」
+            _pump(app, lambda: saved_path.is_file(), what="配置落盘")
+            assert window._config_path == saved_path
+            canvas.set_trial_result(True, "试跑通过：3 条记录", {})   # 满足试跑闸门
+            assert canvas._run_btn.isEnabled()
+
+            window._run_btn.click()                           # 真实「运行」
+            _pump(
+                app,
+                lambda: window._task_runner.state in {"finished", "error"},
+                timeout=180,
+                what="任务到达终态",
+            )
+            assert window._task_runner.state == "finished", (
+                f"表单创建的任务应成功结束：{window._task_runner.state}"
+            )
+            assert window._status_text.text() == "已完成"
+
+            # workspace 按**项目根**解析（`run_controller` 里 `_project_root / config.workspace`）
+            workspace = tmp_path / window._config.workspace
+            records_csv = workspace / "output" / "records.csv"
+            assert records_csv.is_file(), (
+                f"应产出 records.csv：{sorted(p.name for p in (workspace / 'output').glob('*'))}"
+            )
+            rows = list(_csv.DictReader(records_csv.open(encoding="utf-8-sig")))
+            assert {(r["标题"], r["价格"]) for r in rows} == set(EXPECTED), rows
+            assert len(rows) == len(EXPECTED), f"应恰好交付 {len(EXPECTED)} 条：{len(rows)}"
+        finally:
+            with contextlib.suppress(Exception):
+                window._task_runner._backend.shutdown()
+            with contextlib.suppress(Exception):
+                window._task_runner._poller.stop()
+            window.close()
+            app.processEvents()
 
 
 @pytest.mark.parametrize("intent", ["单页", "采集整个栏目"])
