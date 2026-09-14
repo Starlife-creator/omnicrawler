@@ -90,6 +90,25 @@ class _CheckWorker(QThread):
         super().__init__(parent)
         self._rules_json = rules_json
         self._fetcher = fetcher
+        # 仅在**工作线程内**赋值/清空；`cancel()` 从 GUI 线程读取它并转调 detector
+        self._detector: Any = None
+        self._cancelled_by_user = False
+
+    def cancel(self) -> None:
+        """请求取消（线程安全）：先记标志，再中转给正在运行的 detector。
+
+        `requestInterruption()` 只置 Qt 侧标志，而抓取发生在 detector 内部，
+        必须由本方法把取消传下去；`run()` 里也会在启动前检查一次中断标志，
+        覆盖「start() 之前就被中断」的情形。
+        """
+        self._cancelled_by_user = True
+        detector = self._detector
+        if detector is not None:
+            detector.cancel()
+
+    def is_cancelled(self) -> bool:
+        """是否已被请求取消（用户取消或 Qt 中断请求）。"""
+        return self._cancelled_by_user or self.isInterruptionRequested()
 
     def run(self) -> None:
         import asyncio
@@ -98,13 +117,23 @@ class _CheckWorker(QThread):
             from omnicrawler.scheduling.change_detector import ChangeDetector, MonitorRule
 
             detector = ChangeDetector(fetcher=self._fetcher)
+            self._detector = detector
             for item in self._rules_json:
                 detector.add_rule(MonitorRule.from_dict(item))
+            if self.is_cancelled():
+                detector.cancel()
 
             events = asyncio.run(detector.check_all())
-            self.finished.emit(events)
+            if self.is_cancelled():
+                # 取消是正常终态：**不把（可能被截断的）结果当成功交付**，
+                # 但仍要发一个终态信号，调用方才能复位「进行中」状态。
+                self.finished.emit([])
+            else:
+                self.finished.emit(events)
         except Exception as exc:
             self.error.emit(str(exc))
+        finally:
+            self._detector = None
 
 
 # ── 新建规则对话框 ──────────────────────────────────────────────────
@@ -516,6 +545,9 @@ class ChangeMonitorView(QWidget):
 
         # ── 工作线程 ────────────────────────────────────────────────
         self._worker: _CheckWorker | None = None
+        # 关闭后**不得**再启动检查：30s 轮询若在关闭流程之后触发，
+        # 那次检查不会被任何人等待（进程收尾时线程仍在跑）
+        self._shutting_down = False
 
         # ── 首次渲染 ────────────────────────────────────────────────
         self._refresh_list()
@@ -632,7 +664,32 @@ class ChangeMonitorView(QWidget):
             style += " font-weight: bold;"
         self._status_label.setStyleSheet(style)
 
+    def shutdown(self, *, wait_ms: int = 5000) -> None:
+        """停止轮询并等待在飞的检查收尾（窗口关闭路径调用，幂等）。
+
+        顺序有讲究：**先停定时器、先置关闭标志**，再取消并等待——
+        否则 30s 轮询可能在关闭流程之后又启动一次检查，而那次检查
+        不会再被任何人等待（这正是「关窗后仍有在飞后台工作」的来源）。
+
+        等待是**有界**的：一次抓取可能带重试、耗时远超关窗可接受范围，
+        超时就放弃等待并记录日志（此时放弃的是结果，不阻塞退出）。
+        """
+        self._shutting_down = True
+        timer = getattr(self, "_timer", None)
+        if timer is not None:
+            timer.stop()
+        worker = self._worker
+        if worker is None or not worker.isRunning():
+            return
+        worker.cancel()
+        if not worker.wait(wait_ms):
+            LOGGER.warning(
+                "变更检查未在 %sms 内结束，放弃等待（结果将被丢弃）", wait_ms
+            )
+
     def _check_all(self) -> None:
+        if self._shutting_down:
+            return
         if self._worker is not None and self._worker.isRunning():
             ToastManager.instance().warning(_("检查仍在进行中，请稍候"))
             return
@@ -650,7 +707,7 @@ class ChangeMonitorView(QWidget):
 
     def _periodic_check(self) -> None:
         """定时器触发的后台检查。"""
-        if self._paused or not self._rules_data or self._worker is not None:
+        if self._shutting_down or self._paused or not self._rules_data or self._worker is not None:
             return
 
         # 检查是否有到期的规则
@@ -678,6 +735,9 @@ class ChangeMonitorView(QWidget):
 
     @Slot(list)
     def _on_check_finished(self, events: list) -> None:
+        # 迟到信号守卫：被放弃/被取代的旧 worker 的终态不得改动当前状态
+        if self.sender() is not self._worker:
+            return
         self._worker = None
         events_list = list(events)
 
@@ -719,6 +779,8 @@ class ChangeMonitorView(QWidget):
 
     @Slot(str)
     def _on_check_error(self, error: str) -> None:
+        if self.sender() is not self._worker:
+            return
         self._worker = None
         self._status_label.setText(_("检查失败"))
         self._set_status_style("danger")
@@ -812,6 +874,8 @@ class ChangeMonitorView(QWidget):
 
     def _check_single(self, rule_id: str) -> None:
         """手动检查单条规则。"""
+        if self._shutting_down:
+            return
         for rule in self._rules_data:
             if rule.get("rule_id") == rule_id:
                 self._status_label.setText(_("检查中..."))

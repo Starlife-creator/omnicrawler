@@ -168,6 +168,9 @@ class ChangeDetector:
         self._data_dir = data_dir or Path(".omnicrawler_monitor")
         self._on_notify = on_notify
         self._running: bool = True
+        # 协作式取消（终态，与 pause/resume 的可逆开关不同）：置位后不再发起新抓取。
+        # 跨线程只做一次布尔赋值（CPython 下原子），不引入锁以免在事件循环里阻塞。
+        self._cancelled: bool = False
         # 网络边界（S4.5 门禁）：注入 EgressBroker 后所有抓取走授权路径
         self._egress = egress
         # A3：注入 AsyncFetcher 后复用其连接池/限速/隐身/EgressBroker 审计通道
@@ -214,6 +217,20 @@ class ChangeDetector:
 
     def resume(self) -> None:
         self._running = True
+
+    def cancel(self) -> None:
+        """请求取消：**不再发起新的抓取**（协作式，可跨线程调用）。
+
+        在网络调用**之前**与每条规则**之间**检查。已经发出的请求无法中断
+        （urllib / AsyncFetcher 都是阻塞调用），由调用方在关闭路径上等待其收尾。
+        """
+        self._cancelled = True
+        self._running = False
+
+    @property
+    def cancelled(self) -> bool:
+        """是否已被请求取消。"""
+        return self._cancelled
 
     # ── 内容获取与哈希 ──────────────────────────────────────────────
 
@@ -281,7 +298,13 @@ class ChangeDetector:
 
         注入 AsyncFetcher 时复用其连接池/限速/EgressBroker 审计通道；
         否则回退 urllib + EgressBroker（S4.5 网络边界门禁）。
+
+        已被请求取消时直接返回 None：**关闭后不得再发起网络 I/O**
+        （这是「关闭窗口时有抓取在飞」那类崩溃的入口防线）。
         """
+        if self._cancelled:
+            LOGGER.info("变更监测已取消，跳过抓取: %s", url)
+            return None
         if self._fetcher is not None:
             try:
                 from ..core.models import CrawlRequest
@@ -486,7 +509,8 @@ class ChangeDetector:
         """检查所有已启用的规则。返回所有变化事件列表。"""
         events: list[ChangeEvent] = []
         for rule_id in list(self._rules):
-            if not self._running:
+            # 取消后不再开新规则（在飞的那条由调用方等待收尾）
+            if self._cancelled or not self._running:
                 break
             try:
                 event = await self.check_rule(rule_id)

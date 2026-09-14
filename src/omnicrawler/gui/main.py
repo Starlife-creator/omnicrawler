@@ -1858,6 +1858,11 @@ class MainWindow(QMainWindow):
 
     def _request_background_shutdown(self) -> None:
         """Ask auxiliary work to stop without deleting a live QThread."""
+        # 变更监测先停：它的 30s 轮询若在本流程之后再起一次检查，
+        # 那次检查不会被下面的等待覆盖，关闭就永远收敛不了
+        monitor = getattr(self, "_change_monitor", None)
+        if monitor is not None:
+            monitor.shutdown()
         for thread in self._background_threads():
             if thread.isRunning():
                 thread.requestInterruption()
@@ -1908,6 +1913,8 @@ class MainWindow(QMainWindow):
         # discard their redundant crash-recovery draft.
         if self._config_path is not None:
             self._autosave.delete_draft()
+        # 变更监测的轮询必须随窗口关闭停止（否则关闭后仍可能启动一次无人等待的检查）
+        self._change_monitor.shutdown()
         self._release_probe_fetcher()
         self._clear_plugin_ui()
         if self._builtin_background_controller is not None:
