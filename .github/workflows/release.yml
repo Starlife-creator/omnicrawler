@@ -40,6 +40,9 @@ env:
   # FINAL 发布闸门阈值：单资产字节上限（≈1.9 GiB），低于 GitHub 硬限 2 GiB，
   # 为签名/计量误差留余量。超限产物在平台 job 内被移出发布集。
   ASSET_MAX_BYTES: "2039693706"
+  # ★ 同 quality.yml：Windows runner 的 stdout 默认 cp1252，而 `tools/` 脚本会打印中文 ⇒
+  # 非 ASCII 会 `UnicodeEncodeError: 'charmap'` 崩溃。只改 stdio 编码，不动 open() 默认编码。
+  PYTHONIOENCODING: "utf-8"
 
 jobs:
   verify-python-version:
