@@ -19,9 +19,26 @@ from PySide6.QtWidgets import (
     QApplication,
     QGraphicsOpacityEffect,
     QStackedWidget,
+    QStyle,
+    QWidget,
 )
 
 from .i18n import _
+
+
+def repolish_widget(widget: QWidget) -> None:
+    """按 QSS 动态属性刷新控件外观（改 `setProperty` 之后必须重刷，否则样式不生效）。
+
+    ★ W6.7：此前 `convert_tool.py` 与 `task_canvas_components.py` **各有一份逐字相同的私有实现**，
+    另有 view 需要 `from .task_canvas_components import _repolish_widget`（跨 view 导入私有函数）。
+    现下沉到这里作为**唯一实现**，四个调用点统一用公开名。
+    """
+    style = widget.style()
+    if isinstance(style, QStyle):
+        style.unpolish(widget)
+        style.polish(widget)
+    widget.ensurePolished()
+
 
 logger = logging.getLogger(__name__)
 

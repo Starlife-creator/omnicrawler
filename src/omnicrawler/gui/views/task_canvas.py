@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.config_model import CrawlConfig, FieldDef
-from ..design_system import RADIUS, SPACING, ThemeManager, scaled_font_px
+from ..design_system import RADIUS, SPACING, ThemeManager, repolish_widget, scaled_font_px
 from ..i18n import _
 from ..widgets.help_tooltip import HelpTooltip
 from ..widgets.toast import ToastManager
@@ -43,7 +43,7 @@ from ..widgets.toast import ToastManager
 # Compatibility aliases keep the canvas's private API stable for existing tests/plugins.
 from .task_canvas_ai_plan import AiPlanReviewMixin
 from .task_canvas_components import PlanReviewWorker as _PlanReviewWorker
-from .task_canvas_components import _repolish_widget, _Section
+from .task_canvas_components import _Section
 from .task_canvas_draft import DraftAreaMixin
 from .task_canvas_fields import FieldsAreaMixin
 from .task_canvas_intent import IntentAreaMixin
@@ -533,7 +533,7 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
                 _("✓ 交付配置有效") if self._delivery_ok else _("⚠ 至少选择一种输出格式")
             )
             self._delivery_status.setProperty("status", "success" if self._delivery_ok else "warning")
-            _repolish_widget(self._delivery_status)
+            repolish_widget(self._delivery_status)
         if hasattr(self, "_run_btn"):
             self._run_btn.setEnabled(self._trial_ok and self._delivery_ok and not self._locked)
             if self._trial_ok and not self._delivery_ok:

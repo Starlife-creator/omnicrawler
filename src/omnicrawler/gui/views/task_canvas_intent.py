@@ -27,10 +27,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..design_system import SPACING
+from ..design_system import SPACING, repolish_widget
 from ..i18n import _
 from ..widgets.help_tooltip import HelpTooltip
-from .task_canvas_components import _repolish_widget
 
 if TYPE_CHECKING:
     from PySide6.QtCore import QTimer
@@ -213,7 +212,7 @@ class IntentAreaMixin:
         self._url_badge.setText("")
         if url:
             self._url_badge.setText(_("✓ 已识别网址") if valid else _("⚠ 网址格式不完整"))
-            _repolish_widget(self._url_badge)
+            repolish_widget(self._url_badge)
         # P2：URL 有效且未锁定时调度探活（600ms 防抖）；否则取消挂起探测并清空反馈
         if valid and not self._locked:
             self._probe_timer.start(self._PROBE_DEBOUNCE_MS)
@@ -259,7 +258,7 @@ class IntentAreaMixin:
 
     def _set_probe_badge(self, text: str) -> None:
         self._probe_badge.setText(text)
-        _repolish_widget(self._probe_badge)
+        repolish_widget(self._probe_badge)
 
     # ------------------------------------------------------------------
     #  P3：首启引导气泡（PRD §3.1）——最克制：非弹窗、3 秒消失、不重复
@@ -282,7 +281,7 @@ class IntentAreaMixin:
         self._welcome_tip.setText(_("💡 试试粘贴一个网址开始"))
         self._welcome_tip.setVisible(True)
         self._url_edit.setProperty("welcomeHighlight", True)
-        _repolish_widget(self._url_edit)
+        repolish_widget(self._url_edit)
         self._welcome_timer.start(self._WELCOME_TIP_MS)
 
     def _dismiss_welcome_tip(self) -> None:
@@ -291,7 +290,7 @@ class IntentAreaMixin:
         self._welcome_tip.setVisible(False)
         if self._url_edit.property("welcomeHighlight"):
             self._url_edit.setProperty("welcomeHighlight", False)
-            _repolish_widget(self._url_edit)
+            repolish_widget(self._url_edit)
         from ...gui.settings import make_qsettings
 
         settings = make_qsettings("OmniCrawler", "GUIWorkbench")

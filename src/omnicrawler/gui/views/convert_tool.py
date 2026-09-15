@@ -23,25 +23,15 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSizePolicy,
-    QStyle,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
-from ..design_system import mono_font_families
+from ..design_system import mono_font_families, repolish_widget
 from ..i18n import _
 from ..widgets.toast import ToastManager
-
-
-def _repolish_widget(widget: QWidget) -> None:
-    """按 QSS 动态属性刷新控件外观。"""
-    style = widget.style()
-    if isinstance(style, QStyle):
-        style.unpolish(widget)
-        style.polish(widget)
-    widget.ensurePolished()
 
 
 class _ConvertWorker(QThread):
@@ -178,7 +168,7 @@ class _DropZone(QFrame):
 
     def set_highlight(self, on: bool) -> None:
         self.setProperty("dragHover", "1" if on else "")
-        _repolish_widget(self)
+        repolish_widget(self)
 
     def dragEnterEvent(self, ev: QDragEnterEvent | None) -> None:
         if ev is None:
@@ -384,8 +374,8 @@ class ConvertView(QWidget):
     def _apply_style_weak(self) -> None:
         self._drop.setProperty("card", "1")
         self._src_fmt_label.setProperty("badge", "1")
-        _repolish_widget(self._drop)
-        _repolish_widget(self._src_fmt_label)
+        repolish_widget(self._drop)
+        repolish_widget(self._src_fmt_label)
 
     def _pick_source_file(self) -> None:
         self._on_files_dropped(["__PICK__"])

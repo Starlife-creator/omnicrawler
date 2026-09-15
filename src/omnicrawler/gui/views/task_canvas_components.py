@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QStyle,
     QStyledItemDelegate,
     QVBoxLayout,
     QWidget,
@@ -26,7 +25,7 @@ from PySide6.QtWidgets import (
 
 from ...core.field_value_source import COMMON_ATTRIBUTES, POSITION_BY_KEY, POSITION_CHILD
 from ..core.config_model import FieldDef
-from ..design_system import SPACING
+from ..design_system import SPACING, repolish_widget
 from ..i18n import _
 from ..widgets.help_tooltip import HelpTooltip
 
@@ -319,15 +318,6 @@ class FieldCellDelegate(QStyledItemDelegate):
 # UI primitives extracted from task_canvas.py (P1-3 first split)
 # ---------------------------------------------------------------------------
 
-def _repolish_widget(widget: QWidget) -> None:
-    """按 QSS 动态属性刷新控件外观。"""
-    style = widget.style()
-    if isinstance(style, QStyle):
-        style.unpolish(widget)
-        style.polish(widget)
-    widget.ensurePolished()
-
-
 class _Section(QGroupBox):
     """可折叠区域容器：标题 + 折叠按钮 + 内容。
 
@@ -378,7 +368,7 @@ class _Section(QGroupBox):
         # 折叠只隐藏 body 内容；sticky 状态条保持常驻
         self._body_host.setVisible(not self._collapsed)
         self.toggled.emit(self._collapsed)
-        _repolish_widget(self)
+        repolish_widget(self)
 
     def collapsed(self) -> bool:
         return self._collapsed
