@@ -180,6 +180,10 @@ class LocalWorkerBackend:
         self._worker_command = worker_command
         self.session: WorkerSession | None = None
         self.session_file: Path | None = None
+        # 持有 worker 的 Popen 句柄：**必须在关闭时回收**，否则 POSIX 上退出的 worker
+        # 会变成僵尸进程——`psutil.pid_exists()`（`os.kill(pid, 0)`）对僵尸**仍返回真**，
+        # 于是"任务结束后 worker 未退出"会被误判为资源残留（实测 macOS CI；Windows 无此概念）。
+        self._process: subprocess.Popen[bytes] | None = None
 
     def start(self, config_path: str | Path) -> dict[str, Any]:
         config = load_config(config_path)
@@ -220,6 +224,7 @@ class LocalWorkerBackend:
                 stdin=subprocess.DEVNULL, stdout=log, stderr=log, close_fds=True,
                 creationflags=creationflags, **kwargs,
             )
+        self._process = process
         self.session = WorkerSession(**{**asdict(session), "pid": process.pid})
         _write_session(self.session_file, self.session)
         # F36：冻结模式冷启动（解压/杀软首扫）握手放宽到 60s
@@ -252,7 +257,25 @@ class LocalWorkerBackend:
         return self._request("stop")
 
     def shutdown(self) -> dict[str, Any]:
-        return self._request("shutdown")
+        response = self._request("shutdown")
+        self.reap(timeout=10.0)
+        return response
+
+    def reap(self, *, timeout: float = 10.0) -> bool:
+        """回收（wait）本进程启动的 worker 子进程；返回是否已回收。
+
+        **为什么必须在关闭时回收**：worker 退出后若没人 `wait()`，在 POSIX 上会留下**僵尸**，
+        而 `psutil.pid_exists()` / `os.kill(pid, 0)` 对僵尸**仍返回真** ⇒ 看起来像资源残留
+        （实测 macOS CI 的 6 条端到端用例）。Windows 无僵尸概念，所以本地不复现。
+        `attach()` 重连进来的后端不是父进程，无法回收（此时这里安全地什么都不做）。
+        """
+        process = self._process
+        if process is None:
+            return True
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            process.wait(timeout=timeout)
+        self._process = None
+        return process.returncode is not None
 
     def _request(self, command: str) -> dict[str, Any]:
         if self.session is None:

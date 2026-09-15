@@ -87,3 +87,26 @@ def test_local_worker_starts_from_a_deep_workspace(tmp_path: Path) -> None:
     finally:
         with contextlib.suppress(Exception):
             backend.shutdown()
+
+
+def test_local_worker_is_reaped_after_shutdown(tmp_path: Path) -> None:
+    """关闭后必须**回收** worker 子进程（W1.1b，2026-09-15）。
+
+    为什么需要：worker 退出后若没人 `wait()`，在 POSIX 上留下**僵尸**，而
+    `psutil.pid_exists()`（`os.kill(pid, 0)`）对僵尸**仍返回真** ⇒ 端到端用例会报
+    「结束后 worker 子进程 … 未退出，存在资源残留」（实测 macOS CI 6 条；Windows 无僵尸概念，本地不复现）。
+    所以判据是"关闭后 pid 立刻不存在"，而不是"等 30 秒看看"。
+    """
+    psutil = pytest.importorskip("psutil")
+
+    backend = LocalWorkerBackend()
+    backend.start(_config(tmp_path))
+    assert backend.session is not None
+    pid = backend.session.pid
+    assert pid and psutil.pid_exists(pid)
+
+    backend.shutdown()
+
+    assert not psutil.pid_exists(pid), f"关闭后 worker 仍是活进程或僵尸：{pid}"
+    # 非父进程（重连进来的后端）调用 reap 必须安全（什么都不做但也不抛）
+    assert backend.reap() is True
