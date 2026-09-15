@@ -7,34 +7,47 @@ Cascadia Code / Menlo），一旦等宽控件里出现中文（YAML 编辑器、
 复核表格……）就会落到 tofu（缺字形方块）。此前只能靠**人工截图**在某个平台上确认，
 换个系统就没人知道。
 
-## 为什么断言要分两层
+## ★ 环境事实（2026-09-15 实测，别写错）
 
-实测（2026-09-15）：**测试环境里 Qt 一个字体都找不到**（`QFontDatabase.families()` 为空、
-连 `inFont("A")` 都是 `False`）—— 因为 PySide6 不再随包发字体、CI 也没有字体目录。
-所以只能在**有字体的平台**上问"能不能渲染汉字"；裸环境必须**可见地跳过并说明原因**
-（而不是假装通过、也不是无脑判红）。
+本机 venv 是 **full 版**（`.[full]` 的 18 个可选依赖全部装上）。这里出现的"零字体"**不是**
+安装退化，而是 **Qt 平台插件**的属性：
+
+| 运行方式 | `QFontDatabase.families()` |
+|---|---|
+| `QT_QPA_PLATFORM=offscreen`（测试套件默认） | **0**（该插件不枚举系统字体） |
+| 真实平台（本机 windows） | **355** |
+
+所以动态层跑两条路：**进程内**（当前插件，可能是 offscreen ⇒ 只能可见跳过）与
+**子进程去掉 `QT_QPA_PLATFORM`**（真实字体栈 ⇒ 本机 full 版能真验）。后者是重点：
+否则在 offscreen 下永远只能跳过，等于把完整环境白白浪费掉。
 
 * 第一层（静态、任何环境可判）：**声明里必须有 CJK 等宽候选** —— 少了就是缺陷；
-* 第二层（动态、有字体的平台）：平台若已装候选字体，等宽 `QFont` 必须**渲染得出**汉字；
-* 第三层（守卫）：源码里不得再用 `setFontFamily(<逗号串>)` —— Qt 会把它当成**一个**字体名，
-  等宽与 CJK 回退双双静默失效（这正是本次修掉的写法）。
+* 第二层（静态）：拆列表形状正确（无空项、末位是通用 `monospace`）；
+* 第三层（守卫）：源码里不得把**族列表**交给 `setFontFamily` —— Qt 会把它当成**一个**字体名，
+  等宽与 CJK 回退双双静默失效（这正是本次修掉的写法）；
+* 第四层（动态）：有字体的环境里等宽 `QFont` 必须**渲染得出**汉字（进程内 + 真实平台各一份）。
 
 ## 为什么不设"反向探针"
 
 曾经写过一条"不存在的字体族必须渲染不出汉字"的反向用例，用来证明 `inFont` 有区分力。实测后**删掉**：
 
 * **macOS**：未知字体族会被**回退解析到真实字体**并逐字形回退 ⇒ 该用例在 CI 上判红；
-* **Windows**（355 个字体）：`inFont` 对**任何**码位都返回 `True` —— 连非字符
+* **Windows（355 个字体，真实平台）**：`inFont` 对**任何**码位都返回 `True` —— 连非字符
   `U+FFFE` / `U+10FFFE`、私用区 `U+E000` 也是 `True`。
 
 也就是说 `QFontMetrics.inFont` **只能证「有」、不能证「无」**，用它构造"无字形"场景不可移植。
-判据的**区分力改由静态层与守卫层承担**（它们都已做承重性核对：把 CJK 候选删掉、
-或把族列表交回 `setFontFamily`，都会判红）。
+判据的**区分力改由第一、三层承担**（都已做承重性核对：把 CJK 候选删掉、或把族列表交回
+`setFontFamily`，都会判红）。
 """
 
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
+import subprocess
+import sys
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -103,45 +116,6 @@ def test_source_does_not_pass_a_family_list_to_set_font_family() -> None:
     )
 
 
-# ── 第二层：动态（只在平台真有字体的环境判定）──────────────────────────────
-
-
-def _installed_cjk_mono() -> list[str]:
-    from PySide6.QtGui import QFontDatabase
-
-    from omnicrawler.gui.design_system import CJK_CAPABLE_MONO_FAMILIES
-
-    available = set(QFontDatabase.families())
-    return [name for name in CJK_CAPABLE_MONO_FAMILIES if name in available]
-
-
-def test_mono_font_renders_cjk_when_the_platform_has_such_a_font() -> None:
-    """平台装了 CJK 等宽字体时，等宽 `QFont` 必须能渲染汉字。
-
-    环境没有字体（Qt 找不到字体目录 / 裸 CI）或没装候选字体时**可见地跳过**并说明原因——
-    "没有任何字体"不是字体栈的缺陷，判红只会制造噪声。
-    """
-    from PySide6.QtGui import QFont, QFontDatabase, QFontMetrics
-
-    from omnicrawler.gui.design_system import mono_font_families
-
-    _app()
-    if not QFontDatabase.families():
-        pytest.skip("Qt 在环境中找不到任何字体（families() 为空）⇒ 无法判定字形覆盖")
-
-    installed = _installed_cjk_mono()
-    if not installed:
-        pytest.skip(f"平台未安装 CJK 等宽候选（{list(mono_font_families())} 均不可用）⇒ 无法判定")
-
-    font = QFont()
-    font.setFamilies(mono_font_families())
-    metrics = QFontMetrics(font)
-    assert metrics.inFont("汉"), (
-        f"平台已装 CJK 等宽字体 {installed}，等宽控件却渲染不出汉字 ⇒ 字体栈解析有问题"
-    )
-    assert metrics.inFont("A"), "等宽字体连拉丁字母都渲染不出，说明字体根本没解析成功"
-
-
 def test_widget_font_carries_the_whole_family_list() -> None:
     """给控件设字体时，**控件上的字体**必须带着完整族列表（含 CJK 候选）。
 
@@ -162,3 +136,100 @@ def test_widget_font_carries_the_whole_family_list() -> None:
     assert families == mono_font_families(), families
     assert any(name in CJK_CAPABLE_MONO_FAMILIES for name in families), families
     widget.deleteLater()
+
+
+# ── 第四层：动态（进程内 + 真实平台）──────────────────────────────────────
+
+
+def test_mono_font_renders_cjk_in_process() -> None:
+    """进程内：当前平台插件若枚举得到字体，等宽 `QFont` 必须能渲染汉字。
+
+    套件默认 `QT_QPA_PLATFORM=offscreen`，**该插件不枚举系统字体**（本机 full 版实测 0 个）
+    ⇒ 这里会可见跳过并说明；真实字体栈由下一条用例在子进程里验。
+    """
+    from PySide6.QtGui import QFont, QFontDatabase, QFontMetrics
+
+    from omnicrawler.gui.design_system import CJK_CAPABLE_MONO_FAMILIES, mono_font_families
+
+    _app()
+    available = set(QFontDatabase.families())
+    if not available:
+        pytest.skip(
+            f"Qt 平台插件 {os.environ.get('QT_QPA_PLATFORM', '(默认)')!r} 不枚举系统字体"
+            "（本机是 full 版、字体齐全）⇒ 进程内无法判定；真实平台见下一条用例"
+        )
+
+    installed = [name for name in CJK_CAPABLE_MONO_FAMILIES if name in available]
+    if not installed:
+        pytest.skip(f"平台未安装 CJK 等宽候选（候选：{list(mono_font_families())}）⇒ 无法判定")
+
+    font = QFont()
+    font.setFamilies(mono_font_families())
+    metrics = QFontMetrics(font)
+    assert metrics.inFont("汉"), (
+        f"平台已装 CJK 等宽字体 {installed}，等宽控件却渲染不出汉字 ⇒ 字体栈解析有问题"
+    )
+    assert metrics.inFont("A"), "等宽字体连拉丁字母都渲染不出，说明字体根本没解析成功"
+
+
+#: 子进程探针：在**去掉 `QT_QPA_PLATFORM`** 的环境里试真实字体栈，输出一行 JSON。
+_REAL_PLATFORM_PROBE = textwrap.dedent(
+    """
+    import json
+    from PySide6.QtGui import QFont, QFontDatabase, QFontMetrics
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication([])
+    from omnicrawler.gui.design_system import mono_font_families
+
+    families = QFontDatabase.families()
+    font = QFont()
+    font.setFamilies(mono_font_families())
+    metrics = QFontMetrics(font)
+    print(json.dumps({
+        "families": len(families),
+        "han": bool(metrics.inFont("汉")),
+        "latin": bool(metrics.inFont("A")),
+        "cjk_candidates": [name for name in mono_font_families() if name in set(families)],
+    }))
+    """
+).strip()
+
+
+def test_mono_font_renders_cjk_on_the_real_platform() -> None:
+    """子进程（真实平台）：本机装了字体就该渲染得出汉字 —— 让"完整环境"真的被用上。
+
+    为什么要另起进程：GUI 套件默认 offscreen，而该插件不枚举系统字体 ⇒ 进程内只能跳过。
+    去掉该环境变量后走真实字体栈；**无显示环境**（headless CI）会初始化失败，
+    此时**可见跳过并说明**（那是环境没有显示，不是字体栈缺陷）。
+    """
+    env = {key: value for key, value in os.environ.items() if key != "QT_QPA_PLATFORM"}
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", _REAL_PLATFORM_PROBE],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+            timeout=90,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.skip("真实平台探针超时（无显示环境？）⇒ 无法判定")
+
+    if proc.returncode != 0:
+        lines = (proc.stderr or proc.stdout or "").strip().splitlines()
+        pytest.skip(f"真实平台无法初始化（headless？）：{(lines[-1] if lines else '(无输出)')[:120]}")
+
+    payload = next(
+        (line for line in reversed((proc.stdout or "").splitlines()) if line.strip().startswith("{")),
+        "",
+    )
+    assert payload, f"探针没有输出 JSON：{proc.stdout!r} / {proc.stderr!r}"
+    data = json.loads(payload)
+    if not data["families"]:
+        pytest.skip("真实平台下 Qt 仍枚举不到字体 ⇒ 无法判定字形覆盖")
+    assert data["latin"], "真实平台下等宽字体连拉丁字母都渲染不出 ⇒ 字体栈解析有问题"
+    assert data["han"], (
+        f"真实平台有 {data['families']} 个字体、CJK 候选 {data['cjk_candidates'] or '未安装'}，"
+        f"等宽控件却渲染不出汉字 ⇒ 回退链没生效"
+    )
