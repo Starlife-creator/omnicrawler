@@ -140,7 +140,11 @@ jobs:
 
       - run: python tools/check_coding_standards.py src
       - run: python -m coverage run -m pytest -q
-      - run: python -m coverage json -o coverage.json
+      # `--fail-under=0`：本步骤只**取数据**，判定统一交给 `tools/check_coverage_gates.py`
+      # （单一判据）。否则 pyproject.toml 的 `fail_under = 66` 会在这里先以 exit 2 抢跑——
+      # 全量跑时它恰好也过，但在**子集**（如浏览器 job，实测总覆盖率 23%）会直接把门禁
+      # 挡在"数据生成"阶段，连门禁自己的输出都看不到。
+      - run: python -m coverage json -o coverage.json --fail-under=0
       # 显式 core 档：本 job 不装 browser extras ⇒「需浏览器运行时的单文件下限」在这里
       # 永远不可能达标（browser_engines.py 实测 73.47% < 86%）。那些下限**不删除**，
       # 挪到装了 chromium 的 gui-and-browser job 用 --profile browser 检查。
@@ -195,7 +199,11 @@ jobs:
       # 装了 chromium 的环境 ⇒ 在这里执行「需浏览器运行时的单文件下限」（--profile browser）。
       # 这样 browser_engines / browser_pool 的严格下限**仍然有人查**，只是移到能达成的环境。
       - run: python -m coverage run -m pytest -q tests/gui/test_gui_smoke.py tests/integration/browser/test_browser_integration.py
-      - run: python -m coverage json -o coverage.json
+      # `--fail-under=0`：本步骤只**取数据**，判定统一交给 `tools/check_coverage_gates.py`
+      # （单一判据）。否则 pyproject.toml 的 `fail_under = 66` 会在这里先以 exit 2 抢跑——
+      # 全量跑时它恰好也过，但在**子集**（如浏览器 job，实测总覆盖率 23%）会直接把门禁
+      # 挡在"数据生成"阶段，连门禁自己的输出都看不到。
+      - run: python -m coverage json -o coverage.json --fail-under=0
       - run: python tools/check_coverage_gates.py --profile browser coverage.json
 
   windows-full-dependency-matrix:
