@@ -20,6 +20,31 @@ from omnicrawler.services.benchmarking import (
 )
 
 
+#: W6.6 起：只有「场景 / 输入快照 / 有效配置 / 依赖环境」四维齐备且相等的两条记录才可比，
+#: 不可比时 `compare_benchmark` **不下退化结论**（见 tests/unit/services/test_benchmarking_comparability.py）。
+#: 下面这些用例测的是**退化检测本身**，因此必须造可比对 —— 这个 helper 负责把四维补齐。
+def _comparable(
+    profile: str,
+    pages: int,
+    duration: float,
+    memory: int,
+    bytes_xfer: int = 0,
+    errors: int = 0,
+    *,
+    status: str = "succeeded",
+    **overrides,
+) -> BenchmarkResult:
+    kwargs: dict[str, object] = {
+        "status": status,
+        "effective_config_sha256": "eff-cfg",
+        "input_sha256": "input-sha",
+        "environment": (("python", "3.12.10"), ("platform", "unit-test")),
+        "profile_settings": (("concurrency", "3"), ("delay", "1.0")),
+    }
+    kwargs.update(overrides)
+    return BenchmarkResult(profile, pages, duration, memory, bytes_xfer, errors, **kwargs)  # type: ignore[arg-type]
+
+
 class TestBenchmarkResult(unittest.TestCase):
     def test_pages_per_second(self):
         r = BenchmarkResult("standard", pages=100, duration_seconds=10.0, peak_memory_bytes=0, bytes_transferred=0, errors=0)
@@ -61,22 +86,22 @@ class TestSummarizeBenchmarks(unittest.TestCase):
 
 class TestCompareBenchmark(unittest.TestCase):
     def test_no_regression(self):
-        before = BenchmarkResult("standard", 100, 10.0, 100, 0, 0)
-        after = BenchmarkResult("standard", 120, 10.0, 120, 0, 0)
+        before = _comparable("standard", 100, 10.0, 100)
+        after = _comparable("standard", 120, 10.0, 120)
         cmp = compare_benchmark(before, after)
         self.assertFalse(cmp["regression"])
         self.assertGreater(cmp["throughput_change"], 0)
 
     def test_regression_detected(self):
-        before = BenchmarkResult("standard", 100, 10.0, 100, 0, 0)
-        after = BenchmarkResult("standard", 80, 10.0, 120, 0, 0)
+        before = _comparable("standard", 100, 10.0, 100)
+        after = _comparable("standard", 80, 10.0, 120)
         cmp = compare_benchmark(before, after, regression_threshold=0.1)
         self.assertTrue(cmp["regression"])
         self.assertEqual(cmp["memory_change"], 20)
 
     def test_zero_baseline(self):
-        before = BenchmarkResult("standard", 0, 10.0, 0, 0, 0)
-        after = BenchmarkResult("standard", 10, 10.0, 0, 0, 0)
+        before = _comparable("standard", 0, 10.0, 0)
+        after = _comparable("standard", 10, 10.0, 0)
         cmp = compare_benchmark(before, after)
         self.assertFalse(cmp["regression"])
 
@@ -143,8 +168,8 @@ class TestBenchmarkHistory(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "bench_history.json"
             hist = BenchmarkHistory(path)
-            hist.add(BenchmarkResult("standard", 100, 10.0, 100, 0, 0))
-            result = BenchmarkResult("standard", 80, 10.0, 120, 0, 0)
+            hist.add(_comparable("standard", 100, 10.0, 100))
+            result = _comparable("standard", 80, 10.0, 120)
             check = hist.check_regression(result, threshold=0.1)
             self.assertTrue(check["regression"])
 
@@ -319,8 +344,8 @@ class TestBaselineSkipsUnusable(unittest.TestCase):
     def test_regression_detected_against_usable_baseline(self):
         with tempfile.TemporaryDirectory() as temp:
             hist = BenchmarkHistory(Path(temp) / "h.json")
-            hist.add(BenchmarkResult("low", 100, 10.0, 0, 0, 0, status="succeeded"))
-            slower = BenchmarkResult("low", 50, 10.0, 0, 0, 0, status="succeeded")
+            hist.add(_comparable("low", 100, 10.0, 0))
+            slower = _comparable("low", 50, 10.0, 0)
             self.assertTrue(hist.check_regression(slower)['regression'])
 
 

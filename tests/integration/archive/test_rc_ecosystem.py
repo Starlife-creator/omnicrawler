@@ -28,8 +28,15 @@ def test_minimum_offline_corpus_meets_2_0_scale_and_capsule_contract(tmp_path):
 
 
 def test_benchmark_is_repeatable_and_regressions_are_explicit():
-    baseline = BenchmarkResult("standard", 100, 10, 200_000_000, 10_000_000, 0)
-    candidate = BenchmarkResult("standard", 100, 12, 220_000_000, 9_000_000, 1)
+    # W6.6：退化结论只在**可比**的两条记录之间成立，故补齐四维（场景/输入快照/有效配置/依赖环境）
+    dimensions = {
+        "effective_config_sha256": "eff-cfg",
+        "input_sha256": "input-sha",
+        "environment": (("python", "3.12.10"), ("platform", "unit-test")),
+        "profile_settings": (("concurrency", "3"),),
+    }
+    baseline = BenchmarkResult("standard", 100, 10, 200_000_000, 10_000_000, 0, **dimensions)
+    candidate = BenchmarkResult("standard", 100, 12, 220_000_000, 9_000_000, 1, **dimensions)
     summary = summarize_benchmarks([baseline, candidate])
     assert summary["runs"] == 2
     assert summary["peak_memory_bytes"] == 220_000_000
