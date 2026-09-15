@@ -413,6 +413,14 @@ def _run_benchmark(args: argparse.Namespace) -> None:
             # 若不显式说明，用户会误以为「首次基准记录」是正常状态。
             if not result.usable:
                 print(f"  ⚠ 本次运行不可作为基准（status={result.status or '异常'}，pages={result.pages}）——已记录，但不参与基线对比")
+            elif check.get("comparable") is False:
+                # W6.6：四维（场景/输入快照/有效配置/依赖环境）没对齐就**不下退化结论**，
+                # 但要明确报出"为什么不可比"——静默跳过等于把可比性问题藏起来。
+                raw_reasons = check.get("incomparable_reasons")
+                reasons = "；".join(
+                    str(item) for item in (raw_reasons if isinstance(raw_reasons, list) else [])
+                )
+                print(f"  ⚠ 与历史基线不可比，不下退化结论：{reasons}")
             elif check.get("regression"):
                 change = float(str(check.get("throughput_change", 0))) * 100
                 print(f"  ⚠ 性能退化: 吞吐量下降 {abs(change):.1f}% (阈值 {args.regression_threshold * 100:.0f}%)")

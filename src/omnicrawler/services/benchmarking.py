@@ -75,6 +75,10 @@ class BenchmarkResult:
     effective_config_sha256: str = ""
     profile_settings: tuple[tuple[str, str], ...] = ()
     environment: tuple[tuple[str, str], ...] = ()
+    #: **输入快照**（W6.6）：这次运行实际取到的页面内容摘要（`url` + `content_sha256` 逐行哈希）。
+    #: 同一份配置在不同时间可能面对**不同的页面内容** —— 没有它就无法判断"吞吐变了"是代码
+    #: 问题还是输入变了。取不到时为空串，比较阶段会把这类记录判为**不可比**。
+    input_sha256: str = ""
 
     @property
     def pages_per_second(self) -> float:
@@ -127,6 +131,42 @@ def summarize_benchmarks(results: Iterable[BenchmarkResult]) -> dict[str, object
     }
 
 
+def comparability(before: BenchmarkResult, after: BenchmarkResult) -> tuple[bool, list[str]]:
+    """两条记录是否**可比**（W6.6 / §5.2 #8 的前置）。
+
+    四个维度必须全部对齐，缺一不可：
+
+    * **场景**：`profile` 与 `profile_settings`（同一档位的参数被改过也不再同场景）；
+    * **输入快照**：`input_sha256`；
+    * **有效配置**：`effective_config_sha256`；
+    * **依赖环境**：`environment`（包版本 / Python / 平台 / 解释器）。
+
+    **缺维度也算不可比**：旧记录没有这些字段，拿它当基线得出的"退化"结论没有意义。
+    这正是本函数存在的理由 —— 此前 `compare_benchmark` 只看吞吐比值，
+    跨档位、跨环境、输入已变的两次运行也会被据以报警。
+    """
+    reasons: list[str] = []
+    if before.profile != after.profile:
+        reasons.append(f"场景不同：档位 {before.profile} vs {after.profile}")
+    if tuple(before.profile_settings) != tuple(after.profile_settings):
+        reasons.append("场景不同：同一档位的参数被改过")
+    for label, before_value, after_value in (
+        ("输入快照", before.input_sha256, after.input_sha256),
+        ("有效配置", before.effective_config_sha256, after.effective_config_sha256),
+        ("依赖环境", _environment_key(before), _environment_key(after)),
+    ):
+        if not before_value or not after_value:
+            reasons.append(f"{label}缺失（旧记录或采集失败）")
+        elif before_value != after_value:
+            reasons.append(f"{label}不同")
+    return (not reasons), reasons
+
+
+def _environment_key(result: BenchmarkResult) -> str:
+    """环境维度的可比值：排序后的 `键=值` 串（元组顺序不同不应算"不同环境"）。"""
+    return "|".join(f"{key}={value}" for key, value in sorted(result.environment))
+
+
 def compare_benchmark(before: BenchmarkResult, after: BenchmarkResult, *, regression_threshold: float = 0.1) -> dict[str, object]:
     """Compare two benchmark results and detect regressions.
 
@@ -138,11 +178,20 @@ def compare_benchmark(before: BenchmarkResult, after: BenchmarkResult, *, regres
 
     Returns:
         Dict with ``throughput_change`` (float), ``regression`` (bool),
-        and ``memory_change`` (int, bytes).
+        ``memory_change`` (int, bytes), and — W6.6 — ``comparable`` (bool) plus
+        ``incomparable_reasons`` (list[str]). **不可比时不给出退化结论**
+        （``regression`` 恒为 ``False``）：拿不可比的数据报警，只会训练人忽略告警。
     """
+    comparable, reasons = comparability(before, after)
     baseline = before.pages_per_second
     change = (after.pages_per_second - baseline) / baseline if baseline else 0.0
-    return {"throughput_change": change, "regression": change < -abs(regression_threshold), "memory_change": after.peak_memory_bytes - before.peak_memory_bytes}
+    return {
+        "throughput_change": change,
+        "regression": comparable and change < -abs(regression_threshold),
+        "memory_change": after.peak_memory_bytes - before.peak_memory_bytes,
+        "comparable": comparable,
+        "incomparable_reasons": reasons,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +333,7 @@ class BenchmarkRunner:
         errors = 0
         pages = 0
         status = ""
+        input_sha = ""
 
         try:
             from .application_service import ApplicationService
@@ -296,6 +346,7 @@ class BenchmarkRunner:
             pages = int(stats.get("responses", 0) or 0)
             errors = int(stats.get("errors", 0) or 0)
             bytes_xfer = _stored_bytes(source_config.workspace, run_id)
+            input_sha = _stored_snapshot(source_config.workspace, run_id)
         except Exception as exc:
             errors += 1
             _benchmark_logger.warning("Benchmark run failed: %s", exc)
@@ -332,6 +383,7 @@ class BenchmarkRunner:
             effective_config_sha256=_sha256_file(effective),
             profile_settings=_profile_settings(profile),
             environment=_environment(),
+            input_sha256=input_sha,
         )
 
     def run_all(self, *, config_path: str | Path) -> list[BenchmarkResult]:
@@ -497,6 +549,39 @@ def _stored_bytes(workspace: Path | None, run_id: str) -> int:
     return int(row[0]) if row and row[0] is not None else 0
 
 
+def _stored_snapshot(workspace: Path | None, run_id: str) -> str:
+    """这次运行实际取到的**输入**摘要：`url` + `content_sha256` 逐行哈希。
+
+    为什么用内容哈希而不是"字节数"：同一份配置两次运行可能取到**不同的页面内容**
+    （站点更新、A/B、登录态不同），字节数相同并不代表输入相同。取不到（无工作区 /
+    无状态库 / 该 run 没有响应）时返回空串 —— 比较阶段会把空串判为**不可比**。
+    """
+    if workspace is None or not run_id:
+        return ""
+    database = Path(workspace) / "state.sqlite3"
+    if not database.is_file():
+        return ""
+    import sqlite3
+    from contextlib import closing
+
+    try:
+        uri = database.resolve().as_uri() + "?mode=ro"
+        with closing(sqlite3.connect(uri, uri=True)) as conn:
+            rows = conn.execute(
+                "SELECT url, content_sha256 FROM responses WHERE run_id = ? ORDER BY url",
+                (run_id,),
+            ).fetchall()
+    except sqlite3.Error as exc:
+        _benchmark_logger.warning("无法读取输入快照: %s", exc)
+        return ""
+    if not rows:
+        return ""
+    digest = hashlib.sha256()
+    for url, content_sha in rows:
+        digest.update(f"{url}\x00{content_sha}\n".encode("utf-8", "replace"))
+    return digest.hexdigest()
+
+
 def _sha256_file(path: Path) -> str:
     """Return the SHA-256 of *path*, or ``""`` if it cannot be read."""
     digest = hashlib.sha256()
@@ -575,6 +660,8 @@ def _dict_to_result(entry: dict[str, Any]) -> BenchmarkResult:
         status=str(entry.get("status", "")),
         config_sha256=str(entry.get("config_sha256", "")),
         effective_config_sha256=str(entry.get("effective_config_sha256", "")),
+        # W6.6：旧记录没有 `input_sha256` ⇒ 空串 ⇒ 比较阶段判为**不可比**（符合方案要求）
+        input_sha256=str(entry.get("input_sha256", "")),
         profile_settings=_pairs(entry.get("profile_settings")),
         environment=_pairs(entry.get("environment")),
     )
