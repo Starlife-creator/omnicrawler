@@ -44,7 +44,10 @@ def detect_encoding(data: bytes, *, fallback: str = "utf-8") -> str:
         data.decode(guess)
     except (LookupError, UnicodeDecodeError):
         return fallback
-    return guess
+    # 显式收窄：`chardet` 是可选依赖 —— 装了有类型信息（返回 `str | None`），CI 的 test job 没装
+    # （`ignore_missing_imports` ⇒ 返回 `Any`）⇒ 严格档下 `no-any-return` 只在 CI 上炸。
+    # 用 `str(...)` 而不是 `type: ignore`：后者会在装了依赖的环境里触发 `warn_unused_ignores`。
+    return str(guess)
 
 
 def smart_decode(data: bytes, *, fallback: str = "utf-8") -> tuple[str, str]:

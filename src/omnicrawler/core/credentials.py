@@ -43,7 +43,10 @@ def get_secret(name: str) -> str:
     else:
         value = keyring.get_password("omnicrawler", name)
         if value is not None:
-            return value
+            # 显式收窄：`keyring` 是可选依赖 —— 装了有类型信息（`str | None`），CI 的 test job 没装
+            # （`ignore_missing_imports` ⇒ `Any`）⇒ 严格档下 `no-any-return` 只在 CI 上炸。
+            # 用 `str(...)` 而不是 `type: ignore`：后者会在装了依赖的环境里触发 `warn_unused_ignores`。
+            return str(value)
     # S2.2 兜底：读 secrets_store（GUI 写密文，见 config_serializer.to_yaml）
     try:
         value = SecretsStore().get(name)
