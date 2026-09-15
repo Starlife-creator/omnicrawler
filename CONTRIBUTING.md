@@ -53,7 +53,7 @@ python tools/self_verify.py --json evidence.json   # 写出机器可读的证据
 |---|---|---|
 | `static` | 干净的开发检出 | compileall、ruff、mypy、模板校验，以及 10 项 `tools/check_*.py`（架构、SDK 契约、CLI 文档、文档一致性、网络边界、发布完整性、豁免预算、GUI 约定、编码规范、最小安装） |
 | `tests` | 同上（较慢） | 测试套件 |
-| `coverage` | 先跑一次覆盖率统计 | 覆盖率下限与分组门禁（需 `coverage.json`；总体 `>= 66%`，长期目标 80%） |
+| `coverage` | 先跑一次覆盖率统计 | 覆盖率下限与分组门禁（需 `coverage.json`；总体 `>= 73%`，长期目标 80%） |
 | `install` | 逐 extras profile 安装 | 每个 profile 可独立安装且导入完整 |
 | `release` | 有构建产物后 | SBOM 与许可护栏、产物体积预算 |
 
