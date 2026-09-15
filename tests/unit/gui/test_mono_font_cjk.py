@@ -18,6 +18,18 @@ Cascadia Code / Menlo），一旦等宽控件里出现中文（YAML 编辑器、
 * 第二层（动态、有字体的平台）：平台若已装候选字体，等宽 `QFont` 必须**渲染得出**汉字；
 * 第三层（守卫）：源码里不得再用 `setFontFamily(<逗号串>)` —— Qt 会把它当成**一个**字体名，
   等宽与 CJK 回退双双静默失效（这正是本次修掉的写法）。
+
+## 为什么不设"反向探针"
+
+曾经写过一条"不存在的字体族必须渲染不出汉字"的反向用例，用来证明 `inFont` 有区分力。实测后**删掉**：
+
+* **macOS**：未知字体族会被**回退解析到真实字体**并逐字形回退 ⇒ 该用例在 CI 上判红；
+* **Windows**（355 个字体）：`inFont` 对**任何**码位都返回 `True` —— 连非字符
+  `U+FFFE` / `U+10FFFE`、私用区 `U+E000` 也是 `True`。
+
+也就是说 `QFontMetrics.inFont` **只能证「有」、不能证「无」**，用它构造"无字形"场景不可移植。
+判据的**区分力改由静态层与守卫层承担**（它们都已做承重性核对：把 CJK 候选删掉、
+或把族列表交回 `setFontFamily`，都会判红）。
 """
 
 from __future__ import annotations
@@ -150,18 +162,3 @@ def test_widget_font_carries_the_whole_family_list() -> None:
     assert families == mono_font_families(), families
     assert any(name in CJK_CAPABLE_MONO_FAMILIES for name in families), families
     widget.deleteLater()
-
-
-def test_glyph_probe_actually_discriminates() -> None:
-    """反向：判据本身要有区分力 —— 一个不存在的族名必须**渲染不出**汉字。
-
-    没有这一步，"`inFont` 恒为真"这种假通过就看不出来（无字体环境则跳过并说明）。
-    """
-    from PySide6.QtGui import QFont, QFontDatabase, QFontMetrics
-
-    _app()
-    if not QFontDatabase.families():
-        pytest.skip("Qt 找不到任何字体 ⇒ 本判据在此环境无区分力可验")
-
-    metrics = QFontMetrics(QFont("__definitely-not-a-font__"))
-    assert not metrics.inFont("汉"), "不存在的字体竟能渲染汉字 ⇒ 探针失效"
