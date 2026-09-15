@@ -23,10 +23,12 @@ from PySide6.QtWidgets import (
     QTableView,
 )
 
+from ...core.field_value_source import POSITION_CHILD, position_of
 from ..core.config_model import FieldDef
 from ..i18n import _
 from ..widgets.help_tooltip import HelpTooltip
 from ..widgets.toast import ToastManager
+from .task_canvas_components import FieldCellDelegate
 from .task_canvas_components import FieldTableModel as _FieldTableModel
 from .task_canvas_logic import GENERIC_FIELD_RULES as _GENERIC_FIELD_RULES
 from .task_canvas_logic import selector_kind as _selector_kind
@@ -75,6 +77,7 @@ class FieldsAreaMixin(_Base):
         body = self._fields_section.body()
         hint_row = QHBoxLayout()
         hint_row.addWidget(HelpTooltip("fields.definition"))
+        hint_row.addWidget(HelpTooltip("fields.value_source"))
         hint_row.addWidget(HelpTooltip("selection.topic"))
         hint = QLabel(_("字段可留空——内核会自动提取标题、正文等通用内容"))
         hint.setObjectName("muted")
@@ -140,6 +143,8 @@ class FieldsAreaMixin(_Base):
         self._fields_table = QTableView()
         self._fields_table.setModel(self._fields_model)
         self._fields_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+        # 取值方式/属性两列用下拉编辑（写错会**静默变成另一种取值语义**，不适合自由文本）
+        self._fields_table.setItemDelegate(FieldCellDelegate(self._fields_table))
         self._fields_table.setWordWrap(False)
         v_header = self._fields_table.verticalHeader()
         if v_header is not None:
@@ -150,6 +155,8 @@ class FieldsAreaMixin(_Base):
             header.resizeSection(0, 140)
             header.resizeSection(1, 260)
             header.resizeSection(2, 80)
+        header.resizeSection(3, 90)
+        header.resizeSection(4, 120)
         body.addWidget(self._fields_table)
 
         # P2：渐进披露（PRD §3.3）——字段数 >10 时先显示前 10 条
@@ -248,10 +255,13 @@ class FieldsAreaMixin(_Base):
             field_selector = str(field.get("selector") or "").strip()
             if not name or not field_selector or name in existing:
                 continue
+            attribute = str(field.get("attribute") or "") or None
             self._append_field_row(FieldDef(
                 name=name,
                 selector=field_selector,
-                attribute=(str(field.get("attribute") or "") or None),
+                attribute=attribute,
+                # 外部形状进来的字段要**显式**落定位置（否则选择器为空的合法规则会被校验拦住）
+                position=position_of({"selector": field_selector, "attr": attribute}).key,
             ))
             existing.add(name)
             added += 1
@@ -281,7 +291,15 @@ class FieldsAreaMixin(_Base):
         )
 
     def _add_field(self) -> None:
-        self._fields_model.append(FieldDef(name=_("新字段"), selector=".example", selector_type="css"))
+        self._fields_model.append(
+            FieldDef(
+                name=_("新字段"),
+                selector=".example",
+                selector_type="css",
+                # 新行的位置显式给出（＝最常见的"在条目内选子元素"），避免"位置未选"被当成未填；用户随时可在取值方式列改
+                position=POSITION_CHILD,
+            )
+        )
         last = self._fields_model.rowCount() - 1
         self._fields_table.selectRow(last)
         self._fields_table.scrollToBottom()
@@ -385,12 +403,14 @@ class FieldsAreaMixin(_Base):
             xpath = str(getattr(candidate, "xpath", "") or "")
             selector = css or xpath
             kind = _selector_kind(selector)
+            attribute = getattr(candidate, "attribute", None)
             self._fields_model.append(FieldDef(
                 name=name,
                 selector=selector,
                 selector_type=kind,
-                attribute=getattr(candidate, "attribute", None),
+                attribute=attribute,
                 fallback_xpath=xpath if kind == "css" and xpath else None,
+                position=position_of({"selector": selector, "attr": attribute}).key,
             ))
             added += 1
         if added:
@@ -421,13 +441,25 @@ class FieldsAreaMixin(_Base):
         fields: list[FieldDef] = []
         for name, spec in fields_map.items():
             if not isinstance(spec, dict):
-                fields.append(FieldDef(name=str(name), selector="", selector_type="css"))
+                fields.append(
+                    FieldDef(
+                        name=str(name),
+                        selector="",
+                        selector_type="css",
+                        position=POSITION_CHILD,
+                    )
+                )
                 continue
+            selector = str(spec.get("selector", ""))
+            # ★ 此前这里**丢掉了 attr**（模板里写着 href 的字段被读成取文本），一并修掉
+            attribute = str(spec.get("attr") or "") or None
             fields.append(FieldDef(
                 name=str(name),
-                selector=str(spec.get("selector", "")),
+                selector=selector,
                 selector_type=cast(
                     Literal["css", "xpath", "jsonpath"], str(spec.get("type", "css"))
                 ),
+                attribute=attribute,
+                position=position_of({"selector": selector, "attr": attribute}).key,
             ))
         return fields

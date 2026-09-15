@@ -61,16 +61,21 @@ POSITION_BY_KEY: dict[str, FieldPosition] = {position.key: position for position
 
 #: 常见「值载体」属性：GUI 下拉的候选集（**不是**校验白名单——引擎允许任意属性名，
 #: 例如自定义 ``data-*`` 也可能正是要采的值，硬拦会误伤合法配置）。
+#:
+#: ★ **不含 `text`**：引擎的规则是"``attr`` 有值就取**同名属性**"（``node_attr(node, attr)``），
+#: 所以 ``attr: text`` 是去取名为 ``text`` 的属性、**不是**取文本，在多数页面上静默取空。
+#: "取文本"的正确表达是**不给 attr**（位置 ``element`` 或 ``child``）。
 COMMON_ATTRIBUTES: tuple[str, ...] = (
     "href",
     "src",
-    "text",
     "datetime",
     "title",
     "alt",
     "content",
     "value",
     "data-src",
+    "data-id",
+    "data-value",
 )
 
 

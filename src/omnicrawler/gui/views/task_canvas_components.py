@@ -13,15 +13,18 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtWidgets import (
+    QComboBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QStyle,
+    QStyledItemDelegate,
     QVBoxLayout,
     QWidget,
 )
 
+from ...core.field_value_source import COMMON_ATTRIBUTES, POSITION_BY_KEY, POSITION_CHILD
 from ..core.config_model import FieldDef
 from ..design_system import SPACING
 from ..i18n import _
@@ -74,10 +77,24 @@ class PlanReviewWorker(QThread):
 
 
 class FieldTableModel(QAbstractTableModel):
-    """Editable, progressively disclosed field model for the task canvas."""
+    """Editable, progressively disclosed field model for the task canvas.
 
-    _HEADERS: tuple[str, ...] = (_("名称"), _("选择器"), _("类型"))
+    列（2026-09-15 追加后两列，前三个索引保持不变以免破坏既有用法）：
+    ``名称 | 选择器 | 类型 | 属性 | 取值方式``。
+    后两列来自「取值位置」契约（``core/field_value_source.py``）——加它们之前，画布上
+    **根本没法指定属性**（``attribute`` 只从页面分析/视觉点选被动接收），
+    于是"取本条记录的 href"这类规则在任务表单里建不出来。
+    """
+
+    _HEADERS: tuple[str, ...] = (_("名称"), _("选择器"), _("类型"), _("属性"), _("取值方式"))
     _INITIAL_VISIBLE_ROWS = 10
+
+    #: 取值方式列的列号（供委托与测试引用，避免散落的魔法数字）
+    COLUMN_NAME = 0
+    COLUMN_SELECTOR = 1
+    COLUMN_TYPE = 2
+    COLUMN_ATTRIBUTE = 3
+    COLUMN_POSITION = 4
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -91,7 +108,7 @@ class FieldTableModel(QAbstractTableModel):
         return total if self._visible is None else min(total, self._visible)
 
     def columnCount(self, parent: QModelIndex | None = None) -> int:  # type: ignore[override]
-        return 3
+        return len(self._HEADERS)
 
     def data(
         self,
@@ -103,7 +120,16 @@ class FieldTableModel(QAbstractTableModel):
         if role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
             return None
         field = self._fields[index.row()]
-        return (field.name, field.selector, field.selector_type)[index.column()]
+        column = index.column()
+        if column == self.COLUMN_ATTRIBUTE:
+            return field.attribute or ""
+        if column == self.COLUMN_POSITION:
+            key = field.resolved_position()
+            # 显示给人看的是中文标签；`EditRole` 给委托用**键**，才能正确预选下拉项
+            if role == Qt.ItemDataRole.DisplayRole:
+                return position_label(key)
+            return key
+        return (field.name, field.selector, field.selector_type)[column]
 
     def headerData(
         self,
@@ -116,7 +142,13 @@ class FieldTableModel(QAbstractTableModel):
         return None
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:  # type: ignore[override]
-        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable
+        base = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        # 「取元素自身」时选择器不参与取值 ⇒ 那一格不可编辑（值仍保留，切回来即可用）
+        if index.column() == self.COLUMN_SELECTOR:
+            row = index.row()
+            if 0 <= row < len(self._fields) and self._fields[row].resolved_position() != POSITION_CHILD:
+                return base
+        return base | Qt.ItemFlag.ItemIsEditable
 
     def setData(
         self,
@@ -128,18 +160,35 @@ class FieldTableModel(QAbstractTableModel):
             return False
         field = self._fields[index.row()]
         text = str(value)
-        if index.column() == 0:
+        column = index.column()
+        if column == self.COLUMN_NAME:
             if not text.strip():
                 return False
             field.name = text.strip()
-        elif index.column() == 1:
+        elif column == self.COLUMN_SELECTOR:
             field.selector = text
-        else:
+        elif column == self.COLUMN_TYPE:
             field.selector_type = (
                 cast(Literal["css", "xpath", "jsonpath"], text)
                 if text in ("css", "xpath", "jsonpath")
                 else "css"
             )
+        elif column == self.COLUMN_ATTRIBUTE:
+            field.attribute = text.strip() or None
+        elif column == self.COLUMN_POSITION:
+            position = position_key(text) if text else None
+            if position is None and text:
+                return False
+            field.position = position
+            # 位置变了 ⇒ 选择器那一格的可编辑性也变了：整行发一次变更，让视图重查 flags
+            first = self.index(index.row(), 0)
+            last = self.index(index.row(), len(self._HEADERS) - 1)
+            self.dataChanged.emit(
+                first, last, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole]
+            )
+            return True
+        else:
+            return False
         self.dataChanged.emit(
             index, index, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole],
         )
@@ -177,10 +226,98 @@ class FieldTableModel(QAbstractTableModel):
         return {field.name for field in self._fields if field.name.strip()}
 
 
+#: 取值方式的中文标签。**表现层的东西留在 GUI**（契约 `core/field_value_source.py` 只放结构），
+#: 且必须过 `_()`（i18n 门禁：`tests/unit/gui/test_i18n_gate.py`）。
+_POSITION_LABELS: dict[str, str] = {
+    "child": _("子元素"),
+    "element": _("元素自身文本"),
+    "element_attr": _("元素自身属性"),
+}
+
+
+def position_label(key: str) -> str:
+    """位置键 → 中文标签（未知键原样返回：将来加新位置也不会显示空白）。"""
+    text = str(key)
+    return _POSITION_LABELS.get(text, text)
+
+
+def position_key(label_or_key: str) -> str | None:
+    """中文标签**或**位置键 → 位置键；都不认识返回 ``None``。
+
+    两种都接受是有意的：委托给的是下拉项（可能带标签），测试与配置给的是键，
+    让两边都能用同一个入口，避免"哪边该翻译"这种约定散落。
+    """
+    text = str(label_or_key).strip()
+    if not text:
+        return None
+    if text in POSITION_BY_KEY:
+        return text
+    for key, label in _POSITION_LABELS.items():
+        if text == label:
+            return key
+    return None
+
+
+#: 取值方式下拉的选项（键 + 标签），顺序即下拉顺序（来自契约的顺序）。
+POSITION_CHOICES: tuple[tuple[str, str], ...] = tuple(
+    (key, label) for key, label in _POSITION_LABELS.items() if key in POSITION_BY_KEY
+)
+
+
+class FieldCellDelegate(QStyledItemDelegate):
+    """字段表的单元格编辑器。
+
+    * **取值方式**：下拉（选项来自契约，见 :data:`POSITION_CHOICES`）——
+      这里是"选择"而不是自由文本，写错就会静默变成另一种取值语义；
+    * **属性**：**可编辑**下拉 —— 候选是常见值载体属性（``COMMON_ATTRIBUTES``），
+      但允许手输自定义属性（``data-*`` 也可能正是要采的值）。
+    """
+
+    def createEditor(  # noqa: N802 — Qt 命名
+        self, parent: QWidget, option: Any, index: QModelIndex | QPersistentModelIndex
+    ) -> QWidget:
+        column = index.column()
+        if column == FieldTableModel.COLUMN_POSITION:
+            combo = QComboBox(parent)
+            for key, label in POSITION_CHOICES:
+                combo.addItem(label, key)
+            return combo
+        if column == FieldTableModel.COLUMN_ATTRIBUTE:
+            combo = QComboBox(parent)
+            combo.setEditable(True)
+            for name in COMMON_ATTRIBUTES:
+                combo.addItem(name, name)
+            combo.setCurrentText("")
+            return combo
+        return super().createEditor(parent, option, index)
+
+    def setEditorData(  # noqa: N802 — Qt 命名
+        self, editor: QWidget, index: QModelIndex | QPersistentModelIndex
+    ) -> None:
+        if isinstance(editor, QComboBox):
+            value = index.data(Qt.ItemDataRole.EditRole)
+            position = editor.findData(value)
+            if position >= 0:
+                editor.setCurrentIndex(position)
+            elif editor.isEditable():
+                editor.setCurrentText(str(value or ""))
+            return
+        super().setEditorData(editor, index)
+
+    def setModelData(  # noqa: N802 — Qt 命名
+        self, editor: QWidget, model: Any, index: QModelIndex | QPersistentModelIndex
+    ) -> None:
+        if isinstance(editor, QComboBox):
+            data = editor.currentData()
+            value = data if data is not None else editor.currentText()
+            model.setData(index, value, Qt.ItemDataRole.EditRole)
+            return
+        super().setModelData(editor, model, index)
+
+
 # ---------------------------------------------------------------------------
 # UI primitives extracted from task_canvas.py (P1-3 first split)
 # ---------------------------------------------------------------------------
-
 
 def _repolish_widget(widget: QWidget) -> None:
     """按 QSS 动态属性刷新控件外观。"""
