@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import sys
 import threading
@@ -27,6 +28,11 @@ class WorkerRuntime:
             self.session.address, family=self.session.family,
             authkey=self.session.auth_token.encode("utf-8"),
         )
+        # 套接字现在落在系统临时区（短路径，避免 sun_path 超限）：显式收紧文件权限，
+        # 与后端侧目录 0700 形成两道；认证仍由上面的 authkey 承担。
+        if self.session.family == "AF_UNIX":
+            with contextlib.suppress(OSError):
+                os.chmod(self.session.address, 0o600)
         ready = WorkerSession(**{**asdict(self.session), "status": "running", "pid": os.getpid()})
         _write_session(self.session_file, ready)
         with self._lock:

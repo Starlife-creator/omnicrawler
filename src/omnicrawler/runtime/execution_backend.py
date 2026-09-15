@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import secrets
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from multiprocessing.connection import Client
 from pathlib import Path
@@ -101,6 +104,74 @@ class InProcessBackend:
         return getattr(self._service, action)()
 
 
+#: POSIX `sun_path` 上限：Linux 108 / macOS 104 字节（**含结尾 NUL**）——留余量取 96。
+UNIX_SOCKET_PATH_BUDGET = 96
+
+#: 套接字所在子目录名（放在系统临时区根下）。
+_SOCKET_DIR_NAME = "omnicrawler"
+
+
+def _socket_roots() -> tuple[Path, ...]:
+    """套接字根目录候选：系统临时区**越短越优先**（`/tmp` 通常最短，macOS 的 gettempdir 稍长）。"""
+    roots: list[Path] = []
+    for candidate in (Path("/tmp"), Path(tempfile.gettempdir())):
+        with contextlib.suppress(OSError):
+            if candidate.is_dir() and candidate not in roots:
+                roots.append(candidate)
+    return tuple(roots)
+
+
+def _worker_socket_path(
+    workspace: Path, session_id: str, *, roots: Sequence[Path] | None = None
+) -> Path:
+    """worker 的 AF_UNIX 套接字路径：**短、确定、每会话唯一**。
+
+    **为什么不能放在工作区里**（S2.5 修正）：POSIX `sun_path` 上限是 Linux 108 / macOS 104 字节，
+    而工作区可以很深——实测 CI 的 pytest 临时目录、以及用户把项目放在深层目录时都会超限，
+    于是本地 worker **根本起不来**：`RuntimeError: 本地Worker启动超时: AF_UNIX path too long`。
+    这在 macOS 与 ubuntu 上都能复现，属**产品缺陷**而不是测试环境问题。
+
+    候选按「路径更短优先」取第一个**满足预算**的；都不满足才退回工作区
+    （保持旧行为，让失败信息仍然可诊断）。
+    """
+    name = f"{session_id[:16]}.sock"
+    for root in roots if roots is not None else _socket_roots():
+        candidate = root / _SOCKET_DIR_NAME / name
+        if len(str(candidate).encode("utf-8")) <= UNIX_SOCKET_PATH_BUDGET:
+            return candidate
+    return workspace / f".worker-{name}"
+
+
+def _prepare_socket_dir(path: Path) -> None:
+    """建套接字目录并收紧权限（POSIX 0700）：只有本用户能连。
+
+    `multiprocessing.connection` 已有 `authkey` 认证，收窄文件权限是**第二道**——
+    否则同机其它用户可以尝试对 authkey 做暴力验证。工作区路径下没有这个问题，
+    换到系统临时区后必须显式收紧。
+    """
+    parent = path.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    if os.name != "nt":
+        with contextlib.suppress(OSError):
+            os.chmod(parent, 0o700)
+
+
+def _worker_address(
+    workspace: Path, session_id: str, *, is_windows: bool | None = None
+) -> tuple[str, str]:
+    """返回 ``(family, address)``。
+
+    Windows 走命名管道（`\\\\.\\pipe\\...`，无路径长度限制）；
+    POSIX 走**系统临时区里的短路径** AF_UNIX（见 :func:`_worker_socket_path`）。
+    """
+    windows = (os.name == "nt") if is_windows is None else is_windows
+    if windows:
+        return "AF_PIPE", rf"\\.\pipe\omnicrawler-{session_id}"
+    socket_path = _worker_socket_path(workspace, session_id)
+    _prepare_socket_dir(socket_path)
+    return "AF_UNIX", str(socket_path)
+
+
 class LocalWorkerBackend:
     """Authenticated detached local-worker backend with reconnectable session metadata."""
 
@@ -114,12 +185,8 @@ class LocalWorkerBackend:
         config = load_config(config_path)
         config.workspace.mkdir(parents=True, exist_ok=True)
         session_id = uuid.uuid4().hex
-        family = "AF_PIPE" if os.name == "nt" else "AF_UNIX"
-        address = (
-            rf"\\.\pipe\omnicrawler-{session_id}"
-            if family == "AF_PIPE"
-            else str(config.workspace / f".worker-{session_id}.sock")
-        )
+        # S2.5 修正：套接字不再放工作区里（POSIX sun_path 上限会被深工作区撑爆 ⇒ worker 起不来）
+        family, address = _worker_address(config.workspace, session_id)
         self.session_file = config.workspace / "worker-session.json"
         session = WorkerSession(
             session_id, str(config.path), str(config.workspace), address, family,

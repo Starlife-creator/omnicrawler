@@ -27,7 +27,6 @@ import subprocess
 import sys
 import threading
 import time
-import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -107,21 +106,6 @@ def _serve(pages: dict[str, str]):
     finally:
         server.shutdown()
         server.server_close()
-
-
-@pytest.fixture(autouse=True)
-def _worker_socket_path_ok(tmp_path: Path) -> None:
-    """对齐 sdk 测试的既有护栏：POSIX AF_UNIX 路径过长会超 108 字节上限。"""
-    if os.name == "nt":
-        return
-    import socket as socket_module
-
-    if not hasattr(socket_module, "AF_UNIX"):
-        pytest.skip("平台无 AF_UNIX 支持")
-    workspace = tmp_path / "ws"
-    address = str(workspace / f".worker-{uuid.uuid4().hex}.sock")
-    if len(address.encode("utf-8")) >= 104:
-        pytest.skip("AF_UNIX socket 路径过长（CI 长工作区），跳过实时握手测试")
 
 
 def _config_yaml(seed: str, workspace: Path, *, source_kind: str, max_depth: int, xlsx: bool) -> str:
