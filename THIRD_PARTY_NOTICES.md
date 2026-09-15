@@ -24,13 +24,16 @@ Bundled static assets redistributed inside this repository (see `docs/archive/`)
 
 - `mermaid.min.js` (docs/archive/omnicrawler-evaluation-report/_shared/js/) — MIT License.
   Upstream: https://github.com/mermaid-js/mermaid
-  NOTE (2026-09-14, known gap): this bundle ships **without a top-level license banner**; it
-  contains the copyright lines of its bundled dependencies (lodash, cytoscape, …) but **not**
-  the MIT permission text. MIT requires the notice + permission text to accompany
-  redistributions. Fixing it means shipping a `_shared/js/LICENSES.txt` for mermaid plus every
-  bundled dependency — tracked in `优化方案.md` §5.6, not silently half-done.
+  The bundle ships **without a top-level license banner**, so the notices + permission texts of
+  mermaid and of every dependency bundled into it are redistributed alongside it in
+  `_shared/js/LICENSES.txt` (W6.1, 2026-09-15). Those texts and copyright lines are copied
+  verbatim from upstream releases; the component list is derived from identifiers found in the
+  **bundle itself**, not from a manifest. Attribution is not guessed: zrender turned out to be
+  BSD-3-Clause, d3 ISC, dompurify `Apache-2.0 OR MPL-2.0`.
 - `echarts.min.js` (docs/archive/omnicrawler-evaluation-report/_shared/js/) — Apache License 2.0.
-  Upstream: https://github.com/apache/echarts
+  Upstream: https://github.com/apache/echarts (bundles `zrender`, BSD 3-Clause).
+  License texts are in `_shared/js/LICENSES.txt`, guarded by
+  `tests/unit/tools/test_bundled_js_notices.py`.
 - Fonts in `docs/archive/omnicrawler-evaluation-report/_shared/fonts/` — all three families are
   licensed under the **SIL Open Font License 1.1**; the license text (with each family's
   copyright notice) is redistributed alongside them in `_shared/fonts/OFL.txt`:
