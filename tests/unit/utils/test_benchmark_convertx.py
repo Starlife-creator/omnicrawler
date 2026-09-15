@@ -1,11 +1,30 @@
 from __future__ import annotations
 
 import csv
+import importlib.util
 import json
+import os
 
 import pytest
 
 from tools import benchmark_convertx
+
+#: parquet 用例需要**可选依赖** pyarrow（`omnicrawler[storage]`）。
+#:
+#: **CI 里缺它必须报错，不许跳过**（2026-09-15 实测）：CI 的 test job 曾经装了 duckdb 却没装 pyarrow，
+#: 于是这条用例在 ubuntu/macOS 上失败；若这里改成"缺了就 skip"，就等于用 skip 把它藏起来
+#: （同一次 CI 里 GUI 用例没有豁免所以红了，这个缺陷才被看见）。参考环境必须真跑。
+if importlib.util.find_spec("pyarrow") is None:
+    if os.environ.get("CI"):
+        pytest.fail(
+            "CI 缺少 pyarrow：parquet 转换用例不得在参考环境里被跳过。"
+            "请在 quality.yml 的 test job 安装 'omnicrawler[storage]'。",
+            pytrace=False,
+        )
+    pytest.skip(
+        "parquet 用例需要可选依赖 pyarrow：pip install 'omnicrawler[storage]'",
+        allow_module_level=True,
+    )
 
 
 @pytest.mark.parametrize("case", benchmark_convertx.CASES)

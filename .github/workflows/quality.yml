@@ -98,7 +98,10 @@ jobs:
           MARKET_REPO_TOKEN: ${{ secrets.MARKET_REPO_TOKEN }}
         run: python tools/checkout_market.py
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[html,pdf,dev,async-http,gui,tls]" cryptography "duckdb>=1.2,<2"
+      # storage extra 同时提供 duckdb 与 pyarrow：此前只在命令里临时加 duckdb，
+      # pyarrow 缺失让 3 条 convertx 用例在 ubuntu/macOS 上失败（2026-09-15 实测）。
+      # 依赖范围以 pyproject 为唯一真源，CI 不再手抄版本号。
+      - run: python -m pip install -e ".[html,pdf,dev,async-http,gui,tls,storage]" cryptography
       - if: runner.os == 'Linux'
         name: Install Qt runtime dependencies
         run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libpulse0

@@ -39,6 +39,7 @@ from __future__ import annotations
 import codecs
 import csv
 import hashlib
+import importlib.util
 import json
 import logging
 import re
@@ -143,6 +144,35 @@ class ConvertResult:
 # ── 注册表 ────────────────────────────────────────────────
 READERS: dict[str, ReaderFn] = {}
 WRITERS: dict[str, WriterFn] = {}
+
+#: **可选**后端：扩展名 → (需要的模块, 安装用的 extra)。
+#: 只为把「格式不支持」讲清楚——`_register_*()` 在缺依赖时会静默跳过注册，
+#: 于是 `.parquet` 会退化成 `sniff_format() → None`，错误信息变成
+#: `不支持的目标格式 None`（实测：CI 上缺 pyarrow 时就是这样，完全看不出缺什么）。
+#: 注：`.xlsx` 的 openpyxl 属基础依赖，不在此列。
+_OPTIONAL_BACKENDS: dict[str, tuple[str, str]] = {
+    ".parquet": ("pyarrow", "omnicrawler[storage]"),
+    ".duckdb": ("duckdb", "omnicrawler[storage]"),
+    ".db": ("duckdb", "omnicrawler[storage]"),
+}
+
+
+def _missing_backend_hint(path: Path) -> str:
+    """格式不被支持时，若原因是**缺可选依赖**，给出可执行的补齐命令。
+
+    资产判据要求「缺依赖给明确降级 + 补齐命令」。只在模块**确实不可导入**时才提示，
+    避免"装了却没注册"这种别的原因被误指路。
+    """
+    entry = _OPTIONAL_BACKENDS.get(path.suffix.lower())
+    if entry is None:
+        return ""
+    module, extra = entry
+    try:
+        if importlib.util.find_spec(module) is not None:
+            return ""
+    except (ImportError, ValueError):
+        return ""
+    return f"；该格式需要可选依赖 {module}：pip install '{extra}'"
 
 
 def register_reader(*extensions: str) -> Callable[[ReaderFn], ReaderFn]:
@@ -1033,9 +1063,13 @@ def convert(
     src_fmt = (src_format or "").lower() or sniff_format(src)
     dst_fmt = (dst_format or "").lower() or sniff_format(dst)
     if not src_fmt or src_fmt not in READERS:
-        raise KeyError(f"ConvertX: 不支持的源格式 {src_fmt!r}（已注册: {sorted(READERS)}）")
+        raise KeyError(
+            f"ConvertX: 不支持的源格式 {src_fmt!r}（已注册: {sorted(READERS)}）{_missing_backend_hint(src)}"
+        )
     if not dst_fmt or dst_fmt not in WRITERS:
-        raise KeyError(f"ConvertX: 不支持的目标格式 {dst_fmt!r}（已注册: {sorted(WRITERS)}）")
+        raise KeyError(
+            f"ConvertX: 不支持的目标格式 {dst_fmt!r}（已注册: {sorted(WRITERS)}）{_missing_backend_hint(dst)}"
+        )
     reader_key = f"reader{src_fmt.replace('.', '_')}"
     writer_key = f"writer{dst_fmt.replace('.', '_')}"
     jsonl_output_stream_path = (
