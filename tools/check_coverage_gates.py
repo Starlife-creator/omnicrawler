@@ -90,9 +90,14 @@ GATES: dict[str, tuple[float, Matcher]] = {
 OVERALL_COVERAGE_GATE = 66.0
 
 # 按顶层子包设「只降不升」下限（P2-1 ratchet）。
-# 取值口径 = 2026-09-11 本地实测值 − 8（经验余量）：CI quality job 在 Ubuntu、无
+# 取值口径 = 2026-09-11 本地实测值 − 8（经验余量）：当时判断 CI quality job 在 Ubuntu、无
 # browser/extras，会 skip 部分 GUI/browser 测试，覆盖率系统性低于本地（原全局阈值
-# 66 与本地实测 74.46 的差距即源于此）。待 CI 实测覆盖率回收后，按实测收紧到零余量。
+# 66 与本地实测 74.46 的差距即源于此）。
+# ★ **2026-09-15 修正**：CI 实测 `all_source = 75.53%`（**高于**本地 74.46%）——因为 test job
+# 现在装了 storage extra、且 GUI 端到端用例不再被跳过（含拆掉的掩盖型 skip）⇒
+# 「CI 系统性偏低」的老假设**不再成立**，覆盖率可由 CI 直接回收。
+# 阈值仍保留余量（不立即收紧到零余量）：单次采样不足以定 ratchet，先多跑几次再收，
+# 避免把抽样波动变成 flaky 红灯。
 # 先覆盖方案点名的三个「非 GUI、测试更便宜」的包，其余包待后续批次逐个纳入。
 PACKAGE_FLOORS: dict[str, float] = {
     "core": 81.0,      # 本地实测 89.83%
@@ -111,15 +116,32 @@ _FILE_FLOORS: dict[str, float] = {
     # --- P1-3 拆分产出的关键模块（2026-09-11 新增；同样按“本地实测 −8”预留 CI 余量）---
     "src/omnicrawler/plugins/plugins.py": 92.0,  # 纯门面（8 行语句），必须全覆盖
     "src/omnicrawler/state/state_store_records.py": 91.0,  # 实测 99.0%
-    "src/omnicrawler/fetching/browser_engines.py": 86.0,  # 实测 93.9%
     "src/omnicrawler/state/state_store_runs.py": 79.0,  # 实测 87.2%
     "src/omnicrawler/plugins/plugin_loader.py": 77.0,  # 实测 84.9%
-    "src/omnicrawler/fetching/browser_pool.py": 57.0,  # 实测 65.3%
     "src/omnicrawler/gui/views/plugin_market_install.py": 25.0,  # GUI Mixin，实测 32.5%
     "src/omnicrawler/gui/views/pdf_workbench_worker.py": 13.0,  # GUI worker，实测 20.5%
     "src/omnicrawler/apps/field_extractor.py": 30.0,
     "src/omnicrawler/apps/pdf_processor.py": 40.0,
 }
+
+#: **需要浏览器运行时**才能达标的下限（2026-09-15 新增，按环境分离）。
+#:
+#: 由来：`quality` 的 `test` job **不装 browser extras** ⇒ 浏览器相关用例被跳过 ⇒
+#: `browser_engines.py` 在该环境实测 **73.47%**，而此前写死的下限是 **86%**（取自装了
+#: playwright 的环境的实测 93.9% − 余量）—— 于是门禁在 test job 里**永远不可能通过**。
+#: 这些下限**不是被删除**，而是挪到**能达成它们的环境**（`gui-and-browser` job 装了
+#: chromium，在那里跑 `coverage` + `--profile browser`）。
+_BROWSER_FILE_FLOORS: dict[str, float] = {
+    "src/omnicrawler/fetching/browser_engines.py": 86.0,  # 实测 93.9%（含浏览器用例）
+    "src/omnicrawler/fetching/browser_pool.py": 57.0,  # 实测 65.3%（含浏览器用例）
+}
+
+#: 环境档位：
+#: * ``auto``（默认）—— 有 playwright 时 = ``full``，否则 = ``core``（本地"分层可降级"）
+#: * ``core``  —— CI 的 `test` job：总/分组/通用单文件下限；浏览器下限**跳过并打印**
+#: * ``browser`` —— 只检查浏览器专属下限（该 job 只跑浏览器子集，总/分组不适用）
+#: * ``full``  —— 全部检查（本地装了 browser extras 时）
+PROFILES = ("auto", "core", "browser", "full")
 
 
 def _normalise_for_match(path: str) -> str:
@@ -176,14 +198,41 @@ def _file_coverage(files: dict[str, Any], raw_path: str) -> float | None:
     return int(summary["covered_lines"]) * 100.0 / statements
 
 
+def _resolve_profile(requested: str) -> tuple[str, str]:
+    """把 ``auto`` 解析成实际档位并给出理由（打印用，避免"为什么跳过"不可见）。
+
+    ``auto``：装了 playwright ⇒ ``full``（能查浏览器下限）；否则 ⇒ ``core``（如实降级）。
+    这是「分层可降级」：**缺依赖给明确降级并说明**，而不是整体不可用或假装可用。
+    """
+    if requested != "auto":
+        return requested, "显式指定"
+    try:
+        import importlib.util
+
+        has_browser = importlib.util.find_spec("playwright") is not None
+    except (ImportError, ValueError):
+        has_browser = False
+    return ("full", "自动：检测到 playwright") if has_browser else ("core", "自动：未检测到 playwright")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Enforce OmniCrawler subsystem coverage gates")
     parser.add_argument("report", nargs="?", default="coverage.json", type=Path)
+    parser.add_argument(
+        "--profile",
+        choices=PROFILES,
+        default="auto",
+        help="环境档位：auto（默认）/ core（CI 的 test job，无浏览器）/ browser（只查浏览器下限）/ full",
+    )
     args = parser.parse_args()
     payload = json.loads(args.report.read_text(encoding="utf-8"))
     files: dict[str, Any] = payload.get("files", {})
     failures: list[str] = []
 
+    profile, reason = _resolve_profile(args.profile)
+    check_overall = profile in {"core", "full"}
+    check_groups = profile in {"core", "full"}
+    print(f"profile={profile}（{reason}）")
     print("coverage gate                 covered/lines   actual   minimum")
     print("-" * 67)
     total = payload.get("totals", {})
@@ -193,10 +242,11 @@ def main() -> int:
         f"{'all_source':29} {int(total.get('covered_lines', 0)):5}/"
         f"{int(total.get('num_statements', 0)):<7} {total_actual:7.2f}% {total_minimum:7.2f}%"
     )
-    if total_actual < total_minimum:
+    if check_overall and total_actual < total_minimum:
         failures.append(f"all_source {total_actual:.2f}% < {total_minimum:.2f}%")
 
-    for name, (minimum, matcher) in GATES.items():
+    # browser 档位只跑浏览器子集 ⇒ 总/分组指标不适用（该档只查浏览器专属单文件下限）
+    for name, (minimum, matcher) in (GATES if check_groups else {}).items():
         try:
             covered, statements, actual = _coverage(files, matcher)
         except ValueError as exc:
@@ -208,24 +258,43 @@ def main() -> int:
             failures.append(f"{name} {actual:.2f}% < {minimum:.2f}%")
 
     # 单文件下限（S37③）：分组聚合掩盖关键模块，逐文件兜底
-    for raw_path, floor in sorted(_FILE_FLOORS.items()):
-        actual = _file_coverage(files, raw_path)
-        if actual is None:
-            failures.append(f"{raw_path}: missing from coverage report (file-level floor {floor:.2f}%)")
-            print(f"{raw_path:29} {'missing':>13} {'--':>8} {floor:7.2f}%")
-            continue
-        print(f"{raw_path:29} {'':>5}{'':<7} {actual:7.2f}% {floor:7.2f}%")
-        if actual < floor:
-            failures.append(f"{raw_path} {actual:.2f}% < {floor:.2f}%")
+    def _check_file_floors(floors: dict[str, float]) -> None:
+        for raw_path, floor in sorted(floors.items()):
+            actual = _file_coverage(files, raw_path)
+            if actual is None:
+                failures.append(f"{raw_path}: missing from coverage report (file-level floor {floor:.2f}%)")
+                print(f"{raw_path:29} {'missing':>13} {'--':>8} {floor:7.2f}%")
+                continue
+            print(f"{raw_path:29} {'':>5}{'':<7} {actual:7.2f}% {floor:7.2f}%")
+            if actual < floor:
+                failures.append(f"{raw_path} {actual:.2f}% < {floor:.2f}%")
+
+    if profile != "browser":
+        _check_file_floors(_FILE_FLOORS)
+    if profile in {"browser", "full"}:
+        _check_file_floors(_BROWSER_FILE_FLOORS)
+    else:
+        # 跳过必须**可见**（打印出来），不做静默跳过
+        print(
+            f"{'（需浏览器运行时，已跳过）':29} {len(_BROWSER_FILE_FLOORS)} 项下限"
+            " 在 --profile browser（装了 chromium 的 job）里检查"
+        )
 
     # 按顶层子包下限（P2-1 ratchet）：与分组门禁互补 —— 分组是跨包的功能视图，
     # 这里按“包”整体看待，防止某包整体滑落被其它包的高覆盖平均掉。
-    for package, floor in sorted(PACKAGE_FLOORS.items()):
+    for package, floor in sorted((PACKAGE_FLOORS if check_groups else {}).items()):
         prefix = "src/omnicrawler/" + package + "/"
-        covered, statements, actual = _coverage(
-            files, lambda path, _p=prefix: path.startswith(_p)
-        )
         label = "pkg:" + package
+        try:
+            covered, statements, actual = _coverage(
+                files, lambda path, _p=prefix: path.startswith(_p)
+            )
+        except ValueError as exc:
+            # 与分组循环同款处理：报告里缺该包时**记为失败并继续**，不让脚本中断
+            # （2026-09-15：此前这里没有捕获，报告不完整时脚本会直接崩，看不到其它结论）
+            failures.append(f"{label}: {exc}")
+            print(f"{label:29} {'missing':>13} {'--':>8} {floor:7.2f}%")
+            continue
         print(f"{label:29} {covered:5}/{statements:<7} {actual:7.2f}% {floor:7.2f}%")
         if actual < floor:
             failures.append(f"package {package} {actual:.2f}% < {floor:.2f}%")
