@@ -11,6 +11,12 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import uuid4
 
+from ...core.field_value_source import (
+    ATTR_KEY,
+    POSITION_CHILD,
+    POSITION_ELEMENT_ATTR,
+    position_of,
+)
 from ...core.utils import user_agent as _user_agent
 from ...templates.template_catalog import PLACEHOLDER_RE
 from ..i18n import _
@@ -27,6 +33,16 @@ class FieldDef:
     regex: str | None = None
     required: bool = False
     fallback_xpath: str | None = None
+    #: 取值位置（`core/field_value_source.py` 契约）。``None`` ＝"表单里还没选"——
+    #: 由表单控件填入；**从配置加载时由 `config_serializer` 按既有形状显式推导**，
+    #: 因此旧配置零迁移，而"新加一行却忘填选择器"不会被静默当成另一种语义。
+    position: str | None = None
+
+    def resolved_position(self) -> str:
+        """实际生效的取值位置：显式声明优先，否则按既有形状推导（契约）。"""
+        if self.position:
+            return str(self.position)
+        return position_of({"selector": self.selector, ATTR_KEY: self.attribute}).key
 
     def validate(self, *, require_selector: bool = True) -> list[str]:
         """校验单个字段定义的合法性。
@@ -35,12 +51,30 @@ class FieldDef:
         ``path`` / ``paths``（见 extraction.jsonpath.json_field_values），而 ``path``
         属 GUI 不建模的透传键 ⇒ 模型里的 ``selector`` 恒为空。若仍强制要求选择器，
         合法 JSON 配置将无法从 GUI 启动（实测报「字段 xx 的选择器不能为空」）。
+
+        ★ 2026-09-15：选择器是否必填**改由取值位置契约判定**（`core/field_value_source.py`）——
+        「取条目元素自身（文本/属性）」本来就允许选择器为空，引擎也支持；此前 GUI 单方面
+        报「选择器不能为空」，导致「取本条记录自己的 href」这种规则在表单里建不出来。
         """
         errors: list[str] = []
         if not self.name or not self.name.strip():
             errors.append(_("字段名不能为空"))
-        if require_selector and (not self.selector or not self.selector.strip()):
-            errors.append(_(f"字段 '{self.name}' 的选择器不能为空"))
+        # 待判定的位置：**显式声明优先**；未声明时只有"选择器非空"才敢当成 child
+        #（不能反过来推导成 element —— 那会把"忘填选择器"静默解释成另一种语义）。
+        pending = self.position or (POSITION_CHILD if (self.selector or "").strip() else None)
+        if require_selector:
+            if pending is None:
+                # 表单里新加的一行：位置未选、选择器也空 ⇒ 必须显式选择
+                errors.append(
+                    _(
+                        f"字段 '{self.name}' 的选择器不能为空"
+                        "（若要取条目元素自身，请先选择取值位置）"
+                    )
+                )
+            elif pending == POSITION_CHILD and not (self.selector or "").strip():
+                errors.append(_(f"字段 '{self.name}' 选择了「子元素」取值位置，但选择器为空"))
+            elif pending == POSITION_ELEMENT_ATTR and not (self.attribute or "").strip():
+                errors.append(_(f"字段 '{self.name}' 选择了「元素自身属性」，但属性名为空"))
         if self.selector_type not in ("css", "xpath", "jsonpath"):
             errors.append(_(f"字段 '{self.name}' 的选择器类型无效: {self.selector_type}"))
         if self.regex:

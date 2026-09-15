@@ -16,6 +16,7 @@ import ruamel.yaml
 from ruamel.yaml.comments import CommentedMap
 
 from ..._version import __version__ as GUI_VERSION  # noqa: N812
+from ...core.field_value_source import ATTR_KEY, position_of
 from ...core.secrets_store import SecretsStore
 from ..i18n import _
 from .config_model import CrawlConfig, DownloadConfig, FieldDef
@@ -350,6 +351,12 @@ def from_yaml(yaml_str: str) -> CrawlConfig:
                         regex=str(regex) if regex else None,
                         required=bool(field_spec.get("required", False)),
                         fallback_xpath=fallback_xpath or None,
+                        # 从配置加载时**显式**落定取值位置（按既有形状推导，契约见
+                        # core/field_value_source.py）⇒ 旧配置零迁移，且"表单行未选位置"
+                        # 与"配置本来就写着空选择器"不再混为一谈（后者是合法的取元素自身）。
+                        position=position_of(
+                            {"selector": selector, ATTR_KEY: attr if attr else ""}
+                        ).key,
                     ))
     config.fields = fields_list
 

@@ -150,3 +150,36 @@ def test_full_config_placeholder_warns() -> None:
     cfg = _valid_config(seed_urls=["https://{{domain}}.example.com"])
     _, warnings = validate_full_config(cfg)
     assert any("占位符" in w for w in warnings)
+
+
+# ── 取值位置（W2.2）：空选择器在"取元素自身"位置下合法 ──────────────────
+
+
+def test_element_positions_allow_empty_selector() -> None:
+    from omnicrawler.core.field_value_source import POSITION_ELEMENT, POSITION_ELEMENT_ATTR
+
+    assert validate_selector_format(_field(selector="", position=POSITION_ELEMENT)) == []
+    assert (
+        validate_selector_format(
+            _field(selector="", attribute="href", position=POSITION_ELEMENT_ATTR)
+        )
+        == []
+    )
+
+
+def test_element_attr_without_attribute_is_reported() -> None:
+    from omnicrawler.core.field_value_source import POSITION_ELEMENT_ATTR
+
+    errors = validate_selector_format(_field(selector="", attribute="", position=POSITION_ELEMENT_ATTR))
+    assert any("属性名" in issue for issue in errors), errors
+
+
+def test_unset_position_with_empty_selector_is_reported() -> None:
+    errors = validate_selector_format(_field(selector="", position=None))
+    assert any("选择器为空" in issue for issue in errors), errors
+
+
+def test_attribute_name_written_as_selector_is_reported() -> None:
+    """反向检查：`selector: href` 会被引擎当 CSS 选择器找 ⇒ 静默取不到值，必须拦住。"""
+    errors = validate_selector_format(_field(selector="href"))
+    assert errors and "属性名" in errors[0], errors

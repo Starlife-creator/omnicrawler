@@ -193,3 +193,62 @@ def test_prune_orphan_overrides_noop_when_all_match() -> None:
 def test_workspace_default_derived_from_project_name() -> None:
     cfg = CrawlConfig(project_name="mytask", seed_urls=["https://example.com"])
     assert cfg.workspace == "work/mytask"
+
+
+# ── 取值位置（W2.2 / §5.3 #9）：引擎支持"取元素自身"，GUI 不应再单方面卡住 ──
+
+
+def test_field_def_element_position_needs_no_selector() -> None:
+    """取条目元素自身文本：选择器为空是**合法**的（引擎行为如此）。"""
+    from omnicrawler.core.field_value_source import POSITION_ELEMENT
+
+    assert _valid_field(selector="", position=POSITION_ELEMENT).validate() == []
+
+
+def test_field_def_element_attr_position_requires_attribute() -> None:
+    """取条目元素自身属性：必须给属性名，否则会静默退化成"取自身文本"。"""
+    from omnicrawler.core.field_value_source import POSITION_ELEMENT_ATTR
+
+    ok = _valid_field(selector="", attribute="href", position=POSITION_ELEMENT_ATTR)
+    assert ok.validate() == []
+    missing = _valid_field(selector="", attribute=None, position=POSITION_ELEMENT_ATTR)
+    assert any("属性名" in issue for issue in missing.validate())
+
+
+def test_field_def_child_position_requires_selector() -> None:
+    """显式选了"子元素"位置却没填选择器 ⇒ 报错（且提示指向位置选择）。"""
+    from omnicrawler.core.field_value_source import POSITION_CHILD
+
+    errors = _valid_field(selector="", position=POSITION_CHILD).validate()
+    assert any("选择器为空" in issue for issue in errors), errors
+
+
+def test_unset_position_with_empty_selector_is_not_silently_reinterpreted() -> None:
+    """**位置未选 + 选择器为空** 必须报错：不许静默解释成"取元素自身"。
+
+    这条守的是最容易出的事故：用户在表单里新加一行、忘了填选择器，
+    若按形状推导就会"合法地"变成另一种语义（取整块元素的文本），结果静默取错值。
+    """
+    errors = _valid_field(selector="  ", position=None).validate()
+    assert any("选择器不能为空" in issue for issue in errors), errors
+
+
+def test_loaded_config_has_explicit_position() -> None:
+    """从配置加载的字段位置是**显式**的 ⇒ 旧配置零迁移、且不会被上面的"未选"规则误伤。"""
+    from omnicrawler.core.field_value_source import POSITION_CHILD, POSITION_ELEMENT_ATTR
+    from omnicrawler.gui.core.config_serializer import from_yaml
+
+    config = from_yaml(
+        "project: {name: t, workspace: work/t}\n"
+        "source: {kind: static_html, seeds: [https://example.org/]}\n"
+        "extract:\n"
+        "  mode: html\n"
+        "  item_selector: a.item\n"
+        "  fields:\n"
+        "    title: {selector: h2.t}\n"
+        "    link: {selector: '', attr: href}\n"
+    )
+    by_name = {f.name: f for f in config.fields}
+    assert by_name["title"].position == POSITION_CHILD
+    assert by_name["link"].position == POSITION_ELEMENT_ATTR
+    assert by_name["link"].validate() == []

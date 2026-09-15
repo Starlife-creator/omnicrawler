@@ -191,7 +191,13 @@ extract:
     assert fields["id"]["path"] == "id"
     assert "selector" not in fields["id"], "不应往 JSON 字段规则里注入空 selector"
 
-    # 反向护栏：修 JSON 不能顺带放松 HTML 的「选择器必填」
+    # 反向护栏（2026-09-15 语义更新）：HTML 模式下"选择器为空"**不再是错误**——
+    # 按取值位置契约（core/field_value_source.py）它就是「取条目元素自身文本」，引擎也支持。
+    # 但**语义必须显式可见**：加载后该字段必须带上确定的位置，而不是含糊地放行。
+    # （JSON 模式那条不许放松：见上面 `assert not [e for e in errors if "选择器" in e]`。
+    #   而"表单里新加一行却忘填选择器"仍会报错 —— 由 `position is None` 分支守住。）
+    from omnicrawler.core.field_value_source import POSITION_ELEMENT
+
     html_config = from_yaml(
         '''project: {name: h, workspace: work/h}
 source: {kind: static_html, seeds: [https://example.org/]}
@@ -199,7 +205,9 @@ extract: {mode: html, fields: {title: {selector: ''}}}
 '''
     )
     html_errors, _ = validate_full_config(html_config)
-    assert any("选择器" in e for e in html_errors), "HTML 模式仍应要求选择器"
+    assert not [e for e in html_errors if "选择器" in e], f"空选择器在「取元素自身」语义下合法：{html_errors}"
+    loaded_html = from_yaml(to_yaml(html_config))
+    assert loaded_html.fields[0].position == POSITION_ELEMENT, "位置必须显式落定，不许含糊放行"
 def test_form_authored_json_field_is_written_as_path() -> None:
     """表单里那一列在 JSON 模式下装的是 JSONPath ⇒ 落盘必须写成 `path`。
 

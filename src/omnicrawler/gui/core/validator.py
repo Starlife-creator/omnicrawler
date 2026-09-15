@@ -8,6 +8,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from ...core.field_value_source import (
+    COMMON_ATTRIBUTES,
+    POSITION_CHILD,
+    POSITION_ELEMENT_ATTR,
+)
 from ...sources.sources import SUPPORTED_SOURCE_KINDS as VALID_SOURCE_KINDS
 from ..i18n import _
 from .config_model import CrawlConfig, FieldDef
@@ -53,7 +58,29 @@ def validate_selector_format(field: FieldDef) -> list[str]:
     selector = field.selector.strip()
 
     if not selector:
-        errors.append(_(f"字段 '{field.name}': 选择器为空"))
+        # 2026-09-15：选择器为空是否合法**由取值位置契约判定**（core/field_value_source.py）——
+        # 「取条目元素自身（文本/属性）」本来就允许空选择器，引擎也支持（extractors.py 里
+        # `select_nodes(context, selector) if selector else [context]`）。此前这里一律报
+        # 「选择器为空」，导致「取本条记录自己的 href」这种规则在表单里建不出来。
+        #
+        # 位置**未声明**且选择器为空 ⇒ 仍报错：不能把"忘填选择器"静默解释成"取元素自身"。
+        position = field.position or None
+        if position is None:
+            errors.append(_(f"字段 '{field.name}': 选择器为空（要取条目元素自身请先选取值位置）"))
+        elif position == POSITION_CHILD:
+            errors.append(_(f"字段 '{field.name}': 选择器为空"))
+        elif position == POSITION_ELEMENT_ATTR and not (field.attribute or "").strip():
+            errors.append(_(f"字段 '{field.name}': 取元素自身属性时必须填属性名"))
+        return errors
+
+    # 反向检查（契约同款）：把属性名写进选择器 —— 引擎会把它当 CSS 选择器去找，**静默取不到值**
+    if field.selector_type == "css" and selector in COMMON_ATTRIBUTES:
+        errors.append(
+            _(
+                f"字段 '{field.name}': 选择器 {selector!r} 看起来是属性名；"
+                "要取条目元素自身的属性，请把选择器留空并填写属性名"
+            )
+        )
         return errors
 
     if field.selector_type == "css":
