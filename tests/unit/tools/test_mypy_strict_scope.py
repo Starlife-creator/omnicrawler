@@ -7,11 +7,16 @@
 但配置是「后者覆盖前者」的列表语义——**只要有人在后面追加一条更宽松的 override，
 范围就会无声缩水**，而 mypy 依然「通过」。本文件把这件事变成断言。
 
+2026-09-15（W6.3）：范围再扩到 **`omnicrawler.core.*`**（实测严格档下仅 6 处违规，
+同根因：`cryptography` 可选 ⇒ 类型层面是 Any）。同时把本守卫**泛化**——
+不再只枚举 gui，而是按 `_REQUIRED_STRICT_SCOPE` 里的每个模式枚举磁盘上的**实际模块**，
+所以新加 core 文件会自动纳入检查。
+
 **怎么验算**：不复述配置文本，而是按 mypy 的匹配语义（`foo.*` 匹配 `foo` 及其子模块，
-取**最后一条**命中的 override）对**磁盘上实际存在的每一个 gui 模块**逐一算出生效规则，
+取**最后一条**命中的 override）对**磁盘上实际存在的每个受管模块**逐一算出生效规则，
 再断言 5 项严格设置全部为真。因此：
 
-* 新增 gui 文件 → 自动纳入检查范围（新文件必须也是严格的）；
+* 新增受管模块 → 自动纳入检查范围（新文件必须也是严格的）；
 * 追加更宽松的 override → 命中它的模块算出的规则不严格 → 失败；
 * 把整块严格设置删掉 → 失败。
 
@@ -28,7 +33,7 @@ import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _PYPROJECT = _REPO_ROOT / "pyproject.toml"
-_GUI_ROOT = _REPO_ROOT / "src" / "omnicrawler" / "gui"
+_SRC_ROOT = _REPO_ROOT / "src"
 
 #: 严格档定义（沿用原 gui/core 的 Phase 2 口径）。少一项都算「不严格」。
 _STRICT_SETTINGS = (
@@ -40,7 +45,16 @@ _STRICT_SETTINGS = (
 )
 
 #: ratchet：严格范围**至少要**覆盖这些模式。只能在此之上增加。
-_REQUIRED_STRICT_SCOPE = ("omnicrawler.gui.*",)
+_REQUIRED_STRICT_SCOPE = (
+    "omnicrawler.gui.*",
+    "omnicrawler.core.*",
+)
+
+#: 每个受管包的模块数下限（防止"扫到空集 ⇒ 空集对空集假通过"）
+_MIN_MODULES_PER_SCOPE = {
+    "omnicrawler.gui.*": 50,
+    "omnicrawler.core.*": 10,
+}
 
 
 def _overrides() -> list[dict[str, object]]:
@@ -66,28 +80,46 @@ def _effective(module: str) -> dict[str, object]:
     return chosen
 
 
-def _gui_modules() -> list[str]:
-    """磁盘上实际的 gui 模块名（含包本身与所有子模块）。"""
-    if not _GUI_ROOT.is_dir():
+def _package_root(pattern: str) -> Path:
+    """`omnicrawler.gui.*` → `src/omnicrawler/gui`。"""
+    dotted = pattern[:-2] if pattern.endswith(".*") else pattern
+    return _SRC_ROOT.joinpath(*dotted.split("."))
+
+
+def _package_modules(pattern: str) -> list[str]:
+    """磁盘上该包的实际模块名（含包本身与所有子模块）。"""
+    root = _package_root(pattern)
+    if not root.is_dir():
         return []
-    modules = ["omnicrawler.gui"]
-    for path in sorted(_GUI_ROOT.rglob("*.py")):
+    dotted = pattern[:-2] if pattern.endswith(".*") else pattern
+    modules = [dotted]
+    for path in sorted(root.rglob("*.py")):
         if "__pycache__" in path.parts:
             continue
-        rel = path.relative_to(_GUI_ROOT).with_suffix("")
-        parts = list(rel.parts)
+        parts = list(path.relative_to(root).with_suffix("").parts)
         if parts[-1] == "__init__":
             parts.pop()
         if not parts:
             continue
-        modules.append("omnicrawler.gui." + ".".join(parts))
-    return sorted(set(modules))
+        modules.append(dotted + "." + ".".join(parts))
+    return modules
 
 
-def test_gui_root_exists() -> None:
-    """先确认扫到了东西——否则下面的断言会变成空集对空集的假通过。"""
-    assert _GUI_ROOT.is_dir(), f"未找到 GUI 源码目录：{_GUI_ROOT}"
-    assert len(_gui_modules()) > 50, f"只扫到 {len(_gui_modules())} 个模块，路径推断可能写错了"
+def _required_modules() -> list[str]:
+    found: list[str] = []
+    for pattern in _REQUIRED_STRICT_SCOPE:
+        found.extend(_package_modules(pattern))
+    return sorted(set(found))
+
+
+def test_required_scope_roots_exist() -> None:
+    """先确认每个受管包都扫到了东西——否则下面的断言会变成空集对空集的假通过。"""
+    for pattern in _REQUIRED_STRICT_SCOPE:
+        root = _package_root(pattern)
+        assert root.is_dir(), f"未找到受管源码目录：{root}"
+        count = len(_package_modules(pattern))
+        floor = _MIN_MODULES_PER_SCOPE.get(pattern, 1)
+        assert count >= floor, f"{pattern} 只扫到 {count} 个模块（<{floor}），路径推断可能写错了"
 
 
 def test_required_strict_scope_is_declared() -> None:
@@ -100,31 +132,33 @@ def test_required_strict_scope_is_declared() -> None:
     )
 
 
-@pytest.mark.parametrize("module", _gui_modules())
-def test_every_gui_module_is_strict(module: str) -> None:
-    """每一个 gui 模块的**生效**规则都必须是严格档。"""
+@pytest.mark.parametrize("module", _required_modules())
+def test_every_required_module_is_strict(module: str) -> None:
+    """每一个受管模块的**生效**规则都必须是严格档。"""
     settings = _effective(module)
     relaxed = [name for name in _STRICT_SETTINGS if settings.get(name) is not True]
     assert not relaxed, (
         f"{module} 的生效 mypy 规则不严格：{relaxed} 未开启。"
         f"生效值={ {n: settings.get(n) for n in _STRICT_SETTINGS} }。"
-        f"常见成因：在严格 override **之后**又追加了一条更宽松的 `omnicrawler.gui.*`。"
+        f"常见成因：在严格 override **之后**又追加了一条更宽松的同前缀 override。"
     )
 
 
-def test_no_relaxed_override_after_strict_scope() -> None:
-    """反面守卫：严格 scope 之后不得再出现会放宽 gui 模块的 override。"""
+@pytest.mark.parametrize("pattern", _REQUIRED_STRICT_SCOPE)
+def test_no_relaxed_override_after_strict_scope(pattern: str) -> None:
+    """反面守卫：每个严格 scope 之后不得再出现会放宽其模块的 override。"""
     overrides = _overrides()
     strict_index = None
     for index, override in enumerate(overrides):
-        if str(override.get("module", "")) == "omnicrawler.gui.*" and all(
+        if str(override.get("module", "")) == pattern and all(
             override.get(name) is True for name in _STRICT_SETTINGS
         ):
             strict_index = index
-    assert strict_index is not None, "没找到 `omnicrawler.gui.*` 的严格 override"
-    for override in overrides[strict_index + 1:]:
+    assert strict_index is not None, f"没找到 `{pattern}` 的严格 override"
+    prefix = pattern[:-2] if pattern.endswith(".*") else pattern
+    for override in overrides[strict_index + 1 :]:
         module = str(override.get("module", ""))
-        if not module.startswith("omnicrawler.gui"):
+        if not module.startswith(prefix):
             continue
         relaxed = [name for name in _STRICT_SETTINGS if override.get(name) is False]
         assert not relaxed, (

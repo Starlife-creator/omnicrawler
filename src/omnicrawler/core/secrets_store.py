@@ -96,10 +96,11 @@ class SecretsStoreError(RuntimeError):
 
 def _derived_key(password: str, salt: bytes = DERIVE_SALT) -> bytes:
     _ensure_crypto()
-    kdf = PBKDF2HMAC(  # type: ignore[misc]
+    kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(), length=KEY_LENGTH, salt=salt, iterations=PBKDF2_ITERATIONS
     )
-    return kdf.derive(password.encode("utf-8"))
+    # 同上：`cryptography` 可选 ⇒ 类型层面是 Any，用 `bytes(...)` 收窄（严格档不再靠 ignore）
+    return bytes(kdf.derive(password.encode("utf-8")))
 
 
 class SecretsStore:
@@ -268,7 +269,10 @@ class SecretsStore:
         _ensure_crypto()
         key = self._master_key()
         nonce = secrets.token_bytes(12)
-        return FILE_MAGIC + nonce + AESGCM(key).encrypt(nonce, data, FILE_MAGIC)  # type: ignore[misc]
+        # `cryptography` 是可选依赖 ⇒ `AESGCM` 在类型层面是 Any：这里显式 `bytes(...)`
+        # 收窄返回值（W6.3 把 core 纳入 mypy 严格档后不再靠 `type: ignore` 掩盖）。
+        ciphertext = bytes(AESGCM(key).encrypt(nonce, data, FILE_MAGIC))
+        return FILE_MAGIC + nonce + ciphertext
 
     def decrypt(self, blob: bytes) -> bytes:
         """解密 ``encrypt`` 产生的 blob。"""
@@ -279,6 +283,6 @@ class SecretsStore:
         nonce = blob[len(FILE_MAGIC) : len(FILE_MAGIC) + 12]
         ciphertext = blob[len(FILE_MAGIC) + 12 :]
         try:
-            return AESGCM(key).decrypt(nonce, ciphertext, FILE_MAGIC)  # type: ignore[misc]
+            return bytes(AESGCM(key).decrypt(nonce, ciphertext, FILE_MAGIC))
         except Exception as exc:
             raise SecretsStoreError("secrets blob 解密失败（密钥不匹配?）") from exc

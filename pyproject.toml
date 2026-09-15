@@ -200,3 +200,16 @@ disallow_incomplete_defs = true
 check_untyped_defs = true
 warn_return_any = true
 warn_unused_ignores = true
+
+# core 纳入严格档（W6.3，2026-09-15）：实测严格档下只有 6 处违规、且全在
+# `core/secrets_store.py`（3 处 `no-any-return` + 3 处 `unused-ignore`，同一根因：
+# `cryptography` 是可选依赖 ⇒ 类型层面是 Any）。用 `bytes(...)` 收窄后一次收紧。
+# 守卫（`tests/unit/tools/test_mypy_strict_scope.py`）会按磁盘上的**实际模块**逐一验算生效规则，
+# 新增 core 文件自动纳入；本块之后同样**不得**再追加更宽松的 core override。
+[[tool.mypy.overrides]]
+module = "omnicrawler.core.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
