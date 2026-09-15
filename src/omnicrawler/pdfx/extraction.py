@@ -139,14 +139,23 @@ def _normalize_llm_records(payload: dict[str, Any]) -> list[dict[str, dict[str, 
     return normalized
 
 
+def _page_of(value: dict[str, Any], pages_by_no: dict[int, CandidatePage]) -> CandidatePage | None:
+    """值来自哪一页（页码随值一起存，可能是文本形态的数字）。
+
+    抽成一处：置信度判定与「是否按来源折叠 OCR 空白」都要用同一页信息，
+    两处各写一遍迟早会漂（`page_no` 的解析规则只该有一份）。
+    """
+    page_no = value.get("page_no")
+    page_no_text = str(page_no) if page_no is not None else ""
+    return pages_by_no.get(int(page_no_text)) if page_no_text.isdigit() else None
+
+
 def _observable_confidence(value: dict[str, Any], pages_by_no: dict[int, CandidatePage]) -> float:
     """D22：规则也分级——显式 patterns 命中高置信；alias 宽松兜底低置信且要求证据可验证。"""
     method = value.get("extraction_method")
     raw = str(value.get("raw_value") or "").strip()
     evidence = str(value.get("evidence") or "").strip()
-    page_no = value.get("page_no")
-    page_no_text = str(page_no) if page_no is not None else ""
-    page = pages_by_no.get(int(page_no_text)) if page_no_text.isdigit() else None
+    page = _page_of(value, pages_by_no)
     if method in {"filename_rule", "content_rule"}:
         if value.get("matched_by_pattern"):
             return 0.98
@@ -242,7 +251,15 @@ def extract_document(
             for name, spec in field_map.items():
                 value = record.get(name, {})
                 raw_value = value.get("raw_value")
-                normalized, unit = normalize_value(raw_value, spec, entity_resolver)
+                # 来源：值取自 OCR 页时，文本类字段默认做空白归一（§5.8 #24）——
+                # 汉字间空格是识别器伪影，且实测会被高置信放行；显式声明仍可覆盖。
+                page = _page_of(value, pages_by_no)
+                normalized, unit = normalize_value(
+                    raw_value,
+                    spec,
+                    entity_resolver,
+                    from_ocr=bool(page is not None and page.parse_method == "ocr"),
+                )
                 confidence = _observable_confidence(value, pages_by_no) if raw_value else 0.0
                 # D24：置信度分母含全部必填字段，缺失按 0 计（6 字段只抽 1 个不能仍是高置信）
                 if raw_value or name in required_names:

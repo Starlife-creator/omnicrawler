@@ -54,11 +54,12 @@ class FieldSpec:
     maximum: float | None = None
     # 校验用白名单正则（D28：code 等字段的取值形态约束，与提取 patterns 分离）
     value_pattern: str | None = None
-    #: **显式开关，默认关**：把值里的连续空白折叠成单个空格。
+    #: OCR 空白归一：``None``（默认）＝**按来源**——值取自 OCR 页时才折叠；显式 ``True``/``False`` 覆盖。
     #: 针对 OCR 文本 —— chi_sim 常在汉字之间插空格（"示例服务合同" → "示例  服务  合同"），
-    #: 而取值模式 `(?P<value>[^\n]+)` 会把整行余下内容连同空格一起收进来。
-    #: 默认关是为了**不改既有产出**；需要时逐字段声明（原始值仍在"…_原始值"与原文证据里）。
-    collapse_whitespace: bool = False
+    #: 而取值模式 `(?P<value>[^\n]+)` 会把整行余下内容连同空格一起收进来；实测该伪影置信度 0.98
+    #: 会被自动放行 ⇒ 交付脏值（§5.8 #24，2026-09-15 定：**按来源默认生效**，不再要求逐字段声明）。
+    #: 原始值仍在"…_原始值"与原文证据里，可复核。
+    collapse_whitespace: bool | None = None
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> FieldSpec:
@@ -134,7 +135,10 @@ class FieldSpec:
                 "minimum": minimum,
                 "maximum": maximum,
                 "type": spec_type,
-                "collapse_whitespace": bool(raw.get("collapse_whitespace", False)),
+                # None = 按来源（OCR 页才折叠）；显式 True/False 覆盖（§5.8 #24）
+                "collapse_whitespace": None
+                if raw.get("collapse_whitespace") is None
+                else bool(raw["collapse_whitespace"]),
             },
         )
 

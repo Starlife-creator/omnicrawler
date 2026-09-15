@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 from pathlib import Path
 
 import pytest
@@ -78,25 +77,27 @@ def test_scanned_pdf_meets_the_gate_with_real_ocr(tmp_path: Path) -> None:
     assert rows[0]["金额"] == "12345.67", rows[0]
 
 
-def test_ocr_text_whitespace_default_is_flagged_by_the_gate(tmp_path: Path) -> None:
-    """**特征化用例**：默认配置（不开 `collapse_whitespace`）下，OCR 汉字间空格会作为
-    "错值自动放行"被本判据判失败 —— 记录当前行为，并写清升级路径。
+def test_ocr_text_whitespace_is_normalized_by_source_by_default(tmp_path: Path) -> None:
+    """**新契约（§5.8 #24，2026-09-15）**：不声明任何开关，OCR 页的文本值也按来源归一 ⇒ 达标。
 
-    实测（2026-09-14）：`示例服务合同` 被 OCR 读成 `示例  服务  合同`，**置信度 0.98**、
-    `auto_accepted`，于是原样进入交付值：值错 + 自动放行 ⇒ `ok=False`。
-    产品**已有**开关（逐字段 `collapse_whitespace`，默认关，见
-    `tests/unit/pdf/test_collapse_whitespace_option.py`）。
+    **历史**（同一条用例此前记录的是坏行为）：该伪影曾**原样进入交付值**并被 `auto_accepted`
+    （实测置信度 0.98）⇒ 在本判据下就是「错值自动放行」。当时的处置是"图片版用例显式声明
+    `collapse_whitespace`"，把修复责任推给配置；现在改为**按来源默认生效**（OCR 页才归一，
+    原生文字层不动，显式 `false` 仍可关掉）。
 
-    **若将来把"OCR 源文本的空白归一"改成默认开，本用例会红 —— 那是好消息**：
-    请同时更新开关默认、`pdf_quality_benchmark` 的用例声明与相关文档，而不是把断言改回绿。
+    因此本条现在守的是：**默认就对**。若有人把"按来源默认归一"改回"默认关"，它会立刻红。
     """
     _require_ocr_env()
-    default_rules = dataclasses.replace(_SCANNED, name="scanned-default-rules", collapse_ocr_whitespace=False)
-    score = _run(default_rules, tmp_path)
+    score = _run(_SCANNED, tmp_path)  # 用例本身**不声明**任何开关
 
-    assert score.ok is False, "默认配置下该伪影应被本判据抓住（若已改为默认归一，请按 docstring 同步）"
-    assert score.unreviewed_errors == 1, score.to_mapping()
-    assert score.unreviewed_error_fields == ("contract_name",), score.to_mapping()
-    # 判据没有误伤其他字段：金额与编号是对的，且都在门槛内
-    assert score.matched_fields == 2, score.to_mapping()
-    assert score.review_violations == 0, "该伪影是高置信错值——所以不会「低置信必须进复核」那条兜住"
+    assert score.field_accuracy == 1.0, score.to_mapping()
+    assert score.unreviewed_errors == 0, score.to_mapping()
+    assert score.review_violations == 0, score.to_mapping()
+    assert score.ok is True, score.to_mapping()
+
+    # 交付值也要对得上：汉字之间的 OCR 空格应已被归一
+    rows = results_rows(tmp_path, _SCANNED)
+    assert len(rows) == 1, rows
+    assert rows[0]["合同名称"] == "示例服务合同", rows[0]
+    # 归一不动证据：原始值仍保留
+    assert rows[0]["合同名称_原始值"], "原始值必须保留（归一不改证据）"

@@ -258,14 +258,11 @@ class PdfBenchmarkCase:
         ("amount", "金额", "amount", r"金额\s*[：:]?\s*(?P<value>[\d,，.．]+\s*元)"),
     )
     min_confidence: float = DEFAULT_MIN_CONFIDENCE
-    #: 文本字段是否声明"归一 OCR 插入的空白"（产品的逐字段开关 `collapse_whitespace`）。
+    #: 文本字段是否**显式**声明"归一 OCR 插入的空白"（产品的逐字段开关 `collapse_whitespace`）。
     #:
-    #: **为什么要这个开关**：OCR 在汉字间插空格是识别器伪影（实测 `示例服务合同` →
-    #: `示例  服务  合同`，置信度 0.98）。默认配置下该伪影会**原样进入 text 字段值**并被
-    #: ``auto_accepted`` —— 在"要么对，要么进复核"的判据下就是**错值自动放行**（实测见
-    #: `tests/unit/services/test_pdf_quality_benchmark_scoring.py::test_ocr_cjk_spacing_is_flagged_by_default`）。
-    #: 图片版用例因此显式打开该开关：这是**抽取规则的显式声明**，不是比对时的隐藏归一 ——
-    #: 真值与观测都按同一把尺子逐字比较，开关若失效本用例立刻红。
+    #: **2026-09-15 起这里默认不声明**（§5.8 #24 已拍板：按来源默认生效）——OCR 页的文本值
+    #: 本来就该归一，基准要验的正是"**不声明任何开关也达标**"。该字段保留为显式覆盖的入口
+    #: （也用于反向用例：显式关掉时会不会被本判据抓住）。
     collapse_ocr_whitespace: bool = False
 
     def truth(self) -> dict[str, str]:
@@ -287,8 +284,8 @@ PDF_CASES: tuple[PdfBenchmarkCase, ...] = (
         kind="scanned",
         filename="scan.pdf",
         needs_ocr=True,
-        # 图片版：明说"汉字间空格不算值的一部分"（产品的 `collapse_whitespace` 开关）
-        collapse_ocr_whitespace=True,
+        # 图片版**不声明**任何开关：按来源默认生效后，OCR 页的文本值本就该归一
+        # （§5.8 #24）—— 本用例的验收正是「不声明任何开关也达标」。
     ),
 )
 

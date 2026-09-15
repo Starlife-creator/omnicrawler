@@ -1,13 +1,18 @@
-"""字段级 `collapse_whitespace`：OCR 空白归一是**显式选项**，默认关。
+"""OCR 空白归一：**按来源默认生效**，显式声明可覆盖（§5.8 #24，2026-09-15 拍板）。
 
 背景（实测）：`chi_sim` 会在汉字之间插空格（"示例服务合同" → "示例  服务  合同"），
-而取值模式 `(?P<value>[^\\n]+)` 会把整行余下内容连同空格一起收进来 ⇒ 空格留在值里。
-按用户裁决（方案 C）**不改默认产出**，只提供显式开关；原始值仍在 "…_原始值" 与原文证据里。
+而取值模式 `(?P<value>[^\\n]+)` 会把整行余下内容连同空格一起收进来 ⇒ 空格留在值里，
+**且实测置信度 0.98、会被自动放行** ⇒ 交付脏值（PDF 侧专项基准把它判为
+「错值自动放行」）。旧做法是逐字段 `collapse_whitespace: true`（默认关）——等于把
+"记得去开"交给用户。现改为：
 
-本文件锁三件事：
-1. 默认关 ⇒ 文本值原样（只去首尾空白），既有产出不变；
-2. 显式开 ⇒ 连续空白折叠，且**只删"汉字紧邻汉字"**那一个空格（英文/数字之间的空白必须保留）；
-3. 配在数值/日期类字段上必须**报错**，不允许静默失效（沿用该文件 D26/D27 的既有原则）。
+* **未声明**（`None`）：值取自 **OCR 页** ⇒ 折叠；原生文字层 ⇒ 原样（文档空白有意义）；
+* **显式 `True`/`False`**：始终优先（`False` 仍可关掉，供确实要留原始空白的场景）。
+
+本文件锁：
+1. 按来源的四种组合（未声明×原生 / 未声明×OCR / 显式 True×原生 / 显式 False×OCR）；
+2. 只删"汉字紧邻汉字"那一个空格（英文/数字之间的空白必须保留）；
+3. 配在数值/日期类字段上必须**报错**（不允许静默失效，沿用 D26/D27 原则）。
 """
 
 from __future__ import annotations
@@ -17,26 +22,49 @@ import pytest
 from omnicrawler.pdfx.config import FieldSpec
 from omnicrawler.pdfx.normalization import normalize_value
 
-#: OCR 会在汉字之间插空格 —— 这是本选项要解决的噪声
+#: OCR 会在汉字之间插空格 —— 这是本规则要解决的噪声
 OCR_CJK_TEXT = "示例  服务  合同"
+#: 归一后的真值
+CLEAN = "示例服务合同"
 
 
 def _spec(**overrides) -> FieldSpec:
     return FieldSpec.from_dict({"name": "party", "label": "当事方", "type": "text", **overrides})
 
 
-def test_default_keeps_text_untouched() -> None:
-    """默认关：不得改动文本值（既有产出不变）。"""
-    value, _unit = normalize_value(OCR_CJK_TEXT, _spec())
+def test_undeclared_on_native_text_layer_keeps_text_untouched() -> None:
+    """未声明 + **原生文字层**：原样保留（文档本身的空白有意义，不得改动既有产出）。"""
+    value, _unit = normalize_value(OCR_CJK_TEXT, _spec(), from_ocr=False)
 
     assert value == OCR_CJK_TEXT
 
 
-def test_option_removes_whitespace_between_cjk_characters() -> None:
-    """开启后：汉字之间的 OCR 空格被删掉，值等于真值。"""
-    value, _unit = normalize_value(OCR_CJK_TEXT, _spec(collapse_whitespace=True))
+def test_undeclared_on_ocr_page_collapses() -> None:
+    """未声明 + **OCR 页**：默认折叠 —— 这是本轮的行为变更（新默认生效）。"""
+    value, _unit = normalize_value(OCR_CJK_TEXT, _spec(), from_ocr=True)
 
-    assert value == "示例服务合同"
+    assert value == CLEAN
+
+
+def test_explicit_true_overrides_native_source() -> None:
+    """显式 True 优先：即使来自原生文字层也折叠（声明权高于来源推断）。"""
+    value, _unit = normalize_value(OCR_CJK_TEXT, _spec(collapse_whitespace=True), from_ocr=False)
+
+    assert value == CLEAN
+
+
+def test_explicit_false_still_opts_out_on_ocr_page() -> None:
+    """显式 False 仍可关掉：OCR 页上也保留原样（给"确实要留原始空白"的场景）。"""
+    value, _unit = normalize_value(OCR_CJK_TEXT, _spec(collapse_whitespace=False), from_ocr=True)
+
+    assert value == OCR_CJK_TEXT
+
+
+def test_undeclared_default_is_none_not_false() -> None:
+    """配置层：未声明必须是 `None`（＝按来源），**不能退化成 `False`**（否则新默认失效）。"""
+    assert _spec().collapse_whitespace is None
+    assert _spec(collapse_whitespace=False).collapse_whitespace is False
+    assert _spec(collapse_whitespace=True).collapse_whitespace is True
 
 
 @pytest.mark.parametrize(
@@ -52,9 +80,9 @@ def test_option_removes_whitespace_between_cjk_characters() -> None:
         ("  示例服务合同  ", "示例服务合同"),
     ],
 )
-def test_option_only_targets_cjk_to_cjk_spacing(raw: str, expected: str) -> None:
-    """不是"一删了之"：只清汉字之间的噪声，其它空白照旧。"""
-    value, _unit = normalize_value(raw, _spec(collapse_whitespace=True))
+def test_only_cjk_to_cjk_spacing_is_removed(raw: str, expected: str) -> None:
+    """不是"一删了之"：只清汉字之间的噪声，其它空白照旧（OCR 来源下生效）。"""
+    value, _unit = normalize_value(raw, _spec(), from_ocr=True)
 
     assert value == expected
 

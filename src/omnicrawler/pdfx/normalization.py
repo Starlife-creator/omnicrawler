@@ -273,7 +273,15 @@ def normalize_value(
     raw: str | None,
     spec: FieldSpec,
     entity_resolver: EntityResolver | None = None,
+    *,
+    from_ocr: bool = False,
 ) -> tuple[str | None, str | None]:
+    """把原始文本归一到交付值。
+
+    ``from_ocr``：该值是否取自 **OCR 页**（`pages.parse_method == "ocr"`）。
+    文本类字段在未显式声明 `collapse_whitespace` 时**按它决定**是否折叠 OCR 空白伪影
+    —— 见文件末尾的说明（§5.8 #24）。显式声明（True/False）始终优先。
+    """
     if raw is None or not str(raw).strip():
         return None, spec.target_unit
     text = str(raw).strip()
@@ -322,9 +330,13 @@ def normalize_value(
         return text, None
     if kind == "entity" and entity_resolver:
         return entity_resolver.resolve(text), None
-    # 文本类兜底：默认原样返回（只去过首尾空白）；字段显式声明 collapse_whitespace
-    # 时才折叠连续空白 —— 主要给 OCR 文本用（chi_sim 会在汉字间插空格）。
+    # 文本类兜底：默认原样返回（只去过首尾空白）；是否折叠 OCR 空白按**来源**决定——
+    # `spec.collapse_whitespace` 显式声明优先，未声明时用 `from_ocr`（该值取自 OCR 页）。
+    # 理由（§5.8 #24，2026-09-15 拍板）：汉字间空格是**识别器伪影**（chi_sim 实测
+    # "示例服务合同" → "示例  服务  合同"），且实测置信度 0.98 会被自动放行 ⇒ 交付脏值；
+    # 逐字段开关等于把"记得去开"交给用户，而默认值才是产品口径。原始值仍在 `raw_value`/原文证据里。
     # 注意：只影响**返回值**，不影响 enum/entity 的匹配（那些走上面各自的分支）。
-    if spec.collapse_whitespace:
+    collapse = spec.collapse_whitespace if spec.collapse_whitespace is not None else from_ocr
+    if collapse:
         return _collapse_whitespace(text), spec.target_unit
     return text, spec.target_unit
