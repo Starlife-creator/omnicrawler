@@ -6,6 +6,11 @@ concurrency:
 
 env:
   PIP_CONSTRAINT: ${{ github.workspace }}/constraints/quality.txt
+  # ★ `fonts-noto-cjk`（见各 job 的 Qt 依赖安装步骤）：Linux 上 Qt 走 **fontconfig** 取系统字体，
+  # 裸 runner 一个字体都没有（实测 `QFontDatabase.families()` 为空、连 `inFont("A")` 都是 False）
+  # ⇒ 等宽字体的 CJK 覆盖检查（`tests/unit/gui/test_mono_font_cjk.py`）只能**可见地跳过**。
+  # 装上 CJK 字体后该检查在 CI 真正跑起来（缺字形即红），也让 GUI 测试不再运行在"零字体"的
+  # 失真环境里。
   # ★ **Windows 上必须**（2026-09-15 实测）：runner 的 stdout 默认是 **cp1252**，而 `tools/` 下的
   # 脚本会打印中文（门禁结论、错误提示）⇒ 一旦有非 ASCII 就 `UnicodeEncodeError: 'charmap'`
   # 直接崩（`check_coverage_gates.py`、`check_gui_conventions.py` 都踩过），而 ubuntu/macOS 是
@@ -110,7 +115,7 @@ jobs:
       - run: python -m pip install -e ".[html,pdf,dev,async-http,gui,tls,storage]" cryptography
       - if: runner.os == 'Linux'
         name: Install Qt runtime dependencies
-        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libpulse0
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libpulse0 fonts-noto-cjk
       - run: python -m compileall -q src tests examples
       - run: python tools/check_release_integrity.py
       - run: python tools/check_architecture.py
@@ -199,7 +204,7 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[html,browser,gui,dev]"
       - name: Install Qt runtime dependencies
-        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libpulse0
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libpulse0 fonts-noto-cjk
       - run: python -m playwright install --with-deps chromium
       - run: python -m pytest --collect-only -q tests/gui/test_gui_smoke.py tests/integration/browser/test_browser_integration.py
       # 装了 chromium 的环境 ⇒ 在这里执行「需浏览器运行时的单文件下限」（--profile browser）。

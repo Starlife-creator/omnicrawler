@@ -30,8 +30,39 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 FONT_FAMILY_UI = "PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Segoe UI, sans-serif"
-FONT_FAMILY_MONO = "JetBrains Mono, Consolas, Cascadia Code, Menlo, monospace"
+#: 等宽字体族。★ **CJK 回退是必须的**（W6.5 / §5.3 #10）：
+#: 前四个都是**纯拉丁**等宽字体，一旦控件里出现中文（YAML 编辑器、转换日志、差异视图、
+#: 复核表格……），没有带 CJK 的等宽字体就会落到 tofu（缺字形方块）。
+#: 因此后面补上三平台常见的 **CJK 等宽**：Linux/CI 的 `Noto Sans Mono CJK SC`、
+#: 流行的 `Sarasa Mono SC`、Adobe/Google 的 `Source Han Mono SC`；再兜一个 Windows 自带
+#: 的 `MS Gothic`（其 CJK 部分是等宽的）。最后 `monospace` 交给平台。
+#: 机检见 `tests/unit/gui/test_mono_font_cjk.py`（静态查候选 + 平台有字体时动态查字形覆盖），
+#: 不再靠人工截图确认。
+FONT_FAMILY_MONO = (
+    "JetBrains Mono, Consolas, Cascadia Code, Menlo, "
+    "Sarasa Mono SC, Noto Sans Mono CJK SC, Source Han Mono SC, MS Gothic, monospace"
+)
 FONT_FAMILY_DISPLAY = "PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Segoe UI, sans-serif"
+
+
+def mono_font_families() -> list[str]:
+    """把 :data:`FONT_FAMILY_MONO` 拆成**字体族列表**（按优先级）。
+
+    为什么需要它：QSS 的 `font-family: a, b, c` 会按序回退，但 **`QFont.setFontFamily("a, b, c")`
+    不会** —— Qt 把它当成**一个**名叫 "a, b, c" 的字体族，找不到就整串回退到默认字体，
+    等宽与 CJK 回退**双双静默失效**。程序化设置字体请用
+    ``font.setFamilies(mono_font_families())``（Qt6 支持列表）。
+    """
+    return [name.strip() for name in FONT_FAMILY_MONO.split(",") if name.strip()]
+
+
+#: 能覆盖 CJK 的等宽候选（机检据此判断"声明里有没有 CJK 回退"）。
+CJK_CAPABLE_MONO_FAMILIES: tuple[str, ...] = (
+    "Sarasa Mono SC",
+    "Noto Sans Mono CJK SC",
+    "Source Han Mono SC",
+    "MS Gothic",
+)
 
 # 固定 rem 等价刻度（PyQt 无 rem，用 px），步距 1.125–1.2
 FONT_SIZE = {

@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..design_system import FONT_FAMILY_MONO
+from ..design_system import mono_font_families
 from ..i18n import _
 from ..widgets.toast import ToastManager
 
@@ -357,7 +357,11 @@ class ConvertView(QWidget):
         self._log = QTextEdit()
         self._log.setReadOnly(True)
         self._log.setFixedHeight(110)
-        self._log.setFontFamily(FONT_FAMILY_MONO)
+        # ★ 给控件设一个**带族列表**的 QFont：`QWidget` 没有 setFontFamilies，
+        # 而 `setFontFamily("a, b, c")` 会被 Qt 当成**一个**字体名 ⇒ 等宽与 CJK 回退双双静默失效（W6.5）
+        _mono = self._log.font()
+        _mono.setFamilies(mono_font_families())
+        self._log.setFont(_mono)
         prog_layout.addWidget(self._stage_label)
         prog_layout.addWidget(self._progress)
         prog_layout.addWidget(QLabel(_("日志：")))
@@ -723,7 +727,11 @@ class _DocExtractTab(QWidget):
         self._log = QTextEdit()
         self._log.setReadOnly(True)
         self._log.setFixedHeight(110)
-        self._log.setFontFamily(FONT_FAMILY_MONO)
+        # ★ 给控件设一个**带族列表**的 QFont：`QWidget` 没有 setFontFamilies，
+        # 而 `setFontFamily("a, b, c")` 会被 Qt 当成**一个**字体名 ⇒ 等宽与 CJK 回退双双静默失效（W6.5）
+        _mono = self._log.font()
+        _mono.setFamilies(mono_font_families())
+        self._log.setFont(_mono)
         prog_layout.addWidget(self._stage)
         prog_layout.addWidget(self._progress)
         prog_layout.addWidget(QLabel(_("日志：")))
