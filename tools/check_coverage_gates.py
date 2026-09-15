@@ -128,12 +128,21 @@ _FILE_FLOORS: dict[str, float] = {
 #:
 #: 由来：`quality` 的 `test` job **不装 browser extras** ⇒ 浏览器相关用例被跳过 ⇒
 #: `browser_engines.py` 在该环境实测 **73.47%**，而此前写死的下限是 **86%**（取自装了
-#: playwright 的环境的实测 93.9% − 余量）—— 于是门禁在 test job 里**永远不可能通过**。
-#: 这些下限**不是被删除**，而是挪到**能达成它们的环境**（`gui-and-browser` job 装了
-#: chromium，在那里跑 `coverage` + `--profile browser`）。
+#: playwright 的**全量**环境的实测 93.9% − 余量）—— 于是门禁在 test job 里**永远不可能通过**。
+#: 这些下限**不是被删除**，而是挪到**能达成它们的环境**（`gui-and-browser` job 装了 chromium）。
+#:
+#: ★ **2026-09-15 按实测校准**（用户明确许可：多种方式试过仍不行就调低，别钻牛角尖）：
+#: 实测发现**没有任何 CI job 会跑"全量 + 带 chromium"**（`test` job 无浏览器；
+#: `gui-and-browser` 只跑浏览器子集；`windows-full-dependency-matrix` 装 `.[full]` 但**不跑 pytest**）。
+#: 在**真正执行这条门禁的环境**（chromium 子集）里实测：`browser_engines 44.90%`、`browser_pool 47.31%`。
+#: 因此下限改为**该环境实测 − 3**（子集运行确定性高，故余量小于别处的 −8）：
+#: ⇒ 语义仍是「**禁止在这套口径上继续下滑**」，只是口径换成了它真正被度量的环境。
+#: **若将来出现跑"全量 + chromium"的 job**，应把这两条下限抬回 86 / 57（届时实测校准）。
+#: 评估过的替代方案与代价：给三平台 `test` job 装 browser extras + chromium（3× 下载 ≈150MB，
+#: 且与专用浏览器 job 重复）；或让 `gui-and-browser` 跑全量（+13 分钟/次）—— 均判为不划算。
 _BROWSER_FILE_FLOORS: dict[str, float] = {
-    "src/omnicrawler/fetching/browser_engines.py": 86.0,  # 实测 93.9%（含浏览器用例）
-    "src/omnicrawler/fetching/browser_pool.py": 57.0,  # 实测 65.3%（含浏览器用例）
+    "src/omnicrawler/fetching/browser_engines.py": 41.0,  # 全量环境实测 93.9%；本环境实测 44.90%
+    "src/omnicrawler/fetching/browser_pool.py": 44.0,  # 全量环境实测 65.3%；本环境实测 47.31%
 }
 
 #: 环境档位：
@@ -205,14 +214,14 @@ def _resolve_profile(requested: str) -> tuple[str, str]:
     这是「分层可降级」：**缺依赖给明确降级并说明**，而不是整体不可用或假装可用。
     """
     if requested != "auto":
-        return requested, "显式指定"
+        return requested, "explicit"
     try:
         import importlib.util
 
         has_browser = importlib.util.find_spec("playwright") is not None
     except (ImportError, ValueError):
         has_browser = False
-    return ("full", "自动：检测到 playwright") if has_browser else ("core", "自动：未检测到 playwright")
+    return ("full", "auto: playwright detected") if has_browser else ("core", "auto: playwright missing")
 
 
 def main() -> int:
@@ -222,7 +231,7 @@ def main() -> int:
         "--profile",
         choices=PROFILES,
         default="auto",
-        help="环境档位：auto（默认）/ core（CI 的 test job，无浏览器）/ browser（只查浏览器下限）/ full",
+        help="environment profile: auto (default) / core (CI test job, no browser) / browser (browser floors only) / full",
     )
     args = parser.parse_args()
     payload = json.loads(args.report.read_text(encoding="utf-8"))
@@ -232,7 +241,7 @@ def main() -> int:
     profile, reason = _resolve_profile(args.profile)
     check_overall = profile in {"core", "full"}
     check_groups = profile in {"core", "full"}
-    print(f"profile={profile}（{reason}）")
+    print(f"profile={profile} ({reason})")
     print("coverage gate                 covered/lines   actual   minimum")
     print("-" * 67)
     total = payload.get("totals", {})
@@ -276,8 +285,8 @@ def main() -> int:
     else:
         # 跳过必须**可见**（打印出来），不做静默跳过
         print(
-            f"{'（需浏览器运行时，已跳过）':29} {len(_BROWSER_FILE_FLOORS)} 项下限"
-            " 在 --profile browser（装了 chromium 的 job）里检查"
+            f"{'(skipped: needs browser)':29} {len(_BROWSER_FILE_FLOORS)} browser floors"
+            " are checked in --profile browser (the job with chromium installed)"
         )
 
     # 按顶层子包下限（P2-1 ratchet）：与分组门禁互补 —— 分组是跨包的功能视图，

@@ -95,9 +95,9 @@ def test_browser_and_state_families_stay_in_gate_scope() -> None:
 
 def test_explicit_profiles_are_returned_verbatim() -> None:
     checker = _load_checker()
-    assert checker._resolve_profile("core") == ("core", "显式指定")
-    assert checker._resolve_profile("browser") == ("browser", "显式指定")
-    assert checker._resolve_profile("full") == ("full", "显式指定")
+    assert checker._resolve_profile("core") == ("core", "explicit")
+    assert checker._resolve_profile("browser") == ("browser", "explicit")
+    assert checker._resolve_profile("full") == ("full", "explicit")
 
 
 def test_auto_profile_degrades_honestly() -> None:
@@ -105,7 +105,31 @@ def test_auto_profile_degrades_honestly() -> None:
     checker = _load_checker()
     profile, reason = checker._resolve_profile("auto")
     assert profile in {"core", "full"}, profile
-    assert "自动" in reason, reason
+    assert reason.startswith("auto:"), reason
+
+
+def test_prints_survive_a_cp1252_console(tmp_path, monkeypatch) -> None:
+    """**打印必须是 ASCII 安全的**（2026-09-15 实测：Windows runner 的 stdout 是 cp1252）。
+
+    `quality` 的 windows job 曾直接崩在
+    `UnicodeEncodeError: 'charmap' codec can't encode characters`——本脚本在三个平台打日志，
+    只要有一句带全角括号就会炸。用 cp1252 编码试打四种档位，把「只在 Windows CI 上炸」
+    变成**本地也能验**的检查（与「把依赖镜像才崩转成与镜像无关的断言」同一思路）。
+    """
+    import contextlib
+    import io
+
+    checker = _load_checker()
+    report = tmp_path / "coverage.json"
+    _write_report(report, browser_percent=_percent_above_all_browser_floors())
+
+    for profile in ("core", "browser", "full", "auto"):
+        monkeypatch.setattr(
+            sys, "argv", ["check_coverage_gates", str(report), "--profile", profile]
+        )
+        buffer = io.BytesIO()
+        with contextlib.redirect_stdout(io.TextIOWrapper(buffer, encoding="cp1252", write_through=True)):
+            checker.main()  # 有任何非 ASCII 打印都会在这里抛 UnicodeEncodeError
 
 
 def _write_report(path: Path, *, browser_percent: float) -> None:
@@ -130,6 +154,15 @@ def _browser_floor_paths() -> tuple[str, ...]:
     return tuple(_load_checker()._BROWSER_FILE_FLOORS)
 
 
+def _percent_below_all_browser_floors() -> float:
+    """**从下限派生**取一个必然不达标的覆盖率（不要把数字写死：下限会随实测校准而变）。"""
+    return min(_load_checker()._BROWSER_FILE_FLOORS.values()) - 10.0
+
+
+def _percent_above_all_browser_floors() -> float:
+    return max(_load_checker()._BROWSER_FILE_FLOORS.values()) + 5.0
+
+
 def _browser_floor_mentioned(text: str) -> bool:
     return any(Path(name).name in text for name in _browser_floor_paths())
 
@@ -138,11 +171,12 @@ def test_core_profile_skips_browser_floors_visibly(tmp_path, monkeypatch, capsys
     """core 档（CI 的 test job）：浏览器下限**跳过但要可见**，不得静默、也不得挡路。"""
     checker = _load_checker()
     report = tmp_path / "coverage.json"
-    _write_report(report, browser_percent=50.0)  # 远低于 86% ⇒ 若被检查必然出现在失败清单里
+    _write_report(report, browser_percent=_percent_below_all_browser_floors())  # 必然低于任何下限
     monkeypatch.setattr(sys, "argv", ["check_coverage_gates", str(report), "--profile", "core"])
     checker.main()
     captured = capsys.readouterr()
-    assert "已跳过" in captured.out and "profile browser" in captured.out, captured.out
+    assert "skipped: needs browser" in captured.out, captured.out
+    assert "profile browser" in captured.out, captured.out
     assert not _browser_floor_mentioned(captured.err), f"core 档不应因浏览器下限失败：{captured.err}"
 
 
@@ -151,13 +185,13 @@ def test_browser_profile_enforces_only_browser_floors(tmp_path, monkeypatch, cap
     checker = _load_checker()
 
     bad = tmp_path / "bad.json"
-    _write_report(bad, browser_percent=50.0)
+    _write_report(bad, browser_percent=_percent_below_all_browser_floors())
     monkeypatch.setattr(sys, "argv", ["check_coverage_gates", str(bad), "--profile", "browser"])
     assert checker.main() == 1, "browser 档必须抓住浏览器文件覆盖率不足"
     assert _browser_floor_mentioned(capsys.readouterr().err)
 
     ok = tmp_path / "ok.json"
-    _write_report(ok, browser_percent=95.0)
+    _write_report(ok, browser_percent=_percent_above_all_browser_floors())
     monkeypatch.setattr(sys, "argv", ["check_coverage_gates", str(ok), "--profile", "browser"])
     assert checker.main() == 0, "达到下限时应通过"
     out = capsys.readouterr().out
@@ -169,7 +203,7 @@ def test_full_profile_checks_everything(tmp_path, monkeypatch, capsys) -> None:
     """full 档（本地装了 browser extras）：浏览器下限也必须被检查。"""
     checker = _load_checker()
     report = tmp_path / "coverage.json"
-    _write_report(report, browser_percent=50.0)
+    _write_report(report, browser_percent=_percent_below_all_browser_floors())
     monkeypatch.setattr(sys, "argv", ["check_coverage_gates", str(report), "--profile", "full"])
     assert checker.main() == 1
     captured = capsys.readouterr()
