@@ -172,7 +172,9 @@ jobs:
       # 市场内容质量：审查清单里可机器判定的部分（需要 checkout_market.py 拉来的同级市场）
       - run: python tools/check_market_content.py
       - run: python -m mypy src/omnicrawler
-      - run: python -m pip wheel . --no-deps -w dist
+      # 走 tools/build_wheel.py：它先清 build/ 再构建（裸 pip wheel 在同一工作树里
+      # 第二次会因 setuptools 复用 build/ 而失败，见 §5.7 / W6.7-⑥）
+      - run: python tools/build_wheel.py -w dist
       - run: python tools/check_release_integrity.py --wheel-dir dist
       - run: python tools/build_source_archive.py --output-dir dist
       - run: python tools/check_release_integrity.py --source-zip-dir dist

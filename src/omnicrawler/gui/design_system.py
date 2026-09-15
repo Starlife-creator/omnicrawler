@@ -101,7 +101,14 @@ RADIUS = {"xs": 4, "sm": 6, "md": 8, "lg": 12, "xl": 16, "pill": 999}
 SPACING = {"xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24, "xxl": 32}
 
 #: 图标内嵌强调色（监控激活态）。图标 SVG 直接引用它，避免在图标字符串里写裸色值。
-ICON_ACCENT_MONITOR = "#D83B01"
+#: 图标里的「强调点」占位符，以及它取色的**主题令牌键**（A-40 修复，2026-09-15）。
+#:
+#: 此前 `monitor_active` 图标里的告警点是**写死的** `#D83B01`：同一份图标在深浅主题下
+#: 都是同一个橙色，与"图标其余部分随主题"不一致（审查记录 §21.7 记为 A-40 残留）。
+#: 现在 SVG 里写占位符，**渲染时**从当前主题令牌取色 —— 与 `currentColor` → `_resolve_color()`
+#: 同一条路子，于是切主题时图标整体一起变。
+ICON_ACCENT_PLACEHOLDER = "{{accent}}"
+ICON_ACCENT_TOKEN = "warning"  # 语义：监测活动 / 提醒
 #: 主题不可用时的兜底强调色（仅当 ThemeManager 取令牌失败时使用，故必须零依赖）。
 FALLBACK_ACCENT = "#176B87"
 

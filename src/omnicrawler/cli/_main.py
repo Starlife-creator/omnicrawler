@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import io
 import json
 import re
@@ -37,6 +38,25 @@ def _complete_seed_scheme(seed: str) -> str | None:
     return seed if has_scheme else f"https://{seed}"
 
 
+#: CLI 帮助里的 section 顺序（**稳定顺序常量**，W6.7-②）。
+#:
+#: 由来：这个顺序此前是 `build_parser()` 里的一行元组字面量 —— 新加一个 section 时它自然落在
+#: **末尾**（`pdf` 就是这么排到最后去的），于是"顺序"成了注册动作的副产品、而不是一个决定。
+#: 现在显式化，规则是**用户旅程**：先做任务 → 模板/项目/插件 → 抽取与数据 → 运维 → 专项（pdf）。
+#: 守卫见 `tests/unit/cli/test_cli_sections.py`：`_parsers/` 下每个模块都必须在表里，
+#: 且 `build_parser()` 只按这张表注册（不再出现元组字面量）。
+SECTION_ORDER: tuple[str, ...] = (
+    "task",
+    "templates",
+    "project",
+    "plugins",
+    "extraction",
+    "data",
+    "ops",
+    "pdf",
+)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """组装顶层 parser。
 
@@ -49,10 +69,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-format", default="text", choices=["text", "json"])
     sub = parser.add_subparsers(dest="command", required=True)
 
-    from ._parsers import data, extraction, ops, pdf, plugins, project, task, templates
-
-    for section in (task, templates, project, plugins, extraction, data, ops, pdf):
-        section.configure(sub)
+    for name in SECTION_ORDER:
+        # 顺序的唯一来源是 SECTION_ORDER（不再写元组字面量）——
+        # 新加 section 时不会"自然落在末尾"，而必须显式决定它排在哪。
+        module = importlib.import_module(f"._parsers.{name}", __package__)
+        module.configure(sub)
     return parser
 
 

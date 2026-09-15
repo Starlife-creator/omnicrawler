@@ -111,7 +111,9 @@ wheel 为独立产物：构建环境（`.venv`）**未预装 `build` 模块**，
 .\.venv\Scripts\python.exe tools\build_source_archive.py --output-dir artifacts\python\{version}
 
 # 2) wheel（--no-deps 仅打包本项目；离线环境加 --no-build-isolation）
-.\.venv\Scripts\python.exe -m pip wheel . --no-deps -w artifacts\python\{version}
+.\.venv\Scripts\python.exe tools\build_wheel.py -w artifacts\python\{version}
+# （等价于 `pip wheel . --no-deps -w ...`，但**先清 `build/`**：同一工作树里第二次
+#   `pip wheel` 会因 setuptools 复用 `build/` 而报 [WinError 183]，见 §5.7 / W6.7-⑥）
 ```
 
 产物落点：
