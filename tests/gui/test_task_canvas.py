@@ -772,3 +772,46 @@ def test_onboarding_checklist_tracks_goal_draft_and_trial(monkeypatch):
     canvas.set_trial_result(True, "状态：ok", {"status": "ok", "processed": 1, "records": 1})
     assert "✓ 试跑少量页面" in canvas._onboarding_text.text()
     canvas.deleteLater()
+
+
+def test_form_sync_keeps_every_field_attribute(monkeypatch) -> None:
+    """`_sync_form_to_config` 必须**原样带过**所有字段属性，不得静默丢失。
+
+    ★ 2026-09-15（W2.2 期间由端到端用例发现）：该同步此前**重建** FieldDef 时只复制
+    `name` / `selector` / `selector_type` ⇒ 保存时丢掉 `attribute`（属性列）与 `position`
+    （取值方式列），**也丢掉既有的 `regex` / `required` / `fallback_xpath`** ——
+    在表单里改一下别的字段，就能把高级规则悄悄洗掉（那时端到端表现为落盘成 `链接: {}`）。
+
+    这条守住"配置往返不静默丢字段"这一类缺陷：只做规范化（去空白 / 纠正类型），其余原样。
+    """
+    from omnicrawler.core.field_value_source import POSITION_ELEMENT_ATTR
+    from omnicrawler.gui.core.config_model import FieldDef
+
+    canvas = _make_canvas(monkeypatch)
+    try:
+        canvas._fields_model.set_fields([
+            FieldDef(
+                name="  链接  ",          # 名字带空白 ⇒ 规范化时去掉
+                selector="",
+                selector_type="nope",     # 非法类型 ⇒ 规范化为 css
+                attribute="href",
+                position=POSITION_ELEMENT_ATTR,
+                regex=r"(?P<value>/doc/\d+)",
+                required=True,
+                fallback_xpath="//a[@class='item']",
+            )
+        ])
+        canvas._sync_form_to_config()
+        fields = canvas._config.fields
+        assert len(fields) == 1, fields
+        field = fields[0]
+        assert field.name == "链接", field.name
+        assert field.selector_type == "css", field.selector_type
+        # 以下五项此前会被静默丢掉
+        assert field.attribute == "href"
+        assert field.position == POSITION_ELEMENT_ATTR
+        assert field.regex == r"(?P<value>/doc/\d+)"
+        assert field.required is True
+        assert field.fallback_xpath == "//a[@class='item']"
+    finally:
+        canvas.close()

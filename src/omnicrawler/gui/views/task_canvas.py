@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import Any
 
 LOGGER = logging.getLogger(__name__)
@@ -472,15 +473,21 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
         cfg.process_pdf = self._pdf_chk.isChecked()
         cfg.monitor_same_url = self._monitor_chk.isChecked()
         cfg.incremental = self._monitor_chk.isChecked()
-        fields: list[FieldDef] = []
-        for f in self._fields_model.rows():
-            if not f.name.strip():
-                continue
-            fields.append(FieldDef(
+        # ★ 2026-09-15 修：此前这里**重建** FieldDef 时只复制 name/selector/selector_type，
+        # 于是保存时静默丢掉 `attribute`（属性列）、`position`（取值方式列），**也丢掉既有的
+        # `regex` / `required` / `fallback_xpath`** —— 表单改一下别的字段就能把高级规则洗掉。
+        # 现在用 `replace` 只做规范化（去空白、纠正类型），其余字段原样带过。
+        fields: list[FieldDef] = [
+            replace(
+                f,
                 name=f.name.strip(),
-                selector=f.selector,
-                selector_type=f.selector_type if f.selector_type in ("css", "xpath", "jsonpath") else "css",
-            ))
+                selector_type=(
+                    f.selector_type if f.selector_type in ("css", "xpath", "jsonpath") else "css"
+                ),
+            )
+            for f in self._fields_model.rows()
+            if f.name.strip()
+        ]
         cfg.set_item_selector(self._item_selector_edit.text())
         cfg.fields = fields
         cfg.output_formats = [

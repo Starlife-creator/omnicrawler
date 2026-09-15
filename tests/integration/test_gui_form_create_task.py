@@ -975,3 +975,115 @@ def test_form_created_cursor_api_task_runs_end_to_end(tmp_path: Path, monkeypatc
                 window._task_runner._poller.stop()
             window.close()
             app.processEvents()
+
+
+#: 「取元素自身属性」样本：**条目本身就是 <a>** —— 这才是该取值的适用场景
+#: （拿 <li> 当条目去取 href 会取到空，那是配置错位、引擎行为正确）。
+_LINKS_HTML = """<html><body><div class="links">
+<a class="item" href="/doc/alpha">Alpha</a>
+<a class="item" href="/doc/beta">Beta</a>
+<a class="item" href="/doc/gamma">Gamma</a>
+</div></body></html>"""
+
+EXPECTED_LINKS = ("/doc/alpha", "/doc/beta", "/doc/gamma")
+
+
+class _LinksHandler(BaseHTTPRequestHandler):
+    def do_GET(self):  # noqa: N802 —— http.server 回调命名约定
+        body = _LINKS_HTML.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_args):  # 静音访问日志
+        return
+
+
+@contextlib.contextmanager
+def _serve_links():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _LinksHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/links"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_form_created_element_attr_task_delivers_each_items_href(tmp_path: Path, monkeypatch) -> None:
+    """**W2.2 收官**：空白表单建「取条目元素自身 href」的列表任务 → 保存 → 运行 → 链接列逐条正确。
+
+    这是 §5.3 #9 的正面证据：在**取值方式**列选「元素自身属性」、**属性**列填 href。
+    加这两列之前，画布上根本无法表达这种规则（引擎支持、GUI 表达不了），
+    所以本用例同时守住"列存在"和"整条链路真能跑出正确产物"。
+    """
+    import csv as _csv
+
+    from PySide6.QtWidgets import QFileDialog
+
+    from omnicrawler.core.field_value_source import POSITION_ELEMENT_ATTR
+    from omnicrawler.gui.core.config_model import FieldDef
+    from omnicrawler.gui.views.task_canvas_components import FieldTableModel
+
+    saved_path = tmp_path / "form_element_attr.yaml"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(saved_path), ""))
+    )
+
+    with _serve_links() as seed:
+        app, window = _window(tmp_path, monkeypatch)
+        _silence_side_effects(window)
+        window._omnicrawler_available = True
+        try:
+            window._config_delegate.new_config()
+            canvas = window._task_canvas
+            canvas._url_edit.setText(seed)                 # 表单：网址
+            canvas._desc_edit.setText("单页")              # 表单：一句话描述
+            canvas._start_btn.click()                      # 表单：「开始」
+            _pump(app, lambda: window._config.seed_urls == [seed], what="草稿落到配置")
+
+            canvas._item_selector_edit.setText("a.item")   # 表单：列表项＝链接本身
+            canvas._fields_model.append(FieldDef(name="链接", selector="", selector_type="css"))
+            model = canvas._fields_model
+            # ★ 走**表单控件**那条路：取值方式列选「元素自身属性」、属性列填 href
+            assert model.setData(model.index(0, FieldTableModel.COLUMN_POSITION), POSITION_ELEMENT_ATTR)
+            assert model.setData(model.index(0, FieldTableModel.COLUMN_ATTRIBUTE), "href")
+            canvas._on_field_changed()
+
+            window._config.passthrough.setdefault("http", {})["allow_private_network"] = True
+            canvas._save_btn.click()                       # 表单：「保存草稿」
+            _pump(app, lambda: saved_path.is_file(), what="配置落盘")
+
+            # 落盘形状：出现 attr、**不出现** position（位置由形状推导 ⇒ 零迁移）
+            saved_text = saved_path.read_text(encoding="utf-8")
+            assert "attr: href" in saved_text, saved_text
+            assert "position" not in saved_text, saved_text
+
+            canvas.set_trial_result(True, "试跑通过：3 条记录", {})   # 满足试跑闸门
+            window._run_btn.click()                        # 真实「运行」
+            _pump(
+                app,
+                lambda: window._task_runner.state in {"finished", "error"},
+                timeout=180,
+                what="任务到达终态",
+            )
+            assert window._task_runner.state == "finished", window._task_runner.state
+
+            workspace = tmp_path / window._config.workspace
+            records_csv = workspace / "output" / "records.csv"
+            assert records_csv.is_file(), (
+                f"应产出 records.csv：{sorted(p.name for p in (workspace / 'output').glob('*'))}"
+            )
+            rows = list(_csv.DictReader(records_csv.open(encoding="utf-8-sig")))
+            delivered = [r["链接"] for r in rows]
+            assert len(delivered) == len(EXPECTED_LINKS), delivered
+            assert set(delivered) == set(EXPECTED_LINKS), delivered
+        finally:
+            with contextlib.suppress(Exception):
+                window._task_runner._backend.shutdown()
+            with contextlib.suppress(Exception):
+                window._task_runner._poller.stop()
+            window.close()
+            app.processEvents()
