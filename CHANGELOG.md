@@ -4,6 +4,8 @@
 
 ### 变更
 
+- fix(extraction): 单页模式（详情页）不再静默丢短值——旧实现用一条 `len(text) < 5` 同时挡 UI 装饰又误伤数据：4 字标题被丢（标题字段整个没有）、`9`/`元` 被丢而父节点合并文本 `'9
+    元'` 当了「价格」（脏值）、同名不同选择器的字段被名字去重挤掉。现为：长度规则＝**必须有可取值字符**（数字/字母/汉字）、装饰由**区域**判据挡（aside/nav/footer）、去重键含 CSS 路径、容器（文本＝直接子元素拼接）跳过取叶子
 - feat(pdfx): 新增 PDF 侧质量基准 `services/pdf_quality_benchmark.py`（数字版 + 图片版两用例，样本程序自造、离线、可复现；与 crawler 侧**分开记分**）。判据＝**要么对，要么进复核**：归一后逐字比对 + 每字段带页码与原文证据 + 低置信（`validation.auto_accept_confidence`）必须 `needs_review` + 错值不得被 `auto_accepted` 放行；11 条反例单测 + 3 条真跑集成用例（含真 OCR，缺字体或 tesseract 时跳过并登记）
 - fix(gui): 变更监测在关窗后不再留下在飞工作——补 `ChangeDetector.cancel()` 与 `ChangeMonitorView.shutdown()`（先停 30s 轮询、再取消并有界等待），关闭流程后再触发轮询/手动检查都不再启动新工作；旧 worker 的迟到终态信号被忽略
 - fix(gui): 接线 `BackgroundWorker.cleanup()`——该钩子自仓库初始提交起就存在却**从未被调用**（全历史无 `self.cleanup()`）；现在成功/失败/取消三条路径都会在工作线程内执行，晚于终态信号，且清理异常不会改变任务终态

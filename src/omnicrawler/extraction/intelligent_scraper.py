@@ -24,6 +24,10 @@ from ..core.utils import user_agent
 #: `infer_fields` 会在前这么多个重复模式之间择优（见该函数的"多候选择优"说明）。
 _FIELD_CANDIDATES = 3
 
+#: 单页模式最多产出多少个**候选**字段。上限存在的意义是挡住"页面很长 ⇒ 候选爆量"，
+#: 不是用来丢数据的判据（2026-09-14 修正前，短值是被长度判据静默丢掉的）。
+_MAX_SINGLE_PAGE_FIELDS = 20
+
 #: 构成"列表"所需的最少同类元素数。与 `detect_repeating_patterns` 自身"至少 3 个同类元素"
 #: 的口径一致：少于 3 个不叫列表，而应报"未识别出列表"。
 _MIN_LIST_ITEMS = 3
@@ -215,6 +219,46 @@ def _is_chrome_path(css_path: str) -> bool:
             return True
     return False
 
+
+#: 「有可取值字符」＝含数字 / 字母 / 汉字。
+#: **长度不是「是不是数据」的判据**：价格 `9`、单位 `元`、规格 `A4` 都很短，
+#: 但它们正是要采的值；而「是不是 UI 装饰」由区域判据（`_is_chrome_path`）负责。
+_VALUE_CHAR_RE = re.compile(r"[0-9A-Za-z\u4e00-\u9fff]")
+
+
+def _has_value_char(text: str) -> bool:
+    """文本里是否含至少一个可取值字符（数字 / 字母 / 汉字）。"""
+    return bool(_VALUE_CHAR_RE.search(text))
+
+
+def _is_assembled_container(node: DOMNode, nodes: list[DOMNode]) -> bool:
+    """节点文本是否只是其**直接子元素**文本的拼接（容器自身没有额外信息）。
+
+    实测依据（详情页）：
+    * ``div.price`` 的文本是 ``'9\\n    元'``（两个子 ``span`` 的拼接）——当字段值会交付
+      带换行的脏串；
+    * ``div.main`` 的文本与唯一子元素 ``h1`` 完全相同——属重复候选。
+
+    两种都由本判据排除，取更精确的子元素。判据用**绝对 CSS 路径**做父子关系
+    （同模块 ``_is_chrome_path`` / ``analyze_to_config`` 已有同款前缀判据的先例）。
+    """
+    if node.child_count <= 0:
+        return False
+    depth = node.css_path.count(">")
+    prefix = node.css_path + " >"
+    child_texts = [
+        other.text
+        for other in nodes
+        if other.css_path.startswith(prefix) and other.css_path.count(">") == depth + 1
+    ]
+    if not child_texts:
+        return False
+    return _squash_ws(node.text) == _squash_ws("".join(child_texts))
+
+
+def _squash_ws(text: str) -> str:
+    """抹掉全部空白后比较（HTML 里的缩进与换行不是值的一部分）。"""
+    return "".join(text.split())
 
 
 def _is_heading_key(key: str) -> bool:
@@ -792,24 +836,46 @@ def _classify_field(tag: str, classes_str: str, sample_texts: list[str]) -> str:
 
 
 def _infer_single_page_fields(nodes: list[DOMNode], url: str = "") -> list[dict[str, Any]]:
-    """单页模式 — 从整个页面提取所有可见文本字段。"""
+    """单页模式 —— 从整个页面提取所有可见文本字段（候选，供人工确认）。
+
+    **2026-09-14 修正（N1c 剩余项，实测驱动）**：旧实现只有一条 ``len(text) < 5`` 判据，
+    它同时想干两件事（挡 UI 装饰 + 挡噪声），结果**误伤数据**。实测一个普通商品详情页：
+    标题 ``示例商品``（4 字）被丢掉 ⇒ **标题字段整个没有**；``9``（价格）与 ``元``（单位）
+    被丢，反倒是父节点 ``div.price`` 的**合并文本** ``'9\\n    元'`` 当了"价格"（脏值）；
+    第二个 ``<li>尺码：A4`` 被**按字段名去重**丢掉。现在：
+
+    * 长度规则＝**必须有可取值字符**（数字/字母/汉字），短值不再被丢；
+    * UI 装饰改由**区域**判据挡（复用 ``_is_chrome_path``：aside / nav / footer）；
+    * 去重键＝``(字段名, CSS 路径)``：同名但**选择器不同**的字段都保留
+      （旧实现按名字去重，会把不同元素的字段挤掉）；**同一选择器的重复只出一个**
+      ——相同选择器取到的是同一个值，重复列没有意义（同类多个元素属"列表抽取"的范围，
+      由重复模式那条路径负责）；
+    * 多行容器（文本由子节点拼接）跳过，交给更精确的子节点。
+
+    取舍：本函数产出的是**候选字段**（GUI 会填进表单、CLI 会写进配置），
+    宁可多给几个候选，也不静默丢数据；噪声由区域规则挡。上限 ``_MAX_SINGLE_PAGE_FIELDS``。
+    """
     fields: list[dict[str, Any]] = []
-    seen = set()
+    seen: set[tuple[str, str]] = set()
     for node in nodes:
-        if node.depth < 1 or not node.text or len(node.text) < 5:
+        text = node.text.strip()
+        if node.depth < 1 or not text or not _has_value_char(text):
+            continue
+        if _is_chrome_path(node.css_path) or _is_assembled_container(node, nodes):
             continue
         if node.tag in {"div", "span", "p", "h1", "h2", "h3", "a", "li", "td", "th"}:
-            name = _classify_field(node.tag, " ".join(node.classes), [node.text[:50]])
-            if name not in seen:
-                seen.add(name)
+            name = _classify_field(node.tag, " ".join(node.classes), [text[:50]])
+            key = (name, node.css_path)
+            if key not in seen:
+                seen.add(key)
                 fields.append({
                     "name": f"{name}_{len(seen)}",
                     "selector": node.css_path,
                     "attribute": "href" if node.is_link else "text",
-                    "desc": f"自动推断自: {node.text[:30]}",
-                    "examples": [node.text[:80]],
+                    "desc": f"自动推断自: {text[:30]}",
+                    "examples": [text[:80]],
                 })
-    return fields[:20]  # 最多 20 个字段
+    return fields[:_MAX_SINGLE_PAGE_FIELDS]
 
 
 # ── 分页检测 ──────────────────────────────────────────────────────────
