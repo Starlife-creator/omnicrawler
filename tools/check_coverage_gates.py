@@ -28,7 +28,7 @@ def _starts_with(*prefixes: str) -> Matcher:
 
 GATES: dict[str, tuple[float, Matcher]] = {
     "security_and_state": (
-        85.0,
+        90.0,
         # state_store 自 P1-3 起是「门面 + 6 个 Mixin」，用前缀纳入全部模块，
         # 否则门禁只能看到 103 行门面、约 900 行实现漏出视野。
         _is_one_of(
@@ -40,13 +40,13 @@ GATES: dict[str, tuple[float, Matcher]] = {
         ),
     ),
     "pipeline_http_sources": (
-        75.0,
+        80.0,
         _starts_with(
             "src/omnicrawler/pipeline/",
         ),
     ),
     "pipeline_http_client": (
-        75.0,
+        86.0,
         _is_one_of(
             # 曾把不存在的 src/omnicrawler/http_client.py 列在此处——门禁在查空集合
             # （S37 死路径），已移除；真实路径为 fetching/http_client.py
@@ -55,7 +55,7 @@ GATES: dict[str, tuple[float, Matcher]] = {
         ),
     ),
     "browser_and_api": (
-        70.0,
+        74.0,
         # browser_fetcher 自 P1-3 起拆出 browser_engines/guards/pool，同样用前缀纳入。
         _is_one_of(
             "src/omnicrawler/extraction/api_discovery.py",
@@ -63,7 +63,7 @@ GATES: dict[str, tuple[float, Matcher]] = {
         ),
     ),
     "pdf_and_ocr": (
-        65.0,
+        72.0,
         lambda path: path.startswith("src/omnicrawler/pdfx/")
         or path
         in {
@@ -74,7 +74,7 @@ GATES: dict[str, tuple[float, Matcher]] = {
         },
     ),
     "desktop_core": (
-        65.0,
+        77.0,
         lambda path: path.startswith("src/omnicrawler/gui/core/")
         or path
         in {
@@ -87,22 +87,29 @@ GATES: dict[str, tuple[float, Matcher]] = {
     ),
 }
 
-OVERALL_COVERAGE_GATE = 66.0
+OVERALL_COVERAGE_GATE = 73.0
 
 # 按顶层子包设「只降不升」下限（P2-1 ratchet）。
-# 取值口径 = 2026-09-11 本地实测值 − 8（经验余量）：当时判断 CI quality job 在 Ubuntu、无
-# browser/extras，会 skip 部分 GUI/browser 测试，覆盖率系统性低于本地（原全局阈值
-# 66 与本地实测 74.46 的差距即源于此）。
-# ★ **2026-09-15 修正**：CI 实测 `all_source = 75.53%`（**高于**本地 74.46%）——因为 test job
-# 现在装了 storage extra、且 GUI 端到端用例不再被跳过（含拆掉的掩盖型 skip）⇒
-# 「CI 系统性偏低」的老假设**不再成立**，覆盖率可由 CI 直接回收。
-# 阈值仍保留余量（不立即收紧到零余量）：单次采样不足以定 ratchet，先多跑几次再收，
-# 避免把抽样波动变成 flaky 红灯。
+#
+# ★ **取值口径（2026-09-15 定）：CI 三平台实测的最小值 − 2**。
+#   旧口径是「本地实测 − 8」，其前提是「CI 少了 browser/extras ⇒ 系统性低于本地」；
+#   该前提**已被实测推翻**：CI 现在装了 storage extra、GUI 端到端用例也不再被跳过
+#   （含拆掉的掩盖型 skip），`all_source` 实测 75.53%，与本地 74.46% 无系统性差距。
+#   实测（同日 green run，三个平台同时跑）：
+#     all_source            75.55 / 75.53 / 75.55   → min 75.53
+#     security_and_state    92.01 / 92.01 / 92.01   → min 92.01
+#     pipeline_http_sources 82.67 / 82.67 / 82.67   → min 82.67
+#     pipeline_http_client  88.37 / 88.37 / 88.37   → min 88.37
+#     browser_and_api       76.75 / 76.75 / 76.75   → min 76.75
+#     pdf_and_ocr           74.58 / 74.58 / 74.43   → min 74.43
+#     desktop_core          79.73 / 79.66 / 79.73   → min 79.66
+#   跨平台离散 ≤ 0.15 点 ⇒ 余量取 **2 点**（≈ 13× 实测离散），既不 flaky 又不再留 8 点空档。
+#   **只升不降**：以后每次收紧都要按新的实测重算并把数字写在这里。
 # 先覆盖方案点名的三个「非 GUI、测试更便宜」的包，其余包待后续批次逐个纳入。
 PACKAGE_FLOORS: dict[str, float] = {
-    "core": 81.0,      # 本地实测 89.83%
-    "state": 87.0,     # 本地实测 95.01%
-    "fetching": 70.0,  # 本地实测 78.03%
+    "core": 87.0,      # CI 三平台实测 89.33~89.36%（见下方口径说明）
+    "state": 92.0,     # CI 三平台实测 94.96%
+    "fetching": 73.0,  # CI 三平台实测 75.78%
 }
 
 # 单文件下限：分组门禁是加权聚合，关键模块可以被同组高覆盖率"赎买"
@@ -110,18 +117,18 @@ PACKAGE_FLOORS: dict[str, float] = {
 # 取值贴近 2026-08 实测水平，作为"禁止继续下滑"的护栏；
 # 提高这些下限需要配套补齐测试（见审查报告 §8 修复优先级）。
 _FILE_FLOORS: dict[str, float] = {
-    "src/omnicrawler/security/policy.py": 80.0,
-    "src/omnicrawler/security/egress.py": 80.0,
-    "src/omnicrawler/fetching/http_client.py": 70.0,
+    "src/omnicrawler/security/policy.py": 84.0,  # 实测 86.05%
+    "src/omnicrawler/security/egress.py": 89.0,  # 实测 91.75%
+    "src/omnicrawler/fetching/http_client.py": 82.0,  # 实测 84.81%
     # --- P1-3 拆分产出的关键模块（2026-09-11 新增；同样按“本地实测 −8”预留 CI 余量）---
-    "src/omnicrawler/plugins/plugins.py": 92.0,  # 纯门面（8 行语句），必须全覆盖
-    "src/omnicrawler/state/state_store_records.py": 91.0,  # 实测 99.0%
-    "src/omnicrawler/state/state_store_runs.py": 79.0,  # 实测 87.2%
-    "src/omnicrawler/plugins/plugin_loader.py": 77.0,  # 实测 84.9%
-    "src/omnicrawler/gui/views/plugin_market_install.py": 25.0,  # GUI Mixin，实测 32.5%
-    "src/omnicrawler/gui/views/pdf_workbench_worker.py": 13.0,  # GUI worker，实测 20.5%
-    "src/omnicrawler/apps/field_extractor.py": 30.0,
-    "src/omnicrawler/apps/pdf_processor.py": 40.0,
+    "src/omnicrawler/plugins/plugins.py": 98.0,  # 纯门面（8 行语句）；实测 100%
+    "src/omnicrawler/state/state_store_records.py": 97.0,  # 实测 99.03%
+    "src/omnicrawler/state/state_store_runs.py": 85.0,  # 实测 87.18%
+    "src/omnicrawler/plugins/plugin_loader.py": 82.0,  # 实测 84.91%
+    "src/omnicrawler/gui/views/plugin_market_install.py": 30.0,  # 实测 32.50%
+    "src/omnicrawler/gui/views/pdf_workbench_worker.py": 18.0,  # 实测 20.48%
+    "src/omnicrawler/apps/field_extractor.py": 34.0,  # 实测 36.92%
+    "src/omnicrawler/apps/pdf_processor.py": 42.0,  # 实测 44.83%
 }
 
 #: **需要浏览器运行时**才能达标的下限（2026-09-15 新增，按环境分离）。
