@@ -33,6 +33,13 @@ hiddenimports = sorted(set(collect_submodules("omnicrawler") + collect_submodule
 excludes = [
     "paddle", "paddleocr", "paddlex", "cv2", "torch", "torchvision",
     "pyarrow", "duckdb", "scrapy", "redis", "selenium", "psycopg", "opensearchpy",
+    # ★ W4.1（2026-09-16，CI 实测）：**排除 nltk**。它是 `crawl4ai` 的依赖、产品源码零引用，
+    #   但 PyInstaller 会为它装一个**启动运行时钩子**（pyi_rth_nltk）—— 该钩子在冻结包里
+    #   一启动就抛 `AttributeError: http.client has no attribute HTTPSConnection`，
+    #   导致 **打出来的 app 任何调用都起不来**（macOS 构建的冒烟就这样崩的）。
+    #   排除它即可移除钩子；冻结包是否仍能 HTTPS，由构建脚本里既有的
+    #   `capabilities --verify-imports` 冒烟回答（ssl 不可用会当场失败）。
+    "nltk",
 ]
 
 # lxml 的 C 扩展必须显式收集，静态扫描会漏掉共享库（与 Windows spec 同源）。

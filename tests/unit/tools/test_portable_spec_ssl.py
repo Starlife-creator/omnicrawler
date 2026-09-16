@@ -55,3 +55,22 @@ def test_every_portable_spec_declares_ssl() -> None:
         "这些 spec 没有显式声明 ssl/_ssl ⇒ 冻结包里 `http.client.HTTPSConnection` 可能缺失，"
         f"nltk 运行时钩子会让 app 起不来（W4.1 事故）：{missing}"
     )
+
+
+def test_every_portable_spec_excludes_nltk() -> None:
+    """每个便携 spec 都要**排除 nltk**（W4.1 事故：它的启动运行时钩子让 app 起不来）。
+
+    两种 spec 写法都要覆盖：① 独立的 `excludes = [...]` 块（Linux/macOS/Windows-Standard）；
+    ② 内联在 `common` 字典里的 `excludes=[...]`（Windows Full）。
+    """
+    missing: list[str] = []
+    for spec in _SPECS:
+        if spec.name in _EXEMPT:
+            continue
+        text = spec.read_text(encoding="utf-8")
+        if '"nltk"' not in text:
+            missing.append(spec.name)
+    assert not missing, (
+        f"这些 spec 没有排除 nltk ⇒ PyInstaller 会给它装启动钩子（pyi_rth_nltk），"
+        f"冻结包一启动就崩（W4.1 事故）：{missing}"
+    )

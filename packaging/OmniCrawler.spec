@@ -76,7 +76,12 @@ common = dict(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["matplotlib", "pytest", "torch", "torchvision"],
+    # ★ W4.1（2026-09-16，CI 实测）：排除 nltk —— 它是 `crawl4ai` 的依赖、产品源码零引用，
+    #   但 PyInstaller 会为它装**启动运行时钩子**（pyi_rth_nltk），该钩子在冻结包里一启动就抛
+    #   `AttributeError: http.client has no attribute HTTPSConnection` ⇒ **app 任何调用都起不来**。
+    #   （Windows 构建 job 只构建、不启动产物，所以此前没暴露；排除后由产物内
+    #    `capabilities --verify-imports` 冒烟回答"冻结包导入是否完好"。）
+    excludes=["matplotlib", "pytest", "torch", "torchvision", "nltk"],
     noarchive=False,
 )
 

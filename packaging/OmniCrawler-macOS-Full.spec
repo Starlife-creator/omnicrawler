@@ -46,6 +46,13 @@ excludes = [
     # macOS 无稳定 paddle wheel：即使 Full 也不打包 paddle 系（Transformers 后端替代）
     "paddle", "paddleocr", "paddlex", "torch", "torchvision",
     "pyarrow", "duckdb", "scrapy", "redis", "psycopg", "opensearchpy",
+    # ★ W4.1（2026-09-16，CI 实测）：**排除 nltk**。它是 `crawl4ai` 的依赖、产品源码零引用，
+    #   但 PyInstaller 会为它装一个**启动运行时钩子**（pyi_rth_nltk）—— 该钩子在冻结包里
+    #   一启动就抛 `AttributeError: http.client has no attribute HTTPSConnection`，
+    #   导致 **打出来的 app 任何调用都起不来**（macOS 构建的冒烟就这样崩的）。
+    #   排除它即可移除钩子；冻结包是否仍能 HTTPS，由构建脚本里既有的
+    #   `capabilities --verify-imports` 冒烟回答（ssl 不可用会当场失败）。
+    "nltk",
 ]
 
 # cv2/selenium/lxml/playwright 在运行期做静态扫描看不到的 import，显式收集
