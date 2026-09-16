@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.config import AppConfig, resolve_pdf_template
+from ..pdfx.config import load_config
 from ..security.paths import require_workspace_path
 from ..state import StateStore
 from .provenance import write_pdf_source_manifest
@@ -41,6 +42,15 @@ def ensure_pdf_project(config: AppConfig) -> tuple[Path, bool]:
         else (config.workspace / "pdf" / "project.yaml").resolve()
     )
     if project_path.is_file():
+        # 审计（W6.4）：此前直接复用已存在的 project.yaml，**不校验内容** ⇒ 文件损坏时
+        # PDF 阶段空跑或报晦涩错误。复用 pdfx 自己的加载器做 schema 级校验。
+        try:
+            load_config(project_path)
+        except Exception as exc:  # noqa: BLE001 —— 任何加载失败都给可执行的提示
+            raise ValueError(
+                f"PDF项目配置无法加载（请删除后重新生成）: {project_path}"
+                f"（{type(exc).__name__}: {exc}）"
+            ) from exc
         return project_path, False
     if configured:
         raise FileNotFoundError(f"PDF项目配置不存在: {project_path}")

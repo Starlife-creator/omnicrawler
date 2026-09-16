@@ -91,16 +91,33 @@ def export_all(config: AppConfig, state: StateStore, run_id: str | None = None) 
     where, params = (" WHERE run_id=?", (run_id,)) if run_id else ("", ())
     raw_records = state.rows(f"SELECT * FROM records{where} ORDER BY created_at, record_id", params)
     records: list[dict[str, Any]] = []
+    # 与基础列同名的 data 字段（改名保留，见循环内注释）
+    flat_key_collisions: set[str] = set()
     for row in raw_records:
         flat = {
             "record_id": row["record_id"], "source_url": row["source_url"],
             "record_type": row["record_type"], "created_at": row["created_at"],
         }
-        _flatten("", json.loads(row["data_json"]), flat)
+        # 审计（W6.4）：data 里的键若与基础字段同名，此前会**静默覆盖** record_id /
+        # source_url / record_type / created_at ⇒ CSV/XLSX/DuckDB 的列被污染且无任何提示。
+        # 现在"改名不覆盖"：冲突键写进 `data.<key>`，并汇总一条告警。
+        data_flat: dict[str, Any] = {}
+        _flatten("", json.loads(row["data_json"]), data_flat)
+        for key, value in data_flat.items():
+            if key in flat:
+                flat[f"data.{key}"] = value
+                flat_key_collisions.add(str(key))
+            else:
+                flat[key] = value
         records.append(flat)
 
     files: dict[str, str] = {}
     optional_warnings: list[str] = []
+    # 交付列名冲突的告警：在产物列表就绪后统一追加（循环里只收集冲突名）
+    if flat_key_collisions:
+        optional_warnings.append(
+            "字段名与基础列冲突，已改名保留（不覆盖）：" + "、".join(sorted(flat_key_collisions))
+        )
     outputs = config.section("outputs")
     if outputs.get("jsonl", True):
         path = output / "records.jsonl"

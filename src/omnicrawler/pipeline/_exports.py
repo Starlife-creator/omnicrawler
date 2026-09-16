@@ -13,6 +13,18 @@ from ..runtime.resource_profiles import profile_for
 from ._mixin_base import _PipelineBase
 
 
+def _as_int(value: object) -> int:
+    """宽容取整（审计 W6.4）：插件写入非数字 `endpoints` 时，此前 `int()` 会在**汇总阶段**
+    抛 ValueError，把整次导出打断；这里退化成 0，让导出照常完成。
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 class _PipelineExports(_PipelineBase):
     def _run_exports(self, run_id: str, *, force: bool = False) -> dict[str, Any]:
         outputs = self.config.section("outputs")
@@ -90,7 +102,7 @@ class _PipelineExports(_PipelineBase):
         }
         summary["api_discovery"] = {
             "bundles": len(self._api_discoveries),
-            "endpoints": sum(int(item.get("endpoints", 0)) for item in self._api_discoveries),
+            "endpoints": sum(_as_int(item.get("endpoints", 0)) for item in self._api_discoveries),
             "items": self._api_discoveries,
         }
         summary["template_health"] = self.template_monitor.summary()

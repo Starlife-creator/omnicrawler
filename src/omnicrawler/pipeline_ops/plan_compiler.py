@@ -35,7 +35,13 @@ class TaskPlan:
 
 def compile_task_plan(ir: TaskIR, *, available_capabilities: Iterable[str] | None = None) -> TaskPlan:
     config = ir.to_config()
-    seeds = [str(item) for item in ir.source.get("seeds", [])]
+    # 审计（W6.4）：此前 `str(item)` 会把 dict/list 变成 "{'url': ...}" 这种垃圾种子，
+    # 而原始 TaskIR 路径没有校验 ⇒ 显式拒绝非法类型，不再静默转换。
+    seeds: list[str] = []
+    for item in ir.source.get("seeds", []) or []:
+        if not isinstance(item, str):
+            raise ValueError(f"种子元素必须是字符串，收到 {type(item).__name__}: {item!r}")
+        seeds.append(item)
     conflicts: list[str] = []
     warnings: list[str] = []
     if ir.ir_version != TASK_IR_VERSION:

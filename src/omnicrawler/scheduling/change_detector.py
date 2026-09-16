@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.safe_data import safe_regex_search
+from ..core.utils import atomic_write
 
 LOGGER = logging.getLogger(__name__)
 
@@ -564,7 +565,9 @@ class ChangeDetector:
         target = path or self._data_dir / "monitor_rules.json"
         target.parent.mkdir(parents=True, exist_ok=True)
         rules_data = [rule.to_dict() for rule in self._rules.values()]
-        target.write_text(json.dumps(rules_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        # 审计（W6.4）：直接 `write_text` 中途中断会留下**半个 JSON** ⇒ 规则加载失败、
+        # 变化监测静默失效。改用既有 `atomic_write`（写临时文件 + fsync + 原子替换）。
+        atomic_write(target, json.dumps(rules_data, ensure_ascii=False, indent=2).encode("utf-8"))
         LOGGER.info("已保存 %d 条监控规则到 %s", len(rules_data), target)
 
     def load_rules(self, path: Path | None = None) -> int:
