@@ -29,6 +29,7 @@ pytest.importorskip("PySide6")
 import psutil  # noqa: E402
 
 from omnicrawler.gui.core.config_serializer import load_yaml  # noqa: E402
+from omnicrawler.gui.core.run_states import is_terminal  # noqa: E402
 
 EXPECTED = (("苹果", "11"), ("香蕉", "22"), ("樱桃", "33"))
 
@@ -160,10 +161,10 @@ def test_gui_run_button_starts_task_and_shows_results(tmp_path: Path, monkeypatc
             # 等任务结束（终态）
             _pump(
                 app,
-                lambda: window._task_runner.state in {"finished", "error"},
+                lambda: is_terminal(window._task_runner.state),
                 what="任务到达终态",
             )
-            assert window._task_runner.state == "finished", (
+            assert window._task_runner.state == "succeeded", (
                 f"任务应成功结束：{window._task_runner.state}"
             )
             assert window._status_text.text() == "已完成", (

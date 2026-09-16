@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPaintEvent
 from PySide6.QtWidgets import QWidget
 
+from ..core.run_states import state_color_token, state_label
 from ..design_system import ThemeManager
 from ..i18n import _
 from ..motion_signal import MotionSignal
@@ -65,27 +66,20 @@ class StatusIndicator(QWidget):
 
     def _refresh_colors(self, *_args: object) -> None:
         tokens = ThemeManager.instance().tokens
+        # 状态 → 颜色令牌只在 `gui/core/run_states.py` 定义一次（W6.7）。
+        # 取消/暂停/部分成功现在都有**专属令牌**（此前只能借用 idle/error，
+        # 见本文件旧注释里那句"要专属色就新增令牌"）。
         self._colors = {
-            "idle": QColor(tokens.indicator_idle),
-            "running": QColor(tokens.indicator_running),
-            "finished": QColor(tokens.indicator_finished),
-            "error": QColor(tokens.indicator_error),
-            # 取消不是错误：用中性色（与 error 的红明确区分）。若要专属色，
-            # 应在设计系统里新增 indicator_cancelled 令牌，而不是借用 error。
-            "cancelled": QColor(tokens.indicator_idle),
+            name: QColor(getattr(tokens, state_color_token(name)))
+            for name in ("idle", "running", "paused", "stopping", "succeeded",
+                         "partial_success", "failed", "cancelled")
         }
         self.update()
 
     def _update_tooltip(self) -> None:
-        tips = {
-            "idle": _("空闲"),
-            "running": _("运行中"),
-            "finished": _("已完成"),
-            "error": _("错误"),
-            "cancelled": _("已取消"),
-        }
-        self.setToolTip(f"{_('任务状态')}: {tips.get(self._state, self._state)}")
-        self.setAccessibleDescription(tips.get(self._state, self._state))
+        label = state_label(self._state)
+        self.setToolTip(f"{_('任务状态')}: {label}")
+        self.setAccessibleDescription(label)
 
     def paintEvent(self, event: QPaintEvent | None) -> None:
         if event is None:

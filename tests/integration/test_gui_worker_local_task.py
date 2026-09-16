@@ -596,7 +596,7 @@ def test_gui_stop_is_effective_and_restart_recovers_without_duplicates(tmp_path:
 
         runner.stop()
         # 终态集合必须含 cancelled：取消有独立终态（不再落进 error）
-        terminal = {"finished", "error", "cancelled"}
+        terminal = {"succeeded", "failed", "partial_success", "cancelled"}
         deadline = time.monotonic() + 90
         while time.monotonic() < deadline and runner.state not in terminal:
             app.processEvents()

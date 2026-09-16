@@ -9,6 +9,7 @@ from ...core.utils import utcnow
 from ...runtime.execution_backend import LocalWorkerBackend
 from ..core.config_model import CrawlConfig
 from ..core.config_serializer import save_yaml
+from ..core.run_states import normalize_state
 from ..core.validator import plugin_source_kinds, validate_full_config
 from ..i18n import _
 from .log_parser import LogParser
@@ -112,10 +113,10 @@ class WorkerTaskRunner(QObject):
                     pass
                 self._yaml_path = None
             self.log_line.emit(_(f"本地Worker启动失败: {type(exc).__name__}: {exc}"), "error")
-            self._set_state("error")
+            self._set_state("failed")
             return False
         self._current_task_id = config.task_id
-        self._set_state(str(result.get("status", "running")))
+        self._set_state(normalize_state(str(result.get("status", "running"))))
         self.log_line.emit(_("独立本地Worker已启动；关闭或重启GUI不会终止任务。"), "info")
         # S3.3.1：接管 LogParser——增量读取 worker 日志（workspace/logs/local-worker.log）。
         # CrawlConfig.workspace 是字符串，须按 AppConfig 规则相对 project_root 解析，与 worker 端落盘路径一致。
@@ -133,7 +134,7 @@ class WorkerTaskRunner(QObject):
         except Exception as exc:
             self.log_line.emit(_(f"无法重新连接Worker: {exc}"), "error")
             return False
-        self._set_state(str(result.get("status", "running")))
+        self._set_state(normalize_state(str(result.get("status", "running"))))
         self._poller.start()
         self.log_line.emit(_("已重新连接工作区中的本地Worker。"), "info")
         return True
@@ -179,7 +180,7 @@ class WorkerTaskRunner(QObject):
             result = self._backend.status()
         except Exception as exc:
             self._poller.stop()
-            self._set_state("error")
+            self._set_state("failed")
             self.log_line.emit(_(f"Worker连接中断，可从会话文件重新连接: {exc}"), "error")
             return
         status = str(result.get("status", "running"))
@@ -188,7 +189,9 @@ class WorkerTaskRunner(QObject):
             self._log_path = None  # 任务终态，停止增量读日志
             if status == "partial_success":
                 self.log_line.emit(_("任务部分成功(存在错误记录)，见详情。"), "warn")
-                self._set_state("finished")
+                # 规范名就是 partial_success：此前压成 finished，界面再也分不出
+                # "部分成功"与"完全成功"（W6.7）
+                self._set_state("partial_success")
                 self.task_finished.emit(self._current_task_id, 0)
             elif status == "succeeded":
                 records = int(result.get("records", 0))
@@ -196,7 +199,7 @@ class WorkerTaskRunner(QObject):
                     self.log_line.emit(
                         _("任务完成但提取 0 条记录——请检查模板匹配或出网拦截。"), "warn"
                     )
-                self._set_state("finished")
+                self._set_state("succeeded")
                 self.task_finished.emit(self._current_task_id, 0)
             elif status == "cancelled":
                 # 取消是**用户意图的结果**，不是失败：用核心状态机的规范名
@@ -208,7 +211,7 @@ class WorkerTaskRunner(QObject):
                 self._set_state("cancelled")
                 self.task_finished.emit(self._current_task_id, 1)
             else:
-                self._set_state("error")
+                self._set_state("failed")
                 self.task_finished.emit(self._current_task_id, 1)
         elif status != self._state and status in {"running", "paused", "retrying"}:
             self._set_state(status)

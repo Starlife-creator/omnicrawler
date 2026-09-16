@@ -6,6 +6,7 @@ from datetime import datetime
 from PySide6.QtCore import QTimer, Slot
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
+from ..core.run_states import is_terminal, normalize_state, state_label
 from ..i18n import _
 from ._base import _BaseDelegate
 
@@ -105,19 +106,17 @@ class RunController(_BaseDelegate):
         mw = self._mw
         mw._status_indicator.state = state
         mw._monitor_status.state = state
-        # "cancelled" 是核心状态机的规范终态名（core/run_state.py），与 error 分开陈述
-        state_text = {"idle": _("空闲"), "running": _("运行中"), "paused": _("已暂停"),
-                      "cancelled": _("已取消"),
-                      "stopping": _("正在安全停止"), "finished": _("已完成"), "error": _("错误")}
-        mw._status_text.setText(state_text.get(state, state))
-        mw._monitor_status_text.setText(state_text.get(state, state))
+        # 文案只在 `gui/core/run_states.py` 定义一次（W6.7）；终态判定用核心词表
+        label = state_label(state)
+        mw._status_text.setText(label)
+        mw._monitor_status_text.setText(label)
         if state == "paused":
             mw._pause_btn.setEnabled(True)
             mw._pause_btn.setText(_("▶ 继续"))
         elif state == "running":
             mw._pause_btn.setEnabled(True)
             mw._pause_btn.setText(_("Ⅱ 暂停"))
-        if state in ("finished", "error", "cancelled"):
+        if is_terminal(state):
             mw._run_btn.setEnabled(True)
             mw._stop_btn.setEnabled(False)
             mw._pause_btn.setEnabled(False)
@@ -128,11 +127,11 @@ class RunController(_BaseDelegate):
             completed_task_id = mw._running_task_id or mw._config.task_id
             mw._task_history.update_record(completed_task_id, state)
             mw._running_task_id = None
-            if state in ("finished", "cancelled"):
+            if normalize_state(state) in {"succeeded", "partial_success", "cancelled"}:
                 # 取消也把**已采到的**结果载入结果页（"已有有效输出受保护"）；
                 # 下面的自动打开目录/自动导出/提示音只属于正常完成。
                 mw._auto_load_results()
-            if state == "finished":
+            if normalize_state(state) in {"succeeded", "partial_success"}:
                 if mw._settings.auto_open_result:
                     mw._open_result_folder()
                 if mw._settings.sound_enabled and not mw._dnd_mode:

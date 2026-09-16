@@ -13,6 +13,11 @@ STATUS_ALIASES = {
     "stopped": "cancelled",
     "interrupted": "cancelled",
     "resource_limited": "failed",
+    # ★ W6.7（2026-09-15）：GUI 早就用过这两个词，且它们可能写在**历史记录 / 会话文件**里。
+    # 统一词表时把它们登记为**别名**（兼容读取），而不是让 `canonical_run_state` 抛错 ——
+    # 旧数据读进来必须仍然可用。
+    "finished": "succeeded",
+    "error": "failed",
 }
 ALLOWED_TRANSITIONS = {
     "pending": frozenset({"running", "cancelled"}),

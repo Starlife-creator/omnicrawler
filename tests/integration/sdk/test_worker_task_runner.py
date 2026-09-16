@@ -63,7 +63,7 @@ def test_worker_task_runner_start_control_poll_and_attach(tmp_path: Path, monkey
     runner.stop()
     backend.next_status = {"status": "succeeded"}
     runner._poll()
-    assert states[-1] == "finished" and finished == [(config.task_id, 0)]
+    assert states[-1] == "succeeded" and finished == [(config.task_id, 0)]
     assert runner.attach(tmp_path / "worker-session.json") is True
     assert {"start", "pause", "resume", "stop", "status", "attach"} <= set(backend.calls)
     runner._poller.stop()

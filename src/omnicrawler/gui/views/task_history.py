@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..core.run_states import state_icon
 from ..core.view_base import BaseView
 from ..core.workers import JsonlLoadWorker
 from ..i18n import _
@@ -225,8 +226,8 @@ class TaskHistory(BaseView):
             time_str = record.get("started_at", "?")[:19]
             name = record.get("project_name", "?")
             status = record.get("status", "?")
-            status_icon = {"finished": "✅", "error": "❌", "running": "⏳",
-                           "cancelled": "⏹"}.get(status, "⬜")
+            # 图标映射只在 `gui/core/run_states.py` 定义一次（W6.7 词表统一）
+            status_icon = state_icon(status)
             text = f"{status_icon} {time_str}  {name}"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, record)

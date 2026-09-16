@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from ..services.natural_language_task import compile_natural_language
 from ..services.ux_service import QuickTaskDraft, draft_quick_task
+from .core.run_states import state_label
 from .design_system import ThemeManager, rgba_token_to_qcolor
 from .i18n import _
 from .motion_signal import MotionSignal
@@ -385,11 +386,6 @@ class HomePage(QWidget):
             )
             return
 
-        status_names = {
-            "finished": _("已完成"),
-            "error": _("运行失败"),
-            "running": _("运行中"),
-        }
         for record in records[:4]:
             row = QFrame()
             row.setProperty("card", True)
@@ -397,7 +393,9 @@ class HomePage(QWidget):
             row_layout.setContentsMargins(12, 8, 12, 8)
             name = str(record.get("project_name") or _("未命名任务"))
             started = str(record.get("started_at") or "")[:16].replace("T", " ")
-            status = status_names.get(str(record.get("status") or ""), _("待处理"))
+            # 文案只在 `gui/core/run_states.py` 定义一次（W6.7 词表统一）；空值仍显示「待处理」
+            raw_status = str(record.get("status") or "")
+            status = state_label(raw_status) if raw_status else _("待处理")
             summary = QLabel(f"<b>{name}</b><br><small>{status}　{started}</small>")
             row_layout.addWidget(summary, 1)
 

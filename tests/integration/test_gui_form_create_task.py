@@ -37,6 +37,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from omnicrawler.gui.core.config_serializer import to_yaml  # noqa: E402
+from omnicrawler.gui.core.run_states import is_terminal  # noqa: E402
 
 EXPECTED_FIELDS_SELECTORS = {"h1", "a", "time", ".author", ".description"}
 
@@ -378,11 +379,11 @@ def test_form_created_list_task_runs_end_to_end(tmp_path: Path, monkeypatch) -> 
             window._run_btn.click()                           # 真实「运行」
             _pump(
                 app,
-                lambda: window._task_runner.state in {"finished", "error"},
+                lambda: is_terminal(window._task_runner.state),
                 timeout=180,
                 what="任务到达终态",
             )
-            assert window._task_runner.state == "finished", (
+            assert window._task_runner.state == "succeeded", (
                 f"表单创建的任务应成功结束：{window._task_runner.state}"
             )
             assert window._status_text.text() == "已完成"
@@ -685,11 +686,11 @@ def test_form_created_api_task_runs_end_to_end(tmp_path: Path, monkeypatch) -> N
             window._run_btn.click()
             _pump(
                 app,
-                lambda: window._task_runner.state in {"finished", "error"},
+                lambda: is_terminal(window._task_runner.state),
                 timeout=180,
                 what="任务到达终态",
             )
-            assert window._task_runner.state == "finished", (
+            assert window._task_runner.state == "succeeded", (
                 f"表单创建的 API 任务应成功结束：{window._task_runner.state}"
             )
 
@@ -926,11 +927,11 @@ def test_form_created_cursor_api_task_runs_end_to_end(tmp_path: Path, monkeypatc
             window._run_btn.click()
             _pump(
                 app,
-                lambda: window._task_runner.state in {"finished", "error"},
+                lambda: is_terminal(window._task_runner.state),
                 timeout=240,
                 what="任务到达终态",
             )
-            assert window._task_runner.state == "finished", (
+            assert window._task_runner.state == "succeeded", (
                 f"表单创建的游标任务应成功结束：{window._task_runner.state}"
             )
 
@@ -958,11 +959,11 @@ def test_form_created_cursor_api_task_runs_end_to_end(tmp_path: Path, monkeypatc
             window._run_btn.click()
             _pump(
                 app,
-                lambda: window._task_runner.state in {"finished", "error"},
+                lambda: is_terminal(window._task_runner.state),
                 timeout=240,
                 what="第二次任务到达终态",
             )
-            assert window._task_runner.state == "finished"
+            assert window._task_runner.state == "succeeded"
             assert _business_hits(state) == chain, "新同步周期必须重建整条游标链"
             changed = _read_records(workspace)
             assert [(r["id"], r["value"]) for r in changed] == [("3", "last-updated")], (
@@ -1065,11 +1066,11 @@ def test_form_created_element_attr_task_delivers_each_items_href(tmp_path: Path,
             window._run_btn.click()                        # 真实「运行」
             _pump(
                 app,
-                lambda: window._task_runner.state in {"finished", "error"},
+                lambda: is_terminal(window._task_runner.state),
                 timeout=180,
                 what="任务到达终态",
             )
-            assert window._task_runner.state == "finished", window._task_runner.state
+            assert window._task_runner.state == "succeeded", window._task_runner.state
 
             workspace = tmp_path / window._config.workspace
             records_csv = workspace / "output" / "records.csv"

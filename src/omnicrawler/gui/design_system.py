@@ -147,6 +147,11 @@ class VisualTokens:
     indicator_running: str
     indicator_finished: str
     indicator_error: str
+    # ★ W6.7：状态词表统一后补的三个专属令牌 —— 此前"暂停/部分成功/已取消"只能**借用**
+    # 别的令牌（`status_indicator` 的注释里就写着"要专属色就新增令牌，别借用"）。
+    indicator_paused: str
+    indicator_warning: str
+    indicator_cancelled: str
     # 代码编辑器专用（跟随主题）
     code_bg: str
     code_fg: str
@@ -182,6 +187,9 @@ LIGHT = VisualTokens(
     indicator_running="#4CAF50",
     indicator_finished="#2196F3",
     indicator_error="#F44336",
+    indicator_paused="#F0A030",
+    indicator_warning="#E6A700",
+    indicator_cancelled="#9E9E9E",
     code_bg="#1E2730",
     code_fg="#E6EDF3",
     code_border="#344957",
@@ -215,6 +223,9 @@ DARK = VisualTokens(
     indicator_running="#54B99B",
     indicator_finished="#49B4C6",
     indicator_error="#EF7777",
+    indicator_paused="#E8B24A",
+    indicator_warning="#D9A93C",
+    indicator_cancelled="#8A949E",
     code_bg="#0D141A",
     code_fg="#C8D3DC",
     code_border="#2A3A47",
@@ -248,6 +259,9 @@ HIGH_CONTRAST = VisualTokens(
     indicator_running="#00FF85",
     indicator_finished="#FFD600",
     indicator_error="#FF5252",
+    indicator_paused="#FFC400",
+    indicator_warning="#FFC400",
+    indicator_cancelled="#BBBBBB",
     code_bg="#000000",
     code_fg="#FFFFFF",
     code_border="#FFFFFF",
@@ -361,6 +375,9 @@ def theme_tokens(
         indicator_running=base.indicator_running,
         indicator_finished=base.indicator_finished,
         indicator_error=base.indicator_error,
+        indicator_paused=base.indicator_paused,
+        indicator_warning=base.indicator_warning,
+        indicator_cancelled=base.indicator_cancelled,
         code_bg=base.code_bg,
         code_fg=base.code_fg,
         code_border=base.code_border,
@@ -769,6 +786,9 @@ for _t in _PALETTES:
         _t.indicator_running,
         _t.indicator_finished,
         _t.indicator_error,
+        _t.indicator_paused,
+        _t.indicator_warning,
+        _t.indicator_cancelled,
         _t.code_bg,
         _t.code_fg,
         _t.code_border,
