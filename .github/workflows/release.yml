@@ -135,6 +135,11 @@ jobs:
       asset_max_bytes: ${{ needs.verify-python-version.outputs.asset_max_bytes }}
 
   release:
+    # ★ W4.1 / 决策 #3（2026-09-15）：**无参 `workflow_dispatch` 只留 Actions artifacts、不建 Release。**
+    # 本 job 会调 `reusable-finalize-release.yml` → `softprops/action-gh-release` 建 Release，
+    # 而那个 reusable workflow 自身**没有**任何事件守卫 ⇒ 不加这一行的话，手工派发也会建 Release。
+    # 守卫：只在 **tag 推送** 时执行；手工派发跑完三平台构建后，产物留在本次 run 的 artifacts 里。
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: [verify-python-version, build-windows-portable, build-linux-portable, build-macos-portable]
     permissions:
       contents: write
