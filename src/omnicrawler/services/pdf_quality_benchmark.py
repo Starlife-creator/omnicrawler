@@ -90,6 +90,10 @@ class PdfQualityScore:
     unreviewed_errors: int
     missing_fields: tuple[str, ...]
     unreviewed_error_fields: tuple[str, ...] = ()
+    #: W3.1：取到**非真值页**的字段（页码是证据的一部分 —— 取错页等于抽错位置）
+    page_mismatch_fields: tuple[str, ...] = ()
+    #: 该形态的期望页码（字段 → 页号）；为空表示该形态不校验页码
+    expected_pages: tuple[tuple[str, int], ...] = ()
     min_confidence: float = DEFAULT_MIN_CONFIDENCE
     environment: tuple[tuple[str, str], ...] = ()
 
@@ -100,6 +104,7 @@ class PdfQualityScore:
             and self.evidence_ratio >= 1.0
             and self.review_violations == 0
             and self.unreviewed_errors == 0
+            and not self.page_mismatch_fields
         )
 
     def to_mapping(self) -> dict[str, Any]:
@@ -115,6 +120,8 @@ class PdfQualityScore:
             "unreviewed_errors": self.unreviewed_errors,
             "missing_fields": list(self.missing_fields),
             "unreviewed_error_fields": list(self.unreviewed_error_fields),
+            "page_mismatch_fields": list(self.page_mismatch_fields),
+            "expected_pages": {str(name): int(page) for name, page in self.expected_pages},
             "min_confidence": self.min_confidence,
             "ok": self.ok,
             "environment": dict(self.environment),
@@ -132,12 +139,16 @@ def score_pdf_records(
     observations: Iterable[FieldObservation],
     *,
     min_confidence: float = DEFAULT_MIN_CONFIDENCE,
+    expected_pages: Mapping[str, int] | None = None,
 ) -> PdfQualityScore:
     """把一次运行的观测结果与真值比对（纯函数）。
 
     "对"的定义是**归一后逐字相等**：真值与观测都已过产品归一，因此
     「千分位被 OCR 读成小数点」这类可判定形态会被恢复后判对，而**不可判定**的
     误读**不会**因为"看起来差不多"被判对。
+
+    ``expected_pages``（W3.1）给定时，每个字段还必须取自**真值页** ——
+    取错页与取错值同级：证据页码是人工复核的入口，指错页等于让人去错地方核对。
     """
     by_name = {item.name: item for item in observations}
     missing = tuple(name for name in truth if name not in by_name)
@@ -147,12 +158,17 @@ def score_pdf_records(
     review_violations = 0
     unreviewed_errors: list[str] = []
 
+    pages = dict(expected_pages or {})
+    page_mismatches: list[str] = []
+
     for name, expected in truth.items():
         item = by_name.get(name)
         if item is None:
             continue
         if item.has_evidence:
             evidence_ok += 1
+        if name in pages and item.page_no != pages[name]:
+            page_mismatches.append(name)
         if item.confidence < min_confidence and not _is_reviewed(item.review_status):
             review_violations += 1
         if item.normalized == expected:
@@ -174,6 +190,8 @@ def score_pdf_records(
         unreviewed_errors=len(unreviewed_errors),
         missing_fields=missing,
         unreviewed_error_fields=tuple(unreviewed_errors),
+        page_mismatch_fields=tuple(page_mismatches),
+        expected_pages=tuple(sorted(pages.items())),
         min_confidence=min_confidence,
     )
 
@@ -226,6 +244,121 @@ def make_digital_pdf(path: Path) -> None:
     )
 
 
+def make_multi_page_pdf(path: Path, *, pages: int = 3, fields_on_page: int = 2) -> None:
+    """多页样本：**关键字段在后续页**，页码真值因此才有意义（W3.1）。
+
+    单页样本里"页码对不对"根本测不出来 —— 所有字段都在第 1 页，取错页也无从发生。
+    """
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+    from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
+
+    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    style = ParagraphStyle("cn", fontName="STSong-Light", fontSize=12, leading=18)
+    story: list[Any] = [
+        Paragraph("Sample Service Contract / 示例服务合同", style),
+        Spacer(1, 6 * mm),
+        Paragraph("本页为封面与目录，不含待抽取字段。", style),
+    ]
+    for page in range(2, pages + 1):
+        story.append(PageBreak())
+        if page == fields_on_page:
+            story += [
+                Paragraph(f"合同编号：{CONTRACT_NO}", style),
+                Paragraph(f"合同名称：{CONTRACT_NAME}", style),
+                Paragraph(f"金额：{AMOUNT_RAW}", style),
+            ]
+        else:
+            story.append(Paragraph(f"第 {page} 页：附件条款说明。", style))
+    SimpleDocTemplate(str(path), pagesize=A4).build(story)
+
+
+def make_table_pdf(path: Path) -> None:
+    """表格样式的数字版样本（字段在**表格单元格**里）。
+
+    真实合同常把要素放进表格；表格文本层的行序/空白与段落不同，
+    抽取规则必须同样成立（W3.1 的形态之一）。
+    """
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    style = ParagraphStyle("cn", fontName="STSong-Light", fontSize=12, leading=18)
+    # ★ 实测发现（2026-09-16）：把"标签"和"值"分放在两列时，文本层里两者是**分开的**
+    # （没有冒号连接），抽取规则匹配不上 ⇒ 表格形态要用"整段说明在单元格里"的真实排布。
+    # ★ 实测发现（2026-09-16）：分列 + 占位符会被**跨列读进值里**（实测得到
+    # `HT-2026—-0001`、`示例服务—合同`）⇒ 表格形态用"说明列 + 空列"的真实排布，
+    # 不塞任何占位字符。
+    rows = [
+        ["要素说明", "备注"],
+        [f"合同编号：{CONTRACT_NO}", ""],
+        [f"合同名称：{CONTRACT_NAME}", ""],
+        [f"金额：{AMOUNT_RAW}", ""],
+    ]
+    table = Table(rows, colWidths=[30 * mm, 110 * mm])
+    table.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), "STSong-Light"), ("GRID", (0, 0), (-1, -1), 0.4, "grey")]))
+    SimpleDocTemplate(str(path), pagesize=A4).build(
+        [Paragraph("Sample Service Contract / 示例服务合同", style), Spacer(1, 6 * mm), table]
+    )
+
+
+def make_low_quality_scan_pdf(path: Path, font: Path) -> None:
+    """**低质**扫描样本：低分辨率渲染 + 噪声 + 轻度模糊（W3.1 的第三形态）。
+
+    与 `make_image_only_pdf` 的区别是"真的难"：整段文字被降采样、加噪、糊化，
+    OCR 必然产生低置信结果 —— 用来验证「低置信必须进复核」不是纸面条款。
+    """
+    import random
+
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+    hi = Image.new("RGB", (900, 300), "white")
+    draw = ImageDraw.Draw(hi)
+    drawer = ImageFont.truetype(str(font), 34)
+    draw.text((30, 30), f"合同编号：{CONTRACT_NO}", fill="black", font=drawer)
+    draw.text((30, 110), f"合同名称：{CONTRACT_NAME}", fill="black", font=drawer)
+    draw.text((30, 190), f"金额：{AMOUNT_RAW}", fill="black", font=drawer)
+
+    # ★ 降质档位是量出来的（2026-09-16），两种失败模式都记录在案：
+    #   * 本档（0.45 缩放 + 0.8 模糊 + 6% 噪声）：字段**全部读对**、置信 0.98 ⇒
+    #     样本"更难但读得出"，用来守住"不许把错值自动放行"；
+    #   * 更狠的档（0.30 缩放 + 1.4 模糊 + 旋转 + 12% 噪声）：**一个字段都抽不出**
+    #     （`missing_fields` 全中 ⇒ 判据判失败）。那是"读不出"，与"读错却高置信"是两种不同
+    #     失败模式 —— 合成样本能造出前者，造不出后者（tesseract 对合成字形宁可不读也不降置信）。
+    small = hi.resize((int(hi.width * 0.45), int(hi.height * 0.45)), Image.Resampling.BILINEAR)
+    small = small.filter(ImageFilter.GaussianBlur(0.8))
+    pixels = small.load()
+    assert pixels is not None
+    rng = random.Random(20260916)  # 固定种子：样本可复现
+    for y in range(small.height):
+        for x in range(small.width):
+            if rng.random() >= 0.06:
+                continue
+            # PIL 的 `pixels[...]` 在类型存根里是 `float | tuple` ⇒ 显式收窄后再解包
+            pixel = pixels[x, y]
+            if not isinstance(pixel, tuple):
+                continue
+            red, green, blue = pixel
+            noise = rng.randint(-60, 60)
+            pixels[x, y] = (
+                max(0, min(255, red + noise)),
+                max(0, min(255, green + noise)),
+                max(0, min(255, blue + noise)),
+            )
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    small.save(path, "PDF", resolution=200)
+
+
 def make_image_only_pdf(path: Path, font: Path) -> None:
     """图片版样本：渲染成图再存 PDF（**无文字层**），用来逼出真实 OCR。"""
     from PIL import Image, ImageDraw, ImageFont
@@ -258,6 +391,10 @@ class PdfBenchmarkCase:
         ("amount", "金额", "amount", r"金额\s*[：:]?\s*(?P<value>[\d,，.．]+\s*元)"),
     )
     min_confidence: float = DEFAULT_MIN_CONFIDENCE
+    #: 该形态的**字段 → 真值页**（W3.1）。空表示不做页码校验。
+    #: ★ 门槛按**形态**设定、互不平均：低质扫描的置信天花板本来就低，
+    #: 拿它的数字去平均别的形态（或反之）等于把两种现实混成一个指标。
+    expected_pages: tuple[tuple[str, int], ...] = ()
     #: 文本字段是否**显式**声明"归一 OCR 插入的空白"（产品的逐字段开关 `collapse_whitespace`）。
     #:
     #: **2026-09-15 起这里默认不声明**（§5.8 #24 已拍板：按来源默认生效）——OCR 页的文本值
@@ -286,6 +423,29 @@ PDF_CASES: tuple[PdfBenchmarkCase, ...] = (
         needs_ocr=True,
         # 图片版**不声明**任何开关：按来源默认生效后，OCR 页的文本值本就该归一
         # （§5.8 #24）—— 本用例的验收正是「不声明任何开关也达标」。
+    ),
+    # ── W3.1 扩形态：多页 / 表格 / 低质扫描 ──────────────────────────────
+    PdfBenchmarkCase(
+        name="multi-page-text-layer",
+        kind="text_layer",
+        filename="multi.pdf",
+        needs_ocr=False,
+        # 字段在第 2 页 ⇒ **取错页会被判失败**（单页样本测不出这一点）
+        expected_pages=(("contract_no", 2), ("contract_name", 2), ("amount", 2)),
+    ),
+    PdfBenchmarkCase(
+        name="table-text-layer",
+        kind="text_layer",
+        filename="table.pdf",
+        needs_ocr=False,
+    ),
+    PdfBenchmarkCase(
+        name="low-quality-scan",
+        kind="scanned",
+        filename="lowq.pdf",
+        needs_ocr=True,
+        # ★ 逐形态门槛：低质扫描的置信度天然偏低，门槛按它自己的现实设定（不与其它形态平均）
+        min_confidence=0.60,
     ),
 )
 
@@ -388,7 +548,14 @@ def run_case(
             raise RuntimeError("缺少中文字体，无法生成图片版样本")
         if tesseract is None or not Path(tesseract).is_file():
             raise RuntimeError(f"未找到 tesseract：{tesseract}")
-        make_image_only_pdf(sample, font)
+        if case.name == "low-quality-scan":
+            make_low_quality_scan_pdf(sample, font)
+        else:
+            make_image_only_pdf(sample, font)
+    elif case.name == "multi-page-text-layer":
+        make_multi_page_pdf(sample)
+    elif case.name == "table-text-layer":
+        make_table_pdf(sample)
     else:
         make_digital_pdf(sample)
 
@@ -408,8 +575,18 @@ def run_case(
         case.truth(),
         _observations(project, case),
         min_confidence=case.min_confidence,
+        expected_pages=dict(case.expected_pages),
     )
     return score
+
+
+def observations(workdir: Path, case: PdfBenchmarkCase) -> list[FieldObservation]:
+    """读回某用例的**逐字段观测**（置信度 / 页码 / 复核状态）——供验收与排障使用。
+
+    打分只需要汇总值，但"低质样本是否真的触发了低置信复核"这类验收要看**逐字段**事实，
+    因此把读取入口公开出来（复用同一实现，避免测试里再造一套读库逻辑）。
+    """
+    return _observations(workdir / case.name, case)
 
 
 def results_rows(workdir: Path, case: PdfBenchmarkCase) -> list[dict[str, str]]:

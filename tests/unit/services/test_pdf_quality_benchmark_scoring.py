@@ -156,3 +156,63 @@ def test_builtin_cases_cover_both_sample_shapes() -> None:
         names = {name for name, _label, _kind, _pattern in case.field_specs}
         assert names == set(case.truth()), f"{case.name} 字段与真值不一致"
         assert case.filename, f"{case.name} 缺文件名"
+# ── W3.1：页码真值 + 逐形态门槛 ─────────────────────────────────────────
+
+
+def test_wrong_page_fails_even_when_the_value_is_right() -> None:
+    """**取错页必须判失败**（W3.1）。
+
+    值对、证据也在，但页码指向别处 ⇒ 人工复核会被引到错的地方；
+    页码是证据的一部分，不能只当装饰。
+    """
+    observations = _perfect()
+    observations[0] = _obs("contract_no", "HT-2026-0001", page=3)
+    score = score_pdf_records(
+        "case", "text_layer", _TRUTH, observations, expected_pages={"contract_no": 1, "amount": 1}
+    )
+    assert score.field_accuracy == 1.0, "值本身都对"
+    assert score.page_mismatch_fields == ("contract_no",)
+    assert score.ok is False, "页码错了就不该判达标"
+
+
+def test_matching_pages_pass_and_are_recorded() -> None:
+    pages = {"contract_no": 2, "contract_name": 2, "amount": 2}
+    observations = [
+        _obs("contract_no", "HT-2026-0001", page=2),
+        _obs("contract_name", "示例服务合同", page=2),
+        _obs("amount", "12345.67", page=2),
+    ]
+    score = score_pdf_records("case", "text_layer", _TRUTH, observations, expected_pages=pages)
+    assert score.page_mismatch_fields == ()
+    assert score.ok is True
+    assert dict(score.expected_pages) == pages, "期望页码要能回读（便于排障）"
+    assert score.to_mapping()["expected_pages"] == {name: 2 for name in pages}
+
+
+def test_page_truth_is_opt_in_per_case() -> None:
+    """不声明期望页码的形态**不校验**页码（只有多页形态才知道字段在第几页）。"""
+    single_page_case = next(case for case in PDF_CASES if case.name == "digital-text-layer")
+    assert single_page_case.expected_pages == (), "单页形态不该声明期望页码"
+
+    multi_page_case = next(case for case in PDF_CASES if case.name == "multi-page-text-layer")
+    assert dict(multi_page_case.expected_pages) == {
+        "contract_no": 2, "contract_name": 2, "amount": 2
+    }, "多页形态必须声明字段在第 2 页 —— 否则这条判据等于没上"
+
+
+def test_shapes_cover_three_required_kinds_and_keep_own_thresholds() -> None:
+    """三种新形态都在；且**门槛按形态设定、互不平均**。"""
+    names = [case.name for case in PDF_CASES]
+    for required in ("multi-page-text-layer", "table-text-layer", "low-quality-scan"):
+        assert required in names, f"缺少形态 {required}"
+    assert len(names) == len(set(names)), "用例名重复"
+
+    low_quality = next(case for case in PDF_CASES if case.name == "low-quality-scan")
+    assert low_quality.min_confidence < DEFAULT_MIN_CONFIDENCE, (
+        "低质扫描的置信天花板天然更低 ⇒ 门槛应按它自己的现实设定，"
+        "而不是套用文字层的门槛（那会让该形态永远判失败）"
+    )
+    # 别的形态不受它影响（互不平均）
+    for case in PDF_CASES:
+        if case.name != "low-quality-scan":
+            assert case.min_confidence >= low_quality.min_confidence

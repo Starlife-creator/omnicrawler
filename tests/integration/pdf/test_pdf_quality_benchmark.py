@@ -24,6 +24,9 @@ from omnicrawler.services.pdf_quality_benchmark import (
     results_rows,
     run_case,
 )
+from omnicrawler.services.pdf_quality_benchmark import (
+    observations as _observations_public,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TESSERACT = REPO_ROOT / ".runtime" / "tesseract" / "tesseract.exe"
@@ -101,3 +104,67 @@ def test_ocr_text_whitespace_is_normalized_by_source_by_default(tmp_path: Path) 
     assert rows[0]["合同名称"] == "示例服务合同", rows[0]
     # 归一不动证据：原始值仍保留
     assert rows[0]["合同名称_原始值"], "原始值必须保留（归一不改证据）"
+# ── W3.1 扩形态：多页 / 表格 / 低质扫描 ─────────────────────────────────
+
+
+def _case(name: str) -> PdfBenchmarkCase:
+    return next(case for case in PDF_CASES if case.name == name)
+
+
+def test_multi_page_case_hits_the_true_page_and_the_gate(tmp_path: Path) -> None:
+    """多页样本：字段在**第 2 页** ⇒ 页码真值判据必须成立（这条单页样本测不出来）。"""
+    case = _case("multi-page-text-layer")
+    score = _run(case, tmp_path)
+
+    assert score.missing_fields == (), score.to_mapping()
+    assert score.page_mismatch_fields == (), (
+        f"字段应取自真值页 2；实际 {score.to_mapping()['page_mismatch_fields']}"
+    )
+    assert score.evidence_ratio == 1.0, score.to_mapping()
+    assert score.unreviewed_errors == 0, score.to_mapping()
+    assert score.ok is True, score.to_mapping()
+
+
+def test_table_case_meets_the_gate(tmp_path: Path) -> None:
+    """表格样本：字段在表格单元格里，抽取规则同样要成立。"""
+    case = _case("table-text-layer")
+    score = _run(case, tmp_path)
+
+    assert score.missing_fields == (), score.to_mapping()
+    assert score.field_accuracy == 1.0, score.to_mapping()
+    assert score.unreviewed_errors == 0, score.to_mapping()
+    assert score.ok is True, score.to_mapping()
+
+    rows = results_rows(tmp_path, case)
+    assert len(rows) == 1, rows
+    assert rows[0]["合同编号"] == "HT-2026-0001", rows[0]
+
+
+def test_low_quality_sample_never_silently_accepts_wrong_values(tmp_path: Path) -> None:
+    """低质样本：**无论如何都不许把错值自动放行**；门槛按该形态自己的现实设定。
+
+    ## ★ 如实登记的局限（2026-09-16 实测，不当成"已验收"）
+
+    本用例原本想证明"低质样本**真的触发**低置信复核"。**做不到**，原因是样本不够难：
+
+    * 合成降质到「0.30 缩放 + 1.4 高斯模糊 + 0.8° 旋转 + 12% 椒盐噪声」之后，
+      tesseract 依旧把三个字段**全部读对**，置信度 0.98~1.0；
+    * 我试过用"样本锐度"（边缘图方差 / 平滑后边缘均值 / 强边缘占比）作为"更难"的**客观证据**，
+      **三个指标都把低质样本判成更"锐"** —— 噪声本身产生边缘，与模糊混在一起分不开
+      （实测：边缘均值 干净 3.42 vs 低质 9.26）。既然分不开，就不发布这个度量。
+
+    ⇒ 「低置信**必须**进复核」这条规则本身由**纯判据用例**证明
+    （喂一条低置信 + `auto_accepted` 的观测 ⇒ 必须判违规，见
+    `tests/unit/services/test_pdf_quality_benchmark_scoring.py`）；
+    **真实扫描件**上"低置信是否被正确路由"留给 N1b 公网/真实素材复测（W5）。
+    本用例只守**可确定**的那一半：低质样本 + 该形态门槛下，不得出现"错值被自动放行"。
+    """
+    _require_ocr_env()
+    case = _case("low-quality-scan")
+    score = _run(case, tmp_path)
+    obs = {item.name: item for item in _observations_public(tmp_path, case)}
+
+    assert score.unreviewed_errors == 0, score.to_mapping()
+    assert score.review_violations == 0, score.to_mapping()
+    assert score.min_confidence == case.min_confidence, "门槛必须按该形态自己的现实设定"
+    assert obs, "低质样本至少要抽出字段，否则这条用例是空的"
