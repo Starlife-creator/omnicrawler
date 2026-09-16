@@ -15,6 +15,8 @@ name: release
 #
 # FINAL 发布闸门（三层漏斗）：
 #   L0 构建门禁：任一平台 job 失败 ⇒ 聚合 job 不启动，发布不存在（needs 语义）
+#   L0.5 归档级冒烟（★ W4.2）：`portable-smoke` 在**全新 runner** 上把**已上传的归档**
+#       解压后用包内入口跑固定样例 ⇒ 归档往返与"干净机器可用"都有证据；失败则 `release` 不启动
 #   L1 尺寸预分类：各平台构建后本地比对 ASSET_MAX_BYTES（默认 1.9 GiB），
 #      超限产物移出发布集并写入 SKIPPED-<platform>.txt 清单
 #   L2 逐文件挂载：聚合期按文件循环上传——意外错误硬失败（先修再发），
@@ -134,13 +136,61 @@ jobs:
       build_python_version: ${{ needs.verify-python-version.outputs.build_python_version }}
       asset_max_bytes: ${{ needs.verify-python-version.outputs.asset_max_bytes }}
 
+  # ★ W4.2（2026-09-16）：**在全新 runner 上把「已上传的」便携归档再跑一遍**
+  #   （下载 → 解压 → 用**包内入口**起本地 fixture 站点跑固定样例）。
+  #
+  #   为什么不能省：构建期已有的两道检查（`check_release_integrity --portable-deep`、
+  #   `portable_smoke_test.py`）都在**构建 job 内、对构建树**执行 ⇒ 两个盲区无人回答：
+  #   ① **归档往返**（pack→upload→download→unpack）—— 而用户拿到的正是**归档**；
+  #   ② **干净机器上是否可用** —— 构建 job 自带 PATH / 环境变量 / 缓存，会掩盖只在干净环境暴露的
+  #      可移植性缺陷（macOS 上 `@rpath` 解析到 cv2 自带 libcrypto 就是这一类）。
+  #
+  #   ★ **无 tag 守卫**：手工派发也要跑 —— 那正是我们验证产物可用的方式。
+  #   ★ `release` job 已把本 job 列入 `needs` ⇒ **产物不可用则不发布**（L0.5 闸门）。
+  portable-smoke:
+    needs: [verify-python-version, build-windows-portable, build-linux-portable, build-macos-portable]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: artifacts-linux
+            platform: linux
+          - os: windows-latest
+            artifact: artifacts-windows
+            platform: windows
+          - os: macos-latest
+            artifact: artifacts-macos
+            platform: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "${{ needs.verify-python-version.outputs.build_python_version }}"
+      - name: 下载本平台构建产物
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ runner.temp }}/downloaded
+      # ★ 单行命令：Windows runner 的默认 shell 是 pwsh，反斜杠续行在那里不成立。
+      - name: 解压并冒烟（包内入口 + 本地 fixture 站点）
+        run: python tools/portable_archive_smoke.py "${{ runner.temp }}/downloaded" --platform ${{ matrix.platform }} --edition Full --manifest "${{ runner.temp }}/portable-smoke-${{ matrix.platform }}.json"
+      - name: 上传冒烟日志与清单
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: portable-smoke-${{ matrix.platform }}
+          path: ${{ runner.temp }}/portable-smoke-${{ matrix.platform }}.json
+          if-no-files-found: warn
+
   release:
     # ★ W4.1 / 决策 #3（2026-09-15）：**无参 `workflow_dispatch` 只留 Actions artifacts、不建 Release。**
     # 本 job 会调 `reusable-finalize-release.yml` → `softprops/action-gh-release` 建 Release，
     # 而那个 reusable workflow 自身**没有**任何事件守卫 ⇒ 不加这一行的话，手工派发也会建 Release。
     # 守卫：只在 **tag 推送** 时执行；手工派发跑完三平台构建后，产物留在本次 run 的 artifacts 里。
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [verify-python-version, build-windows-portable, build-linux-portable, build-macos-portable]
+    needs: [verify-python-version, build-windows-portable, build-linux-portable, build-macos-portable, portable-smoke]
     permissions:
       contents: write
     uses: ./.github/workflows/reusable-finalize-release.yml
