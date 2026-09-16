@@ -23,22 +23,19 @@ def _module():
     return module
 
 
-def test_detects_foreign_vendored_copy(tmp_path: Path) -> None:
-    """★ 核心：指向别的包自带 `.dylibs/` 的依赖必须被判为"外来副本"。"""
-    module = _module()
-    foreign = (
-        "/tmp/x/OmniCrawler.app/Contents/Frameworks/cv2/.dylibs/libcrypto.3.dylib"
-    )
-    assert module._is_foreign("libcrypto.3.dylib", foreign) is True
+def test_pin_judgement_is_about_our_copy_not_appearance() -> None:
+    """★ 核心判据：**只看"是否已指向我们放的副本"**，不看"看起来是否外来"。
 
-
-def test_does_not_touch_normal_dependencies() -> None:
-    """正常依赖不得被判为外来（否则会误改、破坏产物）。"""
+    教训（CI `35101702777`）：第一版按"绝对路径里带 `/.dylibs/`"判断 ⇒ 而 `otool -L`
+    显示的是 `@rpath/libcrypto.3.dylib` ⇒ 被判"正常"、脚本什么也没做，运行时 `@rpath`
+    仍旧解析到 **cv2 自带的副本**，错误照旧。`@rpath` 的解析结果**不可信**。
+    """
     module = _module()
-    normal = "/usr/lib/libcrypto.3.dylib"
-    assert module._is_foreign("libcrypto.3.dylib", normal) is False
-    # 名字对不上（例如依赖写成 @rpath 而未解析）也不动
-    assert module._is_foreign("libssl.3.dylib", "/opt/homebrew/lib/libcrypto.3.dylib") is False
+    assert module._already_pinned("@loader_path/libcrypto.3.dylib", "libcrypto.3.dylib") is True
+    # 常见形态都必须被判成"还没钉住"（⇒ 需要动手）
+    for original in ("@rpath/libcrypto.3.dylib", "/usr/lib/libcrypto.3.dylib",
+                     "/x/cv2/.dylibs/libcrypto.3.dylib"):
+        assert module._already_pinned(original, "libcrypto.3.dylib") is False, original
 
 
 def test_finds_the_ssl_module_in_a_bundle(tmp_path: Path) -> None:

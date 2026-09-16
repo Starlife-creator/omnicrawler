@@ -113,13 +113,34 @@ def _source_libs() -> dict[str, Path]:
     return found
 
 
-def _is_foreign(dep_name: str, resolved: str) -> bool:
-    """该依赖是否指向「别的包自带的 dylibs 目录」（即需要改的那个场景）。"""
-    marker = f"/{dep_name}"
-    if not resolved.endswith(marker):
-        return False
-    parent = Path(resolved).parent
-    return "/.dylibs" in resolved or parent.name.startswith(".")
+def _already_pinned(original: str, name: str) -> bool:
+    """依赖是否**已经**指向"我们放在 `_ssl` 旁边的副本"（幂等判据）。
+
+    ★ 实测教训（2026-09-16，CI `35101702777`）：第一版按"看起来是否外来"判断（绝对路径里带
+    `/.dylibs/` 才算）—— 但 `otool -L` 对这两个库显示的是 **`@rpath/libcrypto.3.dylib`**，
+    于是被判成"正常"、脚本**什么都没做**，运行时 `@rpath` 仍旧解析到 **cv2 自带的副本** ✗。
+
+    ⇒ 结论：**`@rpath` 的解析结果不可信**（取决于运行时 rpath 搜索顺序），不能拿"看起来外来"
+    当判据；应当把 `_ssl` 的依赖**直接钉到我们放的绝对位置**（`@loader_path/<name>`）。
+    """
+    return original.strip() == f"@loader_path/{name}"
+
+
+def _copy_and_pin(source: Path, name: str, into: Path) -> Path:
+    """把正确的库复制到 *into* 并（就它的 crypto 依赖）钉到同目录，返回目标路径。"""
+    into.mkdir(parents=True, exist_ok=True)
+    destination = into / name
+    shutil.copy2(source, destination)
+    # `libssl` 自身也依赖 `libcrypto` ⇒ 它也必须指向**同目录里的这一份**，
+    # 否则我们只是把问题挪了一层。
+    if name.startswith("libssl"):
+        for dep_name, dep_original in _dependencies(destination).items():
+            if _already_pinned(dep_original, dep_name):
+                continue
+            _run(["install_name_tool", "-change", dep_original,
+                  f"@loader_path/{dep_name}", str(destination)])
+    _run(["codesign", "--force", "--sign", "-", str(destination)])
+    return destination
 
 
 def repair(bundle: Path, *, dry_run: bool = False) -> int:
@@ -138,33 +159,30 @@ def repair(bundle: Path, *, dry_run: bool = False) -> int:
         print("构建期 Python 下找不到 libcrypto/libssl（无法提供正确副本）")
         return 3
 
-    target_dir = bundle / "Contents" / "Frameworks" / "openssl"
+    into = module.parent  # 放在 `_ssl` 旁边：`@loader_path` 即此目录
     changed = 0
-    for name, resolved in deps.items():
-        foreign = _is_foreign(name, resolved)
-        print(f"  {name}: {resolved}{'（★ 指向别的包自带副本）' if foreign else '（正常）'}")
-        if not foreign:
+    for name, original in deps.items():
+        if _already_pinned(original, name):
+            print(f"  {name}: 已钉在本目录，跳过")
             continue
         source = sources.get(name)
         if source is None:
             print(f"  ✗ 构建期没有 {name} 可替换")
             return 4
         if dry_run:
-            print(f"  [dry-run] 将把 {name} 从 {source} 复制到 {target_dir}，并改 {module.name} 的依赖")
+            print(f"  [dry-run] 将把 {name}（来自 {source}）放到 {into}，并把 {module.name} 钉到 @loader_path/{name}")
             changed += 1
             continue
-        target_dir.mkdir(parents=True, exist_ok=True)
-        destination = target_dir / name
-        shutil.copy2(source, destination)
-        _run(["install_name_tool", "-change", resolved, str(destination), str(module)])
+        _copy_and_pin(source, name, into)
+        _run(["install_name_tool", "-change", original, f"@loader_path/{name}", str(module)])
         changed += 1
-        print(f"  ✓ 已把 {module.name} 的 {name} 依赖改到 {destination}")
+        print(f"  ✓ {module.name} 的 {name} 已钉到 @loader_path/{name}（副本放 {into}）")
 
     if changed and not dry_run:
         # 改过 Mach-O 必须重新签名（ad-hoc），否则签名失效
         _run(["codesign", "--force", "--sign", "-", str(module)])
         print(f"  ✓ 已对 {module.name} 重新 ad-hoc 签名")
-    print(f"完成：处理 {changed} 个依赖")
+    print(f"完成：钉住 {changed} 个依赖")
     return 0
 
 
