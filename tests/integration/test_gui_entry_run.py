@@ -153,8 +153,13 @@ def test_gui_run_button_starts_task_and_shows_results(tmp_path: Path, monkeypatc
 
             pid = window._task_runner.get_pid()
             assert pid and pid != os.getpid(), "点运行后应由独立 worker 子进程执行"
-            assert window._task_runner.state in {"running", "retrying"}, (
-                f"点运行后应处于运行态：{window._task_runner.state}"
+            # ★ 不断言"仍在运行"：快机器上任务可能在这一次断言前就已结束（CI 实测 macOS 如此）。
+            # 这里要验的是"任务真的开始了"，而不是"它还没结束" —— 后者本质上有竞态。
+            started_state = window._task_runner.state
+            assert started_state != "idle", f"点运行后仍处于空闲：{started_state}"
+            assert started_state in {"running", "retrying", "succeeded",
+                                     "partial_success", "failed", "cancelled"}, (
+                f"未知的运行状态：{started_state}"
             )
             assert psutil.pid_exists(pid)
 

@@ -175,6 +175,8 @@ class MainWindow(QMainWindow):
     # 委托/后台构建的方法内赋值属性（方法内局部 import 类型，注解延迟求值）
     _log_console: Any
     _page_transition: Any
+    # `_running_task_id` 在 __init__ 里**真初始化**：状态回调可能先于首次运行到达它
+    # （CI 实测：macOS 上任务极快结束时触发 `AttributeError`）
     _running_task_id: str | None
     _preflight_pending: bool
 
@@ -183,6 +185,8 @@ class MainWindow(QMainWindow):
         _GUI_APP_HOLD = QApplication.instance()
         super().__init__()
         self.setObjectName("omnicrawlerMainWindow")
+        # 先置空：运行状态回调可能在任何一次 `run` 之前抵达（见类注解处的 CI 实测说明）
+        self._running_task_id = None
         self.setWindowTitle(_("OmniCrawler GUI 工作台 v{0}").format(GUI_VERSION))
         self.setMinimumSize(860, 520)
         self.resize(1180, 760)
