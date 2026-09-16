@@ -58,6 +58,13 @@ for distribution in (
 
 hiddenimports = sorted(set(hiddenimports))
 
+# ★ W4.1（2026-09-16，CI 实测 macOS 便携包启动即崩）：
+#   `nltk/pathsec.py` 在**模块顶层**用 `http.client.HTTPSConnection`，而该名字
+#   **只在 `ssl` 能导入时才由 CPython 定义** ⇒ 冻结包里缺 `ssl`/`_ssl` 时，
+#   PyInstaller 的 nltk 运行时钩子（pyi_rth_nltk）一启动就抛 AttributeError、整个 app 起不来。
+#   显式声明：三平台一起修（Win/Linux 的构建 job 只构建、不启动产物，所以此前只有 macOS 暴露）。
+hiddenimports = sorted(set(hiddenimports + ["ssl", "_ssl"]))
+
 # Two one-folder programs share one COLLECT directory. This preserves the
 # windowed GUI and console CLI while keeping a single copy of large DLL/data
 # dependencies under _internal.
