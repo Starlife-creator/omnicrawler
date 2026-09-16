@@ -164,7 +164,15 @@ def _run_plugins(args: argparse.Namespace) -> None:
         _json({
             "ok": True,
             "plugin_dir": str(root),
-            "next": ["omnicrawler plugins audit --local .", "pytest -m plugin_contract"],
+            # ★ W3.5（2026-09-16，按 AUTHOR_GUIDE.md 实测）：工程生成在 `<output-dir>/<plugin-id>/`，
+            #   而此前这里直接给 `--local .` ⇒ 与自己的 `plugin_dir` 字段**互相矛盾**：作者照抄
+            #   就会审到**父目录**（只因 audit 会递归才发现得了，属于碰巧能用）。补一步 `cd` 后，
+            #   提示与指南第 3 步的命令序列一字不差地对齐。
+            "next": [
+                f"cd {root}",
+                "omnicrawler plugins audit --local .",
+                "pytest -m plugin_contract",
+            ],
         })
         raise SystemExit(0)
     review_target = getattr(args, "review", None)

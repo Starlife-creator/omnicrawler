@@ -38,7 +38,17 @@ pytestmark = pytest.mark.plugin_contract
 
 
 class Contract2Suite:
-    """契约 2 插件公共验收套件（继承即生效）。"""
+    """契约 2 插件公共验收套件（继承即生效）。
+
+    ★ W3.5（2026-09-16，按 `docs/AUTHOR_GUIDE.md` 实测）：**标记必须打在类上**。
+    模块级 `pytestmark` 只作用于**定义在本模块内**的用例；作者是在自己的
+    `tests/test_contract.py` 里 `class TestContract(Contract2Suite)` **继承**这些用例，
+    于是继承来的用例**不带 `plugin_contract` 标记** ⇒ 文档第 3 步的
+    `pytest -m plugin_contract` **一个都不选中**（实测输出 `7 deselected`）——
+    作者会以为"没失败＝通过"。类级标记会被子类继承，因此这里补上。
+    """
+
+    pytestmark = pytest.mark.plugin_contract
 
     # ---- 作者覆盖点 ----
 

@@ -29,6 +29,10 @@ omnicrawler plugins scaffold-contract2 --plugin-id my_plugin --display-name "我
 生成：`plugin.py`（PLUGIN_METADATA + handle 骨架）+ `plugin.yaml`（双通道字段对齐）+
 `tests/test_contract.py`（继承 Contract2Suite）+ `listing.md`。
 
+> 命令在**当前目录下新建 `my_plugin/`**（根目录可用 `--output-dir` 指定），**不会就地生成**。
+> 因此后续所有命令（第 2、3 步）都要在该目录内执行 —— 脚手架返回的 `next` 字段里
+> 已经给出 `cd` 之后的完整命令序列，照抄即可。
+
 ## 2. 实现业务逻辑
 
 - 在 `handle(operation, payload)` 内按操作分派；`source.seed` 返回 `{"requests": [...]}`。
@@ -46,6 +50,11 @@ omnicrawler plugins scaffold-contract2 --plugin-id my_plugin --display-name "我
 omnicrawler plugins audit --local .        # 元数据、许可、契约一致性与环境探测
 pytest -m plugin_contract                  # 公共契约套件（隔离/协议/越权拦截）
 ```
+
+> ★ **看清第二条的「选中数」**：输出必须是 `N tests collected` / `N passed` 且 **N ≥ 1**。
+> 若出现 `0 selected`、`N deselected` 或 "no tests ran"，说明公共契约套件**一个都没跑到** ——
+> 那是**配置坏了，不是通过**（该命令在这种情况下的退出码仍是 0）。此时检查
+> `tests/test_contract.py` 是否确实继承了 `Contract2Suite`。
 
 - `PLUGIN_METADATA` 与 `plugin.yaml` **逐字段一致**；`dependencies` 与实测导入图
   **双向互证**（声明未导入 / 导入未声明均拒）。

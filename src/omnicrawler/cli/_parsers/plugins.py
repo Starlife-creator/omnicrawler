@@ -6,10 +6,19 @@ import argparse
 
 
 def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    plugins = sub.add_parser("plugins", help="列出已注册插件 / 本地插件自检")
+    plugins = sub.add_parser("plugins", help="列出已注册插件 / 插件作者旅程（自检、脚手架）")
     plugins.add_argument("--config", "-c")
+    # ★ W3.5（2026-09-16）：此处必须**枚举全部**确实存在的子命令 —— 作者是照着
+    #   `docs/AUTHOR_GUIDE.md` 第 1 步敲 `scaffold-contract2` 的，而此前这条 help 只写
+    #   "子命令：audit"，作者读 help 会以为脚手架命令不存在（同一份 help 里却列着它的
+    #   `--plugin-id` 参数，自相矛盾）。守卫：`tests/unit/cli/test_plugin_author_journey_w35.py`。
+    plugins.add_argument(
+        "plugins_command",
+        nargs="?",
+        default=None,
+        help="子命令：audit | scaffold-contract2（省略则列出已注册插件）",
+    )
     # Phase 1（B5）：plugins audit --local <dir> 本地自检（许可+凭据，与 CI 门 2 同逻辑）
-    plugins.add_argument("plugins_command", nargs="?", default=None, help="子命令：audit（可选）")
     plugins.add_argument("--local", default=None, help="audit 子命令：审计的本地插件目录")
     # Phase 2a（B5/H4）：plugins audit --report 生成脱敏环境诊断报告
     plugins.add_argument("--report", action="store_true", help="audit 子命令：生成脱敏环境诊断报告")
