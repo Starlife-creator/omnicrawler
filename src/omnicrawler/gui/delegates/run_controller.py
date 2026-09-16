@@ -57,13 +57,20 @@ class RunController(_BaseDelegate):
         mw._task_elapsed_timer.timeout.connect(mw._run_delegate.update_elapsed)
         mw._task_elapsed_timer.start(1000)
         mw._resource_monitor.set_pid(None)
+        # ★ S3.1.3 + 竞态修复（2026-09-16 CI 实测）：**先记归属、再启动**。
+        # 此前先 `start()` 再赋值，而 `start()` 可能**同步**就走到终态并派发状态回调 ——
+        # 回调里的终态分支会把 `_running_task_id` 清成 None，随后这行赋值又把它写回，
+        # 于是"结束后应清空"永远不成立（macOS 极快结束的用例上稳定复现）。
+        task_id = mw._config.task_id  # 局部 `str`：属性是 `str | None`，这里要的是确定的归属
+        mw._running_task_id = task_id
         ok = mw._task_runner.start(mw._config)
+        if not ok:
+            # 启动失败 ⇒ 本次没有归属，不能把它留给下一次状态回调
+            mw._running_task_id = None
         if ok:
-            # S3.1.3：记录本次运行归属的 task_id——结束时用它而非当前配置
-            mw._running_task_id = mw._config.task_id
             run_config_path = mw._task_runner.config_path or mw._config_path
             mw._task_history.add_record(
-                task_id=mw._running_task_id, project_name=mw._config.project_name,
+                task_id=task_id, project_name=mw._config.project_name,
                 config_path=str(run_config_path),
                 workspace=str(mw._project_root / mw._config.workspace), status="running")
             mw._resource_monitor.set_pid(mw._task_runner.get_pid())
