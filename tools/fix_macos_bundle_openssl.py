@@ -70,14 +70,43 @@ def _dependencies(module: Path) -> dict[str, str]:
 
 
 def _source_libs() -> dict[str, Path]:
-    """构建期 Python 自带的那份 OpenSSL 动态库（符号齐全）。"""
+    """构建期**正确**的那份 OpenSSL 动态库（符号齐全）。
+
+    ★ 实测（2026-09-16，`actions/setup-python` 的 macOS framework Python）：
+    `sys.prefix/lib` 里**没有**这些库 —— 它们由 **Homebrew 的 openssl@3** 提供，
+    或只体现在 `_ssl` 自身的依赖路径里。因此按**权威度**依次找：
+
+    1. **构建期 `_ssl` 模块自身的依赖路径**（最权威：就是解释器实际加载的那份）；
+    2. `sys.prefix/lib`、`sys.base_prefix/lib`（自编 Python / pyenv 常见）；
+    3. Homebrew 常见位置（`/opt/homebrew/opt/openssl@3/lib`、`/usr/local/opt/openssl@3/lib`）。
+    """
     found: dict[str, Path] = {}
-    for base in (Path(sys.prefix) / "lib", Path(sys.base_prefix) / "lib"):
+
+    # ① 构建期 `_ssl` 自身依赖（只依赖 otool；非 macOS 环境不可用 ⇒ 静默跳过）
+    try:
+        import _ssl
+
+        module = Path(str(_ssl.__file__))
+        if module.is_file():
+            for name, resolved in _dependencies(module).items():
+                candidate = Path(resolved)
+                if candidate.is_file():
+                    found.setdefault(name, candidate)
+    except Exception:  # noqa: BLE001 —— 拿不到就退到下面的候选位置
+        pass
+
+    # ② 解释器前缀；③ Homebrew
+    candidates = [
+        Path(sys.prefix) / "lib",
+        Path(sys.base_prefix) / "lib",
+        Path("/opt/homebrew/opt/openssl@3/lib"),
+        Path("/usr/local/opt/openssl@3/lib"),
+    ]
+    for base in candidates:
         if not base.is_dir():
             continue
         for pattern in _TARGET_PATTERNS:
             for path in base.glob(pattern):
-                # 只认真实文件（排除符号链接指错的情况交给 os.path.realpath）
                 resolved = Path(path).resolve()
                 if resolved.is_file():
                     found.setdefault(path.name, resolved)

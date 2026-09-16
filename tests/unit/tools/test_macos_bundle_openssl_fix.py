@@ -66,3 +66,18 @@ def test_repair_reports_missing_sources_instead_of_pretending(tmp_path: Path, mo
     )
     monkeypatch.setattr(module, "_source_libs", lambda: {})
     assert module.repair(tmp_path) == 3
+
+
+def test_source_libs_returns_empty_mapping_instead_of_raising(tmp_path: Path, monkeypatch) -> None:
+    """★ 实测教训（CI `35095464325`）：`actions/setup-python` 的 framework Python 里
+    `sys.prefix/lib` **没有** OpenSSL（它们在 Homebrew 的 openssl@3 下）。
+
+    因此这条守的是：**找不到时返回空映射、绝不抛异常** —— 异常会让错误信息丢失，
+    而"空映射"会由 `repair()` 转成明确的非零退出（那一轮 CI 就是这样给出
+    "构建期 Python 下找不到 libcrypto/libssl（无法提供正确副本）"的）。
+    """
+    module = _module()
+    monkeypatch.setattr(module.sys, "prefix", str(tmp_path / "empty-prefix"))
+    monkeypatch.setattr(module.sys, "base_prefix", str(tmp_path / "empty-base"))
+    result = module._source_libs()
+    assert isinstance(result, dict)
