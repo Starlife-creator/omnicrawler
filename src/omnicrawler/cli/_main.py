@@ -103,6 +103,11 @@ def main(argv: list[str] | None = None) -> None:
     # （只能用内置模板）。因此这里把 `pdf` 之后的 token 原样交给子系统：
     # **发现路径与执行路径分离，子命令定义仍是唯一真源**。
     if argv and argv[0] in {"pdf", "pdf-process", "pdf-extract"}:
+        # W6.7-④：这条**转发路径**此前既不配置日志、也不打启动行 ⇒ 与统一入口行为不一致
+        # （同一次运行，走 `omnicrawler pdf …` 与走 `omnicrawler …` 看到的排障信息不一样）。
+        # 这里补齐同一套：配置日志（默认级别/格式，别名无顶层开关）+ 打关键路径。
+        configure_logging("INFO", "text")
+        _log_startup_paths()
         _dispatch_pdf(argv)
         return
     if not argv:
@@ -116,13 +121,7 @@ def main(argv: list[str] | None = None) -> None:
             print("\n💡 提示: 运行 omnicrawler wizard 开始交互创建配置，或 omnicrawler --help 查看全部命令", file=sys.stderr)
         raise
     configure_logging(args.log_level, args.log_format)
-    # S4.2 ③：启动第一行日志打印关键路径（data_dir/config_path），排障不迷路
-    import logging as _logging
-
-    _root_logger = _logging.getLogger("omnicrawler")
-    _root_logger.info("omnicrawler %s 启动; data_dir=%s", __version__, _data_dir_hint())
-    if getattr(args, "config", None):
-        _root_logger.info("config_path=%s", args.config)
+    _log_startup_paths(getattr(args, "config", None))
     try:
         _dispatch(args)
     except KeyboardInterrupt:
@@ -132,6 +131,19 @@ def main(argv: list[str] | None = None) -> None:
         print(f"错误: {type(exc).__name__}: {exc}", file=sys.stderr)
         _print_error_hint(exc)
         raise SystemExit(1)
+
+
+def _log_startup_paths(config_path: str | None = None) -> None:
+    """启动首行日志：打印关键路径，排障不迷路（S4.2 ③；W6.7-④ 起两条入口共用）。
+
+    统一入口与 `pdf` 转发路径都调用它 —— 同一次运行不该因为入口不同而少一行排障信息。
+    """
+    import logging as _logging
+
+    root_logger = _logging.getLogger("omnicrawler")
+    root_logger.info("omnicrawler %s 启动; data_dir=%s", __version__, _data_dir_hint())
+    if config_path:
+        root_logger.info("config_path=%s", config_path)
 
 
 def _data_dir_hint() -> str:
