@@ -70,6 +70,11 @@ def _infer_column_type(name: str, records: list[dict[str, Any]]) -> str:
     return "VARCHAR"
 
 
+#: 「分页完整性可疑」的最小页数门槛：页数太少时比值噪声大，不报（W3.2 / §5.2 #6）。
+#: 判定规则＝`页数 ≥ 该门槛` 且 `记录数 × 2 < 页数`（每页不足 0.5 条）。
+_PAGINATION_GAP_MIN_PAGES = 4
+
+
 def _flatten(prefix: str, value: Any, output: dict[str, Any]) -> None:
     if isinstance(value, dict):
         for key, item in value.items():
@@ -277,9 +282,33 @@ def export_all(config: AppConfig, state: StateStore, run_id: str | None = None) 
         json.dumps(artifact_integrity, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     files["artifact_integrity"] = str(integrity_path)
+    # W3.2（§5.2 #6）：**「访问 N 页却只交付 M 条」必须可见**。
+    # 两个数字**无条件**写进摘要（低于阈值时用户也能自己判断）；比值异常时另加一条告警，
+    # 免得"只采到一点点"被当成正常完成悄悄交付。
+    pages_visited = len(response_rows)
+    records_delivered = len(records)
+    delivery: dict[str, Any] = {
+        "pages_visited": pages_visited,
+        "records_delivered": records_delivered,
+        "records_per_page": (
+            round(records_delivered / pages_visited, 4) if pages_visited else None
+        ),
+    }
+    if pages_visited >= _PAGINATION_GAP_MIN_PAGES and records_delivered * 2 < pages_visited:
+        delivery["pagination_gap_suspected"] = True
+        optional_warnings.append(
+            f"分页完整性可疑：访问 {pages_visited} 页只交付 {records_delivered} 条"
+            f"（每页不足 0.5 条）。请检查：列表项选择器是否过窄、分页是否真的生效、"
+            f"详情页解析是否失败。"
+        )
+    else:
+        delivery["pagination_gap_suspected"] = False
+
     summary = {
         "project": config.project_name, "run_id": run_id, "exported_at": utcnow(),
-        "records": len(records), "responses": len(response_rows), "errors": len(error_rows),
+        "records": len(records), "responses": len(response_rows),
+        "errors": len(error_rows),
+        "delivery": delivery,
         "files": files, "warnings": optional_warnings, "quality": quality_report,
         "error_center": error_center,
         "artifact_integrity": artifact_integrity,
