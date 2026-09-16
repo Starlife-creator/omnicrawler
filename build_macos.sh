@@ -205,6 +205,16 @@ touch "$APP_BUNDLE/Contents/MacOS/PORTABLE.flag"
 # browsers 不放 .app 内（在 .app 同级 release 根，见组装段），.app 只含
 # PyInstaller 产物 + runtime + PORTABLE.flag，--deep 递归无 Chromium 复杂
 # bundle 干扰，直接整体签名即可。
+# ★ W4.1（2026-09-16，CI 实测 Full 版失败）：修 `_ssl` 的 OpenSSL 依赖指向。
+#   cv2 自带一份同名的 `libcrypto.3.dylib`，PyInstaller 会让 `_ssl` 绑到它的副本 ⇒
+#   符号不匹配（`_X509_STORE_get1_objects` 缺失）⇒ ssl 不可用。必须在**最终 codesign 之前**
+#   改（改 Mach-O 会破坏签名封条）。脚本只在依赖确实指向别的包副本时才动手，改不动就非零退出。
+if [[ "$EDITION" == "Full" ]]; then
+  echo "[Full] 修正 _ssl 的 OpenSSL 依赖指向..."
+  "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/fix_macos_bundle_openssl.py" "$APP_BUNDLE" \
+    || { echo "_ssl OpenSSL 依赖修正失败（ssl 可能不可用）" >&2; exit 1; }
+fi
+
 echo "codesign (ad-hoc): $APP_BUNDLE"
 codesign --force --deep --sign - "$APP_BUNDLE"
 codesign --verify --deep --strict "$APP_BUNDLE" \
