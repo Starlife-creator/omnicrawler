@@ -192,7 +192,11 @@ jobs:
       # ★ W3.4：市场仓在**宿主机**检出（此时还有网）；容器内一律断网。
       - name: 检出市场仓（宿主机、联网；容器内不使用网络）
         run: python tools/checkout_market.py --latest --destination "$RUNNER_TEMP/OmniCrawler-market"
-      - run: docker build -t omnicrawler:ci .
+      # ★ W3.4：**测试镜像要多装 `security` extra**（`cryptography`）。
+      #   市场包安装要做 ed25519 验签，而 `signing.py` 是惰性导入 `cryptography`
+      #   （属可选 `[security]`）⇒ 只装 `[html,async-http,streams]` 的镜像里**验签必失败**。
+      #   ★ 刻意用 build-arg 而不是改 Dockerfile 默认值：**不改动交付镜像的依赖集**。
+      - run: docker build --build-arg EXTRAS=html,async-http,streams,security -t omnicrawler:ci .
       # ★ W3.4（§5.4 #14）：把「离线可用」从**静态预检**（模块级是否导入网络库）升级为**运行级**验证。
       #   判据（照方案原文）：断网容器内全流程成功；**任一网络调用即失败**。
       #   工具自己会先证明「确实断网」（外连必须失败），否则整轮检查在空转 ⇒ 直接判红。

@@ -23,7 +23,22 @@ from typing import Any
 # Lazy-import to allow importing signing without cryptography installed
 # (e.g. e2e CI where only html/pdf/browser/dev extras are present).
 _cryptography_imported = False
-InvalidSignature: Any
+
+
+class InvalidSignature(Exception):  # noqa: N818 - 名字必须与 cryptography 的
+    #   `InvalidSignature` 同名（`_ensure_crypto()` 会替换它、调用方按此名 except），
+    #   因此不能改叫 *Error。
+    """占位异常类；`cryptography` 的真类在 `_ensure_crypto()` 成功后替换它。
+
+    ★ **它必须有真实值**（原先是 `InvalidSignature: Any` 这样一句**纯注解**，没有绑定值）：
+    `verify_bytes()` / `verify_plugin()` 里写的是 `except (InvalidSignature, ValueError, TypeError)`，
+    而 `cryptography` 缺席时 `_ensure_crypto()` 会**先**抛 ImportError ⇒ `except` 子句求值时
+    这个名字**未绑定** ⇒ 抛 `NameError`，**把本该清晰的那句「请安装 security extra」吞掉**。
+    实测（W3.4 在 `docker run --network none` 容器里，镜像只装 `[html,async-http,streams]`）：
+    只看到 `NameError: name 'InvalidSignature' is not defined`，真实原因被完全掩盖。
+    """
+
+
 serialization: Any
 Ed25519PrivateKey: Any
 Ed25519PublicKey: Any
@@ -31,7 +46,7 @@ Ed25519PublicKey: Any
 
 def _ensure_crypto() -> None:
     """Import cryptography primitives on first use; raise a clear error if missing."""
-    global InvalidSignature, serialization, Ed25519PrivateKey, Ed25519PublicKey  # noqa: PLW0603
+    global serialization, Ed25519PrivateKey, Ed25519PublicKey  # noqa: PLW0603
     global _cryptography_imported  # noqa: PLW0603
     if _cryptography_imported:
         return
@@ -48,7 +63,10 @@ def _ensure_crypto() -> None:
         raise ImportError(
             "需要安装 cryptography 才能使用插件签名验证。请运行: pip install 'omnicrawler-platform[security]'"
         ) from exc
-    InvalidSignature = _InvalidSignature
+    # ★ 经 globals() 赋值（而不是直接 `InvalidSignature = ...`）：占位类与 cryptography
+    #   的真类不同型，直接赋值会让 mypy 报 `Cannot assign to a type`。运行时效果相同
+    #   （绑定模块全局），而 `except InvalidSignature` 在运行时按全局查找 ⇒ 取到真类。
+    globals()["InvalidSignature"] = _InvalidSignature
     serialization = _serialization
     Ed25519PrivateKey = _Ed25519PrivateKey
     Ed25519PublicKey = _Ed25519PublicKey

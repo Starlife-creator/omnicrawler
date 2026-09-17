@@ -85,12 +85,25 @@ class _FixtureHandler(BaseHTTPRequestHandler):
 
 
 def _probe(host: str, port: int) -> str | None:
-    """Return None when the connection is refused/unreachable, else a short description."""
-    try:
-        with socket.create_connection((host, port), timeout=_PROBE_TIMEOUT):
-            return f"{host}:{port} CONNECTED"
-    except OSError:
-        return None
+    """Return None when the connection is refused/unreachable, else a short description.
+
+    ★ **有界探测**：`socket.create_connection(timeout=...)` 的 timeout **不覆盖 DNS 解析**
+    （它先调 `getaddrinfo`），而断网容器里解析可能长时间阻塞 ⇒ 把整次尝试放到线程里并设总预算，
+    超预算即判「不可达」（在断网环境里这正是正确答案，且不会把整步拖到 job 超时）。
+    """
+    outcome: list[str | None] = [None]
+
+    def _attempt() -> None:
+        try:
+            with socket.create_connection((host, port), timeout=_PROBE_TIMEOUT):
+                outcome[0] = f"{host}:{port} CONNECTED"
+        except OSError:
+            outcome[0] = None
+
+    worker = threading.Thread(target=_attempt, daemon=True)
+    worker.start()
+    worker.join(_PROBE_TIMEOUT + 5.0)
+    return outcome[0] if not worker.is_alive() else None
 
 
 def assert_offline() -> None:

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import re
 import subprocess
 from pathlib import Path
 
@@ -115,3 +116,27 @@ def test_prints_survive_a_cp1252_console(monkeypatch: pytest.MonkeyPatch) -> Non
     assert printed, "工具没打印任何东西 ⇒ 本用例在空转"
     assert printed.decode("ascii"), "工具在 cp1252 控制台上打印了非 ASCII"
     assert b"offline proven" in printed
+
+
+def test_test_image_installs_the_security_extra() -> None:
+    """★ 测试镜像必须多装 `security`（`cryptography`）。
+
+    真因（W3.4 第一次派发）：市场包安装要做 ed25519 验签，而 `signing.py` 是**惰性导入**
+    `cryptography`（属可选 `[security]` extra）⇒ 只装 `[html,async-http,streams]` 的镜像里
+    验签必然失败 —— 本地全量环境**看不出来**，只在容器里炸。
+    """
+    text = _QUALITY.read_text(encoding="utf-8")
+    match = re.search(r"--build-arg EXTRAS=(\S+)", text)
+    assert match, "docker job 的 docker build 没有用 --build-arg EXTRAS 给测试镜像加依赖"
+    extras = match.group(1)
+    assert "security" in extras, (
+        f"测试镜像的 extras 必须含 security（cryptography）⇒ 否则市场包验签必失败；当前: {extras}"
+    )
+
+
+def test_shipped_image_default_dependency_set_is_unchanged() -> None:
+    """★ 交付镜像的默认 extras 不得被悄悄改动（测试需要 ≠ 产品需要）。"""
+    dockerfile = (_REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert 'ARG EXTRAS="html,async-http,streams"' in dockerfile, (
+        "Dockerfile 的默认 EXTRAS 被改了 ⇒ 交付镜像的依赖集发生变化（W3.4 只需要改测试镜像）"
+    )
