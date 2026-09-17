@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import subprocess
 import tarfile
 import zipfile
 from pathlib import Path
@@ -148,6 +149,71 @@ def test_locate_release_root_fails_loudly_when_absent(tmp_path: Path) -> None:
     (tmp_path / "OmniCrawler" / "readme.txt").write_text("", encoding="utf-8")
     with pytest.raises(FileNotFoundError):
         module.locate_release_root(tmp_path)
+
+
+class _FakeSmoke:
+    """替身：让 `runtime_verify` / `run` 的**顺序与失败语义**可本地断言。"""
+
+    def __init__(self, entry: Path, order: list[str]) -> None:
+        self._entry = entry
+        self._order = order
+
+    def _resolve_executable(self, release_dir: Path, *, gui: bool = False) -> Path:
+        return self._entry
+
+    def run_smoke_test(self, release_dir: Path, edition: str = "Full") -> None:
+        self._order.append("run_smoke_test")
+
+
+def test_runtime_verify_failure_is_loud_and_shows_the_product_listing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """★ `runtime-verify` 不 ok 必须**原样抛出产品给的清单**（而不是只说"冒烟失败"）。
+
+    这正是 W4.2 第一次派发后 macOS 需要的诊断：dmg 往返到底丢了哪个文件，得由产品自己列。
+    """
+    module = _module()
+    entry = tmp_path / "omnicrawler"
+    entry.write_text("", encoding="utf-8")
+    monkeypatch.setattr(module, "_load_smoke_module", lambda: _FakeSmoke(entry, []))
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 1, "MISSING runtime/ocr/paddle_models\n", ""
+        ),
+    )
+    with pytest.raises(RuntimeError) as info:
+        module.runtime_verify(tmp_path)
+    assert "MISSING runtime/ocr/paddle_models" in str(info.value)
+
+
+def test_run_checks_the_manifest_before_running_the_smoke(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """顺序：**先**清单双向核对，**后**冒烟 —— 归档若真丢文件，失败信息才指向文件本身。"""
+    module = _module()
+    archive_dir = tmp_path / "downloaded"
+    archive_dir.mkdir()
+    _make_zip(
+        archive_dir,
+        "OmniCrawler-0.13.0-Windows-Portable-Full.zip",
+        {"OmniCrawler/omnicrawler-cli.exe": "stub"},
+    )
+
+    order: list[str] = []
+
+    def fake_run(command: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
+        order.append("runtime-verify" if "runtime-verify" in command else str(command[0]))
+        return subprocess.CompletedProcess(command, 0, "{}", "")
+
+    monkeypatch.setattr(module, "_load_smoke_module", lambda: _FakeSmoke(Path("stub"), order))
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    manifest = module.run(archive_dir, "windows", "Full")
+    assert order[:2] == ["runtime-verify", "run_smoke_test"], order
+    assert manifest["runtime_verify"] == "ok"
+    assert manifest["smoke"] == "ok"
 
 
 def test_prints_survive_a_cp1252_console(tmp_path: Path, capsys) -> None:

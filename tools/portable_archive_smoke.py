@@ -171,6 +171,30 @@ def locate_release_root(extracted: Path) -> Path:
     raise FileNotFoundError(f"no packaged entry point found below {extracted}")
 
 
+def runtime_verify(release_root: Path) -> None:
+    """产品自带的 `runtime-verify`（RUNTIME-MANIFEST **双向**核对）。
+
+    三个构建脚本都在**构建树**上跑它（`build_{windows.ps1,linux.sh,macos.sh}`）。为什么这里还要
+    在**解压后的归档**上再跑一次：macOS 的 dmg 是磁盘镜像，**纯 Python 读不了其内部**
+    （`build_macos.sh` 注释原话），所以"归档往返是否丢了文件"在构建期根本无从回答 ——
+    而这正是 W4.2 第一次派发就撞上的事：同一个包构建树通过、经 dmg 往返后 Full OCR self-test 失败。
+
+    ★ 失败时**原样抛出产品给的清单**（它按文件列出缺失/被篡改项），而不是只说一句"冒烟失败"。
+    """
+    smoke = _load_smoke_module()
+    executable = smoke._resolve_executable(release_root)
+    if executable is None:
+        raise FileNotFoundError(f"no packaged entry point in {release_root}")
+    completed = _run([str(executable), "runtime-verify", "--root", str(release_root)], check=False)
+    output = f"{completed.stdout}\n{completed.stderr}".strip()
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"runtime-verify failed on the extracted archive (rc={completed.returncode}):\n"
+            f"{output[-8000:]}"
+        )
+    print(f"runtime-verify: OK  {output.splitlines()[0][:110] if output else ''}".rstrip())
+
+
 def run(
     downloaded: Path,
     platform: str,
@@ -178,7 +202,7 @@ def run(
     *,
     keep: Path | None = None,
 ) -> dict[str, Any]:
-    """Full pipeline: find -> extract -> locate -> smoke.  Returns the manifest payload."""
+    """Full pipeline: find -> extract -> locate -> runtime-verify -> smoke."""
     archive = find_archive(downloaded, platform)
     print(f"portable archive: {archive.name} ({archive.stat().st_size} bytes)")
     digest = sha256_of(archive)
@@ -194,6 +218,9 @@ def run(
         extract(archive, extract_dir)
         release_root = locate_release_root(extract_dir)
         print(f"release root: {release_root}")
+        # 先做清单双向核对：若归档真的丢了文件，这条会**指名道姓**列出来
+        # （比冒烟抛一个笼统的 self-test 失败信息有用得多）。
+        runtime_verify(release_root)
         _load_smoke_module().run_smoke_test(release_root, edition)
         relative_root = "." if release_root == extract_dir else str(release_root.relative_to(extract_dir))
         return {
@@ -205,6 +232,7 @@ def run(
                 "sha256": digest,
             },
             "release_root": relative_root,
+            "runtime_verify": "ok",
             "smoke": "ok",
         }
     finally:

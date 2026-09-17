@@ -20,10 +20,33 @@ import yaml
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _RELEASE = _REPO_ROOT / ".github" / "workflows" / "release.yml"
 _FINALIZE = _REPO_ROOT / ".github" / "workflows" / "reusable-finalize-release.yml"
+_LINUX_BUILD = _REPO_ROOT / ".github" / "workflows" / "reusable-build-linux.yml"
 
 
 def _workflow(path: Path) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def _apt_packages(path: Path) -> set[str]:
+    """收集该工作流里所有 `apt-get install` 续行列的包名（用于两侧清单比对）。"""
+    packages: set[str] = set()
+    for job in (_workflow(path).get("jobs") or {}).values():
+        for step in job.get("steps") or []:
+            run = step.get("run") or ""
+            if "apt-get install" not in run:
+                continue
+            collecting = False
+            for line in run.splitlines():
+                if "apt-get install" in line:
+                    tail = line.split("apt-get install", 1)[1]
+                elif collecting:
+                    tail = line
+                else:
+                    continue
+                tokens = [t for t in tail.replace("\\", " ").split() if not t.startswith("-")]
+                packages.update(tokens)
+                collecting = line.rstrip().endswith("\\")
+    return packages
 
 
 def test_dispatch_trigger_exists_and_release_job_is_guarded() -> None:
@@ -108,3 +131,33 @@ def test_release_is_blocked_by_the_archive_smoke() -> None:
     assert "portable-smoke" in needs, (
         "`release` 没有依赖 `portable-smoke` ⇒ 归档坏掉时仍会照常发布（W4.2 的闸门形同虚设）"
     )
+
+
+def test_archive_smoke_fails_loudly_if_prerequisites_differ_from_the_build_job() -> None:
+    """★ Qt6 运行库清单必须与 Linux 构建 job **逐包一致**。
+
+    背景（W4.2 第一次派发）：Linux 红在
+    `libEGL.so.1: cannot open shared object file` —— 构建 job 装了 Qt6 运行库、新 job 没装。
+    正确修法是**复现同一前提**，而不是把 GUI 检查关掉（关掉＝调低口径）。
+    ⇒ 两侧清单必须一致；任一侧新增而另一侧忘加，这条就红。
+    """
+    build_packages = _apt_packages(_LINUX_BUILD)
+    smoke_packages = _apt_packages(_RELEASE)
+    assert build_packages, "没从 Linux 构建 job 里解析出任何 apt 包 ⇒ 本守卫在空转，先修解析"
+    assert smoke_packages == build_packages, (
+        "归档冒烟 job 的 Qt6 运行库清单与 Linux 构建 job 不一致：\n"
+        f"  仅在构建 job: {sorted(build_packages - smoke_packages)}\n"
+        f"  仅在冒烟 job: {sorted(smoke_packages - build_packages)}"
+    )
+
+
+def test_archive_smoke_prerequisite_step_is_linux_only() -> None:
+    """该步骤必须只在 Linux 上跑（macOS/Windows 不需要，且 apt 在那里不存在）。"""
+    data = _workflow(_RELEASE)
+    steps = ((data.get("jobs") or {}).get("portable-smoke") or {}).get("steps") or []
+    apt_steps = [s for s in steps if "apt-get install" in (s.get("run") or "")]
+    assert apt_steps, "`portable-smoke` 里没有安装 Qt6 运行库的步骤（Linux 会重现 libEGL 失败）"
+    for step in apt_steps:
+        assert step.get("if") == "matrix.platform == 'linux'", (
+            f"该步骤缺少 Linux 限定条件（会在 macOS/Windows 上失败）：if={step.get('if')!r}"
+        )
