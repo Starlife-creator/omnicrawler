@@ -149,15 +149,33 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
   }
   resolve_dylibs "$TESS_BIN"
 
-  # 统一重写依赖引用：每个二进制/dylib 的 @rpath/x 依赖 → @loader_path/x
+  # 统一重写依赖引用：**任何"本目录里已有同名副本"的依赖** → @loader_path/<短名>。
+  #
+  # ★ W4.2（2026-09-17，CI 实测 macOS 归档冒烟，run `35165407069`）：
+  #   旧实现**只重写 `@rpath/*`**，而 brew 的 tesseract 同时带**绝对路径**依赖
+  #   （`/opt/homebrew/Cellar/tesseract/5.5.3/lib/libtesseract.5.dylib`）：
+  #   这种依赖被 `resolve_dylibs` **拷贝了**、却**没被改写** ⇒ 包在**构建机**上能跑
+  #   （brew 在，绝对路径命中），在**干净机器**上 dyld 直接 `Library not loaded`
+  #   ⇒ 自称"自包含便携包"其实不自包含。构建期冒烟看不出来，只有归档级冒烟才暴露。
+  #
+  #   判据改成**确定性**的："该 basename 在本目录有副本 ⇒ 改写"，**不看它长什么样**
+  #   （`@rpath/…` 还是 `/opt/homebrew/…` 一视同仁）—— 与
+  #   `tools/fix_macos_bundle_openssl.py` 里"钉到 @loader_path"是同一条原则：
+  #   **`@rpath` / 绝对路径的解析结果都不可信，"看起来正常"≠"运行时正确"**。
+  #   系统库（`/usr/lib`、`/System`、`/Library`）与已是相对引用的依赖一律跳过。
   for target in "$TESS_ROOT/tesseract" "$TESS_ROOT"/*.dylib; do
     [[ -e "$target" ]] || continue
     for dep in $(otool -L "$target" 2>/dev/null | tail -n +2 | awk '{print $1}'); do
       case "$dep" in
-        @rpath/*)
-          install_name_tool -change "$dep" "@loader_path/${dep#@rpath/}" "$target" 2>/dev/null || true
-          ;;
+        /usr/lib/*|/System/*|/Library/*|@loader_path/*|@executable_path/*) continue ;;
       esac
+      dep_base="$(basename "$dep")"
+      if [[ -f "$TESS_ROOT/$dep_base" ]]; then
+        install_name_tool -change "$dep" "@loader_path/$dep_base" "$target" 2>/dev/null || true
+      else
+        echo "[runtime-prep] WARN: 依赖 $dep（来自 $target）在本目录无副本，"
+        echo "               保留原引用（干净机器上可能加载失败）" >&2
+      fi
     done
     # dylib 的 install_name 也统一为 @loader_path/短名，保证按同目录解析
     install_name_tool -id "@loader_path/$(basename "$target")" "$target" 2>/dev/null || true
