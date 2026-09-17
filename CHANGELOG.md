@@ -1,6 +1,187 @@
 # Changelog
 
 ## Unreleased
+## 0.13.0 - 2026-09-17
+
+### 变更
+
+- feat(tools): 公网原场景受控复测（W5.1 / N1b）—— 三条判据实测全绿
+- feat(ci): 离线运行级验收（W3.4）+ 覆盖率基线按 CI 数字收紧（W6.2/W1.3）
+- fix(tests): 补 W4.2 漏掉的契约同步 —— release.yml 的 build_python_version 消费者 4→5
+- fix(packaging): macOS 包内 tesseract 钉到 @loader_path —— 修「自称自包含却不自包含」（W4.2 第三轮）
+- fix(release): 归档冒烟补 Linux 运行前提、并把 runtime-verify 接进来定位 macOS（W4.2 第二轮）
+- feat(release): 归档级便携冒烟 job —— 在全新 runner 上把「已上传的归档」再跑一遍（W4.2）
+- fix(cli,docs,test): 按作者指南实测出的三处缺口（W3.5）
+- fix(packaging): 把 `_ssl` 的 OpenSSL 依赖**钉到 @loader_path**（W4.1 第五轮）
+- fix(packaging): 修 macOS 修正脚本的"正确 OpenSSL 从哪来"（W4.1 第四轮）
+- fix(packaging): 修 macOS Full 版 `_ssl` 绑定到 cv2 自带 libcrypto 的问题（W4.1 第三轮）
+- fix(packaging): 六个便携 spec 排除 nltk —— 修「打了包但 app 起不来」（W4.1 第二轮）
+- fix(packaging): 便携 spec 显式声明 ssl/_ssl —— 修 macOS 便携包「启动即崩」（W4.1 抓到）
+- ci(release): 手工派发只留 artifacts、不建 Release（W4.1 / 决策 #3）
+- fix(gui): 「先记运行归属、再启动」—— 修掉 `start()` 同步到终态时的归属竞态（CI 根因）
+- fix(gui): 初始化 `_running_task_id` + 去掉入口用例的运行态竞态（CI 抓到 1 处）
+- test(browser): 事件驱动懒加载**定论** —— 平台能力已验收 + 产品动作已知限制（W3.3 / §5.2 #7）
+- feat(pdfx): 基准扩三种形态 + 「页码等于真值页」判据（W3.1 / §5.2 #5）
+- feat(pipeline): 分页完整性判据 —— 「访问 N 页却只交付 M 条」必须可见（W3.2 / §5.2 #6）
+- fix(pipeline): 审计 medium/low 按「影响正确交付」筛选复核，修 5 条（W6.4 / §5.5 #18）
+- fix(cli): 两条入口共用启动日志，行为一致（W6.7-④，§5.7 最后一个小项）
+- refactor(gui): 运行状态**词表统一** —— 五份表并成一处，partial_success 不再被压平（W6.7 主项）
+- refactor(cli,gui,ci): §5.7 三个小项收口（W6.7 ②⑤⑥）
+- fix(core): 显式收窄可选依赖返回值 + 新增「缺依赖环境」的 mypy 门禁（CI 抓到 2 处）
+- fix(tests): 让既有基准用例造「可比对」——W6.6 契约变更的配套更新（CI 抓到 4 条）
+- refactor(gui): `_repolish_widget` 两处重复实现下沉为 design_system.repolish_widget（W6.7-①）
+- fix(tests): 字体动态检查改走子进程真实平台，并订正环境表述（本机 full 版）
+- fix(tests): 删掉不可移植的字体反向探针（CI 实测：`inFont` 只能证「有」）
+- feat(benchmark): 基线记录带「输入快照」+ 四维可比性判定（W6.6 / §5.2 #8 前置）
+- chore(licenses): mermaid/echarts 的许可正文随仓分发 + 机器守卫（W6.1 / §5.6 #23）
+- fix(gui): 等宽字体补 CJK 回退 + 机检替代人工截图（W6.5 / §5.3 #10）
+- chore(mypy): 严格范围扩到 core，并把范围守卫泛化（W6.3）
+- fix(gui): 表单同步不得静默丢字段 + W2.2 端到端收官（§5.3 #9 收口）
+- feat(gui): 字段表新增「属性 / 取值方式」两列 —— 表单终于能建出「元素自身属性」规则（W2.2 下半 B）
+- fix(gui): 选择器是否必填改由「取值位置」契约判定（W2.2 下半 A）
+- feat(core): 字段「取值位置」契约 —— 把形状与键名收成单一真源（W2.2 上半）
+- docs(coverage): 同步覆盖率阈值 66% → 73%（文档↔代码第二真源守卫抓到的）
+- chore(ci): 覆盖率 ratchet 按 CI 跨平台实测收紧（W1.4，原「本地实测 − 8」前提已被推翻）
+- fix(ci): Windows 控制台编码**根治**（job 级 `PYTHONIOENCODING=utf-8`）+ 机器契约（W1.3d）
+- fix(ci): 门禁打印必须 ASCII 安全（修 Windows 崩溃）+ 浏览器下限按实测校准（W1.3c）
+- feat(pdfx): OCR 空白归一按**来源**默认生效，不再要求逐字段声明（W2.1，§5.8 #24）
+- fix(ci): coverage json 只取数据、判定交给门禁（W1.3b）
+- fix(ci): 覆盖率门禁认环境——浏览器专属下限挪到能达成的 job（W1.3a，**不降标准**）
+- fix(runtime): 关闭时回收 worker 子进程——POSIX 僵尸会让「已退出」被误判为资源残留（W1.1b）
+- fix(convertx,ci): 缺可选后端时自诊断 + CI 装 storage extra（W1.2）
+- fix(runtime): worker 的 UNIX 域套接字改到短路径——深工作区不再起不来（W1.1）
+- fix(extraction): 单页模式不再静默丢短值——旧的长度判据同时误伤数据、还留下一个脏值
+- feat(pdfx): PDF 侧质量基准——判据「要么对，要么进复核」+ 反例集 + 真 OCR 集成
+- test(gui): 修阶段 1 用例的顺序依赖——断言范围收到「本次抓取」
+- fix(gui): 接线 `BackgroundWorker.cleanup()`（悬空钩子落地）+ 补 i18n 门禁漏项
+- fix(licensing): 补随包字体的 OFL 许可文本与声明——原先只声明了三分之一
+- fix(gui): 变更监测关窗后不得留下在飞工作——补取消/等待入口 + 关闭后不再启动检查
+- fix(packaging): install_windows.ps1 补 Python 版本闸门 + 复核 audit-20260805 余下 9 份报告
+- feat(pagination): 分页形状收成唯一契约 + 表单可 author 分页（含游标）
+- feat(gui): 表单可选「数据来源」——从零在表单里建出 API 任务
+- feat(release): 产物依赖与锁的严格对账——wheel 的 Requires-Dist ↔ uv.lock 逐条比对
+- feat(benchmark): 质量基准扩到 4 个任务 / 3 种取数形态（N1a 覆盖面露口）
+- feat(gui): 表单接上产品自带 DOM 分析器——「分析页面并填字段」
+- feat(gui): 表单可创建「列表」任务——补上列表项选择器入口，闭环上一轮登记的能力缺口
+- test(gui): 补「经 GUI 表单创建任务」证据；顺带暴露一处能力缺口
+- fix(extraction): 自动配置不再丢「链接外字段」，也不再拿侧边栏当列表（N1c 两项）
+- refactor(fetching)+chore(lint): 导入块内不再夹 LOGGER；E402 预算 59 → 45
+- feat(pdfx)+docs: `--config` 位置自由；走查文档样本数字纳入门禁校验
+- fix(pdfx): 数值 token 改「结构判定」——OCR 千分位误读不再被静默截断成错值
+- test(browser)+refactor(fetching): 补「滚动加载」固定样例；浏览器启动参数收口为单处真源
+- test(browser): 补「动态页面→分页→去重」固定样例（N2 最后一条部分验证收官）
+- feat(tools)+docs: 走查资产跨机可用（按平台隔离、缺依赖降级、接入既有安装路径）
+- feat(pdfx): OCR 空白归一做成字段级显式开关（默认关，语言感知）
+- feat(tools): 人工走查做成可复用资产（固定样本 + 隔离工作区 + 可复制记录表）
+- fix(cli): 让 `omnicrawler pdf --config X <stage>` 真正可达（自定义 PDF 项目）
+- test(pdf): 补「附件→PDF/OCR→复核」端到端（自动部分）；账本拆成自动/人工两条
+- feat(quality): 首轮同步标记为「基线」并把提示决定权交给消费方（用户拍板方案 C）
+- docs(compliance)+test: 按实际实现修正 INV-008 声明，并补齐 INV-004/INV-008 的真实证据
+- fix(gui): 取消不再被呈现为「错误」——独立终态 cancelled（用户拍板方案 A）
+- test(isolation): 真实入口用例改用 monkeypatch 打补丁，避免类属性泄漏到同进程后续用例
+- test(integration): 补 GUI 真实入口用例——点「运行」按钮 → 子进程 → 结果页可见
+- test(integration): 补「长任务→GUI 停止→重启恢复」端到端；登记"取消被呈现为错误"
+- test(integration): 变更工作流补「差异导出」端到端；更正账本中"导出产物未见"的误判
+- fix(quality): 变更识别认中文字段键，并补变更检测端到端证据（含 INV-008 缺口登记）
+- docs(ledger): API 工作流升级为含 GUI 运行路径已验证；登记 JSON 模式校验缺陷（已修 4a546ec）
+- fix(gui): 校验按抽取模式区分——合法 JSON 配置不再被「选择器必填」挡在门外
+- test(integration): GUI 闭环补两条——列表→详情两级抓取 + XLSX 可重新打开
+- test(integration): 补 GUI→真实子进程→本地站点→结果可见→进程退出 的闭环证据
+- docs(ledger): 登记 GUI 配置往返静默降级（已修 a5bdfbd）与 GUI 闭环证据缺口
+- fix(gui): 配置往返不再用硬编码默认值覆盖透传键——修复 GUI 运行静默降级
+- build: 让便携产物消费锁定依赖
+- fix(pipeline): 重建增量游标分页链
+- fix(extraction): 真实校验 JSON 自动配置
+- fix(fetching): 超时DOM恢复不再伪造成功状态
+- fix(pipeline): 避免重定向目标重复交付
+- feat(quality): 收紧任务交付验收判据
+- fix(pipeline,sources): 分页不再用"点击下一页"动作；浏览器源可翻页且子请求继承渲染
+- fix(fetching): 等待条件超时不再当作抓取失败——改用已加载 DOM 继续
+- fix(security): apex 与 www 视为同一站点，redirect 不再被判「超出种子站点」
+- fix(extraction,templates): 真实用户场景测试驱动的缺陷修复
+- chore: `.audit-tmp/` 纳入 .gitignore（与 `.test-tmp/` 同性质的临时目录）
+- fix(gui): audit-20260805 逐条复核完成——45 个标题全部给出结论，21 条「仍存在」全部修掉
+- chore(mypy): 严格范围扩大到整个 gui 包——量化门禁最后一项未启动项收口
+- feat(market): 离线可用纳入机器验证——把「不适用」与「通过」分开
+- feat(benchmark): 数据完整性与准确性基准——补上「可复现任务基准」的质量侧
+- feat(market): 内容质量可机器验证——补上信任档位输入的生产者（本项目第 5 例「定义了没有生产者」）
+- perf(gui): 三个未接线 worker 逐项测量后定论——一个接线、两个判定不接线
+- refactor(cli): P2-4 入口收敛——pdf 提为一等子命令、镜像补齐 3 个入口、工作台入口统一
+- ci(deps): P1-2 uv.lock 接入 CI——补齐「按锁文件可复现」的两条验收
+- fix(security): P2-5 TLS 校验降级的作用域收紧——关掉校验不再等于对所有目标降级
+- fix(reliability): 取消不应把待抓页面判成终态 blocked——否则 resume 静默丢页面
+- chore(maintainability): 门禁清单唯一化 + 自证入口唯一化（主线第 4 步·三件套）
+- fix(reliability): 取消真实有效 + 中断可恢复——补齐可靠性闭环（修三处真实缺陷）
+- fix(reliability): 异常不再伪装成功——填上早已定义却从未发出的 partial_success
+- fix(i18n-gate): 门禁真正跟踪三引号串——修 docstring 续行误报（并补门禁自测）
+- fix(benchmark): 可复现基准与公平对比——档位真生效、指标不再恒 0、基线只取可用运行
+- feat(gui): 三态统一（错误不伪装成没数据）——主线第 3 步补完
+- feat(a11y): 存量收敛至零 —— 16 文件补 18 处无障碍名（主线第 3 步·收官）
+- feat(a11y+style): 内联样式改设计令牌 + 补 a11y（主线第 3 步·第三批）
+- feat(a11y): 高频入口页面补无障碍名（主线第 3 步·第二批）
+- feat(a11y): 共享组件补无障碍名（主线第 3 步·第一批）
+- docs(journey): 首个任务旅程人工走查清单（把「双证据」的分工变成可执行步骤）
+- test(journey): 首个任务旅程自动回归（主线第 2 步）
+- feat(gui): 页面骨架 BaseView + 首例迁移示范（主线第 1 步·B）
+- feat(gui): 设计体系继承门禁（主线第 1 步·A）——新页面零容忍、存量只降不升
+- feat(quality): P2-1 覆盖率 ratchet（按包下限 + P1-3 模块族纳入门禁）
+- feat(quality): P2-2 ruff 豁免预算门禁（存量违规只降不升）
+- chore(arch): 重设 cycle budget 为实测值（三项大幅收紧、components 按打散后重设）
+- refactor(arch): 版本号下沉叶子模块 + driver 结构协议，导入环 62 → 11 模块
+- fix(tests): 拆库演练拷贝忽略缓存目录（修 test_standalone_copy_passes_check）
+- fix(convertx): 显式点名导出 + 修正测试 monkeypatch 注入点（P0-2 遗留，5 个测试转绿）
+- fix(convertx): 补 _ordered_columns 到包级兼容垫片（P0-2 遗留，使 tests/unit 可收集）
+- fix(gui): 补 pdf_workbench 的 _collect_failures 再导出（上一批遗漏）
+- refactor(state): P1-3（state_store.py）第三批——运行/导出/产物域外迁，文件收官
+- refactor(state): P1-3（state_store.py）第二批——记录域与质量域外迁
+- refactor(state): P1-3（state_store.py）第一批——队列域与插件状态域外迁
+- refactor(fetching): P1-3（browser_fetcher.py）第三批——Playwright 池化层外迁
+- refactor(fetching): P1-3（browser_fetcher.py）第二批——失败关闭守卫外迁
+- refactor(fetching): P1-3（browser_fetcher.py）第一批——引擎适配器层外迁
+- refactor(plugins): P1-3（plugin_broker.py）第六批——宿主注入能力域 Mixin，文件收官
+- refactor(plugins): P1-3（plugin_broker.py）第五批——fs + network 能力域 Mixin
+- refactor(plugins): P1-3（plugin_broker.py）第四批——artifacts 能力域 Mixin
+- refactor(plugins): P1-3（plugin_broker.py）第三批——records 能力域 Mixin
+- refactor(plugins): P1-3（plugin_broker.py）第二批——IPC 循环驱动外迁
+- refactor(plugins): P1-3（plugin_broker.py）第一批——能力契约叶子模块外迁
+- refactor(gui): P1-3（pdf_workbench.py）第三批——结果与收尾域 Mixin，文件收官
+- refactor(gui): P1-3（pdf_workbench.py）第二批——拖放扫描域 Mixin
+- refactor(gui): P1-3（pdf_workbench.py）第一批——流水线 Worker + 纯逻辑外迁
+- refactor(gui): P1-3（plugin_market.py）第六批——目录加载域 Mixin，文件收官
+- refactor(gui): P1-3（plugin_market.py）第五批——安装流程域 Mixin
+- refactor(gui): P1-3（plugin_market.py）第四批——浏览域 Mixin
+- refactor(gui): P1-3（plugin_market.py）第三批——插件动作域 Mixin
+- refactor(gui): P1-3（plugin_market.py）第二批——3 个后台 Worker 外迁
+- refactor(gui): P1-3（plugin_market.py）第一批——纯逻辑块外迁 plugin_market_logic.py
+- refactor(plugins): P1-3（plugins.py）第四批——加载器域外迁，plugins.py 收敛为纯门面
+- refactor(plugins): P1-3（plugins.py）第三批——Registry 与 Factory 类型别名外迁
+- refactor(plugins): P1-3（plugins.py）第二批——插件契约叶子模块 + 静态预检域外迁
+- chore: 救援重建——以远端 main 为基线，整合 2026-09-10 全部优化成果
+- P1-1 main.py 委托聚合：2240 → 2113 行（-127 行），删除 38 个委托转发桩、40+ 处调用点直连到 delegates 域协调者，6 个改动文件 AST 校验全部通过，tests 对所有被删名零引用（保留 _apply_ui_mode/_set_theme/_show_error_dialog 等有测试或动态检查依赖的兼容转发）。 P1-2 运行时依赖锁：uv.lock 已生成并落盘——226 个包、约 1.1MB，含 Windows/macOS/Linux × py3.12/3.13 多平台解析标记。
+- Refactor convertx into _core; modernize GUI workers
+- docs: rebuild documentation index and enforce it in CI
+- docs: close conditional review queue assessment
+- fix(gui): clear stale resource readings
+- refactor(gui): isolate plugin activation service
+- fix(gui): include child process memory in monitor
+- test: track extended convertx benchmark cases
+- docs: update optimization implementation status
+- perf(convertx): stream jsonl to xlsx
+- perf(convertx): stream jsonl to duckdb
+- perf(convertx): stream jsonl to parquet
+- perf(convertx): bound jsonl to csv memory
+- fix(convertx): preserve late parquet fields
+- perf(convertx): stream duckdb reads to jsonl
+- perf(convertx): stream parquet reads to jsonl
+- perf(convertx): stream xlsx reads to jsonl
+- perf(convertx): reduce xlsx writer memory
+- perf(convertx): bound automatic csv decoding memory
+- perf(convertx): stream jsonl output paths
+- perf(convertx): stream csv to jsonl conversion
+- perf(convertx): add isolated memory benchmark
+- ci: pin market snapshot and add manual compatibility checks
+- fix(convertx): report data loss and safely cancel conversions
+
 
 ### 变更
 
