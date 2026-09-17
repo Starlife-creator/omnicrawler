@@ -37,7 +37,10 @@ def test_reusable_workflow_boundaries_and_explicit_inputs() -> None:
     caller = _workflow(CALLER)
     assert caller.count("uses: ./.github/workflows/reusable-") == 4
     assert "secrets: inherit" not in caller
-    assert caller.count("needs.verify-python-version.outputs.build_python_version") == 4
+    # 消费者（5）：三个平台构建 + portable-smoke（归档级冒烟，必须用**同一版冻结解释器**）
+    # + release（finalize）。★ 新增消费此输出的 job 时，这里要同步 +1 ——
+    # 这正是 W4.2 加 portable-smoke 时漏掉的一步（契约用例没跑，CI 才红）。
+    assert caller.count("needs.verify-python-version.outputs.build_python_version") == 5
     assert caller.count("needs.verify-python-version.outputs.asset_max_bytes") == 3
 
     for filename in (*BUILD_WORKFLOWS.values(), FINALIZE):
