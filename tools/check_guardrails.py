@@ -103,6 +103,20 @@ def check_scanner() -> list[str]:
     return []
 
 
+def _installed_distributions() -> set[str]:
+    """当前环境已安装的发行版名（小写、`_` 归一为 `-`）。**不依赖 pip**。
+
+    ★ 用 `importlib.metadata` 而不是 `pip freeze`：后者在 `uv` 建的 venv 里根本不存在，
+    而原实现又不检查返回码 ⇒ 静默退化成空集（见 `check_sbom` 的注释）。
+    """
+    try:
+        from importlib import metadata
+
+        names = [dist.metadata["Name"] for dist in metadata.distributions()]
+    except Exception:  # noqa: BLE001 - 枚举失败时返回空集，由调用方判红
+        return set()
+    return {n.lower().replace("_", "-") for n in names if n}
+
 def check_sbom(sbom_path: Path | None) -> list[str]:
     path = sbom_path or (REPO_ROOT / "SBOM.json")
     if not path.is_file():
@@ -127,14 +141,19 @@ def check_sbom(sbom_path: Path | None) -> list[str]:
     #   里可能经 build 依赖引入；两者都是平台预期差异，不是"假包"。
     # - freeze ⊆ SBOM 不强制：runner 预装无关工具（pipx 等）不在依赖树中，
     #   若要求 SBOM 覆盖它们会让门禁在部分平台误报。
-    freeze = subprocess.run(
-        [sys.executable, "-m", "pip", "freeze"], capture_output=True, text=True
-    ).stdout
-    frozen = {
-        line.split("==", 1)[0].lower().replace("_", "-")
-        for line in freeze.splitlines()
-        if "==" in line
-    }
+    # ★ 2026-09-17 修复：**原实现依赖 pip 且不检查返回码** ——
+    #   原为 `subprocess.run([sys.executable, "-m", "pip", "freeze"]).stdout`，
+    #   而 `uv sync` 建的 venv **默认不含 pip** ⇒ stdout 为空 ⇒ `frozen` 为空集
+    #   ⇒ **SBOM 里每一个包都被报成「环境中不存在」**（v0.13.0 的 finalize 就是这样红掉的：
+    #   报 30 个，且列表从字母序最前的 `anyio` 开始，而那些包明明就在所选 extra 里）。
+    #   改用 `importlib.metadata`（stdlib、不依赖 pip），并在**枚举为空时明确报错**
+    #   —— 判据必须自己说得出「我没能度量」，而不是把空集当成「一个都不存在」。
+    frozen = _installed_distributions()
+    if not frozen:
+        return [
+            f"[4] 无法枚举当前环境的已安装包（解释器 {sys.executable}）⇒ 本判据不能空转；"
+            "不会把 SBOM 的包误报成缺失。请检查该解释器是否可用 importlib.metadata 枚举。"
+        ]
     sbom_names = {comp["name"].lower().replace("_", "-") for comp in components}
     fake = sorted(
         name
