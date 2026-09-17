@@ -57,6 +57,18 @@ _PROBE_TARGETS: tuple[tuple[str, int], ...] = (("1.1.1.1", 443), ("pypi.org", 44
 _PROBE_TIMEOUT = 5.0
 
 _FIXTURE_ITEMS = ("Alpha", "Beta", "Gamma")
+
+#: 市场包的安装子目录。
+#:
+#: ★ **不能叫 `plugins` / `plugins_installed`**：产品按约定在 **cwd 下**探测这两个目录
+#:   （`capabilities` 的输出里就有这两条 `path` 探测）。实测（W3.4 第二次派发）：
+#:   把市场包装进 `<work_dir>/plugins` 后，紧接着的样例抓取**fail-closed** 了 ——
+#:   `PermissionError: Plugin permissions were not approved for chronicle-capsule:
+#:   artifacts:write, records:read, responses:payload, responses:read`。
+#:   那是**产品的安全模型正确工作**（未授权权限 ⇒ 拒载），问题在于工具不该把包放进被发现的范围。
+#:   守卫：`tests/unit/tools/test_offline_acceptance.py`。
+INSTALL_SUBDIR = "market-install"
+
 _FIXTURE_PAGE = (
     "<!doctype html><html><head><title>offline-acceptance</title></head><body><ul>"
     + "".join(
@@ -318,7 +330,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("note: --require-offline not set -> offline assertions skipped (dev run)")
 
-        plugin_id = install_market_plugin(args.market_dir, work_dir / "plugins", args.plugin_id)
+        plugin_id = install_market_plugin(args.market_dir, work_dir / INSTALL_SUBDIR, args.plugin_id)
         delivered = run_local_sample(work_dir)
         if args.require_offline:
             assert_public_fetch_failed = assert_public_fetch_fails

@@ -140,3 +140,17 @@ def test_shipped_image_default_dependency_set_is_unchanged() -> None:
     assert 'ARG EXTRAS="html,async-http,streams"' in dockerfile, (
         "Dockerfile 的默认 EXTRAS 被改了 ⇒ 交付镜像的依赖集发生变化（W3.4 只需要改测试镜像）"
     )
+
+
+def test_install_root_avoids_the_product_plugin_discovery_convention() -> None:
+    """★ 市场包安装目录**不能叫 `plugins` / `plugins_installed`**。
+
+    产品会按约定在 **cwd 下**探测这两个目录（`capabilities` 输出里就有这两条 path 探测）。
+    实测（W3.4 第二次派发）：包装进 `<work_dir>/plugins` 后，紧接着的样例抓取 **fail-closed**：
+    `PermissionError: Plugin permissions were not approved for chronicle-capsule: ...`
+    —— 那是产品的安全模型正确工作，工具不该把包放进**会被发现**的范围。
+    """
+    module = _module()
+    assert module.INSTALL_SUBDIR not in {"plugins", "plugins_installed"}, (
+        f"安装子目录名撞上产品约定: {module.INSTALL_SUBDIR!r} ⇒ 会让后续抓取因未授权权限而拒载"
+    )
