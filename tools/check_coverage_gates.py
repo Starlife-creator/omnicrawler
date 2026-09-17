@@ -40,13 +40,13 @@ GATES: dict[str, tuple[float, Matcher]] = {
         ),
     ),
     "pipeline_http_sources": (
-        80.0,
+        81.0,
         _starts_with(
             "src/omnicrawler/pipeline/",
         ),
     ),
     "pipeline_http_client": (
-        86.0,
+        86.4,
         _is_one_of(
             # 曾把不存在的 src/omnicrawler/http_client.py 列在此处——门禁在查空集合
             # （S37 死路径），已移除；真实路径为 fetching/http_client.py
@@ -55,7 +55,7 @@ GATES: dict[str, tuple[float, Matcher]] = {
         ),
     ),
     "browser_and_api": (
-        74.0,
+        74.8,
         # browser_fetcher 自 P1-3 起拆出 browser_engines/guards/pool，同样用前缀纳入。
         _is_one_of(
             "src/omnicrawler/extraction/api_discovery.py",
@@ -63,7 +63,7 @@ GATES: dict[str, tuple[float, Matcher]] = {
         ),
     ),
     "pdf_and_ocr": (
-        72.0,
+        72.6,
         lambda path: path.startswith("src/omnicrawler/pdfx/")
         or path
         in {
@@ -74,7 +74,7 @@ GATES: dict[str, tuple[float, Matcher]] = {
         },
     ),
     "desktop_core": (
-        77.0,
+        78.4,
         lambda path: path.startswith("src/omnicrawler/gui/core/")
         or path
         in {
@@ -87,7 +87,7 @@ GATES: dict[str, tuple[float, Matcher]] = {
     ),
 }
 
-OVERALL_COVERAGE_GATE = 73.0
+OVERALL_COVERAGE_GATE = 73.6
 
 # 按顶层子包设「只降不升」下限（P2-1 ratchet）。
 #
@@ -95,15 +95,16 @@ OVERALL_COVERAGE_GATE = 73.0
 #   旧口径是「本地实测 − 8」，其前提是「CI 少了 browser/extras ⇒ 系统性低于本地」；
 #   该前提**已被实测推翻**：CI 现在装了 storage extra、GUI 端到端用例也不再被跳过
 #   （含拆掉的掩盖型 skip），`all_source` 实测 75.53%，与本地 74.46% 无系统性差距。
-#   实测（同日 green run，三个平台同时跑）：
-#     all_source            75.55 / 75.53 / 75.55   → min 75.53
-#     security_and_state    92.01 / 92.01 / 92.01   → min 92.01
-#     pipeline_http_sources 82.67 / 82.67 / 82.67   → min 82.67
-#     pipeline_http_client  88.37 / 88.37 / 88.37   → min 88.37
-#     browser_and_api       76.75 / 76.75 / 76.75   → min 76.75
-#     pdf_and_ocr           74.58 / 74.58 / 74.43   → min 74.43
-#     desktop_core          79.73 / 79.66 / 79.73   → min 79.66
-#   跨平台离散 ≤ 0.15 点 ⇒ 余量取 **2 点**（≈ 13× 实测离散），既不 flaky 又不再留 8 点空档。
+#   ★ **2026-09-17 按 W1.3 回收的 CI 数字收紧（W6.2）**：`quality` 全绿的首个 run
+#   （`3ed2df9`）三平台同时跑的实测与新的下限（口径不变：**min − 2**）：
+#     all_source            75.64 / 75.62 / 75.64   → min 75.62 → 下限 73.6（原 73.0）
+#     security_and_state    92.01 / 92.01 / 92.01   → min 92.01 → 下限 90.0（不变）
+#     pipeline_http_sources 82.98 / 82.98 / 82.98   → min 82.98 → 下限 81.0（原 80.0）
+#     pipeline_http_client  88.37 / 88.37 / 88.37   → min 88.37 → 下限 86.4（原 86.0）
+#     browser_and_api       76.75 / 76.75 / 76.75   → min 76.75 → 下限 74.8（原 74.0）
+#     pdf_and_ocr           74.70 / 74.70 / 74.55   → min 74.55 → 下限 72.6（原 72.0）
+#     desktop_core          80.39 / 80.39 / 80.39   → min 80.39 → 下限 78.4（原 77.0）
+#   跨平台离散 ≤ 0.15 点 ⇒ 余量取 **2 点**（≈ 13× 实测离散），既不 flaky 又不再留空档。
 #   **只升不降**：以后每次收紧都要按新的实测重算并把数字写在这里。
 # 先覆盖方案点名的三个「非 GUI、测试更便宜」的包，其余包待后续批次逐个纳入。
 PACKAGE_FLOORS: dict[str, float] = {

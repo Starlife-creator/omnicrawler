@@ -421,7 +421,7 @@ src/omnicrawler/
 | ruff (lint + format) | 0 violations |
 | mypy (gui/core strict) | 通过 |
 | pytest | 以 CI 全量结果为准；本地基线见 `docs/TEST_REPORT.md` |
-| coverage | 全源码 ≥73%，并执行分组门禁（长期目标 80%、核心 ≥85%） |
+| coverage | 全源码 ≥73.6%，并执行分组门禁（长期目标 80%、核心 ≥85%） |
 | pre-commit hooks | 已配置 |
 
 ### 贡献流程

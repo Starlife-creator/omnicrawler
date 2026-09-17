@@ -209,3 +209,59 @@ def test_full_profile_checks_everything(tmp_path, monkeypatch, capsys) -> None:
     captured = capsys.readouterr()
     assert _browser_floor_mentioned(captured.err), captured.err
     assert "已跳过" not in captured.out, "full 档不应跳过浏览器下限"
+
+# --- W6.2 (2026-09-17): 覆盖率基线 只升不降 的机检守卫 --------------------------
+#
+# 由来：方案 W6.2 判据是「基线单调不降」，但此前只靠注释写一句约定
+# （收紧后要把数字写回文件）—— 属典型的「依赖人记得去做」，正是可复用资产判据的反例。
+# 这里把它变成会失败的检查。
+#
+# 取值来源：quality 全绿首个 run（3ed2df9，2026-09-17）三平台实测最小值减 2。
+# 收紧基线时要同时抬高这里的快照；放松任何一项都会让本用例变红。
+_FLOORS_SNAPSHOT_2026_09_17: dict[str, float] = {
+    "OVERALL_COVERAGE_GATE": 73.6,
+    "GATES.security_and_state": 90.0,
+    "GATES.pipeline_http_sources": 81.0,
+    "GATES.pipeline_http_client": 86.4,
+    "GATES.browser_and_api": 74.8,
+    "GATES.pdf_and_ocr": 72.6,
+    "GATES.desktop_core": 78.4,
+    "PACKAGE_FLOORS.core": 87.0,
+    "PACKAGE_FLOORS.state": 92.0,
+    "PACKAGE_FLOORS.fetching": 73.0,
+    "_FILE_FLOORS.policy.py": 84.0,
+    "_FILE_FLOORS.egress.py": 89.0,
+    "_FILE_FLOORS.http_client.py": 82.0,
+    "_FILE_FLOORS.plugins.py": 98.0,
+    "_FILE_FLOORS.state_store_records.py": 97.0,
+    "_FILE_FLOORS.state_store_runs.py": 85.0,
+    "_FILE_FLOORS.plugin_loader.py": 82.0,
+    "_FILE_FLOORS.plugin_market_install.py": 30.0,
+    "_FILE_FLOORS.pdf_workbench_worker.py": 18.0,
+    "_FILE_FLOORS.field_extractor.py": 34.0,
+    "_FILE_FLOORS.pdf_processor.py": 42.0,
+    "_BROWSER_FILE_FLOORS.browser_engines.py": 41.0,
+    "_BROWSER_FILE_FLOORS.browser_pool.py": 44.0,
+}
+
+
+def _current_floors(checker: ModuleType) -> dict[str, float]:
+    floors = {"OVERALL_COVERAGE_GATE": checker.OVERALL_COVERAGE_GATE}
+    floors.update({f"GATES.{name}": value for name, (value, _m) in checker.GATES.items()})
+    floors.update({f"PACKAGE_FLOORS.{k}": v for k, v in checker.PACKAGE_FLOORS.items()})
+    floors.update({f"_FILE_FLOORS.{Path(k).name}": v for k, v in checker._FILE_FLOORS.items()})
+    floors.update(
+        {f"_BROWSER_FILE_FLOORS.{Path(k).name}": v for k, v in checker._BROWSER_FILE_FLOORS.items()}
+    )
+    return floors
+
+
+def test_coverage_ratchet_never_lowers_a_floor() -> None:
+    """基线只升不降：任何一项被调低，或某个门禁被删掉，都必须判红。"""
+    current = _current_floors(_load_checker())
+    missing = sorted(set(_FLOORS_SNAPSHOT_2026_09_17) - set(current))
+    assert not missing, (
+        f"这些覆盖率门禁被删除了 —— 删门禁等于放宽口径，与 W6.2 只升不降相悖：{missing}"
+    )
+    lowered = {k: (v, current[k]) for k, v in _FLOORS_SNAPSHOT_2026_09_17.items() if current[k] < v}
+    assert not lowered, f"这些覆盖率下限被调低了（快照->现值）：{lowered}"
