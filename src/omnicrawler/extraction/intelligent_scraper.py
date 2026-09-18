@@ -970,7 +970,7 @@ def _explain_no_config(
         )
         return lines
     # 走到这里说明连"最像列表的结构"都没找到 —— 交给交互信号给出**具体**方向（R3.2）
-    detail = _interaction_failure_hint(signals)
+    detail = _interaction_failure_hint(signals, html=html)
     if detail:
         lines.extend(detail)
         return lines
@@ -988,13 +988,17 @@ def _explain_no_config(
     return lines
 
 
-def _interaction_failure_hint(signals: tuple[str, ...]) -> list[str]:
+def _interaction_failure_hint(signals: tuple[str, ...], *, html: str = "") -> list[str]:
     """失败 + 检出交互信号 ⇒ 给出**指名道姓**的原因与下一步（走查 R3.2）。"""
     if not signals:
         return []
     lines: list[str] = []
     if "iframe" in signals:
         lines.append("判断：页面里的内容在 **iframe** 内 —— 列表不在主文档，所以找不到重复结构。")
+        # 走查 R5.2：说完"在 iframe 里"还要给出**定位信息**，否则用户无从下手
+        locators = _iframe_locators(html)
+        if locators:
+            lines.append("定位信息：" + "；".join(locators[:3]))
         lines.append(
             "下一步：omnicrawler record-actions 录制（含进入 frame 的操作）；"
             "或在配置里显式声明 frame 定位后再跑 auto-analyze。"
@@ -1102,7 +1106,9 @@ def _interaction_signals(html: str) -> tuple[str, ...]:
     return tuple(found)
 
 
-def _interaction_advice(signals: tuple[str, ...], *, scroll_rounds: int) -> list[str]:
+def _interaction_advice(
+    signals: tuple[str, ...], *, scroll_rounds: int, iframe_locators: tuple[str, ...] = ()
+) -> list[str]:
     """把交互信号翻译成「我们做了什么 / 你还需要做什么」。
 
     分两类（这是 R3.2 的核心取舍）：
@@ -1123,7 +1129,9 @@ def _interaction_advice(signals: tuple[str, ...], *, scroll_rounds: int) -> list
     if "cookie_banner" in signals:
         manual.append("cookie/consent 提示（先接受才能看到内容）")
     if "iframe" in signals and "infinite_scroll" not in signals:
-        manual.append("内容在 iframe 里")
+        # 走查 R5.2：只说"内容在 iframe 里"没法用 —— 给出**定位信息**才指得到那个 frame
+        detail = "；".join(iframe_locators[:3])
+        manual.append("内容在 iframe 里" + (f"（定位：{detail}）" if detail else ""))
     if "form" in signals and "infinite_scroll" not in signals:
         manual.append("需要提交表单（搜索 / 筛选）")
     if "spa_shell" in signals and not scroll_rounds:
@@ -1337,6 +1345,130 @@ def detect_pagination(html: str, url: str) -> dict[str, Any] | None:
             }
 
     return None
+
+
+#: 分页参数名的候选（与 `detect_pagination` 内部同一张表；这里用于**从 href 里认参数**）。
+_PAGINATION_PARAMS: tuple[str, ...] = (
+    "page", "p", "pg", "pagenum", "page_no", "pn", "offset", "start",
+)
+
+
+def _page_parameter_in(href: str) -> str:
+    """从一条链接里认出页码参数名（``/x?page=2`` ⇒ ``page``）；认不出返回空串。"""
+    for name in _PAGINATION_PARAMS:
+        if re.search(rf"[?&]{name}=\d", href, re.IGNORECASE):
+            return name
+    return ""
+
+
+def _max_page_number(html: str, parameter: str) -> int | None:
+    """从页面自身取**最大页码**（`?page=2` … `?page=17`）；取不到返回 ``None``。
+
+    ★ 为什么必须从页面里取：`source.pagination.end` 决定"翻到第几页"，而
+      `sources.py` 的默认是 `end = start` —— **缺 `end` 的配置根本不会翻页**，
+      运行结果只是"少了几页"，还是"成功"。所以这里宁可返回 `None`
+      （调用方就**不写配置**、只给建议），也不猜一个数。
+    ★ `rel="last"` 的链接 href 里同样带页码参数，所以一并被下面的扫描覆盖。
+    """
+    numbers = [
+        int(match.group(1))
+        for match in re.finditer(rf"[?&]{re.escape(parameter)}=(\d{{1,4}})", html, re.IGNORECASE)
+    ]
+    positive = [number for number in numbers if number >= 1]
+    return max(positive) if positive else None
+
+
+def _pagination_config(
+    html: str, detected: dict[str, Any] | None
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """把检测到的分页信号翻译成 **`core/pagination.py` 契约里的 `page` 形状**（走查 R5.2）。
+
+    ★ **修正一处"配了等于没配"**：旧实现确实会写 `source.pagination`，但只写
+      ``{type: page, parameter: X}`` —— **没有 `end`**。而 `sources.py` 的默认是
+      ``end = start`` ⇒ 运行期只发第 1 页；`validate_pagination` 又只对**游标形状**
+      要求 `next_path`，对页码形状不要求 `end` ⇒ **校验通过、只抓一页**，
+      用户以为"翻页已处理"。这里保证 `end` 一定有值（取自页面自身链接）。
+
+    ★ `detect_pagination` 产出的是 `url_param` / `next_link`，**都不是契约里的形状名**，
+      所以必须显式翻译，不能原样写进去。
+
+    ★ `next_link` 型**不生成"点击下一页"动作**（历史教训，保留原注释）：
+      "下一页"就是同站 `<a href>`，由 ``source.discover`` 的**通用链接发现**跟进即可
+      （`crawl` / `browser` 都参与，受 `crawl.max_depth` / `max_pages` / `same_host` 约束）。
+      历史实现把它写成 ``browser.actions`` 的"点击下一页"，而 actions 对**每个**渲染页
+      都执行 —— 入口页一点即跳走，第一页内容全丢（实测 quotes.toscrape.com/js：最终 URL
+      变成 /js/page/2/、正文只剩未渲染骨架、0 条记录；分析期自校验不跑 actions，
+      所以校验通过 10 条 —— 分析与运行结果不一致的根源就在这里）。
+      ⇒ 只有当下一页链接**带页码参数**时，才翻译成页码式分页配置。
+
+    Returns:
+        ``(pagination 或 None, 面向用户的提醒)``。
+    """
+    if not detected:
+        return None, []
+
+    kind = str(detected.get("type") or "")
+    if kind == "url_param":
+        parameter = str(detected.get("param") or "")
+    elif kind == "next_link":
+        parameter = _page_parameter_in(str(detected.get("example_href") or ""))
+    else:
+        return None, []
+
+    if not parameter:
+        target = str(detected.get("xpath") or detected.get("example_href") or "")
+        return None, [
+            "检测到「下一页」链接，它不是页码参数地址 ⇒ **没有写入分页配置、也没有生成点击动作**"
+            "（自动点「下一页」曾导致入口页内容全丢）。这类页面由 `crawl` 的**通用链接发现**跟进"
+            "（同站链接，受 `crawl.max_depth` 限制）—— 确认能翻到时无需额外配置。"
+            + (f"该链接定位：{target}；" if target else "")
+            + "若链接发现翻不到，请用 `omnicrawler record-actions` 录制，"
+            "或手工声明 `source.pagination`（页码式填 `parameter` + `end`）。"
+        ]
+
+    end = _max_page_number(html, parameter)
+    if not end or end < 2:
+        return None, [
+            f"检测到分页（`{parameter}`），但页面上看不出共有多少页 ⇒ **没有写入** `source.pagination`"
+            "（只写 `start` 不写 `end` 等于只抓第一页，是假配置）。"
+            f"请手工补 `source.pagination: {{type: page, parameter: {parameter}, start: 1, end: N}}`。"
+        ]
+
+    notes = [
+        f"检测到分页 ⇒ 已写入 `source.pagination`（页码式：`{parameter}` 第 1–{end} 页）。"
+        f"`end={end}` 取自页面自身链接里的最大页码；实际页数更多时请调大它。"
+    ]
+    return {"type": "page", "parameter": parameter, "start": 1, "end": end, "step": 1}, notes
+
+
+def _iframe_locators(html: str) -> tuple[str, ...]:
+    """列出页面里 iframe 的**定位信息**（走查 R5.2：只说"内容在 iframe 里"不够用）。
+
+    优先 ``#id`` → ``[name]`` → ``[src]`` → ``nth-of-type``，并带上 ``src``
+    —— 用户据此才能在配置/录制里指到那个 frame。
+    """
+    try:
+        from lxml import html as lxml_html
+
+        root = lxml_html.fromstring(html)
+    except Exception:  # noqa: BLE001 —— 定位信息是"锦上添花"，取不到就不给，不影响主流程
+        return ()
+
+    locators: list[str] = []
+    for index, node in enumerate(root.xpath("//iframe"), 1):
+        node_id = str(node.get("id") or "").strip()
+        name = str(node.get("name") or "").strip()
+        src = str(node.get("src") or "").strip()
+        if node_id:
+            where = f"iframe#{node_id}"
+        elif name:
+            where = f'iframe[name="{name}"]'
+        elif src:
+            where = f'iframe[src="{src[:120]}"]'
+        else:
+            where = f"iframe:nth-of-type({index})"
+        locators.append(f"{where}（src={src[:120] if src else '（未声明）'}）")
+    return tuple(locators)
 
 
 # ── 主入口 ─────────────────────────────────────────────────────────────
@@ -1846,6 +1978,14 @@ def analyze_to_config(
         "extract": {"mode": "html", "fields": fields_dict},
         "outputs": {"jsonl": True, "csv": True, "xlsx": True},
     }
+    # 走查 R5.2：分页信号此前**只**用来决定 `source_kind`，检测结果被丢掉 ——
+    # 用户拿到 `source.kind: crawl` 却没有任何翻页配置，以为"翻页被处理了"。
+    # 现在翻译成 `core/pagination.py` 契约里的形状写进配置；翻译不了时**不写假配置**，只给建议。
+    pagination, pagination_notes = _pagination_config(html, analysis.pagination)
+    if pagination:
+        config["source"]["pagination"] = pagination
+    if advisories is not None:
+        advisories.extend(pagination_notes)
     if use_browser:
         actions: list[dict[str, Any]] = []
         if scroll_rounds > 0:
@@ -1858,21 +1998,6 @@ def analyze_to_config(
             config["browser"]["actions"] = actions
     if item_selector:
         config["extract"]["item_selector"] = item_selector
-
-    # 分页：契约位置 source.pagination，type=page + parameter（page 语义统一）
-    # 分页：契约位置 source.pagination，type=page + parameter（page 语义统一）。
-    #
-    # next_link 型**不写任何配置**：“下一页”就是同站 <a href>，由
-    # source.discover 的通用链接发现处理即可。历史实现把它写成
-    # ``browser.actions`` 的“点击下一页”，而 actions 对**每个**渲染页都执行 ——
-    # 入口页一点即跳走，第一页内容全丢（实测 quotes.toscrape.com/js：最终 URL
-    # 变成 /js/page/2/、正文只剩未渲染骨架、0 条记录；分析期自校验不跑 actions，
-    # 所以校验通过 10 条 —— 分析与运行结果不一致的根源就在这里）。
-    if analysis.pagination and analysis.pagination["type"] == "url_param":
-        config["source"]["pagination"] = {
-            "type": "page",
-            "parameter": analysis.pagination["param"],
-        }
 
     _check_verified(config, html)
     return config
@@ -2091,7 +2216,9 @@ def main() -> None:
                 file=sys.stderr,
             )
         # 走查 R3.2：交互信号必须**说出来** —— 要么已自动配好（滚动），要么告知要手工补录。
-        for line in _interaction_advice(signals, scroll_rounds=scroll_rounds):
+        for line in _interaction_advice(
+            signals, scroll_rounds=scroll_rounds, iframe_locators=_iframe_locators(html)
+        ):
             print(f"提示: {line}", file=sys.stderr)
         # 走查 R4.2：记录路径拿不太准（单对象 / 候选接近）、或有嵌套没展开时，如实说出来。
         for line in chosen_advisories:

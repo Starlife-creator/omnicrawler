@@ -41,7 +41,12 @@ def test_analyze_to_config_contract_keys(tmp_path) -> None:
     )
 
     assert config["source"]["seeds"] == ["https://shop.example/list?page=1"]
-    assert config["source"]["pagination"] == {"type": "page", "parameter": "page"}
+    # 走查 R5.2：旧断言写的是 `{type, parameter}` —— **那正是"配了等于没配"**：
+    # 缺 `end` 时 `sources.py` 用 `end = start` ⇒ 只发第 1 页，而契约校验也不报错。
+    # 现在必须给全 start/end/step（`end` 取自页面自身链接里的最大页码）。
+    assert config["source"]["pagination"] == {
+        "type": "page", "parameter": "page", "start": 1, "end": 2, "step": 1,
+    }
     assert "pagination" not in config["crawl"]
 
     fields = config["extract"]["fields"]
@@ -51,7 +56,8 @@ def test_analyze_to_config_contract_keys(tmp_path) -> None:
         assert "attribute" not in rule, "契约用 attr，不使用 attribute"
         assert "desc" not in rule, "契约字段不含 desc"
         for key in rule:
-            assert key in ("selector", "attr", "regex", "examples"), f"未知字段键: {key}"
+            # `value_map`：走查 R3.6 新增的取值映射（值写在 class 名里的元素）
+            assert key in ("selector", "attr", "regex", "examples", "value_map"), f"未知字段键: {key}"
 
     assert config["extract"].get("item_selector"), "列表容器应输出到 item_selector"
 
