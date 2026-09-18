@@ -410,7 +410,9 @@ def _parent_css(css_path: str) -> str:
 # 字段名推断规则：(类名正则, 允许标签 "a|b" 或空, 字段名)
 # 顺序即优先级——越靠前的语义越强，先匹配先返回。
 _FIELD_RULES: list[tuple[str, str, str]] = [
-    (r"(price|价钱|价格|售价|金额|￥|\$)", "span|div|strong|b", "价格"),
+    # ★ 2026-09-18（走查 R3.4）：价格规则的标签白名单补 `p` —— 实测 books.toscrape 的
+    #   价格正是 `<p class="price_color">`，旧白名单不含 `p` ⇒ 整列落到兜底名 `内容_p`。
+    (r"(price|价钱|价格|售价|金额|￥|\$)", "span|div|strong|b|p", "价格"),
     (r"(author|作者|发布者|writer|byline)", "span|a|div|small|p", "作者"),
     (r"(date|time|日期|时间|published|pubdate)", "time|span|div|a|p", "日期"),
     (r"(rating|star|评分|评价|score)", "span|div|i|p", "评分"),
@@ -596,14 +598,24 @@ def _infer_item_fields(
         texts = slot["texts"]
         # 恒定文案（每件 item 完全相同，且出现 3 次以上）是模板噪声，
         # 不是业务字段——如页码 "(about)"、"Accepted usernames are:"。
+        # ★ 2026-09-18（走查 R3.5）：**恒定 + 无任何语义类名**才算噪声。
+        #   实测反例：`<p class="instock availability">In stock</p>` 在样本内取值恒定，
+        #   但它是真实业务列（库存状态）——旧判据把它整列删掉，于是该字段
+        #   **从未进入候选**（不是命名错，是根本没枚举到）。这一条可能也是
+        #   "评分/库存缺失"在多个电商站上复现的原因。
         if slot["attr"] is None and len(texts) >= 3 and len(set(texts)) == 1:
-            continue
+            marker: DOMNode = slot["node"]
+            if not _has_semantic_signal(marker.tag, marker.classes):
+                continue
         avg_len = sum(len(t) for t in texts) / max(1, len(texts))
         ranked.append((presence * 0.6 + min(1.0, avg_len / 200) * 0.4, key, slot))
     ranked.sort(key=lambda x: x[0], reverse=True)
 
     fields: list[dict[str, Any]] = []
     used_names: set[str] = set()
+    # 同名消歧按**该名字出现的次数**计数（走查 R3.4）：旧实现用 `len(used_names) + 1`，
+    # 于是三个同名列会得到 `价格` / `价格_7` / `价格_9` 这种「后缀看不出是第几个」的名字。
+    name_seen: dict[str, int] = {}
     for _score, key, slot in ranked[:max_fields]:
         desc: DOMNode = slot["node"]
         # desc 可能深藏在 item 内部，定位它真正所属的 item 再算相对路径
@@ -627,7 +639,12 @@ def _infer_item_fields(
         else:
             parts = key.split(":")
             classes_hint = parts[2] if len(parts) > 2 and not parts[2].startswith("@") else ""
-            name = _classify_field(parts[1] if len(parts) > 1 else "", classes_hint, slot["texts"][:3])
+            name = _classify_field(
+                parts[1] if len(parts) > 1 else "",
+                classes_hint,
+                slot["texts"][:3],
+                _ancestor_class_context(desc, item_descendants),
+            )
             selector = _unique_relative_selector(desc, item_css, item_descendants)
             # `h3 > a` / `h2 > a` 是极常见的"标题即链接"结构：链接本身没有语义
             # 类名，但父级标题标签已经把语义说清楚了。
@@ -636,8 +653,7 @@ def _infer_item_fields(
 
         if not name or not selector:
             continue
-        if name in used_names:
-            name = f"{name}_{len(used_names) + 1}"
+        name = _unique_field_name(name, used_names, name_seen)
         used_names.add(name)
 
         rule: dict[str, Any] = {
@@ -830,8 +846,58 @@ def _explain_no_config(html: str, *, static_top: Any, rendered: str) -> list[str
     return lines
 
 
-def _classify_field(tag: str, classes_str: str, sample_texts: list[str]) -> str:
-    """根据标签、类名和示例文本推断字段类型。
+def _ancestor_class_context(desc: DOMNode, pool: list[DOMNode], *, limit: int = 2) -> str:
+    """取 desc 的**祖先类名**（最近 *limit* 层），供字段命名参考。
+
+    走查 R3.4：books.toscrape 的价格结构是
+    ``<div class="product_price"><p class="price_color">``，
+    命名只看元素自身时，``p`` 的 class ``price_color`` 会因「价格」规则的标签白名单
+    不含 ``p`` 而失配 ⇒ 字段被命名成兜底名 ``内容_p``。祖先其实已经把语义说清楚了
+    —— 与既有的 ``h3 > a`` ⇒ 「标题」是同一条思路。
+
+    ★ 只取**类名**、不取文本：2026-09-12 那次修正明确过，把示例文本混进匹配串会让
+    长正文里的偶然词（``star`` / ``$``）劫持字段名；类名不会有这个问题。
+    """
+    parts = desc.css_path.split(" > ")
+    if len(parts) < 2:
+        return ""
+    names: list[str] = []
+    start = max(0, len(parts) - 1 - limit)
+    for depth in range(start, len(parts) - 1):
+        prefix = " > ".join(parts[: depth + 1])
+        node = next((n for n in pool if n.css_path == prefix), None)
+        if node is not None and node.classes:
+            names.extend(node.classes)
+    return " ".join(names)
+
+
+def _unique_field_name(name: str, used_names: set[str], name_seen: dict[str, int]) -> str:
+    """同名消歧：按**该名字已出现的次数**编号（``价格`` / ``价格_2`` / ``价格_3``）。
+
+    走查 R3.4：旧实现用 ``len(used_names) + 1``，后缀与"第几个同类字段"无关 ——
+    实测出现过 ``价格_6``、``标题_2`` 这种看不出关系的编号，用户无法判断
+    ``价格_6`` 和 ``价格`` 是不是同一类字段。
+    """
+    if name not in used_names:
+        return name
+    name_seen[name] = name_seen.get(name, 1) + 1
+    return f"{name}_{name_seen[name]}"
+
+
+def _has_semantic_signal(tag: str, classes: list[str]) -> bool:
+    """元素的**标签 + 类名**是否已足以判定字段语义（即不落到兜底名 ``内容_<tag>``）。
+
+    用途：区分「模板噪声」与「取值恒定的真实业务列」（走查 R3.5）。
+    """
+    if not classes:
+        return False
+    return _classify_field(tag, " ".join(classes), []) != f"内容_{tag}"
+
+
+def _classify_field(
+    tag: str, classes_str: str, sample_texts: list[str], ancestor_classes: str = ""
+) -> str:
+    """根据标签、类名、祖先类名与示例文本推断字段类型。
 
     2026-09-12 两处修正：
 
@@ -842,15 +908,32 @@ def _classify_field(tag: str, classes_str: str, sample_texts: list[str]) -> str:
        文本混进同一个匹配串，于是"描述"这类长正文里偶然出现的 ``star`` / ``time``
        / ``$`` 会劫持字段名——web-scraping.dev 的商品简介正文里出现了匹配词，
        整个字段就被命名成"评分"。
-    """
-    structural = f"{tag} {classes_str}".lower()
 
+    2026-09-18 追加（走查 R3.4）：``ancestor_classes`` 是**祖先类名**（只取最近两层、
+    只取 class），且**只作为自身标签+类名匹配不上时的兜底**，不与自身信号并进同一个串。
+    实测教训：把两者拼在一起时，``<div class="product_price">`` 的两个子元素
+    （``p.price_color`` 与 ``p.instock.availability``）会**同时**命中「价格」规则 ——
+    库存列被命名成价格、还因排序压过了真正的价格列。分两趟匹配后，
+    自身信号永远优先，祖先只在确实没有自身信号时才说话。
+    仍然**不掺示例文本** —— 上面第 2 条的结论不受影响。
+    """
+    own = f"{tag} {classes_str}".lower()
     for pattern, allowed_tags, field_name in _FIELD_RULES:
         # 先检查标签是否匹配（allowed_tags 用 | 分隔，如 "a|span|div"）
         if allowed_tags and tag.lower() not in allowed_tags.split("|"):
             continue
-        if re.search(pattern, structural, re.IGNORECASE):
+        if re.search(pattern, own, re.IGNORECASE):
             return field_name
+
+    # 祖先类名兜底（走查 R3.4）：如 `<div class="product_price"><p class="x">`。
+    # 只在自身没给出语义时使用；标签门禁照旧，避免越过元素类型乱命名。
+    if ancestor_classes.strip():
+        inherited = f"{tag} {ancestor_classes}".lower()
+        for pattern, allowed_tags, field_name in _FIELD_RULES:
+            if allowed_tags and tag.lower() not in allowed_tags.split("|"):
+                continue
+            if re.search(pattern, inherited, re.IGNORECASE):
+                return field_name
 
     # 文本兜底：仅当没有类名信号、且文本足够短（短文本才可能"本身即字段值"）
     if not classes_str.strip():
