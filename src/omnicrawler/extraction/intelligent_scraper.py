@@ -527,6 +527,91 @@ def _unique_relative_selector(
     return _rel_selector(desc, item_css, 2) or _rel_selector(desc, item_css, 1)
 
 
+#: 「值写在 class 名里」的取值词表（走查 R3.6）。
+#: 例：books.toscrape 的评分是 `<p class="star-rating Three">`，**文本为空**，
+#: 值藏在类名里 ⇒ 旧实现整个字段枚举不到。
+#: ★ 这是一张**封闭**的表：只认这些「数字词」。表外的一律不当取值
+#:   ——"看到类名就猜它是值"会把 `col-md-6`、`btn-primary` 这类排版类名也当数据。
+_WORD_NUMBERS: dict[str, int] = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4,
+    "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+    "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+}
+
+
+def _class_value_token(node: DOMNode) -> str | None:
+    """节点是否把**值**写在 class 名里 —— 是则返回那个词，否则 None。
+
+    两个必要条件，缺一不算：
+
+    1. 这个节点**没有别的取值来源**：无文本、不是图片 / 链接、无 ``itemprop``
+       —— 否则 `class="two"` 这类排版类名会被当成数据；
+    2. 类名里**恰好只有一个**已知数字词 —— 有两个就无法判断哪个才是值（歧义不猜）。
+    """
+    if node.text or node.is_image or node.is_link or node.itemprop:
+        return None
+    found = [c for c in node.classes if c.casefold() in _WORD_NUMBERS]
+    return found[0] if len(found) == 1 else None
+
+
+def _class_value_node(node: DOMNode) -> bool:
+    """值写在 class 名里的候选节点（走查 R3.6 的枚举判据）。
+
+    ★ 除 `_class_value_token` 外还要一条：**其余类名本身带字段语义**。
+      没有这一条，纯排版类名会产出一个**永远是噪声**的列；
+      有了它，"`star-rating` + `Three`" 才成立 ——
+      `star-rating` 说出了"这是什么"，`Three` 说出了"值是多少"。
+    """
+    token = _class_value_token(node)
+    if token is None:
+        return False
+    stable = [c for c in node.classes if c.casefold() != token.casefold()]
+    return _has_semantic_signal(node.tag, stable)
+
+
+def _observed_value_map(tokens: list[str] | tuple[str, ...]) -> dict[str, int]:
+    """把**观察到**的 class 取值词映射成数字（走查 R3.6）。
+
+    ★ 只写看到的，不写整张词表 —— 没见过的取值在抽取时会**原样保留**（可见、可回查），
+      而不是被静默丢弃或猜一个数。用户看到原始值就知道要扩这张表。
+    """
+    out: dict[str, int] = {}
+    for token in tokens:
+        number = _WORD_NUMBERS.get(str(token).casefold())
+        if number is not None and str(token) not in out:
+            out[str(token)] = number
+    return out
+
+
+def _is_value_class_part(part: str, wanted: set[str]) -> bool:
+    """CSS 段里的一小段是不是「值词」类名（`.Three` / `[class~="Three"]`）。"""
+    if part.startswith("."):
+        return part[1:].casefold() in wanted
+    if part.startswith("[class~="):
+        return part.split("=", 1)[1].strip().strip('"]').casefold() in wanted
+    return False
+
+
+def _strip_value_classes(selector: str, tokens: list[str] | tuple[str, ...]) -> str:
+    """从**最终选择器**里去掉「值写在 class 名里」的那一段：``p.star-rating.Three`` → ``p.star-rating``。
+
+    ★ 为什么可以这样后处理：选择器是**对整批 item 统一使用**的。带值词的选择器只匹配到
+      "恰好是那个评分"的商品 —— 实测 books.toscrape 首页 20 条里**只有 3 条**取到评分；
+      去掉值词后 `p.star-rating` 才匹配每件商品的评分元素。
+    ★ 按 **CSS 段精确处理**，不做子串替换 —— `One` 不能把 `OneThing` 也削掉。
+    """
+    wanted = {str(token).casefold() for token in tokens if token}
+    if not wanted:
+        return selector
+    kept: list[str] = []
+    for segment in selector.split(" > "):
+        parts = re.split(r"(?=[.\[])", segment)
+        tail = [part for part in parts[1:] if not _is_value_class_part(part, wanted)]
+        kept.append("".join([parts[0], *tail]))
+    return " > ".join(kept)
+
+
 def _field_key(node: DOMNode) -> str:
     """字段聚合键：优先 itemprop，其次 tag + class。
 
@@ -537,7 +622,14 @@ def _field_key(node: DOMNode) -> str:
     if node.itemprop:
         return f"itemprop:{node.itemprop.lower()}"
     if node.classes:
-        return f"tag:{node.tag}:{'.'.join(node.classes[:2])}"
+        # ★ 走查 R3.6：值写在 class 名里时（`star-rating Three` / `star-rating Four`），
+        #   那个值词**不属于字段身份** —— 带着它聚合，每件商品各成一个键，
+        #   出现率必然低于阈值，整列在下一步就被丢掉。去掉值词才能归成同一个字段。
+        token = _class_value_token(node)
+        key_classes = (
+            [c for c in node.classes if c.casefold() != token.casefold()] if token else node.classes
+        ) or node.classes
+        return f"tag:{node.tag}:{'.'.join(key_classes[:2])}"
     return f"tag:{node.tag}:@{node.parent_key or '?'}"
 
 
@@ -561,17 +653,29 @@ def _infer_item_fields(
     for item in sample:
         descendants = [
             n for n in nodes
-            if n.css_path.startswith(item.css_path + " > ") and n.depth > item.depth and (n.text or n.is_image)
+            if n.css_path.startswith(item.css_path + " > ")
+            and n.depth > item.depth
+            # ★ 走查 R3.6：`(text or is_image)` 会把「值写在 class 名里」的元素**整类排除**
+            #   （books.toscrape 的 `<p class="star-rating Three">` 文本为空）⇒ 评分列
+            #   从未进入候选。放行的同时必须能取值 —— 见下面 `attribute: class` + `value_map`；
+            #   只放行不取值，得到的是一列**永远为空**的列，比不出现更糟。
+            and (n.text or n.is_image or _class_value_node(n))
         ]
         for candidate in descendants:
             key = _field_key(candidate)
             slot = by_key.setdefault(
                 key,
-                {"node": candidate, "texts": [], "items": 0, "attr": None},
+                {"node": candidate, "texts": [], "items": 0, "attr": None, "class_values": []},
             )
             slot["items"] += 1
             slot["texts"].append(candidate.text[:200])
-            if candidate.itemprop:
+            token = _class_value_token(candidate)
+            if token is not None:
+                # 值写在 class 名里：取值用 `class`，再由 `value_map` 把词翻成数字
+                if slot["attr"] is None:
+                    slot["attr"] = "class"
+                slot["class_values"].append(token)
+            elif candidate.itemprop:
                 slot["attr"] = "content" if candidate.tag == "meta" else None
             elif candidate.is_image:
                 slot["attr"] = "src"
@@ -670,6 +774,15 @@ def _infer_item_fields(
             "desc": f"自动推断: {name}",
             "examples": slot["texts"][:3],
         }
+        # ★ 走查 R3.6：值写在 class 名里 ⇒ 取到 `class` 之后还要**映射**（`Three` → 3）。
+        #   放行而不映射，用户拿到的要么是 `star-rating Three` 原文、要么是空列 ——
+        #   都不叫"取到了评分"。
+        if slot["class_values"]:
+            rule["attribute"] = "class"
+            rule["value_map"] = _observed_value_map(slot["class_values"])
+            rule["examples"] = slot["class_values"][:3]
+            # ★ 选择器不能带"值词"，否则只匹配到恰好是那个评分的商品（实测 20 条只取到 3 条）
+            rule["selector"] = _strip_value_classes(str(rule["selector"]), slot["class_values"])
         fields.append(rule)
 
     if not fields:
@@ -699,6 +812,12 @@ def _infer_leaf_item_fields(items: list[DOMNode]) -> list[dict[str, Any]]:
     item_token = _css_token(template)
     container_css = _parent_css(template.css_path)
     item_selector = f"{container_css} > {item_token}" if container_css else item_token
+    #: 走查 R3.6：单元自身把**值写在 class 名里**（`p.star-rating Three`）时，
+    #: 下面两条都是假、`sample_texts` 也是空 —— 旧实现于是给它一个 `text` 取值，
+    #: 产出一列**永远为空**的字段。
+    class_tokens = [token for n in sample if (token := _class_value_token(n)) is not None]
+    # 同理，item_selector 也不能带值词，否则只匹配到恰好那一种取值的元素
+    item_selector = _strip_value_classes(item_selector, class_tokens)
 
     is_link = all(n.is_link for n in sample)
     is_image = all(n.is_image for n in sample)
@@ -713,17 +832,25 @@ def _infer_leaf_item_fields(items: list[DOMNode]) -> list[dict[str, Any]]:
         if name in {"链接地址", "图片地址"}:
             name = "链接文本"
         attr = "text"
+    elif class_tokens:
+        token = class_tokens[0]
+        stable = [c for c in template.classes if c.casefold() != token.casefold()]
+        name = _classify_field(template.tag, " ".join(stable), sample_texts) or "内容"
+        attr = "class"
     else:
         name = _classify_field(template.tag, " ".join(template.classes), sample_texts) or "内容"
         attr = "text"
 
-    fields.append({
+    single_rule: dict[str, Any] = {
         "name": name,
         "selector": "",
         "attribute": attr,
         "desc": f"自动推断: {name}（重复单元自身）",
-        "examples": sample_texts,
-    })
+        "examples": class_tokens[:3] if attr == "class" else sample_texts,
+    }
+    if attr == "class":
+        single_rule["value_map"] = _observed_value_map(class_tokens)
+    fields.append(single_rule)
     if is_link:
         hrefs = [n.href for n in sample if n.href][:3]
         if hrefs:
@@ -1675,6 +1802,9 @@ def analyze_to_config(
             rule["attr"] = attribute
         if f.get("regex"):
             rule["regex"] = f["regex"]
+        # 走查 R3.6：值写在 class 名里时，取到 `class` 还要映射（`Three` → 3）
+        if f.get("value_map"):
+            rule["value_map"] = f["value_map"]
         if f.get("examples"):
             rule["examples"] = f["examples"]
         fields_dict[name] = rule

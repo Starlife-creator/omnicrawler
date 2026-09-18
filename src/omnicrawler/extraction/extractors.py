@@ -83,6 +83,48 @@ def _with_absolutized_value(
     return absolute, {**trace, "clean_value": absolute, "absolutized_from": original}
 
 
+def _apply_value_map(value: str, mapping: dict[str, Any]) -> tuple[Any, str | None]:
+    """按规则的 ``value_map`` 把取值映射成目标值；返回 ``(新值, 原值或 None)``。
+
+    匹配顺序：**整体值**优先（去首尾空白、大小写不敏感），其次**逐 token**
+    —— ``attr: class`` 取到的是 ``"star-rating Three"``，值藏在其中一个 token 里。
+
+    ★ **没命中就原样返回**（不猜、不丢）。页面出现词表外的取值时，用户看到的是原始值
+      （据此可以扩表），而不是一个假数字或一列空值。
+    ★ 映射结果**保留用户写的类型**（`{Three: 3}` 给的就是整数 3）——
+      用户写的是数字就用数字，别替他降级成字符串。
+    """
+    text = value.strip()
+    if not text:
+        return value, None
+    for key, mapped in mapping.items():
+        if str(key).strip().casefold() == text.casefold():
+            return mapped, value
+    for token in text.split():
+        for key, mapped in mapping.items():
+            if str(key).strip().casefold() == token.casefold():
+                return mapped, value
+    return value, None
+
+
+def _map_rule_values(values: list[Any], rule: Any) -> tuple[list[Any], list[str]]:
+    """对整批取值套用 ``value_map``；返回 ``(新取值, 被改写的原值列表)``。"""
+    mapping = rule.get("value_map") if isinstance(rule, dict) else None
+    if not isinstance(mapping, dict) or not mapping:
+        return values, []
+    mapped_values: list[Any] = []
+    origins: list[str] = []
+    for item in values:
+        if isinstance(item, str):
+            mapped, original = _apply_value_map(item, mapping)
+            if original is not None:
+                origins.append(original)
+                mapped_values.append(mapped)
+                continue
+        mapped_values.append(item)
+    return mapped_values, origins
+
+
 def decode_body(result: FetchResult) -> str:
     content_type = result.headers.get("content-type", "")
     charset_match = re.search(r"charset=([\w.-]+)", content_type, flags=re.I)
@@ -272,6 +314,7 @@ def _apply_xpath_rule(
                 cleaned = cleaned.strip()
         if cleaned:
             values.append(cleaned)
+    values, mapped_origins = _map_rule_values(values, rule)
     if rule.get("all"):
         result_value: Any = (
             str(rule.get("join", " | ")).join(values) if rule.get("join") is not None else values
@@ -282,6 +325,10 @@ def _apply_xpath_rule(
         "xpath": xpath, "matches": len(nodes), "raw_value": raw_values[0] if raw_values else None,
         "clean_value": result_value, "rule": dict(rule), "confidence": 1.0 if values else 0.0,
     }
+    if mapped_origins:
+        trace["mapped_from"] = (
+            mapped_origins[0] if len(mapped_origins) == 1 else list(mapped_origins)
+        )
     return _with_absolutized_value(
         result_value, trace, kind=_address_rule_kind(rule), base_url=base_url
     )
@@ -344,8 +391,13 @@ def _apply_rule(
                 value = value.lower()
             elif name == "upper":
                 value = value.upper()
-        if value:
+        if value != "":
             values.append(value)
+
+    # 走查 R3.6：值写在 class 名里时取到的是 `star-rating Three` ⇒ 由 value_map 翻成数字。
+    # 放在 transform 之后、选择之前，逐值映射。
+    values, mapped_origins = _map_rule_values(values, rule)
+
     if rule.get("all"):
         value = str(rule.get("join", " | ")).join(map(str, values)) if rule.get("join") is not None else values
     else:
@@ -362,6 +414,12 @@ def _apply_rule(
         },
         "confidence": 1.0 if values else 0.0,
     }
+    if mapped_origins:
+        # ★ 被映射过的值必须**可见**（与 `absolutized_from` 同一条纪律）：
+        #   `Three` 变成 `3` 之后，用户仍要能看出这个数字是从哪来的。
+        trace["mapped_from"] = (
+            mapped_origins[0] if len(mapped_origins) == 1 else list(mapped_origins)
+        )
     return _with_absolutized_value(
         value, trace, kind=_address_rule_kind(rule), base_url=base_url
     )
