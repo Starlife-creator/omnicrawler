@@ -801,15 +801,18 @@ def _fields_for_pattern(pattern: RepeatingPattern, nodes: list[DOMNode]) -> list
     return _infer_leaf_item_fields(items)
 
 
-def _explain_no_config(html: str, *, static_top: Any, rendered: str) -> list[str]:
-    """给出「为什么没产出配置」的**分类与下一步**（走查 R2.3）。
+def _explain_no_config(
+    html: str, *, static_top: Any, rendered: str, signals: tuple[str, ...] = ()
+) -> list[str]:
+    """给出「为什么没产出配置」的**分类与下一步**（走查 R2.3 / R3.2）。
 
     旧实现对每一种失败都打印同一句「静态与浏览器渲染均无可用列表」——
     而实测（0.13.0）10 例失败落在四种完全不同的情形上，下一步动作也各不相同：
     响应根本不是 HTML、响应为空、页面有结构但配置过不了自校验、必须交互才出现列表。
     用户拿不到区分依据，只能挨个试。
 
-    判断只使用**此时已掌握的事实**（原始 HTML、最像列表的静态候选、渲染结果），不新增探测。
+    判断只使用**此时已掌握的事实**（原始 HTML、最像列表的静态候选、渲染结果、
+    交互信号），不新增探测。
     """
     lines: list[str] = []
     if not html.strip():
@@ -832,6 +835,11 @@ def _explain_no_config(html: str, *, static_top: Any, rendered: str) -> list[str
             "结构复杂时用 omnicrawler visual-select 手工选字段。"
         )
         return lines
+    # 走到这里说明连"最像列表的结构"都没找到 —— 交给交互信号给出**具体**方向（R3.2）
+    detail = _interaction_failure_hint(signals)
+    if detail:
+        lines.extend(detail)
+        return lines
     if rendered.strip():
         lines.append("判断：静态与浏览器渲染之后，都没有发现重复列表结构。")
         lines.append(
@@ -844,6 +852,48 @@ def _explain_no_config(html: str, *, static_top: Any, rendered: str) -> list[str
         "下一步：omnicrawler record-actions 录制交互；若目标需要登录，改用 templates/authenticated 路径。"
     )
     return lines
+
+
+def _interaction_failure_hint(signals: tuple[str, ...]) -> list[str]:
+    """失败 + 检出交互信号 ⇒ 给出**指名道姓**的原因与下一步（走查 R3.2）。"""
+    if not signals:
+        return []
+    lines: list[str] = []
+    if "iframe" in signals:
+        lines.append("判断：页面里的内容在 **iframe** 内 —— 列表不在主文档，所以找不到重复结构。")
+        lines.append(
+            "下一步：omnicrawler record-actions 录制（含进入 frame 的操作）；"
+            "或在配置里显式声明 frame 定位后再跑 auto-analyze。"
+        )
+        return lines
+    if "cookie_banner" in signals:
+        lines.append("判断：页面有 **cookie/consent 提示**，内容要先接受才可见。")
+        lines.append(
+            "下一步：omnicrawler record-actions 录制\"接受\"这一击，把动作写进 browser.actions 后重跑。"
+        )
+        return lines
+    if "form" in signals:
+        lines.append("判断：页面主要通过**表单**（搜索 / 筛选）产出列表。")
+        lines.append(
+            "下一步：omnicrawler record-actions 录制表单填写与提交；"
+            "若接口是 GET 查询参数，也可直接用 omnicrawler api-discover 找接口。"
+        )
+        return lines
+    if "spa_shell" in signals:
+        lines.append("判断：这是 **SPA 外壳**（内容全靠 JS 渲染），而渲染后仍未出现列表。")
+        lines.append(
+            "下一步：确认渲染等待是否足够；必要时 omnicrawler record-actions 补录交互，"
+            "或用 omnicrawler api-discover 从浏览器请求里找数据接口。"
+        )
+        return lines
+    if "infinite_scroll" in signals:
+        lines.append("判断：页面标记了**滚动加载**，但滚动后仍未形成稳定的重复列表。")
+        lines.append(
+            "下一步：适当增大 browser.actions 里 scroll_bottom 的 times，或先用 "
+            "omnicrawler record-actions 确认滚动位置与等待时机。"
+        )
+        return lines
+    return []
 
 
 def _ancestor_class_context(desc: DOMNode, pool: list[DOMNode], *, limit: int = 2) -> str:
@@ -869,6 +919,89 @@ def _ancestor_class_context(desc: DOMNode, pool: list[DOMNode], *, limit: int = 
         if node is not None and node.classes:
             names.extend(node.classes)
     return " ".join(names)
+
+
+#: 交互信号检测（走查 R3.2）。
+#
+# 背景（0.13.0 实测）：交互类场景 11 例里 8 例连配置都产不出来、另 3 例只拿到 2–9 条，
+# 而分析阶段**从不产出任何动作配置**、也**不给任何提示** —— 用户看到的是
+# 「自动分析未能产出可用配置」或一个条数明显偏少的结果，无从知道差的是"交互"这一步。
+#
+# 判据只用**结构性 token**（类名 / id / 元素名 / 脚本里的接线调用），不用自由文本 ——
+# 后者在长正文里会误报。
+_INTERACTION_SIGNALS: tuple[tuple[str, str], ...] = (
+    ("iframe", r"<iframe\b"),
+    ("form", r"<form\b"),
+    ("cookie_banner", r"<(?:div|aside|section)[^>]+(?:id|class)=[\"'][^\"']*(?:cookie|consent|gdpr)"),
+    ("spa_shell", r"<div[^>]+id=[\"'](?:app|root|__next|__nuxt)[\"']"),
+)
+
+_SCRIPT_RE = re.compile(r"<script[^>]*>(.*?)</script>", re.IGNORECASE | re.DOTALL)
+#: 「内容随滚动追加」的证据必须在**脚本里的接线调用**或**标记里的专用类名**上。
+#: ★ 不能拿 "scroll" 这个词直接匹配 —— CSS 的 `overflow: scroll` 到处都是。
+#: 实测取证（quotes.toscrape.com/scroll）：该页用 jQuery `$(window).on('scroll', …)`
+#: 轮询 `/api/quotes?page=N`，既没有 `IntersectionObserver` 也没有 `load-more` 类名 ——
+#: 早期版本因此完全漏检。
+_SCROLL_WIRING_RE = re.compile(
+    r"intersectionobserver|infinite[-_]?scroll|load[-_]?more|lazy[-_]?load"
+    r"|on\(\s*['\"]scroll|addEventListener\(\s*['\"]scroll|onscroll\s*="
+    r"|\$\(\s*window\s*\)\s*\.\s*scroll|window\s*\.\s*onscroll",
+    re.IGNORECASE,
+)
+#: 标记里的专用类名/属性（与既有模板 `generic/infinite_scroll.yaml` 的 `html_contains` 同源）
+_SCROLL_MARKUP_RE = re.compile(r"(?:infinite[-_]scroll|load[-_]?more|lazy[-_]load)", re.IGNORECASE)
+
+#: 各类信号建议的滚动轮数（仅"内容随滚动追加"这一类需要真正的动作）
+_SCROLL_ROUNDS: dict[str, int] = {"infinite_scroll": 12}
+
+
+def _interaction_signals(html: str) -> tuple[str, ...]:
+    """检出页面里的**交互信号**（滚动 / iframe / 表单 / cookie 提示 / SPA 外壳）。"""
+    lowered = html.lower()
+    found: list[str] = []
+    script_bodies = " ".join(match.group(1) for match in _SCRIPT_RE.finditer(html))
+    if _SCROLL_WIRING_RE.search(script_bodies) or _SCROLL_MARKUP_RE.search(lowered):
+        found.append("infinite_scroll")
+    found.extend(
+        name for name, pattern in _INTERACTION_SIGNALS if re.search(pattern, lowered)
+    )
+    return tuple(found)
+
+
+def _interaction_advice(signals: tuple[str, ...], *, scroll_rounds: int) -> list[str]:
+    """把交互信号翻译成「我们做了什么 / 你还需要做什么」。
+
+    分两类（这是 R3.2 的核心取舍）：
+    - **能安全自动化的**：滚动。它不改服务端状态、不需要选择器、轮数有界 ⇒ 直接产出
+      `browser.actions`（`wait_ms` + `scroll_bottom`）。
+    - **不能安全自动化的**：点击（cookie 接受、加载更多按钮）、表单提交、进入 iframe。
+      自动猜选择器可能点到错误的东西 ⇒ **只给告警**，并给出 `record-actions` 的确切用法。
+      ★ 不"顺手"生成动作是刻意的：既有代码注释记录过把 next-link 写成"点击下一页"
+      导致入口页第一页内容全丢（实测 quotes.toscrape.com/js 最终 0 条）。
+    """
+    advice: list[str] = []
+    if scroll_rounds:
+        advice.append(
+            f"检测到内容随滚动追加（infinite-scroll / load-more）⇒ 已自动配置浏览器滚动"
+            f"动作（wait_ms + scroll_bottom×{scroll_rounds}），运行期会用浏览器抓取。"
+        )
+    manual: list[str] = []
+    if "cookie_banner" in signals:
+        manual.append("cookie/consent 提示（先接受才能看到内容）")
+    if "iframe" in signals and "infinite_scroll" not in signals:
+        manual.append("内容在 iframe 里")
+    if "form" in signals and "infinite_scroll" not in signals:
+        manual.append("需要提交表单（搜索 / 筛选）")
+    if "spa_shell" in signals and not scroll_rounds:
+        manual.append("SPA 外壳，内容靠 JS 渲染")
+    if manual:
+        advice.append(
+            "另外检测到需要人工确认的交互：" + "、".join(manual)
+            + "。这类动作**不自动生成**（猜错选择器可能点到别的东西）——"
+            "请用 `omnicrawler record-actions <URL>` 录一遍，它会把动作写进 "
+            "`browser.actions`，再重跑 `auto-analyze` 或直接补进配置。"
+        )
+    return advice
 
 
 def _unique_field_name(name: str, used_names: set[str], name_seen: dict[str, int]) -> str:
@@ -1352,6 +1485,7 @@ def analyze_to_config(
     *,
     rendered: bool = False,
     force_browser: bool = False,
+    scroll_rounds: int = 0,
 ) -> dict[str, Any]:
     """分析页面并直接生成符合 core/config.py 契约的 OmniCrawler 配置。
 
@@ -1360,6 +1494,7 @@ def analyze_to_config(
         url: 真实页面地址（占位地址不允许）。
         rendered: 这份 HTML 是否来自浏览器渲染。**决定生成的 `source.kind`。**
         force_browser: 显式强制浏览器抓取（判定失手时的逃生阀）。
+        scroll_rounds: >0 时产出浏览器滚动动作（内容随滚动追加的页面，走查 R3.2）。
 
     Raises:
         ValueError: 未提供真实 URL（占位符不允许）或契约核验失败时抛出。
@@ -1414,7 +1549,10 @@ def analyze_to_config(
     #   需要翻页/进详情 ⇒ 用 `crawl`（静态 HTTP 抓取 + 链接发现，`render` 仅 browser 为真）；
     #   确实是单页无链接可跟 ⇒ 才用 `static_html`。
     # `force_browser` 是显式逃生阀：判定失手时仍可强制走浏览器。
-    use_browser = force_browser or rendered
+    # 走查 R3.2：内容随滚动追加 ⇒ 必须用浏览器，并产出滚动动作。
+    # 滚动是**唯一**被自动生成的交互：不改服务端状态、不需要选择器、轮数有界；
+    # 点击/表单/iframe 一律只给告警并指向 record-actions（见 _interaction_advice）。
+    use_browser = force_browser or rendered or scroll_rounds > 0
     if use_browser:
         source_kind = "browser"
     elif item_selector or analysis.pagination:
@@ -1431,7 +1569,15 @@ def analyze_to_config(
         "outputs": {"jsonl": True, "csv": True, "xlsx": True},
     }
     if use_browser:
+        actions: list[dict[str, Any]] = []
+        if scroll_rounds > 0:
+            actions = [
+                {"action": "wait_ms", "value": "1500"},
+                {"action": "scroll_bottom", "times": scroll_rounds, "pause_ms": "1000"},
+            ]
         config["browser"] = {"engine": "playwright", "headless": True}
+        if actions:
+            config["browser"]["actions"] = actions
     if item_selector:
         config["extract"]["item_selector"] = item_selector
 
@@ -1598,12 +1744,17 @@ def main() -> None:
         # 运行就用哪种抓取方式（静态 HTML 够用 ⇒ static_html，不必启动浏览器）。
         force_browser = bool(getattr(args, "always_browser", False))
         chosen_from_render = False
+        # 走查 R3.2：先把交互信号一次性检出（静态 HTML 上判即可），
+        # 「内容随滚动追加」直接进配置，其余信号走告警。
+        signals = _interaction_signals(html)
+        scroll_rounds = max((_SCROLL_ROUNDS.get(name, 0) for name in signals), default=0)
 
         def _consider(candidate_html: str, *, from_render: bool) -> None:
             nonlocal best_config, best_html, best_records, chosen_from_render
             try:
                 candidate = analyze_to_config(
-                    candidate_html, url, rendered=from_render, force_browser=force_browser
+                    candidate_html, url, rendered=from_render,
+                    force_browser=force_browser, scroll_rounds=scroll_rounds,
                 )
             except AutoConfigUnverifiedError:
                 return
@@ -1637,7 +1788,9 @@ def main() -> None:
 
         if best_config is None:
             print("错误: 自动分析未能产出可用配置", file=sys.stderr)
-            for line in _explain_no_config(html, static_top=static_top, rendered=rendered_html):
+            for line in _explain_no_config(
+                html, static_top=static_top, rendered=rendered_html, signals=signals
+            ):
                 print(f"  · {line}", file=sys.stderr)
             raise SystemExit(3)
         config, html = best_config, best_html
@@ -1649,6 +1802,9 @@ def main() -> None:
                 "如判定失手，加 --always-browser 可强制走浏览器",
                 file=sys.stderr,
             )
+        # 走查 R3.2：交互信号必须**说出来** —— 要么已自动配好（滚动），要么告知要手工补录。
+        for line in _interaction_advice(signals, scroll_rounds=scroll_rounds):
+            print(f"提示: {line}", file=sys.stderr)
         output = yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
         report = verify_config(config, html)
         print(
