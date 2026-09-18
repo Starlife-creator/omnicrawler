@@ -45,6 +45,10 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
         action="store_true",
         help="即使静态 HTML 已足以生成配置，也强制运行期用浏览器抓取（逃生阀）",
     )
+    auto_crawl.add_argument(
+        "--item-path",
+        help="显式指定 JSON 记录路径（如 $.results[*]），跳过自动打分；只对 JSON 载荷生效",
+    )
     c4a = sub.add_parser("c4a-fetch", help="使用 Crawl4AI 进行轻量 JS 渲染抓取")
     c4a.add_argument("url", help="目标 URL")
     c4a.add_argument("--stealth", action="store_true", help="使用 undetected 浏览器模式")

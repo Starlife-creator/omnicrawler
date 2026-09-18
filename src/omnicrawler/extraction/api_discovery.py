@@ -11,6 +11,7 @@ import yaml
 
 from ..core.safe_data import safe_json_loads
 from ..core.utils import atomic_write
+from .item_path import choose_item_path
 
 _SENSITIVE_KEYS: set[str] = {
     "authorization",
@@ -182,19 +183,18 @@ def _walk(value: Any, path: str = ""):
 
 
 def _best_item_array(payload: Any) -> tuple[str, list[Any]]:
-    choices: list[tuple[int, int, str, list[Any]]] = []
-    for path, value in _walk(payload):
-        if not isinstance(value, list) or not value:
-            continue
-        object_count = sum(isinstance(item, dict) for item in value[:50])
-        if not object_count:
-            continue
-        semantic = int(path.rsplit(".", 1)[-1].casefold() in {"items", "results", "data", "records", "rows", "list"})
-        choices.append((semantic, len(value), path, value))
-    if not choices:
+    """记录数组的 JSONPath 与元素（走查 R4.2：判据与自动配置**共用一处**实现）。
+
+    ★ 旧实现返回的是**点号路径**（如 ``results``）。实测
+    ``json_path(payload, "results")`` 得到的是 ``[[全部元素]]`` ——
+    即**一条**记录（元素是整个列表），据此生成的模板采不到真实记录。
+    现在判据统一在 ``extraction/item_path.py``，返回的路径求值器可直接使用
+    （``$.results[*]``）。
+    """
+    chosen = choose_item_path(payload)
+    if chosen is None:
         return "", []
-    _semantic, _length, path, value = max(choices, key=lambda item: (item[0], item[1], -len(item[2])))
-    return path, value
+    return chosen.path, chosen.values
 
 
 def _infer_pagination(payload: Any, url: str) -> dict[str, Any]:

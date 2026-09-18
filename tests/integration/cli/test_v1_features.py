@@ -7,6 +7,7 @@ import yaml
 
 from omnicrawler.core.models import CrawlRequest, FetchResult
 from omnicrawler.extraction.api_discovery import write_discovery_bundle
+from omnicrawler.extraction.extractors import json_path
 from omnicrawler.extraction.topic_filter import evaluate_topic, filter_records
 from omnicrawler.pipeline_ops.task_spec import (
     AISpec,
@@ -75,8 +76,13 @@ def test_api_discovery_preserves_post_and_generates_executable_json_config() -> 
     assert config["source"]["method"] == "POST"
     assert config["source"]["payload"] == {"topic": "AI"}
     assert "Cookie" not in config["source"]["headers"]
-    assert config["extract"]["item_path"] == "items"
+    assert config["extract"]["item_path"] == "$.items[*]"
     assert config["extract"]["fields"]["title"]["path"] == "title"
+    # ★ 走查 R4.2：点号形态（`items`）经求值器只会得到 1 条"元素是整个列表"的记录。
+    #   这里用真实求值器把"生成的配置**真能取到记录**"钉住，而不是只看路径长什么样。
+    assert json_path(responses[0]["json"], config["extract"]["item_path"]) == [
+        {"title": "A", "url": "/a.pdf"}
+    ]
 
 
 def test_help_registry_covers_new_simple_mode_options() -> None:

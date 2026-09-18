@@ -20,6 +20,13 @@ from pathlib import Path
 from typing import Any
 
 from ..core.utils import user_agent
+from .item_path import (
+    ItemPathCandidate,
+    is_close_call,
+    is_representable,
+    rank_item_paths,
+    unrepresentable_path_keys,
+)
 
 #: `infer_fields` 会在前这么多个重复模式之间择优（见该函数的"多候选择优"说明）。
 _FIELD_CANDIDATES = 3
@@ -1283,23 +1290,122 @@ def _maybe_json_payload(text: str) -> Any | None:
         return None
 
 
-def _json_item_path(payload: Any) -> tuple[str, Any] | None:
-    """定位"记录数组"的 JSONPath 与样本记录。"""
-    if isinstance(payload, list):
-        if payload and isinstance(payload[0], dict):
-            return "$[*]", payload[0]
-        return None
-    if isinstance(payload, dict):
-        # 优先找"元素是对象的数组"这一最常见的 API 包装形态
-        for key, value in payload.items():
-            if isinstance(value, list) and value and isinstance(value[0], dict):
-                return f"$.{key}[*]", value[0]
-        # 退一步：对象里直接就是一个记录
-        return "$", payload
-    return None
+#: 单条 JSON 记录铺开后最多几列。★ 旧实现是 `list(sample.items())[:12]` ——
+#: 按**字典插入序**砍掉第 13 个键之后的字段，静默缺列（走查 R4.2 一并修掉）。
+#: 上限本身是为了挡住"记录有 60 个键 ⇒ 60 列宽表"，被省略的列必须**报出来**。
+_JSON_FIELDS_CAP = 32
+
+#: 嵌套**对象**最多铺平到第几层：`company.name`、`company.address.city`。
+_JSON_NESTING_CAP = 2
 
 
-def _json_configs(payload: Any, url: str, project_name: str) -> dict[str, Any] | None:
+def _json_fields(sample: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """把一条样本记录铺成字段表；返回 ``(fields, notes)``。
+
+    走查 R4.2：旧实现 `if isinstance(value, (dict, list)): continue` 把 ``company`` /
+    ``address`` 这类**嵌套对象整列丢掉**，用户拿到的是一张缺列的表。现在：
+
+    - **嵌套对象**铺平成 ``parent.child``（至多 ``_JSON_NESTING_CAP`` 层）；
+    - **标量数组**保留整列（值就是这个列表）；
+    - **对象数组**不铺成列（会撑爆列数）—— 但**列进提醒**，不静默丢。
+    """
+    fields: dict[str, Any] = {}
+    notes: list[str] = []
+    nested_arrays: list[str] = []
+    too_deep: list[str] = []
+    omitted: list[str] = []
+
+    def label_for(path: str) -> str:
+        """优先用叶子键的中文标签；重名则退回完整路径（保证列名唯一）。"""
+        leaf = path.rsplit(".", 1)[-1]
+        label = _JSON_FIELD_NAMES.get(leaf.casefold(), leaf)
+        if label not in fields:
+            return label
+        candidate, index = path, 2
+        while candidate in fields:
+            candidate = f"{path}_{index}"
+            index += 1
+        return candidate
+
+    def add_column(path: str, value: Any) -> None:
+        if len(fields) >= _JSON_FIELDS_CAP:
+            omitted.append(path)
+            return
+        fields[label_for(path)] = {"path": path}
+
+    def visit(path: str, value: Any, depth: int) -> None:
+        if isinstance(value, dict):
+            if depth >= _JSON_NESTING_CAP:
+                too_deep.append(path)
+                return
+            for key, child in value.items():
+                segment = str(key)
+                if not is_representable(segment):
+                    continue  # 无法表达成 JSONPath ⇒ 由 _json_configs 统一提醒
+                visit(f"{path}.{segment}", child, depth + 1)
+            return
+        if isinstance(value, list):
+            if value and all(isinstance(item, dict) for item in value[:5]):
+                nested_arrays.append(path)
+                return
+            add_column(path, value)
+            return
+        add_column(path, value)
+
+    for key, value in sample.items():
+        segment = str(key)
+        if not is_representable(segment):
+            continue
+        visit(segment, value, 0)
+
+    if nested_arrays:
+        notes.append(
+            "以下嵌套数组未铺成列（记录内的对象数组会撑爆列数）："
+            + "、".join(nested_arrays[:5])
+            + "；如需取其中某个子字段，可手工加一个 extract.fields 项、path 写 "
+            + f"{nested_arrays[0]}[*].<子字段>（多个匹配取首个，加 all: true 取全部）"
+        )
+    if too_deep:
+        notes.append(
+            f"以下嵌套超过 {_JSON_NESTING_CAP} 层未展开：" + "、".join(too_deep[:5])
+        )
+    if omitted:
+        notes.append(
+            f"字段数超过 {_JSON_FIELDS_CAP}，以下列已省略：" + "、".join(omitted[:5])
+        )
+    return fields, notes
+
+
+def _item_path_advice(
+    ranked: tuple[ItemPathCandidate, ...], chosen: ItemPathCandidate
+) -> list[str]:
+    """记录路径"拿不太准"时把候选说出来（走查 R4.2）。
+
+    ★ 只在**非显而易见**时发言：选了单对象（``$``）、或最高分与次高分接近
+    （`is_close_call`）。否则每条 JSON 分析都刷一行提醒，提醒就会被当噪声忽略
+    —— 这是 R4.1 已经定过的调子。
+    """
+    if chosen.path != "$" and not is_close_call(ranked):
+        return []
+    listing = "；".join(
+        f"{item.path}（{item.score} 分：{'、'.join(item.reasons)}）" for item in ranked[:3]
+    )
+    head = (
+        "该 JSON 响应按「单对象」处理（item_path = $，整份响应即一条记录）"
+        if chosen.path == "$"
+        else f"记录路径有多个接近的候选，已取最高分 {chosen.path}"
+    )
+    return [f"{head}；可用 --item-path 改选。候选：{listing}"]
+
+
+def _json_configs(
+    payload: Any,
+    url: str,
+    project_name: str,
+    *,
+    advisories: list[str] | None = None,
+    item_path_override: str = "",
+) -> dict[str, Any] | None:
     """把 JSON API 响应转成 ``source.kind: rest`` + ``extract.mode: json`` 配置。
 
     实测背景（2026-09-12 场景测试）：对 ``jsonplaceholder.typicode.com/users``
@@ -1307,31 +1413,52 @@ def _json_configs(payload: Any, url: str, project_name: str) -> dict[str, Any] |
     于是生成 ``fields: {}`` 的空配置并"成功"退出，用户拿到 0 条记录。
     而 JSON 抽取链路本身完备（同一地址手工配 ``mode: json`` 可稳定取到
     10/10 条、字段完整度 1.0）——缺的只是**路由**。
-    """
-    located = _json_item_path(payload)
-    if located is None:
-        return None
-    item_path, sample = located
 
-    fields: dict[str, Any] = {}
-    if isinstance(sample, dict):
-        for key, value in list(sample.items())[:12]:
-            if isinstance(value, (dict, list)):
-                continue  # 嵌套结构交给用户按需展开，自动配置不猜
-            raw_key = str(key)
-            label = _JSON_FIELD_NAMES.get(raw_key.lower(), raw_key)
-            if label in fields:
-                label = raw_key
-            fields[label] = {"path": raw_key}
-    if not fields:
+    走查 R4.2 起，记录路径改**候选打分**（判据在 ``extraction/item_path.py``，
+    与 ``api_discovery`` 共用一处），不再"第一个对象数组"；``item_path_override``
+    是用户显式指定的路径（``auto-analyze --item-path``），优先于打分。
+    """
+    from .extractors import json_path
+
+    ranked = rank_item_paths(payload, url=url)
+    chosen: ItemPathCandidate | None = None
+
+    if item_path_override:
+        chosen_path = item_path_override
+        values = json_path(payload, chosen_path)
+        if not values:
+            raise AutoConfigUnverifiedError(
+                f"--item-path 在这份响应里取不到任何记录：{chosen_path}"
+                "\n  可供选择的候选：" + ("；".join(item.path for item in ranked[:3]) or "（无）")
+            )
+        sample = values[0]
+    else:
+        if not ranked:
+            return None
+        chosen = ranked[0]
+        chosen_path, sample = chosen.path, chosen.sample
+
+    fields, notes = _json_fields(sample) if isinstance(sample, dict) else ({}, [])
+    if not fields and isinstance(sample, dict):
         return None
+
+    if advisories is not None:
+        if chosen is not None:
+            advisories.extend(_item_path_advice(ranked, chosen))
+        unrepresentable = unrepresentable_path_keys(sample)
+        if unrepresentable:
+            advisories.append(
+                "样本里这些键名含 `.` 或 `[]`，现有 JSONPath 无法表达，已跳过："
+                + "、".join(unrepresentable[:5])
+            )
+        advisories.extend(notes)
 
     return {
         "project": {"name": project_name},
         "source": {"kind": "rest", "seeds": [url]},
         "crawl": {"max_pages": 1, "same_host": True},
         "http": {"user_agent": user_agent("+bot"), "respect_robots": True},
-        "extract": {"mode": "json", "item_path": item_path, "fields": fields},
+        "extract": {"mode": "json", "item_path": chosen_path, "fields": fields},
         "outputs": {"jsonl": True, "csv": True, "xlsx": True},
     }
 
@@ -1486,6 +1613,8 @@ def analyze_to_config(
     rendered: bool = False,
     force_browser: bool = False,
     scroll_rounds: int = 0,
+    item_path_override: str = "",
+    advisories: list[str] | None = None,
 ) -> dict[str, Any]:
     """分析页面并直接生成符合 core/config.py 契约的 OmniCrawler 配置。
 
@@ -1495,6 +1624,10 @@ def analyze_to_config(
         rendered: 这份 HTML 是否来自浏览器渲染。**决定生成的 `source.kind`。**
         force_browser: 显式强制浏览器抓取（判定失手时的逃生阀）。
         scroll_rounds: >0 时产出浏览器滚动动作（内容随滚动追加的页面，走查 R3.2）。
+        item_path_override: 用户显式指定的 JSON 记录路径（``--item-path``），
+            跳过自动打分；**只对 JSON 载荷生效**，未生效时如实写进 `advisories`。
+        advisories: 传入列表则把面向用户的提醒（候选路径、未展开的嵌套等）追加进去。
+            ★ 这些提醒是「拿不太准 / 有东西没展开」的如实告知，不是日志。
 
     Raises:
         ValueError: 未提供真实 URL（占位符不允许）或契约核验失败时抛出。
@@ -1507,10 +1640,25 @@ def analyze_to_config(
     # 先判 JSON/API 载荷：纯 API 地址走 rest + json 链路，不进 HTML 分析
     payload = _maybe_json_payload(html)
     if payload is not None:
-        json_config = _json_configs(payload, url, project_name)
+        json_config = _json_configs(
+            payload,
+            url,
+            project_name,
+            advisories=advisories,
+            item_path_override=item_path_override,
+        )
         if json_config is not None:
             _check_verified(json_config, html)
             return json_config
+        if item_path_override and advisories is not None:
+            advisories.append(
+                f"--item-path={item_path_override} 已给出，但该响应生成不出 JSON 配置"
+                "（样本里没有可用字段），已回退到 HTML 分析"
+            )
+    elif item_path_override and advisories is not None:
+        advisories.append(
+            f"--item-path={item_path_override} 只对 JSON 载荷生效，本页不是 JSON，该参数未生效"
+        )
 
     analysis = analyze_page(html, url)
 
@@ -1701,11 +1849,16 @@ def main() -> None:
         action="store_true",
         help="即使静态 HTML 已足以生成配置，也强制运行期用浏览器抓取（逃生阀）",
     )
+    parser.add_argument(
+        "--item-path",
+        help="显式指定 JSON 记录路径（如 $.results[*]），跳过自动打分；只对 JSON 载荷生效",
+    )
     args = parser.parse_args()
 
     # 获取 HTML：URL 走自有抓取栈；文件直接读
     html: str
     url = args.url or ""
+    item_path_override = str(getattr(args, "item_path", "") or "")
     if args.input.startswith("http://") or args.input.startswith("https://"):
         url = args.input
         try:
@@ -1739,6 +1892,8 @@ def main() -> None:
         best_config: dict[str, Any] | None = None
         best_html = html
         best_records = -1
+        #: 走查 R4.2：只保留**胜出那份**配置的提醒，避免静态/渲染两份候选各报一遍。
+        chosen_advisories: list[str] = []
 
         # 走查 R3.1：`from_render` 决定生成配置的 `source.kind` —— 分析用哪份 HTML，
         # 运行就用哪种抓取方式（静态 HTML 够用 ⇒ static_html，不必启动浏览器）。
@@ -1750,11 +1905,13 @@ def main() -> None:
         scroll_rounds = max((_SCROLL_ROUNDS.get(name, 0) for name in signals), default=0)
 
         def _consider(candidate_html: str, *, from_render: bool) -> None:
-            nonlocal best_config, best_html, best_records, chosen_from_render
+            nonlocal best_config, best_html, best_records, chosen_from_render, chosen_advisories
+            local_advisories: list[str] = []
             try:
                 candidate = analyze_to_config(
                     candidate_html, url, rendered=from_render,
                     force_browser=force_browser, scroll_rounds=scroll_rounds,
+                    item_path_override=item_path_override, advisories=local_advisories,
                 )
             except AutoConfigUnverifiedError:
                 return
@@ -1763,6 +1920,7 @@ def main() -> None:
             if records > best_records:
                 best_config, best_html, best_records = candidate, candidate_html, records
                 chosen_from_render = from_render
+                chosen_advisories = local_advisories
 
         _consider(html, from_render=False)
         static_analysis = analyze_page(html, url)
@@ -1804,6 +1962,9 @@ def main() -> None:
             )
         # 走查 R3.2：交互信号必须**说出来** —— 要么已自动配好（滚动），要么告知要手工补录。
         for line in _interaction_advice(signals, scroll_rounds=scroll_rounds):
+            print(f"提示: {line}", file=sys.stderr)
+        # 走查 R4.2：记录路径拿不太准（单对象 / 候选接近）、或有嵌套没展开时，如实说出来。
+        for line in chosen_advisories:
             print(f"提示: {line}", file=sys.stderr)
         output = yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
         report = verify_config(config, html)

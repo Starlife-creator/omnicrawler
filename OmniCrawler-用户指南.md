@@ -150,7 +150,8 @@ omnicrawler task "抓取 https://books.toscrape.com 的全部 50 页书籍的标
 ```
 
 输出里「为什么这样设置」说明每项设置从哪来，「当前不支持」如实列出当下没有对等能力的部分
-（例如按价格排序需导出后自行处理，点击类交互需先用 `record-actions` 录制）。
+（例如点击类交互需先用 `record-actions` 录制）。**排序 / 分组 / 聚合统计已有对等能力**，
+会直接给出可复制的 `transform` 命令 —— 见下方「数据变换与后处理」。
 只做解析、不发起任何网络请求，确认无误后再走下面的零配置流程。
 
 ### 智能零配置流程（最快）
@@ -161,6 +162,18 @@ omnicrawler auto-analyze https://shop.example.com/products -o configs/shop.yaml
 omnicrawler sample -c configs/shop.yaml --pages 3
 omnicrawler run -c configs/shop.yaml
 ```
+
+> **JSON / API 地址**：记录路径（`extract.item_path`）由**候选打分**自动选出 ——
+> 看数组规模、元素字段数、是否含标识字段、键名与 URL 路径词是否吻合。
+> **单对象响应按「整份响应即一条记录」处理**（例如 `dummyjson.com/products/1` 不会再去取
+> 里面的 `reviews`）；拿不太准时命令会把候选列出来，可显式指定：
+>
+> ```powershell
+> omnicrawler auto-analyze https://dummyjson.com/products/1 --item-path '$.reviews[*]' -o configs/reviews.yaml
+> ```
+>
+> 记录里的**嵌套对象会铺平成 1–2 层字段**（如 `dimensions.width`、`company.address.city`）；
+> 记录内的**对象数组**不铺成列（会撑爆列数），但会在输出里说明，并给出取子字段的写法。
 
 ### 可视化点选流程（最直观）
 

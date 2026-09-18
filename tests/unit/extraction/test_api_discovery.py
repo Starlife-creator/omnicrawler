@@ -29,14 +29,14 @@ class ApiDiscoveryTest(unittest.TestCase):
         }]
         profiles = discover_api_endpoints(responses)
         self.assertEqual(len(profiles), 1)
-        self.assertEqual(profiles[0].item_path, "results")
+        self.assertEqual(profiles[0].item_path, "$.results[*]")
         self.assertEqual(profiles[0].schema["properties"]["id"]["type"], "integer")
         self.assertIn("page", profiles[0].pagination)
         self.assertNotIn("timestamp", profiles[0].endpoint)
         with tempfile.TemporaryDirectory() as temp:
             bundle = write_discovery_bundle(responses, Path(temp))
             generated = yaml.safe_load(Path(bundle["templates"][0]).read_text(encoding="utf-8"))
-            self.assertEqual(generated["extract"]["item_path"], "results")
+            self.assertEqual(generated["extract"]["item_path"], "$.results[*]")
             self.assertEqual(generated["source"]["pagination"]["parameter"], "page")
             self.assertIn("title", generated["extract"]["fields"])
 
