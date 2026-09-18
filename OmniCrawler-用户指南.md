@@ -456,6 +456,13 @@ outputs:
 | `schedule` | 定时任务 | enabled, interval_seconds |
 | `plugins` | 插件配置 | paths, approved_permissions, fail_open |
 
+> **地址类字段会自动补成绝对 URL**：当字段取自 `href` / `src` / `poster` / `action` 这类
+> **资源地址属性**，或取值路径/属性名是 `url` / `image` / `thumbnail` / `link` 这类**地址键**时，
+> 取值会补全成绝对地址（`media/a.jpg`、`../../media/a.jpg`、`/images/a.svg` → `https://站点/…`）；
+> **原值保留在每条记录的 `evidence` 里**（`absolutized_from`），溯源与核对不受影响。
+> 判断依据是**属性 / 键名**，不是字段名 —— 所以叫「链接文本」的字段里那个 `2015` 不会被拼成 URL。
+> 已经绝对、纯 `#锚点`、以及 `mailto:` / `tel:` / `data:` / `javascript:` 等非资源地址一律原样保留。
+
 ### 凭据管理
 
 配置中用 `secret://name` 占位，运行时从环境变量或系统 keyring 读取：

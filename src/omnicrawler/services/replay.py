@@ -62,7 +62,7 @@ try:
             print(json.dumps({"status": "error", "message": "item_selector_no_match"}))
             raise SystemExit(0)
         context = items[0]
-    value, trace = _apply_rule(context, params["rule"])
+    value, trace = _apply_rule(context, params["rule"], base_url=params.get("base_url") or "")
     print(json.dumps({"status": "ok", "value": value, "trace": trace}, ensure_ascii=False, default=str))
 except Exception as exc:  # noqa: BLE001 —— 提取异常同样输出到 stdout
     print(json.dumps({"status": "error", "message": f"{type(exc).__name__}: {exc}"}))
@@ -159,6 +159,9 @@ def replay_field(
             "html_path": raw_path,
             "item_selector": input_data.get("item_selector") or "",
             "rule": rule,
+            # 走查 R4.3：字段取值会把相对资源地址补成绝对 URL ⇒ 重放必须拿到同一个 base，
+            # 否则"重放值"与"运行值"不一致（同一件事两处口径）。
+            "base_url": url or "",
         },
         ensure_ascii=False,
         default=str,

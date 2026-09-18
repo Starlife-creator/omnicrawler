@@ -6,7 +6,81 @@ from typing import Any
 from ..core.config import AppConfig
 from ..core.models import ExtractedRecord, FetchResult, ProcessResult
 from ..core.safe_data import safe_json_loads, safe_regex_search
+from ..core.utils import absolutize_resource_url
 from .html_tools import node_attr, node_markup, node_text, parse_html, select_nodes
+
+#: 「这个字段取的是**资源地址**」的确定性信号之一：**属性名**。
+#: ★ 刻意**不用字段名**判断 —— 走查里就有 `链接文本: 2015`（锚文字），
+#: 按名字把 `链接/地址` 一律当归一对象，会把 `2015` 拼成 `https://site/2015`。
+_URL_ATTRS = frozenset({
+    "href", "src", "data-src", "data-original", "data-url", "data-href", "data-image",
+    "poster", "action", "formaction", "cite", "longdesc", "download",
+})
+
+#: 信号之二：**路径 / 属性键的叶子名**（JSON 字段路径、meta 属性名）。
+_URL_KEY_NAMES = frozenset({
+    "url", "uri", "link", "href", "src", "image", "images", "thumbnail", "picture",
+    "photo", "avatar", "logo", "icon", "cover", "poster", "permalink", "canonical",
+    "video", "audio", "attachment", "contenturl", "imageurl", "image_url", "video_url",
+    "profile_image", "preview",
+})
+
+
+def _address_rule_kind(rule: Any, *, key_path: str = "") -> str:
+    """这条规则的取值是不是「资源地址」？返回 ``""`` / ``"attr"`` / ``"key"``。
+
+    ★ **`attr` 优先且互斥**：规则里写了 ``attr`` 就以它为准 —— 写了 ``attr: title``
+    却因为字段路径叫 `image` 去当归一，那是**把两套信号混着用**，两边都不可信。
+    """
+    if isinstance(rule, dict):
+        attr = str(rule.get("attr", "") or "").strip().casefold()
+        if attr:
+            return "attr" if attr in _URL_ATTRS else ""
+    leaf = str(key_path).rsplit(".", 1)[-1].casefold() if key_path else ""
+    return "key" if leaf in _URL_KEY_NAMES else ""
+
+
+def _absolutize_value(value: Any, base_url: str) -> tuple[Any, Any]:
+    """把取值补成绝对 URL；返回 ``(新值, 原值)``，**无改动时原值为 ``None``**。
+
+    - 字符串：单值归一；
+    - 列表（``all: true`` 或数组字段）：逐项归一，任一项变了才整体算"改过"；
+    - 其它类型：原样返回。
+    """
+    if not base_url:
+        return value, None
+    if isinstance(value, list):
+        rewritten = list(value)
+        changed = False
+        for index, item in enumerate(rewritten):
+            absolute = absolutize_resource_url(base_url, item) if isinstance(item, str) else None
+            if absolute and absolute != item:
+                rewritten[index] = absolute
+                changed = True
+        return (rewritten, value) if changed else (value, None)
+    if isinstance(value, str):
+        absolute = absolutize_resource_url(base_url, value)
+        if absolute and absolute != value:
+            return absolute, value
+    return value, None
+
+
+def _with_absolutized_value(
+    value: Any, trace: dict[str, Any], *, kind: str, base_url: str
+) -> tuple[Any, dict[str, Any]]:
+    """字段取值的**统一出口**：是资源地址就补成绝对 URL，并把**原值留在证据里**。
+
+    ★ 归一放在**取值这一处**（`_apply_rule` / `_apply_xpath_rule` / `_structured_rule`
+    都经此出口），而**不是**放在 `HTMLProcessor` —— `services/replay.py` 也会调
+    `_apply_rule` 重放字段，只在 processor 里归一会让**重放值与运行值不一致**
+    （"两处口径不许漂移"）。
+    """
+    if not kind or not base_url:
+        return value, trace
+    absolute, original = _absolutize_value(value, base_url)
+    if original is None:
+        return value, trace
+    return absolute, {**trace, "clean_value": absolute, "absolutized_from": original}
 
 
 def decode_body(result: FetchResult) -> str:
@@ -64,6 +138,8 @@ def _structured_rule(
     field_name: str,
     rule: Any,
     structured: dict[str, Any],
+    *,
+    base_url: str = "",
 ) -> tuple[bool, Any, dict[str, Any]]:
     if not isinstance(rule, dict):
         return False, None, {}
@@ -78,11 +154,15 @@ def _structured_rule(
         value: Any = jsonld_values if rule.get("all") else (
             jsonld_values[0] if jsonld_values else rule.get("default")
         )
-        return True, value, {
+        jsonld_trace = {
             "source": "jsonld", "path": path, "matches": len(jsonld_values),
             "raw_value": jsonld_values[0] if jsonld_values else None, "clean_value": value,
             "rule": dict(rule), "confidence": 1.0 if jsonld_values else 0.0,
         }
+        value, jsonld_trace = _with_absolutized_value(
+            value, jsonld_trace, kind=_address_rule_kind(rule, key_path=path), base_url=base_url
+        )
+        return True, value, jsonld_trace
     if source in {"opengraph", "open_graph", "twitter", "meta"}:
         bucket = "open_graph" if source in {"opengraph", "open_graph"} else source
         key = str(rule.get("property", rule.get("path", field_name)))
@@ -97,11 +177,17 @@ def _structured_rule(
         )
         if value is None:
             value = rule.get("default")
-        return True, value, {
+        meta_trace = {
             "source": bucket, "path": key, "matches": int(value is not None),
             "raw_value": value, "clean_value": value, "rule": dict(rule),
             "confidence": 1.0 if value is not None else 0.0,
         }
+        # 这里的 `key` 就是**取值时用的那个 meta 键**（未显式声明 property/path 时才退回字段名）
+        # —— 取值来源本身就带地址语义，不是"按字段名猜"。
+        value, meta_trace = _with_absolutized_value(
+            value, meta_trace, kind=_address_rule_kind(rule, key_path=key), base_url=base_url
+        )
+        return True, value, meta_trace
     if source in {"browser_response", "network_response", "api_response"}:
         path = str(rule.get("path", "$"))
         url_pattern = str(rule.get("url_pattern", ""))
@@ -124,15 +210,21 @@ def _structured_rule(
         value = response_values if rule.get("all") else (
             response_values[0] if response_values else rule.get("default")
         )
-        return True, value, {
+        response_trace = {
             "source": "browser_response", "path": path, "response_url": sources[0] if sources else None,
             "matches": len(response_values), "raw_value": response_values[0] if response_values else None,
             "clean_value": value, "rule": dict(rule), "confidence": 1.0 if response_values else 0.0,
         }
+        value, response_trace = _with_absolutized_value(
+            value, response_trace, kind=_address_rule_kind(rule, key_path=path), base_url=base_url
+        )
+        return True, value, response_trace
     return False, None, {}
 
 
-def _apply_xpath_rule(context: Any, rule: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
+def _apply_xpath_rule(
+    context: Any, rule: dict[str, Any], *, base_url: str = ""
+) -> tuple[Any, dict[str, Any]]:
     try:
         from lxml import html as lxml_html
     except ImportError as exc:
@@ -186,19 +278,24 @@ def _apply_xpath_rule(context: Any, rule: dict[str, Any]) -> tuple[Any, dict[str
         )
     else:
         result_value = values[0] if values else rule.get("default")
-    return result_value, {
+    trace = {
         "xpath": xpath, "matches": len(nodes), "raw_value": raw_values[0] if raw_values else None,
         "clean_value": result_value, "rule": dict(rule), "confidence": 1.0 if values else 0.0,
     }
+    return _with_absolutized_value(
+        result_value, trace, kind=_address_rule_kind(rule), base_url=base_url
+    )
 
 
-def _apply_rule(context: Any, rule: Any) -> tuple[Any, dict[str, Any]]:
+def _apply_rule(
+    context: Any, rule: Any, *, base_url: str = ""
+) -> tuple[Any, dict[str, Any]]:
     if isinstance(rule, str):
         rule = {"selector": rule}
     if not isinstance(rule, dict):
         return rule, {}
     if rule.get("xpath"):
-        return _apply_xpath_rule(context, rule)
+        return _apply_xpath_rule(context, rule, base_url=base_url)
     candidates = rule.get("selectors")
     if isinstance(candidates, list):
         traces: list[dict[str, Any]] = []
@@ -211,7 +308,7 @@ def _apply_rule(context: Any, rule: Any) -> tuple[Any, dict[str, Any]]:
                 candidate_rule.update(candidate)
             else:
                 continue
-            value, trace = _apply_rule(context, candidate_rule)
+            value, trace = _apply_rule(context, candidate_rule, base_url=base_url)
             traces.append(trace)
             if value is not None and value != "" and value != []:
                 return value, {"candidate": index, "attempts": traces, **trace}
@@ -253,7 +350,7 @@ def _apply_rule(context: Any, rule: Any) -> tuple[Any, dict[str, Any]]:
         value = str(rule.get("join", " | ")).join(map(str, values)) if rule.get("join") is not None else values
     else:
         value = values[0] if values else rule.get("default")
-    return value, {
+    trace = {
         "selector": selector,
         "matches": len(nodes),
         "raw_value": raw_values[0] if raw_values else None,
@@ -265,6 +362,9 @@ def _apply_rule(context: Any, rule: Any) -> tuple[Any, dict[str, Any]]:
         },
         "confidence": 1.0 if values else 0.0,
     }
+    return _with_absolutized_value(
+        value, trace, kind=_address_rule_kind(rule), base_url=base_url
+    )
 
 
 class HTMLProcessor:
@@ -285,9 +385,11 @@ class HTMLProcessor:
             evidence: dict[str, Any] = {}
             if fields:
                 for name, rule in fields.items():
-                    handled, value, trace = _structured_rule(str(name), rule, structured)
+                    handled, value, trace = _structured_rule(
+                        str(name), rule, structured, base_url=result.final_url
+                    )
                     if not handled:
-                        value, trace = _apply_rule(item, rule)
+                        value, trace = _apply_rule(item, rule, base_url=result.final_url)
                     if value is not None:
                         data[str(name)] = value
                     evidence[str(name)] = {"source_url": result.final_url, **trace}
@@ -374,9 +476,7 @@ class JSONProcessor:
                 for name, rule in fields.items():
                     path, values = json_field_values(item, name, rule)
                     value: Any = values if isinstance(rule, dict) and rule.get("all") else (values[0] if values else None)
-                    if value is not None:
-                        data[str(name)] = value
-                    evidence[str(name)] = {
+                    entry = {
                         "source_url": result.final_url,
                         "path": path,
                         "matches": len(values),
@@ -385,6 +485,17 @@ class JSONProcessor:
                         "rule": dict(rule) if isinstance(rule, dict) else {"path": str(rule)},
                         "confidence": 1.0 if values else 0.0,
                     }
+                    # 走查 R4.3：JSON 侧的"地址"信号是**路径叶子名** —— 键名是载荷给的，
+                    # 不是从用户可见的字段名猜的（后者会把「链接文本」也当成地址）。
+                    value, entry = _with_absolutized_value(
+                        value,
+                        entry,
+                        kind=_address_rule_kind(rule, key_path=path),
+                        base_url=result.final_url,
+                    )
+                    if value is not None:
+                        data[str(name)] = value
+                    evidence[str(name)] = entry
             else:
                 data = item if isinstance(item, dict) else {"value": item}
                 evidence = {"path": extract.get("item_path", "$")}

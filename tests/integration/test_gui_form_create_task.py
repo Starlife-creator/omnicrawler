@@ -31,6 +31,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urljoin
 
 import pytest
 
@@ -986,6 +987,8 @@ _LINKS_HTML = """<html><body><div class="links">
 <a class="item" href="/doc/gamma">Gamma</a>
 </div></body></html>"""
 
+#: 页面里**原样写着**的 href（相对路径）。交付值会被补成绝对 URL（走查 R4.3），
+#: 所以期望值必须用同一个 seed 推出来 —— 端口是动态的，不能写死。
 EXPECTED_LINKS = ("/doc/alpha", "/doc/beta", "/doc/gamma")
 
 
@@ -1079,8 +1082,11 @@ def test_form_created_element_attr_task_delivers_each_items_href(tmp_path: Path,
             )
             rows = list(_csv.DictReader(records_csv.open(encoding="utf-8-sig")))
             delivered = [r["链接"] for r in rows]
-            assert len(delivered) == len(EXPECTED_LINKS), delivered
-            assert set(delivered) == set(EXPECTED_LINKS), delivered
+            # 走查 R4.3：`attr: href` 取到的是**资源地址** ⇒ 交付值必须是**能直接打开**的绝对 URL。
+            # 旧断言比的是站内相对路径（`/doc/alpha`）—— 那正是"半条链接"，用户拿到也用不了。
+            expected = {urljoin(seed, link) for link in EXPECTED_LINKS}
+            assert len(delivered) == len(expected), delivered
+            assert set(delivered) == expected, delivered
         finally:
             with contextlib.suppress(Exception):
                 window._task_runner._backend.shutdown()

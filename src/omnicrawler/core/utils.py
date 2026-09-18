@@ -96,6 +96,43 @@ def canonicalize_url(base_url: str, href: str, *, sort_query: bool = False) -> s
     return urlunsplit((parts.scheme.lower(), host, parts.path or "/", query, ""))
 
 
+def absolutize_resource_url(base_url: str, value: str) -> str | None:
+    """把**相对**资源地址补成绝对 URL；不适用时返回 ``None``（调用方保持原值）。
+
+    ★ 与 :func:`canonicalize_url` **刻意不同**，别互相替换：
+
+    ``canonicalize_url`` 是给**链接发现 / 去重**用的 —— 它还会把 scheme 与 host 转小写、
+      去掉默认端口、**丢掉 fragment**，并且对非 http(s) 一律返回 ``None``
+      （在**字段取值**里那等于把值丢掉）。
+    字段取值要的是「**只补全，不改写**」：站点自己怎么写就怎么留，用户拿到的应是他看到的那条链接。
+
+    返回 ``None`` 的情形（都不是"改不了"，而是"**不该改**"）：
+
+    - 空值 / 纯空白；
+    - 纯 fragment（``#section``）—— 它指向本页，不是一个资源地址；
+    - 显式带非 http(s) 的 scheme（``mailto:`` / ``tel:`` / ``data:`` / ``javascript:`` /
+      ``ftp:`` / ``file:`` …）；
+    - 拼出来仍不是 http(s)（例如 base 自身不是 http(s)）。
+
+    协议相对地址（``//cdn.example.com/a.png``）**会**被补成 ``https://…``；
+    绝对 http(s) 地址原样返回（调用方按"新旧是否相同"决定要不要记证据）。
+    """
+    text = str(value).strip()
+    if not text or text.startswith("#"):
+        return None
+    scheme = urlsplit(text).scheme.casefold()
+    if scheme and scheme not in {"http", "https"}:
+        return None
+    try:
+        joined = urljoin(base_url, text)
+        parts = urlsplit(joined)
+    except ValueError:
+        return None
+    if parts.scheme.casefold() not in {"http", "https"} or not parts.netloc:
+        return None
+    return joined
+
+
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 

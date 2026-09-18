@@ -96,7 +96,10 @@ extract:
             )
             records = HTMLProcessor(config).process(result).records
             self.assertEqual([item.data["title"] for item in records], ["甲", "乙"])
-            self.assertEqual(records[0].data["href"], "/a")
+            # 走查 R4.3：`attr: href` 取到的是**资源地址** ⇒ 补成绝对 URL（原值留在证据里）。
+            # 旧断言写的是 `"/a"` —— 那正是"半条链接"，本批要修的形态。
+            self.assertEqual(records[0].data["href"], "https://example.com/a")
+            self.assertEqual(records[0].evidence["href"]["absolutized_from"], "/a")
 
     def test_json_path_extraction(self):
         with tempfile.TemporaryDirectory() as temp:
