@@ -142,6 +142,17 @@ omnicrawler sample -c configs/my_site.yaml --pages 3
 omnicrawler run -c configs/my_site.yaml
 ```
 
+### 从一句中文需求开始（先看它打算做什么）
+
+```powershell
+# 把需求编译成可审阅的任务设置：字段 / 范围 / 输出 / 当前做不到的部分
+omnicrawler task "抓取 https://books.toscrape.com 的全部 50 页书籍的标题、价格，输出 CSV"
+```
+
+输出里「为什么这样设置」说明每项设置从哪来，「当前不支持」如实列出当下没有对等能力的部分
+（例如按价格排序需导出后自行处理，点击类交互需先用 `record-actions` 录制）。
+只做解析、不发起任何网络请求，确认无误后再走下面的零配置流程。
+
 ### 智能零配置流程（最快）
 
 ```powershell
@@ -201,6 +212,7 @@ omnicrawler reprocess -c configs/my_site.yaml --run-id <run_id>
 
 | 命令 | 说明 |
 |------|------|
+| `omnicrawler task "<中文需求>" [--fallback-url <url>]` | 把中文需求编译成可审阅的任务设置（字段/范围/输出/当前做不到的部分；不联网） |
 | `omnicrawler auto-analyze <url\|file> -o config.yaml` | 智能分析页面结构，自动生成配置 |
 | `omnicrawler visual-select [--port 8084] [-o config.yaml]` | 启动可视化选择器 WebSocket 服务 |
 | `omnicrawler import-easyspider <task.json> -o config.yaml` | 导入 EasySpider 任务 |

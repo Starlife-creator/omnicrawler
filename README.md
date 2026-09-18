@@ -218,6 +218,15 @@ omnicrawler templates validate          # 校验完整性
 
 ## CLI 命令参考（注册表模式）
 
+### 需求理解
+
+```powershell
+omnicrawler task "抓取 https://books.toscrape.com 的标题、价格，输出 CSV" [--fallback-url <url>]
+```
+
+把一句中文需求编译成**可审阅的任务设置**：字段清单、访问范围、输出格式，以及**当前做不到的部分**
+（例如"按价格排序"当下需要导出后自行处理）。只做解析、不发起任何网络请求。
+
 ### 任务执行
 
 ```powershell

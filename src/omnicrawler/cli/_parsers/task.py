@@ -8,6 +8,17 @@ import argparse
 
 
 def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    # 走查 R3.3：中文需求解析此前只有 GUI 可达；命令行的"用户要什么"这一层本该在这里。
+    desire = sub.add_parser(
+        "task",
+        help="把一句中文需求编译成可审阅的任务设置（字段 / 范围 / 输出 / 当前不支持项）",
+    )
+    desire.add_argument("request", help="中文需求，例如「抓取 https://example.com 的标题和价格，输出 CSV」")
+    desire.add_argument(
+        "--fallback-url",
+        default="",
+        help="需求里没写 URL 时使用的地址",
+    )
     for name, help_text in (("run", "启动或重新运行任务"), ("resume", "从中断队列继续")):
         item = sub.add_parser(name, help=help_text)
         item.add_argument("--config", "-c", required=True)

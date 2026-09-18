@@ -24,6 +24,7 @@ from ..commands import run_status as cmd_status
 from ..commands import run_task as cmd_run
 from ..commands import schedule as cmd_schedule
 from ..commands import security as cmd_security
+from ..commands import task as cmd_task
 from ..commands import template as cmd_template
 from ..commands import transform as cmd_transform
 from ..commands import worker as cmd_worker
@@ -524,6 +525,12 @@ def _run_replay(args: argparse.Namespace) -> None:
         args.config, run_id=args.run, field=args.field,
         stage=args.stage, capsule_dir=args.capsule_dir, timeout=args.timeout,
     ))
+
+
+@_register("task")
+def _run_desire(args: argparse.Namespace) -> None:
+    """走查 R3.3：把中文需求解析接到 CLI（解析器此前只有 GUI 可达）。"""
+    _json(cmd_task.compile_request(args.request, fallback_url=args.fallback_url))
 
 
 @_register("transform")
