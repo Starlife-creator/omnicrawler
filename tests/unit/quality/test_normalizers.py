@@ -294,6 +294,32 @@ def test_public_parse_money() -> None:
     assert parse_money(123) == 123  # 非字符串原样返回
 
 
+def test_public_parse_money_covers_non_rmb_currencies() -> None:
+    """走查 R2.2：旧表只有 ¥/￥/$/USD/RMB，而实测目标站点用的是 `£` —— 于是
+    `parse_money` 静默返回原值，用户无从发现"这一步没生效"。
+
+    这里锁定三件事：① 非人民币符号可用；② 后置货币代码可用；
+    ③ 欧式写法（点千分位 + 逗号小数）也能正确解析。
+    """
+    from omnicrawler.quality.normalizers import parse_money
+
+    assert parse_money("£51.77") == "51.77"
+    assert parse_money("A$59.99") == "59.99"
+    assert parse_money("51.77 GBP") == "51.77"
+    assert parse_money("€51,77") == "51.77"
+    assert parse_money("1.234,56 €") == "1234.56"
+    assert parse_money("£1,234.56") == "1234.56"
+    # 无货币标识的裸值仍按「歧义不猜」处理（与 test_money_bad_grouping_rejected 一致）
+    assert parse_money("12,99") == "12,99"
+
+
+def test_money_currency_column_is_inferred_as_money() -> None:
+    """列类型推断同样受货币符号表限制 —— `£` 直方图不该被判成文本。"""
+    from omnicrawler.quality.normalizers import infer_column_type
+
+    assert infer_column_type(["£51.77", "£12.00", "£3.5"]).kind == "money"
+
+
 def test_public_parse_time() -> None:
     from omnicrawler.quality.normalizers import parse_time
 

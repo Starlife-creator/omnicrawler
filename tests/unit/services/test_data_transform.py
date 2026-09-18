@@ -213,5 +213,48 @@ class TransformCliTest(unittest.TestCase):
                 transform_cli(str(src), None)
 
 
+# ── 走查 R2.2：表达式"跑了但没改变值"必须可见 ──────────────────────────────
+
+
+class IneffectiveTransformVisibilityTest(unittest.TestCase):
+    """`parse_money` 这类函数的契约是「无法解析则**返回原值**」——既不算异常，
+    也不计入 `eval_failures`。只看 `eval_failures` 会得到 0，用户以为清洗生效了。
+
+    实测（0.13.0，2026-09-18 走查 R2.2）：`--map '价格数字 = parse_money(内容_p)'`
+    对 `£51.77` 输出 `£51.77`（值没变），而 `eval_failures: 0`。
+    """
+
+    def test_unparsable_values_are_reported_not_silent(self) -> None:
+        records = [{"内容_p": "约51.77"}, {"内容_p": "面议"}]
+        _, stats = transform_records(records, [MapSpec("价格数字", "parse_money(内容_p)")])
+        self.assertEqual(stats.eval_failures, 0, "这不是异常路径 —— 正是它静默的原因")
+        self.assertEqual(stats.ineffective_cells, 2)
+        self.assertEqual(stats.ineffective_columns, ("价格数字_parsed",))
+        self.assertTrue(stats.fully_ineffective)
+
+    def test_effective_transform_is_not_flagged(self) -> None:
+        records = [{"内容_p": "£51.77"}, {"内容_p": "£53.74"}]
+        _, stats = transform_records(records, [MapSpec("价格数字", "parse_money(内容_p)")])
+        self.assertEqual(records[0]["价格数字_parsed"], "51.77")
+        self.assertEqual(stats.ineffective_cells, 0)
+        self.assertEqual(stats.ineffective_columns, ())
+        self.assertFalse(stats.fully_ineffective)
+
+    def test_partially_effective_transform_is_not_a_full_alarm(self) -> None:
+        """部分行没变是正常的（例如个别单元格本就无法解析）——不当作"整体无效"。"""
+        records = [{"内容_p": "£51.77"}, {"内容_p": "面议"}]
+        _, stats = transform_records(records, [MapSpec("价格数字", "parse_money(内容_p)")])
+        self.assertEqual(stats.ineffective_cells, 1)
+        self.assertFalse(stats.fully_ineffective)
+
+    def test_cli_surfaces_the_notice(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            src = _csv(Path(temp) / "in.csv", [("面议", "A")])
+            result = transform_cli(str(src), None, maps=["价格数字 = parse_money(price)"])
+            self.assertIn("notice_ineffective", result)
+            self.assertIn("没有生效", result["notice_ineffective"])
+            self.assertEqual(result["ineffective_columns"], ["价格数字_parsed"])
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

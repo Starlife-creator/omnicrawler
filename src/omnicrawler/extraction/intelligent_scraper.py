@@ -785,6 +785,51 @@ def _fields_for_pattern(pattern: RepeatingPattern, nodes: list[DOMNode]) -> list
     return _infer_leaf_item_fields(items)
 
 
+def _explain_no_config(html: str, *, static_top: Any, rendered: str) -> list[str]:
+    """给出「为什么没产出配置」的**分类与下一步**（走查 R2.3）。
+
+    旧实现对每一种失败都打印同一句「静态与浏览器渲染均无可用列表」——
+    而实测（0.13.0）10 例失败落在四种完全不同的情形上，下一步动作也各不相同：
+    响应根本不是 HTML、响应为空、页面有结构但配置过不了自校验、必须交互才出现列表。
+    用户拿不到区分依据，只能挨个试。
+
+    判断只使用**此时已掌握的事实**（原始 HTML、最像列表的静态候选、渲染结果），不新增探测。
+    """
+    lines: list[str] = []
+    if not html.strip():
+        lines.append("判断：响应体为空（空页 / 204 / 被拦后返回空内容）。")
+        lines.append(
+            "下一步：omnicrawler doctor 检查出网；omnicrawler security-report 看是否被策略拦。"
+        )
+        return lines
+    if "<" not in html or ">" not in html:
+        lines.append("判断：响应内容不是 HTML（可能是 JSON / 纯文本 / 未解压的响应体）。")
+        lines.append(
+            "下一步：JSON 接口走 API 发现 —— omnicrawler api-discover；"
+            "否则检查 Content-Type 与编码是否被中间层改写。"
+        )
+        return lines
+    if static_top is not None:
+        lines.append("判断：页面上**有**候选列表结构，但生成的配置没通过自校验（字段或列表项判定不过关）。")
+        lines.append(
+            "下一步：omnicrawler field-suggest 推荐稳定选择器；omnicrawler sample 小样本试跑；"
+            "结构复杂时用 omnicrawler visual-select 手工选字段。"
+        )
+        return lines
+    if rendered.strip():
+        lines.append("判断：静态与浏览器渲染之后，都没有发现重复列表结构。")
+        lines.append(
+            "下一步：列表很可能要**交互**（点击 / 滚动 / 表单 / 接受 cookie）才会出现 —— "
+            "用 omnicrawler record-actions 录制动作后重跑。"
+        )
+        return lines
+    lines.append("判断：静态与浏览器渲染都没有发现重复列表结构，且渲染未取到内容。")
+    lines.append(
+        "下一步：omnicrawler record-actions 录制交互；若目标需要登录，改用 templates/authenticated 路径。"
+    )
+    return lines
+
+
 def _classify_field(tag: str, classes_str: str, sample_texts: list[str]) -> str:
     """根据标签、类名和示例文本推断字段类型。
 
@@ -1441,9 +1486,11 @@ def main() -> None:
             or static_top.count < 3
             or _is_chrome_path(static_top.css_path)
         )
+        rendered_html = ""
         if weak and url:
             rendered = _fetch_rendered(url)
             if rendered.strip():
+                rendered_html = rendered
                 before = best_records
                 _consider(rendered)
                 if best_records > before:
@@ -1453,7 +1500,9 @@ def main() -> None:
                     )
 
         if best_config is None:
-            print("错误: 自动分析未能产出可用配置（静态与浏览器渲染均无可用列表）", file=sys.stderr)
+            print("错误: 自动分析未能产出可用配置", file=sys.stderr)
+            for line in _explain_no_config(html, static_top=static_top, rendered=rendered_html):
+                print(f"  · {line}", file=sys.stderr)
             raise SystemExit(3)
         config, html = best_config, best_html
         output = yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)

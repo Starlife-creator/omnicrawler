@@ -40,8 +40,18 @@ _FLOAT_RE = re.compile(r"^[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$")
 _PCT_RE = re.compile(r"^([+-]?\d+(?:\.\d+)?)\s*([%％])$")
 _DATE_YMD_RE = re.compile(r"^(\d{4})[年/\-.](\d{1,2})[月/\-.](\d{1,2})日?$")
 _DATE_DMY_RE = re.compile(r"^(\d{1,2})[年/\-.](\d{1,2})[月/\-.](\d{2,4})$")
+# 货币标识：符号、带前缀的 $ 变体、以及三字母代码（可前置也可后置）。
+# 走查 R2.2：旧表只有 ¥/￥/$/USD/RMB —— 而实测的目标站点用的是 `£`，
+# 于是 parse_money 静默返回原值、转换结果不变，用户无从发现"这一步没生效"。
+_CURRENCY_TOKEN = (
+    r"(?:A\$|C\$|HK\$|NZ\$|S\$|US\$|R\$|"
+    r"¥|￥|\$|€|£|₩|₹|₽|"
+    r"USD|RMB|CNY|EUR|GBP|JPY|HKD|AUD|CAD|CHF|KRW|INR|NZD|SGD)"
+)
+_MAGNITUDE_TOKEN = r"(?:万元|亿元|万|亿|元|块)"
 _MONEY_RE = re.compile(
-    r"^(?:(¥|￥|\$|USD|RMB)\s*)?([\d,]+(?:\.\d{1,4})?)\s*(万元|亿元|万|亿|元|块)?$"
+    rf"^(?:({_CURRENCY_TOKEN})\s*)?([\d.,]+)\s*(?:({_MAGNITUDE_TOKEN}|{_CURRENCY_TOKEN}))?$",
+    re.IGNORECASE,
 )
 _URL_RE = re.compile(r"^(?:https?://|www\.)[^\s]+$", re.IGNORECASE)
 
@@ -188,6 +198,58 @@ def _try_percent(value: str) -> str | None:
     return f"{match.group(1)}%"
 
 
+def _strip_thousands(digits: str, sep: str) -> str | None:
+    """千分位剥离：分组必须严格三位，否则返回 None（不猜）。"""
+    if not re.fullmatch(r"\d{1,3}(?:" + re.escape(sep) + r"\d{3})+", digits):
+        return None
+    return digits.replace(sep, "")
+
+
+def _canonical_money_digits(digits: str, *, has_currency: bool) -> str | None:
+    """把金额数字串归一为 `_FLOAT_RE` 可接受的形态；有歧义则返回 None。
+
+    支持三种书写约定（走查 R2.2 —— 目标是让 `£` / `€` 这类非人民币金额也能清洗）：
+
+    - 英式：``1,234.56``（逗号千分位 + 点小数）；
+    - 欧式：``1.234,56``（点千分位 + 逗号小数）；
+    - 单逗号 ``51,77``：**仅当带货币标识时**按小数逗号解释。
+      裸值 ``12,99`` 仍然拒绝 —— 保留既有的「歧义不猜」约定
+      （见 tests/unit/quality/test_normalizers.py::test_money_bad_grouping_rejected）。
+    """
+    if "." not in digits and "," not in digits:
+        return digits
+
+    if "." in digits and "," in digits:
+        # 两个分隔符同时出现：以**最后出现的那个**为小数点
+        decimal_sep = "," if digits.rfind(",") > digits.rfind(".") else "."
+        group_sep = "." if decimal_sep == "," else ","
+        int_part, _, frac = digits.rpartition(decimal_sep)
+        if not int_part or not frac or not frac.isdigit():
+            return None
+        if group_sep in int_part:
+            grouped = _strip_thousands(int_part, group_sep)
+            if grouped is None:
+                return None
+        else:
+            grouped = int_part
+        if not grouped.isdigit():
+            return None
+        return f"{grouped}.{frac}"
+
+    if "." in digits:  # 只有点：小数（既有行为）
+        return digits
+
+    # 只有逗号
+    int_part, _, frac = digits.partition(",")
+    if "," in frac:  # 多个逗号 ⇒ 千分位
+        return _strip_thousands(digits, ",")
+    if len(frac) == 3 and int_part.isdigit() and 1 <= len(int_part) <= 3:
+        return _strip_thousands(digits, ",")
+    if has_currency and len(frac) in (1, 2) and int_part.isdigit():
+        return f"{int_part}.{frac}"  # 带货币标识 ⇒ 可安全判定为小数逗号
+    return None
+
+
 def _try_money(value: str, default_unit: str) -> tuple[str, str] | None:
     """金额规范化：剥离货币符号与千分位，中单位（万/亿）换算到默认单位。
 
@@ -199,16 +261,13 @@ def _try_money(value: str, default_unit: str) -> tuple[str, str] | None:
     if not match:
         return None
     symbol, digits, unit = match.groups()
-    # 千分位校验：有逗号必须按三位分组（"1,299" 合法，"12,99" 歧义拒绝）
-    if "," in digits:
-        int_part = digits.split(".")[0]
-        if not re.fullmatch(r"\d{1,3}(?:,\d{3})+", int_part):
-            return None
-        digits = digits.replace(",", "")
-    if not _FLOAT_RE.match(digits):
+    normalized = _canonical_money_digits(digits, has_currency=bool(symbol or unit))
+    if normalized is None:
+        return None
+    if not _FLOAT_RE.match(normalized):
         return None
     try:
-        amount = Decimal(digits)
+        amount = Decimal(normalized)
     except InvalidOperation:
         return None
     multiplier = _MONEY_MULTIPLIER.get(unit or "", 1)
@@ -220,7 +279,7 @@ def _try_money(value: str, default_unit: str) -> tuple[str, str] | None:
     if symbol:
         parts.append(f"货币符号 {symbol!r}")
     if unit:
-        parts.append(f"单位 {unit}→{default_unit}")
+        parts.append(f"单位 {unit}→{default_unit}" if multiplier != 1 else f"货币代码 {unit}")
     rule = "金额规范化（" + "；".join(parts) + "）" if parts else "金额规范化"
     return canonical, rule
 

@@ -55,4 +55,15 @@ def execute(
     ]
     if not write:
         result["note"] = "未写入文件：--confirm 执行写入，--dry-run 展示样例预览"
+    # 走查 R2.2：**「表达式跑了但没改变任何值」必须说出来**。
+    # `parse_money` 这类函数按契约「无法解析则返回原值」，既不算异常也不计入
+    # eval_failures —— 只看 eval_failures 会得到 0，用户会以为清洗生效了。
+    ineffective = result.get("ineffective_columns") or []
+    if ineffective:
+        result["notice_ineffective"] = (
+            "以下输出列的值与原值完全相同（该清洗对这批数据没有生效）："
+            + "、".join(str(name) for name in ineffective)
+            + "。常见原因：函数遇到无法解析的值时按契约返回原值"
+            "（例如 parse_money 遇到不认识的货币符号/格式）。请核对源列的实际取值形态。"
+        )
     return result

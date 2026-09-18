@@ -526,7 +526,7 @@ def _run_replay(args: argparse.Namespace) -> None:
 
 @_register("transform")
 def _run_transform(args: argparse.Namespace) -> None:
-    _json(cmd_transform.execute(
+    result = cmd_transform.execute(
         args.source,
         args.target,
         maps=args.map,
@@ -539,7 +539,12 @@ def _run_transform(args: argparse.Namespace) -> None:
         max_records=args.max_records,
         on_error=args.on_error,
         preview_limit=args.preview_limit,
-    ))
+    )
+    _json(result)
+    # 走查 R2.2：变换"没起作用"必须落到用户的终端上，不能只躺在 JSON 里。
+    notice = result.get("notice_ineffective")
+    if notice:
+        print(f"\n⚠ {notice}", file=sys.stderr)
 
 
 @_register("workspace")

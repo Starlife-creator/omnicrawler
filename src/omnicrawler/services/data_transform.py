@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -44,6 +45,14 @@ class TransformStats:
     columns_added: tuple[str, ...]
     eval_failures: int
     failure_samples: list[str] = field(default_factory=list)
+    # 走查 R2.2：**「跑了但没改变任何值」必须可见**。
+    # `parse_money` 这类函数的契约是「成功返回规范化数值，**否则返回原值**」，
+    # 于是"遇到不认识的货币"既不抛异常也不计 eval_failures ——
+    # 只看 eval_failures 会得到 0，用户以为清洗生效了，实际结果一个都没变。
+    # 实测（0.13.0）：`--map '价格数字 = parse_money(内容_p)'` 对 `£51.77` 输出 `£51.77`，
+    # 而 `eval_failures: 0`。
+    ineffective_cells: int = 0
+    ineffective_columns: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -51,7 +60,29 @@ class TransformStats:
             "columns_added": list(self.columns_added),
             "eval_failures": self.eval_failures,
             "failure_samples": self.failure_samples,
+            "ineffective_cells": self.ineffective_cells,
+            "ineffective_columns": list(self.ineffective_columns),
         }
+
+    @property
+    def fully_ineffective(self) -> bool:
+        """整批单元格都没有被改变 ⇒ 该表达式对这批数据整体无效（值得提醒用户）。"""
+        return bool(self.columns_added) and self.rows > 0 and self.ineffective_cells >= self.rows * len(self.columns_added)
+
+
+def _referenced_columns(expression: str) -> tuple[str, ...]:
+    """表达式里引用的**数据列名**（排除白名单函数名）。
+
+    用途：判断"输出值是否与原值相同"。`--map "新列名 = 表达式"` 的 LHS 是**目标列名**，
+    不一定是数据里的列（实测 `--map '价格数字 = parse_money(内容_p)'` 里 `价格数字` 就不存在），
+    所以必须从表达式的 `ast.Name` 里取真正被读的列，不能拿 LHS 去比。
+    """
+    try:
+        tree = ast.parse(expression, mode="eval")
+    except SyntaxError:
+        return ()
+    names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    return tuple(sorted(names - set(ALLOWED_FUNCTIONS)))
 
 
 def parse_map(mapping: str) -> MapSpec:
@@ -163,10 +194,14 @@ def transform_records(
     """逐行求值并追加 ``{lhs}_parsed`` 列（原列永不修改）。
 
     Returns:
-        (新记录列表, 统计)。求值失败单元格写 None 并计入 eval_failures。
+        (新记录列表, 统计)。求值失败单元格写 None 并计入 eval_failures；
+        求值成功但**值没变**的单元格计入 ineffective_cells（见 TransformStats 说明）。
     """
     columns_added = tuple(spec.output_column for spec in specs)
+    source_columns = {spec.output_column: _referenced_columns(spec.expression) for spec in specs}
+    effective_by_column: dict[str, int] = {spec.output_column: 0 for spec in specs}
     failures = 0
+    ineffective = 0
     samples: list[str] = []
     total = len(records)
     for start in range(0, total, max(1, batch_size)):
@@ -174,19 +209,34 @@ def transform_records(
         for record in batch:
             for spec in specs:
                 try:
-                    record[spec.output_column] = safe_eval(spec.expression, record)
+                    result = safe_eval(spec.expression, record)
                 except Exception as exc:  # noqa: BLE001 —— 单值失败不中断批次
                     record[spec.output_column] = None
                     failures += 1
                     if len(samples) < 5:
                         samples.append(f"{spec.expression}: {type(exc).__name__}: {exc}")
+                    continue
+                record[spec.output_column] = result
+                if result is None:
+                    continue
+                sources = source_columns[spec.output_column]
+                if sources and any(result == record.get(name) for name in sources):
+                    # 与原值相同 ⇒ 这一步对这行没起作用（例如 parse_money 遇到不认识的货币）
+                    ineffective += 1
+                else:
+                    effective_by_column[spec.output_column] += 1
         if on_progress is not None:
             on_progress(min(start + batch_size, total), total)
+    unchanged_columns = tuple(
+        name for name, effective in effective_by_column.items() if effective == 0 and total > 0
+    )
     stats = TransformStats(
         rows=total,
         columns_added=columns_added,
         eval_failures=failures,
         failure_samples=samples,
+        ineffective_cells=ineffective,
+        ineffective_columns=unchanged_columns,
     )
     return records, stats
 
