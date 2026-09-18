@@ -119,3 +119,104 @@ def test_threshold_boundary_is_documented_and_enforced(tmp_path: Path) -> None:
     with StateStore(config.workspace / "state.sqlite3") as state:
         below = export_all(config, state, run_id)
     assert below["delivery"]["pagination_gap_suspected"] is True
+
+
+# ── ③ 「被页数预算截断」必须可见（走查 R1.2） ─────────────────────────────
+#
+# 上面 ② 的判据只覆盖「每页不足 0.5 条」。实测（0.13.0）某 50 页站点在 60 页预算下
+# 只交付 577/1000 条：每页都有货（9.6 条/页）⇒ 上述判据不触发，
+# `pagination_gap_suspected=false`、`warnings=[]`，用户从任何字段都看不出结果不完整。
+# R1.2 把「待抓余量」与配置预算一起写进 `delivery`，并在预算用尽且仍有待抓时告警。
+
+
+def _config_with_budget(tmp_path: Path, budget: int) -> Path:
+    path = tmp_path / "task.yaml"
+    path.write_text(
+        f"project: {{name: exp, workspace: {str(tmp_path / 'work').replace(chr(92), '/')}}}\n"
+        "source: {kind: static_html, seeds: [https://example.org/]}\n"
+        f"crawl: {{max_pages: {budget}, same_host: true}}\n"
+        "extract:\n  mode: html\n  fields:\n    title: {selector: title}\n"
+        "outputs:\n  jsonl: true\n  csv: true\n  xlsx: false\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _seed_budgeted(
+    tmp_path: Path, *, budget: int, pages: int, records: int, pending: int
+) -> tuple[Path, str]:
+    """在 `_seed` 基础上追加 *pending* 条「待抓」frontier 项。"""
+    config_path = _config_with_budget(tmp_path, budget)
+    config = load_config(config_path)
+    config.workspace.mkdir(parents=True, exist_ok=True)
+    with StateStore(config.workspace / "state.sqlite3") as state:
+        run_id = state.start_run("exp", str(config_path))
+        with state.conn:
+            for index in range(pages):
+                state.conn.execute(
+                    "INSERT INTO responses(run_id, request_fingerprint, url, final_url, status_code,"
+                    " content_type, size_bytes, content_sha256, changed, fetched_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (run_id, f"fp{index}", f"https://example.org/p{index}", f"https://example.org/p{index}",
+                     200, "text/html", 100, f"sha{index}", 0, "now"),
+                )
+            for index in range(records):
+                state.conn.execute(
+                    "INSERT INTO records(record_id, run_id, request_fingerprint, source_url, record_type,"
+                    " data_json, evidence_json, created_at) VALUES(?,?,?,?,?,?,?,?)",
+                    (f"r{index}", run_id, f"fp{index}", "https://example.org/", "item",
+                     json.dumps({"title": f"T{index}"}), json.dumps({"raw": "x"}), "now"),
+                )
+            for index in range(pending):
+                state.conn.execute(
+                    "INSERT INTO frontier(fingerprint, url, method, headers_json, kind, meta_json,"
+                    " status, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (f"wait{index}", f"https://example.org/wait{index}", "GET", "{}", "page", "{}",
+                     "pending", "now", "now"),
+                )
+    return config_path, run_id
+
+
+def _budgeted_summary(tmp_path: Path, *, budget: int, pages: int, records: int, pending: int) -> dict:
+    config_path, run_id = _seed_budgeted(
+        tmp_path, budget=budget, pages=pages, records=records, pending=pending
+    )
+    config = load_config(config_path)
+    with StateStore(config.workspace / "state.sqlite3") as state:
+        return export_all(config, state, run_id)
+
+
+def test_frontier_pending_is_always_exposed(tmp_path: Path) -> None:
+    summary = _budgeted_summary(tmp_path, budget=50, pages=3, records=3, pending=0)
+    assert summary["delivery"]["frontier_pending"] == 0
+    assert summary["delivery"]["budget_exhausted"] is False
+
+
+def test_budget_truncation_is_reported(tmp_path: Path) -> None:
+    """预算用尽 + 仍有待抓 ⇒ 必须报「结果不完整」，并给出可执行动作。"""
+    summary = _budgeted_summary(tmp_path, budget=5, pages=5, records=5, pending=7)
+    delivery = summary["delivery"]
+    assert delivery["frontier_pending"] == 7
+    assert delivery["budget_exhausted"] is True
+    warnings = " ".join(str(item) for item in (summary.get("warnings") or []))
+    assert "页数预算截断" in warnings, warnings
+    assert "7 个 URL 待抓" in warnings, warnings
+    assert "max_pages" in warnings, "必须告诉用户怎么解决"
+
+
+def test_no_alarm_when_budget_not_reached(tmp_path: Path) -> None:
+    """还有待抓但**没到预算**（正常按深度/策略收尾）⇒ 不报截断，避免误报。"""
+    summary = _budgeted_summary(tmp_path, budget=50, pages=5, records=5, pending=3)
+    assert summary["delivery"]["frontier_pending"] == 3
+    assert summary["delivery"]["budget_exhausted"] is False
+    warnings = " ".join(str(item) for item in (summary.get("warnings") or []))
+    assert "页数预算截断" not in warnings
+
+
+def test_dense_budget_truncation_still_caught(tmp_path: Path) -> None:
+    """★ 这是 ② 判据抓不到、R1.2 专门补上的形态：每页都有货但页码没走完。"""
+    summary = _budgeted_summary(tmp_path, budget=20, pages=20, records=200, pending=30)
+    delivery = summary["delivery"]
+    assert delivery["records_per_page"] == 10.0
+    assert delivery["pagination_gap_suspected"] is False, "按原判据不触发（记录/页很密）"
+    assert delivery["budget_exhausted"] is True, "但结果确实不完整，必须报出来"
+

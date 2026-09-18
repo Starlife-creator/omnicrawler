@@ -258,6 +258,37 @@ def _site_key(host: str) -> str:
     """站点标识：归一化 ``www.`` 前缀，使 apex 与 ``www.`` 视为同一站点。"""
     return host[4:] if host.startswith("www.") else host
 
+
+#: 内置「写操作语义」URL 拦截表（走查 R1.4，2026-09-18）。
+#:
+#: 为什么必须有：GET 形态的写操作一旦被爬虫跟进，就是对第三方的**真实副作用**。
+#: 实测（0.13.0）：某电商测试站的商品卡片带「加入购物车」链接，自动配置把它当普通链接跟进 ⇒
+#: 60 个响应里 25 个是 ``?add-to-cart=NNN``，交付的 448 条里 **400 条**来自这些页面、
+#: 同一商品最多重复 16 次 —— 既动了对方的购物车，又把结果集污染成重复数据。
+#:
+#: 取向：**宁可少抓，不可产生副作用**。确实需要时用 ``crawl.allow_write_patterns``（正则）放行；
+#: 显式的 ``crawl.deny_patterns`` 仍然更优先、且始终生效。
+#: 注：``?s=`` 这类**纯检索**参数不在表内 —— 它是读操作，拦掉会破坏"搜索后翻页"这类真实需求。
+_BUILTIN_WRITE_GUARD_PATTERNS: tuple[str, ...] = (
+    r"[?&]add[-_]?to[-_]?cart=",
+    r"[?&]add[-_]?to[-_]?(wishlist|compare)=",
+    r"(^|[/?&])cart(/|$|[?&])",
+    r"(^|[/?&])checkout(/|$|[?&])",
+    r"(^|[/?&])orders?(/|$|[?&])",
+    r"(^|[/?&])(logout|signout|sign-out)(/|$|[?&])",
+    r"(^|[/?&])(delete|destroy|unsubscribe)(/|$|[?&])",
+    r"[?&](delete|remove|destroy|unsubscribe)=",
+    r"[?&](action|do)=(delete|remove|update|edit|create|publish)",
+    r"(^|[/?&])wp-admin(/|$|[?&])",
+    r"(^|[/?&])wp-login\.php",
+)
+_BUILTIN_WRITE_GUARDS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern, re.IGNORECASE) for pattern in _BUILTIN_WRITE_GUARD_PATTERNS
+)
+#: 内置保护的拒绝原因（会被写进错误/审计，便于用户判断"为什么这个 URL 没被抓"）
+WRITE_GUARD_REASON = "内置写操作保护：URL 含状态变更语义（加入购物车/下单/登出/删除等）"
+
+
 @dataclass(slots=True)
 class ScopePolicy:
     config: AppConfig
@@ -289,4 +320,18 @@ class ScopePolicy:
         allow_patterns = crawl.get("allow_patterns", [])
         if allow_patterns and not any(re.search(str(pattern), url) for pattern in allow_patterns):
             return False, "未命中allow_patterns"
+        # 内置写操作保护（走查 R1.4）：默认拒绝，显式放行表可覆盖。
+        if not self._write_guard_exempt(url, crawl):
+            for guard in _BUILTIN_WRITE_GUARDS:
+                if guard.search(url):
+                    return False, WRITE_GUARD_REASON
         return True, ""
+
+    @staticmethod
+    def _write_guard_exempt(url: str, crawl: dict[str, Any]) -> bool:
+        """``crawl.allow_write_patterns`` 里任一正则命中即视为显式放行。"""
+        for pattern in crawl.get("allow_write_patterns", []) or []:
+            text = str(pattern)
+            if text and re.search(text, url, re.IGNORECASE):
+                return True
+        return False

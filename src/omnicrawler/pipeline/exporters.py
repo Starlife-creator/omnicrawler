@@ -4,6 +4,8 @@ import csv
 import json
 import logging
 import re
+import shutil
+from pathlib import Path
 from typing import Any
 
 from ..core.config import AppConfig
@@ -90,6 +92,40 @@ def _excel_cell(value: Any) -> Any:
     return value[:32700] if isinstance(value, str) else value
 
 
+def _preserve_previous_delivery(
+    output: Path, run_id: str | None, *, current_records: int
+) -> list[str]:
+    """本次是**空交付**时，把上一次已有的交付另存到 ``output/previous/``。
+
+    走查 R1.3 背景（0.13.0 实测）：同一工作区第二次 ``run`` 交付 0 条，``records.jsonl``
+    被写成 **0 字节**、``records.csv`` 只剩表头 —— 数据其实还在断点库里（``export`` 可恢复），
+    但用户看到的是「上次的结果没了」。这是对 §4.2「已有有效输出得到保护」的直接违反。
+
+    这里取**不改产物布局**的最小形态：覆盖前先另存一份，并在摘要里说明去哪儿找。
+    返回被另存的文件名（相对 ``output/``）；空列表＝没有需要保护的东西。
+
+    ★ 完整形态（导出按 run 维度隔离 + ``latest`` 指针 + 标记 ``stale``）会动到 GUI 与多处
+    既有路径，按 §3.2「分开审查」留作独立批次（见《优化方案》§6.5 R1.3）。
+    """
+    if current_records:
+        return []
+    saved: list[str] = []
+    stamp = re.sub(r"[^0-9A-Za-z]", "", str(run_id or utcnow()))[:24] or "previous"
+    for name, min_lines in (("records.csv", 2), ("records.jsonl", 1)):
+        source = output / name
+        if not source.is_file() or source.stat().st_size == 0:
+            continue
+        lines = [line for line in source.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()]
+        if len(lines) < min_lines:  # 空/仅表头 => 没有值得保护的内容
+            continue
+        target_dir = output / "previous"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"{stamp}_{name}"
+        shutil.copy2(source, target)
+        saved.append(f"previous/{target.name}")
+    return saved
+
+
 def export_all(config: AppConfig, state: StateStore, run_id: str | None = None) -> dict[str, Any]:
     output = config.workspace / "output"
     output.mkdir(parents=True, exist_ok=True)
@@ -124,6 +160,13 @@ def export_all(config: AppConfig, state: StateStore, run_id: str | None = None) 
             "字段名与基础列冲突，已改名保留（不覆盖）：" + "、".join(sorted(flat_key_collisions))
         )
     outputs = config.section("outputs")
+    # 走查 R1.3：覆盖前先保护上一次的交付（空交付不得毁掉已有结果）。
+    preserved = _preserve_previous_delivery(output, run_id, current_records=len(records))
+    if preserved:
+        optional_warnings.append(
+            "本次没有产生新记录，已把上一次的交付另存为 " + "、".join(preserved)
+            + "（避免覆盖丢结果）。若要从断点库重新导出，请运行 omnicrawler export --config <配置>。"
+        )
     if outputs.get("jsonl", True):
         path = output / "records.jsonl"
         with path.open("w", encoding="utf-8") as handle:
@@ -303,6 +346,26 @@ def export_all(config: AppConfig, state: StateStore, run_id: str | None = None) 
         )
     else:
         delivery["pagination_gap_suspected"] = False
+
+    # 走查 R1.2：**「被页数预算截断」必须可见**。
+    # 上面那条判据只覆盖「每页不足 0.5 条」，对"每页都有货、但页码没走完"完全不敏感 ——
+    # 实测（0.13.0）某 50 页站点在 60 页预算下只交付 577/1000 条，而
+    # pagination_gap_suspected=false、warnings=[]，用户无法从任何字段看出结果不完整。
+    # 「还有多少待抓」这个数据其实早已存在（state.pending_count()，也被导成指标），
+    # 只是没进交付摘要 —— 这里把它与配置预算一起写出来。
+    frontier = state.stats(run_id)["frontier"] if run_id else {}
+    frontier_pending = int(frontier.get("pending", 0) or 0)
+    configured_budget = int(config.section("crawl").get("max_pages", 100) or 0)
+    delivery["frontier_pending"] = frontier_pending
+    delivery["budget_exhausted"] = bool(
+        frontier_pending > 0 and configured_budget > 0 and pages_visited >= configured_budget
+    )
+    if delivery["budget_exhausted"]:
+        optional_warnings.append(
+            f"采集被页数预算截断：已访问 {pages_visited} 页（crawl.max_pages={configured_budget}），"
+            f"仍有 {frontier_pending} 个 URL 待抓 —— 本次结果不完整。"
+            f"确认需要全量时请调大 crawl.max_pages 后重新运行。"
+        )
 
     summary = {
         "project": config.project_name, "run_id": run_id, "exported_at": utcnow(),

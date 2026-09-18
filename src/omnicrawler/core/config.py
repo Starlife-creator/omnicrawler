@@ -56,6 +56,10 @@ DEFAULTS: dict[str, Any] = {
         "strategy": "bfs", "max_pages": 100, "max_depth": 3,
         "same_host": True, "allow_domains": [], "deny_patterns": [],
         "allow_patterns": [], "focus_keywords": [], "concurrency": 4,
+        # ★ 内置写操作语义 URL 拦截的**显式放行**表（正则）。留空＝完全启用内置保护
+        #   （见 security/policy.py 的 _BUILTIN_WRITE_GUARD_PATTERNS）：带「加入购物车 / 下单 /
+        #   登出 / 删除」语义的 URL 默认不跟随，避免对第三方产生真实副作用（2026-09-18 走查 R1.4）。
+        "allow_write_patterns": [],
     },
     "http": {
         "engine": "urllib",
@@ -112,7 +116,12 @@ DEFAULTS: dict[str, Any] = {
     "data_quality": {
         "entity_fields": [],
         "entity_resolution": {"aliases": {}, "csv": ""},
-        "near_duplicate_fields": ["title", "text"],
+        # ★ 空列表 = 「用记录里实际存在的非空文本字段」（见 data_intelligence._effective_dedup_fields）。
+        #   旧默认是英文硬编码 ["title", "text"]，而本项目分析器产出的字段名是中文（标题 / 正文 / …）
+        #   ⇒ 取不到任何值 ⇒ 一条记录都不进入 simhash ⇒ near_duplicates 恒为 0，
+        #   而质量报告照样给 average_quality_score: 1.0（2026-09-18 走查 R1.1。
+        #   即「判据从未被调用」被误读成「没有重复」——度量失败伪装成业务结论）。
+        "near_duplicate_fields": [],
         "near_duplicate_hamming": 3,
         "near_duplicate_max_records": 5000,
     },

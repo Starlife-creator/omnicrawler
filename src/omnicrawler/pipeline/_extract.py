@@ -175,10 +175,15 @@ class _PipelineExtract(_PipelineBase):
                 extract_config = extract_sec
                 fields = extract_config.get("fields", {})
                 # S4.5 P3#137：enrich 增加开关（extract.enrich 默认开，兼容现状）
-                intelligence = (
+                # 显式标注：enrich 关闭时的兜底字典与 enrich_records 的返回都是
+                # 「名字 → 混合类型」，不加标注 mypy 会推成 dict[str, Any | object]（arg-type 判红）。
+                intelligence: dict[str, Any] = (
                     enrich_records(outcome.records, self.config)
                     if extract_config.get("enrich", True)
-                    else {"entities_resolved": 0, "near_duplicates": 0}
+                    else {
+                        "entities_resolved": 0, "near_duplicates": 0,
+                        "dedup_compared": 0, "dedup_fields": [],
+                    }
                 )
                 self.metrics.increment(
                     "omnicrawler_entities_resolved_total", intelligence["entities_resolved"]
@@ -186,6 +191,17 @@ class _PipelineExtract(_PipelineBase):
                 self.metrics.increment(
                     "omnicrawler_near_duplicate_records_total", intelligence["near_duplicates"]
                 )
+                # 走查 R1.1：去重判据"没被调用"必须可见 —— 否则 near_duplicates=0 会被读成
+                # 「没有重复」（实测曾把 448 条里 400 条重复报成零重复、质量分满分）。
+                dedup_compared = int(intelligence.get("dedup_compared", 0))
+                self.metrics.increment("omnicrawler_dedup_compared_total", dedup_compared)
+                if outcome.records and dedup_compared == 0:
+                    LOGGER.warning(
+                        "近似重复判据未参与比对：本页 %d 条记录中没有任何字段可用于比较"
+                        "（dedup_fields=%s）——near_duplicates 的 0 不代表「没有重复」",
+                        len(outcome.records),
+                        intelligence.get("dedup_fields", []),
+                    )
                 if isinstance(fields, dict) and fields:
                     self._stage_quality(run_id, outcome.records, fields, extract_config)
                 semantic_changes = self.state.track_semantic_changes(run_id, outcome.records)

@@ -79,7 +79,48 @@ class EntityResolver:
         return value, False
 
 
-def enrich_records(records: list[ExtractedRecord], config: AppConfig) -> dict[str, int]:
+#: 不参与"近似重复"比较的框架列（每行都有、与内容无关）
+_DEDUP_SKIP_FIELDS = frozenset({"record_id", "source_url", "record_type", "created_at"})
+#: 自动挑选参与比较的字段时，最多取几个（宽表不必把所有列都拉进比较）
+_DEDUP_AUTO_FIELD_LIMIT = 12
+#: 自动挑选字段时抽样的记录数
+_DEDUP_AUTO_SAMPLE = 200
+
+
+def _effective_dedup_fields(
+    records: list[ExtractedRecord], configured: list[str]
+) -> list[str]:
+    """决定「哪些字段参与近似重复比较」。
+
+    ★ 显式配置优先；**未配置时，用当前记录里实际存在的非空文本字段**。
+
+    为什么必须有这个兜底（2026-09-18 走查 R1.1 实测）：旧默认是英文硬编码
+    ``["title", "text"]``，而本项目分析器产出的字段名是中文（标题 / 正文 / 内容_p …）
+    ⇒ 取不到任何值 ⇒ 拼接出的 ``text`` 恒为空 ⇒ ``continue`` ⇒ **一条记录都不会进入
+    simhash** ⇒ ``near_duplicates`` 恒为 0，而质量报告照样报
+    ``average_quality_score: 1.0``。实测场景：某电商站点交付 448 条、实际只有 80 个不同商品，
+    报告却显示零重复。即**不是「没发现重复」，而是判据从未被调用**——与 ``record_identity``
+    当年只认英文键属同一类缺陷（见 tests/unit/extraction/test_semantic.py）。
+
+    兜底取向：**宁可多比，不可不比**；实际比较范围随返回值里的 ``dedup_fields`` 一并回报，
+    让"没有重复"与"没有比对"在报告里可区分。
+    """
+    if configured:
+        return configured
+    picked: list[str] = []
+    for record in records[:_DEDUP_AUTO_SAMPLE]:
+        for name, value in record.data.items():
+            key = str(name)
+            if key in _DEDUP_SKIP_FIELDS or key in picked:
+                continue
+            if isinstance(value, str) and value.strip():
+                picked.append(key)
+                if len(picked) >= _DEDUP_AUTO_FIELD_LIMIT:
+                    return picked
+    return picked
+
+
+def enrich_records(records: list[ExtractedRecord], config: AppConfig) -> dict[str, Any]:
     settings = config.section("data_quality")
     resolver = EntityResolver.from_config(config)
     entity_fields = [str(item) for item in settings.get("entity_fields", [])]
@@ -97,16 +138,23 @@ def enrich_records(records: list[ExtractedRecord], config: AppConfig) -> dict[st
                 )
                 resolved += 1
 
-    text_fields = [str(item) for item in settings.get("near_duplicate_fields", ["title", "text"])]
+    text_fields = _effective_dedup_fields(
+        records, [str(item) for item in settings.get("near_duplicate_fields", [])]
+    )
     threshold = max(0, min(32, int(settings.get("near_duplicate_hamming", 3))))
     maximum = max(0, int(settings.get("near_duplicate_max_records", 5000)))
     hashes: list[tuple[int, ExtractedRecord]] = []
     duplicates = 0
+    compared = 0
     buckets: dict[tuple[int, int], list[tuple[int, ExtractedRecord]]] = defaultdict(list)
     for record in records[:maximum]:
         text = " ".join(str(record.data.get(field, "")) for field in text_fields).strip()
         if not text:
             continue
+        # ★ 记录"判据真的用上了"——报告据此区分「没有重复」与「没有比对」（走查 R1.1）。
+        #   该键会被 quality.assess_records 的 prior_quality 合并逻辑保留，不会被覆盖。
+        record.evidence.setdefault("_quality", {})["dedup_compared"] = True
+        compared += 1
         value = simhash(text)
         match = None
         checked: set[int] = set()
@@ -131,4 +179,12 @@ def enrich_records(records: list[ExtractedRecord], config: AppConfig) -> dict[st
             band_value = (value >> (band * 16)) & 0xFFFF
             buckets[(band, band_value)].append((value, record))
         hashes.append((value, record))
-    return {"entities_resolved": resolved, "near_duplicates": duplicates}
+    return {
+        "entities_resolved": resolved,
+        "near_duplicates": duplicates,
+        # 判据可观测性（走查 R1.1）：这四项让「没重复」与「没比对」在报告里可区分。
+        "dedup_compared": compared,
+        "dedup_skipped": max(0, min(len(records), maximum) - compared),
+        "dedup_truncated": max(0, len(records) - maximum),
+        "dedup_fields": list(text_fields),
+    }

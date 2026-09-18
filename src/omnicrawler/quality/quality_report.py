@@ -71,6 +71,9 @@ def build_quality_report(config: AppConfig, state: StateStore, run_id: str | Non
     total = len(rows)
     review = sum(bool(item.get("review_required")) for item in qualities)
     near_duplicates = sum(bool(item.get("near_duplicate")) for item in qualities)
+    # 走查 R1.1：参与去重比对的记录数。必须与 near_duplicates 一起看 ——
+    # 「比对为 0」时 near_duplicates 的 0 是**判据没运行**，不是「没有重复」。
+    dedup_compared = sum(bool(item.get("dedup_compared")) for item in qualities)
     average_score = sum(float(item.get("score", 0)) for item in qualities) / max(1, len(qualities))
     report: dict[str, Any] = {
         "project": config.project_name,
@@ -81,6 +84,13 @@ def build_quality_report(config: AppConfig, state: StateStore, run_id: str | Non
         "average_quality_score": round(average_score, 4),
         "review_required": review,
         "near_duplicates": near_duplicates,
+        "dedup_compared": dedup_compared,
+        "dedup_notice": (
+            "近似重复判据未参与比对（0 条记录可用于比较）"
+            "—— near_duplicates 的 0 不代表「没有重复」"
+            if total and dedup_compared == 0
+            else ""
+        ),
         "entities_resolved": resolved_entities,
         "semantic_changes": {row["change_type"]: row["count"] for row in changes},
         "semantic_changes_baseline": {
@@ -121,11 +131,19 @@ def _render_html(report: dict[str, Any]) -> str:
         ("平均质量", f"{report['average_quality_score']:.1%}"),
         ("需复核", report["review_required"]),
         ("近似重复", report["near_duplicates"]),
+        ("去重比对", report.get("dedup_compared", 0)),
         ("实体归一", report["entities_resolved"]),
     )
     card_html = "".join(
         f'<div class="card"><span>{html.escape(str(label))}</span><strong>{html.escape(str(value))}</strong></div>'
         for label, value in cards
+    )
+    notice = str(report.get("dedup_notice") or "")
+    notice_html = (
+        f'<section style="border-color:#e6b422;background:#fff9e8"><strong>注意</strong>：'
+        f'{html.escape(notice)}</section>'
+        if notice
+        else ""
     )
     changes = html.escape(json.dumps(report.get("semantic_changes", {}), ensure_ascii=False))
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
@@ -135,5 +153,5 @@ def _render_html(report: dict[str, Any]) -> str:
 .card,section{{background:white;border:1px solid #e5e9f1;border-radius:12px;padding:18px;box-shadow:0 3px 14px #25324a0d}}.card span{{display:block;color:#687386}}.card strong{{font-size:28px}}
 table{{width:100%;border-collapse:collapse}}th,td{{padding:10px;border-bottom:1px solid #edf0f5;text-align:left}}code{{white-space:pre-wrap}}</style></head>
 <body><div class="wrap"><h1>数据质量报告</h1><div class="sub">{html.escape(str(report['project']))} · {html.escape(str(report.get('run_id') or '全部运行'))}</div>
-<div class="cards">{card_html}</div><section><h2>字段健康度</h2><table><thead><tr><th>字段</th><th>完整度</th><th>有效</th><th>异常</th></tr></thead><tbody>{rows}</tbody></table></section>
+<div class="cards">{card_html}</div>{notice_html}<section><h2>字段健康度</h2><table><thead><tr><th>字段</th><th>完整度</th><th>有效</th><th>异常</th></tr></thead><tbody>{rows}</tbody></table></section>
 <section style="margin-top:12px"><h2>语义变化</h2><code>{changes}</code></section></div></body></html>"""
