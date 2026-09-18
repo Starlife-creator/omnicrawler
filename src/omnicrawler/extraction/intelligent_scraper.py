@@ -1345,8 +1345,21 @@ def _check_verified(config: dict[str, Any], html: str) -> dict[str, Any]:
     )
 
 
-def analyze_to_config(html: str, url: str = "", project_name: str = "auto_task") -> dict[str, Any]:
+def analyze_to_config(
+    html: str,
+    url: str = "",
+    project_name: str = "auto_task",
+    *,
+    rendered: bool = False,
+    force_browser: bool = False,
+) -> dict[str, Any]:
     """分析页面并直接生成符合 core/config.py 契约的 OmniCrawler 配置。
+
+    Args:
+        html: 用于分析的页面 HTML。
+        url: 真实页面地址（占位地址不允许）。
+        rendered: 这份 HTML 是否来自浏览器渲染。**决定生成的 `source.kind`。**
+        force_browser: 显式强制浏览器抓取（判定失手时的逃生阀）。
 
     Raises:
         ValueError: 未提供真实 URL（占位符不允许）或契约核验失败时抛出。
@@ -1383,15 +1396,42 @@ def analyze_to_config(html: str, url: str = "", project_name: str = "auto_task")
             rule["examples"] = f["examples"]
         fields_dict[name] = rule
 
+    # 走查 R3.1：**只在真需要时才用浏览器**。
+    #
+    # 旧实现无条件写 `source.kind: browser` + playwright。实测（0.13.0）静态站点也因此
+    # 全程走浏览器（60 页 98s）；另一例在浏览器路径下 600s 超时未完成。
+    # 而同一页面上 `templates inspect` 早已判出 `dynamic: false`、`browser_recommended: false`、
+    # `pagination: ["next-link"]` —— 判断是有的，只是没接进这条路径。
+    #
+    # 判据不是"页面看起来动态"，而是**这份配置是从哪份 HTML 得出的**：
+    #   · 静态 HTML 就足以得到可用配置 ⇒ 运行期也用静态抓取（`rendered=False`）
+    #   · 只有渲染后的 HTML 才得到配置   ⇒ 运行期必须用浏览器（`rendered=True`）
+    # 这样"分析用什么、运行就用什么"，不会出现「分析靠渲染、运行靠静态」的错配。
+    #
+    # ★ 静态路径还要分两步走（第一版只写 `static_html`，实测**立刻回归**）：
+    #   `static_html` **不参与链接发现**（`sources.py` 的 `can_crawl` 不含它），
+    #   于是同一站点只抓到 1 页 20 条（浏览器路径是 60 页 577 条）。
+    #   需要翻页/进详情 ⇒ 用 `crawl`（静态 HTTP 抓取 + 链接发现，`render` 仅 browser 为真）；
+    #   确实是单页无链接可跟 ⇒ 才用 `static_html`。
+    # `force_browser` 是显式逃生阀：判定失手时仍可强制走浏览器。
+    use_browser = force_browser or rendered
+    if use_browser:
+        source_kind = "browser"
+    elif item_selector or analysis.pagination:
+        source_kind = "crawl"  # 需要跟随链接（翻页 / 详情页）
+    else:
+        source_kind = "static_html"
+
     config: dict[str, Any] = {
         "project": {"name": project_name},
-        "source": {"kind": "browser", "seeds": [url]},
+        "source": {"kind": source_kind, "seeds": [url]},
         "crawl": {"max_pages": 200},
         "http": {"user_agent": user_agent("+bot"), "respect_robots": True},
         "extract": {"mode": "html", "fields": fields_dict},
         "outputs": {"jsonl": True, "csv": True, "xlsx": True},
-        "browser": {"engine": "playwright", "headless": True},
     }
+    if use_browser:
+        config["browser"] = {"engine": "playwright", "headless": True}
     if item_selector:
         config["extract"]["item_selector"] = item_selector
 
@@ -1510,6 +1550,11 @@ def main() -> None:
     parser.add_argument("-o", "--output", help="输出 YAML 配置路径")
     parser.add_argument("--url", help="页面原始 URL（用于分页检测，当 input 为文件时提供）")
     parser.add_argument("--json", action="store_true", help="输出完整分析 JSON 而非 YAML")
+    parser.add_argument(
+        "--always-browser",
+        action="store_true",
+        help="即使静态 HTML 已足以生成配置，也强制运行期用浏览器抓取（逃生阀）",
+    )
     args = parser.parse_args()
 
     # 获取 HTML：URL 走自有抓取栈；文件直接读
@@ -1549,18 +1594,26 @@ def main() -> None:
         best_html = html
         best_records = -1
 
-        def _consider(candidate_html: str) -> None:
-            nonlocal best_config, best_html, best_records
+        # 走查 R3.1：`from_render` 决定生成配置的 `source.kind` —— 分析用哪份 HTML，
+        # 运行就用哪种抓取方式（静态 HTML 够用 ⇒ static_html，不必启动浏览器）。
+        force_browser = bool(getattr(args, "always_browser", False))
+        chosen_from_render = False
+
+        def _consider(candidate_html: str, *, from_render: bool) -> None:
+            nonlocal best_config, best_html, best_records, chosen_from_render
             try:
-                candidate = analyze_to_config(candidate_html, url)
+                candidate = analyze_to_config(
+                    candidate_html, url, rendered=from_render, force_browser=force_browser
+                )
             except AutoConfigUnverifiedError:
                 return
             report_candidate = verify_config(candidate, candidate_html) or {}
             records = int(report_candidate.get("records") or 0)
             if records > best_records:
                 best_config, best_html, best_records = candidate, candidate_html, records
+                chosen_from_render = from_render
 
-        _consider(html)
+        _consider(html, from_render=False)
         static_analysis = analyze_page(html, url)
         static_top = static_analysis.patterns[0] if static_analysis.patterns else None
         weak = (
@@ -1575,7 +1628,7 @@ def main() -> None:
             if rendered.strip():
                 rendered_html = rendered
                 before = best_records
-                _consider(rendered)
+                _consider(rendered, from_render=True)
                 if best_records > before:
                     print(
                         "提示: 静态 HTML 列表不完整，已改用浏览器渲染结果生成配置",
@@ -1588,6 +1641,14 @@ def main() -> None:
                 print(f"  · {line}", file=sys.stderr)
             raise SystemExit(3)
         config, html = best_config, best_html
+        # 走查 R3.1：让用户知道运行期会用哪种抓取方式（这直接决定耗时可否省下浏览器）。
+        chosen_kind = str((config.get("source") or {}).get("kind") or "")
+        if chosen_kind in {"static_html", "crawl"} and not chosen_from_render:
+            print(
+                f"提示: 静态 HTML 已足以生成配置，运行期按 {chosen_kind} 抓取（不启动浏览器）；"
+                "如判定失手，加 --always-browser 可强制走浏览器",
+                file=sys.stderr,
+            )
         output = yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
         report = verify_config(config, html)
         print(

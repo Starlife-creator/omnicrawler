@@ -40,6 +40,11 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     auto_crawl.add_argument("input", help="HTML 文件路径 或 URL")
     auto_crawl.add_argument("-o", "--output", help="输出 YAML 配置路径")
     auto_crawl.add_argument("--url", help="页面原始 URL")
+    auto_crawl.add_argument(
+        "--always-browser",
+        action="store_true",
+        help="即使静态 HTML 已足以生成配置，也强制运行期用浏览器抓取（逃生阀）",
+    )
     c4a = sub.add_parser("c4a-fetch", help="使用 Crawl4AI 进行轻量 JS 渲染抓取")
     c4a.add_argument("url", help="目标 URL")
     c4a.add_argument("--stealth", action="store_true", help="使用 undetected 浏览器模式")

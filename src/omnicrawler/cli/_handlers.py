@@ -355,6 +355,8 @@ def _run_auto_analyze(args: argparse.Namespace) -> None:
             _sys.argv.extend(["-o", str(args.output)])
         if hasattr(args, "url") and args.url:
             _sys.argv.extend(["--url", str(args.url)])
+        if getattr(args, "always_browser", False):
+            _sys.argv.append("--always-browser")
         is_main()
     finally:
         _sys.argv = _saved

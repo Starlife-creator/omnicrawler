@@ -61,8 +61,40 @@ def test_analyze_to_config_passes_core_validation(tmp_path) -> None:
     path = tmp_path / "auto.yaml"
     path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
     loaded = load_config(path)  # 契约校验通过，不抛 ValueError
-    assert loaded.source_kind == "browser"
+    # 走查 R3.1：静态 HTML 就足以生成配置 ⇒ 运行期不必启动浏览器。
+    # 旧实现无条件写 `kind: browser`，实测让静态站点白跑浏览器（60 页 98s，
+    # 另一例 600s 超时）。新判据是"分析用哪份 HTML，运行就用哪种抓取方式"。
+    # ★ 列表页必须用 `crawl` 而不是 `static_html`：后者**不参与链接发现**
+    #   （sources.py 的 can_crawl 不含它），实测同一站点只抓到 1 页 20 条。
+    assert loaded.source_kind == "crawl"
     assert loaded.section("source").get("seeds")
+    assert not config.get("browser"), "静态路径不该带 browser 段（否则等于仍然启动浏览器）"
+
+
+def test_single_page_without_links_uses_static_html() -> None:
+    """确实没有链接可跟的单页才用 static_html（最省的路径）。"""
+    config = analyze_to_config(
+        "<html><body><h1>Hello</h1><p>Just text, no list.</p></body></html>",
+        url="https://shop.example/about",
+    )
+    assert config["source"]["kind"] == "static_html"
+    assert not config.get("browser")
+
+
+def test_rendered_html_still_yields_browser_source() -> None:
+    """渲染后的 HTML 得到的配置必须走浏览器 —— 否则运行期会采到 0 条。"""
+    config = analyze_to_config(LIST_PAGE, url="https://shop.example/list", rendered=True)
+    assert config["source"]["kind"] == "browser"
+    assert config["browser"] == {"engine": "playwright", "headless": True}
+
+
+def test_force_browser_escape_hatch_wins_over_static() -> None:
+    """--always-browser：判定失手时的显式逃生阀（维护者确认要保留）。"""
+    config = analyze_to_config(
+        LIST_PAGE, url="https://shop.example/list", force_browser=True
+    )
+    assert config["source"]["kind"] == "browser"
+    assert config["browser"]["engine"] == "playwright"
 
 
 def test_analyze_single_json_object_generates_verified_rest_config(tmp_path) -> None:
