@@ -17,7 +17,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
-from .ux_service import QuickTaskDraft, draft_quick_task
+from ..core.config import SOURCE_KINDS
+from .ux_service import QUICK_INTENTS, QuickTaskDraft, draft_quick_task
 
 _URL = re.compile(r"https?://[^\s，。；;]+", re.IGNORECASE)
 _FILE_EXT = re.compile(r"(?:^|\s)([\w\-/\\]+\.(?:pdf|docx?|xlsx?|pptx?|txt|csv|扫描件))", re.IGNORECASE)
@@ -117,6 +118,11 @@ _OUTPUT_FORMAT_RULES: tuple[tuple[str, str], ...] = (
 )
 #: 需求里写明的页数（"全部 50 页" / "翻完 300 页"）
 _PAGE_COUNT = re.compile(r"(?:全部|所有|共|翻完|一共)?\s*(\d{1,4})\s*页")
+#: 草稿层页数界。★ **必须**与 `core/config.py` 的 `crawl.max_pages` 校验一致；由
+#: `tests/unit/ai/test_config_patch_contract_r44.py` 直接读源码交叉核对
+#: （「两处口径不许漂移」—— 这里放宽/收紧都会让草稿与配置校验各说各话）。
+MIN_TASK_PAGES = 1
+MAX_TASK_PAGES = 1_000_000
 
 
 def _extract_requested_fields(request: str) -> tuple[str, ...]:
@@ -239,6 +245,102 @@ def _apply_request_semantics(
         decisions=tuple(decisions),
         warnings=tuple(warnings),
     )
+
+
+def _apply_config_patch(
+    task: QuickTaskDraft, patch: dict[str, Any]
+) -> tuple[QuickTaskDraft, tuple[str, ...]]:
+    """把 AI 建议的 ``config_patch`` 接进草稿（走查 R4.4 路线 B）。
+
+    契约与承载位的对齐表在 ``services/ai_task_designer.py``（``CONFIG_PATCH_ROUTED`` /
+    ``CONFIG_PATCH_SECURITY_ONLY`` / ``CONFIG_PATCH_WITHDRAWN``）—— **那里是唯一真源**，
+    本函数只负责"接"，不决定接哪些键。
+
+    两件事**不许静默**（与 R1/R2 同一条原则）：
+
+    1. **撤回的键**（产品接不住）若仍被返回 ⇒ 如实告警并给出**真实**的手动去处。
+       ★ 措辞是「未应用到任务设置」，**不是**「产品做不到」：配置层确实有
+       ``download.extensions`` / ``topic.include_any``，写成"做不到"就是假话。
+    2. **取值不合法**（intent 不在白名单、页数越界、类型不对）⇒ 汇总成**一条**告警 ——
+       既不逐项刷屏，也不假装没看见。
+
+    Returns:
+        ``(接上后的草稿, 需要追加到 warnings 的提醒)``。
+    """
+    from .ai_task_designer import CONFIG_PATCH_WITHDRAWN
+
+    if not patch:
+        return task, ()
+
+    warnings: list[str] = []
+    invalid: list[str] = []
+
+    # 1) intent 变了 ⇒ 按新意图**重算默认值**：否则会出现"意图是栏目、页数还是 1"这类错配
+    #    （`draft_quick_task` 是纯函数，重跑不会碰网络）。
+    patched_intent = patch.get("task_intent")
+    if patched_intent is not None:
+        if isinstance(patched_intent, str) and patched_intent in QUICK_INTENTS:
+            if patched_intent != task.intent:
+                task = draft_quick_task(task.url, patched_intent)
+        else:
+            invalid.append(f"task_intent={patched_intent!r}")
+
+    updates: dict[str, Any] = {}
+
+    source_kind = patch.get("source_kind")
+    if source_kind is not None:
+        if isinstance(source_kind, str) and source_kind in SOURCE_KINDS:
+            updates["source_kind"] = source_kind
+        else:
+            invalid.append(f"source_kind={source_kind!r}")
+
+    max_pages = patch.get("max_pages")
+    if max_pages is not None:
+        # bool 是 int 的子类，`True` 不能被当成"1 页"
+        if (
+            isinstance(max_pages, int)
+            and not isinstance(max_pages, bool)
+            and MIN_TASK_PAGES <= max_pages <= MAX_TASK_PAGES
+        ):
+            updates["max_pages"] = max_pages
+        else:
+            invalid.append(f"max_pages={max_pages!r}")
+
+    for patch_key, carrier in (
+        ("process_pdf", "process_pdf"),
+        ("monitor_same_url", "monitor_changes"),
+    ):
+        value = patch.get(patch_key)
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            updates[carrier] = value
+        else:
+            invalid.append(f"{patch_key}={value!r}")
+
+    formats = patch.get("output_formats")
+    if formats is not None:
+        cleaned = (
+            tuple(item.strip() for item in formats if isinstance(item, str) and item.strip())
+            if isinstance(formats, (list, tuple))
+            else ()
+        )
+        if cleaned:
+            updates["output_formats"] = cleaned
+        else:
+            invalid.append(f"output_formats={formats!r}")
+
+    if updates:
+        task = replace(task, **updates)
+
+    for key, destination in CONFIG_PATCH_WITHDRAWN.items():
+        if key in patch:
+            warnings.append(f"AI 给出的「{key}」建议未应用到任务设置 —— {destination}")
+
+    if invalid:
+        warnings.append("AI 建议中有取值不合法、已忽略的项：" + "、".join(invalid))
+
+    return task, tuple(warnings)
 
 
 @dataclass(frozen=True, slots=True)
@@ -461,6 +563,13 @@ def compile_with_ai(
             task = draft_quick_task(url, "save_page")
         except ValueError:
             task = draft_quick_task("https://example.com/", "save_page")
+
+    # 走查 R4.4（路线 B）：AI 建议的 `config_patch` 不再"校验完就丢"—— 能接的键接进草稿，
+    # 接不住的键如实进 warnings（含真实的手动去处）。★ 顺序有讲究：patch 先落地，再用
+    # **需求原文**覆盖 —— 需求是用户自己的话，优先于 AI 的建议。
+    task, patch_warnings = _apply_config_patch(task, draft.config_patch)
+    if patch_warnings:
+        task = replace(task, warnings=task.warnings + patch_warnings)
 
     # 走查 R4.1：AI 路径**共用同一处**需求语义接线。否则同一条需求"开不开 AI"会给出
     # 不同的字段 / 后处理 / 不支持清单 —— 旧实现是两条路径都静默丢弃，只接一处则会变成

@@ -46,6 +46,52 @@ AI_TASK_OUTPUT_SCHEMA: dict[str, type | tuple[type, ...]] = {
 }
 
 # ---------------------------------------------------------------------------
+# `config_patch` 的契约—承载位表（走查 R4.4 路线 B）
+# ---------------------------------------------------------------------------
+#
+# ★ 这三张表是「prompt 向模型要什么」与「草稿接得住什么」之间的**唯一对齐点**。
+#   病根（R4.4 取证）：prompt 一共索要 10 个键，其中 4 个产品接不住 —— 白花 token 与延迟，
+#   而 `validate_task_config_safety` 的「校验通过」让用户以为改动已落地，实际一个字节都没接。
+#   ⇒ 处置：**能接的全接上**（`CONFIG_PATCH_ROUTED`）、**接不上的不再要**
+#   （`CONFIG_PATCH_WITHDRAWN`，从 prompt 删除）。两个方向都由
+#   `tests/unit/ai/test_config_patch_contract_r44.py` 钉住（外加反向断言实测会红）。
+
+#: 能直接接进 `QuickTaskDraft` 的键 → 承载位（应用逻辑见
+#: `natural_language_task._apply_config_patch`）。
+CONFIG_PATCH_ROUTED: dict[str, str] = {
+    "task_intent": "QuickTaskDraft.intent",
+    "source_kind": "QuickTaskDraft.source_kind",
+    "max_pages": "QuickTaskDraft.max_pages",
+    "process_pdf": "QuickTaskDraft.process_pdf",
+    "monitor_same_url": "QuickTaskDraft.monitor_changes",
+    "output_formats": "QuickTaskDraft.output_formats",
+}
+
+#: 产品**没有承载位**、但**安全拦截器要读**的键 —— 它的价值在"发现越界"，不在落地，
+#: 因此留在 prompt 里是对的（越界的 seed 正是要拦的形态）。
+#: ★ 这不算"静默丢弃"：入口范围由需求 / `known_requirements.url` 决定，AI 提议的 seed
+#:   要么与入口一致（无需改动），要么越界（会被拦截器**明确拦下**）。两者用户都看得见。
+CONFIG_PATCH_SECURITY_ONLY: dict[str, str] = {
+    "seed_urls": "validate_task_config_safety 的域包含校验",
+}
+
+#: 曾经索要、但产品**既接不住也没有第二用途**的键 ⇒ 已从 prompt 示例撤回（路线 B）。
+#: 模型若仍返回（自由 JSON 拦不住），必须**如实告警**并给出**真实**的手动去处。
+#: ★ 措辞是「AI 的这项建议未自动应用」，**不是**「产品做不到」：配置层确实有
+#:   `download.extensions` / `topic.include_any`，写成"做不到"就是 R4.1 刚钉过的
+#:   「把既有能力说成没有」。
+CONFIG_PATCH_WITHDRAWN: dict[str, str] = {
+    "download_extensions": "如需限定附件类型，请在外层配置 download.extensions 里设置",
+    "topic_filter": (
+        "主题词请写在 known_requirements.topics；需要更细的包含/排除时，"
+        "请在外层配置 topic.include_any / topic.exclude 里设置"
+    ),
+    "schedule": (
+        "调度频率请写在 known_requirements.schedule（manual | daily | weekly | custom）"
+    ),
+}
+
+# ---------------------------------------------------------------------------
 # AI 自然语言处理的 Prompt 模板
 # ---------------------------------------------------------------------------
 
@@ -88,10 +134,7 @@ SYSTEM_PROMPT = """你是一个数据采集任务的设计助手。你的职责�
     "max_pages": 0,
     "process_pdf": false,
     "monitor_same_url": false,
-    "download_extensions": [".pdf"],
-    "output_formats": ["jsonl"],
-    "topic_filter": {"include_any": [], "exclude": []},
-    "schedule": {"interval": "weekly", "day": "monday"}
+    "output_formats": ["jsonl"]
   },
   "explanations": [
     {"field": "字段路径", "before": "原值", "after": "新值", "why": "修改原因"},
@@ -116,7 +159,49 @@ SYSTEM_PROMPT = """你是一个数据采集任务的设计助手。你的职责�
 - 永远不要猜测认证信息
 - 任何高置信度(high)的假设都可以直接使用，但必须在 assumptions 中记录
 - medium 和 low 的假设必须放入 unresolved_questions
+- config_patch 只放上面示例里出现过的那几个键；主题词与调度频率写在 known_requirements
+  的 topics / schedule 里，不要重复放进 config_patch，也不要新增示例之外的键
 """
+
+
+def config_patch_keys_in_prompt() -> tuple[str, ...]:
+    """取出 ``SYSTEM_PROMPT`` 输出示例里 ``config_patch`` 声明的一级键。
+
+    守卫用它断言「**prompt 只索要接得住的东西**」（R4.4 路线 B 的核心不变量）。
+    ★ 用花括号配对切片 + ``json.loads``，而不是整体解析示例：示例里其余字段含 ``...``
+    占位，不是合法 JSON；而 ``config_patch`` 这一段**本身必须是合法 JSON**
+    （我们正是在教模型输出严格 JSON，示例自己先坏掉就更荒谬了）。
+    """
+    text = SYSTEM_PROMPT
+    start = text.find('"config_patch"')
+    if start < 0:
+        raise AssertionError("SYSTEM_PROMPT 里找不到 config_patch 输出示例")
+    brace = text.find("{", start)
+    if brace < 0:
+        raise AssertionError("config_patch 后面没有对象字面量")
+
+    depth = 0
+    end = -1
+    for index in range(brace, len(text)):
+        char = text[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                end = index
+                break
+    if end < 0:
+        raise AssertionError("config_patch 示例的花括号不配对")
+
+    block = text[brace : end + 1]
+    try:
+        parsed = json.loads(block)
+    except ValueError as exc:  # pragma: no cover - 只有示例被写坏时才走到
+        raise AssertionError(f"config_patch 示例不是合法 JSON（示例本身在骗模型）：{exc}") from exc
+    if not isinstance(parsed, dict) or not parsed:
+        raise AssertionError("config_patch 示例里一个键都没取到（判据会退化成空对空的假通过）")
+    return tuple(parsed)
 
 USER_PROMPT_TEMPLATE = """请分析以下数据采集需求，生成结构化配置建议。
 
