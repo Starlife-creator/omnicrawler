@@ -19,11 +19,22 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     backup_restore = backup_sub.add_parser("restore")
     backup_restore.add_argument("package")
     backup_restore.add_argument("--target", required=True)
-    transform_cmd = sub.add_parser("transform", help="值级数据变换：--map 表达式追加解析列（--confirm 才写文件）")
+    transform_cmd = sub.add_parser(
+        "transform",
+        help="数据变换与后处理：--map 值级变换、--sort/--group-by/--agg 排序与分组聚合（--confirm 才写文件）",
+    )
     transform_cmd.add_argument("source", help="源数据文件（CSV/JSONL）")
     transform_cmd.add_argument("target", nargs="?", default=None, help="输出文件（--confirm 时必填）")
     transform_cmd.add_argument("--map", action="append", default=[], help="'列名 = 表达式'，可多次；结果追加到 {列名}_parsed 列")
     transform_cmd.add_argument("--transform-steps", default=None, help="旧步骤列表（JSON 数组或 @file），值级翻译为等价 --map")
+    transform_cmd.add_argument("--sort", action="append", default=[], help="排序键 '列名[:asc|:desc]'，可多次；作用于**最终交付物**（空值恒排最后）")
+    transform_cmd.add_argument("--group-by", action="append", default=[], help="分组键列名，可多次；配合 --agg 产出分组聚合表")
+    transform_cmd.add_argument(
+        "--agg",
+        action="append",
+        default=[],
+        help="聚合项 '函数(列名)[:别名]'，可多次；函数: count/count_distinct/sum/avg/min/max",
+    )
     transform_cmd.add_argument("--from", dest="src_format", default=None, help="显式源格式（csv/jsonl），默认按扩展名推断")
     transform_cmd.add_argument("--to", dest="dst_format", default=None, help="显式目标格式（csv/jsonl），默认按扩展名推断")
     transform_cmd.add_argument("--dry-run", action="store_true", help="预览：展示前 N 条新旧列对照，不写文件")

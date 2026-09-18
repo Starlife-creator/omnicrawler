@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import ast
 import json
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -22,9 +22,18 @@ from typing import Any
 from ..convertx import READERS, WRITERS, sniff_format
 from ..core.ast_evaluator import ALLOWED_FUNCTIONS, safe_eval
 from ..security.paths import require_workspace_path
+from .data_postprocess import (
+    PARSED_SUFFIX,
+    AggSpec,
+    PostProcessStats,
+    SortKey,
+    aggregate_records,
+    sort_records,
+)
 
-#: 追加列的后缀（永不覆盖原列）
-PARSED_SUFFIX = "_parsed"
+#: 「追加列的后缀」的真源在 `services/data_postprocess.py`（记录级后处理要据此识别
+#: "失败列本就是 --map 的产物"，从而给出"换函数重做"而不是再加一层后缀的建议）；
+#: 这里 `PARSED_SUFFIX` 由上面的 import 再导出，是**同一个对象** —— 常量只有一处，不可能漂移。
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,6 +193,15 @@ def _load_steps(value: str) -> list[dict[str, Any]]:
     return [item for item in data if isinstance(item, dict)]
 
 
+def _merge_unique(left: tuple[Any, ...], right: tuple[Any, ...]) -> tuple[Any, ...]:
+    """合并两个回执元组并保持首次出现顺序（聚合路径与排序路径都会产出同一类条目）。"""
+    merged = list(left)
+    for item in right:
+        if item not in merged:
+            merged.append(item)
+    return tuple(merged)
+
+
 def transform_records(
     records: list[dict[str, Any]],
     specs: list[MapSpec],
@@ -253,11 +271,21 @@ def transform_file(
     on_error: str = "skip",
     on_progress: Callable[[int, int], None] | None = None,
     preview_limit: int = 0,
+    sort_keys: Sequence[SortKey] = (),
+    group_by: Sequence[str] = (),
+    aggregations: Sequence[AggSpec] = (),
 ) -> dict[str, Any]:
-    """读取数据文件 → 值级变换 → 写出（复用 ConvertX 读写器）。
+    """读取数据文件 → 值级变换 → **记录级后处理** → 写出（复用 ConvertX 读写器）。
+
+    流水线顺序固定为「值级先行」：`--map "金额 = parse_number(金额)"` 产出 ``金额_parsed``，
+    随后 ``--sort`` / ``--agg`` 就可以作用在转换后的列上。这既是需求里的自然顺序
+    （先清洗再统计），也让"排序/聚合的列口径"有据可依。
+
+    ★ ``--sort`` 作用于**最终交付物**：有分组时它排的是聚合表（因此可以写
+    ``--sort "count:desc"`` 按聚合结果排），无分组时排的是记录本身。
 
     dst 为 None 或 dry-run 时只变换不写；preview_limit>0 时返回前 N 条
-    「原列 + 新列」对照（仅涉及变换的列）。
+    「原列 + 新列」对照（仅涉及变换的列；含后处理时返回最终交付物的前 N 条）。
     """
     src_path = Path(src)
     if not src_path.is_file():
@@ -269,6 +297,37 @@ def transform_file(
     if max_records is not None:
         records = records[:max_records]
     transformed, stats = transform_records(records, specs, batch_size=batch_size, on_progress=on_progress)
+
+    # ── 记录级后处理（走查 R5.1） ────────────────────────────────────────
+    rows_in = len(transformed)
+    if (sort_keys or group_by or aggregations) and rows_in == 0:
+        # 「枚举为空即报错」：0 行时既排不出东西、也校验不了列名，
+        # 静默返回空文件会被当成"跑成功了"。
+        raise ValueError(
+            "源数据没有记录（0 行），无法执行 --sort / --group-by / --agg。"
+            "请确认源文件是否有内容，或去掉这些参数。"
+        )
+    if group_by or aggregations:
+        transformed, post = aggregate_records(transformed, group_by, aggregations)
+    else:
+        post = PostProcessStats(rows_in=rows_in, rows_out=rows_in)
+    if sort_keys:
+        # 排序回执：口径（numeric/text）+ 文本被按数值解读的列 + 探测得出的补救建议。
+        transformed, receipt = sort_records(transformed, sort_keys)
+        post.sort_keys = tuple(key.label for key in sort_keys)
+        post.sorted_as = receipt.kinds
+        post.rows_out = len(transformed)
+        # 判据必须可见：按**文本**排了"看起来是数字"的列 ⇒ 结果看着排好了其实不是。
+        post.numeric_from_text_columns = _merge_unique(
+            post.numeric_from_text_columns, receipt.numeric_from_text_columns
+        )
+        post.conversion_recipes = _merge_unique(
+            post.conversion_recipes, receipt.conversion_recipes
+        )
+        post.unconvertible_columns = _merge_unique(
+            post.unconvertible_columns, receipt.unconvertible_columns
+        )
+
     written = False
     output_path: str | None = None
     if dst is not None:
@@ -281,16 +340,22 @@ def transform_file(
         output_path = str(dst_path)
     preview: list[dict[str, Any]] = []
     if preview_limit > 0:
-        involved = {spec.column for spec in specs} | set(stats.columns_added)
-        preview = [
-            {key: value for key, value in record.items() if key in involved}
-            for record in transformed[:preview_limit]
-        ]
+        if post.post_processed:
+            # 后处理的交付物就是聚合表/排序结果本身，按"变换涉及的列"裁剪没有意义。
+            preview = [dict(record) for record in transformed[:preview_limit]]
+        else:
+            involved = {spec.column for spec in specs} | set(stats.columns_added)
+            preview = [
+                {key: value for key, value in record.items() if key in involved}
+                for record in transformed[:preview_limit]
+            ]
     return {
         "source": str(src_path),
         "output": output_path,
         "written": written,
         "preview": preview,
+        "post_processing": post.to_dict(),
+        "post_processed": post.post_processed,
         **stats.to_dict(),
     }
 

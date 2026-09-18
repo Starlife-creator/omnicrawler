@@ -57,7 +57,10 @@ _FIELD_TOKEN_REJECT = (
     "去除", "转换", "清洗", "归一", "格式化", "去重", "排序", "统计", "分组", "归档", "下载",
 )
 
-#: 需求里的「后处理」意图 —— 这些**都不会自动发生**（R5.1 落地后把排序/分组/聚合移出）。
+#: 需求里的「后处理」意图。★ 每一项必须**恰好**落进下面两张表之一：
+#: 已能做的进 `_POST_PROCESSING_ROUTES`（给出去处、**不进 unsupported**），
+#: 还做不到的进 `_DEMAND_GAP_GROUPS`（如实进 unsupported + 给去处）。
+#: 两边都不进＝需求被静默丢掉；两边都进＝对同一件事既说能做又说做不到。完整性由测试钉住。
 _POST_PROCESSING_RULES: tuple[tuple[str, str], ...] = (
     ("排序", r"排序|升序|降序|从低到高|从高到低|由低到高|由高到低"),
     ("分组", r"分组|归档|按[^，。；]{1,12}(?:分组|归类)"),
@@ -75,15 +78,22 @@ _INTERACTION_RULES: tuple[tuple[str, str], ...] = (
     ("表单填写", r"填写|填入|提交表单|勾选|输入[^，。；]{0,8}(?:后|再|然后)|选择[^，。；]{0,8}(?:后|再|然后)"),
     ("iframe", r"iframe|内嵌框架|嵌套框架"),
 )
+#: ★ R5.1 落地后新增：**已经有对等能力**的后处理 → 可执行的去处。
+#:
+#: 这些项**不得**再进 `unsupported`（那是在说"做不到"，而 0.13.0 走查正是因为
+#: "既有能力被说成没有"才立的 R4.1）。但同时**也不能只说"能做"** —— 必须给出命令，
+#: 否则用户知道有功能却找不到入口，等于没接（§4.5：提示要能引导下一步）。
+_POST_PROCESSING_ROUTES: dict[str, str] = {
+    "排序": '`omnicrawler transform <源> <目标> --sort "列[:asc|:desc]" --confirm`',
+    "分组": "`omnicrawler transform <源> <目标> --group-by <列> --agg count --confirm`",
+    "聚合统计": '`omnicrawler transform <源> <目标> --group-by <列> --agg "sum(<列>):<别名>" --confirm`',
+}
 #: 「不会自动发生」的每一项 → **去处分组**。分组决定提醒里给出的下一步动作。
 #:
-#: ★ 完整性由测试钉住（每个规则名都必须显式登记）：新加规则忘写去处会在 CI 里红，
-#: 而不是让用户看到一句含糊的提醒。运行期取不到分组时落到 `_DEFAULT_GAP_GROUP`
-#: —— **宁可提醒得泛一点，也不让一句需求把解析整条打断**。
+#: ★ 完整性由测试钉住（每个规则名都必须显式登记在 routes 或本表里）：新加规则忘写去处
+#: 会在 CI 里红，而不是让用户看到一句含糊的提醒。运行期取不到分组时落到
+#: `_DEFAULT_GAP_GROUP` —— **宁可提醒得泛一点，也不让一句需求把解析整条打断**。
 _DEMAND_GAP_GROUPS: dict[str, str] = {
-    "排序": "post",
-    "分组": "post",
-    "聚合统计": "post",
     "交叉表": "post",
     "新旧对比": "compare",
     "点击": "interaction",
@@ -94,7 +104,8 @@ _DEFAULT_GAP_GROUP = "post"
 #: 分组 → 提醒的引导语（后半句接"：项目、项目"）。★ 每句都必须给出**可执行的去处**，
 #: 只说"做不到"等于没说（§4.5：提示要能引导下一步）。
 _DEMAND_GAP_ADVICE: dict[str, str] = {
-    "post": "以下后处理当前还没有对等能力，需要你在导出结果后自行处理",
+    "post": "以下后处理当前还没有对等能力（多维交叉表可先用 --group-by 出长表再自行透视），"
+    "需要你在导出结果后自行处理",
     "compare": "以下对比不会自动产出结果，可用 `omnicrawler compare-runs` 对比两次运行",
     "interaction": "以下交互不会由自动路径生成，可用 `omnicrawler record-actions` 录制动作后再运行",
 }
@@ -171,13 +182,16 @@ def _demand_gap_warnings(names: Sequence[str]) -> tuple[str, ...]:
 def _apply_request_semantics(
     task: QuickTaskDraft, request: str, *, extra_decisions: Sequence[str] = ()
 ) -> QuickTaskDraft:
-    """把需求里的语义接到 ``task`` 上，并**如实声明做不到的**（走查 R3.3 / R4.1）。
+    """把需求里的语义接到 ``task`` 上，并**如实声明做不到的**（走查 R3.3 / R4.1 / R5.1）。
 
     这是确定性解析与 AI 增强解析**共用的一处实现** —— 两个入口各写一份必然漂移，而实测
     正是如此：旧实现里字段清单、「按价格从低到高排序」、「统计每个用户的帖子数」、
     「点击年份 2015 等待 AJAX」全部静默丢失且 ``warnings`` 为空。
 
-    **不变量**：凡进入 ``unsupported`` 的名称，都能在 ``warnings`` 里找到对应去处。
+    **两条不变量**（缺一条就会落到同一个坑里）：
+    1. 凡进入 ``unsupported`` 的名称，都能在 ``warnings`` 里找到对应**去处**；
+    2. 凡**已有对等能力**的（R5.1 起含排序/分组/聚合统计），**不得**进入 ``unsupported``
+       —— 那是"把既有能力说成没有"，与第 1 条同样是在传递错误信息。
     """
     decisions = [*task.decisions, *extra_decisions]
     warnings = list(task.warnings)
@@ -187,8 +201,18 @@ def _apply_request_semantics(
     interactions = _extract_interaction_demands(request)
     requested_formats = _extract_output_formats(request)
     page_count = _extract_page_count(request)
-    # 这两类在当前自动路径下都不会发生 ⇒ 一律如实进 unsupported，并各自给出去处。
-    unsupported = (*post_processing, *interactions)
+    # 交互在当前自动路径下不会发生 ⇒ 一律如实进 unsupported，并给出去处。
+    # 后处理要**分岔**：已有对等能力的给命令（不进 unsupported），其余如实进 unsupported。
+    routed = [(name, _POST_PROCESSING_ROUTES[name]) for name in post_processing if name in _POST_PROCESSING_ROUTES]
+    unsupported = (
+        *(name for name in post_processing if name not in _POST_PROCESSING_ROUTES),
+        *interactions,
+    )
+    if routed:
+        warnings.append(
+            "以下后处理已有对等能力，可在导出数据后直接运行："
+            + "；".join(f"{name} → {route}" for name, route in routed)
+        )
 
     if fields:
         decisions.append("已从需求中读出字段清单：" + "、".join(fields))

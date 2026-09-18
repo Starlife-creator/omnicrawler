@@ -540,6 +540,9 @@ def _run_transform(args: argparse.Namespace) -> None:
         args.target,
         maps=args.map,
         transform_steps=args.transform_steps,
+        sorts=args.sort,
+        group_by=args.group_by,
+        aggregations=args.agg,
         src_format=args.src_format,
         dst_format=args.dst_format,
         dry_run=args.dry_run,
@@ -550,10 +553,15 @@ def _run_transform(args: argparse.Namespace) -> None:
         preview_limit=args.preview_limit,
     )
     _json(result)
-    # 走查 R2.2：变换"没起作用"必须落到用户的终端上，不能只躺在 JSON 里。
-    notice = result.get("notice_ineffective")
-    if notice:
-        print(f"\n⚠ {notice}", file=sys.stderr)
+    # 走查 R2.2 / R5.1：**"没起作用"必须落到用户的终端上**，不能只躺在 JSON 里。
+    # 两条都会静默产生"看起来成功了"的结果：变换没生效、以及文本列被拿去排序/求和。
+    for key in ("notice_ineffective", "notice_numeric_text"):
+        notice = result.get(key)
+        if notice:
+            print(f"\n⚠ {notice}", file=sys.stderr)
+    summary = result.get("post_processing_summary")
+    if summary:
+        print(f"\nℹ {summary}", file=sys.stderr)
 
 
 @_register("workspace")

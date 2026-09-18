@@ -259,7 +259,15 @@ omnicrawler templates import-pack pack.zip
 omnicrawler export -c config.yaml [--run-id <id>]
 omnicrawler reprocess -c config.yaml --run-id <id>
 omnicrawler compare-runs -c config.yaml <before> <after> -o diff.json
+omnicrawler transform books.csv grouped.csv --map "价格 = parse_money(价格)" --group-by 分类 --agg "sum(价格_parsed):总价" --sort "总价:desc" --confirm
+omnicrawler transform books.csv sorted.csv --sort "价格:desc" --dry-run
 ```
+
+`transform` 对已落盘数据做「值级清洗 → 记录级排序/分组聚合」，不联网、默认不写文件
+（`--confirm` 才落盘）。**先转数值再聚合**：CSV/JSONL 读入的单元格全是文本，
+`sum`/`avg` 只认严格十进制字面量，所以金额列要先 `--map "价格 = parse_money(价格)"`
+再对 `价格_parsed` 聚合；取不到数值时命令会报出跳过数并给一条可复制的补救命令
+（一个函数都修不好时如实回报，不编建议）。
 
 ### 安全与审计
 

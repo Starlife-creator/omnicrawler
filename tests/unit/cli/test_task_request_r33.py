@@ -60,8 +60,12 @@ def test_task_command_prints_reviewable_task_settings(capsys: pytest.CaptureFixt
     assert payload["task"]["max_pages"] == 50
     assert payload["task"]["output_formats"] == ["csv"]
     assert payload["task"]["post_processing"] == ["排序"]
-    assert payload["task"]["unsupported"] == ["排序"]
-    assert payload["task"]["warnings"], "做不到的部分必须出现在提醒里"
+    # R5.1 起「排序」已有对等能力（`transform --sort`）⇒ **不得**再进 unsupported，
+    # 但必须给出去处（只说"能做"而不给命令，等于把用户丢在半路）。
+    assert payload["task"]["unsupported"] == []
+    advice = "".join(payload["task"]["warnings"])
+    assert "transform" in advice and "--sort" in advice
+    assert payload["confirmation"]["后处理"] == ["排序"]
     assert payload["confirmation"]["字段内容"] == ["标题", "价格", "库存状态"]
     assert "next_step" in payload
 

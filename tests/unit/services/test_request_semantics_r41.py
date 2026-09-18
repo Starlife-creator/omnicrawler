@@ -105,10 +105,12 @@ def test_output_formats_narrow_to_what_the_request_asks_for() -> None:
 @pytest.mark.parametrize(
     "demand",
     [
-        "抓取 https://example.com/a 的标题、价格，按价格从低到高排序",
-        "统计 https://example.com/forum 每个用户的帖子数",
+        # ★ 排序 / 聚合统计**不在**这里：R5.1 起它们已有对等能力（见第 3 节），
+        #   再列进"做不到"就是假话。
+        "抓取 https://example.com/a 的标题、价格，做一个分组统计表",
         "抓取 https://example.com/a 的标题、价格，点击年份 2015 等待 AJAX",
-        "抓取 https://example.com/a 的标题，做一个分组统计表",
+        "抓取 https://example.com/a 的标题，在搜索框填写关键词后点击搜索",
+        "抓取 https://example.com/a 的标题，抓取 iframe 里的表格",
     ],
 )
 def test_every_unsupported_item_has_a_stated_way_out(demand: str) -> None:
@@ -128,18 +130,56 @@ def test_nothing_unsupported_means_no_warning_noise() -> None:
     assert task.warnings == ()
 
 
-def test_gap_advice_always_names_a_next_step() -> None:
-    """每条规则都必须登记去处，且每个去处都必须有引导语 —— 少一个就有需求被静默丢掉。"""
+def test_every_rule_name_is_either_routed_or_declared_unsupported() -> None:
+    """每条规则名都必须**恰好**落进"有对等能力"或"如实说做不到"之一。
+
+    两边都不进 ⇒ 需求被静默丢掉；两边都进 ⇒ 对同一件事既说能做又说做不到。
+    这是 R5.1 把排序/分组/聚合从 `unsupported` 移出后新立的完整性判据。
+    """
     names = [name for name, _ in nlt._POST_PROCESSING_RULES]
     names += [name for name, _ in nlt._INTERACTION_RULES]
     assert names, "规则表是空的，下面的断言会变成空集对空集的假通过"
-    missing = [name for name in names if name not in nlt._DEMAND_GAP_GROUPS]
-    assert not missing, f"这些规则没登记去处分组：{missing}"
+    unregistered = [
+        name
+        for name in names
+        if name not in nlt._POST_PROCESSING_ROUTES and name not in nlt._DEMAND_GAP_GROUPS
+    ]
+    assert not unregistered, f"这些规则既没写去处也没进「做不到」清单：{unregistered}"
+    both = sorted(set(nlt._POST_PROCESSING_ROUTES) & set(nlt._DEMAND_GAP_GROUPS))
+    assert not both, f"这些项同时被声明为「能做」与「做不到」：{both}"
     unknown = sorted(set(nlt._DEMAND_GAP_GROUPS.values()) - set(nlt._DEMAND_GAP_ADVICE))
     assert not unknown, f"这些分组没有引导语：{unknown}"
 
 
 # ── 3. 不撒谎：已经能做的事不得被写成「做不到」 ─────────────────────────
+
+
+def test_post_processing_with_a_route_is_never_denied() -> None:
+    """★ R5.1 起排序/分组/聚合统计已有对等能力（`transform --sort/--group-by/--agg`）：
+    它们**不得**进 unsupported（那是假话），但必须给出**可执行**的去处。"""
+    for demand in (
+        "抓取 https://example.com/a 的标题、价格，按价格从低到高排序",
+        "统计 https://example.com/forum 每个用户的帖子数",
+        "抓取 https://example.com/a 的标题、价格，按分类分组",
+    ):
+        task = compile_natural_language(demand).task
+        assert task.post_processing, f"用例选错了，这条需求没有读出后处理：{demand}"
+        overlap = set(task.post_processing) & set(task.unsupported)
+        assert not overlap, f"既有能力被说成了做不到：{overlap}"
+        advice = "".join(task.warnings)
+        assert "transform" in advice, f"只说能做、没给命令：{advice}"
+        for name in task.post_processing:
+            assert name in advice, f"后处理 {name} 没出现在提醒里"
+
+
+def test_crosstab_is_still_declared_unsupported() -> None:
+    """反向：R5.1 **没有**实现透视表 ⇒ 不能把它说成能做到（同一枚硬币的另一面）。"""
+    task = compile_natural_language(
+        "抓取 https://example.com/a 的标题、价格，做一个分组统计表"
+    ).task
+    assert "交叉表" in task.post_processing
+    assert "交叉表" in task.unsupported
+    assert any("交叉表" in warning for warning in task.warnings)
 
 
 def test_auto_scroll_is_not_reported_as_unsupported() -> None:

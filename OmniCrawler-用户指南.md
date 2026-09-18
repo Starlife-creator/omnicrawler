@@ -208,6 +208,39 @@ omnicrawler reprocess -c configs/my_site.yaml --run-id <run_id>
 | `omnicrawler recovery -c <config> overview` | 查看恢复中心 |
 | `omnicrawler recovery -c <config> retry-failed` | 重试失败项 |
 
+### 数据变换与后处理
+
+对**已落盘**的数据做「值级清洗 → 记录级排序/分组聚合」，全程不访问网络；
+**默认不写文件**，要落盘必须显式 `--confirm`（`--dry-run` 只预览）。
+
+| 命令 | 说明 |
+|------|------|
+| `omnicrawler transform <源> [<目标>] --map "列 = 表达式"` | 值级变换：结果追加 `{列名}_parsed` 列，**原列永不被改写** |
+| `omnicrawler transform <源> <目标> --sort "列[:asc\|:desc]" --confirm` | 按列排序（可多次，**先出现的键为主键**；空值恒排最后） |
+| `omnicrawler transform <源> <目标> --group-by 分类 --agg "sum(价格):总价" --confirm` | 分组聚合，交付物是聚合表 |
+| `omnicrawler transform <源> <目标> --dry-run` | 预览前 N 条，不写文件 |
+
+`--agg` 只认 6 个函数：`count`（行数）、`count_distinct(列)`、`sum(列)`、`avg(列)`、`min(列)`、`max(列)`。
+`--map` 表达式里可调用 `parse_number` / `parse_money` / `parse_time` / `trim` / `clean_html` /
+`regex_extract` / `coalesce` / `concat`。
+
+> **先转数值、再聚合。** CSV/JSONL 读入的单元格**全是文本**，而 `sum` / `avg` 只认「严格十进制
+> 字面量」（`51.77` 可以；`£51.77`、`1,234`、`1e5` 不行）。所以金额列要先
+> `--map "价格 = parse_money(价格)"`，再对 `价格_parsed` 做 `--agg "sum(价格_parsed):总价"`。
+>
+> 取不到数值时命令会**主动说出来**：跳过多少个值、以及一条可直接复制的补救命令；
+> **一个都修不好时不会编建议**，而是如实回报"该列无法自动转换成数值"。
+> 同理，排序口径（数值 / 文本）会写进回执 —— 按文本排数字列是"看着排好了其实没排对"。
+
+一条命令完成清洗 + 分组 + 按聚合结果排序：
+
+```powershell
+omnicrawler transform books.csv grouped.csv `
+  --map "价格 = parse_money(价格)" `
+  --group-by 分类 --agg count --agg "sum(价格_parsed):总价" --agg "avg(价格_parsed):均价" `
+  --sort "总价:desc" --confirm
+```
+
 ### 智能工具
 
 | 命令 | 说明 |
