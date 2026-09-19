@@ -61,3 +61,16 @@ plugins_installed/**/*.sig -text
 *.exe      binary
 *.mo       binary
 *.crx      binary
+
+# === 品牌资产（与市场仓的字节契约）===
+# MANIFEST.txt / SHA256SUMS 是逐文件字节清单，B5 的跨仓断言还直接比对两仓同名
+# 文件的 SHA256。市场仓全局规则是 * text=auto eol=lf；主仓若让品牌树里的文本类
+# 落回 * text=auto，Windows 检出会变 CRLF（core.autocrlf=true），两仓同名
+# .txt/.md 立刻哈希不同 —— Windows 必现、Linux 不现。故在此把品牌树文本钉成 LF。
+# 二进制类（*.svg/*.png/*.ico/*.icns）由上方既有二进制段声明为 binary，不在此列；
+# 本段置于文件末尾，靠 gitattributes 的「后匹配者生效」覆盖上方规则。
+assets/branding/**/*.txt          text eol=lf
+assets/branding/**/*.md           text eol=lf
+assets/branding/**/*.html         text eol=lf
+assets/branding/**/*.webmanifest  text eol=lf
+assets/branding/**/SHA256SUMS     text eol=lf

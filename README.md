@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/branding/lockup/omnicrawler-wordmark-dark.svg">
+    <img alt="OmniCrawler" src="assets/branding/lockup/omnicrawler-wordmark.svg" width="900">
+  </picture>
+</p>
+
 # OmniCrawler 0.13.0 — 桌面专业数据采集平台
 
 > 可配置 · 可恢复 · 可扩展 · 可审计
@@ -17,7 +24,7 @@ OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台�
 ### Windows 便携版（零依赖）
 
 1. 解压当前构建生成的 `OmniCrawler-0.13.0-Windows-Portable-<Edition>.zip` 到可写目录（建议 `D:\OmniCrawler`）
-2. 双击 `OmniCrawler-Launcher.bat`
+2. 双击 `OmniCrawler.exe`；若没有窗口出现（例如 exe 被杀软首次扫描拦下，或文件缺失），再双击 `OmniCrawler-Launcher.bat` 查看中文报错
 3. 在任务工作台确认自动草稿 → 试跑 3 页 → 正式运行
 
 Standard 版：GUI + Chromium + 常规采集。Full 版：额外含 ChromeDriver + 双 OCR 引擎。

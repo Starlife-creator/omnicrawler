@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" role="img" aria-labelledby="t d">
+  <title id="t">OmniCrawler app icon (small size)</title>
+  <desc id="d">Small-size variant of the OmniCrawler icon: one thick hexagon ring, legible down to 16 px.</desc>
+  <rect x="14" y="14" width="192" height="192" rx="40" fill="#0F3D2E"/>
+  <path fill="#DFF7E4" fill-rule="evenodd" d="M0 -76 L65.82 -38 L65.82 38 L0 76 L-65.82 38 L-65.82 -38 Z M0 -46 L39.84 -23 L39.84 23 L0 46 L-39.84 23 L-39.84 -23 Z" transform="translate(110 110)"/>
+</svg>

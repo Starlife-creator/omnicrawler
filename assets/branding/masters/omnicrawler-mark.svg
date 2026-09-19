@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" role="img" aria-labelledby="t d">
+  <title id="t">OmniCrawler mark</title>
+  <desc id="d">The OmniCrawler radar mark without its tile, inked for direct use on a light background.</desc>
+  <g transform="translate(110 110)">
+    <circle r="76" fill="none" stroke="#0F3D2E" stroke-width="2.6" opacity=".88"/>
+    <circle r="46" fill="none" stroke="#1D9E75" stroke-width="2.2" opacity=".62"/>
+    <g stroke="#0F3D2E" stroke-width="2.1" stroke-linecap="round" opacity=".32">
+      <line x1="0" y1="-76" x2="0" y2="76"/>
+      <line x1="-76" y1="0" x2="76" y2="0"/>
+    </g>
+    <g fill="#0F3D2E">
+      <path d="M0 -61 L2.4 -53.5 L10 -51 L2.4 -48.5 L0 -41 L-2.4 -48.5 L-10 -51 L-2.4 -53.5 Z" transform="rotate(0)"/>
+      <path d="M0 -61 L2.4 -53.5 L10 -51 L2.4 -48.5 L0 -41 L-2.4 -48.5 L-10 -51 L-2.4 -53.5 Z" transform="rotate(90)"/>
+      <path d="M0 -61 L2.4 -53.5 L10 -51 L2.4 -48.5 L0 -41 L-2.4 -48.5 L-10 -51 L-2.4 -53.5 Z" transform="rotate(180)"/>
+      <path d="M0 -61 L2.4 -53.5 L10 -51 L2.4 -48.5 L0 -41 L-2.4 -48.5 L-10 -51 L-2.4 -53.5 Z" transform="rotate(270)"/>
+    </g>
+    <polygon points="0,-24 20.78,-12 20.78,12 0,24 -20.78,12 -20.78,-12" fill="none" stroke="#0F3D2E" stroke-width="3.2" stroke-linejoin="round"/>
+    <polygon points="0,-17 14.72,-8.5 14.72,8.5 0,17 -14.72,8.5 -14.72,-8.5" fill="none" stroke="#1D9E75" stroke-width="1" opacity=".35"/>
+    <g fill="#0F3D2E">
+      <circle cx="0" cy="-76" r="3.1"/>
+      <circle cx="76" cy="0" r="3.1"/>
+      <circle cx="0" cy="76" r="3.1"/>
+      <circle cx="-76" cy="0" r="3.1"/>
+    </g>
+  </g>
+</svg>

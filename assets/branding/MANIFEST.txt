@@ -1,0 +1,98 @@
+OmniCrawler branding assets
+==========================
+
+Everything here is generated: the SVGs from one set of geometry constants, every PNG
+from its own SVG, and the icon containers from those same PNGs. Rebuild -- and re-lay
+the files into the repositories -- with
+`python work/build_branding.py --layout repo --repo-root <main repo> --market-root <market repo>`.
+
+Paths are repository-relative. The runtime copy under
+`src/omnicrawler/gui/branding/` is what the application loads; the rest lives under `assets/branding/`.
+
+Each raster line names the SVG it was rendered from; `verify_branding.py --repo` fails
+if a raster and its source disagree about the frame, or if a PNG has no declared source.
+
+assets/branding/masters/
+- omnicrawler-icon-medium.svg        48-64 px tier, strokes re-weighted
+- omnicrawler-icon-small.svg         16-32 px tier, the radar reduces to a hexagon ring
+- omnicrawler-icon-square.svg        full-bleed opaque variant for apple-touch, Android, maskable
+- omnicrawler-icon.svg               app icon master, 128 px and above
+- omnicrawler-mark-dark.svg          radar mark alone, inked for dark backgrounds
+- omnicrawler-mark.svg               radar mark alone, inked for light backgrounds
+
+assets/branding/raster/
+- omnicrawler-icon-1024.png          1024x1024 raster of assets/branding/masters/omnicrawler-icon.svg
+- omnicrawler-icon-512.png           512x512 raster of assets/branding/masters/omnicrawler-icon.svg
+- omnicrawler-icon.png               256x256 raster of assets/branding/masters/omnicrawler-icon.svg, legacy filename, byte-identical copy of the 256 rung
+- omnicrawler-mark-512.png           512x512 raster of assets/branding/masters/omnicrawler-mark.svg, mark on light
+- omnicrawler-mark-dark-512.png      512x512 raster of assets/branding/masters/omnicrawler-mark-dark.svg, mark on dark
+
+assets/branding/lockup/
+- omnicrawler-wordmark-dark.png      2800x600 raster of assets/branding/lockup/omnicrawler-wordmark-dark.svg
+- omnicrawler-wordmark-dark.svg      horizontal lockup for dark backgrounds
+- omnicrawler-wordmark-only-dark.png 2800x600 raster of assets/branding/lockup/omnicrawler-wordmark-only-dark.svg
+- omnicrawler-wordmark-only-dark.svg lettering and pipeline without the icon, dark
+- omnicrawler-wordmark-only.png      2800x600 raster of assets/branding/lockup/omnicrawler-wordmark-only.svg
+- omnicrawler-wordmark-only.svg      lettering and pipeline without the icon, light
+- omnicrawler-wordmark-stacked-dark.png 1040x800 raster of assets/branding/lockup/omnicrawler-wordmark-stacked-dark.svg
+- omnicrawler-wordmark-stacked-dark.svg stacked lockup, dark
+- omnicrawler-wordmark-stacked.png   1040x800 raster of assets/branding/lockup/omnicrawler-wordmark-stacked.svg
+- omnicrawler-wordmark-stacked.svg   stacked lockup (icon above lettering), light
+- omnicrawler-wordmark.png           2800x600 raster of assets/branding/lockup/omnicrawler-wordmark.svg
+- omnicrawler-wordmark.svg           horizontal lockup for light backgrounds
+
+assets/branding/web/
+- android-chrome-192x192.png         192x192 raster of assets/branding/masters/omnicrawler-icon-square.svg, Android home screen, full bleed and opaque
+- android-chrome-512x512.png         512x512 raster of assets/branding/masters/omnicrawler-icon-square.svg, Android splash and store, full bleed and opaque
+- apple-touch-icon.png               180x180 raster of assets/branding/masters/omnicrawler-icon-square.svg, iOS home screen, full bleed and opaque
+- favicon-16x16.png                  16x16 raster of assets/branding/masters/omnicrawler-icon-small.svg, browser tab icon
+- favicon-32x32.png                  32x32 raster of assets/branding/masters/omnicrawler-icon-small.svg, browser tab icon
+- favicon-48x48.png                  48x48 raster of assets/branding/masters/omnicrawler-icon-medium.svg, browser tab icon
+- favicon.ico                        browser favicon, 16/32/48
+- html-head-snippet.html             favicon, manifest and og tags for a page head
+- maskable-512.png                   512x512 raster of assets/branding/masters/omnicrawler-icon-square.svg, maskable variant, content inside the safe zone
+- og-image.png                       1200x630 raster of assets/branding/web/og-image.svg, social preview card
+- og-image.svg                       1200x630 social preview card (source)
+- site.webmanifest                   web app manifest
+
+src/omnicrawler/gui/branding/
+- omnicrawler-icon-128.png           128x128 raster of assets/branding/masters/omnicrawler-icon.svg
+- omnicrawler-icon-16.png            16x16 raster of assets/branding/masters/omnicrawler-icon-small.svg
+- omnicrawler-icon-24.png            24x24 raster of assets/branding/masters/omnicrawler-icon-small.svg
+- omnicrawler-icon-256.png           256x256 raster of assets/branding/masters/omnicrawler-icon.svg
+- omnicrawler-icon-32.png            32x32 raster of assets/branding/masters/omnicrawler-icon-small.svg
+- omnicrawler-icon-48.png            48x48 raster of assets/branding/masters/omnicrawler-icon-medium.svg
+- omnicrawler-icon-64.png            64x64 raster of assets/branding/masters/omnicrawler-icon-medium.svg
+- omnicrawler.icns                   macOS icon
+- omnicrawler.ico                    Windows icon
+
+assets/branding/
+- BUILD-NOTES.md                     what changed versus the previous pack, and how to verify it
+- FONT-NOTICE.txt                    how the lettering is derived and licensed
+- LICENSE-OFL.txt                    SIL Open Font License 1.1 covering the lettering source font
+- MANIFEST.txt                       this file
+- README-logo-snippet.html           README embed, switches lockups on prefers-color-scheme
+- SHA256SUMS                         hash and size of every file above
+
+Icon containers:
+- omnicrawler.ico carries 7 frames: 16x16, 24x24, 32x32, 48x48, 64x64, 128x128, 256x256
+  sizes below 48 come from the small tier, 48-64 from the medium tier, 128+ from the master.
+- omnicrawler.icns carries 11 chunks: icp4, icp5, icp6, ic07, ic08, ic09, ic10, ic11, ic12, ic13, ic14
+  ic11-ic14 are Apple's @2x partners of icp4/icp5/icp6/ic07.
+- assets/branding/web/favicon.ico is a separate, smaller container (16/32/48) so pages do not
+  have to pull the full Windows icon.
+
+Design:
+- Dark green: #0F3D2E
+- Light mint: #EAFBE8
+- Mint: #DFF7E4
+- Accent: #5DCAA5
+- Green: #1D9E75
+
+Concept:
+- Radar/network = discovery and coverage
+- Hexagon = platform core / structured system
+- Four four-point stars = omni-directional capability and a subtle Starlife signature
+- Flow line = data/pipeline, with no spider/bug imagery
+
+Lettering is stored as outlines, so no renderer can substitute a different font.

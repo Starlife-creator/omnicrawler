@@ -1,0 +1,4 @@
+The OmniCrawler wordmark's lettering is stored as vector outlines derived from
+Outfit Bold by The Outfit Project Authors, licensed under the SIL Open Font
+License 1.1 (see LICENSE-OFL.txt). The outlines are used as a logo; no font
+software is redistributed and no reserved font name is claimed.

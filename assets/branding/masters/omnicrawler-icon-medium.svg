@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" role="img" aria-labelledby="t d">
+  <title id="t">OmniCrawler app icon (medium size)</title>
+  <desc id="d">Medium-size variant of the OmniCrawler icon: radar ring, hexagonal core and four nodes, re-weighted for 48-64 px.</desc>
+  <rect x="14" y="14" width="192" height="192" rx="40" fill="#0F3D2E"/>
+  <g transform="translate(110 110)">
+    <circle r="78" fill="none" stroke="#EAFBE8" stroke-width="6" opacity=".95"/>
+    <polygon points="0,-30 25.98,-15 25.98,15 0,30 -25.98,15 -25.98,-15" fill="none" stroke="#DFF7E4" stroke-width="8" stroke-linejoin="round"/>
+    <g fill="#DFF7E4">
+      <circle cx="0" cy="-78" r="9"/>
+      <circle cx="78" cy="0" r="9"/>
+      <circle cx="0" cy="78" r="9"/>
+      <circle cx="-78" cy="0" r="9"/>
+    </g>
+  </g>
+</svg>

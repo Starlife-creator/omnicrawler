@@ -44,6 +44,14 @@ Bundled static assets redistributed inside this repository (see `docs/archive/`)
   - Outfit (`Outfit-*.ttf`) — Copyright 2021 The Outfit Project Authors.
     Upstream: https://github.com/Outfitio/Outfit-Fonts
 
+Branding assets redistributed in this repository (`assets/branding/`, and the runtime copy in
+`src/omnicrawler/gui/branding/`):
+
+- Outfit (Bold) — SIL Open Font License 1.1. Used only as a source for the lettering outlines
+  embedded in the OmniCrawler wordmark; no font software is redistributed and no reserved font
+  name is claimed. See `assets/branding/LICENSE-OFL.txt` and `assets/branding/FONT-NOTICE.txt`.
+  (`license-gate.yml` cannot see this one: it scans the Python dependency closure only.)
+
 7-Zip is used only during the build to extract the Tesseract NSIS package and is not included
 in the portable application. 7-Zip is licensed mainly under GNU LGPL with additional components;
 source and license information: https://www.7-zip.org/

@@ -2,7 +2,9 @@ OmniCrawler Windows 便携版
 =========================
 
 1. 请完整解压整个 OmniCrawler 文件夹，建议放到 D:\OmniCrawler。
-2. 双击“OmniCrawler-Launcher.bat”，无需安装 Python 或浏览器。
+2. 双击“OmniCrawler.exe”即可启动，无需安装 Python 或浏览器。
+   若没有窗口出现（例如 exe 被杀软首次扫描拦下，或文件缺失），再双击
+   “OmniCrawler-Launcher.bat”：它会给出中文报错，并等待最长 60 秒。
 3. 在第一步填写任务名称、业务目标和浏览器地址栏中的入口网址。
    如果翻页时地址栏不变，请点击“学习点击/搜索/翻页”，不要猜 URL。
 4. 建议先点击“试跑检查”，确认少量样本正确后再正式运行。

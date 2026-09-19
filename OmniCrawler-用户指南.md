@@ -77,7 +77,7 @@ OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台�
 
 1. 下载当前构建生成的 `OmniCrawler-0.13.0-Windows-Portable-Standard.zip`
 2. 解压到普通可写目录（如 `D:\OmniCrawler`）
-3. 双击 `OmniCrawler-Launcher.bat`
+3. 双击 `OmniCrawler.exe`；若没有窗口出现（例如 exe 被杀软首次扫描拦下，或文件缺失），再双击 `OmniCrawler-Launcher.bat` 查看中文报错
 
 > Standard 版含 GUI + Chromium + 常规网页/API/PDF 文本处理。
 > Full 版额外含 ChromeDriver + Tesseract + PaddleOCR 离线模型。
