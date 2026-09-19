@@ -15,6 +15,7 @@ datas = [
     (str(src_root / "omnicrawler" / "templates"), "omnicrawler/templates"),
     (str(src_root / "omnicrawler" / "gui" / "templates"), "omnicrawler/gui/templates"),
     (str(src_root / "omnicrawler" / "gui" / "help"), "omnicrawler/gui/help"),
+    (str(src_root / "omnicrawler" / "gui" / "branding"), "omnicrawler/gui/branding"),
     (str(src_root / "omnicrawler" / "fetching" / "stealth.min.js"), "omnicrawler/fetching"),
     # 语言包：i18n._find_localedir 沿包父链找到 omnicrawler/locale（S42 打包登记）
     (str(project_root / "locale"), "omnicrawler/locale"),

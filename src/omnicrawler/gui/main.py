@@ -33,6 +33,7 @@ from ..core.runtime_paths import (
     portable_data_root,
     resolve_cli_command,
 )
+from .app_icon import app_icon
 from .i18n import _
 from .navigation import NavIndex  # noqa: F401  # S3.1.2 re-export
 
@@ -858,6 +859,8 @@ class MainWindow(QMainWindow):
     def _setup_system_tray(self) -> None:
         if QSystemTrayIcon.isSystemTrayAvailable():
             self._tray_icon = QSystemTrayIcon(self)
+            # B1：托盘用带牌图标（自带不透明底，深浅托盘对比度都达标，见《优化方案》§九附录 A §3.5）
+            self._tray_icon.setIcon(app_icon())
             self._tray_icon.setToolTip(_("OmniCrawler GUI 工作台"))
             self._tray_icon.activated.connect(self._on_tray_activated)
             # S3.1.2：QMenu(self) 接管所有权，托盘右键菜单不因父对象销毁而悬空
@@ -2147,6 +2150,10 @@ def main() -> int:
         app.setApplicationName("OmniCrawler GUI")
         app.setOrganizationName("OmniCrawler")
         app.setApplicationVersion(GUI_VERSION)
+        # 品牌批次 B1：应用自身图标（窗口标题栏 / 任务栏 / Alt-Tab）。
+        # desktopFileName 供 Wayland app_id 与 .desktop 文件名匹配（I1b 联动，触点 2）。
+        app.setDesktopFileName("omnicrawler")
+        app.setWindowIcon(app_icon())
 
         window = MainWindow()
         window.show()

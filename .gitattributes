@@ -45,6 +45,7 @@ plugins_installed/**/*.sig -text
 *.jpeg     binary
 *.gif      binary
 *.ico      binary
+*.icns     binary
 *.svg      binary
 *.ttf      binary
 *.woff     binary

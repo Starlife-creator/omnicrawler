@@ -111,7 +111,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 omnicrawler = ["templates/**/*.yaml", "templates/**/*.yml", "templates/**/*.csv", "templates/**/*.json", "data/*.yaml", "scenes/*.yaml"]
-"omnicrawler.gui" = ["templates/*.yaml", "help/*.html", "help/images/*"]
+"omnicrawler.gui" = ["templates/*.yaml", "help/*.html", "help/images/*", "branding/*"]
 # 注：locale 语言包不在此登记——pip wheel 形态经 data-files 打包需配套
 # MANIFEST.in 与 Docker COPY，曾导致 docker/test CI 构建失败（2026-08-11）。
 # 语言包随 PyInstaller 便携包分发（packaging/*.spec datas 已登记），

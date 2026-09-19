@@ -28,6 +28,7 @@ datas = [
     (str(src_root / "omnicrawler" / "templates"), "omnicrawler/templates"),
     (str(src_root / "omnicrawler" / "gui" / "templates"), "omnicrawler/gui/templates"),
     (str(src_root / "omnicrawler" / "gui" / "help"), "omnicrawler/gui/help"),
+    (str(src_root / "omnicrawler" / "gui" / "branding"), "omnicrawler/gui/branding"),
     (str(src_root / "omnicrawler" / "fetching" / "stealth.min.js"), "omnicrawler/fetching"),
     (str(project_root / "plugins"), "plugins"),
     (str(project_root / "locale"), "omnicrawler/locale"),
