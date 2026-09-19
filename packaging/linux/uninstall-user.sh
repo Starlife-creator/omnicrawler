@@ -117,9 +117,16 @@ if [[ ! -e "$PREFIX/OmniCrawler" && ! -d "$PREFIX/installer" ]]; then
 fi
 
 # 数据根检测：便携模式下数据就在应用目录内
+# ★ 必须写成 `if`，不能写 `[[ -e X ]] && data_hint=...`：后者在 **bash 3.2**
+#   （macOS 自带的就是 3.2）下会让 `for` 循环返回非零状态，被 `set -e` 直接终止 ——
+#   表现为**静默退出、rc=1、没有任何消息**，于是"拒绝删树"看起来是对的，
+#   其实根本没走到拒绝那一段（偶然正确）。bash 4/5 不作此处理，所以只在 macOS 上暴露。
 data_hint=""
 for marker in PORTABLE.flag portable.flag data-mode.json; do
-  [[ -e "$PREFIX/$marker" ]] && data_hint="$PREFIX"
+  if [[ -e "$PREFIX/$marker" ]]; then
+    data_hint="$PREFIX"
+    break
+  fi
 done
 if [[ -n "$data_hint" && "$PURGE_DATA" -eq 0 ]]; then
   warn ""

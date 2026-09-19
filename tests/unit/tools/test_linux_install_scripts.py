@@ -307,6 +307,13 @@ def test_uninstall_refuses_to_delete_a_tree_holding_user_data(tmp_path: Path) ->
     refused = _run(prefix / "installer" / "uninstall-user.sh",
                    ["--prefix", str(prefix), "--remove-prefix"], home)
     assert refused.returncode != 0, "有用户数据时必须拒绝删树"
+    # ★ 只断言"非零退出"会放过一类**偶然正确**：脚本可能在别处静默失败（例如
+    #   `set -e` 被一个非零的循环状态终止），于是"看起来拒绝了"，其实根本没走到
+    #   拒绝那一段。所以要求它**把理由说出来** —— macOS 的 bash 3.2 正是这样
+    #   抓到了 uninstall-user.sh 的一个真缺陷。
+    combined = refused.stdout + refused.stderr
+    assert "拒绝删除整个应用树" in combined, combined
+    assert "--purge-data" in combined, combined
     assert prefix.is_dir()
     assert (prefix / "output" / "precious.json").is_file()
 
@@ -407,8 +414,10 @@ def test_archive_install_smoke_passes_on_a_faithful_tree(tmp_path: Path) -> None
     assert result["desktop_entry"] == "ok"
     assert result["exec_absolute_and_present"] is True
     assert result["hicolor_icons"] == len(HICOLOR_SIZES)
-    # desktop-file-validate 可能没装：那时必须是**可见**的 skipped，而不是静默 ok
-    assert "desktop-file-validate" in str(result["desktop_file_validate"])
+    # desktop-file-validate 可能没装：那时必须是**可见**的 skipped（写进 manifest），
+    # 而不是静默 ok —— 但也不能因此判红（缺的是可选工具，不是我们的交付件）。
+    validate = str(result["desktop_file_validate"])
+    assert validate == "ok" or validate.startswith("skipped: desktop-file-utils"), validate
 
 
 @needs_posix_bash
