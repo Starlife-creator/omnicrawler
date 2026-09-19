@@ -74,6 +74,15 @@ class MenuBuilder(_BaseDelegate):
         switch_project_action.triggered.connect(mw._env_checker.switch_project)
         settings_menu.addAction(switch_project_action)
 
+        # I2：桌面快捷方式。欢迎弹窗只在首启问一次，错过了就没了 ⇒ 这里给一个
+        # **显式**的重复入口。非 Windows 不出现（不是"出现但点了没用"）。
+        from ...core.win_shortcut import is_platform_supported
+
+        if is_platform_supported():
+            shortcut_action = QAction(_("创建桌面快捷方式"), mw)
+            shortcut_action.triggered.connect(mw._env_checker.create_desktop_shortcut)
+            settings_menu.addAction(shortcut_action)
+
         mw._schedule_action = QAction(_("定时任务..."), mw)
         mw._schedule_action.triggered.connect(mw._manage_schedules)
         settings_menu.addAction(mw._schedule_action)

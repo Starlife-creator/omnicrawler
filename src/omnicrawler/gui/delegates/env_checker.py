@@ -1,14 +1,21 @@
 """Environment detection, first-launch guidance, and quick experience."""
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
-from PySide6.QtWidgets import QCheckBox, QFileDialog, QInputDialog, QMessageBox
+from PySide6.QtWidgets import QCheckBox, QFileDialog, QGridLayout, QInputDialog, QMessageBox
 
 from ..i18n import _
 from ..navigation import NavIndex
 from ..widgets.toast import ToastManager
 from ._base import _BaseDelegate
+
+logger = logging.getLogger(__name__)
+
+#: I2 的复选框 objectName。测试按它找控件 —— 欢迎弹窗上**本来就有一个** QCheckBox
+#: （"不再显示"），只按类型找会拿到错的那个。
+SHORTCUT_CHECKBOX_NAME = "create_desktop_shortcut_checkbox"
 
 
 class EnvironmentChecker(_BaseDelegate):
@@ -150,12 +157,61 @@ class EnvironmentChecker(_BaseDelegate):
         cb = QCheckBox(_("不再显示"))
         cb.setChecked(False)
         msg.setCheckBox(cb)
+        shortcut_cb = self._add_shortcut_checkbox(msg)
         msg.exec()
         clicked = msg.clickedButton()
+        # I2：只有**用户勾了**才建；取消 / 直接关掉（clickedButton 为 None）都不建。
+        if shortcut_cb is not None and shortcut_cb.isChecked() and clicked is not None:
+            self.create_desktop_shortcut()
         if clicked == demo_btn:
             mw._start_demo()
         elif clicked == tmpl_btn:
             mw._open_template_browser()
+
+    def _add_shortcut_checkbox(self, msg: QMessageBox) -> QCheckBox | None:
+        """I2：把"创建桌面快捷方式"挂到**既有**欢迎弹窗上（**默认不勾**）。
+
+        不新增弹窗、不新增流程：欢迎弹窗本身就是"只问一次"的载体
+        （`is_first_launch` 已在 `on_first_launch()` 里消费）。
+        非 Windows ⇒ 返回 None，控件**不出现**（不是"出现但点了没用"）。
+        """
+        from ...core.win_shortcut import is_platform_supported
+
+        if not is_platform_supported():
+            return None
+        checkbox = QCheckBox(_("在桌面创建快捷方式"))
+        checkbox.setObjectName(SHORTCUT_CHECKBOX_NAME)
+        checkbox.setChecked(False)
+        # QMessageBox 只有一个 setCheckBox 槽位（被"不再显示"占了）⇒ 第二个复选框
+        # 只能加进它内部的 QGridLayout；放在最后一行、横跨所有列。
+        layout = msg.layout()
+        if isinstance(layout, QGridLayout):
+            layout.addWidget(checkbox, layout.rowCount(), 0, 1, layout.columnCount())
+        else:  # pragma: no cover - Qt 的 QMessageBox 内部始终是 QGridLayout
+            logger.warning(_("欢迎弹窗布局不是 QGridLayout，跳过快捷方式复选框"))
+            return None
+        return checkbox
+
+    def create_desktop_shortcut(self) -> None:
+        """I2：创建桌面 / 开始菜单快捷方式（欢迎弹窗勾选与设置菜单共用这一条路径）。
+
+        失败**不重试、不静默**：给 Toast + 日志。整体包一层 ``except Exception`` ——
+        一个可选功能绝不允许拖垮主流程。真正的正确性由 **CI 的读回断言**保证
+        （ctypes 误用是 AV 崩溃而非 Python 异常，这里的兜底管不了那种情形）。
+        """
+        from ...core import win_shortcut
+
+        try:
+            result = win_shortcut.create_shortcut_for_app()
+        except Exception:  # noqa: BLE001 - 可选功能，任何失败都不该冒泡到 UI 线程
+            logger.exception(_("创建桌面快捷方式时发生异常"))
+            ToastManager.instance().warning(_("创建快捷方式失败，详见日志。"))
+            return
+        if result.ok:
+            ToastManager.instance().success(_("已在桌面创建快捷方式。"))
+        else:
+            logger.warning(_("未创建快捷方式：%s"), result.detail)
+            ToastManager.instance().warning(_("未能创建快捷方式：{0}").format(result.detail))
 
     def show_env_setup_dialog(self) -> None:
         mw = self._mw
