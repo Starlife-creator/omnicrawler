@@ -93,7 +93,7 @@ if [[ -L "$BIN_LINK" ]]; then
   target="$(readlink "$BIN_LINK" || true)"
   case "$target" in
     "$PREFIX"/*) rm -f -- "$BIN_LINK"; info "已移除 CLI 软链：$BIN_LINK" ;;
-    *) warn "跳过 $BIN_LINK：它指向 $target，不属于本 prefix" ;;
+    *) warn "跳过 ${BIN_LINK}：它指向 ${target}，不属于本 prefix" ;;
   esac
 fi
 
@@ -139,7 +139,7 @@ if [[ -n "$data_hint" && "$PURGE_DATA" -eq 0 ]]; then
 fi
 
 if [[ -n "$data_hint" ]]; then
-  warn "★ --purge-data 已生效：将不可逆地删除 $PREFIX（含其中的用户数据）。"
+  warn "★ --purge-data 已生效：将不可逆地删除 ${PREFIX}（含其中的用户数据）。"
 fi
 rm -rf -- "$PREFIX"
 info "已删除应用树：$PREFIX"

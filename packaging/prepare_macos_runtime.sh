@@ -132,7 +132,7 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
             # 解析失败不阻断构建：跳过该依赖，由最终 Tesseract 冒烟（--list-langs）
             # 验证运行可用性——若真缺库冒烟会明确报错。brew 依赖树存在 LC_RPATH
             # 覆盖不全的情况（v0.9.1 CI 实测 die 中断），跳过 + 冒烟兜底更稳。
-            echo "[runtime-prep] WARN: 无法解析 @rpath 依赖 $dep（来自 $bin），跳过" >&2
+            echo "[runtime-prep] WARN: 无法解析 @rpath 依赖 ${dep}（来自 ${bin}），跳过" >&2
             continue
           fi
           dep="$rpath_path"
@@ -173,7 +173,7 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
       if [[ -f "$TESS_ROOT/$dep_base" ]]; then
         install_name_tool -change "$dep" "@loader_path/$dep_base" "$target" 2>/dev/null || true
       else
-        echo "[runtime-prep] WARN: 依赖 $dep（来自 $target）在本目录无副本，"
+        echo "[runtime-prep] WARN: 依赖 ${dep}（来自 ${target}）在本目录无副本，"
         echo "               保留原引用（干净机器上可能加载失败）" >&2
       fi
     done

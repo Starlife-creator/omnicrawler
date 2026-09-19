@@ -168,7 +168,7 @@ fi
 if [[ "$icon_count" -gt 0 ]]; then
   info "已安装 hicolor 图标：$icon_count 个 -> $ICON_DEST"
 else
-  warn "包内未找到 hicolor 图标（$ICON_SRC）；桌面条目将无自定义图标。"
+  warn "包内未找到 hicolor 图标（${ICON_SRC}）；桌面条目将无自定义图标。"
 fi
 
 # ---- 3. .desktop（绝对路径是硬要求） ---------------------------------------

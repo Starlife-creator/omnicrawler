@@ -156,6 +156,41 @@ def test_checker_goes_red_when_a_hicolor_source_is_missing(tmp_path: Path) -> No
     assert any("omnicrawler-icon-48.png" in err for err in errors), errors
 
 
+def test_checker_goes_red_on_var_adjacent_to_non_ascii(tmp_path: Path) -> None:
+    """★ 反向断言：`$VAR` 紧跟全角标点 ⇒ 必须红。
+
+    bash 3.2（macOS 自带）会把紧随的**多字节字符吞进变量名**：macOS runner 实测
+    `--purge-data` 的提示行因此报 `PREFIX?: unbound variable`，脚本 rc=1、消息断在
+    上一行；而本地 bash 5 完全不报错（版本差异，只有 macOS CI 能抓到）。
+    """
+    staged = _stage_delivery(tmp_path)
+    target = staged / "uninstall-user.sh"
+    pristine = target.read_bytes()
+    broken = pristine.decode("utf-8").replace("${PREFIX}（", "$PREFIX（").encode("utf-8")
+    assert broken != pristine, "应存在 '${PREFIX}（' 这个锚点"
+
+    target.write_bytes(broken)
+    errors = check_linux_delivery.check(staged)
+    assert any("non-ASCII" in err for err in errors), errors
+
+    target.write_bytes(pristine)
+    assert _sha256(target) == hashlib.sha256(pristine).hexdigest()
+    assert check_linux_delivery.check(staged) == []
+
+
+def test_checker_ignores_escaped_dollar_before_non_ascii(tmp_path: Path) -> None:
+    """转义写法 `\\$ORIGIN（…）` 是**字面量**，不得误报（build_linux.sh 里就有）。"""
+    staged = _stage_delivery(tmp_path)
+    target = staged / "install-user.sh"
+    pristine = target.read_bytes()
+    text = pristine.decode("utf-8")
+    target.write_bytes((text + '\necho "patchelf --set-rpath \\$ORIGIN（说明）"\n').encode("utf-8"))
+    errors = check_linux_delivery.check(staged)
+    assert not any("non-ASCII" in err for err in errors), errors
+    target.write_bytes(pristine)
+    assert check_linux_delivery.check(staged) == []
+
+
 # ── B 组：脚本真实行为（POSIX only，见模块 docstring） ─────────────────────
 
 BASH = shutil.which("bash")

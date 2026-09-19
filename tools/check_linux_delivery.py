@@ -29,6 +29,7 @@ Windows 上的作者**本地看不出来** —— 这正是"构建期报绿、�
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 # hicolor 需要的 7 个尺寸（16/24/32/48/64/128/256），与品牌资产包一致。
@@ -102,6 +103,31 @@ def _check_branding_sources(branding_src: Path) -> list[str]:
     return errors
 
 
+def _check_var_adjacent_non_ascii(path: Path) -> list[str]:
+    """`$VAR` 后面紧跟非 ASCII 字符 ⇒ 必须写成 `${VAR}`。
+
+    ★ 为什么：**bash 3.2**（macOS 自带）的解析器不是 UTF-8 感知的，会把紧跟其后的
+    多字节字符**吞进变量名**。于是 `"…删除 $PREFIX（含…）"` 会被当成变量
+    `PREFIX（`：
+      * 有 `set -u` ⇒ `PREFIX?: unbound variable` 直接终止（实测：macOS runner 上
+        `--purge-data` 因此 rc=1、消息断在上一行）；
+      * 没有 `set -u` ⇒ 变量展开为空，**警告信息悄悄丢掉变量值**，比崩溃更难发现。
+    加花括号显式终止变量名，两种情形都消失。本规则同时排除转义写法 `\\$VAR`。
+    """
+    errors: list[str] = []
+    var = re.compile(r"(?<!\\)\$[A-Za-z_][A-Za-z0-9_]*")
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        for match in var.finditer(line):
+            following = line[match.end() : match.end() + 1]
+            if following and ord(following) > 127:
+                errors.append(
+                    f"{path.name}:{lineno}: '{match.group(0)}' is immediately followed by "
+                    f"non-ASCII {following!r}; write ${{{match.group(0)[1:]}}} instead "
+                    "(bash 3.2 swallows the multibyte char into the variable name)"
+                )
+    return errors
+
+
 def check(delivery_dir: Path, branding_src: Path | None = None) -> list[str]:
     """返回问题列表（空列表 = 全部通过）。构建期与单测都调用这一个入口。"""
     errors: list[str] = []
@@ -119,6 +145,7 @@ def check(delivery_dir: Path, branding_src: Path | None = None) -> list[str]:
         path = delivery_dir / name
         if path.is_file():
             errors.extend(_check_script_shape(path))
+            errors.extend(_check_var_adjacent_non_ascii(path))
 
     template = delivery_dir / DESKTOP_TEMPLATE
     if template.is_file():
