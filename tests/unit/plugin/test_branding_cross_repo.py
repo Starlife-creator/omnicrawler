@@ -130,17 +130,24 @@ def test_branding_stays_byte_identical_across_the_two_repositories() -> None:
     # ⑦ README 门面：两仓插入的 lockup 片段必须逐字相同（§3.6）。
     #    主仓 README 是 CRLF 检出、市场仓全库 LF，故按内容比对（行尾差异由
     #    .gitattributes 的字节契约单独看住）。
-    def snippet(path: Path) -> str:
-        text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
-        assert "</p>" in text, f"{path} 顶部没有 lockup 片段"
+    def snippet(readme: Path) -> str:
+        text = readme.read_text(encoding="utf-8").replace("\r\n", "\n")
+        assert "</p>" in text, f"{readme} 顶部没有 lockup 片段"
         head = text.split("</p>", 1)[0]
-        assert "assets/branding/lockup/" in head, f"{path} 顶部的片段没有指向仓内 lockup"
-        assert "http" not in head, f"{path} 顶部的片段使用了绝对 URL"
+        assert "assets/branding/lockup/" in head, f"{readme} 顶部的片段没有指向仓内 lockup"
+        assert "http" not in head, f"{readme} 顶部的片段使用了绝对 URL"
         return head + "</p>"
 
-    assert snippet(REPO_ROOT / "README.md") == snippet(MARKET_ROOT / "README.md"), (
-        "两仓 README 的 lockup 片段不一致"
-    )
+    main_snippet = snippet(REPO_ROOT / "README.md")
+    market_snippet = snippet(MARKET_ROOT / "README.md")
+    assert main_snippet == market_snippet, "两仓 README 的 lockup 片段不一致"
+
+    # 片段引用的每个文件都必须在**各仓自己**解析得到 —— 断图是用户直接看得见的缺陷。
+    referenced = re.findall(r'(?:srcset|src)="([^"]+)"', main_snippet)
+    assert referenced, "lockup 片段没有引用任何文件"
+    for rel in referenced:
+        assert (REPO_ROOT / rel).is_file(), f"主仓 README 引用的 {rel} 不存在"
+        assert (MARKET_ROOT / rel).is_file(), f"市场仓 README 引用的 {rel} 不存在"
 
     # ⑧ 市场仓品牌目录的行尾保护规则不得被删（§3.11(c)：这是防 PNG 落回
     #    `* text=auto` 的唯一机会）。
