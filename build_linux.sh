@@ -227,6 +227,39 @@ for relative_dir in data/input data/pdfs work output logs; do
   mkdir -p "$RELEASE_ROOT/$relative_dir"
 done
 
+# ---- 用户级安装件（I1a/I1b）：脚本 + hicolor 图标 ----------------------------
+# ★ 本段必须落在 create_runtime_manifest.py 之前 —— 否则新文件不在
+#   RUNTIME-MANIFEST 里，runtime-verify 的双向核对立刻红（白烧一轮 CI）。
+DELIVERY_LINUX="$PROJECT_ROOT/packaging/linux"
+INSTALL_DIR="$RELEASE_ROOT/installer"
+BRANDING_SRC="$PROJECT_ROOT/src/omnicrawler/gui/branding"
+
+# 交付件判据**只留一处**：LF / 无 BOM / 脚本头 / .desktop 契约字段 / 图标源齐备，
+# 全在 tools/check_linux_delivery.py 里；单测把 CRLF、BOM、缺图标装回去验证它会红。
+# （.sh / .desktop 若以 CRLF 交付，用户侧 `/usr/bin/env: 'bash\r'` 直接失败，
+#   而构建机是 Linux、本地看不出来 ⇒ 判据必须前移到装配期。）
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/check_linux_delivery.py" \
+  --delivery-dir "$DELIVERY_LINUX" --branding-src "$BRANDING_SRC"
+
+mkdir -p "$INSTALL_DIR/icons/hicolor"
+cp "$DELIVERY_LINUX/install-user.sh" "$DELIVERY_LINUX/uninstall-user.sh" \
+   "$DELIVERY_LINUX/omnicrawler.desktop.in" "$INSTALL_DIR/"
+chmod +x "$INSTALL_DIR/install-user.sh" "$INSTALL_DIR/uninstall-user.sh"
+
+# hicolor 图标：单一真源在 src/omnicrawler/gui/branding/（随 PyInstaller 进
+# _internal/，不出现在 release root 的可预期路径上）⇒ 必须显式复制。
+# 「构建期复制」不是仓库副本 ⇒ 零副本纪律不破。
+icon_total=0
+for size in 16 24 32 48 64 128 256; do
+  icon_src="$BRANDING_SRC/omnicrawler-icon-$size.png"
+  [[ -f "$icon_src" ]] || { echo "缺品牌图标：$icon_src" >&2; exit 1; }
+  dest_dir="$INSTALL_DIR/icons/hicolor/${size}x${size}/apps"
+  mkdir -p "$dest_dir"
+  cp "$icon_src" "$dest_dir/omnicrawler.png"
+  icon_total=$((icon_total + 1))
+done
+echo "[I1] installer bundle: 3 scripts + $icon_total hicolor icons -> $INSTALL_DIR"
+
 # ---- 产物级测试（SBOM + CLI 冒烟 + portable 冒烟 + 完整性清单）--------------
 # 与 Windows 构建对齐：落盘 CAPABILITIES.json / RELEASE-INFO.json 并重刷清单
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/generate_sbom.py" --output "$RELEASE_ROOT/SBOM.json"

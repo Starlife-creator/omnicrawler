@@ -8,6 +8,7 @@
 |---|---|---:|---|
 | Windows 普通用户 | 全量便携 ZIP | 否 | 全部本地功能与客户端依赖 |
 | Windows 开发者 | `setup_windows.bat` | 是 | `full + dev` |
+| Linux 普通用户 | 便携 tar.xz（可选 `installer/install-user.sh` 装进应用菜单） | 否 | 全部本地功能与客户端依赖 |
 | Linux 开发者/服务器 | `./setup_linux.sh` | 是 | `full + dev` |
 | macOS 开发者 | `./setup_macos.command` | 是 | `full + dev` |
 | 容器/定制服务 | Docker/选择性 extras | 否 | 按镜像用途裁剪 |
@@ -35,6 +36,10 @@ chmod +x setup_linux.sh run_gui_linux.sh run_linux.sh
 GUI 需要系统 Qt/X11/Wayland 库。Tesseract 建议通过发行版安装
 `tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim`；PaddleOCR 是完整本地后备。
 服务器无桌面时使用 CLI，不需要启动 GUI。
+
+不想装 Python 的普通用户走便携 tar.xz：解压即用；若还想让它出现在应用菜单里
+（并带图标、可干净卸载），包内的 `./installer/install-user.sh` 会做一次**用户级**
+安装（不需要 root）—— 详见 [Linux 用户级安装](LINUX_INSTALL.md)。
 
 ## macOS
 

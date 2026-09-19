@@ -46,6 +46,8 @@ _PORTABLE_PLATFORM_ENTRYPOINTS: dict[str, tuple[str, ...]] = {
         "OmniCrawler.app/Contents/MacOS/omnicrawler-worker",
     ),
 }
+# hicolor 图标尺寸（I1b）：与 tools/check_linux_delivery.py 的同一份清单口径一致。
+_HICOLOR_ICON_SIZES: tuple[int, ...] = (16, 24, 32, 48, 64, 128, 256)
 # macOS 额外要求 .app 目录存在（bundle 根）
 _PORTABLE_PLATFORM_REQUIRED_DIRS: dict[str, tuple[str, ...]] = {
     "win": (),
@@ -54,7 +56,18 @@ _PORTABLE_PLATFORM_REQUIRED_DIRS: dict[str, tuple[str, ...]] = {
 }
 _PORTABLE_REQUIRED_EXTRA: dict[str, tuple[str, ...]] = {
     "win": ("OmniCrawler-Launcher.bat", "PORTABLE_README.txt"),
-    "linux": (),
+    # I1：Linux 用户级安装件。这些是"装了才可能对"的东西 —— 缺一个，用户在应用
+    # 菜单里要么没有条目、要么条目没有图标，而构建期是一切正常的。装配层在这里
+    # 取证（缺文件即红），配合 portable_archive_smoke 的安装冒烟形成两道防线。
+    "linux": (
+        "installer/install-user.sh",
+        "installer/uninstall-user.sh",
+        "installer/omnicrawler.desktop.in",
+        *(
+            f"installer/icons/hicolor/{size}x{size}/apps/omnicrawler.png"
+            for size in _HICOLOR_ICON_SIZES
+        ),
+    ),
     "mac": (),
 }
 # Chromium 可执行文件 glob（相对 OmniCrawler/ 根）；与 runtime_paths.py bundled_browser_executable 保持对称
@@ -752,8 +765,14 @@ def _check_portable_archive(
         errors.append("PORTABLE.flag must be empty")
 
     platform_label = {"win": "Windows", "linux": "Linux", "mac": "macOS"}[platform]
+    # ★ `tar\.xz` 必须在内：Linux 产物就是 `.tar.xz`（build_linux.sh）。此前正则只认
+    #   `zip|tar\.gz|dmg` ⇒ 它在 Linux 上**永不命中**，`filename_edition` 恒为 None，
+    #   "文件名 edition 与声明 edition 一致"这条检查在 Linux 上**静默失效**
+    #   （`EDITION.txt` 的校验仍在下方，所以不是漏洞，但是一条哑掉的判据）。
     filename_match = re.search(
-        rf"{platform_label}-Portable-(Standard|Full)\.(zip|tar\.gz|dmg)$", archive_path.name, re.IGNORECASE,
+        rf"{platform_label}-Portable-(Standard|Full)\.(zip|tar\.gz|tar\.xz|dmg)$",
+        archive_path.name,
+        re.IGNORECASE,
     )
     filename_edition = filename_match.group(1).title() if filename_match else None
     if expected_edition is not None:

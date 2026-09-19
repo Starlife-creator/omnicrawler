@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=OmniCrawler
+GenericName=Data Extractor
+Comment=Extract structured data from websites
+Comment[zh_CN]=从网站提取结构化数据
+Exec=@PREFIX@/OmniCrawler
+Icon=omnicrawler
+StartupWMClass=omnicrawler
+Categories=Utility;Office;
+Terminal=false

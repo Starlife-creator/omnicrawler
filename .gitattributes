@@ -13,6 +13,15 @@
 # === Unix 脚本 (LF) ===
 *.sh       text eol=lf
 *.command  text eol=lf
+# 用户级安装（I1）：.sh / .desktop 以 CRLF 交付会让用户侧直接不可用
+# （`/usr/bin/env: 'bash\r': No such file or directory`），而**本地看不出来**
+# ——Windows 检出经 core.autocrlf 会变 CRLF。故在此显式钉死，不依赖上方兜底
+# （S45 教训：规则命中 0 就落 `* text=auto` 兜底，静默失效）。
+packaging/linux/**/*.sh    text eol=lf
+packaging/linux/**/*.desktop       text eol=lf
+packaging/linux/**/*.desktop.in    text eol=lf
+*.desktop  text eol=lf
+*.desktop.in  text eol=lf
 
 # === 文档与配置 ===
 *.md       text

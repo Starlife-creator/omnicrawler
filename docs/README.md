@@ -56,6 +56,7 @@
 
 - [安全与合规](SECURITY_AND_COMPLIANCE.md)
 - [便携版构建（Windows / Linux / macOS）](PORTABLE_PACKAGING.md)
+- [Linux 用户级安装（应用菜单条目与图标）](LINUX_INSTALL.md)
 - [Windows 便携版构建](WINDOWS_PACKAGING.md)
 - [发布流水线故障排查手册](RELEASE_PIPELINE_TROUBLESHOOTING.md)：案例基于 v0.9.1 全轮次复盘，排查方法长期有效。
 

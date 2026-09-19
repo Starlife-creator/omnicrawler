@@ -39,6 +39,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -108,7 +109,9 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _run(command: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+def _run(
+    command: list[str], *, check: bool = True, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603 - argv is built from literals plus paths we own
         command,
         check=check,
@@ -116,6 +119,7 @@ def _run(command: list[str], *, check: bool = True) -> subprocess.CompletedProce
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=env,
     )
 
 
@@ -195,6 +199,96 @@ def runtime_verify(release_root: Path) -> None:
     print(f"runtime-verify: OK  {output.splitlines()[0][:110] if output else ''}".rstrip())
 
 
+# I1：Linux 便携包内附带的用户级安装件。清单口径与 `tools/check_linux_delivery.py`、
+# `check_release_integrity._PORTABLE_REQUIRED_EXTRA["linux"]` 保持一致。
+_HICOLOR_ICON_SIZES: tuple[int, ...] = (16, 24, 32, 48, 64, 128, 256)
+
+
+def linux_install_smoke(release_root: Path, workdir: Path) -> dict[str, Any]:
+    """在**解压后的真产物**上跑一遍 `install-user.sh`，断言落位与 `.desktop` 契约。
+
+    为什么必须在归档层做：脚本读的是**产物内**的 `installer/` 与 hicolor 图标，而
+    "装配时到底复制进去没有"在构建树上看不出来 —— tar 往返丢文件正是 W4.2 第一次
+    派发就撞上的事。这里用 `HOME=<tmp>` 做一次真安装，然后逐条断言：
+
+    * `.desktop` 落到 `$HOME/.local/share/applications/`
+    * `Exec=` 是**绝对路径**、目标是**产物内的 GUI 二进制**、且真的存在
+      （就地注册会留下死链：用户清理下载目录后应用失效）
+    * hicolor 的 7 个尺寸都在
+    * `desktop-file-validate` 通过；**没装则可见跳过**（写进 manifest，不静默通过）
+    """
+    installer = release_root / "installer" / "install-user.sh"
+    if not installer.is_file():
+        raise FileNotFoundError(f"no installer in the extracted archive: {installer}")
+
+    home = workdir / "home"
+    prefix = workdir / "prefix"
+    home.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, "HOME": str(home)}
+    env.pop("XDG_DATA_HOME", None)
+
+    completed = _run(
+        ["/bin/bash", str(installer), "--prefix", str(prefix), "--no-desktop-database"],
+        check=False,
+        env=env,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"install-user.sh failed on the extracted archive (rc={completed.returncode}):\n"
+            f"{(completed.stdout + completed.stderr)[-4000:]}"
+        )
+
+    desktop = home / ".local" / "share" / "applications" / "omnicrawler.desktop"
+    if not desktop.is_file():
+        raise RuntimeError(f"install-user.sh did not write the desktop entry: {desktop}")
+    text = desktop.read_text(encoding="utf-8")
+    exec_lines = [line for line in text.splitlines() if line.startswith("Exec=")]
+    if not exec_lines:
+        raise RuntimeError("desktop entry has no Exec= line")
+    exec_target = Path(exec_lines[0].removeprefix("Exec="))
+    if not exec_target.is_absolute():
+        raise RuntimeError(f"desktop Exec= must be absolute, got {exec_target}")
+    if not exec_target.is_file():
+        raise RuntimeError(f"desktop Exec= points at a missing entry point: {exec_target}")
+    if exec_target != prefix / "OmniCrawler":
+        raise RuntimeError(f"desktop Exec= must target the packaged GUI binary, got {exec_target}")
+    if "Icon=omnicrawler" not in text:
+        raise RuntimeError("desktop entry must declare Icon=omnicrawler")
+
+    hicolor = home / ".local" / "share" / "icons" / "hicolor"
+    missing = [
+        f"{size}x{size}"
+        for size in _HICOLOR_ICON_SIZES
+        if not (hicolor / f"{size}x{size}" / "apps" / "omnicrawler.png").is_file()
+    ]
+    if missing:
+        raise RuntimeError(f"hicolor icons missing after install: {', '.join(missing)}")
+
+    validator = shutil.which("desktop-file-validate")
+    if validator is None:
+        validate = "skipped: desktop-file-utils not installed"
+        print(f"linux install smoke: {validate}")
+    else:
+        validation = _run([validator, str(desktop)], check=False)
+        if validation.returncode != 0:
+            raise RuntimeError(
+                "desktop-file-validate rejected the entry:\n"
+                f"{(validation.stdout + validation.stderr)[-2000:]}"
+            )
+        validate = "ok"
+
+    print(
+        f"linux install smoke: OK (desktop entry + {len(_HICOLOR_ICON_SIZES)} hicolor icons, "
+        f"desktop-file-validate={validate})"
+    )
+    return {
+        "desktop_entry": "ok",
+        "exec_absolute_and_present": True,
+        "hicolor_icons": len(_HICOLOR_ICON_SIZES),
+        "desktop_file_validate": validate,
+    }
+
+
 def run(
     downloaded: Path,
     platform: str,
@@ -209,6 +303,7 @@ def run(
     print(f"sha256: {digest}")
 
     temporary: tempfile.TemporaryDirectory[str] | None = None
+    install_work: tempfile.TemporaryDirectory[str] | None = None
     if keep is None:
         temporary = tempfile.TemporaryDirectory(prefix="omnicrawler-archive-smoke-")
         extract_dir = Path(temporary.name)
@@ -223,7 +318,7 @@ def run(
         runtime_verify(release_root)
         _load_smoke_module().run_smoke_test(release_root, edition)
         relative_root = "." if release_root == extract_dir else str(release_root.relative_to(extract_dir))
-        return {
+        manifest: dict[str, Any] = {
             "platform": platform,
             "edition": edition,
             "archive": {
@@ -235,9 +330,19 @@ def run(
             "runtime_verify": "ok",
             "smoke": "ok",
         }
+        if platform == "linux":
+            # I1：安装脚本只随 Linux 包分发，故该键只对 linux 出现 —— 不是静默跳过，
+            # 而是"这个交付形态只在 Linux 上存在"。
+            install_work = tempfile.TemporaryDirectory(prefix="omnicrawler-install-smoke-")
+            manifest["install_smoke"] = linux_install_smoke(
+                release_root, Path(install_work.name)
+            )
+        return manifest
     finally:
         if temporary is not None:
             temporary.cleanup()
+        if install_work is not None:
+            install_work.cleanup()
 
 
 def main() -> int:
