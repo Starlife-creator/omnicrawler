@@ -20,6 +20,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 from omnicrawler.core import win_shortcut
 
 # Shell Link 头：前 4 字节是本结构自身的长度（0x0000004C，小端）⇒ 4C 00 00 00。
@@ -69,3 +71,89 @@ def test_shortcut_round_trip_and_platform_contract(tmp_path: Path) -> None:
     defaults = win_shortcut.default_shortcut_paths()
     assert defaults, "Windows 上应能解析出桌面/开始菜单目录"
     assert all(path.name == "OmniCrawler.lnk" for path in defaults)
+
+
+# ── 平台中立的编排层（任何平台都能跑）────────────────────────────────────
+# `create_shortcut` / `create_shortcut_for_app` 刻意不含 COM 调用：真正碰 COM 的只有
+# `_write_link_via_com`（Windows-only，由 windows-latest 的读回断言看住）。这里把那条
+# 接缝换成替身 ⇒「平台判定 / 目标校验 / 父目录创建 / 异常映射 / 多落点聚合」在任何平台
+# 都被覆盖，而不是只能在 Windows runner 上被度量。
+
+
+def _force_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(win_shortcut, "is_platform_supported", lambda: True)
+
+
+def test_create_shortcut_orchestration_without_com(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """写入口换成替身后，编排层的三条分支都要有断言。"""
+    _force_windows(monkeypatch)
+    recorded: list[dict[str, object]] = []
+
+    def fake_write(link_path, target, *, working_dir, icon, description):  # noqa: ANN001, ANN202
+        recorded.append({"link": link_path, "target": target, "dir": working_dir, "icon": icon})
+
+    monkeypatch.setattr(win_shortcut, "_write_link_via_com", fake_write)
+    target = tmp_path / "app.exe"
+    target.write_bytes(b"MZ")
+
+    nested = tmp_path / "deep" / "OmniCrawler.lnk"  # 父目录不存在：应由编排层创建
+    ok = win_shortcut.create_shortcut(nested, target, working_dir=tmp_path, icon=f"{target},0")
+    assert ok.ok is True
+    assert ok.status == "created"
+    assert nested.parent.is_dir(), "编排层必须建好父目录"
+    assert recorded and recorded[0]["link"] == nested and recorded[0]["target"] == target
+
+    def failing_write(*_args: object, **_kwargs: object) -> None:
+        raise OSError("com blew up")
+
+    monkeypatch.setattr(win_shortcut, "_write_link_via_com", failing_write)
+    failed = win_shortcut.create_shortcut(tmp_path / "b.lnk", target)
+    assert failed.ok is False
+    assert failed.status == "failed"
+    assert "com blew up" in failed.detail, "失败原因必须原样带出，不能吞掉"
+
+    # 目标不存在：早退，且**不**触碰写入口
+    monkeypatch.setattr(win_shortcut, "_write_link_via_com", fake_write)
+    missing = win_shortcut.create_shortcut(tmp_path / "c.lnk", tmp_path / "nope.exe")
+    assert missing.ok is False and "does not exist" in missing.detail
+
+
+def test_create_shortcut_for_app_aggregates_outcomes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """多落点聚合的三条分支（全部成功 / 部分成功 / 全失败）+ 无入口时的 unsupported。"""
+    _force_windows(monkeypatch)
+    target = tmp_path / "OmniCrawler.exe"
+    target.write_bytes(b"MZ")
+    monkeypatch.setattr(win_shortcut, "resolve_target", lambda: target)
+    destinations = (tmp_path / "desktop.lnk", tmp_path / "startmenu.lnk")
+
+    monkeypatch.setattr(
+        win_shortcut,
+        "create_shortcut",
+        lambda link, *_a, **_k: win_shortcut.ShortcutResult(
+            ok=True, status="created", created=(link,)
+        ),
+    )
+    all_ok = win_shortcut.create_shortcut_for_app(destinations)
+    assert all_ok.ok is True and all_ok.created == destinations
+
+    outcomes = iter(
+        (
+            win_shortcut.ShortcutResult(ok=True, status="created", created=(destinations[0],)),
+            win_shortcut.ShortcutResult(ok=False, status="failed", detail="nope"),
+        )
+    )
+    monkeypatch.setattr(win_shortcut, "create_shortcut", lambda *_a, **_k: next(outcomes))
+    partial = win_shortcut.create_shortcut_for_app(destinations)
+    assert partial.ok is False and partial.created == (destinations[0],)
+    assert "nope" in partial.detail
+
+    monkeypatch.setattr(
+        win_shortcut,
+        "create_shortcut",
+        lambda *_a, **_k: win_shortcut.ShortcutResult(ok=False, status="failed", detail="all bad"),
+    )
+    none_ok = win_shortcut.create_shortcut_for_app(destinations)
+    assert none_ok.ok is False and none_ok.created == () and "all bad" in none_ok.detail
+
+    monkeypatch.setattr(win_shortcut, "resolve_target", lambda: None)
+    assert win_shortcut.create_shortcut_for_app(destinations).status == "unsupported"

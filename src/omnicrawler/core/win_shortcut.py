@@ -111,7 +111,7 @@ class _GUID(ctypes.Structure):
     )
 
 
-def _libraries() -> tuple[Any, Any]:
+def _libraries() -> tuple[Any, Any]:  # pragma: no cover - Windows only
     ole32 = ctypes.WinDLL("ole32", use_last_error=True)
     shell32 = ctypes.WinDLL("shell32", use_last_error=True)
     ole32.CLSIDFromString.argtypes = (ctypes.c_wchar_p, ctypes.POINTER(_GUID))
@@ -139,7 +139,7 @@ def _libraries() -> tuple[Any, Any]:
     return ole32, shell32
 
 
-def _guid(text: str) -> _GUID:
+def _guid(text: str) -> _GUID:  # pragma: no cover - Windows only
     ole32, _ = _libraries()
     guid = _GUID()
     hr = ole32.CLSIDFromString(text, ctypes.byref(guid))
@@ -148,7 +148,7 @@ def _guid(text: str) -> _GUID:
     return guid
 
 
-def _method(ptr: Any, index: int, *argtypes: Any) -> Any:
+def _method(ptr: Any, index: int, *argtypes: Any) -> Any:  # pragma: no cover - Windows only
     """按 vtable 槽位取一个**签名已声明**的函数指针。
 
     签名必须逐参数正确：ctypes 误用会 AV 崩进程，不是 Python 异常。
@@ -158,7 +158,7 @@ def _method(ptr: Any, index: int, *argtypes: Any) -> Any:
     return prototype(vtable[index])
 
 
-def _release(ptr: Any) -> None:
+def _release(ptr: Any) -> None:  # pragma: no cover - Windows only
     """IUnknown::Release —— 无参数，返回引用计数（我们不看返回值）。"""
     if ptr:
         try:
@@ -167,7 +167,7 @@ def _release(ptr: Any) -> None:
             logger.debug("IShellLinkW::Release failed", exc_info=True)
 
 
-def _new_shell_link() -> Any:
+def _new_shell_link() -> Any:  # pragma: no cover - Windows only
     """CoCreateInstance(CLSID_ShellLink) → 一个 IShellLinkW 指针。"""
     ole32, _ = _libraries()
     shell_link = ctypes.c_void_p()
@@ -183,7 +183,7 @@ def _new_shell_link() -> Any:
     return shell_link
 
 
-def _persist_file_of(shell_link: Any) -> Any:
+def _persist_file_of(shell_link: Any) -> Any:  # pragma: no cover - Windows only
     """QueryInterface(IID_IPersistFile) —— 同一个对象上的另一个接口。"""
     persist = ctypes.c_void_p()
     query = _method(
@@ -196,7 +196,7 @@ def _persist_file_of(shell_link: Any) -> Any:
     return persist
 
 
-def _write_fields(
+def _write_fields(  # pragma: no cover - Windows only
     shell_link: Any, target: Path, *, working_dir: Path | None, icon: str | None, description: str
 ) -> None:
     hr = _method(shell_link, _VT_SET_PATH, ctypes.c_wchar_p)(shell_link, str(target))
@@ -219,6 +219,49 @@ def _write_fields(
             raise OSError(f"IShellLinkW::SetIconLocation failed: {hr:#x}")
 
 
+def _write_link_via_com(  # pragma: no cover - 只有 Windows 能执行（见模块 docstring）
+    link_path: Path,
+    target: Path,
+    *,
+    working_dir: Path | None,
+    icon: str | None,
+    description: str,
+) -> None:
+    """真正写 ``.lnk`` 的那一步：``ole32`` + ``IShellLinkW`` + ``IPersistFile``。
+
+    **在非 Windows 上不可能执行**，故从覆盖率里排除 —— 排除的是"度量不到"，
+    不是"不验证"：它的正确性由 **windows-latest 的读回断言**保证（写入后用系统 API
+    把 target / working directory / icon 读回来逐字比对，并核对 ``.lnk`` 头魔数）。
+    把 COM 收在这一个函数里，是为了让上层 ``create_shortcut`` 成为**平台中立**的
+    编排逻辑（校验 / 异常映射 / 结果构造），从而在任何平台都能单测。
+    """
+    ole32, _ = _libraries()
+    co_initialized = False
+    hr = ole32.CoInitializeEx(None, _COINIT_APARTMENTTHREADED)
+    if hr in (_S_OK, _S_FALSE):
+        co_initialized = True
+    elif hr != _RPC_E_CHANGED_MODE:
+        raise OSError(f"CoInitializeEx failed: {hr:#x}")
+
+    shell_link: Any = None
+    persist: Any = None
+    try:
+        shell_link = _new_shell_link()
+        _write_fields(
+            shell_link, target, working_dir=working_dir, icon=icon, description=description
+        )
+        persist = _persist_file_of(shell_link)
+        save = _method(persist, _VT_PERSIST_SAVE, ctypes.c_wchar_p, ctypes.c_int)
+        hr = save(persist, str(link_path), 1)  # fRemember = TRUE
+        if hr != _S_OK:
+            raise OSError(f"IPersistFile::Save failed: {hr:#x}")
+    finally:
+        _release(persist)
+        _release(shell_link)
+        if co_initialized:
+            ole32.CoUninitialize()
+
+
 def create_shortcut(
     link_path: Path,
     target: Path,
@@ -229,6 +272,10 @@ def create_shortcut(
 ) -> ShortcutResult:
     """在 *link_path* 写一个指向 *target* 的 ``.lnk``。
 
+    ★ 这一层刻意做成**平台中立**的：只做平台判定、目标校验、异常映射与结果构造，
+    因此**任何平台都能单测**（把 `_write_link_via_com` 换成记录用的替身即可）。
+    真正碰 COM 的那一步在 `_write_link_via_com` 里，只有 Windows 能执行。
+
     低层入口：**路径完全由调用方给定**（测试因此可以只写 ``tmp_path``，
     永远不碰用户真实的桌面）。
     """
@@ -238,43 +285,21 @@ def create_shortcut(
         return ShortcutResult(
             ok=False, status="failed", detail=f"shortcut target does not exist: {target}"
         )
-
-    ole32, _ = _libraries()
-    co_initialized = False
-    hr = ole32.CoInitializeEx(None, _COINIT_APARTMENTTHREADED)
-    if hr in (_S_OK, _S_FALSE):
-        co_initialized = True
-    elif hr != _RPC_E_CHANGED_MODE:
-        return ShortcutResult(ok=False, status="failed", detail=f"CoInitializeEx failed: {hr:#x}")
-
-    shell_link: Any = None
-    persist: Any = None
     try:
-        shell_link = _new_shell_link()
-        _write_fields(
-            shell_link, target, working_dir=working_dir, icon=icon, description=description
-        )
-        persist = _persist_file_of(shell_link)
+        # 建父目录放在 try 内：失败也要走"返回结构化失败"这条路，而不是抛给调用方。
         link_path.parent.mkdir(parents=True, exist_ok=True)
-        save = _method(persist, _VT_PERSIST_SAVE, ctypes.c_wchar_p, ctypes.c_int)
-        hr = save(persist, str(link_path), 1)  # fRemember = TRUE
-        if hr != _S_OK:
-            return ShortcutResult(ok=False, status="failed", detail=f"IPersistFile::Save failed: {hr:#x}")
+        _write_link_via_com(
+            link_path, target, working_dir=working_dir, icon=icon, description=description
+        )
     except (OSError, AttributeError, ValueError) as exc:
         # 刻意不吞 BaseException：ctypes 误用是 AV（进程级），try/except 兜不住 ——
         # 所以正确性仍然靠 CI 的读回断言，而不是靠这段兜底。
         logger.warning("create_shortcut failed: %s", exc)
         return ShortcutResult(ok=False, status="failed", detail=str(exc))
-    finally:
-        _release(persist)
-        _release(shell_link)
-        if co_initialized:
-            ole32.CoUninitialize()
-
     return ShortcutResult(ok=True, status="created", detail=str(link_path), created=(link_path,))
 
 
-def read_back(link_path: Path) -> dict[str, str]:
+def read_back(link_path: Path) -> dict[str, str]:  # pragma: no cover - Windows only
     """把 ``.lnk`` 里的 target / working_dir / icon **读回来**。
 
     CI 的正确性判据就是这个：写进去再读出来逐字比对。
@@ -341,7 +366,7 @@ def read_back(link_path: Path) -> dict[str, str]:
     }
 
 
-def _known_folder(csidl: int) -> Path | None:
+def _known_folder(csidl: int) -> Path | None:  # pragma: no cover - Windows only
     """shell32.SHGetFolderPathW —— 尊重 OneDrive 之类的重定向。"""
     _, shell32 = _libraries()
     buffer = ctypes.create_unicode_buffer(_MAX_PATH)
@@ -350,7 +375,7 @@ def _known_folder(csidl: int) -> Path | None:
     return Path(buffer.value)
 
 
-def default_shortcut_paths() -> tuple[Path, ...]:
+def default_shortcut_paths() -> tuple[Path, ...]:  # pragma: no cover - Windows only
     """桌面 + 开始菜单，都是 **per-user** ⇒ 不需要提权（绿色便携的红线之一）。"""
     paths: list[Path] = []
     desktop = _known_folder(_CSIDL_DESKTOPDIRECTORY)
