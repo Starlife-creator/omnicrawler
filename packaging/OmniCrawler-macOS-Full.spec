@@ -121,7 +121,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name="OmniCrawler.app",
-    icon=None,
+    icon=str(src_root / "omnicrawler" / "gui" / "branding" / "omnicrawler.icns"),
     bundle_identifier="com.omnicrawler.desktop",
     info_plist={
         "CFBundleName": "OmniCrawler",

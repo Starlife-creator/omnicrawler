@@ -65,6 +65,7 @@ gui_exe = EXE(
     gui_pyz, gui_analysis.scripts, [], exclude_binaries=True, name="OmniCrawler",
     debug=False, bootloader_ignore_signals=False, strip=False, upx=False, console=False,
     disable_windowed_traceback=False,
+    icon=str(src_root / "omnicrawler" / "gui" / "branding" / "omnicrawler.ico"),
 )
 
 cli_analysis = Analysis([str(packaging_root / "cli_entry.py")], **common)

@@ -156,6 +156,98 @@ def _resolve_executable(release_dir: Path, *, gui: bool = False) -> Path | None:
     return next((candidate for candidate in candidates if candidate.is_file()), None)
 
 
+def _verify_windows_icon(exe: Path) -> None:
+    """B2: the built GUI exe must embed the branded icon (RT_GROUP_ICON + frames)."""
+    import ctypes
+    from ctypes import WINFUNCTYPE, c_int, c_ssize_t, c_void_p
+
+    LOAD_LIBRARY_AS_DATAFILE = 0x00000002
+    RT_GROUP_ICON = 14
+    RT_ICON = 3
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    # 必须显式声明签名：默认 restype 是 c_int，64 位下会把 HMODULE 截断，
+    # 枚举于是恒返回 0（"有图标也报没有"——典型假红）。
+    kernel32.LoadLibraryExW.argtypes = [ctypes.c_wchar_p, c_void_p, ctypes.c_uint32]
+    kernel32.LoadLibraryExW.restype = c_void_p
+    kernel32.EnumResourceNamesW.argtypes = [c_void_p, c_void_p, c_void_p, c_ssize_t]
+    kernel32.EnumResourceNamesW.restype = ctypes.c_int
+    kernel32.FreeLibrary.argtypes = [c_void_p]
+    kernel32.FreeLibrary.restype = ctypes.c_int
+    hmod = kernel32.LoadLibraryExW(str(exe), None, LOAD_LIBRARY_AS_DATAFILE)
+    if not hmod:
+        raise RuntimeError(
+            f"brand icon check: cannot load {exe.name} as datafile "
+            f"(GetLastError={ctypes.get_last_error()})"
+        )
+
+    def _count(resource_type: int) -> int:
+        # Name may be an integer ID (IS_INTRESOURCE) -- never cast it to c_wchar_p,
+        # a small pointer value would crash the reader instead of failing cleanly.
+        ENUMPROC = WINFUNCTYPE(c_int, c_void_p, c_void_p, c_void_p, c_ssize_t)
+        names: list[c_void_p] = []
+
+        def _on_name(_hmod: int, _type: int, name: int, _param: int) -> int:
+            names.append(c_void_p(name))
+            return 1
+
+        callback = ENUMPROC(_on_name)
+        kernel32.EnumResourceNamesW.argtypes = [c_void_p, c_void_p, ENUMPROC, c_ssize_t]
+        kernel32.EnumResourceNamesW(hmod, c_void_p(resource_type), callback, 0)
+        return len(names)
+
+    try:
+        groups = _count(RT_GROUP_ICON)
+        frames = _count(RT_ICON)
+    finally:
+        kernel32.FreeLibrary(hmod)
+    if groups < 1 or frames < 1:
+        raise RuntimeError(
+            f"brand icon check: {exe.name} carries no icon resource "
+            f"(RT_GROUP_ICON={groups}, RT_ICON={frames}); "
+            "the spec EXE(icon=...) wiring is broken"
+        )
+    print(f"brand icon check: {exe.name} embeds {groups} icon group(s), {frames} frame(s)")
+
+
+def _verify_macos_icon(release_dir: Path) -> None:
+    """B2: the .app bundle must ship the branded .icns referenced by Info.plist."""
+    import plistlib
+
+    app = release_dir / "OmniCrawler.app"
+    resources = app / "Contents" / "Resources"
+    icns = sorted(resources.glob("*.icns"))
+    if not icns:
+        raise RuntimeError(
+            f"brand icon check: no .icns under {resources}; BUNDLE(icon=...) wiring is broken"
+        )
+    info_plist = app / "Contents" / "Info.plist"
+    with info_plist.open("rb") as handle:
+        info = plistlib.load(handle)
+    icon_file = str(info.get("CFBundleIconFile", ""))
+    expected = {icon_file, f"{icon_file}.icns"} - {""}
+    if not any(item.name in expected for item in icns):
+        raise RuntimeError(
+            f"brand icon check: Info.plist CFBundleIconFile={icon_file!r} does not match "
+            f"bundled {[item.name for item in icns]}"
+        )
+    print(f"brand icon check: {icns[0].name} present and referenced by CFBundleIconFile")
+
+
+def _verify_brand_icon(release_dir: Path, gui_exe: Path) -> None:
+    """B2 guard: the shipped GUI entry must carry the branded icon.
+
+    Linux has nothing to assert here by design: PyInstaller drops ``icon=`` on ELF
+    binaries, and desktop-entry branding lands with the I1b installer batch. The
+    skip is printed on purpose (never silent).
+    """
+    if sys.platform == "win32":
+        _verify_windows_icon(gui_exe)
+    elif sys.platform == "darwin":
+        _verify_macos_icon(release_dir)
+    else:
+        print("brand icon check: skipped on linux (desktop-entry branding ships with I1b)")
+
+
 def run_smoke_test(release_dir: Path, edition: str = "Full") -> None:
     import os as _os
     _env = {**_os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
@@ -167,6 +259,7 @@ def run_smoke_test(release_dir: Path, edition: str = "Full") -> None:
     # 然后主动退出。
     gui = _resolve_executable(release_dir, gui=True)
     if gui is not None:
+        _verify_brand_icon(release_dir, gui)
         gui_env = {**_env, "QT_QPA_PLATFORM": "offscreen"}
         gui_proc = subprocess.Popen([str(gui)], cwd=str(release_dir), env=gui_env)
         try:

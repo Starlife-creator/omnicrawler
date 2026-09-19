@@ -100,6 +100,7 @@ gui_exe = EXE(
     upx=False,
     console=False,
     disable_windowed_traceback=False,
+    icon=str(src_root / "omnicrawler" / "gui" / "branding" / "omnicrawler.ico"),
 )
 
 cli_analysis = Analysis([str(packaging_root / "cli_entry.py")], **common)
