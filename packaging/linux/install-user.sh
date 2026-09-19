@@ -81,8 +81,13 @@ esac
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# ★ 已在 prefix 内运行 ⇒ **跳过复制**，只重做注册（幂等：重复执行不报错、不叠加）。
+#   这里刻意**不能**报错退出：安装脚本自己的收尾提示就写着
+#   「卸载: $PREFIX/installer/uninstall-user.sh」，用户很容易顺手在 prefix 里再跑一次
+#   安装；而且"装完再装一次无副作用"是可重复操作的基本要求。
+IN_PLACE=0
 case "$APP_ROOT" in
-  "$PREFIX"|"$PREFIX"/*) die "源目录在 prefix 内，无需安装：$APP_ROOT" ;;
+  "$PREFIX"|"$PREFIX"/*) IN_PLACE=1 ;;
 esac
 
 info "OmniCrawler 用户级安装"
@@ -140,9 +145,13 @@ fi
 # 前置检查放在复制之前：复制可能要搬几百 MB，缺库这种事应该先说。
 check_runtime_deps
 
-mkdir -p "$PREFIX"
-cp -a "$APP_ROOT/." "$PREFIX/"
-info "应用树已就位：$PREFIX"
+if [[ "$IN_PLACE" -eq 1 ]]; then
+  info "已在安装前缀内运行，跳过复制（幂等）"
+else
+  mkdir -p "$PREFIX"
+  cp -a "$APP_ROOT/." "$PREFIX/"
+  info "应用树已就位：$PREFIX"
+fi
 
 # ---- 2. hicolor 图标 --------------------------------------------------------
 ICON_SRC="$PREFIX/installer/icons/hicolor"
@@ -200,7 +209,11 @@ if [[ "$RUN_DESKTOP_DB" -eq 1 ]]; then
 fi
 
 # ---- 5. --move：确认后才删源 -----------------------------------------------
-if [[ "$DO_MOVE" -eq 1 ]]; then
+# ★ 就地运行时源目录**就是**安装好的应用树 —— 这里必须挡住，否则 --move 会把
+#   刚装好的东西删掉（"删源"与"删安装"变成了同一次操作）。
+if [[ "$DO_MOVE" -eq 1 && "$IN_PLACE" -eq 1 ]]; then
+  warn "--move 已忽略：本次是就地注册（源目录＝安装目录，没有可清理的另一份副本）"
+elif [[ "$DO_MOVE" -eq 1 ]]; then
   info ""
   warn "源目录：$APP_ROOT"
   warn "确认应用已能正常启动后，可删除源目录以释放磁盘（约与已安装的一份等大）。"

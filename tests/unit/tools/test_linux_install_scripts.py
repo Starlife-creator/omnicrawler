@@ -200,6 +200,9 @@ def _run(script: Path, args: list[str], home: Path) -> subprocess.CompletedProce
         encoding="utf-8",
         errors="replace",
         env=env,
+        # ★ 必须关掉 stdin：`--move` 会 `read` 确认，继承父进程 stdin 会**挂死**而不是失败
+        #   （红线：宁可判红也不要挂）。EOF 时脚本按"用户未确认"处理，保留源目录。
+        stdin=subprocess.DEVNULL,
         check=False,
     )
 
@@ -327,8 +330,58 @@ def test_cli_symlink_points_into_the_prefix(tmp_path: Path) -> None:
     assert Path(os.readlink(link)) == prefix / "omnicrawler"
 
 
-# ── I1b 第②层：归档级安装冒烟（tools/portable_archive_smoke.linux_install_smoke） ──
+@needs_posix_bash
+def test_reinstall_from_inside_the_prefix_is_idempotent(tmp_path: Path) -> None:
+    """★ 方案 §2.1：已在 prefix 内运行 ⇒ **跳过复制**（幂等，不报错、不叠加）。
 
+    这同时是**文档声明的守卫**：`docs/LINUX_INSTALL.md` 写着「已经在前缀内运行时
+    跳过复制，不报错也不叠加」，而实现最初是"报错退出" —— 代码与自己的文档不符，
+    正是本项目认定的病根。用例把这句话变成机器判据。
+
+    场景真实性：安装脚本的收尾提示就写着
+    「卸载: $PREFIX/installer/uninstall-user.sh」，用户很容易顺手在 prefix 里
+    再跑一次安装。
+    """
+    app = _make_app_tree(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    prefix = tmp_path / "prefix"
+    assert _run(app / "installer" / "install-user.sh",
+                ["--prefix", str(prefix), "--no-desktop-database"], home).returncode == 0
+
+    again = _run(prefix / "installer" / "install-user.sh",
+                 ["--prefix", str(prefix), "--no-desktop-database"], home)
+    assert again.returncode == 0, again.stdout + again.stderr
+    assert "跳过复制" in again.stdout, again.stdout
+    # 不叠加
+    icons = list((home / ".local" / "share" / "icons").rglob("omnicrawler.png"))
+    assert len(icons) == len(HICOLOR_SIZES)
+    desktop = home / ".local" / "share" / "applications" / "omnicrawler.desktop"
+    assert f"Exec={prefix}/OmniCrawler" in desktop.read_text(encoding="utf-8")
+
+
+@needs_posix_bash
+def test_move_is_ignored_when_registering_in_place(tmp_path: Path) -> None:
+    """★ 就地运行时 `--move` 必须**忽略**删源：否则"删源"就是"删掉刚装好的树"。
+
+    源目录与安装目录是同一个目录时，`rm -rf "$APP_ROOT"` 会把安装本身删掉 ——
+    这是"可选参数在特定路径上语义反转"的典型情形，必须由断言挡住。
+    """
+    app = _make_app_tree(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    prefix = tmp_path / "prefix"
+    assert _run(app / "installer" / "install-user.sh",
+                ["--prefix", str(prefix), "--no-desktop-database"], home).returncode == 0
+
+    result = _run(prefix / "installer" / "install-user.sh",
+                  ["--prefix", str(prefix), "--no-desktop-database", "--move"], home)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert prefix.is_dir(), "就地注册时 --move 不得删除安装目录"
+    assert (prefix / "OmniCrawler").is_file()
+
+
+# ── I1b 第②层：归档级安装冒烟（tools/portable_archive_smoke.linux_install_smoke） ──
 
 def _stage_release_root(tmp_path: Path) -> Path:
     """伪造一棵"已解压的 Linux 产物树"：入口 + `installer/`，与真产物同形。"""
