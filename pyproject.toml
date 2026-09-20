@@ -177,6 +177,12 @@ known-first-party = ["omnicrawler"]
 
 [tool.mypy]
 python_version = "3.12"
+# ★ 显式钉住被分析的平台：CI 的 mypy 跑在 **ubuntu** 上，`--platform` 缺省时本地
+#   （Windows）与 CI 的分析环境**不一致** —— 平台专属 API 会在本地被判通过、到 CI 才红。
+#   实测：`ctypes.WinDLL` 在 Windows 的 typeshed 里存在（本地绿），而 Linux 的 typeshed
+#   没有它 ⇒ CI 报 `Module has no attribute "WinDLL"`。钉成 linux 后两处一致，
+#   平台专属调用必须走 `getattr(ctypes, "WinDLL", None)`（本仓既有做法）。
+platform = "linux"
 ignore_missing_imports = true
 check_untyped_defs = true
 exclude = "^src/omnicrawler/apps/"

@@ -78,9 +78,11 @@ _CSIDL_DESKTOPDIRECTORY = 0x0010
 _MAX_PATH = 260
 _LONG_PATH = 1024
 
-# 只有 Windows 的 ctypes 才有这两个名字；Linux 上取到 None（mypy 也据此不报
-# "module has no attribute"，因为 mypy 常跑在 Linux runner 上）。
+# 只有 Windows 的 ctypes 才有这几个名字；Linux/macOS 上取到 None（mypy 因此不报
+# "module has no attribute" —— CI 的 mypy 跑在 Linux 上，直接写 `ctypes.WinDLL`
+# 会被它判红，而本机 Windows 的 mypy 看不出来）。
 _WINFUNCTYPE: Any = getattr(ctypes, "WINFUNCTYPE", None)
+_WINDLL: Any = getattr(ctypes, "WinDLL", None)
 
 
 @dataclass(frozen=True)
@@ -112,8 +114,12 @@ class _GUID(ctypes.Structure):
 
 
 def _libraries() -> tuple[Any, Any]:  # pragma: no cover - Windows only
-    ole32 = ctypes.WinDLL("ole32", use_last_error=True)
-    shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+    # ★ 用 `getattr` 取 `WinDLL`：它在 Linux/macOS 的 typeshed 里**不存在**，直接写
+    #   `ctypes.WinDLL` 会让 **CI 的 mypy（跑在 Linux 上）判红**，而本机（Windows）
+    #   的 mypy 看不出问题 —— "判据位置决定它有没有机会说话"的又一实例。
+    windll: Any = _WINDLL
+    ole32 = windll("ole32", use_last_error=True)
+    shell32 = windll("shell32", use_last_error=True)
     ole32.CLSIDFromString.argtypes = (ctypes.c_wchar_p, ctypes.POINTER(_GUID))
     ole32.CLSIDFromString.restype = ctypes.c_long
     ole32.CoInitializeEx.argtypes = (ctypes.c_void_p, ctypes.c_ulong)
