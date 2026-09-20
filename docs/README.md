@@ -1,6 +1,6 @@
 # OmniCrawler 文档导航
 
-当前版本 **0.13.0**，配置协议 **v5**，覆盖率门禁 **≥73%**。
+当前版本 **0.13.1**，配置协议 **v5**，覆盖率门禁 **≥73%**。
 
 本页是仓库内文档的唯一索引入口。未出现在本页的 `docs/*.md` 视为孤儿页，会被
 `tools/check_docs_consistency.py` 拦截。新增或删除顶层文档时必须同步更新第 2 节。
@@ -24,7 +24,7 @@
 - [编码规范](CODING_STANDARDS.md)
 - [能力成熟度矩阵](CAPABILITY_MATURITY.md)
 - [支持矩阵](SUPPORT_MATRIX.md)
-- [兼容与回滚](COMPATIBILITY_0.13.0.md)
+- [兼容与回滚](COMPATIBILITY_0.13.1.md)
 
 ### 安装、运行与运维
 

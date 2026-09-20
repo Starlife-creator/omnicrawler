@@ -1,6 +1,35 @@
 # Changelog
 
 ## Unreleased
+## 0.13.1 - 2026-09-20
+
+### 变更
+
+- fix(core): mypy 在 Linux 上判红 `ctypes.WinDLL`；并把 mypy 的分析平台钉成 CI 那一个
+- fix(core): Windows 专属的 COM 管道不再拖垮 Linux 覆盖率门禁（逻辑改为全平台可测）
+- fix(linux): $VAR 紧跟全角标点必须写 ${VAR}（bash 3.2 会把多字节字符吞进变量名）
+- fix(linux): 卸载的数据根检测在 bash 3.2 下静默终止（macOS CI 抓到）
+- fix(linux): 就地重跑必须跳过复制而非报错（与方案 §2.1 及文档声明一致）
+- feat(windows): I2 首启可选的桌面/开始菜单快捷方式（默认不勾）
+- feat(linux): I1 用户级安装（应用菜单条目 + hicolor 图标 + 可干净卸载）
+- test(branding): B5 补 —— README 片段引用的文件必须在两仓各自解析得到
+- test(branding): B5 跨仓一致性断言（两仓品牌文件逐字节相同、清单双向覆盖）
+- branding B3: 主仓门面（41 资产落位 + README lockup + 许可登记 + 入口指引收口）
+- branding B2: 二进制图标（4 spec icon= 接线 + 构建产物图标守卫）
+- branding B1: 运行时图标接线（窗口/托盘 setIcon + desktopFileName + 9 资产落位）
+- feat(extraction): 走查 R5.2 —— 分页信号落成契约形状，iframe 给出定位信息
+- feat(extraction): 走查 R3.6 —— 值写在 class 名里的元素能枚举、能取值、能映射
+- fix(extraction,core): 走查 R4.3 —— 地址类字段归一为绝对 URL（只补全、不改写）
+- feat(extraction,cli): 走查 R4.2 —— JSON 记录路径改候选打分，单对象不再取错
+- feat(ai,services): 走查 R4.4 —— AI 的 config_patch 要么接上、要么如实说
+- feat(cli,services): 走查 R5.1 —— transform 排序与分组聚合，并撤回过时的「做不到」
+- feat(cli,services): 走查 R3.3/R4.1 —— 需求语义有承载、做不到的会说出来
+- feat(extraction): 走查 R3.2 —— 交互信号要么变成动作、要么变成明确告警
+- feat(extraction,cli): 走查 R3.1 —— auto-analyze 不再无条件用浏览器（保留 --always-browser 逃生阀）
+- fix(extraction): 走查 R3.4/R3.5 —— 字段命名纳入祖先类名、恒定列不再被当噪声删掉
+- fix(cli,quality,extraction): 走查 R2 —— 让提示指向真因（R2.1–R2.3）
+- fix(quality,security,pipeline): 走查 R1 —— 让交付层说实话、默认拒绝状态变更 URL（R1.1–R1.4）
+
 ## 0.13.0 - 2026-09-17
 
 ### 变更

@@ -13,4 +13,4 @@ from __future__ import annotations
 
 # Keep this value import-safe for source checkouts. Packaging metadata is
 # verified against it by tools/check_docs_consistency.py before release.
-__version__ = "0.13.0"
+__version__ = "0.13.1"

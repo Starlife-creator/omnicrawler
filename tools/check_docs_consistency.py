@@ -32,13 +32,13 @@ CURRENT_DOCS = (
     "docs/ARCHITECTURE.md",
     "docs/CONFIG_REFERENCE.md",
     "docs/CAPABILITY_MATURITY.md",
-    "docs/COMPATIBILITY_0.13.0.md",
+    "docs/COMPATIBILITY_0.13.1.md",
     "docs/DESKTOP_RUNTIME_1.4.md",
     "docs/GUI_DESIGN_2.1.md",
     "docs/PLUGIN_CONTRACT.md",
     "docs/PRODUCTION_GUIDE.md",
     "docs/WINDOWS_PACKAGING.md",
-    "docs/releases/RELEASE_REPORT_0.13.0.md",
+    "docs/releases/RELEASE_REPORT_0.13.1.md",
     "docs/E2E_TEST_REPORT.md",
 )
 
@@ -243,13 +243,13 @@ def check(root: Path) -> list[str]:
         "docs/ARCHITECTURE.md",
         "docs/CONFIG_REFERENCE.md",
         "docs/CAPABILITY_MATURITY.md",
-        "docs/COMPATIBILITY_0.13.0.md",
+        "docs/COMPATIBILITY_0.13.1.md",
         "docs/DESKTOP_RUNTIME_1.4.md",
         "docs/GUI_DESIGN_2.1.md",
         "docs/PLUGIN_CONTRACT.md",
         "docs/PRODUCTION_GUIDE.md",
         "docs/WINDOWS_PACKAGING.md",
-        "docs/releases/RELEASE_REPORT_0.13.0.md",
+        "docs/releases/RELEASE_REPORT_0.13.1.md",
         "docs/E2E_TEST_REPORT.md",
     )
     for label in versioned_docs:
