@@ -131,6 +131,7 @@ jobs:
             echo "  - 安装：解压 ZIP → 双击 OmniCrawler-Launcher.bat"
             echo "- **Linux**（Standard/Full）：GUI + Chromium +（Full 含）Tesseract/ChromeDriver/PaddleOCR（构建期打包，解压即用）"
             echo "  - 安装：tar -xJf 包名 && ./OmniCrawler/omnicrawler --help"
+            echo "  - 可选（不需要 root）：./OmniCrawler/installer/install-user.sh 把应用装进应用菜单（含 hicolor 图标与 CLI 软链；卸载用同目录的 uninstall-user.sh）"
             echo "- **macOS**（Standard/Full）：.app（ad-hoc 签名）+（Full 含）Tesseract/ChromeDriver（Paddle OCR 以 Transformers 后端替代）；首次打开请右键 → 打开"
             echo "  - 安装：挂载 dmg → 进入 OmniCrawler 文件夹 → 将 OmniCrawler.app 拖入 Applications"
             echo

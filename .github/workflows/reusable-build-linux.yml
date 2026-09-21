@@ -49,10 +49,13 @@ jobs:
       - name: 安装 Qt6 运行库（GUI 冒烟测试依赖，P4 跨平台对称）
         run: |
           sudo apt-get update
+          # ★ desktop-file-utils 本 job 用不到，是为与归档冒烟 job **逐包一致**才装的：
+          #   test_release_workflow_guard.py 逐包比对两份清单，任一侧多/少一个包都会判红。
           sudo apt-get install -y --no-install-recommends \
             libegl1 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 \
             libxcb-shape0 libxcb-render-util0 libxcb-xkb1 libxkbcommon-x11-0 \
-            libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 libxcb-randr0 libxcb-glx0
+            libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 libxcb-randr0 libxcb-glx0 \
+            desktop-file-utils
 
       - name: 解析 playwright 版本（缓存 key，P4-4）
         id: playwright-version

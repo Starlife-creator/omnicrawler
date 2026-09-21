@@ -12,9 +12,9 @@
 
 `docs/archive/releases/` 下的 `RELEASE_REPORT_1.x` / `2.x` 属于**旧编号体系**。
 
-当前版本线为 **0.12.0**（见 `pyproject.toml` 与 `src/omnicrawler/__init__.py`）。
+当前版本线为 **0.13.1**（见 `pyproject.toml` 与 `src/omnicrawler/_version.py`）。
 归档中的 `RELEASE_REPORT_2.3.1.md` 等文件版本号虽然"更大"，但**时间上更早**，
-把它与当前 0.12.0 做任何大小比较都是错的。当前版本的发布报告位于
+把它与当前 0.13.1 做任何大小比较都是错的。当前版本的发布报告位于
 [`docs/releases/`](../releases/README.md)。
 
 ## 内容构成
@@ -28,6 +28,8 @@
 | `omnicrawler-assessment/` | 项目评估 HTML 报告 |
 | `omnicrawler-evaluation-report/` | 项目评估 HTML 报告（含第三方静态资产，见下） |
 | `OPTIMIZATION_PLAN_*.md`、`optimization-plan-v3.md` | 历史优化方案与跟踪记录 |
+| `ADR-001-plugin-catalog.md` | 已取代的插件市场托管 ADR（2026-09-20 冻结；现行为 `MARKET_ECOSYSTEM.md` / `PLUGIN_CONTRACT.md`） |
+| `WIZARD_UX_PRD.md` | 任务创建体验重构 PRD 草案（2026-09-20 冻结；目标已由"任务工作台"实现） |
 | `OmniCrawler-0.5.0-*.md` | 早期 Agent 上下文与提示词存档 |
 | `omnicrawler-final-summary.html` | 历史总结报告 |
 

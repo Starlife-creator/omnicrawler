@@ -1,14 +1,15 @@
 # ADR-001：插件市场 Catalog 托管与双仓就绪设计
 
 > 适用版本：0.12.0 · 配置协议：v5 · 维护状态：已取代（Superseded，保留作决策追溯）
+> 冻结版本：0.12.0 · 归档日期：2026-09-20
 
 - 状态：已取代（Superseded）
 - 日期：2026-08-07
 - 相关：C9 插件离线 ed25519 签名（`src/omnicrawler/plugins/signing.py`）、`EcosystemRegistry`、插件加载门（`src/omnicrawler/plugins/plugins.py`）
 
 > 本 ADR 保留当时的决策和演进记录，不描述当前贡献或发布流程。现行规范以
-> [`MARKET_ECOSYSTEM.md`](MARKET_ECOSYSTEM.md)、[`PLUGIN_CONTRACT.md`](PLUGIN_CONTRACT.md)
-> 和 [`AUTHOR_GUIDE.md`](AUTHOR_GUIDE.md) 为准。新插件不得采用本文中的 `register` 入口、
+> [`MARKET_ECOSYSTEM.md`](../MARKET_ECOSYSTEM.md)、[`PLUGIN_CONTRACT.md`](../PLUGIN_CONTRACT.md)
+> 和 [`AUTHOR_GUIDE.md`](../AUTHOR_GUIDE.md) 为准。新插件不得采用本文中的 `register` 入口、
 > 单文件签名或单信任根流程。
 
 ## 背景 / Context
