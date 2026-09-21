@@ -39,8 +39,25 @@
 |---|---|---|
 | `config` | dict | `source` 配置段的原样副本 |
 | `workspace` | str | 本次 run 工作区的**绝对路径** |
+| `run_id` | str | **本次 run 的标识**（见下「report 与 state 的作用域」） |
 | `file_path` | str（可缺省） | 单文件入口（`source.file` / `source.input_file`）解析后的**工作区内绝对路径** |
 | `files` | list[str]（可缺省） | 多文件入口（`source.files`），同样已解析为工作区内绝对路径 |
+
+> 所有**运行期**操作（`source.seed` / `fetcher.fetch` / `parser.*` / `processor.process` /
+> `transformer.*` / `exporter.export` / `hook.*`）的载荷都带 `run_id`；宿主生命周期操作
+> （`view.*` / `resource.*` / `capability.*`，可能在任何 run 之外发生）不带。
+
+### report 与 state 的作用域（issue #74 §6）
+
+两者**故意不同**，插件必须按此实现：
+
+| | 作用域 | 原因 |
+|---|---|---|
+| `state`（`state.get` / `state.set`） | **跨 run** | 增量抓取依赖它（已下载集合、去重表）——把它按 run 隔离会破坏增量语义 |
+| `report` / `after_run` 汇总 | **按 `run_id` 分桶** | 「本次 run 处理了多少」是运行结果；跨运行累加会把历史算进本次，读者无法判断当次成效 |
+
+宿主交付 `run_id`，**分桶由插件负责**：插件应把本 run 的计数写在以 `run_id` 为键的状态/报告里，
+而不是在旧值上继续累加。宿主不替插件裁剪历史，也不隐藏旧数据。
 
 入口的解析与限定由宿主统一执行（唯一实现处 `plugins/plugin_input_paths.py`）：
 

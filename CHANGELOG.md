@@ -5,6 +5,7 @@
 ### 变更
 
 - feat(plugins): 运行前预检插件声明的依赖（缺失时给出可操作提示；warning 不阻断，因为 manifest 声明的是依赖全集而非本次配置所需；issue #75 §D）
+- feat(plugins): 运行期插件调用统一携带 `run_id`（此前只有 processor 载荷有）—— 插件据此把报告/统计按 run 分桶，而 `state` 仍跨 run 供增量；`view.*`/`resource.*`/`capability.*` 不带（issue #74 §6）
 - feat(plugins,gui): 文件型插件源可接入 GUI/CLI —— 插件 `source.kind` 不再强制 `seeds`，且 seed 载荷注入 `source.file`/`files` 与工作区（issue #75）
 - fix(plugins): 插件源入口收紧为「工作区内 + manifest `input_files` 白名单 + 已声明 `files:read`」，越界与未声明一律拒绝，不再静默回落（对齐 issue #74 §2、#75 §B 的白名单与越界拒绝要求）
 - docs(plugins): `PLUGIN_CONTRACT.md` 固化 `source.seed` 载荷与入口解析契约（此前无承载位）
