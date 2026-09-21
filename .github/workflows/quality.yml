@@ -89,7 +89,13 @@ jobs:
         run: uv run python -c "import omnicrawler; print('omnicrawler', omnicrawler.__version__)"
 
   test:
-    timeout-minutes: 30
+    # ★ 按各平台**实测分布**定上限（2026-09-21 实测 main 近 4 次成功运行的 `test` 作业耗时）：
+    #   ubuntu-latest 15–16 分 / macos-latest 13–17 分 / **windows-latest 27–29 分**。
+    # 原值 30 对 Windows 只剩 1–3 分钟余量 ⇒ 任何新增测试都可能被**超时取消**
+    # （结论是 `cancelled`：前 16 步全绿、卡在 `coverage run -m pytest`；PR #81 即因此卡住）。
+    # ★ 超时是**资源上限**，不是正确性门禁：测试内容与各门禁一字未改，此处只消除假阴性。
+    # 45（≈ Windows 实测 1.5×）给最慢平台留出余量；其余平台更宽裕，且作业成功即结束、不占额外时间。
+    timeout-minutes: 45
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
