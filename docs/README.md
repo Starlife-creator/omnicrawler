@@ -38,7 +38,6 @@
 
 - [桌面运行、工作区与组件](DESKTOP_RUNTIME_1.4.md)
 - [桌面视觉与交互规范](GUI_DESIGN_2.1.md)
-- [任务创建体验重构 PRD](WIZARD_UX_PRD.md)
 
 ### 插件、模板与市场生态
 
@@ -78,16 +77,22 @@
 ### 架构决策记录（ADR）
 
 - [ADR-000 模板](adr/0000-template.md)
-- [ADR-001 插件市场 Catalog 托管与双仓就绪设计](ADR-001-plugin-catalog.md)：状态已取代，保留作决策追溯。
 - [ADR-0001 DuckDB 列白名单](adr/0001-duckdb-column-whitelist.md)
 - [ADR-005 配置字段审计](adr/ADR-005-config-field-audit.md)
+
+> ADR-001（插件市场 Catalog 托管与双仓就绪设计，状态已取代）与
+> 任务创建体验重构 PRD（草案，目标已由"任务工作台"实现）已于 2026-09-20 移入
+> [`archive/`](archive/README.md) —— 那里是决策追溯件，不代表当前行为。
 
 ## 3. 自动生成产物
 
 以下位置由工具链写入，**不要手写编辑**：
 
 - [docs/releases/](releases/README.md)：按版本存放的发布报告。`tools/bump_version.py` 在版本
-  bump 时自动重命名旧报告并生成占位；`tools/check_docs_consistency.py` 会校验当前版本报告存在。
+  bump 时自动重命名旧报告并生成占位；**`tools/post_bump_steps.py` 补它没做的那几步**
+  （`uv.lock` 的项目版本、本目录 README 的版本引用、`docs/*.md` 的 `> 适用版本：` 头、
+  以及把发布报告草稿落成真实内容），并可用 `--check` **只读**核对是否还有遗漏；
+  `tools/check_docs_consistency.py` 会校验当前版本报告存在。
 
 ## 4. 归档（内容已冻结，不作为当前行为依据）
 
