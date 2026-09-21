@@ -93,18 +93,36 @@ class PluginMarketView(
     deactivation_requested = Signal(str)
     uninstall_completed = Signal(str)
 
-    def __init__(self, project_root: str | Path | None = None, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        project_root: str | Path | None = None,
+        parent: QWidget | None = None,
+        app_config: Any | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("pluginMarket")
         self.setAccessibleName(_("插件市场"))
 
         base = _project_root_of(project_root)
         self._base = base
+        self._app_config = app_config
         self._dest_root = base / "plugins_installed"
         self._local_fallback = base.parent / "OmniCrawler-market"
-        self._egress = _market_egress(base)
+        self._egress = _market_egress(base, app_config)
 
-        plugins_cfg = DEFAULTS.get("plugins", {}) if isinstance(DEFAULTS.get("plugins"), dict) else {}
+        # 目录源与信任根优先取用户项目配置（#74 §4：此前读死内置 DEFAULTS，
+        # 用户既换不了镜像、也用不上自己的 http.proxy/egress 设置）；
+        # 独立打开市场视图（无项目配置）时退回内置默认。
+        user_plugins = (
+            app_config.section("plugins")
+            if app_config is not None and hasattr(app_config, "section")
+            else {}
+        )
+        plugins_cfg = user_plugins or (
+            DEFAULTS.get("plugins", {}) if isinstance(DEFAULTS.get("plugins"), dict) else {}
+        )
+        if not isinstance(plugins_cfg, dict):
+            plugins_cfg = {}
         self._catalog_url: str = str(plugins_cfg.get("catalog_url", ""))
         self._bundled_catalog_dir: str = str(plugins_cfg.get("bundled_catalog_dir", ""))
         trust_cfg = plugins_cfg.get("trust_public_key", "")

@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import shutil
+import time
 import urllib.request
 import uuid
 from datetime import UTC, datetime
@@ -43,6 +44,24 @@ def _is_remote(url: str) -> bool:
     return url.startswith(("http://", "https://"))
 
 
+def _market_opener(egress: EgressBroker) -> urllib.request.OpenerDirector:
+    """市场下载复用任务抓取的安全 opener。
+
+    本地导入避免模块环（``fetching.http_client`` 依赖 ``core.config``，而本模块被
+    GUI/插件两侧引用）。语义与 ``RobotsPolicy._safe_opener`` 一致：出口策略、代理、
+    DNS 固定与逐地址回退都交给同一条实现，市场不再自带一套网络行为。
+    """
+    from ..fetching.http_client import build_safe_opener
+
+    return build_safe_opener(
+        egress.config,
+        target_policy=egress.policy,
+        include_cookies=False,
+        egress=egress,
+        purpose="plugin",
+    )
+
+
 def _read(
     url_or_path: str,
     *,
@@ -59,8 +78,15 @@ def _read(
             )
             err.suggestion = "请通过 GUI 市场面板发起下载（内部会构建 EgressBroker）"
             raise err
+        # 走与任务抓取同一条出口（#74 §1）：
+        # - 认 `http.proxy`：此前裸 urlopen 完全不走代理，代理用户必然超时；
+        # - 有代理时源站 DNS 交给代理解析，不会再被「加速器把域名指到回环地址」
+        #   判成内网目标而整条下载失败；
+        # - DNS 答案逐地址尝试，AAAA 无路由时会回退到 IPv4，而不是整体超时；
+        # - 重定向仍过策略与审计（SafeRedirectHandler），而不是跟随任意跳转。
+        opener = _market_opener(egress)
         with egress.request(url_or_path, purpose="plugin", headers=request.headers):
-            with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            with opener.open(request, timeout=timeout) as response:
                 return response.read()
     candidate = Path(url_or_path)
     if candidate.is_file():
@@ -227,6 +253,48 @@ def _verify_install_meta(dest_dir: Path, *, main_name: str) -> tuple[bool, str]:
     if current != meta.get("plugin_sha256"):
         return False, "安装哈希校验失败（插件文件与安装时记录不一致）"
     return True, ""
+
+
+#: 安装暂存目录名：``.{插件目录名}.staging-{uuid4().hex}``（与安装时的构造一致）
+_STAGING_DIR_RE = re.compile(r"^\..+\.staging-[0-9a-f]{32}$")
+#: 暂存目录回收年龄：安装是「写完再原子替换」，超过这个年龄的暂存必然是中断残留
+STAGING_MAX_AGE_SECONDS = 24 * 3600.0
+
+
+def cleanup_stale_staging(
+    dest_root: str | Path,
+    *,
+    max_age_seconds: float = STAGING_MAX_AGE_SECONDS,
+) -> list[str]:
+    """回收中断安装遗留的 staging 目录，返回被清理的目录名（#74 §5）。
+
+    安装流程是「先写 ``.{name}.staging-{uuid}`` 再 ``os.replace`` 成正式目录」，
+    ``finally`` 里的清理在进程被硬杀时不会执行 ⇒ 残留且永不回收。这里按**年龄**
+    判定而不是「一律删除」，避免删掉另一个进程正在写入的暂存目录。
+    """
+    root = Path(dest_root)
+    if not root.is_dir():
+        return []
+    now = time.time()
+    removed: list[str] = []
+    for entry in sorted(root.iterdir()):
+        if not entry.is_dir() or not _STAGING_DIR_RE.match(entry.name):
+            continue
+        try:
+            age = now - entry.stat().st_mtime
+        except OSError:
+            continue
+        if age < max_age_seconds:
+            continue
+        try:
+            shutil.rmtree(entry)
+        except OSError as exc:
+            LOGGER.warning("failed to reclaim stale staging dir %s: %s", entry.name, exc)
+            continue
+        removed.append(entry.name)
+    if removed:
+        LOGGER.info("reclaimed stale plugin staging dirs: %s", ", ".join(removed))
+    return removed
 
 
 def _download_manifest_package(

@@ -522,6 +522,19 @@ class MainWindow(QMainWindow):
         self._finish_label.setObjectName("muted")
         self._statusbar.addPermanentWidget(self._finish_label)
 
+    def _market_app_config(self) -> Any:
+        """市场视图使用的 AppConfig：与插件运行时同源，失败则回退内置默认。
+
+        复用 ``_plugin_app_config()``（它已把当前 GUI 项目状态转成 AppConfig），
+        使市场的 ``plugins.catalog_url`` / ``http.proxy`` / ``egress.*`` 与任务抓取、
+        插件运行时保持一致（#74 §4）；配置不可用时不能让市场面板打不开。
+        """
+        try:
+            return self._plugin_app_config()
+        except Exception as exc:  # noqa: BLE001 - 降级到内置默认，市场面板仍可用
+            LOGGER.warning(_("构建市场配置失败，回退到内置默认: %s"), exc)
+            return None
+
     def _plugin_app_config(self) -> Any:
         """Build the plugin runtime config from the current GUI project state."""
 
@@ -787,7 +800,10 @@ class MainWindow(QMainWindow):
         self._change_monitor.desktop_notify.connect(self._on_monitor_desktop_notify)
         self._stack.addWidget(self._change_monitor)
 
-        self._plugin_market = PluginMarketView(project_root=self._project_root)
+        self._plugin_market = PluginMarketView(
+            project_root=self._project_root,
+            app_config=self._market_app_config(),
+        )
         self._plugin_market.installation_completed.connect(self._on_market_plugin_installed)
         self._plugin_market.activation_requested.connect(self._activate_market_plugin)
         self._plugin_market.deactivation_requested.connect(self._deactivate_market_plugin)

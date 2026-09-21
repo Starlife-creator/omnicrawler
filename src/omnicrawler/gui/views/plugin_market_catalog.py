@@ -10,11 +10,27 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..i18n import _
 from .plugin_market_workers import _CatalogWorker
+
+LOGGER = logging.getLogger(__name__)
+
+
+def _reclaim_stale_staging(dest_root: Path) -> None:
+    """Best-effort 回收中断安装遗留的暂存目录（#74 §5）。
+
+    失败只记日志：回收是清理动作，绝不能因为它挡在市场加载前面。
+    """
+    try:
+        from ...plugins.market_client import cleanup_stale_staging
+
+        cleanup_stale_staging(dest_root)
+    except Exception as exc:  # noqa: BLE001 - 清理失败不阻塞市场
+        LOGGER.warning("stale staging reclaim skipped: %s", exc)
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QShowEvent
@@ -38,6 +54,7 @@ class MarketCatalogMixin(_Base):
     _local_fallback: Path
     _catalog: dict[str, Any] | None
     _catalog_url: str
+    _dest_root: Path
     _bundled_catalog_dir: str
     _trust_source: str
     _egress: Any
@@ -62,6 +79,7 @@ class MarketCatalogMixin(_Base):
             self._set_offline_state(_("未配置 catalog_url，且无本地 OmniCrawler-market/ 回退。"))
             return
         self._state = "loading"
+        _reclaim_stale_staging(self._dest_root)
         self._status_indicator.state = "running"
         self._status_label.setText(_("正在拉取插件目录..."))
         self._footer.setText(_("正在连接插件目录..."))

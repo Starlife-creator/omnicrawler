@@ -155,17 +155,33 @@ def _install_review_text(entry: dict[str, Any]) -> str:
     )
 
 
-def _market_egress(project_root: Path) -> Any:
+def _market_egress(project_root: Path, app_config: Any | None = None) -> Any:
     """Lazily build a shared EgressBroker for curated plugin-market traffic.
 
     The marketplace downloads third-party signed plugins; those requests must
     cross the same policy/budget/audit boundary as every other network egress,
-    not ride a raw urllib call.  A fresh default broker is safe here because
-    egress defaults only restrict private-network targets and count requests.
+    not ride a raw urllib call.
+
+    提供 ``app_config`` 时**以用户项目配置为基准**（#74 §1/§4）：市场的
+    ``http.proxy``／``allow_private_network``／``egress.*`` 与任务抓取同源，
+    不再读死内置 ``DEFAULTS``。只强制打开 ``egress.audit`` —— 第三方插件下载
+    始终留痕，这一条不交给用户配置决定。
     """
+    import copy
+
     from ...core.config import DEFAULTS, AppConfig, deep_merge
     from ...security.egress import EgressBroker
 
+    if app_config is not None and hasattr(app_config, "section"):
+        raw = copy.deepcopy(app_config.raw)
+        egress_cfg = raw.setdefault("egress", {})
+        if isinstance(egress_cfg, dict):
+            egress_cfg["audit"] = True
+        return EgressBroker(
+            AppConfig(app_config.path, app_config.root, raw, app_config.workspace)
+        )
+
+    # 无项目配置（独立打开市场/测试）时退回内置默认：它只限制私网目标并记账。
     raw = deep_merge(dict(DEFAULTS), {"egress": {"audit": True}})
     raw.setdefault("project", {"name": "plugin-market", "workspace": str(project_root)})
     config = AppConfig(Path("<plugin-market>"), project_root, raw, project_root)
