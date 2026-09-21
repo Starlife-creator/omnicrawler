@@ -45,6 +45,15 @@ CONTRACT2_HOOK_EVENTS = (
     "after_reprocess",
 )
 
+#: 宿主生命周期操作前缀：这些操作可能发生在任何一次 run 之外（或跨 run），
+#: 载荷因此**不带** ``run_id``；其余操作都是运行期的，一律带（见 ``_with_run_id``）。
+_HOST_LIFECYCLE_OPERATION_PREFIXES = ("view.", "resource.", "capability.")
+
+
+def _is_host_lifecycle_operation(operation: str) -> bool:
+    return operation.startswith(_HOST_LIFECYCLE_OPERATION_PREFIXES)
+
+
 _SENSITIVE_HEADERS = frozenset(
     {"authorization", "cookie", "proxy-authorization", "set-cookie", "x-api-key"}
 )
@@ -221,9 +230,26 @@ class _SubprocessSessionHost:
     def call(self, operation: str, payload: dict[str, Any]) -> dict[str, Any]:
         # 一个 JSON-RPC 会话同一时刻只能有一个在途请求；多线程抓取与 hook
         # 可能共享同一插件 host，因此在宿主侧串行化帧读写。
+        payload = self._with_run_id(operation, payload)
         with self._call_lock:
             session, broker = self._ensure()
             return drive_loop(session, broker, operation, payload, timeout_seconds=0)
+
+    def _with_run_id(self, operation: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """给**运行期操作**补上本次 run 的标识（issue #74 §6）。
+
+        此前只有 ``processor.process`` 的载荷带 ``run_id``，``source.seed`` / ``fetcher.fetch``
+        / ``hook.*`` 都不知道自己在哪一次 run 里 ⇒ 插件只能把报告跨运行累积。
+
+        语义边界（显式声明）：``state`` 仍是**跨 run** 的——增量抓取依赖它（已下载集合）；
+        本次要修的是「报告/统计按 run 分桶」，那需要的是 **run 标识**而不是隔离的存储。
+        宿主只交付标识，分桶由插件决定。
+
+        ``view.*`` / ``resource.*`` 是宿主生命周期操作（可能在任何 run 之外发生），不带该字段。
+        """
+        if not self._run_id or "run_id" in payload or _is_host_lifecycle_operation(operation):
+            return payload
+        return {**payload, "run_id": self._run_id}
 
     def invalidate_broker(self) -> None:
         """Rebind host-owned run/config/state context without leaking open streams."""
