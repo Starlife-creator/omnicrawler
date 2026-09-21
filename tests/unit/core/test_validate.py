@@ -212,5 +212,20 @@ def test_s211_quick_mode_keeps_explicit_require_features() -> None:
     assert report_default["check"]["requested_features"] == ["core"]
 
 
+def test_plugin_source_kind_is_seedless() -> None:
+    """插件提供的 source.kind 不强制 seeds：入口由插件定义（见 issue #75）。"""
+    config = _config(source={"kind": "academic-paper-downloader", "file": "savedrecs.xls"})
+    errors, warnings = validate_config(config)
+    assert not any("source.seeds" in item for item in errors)
+    assert any("本地插件提供" in item for item in warnings)
+
+
+def test_builtin_source_kind_still_requires_seeds() -> None:
+    """内置 source.kind 仍要求非空 seeds（门禁未放松）。"""
+    config = _config(source={"kind": "crawl", "seeds": []})
+    errors, _warnings = validate_config(config)
+    assert any("source.seeds至少需要一个入口" in item for item in errors)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

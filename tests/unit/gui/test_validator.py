@@ -183,3 +183,24 @@ def test_attribute_name_written_as_selector_is_reported() -> None:
     """反向检查：`selector: href` 会被引擎当 CSS 选择器找 ⇒ 静默取不到值，必须拦住。"""
     errors = validate_selector_format(_field(selector="href"))
     assert errors and "属性名" in errors[0], errors
+
+
+def test_validate_schema_plugin_kind_without_seeds_is_allowed() -> None:
+    """插件注册的动态源无需 seeds（入口常为输入文件，见 #75）。"""
+    errors, _ = validate_schema(
+        _schema_dict(source={"kind": "academic-paper-downloader", "file": "savedrecs.xls"}),
+        extra_source_kinds={"academic-paper-downloader"},
+    )
+    assert not any("seeds" in e for e in errors)
+
+
+def test_validate_schema_builtin_kind_still_requires_seeds() -> None:
+    errors, _ = validate_schema(_schema_dict(source={"kind": "static_html", "seeds": []}))
+    assert any("seeds" in e for e in errors)
+
+
+def test_validate_full_config_plugin_kind_without_seeds() -> None:
+    """GUI 完整校验对插件文件型源不再要求种子 URL。"""
+    config = CrawlConfig(source_kind="academic-paper-downloader")
+    errors, _ = validate_full_config(config, extra_source_kinds={"academic-paper-downloader"})
+    assert not any("种子" in e or "seeds" in e for e in errors)
