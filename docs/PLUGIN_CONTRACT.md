@@ -30,6 +30,34 @@
 - `resource_provider` → `handle("resource.inventory"|"resource.action", payload)`；
 - `view` → `handle("view.describe"|"view.action", payload)`，由宿主渲染固定组件。
 
+### `source.seed` 载荷（宿主 → 插件）
+
+宿主构造 `payload` 后调用 `handle("source.seed", payload)`。契约 2 的 `source` 插件据此取
+输入文件，**不要自行拼接未经限定的路径**：
+
+| 键 | 类型 | 语义 |
+|---|---|---|
+| `config` | dict | `source` 配置段的原样副本 |
+| `workspace` | str | 本次 run 工作区的**绝对路径** |
+| `file_path` | str（可缺省） | 单文件入口（`source.file` / `source.input_file`）解析后的**工作区内绝对路径** |
+| `files` | list[str]（可缺省） | 多文件入口（`source.files`），同样已解析为工作区内绝对路径 |
+
+入口的解析与限定由宿主统一执行（唯一实现处 `plugins/plugin_input_paths.py`）：
+
+1. 入口一律按**运行工作区内**解释：相对路径相对工作区，绝对路径也允许，但解析后必须仍落在
+   工作区内；解析**跟随符号链接**，因此指向工作区外的链接同样被拒。
+2. **越界一律拒绝**（`policy_blocked`），宿主不会把越界改写成「工作区 + 文件名」——静默回落
+   会让配置错误看起来像成功。
+3. manifest 声明了 `input_files` 时，入口必须命中该白名单（按工作区内相对路径或文件名做
+   glob 匹配）；**声明了白名单却一个入口都没配同样直接失败**。
+4. 交付入口要求插件**同时声明 `files:read` 权限**：宿主只向声明了该能力的插件交付入口，
+   否则市场展示的权限会少报插件实际能读到的东西。
+5. 未声明 `input_files` 的插件不受白名单约束，仅受工作区限定；不使用输入文件的插件不受以上
+   任何约束（与既有行为一致）。
+
+> `file_path` / `files` 只说明「入口在边界内的位置」，不等于无限制的文件访问授权：读取输入
+> 内容仍应经 SDK 的 `files.read` 通道，并由 manifest 的 `input_files` 白名单判定。
+
 `ui` 专指原生 QWidget/QSS/绘制回调，不能跨进程序列化，只允许明确受信任的本地契约 1 插件
 使用。公共市场的界面使用契约 2 `view`：插件只返回数据描述，不能提供宿主对象或执行 GUI 代码。
 未知运行类型仍会报错；业务分类必须写入 `category/tags`。

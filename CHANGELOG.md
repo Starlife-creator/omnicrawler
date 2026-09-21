@@ -5,6 +5,8 @@
 ### 变更
 
 - feat(plugins,gui): 文件型插件源可接入 GUI/CLI —— 插件 `source.kind` 不再强制 `seeds`，且 seed 载荷注入 `source.file`/`files` 与工作区（issue #75）
+- fix(plugins): 插件源入口收紧为「工作区内 + manifest `input_files` 白名单 + 已声明 `files:read`」，越界与未声明一律拒绝，不再静默回落（对齐 issue #74 §2、#75 §B 的白名单与越界拒绝要求）
+- docs(plugins): `PLUGIN_CONTRACT.md` 固化 `source.seed` 载荷与入口解析契约（此前无承载位）
 
 ## 0.13.1 - 2026-09-20
 
