@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from ..core.config import AppConfig, validate_config
+from ..plugins.plugin_dependency_check import plugin_dependency_requirements
 from ..runtime.resource_profiles import profile_for
 from ..security.security_audit import scan_config_file
 
@@ -76,6 +77,19 @@ def run_preflight(config: AppConfig) -> dict[str, Any]:
                 f"依赖：{label}",
                 "已安装" if available else f"未安装；{install_hint}",
                 {"action": "install", "extra": install_hint} if not available else None,
+            )
+        )
+    # 插件声明依赖（#75 §D）：manifest 声明的是依赖**全集**，不等于本次配置一定都用到
+    # （实测 playwright 只在 level 3 需要）⇒ 报 warning + 明确清单，既不伪成功，
+    # 也不把"能跑通的 run"挡在门外。
+    for plugin_id, candidates, install_hint in plugin_dependency_requirements(config):
+        checks.append(
+            PreflightCheck(
+                f"plugin_dependency_{plugin_id}_{candidates[0]}",
+                "warning",
+                f"插件依赖：{plugin_id}",
+                f"声明的依赖 {candidates[0]} 未安装；{install_hint}",
+                {"action": "install", "extra": install_hint},
             )
         )
     concurrency = int(config.section("crawl").get("concurrency", 4))
