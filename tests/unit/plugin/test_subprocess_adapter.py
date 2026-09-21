@@ -200,3 +200,58 @@ def test_c2_hook_adapter_redacts_credentials_and_host_objects(c2_extension_plugi
     assert "body_b64" not in payload["request"]
     assert payload["pipeline"] == {"type": "object"}
     host.close()
+
+
+@pytest.fixture()
+def c2_files_source_plugin(tmp_path: Path) -> Path:
+    """契约 2 文件型 source：回显收到的 file_path/files/workspace。"""
+    (tmp_path / "c2_files.py").write_text(
+        textwrap.dedent(
+            """
+            def handle(operation, payload):
+                if operation == "source.seed":
+                    return {"requests": [{
+                        "url": "https://example.com/file-seed", "method": "GET", "kind": "page",
+                        "meta": {
+                            "file_path": payload.get("file_path", ""),
+                            "files": list(payload.get("files", [])),
+                            "workspace": payload.get("workspace", ""),
+                        },
+                    }]}
+                return {}
+            """
+        ),
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def test_c2_source_adapter_injects_input_file_and_workspace(
+    c2_files_source_plugin: Path, tmp_path: Path
+) -> None:
+    """#75：文件型插件源需要在 seed 载荷里拿到 file_path/files/workspace。"""
+    from omnicrawler.core.config import AppConfig
+
+    root = tmp_path / "proj"
+    root.mkdir()
+    workspace = root / "work"
+    config = AppConfig(
+        root / "task.yaml",
+        root,
+        {
+            "project": {"name": "t", "workspace": "work"},
+            "source": {"kind": "c2_files", "file": "savedrecs.xls", "files": ["a.csv", "b.ris"]},
+        },
+        workspace,
+    )
+    host = _SubprocessSessionHost(
+        c2_files_source_plugin, "c2_files", permissions=set(), config=config, timeout_seconds=15
+    )
+    adapter = SubprocessSourceAdapter(host, config)
+    requests = adapter.seed()
+    assert len(requests) == 1
+    meta = requests[0].meta
+    assert meta["file_path"] == "savedrecs.xls"
+    assert meta["files"] == ["a.csv", "b.ris"]
+    assert meta["workspace"] == str(workspace)
+    adapter.close()

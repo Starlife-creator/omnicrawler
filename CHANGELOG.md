@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+
+### 变更
+
+- feat(plugins,gui): 文件型插件源可接入 GUI/CLI —— 插件 `source.kind` 不再强制 `seeds`，且 seed 载荷注入 `source.file`/`files` 与工作区（issue #75）
+
 ## 0.13.1 - 2026-09-20
 
 ### 变更

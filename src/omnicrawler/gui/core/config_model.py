@@ -233,11 +233,11 @@ class CrawlConfig:
         """写入列表项容器选择器（原地更新 ``passthrough['extract']``）。"""
         self._extract_passthrough()["item_selector"] = (value or "").strip()
 
-    def validate(self) -> list[str]:
+    def validate(self, *, require_seeds: bool = True) -> list[str]:
         """校验完整配置，返回错误列表，空列表表示校验通过。
 
         必须检查：
-        - 至少一个种子 URL
+        - 至少一个种子 URL（``require_seeds=False`` 时豁免：插件文件型源无种子）
         - 字段可为空；为空时由内核自动提取标题、正文等通用内容
         - 所有选择器非空
         - max_pages > 0
@@ -248,7 +248,7 @@ class CrawlConfig:
 
         # 种子 URL
         valid_urls = [u for u in self.seed_urls if u and u.strip()]
-        if not valid_urls:
+        if require_seeds and not valid_urls:
             errors.append(_("至少需要一个种子 URL"))
 
         # 字段

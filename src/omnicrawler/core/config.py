@@ -581,10 +581,13 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         or not all(isinstance(item, str) and item.strip() for item in enabled_market_plugins)
     ):
         errors.append("plugins.enabled_market_plugins必须是插件ID字符串数组或null")
+    # 无种子源：redis/scrapy 自带入口；插件提供的 source.kind（不在 SOURCE_KINDS）
+    # 的入口由插件定义（如文件型插件读 source.file），不强制 seeds（见 issue #75）。
+    seedless = config.source_kind in {"redis", "scrapy"} or config.source_kind not in SOURCE_KINDS
     seeds = config.section("source").get("seeds", [])
-    if config.source_kind not in {"redis", "scrapy"} and not isinstance(seeds, list):
+    if not seedless and not isinstance(seeds, list):
         errors.append("source.seeds必须是URL数组")
-    if config.source_kind not in {"redis", "scrapy"} and not seeds:
+    if not seedless and not seeds:
         errors.append("source.seeds至少需要一个入口")
     crawl = config.section("crawl")
     if str(crawl.get("strategy", "bfs")) not in {"bfs", "dfs", "priority", "random"}:

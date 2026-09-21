@@ -405,6 +405,18 @@ class SubprocessSourceAdapter:
         if cfg is not None and hasattr(cfg, "section"):
             section = cfg.section("source")
             payload["config"] = dict(section) if isinstance(section, dict) else {}
+            # 文件型插件源：注入输入文件与工作区，插件方可读取（此前只传 config，
+            # 插件拿到空 file_path；见 issue #75）。
+            if isinstance(section, dict):
+                source_file = section.get("file") or section.get("input_file")
+                if source_file:
+                    payload["file_path"] = str(source_file)
+                files = section.get("files")
+                if isinstance(files, list) and files:
+                    payload["files"] = [str(item) for item in files]
+            workspace = getattr(cfg, "workspace", None)
+            if workspace is not None:
+                payload["workspace"] = str(workspace)
         result = self._host.call("source.seed", payload)
         raw = result.get("requests", [])
         if not isinstance(raw, list):
