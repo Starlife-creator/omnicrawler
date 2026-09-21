@@ -23,9 +23,11 @@ from dataclasses import asdict, is_dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from ..core.errors import PolicyBlockedError
 from ..core.models import CrawlRequest, ExtractedRecord, FetchResult, ProcessResult
 from .plugin_broker import CapabilityBroker, drive_loop
 from .plugin_declarative import validate_view_descriptor
+from .plugin_input_paths import resolve_input_entries
 from .plugin_render import RenderBroker
 from .plugin_resources import ResourceGrantBroker
 from .plugin_sandbox import PluginSubprocessSession
@@ -170,6 +172,16 @@ class _SubprocessSessionHost:
         self._session: PluginSubprocessSession | None = None
         self._broker: CapabilityBroker | None = None
         self._call_lock = threading.RLock()
+
+    @property
+    def input_files(self) -> tuple[str, ...]:
+        """manifest 声明的输入文件白名单（注入插件源入口时用于校验）。"""
+        return self._input_files
+
+    @property
+    def permissions(self) -> set[str]:
+        """manifest 声明的能力集合（入口交付前核对 ``files:read``）。"""
+        return self._permissions
 
     def _ensure(self) -> tuple[PluginSubprocessSession, CapabilityBroker]:
         if self._session is None or self._session._proc is None:  # noqa: SLF001
@@ -405,18 +417,36 @@ class SubprocessSourceAdapter:
         if cfg is not None and hasattr(cfg, "section"):
             section = cfg.section("source")
             payload["config"] = dict(section) if isinstance(section, dict) else {}
-            # 文件型插件源：注入输入文件与工作区，插件方可读取（此前只传 config，
-            # 插件拿到空 file_path；见 issue #75）。
-            if isinstance(section, dict):
-                source_file = section.get("file") or section.get("input_file")
-                if source_file:
-                    payload["file_path"] = str(source_file)
-                files = section.get("files")
-                if isinstance(files, list) and files:
-                    payload["files"] = [str(item) for item in files]
             workspace = getattr(cfg, "workspace", None)
             if workspace is not None:
                 payload["workspace"] = str(workspace)
+            # 文件型插件源：入口必须解析为**工作区内**的绝对路径，命中 manifest 的
+            # input_files 白名单，且插件已声明 files:read；越界拒绝（见 issue #74/#75
+            # 与 docs/PLUGIN_CONTRACT.md「source.seed 载荷」）。
+            if isinstance(section, dict):
+                declared = self._host.input_files
+                file_path, files = resolve_input_entries(
+                    section.get("file") or section.get("input_file"),
+                    section.get("files"),
+                    workspace=workspace,
+                    declared=declared,
+                )
+                if file_path is None and not files:
+                    if declared:
+                        raise PolicyBlockedError(
+                            f"plugin declares input_files {list(declared)} but the task configures "
+                            "no source.file / source.files entry"
+                        )
+                else:
+                    if "files:read" not in self._host.permissions:
+                        raise PolicyBlockedError(
+                            "plugin source input entries require the files:read permission; "
+                            "declare it in plugin.yaml together with input_files"
+                        )
+                    if file_path is not None:
+                        payload["file_path"] = file_path
+                    if files:
+                        payload["files"] = files
         result = self._host.call("source.seed", payload)
         raw = result.get("requests", [])
         if not isinstance(raw, list):
