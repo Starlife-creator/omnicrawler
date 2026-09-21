@@ -19,6 +19,7 @@ import http.server
 import json
 import os
 import threading
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -95,10 +96,36 @@ def remote_market(tmp_path: Path):
 
 
 class _AllowAllEgress:
-    """B01-011: allow-all egress fake for tests."""
+    """B01-011: allow-all egress fake for tests.
+
+    契约已升级（市场下载改走与任务抓取同一条安全 opener）：替身必须提供真实的
+    ``config`` 与 ``policy``，否则市场客户端无法构建 opener。合成市场监听
+    127.0.0.1，因此这里显式打开 ``http.allow_private_network``——它正是给回环/
+    内网目标的合法开关，不是放松市场校验。
+    """
+
+    def __init__(self, root: Path | None = None) -> None:
+        from omnicrawler.core.config import DEFAULTS, AppConfig, deep_merge
+        from omnicrawler.security.policy import NetworkTargetPolicy
+
+        base = root or Path("<market-test>")
+        raw = deep_merge(dict(DEFAULTS), {"http": {"allow_private_network": True}})
+        raw.setdefault("project", {"name": "market-test", "workspace": str(base)})
+        self.config = AppConfig(base / "market-test.yaml", base, raw, base)
+        self.policy = NetworkTargetPolicy(self.config)
 
     def request(self, url: str, *, purpose: str = "", headers: dict | None = None):
         return contextlib.nullcontext()
+
+    def authorize(
+        self,
+        url: str,
+        *,
+        purpose: str = "",
+        headers: dict | None = None,
+        capability: object | None = None,
+    ) -> None:
+        return None
 
 
 def test_fetch_catalog_remote_routes_to_url(remote_market) -> None:
@@ -154,6 +181,50 @@ def test_download_rejects_unknown_remote(remote_market, tmp_path: Path) -> None:
     url, trust = remote_market
     with pytest.raises(KeyError):
         market_client.download_and_verify("nonexistent", url, tmp_path, trust, egress=_AllowAllEgress())
+
+
+def test_market_read_uses_shared_safe_opener(remote_market, monkeypatch: pytest.MonkeyPatch) -> None:
+    """市场下载必须走**与任务抓取同一条**安全 opener（#74 §1）。
+
+    此前市场用裸 ``urlopen``：既不走 ``http.proxy``，也不会逐地址回退，还会把
+    「加速器把域名解析到回环」当成内网目标整条拒掉。这里锁死它复用同一条实现。
+    """
+    from omnicrawler.fetching import http_client
+
+    calls: list[dict] = []
+    real = http_client.build_safe_opener
+
+    def spy(config, *, target_policy=None, **kwargs):
+        calls.append({"config": config, "target_policy": target_policy, **kwargs})
+        return real(config, target_policy=target_policy, **kwargs)
+
+    monkeypatch.setattr(http_client, "build_safe_opener", spy)
+    url, _ = remote_market
+    egress = _AllowAllEgress()
+    catalog = market_client.fetch_catalog(url, egress=egress)
+
+    assert catalog["schema_version"] == 1
+    assert len(calls) == 1
+    # 复用同一个策略对象 ⇒ 与任务共享 DNS 解析结论与私网判定
+    assert calls[0]["target_policy"] is egress.policy
+    assert calls[0]["purpose"] == "plugin"
+    assert calls[0]["include_cookies"] is False
+
+
+def test_market_read_honours_configured_proxy(remote_market) -> None:
+    """配置了 ``http.proxy`` 就必须**真的**走代理，而不是被静默忽略。
+
+    用一个不可达的代理端口：请求必须失败。若代理被忽略，合成市场会正常返回 200，
+    这条就会红 —— 这正是「市场不认代理」的判据。
+    """
+    url, _ = remote_market
+    egress = _AllowAllEgress()
+    http_cfg = egress.config.raw.setdefault("http", {})
+    assert isinstance(http_cfg, dict)
+    http_cfg["proxy"] = "http://127.0.0.1:9"
+
+    with pytest.raises(urllib.error.URLError):
+        market_client.fetch_catalog(url, egress=egress)
 
 
 @pytest.mark.network

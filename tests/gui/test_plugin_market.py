@@ -36,6 +36,46 @@ def _make_view(tmp_path):
     return view
 
 
+def _app_config(tmp_path, *, catalog_url: str, proxy: str = ""):
+    from omnicrawler.core.config import DEFAULTS, AppConfig, deep_merge
+
+    raw = deep_merge(dict(DEFAULTS), {"plugins": {"catalog_url": catalog_url}})
+    if proxy:
+        raw.setdefault("http", {})["proxy"] = proxy
+    raw.setdefault("project", {"name": "market-gui-test", "workspace": str(tmp_path)})
+    return AppConfig(tmp_path / "project.yaml", tmp_path, raw, tmp_path)
+
+
+def test_view_takes_catalog_and_egress_from_project_config(tmp_path):
+    """#74 §4：目录源与出口配置取自**用户项目配置**，不再读死内置 DEFAULTS。"""
+    from omnicrawler.core.config import DEFAULTS
+    from omnicrawler.gui.motion_signal import MotionSignal
+    from omnicrawler.gui.views.plugin_market import PluginMarketView
+
+    mirror = "https://mirror.example.invalid/market"
+    proxy = "http://127.0.0.1:7897"
+    MotionSignal._instance = None
+    view = PluginMarketView(
+        project_root=str(tmp_path),
+        app_config=_app_config(tmp_path, catalog_url=mirror, proxy=proxy),
+    )
+
+    assert view._catalog_url == mirror
+    assert DEFAULTS["plugins"]["catalog_url"] != mirror  # 确认测的是覆盖而非默认
+    assert view._egress.config.section("http")["proxy"] == proxy
+    # 第三方插件下载始终留痕：审计不受用户配置影响
+    assert view._egress.config.section("egress")["audit"] is True
+
+
+def test_view_without_project_config_falls_back_to_defaults(tmp_path):
+    """独立打开市场（无项目配置）时退回内置默认——既有行为不能被这次改动破坏。"""
+    from omnicrawler.core.config import DEFAULTS
+
+    view = _make_view(tmp_path)
+
+    assert view._catalog_url == str(DEFAULTS["plugins"]["catalog_url"])
+
+
 def test_view_instantiates_offline_by_default(tmp_path):
     view = _make_view(tmp_path)
 
