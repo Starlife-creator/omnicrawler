@@ -173,12 +173,15 @@ def validate_schema(
             errors.append(_("'source.kind' 是必填项"))
         elif source["kind"] not in valid_kinds:
             errors.append(_(f"不支持的 source.kind: '{source['kind']}'，支持的值: {', '.join(sorted(valid_kinds))}"))
-        if "seeds" not in source:
-            errors.append(_("'source.seeds' 是必填项"))
-        elif not isinstance(source.get("seeds"), list):
-            errors.append(_("'source.seeds' 必须是数组"))
-        elif len(source.get("seeds", [])) == 0 and source.get("kind") not in {"redis", "scrapy"}:
-            errors.append(_("'source.seeds' 不能为空数组"))
+        # 插件注册的动态源（不在内置白名单）不强制 seeds：其入口常为输入文件（见 #75）。
+        plugin_kind = isinstance(source.get("kind"), str) and source.get("kind") not in VALID_SOURCE_KINDS
+        if not plugin_kind:
+            if "seeds" not in source:
+                errors.append(_("'source.seeds' 是必填项"))
+            elif not isinstance(source.get("seeds"), list):
+                errors.append(_("'source.seeds' 必须是数组"))
+            elif len(source.get("seeds", [])) == 0 and source.get("kind") not in {"redis", "scrapy"}:
+                errors.append(_("'source.seeds' 不能为空数组"))
 
     # 检查 extract
     extract = config_dict.get("extract", {})
@@ -207,7 +210,8 @@ def validate_full_config(
     Returns:
         (errors, warnings) 元组。
     """
-    errors = config.validate()
+    # 插件文件型源允许无种子：仅内置 source.kind 要求种子 URL（见 #75）。
+    errors = config.validate(require_seeds=config.source_kind in VALID_SOURCE_KINDS)
     warnings: list[str] = []
 
     # 选择器格式校验（JSON 模式的字段契约是 path / paths，不适用选择器规则）
