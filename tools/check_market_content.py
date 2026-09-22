@@ -42,15 +42,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from omnicrawler.plugins.plugin_audit import LICENSE_ALLOWLIST
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 #: 市场仓库在工作区里的默认位置（CI 用 checkout_market.py 拷到同级目录）。
 DEFAULT_MARKET = REPO_ROOT.parent / "OmniCrawler-market"
 
-#: 许可白名单（与 `docs/PLUGIN_REVIEW_CHECKLIST.md` 的门 2 一致）。
-SPDX_ALLOWLIST = frozenset(
-    {"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MPL-2.0", "0BSD", "Unlicense"}
-)
+#: 许可白名单 —— ★ **不再在本文件定义**，直接引用 `plugin_audit.LICENSE_ALLOWLIST`（本仓唯一真源）。
+#: 2026-09-22 收敛前，这里是**第四份**逐字副本，且口径与门 2 不一致（无 AGPL/GPL 但多 ISC 等），
+#: 后果是「市场按门 2 收下的 AGPL 插件会让本门禁变红」。口径统一后由
+#: `tests/unit/utils/test_market_content_check.py` 断言二者为同一集合。
+SPDX_ALLOWLIST = LICENSE_ALLOWLIST
 
 #: 模块级导入这些**顶层包**意味着「导入期就可能触网」。
 _ALWAYS_NETWORK = frozenset(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,29 @@ from omnicrawler.plugins.plugin_audit import (
     audit_local_directory,
     audit_local_plugin,
 )
+
+
+def _extract_set_literal(path: Path, name: str) -> frozenset[str]:
+    """从 Python 源码里**结构化提取**某个模块级集合字面量。
+
+    用 AST 而不是子串判断：子串判断只能回答「本仓的项在不在市场仓文本里」，
+    **答不出「市场仓多了一项」**——而那正是本项目真实会吃到的后果。
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == name for t in node.targets
+        ):
+            try:
+                value = ast.literal_eval(node.value)
+            except ValueError as exc:  # pragma: no cover - 市场仓换了写法
+                raise AssertionError(
+                    f"{path}: {name} 不再是可静态求值的字面量，守卫需同步（{exc}）"
+                ) from exc
+            if not isinstance(value, set | frozenset):
+                raise AssertionError(f"{path}: {name} 不是集合（实为 {type(value).__name__}）")
+            return frozenset(str(item) for item in value)
+    raise AssertionError(f"{path}: 找不到 {name} 的赋值（市场仓可能改了名字，守卫需同步）")
 
 
 def _make_plugin(tmp_path: Path, *, license_value: str | None = "MIT", name: str = "demo") -> Path:
@@ -68,16 +92,57 @@ def test_license_non_allowlisted_is_error() -> None:
         assert "license_not_allowlisted" in codes
 
 
-def test_allowlist_matches_market_gate() -> None:
-    """本地 audit 白名单与市场仓 LICENSE_ALLOWLIST 同源一致（防漂移）。
+def test_allowlist_is_the_decided_permissive_set() -> None:
+    """白名单＝2026-09-22 维护者拍板的「方向 B（收紧）」：**不含强互惠（copyleft）**。
 
-    FINAL 长期债 #3：generate_catalog 拆分为 tools/catalog_lib 包后，
-    白名单的单一事实源位于 catalog_lib/common.py；旧单文件路径保留为回退
-    （兼容未拆分的旧检出）。
+    这是**判据**而非快照：它把「AGPL/GPL 系不得进入白名单」这个决定钉住，
+    防止日后被悄悄放宽（放宽必须走拍板 + 同步市场仓 + 同步本断言）。
     """
-    market_root = (
-        Path(__file__).resolve().parents[3].parent / "OmniCrawler-market"
+    expected = frozenset(
+        {
+            "Apache-2.0",
+            "BSD-2-Clause",
+            "BSD-3-Clause",
+            "0BSD",
+            "CC0-1.0",
+            "ISC",
+            "MIT",
+            "MPL-2.0",
+            "Unlicense",
+        }
     )
+    assert frozenset(LICENSE_ALLOWLIST) == expected
+    for copyleft in (
+        "AGPL-3.0-only",
+        "AGPL-3.0-or-later",
+        "GPL-2.0-only",
+        "GPL-2.0-or-later",
+        "GPL-3.0-only",
+        "GPL-3.0-or-later",
+    ):
+        assert copyleft not in LICENSE_ALLOWLIST, copyleft
+
+
+def test_agpl_is_rejected_after_tightening() -> None:
+    """AGPL 自 2026-09-22 起属白名单外（此前曾被允许）——本地自检必须判红。"""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        plugin_dir = _make_plugin(Path(tmp), license_value="AGPL-3.0-only")
+        result = audit_local_plugin(plugin_dir)
+        assert not result.ok
+        assert "license_not_allowlisted" in [f.code for f in result.findings]
+
+
+def test_allowlist_matches_market_gate() -> None:
+    """本仓白名单与市场仓白名单必须**双向相等**（防漂移）。
+
+    ★ 2026-09-22 修正：原断言只做「本仓每一项都出现在市场仓源码文本里」——
+    这是**单向**的：市场仓单方面**多收**一项（例如重新放开 AGPL）时它抓不到，
+    而那正是本项目真实会吃到的后果（市场收下 → 主仓 `check_market_content` 变红）。
+    现在改为结构化提取两侧集合并断言相等 ⇒ **任一侧改动都会红**。
+    """
+    market_root = Path(__file__).resolve().parents[3].parent / "OmniCrawler-market"
     candidates = [
         market_root / "tools" / "catalog_lib" / "common.py",
         market_root / "tools" / "generate_catalog.py",
@@ -85,9 +150,12 @@ def test_allowlist_matches_market_gate() -> None:
     source = next((p for p in candidates if p.is_file()), None)
     if source is None:
         pytest.skip("OmniCrawler-market 未 clone（需与主仓库同级）")
-    text = source.read_text(encoding="utf-8")
-    for identifier in LICENSE_ALLOWLIST:
-        assert f'"{identifier}"' in text, f"市场仓白名单缺少 {identifier}（两侧漂移）"
+    market_set = _extract_set_literal(source, "LICENSE_ALLOWLIST")
+    ours = frozenset(LICENSE_ALLOWLIST)
+    assert market_set == ours, (
+        f"两侧白名单漂移 —— 仅本仓有 {sorted(ours - market_set)}；"
+        f"仅市场仓有 {sorted(market_set - ours)}"
+    )
 
 
 def test_credential_scan_warns_on_leak() -> None:

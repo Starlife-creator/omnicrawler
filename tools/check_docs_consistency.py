@@ -39,6 +39,7 @@ CURRENT_DOCS = (
     "docs/PRODUCTION_GUIDE.md",
     "docs/WINDOWS_PACKAGING.md",
     "docs/releases/RELEASE_REPORT_0.13.1.md",
+    "docs/RESEARCH_AND_FUSION.md",
     "docs/E2E_TEST_REPORT.md",
 )
 
@@ -53,6 +54,23 @@ INDEX_ENTRYPOINTS = ("README.md", "CONTRIBUTING.md")
 GATE_PAGES = ("docs/archive/README.md", "docs/releases/README.md")
 METADATA_MARKER = "> 适用版本："
 
+# 文档里「项目许可」的散文别名 → SPDX 标识（用于许可陈述一致性门禁）。
+# 只收**可能被写成项目自身许可**的那几个；第三方组件的许可表不在此列（由行内
+# 是否引用 LICENSE 文件进一步收窄，见 check_license_statements）。
+LICENSE_ALIASES: dict[str, str] = {
+    "Apache License 2.0": "Apache-2.0",
+    "Apache-2.0": "Apache-2.0",
+    "GNU Affero General Public License v3.0": "AGPL-3.0-only",
+    "AGPL-3.0-only": "AGPL-3.0-only",
+    "AGPL-3.0-or-later": "AGPL-3.0-or-later",
+    "AGPL v3": "AGPL-3.0-only",
+    "GNU General Public License v3": "GPL-3.0-only",
+    "GPL-3.0-only": "GPL-3.0-only",
+    "GPL-3.0-or-later": "GPL-3.0-or-later",
+    "MIT License": "MIT",
+    "MIT": "MIT",
+}
+
 
 def project_root() -> Path:
     return Path(__file__).resolve().parents[1]
@@ -62,6 +80,15 @@ def load_project_metadata(root: Path) -> tuple[str, str]:
     metadata = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     project = metadata["project"]
     return str(project["version"]), str(project["requires-python"])
+
+
+def load_project_license(root: Path) -> str:
+    """项目当前许可（取自 `pyproject.toml`，它才是许可的权威来源）。"""
+    metadata = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    value = metadata["project"]["license"]
+    if isinstance(value, dict):
+        return str(value.get("text") or value.get("file") or "")
+    return str(value)
 
 
 def minimum_python(requires_python: str) -> str:
@@ -192,6 +219,43 @@ def check_walkthrough_sample_numbers(root: Path) -> list[str]:
     return issues
 
 
+def check_license_statements(root: Path, texts: dict[str, str]) -> list[str]:
+    """受管文档**声明的项目许可**必须等于 `pyproject.toml` 的 license。
+
+    起因：AGPL → Apache-2.0 迁移后，《用户指南》附录里仍留着 AGPL 全称，
+    而**没有任何门禁会发现**——按 `grep AGPL` 还会因为它写的是全称（不含 "AGPL" 字面）
+    而得到「已经改好了」的假清白。
+
+    判据：只认**同一行里既引用了 LICENSE 文件、又写出许可名**的陈述行，
+    以此避开第三方许可表（那些行不会同时引用本项目的 LICENSE 文件）。
+    ★ 并断言「至少找到一条陈述」——找不到即许可陈述失踪，**禁止静默放过**。
+    """
+    declared = load_project_license(root)
+    if not declared:
+        return ["pyproject.toml: 读不到 project.license，许可陈述无法比对"]
+    issues: list[str] = []
+    found = 0
+    for label, text in texts.items():
+        for line in text.replace("\r\n", "\n").splitlines():
+            if "LICENSE" not in line:
+                continue
+            for alias, canonical in LICENSE_ALIASES.items():
+                if alias in line:
+                    found += 1
+                    if canonical != declared:
+                        issues.append(
+                            f"{label}: 声明的项目许可是 {canonical}，"
+                            f"与 pyproject.toml 的 {declared} 不一致"
+                        )
+                    break
+    if found == 0:
+        issues.append(
+            "没有任何受管文档声明项目许可 —— 许可陈述失踪；"
+            "按 fail-closed 口径，门禁不能把它当成「没有可比对项」而放行"
+        )
+    return issues
+
+
 def check(root: Path) -> list[str]:
     version, requires_python = load_project_metadata(root)
     python_version = minimum_python(requires_python)
@@ -287,6 +351,7 @@ def check(root: Path) -> list[str]:
 
     issues.extend(check_walkthrough_sample_numbers(root))
     issues.extend(check_docs_governance(root, texts))
+    issues.extend(check_license_statements(root, texts))
     return issues
 
 

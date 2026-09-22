@@ -1061,7 +1061,7 @@ src/omnicrawler/
 
 ### 许可证
 
-GNU Affero General Public License v3.0 — 详见 `LICENSE` 文件。
+Apache License 2.0（SPDX 标识 `Apache-2.0`）— 详见 `LICENSE` 文件。
 
 ### 相关项目
 

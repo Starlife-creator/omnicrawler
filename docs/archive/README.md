@@ -8,6 +8,17 @@
 这些材料记录了当时的决策理由、审计过程与评估结论。删除会丢失可追溯性，因此保留在仓库内，
 但从现行文档索引中移除，避免被误当作操作依据。
 
+## ⚠️ 阅读前必读：许可陈述同理（AGPL 时期的历史文本）
+
+归档中的评估报告、审计产物写于**AGPL-3.0 时期**（例如
+`omnicrawler-assessment/omnicrawler-assessment.html` 的「版本 0.3.0 · AGPL-3.0」）。
+其中一切「本项目许可」的陈述**都不是现状**：当前许可为 **Apache-2.0**
+（见仓库根 `LICENSE` 与 `pyproject.toml`）。
+
+按**归档只读纪律**，归档件原文**一律不改写**；本声明是唯一权威口径。
+★ 注意区分：`omnicrawler-evaluation-report/_shared/js/LICENSES.txt` 里的 AGPL 字样属于
+**随仓分发的第三方组件许可正文**（逐字取自上游），**不是**本项目许可陈述，**不在**本声明范围。
+
 ## ⚠️ 阅读前必读：版本号经历过重置
 
 `docs/archive/releases/` 下的 `RELEASE_REPORT_1.x` / `2.x` 属于**旧编号体系**。

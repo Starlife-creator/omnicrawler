@@ -114,6 +114,43 @@ def test_allowed_licenses_are_recognised(tmp_path: Path) -> None:
         assert gates_evidence(entry, market)["checks"]["license_allowlisted"], license_id
 
 
+def test_allowlist_shares_the_single_source_of_truth() -> None:
+    """本门禁的白名单必须与 `plugin_audit` **同一个对象**——不许再自带字面量。
+
+    2026-09-22 之前这里是**第四份**逐字副本，且与门 2 口径不一致（无 AGPL/GPL
+    但多 ISC 等），后果是「市场按门 2 收下的插件会让本门禁变红」。
+    `is` 而非 `==`：相等断言挡不住「复制一份再各自演化」的复发。
+    """
+    # 走模块属性而非 `import X as y`：后者会命中 ruff N811（常量被重命名为非常量名）。
+    from omnicrawler.plugins import plugin_audit
+
+    assert SPDX_ALLOWLIST is plugin_audit.LICENSE_ALLOWLIST, (
+        "check_market_content 又变回自带字面量了"
+    )
+
+
+@pytest.mark.parametrize(
+    "denied",
+    [
+        "AGPL-3.0-only",
+        "AGPL-3.0-or-later",
+        "GPL-2.0-only",
+        "GPL-2.0-or-later",
+        "GPL-3.0-only",
+        "GPL-3.0-or-later",
+    ],
+)
+def test_copyleft_licenses_are_denied(tmp_path: Path, denied: str) -> None:
+    """2026-09-22 拍板（方向 B「收紧」）后，AGPL/GPL 系一律判白名单外。
+
+    这条直接对准**用户最贵的损失**：市场收下一个声明 copyleft 许可的插件，
+    会让主仓 `quality` 的 `check_market_content` 变红，而作者本地自检却是绿的。
+    """
+    market, entry = _build_market(tmp_path)
+    entry["license"] = denied
+    assert not gates_evidence(entry, market)["checks"]["license_allowlisted"], denied
+
+
 # --------------------------------------------------------------------------
 # 每类缺陷都必须被抓到
 # --------------------------------------------------------------------------

@@ -18,20 +18,25 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-# 门 2 SPDX 白名单（与 OmniCrawler-market/tools/generate_catalog.py LICENSE_ALLOWLIST 同源；
-# 方案 A2 单一权威来源注：变更须两侧同步 + I2 文档比对 job 校验）
-LICENSE_ALLOWLIST = {
-    "AGPL-3.0-only",
-    "AGPL-3.0-or-later",
-    "GPL-3.0-only",
-    "GPL-3.0-or-later",
-    "MIT",
+# 门 2 SPDX 白名单 —— ★ **本仓唯一真源**：门 2、门 3 与 `tools/check_market_content.py`
+# 均引用本常量；市场仓 `tools/catalog_lib/common.py` 因**跨仓无法 import** 而保留一份副本，
+# 由 `tests/unit/plugin/test_plugin_audit.py` 的**双向相等**断言锁死（任一侧漂移即红）。
+# ★ 2026-09-22 维护者拍板（方向 B「收紧」）：剔除 AGPL-3.0-* / GPL-3.0-*，补 ISC /
+#  MPL-2.0 / 0BSD / CC0-1.0 ⇒ 口径＝**不含强互惠（copyleft）的宽松许可集**。
+#  理由：市场按本白名单收下的插件，必须同时能过主仓 `quality` 的
+#  `check_market_content`（它校验市场 catalog 的 license 字段）——口径不一致会让
+#  「本地绿 = CI 绿」失效。变更**须走拍板**，不得单侧放宽。
+LICENSE_ALLOWLIST = frozenset({
     "Apache-2.0",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    "0BSD",
     "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
     "Unlicense",
-}
+})
 
 # 凭据扫描：与市场仓 scan_plugin.py 同族的正则（简化：本地自检面向作者自查，
 # 高误报容忍度低于 CI 门禁——命中给警告而非硬失败）
@@ -297,12 +302,10 @@ def audit_local_directory(base_dir: Path) -> list[AuditResult]:
 # Phase 2a 门 1 / 门 3（方案第 26/67 轮；与 CI generate_catalog 同源逻辑）
 # ============================================================================
 
-# 门 3 依赖许可白名单（A2 单一权威来源：与 generate_catalog.py LICENSE_ALLOWLIST
-# 同源；变更须两侧同步 + I2 文档比对 job 校验）
-_DEPENDENCY_LICENSE_ALLOWLIST = {
-    "AGPL-3.0-only", "AGPL-3.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later",
-    "MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CC0-1.0", "Unlicense",
-}
+# 门 3 依赖许可白名单 —— 与门 2 **同一个集合对象**（2026-09-22 收敛：历史上这里是一份
+# 与门 2 逐字相同的字面量，属重复定义）。若将来确需对「插件依赖」与「插件自身」采用
+# 不同口径，必须先写明该差异的理由，并同步市场仓与双向守卫，不得只改一侧。
+_DEPENDENCY_LICENSE_ALLOWLIST = LICENSE_ALLOWLIST
 
 # 门 1：subprocess 插件禁 import 的宿主核心模块前缀（隔离边界）
 _HOST_CORE_PREFIXES = ("omnicrawler.",)
