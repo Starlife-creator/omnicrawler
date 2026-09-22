@@ -137,6 +137,29 @@ def _reviewed(entry: dict[str, Any]) -> bool:
     return bool(str(entry.get("maintainer_package_signature_file") or "").strip())
 
 
+def _installed_version(plugin_dir: Path) -> str:
+    """读取已安装插件声明的版本（AST 静态读，不执行代码）。"""
+    from ...plugins.plugin_audit import _extract_static_metadata
+
+    meta = _extract_static_metadata(plugin_dir)
+    if not meta:
+        return ""
+    return str(meta.get("version") or "").strip()
+
+
+def _update_available(entry: dict[str, Any], installed_version: str) -> str | None:
+    """更新检查：catalog 的 versions 里有比已装版本更新的 ⇒ 返回最新版本号，否则 None。
+
+    版本目录（entry["versions"]）是市场发布流程写死的真源；比较用与 _compatibility 相同的 _version_tuple（非数字段忽略）。
+    """
+    available = [v for v in (entry.get("versions") or {}) if isinstance(v, str)]
+    current = _version_tuple(installed_version or "")
+    if not available or not current:
+        return None
+    newer = [v for v in available if _version_tuple(v) > current]
+    return max(newer, key=_version_tuple) if newer else None
+
+
 def _tombstone_reason(catalog: dict[str, Any], plugin_id: str) -> str | None:
     """查目录的 tombstones（§4.6 / CATALOG_SCHEMA）：已下架的插件**不得静默消失**。
 

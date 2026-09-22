@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from PySide6.QtCore import Qt
@@ -23,11 +24,13 @@ from .plugin_market_logic import (
     _entry_plugin_types,
     _entry_strings,
     _install_block_reason,
+    _installed_version,
     _official,
     _permission_risk,
     _reviewed,
     _technical_details,
     _tombstone_reason,
+    _update_available,
 )
 from .plugin_market_workers import _ListingWorker
 
@@ -55,6 +58,7 @@ class MarketBrowseMixin(_Base):
     _state: str
     _catalog: dict[str, Any] | None
     _catalog_url: str
+    _dest_root: Path
     _egress: Any
     _enabled_plugin_ids: set[str]
     _selected_id: str | None
@@ -217,6 +221,12 @@ class MarketBrowseMixin(_Base):
         domains = list(_entry_strings(entry or {}, "domains"))
         risk_label = _permission_risk(entry or {})[1]
         compatibility = _compatibility(entry or {})[1]
+        update_hint = ""
+        if installed:
+            newer = _update_available(entry or {}, _installed_version(self._dest_root / plugin_id))
+            if newer:
+                # ★ 永不折叠：更新提示是用户可感行为，不得折叠
+                update_hint = _("\n⚠ 有可用更新：v{0}").format(newer)
 
         self._detail_name.setText(name)
         meta_parts = [
@@ -243,7 +253,7 @@ class MarketBrowseMixin(_Base):
         )
         self._detail_capabilities.setText(
             _(
-                "运行扩展点：{0}\n执行模式：{1}\n权限：{2}（{3}）{4}\n兼容性：{5}\n审核状态：{6}"
+                "运行扩展点：{0}\n执行模式：{1}\n权限：{2}（{3}）{4}\n兼容性：{5}\n审核状态：{6}{7}"
             ).format(
                 type_text,
                 mode_text,
@@ -254,6 +264,7 @@ class MarketBrowseMixin(_Base):
                 # ★ 永不折叠（§10.5）：审核状态与权限风险必须一眼可见，不得折叠
                 (_("官方认证作者 · ") if _official(entry or {}, self._catalog or {}) else "")
                 + (_("已审核（维护者复签通过）") if _reviewed(entry or {}) else _("未审核（仅创作者签名）")),
+                update_hint,
             )
             + ui_notice
         )
