@@ -55,6 +55,9 @@ class DeclarativeViewController(QtCore.QObject):
         self.dock.setFeatures(features)
 
     def _rebuild(self, descriptor: dict[str, Any]) -> None:
+        # §8.4 #4（P1 长列表）：整面板重建不得丢长列表滚动位置。
+        # 销毁旧面板前按组件 id 捕获各列表的滚动位置，新面板建好后恢复。
+        saved_scrolls = self._capture_list_scrolls(self.dock.widget())
         self._descriptor = descriptor
         panel = QtWidgets.QWidget(self.dock)
         panel.setMinimumSize(descriptor["minimum_width"], descriptor["minimum_height"])
@@ -69,6 +72,30 @@ class DeclarativeViewController(QtCore.QObject):
         self.dock.setWidget(panel)
         if old is not None:
             old.deleteLater()
+        self._restore_list_scrolls(saved_scrolls)
+
+    def _capture_list_scrolls(self, panel: QtWidgets.QWidget | None) -> dict[str, int]:
+        saved: dict[str, int] = {}
+        if panel is None:
+            return saved
+        for listing in panel.findChildren(QtWidgets.QListWidget):
+            key = listing.objectName()
+            if key:
+                saved[key] = listing.verticalScrollBar().value()
+        return saved
+
+    def _restore_list_scrolls(self, saved: dict[str, int]) -> None:
+        if not saved:
+            return
+        panel = self.dock.widget()
+        if panel is None:
+            return
+        for listing in panel.findChildren(QtWidgets.QListWidget):
+            key = listing.objectName()
+            if key in saved:
+                # doItemsLayout 确保未显示时滚动范围已就绪，否则 setValue 会被钳到 0
+                listing.doItemsLayout()
+                listing.verticalScrollBar().setValue(saved[key])
 
     def _add_component(self, layout: QtWidgets.QVBoxLayout, item: dict[str, Any]) -> None:
         kind = item["type"]
@@ -115,6 +142,7 @@ class DeclarativeViewController(QtCore.QObject):
             if item.get("label"):
                 layout.addWidget(QtWidgets.QLabel(item["label"]))
             listing = QtWidgets.QListWidget()
+            listing.setObjectName(f"declarativeList_{item['id']}")
             for resource in item["items"]:
                 row = QtWidgets.QListWidgetItem(resource["label"])
                 row.setData(QtCore.Qt.ItemDataRole.UserRole, resource["id"])

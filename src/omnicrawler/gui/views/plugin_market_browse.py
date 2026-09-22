@@ -87,6 +87,15 @@ class MarketBrowseMixin(_Base):
         def _is_installed(self, plugin_id: str) -> bool: ...
         def _installed_ids(self) -> list[str]: ...
     def _populate_list(self) -> None:
+        # §8.4 #4（P1 长列表）：整列表重建不得丢用户状态。
+        # 进入时记录当前选中插件与滚动位置；重建后若原选中项仍在列表里，
+        # 则恢复其选中与滚动位置（筛选后不在了 ⇒ 维持既有行为：回到第 1 行）。
+        previous_pid = ""
+        current = self._list.currentItem()
+        if current is not None:
+            previous_pid = str(current.data(Qt.ItemDataRole.UserRole) or "")
+        saved_scroll = self._list.verticalScrollBar().value()
+
         self._list.blockSignals(True)
         self._list.clear()
         plugins = (self._catalog or {}).get("plugins", []) if self._catalog else []
@@ -153,7 +162,17 @@ class MarketBrowseMixin(_Base):
         if self._state == "ready":
             self._footer.setText(_(f"显示 {len(visible)} / {len(plugins)} 个已审核插件。"))
         if self._list.count() > 0:
-            self._list.setCurrentRow(0)
+            restore_row: int | None = None
+            if previous_pid:
+                for row in range(self._list.count()):
+                    if str(self._list.item(row).data(Qt.ItemDataRole.UserRole) or "") == previous_pid:
+                        restore_row = row
+                        break
+            self._list.setCurrentRow(restore_row if restore_row is not None else 0)
+            if restore_row is not None:
+                # 原选中项仍在：恢复滚动位置（doItemsLayout 确保未显示时滚动范围已就绪）
+                self._list.doItemsLayout()
+                self._list.verticalScrollBar().setValue(saved_scroll)
         else:
             self._show_detail(None)
 

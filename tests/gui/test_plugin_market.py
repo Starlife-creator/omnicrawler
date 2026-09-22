@@ -4,6 +4,7 @@ import importlib.util
 from types import SimpleNamespace
 
 import pytest
+from PySide6.QtWidgets import QApplication
 
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("PySide6") is None,
@@ -258,6 +259,88 @@ def test_market_filters_by_type_mode_risk_and_search(tmp_path):
     view._search_edit.setText("public")
     assert view._list.count() == 1
     assert "Safe Source" in view._list.item(0).text()
+
+
+def test_populate_list_restores_scroll_and_selection_after_rebuild(tmp_path):
+    """§8.4 #4 回归（P1 长列表前置）：刷新＝整列表重建，不得丢滚动位置与选中项。
+
+    用户场景：滚到第 30 条点开详情 ⇒ 点「刷新」/装完插件 ⇒ 界面跳回第 1 行、
+    滚动位置归零，体验明显退化。重建后原选中项仍在列表里 ⇒ 必须原位恢复。
+    """
+    view = _make_view(tmp_path)
+    view._state = "ready"
+    view._catalog = {
+        "plugins": [
+            {
+                "id": f"plug_{n:03d}",
+                "name": f"Plugin {n:03d}",
+                "version": "1.0.0",
+                "category": "news",
+                "plugin_types": ["source"],
+                "execution_mode": "subprocess",
+                "permissions": [],
+                "tags": [],
+                "compatible_core": ">=0.1.0",
+            }
+            for n in range(60)
+        ]
+    }
+    view.show()  # 真实几何：隐藏状态下布局是延迟的，滚动值会残留旧值（假通过陷阱）
+    QApplication.instance().processEvents()
+    view._populate_list()
+    listing = view._list
+    listing.doItemsLayout()
+    assert listing.verticalScrollBar().maximum() > 0  # 前置：列表确实可滚动
+
+    listing.setCurrentRow(30)
+    QApplication.instance().processEvents()
+    saved_scroll = listing.verticalScrollBar().value()
+    assert saved_scroll > 0
+
+    view._populate_list()  # 模拟「刷新」触发的整列表重建
+
+    assert listing.currentRow() == 30  # 选中项不跳回第 1 行
+    assert listing.verticalScrollBar().value() == saved_scroll  # 滚动位置不丢
+    view.deleteLater()
+    QApplication.instance().processEvents()
+
+
+def test_populate_list_resets_to_top_when_selection_no_longer_visible(tmp_path):
+    """原选中项被筛掉 ⇒ 维持既有行为：回到第 1 行（不恢复旧滚动位置）。"""
+    view = _make_view(tmp_path)
+    view._state = "ready"
+    view._catalog = {
+        "plugins": [
+            {
+                "id": f"plug_{n:03d}",
+                "name": f"Plugin {n:03d}",
+                "version": "1.0.0",
+                "category": "news",
+                "plugin_types": ["source"],
+                "execution_mode": "subprocess",
+                "permissions": [],
+                "tags": [],
+                "compatible_core": ">=0.1.0",
+            }
+            for n in range(60)
+        ]
+    }
+    view.show()
+    QApplication.instance().processEvents()
+    view._populate_list()
+    view._list.setCurrentRow(40)
+    QApplication.instance().processEvents()
+    old_scroll = view._list.verticalScrollBar().value()
+    assert old_scroll > 0
+
+    view._search_edit.setText("Plugin 000")  # 筛选后原选中项不在新列表里
+    QApplication.instance().processEvents()
+    assert view._list.count() == 1
+    assert view._list.currentRow() == 0
+    # 不恢复旧滚动位置（回到顶部）
+    assert view._list.verticalScrollBar().value() != old_scroll
+    view.deleteLater()
+    QApplication.instance().processEvents()
 
 
 def test_market_detail_previews_permissions_and_blocks_incompatible_install(tmp_path):
