@@ -295,6 +295,20 @@ class PluginMarketView(
         self._detail_capabilities.setWordWrap(True)
         detail_layout.addWidget(self._detail_capabilities)
 
+        # ★ 永不折叠（§10.5）：capabilities 里的权限风险与审核状态永远直接可见；
+        #   技术细节（哈希/约束/完整清单）默认折叠，用户主动展开才显示。
+        self._tech_toggle = QPushButton(_("显示技术细节"))
+        self._tech_toggle.setObjectName("techToggle")
+        self._tech_toggle.setCheckable(True)
+        self._tech_toggle.toggled.connect(self._toggle_technical)
+        detail_layout.addWidget(self._tech_toggle)
+
+        self._detail_technical = QLabel("")
+        self._detail_technical.setObjectName("technicalLabel")
+        self._detail_technical.setWordWrap(True)
+        self._detail_technical.hide()  # 默认折叠
+        detail_layout.addWidget(self._detail_technical)
+
         self._detail_summary = QLabel("")
         self._detail_summary.setWordWrap(True)
         detail_layout.addWidget(self._detail_summary)
@@ -347,6 +361,11 @@ class PluginMarketView(
         self._set_offline_state(_("尚未加载。点击「刷新」从插件目录拉取（需联网）。"))
 
     # ── 样式 ───────────────────────────────────────────────────
+    def _toggle_technical(self, checked: bool) -> None:
+        """展开/收起技术细节区（默认收起；永不折叠项不在此区）。"""
+        self._detail_technical.setVisible(checked)
+        self._tech_toggle.setText(_("隐藏技术细节") if checked else _("显示技术细节"))
+
     def _apply_style(self, *_args: Any) -> None:
         t = ThemeManager.instance().tokens
         self.setStyleSheet(f"""

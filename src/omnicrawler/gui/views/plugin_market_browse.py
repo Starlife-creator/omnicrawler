@@ -25,6 +25,7 @@ from .plugin_market_logic import (
     _install_block_reason,
     _permission_risk,
     _reviewed,
+    _technical_details,
 )
 from .plugin_market_workers import _ListingWorker
 
@@ -65,6 +66,7 @@ class MarketBrowseMixin(_Base):
     _detail_name: QLabel
     _detail_meta: QLabel
     _detail_tags: QLabel
+    _detail_technical: QLabel
     _detail_capabilities: QLabel
     _detail_summary: QLabel
     _detail_listing: QTextEdit
@@ -218,6 +220,9 @@ class MarketBrowseMixin(_Base):
             _("\n⚠ 原生 UI 只能作为受信任本地进程内插件运行。")
             if "ui" in plugin_types
             else ""
+        )
+        self._detail_technical.setText(
+            chr(10).join(_("{}：{}").format(label, value) for label, value in _technical_details(entry or {}))
         )
         self._detail_capabilities.setText(
             _(

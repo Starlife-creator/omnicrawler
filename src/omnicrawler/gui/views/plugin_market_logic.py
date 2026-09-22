@@ -185,6 +185,27 @@ def _badges(entry: dict[str, Any]) -> tuple[str, ...]:
     return tuple(badges)
 
 
+#: 永不折叠项的标签（§10.5）：这些信息必须默认可见，**不得**进入折叠区。
+NEVER_FOLDED_LABELS: tuple[str, ...] = (_("风险"), _("审核状态"), _("执行模式"))
+
+
+def _technical_details(entry: dict[str, Any]) -> list[tuple[str, str]]:
+    """可折叠区的内容：技术标识与完整清单（默认隐藏，用户主动展开）。
+
+    ★ 判据（§10.5 门禁化）：折叠区只放技术细节；`NEVER_FOLDED_LABELS` 里的
+      「永不折叠」项**必须留在折叠区外**（它们由 `_badges`/capabilities 呈现）。
+    """
+    mapping: list[tuple[str, Any]] = [
+        (_("插件 ID"), entry.get("id")),
+        (_("包清单哈希"), entry.get("package_manifest_sha256")),
+        (_("许可证"), entry.get("license")),
+        (_("兼容约束"), entry.get("compatible_core")),
+        (_("完整权限"), "、".join(_entry_strings(entry, "permissions"))),
+        (_("允许域名"), "、".join(_entry_strings(entry, "domains"))),
+    ]
+    return [(label, str(value)) for label, value in mapping if str(value or "").strip()]
+
+
 def _install_block_reason(entry: dict[str, Any]) -> str:
     compatibility, detail = _compatibility(entry)
     if compatibility in {"incompatible", "blocked"}:
