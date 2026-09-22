@@ -18,6 +18,9 @@ from ..widgets.toast import ToastManager
 from .plugin_market_logic import (
     _install_block_reason,
     _install_review_text,
+    _installed_permissions,
+    _permission_diff,
+    _permission_diff_text,
     _permission_risk,
 )
 from .plugin_market_workers import _InstallWorker
@@ -53,6 +56,7 @@ class MarketInstallMixin(_Base):
     if TYPE_CHECKING:
         def _entry_of(self, plugin_id: str) -> dict[str, Any] | None: ...
         def _populate_list(self) -> None: ...
+        def _is_installed(self, plugin_id: str) -> bool: ...
         def _update_action_buttons(self, installed: bool | None = None) -> None: ...
     def _on_install(self) -> None:
         from PySide6.QtWidgets import QMessageBox
@@ -69,11 +73,23 @@ class MarketInstallMixin(_Base):
         if block_reason:
             ToastManager.instance().warning(block_reason)
             return
-        if _permission_risk(entry)[0] != "low":
+        # §4.6（永不折叠第 5 条）：更新扩大权限必须重新呈现并处理授权。
+        installed = self._is_installed(pid)
+        diff = (
+            _permission_diff(_installed_permissions(self._dest_root / pid), entry)
+            if installed
+            else {"added": [], "removed": []}
+        )
+        diff_text = _permission_diff_text(diff)
+        widened = bool(diff.get("added"))
+        if _permission_risk(entry)[0] != "low" or widened:
+            review = _install_review_text(entry)
+            if diff_text:
+                review += "\n\n⚠ " + _("权限变更（对比已安装版本）") + "\n" + diff_text
             reply = QMessageBox.question(
                 self,
                 _("安装前权限审查"),
-                _install_review_text(entry) + _("\n\n确认继续安装？"),
+                review + _("\n\n确认继续安装？"),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )

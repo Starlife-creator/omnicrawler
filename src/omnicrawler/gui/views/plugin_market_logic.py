@@ -137,6 +137,44 @@ def _reviewed(entry: dict[str, Any]) -> bool:
     return bool(str(entry.get("maintainer_package_signature_file") or "").strip())
 
 
+def _installed_permissions(plugin_dir: Path) -> list[str]:
+    """读取已安装插件声明的权限（AST 静态读，**不执行代码**）。
+
+    ★ 安装元数据（install meta）只有哈希不含权限 ⇒ 只能从插件本体的
+      PLUGIN_METADATA 取（复用 plugin_audit 的静态提取器）。
+    """
+    from ...plugins.plugin_audit import _extract_static_metadata
+
+    meta = _extract_static_metadata(plugin_dir)
+    if not meta:
+        return []
+    return [str(item).strip() for item in meta.get("permissions", []) or [] if str(item).strip()]
+
+
+def _permission_diff(previous: list[str], entry: dict[str, Any]) -> dict[str, list[str]]:
+    """更新前后的权限差异（§4.6：更新扩大权限必须重新呈现并处理授权）。
+
+    「扩权」判据＝**新增**权限（删除不算扩权——收窄权限不需要用户重新授权）。
+    比较大小写不敏感（权限名按 casefold 归一），展示保留原写法。
+    """
+    old = {item.casefold() for item in previous}
+    new_items = [item for item in _entry_strings(entry, "permissions")]
+    new_folded = {item.casefold() for item in new_items}
+    return {
+        "added": [item for item in new_items if item.casefold() not in old],
+        "removed": [item for item in previous if item.casefold() not in new_folded],
+    }
+
+
+def _permission_diff_text(diff: dict[str, list[str]]) -> str:
+    lines: list[str] = []
+    if diff.get("added"):
+        lines.append(_("新增权限：") + ", ".join(diff["added"]))
+    if diff.get("removed"):
+        lines.append(_("移除权限：") + ", ".join(diff["removed"]))
+    return "\n".join(lines)
+
+
 def _badges(entry: dict[str, Any]) -> tuple[str, ...]:
     """卡片与详情的徽章（M5：官方与已审核是**两个维度、非互斥**，不得做成二选一筛选）。"""
     badges: list[str] = []
