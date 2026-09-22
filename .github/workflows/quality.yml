@@ -156,7 +156,10 @@ jobs:
 
 
       - run: python tools/check_coding_standards.py src
-      - run: python -m coverage run -m pytest -q
+      # `--durations` 只追加报告、不改判定：把「哪条腿 / 哪个用例慢」变成可观测数据。
+      # 热点必须在 CI 上量：本地开发机与 runner 的倍率可达 6~10×，用本地耗时推断 CI
+      # 会得出错误结论（2026-09-21 实测：本地 0.5s 收尾的整段在 CI 上占 267s）。
+      - run: python -m coverage run -m pytest -q --durations=25 --durations-min=0.5
       # `--fail-under=0`：本步骤只**取数据**，判定统一交给 `tools/check_coverage_gates.py`
       # （单一判据）。否则 pyproject.toml 的 `fail_under = 66` 会在这里先以 exit 2 抢跑——
       # 全量跑时它恰好也过，但在**子集**（如浏览器 job，实测总覆盖率 23%）会直接把门禁
