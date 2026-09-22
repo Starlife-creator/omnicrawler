@@ -26,6 +26,7 @@ from .plugin_market_logic import (
     _permission_risk,
     _reviewed,
     _technical_details,
+    _tombstone_reason,
 )
 from .plugin_market_workers import _ListingWorker
 
@@ -127,6 +128,21 @@ class MarketBrowseMixin(_Base):
                     item.setData(Qt.ItemDataRole.UserRole, pid)
                     item.setToolTip(pid)
                     self._list.addItem(item)
+
+        # tombstones（§4.6 永不折叠第 3 条）：已下架的已安装插件不得静默消失。
+        for pid in self._installed_ids():
+            already_listed = any(
+                self._list.item(row).data(Qt.ItemDataRole.UserRole) == pid
+                for row in range(self._list.count())
+            )
+            if already_listed:
+                continue
+            reason = _tombstone_reason(self._catalog or {}, pid)
+            if reason:
+                item = QListWidgetItem(_(f"☠ [已下架] {pid} — {reason}"))
+                item.setData(Qt.ItemDataRole.UserRole, pid)
+                item.setToolTip(reason)
+                self._list.addItem(item)
 
         self._list.blockSignals(False)
         if self._state == "ready":

@@ -137,6 +137,26 @@ def _reviewed(entry: dict[str, Any]) -> bool:
     return bool(str(entry.get("maintainer_package_signature_file") or "").strip())
 
 
+def _tombstone_reason(catalog: dict[str, Any], plugin_id: str) -> str | None:
+    """查目录的 tombstones（§4.6 / CATALOG_SCHEMA）：已下架的插件**不得静默消失**。
+
+    数据契约（市场仓 CATALOG_SCHEMA.md 已定义）：
+      tombstones: [{id, removed_at, reason}]，与现存目录互斥（生成器拒绝冲突）。
+    返回人话提示；不在 tombstones 里则返回 None。
+    """
+    raw = catalog.get("tombstones")
+    if not isinstance(raw, list):
+        return None
+    for item in raw:
+        if not isinstance(item, dict) or str(item.get("id") or "") != plugin_id:
+            continue
+        reason = str(item.get("reason") or "").strip()
+        removed_at = str(item.get("removed_at") or "").strip()
+        parts = [part for part in (_("已下架"), removed_at, reason) if part]
+        return "：".join(parts[:1]) + (f"（{removed_at}）" if removed_at else "") + (f"：{reason}" if reason else "")
+    return None
+
+
 def _installed_permissions(plugin_dir: Path) -> list[str]:
     """读取已安装插件声明的权限（AST 静态读，**不执行代码**）。
 
