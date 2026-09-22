@@ -18,6 +18,37 @@ def test_release_integrity_has_no_broken_local_imports_or_entry_points():
     assert check_project(project_root) == []
 
 
+def test_local_import_check_parses_each_module_once(monkeypatch):
+    """性能守卫：每个被导入的模块只应**解析一次**。
+
+    反例（修复前的写法）：`cache.setdefault(target, _defined_names(target))` ——
+    `setdefault` 的默认参数每次都求值，于是缓存形同虚设，同一模块被反复读盘 +
+    `ast.parse` + `ast.walk`（profiler 实测：`ast.parse` 被调 1776 次而源文件只有约 350 个）。
+
+    反向断言：把 `get/if` 改回 `setdefault` ⇒ 本用例转红。
+    """
+    from tools import check_release_integrity as cri
+
+    calls: list[Path] = []
+    real = cri._defined_names
+
+    def counting(path: Path) -> set[str]:
+        calls.append(path)
+        return real(path)
+
+    monkeypatch.setattr(cri, "_defined_names", counting)
+
+    project_root = Path(__file__).resolve().parents[3]
+    assert cri.check_local_imports(project_root / "src") == []
+
+    assert calls, "守卫失去意义：一次都没解析到模块"
+    repeated = len(calls) - len(set(calls))
+    assert repeated == 0, (
+        f"同一模块被重复解析 {repeated} 次（{len(calls)} 次调用 / {len(set(calls))} 个模块）"
+        " ⇒ 解析结果没有按模块缓存（setdefault 的默认参数会被每次都求值）"
+    )
+
+
 def _write_wheel(path: Path, files: dict[str, bytes]) -> None:
     record = []
     for name, content in files.items():
