@@ -17,6 +17,7 @@ import pytest
 from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QPushButton, QWidget
 
 from omnicrawler.gui.views import plugin_market_install as install_module
+from omnicrawler.gui.views.plugin_market_catalog import MarketCatalogMixin
 from omnicrawler.gui.views.plugin_market_install import MarketInstallMixin
 
 
@@ -77,7 +78,7 @@ class _Sig:
         return None
 
 
-class _StubHost(QWidget, MarketInstallMixin):
+class _StubHost(QWidget, MarketCatalogMixin, MarketInstallMixin):
     """只满足宿主契约的最小宿主（Mixin 单测惯例，不建完整视图）。
 
     ★ 必须是 QWidget：`_on_install_error` 会以 `parent=self` 弹 QMessageBox，
@@ -96,6 +97,7 @@ class _StubHost(QWidget, MarketInstallMixin):
         self._install_btn = QPushButton()
         self._footer = QLabel()
         self._install_worker = None
+        self.refresh_calls: list[str] = []
         self._installed = installed
         self._entry = {
             "id": "demo",
@@ -119,11 +121,17 @@ class _StubHost(QWidget, MarketInstallMixin):
     def _update_action_buttons(self, installed: bool | None = None) -> None:
         self.updated_with = installed
 
+    def refresh(self) -> None:  # 覆写真实实现：记录切换后的源，不真拉目录
+        self.refresh_calls.append(self._catalog_url)
+
 
 @pytest.fixture()
 def host(qapp: QApplication, monkeypatch: pytest.MonkeyPatch) -> _StubHost:
     recorder = _ToastRecorder()
-    monkeypatch.setattr(install_module, "ToastManager", type("T", (), {"instance": classmethod(lambda cls: recorder)}))
+    monkeypatch.setattr(
+        "omnicrawler.gui.widgets.toast.ToastManager.instance",
+        classmethod(lambda cls: recorder),
+    )
     shown: list[QMessageBox] = []
 
     def fake_exec(box: QMessageBox) -> int:
@@ -210,3 +218,32 @@ def test_not_ready_state_warns_without_dialog(host: _StubHost) -> None:
     host._on_install()
     assert "请先联网刷新并选择插件" in host._toast.last("warning")
     assert host._shown == []
+
+
+def test_local_install_valid_dir_switches_source(
+    host: _StubHost, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """选中含 catalog.json 的本地目录 ⇒ 切换源并走既有 refresh（离线安装入口）。"""
+    (tmp_path / "catalog.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        "PySide6.QtWidgets.QFileDialog.getExistingDirectory",
+        staticmethod(lambda *a, **k: str(tmp_path)),
+    )
+    host._on_local_install()
+    assert host._catalog_url == str(tmp_path)
+    assert host.refresh_calls == [str(tmp_path)]
+
+
+def test_local_install_invalid_dir_warns_without_switching(
+    host: _StubHost, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """目录里没有 catalog.json ⇒ 告警且不切换源。"""
+    before = host._catalog_url
+    monkeypatch.setattr(
+        "PySide6.QtWidgets.QFileDialog.getExistingDirectory",
+        staticmethod(lambda *a, **k: str(tmp_path)),
+    )
+    host._on_local_install()
+    assert "catalog.json" in host._toast.last("warning")
+    assert host._catalog_url == before
+    assert host.refresh_calls == []

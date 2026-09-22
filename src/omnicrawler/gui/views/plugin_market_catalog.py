@@ -99,6 +99,28 @@ class MarketCatalogMixin(_Base):
         self._catalog_worker.finished.connect(self._catalog_worker.deleteLater)
         self._catalog_worker.start()
 
+    def _on_local_install(self) -> None:
+        """选择本地市场目录作为目录源（§十 P1 离线安装路径）。
+
+        逻辑层 `download_and_verify` 原生支持本地目录作为 catalog 源
+        （`_is_remote` 对非 http(s) 为 False，且有端到端测试覆盖），这里只做入口：
+        校验所选目录含 catalog.json ⇒ 切换源 ⇒ 走既有 refresh 流程（不新增第二套安装实现）。
+        """
+        from PySide6.QtWidgets import QFileDialog
+
+        from ..widgets.toast import ToastManager
+
+        chosen = QFileDialog.getExistingDirectory(self, _("选择本地市场目录"))
+        if not chosen:
+            return
+        root = Path(chosen)
+        if not (root / "catalog.json").is_file():
+            ToastManager.instance().warning(_("所选目录不含 catalog.json，不是有效的市场目录"))
+            return
+        self._catalog_url = str(root)
+        self._footer.setText(_(f"已切换到本地市场目录：{root}"))
+        self.refresh()
+
     def _on_catalog_loaded(self, catalog: dict[str, Any]) -> None:
         self._catalog = catalog
         self._state = "ready"
