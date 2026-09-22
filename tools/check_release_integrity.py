@@ -247,7 +247,15 @@ def check_local_imports(source_root: Path) -> list[str]:
             if target is None:
                 errors.append(f"{path.relative_to(source_root)}:{node.lineno}: missing module {module}")
                 continue
-            exported = cache.setdefault(target, _defined_names(target))
+            # ★ 不能用 `cache.setdefault(target, _defined_names(target))`：
+            # `setdefault` 的默认参数**每次都会被求值**（Python 语义），于是同一模块
+            # 被反复读盘 + `ast.parse` + `ast.walk`，缓存形同虚设。
+            # 实测本文件 5.2s 里绝大部分花在这里（profiler 口径 7.6s / 总计 9.5s，
+            # `ast.parse` 被调 1776 次而源文件只有约 350 个）。
+            exported = cache.get(target)
+            if exported is None:
+                exported = _defined_names(target)
+                cache[target] = exported
             for alias in node.names:
                 if alias.name != "*" and alias.name not in exported:
                     submodule = _module_file(package_root, f"{module}.{alias.name}")
