@@ -37,6 +37,49 @@ def _sys_path_snapshot():
 
 
 @pytest.fixture(autouse=True)
+def _reap_leaked_gui_widgets():
+    """回收每个用例遗留的顶层控件——否则**后跑的** GUI 用例会被历史累积拖死。
+
+    ## 为什么（实测，2026-09-22）
+
+    `tests/gui/test_design_system_contracts.py::test_all_theme_variants_pass_strict_hex_guard`
+    - 单独跑：0.05s；只跑本文件 16 个用例：0.22s（整文件）
+    - 放进整套：**51.8s**（CI 上同用例 44.9s）
+
+    `test_monitor_icon_changes_with_the_theme` 31.9s(CI)/48.9s(本地) → 单独跑 < 1s；
+    `test_visual_theme_home_transition_and_help_visibility` 2.2s（只跑两个文件时）。
+
+    机制：仅跑 2 个 GUI 文件后，进程里已有 **1016 个存活控件**（从未销毁）。
+    而 `ThemeManager.apply()` 每次都会 `setStyleSheet` / `setPalette` / 改 app 字体，
+    Qt 因此要对**所有存活控件**重算样式；泄漏的窗口还连着
+    `ThemeManager.theme_changed` 这个单例信号，每次广播都替它们再干一遍活。
+    微基准（`bench_qss.py`）：`setStyleSheet` 耗时随存活控件数近似线性
+    —— 0 个 0.0ms / 2000 个 40ms / 10000 个 223ms。
+
+    ## 边界
+
+    只回收 QWidget（`topLevelWidgets()` 不含 `QApplication` 本身），
+    且只在 PySide6 已被导入时才动手，非 GUI 用例零成本。
+    本改动不放宽任何断言：若某个用例原本依赖"上一用例的窗口还活着"，
+    修的是那个用例的前置条件，不是把这里的回收去掉。
+    """
+    yield
+    if "PySide6.QtWidgets" not in sys.modules:
+        return
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app is None:
+        return
+    for widget in list(app.topLevelWidgets()):
+        widget.hide()
+        widget.deleteLater()
+    # deleteLater 只是投递 DeferredDelete 事件；不显式派发它就不会真的销毁
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+@pytest.fixture(autouse=True)
 def _restore_i18n_language():
     """隔离 i18n 的全局语言状态（它是进程级量，不还原就会跨测试泄漏）。
 
