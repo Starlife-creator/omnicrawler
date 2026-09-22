@@ -136,6 +136,124 @@ def _install_block_reason(entry: dict[str, Any]) -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# 安装失败原因链（P0：安装失败给「原因链」而非原始异常）
+#
+# 由来：`_on_install_error` 此前只取异常**第一行**塞进一个会消失的 Toast ——
+# market_client 在明确的阶段抛**有语义**的异常（PermissionError=验签/安全校验、
+# FileNotFoundError=读取、KeyError=目录条目、ValueError=解析），但用户永远看不到
+# 「卡在哪一步、为什么、该做什么」，也拿不到可复制的细节。
+#
+# 判据是**确定性**的：按 market_client 各阶段抛出的异常类型与文案前缀归类；
+# 并沿 `__cause__` / `__context__` 走完整链路（网络错误常被包在最外层）。
+# ---------------------------------------------------------------------------
+
+_INSTALL_FAILURE_RULES: tuple[tuple[str, str, str, str], ...] = (
+    # (判据子串, 阶段, 人话结论, 可行动建议)
+    ("非法插件 ID", "参数校验", _("插件 ID 不合法"), _("通常是目录数据问题；刷新目录后重试，若仍出现请反馈")),
+    ("无法读取资源", "下载/读取", _("无法读取市场资源"), _("检查网络与代理设置后重试；离线环境请用本地安装路径")),
+    ("catalog.json 签名校验失败", "目录验签", _("市场目录签名校验失败"), _("fail-closed 安全行为：确认市场来源可信后再试；不要尝试绕过")),
+    ("catalog.json 解析失败", "目录解析", _("市场目录格式无效"), _("市场侧数据可能已损坏，稍后刷新重试")),
+    ("缺少 plugins 数组", "目录解析", _("市场目录缺少插件清单"), _("市场侧数据可能已损坏，稍后刷新重试")),
+    ("catalog 中无此插件", "目录条目", _("目录中已无此插件"), _("刷新目录后重新选择；该插件可能已被下架")),
+    ("市场 package manifest", "包校验", _("插件包清单校验失败"), _("fail-closed 安全行为：包与目录声明不一致，请反馈给发布者")),
+    ("市场包", "包校验", _("插件包校验失败"), _("fail-closed 安全行为：包与目录声明不一致，请反馈给发布者")),
+    ("签名校验失败", "插件验签", _("插件签名校验失败"), _("fail-closed 安全行为：包可能被篡改；不要重试绕过，请反馈给发布者")),
+    ("下载校验失败", "下载哈希校验", _("下载内容与目录不符"), _("fail-closed 安全行为：包可能被篡改或已过期；刷新目录后重试")),
+)
+
+_STAGE_RULES: tuple[tuple[type[BaseException], str, str, str], ...] = (
+    (PermissionError, "安全校验", _("安全校验未通过"), _("fail-closed 安全行为：安装被拒绝；确认来源可信，不要尝试绕过")),
+    (KeyError, "目录条目", _("目录中找不到该插件"), _("刷新目录后重新选择")),
+    (FileNotFoundError, "下载/读取", _("无法读取市场资源"), _("检查网络与代理设置后重试")),
+    (TimeoutError, "网络", _("连接市场超时"), _("检查网络后重试；离线环境请用本地安装路径")),
+    (ConnectionError, "网络", _("连接市场失败"), _("检查网络后重试；离线环境请用本地安装路径")),
+    (ValueError, "解析/格式", _("市场数据解析失败"), _("市场侧数据可能无效，稍后刷新重试")),
+)
+
+
+def _classify_failure_text(message: str) -> dict[str, str] | None:
+    for needle, stage, summary, advice in _INSTALL_FAILURE_RULES:
+        if needle in message:
+            return {"stage": stage, "summary": summary, "advice": advice}
+    return None
+
+
+def _classify_failure_type(exc: BaseException) -> dict[str, str] | None:
+    for exc_type, stage, summary, advice in _STAGE_RULES:
+        if isinstance(exc, exc_type):
+            return {"stage": stage, "summary": summary, "advice": advice}
+    return None
+
+
+def install_failure_chain(exc: BaseException) -> dict[str, Any]:
+    """把安装异常整理成**结构化原因链**（无 Qt 依赖，可独立单测）。
+
+    返回::
+
+        {
+          "stage": "插件验签",                # 最外层归类到的阶段
+          "summary": "插件签名校验失败",       # 一句人话结论
+          "advice": "……",                    # 可行动建议
+          "detail": "……",                    # 完整链路的可复制文本
+          "chain": [                          # 每一环：类型 + 消息
+            {"type": "PermissionError", "message": "..."},
+            ...
+          ],
+        }
+    """
+    chain: list[dict[str, str]] = []
+    links: list[BaseException] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        links.append(current)
+        chain.append({"type": type(current).__name__, "message": str(current)})
+        current = current.__cause__ or current.__context__
+    detail = "\n".join(f"{index + 1}. {item['type']}: {item['message']}" for index, item in enumerate(chain))
+
+    # 分类顺序：**文本规则最具体**（逐环找，外层优先）；其次**类型规则由内向外**取根因
+    # —— 否则「外层 ValueError 包装内层 TimeoutError」会被误判成「解析失败」而非「网络」。
+    classified: dict[str, str] | None = None
+    for link in links:
+        classified = _classify_failure_text(str(link))
+        if classified is not None:
+            break
+    if classified is None:
+        for link in reversed(links):
+            classified = _classify_failure_type(link)
+            if classified is not None:
+                break
+    if classified is None:
+        classified = {
+            "stage": _("安装"),
+            "summary": str(exc).splitlines()[0] if str(exc).strip() else type(exc).__name__,
+            "advice": _("查看详细信息确认原因；可重试一次，若仍失败请附带详情反馈"),
+        }
+    return {
+        "stage": classified["stage"],
+        "summary": classified["summary"],
+        "advice": classified["advice"],
+        "detail": detail or type(exc).__name__,
+        "chain": chain,
+    }
+
+
+def parse_install_failure(message: str) -> dict[str, Any] | None:
+    """解析 worker 的失败信号：结构化原因链（JSON）或旧格式纯文本。"""
+    import json as _json
+
+    text = (message or "").strip()
+    if not text.startswith("{"):
+        return None
+    try:
+        payload = _json.loads(text)
+    except _json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) and "chain" in payload else None
+
+
 def _install_review_text(entry: dict[str, Any]) -> str:
     plugin_types = _entry_plugin_types(entry)
     type_text = ", ".join(_TYPE_LABELS.get(item, item) for item in plugin_types) or _("未知")

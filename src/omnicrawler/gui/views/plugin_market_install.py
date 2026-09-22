@@ -150,6 +150,33 @@ class MarketInstallMixin(_Base):
             ToastManager.instance().info(_(f"创作者 {creator.username} 已在信任列表"))
 
     def _on_install_error(self, msg: str) -> None:
-        ToastManager.instance().error(_(f"安装失败：{msg.split(chr(10))[0]}"))
-        self._footer.setText(_(f"安装失败：{msg.split(chr(10))[0]}"))
+        """安装失败收尾：Toast 给一句结论，**持久对话框给完整原因链**（可复制）。
+
+        由来（P0）：此前只取异常第一行塞进会消失的 Toast —— 卡在哪一步、为什么、
+        该做什么全都不可见。现在 worker 会把结构化原因链序列化跨线程传回，
+        这里解析后分层展示；旧格式（纯文本）走兼容分支，不丢信息。
+        """
+        from PySide6.QtWidgets import QMessageBox
+
+        from .plugin_market_logic import parse_install_failure
+
+        chain = parse_install_failure(msg)
+        if chain is None:
+            first_line = msg.splitlines()[0] if msg.strip() else _("未知错误")
+            summary, stage, advice, detail = first_line, "", "", msg
+        else:
+            summary = str(chain.get("summary") or _("未知错误"))
+            stage = str(chain.get("stage") or "")
+            advice = str(chain.get("advice") or "")
+            detail = str(chain.get("detail") or msg)
+
+        ToastManager.instance().error(_("安装失败：") + summary)
+        self._footer.setText(_("安装失败：") + summary)
+
+        text = _("安装失败") + (f"（{stage}）" if stage else "") + f"\n\n{summary}"
+        if advice:
+            text += "\n\n" + _("建议：") + advice
+        box = QMessageBox(QMessageBox.Icon.Critical, _("插件安装失败"), text, parent=self)
+        box.setDetailedText(_("原因链（可复制）：\n") + detail)
+        box.exec()
         self._update_action_buttons()

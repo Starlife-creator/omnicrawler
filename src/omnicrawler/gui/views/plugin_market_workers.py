@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +75,18 @@ class _ListingWorker(BackgroundWorker):
     def work(self) -> str:
         return fetch_resource(self._catalog_url, self._rel, egress=self._egress).decode("utf-8", "replace")
 
+class InstallError(Exception):
+    """携带结构化原因链的安装失败；`str()` 即 JSON（便于经 `failed(str)` 信号跨线程）。
+
+    由来：`BackgroundWorker.run` 对异常只发 `str(exc)`，GUI 层此前只能拿到第一行；
+    P0 要求失败给**原因链** ⇒ 在线程边界把链序列化，主线程再解析还原。
+    """
+
+    def __init__(self, chain: dict[str, Any]) -> None:
+        self.chain = chain
+        super().__init__(json.dumps(chain, ensure_ascii=False))
+
+
 class _InstallWorker(BackgroundWorker):
     """后台下载 + ed25519 验签 + 落盘安装。"""
 
@@ -94,11 +107,16 @@ class _InstallWorker(BackgroundWorker):
         self._egress = egress
 
     def work(self) -> str:
-        download_and_verify(
-            self._plugin_id,
-            self._catalog_url,
-            self._dest_root,
-            self._trust_source,
-            egress=self._egress,
-        )
+        from .plugin_market_logic import install_failure_chain
+
+        try:
+            download_and_verify(
+                self._plugin_id,
+                self._catalog_url,
+                self._dest_root,
+                self._trust_source,
+                egress=self._egress,
+            )
+        except Exception as exc:  # noqa: BLE001 - 在线程边界把原因链结构化打包
+            raise InstallError(install_failure_chain(exc)) from exc
         return self._plugin_id
