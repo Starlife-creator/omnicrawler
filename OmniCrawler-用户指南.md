@@ -1063,6 +1063,10 @@ src/omnicrawler/
 
 Apache License 2.0（SPDX 标识 `Apache-2.0`）— 详见 `LICENSE` 文件。
 
+### 自动化与 AI
+
+- 想让 AI / 脚本接管命令行：见仓库根 `AGENTS.md`（开发时原则）与 `docs/AGENT_GUIDE.md`（调用面契约：命令 / 参数 / 退出码 / stdout 形态）。
+
 ### 相关项目
 
 - [Crawl4AI](https://github.com/unclecode/crawl4ai) — 轻量 AI 爬虫引擎

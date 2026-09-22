@@ -14,6 +14,7 @@
 | 桌面 GUI 用户 | [桌面运行、工作区与组件](DESKTOP_RUNTIME_1.4.md)、[桌面视觉与交互规范](GUI_DESIGN_2.1.md) |
 | 插件作者 | [插件契约](PLUGIN_CONTRACT.md)、[插件作者指南](AUTHOR_GUIDE.md)、[SDK 使用指南](SDK_USAGE.md) |
 | 代码贡献者 | 根目录 [CONTRIBUTING.md](../CONTRIBUTING.md)、[编码规范](CODING_STANDARDS.md)、[架构](ARCHITECTURE.md) |
+| AI / 自动化脚本 | [Agent 使用指南](AGENT_GUIDE.md)（先取机器契约：`python tools/agent_surface.py --json`） |
 
 ## 2. 现行文档
 
@@ -63,6 +64,11 @@
 
 - [成熟项目研究、融合映射与许可边界](RESEARCH_AND_FUSION.md)
 - [优化实施方案（2026-09）· 已归档](archive/OPTIMIZATION_PLAN_2026-09.md)：W0–W9 实施记录与性能样本保留于此；现行优化方案与审查记录为维护者工作区文档，不在本仓库内。
+
+### 自动化与 AI
+
+- [Agent 使用指南](AGENT_GUIDE.md)：AI / 脚本接管 CLI 的调用面契约 —— 命令、参数、退出码、stdout 形态，
+  以及哪些命令**不是** JSON（避免把 YAML / 文本当 JSON 解析）。
 
 ### 质量报告
 

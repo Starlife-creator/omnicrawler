@@ -135,6 +135,8 @@ HTTP 客户端行为核验自 [HTTPX Client/连接池](https://www.python-httpx.
    已有单一分发表（`cli/_handlers.py` 的 `_registry`）、默认 `_json()` 输出、稳定退出码、
    非 TTY 失败封闭 ⇒ 接 MCP 只是把同一能力**再包一层**，扩大维护面且不新增能力。
    推翻条件：出现**必须**由外部 MCP 客户端驱动、且 CLI 无法满足的硬需求。
+   ★ 落地物见 [`AGENT_GUIDE.md`](AGENT_GUIDE.md)（调用面契约，可 `python tools/agent_surface.py --json` 取得）
+   与仓库根 `AGENTS.md`（开发时原则）。
 2. **许可白名单＝方向 B（收紧）**（2026-09-22 拍板）：插件自身与插件依赖的许可白名单
    **不含 AGPL / GPL 系**；四处定义收敛为「本仓一处真源 + 市场仓一份副本」，
    由双向相等断言锁死。详见《优化方案》§12.1 P0-3 与《审查记录》§10.6。
