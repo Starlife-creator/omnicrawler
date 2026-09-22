@@ -115,10 +115,14 @@ class MarketActionsMixin(_Base):
             return
         import shutil
 
+        from .plugin_market_logic import _append_market_event, _installed_version
+
         target = self._dest_root / pid
+        version = _installed_version(target)
         try:
             shutil.rmtree(target, ignore_errors=True)
             self._enabled_plugin_ids.discard(pid)
+            _append_market_event(self._dest_root, "uninstall", pid, version=version)
             self.uninstall_completed.emit(pid)
             ToastManager.instance().success(_(f"已卸载：{pid}"))
             self._footer.setText(_(f"已卸载 {pid}"))

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from ..i18n import _
 from ..widgets.toast import ToastManager
 from .plugin_market_logic import (
+    _append_market_event,
     _install_block_reason,
     _install_review_text,
     _installed_permissions,
@@ -109,6 +110,7 @@ class MarketInstallMixin(_Base):
     def _on_installed(self, plugin_id: str) -> None:
         from PySide6.QtWidgets import QMessageBox
 
+        _append_market_event(self._dest_root, "install", plugin_id)
         ToastManager.instance().success(_(f"已安装并校验通过：{plugin_id}"))
         self._footer.setText(
             _(f"已安装 {plugin_id} 到 {self._dest_root / plugin_id}；请求的权限仍需在项目插件管理中批准")

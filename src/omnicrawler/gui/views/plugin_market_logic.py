@@ -137,6 +137,50 @@ def _reviewed(entry: dict[str, Any]) -> bool:
     return bool(str(entry.get("maintainer_package_signature_file") or "").strip())
 
 
+def _append_market_event(dest_root: Path, action: str, plugin_id: str, *, version: str = "") -> bool:
+    """本地审计日志（§十 P1）：安装/卸载事件追加进 `.market-events.jsonl`。
+
+    best-effort：写失败返回 False（磁盘满/只读），**不阻断主流程**但调用方可感知。
+    """
+    import json as _json
+    from datetime import UTC, datetime
+
+    entry = {
+        "ts": datetime.now(UTC).isoformat(timespec="seconds"),
+        "action": action,
+        "plugin_id": plugin_id,
+        "version": version,
+    }
+    log_path = Path(dest_root) / ".market-events.jsonl"
+    try:
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(_json.dumps(entry, ensure_ascii=False) + chr(10))
+        return True
+    except OSError:
+        return False
+
+
+def _read_market_events(dest_root: Path) -> list[dict[str, Any]]:
+    """读取本地审计日志（损坏行跳过，不中断）。"""
+    import json as _json
+
+    log_path = Path(dest_root) / ".market-events.jsonl"
+    if not log_path.is_file():
+        return []
+    events: list[dict[str, Any]] = []
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            item = _json.loads(line)
+        except _json.JSONDecodeError:
+            continue
+        if isinstance(item, dict):
+            events.append(item)
+    return events
+
+
 def _installed_version(plugin_dir: Path) -> str:
     """读取已安装插件声明的版本（AST 静态读，不执行代码）。"""
     from ...plugins.plugin_audit import _extract_static_metadata
