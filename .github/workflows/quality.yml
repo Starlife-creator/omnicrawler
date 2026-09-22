@@ -221,6 +221,9 @@ jobs:
     env:
       QT_QPA_PLATFORM: offscreen
       OMNICRAWL_BROWSER_TESTS: "1"
+      # 该作业跑真实 Playwright/Selenium；一旦在解释器退出阶段段错误（exit 139），
+      # 没有回溯就只能靠猜。开着 faulthandler 让崩溃自带 Python 栈。
+      PYTHONFAULTHANDLER: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
