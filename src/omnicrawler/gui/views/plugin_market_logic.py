@@ -195,9 +195,28 @@ def _permission_diff_text(diff: dict[str, list[str]]) -> str:
     return "\n".join(lines)
 
 
-def _badges(entry: dict[str, Any]) -> tuple[str, ...]:
-    """卡片与详情的徽章（M5：官方与已审核是**两个维度、非互斥**，不得做成二选一筛选）。"""
+def _official(entry: dict[str, Any], catalog: dict[str, Any] | None = None) -> bool:
+    """「官方」＝条目 publisher 命中 catalog 顶层的官方认证作者名单。
+
+    数据源（2026-09-22 维护者拍板）：market catalog 顶层 official_publishers，
+    名单随 catalog 签名发布、不可篡改。旧版 catalog 无此字段 ⇒ 一律非官方（向后兼容，
+    不得由客户端从 publisher 写死推斷——那是在发明对外信任语义）。
+    """
+    if not catalog:
+        return False
+    raw = catalog.get("official_publishers")
+    if not isinstance(raw, list):
+        return False
+    officials = {str(item).strip().casefold() for item in raw if str(item).strip()}
+    publisher = str(entry.get("publisher") or "").strip().casefold()
+    return bool(publisher) and publisher in officials
+
+
+def _badges(entry: dict[str, Any], catalog: dict[str, Any] | None = None) -> tuple[str, ...]:
+    """卡片与详情的徽章（M5：官方＝作者身份、已审核＝流程状态，两个维度**非互斥**）。"""
     badges: list[str] = []
+    if _official(entry, catalog):
+        badges.append(_("官方"))
     if _reviewed(entry):
         badges.append(_("已审核"))
     if _permission_risk(entry)[0] == "high":

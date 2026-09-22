@@ -39,13 +39,31 @@ def test_high_risk_via_in_process_mode() -> None:
     assert _badges(entry) == ("已审核", "高权限")
 
 
-def test_official_badge_is_not_invented() -> None:
-    """★ 「官方」＝作者身份，需要市场侧发布官方认证作者数据源才能落。
+def test_official_badge_from_catalog_list() -> None:
+    """★ 数据源已落地（2026-09-22 维护者拍板）：catalog 顶层 official_publishers。"""
+    entry = _entry(publisher="Starlife", maintainer_package_signature_file="m.sig")
+    badges = _badges(entry, {"official_publishers": ["starlife"]})
+    assert badges[0] == "官方"
+    assert "已审核" in badges
 
-    客户端不能自己发明判定（比如把 publisher 写死）——在那之前徽章里不许出现「官方」。
-    """
-    for entry in (
-        _entry(publisher="starlife"),
-        _entry(publisher="starlife", maintainer_package_signature_file="m.sig"),
-    ):
-        assert "官方" not in _badges(entry)
+
+def test_official_badge_requires_listed_publisher() -> None:
+    entry = _entry(publisher="someone-else", maintainer_package_signature_file="m.sig")
+    assert "官方" not in _badges(entry, {"official_publishers": ["starlife"]})
+
+
+def test_no_official_badge_on_legacy_catalog() -> None:
+    """旧版 catalog 没有 official_publishers ⇒ 一律非官方（向后兼容，不写死推断）。"""
+    entry = _entry(publisher="starlife")
+    assert "官方" not in _badges(entry)
+    assert "官方" not in _badges(entry, {})
+
+
+def test_official_reviewed_highrisk_all_coexist() -> None:
+    """M5 三个维度非互斥：官方 + 已审核 + 高权限 同时出现，官方排第一。"""
+    entry = _entry(
+        publisher="starlife",
+        maintainer_package_signature_file="m.sig",
+        permissions=["secrets:read"],
+    )
+    assert _badges(entry, {"official_publishers": ["starlife"]}) == ("官方", "已审核", "高权限")

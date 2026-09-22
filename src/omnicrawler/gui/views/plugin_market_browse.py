@@ -23,6 +23,7 @@ from .plugin_market_logic import (
     _entry_plugin_types,
     _entry_strings,
     _install_block_reason,
+    _official,
     _permission_risk,
     _reviewed,
     _technical_details,
@@ -96,7 +97,7 @@ class MarketBrowseMixin(_Base):
             _risk_key, risk_label = _permission_risk(entry)
             type_label = "/".join(_TYPE_LABELS.get(item, item) for item in plugin_types) or _("类型未知")
             mode_label = _("隔离") if mode == "subprocess" else _("进程内")
-            badge_text = "".join(f"[{badge}] " for badge in _badges(entry))
+            badge_text = "".join(f"[{badge}] " for badge in _badges(entry, self._catalog or {}))
             label = f"{name}  v{version}" if version else name
             label += f"  ·  {badge_text}{type_label} · {mode_label} · {risk_label}"
             item = QListWidgetItem(label)
@@ -251,7 +252,8 @@ class MarketBrowseMixin(_Base):
                 domain_text,
                 compatibility,
                 # ★ 永不折叠（§10.5）：审核状态与权限风险必须一眼可见，不得折叠
-                _("已审核（维护者复签通过）") if _reviewed(entry or {}) else _("未审核（仅创作者签名）"),
+                (_("官方认证作者 · ") if _official(entry or {}, self._catalog or {}) else "")
+                + (_("已审核（维护者复签通过）") if _reviewed(entry or {}) else _("未审核（仅创作者签名）")),
             )
             + ui_notice
         )
