@@ -127,6 +127,26 @@ def _compatibility(entry: dict[str, Any], current: str = __version__) -> tuple[s
     return "compatible", _("兼容")
 
 
+def _reviewed(entry: dict[str, Any]) -> bool:
+    """「已审核」＝维护者复签通过（M5 裁定：已审核＝流程状态，作者可以是任何人）。
+
+    数据源：catalog 条目声明的维护者包签名文件（市场 CI 会校验其存在与有效）。
+    ★ 「官方」徽章（作者身份维度）**暂缺**：需要市场侧发布「官方认证作者」数据源
+      才能落地，客户端不能自己发明 —— 已登记《审查记录》§10.4。
+    """
+    return bool(str(entry.get("maintainer_package_signature_file") or "").strip())
+
+
+def _badges(entry: dict[str, Any]) -> tuple[str, ...]:
+    """卡片与详情的徽章（M5：官方与已审核是**两个维度、非互斥**，不得做成二选一筛选）。"""
+    badges: list[str] = []
+    if _reviewed(entry):
+        badges.append(_("已审核"))
+    if _permission_risk(entry)[0] == "high":
+        badges.append(_("高权限"))
+    return tuple(badges)
+
+
 def _install_block_reason(entry: dict[str, Any]) -> str:
     compatibility, detail = _compatibility(entry)
     if compatibility in {"incompatible", "blocked"}:
