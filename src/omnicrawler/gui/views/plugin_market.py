@@ -337,6 +337,10 @@ class PluginMarketView(
         self._local_install_btn.clicked.connect(self._on_local_install)
         btn_row.addWidget(self._local_install_btn)
 
+        self._switch_source_btn = QPushButton(_("切换市场源…"))
+        self._switch_source_btn.clicked.connect(self._on_switch_source)
+        btn_row.addWidget(self._switch_source_btn)
+
         self._enable_btn = QPushButton(_("启用到当前项目"))
         self._enable_btn.clicked.connect(self._on_enable)
         btn_row.addWidget(self._enable_btn)

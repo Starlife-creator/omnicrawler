@@ -204,6 +204,26 @@ def _update_available(entry: dict[str, Any], installed_version: str) -> str | No
     return max(newer, key=_version_tuple) if newer else None
 
 
+def _validate_market_source(url: str) -> str | None:
+    """校验用户输入的市场源；返回错误消息，合法返回 None（§10.2 #4 多市场源）。
+
+    确定性规则：https 远程源与含 catalog.json 的本地目录合法；其余拒绝——
+    市场源承载签名信任，明文 http 不作为默认选项（私网防线在 egress 层，
+    这是入口侧的第一道确认）。
+    """
+    text = (url or "").strip()
+    if not text:
+        return _("市场源不能为空")
+    if text.startswith("https://"):
+        return None
+    candidate = Path(text)
+    if (candidate / "catalog.json").is_file():
+        return None
+    if text.startswith("http://"):
+        return _("明文 http 不作为市场源：请使用 https 或本地目录")
+    return _("市场源必须是 https:// URL 或含 catalog.json 的本地目录")
+
+
 def _tombstone_reason(catalog: dict[str, Any], plugin_id: str) -> str | None:
     """查目录的 tombstones（§4.6 / CATALOG_SCHEMA）：已下架的插件**不得静默消失**。
 

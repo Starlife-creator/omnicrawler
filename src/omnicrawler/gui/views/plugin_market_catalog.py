@@ -121,6 +121,37 @@ class MarketCatalogMixin(_Base):
         self._footer.setText(_(f"已切换到本地市场目录：{root}"))
         self.refresh()
 
+    def _on_switch_source(self) -> None:
+        """多市场源体验（§10.2 #4）：输入 https 源 ⇒ 确认 ⇒ 切换并刷新。
+
+        私网防线在 egress 层（已存在）；这里做入口侧校验（明文 http 拒绝）与
+        明确的确认对话——切换来源是信任变更，必须用户点头。
+        """
+        from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+        from ..widgets.toast import ToastManager
+        from .plugin_market_logic import _validate_market_source
+
+        url, ok = QInputDialog.getText(self, _("切换市场源"), _("输入 https:// 市场源地址："))
+        if not ok or not url.strip():
+            return
+        error = _validate_market_source(url)
+        if error:
+            ToastManager.instance().warning(error)
+            return
+        reply = QMessageBox.question(
+            self,
+            _("确认切换市场源"),
+            _("将把市场源切换为：\n{0}\n\n目录会立即刷新；新来源的目录同样经过签名校验（fail-closed）。确认继续？").format(url.strip()),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._catalog_url = url.strip()
+        self._footer.setText(_(f"市场源已切换：{self._catalog_url}"))
+        self.refresh()
+
     def _on_catalog_loaded(self, catalog: dict[str, Any]) -> None:
         self._catalog = catalog
         self._state = "ready"

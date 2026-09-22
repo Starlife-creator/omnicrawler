@@ -247,3 +247,55 @@ def test_local_install_invalid_dir_warns_without_switching(
     assert "catalog.json" in host._toast.last("warning")
     assert host._catalog_url == before
     assert host.refresh_calls == []
+
+
+def test_switch_source_confirms_then_switches(
+    host: _StubHost, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """多市场源（§10.2 #4）：https 源经确认后切换并刷新。"""
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(
+        "PySide6.QtWidgets.QInputDialog.getText",
+        staticmethod(lambda *a, **k: ("https://market.example.com/", True)),
+    )
+    monkeypatch.setattr(
+        "PySide6.QtWidgets.QMessageBox.question",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes),
+    )
+    host._on_switch_source()
+    assert host._catalog_url == "https://market.example.com/"
+    assert host.refresh_calls == ["https://market.example.com/"]
+
+
+def test_switch_source_declined_keeps_source(
+    host: _StubHost, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PySide6.QtWidgets import QMessageBox
+
+    before = host._catalog_url
+    monkeypatch.setattr(
+        "PySide6.QtWidgets.QInputDialog.getText",
+        staticmethod(lambda *a, **k: ("https://market.example.com/", True)),
+    )
+    monkeypatch.setattr(
+        "PySide6.QtWidgets.QMessageBox.question",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.No),
+    )
+    host._on_switch_source()
+    assert host._catalog_url == before
+    assert host.refresh_calls == []
+
+
+def test_switch_source_invalid_url_warns(
+    host: _StubHost, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = host._catalog_url
+    monkeypatch.setattr(
+        "PySide6.QtWidgets.QInputDialog.getText",
+        staticmethod(lambda *a, **k: ("http://insecure.example.com/", True)),
+    )
+    host._on_switch_source()
+    assert "http" in host._toast.last("warning")
+    assert host._catalog_url == before
+    assert host.refresh_calls == []
