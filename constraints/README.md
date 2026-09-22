@@ -23,6 +23,14 @@ The initial pin is `7912f85d72d2631a72f59e1b6c9ef5a383bec431`, the market snapsh
 used by the local plugin regression (337 passed, 8 skipped). It is a compatibility
 baseline, not a statement that this is the latest market version.
 
+★ **2026-09-22 推进到 `6642d9b26100738b35c1a6e1e370cbc73ca062ef`**（市场仓 `main`）：
+市场侧把插件许可白名单按方向 B 收紧后，`test` 作业里的**跨仓双向相等守卫**
+（`tests/unit/plugin/test_plugin_audit.py::test_allowlist_matches_market_gate`）比对的是
+**本 pin 对应的市场源码**，不是市场仓 `main`。若 pin 仍停在旧快照，守卫会拿旧白名单
+（含 AGPL/GPL）去比对新策略 ⇒ **只在 CI 判红**（本机用真实同级市场仓则绿）。
+⇒ **凡是市场侧的「策略」改动（许可白名单、schema 约束等），推进本 pin 是必需步骤，不是可选项。**
+内容类改动仍按上面的校验流程自行决定何时推进。
+
 To update this pin, validate the candidate with the application's existing
 `tests/unit/plugin` suite and record the application/market SHA pair. Fetching
 from GitHub still requires network access and, for a private repository, the

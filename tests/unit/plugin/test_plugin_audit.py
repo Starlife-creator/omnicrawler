@@ -154,7 +154,10 @@ def test_allowlist_matches_market_gate() -> None:
     ours = frozenset(LICENSE_ALLOWLIST)
     assert market_set == ours, (
         f"两侧白名单漂移 —— 仅本仓有 {sorted(ours - market_set)}；"
-        f"仅市场仓有 {sorted(market_set - ours)}"
+        f"仅市场仓有 {sorted(market_set - ours)}。"
+        "★ 若本条**只在 CI 红**：`test` 作业用的是 `constraints/market-ref.txt` 里固定的市场快照，"
+        "**不是**市场仓 main ⇒ 市场侧改动后必须同步推进该 pin（见 `tools/checkout_market.py`），"
+        "否则守卫读到的是旧策略。"
     )
 
 
