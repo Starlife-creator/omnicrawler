@@ -61,3 +61,8 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     import_es.add_argument("json", help="EasySpider 任务 JSON 文件")
     import_es.add_argument("-o", "--output", help="输出 YAML 路径（默认 stdout）")
     import_es.add_argument("--ir", action="store_true", help="输出 Task IR JSON 而非 YAML")
+    # P2-2：默认 stdout 是 YAML（不是 JSON）⇒ 显式标注并可切换，避免 agent 按 JSON 解析它
+    import_es.add_argument(
+        "--format", default="yaml", choices=("yaml", "json"),
+        help="配置输出的 stdout 形态（默认 yaml；json 供机器消费。--ir 时不生效）",
+    )

@@ -195,7 +195,12 @@ def _run_plugins(args: argparse.Namespace) -> None:
         if getattr(args, "report", False):
             from ..plugins.plugin_audit import generate_environment_report
 
-            print(generate_environment_report())
+            report = generate_environment_report()
+            # P2-2：默认仍是文本（人读）；`--format json` 时 stdout 才是纯 JSON。
+            if str(getattr(args, "format", "text") or "text").lower() == "json":
+                _json({"ok": True, "report": report})
+            else:
+                print(report)
             raise SystemExit(0)
         # Phase 2b（H4 第 66 轮④）：--export-egress 导出共现事件 JSONL（SIEM）
         egress_export = getattr(args, "export_egress", None)
@@ -322,8 +327,12 @@ def _run_import_easyspider(args: argparse.Namespace) -> None:
         return
     config = import_easyspider(args.json, output_path=args.output)
     if not args.output:
-        import yaml as _yaml
-        print(_yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False))
+        # P2-2：默认仍是 YAML（既有行为不变），但形态可显式选择，避免被当作 JSON 解析。
+        if str(getattr(args, "format", "yaml") or "yaml").lower() == "json":
+            print(_json.dumps(config, ensure_ascii=False, indent=2))
+        else:
+            import yaml as _yaml
+            print(_yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False))
 
 
 @_register("visual-select")
@@ -738,12 +747,15 @@ def _run_convert(args: argparse.Namespace) -> None:
     if not getattr(args, "quiet", False):
         written = result.extra.get("written_records")
         status = "⚠ 转换完成（有异常）" if result.warnings else "✅ 转换完成"
+        # ★ 人类可读摘要一律走 stderr：stdout 必须保持**纯 JSON**，
+        #   否则 `omnicrawler convert ... | jq` 这类管道会被这段文本打断（P2-2 唯一真 bug）。
         print(
             f"{status}: {result.source_format} → {result.target_format} "
-            f"写入 {written if written is not None else '未知'} 行, {len(result.columns)} 列 -> {result.output_path}"
+            f"写入 {written if written is not None else '未知'} 行, {len(result.columns)} 列 -> {result.output_path}",
+            file=sys.stderr,
         )
         for w in result.warnings:
-            print(f"  ⚠ {w}")
+            print(f"  ⚠ {w}", file=sys.stderr)
     _json({
         "ok": True,
         "source_format": result.source_format,

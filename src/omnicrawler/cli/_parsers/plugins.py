@@ -22,6 +22,11 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     plugins.add_argument("--local", default=None, help="audit 子命令：审计的本地插件目录")
     # Phase 2a（B5/H4）：plugins audit --report 生成脱敏环境诊断报告
     plugins.add_argument("--report", action="store_true", help="audit 子命令：生成脱敏环境诊断报告")
+    # P2-2：--report 默认是给人看的文本；给机器消费时显式选 json（stdout 口径才一致）
+    plugins.add_argument(
+        "--format", default="text", choices=("text", "json"),
+        help="audit 子命令：--report 的 stdout 形态（默认 text；json 供机器消费）",
+    )
     # Phase 2b（H4 第 66 轮④）：plugins audit --export-egress <file> SIEM 共现导出
     plugins.add_argument(
         "--export-egress", default=None, metavar="FILE",
