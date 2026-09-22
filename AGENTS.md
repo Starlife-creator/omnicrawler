@@ -43,7 +43,7 @@
 
 ## 三、已定决策（不要重新翻案）
 
-- **不引入 MCP**：CLI 即 agent 面（`python tools/agent_surface.py --json` 导出契约）。
+- **不引入 MCP**：CLI 即 agent 面（`python tools/check_agent_surface.py --json` 导出契约）。
 - **许可白名单＝方向 B（收紧）**：插件与插件依赖的许可白名单**不含 AGPL / GPL 系**。
 - **不融合 stealth-browser-mcp**：其价值主张落在「规避风控 / 隐匿身份」，属明确不融合范畴。
 

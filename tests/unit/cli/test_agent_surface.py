@@ -1,4 +1,4 @@
-"""`tools/agent_surface.py` 的自测 —— 重点是**每一类缺口都会被抓到**。
+"""`tools/check_agent_surface.py` 的自测 —— 重点是**每一类缺口都会被抓到**。
 
 契约类门禁最容易出现的失效是「看起来在跑、其实恒真」：命令数为 0 时所有断言都过，
 或者只检查了其中一侧（解析器有 ⇒ 注册表有没有？）。这里逐类反向验证。
@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from tools.agent_surface import build_surface, main, validate_surface
+from tools.check_agent_surface import build_surface, main, validate_surface
 
 
 def _command(name: str, **overrides: object) -> dict[str, object]:

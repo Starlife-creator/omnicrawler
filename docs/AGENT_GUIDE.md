@@ -7,9 +7,9 @@
 不要靠 `--help` 的文本猜。机器可读的契约在这里拿：
 
 ```bash
-python tools/agent_surface.py --json     # 完整契约（命令 / 参数 / 退出码 / stdout 形态）
-python tools/agent_surface.py            # 一行一个命令的摘要
-python tools/agent_surface.py --check    # 校验契约完整性（CI 门禁同款）
+python tools/check_agent_surface.py --json     # 完整契约（命令 / 参数 / 退出码 / stdout 形态）
+python tools/check_agent_surface.py            # 一行一个命令的摘要
+python tools/check_agent_surface.py --check    # 校验契约完整性（CI 门禁同款）
 ```
 
 契约里每个命令都有：`options`（参数与默认值）、`observed_exit_codes`（源码里静态提取到的退出码）、
@@ -54,7 +54,7 @@ python tools/agent_surface.py --check    # 校验契约完整性（CI 门禁同�
 
 ```bash
 # 1) 拿契约
-python tools/agent_surface.py --json > /tmp/surface.json
+python tools/check_agent_surface.py --json > /tmp/surface.json
 
 # 2) 转换：stdout 是纯 JSON，可直接解析
 omnicrawler convert --from in.csv --to out.jsonl --quiet
@@ -68,4 +68,4 @@ omnicrawler plugins audit --report --format json
 - 契约描述的是**调用面**（命令 / 参数 / 输出形态），**不承诺**任何单个命令的业务语义；
   业务语义以各命令的 `--help` 与对应文档为准。
 - `stdout_source=unknown` 一旦出现就是缺陷：它意味着新增命令时既没接 `_json()`、
-  也没在 `tools/agent_surface.py` 的 `DECLARED_OUTPUT` 里声明形态。
+  也没在 `tools/check_agent_surface.py` 的 `DECLARED_OUTPUT` 里声明形态。

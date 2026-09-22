@@ -175,10 +175,10 @@ GATES: tuple[Gate, ...] = (
     ),
     Gate(
         name="check_agent_surface",
-        args=("tools/agent_surface.py", "--check"),
+        args=("tools/check_agent_surface.py", "--check"),
         sets=_STATIC,
         description="agent 面：CLI 契约（命令/参数/退出码/stdout 形态）完整且双向自洽",
-        script="tools/agent_surface.py",
+        script="tools/check_agent_surface.py",
         ci_note=(
             "防两类沉默失效：① 解析器有命令而注册表没有处理函数（解析器里有 ≠ 能执行）；"
             "② 命令的 stdout 形态既不可验证也未声明（agent 只能靠猜）。命令数为 0 亦判红。"

@@ -144,9 +144,11 @@ def test_both_cli_entry_points_report_actual_written_rows(tmp_path, monkeypatch,
     assert payload["rows"] == 700
     assert payload["written_records"] == 2
     _run_convert(argparse.Namespace(src=str(source), dst=str(target), quiet=False))
-    output = capsys.readouterr().out
-    assert "写入 2 行" in output
-    assert "有异常" in output
+    captured = capsys.readouterr()
+    # P2-2 之后的人类摘要走 **stderr**；stdout 必须保持纯 JSON（管道可解析）。
+    assert "写入 2 行" in captured.err
+    assert "有异常" in captured.err
+    json.loads(captured.out)
 
 
 @pytest.mark.parametrize("stage", ["before", "read", "write"])

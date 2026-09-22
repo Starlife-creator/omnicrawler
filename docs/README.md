@@ -14,7 +14,7 @@
 | 桌面 GUI 用户 | [桌面运行、工作区与组件](DESKTOP_RUNTIME_1.4.md)、[桌面视觉与交互规范](GUI_DESIGN_2.1.md) |
 | 插件作者 | [插件契约](PLUGIN_CONTRACT.md)、[插件作者指南](AUTHOR_GUIDE.md)、[SDK 使用指南](SDK_USAGE.md) |
 | 代码贡献者 | 根目录 [CONTRIBUTING.md](../CONTRIBUTING.md)、[编码规范](CODING_STANDARDS.md)、[架构](ARCHITECTURE.md) |
-| AI / 自动化脚本 | [Agent 使用指南](AGENT_GUIDE.md)（先取机器契约：`python tools/agent_surface.py --json`） |
+| AI / 自动化脚本 | [Agent 使用指南](AGENT_GUIDE.md)（先取机器契约：`python tools/check_agent_surface.py --json`） |
 
 ## 2. 现行文档
 
