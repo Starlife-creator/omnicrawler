@@ -47,7 +47,6 @@ Playwright 的 context 随浏览器窗口一起消失：用户**直接关窗**�
 from __future__ import annotations
 
 import importlib.util
-import os
 import threading
 import time
 from collections.abc import Callable
@@ -61,7 +60,7 @@ from ..core.config import AppConfig
 from ..core.errors import OmniCrawlError
 from ..security.policy import NetworkTargetPolicy
 from ..security.redaction import redact_url
-from . import session_state
+from . import session_crypto, session_state
 from .browser_launch import build_launch_args
 
 __all__ = [
@@ -214,7 +213,8 @@ class PlaywrightLoginLauncher:
             browser = playwright.chromium.launch(headless=False, args=launch_args)
             options: dict[str, Any] = {"user_agent": user_agent}
             if storage_state_path.is_file():
-                options["storage_state"] = str(storage_state_path)
+                # U5（§11.8）：与爬取加载同一入口 —— 信封解密 / 旧明文一次性迁移。
+                options["storage_state"] = session_crypto.load_storage_state(storage_state_path)
             if proxy:
                 options["proxy"] = {"server": proxy}
             context = browser.new_context(**options)
@@ -234,14 +234,9 @@ class PlaywrightLoginLauncher:
             raise LoginSessionError("登录窗口已关闭，无法再读取登录态。")
         # ★ cookies 只在**本函数内**存活：只取计数与域名，值不参与返回、日志或异常。
         cookies = context.cookies()
-        storage_state_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = storage_state_path.with_name(storage_state_path.name + ".tmp")
-        try:
-            context.storage_state(path=str(tmp))
-            os.replace(tmp, storage_state_path)
-        finally:
-            tmp.unlink(missing_ok=True)
-        _chmod_owner_only(storage_state_path)
+        # U5（§11.8）：storage_state() 取 dict → 信封原子写（0600）。
+        # 旧实现的 .tmp 明文中转文件不复存在 —— 明文自始至终不落盘。
+        session_crypto.save_storage_state(context.storage_state(), storage_state_path)
         domains = tuple(
             sorted({str(item.get("domain", "")) for item in cookies if item.get("domain")})
         )
@@ -527,10 +522,3 @@ def _close_quietly(target: Any) -> None:
         closer()
     except Exception:  # noqa: BLE001
         return
-
-
-def _chmod_owner_only(path: Path) -> None:
-    try:
-        os.chmod(path, 0o600)
-    except OSError:
-        return  # Windows 无 POSIX 权限语义

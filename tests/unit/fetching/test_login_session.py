@@ -27,6 +27,7 @@ import pytest
 
 from omnicrawler.core.config import AppConfig, load_config
 from omnicrawler.core.models import CrawlRequest
+from omnicrawler.fetching import session_crypto
 from omnicrawler.fetching.browser_launch import build_launch_args
 from omnicrawler.fetching.browser_pool import PlaywrightPool
 from omnicrawler.fetching.login_session import (
@@ -491,7 +492,7 @@ class _FakeContext:
         self.options = options
         self.closed = False
         self.pages: list[_FakePage] = []
-        self.state_calls: list[str] = []
+        self.state_calls: int = 0
 
     def new_page(self) -> _FakePage:
         page = _FakePage()
@@ -501,9 +502,10 @@ class _FakeContext:
     def cookies(self) -> list[dict[str, Any]]:
         return [{"name": "sid", "value": _SECRET, "domain": "example.org"}]
 
-    def storage_state(self, *, path: str) -> None:
-        self.state_calls.append(path)
-        Path(path).write_text(json.dumps({"cookies": [{"name": "sid", "value": _SECRET}]}), "utf-8")
+    def storage_state(self) -> dict[str, Any]:
+        # U5 后契约：capture 以**无参**调用取 dict（明文不再中转落盘）。
+        self.state_calls += 1
+        return {"cookies": [{"name": "sid", "value": _SECRET}]}
 
     def close(self) -> None:
         self.closed = True
@@ -599,7 +601,10 @@ def test_real_launcher_passes_proxy_and_seeds_existing_state(tmp_path: Path) -> 
     options = playwright.browser.context_options
     assert options is not None
     assert options["proxy"] == {"server": "http://proxy.example:8080"}
-    assert options["storage_state"] == str(path)
+    # U5 后契约：传入的是**解密后的 dict**（种子文件是旧明文 ⇒ 读取时迁移），不再是路径串。
+    assert options["storage_state"] == {"cookies": []}
+    # ★ 一次性迁移：读旧明文后，盘上文件必须已是信封。
+    assert session_crypto.classify_snapshot(path.read_bytes()) == "envelope"
 
 
 def test_real_launcher_capture_is_atomic_and_owner_only(tmp_path: Path) -> None:
@@ -615,10 +620,14 @@ def test_real_launcher_capture_is_atomic_and_owner_only(tmp_path: Path) -> None:
     assert capture == LoginCapture(cookie_count=1, domains=("example.org",))
     context = playwright.browser.context
     assert context is not None
-    # ★ 原子写：Playwright 必须写临时文件、由我们 replace —— 直接写目标路径会让
-    #   并发读者（爬取侧）读到写了一半的 JSON。
-    assert context.state_calls == [str(path.with_name(path.name + ".tmp"))]
+    # ★ U5 后原子写：Playwright 只被无参调用一次（返回 dict），信封由 session_crypto
+    #   原子落盘（tmp+replace 在 helper 内）—— 明文自始至终不落盘。
+    assert context.state_calls == 1
     assert path.is_file()
+    # ★ 落盘的是信封（magic 开头），且 cookie 明文值不在盘上任何字节里。
+    blob = path.read_bytes()
+    assert session_crypto.classify_snapshot(blob) == "envelope"
+    assert _SECRET.encode("utf-8") not in blob
     assert not path.with_name(path.name + ".tmp").exists()
     if os.name == "posix":
         assert stat.S_IMODE(path.stat().st_mode) == 0o600

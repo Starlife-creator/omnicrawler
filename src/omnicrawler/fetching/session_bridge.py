@@ -35,7 +35,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from http.cookiejar import Cookie
@@ -44,6 +43,7 @@ from typing import Any
 
 from ..core.config import AppConfig
 from ..core.errors import OmniCrawlError
+from . import session_crypto
 from .session import CookieSession, get_cookie_session
 from .session_state import SessionPersistenceDisabledError
 
@@ -250,10 +250,13 @@ def bridge_from_storage_state_file(
     state_path = Path(storage_state_path)
     if not state_path.is_file():
         raise SessionBridgeError(f"storage_state 快照不存在：{state_path.name}")
+    # U5（§11.8）：快照读取统一走 session_crypto（信封解密 / 旧明文一次性迁移）。
     try:
-        data = json.loads(state_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise SessionBridgeError("storage_state 快照读取失败（文件损坏或不是 JSON）。") from exc
+        data = session_crypto.load_storage_state(state_path)
+    except session_crypto.SessionCryptoError as exc:
+        raise SessionBridgeError(f"storage_state 快照读取失败：{exc}") from exc
+    except OSError as exc:
+        raise SessionBridgeError("storage_state 快照读取失败（无权限或被占用）。") from exc
     if not isinstance(data, Mapping):
         raise SessionBridgeError("storage_state 快照的顶层不是对象，无法桥接。")
 

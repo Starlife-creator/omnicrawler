@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import queue
 import threading
 import time
@@ -26,7 +25,7 @@ from ..core.safe_data import safe_json_loads
 from ..core.utils import canonicalize_url
 from ..security.egress import EgressBroker
 from ..security.policy import NetworkTargetPolicy
-from . import session_state
+from . import session_crypto, session_state
 from .browser_engines import run_actions_for_page
 from .browser_guards import strip_cross_origin_credentials
 from .browser_launch import build_launch_args
@@ -276,7 +275,9 @@ class PlaywrightPool:
         state_path = self._state_path(context_key)
         options: dict[str, Any] = {"user_agent": self.config.section("http").get("user_agent")}
         if state_path and state_path.is_file():
-            options["storage_state"] = str(state_path)
+            # U5（§11.8）：快照读取统一走 session_crypto —— 信封解密 / 旧明文一次性迁移；
+            # 解密后的 dict 直接传 Playwright，**绝不落临时明文文件**。
+            options["storage_state"] = session_crypto.load_storage_state(state_path)
         # S2.5.13：与 _context_key 同源——meta 代理优先，否则配置代理
         # FINAL-S9：代理统一过 NetworkTargetPolicy——与 http/async 引擎既有
         # 行为一致（二者自始即校验配置代理），浏览器路径此前是唯一未校验的旁路。
@@ -319,11 +320,8 @@ class PlaywrightPool:
         if state_path is None:
             return
         state_path.parent.mkdir(parents=True, exist_ok=True)
-        context.storage_state(path=str(state_path))
-        try:
-            os.chmod(state_path, 0o600)
-        except OSError:
-            pass
+        # U5（§11.8）：storage_state() 取 dict → 信封原子写（0600）。明文不落盘。
+        session_crypto.save_storage_state(context.storage_state(), state_path)
 
     def _guard_route(self, route: Any, *, target_url: str = "") -> None:
         try:
