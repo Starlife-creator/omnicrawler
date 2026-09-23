@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
 from datetime import datetime
 from urllib.parse import urlsplit
 
@@ -160,3 +162,100 @@ def notice_text(*, sessions_dir: str, bridge_enabled: bool) -> str:
     )
     lines.append(_("你可以随时在本页关闭同步开关，或在这里删除某个已保存的会话。"))
     return "\n".join(lines)
+
+
+# ── U4-代码：任务运行命中 401 / 302→login 时的联动提示 ────────────────
+
+#: 401：明确表示"未通过认证"，是"需要先登录"的唯一强信号。
+_UNAUTHORIZED_STATUS = 401
+
+#: 会把下方 URL 里的登录路径当作"被重定向到登录页"的目标状态码。
+_LOGIN_REDIRECT_STATUS = (302, 303, 307, 308)
+
+#: 「401」的**显式**上下文（刻意窄：裸数字 401 可能出现在记录 ID / 页码里，
+#: 误报会把用户推到"去登录一个本来不需要登录的站点"）。
+#:
+#: 第一条覆盖真实报文的两种写法：本项目 `LoginFailedError` 写的是「登录失败: HTTP 401」
+#: （无版本号），而 `requests`/浏览器日志常写「HTTP/1.1 401」。
+_UNAUTHORIZED_PATTERNS = (
+    re.compile(r"\bhttp(?:/\d(?:\.\d)?)?\s+401\b", re.IGNORECASE),
+    re.compile(r"\b(?:status_code|status|code|statuscode)\s*[:=]\s*401\b", re.IGNORECASE),
+    re.compile(r"\b401\s+unauthorized\b", re.IGNORECASE),
+)
+
+_REDIRECT_PATTERN = re.compile(r"\b(?:302|303|307|308)\b")
+
+_LOGIN_URL_PATTERN = re.compile(
+    r"https?://[^\s\"'<>]*?(?:log[-_]?in|sign[-_]?in|auth|passport)[^\s\"'<>]*",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class LoginSignal:
+    """一次"可能需要登录"的判定结果。★ 只含状态与 URL，不含任何凭据。"""
+
+    status: int | None
+    login_url: str
+    reason: str
+
+
+def _login_url_in(text: str) -> str:
+    match = _LOGIN_URL_PATTERN.search(text)
+    return match.group(0) if match else ""
+
+
+def detect_login_signal(message: str) -> LoginSignal | None:
+    """从一条运行日志里判断"是否需要登录"。
+
+    判据刻意**窄**且两类证据都必须显式：
+
+    * **401**：``HTTP 401`` / ``status_code=401`` / ``401 Unauthorized`` 三种明确写法
+      （裸 ``401`` 不算 —— 它可能是记录 ID 或页码）；
+    * **重定向到登录页**：出现 302/303/307/308 **且**同一行里有一个含
+      ``login``/``signin``/``auth``/``passport`` 的 URL。
+
+    403（禁止）**不**当作"需要登录"：那是权限问题，去登录页没有意义。
+    """
+    text = message or ""
+    if not text:
+        return None
+    if any(pattern.search(text) for pattern in _UNAUTHORIZED_PATTERNS):
+        return LoginSignal(
+            status=_UNAUTHORIZED_STATUS,
+            login_url=_login_url_in(text),
+            reason=_("任务被目标站点拒绝访问（HTTP 401）：可能需要先登录。"),
+        )
+    if _REDIRECT_PATTERN.search(text):
+        url = _login_url_in(text)
+        if url:
+            return LoginSignal(
+                status=None,
+                login_url=url,
+                reason=_("任务被重定向到登录页：可能需要先登录。"),
+            )
+    return None
+
+
+class LoginHintGate:
+    """一次运行**只提示一次**（同一次跑里 401 往往会连着刷屏）。"""
+
+    def __init__(self) -> None:
+        self._announced = False
+
+    @property
+    def announced(self) -> bool:
+        return self._announced
+
+    def reset(self) -> None:
+        self._announced = False
+
+    def should_announce(self, message: str) -> LoginSignal | None:
+        """命中且本run 还没提示过 ⇒ 返回信号并置位；否则返回 ``None``。"""
+        if self._announced:
+            return None
+        signal = detect_login_signal(message)
+        if signal is None:
+            return None
+        self._announced = True
+        return signal

@@ -14,9 +14,11 @@ from omnicrawler.core.config import AppConfig, load_config
 from omnicrawler.fetching.login_session import LoginPhase
 from omnicrawler.fetching.session_state import SessionSummary
 from omnicrawler.gui.views.login_session_logic import (
+    LoginHintGate,
     bridge_default,
     bridge_hosts,
     degradation_hint,
+    detect_login_signal,
     effective_bridge_enabled,
     format_remaining,
     format_timestamp,
@@ -204,3 +206,91 @@ def test_notice_text_reflects_bridge_state() -> None:
     off = notice_text(sessions_dir="s", bridge_enabled=False)
     assert on != off
     assert "不会同步" in off
+
+
+# ── U4-代码：「需要登录」信号 ─────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "登录失败: HTTP 401",
+        "GET https://example.org/list -> HTTP/1.1 401 Unauthorized",
+        "fetch failed: status_code=401",
+        "REQUEST FAILED code: 401",
+        "401 Unauthorized",
+    ],
+)
+def test_unauthorized_messages_are_detected(message: str) -> None:
+    signal = detect_login_signal(message)
+    assert signal is not None
+    assert signal.status == 401
+    assert signal.reason
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "记录 401 已保存",
+        "page=4 offset=401",
+        "HTTP/1.1 403 Forbidden",  # 403 是权限问题，去登录页没有意义
+        "HTTP/1.1 200 OK",
+        "connection reset by peer",
+        "",
+    ],
+)
+def test_non_login_messages_are_not_flagged(message: str) -> None:
+    """★ 判据刻意窄：误报会把用户推去登录一个本来不需要登录的站点。"""
+    assert detect_login_signal(message) is None
+
+
+def test_redirect_to_login_page_is_detected_with_url() -> None:
+    signal = detect_login_signal("GET /list -> 302 Found Location: https://example.org/login?next=/list")
+    assert signal is not None
+    assert signal.status is None
+    assert signal.login_url == "https://example.org/login?next=/list"
+
+
+def test_redirect_without_login_url_is_not_flagged() -> None:
+    """302 落在**非**登录页 ⇒ 不提示（否则每次跳转都会劝人去登录）。
+
+    ★ 这里必须用**被纳入**的状态码（302）：用 301 的话根本没走到该分支，
+    这条"负例"就成了假判据（反向断言实测暴露过）。
+    """
+    assert detect_login_signal("302 -> https://example.org/moved") is None
+
+
+def test_permanent_redirect_is_not_treated_as_login_redirect() -> None:
+    """301（永久跳转）不在纳入范围：它通常只是站点改址，不是登录墙。"""
+    assert detect_login_signal("301 -> https://example.org/login") is None
+
+
+def test_unauthorized_signal_carries_login_url_when_present() -> None:
+    signal = detect_login_signal("HTTP 401 -> https://example.org/signin")
+    assert signal is not None
+    assert signal.login_url == "https://example.org/signin"
+
+
+def test_hint_gate_announces_only_once_per_run() -> None:
+    gate = LoginHintGate()
+    assert gate.announced is False
+
+    first = gate.should_announce("HTTP 401 Unauthorized")
+    second = gate.should_announce("HTTP 401 Unauthorized")
+
+    assert first is not None and second is None
+    assert gate.announced is True
+
+
+def test_hint_gate_reset_re_arms() -> None:
+    gate = LoginHintGate()
+    assert gate.should_announce("HTTP 401") is not None
+    gate.reset()
+    assert gate.announced is False
+    assert gate.should_announce("HTTP 401") is not None
+
+
+def test_hint_gate_ignores_unrelated_lines() -> None:
+    gate = LoginHintGate()
+    assert gate.should_announce("已抓取 10 条记录") is None
+    assert gate.announced is False

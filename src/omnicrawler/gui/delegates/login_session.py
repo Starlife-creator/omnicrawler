@@ -49,12 +49,28 @@ class LoginSessionDelegate(_BaseDelegate):
         self._cached_config = None
 
     def open_page(self, *, account: str = "", url: str = "") -> None:
-        """跳到登录会话页并预填登录区（U4：任务命中 401 / 302→login 时调用）。"""
+        """跳到登录会话页并预填登录区（U4：任务命中 401 / 302→login 时调用）。
+
+        未显式给出时按当前任务配置预填：账户取 ``session.name``，
+        地址取第一个种子 URL（目标站点通常就是登录站点；用户可随手改）。
+        """
         view = getattr(self, "view", None)
         if view is None:
             return
+        if not account or not url:
+            default_account, default_url = self._page_defaults()
+            account = account or default_account
+            url = url or default_url
         view.prefill(account=account, url=url)
         self._mw._nav.setCurrentRow(NavIndex.LOGIN_SESSION)
+
+    def _page_defaults(self) -> tuple[str, str]:
+        config = self.current_config()
+        session = config.section("session")
+        account = str(session.get("name", "") or "")
+        seeds = config.section("source").get("seeds")
+        url = str(seeds[0]) if isinstance(seeds, (list, tuple)) and seeds else ""
+        return account, url
 
     def shutdown(self) -> None:
         """窗口关闭时停掉轮询定时器（幂等）。"""

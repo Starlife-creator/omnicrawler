@@ -8,11 +8,18 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
 from ..core.run_states import is_terminal, normalize_state, state_label
 from ..i18n import _
+from ..views.login_session_logic import LoginHintGate
+from ..widgets.toast import ToastManager
 from ._base import _BaseDelegate
 
 
 class RunController(_BaseDelegate):
     """Task execution, stop, progress tracking, and state callbacks."""
+
+    #: U4-代码：「需要登录」联动提示的去重门（一次运行只提示一次）。
+    #: 用类级 ``None`` 默认值 + 首次使用时创建，而不是重写 ``__init__``——
+    #: 后者要在类型层引一次 ``MainWindow``，白添一条进环的依赖。
+    _login_hint_gate: LoginHintGate | None = None
 
     def toggle_pause(self) -> None:
         mw = self._mw
@@ -25,6 +32,10 @@ class RunController(_BaseDelegate):
 
     def run_task(self) -> None:
         mw = self._mw
+        # U4-代码：新的一次运行重新开始计数（上次跑提示过，不代表这次不需要登录）。
+        # 放在最前：即便环境检查没过，用户"又一次点了运行"这件事本身就该重置。
+        if self._login_hint_gate is not None:
+            self._login_hint_gate.reset()
         from ..core.validator import plugin_source_kinds, validate_full_config
         if not mw._omnicrawler_available:
             mw._env_checker.check_environment(silent=False)
@@ -99,7 +110,22 @@ class RunController(_BaseDelegate):
 
     @Slot(str, str)
     def on_log_line(self, message: str, level: str) -> None:
-        self._mw._log_console.append_log(message, level)
+        mw = self._mw
+        mw._log_console.append_log(message, level)
+        # U4-代码：命中 401 / 302→login 时联动提示一次（带"去登录"直达按钮）
+        gate = self._login_hint_gate
+        if gate is None:
+            gate = self._login_hint_gate = LoginHintGate()
+        signal = gate.should_announce(message)
+        if signal is None:
+            return
+        ToastManager.instance().show(
+            signal.reason,
+            kind="warning",
+            duration=6000,
+            action_text=_("去登录"),
+            action_callback=lambda: mw._login_session.open_page(url=signal.login_url),
+        )
 
     @Slot(int, str)
     def on_progress(self, percent: int, url: str) -> None:
