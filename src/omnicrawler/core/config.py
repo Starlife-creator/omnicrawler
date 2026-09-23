@@ -107,7 +107,10 @@ DEFAULTS: dict[str, Any] = {
         "max_api_capture_bytes": 10_000_000,
         "auto_generate_api_templates": True,
     },
-    "session": {"persist_cookies": False, "name": "default"},
+    # U1/U3（§11.1）：storage_state 快照与 HTTP cookie jar 的路径规则见
+    # fetching/session_state.py。bridge_to_http 默认开启（用户手动登录一次后
+    # 应当被 HTTP 引擎直接复用），关闭只影响之后的同步、不删除已存会话。
+    "session": {"persist_cookies": False, "name": "default", "bridge_to_http": True},
     "auth": {"provider": "", "options": {}},
     "extract": {
         "mode": "auto", "parser": "", "extractor": "", "item_selector": "", "fields": {},

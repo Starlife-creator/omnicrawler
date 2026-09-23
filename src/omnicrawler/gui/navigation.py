@@ -23,10 +23,11 @@ class NavIndex:
     PDF_WORKBENCH = 8
     CONVERT_TOOL = 9  # B-4：ConvertX 格式互转工具
     SCENE = 10  # S4：场景管理面板
-    ADVANCED_HEADER = 11
-    YAML_EDITOR = 12
-    EVIDENCE = 13
-    PLUGIN_MARKET = 14
-    DEVELOPER = 15
+    LOGIN_SESSION = 11  # U3：登录会话（工具分组；headed 登录窗口 + 会话列表）
+    ADVANCED_HEADER = 12
+    YAML_EDITOR = 13
+    EVIDENCE = 14
+    PLUGIN_MARKET = 15
+    DEVELOPER = 16
 
     HEADERS = frozenset({WORK_HEADER, AUTOMATION_HEADER, TOOLS_HEADER, ADVANCED_HEADER})

@@ -37,6 +37,7 @@ class ThemeManager(_BaseDelegate):
             NavIndex.YAML_EDITOR,
             NavIndex.EVIDENCE,
             NavIndex.SCENE,
+            NavIndex.LOGIN_SESSION,
             NavIndex.CHANGE_MONITOR,
             NavIndex.PLUGIN_MARKET,
             NavIndex.DEVELOPER,

@@ -12,6 +12,7 @@ from .config_manager import ConfigManager as ConfigManager
 from .env_checker import EnvironmentChecker as EnvironmentChecker
 from .error_dialog import ErrorDialogHelper as ErrorDialogHelper
 from .help_dialog import HelpDialogManager as HelpDialogManager
+from .login_session import LoginSessionDelegate as LoginSessionDelegate
 from .menu import MenuBuilder as MenuBuilder
 from .run_controller import RunController as RunController
 from .theme import ThemeManager as ThemeManager

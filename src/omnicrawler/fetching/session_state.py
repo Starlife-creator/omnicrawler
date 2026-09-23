@@ -31,6 +31,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..core.config import AppConfig
@@ -44,13 +47,17 @@ __all__ = [
     "SESSION_NAME_DIGEST_LENGTH",
     "STORAGE_STATE_SUFFIX",
     "SessionPersistenceDisabledError",
+    "SessionSummary",
     "context_key",
     "context_key_for_request",
+    "list_sessions",
+    "remove_session",
     "require_session_state_path",
     "session_name",
     "session_state_path",
     "storage_state_filename",
     "storage_state_path",
+    "summarize_session",
 ]
 
 SESSIONS_DIRNAME = "sessions"
@@ -168,3 +175,114 @@ def require_session_state_path(config: AppConfig, value: str) -> Path:
             "session.persist_cookies=false：登录会话无处落盘，已拒绝开始登录流程。"
         )
     return path
+
+
+@dataclass(frozen=True, slots=True)
+class SessionSummary:
+    """一份会话快照的**元数据摘要**（U3 的会话列表用）。
+
+    ★ 刻意不含任何 cookie 值：列表只需要"哪个账户、哪些域名、多少条、什么时候"。
+    """
+
+    name: str
+    account: str
+    path: Path
+    modified_at: float
+    cookie_count: int
+    domains: tuple[str, ...]
+    readable: bool
+    """``False`` = 快照存在但解析不出 cookie 列表（损坏/半截写）。
+
+    这种条目**保留在列表里并标出来**，不隐藏 —— 悄悄跳过等于让用户以为
+    "没有这个会话"，与"枚举为空要显式"是同一条纪律。
+    """
+
+    @property
+    def size_bytes(self) -> int:
+        try:
+            return self.path.stat().st_size
+        except OSError:
+            return 0
+
+
+def _account_from_name(name: str) -> str:
+    """从文件名主体 ``<账户前缀>-<摘要>`` 反推账户前缀（仅用于显示）。"""
+    prefix, separator, _digest = name.rpartition("-")
+    if separator and prefix:
+        return prefix
+    return name
+
+
+def summarize_session(path: Path) -> SessionSummary:
+    """读取一份快照的元数据（**不返回** cookie 值）。"""
+    file_path = Path(path)
+    stripped = (
+        file_path.name[: -len(STORAGE_STATE_SUFFIX)]
+        if file_path.name.endswith(STORAGE_STATE_SUFFIX)
+        else file_path.name
+    )
+    try:
+        modified_at = file_path.stat().st_mtime
+    except OSError:
+        modified_at = 0.0
+
+    cookie_count = 0
+    domains: tuple[str, ...] = ()
+    readable = False
+    try:
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        data = None
+    if isinstance(data, Mapping):
+        cookies = data.get("cookies")
+        if isinstance(cookies, list):
+            readable = True
+            cookie_count = len(cookies)
+            domains = tuple(
+                sorted(
+                    {
+                        str(item.get("domain", ""))
+                        for item in cookies
+                        if isinstance(item, Mapping) and item.get("domain")
+                    }
+                )
+            )
+    return SessionSummary(
+        name=stripped,
+        account=_account_from_name(stripped),
+        path=file_path,
+        modified_at=modified_at,
+        cookie_count=cookie_count,
+        domains=domains,
+        readable=readable,
+    )
+
+
+def list_sessions(workspace: Path) -> tuple[SessionSummary, ...]:
+    """列出 ``workspace/sessions`` 下的 storage_state 快照（最近修改的在前）。
+
+    目录不存在 ⇒ 返回空元组（合法的空态，由界面显示空状态而非报错）。
+    """
+    root = Path(workspace) / SESSIONS_DIRNAME
+    if not root.is_dir():
+        return ()
+    summaries = [
+        summarize_session(child)
+        for child in sorted(root.glob(f"*{STORAGE_STATE_SUFFIX}"))
+        if child.is_file()
+    ]
+    return tuple(sorted(summaries, key=lambda item: (-item.modified_at, item.name)))
+
+
+def remove_session(path: Path, *, workspace: Path) -> None:
+    """删除一份会话快照。
+
+    ★ 只删 ``<workspace>/sessions/*.playwright.json`` 这一种文件：目标必须落在
+    会话目录内、且是该目录的**直接子文件**。不接受任意路径 —— 删除动作的
+    合法范围必须由代码约束，而不是由调用方自觉。
+    """
+    sessions_root = (Path(workspace) / SESSIONS_DIRNAME).resolve()
+    target = Path(path).resolve()
+    if target.parent != sessions_root or not target.name.endswith(STORAGE_STATE_SUFFIX):
+        raise ValueError(f"拒绝删除非会话快照文件：{target.name}")
+    target.unlink(missing_ok=True)

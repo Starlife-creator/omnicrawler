@@ -116,6 +116,7 @@ if not _cli_mode():
         EnvironmentChecker,
         ErrorDialogHelper,
         HelpDialogManager,
+        LoginSessionDelegate,
         MenuBuilder,
         ThemeManager,
         ToolbarManager,
@@ -255,6 +256,7 @@ class MainWindow(QMainWindow):
         self._help_dialogs = HelpDialogManager(self)
         self._run_delegate = RunDelegate(self)
         self._config_delegate = ConfigDelegate(self)
+        self._login_session = LoginSessionDelegate(self)
 
         # ---- 项目根目录 ----
         project_root_str = self._settings.project_root
@@ -538,18 +540,36 @@ class MainWindow(QMainWindow):
     def _plugin_app_config(self) -> Any:
         """Build the plugin runtime config from the current GUI project state."""
 
+        return self._gui_app_config(plugin_fail_open=True)
+
+    def _login_app_config(self) -> Any:
+        """登录会话页使用的 AppConfig —— 与任务运行期同源（session / http / source 段）。
+
+        与市场面板同一条转换路子（``CrawlConfig`` → YAML → ``deep_merge(DEFAULTS)``），
+        但不改 ``plugins`` 段：登录会话与插件运行时无关。
+        """
+        return self._gui_app_config()
+
+    def _gui_app_config(self, *, plugin_fail_open: bool | None = None) -> Any:
+        """把当前 GUI 项目状态转成引擎侧 ``AppConfig``（唯一转换点）。
+
+        ``plugin_fail_open=True`` 时把 ``plugins.fail_open`` 置真（插件运行时的既有
+        语义）；``None`` 表示不动该段。
+        """
+
         from ..core.config import DEFAULTS, AppConfig, deep_merge
 
         serialized = yaml.safe_load(to_yaml(self._config)) or {}
         if not isinstance(serialized, dict):
-            raise ValueError(_("当前项目配置无法转换为插件运行配置"))
+            raise ValueError(_("当前项目配置无法转换为运行配置"))
         raw = deep_merge(copy.deepcopy(DEFAULTS), serialized)
-        plugins = raw.setdefault("plugins", {})
-        if not isinstance(plugins, dict):
-            raise ValueError(_("当前项目的 plugins 配置段必须是对象"))
-        # GUI isolates a broken plugin without relaxing signature, permission, or
-        # sandbox gates. Other approved plugins and the workbench remain usable.
-        plugins["fail_open"] = True
+        if plugin_fail_open is not None:
+            plugins = raw.setdefault("plugins", {})
+            if not isinstance(plugins, dict):
+                raise ValueError(_("当前项目的 plugins 配置段必须是对象"))
+            # GUI isolates a broken plugin without relaxing signature, permission, or
+            # sandbox gates. Other approved plugins and the workbench remain usable.
+            plugins["fail_open"] = plugin_fail_open
         root = self._project_root.resolve()
         workspace = Path(self._config.workspace).expanduser()
         if not workspace.is_absolute():
@@ -636,6 +656,7 @@ class MainWindow(QMainWindow):
             ("📄 " + _("PDF 工作台"), 6),
             ("🔁 " + _("格式互转"), 7),
             ("🎯 " + _("场景与模板"), 11),
+            ("🔐 " + _("登录会话"), 12),
             (_("高级"), None),
             ("📝 " + _("YAML 编辑器"), 1),
             ("🔍 " + _("证据查看器"), 5),
@@ -820,6 +841,10 @@ class MainWindow(QMainWindow):
         self._scene_panel = ScenePanel(Path(self._config.workspace).expanduser())
         self._stack.addWidget(self._scene_panel)
 
+        # U3：登录会话独立导航页（工具分组）—— headed 登录窗口 + 会话列表
+        self._login_session_view = self._login_session.setup()
+        self._stack.addWidget(self._login_session_view)
+
         main_layout.addWidget(self._stack)
         self._page_transition = PageTransitionController(
             self._stack, reduced_motion=self._settings.reduced_motion,
@@ -958,6 +983,10 @@ class MainWindow(QMainWindow):
             self._developer_inspector.refresh()
         elif page == 11:
             self._scene_panel.refresh_scenes()  # S4：进入场景面板时刷新
+        elif page == self._nav_pages.get(NavIndex.LOGIN_SESSION):
+            # U3：进入登录会话页才刷新列表 + 弹首次提醒（不做后台轮询）
+            if hasattr(self, "_login_session_view"):
+                self._login_session_view.activate()
 
     def _apply_quick_task(self, draft: QuickTaskDraft) -> None:
         self._apply_task_draft(draft)
@@ -1023,6 +1052,8 @@ class MainWindow(QMainWindow):
             self._toggle_btn.setText(_("⇄ 工作台"))
 
     def _bind_application_controllers(self) -> None:
+        # U3：配置保存/重载后让登录会话页重新取一次配置（含 userspace/session 段改动）
+        self._login_session.invalidate()
         if self._config_path is None:
             self._task_controller = self._run_controller = self._result_controller = None
             return
@@ -1938,6 +1969,8 @@ class MainWindow(QMainWindow):
             self._autosave.delete_draft()
         # 变更监测的轮询必须随窗口关闭停止（否则关闭后仍可能启动一次无人等待的检查）
         self._change_monitor.shutdown()
+        # U3：登录会话页的轮询定时器同样随窗口关闭停止
+        self._login_session.shutdown()
         self._release_probe_fetcher()
         self._clear_plugin_ui()
         if self._builtin_background_controller is not None:

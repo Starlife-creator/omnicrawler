@@ -63,10 +63,12 @@ def test_nav_index_constants() -> None:
     assert NavIndex.PDF_WORKBENCH == 8
     assert NavIndex.CONVERT_TOOL == 9
     assert NavIndex.SCENE == 10
-    assert NavIndex.YAML_EDITOR == 12
-    assert NavIndex.EVIDENCE == 13
-    assert NavIndex.PLUGIN_MARKET == 14
-    assert NavIndex.DEVELOPER == 15
+    # U3：登录会话插在「工具」分组末尾（场景与模板之后），其后的行号整体 +1
+    assert NavIndex.LOGIN_SESSION == 11
+    assert NavIndex.YAML_EDITOR == 13
+    assert NavIndex.EVIDENCE == 14
+    assert NavIndex.PLUGIN_MARKET == 15
+    assert NavIndex.DEVELOPER == 16
 
 
 # ── S3.1.4：日志缓存裁剪 ────────────────────────────────────────────

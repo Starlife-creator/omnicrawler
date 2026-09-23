@@ -4,6 +4,10 @@
 
 ### 变更
 
+- feat(gui): 「工具 → 登录会话」独立导航页 —— 需要登录的站点可**在浏览器里登录一次、之后采集免登录**（headed Playwright 登录窗口 + 会话列表；程序不代填密码、不代过验证码、不读取或显示 cookie 内容）
+- feat(fetching): 登录会话的 storage_state 路径规则收口为唯一真源（`fetching/session_state.py`），爬取侧与登录侧共用同一份快照；快照文件名改为「账户前缀 + 身份摘要」，**代理（可能内嵌用户名口令）不再出现在文件名里**
+- feat(fetching): 会话桥 `fetching/session_bridge.py` —— 登录后的 cookie 按域名归还给 HTTP 引擎；**只归还目标站点**（任务声明的种子域名 + 登录地址），第三方域不进 cookie 罐；没有匹配项、目标站点集合为空、快照不可解析时**显式报错**，不静默通过
+- docs(security): **显式声明**登录会话快照 `sessions/*.playwright.json` 为**明文 JSON**，仅靠文件权限（类 Unix 下 `0600`）与目录隔离保护，请勿置于同步盘/共享目录；用 AES-GCM 包装该快照列在后续批次，首期不做但**不静默**
 - feat(plugins): 运行前预检插件声明的依赖（缺失时给出可操作提示；warning 不阻断，因为 manifest 声明的是依赖全集而非本次配置所需；issue #75 §D）
 - feat(plugins): 运行期插件调用统一携带 `run_id`（此前只有 processor 载荷有）—— 插件据此把报告/统计按 run 分桶，而 `state` 仍跨 run 供增量；`view.*`/`resource.*`/`capability.*` 不带（issue #74 §6）
 - feat(plugins,gui): 文件型插件源可接入 GUI/CLI —— 插件 `source.kind` 不再强制 `seeds`，且 seed 载荷注入 `source.file`/`files` 与工作区（issue #75）
