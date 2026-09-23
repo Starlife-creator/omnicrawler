@@ -26,6 +26,7 @@ from ..core.safe_data import safe_json_loads
 from ..core.utils import canonicalize_url
 from ..security.egress import EgressBroker
 from ..security.policy import NetworkTargetPolicy
+from . import session_state
 from .browser_engines import run_actions_for_page
 from .browser_guards import strip_cross_origin_credentials
 from .browser_launch import build_launch_args
@@ -262,16 +263,14 @@ class PlaywrightPool:
         raise RuntimeError("Unreachable browser retry state")
 
     def _context_key(self, request: CrawlRequest) -> str:
-        session = self.config.section("session")
-        account = str(request.meta.get("account") or session.get("name", "default"))
-        proxy = str(request.meta.get("proxy") or self.config.section("http").get("proxy", ""))
-        return f"{account}|{proxy}"
+        # U1：会话身份键的推导收口到 session_state（登录会话页与爬取共用同一真源）。
+        return session_state.context_key_for_request(self.config, request)
 
     def _state_path(self, context_key: str) -> Path | None:
-        if not self.config.section("session").get("persist_cookies", False):
-            return None
-        safe_name = "".join(char if char.isalnum() or char in "-_" else "_" for char in context_key)[:120]
-        return self.config.workspace / "sessions" / f"{safe_name}.playwright.json"
+        # U1：路径规则收口到 session_state —— 此前是本类私有的两行内联规则，
+        # 登录会话管理器若各写一份必然漂移（登录保存的会话与爬取复用的会话
+        # 指向两个文件 ⇒ 登录了也白登录）。
+        return session_state.session_state_path(self.config, context_key)
 
     def _new_context(self, browser: Any, context_key: str, request: CrawlRequest) -> Any:
         state_path = self._state_path(context_key)

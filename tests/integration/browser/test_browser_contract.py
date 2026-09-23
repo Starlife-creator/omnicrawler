@@ -249,7 +249,14 @@ def test_pool_context_state_headers_proxy_and_route_guard(tmp_path: Path) -> Non
     key = pool._context_key(request)
     assert key == "user/name|http://proxy.example:8080"
     state_path = pool._state_path(key)
-    assert state_path is not None and "user_name_http___proxy" in state_path.name
+    # U1：文件名规则改为「可读账户前缀 + 身份摘要」（session_state.session_name）。
+    # 旧规则把整个 `account|proxy` 替换非法字符后当文件名，会把代理里的
+    # 用户名口令**字面写进文件名**（旧断言钉的正是那个形态）。这里改为钉住
+    # **新规则的安全性质**：账户前缀可读、代理不出现在名字里。
+    assert state_path is not None
+    assert state_path.name.startswith("user_name-")
+    assert "proxy.example" not in state_path.name
+    assert state_path.suffixes == [".playwright", ".json"]
     state_path.parent.mkdir(parents=True)
     state_path.write_text("{}", encoding="utf-8")
 
