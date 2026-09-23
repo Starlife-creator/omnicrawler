@@ -12,6 +12,7 @@ from typing import Any
 
 import yaml
 
+from ..core.utils import validate_user_agent_honesty
 from .template_catalog import TemplateCatalog, TemplateRecord
 
 
@@ -111,6 +112,18 @@ def validate_template(record: TemplateRecord) -> TemplateHealth:
                 errors.append(
                     f"extract.fields.{field_name}: json field contract is path/paths, not selector"
                 )
+    # B2：UA 诚实性在**配置入口**的守卫。core/utils 的铁则此前只覆盖
+    # build_user_agent 的函数出口；模板硬编码的 http.user_agent 会经
+    # browser_pool 直接生效并绕过该守卫（2026-09-23 审计：5 个 social 模板
+    # 硬编码 Chrome/127 UA）。命中浏览器伪造签名 ⇒ error。
+    http_cfg = record.config.get("http")
+    if isinstance(http_cfg, dict) and http_cfg.get("user_agent"):
+        try:
+            validate_user_agent_honesty(
+                str(http_cfg["user_agent"]), profile_name=f"template:{meta.template_id}"
+            )
+        except ValueError as exc:
+            errors.append(str(exc))
     # B11-006 / B05-009：模板不得翻转安全关键配置——`deep_merge` 会把模板段覆盖进
     # 用户配置，`validate_template` 是发布前最后一道闸。安全键只允许默认/更严方向。
     safety_violations = _unsafe_security_overrides(record.config)

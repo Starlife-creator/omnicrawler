@@ -815,3 +815,41 @@ class TestConfirmationEngineGate:
         assert "需要人工确认" in txt
         assert "自动 2/5" in txt
         assert "待人工确认 3/5" in txt
+
+
+# ── B2：搜索引擎结果页不进出厂映射（2026-09-23 移除三条，防回加）──────
+
+class TestSearchEnginesNotMapped:
+    """google/bing/baidu 不得出现在出厂 mappings / fallback_mapping 中。
+
+    ★ 判据边界：这里钉的是「出厂不背书抓 SERP」这一**语义** —— 移除映射后
+    这些域名未命中 L1/L2 时仍会走 ``_FINAL_FALLBACK_TEMPLATE``（行为不变），
+    不要把本组断言误读为"不再能对这些域名发起采集"。
+    """
+
+    _FORBIDDEN = {"google.com", "bing.com", "baidu.com"}
+
+    @staticmethod
+    def _loaded() -> SiteCategorizer:
+        sc = SiteCategorizer()
+        ok, _err = sc.reload(app_config=None, project_root=None, extra_yaml_paths=[])
+        assert ok
+        return sc
+
+    def test_not_in_default_mappings(self) -> None:
+        sc = self._loaded()
+        leaked = self._FORBIDDEN & set(sc.mappings)
+        assert not leaked, f"出厂 mappings 不得包含搜索引擎域名：{sorted(leaked)}"
+        leaked_fb = self._FORBIDDEN & set(sc.fallback_mapping)
+        assert not leaked_fb, f"fallback_mapping 不得包含搜索引擎域名：{sorted(leaked_fb)}"
+
+    def test_classification_behavior_unchanged(self) -> None:
+        """行为不变证据：未命中 L1/L2 仍走 FINAL_FALLBACK（删映射 != 改行为）。"""
+        sc = self._loaded()
+        summary = sc.classify(
+            ["https://www.google.com/search?q=omnicrawler"], catalog=None, fetcher=None
+        )
+        assert summary.per_url, "至少应产出一条分类结果"
+        result = summary.per_url[0]
+        assert result.template_id == _FINAL_FALLBACK_TEMPLATE
+        assert result.hit_source == _HIT_SOURCE_FALLBACK

@@ -9,6 +9,12 @@
 #    「builtin:xxx/xxx.yaml」大类模板（代码级强制，不会崩溃或 KeyError）。
 # 3. 用户可在 <project_root>/config/b2_domain_mappings.yaml 放项目级覆盖，或在
 #    config.yaml 的 source.categorizer.mappings 节内直接写；优先级：节内 > 项目级 > 本默认。
+# 4. 搜索引擎结果页（google.com / bing.com / baidu.com）**不得**进映射表
+#    （2026-09-23 移除原三条 → generic/list_detail 的映射）：三家服务条款均禁止
+#    自动化抓取结果页，出厂映射等于背书该行为，与 README 合规声明冲突。
+#    ★ 判据边界：移除映射只收回"出厂背书"，这些域名未命中 L1/L2 时仍会走
+#    _FINAL_FALLBACK_TEMPLATE（行为不变）；防回加断言见
+#    tests/unit/core/test_categorizer.py::test_search_engines_are_not_mapped。
 
 version: 1
 updated_at: 2026-08-13
@@ -74,9 +80,6 @@ mappings:
   # --- 文档 / 学术 / 开放数据 ---
   wikipedia.org:     sites/wikipedia-category
   zh.wikipedia.org:  sites/wikipedia-category
-  baidu.com:         builtin:generic/list_detail.yaml   # 百度搜索结果页
-  bing.com:          builtin:generic/list_detail.yaml
-  google.com:        builtin:generic/list_detail.yaml
   crossref.org:      sites/crossref-works
   openalex.org:      sites/openalex-works
   arxiv.org:         builtin:industries/academic_papers.yaml

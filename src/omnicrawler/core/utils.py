@@ -208,11 +208,16 @@ def excel_safe(value: Any, max_length: int = 32700) -> Any:
 
 # ── B-1：合规 User-Agent 分层（自报身份，绝不伪造反指纹） ─────────
 # 方法论借鉴：crawler-user-agents / user_agents 项目对「UA 分层」的分类思想，
-# 严格合规铁则（任何 profile 必通过，否则 ValueError 拒绝）：
+# 严格合规铁则（任何 profile 必通过，否则 ValueError 拒绝）。作用域 = 本模块
+# 生成的 **HTTP 默认 UA**（user_agent()/build_user_agent() 的产出与配置层守卫）：
 #   1. 必须包含 "OmniCrawler/<version>" 主标识；
 #   2. 绝不伪造为真实浏览器（Chrome/Edge/Safari/Firefox 精确版本号 UA 冒充）；
 #   3. 绝不以指纹对抗为目的（canvas/webgl/audio/fonts 等指纹相关字样一律禁止出现在
 #      profile 名、描述、suffix 中）—— doctor 预检会额外扫描反指纹关键词。
+# ★ 边界说明：fetching/browser_pool.py 的浏览器路径有独立的反检测行为
+# （stealth.min.js 注入 / navigator.webdriver 隐藏），fetching/stealth_enhanced.py
+# 提供实验性的指纹随机化（当前未接入抓取主链路）。本铁则约束的是"自称是谁"
+# 的 UA 身份，与浏览器侧的反自动化规避属两个层面，后者由 README 的合规边界约束。
 
 UA_PROFILES: dict[str, dict[str, str]] = {
     # 推荐默认：机器人标识 + 联系信息 留给 suffix（如 +contact: a@b.c），

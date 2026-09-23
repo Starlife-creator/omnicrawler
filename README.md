@@ -159,7 +159,7 @@ omnicrawler reprocess -c config.yaml --run-id <id>
 |------|------|
 | 变更监控 | URL 定时检查 + 内容哈希对比 + 变化 diff + 桌面通知 |
 | 镜像注册表 | 多节点健康路由 + EWMA 评分 + 加权故障回退（经 SiteAliasRegistry 归一，EgressBroker 审计） |
-| 反检测隐身 | 四级隐身等级（off/low/medium/high），可控指纹随机化 |
+| 反检测隐身 | 浏览器路径默认注入反自动化检测规避脚本（stealth.min.js）并隐藏 webdriver 标记；分级隐身（off/low/medium/high）与指纹随机化为**实验性能力**（`stealth-fingerprint` CLI / GUI 指纹视图），尚未接入抓取主链路 |
 | 代理池 | 加权轮换 + 健康检查 + 按域绑定 |
 
 ### 场景与基因
