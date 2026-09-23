@@ -1,55 +1,66 @@
 template_version: 1
-
 template:
-
   id: cms/discourse-topics
-
   name: Discourse 公开话题列表
-
   category: cms/discourse
-
   description: 采集 Discourse 公开话题列表及详情 JSON
-
   version: 1.0.0
-
-  tags: [Discourse, 论坛, 社区, JSON]
-
-  capabilities: [rest, json, community]
-
+  tags:
+  - Discourse
+  - 论坛
+  - 社区
+  - JSON
+  capabilities:
+  - rest
+  - json
+  - community
   placeholders:
-
-    site_url: {label: Discourse 站点根地址, required: true}
-
-    end_page: "{label: 最大页码, default: 20}"
-
-  url_patterns: ['*/latest.json*', '*/top.json*', '*/c/*/*.json*']
-
-  header_contains: {x-discourse-route: ''}
-
-  html_contains: [Discourse, discourse-application, discourse_theme_id]
-
-  json_keys: [topic_list, topics, users]
-
-  source_urls: [https://docs.discourse.org/]
-
+    site_url:
+      label: Discourse 站点根地址
+      required: true
+    end_page: '{label: 最大页码, default: 20}'
+  url_patterns:
+  - '*/latest.json*'
+  - '*/top.json*'
+  - '*/c/*/*.json*'
+  header_contains:
+    x-discourse-route: ''
+  html_contains:
+  - Discourse
+  - discourse-application
+  - discourse_theme_id
+  json_keys:
+  - topic_list
+  - topics
+  - users
+  source_urls:
+  - https://docs.discourse.org/
   license: OmniCrawler-MIT; API 行为依据 Discourse 官方文档
-
   verified_at: '2026-07-17'
-
-project: {name: discourse_topics, workspace: work/discourse_topics}
-
+  publisher: starlife
+  author_fingerprint: 4c3014804d85de2568f85e62a3048429
+project:
+  name: discourse_topics
+  workspace: work/discourse_topics
 source:
-
   kind: site_discourse
-
-  seeds: ['{{site_url}}/latest.json']
-
+  seeds:
+  - '{{site_url}}/latest.json'
   max_pages: '{{end_page}}'
-
-crawl: {max_pages: 500, concurrency: 2}
-
-http: {respect_robots: true, delay_seconds: 1.0, headers: {Accept: application/json}}
-
-extract: {mode: json, item_path: 'topic_list.topics[*]', fields: {}, review_low_confidence: true}
-
-outputs: {jsonl: true, csv: true, xlsx: true}
+crawl:
+  max_pages: 500
+  concurrency: 2
+http:
+  respect_robots: true
+  delay_seconds: 1.0
+  headers:
+    Accept: application/json
+extract:
+  mode: json
+  item_path: topic_list.topics[*]
+  fields: {}
+  review_low_confidence: true
+outputs:
+  jsonl: true
+  csv: true
+  xlsx: true
