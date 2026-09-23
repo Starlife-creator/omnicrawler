@@ -34,12 +34,17 @@ _QML_IMPORT_ERROR = ""
 
 
 def qml_available() -> bool:
-    """QML 运行时是否可用（结果缓存；只探测一次）。"""
+    """QML 运行时与页面文件**都**在才算可用（判据确定，杜绝混合态静默白屏）。"""
     global _QML_IMPORT_ERROR
     try:
         from PySide6 import QtQml, QtQuickWidgets  # noqa: F401
     except ImportError as exc:
         _QML_IMPORT_ERROR = str(exc)
+        return False
+    if not qml_page_source().exists():
+        # 2026-09-23 维护者拍板：发布包不打包 QML ⇒ 冻结包里稳定走本分支
+        # （页面文件与运行时都不在包里；开发环境从源码运行则两者都在）。
+        _QML_IMPORT_ERROR = f"QML page file missing: {qml_page_source()}"
         return False
     return True
 
@@ -49,13 +54,13 @@ def qml_unavailable_hint() -> str:
     return _(
         "当前环境缺少 Qt QML 运行时（PySide6 的 QtQml/QtQuickWidgets 组件），"
         "「市场橱窗（QML 试点）」暂不可用。"
-        '安装：pip install "PySide6-Addons>=6.5,<7"；'
-        "便携包需在打包时一并收集 Qt QML 插件与 qml/ 目录。"
+        '源码运行可安装：pip install "PySide6-Addons>=6.5,<7"；'
+        "便携版按维护者拍板（2026-09-23）不打包 QML，此页在便携包中显式降级。"
     )
 
 
 def qml_page_source() -> Path:
-    """页面 QML 文件路径（随包分发，见 packaging/*.spec 的 datas）。"""
+    """页面 QML 文件路径（随源码仓库分发；发布包按 2026-09-23 拍板**不**打包）。"""
     return Path(__file__).resolve().parent.parent / _QML_DIRNAME / _PAGE_QML
 
 

@@ -117,6 +117,24 @@ def test_pilot_page_degrades_when_qml_missing(
     view.shutdown()
 
 
+def test_qml_available_requires_the_page_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """混合态（运行时可导入、页面文件缺）也必须判不可用。
+
+    2026-09-23 拍板「保留代码、不打包」后，冻结包里**运行时与页面文件都不在**；
+    本用例钉的是判据本身：二者缺一即不可用，杜绝"运行时在但 setSource 静默白屏"。
+    """
+    monkeypatch.setattr(
+        showcase_module,
+        "qml_page_source",
+        lambda: Path("Z:/definitely/missing/ShowcasePage.qml"),
+    )
+    showcase_module._QML_IMPORT_ERROR = ""
+    assert qml_available() is False
+    assert "missing" in showcase_module._QML_IMPORT_ERROR
+
+
 def test_pilot_shutdown_releases_resources(tmp_path: Path, qapp: QApplication) -> None:
     """释放后页面**仍可用**（重建并重连主题信号），且换主题不得抛错。"""
     view, _holder = _view(tmp_path, qapp)

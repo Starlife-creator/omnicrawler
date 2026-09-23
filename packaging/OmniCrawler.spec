@@ -14,8 +14,6 @@ sys.path.insert(0, str(src_root))
 datas = [
     (str(src_root / "omnicrawler" / "templates"), "omnicrawler/templates"),
     (str(src_root / "omnicrawler" / "gui" / "templates"), "omnicrawler/gui/templates"),
-    # Q1 试点：QML 页面文件（§11.3 仅新增页面；缺了它们冻结包里该页会显式降级）
-    (str(src_root / "omnicrawler" / "gui" / "qml"), "omnicrawler/gui/qml"),
     (str(src_root / "omnicrawler" / "gui" / "help"), "omnicrawler/gui/help"),
     (str(src_root / "omnicrawler" / "gui" / "branding"), "omnicrawler/gui/branding"),
     (str(src_root / "omnicrawler" / "fetching" / "stealth.min.js"), "omnicrawler/fetching"),
@@ -84,7 +82,10 @@ common = dict(
     #   `AttributeError: http.client has no attribute HTTPSConnection` ⇒ **app 任何调用都起不来**。
     #   （Windows 构建 job 只构建、不启动产物，所以此前没暴露；排除后由产物内
     #    `capabilities --verify-imports` 冒烟回答"冻结包导入是否完好"。）
-    excludes=["matplotlib", "pytest", "torch", "torchvision", "nltk"],
+    excludes=["matplotlib", "pytest", "torch", "torchvision", "nltk",
+          # ★ Q1 试点（2026-09-23 拍板）：发布包不打包 QML（≈45 MB），
+          #   冻结包里橱窗页显式降级（qml_showcase.qml_available）。
+          "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets"],
     noarchive=False,
 )
 

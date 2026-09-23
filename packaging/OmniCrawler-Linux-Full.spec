@@ -24,8 +24,6 @@ sys.path.insert(0, str(src_root))
 datas = [
     (str(src_root / "omnicrawler" / "templates"), "omnicrawler/templates"),
     (str(src_root / "omnicrawler" / "gui" / "templates"), "omnicrawler/gui/templates"),
-    # Q1 试点：QML 页面文件（§11.3 仅新增页面；缺了它们冻结包里该页会显式降级）
-    (str(src_root / "omnicrawler" / "gui" / "qml"), "omnicrawler/gui/qml"),
     (str(src_root / "omnicrawler" / "gui" / "help"), "omnicrawler/gui/help"),
     (str(src_root / "omnicrawler" / "gui" / "branding"), "omnicrawler/gui/branding"),
     (str(src_root / "omnicrawler" / "fetching" / "stealth.min.js"), "omnicrawler/fetching"),
@@ -47,6 +45,11 @@ excludes = [
     #   排除它即可移除钩子；冻结包是否仍能 HTTPS，由构建脚本里既有的
     #   `capabilities --verify-imports` 冒烟回答（ssl 不可用会当场失败）。
     "nltk",
+    # ★ Q1 试点（2026-09-23 维护者拍板）：QML 橱窗页保留**代码**、发布包**不打包**——
+    #   排除三个 QML 模块后，PyInstaller 不再收集 Qt6Qml/Qt6Quick/Qt6QuickWidgets/
+    #   Qt6ShaderTools DLL 与 PySide6/qml 目录（合计 ≈45 MB）。冻结包里橱窗页
+    #   显式降级（qml_showcase.qml_available 判 ImportError 或页面文件缺失）。
+    "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets",
 ]
 
 # PaddleOCR/PaddleX 与插件类包在运行期做静态扫描看不到的 import（镜像
