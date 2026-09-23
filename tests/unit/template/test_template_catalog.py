@@ -136,3 +136,17 @@ def test_bundled_templates_are_encoding_clean() -> None:
         "template 块缺少显式 version 键（会被静默回落到默认 1.0.0）："
         + ", ".join(missing_version)
     )
+
+
+def test_readme_template_count_matches_catalog() -> None:
+    """B3：README 的模板数必须与 catalog 实际记录数一致（防文档漂移）。
+
+    可反向触发：把 README 的"模板库（N 套）"改成任意别的数字即红。
+    """
+    import re
+
+    readme = Path(__file__).resolve().parents[3] / "README.md"
+    count = len(bundled_template_catalog().discover())
+    matches = re.findall(r"模板库（(\d+) 套）", readme.read_text(encoding="utf-8"))
+    assert matches, "README 模板库计数标记丢失"
+    assert int(matches[0]) == count, f"README 模板数 {matches[0]} != catalog 实际 {count}"

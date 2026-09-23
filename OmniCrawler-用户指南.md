@@ -57,7 +57,7 @@ OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台�
 | 能力 | 说明 | 入口 |
 |------|------|------|
 | **任务工作台** | GUI 持续编辑、试跑和运行；CLI 保留六步问答生成配置 | GUI 首页或 `omnicrawler wizard` |
-| **78 套内置模板** | 覆盖 CMS/电商/新闻/政务/论坛等 | `omnicrawler templates list` |
+| **56 套内置模板** | 覆盖 CMS/电商/新闻/政务/论坛等 | `omnicrawler templates list` |
 | **可视化选择器** | 浏览器中右键点选元素，自动生成配置 | `omnicrawler visual-select` |
 | **智能页面分析** | 零配置：贴 URL → 自动推断字段和分页 | `omnicrawler auto-analyze` |
 | **EasySpider 导入** | 兼容 EasySpider JSON 任务格式 | `omnicrawler import-easyspider` |
@@ -1044,7 +1044,7 @@ src/omnicrawler/
 ├── services/                # 应用服务编排、统一进度协议、场景基因
 ├── state/                   # SQLite WAL schema + StateStore/SceneStore/CapsuleStore
 ├── sdk/                     # Python SDK（稳定性标记）
-├── templates/               # 78 套内置 YAML 模板 + recipe
+├── templates/               # 56 套内置 YAML 模板 + recipe
 ├── pdfx/                    # PDF 解析/OCR/抽取子系统
 ├── convertx/                # 任意格式互转（CSV/JSONL/Parquet/DuckDB/文档族）
 ├── sources/                 # 数据源适配器、镜像注册表

@@ -52,7 +52,7 @@ def test_alias_map_only_references_existing_template_files() -> None:
         for old, new in _TEMPLATE_ALIASES.items()
         if not (bundled / f"{new}.yaml").is_file()
     ]
-    assert not missing, f"别名目标文件不存在：\n" + "\n".join(missing)
+    assert not missing, "别名目标文件不存在：\n" + "\n".join(missing)
 
 
 def test_retired_names_have_no_passthrough_gap() -> None:
