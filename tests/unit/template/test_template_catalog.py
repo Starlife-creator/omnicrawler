@@ -12,7 +12,21 @@ def test_bundled_catalog_is_recursive_and_searchable() -> None:
     records = catalog.discover()
     identifiers = {record.metadata.template_id for record in records}
 
-    assert len(records) >= 30  # New hierarchical catalog plus all legacy templates.
+    # B3：魔法阈值（>=30）改为"必需模板 id 集合"断言（可反向触发）。
+    _required_templates = {
+        "generic/list-detail",
+        "generic/single-page",
+        "protocols/rest-offset",
+        "sites/crossref-works",
+        "cms/wordpress-rest",
+        "social/zhihu-topic",
+        "industries/government-policy",
+        "documents/pdf-collection",
+        "authenticated/form-login",
+        "recipes/dynamic-topic-pdf-monitor",
+    }
+    missing = _required_templates - identifiers
+    assert not missing, f"必需模板缺失：{sorted(missing)}"
     assert "generic/list-detail" in identifiers
     assert "cms/wordpress-rest" in identifiers
     assert "industries/government-policy" in identifiers

@@ -8,7 +8,7 @@ import argparse
 def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     init = sub.add_parser("init", help="复制一个可编辑的项目配置")
     init.add_argument("name")
-    init.add_argument("--template", default="static_html")
+    init.add_argument("--template", default="generic/single_page")
     init.add_argument("--output", default="configs")
     wizard = sub.add_parser("wizard", help="交互生成基础配置")
     wizard.add_argument("--output", default="configs/new_project.yaml")

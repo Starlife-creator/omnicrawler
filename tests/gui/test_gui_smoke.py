@@ -67,7 +67,22 @@ def test_task_workspace_template_library_and_rebuild_start_offscreen(monkeypatch
     assert all(not window._nav.item(index).isHidden() for index in range(window._nav.count()))
 
     templates = window._template_loader.discover_templates(force=True)
-    assert len(templates) >= 50
+    # B3：魔法阈值（>=50）在删掉 20 个 legacy 后余量只剩 8，拦不住下一次删除；
+    # 改为"必需模板 id 集合"断言（可反向触发：藏掉任一必需模板即红）。
+    template_ids = {item.template_id for item in templates}
+    _required_templates = {
+        "generic/list-detail",
+        "generic/single-page",
+        "generic/spa-api-discovery",
+        "protocols/rest-offset",
+        "sites/crossref-works",
+        "cms/wordpress-rest",
+        "social/zhihu-topic",
+        "industries/news-articles",
+        "documents/pdf-collection",
+    }
+    _missing = _required_templates - template_ids
+    assert not _missing, f"必需模板缺失：{sorted(_missing)}"
     dialog = TemplateLibraryDialog(templates)
     dialog._search.setText("wordpress")
     assert dialog._list.count() >= 1

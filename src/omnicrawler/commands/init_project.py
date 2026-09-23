@@ -12,8 +12,35 @@ import yaml
 # B09-002：name 参与文件路径构造，必须为纯文件名（拒绝路径分隔符与穿越段）。
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
+# B3：legacy 平面模板退役后的名字别名 —— 旧名继续可用，落到等价的新结构模板
+# （2026-09-23 删除根目录 20 个 legacy 模板；保留 CLI 兼容面，旧脚本/文档里
+# 的 --template static_html 不至于 FileNotFoundError）。别名值按**文件相对路径**
+# 书写（init 按 _find_template 的文件名解析，不是元数据 id）。
+# 无等价新模板的旧名（url_list / httpx_async / incremental / focused）不别名，
+# 继续走 examples/configs 的第二级查找；打包环境缺失时报错并列出可用模板。
+_TEMPLATE_ALIASES: dict[str, str] = {
+    "static_html": "generic/single_page",
+    "rest_api": "protocols/rest_offset",
+    "graphql": "protocols/graphql",
+    "feed": "protocols/feed",
+    "sitemap": "protocols/sitemap",
+    "sse": "protocols/sse",
+    "websocket": "protocols/websocket",
+    "long_poll": "protocols/long_poll",
+    "browser": "generic/spa_api_discovery",
+    "media": "generic/media_gallery",
+    "table": "generic/html_table",
+    "crawl_bfs": "generic/list_detail",
+    "crawl_dfs": "generic/list_detail",
+    "authenticated": "authenticated/form_login",
+    "form": "generic/search_form",
+    "pdf_end_to_end": "documents/pdf_collection",
+}
+
 
 def execute(template: str, output: str, name: str) -> dict[str, Any]:
+    requested = template
+    template = _TEMPLATE_ALIASES.get(template, template)
     # E4：parents[2] 指向 src/，导致 examples 目录找不到；仓库根才是 parents[3]。
     # 打包环境无 examples 时自动回退内置模板（_find_template 返回 None 后走 bundled）。
     root = Path(__file__).resolve().parents[3]
@@ -45,7 +72,9 @@ def execute(template: str, output: str, name: str) -> dict[str, Any]:
     data.setdefault("project", {})["name"] = name
     data["project"]["workspace"] = f"work/{name}"
     target.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    if template == "pdf_end_to_end" or template.endswith("pdf_end_to_end"):
+    # pdf_end_to_end 特判按**用户原始请求名**判定（别名改向后仍要带上 bundled/pdf 资产，
+    # documents/pdf_collection 的 processors 引用 builtin:pdf/generic_template.yaml）。
+    if requested == "pdf_end_to_end" or requested.endswith("pdf_end_to_end"):
         bundled_pdf = bundled / "pdf"
         target_pdf = target_dir / "pdf"
         target_pdf.mkdir(parents=True, exist_ok=True)

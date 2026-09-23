@@ -166,7 +166,7 @@ def _print_welcome() -> None:
     omnicrawler wizard              交互创建配置文件
     omnicrawler workbench           启动图形工作台
     omnicrawler init <名称>         从模板创建项目
-      --template static_html
+      --template generic/single_page
 
   常用命令:
     omnicrawler run    -c <配置>    运行采集任务
