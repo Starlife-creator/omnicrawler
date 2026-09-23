@@ -17,6 +17,7 @@ from PySide6.QtCore import QEasingCurve, QPropertyAnimation
 from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import (
     QApplication,
+    QGraphicsDropShadowEffect,
     QGraphicsOpacityEffect,
     QStackedWidget,
     QStyle,
@@ -99,6 +100,21 @@ RADIUS = {"xs": 4, "sm": 6, "md": 8, "lg": 12, "xl": 16, "pill": 999}
 
 # 间距刻度（4 的倍数）
 SPACING = {"xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24, "xxl": 32}
+
+#: 首页 hero 区最小高度（**唯一来源**：`home.py` 的 AmbientHero 取它）。
+#: 之所以放进令牌层：它是"首页与其余页面留白层级"的一部分，改大时不该去 view 里翻数字。
+HERO_MIN_HEIGHT = 160
+
+#: 阴影层级表 —— **数值与取色都只在这里出现一次**。
+#:
+#: ``level -> (blur_radius, y_offset, 令牌取值器)``。视觉表现与收敛前逐项一致
+#: （卡片 24/7、浮层 16/4），所以这次是**结构性**收口、不改观感：
+#: 此前 `home.py`（卡片）与 `widgets/toast.py`（浮层）各写一份内联数字，
+#: 同一套设计体系里两处硬编码，调层级或换令牌时必然漏改一处。
+SHADOW_LEVELS: dict[str, tuple[int, int, Callable[[VisualTokens], str]]] = {
+    "card": (24, 7, lambda tokens: tokens.card_shadow),
+    "overlay": (16, 4, lambda tokens: tokens.shadow_overlay),
+}
 
 #: 图标内嵌强调色（监控激活态）。图标 SVG 直接引用它，避免在图标字符串里写裸色值。
 #: 图标里的「强调点」占位符，以及它取色的**主题令牌键**（A-40 修复，2026-09-15）。
@@ -407,6 +423,26 @@ def rgba_token_to_qcolor(rgba_str: str) -> QColor:
     return QColor(r, g, b, max(0, min(255, a)))
 
 
+def shadow_effect(widget: QWidget, level: str = "card") -> QGraphicsDropShadowEffect:
+    """给控件套一层**分层**阴影 —— 阴影的唯一构造入口。
+
+    数值与取色都来自 :data:`SHADOW_LEVELS`，调用方只声明"哪一层"。
+    ``tests/unit/gui/test_gui_shared_helpers.py`` 把这条约定变成机器断言：
+    裸 ``setBlurRadius`` / ``setOffset`` 只允许出现在本模块。
+
+    :raises ValueError: ``level`` 不在 :data:`SHADOW_LEVELS` 里（不静默回退到某一层）。
+    """
+    if level not in SHADOW_LEVELS:
+        raise ValueError(_("未知阴影层级：{0}").format(level))
+    blur_radius, offset_y, token_of = SHADOW_LEVELS[level]
+    effect = QGraphicsDropShadowEffect(widget)
+    effect.setBlurRadius(blur_radius)
+    effect.setOffset(0, offset_y)
+    effect.setColor(rgba_token_to_qcolor(token_of(ThemeManager.instance().tokens)))
+    widget.setGraphicsEffect(effect)
+    return effect
+
+
 # ---------------------------------------------------------------------------
 # QSS 生成
 # ---------------------------------------------------------------------------
@@ -512,8 +548,11 @@ def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
     }}
 
     /* === 首页标题 === */
-    QLabel#homeTitle {{ color: {tokens.text}; font-size: {scaled_font_px("display", scale=scale)}px; font-weight: 700; }}
+    /* V2：三层拉开层级对比 —— eyebrow(small 12) → lead(subtitle 15) → 标题(hero 34)。
+       此前标题用 display(28)、副标题走 muted 角色（body 14），三级几乎挨在一起。 */
+    QLabel#homeTitle {{ color: {tokens.text}; font-size: {scaled_font_px("hero", scale=scale)}px; font-weight: 700; }}
     QLabel#eyebrow {{ color: {tokens.primary}; font-size: {scaled_font_px("small", scale=scale)}px; font-weight: 700; }}
+    QLabel#homeLead {{ color: {tokens.muted}; font-size: {scaled_font_px("subtitle", scale=scale)}px; }}
     /* 区块/侧栏标题：页面与面板统一用它，避免各页面自写 font-weight/font-size 内联样式 */
     QLabel#sectionTitle {{
         color: {tokens.text};

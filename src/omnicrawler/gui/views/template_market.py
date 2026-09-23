@@ -36,6 +36,7 @@ from ...plugins.market_client import (
 from ..core.background_worker import BackgroundWorker
 from ..design_system import FONT_FAMILY_MONO, RADIUS, ThemeManager, scaled_font_px
 from ..i18n import _
+from ..widgets.empty_state import EmptyState, sync_list_empty_state
 from ..widgets.status_indicator import StatusIndicator
 from ..widgets.toast import ToastManager
 
@@ -207,6 +208,13 @@ class TemplateMarketView(QWidget):
         self._list.setAlternatingRowColors(True)
         self._list.currentItemChanged.connect(self._on_selection_changed)
         list_layout.addWidget(self._list, 1)
+        # V2：空态统一 —— 列表为空时显示统一空态（两者互斥，不并排出现）
+        self._empty_state = EmptyState(
+            icon="🧩",
+            title=_("暂无市场模板"),
+            description=_("检查市场源是否可达，或点「刷新」重新拉取。"),
+        )
+        list_layout.addWidget(self._empty_state, 1)
         splitter.addWidget(list_panel)
 
         detail_panel = QFrame()
@@ -341,6 +349,7 @@ class TemplateMarketView(QWidget):
             item.setToolTip(tid)
             self._list.addItem(item)
         self._list.blockSignals(False)
+        sync_list_empty_state(self._list, self._empty_state)
         if self._list.count() > 0:
             self._list.setCurrentRow(0)
 

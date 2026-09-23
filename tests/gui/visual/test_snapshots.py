@@ -64,13 +64,39 @@ def test_status_indicator_snapshot(theme_manager):
 
 
 def test_help_tooltip_snapshot(theme_manager, qapp):
-    from omnicrawler.gui.i18n import _
+    """悬浮帮助按钮。
+
+    ★ 此用例曾**静默失效**：它调用的是 `HelpTooltip(help_id=…, label=…)`，而
+    `label` 参数早已不在控件 API 里（`TypeError`）。因为基线目录不随源码包分发、
+    整个模块在没有基线时**整块 skip**，这个脱节长期没人发现 —— 生成本地基线后
+    第一次运行就当场报错。help_id 必须是帮助注册表里**真实存在**的键
+    （`get_help` 对未知 id 直接 `KeyError`）。
+    """
     from omnicrawler.gui.widgets.help_tooltip import HelpTooltip
 
     for theme in THEMES:
         qapp.setProperty("omnicrawlerTheme", theme)
-        widget = HelpTooltip(help_id="test", label=_("帮助"))
+        widget = HelpTooltip("task.name")
         _snap(widget, "help_tooltip", theme)
+
+
+def test_home_hero_snapshot(theme_manager, qapp):
+    """首页 hero 区 —— V2"加大字号/留白层级"的落点。
+
+    ★ 必须先关动效：`AmbientHero` 每 50ms 推进一次相位，装饰光斑位置随相位变化，
+    截图不定影 ⇒ 快照会变成随机通过/失败（比没有快照更糟）。
+    """
+    from omnicrawler.gui.home import AmbientHero
+
+    qapp.setProperty("omnicrawlerReducedMotion", True)
+    try:
+        for theme in THEMES:
+            theme_manager._app.setProperty("omnicrawlerTheme", theme)
+            widget = AmbientHero()
+            _snap(widget, "home_hero", theme)
+            widget._timer.stop()  # type: ignore[attr-defined]
+    finally:
+        qapp.setProperty("omnicrawlerReducedMotion", False)
 
 
 def test_navigation_bar_snapshot(theme_manager):

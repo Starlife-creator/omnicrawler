@@ -47,5 +47,17 @@ def test_budget_is_zero_slack() -> None:
     payload = json.loads((REPO_ROOT / "tools" / "lint-exemption-budget.json").read_text("utf-8"))
     budget = {k: int(v) for k, v in payload.items() if not k.startswith("_")}
     actual = checker.collect_violations(["src", "tests"], list(budget))
-    slack = {code: budget[code] - actual.get(code, 0) for code in budget}
-    assert all(delta == 0 for delta in slack.values()), f"预算存在余量（应同步下调）: {slack}"
+    delta = {code: budget[code] - actual.get(code, 0) for code in budget}
+    if all(value == 0 for value in delta.values()):
+        return
+
+    # ★ 两个方向必须分开说：把"超预算"说成"有余额"会把人引向错误的修法
+    #   （本仓实测踩过：新增 1 处 E402 被判为"存在余量、应下调预算"）。
+    over = {code: -value for code, value in delta.items() if value < 0}
+    slack = {code: value for code, value in delta.items() if value > 0}
+    details = []
+    if over:
+        details.append(f"超出预算 {over} ⇒ **修代码**（新增违规不许搭存量便车）")
+    if slack:
+        details.append(f"存在余量 {slack} ⇒ 同步下调 tools/lint-exemption-budget.json")
+    raise AssertionError("；".join(details))

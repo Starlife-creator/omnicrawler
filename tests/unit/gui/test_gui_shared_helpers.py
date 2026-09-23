@@ -22,7 +22,15 @@ _GUI_ROOT = _REPO_ROOT / "src" / "omnicrawler" / "gui"
 #: 必须唯一实现的共享小工具 → 允许定义它的模块（相对 gui 包的路径）
 _SHARED_HELPERS: dict[str, str] = {
     "repolish_widget": "design_system.py",
+    # V2：阴影的唯一构造入口（数值与取色都只在 design_system 出现一次）
+    "shadow_effect": "design_system.py",
+    # V2：列表/空态互斥同步（三个列表页共用一处实现）
+    "sync_list_empty_state": "widgets/empty_state.py",
 }
+
+#: 阴影参数只能出现在这里（其余模块一律走 ``shadow_effect``）。
+_SHADOW_TUNING_ATTRS = frozenset({"setBlurRadius", "setOffset"})
+_SHADOW_TUNING_HOME = "design_system.py"
 
 
 def _definitions(name: str) -> list[str]:
@@ -56,3 +64,37 @@ def test_probe_is_not_vacuous() -> None:
     """守卫要有意义：确认真的扫到了 gui 源码（否则是空集对空集的假通过）。"""
     files = [p for p in _GUI_ROOT.rglob("*.py") if "__pycache__" not in p.parts]
     assert len(files) > 50, f"只扫到 {len(files)} 个 gui 模块，路径推断可能写错了"
+
+
+def _shadow_tuning_sites() -> list[str]:
+    """找出直接调 ``setBlurRadius`` / ``setOffset`` 的模块（按 AST，不靠文本匹配）。"""
+    found: list[str] = []
+    for path in sorted(_GUI_ROOT.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if isinstance(func, ast.Attribute) and func.attr in _SHADOW_TUNING_ATTRS:
+                found.append(path.relative_to(_GUI_ROOT).as_posix())
+                break
+    return found
+
+
+def test_shadow_tuning_only_happens_in_design_system() -> None:
+    """V2：阴影参数**只能**在 design_system 里出现。
+
+    反例（收敛前的真实形态）：`home.py` 写 blur 24 / offset 0,7，
+    `widgets/toast.py` 写 blur 16 / offset 0,4 —— 同一套设计体系两处硬编码，
+    调层级或换令牌时必然漏改一处。现在调用方只声明"哪一层"。
+    """
+    assert _shadow_tuning_sites() == [_SHADOW_TUNING_HOME], (
+        "阴影参数（setBlurRadius/setOffset）只允许出现在 "
+        f"{_SHADOW_TUNING_HOME}，实际出现在：{_shadow_tuning_sites()}。"
+        "请改用 design_system.shadow_effect(widget, level=…)。"
+    )

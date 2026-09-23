@@ -51,6 +51,13 @@ e2e-artifacts/
 test-results/
 .pytest_session/
 
+# ★ 视觉快照基线：**不入仓**。像素结果与平台字体/渲染器绑定（本仓实测：离屏环境
+#   连 ASCII 都渲染成空心方框），入仓会让 CI 变成随机红。基线按需在本机生成：
+#     OMNI_BASELINE=1 pytest tests/gui/visual/ -q
+#   此前只有 __init__.py 的说明文档在"口头"声明这一点，没有任何机制拦住
+#   `git add -A` 顺手把它们提交进去 —— 现在补上规则。
+tests/gui/visual/baselines/
+
 # === Linting & Type-Checking ===
 .mypy_cache/
 .ruff_cache/

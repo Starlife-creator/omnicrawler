@@ -19,7 +19,6 @@ from PySide6.QtCore import (
 )
 from PySide6.QtWidgets import (
     QFrame,
-    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -28,7 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..design_system import ThemeManager, rgba_token_to_qcolor
+from ..design_system import shadow_effect
 from ..i18n import _
 from ..icon_registry import IconRegistry
 
@@ -70,12 +69,8 @@ class Toast(QFrame):
         self._enter_animation: QPropertyAnimation | None = None
         self._close_animation: QPropertyAnimation | None = None
 
-        # 阴影
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(16)
-        shadow.setOffset(0, 4)
-        shadow.setColor(rgba_token_to_qcolor(ThemeManager.instance().tokens.shadow_overlay))
-        self.setGraphicsEffect(shadow)
+        # 阴影（V2：层级收口到 design_system，浮层用 overlay 层）
+        shadow_effect(self, "overlay")
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 8)

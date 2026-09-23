@@ -13,7 +13,10 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QListWidget,
     QPushButton,
+    QTableWidget,
+    QTreeWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -127,3 +130,28 @@ class EmptyState(QFrame):
         self._desc_label.setText(description)
         self.setAccessibleName(title or _("空状态"))
         self._desc_label.setVisible(bool(description.strip()))
+
+
+def _item_count(list_widget: QWidget) -> int:
+    """列表控件的项目数。
+
+    ★ 不认识的类型**报错**而不是当作 0：静默当成空会伪造一个"没有数据"的结论。
+    """
+    if isinstance(list_widget, QListWidget):
+        return list_widget.count()
+    if isinstance(list_widget, QTableWidget):
+        return list_widget.rowCount()
+    if isinstance(list_widget, QTreeWidget):
+        return list_widget.topLevelItemCount()
+    raise TypeError(_("空态同步不支持这种列表控件：{0}").format(type(list_widget).__name__))
+
+
+def sync_list_empty_state(list_widget: QWidget, empty_state: QWidget) -> int:
+    """按列表项数同步「列表 / 空态」的可见性，返回当前项数（V2 空态统一）。
+
+    ★ 两者**互斥**：同时可见会让用户既看到"还没有内容"、又看到一张空表。
+    """
+    count = _item_count(list_widget)
+    list_widget.setVisible(count > 0)
+    empty_state.setVisible(count == 0)
+    return count

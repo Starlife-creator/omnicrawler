@@ -12,7 +12,6 @@ from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
-    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -25,10 +24,15 @@ from PySide6.QtWidgets import (
 from ..services.natural_language_task import compile_natural_language
 from ..services.ux_service import QuickTaskDraft, draft_quick_task
 from .core.run_states import state_label
-from .design_system import ThemeManager, rgba_token_to_qcolor
+from .design_system import HERO_MIN_HEIGHT, SPACING, shadow_effect
 from .i18n import _
 from .motion_signal import MotionSignal
 from .widgets.empty_state import EmptyState
+
+#: hero 区右侧留给装饰光斑的宽度（本组件自己的几何常量，不是设计令牌）。
+#: ★ 必须放在**导入块之后**：夹在导入中间会让该文件后续导入全部记为 E402
+#:   （`check_lint_budget` 的存量预算只降不升，这是仓库既有先例）。
+_HERO_DECOR_INSET = 220
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +105,8 @@ class AmbientHero(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setAccessibleName(_("首页背景"))
-        self.setMinimumHeight(132)
+        # V2：hero 高度与内边距走令牌层（留白层级属于设计体系，不该在 view 里散落数字）
+        self.setMinimumHeight(HERO_MIN_HEIGHT)
         self._phase = 0.0
         app = QApplication.instance()
         assert app is not None
@@ -113,7 +118,10 @@ class AmbientHero(QWidget):
         self._timer.timeout.connect(self._advance)
         self._timer.start(50)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 220, 18)
+        layout.setContentsMargins(
+            SPACING["xl"], SPACING["lg"], _HERO_DECOR_INSET, SPACING["lg"]
+        )
+        layout.setSpacing(SPACING["sm"])
         eyebrow = QLabel(f"OMNICRAWLER {_package_version()} · DESKTOP PROFESSIONAL")
         eyebrow.setObjectName("eyebrow")
         layout.addWidget(eyebrow)
@@ -122,7 +130,7 @@ class AmbientHero(QWidget):
         title.setWordWrap(True)
         layout.addWidget(title)
         subtitle = QLabel(_("从一个地址开始。自动设置会解释原因，全量运行前始终先试跑。"))
-        subtitle.setObjectName("muted")
+        subtitle.setObjectName("homeLead")
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
 
@@ -184,18 +192,18 @@ class HomePage(QWidget):
         self.setObjectName("homePage")
         self.setAccessibleName(_("OmniCrawler 首页"))
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(32, 24, 32, 24)
-        layout.setSpacing(14)
+        # V2：页边距与区块间距走令牌刻度（原 32/24/32/24 + 14 是散落的裸数字）
+        layout.setContentsMargins(
+            SPACING["xxl"], SPACING["xl"], SPACING["xxl"], SPACING["xl"]
+        )
+        layout.setSpacing(SPACING["lg"])
         layout.addWidget(AmbientHero())
 
         card = QFrame()
         card.setObjectName("quickTaskCard")
         card.setProperty("card", True)
-        shadow = QGraphicsDropShadowEffect(card)
-        shadow.setBlurRadius(24)
-        shadow.setOffset(0, 7)
-        shadow.setColor(rgba_token_to_qcolor(ThemeManager.instance().tokens.card_shadow))
-        card.setGraphicsEffect(shadow)
+        # V2：阴影层级收口到 design_system（数值与取色只在那里出现一次）
+        shadow_effect(card, "card")
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(20, 18, 20, 18)
         card_layout.addWidget(QLabel(_("你想采集什么？")))

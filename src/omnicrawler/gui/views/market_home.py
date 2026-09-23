@@ -47,7 +47,9 @@ from ...plugins.plugin_packaging import (
 )
 from ...plugins.trust import CreatorIdentity, TrustedUserList
 from ..core.background_worker import BackgroundWorker
+from ..design_system import SPACING
 from ..i18n import _
+from ..widgets.empty_state import EmptyState, sync_list_empty_state
 from ..widgets.toast import ToastManager
 
 LOGGER = logging.getLogger(__name__)
@@ -154,10 +156,17 @@ class _LocalPluginsPane(QWidget):
         list_panel = QFrame()
         list_panel.setProperty("card", True)
         list_layout = QVBoxLayout(list_panel)
-        list_layout.setContentsMargins(10, 10, 10, 10)
+        list_layout.setContentsMargins(SPACING["md"], SPACING["md"], SPACING["md"], SPACING["md"])
         self._list = QListWidget()
         self._list.currentItemChanged.connect(self._on_selection)
         list_layout.addWidget(self._list)
+        # V2：空态统一（列表与空态互斥）
+        self._empty_state = EmptyState(
+            icon="📦",
+            title=_("本地还没有可发布的插件"),
+            description=_("把插件目录放入项目根 plugins/ 或 plugins_installed/ 后点「刷新」。"),
+        )
+        list_layout.addWidget(self._empty_state)
         splitter.addWidget(list_panel)
 
         detail_panel = QFrame()
@@ -217,6 +226,7 @@ class _LocalPluginsPane(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, entry)
             item.setToolTip(entry.description or entry.path.name)
             self._list.addItem(item)
+        sync_list_empty_state(self._list, self._empty_state)
         self._footer.setText(_(f"共 {len(self._entries)} 个条目"))
 
     def _current(self) -> LocalPluginEntry | None:
@@ -411,6 +421,13 @@ class _LocalTemplatesPane(QWidget):
         self._list = QListWidget()
         self._list.currentItemChanged.connect(self._on_selection)
         root_layout.addWidget(self._list, 1)
+        # V2：空态统一（列表与空态互斥）
+        self._empty_state = EmptyState(
+            icon="🧩",
+            title=_("本地还没有自制模板"),
+            description=_("把 template.yaml 放进项目根 templates/ 或 templates_installed/ 后点「刷新」。"),
+        )
+        root_layout.addWidget(self._empty_state, 1)
 
         self._meta = QLabel(_("未选择"))
         self._meta.setObjectName("mutedLabel")
@@ -450,6 +467,7 @@ class _LocalTemplatesPane(QWidget):
             signed = (template_dir / "creator.identity").is_file()
             rel = template_dir.relative_to(self._root)
             self._list.addItem(_(f"{rel}  ·  {'已签名' if signed else '未签名'}"))
+        sync_list_empty_state(self._list, self._empty_state)
         self._meta.setText(_(f"共 {len(self._templates)} 个模板"))
 
     def _current(self) -> Path | None:
