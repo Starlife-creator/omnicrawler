@@ -185,7 +185,12 @@ def test_catalog_reports_parse_errors_without_losing_builtin_templates(tmp_path:
     catalog = TemplateCatalog(Path(template_catalog_module.__file__).parent, (user_dir,))
 
     records = catalog.discover()
-    assert len(records) >= 50, "一个坏用户模板不得让内置模板消失"
+    # 2026-09-23 迁市场后内核 41 套：用"必需 id 集合"代替魔法阈值（B3 口径，此处补齐）。
+    ids = {r.metadata.template_id for r in records}
+    required = {"generic/list-detail", "generic/single-page", "protocols/rest-offset",
+                "industries/government-policy", "documents/pdf-collection"}
+    missing = required - ids
+    assert not missing, f"一个坏用户模板不得让内置模板消失（缺：{sorted(missing)}）"
     assert catalog.parse_errors, "坏文件必须被记录，而不是静默消失"
 
 

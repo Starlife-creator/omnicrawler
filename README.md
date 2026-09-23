@@ -180,7 +180,7 @@ omnicrawler reprocess -c config.yaml --run-id <id>
 
 ---
 
-## 模板库（53 套）
+## 模板库（41 套）
 
 ```powershell
 omnicrawler templates list              # 按类别列出
@@ -420,7 +420,7 @@ src/omnicrawler/
 ├── services/                    # 应用服务编排、统一进度协议、场景基因
 ├── state/                       # SQLite WAL schema + StateStore/SceneStore/CapsuleStore
 ├── sdk/                         # 公共 API（稳定性标记）
-├── templates/                   # 53 套采集模板 + recipe
+├── templates/                   # 41 套采集模板 + recipe
 ├── pdfx/                        # PDF 解析/OCR/抽取子系统
 ├── convertx/                    # 任意格式互转（CSV/JSONL/Parquet/DuckDB/文档族）
 ├── sources/                     # 数据源适配器、镜像注册表
