@@ -50,6 +50,6 @@ crawl: {max_pages: 500, concurrency: 2}
 
 http: {respect_robots: true, delay_seconds: 1.0, headers: {Accept: application/json}}
 
-extract: {mode: json, item_selector: topic_list.topics, fields: {}, review_low_confidence: true}
+extract: {mode: json, item_path: 'topic_list.topics[*]', fields: {}, review_low_confidence: true}
 
 outputs: {jsonl: true, csv: true, xlsx: true}

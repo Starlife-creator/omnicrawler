@@ -100,6 +100,22 @@ class TemplateCatalog:
         # B02-010：内置源真值索引（path.resolve() → record）。即使内置模板被用户/市场
         # 同 id 覆盖，`builtin:` 逃生仍从这份真值解析，而非被覆盖的合并 dict。
         self._builtin_by_path: dict[Path, TemplateRecord] | None = None
+        # B1：discover 期间解析失败的文件（(路径, 错误消息)）。单个坏文件只记录并跳过，
+        # 不得让整个 catalog 失效（GUI 的 TemplateLoader / controllers 构造期均无兜底）；
+        # fail-closed 语义由 validate_catalog 把本清单合成失败条目来保持。
+        self._parse_errors: list[tuple[str, str]] = []
+
+    @property
+    def parse_errors(self) -> tuple[tuple[str, str], ...]:
+        """discover 时解析失败的模板文件清单（(路径, 错误消息)）。
+
+        容错读取 ≠ 静默放行：``validate_catalog`` 必须把本清单合成 ``ok=False``
+        条目，破损模板必须显式暴露（TemplateParseError 的 fail-closed 语义不变，
+        只是从「炸掉整个目录」收窄为「记录 + 校验失败」）。
+        """
+        if self._records is None:
+            self.discover()
+        return tuple(self._parse_errors)
 
     def discover(self, refresh: bool = False) -> list[TemplateRecord]:
         if self._records is not None and not refresh:
@@ -107,11 +123,17 @@ class TemplateCatalog:
 
         records: dict[str, TemplateRecord] = {}
         builtin_by_path: dict[Path, TemplateRecord] = {}
+        parse_errors: list[tuple[str, str]] = []
         for root, builtin in [(self.builtin_dir, True), *((path, False) for path in self.user_dirs)]:
             if not root.is_dir():
                 continue
             for path in sorted((*root.rglob("*.yaml"), *root.rglob("*.yml"))):
-                record = self._read_record(root, path, builtin)
+                try:
+                    record = self._read_record(root, path, builtin)
+                except Exception as exc:  # noqa: BLE001 — 单文件解析失败必须与整体隔离
+                    parse_errors.append((str(path), f"{type(exc).__name__}: {exc}"))
+                    LOGGER.warning("模板文件解析失败，已跳过（fail-closed 见 validate_catalog）：%s（%s）", path, exc)
+                    continue
                 if record is None:
                     continue
                 template_id = record.metadata.template_id
@@ -128,6 +150,7 @@ class TemplateCatalog:
                 records[template_id] = record
         self._records = records
         self._builtin_by_path = builtin_by_path
+        self._parse_errors = parse_errors
         return self._sorted(records.values())
 
     def get(self, template_id: str) -> TemplateRecord | None:
@@ -158,7 +181,11 @@ class TemplateCatalog:
         builtin_by_path: dict[Path, TemplateRecord] = {}
         if self.builtin_dir.is_dir():
             for path in sorted((*self.builtin_dir.rglob("*.yaml"), *self.builtin_dir.rglob("*.yml"))):
-                record = self._read_record(self.builtin_dir, path, True)
+                try:
+                    record = self._read_record(self.builtin_dir, path, True)
+                except Exception as exc:  # noqa: BLE001 — 与 discover 同一容错策略（防御路径）
+                    LOGGER.warning("内置模板文件解析失败，已跳过：%s（%s）", path, exc)
+                    continue
                 if record is not None:
                     builtin_by_path[record.path.resolve()] = record
         self._builtin_by_path = builtin_by_path

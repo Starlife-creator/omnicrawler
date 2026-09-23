@@ -58,20 +58,20 @@ extract:
 
   mode: json
 
-  item_selector: '$[*]'
+  item_path: '$[*]'
 
   fields:
 
-    id: {selector: id, type: jsonpath, required: true}
+    id: {path: id, type: jsonpath, required: true}
 
-    title: {selector: title.rendered, type: jsonpath, required: true}
+    title: {path: title.rendered, type: jsonpath, required: true}
 
-    url: {selector: link, type: jsonpath, required: true}
+    url: {path: link, type: jsonpath, required: true}
 
-    published_at: {selector: date, type: jsonpath}
+    published_at: {path: date, type: jsonpath}
 
-    modified_at: {selector: modified, type: jsonpath}
+    modified_at: {path: modified, type: jsonpath}
 
-    content_html: {selector: content.rendered, type: jsonpath}
+    content_html: {path: content.rendered, type: jsonpath}
 
 outputs: {jsonl: true, csv: true, xlsx: true}

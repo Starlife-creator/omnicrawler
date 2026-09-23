@@ -45,11 +45,11 @@ http:
 extract:
   mode: json
   fields:
-    number: {selector: number, type: jsonpath, required: true}
-    title: {selector: title, type: jsonpath, required: true}
-    state: {selector: state, type: jsonpath}
-    url: {selector: html_url, type: jsonpath}
-    created_at: {selector: created_at, type: jsonpath, data_type: datetime}
-    updated_at: {selector: updated_at, type: jsonpath, data_type: datetime}
+    number: {path: number, type: jsonpath, required: true}
+    title: {path: title, type: jsonpath, required: true}
+    state: {path: state, type: jsonpath}
+    url: {path: html_url, type: jsonpath}
+    created_at: {path: created_at, type: jsonpath, data_type: datetime}
+    updated_at: {path: updated_at, type: jsonpath, data_type: datetime}
 
 outputs: {jsonl: true, csv: true, xlsx: true}

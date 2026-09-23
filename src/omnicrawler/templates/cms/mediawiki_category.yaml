@@ -54,14 +54,14 @@ extract:
 
   mode: json
 
-  item_selector: query.categorymembers
+  item_path: query.categorymembers[*]
 
   fields:
 
-    page_id: {selector: pageid, type: jsonpath, required: true}
+    page_id: {path: pageid, type: jsonpath, required: true}
 
-    namespace: {selector: ns, type: jsonpath}
+    namespace: {path: ns, type: jsonpath}
 
-    title: {selector: title, type: jsonpath, required: true}
+    title: {path: title, type: jsonpath, required: true}
 
 outputs: {jsonl: true, csv: true, xlsx: true}

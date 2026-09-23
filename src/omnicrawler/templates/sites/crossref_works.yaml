@@ -41,13 +41,13 @@ http:
 
 extract:
   mode: json
-  item_selector: message.items
+  item_path: message.items[*]
   fields:
-    doi: {selector: DOI, type: jsonpath, required: true}
-    title: {selector: title.0, type: jsonpath, required: true}
-    type: {selector: type, type: jsonpath}
-    published: {selector: published.date-parts.0, type: jsonpath}
-    url: {selector: URL, type: jsonpath}
-    license: {selector: license.0.URL, type: jsonpath}
+    doi: {path: DOI, type: jsonpath, required: true}
+    title: {path: title.0, type: jsonpath, required: true}
+    type: {path: type, type: jsonpath}
+    published: {path: published.date-parts.0, type: jsonpath}
+    url: {path: URL, type: jsonpath}
+    license: {path: license.0.URL, type: jsonpath}
 
 outputs: {jsonl: true, csv: true, xlsx: true, parquet: false}

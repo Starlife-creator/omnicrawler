@@ -269,6 +269,17 @@ def _validate_profile_honest(ua: str, *, profile_name: str) -> None:
             )
 
 
+def validate_user_agent_honesty(ua: str, *, profile_name: str = "user_agent") -> None:
+    """公开入口：校验一个 UA 字符串是否符合诚实自报铁则（违规抛 ``ValueError``）。
+
+    B2：供**配置/模板入口**的守卫复用（如 ``templates/template_health.py``），
+    避免跨模块引用私有名 ``_validate_profile_honest``。语义与后者完全一致：
+    ① 必须包含 ``OmniCrawler/{version}``；② 不得含浏览器伪造签名
+    （Chrome / Safari / Firefox / Edge 的精确版本号强信号）。
+    """
+    _validate_profile_honest(ua, profile_name=profile_name)
+
+
 def build_user_agent(profile: str, suffix: str = "") -> str:
     """按 profile 构建合规 User-Agent（所有 profile 必含 OmniCrawler/version）。
 

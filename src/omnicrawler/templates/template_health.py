@@ -93,6 +93,24 @@ def validate_template(record: TemplateRecord) -> TemplateHealth:
         errors.append("source.kind is required")
     if not isinstance(source, dict) or not isinstance(source.get("seeds"), list) or not source.get("seeds"):
         errors.append("source.seeds must contain at least one entry")
+    # B1：JSON 模式键契约。section 级 `item_selector` 已废弃（加载期迁移会掩盖它，
+    # 但模板必须直接写对契约键）；字段契约是 `path`/`paths` ——
+    # `extractors.json_field_values` 从不读 `selector`，写 selector = 确定性取空
+    # （2026-09-23 审计：7 个 builtin JSON 模板因此塌缩成 1 条空记录）。
+    # 注意只查 json 模式：HTML 模式的 item_selector/selector 是正确用法。
+    extract_cfg = record.config.get("extract")
+    if isinstance(extract_cfg, dict) and extract_cfg.get("mode") == "json":
+        if extract_cfg.get("item_selector"):
+            errors.append("extract.item_selector is deprecated in json mode: use item_path")
+        for field_name, field_rule in (extract_cfg.get("fields") or {}).items():
+            if (
+                isinstance(field_rule, dict)
+                and "selector" in field_rule
+                and not ({"path", "paths"} & field_rule.keys())
+            ):
+                errors.append(
+                    f"extract.fields.{field_name}: json field contract is path/paths, not selector"
+                )
     # B11-006 / B05-009：模板不得翻转安全关键配置——`deep_merge` 会把模板段覆盖进
     # 用户配置，`validate_template` 是发布前最后一道闸。安全键只允许默认/更严方向。
     safety_violations = _unsafe_security_overrides(record.config)
@@ -138,9 +156,23 @@ def _unsafe_security_overrides(config: Any) -> list[str]:
 
 def validate_catalog(catalog: TemplateCatalog, *, include_legacy: bool = False) -> list[TemplateHealth]:
     records = catalog.discover()
+    results: list[TemplateHealth] = []
+    # B1：catalog 现在对单个坏文件容错（跳过而非炸掉整个目录），
+    # 但 fail-closed 语义不变——破损文件必须在这里合成失败条目，
+    # 否则 `all(item.ok)` 会对一个残缺集合恒真（静默放行）。
+    parse_errors = catalog.parse_errors
+    if parse_errors:
+        detail = "; ".join(f"{path}: {message}" for path, message in parse_errors)
+        results.append(TemplateHealth(
+            "<catalog>",
+            False,
+            (f"catalog 包含 {len(parse_errors)} 个解析失败的模板文件: {detail}",),
+            (),
+        ))
     if not include_legacy:
         records = [record for record in records if record.metadata.category != "legacy"]
-    return [validate_template(record) for record in records]
+    results.extend(validate_template(record) for record in records)
+    return results
 
 
 class TemplatePack:

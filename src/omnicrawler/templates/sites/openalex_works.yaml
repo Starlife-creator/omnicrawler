@@ -37,13 +37,13 @@ http: {respect_robots: true, delay_seconds: 1.0, headers: {Accept: application/j
 
 extract:
   mode: json
-  item_selector: results
+  item_path: results[*]
   fields:
-    id: {selector: id, type: jsonpath, required: true}
-    doi: {selector: doi, type: jsonpath}
-    title: {selector: title, type: jsonpath, required: true}
-    publication_year: {selector: publication_year, type: jsonpath, data_type: integer}
-    cited_by_count: {selector: cited_by_count, type: jsonpath, data_type: integer}
-    open_access: {selector: open_access.oa_status, type: jsonpath}
+    id: {path: id, type: jsonpath, required: true}
+    doi: {path: doi, type: jsonpath}
+    title: {path: title, type: jsonpath, required: true}
+    publication_year: {path: publication_year, type: jsonpath, data_type: integer}
+    cited_by_count: {path: cited_by_count, type: jsonpath, data_type: integer}
+    open_access: {path: open_access.oa_status, type: jsonpath}
 
 outputs: {jsonl: true, csv: true, xlsx: true, parquet: false}
