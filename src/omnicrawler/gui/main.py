@@ -657,6 +657,7 @@ class MainWindow(QMainWindow):
             ("🔁 " + _("格式互转"), 7),
             ("🎯 " + _("场景与模板"), 11),
             ("🔐 " + _("登录会话"), 12),
+            ("🪟 " + _("市场橱窗（QML 试点）"), 13),
             (_("高级"), None),
             ("📝 " + _("YAML 编辑器"), 1),
             ("🔍 " + _("证据查看器"), 5),
@@ -845,6 +846,12 @@ class MainWindow(QMainWindow):
         self._login_session_view = self._login_session.setup()
         self._stack.addWidget(self._login_session_view)
 
+        # Q1：QML 试点页（仅新增页面；不建 delegate，避免再往 GUI 大环里加一条边）
+        from .views.qml_showcase import QmlShowcaseView
+
+        self._qml_showcase = QmlShowcaseView(self._project_root)
+        self._stack.addWidget(self._qml_showcase)
+
         main_layout.addWidget(self._stack)
         self._page_transition = PageTransitionController(
             self._stack, reduced_motion=self._settings.reduced_motion,
@@ -987,6 +994,10 @@ class MainWindow(QMainWindow):
             # U3：进入登录会话页才刷新列表 + 弹首次提醒（不做后台轮询）
             if hasattr(self, "_login_session_view"):
                 self._login_session_view.activate()
+        elif page == self._nav_pages.get(NavIndex.QML_SHOWCASE):
+            # Q1：进入试点页才扫描本地市场条目（不做后台轮询）
+            if hasattr(self, "_qml_showcase"):
+                self._qml_showcase.refresh()
 
     def _apply_quick_task(self, draft: QuickTaskDraft) -> None:
         self._apply_task_draft(draft)
@@ -1971,6 +1982,9 @@ class MainWindow(QMainWindow):
         self._change_monitor.shutdown()
         # U3：登录会话页的轮询定时器同样随窗口关闭停止
         self._login_session.shutdown()
+        # Q1：QML 试点页释放 QML 资源与主题信号连接
+        if hasattr(self, "_qml_showcase"):
+            self._qml_showcase.shutdown()
         self._release_probe_fetcher()
         self._clear_plugin_ui()
         if self._builtin_background_controller is not None:

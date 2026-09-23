@@ -24,10 +24,11 @@ class NavIndex:
     CONVERT_TOOL = 9  # B-4：ConvertX 格式互转工具
     SCENE = 10  # S4：场景管理面板
     LOGIN_SESSION = 11  # U3：登录会话（工具分组；headed 登录窗口 + 会话列表）
-    ADVANCED_HEADER = 12
-    YAML_EDITOR = 13
-    EVIDENCE = 14
-    PLUGIN_MARKET = 15
-    DEVELOPER = 16
+    QML_SHOWCASE = 12  # Q1：市场橱窗（QML 试点；仅新增页面，不动存量 QWidget 视图）
+    ADVANCED_HEADER = 13
+    YAML_EDITOR = 14
+    EVIDENCE = 15
+    PLUGIN_MARKET = 16
+    DEVELOPER = 17
 
     HEADERS = frozenset({WORK_HEADER, AUTOMATION_HEADER, TOOLS_HEADER, ADVANCED_HEADER})

@@ -38,6 +38,7 @@ class ThemeManager(_BaseDelegate):
             NavIndex.EVIDENCE,
             NavIndex.SCENE,
             NavIndex.LOGIN_SESSION,
+            NavIndex.QML_SHOWCASE,
             NavIndex.CHANGE_MONITOR,
             NavIndex.PLUGIN_MARKET,
             NavIndex.DEVELOPER,

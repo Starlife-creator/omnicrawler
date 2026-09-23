@@ -4,6 +4,9 @@
 
 ### 变更
 
+- feat(gui): V1 可视化补齐 —— 结果页「字段完整率」由**进度条拼接**改为 **QtCharts 水平条形图**；「任务历史」新增耗时趋势、「变更监控」新增差异概览。前置测量（§9.4 #5）实测：`PySide6` 元包已连带安装 Addons，**零新增依赖**，QtCharts 运行库约 2.4 MB；缺 QtCharts 时自动回退进度条视图并给出可行动安装提示。图表颜色全部走语义令牌，并把数据写进 accessibleDescription（不让可视化变成无障碍净损失）
+- feat(gui): V2 设计系统深化 —— 卡片阴影收敛为 `design_system.shadow_effect`（层级表唯一真源）；首页三级字号/留白层级拉开（12/15/34，hero 高度进令牌层）；空态统一 （`sync_list_empty_state`，模板市场与本地市场两个 pane 接入）；**视觉快照复活**：修复长期静默失效的 stale 用例与坏掉的对比路径（`QPixmap.save(BytesIO)`），基线不入仓并机械排除，11 个既有控件改码前后**逐像素 0.00% 差异**
+- feat(gui): Q1 QML 试点 —— 新增「市场橱窗（QML 试点）」页（QQuickWidget 嵌入，仅新增页面、不动存量 QWidget 视图）；前置两条实测成立（令牌→QML 渲染连通且跟随主题；离屏可渲染可截图）。实测记录：PySide6 6.11 的 `qmlRegisterSingleton*` 不接受文档签名，改用 root context 属性注入；`Property` 必须是**类属性**（实例 setattr 不会被注册），且必须有 `notify`；缺 QML 运行时显式降级；打包 spec 已收集 QML 页面文件（QML 运行期 ≈45 MB 未压缩，是否进入发布集属维护者决策）
 - feat(gui): 「工具 → 登录会话」独立导航页 —— 需要登录的站点可**在浏览器里登录一次、之后采集免登录**（headed Playwright 登录窗口 + 会话列表；程序不代填密码、不代过验证码、不读取或显示 cookie 内容）
 - feat(fetching): 登录会话的 storage_state 路径规则收口为唯一真源（`fetching/session_state.py`），爬取侧与登录侧共用同一份快照；快照文件名改为「账户前缀 + 身份摘要」，**代理（可能内嵌用户名口令）不再出现在文件名里**
 - feat(fetching): 会话桥 `fetching/session_bridge.py` —— 登录后的 cookie 按域名归还给 HTTP 引擎；**只归还目标站点**（任务声明的种子域名 + 登录地址），第三方域不进 cookie 罐；没有匹配项、目标站点集合为空、快照不可解析时**显式报错**，不静默通过

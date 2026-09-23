@@ -65,10 +65,12 @@ def test_nav_index_constants() -> None:
     assert NavIndex.SCENE == 10
     # U3：登录会话插在「工具」分组末尾（场景与模板之后），其后的行号整体 +1
     assert NavIndex.LOGIN_SESSION == 11
-    assert NavIndex.YAML_EDITOR == 13
-    assert NavIndex.EVIDENCE == 14
-    assert NavIndex.PLUGIN_MARKET == 15
-    assert NavIndex.DEVELOPER == 16
+    # Q1：市场橱窗（QML 试点）插在登录会话之后，其后的行号整体 +1
+    assert NavIndex.QML_SHOWCASE == 12
+    assert NavIndex.YAML_EDITOR == 14
+    assert NavIndex.EVIDENCE == 15
+    assert NavIndex.PLUGIN_MARKET == 16
+    assert NavIndex.DEVELOPER == 17
 
 
 # ── S3.1.4：日志缓存裁剪 ────────────────────────────────────────────

@@ -24,6 +24,8 @@ sys.path.insert(0, str(src_root))
 datas = [
     (str(src_root / "omnicrawler" / "templates"), "omnicrawler/templates"),
     (str(src_root / "omnicrawler" / "gui" / "templates"), "omnicrawler/gui/templates"),
+    # Q1 试点：QML 页面文件（§11.3 仅新增页面；缺了它们冻结包里该页会显式降级）
+    (str(src_root / "omnicrawler" / "gui" / "qml"), "omnicrawler/gui/qml"),
     (str(src_root / "omnicrawler" / "gui" / "help"), "omnicrawler/gui/help"),
     (str(src_root / "omnicrawler" / "gui" / "branding"), "omnicrawler/gui/branding"),
     (str(src_root / "omnicrawler" / "fetching" / "stealth.min.js"), "omnicrawler/fetching"),
