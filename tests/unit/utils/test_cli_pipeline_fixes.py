@@ -108,11 +108,16 @@ def test_b09_002_init_project_rejects_path_traversal_name(tmp_path) -> None:
 
 
 def test_e13_render_runs_validation(tmp_path) -> None:
-    """E13：template render 后跑校验（合法渲染成功且返回校验提示）。"""
+    """E13：template render 后跑校验（合法渲染成功且返回校验提示）。
+
+    B3：原用 browser（已退役的 legacy 平面模板），改用 generic/single-page
+    并提供其必填占位符 seed_url。
+    """
     from omnicrawler.commands.template import execute
 
     result = execute(
-        "render", template_id="browser", sets=[],
+        "render", template_id="generic/single-page",
+        sets=["seed_url=https://example.com/page"],
         output=str(tmp_path / "out.yaml"), force=False,
     )
     assert result["created"].endswith("out.yaml")
