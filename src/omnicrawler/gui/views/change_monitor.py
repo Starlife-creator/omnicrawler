@@ -43,6 +43,7 @@ from omnicrawler.gui.widgets.toast import ToastManager
 
 from ..design_system import FONT_FAMILY_MONO, SPACING, ThemeManager, scaled_font_px
 from ..i18n import _
+from ..widgets.charts import BarChart
 from ..widgets.empty_state import EmptyState
 
 if TYPE_CHECKING:
@@ -506,6 +507,18 @@ class ChangeMonitorView(QWidget):
 
         layout.addLayout(toolbar)
 
+        # V1：差异概览（**本次检查**的结果）。默认隐藏 —— 还没做过检查时
+        # "有变化/无变化"是未知，不是 0；画出来就等于伪造结论。
+        self._overview_chart = BarChart(horizontal=False)
+        self._overview_chart.setVisible(False)
+        self._overview_note = QLabel("")
+        self._overview_note.setObjectName("muted")
+        self._overview_note.setWordWrap(True)
+        self._overview_note.setAccessibleName(_("差异概览说明"))
+        self._overview_note.setVisible(False)
+        layout.addWidget(self._overview_chart)
+        layout.addWidget(self._overview_note)
+
         # 规则列表（P3：空态统一 EmptyState，空态有主 CTA「+ 新建规则」）
         self._empty_state = EmptyState(
             icon="📡",
@@ -554,8 +567,53 @@ class ChangeMonitorView(QWidget):
 
     # ── 规则管理 ────────────────────────────────────────────────────
 
+    def _refresh_overview(self, events: list) -> None:
+        """V1：把**本次检查**的结果画成差异概览（有变化 / 无变化）。
+
+        ``events`` 是本次检查返回的变化事件（每条含 ``rule_id``）。
+        ★ 事件里没有的**已启用**规则即"无变化"——这是本次检查的确定结论；
+        已停用的规则不参与检查，只在说明里计数，不进图（否则会被读成"没变化"）。
+        """
+        events_list = list(events or [])
+        enabled = [rule for rule in self._rules_data if rule.get("enabled", True)]
+        disabled = len(self._rules_data) - len(enabled)
+        if not enabled:
+            self._overview_chart.clear()
+            self._overview_chart.setVisible(False)
+            note = _("没有已启用的规则，本次未做检查。") if disabled else ""
+            self._overview_note.setText(note)
+            self._overview_note.setVisible(bool(note))
+            return
+
+        changed_ids = set()
+        for event in events_list:
+            data = event.to_dict() if hasattr(event, "to_dict") else event
+            if isinstance(data, dict):
+                changed_ids.add(str(data.get("rule_id", "")))
+        changed_ids.discard("")
+        changed = min(len(changed_ids), len(enabled))
+        self._overview_chart.set_data(
+            [(_("有变化"), changed), (_("无变化"), len(enabled) - changed)],
+            color_token="warning",
+        )
+        self._overview_chart.setVisible(True)
+        base = _("本次检查：已启用 {0} 条规则，{1} 条有变化。").format(len(enabled), changed)
+        self._overview_note.setText(
+            base + _("另有 {0} 条已停用，未参与检查。").format(disabled) if disabled else base
+        )
+        self._overview_note.setVisible(True)
+
     def _refresh_list(self) -> None:
-        """刷新规则列表 UI。"""
+        """刷新规则列表 UI。
+
+        ★ 规则集合一变（新增/删除/启停），**上次检查的差异概览即失效** ⇒ 这里清掉它，
+        由 `_on_check_finished` 在检查完成后重新填。否则图上会留着与当前规则集
+        对不上的旧结论。
+        """
+        self._overview_chart.clear()
+        self._overview_chart.setVisible(False)
+        self._overview_note.setText("")
+        self._overview_note.setVisible(False)
         self._rule_list.clear()
 
         if not self._rules_data:
@@ -762,6 +820,7 @@ class ChangeMonitorView(QWidget):
 
             self._save_rules()
             self._refresh_list()
+            self._refresh_overview(events_list)
 
             # 弹出详情
             first_event = events_list[0]
@@ -776,6 +835,7 @@ class ChangeMonitorView(QWidget):
                 rule["last_checked"] = now
             self._save_rules()
             self._refresh_list()
+            self._refresh_overview(events_list)
 
     @Slot(str)
     def _on_check_error(self, error: str) -> None:

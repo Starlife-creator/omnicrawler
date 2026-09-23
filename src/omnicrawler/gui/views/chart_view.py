@@ -1,7 +1,11 @@
-"""Lightweight result-quality visualization without a plotting dependency.
+"""结果质量可视化（V1：主路径用 QtCharts，进度条保留为降级路径）。
 
-结果质量可视化：以原生进度条展示各字段非空率。
-所有 CSV 读取均通过 CsvLoadWorker 在后台线程执行，避免阻塞 UI。
+字段非空率以**水平条形图**呈现（`widgets/charts.BarChart`）；环境缺 QtCharts 时
+自动回退到原来的进度条视图，并给出可行动的安装提示 —— 两条路径都保留，
+所以"补齐可视化"不会把没有 QtCharts 的环境变成不可用。
+
+所有 CSV 读取仍通过 `CsvLoadWorker` 在后台线程执行（§11.2 约束：数据经后台
+worker 加载），UI 线程只做渲染。图表颜色走 `VisualTokens` 语义令牌。
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ from PySide6.QtWidgets import (
 from ..core.workers import CsvLoadWorker
 from ..design_system import ThemeManager
 from ..i18n import _
+from ..widgets.charts import BarChart, chart_unavailable_hint, charts_available
 
 
 class ChartView(QWidget):
@@ -45,6 +50,19 @@ class ChartView(QWidget):
         self._loading_bar.setVisible(False)
         self._loading_bar.setMaximumHeight(4)
         self._layout.addWidget(self._loading_bar)
+
+        # V1：主路径的图表（排序类数据 → 水平条形图）
+        self._chart = BarChart(horizontal=True)
+        self._chart.setVisible(False)
+        self._layout.addWidget(self._chart)
+
+        # 缺 QtCharts 时的可行动提示（只在降级路径上显示）
+        self._charts_hint = QLabel("")
+        self._charts_hint.setWordWrap(True)
+        self._charts_hint.setObjectName("muted")
+        self._charts_hint.setAccessibleName(_("图表不可用提示"))
+        self._charts_hint.setVisible(False)
+        self._layout.addWidget(self._charts_hint)
 
         self._bars: list[tuple[QLabel, QProgressBar]] = []
         self._worker: CsvLoadWorker | None = None
@@ -136,14 +154,31 @@ class ChartView(QWidget):
             _("字段完整率：{0} 行，{1} 列{2}").format(rows, len(headers), suffix)
         )
 
-        # 选取完整率最低的 8 个字段展示
+        # 选取完整率最低的 8 个字段展示（最需要关注的排前面）
         ranking = sorted(
             headers,
             key=lambda name: (present.get(name, 0) / max(1, rows), name),
         )[:8]
-        for name in ranking:
-            percentage = round(present.get(name, 0) * 100 / max(1, rows))
-            label = QLabel(str(name))
+        pairs = [
+            (str(name), round(present.get(name, 0) * 100 / max(1, rows))) for name in ranking
+        ]
+        if charts_available():
+            self._chart.set_data(pairs, value_suffix="%", value_max=100)
+            self._chart.setVisible(True)
+        else:
+            # 降级路径：保留原有的进度条视图，并说清"缺什么、怎么装"
+            self._render_progress_bars(pairs)
+            self._charts_hint.setText(chart_unavailable_hint())
+            self._charts_hint.setVisible(True)
+        self.setVisible(True)
+        if not self._showing_data:
+            self._fade_in_widget(self)
+            self._showing_data = True
+
+    def _render_progress_bars(self, pairs: list[tuple[str, int]]) -> None:
+        """降级路径：字段非空率以原生进度条呈现（缺 QtCharts 时使用）。"""
+        for name, percentage in pairs:
+            label = QLabel(name)
             bar = QProgressBar()
             bar.setRange(0, 100)
             bar.setValue(percentage)
@@ -151,10 +186,6 @@ class ChartView(QWidget):
             self._layout.addWidget(label)
             self._layout.addWidget(bar)
             self._bars.append((label, bar))
-        self.setVisible(True)
-        if not self._showing_data:
-            self._fade_in_widget(self)
-            self._showing_data = True
 
     def _fade_in_widget(self, widget: QWidget) -> None:
         """对指定控件播放 200ms 淡入动画。"""
@@ -206,9 +237,14 @@ class ChartView(QWidget):
     # ------------------------------------------------------------------
 
     def _remove_bars(self) -> None:
+        """清掉**两条路径**的产物（图表与进度条），避免切换时残留。"""
         for label, bar in self._bars:
             self._layout.removeWidget(label)
             self._layout.removeWidget(bar)
             label.deleteLater()
             bar.deleteLater()
         self._bars.clear()
+        self._chart.clear()
+        self._chart.setVisible(False)
+        self._charts_hint.setVisible(False)
+        self._charts_hint.setText("")

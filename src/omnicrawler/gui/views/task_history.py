@@ -26,6 +26,7 @@ from ..core.run_states import state_icon
 from ..core.view_base import BaseView
 from ..core.workers import JsonlLoadWorker
 from ..i18n import _
+from ..widgets.charts import BarChart
 from ..widgets.toast import ToastManager
 
 HISTORY_FILE = "work/task_history.jsonl"
@@ -33,6 +34,19 @@ DEFAULT_MAX_ENTRIES = 100
 DEFAULT_MAX_DAYS = 30
 # S3.2.1：内存有界上限（防超长文件全量驻留），显示/清理按 max_entries 截断
 MAX_LOADED_RECORDS = 5000
+
+#: V1 趋势图展示的最近任务条数（再多图会糊，且侧栏空间有限）。
+TREND_POINTS = 8
+
+
+def _parse_iso(value: Any) -> datetime | None:
+    """宽松解析 ISO 时间戳；缺失/非法 ⇒ ``None``（调用方据此**显式排除**该条）。"""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 #: 同步解析的大小上限。超过则改走后台线程——实测同步解析 10 万行约 **215 ms**
 #: （10k 行 ≈ 30 ms），而历史文件只增不减。512 KiB 约合 4k 行（≈12 ms），
@@ -103,6 +117,18 @@ class TaskHistory(BaseView):
         title = QLabel(_("📋 历史任务"))
         title.setObjectName("sectionTitle")  # 区块标题语义类（见 design_system）
         layout.addWidget(title)
+
+        # V1：近期任务趋势（耗时）。默认隐藏 —— 没有**已完成**任务时不得显示，
+        # 否则"没有数据"会被读成"耗时为零"。
+        self._trend_chart = BarChart(horizontal=False)
+        self._trend_chart.setVisible(False)
+        self._trend_note = QLabel("")
+        self._trend_note.setObjectName("muted")
+        self._trend_note.setWordWrap(True)
+        self._trend_note.setAccessibleName(_("任务趋势说明"))
+        self._trend_note.setVisible(False)
+        layout.addWidget(self._trend_chart)
+        layout.addWidget(self._trend_note)
 
         self._list = QListWidget()
         self._list.setAlternatingRowColors(True)
@@ -234,11 +260,51 @@ class TaskHistory(BaseView):
             item.setToolTip(json.dumps(record, ensure_ascii=False, indent=2))
             self._list.addItem(item)
 
+        self._render_trend(shown)
+
         if self._list.count() == 0:
             self.show_empty(_("暂无历史任务"), _("完成一次任务后，这里会显示记录。"))
         else:
             self.show_content()
         self.history_changed.emit()
+
+    def _render_trend(self, records: list[dict[str, Any]]) -> None:
+        """V1：近期任务**耗时**趋势（最近 ``TREND_POINTS`` 条）。
+
+        历史记录里没有"记录条数"这类指标（字段只有 task_id / project_name / 时间 / 状态），
+        所以趋势取可算得的**运行时长**。★ 未完成（``finished_at`` 为空）与时间戳异常
+        的条目**显式排除并计数说明** —— 把"还不知道多久"画成 0，会在图上伪造一个"极快"。
+        """
+        pairs: list[tuple[str, float]] = []
+        unfinished = 0
+        for record in records[:TREND_POINTS]:
+            started = _parse_iso(record.get("started_at"))
+            finished = _parse_iso(record.get("finished_at"))
+            try:
+                seconds = max(0.0, (finished - started).total_seconds())  # type: ignore[operator]
+            except TypeError:  # 时区感知与朴素时间混用：排除该条，而不是崩掉整块面板
+                unfinished += 1
+                continue
+            label = str(record.get("started_at", ""))[5:16].replace("T", " ")
+            pairs.append((label, seconds))
+        if not pairs:
+            self._trend_chart.clear()
+            self._trend_chart.setVisible(False)
+            note = _("暂无可统计的耗时（还没有已完成的任务）") if unfinished else ""
+            self._trend_note.setText(note)
+            self._trend_note.setVisible(bool(note))
+            return
+        pairs.reverse()  # 最早的排前面，按时间自左向右读
+        self._trend_chart.set_data(pairs, value_suffix="s", color_token="info")
+        self._trend_chart.setVisible(True)
+        self._trend_note.setText(
+            _("已按耗时统计最近 {0} 次已完成任务；另有 {1} 次尚未结束（未计入）。").format(
+                len(pairs), unfinished
+            )
+            if unfinished
+            else _("已按耗时统计最近 {0} 次已完成任务。").format(len(pairs))
+        )
+        self._trend_note.setVisible(True)
 
     def recent_records(self, limit: int = 4) -> list[dict[str, Any]]:
         """返回只读用途的最近任务快照，避免首页依赖内部列表。"""
