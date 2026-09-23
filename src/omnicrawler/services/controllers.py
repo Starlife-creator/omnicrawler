@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ..pipeline_ops.task_ir import TaskIR, template_fragment
-from ..templates.template_catalog import TemplateProbe, bundled_template_catalog
+from ..templates.template_catalog import TemplateProbe, bundled_template_catalog, user_template_dirs
 from .application_service import ApplicationService
 
 logger = logging.getLogger(__name__)
@@ -121,8 +121,11 @@ class RunController:
 
 
 class TemplateController:
-    def __init__(self) -> None:
-        self.catalog = bundled_template_catalog()
+    def __init__(self, project_root: str | Path | None = None) -> None:
+        # B4a：与 GUI/CLI 同源发现用户与市场安装模板（缺省按 cwd，与 GUI 回退语义一致）
+        self.catalog = bundled_template_catalog(
+            user_template_dirs(project_root if project_root is not None else Path.cwd())
+        )
 
     def search(self, query: str = "", *, category: str = "") -> list[dict[str, Any]]:
         if not isinstance(query, str):

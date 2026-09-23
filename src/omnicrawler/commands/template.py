@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from ..sources.site_inspector import inspect_url
-from ..templates.template_catalog import TemplateProbe, bundled_template_catalog
+from ..templates.template_catalog import TemplateProbe, bundled_template_catalog, user_template_dirs
 from ..templates.template_diff import compare_template_files, merge_template_files
 from ..templates.template_health import TemplatePack, validate_catalog
 
@@ -43,7 +43,8 @@ def execute(
     before: str = "", after: str = "",
     base: str = "", user: str = "", update: str = "",
 ) -> Any:
-    catalog = bundled_template_catalog()
+    # B4a：与 GUI 同源发现 <cwd>/templates 与 <cwd>/templates_installed（市场安装模板）
+    catalog = bundled_template_catalog(user_template_dirs(Path.cwd()))
 
     if action == "list":
         records = catalog.search(query, category=category, tags=tags or [], capabilities=capabilities or [])

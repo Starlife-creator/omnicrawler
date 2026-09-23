@@ -306,7 +306,7 @@ def run_doctor(config: AppConfig, *, probe_ai: bool = True) -> dict[str, Any]:
             _L3_TIMEOUT_S_DEFAULT,
             SiteCategorizer,
         )
-        from ..templates.template_catalog import bundled_template_catalog
+        from ..templates.template_catalog import bundled_template_catalog, user_template_dirs
 
         categorizer_info["l3_implemented"] = True
         categorizer_info["l3_default_timeout_s"] = float(_L3_TIMEOUT_S_DEFAULT)
@@ -336,7 +336,7 @@ def run_doctor(config: AppConfig, *, probe_ai: bool = True) -> dict[str, Any]:
             categorizer_info["last_error"] = sc.last_error()
             # 模板存在性校验：加载 catalog 后扫一遍 L2 mappings + fallback_mapping 的 values
             try:
-                catalog = bundled_template_catalog()
+                catalog = bundled_template_catalog(user_template_dirs(config.root))
                 missing_template_ids: list[str] = []
                 all_template_ids = set(sc.mappings.values()) | set(sc.fallback_mapping.values())
                 for tid in sorted(all_template_ids):

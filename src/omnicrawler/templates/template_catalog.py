@@ -425,3 +425,19 @@ class TemplateCatalog:
 
 def bundled_template_catalog(user_dirs: Iterable[Path] = ()) -> TemplateCatalog:
     return TemplateCatalog(Path(__file__).resolve().parent, user_dirs)
+
+
+def user_template_dirs(project_root: str | Path | None) -> tuple[Path, ...]:
+    """项目级模板目录（用户模板 + 市场安装），与 GUI 同源发现。
+
+    B4a：此前只有 GUI 发现这两个目录（gui/main.py 的 user_dir =
+    ``<project>/templates``、additional_user_dirs = ``<project>/templates_installed``），
+    CLI（commands/template.py）与 doctor/_extract 都只看 bundled ——
+    市场安装的模板 CLI 不可见，而 tools/market.py 却提示"GUI/CLI 将自动发现"。
+    本函数是 CLI/categorizer/doctor/_extract 与 GUI 的**同一目录契约**，
+    改动目录名必须两处同步。
+    """
+    if project_root is None:
+        return ()
+    root = Path(project_root)
+    return (root / "templates", root / "templates_installed")

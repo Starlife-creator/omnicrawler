@@ -294,9 +294,9 @@ class _PipelineExtract(_PipelineBase):
             from dataclasses import replace as _replace
 
             from ..core.utils import deep_merge
-            from ..templates.template_catalog import bundled_template_catalog
+            from ..templates.template_catalog import bundled_template_catalog, user_template_dirs
 
-            catalog = bundled_template_catalog()
+            catalog = bundled_template_catalog(user_template_dirs(self.config.root))
             record = catalog.get(template_id)
             if record is None:
                 LOGGER.warning("per-URL 覆盖模板 %r 不存在，URL %s 按默认提取", template_id, url)

@@ -195,7 +195,8 @@ def cmd_templates_install(args: argparse.Namespace) -> int:
         return 1
     print(f"已安装并验签: {path}")
     print(f"安装目录: {path.parent}")
-    print("启用方式：将 'templates_installed' 加入模板 user_dirs（GUI/CLI 将自动发现）。")
+    print("启用方式：GUI 模板市场与 CLI（templates list/validate 等）自动发现；")
+    print("确认：运行 `omnicrawler templates list` 应能看到该模板。")
     return 0
 
 
