@@ -9,6 +9,7 @@ import yaml
 
 from omnicrawler.core.config import load_config
 from omnicrawler.core.models import CrawlRequest, FetchResult
+from omnicrawler.fetching import session_crypto
 from omnicrawler.fetching.browser_fetcher import BrowserFetcher, PlaywrightPool
 from omnicrawler.security.policy import NetworkTargetPolicy
 
@@ -213,9 +214,14 @@ class _Context:
     def set_extra_http_headers(self, headers):
         self.headers = headers
 
-    def storage_state(self, path):
-        self.storage_path = Path(path)
-        self.storage_path.write_text("{}", encoding="utf-8")
+    def storage_state(self, path=None):
+        # U5 后 pool 只用**无参**形态（取 dict → 信封封装）；path 形态仅为真实 API 完整性保留。
+        if path is not None:
+            self.storage_path = Path(path)
+            self.storage_path.write_text("{}", encoding="utf-8")
+            return None
+        self.state_calls = getattr(self, "state_calls", 0) + 1
+        return {"cookies": []}
 
     def close(self):
         self.closed = True
@@ -262,17 +268,23 @@ def test_pool_context_state_headers_proxy_and_route_guard(tmp_path: Path) -> Non
 
     browser = _Browser()
     context = pool._new_context(browser, key, request)
-    assert browser.options["storage_state"] == str(state_path)
+    # U5（§11.8）：传入的是**解密后的 dict**（种子为旧明文 ⇒ 读取时迁移为信封），
+    # 不再是路径串 —— 明文绝不经 Playwright 的 path 参数二次落盘。
+    assert browser.options["storage_state"] == {}
+    assert session_crypto.classify_snapshot(state_path.read_bytes()) == "envelope"
     assert browser.options["proxy"] == {"server": "http://proxy.example:8080"}
     assert context.headers == {"X-Global": "yes", "X-Request": "yes"}
 
     with patch("os.chmod", side_effect=OSError("unsupported")):
         pool._save_context(context, key)
-    assert context.storage_path == state_path
+    # U5（§11.8）：保存＝无参取 dict → 信封原子写（0600；chmod 失败不致命，secrets_store 同口径）。
+    assert getattr(context, "state_calls", 0) == 1
+    assert session_crypto.classify_snapshot(state_path.read_bytes()) == "envelope"
 
     transient = _pool(_config(tmp_path, persist=False))
     assert transient._state_path("anything") is None
     transient._save_context(context, "anything")
+    assert getattr(context, "state_calls", 0) == 1  # persist=False ⇒ 不碰 context
 
     allowed = SimpleNamespace(
         request=SimpleNamespace(url="https://example.org"),
