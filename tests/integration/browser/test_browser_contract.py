@@ -210,6 +210,11 @@ class _Context:
         self.headers = None
         self.storage_path = None
         self.closed = False
+        # B5：记录注入的 init 脚本（path= 与 script= 两种形态都收）
+        self.init_scripts = []
+
+    def add_init_script(self, script=None, *, path=None):
+        self.init_scripts.append(path if path is not None else script)
 
     def set_extra_http_headers(self, headers):
         self.headers = headers
@@ -384,3 +389,61 @@ def test_browser_fetcher_close_invalid_engine_and_playwright_pool(tmp_path: Path
     fetcher._playwright_pool = None
     result = fetcher._playwright(CrawlRequest("https://example.org"))
     assert result is expected
+
+
+# ── B5：browser.stealth_level 分级接线守卫 ────────────────────────────
+
+def _context_init_scripts(config):
+    pool = _pool(config)
+    request = CrawlRequest("https://example.org")
+    key = pool._context_key(request)
+    context = pool._new_context(_Browser(), key, request)
+    return list(context.init_scripts)
+
+
+def test_stealth_level_off_disables_all_injection(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    config.raw.setdefault("browser", {})["stealth_level"] = "off"
+    scripts = _context_init_scripts(config)
+    assert scripts == [], f"off 不得注入任何脚本：{scripts}"
+
+
+def test_stealth_level_low_matches_historical_default(tmp_path: Path) -> None:
+    """low = 历史默认行为（stealth.min.js + webdriver 隐藏），保证向后兼容。"""
+    config = _config(tmp_path)
+    config.raw.setdefault("browser", {})["stealth_level"] = "low"
+    scripts = _context_init_scripts(config)
+    assert len(scripts) == 2, f"low 应恰好两条：{[str(s)[:60] for s in scripts]}"
+    assert any(str(s).endswith("stealth.min.js") for s in scripts)
+    assert any("webdriver" in str(s) for s in scripts)
+
+
+def test_stealth_level_medium_adds_fingerprint_script(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    config.raw.setdefault("browser", {})["stealth_level"] = "medium"
+    scripts = _context_init_scripts(config)
+    assert len(scripts) == 3, f"medium 应在 low 基础上叠加指纹脚本：{[str(s)[:60] for s in scripts]}"
+    assert any(
+        "canvas" in str(s).lower() or "webgl" in str(s).lower() for s in scripts
+    ), "分级指纹脚本应包含 canvas/webgl 伪装段"
+
+
+def test_validate_config_rejects_unknown_stealth_level(tmp_path: Path) -> None:
+    """非法隐身等级必须 error（确定性判据），运行期不做静默回退。
+
+    load_config 在校验失败时直接抛 ConfigParseError（fail-fast）。
+    """
+    import pytest
+
+    from omnicrawler.core.config import load_config
+    from omnicrawler.core.errors import ConfigParseError
+
+    cfg_path = tmp_path / "bad.yaml"
+    cfg_path.write_text(
+        "project: {name: stealth, workspace: work/stealth}\n"
+        "source: {kind: browser, seeds: ['https://example.org']}\n"
+        "browser: {engine: playwright, stealth_level: bogus}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigParseError, match="stealth_level"):
+        load_config(cfg_path)

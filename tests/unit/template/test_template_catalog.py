@@ -13,11 +13,11 @@ def test_bundled_catalog_is_recursive_and_searchable() -> None:
     identifiers = {record.metadata.template_id for record in records}
 
     # B3：魔法阈值（>=30）改为"必需模板 id 集合"断言（可反向触发）。
+    # C1：sites/crossref-works 等已只留市场（内核去重），不得再出现在必需集。
     _required_templates = {
         "generic/list-detail",
         "generic/single-page",
         "protocols/rest-offset",
-        "sites/crossref-works",
         "cms/wordpress-rest",
         "social/zhihu-topic",
         "industries/government-policy",
@@ -32,6 +32,23 @@ def test_bundled_catalog_is_recursive_and_searchable() -> None:
     assert "industries/government-policy" in identifiers
     assert catalog.search("WordPress", category="cms")
     assert catalog.search(tags=["PDF"], capabilities=["ocr"])
+
+
+def test_retired_site_adapters_stay_in_market_only() -> None:
+    """C1 去重守卫（反向可触发）：内核不得再收录已迁市场的站点适配器。
+
+    2026-09-23 拍板"只留市场"：crossref / github-public-issues / openalex
+    的内核副本已删，同内容以市场 id（sites/market/*）分发。
+    """
+    from omnicrawler.templates.template_catalog import bundled_template_catalog
+
+    kernel_ids = {r.metadata.template_id for r in bundled_template_catalog().discover()}
+    overlap = kernel_ids & {
+        "sites/crossref-works",
+        "sites/github-public-issues",
+        "sites/openalex-works",
+    }
+    assert not overlap, f"这些模板已裁定只留市场，内核不得回添：{sorted(overlap)}"
 
 
 def test_template_recommendation_uses_multiple_evidence_types() -> None:

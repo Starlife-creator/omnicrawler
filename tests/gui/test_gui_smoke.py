@@ -75,7 +75,6 @@ def test_task_workspace_template_library_and_rebuild_start_offscreen(monkeypatch
         "generic/single-page",
         "generic/spa-api-discovery",
         "protocols/rest-offset",
-        "sites/crossref-works",
         "cms/wordpress-rest",
         "social/zhihu-topic",
         "industries/news-articles",

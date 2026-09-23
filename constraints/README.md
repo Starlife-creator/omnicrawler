@@ -51,3 +51,9 @@ When updating a pin:
 2. run the complete quality workflow;
 3. update `docs/TEST_REPORT.md` and `CHANGELOG.md`;
 4. regenerate the SBOM and release hashes.
+
+★ **2026-09-23 推进到 `db905fd907a501cd25f1f646f47f3559eb12f0ba`**（市场仓 `main`）：
+随"模板去重只留市场 + plugins 快照收口"同步推进。`test` 作业的跨仓守卫
+（`test_plugin_audit` 许可白名单 + `test_market_catalog_cross_repo` templates/plugins
+逐项相等 + 模板维护者签名真实验签）比对的都是本 pin 对应的市场源码；
+pin 落后于市场仓时，这些守卫只在 CI 判红（本机用真实同级市场仓则绿）。

@@ -159,7 +159,7 @@ omnicrawler reprocess -c config.yaml --run-id <id>
 |------|------|
 | 变更监控 | URL 定时检查 + 内容哈希对比 + 变化 diff + 桌面通知 |
 | 镜像注册表 | 多节点健康路由 + EWMA 评分 + 加权故障回退（经 SiteAliasRegistry 归一，EgressBroker 审计） |
-| 反检测隐身 | 浏览器路径默认注入反自动化检测规避脚本（stealth.min.js）并隐藏 webdriver 标记；分级隐身（off/low/medium/high）与指纹随机化为**实验性能力**（`stealth-fingerprint` CLI / GUI 指纹视图），尚未接入抓取主链路 |
+| 反检测隐身 | 按 `browser.stealth_level` 分级（off/low/medium/high，默认 low = stealth.min.js + webdriver 隐藏；medium/high 叠加分级指纹脚本）；UA 不参与随机化（诚实自报铁则不因隐身等级放宽） |
 | 代理池 | 加权轮换 + 健康检查 + 按域绑定 |
 
 ### 场景与基因
@@ -180,7 +180,7 @@ omnicrawler reprocess -c config.yaml --run-id <id>
 
 ---
 
-## 模板库（56 套）
+## 模板库（53 套）
 
 ```powershell
 omnicrawler templates list              # 按类别列出
@@ -420,7 +420,7 @@ src/omnicrawler/
 ├── services/                    # 应用服务编排、统一进度协议、场景基因
 ├── state/                       # SQLite WAL schema + StateStore/SceneStore/CapsuleStore
 ├── sdk/                         # 公共 API（稳定性标记）
-├── templates/                   # 56 套采集模板 + recipe
+├── templates/                   # 53 套采集模板 + recipe
 ├── pdfx/                        # PDF 解析/OCR/抽取子系统
 ├── convertx/                    # 任意格式互转（CSV/JSONL/Parquet/DuckDB/文档族）
 ├── sources/                     # 数据源适配器、镜像注册表

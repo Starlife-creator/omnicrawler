@@ -29,6 +29,7 @@ from . import session_crypto, session_state
 from .browser_engines import run_actions_for_page
 from .browser_guards import strip_cross_origin_credentials
 from .browser_launch import build_launch_args
+from .stealth_enhanced import StealthLevel
 
 LOGGER = logging.getLogger(__name__)
 
@@ -271,6 +272,21 @@ class PlaywrightPool:
         # 指向两个文件 ⇒ 登录了也白登录）。
         return session_state.session_state_path(self.config, context_key)
 
+    def _stealth_level(self) -> StealthLevel:
+        """读取 browser.stealth_level（B5 接线）。
+
+        validate_config 已把非法值判为 error；这里对**运行期**直接构造的
+        配置对象再防御一次：未知值按 low（历史默认行为）并告警，不静默。
+        """
+        raw = str(self.config.section("browser").get("stealth_level", "low")).strip().lower()
+        try:
+            return StealthLevel[raw.upper()]
+        except KeyError:
+            LOGGER.warning(
+                "browser.stealth_level=%r 非法（允许 off/low/medium/high），按 low 处理", raw
+            )
+            return StealthLevel.LOW
+
     def _new_context(self, browser: Any, context_key: str, request: CrawlRequest) -> Any:
         state_path = self._state_path(context_key)
         options: dict[str, Any] = {"user_agent": self.config.section("http").get("user_agent")}
@@ -288,24 +304,32 @@ class PlaywrightPool:
             self.target_policy.require(proxy)
             options["proxy"] = {"server": proxy}
         context = browser.new_context(**options)
-        # -- 反检测增强：注入 stealth.min.js + 隐藏 webdriver 标记 --
-        # FINAL-U9 口径对齐（与 stealth_enhanced.py "实验性、仅显式启用"的注释不同）：
-        # 默认 Playwright 路径在 stealth.min.js 存在时即无条件注入并隐藏
-        # navigator.webdriver——这是**默认行为**而非仅实验分支；README 尾部
-        # "不绕过站点安全策略"的合规边界请以此实际行为为准评估。如需关闭，
-        # 移除安装目录中的 stealth.min.js 即可停用注入。
-        stealth_path = Path(__file__).resolve().parent / "stealth.min.js"
-        if stealth_path.is_file():
+        # -- 反检测增强（B5 接线）：按 browser.stealth_level 分级 --
+        # off=不注入；low=stealth.min.js + webdriver 隐藏（历史默认行为，默认值保持兼容）；
+        # medium/high=叠加 stealth_enhanced 的分级指纹脚本（Canvas/WebGL/AudioContext/时区等）。
+        # ★ UA 不参与指纹随机化：诚实自报铁则不因隐身等级放宽，UA 恒取 http.user_agent。
+        # README 合规边界（不绕过站点安全策略）继续以本实际行为为准评估。
+        level = self._stealth_level()
+        if level is not StealthLevel.OFF:
+            stealth_path = Path(__file__).resolve().parent / "stealth.min.js"
+            if stealth_path.is_file():
+                try:
+                    context.add_init_script(path=str(stealth_path))
+                except Exception as exc:
+                    LOGGER.warning("Stealth script injection failed: %s", exc)
             try:
-                context.add_init_script(path=str(stealth_path))
+                context.add_init_script(
+                    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+                )
             except Exception as exc:
                 LOGGER.warning("Stealth script injection failed: %s", exc)
-        try:
-            context.add_init_script(
-                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
-            )
-        except Exception as exc:
-            LOGGER.warning("Stealth script injection failed: %s", exc)
+            if level.value >= StealthLevel.MEDIUM.value:
+                try:
+                    from .stealth_enhanced import get_stealth_enhancer
+
+                    get_stealth_enhancer().apply_to_playwright_context(context, level=level)
+                except Exception as exc:  # noqa: BLE001 —— 指纹脚本失败不阻断采集
+                    LOGGER.warning("分级指纹脚本注入失败（不阻断采集）：%s", exc)
         extra_headers = {
             **self.config.section("http").get("headers", {}),
             **self.config.section("source").get("headers", {}),

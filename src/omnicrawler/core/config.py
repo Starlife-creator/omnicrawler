@@ -106,6 +106,9 @@ DEFAULTS: dict[str, Any] = {
         "capture_api_responses": True, "max_api_response_bytes": 1_000_000,
         "max_api_capture_bytes": 10_000_000,
         "auto_generate_api_templates": True,
+        # B5：隐身分级接线（off=不注入；low=stealth.min.js+webdriver 隐藏，历史默认；
+        # medium/high=叠加 stealth_enhanced 分级指纹脚本）。UA 不参与随机化（诚实自报铁则）。
+        "stealth_level": "low",
     },
     # U1/U3（§11.1）：storage_state 快照与 HTTP cookie jar 的路径规则见
     # fetching/session_state.py。bridge_to_http 默认开启（用户手动登录一次后
@@ -692,6 +695,12 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         errors.append("egress.experimental_selenium_bidi_guard必须是true或false")
     if config.source_kind == "browser" and not config.section("browser").get("engine"):
         errors.append("browser.engine不能为空")
+    # B5：隐身分级契约——非法值直接报错（确定性判据），运行期不做静默回退
+    _stealth_raw = str(config.section("browser").get("stealth_level", "low")).strip().lower()
+    if _stealth_raw not in {"off", "low", "medium", "high"}:
+        errors.append(
+            f"browser.stealth_level 非法: {_stealth_raw!r}（允许 off/low/medium/high）"
+        )
     # 分页形状由 core.pagination 的契约统一判定与校验（唯一真源）；
     # 这里只负责把结果并入 errors —— 此前核心只校验 type=page，
     # 游标配置缺 next_path 时既不报错也不翻页（静默少采几页）。

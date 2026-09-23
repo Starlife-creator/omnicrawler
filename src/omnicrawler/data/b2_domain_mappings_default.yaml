@@ -55,14 +55,15 @@ mappings:
   suning.com:        builtin:industries/ecommerce_products.yaml
 
   # --- 代码托管 / 技术文档 ---
-  github.com:        sites/github-public-issues
+  github.com:        sites/market/github-public-issues
   gitlab.com:        builtin:generic/list_detail.yaml
   gitee.com:         builtin:generic/list_detail.yaml
 
   # --- 视频 / 媒体 / 社交 ---
+  # douyin.com 映射已移除（2026-09-23 核实：原指向 social/xiaohongshu-note 属结构错配，
+  # 且无已核实的等价模板；未核实映射比 generic 兜底更糟）
   youtube.com:       builtin:generic/media_gallery.yaml
   bilibili.com:      builtin:generic/media_gallery.yaml
-  douyin.com:        social/xiaohongshu-note   # 复用 note 结构
   weibo.com:         social/weibo-search
   xiaohongshu.com:   social/xiaohongshu-note
   mp.weixin.qq.com:  builtin:industries/news_articles.yaml   # 公众号文章
@@ -72,7 +73,7 @@ mappings:
   163.com:           builtin:industries/news_articles.yaml
   toutiao.com:       builtin:industries/news_articles.yaml
   thepaper.cn:       builtin:industries/news_articles.yaml
-  caixin.com:        builtin:industries/company_announcements.yaml   # 财新
+  caixin.com:        builtin:industries/news_articles.yaml          # 财新（新闻媒体；2026-09-23 核实修正）
   huxiu.com:         builtin:industries/news_articles.yaml
   36kr.com:          builtin:industries/news_articles.yaml
   ifanr.com:         builtin:industries/news_articles.yaml
@@ -80,8 +81,8 @@ mappings:
   # --- 文档 / 学术 / 开放数据 ---
   wikipedia.org:     sites/wikipedia-category
   zh.wikipedia.org:  sites/wikipedia-category
-  crossref.org:      sites/crossref-works
-  openalex.org:      sites/openalex-works
+  crossref.org:      sites/market/crossref-works
+  openalex.org:      sites/market/openalex-works
   arxiv.org:         builtin:industries/academic_papers.yaml
   cnki.net:          builtin:industries/academic_papers.yaml   # 中国知网
   wanfangdata.com.cn: builtin:industries/academic_papers.yaml  # 万方
@@ -116,9 +117,9 @@ fallback_mapping:
   builtin:industries/ecommerce_products.yaml: builtin:industries/ecommerce_products.yaml
 
   # 代码 / 技术
-  sites/github-public-issues: builtin:generic/list_detail.yaml
-  sites/crossref-works:       builtin:industries/academic_papers.yaml
-  sites/openalex-works:       builtin:industries/academic_papers.yaml
+  sites/market/github-public-issues: builtin:generic/list_detail.yaml
+  sites/market/crossref-works:       builtin:industries/academic_papers.yaml
+  sites/market/openalex-works:       builtin:industries/academic_papers.yaml
   sites/wikipedia-category:   builtin:generic/list_detail.yaml
 
   # 学术 / 开放数据
