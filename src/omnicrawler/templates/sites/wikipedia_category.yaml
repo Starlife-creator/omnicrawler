@@ -29,6 +29,7 @@ template:
   verified_at: '2026-07-17'
   publisher: starlife
   author_fingerprint: 4c3014804d85de2568f85e62a3048429
+  license: OmniCrawler-MIT; API 行为依据 MediaWiki 官方文档; 内容遵循各站点许可（如 CC BY-SA）
 project:
   name: wikipedia_category
   workspace: work/wikipedia_category

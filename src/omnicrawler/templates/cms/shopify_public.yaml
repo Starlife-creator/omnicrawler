@@ -28,6 +28,7 @@ template:
   verified_at: '2026-07-17'
   publisher: starlife
   author_fingerprint: 4c3014804d85de2568f85e62a3048429
+  license: OmniCrawler-MIT; 仅采集公开页面; 商品数据权利归各商店所有者
 project:
   name: shopify_public
   workspace: work/shopify_public

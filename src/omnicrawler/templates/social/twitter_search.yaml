@@ -36,6 +36,7 @@ template:
   verified_at: '2026-08-04'
   publisher: starlife
   author_fingerprint: 4c3014804d85de2568f85e62a3048429
+  license: OmniCrawler-MIT; 仅公开内容; 须符合 X/Twitter 服务条款
 project:
   name: twitter_search
   workspace: work/twitter_search

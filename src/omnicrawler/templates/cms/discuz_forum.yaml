@@ -29,6 +29,7 @@ template:
   verified_at: '2026-07-17'
   publisher: starlife
   author_fingerprint: 4c3014804d85de2568f85e62a3048429
+  license: OmniCrawler-MIT; 仅采集公开页面; 内容权利归站点与作者
 project:
   name: discuz_forum
   workspace: work/discuz_forum
