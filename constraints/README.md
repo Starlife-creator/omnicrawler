@@ -57,3 +57,8 @@ When updating a pin:
 （`test_plugin_audit` 许可白名单 + `test_market_catalog_cross_repo` templates/plugins
 逐项相等 + 模板维护者签名真实验签）比对的都是本 pin 对应的市场源码；
 pin 落后于市场仓时，这些守卫只在 CI 判红（本机用真实同级市场仓则绿）。
+
+★ **2026-09-24 推进到 `cff9eb76ff9dd2ef2e0be12ac9acf88cad4d6364`**（市场仓 `main`）：
+随"12 个站点适配器迁入市场（1.0.0）"同步推进。`6d65e1b` 曾因 pin 未随快照同步推进
+而 CI 红（跨仓守卫比对的还是 db905fd 的 3 模板 catalog）——**sync_snapshot 之后必须同步
+推进 pin**，两者是同一收口动作的两半。

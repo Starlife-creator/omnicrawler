@@ -75,15 +75,13 @@ def test_task_workspace_template_library_and_rebuild_start_offscreen(monkeypatch
         "generic/single-page",
         "generic/spa-api-discovery",
         "protocols/rest-offset",
-        "cms/wordpress-rest",
-        "social/zhihu-topic",
         "industries/news-articles",
         "documents/pdf-collection",
     }
     _missing = _required_templates - template_ids
     assert not _missing, f"必需模板缺失：{sorted(_missing)}"
     dialog = TemplateLibraryDialog(templates)
-    dialog._search.setText("wordpress")
+    dialog._search.setText("pdf")
     assert dialog._list.count() >= 1
 
     window._refresh_canvas()
