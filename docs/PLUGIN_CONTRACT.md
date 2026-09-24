@@ -84,8 +84,14 @@
 QWidget、绘制器或播放器回调。确实需要自定义 QWidget 时才使用 `register_ui_panel`，并维持最高
 风险提示。
 
-市场 `view` 当前只允许 label、button、directory_picker、slider、select 和 resource_list。面板可在
+市场 `view` 当前只允许 label、button、directory_picker、slider、select、resource_list 和
+rich_text。面板可在
 宿主允许的左、右、底部区域移动、浮动和调整尺寸；插件不能覆盖核心菜单、中央工作区或安全提示。
+`rich_text`（P2.1，2026-09-24）是**受限长文本**组件：内容为结构化文本段
+（heading / paragraph / bullet / link），宿主纯文本渲染、绝不解释 HTML；单组件段数 ≤64、
+总字符 ≤4096；link 段仅允许 http(s) URL 且必须经用户确认后才在系统浏览器打开。
+需要该组件的插件在 `required_capabilities` 声明 `"view.richtext": ">=1"`（宿主版本不足时
+在启动插件代码前拒载）。
 目录选择返回插件会话专属的不透明句柄。媒体背景由 `surface.background.*` 控制，不暴露 QWidget；
 v2 背景表面是语义化底层槽位：插件可以选择 `application/workspace/canvas` 范围、适配方式、
 宿主预设、背景可见度、前景面板不透明度、遮罩和有界静态模糊，但不能控制 Qt 层级。宿主强制

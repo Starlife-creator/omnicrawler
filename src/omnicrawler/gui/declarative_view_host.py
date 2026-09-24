@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from .i18n import _
 from .media_surface import MediaSurfaceService
@@ -159,6 +159,53 @@ class DeclarativeViewController(QtCore.QObject):
                 )
             )
             layout.addWidget(listing)
+
+        elif kind == "rich_text":
+            # 2026-09-24 P2.1：受限长文本——结构化段纯文本渲染，绝不当 HTML 解释；
+            # link 段点击后弹确认框（外链需确认是 §十 10.3 的隔离要求）。
+            for segment in item.get("segments", []):
+                seg_type = segment["type"]
+                if seg_type == "heading":
+                    heading = QtWidgets.QLabel(segment["text"])
+                    heading.setWordWrap(True)
+                    heading.setObjectName("declarativeRichHeading")
+                    layout.addWidget(heading)
+                elif seg_type == "bullet":
+                    bullet = QtWidgets.QLabel("• " + segment["text"])
+                    bullet.setWordWrap(True)
+                    bullet.setIndent(12)
+                    layout.addWidget(bullet)
+                elif seg_type == "link":
+                    url = segment.get("url", "")
+                    link = QtWidgets.QPushButton(segment["text"])
+                    link.setObjectName("declarativeRichLink")
+                    link.setToolTip(url)
+                    link.clicked.connect(
+                        lambda _checked=False, target=url, label=segment["text"]:
+                        self._open_external_link(target, label)
+                    )
+                    layout.addWidget(link)
+                else:  # paragraph
+                    paragraph = QtWidgets.QLabel(segment["text"])
+                    paragraph.setWordWrap(True)
+                    layout.addWidget(paragraph)
+
+    def _open_external_link(self, url: str, label: str) -> None:
+        """外链需确认（§十 10.3）：不可信内容里的 URL 必须用户显式确认才打开。"""
+        if not url:
+            return
+        message = _(
+            "要在系统浏览器中打开以下链接吗？\n\n{label}\n{url}\n\n链接来自插件内容，请确认可信。"
+        ).format(label=label, url=url)
+        choice = QtWidgets.QMessageBox.question(
+            self.dock,
+            _("打开外部链接"),
+            message,
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No,
+        )
+        if choice == QtWidgets.QMessageBox.StandardButton.Yes:
+            QtGui.QDesktopServices.openUrl(QtCore.QUrl(url))
 
     def _choose_directory(self, item: dict[str, Any]) -> None:
         try:

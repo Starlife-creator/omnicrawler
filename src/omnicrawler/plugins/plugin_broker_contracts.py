@@ -42,6 +42,11 @@ CAPABILITY_VERSIONS: dict[str, int] = {
     "surface.background.clear": 1,
     "surface.background.capabilities": 1,
     "secrets.get": 1,
+    # 2026-09-24 P2.1：受限长文本渲染（声明式视图 rich_text 组件）。
+    # 语义：view.describe 的 components 可含 rich_text 段，宿主以受限组件渲染
+    # （纯文本、无 HTML、外链确认后打开）。结构化段格式不兼容变更时 bump，
+    # 追加新段类型属可选扩展、不 bump（与文件头约定一致）。
+    "view.richtext": 1,
 }
 
 _CAPABILITY_REQUIREMENT = re.compile(r"^(?:>=)?([1-9][0-9]*)$")

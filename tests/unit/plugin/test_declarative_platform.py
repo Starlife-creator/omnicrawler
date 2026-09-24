@@ -181,3 +181,50 @@ def test_contract2_resource_and_view_adapters_use_data_only_operations() -> None
     assert [operation for operation, _payload in host.calls] == [
         "view.describe", "resource.inventory",
     ]
+
+
+def test_rich_text_component_validation() -> None:
+    """P2.1（2026-09-24）：受限长文本组件的描述符校验。
+
+    正例：四类段（heading/paragraph/bullet/link）规范化通过；
+    反例：未知段类型 / 非 http(s) URL / 空 segments / 未知字段 / 超总长。
+    """
+    from omnicrawler.plugins.plugin_declarative import validate_view_descriptor
+
+    raw = {
+        "view_id": "rich-demo", "title": "富文本",
+        "components": [{
+            "type": "rich_text", "id": "body",
+            "segments": [
+                {"type": "heading", "text": "标题"},
+                {"type": "paragraph", "text": "正文段落"},
+                {"type": "bullet", "text": "条目"},
+                {"type": "link", "text": "官网", "url": "https://example.com"},
+            ],
+        }],
+    }
+    normalized = validate_view_descriptor(raw)
+    segments = normalized["components"][0]["segments"]
+    assert [s["type"] for s in segments] == ["heading", "paragraph", "bullet", "link"]
+    assert segments[3]["url"] == "https://example.com"
+
+    def _reject(mutate) -> None:
+        bad = {
+            "view_id": "rich-bad", "title": "x",
+            "components": [{"type": "rich_text", "id": "body", "segments": [
+                {"type": "heading", "text": "h"},
+            ]}],
+        }
+        mutate(bad["components"][0]["segments"])
+        with pytest.raises(ValueError):
+            validate_view_descriptor(bad)
+
+    _reject(lambda s: s.append({"type": "script", "text": "x"}))          # 未知段类型
+    _reject(lambda s: s.append({"type": "link", "text": "x", "url": "javascript:alert(1)"}))  # 非 http(s)
+    _reject(lambda s: s.append({"type": "link", "text": "x"}))            # link 缺 url
+    _reject(lambda s: s.append({"type": "paragraph", "text": "x", "evil": 1}))  # 未知字段
+    with pytest.raises(ValueError, match="非空数组"):
+        validate_view_descriptor({
+            "view_id": "rich-empty", "title": "x",
+            "components": [{"type": "rich_text", "id": "body", "segments": []}],
+        })

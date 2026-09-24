@@ -8,9 +8,14 @@ from typing import Any
 MAX_VIEW_COMPONENTS = 64
 MAX_COMPONENT_ITEMS = 500
 MAX_TEXT_LENGTH = 512
+# 2026-09-24 P2.1：受限长文本组件（rich_text）——结构化文本段，宿主统一渲染。
+# 威胁模型：内容来自不可信插件 ⇒ 不收 HTML、纯文本渲染、外链宿主确认后打开。
+MAX_RICH_TEXT_SEGMENTS = 64
+MAX_RICH_TEXT_TOTAL_CHARS = 4096
+RICH_TEXT_SEGMENT_TYPES = frozenset({"heading", "paragraph", "bullet", "link"})
 VIEW_ZONES = frozenset({"left", "right", "bottom"})
 COMPONENT_TYPES = frozenset(
-    {"label", "button", "directory_picker", "slider", "select", "resource_list"}
+    {"label", "button", "directory_picker", "slider", "select", "resource_list", "rich_text"}
 )
 _ID = re.compile(r"^[a-z][a-z0-9_.-]{1,95}$")
 
@@ -76,6 +81,46 @@ def _bounded_int(value: Any, minimum: int, maximum: int, field: str) -> int:
     return result
 
 
+def _validate_rich_text_segments(raw: Any) -> list[dict[str, Any]]:
+    """校验 rich_text 的结构化文本段（2026-09-24 P2.1）。
+
+    段类型白名单：heading / paragraph / bullet / link；link 必须带 http(s) URL
+    （打开前宿主还会弹确认）。总字符数受限，防止把宿主渲染面板撑成内存靶子。
+    """
+    if not isinstance(raw, list) or not raw:
+        raise ValueError("声明式视图 rich_text segments 必须是非空数组")
+    if len(raw) > MAX_RICH_TEXT_SEGMENTS:
+        raise ValueError(f"声明式视图 rich_text segments 最多允许 {MAX_RICH_TEXT_SEGMENTS} 段")
+    normalized: list[dict[str, Any]] = []
+    total = 0
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("声明式视图 rich_text segment 必须是对象")
+        unknown = set(item) - {"type", "text", "url"}
+        if unknown:
+            raise ValueError(f"声明式视图 rich_text segment 包含未知字段: {sorted(unknown)}")
+        seg_type = _text(item.get("type"), "segment.type", required=True).casefold()
+        if seg_type not in RICH_TEXT_SEGMENT_TYPES:
+            raise ValueError(f"声明式视图 rich_text segment 类型不受支持: {seg_type}")
+        text = _text(item.get("text"), "segment.text", required=(seg_type != "link"))
+        if seg_type == "link":
+            url = _text(item.get("url"), "segment.url", required=True)
+            if not (url.startswith("https://") or url.startswith("http://")):
+                raise ValueError("声明式视图 rich_text link 的 url 仅允许 http(s)")
+        else:
+            url = ""
+        total += len(text) + len(url)
+        if total > MAX_RICH_TEXT_TOTAL_CHARS:
+            raise ValueError(
+                f"声明式视图 rich_text 总字符数超出上限 {MAX_RICH_TEXT_TOTAL_CHARS}"
+            )
+        segment: dict[str, Any] = {"type": seg_type, "text": text}
+        if url:
+            segment["url"] = url
+        normalized.append(segment)
+    return normalized
+
+
 def _validate_component(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ValueError("声明式视图组件必须是对象")
@@ -88,7 +133,7 @@ def _validate_component(raw: Any) -> dict[str, Any]:
     allowed = {
         "type", "id", "label", "text", "action", "value", "minimum", "maximum",
         "options", "items", "empty_text", "directory_label",
-        "discovery_kind", "discovery_id",
+        "discovery_kind", "discovery_id", "segments",
     }
     unknown = set(raw) - allowed
     if unknown:
@@ -127,6 +172,8 @@ def _validate_component(raw: Any) -> dict[str, Any]:
             if isinstance(item, dict)
         ]
         result["value"] = _text(raw.get("value"), "component.value")
+    if kind == "rich_text":
+        result["segments"] = _validate_rich_text_segments(raw.get("segments"))
     if kind == "resource_list":
         items = raw.get("items", [])
         if not isinstance(items, list) or len(items) > MAX_COMPONENT_ITEMS:

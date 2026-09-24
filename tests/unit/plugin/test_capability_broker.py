@@ -248,3 +248,33 @@ def test_verified_bytes_executed_not_disk(tmp_path: Path) -> None:
     finally:
         session.end()
     assert not entry_dir.exists(), "会话结束必须清理验签临时入口"
+
+
+def test_view_richtext_capability_registered_and_versioned() -> None:
+    """P2.1（2026-09-24）：受限长文本渲染能力注册为 view.richtext v1。
+
+    反向断言：宿主不支持的能力名（拼写错误/未来能力）必须在能力协商阶段
+    ValueError 拒载——plugin_loader 在启动插件子进程**之前**调它（源码顺序
+    守卫见 test_capability_check_precedes_plugin_code_launch）。
+    """
+    plugin_broker.validate_required_capabilities({"view.richtext": 1})
+    plugin_broker.validate_required_capabilities({"view.richtext": ">=1"})
+    with pytest.raises(ValueError, match="版本不足"):
+        plugin_broker.validate_required_capabilities({"view.richtext": ">=2"})
+
+
+def test_capability_check_precedes_plugin_code_launch() -> None:
+    """拒载时序守卫：能力校验必须位于插件子进程构造之前。
+
+    实证方式 = 源码顺序断言（plugin_loader.py 内 validate_required_capabilities
+    的行号 < _SubprocessSessionHost( 的行号）＋上面的 fail-closed 单测。
+    覆盖边界：不跑真子进程；「校验先于代码执行」的完整链路由子进程沙箱形态保证。
+    """
+    from pathlib import Path
+
+    source = Path(plugin_broker.__file__).parent.joinpath("plugin_loader.py").read_text(
+        encoding="utf-8"
+    )
+    check_at = source.index("validate_required_capabilities(")
+    launch_at = source.index("_SubprocessSessionHost(")
+    assert check_at < launch_at, "能力校验必须先于插件子进程构造（老 core 拒载于代码启动前）"

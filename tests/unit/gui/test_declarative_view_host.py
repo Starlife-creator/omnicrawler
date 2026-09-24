@@ -168,3 +168,52 @@ def test_rebuild_preserves_list_scroll_position(
     assert new_listing.objectName() == "declarativeList_issues"
     assert new_listing.verticalScrollBar().value() == saved
     main.deleteLater()
+
+
+def test_rich_text_renders_plain_text_and_confirms_links(
+    qapp: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P2.1（2026-09-24）：rich_text 段纯文本渲染；外链点击必须确认，拒绝则不开。
+
+    反向断言：拒绝确认后 openUrl 不得被调用（外链需确认是 §十 10.3 隔离要求）。
+    """
+    descriptor = _descriptor(components=[
+        {
+            "type": "rich_text", "id": "body",
+            "segments": [
+                {"type": "heading", "text": "标题段"},
+                {"type": "paragraph", "text": "正文段"},
+                {"type": "bullet", "text": "条目段"},
+                {"type": "link", "text": "项目主页", "url": "https://example.com"},
+            ],
+        },
+    ])
+    main, _adapter, controller = _controller(monkeypatch, descriptor)
+
+    dock = controller.dock
+    texts = [w.text() for w in dock.findChildren(QtWidgets.QLabel)]
+    assert "标题段" in texts
+    assert any(t.startswith("• ") and "条目段" in t for t in texts)
+    links = dock.findChildren(QtWidgets.QPushButton, "declarativeRichLink")
+    assert len(links) == 1 and links[0].text() == "项目主页"
+
+    opened: list[str] = []
+    monkeypatch.setattr(
+        dvh_module.QtGui.QDesktopServices, "openUrl",
+        lambda url: opened.append(url.toString()) or True,
+    )
+    # 用户拒绝（默认按钮 = No）⇒ 不打开
+    monkeypatch.setattr(
+        dvh_module.QtWidgets.QMessageBox, "question",
+        lambda *args, **kwargs: QtWidgets.QMessageBox.StandardButton.No,
+    )
+    links[0].click()
+    assert opened == []
+    # 用户确认 ⇒ 打开且 URL 原样
+    monkeypatch.setattr(
+        dvh_module.QtWidgets.QMessageBox, "question",
+        lambda *args, **kwargs: QtWidgets.QMessageBox.StandardButton.Yes,
+    )
+    links[0].click()
+    assert opened == ["https://example.com"]
+    main.deleteLater()
