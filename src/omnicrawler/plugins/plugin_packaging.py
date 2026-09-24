@@ -246,7 +246,11 @@ def build_template_submission(
     if not _TEMPLATE_ID_RE.match(template_id) or ".." in template_id:
         raise PackagingError(f"非法模板 ID: {template_id}")
     if listing is not None:
-        (template_dir / "listing.md").write_text(listing, encoding="utf-8")
+        # 2026-09-24：listing 必须以 LF 字节落盘（write_text 在 Windows 会写 CRLF，
+        # 而 manifest.files 哈希与市场仓 `* text=auto eol=lf` 全库 LF 策略按字节比对，
+        # CRLF 签名在 Linux/macOS checkout 下必然校验失败）。统一规范化为 LF。
+        listing_text = listing.replace("\r\n", "\n")
+        (template_dir / "listing.md").write_bytes(listing_text.encode("utf-8"))
     if not (template_dir / "listing.md").is_file():
         raise PackagingError("缺少 listing.md：完成并签名前必须填写模板说明")
     user = _load_user(username, password)
