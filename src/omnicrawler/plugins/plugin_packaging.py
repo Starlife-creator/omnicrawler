@@ -208,7 +208,10 @@ def build_plugin_submission(
     plugin_id = _plugin_id_from_dir(plugin_dir)
     version = str(metadata.get("version") or "0.1.0")
     if listing is not None:
-        (plugin_dir / "listing.md").write_text(listing, encoding="utf-8")
+        # 2026-09-24：与 build_template_submission 同款 LF 规范化（市场仓全库 LF 策略，
+        # CRLF 签名在 Linux/macOS checkout 下哈希校验必然失败——见 7e6abd0）。
+        listing_text = listing.replace("\r\n", "\n")
+        (plugin_dir / "listing.md").write_bytes(listing_text.encode("utf-8"))
     if not (plugin_dir / "listing.md").is_file():
         raise PackagingError("缺少 listing.md：完成并签名前必须填写插件说明")
     user = _load_user(username, password)
