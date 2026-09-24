@@ -14,6 +14,17 @@ from .widgets.toast import ToastManager
 LOGGER = logging.getLogger(__name__)
 
 
+class _ProgressRelay(QtCore.QObject):
+    """U6：工作线程 → GUI 线程的进度投递桥。
+
+    broker 的 capability 处理器跑在 pipeline 工作线程；Qt 信号从非 GUI 线程
+    emit 时自动排队到接收者所属线程，这是唯一允许的跨线程形态——
+    绝不在工作线程直接触碰 QWidget。
+    """
+
+    triggered = QtCore.Signal(dict)
+
+
 class DeclarativeViewController(QtCore.QObject):
     """Own one movable dock and translate widgets into data-only actions."""
 
@@ -25,6 +36,19 @@ class DeclarativeViewController(QtCore.QObject):
         self._descriptor = adapter.describe()
         self._surface = MediaSurfaceService(main_window, plugin_id, self._descriptor["title"])
         adapter.bind_surface(self._surface)
+        # U6（2026-09-24）：绑定运行进度投递桥。限速合并：突发上报只保留最新一帧，
+        # 每 300ms 至多刷一次（≤2s 验收间隔的裕量）；面板缺席/已关闭时静默丢弃。
+        self._closed = False
+        self._pending_progress: dict[str, Any] | None = None
+        self._progress_relay = _ProgressRelay(self)
+        self._progress_relay.triggered.connect(self._on_progress_queued)
+        self._progress_timer = QtCore.QTimer(self)
+        self._progress_timer.setSingleShot(True)
+        self._progress_timer.setInterval(300)
+        self._progress_timer.timeout.connect(self._flush_pending_progress)
+        bind_relay = getattr(adapter, "bind_progress_relay", None)
+        if callable(bind_relay):
+            bind_relay(self._progress_relay.triggered.emit)
         self.dock = QtWidgets.QDockWidget(self._descriptor["title"], main_window)
         self.dock.setObjectName(
             f"declarativePluginView_{plugin_id}_{self._descriptor['view_id']}"
@@ -138,6 +162,37 @@ class DeclarativeViewController(QtCore.QObject):
                 )
             )
             layout.addWidget(combo)
+        elif kind == "text":
+            # 2026-09-24 U4：单行文本输入——值经 view.action 以 {"value": 文本} 上送
+            # （与 select 的 value 同通道）。只挂 editingFinished（回车与失焦都会触发）：
+            # 若同时挂 returnPressed 会造成同一次回车双重派发、动作被执行两次。
+            if item.get("label"):
+                layout.addWidget(QtWidgets.QLabel(item["label"]))
+            editor = QtWidgets.QLineEdit(str(item.get("value", "")))
+            editor.setObjectName(f"declarativeText_{item['id']}")
+            editor.setPlaceholderText(str(item.get("placeholder", "")))
+            editor.setMaxLength(int(item.get("maxlength", 512)))
+            editor.editingFinished.connect(
+                lambda current=item, widget=editor: self._dispatch(
+                    current, {"value": widget.text()}
+                )
+            )
+            layout.addWidget(editor)
+        elif kind == "progress":
+            # 2026-09-24 U6：运行进度区——数值不由描述符携带，只由 view.progress
+            # 推送刷新（_apply_progress）；描述符仅声明占位区。
+            if item.get("label"):
+                layout.addWidget(QtWidgets.QLabel(item["label"]))
+            bar = QtWidgets.QProgressBar()
+            bar.setObjectName(f"declarativeProgress_{item['id']}")
+            bar.setRange(0, 1)
+            bar.setValue(0)
+            bar.setFormat(_("待运行"))
+            layout.addWidget(bar)
+            status = QtWidgets.QLabel("")
+            status.setObjectName(f"declarativeProgressText_{item['id']}")
+            status.setWordWrap(True)
+            layout.addWidget(status)
         elif kind == "resource_list":
             if item.get("label"):
                 layout.addWidget(QtWidgets.QLabel(item["label"]))
@@ -226,6 +281,59 @@ class DeclarativeViewController(QtCore.QObject):
         except Exception as exc:  # noqa: BLE001
             self._report(exc)
 
+    def _on_progress_queued(self, data: dict[str, Any]) -> None:
+        """进度帧到达（已排队到 GUI 线程）：立即刷最新一帧并开启合并窗口。"""
+        if self._closed:
+            return
+        self._pending_progress = dict(data)
+        if self._progress_timer.isActive():
+            return  # 合并窗口内：只保留最新一帧，到期统一刷
+        self._apply_progress(self._pending_progress)
+        self._pending_progress = None
+        self._progress_timer.start()
+
+    def _flush_pending_progress(self) -> None:
+        if self._closed or self._pending_progress is None:
+            return
+        data = self._pending_progress
+        self._pending_progress = None
+        self._apply_progress(data)
+
+    def _apply_progress(self, data: dict[str, Any]) -> None:
+        """把一帧进度刷进面板；面板未挂载时静默丢弃（U6 生命周期要求）。"""
+        panel = self.dock.widget()
+        if panel is None:
+            return
+        try:
+            done = int(data.get("done", 0))
+            total = int(data.get("total", 0))
+        except (TypeError, ValueError):
+            return
+        total = max(total, 0)
+        done = min(max(done, 0), total if total else 0)
+        summary_bits: list[str] = []
+        success, failed = data.get("success"), data.get("failed")
+        if isinstance(success, int) or isinstance(failed, int):
+            summary_bits.append(
+                _("成功 {done} · 失败 {failed}").format(done=int(success or 0), failed=int(failed or 0))
+            )
+        current = str(data.get("current_doi") or "").strip()
+        if current:
+            summary_bits.append(current)
+        summary = " · ".join(summary_bits)
+        for bar in panel.findChildren(QtWidgets.QProgressBar):
+            if not bar.objectName().startswith("declarativeProgress_"):
+                continue
+            if total > 0:
+                bar.setRange(0, total)
+                bar.setValue(done)
+                bar.setFormat("%v / %m")
+            else:
+                bar.setRange(0, 0)  # total 未知 → 忙碌态
+        for status in panel.findChildren(QtWidgets.QLabel):
+            if status.objectName().startswith("declarativeProgressText_"):
+                status.setText(summary)
+
     def _dispatch(self, component: dict[str, Any], payload: dict[str, Any]) -> None:
         action = component.get("action", "")
         if not action:
@@ -252,6 +360,9 @@ class DeclarativeViewController(QtCore.QObject):
     def close(self) -> None:
         """Unmount this view before a plugin reload and release its media surface."""
 
+        self._closed = True
+        self._progress_timer.stop()
+        self._pending_progress = None
         self._surface.close()
         self._main_window.removeDockWidget(self.dock)
         self.dock.deleteLater()

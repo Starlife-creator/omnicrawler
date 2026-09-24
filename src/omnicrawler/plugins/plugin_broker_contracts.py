@@ -47,6 +47,11 @@ CAPABILITY_VERSIONS: dict[str, int] = {
     # （纯文本、无 HTML、外链确认后打开）。结构化段格式不兼容变更时 bump，
     # 追加新段类型属可选扩展、不 bump（与文件头约定一致）。
     "view.richtext": 1,
+    # 2026-09-24 U6：运行进度推送（插件 → 宿主 GUI，单向、可丢弃）。
+    # 语义：运行期插件经 omnicrawler_sdk.call("view.progress", {...}) 上报批处理
+    # 进度，宿主合并限速后刷新对应插件面板；面板缺席时静默丢弃。载荷收窄为
+    # 已知字段集，新增可选字段不 bump、剔除字段才 bump。
+    "view.progress": 1,
 }
 
 _CAPABILITY_REQUIREMENT = re.compile(r"^(?:>=)?([1-9][0-9]*)$")
@@ -104,6 +109,10 @@ _CAPABILITY_PERMISSIONS: dict[str, str | None] = {
     # 默认路径是网络经宿主代理密钥零暴露（O2 方案 C），secrets.get 仅显式例外。
     "secrets.get": "secrets:read",
     "system.info": None,
+    # U6（2026-09-24）：进度推送是宿主生命周期性质的单向通知，不承载敏感能力，
+    # 与 system.info 同为内置（None）——无需 manifest 权限；滥用面由宿主侧
+    # 限速合并 + 静默丢弃兜住。
+    "view.progress": None,
 }
 
 E_CONTRACT = "E_CONTRACT"

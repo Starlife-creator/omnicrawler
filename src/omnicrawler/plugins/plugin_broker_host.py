@@ -36,6 +36,46 @@ class BrokerSystemMixin:
         return result
 
 
+class BrokerProgressMixin:
+    """view.progress 能力域（U6，2026-09-24）：插件运行期向宿主 GUI 推送批处理进度。
+
+    线程契约：本处理器跑在 pipeline 工作线程（drive_loop 的 capability 应答路径），
+    ``_progress_relay`` 必须是**线程安全的一次投递**（Qt 信号 emit，自动跨线程排队）
+    ——GUI 更新由接收方在其所属线程完成，本处理器绝不直接触碰任何 QWidget。
+    无接收方（面板未安装 / 插件无 view 类型）时静默降级为 delivered=False；
+    投递异常同样不阻断插件运行（进度是可丢弃的通知，不是契约性数据）。
+    """
+
+    _progress_relay: Any
+    _plugin_id: str
+    _PROGRESS_FIELDS = frozenset(
+        {"done", "total", "current_doi", "eta_seconds", "success", "failed"}
+    )
+
+    def _cap_view_progress(self, payload: dict[str, Any]) -> dict[str, Any]:
+        relay = getattr(self, "_progress_relay", None)
+        if relay is None:
+            return {"delivered": False, "reason": "no-view-panel"}
+        unknown = set(payload) - self._PROGRESS_FIELDS
+        if unknown:
+            raise CapabilityError(E_CONTRACT, f"view.progress 包含未知字段: {sorted(unknown)}")
+        data = dict(payload)
+        try:
+            data["done"] = int(data.get("done", 0))
+            data["total"] = int(data.get("total", 0))
+        except (TypeError, ValueError) as exc:
+            raise CapabilityError(E_CONTRACT, f"view.progress done/total 必须是整数: {exc}") from exc
+        data["plugin_id"] = self._plugin_id
+        try:
+            relay(data)
+        except Exception as exc:  # noqa: BLE001 - 推送失败绝不阻断插件运行
+            LOGGER.warning(
+                "view.progress 投递失败（不阻断运行）: plugin=%s: %s", self._plugin_id, exc
+            )
+            return {"delivered": False, "reason": "relay-error"}
+        return {"delivered": True}
+
+
 class BrokerStateMixin:
     """state 能力域：插件状态读写/删除/迁移（命名空间隔离）。"""
 

@@ -183,6 +183,100 @@ def test_contract2_resource_and_view_adapters_use_data_only_operations() -> None
     ]
 
 
+def test_text_component_validation() -> None:
+    """U4（2026-09-24）：单行文本输入组件的描述符校验。
+
+    正例：label/value/placeholder/maxlength 全量提供，规范化通过；
+    反例：maxlength 越界 / 非整数 / value 超长 / 未知字段必须拒绝。
+    """
+    raw = {
+        "view_id": "text-demo", "title": "代理配置",
+        "components": [{
+            "type": "text", "id": "proxy_url", "label": "机构代理 URL",
+            "value": "http://proxy.example:8080", "placeholder": "http://…",
+            "maxlength": 512,
+        }],
+    }
+    normalized = validate_view_descriptor(raw)["components"][0]
+    assert normalized["value"] == "http://proxy.example:8080"
+    assert normalized["placeholder"] == "http://…"
+    assert normalized["maxlength"] == 512
+
+    # 缺省：value 为空串、maxlength 回落 512、placeholder 不出现
+    minimal = validate_view_descriptor({
+        "view_id": "text-min", "title": "x",
+        "components": [{"type": "text", "id": "login_url"}],
+    })["components"][0]
+    assert minimal["value"] == "" and minimal["maxlength"] == 512
+    assert "placeholder" not in minimal
+
+    def _reject(component: dict, match: str = "") -> None:
+        bad = {"view_id": "text-bad", "title": "x", "components": [component]}
+        with pytest.raises(ValueError, match=match):
+            validate_view_descriptor(bad)
+
+    _reject({"type": "text", "id": "comp", "maxlength": 0}, "超出范围")
+    _reject({"type": "text", "id": "comp", "maxlength": 513}, "超出范围")
+    _reject({"type": "text", "id": "comp", "maxlength": "long"}, "必须是整数")
+    _reject({"type": "text", "id": "comp", "value": "x" * 513}, "过长")
+    _reject({"type": "text", "id": "comp", "evil_field": 1}, "未知字段")
+
+
+def test_view_progress_relay_routing_and_silent_degradation() -> None:
+    """U6（2026-09-24）：view.progress 按 plugin_id 路由投递；异常面全部静默降级。
+
+    正例：绑了 relay → delivered=True，payload 被净化并带上 plugin_id；
+    反例：无面板 → no-view-panel；relay 抛错 → relay-error 不炸宿主；
+    未知字段 / 非整数 done → E_CONTRACT 拒绝（协议纪律与其它能力同源）。
+    """
+    received: list[dict] = []
+    broker = CapabilityBroker(
+        permissions=set(), system_info={}, plugin_id="paper-dl",
+        progress_relay=received.append,
+    )
+    assert broker.dispatch(
+        "view.progress", {"done": 3, "total": 10, "current_doi": "10.1234/abc"}
+    ) == {"delivered": True}
+    assert received[0]["done"] == 3
+    assert received[0]["plugin_id"] == "paper-dl"
+
+    no_panel = CapabilityBroker(permissions=set(), system_info={}, plugin_id="p")
+    assert no_panel.dispatch("view.progress", {"done": 1, "total": 2}) == {
+        "delivered": False, "reason": "no-view-panel",
+    }
+
+    def _boom(_payload: dict) -> None:
+        raise RuntimeError("gui gone")
+
+    broken = CapabilityBroker(permissions=set(), system_info={}, progress_relay=_boom)
+    assert broken.dispatch("view.progress", {"done": 1, "total": 2}) == {
+        "delivered": False, "reason": "relay-error",
+    }
+
+    with pytest.raises(CapabilityError, match="未知字段"):
+        broker.dispatch("view.progress", {"done": 1, "evil": 1})
+    with pytest.raises(CapabilityError, match="必须是整数"):
+        broker.dispatch("view.progress", {"done": "soon"})
+    # 无需 manifest 权限（与 system.info 同为内置）
+    assert CapabilityBroker(permissions=set(), system_info={}).dispatch(
+        "view.progress", {}
+    )["delivered"] is False
+
+
+def test_progress_component_rejects_static_values() -> None:
+    """U6：progress 组件字段面收紧到 type/id/label——数值只走推送，不接受静态值。"""
+    ok = validate_view_descriptor({
+        "view_id": "prog-demo", "title": "x",
+        "components": [{"type": "progress", "id": "bar", "label": "下载进度"}],
+    })
+    assert ok["components"][0]["type"] == "progress"
+    with pytest.raises(ValueError, match="未知字段"):
+        validate_view_descriptor({
+            "view_id": "prog-bad", "title": "x",
+            "components": [{"type": "progress", "id": "bar", "value": 42}],
+        })
+
+
 def test_rich_text_component_validation() -> None:
     """P2.1（2026-09-24）：受限长文本组件的描述符校验。
 

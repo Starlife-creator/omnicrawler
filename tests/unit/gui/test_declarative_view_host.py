@@ -37,6 +37,7 @@ class _StubAdapter:
     def __init__(self, descriptor: dict[str, Any]) -> None:
         self._descriptor = descriptor
         self.bound_surface: Any = None
+        self.progress_relay: Any = None
         self.actions: list[tuple[str, dict[str, Any]]] = []
         self.response: dict[str, Any] = {}
 
@@ -45,6 +46,9 @@ class _StubAdapter:
 
     def bind_surface(self, surface: Any) -> None:
         self.bound_surface = surface
+
+    def bind_progress_relay(self, relay: Any) -> None:
+        self.progress_relay = relay
 
     def action(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
         self.actions.append((action, payload))
@@ -167,6 +171,81 @@ def test_rebuild_preserves_list_scroll_position(
     assert new_listing is not listing
     assert new_listing.objectName() == "declarativeList_issues"
     assert new_listing.verticalScrollBar().value() == saved
+    main.deleteLater()
+
+
+def test_text_component_dispatches_value_once_on_edit_finished(
+    qapp: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """U4（2026-09-24）：text 组件渲染 QLineEdit，编辑结束上送 {"value": 文本}。
+
+    ★ 反向断言（双重派发防线）：returnPressed 与 editingFinished 只允许挂一个——
+    模拟一次回车（returnPressed 语义经由 editingFinished 覆盖），动作必须恰好
+    执行一次，不得出现两次（副作用重复是 S31 修过的同类历史缺陷）。
+    """
+    descriptor = _descriptor(components=[
+        {
+            "type": "text", "id": "proxy_url", "label": "机构代理 URL",
+            "action": "configure-proxy",
+            "value": "http://old", "placeholder": "http://…", "maxlength": 128,
+        },
+    ])
+    main, adapter, controller = _controller(monkeypatch, descriptor)
+
+    editors = controller.dock.findChildren(QtWidgets.QLineEdit, "declarativeText_proxy_url")
+    assert len(editors) == 1
+    editor = editors[0]
+    assert editor.maxLength() == 128
+    assert editor.placeholderText() == "http://…"
+
+    editor.setText("http://proxy.example:8080")
+    editor.editingFinished.emit()  # editingFinished 覆盖回车与失焦两种触发
+    assert adapter.actions == [
+        ("configure-proxy", {"component_id": "proxy_url", "value": "http://proxy.example:8080"}),
+    ]
+    main.deleteLater()
+
+
+def test_progress_component_renders_and_relays_updates(
+    qapp: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """U6（2026-09-24）：progress 组件渲染 + view.progress 推送刷新 + 合并窗口。
+
+    判据（确定性）：① 第一帧立即上屏；② 合并窗口内的后续帧只保留最新、
+    须到窗到期（显式 flush）才上屏；③ done==total 后最终状态保留不被清除；
+    ④ close() 后再来的帧静默丢弃、不抛异常。
+    """
+    descriptor = _descriptor(components=[
+        {"type": "progress", "id": "bar", "label": "下载进度"},
+    ])
+    main, adapter, controller = _controller(monkeypatch, descriptor)
+
+    bars = controller.dock.findChildren(QtWidgets.QProgressBar, "declarativeProgress_bar")
+    assert len(bars) == 1
+    bar = bars[0]
+    assert adapter.progress_relay is not None  # 前置：投递桥确实绑给了插件适配器
+
+    adapter.progress_relay({"done": 3, "total": 10, "current_doi": "10.1/a"})
+    assert (bar.minimum(), bar.maximum(), bar.value()) == (0, 10, 3)
+    texts = [
+        w for w in controller.dock.findChildren(QtWidgets.QLabel)
+        if w.objectName() == "declarativeProgressText_bar"
+    ]
+    assert len(texts) == 1 and "10.1/a" in texts[0].text()
+
+    # 合并窗口内：第二帧暂存不上屏；显式到期后以最新帧上屏
+    adapter.progress_relay({"done": 9, "total": 10, "current_doi": "10.2/b"})
+    assert bar.value() == 3
+    controller._flush_pending_progress()
+    assert bar.value() == 9
+
+    # 最终状态保留：done==total 后不清零、不消失
+    adapter.progress_relay({"done": 10, "total": 10, "current_doi": ""})
+    controller._flush_pending_progress()
+    assert bar.value() == 10 and bar.maximum() == 10
+
+    controller.close()
+    adapter.progress_relay({"done": 1, "total": 1})  # 不得抛异常
     main.deleteLater()
 
 
