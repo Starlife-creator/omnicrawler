@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-23T16:03:52+00:00",
-  "sequence": 1790179432,
+  "generated_at": "2026-09-24T03:42:07+00:00",
+  "sequence": 1790221327,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -421,13 +421,13 @@
         "社区",
         "JSON"
       ],
-      "updated_at": "2026-09-23",
+      "updated_at": "2026-09-24",
       "creator_signature_file": "templates/cms--market--discourse-topics/creator.sig",
       "creator_identity_file": "templates/cms--market--discourse-topics/creator.identity",
       "package_manifest_file": "templates/cms--market--discourse-topics/package.manifest.json",
       "creator_package_signature_file": "templates/cms--market--discourse-topics/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/cms--market--discourse-topics/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "d16f30e8a11881f0b8f16c59157df52b298c8bbde6a0cf3fca4c64c8ab138562"
+      "package_manifest_sha256": "dcd907175974351bf6623b987c2acd77c46b30c66e3bd624e4062d63c2409970"
     },
     {
       "id": "cms/market/discuz-forum",
@@ -448,13 +448,13 @@
         "主题",
         "帖子"
       ],
-      "updated_at": "2026-09-23",
+      "updated_at": "2026-09-24",
       "creator_signature_file": "templates/cms--market--discuz-forum/creator.sig",
       "creator_identity_file": "templates/cms--market--discuz-forum/creator.identity",
       "package_manifest_file": "templates/cms--market--discuz-forum/package.manifest.json",
       "creator_package_signature_file": "templates/cms--market--discuz-forum/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/cms--market--discuz-forum/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "052e725a56beb13631c1ceeb89f6364774a98af81138ef9f4a09ce2c7070e943"
+      "package_manifest_sha256": "3d7b25ecabd4677423a587e3e2e392b62069fef485d3e3986877ff941b14216b"
     },
     {
       "id": "cms/market/drupal-jsonapi",
@@ -474,13 +474,13 @@
         "CMS",
         "JSONAPI"
       ],
-      "updated_at": "2026-09-23",
+      "updated_at": "2026-09-24",
       "creator_signature_file": "templates/cms--market--drupal-jsonapi/creator.sig",
       "creator_identity_file": "templates/cms--market--drupal-jsonapi/creator.identity",
       "package_manifest_file": "templates/cms--market--drupal-jsonapi/package.manifest.json",
       "creator_package_signature_file": "templates/cms--market--drupal-jsonapi/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/cms--market--drupal-jsonapi/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "05fbbf12a3969f59eb08176a3082e0c6a142d97527ec9a335e225cc7a78b5b7f"
+      "package_manifest_sha256": "751ab1d0670a1ae7342397d15b42231ffcedc481c1927c469eb31abc684f6c42"
     },
     {
       "id": "cms/market/mediawiki-category",
@@ -501,13 +501,13 @@
         "分类",
         "API"
       ],
-      "updated_at": "2026-09-23",
+      "updated_at": "2026-09-24",
       "creator_signature_file": "templates/cms--market--mediawiki-category/creator.sig",
       "creator_identity_file": "templates/cms--market--mediawiki-category/creator.identity",
       "package_manifest_file": "templates/cms--market--mediawiki-category/package.manifest.json",
       "creator_package_signature_file": "templates/cms--market--mediawiki-category/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/cms--market--mediawiki-category/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "a4cd80fd4f8902c3f40eac92d6defb2b445bbad5d51a51dc3ce243991ae93b85"
+      "package_manifest_sha256": "78f0fc62a1976ff33d5c0ebcb269656703b0f310ec89c26dccdefc81b5969d37"
     },
     {
       "id": "cms/market/shopify-public",
@@ -527,13 +527,13 @@
         "电商",
         "商品"
       ],
-      "updated_at": "2026-09-23",
+      "updated_at": "2026-09-24",
       "creator_signature_file": "templates/cms--market--shopify-public/creator.sig",
       "creator_identity_file": "templates/cms--market--shopify-public/creator.identity",
       "package_manifest_file": "templates/cms--market--shopify-public/package.manifest.json",
       "creator_package_signature_file": "templates/cms--market--shopify-public/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/cms--market--shopify-public/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "99d97f1b8a7d76c4450b52ed359385a59385e3e26ca96eeeee4c4bbd2a649f21"
+      "package_manifest_sha256": "93cc2a677ce60d44c1e62114b5f8035e5d3e3f467ad5e781034fb14e0306de64"
     },
     {
       "id": "cms/market/wordpress-rest",
@@ -554,13 +554,13 @@
         "REST",
         "文章"
       ],
-      "updated_at": "2026-09-23",
+      "updated_at": "2026-09-24",
       "creator_signature_file": "templates/cms--market--wordpress-rest/creator.sig",
       "creator_identity_file": "templates/cms--market--wordpress-rest/creator.identity",
       "package_manifest_file": "templates/cms--market--wordpress-rest/package.manifest.json",
       "creator_package_signature_file": "templates/cms--market--wordpress-rest/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/cms--market--wordpress-rest/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "feb19e60d230e3a06a7825e728b62d490cee22740f293b983286a3c422c277eb"
+      "package_manifest_sha256": "029e0e06d68f0aef31d723ca2d6ecb7669cdd11a41e92a0e646947164a0349a3"
     },
     {
       "id": "sites/market/crossref-works",
@@ -650,13 +650,13 @@
         "分类",
         "API"
       ],
-      "updated_at": "2026-09-23",
+      "updated_at": "2026-09-24",
       "creator_signature_file": "templates/sites--market--wikipedia-category/creator.sig",
       "creator_identity_file": "templates/sites--market--wikipedia-category/creator.identity",
       "package_manifest_file": "templates/sites--market--wikipedia-category/package.manifest.json",
       "creator_package_signature_file": "templates/sites--market--wikipedia-category/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/sites--market--wikipedia-category/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "5170c73e4c43c32c2351f104025f398dd8d0a1a570eb223692c68ec46bf354aa"
+      "package_manifest_sha256": "db41619d9a07167a9c954b0420c7bf8808d9cc4d686b99d0abea3e2b0196c3c4"
     },
     {
       "id": "social/market/twitter-profile",
@@ -679,13 +679,13 @@
         "推特",
         "用户"
       ],
-      "updated_at": "2026-09-23",
+      "updated_at": "2026-09-24",
       "creator_signature_file": "templates/social--market--twitter-profile/creator.sig",
       "creator_identity_file": "templates/social--market--twitter-profile/creator.identity",
       "package_manifest_file": "templates/social--market--twitter-profile/package.manifest.json",
       "creator_package_signature_file": "templates/social--market--twitter-profile/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/social--market--twitter-profile/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "cdcd34d2aa02c661f907a225e6b6257b0c7481376f29abb153a9b68e3abe0d84"
+      "package_manifest_sha256": "c9cfacca8bf102e4b1adea0c8c3843d2822a6fba29dce5fec0c3b2a7508253a1"
     },
     {
       "id": "social/market/twitter-search",
@@ -707,13 +707,13 @@
         "社交媒体",
         "推特"
       ],
-      "updated_at": "2026-09-23",
+      "updated_at": "2026-09-24",
       "creator_signature_file": "templates/social--market--twitter-search/creator.sig",
       "creator_identity_file": "templates/social--market--twitter-search/creator.identity",
       "package_manifest_file": "templates/social--market--twitter-search/package.manifest.json",
       "creator_package_signature_file": "templates/social--market--twitter-search/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/social--market--twitter-search/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "e57d9fdfb4a75e1539cd98430e0c0c944e4eafff8f335fa026730a4171d4396d"
+      "package_manifest_sha256": "4d9073027ce3b422f01e2eb28fad72a1d410f2172eb937801a09a49456b900d1"
     },
     {
       "id": "social/market/weibo-search",
@@ -736,13 +736,13 @@
         "微博",
         "热搜"
       ],
-      "updated_at": "2026-09-23",
+      "updated_at": "2026-09-24",
       "creator_signature_file": "templates/social--market--weibo-search/creator.sig",
       "creator_identity_file": "templates/social--market--weibo-search/creator.identity",
       "package_manifest_file": "templates/social--market--weibo-search/package.manifest.json",
       "creator_package_signature_file": "templates/social--market--weibo-search/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/social--market--weibo-search/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "17626840edb0c84f80846ca2a1863e9d917f4033999bbc1bc9f6d0a1cd1dd4d6"
+      "package_manifest_sha256": "3ae2ab23b04fa4dc47e5dc8fe92db13d5290505b6dca602b1f10f5ea36cadb42"
     },
     {
       "id": "social/market/xiaohongshu-note",
@@ -766,13 +766,13 @@
         "小红书",
         "种草"
       ],
-      "updated_at": "2026-09-23",
+      "updated_at": "2026-09-24",
       "creator_signature_file": "templates/social--market--xiaohongshu-note/creator.sig",
       "creator_identity_file": "templates/social--market--xiaohongshu-note/creator.identity",
       "package_manifest_file": "templates/social--market--xiaohongshu-note/package.manifest.json",
       "creator_package_signature_file": "templates/social--market--xiaohongshu-note/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/social--market--xiaohongshu-note/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "6d95d92ccff93b02fbe2c008f6b83d26ed3664a1e086af5d231425b77c192514"
+      "package_manifest_sha256": "94fd2652510a28099b182b20a41f3e359863d2079366cc938834da3e7d1a86b0"
     },
     {
       "id": "social/market/zhihu-topic",
@@ -795,13 +795,13 @@
         "知乎",
         "问答"
       ],
-      "updated_at": "2026-09-23",
+      "updated_at": "2026-09-24",
       "creator_signature_file": "templates/social--market--zhihu-topic/creator.sig",
       "creator_identity_file": "templates/social--market--zhihu-topic/creator.identity",
       "package_manifest_file": "templates/social--market--zhihu-topic/package.manifest.json",
       "creator_package_signature_file": "templates/social--market--zhihu-topic/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/social--market--zhihu-topic/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "f48f847cd40fd269829a94ac74b440e7ba00c0f1f5a6fc06c9fb6b32f0a15d2b"
+      "package_manifest_sha256": "833e58c240bcca6b2b3f16e8ade9d72778e9cd3f0ee43b86938ee9d5dce76dfd"
     }
   ]
 }
