@@ -153,6 +153,12 @@ def validate_schema(
         if key not in ALLOWED_TOP_KEYS:
             errors.append(_(f"未知的顶层配置项: '{key}'，允许的项: {', '.join(sorted(ALLOWED_TOP_KEYS))}"))
 
+    # 2026-09-24：必需段检查补生效 —— REQUIRED_TOP_KEYS 此前定义但零调用点
+    # （「定义了却不生效」型缺陷，与 USERNAME_RE 同款）；同步校验喂全量 dict 后
+    # 必须钉住「缺必需段」这一失败面。
+    for key in sorted(REQUIRED_TOP_KEYS - set(config_dict)):
+        errors.append(_(f"缺少必需的配置项: '{key}'"))
+
     # 检查 project
     project = config_dict.get("project", {})
     if not isinstance(project, dict):

@@ -20,10 +20,16 @@ def _field(**overrides) -> FieldDef:
 
 
 def _schema_dict(**overrides) -> dict:
-    """构造一份默认合法的 Schema 字典。"""
+    """构造一份默认合法的 Schema 字典。
+
+    2026-09-24：validate_schema 的 REQUIRED_TOP_KEYS 强制已补生效，
+    默认 dict 必须含全部必需段（crawl / http 无字段级检查，存在即可）。
+    """
     base = {
         "project": {"name": "demo", "workspace": "work/demo"},
         "source": {"kind": "static_html", "seeds": ["https://example.com"]},
+        "crawl": {"max_pages": 10},
+        "http": {"delay_seconds": 1.0},
         "extract": {"fields": {"title": {"selector": "h1", "type": "css"}}},
     }
     base.update(overrides)
@@ -74,6 +80,18 @@ def test_valid_schema_no_errors_no_warnings() -> None:
 def test_unknown_top_key_reported() -> None:
     errors, _ = validate_schema(_schema_dict(unknown_section={}))
     assert any("未知的顶层配置项" in e for e in errors)
+
+
+def test_missing_required_section_flagged() -> None:
+    """2026-09-24：REQUIRED_TOP_KEYS 强制补生效的反向守卫。
+
+    此前该常量定义但零调用点——缺必需段静默通过（「定义了却不生效」型缺陷）。
+    """
+    partial = {k: v for k, v in _schema_dict().items() if k in {"project", "source"}}
+    errors, _ = validate_schema(partial)
+    assert any("缺少必需的配置项" in e for e in errors)
+    for key in ("crawl", "http", "extract"):
+        assert any(key in e for e in errors if "缺少必需" in e), (key, errors)
 
 
 def test_missing_project_name_reported() -> None:

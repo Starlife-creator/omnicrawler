@@ -402,10 +402,11 @@ class YamlEditor(QWidget):
         yaml_text = self._editor.toPlainText()
         try:
             config = from_yaml(yaml_text)
-            errors, warnings = validate_schema(
-                {"project": {"name": config.project_name, "workspace": config.workspace},
-                 "source": {"kind": config.source_kind, "seeds": config.seed_urls}}
-            )
+            # 2026-09-24：同步校验覆盖**全部段**（此前只手工重造 project/source 两段，
+            # 编辑器里其他段写错不会标红——验收条件未闭环型缺陷，测试与 lint 均不报）。
+            # passthrough = from_yaml 存下的完整原始 dict；validate_schema 自带
+            # ALLOWED_TOP_KEYS 白名单与各段检查，天然支持逐段放开。
+            errors, warnings = validate_schema(config.passthrough)
             if errors:
                 for err in errors:
                     self._set_editor_error_style()

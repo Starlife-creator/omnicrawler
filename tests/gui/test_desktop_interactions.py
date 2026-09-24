@@ -146,6 +146,52 @@ def test_yaml_editor_sync_diff_format_and_file_paths(qt_app, tmp_path, monkeypat
     editor._check_external_change()
 
 
+def test_yaml_editor_sync_validates_all_sections(qt_app, monkeypatch):
+    """2026-09-24：同步校验必须覆盖全部段（不再只手工重造 project/source 两段）。
+
+    反向护栏：编辑器里未知顶层 key / 缺必需段 ⇒ 同步必须判红（此前这类错误
+    完全不进校验，属「验收条件未闭环」型缺陷——测试与 lint 都不报）。
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    from omnicrawler.gui.core.config_model import CrawlConfig
+    from omnicrawler.gui.views.yaml_editor import YamlEditor
+
+    config = CrawlConfig(project_name="full_task", seed_urls=["https://example.com"], max_pages=5)
+    editor = YamlEditor()
+    monkeypatch.setattr(QMessageBox, "critical", lambda *args: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: QMessageBox.StandardButton.Ok)
+    statuses = []
+    editor.sync_status.connect(statuses.append)
+
+    # 正例 1：表单生成的完整 YAML（含 crawl/http/extract 等全部必需段）→ 同步成功
+    editor.set_config(config)
+    statuses.clear()
+    editor._try_sync_from_editor()
+    assert "已同步" in statuses
+
+    # 正例 2：附加一个合法的可选段（ALLOWED_TOP_KEYS 内、表单不生成）→ 仍同步成功
+    editor._editor.setPlainText(editor._editor.toPlainText() + "\nbrowser:\n  headless: true\n")
+    statuses.clear()
+    editor._try_sync_from_editor()
+    assert "已同步" in statuses
+
+    # 反例 1：未知顶层 key ⇒ 必须红（修复前这类错误静默通过）
+    editor._editor.setPlainText(editor._editor.toPlainText() + "\nrogue_section:\n  evil: true\n")
+    statuses.clear()
+    editor._try_sync_from_editor()
+    assert any("未知的顶层配置项" in s for s in statuses), statuses
+
+    # 反例 2：缺必需段（只留 project/source）⇒ 必须红
+    editor._editor.setPlainText(
+        "project:\n  name: partial\nsource:\n  kind: static_html\n"
+        "  seeds:\n  - https://example.com\n"
+    )
+    statuses.clear()
+    editor._try_sync_from_editor()
+    assert any("YAML 校验失败" in s for s in statuses), statuses
+
+
 def test_log_console_filters_search_redaction_trim_and_export(qt_app, tmp_path, monkeypatch):
     from PySide6.QtGui import QTextCursor
     from PySide6.QtWidgets import QFileDialog
@@ -224,9 +270,9 @@ def test_desktop_validator_covers_schema_and_selector_errors():
         FieldDef("json", "item.title", "jsonpath"), FieldDef("empty", "", "css"),
     )
     assert all(validate_selector_format(field) for field in cases)
-    errors, warnings = validate_schema({"unknown": 1, "project": [], "source": [], "extract": []})
+    errors, warnings = validate_schema({"unknown": 1, "project": [], "source": [], "extract": [], "crawl": {}, "http": {}})
     assert errors and warnings
-    errors, warnings = validate_schema({"project": {}, "source": {"kind": "bad", "seeds": "x"}, "extract": {"fields": {}}})
+    errors, warnings = validate_schema({"project": {}, "source": {"kind": "bad", "seeds": "x"}, "extract": {"fields": {}}, "crawl": {}, "http": {}})
     assert errors and warnings
     config = CrawlConfig(seed_urls=["https://example.com/{{id}}"], source_kind="unsupported", fields=list(cases))
     errors, warnings = validate_full_config(config)
