@@ -36,6 +36,14 @@ $KNOWN_SHA256 = @{
     (Join-Path $CacheRoot 'tesseract-ocr-w64-setup-5.5.0.20241111.exe') = 'f3fc4236425b690c8be756f35793f77394ee004be0a6460a440c754d892f68bc'
     (Join-Path $CacheRoot '7zr.exe')                                   = '56b8cc9f4971cef253644fafe54063ed7fdca551d4dee0f8c6baa81b855acd72'
     (Join-Path $CacheRoot '7z2602-x64.exe')                            = '6745fa76dc2ea031596d8678f6f6b99c3c1b435b4164a63485adbbc7b8d82ef0'
+    # tessdata_fast 语言包（2026-09-24 补钉）：原为 TOFU（main 移动分支 + 零哈希校验），
+    # 现钉 tessdata_fast commit 87416418657359cb625c412a48b6e1d6d41c29bd 的文件内容，
+    # 下载 URL 同步钉同一 commit（三源 fallback 内容一致）；哈希由该 commit 原始文件
+    # 本地下载计算（eng 4,113,088 B / chi_sim 2,469,156 B / osd 10,562,727 B）。
+    # 升级语言包 = 同时更新 commit、URL 与哈希三处（缺一即 fail-closed 拒绝）。
+    (Join-Path $RuntimeRoot 'tesseract\tessdata\eng.traineddata')     = '7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2'
+    (Join-Path $RuntimeRoot 'tesseract\tessdata\chi_sim.traineddata') = 'a5fcb6f0db1e1d6d8522f39db4e848f05984669172e584e8d76b6b3141e1f730'
+    (Join-Path $RuntimeRoot 'tesseract\tessdata\osd.traineddata')     = '9cf5d576fcc47564f11265841e5ca839001e7e6f38ff7f7aacf46d15a96b00ff'
 }
 
 function Get-Asset([string]$Uri, [string]$Destination, [int64]$MinimumBytes = 1024, [string]$Sha256 = '', [switch]$RequireKnownHash) {
@@ -166,14 +174,16 @@ if (-not $SkipTesseract) {
         $langPath = Join-Path $tessdataRoot "$language.traineddata"
         # 多源 fallback：GitHub raw 服务偶发 404/503（v0.9.1 CI 实测），依次尝试
         # 官方重定向 → raw 直链 → jsDelivr CDN。
+        # 2026-09-24：三源全部钉同一 tessdata_fast commit（内容不可变）+ RequireKnownHash，
+        # 消除本脚本的最后一个 TOFU 下载点（此前 main 移动分支 + 零哈希校验）。
         $downloaded = $false
         foreach ($base in @(
-            "https://github.com/tesseract-ocr/tessdata_fast/raw/main",
-            "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main",
-            "https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_fast@main"
+            "https://github.com/tesseract-ocr/tessdata_fast/raw/87416418657359cb625c412a48b6e1d6d41c29bd",
+            "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd",
+            "https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_fast@87416418657359cb625c412a48b6e1d6d41c29bd"
         )) {
             try {
-                Get-Asset "$base/$language.traineddata" $langPath 100000
+                Get-Asset "$base/$language.traineddata" $langPath 100000 -RequireKnownHash
                 $downloaded = $true
                 break
             } catch {
