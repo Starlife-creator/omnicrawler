@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+## 0.14.0 - 2026-09-24
+
+### 变更
+
+内置模板治理与市场迁出（模板库 78→41，站点适配器 15 个只留市场）；§十 P2 三片（view.richtext 受限长文本组件 + issue-wishlist/community-guide 两个官方 view 插件上线）；§十一 U1-U4/V1/V2/Q1 八项代码侧收口（登录会话 headed Playwright + AES-GCM 会话加密 + QtCharts + QML 试点不打包）；审查记录 §2.4 三条遗留闭环（TOFU 补钉 / yaml_editor 全段校验 + REQUIRED_TOP_KEYS 强制 / settings 私有调用清零）；四处 CI 漏网修复与投稿链路 LF 规范化
+
 
 ### 变更
 

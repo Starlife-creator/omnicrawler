@@ -1,6 +1,6 @@
 # 插件契约（API v1）
 
-> 适用版本：0.13.1 · 配置协议：v5 · 维护状态：现行
+> 适用版本：0.14.0 · 配置协议：v5 · 维护状态：现行
 
 > 本文档是插件的**强制功能契约**。市场只接受契约 2（`handle`）。契约 1
 >（`register`/继承）仅用于明确受信任的本地原生 UI 等进程内扩展，不接受公共市场投稿。
@@ -141,7 +141,7 @@ PLUGIN_METADATA = {
     "dependencies": [],                   # 必填；没有依赖时使用空列表
     "license": "MIT",                     # 必填，且必须在 SPDX 白名单内
     "execution_mode": "subprocess",       # subprocess（缺省）| in_process（特权申请）
-    "min_core_version": "0.13.1",
+    "min_core_version": "0.14.0",
     "source_url": "https://example.org/source",
 }
 ```
@@ -230,7 +230,7 @@ PLUGIN_METADATA = {
 ## 兼容与安全
 
 - 名称在同类型内唯一并转为小写。
-- `api_version` 必须等于 1；核心版本范围必须包含当前 0.13.1。
+- `api_version` 必须等于 1；核心版本范围必须包含当前 0.14.0。
 - 契约 2 插件默认运行于独立子进程，并使用 `-I -S`、环境白名单、能力代理和资源限制。
   当前 OS 级 confinement 仍是未来能力；环境探测只提供诊断，不能把现有边界描述为完整的
   AppContainer、seccomp 或 Landlock 沙箱。契约 1 的 `plugins.paths` 仅适用于受信任的本地
