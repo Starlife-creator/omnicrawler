@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-24T03:42:07+00:00",
-  "sequence": 1790221327,
+  "generated_at": "2026-09-24T09:59:15+00:00",
+  "sequence": 1790243955,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -174,6 +174,51 @@
       }
     },
     {
+      "id": "community-guide",
+      "name": "community-guide",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "view",
+      "plugin_types": [
+        "view"
+      ],
+      "summary": "官方社区引导：仓库 Discussions / Issues / 贡献指南的外链导航",
+      "description_file": "plugins/community-guide/listing.md",
+      "plugin_file": "plugins/community-guide/plugin.py",
+      "signature_file": "plugins/community-guide/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [],
+      "compatible_core": ">=0.14.0",
+      "license": "MIT",
+      "tags": [
+        "社区",
+        "discussions",
+        "外链",
+        "官方",
+        "引导"
+      ],
+      "updated_at": "2026-09-24",
+      "creator_signature_file": "plugins/community-guide/creator.sig",
+      "creator_identity_file": "plugins/community-guide/creator.identity",
+      "execution_mode": "subprocess",
+      "domains": [],
+      "input_files": [],
+      "required_capabilities": {
+        "view.richtext": ">=1"
+      },
+      "state_schema_version": 1,
+      "dependencies": [],
+      "package_manifest_file": "plugins/community-guide/package.manifest.json",
+      "creator_package_signature_file": "plugins/community-guide/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/community-guide/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "ce912eee4941ea7f13144dacff1b68b001b50cd5f0ddf9d07fd02f6ab59a41d4",
+      "versions": {
+        "1.0.0": {
+          "sha256": "a373b007dc88d44cbd4ae675e964593bea5df284287271a98d9657c2aefbcd4e"
+        }
+      }
+    },
+    {
       "id": "example_news",
       "name": "示例新闻站点适配器",
       "version": "1.0.0",
@@ -202,6 +247,56 @@
       "versions": {
         "1.0.0": {
           "sha256": "2630ed2c32a15a9cc355251e1547a05b0b14b07ee0f94b6aed962f8e75f9db2c"
+        }
+      }
+    },
+    {
+      "id": "issue-wishlist",
+      "name": "issue-wishlist",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "view",
+      "plugin_types": [
+        "view"
+      ],
+      "summary": "官方需求清单：只读浏览 OmniCrawler 仓库的开放 Issues",
+      "description_file": "plugins/issue-wishlist/listing.md",
+      "plugin_file": "plugins/issue-wishlist/plugin.py",
+      "signature_file": "plugins/issue-wishlist/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [
+        "network:scoped"
+      ],
+      "compatible_core": ">=0.14.0",
+      "license": "MIT",
+      "tags": [
+        "issues",
+        "需求清单",
+        "roadmap",
+        "官方",
+        "只读"
+      ],
+      "updated_at": "2026-09-24",
+      "creator_signature_file": "plugins/issue-wishlist/creator.sig",
+      "creator_identity_file": "plugins/issue-wishlist/creator.identity",
+      "execution_mode": "subprocess",
+      "domains": [
+        "api.github.com"
+      ],
+      "input_files": [],
+      "required_capabilities": {
+        "network.fetch": ">=1",
+        "view.richtext": ">=1"
+      },
+      "state_schema_version": 1,
+      "dependencies": [],
+      "package_manifest_file": "plugins/issue-wishlist/package.manifest.json",
+      "creator_package_signature_file": "plugins/issue-wishlist/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/issue-wishlist/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "03708885a0fe64651d93fcf79ccdd5d13565d82244bce7ecdd39cf73b7774f68",
+      "versions": {
+        "1.0.0": {
+          "sha256": "29c1b288f3990f2d9586ff1fc1533cb2f7b3b7428bbbf37ef26d4c0d16ded0fc"
         }
       }
     },
