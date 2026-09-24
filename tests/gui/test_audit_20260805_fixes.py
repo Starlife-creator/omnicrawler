@@ -216,8 +216,8 @@ def test_settings_read_survives_destroyed_qsettings(monkeypatch: pytest.MonkeyPa
     settings = AppSettings.instance()
     monkeypatch.setattr(settings, "_settings", _DestroyedQSettings())
     settings._session_values.clear()
-    assert settings._value("theme", "light", str) == "light"
-    assert settings._value("recent/files", [], list) == []
+    assert settings.value("theme", "light", str) == "light"
+    assert settings.value("recent/files", [], list) == []
 
 
 def test_settings_write_and_sync_survive_destroyed_qsettings(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -225,7 +225,7 @@ def test_settings_write_and_sync_survive_destroyed_qsettings(monkeypatch: pytest
 
     settings = AppSettings.instance()
     monkeypatch.setattr(settings, "_settings", _DestroyedQSettings())
-    settings._set_value("theme", "dark")  # 会话回退仍然生效
+    settings.set_value("theme", "dark")  # 会话回退仍然生效
     assert settings._session_values["theme"] == "dark"
     settings.sync()  # 不应抛出
 

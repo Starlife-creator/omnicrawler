@@ -464,7 +464,7 @@ class ChangeMonitorView(QWidget):
 
         # 加载持久化规则
         if settings:
-            self._rules_data = settings._value("monitor/rules", [], list)
+            self._rules_data = settings.value("monitor/rules", [], list)
 
         # ── 布局 ────────────────────────────────────────────────────
         layout = QVBoxLayout(self)
@@ -538,13 +538,13 @@ class ChangeMonitorView(QWidget):
         bottom_row.addWidget(QLabel(_("通知方式:")))
         self._notify_desktop_cb = QCheckBox(_("桌面通知"))
         self._notify_desktop_cb.setChecked(
-            settings._value("monitor/desktop_notify", True, bool) if settings else True
+            settings.value("monitor/desktop_notify", True, bool) if settings else True
         )
         self._notify_desktop_cb.toggled.connect(self._save_monitor_settings)
         bottom_row.addWidget(self._notify_desktop_cb)
         self._notify_sound_cb = QCheckBox(_("提示音"))
         self._notify_sound_cb.setChecked(
-            settings._value("monitor/sound_notify", False, bool) if settings else False
+            settings.value("monitor/sound_notify", False, bool) if settings else False
         )
         self._notify_sound_cb.toggled.connect(self._save_monitor_settings)
         bottom_row.addWidget(self._notify_sound_cb)
@@ -885,8 +885,8 @@ class ChangeMonitorView(QWidget):
 
     def _save_monitor_settings(self) -> None:
         if self._settings:
-            self._settings._set_value("monitor/desktop_notify", self._notify_desktop_cb.isChecked())
-            self._settings._set_value("monitor/sound_notify", self._notify_sound_cb.isChecked())
+            self._settings.set_value("monitor/desktop_notify", self._notify_desktop_cb.isChecked())
+            self._settings.set_value("monitor/sound_notify", self._notify_sound_cb.isChecked())
 
     def _clear_history(self) -> None:
         reply = QMessageBox.question(
