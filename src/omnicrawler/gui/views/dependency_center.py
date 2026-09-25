@@ -141,6 +141,9 @@ class DependencyCenterDialog(QDialog):
         self._registry = registry
         self._on_installed = on_installed
         self._scan_worker: _CapabilityScanWorker | None = None
+        #: 存活中的后台线程（扫描 + 安装）；关闭对话框时必须 join，否则线程仍在
+        #: 运行时销毁 QApplication 会 abort（实测：非确定性崩溃，破坏后续测试/退出）。
+        self._active_workers: list[BackgroundWorker] = []
 
         root = QVBoxLayout(self)
         header = QLabel(_("本机运行组件与依赖（只读检测）。缺失项可在此就地安装。"))
@@ -182,8 +185,36 @@ class DependencyCenterDialog(QDialog):
         worker.succeeded.connect(self._on_scanned)
         worker.failed.connect(lambda error: self._status.setText(_("检测失败：") + error))
         worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(lambda w=worker: self._forget_worker(w))
         self._scan_worker = worker
+        self._active_workers.append(worker)
         worker.start()
+
+    def _forget_worker(self, worker: BackgroundWorker) -> None:
+        self._active_workers = [w for w in self._active_workers if w is not worker]
+
+    def _stop_workers(self) -> None:
+        """请求中断并等待全部后台线程结束（对话框关闭 / 销毁前的必要收尾）。
+
+        QThread 仍在运行时销毁 QApplication 会 abort；等待上限 5s 保证界面不卡死
+        （扫描/安装是短任务，正常远低于此）。
+        """
+        for worker in list(self._active_workers):
+            try:
+                worker.requestInterruption()
+                worker.wait(5000)
+            except RuntimeError:
+                # Qt 侧对象可能已销毁；无可 join 的对象，忽略
+                pass
+        self._active_workers = []
+
+    def closeEvent(self, event: Any) -> None:  # noqa: N802 - Qt 命名
+        self._stop_workers()
+        super().closeEvent(event)
+
+    def done(self, result: int) -> None:
+        self._stop_workers()
+        super().done(result)
 
     def _on_scanned(self, report: dict[str, Any]) -> None:
         rows = capability_rows(report)
@@ -274,6 +305,8 @@ class DependencyCenterDialog(QDialog):
 
         worker.succeeded.connect(_done)
         worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(lambda w=worker: self._forget_worker(w))
+        self._active_workers.append(worker)
         worker.start()
 
 
