@@ -31,6 +31,8 @@ from .plugin_market_logic import (
     _technical_details,
     _tombstone_reason,
     _update_available,
+    dependency_badge,
+    dependency_badge_tooltip,
 )
 from .plugin_market_workers import _ListingWorker
 
@@ -63,6 +65,9 @@ class MarketBrowseMixin(_Base):
     _enabled_plugin_ids: set[str]
     _selected_id: str | None
     _listing_worker: _ListingWorker | None
+    #: 决策四「打开即检测」的只读结果：{plugin_id: DependencyStatus}。
+    #: 由 _DependencyScanWorker 在后台填充，缺依赖时列表行/详情只画徽标，不弹框。
+    _dependency_status: dict[str, Any]
     _search_edit: QLineEdit
     _type_filter: QComboBox
     _mode_filter: QComboBox
@@ -111,8 +116,11 @@ class MarketBrowseMixin(_Base):
             type_label = "/".join(_TYPE_LABELS.get(item, item) for item in plugin_types) or _("类型未知")
             mode_label = _("隔离") if mode == "subprocess" else _("进程内")
             badge_text = "".join(f"[{badge}] " for badge in _badges(entry, self._catalog or {}))
+            dep_status = self._dependency_status.get(pid)
+            dep_badge = dependency_badge(dep_status)
+            dep_text = f"{dep_badge} " if dep_badge else ""
             label = f"{name}  v{version}" if version else name
-            label += f"  ·  {badge_text}{type_label} · {mode_label} · {risk_label}"
+            label += f"  ·  {badge_text}{dep_text}{type_label} · {mode_label} · {risk_label}"
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, pid)
             enabled = pid in self._enabled_plugin_ids
@@ -128,10 +136,15 @@ class MarketBrowseMixin(_Base):
                 if enabled
                 else (_("已安装，但在当前项目禁用") if installed else _("尚未安装"))
             )
-            item.setToolTip(
-                f"{pid}\n{project_state}\n"
-                f"{type_label} · {mode_label} · {risk_label} · {compatibility}"
-            )
+            dep_tip = dependency_badge_tooltip(dep_status)
+            tooltip_lines = [
+                pid,
+                project_state,
+                f"{type_label} · {mode_label} · {risk_label} · {compatibility}",
+            ]
+            if dep_tip:
+                tooltip_lines.append(dep_tip)
+            item.setToolTip("\n".join(tooltip_lines))
             self._list.addItem(item)
 
         # 离线时补充展示本地已安装但不在目录中的插件
@@ -267,6 +280,12 @@ class MarketBrowseMixin(_Base):
             if "ui" in plugin_types
             else ""
         )
+        dep_status = self._dependency_status.get(plugin_id)
+        dep_notice = (
+            _("\n⚠ {0}").format(dependency_badge_tooltip(dep_status))
+            if dep_status is not None and dep_status.missing
+            else ""
+        )
         self._detail_technical.setText(
             chr(10).join(_("{}：{}").format(label, value) for label, value in _technical_details(entry or {}))
         )
@@ -282,10 +301,11 @@ class MarketBrowseMixin(_Base):
                 compatibility,
                 # ★ 永不折叠（§10.5）：审核状态与权限风险必须一眼可见，不得折叠
                 (_("官方认证作者 · ") if _official(entry or {}, self._catalog or {}) else "")
-                + (_("已审核（维护者复签通过）") if _reviewed(entry or {}) else _("未审核（仅创作者签名）")),
+                +                 (_("已审核（维护者复签通过）") if _reviewed(entry or {}) else _("未审核（仅创作者签名）")),
                 update_hint,
             )
             + ui_notice
+            + dep_notice
         )
         self._detail_summary.setText(summary)
         self._detail_listing.setText(

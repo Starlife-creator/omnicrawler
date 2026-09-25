@@ -311,6 +311,38 @@ def _badges(entry: dict[str, Any], catalog: dict[str, Any] | None = None) -> tup
     return tuple(badges)
 
 
+def dependency_badge(status: Any) -> str:
+    """把一个插件依赖状态渲染成**只读徽标文本**（决策四 A：打开即检测，不弹框）。
+
+    只读的边界：本函数**只**返回展示文本，不触发任何安装/网络动作。
+    ``missing`` 为空（含"未声明依赖"）⇒ 返回空串，由调用方静默处理（§R2）；
+    有缺失 ⇒ 返回``[缺依赖 N]``，具体名字放进 tooltip/详情，不在列表行里堆长文。
+    """
+    if status is None:
+        return ""
+    missing = tuple(getattr(status, "missing", ()) or ())
+    if not missing:
+        return ""
+    return _("[缺依赖 {0}]").format(len(missing))
+
+
+def dependency_badge_tooltip(status: Any) -> str:
+    """缺依赖徽标的悬浮说明（只读，列全部缺失项；齐全时为空）。"""
+    if status is None:
+        return ""
+    missing = tuple(getattr(status, "missing", ()) or ())
+    if not missing:
+        return ""
+    return _("该插件声明的依赖未安装：{0}").format("、".join(missing))
+
+
+def plugin_needs_dependency_install(status: Any) -> bool:
+    """该插件是否存在**缺失**依赖（供 GUI 决定是否画徽标/是否给出安装入口）。"""
+    if status is None:
+        return False
+    return bool(getattr(status, "missing", ()) or ())
+
+
 #: 永不折叠项的标签（§10.5）：这些信息必须默认可见，**不得**进入折叠区。
 NEVER_FOLDED_LABELS: tuple[str, ...] = (_("风险"), _("审核状态"), _("执行模式"))
 

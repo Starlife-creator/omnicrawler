@@ -75,6 +75,8 @@
 - [代表性任务验收账本](TASK_ACCEPTANCE_LEDGER.md)：六条核心工作流的当前证据、未知项与下一验收动作。
 - [首个任务旅程 · 人工走查清单](MANUAL_WALKTHROUGH.md)：第四阶段「人工走查」部分的可执行步骤，
   与自动回归 `tests/integration/test_first_task_journey.py` 构成双证据。
+- [统一实机验收清单](RELEASE_ACCEPTANCE_CHECKLIST.md)：全部优化闭环后**一次**收拢的「真人上手」验收入口
+  （先决条件 + A–F 六组条目），与上两篇构成「账本 → 走查 → 总验收」链条。
 
 - [测试报告](TEST_REPORT.md)：全项目回归基线。
 - [E2E 测试结果](E2E_TEST_REPORT.md)：本地 E2E 结论。

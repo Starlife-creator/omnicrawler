@@ -15,7 +15,10 @@ MAX_RICH_TEXT_TOTAL_CHARS = 4096
 RICH_TEXT_SEGMENT_TYPES = frozenset({"heading", "paragraph", "bullet", "link"})
 VIEW_ZONES = frozenset({"left", "right", "bottom"})
 COMPONENT_TYPES = frozenset(
-    {"label", "button", "directory_picker", "slider", "select", "resource_list", "rich_text"}
+    {
+        "label", "button", "directory_picker", "slider", "select", "resource_list",
+        "rich_text", "text", "progress",
+    }
 )
 _ID = re.compile(r"^[a-z][a-z0-9_.-]{1,95}$")
 
@@ -134,6 +137,8 @@ def _validate_component(raw: Any) -> dict[str, Any]:
         "type", "id", "label", "text", "action", "value", "minimum", "maximum",
         "options", "items", "empty_text", "directory_label",
         "discovery_kind", "discovery_id", "segments",
+        # 2026-09-24 U4：单行文本输入（text 组件）的专有字段。
+        "placeholder", "maxlength",
     }
     unknown = set(raw) - allowed
     if unknown:
@@ -172,6 +177,25 @@ def _validate_component(raw: Any) -> dict[str, Any]:
             if isinstance(item, dict)
         ]
         result["value"] = _text(raw.get("value"), "component.value")
+    if kind == "text":
+        # 2026-09-24 U4：单行文本输入——插件面板可收集代理 URL / 登录页 URL 等配置。
+        # 安全纪律与 select 同源：value 经 _text 限长（≤ MAX_TEXT_LENGTH）；
+        # maxlength 只是 GUI 侧 QLineEdit.setMaxLength 的输入上限（1..512），
+        # 防止把宿主面板当无界输入的内存靶子。未知字段已在上方统一拒绝。
+        result["value"] = _text(raw.get("value"), "component.value")
+        placeholder = _text(raw.get("placeholder"), "component.placeholder")
+        if placeholder:
+            result["placeholder"] = placeholder
+        result["maxlength"] = _bounded_int(
+            raw.get("maxlength", MAX_TEXT_LENGTH), 1, MAX_TEXT_LENGTH, "component.maxlength"
+        )
+    if kind == "progress":
+        # 2026-09-24 U6：运行进度区——数值不经描述符携带，只由 view.progress
+        # 推送刷新，故字段面收紧到 type/id/label（比通用白名单更严），
+        # 防止插件把静态数值/动作伪装进进度区。
+        extra = set(raw) - {"type", "id", "label"}
+        if extra:
+            raise ValueError(f"声明式视图进度组件 {component_id} 包含未知字段: {sorted(extra)}")
     if kind == "rich_text":
         result["segments"] = _validate_rich_text_segments(raw.get("segments"))
     if kind == "resource_list":

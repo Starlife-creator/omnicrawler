@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 from .plugin_broker_contracts import (
     E_CONTRACT,
     E_EGRESS_BLOCKED,
+    E_INTERNAL,
     E_PERMISSION,
     E_QUOTA,
     E_RESOURCE,
@@ -28,6 +29,55 @@ LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .plugin_quota import DailyNetworkQuota
+
+#: 注入头名白名单（避免插件把密钥塞进任意头造成外泄面扩大）。
+_AUTH_HEADER_ALLOWED = frozenset({"authorization", "x-api-key", "api-key", "x-auth-token"})
+
+#: 默认注入头名（契约：``auth.header`` 缺省时用 ``Authorization``）。
+_AUTH_HEADER_DEFAULT = "Authorization"
+
+
+def resolve_auth_header(
+    auth: Any,
+    *,
+    resolver: Any,
+    allowlist: set[str],
+) -> tuple[str, str] | None:
+    """把 ``network.fetch`` 的 ``auth: {secret_ref, header}`` 解析成待注入的 (头名, 值)。
+
+    安全语义（与 ``secrets.get`` 同一口径，唯一区别＝**值不回给插件**）：
+
+    * ``auth`` 缺失/非映射 ⇒ 返回 ``None``（**无规则不注入**）；
+    * ``secret_ref`` 必须在 manifest 的 secrets 白名单内，否则 ``E_PERMISSION``；
+    * 头名只允许 ``_AUTH_HEADER_ALLOWED`` 内的少数几个，其余 ``E_CONTRACT``
+      （防止插件借"任意头名"把密钥投递到非标准通道）；
+    * 解析器缺失 ⇒ ``E_INTERNAL``；密钥不存在 ⇒ ``E_RESOURCE``。
+
+    ★ 本函数是**纯函数**（不审计、不落盘）⇒ 可单测；审计与头值脱敏由调用方负责。
+    """
+    if not isinstance(auth, dict) or not auth:
+        return None
+    ref = str(auth.get("secret_ref", "")).strip()
+    if not ref:
+        raise CapabilityError(E_CONTRACT, "network.fetch 的 auth 需要 secret_ref")
+    if resolver is None:
+        raise CapabilityError(E_INTERNAL, "宿主未提供密钥解析器（auth 注入不可用）")
+    if ref not in allowlist:
+        raise CapabilityError(E_PERMISSION, f"auth secret_ref 不在 manifest 白名单: {ref}")
+    header = str(auth.get("header") or _AUTH_HEADER_DEFAULT).strip()
+    if header.casefold() not in _AUTH_HEADER_ALLOWED:
+        raise CapabilityError(
+            E_CONTRACT,
+            f"auth.header 只允许 {'/'.join(sorted(_AUTH_HEADER_ALLOWED))}，收到 {header!r}",
+        )
+    value = resolver(ref)
+    if value is None:
+        raise CapabilityError(E_RESOURCE, f"密钥不存在或不可读: {ref}")
+    text = str(value)
+    # 含换行/回车的值会被 HTTP 库拆成多个头（头注入），直接拒绝而不是静默清洗
+    if "\r" in text or "\n" in text:
+        raise CapabilityError(E_CONTRACT, f"密钥 {ref} 含换行，拒绝注入请求头")
+    return header, text
 
 
 class BrokerFilesMixin:
@@ -143,6 +193,9 @@ class BrokerNetworkMixin:
     _network: Any
     _plugin_id: str
     op_counts: dict[str, int]
+    # ---- 宿主契约：密钥注入（与 BrokerSecretsMixin 同源，见 plugin_broker.py 装配） ----
+    _secret_resolver: Any
+    _secrets_allowlist: set[str]
     def _cap_network_fetch(self, payload: dict[str, Any]) -> dict[str, Any]:
         if self._network is None:
             raise CapabilityError(E_PERMISSION, "会话未授予网络能力（domains 未声明？）")
@@ -178,11 +231,24 @@ class BrokerNetworkMixin:
                 )
             self._audit_call_cooccurrence(read_calls)
 
+        # 密钥注入（契约：auth:{secret_ref, header}）——宿主代理侧解析并注入请求头，
+        # 插件进程永远看不到明文；注入头值不进审计/日志（只记 ref 与头名）。
+        headers = {str(k): str(v) for k, v in (payload.get("headers") or {}).items()}
+        injected = resolve_auth_header(
+            payload.get("auth"),
+            resolver=self._secret_resolver,
+            allowlist=self._secrets_allowlist,
+        )
+        if injected is not None:
+            header_name, header_value = injected
+            headers[header_name] = header_value
+            self._audit_auth_injected(header_name)
+
         try:
             result = self._network.fetch(
                 url,
                 method=str(payload.get("method", "GET")),
-                headers={str(k): str(v) for k, v in (payload.get("headers") or {}).items()},
+                headers=headers,
             )
         except (EgressDisabledError, EgressBudgetExceededError) as exc:
             raise CapabilityError(E_PERMISSION, f"egress 策略拒绝: {exc}") from exc
@@ -220,4 +286,21 @@ class BrokerNetworkMixin:
             except Exception:  # noqa: BLE001 - 审计失败不阻断
                 LOGGER.warning(
                     "共现风险审计写入失败: plugin=%s reads=%s", self._plugin_id, read_calls
+                )
+
+    def _audit_auth_injected(self, header_name: str) -> None:
+        """auth 注入留痕：只记**头名**与 decision，**绝不记头值**（密钥不外泄）。"""
+        if self._audit_hook is not None:
+            try:
+                self._audit_hook(
+                    "plugin.auth_injected",
+                    {
+                        "plugin_id": self._plugin_id,
+                        "decision": "auth_injected",
+                        "header": header_name,
+                    },
+                )
+            except Exception:  # noqa: BLE001 - 审计失败不阻断
+                LOGGER.warning(
+                    "auth 注入审计写入失败: plugin=%s header=%s", self._plugin_id, header_name
                 )

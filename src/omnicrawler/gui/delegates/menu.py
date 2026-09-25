@@ -211,6 +211,13 @@ class MenuBuilder(_BaseDelegate):
         shortcuts_action.triggered.connect(mw._help_dialogs.show_shortcuts)
         settings_menu.addAction(shortcuts_action)
 
+        # 决策四 P1：功能设置页的原生依赖徽标 + 就地安装入口。
+        # 「环境与依赖…」是**只读检测 + 主动安装**面板，与「运行能力与自包含组件…」
+        # （纯文本快照）并存：前者可操作，后者是开发者向的完整清单。
+        dependency_center_action = QAction(_("环境与依赖..."), mw)
+        dependency_center_action.triggered.connect(mw._show_dependency_center)
+        settings_menu.addAction(dependency_center_action)
+
         capabilities_action = QAction(_("运行能力与自包含组件..."), mw)
         capabilities_action.triggered.connect(mw._help_dialogs.show_capabilities)
         settings_menu.addAction(capabilities_action)
