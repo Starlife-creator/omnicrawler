@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-24T09:59:15+00:00",
-  "sequence": 1790243955,
+  "generated_at": "2026-09-25T10:30:15+00:00",
+  "sequence": 1790332215,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -12,7 +12,7 @@
     {
       "id": "academic-paper-downloader",
       "name": "academic-paper-downloader",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "publisher": "starlife",
       "category": "source",
       "plugin_types": [
@@ -21,9 +21,9 @@
         "hook"
       ],
       "summary": "从 Web of Science 导出文件批量下载论文 PDF，全优化版",
-      "description_file": "plugins/academic-paper-downloader/listing.md",
-      "plugin_file": "plugins/academic-paper-downloader/plugin.py",
-      "signature_file": "plugins/academic-paper-downloader/plugin.py.sig",
+      "description_file": "plugins/academic-paper-downloader/versions/0.4.0/listing.md",
+      "plugin_file": "plugins/academic-paper-downloader/versions/0.4.0/plugin.py",
+      "signature_file": "plugins/academic-paper-downloader/versions/0.4.0/plugin.py.sig",
       "signature_algorithm": "ed25519",
       "permissions": [
         "network:scoped",
@@ -45,9 +45,9 @@
         "openalex",
         "batch-download"
       ],
-      "updated_at": "2026-09-20",
-      "creator_signature_file": "plugins/academic-paper-downloader/creator.sig",
-      "creator_identity_file": "plugins/academic-paper-downloader/creator.identity",
+      "updated_at": "2026-09-25",
+      "creator_signature_file": "plugins/academic-paper-downloader/versions/0.4.0/creator.sig",
+      "creator_identity_file": "plugins/academic-paper-downloader/versions/0.4.0/creator.identity",
       "execution_mode": "subprocess",
       "domains": [
         "api.crossref.org",
@@ -92,6 +92,11 @@
           "license": "MIT"
         },
         {
+          "name": "xlrd",
+          "version": ">=2.0,<3.0",
+          "license": "BSD-3-Clause"
+        },
+        {
           "name": "pdfplumber",
           "version": ">=0.10,<1.0",
           "license": "MIT"
@@ -107,13 +112,13 @@
           "license": "Apache-2.0"
         }
       ],
-      "package_manifest_file": "plugins/academic-paper-downloader/package.manifest.json",
-      "creator_package_signature_file": "plugins/academic-paper-downloader/package.manifest.creator.sig",
-      "maintainer_package_signature_file": "plugins/academic-paper-downloader/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "ca52307b66bdd5d41c398313019f7a69d9120bc3945fae31d82831ad52830185",
+      "package_manifest_file": "plugins/academic-paper-downloader/versions/0.4.0/package.manifest.json",
+      "creator_package_signature_file": "plugins/academic-paper-downloader/versions/0.4.0/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/academic-paper-downloader/versions/0.4.0/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "e9c3734f505c1d7eb016ace8c96651b7ba4df2b3bd16b27f145550b258761bbf",
       "versions": {
-        "0.3.0": {
-          "sha256": "93554efba2c02301656b31250fd92b59d4455da9f5faf32adf93e7e4bf3d449e"
+        "0.4.0": {
+          "sha256": "d8daec3bbc4be8596948d77e037bb7d80c09d5f622be45de2b4b09a7f1c9e0e0"
         }
       }
     },
