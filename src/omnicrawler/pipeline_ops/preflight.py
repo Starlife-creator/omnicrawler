@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import re
 import shutil
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -76,12 +77,24 @@ def run_preflight(config: AppConfig) -> dict[str, Any]:
                 "ok" if available else "error",
                 f"依赖：{label}",
                 "已安装" if available else f"未安装；{install_hint}",
-                {"action": "install", "extra": install_hint} if not available else None,
+                # 原生依赖缺失 ⇒ error（阻断）+ 可安装。requirement 为 pip 需求串，
+                # 供 GUI 的「下载并安装」按钮直接消费（决策三）。
+                (
+                    {
+                        "action": "install",
+                        "extra": install_hint,
+                        "requirement": _install_requirement(label, install_hint),
+                        "dependency_class": "native",
+                    }
+                    if not available
+                    else None
+                ),
             )
         )
     # 插件声明依赖（#75 §D）：manifest 声明的是依赖**全集**，不等于本次配置一定都用到
     # （实测 playwright 只在 level 3 需要）⇒ 报 warning + 明确清单，既不伪成功，
     # 也不把"能跑通的 run"挡在门外。
+    # 决策三：warning 也带安装选项（用户自由选择装或不装），但**不阻断**运行。
     for plugin_id, candidates, install_hint in plugin_dependency_requirements(config):
         checks.append(
             PreflightCheck(
@@ -89,7 +102,13 @@ def run_preflight(config: AppConfig) -> dict[str, Any]:
                 "warning",
                 f"插件依赖：{plugin_id}",
                 f"声明的依赖 {candidates[0]} 未安装；{install_hint}",
-                {"action": "install", "extra": install_hint},
+                {
+                    "action": "install",
+                    "extra": install_hint,
+                    "requirement": candidates[0],
+                    "dependency_class": "plugin",
+                    "plugin_id": plugin_id,
+                },
             )
         )
     concurrency = int(config.section("crawl").get("concurrency", 4))
@@ -141,6 +160,19 @@ def run_sample(config: AppConfig, *, pages: int = 3) -> dict[str, Any]:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     return {"sample": result, "report": str(output)}
+
+
+def _install_requirement(label: str, install_hint: str) -> str:
+    """把预检项转成可直接交给 pip 的**需求串**（决策三的安装按钮消费）。
+
+    优先从 ``install_hint`` 里解析（``pip install PyYAML`` → ``PyYAML``；
+    ``pip install omnicrawler-platform[pdf]`` → 该 extra 形式原样保留）；
+    解析不出时退化为探测名（调用方只把它当作 best-effort 需求）。
+    """
+    match = re.search(r"pip\s+install\s+(.+)$", install_hint or "")
+    if match:
+        return match.group(1).strip()
+    return label
 
 
 def _required_dependencies(config: AppConfig) -> list[tuple[str, str, str]]:

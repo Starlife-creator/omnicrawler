@@ -71,7 +71,12 @@ from .plugin_market_logic import (
 from .plugin_market_logic import (
     _version_tuple as _version_tuple,
 )
-from .plugin_market_workers import _CatalogWorker, _InstallWorker, _ListingWorker
+from .plugin_market_workers import (
+    _CatalogWorker,
+    _DependencyScanWorker,
+    _InstallWorker,
+    _ListingWorker,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -139,6 +144,9 @@ class PluginMarketView(
         self._catalog_worker: _CatalogWorker | None = None
         self._listing_worker: _ListingWorker | None = None
         self._install_worker: _InstallWorker | None = None
+        # 决策四「打开即检测」：已装插件的只读依赖状态（后台填充，缺依赖只画徽标）
+        self._dependency_worker: _DependencyScanWorker | None = None
+        self._dependency_status: dict[str, Any] = {}
 
         self._setup_ui()
         self._apply_style()

@@ -1162,6 +1162,26 @@ class MainWindow(QMainWindow):
             on_failed=self._on_preflight_failed,
         )
 
+    def _show_dependency_center(self) -> None:
+        """功能设置页的「环境与依赖」面板（决策四 P1：只读徽标 + 就地安装入口）。
+
+        打开即检测（后台探测，不冻结 UI），缺失项由**用户主动点击**才安装——
+        不自动装、不弹框（决策四 A）。非模态显示，便于用户对照主界面操作。
+        """
+        from .views.dependency_center import open_dependency_center
+
+        registry = None
+        try:
+            from ..sources.mirror_registry import MirrorRegistry
+
+            candidate = MirrorRegistry(self._config)
+            registry = candidate if candidate.enabled else None
+        except Exception as exc:  # noqa: BLE001 - 镜像不可用不影响官方源安装
+            import logging
+
+            logging.getLogger(__name__).warning("镜像注册表不可用：%s", exc)
+        self._dependency_center = open_dependency_center(self, registry=registry)
+
     def _on_preflight_failed(self, error: str) -> None:
         QMessageBox.warning(self, _("运行前检查失败"), error)
         self._preflight_pending = False

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..i18n import _
-from .plugin_market_workers import _CatalogWorker
+from .plugin_market_workers import _CatalogWorker, _DependencyScanWorker
 
 LOGGER = logging.getLogger(__name__)
 
@@ -59,6 +59,8 @@ class MarketCatalogMixin(_Base):
     _trust_source: str
     _egress: Any
     _catalog_worker: _CatalogWorker | None
+    _dependency_worker: _DependencyScanWorker | None
+    _dependency_status: dict[str, Any]
     _status_indicator: StatusIndicator
     _status_label: QLabel
     _source_label: QLabel
@@ -163,6 +165,27 @@ class MarketCatalogMixin(_Base):
         self._source_label.setText(shown)
         self._footer.setText(_(f"共 {len(catalog.get('plugins', []))} 个已审核插件。"))
         self._refresh_btn.setEnabled(True)
+        self._scan_dependency_status()
+        self._populate_list()
+
+    def _scan_dependency_status(self) -> None:
+        """后台扫描已装插件的声明依赖（决策四：打开即检测，只读、不弹框）。
+
+        只在真正装了插件时才启动线程（``plugins_installed/`` 不存在 ⇒ 无事可做）；
+        结果回来只更新徽标（``_populate_list`` 重绘），齐全时静默——绝不打扰用户。
+        """
+        if not self._dest_root.is_dir():
+            self._dependency_status = {}
+            return
+        worker = _DependencyScanWorker(self._dest_root, parent=self)
+        worker.succeeded.connect(self._on_dependency_scanned)
+        worker.finished.connect(worker.deleteLater)
+        self._dependency_worker = worker
+        worker.start()
+
+    def _on_dependency_scanned(self, status: dict[str, Any]) -> None:
+        self._dependency_status = dict(status or {})
+        # 依赖徽标变化后重绘列表（保持选中/滚动由 _populate_list 自身负责）
         self._populate_list()
 
     def _on_catalog_error(self, msg: str) -> None:
@@ -177,6 +200,7 @@ class MarketCatalogMixin(_Base):
         )
         self._refresh_btn.setEnabled(True)
         # 离线也展示已安装列表，便于管理
+        self._scan_dependency_status()
         self._populate_list()
 
     def _set_offline_state(self, message: str) -> None:
@@ -185,4 +209,5 @@ class MarketCatalogMixin(_Base):
         self._status_label.setText(_("离线"))
         self._footer.setText(message)
         self._refresh_btn.setEnabled(True)
+        self._scan_dependency_status()
         self._populate_list()

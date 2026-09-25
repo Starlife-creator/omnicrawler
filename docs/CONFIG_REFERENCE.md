@@ -269,6 +269,45 @@ plugins:
 未启用背景时不会创建播放器或启动浏览器。
 路径默认必须位于项目目录。生命周期事件包括 `before_run/before_fetch/after_fetch/after_extract/before_export/after_export/after_run/on_error/before_reprocess/after_reprocess`。
 
+## 依赖安装与镜像加速
+
+运行前预检会检测两类缺失依赖：**原生依赖**（缺失即阻断，判 `error`）与**插件声明依赖**
+（manifest 声明的依赖全集，本次可能用不到，判 `warning`）。两者都带 `action: install`，
+GUI 会给出「下载并安装」入口——原生依赖阻断运行，插件依赖只提示、不阻断。
+
+安装走统一的多源回退安装器（`services.dependency_installer`）：**官方源恒为首选**，
+官方失败后才按健康分在镜像间顺序回退；每个源单次 `--index-url` 调用，绝不并行跨源混版。
+超时按包体积自适应：先做一次 dry-run 取下载体积估算，重型包（paddle/torch/opencv 等）
+用更高上限，超时归因到「大包」而非误判为「源不可用」。
+
+镜像路由默认 **不启用**。`mirrors` 节缺失时引擎零开销直通官方源，绝不偷偷导流。
+出现官方源连接失败时，GUI 会**弹一次**提示询问是否启用国内镜像加速，用户点「是」才写入
+下述预置组（也可从「设置 → 环境与依赖」手动启用）：
+
+```yaml
+mirrors:
+  enabled: true
+  groups:
+    pypi.org:
+      - host: pypi.org                          # 官方源，健康时恒定置顶
+        weight: 3.0
+      - host: mirrors.tuna.tsinghua.edu.cn      # 需已在 egress 白名单内
+        weight: 2.0
+      - host: mirrors.aliyun.com
+        weight: 1.5
+      - host: mirrors.cloud.tencent.com
+        weight: 1.2
+      - host: pypi.mirrors.ustc.edu.cn
+        weight: 1.0
+  probe_interval_seconds: 60
+  probe_timeout_seconds: 5
+  failure_threshold: 3
+  success_threshold: 2
+```
+
+排障要点：**镜像上找不到指定版本不会摘流**（那是版本问题，不是源故障，摘健康源会误伤）；
+官方源被连续失败摘流后仍作为**列表末尾兜底**保留，不会彻底消失。
+
 ## 环境变量与迁移
 
 - `${NAME}` 与 `${NAME:-default}` 在加载配置时展开。

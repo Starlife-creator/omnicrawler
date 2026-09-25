@@ -17,8 +17,11 @@ from pathlib import Path
 import pytest
 
 from omnicrawler.plugins.plugin_dependency_check import (
+    DependencyStatus,
     import_name_candidates,
     plugin_dependency_requirements,
+    plugin_dependency_status,
+    plugin_dependency_status_for_root,
     plugin_dependency_warnings,
 )
 
@@ -210,3 +213,66 @@ def test_find_spec_guard_is_used(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     )
 
     assert [item[1][0] for item in plugin_dependency_requirements(cfg)] == ["json"]
+
+
+class TestDependencyStatus:
+    """决策四「打开即检测」的数据源：**全量**插件只读状态（不按 run 参与者过滤）。"""
+
+    def test_reports_by_plugin_id_including_unrelated(self, tmp_path: Path) -> None:
+        """与预检不同：打开即检测要覆盖**所有已装**插件，不限于本次 run 参与者。"""
+        plugins_dir = tmp_path / "plugins"
+        cfg = _cfg(tmp_path, kind="demo")
+        _write_plugin(plugins_dir, "demo", [{"name": "json"}])
+        _write_plugin(plugins_dir, "other", [{"name": _MISSING}])
+
+        status = plugin_dependency_status(cfg)
+
+        assert set(status) == {"demo", "other"}
+        assert status["demo"].ready is True
+        assert status["demo"].missing == ()
+        assert status["other"].ready is False
+        assert status["other"].missing == (_MISSING,)
+        assert status["other"].requirements == (_MISSING,)
+
+    def test_ready_means_no_missing(self, tmp_path: Path) -> None:
+        cfg = _cfg(tmp_path, kind="demo")
+        _write_plugin(cfg.root / "plugins", "demo", [{"name": "json"}])
+
+        status = plugin_dependency_status(cfg)
+
+        assert status["demo"].ready
+        assert status["demo"].declared == ("json",)
+
+    def test_for_root_scans_without_config(self, tmp_path: Path) -> None:
+        """GUI 市场页只有安装根目录 ⇒ 走 root 口径，结论与 config 口径一致。"""
+        root = tmp_path / "plugins_installed"
+        _write_plugin(root, "demo", [{"name": _MISSING}])
+
+        status = plugin_dependency_status_for_root(root)
+
+        assert status["demo"].missing == (_MISSING,)
+
+    def test_for_root_missing_dir_is_empty(self, tmp_path: Path) -> None:
+        assert plugin_dependency_status_for_root(tmp_path / "nope") == {}
+
+    def test_duplicate_id_keeps_richest_status(self, tmp_path: Path) -> None:
+        """同一 id 出现在多个路径时，保留信息更全（missing 更多）的一条。"""
+        root_a = tmp_path / "a"
+        root_b = tmp_path / "b"
+        _write_plugin(root_a, "dup", [{"name": "json"}])
+        _write_plugin(root_b, "dup", [{"name": _MISSING}])
+
+        first = plugin_dependency_status_for_root(root_a)
+        second = plugin_dependency_status_for_root(root_b)
+        # 分别扫描各自只有一个，合并语义由 plugin_dependency_status 承担——
+        # 这里用 config 同时扫两个路径，验证"更全者优先"
+        cfg = _cfg(tmp_path, kind="demo", plugins={"paths": [str(root_a), str(root_b)]})
+        merged = plugin_dependency_status(cfg)
+
+        assert first["dup"].ready and not second["dup"].ready
+        assert merged["dup"].missing == (_MISSING,)
+
+    def test_dataclass_is_frozen(self, tmp_path: Path) -> None:
+        status = DependencyStatus(plugin_id="x")
+        with pytest.raises(AttributeError):
+            status.plugin_id = "y"  # type: ignore[misc]

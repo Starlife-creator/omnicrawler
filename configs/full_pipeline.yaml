@@ -61,3 +61,25 @@ outputs:
 
 plugins:
   paths: []
+
+# 依赖安装镜像加速（默认关闭；`mirrors` 节缺失即零开销直通官方源）。
+# 官方源恒为首选，失败后才按健康分在镜像间顺序回退。启用前请确认每个 host
+# 已在 egress 域名白名单内。也可在 GUI「设置 → 环境与依赖」一键启用预置组。
+# mirrors:
+#   enabled: true
+#   groups:
+#     pypi.org:
+#       - host: pypi.org                    # 官方源，健康时恒定置顶
+#         weight: 3.0
+#       - host: mirrors.tuna.tsinghua.edu.cn  # 需已在白名单内
+#         weight: 2.0
+#       - host: mirrors.aliyun.com
+#         weight: 1.5
+#       - host: mirrors.cloud.tencent.com
+#         weight: 1.2
+#       - host: pypi.mirrors.ustc.edu.cn
+#         weight: 1.0
+#   probe_interval_seconds: 60
+#   probe_timeout_seconds: 5
+#   failure_threshold: 3
+#   success_threshold: 2

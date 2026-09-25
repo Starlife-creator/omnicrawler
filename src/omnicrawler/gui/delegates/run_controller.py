@@ -50,6 +50,10 @@ class RunController(_BaseDelegate):
             return
         for w in warnings:
             mw._log_console.append_log(w, "warn")
+        # 依赖自动检测/提示/安装（决策三）：运行前把缺失依赖（原生 error 阻断 /
+        # 插件 warning 不阻断）呈现为带安装按钮的对话框；用户拒装原生依赖 ⇒ 中止。
+        if not self._ensure_dependencies():
+            return
         if not mw._config_path:
             mw._config_delegate.save_config_as()
             if not mw._config_path:
@@ -92,6 +96,48 @@ class RunController(_BaseDelegate):
             mw._pause_btn.setEnabled(False)
             mw._set_status(_("启动失败"))
         mw._stack.setCurrentIndex(2)
+
+    def _ensure_dependencies(self) -> bool:
+        """运行前依赖检测 + 可选安装（同步版，供 run_task 前置调用）。
+
+        复用 ``pipeline_ops.preflight.run_preflight`` 的依赖判定与
+        ``pipeline_ops.preflight`` 里已标注 ``action == "install"`` 的两种依赖，
+        渲染成**带安装按钮**的对话框。返回 ``False`` 表示用户拒绝安装阻断类
+        （原生）依赖，调用方应中止本次运行。
+
+        任何内部异常都不阻断运行（依赖检测是保障，不该比业务本身更致命）。
+        """
+        mw = self._mw
+        try:
+            from ...core.config import load_config as load_core_config
+            from ...pipeline_ops.preflight import run_preflight
+            from ..views.dependency_dialog import dependency_install_items, prompt_and_install
+
+            if not mw._config_path:
+                return True
+            report = run_preflight(load_core_config(mw._config_path))
+            items = dependency_install_items(report)
+            if not items:
+                return True
+            return prompt_and_install(mw, items, registry=self._mirror_registry())
+        except Exception as exc:  # noqa: BLE001 - 依赖检测失败不阻断运行
+            import logging
+
+            logging.getLogger(__name__).warning("运行前依赖检测失败，跳过：%s", exc)
+            return True
+
+    def _mirror_registry(self) -> object | None:
+        """构造 MirrorRegistry（未启用时返回 None ⇒ 安装器直连官方源）。"""
+        try:
+            from ...sources.mirror_registry import MirrorRegistry
+
+            registry = MirrorRegistry(self._mw._config)
+            return registry if registry.enabled else None
+        except Exception as exc:  # noqa: BLE001
+            import logging
+
+            logging.getLogger(__name__).warning("镜像注册表不可用：%s", exc)
+            return None
 
     def stop_task(self) -> None:
         mw = self._mw
