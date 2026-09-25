@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -24,7 +25,8 @@ GIT_ENV_ARGS = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
 
 def _git(args: list[str], cwd: Path) -> str:
     r = subprocess.run(
-        ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True
+        ["git", *args], cwd=str(cwd), capture_output=True,
+        text=True, encoding="utf-8", errors="replace", check=True,
     )
     return r.stdout.strip()
 
@@ -44,6 +46,10 @@ def _make_market_repo(tmp_path: Path) -> tuple[Path, str]:
 
 
 def _run(mkt: Path, dest: Path, ref: Path, *extra: str) -> subprocess.CompletedProcess:
+    # ★ 管道编码必须父子两端都钉死 UTF-8：CI Windows runner locale 是 cp1252，
+    # 工具打印中文时 _readerthread 解码崩溃（PytestUnhandledThreadExceptionWarning）
+    # ⇒ CompletedProcess.stdout/stderr 为 None（而非报错），断言炸 TypeError。
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
     return subprocess.run(
         [
             sys.executable, str(SCRIPT),
@@ -52,7 +58,7 @@ def _run(mkt: Path, dest: Path, ref: Path, *extra: str) -> subprocess.CompletedP
             "--ref-file", str(ref),
             *extra,
         ],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
     )
 
 
