@@ -128,6 +128,20 @@ def test_windows_build_refreshes_verified_asset_caches() -> None:
     assert "Move-Item -LiteralPath $backup -Destination $resolvedDestination" in script
 
 
+def _pinned_uv_version() -> str:
+    """★ 单一真源：便携构建/发布工作流用的 uv 版本 = `constraints/quality.txt` 的 `uv==X`。
+
+    这里**不再硬编码版本号字面量**（旧实现写死 `0.12.13`，导致任何 uv 升级都必须
+    手改测试断言；2026-09-25 的 dependabot PR 就是这样只改了 constraints，
+    把 4 个工作流与 2 条断言落下的）。改为从约束文件派生 ⇒ 升级只需改一处。
+    """
+    for line in (PROJECT_ROOT / "constraints" / "quality.txt").read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("uv=="):
+            return stripped.split("==", 1)[1]
+    raise AssertionError("constraints/quality.txt 缺少 `uv==X` 约束行")
+
+
 def test_portable_builds_install_and_verify_locked_dependencies() -> None:
     scripts = [
         (PROJECT_ROOT / "build_windows.ps1").read_text(encoding="utf-8"),
@@ -141,9 +155,24 @@ def test_portable_builds_install_and_verify_locked_dependencies() -> None:
 
     for filename in (*BUILD_WORKFLOWS.values(), FINALIZE):
         workflow = _workflow(filename)
-        assert "version: \"0.12.13\"" in workflow
         assert "uv sync --locked" in workflow
         assert "pip install -e" not in workflow
 
     constraints = (PROJECT_ROOT / "constraints" / "quality.txt").read_text(encoding="utf-8")
-    assert "uv==0.12.13" in constraints
+    assert "uv==" in constraints
+
+
+def test_release_build_toolchain_uv_version_matches_constraints() -> None:
+    """★ 版本一致性守卫（防复发）。
+
+    4 个 reusable 工作流里 `setup-uv` 的 `version:` pin 必须与
+    `constraints/quality.txt` 的 `uv==X` **逐字相等**。任何一处漏改即全局报红
+    ——旧实现只在测试里硬编码一个字面量，只能抓到其中一处，抓不到工作流漂移。
+    """
+    expected = _pinned_uv_version()
+    for filename in (*BUILD_WORKFLOWS.values(), FINALIZE):
+        workflow = _workflow(filename)
+        assert f'version: "{expected}"' in workflow, (
+            f"{filename} 的 setup-uv version pin 与 constraints/quality.txt 的 "
+            f"uv=={expected} 不一致（升级 uv 时必须同步此处）"
+        )
