@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from PySide6.QtCore import QTimer, Slot
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
@@ -50,6 +51,10 @@ class RunController(_BaseDelegate):
             return
         for w in warnings:
             mw._log_console.append_log(w, "warn")
+        # 依赖自动检测/提示/安装（决策三）：运行前把缺失依赖（原生 error 阻断 /
+        # 插件 warning 不阻断）呈现为带安装按钮的对话框；用户拒装原生依赖 ⇒ 中止。
+        if not self._ensure_dependencies():
+            return
         if not mw._config_path:
             mw._config_delegate.save_config_as()
             if not mw._config_path:
@@ -92,6 +97,83 @@ class RunController(_BaseDelegate):
             mw._pause_btn.setEnabled(False)
             mw._set_status(_("启动失败"))
         mw._stack.setCurrentIndex(2)
+
+    def _ensure_dependencies(self) -> bool:
+        """运行前依赖检测 + 可选安装（同步版，供 run_task 前置调用）。
+
+        复用 ``pipeline_ops.preflight.run_preflight`` 的依赖判定与
+        ``pipeline_ops.preflight`` 里已标注 ``action == "install"`` 的两种依赖，
+        渲染成**带安装按钮**的对话框。返回 ``False`` 表示用户拒绝安装阻断类
+        （原生）依赖，调用方应中止本次运行。
+
+        任何内部异常都不阻断运行（依赖检测是保障，不该比业务本身更致命）。
+        """
+        mw = self._mw
+        try:
+            from ...core.config import load_config as load_core_config
+            from ...pipeline_ops.preflight import run_preflight
+            from ..views.dependency_dialog import dependency_install_items, prompt_and_install
+
+            if not mw._config_path:
+                return True
+            report = run_preflight(load_core_config(mw._config_path))
+            items = dependency_install_items(report)
+            if not items:
+                return True
+            return prompt_and_install(
+                mw,
+                items,
+                registry=self._mirror_registry(),
+                config_raw=self._config_raw(),
+                persist_patch=self._persist_config_patch,
+            )
+        except Exception as exc:  # noqa: BLE001 - 依赖检测失败不阻断运行
+            import logging
+
+            logging.getLogger(__name__).warning(_("运行前依赖检测失败，跳过：%s"), exc)
+            return True
+
+    def _config_raw(self) -> dict[str, Any]:
+        """当前 GUI 配置的原始字典（读 ``mirrors`` 节判断镜像是否已启用）。"""
+        import yaml
+
+        from ..core.config_serializer import to_yaml
+
+        try:
+            return yaml.safe_load(to_yaml(self._mw._config)) or {}
+        except Exception as exc:  # noqa: BLE001 - 读不出就按"未启用镜像"处理
+            import logging
+
+            logging.getLogger(__name__).warning(_("读取当前配置失败：%s"), exc)
+            return {}
+
+    def _persist_config_patch(self, patch: dict[str, Any]) -> None:
+        """把一段配置补丁合入 ``passthrough`` 并落盘（如"启用镜像"补丁）。
+
+        只做顶层段的浅合并（补丁本身已是整段内容）——沿用 GUI 既有的
+        ``save_yaml`` 路径，保证注释与 B 类透传字段不丢。
+        """
+        mw = self._mw
+        if not mw._config_path:
+            return
+        for key, value in (patch or {}).items():
+            mw._config.passthrough[key] = value
+        from ..core.config_serializer import save_yaml
+
+        save_yaml(mw._config, mw._config_path)
+
+    def _mirror_registry(self) -> object | None:
+        """构造 MirrorRegistry（未启用时返回 None ⇒ 安装器直连官方源）。"""
+        try:
+            from ...sources.mirror_registry import MirrorRegistry
+
+            registry = MirrorRegistry(self._mw._config)
+            return registry if registry.enabled else None
+        except Exception as exc:  # noqa: BLE001
+            import logging
+
+            logging.getLogger(__name__).warning(_("镜像注册表不可用：%s"), exc)
+            return None
 
     def stop_task(self) -> None:
         mw = self._mw

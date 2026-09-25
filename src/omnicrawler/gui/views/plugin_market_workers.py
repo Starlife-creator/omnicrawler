@@ -75,6 +75,24 @@ class _ListingWorker(BackgroundWorker):
     def work(self) -> str:
         return fetch_resource(self._catalog_url, self._rel, egress=self._egress).decode("utf-8", "replace")
 
+class _DependencyScanWorker(BackgroundWorker):
+    """后台扫描已装插件的**声明依赖**可用性（决策四：打开即检测，不冻结 UI）。
+
+    只读：只对 ``plugin.yaml`` 的 ``dependencies`` 做 ``find_spec`` 探测，
+    不执行插件代码、不联网、不安装（安装由用户点击触发，见 dependency_dialog）。
+    """
+
+    def __init__(self, plugins_root: Path, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._plugins_root = plugins_root
+
+    def work(self) -> dict[str, Any]:
+        from ...plugins.plugin_dependency_check import plugin_dependency_status_for_root
+
+        # 返回 {plugin_id: DependencyStatus}；dataclass 跨线程传递安全（不可变）
+        return plugin_dependency_status_for_root(self._plugins_root)
+
+
 class InstallError(Exception):
     """携带结构化原因链的安装失败；`str()` 即 JSON（便于经 `failed(str)` 信号跨线程）。
 

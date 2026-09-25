@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from dataclasses import dataclass, field
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
@@ -25,8 +26,10 @@ from typing import Any
 from .plugin_preflight import _decode_plugin_source, _static_plugin_metadata
 
 __all__ = [
+    "DependencyStatus",
     "import_name_candidates",
     "plugin_dependency_requirements",
+    "plugin_dependency_status",
     "plugin_dependency_warnings",
 ]
 
@@ -185,3 +188,86 @@ def plugin_dependency_warnings(config: Any) -> list[str]:
         f"插件 {plugin_id} 声明的依赖未安装：{candidates[0]}（{hint}）"
         for plugin_id, candidates, hint in plugin_dependency_requirements(config)
     ]
+
+
+@dataclass(frozen=True, slots=True)
+class DependencyStatus:
+    """单个插件的**只读**依赖状态（决策四：打开即检测，不冻结 UI、不弹框）。
+
+    ``missing`` 为空即"依赖齐全"（§R2 ⇒ GUI 静默，不打扰用户）；非空时 GUI 只画
+    徽标，把"是否安装"留给用户主动点击（决策四 A：只读）。
+    """
+
+    plugin_id: str
+    declared: tuple[str, ...] = ()
+    missing: tuple[str, ...] = ()
+    requirements: tuple[str, ...] = field(default=())
+
+    @property
+    def ready(self) -> bool:
+        """依赖齐全（含"未声明依赖"这一平凡情形）。"""
+        return not self.missing
+
+
+def plugin_dependency_status_from_dir(plugin_dir: Path) -> DependencyStatus | None:
+    """对**单个**插件目录做只读依赖探测；读不出声明时返回 ``None``。
+
+    与 ``plugin_dependency_requirements`` 共用同一套探测口径（``import_name_candidates``
+    + ``find_spec``），保证"运行前预检"与"打开即检测"给出**一致**的结论——
+    两处判据不重复定义（判据只留一处）。
+    """
+    declared = _declared_dependencies(plugin_dir)
+    if declared is None:
+        return None
+    plugin_id, names = declared
+    missing: list[str] = []
+    requirements: list[str] = []
+    for name in names:
+        candidates = import_name_candidates(name)
+        if not candidates or any(find_spec(item) is not None for item in candidates):
+            continue
+        missing.append(candidates[0])
+        requirements.append(name)
+    return DependencyStatus(
+        plugin_id=plugin_id,
+        declared=tuple(names),
+        missing=tuple(missing),
+        requirements=tuple(requirements),
+    )
+
+
+def plugin_dependency_status(config: Any) -> dict[str, DependencyStatus]:
+    """扫描**全部**已装插件（不限于本次 run 参与者）的依赖状态。
+
+    决策四「打开即检测」的数据源：插件市场页只需展示**已安装**插件的依赖徽标，
+    与"本次 run 是否启用"无关，因此这里不沿用 ``_wanted_plugin_ids`` 过滤。
+    """
+    result: dict[str, DependencyStatus] = {}
+    for plugin_dir in _iter_plugin_paths(config):
+        status = plugin_dependency_status_from_dir(plugin_dir)
+        if status is None:
+            continue
+        # 同一 id 多次出现（多路径）时保留信息更全的一条（missing 更多者优先）
+        existing = result.get(status.plugin_id)
+        if existing is None or len(status.missing) > len(existing.missing):
+            result[status.plugin_id] = status
+    return result
+
+
+def plugin_dependency_status_for_root(plugins_root: Path) -> dict[str, DependencyStatus]:
+    """按**目录**（而非 AppConfig）扫描依赖状态——GUI 市场页只有安装根目录。
+
+    与 ``plugin_dependency_status`` 同口径，只是把"路径枚举"换成显式根目录，
+    供 plugin_market / dependency badge 在无 config 对象的场景复用。
+    """
+    result: dict[str, DependencyStatus] = {}
+    if not plugins_root.is_dir():
+        return result
+    for plugin_dir in _iter_plugin_dirs(plugins_root):
+        status = plugin_dependency_status_from_dir(plugin_dir)
+        if status is None:
+            continue
+        existing = result.get(status.plugin_id)
+        if existing is None or len(status.missing) > len(existing.missing):
+            result[status.plugin_id] = status
+    return result

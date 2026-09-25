@@ -137,6 +137,104 @@ class TestUrlRewrite:
         assert canonical == "a.test"
 
 
+class TestOrderedEndpoints:
+    """``ordered()`` / ``ordered_endpoints()``：顺序回退的排序契约。
+
+    对应依赖安装的决策一（官方源恒首）+ 决策六（官方源失败移末兜底）。
+    """
+
+    def _registry(self, **mirrors: object):
+        from omnicrawler.sources.mirror_registry import MirrorRegistry
+
+        groups = mirrors.pop("groups")
+        cfg = FakeAppConfig({"mirrors": {"enabled": True, "groups": groups, **mirrors}})
+        return MirrorRegistry(cfg)
+
+    def test_official_first_when_healthy(self) -> None:
+        reg = self._registry(groups={
+            "pypi.org": [
+                {"host": "pypi.org", "weight": 1},
+                {"host": "mirror-a.com", "weight": 5},  # 权重更高，但官方必须仍第一
+            ]
+        })
+        ordered = reg.ordered_endpoints("pypi.org")
+        assert ordered[0] == ("pypi.org", "pypi.org")
+
+    def test_official_moves_to_last_when_unhealthy(self) -> None:
+        reg = self._registry(
+            groups={
+                "pypi.org": [
+                    {"host": "pypi.org", "weight": 1},
+                    {"host": "mirror-a.com", "weight": 5},
+                ]
+            },
+            failure_threshold=2,
+            success_threshold=2,
+        )
+        # 官方连续失败 ⇒ unhealthy
+        reg.record_failure("pypi.org", "pypi.org")
+        reg.record_failure("pypi.org", "pypi.org")
+        ordered = reg.ordered_endpoints("pypi.org")
+        hosts = [host for _, host in ordered]
+        assert hosts[-1] == "pypi.org"          # 官方兜底末位
+        assert hosts.count("pypi.org") == 1     # 且只出现一次
+        assert hosts[0] == "mirror-a.com"       # 健康镜像上位
+
+    def test_official_returns_to_front_after_recovery(self) -> None:
+        reg = self._registry(
+            groups={
+                "pypi.org": [
+                    {"host": "pypi.org", "weight": 1},
+                    {"host": "mirror-a.com", "weight": 5},
+                ]
+            },
+            failure_threshold=2,
+            success_threshold=2,
+        )
+        reg.record_failure("pypi.org", "pypi.org")
+        reg.record_failure("pypi.org", "pypi.org")
+        assert reg.ordered_endpoints("pypi.org")[-1][1] == "pypi.org"
+        # 官方恢复
+        reg.record_success("pypi.org", "pypi.org")
+        reg.record_success("pypi.org", "pypi.org")
+        assert reg.ordered_endpoints("pypi.org")[0][1] == "pypi.org"
+
+    def test_all_endpoints_present_in_order(self) -> None:
+        reg = self._registry(groups={
+            "pypi.org": [
+                {"host": "pypi.org", "weight": 1},
+                {"host": "mirror-a.com", "weight": 5},
+                {"host": "mirror-b.com", "weight": 2},
+            ]
+        })
+        hosts = [host for _, host in reg.ordered_endpoints("pypi.org")]
+        assert set(hosts) == {"pypi.org", "mirror-a.com", "mirror-b.com"}
+        # 其余按 weight 降序
+        assert hosts[1:] == ["mirror-a.com", "mirror-b.com"]
+
+    def test_disabled_registry_returns_empty(self) -> None:
+        from omnicrawler.sources.mirror_registry import MirrorRegistry
+
+        reg = MirrorRegistry(FakeAppConfig({"mirrors": {"enabled": False}}))
+        assert reg.ordered_endpoints("pypi.org") == []
+
+    def test_unknown_canonical_returns_empty(self) -> None:
+        reg = self._registry(groups={"pypi.org": [{"host": "pypi.org"}]})
+        assert reg.ordered_endpoints("npmjs.com") == []
+
+    def test_deterministic_on_weight_tie(self) -> None:
+        reg = self._registry(groups={
+            "pypi.org": [
+                {"host": "pypi.org", "weight": 1},
+                {"host": "mirror-b.com", "weight": 3},
+                {"host": "mirror-a.com", "weight": 3},
+            ]
+        })
+        first = [host for _, host in reg.ordered_endpoints("pypi.org")]
+        second = [host for _, host in reg.ordered_endpoints("pypi.org")]
+        assert first == second  # 同权重也稳定（host 兜底排序），不 flaky
+
+
 class TestModelsWithCopy:
     def test_crawl_request_with_url_and_meta(self) -> None:
         from omnicrawler.core.models import CrawlRequest

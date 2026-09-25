@@ -163,6 +163,38 @@ class MirrorGroup:
         best_idx = max(range(len(pool)), key=lambda i: weights[i])
         return pool[best_idx]
 
+    def ordered(self) -> list[MirrorEndpoint]:
+        """返回**完整**的按尝试顺序排列的节点列表（供顺序回退安装器使用）。
+
+        与 ``pick()`` 只返回单个最优节点不同，本方法返回可直接逐源重试的**全部**
+        节点，语义为「严格顺序回退」：
+
+        * **官方源（canonical 同名 host）健康时恒为第 0 位** —— 官方更权威、
+          镜像站不一定安全，健康时绝不让镜像抢位；
+        * 官方源**被判定失败**（``healthy=False``，即连续失败达 ``failure_threshold``）
+          时**移到最后一位兜底** —— 既符合「官方失败后才换镜像」，又保证全挂时
+          仍有一次官方重试机会（不丢源）；
+        * 官方源恢复健康后自动回到第 0 位；
+        * **官方源只出现一次**，位置在首/尾之间随健康状态迁移；
+        * 其余节点按 ``score * weight`` 降序（确定性，无随机）。
+
+        未命中的节点不会丢失：``pick()`` 的「全不健康回退」语义在此同样成立
+        —— 全部不健康时仍返回全部节点（顺序不变），由调用方逐源尝试。
+        """
+        if not self.endpoints:
+            return []
+        official = [e for e in self.endpoints if e.host == self.canonical]
+        others = [e for e in self.endpoints if e.host != self.canonical]
+        # score * weight 降序；key 里带上 host 保证同分时顺序确定，避免 flaky。
+        others.sort(key=lambda e: (-(e.score * e.weight), e.host))
+        if not official:
+            return list(others)
+        official_endpoint = official[0]
+        if official_endpoint.healthy:
+            return [official_endpoint, *others]
+        # 官方不健康 ⇒ 移到最后一位兜底（决策一 + 决策六的一致性要求）
+        return [*others, official_endpoint]
+
 
 class MirrorRegistry:
     """镜像注册表：加载 config 中的 groups，负责 rewrite_url + 成功/失败回写。
@@ -439,6 +471,27 @@ class MirrorRegistry:
                         ep.record_failure()
                     ep.update_healthy(self._failure_threshold, self._success_threshold)
                     return
+
+    def ordered_endpoints(self, canonical: str) -> list[tuple[str, str]]:
+        """返回某镜像组的**有序** ``(canonical, host)`` 列表，供顺序回退安装使用。
+
+        registry 未启用 / 未加载任何组 / canonical 不在任何组时返回空列表
+        —— 调用方据此判定「无镜像路由，直连官方」，与 ``resolve_host`` 的
+        空返回语义一致。
+        """
+        if not self._enabled:
+            return []
+        with self._lock:
+            group = self._groups.get(normalize_host(canonical))
+            if group is None:
+                return []
+            return [(group.canonical, ep.host) for ep in group.ordered()]
+
+    @property
+    def group_canonicals(self) -> list[str]:
+        """当前已加载的全部 canonical（供 UI 展示 / 安装器枚举组）。"""
+        with self._lock:
+            return sorted(self._groups)
 
     def endpoint_status(self, canonical: str) -> list[dict[str, Any]] | None:
         """用于调试 / metrics：返回某组全部 endpoint 的健康快照。"""

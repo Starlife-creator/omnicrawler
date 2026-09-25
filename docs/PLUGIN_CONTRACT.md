@@ -168,7 +168,7 @@ PLUGIN_METADATA = {
 | `artifact.stream.open/write/commit/abort` | `artifacts:write` | 不透明分块工件流；插件看不到路径，不能覆盖文件 |
 | `state.get` | `state:read` | 读取插件私有状态键 |
 | `state.set/delete/migrate` | `state:write` | 写入、删除或显式复制迁移私有状态 schema |
-| `network.fetch` | `network:scoped` | 网络经宿主代理；默认不向插件暴露密钥，且受 domains 和配额约束 |
+| `network.fetch` | `network:scoped` | 网络经宿主代理；默认不向插件暴露密钥（凭据经 `auth` 注入，见下），且受 domains 和配额约束 |
 | `temp.open` | `temp:write` | 会话临时文件（配额约束） |
 | `files.read` | `files:read` | 仅允许读取 input_files 白名单中的文件，拒绝路径逃逸 |
 | `resources.describe/enumerate/read` | `resources:read` | 访问用户明确授予的会话目录句柄；有扫描、深度、数量和读取大小上限 |
@@ -179,7 +179,12 @@ PLUGIN_METADATA = {
 | `secrets.get` | `secrets:read` | 明文密钥访问的显式例外：需要 manifest 白名单并记录审计；优先用 auth 注入 |
 
 - **网络密钥默认零暴露**：`network.fetch` 可用 `auth: {secret_ref, header}`，宿主代理侧
-  从密钥库解析注入请求头，插件进程永远看不到明文；注入头值不进审计/日志。
+  从密钥库解析注入请求头，插件进程永远看不到明文；注入头值不进审计/日志（仅记**头名**与
+  `decision=auth_injected`）。`secret_ref` 必须在该插件 manifest 的 secrets 白名单内，
+  否则 `E_PERMISSION`；`header` 缺省为 `Authorization`，且**只允许**
+  `Authorization` / `X-Api-Key` / `Api-Key` / `X-Auth-Token`（其余 `E_CONTRACT`，防止
+  借任意头名把密钥投递到非标准通道）；密钥值含换行一律拒绝（防请求头注入）。
+  **无 `auth` 字段 ⇒ 不注入**（缺省即安全）。
 - **secrets.get 为显式例外**：返回明文仅限单次调用，不缓存；调用即审计
   （decision=secret_accessed）。优先使用 auth 注入。
 - 未声明权限的越权调用 → `E_PERMISSION`；未知能力 → `E_CONTRACT`。
