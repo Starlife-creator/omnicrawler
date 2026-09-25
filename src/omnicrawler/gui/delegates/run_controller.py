@@ -130,7 +130,7 @@ class RunController(_BaseDelegate):
         except Exception as exc:  # noqa: BLE001 - 依赖检测失败不阻断运行
             import logging
 
-            logging.getLogger(__name__).warning("运行前依赖检测失败，跳过：%s", exc)
+            logging.getLogger(__name__).warning(_("运行前依赖检测失败，跳过：%s"), exc)
             return True
 
     def _config_raw(self) -> dict[str, Any]:
@@ -144,7 +144,7 @@ class RunController(_BaseDelegate):
         except Exception as exc:  # noqa: BLE001 - 读不出就按"未启用镜像"处理
             import logging
 
-            logging.getLogger(__name__).warning("读取当前配置失败：%s", exc)
+            logging.getLogger(__name__).warning(_("读取当前配置失败：%s"), exc)
             return {}
 
     def _persist_config_patch(self, patch: dict[str, Any]) -> None:
@@ -172,7 +172,7 @@ class RunController(_BaseDelegate):
         except Exception as exc:  # noqa: BLE001
             import logging
 
-            logging.getLogger(__name__).warning("镜像注册表不可用：%s", exc)
+            logging.getLogger(__name__).warning(_("镜像注册表不可用：%s"), exc)
             return None
 
     def stop_task(self) -> None:

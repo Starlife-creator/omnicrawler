@@ -281,7 +281,7 @@ class DependencyCenterDialog(QDialog):
                 persist_patch=self._persist_patch,
             )
         except Exception as exc:  # noqa: BLE001 - 单行安装异常不该让整个面板崩掉
-            LOGGER.warning("安装 %s 异常：%s", row.requirement, exc)
+            LOGGER.warning(_("安装 %s 异常：%s"), row.requirement, exc)
             ok = False
         if ok:
             if self._on_installed is not None:

@@ -1179,7 +1179,7 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001 - 镜像不可用不影响官方源安装
             import logging
 
-            logging.getLogger(__name__).warning("镜像注册表不可用：%s", exc)
+            logging.getLogger(__name__).warning(_("镜像注册表不可用：%s"), exc)
         self._dependency_center = open_dependency_center(
             self,
             registry=registry,
@@ -1198,7 +1198,7 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001 - 读不出按"未启用镜像"处理
             import logging
 
-            logging.getLogger(__name__).warning("读取配置失败：%s", exc)
+            logging.getLogger(__name__).warning(_("读取配置失败：%s"), exc)
             return {}
 
     def _persist_dependency_config_patch(self, patch: dict) -> None:

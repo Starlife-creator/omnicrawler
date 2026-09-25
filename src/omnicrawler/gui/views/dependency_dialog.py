@@ -110,7 +110,7 @@ def mirror_retry_sources(config_raw: dict[str, Any]) -> list[tuple[str, str]]:
     try:
         return mirror_endpoints_from_patch(config_raw or {})
     except Exception as exc:  # noqa: BLE001 - 兜底直连官方，绝不因镜像清单异常卡死安装
-        LOGGER.warning("解析镜像清单失败，回退官方源: %s", exc)
+        LOGGER.warning(_("解析镜像清单失败，回退官方源: %s"), exc)
         return []
 
 
@@ -146,7 +146,7 @@ class _DependencyInstallWorker(BackgroundWorker):
             try:
                 sources = self._registry.ordered_endpoints("pypi.org")
             except Exception as exc:  # noqa: BLE001 - 镜像不可用不影响直连官方
-                LOGGER.warning("读取镜像组失败，回退官方源: %s", exc)
+                LOGGER.warning(_("读取镜像组失败，回退官方源: %s"), exc)
         result = install_dependency(
             self._requirement,
             sources=sources,
@@ -255,7 +255,7 @@ def install_with_mirror_offer(
                 persist_patch(patch)
                 patch_applied = True
             except Exception as exc:  # noqa: BLE001 - 保存失败不阻断本轮镜像重试
-                LOGGER.warning("镜像配置保存失败: %s", exc)
+                LOGGER.warning(_("镜像配置保存失败: %s"), exc)
 
     retry_payload = _run_install_attempt(
         parent,
