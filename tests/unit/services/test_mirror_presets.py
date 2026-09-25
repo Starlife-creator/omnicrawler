@@ -104,3 +104,74 @@ class TestPresetIsConsumableByRegistry:
         registry = MirrorRegistry(self._Cfg({}))
         assert registry.enabled is False
         assert registry.ordered_endpoints(mp.CANONICAL_PYPI) == []
+
+
+class _Attempt:
+    """测试用最小 attempt（只带谓词要读的两个字段）。"""
+
+    def __init__(self, host: str, kind: str, ok: bool = False) -> None:
+        self.host = host
+        self.kind = kind
+        self.ok = ok
+
+
+class _Result:
+    def __init__(self, ok: bool, attempts: list[_Attempt] | None = None) -> None:
+        self.ok = ok
+        self.attempts = attempts or []
+
+
+class TestMirrorEndpointsFromPatch:
+    def test_official_first_then_preset_order(self) -> None:
+        endpoints = mp.mirror_endpoints_from_patch({})
+        hosts = [host for _canonical, host in endpoints]
+        # 官方源在首位（决策一），其余按预置清单顺序
+        assert hosts[0] == "pypi.org"
+        assert hosts[1] == "mirrors.tuna.tsinghua.edu.cn"
+        assert all(canonical == mp.CANONICAL_PYPI for canonical, _host in endpoints)
+
+    def test_matches_preset_group_hosts(self) -> None:
+        patch = mp.enable_mirrors_patch({})
+        expected = [e["host"] for e in patch["mirrors"]["groups"][mp.CANONICAL_PYPI]]
+        assert [h for _c, h in mp.mirror_endpoints_from_patch({})] == expected
+
+
+class TestShouldOfferMirrorAcceleration:
+    def test_network_failure_on_official_offers(self) -> None:
+        result = _Result(ok=False, attempts=[_Attempt("pypi.org", "network")])
+        assert mp.should_offer_mirror_acceleration(result, config_raw={}) is True
+
+    def test_timeout_retry_on_official_offers(self) -> None:
+        result = _Result(ok=False, attempts=[_Attempt("files.pythonhosted.org", "timeout-retry")])
+        assert mp.should_offer_mirror_acceleration(result, config_raw={}) is True
+
+    def test_success_never_offers(self) -> None:
+        result = _Result(ok=True, attempts=[_Attempt("pypi.org", "network")])
+        assert mp.should_offer_mirror_acceleration(result, config_raw={}) is False
+
+    def test_already_enabled_never_offers(self) -> None:
+        result = _Result(ok=False, attempts=[_Attempt("pypi.org", "network")])
+        raw = {"mirrors": {"enabled": True}}
+        assert mp.should_offer_mirror_acceleration(result, config_raw=raw) is False
+
+    def test_version_failure_does_not_offer(self) -> None:
+        # 缺该版本换镜像无用 ⇒ 不该提示（避免误导用户）
+        result = _Result(ok=False, attempts=[_Attempt("pypi.org", "version")])
+        assert mp.should_offer_mirror_acceleration(result, config_raw={}) is False
+
+    def test_conflict_failure_does_not_offer(self) -> None:
+        result = _Result(ok=False, attempts=[_Attempt("pypi.org", "conflict")])
+        assert mp.should_offer_mirror_acceleration(result, config_raw={}) is False
+
+    def test_network_failure_on_mirror_only_does_not_offer(self) -> None:
+        # 镜像源自己的网络失败：已启用镜像场景，再提示无意义
+        result = _Result(ok=False, attempts=[_Attempt("mirrors.aliyun.com", "network")])
+        assert mp.should_offer_mirror_acceleration(result, config_raw={}) is False
+
+    def test_no_attempts_does_not_offer(self) -> None:
+        result = _Result(ok=False, attempts=[])
+        assert mp.should_offer_mirror_acceleration(result, config_raw={}) is False
+
+    def test_host_matching_is_case_insensitive(self) -> None:
+        result = _Result(ok=False, attempts=[_Attempt("PyPI.ORG", "NETWORK")])
+        assert mp.should_offer_mirror_acceleration(result, config_raw={}) is True

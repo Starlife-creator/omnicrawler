@@ -146,3 +146,134 @@ def test_dependency_center_renders_install_buttons(tmp_path: Path) -> None:
     # 只有"缺失且可安装"那行有安装按钮（就绪项、需手动项都没有）
     assert len(install_buttons) == 1
     dialog.close()
+
+
+# ── 镜像加速提示：只在"真实安装失败、轮到镜像源"的时刻触发 ─────────────
+
+
+class _FakeBox:
+    """替换 QMessageBox：记录是否弹过、并模拟用户点了指定按钮。
+
+    ``exec()`` 不真正显示界面（offscreen 下也能跑），``clickedButton()`` 返回
+    ``_accept_button``（首个 addButton 的按钮）或 None。由测试构造时用
+    ``_chosen_accept`` 指定"用户点的接受按钮还是拒绝按钮"。
+    """
+
+    _stack: list[_FakeBox] = []
+    _chosen_accept = True
+
+    class Icon:  # 与 QMessageBox.Icon 同名枚举占位（`_show_failure` 会引用）
+        Critical = "critical"
+        Information = "information"
+        Warning = "warning"
+
+    class ButtonRole:
+        AcceptRole = "accept"
+        RejectRole = "reject"
+        ActionRole = "action"
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        self._accept_button: object | None = None
+        self._buttons: list[object] = []
+        self.window_title = ""
+        _FakeBox._stack.append(self)
+
+    def setWindowTitle(self, title: str) -> None:  # noqa: N802 - Qt 命名
+        self.window_title = title
+
+    def setIcon(self, _icon: object) -> None:  # noqa: N802
+        pass
+
+    def setText(self, _text: str) -> None:  # noqa: N802
+        pass
+
+    def setInformativeText(self, _text: str) -> None:  # noqa: N802
+        pass
+
+    def setDetailedText(self, _text: str) -> None:  # noqa: N802
+        pass
+
+    def addButton(self, _text: str, _role: object) -> object:  # noqa: N802
+        button = object()
+        self._buttons.append(button)
+        if self._accept_button is None:
+            self._accept_button = button
+        return button
+
+    def exec(self) -> int:
+        return 0
+
+    def clickedButton(self) -> object:  # noqa: N802
+        return self._accept_button if _FakeBox._chosen_accept else None
+
+
+def _failed_official_payload() -> dict:
+    return {
+        "ok": False,
+        "summary": "失败",
+        "detail": "pypi.org 连接超时",
+        "requirement": "somepkg",
+        "attempts": [
+            {"host": "pypi.org", "canonical": "pypi.org", "kind": "network", "ok": False}
+        ],
+    }
+
+
+def test_mirror_prompt_fires_on_official_network_failure(monkeypatch) -> None:
+    """官方源网络失败 ⇒ 弹启用镜像提示；点「启用并重试」⇒ 落盘补丁 + 重试一次。"""
+    from omnicrawler.gui.views import dependency_dialog as dd
+
+    retry_sources: list[object] = []
+    persisted: list[dict] = []
+
+    def _fake_run(parent, requirement, *, registry, sources_override=None):  # type: ignore[no-untyped-def]
+        if sources_override is None:
+            return _failed_official_payload()  # 首次：官方源网络失败
+        retry_sources.append(list(sources_override))
+        return {"ok": True, "summary": "已安装", "detail": "", "requirement": requirement, "attempts": []}
+
+    monkeypatch.setattr(dd, "_run_install_attempt", _fake_run)
+    monkeypatch.setattr(dd, "QMessageBox", _FakeBox)
+    _FakeBox._stack = []
+    _FakeBox._chosen_accept = True  # 用户点「启用并重试」
+
+    config_raw: dict = {}
+    ok, enabled = dd.install_with_mirror_offer(
+        None, "somepkg", config_raw=config_raw, persist_patch=persisted.append
+    )
+
+    assert ok is True
+    assert enabled is True
+    assert persisted and persisted[0]["mirrors"]["enabled"] is True
+    # 同一轮内的镜像重试源列表：官方仍居首位
+    assert retry_sources and retry_sources[0][0][1] == "pypi.org"
+    # config_raw 就地标记为已启用 ⇒ 同批下一项不再重复弹框
+    assert config_raw["mirrors"]["enabled"] is True
+
+
+def test_mirror_prompt_absent_on_version_failure(monkeypatch) -> None:
+    """版本类失败（缺该版本）⇒ 换镜像无用，绝不弹提示。"""
+    from omnicrawler.gui.views import dependency_dialog as dd
+
+    def _fake_run(parent, requirement, *, registry, sources_override=None):  # type: ignore[no-untyped-def]
+        return {
+            "ok": False,
+            "summary": "失败",
+            "detail": "无满足版本",
+            "requirement": requirement,
+            "attempts": [
+                {"host": "pypi.org", "canonical": "pypi.org", "kind": "version", "ok": False}
+            ],
+        }
+
+    monkeypatch.setattr(dd, "_run_install_attempt", _fake_run)
+    monkeypatch.setattr(dd, "QMessageBox", _FakeBox)
+    _FakeBox._stack = []
+    _FakeBox._chosen_accept = True
+
+    ok, enabled = dd.install_with_mirror_offer(None, "somepkg", config_raw={})
+    assert ok is False
+    assert enabled is False
+    # 未弹出"官方源连接失败"提示（唯一一次 QMessageBox 是失败原因链）
+    titles = [box.window_title for box in _FakeBox._stack]
+    assert "官方源连接失败" not in titles

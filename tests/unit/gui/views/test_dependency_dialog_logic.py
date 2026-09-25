@@ -6,7 +6,12 @@
 
 from __future__ import annotations
 
-from omnicrawler.gui.views.dependency_dialog import dependency_install_items
+from omnicrawler.gui.views.dependency_dialog import (
+    dependency_install_items,
+    mirror_retry_sources,
+    should_offer_mirror_from_payload,
+)
+from omnicrawler.services.dependency_installer import InstallAttempt, InstallResult
 
 
 def _report(*checks: dict) -> dict:
@@ -91,3 +96,76 @@ class TestDependencyInstallItems:
     def test_empty_report(self) -> None:
         assert dependency_install_items({}) == []
         assert dependency_install_items({"checks": []}) == []
+
+
+class TestInstallResultPayload:
+    def test_payload_carries_attempts(self) -> None:
+        from omnicrawler.gui.views.dependency_dialog import install_result_payload
+
+        result = InstallResult(
+            ok=False,
+            package="pdfplumber",
+            spec="",
+            attempts=[
+                InstallAttempt(
+                    host="pypi.org", canonical="pypi.org",
+                    index_url="https://pypi.org/simple", ok=False, kind="network",
+                    detail="连接超时",
+                )
+            ],
+        )
+        payload = install_result_payload(result, "pdfplumber")
+        assert payload["ok"] is False
+        assert payload["requirement"] == "pdfplumber"
+        assert payload["attempts"][0]["host"] == "pypi.org"
+        assert payload["attempts"][0]["kind"] == "network"
+
+
+class TestShouldOfferMirrorFromPayload:
+    def _payload(self, host: str, kind: str, ok: bool = False) -> dict:
+        return {
+            "ok": ok,
+            "detail": "…",
+            "requirement": "playwright",
+            "attempts": [{"host": host, "canonical": "pypi.org", "kind": kind, "ok": ok}],
+        }
+
+    def test_official_network_failure_offers(self) -> None:
+        assert should_offer_mirror_from_payload(
+            self._payload("pypi.org", "network"), config_raw={}
+        ) is True
+
+    def test_success_does_not_offer(self) -> None:
+        assert should_offer_mirror_from_payload(
+            self._payload("pypi.org", "network", ok=True), config_raw={}
+        ) is False
+
+    def test_already_enabled_does_not_offer(self) -> None:
+        assert should_offer_mirror_from_payload(
+            self._payload("pypi.org", "network"),
+            config_raw={"mirrors": {"enabled": True}},
+        ) is False
+
+    def test_version_failure_does_not_offer(self) -> None:
+        assert should_offer_mirror_from_payload(
+            self._payload("pypi.org", "version"), config_raw={}
+        ) is False
+
+    def test_none_config_treated_as_disabled(self) -> None:
+        assert should_offer_mirror_from_payload(
+            self._payload("pypi.org", "network"), config_raw=None
+        ) is True
+
+    def test_empty_payload_does_not_offer(self) -> None:
+        assert should_offer_mirror_from_payload({}, config_raw={}) is False
+
+
+class TestMirrorRetrySources:
+    def test_official_first(self) -> None:
+        sources = mirror_retry_sources({})
+        assert sources[0][1] == "pypi.org"
+        assert all(canonical == "pypi.org" for canonical, _host in sources)
+
+    def test_bad_config_falls_back_to_empty(self) -> None:
+        # 传入畸形 mirrors 段也不应抛异常；异常时兜底空列表 ⇒ 安装器直连官方
+        assert mirror_retry_sources({"mirrors": "不是字典"}) == []

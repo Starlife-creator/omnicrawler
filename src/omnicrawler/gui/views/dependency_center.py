@@ -133,6 +133,8 @@ class DependencyCenterDialog(QDialog):
         *,
         registry: Any = None,
         on_installed: Callable[[], object] | None = None,
+        config_raw: dict[str, Any] | None = None,
+        persist_patch: Callable[[dict[str, Any]], object] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(_("环境与依赖"))
@@ -140,6 +142,8 @@ class DependencyCenterDialog(QDialog):
         self.setMinimumSize(560, 480)
         self._registry = registry
         self._on_installed = on_installed
+        self._config_raw = config_raw if config_raw is not None else {}
+        self._persist_patch = persist_patch
         self._scan_worker: _CapabilityScanWorker | None = None
         #: 存活中的后台线程（扫描 + 安装）；关闭对话框时必须 join，否则线程仍在
         #: 运行时销毁 QApplication 会 abort（实测：非确定性崩溃，破坏后续测试/退出）。
@@ -258,56 +262,33 @@ class DependencyCenterDialog(QDialog):
     # ---- 就地安装（用户主动触发）----
 
     def _install(self, row: CapabilityRow) -> None:
-        from .dependency_dialog import _show_failure
+        """就地安装一行（用户主动点击）：走统一流程，官方源失败时**轮到镜像源**再弹提示。
+
+        注意 ``install_with_mirror_offer`` 自己就会创建后台安装线程并用事件循环等待
+        （内部已保证界面不冻结），因此这里**必须直接在 GUI 线程调用**，不能再套一层
+        worker —— 否则会在子线程里创建 QThread 并从子线程弹 QMessageBox（Qt 非法）。
+        """
+        from .dependency_dialog import install_with_mirror_offer
 
         self._status.setText(_("正在安装 {0}…").format(row.requirement))
-
-        class _InstallRowWorker(BackgroundWorker):
-            def __init__(self, requirement: str, registry: Any, parent: QWidget | None = None) -> None:
-                super().__init__(parent)
-                self._requirement = requirement
-                self._registry = registry
-
-            def work(self) -> dict[str, Any]:
-                from ...services.dependency_installer import install_dependency
-
-                sources: list[tuple[str, str]] = []
-                if self._registry is not None:
-                    try:
-                        sources = self._registry.ordered_endpoints("pypi.org")
-                    except Exception as exc:  # noqa: BLE001 - 镜像不可用不影响直连官方
-                        LOGGER.warning("读取镜像组失败，回退官方源: %s", exc)
-                result = install_dependency(
-                    self._requirement, sources=sources, registry=self._registry
-                )
-                return {
-                    "ok": result.ok,
-                    "summary": result.summary,
-                    "detail": result.reason_chain(),
-                    "requirement": self._requirement,
-                }
-
-        parent = self.parentWidget()
-        worker = _InstallRowWorker(row.requirement, self._registry, parent=parent)
-
-        def _done(payload: dict[str, Any]) -> None:
-            if payload.get("ok"):
-                from ..widgets.toast import ToastManager
-
-                ToastManager.instance().success(str(payload.get("summary") or _("安装成功")))
-                if self._on_installed is not None:
-                    self._on_installed()
-                self.reload()
-            else:
-                self._status.setText(_("安装失败：") + row.requirement)
-                if parent is not None:
-                    _show_failure(parent, row.requirement, str(payload.get("detail") or ""))
-
-        worker.succeeded.connect(_done)
-        worker.finished.connect(worker.deleteLater)
-        worker.finished.connect(lambda w=worker: self._forget_worker(w))
-        self._active_workers.append(worker)
-        worker.start()
+        parent = self.parentWidget() or self
+        try:
+            ok, _enabled = install_with_mirror_offer(
+                parent,
+                row.requirement,
+                registry=self._registry,
+                config_raw=self._config_raw,
+                persist_patch=self._persist_patch,
+            )
+        except Exception as exc:  # noqa: BLE001 - 单行安装异常不该让整个面板崩掉
+            LOGGER.warning("安装 %s 异常：%s", row.requirement, exc)
+            ok = False
+        if ok:
+            if self._on_installed is not None:
+                self._on_installed()
+            self.reload()
+        else:
+            self._status.setText(_("安装失败：") + row.requirement)
 
 
 def open_dependency_center(
@@ -315,9 +296,17 @@ def open_dependency_center(
     *,
     registry: Any = None,
     on_installed: Callable[[], object] | None = None,
+    config_raw: dict[str, Any] | None = None,
+    persist_patch: Callable[[dict[str, Any]], object] | None = None,
 ) -> DependencyCenterDialog:
     """便捷入口：构造并**非模态**显示面板（打开即检测，不阻塞主界面）。"""
-    dialog = DependencyCenterDialog(parent, registry=registry, on_installed=on_installed)
+    dialog = DependencyCenterDialog(
+        parent,
+        registry=registry,
+        on_installed=on_installed,
+        config_raw=config_raw,
+        persist_patch=persist_patch,
+    )
     dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
     dialog.show()
     return dialog

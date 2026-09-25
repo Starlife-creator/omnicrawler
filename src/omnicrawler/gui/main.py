@@ -1180,7 +1180,39 @@ class MainWindow(QMainWindow):
             import logging
 
             logging.getLogger(__name__).warning("镜像注册表不可用：%s", exc)
-        self._dependency_center = open_dependency_center(self, registry=registry)
+        self._dependency_center = open_dependency_center(
+            self,
+            registry=registry,
+            config_raw=self._dependency_config_raw(),
+            persist_patch=self._persist_dependency_config_patch,
+        )
+
+    def _dependency_config_raw(self) -> dict:
+        """当前配置的原始字典（供「环境与依赖」面板判断镜像是否已启用）。"""
+        import yaml
+
+        from .core.config_serializer import to_yaml
+
+        try:
+            return yaml.safe_load(to_yaml(self._config)) or {}
+        except Exception as exc:  # noqa: BLE001 - 读不出按"未启用镜像"处理
+            import logging
+
+            logging.getLogger(__name__).warning("读取配置失败：%s", exc)
+            return {}
+
+    def _persist_dependency_config_patch(self, patch: dict) -> None:
+        """把依赖安装相关补丁（如"启用镜像"）合入配置并落盘。
+
+        未打开过配置路径时静默跳过（补丁仍会在本轮内用于镜像重试）。
+        """
+        for key, value in (patch or {}).items():
+            self._config.passthrough[key] = value
+        if not self._config_path:
+            return
+        from .core.config_serializer import save_yaml
+
+        save_yaml(self._config, self._config_path)
 
     def _on_preflight_failed(self, error: str) -> None:
         QMessageBox.warning(self, _("运行前检查失败"), error)
