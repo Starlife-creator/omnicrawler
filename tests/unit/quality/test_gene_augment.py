@@ -1,11 +1,14 @@
 """N1：基因增强单元测试 — 缺失字段补提 + 反馈进化 + 性能上限。
 
 覆盖：默认关闭、字段级去重、单/多节点取值、命中/未命中反馈、冷启动无基因、
-MAX_AUGMENT_FIELDS_PER_PAGE 硬上限。
+MAX_AUGMENT_FIELDS_PER_PAGE 硬上限，以及转交 doc_extractors 的
+regex / jsonpath / text 三种基因类型与未知类型的跳过口径。
 """
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from types import SimpleNamespace
 
 from omnicrawler.quality.gene_augment import MAX_AUGMENT_FIELDS_PER_PAGE, gene_augment_html
@@ -40,7 +43,15 @@ def test_inactive_without_scene(tmp_path) -> None:
     with SceneStore(db):
         pass
     stats = gene_augment_html(_html("<p>x</p>"), [_rec({"t": ""})], _fields("t"), "", db)
-    assert stats == {"active": False, "augmented": 0, "hit": 0, "miss": 0, "skipped_no_gene": 0}
+    assert stats == {
+        "active": False,
+        "augmented": 0,
+        "hit": 0,
+        "miss": 0,
+        "skipped_no_gene": 0,
+        "skipped_unsupported_type": 0,
+        "skipped_no_document": 0,
+    }
 
 
 def test_inactive_db_missing(tmp_path) -> None:
@@ -103,6 +114,118 @@ def test_no_gene_skipped(tmp_path) -> None:
     stats = gene_augment_html(_html("<h1>x</h1>"), [_rec({"t": ""})], _fields("t"), "scene", db)
     assert stats["skipped_no_gene"] == 1
     assert stats["augmented"] == 0
+
+
+# ── regex / jsonpath / text：转交 doc_extractors ────────
+
+_REPORT_HTML = (
+    "<html><body><p>公司名称：星云科技</p><p>营业收入 12.5 亿元</p>"
+    "<p>归属于上市公司股东的净利润 3.1 亿元</p><p>2026年9月18日</p></body></html>"
+)
+
+
+def test_regex_gene_hits_on_page_text(tmp_path) -> None:
+    """regex 基因在页面全文上匹配并补提成功（此前会被 cssselect 吞成 miss）。"""
+    db = tmp_path / "scene.sqlite3"
+    _seed_gene(db, "scene", "company", r"公司(?:名称|全称)[：:]\s*([^\s，。,；]+)", selector_type="regex")
+    record = _rec({"company": ""})
+    stats = gene_augment_html(_html(_REPORT_HTML), [record], _fields("company"), "scene", db)
+    assert stats["hit"] == 1
+    assert stats["miss"] == 0
+    assert record.data["company"] == "星云科技"  # 捕获组 1
+    with SceneStore(db) as store:
+        row = store.top_genes("scene", "company", limit=1)[0]
+        assert row["hits"] == 1
+        assert row["misses"] == 0
+
+
+def test_regex_gene_miss_records_feedback(tmp_path) -> None:
+    """regex 真的不匹配时，仍然要如实记 miss。"""
+    db = tmp_path / "scene.sqlite3"
+    _seed_gene(db, "scene", "company", r"不存在的字段[：:]\s*(\S+)", selector_type="regex")
+    stats = gene_augment_html(_html(_REPORT_HTML), [_rec({"company": ""})], _fields("company"), "scene", db)
+    assert stats["miss"] == 1
+    assert stats["hit"] == 0
+
+
+def test_bundled_scene_regex_genes_all_hit(tmp_path) -> None:
+    """出厂年报场景的 4 个 regex 基因全部命中，且适应度不再被假 miss 污染。"""
+    db = tmp_path / "scene.sqlite3"
+    with SceneStore(db):
+        pass
+    yaml_path = (
+        Path(__file__).resolve().parents[3] / "src" / "omnicrawler" / "scenes" / "annual_report.yaml"
+    )
+    slots = re.findall(
+        r"- slot: (\w+)\n\s+selector: '([^']+)'\n\s+selector_type: regex",
+        yaml_path.read_text(encoding="utf-8"),
+    )
+    assert len(slots) == 4, "年报场景应含 4 个 regex 基因"
+    for slot, selector in slots:
+        _seed_gene(db, "annual_report", slot, selector, selector_type="regex")
+    record = _rec({slot: "" for slot, _ in slots})
+    fields = {slot: {"selector": "h1"} for slot, _ in slots}
+    stats = gene_augment_html(_html(_REPORT_HTML), [record], fields, "annual_report", db)
+    assert stats["hit"] == len(slots)
+    assert stats["miss"] == 0
+    assert record.data["company"] == "星云科技"
+    assert record.data["revenue"] == "12.5"
+    with SceneStore(db) as store:
+        for slot, _ in slots:
+            row = store.top_genes("annual_report", slot, limit=1)[0]
+            assert row["hits"] == 1
+            assert row["misses"] == 0
+
+
+def test_jsonpath_gene_hits_jsonld(tmp_path) -> None:
+    """jsonpath 基因作用于页内 JSON-LD。"""
+    db = tmp_path / "scene.sqlite3"
+    html = (
+        '<html><body><script type="application/ld+json">'
+        '{"@type":"Article","headline":"标题在这里"}</script></body></html>'
+    )
+    _seed_gene(db, "scene", "headline", "$.headline", selector_type="jsonpath")
+    record = _rec({"headline": ""})
+    stats = gene_augment_html(_html(html), [record], _fields("headline"), "scene", db)
+    assert stats["hit"] == 1
+    assert record.data["headline"] == "标题在这里"
+
+
+def test_text_gene_hits(tmp_path) -> None:
+    """text 基因走 TextDocExtractor 的子串匹配。"""
+    db = tmp_path / "scene.sqlite3"
+    _seed_gene(db, "scene", "marker", "星云科技", selector_type="text")
+    record = _rec({"marker": ""})
+    stats = gene_augment_html(_html(_REPORT_HTML), [record], _fields("marker"), "scene", db)
+    assert stats["hit"] == 1
+    assert record.data["marker"] == "星云科技"
+
+
+def test_unknown_selector_type_skipped_without_miss(tmp_path) -> None:
+    """未知类型：跳过且不写反馈，不把好基因压低。"""
+    db = tmp_path / "scene.sqlite3"
+    _seed_gene(db, "scene", "title", "whatever", selector_type="javascript")
+    record = _rec({"title": ""})
+    stats = gene_augment_html(_html("<h1>x</h1>"), [record], _fields("title"), "scene", db)
+    assert stats["skipped_unsupported_type"] == 1
+    assert stats["miss"] == 0
+    assert stats["hit"] == 0
+    assert record.data["title"] == ""
+    with SceneStore(db) as store:
+        row = store.top_genes("scene", "title", limit=1)[0]
+        assert row["misses"] == 0
+        assert row["hits"] == 0
+
+
+def test_css_multi_node_still_list(tmp_path) -> None:
+    """css 多节点仍返回 list（不得因转交 doc_extractors 而退化为首节点）。"""
+    db = tmp_path / "scene.sqlite3"
+    _seed_gene(db, "scene", "tags", ".item")
+    record = _rec({"tags": []})
+    html = '<html><body><span class="item">a</span><span class="item">b</span></body></html>'
+    stats = gene_augment_html(_html(html), [record], _fields("tags"), "scene", db)
+    assert stats["hit"] == 1
+    assert record.data["tags"] == ["a", "b"]
 
 
 # ── 性能：字段级去重 + 硬上限 ──────────────────────────
