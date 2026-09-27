@@ -180,7 +180,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "outputs": {
         "jsonl": True, "csv": True, "xlsx": True, "parquet": False, "duckdb": False,
-        "exporter": "default", "plugin_exporters": [],
+        "exporter": "default", "plugin_exporters": [], "ai_act_summary": False,
     },
     "storage": {
         "objects": {"backend": "local", "local_directory": "."},
