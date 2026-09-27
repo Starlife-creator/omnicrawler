@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -90,7 +91,6 @@ def test_pilot_page_lists_local_entries(tmp_path: Path, qapp: QApplication) -> N
 
 def test_pilot_page_has_no_bare_colours_in_qml(tmp_path: Path, qapp: QApplication) -> None:
     """QML 里**不写裸色值**（与 QWidget 侧"禁裸色值"守卫同一条纪律）。"""
-    import re
 
     for qml_file in qml_page_source().parent.glob("*.qml"):
         text = qml_file.read_text(encoding="utf-8")
@@ -182,3 +182,156 @@ def test_pilot_page_source_ships_with_the_package() -> None:
     source = qml_page_source()
     assert source.is_file(), f"QML 页面文件缺失：{source}"
     assert source.name == "ShowcasePage.qml"
+
+
+# ── 空态 / 列表互斥（回归守卫）────────────────────────────
+#
+# 修复前实测到的缺陷（两条都是 QML↔Python 绑定层，不是渲染层）：
+#   ① `ShowcaseModel.count` **不存在**——QAbstractListModel 只暴露 `rowCount()`，
+#      QML 不把它映射成 `count`；求值为 undefined ⇒ `count === 0` 与 `count > 0`
+#      **同时为 false** ⇒ 空态卡和列表**都永不显示**，整页只剩标题+副标题。
+#   ② `I18n.emptyHint`（camelCase）与 Python 侧属性名 `empty_hint`（snake_case）
+#      不一致 ⇒ undefined ⇒ 日志 `Unable to assign [undefined] to QString`。
+# 两者都不产生渲染错误、也不让 `QQuickWidget.status()` 掉出 Ready，所以原有
+# 用例（只看 Python 侧 `rowCount()`）全绿也照样漏。
+
+_EMPTY_HINT_OBJECT = "showcaseEmptyHint"
+_EMPTY_STATE_OBJECT = "showcaseEmptyState"
+_LIST_OBJECT = "showcaseList"
+
+#: 回归注入：把修复后的绑定改回修复前的写法（用于反向断言）
+_REGRESSED_HINT_BINDING = ("I18n.empty_hint", "I18n.emptyHint")
+_REGRESSED_COUNT_BINDING = ("ShowcaseModel.count", "ShowcaseModel.rowCount")
+
+
+class _PageProbe:
+    """用**真实桥**加载任意 QML 文本，读回绑定解析结果。"""
+
+    def __init__(self, qapp: QApplication) -> None:
+        from PySide6.QtQml import QQmlEngine
+
+        from omnicrawler.gui.qml_bridge import QmlTexts, ShowcaseModel, TokenBridge
+
+        self.engine = QQmlEngine()
+        self._held: list[object] = []
+        self.model = ShowcaseModel()
+        self.texts = QmlTexts()
+        for key, value in (
+            ("ShowcaseModel", self.model),
+            ("I18n", self.texts),
+            ("VisualTokens", TokenBridge()),
+        ):
+            self.engine.rootContext().setContextProperty(key, value)
+        self._held += [self.model, self.texts]
+        qapp.processEvents()
+
+    def state(self, qml_text: str, items: list[dict[str, str]]) -> dict[str, object]:
+        from PySide6.QtCore import QObject, QUrl
+        from PySide6.QtQml import QQmlComponent
+
+        self.model.set_items(items)
+        component = QQmlComponent(self.engine)
+        # ★ base URL 必须给真实页面路径：否则同目录的 `ShowcaseCard` 类型解析不到
+        #   （`setData` 的 QUrl 为空 ⇒ 无目录上下文 ⇒ "ShowcaseCard is not a type"）。
+        base = QUrl.fromLocalFile(str(qml_page_source()))
+        component.setData(qml_text.encode("utf-8"), base)
+        if component.isError():
+            raise AssertionError(f"QML 加载失败：{[e.toString() for e in component.errors()]}")
+        root = component.create()
+        assert root is not None
+        self._held.append(root)
+        empty = root.findChild(QObject, _EMPTY_STATE_OBJECT)
+        listing = root.findChild(QObject, _LIST_OBJECT)
+        hint = root.findChild(QObject, _EMPTY_HINT_OBJECT)
+        assert empty is not None and listing is not None and hint is not None, "QML 缺少守卫锚点"
+        return {
+            "count": self.model.count,
+            "empty_visible": bool(empty.property("visible")),
+            "list_visible": bool(listing.property("visible")),
+            "hint": str(hint.property("text") or ""),
+        }
+
+
+def _page_text() -> str:
+    return qml_page_source().read_text(encoding="utf-8")
+
+
+#: QML 通过 rootContext 注入的三个上下文对象
+_CONTEXT_OBJECTS = ("I18n", "ShowcaseModel", "VisualTokens")
+
+_BINDING_REF = re.compile(rf"\b({'|'.join(_CONTEXT_OBJECTS)})\.(\w+)")
+
+
+def test_showcase_qml_context_bindings_all_resolve(qapp: QApplication) -> None:
+    """★ 语义守卫（不依赖 ``objectName`` 锚点）：QML 引用的属性名必须都对得上。
+
+    为什么需要这条：``undefined`` 在 QML 里**不抛错**，只是静默变成 ``false`` /
+    空串 —— 属性名写错既不体现在 `QQuickWidget.status()` 上，也不在渲染结果里
+    （本例就是空态与列表同时不可见、页面看着"正常"地只剩标题）。所以唯一的判据
+    是**名字对得上**，必须逐个解析。
+    """
+    from omnicrawler.gui.qml_bridge import QmlTexts, ShowcaseModel, TokenBridge
+
+    targets = {"I18n": QmlTexts(), "ShowcaseModel": ShowcaseModel(), "VisualTokens": TokenBridge()}
+    refs = sorted(set(_BINDING_REF.findall(_page_text())))
+
+    assert refs, f"页面里没解析到任何上下文属性引用（正则失效？）：{_BINDING_REF.pattern}"
+    unresolved = [f"{obj}.{attr}" for obj, attr in refs if not hasattr(targets[obj], attr)]
+    assert unresolved == [], f"QML 引用了 Python 侧不存在的属性（QML 求值为 undefined）：{unresolved}"
+
+
+def test_showcase_empty_state_visible_without_entries(
+    tmp_path: Path, qapp: QApplication
+) -> None:
+    probe = _PageProbe(qapp)
+    state = probe.state(_page_text(), [])
+
+    assert state["count"] == 0
+    assert state["empty_visible"] is True, "无条目时空态必须显示"
+    assert state["list_visible"] is False, "无条目时列表必须隐藏"
+
+
+def test_showcase_list_visible_with_entries(tmp_path: Path, qapp: QApplication) -> None:
+    probe = _PageProbe(qapp)
+    items = [{"name": "demo", "version": "1.0.0", "kinds": "source", "summary": "s"}]
+    state = probe.state(_page_text(), items)
+
+    assert state["count"] == 1
+    assert state["list_visible"] is True, "有条目时列表必须显示"
+    assert state["empty_visible"] is False, "有条目时空态必须隐藏"
+
+
+def test_showcase_empty_hint_binding_resolves(qapp: QApplication) -> None:
+    """文案绑定必须解析成非空串（`undefined` 会退化成空串且不报错）。"""
+    probe = _PageProbe(qapp)
+    state = probe.state(_page_text(), [])
+
+    assert state["hint"].strip(), "I18n.empty_hint 绑定未解析（QML 侧属性名与 Python 侧不一致？）"
+
+
+@pytest.mark.parametrize(
+    ("binding", "value_key", "expected"),
+    [
+        (_REGRESSED_HINT_BINDING, "hint", ""),
+        (_REGRESSED_COUNT_BINDING, "empty_visible", False),
+    ],
+)
+def test_showcase_guard_detects_regressed_bindings(
+    qapp: QApplication, binding: tuple[str, str], value_key: str, expected: object
+) -> None:
+    """★ 反向断言：把绑定改回修复前的写法，守卫**必须变红**。
+
+    守卫只绿不红等于没装护栏（AGENTS.md 二），所以每条正向断言都要配一条
+    「装回缺口 ⇒ 判红」的对照。
+    """
+    current, regressed = binding
+    text = _page_text()
+    assert current in text, f"待验证的绑定 {current} 已不在页面里，反向断言失效"
+
+    probe = _PageProbe(qapp)
+    state = probe.state(text.replace(current, regressed), [])
+
+    assert state[value_key] == expected, (
+        f"绑定退回 {regressed} 后 {value_key} 竟未退化，守卫对该缺口不敏感"
+    )
+

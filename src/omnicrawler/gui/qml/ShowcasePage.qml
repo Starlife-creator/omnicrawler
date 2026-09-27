@@ -30,43 +30,52 @@ Rectangle {
             wrapMode: Text.WordWrap
         }
 
-        // 空态：明确说明"没有可展示的本地条目"，并给可行动指引
-        Rectangle {
+        // 剩余高度容器：空态卡与列表共用，互斥显示。
+        // 用容器而不是给 ListView 写死 `parent.height - 150`：Column 里 positioner
+        // 会把**不可见**项也计入布局，写死高度会让内容恒定溢出页面底部。
+        Item {
             width: parent.width
-            height: 96
-            visible: ShowcaseModel.count === 0
-            color: "transparent"
-            border.color: VisualTokens.border
-            border.width: 1
-            radius: 10
+            height: parent.height - y - parent.y
 
-            Text {
-                anchors.centerIn: parent
-                width: parent.width - 32
-                horizontalAlignment: Text.AlignHCenter
-                text: I18n.emptyHint
-                color: VisualTokens.muted
-                font.pixelSize: 13
-                wrapMode: Text.WordWrap
+            // 空态：明确说明"没有可展示的本地条目"，并给可行动指引
+            Rectangle {
+                objectName: "showcaseEmptyState"
+                anchors.fill: parent
+                visible: ShowcaseModel.count === 0
+                color: "transparent"
+                border.color: VisualTokens.border
+                border.width: 1
+                radius: 10
+
+                Text {
+                    objectName: "showcaseEmptyHint"
+                    anchors.centerIn: parent
+                    width: parent.width - 32
+                    horizontalAlignment: Text.AlignHCenter
+                    text: I18n.empty_hint
+                    color: VisualTokens.muted
+                    font.pixelSize: 13
+                    wrapMode: Text.WordWrap
+                }
             }
-        }
 
-        ListView {
-            id: cards
+            ListView {
+                id: cards
+                objectName: "showcaseList"
 
-            width: parent.width
-            height: parent.height - 150
-            visible: ShowcaseModel.count > 0
-            clip: true
-            spacing: 10
-            model: ShowcaseModel
+                anchors.fill: parent
+                visible: ShowcaseModel.count > 0
+                clip: true
+                spacing: 10
+                model: ShowcaseModel
 
-            delegate: ShowcaseCard {
-                width: cards.width
-                name: model.name
-                version: model.version
-                kinds: model.kinds
-                summary: model.summary
+                delegate: ShowcaseCard {
+                    width: cards.width
+                    name: model.name
+                    version: model.version
+                    kinds: model.kinds
+                    summary: model.summary
+                }
             }
         }
     }
