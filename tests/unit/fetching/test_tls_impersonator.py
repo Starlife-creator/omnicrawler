@@ -95,6 +95,12 @@ class TestFallbackWithoutCurlCffi:
 
 class TestChooseImpersonate:
     def test_preferred_used_when_available(self) -> None:
+        # ★ `_choose_impersonate` 无条件 `from curl_cffi import BrowserType`；生产侧由
+        #   `TLSImpersonator.__post_init__` 的 ImportError 兜底挡住（未安装即回退 httpx），
+        #   所以 helper 本身不必兜底。但本用例**直接**调该 helper，缺可选依赖时
+        #   没有拦截点 ⇒ base 安装下必红。降级路径由 test_unavailable_without_curl_cffi
+        #   （mock sys.modules）单独守卫，本用例只在依赖齐全时才测"择优"语义。
+        pytest.importorskip("curl_cffi")
         chosen = _choose_impersonate(DEFAULT_IMPERSONATE)
         assert chosen.startswith("chrome")
 
@@ -145,11 +151,19 @@ class TestRealCurlCffiFetch:
         server.shutdown()
         thread.join(timeout=5)
 
-    @pytest.mark.filterwarnings(
-        r"ignore:\s*Proactor event loop does not implement add_reader:curl_cffi.utils.CurlCffiWarning"
-    )
     def test_impersonate_fetch_local(self, tmp_path: Path, local_server: str) -> None:
+        # ★ 抑制规则必须在**函数体内**、importorskip **之后**建立，不能用
+        #   `@pytest.mark.filterwarnings(...curl_cffi.utils.CurlCffiWarning)`：
+        #   标记里的点路径由 pytest 在 runtest 协议阶段用 importlib 解析，那发生在
+        #   函数体之外 ⇒ 缺 curl_cffi（base 安装）时抛 ModuleNotFoundError，
+        #   importorskip 拦不住 ⇒ 整个 pytest run 以 INTERNALERROR 中断，
+        #   后续上千条用例**从未执行**。基线安装无 curl_cffi 时本用例本就该 skip，
+        #   所以把过滤移进体内不改变任何断言语义。
         pytest.importorskip("curl_cffi")
+        import warnings
+
+        from curl_cffi.utils import CurlCffiWarning
+
         raw = copy.deepcopy(DEFAULTS)
         raw["project"] = {"name": "tls-live", "workspace": str(tmp_path / "ws")}
         raw["source"] = {"kind": "static_html", "seeds": [local_server]}
@@ -161,7 +175,13 @@ class TestRealCurlCffiFetch:
         fake = _FakeFetcher(_fake_result(CrawlRequest(local_server)))
         imp = TLSImpersonator(config, fake)
         assert imp.available is True
-        result = asyncio.run(imp.fetch_async(CrawlRequest(local_server)))
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="Proactor event loop does not implement add_reader",
+                category=CurlCffiWarning,
+            )
+            result = asyncio.run(imp.fetch_async(CrawlRequest(local_server)))
         assert result.status == 200
         assert b"tls-smoke" in result.body
         assert fake.fetch_called == 0  # 真实走了 curl_cffi，未降级
