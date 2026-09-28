@@ -86,9 +86,21 @@ python -m omnicrawler.pdfx --help
    ```yaml
    self_update:
      feed_url: "https://<你的更新源>/omnicrawler"   # 含 update.json 与各平台资产；也可直接填本地目录
-     trusted_public_key: "<base64 的 ed25519 公钥，32 字节>"   # 必填；留空=禁用
+     trusted_public_key: ""                         # 留空 = 用随包内置信任根 configs/update_trust.pub.pem
      edition: "Standard"                            # Standard | Full
    ```
+
+   ★ **信任根随包内置**（`configs/update_trust.pub.pem`），因此通常**只需要填 `feed_url`**；
+   显式填 `trusted_public_key` 会覆盖内置值（自建源/轮换时用）。**内置文件缺失即视为禁用**——
+   不存在"跳过验签"的降级路径。
+   ★ **更新源可以只发变化的那部分**：若 `update.json` 带 `payload.files`（逐文件清单）与
+   `payload.delta`（变更包），`check` 会先比对**本机每个文件的实际哈希**，只报"需更新几个文件、
+   共多少字节"，`apply` 也只取这些 —— 515MB / 1.9GB 的便携包，常规版本升级通常只需几 MB。
+   清单里有、本机没有的文件计入"需下载"；`payload.deleted` 列出本版**已移除**的路径，
+   本机若还残留会被显式列出（不会被静默留着）。
+   ★ 维护者生成本文件：`python tools/build_update_manifest.py --payload-dir <解压后的载荷> --version X.Y.Z
+   --asset <平台-版本>=<整包> [--delta <旧版本>=<变更包>] [--previous-payload-dir <上一版载荷>]
+   --key <ed25519 冷私钥路径> --out update.json`（冷密钥只读入内存，绝不打印/入仓）。
 
    ★ **本命令没有「跳过验签」开关**（安全不降级）：`update.json` 必须带 `signature`，
    且签名覆盖除该字段外的全部内容 —— 改任何一个字节都会被拒。

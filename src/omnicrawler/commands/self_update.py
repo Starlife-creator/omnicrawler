@@ -15,7 +15,8 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
+from collections.abc import Mapping
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .._version import __version__
@@ -30,6 +31,7 @@ from ..services.update_feed import (
     check_feed,
     decode_public_key,
     detect_platform,
+    plan_payload,
     verify_feed_document,
 )
 from ..services.updater import UpgradeManager
@@ -48,11 +50,35 @@ def _self_update_section(config: AppConfig) -> dict[str, Any]:
 
 
 def _resolve(config_path: str) -> tuple[dict[str, Any], AppConfig, bytes | None, str]:
-    """读配置并解出（段, config, 信任根, 更新源基址）。信任根非法即抛错。"""
+    """读配置并解出（段, config, 信任根, 更新源基址）。信任根非法即抛错。
+
+    信任根来源：``self_update.trusted_public_key`` 优先；**为空时回退内置信任根**
+    ``configs/update_trust.pub.pem``（`AppConfig.update_trust_public_key`）——
+    内置文件缺失则回退空串 ⇒ 调用方判"禁用"（fail-closed，不降级为不校验）。
+    """
     config = load_config(config_path)
     section = _self_update_section(config)
-    key = decode_public_key(str(section.get("trusted_public_key") or ""))
+    configured = str(section.get("trusted_public_key") or "").strip()
+    key = decode_public_key(configured or config.update_trust_public_key)
     return section, config, key, str(section.get("feed_url") or "").strip()
+
+
+def _local_payload_hashes(files: Mapping[str, Any], root: Path) -> dict[str, str]:
+    """只对**清单里出现的路径**算本机哈希（不遍历应用根，避免误扫用户数据目录）。
+
+    清单里的路径已由解析层校验过（相对路径、无 ``..``），此处按 posix 语义拼接。
+    """
+    found: dict[str, str] = {}
+    for relative in files:
+        path = root.joinpath(*PurePosixPath(relative).parts)
+        if not path.is_file():
+            continue
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        found[relative] = digest.hexdigest()
+    return found
 
 
 def _is_remote(base: str) -> bool:
@@ -80,9 +106,13 @@ def _disabled_payload(reason: str) -> dict[str, Any]:
 
 
 def check(
-    *, config_path: str, platform: str = "", edition: str = ""
+    *, config_path: str, platform: str = "", edition: str = "", payload_root: Path | None = None
 ) -> tuple[dict[str, Any], int]:
-    """``self-update check``：读更新源 → 验签 → 与已装版本比较。"""
+    """``self-update check``：读更新源 → 验签 → 与已装版本比较（+ 本机载荷比对）。
+
+    ``payload_root`` 只作为测试接缝（默认＝真实应用根）；与"要下哪些文件"的比对
+    只读清单里出现的路径，不遍历用户的 ``work``/``data`` 等目录。
+    """
     try:
         section, config, key, base = _resolve(config_path)
     except UpdateFeedError as exc:
@@ -111,13 +141,45 @@ def check(
         platform=platform or detect_platform(),
         edition=edition or str(section.get("edition") or DEFAULT_EDITION),
     )
+    detail = result.detail
     payload: dict[str, Any] = {
         "status": result.status,
-        "detail": result.detail,
+        "detail": detail,
         "current_version": result.current_version,
         "latest_version": result.latest_version,
         "feed_base": base,
     }
+
+    # ★ 只在"更新源给了逐文件清单 ∧ 确实有新版"时才做本机比对：把"到底要不要重下 2G"
+    #   变成一个具体数字（需更新几个文件、共多少字节）。**不遍历**整个应用根，
+    #   只读清单里出现的路径 —— 用户数据目录（work/data/...）绝不会被扫到。
+    if feed.payload_files and result.update_available:
+        root = Path(payload_root) if payload_root is not None else application_dir()
+        plan = plan_payload(
+            feed,
+            local_hashes=_local_payload_hashes(feed.payload_files, root),
+            # ★ 必须用"文件是否存在"判删除清单：被删的路径本来就不在目标清单里，
+            #   拿 local_hashes 去查会恒为假（实测踩过）。
+            exists=lambda relative: root.joinpath(*PurePosixPath(relative).parts).is_file(),
+        )
+        delta = feed.payload_delta.get(__version__)
+        payload["payload_plan"] = {
+            "files_total": len(feed.payload_files),
+            "unchanged": plan.unchanged,
+            "needs_download": plan.needs_download,
+            "to_fetch": list(plan.to_fetch),
+            "missing_locally": list(plan.missing_locally),
+            "fetch_bytes": plan.fetch_bytes,
+            "delta_for_current_version": delta.name if delta else "",
+            "delta_size": delta.size if delta else 0,
+            "removed_in_new_version": list(plan.present_deleted),
+            "payload_base": feed.payload_base or base,
+        }
+        payload["detail"] = (
+            f"{detail}；本机需更新 {plan.needs_download}/{len(feed.payload_files)} 个文件"
+            f"（约 {plan.fetch_bytes} 字节）"
+        )
+
     if result.notes:
         payload["notes"] = result.notes
     if result.asset is not None:
