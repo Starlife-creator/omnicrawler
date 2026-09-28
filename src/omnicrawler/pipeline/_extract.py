@@ -152,13 +152,37 @@ class _PipelineExtract(_PipelineBase):
                         from ..quality.gene_augment import gene_augment_html
 
                         fields_map = extract_sec.get("fields", {})
-                        gene_augment_html(
+                        gene_stats = gene_augment_html(
                             result,
                             outcome.records,
                             fields_map if isinstance(fields_map, dict) else {},
                             scene_name,
                             Path(self.config.workspace) / "scene.sqlite3",
                         )
+                        # ★ 把增强结果**记进指标**：此前返回值被直接丢弃，于是配了
+                        #   `extract.scene` 的运行跑完之后，从日志、指标、产物里都读不到
+                        #   补提了几条、命中/落空多少 —— 基因池是"择优"闭环，没有读数
+                        #   就既无法验收、也无法做对照实验（自适应能力至今停在 Preview
+                        #   的原因之一）。指标名沿用本方法既有约定 omnicrawler_*_total。
+                        self.metrics.gauge(
+                            "omnicrawler_gene_augment_active",
+                            1.0 if gene_stats.get("active") else 0.0,
+                        )
+                        self.metrics.increment(
+                            "omnicrawler_gene_augment_fields_total",
+                            int(gene_stats.get("augmented", 0)),
+                        )
+                        self.metrics.increment(
+                            "omnicrawler_gene_augment_hits_total", int(gene_stats.get("hit", 0))
+                        )
+                        self.metrics.increment(
+                            "omnicrawler_gene_augment_misses_total", int(gene_stats.get("miss", 0))
+                        )
+                        self.metrics.increment(
+                            "omnicrawler_gene_augment_skipped_no_gene_total",
+                            int(gene_stats.get("skipped_no_gene", 0)),
+                        )
+                        LOGGER.debug("场景基因增强完成：%s", gene_stats)
                     except Exception:  # noqa: BLE001 — 基因增强失败绝不阻断提取
                         LOGGER.warning("基因增强失败", exc_info=True)
                 # AutoDataCleaner 值清洗：L1 幂等 + L2 规则（quality.normalize，默认开），
