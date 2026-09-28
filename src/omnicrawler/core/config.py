@@ -295,6 +295,25 @@ class AppConfig:
         return path.resolve() if path.is_absolute() else (self.root / path).resolve()
 
     @property
+    def update_trust_public_key(self) -> str:
+        """应用自更新的 ed25519 信任根（PEM 文本**或**公钥文件路径）。
+
+        未显式配置 `self_update.trusted_public_key` 时**默认接线内置信任根**
+        ``configs/update_trust.pub.pem``（与 `plugin_trust_public_key` 同一写法）——
+        它**刻意与市场信任根是两把钥匙**：市场根授权"沙箱内的插件"，更新根授权
+        "替换应用本体"，两者权威不同级，不可互相顶替。
+
+        内置文件不存在（如 pip 安装形态）时回退空串 ⇒ 调用方判"未配置 ⇒ 禁用"
+        （fail-closed：**不存在"跳过验签"的降级路径**）。
+        """
+        section = self.section("self_update")
+        value = section.get("trusted_public_key", "") if isinstance(section, dict) else ""
+        if value:
+            return str(value)
+        bundled = self.root / "configs" / "update_trust.pub.pem"
+        return str(bundled) if bundled.is_file() else ""
+
+    @property
     def plugin_trust_public_key(self) -> str:
         """ed25519 信任根公钥（PEM 或公钥文件路径），用于插件 fail-closed 验签。
 

@@ -39,7 +39,7 @@ import binascii
 import json
 import re
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -70,14 +70,45 @@ class UpdateAsset:
 
 
 @dataclass(frozen=True)
+class UpdateFile:
+    """载荷内单个文件的目标状态（相对应用根的路径 → 内容哈希 + 体积）。"""
+
+    sha256: str
+    size: int
+
+
+@dataclass(frozen=True)
 class UpdateFeed:
     version: str
     published_at: str = ""
     notes: str = ""
     assets: Mapping[str, UpdateAsset] = field(default_factory=dict)
+    #: 载荷逐文件清单（相对应用根）。为空 = 只提供整包，无法做文件级跳过。
+    payload_files: Mapping[str, UpdateFile] = field(default_factory=dict)
+    #: 载荷基址（缺省＝feed 基址）。逐文件下载/变更包都相对它解析。
+    payload_base: str = ""
+    #: 变更包：``旧版本号 → 资源``（只含相对该旧版变化的文件）。
+    payload_delta: Mapping[str, UpdateAsset] = field(default_factory=dict)
+    #: 新版本**已移除**的路径（逐文件差异必须显式声明删除，否则旧文件会残留）。
+    payload_deleted: tuple[str, ...] = ()
 
     def asset_for(self, platform: str, edition: str) -> UpdateAsset | None:
         return self.assets.get(asset_key(platform, edition))
+
+
+@dataclass(frozen=True)
+class PayloadPlan:
+    """本机载荷与目标清单的比对结果（判定"要下哪些"，**不涉及任何写入**）。"""
+
+    to_fetch: tuple[str, ...]
+    unchanged: int
+    missing_locally: tuple[str, ...]
+    fetch_bytes: int
+    present_deleted: tuple[str, ...]
+
+    @property
+    def needs_download(self) -> int:
+        return len(self.to_fetch) + len(self.missing_locally)
 
 
 @dataclass(frozen=True)
@@ -124,33 +155,67 @@ def canonical_feed_bytes(document: Mapping[str, Any]) -> bytes:
 
 
 def decode_public_key(value: str | None) -> bytes | None:
-    """把配置里的公钥解成原始字节：base64（默认）或 64 位十六进制。
+    """把信任根来源解成原始 32 字节：**PEM 文本 / PEM 文件路径** / ``hex:`` / base64。
 
     空值返回 ``None``（调用方据此判"未配置 ⇒ 禁用"）。**不给默认值、不从网络取**：
     信任根只能由使用者显式提供。解不出来即报错（而不是静默当作未配置）。
+
+    判定顺序是确定性的（不靠"看起来像"）：
+    ① ``-----BEGIN`` 开头 ⇒ 内联 PEM；② **该路径的文件确实存在** ⇒ 文件路径；
+    ③ 以 ``.pem``/``.pub`` 结尾 ⇒ 按路径处理（**不存在即报错**，不回落成 base64）；
+    ④ ``hex:`` 前缀 ⇒ 十六进制；⑤ 其余 ⇒ base64（#101 的原始形态，保持兼容）。
+
+    ★ 顺序里"先文件存在"放在"看后缀"之前，是因为 base64 也可能含 ``/`` 与 ``+``，
+    仅凭字符无法区分路径与 base64 —— 用文件系统事实与显式后缀来判定才可复现。
     """
     text = (value or "").strip()
     if not text:
         return None
-    candidate = text
-    if candidate.startswith("hex:"):
-        candidate = candidate[4:]
+
+    if text.startswith("-----BEGIN"):
+        raw = _pem_public_key_bytes(text, source="内联 PEM 信任根")
+    elif _is_existing_file(text) or text.lower().endswith((".pem", ".pub")):
+        path = Path(text).expanduser()
+        if not path.is_file():
+            raise UpdateFeedError(f"更新信任根文件不存在: {path}")
+        raw = _pem_public_key_bytes(
+            path.read_text(encoding="utf-8"), source=str(path)
+        )
+    elif text.startswith("hex:"):
         try:
-            raw = bytes.fromhex(candidate)
+            raw = bytes.fromhex(text[4:])
         except ValueError as exc:
             raise UpdateFeedError(f"更新信任根不是合法十六进制: {exc}") from exc
     else:
         try:
-            raw = base64.b64decode(candidate, validate=True)
+            raw = base64.b64decode(text, validate=True)
         except (binascii.Error, ValueError) as exc:
             raise UpdateFeedError(
-                "更新信任根不是合法 base64（ed25519 公钥，32 字节）"
+                "更新信任根既不是 PEM/文件路径，也不是合法 base64（ed25519 公钥 32 字节）"
             ) from exc
+
     if len(raw) != _ED25519_KEY_BYTES:
         raise UpdateFeedError(
             f"更新信任根长度不对：ed25519 公钥应为 {_ED25519_KEY_BYTES} 字节，实际 {len(raw)}"
         )
     return raw
+
+
+def _is_existing_file(value: str) -> bool:
+    try:
+        return Path(value).expanduser().is_file()
+    except OSError:
+        return False
+
+
+def _pem_public_key_bytes(pem: str, *, source: str) -> bytes:
+    """PEM → 原始公钥字节（复用 `plugins.identity` 的解析，避免第二套 PEM 处理）。"""
+    from ..plugins.identity import public_key_bytes_from_pem
+
+    try:
+        return public_key_bytes_from_pem(pem)
+    except Exception as exc:
+        raise UpdateFeedError(f"更新信任根 PEM 解析失败（{source}）: {exc}") from exc
 
 
 def verify_feed_document(raw: bytes, *, trusted_public_key: bytes | None) -> UpdateFeed:
@@ -211,11 +276,129 @@ def _parse_document(document: Mapping[str, Any]) -> UpdateFeed:
             key=asset_key_name, name=name, sha256=sha256, size=size
         )
 
+    payload_files, payload_base, payload_delta, payload_deleted = _parse_payload(document)
     return UpdateFeed(
         version=version,
         published_at=str(document.get("published_at") or ""),
         notes=str(document.get("notes") or ""),
         assets=assets,
+        payload_files=payload_files,
+        payload_base=payload_base,
+        payload_delta=payload_delta,
+        payload_deleted=payload_deleted,
+    )
+
+
+def _parse_payload(
+    document: Mapping[str, Any],
+) -> tuple[dict[str, UpdateFile], str, dict[str, UpdateAsset], tuple[str, ...]]:
+    """解析可选的 ``payload`` 段：逐文件清单 + 基址 + 变更包 + 删除清单。
+
+    ★ 这一段是"能否只下差异"的全部依据，所以**逐条严格校验**（越界路径、非法哈希、
+    体积非法都直接拒绝整份文档）—— 宁可拒绝，也不要拿一份只信了一半的清单去落地。
+    """
+    raw_payload = document.get("payload")
+    if raw_payload is None:
+        return {}, "", {}, ()
+    if not isinstance(raw_payload, dict):
+        raise UpdateFeedError("payload 必须是对象")
+
+    files: dict[str, UpdateFile] = {}
+    raw_files = raw_payload.get("files")
+    if raw_files is not None:
+        if not isinstance(raw_files, dict) or not raw_files:
+            raise UpdateFeedError("payload.files 必须是非空对象")
+        for name, value in raw_files.items():
+            relative = str(name)
+            if not is_safe_asset_name(relative):
+                raise UpdateFeedError(f"payload.files 的路径不合法: {relative}")
+            if not isinstance(value, dict):
+                raise UpdateFeedError(f"payload.files.{relative} 必须是对象")
+            sha256 = str(value.get("sha256") or "").strip().lower()
+            if not _SHA256_RE.match(sha256):
+                raise UpdateFeedError(f"payload.files.{relative}.sha256 必须是 64 位十六进制")
+            size = value.get("size")
+            if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+                raise UpdateFeedError(f"payload.files.{relative}.size 必须是非负整数")
+            files[relative] = UpdateFile(sha256=sha256, size=size)
+
+    delta: dict[str, UpdateAsset] = {}
+    raw_delta = raw_payload.get("delta")
+    if raw_delta is not None:
+        if not isinstance(raw_delta, dict):
+            raise UpdateFeedError("payload.delta 必须是对象")
+        for from_version, value in raw_delta.items():
+            key = str(from_version)
+            if not isinstance(value, dict):
+                raise UpdateFeedError(f"payload.delta.{key} 必须是对象")
+            name = str(value.get("name") or "").strip()
+            if not name or not is_safe_asset_name(name):
+                raise UpdateFeedError(f"payload.delta.{key}.name 必须是相对文件名")
+            sha256 = str(value.get("sha256") or "").strip().lower()
+            if not _SHA256_RE.match(sha256):
+                raise UpdateFeedError(f"payload.delta.{key}.sha256 必须是 64 位十六进制")
+            size = value.get("size")
+            if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+                raise UpdateFeedError(f"payload.delta.{key}.size 必须是非负整数")
+            delta[key] = UpdateAsset(key=key, name=name, sha256=sha256, size=size)
+
+    deleted: list[str] = []
+    raw_deleted = raw_payload.get("deleted")
+    if raw_deleted is not None:
+        if not isinstance(raw_deleted, list):
+            raise UpdateFeedError("payload.deleted 必须是数组")
+        for item in raw_deleted:
+            relative = str(item)
+            if not is_safe_asset_name(relative):
+                raise UpdateFeedError(f"payload.deleted 的路径不合法: {relative}")
+            if relative in files:
+                raise UpdateFeedError(f"payload 自相矛盾：{relative} 同时在 files 与 deleted 里")
+            deleted.append(relative)
+
+    return files, str(raw_payload.get("base_url") or "").strip(), delta, tuple(deleted)
+
+
+def plan_payload(
+    feed: UpdateFeed,
+    *,
+    local_hashes: Mapping[str, str],
+    exists: Callable[[str], bool] | None = None,
+) -> PayloadPlan:
+    """比对"目标清单 vs 本机文件" ⇒ 要下哪些、要下多少字节、哪些已移除。
+
+    ``local_hashes`` 由调用方算（**必须是本机文件的实际哈希**），缺失的路径用不出现在
+    映射里表示"本机没有"。判据：**哈希相等才跳过** —— 不看体积、不看时间戳
+    （体积相同内容不同必须重下；这是"偶然相同 ≠ 正确"的直接体现）。
+
+    ``exists`` 用于判断"``payload.deleted`` 里的路径本机是否还在"。它**不能**用
+    ``local_hashes`` 代替：被删除的路径本来就不在目标清单里，因此永远不会出现在
+    ``local_hashes`` 中 —— 那样写会让"需要清理的残留文件"恒为空（实测踩过）。
+    缺省回退为"在 ``local_hashes`` 里"，仅对不依赖删除语义的调用方成立。
+    """
+    to_fetch: list[str] = []
+    missing: list[str] = []
+    unchanged = 0
+    fetch_bytes = 0
+    for relative, entry in sorted(feed.payload_files.items()):
+        current = local_hashes.get(relative)
+        if current is None:
+            missing.append(relative)
+            fetch_bytes += entry.size
+        elif current != entry.sha256:
+            to_fetch.append(relative)
+            fetch_bytes += entry.size
+        else:
+            unchanged += 1
+    is_present = exists or (lambda relative: relative in local_hashes)
+    present_deleted = tuple(
+        relative for relative in feed.payload_deleted if is_present(relative)
+    )
+    return PayloadPlan(
+        to_fetch=tuple(to_fetch),
+        unchanged=unchanged,
+        missing_locally=tuple(missing),
+        fetch_bytes=fetch_bytes,
+        present_deleted=present_deleted,
     )
 
 

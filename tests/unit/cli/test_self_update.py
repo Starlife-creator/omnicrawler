@@ -243,3 +243,104 @@ def test_self_update_is_registered_and_has_both_subcommands() -> None:
     apply_args = parser.parse_args(["self-update", "apply", "-c", "x.yaml", "--yes"])
     assert apply_args.confirm is True
     assert apply_args.dry_run is False
+
+
+# ── 内置信任根默认接线 ──────────────────────────────────────────────────
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def test_bundled_update_trust_root_is_wired_by_default() -> None:
+    """未配置 `self_update.trusted_public_key` 时必须**默认读内置信任根**。
+
+    否则"开箱即用"永远落在"已禁用"上 —— 与市场侧 `plugin_trust_public_key`
+    当初的同款缺陷（内置公钥不接线）。
+    """
+    from omnicrawler.core.config import AppConfig
+
+    config = AppConfig(Path("test.yaml"), _repo_root(), {"self_update": {}}, Path("work"), [])
+    resolved = config.update_trust_public_key
+    # 平台无关比较：Windows 上分隔符是 \，不能直接 endswith("configs/…")
+    assert Path(resolved).parts[-2:] == ("configs", "update_trust.pub.pem"), resolved
+    assert Path(resolved).is_file()
+    # 内置信任根必须能被解成合法 ed25519 公钥（32 字节）
+    assert len(uf.decode_public_key(resolved) or b"") == 32
+
+    # 显式配置优先于内置
+    explicit = AppConfig(
+        Path("test.yaml"), _repo_root(),
+        {"self_update": {"trusted_public_key": "hex:" + "ab" * 32}}, Path("work"), [],
+    )
+    assert explicit.update_trust_public_key == "hex:" + "ab" * 32
+
+
+def test_update_trust_root_differs_from_market_trust_root() -> None:
+    """两把钥匙**刻意不同**：目录根授权沙箱插件，更新根授权替换应用本体。"""
+    from omnicrawler.core.config import AppConfig
+
+    config = AppConfig(Path("test.yaml"), _repo_root(), {"self_update": {}}, Path("work"), [])
+    assert uf.decode_public_key(config.update_trust_public_key) != uf.decode_public_key(
+        config.plugin_trust_public_key
+    )
+
+
+# ── 载荷差异：只下变化文件（"不会真的下 2G"的端到端）──────────────────
+
+
+def _write_payload_feed(
+    feed_dir: Path,
+    private: ed25519.Ed25519PrivateKey,
+    *,
+    version: str,
+    files: dict[str, bytes],
+    deleted: tuple[str, ...] = (),
+) -> None:
+    feed_dir.mkdir(parents=True, exist_ok=True)
+    document = {
+        "version": version,
+        "assets": {"linux-standard": {"name": "pkg.tar.xz", "sha256": "a" * 64, "size": 999}},
+        "payload": {
+            "files": {
+                name: {"sha256": hashlib.sha256(body).hexdigest(), "size": len(body)}
+                for name, body in files.items()
+            },
+            "delta": {__version__: {"name": "update-prev-to-new.zip", "sha256": "b" * 64, "size": 42}},
+            "deleted": list(deleted),
+        },
+    }
+    signature = base64.b64encode(private.sign(uf.canonical_feed_bytes(document))).decode()
+    (feed_dir / uf.FEED_FILENAME).write_text(
+        json.dumps({**document, "signature": signature}, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def test_check_skips_unchanged_files_reports_delta_and_removals(tmp_path: Path) -> None:
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    local_root = tmp_path / "app"
+    (local_root / "_internal").mkdir(parents=True)
+    (local_root / "app.exe").write_bytes(b"OLD")
+    (local_root / "_internal" / "qt.dll").write_bytes(b"QT-SAME")
+    (local_root / "_internal" / "removed.pyd").write_bytes(b"X")
+
+    _write_payload_feed(
+        feed_dir, private, version="99.0.0",
+        files={"app.exe": b"NEW", "_internal/qt.dll": b"QT-SAME"},
+        deleted=("_internal/removed.pyd",),
+    )
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.check(
+        config_path=str(config), platform="linux", payload_root=local_root
+    )
+    assert code == cmd_self_update.EXIT_UPDATE_AVAILABLE
+    plan = payload["payload_plan"]
+    assert plan["to_fetch"] == ["app.exe"]          # 只下变了的那一个
+    assert plan["unchanged"] == 1                   # qt.dll 内容相同 ⇒ 跳过
+    assert plan["fetch_bytes"] == 3                 # 只算要下的字节，不是整包 999
+    assert plan["delta_for_current_version"] == "update-prev-to-new.zip"
+    assert plan["delta_size"] == 42
+    assert plan["removed_in_new_version"] == ["_internal/removed.pyd"]
+    assert "需更新 1/2 个文件" in payload["detail"]

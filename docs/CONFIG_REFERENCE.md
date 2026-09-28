@@ -287,9 +287,23 @@ plugins:
 self_update:
   feed_url: ""                 # 更新源基址：远程目录（https://…）或本地目录，内含 update.json
                                # 与各平台资产；留空 = 禁用
-  trusted_public_key: ""       # ed25519 信任根公钥（base64 的 32 字节；也接受 "hex:" 前缀）；留空 = 禁用
+  trusted_public_key: ""       # 留空 = 用随包内置信任根 configs/update_trust.pub.pem
+                               # （也可写 PEM 文本 / PEM 文件路径 / base64 / "hex:"）
   edition: "Standard"          # 资产键后缀，与发布资产命名对齐：Standard | Full
 ```
+
+- **信任根**：未显式配置时读内置 `configs/update_trust.pub.pem`（ed25519，指纹 `bf981f1d…`）。
+  它**刻意与市场信任根 `d92fa9fb…` 是两把钥匙**：市场根授权"沙箱内的插件"，
+  更新根授权"替换应用本体"，两者权威不同级、不可互替。内置文件缺失 ⇒ 回退空串 ⇒ 判"禁用"
+  （fail-closed，**不存在跳过验签的降级路径**）。
+- **更新源文档**：`<feed_url>/update.json`，字段 `version` / `published_at` / `notes` /
+  `assets.<platform>-<edition>` / 可选的 `payload` / `signature`。
+  - `assets.{…}`：整包资源 `{name, sha256, size}`（`name` 是**相对基址**的文件名）；全量兜底。
+  - `payload.base_url`：载荷基址（留空＝feed 基址）。
+  - `payload.files`：**逐文件清单** `{"<相对路径>": {sha256, size}}` ——
+    客户端据此只下载与本机哈希不同的文件（"自动跳过一样的"全部依据）。
+  - `payload.delta`：`{"<旧版本号>": {name, sha256, size}}` 变更包（相对该旧版变化的文件）。
+  - `payload.deleted`：本版**已移除**的相对路径（逐文件差异必须显式声明删除，否则旧文件会残留）。
 
 - **更新源文档**：`<feed_url>/update.json`，字段为 `version` / `published_at` / `notes` /
   `assets.{<platform>-<edition>: {name, sha256, size}}` / `signature`。
