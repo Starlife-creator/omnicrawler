@@ -1,0 +1,201 @@
+# 三臂对照实验语料（真实站点）
+#
+# 配套 `tools/benchmark_adaptive_arms.py`。与 `services/quality_benchmark.py` 的内置
+# 常量任务不同：这里的**页面来自真实站点**，因此语料是**数据**（本文件）而不是代码
+# 常量 —— 页面会变、真值需要标注，这正是 AGENTS.md「站点与格式差异配置化」的落点。
+#
+# ── 形态：必须是**页面级单值槽位**，不是列表项 ──────────────────────────────
+# 基因补提是**页面级**的：按场景×槽位在整页匹配，把命中值写进**第一条**缺该槽位的
+# 记录，多节点命中按模块承诺返回 list。所以 `item_selector` 逐条抽取的列表任务**测不到**
+# 基因池（实测：20 条商品列表 + `p.price_color` 基因 ⇒ 20 个价格被塞进第一条记录的
+# `price`，其余 19 条仍为空）。本语料用**商品详情页**：每页一个商品、槽位是页面级单值。
+#
+# ── 每槽给**多个候选基因**，且必须跑**多轮** ────────────────────────────────
+# 只给一个基因 ⇒ 测的是"有没有基因"，测不到"择优"：基因池的价值在于**在候选集内**
+# 挑出最好的那个，所以每槽都给了失效 + 可用两个候选。
+# 而 fitness 存在 `scene.sqlite3` 里**跨轮累积**，`recommend()` 按
+# `fitness DESC, hits DESC` 排序；单轮运行时所有基因 fitness 都是 0、排序退化为任意，
+# 择优无从发生 ⇒ 工具默认 `--rounds 3`。
+#
+# ── 为什么必须有输入快照 ────────────────────────────────────────────────────
+# 真实站点内容会变。三臂串行跑，若各自现抓，差异无法归因（是自适应起了作用，还是页面
+# 变了？）。所以工具**只抓一次**并缓存，三臂都从同一份字节的本地副本跑，`input_sha256`
+# 记进报告 —— 没有输入快照，跨臂数字不可比。
+#
+# ── 真值口径与来源 ──────────────────────────────────────────────────────────
+# 1. `expected` 写的是**流水线归一之后**的形态（与 `quality_benchmark` 内置任务同口径）：
+#    比对是逐字 `str()` 相等。实测价格经 L2 金额归一后 `£51.77` → `51.77`，故真值写
+#    `51.77`；`availability` 是纯文本、不被改写。**改了字段的 `data_type` 就要改真值。**
+# 2. 真值由**独立于被测代码**的 stdlib `html.parser` 最小解析器从页面快照生成，因此真值
+#    不依赖 omnicrawler 的抽取实现 —— 否则"抽对了"这件事会被自己的实现定义。
+#    **人的判断**落在"选哪些字段、选哪些页面、真值是否可信"上。
+# 3. 重新标注：抓一次页面 → 用独立解析器导出字面值 → 人工复核 → 落回本文件。
+# 4. ⚠ `availability` 的文本含**库存数**（如 `In stock (22 available)`），站点改库存后
+#    真值即失效。用 `--refresh` 重抓后必须复核本文件。
+#
+# ── 字段设计 ────────────────────────────────────────────────────────────────
+# 每页留一个**始终能匹配**的 `product_title`（`h1`）撑住记录与模板，另配 `price` /
+# `availability` 两个**故意匹配不到**的槽位交给基因补提。原因：若全部字段都匹配不到，
+# 模板会在第一次抓取即被判「关键字段成功率下降」而失效、回退通用抽取、产出 0 条记录
+# （`docs/BENCHMARKING.md` 记录过同一个坑）。于是 A 臂 = 1/3、B 臂（有可用基因）= 3/3、
+# B 臂（只有失效基因）= 1/3。
+
+version: 1
+
+tasks:
+
+  # ── book-a-light-in-the-attic：含可用候选 ⇒ 期望 A < B
+  - name: book-a-light-in-the-attic
+    site: books.toscrape
+    seeds:
+      - https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html
+    source_kind: static_html
+    identity_fields: [product_title]
+    fields:
+      product_title:
+        selector: "h1"
+      price:
+        # 故意匹配不到 ⇒ 只能由基因补提（A 臂必然拿不到）
+        selector: ".absent-price"
+      availability:
+        selector: ".absent-availability"
+    gene_seed: working
+    genes:
+      price:
+        # 旧版类名，页面上不存在（实测 0 命中）
+        - {selector: "p.product_main .price_color", selector_type: css}
+        # ★ 必须**限定在主商品块内**：裸 `p.price_color` 在部分页面命中 1 个（看着正常），
+        #   在相关推荐较多的页面命中 5 个 ⇒ 补提按模块承诺返回 list，值不再是标量、
+        #   与真值比不上。限定后实测恒 1 命中。
+        - {selector: "div.product_main p.price_color", selector_type: css}
+      availability:
+        # 旧版类名（实测 0 命中）
+        - {selector: "p.stock .availability", selector_type: css}
+        # 同上：限定主商品块，避免命中相关推荐
+        - {selector: "div.product_main p.availability", selector_type: css}
+    expected:
+      - {"availability": "In stock (22 available)", "price": "51.77", "product_title": "A Light in the Attic"}
+
+  # ── book-tipping-the-velvet：含可用候选 ⇒ 期望 A < B
+  - name: book-tipping-the-velvet
+    site: books.toscrape
+    seeds:
+      - https://books.toscrape.com/catalogue/tipping-the-velvet_999/index.html
+    source_kind: static_html
+    identity_fields: [product_title]
+    fields:
+      product_title:
+        selector: "h1"
+      price:
+        # 故意匹配不到 ⇒ 只能由基因补提（A 臂必然拿不到）
+        selector: ".absent-price"
+      availability:
+        selector: ".absent-availability"
+    gene_seed: working
+    genes:
+      price:
+        # 旧版类名，页面上不存在（实测 0 命中）
+        - {selector: "p.product_main .price_color", selector_type: css}
+        # ★ 必须**限定在主商品块内**：裸 `p.price_color` 在部分页面命中 1 个（看着正常），
+        #   在相关推荐较多的页面命中 5 个 ⇒ 补提按模块承诺返回 list，值不再是标量、
+        #   与真值比不上。限定后实测恒 1 命中。
+        - {selector: "div.product_main p.price_color", selector_type: css}
+      availability:
+        # 旧版类名（实测 0 命中）
+        - {selector: "p.stock .availability", selector_type: css}
+        # 同上：限定主商品块，避免命中相关推荐
+        - {selector: "div.product_main p.availability", selector_type: css}
+    expected:
+      - {"availability": "In stock (20 available)", "price": "53.74", "product_title": "Tipping the Velvet"}
+
+  # ── book-sapiens-a-brief-history-of-humankind：含可用候选 ⇒ 期望 A < B
+  - name: book-sapiens-a-brief-history-of-humankind
+    site: books.toscrape
+    seeds:
+      - https://books.toscrape.com/catalogue/sapiens-a-brief-history-of-humankind_996/index.html
+    source_kind: static_html
+    identity_fields: [product_title]
+    fields:
+      product_title:
+        selector: "h1"
+      price:
+        # 故意匹配不到 ⇒ 只能由基因补提（A 臂必然拿不到）
+        selector: ".absent-price"
+      availability:
+        selector: ".absent-availability"
+    gene_seed: working
+    genes:
+      price:
+        # 旧版类名，页面上不存在（实测 0 命中）
+        - {selector: "p.product_main .price_color", selector_type: css}
+        # ★ 必须**限定在主商品块内**：裸 `p.price_color` 在部分页面命中 1 个（看着正常），
+        #   在相关推荐较多的页面命中 5 个 ⇒ 补提按模块承诺返回 list，值不再是标量、
+        #   与真值比不上。限定后实测恒 1 命中。
+        - {selector: "div.product_main p.price_color", selector_type: css}
+      availability:
+        # 旧版类名（实测 0 命中）
+        - {selector: "p.stock .availability", selector_type: css}
+        # 同上：限定主商品块，避免命中相关推荐
+        - {selector: "div.product_main p.availability", selector_type: css}
+    expected:
+      - {"availability": "In stock (20 available)", "price": "54.23", "product_title": "Sapiens: A Brief History of Humankind"}
+
+  # ── book-sharp-objects：候选全失效 ⇒ 期望 A == B
+  - name: book-sharp-objects
+    site: books.toscrape
+    seeds:
+      - https://books.toscrape.com/catalogue/sharp-objects_997/index.html
+    source_kind: static_html
+    identity_fields: [product_title]
+    fields:
+      product_title:
+        selector: "h1"
+      price:
+        # 故意匹配不到 ⇒ 只能由基因补提（A 臂必然拿不到）
+        selector: ".absent-price"
+      availability:
+        selector: ".absent-availability"
+    gene_seed: stale
+    genes:
+      price:
+        # 旧版类名（实测 0 命中）
+        - {selector: "p.product_main .price_color", selector_type: css}
+        # 本任务**故意不给**可用候选：模拟「出厂基因全死」
+        - {selector: "div.price_color", selector_type: css}
+      availability:
+        # 旧版类名（实测 0 命中）
+        - {selector: "p.stock .availability", selector_type: css}
+        # 同样失效
+        - {selector: "p.stock-status .availability", selector_type: css}
+    expected:
+      - {"availability": "In stock (20 available)", "price": "47.82", "product_title": "Sharp Objects"}
+
+  # ── book-soumission：候选全失效 ⇒ 期望 A == B
+  - name: book-soumission
+    site: books.toscrape
+    seeds:
+      - https://books.toscrape.com/catalogue/soumission_998/index.html
+    source_kind: static_html
+    identity_fields: [product_title]
+    fields:
+      product_title:
+        selector: "h1"
+      price:
+        # 故意匹配不到 ⇒ 只能由基因补提（A 臂必然拿不到）
+        selector: ".absent-price"
+      availability:
+        selector: ".absent-availability"
+    gene_seed: stale
+    genes:
+      price:
+        # 旧版类名（实测 0 命中）
+        - {selector: "p.product_main .price_color", selector_type: css}
+        # 本任务**故意不给**可用候选：模拟「出厂基因全死」
+        - {selector: "div.price_color", selector_type: css}
+      availability:
+        # 旧版类名（实测 0 命中）
+        - {selector: "p.stock .availability", selector_type: css}
+        # 同样失效
+        - {selector: "p.stock-status .availability", selector_type: css}
+    expected:
+      - {"availability": "In stock (20 available)", "price": "50.10", "product_title": "Soumission"}
