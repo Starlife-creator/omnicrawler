@@ -211,12 +211,21 @@ def test_market_read_uses_shared_safe_opener(remote_market, monkeypatch: pytest.
     assert calls[0]["include_cookies"] is False
 
 
-def test_market_read_honours_configured_proxy(remote_market) -> None:
+def test_market_read_honours_configured_proxy(remote_market, monkeypatch) -> None:
     """配置了 ``http.proxy`` 就必须**真的**走代理，而不是被静默忽略。
 
     用一个不可达的代理端口：请求必须失败。若代理被忽略，合成市场会正常返回 200，
     这条就会红 —— 这正是「市场不认代理」的判据。
+
+    ★ 必须先清掉 ``no_proxy``/``NO_PROXY``：合成市场监听 127.0.0.1，而 urllib 的
+      ``ProxyHandler`` 对每个请求都过 ``proxy_bypass()``，它会读 ``no_proxy``。
+      开发机与 CI 普遍设了 ``no_proxy=127.0.0.1,...`` ⇒ 代理被**合规地**绕过、
+      直连成功 200，于是这条在没有该变量的机器上绿、在有该变量的机器上红 ——
+      同一个断言两种结局。代理是否被 bypass 与本用例要验的"配置有没有被认"是两件事，
+      所以这里把 bypass 关掉，让断言只依赖被验对象。
     """
+    monkeypatch.delenv("no_proxy", raising=False)
+    monkeypatch.delenv("NO_PROXY", raising=False)
     url, _ = remote_market
     egress = _AllowAllEgress()
     http_cfg = egress.config.raw.setdefault("http", {})
@@ -225,6 +234,24 @@ def test_market_read_honours_configured_proxy(remote_market) -> None:
 
     with pytest.raises(urllib.error.URLError):
         market_client.fetch_catalog(url, egress=egress)
+
+
+def test_market_proxy_is_bypassed_for_no_proxy_targets(remote_market, monkeypatch) -> None:
+    """★ 反向断言：上面那条**必须**依赖 ``no_proxy`` 被清掉，否则守卫是假的。
+
+    把 ``no_proxy`` 放回 127.0.0.1 时，请求应当被合规绕过、直连成功 ⇒ 若上一条
+    在这种环境下也能红，说明它压根没在验代理，接线与否都判红。
+    """
+    monkeypatch.setenv("no_proxy", "127.0.0.1")
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1")
+    url, _ = remote_market
+    egress = _AllowAllEgress()
+    http_cfg = egress.config.raw.setdefault("http", {})
+    assert isinstance(http_cfg, dict)
+    http_cfg["proxy"] = "http://127.0.0.1:9"
+
+    catalog = market_client.fetch_catalog(url, egress=egress)
+    assert catalog["schema_version"] == 1
 
 
 @pytest.mark.network

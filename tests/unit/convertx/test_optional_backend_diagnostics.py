@@ -60,7 +60,10 @@ def test_installed_but_unregistered_backend_gets_no_misleading_hint(
     tmp_path, _parquet_unregistered: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """装了 pyarrow 却没注册（别的原因）⇒ 不得提示"去装依赖"（那会把人带偏）。"""
-    import pyarrow  # noqa: F401  （本机已装；缺失时整条用例不适用）
+    # ★ 注释写的是"本机已装；缺失时整条用例不适用"，但当时写成了裸 `import` ——
+    #   裸 import 在没装 pyarrow 的环境（base 安装）直接 ModuleNotFoundError。
+    #   该用例的前提就是"装了但没注册"，前提不成立时必须 skip 而不是失败。
+    pytest.importorskip("pyarrow")
 
     src = tmp_path / "in.jsonl"
     src.write_text('{"a": 1}\n', encoding="utf-8")
