@@ -325,6 +325,26 @@ def export_all(config: AppConfig, state: StateStore, run_id: str | None = None) 
         json.dumps(artifact_integrity, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     files["artifact_integrity"] = str(integrity_path)
+    # EU AI Act Art. 53(1)(d) 训练内容公开摘要（默认关闭）。
+    # 之所以能按 run 维度给出可验证的事实：内容侧走 `artifacts` 表 + 已有的
+    # `verify_artifacts`（逐文件重算 sha256），来源侧走 `source_url` 实测域名摘要
+    # 与模板元数据里人工声明的 `source_urls`/`license`/`verified_at`。
+    # 取不到的字段一律写 GAP + 理由，绝不写空白（空白会被读成"无需申报"）。
+    if outputs.get("ai_act_summary", False):
+        from ..quality.training_content_summary import (
+            build_training_content_summary,
+            write_training_content_summary,
+        )
+
+        summary = build_training_content_summary(
+            state,
+            run_id,
+            workspace=config.workspace,
+            effective_config=dict(config.raw),
+        )
+        summary_path = output / "ai_act_training_summary.json"
+        write_training_content_summary(summary, summary_path)
+        files["ai_act_training_summary"] = str(summary_path)
     # W3.2（§5.2 #6）：**「访问 N 页却只交付 M 条」必须可见**。
     # 两个数字**无条件**写进摘要（低于阈值时用户也能自己判断）；比值异常时另加一条告警，
     # 免得"只采到一点点"被当成正常完成悄悄交付。

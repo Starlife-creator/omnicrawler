@@ -170,9 +170,18 @@ outputs:
   plugin_exporters: [warehouse]
   exporter_options:
     warehouse: {table: records}
+  ai_act_summary: false
 ```
 
 主 exporter 失败会使任务失败；额外 exporter 是否失败开放由 `plugins.fail_open` 决定。
+
+`ai_act_summary` 额外产出 `output/ai_act_training_summary.json`——EU AI Act
+Art. 53(1)(d) 要求的「训练内容公开摘要」，按委员会 2025-07-24 发布的模板三节结构
+（通用信息 / 数据来源清单 / 相关数据处理 aspects）组织。内容侧取自 `artifacts` 表
+并逐文件重算 sha256，来源侧取自 `source_url` 的实测域名摘要与模板元数据里人工声明的
+`source_urls`/`license`/`verified_at`；**取不到的字段一律标 `GAP` 并附理由，不写
+空白**（空白会被读成「无需申报」）。产物含四类**分离**的哈希，第三方可各自独立重算。
+默认关闭：多数任务并不训练模型，开着只是多产出一份文件。
 
 ## storage
 

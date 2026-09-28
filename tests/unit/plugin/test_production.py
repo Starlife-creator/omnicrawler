@@ -1,4 +1,5 @@
 import asyncio
+import email.utils
 import tempfile
 import threading
 import time
@@ -203,8 +204,16 @@ class ProductionFoundationTest(unittest.TestCase):
         self.assertGreaterEqual(state["max_active"], 2)
 
     def test_retry_after_accepts_http_date(self):
+        # ★ HTTP-date 必须**与 locale 无关**地构造（RFC 9110 的 IMF-fixdate 恒为英文）。
+        #   这里原先用 `strftime("%a, %d %b ...")` 造串，而 `%a`/`%b` 是 locale 依赖的：
+        #   实例化 `QApplication` 会让 Qt 调 `setlocale(LC_ALL, "")` 采纳环境里的
+        #   `LANG=zh_CN.UTF-8` ⇒ `LC_TIME` 变中文 ⇒ 造出 "四, 01 1月 2026 ..."，
+        #   `parsedate_to_datetime` 按 RFC 只认英文、正确地拒绝它 ⇒ 本用例只在
+        #   "排在 GUI 测试之前" 时绿，全量跑必红。生产侧行为是对的，错的是造串方式。
+        #   `email.utils.format_datetime(usegmt=True)` 恒输出合规英文 IMF-fixdate。
         now = datetime(2026, 1, 1, tzinfo=UTC)
-        target = (now + timedelta(seconds=15)).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        target = email.utils.format_datetime(now + timedelta(seconds=15), usegmt=True)
+        self.assertEqual(target, "Thu, 01 Jan 2026 00:00:15 GMT")
         self.assertEqual(retry_after_seconds({"Retry-After": target}, now=now), 15)
 
     def test_multi_candidate_selector_falls_back(self):

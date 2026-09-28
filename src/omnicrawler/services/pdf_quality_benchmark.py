@@ -208,11 +208,25 @@ def normalize_amount_truth(truth: Mapping[str, str]) -> dict[str, str]:
 
 # ── 样本：程序自造，零第三方内容 ─────────────────────────────────────────
 
-#: 找不到中文字体时的候选（图片版必需；缺则跳过该形态）
+#: 找不到中文字体时的候选（图片版必需；缺则跳过该形态）。
+#:
+#: 按平台列出**常见发行版实际安装路径**：候选只有 Windows 字体时，Linux/macOS
+#: 上 `cjk_font()` 恒为 None ⇒ 图片版用例恒跳过，且跳过原因写成"缺少中文字体"，
+#: 与机器上明明装着 40+ 个 CJK 字体的事实不符（诊断失真比缺功能更坏）。
 CJK_FONT_CANDIDATES = (
+    # Windows
     Path("C:/Windows/Fonts/msyh.ttc"),
     Path("C:/Windows/Fonts/simsun.ttc"),
     Path("C:/Windows/Fonts/simhei.ttf"),
+    # Linux（Debian/Ubuntu/Fedora 的常见 noto-cjk 与文鼎包）
+    Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+    Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
+    Path("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"),
+    Path("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"),
+    Path("/usr/share/fonts/truetype/arphic/uming.ttc"),
+    # macOS
+    Path("/System/Library/Fonts/PingFang.ttc"),
+    Path("/System/Library/Fonts/Supplemental/Songti.ttc"),
 )
 
 
