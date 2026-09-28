@@ -25,11 +25,19 @@ def redact_url(value: str) -> str:
 
 
 def redact_value(value: str) -> str:
-    """值级脱敏：URL 内嵌凭据 + 高熵 token（长度≥16 的 base64/hex 疑似密钥）。
+    """值级脱敏：**仅** URL 内嵌凭据（``scheme://user:pass@host``）。
 
     研究包/日志在键名不含敏感词时（如 ``db_url``、``endpoint`` 的值）兜底覆盖。
+
+    .. note::
+       本函数此前在此处只留了一段关于高熵 token 的**注释**便直接返回，docstring 却
+       声称脱敏「长度≥16 的 base64/hex 疑似密钥」——**文档承诺的能力从未实现**。
+       现改为只声明它真正做到的事，把 PII 与密钥检测明确指向
+       :mod:`omnicrawler.quality.pii_redaction`（那里才有 Luhn / 身份证加权校验
+       与语料级画像）。
+
+       刻意**不**在模块顶层 ``import`` 那个模块：本模块是 ``security`` 的最底层，
+       引入对 ``quality`` 的依赖会形成 ``quality ↔ security`` 循环依赖并突破
+       ``check_architecture`` 的环预算。需要时由调用方自行导入。
     """
-    value = redact_url(value)
-    # 高熵疑似密钥：16+ 位 base64/hex，出现在等号后或独立 token 位置。
-    # 保守起见仅当键名为连接串/URL 类时由调用方决定是否使用；本函数只处理 URL 形态。
-    return value
+    return redact_url(value)
