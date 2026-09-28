@@ -439,6 +439,40 @@ def _run_components(args: argparse.Namespace) -> None:
     ))
 
 
+@_register("self-update")
+def _run_self_update(args: argparse.Namespace) -> None:
+    """应用自更新：``check`` 只读；``apply`` 覆盖应用文件 ⇒ 破坏性，先过显式确认。
+
+    退出码四态（便于脚本/agent 面判断，不靠解析文案）：
+    0 已最新 · 1 有可用更新 · 2 未配置信任根或更新源（fail-closed 禁用）· 3 失败。
+    """
+    from ..commands import self_update as cmd_self_update
+    from ..core.safe_action import require_explicit_apply
+
+    if args.self_update_command == "apply" and not args.dry_run:
+        # 与 components uninstall 同一判据：argv 里没有 --yes/--apply 就一个字节都不写。
+        require_explicit_apply("self-update apply")
+
+    if args.self_update_command == "apply":
+        payload, code = cmd_self_update.apply(
+            config_path=args.config, platform=args.platform or "", edition=args.edition or "",
+            package=args.package or "", dry_run=bool(args.dry_run),
+        )
+    else:
+        payload, code = cmd_self_update.check(
+            config_path=args.config, platform=args.platform or "", edition=args.edition or "",
+        )
+
+    if getattr(args, "json_output", False):
+        _json(payload)
+    else:
+        print(f"[{payload.get('status')}] {payload.get('detail')}")
+        notes = str(payload.get("notes") or "").strip()
+        if notes:
+            print(notes)
+    raise SystemExit(code)
+
+
 # ── Commands requiring config ───────────────────────────────────
 # 与旧分发路径一致：先 load_config 校验配置，再执行命令，
 # 保证配置错误的报错内容与退出码不变。
