@@ -15,7 +15,28 @@ from ..core.archive_security import (
 )
 from .component_manager import _verify_ed25519
 
-PROTECTED_TOP_LEVEL = {"work", "data", "output", "logs", ".omnicrawler", "PORTABLE.flag", "portable.flag"}
+#: 升级包**永远不许触碰**的顶层路径（越界即整包拒绝）。
+#:
+#: 判据是"合法升级**绝不**需要写它"：
+#: * `work` / `data` / `output` / `logs` / `.omnicrawler`：用户数据与密钥；
+#: * `plugins_installed`：**市场安装的插件**（构建脚本从不产出它，纯运行期数据，
+#:   合法升级包没有任何理由写它）—— 此前漏在名单外，升级包可以覆盖用户已装插件；
+#: * `PORTABLE.flag` / `portable.flag`：便携模式标记（写错会改掉数据根判定）。
+#:
+#: ★ **`configs/` 刻意不在名单里**：它是**随包目录**（`configs/plugin_trust.pub.pem`
+#: 是内置信任根，由构建脚本 `build_*.ps1/sh` 随包复制），整目录保护会让
+#: "升级时轮换信任根"永远做不到。故对 `configs/` 的约束是"**只允许随包文件被更新**"，
+#: 而不是"禁止触碰" —— 不要为了"看起来更安全"把它加进来。
+PROTECTED_TOP_LEVEL = {
+    "work",
+    "data",
+    "output",
+    "logs",
+    ".omnicrawler",
+    "plugins_installed",
+    "PORTABLE.flag",
+    "portable.flag",
+}
 
 
 class UpgradeManager:
