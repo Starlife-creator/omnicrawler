@@ -69,8 +69,10 @@ python -m omnicrawler.pdfx --help
 本仓库**不做 MSI/pkg/deb 安装器**（见《优化方案》§6.3），升级因此有两条路，适用人群不同：
 
 1. **手动替换便携包（所有人，零前提）**：下载新版本便携包解压覆盖程序文件即可。
-   `work/` / `data/` / `output/` / `logs/` / `.omnicrawler/` / `PORTABLE.flag` 是**受保护路径**，
-   升级包**不允许**触碰它们（`services/updater.py` 的 `PROTECTED_TOP_LEVEL`，越界即整包拒绝）。
+   `work/` / `data/` / `output/` / `logs/` / `.omnicrawler/` / `plugins_installed/` / `PORTABLE.flag`
+   是**受保护路径**，升级包**不允许**触碰它们（`services/updater.py` 的 `PROTECTED_TOP_LEVEL`，越界即整包拒绝）。
+   ★ 注意 `configs/` **不在**受保护名单里：它是随包目录（含内置信任根 `plugin_trust.pub.pem`），
+   必须能被升级更新，否则信任根永远无法随升级轮换 —— 所以那里只放随包文件，别把自己的配置放进去。
 2. **应用内自更新（配置了更新源的人）**：
 
    ```bash
