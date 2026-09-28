@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ..._version import __version__
+from ...core.versions import version_key
 from ...plugins.plugins import OFFICIAL_PLUGIN_TYPES
 from ..i18n import _
 
@@ -83,7 +84,11 @@ def _permission_risk(entry: dict[str, Any]) -> tuple[str, str]:
 
 
 def _version_tuple(value: str) -> tuple[int, ...]:
-    return tuple(int(part) for part in value.split(".") if part.isdigit())
+    """转出 `core.versions.version_key`（判据只有一份，见该模块 docstring）。
+
+    保留本名与签名是为了不动既有调用点与测试；**不要在这里重新实现比较**。
+    """
+    return version_key(value)
 
 
 def _compatibility(entry: dict[str, Any], current: str = __version__) -> tuple[str, str]:

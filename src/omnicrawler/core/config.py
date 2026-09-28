@@ -154,6 +154,22 @@ DEFAULTS: dict[str, Any] = {
         #   保留键值是为兼容既有配置文件；不要再声称它实现了任何不变量。
         "confirm_missing_runs": 2,
     },
+    # 应用自更新（issue #88）：检查新版本 + 应用**已签名**升级包（stage/apply/回滚）。
+    # ★ 与上面的 `updates` 段**无关**（那是网站变更监控），故另立一段，别混。
+    # ★ 两条红线：**不设默认信任根**、**不设「跳过验签」开关**——缺任一配置即视为禁用，
+    #   不会"降级为不校验"（§10.7 安全不降级）。
+    "self_update": {
+        # 更新源基址：远程目录（https://…）或本地目录，内含 update.json 与各平台资产。
+        # 留空 = 禁用。**不指向任何特定托管方**（§10.7 不做「core 硬编码 GitHub API 调用」），
+        # 本地目录形态同时让离线/内网镜像开箱可用。
+        "feed_url": "",
+        # ed25519 信任根公钥（base64 编码的 32 字节；也接受 "hex:" 前缀的十六进制）。留空 = 禁用。
+        # 与 `services/updater.UpgradeManager` / `services/component_manager` 同一信任根语义。
+        "trusted_public_key": "",
+        # 资产键的版本后缀：Standard / Full（对齐发布资产命名
+        # `OmniCrawler-<ver>-<OS>-Portable-<Edition>`，键的完整形态为 `<platform>-<edition>`）。
+        "edition": "Standard",
+    },
     # AutoDataCleaner 值清洗：L1 幂等 + L2 规则默认开，L3（LLM）槽位默认关
     "quality": {
         "normalize": {
@@ -492,6 +508,7 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         "plugins": set(DEFAULTS["plugins"]),
         "quality": set(DEFAULTS["quality"]),
         "resources": set(DEFAULTS["resources"]),
+        "self_update": set(DEFAULTS["self_update"]),
         "session": set(DEFAULTS["session"]),
         "updates": set(DEFAULTS["updates"]),
         # S3.3.2：source 是核心段——漏检会让 seedz 等拼写错误静默通过

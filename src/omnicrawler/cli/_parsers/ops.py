@@ -12,6 +12,30 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     server.add_argument("--host", default="127.0.0.1")
     server.add_argument("--port", type=int, default=8765)
     sub.add_parser("workbench", help="启动从采集到PDF结果的统一桌面工作台")
+    # 应用自更新（issue #88）。命名用 self-update 而不是 update：配置里已有的
+    # `updates` 段是**网站变更监控**，同名会把两件事混成一件。
+    self_update = sub.add_parser("self-update", help="应用自更新：检查新版本 / 应用签名升级包")
+    self_update_sub = self_update.add_subparsers(dest="self_update_command", required=True)
+    su_check = self_update_sub.add_parser(
+        "check", help="检查更新源是否有新版本（未配置信任根或更新源即报「已禁用」）"
+    )
+    su_check.add_argument("--config", "-c", required=True)
+    su_check.add_argument("--platform", default="", help="覆盖平台键（windows/linux/macos）")
+    su_check.add_argument("--edition", default="", help="覆盖版本后缀（Standard/Full）")
+    su_check.add_argument("--json", dest="json_output", action="store_true", help="以 JSON 输出")
+    su_apply = self_update_sub.add_parser(
+        "apply", help="下载并应用签名升级包（覆盖应用文件，破坏性：需 --yes）"
+    )
+    su_apply.add_argument("--config", "-c", required=True)
+    su_apply.add_argument("--platform", default="", help="覆盖平台键（windows/linux/macos）")
+    su_apply.add_argument("--edition", default="", help="覆盖版本后缀（Standard/Full）")
+    su_apply.add_argument("--package", default="", help="离线路径：直接指定本地已签名升级包")
+    su_apply.add_argument("--dry-run", action="store_true", help="只输出计划，不写任何文件")
+    su_apply.add_argument(
+        "--yes", "--apply", dest="confirm", action="store_true",
+        help="确认执行破坏性覆盖（与 components uninstall 同一判据）",
+    )
+    su_apply.add_argument("--json", dest="json_output", action="store_true", help="以 JSON 输出")
     schedule = sub.add_parser("schedule", help="管理可恢复的本地定时任务")
     schedule.add_argument("--database", default="work/schedules.sqlite3")
     schedule_sub = schedule.add_subparsers(dest="schedule_command", required=True)

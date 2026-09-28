@@ -269,6 +269,27 @@ plugins:
 未启用背景时不会创建播放器或启动浏览器。
 路径默认必须位于项目目录。生命周期事件包括 `before_run/before_fetch/after_fetch/after_extract/before_export/after_export/after_run/on_error/before_reprocess/after_reprocess`。
 
+## self_update（应用自更新）
+
+与上面的 `plugins.catalog_url`（**插件市场**）和 `updates`（**网站变更监控**）都无关，
+是"把应用本体升到新版本"。★ 别名混淆点：`updates` 段是变更监控，**不是**自更新配置。
+
+```yaml
+self_update:
+  feed_url: ""                 # 更新源基址：远程目录（https://…）或本地目录，内含 update.json
+                               # 与各平台资产；留空 = 禁用
+  trusted_public_key: ""       # ed25519 信任根公钥（base64 的 32 字节；也接受 "hex:" 前缀）；留空 = 禁用
+  edition: "Standard"          # 资产键后缀，与发布资产命名对齐：Standard | Full
+```
+
+- **更新源文档**：`<feed_url>/update.json`，字段为 `version` / `published_at` / `notes` /
+  `assets.{<platform>-<edition>: {name, sha256, size}}` / `signature`。
+  `name` 是**相对基址**的文件名（与 `catalog.json` 内部路径同模型，故本地目录形态天然可用）。
+- ★ **fail-closed**：`trusted_public_key` 或 `feed_url` 任一为空 ⇒ 命令直接报"已禁用"（退出码 2），
+  **不会**降级为"不校验"。签名规范化方式与升级包的 `upgrade.json` 逐字一致 ⇒ 两者共用同一信任根。
+- 取回走与市场同一条**受控出站读**（认 `http.proxy`、DNS 逐地址尝试可回退 IPv4、重定向过策略与审计）。
+- 命令见 `docs/INSTALLATION.md`「升级到新版本」；退出码 `0` 已最新 / `1` 有更新 / `2` 禁用 / `3` 失败。
+
 ## 依赖安装与镜像加速
 
 运行前预检会检测两类缺失依赖：**原生依赖**（缺失即阻断，判 `error`）与**插件声明依赖**
