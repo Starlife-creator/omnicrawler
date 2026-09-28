@@ -125,10 +125,18 @@ class ShowcaseModel(QAbstractListModel):
     """市场橱窗条目模型（只读）。
 
     角色名直接给 QML 用（``model.name`` 等），避免在 QML 里写魔法数字角色。
+
+    ★ ``count`` 是**必须**的：QML 侧把它当上下文属性注入（``ShowcaseModel.count``），
+      而 ``QAbstractListModel`` 只暴露 ``rowCount()``，QML **不**把 ``rowCount``
+      映射成 ``count``（实测：``ShowcaseModel.count`` 求值为 ``undefined``，于是
+      ``count === 0`` 与 ``count > 0`` 同时为 false，空态卡和列表都永不显示）。
     """
 
     #: 角色名 —— 与 QML 里的 ``model.<name>`` 一一对应
     ROLE_NAMES: tuple[str, ...] = ("name", "version", "kinds", "summary")
+
+    #: 条目数变化通知（``count`` 绑定的 notify）
+    count_changed = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -169,6 +177,13 @@ class ShowcaseModel(QAbstractListModel):
         self.beginResetModel()
         self._items = normalized
         self.endResetModel()
+        self.count_changed.emit()
+
+    def _get_count(self) -> int:
+        return len(self._items)
+
+    #: 条目数 —— QML 用它决定空态 / 列表谁可见
+    count = Property(int, _get_count, notify=count_changed)
 
     @property
     def items(self) -> list[dict[str, str]]:
