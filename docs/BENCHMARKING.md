@@ -159,10 +159,44 @@ python tools/benchmark_quality.py --json report.json
 注意**种子页必须含匹配块**：否则模板会在第一次抓取时被判「关键字段成功率下降」而失效，
 整轮抽取退化为通用抽取——实测会得到 0 条记录。
 
+## PDF 质量基准：要么对，要么进复核
+
+上面测的是**结构化抽取**（数据对不对）。PDF 侧的**模糊抽取与 OCR** 是另一种现实：
+版面、页码、置信度都会影响结果，判据因此不同，且**与上面不混分**（数据集、口径、
+门槛各自独立）。
+
+```bash
+python tools/benchmark_pdf_quality.py                 # 跑全部内置用例（离线）
+python tools/benchmark_pdf_quality.py --case digital-text-layer --json report.json
+python tools/benchmark_pdf_quality.py --tesseract /usr/bin/tesseract
+```
+
+门槛（`PdfQualityScore.ok`）＝**要么对，要么进复核**：归一后字段逐字相符、每个字段
+都带页码与原文证据、置信度低于阈值的必须 `needs_review`、不得有“错值被自动放行”。
+页码是证据的一部分，所以多页形态还会检查字段**取自真值页**。
+
+样本由程序自造（`reportlab` 渲染数字版、`PIL` 渲染图片版），**零第三方内容、不依赖外部网络**，
+因此「同一版本 → 同一用例 → 可比结果」。内置 5 个形态：数字版 / 图片版 / 多页 / 表格 / 低质扫描。
+
+**环境不可达时跳过并如实登记**：图片版需要中文字体与 tesseract。缺任一项时该用例
+被**跳过**（不计入通过、原因写进表格与 JSON），而不是假装通过。退出码区分四种结局：
+
+| 退出码 | 含义 |
+|---|---|
+| 0 | 全部选中用例跑完且达门槛 |
+| 1 | 有用例跑完但未达门槛 |
+| 2 | `--case` 没匹配到任何用例（选中 0 个判红） |
+| 3 | 选中用例一个都没跑起来（环境全缺，空集合同样判红） |
+
+**怎么扩展**：在 `omnicrawler.services.pdf_quality_benchmark` 的 `PDF_CASES` 里加一个
+`PdfBenchmarkCase` 即可；门槛按**形态**单独设定（低质扫描的置信天花板天然低，
+拿它去和别的形态平均等于把两种现实混成一个指标）。
+
 ## 相关
 
 - 微基准（模板发现、HTML 抽取耗时）：`tools/benchmark_core.py`
 - 转换专项基准：`tools/benchmark_convertx.py`
 - 任务质量基准：`tools/benchmark_quality.py`（离线，跑内置任务并打分）
+- PDF 质量基准：`tools/benchmark_pdf_quality.py`（离线，跑内置 PDF 形态并打分）
 - 端到端公平性回归：`tests/integration/test_benchmark_fairness.py`
 - 单元测试：`tests/unit/utils/test_benchmarking.py`
