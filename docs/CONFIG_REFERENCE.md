@@ -289,8 +289,18 @@ self_update:
                                # 与各平台资产；留空 = 禁用
   trusted_public_key: ""       # 留空 = 用随包内置信任根 configs/update_trust.pub.pem
                                # （也可写 PEM 文本 / PEM 文件路径 / base64 / "hex:"）
+  feed_url: ""                 # 留空 = 用默认更新源（见下）
   edition: "Standard"          # 资产键后缀，与发布资产命名对齐：Standard | Full
 ```
+
+- **feed_url 默认值**＝
+  `https://github.com/Starlife-creator/omnicrawler/releases/latest/download`
+  （GitHub「最新 release 资产」固定链接：每版把 `update.json` 当普通 Release 资产上传，
+  客户端取 `<feed_url>/update.json` 永远拿到最新清单——免版本号、免 API、零额外托管）。
+  显式配置可指向镜像/本地目录；**清单带 sha256 ⇒ 镜像不必可信**（只承担带宽）。
+- **full_fallback（清单顶层可选字段）**：`{"version", "base", "name", "sha256", "size"}`——
+  指向「最近一次带全量包的发布」。小版本发布**不重建全量包**时（§A.13），
+  本机版本不在增量基线内的用户从这里取全量，否则会被永久卡住。
 
 - **信任根**：未显式配置时读内置 `configs/update_trust.pub.pem`（ed25519，指纹 `bf981f1d…`）。
   它**刻意与市场信任根 `d92fa9fb…` 是两把钥匙**：市场根授权"沙箱内的插件"，

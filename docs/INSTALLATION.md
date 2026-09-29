@@ -85,10 +85,15 @@ python -m omnicrawler.pdfx --help
 
    ```yaml
    self_update:
-     feed_url: "https://<你的更新源>/omnicrawler"   # 含 update.json 与各平台资产；也可直接填本地目录
+     feed_url: ""                                   # 留空 = 默认更新源（GitHub 官方发布页，见下）
      trusted_public_key: ""                         # 留空 = 用随包内置信任根 configs/update_trust.pub.pem
      edition: "Standard"                            # Standard | Full
    ```
+
+   ★ **默认更新源**＝`https://github.com/Starlife-creator/omnicrawler/releases/latest/download`
+   （GitHub「最新 release 资产」固定链接：每版把 `update.json` 当普通 Release 资产上传，
+   客户端永远拿到最新清单——免版本号、免 API、零额外托管）。显式配置可指向镜像/本地目录；
+   **清单带 sha256 ⇒ 镜像不必可信**（只承担带宽）。
 
    ★ **信任根随包内置**（`configs/update_trust.pub.pem`），因此通常**只需要填 `feed_url`**；
    显式填 `trusted_public_key` 会覆盖内置值（自建源/轮换时用）。**内置文件缺失即视为禁用**——
