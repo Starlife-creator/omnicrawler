@@ -22,7 +22,6 @@ or the portable zip.
 from __future__ import annotations
 
 import argparse
-import getpass
 import hashlib
 import json
 import os
@@ -137,21 +136,28 @@ def _run_scan_cli(plugin_dir: Path, manifest: Path | None) -> int:
     return subprocess.run(cmd).returncode
 
 
-def _current_operator(override: str | None = None) -> str:
-    """当前操作者（显式参数 > 环境变量 > getpass 兜底，失败返回 unknown）。
+#: 透明日志里的操作者缺省值：**中性占位**，绝不落本机用户名。
+#:
+#: 背景（2026-09-29）：旧实现兜底读 ``USERNAME``/``getpass.getuser()``，
+#: 于是日志里出现了本机用户名（如 ``Lenovo``）并随公开仓库外泄。
+#: 现在只认**显式**来源：``--operator`` 参数 > 环境变量 ``OMNICRAWL_OPERATOR``；
+#: 谁都不给 ⇒ 写中性占位（审计仍可由 plugin 路径 + sha256 + 时间定位）。
+DEFAULT_OPERATOR = "local-operator"
 
-    B02-004：操作者身份必须可显式配置（审计归属），不再仅靠机器用户名推断。
+
+def _current_operator(override: str | None = None) -> str:
+    """当前操作者（**只认显式来源**，不推断机器用户名）。
+
+    优先级：``override``（--operator）> ``OMNICRAWL_OPERATOR`` > ``DEFAULT_OPERATOR``。
+    ★ 刻意**不读** ``USERNAME``/``USER``/``LOGNAME``/``getpass.getuser()``：
+    那些是**本机用户名**，会随公开的透明日志外泄（2026-09-29 实测发生过）。
     """
     if override:
         return override
-    for var in ("USERNAME", "USER", "LOGNAME"):
-        value = os.environ.get(var)
-        if value:
-            return value
-    try:
-        return getpass.getuser()
-    except Exception:  # noqa: BLE001 - Windows 无 pwd 模块或环境缺用户名时兜底
-        return "unknown"
+    value = os.environ.get("OMNICRAWL_OPERATOR", "").strip()
+    if value:
+        return value
+    return DEFAULT_OPERATOR
 
 
 def _append_transparency_log(
