@@ -61,7 +61,7 @@ def test_shortcut_manager_stores_only_a_weakref() -> None:
     fake_window = QObject()
     manager = GlobalShortcutManager(fake_window)  # type: ignore[arg-type]
 
-    stored = manager.__dict__["_main_window"]
+    stored = manager.__dict__[GlobalShortcutManager._WINDOW_REF_KEY]
     assert isinstance(stored, weakref.ref), (
         "应只存 weakref；存强引用会与窗口构成环 ⇒ 回收不掉"
     )

@@ -25,6 +25,10 @@ class _BaseDelegate:
     def __init__(self, mw: MainWindow) -> None:
         self._mw = mw
 
+    #: 同 shortcuts：weakref 存在**不同名**的内部键上（委托目前不是 QObject 子类，
+    #: 同名也正常，但与 QObject 侧保持同一约定，避免以后改成 QObject 时踩坑）。
+    _MW_REF_KEY = "_mw_weak"
+
     @property
     def _mw(self) -> MainWindow:
         """按需还原主窗口。
@@ -33,7 +37,7 @@ class _BaseDelegate:
         主窗口持有全部委托，委托若再强引用主窗口就成环 ⇒ Qt 控件回收不掉，
         离屏用例逐条累积把整套拖慢数倍。
         """
-        window = self.__dict__["_mw"]()
+        window = self.__dict__[self._MW_REF_KEY]()
         if window is None:
             raise RuntimeError(_("主窗口已销毁，委托不再可用"))
         return cast("MainWindow", window)
@@ -41,8 +45,8 @@ class _BaseDelegate:
     @_mw.setter
     def _mw(self, value: MainWindow) -> None:
         try:
-            self.__dict__["_mw"] = weakref.ref(value)
+            self.__dict__[self._MW_REF_KEY] = weakref.ref(value)
         except TypeError:
             # 不可弱引用的对象（测试桩等）⇒ 退回强引用：显式声明这条兼容边界的代价，
             # 但不让"桩对象"把调用方拦在门外（真实 MainWindow 是 QObject，可弱引用）。
-            self.__dict__["_mw"] = lambda: value
+            self.__dict__[self._MW_REF_KEY] = lambda: value
