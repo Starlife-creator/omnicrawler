@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import shutil
 import time
 from pathlib import Path
 
@@ -193,3 +194,53 @@ def test_apply_leaves_untouched_files_alone(tmp_path: Path) -> None:
     assert heavy.read_bytes() == b"QT" * 500
     assert heavy.stat().st_mtime_ns == before, "未变的重依赖被重写了（说明没有真跳过）"
     assert (root / "app.exe").read_bytes() == b"NEW"
+
+
+# ── ⑤ versions/ 旧版本的识别与清理（布局 B 的收口）──────────────────────
+
+
+def test_stale_version_dirs_skip_the_pointed_one(tmp_path: Path) -> None:
+    manager = UpgradeManager(tmp_path, trusted_public_key=None)
+    (tmp_path / "versions" / "0.98.0").mkdir(parents=True)
+    (tmp_path / "versions" / "0.98.0" / "app.exe").write_bytes(b"x" * 100)
+    (tmp_path / "versions" / "99.0.0").mkdir()
+    (tmp_path / "versions" / "99.0.0" / "app.exe").write_bytes(b"y" * 10)
+    (tmp_path / "versions" / "current.txt").write_text("99.0.0\n", encoding="utf-8")
+
+    stale = manager.stale_version_dirs()
+    assert [package.name for package, _ in stale] == ["0.98.0"]
+    assert stale[0][1] == 100
+
+
+def test_cleanup_without_pointer_marks_every_version_dir_stale(tmp_path: Path) -> None:
+    """就地布局（无指针）下若存在 versions/ 目录 ⇒ 全部算残留（没有指针就说明它们不在用）。"""
+    manager = UpgradeManager(tmp_path, trusted_public_key=None)
+    (tmp_path / "versions" / "0.4.0").mkdir(parents=True)
+    (tmp_path / "versions" / "0.4.0" / "app.exe").write_bytes(b"z" * 5)
+    assert [package.name for package, _ in manager.stale_version_dirs()] == ["0.4.0"]
+
+
+def test_remove_stale_version_dirs_keeps_pointed_and_reports_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = UpgradeManager(tmp_path, trusted_public_key=None)
+    stale = tmp_path / "versions" / "0.4.0"
+    stale.mkdir(parents=True)
+    (stale / "app.exe").write_bytes(b"x" * 5)
+
+    real_rmtree = shutil.rmtree
+
+    def refuse(path: object, *args: object, **kwargs: object) -> None:
+        raise OSError(32, "busy")
+
+    monkeypatch.setattr(shutil, "rmtree", refuse)
+    result = manager.remove_stale_version_dirs()
+    assert result["removed"] == [] and result["failed"] == [
+        "versions/0.4.0"
+    ], "删不掉必须如实报告，不能假装清完"
+    assert stale.is_dir()
+
+    monkeypatch.setattr(shutil, "rmtree", real_rmtree)
+    result = manager.remove_stale_version_dirs()
+    assert result["removed"] == ["0.4.0"] and result["freed_bytes"] == 5
+    assert not stale.exists()

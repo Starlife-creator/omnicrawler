@@ -50,6 +50,14 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     su_ignore.add_argument("--config", "-c", required=True)
     su_ignore.add_argument("--clear", action="store_true", help="清除已忽略的版本，恢复提示")
     su_ignore.add_argument("--json", dest="json_output", action="store_true", help="以 JSON 输出")
+    su_cleanup = self_update_sub.add_parser(
+        "cleanup", help="回收磁盘：清挂账残留 + 删不再使用的旧版本目录（不需要更新源）"
+    )
+    su_cleanup.add_argument(
+        "--yes", "--apply", dest="confirm", action="store_true",
+        help="确认删除（缺省只报清理计划）",
+    )
+    su_cleanup.add_argument("--json", dest="json_output", action="store_true", help="以 JSON 输出")
     schedule = sub.add_parser("schedule", help="管理可恢复的本地定时任务")
     schedule.add_argument("--database", default="work/schedules.sqlite3")
     schedule_sub = schedule.add_subparsers(dest="schedule_command", required=True)

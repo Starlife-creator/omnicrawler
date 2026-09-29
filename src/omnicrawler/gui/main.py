@@ -235,6 +235,7 @@ class MainWindow(QMainWindow):
         self._settings = AppSettings.instance()
         self._config = CrawlConfig()
         self._config_path: Path | None = None
+        self._update_check_worker: Any = None
         self._task_controller: TaskController | None = None
         self._run_controller: RunController | None = None
         self._result_controller: ResultController | None = None
@@ -916,6 +917,9 @@ class MainWindow(QMainWindow):
             show_action = QAction(_("显示主窗口"), self)
             show_action.triggered.connect(self.show)
             tray_menu.addAction(show_action)
+            update_action = QAction(_("检查更新"), self)
+            update_action.triggered.connect(self._check_for_updates)
+            tray_menu.addAction(update_action)
             quit_action = QAction(_("退出"), self)
             quit_action.triggered.connect(self.close)
             tray_menu.addAction(quit_action)
@@ -923,6 +927,54 @@ class MainWindow(QMainWindow):
             self._tray_icon.show()
         else:
             self._tray_icon = None
+
+    def _check_for_updates(self) -> None:
+        """托盘"检查更新"：后台线程跑 CLI 的 check，结果以 Toast/对话框呈现。
+
+        本入口只做**检查与说明**；执行更新仍走命令行（含 --yes 确认判据）。
+        """
+        from .update_check import _CheckWorker
+
+        if self._config_path is None:
+            ToastManager.instance().info(_("未加载任务配置，无法检查更新"))
+            return
+        if self._update_check_worker is not None:
+            ToastManager.instance().info(_("更新检查正在进行中"))
+            return
+        ToastManager.instance().info(_("正在检查更新……"))
+        worker = _CheckWorker(str(self._config_path), self)
+        worker.finished_with.connect(self._on_update_checked)
+        self._update_check_worker = worker
+        worker.start()
+
+    def _on_update_checked(self, payload: dict[str, Any], code: int) -> None:
+        # ★ 状态判断用 payload 的 status 字符串（"disabled"/"ignored"/"failed"/
+        #   "up-to-date"/"update-available"），**不导入 commands 层的退出码**——
+        #   退出码是 commands 的 API，GUI 只消费语义化的 status。
+        self._update_check_worker = None
+        status = str(payload.get("status", ""))
+        if status == "disabled":
+            ToastManager.instance().info(_("应用自更新已禁用（缺少随包信任根）"))
+            return
+        if status == "ignored":
+            ToastManager.instance().info(_("已忽略该版本的更新（命令行 ignore --clear 可恢复）"))
+            return
+        if status == "failed":
+            ToastManager.instance().warning(
+                _("检查更新失败：{0}").format(payload.get("detail", ""))
+            )
+            return
+        from .update_check import format_update_summary
+
+        summary = format_update_summary(payload)
+        if status == "up-to-date":
+            ToastManager.instance().info(summary)
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle(_("检查更新"))
+        box.setText(summary)
+        box.setAccessibleName(_("检查更新结果"))
+        box.exec()
 
     # ================================================================
     #  信号连接
