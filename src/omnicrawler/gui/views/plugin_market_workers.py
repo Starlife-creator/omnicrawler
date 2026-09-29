@@ -12,12 +12,14 @@ from typing import Any
 from PySide6.QtWidgets import QWidget
 
 from ...plugins.market_client import (
+    aggregate_catalogs,
     catalog_cache_path,
     download_and_verify,
     fetch_catalog_verified,
     fetch_resource,
 )
 from ..core.background_worker import BackgroundWorker
+from ..i18n import _
 
 
 class _CatalogWorker(BackgroundWorker):
@@ -31,8 +33,11 @@ class _CatalogWorker(BackgroundWorker):
         cache_root: Path,
         egress: Any,
         parent: QWidget | None = None,
+        *,
+        sources: list[dict[str, Any]] | None = None,
     ) -> None:
         super().__init__(parent)
+        self._sources = sources
         self._catalog_url = catalog_url
         self._local_fallback = local_fallback
         self._trust_source = trust_source
@@ -40,6 +45,8 @@ class _CatalogWorker(BackgroundWorker):
         self._egress = egress
 
     def work(self) -> dict[str, Any]:
+        if self._sources:
+            return self._work_aggregated()
         try:
             catalog = fetch_catalog_verified(
                 self._catalog_url,
@@ -60,6 +67,36 @@ class _CatalogWorker(BackgroundWorker):
                 catalog["_source"] = local
                 return catalog
             raise
+
+    def _work_aggregated(self) -> dict[str, Any]:
+        """多索引（#77 Phase 1）：逐源验签聚合，本地快照作为**最后一条兜底源**。
+
+        判据：**全部源都失败**才算整体失败（抛错 ⇒ 视图进离线态）；只要有一条成功，
+        其余失败的源会出现在 ``sources`` 报告里（视图可提示"部分源不可用"，不静默）。
+        """
+        sources = list(self._sources or [])
+        if self._local_fallback.is_dir():
+            sources.append(
+                {
+                    "url": str(self._local_fallback),
+                    "trust": self._trust_source,
+                    "kind": "curated",
+                    "priority": 9999,
+                    "enabled": True,
+                }
+            )
+        aggregated = aggregate_catalogs(
+            sources,
+            official_trust_source=self._trust_source,
+            cache_root=self._cache_root,
+            egress=self._egress,
+        )
+        if not any(s.get("ok") for s in aggregated.get("sources", [])):
+            failures = "; ".join(
+                f"{s.get('url')}: {s.get('error')}" for s in aggregated.get("sources", [])
+            )
+            raise RuntimeError(_("全部索引都不可用：{0}").format(failures))
+        return aggregated
 
 class _ListingWorker(BackgroundWorker):
     """后台拉取单个插件的 listing.md 说明。"""

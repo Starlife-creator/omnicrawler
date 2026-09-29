@@ -142,6 +142,14 @@ class MarketBrowseMixin(_Base):
                 project_state,
                 f"{type_label} · {mode_label} · {risk_label} · {compatibility}",
             ]
+            # #77：信任信号分级（官方策展 / 社区索引 / 冲突）——不误导用户以为都经官方审核
+            trust = str(entry.get("_trust") or "")
+            if trust == "official":
+                tooltip_lines.append(_("来源：官方策展索引"))
+            elif trust == "community":
+                tooltip_lines.append(_("来源：社区索引（未经官方审核）"))
+            if entry.get("_conflict"):
+                tooltip_lines.append(_("⚠ 同名插件在其他索引中来自不同创作者，请核对来源"))
             if dep_tip:
                 tooltip_lines.append(dep_tip)
             item.setToolTip("\n".join(tooltip_lines))

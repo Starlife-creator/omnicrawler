@@ -143,6 +143,45 @@ def _run_wizard(args: argparse.Namespace) -> None:
 @_register("plugins")
 def _run_plugins(args: argparse.Namespace) -> None:
     command = getattr(args, "plugins_command", None)
+    if command == "catalogs":
+        # #77 Phase 1：多索引的增删查（每源独立验签；写回会重排 YAML，命令内会明示）
+        from ..commands.plugins_catalog import (
+            catalogs_add,
+            catalogs_list,
+            catalogs_remove,
+        )
+
+        config_path = getattr(args, "config", None)
+        if not config_path:
+            print("需要 --config/-c 指定配置文件")
+            return
+        action = getattr(args, "catalogs_action", None) or "list"
+        url = str(getattr(args, "catalogs_url", None) or "").strip()
+        if action == "list":
+            payload, _code = catalogs_list(config_path=config_path)
+        elif action == "add":
+            payload, _code = catalogs_add(
+                config_path=config_path,
+                url=url,
+                kind=str(getattr(args, "catalog_kind", "community")),
+                trust=str(getattr(args, "catalog_trust", "") or ""),
+                priority=int(getattr(args, "catalog_priority", 100)),
+            )
+        else:
+            payload, _code = catalogs_remove(config_path=config_path, url=url)
+        if str(getattr(args, "format", "text") or "text").lower() == "json":
+            _json(payload)
+        else:
+            marker = "[OK]" if payload.get("status") == "ok" else "[FAIL]"
+            print(f"{marker} {payload.get('detail', '')}")
+            for source in payload.get("sources") or []:
+                implicit = "（隐式官方源）" if source.get("implicit") else ""
+                print(
+                    f"  - {source.get('url', '')}  kind={source.get('kind', '')}"
+                    f"  trust={source.get('trust', '')}  priority={source.get('priority', '')}"
+                    f"  enabled={source.get('enabled', '')}{implicit}"
+                )
+        return
     if command == "scaffold-contract2":
         # Phase 3（P1 第 67 轮）：新建契约 2 工程骨架（非原地改造）
         from pathlib import Path as _ScaffoldPath

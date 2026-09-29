@@ -95,6 +95,9 @@ class MarketCatalogMixin(_Base):
             self._base / ".omnicrawler" / "catalog-cache",
             self._egress,
             parent=self,
+            # 多索引（#77 Phase 1）：配置了 catalog_url 时走逐源验签聚合；
+            # 只有"未配置 catalog_url、退回内置快照"时保持单源路径。
+            sources=getattr(self, "_catalog_sources", None) if self._catalog_url else None,
         )
         self._catalog_worker.succeeded.connect(self._on_catalog_loaded)
         self._catalog_worker.failed.connect(self._on_catalog_error)
