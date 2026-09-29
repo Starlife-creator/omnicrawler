@@ -21,6 +21,7 @@ import shutil
 import time
 import urllib.request
 import uuid
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -127,6 +128,135 @@ def fetch_catalog(
     if not isinstance(data.get("plugins"), list):
         raise ValueError("catalog.json 缺少 plugins 数组")
     return data
+
+
+
+#: 信任信号三级（#77 设计要点 6）：进 UI/CLI 徽标，避免用户误以为"都经官方审核"。
+TRUST_OFFICIAL = "official"
+TRUST_COMMUNITY = "community"
+
+_TRUST_BY_KIND = {
+    "curated": TRUST_OFFICIAL,
+    "community": TRUST_COMMUNITY,
+    "topic": TRUST_COMMUNITY,
+}
+
+
+def trust_level(kind: str) -> str:
+    """索引类型 → 信任信号级别（``curated`` ⇒ official，其余 ⇒ community）。"""
+    return _TRUST_BY_KIND.get(str(kind), TRUST_COMMUNITY)
+
+
+def aggregate_catalogs(
+    sources: Sequence[Mapping[str, Any]],
+    *,
+    official_trust_source: str = "",
+    cache_root: str | Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+    egress: EgressBroker | None = None,
+) -> dict[str, Any]:
+    """多索引聚合（#77 Phase 1）：**逐源独立验签** → 合并 → 去重 → 标信任级。
+
+    与单源路径同一条安全语义，差别只在"源"变成了复数：
+
+    * 每个源**各自**用它的信任根验签（``trust`` 留空 ⇒ 官方内置信任根）；
+      **信任根为空 ⇒ 该源直接判失败**（fail-closed：宁可不显示，也不"不验签就用"）；
+    * 每个源的离线快照**分别保存**（``catalog_cache_path`` 按 URL 派生，天然隔离）；
+    * **失败可见**：取数/验签失败的源照样出现在 ``sources`` 里并带 ``error``，
+      绝不静默丢弃（否则用户以为"就这么多"）；
+    * 条目一律带 ``_source`` / ``_trust`` / ``_kind``，供 UI 徽标；
+    * 去重键 ``(id, creator_fingerprint)``：同一 id 从**不同指纹**出现 ⇒ 双方都标
+      ``_conflict``（不静默择一，交用户判断）；同一 id+指纹多处出现 ⇒ 按 ``priority``
+      （小的优先）择一，并在 ``_sources`` 里保留全部来源。
+    """
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    seen_sources_by_id: dict[str, set[str]] = {}
+    source_report: list[dict[str, Any]] = []
+
+    for raw_source in sources:
+        url = str(raw_source.get("url") or "").strip()
+        kind = str(raw_source.get("kind") or "community")
+        if not raw_source.get("enabled", True):
+            source_report.append(
+                {"url": url, "kind": kind, "trust": trust_level(kind),
+                 "ok": False, "error": "已禁用", "count": 0}
+            )
+            continue
+        trust = str(raw_source.get("trust") or "").strip() or official_trust_source
+        if not trust:
+            source_report.append(
+                {"url": url, "kind": kind, "trust": trust_level(kind),
+                 "ok": False, "error": "未配置信任根（fail-closed，拒绝不验签使用）", "count": 0}
+            )
+            continue
+        try:
+            catalog = fetch_catalog_verified(
+                url,
+                trust,
+                cache_path=(
+                    catalog_cache_path(cache_root, url) if cache_root is not None else None
+                ),
+                timeout=timeout,
+                egress=egress,
+            )
+        except Exception as exc:  # noqa: BLE001 - 逐源失败必须可见（不含静默降级）
+            source_report.append(
+                {"url": url, "kind": kind, "trust": trust_level(kind),
+                 "ok": False, "error": f"{type(exc).__name__}: {exc}", "count": 0}
+            )
+            continue
+
+        priority = int(raw_source.get("priority", 100))
+        count = 0
+        for package_type, entries in (
+            ("plugin", catalog.get("plugins") or []),
+            ("template", catalog.get("templates") or []),
+        ):
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                entry_id = str(entry.get("id") or "").strip()
+                if not entry_id:
+                    continue
+                fingerprint = str(entry.get("creator_fingerprint") or "").strip()
+                labelled = dict(entry)
+                labelled["_package_type"] = package_type
+                labelled["_source"] = url
+                labelled["_trust"] = trust_level(kind)
+                labelled["_kind"] = kind
+                labelled["_priority"] = priority
+                key = (entry_id, fingerprint)
+                previous = merged.get(key)
+                if previous is None:
+                    labelled["_sources"] = [url]
+                    merged[key] = labelled
+                else:
+                    previous["_sources"] = [*previous.get("_sources", []), url]
+                    if priority < int(previous.get("_priority", 100)):
+                        labelled["_sources"] = previous["_sources"]
+                        merged[key] = labelled
+                seen_sources_by_id.setdefault(entry_id, set()).add(fingerprint)
+                count += 1
+        source_report.append(
+            {"url": url, "kind": kind, "trust": trust_level(kind), "ok": True,
+             "error": "", "count": count}
+        )
+
+    # 同一 id 出现多个指纹 ⇒ 双方标记冲突（不静默择一）
+    conflicted_ids = {i for i, fps in seen_sources_by_id.items() if len(fps) > 1}
+    for entry in merged.values():
+        entry["_conflict"] = str(entry.get("id")) in conflicted_ids
+
+    ordered = sorted(
+        merged.values(),
+        key=lambda e: (int(e.get("_priority", 100)), str(e.get("id") or "")),
+    )
+    return {
+        "plugins": [e for e in ordered if e.get("_package_type") == "plugin"],
+        "templates": [e for e in ordered if e.get("_package_type") == "template"],
+        "sources": source_report,
+        "conflicts": sorted(conflicted_ids),
+    }
 
 
 def catalog_cache_path(cache_root: str | Path, catalog_url: str) -> Path:
