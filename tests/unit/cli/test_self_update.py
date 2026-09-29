@@ -25,6 +25,7 @@ from omnicrawler.cli._main import build_parser
 from omnicrawler.commands import self_update as cmd_self_update
 from omnicrawler.core.safe_action import ConfirmationRequiredError
 from omnicrawler.services import update_feed as uf
+from omnicrawler.services import updater as up
 
 
 def _keypair() -> tuple[ed25519.Ed25519PrivateKey, bytes]:
@@ -296,8 +297,19 @@ def _write_payload_feed(
     version: str,
     files: dict[str, bytes],
     deleted: tuple[str, ...] = (),
+    delta_path: Path | None = None,
 ) -> None:
     feed_dir.mkdir(parents=True, exist_ok=True)
+    # 给了真实变更包就算真实哈希（否则下载时会被整包 sha256 校验挡住）；没给则用占位值
+    if delta_path is not None:
+        body = delta_path.read_bytes()
+        delta_entry = {
+            "name": delta_path.name,
+            "sha256": hashlib.sha256(body).hexdigest(),
+            "size": len(body),
+        }
+    else:
+        delta_entry = {"name": "update-prev-to-new.zip", "sha256": "b" * 64, "size": 42}
     document = {
         "version": version,
         "assets": {"linux-standard": {"name": "pkg.tar.xz", "sha256": "a" * 64, "size": 999}},
@@ -306,7 +318,7 @@ def _write_payload_feed(
                 name: {"sha256": hashlib.sha256(body).hexdigest(), "size": len(body)}
                 for name, body in files.items()
             },
-            "delta": {__version__: {"name": "update-prev-to-new.zip", "sha256": "b" * 64, "size": 42}},
+            "delta": {__version__: delta_entry},
             "deleted": list(deleted),
         },
     }
@@ -314,6 +326,15 @@ def _write_payload_feed(
     (feed_dir / uf.FEED_FILENAME).write_text(
         json.dumps({**document, "signature": signature}, ensure_ascii=False), encoding="utf-8"
     )
+
+
+def _write_delta_package(path: Path, *, files: dict[str, bytes]) -> Path:
+    """变更包：一个**只含变化文件**的 zip（自身不签名，成员逐个对已签名清单核哈希）。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, body in files.items():
+            archive.writestr(name, body)
+    return path
 
 
 def test_check_skips_unchanged_files_reports_delta_and_removals(tmp_path: Path) -> None:
@@ -344,3 +365,95 @@ def test_check_skips_unchanged_files_reports_delta_and_removals(tmp_path: Path) 
     assert plan["delta_size"] == 42
     assert plan["removed_in_new_version"] == ["_internal/removed.pyd"]
     assert "需更新 1/2 个文件" in payload["detail"]
+
+
+# ── 增量落地：只下变化的那一个文件（"不会真的下 2G"的端到端）──────────
+
+
+def test_apply_incremental_replaces_only_changed_files(tmp_path: Path) -> None:
+    """★ 端到端：变更包只含变化文件 ⇒ **只替换那一个**，未变的重依赖连 mtime 都不许动。
+
+    这条同时钉住三件事：① 走的是 incremental（不是整包）；② 未变的文件**没被重写**；
+    ③ 清单里的"本版已移除"路径被清掉、改名让位的残留也被清掉。
+    """
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    (app / "_internal").mkdir(parents=True)
+    (app / "app.exe").write_bytes(b"OLD")
+    heavy = app / "_internal" / "qt.dll"
+    heavy.write_bytes(b"QT-SAME" * 100)
+    (app / "stale.pyd").write_bytes(b"GONE-IN-NEW")
+    heavy_before = heavy.stat().st_mtime_ns
+
+    _write_payload_feed(
+        feed_dir, private, version="99.0.0",
+        files={"app.exe": b"NEW", "_internal/qt.dll": b"QT-SAME" * 100},
+        deleted=("stale.pyd",),
+        delta_path=_write_delta_package(
+            feed_dir / "update-prev-to-new.zip", files={"app.exe": b"NEW"}
+        ),
+    )
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.apply(
+        config_path=str(config), app_root=app, platform="linux"
+    )
+    assert code == cmd_self_update.EXIT_OK, payload
+    assert payload["plan"]["mode"] == "incremental"
+    assert payload["plan"]["files_to_replace"] == 1     # 只换一个
+    assert payload["applied_files"] == 1
+    assert (app / "app.exe").read_bytes() == b"NEW"
+    assert heavy.stat().st_mtime_ns == heavy_before, "未变的重依赖被重写了"
+    assert not (app / "stale.pyd").exists(), "清单里的「本版已移除」没被清掉"
+    assert list(app.rglob(f"*{up.ASIDE_MARKER}*")) == [], "改名让位的残留没清掉"
+
+
+def test_apply_incremental_rejects_tampered_delta_member(tmp_path: Path) -> None:
+    """变更包里的成员内容与**已签名清单**不符 ⇒ 必须整包拒绝（变更包自身不签名）。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "app.exe").write_bytes(b"OLD")
+
+    _write_payload_feed(
+        feed_dir, private, version="99.0.0", files={"app.exe": b"NEW"},
+        delta_path=_write_delta_package(
+            feed_dir / "update-prev-to-new.zip", files={"app.exe": b"TAMPERED"}
+        ),
+    )
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.apply(
+        config_path=str(config), app_root=app, platform="linux"
+    )
+    assert code == cmd_self_update.EXIT_FAILED
+    assert "哈希与清单不符" in payload["detail"]
+    assert (app / "app.exe").read_bytes() == b"OLD"     # 一个字节都没落地
+    assert list(app.rglob(f"*{up.ASIDE_MARKER}*")) == []
+
+
+def test_apply_dry_run_reports_incremental_without_touching_disk(tmp_path: Path) -> None:
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "app.exe").write_bytes(b"OLD")
+    _write_payload_feed(
+        feed_dir, private, version="99.0.0", files={"app.exe": b"NEW"},
+        delta_path=_write_delta_package(
+            feed_dir / "update-prev-to-new.zip", files={"app.exe": b"NEW"}
+        ),
+    )
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.apply(
+        config_path=str(config), app_root=app, platform="linux", dry_run=True
+    )
+    assert code == cmd_self_update.EXIT_OK
+    assert payload["status"] == "dry-run"
+    assert payload["mode"] == "incremental"
+    assert payload["files_to_replace"] == 1
+    assert (app / "app.exe").read_bytes() == b"OLD"      # 未写盘
+    assert not (app / ".updates").exists()

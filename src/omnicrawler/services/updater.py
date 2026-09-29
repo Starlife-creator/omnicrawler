@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import time
 import zipfile
+from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -38,6 +40,13 @@ PROTECTED_TOP_LEVEL = {
     "portable.flag",
 }
 
+#: 改名让位时给旧文件加的后缀（同一个目录内、同卷 ⇒ 改名总是很快）。
+ASIDE_MARKER = ".old-"
+
+#: 待清理清单（相对路径）。改名让位后的旧文件若**当场删不掉**（正被占用），
+#: 就登记在这里，等下一次运行（＝"下次启动"）再删。
+PENDING_FILENAME = "pending-cleanup.json"
+
 
 class UpgradeManager:
     def __init__(self, app_root: Path, *, trusted_public_key: bytes) -> None:
@@ -45,6 +54,7 @@ class UpgradeManager:
         self.trusted_public_key = trusted_public_key
         self.updates = self.app_root / ".updates"
 
+    # ── 打包体：校验 + 展开（既有行为不变）────────────────────────────
     def stage(self, package: Path) -> dict[str, Any]:
         with zipfile.ZipFile(package) as archive:
             members = validate_zip_archive(
@@ -71,35 +81,174 @@ class UpgradeManager:
                     raise ValueError(f"升级文件哈希不匹配: {name}")
         return {"stage": str(stage), "version": raw.get("version"), "files": len(files)}
 
+    def stage_members(
+        self, package: Path, expected: Mapping[str, str], *, version: str = "unknown"
+    ) -> dict[str, Any]:
+        """展开**变更包**：逐成员按**已签名清单**里的 sha256 核对后写入暂存目录。
+
+        变更包自身**不需要单独签名**：它的每个成员都要对已签名清单里的哈希，
+        改一个字节即整包拒绝；清单里列了而包里没有的文件同样拒绝
+        （宁可拒绝，也不要"少换几个文件"这种静默不一致）。
+        """
+        if not expected:
+            raise ValueError("变更包没有可比对的清单（expected 为空）")
+        with zipfile.ZipFile(package) as archive:
+            members = validate_zip_archive(archive, limits=DEFAULT_ZIP_READ_LIMITS)
+            stage = self.updates / "staging" / f"{version}-{time.time_ns()}"
+            stage.mkdir(parents=True, exist_ok=False)
+            for name, digest in expected.items():
+                relative = _safe_upgrade_path(str(name))
+                member = members.get(str(name))
+                if member is None or member.is_dir():
+                    raise ValueError(f"变更包缺少清单里的文件: {name}")
+                target = stage.joinpath(*relative.parts)
+                if copy_zip_member(archive, member, target) != digest:
+                    raise ValueError(f"变更包成员哈希与清单不符: {name}")
+        return {"stage": str(stage), "version": version, "files": len(expected)}
+
+    # ── 就地替换：改名让位，不复制副本 ────────────────────────────────
     def apply(self, stage: Path) -> dict[str, Any]:
+        """把暂存目录里的文件**就地替换**进应用根。
+
+        ★ 手法是**改名让位**而不是覆盖——Windows 不允许覆盖/删除正在运行的程序文件
+        （实测 `PermissionError: 5`），但**允许改名**（实测成功）。逐文件：
+
+        1. 旧文件改名成 ``<原名>.old-<随机>``（原名随即空出来）；
+        2. 新文件写到**原名**上；
+        3. 尝试删掉那个 ``.old-*``：删得掉 ⇒ 磁盘上只有一份；**删不掉**（仍被占用）
+           ⇒ 登记进 `.updates/pending-cleanup.json`，等下次运行再删。
+
+        ★ **回滚不复制副本**：任何一步失败，就把新写的文件删掉、把 ``.old-*`` 改名回去
+        （同卷 rename，瞬时、零额外空间）——这比"先复制一份备份"省一整个载荷的空间。
+        """
         stage = stage.resolve()
         staging_root = (self.updates / "staging").resolve()
         if staging_root not in stage.parents:
             raise ValueError("升级暂存目录无效")
-        rollback = self.updates / "rollback" / str(time.time_ns())
-        applied: list[Path] = []
+
+        applied: list[tuple[Path, Path | None]] = []
         try:
             for source in sorted(path for path in stage.rglob("*") if path.is_file()):
                 relative = source.relative_to(stage)
                 _safe_upgrade_path(relative.as_posix())
                 destination = self.app_root / relative
-                if destination.is_file():
-                    backup = rollback / relative
-                    backup.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(destination, backup)
                 destination.parent.mkdir(parents=True, exist_ok=True)
+                aside: Path | None = None
+                if destination.exists():
+                    aside = _aside_path(destination)
+                    os.replace(destination, aside)
+                # ★ 先记账再写：这样"写新文件失败"也能回滚（不然旧文件已改名、无人还原）
+                applied.append((relative, aside))
                 shutil.copy2(source, destination)
-                applied.append(relative)
         except Exception:
-            for relative in reversed(applied):
-                backup = rollback / relative
-                destination = self.app_root / relative
-                if backup.is_file():
-                    shutil.copy2(backup, destination)
-                else:
-                    destination.unlink(missing_ok=True)
+            self._rollback(applied)
             raise
-        return {"applied": len(applied), "rollback": str(rollback), "workspace_preserved": True}
+
+        return {"applied": len(applied), **self._finish(applied), "workspace_preserved": True}
+
+    def _rollback(self, applied: list[tuple[Path, Path | None]]) -> None:
+        """尽力回滚：删掉新文件、把改名让位的旧文件改回原名。"""
+        leftovers: list[str] = []
+        for relative, aside in reversed(applied):
+            destination = self.app_root / relative
+            try:
+                if aside is not None and aside.exists():
+                    destination.unlink(missing_ok=True)
+                    os.replace(aside, destination)
+                elif aside is None:
+                    destination.unlink(missing_ok=True)
+            except OSError:
+                # 回滚失败也不能再抛（会掩盖原始异常）；把残留登记进待清理，别静默丢下
+                if aside is not None and aside.exists():
+                    leftovers.append(aside.relative_to(self.app_root).as_posix())
+        if leftovers:
+            self._record_pending(leftovers)
+
+    def _finish(self, applied: list[tuple[Path, Path | None]]) -> dict[str, Any]:
+        """收尾：删掉改名让位出来的旧文件；删不掉的挂账。"""
+        pending: list[str] = []
+        for _relative, aside in applied:
+            if aside is None or not aside.exists():
+                continue
+            try:
+                _discard(aside)
+            except OSError:
+                pending.append(aside.relative_to(self.app_root).as_posix())
+        if pending:
+            self._record_pending(pending)
+        return {"removed": len(applied) - len(pending), "pending_cleanup": pending}
+
+    # ── 待清理清单（"下次启动清理"的落点）─────────────────────────────
+    @property
+    def pending_file(self) -> Path:
+        return self.updates / PENDING_FILENAME
+
+    def pending_cleanup(self) -> list[str]:
+        """当前仍登记着、且文件确实还在的残留（相对路径，已排序去重）。"""
+        recorded = _read_pending(self.pending_file)
+        alive = [
+            relative
+            for relative in recorded
+            if (self.app_root / relative).exists()
+        ]
+        return sorted(set(alive))
+
+    def run_pending_cleanup(self) -> dict[str, Any]:
+        """尽量删掉上次挂账的残留；删不掉的继续留着。**幂等、不抛异常。**"""
+        remaining: list[str] = []
+        removed = 0
+        for relative in self.pending_cleanup():
+            try:
+                _discard(self.app_root / relative)
+                removed += 1
+            except OSError:
+                remaining.append(relative)
+        _write_pending(self.pending_file, remaining)
+        return {"removed": removed, "remaining": remaining}
+
+    def record_pending(self, relatives: list[str]) -> None:
+        """把"当场删不掉"的残留登记进待清理清单（供调用方在删除失败后调用）。"""
+        if relatives:
+            self._record_pending(relatives)
+
+    def _record_pending(self, relatives: list[str]) -> None:
+        recorded = _read_pending(self.pending_file)
+        _write_pending(self.pending_file, sorted(set(recorded) | set(relatives)))
+
+
+def _aside_path(destination: Path) -> Path:
+    """给同一个文件生成"改名让位"目标名（同目录、同卷）。"""
+    return destination.with_name(f"{destination.name}{ASIDE_MARKER}{time.time_ns():x}")
+
+
+def _discard(path: Path) -> None:
+    """删除一个改名让位出来的残留文件。
+
+    单独抽成函数是为了让"删不掉"这条分支**可确定性地测试**：真实触发它需要一个
+    "改名能成功、删除却失败"的文件（＝正在运行的程序文件，实测如此），单元测试里
+    造不出来 ⇒ 测试把这个点替换成"抛 OSError"，从而验证挂账路径。
+    """
+    path.unlink()
+
+
+def _read_pending(path: Path) -> list[str]:
+    """读待清理清单；损坏时**当作空**并保留文件（不阻塞升级，也不静默删掉别人的记录）。"""
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(raw, dict):
+        return []
+    entries = raw.get("files")
+    if not isinstance(entries, list):
+        return []
+    return [str(item) for item in entries if isinstance(item, str) and item.strip()]
+
+
+def _write_pending(path: Path, relatives: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"files": list(relatives), "updated_at": int(time.time())}
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def _safe_upgrade_path(value: str) -> PurePosixPath:
