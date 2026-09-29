@@ -18,12 +18,12 @@ issue #88 的第一片：把「检查更新」的判据集中到一处，并把�
 ``services/updater.UpgradeManager`` 的升级包**逐字一致**，因此两者可共用同一信任根）::
 
     {
-      "version": "0.15.0",
-      "published_at": "2026-09-28T00:00:00Z",
+      "version": "<X.Y.Z>",
+      "published_at": "<ISO8601>",
       "notes": "本版要点……",
       "assets": {
         "windows-standard": {
-          "name": "OmniCrawler-0.15.0-Windows-Portable-Standard.zip",
+          "name": "OmniCrawler-<X.Y.Z>-Windows-Portable-Standard.zip",
           "sha256": "<64 位十六进制>",
           "size": 123456789
         }
