@@ -337,6 +337,173 @@ def _write_delta_package(path: Path, *, files: dict[str, bytes]) -> Path:
     return path
 
 
+def _write_portable_zip(path: Path, *, files: dict[str, bytes]) -> Path:
+    """便携包形态：zip 里有一层顶层目录 `OmniCrawler/`（build_windows.ps1 `--root-name`）。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, body in files.items():
+            archive.writestr(f"OmniCrawler/{name}", body)
+    return path
+
+
+def _write_full_feed(
+    feed_dir: Path,
+    private: ed25519.Ed25519PrivateKey,
+    *,
+    version: str,
+    asset_path: Path,
+) -> None:
+    """只带全量包的清单（大版本形态：没有 payload ⇒ 增量不可用 ⇒ 必须走全量）。"""
+    feed_dir.mkdir(parents=True, exist_ok=True)
+    body = asset_path.read_bytes()
+    document = {
+        "version": version,
+        "assets": {
+            "linux-standard": {
+                "name": asset_path.name,
+                "sha256": hashlib.sha256(body).hexdigest(),
+                "size": len(body),
+            }
+        },
+    }
+    signature = base64.b64encode(private.sign(uf.canonical_feed_bytes(document))).decode()
+    (feed_dir / uf.FEED_FILENAME).write_text(
+        json.dumps({**document, "signature": signature}, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def test_apply_full_replaces_in_place_and_keeps_workspace(tmp_path: Path) -> None:
+    """全量·就地替换：整包哈希来自**已签名清单**，落地仍是改名让位 ⇒ 只占一份。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    (app / "work").mkdir(parents=True)
+    (app / "work" / "keep.txt").write_bytes(b"KEEP")
+    (app / "app.exe").write_bytes(b"OLD")
+    pkg = _write_portable_zip(
+        feed_dir / "OmniCrawler-99.0.0-Linux-Portable-Standard.tar.xz",
+        files={"app.exe": b"NEW", "newfile.txt": b"ADDED"},
+    )
+    _write_full_feed(feed_dir, private, version="99.0.0", asset_path=pkg)
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.apply(
+        config_path=str(config), app_root=app, platform="linux", full=True
+    )
+    assert code == cmd_self_update.EXIT_OK, payload
+    assert payload["plan"]["mode"] == "full-archive"
+    assert (app / "app.exe").read_bytes() == b"NEW"
+    assert (app / "newfile.txt").read_bytes() == b"ADDED"
+    assert (app / "work" / "keep.txt").read_bytes() == b"KEEP"     # 受保护路径不动
+    assert not (app / ".updates" / "rollback").exists()            # 没有备份副本
+
+
+def test_apply_to_versions_keeps_in_place_copy_as_fallback(tmp_path: Path) -> None:
+    """大版本可选：装到 versions/<新版>/，应用根那份**原样不动**＝零成本回退；
+    旧入口改名 `.outdated`（防止误点旧版又触发一次更新）。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "OmniCrawler.exe").write_bytes(b"OLD-LAUNCHER")
+    (app / "app.exe").write_bytes(b"OLD")
+    pkg = _write_portable_zip(
+        feed_dir / "OmniCrawler-99.0.0-Linux-Portable-Standard.tar.xz",
+        files={"OmniCrawler.exe": b"NEW-LAUNCHER", "app.exe": b"NEW"},
+    )
+    _write_full_feed(feed_dir, private, version="99.0.0", asset_path=pkg)
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.apply(
+        config_path=str(config), app_root=app, platform="linux", full=True, to_versions=True
+    )
+    assert code == cmd_self_update.EXIT_OK, payload
+    assert payload["plan"]["mode"] == "versions-install"
+    assert (app / "versions" / "99.0.0" / "app.exe").read_bytes() == b"NEW"
+    assert (app / "versions" / "current.txt").read_text(encoding="utf-8").strip() == "99.0.0"
+    assert (app / "app.exe").read_bytes() == b"OLD"                     # 原样不动
+    assert (app / "OmniCrawler.exe").exists() is False
+    assert (app / "OmniCrawler.exe.outdated").exists()                  # 旧入口已退役
+
+
+def test_apply_falls_back_to_full_when_no_delta_for_current(tmp_path: Path) -> None:
+    """本机版本不在增量基线内（清单只有全量包）⇒ **自动走全量**，而不是永久卡住。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "app.exe").write_bytes(b"OLD")
+    pkg = _write_portable_zip(
+        feed_dir / "OmniCrawler-99.0.0-Linux-Portable-Standard.tar.xz", files={"app.exe": b"NEW"}
+    )
+    _write_full_feed(feed_dir, private, version="99.0.0", asset_path=pkg)
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.apply(config_path=str(config), app_root=app, platform="linux")
+    assert code == cmd_self_update.EXIT_OK, payload
+    assert payload["plan"]["mode"] == "full-archive"     # 没有可用增量 ⇒ 全量兜底
+    assert (app / "app.exe").read_bytes() == b"NEW"
+
+
+def test_ignore_version_suppresses_then_recovers(tmp_path: Path) -> None:
+    """★ "忽略此版本的更新"：同一版本不再提示；出现更新的版本自动恢复。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_payload_feed(
+        feed_dir, private, version="99.0.0",
+        files={"app.exe": b"NEW"},
+        delta_path=_write_delta_package(feed_dir / "update.zip", files={"app.exe": b"NEW"}),
+    )
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    ignored, code = cmd_self_update.ignore(config_path=str(config), app_root=app)
+    assert code == cmd_self_update.EXIT_OK and ignored["status"] == "ignored"
+    assert ignored["ignored_version"] == "99.0.0"
+
+    payload, code = cmd_self_update.check(
+        config_path=str(config), platform="linux", payload_root=app
+    )
+    assert code == cmd_self_update.EXIT_OK
+    assert payload["status"] == "ignored"                # 不再提示
+
+    cleared, _ = cmd_self_update.ignore(config_path=str(config), clear=True, app_root=app)
+    assert cleared["status"] == "cleared"
+    payload, code = cmd_self_update.check(
+        config_path=str(config), platform="linux", payload_root=app
+    )
+    assert payload["status"] == "update-available"       # 恢复提示
+
+
+def test_check_reports_incremental_and_full_sizes_side_by_side(tmp_path: Path) -> None:
+    """★ 体积对比文案（照 B 站弹窗）：两个数并排，用户一眼看到省了多少。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "app.exe").write_bytes(b"OLD")
+    _write_payload_feed(
+        feed_dir, private, version="99.0.0", files={"app.exe": b"NEW"},
+        delta_path=_write_delta_package(feed_dir / "update.zip", files={"app.exe": b"NEW"}),
+    )
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.check(
+        config_path=str(config), platform="linux", payload_root=app
+    )
+    assert code == cmd_self_update.EXIT_UPDATE_AVAILABLE
+    options = payload["options"]
+    assert options["incremental"]["available"] is True
+    # ★ 增量体积＝**变更包文件**的大小（这才是实际要下载的字节数，含 zip 开销），
+    #   不是清单里变化文件的净字节（那是 plan.fetch_bytes）。
+    assert options["incremental"]["size"] == (feed_dir / "update.zip").stat().st_size
+    assert options["full"]["available"] is True
+    assert options["full"]["size"] == 999                 # 全量包体积（清单声明）
+    assert options["install_to_versions"] is True
+    assert "增量约" in payload["detail"] and "全量包" in payload["detail"]
+
+
 def test_check_skips_unchanged_files_reports_delta_and_removals(tmp_path: Path) -> None:
     private, public = _keypair()
     feed_dir = tmp_path / "feed"

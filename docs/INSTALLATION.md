@@ -111,6 +111,19 @@ python -m omnicrawler.pdfx --help
    `<应用根>/.updates/pending-cleanup.json`，**下次启动时自动清掉**（`--dry-run` 不清理、不写盘）。
    ★ 失败可回滚：把新文件删掉、把 `.old-*` 改名回去（同卷改名，瞬时、零额外空间）。
    ★ 被替换之外的文件**一个都不动**（未变的重依赖连修改时间都不变），所以常规增量只下几 MB。
+   ★ **三种落地方式**（`check` 会把它们需要的体积并排报出来，照 B 站弹窗的形态）：
+
+   | 方式 | 命令 | 磁盘 | 适用 |
+   |---|---|---|---|
+   | **增量更新** | `self-update apply -c task.yaml --yes` | **一份** | 有"相对当前版本的变更包"时（默认） |
+   | **全量·就地替换** | `self-update apply -c task.yaml --full --yes` | **一份** | 大版本，或本机不在增量基线内（自动兜底） |
+   | **全量·装到 versions/** | `self-update apply -c task.yaml --full --to-versions --yes` | **两份** | 想保留当前版本以便回退（应用根那份原样不动） |
+
+   ★ 装到 `versions/<新版>/` 时会写 `versions/current.txt`（启动器优先读它指向的版本），
+   并把就地布局的旧入口改名 `.outdated`（防止误点旧版又触发一次更新）；应用根里那份**原样保留**，
+   你随时可以删，或以后提供"清理旧版本"入口。
+   ★ **忽略此版本的更新**：`self-update ignore -c task.yaml`（记录当前更新源给出的版本，
+   之后同一版本不再提示；出现更新的版本自动恢复）· `self-update ignore -c task.yaml --clear` 恢复。
    ★ 更新源**不绑定任何托管方**（远程目录或本地目录均可）；本地目录形态可用于内网镜像与离线环境。
 
 ## 外部服务并非本机依赖

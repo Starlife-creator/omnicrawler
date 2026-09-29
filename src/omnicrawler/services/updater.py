@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -138,7 +139,7 @@ class UpgradeManager:
                     aside = _aside_path(destination)
                     os.replace(destination, aside)
                 # ★ 先记账再写：这样"写新文件失败"也能回滚（不然旧文件已改名、无人还原）
-                applied.append((relative, aside))
+                applied.append((destination, aside))
                 shutil.copy2(source, destination)
         except Exception:
             self._rollback(applied)
@@ -146,11 +147,67 @@ class UpgradeManager:
 
         return {"applied": len(applied), **self._finish(applied), "workspace_preserved": True}
 
+    def apply_archive(
+        self,
+        archive_path: Path,
+        *,
+        strip_root: str | None = None,
+        expected_sha256: str | None = None,
+        dest_root: Path | None = None,
+    ) -> dict[str, Any]:
+        """把一个**整包压缩档**就地替换进应用根（全量路径）。
+
+        与 `apply()` 共用同一套**改名让位**机制（旧文件改名让位 → 写新内容 → 删掉或挂账），
+        差别只在内容来源是压缩档而非暂存目录，因此**不需要先解压出一份暂存**
+        （515MB／1.9GB 的包若先解压，峰值磁盘会直接翻倍）。
+
+        - ``strip_root``：压缩档里包着一层顶层目录（本仓便携包是 ``OmniCrawler/``）⇒ 剥掉后再对位；
+        - ``expected_sha256``：整包哈希（来自**已签名清单**的 ``assets[key].sha256``）——
+          先核包再落地，**一个字节不符就一个文件都不写**；
+        - ``dest_root``：写入根（默认应用根；"装到 versions/<ver>/" 时传该目录）。
+        """
+        if expected_sha256 is None:
+            raise ValueError("整包必须提供 expected_sha256（来自已签名清单），否则无从校验")
+        target_root = (dest_root or self.app_root).resolve()
+        with zipfile.ZipFile(archive_path) as archive:
+            digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+            if digest != expected_sha256:
+                raise ValueError(
+                    f"整包 sha256 与已签名清单不一致（期望 {expected_sha256}，实际 {digest}）"
+                )
+            members = validate_zip_archive(archive, limits=DEFAULT_ZIP_READ_LIMITS)
+            prefix = f"{strip_root.strip('/')}/" if strip_root else ""
+            applied: list[tuple[Path, Path | None]] = []
+            try:
+                for name, info in sorted(members.items()):
+                    if info.is_dir():
+                        continue
+                    relative_name = name[len(prefix):] if prefix and name.startswith(prefix) else name
+                    if not relative_name:
+                        continue
+                    relative = _safe_upgrade_path(relative_name)
+                    destination = target_root / relative
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    aside: Path | None = None
+                    if destination.exists():
+                        aside = _aside_path(destination)
+                        os.replace(destination, aside)
+                    applied.append((destination, aside))
+                    if copy_zip_member(archive, info, destination) is None:
+                        raise ValueError(f"整包成员写出失败: {name}")
+            except Exception:
+                self._rollback(applied)
+                raise
+
+        return {"applied": len(applied), **self._finish(applied), "workspace_preserved": True}
+
     def _rollback(self, applied: list[tuple[Path, Path | None]]) -> None:
-        """尽力回滚：删掉新文件、把改名让位的旧文件改回原名。"""
+        """尽力回滚：删掉新文件、把改名让位的旧文件改回原名。
+
+        ``applied`` 的第一项是**绝对目标路径**（这样"装到 versions/" 时也能正确还原）。
+        """
         leftovers: list[str] = []
-        for relative, aside in reversed(applied):
-            destination = self.app_root / relative
+        for destination, aside in reversed(applied):
             try:
                 if aside is not None and aside.exists():
                     destination.unlink(missing_ok=True)

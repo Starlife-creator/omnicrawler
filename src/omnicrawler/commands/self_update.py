@@ -141,6 +141,22 @@ def check(
         platform=platform or detect_platform(),
         edition=edition or str(section.get("edition") or DEFAULT_EDITION),
     )
+
+    root = Path(payload_root) if payload_root is not None else application_dir()
+
+    # ★ "忽略此版本的更新"：同一版本不再提示；出现更新的版本自动恢复（本地记录，一个文件）。
+    if result.update_available and feed.version == get_ignored_version(root):
+        return {
+            "status": "ignored",
+            "detail": (
+                f"已忽略版本 {feed.version} 的更新"
+                f"（恢复：omnicrawler self-update ignore --clear）"
+            ),
+            "current_version": result.current_version,
+            "latest_version": result.latest_version,
+            "feed_base": base,
+        }, EXIT_OK
+
     detail = result.detail
     payload: dict[str, Any] = {
         "status": result.status,
@@ -154,7 +170,6 @@ def check(
     #   变成一个具体数字（需更新几个文件、共多少字节）。**不遍历**整个应用根，
     #   只读清单里出现的路径 —— 用户数据目录（work/data/...）绝不会被扫到。
     if feed.payload_files and result.update_available:
-        root = Path(payload_root) if payload_root is not None else application_dir()
         plan = plan_payload(
             feed,
             local_hashes=_local_payload_hashes(feed.payload_files, root),
@@ -163,6 +178,11 @@ def check(
             exists=lambda relative: root.joinpath(*PurePosixPath(relative).parts).is_file(),
         )
         delta = feed.payload_delta.get(__version__)
+        full_asset = feed.asset_for(
+            platform or detect_platform(),
+            edition or str(section.get("edition") or DEFAULT_EDITION),
+        )
+        full_size = full_asset.size if full_asset is not None else 0
         payload["payload_plan"] = {
             "files_total": len(feed.payload_files),
             "unchanged": plan.unchanged,
@@ -175,9 +195,23 @@ def check(
             "removed_in_new_version": list(plan.present_deleted),
             "payload_base": feed.payload_base or base,
         }
+        # ★ 体积对比文案（照 B 站移动端的形态）：两个数并排，用户一眼看到省了多少。
+        payload["options"] = {
+            "incremental": {
+                "available": delta is not None,
+                "size": delta.size if delta is not None else plan.fetch_bytes,
+            },
+            "full": {
+                "available": full_asset is not None,
+                "size": full_size,
+                "name": full_asset.name if full_asset is not None else "",
+            },
+            "install_to_versions": full_asset is not None,
+            "ignored": False,
+        }
         payload["detail"] = (
             f"{detail}；本机需更新 {plan.needs_download}/{len(feed.payload_files)} 个文件"
-            f"（约 {plan.fetch_bytes} 字节）"
+            f"（增量约 {_human_bytes(plan.fetch_bytes)} · 全量包 {_human_bytes(full_size) if full_size else '本版未提供'}）"
         )
 
     if result.notes:
@@ -192,6 +226,121 @@ def check(
     return payload, (EXIT_UPDATE_AVAILABLE if result.update_available else EXIT_OK)
 
 
+#: 便携包压缩档里的顶层目录名（`build_windows.ps1` 用 `--root-name 'OmniCrawler'` 打包）。
+PORTABLE_ZIP_ROOT = "OmniCrawler"
+
+#: 布局 B 的指针文件：存在 ⇒ 启动器优先跑它指向的版本；不存在 ⇒ 按就地布局启动。
+CURRENT_POINTER = "versions/current.txt"
+
+#: 就地布局下需要"退役"的入口（防止用户误点旧版、又触发一次更新）。
+_RETIRE_ENTRIES = ("OmniCrawler.exe", "OmniCrawler-Launcher.bat")
+
+
+def _write_current_pointer(root: Path, version: str) -> Path:
+    """写布局 B 的版本指针。**只新增、不移动**：应用根里那份原样保留＝天然回退。"""
+    pointer = root / CURRENT_POINTER
+    pointer.parent.mkdir(parents=True, exist_ok=True)
+    pointer.write_text(f"{version.strip()}\n", encoding="utf-8")
+    return pointer
+
+
+def _retire_inplace_entries(root: Path) -> list[str]:
+    """把就地布局的旧入口改名 `.outdated`（防误点）。**改名在运行中可行**（实测），
+    失败（被占用且不允许改名）则原样保留并如实返回，不静默。"""
+    retired: list[str] = []
+    for name in _RETIRE_ENTRIES:
+        entry = root / name
+        if not entry.exists():
+            continue
+        try:
+            entry.rename(root / f"{name}.outdated")
+            retired.append(f"{name} -> {name}.outdated")
+        except OSError as exc:
+            retired.append(f"{name} 未能改名（{exc}）")
+    return retired
+
+
+def _human_bytes(size: int) -> str:
+    """人类可读体积（照 B 站弹窗的形态：一位小数）。"""
+    value = float(size)
+    for unit in ("B", "KB", "MB", "GB"):
+        if value < 1024 or unit == "GB":
+            return f"{int(value)}{unit}" if unit == "B" else f"{value:.1f}{unit}"
+        value /= 1024
+    return f"{value:.1f}GB"
+
+
+def _ignored_version_file(root: Path) -> Path:
+    """本地记录的"忽略此版本"（一个文件，不属于配置 ⇒ 不跨机器同步）。"""
+    return root / ".updates" / "ignored-version.txt"
+
+
+def get_ignored_version(root: Path) -> str:
+    """读"忽略此版本"；文件不存在/损坏 ⇒ 空串（绝不因此报错）。"""
+    try:
+        return _ignored_version_file(root).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def set_ignored_version(root: Path, version: str) -> None:
+    path = _ignored_version_file(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{version.strip()}\n", encoding="utf-8")
+
+
+def clear_ignored_version(root: Path) -> bool:
+    path = _ignored_version_file(root)
+    if not path.exists():
+        return False
+    path.unlink()
+    return True
+
+
+def ignore(
+    *, config_path: str, clear: bool = False, app_root: Path | None = None
+) -> tuple[dict[str, Any], int]:
+    """``self-update ignore``：记录 / 清除"忽略此版本的更新"。
+
+    记录时**必须先读更新源**拿到它当前给出的版本号 —— 不接受用户随手填一个版本，
+    避免"忽略了一个根本不存在的版本，结果永远收不到提示"。
+    """
+    root = Path(app_root) if app_root is not None else application_dir()
+    if clear:
+        removed = clear_ignored_version(root)
+        return {
+            "status": "cleared" if removed else "nothing-to-clear",
+            "detail": "已恢复提示" if removed else "本来就没有被忽略的版本",
+            "current_version": __version__,
+        }, EXIT_OK
+    try:
+        _section, config, key, base = _resolve(config_path)
+    except UpdateFeedError as exc:
+        return {"status": "failed", "detail": str(exc), "current_version": __version__}, EXIT_FAILED
+    if key is None:
+        return _disabled_payload("未配置 self_update.trusted_public_key"), EXIT_DISABLED
+    if not base:
+        return _disabled_payload("未配置 self_update.feed_url"), EXIT_DISABLED
+    try:
+        feed = verify_feed_document(_fetch(base, FEED_FILENAME, config), trusted_public_key=key)
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "detail": f"读取或校验更新源失败：{exc}",
+            "current_version": __version__,
+        }, EXIT_FAILED
+    set_ignored_version(root, feed.version)
+    return {
+        "status": "ignored",
+        "detail": (
+            f"已忽略版本 {feed.version} 的更新；之后出现更新的版本会自动恢复提示"
+            f"（恢复：omnicrawler self-update ignore --clear）"
+        ),
+        "current_version": __version__,
+        "ignored_version": feed.version,
+    }, EXIT_OK
+
+
 def apply(
     *,
     config_path: str,
@@ -201,6 +350,8 @@ def apply(
     dry_run: bool = False,
     app_root: Path | None = None,
     force_full: bool = False,
+    full: bool = False,
+    to_versions: bool = False,
 ) -> tuple[dict[str, Any], int]:
     """``self-update apply``：落地更新（**优先只下变化的那部分**）。
 
@@ -262,7 +413,11 @@ def apply(
 
     # ★ 增量优先：更新源若提供"相对当前版本的变更包"，就只下它（几 MB），
     #   只替换**本机确实不同**的那些文件 —— 这是"不会真的下 2G"的落点。
-    delta = feed.payload_delta.get(__version__) if (feed is not None and not force_full) else None
+    delta = (
+        feed.payload_delta.get(__version__)
+        if (feed is not None and not force_full and not full and not to_versions)
+        else None
+    )
     delta_expected: dict[str, str] = {}
     if delta is not None and feed.payload_files:
         local = _local_payload_hashes(feed.payload_files, root)
@@ -279,11 +434,15 @@ def apply(
         if not delta_expected:
             delta = None  # 本机已与目标一致：一个成员都不用下
 
-    mode = (
-        "incremental"
-        if delta is not None
-        else ("offline-package" if local_package is not None else "full-package")
-    )
+    if delta is not None:
+        mode = "incremental"
+    elif local_package is not None:
+        mode = "offline-package"
+    elif to_versions:
+        mode = "versions-install"
+    else:
+        # ★ 全量兜底：显式 --full，或本机版本不在增量基线内（跨大版本）⇒ 只能全量，否则永久卡住
+        mode = "full-archive"
     plan: dict[str, Any] = {
         "app_root": str(root),
         "mode": mode,
@@ -310,6 +469,7 @@ def apply(
     deleted_removed = 0
     failed_removed: list[str] = []
     try:
+        staged_version = ""
         if delta is not None:
             raw = _fetch(feed.payload_base or base, delta.name, config)
             actual = hashlib.sha256(raw).hexdigest()
@@ -326,7 +486,11 @@ def apply(
             delta_path.write_bytes(raw)
             # 成员逐个对**已签名清单**里的哈希核对（变更包自身无需签名）
             staged = manager.stage_members(delta_path, delta_expected, version=feed.version)
+            staged_version = str(staged.get("version") or "")
+            applied = manager.apply(Path(str(staged["stage"])))
         elif local_package is None:
+            # 全量：整包（便携包 zip）。整包哈希来自**已签名清单** ⇒ 先核包再落地，
+            # 一个字节不符就一个文件都不写。
             raw = _fetch(base, target_name, config)
             actual = hashlib.sha256(raw).hexdigest()
             if actual != expected_sha:
@@ -338,9 +502,25 @@ def apply(
                     "current_version": __version__,
                     "plan": plan,
                 }, EXIT_FAILED
-            local_package = incoming / Path(target_name).name
-            local_package.write_bytes(raw)
-            staged = manager.stage(local_package)
+            archive_path = incoming / Path(target_name).name
+            archive_path.write_bytes(raw)
+            staged_version = feed.version if feed is not None else ""
+            if to_versions:
+                # 大版本可选：装到 versions/<新版>/，应用根那份**原样不动**＝天然回退
+                versions_root = root / "versions" / staged_version
+                applied = manager.apply_archive(
+                    archive_path,
+                    strip_root=PORTABLE_ZIP_ROOT,
+                    expected_sha256=expected_sha,
+                    dest_root=versions_root,
+                )
+                _write_current_pointer(root, staged_version)
+                plan["retired_entries"] = _retire_inplace_entries(root)
+            else:
+                # 全量·就地替换：只占一份（--full 显式选择，或本机不在增量基线内的兜底）
+                applied = manager.apply_archive(
+                    archive_path, strip_root=PORTABLE_ZIP_ROOT, expected_sha256=expected_sha
+                )
         else:
             if not local_package.is_file():
                 return {
@@ -349,8 +529,8 @@ def apply(
                     "current_version": __version__,
                 }, EXIT_FAILED
             staged = manager.stage(local_package)
-
-        applied = manager.apply(Path(str(staged["stage"])))
+            staged_version = str(staged.get("version") or "")
+            applied = manager.apply(Path(str(staged["stage"])))
         if delta is not None:
             deleted_removed, failed_removed = _remove_deleted(feed, root)
     except Exception as exc:
@@ -377,7 +557,7 @@ def apply(
         "status": "applied",
         "detail": detail,
         "previous_version": __version__,
-        "staged_version": staged.get("version"),
+        "staged_version": staged_version,
         "applied_files": applied.get("applied"),
         "pending_cleanup": pending,
         "deleted_removed": deleted_removed,
