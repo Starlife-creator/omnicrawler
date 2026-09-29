@@ -32,10 +32,24 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     su_apply.add_argument("--package", default="", help="离线路径：直接指定本地已签名升级包")
     su_apply.add_argument("--dry-run", action="store_true", help="只输出计划，不写任何文件")
     su_apply.add_argument(
+        "--full", action="store_true",
+        help="跳过增量，走全量·就地替换（只占一份；本机不在增量基线内时会自动走这条）",
+    )
+    su_apply.add_argument(
+        "--to-versions", action="store_true",
+        help="全量装到 versions/<新版>/（应用根那份原样保留＝可回退；磁盘会占两份）",
+    )
+    su_apply.add_argument(
         "--yes", "--apply", dest="confirm", action="store_true",
         help="确认执行破坏性覆盖（与 components uninstall 同一判据）",
     )
     su_apply.add_argument("--json", dest="json_output", action="store_true", help="以 JSON 输出")
+    su_ignore = self_update_sub.add_parser(
+        "ignore", help="忽略当前更新源给出的版本（之后出现更新的版本会自动恢复提示）"
+    )
+    su_ignore.add_argument("--config", "-c", required=True)
+    su_ignore.add_argument("--clear", action="store_true", help="清除已忽略的版本，恢复提示")
+    su_ignore.add_argument("--json", dest="json_output", action="store_true", help="以 JSON 输出")
     schedule = sub.add_parser("schedule", help="管理可恢复的本地定时任务")
     schedule.add_argument("--database", default="work/schedules.sqlite3")
     schedule_sub = schedule.add_subparsers(dest="schedule_command", required=True)
