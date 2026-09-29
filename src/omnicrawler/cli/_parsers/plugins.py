@@ -16,7 +16,24 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
         "plugins_command",
         nargs="?",
         default=None,
-        help="子命令：audit | scaffold-contract2（省略则列出已注册插件）",
+        help="子命令：audit | scaffold-contract2 | catalogs（省略则列出已注册插件）",
+    )
+    # #77 Phase 1：plugins catalogs list|add|remove —— 多索引（每源独立验签）的增删查
+    plugins.add_argument(
+        "catalogs_action", nargs="?", default=None, choices=("list", "add", "remove"),
+        help="catalogs 子命令的动作：list | add | remove",
+    )
+    plugins.add_argument("catalogs_url", nargs="?", default=None, help="catalogs 子命令：索引 URL")
+    plugins.add_argument(
+        "--catalog-kind", default="community", choices=("curated", "community", "topic"),
+        help="catalogs add：索引类型（curated＝官方策展，community/topic＝未审核，按社区展示）",
+    )
+    plugins.add_argument(
+        "--catalog-trust", default="",
+        help="catalogs add：该索引的信任根（PEM 文本 / 文件路径 / base64 / hex:）；留空＝官方内置",
+    )
+    plugins.add_argument(
+        "--catalog-priority", type=int, default=100, help="catalogs add：展示优先级（小的在前）"
     )
     # Phase 1（B5）：plugins audit --local <dir> 本地自检（许可+凭据，与 CI 门 2 同逻辑）
     plugins.add_argument("--local", default=None, help="audit 子命令：审计的本地插件目录")
