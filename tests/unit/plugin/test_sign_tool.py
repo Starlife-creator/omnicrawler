@@ -267,3 +267,48 @@ def test_loader_rejects_untrusted_creator_plugin(tmp_path: Path, monkeypatch: py
             Registry(), [str(plugin)], tmp_path, config=config,
             signature_policy="strict",
         )
+
+
+def test_operator_never_records_machine_username(tmp_path: Path) -> None:
+    """★ 反向断言：**本机用户名绝不能被写进透明日志**（2026-09-29 实测发生过）。
+
+    旧实现兜底读 ``USERNAME``/``getpass.getuser()`` ⇒ 日志里出现本机用户名并随公开仓库外泄。
+    把该兜底装回去，本用例必须变红（断言的是"绝不"，不是"通常不"）。
+    """
+    private, _ = _make_keypair(tmp_path)
+    plugin = _make_clean_plugin(tmp_path)
+    log = tmp_path / "signing_transparency.jsonl"
+    env = {**_UTF8_ENV, "USERNAME": "Lenovo", "USER": "Lenovo", "LOGNAME": "Lenovo"}
+    env.pop("OMNICRAWL_OPERATOR", None)
+
+    signed = _run(
+        "sign", str(plugin), "--private-key", str(private), "--log", str(log), env=env
+    )
+    assert signed.returncode == 0, signed.stdout + signed.stderr
+
+    raw = log.read_text(encoding="utf-8")
+    entry = json.loads(raw.splitlines()[0])
+    assert entry["operator"] == "local-operator", "缺省应是中性占位，而不是任何机器身份"
+    assert "Lenovo" not in raw, "本机用户名绝不能出现在透明日志里"
+
+
+def test_operator_env_override_and_explicit_flag(tmp_path: Path) -> None:
+    """显式来源优先：环境变量 ``OMNICRAWL_OPERATOR`` 生效；``--operator`` 再压过它。"""
+    private, _ = _make_keypair(tmp_path)
+    plugin = _make_clean_plugin(tmp_path)
+    log = tmp_path / "signing_transparency.jsonl"
+    env = {**_UTF8_ENV, "USERNAME": "Lenovo", "OMNICRAWL_OPERATOR": "starlife"}
+
+    first = _run(
+        "sign", str(plugin), "--private-key", str(private), "--log", str(log), env=env
+    )
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert json.loads(log.read_text(encoding="utf-8").splitlines()[0])["operator"] == "starlife"
+
+    second = _run(
+        "sign", str(plugin), "--private-key", str(private), "--log", str(log),
+        "--operator", "release-bot", env=env,
+    )
+    assert second.returncode == 0, second.stdout + second.stderr
+    entries = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    assert entries[-1]["operator"] == "release-bot"

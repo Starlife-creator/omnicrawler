@@ -24,10 +24,11 @@
 3. **枚举为空必须报错**：没有任何 cookie 匹配目标站点（或 ``hosts`` 传空）时**报错**，
    不许静默通过 —— 否则"桥接成功"是假的，用户会以为已经登录。
 
-★ 不做（§11.5 已裁定）：**不注入 localStorage / sessionStorage**。
-``storage_state`` 的 ``origins``（localStorage token）**不在本期范围**：给 HTTP 引擎
-注入显式 token 是独立的语义变更，触发条件是"出现「storage_state cookie 齐全但仍 401」
-的实测任务"。本模块只读 ``cookies``，``origins`` 会被计数并忽略（不静默误当已处理）。
+★ **本模块只读 ``cookies``**；``storage_state`` 的 ``origins``（localStorage token）
+目前只**计数并忽略**（不静默误当已处理）。给 HTTP 引擎注入显式 token 是独立语义变更，
+即《优化方案》§11.8.2 的 **U6**——**按文档口径"视实测启动"**（触发条件＝实况出现
+「cookie 齐全但仍 401」的真实任务，归实机验收核）；届时在此模块扩展，不在本期范围。
+（本条 2026-09-29 按 §11.8 的最新口径改写：原文写"§11.5 已裁定不做"，已被后续拍板取代。）
 
 ★ 凭据边界：cookie **值**必须离开 storage_state 进入 jar（这是桥的本职），但
 **不进日志、不进异常文本、不进返回值** —— :class:`BridgeResult` 只含计数与域名。
