@@ -19,16 +19,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 
 pytest.importorskip("PySide6")
-
-from PySide6.QtWidgets import QApplication
-
 from omnicrawler.gui.shortcuts import GlobalShortcutManager
-
-
-@pytest.fixture(scope="module")
-def app() -> QApplication:
-    """QApplication（离屏）——没有它构造 QMainWindow 会让解释器直接崩（实测 exit 127）。"""
-    return QApplication.instance() or QApplication([])
 
 
 class _FakeMainWindow:
@@ -64,22 +55,24 @@ def test_delegate_must_not_keep_main_window_alive() -> None:
 
 
 @pytest.mark.xfail(strict=True, reason="同上：GlobalShortcutManager 仍强引用主窗口（未闭环债）")
-def test_shortcut_manager_stores_only_a_weakref(app: QApplication) -> None:
+def test_shortcut_manager_stores_only_a_weakref() -> None:
     """快捷键管理器只准存 weakref。
 
-    ★ 这里用**结构性断言**而不是"删掉窗口看它死没死"：管理器是窗口的 QObject 子对象，
-    Qt 的父子链本身就会钉住窗口（那是正常的 Qt 所有权，不是泄漏）。真正要防的是
-    Python 侧的"窗口 → 管理器 → 窗口"强引用环。
+    ★ 两处刻意的选择：
+    - 用**结构性断言**而不是"删掉窗口看它死没死"：管理器是窗口的 QObject 子对象，
+      Qt 的父子链本身就会钉住窗口（正常 Qt 所有权，不是泄漏）。要防的是 Python 侧
+      "窗口 → 管理器 → 窗口"的强引用环；
+    - 替身用**纯 QObject**而不是 QMainWindow：无事件循环下创建并 deleteLater 一个
+      widget 会在解释器退出时让 Qt 段错误（CI macos 实测 exit 139）。本用例只关心
+      "存的是不是 weakref"，不需要 widget。
     """
-    from PySide6.QtWidgets import QMainWindow
+    from PySide6.QtCore import QObject
 
-    window = QMainWindow()
-    manager = GlobalShortcutManager(window)
+    fake_window = QObject()
+    manager = GlobalShortcutManager(fake_window)  # type: ignore[arg-type]
 
     stored = manager.__dict__["_main_window"]
     assert isinstance(stored, weakref.ref), (
         "应只存 weakref；存强引用会与窗口构成环 ⇒ 回收不掉"
     )
-    assert stored() is window, "窗口存活时仍应正确解析"
-    manager.deleteLater()
-    window.deleteLater()
+    assert stored() is fake_window, "窗口存活时仍应正确解析"
