@@ -307,6 +307,29 @@ tar -cJf "$RELEASE_ARCHIVE" -C "$BUILD_ROOT/release" --exclude='OmniCrawler/logs
   --portable-tar "$RELEASE_ARCHIVE" --portable-platform linux --portable-deep \
   || { echo "Linux portable tar.xz 深校验失败" >&2; exit 1; }
 
+# ---- 生成无签名更新清单（本平台本版本一份）-------------------------------------
+# ★ 就在**打包这里**生成，而不是回到聚合 job 再把归档下载+解包一遍算哈希：
+#   归档刚写完、就在本机磁盘上，逐文件 sha256 直接流式读出来即可（tar.xz 顺序读，
+#   不落第二个解压目录，内存恒定）。
+# ★ 从**归档本体**算而不是从 $RELEASE_ROOT 算：客户端下载的是归档，清单必须与归档里的
+#   字节逐字节一致；从暂存目录算就多出一条"打包时排除了什么"（这里是 exclude logs/）
+#   的隐含约定 —— 两处不同步时增量校验会**很晚**才失败（用户侧）。
+# ★ CI 不持有任何密钥（红线）：这里只产**无签名**清单（哈希是数据，随便算）；
+#   签名由维护者本机一条命令完成（tools/sign_update_manifest.py）。
+EDITION_LC="$(echo "$EDITION" | tr '[:upper:]' '[:lower:]')"
+# 摘要走**文件**而不是 argv：Windows 侧 PS 5.1 传非 ASCII 参数会按控制台代码页转码
+# （中文变 ??）。三平台统一走文件，就没有"某个平台摘要变问号"的差异。
+UPDATE_NOTES_FILE="$BUILD_ROOT/update-notes.txt"
+printf '%s' "见本 Release 说明；本版要点亦见 CHANGELOG.md" > "$UPDATE_NOTES_FILE"
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/build_update_manifest.py" \
+  --payload-archive "$RELEASE_ARCHIVE" \
+  --version "$APP_VERSION" --platform linux --edition "$EDITION_LC" \
+  --notes-file "$UPDATE_NOTES_FILE" \
+  --asset "linux-$EDITION_LC=$RELEASE_ARCHIVE" \
+  --emit-unsigned "$RELEASE_OUTPUT/update-linux-$EDITION_LC.unsigned.json" \
+  || { echo "Linux 更新清单生成失败" >&2; exit 1; }
+
 echo "Build staging: $RELEASE_ROOT"
 echo "Portable archive: $RELEASE_ARCHIVE"
+echo "Update manifest (unsigned): $RELEASE_OUTPUT/update-linux-$EDITION_LC.unsigned.json"
 echo "CLI: $RELEASE_ROOT/omnicrawler --help"

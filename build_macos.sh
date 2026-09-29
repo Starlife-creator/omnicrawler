@@ -305,5 +305,29 @@ else
     || { echo "macOS portable tar.gz 深校验失败" >&2; exit 1; }
 fi
 
+# ---- 生成无签名更新清单（本平台本版本一份）-------------------------------------
+# ★ macOS 主产物是 .dmg（磁盘镜像，纯 Python 读不了内部）⇒ 这一版出**只声明 assets** 的
+#   清单，该平台走**全量更新**。与其让 macOS 完全没有清单（客户端直接报错），不如给一份
+#   能用的：全量路径本来就是老版本用户唯一可走的路。
+# ★ 与 Linux/Windows 一致：CI 只产无签名清单（不持密钥），签名在维护者本机。
+EDITION_LC="$(echo "$EDITION" | tr '[:upper:]' '[:lower:]')"
+# 摘要走文件（与 Linux/Windows 一致）：避免任何 argv 编码转码路径。
+UPDATE_NOTES_FILE="$BUILD_ROOT/update-notes.txt"
+printf '%s' "见本 Release 说明；本版要点亦见 CHANGELOG.md" > "$UPDATE_NOTES_FILE"
+MAC_ARCHIVE="${TAR_ARCHIVE:-}"
+if [[ -f "$DMG_ARCHIVE" ]]; then
+  MAC_ARCHIVE="$DMG_ARCHIVE"
+fi
+[[ -n "$MAC_ARCHIVE" ]] || { echo "既没有 dmg 也没有 tar.gz 产物" >&2; exit 1; }
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/build_update_manifest.py" \
+  --no-payload \
+  --version "$APP_VERSION" --platform macos --edition "$EDITION_LC" \
+  --notes-file "$UPDATE_NOTES_FILE" \
+  --asset "macos-$EDITION_LC=$MAC_ARCHIVE" \
+  --emit-unsigned "$RELEASE_OUTPUT/update-macos-$EDITION_LC.unsigned.json" \
+  || { echo "macOS 更新清单生成失败" >&2; exit 1; }
+
 echo "Build staging: $RELEASE_ROOT"
+echo "Portable archive: $MAC_ARCHIVE"
+echo "Update manifest (unsigned): $RELEASE_OUTPUT/update-macos-$EDITION_LC.unsigned.json"
 echo "CLI: $RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli --help"

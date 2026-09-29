@@ -791,9 +791,18 @@ def test_to_versions_refused_on_non_windows(tmp_path: Path) -> None:
 
 
 def _write_platform_feed(
-    feed_dir: Path, private: ed25519.Ed25519PrivateKey, *, version: str, platform: str
+    feed_dir: Path,
+    private: ed25519.Ed25519PrivateKey,
+    *,
+    version: str,
+    platform: str,
+    edition: str = "",
 ) -> Path:
-    """写一份**声明了平台**的清单，文件名按平台（``update-<platform>.json``）。"""
+    """写一份**声明了平台**的清单，文件名按平台（可选再加版本）。
+
+    ``edition`` 非空 ⇒ 文件名 ``update-<platform>-<edition>.json``（Standard/Full 载荷不同，
+    逐文件清单也不同）；为空 ⇒ ``update-<platform>.json``（粗粒度兼容路径）。
+    """
     feed_dir.mkdir(parents=True, exist_ok=True)
     document = {
         "version": version,
@@ -810,7 +819,7 @@ def _write_platform_feed(
     }
     (feed_dir / "pkg.tar.xz").write_bytes(b"x")
     signature = base64.b64encode(private.sign(uf.canonical_feed_bytes(document))).decode()
-    path = feed_dir / uf.feed_filename(platform)
+    path = feed_dir / uf.feed_filename(platform, edition)
     path.write_text(
         json.dumps({**document, "signature": signature}, ensure_ascii=False), encoding="utf-8"
     )
@@ -832,7 +841,110 @@ def test_check_uses_platform_specific_feed_filename(tmp_path: Path) -> None:
 
     assert code == cmd_self_update.EXIT_UPDATE_AVAILABLE, payload
     assert payload["latest_version"] == "99.0.0"
-    assert "update-linux.json" in str(payload.get("feed_base", "")) or payload["status"] != "failed"
+    assert payload["feed_document"] == "update-linux.json"
+
+
+def test_feed_filename_includes_edition_when_given() -> None:
+    """★ 文件名契约：带版本 ⇒ ``update-<platform>-<edition>.json``（大小写归一）。"""
+    assert uf.feed_filename("Linux", "Standard") == "update-linux-standard.json"
+    assert uf.feed_filename("windows", "FULL") == "update-windows-full.json"
+    assert uf.feed_filename("macos") == "update-macos.json"
+
+
+def test_check_prefers_edition_specific_feed_over_platform_one(tmp_path: Path) -> None:
+    """★ 反回退断言：本版清单与平台清单**同时存在**时，必须先取本版那份。
+
+    否则 Standard 用户会拿到 Full 的逐文件清单，把 OCR/runtime 的差异文件按错哈希去比。
+    """
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    # 版本清单报 99.0.0，平台粗粒度清单报 88.0.0 ⇒ 命中哪份一看版本号就知道
+    _write_platform_feed(feed_dir, private, version="99.0.0", platform="linux", edition="standard")
+    _write_platform_feed(feed_dir, private, version="88.0.0", platform="linux")
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.check(
+        config_path=str(config), platform="linux", edition="Standard", payload_root=app
+    )
+
+    assert code == cmd_self_update.EXIT_UPDATE_AVAILABLE, payload
+    assert payload["feed_document"] == "update-linux-standard.json"
+    assert payload["latest_version"] == "99.0.0", "不得回退到平台粗粒度清单"
+
+
+def test_check_falls_back_to_platform_feed_when_edition_missing(tmp_path: Path) -> None:
+    """兼容路径：更新源只发 ``update-<platform>.json`` ⇒ 仍要能用（逐级回退不是装饰）。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_platform_feed(feed_dir, private, version="99.0.0", platform="windows")
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.check(
+        config_path=str(config), platform="windows", edition="Standard", payload_root=app
+    )
+
+    assert code == cmd_self_update.EXIT_UPDATE_AVAILABLE, payload
+    assert payload["feed_document"] == "update-windows.json"
+    assert payload["latest_version"] == "99.0.0"
+
+
+def test_check_falls_back_to_generic_feed_when_platform_missing(tmp_path: Path) -> None:
+    """最粗一层：只有 ``update.json``（声明平台为本机）⇒ 也要能取到。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    document = {
+        "version": "99.0.0",
+        "platform": "linux",
+        "assets": {},
+        "full_fallback": {
+            "version": "99.0.0",
+            "base": feed_dir.as_posix(),
+            "name": "pkg.tar.xz",
+            "sha256": "0" * 64,
+            "size": 1,
+        },
+    }
+    feed_dir.mkdir(parents=True, exist_ok=True)
+    (feed_dir / "pkg.tar.xz").write_bytes(b"x")
+    signature = base64.b64encode(private.sign(uf.canonical_feed_bytes(document))).decode()
+    (feed_dir / uf.FEED_FILENAME).write_text(
+        json.dumps({**document, "signature": signature}, ensure_ascii=False), encoding="utf-8"
+    )
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.check(
+        config_path=str(config), platform="linux", edition="Standard", payload_root=app
+    )
+
+    assert code == cmd_self_update.EXIT_UPDATE_AVAILABLE, payload
+    assert payload["feed_document"] == uf.FEED_FILENAME
+
+
+def test_apply_reports_which_feed_document_was_used(tmp_path: Path) -> None:
+    """``apply --dry-run`` 也要报出命中清单名 —— 出问题时第一句话就能答「用的哪份」。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_platform_feed(feed_dir, private, version="99.0.0", platform="linux", edition="standard")
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.apply(
+        config_path=str(config),
+        platform="linux",
+        edition="Standard",
+        dry_run=True,
+        app_root=app,
+    )
+
+    assert code == cmd_self_update.EXIT_OK, payload
+    assert payload["feed_document"] == "update-linux-standard.json"
 
 
 def test_check_refuses_manifest_from_another_platform(tmp_path: Path) -> None:

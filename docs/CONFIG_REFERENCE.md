@@ -285,41 +285,43 @@ plugins:
 
 ```yaml
 self_update:
-  feed_url: ""                 # 更新源基址：远程目录（https://…）或本地目录，内含 update.json
-                               # 与各平台资产；留空 = 禁用
+  feed_url: ""                 # 更新源基址（https://… 或本地目录）；留空 = 用默认更新源（见下）
   trusted_public_key: ""       # 留空 = 用随包内置信任根 configs/update_trust.pub.pem
                                # （也可写 PEM 文本 / PEM 文件路径 / base64 / "hex:"）
-  feed_url: ""                 # 留空 = 用默认更新源（见下）
-  edition: "Standard"          # 资产键后缀，与发布资产命名对齐：Standard | Full
+  edition: "Standard"          # 本机版本，用于选 (平台, 版本) 清单与资产键：Standard | Full
 ```
 
 - **feed_url 默认值**＝
   `https://github.com/Starlife-creator/omnicrawler/releases/latest/download`
-  （GitHub「最新 release 资产」固定链接：每版把 `update.json` 当普通 Release 资产上传，
-  客户端取 `<feed_url>/update.json` 永远拿到最新清单——免版本号、免 API、零额外托管）。
+  （GitHub「最新 release 资产」固定链接：每版把更新清单当普通 Release 资产上传，
+  客户端永远拿到最新那一份——免版本号、免 API、零额外托管）。
   显式配置可指向镜像/本地目录；**清单带 sha256 ⇒ 镜像不必可信**（只承担带宽）。
 - **full_fallback（清单顶层可选字段）**：`{"version", "base", "name", "sha256", "size"}`——
-  指向「最近一次带全量包的发布」。小版本发布**不重建全量包**时（§A.13），
+  指向「最近一次带全量包的发布」。小版本发布**不重建全量包**时，
   本机版本不在增量基线内的用户从这里取全量，否则会被永久卡住。
 
 - **信任根**：未显式配置时读内置 `configs/update_trust.pub.pem`（ed25519，指纹 `bf981f1d…`）。
-  它**刻意与市场信任根 `d92fa9fb…` 是两把钥匙**：市场根授权"沙箱内的插件"，
-  更新根授权"替换应用本体"，两者权威不同级、不可互替。内置文件缺失 ⇒ 回退空串 ⇒ 判"禁用"
+  它**刻意与市场信任根 `d92fa9fb…` 是两把钥匙**：市场根授权“沙箱内的插件”，
+  更新根授权“替换应用本体”，两者权威不同级、不可互替。内置文件缺失 ⇒ 回退空串 ⇒ 判“禁用”
   （fail-closed，**不存在跳过验签的降级路径**）。
-- **更新源文档**：`<feed_url>/update.json`，字段 `version` / `published_at` / `notes` /
-  `assets.<platform>-<edition>` / 可选的 `payload` / `signature`。
-  - `assets.{…}`：整包资源 `{name, sha256, size}`（`name` 是**相对基址**的文件名）；全量兜底。
+- **更新源文档**：按**精度逐级回退**取——`<feed_url>/update-<平台>-<版本>.json` →
+  `<feed_url>/update-<平台>.json` → `<feed_url>/update.json`，命中哪个报哪个
+  （`feed_document` 字段）。为什么分文件名而不是在文档里分键：`payload.files` 是**扁平**的
+  逐文件哈希，而三平台载荷（`.exe/.dll` vs ELF/`.so`）与 Standard/Full 的 `runtime/`、OCR
+  载荷都不同 ⇒ 一份清单只可能描述一个 (平台, 版本)。后两层是兼容路径。
+  字段：`version` / `published_at` / `notes` / `platform`（可选）/ `edition`（可选）/
+  `assets` / 可选的 `payload` / `full_fallback` / `signature`。
+  - `platform` / `edition`：清单**自述**的平台与版本。客户端会**交叉校验**：声明了就必须与
+    本机一致，否则**拒绝使用**（否则 Windows 客户端可能拿 Linux 的清单把 ELF/`.so` 覆盖进来，
+    或把 Full 的清单套在 Standard 安装上）。留空＝不校验（兼容只发一份粗粒度清单的老更新源）。
+  - `assets.{<平台>-<版本>}`：整包资源 `{name, sha256, size}`（`name` 是**相对基址**的文件名）；全量用。
   - `payload.base_url`：载荷基址（留空＝feed 基址）。
   - `payload.files`：**逐文件清单** `{"<相对路径>": {sha256, size}}` ——
-    客户端据此只下载与本机哈希不同的文件（"自动跳过一样的"全部依据）。
+    客户端据此只下载与本机哈希不同的文件（“自动跳过一样的”全部依据）。
   - `payload.delta`：`{"<旧版本号>": {name, sha256, size}}` 变更包（相对该旧版变化的文件）。
   - `payload.deleted`：本版**已移除**的相对路径（逐文件差异必须显式声明删除，否则旧文件会残留）。
-
-- **更新源文档**：`<feed_url>/update.json`，字段为 `version` / `published_at` / `notes` /
-  `assets.{<platform>-<edition>: {name, sha256, size}}` / `signature`。
-  `name` 是**相对基址**的文件名（与 `catalog.json` 内部路径同模型，故本地目录形态天然可用）。
-- ★ **fail-closed**：`trusted_public_key` 或 `feed_url` 任一为空 ⇒ 命令直接报"已禁用"（退出码 2），
-  **不会**降级为"不校验"。签名规范化方式与升级包的 `upgrade.json` 逐字一致 ⇒ 两者共用同一信任根。
+- ★ **fail-closed**：`trusted_public_key` 或 `feed_url` 任一为空 ⇒ 命令直接报“已禁用”（退出码 2），
+  **不会**降级为“不校验”。签名规范化方式与升级包的 `upgrade.json` 逐字一致 ⇒ 两者共用同一信任根。
 - 取回走与市场同一条**受控出站读**（认 `http.proxy`、DNS 逐地址尝试可回退 IPv4、重定向过策略与审计）。
 - 命令见 `docs/INSTALLATION.md`「升级到新版本」；退出码 `0` 已最新 / `1` 有更新 / `2` 禁用 / `3` 失败。
 

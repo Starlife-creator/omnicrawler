@@ -431,9 +431,36 @@ $existingChecksums = if (Test-Path -LiteralPath $checksumPath) {
     Set-Content -LiteralPath $checksumPath -Encoding ascii
 #>
 
+# ---- Generate the unsigned update manifest (one per platform+edition) ----------
+# Do it HERE, right after packing, instead of back in the aggregate job re-downloading
+# and re-extracting the 2 GiB archive: the ZIP is already on local disk, so per-file
+# sha256 is streamed straight out of it.
+# Hash the ARCHIVE, not the staging tree: clients download the archive, so the manifest
+# must match the archive byte for byte. Hashing the staging tree would add an implicit
+# "what did packing exclude today" contract (here: the top-level logs/ dropped by
+# create_zip.py); when the two drift apart the mismatch only surfaces on the user side.
+# CI holds no key (standing rule): this step only produces an UNSIGNED manifest.
+# The maintainer signs it locally with a single command (tools/sign_update_manifest.py).
+$editionLc = $Edition.ToLowerInvariant()
+$updateManifest = Join-Path $releaseOutput "update-windows-$editionLc.unsigned.json"
+# Notes go through a UTF-8 FILE, not an argv value: Windows PowerShell 5.1 re-encodes
+# non-ASCII arguments for native executables using the console codepage, which turns
+# Chinese text into "??". Same approach as build_linux.sh / build_macos.sh.
+$updateNotesFile = Join-Path $buildRoot 'update-notes.txt'
+[IO.File]::WriteAllText($updateNotesFile, '见本 Release 说明；本版要点亦见 CHANGELOG.md',
+    (New-Object Text.UTF8Encoding($false)))
+& $builderPython (Join-Path $projectRoot 'tools\build_update_manifest.py') `
+    --payload-archive $releaseArchive `
+    --version $appVersion --platform windows --edition $editionLc `
+    --notes-file $updateNotesFile `
+    --asset "windows-$editionLc=$releaseArchive" `
+    --emit-unsigned $updateManifest
+Assert-LastExit 'Update manifest generation failed.'
+
 Write-Host "Build staging: $releaseRoot"
 Write-Host "Portable ZIP: $releaseArchive"
 Write-Host "SHA-256: $($archiveHash.Hash)"
+Write-Host "Update manifest (unsigned): $updateManifest"
 Write-Host 'GUI: OmniCrawler.exe'
 Write-Host 'CLI: omnicrawler-cli.exe --help'
 # D3：构建成功后清理临时目录。仅当 $buildRoot 为默认 %TEMP% 路径时清理
