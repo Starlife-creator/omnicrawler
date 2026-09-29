@@ -129,6 +129,12 @@ class PluginMarketView(
         if not isinstance(plugins_cfg, dict):
             plugins_cfg = {}
         self._catalog_url: str = str(plugins_cfg.get("catalog_url", ""))
+        # #77 Phase 1：多索引清单（未配置 catalogs 时由 catalog_url 派生唯一官方源）
+        self._catalog_sources: list[dict[str, Any]] = (
+            list(app_config.plugin_catalogs)
+            if app_config is not None and hasattr(app_config, "plugin_catalogs")
+            else []
+        )
         self._bundled_catalog_dir: str = str(plugins_cfg.get("bundled_catalog_dir", ""))
         trust_cfg = plugins_cfg.get("trust_public_key", "")
         if trust_cfg:
