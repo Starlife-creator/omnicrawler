@@ -4,6 +4,8 @@ import json
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from tools.check_release_integrity import (
     check_portable_zip,
     check_project,
@@ -136,6 +138,11 @@ def _write_portable(
         "RELEASE-INFO.json": b"{}",
         "docs/README.md": b"# docs",
         "browsers/chromium-1234/chrome-win64/chrome.exe": b"MZ-chromium",
+        # 2026-09-29 审计补：便携包必须携带的数据件
+        # （更新信任根＝自更新 fail-closed 的根；market/＝默认 bundled_catalog_dir 的离线快照）
+        "configs/update_trust.pub.pem": b"-----BEGIN PUBLIC KEY-----\n",
+        "configs/plugin_trust.pub.pem": b"-----BEGIN PUBLIC KEY-----\n",
+        "market/catalog.json": b'{"plugins": []}',
     }
     if edition == "Full":
         model = "PP-OCRv5_server_rec"
@@ -324,3 +331,40 @@ def test_check_wheel_only_compares_when_lock_is_provided(tmp_path) -> None:
     wheel = _wheel(tmp_path, ("requests>=2.28,<3",))
     assert check_wheel(wheel) == []
 
+
+
+@pytest.mark.parametrize(
+    "missing",
+    ["configs/update_trust.pub.pem", "configs/plugin_trust.pub.pem", "market/catalog.json"],
+)
+def test_portable_zip_requires_trust_root_and_offline_snapshot(
+    tmp_path: Path, missing: str
+) -> None:
+    """★ 反向断言：便携包缺**更新信任根**或**离线市场快照** ⇒ 深检必须报错。
+
+    ① 缺更新信任根 ⇒ 自更新 fail-closed 直接禁用（用户侧"永远检查不到更新"）；
+    ② 缺 market/ ⇒ 默认 `plugins.bundled_catalog_dir: "market"` 落空 ⇒ 无网环境市场面板无兜底。
+    两者都是"包看起来正常、能力却缺席"的类型 —— 所以要在发布门禁里钉住。
+    """
+    archive = tmp_path / "portable.zip"
+    _write_portable(archive, "Standard")
+    # 从已有 archive 里剔掉目标条目，模拟"构建漏拷"
+    kept: dict[str, bytes] = {}
+    removed = False
+    with zipfile.ZipFile(archive) as source:
+        for name in source.namelist():
+            # 归档条目带顶层目录前缀（真实构建是 OmniCrawler/），按**后缀**剔除
+            if name == missing or name.endswith("/" + missing):
+                removed = True
+                continue
+            kept[name] = source.read(name)
+    assert removed, f"夹具里没找到要剔除的条目：{missing}"
+    archive.unlink()
+    with zipfile.ZipFile(archive, "w") as target:
+        for name, body in kept.items():
+            target.writestr(name, body)
+
+    errors = check_portable_zip(archive, verify_payloads=True)
+    assert any("required data file" in error and missing in error for error in errors), (
+        f"缺 {missing} 时深检应当报错，实际：{errors}"
+    )

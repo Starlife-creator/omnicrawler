@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+
+### 修复
+
+- fix(release): **发布前审计补两处"包看起来正常、能力却缺席"的缺口** —— ① **便携包此前不含 `market/` 离线快照**（三个构建脚本只拷 `configs/docs/examples`，而代码默认 `plugins.bundled_catalog_dir: "market"`）⇒ 无网环境下市场面板没有兜底、与《优化方案》§十承诺不符 ⇒ 三个构建脚本各加一个目录，并在 `check_release_integrity.py` 的便携深检里**钉死必需数据件**（`configs/update_trust.pub.pem`、`configs/plugin_trust.pub.pem`、`market/catalog.json`），配 3 条反向断言（缺任一 ⇒ 深检必红）；② **`self-update apply --to-versions` 在非 Windows 上明确拒绝**：该布局的消费者只有 `OmniCrawler-Launcher.bat`（读 `versions/current.txt`），Linux/macOS 静默产出"装了但没人会启动它"的布局比拒绝更糟 ⇒ 现在报错并建议 `--full`（Linux 侧包一层解析脚本属后续项）。另：更新源文档示例里的版本号改为版本无关，避免每次发布被 churn 并触发硬编码告警。
 ## 0.15.0 - 2026-09-29
 
 ### 变更

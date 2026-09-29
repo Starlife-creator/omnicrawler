@@ -219,7 +219,7 @@ if [[ "$EDITION" == "Full" ]]; then
 fi
 cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/packaging/THIRD_PARTY_NOTICES.md" "$RELEASE_ROOT/"
 echo "OmniCrawler $EDITION portable edition" > "$RELEASE_ROOT/EDITION.txt"
-for directory in configs docs examples; do
+for directory in configs docs examples market; do
   cp -r "$PROJECT_ROOT/$directory" "$RELEASE_ROOT/"
 done
 touch "$RELEASE_ROOT/PORTABLE.flag"
