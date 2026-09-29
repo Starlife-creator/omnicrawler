@@ -16,7 +16,9 @@
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Callable
+from typing import cast
 
 from PySide6.QtCore import QObject, Qt
 from PySide6.QtGui import QAction, QKeySequence
@@ -36,6 +38,21 @@ class GlobalShortcutManager(QObject):
     def __init__(self, main_window: QMainWindow) -> None:
         super().__init__(main_window)
         self._main_window = main_window
+
+    @property
+    def _main_window(self) -> QMainWindow:
+        """按需还原主窗口（只持 weakref —— 回收契约：避免"窗口→管理器→窗口"成环）。"""
+        window = self.__dict__["_main_window"]()
+        if window is None:
+            raise RuntimeError(_("主窗口已销毁，快捷键管理器不再可用"))
+        return cast("QMainWindow", window)
+
+    @_main_window.setter
+    def _main_window(self, value: QMainWindow) -> None:
+        try:
+            self.__dict__["_main_window"] = weakref.ref(value)
+        except TypeError:
+            self.__dict__["_main_window"] = lambda: value
         self._actions: dict[str, QAction] = {}
         self._callbacks: dict[str, Callable[[], None]] = {}
         self._settings = AppSettings.instance()

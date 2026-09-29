@@ -29,15 +29,6 @@ class _FakeMainWindow:
         pass
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "已知未闭环（2026-09-29 度量完成、修复暂缓）：委托仍强引用主窗口。"
-        "实测改 weakref 会打破两条合法用法 —— ① 测试桩 SimpleNamespace 不可弱引用；"
-        "② 窗口先销毁、委托仍被使用（关停路径）。修复须连带处理这两处后再开；"
-        "此前同类尝试即因这些问题被撤销。本用例是修复后的验收判据。"
-    ),
-)
 def test_delegate_must_not_keep_main_window_alive() -> None:
     from omnicrawler.gui.delegates._base import _BaseDelegate
 
@@ -54,7 +45,6 @@ def test_delegate_must_not_keep_main_window_alive() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="同上：GlobalShortcutManager 仍强引用主窗口（未闭环债）")
 def test_shortcut_manager_stores_only_a_weakref() -> None:
     """快捷键管理器只准存 weakref。
 

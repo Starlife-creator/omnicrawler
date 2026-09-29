@@ -10,7 +10,10 @@ FINAL 长期债 #1 Phase B：显式耦合契约——委托对主窗口的一切
 """
 from __future__ import annotations
 
+import weakref
 from typing import TYPE_CHECKING, cast
+
+from ..i18n import _
 
 if TYPE_CHECKING:
     from ..main import MainWindow
@@ -24,8 +27,22 @@ class _BaseDelegate:
 
     @property
     def _mw(self) -> MainWindow:
-        return cast("MainWindow", self.__dict__["_mw"])
+        """按需还原主窗口。
+
+        ★ 只持 weakref（回收契约，见 tests/unit/gui/test_widget_reaping_contract.py）：
+        主窗口持有全部委托，委托若再强引用主窗口就成环 ⇒ Qt 控件回收不掉，
+        离屏用例逐条累积把整套拖慢数倍。
+        """
+        window = self.__dict__["_mw"]()
+        if window is None:
+            raise RuntimeError(_("主窗口已销毁，委托不再可用"))
+        return cast("MainWindow", window)
 
     @_mw.setter
     def _mw(self, value: MainWindow) -> None:
-        self.__dict__["_mw"] = value
+        try:
+            self.__dict__["_mw"] = weakref.ref(value)
+        except TypeError:
+            # 不可弱引用的对象（测试桩等）⇒ 退回强引用：显式声明这条兼容边界的代价，
+            # 但不让"桩对象"把调用方拦在门外（真实 MainWindow 是 QObject，可弱引用）。
+            self.__dict__["_mw"] = lambda: value

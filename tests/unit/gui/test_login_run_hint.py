@@ -128,7 +128,8 @@ def test_unrelated_log_lines_produce_no_hint(toasts: _ToastRecorder) -> None:
 
 
 def test_hint_gate_is_created_lazily(toasts: _ToastRecorder) -> None:
-    controller = RunController(_HostStub())  # type: ignore[arg-type]
+    host = _HostStub()  # 保活：控制器只持 weakref（回收契约），宿主必须活过它
+    controller = RunController(host)  # type: ignore[arg-type]
     assert controller._login_hint_gate is None
 
     controller.on_log_line("HTTP 401", "error")

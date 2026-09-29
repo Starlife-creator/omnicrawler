@@ -63,11 +63,17 @@ class _StubToast:
         self.messages.append(message)
 
 
+#: 桩窗口必须**活过委托**：委托只持 weakref（回收契约），若桩只被委托引用就会立刻死掉
+#: 并让 `_mw` 抛"主窗口已销毁"。生产里主窗口本来就活过它自己的全部委托。
+_KEEPALIVE: list[Any] = []
+
+
 def _make_checker() -> EnvironmentChecker:
     """最小 stub 当 `_mw`：`show_welcome_dialog` 只用到 `_nav` 与 `_task_canvas`。"""
     parent: Any = QWidget()
     parent._nav = _StubNav()
     parent._task_canvas = _StubCanvas()
+    _KEEPALIVE.append(parent)
     return EnvironmentChecker(parent)
 
 
