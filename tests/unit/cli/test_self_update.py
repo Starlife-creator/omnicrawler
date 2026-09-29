@@ -367,6 +367,7 @@ def _write_full_feed(
     *,
     version: str,
     asset_path: Path,
+    platform_key: str = "linux-standard",
 ) -> None:
     """只带全量包的清单（大版本形态：没有 payload ⇒ 增量不可用 ⇒ 必须走全量）。"""
     feed_dir.mkdir(parents=True, exist_ok=True)
@@ -374,7 +375,7 @@ def _write_full_feed(
     document = {
         "version": version,
         "assets": {
-            "linux-standard": {
+            platform_key: {
                 "name": asset_path.name,
                 "sha256": hashlib.sha256(body).hexdigest(),
                 "size": len(body),
@@ -426,11 +427,13 @@ def test_apply_to_versions_keeps_in_place_copy_as_fallback(tmp_path: Path) -> No
         feed_dir / "OmniCrawler-99.0.0-Linux-Portable-Standard.tar.xz",
         files={"OmniCrawler.exe": b"NEW-LAUNCHER", "app.exe": b"NEW"},
     )
-    _write_full_feed(feed_dir, private, version="99.0.0", asset_path=pkg)
+    _write_full_feed(
+        feed_dir, private, version="99.0.0", asset_path=pkg, platform_key="windows-standard"
+    )
     config = _write_config(tmp_path, feed=feed_dir, public=public)
 
     payload, code = cmd_self_update.apply(
-        config_path=str(config), app_root=app, platform="linux", full=True, to_versions=True
+        config_path=str(config), app_root=app, platform="windows", full=True, to_versions=True
     )
     assert code == cmd_self_update.EXIT_OK, payload
     assert payload["plan"]["mode"] == "versions-install"
@@ -756,3 +759,29 @@ def test_cleanup_command_reports_plan_then_deletes(tmp_path: Path) -> None:
     assert done["version_dirs_removed"] == ["0.4.0"]
     assert not (app / "versions" / "0.4.0").exists()
     assert done["freed_bytes"] == len(b"LEGACY")
+
+
+def test_to_versions_refused_on_non_windows(tmp_path: Path) -> None:
+    """★ `--to-versions` 的消费者只有 Windows 启动器 ⇒ Linux/macOS 上明确拒绝。
+
+    静默产出"装了但没人会启动它"的布局，比拒绝更糟（用户以为回退可用，其实没有入口）。
+    """
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "app.exe").write_bytes(b"OLD")
+    pkg = _write_portable_zip(
+        feed_dir / "OmniCrawler-99.0.0-Linux-Portable-Standard.tar.xz", files={"app.exe": b"NEW"}
+    )
+    _write_full_feed(feed_dir, private, version="99.0.0", asset_path=pkg)
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.apply(
+        config_path=str(config), app_root=app, platform="linux", full=True, to_versions=True
+    )
+
+    assert code == cmd_self_update.EXIT_FAILED, payload
+    assert "--to-versions" in payload["detail"] and "Windows" in payload["detail"]
+    assert not (app / "versions").exists(), "被拒绝时不得留下任何布局痕迹"
+    assert (app / "app.exe").read_bytes() == b"OLD"

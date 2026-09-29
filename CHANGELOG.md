@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### 修复
+
+- fix(release): **发布前审计补两处"包看起来正常、能力却缺席"的缺口** —— ① **便携包此前不含 `market/` 离线快照**（三个构建脚本只拷 `configs/docs/examples`，而代码默认 `plugins.bundled_catalog_dir: "market"`）⇒ 无网环境下市场面板没有兜底、与《优化方案》§十承诺不符 ⇒ 三个构建脚本各加一个目录，并在 `check_release_integrity.py` 的便携深检里**钉死必需数据件**（`configs/update_trust.pub.pem`、`configs/plugin_trust.pub.pem`、`market/catalog.json`），配 3 条反向断言（缺任一 ⇒ 深检必红）；② **`self-update apply --to-versions` 在非 Windows 上明确拒绝**：该布局的消费者只有 `OmniCrawler-Launcher.bat`（读 `versions/current.txt`），Linux/macOS 静默产出"装了但没人会启动它"的布局比拒绝更糟 ⇒ 现在报错并建议 `--full`（Linux 侧包一层解析脚本属后续项）。另：更新源文档示例里的版本号改为版本无关，避免每次发布被 churn 并触发硬编码告警。
+## 0.15.0 - 2026-09-29
+
+### 变更
+
+应用自更新线（检查/下载/落地：增量优先＋全量兜底、逐文件清单、默认更新源、清理旧版本、GUI 检查更新）；插件市场多索引 Phase 1（plugins.catalogs ＋ 逐源验签聚合 ＋ CLI ＋ GUI 源管理与信任徽标）；依赖自动检测与安装闭环（含官方源失败后的镜像加速提示）；契约 network.fetch 的 auth 注入补齐；语料级 PII 检测与脱敏；EU AI Act 训练内容公开摘要；基因增强结果接入运行指标；bench 三臂对照量化自适应引擎；GUI 修复（市场橱窗空态、依赖面板退出 abort、i18n 包裹）；隐私收尾（透明日志脱敏 ＋ 签署工具防复发）
+
+
 ### 新增
 
 - feat(update): **批次 A——默认更新源 + full_fallback 兜底 + 忽略冗余配置 + 打包守卫 + FAULTHANDLER** —— ① `feed_url` 默认值＝GitHub 官方发布页的「最新 release 资产」固定链接（`releases/latest/download`，用户拍板）：每版把 `update.json` 当普通 Release 资产上传即可，**免版本号、免 API、零额外托管**；显式配置仍可指向镜像/本地目录（清单带 sha256 ⇒ 镜像不必可信）。② 清单新增顶层 `full_fallback`（`version/base/name/sha256/size`）：指向「最近一次带全量包的发布」——小版本不重建全量包时，**本机版本不在增量基线内的用户从这里取全量，不会被永久卡住**；`assets` 相应放宽为"与 full_fallback 至少其一"。③ `apply` 在 `assets` 缺失时自动用 `full_fallback`（取数基址用它声明的 `base`），`check` 的 `options` 恒给出增量/全量体积与 `via_fallback` 标注。④ `tools/sign_plugin.py generate-keys` 增加**防误毁守卫**：目标已存在即拒绝（除非 `--overwrite`），**指向市场信任根 `configs/plugin_trust.pub.pem` 则无条件拒绝**（换市场钥匙必须走 ressign_market 流程）——此前默认参数一条命令即可覆盖市场信任根。⑤ `gui-and-browser` CI 作业加 `PYTHONFAULTHANDLER: 1`（崩溃时自动落 faulthandler 段回）。

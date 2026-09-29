@@ -519,6 +519,23 @@ def apply(
         if not delta_expected:
             delta = None  # 本机已与目标一致：一个成员都不用下
 
+    # ★ `--to-versions` 的**消费者只有 Windows 启动器**（`OmniCrawler-Launcher.bat` 读
+    #   `versions\current.txt`）；Linux/macOS 上没有任何东西会读那个指针 ⇒ 静默产出
+    #   "装了但没人启动它"的布局比拒绝更糟。这里明确拒绝并指路（Linux 侧包一层解析脚本
+    #   属后续项，需与 install-user.sh / 桌面入口一起改）。
+    if to_versions:
+        target_platform = platform or detect_platform()
+        if target_platform != "windows":
+            return {
+                "status": "failed",
+                "detail": (
+                    f"--to-versions 目前仅 Windows 可用（当前平台 {target_platform}）："
+                    "该布局靠启动器读取 versions/current.txt，而 Linux/macOS 暂无消费者。"
+                    "请改用 --full（全量·就地替换）。"
+                ),
+                "current_version": __version__,
+            }, EXIT_FAILED
+
     if delta is not None:
         mode = "incremental"
     elif local_package is not None:

@@ -346,7 +346,7 @@ foreach ($file in @('packaging\PORTABLE_README.txt', 'packaging\THIRD_PARTY_NOTI
 }
 "OmniCrawler $Edition portable edition" |
     ForEach-Object { [IO.File]::WriteAllText((Join-Path $releaseRoot 'EDITION.txt'), $_, (New-Object Text.UTF8Encoding($false))) }
-foreach ($directory in @('configs', 'docs', 'examples')) {
+foreach ($directory in @('configs', 'docs', 'examples', 'market')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $directory) -Destination $releaseRoot -Recurse
 }
 

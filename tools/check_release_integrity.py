@@ -46,6 +46,15 @@ _PORTABLE_PLATFORM_ENTRYPOINTS: dict[str, tuple[str, ...]] = {
         "OmniCrawler.app/Contents/MacOS/omnicrawler-worker",
     ),
 }
+# 便携包必须携带的**非可执行**数据件（2026-09-29 审计补）：
+# ① 更新信任根——自更新 fail-closed 的根，缺它则自更新直接禁用；
+# ② 离线市场快照——代码默认 `plugins.bundled_catalog_dir: "market"`，
+#    缺它则无网环境下市场面板没有兜底（与《优化方案》§十承诺不符）。
+_PORTABLE_REQUIRED_DATA: tuple[str, ...] = (
+    "configs/update_trust.pub.pem",
+    "configs/plugin_trust.pub.pem",
+    "market/catalog.json",
+)
 # hicolor 图标尺寸（I1b）：与 tools/check_linux_delivery.py 的同一份清单口径一致。
 _HICOLOR_ICON_SIZES: tuple[int, ...] = (16, 24, 32, 48, 64, 128, 256)
 # macOS 额外要求 .app 目录存在（bundle 根）
@@ -709,6 +718,14 @@ def _check_portable_archive(
         if entry.is_symlink:
             errors.append(f"portable archive contains symlink: {raw}")
         safe_entries.append((entry, path))
+
+    # 必需数据件（2026-09-29 审计补）：用**后缀匹配**，兼容"顶层目录名不同"
+    # （win/linux 是 OmniCrawler/）与 macOS 的 .app 嵌套布局。
+    present = {_key(entry.path) for entry in entries}
+    for required in _PORTABLE_REQUIRED_DATA:
+        needle = _key(required)
+        if not any(candidate == needle or candidate.endswith("/" + needle) for candidate in present):
+            errors.append(f"portable archive missing required data file: {required}")
 
     if len(roots) != 1:
         errors.append(f"portable archive must have one root directory, found {sorted(roots)}")

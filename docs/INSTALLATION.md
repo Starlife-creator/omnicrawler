@@ -122,7 +122,7 @@ python -m omnicrawler.pdfx --help
    |---|---|---|---|
    | **增量更新** | `self-update apply -c task.yaml --yes` | **一份** | 有"相对当前版本的变更包"时（默认） |
    | **全量·就地替换** | `self-update apply -c task.yaml --full --yes` | **一份** | 大版本，或本机不在增量基线内（自动兜底） |
-   | **全量·装到 versions/** | `self-update apply -c task.yaml --full --to-versions --yes` | **两份** | 想保留当前版本以便回退（应用根那份原样不动） |
+   | **全量·装到 versions/**（**仅 Windows**） | `self-update apply -c task.yaml --full --to-versions --yes` | **两份** | 想保留当前版本以便回退（应用根那份原样不动）。★ 该布局靠 `OmniCrawler-Launcher.bat` 读 `versions/current.txt`，Linux/macOS 暂无消费者 ⇒ 非 Windows 平台会**明确拒绝**并建议改用 `--full` |
 
    ★ 装到 `versions/<新版>/` 时会写 `versions/current.txt`（启动器优先读它指向的版本），
    并把就地布局的旧入口改名 `.outdated`（防止误点旧版又触发一次更新）；应用根里那份**原样保留**，

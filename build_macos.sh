@@ -240,7 +240,7 @@ while IFS= read -r executable; do
 done < <(find "$RELEASE_ROOT/browsers" -type f -perm -111 -not -path "*.app/*" 2>/dev/null)
 cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/packaging/THIRD_PARTY_NOTICES.md" "$RELEASE_ROOT/"
 echo "OmniCrawler $EDITION portable edition" > "$RELEASE_ROOT/EDITION.txt"
-for directory in configs docs examples; do
+for directory in configs docs examples market; do
   cp -R "$PROJECT_ROOT/$directory" "$RELEASE_ROOT/"
 done
 for relative_dir in data/input data/pdfs work output logs; do
