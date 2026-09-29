@@ -453,7 +453,9 @@ def _run_self_update(args: argparse.Namespace) -> None:
         # 与 components uninstall 同一判据：argv 里没有 --yes/--apply 就一个字节都不写。
         require_explicit_apply("self-update apply")
 
-    if args.self_update_command == "ignore":
+    if args.self_update_command == "cleanup":
+        payload, code = cmd_self_update.cleanup(app_root=None, yes=bool(args.confirm))
+    elif args.self_update_command == "ignore":
         payload, code = cmd_self_update.ignore(
             config_path=args.config, clear=bool(getattr(args, "clear", False))
         )

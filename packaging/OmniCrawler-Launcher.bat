@@ -2,15 +2,26 @@
 setlocal
 cd /d "%~dp0"
 
-if not exist "%~dp0OmniCrawler.exe" (
-    echo [ERROR] 未找到 OmniCrawler.exe
+rem F88：布局 B（versions\ + current.txt 指针）优先；指针缺失/为空/指向不存在 ⇒ 回退就地布局。
+set "TARGET_EXE=%~dp0OmniCrawler.exe"
+set "CURRENT_PTR=%~dp0versions\current.txt"
+if not exist "%CURRENT_PTR%" goto resolve_done
+set /p POINTED_VERSION=<"%CURRENT_PTR%"
+if "%POINTED_VERSION%"=="" goto resolve_done
+set "POINTED_EXE=%~dp0versions\%POINTED_VERSION%\OmniCrawler.exe"
+if not exist "%POINTED_EXE%" goto resolve_done
+set "TARGET_EXE=%POINTED_EXE%"
+:resolve_done
+
+if not exist "%TARGET_EXE%" (
+    echo [ERROR] 未找到 OmniCrawler.exe（尝试：%TARGET_EXE%）
     echo 请确认已完整解压便携包，且未单独复制本启动器。
     echo 程序目录: %~dp0
     pause
     exit /b 1
 )
 
-start "" "%~dp0OmniCrawler.exe" %*
+start "" "%TARGET_EXE%" %*
 
 rem F55/F36：冷启动可能较慢（杀软首扫/解压），轮询最长 60s 再判定失败，
 rem 避免慢机器上 GUI 正在加载却被误报"启动失败"。

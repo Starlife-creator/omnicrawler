@@ -361,6 +361,60 @@ def ignore(
     }, EXIT_OK
 
 
+
+def cleanup(
+    *, app_root: Path | None = None, yes: bool = False
+) -> tuple[dict[str, Any], int]:
+    r"""``self-update cleanup``：回收磁盘——清挂账残留 + 删不再使用的旧版本目录。
+
+    **不需要更新源与信任根**（纯清理，不触网、不验签）。两步都做：
+
+    1. 挂账残留（``.updates/pending-cleanup.json``，上次更新时被占用而删不掉的文件）；
+    2. ``versions\`` 下不再被 `current.txt` 指向的旧版本目录（就地布局下即"全部"）。
+
+    ``--yes`` 才真正删除；缺省只报计划（与 apply 同一安全判据）。
+    """
+    root = Path(app_root) if app_root is not None else application_dir()
+    manager = UpgradeManager(root, trusted_public_key=None)
+
+    pending_plan = manager.pending_cleanup()
+    stale_dirs = manager.stale_version_dirs()
+    plan: dict[str, Any] = {
+        "app_root": str(root),
+        "pending_cleanup": pending_plan,
+        "stale_version_dirs": [
+            {"path": str(package.relative_to(root)), "size": size}
+            for package, size in stale_dirs
+        ],
+        "freeable_bytes": sum(size for _package, size in stale_dirs),
+        "workspace_protected": True,
+    }
+    if not yes:
+        plan["status"] = "dry-run"
+        plan["detail"] = "清理计划已生成（加 --yes 才真正删除）"
+        return plan, EXIT_OK
+
+    pending_result = manager.run_pending_cleanup()
+    versions_result = manager.remove_stale_version_dirs()
+    detail = (
+        f"已清理挂账残留 {pending_result.get('removed', 0)} 个"
+        f"；删除旧版本目录 {len(versions_result.get('removed', []))} 个"
+        f"（回收约 {versions_result.get('freed_bytes', 0)} 字节）"
+    )
+    if pending_result.get("remaining"):
+        detail += f"；仍有 {len(pending_result['remaining'])} 个被占用、留待下次"
+    return {
+        "status": "cleaned",
+        "detail": detail,
+        "pending_removed": pending_result.get("removed", 0),
+        "pending_remaining": pending_result.get("remaining", []),
+        "version_dirs_removed": versions_result.get("removed", []),
+        "version_dirs_failed": versions_result.get("failed", []),
+        "freed_bytes": versions_result.get("freed_bytes", 0),
+        "plan": plan,
+    }, EXIT_OK
+
+
 def apply(
     *,
     config_path: str,

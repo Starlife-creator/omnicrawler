@@ -725,3 +725,34 @@ def test_check_reports_full_only_via_fallback(tmp_path: Path) -> None:
     assert options["full"]["size"] == pkg.stat().st_size
     assert options["incremental"]["available"] is False   # 没有 payload ⇒ 无增量
     del feed_file
+def test_cleanup_command_reports_plan_then_deletes(tmp_path: Path) -> None:
+    """`self-update cleanup`：缺省只报计划；--yes 才真正删除（与 apply 同一安全判据）。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    (app / "_internal").mkdir(parents=True)
+    (app / "app.exe").write_bytes(b"OLD")
+    _write_payload_feed(
+        feed_dir, private, version="99.0.0", files={"app.exe": b"NEW"},
+        delta_path=_write_delta_package(feed_dir / "update.zip", files={"app.exe": b"NEW"}),
+    )
+
+    # 先装出一个 versions/0.6.4/（模拟布局 B 的历史版本），再把指针切走
+    (app / "versions" / "0.4.0").mkdir(parents=True)
+    (app / "versions" / "0.4.0" / "app.exe").write_bytes(b"LEGACY")
+    # 指针指向 0.6.4（已发布的新版）⇒ versions/0.4.0 成为"不再被指向"的残留
+    (app / "versions" / "current.txt").write_text("0.6.4\n", encoding="utf-8")
+
+    plan, code = cmd_self_update.cleanup(app_root=app, yes=False)
+    assert code == cmd_self_update.EXIT_OK and plan["status"] == "dry-run"
+    # Windows 分隔符：断言用 as_posix 口径
+    assert [Path(d["path"]).as_posix() for d in plan["stale_version_dirs"]] == [
+        "versions/0.4.0"
+    ], "无指针/指针别处 ⇒ 0.4.0 全算残留"
+    assert (app / "versions" / "0.4.0").is_dir()      # 计划不删
+
+    done, code = cmd_self_update.cleanup(app_root=app, yes=True)
+    assert code == cmd_self_update.EXIT_OK and done["status"] == "cleaned"
+    assert done["version_dirs_removed"] == ["0.4.0"]
+    assert not (app / "versions" / "0.4.0").exists()
+    assert done["freed_bytes"] == len(b"LEGACY")

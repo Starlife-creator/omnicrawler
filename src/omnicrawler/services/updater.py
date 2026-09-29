@@ -50,13 +50,16 @@ PENDING_FILENAME = "pending-cleanup.json"
 
 
 class UpgradeManager:
-    def __init__(self, app_root: Path, *, trusted_public_key: bytes) -> None:
+    def __init__(self, app_root: Path, *, trusted_public_key: bytes | None = None) -> None:
+        # trusted_public_key 只有 stage/stage_members（取包）需要；清理类操作传 None 即可。
         self.app_root = app_root.resolve()
         self.trusted_public_key = trusted_public_key
         self.updates = self.app_root / ".updates"
 
     # ── 打包体：校验 + 展开（既有行为不变）────────────────────────────
     def stage(self, package: Path) -> dict[str, Any]:
+        if self.trusted_public_key is None:
+            raise ValueError("取包需要信任根公钥（清理类操作不需要，请勿用 None 调用）")
         with zipfile.ZipFile(package) as archive:
             members = validate_zip_archive(
                 archive, required=("upgrade.json",), limits=DEFAULT_ZIP_READ_LIMITS
@@ -90,7 +93,11 @@ class UpgradeManager:
         变更包自身**不需要单独签名**：它的每个成员都要对已签名清单里的哈希，
         改一个字节即整包拒绝；清单里列了而包里没有的文件同样拒绝
         （宁可拒绝，也不要"少换几个文件"这种静默不一致）。
+
+        信任根仅在清理类操作下可为 None；展开变更包不需要验签，但取包需要。
         """
+        if self.trusted_public_key is None:
+            raise ValueError("展开变更包需要信任根公钥（清理类操作不需要）")
         if not expected:
             raise ValueError("变更包没有可比对的清单（expected 为空）")
         with zipfile.ZipFile(package) as archive:
@@ -267,6 +274,58 @@ class UpgradeManager:
         """把"当场删不掉"的残留登记进待清理清单（供调用方在删除失败后调用）。"""
         if relatives:
             self._record_pending(relatives)
+
+    # ── 布局 B：versions/ 旧版本的识别与清理 ──────────────────────────
+    @property
+    def versions_root(self) -> Path:
+        return self.app_root / "versions"
+
+    @property
+    def current_pointer_file(self) -> Path:
+        return self.versions_root / "current.txt"
+
+    def current_pointed_version(self) -> str:
+        """布局 B 指针指向的版本（文件缺失/损坏 ⇒ 空串）。"""
+        try:
+            return self.current_pointer_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+
+    def stale_version_dirs(self) -> list[tuple[Path, int]]:
+        """返回"可清理的旧版本目录"（绝对路径 + 体积字节）。
+
+        规则：布局 B 下，除 `current.txt` 指向的那份外全部算旧版本；
+        就地布局（无指针）下若存在 versions/ 目录，则其中**全部**目录都算残留
+        （没有指针就说明当前生效的不是它们）。
+        """
+        versions = self.versions_root
+        if not versions.is_dir():
+            return []
+        pointed = self.current_pointed_version()
+        stale: list[tuple[Path, int]] = []
+        for package in sorted(versions.iterdir()):
+            if not package.is_dir():
+                continue
+            if pointed and package.name == pointed:
+                continue
+            size = sum(f.stat().st_size for f in package.rglob("*") if f.is_file())
+            stale.append((package, size))
+        return stale
+
+    def remove_stale_version_dirs(self) -> dict[str, Any]:
+        """删除全部旧版本目录；删不掉（文件被占用）的原样保留并如实返回。"""
+        freed = 0
+        failed: list[str] = []
+        removed: list[str] = []
+        for package, size in self.stale_version_dirs():
+            try:
+                shutil.rmtree(package)
+                freed += size
+                removed.append(package.name)
+            except OSError:
+                failed.append(package.relative_to(self.app_root).as_posix())
+        return {"removed": removed, "failed": failed, "freed_bytes": freed}
+
 
     def _record_pending(self, relatives: list[str]) -> None:
         recorded = _read_pending(self.pending_file)
