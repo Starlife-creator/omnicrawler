@@ -33,6 +33,7 @@ from ..services.update_feed import (
     check_feed,
     decode_public_key,
     detect_platform,
+    feed_filename,
     plan_payload,
     verify_feed_document,
 )
@@ -90,6 +91,29 @@ def _is_remote(base: str) -> bool:
     return base.startswith(("http://", "https://"))
 
 
+def _fetch_feed(base: str, platform: str, config: AppConfig) -> bytes:
+    """取**本平台**的更新清单：先 ``update-<platform>.json``，没有则回退 ``update.json``。
+
+    回退是给"只发一份通用清单"的旧更新源留的兼容路径；两条都取不到时抛原始错误。
+    """
+    try:
+        return _fetch(base, feed_filename(platform), config)
+    except Exception:  # noqa: BLE001 - 回退到通用清单名，失败时再抛
+        return _fetch(base, FEED_FILENAME, config)
+
+
+def _require_matching_platform(feed: Any, platform: str) -> None:
+    """清单若声明了 ``platform`` ⇒ 必须与**本机平台**一致（fail-closed）。
+
+    否则 Windows 客户端可能拿到 Linux 的清单，进而按它的逐文件清单把 ELF/``.so`` 覆盖进本机。
+    """
+    declared = str(getattr(feed, "platform", "") or "").strip().lower()
+    if declared and declared != platform.strip().lower():
+        raise UpdateFeedError(
+            f"更新清单声明的平台是 {declared}，与本机 {platform} 不一致 ⇒ 拒绝使用"
+        )
+
+
 def _fetch(base: str, relative: str, config: AppConfig) -> bytes:
     """受控取回：远程基址必须给出 EgressBroker，本地目录不需要（也不出网）。"""
     egress = None
@@ -128,11 +152,13 @@ def check(
     if not base:
         return _disabled_payload("未配置 self_update.feed_url"), EXIT_DISABLED
 
+    target_platform = platform or detect_platform()
     try:
         feed = verify_feed_document(
-            _fetch(base, FEED_FILENAME, config), trusted_public_key=key
+            _fetch_feed(base, target_platform, config), trusted_public_key=key
         )
-    except Exception as exc:  # 网络 / 缺文件 / 验签 / 字段非法，统一一种可读结论
+        _require_matching_platform(feed, target_platform)
+    except Exception as exc:  # 网络 / 缺文件 / 验签 / 字段非法 / 平台不符，统一一种可读结论
         return {
             "status": "failed",
             "detail": f"读取或校验更新源失败：{exc}",
@@ -341,8 +367,12 @@ def ignore(
         return {"status": "failed", "detail": str(exc), "current_version": __version__}, EXIT_FAILED
     if key is None:
         return _disabled_payload("未配置 self_update.trusted_public_key"), EXIT_DISABLED
+    target_platform = detect_platform()
     try:
-        feed = verify_feed_document(_fetch(base, FEED_FILENAME, config), trusted_public_key=key)
+        feed = verify_feed_document(
+            _fetch_feed(base, target_platform, config), trusted_public_key=key
+        )
+        _require_matching_platform(feed, target_platform)
     except Exception as exc:
         return {
             "status": "failed",
@@ -460,10 +490,12 @@ def apply(
     target_name = ""
     expected_sha = ""
     if local_package is None:
+        target_platform = platform or detect_platform()
         try:
             feed = verify_feed_document(
-                _fetch(base, FEED_FILENAME, config), trusted_public_key=key
+                _fetch_feed(base, target_platform, config), trusted_public_key=key
             )
+            _require_matching_platform(feed, target_platform)
         except Exception as exc:
             return {
                 "status": "failed",

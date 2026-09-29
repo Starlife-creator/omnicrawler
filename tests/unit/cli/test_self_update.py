@@ -785,3 +785,75 @@ def test_to_versions_refused_on_non_windows(tmp_path: Path) -> None:
     assert "--to-versions" in payload["detail"] and "Windows" in payload["detail"]
     assert not (app / "versions").exists(), "被拒绝时不得留下任何布局痕迹"
     assert (app / "app.exe").read_bytes() == b"OLD"
+
+
+# ── 按平台清单（update-<platform>.json）+ 平台交叉校验 ─────────────────
+
+
+def _write_platform_feed(
+    feed_dir: Path, private: ed25519.Ed25519PrivateKey, *, version: str, platform: str
+) -> Path:
+    """写一份**声明了平台**的清单，文件名按平台（``update-<platform>.json``）。"""
+    feed_dir.mkdir(parents=True, exist_ok=True)
+    document = {
+        "version": version,
+        "platform": platform,
+        "notes": "",
+        "assets": {},
+        "full_fallback": {
+            "version": version,
+            "base": feed_dir.as_posix(),
+            "name": "pkg.tar.xz",
+            "sha256": "0" * 64,
+            "size": 1,
+        },
+    }
+    (feed_dir / "pkg.tar.xz").write_bytes(b"x")
+    signature = base64.b64encode(private.sign(uf.canonical_feed_bytes(document))).decode()
+    path = feed_dir / uf.feed_filename(platform)
+    path.write_text(
+        json.dumps({**document, "signature": signature}, ensure_ascii=False), encoding="utf-8"
+    )
+    return path
+
+
+def test_check_uses_platform_specific_feed_filename(tmp_path: Path) -> None:
+    """清单按平台命名 ⇒ 客户端取 ``update-<platform>.json``。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_platform_feed(feed_dir, private, version="99.0.0", platform="linux")
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.check(
+        config_path=str(config), platform="linux", payload_root=app
+    )
+
+    assert code == cmd_self_update.EXIT_UPDATE_AVAILABLE, payload
+    assert payload["latest_version"] == "99.0.0"
+    assert "update-linux.json" in str(payload.get("feed_base", "")) or payload["status"] != "failed"
+
+
+def test_check_refuses_manifest_from_another_platform(tmp_path: Path) -> None:
+    """★ 反向断言：清单声明 linux 而本机 windows ⇒ **拒绝**。
+
+    否则 Windows 客户端会拿 Linux 的逐文件清单去比对/落地，把 ELF/`.so` 覆盖进本机。
+    """
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    # 同时提供 windows 名字的副本（内容仍是 linux 声明）⇒ 专门测"内容与平台不符"
+    _write_platform_feed(feed_dir, private, version="99.0.0", platform="linux")
+    (feed_dir / uf.feed_filename("windows")).write_bytes(
+        (feed_dir / uf.feed_filename("linux")).read_bytes()
+    )
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.check(
+        config_path=str(config), platform="windows", payload_root=app
+    )
+
+    assert code == cmd_self_update.EXIT_FAILED, payload
+    assert "平台" in payload["detail"] and "linux" in payload["detail"]

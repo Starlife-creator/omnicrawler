@@ -104,7 +104,52 @@ def main() -> int:
     parser.add_argument("--unsigned-url", default=None, help="无签名清单 URL（与 --unsigned 二选一）")
     parser.add_argument("--key", required=True, help="ed25519 冷私钥 PEM 路径（只读入内存签名）")
     parser.add_argument("--out", default=SIGNED_FILENAME, help=f"输出文件名（缺省 {SIGNED_FILENAME}）")
+    parser.add_argument(
+        "--platforms",
+        default=None,
+        help=(
+            "**一条命令签多平台**：逗号分隔（windows,linux,macos）。"
+            "配合 --unsigned-url-base 使用，逐个取 update-<平台>.unsigned.json 并签名，"
+            "输出到 --out-dir。"
+        ),
+    )
+    parser.add_argument(
+        "--unsigned-url-base",
+        default=None,
+        help="Release 下载基址（与 --platforms 一起用），如 "
+             "https://github.com/<owner>/<repo>/releases/download/vX.Y.Z",
+    )
+    parser.add_argument("--out-dir", default=".", help="--platforms 模式的输出目录")
     args = parser.parse_args()
+
+    if args.platforms:
+        if not args.unsigned_url_base:
+            print("[错误] --platforms 需要配合 --unsigned-url-base 使用", file=sys.stderr)
+            return 2
+        out_dir = Path(args.out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        base = args.unsigned_url_base.rstrip("/")
+        signed_paths: list[Path] = []
+        for raw_platform in str(args.platforms).split(","):
+            platform = raw_platform.strip().lower()
+            if not platform:
+                continue
+            url = f"{base}/update-{platform}.unsigned.json"
+            try:
+                document, _source = load_unsigned(path=None, url=url)
+                signed = sign_document(document, Path(args.key))
+            except ValueError as exc:
+                print(f"[错误] {platform}: {exc}", file=sys.stderr)
+                return 2
+            target = out_dir / f"update-{platform}.json"
+            body = (json.dumps(signed, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+            target.write_bytes(body)
+            signed_paths.append(target)
+            files = signed.get("payload", {}).get("files") or {}
+            print(f"[完成] {platform}: {target}（{len(body)} 字节 · 逐文件 {len(files)} 项）")
+        print("       下一步：把这些 update-<平台>.json 作为 Release 资产上传。")
+        print(f"       共 {len(signed_paths)} 份。")
+        return 0
 
     try:
         document, source = load_unsigned(path=args.unsigned, url=args.unsigned_url)

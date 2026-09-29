@@ -50,6 +50,18 @@ from .component_manager import _verify_ed25519
 #: 更新源文档的固定文件名（与市场 ``catalog.json`` 一样，名字是契约的一部分）。
 FEED_FILENAME = "update.json"
 
+
+def feed_filename(platform: str) -> str:
+    """按平台取清单文件名：``update-<platform>.json``。
+
+    为什么需要它：更新清单里的 ``payload.files`` 是**逐文件哈希**，而三平台的载荷完全不同
+    （Windows 是 ``OmniCrawler.exe``/``.dll``，Linux 是 ELF、``.so``…）⇒ 一份清单只可能描述
+    一个平台。用**文件名区分平台**，客户端按自身平台取，``payload.files`` 就能保持扁平
+    （无需按平台分键的结构变更）；清单内部仍写入 ``platform`` 字段，客户端会**交叉校验**
+    （见 ``commands/self_update._require_matching_platform``），防止把别的平台的清单应用上来。
+    """
+    return f"update-{platform.strip().lower()}.json"
+
 #: 未显式配置 ``self_update.feed_url`` 时使用的默认更新源。
 #:
 #: 这是 GitHub 的**「最新 release 资产」固定链接**（302 到最新那版的该资产，实测过）：
@@ -116,6 +128,8 @@ class UpdateFeed:
     payload_deleted: tuple[str, ...] = ()
     #: 最近一次带全量包的发布（本版 assets 缺失时的兜底；None＝不提供）。
     full_fallback: FullFallback | None = None
+    #: 本清单描述的**平台**（``update-<platform>.json``；旧版单份清单可为空＝不作校验）。
+    platform: str = ""
 
     def asset_for(self, platform: str, edition: str) -> UpdateAsset | None:
         return self.assets.get(asset_key(platform, edition))
@@ -310,6 +324,7 @@ def _parse_document(document: Mapping[str, Any]) -> UpdateFeed:
 
     payload_files, payload_base, payload_delta, payload_deleted = _parse_payload(document)
     full_fallback = _parse_full_fallback(document)
+    platform = str(document.get("platform") or "").strip().lower()
     return UpdateFeed(
         version=version,
         published_at=str(document.get("published_at") or ""),
@@ -320,6 +335,7 @@ def _parse_document(document: Mapping[str, Any]) -> UpdateFeed:
         payload_delta=payload_delta,
         payload_deleted=payload_deleted,
         full_fallback=full_fallback,
+        platform=platform,
     )
 
 

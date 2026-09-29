@@ -108,6 +108,8 @@ def _parse_asset(spec: str) -> tuple[str, Path]:
 
 
 def build(args: argparse.Namespace) -> dict[str, object]:
+    if getattr(args, "no_payload", False):
+        return _build_assets_only(args)
     payload_dir = Path(args.payload_dir).expanduser()
     files = _walk_payload(payload_dir)
 
@@ -154,6 +156,16 @@ def build(args: argparse.Namespace) -> dict[str, object]:
             "size": int(fb_size),
         }
 
+    platform = str(args.platform or "").strip().lower()
+    if platform:
+        for spec in args.asset or []:
+            key = str(spec).split("=", 1)[0].strip()
+            if not key.startswith(f"{platform}-"):
+                raise SystemExit(
+                    f"[错误] --asset 的键 {key!r} 与 --platform {platform!r} 不匹配"
+                    f"（应为 {platform}-<edition>）"
+                )
+
     document: dict[str, object] = {
         "version": str(args.version).strip(),
         "published_at": args.published_at
@@ -169,6 +181,9 @@ def build(args: argparse.Namespace) -> dict[str, object]:
     }
     if full_fallback is not None:
         document["full_fallback"] = full_fallback
+    if platform:
+        # 客户端会**交叉校验**这个字段（防把别的平台的清单应用上来）
+        document["platform"] = platform
     if not version_key(str(document["version"])):
         raise SystemExit(f"--version 不可比较: {document['version']!r}")
 
@@ -201,13 +216,64 @@ def sign(document: dict[str, object], key_path: Path) -> dict[str, object]:
     return {**document, "signature": signature}
 
 
+def _build_assets_only(args: argparse.Namespace) -> dict[str, object]:
+    """只声明 ``assets`` 的清单（无逐文件清单）⇒ 该平台走**全量更新**。
+
+    为什么需要：某些平台的载荷不便解压（macOS 的 ``.dmg``），而"逐文件清单"必须遍历载荷
+    才能算哈希。与其让那个平台**完全没有清单**（客户端直接报错），不如出一份"只有整包"的
+    清单 —— 全量路径本来就是 0.14.0 用户唯一可走的路。
+    """
+    assets: dict[str, dict[str, object]] = {}
+    for spec in args.asset or []:
+        key, path = _parse_asset(str(spec))
+        body = path.read_bytes()
+        assets[key] = {
+            "name": path.name,
+            "sha256": hashlib.sha256(body).hexdigest(),
+            "size": len(body),
+        }
+    if not assets:
+        raise SystemExit("--no-payload 时至少要给一个 --asset（否则该平台没有任何可下载内容）")
+    document: dict[str, object] = {
+        "version": str(args.version).strip(),
+        "published_at": args.published_at
+        or datetime.now(UTC).replace(microsecond=0).isoformat(),
+        "notes": args.notes or "",
+        "assets": assets,
+    }
+    print(f"[清单] 无逐文件清单（--no-payload）⇒ 该平台走全量更新；整包资源 {len(assets)} 个")
+    return document
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="生成并签名应用自更新源文档（维护者本机运行）")
-    parser.add_argument("--payload-dir", required=True, help="解压后的载荷目录（新版本）")
+    parser.add_argument(
+        "--payload-dir",
+        default=None,
+        help="解压后的载荷目录（新版本）；--no-payload 时不需要",
+    )
     parser.add_argument(
         "--previous-payload-dir", default="", help="上一版载荷目录（给了才输出「已移除」清单）"
     )
     parser.add_argument("--version", required=True, help="目标版本号，如 0.15.0")
+    parser.add_argument(
+        "--no-payload",
+        action="store_true",
+        help=(
+            "不产出逐文件清单（只声明 assets/notes）⇒ 该平台走**全量更新**。"
+            "用于载荷不便解压的平台（如 macOS 的 .dmg），或本版不做增量时。"
+        ),
+    )
+    parser.add_argument(
+        "--platform",
+        default=None,
+        choices=("windows", "linux", "macos"),
+        help=(
+            "本清单描述的**平台**（写入 platform 字段；客户端会校验，防止把别的平台的清单"
+            "应用上来）。给了它时 --asset 的键必须是 <platform>-<edition>，且 --out 缺省为 "
+            "update-<platform>.json。三平台各出一份清单（载荷不同，一份清单只可能描述一个平台）。"
+        ),
+    )
     parser.add_argument("--notes", default="", help="给用户看的变更摘要")
     parser.add_argument("--published-at", default="", help="发布时间（缺省＝当前 UTC）")
     parser.add_argument("--base-url", default="", help="载荷基址（缺省＝feed 基址）")
@@ -259,7 +325,9 @@ def main() -> int:
         return 0
 
     document = sign(build(args), Path(args.key))
-    out = Path(args.out or FEED_FILENAME)
+    selected_platform = str(getattr(args, "platform", "") or "").strip().lower()
+    default_name = f"update-{selected_platform}.json" if selected_platform else FEED_FILENAME
+    out = Path(args.out or default_name)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"[完成] 已写出 {out}（{out.stat().st_size} 字节）")

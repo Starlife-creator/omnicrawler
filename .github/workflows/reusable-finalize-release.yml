@@ -154,6 +154,62 @@ jobs:
           echo "── RELEASE_BODY.md ──"
           cat "$BODY"
 
+      # 无签名更新清单（每平台一份）：**不需要任何密钥** —— 逐文件哈希由 CI 算好当数据，
+      # 签名留给维护者本机（tools/sign_update_manifest.py，冷私钥不出本机）。
+      # 这样每版发布维护者只剩一条命令，不必再把整包搬回家。
+      - name: 生成无签名更新清单（每平台一份）
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PY="$RUNNER_TEMP/finalize-venv/bin/python"
+          cd "$RUNNER_TEMP/artifacts"
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES="见本 Release 说明；本版要点亦见 CHANGELOG.md"
+          shopt -s nullglob
+
+          # Windows / Linux：载荷是 zip / tar.xz ⇒ 解压后产**逐文件清单**（可走增量）
+          for spec in windows linux; do
+            case "$spec" in
+              windows) pkg=$(ls OmniCrawler-"$VERSION"-Windows-Portable-Standard.zip 2>/dev/null | head -1 || true) ;;
+              linux)   pkg=$(ls OmniCrawler-"$VERSION"-Linux-Portable-Standard.tar.xz 2>/dev/null | head -1 || true) ;;
+            esac
+            if [ -z "$pkg" ]; then
+              echo "::warning::缺 $spec Standard 包 ⇒ 跳过该平台的更新清单"
+              continue
+            fi
+            payload="$RUNNER_TEMP/payload-$spec"
+            rm -rf "$payload"; mkdir -p "$payload"
+            case "$pkg" in
+              *.zip) "$PY" -c "import sys,zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$pkg" "$payload" ;;
+              *.tar.xz) tar -xJf "$pkg" -C "$payload" ;;
+              *) echo "::warning::$pkg 类型未支持"; continue ;;
+            esac
+            "$PY" "$GITHUB_WORKSPACE/tools/build_update_manifest.py" \
+              --payload-dir "$payload/OmniCrawler" \
+              --version "$VERSION" --platform "$spec" \
+              --notes "$NOTES" \
+              --asset "$spec-standard=$PWD/$pkg" \
+              --emit-unsigned "$PWD/update-$spec.unsigned.json"
+          done
+
+          # macOS：主产物是 .dmg，不便解压 ⇒ 只声明整包（该平台走**全量更新**）——
+          # 与其让 macOS 完全没有清单（客户端直接报错），不如给一份能用的。
+          macpkg=$(ls OmniCrawler-"$VERSION"-macOS-Portable-Standard.dmg 2>/dev/null | head -1 || true)
+          if [ -n "$macpkg" ]; then
+            "$PY" "$GITHUB_WORKSPACE/tools/build_update_manifest.py" \
+              --no-payload \
+              --version "$VERSION" --platform macos --notes "$NOTES" \
+              --asset "macos-standard=$PWD/$macpkg" \
+              --emit-unsigned "$PWD/update-macos.unsigned.json"
+          else
+            echo "::warning::缺 macOS Standard 包 ⇒ 跳过该平台的更新清单"
+          fi
+
+          ls -l update-*.unsigned.json || { echo "::error::没有产出任何更新清单"; exit 1; }
+          echo "维护者本机随后执行（一条命令，三平台一次签完）："
+          echo "  python tools/sign_update_manifest.py --unsigned-url-base <本 Release 下载基址> --platforms windows,linux,macos --key <冷私钥> --out-dir ."
+
       - name: 发布到 GitHub Release（元数据）
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3

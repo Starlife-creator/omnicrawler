@@ -171,3 +171,22 @@ def test_load_unsigned_from_url_is_supported(tmp_path: Path, monkeypatch: pytest
     with pytest.raises(ValueError) as excinfo:
         module.load_unsigned(path=None, url="https://example.com/update.json")
     assert "已签名" in str(excinfo.value)
+
+
+def test_build_platform_flag_writes_field_and_validates_asset(tmp_path: Path) -> None:
+    """`--platform` 写进清单、并校验资产键前缀（三平台各一份清单的前提）。"""
+    payload = _payload(tmp_path)
+    out = tmp_path / "u.json"
+    ok = _run(BUILD_TOOL, "--payload-dir", str(payload), "--version", "9.9.9",
+              "--platform", "windows", "--asset", str(_asset(tmp_path)).replace(
+                  "linux-standard", "windows-standard"),
+              "--emit-unsigned", str(out))
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+    assert json.loads(out.read_text(encoding="utf-8"))["platform"] == "windows"
+
+    # 反向：资产键与平台前缀不符 ⇒ 拒绝（防止把 A 平台的包挂到 B 平台的清单上）
+    bad = _run(BUILD_TOOL, "--payload-dir", str(payload), "--version", "9.9.9",
+               "--platform", "macos", "--asset", _asset(tmp_path),
+               "--emit-unsigned", str(tmp_path / "bad.json"))
+    assert bad.returncode != 0
+    assert "不匹配" in (bad.stdout + bad.stderr)
