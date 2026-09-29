@@ -200,12 +200,21 @@ def apply(
     package: str = "",
     dry_run: bool = False,
     app_root: Path | None = None,
+    force_full: bool = False,
 ) -> tuple[dict[str, Any], int]:
-    """``self-update apply``：取包 → 核对 sha256 → 验签 stage → 覆盖 apply（可回滚）。
+    """``self-update apply``：落地更新（**优先只下变化的那部分**）。
 
-    ``package`` 非空时走**离线路径**（不读更新源，直接用本地已签名包）。
-    ``app_root`` 只作为测试接缝（默认＝真实应用根）；**不作为 CLI 开关**，
-    避免把"覆盖到哪儿"变成可由参数指定的行为。
+    三条路径，按优先级：
+    1. **增量**（默认优先）：更新源为该版本提供了**变更包**（``payload.delta[当前版本]``）
+       ⇒ 只下这个包（几 MB），逐成员对已签名清单核哈希后**就地替换**；
+    2. **离线包**（``package`` 非空）：用一个本地已签名升级包（整包）；
+    3. **整包**（``use force_full`` 或缺变更包）：按 ``assets`` 下整包再替换。
+
+    ``app_root`` / ``force_full`` 只作为测试接缝与显式降级入口，**不作为 CLI 开关**，
+    避免把"替换到哪儿"变成可由参数指定的行为。
+
+    ★ 每次真正落地前都会先执行**上次挂账的待清理**（"下次启动清理"的落点）；
+    ``--dry-run`` 既不清理也不写盘。
     """
     try:
         section, config, key, base = _resolve(config_path)
@@ -219,6 +228,7 @@ def apply(
     manager = UpgradeManager(root, trusted_public_key=key)
     local_package = Path(package).expanduser() if package else None
 
+    feed: Any = None
     target_name = ""
     expected_sha = ""
     if local_package is None:
@@ -250,10 +260,42 @@ def apply(
             }, EXIT_FAILED
         target_name, expected_sha = asset.name, asset.sha256
 
+    # ★ 增量优先：更新源若提供"相对当前版本的变更包"，就只下它（几 MB），
+    #   只替换**本机确实不同**的那些文件 —— 这是"不会真的下 2G"的落点。
+    delta = feed.payload_delta.get(__version__) if (feed is not None and not force_full) else None
+    delta_expected: dict[str, str] = {}
+    if delta is not None and feed.payload_files:
+        local = _local_payload_hashes(feed.payload_files, root)
+        delta_plan = plan_payload(
+            feed,
+            local_hashes=local,
+            exists=lambda relative: root.joinpath(*PurePosixPath(relative).parts).is_file(),
+        )
+        delta_expected = {
+            relative: feed.payload_files[relative].sha256
+            for relative in (*delta_plan.to_fetch, *delta_plan.missing_locally)
+            if relative in feed.payload_files
+        }
+        if not delta_expected:
+            delta = None  # 本机已与目标一致：一个成员都不用下
+
+    mode = (
+        "incremental"
+        if delta is not None
+        else ("offline-package" if local_package is not None else "full-package")
+    )
     plan: dict[str, Any] = {
         "app_root": str(root),
-        "package": str(local_package) if local_package else target_name,
-        "sha256": expected_sha or "(离线包：仅按包内 upgrade.json 验签 + 逐文件哈希)",
+        "mode": mode,
+        "package": (
+            delta.name if delta is not None else (str(local_package) if local_package else target_name)
+        ),
+        "sha256": (
+            delta.sha256 if delta is not None
+            else (expected_sha or "(离线包：仅按包内 upgrade.json 验签 + 逐文件哈希)")
+        ),
+        "download_bytes": delta.size if delta is not None else 0,
+        "files_to_replace": len(delta_expected) if delta is not None else 0,
         "workspace_protected": True,
     }
     if dry_run:
@@ -261,10 +303,30 @@ def apply(
         plan["detail"] = "计划已生成，未写入任何文件（去掉 --dry-run 并加 --yes 才执行）"
         return plan, EXIT_OK
 
+    # ★ "下次启动清理"的落点：先把上次挂账的残留收掉（幂等、尽力而为、不阻塞本次更新）
+    cleanup = manager.run_pending_cleanup()
     incoming = root / ".updates" / "incoming"
     incoming.mkdir(parents=True, exist_ok=True)
+    deleted_removed = 0
+    failed_removed: list[str] = []
     try:
-        if local_package is None:
+        if delta is not None:
+            raw = _fetch(feed.payload_base or base, delta.name, config)
+            actual = hashlib.sha256(raw).hexdigest()
+            if actual != delta.sha256:
+                return {
+                    "status": "failed",
+                    "detail": (
+                        f"变更包 sha256 与更新源不一致（期望 {delta.sha256}，实际 {actual}）——已拒绝应用"
+                    ),
+                    "current_version": __version__,
+                    "plan": plan,
+                }, EXIT_FAILED
+            delta_path = incoming / Path(delta.name).name
+            delta_path.write_bytes(raw)
+            # 成员逐个对**已签名清单**里的哈希核对（变更包自身无需签名）
+            staged = manager.stage_members(delta_path, delta_expected, version=feed.version)
+        elif local_package is None:
             raw = _fetch(base, target_name, config)
             actual = hashlib.sha256(raw).hexdigest()
             if actual != expected_sha:
@@ -274,35 +336,71 @@ def apply(
                         f"下载包 sha256 与更新源不一致（期望 {expected_sha}，实际 {actual}）——已拒绝应用"
                     ),
                     "current_version": __version__,
+                    "plan": plan,
                 }, EXIT_FAILED
             local_package = incoming / Path(target_name).name
             local_package.write_bytes(raw)
-        elif not local_package.is_file():
-            return {
-                "status": "failed",
-                "detail": f"本地升级包不存在：{local_package}",
-                "current_version": __version__,
-            }, EXIT_FAILED
+            staged = manager.stage(local_package)
+        else:
+            if not local_package.is_file():
+                return {
+                    "status": "failed",
+                    "detail": f"本地升级包不存在：{local_package}",
+                    "current_version": __version__,
+                }, EXIT_FAILED
+            staged = manager.stage(local_package)
 
-        staged = manager.stage(local_package)
         applied = manager.apply(Path(str(staged["stage"])))
+        if delta is not None:
+            deleted_removed, failed_removed = _remove_deleted(feed, root)
     except Exception as exc:
         return {
             "status": "failed",
-            "detail": f"应用升级包失败（已按需回滚）：{exc}",
+            "detail": f"应用更新失败（已尽力回滚：新文件删除、旧文件改名还原）：{exc}",
             "current_version": __version__,
             "plan": plan,
         }, EXIT_FAILED
 
+    pending: list[str] = [str(item) for item in (applied.get("pending_cleanup") or [])]
+    if failed_removed:
+        manager.record_pending(failed_removed)
+        pending.extend(failed_removed)
+    detail = (
+        f"已就地替换 {applied.get('applied')} 个文件（{mode}）；工作区数据未改动；"
+        f"旧文件当场删除 {applied.get('removed')} 个"
+    )
+    if pending:
+        detail += f"，另 {len(pending)} 个被占用、已登记到下次启动清理"
+    if cleanup["removed"]:
+        detail += f"；本次顺带清掉了上次挂账的 {cleanup['removed']} 个残留"
     return {
         "status": "applied",
-        "detail": (
-            f"已从 {staged.get('version')} 升级包应用 {applied.get('applied')} 个文件；"
-            "工作区数据未改动；可用 rollback 目录回退"
-        ),
+        "detail": detail,
         "previous_version": __version__,
         "staged_version": staged.get("version"),
         "applied_files": applied.get("applied"),
-        "rollback_dir": applied.get("rollback"),
+        "pending_cleanup": pending,
+        "deleted_removed": deleted_removed,
+        "cleaned_previous_pending": cleanup["removed"],
         "plan": plan,
     }, EXIT_OK
+
+
+def _remove_deleted(feed: Any, root: Path) -> tuple[int, list[str]]:
+    """处理清单里的"本版已移除"路径，返回 ``(删除成功数, 删不掉的残留)``。
+
+    删不掉（被占用）的交给调用方挂账到待清理清单 —— 不做成静默忽略：残留文件属于
+    "下一版已经不要、但本机还留着"的隐患，必须可见可追。
+    """
+    removed = 0
+    failed: list[str] = []
+    for relative in feed.payload_deleted:
+        path = root.joinpath(*PurePosixPath(relative).parts)
+        if not path.exists():
+            continue
+        try:
+            path.unlink()
+            removed += 1
+        except OSError:
+            failed.append(str(relative))
+    return removed, failed
