@@ -218,9 +218,45 @@ def main() -> int:
         metavar=("VERSION", "BASE", "NAME", "SHA256", "SIZE"),
         help="本版不重建全量包时：指向最近一次带全量包的发布（老版本用户从这里取全量）",
     )
-    parser.add_argument("--key", required=True, help="ed25519 冷私钥 PEM 路径（只读入内存签名）")
+    parser.add_argument(
+        "--key",
+        default=None,
+        help="ed25519 冷私钥 PEM 路径（只读入内存签名）；与 --emit-unsigned 二选一",
+    )
+    parser.add_argument(
+        "--emit-unsigned",
+        default=None,
+        metavar="PATH",
+        help=(
+            "只产出**无签名清单**（CI 用；不需要任何密钥）。逐文件哈希由 CI 算好作数据，"
+            "签名留给维护者本机（见 tools/sign_update_manifest.py）——这样每版发布"
+            "不必再把整包搬到本机。"
+        ),
+    )
     parser.add_argument("--out", default="", help=f"输出文件名（缺省 {FEED_FILENAME}）")
     args = parser.parse_args()
+
+    if bool(args.emit_unsigned) == bool(args.key):
+        print(
+            "[错误] --emit-unsigned 与 --key 必须**二选一**："
+            "CI 用前者产无签名清单，维护者本机用后者直接签名。",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.emit_unsigned:
+        unsigned = build(args)
+        out = Path(args.emit_unsigned)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        # 规范化写入：与签名时**同一份字节口径**，避免"签的和发的不一致"
+        out.write_text(
+            json.dumps(unsigned, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        print(f"[完成] 已写出**无签名**清单 {out}（{out.stat().st_size} 字节）")
+        print("       ★ 它不能直接对外发布：客户端要求 signature。")
+        print("       ★ 维护者本机执行：python tools/sign_update_manifest.py "
+              f"--unsigned {out} --key <冷私钥> --out update.json")
+        return 0
 
     document = sign(build(args), Path(args.key))
     out = Path(args.out or FEED_FILENAME)
