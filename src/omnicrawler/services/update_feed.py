@@ -50,6 +50,14 @@ from .component_manager import _verify_ed25519
 #: 更新源文档的固定文件名（与市场 ``catalog.json`` 一样，名字是契约的一部分）。
 FEED_FILENAME = "update.json"
 
+#: 未显式配置 ``self_update.feed_url`` 时使用的默认更新源。
+#:
+#: 这是 GitHub 的**「最新 release 资产」固定链接**（302 到最新那版的该资产，实测过）：
+#: 把 ``update.json`` 作为每版都上传的 Release 资产，客户端取
+#: ``<feed_url>/update.json`` 即永远拿到最新清单——**免版本号、免 API、零额外托管**。
+#: 走 ``github.com`` ⇒ 大陆网络需镜像；清单带 sha256，**镜像不必可信**（只承担带宽）。
+DEFAULT_FEED_URL = "https://github.com/Starlife-creator/omnicrawler/releases/latest/download"
+
 #: 可选版本后缀（``Standard`` / ``Full``）。空串表示"不区分版本"。
 DEFAULT_EDITION = "Standard"
 
@@ -78,6 +86,21 @@ class UpdateFile:
 
 
 @dataclass(frozen=True)
+class FullFallback:
+    """「最近一次带全量包的发布」。
+
+    小版本发布**不重建全量包**时（§A.13），本机版本不在增量基线内的用户从这里取全量，
+    否则会被永久卡住。``base``＋``name`` 与资产同构（base 指向那次发布的下载基址）。
+    """
+
+    version: str
+    base: str
+    name: str
+    sha256: str
+    size: int
+
+
+@dataclass(frozen=True)
 class UpdateFeed:
     version: str
     published_at: str = ""
@@ -91,6 +114,8 @@ class UpdateFeed:
     payload_delta: Mapping[str, UpdateAsset] = field(default_factory=dict)
     #: 新版本**已移除**的路径（逐文件差异必须显式声明删除，否则旧文件会残留）。
     payload_deleted: tuple[str, ...] = ()
+    #: 最近一次带全量包的发布（本版 assets 缺失时的兜底；None＝不提供）。
+    full_fallback: FullFallback | None = None
 
     def asset_for(self, platform: str, edition: str) -> UpdateAsset | None:
         return self.assets.get(asset_key(platform, edition))
@@ -253,11 +278,18 @@ def _parse_document(document: Mapping[str, Any]) -> UpdateFeed:
         raise UpdateFeedError("更新源文档的 version 缺失或不可比较")
 
     raw_assets = document.get("assets")
-    if not isinstance(raw_assets, dict) or not raw_assets:
-        raise UpdateFeedError("更新源文档的 assets 缺失或为空")
+    if raw_assets is not None and not isinstance(raw_assets, dict):
+        raise UpdateFeedError("更新源文档的 assets 必须是对象")
+    # ★ assets 允许缺失/为空——小版本发布可以只带变更包 + full_fallback（不重建全量包）；
+    #   但两者至少要有一个，否则客户端没有任何可下载的东西。
+    has_full_fallback = isinstance(document.get("full_fallback"), dict)
+    if not raw_assets and not has_full_fallback:
+        raise UpdateFeedError(
+            "更新源文档既没有 assets 也没有 full_fallback ⇒ 客户端无任何可下载内容"
+        )
 
     assets: dict[str, UpdateAsset] = {}
-    for key, value in raw_assets.items():
+    for key, value in (raw_assets or {}).items():
         asset_key_name = str(key)
         if not isinstance(value, dict):
             raise UpdateFeedError(f"assets.{asset_key_name} 必须是对象")
@@ -277,6 +309,7 @@ def _parse_document(document: Mapping[str, Any]) -> UpdateFeed:
         )
 
     payload_files, payload_base, payload_delta, payload_deleted = _parse_payload(document)
+    full_fallback = _parse_full_fallback(document)
     return UpdateFeed(
         version=version,
         published_at=str(document.get("published_at") or ""),
@@ -286,6 +319,7 @@ def _parse_document(document: Mapping[str, Any]) -> UpdateFeed:
         payload_base=payload_base,
         payload_delta=payload_delta,
         payload_deleted=payload_deleted,
+        full_fallback=full_fallback,
     )
 
 
@@ -356,6 +390,29 @@ def _parse_payload(
             deleted.append(relative)
 
     return files, str(raw_payload.get("base_url") or "").strip(), delta, tuple(deleted)
+
+
+def _parse_full_fallback(document: Mapping[str, Any]) -> FullFallback | None:
+    """解析可选的顶层 ``full_fallback``：最近一次带全量包的发布（版本+基址+资产+哈希）。"""
+    raw = document.get("full_fallback")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise UpdateFeedError("full_fallback 必须是对象")
+    version = str(raw.get("version") or "").strip()
+    base = str(raw.get("base") or "").strip()
+    name = str(raw.get("name") or "").strip()
+    sha256 = str(raw.get("sha256") or "").strip().lower()
+    size = raw.get("size")
+    if not version or not base or not name:
+        raise UpdateFeedError("full_fallback 缺少 version/base/name")
+    if not _SHA256_RE.match(sha256):
+        raise UpdateFeedError("full_fallback.sha256 必须是 64 位十六进制")
+    if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+        raise UpdateFeedError("full_fallback.size 必须是非负整数")
+    if not is_safe_asset_name(name):
+        raise UpdateFeedError(f"full_fallback.name 不合法: {name}")
+    return FullFallback(version=version, base=base, name=name, sha256=sha256, size=size)
 
 
 def plan_payload(

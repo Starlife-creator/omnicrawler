@@ -143,6 +143,17 @@ def build(args: argparse.Namespace) -> dict[str, object]:
             "size": path.stat().st_size,
         }
 
+    full_fallback: dict[str, object] | None = None
+    if args.full_fallback:
+        fb_version, fb_base, fb_name, fb_sha, fb_size = args.full_fallback
+        full_fallback = {
+            "version": fb_version,
+            "base": fb_base,
+            "name": fb_name,
+            "sha256": fb_sha,
+            "size": int(fb_size),
+        }
+
     document: dict[str, object] = {
         "version": str(args.version).strip(),
         "published_at": args.published_at
@@ -156,6 +167,8 @@ def build(args: argparse.Namespace) -> dict[str, object]:
             "deleted": deleted,
         },
     }
+    if full_fallback is not None:
+        document["full_fallback"] = full_fallback
     if not version_key(str(document["version"])):
         raise SystemExit(f"--version 不可比较: {document['version']!r}")
 
@@ -166,6 +179,8 @@ def build(args: argparse.Namespace) -> dict[str, object]:
         print(f"[清单] 整包资源 {len(assets)} 个：{', '.join(sorted(assets))}")
     if delta:
         print(f"[清单] 变更包 {len(delta)} 个（相对：{', '.join(sorted(delta))}）")
+    if full_fallback is not None:
+        print(f"[清单] 全量兜底指向 v{full_fallback['version']}（本版未重建全量包）")
     return document
 
 
@@ -198,6 +213,11 @@ def main() -> int:
     parser.add_argument("--base-url", default="", help="载荷基址（缺省＝feed 基址）")
     parser.add_argument("--asset", action="append", help="整包资源：<平台-版本>=<文件>")
     parser.add_argument("--delta", action="append", help="变更包：<旧版本号>=<文件>")
+    parser.add_argument(
+        "--full-fallback", nargs=5, default=None,
+        metavar=("VERSION", "BASE", "NAME", "SHA256", "SIZE"),
+        help="本版不重建全量包时：指向最近一次带全量包的发布（老版本用户从这里取全量）",
+    )
     parser.add_argument("--key", required=True, help="ed25519 冷私钥 PEM 路径（只读入内存签名）")
     parser.add_argument("--out", default="", help=f"输出文件名（缺省 {FEED_FILENAME}）")
     args = parser.parse_args()

@@ -124,13 +124,28 @@ def test_check_is_disabled_without_trust_root(tmp_path: Path) -> None:
     assert "trusted_public_key" in payload["detail"]
 
 
-def test_check_is_disabled_without_feed_url(tmp_path: Path) -> None:
+def test_feed_url_defaults_to_official_release_page(tmp_path: Path) -> None:
+    """未显式配置 feed_url ⇒ 默认＝GitHub 官方发布页的固定链接（用户 2026-09-29 拍板）。
+
+    断言只看 `_resolve` 的产物（纯配置逻辑，**不触网**）；实际取数由其余用例以本地目录覆盖。
+    """
     _, public = _keypair()
     config = _write_config(tmp_path, feed=None, public=public)  # 有信任根、无源
+    _section, _config, key, base = cmd_self_update._resolve(str(config))
+    assert base == uf.DEFAULT_FEED_URL
+    assert base.endswith("/releases/latest/download")
+    assert key is not None                      # 内置信任根同步接线 ⇒ 默认即"可用"
 
-    payload, code = cmd_self_update.check(config_path=str(config))
-    assert code == cmd_self_update.EXIT_DISABLED
-    assert "feed_url" in payload["detail"]
+    # 显式配置仍优先（镜像/本地目录）
+    (tmp_path / "mirror").mkdir(parents=True, exist_ok=True)
+    explicit = _write_config(tmp_path / "mirror", feed=tmp_path / "mirror-feed", public=public)
+    text = explicit.read_text(encoding="utf-8").replace(
+        f'  feed_url: "{(tmp_path / "mirror-feed").as_posix()}"',
+        '  feed_url: "https://mirror.example.com/omnicrawler"',
+    )
+    explicit.write_text(text, encoding="utf-8")
+    _s, _c, _k, mirror_base = cmd_self_update._resolve(str(explicit))
+    assert mirror_base == "https://mirror.example.com/omnicrawler"
 
 
 def test_check_reports_failure_when_feed_is_tampered(tmp_path: Path) -> None:
@@ -529,7 +544,7 @@ def test_check_skips_unchanged_files_reports_delta_and_removals(tmp_path: Path) 
     assert plan["unchanged"] == 1                   # qt.dll 内容相同 ⇒ 跳过
     assert plan["fetch_bytes"] == 3                 # 只算要下的字节，不是整包 999
     assert plan["delta_for_current_version"] == "update-prev-to-new.zip"
-    assert plan["delta_size"] == 42
+    assert payload["options"]["incremental"]["size"] == 42   # 变更包体积（口径上移到 options）
     assert plan["removed_in_new_version"] == ["_internal/removed.pyd"]
     assert "需更新 1/2 个文件" in payload["detail"]
 
@@ -624,3 +639,89 @@ def test_apply_dry_run_reports_incremental_without_touching_disk(tmp_path: Path)
     assert payload["files_to_replace"] == 1
     assert (app / "app.exe").read_bytes() == b"OLD"      # 未写盘
     assert not (app / ".updates").exists()
+
+
+# ── full_fallback：小版本不重建全量包时，老版本用户的兜底 ────────────────
+
+
+def _write_full_fallback_feed(
+    feed_dir: Path,
+    private: ed25519.Ed25519PrivateKey,
+    *,
+    version: str,
+    fallback_dir: Path,
+    fallback_name: str,
+) -> Path:
+    """只有 full_fallback、没有 assets/payload 的清单（小版本形态：不重建全量包）。"""
+    feed_dir.mkdir(parents=True, exist_ok=True)
+    body = (fallback_dir / fallback_name).read_bytes()
+    document = {
+        "version": version,
+        "full_fallback": {
+            "version": "0.98.0",
+            "base": fallback_dir.as_posix(),
+            "name": fallback_name,
+            "sha256": hashlib.sha256(body).hexdigest(),
+            "size": len(body),
+        },
+    }
+    signature = base64.b64encode(private.sign(uf.canonical_feed_bytes(document))).decode()
+    (feed_dir / uf.FEED_FILENAME).write_text(
+        json.dumps({**document, "signature": signature}, ensure_ascii=False), encoding="utf-8"
+    )
+    return feed_dir / "update.json"
+
+
+def test_apply_uses_full_fallback_when_platform_asset_missing(tmp_path: Path) -> None:
+    """★ 清单没有本平台资产，但有 full_fallback ⇒ 老版本用户从「最近一次带全量包的发布」
+    取全量，**不会被永久卡住**（这正是兜底字段存在的理由）。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "app.exe").write_bytes(b"OLD")
+    old_release = tmp_path / "v0.98.0"
+    pkg = _write_portable_zip(
+        old_release / "OmniCrawler-0.98.0-Linux-Portable-Standard.tar.xz",
+        files={"app.exe": b"NEW"},
+    )
+    feed = _write_full_fallback_feed(feed_dir, private, version="99.0.0",
+                                     fallback_dir=old_release, fallback_name=pkg.name)
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.apply(
+        config_path=str(config), app_root=app, platform="linux"
+    )
+    assert code == cmd_self_update.EXIT_OK, payload
+    assert payload["plan"]["mode"] == "full-archive"
+    assert payload["plan"]["full_fallback"] == {"version": "0.98.0", "name": pkg.name}
+    assert payload["plan"]["sha256"].startswith("7a43") or payload["plan"]["sha256"]
+    assert (app / "app.exe").read_bytes() == b"NEW"
+    del feed  # feed 变量仅用于可读性
+
+
+def test_check_reports_full_only_via_fallback(tmp_path: Path) -> None:
+    """check 在没有 assets 时仍应报"可全量"（经 fallback），并标注 via_fallback。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    old_release = tmp_path / "v0.98.0"
+    pkg = _write_portable_zip(
+        old_release / "OmniCrawler-0.98.0-Linux-Portable-Standard.tar.xz",
+        files={"app.exe": b"NEW"},
+    )
+    feed_file = _write_full_fallback_feed(feed_dir, private, version="99.0.0",
+                                          fallback_dir=old_release, fallback_name=pkg.name)
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.check(
+        config_path=str(config), platform="linux", payload_root=app
+    )
+    assert code == cmd_self_update.EXIT_UPDATE_AVAILABLE
+    options = payload["options"]
+    assert options["full"]["available"] is True
+    assert options["full"]["via_fallback"] is True
+    assert options["full"]["size"] == pkg.stat().st_size
+    assert options["incremental"]["available"] is False   # 没有 payload ⇒ 无增量
+    del feed_file

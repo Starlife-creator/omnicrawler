@@ -25,7 +25,9 @@ from ..core.runtime_paths import application_dir
 from ..plugins.market_client import fetch_resource
 from ..services.update_feed import (
     DEFAULT_EDITION,
+    DEFAULT_FEED_URL,
     FEED_FILENAME,
+    FullFallback,
     UpdateFeedError,
     asset_key,
     check_feed,
@@ -60,7 +62,10 @@ def _resolve(config_path: str) -> tuple[dict[str, Any], AppConfig, bytes | None,
     section = _self_update_section(config)
     configured = str(section.get("trusted_public_key") or "").strip()
     key = decode_public_key(configured or config.update_trust_public_key)
-    return section, config, key, str(section.get("feed_url") or "").strip()
+    # ★ 更新源默认＝GitHub 官方发布页的「最新 release 资产」固定链接（用户 2026-09-29 拍板）；
+    #   显式配置 feed_url 仍可指向镜像/本地目录（镜像不必可信，清单带 sha256）。
+    base = str(section.get("feed_url") or "").strip() or DEFAULT_FEED_URL
+    return section, config, key, base
 
 
 def _local_payload_hashes(files: Mapping[str, Any], root: Path) -> dict[str, str]:
@@ -166,10 +171,46 @@ def check(
         "feed_base": base,
     }
 
-    # ★ 只在"更新源给了逐文件清单 ∧ 确实有新版"时才做本机比对：把"到底要不要重下 2G"
-    #   变成一个具体数字（需更新几个文件、共多少字节）。**不遍历**整个应用根，
-    #   只读清单里出现的路径 —— 用户数据目录（work/data/...）绝不会被扫到。
+    # ★ 选项与体积（有更新时**总是**给出；增量是否可用取决于"有逐文件清单 ∧ 有对应变更包"）。
+    #   体积对比照 B 站弹窗的形态：增量与全量并排，用户一眼看到省了多少。
+    delta = (
+        feed.payload_delta.get(__version__)
+        if (result.update_available and feed.payload_files) else None
+    )
+    full_asset = (
+        feed.asset_for(
+            platform or detect_platform(),
+            edition or str(section.get("edition") or DEFAULT_EDITION),
+        )
+        if result.update_available else None
+    )
+    full_fallback = feed.full_fallback if result.update_available else None
+    full_size = (
+        full_asset.size if full_asset is not None
+        else (full_fallback.size if full_fallback is not None else 0)
+    )
+    payload["options"] = {
+        "incremental": {
+            "available": delta is not None,
+            "size": delta.size if delta is not None else 0,
+        },
+        "full": {
+            "available": full_asset is not None or full_fallback is not None,
+            "size": full_size,
+            "name": (
+                full_asset.name if full_asset is not None
+                else (full_fallback.name if full_fallback is not None else "")
+            ),
+            "via_fallback": full_asset is None and full_fallback is not None,
+        },
+        "install_to_versions": full_asset is not None or full_fallback is not None,
+        "ignored": False,
+    }
+
+    # ★ 本机比对（有逐文件清单时）：把"到底要不要重下 2G"变成一个具体数字。
+    #   **不遍历**整个应用根，只读清单里出现的路径——用户数据目录绝不会被扫到。
     if feed.payload_files and result.update_available:
+        root = Path(payload_root) if payload_root is not None else application_dir()
         plan = plan_payload(
             feed,
             local_hashes=_local_payload_hashes(feed.payload_files, root),
@@ -177,12 +218,6 @@ def check(
             #   拿 local_hashes 去查会恒为假（实测踩过）。
             exists=lambda relative: root.joinpath(*PurePosixPath(relative).parts).is_file(),
         )
-        delta = feed.payload_delta.get(__version__)
-        full_asset = feed.asset_for(
-            platform or detect_platform(),
-            edition or str(section.get("edition") or DEFAULT_EDITION),
-        )
-        full_size = full_asset.size if full_asset is not None else 0
         payload["payload_plan"] = {
             "files_total": len(feed.payload_files),
             "unchanged": plan.unchanged,
@@ -191,27 +226,14 @@ def check(
             "missing_locally": list(plan.missing_locally),
             "fetch_bytes": plan.fetch_bytes,
             "delta_for_current_version": delta.name if delta else "",
-            "delta_size": delta.size if delta else 0,
             "removed_in_new_version": list(plan.present_deleted),
             "payload_base": feed.payload_base or base,
         }
-        # ★ 体积对比文案（照 B 站移动端的形态）：两个数并排，用户一眼看到省了多少。
-        payload["options"] = {
-            "incremental": {
-                "available": delta is not None,
-                "size": delta.size if delta is not None else plan.fetch_bytes,
-            },
-            "full": {
-                "available": full_asset is not None,
-                "size": full_size,
-                "name": full_asset.name if full_asset is not None else "",
-            },
-            "install_to_versions": full_asset is not None,
-            "ignored": False,
-        }
+        full_label = _human_bytes(full_size) if full_size else "本版未提供"
         payload["detail"] = (
             f"{detail}；本机需更新 {plan.needs_download}/{len(feed.payload_files)} 个文件"
-            f"（增量约 {_human_bytes(plan.fetch_bytes)} · 全量包 {_human_bytes(full_size) if full_size else '本版未提供'}）"
+            f"（增量约 {_human_bytes(delta.size if delta else plan.fetch_bytes)}"
+            f" · 全量包 {full_label}）"
         )
 
     if result.notes:
@@ -319,8 +341,6 @@ def ignore(
         return {"status": "failed", "detail": str(exc), "current_version": __version__}, EXIT_FAILED
     if key is None:
         return _disabled_payload("未配置 self_update.trusted_public_key"), EXIT_DISABLED
-    if not base:
-        return _disabled_payload("未配置 self_update.feed_url"), EXIT_DISABLED
     try:
         feed = verify_feed_document(_fetch(base, FEED_FILENAME, config), trusted_public_key=key)
     except Exception as exc:
@@ -380,11 +400,12 @@ def apply(
     local_package = Path(package).expanduser() if package else None
 
     feed: Any = None
+    asset: Any = None
+    fallback_used: FullFallback | None = None
+    fetch_base = ""
     target_name = ""
     expected_sha = ""
     if local_package is None:
-        if not base:
-            return _disabled_payload("未配置 self_update.feed_url"), EXIT_DISABLED
         try:
             feed = verify_feed_document(
                 _fetch(base, FEED_FILENAME, config), trusted_public_key=key
@@ -400,16 +421,26 @@ def apply(
             edition or str(section.get("edition") or DEFAULT_EDITION),
         )
         if asset is None:
-            wanted = asset_key(
-                platform or detect_platform(),
-                edition or str(section.get("edition") or DEFAULT_EDITION),
-            )
-            return {
-                "status": "failed",
-                "detail": (f"更新源未提供本平台资产（{wanted}）"),
-                "current_version": __version__,
-            }, EXIT_FAILED
-        target_name, expected_sha = asset.name, asset.sha256
+            # 本平台没有全量包（小版本不重建全量）⇒ 用「最近一次带全量包的发布」兜底，
+            # 否则不在增量基线内的用户会被永久卡住。
+            fallback_used = feed.full_fallback
+            if fallback_used is None:
+                wanted = asset_key(
+                    platform or detect_platform(),
+                    edition or str(section.get("edition") or DEFAULT_EDITION),
+                )
+                return {
+                    "status": "failed",
+                    "detail": (
+                        f"更新源未提供本平台资产（{wanted}），且清单没有 full_fallback 兜底"
+                    ),
+                    "current_version": __version__,
+                }, EXIT_FAILED
+            target_name, expected_sha = fallback_used.name, fallback_used.sha256
+            fetch_base = fallback_used.base
+        else:
+            target_name, expected_sha = asset.name, asset.sha256
+            fetch_base = base
 
     # ★ 增量优先：更新源若提供"相对当前版本的变更包"，就只下它（几 MB），
     #   只替换**本机确实不同**的那些文件 —— 这是"不会真的下 2G"的落点。
@@ -453,7 +484,14 @@ def apply(
             delta.sha256 if delta is not None
             else (expected_sha or "(离线包：仅按包内 upgrade.json 验签 + 逐文件哈希)")
         ),
-        "download_bytes": delta.size if delta is not None else 0,
+        "download_bytes": (
+            delta.size if delta is not None
+            else ((asset.size if asset is not None else 0) or 0)
+        ),
+        "full_fallback": (
+            {"version": fallback_used.version, "name": fallback_used.name}
+            if fallback_used is not None else None
+        ),
         "files_to_replace": len(delta_expected) if delta is not None else 0,
         "workspace_protected": True,
     }
@@ -491,7 +529,7 @@ def apply(
         elif local_package is None:
             # 全量：整包（便携包 zip）。整包哈希来自**已签名清单** ⇒ 先核包再落地，
             # 一个字节不符就一个文件都不写。
-            raw = _fetch(base, target_name, config)
+            raw = _fetch(fetch_base, target_name, config)
             actual = hashlib.sha256(raw).hexdigest()
             if actual != expected_sha:
                 return {

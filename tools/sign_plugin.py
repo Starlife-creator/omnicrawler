@@ -259,6 +259,10 @@ def main(argv: list[str] | None = None) -> int:
     gen = sub.add_parser("generate-keys", help="生成 ed25519 密钥对")
     gen.add_argument("--private-out", default=PRIVATE_DEFAULT, help="私钥输出路径（冷存储）")
     gen.add_argument("--public-out", default=PUBLIC_DEFAULT, help="公钥输出路径（信任根）")
+    gen.add_argument(
+        "--overwrite", action="store_true",
+        help="允许覆盖已存在的公钥/私钥文件（默认拒绝——防一条命令误毁既有信任根）",
+    )
 
     sc = sub.add_parser("scan", help="发布前安全扫描插件目录")
     sc.add_argument("plugin_dir", help="插件目录路径")
@@ -308,6 +312,23 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "generate-keys":
+        # ★ 守卫（#31 教训）：默认 `--public-out` 就是市场信任根文件，不带参数跑一条命令
+        #   即可把它覆盖掉 ⇒ 任何已存在的目标都拒绝覆盖，除非显式 --overwrite；
+        #   市场信任根路径则**无条件拒绝**（换市场钥匙必须走 ressign_market 流程，不能手滑）。
+        public_target = Path(args.public_out)
+        private_target = Path(args.private_out)
+        if public_target.name == "plugin_trust.pub.pem":
+            raise SystemExit(
+                "拒绝生成：--public-out 指向市场信任根 configs/plugin_trust.pub.pem。\n"
+                "换市场信任钥必须走 tools/ressign_market.py 流程（重签全部插件并同步信任根），"
+                "不能用 generate-keys 覆盖。"
+            )
+        for target, label in ((public_target, "公钥"), (private_target, "私钥")):
+            if target.exists() and not args.overwrite:
+                raise SystemExit(
+                    f"拒绝生成：{label}文件已存在: {target}\n"
+                    "确认要覆盖请加 --overwrite；若要生成**另一把**钥匙，请换一个 --public-out 路径。"
+                )
         if not args.private_out:
             print(
                 "FAIL 无法确定用户主目录（无 HOME）；私钥只允许写入用户主目录，"
