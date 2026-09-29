@@ -16,7 +16,9 @@
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Callable
+from typing import cast
 
 from PySide6.QtCore import QObject, Qt
 from PySide6.QtGui import QAction, QKeySequence
@@ -39,6 +41,28 @@ class GlobalShortcutManager(QObject):
         self._actions: dict[str, QAction] = {}
         self._callbacks: dict[str, Callable[[], None]] = {}
         self._settings = AppSettings.instance()
+
+    #: weakref 存在**不同名**的内部键上：PySide6 的 QObject 子类里，
+    #: 实例 ``__dict__`` 的同名键会盖过类里的 property（Shiboken 的属性查找不按
+    #: Python 描述符协议走，实测 `type(mgr._main_window) is weakref.ref`）——
+    #: 若用同名键，调用方拿到的会是 weakref 本身而不是主窗口。
+    _WINDOW_REF_KEY = "_main_window_weak"
+
+    @property
+    def _main_window(self) -> QMainWindow:
+        """按需还原主窗口（只持 weakref —— 回收契约：避免"窗口→管理器→窗口"成环）。"""
+        window = self.__dict__[self._WINDOW_REF_KEY]()
+        if window is None:
+            raise RuntimeError(_("主窗口已销毁，快捷键管理器不再可用"))
+        return cast("QMainWindow", window)
+
+    @_main_window.setter
+    def _main_window(self, value: QMainWindow) -> None:
+        try:
+            self.__dict__[self._WINDOW_REF_KEY] = weakref.ref(value)
+        except TypeError:
+            # 不可弱引用的对象（测试桩）⇒ 退回强引用，把兼容边界写在明面上
+            self.__dict__[self._WINDOW_REF_KEY] = lambda: value
 
     def register_all(self, callbacks: dict[str, Callable[[], None]]) -> None:
         """注册全部 8 个快捷键。

@@ -344,6 +344,66 @@ class AppConfig:
         return str(value) if value else ""
 
     @property
+    def plugin_catalogs(self) -> list[dict[str, Any]]:
+        """多索引（#77 Phase 1）：可同时启用**多个** catalog 源。
+
+        配置形态：``plugins.catalogs: [{url, trust?, kind?, priority?, enabled?}]``
+
+        - ``trust``：该索引的信任根（PEM 文本 / 路径 / base64 / hex:）；留空＝用官方内置信任根；
+        - ``kind``：``curated``（官方策展）/``community``（社区索引）/``topic``（主题聚合）；
+        - ``priority``：同一 ``id`` 出现在多个索引时的展示优先级（小的在前，缺省 100）；
+        - ``enabled``：缺省 True。
+
+        **向后兼容**：未配置 ``catalogs`` 时，由 ``catalog_url`` 派生**唯一一条官方源**
+        （行为与升级前完全一致）。 ``catalog_url`` 仍保留为官方源基址。
+        """
+        plugins = self.section("plugins")
+        if not isinstance(plugins, dict):
+            return []
+        raw = plugins.get("catalogs")
+        sources: list[dict[str, Any]] = []
+        if isinstance(raw, list):
+            for index, item in enumerate(raw):
+                if not isinstance(item, dict):
+                    continue
+                url = str(item.get("url") or "").strip()
+                if not url:
+                    continue
+                kind = str(item.get("kind") or "community").strip() or "community"
+                if kind not in ("curated", "community", "topic"):
+                    kind = "community"
+                try:
+                    priority = int(item.get("priority", 100))
+                except (TypeError, ValueError):
+                    priority = 100
+                sources.append(
+                    {
+                        "url": url,
+                        "trust": str(item.get("trust") or "").strip(),
+                        "kind": kind,
+                        "priority": priority,
+                        "enabled": bool(item.get("enabled", True)),
+                        "index": index,
+                    }
+                )
+        if sources:
+            return sources
+        # 兼容路径：单源（官方策展）
+        url = self.plugin_catalog_url
+        if not url:
+            return []
+        return [
+            {
+                "url": url,
+                "trust": "",
+                "kind": "curated",
+                "priority": 0,
+                "enabled": True,
+                "index": 0,
+            }
+        ]
+
+    @property
     def plugin_bundled_catalog_dir(self) -> str:
         """离线/便携构建内置的 catalog 快照目录（相对或绝对路径）。
 
