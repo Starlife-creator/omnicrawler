@@ -19,7 +19,7 @@ from ...plugins.market_client import (
     fetch_resource,
 )
 from ..core.background_worker import BackgroundWorker
-from .i18n import _
+from ..i18n import _
 
 
 class _CatalogWorker(BackgroundWorker):

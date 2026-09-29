@@ -96,8 +96,13 @@ def catalogs_add(
     kind: str = "community",
     trust: str = "",
     priority: int = 100,
+    enabled: bool | None = None,
 ) -> tuple[dict[str, Any], int]:
-    """添加（或就地更新）一个索引；**先播种**当前生效的源。"""
+    """添加（或就地更新）一个索引；**先播种**当前生效的源。
+
+    ``enabled=None`` 表示"不动启用状态"（新增时默认启用）——GUI 的启用/停用与
+    优先级调整都复用本函数（同 URL 就地更新），不另设一套写入路径。
+    """
     config_file = _config_path(config_path)
     url = url.strip()
     if not url:
@@ -121,6 +126,8 @@ def catalogs_add(
             source.update({"kind": kind, "priority": int(priority)})
             if trust:
                 source["trust"] = trust
+            if enabled is not None:
+                source["enabled"] = bool(enabled)
             break
     else:
         seeded.append(
@@ -129,7 +136,7 @@ def catalogs_add(
                 "trust": trust,
                 "kind": kind,
                 "priority": int(priority),
-                "enabled": True,
+                "enabled": True if enabled is None else bool(enabled),
             }
         )
 

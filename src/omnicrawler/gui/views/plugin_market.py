@@ -38,6 +38,7 @@ from ...plugins.plugins import OFFICIAL_PLUGIN_TYPES
 from ..design_system import FONT_FAMILY_MONO, RADIUS, ThemeManager, scaled_font_px
 from ..i18n import _
 from ..widgets.status_indicator import StatusIndicator
+from ..widgets.toast import ToastManager
 from .plugin_market_actions import MarketActionsMixin
 from .plugin_market_browse import MarketBrowseMixin
 from .plugin_market_catalog import MarketCatalogMixin
@@ -158,6 +159,27 @@ class PluginMarketView(
         self._apply_style()
         ThemeManager.instance().theme_changed.connect(self._apply_style)
 
+    def _open_sources_dialog(self) -> None:
+        """打开"市场索引源管理"（#77 Phase 1）；关掉后重新聚合。
+
+        写入路径与 CLI 完全一致（commands/plugins_catalog），GUI 不自己写 YAML。
+        """
+        config_path = getattr(self._app_config, "path", None)
+        if config_path is None:
+            ToastManager.instance().info(_("未加载项目配置，无法管理索引源"))
+            return
+        from .market_sources_dialog import MarketSourcesDialog
+
+        dialog = MarketSourcesDialog(config_path, self)
+        dialog.exec()
+        # 源变了 ⇒ 重新取一次配置里的清单并刷新（聚合结果随之变化）
+        try:
+            config = self._app_config
+            self._catalog_sources = list(config.plugin_catalogs) if config is not None else []
+        except Exception:  # noqa: BLE001 - 配置读失败不应阻塞刷新
+            self._catalog_sources = []
+        self.refresh()
+
     @property
     def installed_root(self) -> Path:
         """Directory containing installed market plugins for this project."""
@@ -231,6 +253,10 @@ class PluginMarketView(
         self._identity_btn.clicked.connect(self._open_identity_dialog)
         top_bar.addWidget(self._identity_btn)
 
+        self._sources_btn = QPushButton(_("管理源…"))
+        self._sources_btn.setAccessibleName(_("管理市场索引源"))
+        self._sources_btn.clicked.connect(self._open_sources_dialog)
+        top_bar.addWidget(self._sources_btn)
         self._refresh_btn = QPushButton(_("刷新"))
         self._refresh_btn.clicked.connect(self.refresh)
         top_bar.addWidget(self._refresh_btn)

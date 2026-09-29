@@ -129,3 +129,34 @@ def test_write_back_warns_when_file_had_comments(tmp_path: Path) -> None:
 
     assert "不保留注释" in payload["detail"]
     assert "不保留注释" in payload["detail"]
+
+
+def test_enabled_none_keeps_state_new_source_defaults_enabled(tmp_path: Path) -> None:
+    """``enabled=None`` 不动启用状态；新增默认启用（GUI 的启用/停用复用同一函数）。"""
+    config = _write_config(tmp_path)
+    first, _ = cmd.catalogs_add(config_path=str(config), url="https://example.com/a")
+    entry = next(s for s in first["sources"] if s["url"] == "https://example.com/a")
+    assert entry["enabled"] is True
+
+    # 显式停用
+    off, _ = cmd.catalogs_add(
+        config_path=str(config), url="https://example.com/a", enabled=False
+    )
+    entry = next(s for s in off["sources"] if s["url"] == "https://example.com/a")
+    assert entry["enabled"] is False
+
+    # enabled=None 再走一次 ⇒ 状态保持不变（不是"重置为 True"）
+    again, _ = cmd.catalogs_add(config_path=str(config), url="https://example.com/a")
+    entry = next(s for s in again["sources"] if s["url"] == "https://example.com/a")
+    assert entry["enabled"] is False, "未显式指定 enabled 时不得偷偷改回启用"
+
+
+def test_disabled_source_still_listed_with_flag(tmp_path: Path) -> None:
+    """停用的源要留在配置里并如实标注（不静默删除——用户只是暂时不用它）。"""
+    config = _write_config(tmp_path)
+    cmd.catalogs_add(config_path=str(config), url="https://example.com/a", enabled=False)
+
+    listed, _ = cmd.catalogs_list(config_path=str(config))
+    entry = next(s for s in listed["sources"] if s["url"] == "https://example.com/a")
+    assert entry["enabled"] is False
+    assert len(listed["sources"]) == 2, "官方源 + 该停用源都应在列"
