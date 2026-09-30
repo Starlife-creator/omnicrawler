@@ -317,3 +317,217 @@ def test_manifest_tool_consumes_delta_file(tmp_path: Path) -> None:
         trusted_public_key=decode_public_key(public_pem.decode()),
     )
     assert feed.payload_delta["0.15.2"].name == package.name
+
+
+# ── 构建脚本实际调用的那条接口（此前**没有任何用例覆盖**）───────────────────
+# 三个构建脚本用的是 `--baselines` + `--baseline-url-base` + `--emit-args`
+# + `--emit-previous-args`，再喂给清单工具的 `--delta-file` 与 `--previous-manifest-file`。
+# 这条链直到第一次真发布才会被跑到 ⇒ 参数名/文件格式一旦不一致，代价是一轮发布事故。
+# 本组用例用**真的 HTTP 服务**（127.0.0.1 上临时端口）覆盖这条链，包括"某个版本没有清单"的跳过路径。
+
+
+@pytest.fixture()
+def baseline_server(tmp_path: Path):
+    """起一个只读本地 HTTP 服务，按 `<base>/v<版本>/<文件名>` 提供清单。"""
+    import http.server
+    import threading
+
+    root = tmp_path / "served"
+    root.mkdir(parents=True, exist_ok=True)
+
+    class _Handler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=str(root), **kwargs)
+
+        def log_message(self, *args):  # 静默：测试输出不需要访问日志
+            return None
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield root, f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_baselines_from_url_with_skip_and_both_arg_files(tmp_path: Path, baseline_server) -> None:
+    """★ 构建脚本的真实调用形态：给版本号列表 ⇒ 自己取清单、跳过缺失、产出两个参数文件。"""
+    from cryptography.hazmat.primitives import serialization
+
+    served, url_base = baseline_server
+    private_pem, public_pem = signing.generate_keypair()
+    key = serialization.load_pem_private_key(private_pem, password=None)
+    trust = tmp_path / "trust.pem"
+    trust.write_bytes(public_pem)
+
+    # 0.15.2 有清单；0.15.1 **故意没有**（模拟"那次没发或没签名"）⇒ 必须跳过而不是失败
+    previous = _signed_manifest(
+        served / "v0.15.2" / "update-linux-standard.json", key, version="0.15.2",
+        files={"app": b"OLD", "gone.txt": b"OLD-GONE"},
+    )
+    assert previous.is_file()
+
+    archive = _portable_zip(tmp_path / "dist" / "pkg.zip", {"app": b"NEW", "added": b"A"})
+    delta_args = tmp_path / "scratch" / ".delta-args.txt"
+    previous_args = tmp_path / "scratch" / ".previous-args.txt"
+
+    result = _run(
+        DELTA_TOOL,
+        "--payload-archive", str(archive),
+        "--version", "0.15.3", "--platform", "linux", "--edition", "standard",
+        "--baselines", "0.15.2,0.15.1",
+        "--baseline-url-base", url_base,
+        "--out-dir", str(tmp_path / "delta"),
+        "--scratch-dir", str(tmp_path / "scratch"),
+        "--emit-args", str(delta_args),
+        "--emit-previous-args", str(previous_args),
+        "--trusted-public-key", str(trust),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "0.15.1" in result.stderr and "跳过" in result.stderr, "缺失的基线要**可见地**跳过"
+
+    # ① 变更包参数文件：只有取到清单的那个版本
+    lines = [line for line in delta_args.read_text(encoding="utf-8").splitlines() if line]
+    assert len(lines) == 1 and lines[0].startswith("0.15.2="), lines
+    assert lines[0].endswith("update-0.15.2-to-0.15.3-linux-standard.zip")
+
+    # ② 基线参数文件：指向**已落盘的那份**（避免清单工具再取一次网络、还可能取到不同内容）
+    previous_lines = [
+        line for line in previous_args.read_text(encoding="utf-8").splitlines() if line
+    ]
+    assert len(previous_lines) == 1 and previous_lines[0].startswith("0.15.2="), previous_lines
+    saved = Path(previous_lines[0].partition("=")[2])
+    assert saved.is_file() and saved.name == ".baseline-0.15.2.json"
+
+    # ③ 把两个文件原样喂给清单工具（这才是构建脚本的实际顺序）
+    out = tmp_path / "update-linux-standard.unsigned.json"
+    built = _run(
+        BUILD_TOOL,
+        "--payload-archive", str(archive),
+        "--version", "0.15.3", "--platform", "linux", "--edition", "standard",
+        "--asset", f"linux-standard={archive}",
+        "--delta-file", str(delta_args),
+        "--previous-manifest-file", str(previous_args),
+        "--trusted-public-key", str(trust),
+        "--emit-unsigned", str(out),
+    )
+    assert built.returncode == 0, built.stdout + built.stderr
+
+    document = json.loads(out.read_text(encoding="utf-8"))
+    assert list(document["payload"]["delta"]) == ["0.15.2"], "变更包只该声明取到基线的那一版"
+    # ④ 累积删除：上一版有、本版没有的路径（`gone.txt`）必须出现在删除清单里
+    assert document["payload"]["deleted"] == ["gone.txt"], document["payload"]["deleted"]
+
+
+def test_previous_manifest_file_accumulates_deletions(tmp_path: Path) -> None:
+    """★ 累积语义：只看最近一版会让"更早删掉的残留"永远清不掉。
+
+    `payload.deleted` 是一个**扁平清单、无条件应用**。若只算 `最近一版 − 本版`，
+    那么从更老版本跳上来的用户手里那份**上一版就已删掉**的文件，既不在本版清单里、
+    也不在最近一版的删除集里 ⇒ 永远留着。
+    """
+    from cryptography.hazmat.primitives import serialization
+
+    private_pem, public_pem = signing.generate_keypair()
+    key = serialization.load_pem_private_key(private_pem, password=None)
+    trust = tmp_path / "trust.pem"
+    trust.write_bytes(public_pem)
+
+    near = _signed_manifest(
+        tmp_path / "near.json", key, version="0.15.2",
+        files={"keep.txt": b"K"},
+        # 更早那一版删掉的，由这份清单自己记着
+    )
+    far = _signed_manifest(
+        tmp_path / "far.json", key, version="0.15.1",
+        files={"keep.txt": b"K", "deleted_long_ago.txt": b"X"},
+    )
+    previous_args = tmp_path / "prev.txt"
+    previous_args.write_text(
+        f"0.15.2={near}\n0.15.1={far}\n", encoding="utf-8"
+    )
+    archive = _portable_zip(tmp_path / "dist" / "pkg.zip", {"keep.txt": b"K"})
+    out = tmp_path / "u.json"
+
+    built = _run(
+        BUILD_TOOL,
+        "--payload-archive", str(archive),
+        "--version", "0.15.3", "--platform", "linux", "--edition", "standard",
+        "--asset", f"linux-standard={archive}",
+        "--previous-manifest-file", str(previous_args),
+        "--trusted-public-key", str(trust),
+        "--emit-unsigned", str(out),
+    )
+    assert built.returncode == 0, built.stdout + built.stderr
+
+    document = json.loads(out.read_text(encoding="utf-8"))
+    assert document["payload"]["deleted"] == ["deleted_long_ago.txt"], document["payload"]["deleted"]
+
+
+def test_previous_manifest_file_requires_a_verified_baseline(tmp_path: Path) -> None:
+    """★ 反向断言：基线清单**必须验签** ⇒ 换一把钥匙签的清单不得当基线。"""
+    from cryptography.hazmat.primitives import serialization
+
+    private_pem, public_pem = signing.generate_keypair()
+    _other_private, other_public = signing.generate_keypair()
+    key = serialization.load_pem_private_key(private_pem, password=None)
+    trust = tmp_path / "trust.pem"
+    trust.write_bytes(public_pem)
+    elsewhere = tmp_path / "elsewhere.pem"
+    elsewhere.write_bytes(other_public)
+
+    baseline = _signed_manifest(tmp_path / "b.json", key, version="0.15.2", files={"a": b"1"})
+    previous_args = tmp_path / "prev.txt"
+    previous_args.write_text(f"0.15.2={baseline}\n", encoding="utf-8")
+    archive = _portable_zip(tmp_path / "dist" / "pkg.zip", {"a": b"2"})
+
+    built = _run(
+        BUILD_TOOL,
+        "--payload-archive", str(archive),
+        "--version", "0.15.3", "--platform", "linux", "--edition", "standard",
+        "--asset", f"linux-standard={archive}",
+        "--previous-manifest-file", str(previous_args),
+        "--trusted-public-key", str(elsewhere),
+        "--emit-unsigned", str(tmp_path / "u.json"),
+    )
+
+    assert built.returncode != 0
+    assert "校验失败" in (built.stdout + built.stderr)
+
+
+def test_empty_arg_files_produce_a_manifest_without_delta(tmp_path: Path) -> None:
+    """★ **0.15.0 首发的真实形态**：基线全取不到 ⇒ 两个参数文件为空 ⇒
+    清单必须**照常产出**（只是没有 `payload.delta` / `payload.deleted`），而不是失败。
+
+    为什么必须钉这条：构建脚本是**先创建空文件**（`: > "$DELTA_ARGS_FILE"`）再调用清单工具的；
+    首个版本一定走到这里（v0.14.0 及更早都没有任何 `update-*.json`）。空文件若被判成
+    "格式错误"，第一次发布就红。
+    """
+    delta_args = tmp_path / ".delta-args.txt"
+    previous_args = tmp_path / ".previous-args.txt"
+    delta_args.write_text("", encoding="utf-8")
+    previous_args.write_text("", encoding="utf-8")
+    archive = _portable_zip(tmp_path / "dist" / "pkg.zip", {"app": b"NEW"})
+    out = tmp_path / "u.json"
+
+    built = _run(
+        BUILD_TOOL,
+        "--payload-archive", str(archive),
+        "--version", "0.15.0", "--platform", "linux", "--edition", "standard",
+        "--asset", f"linux-standard={archive}",
+        "--delta-file", str(delta_args),
+        "--previous-manifest-file", str(previous_args),
+        "--emit-unsigned", str(out),
+    )
+
+    assert built.returncode == 0, built.stdout + built.stderr
+    document = json.loads(out.read_text(encoding="utf-8"))
+    assert document["payload"]["delta"] == {}
+    assert document["payload"]["deleted"] == []
+    assert set(document["payload"]["files"]) == {"app"}
+    # 清单本体仍然可验签（首发客户端的唯一依赖）
+    assert "signature" not in document  # 无签名清单，签名由维护者本机做
+    assert document["platform"] == "linux" and document["edition"] == "standard"

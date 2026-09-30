@@ -30,6 +30,7 @@ from omnicrawler.services.update_feed import (  # noqa: E402
     FEED_FILENAME,
     UpdateFeed,
     decode_public_key,
+    feed_filename,
     verify_feed_document,
 )
 
@@ -37,6 +38,7 @@ from omnicrawler.services.update_feed import (  # noqa: E402
 __all__ = [
     "DEFAULT_TRUST_ROOT",
     "FEED_FILENAME",
+    "feed_filename",
     "PayloadEntry",
     "cumulative_deleted",
     "iter_archive_members",
