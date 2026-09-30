@@ -27,10 +27,28 @@ if str(_REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from omnicrawler.services.update_feed import (  # noqa: E402
+    FEED_FILENAME,
     UpdateFeed,
     decode_public_key,
     verify_feed_document,
 )
+
+#: 供两个工具共用（`build_update_delta.py` 按 (平台, 版本) 逐级回退取基线清单时要用）。
+__all__ = [
+    "DEFAULT_TRUST_ROOT",
+    "FEED_FILENAME",
+    "PayloadEntry",
+    "cumulative_deleted",
+    "iter_archive_members",
+    "load_payload_entries",
+    "load_signed_manifest",
+    "read_source",
+    "reject_protected_top_level",
+    "require_single_root",
+    "resolve_trusted_key",
+    "sha256_of",
+    "split_root",
+]
 
 #: 随包内置的更新信任根（与市场信任根**刻意是两把钥匙**）。
 DEFAULT_TRUST_ROOT = "configs/update_trust.pub.pem"

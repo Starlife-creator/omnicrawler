@@ -55,6 +55,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+
 from manifest_common import (  # noqa: E402
     DEFAULT_TRUST_ROOT,
     FEED_FILENAME,

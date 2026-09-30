@@ -1,0 +1,61 @@
+#!/bin/sh
+# =============================================================================
+# OmniCrawler-launcher —— Linux/macOS 的**版本无关入口**（GUI）
+#
+# 为什么需要它（2026-09-30）：`--to-versions` 把新版装到 `<安装根>/versions/<版本>/`，
+# 靠 `<安装根>/versions/current.txt` 决定"当前生效的是哪一份"。而 Linux 上此前的入口是
+# **安装期烘死的绝对路径**（`.desktop` 的 `Exec=$PREFIX/OmniCrawler` 与
+# `~/.local/bin/omnicrawler -> $PREFIX/omnicrawler`），两者都指向**就地**那一份
+# ⇒ 装了新版也没人启动它。Windows 没有这个问题，因为它的文档化入口本来就是启动器
+# （`OmniCrawler-Launcher.bat` 读 `versions\current.txt`）。本脚本补上等价的消费者，
+# **指针格式与 Windows 完全一致**（同一份 `versions/current.txt`）。
+#
+# 判据（与 .bat 同一套）：
+#   · 指针缺失 / 为空 / 指向的目录不完整 ⇒ **回退就地那份**（绝不让人打不开应用）；
+#   · 只认**可执行**的目标（不完整或半途中断的版本目录不会被误启动）。
+#
+# ★ 同时设置 `OMNICRAWL_INSTALL_ROOT`：版本化布局下"运行目录 ≠ 安装根"，
+#   应用必须靠这个变量把**用户数据根**钉在安装根上（否则每换一版，`work/`、`data/`
+#   就跟着换地方，而清理旧版本时会把里面写进去的用户数据一起删掉）。
+# =============================================================================
+set -eu
+
+# 解析自身所在目录（符号链接也要正确解析：用户可能把它软链到 PATH 里）
+SELF="$0"
+while [ -L "$SELF" ]; do
+  TARGET=$(readlink "$SELF")
+  case "$TARGET" in
+    /*) SELF="$TARGET" ;;
+    *) SELF="$(dirname -- "$SELF")/$TARGET" ;;
+  esac
+done
+SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$SELF")" && pwd)
+
+OMNICRAWL_INSTALL_ROOT="$SELF_DIR"
+export OMNICRAWL_INSTALL_ROOT
+
+BINARY_NAME="OmniCrawler"
+CURRENT_PTR="$SELF_DIR/versions/current.txt"
+TARGET=""
+
+if [ -f "$CURRENT_PTR" ]; then
+  POINTED=""
+  # 只取第一行、去掉首尾空白与可能的 CR（指针文件被 Windows 侧写过时会有 CRLF）
+  IFS= read -r POINTED < "$CURRENT_PTR" || POINTED=""
+  POINTED=$(printf '%s' "$POINTED" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  if [ -n "$POINTED" ] && [ -x "$SELF_DIR/versions/$POINTED/$BINARY_NAME" ]; then
+    TARGET="$SELF_DIR/versions/$POINTED/$BINARY_NAME"
+  fi
+fi
+
+if [ -z "$TARGET" ]; then
+  TARGET="$SELF_DIR/$BINARY_NAME"
+fi
+
+if [ ! -x "$TARGET" ]; then
+  echo "[ERROR] 未找到可执行文件：$TARGET" >&2
+  echo "请确认已完整解压便携包；若用过 --to-versions，请检查 versions/current.txt 指向的目录是否完整。" >&2
+  exit 1
+fi
+
+exec "$TARGET" "$@"

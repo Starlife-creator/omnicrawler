@@ -242,7 +242,13 @@ def check(
         if (result.update_available and feed.payload_files) else None
     )
     full_asset = feed.asset_for(target_platform, target_edition) if result.update_available else None
+    # ★ 能力声明进 options：GUI 与调用方据此把"能自动更新"和"只能手动安装"区分开。
+    #   macOS 不在 `AUTO_APPLY_PLATFORMS` 里（主产物是 dmg、`browsers/` 在 .app 之外、
+    #   ad-hoc 签名会被改坏）⇒ 如实说"只能手动装"，而不是让用户点一个注定失败的按钮。
+    manual_only = result.update_available and not feed.auto_apply
     payload["options"] = {
+        "auto_apply": result.update_available and feed.auto_apply,
+        "manual_install": manual_only,
         "incremental": {
             "available": delta is not None,
             "size": delta.size if delta is not None else 0,
@@ -252,9 +258,19 @@ def check(
             "size": full_asset.size if full_asset is not None else 0,
             "name": full_asset.name if full_asset is not None else "",
         },
-        "install_to_versions": full_asset is not None,
+        "install_to_versions": full_asset is not None and feed.auto_apply,
         "ignored": False,
     }
+    if manual_only:
+        where = (
+            f"（{full_asset.name}，{_human_bytes(full_asset.size)}）"
+            if full_asset is not None
+            else f"（本平台资产 {asset_key(target_platform, target_edition)}）"
+        )
+        payload["detail"] = (
+            f"{detail}；★ 本平台**不支持自动更新**，请手动下载并替换"
+            f"{where} —— 取自本 Release 的下载页（feed 基址：{base}）"
+        )
 
     # ★ 本机比对（有逐文件清单时）：把"到底要不要重下 2G"变成一个具体数字。
     #   **不遍历**整个应用根，只读清单里出现的路径——用户数据目录绝不会被扫到。
@@ -304,7 +320,25 @@ PORTABLE_ZIP_ROOT = "OmniCrawler"
 CURRENT_POINTER = "versions/current.txt"
 
 #: 就地布局下需要"退役"的入口（防止用户误点旧版、又触发一次更新）。
-_RETIRE_ENTRIES = ("OmniCrawler.exe", "OmniCrawler-Launcher.bat")
+#:
+#: ★★ **绝不退役启动器**（`OmniCrawler-Launcher.bat` / `*-launcher`）：启动器是
+#: **版本无关**的 —— 它读 `versions/current.txt` 再决定启动哪一份。把它改名 `.outdated`
+#: 等于把"唯一能启动应用的入口"藏起来（此前 Windows 那份就在名单里，属真缺陷）。
+#: 退役只针对**具体版本的那几个二进制**。
+_RETIRE_ENTRIES_WINDOWS = ("OmniCrawler.exe",)
+_RETIRE_ENTRIES_POSIX = ("OmniCrawler", "omnicrawler")
+
+
+def _retire_names(platform: str) -> tuple[str, ...]:
+    """**目标平台**该退役的就地入口二进制（**不含启动器**）。
+
+    判据取"正在安装的那个平台"而不是 `detect_platform()`：两者在生产环境里必然一致
+    （退役动作作用在正在运行的那棵树上），但取显式参数才能在测试里确定性地说清
+    "给 linux 装的时候退役哪几个" —— 否则用例会随"跑在哪个系统上"而变。
+    """
+    if platform.strip().lower() == "windows":
+        return _RETIRE_ENTRIES_WINDOWS
+    return _RETIRE_ENTRIES_POSIX
 
 
 def _write_current_pointer(root: Path, version: str) -> Path:
@@ -315,11 +349,16 @@ def _write_current_pointer(root: Path, version: str) -> Path:
     return pointer
 
 
-def _retire_inplace_entries(root: Path) -> list[str]:
+def _retire_inplace_entries(root: Path, *, platform: str) -> list[str]:
     """把就地布局的旧入口改名 `.outdated`（防误点）。**改名在运行中可行**（实测），
-    失败（被占用且不允许改名）则原样保留并如实返回，不静默。"""
+    失败（被占用且不允许改名）则原样保留并如实返回，不静默。
+
+    ★ **不碰启动器**（见 `_retire_names` 的注释）：它是版本无关的入口，退役掉用户就没法启动了。
+    ★ 启动器本身还会做"若 `current.txt` 指向别的版本 ⇒ 转交"的检查，所以即便用户
+    直接点了旧二进制，也会被引到当前生效的那份。
+    """
     retired: list[str] = []
-    for name in _RETIRE_ENTRIES:
+    for name in _retire_names(platform):
         entry = root / name
         if not entry.exists():
             continue
@@ -567,6 +606,27 @@ def apply(
                 "current_version": __version__,
             }, EXIT_FAILED
         asset = feed.asset_for(target_platform, target_edition)
+        if not feed.auto_apply:
+            # ★ 能力声明说"本平台只能手动装" ⇒ **明确拒绝并指路**，不去尝试一个注定失败的落地。
+            #   判据来自清单的 `auto_apply`（与 `AUTO_APPLY_PLATFORMS` 同源），而不是客户端
+            #   自己按平台名猜 —— 这样"支持面"只有一处真源。
+            target_asset = feed.asset_for(target_platform, target_edition)
+            what = (
+                f"{target_asset.name}（{_human_bytes(target_asset.size)}）"
+                if target_asset is not None
+                else asset_key(target_platform, target_edition)
+            )
+            return {
+                "status": "failed",
+                "detail": (
+                    f"本平台不支持自动更新（{target_platform}）：原因见平台能力声明。"
+                    f"请手动下载并替换 {what}（本 Release 的下载页：{base}）。"
+                ),
+                "current_version": __version__,
+                "latest_version": feed.version,
+                "feed_document": feed_name,
+                "manual_install": True,
+            }, EXIT_FAILED
         if asset is None:
             # ★ 明确缺失 + 指引（**不再**指向老版本兜底）。
             #   曾经的做法是用 `full_fallback` 指向"最近一次带全量包的发布"，但那是
@@ -613,22 +673,13 @@ def apply(
         if not delta_expected:
             delta = None  # 本机已与目标一致：一个成员都不用下
 
-    # ★ `--to-versions` 的**消费者只有 Windows 启动器**（`OmniCrawler-Launcher.bat` 读
-    #   `versions\current.txt`）；Linux/macOS 上没有任何东西会读那个指针 ⇒ 静默产出
-    #   "装了但没人启动它"的布局比拒绝更糟。这里明确拒绝并指路（Linux 侧包一层解析脚本
-    #   属后续项，需与 install-user.sh / 桌面入口一起改）。
-    if to_versions:
-        target_platform = platform or detect_platform()
-        if target_platform != "windows":
-            return {
-                "status": "failed",
-                "detail": (
-                    f"--to-versions 目前仅 Windows 可用（当前平台 {target_platform}）："
-                    "该布局靠启动器读取 versions/current.txt，而 Linux/macOS 暂无消费者。"
-                    "请改用 --full（全量·就地替换）。"
-                ),
-                "current_version": __version__,
-            }, EXIT_FAILED
+    # ★ `--to-versions`（"保留旧版本"）此前**只在 Windows 可用**并被明确拒绝：Linux/macOS
+    #   的入口是安装期烘死的绝对路径（`.desktop` 的 Exec、`~/.local/bin` 软链），都指向
+    #   **就地**那一份 ⇒ 装了新版没人启动它。现在三平台都有了读 `versions/current.txt` 的
+    #   启动器（Linux：随包发 `OmniCrawler-launcher` / `omnicrawler-cli-launcher`；
+    #   Windows：`OmniCrawler-Launcher.bat`），且**指针格式完全一致** ⇒ 拒绝可以撤了。
+    #   ★ macOS 仍然只有 `assets`-only 清单、主产物是 dmg（`apply_archive` 只认 zip），
+    #   其"能不能落地"是另一件事，不在这里假装解决 —— 见发布侧的 macOS 能力声明。
 
     if delta is not None:
         mode = "incremental"
@@ -687,7 +738,7 @@ def apply(
                 dest_root=versions_root,
             )
             _write_current_pointer(manager.install_root, version)
-            plan["retired_entries"] = _retire_inplace_entries(root)
+            plan["retired_entries"] = _retire_inplace_entries(root, platform=target_platform)
             plan["versions_root"] = str(versions_root)
         else:
             # 全量·就地替换：只占一份（--full 显式选择，或本机不在增量基线内的兜底）

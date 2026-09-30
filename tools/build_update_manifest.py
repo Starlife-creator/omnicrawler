@@ -55,6 +55,7 @@ from manifest_common import (  # noqa: E402
 
 from omnicrawler.core.versions import version_key  # noqa: E402
 from omnicrawler.services.update_feed import (  # noqa: E402
+    AUTO_APPLY_PLATFORMS,
     FEED_FILENAME,
     canonical_feed_bytes,
     feed_filename,
@@ -176,6 +177,10 @@ def build(args: argparse.Namespace) -> dict[str, object]:
     if platform:
         # 客户端会**交叉校验**这个字段（防把别的平台的清单应用上来）
         document["platform"] = platform
+        # ★ 平台能力声明（与客户端的 `AUTO_APPLY_PLATFORMS` **同一判据**，不另抄一份）：
+        #   macOS 的自动落地做不到（主产物是 dmg、browsers/ 在 .app 之外、ad-hoc 签名），
+        #   所以清单如实写 `auto_apply: false` ⇒ 客户端只提示、引导手动安装。
+        document["auto_apply"] = platform in AUTO_APPLY_PLATFORMS
     if edition:
         # 同理：Standard/Full 的逐文件清单不同，套错版本会白下或漏文件
         document["edition"] = edition

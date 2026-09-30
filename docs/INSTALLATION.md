@@ -120,13 +120,20 @@ python -m omnicrawler.pdfx --help
 
    | 方式 | 命令 | 磁盘 | 适用 |
    |---|---|---|---|
-   | **增量更新** | `self-update apply -c task.yaml --yes` | **一份** | 有"相对当前版本的变更包"时（默认） |
-   | **全量·就地替换** | `self-update apply -c task.yaml --full --yes` | **一份** | 大版本，或本机不在增量基线内（自动兜底） |
-   | **全量·装到 versions/**（**仅 Windows**） | `self-update apply -c task.yaml --full --to-versions --yes` | **两份** | 想保留当前版本以便回退（应用根那份原样不动）。★ 该布局靠 `OmniCrawler-Launcher.bat` 读 `versions/current.txt`，Linux/macOS 暂无消费者 ⇒ 非 Windows 平台会**明确拒绝**并建议改用 `--full` |
+   | **增量更新** | `self-update apply -c task.yaml --yes` | **一份** | 有"相对当前版本的变更包"时（默认）。发布侧为**最近 3 个版本**各出一个变更包，所以跨两三版升级也能走增量 |
+   | **全量·就地替换** | `self-update apply -c task.yaml --full --yes` | **一份** | 显式选全量；或本机版本不在增量窗口内（自动兜底） |
+   | **全量·装到 versions/** | `self-update apply -c task.yaml --full --to-versions --yes` | **两份** | 想保留当前版本以便回退（就地那份原样不动）。三平台都可用：Windows 靠 `OmniCrawler-Launcher.bat`，Linux/macOS 靠随包发的 `OmniCrawler-launcher` / `omnicrawler-cli-launcher` —— 三者读**同一份** `versions/current.txt` |
+   | **手动安装**（macOS） | 见下 | — | macOS **不支持自动更新**：只提示有新版并给出要下载的文件名与体积 |
 
-   ★ 装到 `versions/<新版>/` 时会写 `versions/current.txt`（启动器优先读它指向的版本），
-   并把就地布局的旧入口改名 `.outdated`（防止误点旧版又触发一次更新）；应用根里那份**原样保留**，
-   你随时可以删，或以后提供"清理旧版本"入口。
+   ★ 装到 `versions/<新版>/` 时会写 `versions/current.txt`（入口优先读它指向的版本），
+   并把就地布局的**旧版本二进制**改名 `.outdated`（防止误点旧版又触发一次更新）。
+   ★ **启动器自己不会被改名** —— 它是版本无关的入口，藏起来就没法启动应用了。
+   应用根里那份**原样保留**，你随时可以删，或以后提供"清理旧版本"入口。
+   ★ 用户的 `work/`、`data/` 等数据**始终在安装根**（不随版本目录走）；`self-update cleanup`
+   也不会删含用户数据的版本目录（会如实报出来但不删）。
+   ★ **macOS 只能手动安装**：主产物是 `.dmg`（纯 Python 读不了内部）、Chromium 在 `.app`
+   之外、ad-hoc 签名会被改坏 ⇒ 自动落地做不到**完整替换**。所以 macOS 上产品只告诉你
+   "有新版本 + 该下载哪个文件"，不提供一个点了必然失败的动作。
    ★ **忽略此版本的更新**：`self-update ignore -c task.yaml`（记录当前更新源给出的版本，
    之后同一版本不再提示；出现更新的版本自动恢复）· `self-update ignore -c task.yaml --clear` 恢复。
    ★ 更新源**不绑定任何托管方**（远程目录或本地目录均可）；本地目录形态可用于内网镜像与离线环境。

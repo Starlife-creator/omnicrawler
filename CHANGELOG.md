@@ -4,6 +4,51 @@
 
 ### 变更
 
+- fix(update): **落地端三处硬化 + 变更包产出端 + 删掉 `full_fallback` + Linux/macOS 版本无关入口** ——
+  ① ★ **数据根不再跟着版本走**：`--to-versions` 把新版装进 `<安装根>/versions/<版本>/` 后，
+  经启动器运行时 `application_dir()`（＝`sys.executable` 的父目录）也随之指向版本目录，
+  而冻结包**一定**把数据根设为它 ⇒ 用户的 `work/`、`data/` 会写进版本目录，**下一轮
+  `cleanup --yes` 按"除当前版外全部删除"把它们一起 `rmtree` 掉**（实测可复现；Windows 的
+  启动器已上线 ⇒ 这条路径**今天就在产品里**）。新增 `install_root()`（安装根 ≠ 运行目录，
+  解析顺序＝启动器传入的环境变量 → 运行目录的父目录名为 `versions` 时上溯 → 就地重合），
+  数据根改跟安装根；并加**拒删守卫**：含非空 `work`/`data`/`output`/`.omnicrawler` 的版本目录
+  不进入可清理集合、如实报出（判据刻意不含 `logs`，否则每份版本目录都受保护、清理功能形同废掉）。
+  ② ★ **权限位往返**：zip 把 `st_mode` 存在 `external_attr` 高 16 位，而客户端**从没读它**，
+  一律按新建文件的默认模式写出 ⇒ **Linux/macOS 上经变更包或整包替换后的 `omnicrawler`
+  变成不可执行**（整包路径同病）。现在在改名落地前把模式落到临时文件（仍是一次原子替换），
+  并钳制 `& 0o777` **丢掉 setuid/setgid/sticky**（变更包不签名 ⇒ 不可信容器）。
+  ③ ★ **删掉 `full_fallback`**：它存在的唯一理由（"小版本不重建全量包"）**从未实现**
+  （每版都无条件构建并发布六份全量，v0.14.0 实测 ≈6.4 GB），而它的跨版本兜底会把应用
+  **静默降级成旧版**却把版本号报成新版（`--to-versions` 还会把版本号写进 `current.txt`）——
+  一个错误的状态比没有自动路径更糟。缺本平台本版本键 ⇒ 明确报出缺哪个键并给两条已文档化的
+  替代路径；`assets` 放宽规则一并撤回（现在必须非空）。④ ★ **本地损害自愈**：
+  `plan_payload` 把"本机没有的文件"一律算进 `missing_locally`（与基线无关），而变更包只装
+  "相对基线变化过"的成员 ⇒ 用户删过/被隔离过一个"两版间未变"的文件后，整次更新**硬失败且
+  不自愈**。现在缺成员 ⇒ 自动降级走全量并报出缺失路径。⑤ ★ **变更包产出端**
+  （`tools/build_update_delta.py`）：`payload.delta` 此前只有消费端、**没有任何产出端**
+  ⇒ "小版本只发增量、老用户不必下整包"这条路径永远走不到。由 **本版归档 + K 份旧版已签名
+  清单** 算出（**不需要重建旧版本、也不需要旧版字节** —— "哪些文件要下"靠逐文件哈希，
+  旧哈希就在旧清单里），单次遍历归档、成员时间戳固定（产物可复现）、权限位随包携带；
+  基线窗口 **K=3** 由 `release.yml` 从 tag 列表推导；`payload.deleted` 改为**累积**语义
+  （`⋃(旧版 files ∪ 旧版 deleted) − 本版 files`），删除清单**刻意不放变更包里**（包是不可信容器）。
+  ⑥ ★ **Linux/macOS 的版本无关入口**：此前 `--to-versions` 因"消费者只有 Windows 启动器"
+  被明确拒绝（Linux 的入口是安装期烘死的绝对路径，都指向就地那份）。现在随包发
+  `OmniCrawler-launcher` / `omnicrawler-cli-launcher`（POSIX `sh`，读**同一份**
+  `versions/current.txt`，指针无效/目标不可执行 ⇒ 回退就地那份，并把 `OMNICRAWL_INSTALL_ROOT`
+  交给子进程），`install-user.sh` 的桌面条目与 PATH 软链都指向启动器 ⇒ 拒绝同批撤回。
+  ⑦ ★ **启动器绝不退役**：退役名单此前含 `OmniCrawler-Launcher.bat` —— 启动器是**版本无关**
+  的入口（读指针），把它改名 `.outdated` 等于把"唯一能启动应用的入口"藏起来；现在按**目标
+  平台**给退役名单，且只含具体版本的二进制。⑧ ★ **macOS 能力声明收口**：`apply_archive()`
+  只认 zip 而 macOS 主产物是 dmg（Release 无 zip/tar.gz）、`browsers/` 在 `.app` 之外、
+  ad-hoc 签名会被改坏 ⇒ **自动落地在 macOS 上根本跑不起来**，而我们**已经在发**
+  `update-macos-*.json` —— 等于对一个装不上的平台声明"可更新"。新增 `AUTO_APPLY_PLATFORMS`
+  能力表 + 清单 `auto_apply` 字段（与能力表**取与**，声明 true 也不越权）+ 客户端
+  `manual_install` 呈现，三处一致：**只报"有新版"并给出要下载的文件名与体积**。
+  验证：`tests/unit/{services,cli,core,utils,gui,tools}` **1832 passed, 23 skipped**；
+  并逐条做**反向断言**（装回缺口 ⇒ 必须红 ⇒ 字节级还原）：数据根退回 `application_dir()`、
+  去掉清理守卫、关掉自愈、启动器丢掉 `#!/bin/sh`、启动器混入 `pipefail`、清单谎称
+  `auto_apply: true` —— 全部转红。静态自证 **17/17**；`check_linux_delivery` 通过。
+
 - refactor(release): **更新清单改为在「打包那一刻」就地生成，并按 (平台, 版本) 分成六份** —— ① 清单生成从聚合 job 搬进三个构建脚本末尾（`build_windows.ps1` / `build_linux.sh` / `build_macos.sh`）：归档刚写完就在本机磁盘上，逐文件 sha256 直接**从归档流式**读出来（tar.xz 顺序读、内存恒定、**不落第二个解压目录**），不必再把 2 GiB 归档在聚合 job 下载+解包一遍；② 新增 `--payload-archive` 直接吃**发布用的那个归档**（顶层 `OmniCrawler/` 自动剥掉；多顶层目录**拒绝**、`work`/`data` 等受保护顶层**拒绝**）—— 这样清单与**归档本体**逐字节一致，不再依赖「打包时排除了什么」这条隐含约定（tar 排除 `OmniCrawler/logs`、zip 排除顶层 `logs/`，两处不同步时增量校验会**很晚**才失败，用户侧才发现）；③ 文件名从 `update-<平台>.json` 细化为 `update-<平台>-<版本>.json`（Standard/Full 的 `runtime/`、OCR 载荷不同 ⇒ 逐文件清单也不同），客户端按 `update-<平台>-<版本>.json` → `update-<平台>.json` → `update.json` **逐级回退**；④ 清单新增自述字段 `edition`，与 `platform` 一样**交叉校验**（不符即拒绝，fail-closed —— 把 Full 的清单套在 Standard 安装上会白下或漏文件）；⑤ `check`/`apply` 的结果新增 `feed_document`（**命中哪份清单**），出问题时第一句话就能答；⑥ 签名工具支持 `--editions` 网格：**一条命令签完 三平台 × 两版本**（缺席的跳过并列出，`--strict` 则缺一份就红），404 与「文件在但坏了」按**状态码**区分（不看错误文案）；⑦ `--notes-file` 走 UTF-8 文件而非命令行参数（Windows PowerShell 5.1 传非 ASCII 参数给原生 exe 会按控制台代码页转码，中文变 `??`）。验证：`tests/unit/{tools,cli,services,utils}` **105 passed**；静态自证 **17/17**。
 
 ### 修复

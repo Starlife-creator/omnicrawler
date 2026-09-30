@@ -829,18 +829,27 @@ def test_cleanup_command_reports_plan_then_deletes(tmp_path: Path) -> None:
     assert done["freed_bytes"] == len(b"LEGACY")
 
 
-def test_to_versions_refused_on_non_windows(tmp_path: Path) -> None:
-    """★ `--to-versions` 的消费者只有 Windows 启动器 ⇒ Linux/macOS 上明确拒绝。
+def test_to_versions_works_on_posix_now_that_consumers_exist(tmp_path: Path) -> None:
+    """★★ **撤回旧的「非 Windows 一律拒绝」**：三平台现在都有读指针的启动器了。
 
-    静默产出"装了但没人会启动它"的布局，比拒绝更糟（用户以为回退可用，其实没有入口）。
+    历史：`--to-versions` 曾因"消费者只有 Windows 启动器"而被明确拒绝（静默产出
+    "装了但没人会启动它"的布局比拒绝更糟）。现在 Linux 随包发
+    `OmniCrawler-launcher` / `omnicrawler-cli-launcher`（读同一份 `versions/current.txt`），
+    能力上线 ⇒ 这条拒绝必须同批撤掉，否则用户拿不到已经可用的能力。
+
+    本用例钉三件事：① 在 POSIX 平台**能装成**；② 载荷落在 `<安装根>/versions/<版本>/`
+    且指针被写出；③ **启动器原位不动**（它才是入口，退役掉就没法启动了）。
     """
     private, public = _keypair()
     feed_dir = tmp_path / "feed"
     app = tmp_path / "app"
     app.mkdir()
     (app / "app.exe").write_bytes(b"OLD")
+    for launcher in ("OmniCrawler-launcher", "omnicrawler-cli-launcher"):
+        (app / launcher).write_bytes(b"#!/bin/sh\nexit 0\n")
     pkg = _write_portable_zip(
-        feed_dir / "OmniCrawler-99.0.0-Linux-Portable-Standard.tar.xz", files={"app.exe": b"NEW"}
+        feed_dir / "OmniCrawler-99.0.0-Linux-Portable-Standard.tar.xz",
+        files={"app.exe": b"NEW", "newfile.txt": b"ADDED"},
     )
     _write_full_feed(feed_dir, private, version="99.0.0", asset_path=pkg)
     config = _write_config(tmp_path, feed=feed_dir, public=public)
@@ -849,10 +858,20 @@ def test_to_versions_refused_on_non_windows(tmp_path: Path) -> None:
         config_path=str(config), app_root=app, platform="linux", full=True, to_versions=True
     )
 
-    assert code == cmd_self_update.EXIT_FAILED, payload
-    assert "--to-versions" in payload["detail"] and "Windows" in payload["detail"]
-    assert not (app / "versions").exists(), "被拒绝时不得留下任何布局痕迹"
+    assert code == cmd_self_update.EXIT_OK, payload
+    assert payload["plan"]["mode"] == "versions-install"
+    versions_root = app / "versions" / "99.0.0"
+    assert (versions_root / "app.exe").read_bytes() == b"NEW"
+    assert (versions_root / "newfile.txt").read_bytes() == b"ADDED"
+    assert (app / "versions" / "current.txt").read_text(encoding="utf-8").strip() == "99.0.0"
+    # 就地那份**原样不动**＝零成本回退
     assert (app / "app.exe").read_bytes() == b"OLD"
+    # ★ 启动器必须还在（退役名单里绝不含启动器）
+    for launcher in ("OmniCrawler-launcher", "omnicrawler-cli-launcher"):
+        assert (app / launcher).exists(), f"{launcher} 被退役 ⇒ 用户没有入口启动应用"
+    # 退役动作**被报告出来了**（具体退役了哪几个由 _retire_names(平台) 决定，
+    # 那条不变量另有专门用例钉住；这里只确认这一步执行了、且没碰启动器）。
+    assert isinstance(payload["plan"].get("retired_entries"), list)
 
 
 # ── 按平台清单（update-<platform>.json）+ 平台交叉校验 ─────────────────
@@ -1027,3 +1046,151 @@ def test_check_refuses_manifest_from_another_platform(tmp_path: Path) -> None:
 
     assert code == cmd_self_update.EXIT_FAILED, payload
     assert "平台" in payload["detail"] and "linux" in payload["detail"]
+
+
+# ── 退役入口：绝不碰启动器 ────────────────────────────────────────────────
+# 启动器是**版本无关**的入口（读 versions/current.txt 再决定启动哪一份）。
+# 把它改名 `.outdated` 等于把"唯一能启动应用的入口"藏起来 —— 此前 Windows 那份
+# 就在退役名单里（`OmniCrawler-Launcher.bat`），属真缺陷。
+
+
+@pytest.mark.parametrize("target_platform", ["windows", "linux", "macos"])
+def test_retire_names_never_include_a_launcher(target_platform: str) -> None:
+    """★ 不变量：三个平台的退役名单里都不得出现启动器。
+
+    启动器是**版本无关**的入口，退役掉它等于把"唯一能启动应用的入口"藏起来
+    （此前 Windows 那份 `OmniCrawler-Launcher.bat` 就在名单里）。
+    """
+    names = cmd_self_update._retire_names(target_platform)
+
+    assert names, "总要退役点什么（否则就地布局会留下可误点的旧入口）"
+    for name in names:
+        assert "launcher" not in name.lower(), f"{name} 是启动器，不能退役"
+        assert not name.lower().endswith(".bat"), f"{name} 是启动器，不能退役"
+
+
+def test_retire_names_follow_the_target_platform() -> None:
+    """★ 退役名单按**目标平台**给，而不是按"进程跑在哪个系统上"。
+
+    取显式平台才能在测试里确定性地说清行为；生产环境里两者一致
+    （动作作用在正在运行的那棵树上）。
+    """
+    assert cmd_self_update._retire_names("windows") == ("OmniCrawler.exe",)
+    assert cmd_self_update._retire_names("linux") == ("OmniCrawler", "omnicrawler")
+    assert cmd_self_update._retire_names("macos") == ("OmniCrawler", "omnicrawler")
+
+
+def test_retire_entries_leave_launchers_untouched(tmp_path: Path) -> None:
+    """★ 功能断言：跑一遍退役，启动器必须**原位不动**，具体版本二进制才被改名。
+
+    ★ 用 `platform="windows"`：退役名单里 `OmniCrawler` 与 `omnicrawler` 只差大小写，
+    在**大小写不敏感的卷**（macOS 默认、Windows）上会塌成同一个文件 ⇒ 用 POSIX 名单
+    时"退了几个"会随文件系统而变。跨平台的那条不变量由上面参数化的用例钉。
+    """
+    root = tmp_path / "app"
+    root.mkdir()
+    for name in ("OmniCrawler.exe", "OmniCrawler-Launcher.bat",
+                 "OmniCrawler", "OmniCrawler-launcher", "omnicrawler", "omnicrawler-cli-launcher"):
+        (root / name).write_bytes(b"stub")
+
+    retired = cmd_self_update._retire_inplace_entries(root, platform="windows")
+
+    for launcher in ("OmniCrawler-Launcher.bat", "OmniCrawler-launcher", "omnicrawler-cli-launcher"):
+        assert (root / launcher).exists(), f"{launcher} 被退役了 ⇒ 用户没有入口启动应用"
+        assert not (root / f"{launcher}.outdated").exists()
+
+    for name in cmd_self_update._retire_names("windows"):
+        assert (root / f"{name}.outdated").exists(), f"{name} 应当被退役"
+    assert len(retired) == len(cmd_self_update._retire_names("windows"))
+
+
+# ── 平台能力声明：macOS 只能手动安装（"能力声明与实现一致"）─────────────────
+# macOS 做不到自动落地：`apply_archive()` 只认 zip 而主产物是 dmg、`browsers/` 在 .app
+# 之外、ad-hoc 签名会被改坏。此前我们**已经在发** `update-macos-*.json` ⇒ 等于对一个
+# 装不上的平台声明"可更新"。现在三处一致：能力表（services）、清单字段、客户端判据。
+
+
+def _write_manual_only_feed(
+    feed_dir: Path, private: ed25519.Ed25519PrivateKey, *, version: str = "99.0.0"
+) -> Path:
+    """macOS 形态的清单：有 assets（dmg），但声明 `auto_apply: false`。"""
+    feed_dir.mkdir(parents=True, exist_ok=True)
+    document = {
+        "version": version,
+        "platform": "macos",
+        "edition": "standard",
+        "auto_apply": False,
+        "assets": {
+            "macos-standard": {
+                "name": f"OmniCrawler-{version}-macOS-Portable-Standard.dmg",
+                "sha256": "c" * 64,
+                "size": 900 * 1024 * 1024,
+            }
+        },
+    }
+    signature = base64.b64encode(private.sign(uf.canonical_feed_bytes(document))).decode()
+    path = feed_dir / uf.feed_filename("macos", "standard")
+    path.write_text(
+        json.dumps({**document, "signature": signature}, ensure_ascii=False), encoding="utf-8"
+    )
+    return path
+
+
+def test_apply_refuses_on_manual_only_platform_with_the_download_hint(tmp_path: Path) -> None:
+    """★ 声明"只能手动装"的平台 ⇒ **明确拒绝并给出要下哪个包**，不去尝试注定失败的落地。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "OmniCrawler.app").mkdir()
+    _write_manual_only_feed(feed_dir, private)
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.apply(
+        config_path=str(config), app_root=app, platform="macos", edition="Standard"
+    )
+
+    assert code == cmd_self_update.EXIT_FAILED, payload
+    assert payload["manual_install"] is True
+    assert "不支持自动更新" in payload["detail"]
+    # 必须**告诉用户下哪一个**（否则"手动装"只是一句空话）
+    assert "OmniCrawler-99.0.0-macOS-Portable-Standard.dmg" in payload["detail"]
+
+
+def test_check_reports_manual_install_for_such_platform(tmp_path: Path) -> None:
+    """check 侧同步如实：`options.manual_install` 为真，且体积用真实资产算出来。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_manual_only_feed(feed_dir, private)
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.check(
+        config_path=str(config), platform="macos", edition="Standard", payload_root=app
+    )
+
+    assert code == cmd_self_update.EXIT_UPDATE_AVAILABLE, payload
+    assert payload["options"]["manual_install"] is True
+    assert payload["options"]["auto_apply"] is False
+    assert payload["options"]["install_to_versions"] is False
+    assert payload["options"]["full"]["size"] == 900 * 1024 * 1024
+    assert "手动下载" in payload["detail"]
+
+
+def test_check_keeps_auto_apply_for_supported_platforms(tmp_path: Path) -> None:
+    """反向的一半：Windows/Linux 照旧可自动更新（别为了修 macOS 把正常路径关掉）。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_platform_feed(feed_dir, private, version="99.0.0", platform="linux")
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.check(
+        config_path=str(config), platform="linux", payload_root=app
+    )
+
+    assert code == cmd_self_update.EXIT_UPDATE_AVAILABLE, payload
+    assert payload["options"]["manual_install"] is False
+    assert payload["options"]["auto_apply"] is True

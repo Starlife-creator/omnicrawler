@@ -227,6 +227,18 @@ for relative_dir in data/input data/pdfs work output logs; do
   mkdir -p "$RELEASE_ROOT/$relative_dir"
 done
 
+# ---- 版本无关入口（启动器）-----------------------------------------------------
+# ★ 为什么必须在**安装根**放启动器：`--to-versions` 把新版装到 `versions/<版本>/`，
+#   靠 `versions/current.txt` 决定当前生效的是哪一份；只有读指针的入口才会启动新版。
+#   Windows 一直有它（`OmniCrawler-Launcher.bat`），Linux 之前没有 ⇒ 装了新版没人启动。
+# ★ 指针格式与 Windows **完全一致**（同一份 `versions/current.txt`），三平台一个心智模型。
+# ★ 用 POSIX sh 而不是 bash：它是用户**唯一**能启动应用的入口，`/bin/sh` 由 POSIX 保证存在。
+#   （形态判据见 tools/check_linux_delivery.py 的 DELIVERY_POSIX_SCRIPTS。）
+for launcher in OmniCrawler-launcher omnicrawler-cli-launcher; do
+  cp "$PROJECT_ROOT/packaging/linux/$launcher" "$RELEASE_ROOT/"
+  chmod +x "$RELEASE_ROOT/$launcher"
+done
+
 # ---- 用户级安装件（I1a/I1b）：脚本 + hicolor 图标 ----------------------------
 # ★ 本段必须落在 create_runtime_manifest.py 之前 —— 否则新文件不在
 #   RUNTIME-MANIFEST 里，runtime-verify 的双向核对立刻红（白烧一轮 CI）。

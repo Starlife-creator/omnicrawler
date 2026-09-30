@@ -59,7 +59,9 @@ assert _smoke_spec is not None and _smoke_spec.loader is not None
 archive_smoke = importlib.util.module_from_spec(_smoke_spec)
 _smoke_spec.loader.exec_module(archive_smoke)
 
-DELIVERY_FILES = ("install-user.sh", "uninstall-user.sh", "omnicrawler.desktop.in")
+# ★ 单一真源：用**判据自己的**交付件清单，而不是在测试里再抄一份 ——
+#   抄一份的话，将来给判据加文件（如启动器）会漏掉暂存、反向断言就悄悄失效。
+DELIVERY_FILES = check_linux_delivery.DELIVERY_FILES
 HICOLOR_SIZES = (16, 24, 32, 48, 64, 128, 256)
 
 
@@ -482,3 +484,47 @@ def test_archive_install_smoke_red_then_restored_when_exec_points_nowhere(
     template.write_bytes(pristine)
     assert _sha256(template) == hashlib.sha256(pristine).hexdigest()
     assert archive_smoke.linux_install_smoke(root, tmp_path / "work")["desktop_entry"] == "ok"
+
+
+# ── A2 组：POSIX sh 类交付件（启动器）的形态判据 ──────────────────────────
+# 启动器是用户**唯一**能启动应用的入口，所以它刻意用 `/bin/sh`（POSIX 保证存在）而不是 bash。
+# 代价是没有 `pipefail` ⇒ 判据是 `set -eu`。若有人"为了统一"把它改成 bash，
+# 或者把 `pipefail` 塞进来，下面两条要能立刻说话。
+
+
+def test_posix_launchers_are_declared_and_shaped(tmp_path: Path) -> None:
+    """正向：两个启动器都在交付清单里，且形态正确。"""
+    staged = _stage_delivery(tmp_path)
+    for name in check_linux_delivery.DELIVERY_POSIX_SCRIPTS:
+        assert (staged / name).is_file(), f"{name} 必须在交付件清单里（否则没人检查它）"
+    assert check_linux_delivery.check(staged) == []
+
+
+def test_checker_goes_red_if_launcher_loses_sh_shebang(tmp_path: Path) -> None:
+    """★ 反向断言：启动器丢掉 `#!/bin/sh` ⇒ 必红（被改成 bash 也算丢）。"""
+    staged = _stage_delivery(tmp_path)
+    launcher = staged / "OmniCrawler-launcher"
+    launcher.write_text(
+        launcher.read_text(encoding="utf-8").replace("#!/bin/sh\n", "#!/usr/bin/env bash\n", 1),
+        encoding="utf-8",
+        newline="",
+    )
+
+    errors = check_linux_delivery.check(staged)
+
+    assert any("#!/bin/sh" in error for error in errors), errors
+
+
+def test_checker_goes_red_if_launcher_uses_pipefail(tmp_path: Path) -> None:
+    """★ 反向断言：POSIX sh 里没有 `pipefail` ⇒ 写进来必红（否则运行期才发现）。"""
+    staged = _stage_delivery(tmp_path)
+    launcher = staged / "omnicrawler-cli-launcher"
+    launcher.write_text(
+        launcher.read_text(encoding="utf-8").replace("set -eu\n", "set -euo pipefail\n", 1),
+        encoding="utf-8",
+        newline="",
+    )
+
+    errors = check_linux_delivery.check(staged)
+
+    assert any("pipefail" in error for error in errors), errors

@@ -80,6 +80,21 @@ DEFAULT_FEED_URL = "https://github.com/Starlife-creator/omnicrawler/releases/lat
 #: 可选版本后缀（``Standard`` / ``Full``）。空串表示"不区分版本"。
 DEFAULT_EDITION = "Standard"
 
+#: 支持**自动落地**（把新版字节写进本机）的平台。
+#:
+#: ★★ 为什么 macOS 不在其中（2026-09-30 核实，且这是**能力声明要与实现一致**的落点）：
+#:
+#: 1. `UpgradeManager.apply_archive()` 只认 **zip**，而 macOS 的主产物是 **`.dmg`**
+#:    （Release 里没有 zip/tar.gz）⇒ macOS 上"全量落地"这条路径**根本跑不起来**；
+#: 2. macOS 的 `browsers/` 在 `.app` **之外**（`browsers_root()` 特意取 `.app` 的同级，
+#:    理由是避免 codesign seal 卷入 Chromium 的复杂 bundle），而 `app_root` 是
+#:    `Contents/MacOS` ⇒ **任何以 app_root 为根的载荷都覆盖不到 `browsers/`**；
+#: 3. `.app` 是 ad-hoc 签名，改包内任何 Mach-O 都会让签名失效（Apple Silicon 有硬要求）。
+#:
+#: 这三点都不是"加个启动器"能解决的 ⇒ 与其假装能更新，不如**如实只报"有新版"并引导手动安装**。
+#: 三处必须一致：本常量（客户端判据）、清单里的 `auto_apply` 字段（发布侧声明）、文档。
+AUTO_APPLY_PLATFORMS = frozenset({"windows", "linux"})
+
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ED25519_KEY_BYTES = 32
 
@@ -124,6 +139,9 @@ class UpdateFeed:
     #: Standard/Full 的 ``runtime/`` 与 OCR 载荷不同 ⇒ 逐文件清单也不同，拿错清单会把
     #: 另一版当作"应该是什么样"，所以与 platform 一样要交叉校验（fail-closed）。
     edition: str = ""
+    #: 本清单**声明本平台能否自动落地**（缺省 True）。发布侧写 `auto_apply: false` 表示
+    #: "只报有新版，请手动安装"——判据与 `AUTO_APPLY_PLATFORMS` 同源，避免两处漂移。
+    auto_apply: bool = True
 
     def asset_for(self, platform: str, edition: str) -> UpdateAsset | None:
         return self.assets.get(asset_key(platform, edition))
@@ -321,6 +339,13 @@ def _parse_document(document: Mapping[str, Any]) -> UpdateFeed:
     payload_files, payload_base, payload_delta, payload_deleted = _parse_payload(document)
     platform = str(document.get("platform") or "").strip().lower()
     edition = str(document.get("edition") or "").strip().lower()
+    # 缺省 True（老清单没有这个字段 ⇒ 保持既有行为）；显式 false 才表示"仅提示、不落地"。
+    raw_auto_apply = document.get("auto_apply", True)
+    if not isinstance(raw_auto_apply, bool):
+        raise UpdateFeedError("更新源文档的 auto_apply 必须是布尔值")
+    # ★ 与 `AUTO_APPLY_PLATFORMS` **取与**：声明了 true 但本平台其实做不到时，以能力表为准
+    #   （发布侧写错声明不能变成"客户端去尝试一个注定失败的落地"）。
+    auto_apply = raw_auto_apply and (not platform or platform in AUTO_APPLY_PLATFORMS)
     return UpdateFeed(
         version=version,
         published_at=str(document.get("published_at") or ""),
@@ -332,6 +357,7 @@ def _parse_document(document: Mapping[str, Any]) -> UpdateFeed:
         payload_deleted=payload_deleted,
         platform=platform,
         edition=edition,
+        auto_apply=auto_apply,
     )
 
 

@@ -47,6 +47,23 @@ def format_update_summary(payload: dict[str, Any]) -> str:
     options = payload.get("options") or {}
     incremental = options.get("incremental") or {}
     full = options.get("full") or {}
+    if options.get("manual_install"):
+        # ★ 如实说"只能手动装"（本平台自动更新做不到，见 services/update_feed 的能力表）。
+        #   不给出一个点了必然失败的动作 —— 只给下载信息。
+        lines.append(_("★ 本平台不支持自动更新，需要手动下载并替换："))
+        if full.get("available"):
+            lines.append(
+                _("下载包：{0}（约 {1}）").format(
+                    full.get("name", ""), _human_bytes(int(full.get("size", 0)))
+                )
+            )
+        lines.append(_("下载后请解压替换原目录；请先用产品内「检查更新」的说明确认版本号。"))
+        notes = payload.get("notes")
+        if notes:
+            lines.append("")
+            lines.append(_("更新说明："))
+            lines.append(str(notes))
+        return "\n".join(lines)
     if incremental.get("available"):
         lines.append(
             _("增量更新（约 {0}）").format(_human_bytes(int(incremental.get("size", 0))))

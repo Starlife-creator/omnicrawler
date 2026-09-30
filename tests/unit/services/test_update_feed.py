@@ -354,3 +354,48 @@ def test_plan_payload_uses_hash_not_mere_presence() -> None:
     )
     assert plan.to_fetch == ("app.exe",)
     assert plan.unchanged == 1
+
+
+# ── 平台能力声明：auto_apply（"能力声明必须与实现一致"）─────────────────────
+# macOS 做不到自动落地（主产物 dmg、browsers/ 在 .app 之外、ad-hoc 签名会被改坏），
+# 所以清单如实写 auto_apply: false，客户端只提示、引导手动安装。三处同源：
+# services 里的能力表、清单字段、客户端判据。
+
+
+def test_auto_apply_defaults_to_true_for_legacy_manifests() -> None:
+    """老清单没有这个字段 ⇒ 保持既有行为（不因为新增字段把老发布判成"只能手动"）。"""
+    private, public = _keypair()
+    raw = _signed(_document(), private)
+    feed = uf.verify_feed_document(raw, trusted_public_key=public)
+
+    assert feed.auto_apply is True
+
+
+def test_auto_apply_false_is_honoured() -> None:
+    """清单显式声明"本平台不自动落地" ⇒ 客户端必须认。"""
+    private, public = _keypair()
+    document = {**_document(), "platform": "linux", "auto_apply": False}
+    feed = uf.verify_feed_document(_signed(document, private), trusted_public_key=public)
+
+    assert feed.auto_apply is False
+
+
+def test_auto_apply_cannot_overclaim_a_platform() -> None:
+    """★ 反向断言：清单**谎称**能自动落地时，以能力表为准（取与）。
+
+    否则发布侧一个笔误就会让客户端去尝试一个注定失败的落地（macOS 上连包都读不了）。
+    """
+    private, public = _keypair()
+    document = {**_document(), "platform": "macos", "auto_apply": True}
+    feed = uf.verify_feed_document(_signed(document, private), trusted_public_key=public)
+
+    assert "macos" not in uf.AUTO_APPLY_PLATFORMS
+    assert feed.auto_apply is False, "能力表说做不到 ⇒ 声明 true 也不生效"
+
+
+def test_auto_apply_must_be_boolean() -> None:
+    """类型判据：写个字符串不算"声明"。"""
+    private, public = _keypair()
+    document = {**_document(), "auto_apply": "yes"}
+    with pytest.raises(uf.UpdateFeedError, match="auto_apply"):
+        uf.verify_feed_document(_signed(document, private), trusted_public_key=public)
