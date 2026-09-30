@@ -245,6 +245,14 @@ egress:
 plugins:
   paths: [plugins/, plugins_installed/]
   allow_external_paths: false
+  # 多索引（#77 Phase 1）：可同时启用多个 catalog 源。未配置时由 catalog_url 派生**唯一一条官方源**
+  #（行为与升级前完全一致）。详见 docs/MARKET_ECOSYSTEM.md「多索引」。
+  catalogs:
+    - url: https://raw.githubusercontent.com/<owner>/<index-repo>/main
+      kind: community        # curated（官方策展）| community（社区索引）| topic（主题聚合）
+      priority: 10           # 同一 id 出现在多个索引时的展示优先级（小的在前，缺省 100）
+      trust: ""              # 该索引的信任根（PEM 文本/路径/base64/hex:）；留空＝官方内置信任根
+      enabled: true
   enabled_market_plugins: [site]
   permission_grants:
     site:
@@ -255,6 +263,10 @@ plugins:
   fail_open: false
   hook_fail_open: true
 ```
+
+★ **`catalogs[].trust` 留空**不是"不校验"，而是**用官方内置信任根**；取数或验签失败的源会
+**带着原因出现在报告里**（不静默丢弃）。三级信任信号（官方策展 / 社区索引 / P2P 未审核）
+及其**各自不保证什么**见 `docs/MARKET_ECOSYSTEM.md`。
 
 权限授权绑定插件 ID、版本和载荷哈希；插件代码或整包 manifest 变化后必须重新批准。旧字段
 `approved_permissions` 仅在只启用一个插件时临时兼容，多插件配置必须迁移，避免权限横向复用。

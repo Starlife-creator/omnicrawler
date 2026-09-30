@@ -518,6 +518,27 @@ def _download_manifest_package(
     return dest_dir / main_name
 
 
+def entry_source_base(entry: Mapping[str, Any], *, catalog_url: str) -> str:
+    """条目该从**哪里**取清单与包：条目自己的 ``source_base`` 优先，否则回落到索引基址。
+
+    #77 设计要点 3（「聚合而非搬运」）：官方/社区索引可以只**背书**、不搬运字节 ——
+    条目用 ``source_base`` 指向**创作者自己的仓库**，索引只提供发现与签名信息。
+    没有这一条，"社区索引聚合他人仓库"在实际安装时会去索引的基址找包（必然 404 或取错），
+    也就是**设计上写着、跑起来走不通**。
+
+    ★ 跟着索引给的基址去取包安全吗？安全，因为三条判据都没有被绕过：
+    ① 包字节仍要用**创作者签名**验（`verify_bytes`/`_download_manifest_package`）；
+    ② 还要对**清单里固化的 sha256**（time-of-check 后门防线）；
+    ③ 目标主机照样过 **egress 策略**（`fetch_resource` 走 broker）。
+    即：索引能决定"去哪儿取"，但决定不了"取到的东西算不算数"。
+
+    ★ 判据只留这一处：`download_and_verify` 内部解析（它手里就有 entry），
+    调用方（GUI/CLI）不必各自记得传基址 —— 少一个能写错的接线点。
+    """
+    declared = str(entry.get("source_base") or "").strip()
+    return declared or catalog_url
+
+
 def download_and_verify(
     plugin_id: str,
     catalog_url: str,
@@ -544,18 +565,22 @@ def download_and_verify(
         egress=egress,
     )
     entry = resolve_entry(catalog, plugin_id)
+    # ★ 索引可以只背书、不搬运：条目用 `source_base` 指向创作者自己的仓库。
+    #   清单与包都从**这个**基址取；下面三条判据（创作者签名 / 固化 sha256 / egress 策略）
+    #   一个都不因此放松 —— 索引能决定"去哪儿取"，决定不了"算不算数"。
+    asset_base = entry_source_base(entry, catalog_url=catalog_url)
     if entry.get("package_manifest_file"):
         return _download_manifest_package(
             entry,
-            catalog_url,
+            asset_base,
             Path(dest_root) / plugin_id,
             trust_source,
             main_name="plugin.py",
             timeout=timeout,
             egress=egress,
         )
-    plugin_bytes = fetch_resource(catalog_url, entry["plugin_file"], timeout=timeout, egress=egress)
-    sig_bytes = fetch_resource(catalog_url, entry["signature_file"], timeout=timeout, egress=egress)
+    plugin_bytes = fetch_resource(asset_base, entry["plugin_file"], timeout=timeout, egress=egress)
+    sig_bytes = fetch_resource(asset_base, entry["signature_file"], timeout=timeout, egress=egress)
     if not verify_bytes(plugin_bytes, sig_bytes, trust_source):
         raise PermissionError(f"插件 {plugin_id} 签名校验失败（fail-closed 拒载）")
 
