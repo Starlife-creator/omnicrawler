@@ -50,6 +50,7 @@ _GUI_APP_HOLD = None
 if not _cli_mode():
     try:
         from PySide6.QtCore import (
+            QProcess,
             Qt,
             QThread,
             QTimer,
@@ -236,6 +237,8 @@ class MainWindow(QMainWindow):
         self._config = CrawlConfig()
         self._config_path: Path | None = None
         self._update_check_worker: Any = None
+        # 执行更新的后台线程（与检查分开持有：检查可重入、执行必须互斥）
+        self._update_apply_worker: Any = None
         self._task_controller: TaskController | None = None
         self._run_controller: RunController | None = None
         self._result_controller: ResultController | None = None
@@ -929,9 +932,10 @@ class MainWindow(QMainWindow):
             self._tray_icon = None
 
     def _check_for_updates(self) -> None:
-        """托盘"检查更新"：后台线程跑 CLI 的 check，结果以 Toast/对话框呈现。
+        """托盘"检查更新"：后台线程跑 check，结果以 Toast/对话框呈现。
 
-        本入口只做**检查与说明**；执行更新仍走命令行（含 --yes 确认判据）。
+        ★ 检查与**执行**都在应用内（执行走同一套 `commands.self_update` 编排）；
+        本平台没有自动落地能力时只给下载信息（见 `options.manual_install`）。
         """
         from .update_check import _CheckWorker
 
@@ -964,17 +968,153 @@ class MainWindow(QMainWindow):
                 _("检查更新失败：{0}").format(payload.get("detail", ""))
             )
             return
-        from .update_check import format_update_summary
+        from .update_check import (
+            available_apply_modes,
+            describe_apply_mode,
+            format_update_summary,
+        )
 
         summary = format_update_summary(payload)
         if status == "up-to-date":
             ToastManager.instance().info(summary)
             return
+
+        options = payload.get("options") or {}
+        modes = available_apply_modes(options)
+        if not modes:
+            # 本平台没有自动落地能力（或本版没有可用资产）⇒ **只呈现信息**。
+            # 不提供"点了必然失败"的按钮。
+            box = QMessageBox(self)
+            box.setWindowTitle(_("检查更新"))
+            box.setText(summary)
+            box.setAccessibleName(_("检查更新结果"))
+            box.exec()
+            return
+
         box = QMessageBox(self)
         box.setWindowTitle(_("检查更新"))
         box.setText(summary)
         box.setAccessibleName(_("检查更新结果"))
+        apply_button = box.addButton(_("立即更新"), QMessageBox.ButtonRole.AcceptRole)
+        ignore_button = box.addButton(_("忽略此版本"), QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton(_("稍后"), QMessageBox.ButtonRole.RejectRole)
         box.exec()
+        clicked = box.clickedButton()
+        if clicked is ignore_button:
+            self._ignore_current_update_version()
+            return
+        if clicked is not apply_button:
+            return
+        if len(modes) == 1:
+            self._start_update_apply(modes[0], describe_apply_mode(modes[0], options))
+            return
+        # 多种方式可选 ⇒ 让用户选（含体积与磁盘代价，用户要据此决定）
+        chooser = QMessageBox(self)
+        chooser.setWindowTitle(_("选择更新方式"))
+        chooser.setAccessibleName(_("选择更新方式"))
+        chooser.setText(_("请选择更新方式："))
+        buttons: dict[Any, str] = {}
+        for mode in modes:
+            buttons[chooser.addButton(describe_apply_mode(mode, options), QMessageBox.ButtonRole.AcceptRole)] = mode
+        chooser.addButton(_("取消"), QMessageBox.ButtonRole.RejectRole)
+        chooser.exec()
+        chosen = buttons.get(chooser.clickedButton())
+        if chosen is None:
+            return
+        self._start_update_apply(chosen, describe_apply_mode(chosen, options))
+
+    def _ignore_current_update_version(self) -> None:
+        """托盘对话框的"忽略此版本"：与 CLI 的 `self-update ignore` 同一条路径。
+
+        ★ 复用 commands 层（它**必须先读更新源**拿当前版本号，不接受随手填 —— 记录一个
+        不存在的版本会导致永远收不到提示），不另写一份。
+        """
+        if self._config_path is None:
+            return
+        from ..commands import self_update as cmd_self_update
+
+        try:
+            payload, _code = cmd_self_update.ignore(config_path=str(self._config_path))
+        except Exception as exc:  # noqa: BLE001 - 异常需呈现给用户（C12/C25）
+            LOGGER.debug("update ignore failed: %s", exc, exc_info=True)
+            ToastManager.instance().warning(_("忽略该版本失败：{0}").format(exc))
+            return
+        ToastManager.instance().info(str(payload.get("detail") or _("已忽略该版本")))
+
+    def _start_update_apply(self, mode: str, description: str) -> None:
+        """确认后启动后台更新线程（确认框 ＝ CLI 的 `--yes` 判据）。"""
+        from .update_check import _ApplyWorker
+
+        confirm = QMessageBox(self)
+        confirm.setWindowTitle(_("确认更新"))
+        confirm.setAccessibleName(_("确认更新"))
+        confirm.setIcon(QMessageBox.Icon.Warning)
+        confirm.setText(
+            _("将执行：{0}\n\n这会覆盖应用文件（不会动你的工作区数据）。继续吗？").format(description)
+        )
+        confirm.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        confirm.setDefaultButton(QMessageBox.StandardButton.No)
+        if confirm.exec() != QMessageBox.StandardButton.Yes:
+            return
+        if self._update_apply_worker is not None:
+            ToastManager.instance().info(_("更新正在进行中"))
+            return
+        ToastManager.instance().info(_("正在下载并应用更新……"))
+        worker = _ApplyWorker(str(self._config_path), mode, self)
+        worker.finished_with.connect(self._on_update_applied)
+        self._update_apply_worker = worker
+        worker.start()
+
+    def _on_update_applied(self, payload: dict[str, Any], code: int) -> None:
+        from .update_check import format_apply_result
+
+        self._update_apply_worker = None
+        text = format_apply_result(payload, code)
+        if str(payload.get("status", "")) != "applied":
+            box = QMessageBox(self)
+            box.setWindowTitle(_("更新未完成"))
+            box.setAccessibleName(_("更新未完成"))
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setText(text)
+            box.exec()
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle(_("更新完成"))
+        box.setAccessibleName(_("更新完成"))
+        box.setText(text)
+        restart_button = box.addButton(_("立即重启"), QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(_("稍后手动重启"), QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is restart_button:
+            self._restart_application()
+
+    def _restart_application(self) -> None:
+        """拉起同一个可执行文件再退出当前进程。
+
+        ★ 只在**冻结包**下提供：源码模式下"重启"会变成用解释器重跑当前脚本，
+        行为与用户预期不符（`sys.executable` 是 python 而不是应用）。
+        ★ 落地后旧二进制已被改名让位、新的在原路径上，所以再启动同一个路径就是新版。
+        """
+        from ..core.runtime_paths import is_frozen
+
+        if not is_frozen():
+            ToastManager.instance().info(_("开发环境下请手动重启；更新已写入磁盘"))
+            return
+        try:
+            started, _pid = QProcess.startDetached(sys.executable, sys.argv[1:])
+        except Exception as exc:  # noqa: BLE001 - 重启失败不该影响"更新已完成"这个事实
+            LOGGER.debug("restart failed: %s", exc, exc_info=True)
+            started = False
+        if not started:
+            ToastManager.instance().warning(_("重启失败，请手动关闭并重新打开应用"))
+            return
+        self._quit_application()
+
+    def _quit_application(self) -> None:
+        """走**正常关闭路径**退出（closeEvent 里的安全收尾：停任务、清恢复草稿、
+        释放连接池），而不是直接 QApplication.quit() —— 后者会跳过那些收尾。
+        """
+        self.close()
 
     # ================================================================
     #  信号连接
