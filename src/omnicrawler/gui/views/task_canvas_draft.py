@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...core.pagination import INTEGER, SHAPES, PaginationShape, detect_shape, shape_for_type
+from ...core.pagination import CHOICE, INTEGER, SHAPES, PaginationShape, detect_shape, shape_for_type
 from ..design_system import SPACING
 from ..i18n import _
 from ..widgets.help_tooltip import HelpTooltip
@@ -79,8 +79,41 @@ def _pagination_shape_label(key: str) -> str:
     return _({"page": "按页码 / 偏移", "cursor": "按游标 / 下一页值"}.get(key, key))
 #: 下拉里代表"形状未知、原样保留"的哨兵值（插件可自带 type）。
 _PAGINATION_KEEP = "__keep__"
-#: 由表单拥有的分页字段名（写回时据此清掉另一形状的残留；契约里 `editable=False` 的键不在此列，
-#: 例如 `location` —— 它需要 `source.payload` 配套，表单改不动，就必须原样留着）。
+
+def _pagination_value(edit: QLineEdit | QComboBox) -> str:
+    """分页控件的**统一读法**（下拉与文本框两种控件，语义只在这里定义一次）。"""
+    if isinstance(edit, QComboBox):
+        data = edit.currentData()
+        return str(data) if data is not None else edit.currentText()
+    return edit.text()
+
+
+def _set_pagination_value(edit: QLineEdit | QComboBox, value: str) -> None:
+    """分页控件的**统一写法**。
+
+    ★ 关键：下拉里若**没有**这个值，就把它**作为一项插进去**再选中，**绝不悄悄改成别的值**。
+    理由：`location` 的合法取值由契约声明、由 `core.pagination` 校验；表单的职责是**忠实呈现**，
+    而不是"猜一个最接近的"——静默改写用户配置是本仓明确反对的一类缺陷。
+    """
+    if isinstance(edit, QComboBox):
+        index = edit.findData(value)
+        if index < 0:
+            index = edit.findText(value)
+        if index < 0:
+            if not value:
+                edit.setCurrentIndex(0)
+                return
+            edit.addItem(value, value)
+            index = edit.findData(value)
+        edit.setCurrentIndex(index)
+        return
+    edit.setText(value)
+
+
+#: 由表单拥有的分页字段名（写回时据此清掉另一形状的残留）。
+#: ★ 一律**从契约推导**（`field.editable`），不另立清单：契约里仍是 `editable=False` 的键
+#: 不在其中 ⇒ 换形状时**原样保留**，不会被表单当成"上个形状的残留"清掉。
+#: （2026-09-30 起 `location` 已转为可编辑，故它**在**此列；配套校验见 `core/config.validate_config`。）
 _EDITABLE_PAGINATION_FIELDS = frozenset(
     field.name for shape in SHAPES for field in shape.fields if field.editable
 )
@@ -96,7 +129,7 @@ class DraftAreaMixin:
     _summary_label: QLabel
     _max_pages: QSpinBox
     _pagination_combo: QComboBox
-    _pagination_edits: dict[str, QLineEdit]
+    _pagination_edits: dict[str, QLineEdit | QComboBox]
     _pagination_rows: dict[str, QWidget]
     _pagination_extras: dict[str, Any]
     _pagination_keep_original: bool
@@ -269,12 +302,27 @@ class DraftAreaMixin:
             for field in shape.fields:
                 if not field.editable or field.name in self._pagination_edits:
                     continue
-                edit = QLineEdit()
-                edit.setObjectName("pagination" + field.name.title().replace("_", ""))
-                edit.setPlaceholderText(_pagination_field_placeholder(field.name))
-                edit.setClearButtonEnabled(True)
-                edit.setAccessibleName(_pagination_field_label(field.name))
-                edit.textChanged.connect(self._on_scope_changed)
+                # ★ 控件类型由**契约**决定：`CHOICE` ⇒ 下拉（选项就是契约的 choices，用户不会打错），
+                #   其余 ⇒ 文本框。此前一律建文本框 ⇒ 一旦把某个 CHOICE 字段开放编辑，
+                #   用户就得手打枚举值（打错只在运行时才炸）。
+                control: QLineEdit | QComboBox
+                if field.kind == CHOICE:
+                    combo = QComboBox()
+                    combo.setObjectName("pagination" + field.name.title().replace("_", ""))
+                    combo.setAccessibleName(_pagination_field_label(field.name))
+                    combo.addItem("", "")
+                    for choice in field.choices:
+                        combo.addItem(choice, choice)
+                    combo.currentIndexChanged.connect(self._on_scope_changed)
+                    control = combo
+                else:
+                    line = QLineEdit()
+                    line.setObjectName("pagination" + field.name.title().replace("_", ""))
+                    line.setPlaceholderText(_pagination_field_placeholder(field.name))
+                    line.setClearButtonEnabled(True)
+                    line.setAccessibleName(_pagination_field_label(field.name))
+                    line.textChanged.connect(self._on_scope_changed)
+                    control = line
                 row_widget = QWidget()
                 row_layout = QHBoxLayout(row_widget)
                 row_layout.setContentsMargins(0, 0, 0, 0)
@@ -282,11 +330,11 @@ class DraftAreaMixin:
                 row_label.setObjectName("muted")
                 row_layout.addWidget(row_label)
                 row_layout.addStretch()
-                row_layout.addWidget(edit, 3)
+                row_layout.addWidget(control, 3)
                 row_widget.setVisible(False)
                 adv.addWidget(row_widget)
                 self._pagination_rows[field.name] = row_widget
-                self._pagination_edits[field.name] = edit
+                self._pagination_edits[field.name] = control
         self._reset_pagination_choices()
         self._delay_spin = QDoubleSpinBox()
         adv.addLayout(_form_row(_("请求延迟(秒)"), self._delay_spin, "http.delay"))
@@ -367,10 +415,10 @@ class DraftAreaMixin:
         self._pagination_keep_original = self._pagination_combo.currentData() == _PAGINATION_KEEP
         shape = self._active_pagination_shape()
         for edit in self._pagination_edits.values():
-            if not edit.text():
+            if not _pagination_value(edit):
                 continue
             edit.blockSignals(True)
-            edit.setText("")
+            _set_pagination_value(edit, "")
             edit.blockSignals(False)
         if shape is not None:
             for field in shape.fields:
@@ -379,7 +427,7 @@ class DraftAreaMixin:
                 field_edit = self._pagination_edits.get(field.name)
                 if field_edit is not None:
                     field_edit.blockSignals(True)
-                    field_edit.setText(str(field.default))
+                    _set_pagination_value(field_edit, str(field.default))
                     field_edit.blockSignals(False)
         self._update_pagination_rows()
         self._on_scope_changed()
@@ -388,9 +436,9 @@ class DraftAreaMixin:
         """把配置里的分页回填到控件。
 
         **契约外的键收进 `_pagination_extras`，写回时原样带出** —— 表单只拥有契约里
-        `editable` 的那些字段（如 `location`、插件自带键都不属于它），否则就会出现
-        「打开一个能用的配置、存一下就被删掉几个键」（本仓库已有过同类事故）。
-        形状无法识别时进入「其它（保持原样）」：不猜、不改写。
+        `editable` 的那些字段（如 `parameter` / `start` / `end` / `step` / `location`；
+        插件自带键一律不属于它），否则就会出现「打开一个能用的配置、存一下就被删掉几个键」
+        （本仓库已有过同类事故）。形状无法识别时进入「其它（保持原样）」：不猜、不改写。
         """
         loaded = dict(pagination) if isinstance(pagination, Mapping) else {}
         shape = detect_shape(loaded)
@@ -407,7 +455,7 @@ class DraftAreaMixin:
         for name, edit in self._pagination_edits.items():
             value = loaded.get(name)
             edit.blockSignals(True)
-            edit.setText("" if value is None else str(value))
+            _set_pagination_value(edit, "" if value is None else str(value))
             edit.blockSignals(False)
         self._update_pagination_rows()
 
@@ -425,7 +473,7 @@ class DraftAreaMixin:
             edit = self._pagination_edits.get(field.name)
             if not field.editable or edit is None:
                 continue
-            text = edit.text().strip()
+            text = _pagination_value(edit).strip()
             if not text:
                 continue
             if field.kind == INTEGER:

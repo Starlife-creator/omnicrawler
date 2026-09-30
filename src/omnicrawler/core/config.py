@@ -803,7 +803,22 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     # 分页形状由 core.pagination 的契约统一判定与校验（唯一真源）；
     # 这里只负责把结果并入 errors —— 此前核心只校验 type=page，
     # 游标配置缺 next_path 时既不报错也不翻页（静默少采几页）。
-    errors.extend(validate_pagination(config.section("source").get("pagination", {})))
+    _source_section = config.section("source")
+    errors.extend(validate_pagination(_source_section.get("pagination", {})))
+    # ★ 跨字段判据（2026-09-30）：`pagination.location: body` 需要 `source.payload` 配套。
+    #   为什么必须有：`location` 现在**表单可编辑**（契约 `editable=True`），用户能在 GUI 里选
+    #   `body` —— 但若没有 `payload`，参数**无处可发** ⇒ 请求照发、运行"成功"、却抓不到数据
+    #   （本仓最忌讳的"异常伪装成功"）。所以选得动就必须同时**报得出来**。
+    #   判据只留这一处：`validate_config` 是 CLI 与 GUI 共用的唯一配置校验入口。
+    _pagination_section = _source_section.get("pagination", {})
+    if isinstance(_pagination_section, dict):
+        _location = str(_pagination_section.get("location") or "").strip().lower()
+        _payload = _source_section.get("payload")
+        if _location == "body" and not (isinstance(_payload, str) and _payload.strip()):
+            errors.append(
+                "source.pagination.location=body 需要 source.payload 配套（请求体内容），"
+                "否则分页参数无处可发"
+            )
     fields = config.section("extract").get("fields", {})
     if fields and not isinstance(fields, dict):
         errors.append("extract.fields必须是字段名到规则的映射")

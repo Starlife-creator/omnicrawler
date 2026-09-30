@@ -815,3 +815,40 @@ def test_form_sync_keeps_every_field_attribute(monkeypatch) -> None:
         assert field.fallback_xpath == "//a[@class='item']"
     finally:
         canvas.close()
+
+
+def test_pagination_location_is_a_dropdown_and_round_trips(monkeypatch) -> None:
+    """`pagination.location` 渲染成**下拉**（契约里的 CHOICE），且 `body` 往返逐字不变。
+
+    ★ 2026-09-30：`location` 由 `editable=False` 改为可编辑 ⇒ 契约里**第一个真正进表单**的
+    CHOICE 字段。此前渲染器一律建文本框 ⇒ 用户只能手打 `query` / `body`，打错要到运行时
+    才炸。这条同时钉住两件事：
+
+    ① 控件是 QComboBox，选项**来自契约 `choices`**（不是第二份硬编码词典）；
+    ② 选中 `body` 写回配置后仍是 `body`（表单**不静默改写**用户的选择）。
+    """
+    from PySide6.QtWidgets import QComboBox
+
+    canvas = _make_canvas(monkeypatch)
+    try:
+        canvas._load_pagination(
+            {
+                "type": "page",
+                "parameter": "p",
+                "start": 1,
+                "step": 1,
+                "end": 5,
+                "location": "body",
+            }
+        )
+        combo = canvas._pagination_edits["location"]
+        assert isinstance(combo, QComboBox), "location 必须渲染成下拉，而不是自由文本框"
+        assert [combo.itemData(i) for i in range(combo.count())] == ["", "query", "body"]
+        assert combo.currentData() == "body"
+
+        canvas._sync_form_to_config()
+        assert canvas._config.pagination["location"] == "body"
+        assert canvas._config.pagination["parameter"] == "p"
+        assert canvas._config.pagination["end"] == 5
+    finally:
+        canvas.deleteLater()
