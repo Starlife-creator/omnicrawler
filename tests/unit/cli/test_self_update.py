@@ -1194,3 +1194,46 @@ def test_check_keeps_auto_apply_for_supported_platforms(tmp_path: Path) -> None:
     assert code == cmd_self_update.EXIT_UPDATE_AVAILABLE, payload
     assert payload["options"]["manual_install"] is False
     assert payload["options"]["auto_apply"] is True
+
+
+# ── 受限网络：**明确报错 + 指引**（#88 验收："离线/代理受限网络有明确报错与指引"）──────
+# 只兜住异常还不够 ——"读取更新源失败：<原始异常>"对"被墙/没配代理/策略拦了"这件事
+# 没有任何可执行信息。指引刻意只加在网络/策略类错误上：验签失败时去折腾网络是误导。
+
+
+def test_check_network_failure_reports_actionable_guidance(tmp_path: Path, monkeypatch) -> None:
+    """网络类失败 ⇒ detail 里必须给出**可执行的**几条路（代理 / 允许域名 / 镜像 / 手动替换）。"""
+    from urllib.error import URLError
+
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    def _boom(*args, **kwargs):
+        raise URLError("timed out")
+
+    monkeypatch.setattr(cmd_self_update, "_fetch", _boom)
+    payload, code = cmd_self_update.check(config_path=str(config), platform="linux")
+
+    assert code == cmd_self_update.EXIT_FAILED, payload
+    detail = payload["detail"]
+    assert "可以这样做" in detail, detail
+    assert "proxy" in detail and "allowed_domains" in detail and "feed_url" in detail
+
+
+def test_check_signature_failure_does_not_suggest_network_troubleshooting(tmp_path: Path) -> None:
+    """★ 反向的一半：**验签失败**不得被说成"换个网络试试"（那是误导，且会掩盖真问题）。"""
+    private, _public = _keypair()
+    _other_private, other_public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_platform_feed(feed_dir, private, version="99.0.0", platform="linux")
+    config = _write_config(tmp_path, feed=feed_dir, public=other_public)
+
+    payload, code = cmd_self_update.check(config_path=str(config), platform="linux")
+
+    assert code == cmd_self_update.EXIT_FAILED, payload
+    assert "可以这样做" not in payload["detail"], "验签失败不该给网络排查指引"

@@ -91,6 +91,35 @@ def _is_remote(base: str) -> bool:
     return base.startswith(("http://", "https://"))
 
 
+def _network_guidance(exc: Exception) -> str:
+    """受限网络（被墙 / 代理 / egress 策略）⇒ 追加**可执行的**指引；其他错误返回空串。
+
+    ★ 为什么只在网络/策略类错误上追加：把"验签失败"也说成"换个网络试试"会误导人
+    （用户会去折腾网络，而真正的问题是签名对不上）。判据按**异常类型 + 关键词**，
+    且**优先复用既有约定**：出口策略拒绝抛的是 `PolicyBlockedError`，它自带 `.suggestion`
+    —— 有就用它，不另造一套措辞。
+    """
+    suggestion = getattr(exc, "suggestion", "")
+    looks_networky = any(
+        mark in f"{type(exc).__name__} {exc}".lower()
+        for mark in (
+            "urlerror", "httperror", "policyblocked", "connection", "timed out", "timeout",
+            "proxy", "tunnel", "name or service", "getaddrinfo", "ssl", "dns", "denied",
+        )
+    )
+    if not looks_networky:
+        return ""
+    hints = [
+        "在配置的 `self_update` 段设置 `proxy`（例如 http://127.0.0.1:7890）",
+        "在 `egress.allowed_domains` 里允许该主机（默认策略是询问/拦截）",
+        "把 `self_update.feed_url` 指向镜像或**本地目录**（清单自带 sha256 ⇒ 镜像不必可信）",
+        "或手动下载本平台完整包替换（发布页：见 feed 基址）",
+    ]
+    lines = [str(suggestion)] if suggestion else []
+    lines.append("\n可以这样做：" + "；".join(f"{index}. {hint}" for index, hint in enumerate(hints, 1)))
+    return f"\n{' '.join(lines)}"
+
+
 def _fetch_feed(base: str, platform: str, edition: str, config: AppConfig) -> tuple[bytes, str]:
     """取**本平台本版本**的更新清单，按精度逐级回退；返回 (文档字节, 实际命中的文件名)。
 
@@ -112,7 +141,9 @@ def _fetch_feed(base: str, platform: str, edition: str, config: AppConfig) -> tu
         except Exception as exc:  # noqa: BLE001 - 逐级回退，全失败时抛最后一次
             last_error = exc
     assert last_error is not None
-    raise last_error
+    # ★ 三层都取不到 ⇒ 最常见的原因就是**网络/策略**（被墙、没配代理、egress 拦了）。
+    #   把这层判断做在这里（唯一一处），`check` / `apply` / `ignore` 三个调用点都能受益。
+    raise UpdateFeedError(f"{last_error}{_network_guidance(last_error)}") from last_error
 
 
 def _require_matching_platform(feed: Any, platform: str) -> None:

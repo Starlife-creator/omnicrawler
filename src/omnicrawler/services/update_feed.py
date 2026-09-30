@@ -80,6 +80,36 @@ DEFAULT_FEED_URL = "https://github.com/Starlife-creator/omnicrawler/releases/lat
 #: 可选版本后缀（``Standard`` / ``Full``）。空串表示"不区分版本"。
 DEFAULT_EDITION = "Standard"
 
+#: 载荷里**属于用户**的顶层：这些路径**本机已存在时一律不覆盖**。
+#:
+#: 为什么需要它（#88 验收要求 5：「额外保留 `plugins_installed/` 与 `configs/`（用户配置/信任根）」）：
+#: `configs/` 既是随包发的**示例配置**（`project.yaml` / `full_pipeline.yaml`，用户会改），
+#: 又是**信任根本体**。而更新只会替换"本地哈希与目标不符"的文件 ⇒ **用户改过的那份恰好
+#: 一定不符** ⇒ 会被静默覆盖掉。这不是"可能发生"，而是"用户一改就必然发生"。
+#: 语义刻意选**"已存在则保留、缺失则照装"**：新版本新增的默认配置仍然能到达用户手里。
+USER_OWNED_TOP_LEVEL = frozenset({"configs"})
+
+#: 上面那条保护的**例外**：信任根必须随发布走。
+#: 若把信任根也冻住，一旦轮换密钥，客户端会一直信任旧根 ⇒ 新发布验不过 ⇒ **更新永久坏掉**，
+#: 而且没有任何本地操作能救回来（这正是"保护过度"的典型反噬）。
+USER_OWNED_EXCEPTIONS = frozenset({
+    "configs/update_trust.pub.pem",
+    "configs/plugin_trust.pub.pem",
+})
+
+
+def is_user_owned(relative: str) -> bool:
+    """这个载荷路径是否属于"用户所有"（**本机已存在时**不覆盖）。
+
+    归一化后再判：Windows 侧可能给反斜杠、清单里可能带 `./` 前缀 —— 判据不能靠"看起来像"。
+    """
+    normalized = str(relative).replace("\\", "/").lstrip("/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    if normalized in USER_OWNED_EXCEPTIONS:
+        return False
+    return normalized.split("/", 1)[0] in USER_OWNED_TOP_LEVEL
+
 #: 支持**自动落地**（把新版字节写进本机）的平台。
 #:
 #: ★★ 为什么 macOS 不在其中（2026-09-30 核实，且这是**能力声明要与实现一致**的落点）：
@@ -156,6 +186,9 @@ class PayloadPlan:
     missing_locally: tuple[str, ...]
     fetch_bytes: int
     present_deleted: tuple[str, ...]
+    #: ★ 用户所有区域里**本机已存在**的路径：**刻意不覆盖**（用户可能改过），
+    #: 所以它既不在 `to_fetch` 里、也不能被算作"已是最新"。如实报出来才看得见。
+    preserved: tuple[str, ...] = ()
 
     @property
     def needs_download(self) -> int:
@@ -449,16 +482,24 @@ def plan_payload(
     """
     to_fetch: list[str] = []
     missing: list[str] = []
+    preserved: list[str] = []
     unchanged = 0
     fetch_bytes = 0
     for relative, entry in sorted(feed.payload_files.items()):
         current = local_hashes.get(relative)
         if current is None:
+            # 本机没有 ⇒ 照装（**包括** `configs/` 里新增的默认项：保护是"不覆盖"，
+            # 不是"永不安装"）。
             missing.append(relative)
             fetch_bytes += entry.size
         elif current != entry.sha256:
-            to_fetch.append(relative)
-            fetch_bytes += entry.size
+            if is_user_owned(relative):
+                # ★ 用户所有区域且本机已有 ⇒ **保留本地那份**：不进 to_fetch，
+                # 也就不会被下载/覆盖；体积口径上也不计入（本来就不下）。
+                preserved.append(relative)
+            else:
+                to_fetch.append(relative)
+                fetch_bytes += entry.size
         else:
             unchanged += 1
     is_present = exists or (lambda relative: relative in local_hashes)
@@ -471,6 +512,7 @@ def plan_payload(
         missing_locally=tuple(missing),
         fetch_bytes=fetch_bytes,
         present_deleted=present_deleted,
+        preserved=tuple(preserved),
     )
 
 

@@ -19,6 +19,11 @@ from ..core.archive_security import (
 from ..core.runtime_paths import VERSIONS_DIRNAME
 from .component_manager import _verify_ed25519
 
+# ★ 判据同源：`is_user_owned` 定义在 `update_feed`（载荷语义的归属地），
+#   增量路径（`plan_payload`）与全量路径（`apply_archive`）**共用同一个函数** ——
+#   两处各写一套迟早会漂移成"增量保护了、全量没保护"。（无循环导入：update_feed 不依赖本模块。）
+from .update_feed import is_user_owned
+
 #: 升级包**永远不许触碰**的顶层路径（越界即整包拒绝）。
 #:
 #: 判据是"合法升级**绝不**需要写它"：
@@ -231,6 +236,7 @@ class UpgradeManager:
             members = validate_zip_archive(archive, limits=DEFAULT_ZIP_READ_LIMITS)
             prefix = f"{strip_root.strip('/')}/" if strip_root else ""
             applied: list[tuple[Path, Path | None]] = []
+            preserved: list[str] = []
             try:
                 for name, info in sorted(members.items()):
                     if info.is_dir():
@@ -240,6 +246,13 @@ class UpgradeManager:
                         continue
                     relative = _safe_upgrade_path(relative_name)
                     destination = target_root / relative
+                    # ★ 用户所有区域（`configs/`）且本机已有 ⇒ **保留本地那份不覆盖**
+                    #   （#88 要求 5：保留用户配置；信任根是例外，见 update_feed.is_user_owned）。
+                    #   判据与**增量路径**同源（`plan_payload` 已把这类路径排除在 to_fetch 之外），
+                    #   这里补的是全量路径 —— 它是按压缩档成员走，不看 plan。
+                    if is_user_owned(relative.as_posix()) and destination.exists():
+                        preserved.append(relative.as_posix())
+                        continue
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     aside: Path | None = None
                     if destination.exists():
@@ -252,7 +265,14 @@ class UpgradeManager:
                 self._rollback(applied)
                 raise
 
-        return {"applied": len(applied), **self._finish(applied), "workspace_preserved": True}
+        return {
+            "applied": len(applied),
+            **self._finish(applied),
+            "workspace_preserved": True,
+            # ★ 如实报出"用户所有区域里被保留的路径"：否则用户只会看到"更新完了"，
+            #   却不知道某些文件**故意**没换（那不是失败，但必须可见）。
+            "preserved": sorted(preserved),
+        }
 
     def _rollback(self, applied: list[tuple[Path, Path | None]]) -> None:
         """尽力回滚：删掉新文件、把改名让位的旧文件改回原名。

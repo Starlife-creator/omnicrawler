@@ -244,3 +244,56 @@ def test_remove_stale_version_dirs_keeps_pointed_and_reports_failures(
     result = manager.remove_stale_version_dirs()
     assert result["removed"] == ["0.4.0"] and result["freed_bytes"] == 5
     assert not stale.exists()
+
+
+# ── 全量路径的用户所有区域保护（#88 验收要求 5）────────────────────────────
+# 增量路径由 `plan_payload` 把 `configs/**`（信任根除外）排除在 `to_fetch` 之外；
+# 而**全量路径是按压缩档成员走的、根本不看 plan** ⇒ 必须在 `apply_archive` 里补同一道判据。
+# 两处共用 `update_feed.is_user_owned`（判据同源），避免"增量保护了、全量没保护"。
+
+
+def _zip_package(root: Path, files: dict[str, bytes], *, strip_root: str = "OmniCrawler"):
+    import hashlib
+    import zipfile
+
+    path = root.parent / f"pkg-{time.time_ns()}.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        for relative, body in sorted(files.items()):
+            archive.writestr(f"{strip_root}/{relative}", body)
+    return path, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_full_archive_preserves_a_user_modified_config(tmp_path: Path) -> None:
+    """★ 用户改过的 `configs/` 在全量路径下也必须活下来（旧行为会静默冲掉）。
+
+    同时钉住**例外**：信任根照常更新（否则轮换密钥后更新永久坏掉）、
+    以及"保护是不覆盖而不是不安装"（新默认项照装）。
+    """
+    app = tmp_path / "app"
+    (app / "configs").mkdir(parents=True)
+    (app / "configs" / "project.yaml").write_bytes(b"USER-EDITED")
+    (app / "configs" / "update_trust.pub.pem").write_bytes(b"OLD-ROOT")
+    (app / "runtime").mkdir()
+    (app / "runtime" / "app.bin").write_bytes(b"OLD")
+    (app / "work").mkdir()
+    (app / "work" / "keep.db").write_bytes(b"USER DATA")
+
+    package, digest = _zip_package(
+        app,
+        {
+            "configs/project.yaml": b"SHIPPED-DEFAULT",
+            "configs/update_trust.pub.pem": b"NEW-ROOT",
+            "configs/brand_new.yaml": b"NEW-DEFAULT",
+            "runtime/app.bin": b"NEW",
+        },
+    )
+    result = _manager(app).apply_archive(
+        package, strip_root="OmniCrawler", expected_sha256=digest, dest_root=app
+    )
+
+    assert (app / "configs" / "project.yaml").read_bytes() == b"USER-EDITED", "用户改过的配置被冲掉"
+    assert (app / "runtime" / "app.bin").read_bytes() == b"NEW", "非用户所有区域照常更新"
+    assert (app / "configs" / "update_trust.pub.pem").read_bytes() == b"NEW-ROOT", "信任根要能轮换"
+    assert (app / "configs" / "brand_new.yaml").read_bytes() == b"NEW-DEFAULT", "新默认项照装"
+    assert (app / "work" / "keep.db").read_bytes() == b"USER DATA", "工作区数据不动"
+    assert result["preserved"] == ["configs/project.yaml"], "保留了哪些必须如实报出"
