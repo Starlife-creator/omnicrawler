@@ -56,6 +56,9 @@ def _pagination_field_label(name: str) -> str:
             "start": "起始",
             "end": "结束",
             "step": "步长",
+            # 真实前置是种子 method == POST（见 sources.py）；写在标签上比事后报错更有用：
+            # 不是 POST 时该设置会被忽略，页码改走 URL query。
+            "location": "参数位置（仅 POST 生效）",
             "next_path": "下一页字段（JSONPath）",
         }.get(name, name)
     )

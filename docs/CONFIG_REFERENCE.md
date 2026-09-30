@@ -28,10 +28,12 @@ outputs: {jsonl: true, csv: true, xlsx: true}
 - `seeds`：URL 字符串，或含 `url/method/headers/payload/render/kind` 的对象。
 - `method/headers/params/payload/content_type`：API 或表单请求参数。
 - `pagination`：页码型使用 `type: page`、`parameter/start/end`；服务端 next URL 使用 `next_path`。
-  ★ **`location`（`query` ／ `body`，缺省 `query`）** 是分页参数**发到哪里**：`body` 需要
-  `source.payload` 配套（把参数放进请求体），否则分页参数**无处可发** —— 因此 `location=body`
-  而缺 `payload` 时**直接报错**（`core/config.validate_config` 的跨字段判据；CLI 与 GUI 共用
-  同一校验入口，不会一边放行一边报错）。
+  ★ **`location`（`query` ／ `body`，缺省 `query`）** 是分页参数**发到哪里**。
+  **真实前置＝该种子请求的 `method` 为 `POST`**（`sources.py` 的判断是
+  `template.method == "POST" and pagination.get("location") == "body"`）：不是 POST 时这一支
+  不走，页码会照旧拼到 URL query —— **分页仍然工作**，只是位置不是 body。
+  `source.payload` **不是前置条件**：缺省即 `{}`，页码照样进请求体；它可以是**映射**
+  （如 `{"size": 10}`）或字符串，随 `content_type` 编码。
   ★ 表单里 `location` 渲染为**下拉**（选项即契约的 `choices`，见 `core/pagination.py` 的
   `PAGE_SHAPE`）；`payload` 仍**不在表单**里 —— 它属**透传字段**，从配置加载后**原样保留**，
   需要请求体请手写 YAML（`task_canvas_draft`）。
