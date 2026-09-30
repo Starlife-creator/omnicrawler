@@ -148,11 +148,14 @@ DEFAULTS: dict[str, Any] = {
     "updates": {
         "enabled": False, "revisit_completed": False,
         "detect_same_url_changes": True, "keep_versions": True,
-        # ★ 预留未实现：本键当前**没有任何消费点**，只有这里与 validate_config 的校验。
-        #   "删除"的实际判定在 review/run_compare.compare_runs（后一次运行完成才确认
-        #   removed，未完成则 possibly_removed），与"连续 N 次缺失"无关（2026-09-13 核实）。
-        #   保留键值是为兼容既有配置文件；不要再声称它实现了任何不变量。
-        "confirm_missing_runs": 2,
+        # ★★ `confirm_missing_runs` 已**删除**（2026-09-30 用户拍板）。
+        #   它从 v1.1.0（初始历史）起就**只有默认值与校验、零消费点** —— 连它引用的测试文件
+        #   (`test_v110_features.py`) 都全仓不存在 ⇒ "删除需连续 N 次确认"这条不变量**从未实现**。
+        #   实际保护走另一条路：`review/run_compare.compare_runs`（后一次运行**完成**才确认
+        #   `removed`，未完成则降级 `possibly_removed`）。
+        #   ★ 删除而不是保留的理由：**一个不生效的开关会误导**（把它 2→5 会让人以为更保守）。
+        #   本仓已把"定义但零调用点"当明确缺陷类型（`yaml_editor` 的 `REQUIRED_TOP_KEYS` 即先例）。
+        #   若你的配置里仍有它，会收到一条**未知字段警告**（不是错误）——删掉即可。
     },
     # 应用自更新（issue #88）：检查新版本 + 应用**已签名**升级包（stage/apply/回滚）。
     # ★ 与上面的 `updates` 段**无关**（那是网站变更监控），故另立一段，别混。
@@ -819,12 +822,6 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     updates = config.section("updates")
     if updates and not isinstance(updates, dict):
         errors.append("updates必须是YAML对象")
-    elif isinstance(updates, dict):
-        try:
-            if int(updates.get("confirm_missing_runs", 2)) < 1:
-                errors.append("updates.confirm_missing_runs必须至少为1")
-        except (TypeError, ValueError):
-            errors.append("updates.confirm_missing_runs必须是整数")
     quality = config.section("quality")
     if quality and not isinstance(quality, dict):
         errors.append("quality必须是YAML对象")

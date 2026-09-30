@@ -1,12 +1,14 @@
 import base64
 import hashlib
 import json
+import re
 import zipfile
 from pathlib import Path
 
 import pytest
 
 from tools.check_release_integrity import (
+    check_changelog_released,
     check_portable_zip,
     check_project,
     check_source_zip,
@@ -368,3 +370,66 @@ def test_portable_zip_requires_trust_root_and_offline_snapshot(
     assert any("required data file" in error and missing in error for error in errors), (
         f"缺 {missing} 时深检应当报错，实际：{errors}"
     )
+
+
+# ── 发布门禁：CHANGELOG 的 Unreleased 必须已折进版本段（2026-09-30 新增）──
+# 为什么需要：`bump_version` 只在 `## Unreleased` **之后插入**新版本段，**不会**把正文并进去
+# ⇒ 忘了折 = Release 说明**缺整批内容**，而**没有别的门禁会说话**（0.15.0 一度就是两段并存）。
+
+
+def _changelog(tmp_path: Path, body: str) -> Path:
+    (tmp_path / "CHANGELOG.md").write_text(body, encoding="utf-8", newline="\n")
+    return tmp_path
+
+
+def test_current_repo_has_a_changelog_section_for_its_version() -> None:
+    """正向：当前仓库必须有**本版本段**（发布说明的落点）。
+
+    ★★ **刻意不断言"Unreleased 为空"** —— 那在**开发期是正常状态**（新工作先记 Unreleased），
+    放在常跑用例里会让它每次正常开工就变红（"狼来了"）。"发布时必须为空"由
+    `release.yml` 在**推 tag 路径**上断言（本文件的临时文件用例覆盖那两个反例）。
+    ★ 这条修正是被这套用例自己抓出来的：最初写成"当前仓库必须已折平"，
+    结果我刚把新一笔记进 Unreleased 就红了 —— 判据的位置决定了它会不会天天误报。
+    """
+    root = Path(__file__).resolve().parents[3]
+    version = re.search(
+        r'^version = "([^"]+)"', (root / "pyproject.toml").read_text(encoding="utf-8"), re.M
+    )
+    assert version is not None
+    errors = check_changelog_released(root, version.group(1))
+    assert not [e for e in errors if "缺少版本段" in e], errors
+
+
+def test_changelog_gate_goes_red_when_unreleased_still_has_content(tmp_path: Path) -> None:
+    """★ 反向断言：`## Unreleased` 还剩内容 ⇒ 必须红（这正是 0.15.0 当时的状态）。"""
+    root = _changelog(
+        tmp_path,
+        "# Changelog\n\n## Unreleased\n\n### 变更\n\n- 还没折进版本段的一条\n\n"
+        "## 0.15.0 - 2026-09-29\n\n### 变更\n\n- 已发布的\n",
+    )
+
+    errors = check_changelog_released(root, "0.15.0")
+
+    assert errors and "Unreleased" in errors[0], errors
+    assert "折进" in errors[0]
+
+
+def test_changelog_gate_goes_red_when_version_section_is_missing(tmp_path: Path) -> None:
+    """★ 反向断言：连版本段都没有（例如 tag 打了但没写发布说明）⇒ 必须红。"""
+    root = _changelog(
+        tmp_path, "# Changelog\n\n## Unreleased\n\n## 0.14.0 - 2026-09-24\n\n- 旧版\n"
+    )
+
+    errors = check_changelog_released(root, "0.15.0")
+
+    assert any("缺少版本段" in error for error in errors), errors
+
+
+def test_changelog_gate_accepts_a_fully_folded_file(tmp_path: Path) -> None:
+    """正向（临时文件）：Unreleased 空 + 版本段存在 ⇒ 通过。"""
+    root = _changelog(
+        tmp_path,
+        "# Changelog\n\n## Unreleased\n\n## 0.15.0 - 2026-09-29\n\n### 变更\n\n- 本版内容\n",
+    )
+
+    assert check_changelog_released(root, "0.15.0") == []

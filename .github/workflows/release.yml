@@ -107,6 +107,16 @@ jobs:
           fi
           echo "OK: 发布 tag ${GITHUB_REF_NAME} == 项目版本 $PROJECT_VERSION"
 
+      # ★ 发布闸门：CHANGELOG 的 `## Unreleased` 必须**已折进本版本段**。
+      #   为什么必须挡在发布路径上：`bump_version` 只在 `## Unreleased` **之后插入**新版本段，
+      #   **不会**把 Unreleased 的正文并进去 ⇒ 忘了折 = **Release 说明缺整批内容**，
+      #   而这件事**没有任何别的门禁会说话**（2026-09-30 实测：0.15.0 一度就是两段并存）。
+      #   只在 push（真正的发布）上断言：开发期 Unreleased 非空是正常的。
+      - name: 断言 CHANGELOG 已折进本版
+        if: github.event_name == 'push'
+        shell: bash
+        run: python tools/check_release_integrity.py --require-released-changelog "${GITHUB_REF_NAME#v}"
+
       - name: 安装快速门禁工具
         run: python -m pip install --constraint constraints/quality.txt ruff
 
