@@ -89,8 +89,11 @@ def test_copy_zip_member_atomic_no_partial_file(tmp_path: Path) -> None:
 # Windows 上这个位没有意义，所以此前一直没暴露。
 
 
-def _member_with_mode(mode: int) -> zipfile.ZipInfo:
-    info = zipfile.ZipInfo("omnicrawler")
+def _member_with_mode(mode: int, name: str = "omnicrawler") -> zipfile.ZipInfo:
+    """带权限位的成员。★ `name` 必须可传：同一归档里放两个同名成员会被
+    `validate_zip_archive` 判成重复路径（**只在 POSIX 上跑的那条端到端用例**因此亮红过 ——
+    本地 Windows 跳过，所以是 CI 先发现的）。"""
+    info = zipfile.ZipInfo(name)
     info.external_attr = (mode & 0xFFFF) << 16
     return info
 
@@ -123,8 +126,8 @@ def test_copy_zip_member_applies_executable_bit(tmp_path: Path) -> None:
     """端到端：归档里记 0o755 的成员解出来后**必须可执行**（Linux/macOS 上就是应用本体）。"""
     package = tmp_path / "mode.zip"
     with zipfile.ZipFile(package, "w") as archive:
-        archive.writestr(_member_with_mode(0o755), b"#!/bin/sh\necho hi\n")
-        archive.writestr(_member_with_mode(0o644), b"data")
+        archive.writestr(_member_with_mode(0o755, "omnicrawler"), b"#!/bin/sh\necho hi\n")
+        archive.writestr(_member_with_mode(0o644, "data"), b"data")
 
     target = tmp_path / "out" / "omnicrawler"
     with zipfile.ZipFile(package) as archive:

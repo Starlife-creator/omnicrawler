@@ -61,6 +61,10 @@ _smoke_spec.loader.exec_module(archive_smoke)
 
 # ★ 单一真源：用**判据自己的**交付件清单，而不是在测试里再抄一份 ——
 #   抄一份的话，将来给判据加文件（如启动器）会漏掉暂存、反向断言就悄悄失效。
+# ★ 分层的两个清单（与真产物一致）：安装器脚本在 installer/ 下，启动器在应用根。
+INSTALLER_FILES = (*check_linux_delivery.DELIVERY_SCRIPTS, check_linux_delivery.DESKTOP_TEMPLATE)
+APP_ROOT_FILES = check_linux_delivery.APP_ROOT_FILES
+# 判据用的全集（gate 只看"每个交付件都必须合规"，与它落在哪一层无关）
 DELIVERY_FILES = check_linux_delivery.DELIVERY_FILES
 HICOLOR_SIZES = (16, 24, 32, 48, 64, 128, 256)
 
@@ -209,8 +213,14 @@ def _make_app_tree(tmp_path: Path) -> Path:
     """伪造一棵与产物同形的应用树：入口 + installer/{脚本,模板,hicolor}。"""
     app = tmp_path / "download" / "OmniCrawler"
     (app / "installer" / "icons" / "hicolor").mkdir(parents=True)
-    for name in DELIVERY_FILES:
+    for name in INSTALLER_FILES:
         shutil.copy2(DELIVERY_DIR / name, app / "installer" / name)
+    # ★ 启动器在**应用根**（不是 installer/）：install-user.sh 会把桌面条目与 PATH 软链
+    #   指向 <prefix>/OmniCrawler-launcher ⇒ 放错层会让安装脚本报"便携包不完整"。
+    for name in APP_ROOT_FILES:
+        staged = app / name
+        shutil.copy2(DELIVERY_DIR / name, staged)
+        staged.chmod(0o755)
     for size in HICOLOR_SIZES:
         dest = app / "installer" / "icons" / "hicolor" / f"{size}x{size}" / "apps"
         dest.mkdir(parents=True)
@@ -401,7 +411,7 @@ def test_reinstall_from_inside_the_prefix_is_idempotent(tmp_path: Path) -> None:
     icons = list((home / ".local" / "share" / "icons").rglob("omnicrawler.png"))
     assert len(icons) == len(HICOLOR_SIZES)
     desktop = home / ".local" / "share" / "applications" / "omnicrawler.desktop"
-    assert f"Exec={prefix}/OmniCrawler" in desktop.read_text(encoding="utf-8")
+    assert f"Exec={prefix}/OmniCrawler-launcher" in desktop.read_text(encoding="utf-8")
 
 
 @needs_posix_bash
@@ -431,8 +441,12 @@ def _stage_release_root(tmp_path: Path) -> Path:
     """伪造一棵"已解压的 Linux 产物树"：入口 + `installer/`，与真产物同形。"""
     root = tmp_path / "OmniCrawler"
     (root / "installer" / "icons" / "hicolor").mkdir(parents=True)
-    for name in DELIVERY_FILES:
+    for name in INSTALLER_FILES:
         shutil.copy2(DELIVERY_DIR / name, root / "installer" / name)
+    for name in APP_ROOT_FILES:
+        staged = root / name
+        shutil.copy2(DELIVERY_DIR / name, staged)
+        staged.chmod(0o755)
     for size in HICOLOR_SIZES:
         dest = root / "installer" / "icons" / "hicolor" / f"{size}x{size}" / "apps"
         dest.mkdir(parents=True)
@@ -474,8 +488,8 @@ def test_archive_install_smoke_red_then_restored_when_exec_points_nowhere(
     root = _stage_release_root(tmp_path)
     template = root / "installer" / "omnicrawler.desktop.in"
     pristine = template.read_bytes()
-    broken = pristine.replace(b"Exec=@PREFIX@/OmniCrawler", b"Exec=@PREFIX@/NoSuchBinary")
-    assert broken != pristine, "模板里应存在 Exec=@PREFIX@/OmniCrawler 这个锚点"
+    broken = pristine.replace(b"Exec=@PREFIX@/OmniCrawler-launcher", b"Exec=@PREFIX@/NoSuchBinary")
+    assert broken != pristine, "模板里应存在 Exec=@PREFIX@/OmniCrawler-launcher 这个锚点"
 
     template.write_bytes(broken)
     with pytest.raises(RuntimeError):

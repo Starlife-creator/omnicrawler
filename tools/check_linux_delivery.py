@@ -35,19 +35,30 @@ from pathlib import Path
 # hicolor 需要的 7 个尺寸（16/24/32/48/64/128/256），与品牌资产包一致。
 HICOLOR_SIZES: tuple[int, ...] = (16, 24, 32, 48, 64, 128, 256)
 
-# 交付脚本：bash 类（要求 `#!/usr/bin/env bash` + `set -euo pipefail`）
+#: 用 bash 写的**安装器脚本**（随包放在 `installer/` 下）。
 DELIVERY_SCRIPTS: tuple[str, ...] = ("install-user.sh", "uninstall-user.sh")
+
+#: ★ 放在**应用根**（不是 `installer/`）的交付件：版本无关入口（启动器）。
+#:
+#: 为什么这个位置区分很重要：`install-user.sh` 会把桌面条目与 PATH 软链指向
+#: `<prefix>/OmniCrawler-launcher`，所以启动器必须在**应用根**上；而安装器脚本在
+#: `installer/` 下。混成一个清单会让"造忠实安装树"的测试把启动器放进 `installer/`，
+#: 于是安装脚本报"便携包不完整"（CI 实测踩到过）。
+APP_ROOT_FILES: tuple[str, ...] = (
+    "OmniCrawler-launcher",
+    "omnicrawler-cli-launcher",
+)
 
 # ★ 交付脚本：**POSIX sh** 类（要求 `#!/bin/sh` + `set -eu`）
 #   为什么启动器刻意不用 bash：它是用户**唯一**能启动应用的入口。`/bin/sh` 由 POSIX 保证存在
 #   （Linux/macOS 都有，Alpine 是 busybox ash 也满足），而 `bash` 在极简镜像里可能缺席 ——
 #   启动器因为"找不到 bash"而失败，比它写得少一点花活严重得多。
 #   代价是 `pipefail` 在 POSIX sh 里不存在 ⇒ 这一类的严格模式判据是 `set -eu`（等价强度）。
-DELIVERY_POSIX_SCRIPTS: tuple[str, ...] = (
-    "OmniCrawler-launcher",
-    "omnicrawler-cli-launcher",
-)
+DELIVERY_POSIX_SCRIPTS: tuple[str, ...] = APP_ROOT_FILES
+
 DESKTOP_TEMPLATE = "omnicrawler.desktop.in"
+
+#: 交付件全集（判据只认这一个清单：不管它最终落在哪一层，都要过 LF 与形态检查）。
 DELIVERY_FILES: tuple[str, ...] = (
     *DELIVERY_SCRIPTS,
     *DELIVERY_POSIX_SCRIPTS,
