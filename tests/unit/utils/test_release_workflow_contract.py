@@ -176,3 +176,20 @@ def test_release_build_toolchain_uv_version_matches_constraints() -> None:
             f"{filename} 的 setup-uv version pin 与 constraints/quality.txt 的 "
             f"uv=={expected} 不一致（升级 uv 时必须同步此处）"
         )
+
+
+def test_release_asserts_changelog_is_folded_into_the_released_version() -> None:
+    """★ 发布路径必须断言「CHANGELOG 已折进本版本段」，且**只在真正发布时**断言。
+
+    为什么必须在位：`bump_version` 只在 `## Unreleased` **之后插入**新版本段，**不会**把正文
+    并进去 ⇒ 忘了折 = Release 说明**缺整批内容**，而这件事**没有任何别的门禁会说话**。
+    为什么必须只在 push：开发期 `## Unreleased` 非空是**正常**的，放进常跑门禁会天天红。
+    """
+    caller = _workflow(CALLER)
+
+    assert "--require-released-changelog" in caller, "发布门禁丢了（Release 说明会缺整批内容）"
+    # 与「tag == 项目版本」同处"仅 push"的路径上：两者都在推 tag 时才该说话
+    index = caller.index("--require-released-changelog")
+    window = caller[max(0, index - 2000) : index]
+    assert "断言发布 tag == 项目版本" in window
+    assert "if: github.event_name == 'push'" in window, "门禁必须只在发布（push tag）时生效"

@@ -4,6 +4,54 @@
 
 ### 变更
 
+- chore(config): **删掉 `updates.confirm_missing_runs`**（一个不生效的开关比没有更糟）——
+  它从 v1.1.0（初始历史）起就**只有默认值与一条校验、零消费点**：连它引用的测试文件
+  （`test_v110_features.py`）都**全仓不存在** ⇒ "删除需连续 N 次确认"这条不变量**从未实现**。
+  ★ 实际保护走另一条路（`run_compare` 两次运行对比：后一次**完成**才确认 `removed`，
+  未完成降级 `possibly_removed`），本次**不动**该语义。删除的理由：保留它会让用户**以为**
+  调大就更保守（本仓已把"定义但零调用点"当明确缺陷类型，`yaml_editor` 的 `REQUIRED_TOP_KEYS` 即先例）。
+  既有配置里若仍有它 ⇒ 一条**未知字段警告**（不是错误），删掉即可。
+
+- chore(release): **新增发布门禁——`## Unreleased` 必须已折进本版本段** —— `bump_version` 只在
+  `## Unreleased` **之后插入**新版本段（摘要由提交信息生成），**不会**把正文并进去 ⇒ 忘了折
+  = **Release 说明缺整批内容**，而这件事**没有任何别的门禁会说话**（0.15.0 一度就是两段并存，
+  本次已手工折进 `## 0.15.0`）。现在 `release.yml` 在**推 tag 时**断言（`check_release_integrity.py
+  --require-released-changelog`）⇒ 忘折直接红；开发期不断言（那时 Unreleased 非空是正常的）。
+
+## 0.15.0 - 2026-09-29
+
+### 变更
+
+应用自更新线（检查/下载/落地：增量优先＋全量兜底、逐文件清单、默认更新源、清理旧版本、GUI 检查更新）；插件市场多索引 Phase 1（plugins.catalogs ＋ 逐源验签聚合 ＋ CLI ＋ GUI 源管理与信任徽标）；依赖自动检测与安装闭环（含官方源失败后的镜像加速提示）；契约 network.fetch 的 auth 注入补齐；语料级 PII 检测与脱敏；EU AI Act 训练内容公开摘要；基因增强结果接入运行指标；bench 三臂对照量化自适应引擎；GUI 修复（市场橱窗空态、依赖面板退出 abort、i18n 包裹）；隐私收尾（透明日志脱敏 ＋ 签署工具防复发）
+
+### 新增
+
+- feat(update): **批次 A——默认更新源 + full_fallback 兜底 + 忽略冗余配置 + 打包守卫 + FAULTHANDLER** —— ① `feed_url` 默认值＝GitHub 官方发布页的「最新 release 资产」固定链接（`releases/latest/download`，用户拍板）：每版把 `update.json` 当普通 Release 资产上传即可，**免版本号、免 API、零额外托管**；显式配置仍可指向镜像/本地目录（清单带 sha256 ⇒ 镜像不必可信）。② 清单新增顶层 `full_fallback`（`version/base/name/sha256/size`）：指向「最近一次带全量包的发布」——小版本不重建全量包时，**本机版本不在增量基线内的用户从这里取全量，不会被永久卡住**；`assets` 相应放宽为"与 full_fallback 至少其一"。③ `apply` 在 `assets` 缺失时自动用 `full_fallback`（取数基址用它声明的 `base`），`check` 的 `options` 恒给出增量/全量体积与 `via_fallback` 标注。④ `tools/sign_plugin.py generate-keys` 增加**防误毁守卫**：目标已存在即拒绝（除非 `--overwrite`），**指向市场信任根 `configs/plugin_trust.pub.pem` 则无条件拒绝**（换市场钥匙必须走 ressign_market 流程）——此前默认参数一条命令即可覆盖市场信任根。⑤ `gui-and-browser` CI 作业加 `PYTHONFAULTHANDLER: 1`（崩溃时自动落 faulthandler 段回）。
+
+- feat(update): **三种落地方式全齐：全量·就地替换 / 全量·装到 versions/ ＋ 体积对比文案 ＋ "忽略此版本"** —— ① 新增 `UpgradeManager.apply_archive()`：整包（便携包 zip，**带一层顶层目录** `OmniCrawler/`，由 `build_windows.ps1 --root-name` 决定）**先核整包哈希（来自已签名清单）再落地**，逐成员用**改名让位**写入 ⇒ 不需要先解压出一份暂存（515MB／1.9GB 的包若先解压，峰值磁盘直接翻倍）；② `apply` 新增 `--full`（全量·就地替换，只占一份）与 `--to-versions`（装到 `versions/<新版>/`，应用根那份**原样不动**＝零成本回退，并写 `versions/current.txt`、把就地旧入口改名 `.outdated` 防误点）；③ **增量不可用自动兜底全量**（本机版本不在增量基线内 ⇒ 走全量，而不是永久卡住）；④ `check` 把**增量体积与全量体积并排报出**（照 B 站移动端弹窗的形态），`options` 里给出三种方式各自是否可用与体积；⑤ 新增 `self-update ignore [--clear]`："忽略此版本的更新"——记录时**必须先读更新源**拿它当前给出的版本（不接受随手填，避免忽略了不存在的版本导致永远收不到提示），同一版本不再提示、出现更新的版本自动恢复。验证：`tests/unit/{cli,services,config}` **545 passed**；静态自证 **17/17**。
+
+- feat(update): **就地替换引擎：改名让位 + 待清理挂账 + 变更包增量落地** —— ① `UpgradeManager.apply()` 从"先复制一份备份再覆盖"改为**改名让位**：旧文件改名成 `<原名>.old-<随机>`（原名随即空出）→ 写新文件 → 删除改名出来的旧文件，因此**磁盘上不再有第二份副本**，回滚也不再靠复制备份，而是"删新文件 + 把 `.old-*` 改名回去"（同卷 rename，瞬时、零额外空间）。② 新增**待清理清单** `<应用根>/.updates/pending-cleanup.json`：Windows 不允许删除正在使用的文件（实测 `WinError 32`）⇒ 删不掉就挂账，**下次运行时自动清**（幂等、尽力而为、`--dry-run` 不清理）。③ 新增 `stage_members()` 与 `apply` 的**增量路径**：更新源若提供"相对当前版本的变更包"（`payload.delta[当前版本]`）⇒ 只下这个包（几 MB），逐成员对**已签名清单**里的 sha256 核对（变更包自身无需签名，改一个字节即整包拒绝），只替换**本机确实不同**的那些文件。④ 处理 `payload.deleted`：本版已移除且本机仍残留的路径会被删掉；删不掉同样挂账。★ **实测支撑**：直接覆盖正在运行的 exe ⇒ `PermissionError: 5`；改名 ⇒ 成功（用"正在运行的 exe"做忠实模型所得——用普通句柄测会得出误导结论）。★ **反向断言**：`test_apply_leaves_untouched_files_alone` 断言未变文件的**内容与 mtime 都原封不动**；一旦实现退化成"把包里所有成员都写一遍"，该用例立刻转红。验证：`tests/unit/cli` + `tests/unit/services` **339 passed**。
+
+- feat(update): **应用自更新第二批：内置信任根 + 逐文件清单（只下变化文件）+ 维护者签名工具** —— ① 更新信任根**随包内置**（`configs/update_trust.pub.pem`，指纹 `bf981f1d…`）并默认接线，用户通常只需填 `feed_url`；它是**刻意独立于市场信任根的另一把密钥**（市场根授权"沙箱内的插件"，更新根授权"替换应用本体"，权威不同级、不可互替）；② `update.json` 新增可选 `payload` 段：**逐文件 `sha256+size` 清单**、`delta` 变更包、`deleted` 移除清单；③ `self-update check` 现在会**比对本机每个文件的实际哈希**（只读清单里出现的路径，**不扫** `work/`、`data/` 等用户目录），直接给出"需更新 N/M 个文件、共 X 字节"——515MB / 1.9GB 的便携包，常规版本升级通常只需几 MB；④ 新增 `tools/build_update_manifest.py`：维护者本机从解压载荷生成清单 + 组装 + ed25519 签名（冷私钥**只读入内存**，绝不打印/入仓）；⑤ 信任根来源支持 **PEM 文本 / PEM 路径 / base64 / `hex:`**（以 `.pem` 结尾但文件缺失会**显式报错**，不回落成 base64 解析——否则症状会指向错误的排查方向）。**实证**：把"哈希相等才跳过"弱化成"存在即跳过"⇒ **3 条用例转红**，字节级还原后复绿；并修掉一处实测踩到的缺陷——`payload.deleted` 若用"清单内文件"判断存在性，会让"需要清理的残留"**恒为空**。
+
+- feat(update): **应用自更新接线（issue #88 第一片）** —— `services/updater.UpgradeManager`（签名升级包的 stage/apply/回滚）此前**零调用点**：机制在，运行期却没有任何办法把应用升到新版本。本片把它接成可用能力 `omnicrawler self-update check|apply`，且四条判据都做成**能失败**的：① **没有默认信任根、没有"跳过验签"开关** —— 未配置 `self_update.trusted_public_key` 或 `feed_url` 即报"已禁用"（退出码 2），**不**降级为不校验（§10.7 安全不降级）；② **更新源被改动即拒绝** —— `update.json` 的签名覆盖除 `signature` 外的全部字段，规范化方式与升级包 `upgrade.json` **逐字一致**（故两者共用同一信任根），并做了反向断言（关掉验签后同一份篡改文档会被接受 ⇒ 证明该判据承重）；③ **更新源不绑定任何托管方** —— 基址可配（远程目录或本地目录），core 不认识特定服务的 API（§10.7 明列不做「core 硬编码 GitHub API 调用」），本地目录形态顺带让离线/内网镜像开箱可用；④ `apply` 是**破坏性**动作 —— 必须显式 `--yes`（沿用 `core.safe_action` 判据），`--dry-run` 一个字节都不写，覆盖前备份到 `<应用根>/.updates/rollback/`，受保护路径（`work`/`data`/`output`/`logs`/`.omnicrawler`/`PORTABLE.flag`）越界即整包拒绝。取回复用**市场同一条受控出站读**（egress 未注入即拒网 / 认 `http.proxy` / DNS 逐地址尝试可回退 IPv4 / 重定向仍过策略），不再长出第二套代理与重定向处理。顺带把「版本比较」由 GUI 的两处实现收敛为 `core/versions.py` **单一真源**（GUI 侧转出别名，杜绝第三份实现漂移；实测订正了 docstring 里"非数字段当 0"的错误说法——真实语义是整段连同位置丢弃）。
+
+- feat(deps): **自动依赖检测与安装闭环**（`00d4165`）—— 把「检测到缺失 → 提示 → 是否安装 → 装好 → 复检」全收进产品内，用户只做一次是/否判断，不必再去命令行 `pip install`。六层落地：① 插件市场页**打开即检测**的只读徽标（缺声明依赖时画 `[缺依赖 N]`，齐全静默、绝不弹框）；② 运行前预检双弹框（**原生依赖**缺失判 `error` 并**阻断**运行，**插件声明依赖**判 `warning` 只提示、不阻断 —— manifest 声明的是依赖全集，本次未必用得到）；③ 多源顺序回退安装器（`services/dependency_installer.py`：**官方源恒为首选**，失败后按健康分在镜像间顺序回退；每个源单次 `--index-url`，**杜绝跨源混版**；失败三分类 NETWORK / VERSION / CONFLICT，**版本缺失与约束冲突不摘健康源**；超时按包体积自适应——先 dry-run 取下载体积估算，重型包给更高上限并**把超时归因到大包而非误判源不可用**；装后一律用 `importlib.metadata` **复检实际版本**，绝不把「装完了」当「装对了」）；④ 镜像启用的**候选清单**与一键启用补丁（`services/mirror_presets.py` 只给纯函数，默认配置无 `mirrors` 节 ⇒ 引擎零开销直通官方，**绝不偷偷导流**）；⑤ 功能设置页「**环境与依赖**」面板（原生组件只读徽标 + 就地安装，打开只探测、点击才装）；⑥ 随附文档与配置示例
+- feat(deps): **官方源失败后的「启用镜像加速」提示**（`b0320e5`）—— 提示**只在真实安装失败、且该轮到镜像源的那一刻**弹出，判据为纯函数（三个条件同时满足）：安装确实失败、当前**尚未启用**镜像、失败归因里有**官方源**的**网络类**失败（连接超时 / 传输故障）。**版本类失败（源可达但无该版本）与约束冲突不弹** —— 换镜像救不了，弹了只会误导。用户点「启用并重试」⇒ 写入预置镜像组并**在同一轮内立即用镜像源重试**（官方仍居首位，健康时不会被绕过）
+- feat(plugins): **声明式视图 text 输入组件 + `view.progress` 进度推送**（`528cedc`）—— U4/U6 收口，插件面板可声明文本输入项并向宿主推送有界进度
+
+### 修复
+
+- fix(deps): 「环境与依赖」面板关闭时**未 join 后台线程**，导致在扫描线程仍在运行时销毁 QApplication 会 `abort`（实测为非确定性崩溃，破坏后续测试与退出）；现统一跟踪存活线程，关闭/销毁前 `requestInterruption` + `wait`（`78779a6`）
+
+### 文档
+
+- docs(contract): `PLUGIN_CONTRACT.md` 补全 `network.fetch` 的 `auth:{secret_ref, header}` 注入契约表述 —— 该注入**已实现**（宿主代理侧解析密钥并注入请求头，插件进程永不接触明文，注入头值不进审计/日志）
+
+
+
+### 变更
+
 - fix(update): **落地端三处硬化 + 变更包产出端 + 删掉 `full_fallback` + Linux/macOS 版本无关入口** ——
   ① ★ **数据根不再跟着版本走**：`--to-versions` 把新版装进 `<安装根>/versions/<版本>/` 后，
   经启动器运行时 `application_dir()`（＝`sys.executable` 的父目录）也随之指向版本目录，
@@ -54,43 +102,12 @@
 ### 修复
 
 - fix(release): **发布前审计补两处"包看起来正常、能力却缺席"的缺口** —— ① **便携包此前不含 `market/` 离线快照**（三个构建脚本只拷 `configs/docs/examples`，而代码默认 `plugins.bundled_catalog_dir: "market"`）⇒ 无网环境下市场面板没有兜底、与《优化方案》§十承诺不符 ⇒ 三个构建脚本各加一个目录，并在 `check_release_integrity.py` 的便携深检里**钉死必需数据件**（`configs/update_trust.pub.pem`、`configs/plugin_trust.pub.pem`、`market/catalog.json`），配 3 条反向断言（缺任一 ⇒ 深检必红）；② **`self-update apply --to-versions` 在非 Windows 上明确拒绝**：该布局的消费者只有 `OmniCrawler-Launcher.bat`（读 `versions/current.txt`），Linux/macOS 静默产出"装了但没人会启动它"的布局比拒绝更糟 ⇒ 现在报错并建议 `--full`（Linux 侧包一层解析脚本属后续项）。另：更新源文档示例里的版本号改为版本无关，避免每次发布被 churn 并触发硬编码告警。
-## 0.15.0 - 2026-09-29
-
-### 变更
-
-应用自更新线（检查/下载/落地：增量优先＋全量兜底、逐文件清单、默认更新源、清理旧版本、GUI 检查更新）；插件市场多索引 Phase 1（plugins.catalogs ＋ 逐源验签聚合 ＋ CLI ＋ GUI 源管理与信任徽标）；依赖自动检测与安装闭环（含官方源失败后的镜像加速提示）；契约 network.fetch 的 auth 注入补齐；语料级 PII 检测与脱敏；EU AI Act 训练内容公开摘要；基因增强结果接入运行指标；bench 三臂对照量化自适应引擎；GUI 修复（市场橱窗空态、依赖面板退出 abort、i18n 包裹）；隐私收尾（透明日志脱敏 ＋ 签署工具防复发）
-
-
-### 新增
-
-- feat(update): **批次 A——默认更新源 + full_fallback 兜底 + 忽略冗余配置 + 打包守卫 + FAULTHANDLER** —— ① `feed_url` 默认值＝GitHub 官方发布页的「最新 release 资产」固定链接（`releases/latest/download`，用户拍板）：每版把 `update.json` 当普通 Release 资产上传即可，**免版本号、免 API、零额外托管**；显式配置仍可指向镜像/本地目录（清单带 sha256 ⇒ 镜像不必可信）。② 清单新增顶层 `full_fallback`（`version/base/name/sha256/size`）：指向「最近一次带全量包的发布」——小版本不重建全量包时，**本机版本不在增量基线内的用户从这里取全量，不会被永久卡住**；`assets` 相应放宽为"与 full_fallback 至少其一"。③ `apply` 在 `assets` 缺失时自动用 `full_fallback`（取数基址用它声明的 `base`），`check` 的 `options` 恒给出增量/全量体积与 `via_fallback` 标注。④ `tools/sign_plugin.py generate-keys` 增加**防误毁守卫**：目标已存在即拒绝（除非 `--overwrite`），**指向市场信任根 `configs/plugin_trust.pub.pem` 则无条件拒绝**（换市场钥匙必须走 ressign_market 流程）——此前默认参数一条命令即可覆盖市场信任根。⑤ `gui-and-browser` CI 作业加 `PYTHONFAULTHANDLER: 1`（崩溃时自动落 faulthandler 段回）。
-
-- feat(update): **三种落地方式全齐：全量·就地替换 / 全量·装到 versions/ ＋ 体积对比文案 ＋ "忽略此版本"** —— ① 新增 `UpgradeManager.apply_archive()`：整包（便携包 zip，**带一层顶层目录** `OmniCrawler/`，由 `build_windows.ps1 --root-name` 决定）**先核整包哈希（来自已签名清单）再落地**，逐成员用**改名让位**写入 ⇒ 不需要先解压出一份暂存（515MB／1.9GB 的包若先解压，峰值磁盘直接翻倍）；② `apply` 新增 `--full`（全量·就地替换，只占一份）与 `--to-versions`（装到 `versions/<新版>/`，应用根那份**原样不动**＝零成本回退，并写 `versions/current.txt`、把就地旧入口改名 `.outdated` 防误点）；③ **增量不可用自动兜底全量**（本机版本不在增量基线内 ⇒ 走全量，而不是永久卡住）；④ `check` 把**增量体积与全量体积并排报出**（照 B 站移动端弹窗的形态），`options` 里给出三种方式各自是否可用与体积；⑤ 新增 `self-update ignore [--clear]`："忽略此版本的更新"——记录时**必须先读更新源**拿它当前给出的版本（不接受随手填，避免忽略了不存在的版本导致永远收不到提示），同一版本不再提示、出现更新的版本自动恢复。验证：`tests/unit/{cli,services,config}` **545 passed**；静态自证 **17/17**。
-
-- feat(update): **就地替换引擎：改名让位 + 待清理挂账 + 变更包增量落地** —— ① `UpgradeManager.apply()` 从"先复制一份备份再覆盖"改为**改名让位**：旧文件改名成 `<原名>.old-<随机>`（原名随即空出）→ 写新文件 → 删除改名出来的旧文件，因此**磁盘上不再有第二份副本**，回滚也不再靠复制备份，而是"删新文件 + 把 `.old-*` 改名回去"（同卷 rename，瞬时、零额外空间）。② 新增**待清理清单** `<应用根>/.updates/pending-cleanup.json`：Windows 不允许删除正在使用的文件（实测 `WinError 32`）⇒ 删不掉就挂账，**下次运行时自动清**（幂等、尽力而为、`--dry-run` 不清理）。③ 新增 `stage_members()` 与 `apply` 的**增量路径**：更新源若提供"相对当前版本的变更包"（`payload.delta[当前版本]`）⇒ 只下这个包（几 MB），逐成员对**已签名清单**里的 sha256 核对（变更包自身无需签名，改一个字节即整包拒绝），只替换**本机确实不同**的那些文件。④ 处理 `payload.deleted`：本版已移除且本机仍残留的路径会被删掉；删不掉同样挂账。★ **实测支撑**：直接覆盖正在运行的 exe ⇒ `PermissionError: 5`；改名 ⇒ 成功（用"正在运行的 exe"做忠实模型所得——用普通句柄测会得出误导结论）。★ **反向断言**：`test_apply_leaves_untouched_files_alone` 断言未变文件的**内容与 mtime 都原封不动**；一旦实现退化成"把包里所有成员都写一遍"，该用例立刻转红。验证：`tests/unit/cli` + `tests/unit/services` **339 passed**。
-
-- feat(update): **应用自更新第二批：内置信任根 + 逐文件清单（只下变化文件）+ 维护者签名工具** —— ① 更新信任根**随包内置**（`configs/update_trust.pub.pem`，指纹 `bf981f1d…`）并默认接线，用户通常只需填 `feed_url`；它是**刻意独立于市场信任根的另一把密钥**（市场根授权"沙箱内的插件"，更新根授权"替换应用本体"，权威不同级、不可互替）；② `update.json` 新增可选 `payload` 段：**逐文件 `sha256+size` 清单**、`delta` 变更包、`deleted` 移除清单；③ `self-update check` 现在会**比对本机每个文件的实际哈希**（只读清单里出现的路径，**不扫** `work/`、`data/` 等用户目录），直接给出"需更新 N/M 个文件、共 X 字节"——515MB / 1.9GB 的便携包，常规版本升级通常只需几 MB；④ 新增 `tools/build_update_manifest.py`：维护者本机从解压载荷生成清单 + 组装 + ed25519 签名（冷私钥**只读入内存**，绝不打印/入仓）；⑤ 信任根来源支持 **PEM 文本 / PEM 路径 / base64 / `hex:`**（以 `.pem` 结尾但文件缺失会**显式报错**，不回落成 base64 解析——否则症状会指向错误的排查方向）。**实证**：把"哈希相等才跳过"弱化成"存在即跳过"⇒ **3 条用例转红**，字节级还原后复绿；并修掉一处实测踩到的缺陷——`payload.deleted` 若用"清单内文件"判断存在性，会让"需要清理的残留"**恒为空**。
-
-- feat(update): **应用自更新接线（issue #88 第一片）** —— `services/updater.UpgradeManager`（签名升级包的 stage/apply/回滚）此前**零调用点**：机制在，运行期却没有任何办法把应用升到新版本。本片把它接成可用能力 `omnicrawler self-update check|apply`，且四条判据都做成**能失败**的：① **没有默认信任根、没有"跳过验签"开关** —— 未配置 `self_update.trusted_public_key` 或 `feed_url` 即报"已禁用"（退出码 2），**不**降级为不校验（§10.7 安全不降级）；② **更新源被改动即拒绝** —— `update.json` 的签名覆盖除 `signature` 外的全部字段，规范化方式与升级包 `upgrade.json` **逐字一致**（故两者共用同一信任根），并做了反向断言（关掉验签后同一份篡改文档会被接受 ⇒ 证明该判据承重）；③ **更新源不绑定任何托管方** —— 基址可配（远程目录或本地目录），core 不认识特定服务的 API（§10.7 明列不做「core 硬编码 GitHub API 调用」），本地目录形态顺带让离线/内网镜像开箱可用；④ `apply` 是**破坏性**动作 —— 必须显式 `--yes`（沿用 `core.safe_action` 判据），`--dry-run` 一个字节都不写，覆盖前备份到 `<应用根>/.updates/rollback/`，受保护路径（`work`/`data`/`output`/`logs`/`.omnicrawler`/`PORTABLE.flag`）越界即整包拒绝。取回复用**市场同一条受控出站读**（egress 未注入即拒网 / 认 `http.proxy` / DNS 逐地址尝试可回退 IPv4 / 重定向仍过策略），不再长出第二套代理与重定向处理。顺带把「版本比较」由 GUI 的两处实现收敛为 `core/versions.py` **单一真源**（GUI 侧转出别名，杜绝第三份实现漂移；实测订正了 docstring 里"非数字段当 0"的错误说法——真实语义是整段连同位置丢弃）。
-
-- feat(deps): **自动依赖检测与安装闭环**（`00d4165`）—— 把「检测到缺失 → 提示 → 是否安装 → 装好 → 复检」全收进产品内，用户只做一次是/否判断，不必再去命令行 `pip install`。六层落地：① 插件市场页**打开即检测**的只读徽标（缺声明依赖时画 `[缺依赖 N]`，齐全静默、绝不弹框）；② 运行前预检双弹框（**原生依赖**缺失判 `error` 并**阻断**运行，**插件声明依赖**判 `warning` 只提示、不阻断 —— manifest 声明的是依赖全集，本次未必用得到）；③ 多源顺序回退安装器（`services/dependency_installer.py`：**官方源恒为首选**，失败后按健康分在镜像间顺序回退；每个源单次 `--index-url`，**杜绝跨源混版**；失败三分类 NETWORK / VERSION / CONFLICT，**版本缺失与约束冲突不摘健康源**；超时按包体积自适应——先 dry-run 取下载体积估算，重型包给更高上限并**把超时归因到大包而非误判源不可用**；装后一律用 `importlib.metadata` **复检实际版本**，绝不把「装完了」当「装对了」）；④ 镜像启用的**候选清单**与一键启用补丁（`services/mirror_presets.py` 只给纯函数，默认配置无 `mirrors` 节 ⇒ 引擎零开销直通官方，**绝不偷偷导流**）；⑤ 功能设置页「**环境与依赖**」面板（原生组件只读徽标 + 就地安装，打开只探测、点击才装）；⑥ 随附文档与配置示例
-- feat(deps): **官方源失败后的「启用镜像加速」提示**（`b0320e5`）—— 提示**只在真实安装失败、且该轮到镜像源的那一刻**弹出，判据为纯函数（三个条件同时满足）：安装确实失败、当前**尚未启用**镜像、失败归因里有**官方源**的**网络类**失败（连接超时 / 传输故障）。**版本类失败（源可达但无该版本）与约束冲突不弹** —— 换镜像救不了，弹了只会误导。用户点「启用并重试」⇒ 写入预置镜像组并**在同一轮内立即用镜像源重试**（官方仍居首位，健康时不会被绕过）
-- feat(plugins): **声明式视图 text 输入组件 + `view.progress` 进度推送**（`528cedc`）—— U4/U6 收口，插件面板可声明文本输入项并向宿主推送有界进度
-
-### 修复
-
-- fix(deps): 「环境与依赖」面板关闭时**未 join 后台线程**，导致在扫描线程仍在运行时销毁 QApplication 会 `abort`（实测为非确定性崩溃，破坏后续测试与退出）；现统一跟踪存活线程，关闭/销毁前 `requestInterruption` + `wait`（`78779a6`）
-
-### 文档
-
-- docs(contract): `PLUGIN_CONTRACT.md` 补全 `network.fetch` 的 `auth:{secret_ref, header}` 注入契约表述 —— 该注入**已实现**（宿主代理侧解析密钥并注入请求头，插件进程永不接触明文，注入头值不进审计/日志）
 
 ## 0.14.0 - 2026-09-24
 
 ### 变更
 
 内置模板治理与市场迁出（模板库 78→41，站点适配器 15 个只留市场）；§十 P2 三片（view.richtext 受限长文本组件 + issue-wishlist/community-guide 两个官方 view 插件上线）；§十一 U1-U4/V1/V2/Q1 八项代码侧收口（登录会话 headed Playwright + AES-GCM 会话加密 + QtCharts + QML 试点不打包）；审查记录 §2.4 三条遗留闭环（TOFU 补钉 / yaml_editor 全段校验 + REQUIRED_TOP_KEYS 强制 / settings 私有调用清零）；四处 CI 漏网修复与投稿链路 LF 规范化
-
 
 ### 变更
 
@@ -317,7 +334,6 @@
 - ci: pin market snapshot and add manual compatibility checks
 - fix(convertx): report data loss and safely cancel conversions
 
-
 ### 变更
 
 - fix(extraction): 单页模式（详情页）不再静默丢短值——旧实现用一条 `len(text) < 5` 同时挡 UI 装饰又误伤数据：4 字标题被丢（标题字段整个没有）、`9`/`元` 被丢而父节点合并文本 `'9
@@ -336,7 +352,6 @@
 
 插件平台、安全边界与桌面体验全面升级：新增可审核的声明式资源视图和宿主管理背景层，完善运行类型、项目级精确授权、启用/禁用热加载及创作者签名确定性；同时强化异步网络隔离、PDF 管线、任务创建体验、架构与 SDK 契约，并将跨平台发布流程拆分为可复用且带产物预算、SBOM、来源证明和签名证明的构建门禁。
 
-
 ### 变更
 
 - refactor(architecture): 拆除 core→pdfx 与 services→gui 反向依赖，并加入依赖方向和循环复杂度预算门禁
@@ -354,7 +369,6 @@
 ### 变更
 
 市场生态安全加固、创作者私下分享与正式发布体验完善
-
 
 ### 变更
 
@@ -450,7 +464,6 @@
 
 0.9.0：全仓安全审查修复落地（8 阶段：公式注入/路径穿越/ReDoS/信任链/AI 隐私/源类型白名单/供应链硬化/文档测试收口）+ AI 外发隐私闸门 fail-closed 全落点接线 + 插件注册源校验 + 市场仓 D2-A 独立模板 id + B02-023 重签 + CI 三平台门禁全绿
 
-
 ### 变更
 
 T 批次：场景体系闭环——SceneStore 新增已验收候选文档级透视（accepted_values）、candidates 补 document 维度；ScenePanel 新增「导出已验收结果」（JSON/CSV，标准库零依赖）与「生成为任务字段」（槽位→extract.fields YAML + 复制剪贴板）；document_ir HTML 正文主体抽取（正文容器词典 main/article/#content/.entry-content 等，未命中回退全页，main_content 选项默认开）；normalizers L3 槽位注释澄清（设计预留，LLM 修复走 shadow_repair）。
@@ -472,7 +485,6 @@ T 批次：场景体系闭环——SceneStore 新增已验收候选文档级透�
 ### 变更
 
 feat(extraction): L3 自适应提取闭环（失效检测→LLM 重生成→本地验证）；Markdown 降维与语义分块；SimHash 双层去重（URL 规范化 + 内容指纹）；curl_cffi TLS 指纹伪装（含 DNS 钉扎与出口审计，未装时回退 httpx）；新增 tls extra；签名密钥默认路径改为主目录相对；市场拆分为独立仓库（git-as-registry）；CI 双库 checkout；市场测试缺失时自动跳过
-
 
 ### 变更
 
@@ -546,7 +558,6 @@ release 0.4.0：优化计划阶段 0-4 全部完成（基线 1114 测试通过�
 ### 变更
 
 - Initial commit
-
 
 ## 2.7.0 - 2026-08-01
 

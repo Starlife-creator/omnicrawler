@@ -286,6 +286,9 @@ def check_entry_points(project_root: Path, metadata: dict) -> list[str]:
     return errors
 
 
+CHANGELOG_FILENAME = "CHANGELOG.md"
+
+
 def check_project(project_root: Path) -> list[str]:
     pyproject = project_root / "pyproject.toml"
     metadata = tomllib.loads(pyproject.read_text(encoding="utf-8"))
@@ -1045,9 +1048,52 @@ def _defined_names_from_text(text: str, filename: str) -> set[str]:
     return names
 
 
+def check_changelog_released(root: Path, version: str) -> list[str]:
+    """发布时断言：CHANGELOG 里该版本段存在，且 ``## Unreleased`` **已清空**。
+
+    ★ 为什么需要（2026-09-30）：``bump_version`` 只在 ``## Unreleased`` **之后插入**新版本段
+    （摘要由提交信息生成），**不会**把 Unreleased 的正文并进版本段 ⇒ 忘了折是本仓**真实出现过**
+    的风险 —— 0.15.0 一度就是「``## Unreleased``（整批待发内容）＋ ``## 0.15.0``」两段并存。
+    而 Release 说明来自 CHANGELOG ⇒ 忘折 = Release notes **缺整批内容**，且没有别的门禁会说话。
+
+    ★ 只在**发布路径**上断言（``release.yml`` 传 tag 版本）：开发期 Unreleased 非空是**正常**的，
+    放进常跑的门禁会让它天天红（那就变成"狼来了"，反而没人看）。
+    """
+    path = root / CHANGELOG_FILENAME
+    if not path.is_file():
+        return [f"缺少 {CHANGELOG_FILENAME}"]
+    lines = path.read_text(encoding="utf-8").replace(chr(13) + chr(10), chr(10)).split(chr(10))
+    errors: list[str] = []
+    heading = f"## {version}"
+    section = [
+        line for line in lines
+        if line.strip() == heading or line.strip().startswith(heading + " ")
+    ]
+    if not section:
+        errors.append(f"{CHANGELOG_FILENAME} 缺少版本段 {heading!r}（发布说明的落点）")
+    unreleased = [i for i, line in enumerate(lines) if line.strip() == "## Unreleased"]
+    if unreleased:
+        start = unreleased[0]
+        end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+        body = [line for line in lines[start + 1:end] if line.strip()]
+        if body:
+            errors.append(
+                f"{CHANGELOG_FILENAME} 的 `## Unreleased` 仍有 {len(body)} 行内容 —— "
+                f"发布前必须折进 {heading}（否则 Release 说明缺整批内容）"
+            )
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("project_root", nargs="?", type=Path, default=Path.cwd())
+    parser.add_argument(
+        "--require-released-changelog",
+        default="",
+        metavar="VERSION",
+        help=("发布路径专用：断言 CHANGELOG 有该版本段且 `## Unreleased` 已清空"
+              "（`bump_version` 不会自动折叠，忘了折会让 Release 说明缺整批内容）"),
+    )
     parser.add_argument("--wheel", type=Path)
     parser.add_argument(
         "--lock",
@@ -1067,6 +1113,10 @@ def main() -> int:
     project_root = args.project_root.resolve()
     lock_path = (args.lock or (project_root / "uv.lock")).resolve()
     errors = check_project(project_root)
+    if args.require_released_changelog:
+        errors.extend(
+            check_changelog_released(project_root, args.require_released_changelog.lstrip("v"))
+        )
     if args.wheel:
         errors.extend(check_wheel(args.wheel.resolve(), lock_path=lock_path))
     if args.wheel_dir:
