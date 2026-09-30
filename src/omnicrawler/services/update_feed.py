@@ -51,16 +51,23 @@ from .component_manager import _verify_ed25519
 FEED_FILENAME = "update.json"
 
 
-def feed_filename(platform: str) -> str:
-    """按平台取清单文件名：``update-<platform>.json``。
+def feed_filename(platform: str, edition: str = "") -> str:
+    """按**平台+版本**取清单文件名：``update-<platform>-<edition>.json``（无版本时 ``update-<platform>.json``）。
 
     为什么需要它：更新清单里的 ``payload.files`` 是**逐文件哈希**，而三平台的载荷完全不同
     （Windows 是 ``OmniCrawler.exe``/``.dll``，Linux 是 ELF、``.so``…）⇒ 一份清单只可能描述
     一个平台。用**文件名区分平台**，客户端按自身平台取，``payload.files`` 就能保持扁平
     （无需按平台分键的结构变更）；清单内部仍写入 ``platform`` 字段，客户端会**交叉校验**
     （见 ``commands/self_update._require_matching_platform``），防止把别的平台的清单应用上来。
+
+    ★ 再加一层**版本**（Standard/Full）维度：两版的 ``runtime/`` 与 OCR 载荷不同，逐文件清单
+    也因此不同 ⇒ 完整名是 ``update-<platform>-<edition>.json``；不带版本名的是兼容路径
+    （更新源只发一份粗粒度清单时用）。客户端按精度逐级回退，见 ``_fetch_feed``。
     """
-    return f"update-{platform.strip().lower()}.json"
+    p = platform.strip().lower()
+    e = edition.strip().lower()
+    return f"update-{p}-{e}.json" if e else f"update-{p}.json"
+
 
 #: 未显式配置 ``self_update.feed_url`` 时使用的默认更新源。
 #:
@@ -130,6 +137,10 @@ class UpdateFeed:
     full_fallback: FullFallback | None = None
     #: 本清单描述的**平台**（``update-<platform>.json``；旧版单份清单可为空＝不作校验）。
     platform: str = ""
+    #: 本清单描述的**版本**（``update-<platform>-<edition>.json``；同样可为空＝不作校验）。
+    #: Standard/Full 的 ``runtime/`` 与 OCR 载荷不同 ⇒ 逐文件清单也不同，拿错清单会把
+    #: 另一版当作"应该是什么样"，所以与 platform 一样要交叉校验（fail-closed）。
+    edition: str = ""
 
     def asset_for(self, platform: str, edition: str) -> UpdateAsset | None:
         return self.assets.get(asset_key(platform, edition))
@@ -325,6 +336,7 @@ def _parse_document(document: Mapping[str, Any]) -> UpdateFeed:
     payload_files, payload_base, payload_delta, payload_deleted = _parse_payload(document)
     full_fallback = _parse_full_fallback(document)
     platform = str(document.get("platform") or "").strip().lower()
+    edition = str(document.get("edition") or "").strip().lower()
     return UpdateFeed(
         version=version,
         published_at=str(document.get("published_at") or ""),
@@ -336,6 +348,7 @@ def _parse_document(document: Mapping[str, Any]) -> UpdateFeed:
         payload_deleted=payload_deleted,
         full_fallback=full_fallback,
         platform=platform,
+        edition=edition,
     )
 
 

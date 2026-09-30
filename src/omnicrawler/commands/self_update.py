@@ -91,15 +91,28 @@ def _is_remote(base: str) -> bool:
     return base.startswith(("http://", "https://"))
 
 
-def _fetch_feed(base: str, platform: str, config: AppConfig) -> bytes:
-    """取**本平台**的更新清单：先 ``update-<platform>.json``，没有则回退 ``update.json``。
+def _fetch_feed(base: str, platform: str, edition: str, config: AppConfig) -> tuple[bytes, str]:
+    """取**本平台本版本**的更新清单，按精度逐级回退；返回 (文档字节, 实际命中的文件名)。
 
-    回退是给"只发一份通用清单"的旧更新源留的兼容路径；两条都取不到时抛原始错误。
+    顺序：``update-<platform>-<edition>.json`` → ``update-<platform>.json`` → ``update.json``。
+    为什么会分三层：载荷在 **平台**（Windows 是 .exe/.dll，Linux 是 ELF/.so）与 **版本**
+    （Standard/Full 的 runtime/OCR 差异）两个维度都不同，所以清单必须按 (平台, 版本) 分；
+    后两层是给"只发更粗粒度清单"的更新源留的兼容路径。都取不到时抛最后那次错误。
+
+    命中文件名要**回传**：出问题时「用了哪份清单」是首要诊断信息，也让「确实按版本取到了」
+    这件事可以被断言（否则只能靠「没报错」间接推断）。
     """
-    try:
-        return _fetch(base, feed_filename(platform), config)
-    except Exception:  # noqa: BLE001 - 回退到通用清单名，失败时再抛
-        return _fetch(base, FEED_FILENAME, config)
+    candidates = [feed_filename(platform, edition), feed_filename(platform), FEED_FILENAME]
+    last_error: Exception | None = None
+    for index, name in enumerate(candidates):
+        if index and candidates[index - 1] == name:
+            continue
+        try:
+            return _fetch(base, name, config), name
+        except Exception as exc:  # noqa: BLE001 - 逐级回退，全失败时抛最后一次
+            last_error = exc
+    assert last_error is not None
+    raise last_error
 
 
 def _require_matching_platform(feed: Any, platform: str) -> None:
@@ -112,6 +125,27 @@ def _require_matching_platform(feed: Any, platform: str) -> None:
         raise UpdateFeedError(
             f"更新清单声明的平台是 {declared}，与本机 {platform} 不一致 ⇒ 拒绝使用"
         )
+
+
+def _require_matching_edition(feed: Any, edition: str) -> None:
+    """清单若声明了 ``edition`` ⇒ 必须与本机版本一致（与平台同一类 fail-closed 判据）。
+
+    为什么必需：Standard 与 Full 的载荷不同（``runtime/``、OCR 组件），逐文件清单因此不同。
+    若把 Full 的清单套在 Standard 安装上，客户端会按"应该有 PaddleOCR"去比对，结果是
+    **要么白下几百 MB、要么把不该有的文件当成待落地**；反过来还会漏掉本版该有的文件。
+    ``edition`` 缺省为空 ⇒ 不校验（兼容"只发一份粗粒度清单"的老更新源）。
+    """
+    declared = str(getattr(feed, "edition", "") or "").strip().lower()
+    if declared and declared != edition.strip().lower():
+        raise UpdateFeedError(
+            f"更新清单声明的版本是 {declared}，与本机 {edition} 不一致 ⇒ 拒绝使用"
+        )
+
+
+def _require_matching_target(feed: Any, platform: str, edition: str) -> None:
+    """清单声明的 (平台, 版本) 必须与本机一致 —— 两维都查，缺一不可。"""
+    _require_matching_platform(feed, platform)
+    _require_matching_edition(feed, edition)
 
 
 def _fetch(base: str, relative: str, config: AppConfig) -> bytes:
@@ -153,11 +187,13 @@ def check(
         return _disabled_payload("未配置 self_update.feed_url"), EXIT_DISABLED
 
     target_platform = platform or detect_platform()
+    # ★ 清单文件名按 (平台, 版本) 定位 ⇒ 版本要与后面选资产时用的**同一个**（Standard/Full
+    #   的 runtime/OCR 载荷不同，拿错清单会把另一版的文件清单当成自己的）。
+    target_edition = edition or str(section.get("edition") or DEFAULT_EDITION)
     try:
-        feed = verify_feed_document(
-            _fetch_feed(base, target_platform, config), trusted_public_key=key
-        )
-        _require_matching_platform(feed, target_platform)
+        raw_feed, feed_name = _fetch_feed(base, target_platform, target_edition, config)
+        feed = verify_feed_document(raw_feed, trusted_public_key=key)
+        _require_matching_target(feed, target_platform, target_edition)
     except Exception as exc:  # 网络 / 缺文件 / 验签 / 字段非法 / 平台不符，统一一种可读结论
         return {
             "status": "failed",
@@ -169,8 +205,8 @@ def check(
     result = check_feed(
         feed,
         current_version=__version__,
-        platform=platform or detect_platform(),
-        edition=edition or str(section.get("edition") or DEFAULT_EDITION),
+        platform=target_platform,
+        edition=target_edition,
     )
 
     root = Path(payload_root) if payload_root is not None else application_dir()
@@ -186,6 +222,7 @@ def check(
             "current_version": result.current_version,
             "latest_version": result.latest_version,
             "feed_base": base,
+            "feed_document": feed_name,
         }, EXIT_OK
 
     detail = result.detail
@@ -195,6 +232,7 @@ def check(
         "current_version": result.current_version,
         "latest_version": result.latest_version,
         "feed_base": base,
+        "feed_document": feed_name,
     }
 
     # ★ 选项与体积（有更新时**总是**给出；增量是否可用取决于"有逐文件清单 ∧ 有对应变更包"）。
@@ -203,13 +241,7 @@ def check(
         feed.payload_delta.get(__version__)
         if (result.update_available and feed.payload_files) else None
     )
-    full_asset = (
-        feed.asset_for(
-            platform or detect_platform(),
-            edition or str(section.get("edition") or DEFAULT_EDITION),
-        )
-        if result.update_available else None
-    )
+    full_asset = feed.asset_for(target_platform, target_edition) if result.update_available else None
     full_fallback = feed.full_fallback if result.update_available else None
     full_size = (
         full_asset.size if full_asset is not None
@@ -368,11 +400,11 @@ def ignore(
     if key is None:
         return _disabled_payload("未配置 self_update.trusted_public_key"), EXIT_DISABLED
     target_platform = detect_platform()
+    target_edition = str(_section.get("edition") or DEFAULT_EDITION)
     try:
-        feed = verify_feed_document(
-            _fetch_feed(base, target_platform, config), trusted_public_key=key
-        )
-        _require_matching_platform(feed, target_platform)
+        raw_feed, _feed_name = _fetch_feed(base, target_platform, target_edition, config)
+        feed = verify_feed_document(raw_feed, trusted_public_key=key)
+        _require_matching_target(feed, target_platform, target_edition)
     except Exception as exc:
         return {
             "status": "failed",
@@ -489,32 +521,28 @@ def apply(
     fetch_base = ""
     target_name = ""
     expected_sha = ""
+    # 命中的清单文件名（离线包路径下没有清单 ⇒ 留空）。回传给用户便于回答「用的哪份清单」。
+    feed_name = ""
     if local_package is None:
         target_platform = platform or detect_platform()
+        target_edition = edition or str(section.get("edition") or DEFAULT_EDITION)
         try:
-            feed = verify_feed_document(
-                _fetch_feed(base, target_platform, config), trusted_public_key=key
-            )
-            _require_matching_platform(feed, target_platform)
+            raw_feed, feed_name = _fetch_feed(base, target_platform, target_edition, config)
+            feed = verify_feed_document(raw_feed, trusted_public_key=key)
+            _require_matching_target(feed, target_platform, target_edition)
         except Exception as exc:
             return {
                 "status": "failed",
                 "detail": f"读取或校验更新源失败：{exc}",
                 "current_version": __version__,
             }, EXIT_FAILED
-        asset = feed.asset_for(
-            platform or detect_platform(),
-            edition or str(section.get("edition") or DEFAULT_EDITION),
-        )
+        asset = feed.asset_for(target_platform, target_edition)
         if asset is None:
             # 本平台没有全量包（小版本不重建全量）⇒ 用「最近一次带全量包的发布」兜底，
             # 否则不在增量基线内的用户会被永久卡住。
             fallback_used = feed.full_fallback
             if fallback_used is None:
-                wanted = asset_key(
-                    platform or detect_platform(),
-                    edition or str(section.get("edition") or DEFAULT_EDITION),
-                )
+                wanted = asset_key(target_platform, target_edition)
                 return {
                     "status": "failed",
                     "detail": (
@@ -580,6 +608,7 @@ def apply(
     plan: dict[str, Any] = {
         "app_root": str(root),
         "mode": mode,
+        "feed_document": feed_name,
         "package": (
             delta.name if delta is not None else (str(local_package) if local_package else target_name)
         ),

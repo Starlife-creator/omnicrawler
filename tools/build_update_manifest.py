@@ -33,8 +33,11 @@ import base64
 import hashlib
 import json
 import sys
+import tarfile
+import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
@@ -46,6 +49,7 @@ from omnicrawler.core.versions import version_key  # noqa: E402
 from omnicrawler.services.update_feed import (  # noqa: E402
     FEED_FILENAME,
     canonical_feed_bytes,
+    feed_filename,
 )
 
 #: 绝不进清单的顶层目录（用户数据 / 标记）——载荷来自构建产物，本不该含它们；
@@ -82,11 +86,7 @@ def _walk_payload(root: Path) -> dict[str, Path]:
         if not path.is_file():
             continue
         relative = path.relative_to(root)
-        if relative.parts[0].lower() in _FORBIDDEN_TOP_LEVEL:
-            raise SystemExit(
-                f"载荷里出现受保护顶层路径 {relative.parts[0]}/（{path}）—— "
-                "构建产物不该包含用户数据目录，请检查打包步骤"
-            )
+        _reject_protected_top_level(relative.as_posix(), origin=str(path))
         if any(part in _SKIP_DIRS for part in relative.parts):
             continue
         if path.suffix.lower() in _SKIP_SUFFIXES:
@@ -95,6 +95,92 @@ def _walk_payload(root: Path) -> dict[str, Path]:
     if not files:
         raise SystemExit(f"载荷目录里没有任何文件: {root}")
     return files
+
+
+def _reject_protected_top_level(relative: str, *, origin: str) -> None:
+    """载荷里出现 ``work/`` ``data/`` 等受保护顶层 ⇒ 直接拒绝（而不是默默漏掉）。
+
+    这些目录是**用户数据**。它们出现在载荷里说明打包步骤把用户目录一起装进去了，
+    静默跳过会让清单与实际归档不一致，正是"看着正常、其实错了"的典型。
+    """
+    top = relative.split("/", 1)[0]
+    if top.lower() in _FORBIDDEN_TOP_LEVEL:
+        raise SystemExit(
+            f"载荷里出现受保护顶层路径 {top}/（{origin}）—— "
+            "构建产物不该包含用户数据目录，请检查打包步骤"
+        )
+
+
+def _sha256_stream(handle: Any) -> str:
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _hash_archive_members(archive: Path) -> dict[str, tuple[str, int]]:
+    """从**归档本体**流式算逐文件哈希，返回 ``去掉顶层目录的相对 posix 路径 → (sha256, 体积)``。
+
+    为什么不从构建暂存目录算：客户端下载的是归档，清单必须与**归档里的字节**逐字节一致。
+    从暂存目录算就多了一条"打包时排除了什么"的隐含约定（tar 排除了 ``OmniCrawler/logs``、
+    zip 排除了顶层 ``logs/``…），两处一旦不同步，增量校验就会永远失败，而且失败得很晚
+    （用户侧才发现）。直接读归档 = 这条约定不存在。
+
+    对 tar.xz 是**流式**（顺序读，逐成员算完即丢），内存恒定，不落第二个解压目录。
+    """
+    if not archive.is_file():
+        raise SystemExit(f"载荷归档不存在: {archive}")
+    members: dict[str, tuple[str, int]] = {}
+    roots: set[str] = set()
+
+    def _record(name: str, digest: str, size: int) -> None:
+        parts = [part for part in name.split("/") if part not in ("", ".")]
+        if len(parts) < 2:
+            raise SystemExit(f"归档成员不在顶层目录内（无法剥根）: {name}")
+        roots.add(parts[0])
+        relative = "/".join(parts[1:])
+        if not relative:
+            return
+        _reject_protected_top_level(relative, origin=f"{archive.name}!{name}")
+        members[relative] = (digest, size)
+
+    if archive.name.lower().endswith(".zip"):
+        with zipfile.ZipFile(archive) as handle:
+            for info in handle.infolist():
+                if info.is_dir():
+                    continue
+                with handle.open(info) as stream:
+                    _record(info.filename, _sha256_stream(stream), info.file_size)
+    else:
+        with tarfile.open(archive, "r:*") as handle:
+            for member in handle:
+                if not member.isfile():
+                    continue
+                stream = handle.extractfile(member)
+                if stream is None:  # pragma: no cover - isfile() 为真时必有流
+                    continue
+                _record(member.name, _sha256_stream(stream), member.size)
+    if not members:
+        raise SystemExit(f"归档里没有任何文件: {archive}")
+    if len(roots) != 1:
+        raise SystemExit(
+            f"归档顶层目录不唯一 {sorted(roots)} —— 便携包应当只有单个 <根>/ 顶层"
+        )
+    return members
+
+
+def _load_payload(*, directory: str, archive: str, what: str) -> dict[str, tuple[str, int]]:
+    """统一的载荷读取：目录（开发/回算）或归档（构建期，与发布字节一致）。"""
+    if directory and archive:
+        raise SystemExit(f"{what}：--payload-dir 与 --payload-archive 二选一")
+    if archive:
+        return _hash_archive_members(Path(archive).expanduser())
+    if not directory:
+        raise SystemExit(f"{what}：需要 --payload-dir 或 --payload-archive")
+    return {
+        relative: (_sha256_of(path), path.stat().st_size)
+        for relative, path in _walk_payload(Path(directory).expanduser()).items()
+    }
 
 
 def _parse_asset(spec: str) -> tuple[str, Path]:
@@ -107,22 +193,42 @@ def _parse_asset(spec: str) -> tuple[str, Path]:
     return key, path
 
 
+def _resolve_notes(args: argparse.Namespace) -> str:
+    """取变更摘要：``--notes-file`` 优先（UTF-8），否则 ``--notes``。
+
+    为什么要文件：Windows PowerShell 5.1 把**非 ASCII 参数**交给原生 exe 时会按控制台
+    ANSI 代码页转码，中文会变成 ``??`` —— 而 CI 的 Windows 构建正是 ``powershell -File``
+    跑的。走文件就没有这条 argv 编码路径。
+    """
+    path = str(getattr(args, "notes_file", "") or "")
+    if path:
+        return Path(path).expanduser().read_text(encoding="utf-8").strip()
+    return str(args.notes or "")
+
+
 def build(args: argparse.Namespace) -> dict[str, object]:
     if getattr(args, "no_payload", False):
         return _build_assets_only(args)
-    payload_dir = Path(args.payload_dir).expanduser()
-    files = _walk_payload(payload_dir)
-
+    notes = _resolve_notes(args)
     payload_files: dict[str, dict[str, object]] = {}
     total_bytes = 0
-    for relative, path in files.items():
-        size = path.stat().st_size
-        total_bytes += size
-        payload_files[relative] = {"sha256": _sha256_of(path), "size": size}
+    if not getattr(args, "no_payload", False):
+        hashed = _load_payload(
+            directory=str(args.payload_dir or ""),
+            archive=str(getattr(args, "payload_archive", "") or ""),
+            what="载荷",
+        )
+        for relative, (digest, size) in hashed.items():
+            total_bytes += size
+            payload_files[relative] = {"sha256": digest, "size": size}
 
     deleted: list[str] = []
-    if args.previous_payload_dir:
-        previous = _walk_payload(Path(args.previous_payload_dir).expanduser())
+    if args.previous_payload_dir or getattr(args, "previous_payload_archive", ""):
+        previous = _load_payload(
+            directory=str(args.previous_payload_dir or ""),
+            archive=str(getattr(args, "previous_payload_archive", "") or ""),
+            what="上一版载荷",
+        )
         deleted = sorted(set(previous) - set(payload_files))
 
     assets: dict[str, dict[str, object]] = {}
@@ -156,21 +262,13 @@ def build(args: argparse.Namespace) -> dict[str, object]:
             "size": int(fb_size),
         }
 
-    platform = str(args.platform or "").strip().lower()
-    if platform:
-        for spec in args.asset or []:
-            key = str(spec).split("=", 1)[0].strip()
-            if not key.startswith(f"{platform}-"):
-                raise SystemExit(
-                    f"[错误] --asset 的键 {key!r} 与 --platform {platform!r} 不匹配"
-                    f"（应为 {platform}-<edition>）"
-                )
+    platform, edition = _target(args)
 
     document: dict[str, object] = {
         "version": str(args.version).strip(),
         "published_at": args.published_at
         or datetime.now(UTC).replace(microsecond=0).isoformat(),
-        "notes": args.notes or "",
+        "notes": notes,
         "assets": assets,
         "payload": {
             "base_url": args.base_url or "",
@@ -184,10 +282,14 @@ def build(args: argparse.Namespace) -> dict[str, object]:
     if platform:
         # 客户端会**交叉校验**这个字段（防把别的平台的清单应用上来）
         document["platform"] = platform
+    if edition:
+        # 同理：Standard/Full 的逐文件清单不同，套错版本会白下或漏文件
+        document["edition"] = edition
     if not version_key(str(document["version"])):
         raise SystemExit(f"--version 不可比较: {document['version']!r}")
 
-    print(f"[清单] 载荷文件 {len(payload_files)} 个，合计 {total_bytes} 字节（{payload_dir}）")
+    source = str(getattr(args, "payload_archive", "") or args.payload_dir or "")
+    print(f"[清单] 载荷文件 {len(payload_files)} 个，合计 {total_bytes} 字节（源: {source}）")
     if deleted:
         print(f"[清单] 本版已移除 {len(deleted)} 个路径（相对上一版）")
     if assets:
@@ -234,15 +336,43 @@ def _build_assets_only(args: argparse.Namespace) -> dict[str, object]:
         }
     if not assets:
         raise SystemExit("--no-payload 时至少要给一个 --asset（否则该平台没有任何可下载内容）")
+    platform, edition = _target(args)
     document: dict[str, object] = {
         "version": str(args.version).strip(),
         "published_at": args.published_at
         or datetime.now(UTC).replace(microsecond=0).isoformat(),
-        "notes": args.notes or "",
+        "notes": _resolve_notes(args),
         "assets": assets,
     }
+    if platform:
+        document["platform"] = platform
+    if edition:
+        document["edition"] = edition
     print(f"[清单] 无逐文件清单（--no-payload）⇒ 该平台走全量更新；整包资源 {len(assets)} 个")
     return document
+
+
+def _target(args: argparse.Namespace) -> tuple[str, str]:
+    """归一化并校验 (``--platform``, ``--edition``) 与其 ``--asset`` 键的一致性。"""
+    platform = str(args.platform or "").strip().lower()
+    edition = str(getattr(args, "edition", "") or "").strip().lower()
+    if edition and not platform:
+        raise SystemExit("[错误] --edition 只能与 --platform 一起给出（文件名要平台+版本两段）")
+    if not platform:
+        return "", ""
+    wanted = f"{platform}-{edition}" if edition else ""
+    for spec in args.asset or []:
+        key = str(spec).split("=", 1)[0].strip()
+        if not key.startswith(f"{platform}-"):
+            raise SystemExit(
+                f"[错误] --asset 的键 {key!r} 与 --platform {platform!r} 不匹配"
+                f"（应为 {platform}-<edition>）"
+            )
+        if wanted and key != wanted:
+            raise SystemExit(
+                f"[错误] 声明了 --edition {edition} ⇒ --asset 的键必须是 {wanted!r}，收到 {key!r}"
+            )
+    return platform, edition
 
 
 def main() -> int:
@@ -250,10 +380,23 @@ def main() -> int:
     parser.add_argument(
         "--payload-dir",
         default=None,
-        help="解压后的载荷目录（新版本）；--no-payload 时不需要",
+        help="解压后的载荷目录（新版本）；与 --payload-archive 二选一",
+    )
+    parser.add_argument(
+        "--payload-archive",
+        default=None,
+        help=(
+            "载荷**归档本体**（zip / tar.xz / tar.gz）——**构建脚本用这个**。"
+            "逐文件哈希直接从归档流式算（不落第二个解压目录，tar.xz 内存恒定），"
+            "于是清单与用户下载到的字节**逐字节一致**，不需要再约定"
+            "「打包时排除了什么」。顶层目录会被自动剥掉（便携包的 OmniCrawler/）。"
+        ),
     )
     parser.add_argument(
         "--previous-payload-dir", default="", help="上一版载荷目录（给了才输出「已移除」清单）"
+    )
+    parser.add_argument(
+        "--previous-payload-archive", default="", help="上一版载荷归档（同上，二者选一）"
     )
     parser.add_argument("--version", required=True, help="目标版本号，如 0.15.0")
     parser.add_argument(
@@ -274,7 +417,27 @@ def main() -> int:
             "update-<platform>.json。三平台各出一份清单（载荷不同，一份清单只可能描述一个平台）。"
         ),
     )
+    parser.add_argument(
+        "--edition",
+        default="",
+        choices=("", "standard", "full"),
+        help=(
+            "本清单描述的**版本**（Standard/Full，写入 edition 字段；客户端会校验）。给了它时 "
+            "--out 缺省为 update-<platform>-<edition>.json，且 --asset 的键必须是 "
+            "<platform>-<edition>。两版的 runtime/OCR 载荷不同 ⇒ 逐文件清单也不同，"
+            "所以一份清单只可能描述一个 (平台, 版本)。"
+        ),
+    )
     parser.add_argument("--notes", default="", help="给用户看的变更摘要")
+    parser.add_argument(
+        "--notes-file",
+        default="",
+        help=(
+            "从 **UTF-8 文件**读变更摘要（优先于 --notes）。构建脚本用这个："
+            "Windows PowerShell 5.1 传非 ASCII 参数给原生 exe 会按控制台代码页转码，"
+            "中文会变成 ??；走文件就没有这条转码路径。"
+        ),
+    )
     parser.add_argument("--published-at", default="", help="发布时间（缺省＝当前 UTC）")
     parser.add_argument("--base-url", default="", help="载荷基址（缺省＝feed 基址）")
     parser.add_argument("--asset", action="append", help="整包资源：<平台-版本>=<文件>")
@@ -326,7 +489,10 @@ def main() -> int:
 
     document = sign(build(args), Path(args.key))
     selected_platform = str(getattr(args, "platform", "") or "").strip().lower()
-    default_name = f"update-{selected_platform}.json" if selected_platform else FEED_FILENAME
+    selected_edition = str(getattr(args, "edition", "") or "").strip().lower()
+    default_name = (
+        feed_filename(selected_platform, selected_edition) if selected_platform else FEED_FILENAME
+    )
     out = Path(args.out or default_name)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

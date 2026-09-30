@@ -13,17 +13,19 @@
 
 用法
 ----
-    # 一条命令：直接取 CI 挂在 Release 上的无签名清单并签名
+    # ★ 每版发布的那一条命令：一次签完 (三平台 × 两版本) 的全组合
     python tools/sign_update_manifest.py \\
-        --unsigned-url https://github.com/<owner>/<repo>/releases/download/vX.Y.Z/update.unsigned.json \\
-        --key C:\\path\\to\\update_signing_private.pem \\
-        --out update.json
+        --unsigned-url-base https://github.com/<owner>/<repo>/releases/download/vX.Y.Z \\
+        --platforms windows,linux,macos --editions standard,full \\
+        --key "C:\\path\\to\\update_signing_private.pem" --out-dir .
 
-    # 也可以先自己下载，再对本地文件签名
-    python tools/sign_update_manifest.py --unsigned update.unsigned.json --key <冷私钥> --out update.json
+    # 也可以先自己下载，再对单个本地文件签名
+    python tools/sign_update_manifest.py --unsigned update-linux-standard.unsigned.json \\
+        --key <冷私钥> --out update-linux-standard.json
 
-签名后把 update.json 作为 Release 资产上传（与便携包并列），客户端即从
-``<feed_url>/update.json`` 取到它。
+签名后把这些 ``update-<平台>[-<版本>].json`` 作为 Release 资产上传（与便携包并列）；
+客户端按 ``<feed_url>/update-<平台>-<版本>.json`` 取，逐级回退到 ``update-<平台>.json``
+再到 ``update.json``（见 ``commands/self_update._fetch_feed``）。
 """
 
 from __future__ import annotations
@@ -42,7 +44,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "src"))
 
-from omnicrawler.services.update_feed import canonical_feed_bytes  # noqa: E402
+from omnicrawler.services.update_feed import (  # noqa: E402
+    canonical_feed_bytes,
+    feed_filename,
+)
 
 #: 无签名清单的约定文件名（CI 用它挂到 Release 上）
 UNSIGNED_FILENAME = "update.unsigned.json"
@@ -50,12 +55,28 @@ UNSIGNED_FILENAME = "update.unsigned.json"
 SIGNED_FILENAME = "update.json"
 
 
+def _is_not_found(exc: ValueError) -> bool:
+    """区分「更新源没有这份清单」（404，可跳过）与「有但坏了」（必须报错）。
+
+    判据只能落在 HTTP 状态码或文件状态上 —— 用错误文案里有没有 "404" 去猜属于
+    「看着像」判据，一次措辞改动就会让跳过/报错的边界反过来。
+    """
+    if isinstance(exc.__cause__, urllib.error.HTTPError):
+        return exc.__cause__.code == 404
+    if isinstance(exc.__cause__, FileNotFoundError):
+        return True
+    return False
+
+
 def load_unsigned(*, path: str | None, url: str | None) -> tuple[dict[str, Any], str]:
     """读入无签名清单（本地路径或 URL 二选一），返回 ``(文档, 来源描述)``。"""
     if bool(path) == bool(url):
         raise ValueError("--unsigned 与 --unsigned-url 必须二选一")
     if path:
-        raw = Path(path).expanduser().read_bytes()
+        try:
+            raw = Path(path).expanduser().read_bytes()
+        except FileNotFoundError as exc:
+            raise ValueError(f"无签名清单不存在: {path}") from exc
         source = str(path)
     else:
         assert url is not None
@@ -109,8 +130,17 @@ def main() -> int:
         default=None,
         help=(
             "**一条命令签多平台**：逗号分隔（windows,linux,macos）。"
-            "配合 --unsigned-url-base 使用，逐个取 update-<平台>.unsigned.json 并签名，"
-            "输出到 --out-dir。"
+            "配合 --unsigned-url-base 使用，逐个取 update-<平台>[-<版本>].unsigned.json 并签名，"
+            "输出到 --out-dir。再给 --editions 即按 (平台 × 版本) 全组合签。"
+        ),
+    )
+    parser.add_argument(
+        "--editions",
+        default=None,
+        help=(
+            "与 --platforms 组合：逗号分隔（standard,full）。给定时签 "
+            "(平台 × 版本) 的**全部组合**，文件名 update-<平台>-<版本>.json；"
+            "不给则签平台级粗粒度清单（update-<平台>.json）。"
         ),
     )
     parser.add_argument(
@@ -120,6 +150,14 @@ def main() -> int:
              "https://github.com/<owner>/<repo>/releases/download/vX.Y.Z",
     )
     parser.add_argument("--out-dir", default=".", help="--platforms 模式的输出目录")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help=(
+            "缺哪一份就报错退出（默认：缺的跳过并黄字提醒 —— 某平台某版本的包可能因超 2GiB "
+            "没随发布，属于已知情形，不该阻塞其余清单落盘）"
+        ),
+    )
     args = parser.parse_args()
 
     if args.platforms:
@@ -129,26 +167,40 @@ def main() -> int:
         out_dir = Path(args.out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         base = args.unsigned_url_base.rstrip("/")
+        platforms = [p.strip().lower() for p in str(args.platforms).split(",") if p.strip()]
+        editions = [e.strip().lower() for e in str(args.editions or "").split(",") if e.strip()]
+        targets = [(p, e) for p in platforms for e in (editions or [""])]
         signed_paths: list[Path] = []
-        for raw_platform in str(args.platforms).split(","):
-            platform = raw_platform.strip().lower()
-            if not platform:
-                continue
-            url = f"{base}/update-{platform}.unsigned.json"
+        missing: list[str] = []
+        for platform, edition in targets:
+            name = feed_filename(platform, edition)
+            label = f"{platform}-{edition}" if edition else platform
+            url = f"{base}/{name.replace('.json', '.unsigned.json')}"
             try:
                 document, _source = load_unsigned(path=None, url=url)
                 signed = sign_document(document, Path(args.key))
             except ValueError as exc:
-                print(f"[错误] {platform}: {exc}", file=sys.stderr)
+                if _is_not_found(exc):
+                    missing.append(label)
+                    print(f"[跳过] {label}: 更新源没有 {name.replace('.json', '.unsigned.json')}")
+                    continue
+                print(f"[错误] {label}: {exc}", file=sys.stderr)
                 return 2
-            target = out_dir / f"update-{platform}.json"
+            target = out_dir / name
             body = (json.dumps(signed, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
             target.write_bytes(body)
             signed_paths.append(target)
             files = signed.get("payload", {}).get("files") or {}
-            print(f"[完成] {platform}: {target}（{len(body)} 字节 · 逐文件 {len(files)} 项）")
-        print("       下一步：把这些 update-<平台>.json 作为 Release 资产上传。")
-        print(f"       共 {len(signed_paths)} 份。")
+            print(f"[完成] {label}: {target}（{len(body)} 字节 · 逐文件 {len(files)} 项）")
+        if not signed_paths:
+            print("[错误] 一份清单都没签成 ⇒ 检查 --unsigned-url-base 与发布是否完成", file=sys.stderr)
+            return 2
+        if missing and args.strict:
+            print(f"[错误] --strict：以下清单缺席 {missing}", file=sys.stderr)
+            return 2
+        print(f"       下一步：把这 {len(signed_paths)} 份 update-*.json 作为 Release 资产上传。")
+        if missing:
+            print(f"       ★ 未签到（更新源没有）：{', '.join(missing)}")
         return 0
 
     try:
