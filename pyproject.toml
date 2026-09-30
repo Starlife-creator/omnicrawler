@@ -140,14 +140,13 @@ omit = ["src/omnicrawler/visual_selector/*"]  # Browser E2E tool — integration
 [tool.coverage.report]
 skip_covered = true
 show_missing = true
-# P2-1（2026-09-11）：本地实测 74.46%，但 CI quality job（Ubuntu、无 browser extras）
-# 会 skip 部分 GUI/browser 测试、覆盖率系统性低于本地（原 66 与本地 74.46 的差距即源于此）。
-# 故全局阈值暂维持 66；ratchet 落在 tools/check_coverage_gates.py 的
-# PACKAGE_FLOORS / _FILE_FLOORS（按包与关键模块设下限），取值已预留 CI 环境余量。
-# 待 CI 实测覆盖率回收后，再按实测把全局与各包下限一并收紧。
-# 与 tools/check_coverage_gates.py 的 OVERALL_COVERAGE_GATE 保持一致（唯一判据在那个脚本；
-# CI 的 coverage json 用 --fail-under=0 取数，避免两处判定互相遮蔽）。
-fail_under = 73.6
+# ★ **唯一判据在 tools/check_coverage_gates.py 的 OVERALL_COVERAGE_GATE** —— 本值只求与之
+#   **一致**（由 check_docs_consistency 交叉校验）；CI 用 `--fail-under=0` 取数，
+#   避免两处判定互相遮蔽。
+#   本值另会作用于**本地** `coverage report` ⇒ 余量须覆盖「本地低于 CI」那部分
+#   （脚本内记录：本地系统性低于 CI 约 1.1 点）⇒ 取 CI 三平台实测最小值 77.46% − 2.46。
+#   2026-09-30 收紧：73.6 → 75.0（依据 CI run 36551475125 @ f4fc52f；只升不降）。
+fail_under = 75.0
 
 [tool.ruff]
 target-version = "py312"
