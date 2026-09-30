@@ -1,6 +1,11 @@
 # 代表性任务验收账本
 
-> 适用版本：0.12.0 · 逐条证据截至 2026-09-16（**0.13.0 / 0.13.1 / 0.14.0 / 0.15.0 均未重跑验收**）· 建立日期：2026-09-12 · 基准提交：`13ea424` · 维护状态：现行
+> 适用版本：**0.12.0（各行证据日期见该行）** · 逐条证据截至 2026-09-16；**2026-09-30 在 0.15.0 上补跑**了一批（见「2026-09-30 复跑记录」）· 建立日期：2026-09-12 · 基准提交：`13ea424` · 维护状态：现行
+>
+> ★ **本轮补跑的边界（不夸大）**：在**源码树内**（`main` = `ab9ddf4`、本机受控环境）按 `docs/BENCHMARKING.md`
+> 记录的入口重跑了 crawler 侧 4 条基准（4/4 满分）、PDF 侧 5 个用例（5/5）与相关集成/浏览器/GUI 用例（57 passed）。
+> ★ **「便携产物内复跑」仍未做**（那是本账本原定的下一步验收，必须在**打包产物**里跑）——
+> 因此**没有任何一行**被标为「已按便携产物验收」，`适用版本` 也不靠改字升级。
 
 本账本记录“当前版本真实证明了什么”。历史报告不自动等于当前版本通过；没有当前证据的
 能力标为未知。每次执行必须使用独立 workspace 与 data_dir，恢复测试只复用本任务状态。
@@ -11,10 +16,29 @@
 | 动态页面→分页/滚动→去重 | **程序自造的固定样例**：3 页 × 4 条，条目由页面**内联 JS 注入**（只有真渲染才看得到），页面间用静态 `rel="next"` 相连；真值 = 12 条且互不相同 | **2026-09-13 新增端到端**（`tests/integration/browser/test_dynamic_pagination_fixed_sample.py`）：本地 JS 站点经真实流水线（浏览器引擎）⇒ `processed=3`（首末页齐全）、12 条、**无重复**、来源覆盖 3 个页面；**浏览器进程回收**独立成一条用例核对。**独立性核对**：断掉"浏览器源链接发现"后 `processed` 由 3 掉到 1（证明断言承重）。门禁 `OMNICRAWL_BROWSER_TESTS=1`（与仓库既有浏览器用例同款），跳过时给出安装命令。**2026-09-13 再补滚动样例**（`test_infinite_scroll_fixed_sample.py`）：单页 3 批 × 4 条，内容**只在页面被滚动过之后**才追加 ⇒ `processed=1` 且 12 条、无重复；**去掉滚动动作只剩首屏 4 条**（承重性做成常驻用例，非一次性核对）。样例刻意**不依赖 scroll 事件 / IntersectionObserver**（无头下二者派发不稳定，见缺口节） | 已验证（**分页 + 滚动**） | 便携产物内复跑（按约定留 CI / 受控环境） |
 | API→游标分页→增量 | 本地HTTP固定3页：首次交付ID 1/2/3；二次仅末页值变化，应只交付ID 3新值 | 自动分析按正式JSONPath试跑；真实流水线核对游标替换、末页停止、来源URL及二次同步；恢复保留未完成游标；**2026-09-13 新增 GUI 路径**：同场景经真实 GUI 运行器 + worker 子进程跑通（3 条含游标来源、游标链恰好一遍、二次只交付变化那条）；**2026-09-14 新增「经 GUI 表单创建」**：`test_form_created_cursor_api_task_runs_end_to_end` —— **空白表单**选「API / JSON」+「按游标」分页、填记录路径与字段 → 保存 → 运行 → 三页全交付、游标链恰好一遍、二次只交付末页变化那条（与 YAML 路径同一组真值） | 已验证（JSONL核心链，含 GUI 运行路径与**表单创建**路径） | 便携产物内复跑（按约定留 CI / 受控环境） |
 | 附件→PDF/OCR→复核（**自动部分**） | 程序自造样本（零第三方内容）：数字版=reportlab 中英文+表格；图片版=PIL 渲染的**无文字层** PDF（用来逼出 OCR）。真值：`HT-2026-0001` / `示例服务合同` / `12,345.67 元` | **2026-09-13 新增端到端**（`tests/integration/pdf/test_pdf_ocr_review_workflow.py`）：① 数字版取到中英文与表格（还原为 Markdown 表）、金额标准化为「元」、字段带**页码 + 原文证据**、校验 `valid`；② 图片版 `parse_method=ocr`、`ocr_status=done`、置信度 > 0.5（用**项目内置 tesseract** `.runtime/tesseract/`），OCR 文本还原出编号与名称，宽容模式抽取 `valid`，**金额经结构判定恢复为真值并逐字符核对**（`12.345.67` → `12345.67`；原始值仍保留）；③ 故意用严格模式制造失败 → `invalid`/`needs_review` + 校验信息说明缺哪些必填字段 → 复核队列 → 人工补齐并确认 → `apply-review` 写入 `human_review` 值 → **再导出可见** | 已验证（自动部分） | — |
-| 附件→PDF/OCR→复核（**人工部分**） | 同上样本与真值 | 无自动证据（按定义不可自动） | 未知（须人工走查） | 用**可复用走查包**走一遍：`python tools/walkthrough_env.py`（固定样本 + 隔离工作区）配合 `docs/MANUAL_WALKTHROUGH.md` 的 8 步清单，结论填《审查记录》§二十。样本期望值由 `tools/walkthrough_demo_site.py` 的 `EXPECTED` 提供并被 `tests/unit/tools/test_walkthrough_demo_site.py` 锁定（不会与文档漂移） |
+| 附件→PDF/OCR→复核（**人工部分**） | 同上样本与真值 | 无自动证据（按定义不可自动） | 未知（须人工走查） | 用**可复用走查包**走一遍：`python tools/walkthrough_env.py`（固定样本 + 隔离工作区）配合 `docs/MANUAL_WALKTHROUGH.md` 的 8 步清单，结论填《审查记录》**§2.3**「人工走查记录」（旧文稿写「§二十」＝收口前编号）。样本期望值由 `tools/walkthrough_demo_site.py` 的 `EXPECTED` 提供并被 `tests/unit/tools/test_walkthrough_demo_site.py` 锁定（不会与文档漂移） |
 | 定期采集→变更检测→差异导出 | 本地固定两版输入：v1=甲乙丙；v2=甲改价、乙不变、丙移除、丁新增 | **2026-09-13 新增端到端**：经真实 GUI 运行器 + worker 子进程连跑三次——v2 报 `modified=1`、`added=1`（中文键身份生效）；「删除」经 `run_compare` 检出 `removed=1`、`possibly_removed=0`；**差异导出**经产品自身 `compare-runs -o <file>` 写出文件且计数一致；第三次内容不变 → **零差异（无假差异）** | 已验证（变动识别 + 删除 + 差异导出 + 无假差异；删除走 run_compare 而非主路径） | `updates.confirm_missing_runs` 的连续确认（见缺口）；首次同步是否应报变更（待决策） |
 | 长任务→中断→恢复 | 故障注入与取消恢复用例已有；**2026-09-13 新增 GUI 路径**：慢站点（列表 + 8 详情），运行中经 GUI 停止 | 真实 GUI 运行器 + worker 子进程：**取消时服务端仅命中 3/9 页（对照实验：不取消 = 9/9）**、后端 `status=cancelled` 且 `pending>0`（证明确为中途停止）；停止后子进程回收无残留；重启后按标题去重**无重复**、两次运行合起来**覆盖全部页面** | 已验证（GUI 停止真实有效 + 进程回收 + 重启不重复不遗漏）；「resume 只交付剩余」由 ApplicationService 级用例覆盖 | 便携产物内复跑 |
 
+## 2026-09-30 复跑记录（0.15.0，**源码树内**）
+
+> 提交 `ab9ddf4`（＝远端 `main`）· 平台 Windows（本机，Chromium 1228 已装）· 执行入口见 `docs/BENCHMARKING.md`
+> ★ **边界**：这是**源码树内**的复跑，**不是**便携产物内 —— 后者仍未做（见头部说明）。
+
+| 台账行 | 复跑入口 | 结果 |
+|---|---|---|
+| 静态列表→详情→结构化结果 | `tools/benchmark_quality.py`（`list-three-details`）＋ `tests/integration/test_quality_benchmark.py` ＋ `test_gui_worker_local_task.py` | 基准：6/6 记录，completeness / accuracy / evidence 均 **1.00**，0 额外、0 重复；用例全绿 |
+| 动态页面→分页/滚动→去重 | `tests/integration/browser/test_dynamic_pagination_fixed_sample.py` ＋ `test_infinite_scroll_fixed_sample.py`（`OMNICRAWL_BROWSER_TESTS=1`） | **5 passed**：分页 3 页 12 条无重复；滚动 3 批 12 条无重复 |
+| API→游标分页→增量 | `tools/benchmark_quality.py`（`api-cursor-two-pages`）＋ `tests/integration/test_cursor_api_pipeline.py` | 基准：2/2 记录，各指标 **1.00**；用例全绿 |
+| 附件→PDF/OCR→复核（**自动部分**） | `tools/benchmark_pdf_quality.py` | **5/5** 满足「要么对，要么进复核」（text_layer ×3 ＋ scanned ×2，含低质量扫描件） |
+| 定期采集→变更检测→差异导出 | `tests/integration/test_run_compare_deletions.py` | 全绿（含「仅后一次是否收尾」之差令 `removed` / `possibly_removed` **互换**的对照） |
+| 长任务→中断→恢复 | `tests/integration/recovery/`（cancel_and_interrupt / failure_visibility / run_reliability） | 全绿（取消真实有效 ＋ 进程回收 ＋ 重启不重复不遗漏） |
+| （配 row 1/3 的 GUI 路径） | `tests/integration/test_gui_form_create_task.py` ＋ `test_first_task_journey.py` | 全绿 |
+
+**汇总**：crawler 基准 **4/4 任务**满分 · PDF 基准 **5/5** · 集成/浏览器/GUI **57 passed / 0 failed**。
+**失败项**：无。**跳过项**：无（浏览器门禁已显式打开）。
+**产物报告**（本机临时目录，**未入库**）：crawler 侧 `bench-0150.json`、PDF 侧 `bench-pdf-0150.json`。
+★ 依「证据更新规则」：本机环境的结论只记**该环境该时刻**成立。
 ## 当前已知缺口
 
 - **单页模式（详情页）曾静默丢短值，且留下一个更糟的脏值**（2026-09-14 实测 → 同日修）。
@@ -67,7 +91,11 @@
   **GUI 侧的证据**：`test_form_authored_pagination_reaches_config_and_survives_extras`（换形状＝该组参数重填，避免把页码参数名 `page` 带到游标形状写成 `?page=<游标值>`；契约外/表单不渲染的键如 `location` 表单同步后仍在；未知形状 `type: scroll` 进「保持原样」不改写）；`test_form_created_cursor_api_task_runs_end_to_end`（空白表单 → 保存 → 运行 → 真值）；`tests/unit/config/test_gui_config_preservation.py` 两条往返用例（含历史无 `type` 写法）。
   **承重性核对（三处注入，全部会红）**：① 让 `_pagination_from_form()` 恒返回 `None` ⇒ 端到端用例失败（只抓第一批）；② 清空 `_pagination_extras` ⇒ 契约外键保留用例失败；③ 把契约校验打空（退回只认 `type=page`）⇒ 校验用例 `DID NOT RAISE` 而失败。
 
-  **仍未闭环（如实登记）**：`location: body` 需要 `source.payload` 配套，表单**仍不渲染**它
+  ★ **更正（2026-09-30）：这不是"缺了没做"，而是契约里明写的 `editable=False`**（按设计），
+  且**不丢数据**（`location` / `payload` 属透传字段，加载后原样保留）。原表述"仍不渲染"容易被读成
+  实现缺陷 —— 实际状态是「**高级用法，表单不渲染，改它要手写 YAML**」，并已补进
+  `docs/CONFIG_REFERENCE.md`（`location: query|body` ＋ `source.payload` 的写法与边界）。
+  仍在的**真实**限制：想要表单可编辑，需要先做「payload 编辑器」—— 列为**待评估的产品增强**，不是缺口。
   （契约里标 `editable=False`，原样透传）；`extract.mode`/`source.kind` 的表单入口属另一条
   （见下方 GUI 条目）。
 
@@ -123,8 +151,10 @@
   都**有代表** —— 删掉 API 任务会被判红。避免"覆盖了哪些形态"退化成口头声明。
 
   **仍未闭环（如实登记）**：
-  - **OCR / 模糊抽取的专项标准**未做：它属 **pdfx 侧**的判据（crawler 基准混不进 OCR，
-    混进去就会变成"用精确结构化标准要求模糊抽取"）；`TASKS` 里也还没有"附件 / PDF"形态。
+  ★ **已闭环（2026-09-14 建 + 2026-09-30 复跑；本条原文已过时）**：pdfx 侧的专项标准**已建**
+  （`services/pdf_quality_benchmark.py`：分数 + 门槛 + 11 条反例集），2026-09-30 在 0.15.0 上复跑 **5/5**。
+  ★ crawler 侧的 `TASKS` **刻意不加**"附件 / PDF"形态 —— 两侧**分开记分**（混在一起就会变成
+  "用精确结构化标准要求模糊抽取"，那正是本条原文反对的事）。
 - **GUI 此前完全用不到产品自带的 DOM 分析器**（2026-09-14 补上「分析页面并填字段」）。
   在此之前，GUI 里唯一能"补字段"的入口是「启发式补全字段」，它只追加**通用**规则
   （`h1`/`a`/`time`/`.author`/`.description`，与目标页无关）；而 CLI 的 `analyze` 一直能用
@@ -168,8 +198,9 @@
   取不到值）；让 `_on_source_kind_changed` 变空实现 ⇒ 控件用例失败。
 
   **仍未闭环（如实登记）**：
-  - 选择器为空的字段（如"元素自身 href"这类 `selector=""` + `attr=href` 的规则）会被**跳过** ——
-    GUI 的 `FieldDef` 要求选择器非空，这类规则目前只能靠 YAML 表达。
+  ★ **已闭环（2026-09-15；本条原文已过时）**：选择器是否必填**改由取值位置契约判定**
+  （`core/field_value_source.POSITIONS`）—— `element` / `element_attr` 两种位置**允许留空**，
+  表单可选「取条目元素自身（的属性）」⇒ 这类规则**表单已能 author**（校验判据就是契约本身）。
 - **GUI 曾无法创建（author）`extract.item_selector`**（2026-09-13 实测 → **2026-09-14 已修**）：从零在表单里建不出"列表"任务。**现已闭环**——
   核实方式：逐条查 GUI 的输入路径 ——
   ① 表单（TaskCanvas）没有该控件；② 「启发式补全字段」只追加**通用**字段规则
@@ -233,8 +264,9 @@
   不被误杀、异质叶子不构成重复模式）。**承重性核对**：注入旧 `infer_fields` 后"链接外价格"
   用例失败；侧边栏配置在旧门槛下确实 `records=4` 会被放行 ⇒ 新门禁必要。
 
-  ④ **仍未闭环（本轮新观察）**：详情页改走单页模式后**字段偏少** —— `_infer_single_page_fields`
-  要求文本长度 ≥5，于是"商品名"(3 字符) / "99" 这类短字段被滤掉。属既有启发式，本轮未动。
+  ④ ★ **已闭环（2026-09-14 同日修；"本轮未动"是同一文件内的口径矛盾，2026-09-30 更正）**：
+  长度规则改为「**必须有可取值字符**」（`intelligent_scraper._VALUE_CHAR_RE`：数字/字母/汉字），
+  短字段不再被滤 —— 证据见本文档「当前已知缺口」首条（7 条用例 + 五处注入承重核对）。
 - **无头浏览器：事件驱动型懒加载尚未验证（有实测依据，不掩盖）**（2026-09-13）。
   实测（Windows 无头 Chromium，同一页面、同一动作序列重复跑）：`window.scrollTo` 能改变滚动位置，
   但 **scroll 事件的派发不稳定**（同一参数多次运行，计数时有时无）；**IntersectionObserver 亦不稳定**

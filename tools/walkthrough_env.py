@@ -250,7 +250,7 @@ def main() -> None:
     print(f"  {project}，并在记录里写明实际项目根。")
     print()
     print("── 走查完成后 ───────────────────────────────────────")
-    print("1. 结论填《审查记录》§二十（步骤与记录表见 docs/MANUAL_WALKTHROUGH.md）")
+    print("1. 结论填《审查记录》§2.3「人工走查记录」（步骤与记录表见 docs/MANUAL_WALKTHROUGH.md）")
     print(f"2. 工作区可整目录删除：{workspace}")
     print()
     print("Ctrl+C 结束演示站点")
