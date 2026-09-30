@@ -245,6 +245,14 @@ egress:
 plugins:
   paths: [plugins/, plugins_installed/]
   allow_external_paths: false
+  # 多索引（#77 Phase 1）：可同时启用多个 catalog 源。未配置时由 catalog_url 派生**唯一一条官方源**
+  #（行为与升级前完全一致）。详见 docs/MARKET_ECOSYSTEM.md「多索引」。
+  catalogs:
+    - url: https://raw.githubusercontent.com/<owner>/<index-repo>/main
+      kind: community        # curated（官方策展）| community（社区索引）| topic（主题聚合）
+      priority: 10           # 同一 id 出现在多个索引时的展示优先级（小的在前，缺省 100）
+      trust: ""              # 该索引的信任根（PEM 文本/路径/base64/hex:）；留空＝官方内置信任根
+      enabled: true
   enabled_market_plugins: [site]
   permission_grants:
     site:
@@ -255,6 +263,10 @@ plugins:
   fail_open: false
   hook_fail_open: true
 ```
+
+★ **`catalogs[].trust` 留空**不是"不校验"，而是**用官方内置信任根**；取数或验签失败的源会
+**带着原因出现在报告里**（不静默丢弃）。三级信任信号（官方策展 / 社区索引 / P2P 未审核）
+及其**各自不保证什么**见 `docs/MARKET_ECOSYSTEM.md`。
 
 权限授权绑定插件 ID、版本和载荷哈希；插件代码或整包 manifest 变化后必须重新批准。旧字段
 `approved_permissions` 仅在只启用一个插件时临时兼容，多插件配置必须迁移，避免权限横向复用。
@@ -296,9 +308,19 @@ self_update:
   （GitHub「最新 release 资产」固定链接：每版把更新清单当普通 Release 资产上传，
   客户端永远拿到最新那一份——免版本号、免 API、零额外托管）。
   显式配置可指向镜像/本地目录；**清单带 sha256 ⇒ 镜像不必可信**（只承担带宽）。
-- **full_fallback（清单顶层可选字段）**：`{"version", "base", "name", "sha256", "size"}`——
-  指向「最近一次带全量包的发布」。小版本发布**不重建全量包**时，
-  本机版本不在增量基线内的用户从这里取全量，否则会被永久卡住。
+- **full_fallback（已删除）**：该字段曾是"小版本不重建全量包"的兜底，指向"最近一次带全量包的
+  发布"。**它已随"统一发布形态"删除** —— 每版都发本平台全量包，字段的存在理由消失；而它的
+  跨版本兜底会把应用**静默降级成旧版**却把版本号报成新版（`--to-versions` 还会把版本号写进
+  `current.txt`），错的状态比没有自动路径更糟。缺本平台本版本键时客户端**明确报错并指路**
+  （手动下载某个已发布的完整包；或 Standard + `omnicrawler components import`）。
+
+- **平台能力声明 `auto_apply`**（清单顶层可选，缺省 true）：`false` 表示**本平台只提示、不落地**，
+  请手动下载替换。判据与客户端的 `AUTO_APPLY_PLATFORMS` **取与** ⇒ 清单声明 `true` 也不能越权
+  （避免发布侧一个笔误让客户端去尝试注定失败的落地）。
+  **macOS 恒为 false**：主产物是 `.dmg`（`apply_archive()` 只认 zip，Release 里没有 zip/tar.gz）、
+  `browsers/` 在 `.app` **之外**（以 `app_root` 为根的载荷覆盖不到它）、ad-hoc 签名会被改坏 ⇒
+  自动更新在 macOS 上**做不到完整替换**。客户端会在 `options.manual_install` 为真时只给
+  "下载哪个文件、多大"，不提供必然失败的动作。
 
 - **信任根**：未显式配置时读内置 `configs/update_trust.pub.pem`（ed25519，指纹 `bf981f1d…`）。
   它**刻意与市场信任根 `d92fa9fb…` 是两把钥匙**：市场根授权“沙箱内的插件”，
@@ -310,7 +332,7 @@ self_update:
   逐文件哈希，而三平台载荷（`.exe/.dll` vs ELF/`.so`）与 Standard/Full 的 `runtime/`、OCR
   载荷都不同 ⇒ 一份清单只可能描述一个 (平台, 版本)。后两层是兼容路径。
   字段：`version` / `published_at` / `notes` / `platform`（可选）/ `edition`（可选）/
-  `assets` / 可选的 `payload` / `full_fallback` / `signature`。
+  `auto_apply`（可选，缺省 true）/ `assets` / 可选的 `payload` / `signature`。
   - `platform` / `edition`：清单**自述**的平台与版本。客户端会**交叉校验**：声明了就必须与
     本机一致，否则**拒绝使用**（否则 Windows 客户端可能拿 Linux 的清单把 ELF/`.so` 覆盖进来，
     或把 Full 的清单套在 Standard 安装上）。留空＝不校验（兼容只发一份粗粒度清单的老更新源）。

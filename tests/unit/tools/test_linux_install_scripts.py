@@ -59,7 +59,13 @@ assert _smoke_spec is not None and _smoke_spec.loader is not None
 archive_smoke = importlib.util.module_from_spec(_smoke_spec)
 _smoke_spec.loader.exec_module(archive_smoke)
 
-DELIVERY_FILES = ("install-user.sh", "uninstall-user.sh", "omnicrawler.desktop.in")
+# ★ 单一真源：用**判据自己的**交付件清单，而不是在测试里再抄一份 ——
+#   抄一份的话，将来给判据加文件（如启动器）会漏掉暂存、反向断言就悄悄失效。
+# ★ 分层的两个清单（与真产物一致）：安装器脚本在 installer/ 下，启动器在应用根。
+INSTALLER_FILES = (*check_linux_delivery.DELIVERY_SCRIPTS, check_linux_delivery.DESKTOP_TEMPLATE)
+APP_ROOT_FILES = check_linux_delivery.APP_ROOT_FILES
+# 判据用的全集（gate 只看"每个交付件都必须合规"，与它落在哪一层无关）
+DELIVERY_FILES = check_linux_delivery.DELIVERY_FILES
 HICOLOR_SIZES = (16, 24, 32, 48, 64, 128, 256)
 
 
@@ -207,8 +213,14 @@ def _make_app_tree(tmp_path: Path) -> Path:
     """伪造一棵与产物同形的应用树：入口 + installer/{脚本,模板,hicolor}。"""
     app = tmp_path / "download" / "OmniCrawler"
     (app / "installer" / "icons" / "hicolor").mkdir(parents=True)
-    for name in DELIVERY_FILES:
+    for name in INSTALLER_FILES:
         shutil.copy2(DELIVERY_DIR / name, app / "installer" / name)
+    # ★ 启动器在**应用根**（不是 installer/）：install-user.sh 会把桌面条目与 PATH 软链
+    #   指向 <prefix>/OmniCrawler-launcher ⇒ 放错层会让安装脚本报"便携包不完整"。
+    for name in APP_ROOT_FILES:
+        staged = app / name
+        shutil.copy2(DELIVERY_DIR / name, staged)
+        staged.chmod(0o755)
     for size in HICOLOR_SIZES:
         dest = app / "installer" / "icons" / "hicolor" / f"{size}x{size}" / "apps"
         dest.mkdir(parents=True)
@@ -258,9 +270,12 @@ def test_install_places_everything_and_is_idempotent(tmp_path: Path) -> None:
     text = desktop.read_text(encoding="utf-8")
     exec_line = next(line for line in text.splitlines() if line.startswith("Exec="))
     exec_target = Path(exec_line.removeprefix("Exec="))
-    # ★ 必须是**绝对**路径，且指向 prefix 下真实存在的入口（就地注册会留死链）
+    # ★ 必须是**绝对**路径，且指向 prefix 下真实存在的入口（就地注册会留死链）。
+    # ★★ 目标必须是**启动器**而不是 `OmniCrawler` 本体：`--to-versions` 会把新版装到
+    #    `<prefix>/versions/<版本>/`，只有读 `versions/current.txt` 的启动器才会启动**新版**；
+    #    写死指本体等于"装了新版没人启动它"（这正是本批要修的缺口）。
     assert exec_target.is_absolute(), exec_line
-    assert exec_target == prefix / "OmniCrawler", exec_line
+    assert exec_target == prefix / "OmniCrawler-launcher", exec_line
     assert exec_target.is_file(), "Exec= 指向的入口在磁盘上必须真实存在"
     assert "Icon=omnicrawler" in text
     assert "StartupWMClass=omnicrawler" in text
@@ -369,7 +384,9 @@ def test_cli_symlink_points_into_the_prefix(tmp_path: Path) -> None:
                 ["--prefix", str(prefix), "--no-desktop-database"], home).returncode == 0
     link = home / ".local" / "bin" / "omnicrawler"
     assert link.is_symlink()
-    assert Path(os.readlink(link)) == prefix / "omnicrawler"
+    # ★ 软链也要指向**启动器**（否则 `--to-versions` 之后命令行跑的还是旧那份）
+    assert Path(os.readlink(link)) == prefix / "omnicrawler-cli-launcher"
+    assert Path(os.readlink(link)).is_file(), "软链目标必须真实存在"
 
 
 @needs_posix_bash
@@ -399,7 +416,7 @@ def test_reinstall_from_inside_the_prefix_is_idempotent(tmp_path: Path) -> None:
     icons = list((home / ".local" / "share" / "icons").rglob("omnicrawler.png"))
     assert len(icons) == len(HICOLOR_SIZES)
     desktop = home / ".local" / "share" / "applications" / "omnicrawler.desktop"
-    assert f"Exec={prefix}/OmniCrawler" in desktop.read_text(encoding="utf-8")
+    assert f"Exec={prefix}/OmniCrawler-launcher" in desktop.read_text(encoding="utf-8")
 
 
 @needs_posix_bash
@@ -429,8 +446,12 @@ def _stage_release_root(tmp_path: Path) -> Path:
     """伪造一棵"已解压的 Linux 产物树"：入口 + `installer/`，与真产物同形。"""
     root = tmp_path / "OmniCrawler"
     (root / "installer" / "icons" / "hicolor").mkdir(parents=True)
-    for name in DELIVERY_FILES:
+    for name in INSTALLER_FILES:
         shutil.copy2(DELIVERY_DIR / name, root / "installer" / name)
+    for name in APP_ROOT_FILES:
+        staged = root / name
+        shutil.copy2(DELIVERY_DIR / name, staged)
+        staged.chmod(0o755)
     for size in HICOLOR_SIZES:
         dest = root / "installer" / "icons" / "hicolor" / f"{size}x{size}" / "apps"
         dest.mkdir(parents=True)
@@ -472,8 +493,8 @@ def test_archive_install_smoke_red_then_restored_when_exec_points_nowhere(
     root = _stage_release_root(tmp_path)
     template = root / "installer" / "omnicrawler.desktop.in"
     pristine = template.read_bytes()
-    broken = pristine.replace(b"Exec=@PREFIX@/OmniCrawler", b"Exec=@PREFIX@/NoSuchBinary")
-    assert broken != pristine, "模板里应存在 Exec=@PREFIX@/OmniCrawler 这个锚点"
+    broken = pristine.replace(b"Exec=@PREFIX@/OmniCrawler-launcher", b"Exec=@PREFIX@/NoSuchBinary")
+    assert broken != pristine, "模板里应存在 Exec=@PREFIX@/OmniCrawler-launcher 这个锚点"
 
     template.write_bytes(broken)
     with pytest.raises(RuntimeError):
@@ -482,3 +503,102 @@ def test_archive_install_smoke_red_then_restored_when_exec_points_nowhere(
     template.write_bytes(pristine)
     assert _sha256(template) == hashlib.sha256(pristine).hexdigest()
     assert archive_smoke.linux_install_smoke(root, tmp_path / "work")["desktop_entry"] == "ok"
+
+
+# ── A2 组：POSIX sh 类交付件（启动器）的形态判据 ──────────────────────────
+# 启动器是用户**唯一**能启动应用的入口，所以它刻意用 `/bin/sh`（POSIX 保证存在）而不是 bash。
+# 代价是没有 `pipefail` ⇒ 判据是 `set -eu`。若有人"为了统一"把它改成 bash，
+# 或者把 `pipefail` 塞进来，下面两条要能立刻说话。
+
+
+def test_posix_launchers_are_declared_and_shaped(tmp_path: Path) -> None:
+    """正向：两个启动器都在交付清单里，且形态正确。"""
+    staged = _stage_delivery(tmp_path)
+    for name in check_linux_delivery.DELIVERY_POSIX_SCRIPTS:
+        assert (staged / name).is_file(), f"{name} 必须在交付件清单里（否则没人检查它）"
+    assert check_linux_delivery.check(staged) == []
+
+
+def test_checker_goes_red_if_launcher_loses_sh_shebang(tmp_path: Path) -> None:
+    """★ 反向断言：启动器丢掉 `#!/bin/sh` ⇒ 必红（被改成 bash 也算丢）。"""
+    staged = _stage_delivery(tmp_path)
+    launcher = staged / "OmniCrawler-launcher"
+    launcher.write_text(
+        launcher.read_text(encoding="utf-8").replace("#!/bin/sh\n", "#!/usr/bin/env bash\n", 1),
+        encoding="utf-8",
+        newline="",
+    )
+
+    errors = check_linux_delivery.check(staged)
+
+    assert any("#!/bin/sh" in error for error in errors), errors
+
+
+def test_checker_goes_red_if_launcher_uses_pipefail(tmp_path: Path) -> None:
+    """★ 反向断言：POSIX sh 里没有 `pipefail` ⇒ 写进来必红（否则运行期才发现）。"""
+    staged = _stage_delivery(tmp_path)
+    launcher = staged / "omnicrawler-cli-launcher"
+    launcher.write_text(
+        launcher.read_text(encoding="utf-8").replace("set -eu\n", "set -euo pipefail\n", 1),
+        encoding="utf-8",
+        newline="",
+    )
+
+    errors = check_linux_delivery.check(staged)
+
+    assert any("pipefail" in error for error in errors), errors
+
+
+def test_every_delivery_file_is_pinned_to_lf_in_gitattributes() -> None:
+    """★ .gitattributes 必须**按名字**把每个交付件钉成 LF（不能只靠 `* text=auto` 兜底）。
+
+    为什么：规则命中 0 时会**静默**落回 `text=auto` ⇒ Windows 检出变 CRLF ⇒ 用户侧
+    `/usr/bin/env: 'sh
+'` 直接失败，而构建机是 Linux、本地看不出来。
+    新增交付件最容易漏（本次的启动器**无扩展名**、又直接在 `packaging/linux/` 下，
+    上面那些 `**/*.sh` 规则一条都命中不到）—— 这里逐个用 `git check-attr` 核对，漏一个就红。
+    """
+    if shutil.which("git") is None:
+        pytest.skip("没有 git，无法核对 .gitattributes")
+    missing: list[str] = []
+    for name in check_linux_delivery.DELIVERY_FILES:
+        result = subprocess.run(
+            ["git", "check-attr", "eol", "--", f"packaging/linux/{name}"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        if "eol: lf" not in result.stdout:
+            missing.append(f"{name} -> {result.stdout.strip() or result.stderr.strip()}")
+    assert not missing, "以下交付件没有在 .gitattributes 里钉成 LF：" + "; ".join(missing)
+
+
+@needs_posix_bash
+def test_uninstall_derives_the_prefix_from_the_launcher_entry(tmp_path: Path) -> None:
+    """★ 从 `.desktop` 的 `Exec=` 反推 prefix 时，必须认**启动器**后缀。
+
+    真缺陷（本轮全仓扫描扫出来的）：入口从 `<prefix>/OmniCrawler` 换成
+    `<prefix>/OmniCrawler-launcher` 之后，卸载脚本仍按 `%/OmniCrawler` 截断 ⇒ **截不掉**
+    ⇒ 反推出的"prefix"是**带文件名的那一层**。后果要么是"拿它去删删错地方"，
+    要么被"该目录不像 OmniCrawler 安装"的守卫拦住（用户看到一句莫名其妙的拒绝）。
+    两个后缀都要认：升级前装的 `.desktop` 还指着本体。
+    """
+    app = _make_app_tree(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    prefix = tmp_path / "prefix"
+    assert _run(
+        app / "installer" / "install-user.sh",
+        ["--prefix", str(prefix), "--no-desktop-database"],
+        home,
+    ).returncode == 0
+
+    # ★ 不传 --prefix ⇒ 只能从 .desktop 反推；也不传 --remove-prefix ⇒ **非破坏性**
+    result = _run(prefix / "installer" / "uninstall-user.sh", [], home)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"应用树已保留：{prefix}" in result.stdout, (
+        "反推出的 prefix 不对（应等于安装时的 prefix）:\n" + result.stdout
+    )

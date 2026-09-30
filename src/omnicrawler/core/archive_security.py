@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import stat
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+
+logger = logging.getLogger(__name__)
 
 
 class UnsafePackageError(ValueError):
@@ -91,6 +94,43 @@ def read_zip_member(
     return payload
 
 
+def zip_member_mode(info: zipfile.ZipInfo) -> int | None:
+    """从 zip 成员的 ``external_attr`` 取 POSIX 权限位；没有记录 ⇒ ``None``。
+
+    ★★ 为什么必须有这条往返（2026-09-30 发现的缺陷）：zip 把 ``st_mode`` 放在
+    ``external_attr`` 的高 16 位，而客户端此前**完全没读它**，一律用"新建文件的默认模式"写出
+    （``shutil.copy2`` 只保留**源**文件模式，而源是刚解出来的临时文件）。后果是
+    **Linux/macOS 上经变更包或整包替换后的 ``omnicrawler`` 变成不可执行** —— 应用直接起不来。
+    Windows 上这个位没有意义（``os.chmod`` 只切只读），所以此前一直没暴露。
+
+    安全钳制（包是**不可信容器**：变更包本身不签名，只有成员哈希来自已签名清单）：
+    ``mode & 0o777`` —— 只保留 rwx，**丢掉 setuid/setgid/sticky**。
+    否则一个被投毒的包就能给落下来的文件设特权位。
+    """
+    raw = (info.external_attr >> 16) & 0xFFFF
+    mode = raw & 0o777
+    if not mode:
+        # 0 表示"没记录"（很多工具产出的 zip 就是这样）：**什么都不做**，
+        # 保持当前默认行为，免得把本来正常的包改坏。
+        return None
+    return mode
+
+
+def apply_zip_member_mode(info: zipfile.ZipInfo, path: Path) -> int | None:
+    """把成员记录的权限位落到文件上（Windows 上无害：只影响只读位）。"""
+    mode = zip_member_mode(info)
+    if mode is None:
+        return None
+    try:
+        path.chmod(mode)
+    except OSError:
+        # chmod 失败不阻断落地：内容哈希才是安全判据，权限位是正确性优化。
+        # 但也不能静默 —— 权限位丢了正是"应用起不来"那类故障。
+        logger.warning("无法设置文件权限位 %o: %s", mode, path)
+        return None
+    return mode
+
+
 def copy_zip_member(
     archive: zipfile.ZipFile,
     info: zipfile.ZipInfo,
@@ -100,6 +140,9 @@ def copy_zip_member(
 
     Writes to a temporary sibling and atomically renames on success, so a
     failed or oversized extraction never leaves a partial file behind.
+
+    权限位（``external_attr``）在**改名之前**落到临时文件上，随后的 ``os.replace``
+    把这个模式一并带过去 —— 于是"改权限"与"落地"仍然是**一次原子替换**。
     """
     destination.parent.mkdir(parents=True, exist_ok=True)
     temp_name = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
@@ -115,6 +158,7 @@ def copy_zip_member(
                 target.write(chunk)
         if written != info.file_size:
             raise UnsafePackageError(f"package member size mismatch: {info.filename!r}")
+        apply_zip_member_mode(info, temp_name)
         os.replace(temp_name, destination)
     except Exception:
         temp_name.unlink(missing_ok=True)

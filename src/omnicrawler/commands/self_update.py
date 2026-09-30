@@ -15,19 +15,19 @@
 from __future__ import annotations
 
 import hashlib
+import zipfile
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .._version import __version__
 from ..core.config import AppConfig, load_config
-from ..core.runtime_paths import application_dir
+from ..core.runtime_paths import VERSIONS_DIRNAME, application_dir, install_root
 from ..plugins.market_client import fetch_resource
 from ..services.update_feed import (
     DEFAULT_EDITION,
     DEFAULT_FEED_URL,
     FEED_FILENAME,
-    FullFallback,
     UpdateFeedError,
     asset_key,
     check_feed,
@@ -91,6 +91,35 @@ def _is_remote(base: str) -> bool:
     return base.startswith(("http://", "https://"))
 
 
+def _network_guidance(exc: Exception) -> str:
+    """受限网络（被墙 / 代理 / egress 策略）⇒ 追加**可执行的**指引；其他错误返回空串。
+
+    ★ 为什么只在网络/策略类错误上追加：把"验签失败"也说成"换个网络试试"会误导人
+    （用户会去折腾网络，而真正的问题是签名对不上）。判据按**异常类型 + 关键词**，
+    且**优先复用既有约定**：出口策略拒绝抛的是 `PolicyBlockedError`，它自带 `.suggestion`
+    —— 有就用它，不另造一套措辞。
+    """
+    suggestion = getattr(exc, "suggestion", "")
+    looks_networky = any(
+        mark in f"{type(exc).__name__} {exc}".lower()
+        for mark in (
+            "urlerror", "httperror", "policyblocked", "connection", "timed out", "timeout",
+            "proxy", "tunnel", "name or service", "getaddrinfo", "ssl", "dns", "denied",
+        )
+    )
+    if not looks_networky:
+        return ""
+    hints = [
+        "在配置的 `self_update` 段设置 `proxy`（例如 http://127.0.0.1:7890）",
+        "在 `egress.allowed_domains` 里允许该主机（默认策略是询问/拦截）",
+        "把 `self_update.feed_url` 指向镜像或**本地目录**（清单自带 sha256 ⇒ 镜像不必可信）",
+        "或手动下载本平台完整包替换（发布页：见 feed 基址）",
+    ]
+    lines = [str(suggestion)] if suggestion else []
+    lines.append("\n可以这样做：" + "；".join(f"{index}. {hint}" for index, hint in enumerate(hints, 1)))
+    return f"\n{' '.join(lines)}"
+
+
 def _fetch_feed(base: str, platform: str, edition: str, config: AppConfig) -> tuple[bytes, str]:
     """取**本平台本版本**的更新清单，按精度逐级回退；返回 (文档字节, 实际命中的文件名)。
 
@@ -112,7 +141,9 @@ def _fetch_feed(base: str, platform: str, edition: str, config: AppConfig) -> tu
         except Exception as exc:  # noqa: BLE001 - 逐级回退，全失败时抛最后一次
             last_error = exc
     assert last_error is not None
-    raise last_error
+    # ★ 三层都取不到 ⇒ 最常见的原因就是**网络/策略**（被墙、没配代理、egress 拦了）。
+    #   把这层判断做在这里（唯一一处），`check` / `apply` / `ignore` 三个调用点都能受益。
+    raise UpdateFeedError(f"{last_error}{_network_guidance(last_error)}") from last_error
 
 
 def _require_matching_platform(feed: Any, platform: str) -> None:
@@ -242,28 +273,35 @@ def check(
         if (result.update_available and feed.payload_files) else None
     )
     full_asset = feed.asset_for(target_platform, target_edition) if result.update_available else None
-    full_fallback = feed.full_fallback if result.update_available else None
-    full_size = (
-        full_asset.size if full_asset is not None
-        else (full_fallback.size if full_fallback is not None else 0)
-    )
+    # ★ 能力声明进 options：GUI 与调用方据此把"能自动更新"和"只能手动安装"区分开。
+    #   macOS 不在 `AUTO_APPLY_PLATFORMS` 里（主产物是 dmg、`browsers/` 在 .app 之外、
+    #   ad-hoc 签名会被改坏）⇒ 如实说"只能手动装"，而不是让用户点一个注定失败的按钮。
+    manual_only = result.update_available and not feed.auto_apply
     payload["options"] = {
+        "auto_apply": result.update_available and feed.auto_apply,
+        "manual_install": manual_only,
         "incremental": {
             "available": delta is not None,
             "size": delta.size if delta is not None else 0,
         },
         "full": {
-            "available": full_asset is not None or full_fallback is not None,
-            "size": full_size,
-            "name": (
-                full_asset.name if full_asset is not None
-                else (full_fallback.name if full_fallback is not None else "")
-            ),
-            "via_fallback": full_asset is None and full_fallback is not None,
+            "available": full_asset is not None,
+            "size": full_asset.size if full_asset is not None else 0,
+            "name": full_asset.name if full_asset is not None else "",
         },
-        "install_to_versions": full_asset is not None or full_fallback is not None,
+        "install_to_versions": full_asset is not None and feed.auto_apply,
         "ignored": False,
     }
+    if manual_only:
+        where = (
+            f"（{full_asset.name}，{_human_bytes(full_asset.size)}）"
+            if full_asset is not None
+            else f"（本平台资产 {asset_key(target_platform, target_edition)}）"
+        )
+        payload["detail"] = (
+            f"{detail}；★ 本平台**不支持自动更新**，请手动下载并替换"
+            f"{where} —— 取自本 Release 的下载页（feed 基址：{base}）"
+        )
 
     # ★ 本机比对（有逐文件清单时）：把"到底要不要重下 2G"变成一个具体数字。
     #   **不遍历**整个应用根，只读清单里出现的路径——用户数据目录绝不会被扫到。
@@ -287,7 +325,7 @@ def check(
             "removed_in_new_version": list(plan.present_deleted),
             "payload_base": feed.payload_base or base,
         }
-        full_label = _human_bytes(full_size) if full_size else "本版未提供"
+        full_label = _human_bytes(full_asset.size) if full_asset is not None else "本版未提供"
         payload["detail"] = (
             f"{detail}；本机需更新 {plan.needs_download}/{len(feed.payload_files)} 个文件"
             f"（增量约 {_human_bytes(delta.size if delta else plan.fetch_bytes)}"
@@ -313,7 +351,25 @@ PORTABLE_ZIP_ROOT = "OmniCrawler"
 CURRENT_POINTER = "versions/current.txt"
 
 #: 就地布局下需要"退役"的入口（防止用户误点旧版、又触发一次更新）。
-_RETIRE_ENTRIES = ("OmniCrawler.exe", "OmniCrawler-Launcher.bat")
+#:
+#: ★★ **绝不退役启动器**（`OmniCrawler-Launcher.bat` / `*-launcher`）：启动器是
+#: **版本无关**的 —— 它读 `versions/current.txt` 再决定启动哪一份。把它改名 `.outdated`
+#: 等于把"唯一能启动应用的入口"藏起来（此前 Windows 那份就在名单里，属真缺陷）。
+#: 退役只针对**具体版本的那几个二进制**。
+_RETIRE_ENTRIES_WINDOWS = ("OmniCrawler.exe",)
+_RETIRE_ENTRIES_POSIX = ("OmniCrawler", "omnicrawler")
+
+
+def _retire_names(platform: str) -> tuple[str, ...]:
+    """**目标平台**该退役的就地入口二进制（**不含启动器**）。
+
+    判据取"正在安装的那个平台"而不是 `detect_platform()`：两者在生产环境里必然一致
+    （退役动作作用在正在运行的那棵树上），但取显式参数才能在测试里确定性地说清
+    "给 linux 装的时候退役哪几个" —— 否则用例会随"跑在哪个系统上"而变。
+    """
+    if platform.strip().lower() == "windows":
+        return _RETIRE_ENTRIES_WINDOWS
+    return _RETIRE_ENTRIES_POSIX
 
 
 def _write_current_pointer(root: Path, version: str) -> Path:
@@ -324,11 +380,16 @@ def _write_current_pointer(root: Path, version: str) -> Path:
     return pointer
 
 
-def _retire_inplace_entries(root: Path) -> list[str]:
+def _retire_inplace_entries(root: Path, *, platform: str) -> list[str]:
     """把就地布局的旧入口改名 `.outdated`（防误点）。**改名在运行中可行**（实测），
-    失败（被占用且不允许改名）则原样保留并如实返回，不静默。"""
+    失败（被占用且不允许改名）则原样保留并如实返回，不静默。
+
+    ★ **不碰启动器**（见 `_retire_names` 的注释）：它是版本无关的入口，退役掉用户就没法启动了。
+    ★ 启动器本身还会做"若 `current.txt` 指向别的版本 ⇒ 转交"的检查，所以即便用户
+    直接点了旧二进制，也会被引到当前生效的那份。
+    """
     retired: list[str] = []
-    for name in _RETIRE_ENTRIES:
+    for name in _retire_names(platform):
         entry = root / name
         if not entry.exists():
             continue
@@ -348,6 +409,42 @@ def _human_bytes(size: int) -> str:
             return f"{int(value)}{unit}" if unit == "B" else f"{value:.1f}{unit}"
         value /= 1024
     return f"{value:.1f}GB"
+
+
+class _ApplyHardFailError(RuntimeError):
+    """落地过程中产生的「明确失败」（带可读 detail）。
+
+    与外层 `except Exception` 分开：那条路会写"已尽力回滚"，而这些失败**发生在写盘之前**
+    （取包、核哈希、比成员），报"已回滚"会误导用户去找一个不存在的半成品状态。
+    """
+
+
+def _delta_missing_members(delta_path: Path, expected: Mapping[str, str]) -> list[str]:
+    """变更包里**缺失**的所需成员（相对路径，已排序）。
+
+    为什么需要它（2026-09-30 发现的缺陷）：`plan_payload` 把「本机没有的文件」一律算进
+    `missing_locally` —— **包括那些在本机版本与目标版本之间根本没变过的文件**（用户自己删过、
+    或被杀软隔离过、或上次更新中断留下缺口）。而变更包只装"相对基线**变化过**的成员"，
+    于是 `stage_members` 会抛「变更包缺少清单里的文件」⇒ **整次更新失败且不自愈**：
+    用户删过一个文件之后，再也做不了增量更新。
+
+    调用点在**已核对包 sha256 之后** ⇒ 这里读的是一份**已认证**的包，不是来路不明的输入。
+    """
+    with zipfile.ZipFile(delta_path) as archive:
+        present = set(archive.namelist())
+    return sorted(relative for relative in expected if relative not in present)
+
+
+def _layout_root(*, app_root: Path | None, root: Path) -> Path:
+    """布局根：`versions/` 与 `current.txt` 所在的那一层。
+
+    默认是 **`install_root()`（安装根）** —— 版本化布局下它 ≠ 运行目录，这是必须分开的原因
+    （见 `runtime_paths.install_root`）。但调用方**显式**给了 `app_root` 时（测试接缝 /
+    离线自建更新源），那棵被指定的树就是"这份安装"，布局根跟着它；否则测试会写到真实安装目录去。
+
+    ★ 判据落在"调用方有没有显式指定"上，而不是"看起来像不像安装根"：后者会变成"看着像"判据。
+    """
+    return root if app_root is not None else install_root()
 
 
 def _ignored_version_file(root: Path) -> Path:
@@ -437,7 +534,9 @@ def cleanup(
     ``--yes`` 才真正删除；缺省只报计划（与 apply 同一安全判据）。
     """
     root = Path(app_root) if app_root is not None else application_dir()
-    manager = UpgradeManager(root, trusted_public_key=None)
+    manager = UpgradeManager(
+        root, trusted_public_key=None, install_root=_layout_root(app_root=app_root, root=root)
+    )
 
     pending_plan = manager.pending_cleanup()
     stale_dirs = manager.stale_version_dirs()
@@ -512,12 +611,13 @@ def apply(
         return _disabled_payload("未配置 self_update.trusted_public_key"), EXIT_DISABLED
 
     root = Path(app_root) if app_root is not None else application_dir()
-    manager = UpgradeManager(root, trusted_public_key=key)
+    manager = UpgradeManager(
+        root, trusted_public_key=key, install_root=_layout_root(app_root=app_root, root=root)
+    )
     local_package = Path(package).expanduser() if package else None
 
     feed: Any = None
     asset: Any = None
-    fallback_used: FullFallback | None = None
     fetch_base = ""
     target_name = ""
     expected_sha = ""
@@ -537,24 +637,49 @@ def apply(
                 "current_version": __version__,
             }, EXIT_FAILED
         asset = feed.asset_for(target_platform, target_edition)
+        if not feed.auto_apply:
+            # ★ 能力声明说"本平台只能手动装" ⇒ **明确拒绝并指路**，不去尝试一个注定失败的落地。
+            #   判据来自清单的 `auto_apply`（与 `AUTO_APPLY_PLATFORMS` 同源），而不是客户端
+            #   自己按平台名猜 —— 这样"支持面"只有一处真源。
+            target_asset = feed.asset_for(target_platform, target_edition)
+            what = (
+                f"{target_asset.name}（{_human_bytes(target_asset.size)}）"
+                if target_asset is not None
+                else asset_key(target_platform, target_edition)
+            )
+            return {
+                "status": "failed",
+                "detail": (
+                    f"本平台不支持自动更新（{target_platform}）：原因见平台能力声明。"
+                    f"请手动下载并替换 {what}（本 Release 的下载页：{base}）。"
+                ),
+                "current_version": __version__,
+                "latest_version": feed.version,
+                "feed_document": feed_name,
+                "manual_install": True,
+            }, EXIT_FAILED
         if asset is None:
-            # 本平台没有全量包（小版本不重建全量）⇒ 用「最近一次带全量包的发布」兜底，
-            # 否则不在增量基线内的用户会被永久卡住。
-            fallback_used = feed.full_fallback
-            if fallback_used is None:
-                wanted = asset_key(target_platform, target_edition)
-                return {
-                    "status": "failed",
-                    "detail": (
-                        f"更新源未提供本平台资产（{wanted}），且清单没有 full_fallback 兜底"
-                    ),
-                    "current_version": __version__,
-                }, EXIT_FAILED
-            target_name, expected_sha = fallback_used.name, fallback_used.sha256
-            fetch_base = fallback_used.base
-        else:
-            target_name, expected_sha = asset.name, asset.sha256
-            fetch_base = base
+            # ★ 明确缺失 + 指引（**不再**指向老版本兜底）。
+            #   曾经的做法是用 `full_fallback` 指向"最近一次带全量包的发布"，但那是
+            #   **把应用静默降级成旧版**却把版本号报成新版（还写进 current.txt）——
+            #   错的状态比没有自动路径更糟。缺键只可能是发布侧出错（或该包超 2 GiB 被剔除），
+            #   如实说出来并给两条已文档化的替代路径。
+            wanted = asset_key(target_platform, target_edition)
+            available = ", ".join(sorted(feed.assets)) or "无"
+            return {
+                "status": "failed",
+                "detail": (
+                    f"本版未提供本平台本版本的完整包（缺 {wanted}；清单里有：{available}）。"
+                    "若它超了 2 GiB 未随发布：本平台本版本只能走增量；"
+                    "本机版本不在增量窗口内时，请手动下载某个已发布的完整包重装，"
+                    f"或改用 Standard 包 + `omnicrawler components import` 加装组件。"
+                ),
+                "current_version": __version__,
+                "latest_version": feed.version,
+                "feed_document": feed_name,
+            }, EXIT_FAILED
+        target_name, expected_sha = asset.name, asset.sha256
+        fetch_base = base
 
     # ★ 增量优先：更新源若提供"相对当前版本的变更包"，就只下它（几 MB），
     #   只替换**本机确实不同**的那些文件 —— 这是"不会真的下 2G"的落点。
@@ -579,22 +704,13 @@ def apply(
         if not delta_expected:
             delta = None  # 本机已与目标一致：一个成员都不用下
 
-    # ★ `--to-versions` 的**消费者只有 Windows 启动器**（`OmniCrawler-Launcher.bat` 读
-    #   `versions\current.txt`）；Linux/macOS 上没有任何东西会读那个指针 ⇒ 静默产出
-    #   "装了但没人启动它"的布局比拒绝更糟。这里明确拒绝并指路（Linux 侧包一层解析脚本
-    #   属后续项，需与 install-user.sh / 桌面入口一起改）。
-    if to_versions:
-        target_platform = platform or detect_platform()
-        if target_platform != "windows":
-            return {
-                "status": "failed",
-                "detail": (
-                    f"--to-versions 目前仅 Windows 可用（当前平台 {target_platform}）："
-                    "该布局靠启动器读取 versions/current.txt，而 Linux/macOS 暂无消费者。"
-                    "请改用 --full（全量·就地替换）。"
-                ),
-                "current_version": __version__,
-            }, EXIT_FAILED
+    # ★ `--to-versions`（"保留旧版本"）此前**只在 Windows 可用**并被明确拒绝：Linux/macOS
+    #   的入口是安装期烘死的绝对路径（`.desktop` 的 Exec、`~/.local/bin` 软链），都指向
+    #   **就地**那一份 ⇒ 装了新版没人启动它。现在三平台都有了读 `versions/current.txt` 的
+    #   启动器（Linux：随包发 `OmniCrawler-launcher` / `omnicrawler-cli-launcher`；
+    #   Windows：`OmniCrawler-Launcher.bat`），且**指针格式完全一致** ⇒ 拒绝可以撤了。
+    #   ★ macOS 仍然只有 `assets`-only 清单、主产物是 dmg（`apply_archive` 只认 zip），
+    #   其"能不能落地"是另一件事，不在这里假装解决 —— 见发布侧的 macOS 能力声明。
 
     if delta is not None:
         mode = "incremental"
@@ -607,6 +723,9 @@ def apply(
         mode = "full-archive"
     plan: dict[str, Any] = {
         "app_root": str(root),
+        # 布局（versions/ 与 current.txt）在**安装根**下；就地载荷落在运行目录。
+        # 两者在版本化布局下不同 ⇒ 两个都报出来，出问题时一眼看得出用的哪个。
+        "install_root": str(manager.install_root),
         "mode": mode,
         "feed_document": feed_name,
         "package": (
@@ -620,13 +739,45 @@ def apply(
             delta.size if delta is not None
             else ((asset.size if asset is not None else 0) or 0)
         ),
-        "full_fallback": (
-            {"version": fallback_used.version, "name": fallback_used.name}
-            if fallback_used is not None else None
-        ),
         "files_to_replace": len(delta_expected) if delta is not None else 0,
         "workspace_protected": True,
     }
+
+    def _apply_full_archive() -> tuple[str, dict[str, Any]]:
+        """全量：整包 zip。整包哈希来自**已签名清单** ⇒ 先核包再落地，一个字节不符一个文件都不写。
+
+        抽成函数是为了让"增量包覆盖不到本机状态"时能**原地降级重试**（见下面的自愈分支）。
+        """
+        raw = _fetch(fetch_base, target_name, config)
+        actual = hashlib.sha256(raw).hexdigest()
+        if actual != expected_sha:
+            raise _ApplyHardFailError(
+                f"下载包 sha256 与更新源不一致（期望 {expected_sha}，实际 {actual}）——已拒绝应用"
+            )
+        archive_path = incoming / Path(target_name).name
+        archive_path.write_bytes(raw)
+        version = feed.version if feed is not None else ""
+        if to_versions:
+            # 可选：装到 <安装根>/versions/<新版>/，就地那份**原样不动**＝天然回退。
+            # ★ 目录与指针都放**安装根**（不是运行目录）：版本化布局下运行目录是
+            #   `<安装根>/versions/<v>/`，照旧写就会套出 `<v>/versions/<新版>/`（实测可复现）。
+            versions_root = manager.install_root / VERSIONS_DIRNAME / version
+            result = manager.apply_archive(
+                archive_path,
+                strip_root=PORTABLE_ZIP_ROOT,
+                expected_sha256=expected_sha,
+                dest_root=versions_root,
+            )
+            _write_current_pointer(manager.install_root, version)
+            plan["retired_entries"] = _retire_inplace_entries(root, platform=target_platform)
+            plan["versions_root"] = str(versions_root)
+        else:
+            # 全量·就地替换：只占一份（--full 显式选择，或本机不在增量基线内的兜底）
+            result = manager.apply_archive(
+                archive_path, strip_root=PORTABLE_ZIP_ROOT, expected_sha256=expected_sha
+            )
+        return version, result
+
     if dry_run:
         plan["status"] = "dry-run"
         plan["detail"] = "计划已生成，未写入任何文件（去掉 --dry-run 并加 --yes 才执行）"
@@ -644,65 +795,54 @@ def apply(
             raw = _fetch(feed.payload_base or base, delta.name, config)
             actual = hashlib.sha256(raw).hexdigest()
             if actual != delta.sha256:
-                return {
-                    "status": "failed",
-                    "detail": (
-                        f"变更包 sha256 与更新源不一致（期望 {delta.sha256}，实际 {actual}）——已拒绝应用"
-                    ),
-                    "current_version": __version__,
-                    "plan": plan,
-                }, EXIT_FAILED
+                raise _ApplyHardFailError(
+                    f"变更包 sha256 与更新源不一致（期望 {delta.sha256}，实际 {actual}）——已拒绝应用"
+                )
             delta_path = incoming / Path(delta.name).name
             delta_path.write_bytes(raw)
+            # ★★ 自愈：变更包只装"相对基线**变化过**"的成员，而本机可能有"两版之间没变过、
+            #   但本机被删掉/改坏"的文件 —— 那些成员**不在包里**。此前会直接抛"变更包缺少清单里
+            #   的文件"⇒ 整次更新失败且不自愈（用户删过一个文件就再也做不了增量更新）。
+            #   正解：不硬失败，改为**降级走全量**，并把缺失路径如实报出来（可见、不静默）。
+            missing_members = _delta_missing_members(delta_path, delta_expected)
+            if missing_members:
+                plan["delta_fallback"] = {
+                    "package": delta.name,
+                    "missing_count": len(missing_members),
+                    "missing_members": missing_members[:20],
+                    "reason": "本机有「变更包未包含」的所需文件（多为本地自行改动或上次更新中断）⇒ 改用全量",
+                }
+                delta = None
+                delta_expected = {}
+                mode = "versions-install" if to_versions else "full-archive"
+                plan["mode"] = mode
+                plan["files_to_replace"] = 0
+                plan["package"] = target_name
+                plan["sha256"] = expected_sha
+                plan["download_bytes"] = (asset.size if asset is not None else 0) or 0
+        if delta is not None:
             # 成员逐个对**已签名清单**里的哈希核对（变更包自身无需签名）
             staged = manager.stage_members(delta_path, delta_expected, version=feed.version)
             staged_version = str(staged.get("version") or "")
             applied = manager.apply(Path(str(staged["stage"])))
         elif local_package is None:
-            # 全量：整包（便携包 zip）。整包哈希来自**已签名清单** ⇒ 先核包再落地，
-            # 一个字节不符就一个文件都不写。
-            raw = _fetch(fetch_base, target_name, config)
-            actual = hashlib.sha256(raw).hexdigest()
-            if actual != expected_sha:
-                return {
-                    "status": "failed",
-                    "detail": (
-                        f"下载包 sha256 与更新源不一致（期望 {expected_sha}，实际 {actual}）——已拒绝应用"
-                    ),
-                    "current_version": __version__,
-                    "plan": plan,
-                }, EXIT_FAILED
-            archive_path = incoming / Path(target_name).name
-            archive_path.write_bytes(raw)
-            staged_version = feed.version if feed is not None else ""
-            if to_versions:
-                # 大版本可选：装到 versions/<新版>/，应用根那份**原样不动**＝天然回退
-                versions_root = root / "versions" / staged_version
-                applied = manager.apply_archive(
-                    archive_path,
-                    strip_root=PORTABLE_ZIP_ROOT,
-                    expected_sha256=expected_sha,
-                    dest_root=versions_root,
-                )
-                _write_current_pointer(root, staged_version)
-                plan["retired_entries"] = _retire_inplace_entries(root)
-            else:
-                # 全量·就地替换：只占一份（--full 显式选择，或本机不在增量基线内的兜底）
-                applied = manager.apply_archive(
-                    archive_path, strip_root=PORTABLE_ZIP_ROOT, expected_sha256=expected_sha
-                )
+            staged_version, applied = _apply_full_archive()
         else:
             if not local_package.is_file():
-                return {
-                    "status": "failed",
-                    "detail": f"本地升级包不存在：{local_package}",
-                    "current_version": __version__,
-                }, EXIT_FAILED
+                raise _ApplyHardFailError(f"本地升级包不存在：{local_package}")
             staged = manager.stage(local_package)
             staged_version = str(staged.get("version") or "")
             applied = manager.apply(Path(str(staged["stage"])))
-        if delta is not None:
+        if feed is not None:
+            # 删除清单来自**已签名清单**：变更包里刻意不带删除语义（包是不可信容器）
             deleted_removed, failed_removed = _remove_deleted(feed, root)
+    except _ApplyHardFailError as exc:
+        return {
+            "status": "failed",
+            "detail": str(exc),
+            "current_version": __version__,
+            "plan": plan,
+        }, EXIT_FAILED
     except Exception as exc:
         return {
             "status": "failed",

@@ -314,16 +314,39 @@ EDITION_LC="$(echo "$EDITION" | tr '[:upper:]' '[:lower:]')"
 # 摘要走文件（与 Linux/Windows 一致）：避免任何 argv 编码转码路径。
 UPDATE_NOTES_FILE="$BUILD_ROOT/update-notes.txt"
 printf '%s' "见本 Release 说明；本版要点亦见 CHANGELOG.md" > "$UPDATE_NOTES_FILE"
+
+# ---- 变更包（相对最近 K 个已发布版本）-----------------------------------------
+# ★ macOS 的载荷是 `.dmg`（纯 Python 读不了内部）⇒ 本平台**没有逐文件清单**，
+#   因此**也产不出变更包**（差集需要逐文件哈希）。这里仍然调用一次工具：
+#   它会在"基线清单没有 payload.files"时**明确跳过并打日志**，而不是静默什么都不做 ——
+#   "该平台走全量"这件事要看得见。
+DELTA_ARGS_FILE="$BUILD_ROOT/.delta-args.txt"
+PREV_ARGS_FILE="$BUILD_ROOT/.previous-args.txt"
+: > "$DELTA_ARGS_FILE"
+: > "$PREV_ARGS_FILE"
 MAC_ARCHIVE="${TAR_ARCHIVE:-}"
 if [[ -f "$DMG_ARCHIVE" ]]; then
   MAC_ARCHIVE="$DMG_ARCHIVE"
 fi
 [[ -n "$MAC_ARCHIVE" ]] || { echo "既没有 dmg 也没有 tar.gz 产物" >&2; exit 1; }
+if [[ -n "${OMNICRAWL_DELTA_BASELINES:-}" ]]; then
+  "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/build_update_delta.py" \
+    --payload-archive "$MAC_ARCHIVE" \
+    --version "$APP_VERSION" --platform macos --edition "$EDITION_LC" \
+    --baselines "$OMNICRAWL_DELTA_BASELINES" \
+    --baseline-url-base "$OMNICRAWL_RELEASE_URL_BASE" \
+    --out-dir "$RELEASE_OUTPUT" --scratch-dir "$BUILD_ROOT" \
+    --emit-args "$DELTA_ARGS_FILE" --emit-previous-args "$PREV_ARGS_FILE" \
+    || echo "[WARN] 变更包产出失败（macOS 本就只走全量）" >&2
+fi
+
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/build_update_manifest.py" \
   --no-payload \
   --version "$APP_VERSION" --platform macos --edition "$EDITION_LC" \
   --notes-file "$UPDATE_NOTES_FILE" \
   --asset "macos-$EDITION_LC=$MAC_ARCHIVE" \
+  --delta-file "$DELTA_ARGS_FILE" \
+  --previous-manifest-file "$PREV_ARGS_FILE" \
   --emit-unsigned "$RELEASE_OUTPUT/update-macos-$EDITION_LC.unsigned.json" \
   || { echo "macOS 更新清单生成失败" >&2; exit 1; }
 

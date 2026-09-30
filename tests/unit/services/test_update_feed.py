@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from pathlib import Path
 
@@ -119,7 +120,7 @@ def test_unsigned_document_is_rejected() -> None:
         ({"linux-standard": {"name": "x.zip", "sha256": "zz", "size": 1}}, "64 位十六进制"),
         ({"linux-standard": {"name": "x.zip", "sha256": "a" * 64, "size": -1}}, "非负整数"),
         ({"linux-standard": {"name": "x.zip", "sha256": "a" * 64}}, "非负整数"),
-        ({}, "既没有 assets 也没有 full_fallback"),
+        ({}, "没有 assets"),
     ],
 )
 def test_bad_assets_are_rejected(assets: dict, match: str) -> None:
@@ -354,3 +355,119 @@ def test_plan_payload_uses_hash_not_mere_presence() -> None:
     )
     assert plan.to_fetch == ("app.exe",)
     assert plan.unchanged == 1
+
+
+# ── 平台能力声明：auto_apply（"能力声明必须与实现一致"）─────────────────────
+# macOS 做不到自动落地（主产物 dmg、browsers/ 在 .app 之外、ad-hoc 签名会被改坏），
+# 所以清单如实写 auto_apply: false，客户端只提示、引导手动安装。三处同源：
+# services 里的能力表、清单字段、客户端判据。
+
+
+def test_auto_apply_defaults_to_true_for_legacy_manifests() -> None:
+    """老清单没有这个字段 ⇒ 保持既有行为（不因为新增字段把老发布判成"只能手动"）。"""
+    private, public = _keypair()
+    raw = _signed(_document(), private)
+    feed = uf.verify_feed_document(raw, trusted_public_key=public)
+
+    assert feed.auto_apply is True
+
+
+def test_auto_apply_false_is_honoured() -> None:
+    """清单显式声明"本平台不自动落地" ⇒ 客户端必须认。"""
+    private, public = _keypair()
+    document = {**_document(), "platform": "linux", "auto_apply": False}
+    feed = uf.verify_feed_document(_signed(document, private), trusted_public_key=public)
+
+    assert feed.auto_apply is False
+
+
+def test_auto_apply_cannot_overclaim_a_platform() -> None:
+    """★ 反向断言：清单**谎称**能自动落地时，以能力表为准（取与）。
+
+    否则发布侧一个笔误就会让客户端去尝试一个注定失败的落地（macOS 上连包都读不了）。
+    """
+    private, public = _keypair()
+    document = {**_document(), "platform": "macos", "auto_apply": True}
+    feed = uf.verify_feed_document(_signed(document, private), trusted_public_key=public)
+
+    assert "macos" not in uf.AUTO_APPLY_PLATFORMS
+    assert feed.auto_apply is False, "能力表说做不到 ⇒ 声明 true 也不生效"
+
+
+def test_auto_apply_must_be_boolean() -> None:
+    """类型判据：写个字符串不算"声明"。"""
+    private, public = _keypair()
+    document = {**_document(), "auto_apply": "yes"}
+    with pytest.raises(uf.UpdateFeedError, match="auto_apply"):
+        uf.verify_feed_document(_signed(document, private), trusted_public_key=public)
+
+
+# ── 用户所有区域：configs/ 不被静默覆盖（#88 验收要求 5）────────────────────
+# 为什么这不是"可能发生"：更新只替换"本地哈希与目标不符"的文件，而**用户改过的那份恰好
+# 一定不符** ⇒ 只要用户改过 configs/ 里的示例配置，旧行为就必然把它冲掉。
+# 语义刻意选"已存在则保留、缺失则照装"（新默认项仍能到达），信任根是**例外**（否则密钥轮换发不出去）。
+
+
+def test_user_owned_predicate_covers_configs_but_not_trust_roots() -> None:
+    """判据本体：`configs/**` 是用户所有，**信任根除外**。"""
+    assert uf.is_user_owned("configs/project.yaml") is True
+    assert uf.is_user_owned("configs/sub/deep.yaml") is True
+    assert uf.is_user_owned("configs/update_trust.pub.pem") is False
+    assert uf.is_user_owned("configs/plugin_trust.pub.pem") is False
+    assert uf.is_user_owned("runtime/foo.dll") is False
+    # 归一化：反斜杠与 `./` 前缀都不能让判据"看起来像"就跑偏
+    assert uf.is_user_owned("configs\\project.yaml") is True
+    assert uf.is_user_owned("./configs/a.yaml") is True
+    # ★ 前缀混淆：`configsevil/` 不是 `configs/`
+    assert uf.is_user_owned("configsevil/x.yaml") is False
+
+
+def _plan_for(files: dict[str, str], local: dict[str, str]) -> object:
+    """把"内容"当输入：真算 sha256（清单要求 64 位十六进制，占位串过不了校验）。"""
+    private, public = _keypair()
+
+    def _sha(content: str) -> str:
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    document = _document(
+        payload={
+            "files": {
+                name: {"sha256": _sha(content), "size": len(content)}
+                for name, content in files.items()
+            }
+        }
+    )
+    local = {name: _sha(content) for name, content in local.items()}
+    feed = uf.verify_feed_document(_signed(document, private), trusted_public_key=public)
+    return uf.plan_payload(feed, local_hashes=local)
+
+
+def test_plan_preserves_modified_user_config_instead_of_overwriting() -> None:
+    """★ 用户改过的 `configs/` 不进 `to_fetch`（不下载、不覆盖），但**如实报出**。"""
+    plan = _plan_for(
+        {"configs/project.yaml": "NEW", "runtime/app.bin": "NEW2"},
+        {"configs/project.yaml": "USER-EDITED", "runtime/app.bin": "OLD2"},
+    )
+
+    assert "configs/project.yaml" not in plan.to_fetch, "用户改过的配置不能被覆盖"
+    assert plan.preserved == ("configs/project.yaml",), "保留了哪些必须可见"
+    assert plan.to_fetch == ("runtime/app.bin",), "非用户所有区域照常更新"
+
+
+def test_plan_still_delivers_trust_roots() -> None:
+    """★ 例外必须真的生效：信任根**照常更新** —— 否则轮换密钥后更新永久坏掉。"""
+    plan = _plan_for(
+        {"configs/update_trust.pub.pem": "NEW-ROOT", "configs/plugin_trust.pub.pem": "NEW-ROOT2"},
+        {"configs/update_trust.pub.pem": "OLD-ROOT", "configs/plugin_trust.pub.pem": "OLD-ROOT2"},
+    )
+
+    assert set(plan.to_fetch) == {"configs/update_trust.pub.pem", "configs/plugin_trust.pub.pem"}
+    assert plan.preserved == ()
+
+
+def test_plan_still_installs_new_default_configs() -> None:
+    """★ 保护是"不覆盖"，**不是"永不安装"**：本机没有的新默认项仍要装。"""
+    plan = _plan_for({"configs/brand_new.yaml": "NEW"}, {})
+
+    assert plan.missing_locally == ("configs/brand_new.yaml",)
+    assert plan.preserved == ()

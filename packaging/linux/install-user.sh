@@ -172,13 +172,19 @@ else
 fi
 
 # ---- 3. .desktop（绝对路径是硬要求） ---------------------------------------
+# ★ 入口指向**启动器**（`OmniCrawler-launcher`）而不是 `OmniCrawler` 本体：
+#   `--to-versions` 会把新版装到 `<prefix>/versions/<版本>/`，只有读
+#   `versions/current.txt` 的启动器才会启动**新版**；写死指本体等于"装了新版没人启动它"。
+#   启动器本身就在包里（版本无关，不随版本变），所以这个绝对路径是**稳定**的。
 TEMPLATE="$PREFIX/installer/omnicrawler.desktop.in"
 [[ -f "$TEMPLATE" ]] || die "缺少 .desktop 模板：$TEMPLATE"
+GUI_ENTRY="$PREFIX/OmniCrawler-launcher"
+[[ -x "$GUI_ENTRY" ]] || die "缺少启动器：${GUI_ENTRY}（便携包不完整？）"
 DESKTOP_DIR="$HOME/.local/share/applications"
 mkdir -p "$DESKTOP_DIR"
 DESKTOP_FILE="$DESKTOP_DIR/omnicrawler.desktop"
 sed "s|^Exec=@PREFIX@|Exec=$PREFIX|" "$TEMPLATE" > "$DESKTOP_FILE"
-if ! grep -qF "Exec=$PREFIX/OmniCrawler" "$DESKTOP_FILE"; then
+if ! grep -qF "Exec=$GUI_ENTRY" "$DESKTOP_FILE"; then
   die "生成的 .desktop 未指向绝对路径：$DESKTOP_FILE"
 fi
 info "桌面条目已写入：$DESKTOP_FILE"
@@ -190,13 +196,16 @@ else
 fi
 
 # ---- 4. CLI 进 PATH ---------------------------------------------------------
+# ★ 同样指向**启动器**：否则 `--to-versions` 之后命令行跑的还是旧的那份。
 BIN_DIR="$HOME/.local/bin"
 mkdir -p "$BIN_DIR"
-ln -sfn "$PREFIX/omnicrawler" "$BIN_DIR/omnicrawler"
-info "CLI 软链：$BIN_DIR/omnicrawler -> $PREFIX/omnicrawler"
+CLI_ENTRY="$PREFIX/omnicrawler-cli-launcher"
+[[ -x "$CLI_ENTRY" ]] || die "缺少 CLI 启动器：${CLI_ENTRY}（便携包不完整？）"
+ln -sfn "$CLI_ENTRY" "$BIN_DIR/omnicrawler"
+info "CLI 软链：$BIN_DIR/omnicrawler -> $CLI_ENTRY"
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
-  *) warn "提示：$BIN_DIR 不在 PATH 中，命令行需用 $PREFIX/omnicrawler" ;;
+  *) warn "提示：$BIN_DIR 不在 PATH 中，命令行需用 $CLI_ENTRY" ;;
 esac
 
 if [[ "$RUN_DESKTOP_DB" -eq 1 ]]; then
@@ -229,7 +238,7 @@ fi
 
 info ""
 info "安装完成。"
-info "  启动     : 应用菜单搜索 OmniCrawler，或直接运行 $PREFIX/OmniCrawler"
+info "  启动     : 应用菜单搜索 OmniCrawler，或直接运行 $GUI_ENTRY"
 info "  命令行   : $BIN_DIR/omnicrawler"
 info "  卸载     : $PREFIX/installer/uninstall-user.sh"
 info "  数据位置 : 便携模式下在应用目录内（卸载默认保护，不会被删）"

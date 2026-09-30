@@ -449,11 +449,37 @@ $updateManifest = Join-Path $releaseOutput "update-windows-$editionLc.unsigned.j
 $updateNotesFile = Join-Path $buildRoot 'update-notes.txt'
 [IO.File]::WriteAllText($updateNotesFile, '见本 Release 说明；本版要点亦见 CHANGELOG.md',
     (New-Object Text.UTF8Encoding($false)))
+
+# ---- Change packages (relative to the last K published versions) ---------------
+# One build + K *previous manifests* => K change packages. No rebuild of the old
+# versions and no old bytes needed: "what to download" is decided by per-file
+# hashes, and the old hashes live in the old *signed manifests* (a few hundred KB).
+# OMNICRAWL_DELTA_BASELINES is derived from the tag list in release.yml (K=3);
+# empty => skip. A missing manifest is skipped with a log line, not a failure.
+$deltaArgsFile = Join-Path $buildRoot '.delta-args.txt'
+$previousArgsFile = Join-Path $buildRoot '.previous-args.txt'
+Set-Content -LiteralPath $deltaArgsFile -Value '' -NoNewline -Encoding ascii
+Set-Content -LiteralPath $previousArgsFile -Value '' -NoNewline -Encoding ascii
+if ($env:OMNICRAWL_DELTA_BASELINES) {
+    & $builderPython (Join-Path $projectRoot 'tools\build_update_delta.py') `
+        --payload-archive $releaseArchive `
+        --version $appVersion --platform windows --edition $editionLc `
+        --baselines $env:OMNICRAWL_DELTA_BASELINES `
+        --baseline-url-base $env:OMNICRAWL_RELEASE_URL_BASE `
+        --out-dir $releaseOutput --scratch-dir $buildRoot `
+        --emit-args $deltaArgsFile --emit-previous-args $previousArgsFile
+    if (-not $?) {
+        Write-Warning '变更包产出失败 ⇒ 本版只发布全量（客户端会走全量，不会卡住）'
+    }
+}
+
 & $builderPython (Join-Path $projectRoot 'tools\build_update_manifest.py') `
     --payload-archive $releaseArchive `
     --version $appVersion --platform windows --edition $editionLc `
     --notes-file $updateNotesFile `
     --asset "windows-$editionLc=$releaseArchive" `
+    --delta-file $deltaArgsFile `
+    --previous-manifest-file $previousArgsFile `
     --emit-unsigned $updateManifest
 Assert-LastExit 'Update manifest generation failed.'
 

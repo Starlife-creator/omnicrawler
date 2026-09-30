@@ -1,0 +1,72 @@
+#!/bin/sh
+# =============================================================================
+# omnicrawler-cli-launcher —— Linux/macOS 的**版本无关入口**（命令行）
+#
+# 与 `OmniCrawler-launcher`（GUI）是同一套解析逻辑，只有目标二进制名不同
+# （这里找 `omnicrawler`，那里找 `OmniCrawler`）。
+#
+# ★ 刻意**各写一份、不共用解析脚本**：这是用户唯一能启动应用的入口，
+#   出问题时"这个文件本身就是全部逻辑"比"少 30 行重复代码"重要得多。
+#   改其中一个的判据时，记得另一个也要改（两处都写了同一条判据注释）。
+#
+# 判据（与 Windows 的 `OmniCrawler-Launcher.bat` 完全一致）：
+#   · 指针缺失 / 为空 / 指向的目录不完整 ⇒ **回退就地那份**；
+#   · 只认**可执行**的目标。
+# 并设置 `OMNICRAWL_INSTALL_ROOT`（见 GUI 那份的说明：数据根必须钉在安装根上）。
+# =============================================================================
+set -eu
+
+SELF="$0"
+while [ -L "$SELF" ]; do
+  TARGET=$(readlink "$SELF")
+  case "$TARGET" in
+    /*) SELF="$TARGET" ;;
+    *) SELF="$(dirname -- "$SELF")/$TARGET" ;;
+  esac
+done
+SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$SELF")" && pwd)
+
+OMNICRAWL_INSTALL_ROOT="$SELF_DIR"
+export OMNICRAWL_INSTALL_ROOT
+
+# ★ 两个候选名都要认（不是"随便挑一个"）：
+#   Linux 上 CLI 是 `omnicrawler`（与 `OmniCrawler` 大小写区分，大小写敏感无冲突）；
+#   macOS 上**默认卷大小写不敏感** ⇒ 那一对同名会撞车，所以 macOS 包的 CLI 叫 `omnicrawler-cli`
+#   （见 `core/runtime_paths.bundled_cli_path` 的同一套约定）。本脚本按顺序找，
+#   找到谁用谁 —— 这样同一份启动器在两种布局下都对，不必按平台分叉。
+CURRENT_PTR="$SELF_DIR/versions/current.txt"
+TARGET=""
+
+resolve_binary() {
+  # $1 = 版本目录（空串表示就地那份）
+  _dir="$1"
+  [ -n "$_dir" ] && _dir="$_dir/"
+  for _name in omnicrawler-cli omnicrawler; do
+    if [ -x "$SELF_DIR/$_dir$_name" ]; then
+      printf '%s' "$SELF_DIR/$_dir$_name"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if [ -f "$CURRENT_PTR" ]; then
+  POINTED=""
+  IFS= read -r POINTED < "$CURRENT_PTR" || POINTED=""
+  POINTED=$(printf '%s' "$POINTED" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  if [ -n "$POINTED" ]; then
+    TARGET=$(resolve_binary "versions/$POINTED") || TARGET=""
+  fi
+fi
+
+if [ -z "$TARGET" ]; then
+  TARGET=$(resolve_binary "") || TARGET=""
+fi
+
+if [ -z "$TARGET" ]; then
+  echo "[ERROR] 未找到命令行入口（尝试：$SELF_DIR/omnicrawler-cli、$SELF_DIR/omnicrawler）" >&2
+  echo "请确认已完整解压便携包；若用过 --to-versions，请检查 versions/current.txt 指向的目录是否完整。" >&2
+  exit 1
+fi
+
+exec "$TARGET" "$@"

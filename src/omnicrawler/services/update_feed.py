@@ -80,6 +80,51 @@ DEFAULT_FEED_URL = "https://github.com/Starlife-creator/omnicrawler/releases/lat
 #: 可选版本后缀（``Standard`` / ``Full``）。空串表示"不区分版本"。
 DEFAULT_EDITION = "Standard"
 
+#: 载荷里**属于用户**的顶层：这些路径**本机已存在时一律不覆盖**。
+#:
+#: 为什么需要它（#88 验收要求 5：「额外保留 `plugins_installed/` 与 `configs/`（用户配置/信任根）」）：
+#: `configs/` 既是随包发的**示例配置**（`project.yaml` / `full_pipeline.yaml`，用户会改），
+#: 又是**信任根本体**。而更新只会替换"本地哈希与目标不符"的文件 ⇒ **用户改过的那份恰好
+#: 一定不符** ⇒ 会被静默覆盖掉。这不是"可能发生"，而是"用户一改就必然发生"。
+#: 语义刻意选**"已存在则保留、缺失则照装"**：新版本新增的默认配置仍然能到达用户手里。
+USER_OWNED_TOP_LEVEL = frozenset({"configs"})
+
+#: 上面那条保护的**例外**：信任根必须随发布走。
+#: 若把信任根也冻住，一旦轮换密钥，客户端会一直信任旧根 ⇒ 新发布验不过 ⇒ **更新永久坏掉**，
+#: 而且没有任何本地操作能救回来（这正是"保护过度"的典型反噬）。
+USER_OWNED_EXCEPTIONS = frozenset({
+    "configs/update_trust.pub.pem",
+    "configs/plugin_trust.pub.pem",
+})
+
+
+def is_user_owned(relative: str) -> bool:
+    """这个载荷路径是否属于"用户所有"（**本机已存在时**不覆盖）。
+
+    归一化后再判：Windows 侧可能给反斜杠、清单里可能带 `./` 前缀 —— 判据不能靠"看起来像"。
+    """
+    normalized = str(relative).replace("\\", "/").lstrip("/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    if normalized in USER_OWNED_EXCEPTIONS:
+        return False
+    return normalized.split("/", 1)[0] in USER_OWNED_TOP_LEVEL
+
+#: 支持**自动落地**（把新版字节写进本机）的平台。
+#:
+#: ★★ 为什么 macOS 不在其中（2026-09-30 核实，且这是**能力声明要与实现一致**的落点）：
+#:
+#: 1. `UpgradeManager.apply_archive()` 只认 **zip**，而 macOS 的主产物是 **`.dmg`**
+#:    （Release 里没有 zip/tar.gz）⇒ macOS 上"全量落地"这条路径**根本跑不起来**；
+#: 2. macOS 的 `browsers/` 在 `.app` **之外**（`browsers_root()` 特意取 `.app` 的同级，
+#:    理由是避免 codesign seal 卷入 Chromium 的复杂 bundle），而 `app_root` 是
+#:    `Contents/MacOS` ⇒ **任何以 app_root 为根的载荷都覆盖不到 `browsers/`**；
+#: 3. `.app` 是 ad-hoc 签名，改包内任何 Mach-O 都会让签名失效（Apple Silicon 有硬要求）。
+#:
+#: 这三点都不是"加个启动器"能解决的 ⇒ 与其假装能更新，不如**如实只报"有新版"并引导手动安装**。
+#: 三处必须一致：本常量（客户端判据）、清单里的 `auto_apply` 字段（发布侧声明）、文档。
+AUTO_APPLY_PLATFORMS = frozenset({"windows", "linux"})
+
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ED25519_KEY_BYTES = 32
 
@@ -105,21 +150,6 @@ class UpdateFile:
 
 
 @dataclass(frozen=True)
-class FullFallback:
-    """「最近一次带全量包的发布」。
-
-    小版本发布**不重建全量包**时（§A.13），本机版本不在增量基线内的用户从这里取全量，
-    否则会被永久卡住。``base``＋``name`` 与资产同构（base 指向那次发布的下载基址）。
-    """
-
-    version: str
-    base: str
-    name: str
-    sha256: str
-    size: int
-
-
-@dataclass(frozen=True)
 class UpdateFeed:
     version: str
     published_at: str = ""
@@ -133,14 +163,15 @@ class UpdateFeed:
     payload_delta: Mapping[str, UpdateAsset] = field(default_factory=dict)
     #: 新版本**已移除**的路径（逐文件差异必须显式声明删除，否则旧文件会残留）。
     payload_deleted: tuple[str, ...] = ()
-    #: 最近一次带全量包的发布（本版 assets 缺失时的兜底；None＝不提供）。
-    full_fallback: FullFallback | None = None
     #: 本清单描述的**平台**（``update-<platform>.json``；旧版单份清单可为空＝不作校验）。
     platform: str = ""
     #: 本清单描述的**版本**（``update-<platform>-<edition>.json``；同样可为空＝不作校验）。
     #: Standard/Full 的 ``runtime/`` 与 OCR 载荷不同 ⇒ 逐文件清单也不同，拿错清单会把
     #: 另一版当作"应该是什么样"，所以与 platform 一样要交叉校验（fail-closed）。
     edition: str = ""
+    #: 本清单**声明本平台能否自动落地**（缺省 True）。发布侧写 `auto_apply: false` 表示
+    #: "只报有新版，请手动安装"——判据与 `AUTO_APPLY_PLATFORMS` 同源，避免两处漂移。
+    auto_apply: bool = True
 
     def asset_for(self, platform: str, edition: str) -> UpdateAsset | None:
         return self.assets.get(asset_key(platform, edition))
@@ -155,6 +186,9 @@ class PayloadPlan:
     missing_locally: tuple[str, ...]
     fetch_bytes: int
     present_deleted: tuple[str, ...]
+    #: ★ 用户所有区域里**本机已存在**的路径：**刻意不覆盖**（用户可能改过），
+    #: 所以它既不在 `to_fetch` 里、也不能被算作"已是最新"。如实报出来才看得见。
+    preserved: tuple[str, ...] = ()
 
     @property
     def needs_download(self) -> int:
@@ -305,12 +339,14 @@ def _parse_document(document: Mapping[str, Any]) -> UpdateFeed:
     raw_assets = document.get("assets")
     if raw_assets is not None and not isinstance(raw_assets, dict):
         raise UpdateFeedError("更新源文档的 assets 必须是对象")
-    # ★ assets 允许缺失/为空——小版本发布可以只带变更包 + full_fallback（不重建全量包）；
-    #   但两者至少要有一个，否则客户端没有任何可下载的东西。
-    has_full_fallback = isinstance(document.get("full_fallback"), dict)
-    if not raw_assets and not has_full_fallback:
+    # ★ `assets` 必须非空 —— 每版都发全量包（2026-09-30 用户拍板「统一发布形态」），
+    #   所以"本版没有任何可下载内容"就是**发布侧出错**，直接拒绝这份清单。
+    #   曾经放宽为"assets 或 full_fallback 至少其一"，那个字段已随"统一"删除：
+    #   它存在的唯一理由是"小版本不重建全量包"，而那条规则**从未实现**（每版都构建并发全量），
+    #   且它的跨版本兜底会把应用**静默降级成旧版**却报成新版 —— 错的状态比没有自动路径更糟。
+    if not raw_assets:
         raise UpdateFeedError(
-            "更新源文档既没有 assets 也没有 full_fallback ⇒ 客户端无任何可下载内容"
+            "更新源文档没有 assets ⇒ 客户端无任何可下载内容（每版都应随发布提供本平台全量包）"
         )
 
     assets: dict[str, UpdateAsset] = {}
@@ -334,9 +370,15 @@ def _parse_document(document: Mapping[str, Any]) -> UpdateFeed:
         )
 
     payload_files, payload_base, payload_delta, payload_deleted = _parse_payload(document)
-    full_fallback = _parse_full_fallback(document)
     platform = str(document.get("platform") or "").strip().lower()
     edition = str(document.get("edition") or "").strip().lower()
+    # 缺省 True（老清单没有这个字段 ⇒ 保持既有行为）；显式 false 才表示"仅提示、不落地"。
+    raw_auto_apply = document.get("auto_apply", True)
+    if not isinstance(raw_auto_apply, bool):
+        raise UpdateFeedError("更新源文档的 auto_apply 必须是布尔值")
+    # ★ 与 `AUTO_APPLY_PLATFORMS` **取与**：声明了 true 但本平台其实做不到时，以能力表为准
+    #   （发布侧写错声明不能变成"客户端去尝试一个注定失败的落地"）。
+    auto_apply = raw_auto_apply and (not platform or platform in AUTO_APPLY_PLATFORMS)
     return UpdateFeed(
         version=version,
         published_at=str(document.get("published_at") or ""),
@@ -346,9 +388,9 @@ def _parse_document(document: Mapping[str, Any]) -> UpdateFeed:
         payload_base=payload_base,
         payload_delta=payload_delta,
         payload_deleted=payload_deleted,
-        full_fallback=full_fallback,
         platform=platform,
         edition=edition,
+        auto_apply=auto_apply,
     )
 
 
@@ -421,29 +463,6 @@ def _parse_payload(
     return files, str(raw_payload.get("base_url") or "").strip(), delta, tuple(deleted)
 
 
-def _parse_full_fallback(document: Mapping[str, Any]) -> FullFallback | None:
-    """解析可选的顶层 ``full_fallback``：最近一次带全量包的发布（版本+基址+资产+哈希）。"""
-    raw = document.get("full_fallback")
-    if raw is None:
-        return None
-    if not isinstance(raw, dict):
-        raise UpdateFeedError("full_fallback 必须是对象")
-    version = str(raw.get("version") or "").strip()
-    base = str(raw.get("base") or "").strip()
-    name = str(raw.get("name") or "").strip()
-    sha256 = str(raw.get("sha256") or "").strip().lower()
-    size = raw.get("size")
-    if not version or not base or not name:
-        raise UpdateFeedError("full_fallback 缺少 version/base/name")
-    if not _SHA256_RE.match(sha256):
-        raise UpdateFeedError("full_fallback.sha256 必须是 64 位十六进制")
-    if not isinstance(size, int) or isinstance(size, bool) or size < 0:
-        raise UpdateFeedError("full_fallback.size 必须是非负整数")
-    if not is_safe_asset_name(name):
-        raise UpdateFeedError(f"full_fallback.name 不合法: {name}")
-    return FullFallback(version=version, base=base, name=name, sha256=sha256, size=size)
-
-
 def plan_payload(
     feed: UpdateFeed,
     *,
@@ -463,16 +482,24 @@ def plan_payload(
     """
     to_fetch: list[str] = []
     missing: list[str] = []
+    preserved: list[str] = []
     unchanged = 0
     fetch_bytes = 0
     for relative, entry in sorted(feed.payload_files.items()):
         current = local_hashes.get(relative)
         if current is None:
+            # 本机没有 ⇒ 照装（**包括** `configs/` 里新增的默认项：保护是"不覆盖"，
+            # 不是"永不安装"）。
             missing.append(relative)
             fetch_bytes += entry.size
         elif current != entry.sha256:
-            to_fetch.append(relative)
-            fetch_bytes += entry.size
+            if is_user_owned(relative):
+                # ★ 用户所有区域且本机已有 ⇒ **保留本地那份**：不进 to_fetch，
+                # 也就不会被下载/覆盖；体积口径上也不计入（本来就不下）。
+                preserved.append(relative)
+            else:
+                to_fetch.append(relative)
+                fetch_bytes += entry.size
         else:
             unchanged += 1
     is_present = exists or (lambda relative: relative in local_hashes)
@@ -485,6 +512,7 @@ def plan_payload(
         missing_locally=tuple(missing),
         fetch_bytes=fetch_bytes,
         present_deleted=present_deleted,
+        preserved=tuple(preserved),
     )
 
 

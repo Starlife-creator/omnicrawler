@@ -52,6 +52,8 @@ jobs:
     outputs:
       build_python_version: ${{ steps.release-config.outputs.build_python_version }}
       asset_max_bytes: ${{ steps.release-config.outputs.asset_max_bytes }}
+      delta_baselines: ${{ steps.release-config.outputs.delta_baselines }}
+      release_url_base: ${{ steps.release-config.outputs.release_url_base }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -67,6 +69,21 @@ jobs:
         run: |
           echo "build_python_version=${BUILD_PYTHON_VERSION}" >> "$GITHUB_OUTPUT"
           echo "asset_max_bytes=${ASSET_MAX_BYTES}" >> "$GITHUB_OUTPUT"
+          echo "release_url_base=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download" >> "$GITHUB_OUTPUT"
+          # 变更包基线窗口 K=3：取**当前 tag 之前**最近的 3 个版本 tag。
+          # 为什么是"窗口"而不是"上一次发全量包的版本"：发布形态已统一（每版都发全量
+          # 包）⇒ 后一个判据会退化成 K=1；而用户可能跨两三版才升级一次。
+          # 为什么不能无限大：每个基线都要在**发布时预先算好并上传**（静态托管不能
+          # 现算），而窗口外的用户走全量即可（每版都有全量 ⇒ 不会卡住）。
+          CURRENT="${GITHUB_REF_NAME#v}"
+          BASELINES=$(git tag --sort=-v:refname \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sed 's/^v//' \
+            | grep -vx "$CURRENT" \
+            | head -3 \
+            | paste -sd, -)
+          echo "delta_baselines=${BASELINES}" >> "$GITHUB_OUTPUT"
+          echo "变更包基线窗口：${BASELINES:-（空）}"
       - name: 断言 requires-python 下界 == 构建 Python 版本
         shell: bash
         run: |
@@ -113,6 +130,8 @@ jobs:
     with:
       build_python_version: ${{ needs.verify-python-version.outputs.build_python_version }}
       asset_max_bytes: ${{ needs.verify-python-version.outputs.asset_max_bytes }}
+      delta_baselines: ${{ needs.verify-python-version.outputs.delta_baselines }}
+      release_url_base: ${{ needs.verify-python-version.outputs.release_url_base }}
 
   build-linux-portable:
     needs: [verify-python-version]
@@ -124,6 +143,8 @@ jobs:
     with:
       build_python_version: ${{ needs.verify-python-version.outputs.build_python_version }}
       asset_max_bytes: ${{ needs.verify-python-version.outputs.asset_max_bytes }}
+      delta_baselines: ${{ needs.verify-python-version.outputs.delta_baselines }}
+      release_url_base: ${{ needs.verify-python-version.outputs.release_url_base }}
 
   build-macos-portable:
     needs: [verify-python-version]
@@ -135,6 +156,8 @@ jobs:
     with:
       build_python_version: ${{ needs.verify-python-version.outputs.build_python_version }}
       asset_max_bytes: ${{ needs.verify-python-version.outputs.asset_max_bytes }}
+      delta_baselines: ${{ needs.verify-python-version.outputs.delta_baselines }}
+      release_url_base: ${{ needs.verify-python-version.outputs.release_url_base }}
 
   # ★ W4.2（2026-09-16）：**在全新 runner 上把「已上传的」便携归档再跑一遍**
   #   （下载 → 解压 → 用**包内入口**起本地 fixture 站点跑固定样例）。

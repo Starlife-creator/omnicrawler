@@ -16,8 +16,9 @@ Windows 上的作者**本地看不出来** —— 这正是"构建期报绿、�
 同时校验 ``.desktop`` 模板的契约字段。这些字段是**跨文件契约**，散在散文注释里
 会随重构静默漂移：
 
-* ``Exec=@PREFIX@/OmniCrawler`` —— 占位符给安装脚本替换成绝对路径；目标必须是
-  **GUI 二进制 ``OmniCrawler``**（不是 CLI ``omnicrawler``，产物里两个名字不同）。
+* ``Exec=@PREFIX@/OmniCrawler-launcher`` —— 占位符给安装脚本替换成绝对路径；目标必须是
+  **版本无关的启动器**（它读 ``versions/current.txt`` 决定启动哪一份；指本体的话
+  ``--to-versions`` 装了新版也没人启动它）。
 * ``Icon=omnicrawler`` —— 必须与 hicolor 落点 ``<N>x<N>/apps/omnicrawler.png`` 同名。
 * ``StartupWMClass=omnicrawler`` —— 必须与 ``gui/main.py`` 的
   ``setDesktopFileName("omnicrawler")`` 一致（X11 侧靠它匹配窗口与桌面条目）。
@@ -35,17 +36,45 @@ from pathlib import Path
 # hicolor 需要的 7 个尺寸（16/24/32/48/64/128/256），与品牌资产包一致。
 HICOLOR_SIZES: tuple[int, ...] = (16, 24, 32, 48, 64, 128, 256)
 
-# 交付脚本：名字 -> 是否必须可执行（.desktop.in 是数据文件）
+#: 用 bash 写的**安装器脚本**（随包放在 `installer/` 下）。
 DELIVERY_SCRIPTS: tuple[str, ...] = ("install-user.sh", "uninstall-user.sh")
+
+#: ★ 放在**应用根**（不是 `installer/`）的交付件：版本无关入口（启动器）。
+#:
+#: 为什么这个位置区分很重要：`install-user.sh` 会把桌面条目与 PATH 软链指向
+#: `<prefix>/OmniCrawler-launcher`，所以启动器必须在**应用根**上；而安装器脚本在
+#: `installer/` 下。混成一个清单会让"造忠实安装树"的测试把启动器放进 `installer/`，
+#: 于是安装脚本报"便携包不完整"（CI 实测踩到过）。
+APP_ROOT_FILES: tuple[str, ...] = (
+    "OmniCrawler-launcher",
+    "omnicrawler-cli-launcher",
+)
+
+# ★ 交付脚本：**POSIX sh** 类（要求 `#!/bin/sh` + `set -eu`）
+#   为什么启动器刻意不用 bash：它是用户**唯一**能启动应用的入口。`/bin/sh` 由 POSIX 保证存在
+#   （Linux/macOS 都有，Alpine 是 busybox ash 也满足），而 `bash` 在极简镜像里可能缺席 ——
+#   启动器因为"找不到 bash"而失败，比它写得少一点花活严重得多。
+#   代价是 `pipefail` 在 POSIX sh 里不存在 ⇒ 这一类的严格模式判据是 `set -eu`（等价强度）。
+DELIVERY_POSIX_SCRIPTS: tuple[str, ...] = APP_ROOT_FILES
+
 DESKTOP_TEMPLATE = "omnicrawler.desktop.in"
-DELIVERY_FILES: tuple[str, ...] = (*DELIVERY_SCRIPTS, DESKTOP_TEMPLATE)
+
+#: 交付件全集（判据只认这一个清单：不管它最终落在哪一层，都要过 LF 与形态检查）。
+DELIVERY_FILES: tuple[str, ...] = (
+    *DELIVERY_SCRIPTS,
+    *DELIVERY_POSIX_SCRIPTS,
+    DESKTOP_TEMPLATE,
+)
 
 # .desktop 模板必须含有的字段（字面量比对，避免"改了模板这里不知道"）。
 DESKTOP_REQUIRED_LINES: tuple[str, ...] = (
     "[Desktop Entry]",
     "Type=Application",
     "Name=OmniCrawler",
-    "Exec=@PREFIX@/OmniCrawler",
+    # ★ 指向**启动器**而不是 `OmniCrawler` 本体：`--to-versions` 把新版装到
+    #   `<安装根>/versions/<版本>/` 后，只有读 `versions/current.txt` 的启动器才会启动新版。
+    #   写死指本体等于"装了新版没人启动它"。
+    "Exec=@PREFIX@/OmniCrawler-launcher",
     "Icon=omnicrawler",
     "StartupWMClass=omnicrawler",
     "Terminal=false",
@@ -74,6 +103,23 @@ def _check_script_shape(path: Path) -> list[str]:
         errors.append(f"{path.name}: must start with '#!/usr/bin/env bash'")
     if "set -euo pipefail" not in text:
         errors.append(f"{path.name}: must set -euo pipefail")
+    return errors
+
+
+def _check_posix_script_shape(path: Path) -> list[str]:
+    """POSIX sh 类的形态判据（与 bash 类同强度：声明解释器 + 严格模式）。
+
+    `pipefail` 在 POSIX sh 里**不存在** ⇒ 这一类只要求 `set -eu`。
+    别为了"看起来一致"把它改成 bash：见 `DELIVERY_POSIX_SCRIPTS` 的注释。
+    """
+    errors: list[str] = []
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("#!/bin/sh\n"):
+        errors.append(f"{path.name}: must start with '#!/bin/sh'")
+    if "set -eu" not in text:
+        errors.append(f"{path.name}: must set -eu")
+    if "pipefail" in text:
+        errors.append(f"{path.name}: uses pipefail, which POSIX sh does not support")
     return errors
 
 
@@ -147,6 +193,12 @@ def check(delivery_dir: Path, branding_src: Path | None = None) -> list[str]:
             errors.extend(_check_script_shape(path))
             errors.extend(_check_var_adjacent_non_ascii(path))
 
+    for name in DELIVERY_POSIX_SCRIPTS:
+        path = delivery_dir / name
+        if path.is_file():
+            errors.extend(_check_posix_script_shape(path))
+            errors.extend(_check_var_adjacent_non_ascii(path))
+
     template = delivery_dir / DESKTOP_TEMPLATE
     if template.is_file():
         errors.extend(_check_desktop_template(template))
@@ -161,7 +213,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--delivery-dir", type=Path, default=Path("packaging/linux"),
-        help="directory holding install-user.sh / uninstall-user.sh / omnicrawler.desktop.in",
+        help=(
+            "directory holding install-user.sh / uninstall-user.sh / omnicrawler.desktop.in / "
+            "OmniCrawler-launcher / omnicrawler-cli-launcher"
+        ),
     )
     parser.add_argument(
         "--branding-src", type=Path, default=None,

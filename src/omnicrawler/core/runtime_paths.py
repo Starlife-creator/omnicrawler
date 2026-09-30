@@ -26,6 +26,48 @@ def application_dir() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+#: 启动器用它告诉应用「安装根在哪」。必须有这条显式通道，见 `install_root()`。
+INSTALL_ROOT_ENV = "OMNICRAWL_INSTALL_ROOT"
+
+#: 版本化布局的目录名（`<安装根>/versions/<版本>/`）。
+VERSIONS_DIRNAME = "versions"
+
+
+def install_root() -> Path:
+    """Return the **installation root** —— 长期存在的那个目录，用户数据跟着它走。
+
+    ★★ 为什么要和 `application_dir()` 分开（2026-09-30 实测发现）：
+
+    `application_dir()` 是「**正在运行的二进制在哪**」，browsers/runtime/CLI 探测都必须用它
+    （版本化布局下它们在 `versions/<v>/` 里）。但**用户可写数据**不能跟着它走 —— 冻结包在
+    没有 `data-mode.json` 时 `portable_data_root()` **一定**返回 `application_dir()`，于是
+    `versions/<v>/` 布局下每换一版，`work/`、`data/`、`output/` 就换一个地方：
+
+    - 用户切到新版后**看不到自己原来的工作区**（数据没丢，是找错目录）；
+    - 更糟的是 `UpgradeManager.remove_stale_version_dirs()` 的规则是「除 `current.txt` 指向的
+      那份外**全部**算旧版本」并直接 `rmtree` ⇒ **下一轮 `cleanup --yes` 会把上一版目录连同
+      里面已经写进去的用户数据永久删除**。
+
+    解析顺序（**每一层都要能独立成立**，因为启动器可能没更新、用户可能直接跑二进制）：
+
+    1. `OMNICRAWL_INSTALL_ROOT`（启动器显式传入；必须是已存在的目录）；
+    2. `application_dir()` 的父目录名为 `versions` ⇒ 取它的父目录（没有环境变量时的兜底）；
+    3. 都不是 ⇒ 就是 `application_dir()`（就地布局，两种含义重合）。
+    """
+    explicit = os.environ.get(INSTALL_ROOT_ENV, "").strip()
+    if explicit:
+        candidate = Path(explicit).expanduser()
+        try:
+            if candidate.is_dir():
+                return candidate.resolve()
+        except OSError:  # 路径不可解析 ⇒ 退到下一条，绝不因环境变量而崩
+            pass
+    app_dir = application_dir()
+    if app_dir.parent.name.lower() == VERSIONS_DIRNAME:
+        return app_dir.parent.parent
+    return app_dir
+
+
 def bundle_root() -> Path:
     """Return the root used for package resources bundled by PyInstaller."""
     frozen_root = getattr(sys, "_MEIPASS", None)
@@ -41,9 +83,19 @@ def package_resource(*parts: str) -> Path:
 
 @lru_cache(maxsize=1)
 def portable_data_root() -> Path:
-    """Choose an app-local writable workspace, with a safe OS fallback."""
-    preferred = application_dir()
-    choice = _data_mode_choice(preferred)
+    """Choose an app-local writable workspace, with a safe OS fallback.
+
+    ★ 起点是 **`install_root()`**（安装根）而不是 `application_dir()`（运行目录）：
+    版本化布局下两者不同，用户数据必须跟安装根走。理由与实测见 `install_root()`。
+    """
+    preferred = install_root()
+    # ★ `data-mode.json` 可能只躺在运行目录里（用户显式选过数据模式，或旧版写下的）
+    #   ⇒ 两处都认，避免升级/布局变化后那个选择"丢失"而悄悄换成默认行为。
+    choice: dict[str, object] = {}
+    for candidate in (preferred, application_dir()):
+        choice = _data_mode_choice(candidate)
+        if choice:
+            break
     if choice.get("mode") == "custom" and choice.get("root"):
         selected = Path(str(choice["root"])).expanduser()
         selected = selected if selected.is_absolute() else preferred / selected
@@ -101,7 +153,8 @@ def configure_data_mode(mode: str, custom_root: str = "") -> Path:
         raise ValueError("数据模式必须是portable、local或custom")
     if mode == "custom" and not custom_root.strip():
         raise ValueError("custom数据模式必须选择目录")
-    path = application_dir() / "data-mode.json"
+    # ★ 写到**安装根**：数据模式是"用户对这棵安装树的选择"，不该跟着运行目录（版本目录）走。
+    path = install_root() / "data-mode.json"
     path.write_text(json.dumps({"mode": mode, "root": custom_root}, ensure_ascii=False, indent=2), encoding="utf-8")
     portable_data_root.cache_clear()
     return portable_data_root()
@@ -112,7 +165,9 @@ def resolve_portable_path(value: str) -> Path:
     # 应用目录或数据根内，拒绝任意绝对路径 / ../ 逃逸（防越界读写）。
     expanded = value.replace("${APP_DIR}", str(application_dir())).replace("${DATA_DIR}", str(portable_data_root()))
     resolved = Path(expanded).expanduser().resolve()
-    roots = (application_dir(), portable_data_root())
+    # 安装根也允许：版本化布局下它是"这棵安装树"的根（`${DATA_DIR}` 在默认模式下就是它），
+    # 不放行会让就地/版本化两种布局下的同一份配置行为不一致。
+    roots = (application_dir(), portable_data_root(), install_root())
     if not any(resolved == root or root in resolved.parents for root in roots):
         raise ValueError(f"路径越出应用/数据根目录: {resolved}")
     return resolved
@@ -244,6 +299,9 @@ def configure_runtime_environment() -> None:
         runtime_status["chromium"] = "missing"
     if is_frozen():
         os.environ.setdefault("OMNICRAWL_PORTABLE_ROOT", str(portable_data_root()))
+        # 让子进程（worker / 沙箱宿主）与父进程解析到**同一个安装根**：
+        # 版本化布局下"运行目录 ≠ 安装根"，子进程若各自推断会得出不同答案。
+        os.environ.setdefault(INSTALL_ROOT_ENV, str(install_root()))
         try:
             status_path = portable_data_root() / ".omnicrawler" / "runtime-status.json"
             status_path.parent.mkdir(parents=True, exist_ok=True)
