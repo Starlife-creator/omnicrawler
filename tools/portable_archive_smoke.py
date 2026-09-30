@@ -250,8 +250,12 @@ def linux_install_smoke(release_root: Path, workdir: Path) -> dict[str, Any]:
         raise RuntimeError(f"desktop Exec= must be absolute, got {exec_target}")
     if not exec_target.is_file():
         raise RuntimeError(f"desktop Exec= points at a missing entry point: {exec_target}")
-    if exec_target != prefix / "OmniCrawler":
-        raise RuntimeError(f"desktop Exec= must target the packaged GUI binary, got {exec_target}")
+    expected_entry = prefix / "OmniCrawler-launcher"
+    if exec_target != expected_entry:
+        raise RuntimeError(
+            "desktop Exec= must target the version-agnostic launcher "
+            f"({expected_entry.name}), got {exec_target}"
+        )
     if "Icon=omnicrawler" not in text:
         raise RuntimeError("desktop entry must declare Icon=omnicrawler")
 

@@ -64,7 +64,15 @@ BIN_LINK="$HOME/.local/bin/omnicrawler"
 if [[ -f "$DESKTOP_FILE" ]]; then
   if [[ "$PREFIX_GIVEN" -eq 0 ]]; then
     exec_line="$(grep -m1 '^Exec=' "$DESKTOP_FILE" || true)"
-    derived="${exec_line#Exec=}"; derived="${derived%/OmniCrawler}"
+    derived="${exec_line#Exec=}"
+    # ★ 入口是**启动器**（`<prefix>/OmniCrawler-launcher`），所以先剥启动器后缀；
+    #   再兜一次老安装的 `<prefix>/OmniCrawler`（升级前装的 .desktop 还指着本体）。
+    #   两个后缀都要认：只按其中一个剥，反推出来的"prefix"会是**带文件名的一层**，
+    #   后面拿它去删就删错地方（这是本仓真实踩过的：入口换名后忘了同步这里）。
+    case "$derived" in
+      */OmniCrawler-launcher) derived="${derived%/OmniCrawler-launcher}" ;;
+      */OmniCrawler) derived="${derived%/OmniCrawler}" ;;
+    esac
     if [[ -n "$derived" && "$derived" != "$exec_line" ]]; then PREFIX="$derived"; fi
   fi
   rm -f -- "$DESKTOP_FILE"

@@ -270,9 +270,12 @@ def test_install_places_everything_and_is_idempotent(tmp_path: Path) -> None:
     text = desktop.read_text(encoding="utf-8")
     exec_line = next(line for line in text.splitlines() if line.startswith("Exec="))
     exec_target = Path(exec_line.removeprefix("Exec="))
-    # ★ 必须是**绝对**路径，且指向 prefix 下真实存在的入口（就地注册会留死链）
+    # ★ 必须是**绝对**路径，且指向 prefix 下真实存在的入口（就地注册会留死链）。
+    # ★★ 目标必须是**启动器**而不是 `OmniCrawler` 本体：`--to-versions` 会把新版装到
+    #    `<prefix>/versions/<版本>/`，只有读 `versions/current.txt` 的启动器才会启动**新版**；
+    #    写死指本体等于"装了新版没人启动它"（这正是本批要修的缺口）。
     assert exec_target.is_absolute(), exec_line
-    assert exec_target == prefix / "OmniCrawler", exec_line
+    assert exec_target == prefix / "OmniCrawler-launcher", exec_line
     assert exec_target.is_file(), "Exec= 指向的入口在磁盘上必须真实存在"
     assert "Icon=omnicrawler" in text
     assert "StartupWMClass=omnicrawler" in text
@@ -381,7 +384,9 @@ def test_cli_symlink_points_into_the_prefix(tmp_path: Path) -> None:
                 ["--prefix", str(prefix), "--no-desktop-database"], home).returncode == 0
     link = home / ".local" / "bin" / "omnicrawler"
     assert link.is_symlink()
-    assert Path(os.readlink(link)) == prefix / "omnicrawler"
+    # ★ 软链也要指向**启动器**（否则 `--to-versions` 之后命令行跑的还是旧那份）
+    assert Path(os.readlink(link)) == prefix / "omnicrawler-cli-launcher"
+    assert Path(os.readlink(link)).is_file(), "软链目标必须真实存在"
 
 
 @needs_posix_bash
@@ -568,3 +573,32 @@ def test_every_delivery_file_is_pinned_to_lf_in_gitattributes() -> None:
         if "eol: lf" not in result.stdout:
             missing.append(f"{name} -> {result.stdout.strip() or result.stderr.strip()}")
     assert not missing, "以下交付件没有在 .gitattributes 里钉成 LF：" + "; ".join(missing)
+
+
+@needs_posix_bash
+def test_uninstall_derives_the_prefix_from_the_launcher_entry(tmp_path: Path) -> None:
+    """★ 从 `.desktop` 的 `Exec=` 反推 prefix 时，必须认**启动器**后缀。
+
+    真缺陷（本轮全仓扫描扫出来的）：入口从 `<prefix>/OmniCrawler` 换成
+    `<prefix>/OmniCrawler-launcher` 之后，卸载脚本仍按 `%/OmniCrawler` 截断 ⇒ **截不掉**
+    ⇒ 反推出的"prefix"是**带文件名的那一层**。后果要么是"拿它去删删错地方"，
+    要么被"该目录不像 OmniCrawler 安装"的守卫拦住（用户看到一句莫名其妙的拒绝）。
+    两个后缀都要认：升级前装的 `.desktop` 还指着本体。
+    """
+    app = _make_app_tree(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    prefix = tmp_path / "prefix"
+    assert _run(
+        app / "installer" / "install-user.sh",
+        ["--prefix", str(prefix), "--no-desktop-database"],
+        home,
+    ).returncode == 0
+
+    # ★ 不传 --prefix ⇒ 只能从 .desktop 反推；也不传 --remove-prefix ⇒ **非破坏性**
+    result = _run(prefix / "installer" / "uninstall-user.sh", [], home)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"应用树已保留：{prefix}" in result.stdout, (
+        "反推出的 prefix 不对（应等于安装时的 prefix）:\n" + result.stdout
+    )

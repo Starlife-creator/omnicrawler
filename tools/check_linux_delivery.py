@@ -16,8 +16,9 @@ Windows 上的作者**本地看不出来** —— 这正是"构建期报绿、�
 同时校验 ``.desktop`` 模板的契约字段。这些字段是**跨文件契约**，散在散文注释里
 会随重构静默漂移：
 
-* ``Exec=@PREFIX@/OmniCrawler`` —— 占位符给安装脚本替换成绝对路径；目标必须是
-  **GUI 二进制 ``OmniCrawler``**（不是 CLI ``omnicrawler``，产物里两个名字不同）。
+* ``Exec=@PREFIX@/OmniCrawler-launcher`` —— 占位符给安装脚本替换成绝对路径；目标必须是
+  **版本无关的启动器**（它读 ``versions/current.txt`` 决定启动哪一份；指本体的话
+  ``--to-versions`` 装了新版也没人启动它）。
 * ``Icon=omnicrawler`` —— 必须与 hicolor 落点 ``<N>x<N>/apps/omnicrawler.png`` 同名。
 * ``StartupWMClass=omnicrawler`` —— 必须与 ``gui/main.py`` 的
   ``setDesktopFileName("omnicrawler")`` 一致（X11 侧靠它匹配窗口与桌面条目）。
