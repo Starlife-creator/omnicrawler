@@ -20,6 +20,12 @@
 packaging/linux/**/*.sh    text eol=lf
 packaging/linux/**/*.desktop       text eol=lf
 packaging/linux/**/*.desktop.in    text eol=lf
+# 启动器（版本无关入口）：**直接**在 packaging/linux/ 下且**没有扩展名** ⇒ 上面那些
+# `*.sh` / `*.desktop*` 规则一条都命中不到，会落回 `* text=auto` 兜底（Windows 检出变
+# CRLF ⇒ 用户侧 `/usr/bin/env: 'sh\r'` 直接失败）。**按名字显式钉死**，
+# 与上一条注释里说的 S45 教训同一个坑。
+packaging/linux/OmniCrawler-launcher       text eol=lf
+packaging/linux/omnicrawler-cli-launcher   text eol=lf
 *.desktop  text eol=lf
 *.desktop.in  text eol=lf
 

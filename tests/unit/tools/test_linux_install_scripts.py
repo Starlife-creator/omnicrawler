@@ -528,3 +528,29 @@ def test_checker_goes_red_if_launcher_uses_pipefail(tmp_path: Path) -> None:
     errors = check_linux_delivery.check(staged)
 
     assert any("pipefail" in error for error in errors), errors
+
+
+def test_every_delivery_file_is_pinned_to_lf_in_gitattributes() -> None:
+    """★ .gitattributes 必须**按名字**把每个交付件钉成 LF（不能只靠 `* text=auto` 兜底）。
+
+    为什么：规则命中 0 时会**静默**落回 `text=auto` ⇒ Windows 检出变 CRLF ⇒ 用户侧
+    `/usr/bin/env: 'sh
+'` 直接失败，而构建机是 Linux、本地看不出来。
+    新增交付件最容易漏（本次的启动器**无扩展名**、又直接在 `packaging/linux/` 下，
+    上面那些 `**/*.sh` 规则一条都命中不到）—— 这里逐个用 `git check-attr` 核对，漏一个就红。
+    """
+    if shutil.which("git") is None:
+        pytest.skip("没有 git，无法核对 .gitattributes")
+    missing: list[str] = []
+    for name in check_linux_delivery.DELIVERY_FILES:
+        result = subprocess.run(
+            ["git", "check-attr", "eol", "--", f"packaging/linux/{name}"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        if "eol: lf" not in result.stdout:
+            missing.append(f"{name} -> {result.stdout.strip() or result.stderr.strip()}")
+    assert not missing, "以下交付件没有在 .gitattributes 里钉成 LF：" + "; ".join(missing)
