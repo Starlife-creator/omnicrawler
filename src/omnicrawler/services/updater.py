@@ -16,6 +16,7 @@ from ..core.archive_security import (
     read_zip_member,
     validate_zip_archive,
 )
+from ..core.runtime_paths import VERSIONS_DIRNAME
 from .component_manager import _verify_ed25519
 
 #: 升级包**永远不许触碰**的顶层路径（越界即整包拒绝）。
@@ -44,15 +45,60 @@ PROTECTED_TOP_LEVEL = {
 #: 改名让位时给旧文件加的后缀（同一个目录内、同卷 ⇒ 改名总是很快）。
 ASIDE_MARKER = ".old-"
 
+#: 判断一个版本目录里"是否已经有用户数据"时看的目录（与 `_FORBIDDEN_TOP_LEVEL` 同源）。
+#:
+#: ★ 只用**用户一定会产出文件的**那几个：`work`（任务工作区）、`data`（输入/库）、
+#: `output`（导出）、`.omnicrawler`（密钥/缓存/挂账）。**故意不含 `logs`**：日志是
+#: 构建期就会在载荷里生成的（`build_*.ps1/sh` 建了 `logs/` 且运行期必然写它），
+#: 拿它当"有用户数据"会把**每一份**版本目录都变成受保护 ⇒ 清理功能形同废掉。
+WORKSPACE_MARKERS = ("work", "data", "output", ".omnicrawler")
+
+
+def user_workspace_reason(package: Path) -> str:
+    """版本目录里若已有用户数据，返回可读原因（否则空串）。
+
+    判据是"**目录存在且非空**"，不看体积下限：哪怕只有一个文件，也说明用户的运行数据
+    已经落在这里 ⇒ 删掉就是删用户数据。
+    """
+    for name in WORKSPACE_MARKERS:
+        candidate = package / name
+        try:
+            if not candidate.is_dir():
+                continue
+            has_content = any(candidate.iterdir())
+        except OSError:
+            # 读不了（权限/占用）⇒ 当作"有数据"处理：宁可留着，也不要赌
+            return f"{name}/（无法读取，保守视为有数据）"
+        if has_content:
+            return f"{name}/ 非空"
+    return ""
+
+
+def holds_user_workspace(package: Path) -> bool:
+    return bool(user_workspace_reason(package))
+
 #: 待清理清单（相对路径）。改名让位后的旧文件若**当场删不掉**（正被占用），
 #: 就登记在这里，等下一次运行（＝"下次启动"）再删。
 PENDING_FILENAME = "pending-cleanup.json"
 
 
 class UpgradeManager:
-    def __init__(self, app_root: Path, *, trusted_public_key: bytes | None = None) -> None:
+    def __init__(
+        self,
+        app_root: Path,
+        *,
+        trusted_public_key: bytes | None = None,
+        install_root: Path | None = None,
+    ) -> None:
         # trusted_public_key 只有 stage/stage_members（取包）需要；清理类操作传 None 即可。
         self.app_root = app_root.resolve()
+        # ★ 布局（`versions/` 与 `current.txt`）认**安装根**，载荷落点认**运行目录**。
+        #   版本化布局下运行的是 `<安装根>/versions/<v>/` 里的程序，两者不同：
+        #   若照旧用 app_root 推"布局"，就会在 `<v>/` 里再套一层 `versions/`（实测可复现），
+        #   指针也读不到真正的那个 ⇒ `--to-versions`/`cleanup` 全线错位。
+        self.install_root = (
+            Path(install_root).resolve() if install_root is not None else self.app_root
+        )
         self.trusted_public_key = trusted_public_key
         self.updates = self.app_root / ".updates"
 
@@ -278,7 +324,8 @@ class UpgradeManager:
     # ── 布局 B：versions/ 旧版本的识别与清理 ──────────────────────────
     @property
     def versions_root(self) -> Path:
-        return self.app_root / "versions"
+        """版本目录集合的根 —— 在**安装根**下（不是运行目录，见 `__init__`）。"""
+        return self.install_root / VERSIONS_DIRNAME
 
     @property
     def current_pointer_file(self) -> Path:
@@ -292,11 +339,18 @@ class UpgradeManager:
             return ""
 
     def stale_version_dirs(self) -> list[tuple[Path, int]]:
-        """返回"可清理的旧版本目录"（绝对路径 + 体积字节）。
+        """返回"**可清理**的旧版本目录"（绝对路径 + 体积字节）。
 
         规则：布局 B 下，除 `current.txt` 指向的那份外全部算旧版本；
         就地布局（无指针）下若存在 versions/ 目录，则其中**全部**目录都算残留
         （没有指针就说明当前生效的不是它们）。
+
+        ★★ **但含用户数据的版本目录一律排除**（`protected_version_dirs()`），原因是一条实测过的
+        数据丢失路径：2026-09-30 之前 `portable_data_root()` 返回 `application_dir()`，于是
+        通过启动器跑 `versions/<v>/` 里的程序时，**用户新建的 `work/`、`data/` 就写在那个版本
+        目录里**；而这里的规则是"除当前版外全部删" ⇒ 下一次 `cleanup --yes` 会把它们
+        `rmtree` 掉。宁可少回收一些磁盘，也不能删用户数据 —— 所以这里**只返回安全的那些**，
+        被保护的原样列给调用方（可见，但不删）。
         """
         versions = self.versions_root
         if not versions.is_dir():
@@ -308,12 +362,33 @@ class UpgradeManager:
                 continue
             if pointed and package.name == pointed:
                 continue
+            if holds_user_workspace(package):
+                continue
             size = sum(f.stat().st_size for f in package.rglob("*") if f.is_file())
             stale.append((package, size))
         return stale
 
+    def protected_version_dirs(self) -> list[tuple[Path, str]]:
+        """含用户数据的版本目录（**不删**，只报告）：``(路径, 原因)``。"""
+        versions = self.versions_root
+        if not versions.is_dir():
+            return []
+        pointed = self.current_pointed_version()
+        protected: list[tuple[Path, str]] = []
+        for package in sorted(versions.iterdir()):
+            if not package.is_dir() or (pointed and package.name == pointed):
+                continue
+            reason = user_workspace_reason(package)
+            if reason:
+                protected.append((package, reason))
+        return protected
+
     def remove_stale_version_dirs(self) -> dict[str, Any]:
-        """删除全部旧版本目录；删不掉（文件被占用）的原样保留并如实返回。"""
+        """删除全部**可清理**的旧版本目录；删不掉（文件被占用）的原样保留并如实返回。
+
+        ★ 含用户数据的目录不在 `stale_version_dirs()` 里（见其 docstring）⇒ 这里天然删不到它们；
+        它们由 `protected_version_dirs()` 如实报出（`protected` 字段），不静默。
+        """
         freed = 0
         failed: list[str] = []
         removed: list[str] = []
@@ -323,8 +398,24 @@ class UpgradeManager:
                 freed += size
                 removed.append(package.name)
             except OSError:
-                failed.append(package.relative_to(self.app_root).as_posix())
-        return {"removed": removed, "failed": failed, "freed_bytes": freed}
+                failed.append(self._layout_relative(package))
+        protected = self.protected_version_dirs()
+        return {
+            "removed": removed,
+            "failed": failed,
+            "freed_bytes": freed,
+            "protected": [
+                {"path": self._layout_relative(package), "reason": reason}
+                for package, reason in protected
+            ],
+        }
+
+    def _layout_relative(self, path: Path) -> str:
+        """把版本目录表达成相对**安装根**的路径（报告用，绝不因计算失败而抛）。"""
+        try:
+            return path.relative_to(self.install_root).as_posix()
+        except ValueError:
+            return path.as_posix()
 
 
     def _record_pending(self, relatives: list[str]) -> None:

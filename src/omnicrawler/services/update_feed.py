@@ -105,21 +105,6 @@ class UpdateFile:
 
 
 @dataclass(frozen=True)
-class FullFallback:
-    """「最近一次带全量包的发布」。
-
-    小版本发布**不重建全量包**时（§A.13），本机版本不在增量基线内的用户从这里取全量，
-    否则会被永久卡住。``base``＋``name`` 与资产同构（base 指向那次发布的下载基址）。
-    """
-
-    version: str
-    base: str
-    name: str
-    sha256: str
-    size: int
-
-
-@dataclass(frozen=True)
 class UpdateFeed:
     version: str
     published_at: str = ""
@@ -133,8 +118,6 @@ class UpdateFeed:
     payload_delta: Mapping[str, UpdateAsset] = field(default_factory=dict)
     #: 新版本**已移除**的路径（逐文件差异必须显式声明删除，否则旧文件会残留）。
     payload_deleted: tuple[str, ...] = ()
-    #: 最近一次带全量包的发布（本版 assets 缺失时的兜底；None＝不提供）。
-    full_fallback: FullFallback | None = None
     #: 本清单描述的**平台**（``update-<platform>.json``；旧版单份清单可为空＝不作校验）。
     platform: str = ""
     #: 本清单描述的**版本**（``update-<platform>-<edition>.json``；同样可为空＝不作校验）。
@@ -305,12 +288,14 @@ def _parse_document(document: Mapping[str, Any]) -> UpdateFeed:
     raw_assets = document.get("assets")
     if raw_assets is not None and not isinstance(raw_assets, dict):
         raise UpdateFeedError("更新源文档的 assets 必须是对象")
-    # ★ assets 允许缺失/为空——小版本发布可以只带变更包 + full_fallback（不重建全量包）；
-    #   但两者至少要有一个，否则客户端没有任何可下载的东西。
-    has_full_fallback = isinstance(document.get("full_fallback"), dict)
-    if not raw_assets and not has_full_fallback:
+    # ★ `assets` 必须非空 —— 每版都发全量包（2026-09-30 用户拍板「统一发布形态」），
+    #   所以"本版没有任何可下载内容"就是**发布侧出错**，直接拒绝这份清单。
+    #   曾经放宽为"assets 或 full_fallback 至少其一"，那个字段已随"统一"删除：
+    #   它存在的唯一理由是"小版本不重建全量包"，而那条规则**从未实现**（每版都构建并发全量），
+    #   且它的跨版本兜底会把应用**静默降级成旧版**却报成新版 —— 错的状态比没有自动路径更糟。
+    if not raw_assets:
         raise UpdateFeedError(
-            "更新源文档既没有 assets 也没有 full_fallback ⇒ 客户端无任何可下载内容"
+            "更新源文档没有 assets ⇒ 客户端无任何可下载内容（每版都应随发布提供本平台全量包）"
         )
 
     assets: dict[str, UpdateAsset] = {}
@@ -334,7 +319,6 @@ def _parse_document(document: Mapping[str, Any]) -> UpdateFeed:
         )
 
     payload_files, payload_base, payload_delta, payload_deleted = _parse_payload(document)
-    full_fallback = _parse_full_fallback(document)
     platform = str(document.get("platform") or "").strip().lower()
     edition = str(document.get("edition") or "").strip().lower()
     return UpdateFeed(
@@ -346,7 +330,6 @@ def _parse_document(document: Mapping[str, Any]) -> UpdateFeed:
         payload_base=payload_base,
         payload_delta=payload_delta,
         payload_deleted=payload_deleted,
-        full_fallback=full_fallback,
         platform=platform,
         edition=edition,
     )
@@ -419,29 +402,6 @@ def _parse_payload(
             deleted.append(relative)
 
     return files, str(raw_payload.get("base_url") or "").strip(), delta, tuple(deleted)
-
-
-def _parse_full_fallback(document: Mapping[str, Any]) -> FullFallback | None:
-    """解析可选的顶层 ``full_fallback``：最近一次带全量包的发布（版本+基址+资产+哈希）。"""
-    raw = document.get("full_fallback")
-    if raw is None:
-        return None
-    if not isinstance(raw, dict):
-        raise UpdateFeedError("full_fallback 必须是对象")
-    version = str(raw.get("version") or "").strip()
-    base = str(raw.get("base") or "").strip()
-    name = str(raw.get("name") or "").strip()
-    sha256 = str(raw.get("sha256") or "").strip().lower()
-    size = raw.get("size")
-    if not version or not base or not name:
-        raise UpdateFeedError("full_fallback 缺少 version/base/name")
-    if not _SHA256_RE.match(sha256):
-        raise UpdateFeedError("full_fallback.sha256 必须是 64 位十六进制")
-    if not isinstance(size, int) or isinstance(size, bool) or size < 0:
-        raise UpdateFeedError("full_fallback.size 必须是非负整数")
-    if not is_safe_asset_name(name):
-        raise UpdateFeedError(f"full_fallback.name 不合法: {name}")
-    return FullFallback(version=version, base=base, name=name, sha256=sha256, size=size)
 
 
 def plan_payload(

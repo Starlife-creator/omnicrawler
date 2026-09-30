@@ -11,10 +11,24 @@ on:
         description: Maximum size in bytes for a publishable release asset
         required: true
         type: string
+      delta_baselines:
+        description: Comma-separated previous versions to build change packages against
+        required: false
+        default: ""
+        type: string
+      release_url_base:
+        description: Base URL of the releases download endpoint (baseline manifest source)
+        required: false
+        default: ""
+        type: string
 
 env:
   BUILD_PYTHON_VERSION: ${{ inputs.build_python_version }}
   ASSET_MAX_BYTES: ${{ inputs.asset_max_bytes }}
+  # 变更包基线窗口与发布下载基址：交给构建脚本末尾的 build_update_delta.py。
+  # 为空 ⇒ 构建脚本跳过变更包（只发全量，客户端不会卡住）。
+  OMNICRAWL_DELTA_BASELINES: ${{ inputs.delta_baselines }}
+  OMNICRAWL_RELEASE_URL_BASE: ${{ inputs.release_url_base }}
 
 jobs:
   build:

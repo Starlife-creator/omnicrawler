@@ -119,7 +119,7 @@ def test_unsigned_document_is_rejected() -> None:
         ({"linux-standard": {"name": "x.zip", "sha256": "zz", "size": 1}}, "64 位十六进制"),
         ({"linux-standard": {"name": "x.zip", "sha256": "a" * 64, "size": -1}}, "非负整数"),
         ({"linux-standard": {"name": "x.zip", "sha256": "a" * 64}}, "非负整数"),
-        ({}, "既没有 assets 也没有 full_fallback"),
+        ({}, "没有 assets"),
     ],
 )
 def test_bad_assets_are_rejected(assets: dict, match: str) -> None:

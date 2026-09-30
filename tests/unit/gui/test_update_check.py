@@ -38,8 +38,12 @@ def test_summary_shows_incremental_and_full_side_by_side() -> None:
     assert "self-update apply --yes" in summary
 
 
-def test_summary_labels_fallback_full_and_via_fallback() -> None:
-    """via_fallback ⇒ 明示"本版未重建全量包，体积取自最近一次全量发布"。"""
+def test_summary_labels_full_package_without_fallback_notion() -> None:
+    """全量包只按体积报出 —— **不再**有"取自最近一次全量发布"这类兜底措辞。
+
+    兜底字段已随"统一发布形态"删除（每版都发本平台全量包），仍出现那句提示就说明
+    旧分支没删干净（或 `options.full` 又冒出了 `via_fallback`）。
+    """
     summary = format_update_summary(
         {
             "status": "update-available",
@@ -47,17 +51,17 @@ def test_summary_labels_fallback_full_and_via_fallback() -> None:
             "latest_version": "0.14.1",
             "options": {
                 "incremental": {"available": False, "size": 0},
-                "full": {"available": True, "size": 515_000_000, "via_fallback": True},
+                "full": {"available": True, "size": 515_000_000},
             },
         }
     )
-    assert "全量·就地替换（约 491.1MB）" in summary
-    assert "本版未重建全量包" in summary
+    assert "全量包（约 491.1MB）" in summary
+    assert "最近一次全量发布" not in summary
     assert "增量更新" not in summary
 
 
 def test_summary_without_options_still_renders() -> None:
-    """清单既无 assets 也无 full_fallback 的极端形态 ⇒ 不崩溃、至少报版本。"""
+    """清单连 options 都没有的极端形态 ⇒ 不崩溃、至少报版本。"""
     summary = format_update_summary(
         {"status": "update-available", "current_version": "0.14.0", "latest_version": "0.15.0"}
     )

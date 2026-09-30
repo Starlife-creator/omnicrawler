@@ -33,11 +33,8 @@ import base64
 import hashlib
 import json
 import sys
-import tarfile
-import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
@@ -45,142 +42,23 @@ if hasattr(sys.stdout, "reconfigure"):
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
+#: 共享件（与 build_update_delta.py 同源）：载荷读取、保护路径、清单落盘。
+#: 这些是**安全判据**（拒绝受保护顶层、与归档本体对齐），复制两份迟早漂移。
+from manifest_common import (  # noqa: E402
+    DEFAULT_TRUST_ROOT,
+    cumulative_deleted,
+    load_payload_entries,
+    load_signed_manifest,
+    resolve_trusted_key,
+    sha256_of,
+)
+
 from omnicrawler.core.versions import version_key  # noqa: E402
 from omnicrawler.services.update_feed import (  # noqa: E402
     FEED_FILENAME,
     canonical_feed_bytes,
     feed_filename,
 )
-
-#: 绝不进清单的顶层目录（用户数据 / 标记）——载荷来自构建产物，本不该含它们；
-#: 真含了说明打包错了，这里直接拒绝而不是默默漏掉。
-_FORBIDDEN_TOP_LEVEL = {
-    "work",
-    "data",
-    "output",
-    "logs",
-    ".omnicrawler",
-    "PORTABLE.flag",
-    "portable.flag",
-}
-
-#: 构建垃圾，不参与清单（否则每次构建都会产生"变化"）
-_SKIP_SUFFIXES = {".pyc", ".pyo"}
-_SKIP_DIRS = {"__pycache__", ".pytest_cache"}
-
-
-def _sha256_of(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _walk_payload(root: Path) -> dict[str, Path]:
-    """遍历载荷，返回 ``相对 posix 路径 → 文件``（跳过构建垃圾，拒绝受保护顶层）。"""
-    if not root.is_dir():
-        raise SystemExit(f"载荷目录不存在: {root}")
-    files: dict[str, Path] = {}
-    for path in sorted(root.rglob("*")):
-        if not path.is_file():
-            continue
-        relative = path.relative_to(root)
-        _reject_protected_top_level(relative.as_posix(), origin=str(path))
-        if any(part in _SKIP_DIRS for part in relative.parts):
-            continue
-        if path.suffix.lower() in _SKIP_SUFFIXES:
-            continue
-        files[relative.as_posix()] = path
-    if not files:
-        raise SystemExit(f"载荷目录里没有任何文件: {root}")
-    return files
-
-
-def _reject_protected_top_level(relative: str, *, origin: str) -> None:
-    """载荷里出现 ``work/`` ``data/`` 等受保护顶层 ⇒ 直接拒绝（而不是默默漏掉）。
-
-    这些目录是**用户数据**。它们出现在载荷里说明打包步骤把用户目录一起装进去了，
-    静默跳过会让清单与实际归档不一致，正是"看着正常、其实错了"的典型。
-    """
-    top = relative.split("/", 1)[0]
-    if top.lower() in _FORBIDDEN_TOP_LEVEL:
-        raise SystemExit(
-            f"载荷里出现受保护顶层路径 {top}/（{origin}）—— "
-            "构建产物不该包含用户数据目录，请检查打包步骤"
-        )
-
-
-def _sha256_stream(handle: Any) -> str:
-    digest = hashlib.sha256()
-    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-        digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _hash_archive_members(archive: Path) -> dict[str, tuple[str, int]]:
-    """从**归档本体**流式算逐文件哈希，返回 ``去掉顶层目录的相对 posix 路径 → (sha256, 体积)``。
-
-    为什么不从构建暂存目录算：客户端下载的是归档，清单必须与**归档里的字节**逐字节一致。
-    从暂存目录算就多了一条"打包时排除了什么"的隐含约定（tar 排除了 ``OmniCrawler/logs``、
-    zip 排除了顶层 ``logs/``…），两处一旦不同步，增量校验就会永远失败，而且失败得很晚
-    （用户侧才发现）。直接读归档 = 这条约定不存在。
-
-    对 tar.xz 是**流式**（顺序读，逐成员算完即丢），内存恒定，不落第二个解压目录。
-    """
-    if not archive.is_file():
-        raise SystemExit(f"载荷归档不存在: {archive}")
-    members: dict[str, tuple[str, int]] = {}
-    roots: set[str] = set()
-
-    def _record(name: str, digest: str, size: int) -> None:
-        parts = [part for part in name.split("/") if part not in ("", ".")]
-        if len(parts) < 2:
-            raise SystemExit(f"归档成员不在顶层目录内（无法剥根）: {name}")
-        roots.add(parts[0])
-        relative = "/".join(parts[1:])
-        if not relative:
-            return
-        _reject_protected_top_level(relative, origin=f"{archive.name}!{name}")
-        members[relative] = (digest, size)
-
-    if archive.name.lower().endswith(".zip"):
-        with zipfile.ZipFile(archive) as handle:
-            for info in handle.infolist():
-                if info.is_dir():
-                    continue
-                with handle.open(info) as stream:
-                    _record(info.filename, _sha256_stream(stream), info.file_size)
-    else:
-        with tarfile.open(archive, "r:*") as handle:
-            for member in handle:
-                if not member.isfile():
-                    continue
-                stream = handle.extractfile(member)
-                if stream is None:  # pragma: no cover - isfile() 为真时必有流
-                    continue
-                _record(member.name, _sha256_stream(stream), member.size)
-    if not members:
-        raise SystemExit(f"归档里没有任何文件: {archive}")
-    if len(roots) != 1:
-        raise SystemExit(
-            f"归档顶层目录不唯一 {sorted(roots)} —— 便携包应当只有单个 <根>/ 顶层"
-        )
-    return members
-
-
-def _load_payload(*, directory: str, archive: str, what: str) -> dict[str, tuple[str, int]]:
-    """统一的载荷读取：目录（开发/回算）或归档（构建期，与发布字节一致）。"""
-    if directory and archive:
-        raise SystemExit(f"{what}：--payload-dir 与 --payload-archive 二选一")
-    if archive:
-        return _hash_archive_members(Path(archive).expanduser())
-    if not directory:
-        raise SystemExit(f"{what}：需要 --payload-dir 或 --payload-archive")
-    return {
-        relative: (_sha256_of(path), path.stat().st_size)
-        for relative, path in _walk_payload(Path(directory).expanduser()).items()
-    }
 
 
 def _parse_asset(spec: str) -> tuple[str, Path]:
@@ -212,54 +90,72 @@ def build(args: argparse.Namespace) -> dict[str, object]:
     notes = _resolve_notes(args)
     payload_files: dict[str, dict[str, object]] = {}
     total_bytes = 0
-    if not getattr(args, "no_payload", False):
-        hashed = _load_payload(
-            directory=str(args.payload_dir or ""),
-            archive=str(getattr(args, "payload_archive", "") or ""),
-            what="载荷",
-        )
-        for relative, (digest, size) in hashed.items():
-            total_bytes += size
-            payload_files[relative] = {"sha256": digest, "size": size}
+    hashed = load_payload_entries(
+        directory=str(args.payload_dir or ""),
+        archive=str(getattr(args, "payload_archive", "") or ""),
+        what="载荷",
+    )
+    for relative, entry in hashed.items():
+        total_bytes += entry.size
+        payload_files[relative] = {"sha256": entry.sha256, "size": entry.size}
 
     deleted: list[str] = []
     if args.previous_payload_dir or getattr(args, "previous_payload_archive", ""):
-        previous = _load_payload(
+        previous = load_payload_entries(
             directory=str(args.previous_payload_dir or ""),
             archive=str(getattr(args, "previous_payload_archive", "") or ""),
             what="上一版载荷",
         )
         deleted = sorted(set(previous) - set(payload_files))
+    previous_manifests = list(getattr(args, "previous_manifest", None) or [])
+    previous_file = str(getattr(args, "previous_manifest_file", "") or "")
+    if previous_file:
+        # 构建脚本用它：`build_update_delta.py --emit-previous-args` 写出 `<旧版本>=<清单路径>` 行。
+        # 走文件的原因同 `--delta-file`：基线个数是动态的。
+        for line in Path(previous_file).expanduser().read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                previous_manifests.append(stripped)
+    if previous_manifests:
+        # ★ 用**已签名清单**算"已移除"：比"上一版解压目录"更省（几十~几百 KB，不必搬整包），
+        #   而且能一次覆盖多个基线（取并集，见 cumulative_deleted 的注释）。
+        trusted = resolve_trusted_key(str(getattr(args, "trusted_public_key", "") or ""))
+        feeds = [
+            load_signed_manifest(spec, trusted_public_key=trusted)[1]
+            for spec in previous_manifests
+        ]
+        deleted = sorted(
+            set(deleted) | set(cumulative_deleted(feeds, new_files=set(payload_files)))
+        )
 
     assets: dict[str, dict[str, object]] = {}
     for spec in args.asset or []:
         key, path = _parse_asset(spec)
         assets[key] = {
             "name": path.name,
-            "sha256": _sha256_of(path),
+            "sha256": sha256_of(path),
             "size": path.stat().st_size,
         }
 
     delta: dict[str, dict[str, object]] = {}
-    for spec in args.delta or []:
+    delta_specs = list(args.delta or [])
+    delta_file = str(getattr(args, "delta_file", "") or "")
+    if delta_file:
+        # 构建脚本用它：`build_update_delta.py --emit-args` 写出 `<旧版本>=<包路径>` 行。
+        # 为什么走文件而不是 argv：基线个数是**动态的**（取决于 K 与哪些清单真的取到了），
+        # 而 shell 侧拼动态个数的参数在 bash 3.2 / PowerShell 5.1 上各有各的坑。
+        for line in Path(delta_file).expanduser().read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                delta_specs.append(stripped)
+    for spec in delta_specs:
         key, path = _parse_asset(spec)
         if not version_key(key):
             raise SystemExit(f"--delta 的旧版本号不可比较: {key}")
         delta[key] = {
             "name": path.name,
-            "sha256": _sha256_of(path),
+            "sha256": sha256_of(path),
             "size": path.stat().st_size,
-        }
-
-    full_fallback: dict[str, object] | None = None
-    if args.full_fallback:
-        fb_version, fb_base, fb_name, fb_sha, fb_size = args.full_fallback
-        full_fallback = {
-            "version": fb_version,
-            "base": fb_base,
-            "name": fb_name,
-            "sha256": fb_sha,
-            "size": int(fb_size),
         }
 
     platform, edition = _target(args)
@@ -277,8 +173,6 @@ def build(args: argparse.Namespace) -> dict[str, object]:
             "deleted": deleted,
         },
     }
-    if full_fallback is not None:
-        document["full_fallback"] = full_fallback
     if platform:
         # 客户端会**交叉校验**这个字段（防把别的平台的清单应用上来）
         document["platform"] = platform
@@ -296,8 +190,6 @@ def build(args: argparse.Namespace) -> dict[str, object]:
         print(f"[清单] 整包资源 {len(assets)} 个：{', '.join(sorted(assets))}")
     if delta:
         print(f"[清单] 变更包 {len(delta)} 个（相对：{', '.join(sorted(delta))}）")
-    if full_fallback is not None:
-        print(f"[清单] 全量兜底指向 v{full_fallback['version']}（本版未重建全量包）")
     return document
 
 
@@ -443,9 +335,46 @@ def main() -> int:
     parser.add_argument("--asset", action="append", help="整包资源：<平台-版本>=<文件>")
     parser.add_argument("--delta", action="append", help="变更包：<旧版本号>=<文件>")
     parser.add_argument(
+        "--delta-file",
+        default="",
+        help=(
+            "从文件读变更包列表（每行 `<旧版本号>=<文件>`，`#` 开头忽略）。"
+            "供构建脚本消费 `build_update_delta.py --emit-args` 的产出 —— "
+            "基线个数是动态的，让 shell 拼动态个数的参数在 bash 3.2 / PS 5.1 上各有坑。"
+        ),
+    )
+    parser.add_argument(
+        "--previous-manifest",
+        action="append",
+        default=None,
+        metavar="<旧版本>=<文件路径|URL>",
+        help=(
+            "上一版**已签名清单**（可重复；本机路径或 URL）。用它算 `payload.deleted`："
+            "`(上一版 files ∪ 上一版 deleted) − 本版 files` —— 取并集是**累积**语义，"
+            "否则从更老版本跳上来的用户会留下早已删过的残留。"
+        ),
+    )
+    parser.add_argument(
         "--full-fallback", nargs=5, default=None,
         metavar=("VERSION", "BASE", "NAME", "SHA256", "SIZE"),
         help="本版不重建全量包时：指向最近一次带全量包的发布（老版本用户从这里取全量）",
+    )
+    parser.add_argument(
+        "--previous-manifest-file",
+        default="",
+        help=(
+            "从文件读基线清单列表（每行 `<旧版本>=<清单路径>`）。"
+            "供构建脚本消费 `build_update_delta.py --emit-previous-args` 的产出（个数动态）。"
+        ),
+    )
+    parser.add_argument(
+        "--trusted-public-key",
+        default="",
+        help=(
+            f"更新信任根（缺省用随包内置的 {DEFAULT_TRUST_ROOT}）。"
+            "只有 --previous-manifest 需要它 —— 基线清单必须验签，"
+            "否则等于让中间人决定用户该下什么。"
+        ),
     )
     parser.add_argument(
         "--key",

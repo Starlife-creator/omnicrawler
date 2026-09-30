@@ -3,7 +3,7 @@
 设计要点：
 - **不占 UI 线程**：检查走 QThread（沿用 home.py 的 BackgroundWorker 模式与 S1.1.5 释放约定）；
 - **无配置不检查**：MainWindow 未加载任务配置时直接 Toast 提示（检查需要 config 作 Egress 判据）；
-- **体积对比**（照 B 站弹窗形态）：增量与全量并排，`via_fallback` 时注明"取自最近一次全量发布"；
+- **体积对比**（照 B 站弹窗形态）：增量与全量并排 —— 每版都同时发布两者（统一发布形态）；
 - 执行更新仍走 CLI（``omnicrawler self-update apply --yes``），本入口只做检查与说明。
 """
 
@@ -53,11 +53,7 @@ def format_update_summary(payload: dict[str, Any]) -> str:
         )
     if full.get("available"):
         size = _human_bytes(int(full.get("size", 0)))
-        if full.get("via_fallback"):
-            lines.append(_("全量·就地替换（约 {0}）").format(size))
-            lines.append(_("（本版未重建全量包，体积取自最近一次全量发布）"))
-        else:
-            lines.append(_("全量包（约 {0}）").format(size))
+        lines.append(_("全量包（约 {0}）").format(size))
     plan = payload.get("payload_plan")
     if isinstance(plan, dict) and plan.get("needs_download") is not None:
         lines.append(

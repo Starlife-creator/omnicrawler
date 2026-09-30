@@ -305,6 +305,14 @@ def test_update_trust_root_differs_from_market_trust_root() -> None:
 # ── 载荷差异：只下变化文件（"不会真的下 2G"的端到端）──────────────────
 
 
+def _asset_entry(asset: Path | None) -> dict[str, object]:
+    """整包条目：给了真实文件就算真哈希（否则下载时会被整包 sha256 校验挡住）。"""
+    if asset is None:
+        return {"name": "pkg.tar.xz", "sha256": "a" * 64, "size": 999}
+    body = asset.read_bytes()
+    return {"name": asset.name, "sha256": hashlib.sha256(body).hexdigest(), "size": len(body)}
+
+
 def _write_payload_feed(
     feed_dir: Path,
     private: ed25519.Ed25519PrivateKey,
@@ -313,6 +321,7 @@ def _write_payload_feed(
     files: dict[str, bytes],
     deleted: tuple[str, ...] = (),
     delta_path: Path | None = None,
+    asset: Path | None = None,
 ) -> None:
     feed_dir.mkdir(parents=True, exist_ok=True)
     # 给了真实变更包就算真实哈希（否则下载时会被整包 sha256 校验挡住）；没给则用占位值
@@ -327,7 +336,7 @@ def _write_payload_feed(
         delta_entry = {"name": "update-prev-to-new.zip", "sha256": "b" * 64, "size": 42}
     document = {
         "version": version,
-        "assets": {"linux-standard": {"name": "pkg.tar.xz", "sha256": "a" * 64, "size": 999}},
+        "assets": {"linux-standard": _asset_entry(asset)},
         "payload": {
             "files": {
                 name: {"sha256": hashlib.sha256(body).hexdigest(), "size": len(body)}
@@ -594,6 +603,53 @@ def test_apply_incremental_replaces_only_changed_files(tmp_path: Path) -> None:
     assert list(app.rglob(f"*{up.ASIDE_MARKER}*")) == [], "改名让位的残留没清掉"
 
 
+def test_apply_incremental_self_heals_when_delta_lacks_needed_members(tmp_path: Path) -> None:
+    """★★ 自愈：本机删掉一个"两版之间**没变过**"的文件 ⇒ 增量包必然不含它 ⇒
+    **不得硬失败**，改为自动降级走全量，并把缺失路径如实报出来。
+
+    为什么会有这个缺陷：`plan_payload` 把「本机没有的文件」一律算进 `missing_locally`
+    （判据是"在不在盘上"，与基线无关），而变更包只装"相对基线**变化过**"的成员。
+    于是那个被删掉、但两版间未变的文件**不在包里** ⇒ 原先 `stage_members` 会抛
+    「变更包缺少清单里的文件」⇒ 整次更新失败且**不自愈**：用户删过一个文件之后
+    再也做不了增量更新（`--full` 能绕开，但报错不指向它）。
+    """
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "app.exe").write_bytes(b"OLD")
+    # heavy.dll **不在盘上**（用户删过 / 被隔离 / 上次更新中断），但它两版之间没变
+    # ⇒ 变更包里没有它 —— 这正是触发条件。
+    # 全量包必须真的可取（自愈要落到它上面）。
+    full = _write_portable_zip(
+        feed_dir / "OmniCrawler-99.0.0-Linux-Portable-Standard.tar.xz",
+        files={"app.exe": b"NEW", "heavy.dll": b"SAME-AS-BEFORE"},
+    )
+    _write_payload_feed(
+        feed_dir, private, version="99.0.0",
+        files={"app.exe": b"NEW", "heavy.dll": b"SAME-AS-BEFORE"},
+        delta_path=_write_delta_package(
+            feed_dir / "update-prev-to-new.zip", files={"app.exe": b"NEW"}
+        ),
+        asset=full,
+    )
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+
+    payload, code = cmd_self_update.apply(
+        config_path=str(config), app_root=app, platform="linux"
+    )
+
+    assert code == cmd_self_update.EXIT_OK, payload
+    assert payload["plan"]["mode"] == "full-archive", "缺成员必须降级为全量，而不是硬失败"
+    fallback = payload["plan"]["delta_fallback"]
+    assert fallback["missing_members"] == ["heavy.dll"]
+    assert fallback["missing_count"] == 1
+    # 降级后本该装好的东西都要在位
+    assert (app / "app.exe").read_bytes() == b"NEW"
+    assert (app / "heavy.dll").read_bytes() == b"SAME-AS-BEFORE"
+    assert list(app.rglob(f"*{up.ASIDE_MARKER}*")) == []
+
+
 def test_apply_incremental_rejects_tampered_delta_member(tmp_path: Path) -> None:
     """变更包里的成员内容与**已签名清单**不符 ⇒ 必须整包拒绝（变更包自身不签名）。"""
     private, public = _keypair()
@@ -644,90 +700,102 @@ def test_apply_dry_run_reports_incremental_without_touching_disk(tmp_path: Path)
     assert not (app / ".updates").exists()
 
 
-# ── full_fallback：小版本不重建全量包时，老版本用户的兜底 ────────────────
+# ── 缺资产：明确报错 + 指引（**不再**指向老版本兜底）─────────────────────
 
 
-def _write_full_fallback_feed(
-    feed_dir: Path,
-    private: ed25519.Ed25519PrivateKey,
-    *,
-    version: str,
-    fallback_dir: Path,
-    fallback_name: str,
+def _write_missing_asset_feed(
+    feed_dir: Path, private: ed25519.Ed25519PrivateKey, *, version: str, other_platform: str = "macos"
 ) -> Path:
-    """只有 full_fallback、没有 assets/payload 的清单（小版本形态：不重建全量包）。"""
+    """清单**有** assets，但只有别的平台的键（本平台键缺失）。"""
     feed_dir.mkdir(parents=True, exist_ok=True)
-    body = (fallback_dir / fallback_name).read_bytes()
     document = {
         "version": version,
-        "full_fallback": {
-            "version": "0.98.0",
-            "base": fallback_dir.as_posix(),
-            "name": fallback_name,
-            "sha256": hashlib.sha256(body).hexdigest(),
-            "size": len(body),
+        "assets": {
+            f"{other_platform}-standard": {
+                "name": "OmniCrawler-99.0.0-macOS-Portable-Standard.dmg",
+                "sha256": "a" * 64,
+                "size": 123,
+            }
         },
     }
     signature = base64.b64encode(private.sign(uf.canonical_feed_bytes(document))).decode()
-    (feed_dir / uf.FEED_FILENAME).write_text(
+    path = feed_dir / uf.FEED_FILENAME
+    path.write_text(
         json.dumps({**document, "signature": signature}, ensure_ascii=False), encoding="utf-8"
     )
-    return feed_dir / "update.json"
+    return path
 
 
-def test_apply_uses_full_fallback_when_platform_asset_missing(tmp_path: Path) -> None:
-    """★ 清单没有本平台资产，但有 full_fallback ⇒ 老版本用户从「最近一次带全量包的发布」
-    取全量，**不会被永久卡住**（这正是兜底字段存在的理由）。"""
+def test_apply_without_platform_asset_fails_with_guidance(tmp_path: Path) -> None:
+    """★ 本平台本版本没有完整包 ⇒ **明确失败 + 给出替代路径**。
+
+    为什么不指向"老版本的全量包"兜底（2026-09-30 用户拍板删除 full_fallback）：
+    那会把应用**静默降级成旧版**，却把版本号报成新版（`--to-versions` 还会把它写进
+    `current.txt`）—— **一个错误的状态比没有自动路径更糟**。缺本平台键只可能是发布侧出错
+    （或该包超 2 GiB 被剔除），如实说出来，并给两条已文档化的替代路径。
+    """
     private, public = _keypair()
     feed_dir = tmp_path / "feed"
     app = tmp_path / "app"
     app.mkdir()
     (app / "app.exe").write_bytes(b"OLD")
-    old_release = tmp_path / "v0.98.0"
-    pkg = _write_portable_zip(
-        old_release / "OmniCrawler-0.98.0-Linux-Portable-Standard.tar.xz",
-        files={"app.exe": b"NEW"},
-    )
-    feed = _write_full_fallback_feed(feed_dir, private, version="99.0.0",
-                                     fallback_dir=old_release, fallback_name=pkg.name)
+    _write_missing_asset_feed(feed_dir, private, version="99.0.0")
     config = _write_config(tmp_path, feed=feed_dir, public=public)
 
     payload, code = cmd_self_update.apply(
         config_path=str(config), app_root=app, platform="linux"
     )
-    assert code == cmd_self_update.EXIT_OK, payload
-    assert payload["plan"]["mode"] == "full-archive"
-    assert payload["plan"]["full_fallback"] == {"version": "0.98.0", "name": pkg.name}
-    assert payload["plan"]["sha256"].startswith("7a43") or payload["plan"]["sha256"]
-    assert (app / "app.exe").read_bytes() == b"NEW"
-    del feed  # feed 变量仅用于可读性
+
+    assert code == cmd_self_update.EXIT_FAILED, payload
+    detail = payload["detail"]
+    assert "linux-standard" in detail, detail
+    # 指引必须真的指路（两条已文档化的替代路径），而不是只说"失败了"
+    assert "components import" in detail, detail
+    assert "手动下载" in detail, detail
+    assert (app / "app.exe").read_bytes() == b"OLD", "失败时一个字节都不该动"
 
 
-def test_check_reports_full_only_via_fallback(tmp_path: Path) -> None:
-    """check 在没有 assets 时仍应报"可全量"（经 fallback），并标注 via_fallback。"""
+def test_check_without_platform_asset_reports_full_unavailable(tmp_path: Path) -> None:
+    """check 侧同样如实：``options.full.available`` 为 False（不再有 via_fallback）。"""
     private, public = _keypair()
     feed_dir = tmp_path / "feed"
     app = tmp_path / "app"
     app.mkdir()
-    old_release = tmp_path / "v0.98.0"
-    pkg = _write_portable_zip(
-        old_release / "OmniCrawler-0.98.0-Linux-Portable-Standard.tar.xz",
-        files={"app.exe": b"NEW"},
-    )
-    feed_file = _write_full_fallback_feed(feed_dir, private, version="99.0.0",
-                                          fallback_dir=old_release, fallback_name=pkg.name)
+    _write_missing_asset_feed(feed_dir, private, version="99.0.0")
     config = _write_config(tmp_path, feed=feed_dir, public=public)
 
     payload, code = cmd_self_update.check(
         config_path=str(config), platform="linux", payload_root=app
     )
-    assert code == cmd_self_update.EXIT_UPDATE_AVAILABLE
-    options = payload["options"]
-    assert options["full"]["available"] is True
-    assert options["full"]["via_fallback"] is True
-    assert options["full"]["size"] == pkg.stat().st_size
-    assert options["incremental"]["available"] is False   # 没有 payload ⇒ 无增量
-    del feed_file
+
+    assert code == cmd_self_update.EXIT_UPDATE_AVAILABLE, payload
+    assert payload["options"]["full"]["available"] is False
+    assert "via_fallback" not in payload["options"]["full"]
+    assert payload["options"]["install_to_versions"] is False
+
+
+def test_manifest_without_assets_is_rejected(tmp_path: Path) -> None:
+    """★ 反向断言：**没有 assets 的清单必须被拒绝**（统一发布形态后这是发布侧出错）。"""
+    private, public = _keypair()
+    feed_dir = tmp_path / "feed"
+    feed_dir.mkdir(parents=True, exist_ok=True)
+    document = {"version": "99.0.0"}
+    signature = base64.b64encode(private.sign(uf.canonical_feed_bytes(document))).decode()
+    (feed_dir / uf.FEED_FILENAME).write_text(
+        json.dumps({**document, "signature": signature}, ensure_ascii=False), encoding="utf-8"
+    )
+    config = _write_config(tmp_path, feed=feed_dir, public=public)
+    app = tmp_path / "app"
+    app.mkdir()
+
+    payload, code = cmd_self_update.check(
+        config_path=str(config), platform="linux", payload_root=app
+    )
+
+    assert code == cmd_self_update.EXIT_FAILED, payload
+    assert "assets" in payload["detail"]
+
+
 def test_cleanup_command_reports_plan_then_deletes(tmp_path: Path) -> None:
     """`self-update cleanup`：缺省只报计划；--yes 才真正删除（与 apply 同一安全判据）。"""
     private, public = _keypair()
@@ -804,20 +872,17 @@ def _write_platform_feed(
     逐文件清单也不同）；为空 ⇒ ``update-<platform>.json``（粗粒度兼容路径）。
     """
     feed_dir.mkdir(parents=True, exist_ok=True)
+    # 注意：`assets` 现在**必须非空**（统一发布形态：每版都发本平台全量包）。
+    # 资产键是 `<平台>-<版本>`，与客户端 `asset_key()` 同构；Standard 是缺省版本。
+    asset_key = f"{platform}-{edition or 'standard'}"
+    pkg_name = f"OmniCrawler-{version}-{platform}-{edition or 'standard'}.tar.xz"
+    (feed_dir / pkg_name).write_bytes(b"x")
     document = {
         "version": version,
         "platform": platform,
         "notes": "",
-        "assets": {},
-        "full_fallback": {
-            "version": version,
-            "base": feed_dir.as_posix(),
-            "name": "pkg.tar.xz",
-            "sha256": "0" * 64,
-            "size": 1,
-        },
+        "assets": {asset_key: {"name": pkg_name, "sha256": "0" * 64, "size": 1}},
     }
-    (feed_dir / "pkg.tar.xz").write_bytes(b"x")
     signature = base64.b64encode(private.sign(uf.canonical_feed_bytes(document))).decode()
     path = feed_dir / uf.feed_filename(platform, edition)
     path.write_text(
@@ -901,14 +966,7 @@ def test_check_falls_back_to_generic_feed_when_platform_missing(tmp_path: Path) 
     document = {
         "version": "99.0.0",
         "platform": "linux",
-        "assets": {},
-        "full_fallback": {
-            "version": "99.0.0",
-            "base": feed_dir.as_posix(),
-            "name": "pkg.tar.xz",
-            "sha256": "0" * 64,
-            "size": 1,
-        },
+        "assets": {"linux-standard": {"name": "pkg.tar.xz", "sha256": "0" * 64, "size": 1}},
     }
     feed_dir.mkdir(parents=True, exist_ok=True)
     (feed_dir / "pkg.tar.xz").write_bytes(b"x")

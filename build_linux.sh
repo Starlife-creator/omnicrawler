@@ -321,11 +321,34 @@ EDITION_LC="$(echo "$EDITION" | tr '[:upper:]' '[:lower:]')"
 # （中文变 ??）。三平台统一走文件，就没有"某个平台摘要变问号"的差异。
 UPDATE_NOTES_FILE="$BUILD_ROOT/update-notes.txt"
 printf '%s' "见本 Release 说明；本版要点亦见 CHANGELOG.md" > "$UPDATE_NOTES_FILE"
+
+# ---- 变更包（相对最近 K 个已发布版本）-----------------------------------------
+# ★ 一次构建 + K 份**旧版清单** ⇒ K 个变更包。不需要重建旧版本，也不需要旧版字节：
+#   "哪些文件要下"靠逐文件哈希，而旧版的哈希就在旧版的**已签名清单**里（几十~几百 KB）。
+# ★ OMNICRAWL_DELTA_BASELINES 由 release.yml 从 tag 列表推导（K=3）；为空 ⇒ 跳过。
+#   清单取不到就**跳过并打日志**（0.15.0 之前根本没有清单，属正常）。
+DELTA_ARGS_FILE="$BUILD_ROOT/.delta-args.txt"
+PREV_ARGS_FILE="$BUILD_ROOT/.previous-args.txt"
+: > "$DELTA_ARGS_FILE"
+: > "$PREV_ARGS_FILE"
+if [[ -n "${OMNICRAWL_DELTA_BASELINES:-}" ]]; then
+  "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/build_update_delta.py" \
+    --payload-archive "$RELEASE_ARCHIVE" \
+    --version "$APP_VERSION" --platform linux --edition "$EDITION_LC" \
+    --baselines "$OMNICRAWL_DELTA_BASELINES" \
+    --baseline-url-base "$OMNICRAWL_RELEASE_URL_BASE" \
+    --out-dir "$RELEASE_OUTPUT" --scratch-dir "$BUILD_ROOT" \
+    --emit-args "$DELTA_ARGS_FILE" --emit-previous-args "$PREV_ARGS_FILE" \
+    || echo "[WARN] 变更包产出失败 ⇒ 本版只发布全量（客户端会走全量，不会卡住）" >&2
+fi
+
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/build_update_manifest.py" \
   --payload-archive "$RELEASE_ARCHIVE" \
   --version "$APP_VERSION" --platform linux --edition "$EDITION_LC" \
   --notes-file "$UPDATE_NOTES_FILE" \
   --asset "linux-$EDITION_LC=$RELEASE_ARCHIVE" \
+  --delta-file "$DELTA_ARGS_FILE" \
+  --previous-manifest-file "$PREV_ARGS_FILE" \
   --emit-unsigned "$RELEASE_OUTPUT/update-linux-$EDITION_LC.unsigned.json" \
   || { echo "Linux 更新清单生成失败" >&2; exit 1; }
 
