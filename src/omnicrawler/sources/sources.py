@@ -11,6 +11,7 @@ from defusedxml import ElementTree as SafeET
 
 from ..core.config import AppConfig
 from ..core.models import CrawlRequest, FetchResult
+from ..core.pagination import body_location_payload_error
 from ..core.utils import canonicalize_url
 from ..extraction.extractors import decode_body, json_path
 from ..extraction.html_tools import discover_links, parse_html
@@ -60,7 +61,18 @@ class GenericSource:
                     url = _with_query(template.url, {name: page})
                     body = template.body
                     if template.method == "POST" and pagination.get("location") == "body":
-                        payload = dict(self.source.get("payload", {}))
+                        # ★ 2026-09-30 修：此前是 `dict(self.source.get("payload", {}))` ⇒
+                        #   ① payload 是字符串/数字等**非映射真值**时抛裸 `ValueError`
+                        #      （`dict("abc")`，没有任何上下文）；
+                        #   ② `payload:`（显式 null）时 `get` 返回 None ⇒ 裸 `TypeError`。
+                        #   现在：空值一律当"没有请求体"（`or {}`），非映射真值给**指名道姓**的
+                        #   报错；判据与文案的唯一真源＝`core.pagination.body_location_payload_error`
+                        #   （同一判据也在 `validate_config` 里做启动前校验 ⇒ 正常情况下到不了这里）。
+                        payload = self.source.get("payload") or {}
+                        payload_issue = body_location_payload_error(payload)
+                        if payload_issue:
+                            raise ValueError(payload_issue)
+                        payload = dict(payload)
                         payload[name] = page
                         body, _ = encode_request_payload(template.method, payload, "application/json")
                     paged.append(CrawlRequest(

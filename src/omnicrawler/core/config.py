@@ -3,7 +3,7 @@ from __future__ import annotations
 import difflib
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -19,7 +19,7 @@ from .builtin_references import (
 from .credentials import resolve_secret_refs
 from .errors import ConfigParseError
 from .migrations import CURRENT_CONFIG_VERSION, migrate_config
-from .pagination import validate_pagination
+from .pagination import body_location_payload_error, validate_pagination
 from .utils import deep_merge, expand_env_checked, user_agent
 
 LOGGER = logging.getLogger("omnicrawler")
@@ -804,7 +804,20 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     # 这里只负责把结果并入 errors —— 此前核心只校验 type=page，
     # 游标配置缺 next_path 时既不报错也不翻页（静默少采几页）。
     _source_section = config.section("source")
-    errors.extend(validate_pagination(config.section("source").get("pagination", {})))
+    _source_section = config.section("source")
+    errors.extend(validate_pagination(_source_section.get("pagination", {})))
+    # ★ 跨字段判据（2026-09-30，**这条有据**）：`location: body` 时 `source.payload` 必须能被
+    #   运行时的 `dict()` 消费。判据**只定义一处**＝契约层 `body_location_payload_error`
+    #   （与 `validate_pagination` 同一模式），此处只负责把它并入 errors ⇒ CLI 与 GUI 共用。
+    #   背景：本轮曾先加过一条**假判据**（「body 必须有 payload」）被 CI 证伪；本条是**实测**出来的
+    #   真实前置（`dict("abc")` 必抛、`payload:` 显式 null 也必抛）。
+    _pagination_section = _source_section.get("pagination")
+    if isinstance(_pagination_section, Mapping):
+        _location = str(_pagination_section.get("location") or "").strip().lower()
+        if _location == "body":
+            _payload_issue = body_location_payload_error(_source_section.get("payload"))
+            if _payload_issue:
+                errors.append(_payload_issue)
     # ★ 2026-09-30 记录（**刻意不加**跨字段判据，并附推翻它的证据）：
     #   本轮曾一度认为「`location: body` 必须有 `source.payload`」，实测**不成立**：
     #   运行时 `sources.py::GenericSource.seed` 写的是

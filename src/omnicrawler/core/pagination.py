@@ -42,8 +42,10 @@ class PaginationField:
     required: bool = False
     default: Any = None
     choices: tuple[str, ...] = ()
-    #: 是否应由 GUI 表单渲染；``False`` 表示契约里有、但需要配套键（如 ``source.payload``）
-    #: 才能生效，仍留在透传里由高级用户/YAML 表达。
+    #: 是否应由 GUI 表单渲染。``False`` 仅用于「契约里有、但表单不该给入口」的字段
+    #: （留给高级用户 / YAML 表达）。★ 2026-09-30：`location` 转 `True` 后，四个形状的字段
+    #: **全部**为 ``True``（原注释举的 `source.payload` 例子随该次变更失效——那条「必须配套
+    #: payload」的猜测已被实测推翻，故一并删掉）。
     editable: bool = True
 
 
@@ -163,3 +165,33 @@ def validate_pagination(pagination: Any) -> list[str]:
     if not str(pagination.get("next_path") or "").strip():
         errors.append("source.pagination.next_path不能为空（游标/下一页翻页必须给出下一页字段）")
     return errors
+
+
+def body_location_payload_error(payload: Any) -> str | None:
+    """``location: body`` 时 ``source.payload`` 能否被运行时消费；不能则给出可行动说明。
+
+    判据直接抄自运行时（``sources.py::GenericSource.seed``）::
+
+        payload = dict(self.source.get("payload") or {})
+        payload[name] = page
+
+    ⇒ 必须是**键值映射**（``Mapping``）或**键值对序列**（``list`` / ``tuple`` of pairs）；
+    **空值一律当「没有请求体」**（``or {}``）——缺省、``None``、空串、空容器、``0`` 都走这条。
+
+    ★ 本函数是这条判据的**唯一定义处**：``core/config.validate_config`` 用它做**启动前**
+    校验（CLI 与 GUI 共用入口），``sources.py`` 用它把运行时的裸异常换成指名道姓的报错
+    （此前是 ``dict("abc")`` → 无上下文的 ``ValueError``；``payload:``（null）→ ``TypeError``）。
+
+    ★ 边界是**实测**的，不是推的（探针见 ``tests/unit/core/test_pagination_body_payload.py``）：
+    被判「报错」的那些值，``dict(...)`` 实测**都会抛**；被判「通过」的那些，``dict(v or {})``
+    实测**都不抛** ⇒ 两个方向都没有假报错 / 假放行。
+    """
+    if not payload:
+        return None
+    if isinstance(payload, (Mapping, list, tuple)):
+        return None
+    return (
+        "source.pagination.location=body 要求 source.payload 是键值映射"
+        f'（缺省即可，如 {{"size": 10}}）；当前是 {type(payload).__name__}，'
+        "运行时无法把页码并入请求体"
+    )
