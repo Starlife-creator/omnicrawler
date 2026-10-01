@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-29T08:17:39+00:00",
-  "sequence": 1790669859,
+  "generated_at": "2026-09-30T15:51:53+00:00",
+  "sequence": 1790783513,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -116,6 +116,7 @@
       "creator_package_signature_file": "plugins/academic-paper-downloader/versions/0.6.4/package.manifest.creator.sig",
       "maintainer_package_signature_file": "plugins/academic-paper-downloader/versions/0.6.4/package.manifest.maintainer.sig",
       "package_manifest_sha256": "43a487a3eb317e66a576862336484e7cc22fbfa3de9487b53b0a849b87f9a21e",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
         "0.6.4": {
           "sha256": "98ffb9b3a67d753006762ab227262347a7fd6b4fe2be8f2207b258434833a129"
@@ -172,6 +173,7 @@
       "creator_package_signature_file": "plugins/chronicle-capsule/package.manifest.creator.sig",
       "maintainer_package_signature_file": "plugins/chronicle-capsule/package.manifest.maintainer.sig",
       "package_manifest_sha256": "3d1b1fcb3c61ba69b6d2d65ab24239e7bf9f18da0095b9eab79e3fe6341a73e3",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
         "0.2.0": {
           "sha256": "6bf1ebd1139b2675f45a9f65765fc469ada9b48449cc7b951c978a8b009fce77"
@@ -217,6 +219,7 @@
       "creator_package_signature_file": "plugins/community-guide/package.manifest.creator.sig",
       "maintainer_package_signature_file": "plugins/community-guide/package.manifest.maintainer.sig",
       "package_manifest_sha256": "ce912eee4941ea7f13144dacff1b68b001b50cd5f0ddf9d07fd02f6ab59a41d4",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
         "1.0.0": {
           "sha256": "a373b007dc88d44cbd4ae675e964593bea5df284287271a98d9657c2aefbcd4e"
@@ -249,6 +252,7 @@
       "creator_signature_file": "plugins/example_news/creator.sig",
       "creator_identity_file": "plugins/example_news/creator.identity",
       "execution_mode": "subprocess",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
         "1.0.0": {
           "sha256": "2630ed2c32a15a9cc355251e1547a05b0b14b07ee0f94b6aed962f8e75f9db2c"
@@ -299,6 +303,7 @@
       "creator_package_signature_file": "plugins/issue-wishlist/package.manifest.creator.sig",
       "maintainer_package_signature_file": "plugins/issue-wishlist/package.manifest.maintainer.sig",
       "package_manifest_sha256": "03708885a0fe64651d93fcf79ccdd5d13565d82244bce7ecdd39cf73b7774f68",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
         "1.0.0": {
           "sha256": "29c1b288f3990f2d9586ff1fc1533cb2f7b3b7428bbbf37ef26d4c0d16ded0fc"
@@ -357,6 +362,7 @@
       "creator_package_signature_file": "plugins/lumen-drift/versions/0.4.0/package.manifest.creator.sig",
       "maintainer_package_signature_file": "plugins/lumen-drift/versions/0.4.0/package.manifest.maintainer.sig",
       "package_manifest_sha256": "9ba159289c9a9b156bd516f28a43659a97591c04aa2aa500de78e4c27e47e5e7",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
         "0.4.0": {
           "sha256": "044fdc841155f17512f40e53bbe262defea1c3ca8cdef6760d89d8c1ad8dcfd2"
@@ -400,6 +406,7 @@
       "creator_package_signature_file": "plugins/signal-sieve/package.manifest.creator.sig",
       "maintainer_package_signature_file": "plugins/signal-sieve/package.manifest.maintainer.sig",
       "package_manifest_sha256": "c5d47641523244a97f6b6aaadbe67efcb46e9ab9ac3cb4fe15cfc36ae451eeb2",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
         "0.2.0": {
           "sha256": "b0843e71e07ad34ba464f4e616166a30bb7211dc161fedbb38c8fa6c62860f4f"
@@ -449,6 +456,7 @@
       "creator_package_signature_file": "plugins/tideprint-gate/package.manifest.creator.sig",
       "maintainer_package_signature_file": "plugins/tideprint-gate/package.manifest.maintainer.sig",
       "package_manifest_sha256": "cd27ebec8a1879e569ea76ee2f9881e444c3fae5edbc35355fba99a8ce11c4a3",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
         "0.2.0": {
           "sha256": "37e6c1b116ec80488fd5867149c7c12545ffeb17d188a069121921d98d338a7a"
@@ -494,6 +502,7 @@
       "creator_package_signature_file": "plugins/upstream-lantern/package.manifest.creator.sig",
       "maintainer_package_signature_file": "plugins/upstream-lantern/package.manifest.maintainer.sig",
       "package_manifest_sha256": "9ab766ea9f66b2a53633bf3fcf79695eb950858976e5763231e72c9c18f3196c",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
         "0.1.0": {
           "sha256": "13c6a6fbc09acc49d37b340afb0ce992da5bb3f5185519181cdbca10c7eab8ec"
@@ -527,7 +536,8 @@
       "package_manifest_file": "templates/cms--market--discourse-topics/package.manifest.json",
       "creator_package_signature_file": "templates/cms--market--discourse-topics/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/cms--market--discourse-topics/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "dcd907175974351bf6623b987c2acd77c46b30c66e3bd624e4062d63c2409970"
+      "package_manifest_sha256": "dcd907175974351bf6623b987c2acd77c46b30c66e3bd624e4062d63c2409970",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {
       "id": "cms/market/discuz-forum",
@@ -554,7 +564,8 @@
       "package_manifest_file": "templates/cms--market--discuz-forum/package.manifest.json",
       "creator_package_signature_file": "templates/cms--market--discuz-forum/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/cms--market--discuz-forum/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "3d7b25ecabd4677423a587e3e2e392b62069fef485d3e3986877ff941b14216b"
+      "package_manifest_sha256": "3d7b25ecabd4677423a587e3e2e392b62069fef485d3e3986877ff941b14216b",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {
       "id": "cms/market/drupal-jsonapi",
@@ -580,7 +591,8 @@
       "package_manifest_file": "templates/cms--market--drupal-jsonapi/package.manifest.json",
       "creator_package_signature_file": "templates/cms--market--drupal-jsonapi/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/cms--market--drupal-jsonapi/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "751ab1d0670a1ae7342397d15b42231ffcedc481c1927c469eb31abc684f6c42"
+      "package_manifest_sha256": "751ab1d0670a1ae7342397d15b42231ffcedc481c1927c469eb31abc684f6c42",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {
       "id": "cms/market/mediawiki-category",
@@ -607,7 +619,8 @@
       "package_manifest_file": "templates/cms--market--mediawiki-category/package.manifest.json",
       "creator_package_signature_file": "templates/cms--market--mediawiki-category/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/cms--market--mediawiki-category/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "78f0fc62a1976ff33d5c0ebcb269656703b0f310ec89c26dccdefc81b5969d37"
+      "package_manifest_sha256": "78f0fc62a1976ff33d5c0ebcb269656703b0f310ec89c26dccdefc81b5969d37",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {
       "id": "cms/market/shopify-public",
@@ -633,7 +646,8 @@
       "package_manifest_file": "templates/cms--market--shopify-public/package.manifest.json",
       "creator_package_signature_file": "templates/cms--market--shopify-public/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/cms--market--shopify-public/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "93cc2a677ce60d44c1e62114b5f8035e5d3e3f467ad5e781034fb14e0306de64"
+      "package_manifest_sha256": "93cc2a677ce60d44c1e62114b5f8035e5d3e3f467ad5e781034fb14e0306de64",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {
       "id": "cms/market/wordpress-rest",
@@ -660,7 +674,8 @@
       "package_manifest_file": "templates/cms--market--wordpress-rest/package.manifest.json",
       "creator_package_signature_file": "templates/cms--market--wordpress-rest/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/cms--market--wordpress-rest/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "029e0e06d68f0aef31d723ca2d6ecb7669cdd11a41e92a0e646947164a0349a3"
+      "package_manifest_sha256": "029e0e06d68f0aef31d723ca2d6ecb7669cdd11a41e92a0e646947164a0349a3",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {
       "id": "sites/market/crossref-works",
@@ -683,7 +698,8 @@
       "updated_at": "2026-07-18",
       "creator_signature_file": "templates/crossref-works/creator.sig",
       "creator_identity_file": "templates/crossref-works/creator.identity",
-      "description_file": "templates/crossref-works/listing.md"
+      "description_file": "templates/crossref-works/listing.md",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {
       "id": "sites/market/github-public-issues",
@@ -706,7 +722,8 @@
       "updated_at": "2026-07-18",
       "creator_signature_file": "templates/github-public-issues/creator.sig",
       "creator_identity_file": "templates/github-public-issues/creator.identity",
-      "description_file": "templates/github-public-issues/listing.md"
+      "description_file": "templates/github-public-issues/listing.md",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {
       "id": "sites/market/openalex-works",
@@ -729,7 +746,8 @@
       "updated_at": "2026-07-18",
       "creator_signature_file": "templates/openalex-works/creator.sig",
       "creator_identity_file": "templates/openalex-works/creator.identity",
-      "description_file": "templates/openalex-works/listing.md"
+      "description_file": "templates/openalex-works/listing.md",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {
       "id": "sites/market/wikipedia-category",
@@ -756,7 +774,8 @@
       "package_manifest_file": "templates/sites--market--wikipedia-category/package.manifest.json",
       "creator_package_signature_file": "templates/sites--market--wikipedia-category/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/sites--market--wikipedia-category/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "db41619d9a07167a9c954b0420c7bf8808d9cc4d686b99d0abea3e2b0196c3c4"
+      "package_manifest_sha256": "db41619d9a07167a9c954b0420c7bf8808d9cc4d686b99d0abea3e2b0196c3c4",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {
       "id": "social/market/twitter-profile",
@@ -785,7 +804,8 @@
       "package_manifest_file": "templates/social--market--twitter-profile/package.manifest.json",
       "creator_package_signature_file": "templates/social--market--twitter-profile/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/social--market--twitter-profile/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "c9cfacca8bf102e4b1adea0c8c3843d2822a6fba29dce5fec0c3b2a7508253a1"
+      "package_manifest_sha256": "c9cfacca8bf102e4b1adea0c8c3843d2822a6fba29dce5fec0c3b2a7508253a1",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {
       "id": "social/market/twitter-search",
@@ -813,7 +833,8 @@
       "package_manifest_file": "templates/social--market--twitter-search/package.manifest.json",
       "creator_package_signature_file": "templates/social--market--twitter-search/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/social--market--twitter-search/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "4d9073027ce3b422f01e2eb28fad72a1d410f2172eb937801a09a49456b900d1"
+      "package_manifest_sha256": "4d9073027ce3b422f01e2eb28fad72a1d410f2172eb937801a09a49456b900d1",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {
       "id": "social/market/weibo-search",
@@ -842,7 +863,8 @@
       "package_manifest_file": "templates/social--market--weibo-search/package.manifest.json",
       "creator_package_signature_file": "templates/social--market--weibo-search/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/social--market--weibo-search/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "3ae2ab23b04fa4dc47e5dc8fe92db13d5290505b6dca602b1f10f5ea36cadb42"
+      "package_manifest_sha256": "3ae2ab23b04fa4dc47e5dc8fe92db13d5290505b6dca602b1f10f5ea36cadb42",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {
       "id": "social/market/xiaohongshu-note",
@@ -872,7 +894,8 @@
       "package_manifest_file": "templates/social--market--xiaohongshu-note/package.manifest.json",
       "creator_package_signature_file": "templates/social--market--xiaohongshu-note/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/social--market--xiaohongshu-note/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "94fd2652510a28099b182b20a41f3e359863d2079366cc938834da3e7d1a86b0"
+      "package_manifest_sha256": "94fd2652510a28099b182b20a41f3e359863d2079366cc938834da3e7d1a86b0",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {
       "id": "social/market/zhihu-topic",
@@ -901,7 +924,8 @@
       "package_manifest_file": "templates/social--market--zhihu-topic/package.manifest.json",
       "creator_package_signature_file": "templates/social--market--zhihu-topic/package.manifest.creator.sig",
       "maintainer_package_signature_file": "templates/social--market--zhihu-topic/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "833e58c240bcca6b2b3f16e8ade9d72778e9cd3f0ee43b86938ee9d5dce76dfd"
+      "package_manifest_sha256": "833e58c240bcca6b2b3f16e8ade9d72778e9cd3f0ee43b86938ee9d5dce76dfd",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     }
   ]
 }
