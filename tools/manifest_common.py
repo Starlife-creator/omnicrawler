@@ -40,7 +40,10 @@ __all__ = [
     "FEED_FILENAME",
     "feed_filename",
     "PayloadEntry",
+    "EXCLUDED_TOP_LEVEL",
     "cumulative_deleted",
+    "normalise_top_level_names",
+    "is_excluded_top_level",
     "iter_archive_members",
     "load_payload_entries",
     "load_signed_manifest",
@@ -58,17 +61,55 @@ DEFAULT_TRUST_ROOT = "configs/update_trust.pub.pem"
 #: 单独取一份清单的超时（秒）。清单只有几十~几百 KB，60s 足够且不至于挂死 CI。
 FETCH_TIMEOUT = 60
 
-#: 绝不进清单的顶层目录（用户数据 / 标记）。载荷来自构建产物，本不该含它们；
-#: 真含了说明打包错了 ⇒ 这里**直接拒绝**而不是默默漏掉（静默漏掉会让清单与实际归档不一致）。
+#: 载荷里**绝不**允许出现的顶层 —— 出现即说明**打包被污染**。
+#: 目前只有一项：`.omnicrawler/`（运行期状态）。判据来自 release 预检实测（2026-10-01）：
+#: 冻结应用每次启动都会把状态写到 **exe 同级**的 `.omnicrawler/`
+#: （`core/runtime_paths.portable_data_root()`），而各平台构建脚本都会**在载荷根跑冒烟**
+#: （`--version` / `templates validate` / `portable_smoke_test.py` / `capabilities` /
+#: `runtime-verify`）⇒ 残留会被打进包并发给用户。这里**直接拒绝**，因为静默跳过
+#: 等于把"打包脏了"藏起来（清单与归档仍然一致，但归档本身不该是那样）。
 FORBIDDEN_TOP_LEVEL = {
+    ".omnicrawler",
+}
+
+
+def normalise_top_level_names(names: object) -> frozenset[str]:
+    """把顶层名集合归一为**小写 frozenset**（判定侧按小写比对）。
+
+    ★ 为什么需要：判定读的是 `path.lower()` ⇒ 集合里若混入大写项（如 `PORTABLE.flag`）
+    会**永不命中**、守卫静默失效（反向断言实测 2026-10-01）。原实现靠"同时列两种写法"
+    绕开，那只是把坑藏起来；这里把**两侧都归一**，加新项时不可能再踩。
+    """
+    return frozenset(str(name).lower() for name in names)  # type: ignore[union-attr]
+
+#: 更新载荷里**排除**的顶层（用户数据目录 + 便携标记）。判据：**自更新只该替换应用文件**，
+#: 不该携带/覆盖用户数据；而**完整便携包**按设计必须带这些（`build_linux.sh` 明确
+#: `touch PORTABLE.flag` 并建 `data/input data/pdfs work output logs`）。
+#: 两者语义不同 ⇒ 命中即**跳过并计数**（调用方打印；跳过必须可见），不算错误。
+#: ★ 与 `FORBIDDEN_TOP_LEVEL` 的区别是**"是不是打包缺陷"**，不是"要不要进清单"：
+#: 两者都不进自更新清单，只有前者说明构建出了问题。
+EXCLUDED_TOP_LEVEL = {
     "work",
     "data",
     "output",
     "logs",
-    ".omnicrawler",
-    "PORTABLE.flag",
     "portable.flag",
 }
+
+_FORBIDDEN_TOP_LEVEL_LOWER = normalise_top_level_names(FORBIDDEN_TOP_LEVEL)
+_EXCLUDED_TOP_LEVEL_LOWER = normalise_top_level_names(EXCLUDED_TOP_LEVEL)
+
+
+def is_excluded_top_level(relative: str) -> bool:
+    """该成员是否属于用户数据目录 / 便携标记（True ⇒ 不纳入自更新载荷）。"""
+    top = relative.replace("\\", "/").split("/", 1)[0].lower()
+    return top in _EXCLUDED_TOP_LEVEL_LOWER
+
+
+def _report_excluded(count: int, *, what: str) -> None:
+    """跳过必须可见：不打印就等于静默漏文件。"""
+    if count:
+        print(f"[跳过] {what}: {count} 个文件属于用户数据目录/便携标记，不纳入自更新载荷")
 
 #: 构建垃圾，不参与清单（否则每次构建都会产生"变化"）。
 SKIP_SUFFIXES = {".pyc", ".pyo"}
@@ -104,7 +145,7 @@ def sha256_stream(handle) -> tuple[str, int]:  # type: ignore[no-untyped-def]
 
 def reject_protected_top_level(relative: str, *, origin: str) -> None:
     top = relative.split("/", 1)[0]
-    if top.lower() in FORBIDDEN_TOP_LEVEL:
+    if top.lower() in _FORBIDDEN_TOP_LEVEL_LOWER:
         raise SystemExit(
             f"载荷里出现受保护顶层路径 {top}/（{origin}）—— "
             "构建产物不该包含用户数据目录，请检查打包步骤"
@@ -141,6 +182,7 @@ def iter_archive_members(archive: Path):  # type: ignore[no-untyped-def]
     "在不在基线里" ∧ "哈希是否相同"都不需要先看齐全部成员）。
     zip 走同一条代码路径（顺序遍历），两种容器行为一致、少一条分叉。
     """
+    skipped = 0
     if zipfile.is_zipfile(archive):
         # ★ 按**魔数**判容器而不是按文件名后缀：后缀与实际格式不符时不至于把 zip 当 tar 读
         #   （实测踩过：测试里把 zip 写成 `.tar.xz` 名字 ⇒ tarfile 报"不是 lzma 文件"）。
@@ -150,6 +192,9 @@ def iter_archive_members(archive: Path):  # type: ignore[no-untyped-def]
                     continue
                 root, relative = split_root(info.filename, archive_name=archive.name)
                 if not relative:
+                    continue
+                if is_excluded_top_level(relative):
+                    skipped += 1
                     continue
                 mode = (info.external_attr >> 16) & 0o777 or None
                 with handle.open(info) as stream:
@@ -162,10 +207,14 @@ def iter_archive_members(archive: Path):  # type: ignore[no-untyped-def]
                 root, relative = split_root(member.name, archive_name=archive.name)
                 if not relative:
                     continue
+                if is_excluded_top_level(relative):
+                    skipped += 1
+                    continue
                 stream = handle.extractfile(member)
                 if stream is None:  # pragma: no cover - isfile() 为真时必有流
                     continue
                 yield root, relative, (member.mode & 0o777) or None, stream
+    _report_excluded(skipped, what=archive.name)
 
 
 def walk_payload_dir(root: Path) -> dict[str, Path]:
@@ -173,11 +222,15 @@ def walk_payload_dir(root: Path) -> dict[str, Path]:
     if not root.is_dir():
         raise SystemExit(f"载荷目录不存在: {root}")
     files: dict[str, Path] = {}
+    skipped = 0
     for path in sorted(root.rglob("*")):
         if not path.is_file():
             continue
         relative = path.relative_to(root)
         reject_protected_top_level(relative.as_posix(), origin=str(path))
+        if is_excluded_top_level(relative.as_posix()):
+            skipped += 1
+            continue
         if any(part in SKIP_DIRS for part in relative.parts):
             continue
         if path.suffix.lower() in SKIP_SUFFIXES:
@@ -185,6 +238,7 @@ def walk_payload_dir(root: Path) -> dict[str, Path]:
         files[relative.as_posix()] = path
     if not files:
         raise SystemExit(f"载荷目录里没有任何文件: {root}")
+    _report_excluded(skipped, what=str(root))
     return files
 
 

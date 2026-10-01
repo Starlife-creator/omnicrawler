@@ -260,13 +260,38 @@ def test_payload_archive_matches_payload_dir_result(tmp_path: Path, builder) -> 
     assert set(right) == {"app.exe", "lib.dll"}
 
 
-def test_payload_archive_rejects_protected_top_level(tmp_path: Path) -> None:
-    """★ 反向断言：归档里出现 ``work/`` ⇒ 拒绝（不能静默漏掉用户数据目录）。"""
+def test_payload_archive_skips_user_data_dirs(tmp_path: Path) -> None:
+    """★ **契约变更（2026-10-01，方案 A）**：`work/` 这类**用户数据目录**改为**跳过**，不再拒绝。
+
+    理由：**完整便携包按设计必须带**它们（`build_linux.sh` 明确建
+    `data/input data/pdfs work output logs` 并 `touch PORTABLE.flag`），而**自更新载荷**
+    只该含应用文件 ⇒ 二者语义不同。旧断言（一律拒绝）会让三个平台的便携构建**永远红**
+    （release 预检实测：Linux 被 `受保护顶层路径 PORTABLE.flag/` 判红）。
+    ★ 但"跳过"必须**可见**，且不静默把用户数据写进清单。
+    """
     archive = _payload_zip(tmp_path, extra={"work/secret.txt": b"user-data"})
+    out = tmp_path / "u.json"
+    result = _run(BUILD_TOOL, "--payload-archive", str(archive), "--version", "9.9.9",
+                  "--emit-unsigned", str(out))
+    assert result.returncode == 0, result.stdout + result.stderr
+    files = json.loads(out.read_text(encoding="utf-8"))["payload"]["files"]
+    assert "work/secret.txt" not in files, "用户数据目录不该进自更新清单"
+    assert set(files) == {"app.exe", "lib.dll"}
+    assert "跳过" in result.stdout, "跳过必须可见（不打印就等于静默漏文件）"
+
+
+def test_payload_archive_rejects_runtime_residue(tmp_path: Path) -> None:
+    """★ 反向断言：运行期残留 ``.omnicrawler/`` ⇒ **拒绝**。
+
+    与上一条的区别不是"要不要进清单"（两者都不进），而是**是不是打包缺陷**：
+    `.omnicrawler/` 是"构建脚本在载荷根跑冒烟、冻结应用把状态写到 exe 同级"的**证据**，
+    静默跳过等于把它藏起来。
+    """
+    archive = _payload_zip(tmp_path, extra={".omnicrawler/runtime-status.json": b"{}"})
     result = _run(BUILD_TOOL, "--payload-archive", str(archive), "--version", "9.9.9",
                   "--emit-unsigned", str(tmp_path / "u.json"))
     assert result.returncode != 0
-    assert "受保护顶层路径 work/" in (result.stdout + result.stderr)
+    assert "受保护顶层路径 .omnicrawler/" in (result.stdout + result.stderr)
     assert not (tmp_path / "u.json").exists(), "被拒绝时不得留下半成品清单"
 
 
@@ -542,3 +567,90 @@ def test_is_not_found_only_trusts_http_status_and_file_absence(tmp_path: Path) -
     missing = ValueError("无签名清单不存在: x")
     missing.__cause__ = FileNotFoundError("x")
     assert module._is_not_found(missing) is True
+
+
+# --- 2026-10-01：两种载荷语义（用户数据目录 vs 打包污染） --------------------------
+#
+# 由来（release 预检实测，作业日志为证）：Linux 便携构建被
+# `载荷里出现受保护顶层路径 PORTABLE.flag/` 判红 —— 而 `build_linux.sh` 正是**有意**
+# 创建 `PORTABLE.flag` 与空数据目录（完整便携包必须带它们）。守卫那份清单是照
+# **自更新载荷**的语义写的，却被喂了**完整便携归档** ⇒ 语义混用。同一轮里 Windows 报的
+# `.omnicrawler/` 则**真的是**打包污染（构建脚本在载荷根跑冒烟，冻结应用把运行期状态
+# 写到 exe 同级）。两件事必须分开：前者跳过，后者硬失败。
+
+sys.path.insert(0, str(REPO_ROOT / "tools"))
+
+import manifest_common  # noqa: E402
+
+
+def _zip_with(tmp_path: Path, members: Mapping[str, str]) -> Path:
+    import zipfile
+
+    archive = tmp_path / "payload.zip"
+    with zipfile.ZipFile(archive, "w") as handle:
+        for name, data in members.items():
+            handle.writestr(name, data)
+    return archive
+
+
+def test_user_data_dirs_and_flag_are_skipped_not_rejected(tmp_path: Path) -> None:
+    """完整便携包按设计带 `PORTABLE.flag` 与空数据目录 ⇒ **跳过**、不判错、不进自更新清单。"""
+    archive = _zip_with(
+        tmp_path,
+        {
+            "OmniCrawler/PORTABLE.flag": "",
+            "OmniCrawler/work/state.json": "{}",
+            "OmniCrawler/data/input/.keep": "",
+            "OmniCrawler/logs/run.log": "x",
+            "OmniCrawler/app.py": "print(1)",
+        },
+    )
+    relatives = [
+        relative for _root, relative, _mode, _reader in manifest_common.iter_archive_members(archive)
+    ]
+    assert relatives == ["app.py"]
+
+
+def test_runtime_residue_is_rejected_hard(tmp_path: Path) -> None:
+    """★ 运行期残留 `.omnicrawler/` 必须**硬失败**——它是"打包被污染"的证据。"""
+    archive = _zip_with(
+        tmp_path,
+        {
+            "OmniCrawler/.omnicrawler/runtime-status.json": "{}",
+            "OmniCrawler/app.py": "print(1)",
+        },
+    )
+    with pytest.raises(SystemExit) as caught:
+        list(manifest_common.iter_archive_members(archive))
+    assert ".omnicrawler" in str(caught.value)
+
+
+def test_payload_dir_classification_matches_archive(tmp_path: Path) -> None:
+    """**目录形态**（本机签名那条流水线用）必须与归档形态判定一致，否则两条路会分叉。"""
+    payload = tmp_path / "payload"
+    (payload / "work").mkdir(parents=True)
+    (payload / "work" / "state.json").write_text("{}", encoding="utf-8")
+    (payload / "PORTABLE.flag").write_text("", encoding="utf-8")
+    (payload / "app.py").write_text("print(1)", encoding="utf-8")
+    assert sorted(manifest_common.walk_payload_dir(payload)) == ["app.py"]
+
+    (payload / ".omnicrawler").mkdir()
+    (payload / ".omnicrawler" / "runtime-status.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(SystemExit) as caught:
+        manifest_common.walk_payload_dir(payload)
+    assert ".omnicrawler" in str(caught.value)
+
+def test_top_level_matching_is_case_insensitive() -> None:
+    """★ 顶层名匹配必须**大小写归一**（两侧都归一），否则守卫会**静默失效**。
+
+    由来（2026-10-01 反向断言实测）：把「PORTABLE.flag」（大写写法）放回禁止项后守卫
+    **没有**判红 —— 判定读的是「path.lower()」，而集合里是大写项 ⇒ 永不命中。
+    原实现靠"同时列 PORTABLE.flag 与 portable.flag"绕开，那只是把坑藏起来：
+    将来谁只加一种写法，守卫就悄悄不说话。本用例钉住这条不变量。
+    """
+    assert manifest_common.normalise_top_level_names({"PORTABLE.flag", ".OmniCrawler"}) == {
+        "portable.flag",
+        ".omnicrawler",
+    }
+    assert manifest_common.is_excluded_top_level("PORTABLE.flag") is True
+    assert manifest_common.is_excluded_top_level("Work") is True

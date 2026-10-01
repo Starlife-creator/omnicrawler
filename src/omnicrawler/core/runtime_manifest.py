@@ -34,9 +34,20 @@ _EXCLUDED_LOG_DIRS = (
     "Contents/MacOS/logs",        # macOS .app 内运行期日志
 )
 
+#: 运行期**状态**目录名（`.omnicrawler/`）。冻结应用每次启动都往里写状态
+#: （`runtime_paths.portable_data_root() / ".omnicrawler" / "runtime-status.json"`），
+#: 与日志同理：**创建与校验两侧都必须排除**，否则 `runtime-verify` 会把刚写的状态
+#: 当"未知文件"判红（release 预检实测 2026-10-01：载荷里带着上一轮冒烟写的该文件）。
+#: ★ 与 `logs` 的**判据不同**：`logs` 只认顶层（任意层级的 `logs` 可能是合法资产，如
+#: `_internal/botocore/data/logs`）；而 `.omnicrawler` 是本项目自有的点目录，
+#: macOS 下它落在 `OmniCrawler.app/Contents/MacOS/.omnicrawler/` ⇒ **任意层级都排除**。
+_EXCLUDED_RUNTIME_DIRNAME = ".omnicrawler"
+
 
 def _is_excluded_relative(relative: str) -> bool:
     parts = PurePosixPath(relative).parts
+    if _EXCLUDED_RUNTIME_DIRNAME in parts:
+        return True
     if len(parts) >= 1 and parts[0] == "logs":
         return True
     # macOS .app 结构：OmniCrawler.app/Contents/MacOS/logs（运行期日志在

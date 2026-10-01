@@ -37,3 +37,32 @@ def test_missing_and_corrupt_still_detected(tmp_path: Path) -> None:
     report = verify_runtime_manifest(runtime)
     assert report["corrupt"] == ["a.bin"]
     assert "b.bin" in report["unknown"]
+
+
+def test_runtime_state_dir_excluded_from_manifest_and_unknown_scan(tmp_path: Path) -> None:
+    """★ 运行期状态目录 `.omnicrawler/` 与 `logs/` 同理：**创建与校验两侧都排除**。
+
+    由来（2026-10-01 release 预检实测）：构建脚本在载荷根跑冒烟，冻结应用把状态写到
+    exe 同级的 `.omnicrawler/` ⇒ 它被打进包、还会被清单声明；而打包侧一旦清掉该残留，
+    若清单仍声明它，`runtime-verify` 就会判 missing/unknown。两侧一致才不会两头红。
+    """
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    (runtime / "app.exe").write_bytes(b"trusted")
+    state = runtime / ".omnicrawler"
+    state.mkdir()
+    (state / "runtime-status.json").write_text('{"tesseract": "ok"}', encoding="utf-8")
+
+    manifest = create_runtime_manifest(runtime)
+    assert not [name for name in manifest["files"] if ".omnicrawler" in name], manifest["files"]
+    report = verify_runtime_manifest(runtime)
+    assert report["ok"] is True, report
+    assert report["unknown"] == []
+
+    # macOS 形态：运行期状态落在 `OmniCrawler.app/Contents/MacOS/.omnicrawler/`（任意层级都排除）
+    nested = runtime / "OmniCrawler.app" / "Contents" / "MacOS" / ".omnicrawler"
+    nested.mkdir(parents=True)
+    (nested / "runtime-status.json").write_text("{}", encoding="utf-8")
+    report = verify_runtime_manifest(runtime)
+    assert report["ok"] is True, report
+    assert report["unknown"] == []
