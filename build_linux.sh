@@ -300,6 +300,12 @@ fi
 # 使清单覆盖这两个机器可读文件（与 Windows 同序：先加文件再刷清单）。
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/create_runtime_manifest.py" --release-root "$RELEASE_ROOT"
 "$RELEASE_ROOT/omnicrawler" runtime-verify --root "$RELEASE_ROOT"
+# F32（2026-10-01）：同上——载荷根跑冒烟会把运行期状态写进 `<root>/.omnicrawler/`；
+# 它既不该随包发出，也会被 build_update_manifest 的受保护顶层守卫拒绝（release 预检实测）。
+if [[ -e "$RELEASE_ROOT/.omnicrawler" ]]; then
+  rm -rf "$RELEASE_ROOT/.omnicrawler"
+  echo '[清理] 已移除载荷内的运行期状态目录 .omnicrawler/'
+fi
 # P5 完整版：Linux tar.xz 的容器级深校验在打包后执行（见下方 check_release_integrity
 # --portable-tar --portable-deep），与 Windows 对 zip 的 --portable-zip --portable-deep 对齐。
 

@@ -278,6 +278,15 @@ fi
 # 使清单覆盖这两个机器可读文件（与 Windows 同序：先加文件再刷清单）。
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/create_runtime_manifest.py" --release-root "$RELEASE_ROOT"
 "$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli" runtime-verify --root "$RELEASE_ROOT"
+# F32（2026-10-01）：同上——载荷根跑冒烟会把运行期状态写进 exe 同级；macOS 的可执行文件在
+# `OmniCrawler.app/Contents/MacOS/`，故两处都要清（`runtime_manifest` 侧对 `.omnicrawler`
+# 按**任意层级**排除，因此清掉不会让 runtime-verify 报"未知文件"）。
+for _state_dir in "$RELEASE_ROOT/.omnicrawler" "$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/.omnicrawler"; do
+  if [[ -e "$_state_dir" ]]; then
+    rm -rf "$_state_dir"
+    echo '[清理] 已移除载荷内的运行期状态目录 .omnicrawler/'
+  fi
+done
 # P4-1：Windows 对 zip 跑 check_release_integrity --portable-zip --portable-deep；
 # macOS dmg 是磁盘镜像（纯 Python 无法读内部），深校验由上方 runtime-verify 兜底；
 # tar.gz 回退产物跑容器级深校验（与 Linux 对齐）。

@@ -404,6 +404,16 @@ Assert-LastExit 'Runtime integrity manifest refresh failed.'
 & (Join-Path $releaseRoot 'omnicrawler-cli.exe') runtime-verify --root $releaseRoot
 Assert-LastExit 'Packaged runtime integrity verification failed.'
 
+# F32（2026-10-01）：载荷根跑冒烟（--version / templates validate / 冒烟 / runtime-verify）
+# 会让冻结应用把**运行期状态**写进 exe 同级的 `.omnicrawler/`（core/runtime_paths.py）。
+# 它既不该随包发给用户，也会被 build_update_manifest 的受保护顶层守卫拒绝（release 预检实测）
+# ⇒ 打包前清掉。清得掉还要靠 RUNTIME-MANIFEST 侧不把它当"未知文件"（见 runtime_manifest）。
+$runtimeStateDir = Join-Path $releaseRoot '.omnicrawler'
+if (Test-Path -LiteralPath $runtimeStateDir) {
+    Remove-Item -LiteralPath $runtimeStateDir -Recurse -Force
+    Write-Host '[清理] 已移除载荷内的运行期状态目录 .omnicrawler/'
+}
+
 # $appVersion was already resolved at script startup — reuse it.
 New-Item -ItemType Directory -Path $releaseOutput -Force | Out-Null
 $releaseArchive = Join-Path $releaseOutput "OmniCrawler-$appVersion-Windows-Portable-$Edition.zip"
