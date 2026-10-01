@@ -64,8 +64,12 @@ PAGE_SHAPE = PaginationShape(
         PaginationField("start", INTEGER, default=1),
         PaginationField("end", INTEGER, default=1),
         PaginationField("step", INTEGER, default=1),
-        # 仅 ``location: body`` 需要 ``source.payload`` 配套，属高级用法，表单不渲染。
-        PaginationField("location", CHOICE, default="query", choices=("query", "body"), editable=False),
+        # ★ 2026-09-30：`location` 改为**表单可编辑**（GUI 用户此前只能手写 YAML 才能用 body 型分页）。
+        #   配套＝表单按契约渲染成**下拉**（选项就是这里的 `choices`，用户不会打错枚举值）。
+        #   ★ 另有一条**未加**的候选判据，连同推翻它的实测证据，记在
+        #   `core/config.validate_config` 的注释里（"body 必须有 payload" —— 与运行时语义和
+        #   本契约都不符，故不加；真实前置是种子 `method == POST`）。
+        PaginationField("location", CHOICE, default="query", choices=("query", "body"), editable=True),
     ),
 )
 

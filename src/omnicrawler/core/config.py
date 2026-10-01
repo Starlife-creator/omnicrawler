@@ -803,7 +803,21 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     # 分页形状由 core.pagination 的契约统一判定与校验（唯一真源）；
     # 这里只负责把结果并入 errors —— 此前核心只校验 type=page，
     # 游标配置缺 next_path 时既不报错也不翻页（静默少采几页）。
+    _source_section = config.section("source")
     errors.extend(validate_pagination(config.section("source").get("pagination", {})))
+    # ★ 2026-09-30 记录（**刻意不加**跨字段判据，并附推翻它的证据）：
+    #   本轮曾一度认为「`location: body` 必须有 `source.payload`」，实测**不成立**：
+    #   运行时 `sources.py::GenericSource.seed` 写的是
+    #       if template.method == "POST" and pagination.get("location") == "body":
+    #           payload = dict(self.source.get("payload", {})); payload[name] = page
+    #   ① `payload` **可为空**（缺省 `{}`，页码照样进请求体）；
+    #   ② 真正的开关是**该种子请求的 method == POST**；不是 POST 时这一支不走，页码照旧
+    #      拼到 URL query（`_with_query`）—— **分页仍然工作**，只是位置不是 body；
+    #   ③ `payload` 是**映射**（如 `{"size": 10}`）而非只字符串 ⇒ 按「字符串非空」判它会
+    #      **假红**（CI 已实证：`tests/integration/browser/test_sources.py` 因此被误杀）。
+    #   契约层立场一致：`validate_pagination({"type":"page","parameter":"p",
+    #   "location":"body"})` 本就返回 `[]`（`tests/unit/core/test_pagination_contract.py`）。
+    #   ⇒ 不在此处发明前置条件；**真实前置写在 GUI 字段标签与 `docs/CONFIG_REFERENCE.md` 里**。
     fields = config.section("extract").get("fields", {})
     if fields and not isinstance(fields, dict):
         errors.append("extract.fields必须是字段名到规则的映射")

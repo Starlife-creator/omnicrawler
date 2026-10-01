@@ -772,9 +772,12 @@ def test_form_authored_pagination_reaches_config_and_survives_extras(
 ) -> None:
     """表单里选的「分页方式」要落进配置；**表单管不到的键不许被改写**。
 
-    同一件事的两个方向：换形状必须真的生效（否则用户以为配了却没翻页），而 `location`、
-    插件自带键这类表单管不到的键必须原样留着 —— 本仓库出过「打开一个能用的配置、
-    存一下就被删掉几个键」的事故。
+    同一件事的两个方向：换形状必须真的生效（否则用户以为配了却没翻页），而**契约外**的键
+    （插件自带键）必须原样留着 —— 本仓库出过「打开一个能用的配置、存一下就被删掉几个键」的事故。
+
+    ★ 2026-09-30 契约变更：`location` 由「表单不渲染」改为**可编辑**（下拉）⇒ 它从此**归表单管**，
+    因此 `page` 形状的产出里会**显式带上** `location: query`（与 `start/end/step` 一样写默认值），
+    而它不再出现在 `_pagination_extras`（那是「契约外键」的存放处）。本用例的期望值随之更新。
     """
     app, window = _window(tmp_path, monkeypatch)
     _silence_side_effects(window)
@@ -791,6 +794,8 @@ def test_form_authored_pagination_reaches_config_and_survives_extras(
             "start": 1,
             "end": 1,
             "step": 1,
+            # 自 2026-09-30 起 location 归表单管 ⇒ 与其余字段一样显式写出默认值
+            "location": "query",
         }, window._config.pagination
         assert canvas._pagination_rows["end"].isVisibleTo(canvas)
         assert not canvas._pagination_rows["next_path"].isVisibleTo(canvas)
@@ -824,7 +829,7 @@ def test_form_authored_pagination_reaches_config_and_survives_extras(
         assert window._config.pagination["next_path"] == "$.next"
         assert canvas._pagination_combo.currentData() == "cursor"
 
-        # 契约外/表单不渲染的键（location）：一次表单同步之后仍要在
+        # 表单可编辑键（location）：一次表单同步之后仍在（这里是**经表单回写**，不是透传）
         exotic = tmp_path / "exotic.yaml"
         exotic.write_text(
             "\n".join(
@@ -847,10 +852,11 @@ def test_form_authored_pagination_reaches_config_and_survives_extras(
         )
         window._config_delegate._open_recent(str(exotic))
         app.processEvents()
-        assert canvas._pagination_extras == {"location": "body"}, canvas._pagination_extras
+        # location 自 2026-09-30 起归表单管 ⇒ **不在** extras（extras 只收契约外键）
+        assert canvas._pagination_extras == {}, canvas._pagination_extras
         canvas._desc_edit.setText("改一下描述，触发一次表单→配置同步")
         app.processEvents()
-        assert window._config.pagination["location"] == "body", "location 属表单管不到的键，不许被删"
+        assert window._config.pagination["location"] == "body", "location 是表单可编辑键，值不许被改掉"
         assert window._config.pagination["step"] == 50
 
         # 未知形状（插件自带）：进「保持原样」，不猜、不改写
