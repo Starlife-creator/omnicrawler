@@ -244,6 +244,20 @@ _FLOORS_SNAPSHOT_2026_09_17: dict[str, float] = {
     "_BROWSER_FILE_FLOORS.browser_pool.py": 44.0,
 }
 
+# 2026-09-30 收紧：口径不变（CI 三平台实测最小值 − 2），按「只升不降」重算。
+# 依据 quality run `36551475125` @ `f4fc52f`（2026-09-29）：all_source min 77.46 → 75.0；
+# security_and_state min 92.18 → 90.1；pipeline_http_sources min 83.77 → 81.7。
+_FLOORS_SNAPSHOT_2026_09_30: dict[str, float] = {
+    "OVERALL_COVERAGE_GATE": 75.0,
+    "GATES.security_and_state": 90.1,
+    "GATES.pipeline_http_sources": 81.7,
+}
+# 有效基线＝**所有历史快照的逐项最大值**（只升不降）。
+_FLOORS_SNAPSHOTS: tuple[dict[str, float], ...] = (
+    _FLOORS_SNAPSHOT_2026_09_17,
+    _FLOORS_SNAPSHOT_2026_09_30,
+)
+
 
 def _current_floors(checker: ModuleType) -> dict[str, float]:
     floors = {"OVERALL_COVERAGE_GATE": checker.OVERALL_COVERAGE_GATE}
@@ -257,11 +271,15 @@ def _current_floors(checker: ModuleType) -> dict[str, float]:
 
 
 def test_coverage_ratchet_never_lowers_a_floor() -> None:
-    """基线只升不降：任何一项被调低，或某个门禁被删掉，都必须判红。"""
+    """基线只升不降：相对**任一历史快照**被调低、或某个门禁被删掉，都必须判红。"""
     current = _current_floors(_load_checker())
-    missing = sorted(set(_FLOORS_SNAPSHOT_2026_09_17) - set(current))
+    expected: dict[str, float] = {}
+    for snapshot in _FLOORS_SNAPSHOTS:
+        for key, value in snapshot.items():
+            expected[key] = max(expected.get(key, float("-inf")), value)
+    missing = sorted(set(expected) - set(current))
     assert not missing, (
         f"这些覆盖率门禁被删除了 —— 删门禁等于放宽口径，与 W6.2 只升不降相悖：{missing}"
     )
-    lowered = {k: (v, current[k]) for k, v in _FLOORS_SNAPSHOT_2026_09_17.items() if current[k] < v}
+    lowered = {k: (v, current[k]) for k, v in expected.items() if current[k] < v}
     assert not lowered, f"这些覆盖率下限被调低了（快照->现值）：{lowered}"

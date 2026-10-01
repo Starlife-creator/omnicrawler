@@ -28,7 +28,7 @@ def _starts_with(*prefixes: str) -> Matcher:
 
 GATES: dict[str, tuple[float, Matcher]] = {
     "security_and_state": (
-        90.0,
+        90.1,
         # state_store 自 P1-3 起是「门面 + 6 个 Mixin」，用前缀纳入全部模块，
         # 否则门禁只能看到 103 行门面、约 900 行实现漏出视野。
         _is_one_of(
@@ -40,7 +40,7 @@ GATES: dict[str, tuple[float, Matcher]] = {
         ),
     ),
     "pipeline_http_sources": (
-        81.0,
+        81.7,
         _starts_with(
             "src/omnicrawler/pipeline/",
         ),
@@ -87,7 +87,7 @@ GATES: dict[str, tuple[float, Matcher]] = {
     ),
 }
 
-OVERALL_COVERAGE_GATE = 73.6
+OVERALL_COVERAGE_GATE = 75.0
 
 # 按顶层子包设「只降不升」下限（P2-1 ratchet）。
 #
@@ -106,6 +106,17 @@ OVERALL_COVERAGE_GATE = 73.6
 #     desktop_core          80.39 / 80.39 / 80.39   → min 80.39 → 下限 78.4（原 77.0）
 #   跨平台离散 ≤ 0.15 点 ⇒ 余量取 **2 点**（≈ 13× 实测离散），既不 flaky 又不再留空档。
 #   **只升不降**：以后每次收紧都要按新的实测重算并把数字写在这里。
+#
+# ★ **2026-09-30 收紧**（口径不变：CI 三平台实测最小值 − 2；只升不降）。
+#   依据 quality run `36551475125` @ `f4fc52f`（2026-09-29，最近一次 main 全绿）三平台实测：
+#     all_source            77.46 / 77.48 / 77.48   → min 77.46 → 下限 **75.0**（原 73.6）
+#     security_and_state    92.18 / 92.18 / 92.18   → min 92.18 → 下限 **90.1**（原 90.0）
+#     pipeline_http_sources 83.77 / 83.77 / 83.77   → min 83.77 → 下限 **81.7**（原 81.0）
+#   未列出的四项：`min − 2` 低于现值 ⇒ 按只升不降**保持**（http_client 86.4 /
+#   browser_and_api 74.8 / pdf_and_ocr 72.6 / desktop_core 78.4）。
+#   ★ all_source 取 75.0 而非公式的 75.46：`fail_under` 还作用于**本地** `coverage report`，
+#     而本条记录显示本地系统性低于 CI 约 1.1 点 ⇒ 余量要覆盖**两个环境里最差的那个**
+#     （同「下限按真正被度量的环境设定」）。
 # 先覆盖方案点名的三个「非 GUI、测试更便宜」的包，其余包待后续批次逐个纳入。
 PACKAGE_FLOORS: dict[str, float] = {
     "core": 87.0,      # CI 三平台实测 89.33~89.36%（见下方口径说明）
