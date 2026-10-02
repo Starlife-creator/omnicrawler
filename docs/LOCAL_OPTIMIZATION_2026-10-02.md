@@ -31,3 +31,11 @@ GUI-08：独立真实 worker 启动/关闭探针中，自有启动 PID 在 shutd
 首页使用可滚动内容容器，布局最小尺寸来自控件内容，空间不足时滚动访问最近任务和次要操作，不挤压输入、示例和创建按钮。首页版本使用与主窗口一致的运行代码版本，不再优先显示旧 editable 安装元数据。
 
 验证：新增导航、配置保真、小窗口操作可达和版本来源回归，以及前轮生命周期/窗口关闭回归通过；恢复导航无动作时新回归失败并字节级恢复；static 通过。150% 缩放真实桌面默认窗口截图 desktop-home-default-150.png 已目视检查：输入、示例与创建按钮分开排列，标题及窗口均为 0.15.0，下方内容有滚动入口。日志见 round3-tests.log、round3-negative.log、round3-static.json。后续继续复验滚动到末尾、连续创建和真实运行交付。
+
+## 第四轮：GUI-08 连续会话退出
+
+真实桌面连续采集、重复运行、停止与续跑后，发现 start 覆盖 self.session、会话文件与 Popen 句柄，旧终态 worker 的 Listener 仍在等待连接。最新会话 shutdown 后其 PID 消失，旧两轮 PID 仍存活（gui-process-tree.json、worker-processes-after-shutdown.json），解释了单次启动探针正常而连续运行残留。此次证据确认的是旧 worker 会话遗留，不能继续仅凭可执行路径称为 venv 包装进程。
+
+同一后端开始新任务前先检查旧会话：运行/暂停等非终态拒绝覆盖；终态先 shutdown 并回收，再创建新会话。回收超时保留自有进程句柄供后续重试，不再把未退出当作已释放。成功关闭后清除活动会话引用，允许显式关闭后重启。GUI 运行器在写配置前拒绝重复 start，保护运行副本。GUI 关闭与托盘后台运行语义保持。
+
+验证：连续三轮真实 worker 启动能回收上一会话，显式关闭后重启成功；活动会话不能被替换；回收超时句柄保留；GUI 活动配置不能覆盖；真实 GUI runner 采集/停止/续跑链通过。移除旧会话清理后，进程退出回归失败并字节级恢复。static 通过。日志见 round4-tests.log、round4-negative.log、round4-static.json。AF_UNIX 深路径用例在 Windows 不适用，明确跳过。

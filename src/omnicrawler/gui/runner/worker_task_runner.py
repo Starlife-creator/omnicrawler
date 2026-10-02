@@ -82,6 +82,9 @@ class WorkerTaskRunner(QObject):
         self._backend = LocalWorkerBackend(worker_command=_derive_worker_command(command_path))
 
     def start(self, config: CrawlConfig, log_level: str = "INFO") -> bool:
+        if self.is_running:
+            self.log_line.emit(_("任务正在运行，请先停止或等待完成。"), "warn")
+            return False
         errors, warnings = validate_full_config(
             config, extra_source_kinds=plugin_source_kinds(self._project_root)
         )

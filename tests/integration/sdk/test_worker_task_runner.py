@@ -194,3 +194,22 @@ def test_worker_zero_new_records_with_pending_frontier_warns(tmp_path, monkeypat
     assert not any("没有待处理" in text for text, _ in logs)
     runner.deleteLater()
     app.processEvents()
+
+
+def test_running_runner_rejects_start_before_writing_config(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    from omnicrawler.gui.core.config_model import CrawlConfig
+    from omnicrawler.gui.runner.worker_task_runner import WorkerTaskRunner
+
+    app = QApplication.instance() or QApplication([])
+    runner = WorkerTaskRunner(project_root=tmp_path)
+    runner._backend = _Backend()
+    runner._state = "running"
+    config = CrawlConfig(project_name="active", workspace=str(tmp_path / "work"))
+    assert runner.start(config) is False
+    assert runner._backend.calls == []
+    assert not (tmp_path / "configs").exists()
+    assert runner.state == "running"
+    runner.deleteLater()
+    app.processEvents()

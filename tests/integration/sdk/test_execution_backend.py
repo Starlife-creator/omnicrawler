@@ -110,3 +110,65 @@ def test_local_worker_is_reaped_after_shutdown(tmp_path: Path) -> None:
     assert not psutil.pid_exists(pid), f"关闭后 worker 仍是活进程或僵尸：{pid}"
     # 非父进程（重连进来的后端）调用 reap 必须安全（什么都不做但也不抛）
     assert backend.reap() is True
+
+
+def test_restarting_terminal_worker_reaps_previous_session(tmp_path):
+    psutil = pytest.importorskip("psutil")
+    backend = LocalWorkerBackend()
+    config = _config(tmp_path)
+    pids = []
+    try:
+        for _ in range(3):
+            backend.start(config)
+            pids.append(backend._process.pid)
+            deadline = time.monotonic() + 10
+            while backend.status()["status"] not in {"failed", "succeeded", "partial_success"}:
+                assert time.monotonic() < deadline
+                time.sleep(0.02)
+            assert all(not psutil.pid_exists(pid) for pid in pids[:-1])
+        backend.shutdown()
+        backend.start(config)
+        pids.append(backend._process.pid)
+        assert all(not psutil.pid_exists(pid) for pid in pids[:-1])
+    finally:
+        with contextlib.suppress(Exception):
+            backend.shutdown()
+        # Only this test's exact owned process handles are eligible for cleanup.
+        for pid in pids:
+            with contextlib.suppress(psutil.NoSuchProcess):
+                proc = psutil.Process(pid)
+                args = proc.cmdline()
+                if str(tmp_path) in " ".join(args) and "omnicrawler.runtime.worker_main" in args:
+                    proc.terminate()
+                    proc.wait(5)
+
+
+def test_start_does_not_replace_live_session_metadata(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    backend = LocalWorkerBackend()
+    backend.session = SimpleNamespace(session_id="active")
+    monkeypatch.setattr(backend, "status", lambda: {"status": "paused"})
+    config = tmp_path / "must-not-be-read.yaml"
+    with pytest.raises(RuntimeError, match="正在运行"):
+        backend.start(config)
+    assert backend.session.session_id == "active"
+    assert not config.exists()
+
+
+def test_reap_timeout_keeps_owned_process_for_later_retry(monkeypatch):
+    import subprocess
+    from types import SimpleNamespace
+
+    process = SimpleNamespace(returncode=None)
+    def wait(timeout):
+        raise subprocess.TimeoutExpired("owned-worker", timeout)
+    process.wait = wait
+    backend = LocalWorkerBackend()
+    backend._process = process
+    assert backend.reap(timeout=0) is False
+    assert backend._process is process
+    process.returncode = 0
+    process.wait = lambda timeout: 0
+    assert backend.reap(timeout=0) is True
+    assert backend._process is None

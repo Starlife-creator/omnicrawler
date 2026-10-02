@@ -186,6 +186,13 @@ class LocalWorkerBackend:
         self._process: subprocess.Popen[bytes] | None = None
 
     def start(self, config_path: str | Path) -> dict[str, Any]:
+        # A terminal worker keeps its listener for reconnects. End the previous
+        # session before replacing its metadata and Popen handle on a new run.
+        if self.session is not None:
+            previous = self.status()
+            if previous.get("status") not in {"succeeded", "failed", "cancelled", "partial_success"}:
+                raise RuntimeError("已有独立 Worker 任务正在运行，请先停止或等待完成")
+            self.shutdown()
         config = load_config(config_path)
         config.workspace.mkdir(parents=True, exist_ok=True)
         session_id = uuid.uuid4().hex
@@ -258,7 +265,10 @@ class LocalWorkerBackend:
 
     def shutdown(self) -> dict[str, Any]:
         response = self._request("shutdown")
-        self.reap(timeout=10.0)
+        if not self.reap(timeout=10.0):
+            raise RuntimeError("本地 Worker 尚未退出，请稍后重试")
+        self.session = None
+        self.session_file = None
         return response
 
     def reap(self, *, timeout: float = 10.0) -> bool:
@@ -274,8 +284,10 @@ class LocalWorkerBackend:
             return True
         with contextlib.suppress(subprocess.TimeoutExpired):
             process.wait(timeout=timeout)
+        if process.returncode is None:
+            return False
         self._process = None
-        return process.returncode is not None
+        return True
 
     def _request(self, command: str) -> dict[str, Any]:
         if self.session is None:
