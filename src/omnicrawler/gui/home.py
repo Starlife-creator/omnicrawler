@@ -78,9 +78,6 @@ class _AIEnrichWorker(QThread):
             reason = str(exc).strip() or type(exc).__name__
             logger.debug("AI enrichment failed: %s", reason, exc_info=True)
             self.ai_error.emit(reason)
-        finally:
-            # S1.1.5：任务运行完立即释放，避免关闭窗口时 QThread 仍在运行
-            self.deleteLater()
 
     def _load_provider(self) -> object | None:
         """从单一真源构造 AI provider（含 Egress 审计；未启用返回 None）。"""
@@ -189,6 +186,10 @@ class HomePage(QWidget):
     def __init__(self, parent: QWidget | None = None, project_root: str | None = None) -> None:
         super().__init__(parent)
         self._project_root = project_root
+        self._enrich_worker: _AIEnrichWorker | None = None
+        self._pending_enrich_request: str | None = None
+        self._enrich_shutting_down = False
+        self._enrich_request_current = False
         self.setObjectName("homePage")
         self.setAccessibleName(_("OmniCrawler 首页"))
         layout = QVBoxLayout(self)
@@ -293,6 +294,7 @@ class HomePage(QWidget):
         layout.addStretch()
 
     def _create_task(self) -> None:
+        self._cancel_ai_enrich()
         """从统一输入框创建网址任务或自然语言任务草稿。"""
         request = self.task_input.toPlainText().strip()
         if not request:
@@ -430,32 +432,75 @@ class HomePage(QWidget):
         if not request:
             return
 
-        # C17：启动新 worker 前先回收旧 worker，避免覆盖旧任务仍在跑导致结果错乱
-        old = getattr(self, "_enrich_worker", None)
-        if old is not None:
-            old.quit()
-            old.wait(500)
-            old.deleteLater()
+        if self._enrich_shutting_down:
+            return
+        self._pending_enrich_request = request
+        if self._enrich_worker is not None:
+            self._enrich_request_current = False
+            self._enrich_worker.requestInterruption()
+            return
+        self._start_pending_ai_enrich()
 
-        self._enrich_worker = _AIEnrichWorker(request, self, project_root=self._project_root)
-        self._enrich_worker.result_ready.connect(self._on_ai_enriched)
-        self._enrich_worker.ai_unavailable.connect(self._on_ai_unavailable)
-        self._enrich_worker.ai_error.connect(self._on_ai_error)
-        self._enrich_worker.start()
+    def _cancel_ai_enrich(self) -> None:
+        self._pending_enrich_request = None
+        if self._enrich_worker is not None:
+            self._enrich_request_current = False
+            self._enrich_worker.requestInterruption()
+
+    def shutdown(self) -> None:
+        """Idempotently cancel enrichment; the window waits for live threads."""
+        self._enrich_shutting_down = True
+        self._cancel_ai_enrich()
+
+    def _start_pending_ai_enrich(self) -> None:
+        request = self._pending_enrich_request
+        self._pending_enrich_request = None
+        if request is None or self._enrich_shutting_down:
+            return
+        worker = _AIEnrichWorker(request, self, project_root=self._project_root)
+        self._enrich_worker = worker
+        self._enrich_request_current = True
+        worker.result_ready.connect(self._on_ai_enriched)
+        worker.ai_unavailable.connect(self._on_ai_unavailable)
+        worker.ai_error.connect(self._on_ai_error)
+        worker.finished.connect(self._on_ai_enrich_finished)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _on_ai_enrich_finished(self) -> None:
+        if self.sender() is self._enrich_worker:
+            self._enrich_worker = None
+            self._start_pending_ai_enrich()
+
+    def _accept_ai_feedback(self) -> bool:
+        worker = self._enrich_worker
+        return (
+            self.sender() is worker
+            and worker is not None
+            and self._enrich_request_current
+            and not worker.isInterruptionRequested()
+            and not self._enrich_shutting_down
+        )
 
     def _on_ai_unavailable(self, reason: str) -> None:
         """C13：AI 未启用/被隐私禁用时，明确告知用户（仍保留本地解析结果）。"""
+        if not self._accept_ai_feedback():
+            return
         base = self.feedback.text()
         if reason not in base:
             self.feedback.setText(_(f"{base}\nℹ {reason}（已使用本地解析）"))
 
     def _on_ai_error(self, message: str) -> None:
         """C12/C25：AI 运行出错（含越权拦截）时明示，而非静默丢弃。"""
+        if not self._accept_ai_feedback():
+            return
         base = self.feedback.text()
         self.feedback.setText(_(f"{base}\n⚠ AI 增强失败：{message}（已使用本地解析）"))
 
     def _on_ai_enriched(self, ai_draft: object | None) -> None:
         """AI 增强结果到达：合并展示，不覆盖本地结果。"""
+        if not self._accept_ai_feedback():
+            return
         if ai_draft is None:
             return
 

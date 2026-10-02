@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import traceback
+from types import TracebackType
 from typing import Any
 
 from PySide6.QtWidgets import QApplication, QMessageBox
@@ -15,15 +16,20 @@ class ErrorDialogHelper(_BaseDelegate):
     """Error dialog display with privacy redaction."""
 
     def show_error_dialog(
-        self, exc: BaseException, context: str = "", *, retry_callback: Any = None
+        self, exc: BaseException, context: str = "", *, retry_callback: Any = None,
+        traceback_obj: TracebackType | None = None
     ) -> None:
         """Show an error dialog with privacy redaction."""
         mw = self._mw
-        tb = traceback.format_exc()
+        tb = "".join(traceback.format_exception(
+            type(exc), exc, traceback_obj if traceback_obj is not None else exc.__traceback__
+        ))
+        if context:
+            tb = context + "\n\n" + tb
         redacted_tb = self.redact_error(tb)
         msg = QMessageBox(mw)
         msg.setWindowTitle(_("发生错误"))
-        msg.setText(_("应用程序遇到一个错误: {0}").format(str(exc)[:200]))
+        msg.setText(_("应用程序遇到一个错误: {0}").format(self.redact_error(str(exc))[:200]))
         msg.setDetailedText(redacted_tb)
         if retry_callback is not None:
             retry_btn = msg.addButton(_("重试"), QMessageBox.ButtonRole.ActionRole)

@@ -477,9 +477,12 @@ class MainWindow(QMainWindow):
 
     # --- ErrorDialogHelper ---
     def _show_error_dialog(
-        self, exc: BaseException, context: str = "", *, retry_callback: Callable[[], None] | None = None
+        self, exc: BaseException, context: str = "", *, retry_callback: Callable[[], None] | None = None,
+        traceback_obj: TracebackType | None = None
     ) -> None:
-        self._error_helper.show_error_dialog(exc, context, retry_callback=retry_callback)
+        self._error_helper.show_error_dialog(
+            exc, context, retry_callback=retry_callback, traceback_obj=traceback_obj
+        )
 
     # --- EnvironmentChecker ---
     def _on_first_launch(self) -> None:
@@ -2172,6 +2175,7 @@ class MainWindow(QMainWindow):
         monitor = getattr(self, "_change_monitor", None)
         if monitor is not None:
             monitor.shutdown()
+        self._home.shutdown()
         for thread in self._background_threads():
             if thread.isRunning():
                 thread.requestInterruption()
@@ -2472,7 +2476,7 @@ def main() -> int:
         ) -> None:
             traceback.print_exception(exc_type, exc_value, exc_tb)
             if hasattr(window, '_show_error_dialog'):
-                window._show_error_dialog(exc_value)
+                window._show_error_dialog(exc_value, traceback_obj=exc_tb)
             sys.__excepthook__(exc_type, exc_value, exc_tb)
 
         sys.excepthook = _global_exception_hook
