@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -28,6 +29,18 @@ from ..services.progress import ProgressTracker, StageSpec, TaskProgressEvent
 from ._mixin_base import _PipelineBase
 
 LOGGER = logging.getLogger("omnicrawler")
+
+
+def _comparison_scope(config: Any) -> str:
+    scope = {key: config.section(key) for key in (
+        "source", "extract", "selection", "browser", "http", "session", "updates",
+    )}
+    scope["crawl_scope"] = {
+        key: config.section("crawl").get(key) for key in (
+            "allow_patterns", "deny_patterns", "same_host", "max_depth",
+        )
+    }
+    return hashlib.sha256(json.dumps(scope, sort_keys=True, default=str).encode("utf-8")).hexdigest()
 
 # Pipeline 四阶段权重（归一化后即 10% / 40% / 30% / 20%）
 _PIPELINE_STAGES = (
@@ -135,7 +148,11 @@ class _PipelineRun(_PipelineBase):
                 run_id,
                 "setup",
                 "setup",
-                {"resume": resume, "retry_failed": retry_failed},
+                {
+                    "resume": resume, "retry_failed": retry_failed,
+                    "revisit_completed": reset_all or reset_api_pagination,
+                    "comparison_scope": _comparison_scope(self.config),
+                },
             )
             self.metrics.record_stage("setup", time.monotonic() - setup_started)
         except Exception as exc:
@@ -495,6 +512,10 @@ class _PipelineRun(_PipelineBase):
             prepared.append((row, path))
 
         reset = self.state.reset_record_stage(run_id)
+        setup = (self.state.checkpoint(run_id, "setup", "setup") or {}).get("payload", {})
+        self.state.save_checkpoint(run_id, "setup", "setup", {
+            **setup, "comparison_scope": _comparison_scope(self.config),
+        })
         self.state.add_audit_event(
             "reprocess_records_started", run_id=run_id, actor="local-user",
             details={"responses": len(prepared), "reset": reset},

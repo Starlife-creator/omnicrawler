@@ -80,10 +80,12 @@ S3、OpenSearch 与 PostgreSQL SDK 在调用前经过同一出口策略和预算
 | INV-005 | 人工修改不伪装为原始抽取 | 修订表与审计事件独立于原始记录 | `test_quality_review.py` 人工编辑审计测试 |
 | INV-006 | 配置迁移保留未知字段 | 深合并、迁移与 GUI 往返保留扩展段 | `test_migrations.py`、`test_compatibility_v112.py` |
 | INV-007 | 非幂等导出不重复提交 | `export_commits` 提交锁和稳定幂等键 | `test_run_reliability_v120.py` |
-| INV-008 | 记录消失只在**完整运行之间**确认（后一次运行未完成则降级为「待确认」） | `review.run_compare.compare_runs` 的 `removed` / `possibly_removed` | `test_run_compare_deletions.py` |
+| INV-008 | 按实际观察快照比较；仅同范围且覆盖可验证的完整采集确认删除，增量交付为空不代表站点为空；缺失覆盖降级为「待确认」 | `review.run_compare.compare_runs` 的 `removed` / `possibly_removed` / `deletion_confirmation_reasons` | `test_run_compare_deletions.py`、`test_run_compare_incremental_snapshot.py` |
 | INV-009 | 状态机、故障注入验证全部规则 | 七态穷举、崩溃恢复、预算/熔断/插件越权测试 | `test_run_reliability_v120.py`、`test_egress_v120.py` |
 
-> **2026-09-13 纠偏说明（INV-004 / INV-008）**：这两行的证据此前写作
+> **2026-10-02 高级验收纠偏（INV-008）**：此前仅以 succeeded 判断完整，导致相同内容在增量跳过提取后被误报删除。现比较每次请求的观察快照，检查预算、剩余队列、错误、范围与续跑；旧数据库缺少观察证据时不确认删除。304 无响应体可复用已有实体，但不能据此证明发现链完整，删除保持待确认。普通增量导出仍只交付本次新增提取；历史原始数据不回填为本轮新增数据。
+
+> **2026-09-13 纠偏说明（INV-004 / INV-008，历史背景）**：这两行的证据此前写作
 > `test_v110_features.py`，但**该测试文件在全仓不存在**（同时核对确认），
 > 属"声明引用了不存在证据"。本次按实际实现重写：
 >

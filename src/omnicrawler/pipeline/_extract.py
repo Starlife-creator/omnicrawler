@@ -88,6 +88,11 @@ class _PipelineExtract(_PipelineBase):
             else True
         )
 
+        if result.status == 304:
+            # A conditional response has no body: never interpret it as an empty page.
+            self.state.reuse_record_observation(run_id, result)
+            return
+
         # S4.5 P3#136：choose_processor 只调一次（binary 判定与提取选择共用）
         processor_name = extractors.choose_processor(result)
         is_binary = processor_name == "binary"
@@ -106,14 +111,17 @@ class _PipelineExtract(_PipelineBase):
                     return
             path = self._save_artifact(result)
             self.state.save_artifact(run_id, result, path)
+            self.state.save_record_observation(run_id, result, [])
             return
 
         if not changed and self.config.section("incremental").get("skip_unchanged", True):
             # 未变化只表示无需重复提取，不表示无需重建发现链。游标 API 的派生
             # 请求会在新周期清理；若在这里提前返回，种子未变化时后续页永远不再
             # 访问。普通 HTML 发现到的既有 URL 仍由 frontier 指纹去重。
-            self._enqueue_discovered(result, maximum_depth, discover=discover)
-            return
+            if self.state.reuse_record_observation(run_id, result):
+                self._enqueue_discovered(result, maximum_depth, discover=discover)
+                return
+            # Older databases or changed extraction scopes need one fresh extraction.
 
         # === Stage: Extract ===
         # B-2 闸门：逐 URL 模板强制覆盖（source.seed_template_overrides）。
@@ -238,6 +246,7 @@ class _PipelineExtract(_PipelineBase):
                 if observation and observation.invalidated:
                     LOGGER.warning("Template invalidated for %s: %s", result.final_url, observation.suggestions)
                 self.state.save_records(run_id, result.request, outcome.records)
+                self.state.save_record_observation(run_id, result, outcome.records)
                 if persist_response:
                     self.regression_library.capture(
                         result, records=len(outcome.records), processor=processor_name

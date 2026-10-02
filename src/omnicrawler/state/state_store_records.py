@@ -33,6 +33,53 @@ class RecordsMixin:
         @staticmethod
         def _require_run_id(run_id: str | None) -> str | None: ...
         def add_audit_event(self, *args: Any, **kwargs: Any) -> Any: ...
+        def checkpoint(self, run_id: str, stage: str, idempotency_key: str) -> dict[str, Any] | None: ...
+        def save_checkpoint(
+            self, run_id: str, stage: str, idempotency_key: str, payload: dict[str, Any],
+            *, status: str = "succeeded",
+        ) -> None: ...
+
+    def save_record_observation(
+        self, run_id: str, result: FetchResult, records: list[ExtractedRecord],
+    ) -> None:
+        """Keep a per-request snapshot independently of incremental delivery."""
+        self.save_checkpoint(run_id, "record_observation", result.request.fingerprint, {
+            "content_sha256": result.content_hash,
+            "final_url": result.final_url,
+            "records": [
+                {"source_url": r.source_url, "record_type": r.record_type, "data": r.data}
+                for r in records
+            ],
+        })
+
+    def reuse_record_observation(self, run_id: str, result: FetchResult) -> bool:
+        """Reuse only a matching observed response under the same extraction scope."""
+        setup = (self.checkpoint(run_id, "setup", "setup") or {}).get("payload", {})
+        scope = setup.get("comparison_scope")
+        if not scope:
+            return False
+        with self._lock:
+            response = self.conn.execute(
+                "SELECT content_sha256 FROM responses WHERE run_id=? AND request_fingerprint=? "
+                "ORDER BY id DESC LIMIT 1", (run_id, result.request.fingerprint),
+            ).fetchone()
+            row = self.conn.execute(
+                "SELECT run_id, payload_json FROM stage_checkpoints "
+                "WHERE stage='record_observation' AND idempotency_key=? AND run_id<>? "
+                "ORDER BY updated_at DESC, rowid DESC LIMIT 1",
+                (result.request.fingerprint, run_id),
+            ).fetchone()
+        if row is None:
+            return False
+        previous_setup = (self.checkpoint(row["run_id"], "setup", "setup") or {}).get("payload", {})
+        payload = json.loads(row["payload_json"])
+        if (previous_setup.get("comparison_scope") != scope
+                or payload.get("content_sha256") != (response["content_sha256"] if response else result.content_hash)
+                or payload.get("final_url") != result.final_url):
+            return False
+        self.save_checkpoint(run_id, "record_observation", result.request.fingerprint, payload)
+        return True
+
     def save_response(self, run_id: str, result: FetchResult, raw_path: str | None) -> bool:
         self._require_run_id(run_id)
         now = utcnow()
@@ -279,5 +326,8 @@ class RecordsMixin:
             self.conn.execute("DELETE FROM records WHERE run_id=?", (run_id,))
             self.conn.execute("DELETE FROM quality_stats WHERE run_id=?", (run_id,))
             self.conn.execute("DELETE FROM semantic_changes WHERE run_id=?", (run_id,))
+            self.conn.execute(
+                "DELETE FROM stage_checkpoints WHERE run_id=? AND stage='record_observation'", (run_id,),
+            )
             self.conn.execute("DELETE FROM record_versions WHERE run_id=?", (run_id,))
         return {"records": int(record_count), "quality_stats": int(quality_count)}

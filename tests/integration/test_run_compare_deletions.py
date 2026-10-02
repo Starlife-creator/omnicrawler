@@ -26,7 +26,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawler.core.models import CrawlRequest, ExtractedRecord
+import pytest
+
+from omnicrawler.core.models import CrawlRequest, ExtractedRecord, FetchResult
 from omnicrawler.review.run_compare import compare_runs
 from omnicrawler.state import StateStore
 
@@ -95,3 +97,124 @@ def test_same_title_different_identity_is_not_merged(tmp_path: Path) -> None:
     assert report["added"] == 1, f"id=2 应视为新增：{report}"
     assert report["removed"] == 1, f"id=1 应视为移除：{report}"
     assert report["modified"] == 0, f"同名不同身份不应被当成同一条的修改：{report}"
+
+
+def _observed_run(state: StateStore, records: list[ExtractedRecord], body: bytes, scope: str = "same") -> str:
+    run_id = state.start_run("compare", "config.yaml")
+    state.save_checkpoint(run_id, "setup", "setup", {"comparison_scope": scope})
+    response = FetchResult(_REQUEST, _URL, 200, {"content-type": "application/json"}, body, 0)
+    state.save_response(run_id, response, None)
+    state.save_records(run_id, _REQUEST, records)
+    state.save_record_observation(run_id, response, records)
+    state.finish_run(run_id, "succeeded", {})
+    return run_id
+
+
+def test_unchanged_response_preserves_snapshot_without_new_delivery(tmp_path: Path) -> None:
+    with StateStore(tmp_path / "state.sqlite3") as state:
+        first = _observed_run(state, [_record(1, "A"), _record(2, "B")], b"same")
+        second = state.start_run("compare", "config.yaml")
+        state.save_checkpoint(second, "setup", "setup", {"comparison_scope": "same"})
+        response = FetchResult(_REQUEST, _URL, 200, {}, b"same", 0)
+        assert state.save_response(second, response, None) is False
+        assert state.reuse_record_observation(second, response)
+        state.finish_run(second, "succeeded", {})
+        assert not state.rows("SELECT 1 FROM records WHERE run_id=?", (second,))
+        report = compare_runs(state, first, second)
+        assert report["changes"] == []
+        assert report["deletion_confirmation_reasons"] == []
+        # A later real disappearance must not be hidden by cumulative history.
+        third = _observed_run(state, [_record(1, "A")], b"changed")
+        assert compare_runs(state, second, third)["removed"] == 1
+        assert compare_runs(state, first, second)["changes"] == []
+
+
+def test_observed_empty_page_confirms_real_deletion(tmp_path: Path) -> None:
+    with StateStore(tmp_path / "state.sqlite3") as state:
+        first = _observed_run(state, [_record(1, "A")], b"before")
+        second = _observed_run(state, [], b"[]")
+        assert compare_runs(state, first, second)["removed"] == 1
+
+
+@pytest.mark.parametrize("summary", [
+    {"export": {"delivery": {"budget_exhausted": True, "frontier_pending": 1}}},
+    {"frontier": {"failed": 1}},
+    {"errors": 1},
+])
+def test_successful_but_incomplete_collection_cannot_confirm_deletion(tmp_path: Path, summary: dict) -> None:
+    with StateStore(tmp_path / "state.sqlite3") as state:
+        first = _observed_run(state, [_record(1, "A"), _record(2, "B")], b"before")
+        second = _observed_run(state, [_record(1, "A")], b"after")
+        state.finish_run(second, "succeeded", summary)
+        report = compare_runs(state, first, second)
+        assert report["removed"] == 0
+        assert report["possibly_removed"] == 1
+        assert report["deletion_confirmation_reasons"]
+
+
+def test_scope_change_forces_extraction_and_prevents_confirming_deletion(tmp_path: Path) -> None:
+    with StateStore(tmp_path / "state.sqlite3") as state:
+        first = _observed_run(state, [_record(1, "A"), _record(2, "B")], b"same")
+        second = state.start_run("compare", "config.yaml")
+        state.save_checkpoint(second, "setup", "setup", {"comparison_scope": "changed"})
+        response = FetchResult(_REQUEST, _URL, 200, {}, b"same", 0)
+        assert not state.reuse_record_observation(second, response)
+        state.save_response(second, response, None)
+        state.save_record_observation(second, response, [_record(1, "A")])
+        state.finish_run(second, "succeeded", {})
+        report = compare_runs(state, first, second)
+        assert report["removed"] == 0
+        assert "scope_changed_or_unknown" in report["deletion_confirmation_reasons"]
+
+
+def test_legacy_incremental_run_without_observations_is_not_confirmed_empty(tmp_path: Path) -> None:
+    with StateStore(tmp_path / "state.sqlite3") as state:
+        first = _run(state, [_record(1, "A")])
+        state.finish_run(first, "succeeded", {})
+        second = state.start_run("compare", "config.yaml")
+        state.save_response(second, FetchResult(_REQUEST, _URL, 200, {}, b"same", 0), None)
+        state.finish_run(second, "succeeded", {})
+        report = compare_runs(state, first, second)
+        assert report["removed"] == 0
+        assert report["possibly_removed"] == 1
+        assert "observations_unverified" in report["deletion_confirmation_reasons"]
+
+
+def test_reset_record_stage_discards_stale_observations(tmp_path: Path) -> None:
+    with StateStore(tmp_path / "state.sqlite3") as state:
+        run_id = _observed_run(state, [_record(1, "A")], b"same")
+        state.reset_record_stage(run_id)
+        assert not state.checkpoint(run_id, "record_observation", _REQUEST.fingerprint)
+
+
+def test_conditional_response_reuses_data_but_cannot_prove_discovery_coverage(tmp_path: Path) -> None:
+    with StateStore(tmp_path / "state.sqlite3") as state:
+        first = _observed_run(state, [_record(1, "A")], b"same")
+        second = state.start_run("compare", "config.yaml")
+        state.save_checkpoint(second, "setup", "setup", {"comparison_scope": "same"})
+        response = FetchResult(_REQUEST, _URL, 304, {}, b"", 0)
+        state.save_response(second, response, None)
+        assert state.reuse_record_observation(second, response)
+        state.finish_run(second, "succeeded", {})
+        report = compare_runs(state, first, second)
+        assert report["changes"] == []
+        assert "conditional_response_coverage_unverified" in report["deletion_confirmation_reasons"]
+
+
+def test_pages_not_revisited_and_partial_resume_cannot_confirm_deletion(tmp_path: Path) -> None:
+    with StateStore(tmp_path / "state.sqlite3") as state:
+        first = _observed_run(state, [_record(1, "A")], b"first")
+        other_request = CrawlRequest("https://example.org/page/2")
+        other = FetchResult(other_request, other_request.url, 200, {}, b"other", 0)
+        state.save_response(first, other, None)
+        state.save_record_observation(first, other, [_record(2, "B")])
+        second = _observed_run(state, [_record(1, "A")], b"second")
+        report = compare_runs(state, first, second)
+        assert report["removed"] == 0
+        assert "previous_pages_not_revisited" in report["deletion_confirmation_reasons"]
+        state.save_checkpoint(second, "setup", "setup", {
+            "comparison_scope": "same", "resume": True, "revisit_completed": True,
+        })
+        report = compare_runs(state, first, second)
+        assert report["removed"] == 0
+        assert "partial_resume" in report["deletion_confirmation_reasons"]
