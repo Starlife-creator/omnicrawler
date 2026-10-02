@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QUrl, Slot
+from PySide6.QtCore import QTimer, QUrl, Slot
 from PySide6.QtGui import QCloseEvent, QDesktopServices
 
 from ..i18n import _
@@ -33,6 +33,7 @@ if TYPE_CHECKING:
         QWidget,
     )
 
+    from .pdf_workbench_scan import _PdfScanWorker
     from .pdf_workbench_worker import _PdfPipelineWorker
 
     # 类型检查期把宿主视作 QWidget；运行期仍为 object，不改变 PdfWorkbenchView 的 MRO。
@@ -49,6 +50,10 @@ class PdfResultMixin(_Base):
     _pdf_files: list[Path]
     _temp_dir: str | None
     _worker: _PdfPipelineWorker | None
+    _scan_worker: _PdfScanWorker | None
+    _close_requested: bool
+    _scan_status: QLabel
+    _directory_group: QWidget
     _progress_bar: QProgressBar
     _stage_label: QLabel
     _result_group: QGroupBox
@@ -98,17 +103,33 @@ class PdfResultMixin(_Base):
     @Slot(object)
     def closeEvent(self, event: QCloseEvent) -> None:
         """S1.1.5：关闭前取消并等待 PDF 后台线程，避免 QThread 销毁时仍在运行。"""
+        self._close_requested = True
+        running = False
+        if self._scan_worker is not None and self._scan_worker.isRunning():
+            self._scan_worker.requestInterruption()
+            running = True
         worker = getattr(self, "_worker", None)
         if worker is not None and worker.isRunning():
             worker.cancel()
             worker.requestInterruption()
-            worker.wait(5000)
-            self._clear_injected_env()
+            running = True
+        if running:
+            event.ignore()
+            return
+        self._clear_injected_env()
         self._state = "idle"
         super().closeEvent(event)
 
+    @Slot()
+    def _finish_close_if_idle(self) -> None:
+        if self._close_requested and not any(
+            worker is not None and worker.isRunning() for worker in (self._scan_worker, self._worker)
+        ):
+            QTimer.singleShot(0, self.close)
+
     def _on_done(self, result: object) -> None:
         self._clear_injected_env()
+        self._directory_group.setEnabled(True)
         self._state = "done"
         self._progress_bar.setValue(100)
         # S2.3.4：部分阶段失败不得显示"全部完成"
@@ -183,6 +204,7 @@ class PdfResultMixin(_Base):
     @Slot(str)
     def _on_failed(self, msg: str) -> None:
         self._clear_injected_env()
+        self._directory_group.setEnabled(True)
         self._state = "idle"
         self._progress_bar.setVisible(False)
         self._stage_label.setVisible(False)
@@ -202,6 +224,11 @@ class PdfResultMixin(_Base):
 
     @Slot()
     def _cancel(self) -> None:
+        if self._scan_worker is not None and self._scan_worker.isRunning():
+            self._scan_worker.requestInterruption()
+            self._scan_status.setText(_("正在取消扫描..."))
+            self._cancel_btn.setEnabled(False)
+            return
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
             self._stage_label.setText(_("正在取消..."))
@@ -211,6 +238,7 @@ class PdfResultMixin(_Base):
             # closeEvent 路径保留有界 wait（析构顺序需要确定性，属文档允许的例外）。
             def _on_cancel_finished() -> None:
                 self._clear_injected_env()
+                self._directory_group.setEnabled(True)
                 self._stage_label.setText(_("已取消"))
                 self._cancel_btn.setEnabled(True)
                 self._cancel_btn.setVisible(False)
@@ -250,7 +278,10 @@ class PdfResultMixin(_Base):
 
     @Slot()
     def _reset(self) -> None:
+        if self._scan_worker is not None or (self._worker is not None and self._worker.isRunning()):
+            return
         self._state = "idle"
+        self._directory_group.setEnabled(True)
         self._result_group.setVisible(False)
         self._progress_bar.setVisible(False)
         self._progress_bar.setValue(0)

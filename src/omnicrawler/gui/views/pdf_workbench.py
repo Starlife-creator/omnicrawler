@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -37,7 +38,7 @@ from .pdf_workbench_logic import (
     _collect_failures as _collect_failures,
 )
 from .pdf_workbench_result import PdfResultMixin
-from .pdf_workbench_scan import PdfScanMixin
+from .pdf_workbench_scan import PdfScanMixin, _PdfScanWorker
 from .pdf_workbench_worker import _PdfPipelineWorker
 
 
@@ -59,6 +60,8 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
         self._state = "idle"          # idle | scanning | ready | running | done
         self._pdf_files: list[Path] = []
         self._worker: _PdfPipelineWorker | None = None
+        self._scan_worker: _PdfScanWorker | None = None
+        self._close_requested = False
         self._temp_dir: str | None = None
 
         self._setup_ui()
@@ -66,6 +69,13 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
         ThemeManager.instance().theme_changed.connect(self._apply_style)
 
     # ── UI 搭建 ────────────────────────────────────────────────
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 - Qt override
+        if not any(
+            worker is not None and worker.isRunning() for worker in (self._scan_worker, self._worker)
+        ):
+            self._close_requested = False
+        super().showEvent(event)
+
     def set_pending_request(self, request: str) -> None:
         """接收首页自然语言入口带来的需求原文（§A-27）。
 
@@ -94,6 +104,7 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
 
         # ── 区域 1: 目录选择 ──
         dir_group = QGroupBox(_("1. 选择 PDF 目录"))
+        self._directory_group = dir_group
         dir_layout = QVBoxLayout(dir_group)
         dir_layout.setSpacing(8)
 
@@ -290,6 +301,8 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
     # ── 执行 ───────────────────────────────────────────────────
     @Slot()
     def _execute(self) -> None:
+        if self._scan_worker is not None or self._close_requested:
+            return
         if self._state != "ready" or not self._pdf_files:
             return
 
@@ -315,6 +328,7 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
                 run_ocr = False
 
         self._state = "running"
+        self._directory_group.setEnabled(False)
         self._execute_btn.setVisible(False)
         self._cancel_btn.setVisible(True)
         self._scan_btn.setEnabled(False)
@@ -382,6 +396,7 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
         self._worker.document_progress.connect(self._on_document_progress)
         self._worker.all_done.connect(self._on_done)
         self._worker.failed.connect(self._on_failed)
+        self._worker.finished.connect(self._finish_close_if_idle)
         self._worker.start()
 
     def _confirm_pdf_ai_egress(self) -> bool:

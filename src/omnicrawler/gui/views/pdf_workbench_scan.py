@@ -16,10 +16,11 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtWidgets import QFileDialog, QListWidgetItem
 
+from ..core.background_worker import BackgroundWorker
 from ..i18n import _
 from ..widgets.toast import ToastManager
 
@@ -39,6 +40,21 @@ else:
     _Base = object
 
 
+class _PdfScanWorker(BackgroundWorker):
+    def __init__(self, root: Path, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._root = root
+
+    def work(self) -> list[Path]:
+        files = []
+        for path in self._root.rglob("*"):
+            if self.isInterruptionRequested():
+                return []
+            if path.suffix.lower() == ".pdf" and path.is_file():
+                files.append(path)
+        return sorted(files)
+
+
 class PdfScanMixin(_Base):
     """拖放与扫描域：文件入口、拖放暂存与后台扫描。"""
 
@@ -52,6 +68,12 @@ class PdfScanMixin(_Base):
     _file_list: QListWidget
     _file_count_label: QLabel
     _execute_btn: QPushButton
+    _scan_worker: _PdfScanWorker | None
+    _close_requested: bool
+    _directory_group: QWidget
+    _cancel_btn: QPushButton
+    if TYPE_CHECKING:
+        def _finish_close_if_idle(self) -> None: ...
     @Slot()
     def _browse_dir(self) -> None:
         path = QFileDialog.getExistingDirectory(self, _("选择 PDF 目录"))
@@ -145,6 +167,9 @@ class PdfScanMixin(_Base):
 
     def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802 — Qt 命名
         """拖入目录 → 直接扫描；拖入 PDF 文件 → 暂存后扫描。"""
+        if self._state in {"scanning", "running"}:
+            event.ignore()
+            return
         pdf_files: list[Path] = []
         dir_dropped: Path | None = None
         for url in event.mimeData().urls():
@@ -176,6 +201,8 @@ class PdfScanMixin(_Base):
 
     @Slot()
     def _scan_directory(self) -> None:
+        if self._scan_worker is not None or self._state == "running" or self._close_requested:
+            return
         dir_path = self._dir_input.text().strip()
         if not dir_path:
             self._scan_status.setText(_("请先选择或输入目录路径"))
@@ -187,27 +214,29 @@ class PdfScanMixin(_Base):
             return
 
         self._state = "scanning"
+        self._pdf_files = []
+        self._file_list.clear()
+        self._execute_btn.setEnabled(False)
+        self._directory_group.setEnabled(False)
+        self._cancel_btn.setVisible(True)
+        self._cancel_btn.setEnabled(True)
         self._scan_btn.setEnabled(False)
         self._scan_status.setText(_("正在扫描..."))
 
         # S3.1.1：目录扫描移入后台线程（大目录 rglob 不冻结界面）
-        from ..core.background_worker import BackgroundWorker, run_worker
+        worker = _PdfScanWorker(p, parent=self)
+        self._scan_worker = worker
+        worker.succeeded.connect(self._apply_scan_result, Qt.ConnectionType.QueuedConnection)
+        worker.failed.connect(self._apply_scan_error, Qt.ConnectionType.QueuedConnection)
+        worker.interrupted.connect(self._scan_interrupted, Qt.ConnectionType.QueuedConnection)
+        worker.finished.connect(self._scan_finished, Qt.ConnectionType.QueuedConnection)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
 
-        class _ScanWorker(BackgroundWorker):
-            def __init__(self, root: Path, parent: QWidget | None = None) -> None:
-                super().__init__(parent)
-                self._root = root
-
-            def work(self) -> list[Path]:
-                return sorted(self._root.rglob("*.pdf"))
-
-        run_worker(
-            _ScanWorker(p),
-            on_succeeded=self._apply_scan_result,
-            on_failed=lambda error: self._apply_scan_error(error),
-        )
-
+    @Slot(object)
     def _apply_scan_result(self, pdfs: list[Path]) -> None:
+        if self._close_requested:
+            return
         self._pdf_files = pdfs
         self._file_list.clear()
 
@@ -237,10 +266,28 @@ class PdfScanMixin(_Base):
             self._state = "ready"
         self._scan_btn.setEnabled(True)
 
+    @Slot(str)
     def _apply_scan_error(self, error: str) -> None:
+        if self._close_requested:
+            return
         self._scan_status.setText(_(f"扫描失败: {error}"))
         self._state = "idle"
         self._scan_btn.setEnabled(True)
+
+    @Slot()
+    def _scan_interrupted(self) -> None:
+        self._state = "idle"
+        if not self._close_requested:
+            self._scan_status.setText(_("扫描已取消"))
+
+    @Slot()
+    def _scan_finished(self) -> None:
+        self._scan_worker = None
+        self._directory_group.setEnabled(True)
+        self._scan_btn.setEnabled(True)
+        self._cancel_btn.setVisible(False)
+        self._cancel_btn.setEnabled(True)
+        self._finish_close_if_idle()
 
     @staticmethod
     def _format_size(size: int) -> str:
