@@ -196,9 +196,19 @@ class WorkerTaskRunner(QObject):
             elif status == "succeeded":
                 records = int(result.get("records", 0))
                 if records == 0:
-                    self.log_line.emit(
-                        _("任务完成但提取 0 条记录——请检查模板匹配或出网拦截。"), "warn"
-                    )
+                    delivery = result.get("export", {}).get("delivery", {})
+                    cumulative = delivery.get("cumulative_records")
+                    pending = delivery.get("frontier_pending")
+                    if cumulative is not None and int(cumulative) > 0 and pending == 0:
+                        message = _("本次新增 0 条记录；已有累计 {0} 条，当前没有待处理页面。已有成果可在结果页查看或累计导出。").format(cumulative)
+                        level = "info"
+                    elif pending is not None and int(pending) > 0:
+                        message = _("本次新增 0 条记录，仍有 {0} 个页面待处理；请查看运行详情并按需继续。").format(pending)
+                        level = "warn"
+                    else:
+                        message = _("本次新增 0 条记录；请查看试跑结果与运行详情，确认是否符合预期。")
+                        level = "warn"
+                    self.log_line.emit(message, level)
                 self._set_state("succeeded")
                 self.task_finished.emit(self._current_task_id, 0)
             elif status == "cancelled":

@@ -48,6 +48,12 @@ class EgressDisabledError(PolicyBlockedError):
     suggestion = "网络出口已被任务停止或紧急断网开关关闭；确认安全后再恢复任务。"
 
 
+class TaskStoppedError(EgressDisabledError):
+    """A request denied specifically by this task's user stop control."""
+
+    code = "task_stopped"
+
+
 class EgressBudgetExceededError(PolicyBlockedError):
     code = "egress_budget_exceeded"
     suggestion = "任务已达到网络请求、流量、并发、时长或费用预算；请检查任务范围后调整预算。"

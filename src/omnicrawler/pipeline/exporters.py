@@ -377,6 +377,7 @@ def export_all(config: AppConfig, state: StateStore, run_id: str | None = None) 
     frontier_pending = int(frontier.get("pending", 0) or 0)
     configured_budget = int(config.section("crawl").get("max_pages", 100) or 0)
     delivery["frontier_pending"] = frontier_pending
+    delivery["cumulative_records"] = int(state.stats()["records"])
     delivery["budget_exhausted"] = bool(
         frontier_pending > 0 and configured_budget > 0 and pages_visited >= configured_budget
     )

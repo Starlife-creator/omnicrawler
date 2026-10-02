@@ -18,6 +18,7 @@ from ..core.errors import (
     EgressBudgetExceededError,
     EgressDisabledError,
     PolicyBlockedError,
+    TaskStoppedError,
 )
 from ..core.utils import utcnow
 from . import tls_scope
@@ -249,10 +250,12 @@ class EgressBroker:
         return stopped
 
     def _check_switches(self) -> None:
-        if not self.enabled or self._task_disabled.is_set() or self._global_disabled.is_set():
+        if not self.enabled or self._global_disabled.is_set():
             raise EgressDisabledError("网络出口已关闭")
         if self._control_stopped():
-            raise EgressDisabledError("任务已停止，禁止产生新的网络请求")
+            raise TaskStoppedError("任务已停止，禁止产生新的网络请求")
+        if self._task_disabled.is_set():
+            raise EgressDisabledError("网络出口已关闭")
 
     def _check_time_and_cost(self) -> None:
         elapsed = time.monotonic() - self._started

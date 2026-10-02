@@ -238,3 +238,57 @@ def test_repeated_interrupt_still_finalizes_the_run(site, tmp_path: Path, monkey
     with StateStore(_workspace(tmp_path) / "state.sqlite3") as state:
         counts = _frontier(state)
     assert counts == {"done": _TOTAL_REQUESTS}, f"二次中断后有工作永久丢失: {counts}"
+
+
+def test_stop_seen_by_broker_before_main_loop_is_not_a_policy_failure(site, tmp_path, monkeypatch):
+    from omnicrawler.pipeline import Pipeline
+
+    path = _write_config(tmp_path, site)
+    original = Pipeline._fetch_checked
+    injected = threading.Event()
+
+    def fetch(pipeline, run_id, request):
+        if not injected.is_set():
+            injected.set()
+            pipeline.run_control.request_stop()
+            pipeline.egress._check_switches()
+        return original(pipeline, run_id, request)
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(Pipeline, "_fetch_checked", fetch)
+        summary = ApplicationService(path).run()
+    assert injected.is_set()
+    assert summary["status"] == "cancelled"
+    assert summary["export"]["error_center"]["total_errors"] == 0
+    with StateStore(_workspace(tmp_path) / "state.sqlite3") as state:
+        assert _frontier(state) == {"pending": 1}
+    assert ApplicationService(path).run(resume=True)["status"] == "succeeded"
+
+
+def test_real_policy_denial_is_preserved_when_stop_arrives(site, tmp_path, monkeypatch):
+    from omnicrawler.core.errors import EgressDisabledError
+    from omnicrawler.pipeline import Pipeline
+
+    path = _write_config(tmp_path, site)
+
+    def denied(pipeline, run_id, request):
+        pipeline.run_control.request_stop()
+        raise EgressDisabledError("域名未获批准")
+
+    monkeypatch.setattr(Pipeline, "_fetch_checked", denied)
+    summary = ApplicationService(path).run()
+    report = summary["export"]["error_center"]
+    assert report["total_errors"] == 1
+    assert report["groups"][0]["error_type"] == "EgressDisabledError"
+    with StateStore(_workspace(tmp_path) / "state.sqlite3") as state:
+        assert _frontier(state) == {"blocked": 1}
+
+
+def test_completed_rerun_reports_cumulative_delivery(site, tmp_path):
+    path = _write_config(tmp_path, site)
+    first = ApplicationService(path).run()
+    repeat = ApplicationService(path).run()
+    assert first["records"] > 0
+    assert repeat["records"] == 0
+    assert repeat["export"]["delivery"]["cumulative_records"] == first["records"]
+    assert repeat["export"]["delivery"]["frontier_pending"] == 0

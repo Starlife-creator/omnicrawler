@@ -147,3 +147,50 @@ def test_worker_cancelled_is_a_distinct_terminal_state(tmp_path: Path, monkeypat
     assert any("已取消" in text for text in logs), f"应给用户可见提示：{logs}"
     runner._poller.stop()
     app.processEvents()
+
+
+def test_worker_zero_new_records_with_existing_delivery_is_informational(tmp_path, monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from omnicrawler.gui.runner.worker_task_runner import WorkerTaskRunner
+
+    app = QApplication.instance() or QApplication([])
+    runner = WorkerTaskRunner(project_root=tmp_path)
+    backend = _Backend()
+    runner._backend = backend
+    backend.next_status = {
+        "status": "succeeded", "records": 0,
+        "export": {"delivery": {"cumulative_records": 8, "frontier_pending": 0}},
+    }
+    logs = []
+    runner.log_line.connect(lambda text, level: logs.append((text, level)))
+    runner._poll()
+    assert runner.state == "succeeded"
+    assert any("累计 8 条" in text and level == "info" for text, level in logs)
+    assert not any("模板匹配" in text or "出网拦截" in text for text, _ in logs)
+    runner.deleteLater()
+    app.processEvents()
+
+
+def test_worker_zero_new_records_with_pending_frontier_warns(tmp_path, monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from omnicrawler.gui.runner.worker_task_runner import WorkerTaskRunner
+
+    app = QApplication.instance() or QApplication([])
+    runner = WorkerTaskRunner(project_root=tmp_path)
+    backend = _Backend()
+    runner._backend = backend
+    backend.next_status = {
+        "status": "succeeded", "records": 0,
+        "export": {"delivery": {"cumulative_records": 8, "frontier_pending": 3}},
+    }
+    logs = []
+    runner.log_line.connect(lambda text, level: logs.append((text, level)))
+    runner._poll()
+    assert any("3 个页面待处理" in text and level == "warn" for text, level in logs)
+    assert not any("没有待处理" in text for text, _ in logs)
+    runner.deleteLater()
+    app.processEvents()
