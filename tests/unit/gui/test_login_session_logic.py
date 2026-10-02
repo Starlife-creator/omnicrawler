@@ -196,7 +196,9 @@ def test_notice_text_states_all_four_facts(tmp_path: Path) -> None:
     text = notice_text(sessions_dir=str(tmp_path / "sessions"), bridge_enabled=True)
     assert str(tmp_path / "sessions") in text
     assert "0600" in text
-    assert "明文" in text
+    assert "AES-GCM" in text
+    assert "密钥丢失" in text
+    assert "正式加载时迁移" in text
     assert "关闭" in text
     assert "同步" in text
 

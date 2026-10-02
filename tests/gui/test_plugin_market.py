@@ -565,3 +565,33 @@ def test_market_deactivation_keeps_install_but_revokes_project_access(monkeypatc
 
     window.deleteLater()
     QApplication.instance().processEvents()
+
+
+def test_loaded_project_policy_replaces_catalog_trust_and_egress_on_next_operation(tmp_path):
+    view = _make_view(tmp_path)
+    config = _app_config(tmp_path, catalog_url="https://new.example.org/")
+    config.raw["plugins"]["trust_public_key"] = "new-trust"
+    config.raw["http"]["allow_private_network"] = True
+    view.set_app_config(config)
+    view._consume_app_config()
+    assert view._app_config is config
+    assert view._catalog_url == "https://new.example.org/"
+    assert view._trust_source == "new-trust"
+    assert view._catalog_sources[0]["url"] == "https://new.example.org/"
+    assert view._egress.config.section("http")["allow_private_network"]
+
+
+def test_activation_save_keeps_explicitly_selected_local_catalog(tmp_path):
+    view = _make_view(tmp_path)
+    old = _app_config(tmp_path, catalog_url="https://original.example.org/")
+    view.set_app_config(old)
+    view._consume_app_config()
+    view._catalog_url = str(tmp_path / "local-market")
+    view._catalog_sources = []
+    new = _app_config(tmp_path, catalog_url="https://original.example.org/")
+    new.raw["plugins"]["enabled_market_plugins"] = ["community-guide"]
+    view.set_app_config(new)
+    view._consume_app_config()
+    assert view._catalog_url == str(tmp_path / "local-market")
+    assert view._catalog_sources == []
+    assert view._app_config is new

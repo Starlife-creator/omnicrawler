@@ -255,3 +255,36 @@ def test_reverse_assertions(tmp_path: Path) -> None:
     assert session_crypto.open_storage_state is original_open  # 还原
     with pytest.raises(SessionCryptoError):
         session_crypto.open_storage_state(bytes(corrupted), store=store)  # 还原后回绿
+
+
+def test_session_summary_reads_envelope_without_writing_or_revealing_values(tmp_path: Path, monkeypatch) -> None:
+    from omnicrawler.fetching.session_state import summarize_session
+
+    store = _store(tmp_path)
+    monkeypatch.setattr(session_crypto, "_store", lambda ignored: store)
+    path = tmp_path / "account.playwright.json"
+    save_storage_state(_state(), path, store=store)
+    original = path.read_bytes()
+    summary = summarize_session(path)
+    assert summary.readable and summary.cookie_count == 1
+    assert summary.domains == ("example.org",)
+    assert _SECRET not in repr(summary)
+    assert path.read_bytes() == original
+    path.write_text(json.dumps(_state()), encoding="utf-8")
+    legacy = path.read_bytes()
+    assert summarize_session(path).readable
+    assert path.read_bytes() == legacy
+    path.write_bytes(original[:-1] + bytes([original[-1] ^ 1]))
+    assert not summarize_session(path).readable
+
+
+def test_missing_session_key_is_not_created_during_read(tmp_path: Path, monkeypatch) -> None:
+    from omnicrawler.fetching.session_state import summarize_session
+
+    path = tmp_path / "account.playwright.json"
+    save_storage_state(_state(), path, store=_store(tmp_path))
+    missing = _store(tmp_path / "missing")
+    monkeypatch.setattr(session_crypto, "_store", lambda ignored: missing)
+    assert not summarize_session(path).readable
+    assert missing.get(SESSION_KEY_NAME) is None
+    assert not (tmp_path / "missing/secrets.bin").exists()

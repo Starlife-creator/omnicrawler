@@ -82,10 +82,12 @@ def classify_snapshot(blob: bytes) -> str:
     return "envelope" if blob.startswith(SESSION_MAGIC) else "plaintext"
 
 
-def _session_aes_key(store: SecretsStore) -> bytes:
+def _session_aes_key(store: SecretsStore, *, create: bool = True) -> bytes:
     """取（或首次创建）会话加密密钥：32 字节随机数，经 SecretsStore 双轨保管。"""
     raw = store.get(SESSION_KEY_NAME)
     if raw is None:
+        if not create:
+            raise SessionCryptoError("会话加密密钥缺失，请重新登录。")
         raw = base64.b64encode(_random.token_bytes(_KEY_SIZE)).decode("ascii")
         store.set(SESSION_KEY_NAME, raw)
     try:
@@ -130,7 +132,7 @@ def open_storage_state(
     ciphertext = blob[nonce_start + _NONCE_SIZE :]
     if len(nonce) != _NONCE_SIZE or not ciphertext:
         raise SessionCryptoError("storage_state 信封结构不完整。")
-    key = _session_aes_key(_store(store))
+    key = _session_aes_key(_store(store), create=False)
     try:
         plaintext = aesgcm(key).decrypt(nonce, ciphertext, SESSION_MAGIC)
         data = json.loads(zlib.decompress(plaintext).decode("utf-8"))

@@ -1267,6 +1267,7 @@ class MainWindow(QMainWindow):
     def _bind_application_controllers(self) -> None:
         # U3：配置保存/重载后让登录会话页重新取一次配置（含 userspace/session 段改动）
         self._login_session.invalidate()
+        self._plugin_market.set_app_config(self._market_app_config())
         if self._config_path is None:
             self._task_controller = self._run_controller = self._result_controller = None
             return

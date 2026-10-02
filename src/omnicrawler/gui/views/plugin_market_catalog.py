@@ -54,6 +54,7 @@ class MarketCatalogMixin(_Base):
     _local_fallback: Path
     _catalog: dict[str, Any] | None
     _catalog_url: str
+    _catalog_sources: list[dict[str, Any]]
     _dest_root: Path
     _bundled_catalog_dir: str
     _trust_source: str
@@ -70,6 +71,7 @@ class MarketCatalogMixin(_Base):
     # ---- 宿主契约：方法（由 MarketBrowseMixin 提供）----
     if TYPE_CHECKING:
         def _populate_list(self) -> None: ...
+        def _consume_app_config(self) -> None: ...
     def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 - Qt 命名
         super().showEvent(event)
         if not self._auto_loaded:
@@ -77,6 +79,9 @@ class MarketCatalogMixin(_Base):
             self.refresh()
 
     def refresh(self) -> None:
+        if self._state == "loading":
+            return
+        self._consume_app_config()
         if not self._catalog_url and not self._bundled_catalog_dir and not self._local_fallback.is_dir():
             self._set_offline_state(_("未配置 catalog_url，且无本地 OmniCrawler-market/ 回退。"))
             return
@@ -115,6 +120,10 @@ class MarketCatalogMixin(_Base):
 
         from ..widgets.toast import ToastManager
 
+        if self._state == "loading":
+            ToastManager.instance().warning(_("目录加载中，请等待完成后切换来源。"))
+            return
+        self._consume_app_config()
         chosen = QFileDialog.getExistingDirectory(self, _("选择本地市场目录"))
         if not chosen:
             return
@@ -123,6 +132,7 @@ class MarketCatalogMixin(_Base):
             ToastManager.instance().warning(_("所选目录不含 catalog.json，不是有效的市场目录"))
             return
         self._catalog_url = str(root)
+        self._catalog_sources = []
         self._footer.setText(_(f"已切换到本地市场目录：{root}"))
         self.refresh()
 
@@ -137,6 +147,10 @@ class MarketCatalogMixin(_Base):
         from ..widgets.toast import ToastManager
         from .plugin_market_logic import _validate_market_source
 
+        if self._state == "loading":
+            ToastManager.instance().warning(_("目录加载中，请等待完成后切换来源。"))
+            return
+        self._consume_app_config()
         url, ok = QInputDialog.getText(self, _("切换市场源"), _("输入 https:// 市场源地址："))
         if not ok or not url.strip():
             return
@@ -154,6 +168,7 @@ class MarketCatalogMixin(_Base):
         if reply != QMessageBox.StandardButton.Yes:
             return
         self._catalog_url = url.strip()
+        self._catalog_sources = []
         self._footer.setText(_(f"市场源已切换：{self._catalog_url}"))
         self.refresh()
 

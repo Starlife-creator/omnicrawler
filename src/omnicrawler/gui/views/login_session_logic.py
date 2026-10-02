@@ -122,7 +122,7 @@ def session_row(summary: SessionSummary) -> tuple[str, str, str, str]:
     if not summary.readable:
         return (
             summary.account,
-            _("（快照无法解析）"),
+            _("（快照无法解析或解密，请重新登录）"),
             "-",
             format_timestamp(summary.modified_at),
         )
@@ -157,7 +157,7 @@ def notice_text(*, sessions_dir: str, bridge_enabled: bool) -> str:
     lines.append(
         _(
             "保护方式与局限：快照按当前用户权限保存（类 Unix 下 0600），"
-            "内容为明文 JSON；请勿把工作区目录放到同步盘或共享目录。"
+            "内容为 AES-GCM 加密快照；旧明文快照在正式加载时迁移。密钥丢失或快照损坏需重新登录。"
         )
     )
     lines.append(_("你可以随时在本页关闭同步开关，或在这里删除某个已保存的会话。"))

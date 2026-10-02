@@ -22,16 +22,15 @@
 关于内容安全
 ------------
 
-``storage_state`` 目前是**明文 JSON + 0600**，这是《优化方案》§11.1 的**既有裁定**
-（首期靠 0600 + 路径隔离，AES-GCM 包装列 U 线二期，并在用户指南显式声明）。
-本模块只负责**路径**，不读写内容 ⇒ 二期换包装时调用方无感，也不会出现"两处各写一份
-明文存储"的分叉。
+``storage_state`` 由 session_crypto 统一读写 AES-GCM 信封。旧明文 JSON 在正式加载时迁移；
+会话列表只读解密摘要，不迁移、不返回 cookie 值。扩展名仍为 .playwright.json，不能据此
+判断文件内容是 JSON。密钥丢失或快照损坏时需重新登录。
+
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +38,8 @@ from pathlib import Path
 from ..core.config import AppConfig
 from ..core.errors import OmniCrawlError
 from ..core.models import CrawlRequest
+from ..core.secrets_store import SecretsStoreError
+from .session_crypto import SessionCryptoError, load_storage_state
 
 __all__ = [
     "DEFAULT_NAME_FRAGMENT",
@@ -230,8 +231,8 @@ def summarize_session(path: Path) -> SessionSummary:
     domains: tuple[str, ...] = ()
     readable = False
     try:
-        data = json.loads(file_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        data = load_storage_state(file_path, migrate=False)
+    except (OSError, SessionCryptoError, SecretsStoreError):
         data = None
     if isinstance(data, Mapping):
         cookies = data.get("cookies")

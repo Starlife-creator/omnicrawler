@@ -114,8 +114,52 @@ class PluginMarketView(
         self._app_config = app_config
         self._dest_root = base / "plugins_installed"
         self._local_fallback = base.parent / "OmniCrawler-market"
-        self._egress = _market_egress(base, app_config)
+        self._pending_app_config: Any | None = None
+        self._configure_app_config(app_config)
 
+        self._state = "offline"
+        self._catalog: dict[str, Any] | None = None
+        self._selected_id: str | None = None
+        self._enabled_plugin_ids: set[str] = set()
+        self._auto_loaded = False
+        self._catalog_worker: _CatalogWorker | None = None
+        self._listing_worker: _ListingWorker | None = None
+        self._install_worker: _InstallWorker | None = None
+        # 决策四「打开即检测」：已装插件的只读依赖状态（后台填充，缺依赖只画徽标）
+        self._dependency_worker: _DependencyScanWorker | None = None
+        self._dependency_status: dict[str, Any] = {}
+
+        self._setup_ui()
+        self._apply_style()
+        ThemeManager.instance().theme_changed.connect(self._apply_style)
+
+    def set_app_config(self, config: Any) -> None:
+        """Defer changed project policy until the next catalog operation."""
+        current = self._pending_app_config if self._pending_app_config is not None else self._app_config
+        if current is None or self._catalog_policy(current) != self._catalog_policy(config):
+            self._pending_app_config = config
+            self._auto_loaded = False
+        elif self._pending_app_config is not None:
+            self._pending_app_config = config
+        else:
+            self._app_config = config
+
+    @staticmethod
+    def _catalog_policy(config: Any) -> tuple[Any, ...]:
+        plugins = config.section("plugins")
+        return (str(config.root), str(config.workspace), config.section("http"), config.section("egress"),
+                {key: plugins.get(key) for key in ("catalog_url", "catalogs", "trust_public_key", "bundled_catalog_dir")})
+
+    def _consume_app_config(self) -> None:
+        config = self._pending_app_config
+        if config is not None:
+            self._pending_app_config = None
+            self._configure_app_config(config)
+
+    def _configure_app_config(self, app_config: Any | None) -> None:
+        base = self._base
+        self._app_config = app_config
+        self._egress = _market_egress(base, app_config)
         # 目录源与信任根优先取用户项目配置（#74 §4：此前读死内置 DEFAULTS，
         # 用户既换不了镜像、也用不上自己的 http.proxy/egress 设置）；
         # 独立打开市场视图（无项目配置）时退回内置默认。
@@ -143,21 +187,6 @@ class PluginMarketView(
         else:
             self._trust_source = str(base / "configs" / "plugin_trust.pub.pem")
 
-        self._state = "offline"
-        self._catalog: dict[str, Any] | None = None
-        self._selected_id: str | None = None
-        self._enabled_plugin_ids: set[str] = set()
-        self._auto_loaded = False
-        self._catalog_worker: _CatalogWorker | None = None
-        self._listing_worker: _ListingWorker | None = None
-        self._install_worker: _InstallWorker | None = None
-        # 决策四「打开即检测」：已装插件的只读依赖状态（后台填充，缺依赖只画徽标）
-        self._dependency_worker: _DependencyScanWorker | None = None
-        self._dependency_status: dict[str, Any] = {}
-
-        self._setup_ui()
-        self._apply_style()
-        ThemeManager.instance().theme_changed.connect(self._apply_style)
 
     def _open_sources_dialog(self) -> None:
         """打开"市场索引源管理"（#77 Phase 1）；关掉后重新聚合。

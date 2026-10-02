@@ -121,6 +121,9 @@ class _StubHost(QWidget, MarketCatalogMixin, MarketInstallMixin):
     def _update_action_buttons(self, installed: bool | None = None) -> None:
         self.updated_with = installed
 
+    def _consume_app_config(self) -> None:
+        pass
+
     def refresh(self) -> None:  # 覆写真实实现：记录切换后的源，不真拉目录
         self.refresh_calls.append(self._catalog_url)
 
@@ -229,7 +232,9 @@ def test_local_install_valid_dir_switches_source(
         "PySide6.QtWidgets.QFileDialog.getExistingDirectory",
         staticmethod(lambda *a, **k: str(tmp_path)),
     )
+    host._catalog_sources = [{"url": "https://old.example.org/", "trust": "old"}]
     host._on_local_install()
+    assert host._catalog_sources == []
     assert host._catalog_url == str(tmp_path)
     assert host.refresh_calls == [str(tmp_path)]
 
@@ -263,7 +268,9 @@ def test_switch_source_confirms_then_switches(
         "PySide6.QtWidgets.QMessageBox.question",
         staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes),
     )
+    host._catalog_sources = [{"url": "https://old.example.org/", "trust": "old"}]
     host._on_switch_source()
+    assert host._catalog_sources == []
     assert host._catalog_url == "https://market.example.com/"
     assert host.refresh_calls == ["https://market.example.com/"]
 
@@ -299,3 +306,16 @@ def test_switch_source_invalid_url_warns(
     assert "http" in host._toast.last("warning")
     assert host._catalog_url == before
     assert host.refresh_calls == []
+
+
+def test_market_source_switches_do_not_replace_inflight_catalog(host: _StubHost, monkeypatch) -> None:
+    host._state = "loading"
+    host._catalog_sources = [{"url": "https://original.example.org/"}]
+    original = host._catalog_url
+    monkeypatch.setattr("PySide6.QtWidgets.QFileDialog.getExistingDirectory", lambda *a, **k: pytest.fail("source dialog opened during load"))
+    monkeypatch.setattr("PySide6.QtWidgets.QInputDialog.getText", lambda *a, **k: pytest.fail("source dialog opened during load"))
+    host._on_local_install()
+    host._on_switch_source()
+    assert host._catalog_url == original and host._catalog_sources == [{"url": "https://original.example.org/"}]
+    assert not host.refresh_calls
+    assert "加载中" in host._toast.last("warning")
