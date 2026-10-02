@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import logging
+import math
 import re
 import threading
 from collections.abc import Callable
@@ -158,6 +159,11 @@ def _observable_confidence(value: dict[str, Any], pages_by_no: dict[int, Candida
     page = _page_of(value, pages_by_no)
     if method in {"filename_rule", "content_rule"}:
         if value.get("matched_by_pattern"):
+            if method == "content_rule" and page is not None and page.parse_method == "ocr":
+                quality = page.ocr_confidence
+                if quality is None or not math.isfinite(quality) or not 0 <= quality <= 1:
+                    return 0.55
+                return 0.98 * quality
             return 0.98
         # D22：alias 宽松兜底一律低置信（<0.6），进复核
         return 0.55
@@ -270,6 +276,8 @@ def extract_document(
                     "normalized_value": normalized,
                     "unit": unit,
                     "confidence": confidence,
+                    "source_is_ocr": bool(page is not None and page.parse_method == "ocr"),
+                    "source_ocr_confidence": page.ocr_confidence if page is not None else None,
                 }
             record_confidence = sum(confidences) / len(confidences) if confidences else 0.0
             validation = validate_record(config, values, record_confidence)

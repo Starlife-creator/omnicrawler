@@ -3,7 +3,9 @@ from __future__ import annotations
 import concurrent.futures
 import io
 import logging
+import math
 import os
+import re
 import statistics
 import time
 from collections.abc import Callable, Iterable, Iterator
@@ -54,33 +56,76 @@ class PaddleStructureBackend:
         image = self.Image.open(io.BytesIO(png_bytes)).convert("RGB")
         array = self.np.asarray(image)
         output = list(self.pipeline.predict(array))
-        markdown_parts: list[str] = []
-        scores: list[float] = []
+        parts: list[str] = []
+        confidences: list[float | None] = []
         for result in output:
-            markdown = getattr(result, "markdown", {}) or {}
-            markdown_parts.append(str(markdown.get("markdown_texts", "")))
-            result_json = getattr(result, "json", {}) or {}
-            overall = result_json.get("overall_ocr_res", {}) if isinstance(result_json, dict) else {}
-            for score in overall.get("rec_scores", []) or []:
-                try:
-                    scores.append(float(score))
-                except (TypeError, ValueError):
-                    pass
-            # D10：PPStructureV3 的表格 HTML 在 json.res（type=table）中，未进入 markdown_texts 时显式提取
-            res_list = result_json.get("res", []) if isinstance(result_json, dict) else []
-            table_htmls = []
-            for region in res_list:
-                if not isinstance(region, dict) or str(region.get("type", "")).casefold() != "table":
-                    continue
-                html = region.get("res", {})
-                if isinstance(html, dict):
-                    html = html.get("html", "")
-                if isinstance(html, str) and html.strip():
-                    table_htmls.append(html)
-            if table_htmls:
-                markdown_parts.append(_table_html_to_markdown(table_htmls))
-        confidence = statistics.fmean(scores) if scores else None
-        return clean_text("\n".join(markdown_parts)), confidence
+            text, confidence = _paddle_page_text(
+                getattr(result, "json", {}) or {}, getattr(result, "markdown", {}) or {}
+            )
+            parts.append(text)
+            confidences.append(confidence)
+        confidence = min(score for score in confidences if score is not None) if confidences and all(
+            score is not None for score in confidences
+        ) else None
+        return clean_text("\n".join(parts)), confidence
+
+
+def _paddle_page_text(result_json: dict[str, Any], markdown: dict[str, Any]) -> tuple[str, float | None]:
+    """Preserve OCR line boundaries inside text blocks without flattening tables."""
+    payload = result_json.get("res", result_json)
+    if not isinstance(payload, dict):
+        payload = result_json
+    overall = payload.get("overall_ocr_res", {}) or {}
+    texts = overall.get("rec_texts", []) or []
+    boxes = overall.get("rec_boxes", []) or []
+    text = str(markdown.get("markdown_texts", ""))
+    for block in payload.get("parsing_res_list", []) or []:
+        if not isinstance(block, dict) or block.get("block_label") != "text":
+            continue
+        content = str(block.get("block_content", ""))
+        bounds = block.get("block_bbox", [])
+        if not content or len(bounds) != 4 or len(boxes) != len(texts):
+            continue
+        lines = []
+        for line, box in zip(texts, boxes, strict=True):
+            if len(box) != 4:
+                continue
+            x, y = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+            if bounds[0] <= x <= bounds[2] and bounds[1] <= y <= bounds[3]:
+                lines.append(str(line))
+        # Keep Paddle's reading order. Only replace when OCR and layout agree:
+        # a nearby column, equation or table must not contaminate this block.
+        if lines and re.sub(r"\s+", "", "".join(lines)) == re.sub(r"\s+", "", content):
+            text = text.replace(content, "\n".join(lines))
+    if not text.strip() and texts:
+        text = "\n".join(str(line) for line in texts)
+    table_htmls = []
+    for table in payload.get("table_res_list", []) or []:
+        html = table.get("pred_html", "") if isinstance(table, dict) else ""
+        if isinstance(html, str) and html.strip() and html not in text:
+            table_htmls.append(html)
+    # Older Paddle adapters expose regions as res=[{type: table, res: {html: ...}}].
+    regions = result_json.get("res", [])
+    for region in regions if isinstance(regions, list) else []:
+        if isinstance(region, dict) and str(region.get("type", "")).casefold() == "table":
+            html = region.get("res", {})
+            html = html.get("html", "") if isinstance(html, dict) else html
+            if isinstance(html, str) and html.strip() and html not in text:
+                table_htmls.append(html)
+    if table_htmls:
+        text += "\n" + _table_html_to_markdown(table_htmls)
+    scores = []
+    for score in overall.get("rec_scores", []) or []:
+        try:
+            number = float(score)
+        except (TypeError, ValueError):
+            return clean_text(text), None
+        if not math.isfinite(number) or not 0 <= number <= 1:
+            return clean_text(text), None
+        scores.append(number)
+    # A strong line cannot hide an uncertain line on the same source page.
+    confidence = min(scores) if scores and (not texts or len(scores) == len(texts)) else None
+    return clean_text(text), confidence
 
 
 def _table_html_to_markdown(html_parts: list[str]) -> str:

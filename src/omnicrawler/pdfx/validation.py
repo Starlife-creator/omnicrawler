@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -106,6 +108,20 @@ def validate_record(
             invalid = True
         if raw and not value.get("evidence"):
             messages.append(f"字段缺少原文证据：{spec.label}")
+        if raw and value.get("source_is_ocr"):
+            threshold = float(config.validation.get("auto_accept_confidence", 0.90))
+            quality = value.get("source_ocr_confidence")
+            if quality is None or not math.isfinite(float(quality)) or not 0 <= float(quality) <= 1:
+                messages.append(f"OCR 来源置信度未知，需复核：{spec.label}")
+            if float(value.get("confidence", 0.0)) < threshold:
+                messages.append(f"OCR 字段置信度不足，需复核：{spec.label}")
+            if value.get("extraction_method") == "content_rule":
+                other_terms = {
+                    term for other in field_map.values() if other.name != name
+                    for term in other.search_terms if term
+                }
+                if any(re.search(rf"{re.escape(term)}\s*[：:]", str(raw)) for term in other_terms):
+                    messages.append(f"OCR 字段可能串入其他字段，需复核：{spec.label}")
 
     for pair in config.validation.get("required_together", []):
         present = [bool(values.get(name, {}).get("raw_value")) for name in pair]
