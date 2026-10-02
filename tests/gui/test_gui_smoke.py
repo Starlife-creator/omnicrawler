@@ -286,3 +286,37 @@ def test_export_thread_xlsx_escapes_formula_injection(tmp_path, monkeypatch):
     values = [cell for row in workbooks[0].active.cells for cell in row]
     assert "'=SUM(A1:A2)" in values
     assert "plain" in values
+
+
+def test_editor_toolbar_works_from_monitor_home_and_results(monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    from omnicrawler.gui.core.config_serializer import to_yaml
+    from omnicrawler.gui.main import MainWindow, NavIndex
+
+    monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    original = to_yaml(window._config)
+    try:
+        for page in (NavIndex.MONITOR, NavIndex.HOME, NavIndex.RESULTS):
+            window._nav.setCurrentRow(page)
+            window._toggle_workspace_editor()
+            assert window._nav.currentRow() == NavIndex.YAML_EDITOR
+            assert window._toggle_btn.text() == "⇄ 工作台"
+            assert to_yaml(window._config) == original
+            window._toggle_workspace_editor()
+            assert window._nav.currentRow() == NavIndex.WORKSPACE
+            assert window._toggle_btn.text() == "⇄ 编辑器"
+        # Navigation remains available while the worker owns its saved run copy;
+        # merely opening the editor must not change that copy or current draft.
+        window._task_runner._state = "running"
+        window._nav.setCurrentRow(NavIndex.MONITOR)
+        window._toggle_workspace_editor()
+        assert window._nav.currentRow() == NavIndex.YAML_EDITOR
+        assert to_yaml(window._config) == original
+    finally:
+        window._task_runner._state = "idle"
+        window.close()
+        window.deleteLater()
+        app.processEvents()

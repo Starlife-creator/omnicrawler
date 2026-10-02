@@ -137,3 +137,42 @@ def test_exception_details_outside_except_preserve_traceback_and_redact(app, mon
             assert "secret123" not in value
     finally:
         owner.deleteLater()
+
+
+def test_home_version_matches_running_application(app, monkeypatch):
+    import importlib.metadata
+
+    from PySide6.QtWidgets import QLabel
+
+    from omnicrawler._version import __version__
+    from omnicrawler.gui.home import AmbientHero, _package_version
+
+    monkeypatch.setattr(importlib.metadata, "version", lambda name: "0.12.0")
+    assert _package_version() == __version__
+    hero = AmbientHero()
+    assert __version__ in hero.findChild(QLabel, "eyebrow").text()
+    hero.deleteLater()
+
+
+def test_home_small_window_keeps_actions_separate_and_scrollable(app):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtWidgets import QFrame
+
+    home = HomePage()
+    home.resize(780, 540)
+    home.show()
+    try:
+        app.processEvents()
+        assert home._scroll.verticalScrollBar().maximum() > 0
+        card = home.findChild(QFrame, "quickTaskCard")
+        input_bottom = home.task_input.mapTo(card, QPoint(0, home.task_input.height())).y()
+        create_top = home.create_button.mapTo(card, QPoint(0, 0)).y()
+        assert input_bottom < create_top
+        home._scroll.ensureWidgetVisible(home.create_button)
+        app.processEvents()
+        viewport = home._scroll.viewport()
+        point = home.create_button.mapTo(viewport, home.create_button.rect().center())
+        assert viewport.rect().contains(point)
+    finally:
+        home.close()
+        home.deleteLater()

@@ -1166,6 +1166,10 @@ class MainWindow(QMainWindow):
         if page is None:
             return
         self._page_transition.show(page)
+        if hasattr(self, "_toggle_btn"):
+            self._toggle_btn.setText(
+                _("⇄ 工作台") if index == NavIndex.YAML_EDITOR else _("⇄ 编辑器")
+            )
         if page == 1:
             self._yaml_editor.update_from_config(self._config)
         elif page == 3:
@@ -1250,12 +1254,12 @@ class MainWindow(QMainWindow):
         ——用户看到的是「停在『任务工作台』但内容是 YAML 编辑器」。改为走导航
         （`_nav.setCurrentRow`），由 `_on_nav_changed` 统一负责页面切换与编辑器回填。
         """
-        if self._stack.currentIndex() == 1:
-            self._nav.setCurrentRow(NavIndex.WORKSPACE)
-            self._toggle_btn.setText(_("⇄ 编辑器"))
-        elif self._stack.currentIndex() == 0:
-            self._nav.setCurrentRow(NavIndex.YAML_EDITOR)
-            self._toggle_btn.setText(_("⇄ 工作台"))
+        target = (
+            NavIndex.WORKSPACE
+            if self._nav.currentRow() == NavIndex.YAML_EDITOR
+            else NavIndex.YAML_EDITOR
+        )
+        self._nav.setCurrentRow(target)
 
     def _bind_application_controllers(self) -> None:
         # U3：配置保存/重载后让登录会话页重新取一次配置（含 userspace/session 段改动）

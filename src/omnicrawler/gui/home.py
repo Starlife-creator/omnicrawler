@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.metadata
 import logging
 import math
 from typing import cast
@@ -14,13 +13,16 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
+from .._version import __version__
 from ..services.natural_language_task import compile_natural_language
 from ..services.ux_service import QuickTaskDraft, draft_quick_task
 from .core.run_states import state_label
@@ -87,13 +89,8 @@ class _AIEnrichWorker(QThread):
 
 
 def _package_version() -> str:
-    """动态读取包版本号。"""
-    try:
-        return importlib.metadata.version("omnicrawler-platform")
-    except Exception:
-        # A16：回退用 omnicrawler.__version__，不再硬编码 "2.7"
-        from .._version import __version__
-        return __version__
+    """Use the running application's version, including source checkouts."""
+    return __version__
 
 
 class AmbientHero(QWidget):
@@ -192,7 +189,19 @@ class HomePage(QWidget):
         self._enrich_request_current = False
         self.setObjectName("homePage")
         self.setAccessibleName(_("OmniCrawler 首页"))
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self._scroll = QScrollArea(self)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setAccessibleName(_("首页内容"))
+        content = QWidget()
+        self._scroll.setWidget(content)
+        outer.addWidget(self._scroll)
+        layout = QVBoxLayout(content)
+        # Prevent compression below the controls' content size; smaller windows
+        # scroll instead of overlapping input, examples and task actions.
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         # V2：页边距与区块间距走令牌刻度（原 32/24/32/24 + 14 是散落的裸数字）
         layout.setContentsMargins(
             SPACING["xxl"], SPACING["xl"], SPACING["xxl"], SPACING["xl"]
