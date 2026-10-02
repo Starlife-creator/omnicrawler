@@ -2005,6 +2005,27 @@ def analyze_to_config(
 
 # ── CLI ────────────────────────────────────────────────────────────────
 
+def _analysis_browser_reason(result: Any) -> str:
+    from ..extraction.extractors import decode_body
+    from ..fetching.routing import needs_browser
+
+    browser, reason = needs_browser(result)
+    if browser:
+        return reason
+    if "html" not in result.content_type and result.content_type:
+        return ""
+    html = decode_body(result)
+    if not re.search(r"<script\b", html, re.I):
+        return ""
+    analysis = analyze_page(html, result.final_url)
+    top = analysis.patterns[0] if analysis.patterns else None
+    if analysis.page_type not in {"detail", "table"} and (
+        top is None or top.count < 3 or _is_chrome_path(top.css_path)
+    ):
+        return "静态内容未形成可用业务列表，存在脚本，需浏览器补充确认"
+    return ""
+
+
 def _build_probe_config(url: str) -> Any:
     """为自动分析构造一份最小可用的 AppConfig（不写盘、只读）。"""
     from ..core.config import AppConfig
@@ -2036,39 +2057,15 @@ def _fetch_html(url: str) -> tuple[str, str]:
     用户只看到一屏第三方库的源码堆栈。自有栈是产品承诺的"本地自主"路径，
     理应是一等公民而非依赖外部库。
     """
-    from ..core.models import CrawlRequest
+    from ..extraction.extractors import decode_body
+    from ..fetching.page_probe import fetch_analysis_page
 
-    config = _build_probe_config(url)
-    request = CrawlRequest(url=url, render=False)
-
-    errors: list[str] = []
-    try:
-        from ..fetching.http_client import HTTPFetcher
-
-        fetcher = HTTPFetcher(config)
-        result = fetcher.fetch(request)
-        body = result.body.decode("utf-8", "replace")
-        content_type = result.content_type
-        if body.strip() and (result.status < 400):
-            return body, content_type
-        errors.append(f"HTTP 栈返回状态 {result.status} / 内容长度 {len(body)}")
-    except Exception as exc:  # noqa: BLE001 —— 逐级降级，错误汇总后统一上报
-        errors.append(f"HTTP 栈失败: {type(exc).__name__}: {exc}")
-
-    try:
-        from ..fetching.browser_fetcher import BrowserFetcher
-
-        render_request = CrawlRequest(url=url, render=True)
-        with BrowserFetcher(config) as browser:
-            result = browser.fetch(render_request)
-        body = result.body.decode("utf-8", "replace")
-        if body.strip():
-            return body, result.content_type
-        errors.append("浏览器栈返回空内容")
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"浏览器栈失败: {type(exc).__name__}: {exc}")
-
-    raise RuntimeError("；".join(errors) or "未知抓取失败")
+    result, _rendered, error = fetch_analysis_page(url, browser_reason=_analysis_browser_reason)
+    if error:
+        raise RuntimeError(error)
+    if result.status >= 400:
+        raise RuntimeError(f"页面获取失败：HTTP {result.status}")
+    return decode_body(result), result.content_type
 
 
 def _fetch_rendered(url: str) -> str:
@@ -2078,16 +2075,14 @@ def _fetch_rendered(url: str) -> str:
     quotes.toscrape.com/js 等）用它拿到渲染后的 DOM 再分析。生成的配置本就是
     ``source.kind=browser``，因此"分析用渲染结果 + 运行用浏览器"两者一致。
     """
-    from ..core.models import CrawlRequest
-    from ..fetching.browser_fetcher import BrowserFetcher
+    from ..extraction.extractors import decode_body
+    from ..fetching.page_probe import fetch_analysis_page
 
-    try:
-        config = _build_probe_config(url)
-        with BrowserFetcher(config) as browser:
-            result = browser.fetch(CrawlRequest(url=url, render=True))
-        return result.body.decode("utf-8", "replace")
-    except Exception:  # noqa: BLE001 —— 渲染不可用则由调用方报原始错误
-        return ""
+    result, rendered, error = fetch_analysis_page(url, force_browser=True, browser_reason=_analysis_browser_reason)
+    if error:
+        raise RuntimeError(error)
+    return decode_body(result) if rendered else ""
+
 
 def main() -> None:
     import argparse
@@ -2110,14 +2105,24 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # 获取 HTML：URL 走自有抓取栈；文件直接读
+    # 获取 HTML：URL 走共享安全分析栈；文件直接读
+    initial_rendered = False
     html: str
     url = args.url or ""
     item_path_override = str(getattr(args, "item_path", "") or "")
     if args.input.startswith("http://") or args.input.startswith("https://"):
         url = args.input
         try:
-            html, content_type = _fetch_html(args.input)
+            from ..extraction.extractors import decode_body
+            from ..fetching.page_probe import fetch_analysis_page
+
+            result, initial_rendered, analysis_error = fetch_analysis_page(args.input, browser_reason=_analysis_browser_reason)
+            if analysis_error:
+                raise RuntimeError(analysis_error)
+            if result.status >= 400:
+                raise RuntimeError(f"页面获取失败：HTTP {result.status}")
+            html = decode_body(result)
+            url = result.final_url or url
         except Exception as exc:  # noqa: BLE001 —— 抓取失败必须以非零退出码暴露
             print(f"错误: 无法获取页面内容（{type(exc).__name__}: {exc}）", file=sys.stderr)
             raise SystemExit(2) from exc
@@ -2135,6 +2140,7 @@ def main() -> None:
         output = json.dumps({
             "url": analysis.url, "page_type": analysis.page_type,
             "confidence": analysis.confidence,
+            "rendered": initial_rendered,
             "patterns_count": len(analysis.patterns),
             "fields": analysis.fields,
             "pagination": analysis.pagination,
@@ -2177,7 +2183,7 @@ def main() -> None:
                 chosen_from_render = from_render
                 chosen_advisories = local_advisories
 
-        _consider(html, from_render=False)
+        _consider(html, from_render=initial_rendered)
         static_analysis = analyze_page(html, url)
         static_top = static_analysis.patterns[0] if static_analysis.patterns else None
         weak = (
@@ -2187,7 +2193,7 @@ def main() -> None:
             or _is_chrome_path(static_top.css_path)
         )
         rendered_html = ""
-        if weak and url:
+        if weak and url and not initial_rendered:
             rendered = _fetch_rendered(url)
             if rendered.strip():
                 rendered_html = rendered

@@ -1,20 +1,14 @@
 from __future__ import annotations
 
-import copy
 import json
 import re
 import urllib.parse
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from ..core.config import DEFAULTS, AppConfig
-from ..core.models import CrawlRequest, FetchResult
-from ..core.utils import user_agent
+from ..core.models import FetchResult
 from ..extraction.extractors import decode_body
-from ..fetching.http_client import HTTPFetcher
-from ..fetching.routing import needs_browser
-from ..security.policy import RobotsPolicy
 from ..templates.template_catalog import TemplateCatalog, TemplateMatch, TemplateProbe
 
 
@@ -34,56 +28,19 @@ class SiteInspection:
     downloads: tuple[str, ...]
     authentication: tuple[str, ...]
     recommendations: tuple[dict[str, Any], ...]
+    rendered: bool = False
+    analysis_error: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
-def build_inspection_config(
-    url: str,
-    *,
-    timeout_seconds: float = 20.0,
-    robots_fail_closed: bool = True,
-    allow_private_network: bool = False,
-) -> AppConfig:
-    """构造"巡检 / 分析页面用"的 AppConfig：守卫与 crawl 完全一致。
+def fetch_analysis_page(url: str, **kwargs: Any) -> tuple[FetchResult, bool, str]:
+    """Shared analysis eligibility with I/O kept below the extraction layer."""
+    from ..extraction.intelligent_scraper import _analysis_browser_reason
+    from ..fetching.page_probe import fetch_analysis_page as fetch
 
-    `inspect_url`（站点识别）与 `fetch_page_html`（分析页面并填字段）都走这里 ——
-    否则会出现**第二条不带 SSRF/重定向/大小/robots 守卫的抓取路径**，
-    那正是本项目反复避免的东西。
-    """
-    raw = copy.deepcopy(DEFAULTS)
-    raw["project"] = {"name": "site_inspection", "workspace": "work/site_inspection"}
-    raw["source"] = {"kind": "static_html", "seeds": [url]}
-    raw["http"].update({
-        "user_agent": user_agent("Inspector (+contact: local-user)"),
-        "timeout_seconds": timeout_seconds,
-        "retries": 1,
-        "max_response_bytes": 10_000_000,
-        "respect_robots": True,
-        "robots_fail_closed": bool(robots_fail_closed),
-        # 沿用调用方（任务）的出网策略：默认仍禁止本机/内网/保留地址，
-        # 用户在配置里显式放行时才跟着放行 —— 分析不该比运行更宽松，也不该更严格。
-        "allow_private_network": bool(allow_private_network),
-    })
-    root = Path.cwd().resolve()
-    return AppConfig(
-        root / ".omnicrawler-inspector.yaml", root, raw, root / "work" / "site_inspection"
-    )
-
-
-def _guarded_fetch(url: str, config: AppConfig, fetcher: Any | None = None) -> FetchResult:
-    """按 robots 策略放行后抓一页。
-
-    传入 `fetcher` 时要求**它自身经 EgressBroker 审计**（例如 AsyncFetcher）；
-    否则回退为独立的 HTTPFetcher 实例。
-    """
-    if not RobotsPolicy(config).allowed(url):
-        raise PermissionError("robots.txt does not allow automated inspection of this URL")
-    request = CrawlRequest(url, meta={"root_url": url})
-    if fetcher is not None:
-        return fetcher.fetch(request)
-    return HTTPFetcher(config).fetch(request)
+    return fetch(url, browser_reason=_analysis_browser_reason, **kwargs)
 
 
 def fetch_page_html(
@@ -99,13 +56,12 @@ def fetch_page_html(
     供 GUI 的「分析页面并填字段」使用：它必须看到与真实运行**同一份内容**，
     否则会出现"分析说得通、运行跑不通"。
     """
-    config = build_inspection_config(
-        url,
-        timeout_seconds=timeout_seconds,
-        robots_fail_closed=robots_fail_closed,
-        allow_private_network=allow_private_network,
+    result, _rendered, _error = fetch_analysis_page(
+        url, timeout_seconds=timeout_seconds, robots_fail_closed=robots_fail_closed,
+        allow_private_network=allow_private_network, fetcher=fetcher,
     )
-    result = _guarded_fetch(url, config, fetcher=fetcher)
+    if _error:
+        raise RuntimeError(_error)
     return decode_body(result), (result.final_url or url)
 
 
@@ -117,17 +73,22 @@ def inspect_url(
     intent: str = "",
     robots_fail_closed: bool = True,  # P2-8：默认 fail-closed，可联动用户配置
     fetcher: Any | None = None,
+    allow_private_network: bool = False,
 ) -> SiteInspection:
     """Fetch one public page through the same SSRF/redirect/size/robots guards as a crawl.
 
     ``fetcher`` 传入时复用其请求通道（例如 AsyncFetcher，内部经 EgressBroker
     审计出网），否则回退为独立的 HTTPFetcher 实例。
     """
-    config = build_inspection_config(
-        url, timeout_seconds=timeout_seconds, robots_fail_closed=robots_fail_closed
+    result, rendered, error = fetch_analysis_page(
+        url, timeout_seconds=timeout_seconds, robots_fail_closed=robots_fail_closed,
+        allow_private_network=allow_private_network, fetcher=fetcher,
     )
-    result = _guarded_fetch(url, config, fetcher=fetcher)
-    return inspect_result(result, catalog, intent=intent)
+    report = inspect_result(result, catalog, intent=intent)
+    if rendered:
+        report = replace(report, dynamic=True, browser_recommended=True,
+                         browser_reason="静态内容不足，已通过浏览器获得业务页面", rendered=True)
+    return replace(report, analysis_error=error)
 
 
 def inspect_result(
@@ -137,7 +98,7 @@ def inspect_result(
     limit: int = 8,
     intent: str = "",
 ) -> SiteInspection:
-    text = decode_body(result) if "text" in result.content_type or "html" in result.content_type else ""
+    text = decode_body(result) if any(kind in result.content_type for kind in ("text", "html", "json")) else ""
     lower = text.casefold()
     parsed_json: Any = None
     if "json" in result.content_type:
@@ -216,7 +177,10 @@ def inspect_result(
     else:
         page_type = "unknown"
 
-    browser, browser_reason = needs_browser(result)
+    from ..extraction.intelligent_scraper import _analysis_browser_reason
+
+    browser_reason = _analysis_browser_reason(result)
+    browser = bool(browser_reason)
     script_count = len(re.findall(r"<script\b", lower))
     dynamic = browser or bool(frameworks) or script_count >= 12
     matches = catalog.recommend(

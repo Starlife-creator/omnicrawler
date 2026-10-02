@@ -22,3 +22,38 @@ def test_inspector_detects_cms_page_type_and_assets() -> None:
     assert "fetch" in report.api_signals
     assert "pdf" in report.downloads
     assert report.recommendations
+
+
+def test_inspector_reports_script_only_business_content_as_unconfirmed_dynamic() -> None:
+    request = CrawlRequest("https://example.org/js/")
+    body = b"<div id='list'></div><a href='/login'>Login</a><script>document.querySelector('#list').innerHTML='rows';</script>"
+    result = FetchResult(request, request.url, 200, {"content-type": "text/html"}, body, .01)
+    report = inspect_result(result, bundled_template_catalog())
+    assert report.dynamic and report.browser_recommended
+    assert "静态内容" in report.browser_reason
+    assert not report.rendered
+
+
+def test_inspector_reads_json_continuation_evidence() -> None:
+    request = CrawlRequest("https://example.org/api")
+    result = FetchResult(request, request.url, 200, {"content-type": "application/json"},
+                         b'{"items":[{"id":1}],"next":"two"}', .01)
+    report = inspect_result(result, bundled_template_catalog())
+    assert "cursor-or-next-url" in report.pagination
+    assert not report.browser_recommended
+
+
+def test_render_failure_is_retained_as_inspection_error(monkeypatch) -> None:
+    from omnicrawler.fetching import page_probe
+    from omnicrawler.fetching.browser_fetcher import BrowserFetcher
+    from omnicrawler.sources import site_inspector
+
+    request = CrawlRequest("https://example.org/js/")
+    result = FetchResult(request, request.url, 200, {"content-type": "text/html"},
+                         b"<main></main><script>render()</script>", .01)
+    monkeypatch.setattr(page_probe, "_guarded_fetch", lambda *a, **k: result)
+    monkeypatch.setattr(page_probe.RobotsPolicy, "allowed", lambda *a: True)
+    monkeypatch.setattr(BrowserFetcher, "fetch", lambda *a: (_ for _ in ()).throw(RuntimeError("renderer unavailable")))
+    report = site_inspector.inspect_url(request.url, bundled_template_catalog())
+    assert report.browser_recommended and not report.rendered
+    assert "renderer unavailable" in report.analysis_error

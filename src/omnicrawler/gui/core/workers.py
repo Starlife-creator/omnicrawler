@@ -108,16 +108,20 @@ class PageAnalyzeWorker(BackgroundWorker):
         self.allow_private_network = allow_private_network
 
     def work(self) -> Any:
+        from ...extraction.extractors import decode_body
         from ...extraction.intelligent_scraper import _is_chrome_path, analyze_page
-        from ...sources.site_inspector import fetch_page_html
+        from ...sources.site_inspector import fetch_analysis_page
 
-        html, final_url = fetch_page_html(
+        result, rendered, analysis_error = fetch_analysis_page(
             self.url,
             timeout_seconds=self.timeout_seconds,
             robots_fail_closed=self.robots_fail_closed,
             allow_private_network=self.allow_private_network,
         )
-        analysis = analyze_page(html, final_url or self.url)
+        html, final_url = decode_body(result), result.final_url or self.url
+        analysis = analyze_page(html, final_url)
+        if analysis_error:
+            raise RuntimeError(analysis_error)
         fields: list[dict[str, Any]] = []
         item_selector = ""
         for field in analysis.fields:
@@ -131,6 +135,7 @@ class PageAnalyzeWorker(BackgroundWorker):
             })
         return {
             "url": final_url or self.url,
+            "rendered": rendered,
             "page_type": analysis.page_type,
             "confidence": analysis.confidence,
             "item_selector": item_selector,

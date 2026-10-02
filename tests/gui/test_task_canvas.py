@@ -852,3 +852,50 @@ def test_pagination_location_is_a_dropdown_and_round_trips(monkeypatch) -> None:
         assert canvas._config.pagination["end"] == 5
     finally:
         canvas.deleteLater()
+
+
+def test_loaded_url_refreshes_analysis_button_without_edit(monkeypatch):
+    from omnicrawler.gui.core.config_model import CrawlConfig
+
+    canvas = _make_canvas(monkeypatch)
+    config = CrawlConfig(seed_urls=["https://example.org/js/"])
+    canvas.load_config(config)
+    assert canvas._url_edit.text() == config.seed_urls[0]
+    assert canvas._analyze_btn.isEnabled()
+    canvas.set_locked(True)
+    assert not canvas._analyze_btn.isEnabled()
+    canvas.set_locked(False)
+    assert canvas._analyze_btn.isEnabled()
+    canvas._analyze_btn.setText("分析中…")
+    canvas._url_edit.setText("https://example.org/other")
+    canvas._rebuild_from_config()
+    assert not canvas._analyze_btn.isEnabled()
+    canvas._on_analysis_finished()
+    assert canvas._analyze_btn.isEnabled()
+    canvas._url_edit.clear()
+    assert not canvas._analyze_btn.isEnabled()
+    canvas.deleteLater()
+
+
+def test_analysis_discards_stale_result_and_cancellation_restores_button(monkeypatch):
+    canvas = _make_canvas(monkeypatch)
+    canvas._url_edit.setText("https://example.org/new")
+    canvas._analyze_btn.setText("分析中…")
+    canvas._on_analysis_ready(({"item_selector": "div.old", "fields": []}, "https://example.org/old"))
+    assert canvas._item_selector_edit.text() == ""
+    assert canvas._analyze_btn.isEnabled()
+    canvas._analyze_btn.setText("分析中…")
+    canvas._reset_analyze_button()
+    assert canvas._analyze_btn.isEnabled()
+    canvas.deleteLater()
+
+
+def test_rendered_analysis_synchronizes_source_and_summary(monkeypatch):
+    canvas = _make_canvas(monkeypatch)
+    canvas._url_edit.setText("https://example.org/js/")
+    canvas.apply_analysis({"rendered": True, "item_selector": "div.item", "page_type": "list",
+                           "fields": [{"name": "标题", "selector": "h2", "attribute": ""}]})
+    assert canvas._config.source_kind == "browser"
+    assert canvas._source_kind_combo.currentData() == "browser"
+    assert "浏览器" in canvas._summary_label.text()
+    canvas.deleteLater()

@@ -578,7 +578,8 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
             # 意图区（`_build_intent_area`）比字段区先构建，而它已连上 URL 变化回调 ——
             # 构建期间若有任何 `setText`，这里会被调用到而按钮还不存在。
             return
-        button.setEnabled(bool(self._url_edit.text().strip()) and not self._locked)
+        button.setEnabled(bool(self._url_edit.text().strip()) and not self._locked
+                          and button.text() != _("分析中…") and getattr(self, "_analyze_worker", None) is None)
 
     def _sync_ui_state(self) -> None:
         locked = self._locked
@@ -811,6 +812,7 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
                 self._collapse_section(section, False)
         finally:
             self._updating = False
+            self._update_analyze_button()
 
     def _render_summary(self) -> None:
         """草稿计划卡片：分节渲染 + 每节「可修改」标记（PRD §3.2）。

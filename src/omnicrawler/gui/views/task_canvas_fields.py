@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -54,6 +55,7 @@ class FieldsAreaMixin(_Base):
     _locked: bool
     _updating: bool
     _DOMAIN_FIELD: str
+    _DOMAIN_SCOPE: str
     _fields_section: _Section
     _fields_model: _FieldTableModel
     _fields_table: QTableView
@@ -62,6 +64,7 @@ class FieldsAreaMixin(_Base):
     _more_fields_btn: QPushButton
     _visual_pick_btn: QPushButton
     _recommendation: Any | None
+    _analyze_worker: Any | None
 
     if TYPE_CHECKING:
         # 由 TaskCanvas / 其他 Mixin 提供；仅类型检查期可见，运行期不存在，故不遮蔽宿主实现。
@@ -69,6 +72,8 @@ class FieldsAreaMixin(_Base):
         def _sync_form_to_config(self) -> None: ...
         def _mark_dirty(self, domain: str = ...) -> None: ...
         def _update_analyze_button(self) -> None: ...
+        def _set_source_kind(self, kind: str) -> None: ...
+        def _render_summary(self) -> None: ...
 
     # ------------------------------------------------------------------
     #  字段规则
@@ -197,7 +202,7 @@ class FieldsAreaMixin(_Base):
         worker 以 `parent=self` 挂进视图树，因此主窗口关闭时的 `findChildren(QThread)`
         统一回收能覆盖它（与既有做法一致）。
         """
-        if self._locked:
+        if self._locked or getattr(self, "_analyze_worker", None) is not None or self._analyze_btn.text() == _("分析中…"):
             return
         url = (self._url_edit.text() or "").strip()
         if not url:
@@ -218,12 +223,29 @@ class FieldsAreaMixin(_Base):
             robots_fail_closed=bool(section.get("robots_fail_closed", True)),
             parent=self,
         )
-        worker.succeeded.connect(lambda payload: self.apply_analysis(payload[0]))
-        worker.failed.connect(self.set_analysis_failed)
+        worker.succeeded.connect(self._on_analysis_ready, Qt.ConnectionType.QueuedConnection)
+        worker.failed.connect(self.set_analysis_failed, Qt.ConnectionType.QueuedConnection)
+        worker.interrupted.connect(self._reset_analyze_button, Qt.ConnectionType.QueuedConnection)
+        worker.finished.connect(self._on_analysis_finished, Qt.ConnectionType.QueuedConnection)
         worker.finished.connect(worker.deleteLater)
         self._analyze_worker = worker
         worker.start()
 
+    @Slot(object)
+    def _on_analysis_ready(self, payload: Any) -> None:
+        report, url = payload
+        if url != self._url_edit.text().strip():
+            self._reset_analyze_button()
+            ToastManager.instance().warning(_("入口网址已变化，已丢弃旧页面分析结果"))
+            return
+        self.apply_analysis(report)
+
+    @Slot()
+    def _on_analysis_finished(self) -> None:
+        self._analyze_worker = None
+        self._reset_analyze_button()
+
+    @Slot()
     def _reset_analyze_button(self) -> None:
         """恢复分析按钮的文案与可用性（可用性由 URL 是否为空决定，见 `_sync_ui_state`）。"""
         self._analyze_btn.setText(_("🔍 分析页面并填字段"))
@@ -279,8 +301,22 @@ class FieldsAreaMixin(_Base):
             parts.append(_("列表项选择器：{0}").format(selector))
         elif selector:
             parts.append(_("已保留你填的列表项选择器"))
-        ToastManager.instance().success((" · ").join(parts))
+        if report.get("rendered") and not getattr(self, "_source_kind_overridden", False):
+            self._config.source_kind = "browser"
+            self._set_source_kind("browser")
+            self._sync_form_to_config()
+            self._mark_dirty(self._DOMAIN_SCOPE)
+            self._render_summary()
+            parts.append(_("已使用浏览器分析，运行方式同步为浏览器"))
+        message = (" · ").join(parts)
+        if added or filled_container:
+            ToastManager.instance().success(message)
+        elif not report.get("fields"):
+            ToastManager.instance().warning(_("未识别到可用字段，请检查入口或手动配置") + " · " + page_type)
+        else:
+            ToastManager.instance().info(_("保留已有字段配置") + " · " + page_type)
 
+    @Slot(str)
     def set_analysis_failed(self, message: str) -> None:
         """分析失败：**如实报错**，并把「改用通用规则」作为显式去路（不静默降级）。"""
         self._reset_analyze_button()
