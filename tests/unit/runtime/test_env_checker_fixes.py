@@ -94,3 +94,16 @@ def test_f35_derive_worker_command_no_worker_binary(tmp_path: Path) -> None:
     cli = tmp_path / "omnicrawler.exe"
     cli.write_bytes(b"MZ")
     assert _derive_worker_command(str(cli)) is None
+
+
+def test_cli_probe_decodes_utf8_even_when_windows_locale_is_gbk(monkeypatch) -> None:
+    monkeypatch.setattr("omnicrawler.gui.runner.env_checker.resolve_cli_command", lambda p: p)
+    monkeypatch.setattr("omnicrawler.core.runtime_paths.bundled_cli_path", lambda: None)
+
+    def run(*args, **kwargs):
+        assert kwargs.get("encoding") == "utf-8"
+        assert kwargs.get("errors") == "replace"
+        return _Result(stdout="OmniCrawler 0.15.0", stderr="环境已就绪")
+
+    monkeypatch.setattr("omnicrawler.gui.runner.env_checker.subprocess.run", run)
+    assert check_omnicrawler("omnicrawler") == (True, "OmniCrawler 0.15.0")

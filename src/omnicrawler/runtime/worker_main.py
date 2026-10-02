@@ -10,6 +10,7 @@ from multiprocessing.connection import Listener
 from pathlib import Path
 from typing import Any
 
+from ..core.logging_utils import configure_logging
 from ..services.application_service import ApplicationService
 from .execution_backend import WorkerSession, _read_session, _write_session
 
@@ -112,6 +113,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--session", required=True)
     args = parser.parse_args(argv)
+    for name in ("stdout", "stderr", "__stderr__"):
+        stream = getattr(sys, name, None)
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+    configure_logging("INFO", file_logging=False)
     return WorkerRuntime(Path(args.session).resolve()).run()
 
 

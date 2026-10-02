@@ -582,7 +582,7 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         "egress": set(DEFAULTS["egress"]),
         "extract": set(DEFAULTS["extract"]) | {
             "item_path", "enrich", "scene",
-            "parser_options", "processor_options", "extractor_options",
+            "parser_options", "processor_options", "extractor_options", "deduplicate_by",
         },
         "http": set(DEFAULTS["http"]) | {"retry_max"},
         "incremental": set(DEFAULTS["incremental"]) | {"since_date"},
@@ -600,7 +600,7 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
             "fields", "params", "variables", "arguments", "query",
             "query_file", "spider_file", "max_pages",
             # B-2 闸门：逐 URL 模板强制覆盖（GUI 写入，Worker/Runner 消费）
-            "seed_template_overrides",
+            "seed_template_overrides", "follow_xpath",
             # FINAL-D2：站点分类器配置（categorizer.py 消费 enable_sniffing 等）
             "categorizer",
         },

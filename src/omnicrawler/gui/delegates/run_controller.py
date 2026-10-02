@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
 from ..core.run_states import is_terminal, normalize_state, state_label
 from ..i18n import _
+from ..navigation import NavIndex
 from ..views.login_session_logic import LoginHintGate
 from ..widgets.toast import ToastManager
 from ._base import _BaseDelegate
@@ -96,7 +97,7 @@ class RunController(_BaseDelegate):
             mw._stop_btn.setEnabled(False)
             mw._pause_btn.setEnabled(False)
             mw._set_status(_("启动失败"))
-        mw._stack.setCurrentIndex(2)
+        mw._nav.setCurrentRow(NavIndex.MONITOR)
 
     def _ensure_dependencies(self) -> bool:
         """运行前依赖检测 + 可选安装（同步版，供 run_task 前置调用）。

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from omnicrawler.commands.task import compile_request
+from omnicrawler.core.config import load_config, validate_config
 from omnicrawler.core.models import CrawlRequest, ExtractedRecord
 from omnicrawler.extraction.intelligent_scraper import align_requested_fields, analyze_to_config
 from omnicrawler.state import StateStore
@@ -68,3 +69,21 @@ def test_tags_inference_collects_all_values() -> None:
     items = "".join(f'<div class="quote"><span class="text">Quotation {i} sufficiently long</span><small class="author">Author {i}</small><div class="tags"><a class="tag" href="/tag/a">alpha</a><a class="tag" href="/tag/b">beta</a></div></div>' for i in range(3))
     config = analyze_to_config(f"<html><body>{items}</body></html>", "https://example.org/")
     assert config["extract"]["fields"]["标签"].get("all", False)
+
+
+def test_pagination_and_identity_fields_are_known_but_typos_still_warn(tmp_path: Path) -> None:
+    import yaml
+
+    path = tmp_path / "config.yaml"
+    raw = {
+        "source": {"kind": "static_html", "seeds": ["https://example.org/"], "follow_xpath": "//a[@rel='next']/@href"},
+        "extract": {"fields": {"link": {"selector": "a", "attr": "href"}}, "deduplicate_by": ["link"]},
+    }
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    errors, warnings = validate_config(load_config(path), strict=True)
+    assert not errors
+    assert not any("follow_xpath" in message or "deduplicate_by" in message for message in warnings)
+    raw["source"]["follow_xpat"] = "//a"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    errors, _ = validate_config(load_config(path), strict=True)
+    assert any("follow_xpat" in message and "未知字段" in message for message in errors)

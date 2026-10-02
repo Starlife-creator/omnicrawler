@@ -65,6 +65,8 @@ def check_omnicrawler(command_path: str = "omnicrawler") -> tuple[bool, str]:
             [resolved_command, "--version"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             creationflags=creationflags,
         )

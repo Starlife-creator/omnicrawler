@@ -172,3 +172,24 @@ def test_reap_timeout_keeps_owned_process_for_later_retry(monkeypatch):
     process.wait = lambda timeout: 0
     assert backend.reap(timeout=0) is True
     assert backend._process is None
+
+
+def test_local_worker_logs_fail_closed_chinese_in_utf8(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("PYTHONUTF8", "0")
+    monkeypatch.setenv("PYTHONIOENCODING", "gbk")
+    config = _config(tmp_path)
+    workspace = tmp_path / "workspace"
+    backend = LocalWorkerBackend()
+    try:
+        backend.start(config)
+        deadline = time.monotonic() + 10
+        while backend.status()["status"] == "running" and time.monotonic() < deadline:
+            time.sleep(.05)
+        # Private addresses remain denied; the real child must report the reason in UTF-8.
+        assert backend.status()["status"] == "failed"
+        text = (workspace / "logs/local-worker.log").read_text(encoding="utf-8")
+        assert "ERROR omnicrawler" in text
+        assert "默认禁止访问本机" in text
+        assert "\ufffd" not in text
+    finally:
+        backend.shutdown()
