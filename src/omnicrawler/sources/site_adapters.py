@@ -8,7 +8,7 @@ from ..core.models import CrawlRequest, FetchResult
 from ..core.utils import canonicalize_url
 from ..extraction.extractors import decode_body, json_path
 from ..plugins.plugins import PluginMetadata
-from .sources import GenericSource, _with_query
+from .sources import GenericSource, _replace_query
 
 
 class DynamicApiSource(GenericSource):
@@ -27,9 +27,24 @@ class DynamicApiSource(GenericSource):
     def _page(url: str) -> int:
         values = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get("page", ["1"])
         try:
-            return int(values[-1])
+            return int(values[0])
         except (TypeError, ValueError):
             return 1
+
+
+    @staticmethod
+    def _next_request(result: FetchResult, url: str, **metadata: Any) -> list[CrawlRequest]:
+        seen = [*result.request.meta.get("_cms_pagination_seen", []),
+                result.request.url, result.final_url]
+        if url in seen:
+            raise ValueError("CMS pagination repeated a continuation URL; collection is incomplete")
+        request = result.request
+        return [CrawlRequest(
+            url, method=request.method, headers=dict(request.headers), body=request.body,
+            kind=request.kind, render=request.render, priority=request.priority,
+            depth=request.depth + 1, parent_url=result.final_url,
+            meta={**request.meta, **metadata, "_cms_pagination_seen": list(dict.fromkeys(seen))},
+        )]
 
 
 class WordPressSource(DynamicApiSource):
@@ -43,8 +58,8 @@ class WordPressSource(DynamicApiSource):
         limit = int(self.source.get("max_pages", total))
         if current >= min(total, limit):
             return []
-        url = _with_query(result.final_url, {"page": current + 1})
-        return [CrawlRequest(url, headers=dict(result.request.headers), meta={**result.request.meta, "page": current + 1})]
+        url = _replace_query(result.final_url, {"page": current + 1})
+        return self._next_request(result, url, page=current + 1)
 
 
 class DrupalJsonApiSource(DynamicApiSource):
@@ -68,8 +83,13 @@ class MediaWikiSource(DynamicApiSource):
         continuation = payload.get("continue", {})
         if not isinstance(continuation, dict) or not continuation:
             return []
-        url = _with_query(result.final_url, {str(key): value for key, value in continuation.items()})
-        return [CrawlRequest(url, headers=dict(result.request.headers), meta=result.request.meta)]
+        parameters = {str(key): value for key, value in continuation.items()}
+        # Remove only continuation keys carried by our preceding request. Query
+        # filters, including repeated values, remain intact when token names change.
+        replacing: dict[str, Any] = {key: [] for key in result.request.meta.get("_cms_continuation_keys", [])}
+        replacing.update(parameters)
+        url = _replace_query(result.final_url, replacing)
+        return self._next_request(result, url, _cms_continuation_keys=list(parameters))
 
 
 class DiscourseSource(DynamicApiSource):
