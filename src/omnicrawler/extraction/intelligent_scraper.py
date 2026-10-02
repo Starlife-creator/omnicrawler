@@ -50,6 +50,7 @@ class DOMNode:
     id_: str = ""
     text: str = ""
     href: str = ""
+    title: str = ""
     src: str = ""
     depth: int = 0
     child_count: int = 0
@@ -136,7 +137,7 @@ def _walk(element: Any, nodes: list[DOMNode], depth: int, max_nodes: int) -> Non
         parent_key = f"{parent_key}.{parent_classes[0]}"
     node = DOMNode(
         tag=tag, classes=classes, id_=id_, text=text,
-        href=href, src=src, depth=depth,
+        href=href, title=element.get("title", ""), src=src, depth=depth,
         child_count=len(children), children_tags=child_tags,
         children_keys=child_keys,
         parent_tag=_tag_name(parent) if parent is not None else "",
@@ -426,7 +427,8 @@ _FIELD_RULES: list[tuple[str, str, str]] = [
     (r"(title|标题|name|名称|heading|headline)", "a|h[1-6]|span|div|p", "标题"),
     (r"(desc|description|简介|摘要|描述|summary|excerpt)", "p|div|span|small", "描述"),
     (r"(img|image|photo|图片|缩略图|thumb)", "img", "图片地址"),
-    (r"(tag|category|标签|分类|类型|type|genre)", "span|a|div|li", "分类"),
+    (r"(tag|标签)", "span|a|div|li", "标签"),
+    (r"(category|分类|类型|type|genre)", "span|a|div|li", "分类"),
     (r"(location|address|地址|位置|地区)", "span|div|a|p", "地址"),
     (r"(phone|tel|电话|手机|联系)", "span|a|div|p", "电话"),
     (r"(email|e-mail|邮箱|邮件)", "span|a|div|p", "邮箱"),
@@ -665,8 +667,9 @@ def _infer_item_fields(
             key = _field_key(candidate)
             slot = by_key.setdefault(
                 key,
-                {"node": candidate, "texts": [], "items": 0, "attr": None, "class_values": []},
+                {"node": candidate, "nodes": [], "texts": [], "items": 0, "attr": None, "class_values": []},
             )
+            slot["nodes"].append(candidate)
             slot["items"] += 1
             slot["texts"].append(candidate.text[:200])
             token = _class_value_token(candidate)
@@ -774,6 +777,17 @@ def _infer_item_fields(
             "desc": f"自动推断: {name}",
             "examples": slot["texts"][:3],
         }
+        if name == "标题" and all(
+            node.title and node.title.startswith(node.text.rstrip(".… ")) for node in slot["nodes"]
+        ):
+            rule["attribute"] = "title"
+            rule["examples"] = [node.title for node in slot["nodes"][:3]]
+        if name == "标签":
+            rule["all"] = True
+            rule["selector"] = _css_token(desc)
+        if name == "标题" and desc.is_link:
+            fields.append({"name": "链接地址", "selector": selector, "attribute": "href",
+                           "desc": "条目稳定详情链接"})
         # ★ 走查 R3.6：值写在 class 名里 ⇒ 取到 `class` 之后还要**映射**（`Three` → 3）。
         #   放行而不映射，用户拿到的要么是 `star-rating Three` 原文、要么是空列 ——
         #   都不叫"取到了评分"。
@@ -871,6 +885,25 @@ def _infer_leaf_item_fields(items: list[DOMNode]) -> list[dict[str, Any]]:
     return fields
 
 
+def _product_detail_fields(nodes: list[DOMNode]) -> list[dict[str, Any]]:
+    blocks = [node for node in nodes if any(
+        re.fullmatch(r"product[-_](?:main|detail|details|info)", cls, re.I) for cls in node.classes
+    )]
+    if len(blocks) != 1:
+        return []
+    block = blocks[0]
+    children = [node for node in nodes if node.css_path.startswith(block.css_path + " > ")]
+    titles = [node for node in children if node.tag == "h1" and node.text.strip()]
+    prices = [node for node in children if node.itemprop == "price" or any(
+        re.search(r"(?:^|[-_])price(?:$|[-_])", cls, re.I) for cls in node.classes
+    )]
+    if len(titles) != 1 or len(prices) != 1:
+        return []
+    return [{"name": "列表容器", "selector": block.css_path, "is_container": True, "record_grain": "detail"},
+            {"name": "名称", "selector": _css_token(titles[0]), "attribute": "text"},
+            {"name": "价格", "selector": _css_token(prices[0]), "attribute": "text"}]
+
+
 def infer_fields(
     patterns: list[RepeatingPattern],
     nodes: list[DOMNode],
@@ -889,6 +922,9 @@ def infer_fields(
     打分口径被多处用例与实测站点标定过，动它会牵连其它站点；而"字段更全"是
     该场景的**直接判据**。
     """
+    detail_fields = _product_detail_fields(nodes)
+    if detail_fields:
+        return detail_fields
     if not patterns:
         # 尝试全页面推断（单页模式）
         return _infer_single_page_fields(nodes, url)
@@ -1416,6 +1452,8 @@ def _pagination_config(
         return None, []
 
     if not parameter:
+        if kind == "next_link" and detected.get("xpath"):
+            return None, ["已通过 source.follow_xpath 只跟进识别出的下一页链接，不遍历登录、导航或其他站内链接；仍受页面预算与安全边界限制。"]
         target = str(detected.get("xpath") or detected.get("example_href") or "")
         return None, [
             "检测到「下一页」链接，它不是页码参数地址 ⇒ **没有写入分页配置、也没有生成点击动作**"
@@ -1500,7 +1538,10 @@ def analyze_page(html: str, url: str = "") -> IntelligentAnalysis:
     pagination = detect_pagination(html, url)
 
     # 判定页面类型
-    if patterns and patterns[0].count >= 3:
+    if any(field.get("record_grain") == "detail" for field in fields):
+        page_type = "detail"
+        confidence = 0.9
+    elif patterns and patterns[0].count >= 3:
         page_type = "list"
         confidence = min(0.95, 0.5 + patterns[0].score * 0.5)
     elif fields and len(fields) > 5:
@@ -1815,7 +1856,9 @@ def _check_verified(config: dict[str, Any], html: str) -> dict[str, Any]:
     empty = ", ".join(f"{k}({v})" for k, v in report["fields"].items()) or "（无字段）"
 
     item_selector = str(extract.get("item_selector", "") or "")
-    is_html_list = str(extract.get("mode", "")) != "json" and bool(item_selector)
+    detail = _product_detail_fields(_parse_dom(html)) if extract.get("record_grain") == "detail" else []
+    verified_detail = bool(detail) and items == 1 and detail[0]["selector"] == item_selector
+    is_html_list = str(extract.get("mode", "")) != "json" and bool(item_selector) and not verified_detail
 
     # 3. 容器落在**页面框架**（导航 / 侧边栏 / 页脚）里 ⇒ 那不是业务列表。
     #    实测（本轮复现）：只含侧边栏链接的页面会产出一份指向 `aside.sidebar > a` 的配置并
@@ -1932,6 +1975,8 @@ def analyze_to_config(
         attribute = f.get("attribute") or "text"
         if attribute not in ("", "text"):
             rule["attr"] = attribute
+        if f.get("all"):
+            rule["all"] = True
         if f.get("regex"):
             rule["regex"] = f["regex"]
         # 走查 R3.6：值写在 class 名里时，取到 `class` 还要映射（`Three` → 3）
@@ -1965,6 +2010,8 @@ def analyze_to_config(
     use_browser = force_browser or rendered or scroll_rounds > 0
     if use_browser:
         source_kind = "browser"
+    elif analysis.page_type == "detail":
+        source_kind = "static_html"
     elif item_selector or analysis.pagination:
         source_kind = "crawl"  # 需要跟随链接（翻页 / 详情页）
     else:
@@ -1978,12 +2025,19 @@ def analyze_to_config(
         "extract": {"mode": "html", "fields": fields_dict},
         "outputs": {"jsonl": True, "csv": True, "xlsx": True},
     }
+    if analysis.page_type == "detail" and any(field.get("record_grain") == "detail" for field in analysis.fields):
+        config["extract"]["record_grain"] = "detail"
+        config["crawl"]["max_pages"] = 1
     # 走查 R5.2：分页信号此前**只**用来决定 `source_kind`，检测结果被丢掉 ——
     # 用户拿到 `source.kind: crawl` 却没有任何翻页配置，以为"翻页被处理了"。
     # 现在翻译成 `core/pagination.py` 契约里的形状写进配置；翻译不了时**不写假配置**，只给建议。
     pagination, pagination_notes = _pagination_config(html, analysis.pagination)
     if pagination:
         config["source"]["pagination"] = pagination
+    if analysis.pagination and analysis.pagination.get("type") == "next_link":
+        config["source"]["follow_xpath"] = str(analysis.pagination.get("xpath") or "")
+    if "链接地址" in fields_dict:
+        config["extract"]["deduplicate_by"] = ["链接地址"]
     if advisories is not None:
         advisories.extend(pagination_notes)
     if use_browser:
@@ -2004,6 +2058,43 @@ def analyze_to_config(
 
 
 # ── CLI ────────────────────────────────────────────────────────────────
+
+def align_requested_fields(
+    fields: dict[str, Any], requested: list[str], multiple: list[str],
+) -> dict[str, Any]:
+    aliases = {"标签": ("标签", "分类"), "名称": ("名称", "标题"), "正文": ("正文", "内容")}
+    selected: dict[str, Any] = {}
+    missing = []
+    for name in requested:
+        match = next((candidate for candidate in aliases.get(name, (name,)) if candidate in fields), None)
+        if match is None:
+            missing.append(name)
+            continue
+        selected[name] = dict(fields[match])
+        selected[name]["required"] = True
+        if name in multiple:
+            selected[name]["all"] = True
+            selected[name].pop("join", None)
+    if missing:
+        raise ValueError("需求字段没有可靠规则：" + "、".join(missing))
+    return selected or fields
+
+
+def apply_task_goal(config: dict[str, Any], settings: dict[str, Any]) -> None:
+    if settings.get("unsupported"):
+        raise ValueError("需求仍有未支持的自动操作：" + "、".join(settings["unsupported"]))
+    config["crawl"]["max_pages"] = int(settings["max_pages"])
+    config["extract"]["fields"] = align_requested_fields(
+        config["extract"]["fields"], list(settings.get("fields", [])),
+        list(settings.get("multi_value_fields", [])),
+    )
+    if not all(name in config["extract"]["fields"] for name in config["extract"].get("deduplicate_by", [])):
+        config["extract"].pop("deduplicate_by", None)
+    config["outputs"] = {key: key in {"jsonl" if item == "json" else item for item in settings["output_formats"]}
+                         for key in ("xlsx", "csv", "jsonl")}
+    config["task"] = {"requested_fields": list(settings.get("fields", [])),
+                      "multi_value_fields": list(settings.get("multi_value_fields", []))}
+
 
 def _analysis_browser_reason(result: Any) -> str:
     from ..extraction.extractors import decode_body
@@ -2084,7 +2175,7 @@ def _fetch_rendered(url: str) -> str:
     return decode_body(result) if rendered else ""
 
 
-def main() -> None:
+def main(task_settings: dict[str, Any] | None = None) -> None:
     import argparse
     import sys
 
@@ -2213,6 +2304,13 @@ def main() -> None:
                 print(f"  · {line}", file=sys.stderr)
             raise SystemExit(3)
         config, html = best_config, best_html
+        if task_settings is not None:
+            try:
+                apply_task_goal(config, task_settings)
+                _check_verified(config, html)
+            except ValueError as exc:
+                print(f"错误: {exc}", file=sys.stderr)
+                raise SystemExit(3) from exc
         # 走查 R3.1：让用户知道运行期会用哪种抓取方式（这直接决定耗时可否省下浏览器）。
         chosen_kind = str((config.get("source") or {}).get("kind") or "")
         if chosen_kind in {"static_html", "crawl"} and not chosen_from_render:

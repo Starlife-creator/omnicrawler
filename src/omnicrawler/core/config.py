@@ -834,6 +834,14 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     fields = config.section("extract").get("fields", {})
     if fields and not isinstance(fields, dict):
         errors.append("extract.fields必须是字段名到规则的映射")
+    deduplicate_by = config.section("extract").get("deduplicate_by", [])
+    if not isinstance(deduplicate_by, list) or not all(isinstance(name, str) and name.strip() for name in deduplicate_by):
+        errors.append("extract.deduplicate_by必须是非空字段名的数组")
+    elif isinstance(fields, dict) and any(name not in fields for name in deduplicate_by):
+        errors.append("extract.deduplicate_by引用了未配置的字段")
+    follow_xpath = config.section("source").get("follow_xpath", "")
+    if not isinstance(follow_xpath, str):
+        errors.append("source.follow_xpath必须是XPath字符串")
     if not isinstance(config.section("auth").get("options", {}), dict):
         errors.append("auth.options必须是YAML对象")
     if not isinstance(config.raw.get("transformers", []), list):

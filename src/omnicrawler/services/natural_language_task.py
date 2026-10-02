@@ -131,6 +131,8 @@ def _extract_requested_fields(request: str) -> tuple[str, ...]:
     只接受**长度 ≤ ``_FIELD_MAX_LEN`` 且不含动作词**的 token；否则宁可不取
     （把「该标签下所有引文」这种半句话当字段名，比少一个字段更糟）。
     """
+    request = _URL.sub("", request)
+    request = re.sub(r"(?:前|仅|只)?[一二两三四五六七八九十百\d]+\s*页(?:名言|引文|商品|书籍|新闻)?", "", request)
     for verb in _FIELD_VERBS:
         for match in re.finditer(re.escape(verb), request):
             window = _FIELD_LIST_END.split(request[match.end(): match.end() + 60])[0]
@@ -139,6 +141,7 @@ def _extract_requested_fields(request: str) -> tuple[str, ...]:
             picked: list[str] = []
             for part in _FIELD_SPLIT.split(window):
                 token = _QUANT_PREFIX.sub("", part.strip()).strip(" 的了")
+                token = re.sub(r"^(?:名言|引文|商品|书籍|新闻)(?=正文|标题|名称|作者|标签)", "", token)
                 if not token or len(token) > _FIELD_MAX_LEN:
                     continue
                 if any(word in token for word in _FIELD_VERBS):
@@ -166,7 +169,21 @@ def _extract_output_formats(request: str) -> tuple[str, ...]:
 
 def _extract_page_count(request: str) -> int | None:
     match = _PAGE_COUNT.search(request)
-    return int(match.group(1)) if match else None
+    if match:
+        return int(match.group(1))
+    chinese = re.search(r"(?:前|仅|只|共|全部|所有)?\s*([一二两三四五六七八九十百]+)\s*页", request)
+    if not chinese:
+        return None
+    digits = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
+              "六": 6, "七": 7, "八": 8, "九": 9}
+    total = current = 0
+    for char in chinese.group(1):
+        if char in digits:
+            current = digits[char]
+        else:
+            total += (current or 1) * {"十": 10, "百": 100}[char]
+            current = 0
+    return total + current
 
 
 def _demand_gap_warnings(names: Sequence[str]) -> tuple[str, ...]:
@@ -240,6 +257,7 @@ def _apply_request_semantics(
         max_pages=page_count or task.max_pages,
         output_formats=requested_formats or task.output_formats,
         fields=fields,
+        multi_value_fields=tuple(name for name in fields if re.search(rf"(?:全部|所有)\s*{re.escape(name)}", request)),
         post_processing=post_processing,
         unsupported=unsupported,
         decisions=tuple(decisions),
@@ -422,7 +440,7 @@ def compile_natural_language(request: str, *, fallback_url: str = "") -> Natural
     lowered = request.lower()
     wants_monitor = any(word in lowered for word in ("每周", "每天", "监测", "变化", "更新", "调度", "定期"))
     wants_download = any(word in lowered for word in ("附件", "pdf", "下载", ".doc", "表格"))
-    wants_section = any(word in lowered for word in ("栏目", "列表", "全部", "所有", "整个", "翻页", "分页"))
+    wants_section = any(word in lowered for word in ("栏目", "列表", "全部", "所有", "整个", "翻页", "分页")) or (_extract_page_count(request) or 1) > 1
     if wants_section:
         intent = "collect_section"
     elif wants_monitor:

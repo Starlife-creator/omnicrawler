@@ -32,6 +32,7 @@ class FieldDef:
     attribute: str | None = None  # 提取属性，如 'href'
     regex: str | None = None
     required: bool = False
+    all_values: bool = False
     fallback_xpath: str | None = None
     #: 取值位置（`core/field_value_source.py` 契约）。``None`` ＝"表单里还没选"——
     #: 由表单控件填入；**从配置加载时由 `config_serializer` 按既有形状显式推导**，
@@ -245,6 +246,15 @@ class CrawlConfig:
         - 所有字段名不能重复
         """
         errors: list[str] = []
+        goal = self.passthrough.get("task", {})
+        if isinstance(goal, dict):
+            names = {field.name for field in self.fields}
+            missing = [str(name) for name in goal.get("requested_fields", []) if name not in names]
+            if missing:
+                errors.append(_("需求字段尚未配置：") + "、".join(missing))
+            if goal.get("unsupported"):
+                errors.append(_("需求中仍有未支持的自动操作：") + "、".join(map(str, goal["unsupported"])))
+
 
         # 种子 URL
         valid_urls = [u for u in self.seed_urls if u and u.strip()]

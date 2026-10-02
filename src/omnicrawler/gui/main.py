@@ -1234,6 +1234,9 @@ class MainWindow(QMainWindow):
         self._config.monitor_same_url = draft.monitor_changes
         self._config.incremental = draft.monitor_changes
         self._config.output_formats = list(draft.output_formats)
+        goal = self._config.passthrough.setdefault("task", {})
+        goal.update(requested_fields=list(draft.fields), multi_value_fields=list(draft.multi_value_fields),
+                    goal_warnings=list(draft.warnings), unsupported=list(draft.unsupported))
 
     def _create_offline_demo(self) -> None:
         demo = create_demo_workspace(self._project_root / "demos" / "offline-onboarding")

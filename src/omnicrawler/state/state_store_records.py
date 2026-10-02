@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from dataclasses import replace
@@ -129,29 +130,35 @@ class RecordsMixin:
                 )
         return changed
 
-    def save_records(self, run_id: str, request: CrawlRequest, records: list[ExtractedRecord]) -> int:
+    def save_records(
+        self, run_id: str, request: CrawlRequest, records: list[ExtractedRecord],
+        *, deduplicate_by: tuple[str, ...] = (),
+    ) -> int:
         self._require_run_id(run_id)
         if not records:
             return 0
+        inserted = 0
         with self._lock, self.conn:
-            rows = [
-                (
-                    uuid.uuid5(uuid.NAMESPACE_URL, f"{run_id}:{request.fingerprint}:{index}").hex,
-                    run_id, request.fingerprint, record.source_url,
-                    record.record_type, json_text(record.data), json_text(record.evidence), utcnow(),
+            for index, record in enumerate(records, 1):
+                identity = [record.data.get(name) for name in deduplicate_by]
+                stable = bool(identity) and all(value not in (None, "", []) for value in identity)
+                key = f"{run_id}:{request.fingerprint}:{index}"
+                if stable:
+                    digest = hashlib.sha256(json_text(record.data).encode("utf-8")).hexdigest()
+                    key = f"{run_id}:entity:{record.record_type}:{json_text(identity)}:{digest}"
+                sql = "INSERT OR IGNORE" if stable else "INSERT OR REPLACE"
+                before = self.conn.total_changes
+                self.conn.execute(
+                    f"""{sql} INTO records(
+                        record_id, run_id, request_fingerprint, source_url, record_type,
+                        data_json, evidence_json, created_at
+                    ) VALUES(?,?,?,?,?,?,?,?)""",
+                    (uuid.uuid5(uuid.NAMESPACE_URL, key).hex, run_id, request.fingerprint,
+                     record.source_url, record.record_type, json_text(record.data),
+                     json_text(record.evidence), utcnow()),
                 )
-                for index, record in enumerate(records, 1)
-            ]
-            self.conn.executemany(
-                """
-                INSERT OR REPLACE INTO records(
-                    record_id, run_id, request_fingerprint, source_url, record_type,
-                    data_json, evidence_json, created_at
-                ) VALUES(?,?,?,?,?,?,?,?)
-                """,
-                rows,
-            )
-        return len(records)
+                inserted += self.conn.total_changes - before
+        return inserted
 
     def _preload_versions(
         self,

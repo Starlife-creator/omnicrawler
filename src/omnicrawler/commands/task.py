@@ -49,6 +49,7 @@ def compile_request(request: str, *, fallback_url: str = "") -> dict[str, Any]:
             "max_pages": task.max_pages,
             "output_formats": list(task.output_formats),
             "fields": list(task.fields),
+            "multi_value_fields": list(task.multi_value_fields),
             "post_processing": list(task.post_processing),
             "unsupported": list(task.unsupported),
             "download_files": task.download_files,

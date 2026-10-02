@@ -149,8 +149,9 @@ def test_next_link_without_a_parameter_is_reported_not_clicked() -> None:
     text = "".join(notes)
     # ★ 断言要落在「说明它**被跟进**」这个意思上 —— 只说"链接发现"太松：
     #   提醒里还有一句「若链接发现翻不到…」，删掉前半句仍然能命中。
-    assert "通用链接发现" in text, "只说不做什么、不说已经怎么处理了 —— 用户会以为整页没人管"
-    assert "//a[rel='next']" in text, "没给出该链接的定位信息"
+    assert "source.follow_xpath" in text
+    assert "只跟进识别出的下一页链接" in text
+    assert "页面预算与安全边界" in text
 
 
 def test_unknown_or_absent_detection_yields_nothing() -> None:
@@ -174,7 +175,9 @@ def test_next_link_page_write_no_pagination_and_says_so() -> None:
     advisories: list[str] = []
     config = analyze_to_config(NEXT_LINK, URL, advisories=advisories)
     assert "pagination" not in config["source"]
-    assert any("链接发现" in line for line in advisories)
+    assert config["source"]["follow_xpath"]
+    assert "actions" not in config.get("browser", {})
+    assert any("source.follow_xpath" in line for line in advisories)
 
 
 def test_scroll_shape_produces_browser_actions_not_pagination() -> None:

@@ -69,3 +69,11 @@ omnicrawler plugins audit --report --format json
   业务语义以各命令的 `--help` 与对应文档为准。
 - `stdout_source=unknown` 一旦出现就是缺陷：它意味着新增命令时既没接 `_json()`、
   也没在 `tools/check_agent_surface.py` 的 `DECLARED_OUTPUT` 里声明形态。
+
+
+### 自动分析保留中文需求
+
+`omnicrawler auto-analyze <URL> --request "从 <URL> 采集前两页名言正文、作者和全部标签，导出 Excel。" -o task.yaml`
+将需求页数、字段、多值及输出格式写入自动配置；无法可靠推断的字段或不支持的自动操作明确报错，不写假成功配置。随后按常规先试跑再运行。HTML 下一页使用 `source.follow_xpath` 仅跟进已识别的下一页链接，避免登录或导航消耗页面预算；它不关闭域名、robots 或出网边界。
+
+自动列表中，标题属性仅在对应可见标题时采用；标签用 `all: true` 保留数组。稳定详情链接对应 `extract.deduplicate_by` 时，同实体、同数据在同轮只交付一次，内容变化或标识缺失保留原记录，不按同名标题合并。

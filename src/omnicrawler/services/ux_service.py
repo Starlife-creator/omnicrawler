@@ -33,6 +33,7 @@ class QuickTaskDraft:
     # 这里给出承载位置。约定：**凡进入 `unsupported` 的，必须同时进入 `warnings`** ——
     # 做不到的事要说出来，而不是静默丢弃（这与 R1/R2 的"判据不得静默"是同一条原则）。
     fields: tuple[str, ...] = ()
+    multi_value_fields: tuple[str, ...] = ()
     post_processing: tuple[str, ...] = ()
     unsupported: tuple[str, ...] = ()
 
@@ -47,6 +48,7 @@ class QuickTaskDraft:
             "访问范围": {"入口": self.url, "最多页面": self.max_pages},
             "采集方式": self.source_kind,
             "字段内容": list(self.fields),
+            "多值字段": list(self.multi_value_fields),
             "字段来源": "需求指定" if self.fields else "自动推断",
             "后处理": list(self.post_processing),
             "附件": self.download_files,

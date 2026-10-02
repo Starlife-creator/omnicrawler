@@ -408,7 +408,17 @@ def _run_auto_analyze(args: argparse.Namespace) -> None:
             _sys.argv.append("--always-browser")
         if getattr(args, "item_path", ""):
             _sys.argv.extend(["--item-path", str(args.item_path)])
-        is_main()
+        settings = None
+        if getattr(args, "request", ""):
+            from ..commands.task import compile_request
+
+            settings = compile_request(args.request, fallback_url=args.input)["task"]
+            if settings["url"] != args.input:
+                raise ValueError("需求中的入口网址与分析网址不一致")
+        if settings is None:
+            is_main()
+        else:
+            is_main(task_settings=settings)
     finally:
         _sys.argv = _saved
 

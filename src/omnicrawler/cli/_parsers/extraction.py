@@ -40,6 +40,7 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     auto_crawl.add_argument("input", help="HTML 文件路径 或 URL")
     auto_crawl.add_argument("-o", "--output", help="输出 YAML 配置路径")
     auto_crawl.add_argument("--url", help="页面原始 URL")
+    auto_crawl.add_argument("--request", help="中文需求；保留页数、字段、多值及输出格式，不支持项明确拒绝")
     auto_crawl.add_argument(
         "--always-browser",
         action="store_true",

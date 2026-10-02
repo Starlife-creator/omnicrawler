@@ -132,6 +132,7 @@ class PageAnalyzeWorker(BackgroundWorker):
                 "name": str(field.get("name") or ""),
                 "selector": str(field.get("selector") or ""),
                 "attribute": str(field.get("attribute") or ""),
+                "all": bool(field.get("all", False)),
             })
         return {
             "url": final_url or self.url,
@@ -141,6 +142,7 @@ class PageAnalyzeWorker(BackgroundWorker):
             "item_selector": item_selector,
             "fields": fields,
             "pagination": analysis.pagination,
+            "follow_xpath": str((analysis.pagination or {}).get("xpath") or "") if (analysis.pagination or {}).get("type") == "next_link" else "",
             # 复用分析器自己的"页面框架"判据（`_is_chrome_path`：aside/nav/footer）：
             # 只在导航/侧边栏里找到重复元素时，那不是业务列表 ——
             # GUI 据此**不填容器并警告**，而不是把侧边栏当成列表交给用户。

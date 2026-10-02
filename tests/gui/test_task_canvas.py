@@ -899,3 +899,29 @@ def test_rendered_analysis_synchronizes_source_and_summary(monkeypatch):
     assert canvas._source_kind_combo.currentData() == "browser"
     assert "浏览器" in canvas._summary_label.text()
     canvas.deleteLater()
+
+
+def test_requested_fields_all_values_and_trial_budget_round_trip(monkeypatch):
+    from omnicrawler.gui.core.config_model import CrawlConfig
+    from omnicrawler.gui.core.config_serializer import from_yaml, to_yaml
+
+    canvas = _make_canvas(monkeypatch)
+    cfg = CrawlConfig(seed_urls=["https://example.org/js/"], max_pages=2)
+    cfg.passthrough["task"] = {"requested_fields": ["正文", "作者", "标签"], "multi_value_fields": ["标签"]}
+    canvas.load_config(cfg)
+    assert canvas.trial_pages() == 2
+    assert any("正文" in error for error in cfg.validate())
+    canvas.apply_analysis({"item_selector": "div.quote", "rendered": True, "page_type": "list",
+                           "follow_xpath": "//li[@class='next']/a",
+                           "fields": [{"name": "正文", "selector": ".text", "attribute": "text"},
+                                      {"name": "作者", "selector": ".author", "attribute": "text"},
+                                      {"name": "标签", "selector": ".tag", "all": True, "attribute": "text"}]})
+    canvas._sync_form_to_config()
+    restored = from_yaml(to_yaml(canvas._config))
+    assert [field.name for field in restored.fields] == ["正文", "作者", "标签"]
+    assert restored.fields[2].all_values
+    assert all(field.attribute is None for field in restored.fields)
+    assert all(field.required for field in restored.fields)
+    assert restored.passthrough["source"]["follow_xpath"] == "//li[@class='next']/a"
+    assert not restored.validate()
+    canvas.deleteLater()

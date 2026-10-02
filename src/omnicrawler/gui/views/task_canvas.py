@@ -797,6 +797,9 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
             self._update_item_path_visibility()
             self._load_pagination(cfg.pagination)
             self._max_pages.setValue(cfg.max_pages)
+            goal = cfg.passthrough.get("task", {})
+            limit = min(10, cfg.max_pages) if isinstance(goal, dict) and goal.get("requested_fields") else 10
+            self._trial_pages_spin.setMaximum(max(1, limit))
             self._delay_spin.setValue(cfg.delay)
             self._concurrency_spin.setValue(cfg.concurrency)
             self._download_chk.setChecked(cfg.download.enabled)
@@ -828,6 +831,18 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
         lines.append(f"<b>{_('入口')}</b>　{url}　{editable}")
         lines.append(f"<b>{_('采集方式')}</b>　{kind}　{editable}")
         lines.append(f"<b>{_('预计页数')}</b>　{cfg.max_pages}　{editable}")
+        goal = cfg.passthrough.get("task", {})
+        if isinstance(goal, dict) and goal.get("requested_fields"):
+            import html
+
+            requested = "、".join(str(name) for name in goal["requested_fields"])
+            lines.append(f"<b>{_('需求字段')}</b>　{html.escape(requested)}")
+            if goal.get("multi_value_fields"):
+                multiple = "、".join(str(name) for name in goal["multi_value_fields"])
+                lines.append(f"<b>{_('全部取值')}</b>　{html.escape(multiple)}")
+            missing = [str(name) for name in goal["requested_fields"] if name not in {field.name for field in cfg.fields}]
+            if missing:
+                lines.append(f"<b>{_('待配置字段')}</b>　{html.escape('、'.join(missing))} · {_('请先分析页面或手动配置')}")
         if not self._simple_mode:
             lines.append(
                 f"<b>{_('附件与PDF')}</b>　{_('启用') if cfg.download.enabled else _('关闭')}　{editable}"

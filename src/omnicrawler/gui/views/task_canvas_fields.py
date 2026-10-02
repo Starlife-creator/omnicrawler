@@ -270,6 +270,20 @@ class FieldsAreaMixin(_Base):
             self._item_selector_edit.setText(selector)
             filled_container = True
 
+        goal = self._config.passthrough.get("task", {})
+        if isinstance(goal, dict) and goal.get("requested_fields"):
+            from ...extraction.intelligent_scraper import align_requested_fields
+
+            candidates = {str(field["name"]): dict(field) for field in report.get("fields", [])}
+            try:
+                aligned = align_requested_fields(candidates, list(goal["requested_fields"]),
+                                                  list(goal.get("multi_value_fields", [])))
+            except ValueError as exc:
+                ToastManager.instance().warning(str(exc))
+                return
+            report = {**report, "fields": [{**field, "name": name} for name, field in aligned.items()]}
+        if report.get("follow_xpath"):
+            self._config.passthrough.setdefault("source", {})["follow_xpath"] = report["follow_xpath"]
         existing = self._current_field_names()
         added = 0
         for field in report.get("fields") or []:
@@ -278,10 +292,14 @@ class FieldsAreaMixin(_Base):
             if not name or not field_selector or name in existing:
                 continue
             attribute = str(field.get("attribute") or "") or None
+            if attribute == "text":
+                attribute = None
             self._append_field_row(FieldDef(
                 name=name,
                 selector=field_selector,
                 attribute=attribute,
+                required=bool(field.get("required", False)),
+                all_values=bool(field.get("all", False)),
                 # 外部形状进来的字段要**显式**落定位置（否则选择器为空的合法规则会被校验拦住）
                 position=position_of({"selector": field_selector, "attr": attribute}).key,
             ))

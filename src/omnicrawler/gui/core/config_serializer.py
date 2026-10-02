@@ -142,6 +142,8 @@ def to_yaml(config: CrawlConfig) -> str:
             field_value["regex"] = f.regex
         if f.required:
             field_value["required"] = True
+        if f.all_values:
+            field_value["all"] = True
         fields_map[f.name] = field_value
     extract["fields"] = fields_map
     root["extract"] = extract
@@ -350,6 +352,7 @@ def from_yaml(yaml_str: str) -> CrawlConfig:
                         attribute=str(attr) if attr else None,
                         regex=str(regex) if regex else None,
                         required=bool(field_spec.get("required", False)),
+                        all_values=bool(field_spec.get("all", False)),
                         fallback_xpath=fallback_xpath or None,
                         # 从配置加载时**显式**落定取值位置（按既有形状推导，契约见
                         # core/field_value_source.py）⇒ 旧配置零迁移，且"表单行未选位置"

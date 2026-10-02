@@ -144,6 +144,14 @@ class GenericSource:
             can_crawl = self.kind in {"crawl", "focused", "incremental", "media", "browser"}
             download = self.config.section("download")
             extensions = tuple(str(item).lower() for item in download.get("extensions", []))
+            follow_xpath = str(self.source.get("follow_xpath") or "").strip()
+            allowed_links = None
+            if follow_xpath:
+                from lxml import html as lxml_html
+
+                root = lxml_html.fromstring(decode_body(result))
+                allowed_links = {str(node.get("href")).strip() for node in root.xpath(follow_xpath)
+                                 if hasattr(node, "get") and node.get("href")}
             for href, label, link_kind in discover_links(document):
                 url = canonicalize_url(result.final_url, href)
                 if not url:
@@ -155,7 +163,7 @@ class GenericSource:
                     discovered.append(self._child(result, url, "asset", label))
                 elif is_media and (download.get("media") or self.kind == "media"):
                     discovered.append(self._child(result, url, "asset", label))
-                elif can_crawl and link_kind == "link":
+                elif can_crawl and link_kind == "link" and (allowed_links is None or href.strip() in allowed_links):
                     discovered.append(self._child(result, url, "page", label))
         if self.kind in {"rest", "graphql"}:
             discovered.extend(self._discover_api_next(result))

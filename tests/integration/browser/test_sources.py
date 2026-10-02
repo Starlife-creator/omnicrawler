@@ -282,3 +282,11 @@ def test_query_helper_and_source_registration() -> None:
     registry = Registry()
     register(registry)
     assert {"static_html", "rest", "browser", "websocket", "scrapy"}.issubset(registry.sources)
+
+
+def test_detected_next_link_excludes_login_and_navigation(tmp_path: Path) -> None:
+    source = GenericSource(_config(tmp_path, "browser", source={"follow_xpath": "//li[@class='next']/a"}))
+    body = b"<html><body><a href='/login'>Login</a><a href='/about'>About</a><li class='next'><a href=' /page/2/ '>Next</a></li></body></html>"
+    links = source.discover(_result("https://example.org/start", body, request=CrawlRequest("https://example.org/start", render=True)))
+    assert [request.url for request in links] == ["https://example.org/page/2/"]
+    assert links[0].render
