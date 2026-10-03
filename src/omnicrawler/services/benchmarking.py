@@ -361,7 +361,7 @@ class BenchmarkRunner:
 
             service = ApplicationService(effective)
             with sampler:
-                result = service.run(resume=resume, callback=_sample_rss)
+                result = service.run(resume=resume, lifecycle_callback=_sample_rss)
             status = str(result.get("status", ""))
             stats = _summary_stats(result)
             run_id = str(result.get("run_id", ""))

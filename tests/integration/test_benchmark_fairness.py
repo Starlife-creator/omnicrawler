@@ -112,6 +112,12 @@ def test_profiles_apply_distinct_workloads(site, tmp_path: Path) -> None:
         assert result.pages == hits, f"pages={result.pages} 与站点收到的请求数 {hits} 不一致"
         assert result.pages_per_second > 0, "吞吐量仍为 0 —— 指标口径回退了"
         assert result.bytes_transferred > 0, "落库字节数仍为 0"
+        assert result.fetches == hits, "抓取事件不能从进度回调推断"
+        assert result.browser_fetches == result.browser_escalations == 0
+        assert result.time_to_first_record_seconds is not None, "非空落库提取必须记录首条延迟"
+        assert 0 <= result.time_to_first_record_seconds <= result.duration_seconds + 0.01
+        assert result.memory_scope == "process_tree_rss_v1" and result.memory_samples > 0
+
         assert dict(result.profile_settings)["max_pages"] == str(profile.max_pages)
 
 

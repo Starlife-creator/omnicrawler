@@ -83,7 +83,8 @@ class ApplicationService:
         return {"before_hash": before.plan_hash, "after_hash": other.plan_hash, "changes": diff_plans(before, other)}
 
     def run(self, *, resume: bool = False, retry_failed: bool = False, require_sample_match: bool = False,
-            max_pages: int | None = None, callback: Callable[[str, dict[str, Any]], None] | None = None) -> dict[str, Any]:
+            max_pages: int | None = None, callback: Callable[[str, dict[str, Any]], None] | None = None,
+            lifecycle_callback: Callable[[str, dict[str, Any]], None] | None = None) -> dict[str, Any]:
         # E9：max_pages 与 callback 透传 Pipeline.run，保证任意调用方（CLI/GUI）行为一致
         config = self._ensure_config()
         plan = compile_task_plan(TaskIR.from_config(config.raw))
@@ -96,6 +97,17 @@ class ApplicationService:
         status = "unknown"
         try:
             with Pipeline(config) as pipeline:
+                if lifecycle_callback is not None:
+                    target = lifecycle_callback
+                    # Progress callbacks and lifecycle hooks are separate
+                    # channels. Register on this pipeline instance only.
+                    def fetched(**context: Any) -> None:
+                        target("after_fetch", {"engine": context.get("engine"),
+                                               "escalated": bool(context.get("escalated", False))})
+                    def extracted(**context: Any) -> None:
+                        target("after_extract", {"count": context.get("count", 0)})
+                    pipeline.registry.register_hook("after_fetch", fetched)
+                    pipeline.registry.register_hook("after_extract", extracted)
                 result = pipeline.run(resume=resume, retry_failed=retry_failed, max_pages=max_pages, callback=callback)
             self._write_binding(config, formal_plan_hash=plan.plan_hash)
             result_status = result.get("status")
