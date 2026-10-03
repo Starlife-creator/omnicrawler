@@ -1,0 +1,27 @@
+template_version: 1
+template:
+  id: examples/public-list
+  name: 公开列表离线样例
+  category: examples/public-http
+  description: 自建合成样例用于离线复现，不代表公网场景已核验
+  version: 1.0.0
+  min_core_version: 0.15.0
+  license: OmniCrawler-MIT
+  capabilities: [http, evidence]
+  placeholders:
+    seed_url: {type: string, required: true}
+    maximum_pages: {type: integer, minimum: 1, maximum: 10, default: 3}
+  verified_at: '2026-10-03'
+  limitations: 合成 HTML 样例；新 URL 仍须 validate/plan/sample；导入不批准运行
+  offline_example:
+    source_id: synthetic-public-list-v1
+    url: https://example.test/list
+    html: '<main><article class="card"><h2 class="title">Synthetic paper A</h2></article><article class="card"><h2 class="title">Synthetic paper B</h2></article></main>'
+    expected: [{title: Synthetic paper A}, {title: Synthetic paper B}]
+    historical_reference_only: true
+project: {name: public_list, workspace: work/public_list}
+source: {kind: static_html, seeds: ['{{seed_url}}']}
+crawl: {max_pages: '{{maximum_pages}}', max_depth: 0, concurrency: 1, same_host: true}
+http: {respect_robots: true, delay_seconds: 1.5}
+extract: {mode: html, item_selector: article.card, fields: {title: {selector: .title, type: text}}}
+outputs: {jsonl: true, csv: true, xlsx: false}

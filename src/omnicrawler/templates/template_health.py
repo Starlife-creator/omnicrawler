@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import re
 import zipfile
@@ -12,7 +13,8 @@ from typing import Any
 
 import yaml
 
-from ..core.utils import validate_user_agent_honesty
+from ..core.archive_security import ZipReadLimits, read_zip_member, validate_zip_archive
+from ..core.utils import atomic_write, validate_user_agent_honesty
 from .parameters import validate_parameters
 from .template_catalog import TemplateCatalog, TemplateRecord
 
@@ -201,19 +203,38 @@ class TemplatePack:
     """
 
     MANIFEST = "omnicrawler-template-pack.json"
+    LIMITS = ZipReadLimits(max_entries=101, max_total_bytes=32 * 1024**2,
+                           max_file_bytes=2 * 1024**2, max_manifest_bytes=1024**2)
 
     @classmethod
     def export(cls, records: Iterable[TemplateRecord], target: Path) -> Path:
         selected = list(records)
+        if not 1 <= len(selected) <= 100:
+            raise ValueError("模板包需要 1–100 个模板，空包不能代表成功")
+        entries: dict[str, bytes] = {}
+        total = 0
+        for record in selected:
+            identifier = record.metadata.template_id
+            if not re.fullmatch(r"[a-z0-9][a-z0-9._/-]*", identifier) or ".." in identifier:
+                raise ValueError("Unsafe template id")
+            name = f"templates/{identifier}.yaml"
+            if name.casefold() in {key.casefold() for key in entries}:
+                raise ValueError("Duplicate template id")
+            payload = record.path.read_bytes()
+            total += len(payload)
+            if len(payload) > cls.LIMITS.max_file_bytes or total > cls.LIMITS.max_total_bytes:
+                raise ValueError("Template pack size budget exceeded")
+            cls._validate_payload(payload)
+            entries[name] = payload
         target.parent.mkdir(parents=True, exist_ok=True)
         manifest: dict[str, Any] = {"format": 1, "created_at": datetime.now(UTC).isoformat(), "files": {}}
-        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for record in selected:
-                name = f"templates/{record.metadata.template_id}.yaml"
-                payload = record.path.read_bytes()
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for name, payload in entries.items():
                 manifest["files"][name] = hashlib.sha256(payload).hexdigest()
                 archive.writestr(name, payload)
             archive.writestr(cls.MANIFEST, json.dumps(manifest, ensure_ascii=False, indent=2))
+        atomic_write(target, buffer.getvalue())
         return target
 
     @classmethod
@@ -222,19 +243,25 @@ class TemplatePack:
         target_dir = target_dir.resolve()
         target_dir.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(pack) as archive:
-            manifest = json.loads(archive.read(cls.MANIFEST))
+            members = validate_zip_archive(archive, required=(cls.MANIFEST,), limits=cls.LIMITS)
+            manifest = json.loads(read_zip_member(archive, members[cls.MANIFEST], maximum_bytes=cls.LIMITS.max_manifest_bytes))
+            if not isinstance(manifest, dict) or manifest.get("format") != 1:
+                raise ValueError("Invalid template pack format")
             files = manifest.get("files", {})
-            if not isinstance(files, dict):
+            if not isinstance(files, dict) or not 1 <= len(files) <= 100:
                 raise ValueError("Invalid template pack manifest")
+            actual = {name for name, info in members.items() if not info.is_dir()}
+            if actual != set(files) | {cls.MANIFEST}:
+                raise ValueError("Template pack contains unlisted or missing files")
             prepared: list[tuple[Path, bytes]] = []
             for name, expected_hash in files.items():
                 pure = PurePosixPath(name)
-                if pure.is_absolute() or ".." in pure.parts or not str(pure).startswith("templates/"):
+                if pure.is_absolute() or ".." in pure.parts or pure.suffix not in {".yaml", ".yml"} or not str(pure).startswith("templates/"):
                     raise ValueError(f"Unsafe template pack path: {name}")
-                payload = archive.read(name)
+                payload = read_zip_member(archive, members[name], maximum_bytes=cls.LIMITS.max_file_bytes)
                 if hashlib.sha256(payload).hexdigest() != expected_hash:
                     raise ValueError(f"Template pack checksum mismatch: {name}")
-                yaml.safe_load(payload.decode("utf-8"))
+                cls._validate_payload(payload)
                 destination = (target_dir / Path(*pure.parts[1:])).resolve()
                 if target_dir not in destination.parents:
                     raise ValueError(f"Unsafe template destination: {name}")
@@ -243,9 +270,18 @@ class TemplatePack:
                 prepared.append((destination, payload))
             for destination, payload in prepared:
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                destination.write_bytes(payload)
+                atomic_write(destination, payload)
                 created.append(destination)
         return created
+
+    @staticmethod
+    def _validate_payload(payload: bytes) -> None:
+        text = payload.decode("utf-8")
+        if any(isinstance(token, yaml.tokens.AliasToken) for token in yaml.scan(text)):
+            raise ValueError("Template packs do not support YAML aliases")
+        value = yaml.safe_load(text)
+        if not isinstance(value, dict) or not isinstance(value.get("project"), dict) or not isinstance(value.get("source"), dict):
+            raise ValueError("Template pack entry must be a task mapping")
 
 
 def _html_features(html: str) -> set[str]:

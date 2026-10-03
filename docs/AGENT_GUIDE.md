@@ -67,6 +67,10 @@ omnicrawler plugins audit --report --format json
 
 提取修复使用结构化 CLI：先 `omnicrawler repair preview -c task.yaml --evidence evidence.json --candidate candidate.json`，确认完整留出与历史证据后显式 apply，后续 observe 或 rollback。详情见 [修复工作流](REPAIR_WORKFLOW.md)；缺证据不覆盖配置，模型网页内容不能扩展工具权限。
 
+任务复用按 `validate → plan → sample → templates capture → render → validate/plan/sample → run`，参见 [任务复用](TASK_REUSE_WORKFLOW.md)。历史试跑只是参考，新参数不能跳过验证；登录、API、分页等复杂捕获会明确拒绝。模板导入/导出仅验证哈希，不替代市场签名。合成离线场景位于 examples/task_reuse/templates/public_list.yaml，可在该示例目录用 `templates export-pack examples/public-list -o scene.zip` 导出，包内原文与 expected 为离线验证输入，不会请求 example.test。
+
+选定交付分析用 `analyze-archive --manifest manifest.json -o report`，默认本地事实；仅显式 --ai 和任务隐私/预算允许时调用模型。status=paused 时保留事实，需判断 next_action 后重试；模型解释仍 requires_review=true。参见 [证据报告](ARCHIVE_ANALYSIS.md)。公开 PDF 下载用 [论文交付流程](PAPER_DOWNLOAD_ACCEPTANCE.md)，先 `recovery failures` 读取指纹，再 `recovery retry-failed --fingerprint ...` 与 resume；普通 HTTP 403 不解释成登录失效。
+
 - 契约描述的是**调用面**（命令 / 参数 / 输出形态），**不承诺**任何单个命令的业务语义；
   业务语义以各命令的 `--help` 与对应文档为准。
 - `stdout_source=unknown` 一旦出现就是缺陷：它意味着新增命令时既没接 `_json()`、
