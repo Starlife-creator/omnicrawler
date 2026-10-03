@@ -76,18 +76,23 @@ def read_document(path: Path) -> dict[str, Any]:
     return value
 
 
-def commit_document(root: Path, value: dict[str, Any]) -> None:
+def commit_document(root: Path, value: dict[str, Any], previous: dict[str, Any] | None = None) -> None:
     """Immutable version directories make replay of the manifest commit safe."""
     journal = contained_path(root, ".registry.pending.json")
-    raw = json.dumps(value, ensure_ascii=False, indent=2).encode("utf-8")
+    raw = json.dumps({"format": 1, "installed": value, "previous": previous or {}}, ensure_ascii=False, indent=2).encode("utf-8")
     atomic_write(journal, raw)
-    atomic_write(contained_path(root, "installed.json"), raw)
-    journal.unlink()
+    recover_document(root)
 
 
 def recover_document(root: Path) -> None:
     journal = contained_path(root, ".registry.pending.json")
     if journal.exists():
         value = read_document(journal)
+        if value.get("format") == 1:
+            for name, entry in value["previous"].items():
+                rollback = contained_path(root, f".rollback/{safe_identifier(name)}.json")
+                rollback.parent.mkdir(exist_ok=True)
+                atomic_write(rollback, json.dumps(entry, ensure_ascii=False).encode("utf-8"))
+            value = value["installed"]
         atomic_write(contained_path(root, "installed.json"), json.dumps(value, ensure_ascii=False, indent=2).encode("utf-8"))
         journal.unlink()
