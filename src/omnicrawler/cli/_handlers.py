@@ -313,6 +313,8 @@ def _run_templates(args: argparse.Namespace) -> None:
         timeout=getattr(args, 'timeout', 20.0),
         before=getattr(args, 'before', ''), after=getattr(args, 'after', ''),
         base=getattr(args, 'base', ''), user=getattr(args, 'user', ''), update=getattr(args, 'update', ''),
+        config=getattr(args, 'config', ''), acceptance=getattr(args, 'acceptance', ''),
+        parameter_file=getattr(args, 'parameters', ''),
     )
     if isinstance(result, dict) and result.get("ok") is False:
         _json(result)

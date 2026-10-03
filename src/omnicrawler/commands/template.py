@@ -45,9 +45,16 @@ def execute(
     timeout: float = 20.0,
     before: str = "", after: str = "",
     base: str = "", user: str = "", update: str = "",
+    config: str = "", acceptance: str = "", parameter_file: str = "",
 ) -> Any:
     # B4a：与 GUI 同源发现 <cwd>/templates 与 <cwd>/templates_installed（市场安装模板）
     catalog = bundled_template_catalog(user_template_dirs(Path.cwd()))
+
+    if action == "capture":
+        from ..core.config import load_config
+        from ..templates.capture import capture
+        return capture(load_config(config), Path(acceptance), Path(output), template_id=template_id,
+                       parameter_path=Path(parameter_file) if parameter_file else None, force=force)
 
     if action == "list":
         records = catalog.search(query, category=category, tags=tags or [], capabilities=capabilities or [])

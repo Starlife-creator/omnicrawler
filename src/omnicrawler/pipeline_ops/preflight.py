@@ -177,10 +177,22 @@ def run_sample(config: AppConfig, *, pages: int = 3) -> dict[str, Any]:
     sample_config = AppConfig(config.path, config.root, raw, sample_workspace)
     with Pipeline(sample_config) as pipeline:
         result = pipeline.run(max_pages=max(1, min(10, int(pages))))
+        from ..core.runtime_paths import portable_data_root
+        from ..services.component_manager import ComponentManager
+        from ..templates.capture import trial_reference
+        samples = [dict(row) for row in pipeline.state.conn.execute(
+            "SELECT request_fingerprint, content_sha256, fetched_at FROM responses WHERE run_id=? ORDER BY id",
+            (result.get("run_id", ""),)).fetchall()]
+        component_root = portable_data_root() / ".omnicrawler/components"
+        components = ComponentManager(component_root).list() if component_root.is_dir() else []
+        reference = trial_reference(config, result, samples, components)
     output = config.workspace / "preflight_sample.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
-    return {"sample": result, "report": str(output)}
+    from ..core.utils import atomic_write
+    reference_path = config.workspace / "preflight_acceptance.json"
+    atomic_write(reference_path, json.dumps(reference, ensure_ascii=False, indent=2).encode())
+    return {"sample": result, "report": str(output), "acceptance_reference": str(reference_path)}
 
 
 def _install_requirement(label: str, install_hint: str) -> str:
