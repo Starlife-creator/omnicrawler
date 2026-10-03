@@ -272,5 +272,6 @@ def _bridge_from_storage_state_file(
 
     session = get_cookie_session(config)
     result = bridge_storage_state(data, session, hosts=hosts)
-    session.save()
+    if not session.save():
+        raise SessionBridgeError("HTTP 会话未能加密持久化，不能报告同步成功。")
     return result

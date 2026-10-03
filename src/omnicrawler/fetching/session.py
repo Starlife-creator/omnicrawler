@@ -77,10 +77,10 @@ class CookieSession:
         except Exception as exc:
             LOGGER.warning("cookie 文件加载失败，将新建会话: %s (%s)", self.path, exc)
 
-    def save(self) -> None:
+    def save(self) -> bool:
         with self.lock:
             if not self.path:
-                return
+                return False
             self.path.parent.mkdir(parents=True, exist_ok=True)
             plain = self.path.with_name(self.path.name + ".plain")
             try:
@@ -89,7 +89,7 @@ class CookieSession:
                     blob = SecretsStore().encrypt(plain.read_bytes())
                 except Exception as exc:
                     LOGGER.warning("cookie 加密失败，跳过落盘（会话仍在内存中）: %s", exc)
-                    return
+                    return False
                 tmp = self.path.with_name(self.path.name + ".tmp")
                 tmp.write_bytes(blob)
                 os.replace(tmp, self.path)
@@ -99,6 +99,7 @@ class CookieSession:
                 os.chmod(self.path, 0o600)
             except OSError:
                 pass  # Windows 无 POSIX 权限语义，由 AES-GCM 兜底
+            return True
 
 
 _SESSIONS: dict[Path, CookieSession] = {}

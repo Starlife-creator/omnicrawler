@@ -296,3 +296,8 @@ def test_hint_gate_ignores_unrelated_lines() -> None:
     gate = LoginHintGate()
     assert gate.should_announce("已抓取 10 条记录") is None
     assert gate.announced is False
+
+
+def test_explicit_site_authentication_failure_is_a_login_hint():
+    assert detect_login_signal("目标响应命中任务声明的认证失败条件，需要重新登录") is not None
+    assert detect_login_signal("HTTP 403 权限不足") is None

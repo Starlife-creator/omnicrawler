@@ -32,11 +32,12 @@ class WorkerSession:
     pid: int
     status: str
     created_at: str
+    resume_from_checkpoint: bool = False
 
 
 @runtime_checkable
 class ExecutionBackend(Protocol):
-    def start(self, config_path: str | Path) -> dict[str, Any]: ...
+    def start(self, config_path: str | Path, *, resume: bool = False) -> dict[str, Any]: ...
     def attach(self, session_file: str | Path) -> dict[str, Any]: ...
     def status(self) -> dict[str, Any]: ...
     def pause(self) -> dict[str, Any]: ...
@@ -53,7 +54,7 @@ class InProcessBackend:
         self._state: dict[str, Any] = {"status": "idle"}
         self._lock = threading.Lock()
 
-    def start(self, config_path: str | Path) -> dict[str, Any]:
+    def start(self, config_path: str | Path, *, resume: bool = False) -> dict[str, Any]:
         if self._thread and self._thread.is_alive():
             raise RuntimeError("已有进程内任务正在运行")
         service = ApplicationService(config_path)
@@ -62,7 +63,7 @@ class InProcessBackend:
 
         def run() -> None:
             try:
-                result = service.run()
+                result = service.run(resume=resume)
             except Exception as exc:
                 with self._lock:
                     self._state = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
@@ -184,8 +185,9 @@ class LocalWorkerBackend:
         # 会变成僵尸进程——`psutil.pid_exists()`（`os.kill(pid, 0)`）对僵尸**仍返回真**，
         # 于是"任务结束后 worker 未退出"会被误判为资源残留（实测 macOS CI；Windows 无此概念）。
         self._process: subprocess.Popen[bytes] | None = None
+        self._session_shutdown_requested = False
 
-    def start(self, config_path: str | Path) -> dict[str, Any]:
+    def start(self, config_path: str | Path, *, resume: bool = False) -> dict[str, Any]:
         # A terminal worker keeps its listener for reconnects. End the previous
         # session before replacing its metadata and Popen handle on a new run.
         if self.session is not None:
@@ -201,7 +203,7 @@ class LocalWorkerBackend:
         self.session_file = config.workspace / "worker-session.json"
         session = WorkerSession(
             session_id, str(config.path), str(config.workspace), address, family,
-            secrets.token_urlsafe(32), 0, "starting", utcnow(),
+            secrets.token_urlsafe(32), 0, "starting", utcnow(), resume_from_checkpoint=resume,
         )
         _write_session(self.session_file, session)
         log_path = config.workspace / "logs" / "local-worker.log"
@@ -264,12 +266,47 @@ class LocalWorkerBackend:
         return self._request("stop")
 
     def shutdown(self) -> dict[str, Any]:
-        response = self._request("shutdown")
+        response = {"shutdown": True} if self._session_shutdown_requested else self._request("shutdown")
         if not self.reap(timeout=10.0):
             raise RuntimeError("本地 Worker 尚未退出，请稍后重试")
         self.session = None
         self.session_file = None
+        self._session_shutdown_requested = False
         return response
+
+    def close_for_session_edit(self) -> bool:
+        """Ask a terminal worker to exit, then poll completion without waiting.
+
+        GUI timers call this method until true. Stop acknowledgement alone never
+        permits editing credentials; active resources and the old process must exit.
+        """
+        if self.session is None:
+            return True
+        if not self._session_shutdown_requested:
+            if self.status().get("status") not in {"succeeded", "failed", "cancelled", "partial_success"}:
+                return False
+            self._request("shutdown")
+            self._session_shutdown_requested = True
+        if self._process is not None:
+            if not self.reap(timeout=0):
+                return False
+        else:
+            # Desktop's existing psutil dependency also handles attached workers
+            # (which cannot be waited on as our own child).
+            try:
+                import psutil
+            except ImportError as exc:
+                raise RuntimeError("确认已连接 Worker 退出需要 psutil，请先关闭该 Worker") from exc
+            try:
+                process = psutil.Process(self.session.pid)
+                if process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
+                    return False
+            except psutil.NoSuchProcess:
+                pass
+        self.session = None
+        self.session_file = None
+        self._session_shutdown_requested = False
+        return True
 
     def reap(self, *, timeout: float = 10.0) -> bool:
         """回收（wait）本进程启动的 worker 子进程；返回是否已回收。

@@ -81,7 +81,7 @@ class WorkerTaskRunner(QObject):
         # 无论是否推导出配套 worker，都重建 backend，避免残留旧路径的 worker 命令
         self._backend = LocalWorkerBackend(worker_command=_derive_worker_command(command_path))
 
-    def start(self, config: CrawlConfig, log_level: str = "INFO") -> bool:
+    def start(self, config: CrawlConfig, log_level: str = "INFO", *, resume: bool = False) -> bool:
         if self.is_running:
             self.log_line.emit(_("任务正在运行，请先停止或等待完成。"), "warn")
             return False
@@ -106,7 +106,7 @@ class WorkerTaskRunner(QObject):
         self._yaml_path = configs / f"{config.project_name}_{timestamp}.yaml"
         try:
             save_yaml(config, self._yaml_path)
-            result = self._backend.start(self._yaml_path)
+            result = self._backend.start(self._yaml_path, resume=True) if resume else self._backend.start(self._yaml_path)
         except Exception as exc:
             # S3.1.8：启动失败清理残留配置（backend.start 失败不留孤 YAML）
             if self._yaml_path is not None:
@@ -165,6 +165,18 @@ class WorkerTaskRunner(QObject):
 
     def get_pid(self) -> int | None:
         return self._backend.session.pid if self._backend.session else None
+
+    def prepare_session_change(self, workspace: Path) -> bool:
+        """Stop once, then let the login view's timer wait for resource/process exit."""
+        session = self._backend.session
+        if session is not None and Path(session.workspace).resolve() != workspace.resolve():
+            return True
+        if self.is_running:
+            if self.state != "stopping":
+                self.stop()
+            return False
+        self._poller.stop()
+        return self._backend.close_for_session_edit()
 
     def _poll(self) -> None:
         # S3.3.1：增量读取 worker 日志，逐行过 LogParser（命中 PROGRESS 行经 on_progress emit progress）

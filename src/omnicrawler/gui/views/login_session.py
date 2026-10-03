@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QTimer
@@ -49,6 +50,7 @@ from ...fetching.session_bridge import (
     SessionBridgeError,
     bridge_from_storage_state_file,
 )
+from ...fetching.session_crypto import SessionCryptoError
 from ...fetching.session_state import (
     SESSIONS_DIRNAME,
     SessionPersistenceDisabledError,
@@ -56,6 +58,7 @@ from ...fetching.session_state import (
     list_sessions,
     remove_session,
 )
+from ...runtime.recovery import RecoveryCenter
 from ..design_system import SPACING
 from ..i18n import _
 from ..settings import AppSettings
@@ -78,6 +81,14 @@ _SETTING_TRUE = "1"
 _SETTING_FALSE = "0"
 
 
+@dataclass(frozen=True, slots=True)
+class _PendingLogin:
+    config: AppConfig
+    url: str
+    account: str
+    proxy: str
+
+
 class LoginSessionView(QWidget):
     """登录会话页（工具分组）。
 
@@ -92,12 +103,17 @@ class LoginSessionView(QWidget):
         *,
         settings: AppSettings | None = None,
         launcher: LoginLauncher | None = None,
+        before_session_change: Callable[[AppConfig], bool] | None = None,
+        resume_task: Callable[[AppConfig], None] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._config_provider = config_provider
         self._settings = settings if settings is not None else AppSettings.instance()
         self._launcher = launcher
+        self._before_session_change = before_session_change or (lambda _config: True)
+        self._resume_task = resume_task
+        self._pending_login: _PendingLogin | None = None
         self._config = config_provider()
         self._manager = LoginSessionManager(self._config, launcher=launcher)
         self._sessions: tuple[SessionSummary, ...] = ()
@@ -162,6 +178,9 @@ class LoginSessionView(QWidget):
         actions.addWidget(self._bridge_checkbox)
         actions.addStretch(1)
         form.addLayout(actions)
+        self._resume_checkbox = QCheckBox(_("登录后恢复本任务的认证失败请求"))
+        self._resume_checkbox.setAccessibleName(_("登录后恢复任务开关"))
+        form.addWidget(self._resume_checkbox)
 
         note = QLabel(
             _("窗口只用于你本人手动登录：程序不代填密码、不代过验证码，也不读取 cookie 内容。")
@@ -229,10 +248,13 @@ class LoginSessionView(QWidget):
         layout.addWidget(self._empty)
 
         actions = QHBoxLayout()
-        self._delete_button = QPushButton(_("删除选中会话"))
+        self._delete_button = QPushButton(_("删除选中快照"))
         self._delete_button.clicked.connect(self._on_delete_selected)
         self._delete_button.setEnabled(False)
         actions.addWidget(self._delete_button)
+        self._logout_button = QPushButton(_("清除本任务登录态"))
+        self._logout_button.clicked.connect(self._on_logout_current)
+        actions.addWidget(self._logout_button)
         actions.addStretch(1)
         layout.addLayout(actions)
         return box
@@ -285,7 +307,7 @@ class LoginSessionView(QWidget):
         )
         self._hint_label.setText(hint)
         self._hint_label.setVisible(bool(hint))
-        self._open_button.setEnabled(not hint)
+        self._open_button.setEnabled(not hint and self._pending_login is None)
 
     def _refresh_bridge_switch(self) -> None:
         self._bridge_checkbox.blockSignals(True)
@@ -306,7 +328,13 @@ class LoginSessionView(QWidget):
             self._remaining_label.setText(_("剩余 {0}").format(remaining))
         self._detail_label.setText(snapshot.message)
         self._save_button.setEnabled(active)
+        self._save_button.setText(_("保存并关闭"))
+        if self._pending_login is not None:
+            self._phase_label.setText(_("正在停止任务并等待旧资源退出"))
+            self._save_button.setText(_("取消等待"))
+            self._save_button.setEnabled(True)
         self._extend_button.setEnabled(active)
+        self._logout_button.setEnabled(not active and self._pending_login is None and self._persistence_enabled())
 
     def _refresh_sessions(self) -> None:
         self._sessions = list_sessions(self._config.workspace)
@@ -334,11 +362,28 @@ class LoginSessionView(QWidget):
             ToastManager.instance().warning(_("请先填写要登录的站点地址。"))
             return
         proxy = str(self._config.section("http").get("proxy", ""))
+        pending = _PendingLogin(self._config, url, self._account_edit.text().strip(), proxy)
+        if self._pending_login is not None:
+            return
+        try:
+            ready = self._before_session_change(self._config)
+        except (RuntimeError, OSError) as exc:
+            ToastManager.instance().error(_("无法准备会话恢复：{0}").format(exc))
+            return
+        if not ready:
+            self._pending_login = pending
+            self._timer.start()
+            self.refresh()
+            return
+        self._begin_login(pending)
+
+    def _begin_login(self, pending: _PendingLogin) -> None:
         try:
             self._manager.begin(
-                url, account=self._account_edit.text().strip(), proxy=proxy
+                pending.url, account=pending.account, proxy=pending.proxy
             )
         except (LoginSessionError, SessionPersistenceDisabledError, PolicyBlockedError) as exc:
+            self._timer.stop()
             ToastManager.instance().error(_("无法打开登录窗口：{0}").format(exc))
             self.refresh()
             return
@@ -346,6 +391,11 @@ class LoginSessionView(QWidget):
         self.refresh()
 
     def _on_save_and_close(self) -> None:
+        if self._pending_login is not None:
+            self._pending_login = None
+            self._timer.stop()
+            self.refresh()
+            return
         snapshot = self._manager.finalize(reason="save_and_close")
         self._on_session_finished(snapshot)
 
@@ -357,6 +407,25 @@ class LoginSessionView(QWidget):
         self.refresh()
 
     def _on_tick(self) -> None:
+        pending = self._pending_login
+        if pending is not None:
+            if self._config_provider() is not pending.config:
+                self._pending_login = None
+                self._timer.stop()
+                self.refresh()
+                return
+            try:
+                ready = self._before_session_change(pending.config)
+            except (RuntimeError, OSError) as exc:
+                self._pending_login = None
+                self._timer.stop()
+                ToastManager.instance().error(_("等待旧任务退出失败：{0}").format(exc))
+                self.refresh()
+                return
+            if ready:
+                self._pending_login = None
+                self._begin_login(pending)
+            return
         snapshot = self._manager.poll()
         if snapshot is None:
             self._timer.stop()
@@ -373,35 +442,63 @@ class LoginSessionView(QWidget):
     def _on_session_finished(self, snapshot: LoginSessionSnapshot) -> None:
         """收尾后的统一处理：先如实报告"存了没有"，再谈同步。"""
         self._timer.stop()
+        completed_config = self._config
         self.refresh()
+        if self._config is not completed_config:
+            ToastManager.instance().info(_("登录态已保存到原任务工作区；当前任务已切换，请重新选择恢复目标。"))
+            return
         if snapshot.phase is not LoginPhase.SAVED:
             return
         if not snapshot.state_path:
             return
         if not self._bridge_checkbox.isChecked():
             ToastManager.instance().success(_("登录态已保存（本次未同步给 HTTP 引擎）。"))
+            if self._resume_checkbox.isChecked():
+                ToastManager.instance().warning(_("恢复任务前请开启 HTTP 同步并重新保存，确保请求使用本次登录态。"))
             return
-        self._bridge_to_http(snapshot)
+        elif not self._bridge_to_http(snapshot):
+            return
+        if self._resume_checkbox.isChecked():
+            try:
+                recovery = RecoveryCenter(self._config).retry_after_login(
+                    Path(snapshot.state_path), hosts=bridge_hosts(self._config, login_url=snapshot.login_url),
+                )
+            except (OSError, ValueError, RuntimeError, SessionCryptoError) as exc:
+                ToastManager.instance().warning(_("登录态已保存，但任务恢复失败：{0}").format(exc))
+                return
+            if recovery["retried"] and self._resume_task is not None:
+                self._resume_task(self._config)
+            else:
+                ToastManager.instance().info(_("没有与本次登录匹配的认证失败请求需要恢复。"))
 
-    def _bridge_to_http(self, snapshot: LoginSessionSnapshot) -> None:
+    def _bridge_to_http(self, snapshot: LoginSessionSnapshot) -> bool:
         hosts = bridge_hosts(self._config, login_url=snapshot.login_url)
+        account = str(self._config.section("session").get("name", "default"))
+        if snapshot.account != account:
+            ToastManager.instance().warning(_("此快照属于其他账户，未同步到本任务的 HTTP 会话。"))
+            return False
         try:
             result = bridge_from_storage_state_file(
                 self._config, Path(snapshot.state_path), hosts=hosts
             )
-        except (SessionBridgeError, SessionPersistenceDisabledError) as exc:
+        except (SessionBridgeError, SessionPersistenceDisabledError, TimeoutError, OSError) as exc:
             # ★ 保存本身是成功的，不能被"同步失败"说成整体失败。
             ToastManager.instance().warning(
                 _("登录态已保存，但同步给 HTTP 引擎失败：{0}").format(exc)
             )
-            return
+            return False
         ToastManager.instance().success(
             _("登录态已同步给 HTTP 引擎（{0} 条 cookie，{1} 个域名）。").format(
                 result.added, len(result.domains)
             )
         )
+        return True
 
     def _on_delete_selected(self) -> None:
+        if self._config_provider() is not self._config:
+            self.refresh()
+            ToastManager.instance().warning(_("任务已切换，请重新选择要删除的快照。"))
+            return
         row = self._table.currentRow()
         if row < 0 or row >= len(self._sessions):
             ToastManager.instance().warning(_("请先选中要删除的会话。"))
@@ -410,7 +507,7 @@ class LoginSessionView(QWidget):
         answer = QMessageBox.question(
             self,
             _("删除登录会话"),
-            _("确定删除账户「{0}」的登录会话快照吗？下次采集需要重新登录。").format(
+            _("确定删除账户「{0}」的浏览器快照吗？已同步的 HTTP Cookie 会保留。").format(
                 summary.account
             ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -419,11 +516,32 @@ class LoginSessionView(QWidget):
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
+            if not self._before_session_change(self._config):
+                ToastManager.instance().warning(_("任务正在停止，请等待资源关闭后再删除快照。"))
+                return
             remove_session(summary.path, workspace=self._config.workspace)
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             ToastManager.instance().error(_("删除失败：{0}").format(exc))
             return
-        ToastManager.instance().success(_("已删除登录会话。"))
+        ToastManager.instance().success(_("已删除浏览器快照；HTTP Cookie 保留。"))
+        self.refresh()
+
+    def _on_logout_current(self) -> None:
+        self._sync_config()
+        answer = QMessageBox.question(self, _("清除本任务登录态"),
+            _("将清除当前账户的浏览器快照、HTTP Cookie 和本地浏览器 Profile，并保留可恢复隔离副本。继续吗？"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            if not self._before_session_change(self._config):
+                ToastManager.instance().warning(_("任务正在停止，请等待资源关闭后再清除登录态。"))
+                return
+            RecoveryCenter(self._config).logout_current_session()
+        except (OSError, ValueError, RuntimeError) as exc:
+            ToastManager.instance().error(_("清除登录态失败：{0}").format(exc))
+            return
+        ToastManager.instance().success(_("本任务本地登录态已清除，隔离副本可恢复。"))
         self.refresh()
 
     def _on_bridge_toggled(self, checked: bool) -> None:
@@ -461,3 +579,9 @@ class LoginSessionView(QWidget):
     def stop_timer(self) -> None:
         """窗口关闭等场景下停掉轮询定时器（幂等）。"""
         self._timer.stop()
+        self._pending_login = None
+
+    def shutdown(self) -> None:
+        self.stop_timer()
+        if self._manager.phase in _ACTIVE_PHASES:
+            self._manager.finalize(reason="save_and_close")

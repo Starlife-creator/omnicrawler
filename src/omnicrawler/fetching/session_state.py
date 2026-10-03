@@ -40,6 +40,7 @@ from ..core.errors import OmniCrawlError
 from ..core.models import CrawlRequest
 from ..core.secrets_store import SecretsStoreError
 from .session_crypto import SessionCryptoError, load_storage_state
+from .session_lease import session_lease
 
 __all__ = [
     "DEFAULT_NAME_FRAGMENT",
@@ -286,4 +287,5 @@ def remove_session(path: Path, *, workspace: Path) -> None:
     target = Path(path).resolve()
     if target.parent != sessions_root or not target.name.endswith(STORAGE_STATE_SUFFIX):
         raise ValueError(f"拒绝删除非会话快照文件：{target.name}")
-    target.unlink(missing_ok=True)
+    with session_lease(workspace):
+        target.unlink(missing_ok=True)

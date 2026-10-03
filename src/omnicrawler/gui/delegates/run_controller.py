@@ -32,7 +32,7 @@ class RunController(_BaseDelegate):
             mw._task_runner.pause()
             mw._pause_btn.setText(_("▶ 继续"))
 
-    def run_task(self) -> None:
+    def run_task(self, *, resume: bool = False) -> None:
         mw = self._mw
         # U4-代码：新的一次运行重新开始计数（上次跑提示过，不代表这次不需要登录）。
         # 放在最前：即便环境检查没过，用户"又一次点了运行"这件事本身就该重置。
@@ -80,7 +80,7 @@ class RunController(_BaseDelegate):
         # 于是"结束后应清空"永远不成立（macOS 极快结束的用例上稳定复现）。
         task_id = mw._config.task_id  # 局部 `str`：属性是 `str | None`，这里要的是确定的归属
         mw._running_task_id = task_id
-        ok = mw._task_runner.start(mw._config)
+        ok = mw._task_runner.start(mw._config, resume=True) if resume else mw._task_runner.start(mw._config)
         if not ok:
             # 启动失败 ⇒ 本次没有归属，不能把它留给下一次状态回调
             mw._running_task_id = None

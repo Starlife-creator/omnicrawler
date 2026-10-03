@@ -234,6 +234,60 @@ def _start_and_save(view: LoginSessionView, tmp_path: Path, *, url: str = "https
         view._on_save_and_close()
 
 
+def test_wait_for_worker_exit_before_opening_login(tmp_path, qapp, alerts, toasts):
+    launcher = _FakeLauncher()
+    view = _view(_config(tmp_path), launcher=launcher)
+    ready = [False]
+    view._before_session_change = lambda _config: ready[0]
+    view._on_open_login_window()
+    view._on_open_login_window()
+    assert launcher.opened is None
+    assert view._pending_login is not None
+    view._on_tick()
+    assert launcher.opened is None
+    ready[0] = True
+    view._on_tick()
+    assert launcher.opened is not None
+    assert view._pending_login is None
+    with _bridge_ready(tmp_path):
+        view.shutdown()
+        view.shutdown()
+    assert launcher.close_calls == 1
+    assert not view._timer.isActive()
+
+
+def test_wait_cancel_and_workspace_switch_never_open_login(tmp_path, qapp, alerts, toasts):
+    launcher = _FakeLauncher()
+    config = _config(tmp_path)
+    view = _view(config, launcher=launcher)
+    view._before_session_change = lambda _config: False
+    view._on_open_login_window()
+    view._on_save_and_close()
+    assert view._pending_login is None
+    assert not view._timer.isActive()
+    view._on_open_login_window()
+    other = tmp_path / "other"
+    other.mkdir()
+    view._config_provider = lambda: _config(other)
+    view._on_tick()
+    assert launcher.opened is None
+    assert view._pending_login is None
+    assert not view._timer.isActive()
+    view.shutdown()
+
+
+def test_resume_requires_successful_http_bridge(tmp_path, qapp, alerts, toasts):
+    view = _view(_config(tmp_path))
+    resumed = []
+    view._resume_task = resumed.append
+    view._resume_checkbox.setChecked(True)
+    view._bridge_checkbox.setChecked(False)
+    _start_and_save(view, tmp_path)
+    assert not resumed
+    assert "HTTP" in toasts.last("warning")
+    view.shutdown()
+
+
 # ── 一次性提醒（裁定 1）─────────────────────────────────
 
 

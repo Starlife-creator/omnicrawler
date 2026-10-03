@@ -61,7 +61,7 @@ class WorkerRuntime:
 
     def _execute(self) -> None:
         try:
-            result = self.service.run(callback=self._progress_to_stderr)
+            result = self.service.run(resume=self.session.resume_from_checkpoint, callback=self._progress_to_stderr)
         except Exception as exc:
             result = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
         if isinstance(result, dict):

@@ -11,7 +11,8 @@ from ..core.models import CrawlRequest
 from ..core.utils import utcnow
 from ..fetching import session_crypto
 from ..fetching.authentication import session_scope
-from ..fetching.session import invalidate_cookie_sessions
+from ..fetching.profile_registry import ProfileRegistry
+from ..fetching.session import get_cookie_session, invalidate_cookie_sessions
 from ..fetching.session_bridge import select_bridgeable_cookies
 from ..fetching.session_lease import session_lease
 from ..fetching.session_state import context_key_for_request, require_session_state_path
@@ -214,6 +215,40 @@ class RecoveryCenter:
             "quarantine": str(quarantine),
             "message": "旧会话已隔离；下次运行会重新登录，可从隔离目录恢复。",
         }
+
+    def logout_current_session(self) -> dict[str, Any]:
+        """Clear this task's active local login state, retaining reversible quarantine."""
+        with session_lease(self.config.workspace):
+            workspace = self.config.workspace.resolve()
+            request = CrawlRequest("https://example.invalid/")
+            snapshot = require_session_state_path(self.config, context_key_for_request(self.config, request))
+            http_path = get_cookie_session(self.config).path
+            account = str(self.config.section("session").get("name", "default"))
+            profiles_root = workspace / "browser_profiles"
+            profiles = ProfileRegistry(profiles_root).list_all() if profiles_root.is_dir() else []
+            paths = [snapshot, *([http_path] if http_path else [])]
+            paths.extend(profile.root for profile in profiles if profile.scope.split("|")[1:2] == [account])
+            paths = [path for path in paths if path.exists()]
+            for path in paths:
+                if workspace not in path.resolve().parents or path.is_symlink():
+                    raise ValueError("登录资源超出当前工作区，拒绝清除")
+            quarantine = workspace / "recovery" / f"logout-{secrets.token_hex(8)}"
+            if workspace not in quarantine.resolve().parents:
+                raise ValueError("登录隔离目录超出工作区")
+            invalidate_cookie_sessions(workspace)
+            moved: list[tuple[Path, Path]] = []
+            try:
+                for path in paths:
+                    destination = quarantine / path.relative_to(workspace)
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    path.replace(destination)
+                    moved.append((path, destination))
+            except OSError:
+                for original, destination in reversed(moved):
+                    destination.replace(original)
+                raise
+            return {"moved": len(moved), "quarantine": str(quarantine) if moved else None,
+                    "message": "本任务本地登录态已清除；隔离文件可恢复，目标站点在线会话未执行注销。"}
 
     def rollback_config(self, backup: Path) -> dict[str, Any]:
         backup = backup.expanduser().resolve()

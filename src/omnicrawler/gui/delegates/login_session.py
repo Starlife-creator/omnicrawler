@@ -23,9 +23,17 @@ class LoginSessionDelegate(_BaseDelegate):
 
     def setup(self) -> LoginSessionView:
         """创建页面（由 MainWindow 加入页面栈）。"""
-        view = LoginSessionView(self.current_config, settings=self._mw._settings)
+        view = LoginSessionView(self.current_config, settings=self._mw._settings,
+                                before_session_change=self.prepare_session_change, resume_task=self.resume_after_login)
         self.view = view
         return view
+
+    def prepare_session_change(self, config: AppConfig) -> bool:
+        return self._mw._task_runner.prepare_session_change(config.workspace)
+
+    def resume_after_login(self, config: AppConfig) -> None:
+        if self.current_config() is config:
+            self._mw._run_delegate.run_task(resume=True)
 
     def current_config(self) -> AppConfig:
         """当前 GUI 项目状态 → 引擎侧 ``AppConfig``。
@@ -76,4 +84,4 @@ class LoginSessionDelegate(_BaseDelegate):
         """窗口关闭时停掉轮询定时器（幂等）。"""
         view = getattr(self, "view", None)
         if view is not None:
-            view.stop_timer()
+            view.shutdown()

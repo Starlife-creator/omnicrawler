@@ -7,9 +7,11 @@ from types import SimpleNamespace
 import pytest
 
 from omnicrawler.core.config import AppConfig
+from omnicrawler.fetching.profile_registry import ProfileRegistry
 from omnicrawler.fetching.session import get_cookie_session
 from omnicrawler.fetching.session_bridge import bridge_from_storage_state_file
 from omnicrawler.fetching.session_lease import session_lease
+from omnicrawler.fetching.session_state import context_key, require_session_state_path
 from omnicrawler.pipeline import Pipeline
 from omnicrawler.runtime.recovery import RecoveryCenter
 
@@ -85,3 +87,51 @@ def test_pipeline_close_waits_for_inflight_work_before_releasing_session_lease(t
     with session_lease(config.workspace):
         pass
     pipeline.close()
+
+
+def test_logout_clears_current_account_resources_and_preserves_other_account(tmp_path):
+    config = _config(tmp_path)
+    http = get_cookie_session(config)
+    assert http.path is not None
+    snapshot = require_session_state_path(config, context_key(account="default", proxy=""))
+    other_snapshot = require_session_state_path(config, context_key(account="other", proxy=""))
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    for path in (http.path, snapshot, other_snapshot):
+        path.write_bytes(b"test-only session")
+    profiles = ProfileRegistry(config.workspace / "browser_profiles")
+    current_profile = profiles.acquire("example.test", account="default")
+    other_profile = profiles.acquire("example.test", account="other")
+    result = RecoveryCenter(config).logout_current_session()
+    assert result["moved"] == 3
+    assert not snapshot.exists()
+    assert http.path is None
+    assert not current_profile.root.exists()
+    assert other_snapshot.exists() and other_profile.root.exists()
+    quarantine = Path(result["quarantine"])
+    assert (quarantine / "sessions" / snapshot.name).is_file()
+    assert not (config.workspace / "sessions" / "default.cookies").exists()
+    http.save()
+    assert not (config.workspace / "sessions" / "default.cookies").exists()
+
+
+def test_logout_restores_files_when_a_move_fails(tmp_path, monkeypatch):
+    config = _config(tmp_path)
+    http = get_cookie_session(config)
+    assert http.path is not None
+    snapshot = require_session_state_path(config, context_key(account="default", proxy=""))
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.write_bytes(b"original snapshot")
+    http.path.write_bytes(b"original cookie file")
+    cookie_path = http.path
+    original_replace = Path.replace
+
+    def fail_cookie_move(path, destination):
+        if path == cookie_path:
+            raise OSError("injected move failure")
+        return original_replace(path, destination)
+
+    monkeypatch.setattr(Path, "replace", fail_cookie_move)
+    with pytest.raises(OSError, match="injected"):
+        RecoveryCenter(config).logout_current_session()
+    assert snapshot.read_bytes() == b"original snapshot"
+    assert cookie_path.read_bytes() == b"original cookie file"

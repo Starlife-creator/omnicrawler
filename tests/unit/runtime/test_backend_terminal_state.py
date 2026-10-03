@@ -19,7 +19,7 @@ def test_inprocess_backend_non_dict_result_reaches_terminal_state(tmp_path: Path
     backend = InProcessBackend()
 
     class _FakeService:
-        def run(self, callback=None):
+        def run(self, callback=None, *, resume=False):
             return "plain-value"
 
     monkeypatch.setattr(
@@ -38,14 +38,14 @@ def test_inprocess_backend_non_dict_result_reaches_terminal_state(tmp_path: Path
 def test_worker_runtime_non_dict_result_does_not_crash(tmp_path: Path) -> None:
     from types import SimpleNamespace
 
-    session = SimpleNamespace(config_path=str(tmp_path / "task.yaml"))
+    session = SimpleNamespace(config_path=str(tmp_path / "task.yaml"), resume_from_checkpoint=False)
     runtime = WorkerRuntime.__new__(WorkerRuntime)
     runtime.session = session
     runtime.state = {"status": "running"}
     runtime._lock = threading.Lock()
 
     class _FakeService:
-        def run(self, callback=None):
+        def run(self, callback=None, *, resume=False):
             return 42
 
     runtime.service = _FakeService()
