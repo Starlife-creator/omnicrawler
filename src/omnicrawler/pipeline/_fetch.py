@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ..core.models import CrawlRequest, FetchResult
 from ..core.utils import safe_filename
-from ..fetching.routing import needs_browser
+from ..fetching.routing import browser_decision
 from ..plugins.plugin_advice import choose_fetch_advice
 from ..plugins.plugin_runtime import prepare_request
 from ._mixin_base import _PipelineBase
@@ -98,19 +98,33 @@ class _PipelineFetch(_PipelineBase):
             self._emit("after_fetch", run_id=run_id, request=request, result=result, engine=name)
             return result
         escalated = False
-        escalate, escalation_reason = needs_browser(result)
+        decision = browser_decision(result)
+        fallback_enabled = bool(self.config.section("http").get("auto_browser_fallback", True))
+        if name != "browser":
+            self.metrics.increment(
+                "omnicrawler_browser_decisions_total", reason=decision.code,
+                action="upgrade" if decision.escalate and fallback_enabled else "keep_http",
+            )
         if (
             name != "browser"
-            and escalate
-            and self.config.section("http").get("auto_browser_fallback", True)
+            and decision.escalate
+            and fallback_enabled
         ):
-            LOGGER.info("自动切换浏览器模式: %s (%s)", request.url, escalation_reason)
+            LOGGER.info("自动切换浏览器模式: %s (%s)", request.url, decision.reason)
+            self.metrics.record_stage("http_before_browser", result.elapsed_seconds)
+            self.metrics.increment("omnicrawler_http_before_browser_bytes_total", len(result.body), reason=decision.code)
+            escalation_meta = {
+                "escalated_from": name, "escalation_reason_code": decision.code,
+                "http_before_browser_seconds": result.elapsed_seconds,
+                "http_before_browser_bytes": len(result.body),
+            }
             browser_request = CrawlRequest(
                 url=request.url, method=request.method, headers=request.headers, body=request.body,
                 kind=request.kind, render=True, priority=request.priority, depth=request.depth,
-                parent_url=request.parent_url, meta={**request.meta, "escalated_from": name},
+                parent_url=request.parent_url, meta={**request.meta, **escalation_meta},
             )
             result = self._thread_fetcher("browser").fetch(browser_request)
+            result = result.with_meta_update(escalation_meta)
             name = "browser"
             escalated = True
         allowed, reason = self.scope.allowed(result.final_url, str(root) if root else None)

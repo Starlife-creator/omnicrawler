@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from omnicrawler.core.models import CrawlRequest, FetchResult
-from omnicrawler.fetching.routing import needs_browser
+from omnicrawler.fetching.routing import browser_decision, needs_browser
 
 
 def _result(body: bytes, *, content_type: str = "text/html") -> FetchResult:
@@ -55,3 +55,22 @@ def test_strong_marker_anywhere_is_challenge() -> None:
     <html><head><script>// cf-chl-widget</script></head><body><p>Checking your browser before accessing.</p></body></html>
     """
     assert needs_browser(_result(body)) == (True, "检测到验证页或访问挑战")
+
+
+def test_challenge_documentation_keeps_http() -> None:
+    body = b"<article>How captcha works. " + b"This is public reference material. " * 30 + b"</article>"
+    assert browser_decision(_result(body)).code == "static_content"
+    assert needs_browser(_result(body)) == (False, "")
+
+
+def test_weak_marker_in_attribute_or_comment_is_not_visible():
+    body = b'<p id="captcha">Welcome</p><!-- access denied -->'
+    assert needs_browser(_result(body)) == (False, "")
+
+
+def test_decision_codes_distinguish_shell_challenge_and_assets():
+    shell = _result(b'<div id="root"></div><script></script><script></script><script></script>')
+    assert browser_decision(shell).code == "javascript_shell"
+    assert browser_decision(_result(b"<p>Access denied</p>")).code == "challenge_visible"
+    assert browser_decision(_result(b"cf-chl-widget")).code == "challenge_signature"
+    assert browser_decision(_result(b"captcha", content_type="application/json")).code == "non_html_or_asset"
