@@ -237,6 +237,7 @@ def _start_and_save(view: LoginSessionView, tmp_path: Path, *, url: str = "https
 def test_wait_for_worker_exit_before_opening_login(tmp_path, qapp, alerts, toasts):
     launcher = _FakeLauncher()
     view = _view(_config(tmp_path), launcher=launcher)
+    view._url_edit.setText("https://example.org/")
     ready = [False]
     view._before_session_change = lambda _config: ready[0]
     view._on_open_login_window()
@@ -260,12 +261,15 @@ def test_wait_cancel_and_workspace_switch_never_open_login(tmp_path, qapp, alert
     launcher = _FakeLauncher()
     config = _config(tmp_path)
     view = _view(config, launcher=launcher)
+    view._url_edit.setText("https://example.org/")
     view._before_session_change = lambda _config: False
     view._on_open_login_window()
+    assert view._pending_login is not None
     view._on_save_and_close()
     assert view._pending_login is None
     assert not view._timer.isActive()
     view._on_open_login_window()
+    assert view._pending_login is not None
     other = tmp_path / "other"
     other.mkdir()
     view._config_provider = lambda: _config(other)

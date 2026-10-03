@@ -110,13 +110,14 @@ class SessionExpiredError(OmniCrawlError):
     """Only explicit site checks may mark a response as a session failure."""
 
     code = "session_expired"
+    default_message = "目标响应命中任务声明的认证失败条件，需要重新登录"
     suggestion = "请停止任务并等待资源关闭，重新登录后仅恢复本会话的认证失败请求。"
 
     def __init__(self, scope: str) -> None:
         if len(scope) != 64 or any(char not in "0123456789abcdef" for char in scope):
             raise ValueError("认证失败须绑定明确的会话作用域摘要")
         self.scope = scope
-        super().__init__("目标响应命中任务声明的认证失败条件，需要重新登录")
+        super().__init__(self.default_message)
 
 
 class ExtractionError(OmniCrawlError):

@@ -15,6 +15,7 @@ from datetime import datetime
 from urllib.parse import urlsplit
 
 from ...core.config import AppConfig
+from ...core.errors import SessionExpiredError
 from ...fetching.login_session import LoginPhase
 from ...fetching.session_state import SessionSummary
 from ..i18n import _
@@ -220,7 +221,7 @@ def detect_login_signal(message: str) -> LoginSignal | None:
     text = message or ""
     if not text:
         return None
-    if "目标响应命中任务声明的认证失败条件，需要重新登录" in text:
+    if SessionExpiredError.default_message in text:
         return LoginSignal(status=None, login_url="", reason=_("任务命中已声明的认证失败条件，请重新登录后恢复。"))
     if any(pattern.search(text) for pattern in _UNAUTHORIZED_PATTERNS):
         return LoginSignal(

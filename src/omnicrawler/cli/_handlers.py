@@ -101,7 +101,7 @@ def _run_archive_analysis(args: argparse.Namespace) -> None:
     from ..services.archive_analysis import execute
 
     _json(execute(Path(args.manifest), Path(args.output),
-                  config_path=Path(args.config) if args.config else None, use_ai=args.ai))
+                  config_path=Path(args.ai_config) if args.ai_config else None, use_ai=args.ai))
 
 
 @_register("pdf")
@@ -709,10 +709,11 @@ def _run_recovery(args: argparse.Namespace) -> None:
     if args.action == "rollback-config":
         require_explicit_apply("recovery rollback-config")
     load_config(args.config)
-    if args.fingerprint and args.action != "retry-failed":
+    fingerprints = getattr(args, "fingerprint", None)
+    if fingerprints and args.action != "retry-failed":
         raise ValueError("fingerprint 仅用于 retry-failed")
     _json(cmd_recovery.execute(args.config, args.action, limit=args.limit, backup=args.backup or "",
-                              fingerprints=args.fingerprint))
+                              fingerprints=fingerprints))
 
 
 @_register("compare-runs")

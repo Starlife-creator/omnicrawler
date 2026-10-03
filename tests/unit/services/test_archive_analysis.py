@@ -19,6 +19,18 @@ def _inputs(tmp_path):
     return source, manifest, tmp_path / "report"
 
 
+def test_cli_ai_configuration_is_explicit_and_separate_from_task_config(monkeypatch, capsys):
+    from pathlib import Path
+
+    from omnicrawler.cli import main
+
+    calls = []
+    monkeypatch.setattr(analysis, "execute", lambda *args, **kwargs: calls.append((args, kwargs)) or {"status": "review"})
+    main(["analyze-archive", "--manifest", "manifest.json", "-o", "report", "--ai", "--ai-config", "model.yaml"])
+    assert json.loads(capsys.readouterr().out)["status"] == "review"
+    assert calls[0][1] == {"config_path": Path("model.yaml"), "use_ai": True}
+
+
 def test_cli_local_report_has_stable_references_and_no_provider(tmp_path, monkeypatch, capsys):
     from omnicrawler.cli import main
 

@@ -10,7 +10,7 @@
 
 ```bash
 omnicrawler analyze-archive --manifest delivered/manifest.json -o analysis
-omnicrawler analyze-archive --manifest delivered/manifest.json -o analysis --ai -c task.yaml
+omnicrawler analyze-archive --manifest delivered/manifest.json -o analysis --ai --ai-config task.yaml
 ```
 
 默认只生成 facts.json 与 analysis.json，包含来源哈希、段落定位、稳定证据 ID 和统计；解释与建议为空。PDF 页码未知，不编造页级定位。段落证据至多 400 条、100000 字符，每段至多 2000 字符，报告明确说明遗漏段落未分析；不能据此声称覆盖全文或因果成立。
