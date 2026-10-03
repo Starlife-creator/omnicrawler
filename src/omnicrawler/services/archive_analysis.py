@@ -24,10 +24,45 @@ def _json(path: Path) -> dict[str, Any]:
     return value
 
 
-def _verified_sources(manifest: Path) -> list[dict[str, Any]]:
-    document = _json(manifest)
-    entries = document.get("sources", [])
-    if document.get("format") != 1 or not isinstance(entries, list) or not 1 <= len(entries) <= 20:
+def read_sources(manifest: Path) -> list[dict[str, Any]]:
+    """Read bounded selection metadata; content hashes are verified only for selected inputs."""
+    if manifest.suffix.lower() != ".jsonl":
+        document = _json(manifest)
+        if document.get("format") != 1 or not isinstance(document.get("sources"), list):
+            raise ValueError("需要格式 1 交付清单")
+        entries = document["sources"]
+    else:
+        if manifest.stat().st_size > 2 * 1024**2:
+            raise ValueError("交付清单超过大小限制")
+        entries = []
+        root = manifest.resolve().parent
+        for line in manifest.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            item = json.loads(line)
+            if not isinstance(item, dict) or item.get("verification") != "verified_file":
+                raise ValueError("PDF 交付清单缺少文件核验标记")
+            path = Path(str(item.get("file_path", "")))
+            if root not in path.resolve().parents:
+                raise ValueError("交付文件越出清单目录")
+            relative = str(path.relative_to(root))
+            entries.append({"id": hashlib.sha256(relative.encode()).hexdigest(), "path": relative,
+                            "sha256": item.get("sha256"), "source_url": item.get("source_url", "")})
+    if not 1 <= len(entries) <= 1000 or any(not isinstance(entry, dict) for entry in entries):
+        raise ValueError("交付清单需要 1–1000 份文档")
+    ids = [entry.get("id") for entry in entries]
+    if any(not isinstance(identity, str) or not identity for identity in ids) or len(set(ids)) != len(ids):
+        raise ValueError("交付文档 id 缺失或重复")
+    return entries
+
+
+def _verified_sources(manifest: Path, selected_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    entries = read_sources(manifest)
+    if selected_ids is not None:
+        if not selected_ids or len(set(selected_ids)) != len(selected_ids) or not set(selected_ids) <= {entry["id"] for entry in entries}:
+            raise ValueError("需要明确且有效的非空文档选择")
+        entries = [entry for entry in entries if entry["id"] in selected_ids]
+    if not 1 <= len(entries) <= 20:
         raise ValueError("格式 1 分析清单需要 1–20 份明确选择的交付文档")
     result = []
     total_bytes = 0
@@ -120,8 +155,9 @@ def _validate_claims(value: dict[str, Any], evidence: list[dict[str, Any]]) -> d
     return validated
 
 
-def execute(manifest: Path, output: Path, *, config_path: Path | None = None, use_ai: bool = False) -> dict[str, Any]:
-    sources = _verified_sources(manifest)
+def execute(manifest: Path, output: Path, *, config_path: Path | None = None, use_ai: bool = False,
+            selected_ids: list[str] | None = None) -> dict[str, Any]:
+    sources = _verified_sources(manifest, selected_ids)
     identity = hashlib.sha256(json.dumps(sources, sort_keys=True).encode()).hexdigest()
     if output.is_symlink():
         raise ValueError("报告目录不能使用链接")

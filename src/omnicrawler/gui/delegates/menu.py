@@ -95,6 +95,12 @@ class MenuBuilder(_BaseDelegate):
         error_center_action.triggered.connect(mw._open_error_center)
         settings_menu.addAction(error_center_action)
 
+        from ..views.task_tools import open_task_tools
+
+        task_tools_action = QAction(_("模板、交付分析与恢复..."), mw)
+        task_tools_action.triggered.connect(lambda: open_task_tools(mw))
+        settings_menu.addAction(task_tools_action)
+
         compare_runs_action = QAction(_("对比两次运行..."), mw)
         compare_runs_action.triggered.connect(mw._show_run_comparison)
         settings_menu.addAction(compare_runs_action)

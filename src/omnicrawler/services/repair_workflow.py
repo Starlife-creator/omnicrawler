@@ -220,7 +220,7 @@ def execute(
                 comparison,
             ) for candidate, comparison in evaluated]
             report = {"status": "preview", "historical_reference_only": True,
-                      "candidates": [{"candidate": asdict(candidate), "comparison": asdict(comparison)} for candidate, comparison in evaluated]}
+                      "candidates": [{"candidate": asdict(candidate), "comparison": {**asdict(comparison), "improves_safely": comparison.improves_safely}} for candidate, comparison in evaluated]}
             atomic_write(report_path, json.dumps(report, ensure_ascii=False, indent=2).encode())
             if action == "preview" or not evaluated:
                 return {**report, "report": str(report_path)}
