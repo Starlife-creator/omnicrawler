@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import yaml
 
 from ..core.safe_data import safe_regex_search
+from .parameters import validate_parameters
 
 LOGGER = logging.getLogger(__name__)
 
@@ -293,11 +294,7 @@ class TemplateCatalog:
             raise KeyError(f"Unknown template: {template}")
         data = copy.deepcopy(dict(record.config))
         declared = record.metadata.placeholders
-        merged_values = {
-            key: value.get("default") if isinstance(value, Mapping) else value
-            for key, value in declared.items()
-        }
-        merged_values.update(values)
+        merged_values = validate_parameters(declared, values, strict=strict)
         missing: set[str] = set()
 
         def replace(value: Any) -> Any:

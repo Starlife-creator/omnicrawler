@@ -13,6 +13,7 @@ from typing import Any
 import yaml
 
 from ..core.utils import validate_user_agent_honesty
+from .parameters import validate_parameters
 from .template_catalog import TemplateCatalog, TemplateRecord
 
 
@@ -72,6 +73,10 @@ def validate_template(record: TemplateRecord) -> TemplateHealth:
     errors: list[str] = []
     warnings: list[str] = []
     meta = record.metadata
+    try:
+        validate_parameters(meta.placeholders, {}, strict=False)
+    except ValueError as exc:
+        errors.append(str(exc))
     if not re.fullmatch(r"[a-z0-9][a-z0-9._/-]*", meta.template_id):
         errors.append("template.id must use stable lowercase path characters")
     if not meta.description.strip():

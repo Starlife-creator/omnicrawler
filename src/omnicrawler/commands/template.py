@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
-import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from ..core.utils import atomic_write
+from ..services.config_history import ConfigHistory
 from ..sources.site_inspector import inspect_url
 from ..templates.template_catalog import TemplateProbe, bundled_template_catalog, user_template_dirs
 from ..templates.template_diff import compare_template_files, merge_template_files
@@ -92,18 +94,20 @@ def execute(
         target_path.parent.mkdir(parents=True, exist_ok=True)
         if target_path.exists() and not force:
             raise FileExistsError(f"目标已存在；使用 --force 才会覆盖: {target_path}")
-        target_path.write_text(yaml.safe_dump(rendered, allow_unicode=True, sort_keys=False), encoding="utf-8")
-        # E13：渲染出的配置先跑校验——内部不合法（缺必填/数值越界）直接报错，
-        # 不再生成"能写盘但跑不起来"的配置；--force 仅放行写入，校验错误仍报告。
-        from ..core.config import load_config, validate_config
-        loaded = load_config(target_path)
-        errors, _warnings = validate_config(loaded)
-        if errors:
-            detail = "\n".join(f"  - {item}" for item in errors)
-            if force:
-                print(f"⚠ 渲染出的配置校验不通过（--force 已放行，请手工修复）:\n{detail}", file=sys.stderr)
-            else:
-                raise ValueError(f"渲染出的配置校验不通过:\n{detail}")
+        from ..core.config import load_config
+        payload = yaml.safe_dump(rendered, allow_unicode=True, sort_keys=False).encode("utf-8")
+        # Validate in the destination directory so relative paths keep their meaning.
+        # --force authorizes overwrite, never invalid configuration.
+        with tempfile.NamedTemporaryFile(dir=target_path.parent, suffix=".yaml", delete=False) as temporary:
+            temporary.write(payload)
+            temporary_path = Path(temporary.name)
+        try:
+            loaded = load_config(temporary_path)
+            if target_path.exists():
+                ConfigHistory(loaded.root / ".config_history").snapshot(target_path, reason="before_template_render")
+            atomic_write(target_path, payload)
+        finally:
+            temporary_path.unlink(missing_ok=True)
         return {"created": str(target_path), "next": f"omnicrawler validate -c {target_path}"}
     if action == "validate":
         health = validate_catalog(catalog, include_legacy=include_legacy)

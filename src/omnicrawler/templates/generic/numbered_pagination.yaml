@@ -18,11 +18,11 @@ template:
 
   placeholders:
 
-    seed_url: {label: 第一页地址, required: true}
+    seed_url: {label: 第一页地址, type: string, required: true}
 
-    page_parameter: {label: 页码参数名, default: page}
+    page_parameter: {label: 页码参数名, type: string, default: page}
 
-    end_page: {label: 终止页码, default: 20}
+    end_page: {label: 终止页码, type: integer, minimum: 1, maximum: 1000, default: 20}
 
   verified_at: '2026-07-17'
 
