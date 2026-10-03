@@ -190,6 +190,8 @@ def classify_tier(
     # 安全兜底：未通过安全改善检查永远 L0
     if not comparison.improves_safely:
         return AutomationTier.L0
+    if candidate.origin == "llm" and not policy.llm_enabled:
+        return AutomationTier.L0
 
     # L3：连续稳定（观察轮数达标 + 误报风险低）
     # L3 是 L2 的稳定演化，需要 L2 启用（L2 禁用时稳定候选降级 L1/L0）
@@ -367,6 +369,7 @@ def observed_auto_apply(
             promoted,
             tier_value=result.tier.value,
             baseline_quality=comparison.old_quality,
+            evidence_sha256=comparison.evidence_sha256,
             rollback_config_sha256=result.config.get("_repair", {}).get("rollback_config_sha256")
             if isinstance(result.config, dict)
             else None,

@@ -65,6 +65,8 @@ omnicrawler plugins audit --report --format json
 
 ## 边界（如实说明）
 
+提取修复使用结构化 CLI：先 `omnicrawler repair preview -c task.yaml --evidence evidence.json --candidate candidate.json`，确认完整留出与历史证据后显式 apply，后续 observe 或 rollback。详情见 [修复工作流](REPAIR_WORKFLOW.md)；缺证据不覆盖配置，模型网页内容不能扩展工具权限。
+
 - 契约描述的是**调用面**（命令 / 参数 / 输出形态），**不承诺**任何单个命令的业务语义；
   业务语义以各命令的 `--help` 与对应文档为准。
 - `stdout_source=unknown` 一旦出现就是缺陷：它意味着新增命令时既没接 `_json()`、

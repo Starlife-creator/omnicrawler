@@ -86,6 +86,16 @@ def _json(value: Any) -> None:
 # ── Simple commands (no config needed) ──────────────────────────
 
 
+@_register("repair")
+def _run_repair(args: argparse.Namespace) -> None:
+    from ..services.repair_workflow import execute
+
+    _json(execute(args.action, config_path=Path(args.config),
+                  evidence=Path(args.evidence) if args.evidence else None,
+                  candidate_path=Path(args.candidate) if args.candidate else None,
+                  generate=args.generate, max_rounds=args.max_rounds))
+
+
 @_register("pdf")
 def _run_pdf_command(args: argparse.Namespace) -> None:
     """PDF 子命令：把参数原样转发给 PDF 子系统。

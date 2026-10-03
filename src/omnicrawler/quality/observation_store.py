@@ -67,6 +67,11 @@ CREATE TABLE IF NOT EXISTS obs_candidates (
     last_seen_ts            REAL    NOT NULL,
     rollback_required       INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS obs_evidence (
+    candidate_id TEXT NOT NULL,
+    evidence_sha256 TEXT NOT NULL,
+    PRIMARY KEY(candidate_id, evidence_sha256)
+);
 """
 
 # EMA 新观测占比（new observation 权重 0.4，历史记忆 0.6）
@@ -186,6 +191,7 @@ class ObservationStore:
         tier_value: int,
         baseline_quality: float | None,
         rollback_config_sha256: str | None,
+        evidence_sha256: str = "",
     ) -> None:
         """L2/L3 自动应用后，写入应用审计 + baseline（用于后续回滚判定）。
 
@@ -196,6 +202,8 @@ class ObservationStore:
         with self._tx() as con:
             # 确保该行存在（promote 可能没被调过，但幂等安全）
             self._ensure_row(con, candidate, now)
+            if evidence_sha256:
+                con.execute("INSERT OR IGNORE INTO obs_evidence VALUES (?, ?)", (candidate.candidate_id, evidence_sha256))
             con.execute(
                 """UPDATE obs_candidates SET
                     applied_count = applied_count + 1,
@@ -249,6 +257,11 @@ class ObservationStore:
         )
         with self._tx() as con:
             self._ensure_row(con, candidate, now)
+            if comparison.evidence_sha256:
+                inserted = con.execute("INSERT OR IGNORE INTO obs_evidence VALUES (?, ?)",
+                                       (candidate.candidate_id, comparison.evidence_sha256)).rowcount
+                if inserted == 0:
+                    return None
             row = con.execute(
                 """SELECT applied_count, observation_rounds, regression_count,
                           false_positive_risk, fp_risk_samples, last_applied_tier,

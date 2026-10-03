@@ -8,6 +8,13 @@ import argparse
 
 
 def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    repair = sub.add_parser("repair", help="用独立本地快照比较、应用、观察或回滚提取候选")
+    repair.add_argument("action", choices=("preview", "apply", "observe", "rollback"))
+    repair.add_argument("--config", "-c", required=True)
+    repair.add_argument("--evidence", help="明确选择的格式 1 本地快照 JSON")
+    repair.add_argument("--candidate", help="本地规则草案 JSON，不接受自评分")
+    repair.add_argument("--generate", action="store_true", help="显式使用配置的 AI 生成候选，仅发送训练快照")
+    repair.add_argument("--max-rounds", type=int, default=1, help="AI 请求上限，1–3；缺证据不应用")
     field_suggest = sub.add_parser("field-suggest", help="从保存的 HTML 自动推荐稳定字段选择器")
     field_suggest.add_argument("html")
     field_suggest.add_argument("--limit", type=int, default=100)
