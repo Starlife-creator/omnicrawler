@@ -40,6 +40,8 @@
 - [0.15.0 实机问题优化记录](LOCAL_OPTIMIZATION_2026-10-02.md)
 
 - [桌面运行、工作区与组件](DESKTOP_RUNTIME_1.4.md)
+- [可选组件管理](COMPONENTS.md)：离线信任、注册表事务、回滚和搬迁。
+- [2026-10-03 专项优化执行记录](OPTIMIZATION_EXECUTION_2026-10-03.md)：批次、验证边界与剩余工作。
 - [桌面视觉与交互规范](GUI_DESIGN_2.1.md)
 
 ### 插件、模板与市场生态

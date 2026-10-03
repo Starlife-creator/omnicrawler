@@ -3,7 +3,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
 import shutil
+import tempfile
 import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
@@ -16,6 +18,14 @@ from ..core.archive_security import (
     validate_zip_archive,
 )
 from ..core.utils import atomic_write, utcnow
+from .component_registry import (
+    commit_document,
+    contained_path,
+    read_document,
+    recover_document,
+    registry_lock,
+    safe_identifier,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +49,9 @@ class ComponentManager:
         self.trusted_public_key = trusted_public_key
 
     def list(self) -> list[dict[str, Any]]:
-        return list(self._installed().values())
+        with registry_lock(self.root):
+            recover_document(self.root)
+            return [self._public_entry(entry) for entry in self._installed().values()]
 
     def inspect_package(self, package: Path, *, allow_unsigned: bool = False) -> ComponentInfo:
         package = package.resolve()
@@ -51,6 +63,10 @@ class ComponentManager:
                 archive, members["component.json"], maximum_bytes=DEFAULT_ZIP_READ_LIMITS.max_manifest_bytes
             )
             raw = json.loads(manifest_bytes)
+            if not isinstance(raw, dict):
+                raise ValueError("组件清单格式无效")
+            safe_identifier(str(raw.get("name", "")))
+            safe_identifier(str(raw.get("version", "")))
             signature = raw.pop("signature", "")
             canonical = json.dumps(raw, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
             if self.trusted_public_key:
@@ -62,6 +78,8 @@ class ComponentManager:
                 raise ValueError("组件files清单无效")
             for name, expected in files.items():
                 _safe_component_path(str(name))
+                if not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected):
+                    raise ValueError("组件文件哈希格式无效")
                 info = members.get(str(name))
                 if info is None or info.is_dir():
                     raise ValueError(f"组件包缺少文件: {name}")
@@ -76,13 +94,26 @@ class ComponentManager:
         )
 
     def import_offline(self, package: Path, *, allow_unsigned: bool = False) -> dict[str, Any]:
+        with registry_lock(self.root):
+            recover_document(self.root)
+            return self._import_locked(package, allow_unsigned=allow_unsigned)
+
+    def _import_locked(self, package: Path, *, allow_unsigned: bool) -> dict[str, Any]:
+        # Use the same private package bytes for signature verification and extraction.
+        staging = contained_path(self.root, ".staging")
+        staging.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=staging) as temporary:
+            snapshot = Path(temporary) / "package.ocp"
+            shutil.copyfile(package, snapshot)
+            return self._install_snapshot(snapshot, allow_unsigned=allow_unsigned)
+
+    def _install_snapshot(self, package: Path, *, allow_unsigned: bool) -> dict[str, Any]:
         info = self.inspect_package(package, allow_unsigned=allow_unsigned)
         installed = self._installed()
         missing = [name for name in info.dependencies if name not in installed]
         if missing:
             raise ValueError("缺少组件依赖: " + ", ".join(missing))
-        target = self.root / info.name / info.version
-        rollback = self.root / ".rollback" / info.name
+        target = contained_path(self.root, f"{info.name}/{info.version}")
         if target.exists():
             raise FileExistsError(f"组件版本已安装: {info.name} {info.version}")
         target.mkdir(parents=True)
@@ -93,7 +124,7 @@ class ComponentManager:
                 )
                 for name in info.files:
                     relative = _safe_component_path(name)
-                    destination = target.joinpath(*relative.parts)
+                    destination = contained_path(self.root, str(target.joinpath(*relative.parts)))
                     member = members.get(name)
                     if member is None or member.is_dir():
                         raise ValueError(f"组件包缺少文件: {name}")
@@ -103,14 +134,10 @@ class ComponentManager:
             shutil.rmtree(target, ignore_errors=True)
             raise
         if info.name in installed:
-            previous = Path(str(installed[info.name]["path"]))
-            rollback.parent.mkdir(parents=True, exist_ok=True)
-            if rollback.exists():
-                shutil.rmtree(rollback)
-            shutil.copytree(previous, rollback)
-        installed[info.name] = {**asdict(info), "dependencies": list(info.dependencies), "path": str(target), "installed_at": utcnow()}
+            self._save_previous(info.name, installed[info.name])
+        installed[info.name] = {**asdict(info), "dependencies": list(info.dependencies), "path": target.relative_to(self.root).as_posix(), "installed_at": utcnow()}
         self._save(installed)
-        return installed[info.name]
+        return self._public_entry(installed[info.name])
 
     def stage_resumable(self, source: Path, expected_sha256: str, *, chunk_size: int = 1024 * 1024) -> dict[str, Any]:
         """Resume a previously interrupted package copy into the managed download area."""
@@ -134,6 +161,12 @@ class ComponentManager:
         return {"package": str(completed), "resumed_from": offset, "bytes": completed.stat().st_size}
 
     def uninstall(self, name: str) -> dict[str, Any]:
+        safe_identifier(name)
+        with registry_lock(self.root):
+            recover_document(self.root)
+            return self._uninstall_locked(name)
+
+    def _uninstall_locked(self, name: str) -> dict[str, Any]:
         installed = self._installed()
         if name not in installed:
             raise KeyError(f"组件未安装: {name}")
@@ -141,46 +174,69 @@ class ComponentManager:
         if dependents:
             raise ValueError("以下组件仍依赖它: " + ", ".join(dependents))
         entry = installed.pop(name)
-        path = Path(str(entry["path"])).resolve()
-        if self.root not in path.parents:
-            raise ValueError("组件路径越出组件根目录")
-        rollback = self.root / ".rollback" / name
-        rollback.parent.mkdir(parents=True, exist_ok=True)
-        if rollback.exists():
-            shutil.rmtree(rollback)
-        shutil.move(str(path), str(rollback))
+        path = self._entry_path(entry)
+        self._save_previous(name, entry)
         self._save(installed)
-        return {"uninstalled": name, "recoverable_from": str(rollback), "impact": entry.get("uninstall_impact", "")}
+        # Keep immutable bytes for rollback and tasks already using this version.
+        return {"uninstalled": name, "recoverable_from": str(path), "impact": entry.get("uninstall_impact", "")}
 
     def rollback(self, name: str) -> dict[str, Any]:
-        rollback = self.root / ".rollback" / name
-        if not rollback.is_dir():
+        safe_identifier(name)
+        with registry_lock(self.root):
+            recover_document(self.root)
+            return self._rollback_locked(name)
+
+    def _rollback_locked(self, name: str) -> dict[str, Any]:
+        rollback = contained_path(self.root, f".rollback/{name}.json")
+        if not rollback.is_file():
             raise FileNotFoundError(f"组件没有可用回滚版本: {name}")
         installed = self._installed()
-        current = Path(str(installed.get(name, {}).get("path", "")))
-        if current.is_dir() and self.root in current.resolve().parents:
-            shutil.rmtree(current)
-        restored = self.root / name / f"rollback-{utcnow().replace(':', '-')}"
-        restored.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(rollback), str(restored))
-        installed[name] = {**installed.get(name, {}), "path": str(restored), "rolled_back_at": utcnow()}
+        entry = read_document(rollback)
+        restored = self._entry_path(entry)
+        for relative, expected in entry.get("files", {}).items():
+            _safe_component_path(relative)
+            file_path = contained_path(self.root, str(restored / relative))
+            if not file_path.is_file() or _sha256(file_path) != expected:
+                raise ValueError("回滚组件文件缺失或哈希不匹配")
+        missing = [dependency for dependency in entry.get("dependencies", []) if dependency not in installed]
+        if missing:
+            raise ValueError("缺少组件依赖: " + ", ".join(missing))
+        if name in installed:
+            self._save_previous(name, installed[name])
+        installed[name] = {**entry, "rolled_back_at": utcnow()}
         self._save(installed)
-        return installed[name]
+        return self._public_entry(installed[name])
 
     def _installed(self) -> dict[str, dict[str, Any]]:
-        try:
-            value = json.loads(self.manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return {}
-        return value if isinstance(value, dict) else {}
+        value = read_document(self.manifest_path)
+        for name, entry in value.items():
+            safe_identifier(name)
+            self._entry_path(entry)
+        return value
 
     def _save(self, value: dict[str, Any]) -> None:
-        atomic_write(self.manifest_path, json.dumps(value, ensure_ascii=False, indent=2).encode())
+        for entry in value.values():
+            entry["path"] = self._entry_path(entry).relative_to(self.root).as_posix()
+        commit_document(self.root, value)
+
+    def _entry_path(self, entry: dict[str, Any]) -> Path:
+        safe_identifier(str(entry["name"]))
+        safe_identifier(str(entry["version"]))
+        return contained_path(self.root, str(entry["path"]))
+
+    def _public_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
+        return {**entry, "path": str(self._entry_path(entry))}
+
+    def _save_previous(self, name: str, entry: dict[str, Any]) -> None:
+        path = contained_path(self.root, f".rollback/{safe_identifier(name)}.json")
+        path.parent.mkdir(exist_ok=True)
+        value = {**entry, "path": self._entry_path(entry).relative_to(self.root).as_posix()}
+        atomic_write(path, json.dumps(value, ensure_ascii=False).encode("utf-8"))
 
 
 def _safe_component_path(value: str) -> PurePosixPath:
     path = PurePosixPath(value)
-    if path.is_absolute() or ".." in path.parts or not path.parts:
+    if path.is_absolute() or ".." in path.parts or not path.parts or "\\" in value or ":" in value:
         raise ValueError(f"不安全的组件路径: {value}")
     return path
 

@@ -5,13 +5,17 @@ from typing import Any
 
 from ..core.runtime_paths import portable_data_root
 from ..services.component_manager import ComponentManager
+from ..services.update_feed import decode_public_key
 
 
 def execute(
     action: str, *, package: str = "", name: str = "", allow_unsigned: bool = False,
     sha256: str = "",
 ) -> Any:
-    manager = ComponentManager(portable_data_root() / ".omnicrawler" / "components")
+    root = portable_data_root() / ".omnicrawler" / "components"
+    trust_file = root.parent / "component_trust.pub.pem"
+    key = decode_public_key(trust_file.read_text(encoding="utf-8")) if trust_file.is_file() else None
+    manager = ComponentManager(root, trusted_public_key=key)
     if action == "list":
         return manager.list()
     if action == "inspect":
