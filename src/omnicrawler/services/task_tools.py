@@ -33,6 +33,14 @@ def repair_binding(evidence: Path, candidate: Path) -> tuple[str, tuple[bytes, b
     return digest.hexdigest(), (payloads[0], payloads[1])
 
 
+def _manifest_digest(path: Path) -> str:
+    with path.open("rb") as handle:
+        payload = handle.read(2 * 1024**2 + 1)
+    if len(payload) > 2 * 1024**2:
+        raise ValueError("交付清单超过大小限制")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def execute(action: TaskAction) -> dict[str, Any]:
     if hashlib.sha256(action.config_path.read_bytes()).hexdigest() != action.config_sha256:
         raise ValueError("已保存配置已变化，请重新打开任务工具")
@@ -45,12 +53,12 @@ def execute(action: TaskAction) -> dict[str, Any]:
         from . import archive_analysis
         manifest = Path(args["manifest"])
         if action.name == "sources":
-            before = hashlib.sha256(manifest.read_bytes()).hexdigest()
+            before = _manifest_digest(manifest)
             sources = archive_analysis.read_sources(manifest)
-            if hashlib.sha256(manifest.read_bytes()).hexdigest() != before:
+            if _manifest_digest(manifest) != before:
                 raise ValueError("交付清单已变化，请重新读取")
             return {"sources": sources, "manifest_sha256": before}
-        if hashlib.sha256(manifest.read_bytes()).hexdigest() != args.get("manifest_sha256"):
+        if _manifest_digest(manifest) != args.get("manifest_sha256"):
             raise ValueError("交付清单已变化，请重新选择文档")
         if not isinstance(args.get("selected_ids"), list) or not args["selected_ids"]:
             raise ValueError("必须明确选择分析文档")

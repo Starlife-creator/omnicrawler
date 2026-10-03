@@ -174,3 +174,17 @@ def test_memory_scope_and_missing_measurements_cannot_produce_a_memory_delta():
     assert compare_benchmark(parent, tree)["memory_change"] is None
     assert not compare_benchmark(parent, tree)["memory_comparable"]
     assert compare_benchmark(tree, _result(memory_scope=tree.memory_scope, memory_complete=False))["memory_change"] is None
+
+
+def test_summary_preserves_unknown_or_mixed_memory_scope():
+    from dataclasses import replace
+
+    from omnicrawler.services.benchmarking import BenchmarkResult, summarize_benchmarks
+
+    complete = BenchmarkResult("standard", 1, 1, 200, 0, 0, memory_scope="process_tree_rss_v1")
+    for other in (replace(complete, peak_memory_bytes=0, memory_complete=False),
+                  replace(complete, memory_scope="parent_rss_v1")):
+        summary = summarize_benchmarks([complete, other])
+        assert summary["peak_memory_bytes"] is None and summary["memory_complete"] is False
+    summary = summarize_benchmarks([complete])
+    assert summary["peak_memory_bytes"] == 200 and summary["memory_complete"] is True

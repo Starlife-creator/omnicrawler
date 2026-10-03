@@ -119,3 +119,12 @@ def test_reviewed_repair_preview_apply_rollback_and_changed_candidate(tmp_path):
     assert execute(_action(config, "repair:apply", **args, confirmed=True))["status"] == "applied"
     assert execute(_action(config, "repair:rollback", confirmed=True))["status"] == "rolled_back"
     assert config.read_bytes() == before
+
+
+def test_gui_manifest_digest_is_bounded_before_parsing(tmp_path, monkeypatch):
+    config = _config(tmp_path)
+    manifest = tmp_path / "oversized.json"
+    manifest.write_bytes(b" " * (2 * 1024**2 + 1))
+    monkeypatch.setattr(archive_analysis, "read_sources", lambda *a: pytest.fail("oversized metadata parsed"))
+    with pytest.raises(ValueError, match="大小限制"):
+        execute(_action(config, "sources", manifest=str(manifest)))

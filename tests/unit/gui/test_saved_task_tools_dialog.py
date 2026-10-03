@@ -46,6 +46,10 @@ def test_selection_is_explicit_and_ai_is_opt_in(dialog, monkeypatch):
     assert window._checked(window.sources) == []
     window.sources.item(0).setCheckState(Qt.CheckState.Checked)
     window._analyze()
+    assert not calls
+    window.manifest.setText("manifest.json")
+    window.report_output.setText("report")
+    window._analyze()
     assert calls[0][0] == "analyze"
     assert calls[0][1]["selected_ids"] == ["chosen"] and calls[0][1]["use_ai"] is False
     assert calls[0][1]["manifest_sha256"] == "verified"

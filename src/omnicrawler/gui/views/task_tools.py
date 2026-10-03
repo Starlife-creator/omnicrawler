@@ -183,6 +183,9 @@ class TaskToolsDialog(QDialog):
         if not ids:
             self.result_view.setPlainText(_("请明确选择需要分析的文档。"))
             return
+        if not self.manifest.text().strip() or not self.report_output.text().strip():
+            self.result_view.setPlainText(_("请选择交付清单和报告目录。"))
+            return
         self._launch("analyze", {"manifest": self.manifest.text(), "manifest_sha256": self._manifest_sha,
                     "output": self.report_output.text(), "selected_ids": ids, "use_ai": self.use_ai.isChecked()})
 

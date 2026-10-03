@@ -132,10 +132,14 @@ def summarize_benchmarks(results: Iterable[BenchmarkResult]) -> dict[str, object
     values = list(results)
     if not values:
         return {"runs": 0}
+    scopes = {item.memory_scope for item in values}
+    memory_complete = len(scopes) == 1 and all(item.memory_complete for item in values)
     return {
         "runs": len(values), "profiles": sorted({item.profile for item in values}),
         "median_pages_per_second": statistics.median(item.pages_per_second for item in values),
-        "peak_memory_bytes": max(item.peak_memory_bytes for item in values),
+        "peak_memory_bytes": max(item.peak_memory_bytes for item in values) if memory_complete else None,
+        "memory_complete": memory_complete,
+        "memory_scope": next(iter(scopes)) if len(scopes) == 1 else None,
         "total_errors": sum(item.errors for item in values),
     }
 
