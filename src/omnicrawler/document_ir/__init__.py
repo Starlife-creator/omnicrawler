@@ -16,7 +16,10 @@ from pathlib import Path
 from typing import Any
 
 from ..services.progress import ProgressTracker, StageSpec, TaskProgressEvent
-from . import office  # noqa: F401 — 触发 .docx/.pptx/.odt/.epub 注册（懒加载依赖）
+from . import (
+    office,  # noqa: F401 — 触发 .docx/.pptx/.odt/.epub 注册（懒加载依赖）
+    pdf,  # noqa: F401 — native PDF adapter, dependencies stay lazy
+)
 from .base import DocumentIR
 from .parsers import DOCUMENT_PARSERS, sniff_document_format
 

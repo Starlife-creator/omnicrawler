@@ -28,6 +28,7 @@ class DocumentIR:
     links: list[tuple[str, str]] = field(default_factory=list)  # (文本, href)
     metadata: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    paragraph_locators: list[dict[str, int]] = field(default_factory=list)
 
     # ── 导出视图 ─────────────────────────────────────────
     def to_text(self) -> str:
