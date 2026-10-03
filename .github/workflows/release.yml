@@ -27,6 +27,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      generate_delta_packages:
+        description: "同时生成旧版本更新包（默认仅验证便携产物）"
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ github.ref }}
@@ -66,6 +71,9 @@ jobs:
       - name: 导出已冻结的发布配置
         id: release-config
         shell: bash
+        env:
+          RELEASE_EVENT: ${{ github.event_name }}
+          DELTA_REQUESTED: ${{ inputs.generate_delta_packages }}
         run: |
           echo "build_python_version=${BUILD_PYTHON_VERSION}" >> "$GITHUB_OUTPUT"
           echo "asset_max_bytes=${ASSET_MAX_BYTES}" >> "$GITHUB_OUTPUT"
@@ -75,13 +83,11 @@ jobs:
           # 包）⇒ 后一个判据会退化成 K=1；而用户可能跨两三版才升级一次。
           # 为什么不能无限大：每个基线都要在**发布时预先算好并上传**（静态托管不能
           # 现算），而窗口外的用户走全量即可（每版都有全量 ⇒ 不会卡住）。
-          CURRENT="${GITHUB_REF_NAME#v}"
-          BASELINES=$(git tag --sort=-v:refname \
-            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-            | sed 's/^v//' \
-            | grep -vx "$CURRENT" \
-            | head -3 \
-            | paste -sd, -)
+          DELTA_ARGS=()
+          if [[ "$RELEASE_EVENT" == "push" || "$DELTA_REQUESTED" == "true" ]]; then
+            DELTA_ARGS=(--enabled)
+          fi
+          BASELINES=$(python tools/release_delta_baselines.py "${DELTA_ARGS[@]}")
           echo "delta_baselines=${BASELINES}" >> "$GITHUB_OUTPUT"
           echo "变更包基线窗口：${BASELINES:-（空）}"
       - name: 断言 requires-python 下界 == 构建 Python 版本

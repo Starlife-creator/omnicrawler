@@ -57,8 +57,10 @@ def test_release_workflow_declares_and_exports_the_baseline_inputs() -> None:
     assert 'echo "delta_baselines=' in text, "必须真的往 GITHUB_OUTPUT 写这个值"
     assert 'echo "release_url_base=' in text, "必须真的往 GITHUB_OUTPUT 写这个值"
     # 基线来自**版本 tag**（不是分支、不是 release 名）
-    assert "git tag --sort=-v:refname" in text
-    assert "head -3" in text, "窗口大小 K=3 要能一眼看见"
+    assert "python tools/release_delta_baselines.py" in text
+    helper = _text(REPO_ROOT / "tools" / "release_delta_baselines.py")
+    assert '"tag", "--list"' in helper
+    assert "limit: int = 3" in helper, "窗口大小 K=3 要能一眼看见"
 
 
 def test_release_workflow_forwards_both_inputs_to_every_build_job() -> None:
