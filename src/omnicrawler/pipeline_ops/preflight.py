@@ -175,17 +175,20 @@ def run_sample(config: AppConfig, *, pages: int = 3) -> dict[str, Any]:
     raw.setdefault("project", {})["workspace"] = str(sample_workspace)
     raw.setdefault("crawl", {})["max_pages"] = max(1, min(10, int(pages)))
     sample_config = AppConfig(config.path, config.root, raw, sample_workspace)
+    from ..core.runtime_paths import portable_data_root
+    from ..services.component_manager import ComponentManager
+    from ..templates.capture import trial_reference
+    component_root = portable_data_root() / ".omnicrawler/components"
+    components = ComponentManager(component_root).list() if component_root.is_dir() else []
     with Pipeline(sample_config) as pipeline:
         result = pipeline.run(max_pages=max(1, min(10, int(pages))))
-        from ..core.runtime_paths import portable_data_root
-        from ..services.component_manager import ComponentManager
-        from ..templates.capture import trial_reference
         samples = [dict(row) for row in pipeline.state.conn.execute(
             "SELECT request_fingerprint, content_sha256, fetched_at FROM responses WHERE run_id=? ORDER BY id",
             (result.get("run_id", ""),)).fetchall()]
-        component_root = portable_data_root() / ".omnicrawler/components"
-        components = ComponentManager(component_root).list() if component_root.is_dir() else []
-        reference = trial_reference(config, result, samples, components)
+        after = ComponentManager(component_root).list() if component_root.is_dir() else []
+        consistent = sorted((item["name"], item["version"]) for item in components) == sorted(
+            (item["name"], item["version"]) for item in after)
+        reference = trial_reference(config, result, samples, components, components_consistent=consistent)
     output = config.workspace / "preflight_sample.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8")

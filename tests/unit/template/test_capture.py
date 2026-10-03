@@ -56,6 +56,16 @@ def test_capture_requires_matching_trial_not_old_or_changed_config(tmp_path):
     assert not output.exists()
 
 
+def test_changed_component_versions_reject_capture(tmp_path):
+    config, proof, output = _fixture(tmp_path)
+    reference = json.loads(proof.read_text(encoding="utf-8"))
+    reference["versions"]["components_consistent"] = False
+    proof.write_text(json.dumps(reference), encoding="utf-8")
+    with pytest.raises(ValueError, match="组件版本"):
+        capture(config, proof, output, template_id="user/demo")
+    assert not output.exists()
+
+
 def test_typed_capture_parameters_and_missing_value_fail(tmp_path):
     config, proof, output = _fixture(tmp_path)
     parameters = tmp_path / "parameters.json"

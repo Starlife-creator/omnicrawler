@@ -8,6 +8,7 @@ from typing import Any
 
 from ..core.config import AppConfig, load_config, validate_config
 from ..core.utils import atomic_write, utcnow
+from ..fetching.session_lease import session_lease
 from ..pipeline import Pipeline
 from ..pipeline.exporters import export_all
 from ..pipeline_ops.plan_compiler import TaskPlan, compile_task_plan, diff_plans
@@ -139,8 +140,15 @@ class ApplicationService:
             raise FileNotFoundError(
                 f"断点数据库不存在: {database}。请先运行采集任务（omnicrawler run -c <配置>）再导出。"
             )
-        with StateStore(database) as state:
-            return export_all(config, state, run_id)
+        with session_lease(config.workspace), StateStore(database) as state:
+            delivery = None
+            if config.section("download").get("verified_pdf_manifest", False):
+                from ..pipeline_ops.provenance import write_pdf_source_manifest
+                delivery = write_pdf_source_manifest(config.workspace, state, run_id=run_id)
+            result = export_all(config, state, run_id)
+            if delivery is not None:
+                result["pdf_delivery"] = delivery
+            return result
 
     def _plan(self) -> TaskPlan:
         config = self._ensure_config()

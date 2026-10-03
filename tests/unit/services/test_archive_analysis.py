@@ -115,3 +115,18 @@ def test_bounded_facts_remain_resumable(tmp_path):
     facts = json.loads((output / "facts.json").read_text(encoding="utf-8"))
     assert facts["statistics"]["evidence_characters"] <= 100000
     assert facts["statistics"]["evidence_paragraphs"] < facts["statistics"]["paragraphs"]
+
+
+def test_each_selected_document_receives_bounded_local_evidence(tmp_path):
+    source, manifest, output = _inputs(tmp_path)
+    source.write_text("\n\n".join("Paragraph " + "x" * 1900 for _ in range(100)), encoding="utf-8")
+    second = tmp_path / "second.txt"
+    second.write_text("Second document\n\nIndependent evidence from the second document.", encoding="utf-8")
+    value = json.loads(manifest.read_text(encoding="utf-8"))
+    value["sources"][0]["sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
+    value["sources"].append({"id": "two", "path": "second.txt", "sha256": hashlib.sha256(second.read_bytes()).hexdigest()})
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+    analysis.execute(manifest, output)
+    facts = json.loads((output / "facts.json").read_text(encoding="utf-8"))
+    assert {item["source_id"] for item in facts["evidence"]} == {"one", "two"}
+    assert facts["statistics"]["evidence_characters"] <= 100000

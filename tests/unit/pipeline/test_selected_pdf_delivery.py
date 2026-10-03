@@ -139,3 +139,36 @@ def test_corrupted_pdf_cannot_receive_verified_manifest(tmp_path):
         with pytest.raises(ValueError, match="哈希"):
             write_pdf_source_manifest(workspace, state)
         assert manifest.read_bytes() == before
+
+
+def test_cli_reexport_verifies_current_files_and_refuses_active_resource(tmp_path, capsys):
+    from omnicrawler.cli import main
+    from omnicrawler.fetching.session_lease import session_lease
+
+    path = tmp_path / "work/artifacts/pdf/paper.pdf"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"original PDF")
+    config_path = tmp_path / "task.yaml"
+    config_path.write_text("project: {name: verified, workspace: work}\nsource: {kind: static_html, seeds: [https://example.test/]}\ndownload: {verified_pdf_manifest: true}\noutputs: {xlsx: false}\n", encoding="utf-8")
+    config = load_config(config_path)
+    request = CrawlRequest("https://example.test/paper.pdf", kind="asset")
+    with StateStore(config.workspace / "state.sqlite3") as state:
+        run_id = state.start_run("test", str(config_path))
+        state.save_artifact(run_id, FetchResult(request, request.url, 200, {"content-type": "application/pdf"}, path.read_bytes(), 0), path)
+    main(["export", "-c", str(config_path)])
+    assert json.loads(capsys.readouterr().out)["pdf_delivery"]["documents"] == 1
+    with session_lease(config.workspace), pytest.raises(SystemExit) as stopped:
+        main(["export", "-c", str(config_path)])
+    assert stopped.value.code == 1
+    capsys.readouterr()
+    path.write_bytes(b"tampered PDF")
+    with pytest.raises(SystemExit) as stopped:
+        main(["export", "-c", str(config_path)])
+    assert stopped.value.code == 1 and "哈希" in capsys.readouterr().err
+
+
+def test_verified_manifest_flag_rejects_truthy_strings(tmp_path):
+    path = tmp_path / "task.yaml"
+    path.write_text("project: {name: verified, workspace: work}\nsource: {kind: static_html, seeds: [https://example.test/]}\ndownload: {verified_pdf_manifest: 'false'}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="布尔"):
+        load_config(path)

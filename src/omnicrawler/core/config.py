@@ -652,6 +652,8 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     raw_source_kind = config.raw.get("source", {}).get("kind", "")
     if not isinstance(raw_source_kind, str):
         errors.append("source.kind必须是字符串")
+    if type(config.section("download").get("verified_pdf_manifest", False)) is not bool:
+        errors.append("download.verified_pdf_manifest必须是布尔值")
 
     if config.source_kind not in SOURCE_KINDS:
         if config.section("plugins").get("paths"):

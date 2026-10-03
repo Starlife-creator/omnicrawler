@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from itertools import zip_longest
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,7 @@ def _verified_sources(manifest: Path) -> list[dict[str, Any]]:
     if document.get("format") != 1 or not isinstance(entries, list) or not 1 <= len(entries) <= 20:
         raise ValueError("格式 1 分析清单需要 1–20 份明确选择的交付文档")
     result = []
+    total_bytes = 0
     root = manifest.resolve().parent
     for entry in entries:
         if not isinstance(entry, dict) or not isinstance(entry.get("id"), str) or not entry["id"]:
@@ -45,6 +47,9 @@ def _verified_sources(manifest: Path) -> list[dict[str, Any]]:
         path = path.resolve()
         if not path.is_file() or path.stat().st_size > 20 * 1024**2:
             raise ValueError("分析文档超过大小限制")
+        total_bytes += path.stat().st_size
+        if total_bytes > 40 * 1024**2:
+            raise ValueError("所选分析文档合计超过 40 MiB，请缩小输入")
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         if digest != entry.get("sha256"):
             raise ValueError("分析文档与已验证交付哈希不一致")
@@ -60,6 +65,8 @@ def _facts(sources: list[dict[str, Any]]) -> dict[str, Any]:
     evidence: list[dict[str, Any]] = []
     characters = 0
     for source in sources:
+        document_characters = 0
+        document_evidence = 0
         parsed = parse_document(source["path"])
         if not parsed.paragraphs:
             raise ValueError("文档没有可回链的段落证据")
@@ -68,13 +75,15 @@ def _facts(sources: list[dict[str, Any]]) -> dict[str, Any]:
         documents.append({**source, "title": parsed.title, "paragraph_count": len(parsed.paragraphs),
                           "table_count": len(parsed.tables), "warnings": parsed.warnings})
         for index, paragraph in enumerate(parsed.paragraphs, 1):
-            if len(evidence) >= 400 or characters + len(paragraph[:2000]) > 100000:
+            if document_evidence >= 400 // len(sources) or document_characters + len(paragraph[:2000]) > 100000 // len(sources):
                 continue
             characters += len(paragraph[:2000])
+            document_characters += len(paragraph[:2000])
+            document_evidence += 1
             evidence.append({"id": hashlib.sha256(f"{source['id']}:{source['sha256']}:{index}".encode()).hexdigest(),
                              "source_id": source["id"], "locator": {"paragraph": index, "page": None},
                              "quote": paragraph[:2000]})
-    return {"format": 1, "documents": documents, "evidence": evidence,
+    return {"format": 1, "fact_stage_version": 2, "documents": documents, "evidence": evidence,
             "statistics": {"documents": len(documents), "paragraphs": sum(item["paragraph_count"] for item in documents),
                            "evidence_paragraphs": len(evidence), "evidence_characters": characters},
             "coverage": "bounded_excerpts; omitted paragraphs are not analyzed; PDF page is unknown",
@@ -119,7 +128,7 @@ def execute(manifest: Path, output: Path, *, config_path: Path | None = None, us
         try:
             cached = _json(facts_path)
             digest = cached.pop("stage_sha256", None)
-            if cached.get("input_sha256") == identity and digest == _stage_digest(cached):
+            if cached.get("fact_stage_version") == 2 and cached.get("input_sha256") == identity and digest == _stage_digest(cached):
                 report = cached
         except (ValueError, OSError):
             pass
@@ -144,13 +153,19 @@ def execute(manifest: Path, output: Path, *, config_path: Path | None = None, us
                                        maximum_cost=float(limits.get("max_cost", 0)))
             # Send only the selected bounded excerpts, never other archive files.
             selected: list[dict[str, Any]] = []
-            for item in report["evidence"]:
+            groups = [[item for item in report["evidence"] if item["source_id"] == source["id"]] for source in sources]
+            ordered = [item for row in zip_longest(*groups) for item in row if item is not None]
+            for item in ordered:
                 proposed = [*selected, item]
                 if len(json.dumps(proposed, ensure_ascii=False)) > min(12000, int(limits.get("maximum_input_characters", 0)) or 12000):
                     break
                 selected = proposed
             if not selected:
                 raise ValueError("输入字符预算不足，事实阶段已保留")
+            selected_ids = sorted({item["source_id"] for item in selected})
+            report["model_scope"] = {"source_ids": selected_ids,
+                "omitted_source_ids": [source["id"] for source in sources if source["id"] not in selected_ids],
+                "evidence_ids": [item["id"] for item in selected]}
             prompt = "对已选资料做比较。仅输出 JSON interpretations/suggestions 列表；每项只含 text/uncertainty/citations。citations 每项 evidence_id/quote，quote 必须逐字来自证据。不要声称因果已证明。\n" + mark_untrusted(json.dumps(selected, ensure_ascii=False))
             maximum = int(limits.get("maximum_input_characters", 0))
             if maximum and len(prompt) > maximum:

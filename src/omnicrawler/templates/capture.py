@@ -23,12 +23,13 @@ def config_digest(config: AppConfig) -> str:
 
 
 def trial_reference(config: AppConfig, result: dict[str, Any], samples: list[dict[str, Any]],
-                    components: list[dict[str, Any]]) -> dict[str, Any]:
+                    components: list[dict[str, Any]], *, components_consistent: bool = True) -> dict[str, Any]:
     """A machine trial is a historical reference, never a transferable approval."""
     return {"format": 1, "config_sha256": config_digest(config), "captured_at": utcnow(),
             "run_id": str(result.get("run_id", "")), "samples": samples,
             "summary": {key: result.get(key) for key in ("status", "processed", "records", "failed")},
             "versions": {"core": __version__, "plugins": result.get("plugins", {}).get("plugins", []),
+                         "components_consistent": components_consistent,
                          "components": [{"name": item["name"], "version": item["version"]} for item in components]},
             "historical_reference_only": True}
 
@@ -44,6 +45,8 @@ def capture(config: AppConfig, proof_path: Path, output: Path, *, template_id: s
         raise ValueError("试跑摘要缺少当前配置绑定，请重新 sample")
     summary = proof.get("summary", {})
     samples = proof.get("samples", [])
+    if not isinstance(proof.get("versions"), dict) or proof["versions"].get("components_consistent") is not True:
+        raise ValueError("试跑期间组件版本不一致或旧摘要缺少版本绑定，请重新 sample")
     if not isinstance(summary, dict) or summary.get("status") != "succeeded" or not summary.get("processed") or not samples:
         raise ValueError("缺少完整成功试跑和来源快照")
     if not isinstance(samples, list) or any(not isinstance(item, dict) or
@@ -169,6 +172,7 @@ def _safe_versions(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {"status": "unknown"}
     return {"core": str(value.get("core", "unknown")),
+            "components_consistent": value.get("components_consistent") is True,
             "plugins": [str(item) for item in value.get("plugins", []) if isinstance(item, str)],
             "components": [{"name": str(item.get("name", "")), "version": str(item.get("version", ""))}
                            for item in value.get("components", []) if isinstance(item, dict)]}
