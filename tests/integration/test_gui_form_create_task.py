@@ -40,6 +40,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from omnicrawler.gui.core.config_serializer import to_yaml  # noqa: E402
 from omnicrawler.gui.core.run_states import is_terminal  # noqa: E402
 
+_TEST_WINDOWS: list[tuple[object, object]] = []
+_APP = None
+
+
 EXPECTED_FIELDS_SELECTORS = {"h1", "a", "time", ".author", ".description"}
 
 #: 演示站点的真值（与 `_LIST_HTML` 一致）
@@ -136,7 +140,52 @@ def _window(tmp_path: Path, monkeypatch):
     window = MainWindow()
     window._project_root = tmp_path
     window._rebuild_project_components()
+    _TEST_WINDOWS.append((app, window))
     return app, window
+
+
+def _dispose_test_window(app, window) -> None:
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from shiboken6 import isValid
+
+    if not isValid(window):
+        return
+    if window._task_runner.is_running:
+        window._task_runner.stop()
+        _pump(app, lambda: not window._task_runner.is_running, timeout=20, what="停止测试任务")
+    backend = window._task_runner._backend
+    if backend.session is not None or backend.session_file is not None:
+        backend.shutdown()
+    assert backend.reap(timeout=10), "测试 Worker 必须回收"
+    window._task_runner._poller.stop()
+    window._request_background_shutdown()
+    _pump(app, lambda: not any(thread.isRunning() for thread in window._background_threads()),
+          timeout=20, what="结束测试窗口后台线程")
+    assert window.close(), "后台停止后关闭必须接受"
+    window.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert not isValid(window), "关闭后的测试窗口必须完成 Qt 删除"
+
+
+@pytest.fixture(autouse=True)
+def _dispose_owned_windows():
+    """Close is asynchronous; retain ownership until workers and Qt deletion finish."""
+    yield
+    try:
+        for app, window in _TEST_WINDOWS:
+            _dispose_test_window(app, window)
+    finally:
+        _TEST_WINDOWS.clear()
+
+
+def test_form_window_disposal_finishes_before_another_theme_application(tmp_path, monkeypatch):
+    from shiboken6 import isValid
+
+    app, first = _window(tmp_path, monkeypatch)
+    _dispose_test_window(app, first)
+    assert not isValid(first)
+    _, second = _window(tmp_path, monkeypatch)
+    assert isValid(second)
 
 
 def _silence_side_effects(window) -> None:

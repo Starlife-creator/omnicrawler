@@ -88,14 +88,35 @@ def test_home_page_margins_and_spacing_come_from_tokens(qapp: QApplication) -> N
     from omnicrawler.gui.home import HomePage
 
     page = HomePage()
-    margins = page.layout().contentsMargins()  # type: ignore[union-attr]
-    assert (margins.left(), margins.top(), margins.right(), margins.bottom()) == (
-        SPACING["xxl"],
-        SPACING["xl"],
-        SPACING["xxl"],
-        SPACING["xl"],
-    )
-    assert page.layout().spacing() == SPACING["lg"]  # type: ignore[union-attr]
+    try:
+        content = page._scroll.widget()
+        assert content is not None
+        layout = content.layout()
+        assert layout is not None
+        margins = layout.contentsMargins()
+        assert (margins.left(), margins.top(), margins.right(), margins.bottom()) == (
+            SPACING["xxl"], SPACING["xl"], SPACING["xxl"], SPACING["xl"],
+        )
+        assert layout.spacing() == SPACING["lg"]
+        assert page.layout().contentsMargins().isNull()
+        page.resize(860, 520)
+        page.show()
+        qapp.processEvents()
+        assert page._scroll.verticalScrollBar().maximum() > 0
+        from PySide6.QtWidgets import QPushButton
+
+        action = next(button for button in content.findChildren(QPushButton) if button.property("homeAction"))
+        page._scroll.ensureWidgetVisible(action)
+        qapp.processEvents()
+        position = action.mapTo(page._scroll.viewport(), action.rect().center())
+        assert page._scroll.viewport().rect().contains(position)
+    finally:
+        from PySide6.QtCore import QCoreApplication, QEvent
+
+        page.shutdown()
+        page.close()
+        page.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 # ── 阴影收口 ─────────────────────────────────────────────

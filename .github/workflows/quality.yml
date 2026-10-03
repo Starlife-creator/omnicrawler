@@ -97,6 +97,8 @@ jobs:
     # 45（≈ Windows 实测 1.5×）给最慢平台留出余量；其余平台更宽裕，且作业成功即结束、不占额外时间。
     timeout-minutes: 45
     strategy:
+      # Keep every platform running so one assertion cannot hide another failure.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.12"]
@@ -159,17 +161,22 @@ jobs:
       # `--durations` 只追加报告、不改判定：把「哪条腿 / 哪个用例慢」变成可观测数据。
       # 热点必须在 CI 上量：本地开发机与 runner 的倍率可达 6~10×，用本地耗时推断 CI
       # 会得出错误结论（2026-09-21 实测：本地 0.5s 收尾的整段在 CI 上占 267s）。
-      - run: python -m coverage run -m pytest -q --durations=25 --durations-min=0.5
+      - id: core_tests
+        run: python -m coverage run -m pytest -q --durations=25 --durations-min=0.5 --junitxml=pytest-core.xml
       # `--fail-under=0`：本步骤只**取数据**，判定统一交给 `tools/check_coverage_gates.py`
       # （单一判据）。否则 pyproject.toml 的 `fail_under = 66` 会在这里先以 exit 2 抢跑——
       # 全量跑时它恰好也过，但在**子集**（如浏览器 job，实测总覆盖率 23%）会直接把门禁
       # 挡在"数据生成"阶段，连门禁自己的输出都看不到。
-      - run: python -m coverage json -o coverage.json --fail-under=0
+      - id: core_coverage
+        if: ${{ !cancelled() && (steps.core_tests.outcome == 'success' || steps.core_tests.outcome == 'failure') }}
+        run: python -m coverage json -o coverage.json --fail-under=0
       # 显式 core 档：本 job 不装 browser extras ⇒「需浏览器运行时的单文件下限」在这里
       # 永远不可能达标（browser_engines.py 实测 73.47% < 86%）。那些下限**不删除**，
       # 挪到装了 chromium 的 gui-and-browser job 用 --profile browser 检查。
-      - run: python tools/check_coverage_gates.py --profile core coverage.json
-      - run: python -m coverage report
+      - if: ${{ !cancelled() && steps.core_coverage.outcome == 'success' }}
+        run: python tools/check_coverage_gates.py --profile core coverage.json
+      - if: ${{ !cancelled() && steps.core_coverage.outcome == 'success' }}
+        run: python -m coverage report
       - run: python -m omnicrawler.cli templates validate
       # 范围与 tools/gate_registry.py 的 ruff 门禁保持一致（含 tools）；
       # 本地 `python tools/self_verify.py` 跑的就是同一集合。
@@ -194,6 +201,18 @@ jobs:
       - run: python tools/generate_checksums.py dist --output SHA256SUMS-ci.txt
       - run: python tools/generate_checksums.py dist --output SHA256SUMS-ci.txt --check
       - run: python tools/generate_provenance.py --artifact-dir dist --output dist/omnicrawler-provenance.json
+
+      - name: Preserve core test and coverage diagnostics
+        if: ${{ !cancelled() && (steps.core_tests.outcome == 'success' || steps.core_tests.outcome == 'failure') }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: core-diagnostics-${{ matrix.os }}-${{ matrix.python-version }}
+          path: |
+            pytest-core.xml
+            coverage.json
+            .coverage
+          include-hidden-files: true
+          if-no-files-found: warn
 
   docker:
     runs-on: ubuntu-latest
