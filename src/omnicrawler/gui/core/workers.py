@@ -171,12 +171,16 @@ class SampleRunWorker(BackgroundWorker):
         super().__init__(parent)
         self._config_path = config_path
         self._pages = pages
+        from ...core.config import load_config
+
+        # Capture before the background thread starts: edits on disk must not
+        # change the input of an already requested trial.
+        self._sample_config = load_config(config_path)
 
     def work(self) -> Any:
-        from ...core.config import load_config
         from ...pipeline_ops.preflight import run_sample
 
-        return run_sample(load_config(self._config_path), pages=self._pages)
+        return run_sample(self._sample_config, pages=self._pages)
 
 
 class CsvLoadWorker(BackgroundWorker):

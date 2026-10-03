@@ -645,8 +645,16 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
         self._set_trial_state(False)
         self._sync_ui_state()
 
-    def set_trial_result(self, ok: bool, summary: str, details: dict[str, Any] | None = None) -> None:
+    def set_trial_result(
+        self, ok: bool, summary: str, details: dict[str, Any] | None = None,
+        *, input_fingerprint: str | None = None,
+    ) -> None:
         """试跑完成回调：绑定配置指纹并渲染结构化诊断。"""
+        from .task_canvas_logic import trial_result_is_current
+
+        if ok and not trial_result_is_current(ok, input_fingerprint, crawl_fingerprint(self._config)):
+            ok = False
+            summary = _("试跑输入已改变，旧结果仅供参考，请按当前配置重新试跑。") + "\n" + summary
         if ok:
             self._trial_field_hash = self._field_fingerprint()
             self._trial_config_hash = crawl_fingerprint(self._config)

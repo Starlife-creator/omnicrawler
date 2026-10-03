@@ -1448,7 +1448,14 @@ class MainWindow(QMainWindow):
     def _start_sample_run(self, pages: int | None = None) -> None:
         if not self._config_path:
             return
+        if self._sample_jobs:
+            ToastManager.instance().info(_("已有试跑正在收尾，请等待完成后再试。"))
+            return
         pages = 3 if pages is None else pages
+        from .views.task_canvas_logic import crawl_fingerprint
+
+        input_fingerprint = crawl_fingerprint(self._config)
+        input_config = self._config
         worker = SampleRunWorker(self._config_path, pages, parent=self)
 
         def completed(result: dict) -> None:
@@ -1461,7 +1468,12 @@ class MainWindow(QMainWindow):
             ok = bool(status) and status != "failed" and processed > 0
             summary = _(f"状态：{status}\n处理页面：{processed}\n提取记录：{records}")
             # P0：试跑结果回填工作台（决定「开始全量运行」是否可用）
-            self._task_canvas.set_trial_result(ok, summary, sample)
+            current = self._config is input_config and crawl_fingerprint(self._config) == input_fingerprint
+            self._task_canvas.set_trial_result(
+                ok and current, summary if current else _("配置已变化，旧试跑仅供参考。") + "\n" + summary,
+                sample, input_fingerprint=input_fingerprint,
+            )
+            ok = ok and current
             if ok:
                 ToastManager.instance().success(_("小样本试跑完成：请在工作台查看结果"))
             else:
@@ -1474,6 +1486,7 @@ class MainWindow(QMainWindow):
                 False,
                 _("试跑失败：{0}").format(message),
                 {"status": "failed", "processed": 0, "records": 0, "error": message},
+                input_fingerprint=input_fingerprint,
             )
             ToastManager.instance().warning(_("小样本试跑失败：请在工作台查看诊断"))
 

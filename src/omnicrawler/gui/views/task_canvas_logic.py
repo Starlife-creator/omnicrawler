@@ -114,6 +114,11 @@ def crawl_fingerprint(config: CrawlConfig) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def trial_result_is_current(ok: bool, captured: str | None, current: str) -> bool:
+    """Legacy direct callers bind at completion; asynchronous callers pass input identity."""
+    return ok and (captured is None or captured == current)
+
+
 def selector_kind(selector: str) -> Literal["css", "xpath"]:
     """判断选择器是 XPath 还是 CSS（默认 css）；与 step3_fields.selector_kind 同语义。"""
     stripped = (selector or "").strip()

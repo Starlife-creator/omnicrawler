@@ -6,6 +6,13 @@ from omnicrawler.gui.core.config_model import FieldDef
 from omnicrawler.gui.views.task_canvas_logic import field_fingerprint, selector_kind
 
 
+def test_trial_changed_during_execution_cannot_approve_current_task():
+    from omnicrawler.gui.views.task_canvas_logic import trial_result_is_current
+
+    assert trial_result_is_current(True, "original", "original")
+    assert not trial_result_is_current(True, "original", "edited")
+    assert not trial_result_is_current(False, "original", "original")
+
 def _field(name: str = "title", selector: str = "h1", kind: str = "css") -> FieldDef:
     return FieldDef(name=name, selector=selector, selector_type=kind)
 

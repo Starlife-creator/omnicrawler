@@ -5,6 +5,17 @@ import importlib.util
 
 import pytest
 
+
+def test_trial_result_from_before_edit_is_historical_only(monkeypatch):
+    from omnicrawler.gui.views.task_canvas_logic import crawl_fingerprint
+
+    canvas = _make_canvas(monkeypatch)
+    original = crawl_fingerprint(canvas._config)
+    canvas._config.seed_urls = ["https://example.org/changed"]
+    canvas.set_trial_result(True, "old successful trial", input_fingerprint=original)
+    assert not canvas._trial_ok
+    assert not canvas.trial_matches_fields()
+
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("PySide6") is None,
     reason="GUI smoke test requires PyQt6",

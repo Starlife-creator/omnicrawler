@@ -12,6 +12,7 @@ import yaml
 from ..core.utils import atomic_write
 from ..services.config_history import ConfigHistory
 from ..sources.site_inspector import inspect_url
+from ..templates.evidence import template_binding
 from ..templates.template_catalog import TemplateProbe, bundled_template_catalog, user_template_dirs
 from ..templates.template_diff import compare_template_files, merge_template_files
 from ..templates.template_health import TemplatePack, validate_catalog
@@ -88,8 +89,13 @@ def execute(
             for match in matches
         ]
     if action == "render":
-        rendered = catalog.render(template_id, _key_values(sets or [], "="))
+        parameters = _key_values(sets or [], "=")
+        rendered = catalog.render(template_id, parameters)
         rendered.setdefault("project", {})["template_id"] = template_id
+        rendered_record = catalog.get(template_id)
+        if rendered_record is None:
+            raise KeyError(template_id)
+        rendered["project"]["template_binding"] = template_binding(rendered_record, parameters)
         target_path = Path(output).expanduser().resolve()
         target_path.parent.mkdir(parents=True, exist_ok=True)
         if target_path.exists() and not force:
