@@ -69,6 +69,27 @@ def run_preflight(config: AppConfig) -> dict[str, Any]:
         )
     )
     requirements = _required_dependencies(config)
+    pdf_settings = config.section("processors").get("pdf", {})
+    ocr_settings = {"component": pdf_settings.get("ocr_component"), "backend": pdf_settings.get("ocr_backend", "none")}
+    if pdf_settings.get("enabled") and not pdf_settings.get("skip_ocr"):
+        configured_project = str(pdf_settings.get("project_config", "")).strip()
+        project_path = config.resolve(configured_project) if configured_project else config.workspace / "pdf/project.yaml"
+        if project_path.is_file():
+            try:
+                from ..pdfx.config import load_config as load_pdf_config
+
+                ocr_settings = dict(load_pdf_config(project_path).ocr)
+            except Exception as exc:  # noqa: BLE001 - invalid existing PDF projects must not pass preflight
+                checks.append(PreflightCheck("pdf_project", "error", "PDF项目配置", str(exc) or type(exc).__name__))
+    component_name = ocr_settings.get("component") if pdf_settings.get("enabled") and not pdf_settings.get("skip_ocr") else None
+    if component_name:
+        try:
+            from ..services.component_runtime import leased_ocr_runtime
+
+            with leased_ocr_runtime(str(component_name), engine=str(ocr_settings.get("backend", "none"))) as runtime:
+                checks.append(PreflightCheck("ocr_component", "ok", "OCR组件", f"受信版本 {runtime.version}，冻结运行仍须产物验收"))
+        except Exception as exc:  # noqa: BLE001 - dependency/signature/platform failures must block before execution
+            checks.append(PreflightCheck("ocr_component", "error", "OCR组件", str(exc) or type(exc).__name__))
     for label, module, install_hint in requirements:
         available = importlib.util.find_spec(module) is not None
         checks.append(

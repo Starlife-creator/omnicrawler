@@ -7,7 +7,7 @@ import re
 import shutil
 import tempfile
 import zipfile
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -17,7 +17,7 @@ from ..core.archive_security import (
     read_zip_member,
     validate_zip_archive,
 )
-from ..core.utils import utcnow
+from ..core.utils import atomic_write, utcnow
 from .component_compatibility import check_registry, dependency
 from .component_registry import (
     commit_document,
@@ -43,6 +43,7 @@ class ComponentInfo:
     core_version: str = ""
     platforms: tuple[str, ...] = ()
     architectures: tuple[str, ...] = ()
+    runtime: dict[str, Any] = field(default_factory=dict)
 
 
 class ComponentManager:
@@ -94,6 +95,16 @@ class ComponentManager:
                     raise ValueError(f"组件{key}清单无效")
             for requirement in raw.get("dependencies", []):
                 dependency(requirement)
+            runtime = raw.get("runtime", {})
+            if not isinstance(runtime, dict):
+                raise ValueError("组件runtime清单无效")
+            if runtime:
+                if runtime.get("protocol") != "ocr-file-v1" or runtime.get("engine") not in {"paddle", "tesseract"}:
+                    raise ValueError("不支持的组件运行协议")
+                entrypoint = str(runtime.get("entrypoint", ""))
+                _safe_component_path(entrypoint)
+                if entrypoint not in files or not isinstance(runtime.get("model_license"), str) or not runtime["model_license"].strip():
+                    raise ValueError("OCR组件必须声明已校验入口和模型许可")
         return ComponentInfo(
             name=str(raw["name"]), version=str(raw["version"]), purpose=str(raw.get("purpose", "")),
             edition=str(raw.get("edition", "optional")), download_bytes=package.stat().st_size,
@@ -102,6 +113,7 @@ class ComponentManager:
             files={str(key): str(value) for key, value in files.items()},
             core_version=str(raw.get("core_version", "")),
             platforms=tuple(raw.get("platforms", [])), architectures=tuple(raw.get("architectures", [])),
+            runtime=runtime,
         )
 
     def import_offline(self, package: Path, *, allow_unsigned: bool = False) -> dict[str, Any]:
@@ -152,6 +164,13 @@ class ComponentManager:
                         raise ValueError(f"组件文件哈希不匹配: {name}")
             target.parent.mkdir(exist_ok=True)
             payload_root.replace(target)
+        # Preserve the original signature outside the payload file set. Runtime
+        # lookup re-verifies it against the current trust root, not installed.json.
+        with zipfile.ZipFile(package) as archive:
+            manifest_bytes = archive.read("component.json")
+        signed_manifest = contained_path(self.root, f".manifests/{info.name}/{info.version}.json")
+        signed_manifest.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write(signed_manifest, manifest_bytes)
         previous = {info.name: installed[info.name]} if info.name in installed else {}
         installed[info.name] = {**asdict(info), "dependencies": list(info.dependencies), "path": target.relative_to(self.root).as_posix(), "installed_at": utcnow()}
         self._save(installed, previous)
@@ -223,7 +242,9 @@ class ComponentManager:
         for relative, expected in entry.get("files", {}).items():
             _safe_component_path(relative)
             file_path = contained_path(self.root, str(restored / relative))
-            if file_path.is_symlink() or not file_path.is_file() or _sha256(file_path) != expected:
+            original_path = restored / relative
+            linked = any(part.is_symlink() or part.is_junction() for part in (original_path, *original_path.parents) if part != self.root and self.root in part.parents)
+            if linked or not file_path.is_file() or _sha256(file_path) != expected:
                 raise ValueError("回滚组件文件缺失或哈希不匹配")
 
     def _installed(self) -> dict[str, dict[str, Any]]:

@@ -196,6 +196,7 @@ DEFAULTS: dict[str, Any] = {
             "project_config": "",
             "skip_ocr": False,
             "ocr_backend": "none",
+            "ocr_component": "",
         }
     },
     "outputs": {
@@ -962,6 +963,11 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
                 f"{template_path}"
             )
         backend = str(pdf.get("ocr_backend", "none")).lower()
+        ocr_component = pdf.get("ocr_component", "")
+        if ocr_component and (not isinstance(ocr_component, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", ocr_component)):
+            errors.append("processors.pdf.ocr_component必须是组件标识，不能包含路径")
+        if ocr_component and backend not in {"paddle", "tesseract"}:
+            errors.append("指定ocr_component时需选择paddle或tesseract后端")
         if backend not in {"none", "paddle", "tesseract"}:
             errors.append("processors.pdf.ocr_backend只能是none、paddle或tesseract")
         if not isinstance(pdf.get("skip_ocr", False), bool):

@@ -243,6 +243,8 @@ def load_config(config_path: str | Path) -> ProjectConfig:
 def validate_runtime_config(config: ProjectConfig) -> list[str]:
     warnings: list[str] = []
     backend = str(config.ocr.get("backend", "none")).lower()
+    if config.ocr.get("component") and backend not in {"paddle", "tesseract"}:
+        raise ValueError("指定ocr.component时需选择paddle或tesseract后端")
     if backend not in {"none", "paddle", "tesseract"}:
         raise ValueError("ocr.backend 只能是 none、paddle 或 tesseract")
     provider = str(config.llm.get("provider", "disabled")).lower()

@@ -70,6 +70,7 @@ def ensure_pdf_project(config: AppConfig) -> tuple[Path, bool]:
         ocr_backend=str(
             settings.get("ocr_backend") or os.environ.get("PDFX_OCR_BACKEND", "none")
         ),
+        ocr_component=str(settings.get("ocr_component", "")),
     )
     return path, True
 

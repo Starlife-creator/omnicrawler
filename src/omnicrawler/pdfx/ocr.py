@@ -250,6 +250,10 @@ class TesseractBackend:
 
 
 def create_backend(config: ProjectConfig) -> OCRBackend | None:
+    if config.ocr.get("component"):
+        from .component_ocr import ComponentOCRBackend
+
+        return ComponentOCRBackend(config.ocr)
     name = str(config.ocr.get("backend", "none")).lower()
     if name == "none":
         return None
@@ -312,6 +316,11 @@ def _check_temperature() -> bool:
 def _ocr_worker_init(ocr_config: dict[str, Any]) -> None:
     """进程池初始化：为当前 worker 进程创建 OCR backend 实例。"""
     global _worker_backend
+    if ocr_config.get("component"):
+        from .component_ocr import ComponentOCRBackend
+
+        _worker_backend = ComponentOCRBackend(ocr_config)
+        return
     name = str(ocr_config.get("backend", "none")).lower()
     if name == "paddle":
         _worker_backend = PaddleStructureBackend(ocr_config)

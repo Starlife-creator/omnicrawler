@@ -22,6 +22,7 @@ def create_project_config(
     work_dir: str | Path,
     output_dir: str | Path,
     ocr_backend: str = "none",
+    ocr_component: str = "",
 ) -> Path:
     template = resolve_pdf_project_config(template_path)
     destination = Path(destination).expanduser().resolve()
@@ -47,6 +48,8 @@ def create_project_config(
         }
     )
     raw.setdefault("ocr", {})["backend"] = ocr_backend
+    if ocr_component:
+        raw["ocr"]["component"] = ocr_component
     with atomic_output_path(destination, suffix=destination.suffix or ".yaml") as temp:
         temp.write_text(
             yaml.safe_dump(raw, allow_unicode=True, sort_keys=False, width=120),
