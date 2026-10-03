@@ -41,6 +41,9 @@ class ShadowComparison:
     new_quality: float
     false_matches: int
     historical_compatible: bool
+    baseline_sha256: str = ""
+    candidate_sha256: str = ""
+    evidence_sha256: str = ""
 
     @property
     def improves_safely(self) -> bool:
@@ -72,6 +75,11 @@ def shadow_config(active: dict[str, Any], candidate: RepairCandidate) -> dict[st
 def approve_repair(active: dict[str, Any], shadow: dict[str, Any], candidate: RepairCandidate, comparison: ShadowComparison, approved_by: str) -> dict[str, Any]:
     if not approved_by or not comparison.improves_safely:
         raise ValueError("修复必须经人工批准且影子比较安全改善")
+    if comparison.baseline_sha256 and (
+        comparison.baseline_sha256 != config_digest(active)
+        or comparison.candidate_sha256 != config_digest(shadow)
+    ):
+        raise ValueError("影子比较证据与当前配置或候选不一致，必须重新比较")
     approved = copy.deepcopy(shadow)
     approved.pop("_shadow", None)
     snapshot = hashlib.sha256(json.dumps(active, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
@@ -80,3 +88,7 @@ def approve_repair(active: dict[str, Any], shadow: dict[str, Any], candidate: Re
         "rollback_config_sha256": snapshot, "status": "observing" if not candidate.stable else "stable",
     }
     return approved
+
+
+def config_digest(config: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(config, ensure_ascii=False, sort_keys=True).encode()).hexdigest()

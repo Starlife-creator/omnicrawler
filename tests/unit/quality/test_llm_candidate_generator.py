@@ -172,12 +172,12 @@ class TestBuildComparisonFromProposal:
         comparison = build_comparison_from_proposal(
             proposal, old_quality=0.3, new_quality=0.8
         )
-        assert comparison.old_records == 5
+        assert comparison.old_records == 0
         assert comparison.new_records == 5
         assert comparison.old_quality == 0.3
         assert comparison.new_quality == 0.8
         assert comparison.false_matches == 0
-        assert comparison.historical_compatible is True
+        assert comparison.historical_compatible is False
 
     def test_comparison_improves_safely_when_quality_rises(self) -> None:
         """质量上升 + 无误匹配 → improves_safely=True。"""
@@ -185,7 +185,7 @@ class TestBuildComparisonFromProposal:
         comparison = build_comparison_from_proposal(
             proposal, old_quality=0.3, new_quality=0.9
         )
-        assert comparison.improves_safely is True
+        assert comparison.improves_safely is False
 
     def test_comparison_not_safe_when_quality_drops(self) -> None:
         """质量下降 → improves_safely=False。"""
@@ -220,7 +220,7 @@ class TestLLMCandidateGenerator:
         assert item.candidate.field == "title"
         assert item.candidate.new_rule == ".name"
         assert item.comparison.new_quality == 0.9
-        assert item.comparison.improves_safely is True
+        assert item.comparison.improves_safely is False
 
     def test_comparisons_property_reflects_last_run(self) -> None:
         """comparisons 属性反映最近一次生成的比较结果。"""

@@ -29,18 +29,20 @@
     generator = LLMCandidateGenerator()
     candidates = generator.generate_candidates(html, records, fields)
     policy = AutoApplyPolicy(llm_enabled=True)
-    results = generate_and_auto_apply(active, candidates, generator.comparisons, policy)
+    results = generate_and_auto_apply(active, candidates, policy)
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
+from ..core.config import AppConfig
 from ..extraction.adaptive_extractor import AdaptiveExtractor, RepairProposal
 from .auto_apply import AutoApplyPolicy, AutoApplyResult, auto_apply_if_safe
+from .comparison_evidence import ComparisonSample, compare_snapshots
 from .shadow_repair import (
     RepairCandidate,
     ShadowComparison,
@@ -140,30 +142,18 @@ def build_comparison_from_proposal(
     old_quality: float = 0.0,
     new_quality: float = 0.0,
 ) -> ShadowComparison:
-    """基于 RepairProposal 的验证数据构造 ShadowComparison。
+    """提供候选预览；旧结果和历史兼容未知，不能授权应用。
 
-    adaptive_extractor 的本地验证已经确保新规则命中数达标，
-    这里把命中数转换为质量改善指标：
-        - old_records / new_records: 用 proposal.matches 表示新规则命中数
-        - old_quality / new_quality: 调用方传入（默认 0.0 表示未知，需调用方填充）
-        - false_matches: 本地验证通过即 0
-        - historical_compatible: True（新规则在当前页面验证通过）
-
-    Args:
-        proposal: 修复建议
-        old_quality: 旧规则质量分数（如字段成功率）
-        new_quality: 新规则质量分数
-
-    Returns:
-        ShadowComparison 实例
+    兼容原调用者传入的质量分数，但分数与当前页命中不能代替标注样本。
+    自动应用比较必须使用 compare_snapshots 的旧/新实际提取结果。
     """
     return ShadowComparison(
-        old_records=proposal.matches,
+        old_records=0,
         new_records=proposal.matches,
         old_quality=old_quality,
         new_quality=new_quality,
         false_matches=0,
-        historical_compatible=True,
+        historical_compatible=False,
     )
 
 
@@ -215,6 +205,9 @@ class LLMCandidateGenerator:
         old_quality: float = 0.0,
         new_quality: float = 0.0,
         observation_rounds: int = 0,
+        active_config: AppConfig | None = None,
+        current_samples: Sequence[ComparisonSample] = (),
+        historical_samples: Sequence[ComparisonSample] = (),
     ) -> list[CandidateWithComparison]:
         """从失效字段生成 LLM 修复候选。
 
@@ -231,6 +224,9 @@ class LLMCandidateGenerator:
             old_quality: 旧规则质量分数（用于 ShadowComparison）
             new_quality: 新规则质量分数
             observation_rounds: 观察轮数（首次生成=0）
+            active_config: 标注样本对应的完整配置；缺少时只生成预览
+            current_samples: 当前响应及完整标注结果，须包含生成候选的页面
+            historical_samples: 独立的已验收历史响应及结果
 
         Returns:
             CandidateWithComparison 列表；无 AI 或验证不过时返回空列表
@@ -253,6 +249,12 @@ class LLMCandidateGenerator:
                 old_quality=old_quality,
                 new_quality=new_quality,
             )
+            if active_config is not None and any(
+                sample.response.body == html.encode("utf-8") for sample in current_samples
+            ):
+                comparison = compare_snapshots(
+                    active_config, candidate, current_samples, historical_samples
+                )
             results.append(CandidateWithComparison(candidate, comparison))
 
         self._last_candidates = results
