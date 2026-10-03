@@ -8,6 +8,11 @@ import argparse
 
 
 def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    analysis = sub.add_parser("analyze-archive", help="分析明确选择且哈希已验证的交付文档，生成可回链报告")
+    analysis.add_argument("--manifest", required=True)
+    analysis.add_argument("--output", "-o", required=True)
+    analysis.add_argument("--config", "-c", help="可选 AI 配置；默认完全本地")
+    analysis.add_argument("--ai", action="store_true", help="显式发送选定证据片段，按隐私和预算分析")
     repair = sub.add_parser("repair", help="用独立本地快照比较、应用、观察或回滚提取候选")
     repair.add_argument("action", choices=("preview", "apply", "observe", "rollback"))
     repair.add_argument("--config", "-c", required=True)

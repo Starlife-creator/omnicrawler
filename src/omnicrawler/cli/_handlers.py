@@ -96,6 +96,14 @@ def _run_repair(args: argparse.Namespace) -> None:
                   generate=args.generate, max_rounds=args.max_rounds))
 
 
+@_register("analyze-archive")
+def _run_archive_analysis(args: argparse.Namespace) -> None:
+    from ..services.archive_analysis import execute
+
+    _json(execute(Path(args.manifest), Path(args.output),
+                  config_path=Path(args.config) if args.config else None, use_ai=args.ai))
+
+
 @_register("pdf")
 def _run_pdf_command(args: argparse.Namespace) -> None:
     """PDF 子命令：把参数原样转发给 PDF 子系统。
