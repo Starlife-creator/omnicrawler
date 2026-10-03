@@ -11,6 +11,7 @@ from typing import Any
 import yaml
 
 from ..security import tls_scope
+from .auth_policy import validate_auth_check
 from .builtin_references import (
     DEFAULT_PDF_TEMPLATE,
     LEGACY_DEFAULT_PDF_TEMPLATE,
@@ -51,7 +52,7 @@ DEFAULTS: dict[str, Any] = {
 },
     "config_version": CURRENT_CONFIG_VERSION,
     "project": {"name": "omnicrawler_project", "workspace": "work/default"},
-    "source": {"kind": "static_html", "seeds": []},
+    "source": {"kind": "static_html", "seeds": [], "auth_check": {}},
     "crawl": {
         "strategy": "bfs", "max_pages": 100, "max_depth": 3,
         "same_host": True, "allow_domains": [], "deny_patterns": [],
@@ -559,6 +560,7 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     """
     errors: list[str] = []
     warnings: list[str] = []
+    errors.extend(validate_auth_check(config.section("source").get("auth_check")))
     flag = errors.append if strict else warnings.append
 
     # S2.1.1 ②：顶层段白名单（DEFAULTS 键 + GUI/模板允许的扩展段）

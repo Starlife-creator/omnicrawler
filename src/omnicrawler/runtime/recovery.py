@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import hashlib
 import secrets
 import shutil
 from pathlib import Path
 from typing import Any
 
 from ..core.config import AppConfig, load_config
+from ..core.models import CrawlRequest
 from ..core.utils import utcnow
+from ..fetching import session_crypto
+from ..fetching.authentication import session_scope
 from ..fetching.session import invalidate_cookie_sessions
+from ..fetching.session_bridge import select_bridgeable_cookies
 from ..fetching.session_lease import session_lease
+from ..fetching.session_state import context_key_for_request, require_session_state_path
 from ..state import StateStore
 from .run_control import RunControl
 
@@ -154,6 +160,39 @@ class RecoveryCenter:
         with session_lease(self.config.workspace):
             invalidate_cookie_sessions(self.config.workspace)
             return self._reset_login_stopped()
+
+    def retry_after_login(self, snapshot: Path, *, hosts: tuple[str, ...]) -> dict[str, Any]:
+        """Restore only matching authentication failures after a persisted login.
+
+        The snapshot is verified locally and bound to this workspace. Reusing the
+        same snapshot cannot repeatedly retry a still-failing authentication check.
+        The caller selects browser-only or HTTP bridging before invoking this step.
+        """
+        with session_lease(self.config.workspace):
+            root = (self.config.workspace / "sessions").resolve()
+            snapshot = snapshot.resolve()
+            if snapshot.parent != root or not snapshot.name.endswith(".playwright.json"):
+                raise ValueError("登录快照须来自当前工作区会话目录")
+            expected = require_session_state_path(self.config, context_key_for_request(self.config, CrawlRequest("https://example.invalid/")))
+            if snapshot != expected.resolve():
+                raise ValueError("登录快照账号或代理身份与当前任务不一致")
+            captured = session_crypto.load_storage_state(snapshot)
+            if not isinstance(captured, dict) or not captured.get("cookies"):
+                raise ValueError("登录快照缺少 Cookie，不能据此恢复认证失败")
+            generation = hashlib.sha256(snapshot.read_bytes()).hexdigest()
+            invalidate_cookie_sessions(self.config.workspace)
+            if not self.database.is_file():
+                return {"retried": 0, "generation": generation}
+            count = 0
+            with StateStore(self.database) as state:
+                for host in dict.fromkeys(hosts):
+                    matched, _foreign = select_bridgeable_cookies(captured["cookies"], hosts=[host])
+                    if not matched:
+                        continue
+                    scope = session_scope(self.config, CrawlRequest(f"https://{host}/"))
+                    count += state.retry_authentication(state.authentication_failures(scope), scope=scope, generation=generation)
+            return {"retried": count, "generation": generation,
+                    "next_command": f"omnicrawler resume -c {self.config.path}"}
 
     def _reset_login_stopped(self) -> dict[str, Any]:
         sessions = (self.config.workspace / "sessions").resolve()

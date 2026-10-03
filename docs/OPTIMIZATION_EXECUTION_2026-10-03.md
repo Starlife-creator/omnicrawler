@@ -73,3 +73,13 @@ TemplateCatalog.render 统一检查声明的 `type`、`required`、`minimum`、`
 新任务及会话编辑清除工作区 HTTP 缓存；被清除的旧 jar 清空且禁止再落盘，避免隔离后的文件被旧引用重建。get_cookie_session 缓存命中时不再构造并解密一个随后丢弃的实例。恢复隔离动作须持有会话锁，不能与任务并行修改登录态。
 
 验证：任务阻止会话替换、隔离后旧引用不能复写、新任务可重新获得锁、关闭等待先于客户端回收，以及既有 Pipeline/登录/桥接/组件并发路径通过。恢复不等待在途的关闭方式后生命周期回归失败，按字节还原。证据为 `.tmp/session-lifecycle-negative.log` 与 `.tmp/session-lifecycle-static.json`。GUI 等待停止后重登录与按认证指纹重试继续在后续批次接入。
+
+## 第七批：明确认证失败与精确重试
+
+新增可选 `source.auth_check`，由站点模板或用户明确声明 `status_codes`（401/403）、`selector`（登录表单 CSS）与 `redirect_paths`（精确登录路径）。多条件同时满足才判认证失败；未声明时普通 401/403 保持原行为。失败元数据只保存原因码和账号/代理/目标域的身份摘要。
+
+StateStore 仅重入队明确给出的认证失败指纹，同时核对失败状态、原因码、会话摘要和登录代次。相同登录快照只可重试一次，不触碰已完成、策略拦截、网络错误或其他账号的失败。RecoveryCenter 核对当前工作区、快照账号/代理和 Cookie 域覆盖，再按摘要选择重试；下一次执行使用 resume 并重建资源。
+
+示例：`source.auth_check: {status_codes: [403], selector: 'form.login'}`。声明须来自实际站点观察；请勿将所有 403 解释为登录过期。默认空声明不改变既有任务。
+
+验证：明确诊断、多条件、普通状态码、身份过滤、登录代次、Cookie 域覆盖、错账号快照，以及生产 Pipeline 跨运行持久化与 resume 路径通过。取消认证重试的作用域筛选后回归失败并字节还原；证据 `.tmp/auth-recovery-negative.log` 与 `.tmp/auth-recovery-static.json`。GUI 停止/登录/恢复按钮接入仍待下一批。

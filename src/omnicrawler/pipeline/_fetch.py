@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ..core.models import CrawlRequest, FetchResult
 from ..core.utils import safe_filename
+from ..fetching.authentication import check_authentication
 from ..fetching.routing import browser_decision
 from ..plugins.plugin_advice import choose_fetch_advice
 from ..plugins.plugin_runtime import prepare_request
@@ -93,6 +94,7 @@ class _PipelineFetch(_PipelineBase):
         http_engine = str(self.config.section("http").get("engine", "urllib")).lower()
         name = "browser" if request.render else ("httpx_async" if http_engine == "httpx_async" else "http")
         result = self._thread_fetcher(name).fetch(request)
+        check_authentication(self.config, result)
         if result.status == 304:
             self.metrics.record_fetch(result, engine=name, escalated=False)
             self._emit("after_fetch", run_id=run_id, request=request, result=result, engine=name)
@@ -125,6 +127,7 @@ class _PipelineFetch(_PipelineBase):
             )
             result = self._thread_fetcher("browser").fetch(browser_request)
             result = result.with_meta_update(escalation_meta)
+            check_authentication(self.config, result)
             name = "browser"
             escalated = True
         allowed, reason = self.scope.allowed(result.final_url, str(root) if root else None)

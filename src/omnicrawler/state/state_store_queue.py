@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Sequence
 from typing import Any
 
+from ..core.errors import SessionExpiredError
 from ..core.models import CrawlRequest
 from ..core.utils import canonicalize_url, json_text, redact_headers, utcnow
 
@@ -213,12 +215,45 @@ class QueueMixin:
 
     def mark_failed(self, request: CrawlRequest, exc: Exception, max_attempts: int, retryable: bool = True) -> None:
         with self._lock, self.conn:
-            row = self.conn.execute("SELECT attempts FROM frontier WHERE fingerprint=?", (request.fingerprint,)).fetchone()
+            row = self.conn.execute("SELECT attempts, meta_json FROM frontier WHERE fingerprint=?", (request.fingerprint,)).fetchone()
             retry = bool(row and int(row["attempts"]) < max_attempts and retryable)
+            meta = json.loads(row["meta_json"]) if row else {}
+            meta.pop("_auth_failure", None)
+            if isinstance(exc, SessionExpiredError):
+                retry = False
+                meta["_auth_failure"] = {"code": exc.code, "scope": exc.scope}
             self.conn.execute(
-                "UPDATE frontier SET status=?, last_error=?, updated_at=? WHERE fingerprint=?",
-                ("pending" if retry else "failed", str(exc)[:4000], utcnow(), request.fingerprint),
+                "UPDATE frontier SET status=?, last_error=?, meta_json=?, updated_at=? WHERE fingerprint=?",
+                ("pending" if retry else "failed", str(exc)[:4000], json_text(meta), utcnow(), request.fingerprint),
             )
+
+    def authentication_failures(self, scope: str) -> list[str]:
+        with self._lock:
+            return [str(row["fingerprint"]) for row in self.conn.execute(
+                "SELECT fingerprint FROM frontier WHERE status='failed' "
+                "AND json_extract(meta_json, '$._auth_failure.code')='session_expired' "
+                "AND json_extract(meta_json, '$._auth_failure.scope')=? ORDER BY id", (scope,),
+            )]
+
+    def retry_authentication(self, fingerprints: Sequence[str], *, scope: str, generation: str) -> int:
+        """Requeue exact authentication failures at most once per login generation."""
+        for digest in (scope, generation, *fingerprints):
+            if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+                raise ValueError("认证重试须提供明确的指纹、会话及登录代次摘要")
+        total = 0
+        with self._lock, self.conn:
+            for fingerprint in dict.fromkeys(fingerprints):
+                cursor = self.conn.execute(
+                    "UPDATE frontier SET status='pending', attempts=0, last_error=NULL, updated_at=?, "
+                    "meta_json=json_set(meta_json, '$._auth_retry_generation', ?) "
+                    "WHERE fingerprint=? AND status='failed' "
+                    "AND json_extract(meta_json, '$._auth_failure.code')='session_expired' "
+                    "AND json_extract(meta_json, '$._auth_failure.scope')=? "
+                    "AND COALESCE(json_extract(meta_json, '$._auth_retry_generation'), '') != ?",
+                    (utcnow(), generation, fingerprint, scope, generation),
+                )
+                total += cursor.rowcount
+        return total
 
     def pending_count(self) -> int:
         """S2.5.37：轻量单表 COUNT（走 idx_frontier_status 索引），
