@@ -94,12 +94,18 @@ class _PipelineExports(_PipelineBase):
     ) -> dict[str, Any]:
         """Run exporters, assemble summary, emit lifecycle hooks and persist."""
         export_started = time.monotonic()
+        delivery = None
+        if self.config.section("download").get("verified_pdf_manifest", False):
+            from ..pipeline_ops.provenance import write_pdf_source_manifest
+            delivery = write_pdf_source_manifest(self.workspace, self.state, run_id=run_id)
         exported = self._run_exports(run_id)
         self.metrics.record_stage("export", time.monotonic() - export_started)
         summary: dict[str, Any] = {
             "run_id": run_id, "status": status, "processed": processed,
             **self.state.stats(run_id), "export": exported, "pdf": pdf_summary,
         }
+        if delivery is not None:
+            summary["pdf_delivery"] = delivery
         summary["api_discovery"] = {
             "bundles": len(self._api_discoveries),
             "endpoints": sum(_as_int(item.get("endpoints", 0)) for item in self._api_discoveries),

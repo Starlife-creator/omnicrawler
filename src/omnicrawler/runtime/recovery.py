@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import re
 import secrets
 import shutil
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from ..core.config import AppConfig, load_config
 from ..core.models import CrawlRequest
@@ -150,12 +153,45 @@ class RecoveryCenter:
             recovered = state.recover_incomplete_runs()
         return {"recovered_runs": recovered, "next_command": f"omnicrawler resume -c {self.config.path}"}
 
-    def retry_failed(self, limit: int | None = None) -> dict[str, Any]:
+    def retry_failed(self, limit: int | None = None, *, fingerprints: list[str] | None = None) -> dict[str, Any]:
+        if fingerprints is not None:
+            if limit is not None:
+                raise ValueError("明确选择指纹时不能同时使用 limit")
+            with session_lease(self.config.workspace):
+                with StateStore(self.database) as state:
+                    count = state.retry_failed_selected(fingerprints)
+            return {"retried": count, "selected": len(set(fingerprints)),
+                    "next_command": f"omnicrawler resume -c {self.config.path}",
+                    "authentication": "session_expired requires verified login recovery"}
         if not self.database.is_file():
             return {"retried": 0, "message": "没有断点数据库。"}
         with StateStore(self.database) as state:
             count = state.retry_failed(limit)
         return {"retried": count, "next_command": f"omnicrawler resume -c {self.config.path}"}
+
+    def failed_requests(self, limit: int = 100) -> dict[str, Any]:
+        if not 1 <= limit <= 1000:
+            raise ValueError("失败列表 limit 需要 1–1000")
+        if not self.database.is_file():
+            return {"failures": [], "total": 0, "truncated": False}
+        with StateStore(self.database) as state:
+            rows = state.rows("SELECT fingerprint, url, kind, attempts, last_error, meta_json FROM frontier "
+                              "WHERE status='failed' ORDER BY id LIMIT ?", (limit,))
+            total = int(state.conn.execute("SELECT COUNT(*) FROM frontier WHERE status='failed'").fetchone()[0])
+        failures = []
+        for row in rows:
+            parts = urlsplit(str(row["url"]))
+            # Diagnostics carry no query credentials, userinfo or raw exception text.
+            display_url = urlunsplit((parts.scheme, parts.hostname or "", parts.path, "", ""))
+            meta = json.loads(row["meta_json"] or "{}")
+            auth = meta.get("_auth_failure", {})
+            expired = isinstance(auth, dict) and auth.get("code") == "session_expired"
+            match = re.search(r"HTTP(?: Error)?[ :]+(\d{3})", str(row["last_error"] or ""))
+            reason = "session_expired" if expired else "HTTP_" + match[1] if match else "request_failed"
+            failures.append({"fingerprint": row["fingerprint"], "url": display_url, "kind": row["kind"],
+                             "attempts": row["attempts"], "reason": reason,
+                             "next_action": "verified_login_recovery" if expired else "review_then_select_retry"})
+        return {"failures": failures, "total": total, "truncated": total > len(failures)}
 
     def reset_login(self) -> dict[str, Any]:
         with session_lease(self.config.workspace):

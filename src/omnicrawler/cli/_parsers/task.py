@@ -78,9 +78,10 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     recovery = sub.add_parser("recovery", help="查看并执行任务恢复中心操作")
     recovery.add_argument("--config", "-c", required=True)
     recovery.add_argument(
-        "action", choices=["overview", "continue", "retry-failed", "relogin", "reprocess", "rollback-config"]
+        "action", choices=["overview", "failures", "continue", "retry-failed", "relogin", "reprocess", "rollback-config"]
     )
     recovery.add_argument("--limit", type=int)
+    recovery.add_argument("--fingerprint", action="append", help="retry-failed 只重试明确选择的失败请求；可重复，认证过期须登录恢复")
     recovery.add_argument("--backup", help="rollback-config使用的已验证配置备份")
     recovery.add_argument("--apply", "--yes", action="store_true", help="执行破坏性操作（rollback-config 需要）")
     plan = sub.add_parser("plan", help="把任务编译为可解释、可校验哈希的执行计划")

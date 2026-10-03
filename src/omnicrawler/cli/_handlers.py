@@ -709,7 +709,10 @@ def _run_recovery(args: argparse.Namespace) -> None:
     if args.action == "rollback-config":
         require_explicit_apply("recovery rollback-config")
     load_config(args.config)
-    _json(cmd_recovery.execute(args.config, args.action, limit=args.limit, backup=args.backup or ""))
+    if args.fingerprint and args.action != "retry-failed":
+        raise ValueError("fingerprint 仅用于 retry-failed")
+    _json(cmd_recovery.execute(args.config, args.action, limit=args.limit, backup=args.backup or "",
+                              fingerprints=args.fingerprint))
 
 
 @_register("compare-runs")

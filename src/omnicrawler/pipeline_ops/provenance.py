@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -39,10 +40,21 @@ def write_pdf_source_manifest(
     for row in rows:
         # B06-004：DB 内 local_path 不应含 `~`；去掉 expanduser 防止 DB 数据污染时
         # 意外展开到用户目录。resolve() 保留用于相对路径规范化。
-        path = Path(str(row["local_path"])).resolve()
+        original = Path(str(row["local_path"]))
+        path = original.resolve()
+        if original.is_symlink() or workspace.resolve() not in path.parents:
+            raise ValueError("PDF 交付路径越界或使用链接")
         if not path.is_file():
             missing += 1
             continue
+        if path.stat().st_size != row["size_bytes"]:
+            raise ValueError("PDF 交付大小与完成记录不一致")
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while chunk := handle.read(1024 * 1024):
+                digest.update(chunk)
+        if digest.hexdigest() != row["sha256"]:
+            raise ValueError("PDF 交付哈希与完成记录不一致")
         request_meta = safe_json_loads(row.get("meta_json") or "{}", default={})
         item = {
             "filename": path.name,
@@ -55,6 +67,7 @@ def write_pdf_source_manifest(
             "content_type": row["content_type"],
             "size_bytes": row["size_bytes"],
             "sha256": row["sha256"],
+            "verification": "verified_file",
             "downloaded_at": row["created_at"],
             "request_meta": request_meta,
         }

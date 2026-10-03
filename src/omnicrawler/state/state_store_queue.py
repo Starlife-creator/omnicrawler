@@ -59,6 +59,24 @@ class QueueMixin:
                     (utcnow(),),
                 )
 
+    def retry_failed_selected(self, fingerprints: Sequence[str]) -> int:
+        """Reset only explicitly selected failures; login recovery remains generation-bound."""
+        if not 1 <= len(fingerprints) <= 1000 or any(
+                len(value) != 64 or any(char not in "0123456789abcdef" for char in value)
+                for value in fingerprints):
+            raise ValueError("选择重试需要 1–1000 个有效请求指纹")
+        total = 0
+        with self._lock, self.conn:
+            for fingerprint in dict.fromkeys(fingerprints):
+                cursor = self.conn.execute(
+                    "UPDATE frontier SET status='pending', attempts=0, last_error=NULL, updated_at=? "
+                    "WHERE fingerprint=? AND status='failed' "
+                    "AND COALESCE(json_extract(meta_json, '$._auth_failure.code'), '') != 'session_expired'",
+                    (utcnow(), fingerprint),
+                )
+                total += cursor.rowcount
+        return total
+
     def retry_failed(self, limit: int | None = None) -> int:
         """Move dead-letter frontier entries back to pending without resetting completed work.
 

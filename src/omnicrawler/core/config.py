@@ -135,6 +135,7 @@ DEFAULTS: dict[str, Any] = {
     "transformers": [],
     "download": {
         "enabled": False,
+        "verified_pdf_manifest": False,
         "extensions": [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".zip"],
         "media": False,
     },

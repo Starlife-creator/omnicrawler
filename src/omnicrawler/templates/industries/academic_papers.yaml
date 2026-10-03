@@ -34,6 +34,6 @@ http: {respect_robots: true, delay_seconds: 1.5}
 
 extract: {mode: auto, fields: {}, quality_threshold: 0.85, review_low_confidence: true}
 
-download: {enabled: true, extensions: [.pdf], media: false}
+download: {enabled: true, extensions: [.pdf], media: false, verified_pdf_manifest: true}
 
 outputs: {jsonl: true, csv: true, xlsx: true}

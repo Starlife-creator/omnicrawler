@@ -8,15 +8,18 @@ from ..pipeline import Pipeline
 from ..runtime.recovery import RecoveryCenter
 
 
-def execute(config: str, action: str, *, limit: int | None = None, backup: str = "") -> dict[str, Any]:
+def execute(config: str, action: str, *, limit: int | None = None, backup: str = "",
+            fingerprints: list[str] | None = None) -> dict[str, Any]:
     loaded = load_config(config)
     center = RecoveryCenter(loaded)
     if action == "overview":
         return center.overview()
+    if action == "failures":
+        return center.failed_requests(limit if limit is not None else 100)
     if action == "continue":
         return center.continue_incomplete()
     if action == "retry-failed":
-        return center.retry_failed(limit)
+        return center.retry_failed(limit, fingerprints=fingerprints)
     if action == "relogin":
         return center.reset_login()
     if action == "reprocess":

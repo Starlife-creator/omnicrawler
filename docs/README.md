@@ -46,6 +46,7 @@
 - [本地证据驱动的提取修复](REPAIR_WORKFLOW.md)：候选预览、分级应用、观察与恢复。
 - [选定交付文档分析](ARCHIVE_ANALYSIS.md)：事实回链、可选模型解释和阶段恢复。
 - [公开任务参数化复用](TASK_REUSE_WORKFLOW.md)：试跑摘要、脱敏捕获、参数重填和重新验收。
+- [公开论文下载验收](PAPER_DOWNLOAD_ACCEPTANCE.md)：选定失败重试、累计校验清单与市场插件停止证据。
 - [桌面视觉与交互规范](GUI_DESIGN_2.1.md)
 
 ### 插件、模板与市场生态
