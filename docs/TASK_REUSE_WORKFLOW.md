@@ -28,7 +28,7 @@ sample 生成绑定加载配置摘要、当前运行响应哈希/请求指纹、
 {"pages":{"path":"crawl.max_pages","type":"integer","required":true,"minimum":1,"maximum":10,"default":3},"title_selector":{"path":"extract.fields.title.selector","type":"string","required":true}}
 ```
 
-支持范围为 seeds、页数/深度/并发、HTTP 时延/超时和既有字段选择器/path。每项必须声明类型；路径不能指向请求头或凭据。使用现有参数校验和健康门禁，参数越界或缺失时拒绝。--force 覆盖前保留 ConfigHistory；已有任务 render 也先验证再原子替换。
+支持范围为 seeds、页数/深度/并发、HTTP 时延/超时和既有字段 CSS/XPath 选择器。保留 attr、all、正则分组和 join 的提取语义；字符串规则转为 selector。附件、自定义提取扩展和未支持的规则属性明确拒绝，不静默丢失语义。每项必须声明类型；路径不能指向请求头或凭据。使用现有参数校验和健康门禁，参数越界或缺失时拒绝。--force 覆盖前保留 ConfigHistory；已有任务 render 也先验证再原子替换。
 
 修改使用现有 templates diff/merge 与配置历史。自然语言只提出可编辑草案，继续沿用已有范围、权限、预算守卫与 GUI crawl_fingerprint；试跑过程中改输入，旧结果只保留为历史。输出/调度由既有独立验证处理。
 

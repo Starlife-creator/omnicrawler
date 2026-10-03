@@ -66,6 +66,40 @@ def test_changed_component_versions_reject_capture(tmp_path):
     assert not output.exists()
 
 
+def test_capture_preserves_production_attribute_and_array_semantics(tmp_path):
+    from omnicrawler.core.models import CrawlRequest, FetchResult
+    from omnicrawler.extraction.extractors import HTMLProcessor
+
+    config, proof, output = _fixture(tmp_path)
+    config.raw["extract"]["fields"] = {"title": ".title", "link": {"selector": "a", "attr": "href"},
+                                       "tags": {"selector": ".tag", "all": True}}
+    reference = json.loads(proof.read_text(encoding="utf-8"))
+    from omnicrawler.templates.capture import config_digest
+    reference["config_sha256"] = config_digest(config)
+    proof.write_text(json.dumps(reference), encoding="utf-8")
+    capture(config, proof, output, template_id="user/demo")
+    rendered = bundled_template_catalog([output.parent]).render("user/demo", {"seed_url_1": "https://example.test/new"})
+    target = tmp_path / "new.yaml"
+    target.write_text(yaml.safe_dump(rendered), encoding="utf-8")
+    request = CrawlRequest("https://example.test/new")
+    response = FetchResult(request, request.url, 200, {"content-type": "text/html"},
+        b'<article class="card"><h2 class="title">Paper</h2><a href="/paper.pdf">Download</a><b class="tag">A</b><b class="tag">B</b></article>', 0)
+    expected = [{"title": "Paper", "link": "https://example.test/paper.pdf", "tags": ["A", "B"]}]
+    assert [item.data for item in HTMLProcessor(load_config(target)).process(response).records] == expected
+
+
+def test_capture_unknown_extraction_rule_refused_instead_of_losing_semantics(tmp_path):
+    from omnicrawler.templates.capture import config_digest
+
+    config, proof, output = _fixture(tmp_path)
+    config.raw["extract"]["fields"]["title"]["default"] = "Fallback"
+    reference = json.loads(proof.read_text(encoding="utf-8"))
+    reference["config_sha256"] = config_digest(config)
+    proof.write_text(json.dumps(reference), encoding="utf-8")
+    with pytest.raises(ValueError, match="静默移除"):
+        capture(config, proof, output, template_id="user/demo")
+
+
 def test_typed_capture_parameters_and_missing_value_fail(tmp_path):
     config, proof, output = _fixture(tmp_path)
     parameters = tmp_path / "parameters.json"

@@ -60,6 +60,8 @@ def capture(config: AppConfig, proof_path: Path, output: Path, *, template_id: s
         raise ValueError("首期捕获简单 HTML seeds 任务；分页、认证和 JSON 任务使用原始配置历史")
     if any(config.section("crawl").get(key) for key in ("allow_patterns", "deny_patterns")):
         raise ValueError("首期不捕获带自定义 URL 过滤器的任务，请保留原始配置")
+    if config.section("download").get("enabled"):
+        raise ValueError("首期捕获页面记录任务；附件下载任务请保留原配置及交付清单")
     # Deliberately allowlist the public scenario instead of guessing whether arbitrary
     # headers, bodies, plugin fields, database URLs or unknown keys contain secrets.
     data: dict[str, Any] = {"config_version": 5,
@@ -91,7 +93,7 @@ def capture(config: AppConfig, proof_path: Path, output: Path, *, template_id: s
             raise ValueError("参数名或声明无效")
         location = specification.get("path", "")
         if not isinstance(location, str) or not re.fullmatch(
-                r"(?:source\.seeds\.\d+|crawl\.(?:max_pages|max_depth|concurrency)|http\.(?:timeout_seconds|delay_seconds)|extract\.fields\.[A-Za-z_][A-Za-z0-9_]*\.(?:selector|path))", location):
+                r"(?:source\.seeds\.\d+|crawl\.(?:max_pages|max_depth|concurrency)|http\.(?:timeout_seconds|delay_seconds)|extract\.fields\.[A-Za-z_][A-Za-z0-9_]*\.(?:selector|xpath))", location):
             raise ValueError("参数路径不属于可分享字段")
         if location in used_paths:
             raise ValueError("参数路径重复")
@@ -148,11 +150,20 @@ def capture(config: AppConfig, proof_path: Path, output: Path, *, template_id: s
 
 
 def _public_extract(section: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"selector", "path", "type", "attribute", "multiple", "required", "regex"}
+    allowed = {"selector", "xpath", "type", "attr", "all", "required", "regex", "group", "join"}
+    if any(section.get(key) for key in ("parser", "extractor", "deduplicate_by", "enrich", "scene", "processor_options", "parser_options", "extractor_options")):
+        raise ValueError("首期不捕获自定义提取扩展；请保留原始配置")
     fields = section.get("fields", {})
+    normalized = {}
+    for name, rule in fields.items():
+        if isinstance(rule, str):
+            rule = {"selector": rule}
+        if not isinstance(rule, dict) or set(rule) - allowed:
+            raise ValueError("提取规则包含首期未支持的属性，不能静默移除")
+        normalized[name] = copy.deepcopy(rule)
     return {"mode": section.get("mode", "auto"), "item_selector": section.get("item_selector", ""),
-            "fields": {name: {key: value for key, value in rule.items() if key in allowed}
-                       for name, rule in fields.items() if isinstance(rule, dict)}, "review_low_confidence": True}
+            "fields": normalized, "quality_threshold": section.get("quality_threshold", 0.8),
+            "review_low_confidence": True}
 
 
 def _location(data: dict[str, Any], location: str) -> tuple[Any, str]:
