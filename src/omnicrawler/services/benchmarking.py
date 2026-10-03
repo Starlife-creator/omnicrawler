@@ -28,6 +28,7 @@ import json
 import logging
 import os
 import statistics
+import threading
 import time
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
@@ -79,6 +80,14 @@ class BenchmarkResult:
     #: 同一份配置在不同时间可能面对**不同的页面内容** —— 没有它就无法判断"吞吐变了"是代码
     #: 问题还是输入变了。取不到时为空串，比较阶段会把这类记录判为**不可比**。
     input_sha256: str = ""
+    memory_scope: str = "parent_rss_v1"
+    memory_complete: bool = True
+    memory_samples: int = 0
+    time_to_first_record_seconds: float | None = None
+    fetches: int = 0
+    browser_fetches: int = 0
+    browser_escalations: int = 0
+    fresh_process_start_seconds: float | None = None
 
     @property
     def pages_per_second(self) -> float:
@@ -188,7 +197,9 @@ def compare_benchmark(before: BenchmarkResult, after: BenchmarkResult, *, regres
     return {
         "throughput_change": change,
         "regression": comparable and change < -abs(regression_threshold),
-        "memory_change": after.peak_memory_bytes - before.peak_memory_bytes,
+        "memory_change": (after.peak_memory_bytes - before.peak_memory_bytes)
+        if before.memory_scope == after.memory_scope and before.memory_complete and after.memory_complete else None,
+        "memory_comparable": before.memory_scope == after.memory_scope and before.memory_complete and after.memory_complete,
         "comparable": comparable,
         "incomparable_reasons": reasons,
     }
@@ -227,7 +238,7 @@ PROFILES: dict[str, BenchmarkProfile] = {
 #: 执行的是哪份配置应当可以被直接打开查看，而不是藏在随机临时目录里。
 _CONFIG_SUBDIR = ".benchmark"
 #: 运行期采样 RSS 的最小间隔（秒）。逐事件调用 psutil 本身会污染被测负载。
-_RSS_SAMPLE_INTERVAL = 0.05
+_RSS_SAMPLE_INTERVAL = 0.25
 
 #: 能被基准采信的终态。`partial_success` 表示「有交付但存在错误记录」——
 #: 它确实交付了页面，吞吐量因此仍是一次有效测量，不应被排除在基线之外。
@@ -316,18 +327,24 @@ class BenchmarkRunner:
         source = Path(config_path).expanduser().resolve()
         effective, source_config = self._materialize_profile_config(source, profile, workdir=workdir)
 
+        startup_seconds = _fresh_process_start_seconds()
         started = time.monotonic()
-        peak = _peak_rss()
-        last_sample = started
+        from .resource_sampling import ProcessTreeSampler
 
-        def _sample_rss(_event: str, _payload: dict[str, Any]) -> None:
-            # 采样被节流：逐事件调用 psutil 会把基准本身拖慢。
-            nonlocal peak, last_sample
-            now = time.monotonic()
-            if now - last_sample < _RSS_SAMPLE_INTERVAL:
-                return
-            last_sample = now
-            peak = max(peak, _peak_rss())
+        sampler = ProcessTreeSampler(_RSS_SAMPLE_INTERVAL)
+        first_record: float | None = None
+        fetches = browser_fetches = browser_escalations = 0
+        event_lock = threading.Lock()
+
+        def _sample_rss(event: str, payload: dict[str, Any]) -> None:
+            nonlocal first_record, fetches, browser_fetches, browser_escalations
+            with event_lock:
+                if event == "after_extract" and payload.get("count", 0) > 0 and first_record is None:
+                    first_record = time.monotonic() - started
+                if event == "after_fetch":
+                    fetches += 1
+                    browser_fetches += int(payload.get("engine") == "browser")
+                    browser_escalations += int(bool(payload.get("escalated", False)))
 
         bytes_xfer = 0
         errors = 0
@@ -339,7 +356,8 @@ class BenchmarkRunner:
             from .application_service import ApplicationService
 
             service = ApplicationService(effective)
-            result = service.run(resume=resume, callback=_sample_rss)
+            with sampler:
+                result = service.run(resume=resume, callback=_sample_rss)
             status = str(result.get("status", ""))
             stats = _summary_stats(result)
             run_id = str(result.get("run_id", ""))
@@ -368,13 +386,18 @@ class BenchmarkRunner:
             )
 
         elapsed = time.monotonic() - started
-        peak = max(peak, _peak_rss())
 
         return BenchmarkResult(
             profile=profile.name,
             pages=pages,
             duration_seconds=round(elapsed, 3),
-            peak_memory_bytes=peak,
+            peak_memory_bytes=sampler.peak,
+            memory_scope=sampler.scope,
+            memory_complete=sampler.complete,
+            memory_samples=sampler.samples,
+            time_to_first_record_seconds=first_record,
+            fetches=fetches, browser_fetches=browser_fetches, browser_escalations=browser_escalations,
+            fresh_process_start_seconds=startup_seconds,
             bytes_transferred=bytes_xfer,
             errors=errors,
             ok=ok,
@@ -382,7 +405,7 @@ class BenchmarkRunner:
             config_sha256=_sha256_file(source),
             effective_config_sha256=_sha256_file(effective),
             profile_settings=_profile_settings(profile),
-            environment=_environment(),
+            environment=(*_environment(), ("memory_scope", sampler.scope)),
             input_sha256=input_sha,
         )
 
@@ -643,6 +666,25 @@ def _peak_rss() -> int:
         return 0
 
 
+def _fresh_process_start_seconds() -> float | None:
+    """Measure a new CLI process; filesystem cache is not forced cold."""
+    import subprocess
+    import sys
+
+    command = [sys.executable, "-m", "omnicrawler", "--version"]
+    if getattr(sys, "frozen", False):
+        candidate = Path(sys.executable).with_name("omnicrawler.exe" if os.name == "nt" else "omnicrawler")
+        if not candidate.is_file():
+            return None
+        command = [str(candidate), "--version"]
+    started = time.monotonic()
+    try:
+        result = subprocess.run(command, capture_output=True, timeout=30, check=False)
+        return time.monotonic() - started if result.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
 def _dict_to_result(entry: dict[str, Any]) -> BenchmarkResult:
     """Reconstruct a BenchmarkResult from a stored dict.
 
@@ -662,6 +704,14 @@ def _dict_to_result(entry: dict[str, Any]) -> BenchmarkResult:
         effective_config_sha256=str(entry.get("effective_config_sha256", "")),
         # W6.6：旧记录没有 `input_sha256` ⇒ 空串 ⇒ 比较阶段判为**不可比**（符合方案要求）
         input_sha256=str(entry.get("input_sha256", "")),
+        memory_scope=str(entry.get("memory_scope", "parent_rss_v1")),
+        memory_complete=bool(entry.get("memory_complete", False)),
+        memory_samples=int(entry.get("memory_samples", 0)),
+        time_to_first_record_seconds=entry.get("time_to_first_record_seconds"),
+        fetches=int(entry.get("fetches", 0)),
+        browser_fetches=int(entry.get("browser_fetches", 0)),
+        browser_escalations=int(entry.get("browser_escalations", 0)),
+        fresh_process_start_seconds=entry.get("fresh_process_start_seconds"),
         profile_settings=_pairs(entry.get("profile_settings")),
         environment=_pairs(entry.get("environment")),
     )

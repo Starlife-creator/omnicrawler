@@ -272,3 +272,9 @@ fail-closed），工具会显式写明，不把「没差别」包装成「LLM �
 - 三臂对照实验：`tools/benchmark_adaptive_arms.py`（真实站点，量化自适应引擎的边际贡献）
 - 端到端公平性回归：`tests/integration/test_benchmark_fairness.py`
 - 单元测试：`tests/unit/utils/test_benchmarking.py`
+
+## 进程树与启动测量（2026-10-04）
+
+新基准每 250ms 独立采样主进程与递归子进程的 RSS 总和，记录 memory_scope=process_tree_rss_v1、memory_samples 和 memory_complete。RSS 包含共享页重复计数，不等同于独占物理内存；短于采样间隔的峰值可能遗漏。缺 psutil 或访问被拒明确标为不完整，不能当作零内存；旧主进程口径与新口径不能计算内存变化。任务成功、失败均停止并回收采样线程。
+
+fresh_process_start_seconds 为新 CLI 进程执行 --version 的时间，超时/失败为 null，没有清空操作系统缓存，不宣称磁盘冷启动。time_to_first_record_seconds 为首个非空落库提取事件的时间，不等同于人工复核合格记录，未产出为 null。fetches/browser_fetches/browser_escalations 绑定实际抓取事件，升级原因仍以现有原因码为准。没有新测量前不宣称性能提升。

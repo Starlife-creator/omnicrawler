@@ -167,3 +167,10 @@ def test_snapshot_is_stable_for_the_same_run(tmp_path: Path) -> None:
 def test_run_without_responses_has_no_snapshot(tmp_path: Path) -> None:
     _state_db(tmp_path, [("other-run", "https://a/", "sha-a", 100)])
     assert _stored_snapshot(tmp_path, "run-1") == ""
+
+def test_memory_scope_and_missing_measurements_cannot_produce_a_memory_delta():
+    parent = _result(memory_scope="parent_rss_v1")
+    tree = _result(memory_scope="process_tree_rss_v1")
+    assert compare_benchmark(parent, tree)["memory_change"] is None
+    assert not compare_benchmark(parent, tree)["memory_comparable"]
+    assert compare_benchmark(tree, _result(memory_scope=tree.memory_scope, memory_complete=False))["memory_change"] is None

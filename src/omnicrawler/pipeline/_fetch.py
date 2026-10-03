@@ -134,7 +134,7 @@ class _PipelineFetch(_PipelineBase):
         if not allowed:
             raise PermissionError(f"重定向目标被拦截: {reason}")
         self.metrics.record_fetch(result, engine=name, escalated=escalated)
-        self._emit("after_fetch", run_id=run_id, request=request, result=result, engine=name)
+        self._emit("after_fetch", run_id=run_id, request=request, result=result, engine=name, escalated=escalated)
         return result
 
     def _save_artifact(self, result: FetchResult) -> Path:
