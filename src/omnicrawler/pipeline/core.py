@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..core.config import AppConfig
+from ..fetching.session import invalidate_cookie_sessions
+from ..fetching.session_lease import session_lease
 from ..quality.diagnostics import DiagnosticRecorder
 from ..runtime.resources import ResourceGuard
 from ..runtime.run_control import RunControl
@@ -87,6 +89,8 @@ class Pipeline(_PipelineBuilders, _PipelineExports, _PipelineFetch, _PipelineRun
             return resource
 
         try:
+            self._close_stack.enter_context(session_lease(self.workspace))
+            invalidate_cookie_sessions(self.workspace)
             self.egress = (
                 dependencies.egress
                 if dependencies.egress is not None
@@ -162,6 +166,14 @@ class Pipeline(_PipelineBuilders, _PipelineExports, _PipelineFetch, _PipelineRun
     def close(self) -> None:
         """Release shared fetchers, the thread pool, record sinks, and state."""
         errors: list[Exception] = []
+        # Drain active work before closing its clients/state or releasing the
+        # session lease. Pending work is cancelled and remains resumable.
+        if self._executor is not None:
+            try:
+                self._executor.shutdown(wait=True, cancel_futures=True)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+            self._executor = None
         # S2.5.45：线程局部 fetcher 也在 close 时统一回收（消除连接池泄漏）
         fetchers = list(self._shared_fetchers.values())
         with self._all_fetchers_lock:
@@ -174,18 +186,6 @@ class Pipeline(_PipelineBuilders, _PipelineExports, _PipelineFetch, _PipelineRun
                     close()
             except Exception as exc:  # noqa: BLE001 - 单项关闭隔离
                 errors.append(exc)
-        if self._executor is not None:
-            try:
-                # cancel_futures=True：**已提交但尚未开始**的请求不再执行。
-                # 2026-09-11：此前只有 wait=False，排队中的任务仍会被调度——
-                # 即「关闭之后进程还可能继续抓取，并在运行终态落库之后再写状态」，
-                # 与「取消真实有效」相悖（收尾被二次中断时尤其明显：drain 没跑完，
-                # 队列里剩下的请求仍会自行开跑）。
-                # 未开始的请求留在 frontier 里，由下次运行的 prepare_cycle 退回待处理，不会丢。
-                self._executor.shutdown(wait=False, cancel_futures=True)
-            except Exception as exc:  # noqa: BLE001
-                errors.append(exc)
-            self._executor = None
         if self._manage_record_sinks:
             try:
                 self.record_sinks.close()

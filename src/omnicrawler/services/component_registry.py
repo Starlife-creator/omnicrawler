@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import importlib
 import json
-import os
 import re
-import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from ..core.file_lock import file_lock
 from ..core.utils import atomic_write
 
 
@@ -33,38 +31,9 @@ def contained_path(root: Path, value: str) -> Path:
 @contextmanager
 def registry_lock(root: Path, *, timeout: float = 10.0) -> Iterator[None]:
     """OS locks are released automatically if the owning process exits."""
-    lock_path = contained_path(root, ".registry.lock")
-    with lock_path.open("a+b") as stream:
-        if lock_path.stat().st_size == 0:
-            stream.write(b"\0")
-            stream.flush()
-        deadline = time.monotonic() + timeout
-        while True:
-            stream.seek(0)
-            try:
-                if os.name == "nt":
-                    windows_lock = importlib.import_module("msvcrt")
-                    windows_lock.locking(stream.fileno(), windows_lock.LK_NBLCK, 1)
-                else:
-                    import fcntl
-
-                    fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except OSError as exc:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("组件注册表正在使用，请稍后重试") from exc
-                time.sleep(0.05)
-        try:
-            yield
-        finally:
-            stream.seek(0)
-            if os.name == "nt":
-                windows_lock = importlib.import_module("msvcrt")
-                windows_lock.locking(stream.fileno(), windows_lock.LK_UNLCK, 1)
-            else:
-                import fcntl
-
-                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+    with file_lock(contained_path(root, ".registry.lock"), timeout=timeout,
+                   busy_message="组件注册表正在使用，请稍后重试"):
+        yield
 
 
 def read_document(path: Path) -> dict[str, Any]:

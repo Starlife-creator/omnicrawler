@@ -45,7 +45,8 @@ from typing import Any
 from ..core.config import AppConfig
 from ..core.errors import OmniCrawlError
 from . import session_crypto
-from .session import CookieSession, get_cookie_session
+from .session import CookieSession, get_cookie_session, invalidate_cookie_sessions
+from .session_lease import session_lease
 from .session_state import SessionPersistenceDisabledError
 
 __all__ = [
@@ -242,6 +243,14 @@ def bridge_from_storage_state_file(
     storage_state_path: Path,
     *,
     hosts: Iterable[str],
+) -> BridgeResult:
+    with session_lease(config.workspace):
+        invalidate_cookie_sessions(config.workspace)
+        return _bridge_from_storage_state_file(config, storage_state_path, hosts=hosts)
+
+
+def _bridge_from_storage_state_file(
+    config: AppConfig, storage_state_path: Path, *, hosts: Iterable[str],
 ) -> BridgeResult:
     """从 ``storage_state`` 快照文件桥接到**加密的** ``CookieSession`` 并落盘。
 

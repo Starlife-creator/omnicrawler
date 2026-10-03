@@ -50,6 +50,7 @@ import importlib.util
 import threading
 import time
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -62,6 +63,7 @@ from ..security.policy import NetworkTargetPolicy
 from ..security.redaction import redact_url
 from . import session_crypto, session_state
 from .browser_launch import build_launch_args
+from .session_lease import session_lease
 
 __all__ = [
     "DEFAULT_LOGIN_TIMEOUT_SECONDS",
@@ -300,6 +302,7 @@ class LoginSessionManager:
         self._message = ""
         self._capture_ok = False
         self._saved_once = False
+        self._session_resources = ExitStack()
 
     # ── 只读属性 ──────────────────────────────────────────
     @property
@@ -352,6 +355,10 @@ class LoginSessionManager:
         )
         key = session_state.context_key(account=account_name, proxy=proxy)
         state_path = session_state.require_session_state_path(self._config, key)
+        try:
+            self._session_resources.enter_context(session_lease(self._config.workspace))
+        except TimeoutError as exc:
+            raise LoginSessionError(str(exc)) from exc
         with self._lock:
             self._phase = LoginPhase.LAUNCHING
             self._account = account_name
@@ -369,6 +376,8 @@ class LoginSessionManager:
                 url=target, account=account_name, proxy=proxy, storage_state_path=state_path
             )
         except BaseException as exc:
+            self._close_launcher()
+            self._session_resources.close()
             with self._lock:
                 self._phase = LoginPhase.FAILED
                 self._message = f"登录窗口打开失败：{_safe_message(exc)}"
@@ -456,6 +465,7 @@ class LoginSessionManager:
             self._phase = LoginPhase.SAVING
         captured = self.capture()
         self._close_launcher()
+        self._session_resources.close()
         with self._lock:
             # 关窗竞态：最后一次 capture 失败（context 已消失）但此前有过成功快照
             # ⇒ 登录态其实在盘上，不能报"失败"误导用户重登一次。

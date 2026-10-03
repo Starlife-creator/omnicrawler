@@ -78,9 +78,9 @@ class CookieSession:
             LOGGER.warning("cookie 文件加载失败，将新建会话: %s (%s)", self.path, exc)
 
     def save(self) -> None:
-        if not self.path:
-            return
         with self.lock:
+            if not self.path:
+                return
             self.path.parent.mkdir(parents=True, exist_ok=True)
             plain = self.path.with_name(self.path.name + ".plain")
             try:
@@ -113,4 +113,23 @@ def get_cookie_session(config: AppConfig) -> CookieSession:
     safe_name = "".join(char if char.isalnum() or char in "-_" else "_" for char in name)
     path = (config.workspace / "sessions" / f"{safe_name}.cookies").resolve()
     with _LOCK:
-        return _SESSIONS.setdefault(path, CookieSession(path))
+        if path not in _SESSIONS:
+            _SESSIONS[path] = CookieSession(path)
+        return _SESSIONS[path]
+
+
+def invalidate_cookie_sessions(workspace: Path) -> int:
+    """After execution resources stop, evict jars and disable stale saves.
+
+    A retained old fetcher reference cannot recreate a removed session file.
+    The caller must own the workspace session lease before calling this function.
+    """
+    root = (workspace / "sessions").resolve()
+    with _LOCK:
+        paths = [path for path in _SESSIONS if path.parent == root]
+        for path in paths:
+            session = _SESSIONS.pop(path)
+            with session.lock:
+                session.jar.clear()
+                session.path = None
+        return len(paths)

@@ -7,6 +7,8 @@ from typing import Any
 
 from ..core.config import AppConfig, load_config
 from ..core.utils import utcnow
+from ..fetching.session import invalidate_cookie_sessions
+from ..fetching.session_lease import session_lease
 from ..state import StateStore
 from .run_control import RunControl
 
@@ -149,6 +151,11 @@ class RecoveryCenter:
         return {"retried": count, "next_command": f"omnicrawler resume -c {self.config.path}"}
 
     def reset_login(self) -> dict[str, Any]:
+        with session_lease(self.config.workspace):
+            invalidate_cookie_sessions(self.config.workspace)
+            return self._reset_login_stopped()
+
+    def _reset_login_stopped(self) -> dict[str, Any]:
         sessions = (self.config.workspace / "sessions").resolve()
         workspace = self.config.workspace.resolve()
         if sessions.parent != workspace:
