@@ -29,7 +29,7 @@ def test_quality_collects_platform_failures_without_masking_them() -> None:
     steps = job["steps"]
     test = next(step for step in steps if step.get("id") == "core_tests")
     assert not test.get("continue-on-error", False)
-    assert "--junitxml=pytest-core.xml" in test["run"]
+    assert "--junitxml=artifacts/ci/pytest-core.xml" in test["run"]
     coverage = next(step for step in steps if step.get("id") == "core_coverage")
     assert "steps.core_tests.outcome == 'failure'" in coverage["if"]
     gate = next(step for step in steps if "--profile core coverage.json" in step.get("run", ""))
