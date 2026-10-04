@@ -45,7 +45,7 @@ def extend_workflow(config: AppConfig, data: dict[str, Any]) -> dict[str, Any]:
         data["download"] = copy.deepcopy(download)
     browser = config.section("browser")
     if source["kind"] == "browser" or any(isinstance(seed, dict) and seed.get("render") for seed in seeds):
-        allowed_browser = {"engine", "headless", "pool_size", "actions", "capture_api_responses", "max_api_response_bytes", "max_api_capture_bytes", "auto_generate_api_templates", "stealth_level"}
+        allowed_browser = {"engine", "headless", "pool_size", "actions", "capture_api_responses", "max_api_response_bytes", "max_api_capture_bytes", "auto_generate_api_templates", "stealth_level", "selenium_fallback_engine"}
         if set(browser) - allowed_browser:
             raise ValueError("浏览器配置含未支持属性，不能静默移除")
         data["browser"] = copy.deepcopy(browser)

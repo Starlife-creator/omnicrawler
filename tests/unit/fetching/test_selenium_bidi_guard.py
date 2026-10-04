@@ -1,4 +1,4 @@
-"""S2.5.12：Selenium BiDi guard 默认可用 + 非权限异常放行。"""
+"""S2.5.12：Selenium BiDi guard 默认可用 + 出口异常失败关闭。"""
 
 from __future__ import annotations
 
@@ -67,19 +67,19 @@ def test_bidi_guard_permission_error_blocks_request(tmp_path: Path, monkeypatch)
     assert request.continued == 0
 
 
-def test_bidi_guard_non_permission_error_passes_through(tmp_path: Path, monkeypatch) -> None:
+def test_bidi_guard_non_permission_error_blocks_request(tmp_path: Path, monkeypatch) -> None:
     fetcher = BrowserFetcher(load_config(_config(tmp_path)))
 
     def _boom(*_a, **_k):
-        raise KeyError("unexpected")  # 非 PermissionError 家族：放行而非挂死
+        raise KeyError("unexpected")  # 出口未授权完成不能放行
 
     fetcher.egress = SimpleNamespace(authorize=_boom)
     network = _FakeNetwork()
     fetcher._install_selenium_guard(SimpleNamespace(network=network))
     request = _FakeRequest()
-    network.handler(request)  # 不抛异常（放行而非挂死）
-    assert request.failed is False
-    assert request.continued == 1
+    network.handler(request)  # 不抛异常，但明确阻止
+    assert request.failed is True
+    assert request.continued == 0
 
 
 def test_bidi_guard_unavailable_raises_guidance(tmp_path: Path) -> None:
@@ -108,3 +108,20 @@ def test_legacy_optout_is_ignored_and_guard_installed(tmp_path: Path) -> None:
     network = _FakeNetwork()
     fetcher._install_selenium_guard(SimpleNamespace(network=network))
     assert network.handler is not None  # 拦截已安装，而非 return 跳过
+
+
+def test_optional_fallback_requires_public_task_and_records_effective_renderer(tmp_path, monkeypatch):
+    from omnicrawler.core.models import CrawlRequest, FetchResult
+    from omnicrawler.fetching.browser_fetcher import SeleniumRuntimeUnavailableError
+    config = load_config(_config(tmp_path))
+    config.raw["browser"].update(engine="selenium", selenium_fallback_engine="playwright")
+    fetcher = BrowserFetcher(config)
+    request = CrawlRequest("https://example.org/x", render=True)
+    monkeypatch.setattr(fetcher, "_selenium", lambda _request: (_ for _ in ()).throw(SeleniumRuntimeUnavailableError("test")))
+    monkeypatch.setattr(fetcher, "_playwright", lambda req: FetchResult(req, req.url, 200, {}, b"verified", 0.1))
+    monkeypatch.setattr(fetcher.egress.policy, "require", lambda *_args, **_kwargs: None)
+    result = fetcher.fetch(request)
+    assert result.meta["renderer_fallback"]["effective"] == "playwright"
+    config.raw["session"]["persist_cookies"] = True
+    with pytest.raises(SeleniumRuntimeUnavailableError):
+        fetcher.fetch(request)

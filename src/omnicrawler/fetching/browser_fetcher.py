@@ -41,6 +41,11 @@ from .browser_pool import (
 
 LOGGER = logging.getLogger(__name__)
 
+
+class SeleniumRuntimeUnavailableError(RuntimeError):
+    """The renderer cannot complete its mandatory network interception."""
+
+
 # ---------------------------------------------------------------------------
 # Unified browser action protocol
 # ---------------------------------------------------------------------------
@@ -102,7 +107,15 @@ class BrowserFetcher:
                 if engine == "playwright":
                     result = self._playwright(request)
                 elif engine == "selenium":
-                    result = self._selenium(request)
+                    try:
+                        result = self._selenium(request)
+                    except SeleniumRuntimeUnavailableError as exc:
+                        browser = self.config.section("browser")
+                        if browser.get("selenium_fallback_engine") != "playwright" or self.config.section("session").get("persist_cookies") or browser.get("persist_profile") or self.config.section("source").get("auth_check"):
+                            raise
+                        LOGGER.warning("Selenium安全拦截不可用，公开任务改用Playwright；运行结果记录降级")
+                        result = self._playwright(request)
+                        result.meta["renderer_fallback"] = {"requested": "selenium", "effective": "playwright", "reason": type(exc).__name__}
                 else:
                     raise ValueError("browser.engine只能是playwright或selenium")
             self.egress.record_success(result.final_url)
@@ -226,8 +239,30 @@ class BrowserFetcher:
                 driver = webdriver.Chrome(service=service, options=options)
             else:
                 raise
+        guard_failed = threading.Event()
+        service_pid = driver.service.process.pid
+        owned_children: list[Any] = []
+        cleanup_lock = threading.Lock()
+        def stop_owned_driver() -> None:
+            nonlocal owned_children
+            with cleanup_lock:
+                try:
+                    import psutil
+                except ImportError:
+                    driver.service.stop()
+                    return
+                try:
+                    owned_children = psutil.Process(service_pid).children(recursive=True)
+                except psutil.Error:
+                    pass
+                for child in owned_children:
+                    try:
+                        child.kill()
+                    except psutil.Error:
+                        pass
+                driver.service.stop()
         try:
-            self._install_selenium_guard(driver)
+            self._install_selenium_guard(driver, failure=guard_failed, stop_driver=stop_owned_driver)
             driver.set_page_load_timeout(float(self.config.section("http").get("timeout_seconds", 60)))
             # 看门狗：BiDi 拦截在个别平台上 continue_request 可能超时挂起（selenium
             # 4.47 + Chrome 151 组合问题），导航/actions 不返回。driver.quit() 也走
@@ -237,7 +272,7 @@ class BrowserFetcher:
             watchdog_seconds = float(self.config.section("http").get("selenium_watchdog_seconds", 90))
             watchdog = _Watchdog(
                 watchdog_seconds,
-                on_timeout=driver.service.stop,
+                on_timeout=stop_owned_driver,
             )
             with watchdog:
                 # BiDi 订阅竞态：guard 注册后首导航偶发命令超时（Windows/macOS CI
@@ -256,15 +291,22 @@ class BrowserFetcher:
                     f"Selenium 操作超过看门狗 {watchdog_seconds:.0f}s 未完成（可能 BiDi 拦截事件流挂起）"
                 )
             self.egress.authorize(final_url, purpose="browser", count_request=False)
+        except Exception as exc:
+            if guard_failed.is_set():
+                raise SeleniumRuntimeUnavailableError("Selenium BiDi拦截命令未完成") from exc
+            raise
         finally:
-            driver.quit()
+            if guard_failed.is_set() or ("watchdog" in locals() and watchdog.fired):
+                stop_owned_driver()
+            else:
+                driver.quit()
         maximum = int(self.config.section("http").get("max_response_bytes", 50_000_000))
         if len(body) > maximum:
             raise ResponseTooLargeError(f"浏览器页面超过大小限制: {len(body)} > {maximum}")
         self.egress.record_response(len(body), url=final_url)
         return FetchResult(request, final_url, 200, {"content-type": "text/html; charset=utf-8"}, body, time.monotonic() - started)
 
-    def _install_selenium_guard(self, driver: Any) -> None:
+    def _install_selenium_guard(self, driver: Any, *, failure: threading.Event | None = None, stop_driver: Any = None) -> None:
         """Use WebDriver BiDi interception so Selenium subrequests cannot bypass policy."""
 
         egress_config = self.config.section("egress")
@@ -295,12 +337,8 @@ class BrowserFetcher:
                 except PermissionError:
                     request.fail()
                 except Exception as exc:
-                    # S2.5.12：非权限异常（预算/熔断/瞬态）放行请求而非挂死渲染
-                    LOGGER.warning(
-                        "BiDi guard 异常放行请求 %s: %s: %s",
-                        request.url, type(exc).__name__, exc,
-                    )
-                    request.continue_request()
+                    LOGGER.warning("BiDi 出口校验失败，阻止请求: %s", type(exc).__name__)
+                    request.fail()
                 else:
                     try:
                         request.continue_request()
@@ -314,12 +352,21 @@ class BrowserFetcher:
                             "BiDi continue_request 失败（%s）: %s，尝试 fail_request",
                             request.url, exc,
                         )
-                        try:
-                            request.fail()
-                        except Exception as fail_exc:
-                            LOGGER.error("BiDi fail_request 也失败: %s", fail_exc)
+                        if failure is not None:
+                            failure.set()
+                        if stop_driver is not None:
+                            stop_driver()
+                        else:
+                            try:
+                                request.fail()
+                            except Exception as fail_exc:
+                                LOGGER.error("BiDi fail_request 也失败: %s", fail_exc)
 
-            network.add_request_handler("before_request", guard)
+            if callable(getattr(network, "clear_request_handlers", None)):
+                # Current Selenium reconciles deferred decisions once per request.
+                network.add_request_handler(guard)
+            else:
+                network.add_request_handler("before_request", guard)
             # BiDi 网络订阅广播与首个导航请求存在竞态：guard 刚注册完浏览器
             # 事件流尚未完全稳定，首请求立即拦截时 continue_request 命令可能
             # 超时（'Timed out waiting for response to BiDi command'，selenium

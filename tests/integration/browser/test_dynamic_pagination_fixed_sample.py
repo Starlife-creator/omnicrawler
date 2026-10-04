@@ -26,6 +26,8 @@ import yaml
 from omnicrawler.core.config import load_config
 from omnicrawler.pipeline import Pipeline
 
+from .process_ownership import browser_snapshot
+
 pytestmark = pytest.mark.skipif(
     os.environ.get("OMNICRAWL_BROWSER_TESTS") != "1",
     reason=(
@@ -137,9 +139,15 @@ def completed_run(tmp_path_factory, dynamic_site):
 
     tmp_path = tmp_path_factory.mktemp("dynamic")
     config = load_config(_config(tmp_path, dynamic_site))
+    try:
+        import psutil
+    except ImportError:
+        psutil = None
+    before = browser_snapshot(psutil) if psutil is not None else {}
     with Pipeline(config) as pipeline:
         summary = pipeline.run()
 
+    summary["browser_processes_before"] = before
     records_path = config.workspace / "output" / "records.jsonl"
     records = []
     if records_path.is_file():
@@ -178,18 +186,9 @@ def test_browser_processes_are_reclaimed(completed_run, tmp_path_factory) -> Non
     psutil = pytest.importorskip("psutil", reason='需要 psutil 核对进程：pip install -e ".[gui]"')
 
     _summary, _records, workspace = completed_run
-    leftovers: list[str] = []
-    for proc in psutil.process_iter(["pid", "cmdline"]):
-        try:
-            cmdline = " ".join(proc.info.get("cmdline") or [])
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-        lowered = cmdline.lower()
-        # 只关心"由本项目运行时目录启动"的浏览器：避免误报开发者其它浏览器
-        if ("chromium" in lowered or "chrome" in lowered) and (
-            "ms-playwright" in lowered or ".runtime" in lowered
-        ):
-            leftovers.append(f"{proc.info['pid']}: {cmdline[:120]}")
+    before = _summary["browser_processes_before"]
+    after = browser_snapshot(psutil)
+    leftovers = [f"{identity[0]}: {command[:120]}" for identity, command in after.items() if identity not in before]
 
     assert not leftovers, f"运行结束后仍有浏览器进程未回收：{leftovers}"
     assert workspace.is_dir()

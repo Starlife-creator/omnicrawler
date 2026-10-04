@@ -104,6 +104,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "browser": {
         "engine": "playwright", "headless": True, "pool_size": 2, "actions": [],
+        "selenium_fallback_engine": "none",
         "capture_api_responses": True, "max_api_response_bytes": 1_000_000,
         "max_api_capture_bytes": 10_000_000,
         "auto_generate_api_templates": True,
@@ -802,6 +803,8 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         errors.append("egress.allow_unintercepted_selenium必须是true或false")
     if not isinstance(egress.get("experimental_selenium_bidi_guard", False), bool):
         errors.append("egress.experimental_selenium_bidi_guard必须是true或false")
+    if config.section("browser").get("selenium_fallback_engine") not in {"none", "playwright"}:
+        errors.append("browser.selenium_fallback_engine只能是none或playwright")
     if config.source_kind == "browser" and not config.section("browser").get("engine"):
         errors.append("browser.engine不能为空")
     # B5：隐身分级契约——非法值直接报错（确定性判据），运行期不做静默回退

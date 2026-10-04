@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import http.client
 import json
 import socket
@@ -130,6 +131,28 @@ class PinnedHTTPSHandler(urllib.request.HTTPSHandler):
         return self.do_open(connection, req, context=self.context)
 
 
+class ExplicitProxyHandler(urllib.request.ProxyHandler):
+    """Use explicit no_proxy exceptions, never the Windows registry bypass list."""
+
+    def proxy_open(self, req, proxy, protocol):
+        bypass_environment = getattr(urllib.request, "proxy_bypass_environment", None)
+        if req.host and bypass_environment is not None and bypass_environment(req.host):
+            return None
+        parsed = urllib.parse.urlsplit(proxy)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("Explicit proxy requires an HTTP(S) URL")
+        original_protocol = req.type
+        authority = parsed.netloc.rsplit("@", 1)[-1]
+        if parsed.username is not None and parsed.password is not None:
+            credentials = urllib.parse.unquote(parsed.username) + ":" + urllib.parse.unquote(parsed.password)
+            encoded = base64.b64encode(credentials.encode()).decode("ascii")
+            req.add_header("Proxy-authorization", "Basic " + encoded)
+        req.set_proxy(authority, parsed.scheme)
+        if original_protocol == parsed.scheme or original_protocol == "https":
+            return None
+        return self.parent.open(req, timeout=req.timeout)
+
+
 def build_safe_opener(
     config: AppConfig,
     *,
@@ -165,7 +188,7 @@ def build_safe_opener(
     proxy = str(http.get("proxy", "")).strip()
     if proxy:
         policy.require(proxy)
-        handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+        handlers.append(ExplicitProxyHandler({"http": proxy, "https": proxy}))
     else:
         handlers.append(urllib.request.ProxyHandler({}))
     verify = bool(http.get("verify_tls", True))

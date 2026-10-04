@@ -94,7 +94,7 @@ def test_real_playwright_pool_dynamic_render_and_api_capture():
         server.server_close()
 
 
-def test_real_selenium_dynamic_render_and_action_wait():
+def test_real_selenium_or_declared_safe_fallback_dynamic_render_and_action_wait(tmp_path):
     if not os.environ.get("OMNICRAWL_SELENIUM_DRIVER"):
         pytest.skip("OMNICRAWL_SELENIUM_DRIVER is not configured")
     server = ThreadingHTTPServer(("127.0.0.1", 0), _DynamicHandler)
@@ -114,6 +114,7 @@ def test_real_selenium_dynamic_render_and_action_wait():
                         "egress": {"allow_unintercepted_selenium": True},
                         "browser": {
                             "engine": "selenium",
+                                "selenium_fallback_engine": "playwright",
                             "headless": True,
                             "launch_args": ["--no-sandbox", "--disable-dev-shm-usage"],
                             "actions": [{"action": "wait_for", "selector": "#root[data-ready='yes']"}],
@@ -128,6 +129,8 @@ def test_real_selenium_dynamic_render_and_action_wait():
                 result = fetcher.fetch(CrawlRequest(url, render=True))
             finally:
                 fetcher.close()
+            import json
+            (tmp_path / "renderer.json").write_text(json.dumps({"requested": "selenium", "fallback": result.meta.get("renderer_fallback"), "effective": result.meta.get("renderer_fallback", {}).get("effective", "selenium")}, indent=2), encoding="utf-8")
             assert b"Captured API value" in result.body
     finally:
         server.shutdown()

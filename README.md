@@ -180,7 +180,7 @@ omnicrawler reprocess -c config.yaml --run-id <id>
 
 ---
 
-## 模板库（以注册表为准）
+## 模板库（44 套）
 
 ```powershell
 omnicrawler templates list              # 按类别列出
