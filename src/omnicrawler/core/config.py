@@ -262,6 +262,8 @@ DEFAULTS: dict[str, Any] = {
     },
     "resources": {
         "profile": "balanced",
+        "adaptive_concurrency": True,
+        "maximum_process_tree_bytes": 0,
         "minimum_free_disk_bytes": 536_870_912,
         "maximum_runtime_seconds": 0,
         "maximum_workspace_bytes": 0,
@@ -907,7 +909,7 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     }:
         errors.append("resources.profile只能是economy、balanced或performance")
     try:
-        for key in ("minimum_free_disk_bytes", "maximum_workspace_bytes"):
+        for key in ("minimum_free_disk_bytes", "maximum_workspace_bytes", "maximum_process_tree_bytes"):
             if int(resources.get(key, 0)) < 0:
                 errors.append(f"resources.{key}不能为负数")
         for key in ("maximum_runtime_seconds", "check_interval_seconds"):
@@ -915,6 +917,8 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
                 errors.append(f"resources.{key}不能为负数")
     except (TypeError, ValueError):
         errors.append("resources配置必须是数值")
+    if type(resources.get("adaptive_concurrency", True)) is not bool:
+        errors.append("resources.adaptive_concurrency必须是布尔值")
     diagnostics_raw = config.raw.get("diagnostics", {})
     if not isinstance(diagnostics_raw, dict):
         errors.append("diagnostics必须是YAML对象")

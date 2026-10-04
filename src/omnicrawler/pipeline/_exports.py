@@ -111,6 +111,8 @@ class _PipelineExports(_PipelineBase):
             "endpoints": sum(_as_int(item.get("endpoints", 0)) for item in self._api_discoveries),
             "items": self._api_discoveries,
         }
+        adaptive_checkpoint = self.state.checkpoint(run_id, "adaptive", "admission") or {}
+        summary["adaptive"] = adaptive_checkpoint.get("payload", {})
         summary["template_health"] = self.template_monitor.summary()
         summary["resource_profile"] = profile_for(self.config).to_dict()
         summary["metrics"] = self.metrics.write(self.workspace / "output", self.workspace)

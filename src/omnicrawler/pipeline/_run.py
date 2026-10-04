@@ -22,6 +22,7 @@ from ..extraction import extractors
 from ..fetching.streams import collect_sse, collect_websocket
 from ..pipeline_ops.pdf_integration import run_pdf_pipeline
 from ..plugins.plugin_runtime import prepare_request, transform_record
+from ..runtime.live_concurrency import LiveConcurrency, local_resource_pressure
 from ..runtime.resource_profiles import effective_concurrency
 from ..runtime.resources import ResourceLimitError
 from ..security.policy import is_private_target
@@ -170,6 +171,9 @@ class _PipelineRun(_PipelineBase):
         if limit < 0:
             raise ValueError(f"max_pages 不能为负数: {limit}")
         concurrency = effective_concurrency(self.config, int(crawl.get("concurrency", 4)))
+        admission = LiveConcurrency(concurrency, enabled=self.config.section("resources").get("adaptive_concurrency", True))
+        pressure_checked = 0.0
+        resource_pressure = False
         strategy = str(crawl.get("strategy", "bfs"))
         maximum_depth = int(crawl.get("max_depth", 3))
         attempts = int(self.config.section("http").get("retries", 3))
@@ -196,6 +200,7 @@ class _PipelineRun(_PipelineBase):
             request = inflight.pop(future)
             try:
                 result = future.result()
+                admission.observe(result.elapsed_seconds, failed=result.status >= 400, rate_limited=result.status == 429)
                 self._handle_result(run_id, result, maximum_depth)
                 frontier_exhausted = False
                 # 已成功处理重定向响应后，把精确最终 URL 记为同一请求的已完成别名。
@@ -252,6 +257,8 @@ class _PipelineRun(_PipelineBase):
                 self.metrics.increment("omnicrawler_failures_total", stage="extract", error=type(exc).__name__)
                 self._emit("on_error", run_id=run_id, stage="extract", error=exc, request=request)
             except Exception as exc:  # Per-URL isolation and retry boundary.
+                response = getattr(exc, "response", None)
+                admission.observe(0, failed=True, rate_limited=getattr(response, "status_code", None) == 429)
                 info = describe_error(exc)
                 self.state.add_error(run_id, request, "fetch", exc, retryable=info.retryable)
                 self.state.mark_failed(request, exc, attempts, retryable=info.retryable)
@@ -308,14 +315,21 @@ class _PipelineRun(_PipelineBase):
                         "omnicrawler_disk_free_bytes", float(resource_snapshot["disk_free_bytes"])
                     )
 
+                now = time.monotonic()
+                if now - pressure_checked >= 1:
+                    pressure_checked = now
+                    resource_pressure = local_resource_pressure(int(self.config.section("resources").get("maximum_process_tree_bytes", 0)))
+                    if resource_pressure:
+                        admission.observe(0, resource_pressure=True)
+                self.metrics.gauge("omnicrawler_admission_concurrency", float(admission.current))
                 while (
                     not frontier_exhausted
-                    and len(inflight) < concurrency
+                    and len(inflight) < admission.current
                     and processed + len(inflight) < limit
                     and attempted + len(inflight) < max_requests
                 ):
                     want = min(
-                        concurrency - len(inflight),
+                        admission.current - len(inflight),
                         limit - processed - len(inflight),
                         max_requests - attempted - len(inflight),
                     )
@@ -379,7 +393,9 @@ class _PipelineRun(_PipelineBase):
                         error_total,
                     )
 
-            crawl_status = {"processed": processed, **self.state.stats(run_id)}
+            adaptive = {"enabled": admission.enabled, "maximum": admission.maximum, "final": admission.current, "adjustments": admission.audit}
+            self.state.save_checkpoint(run_id, "adaptive", "admission", adaptive)
+            crawl_status = {"processed": processed, "adaptive": adaptive, **self.state.stats(run_id)}
             self.state.save_checkpoint(run_id, "crawl", "crawl", crawl_status)
             self.metrics.record_stage("crawl", time.monotonic() - started_monotonic)
             if callback:
