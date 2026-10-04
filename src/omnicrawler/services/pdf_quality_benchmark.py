@@ -523,7 +523,7 @@ def _observations(project: Path, case: PdfBenchmarkCase) -> list[FieldObservatio
     """从运行产物里读回字段级事实（归一值 / 证据 / 置信度 / 复核状态）。"""
     conn = sqlite3.connect(project / "work" / "pipeline.sqlite3")
     conn.row_factory = sqlite3.Row
-    with conn:
+    with contextlib.closing(conn):
         rows = conn.execute(
             "SELECT fv.field_name, fv.raw_value, fv.normalized_value, fv.page_no, fv.evidence, "
             "       fv.confidence, r.review_status "
