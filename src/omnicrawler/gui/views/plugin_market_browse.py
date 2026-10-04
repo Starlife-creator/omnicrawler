@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QListWidgetItem
 
+from ...services.scenario_cards import describe_card
 from ..i18n import _
 from .plugin_market_logic import (
     _TYPE_LABELS,
@@ -315,7 +316,8 @@ class MarketBrowseMixin(_Base):
             + ui_notice
             + dep_notice
         )
-        self._detail_summary.setText(summary)
+        self._detail_summary.setTextFormat(Qt.TextFormat.PlainText)
+        self._detail_summary.setText(summary + "\n\n" + describe_card(entry or {}))
         self._detail_listing.setText(
             _(
                 "（加载功能说明中...）"

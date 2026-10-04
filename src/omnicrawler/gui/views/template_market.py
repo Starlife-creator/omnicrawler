@@ -33,6 +33,7 @@ from ...plugins.market_client import (
     fetch_resource,
     verify_installed_template,
 )
+from ...services.scenario_cards import describe_card
 from ..core.background_worker import BackgroundWorker
 from ..design_system import FONT_FAMILY_MONO, RADIUS, ThemeManager, scaled_font_px
 from ..i18n import _
@@ -378,7 +379,8 @@ class TemplateMarketView(QWidget):
         summary = (entry or {}).get("summary", "")
         self._detail_name.setText(name)
         self._detail_meta.setText(" · ".join(p for p in [f"v{version}", publisher, category, compat] if p))
-        self._detail_summary.setText(summary)
+        self._detail_summary.setTextFormat(Qt.TextFormat.PlainText)
+        self._detail_summary.setText(summary + "\n\n" + describe_card(entry or {}))
         self._detail_listing.setText(
             _(
                 "（加载功能说明中...）"
