@@ -16,6 +16,7 @@ from ..core.utils import atomic_write, utcnow
 from .parameters import validate_parameters
 from .template_catalog import TemplateMetadata, TemplateRecord
 from .template_health import validate_template
+from .workflow_capture import extend_workflow
 
 
 def config_digest(config: AppConfig) -> str:
@@ -54,14 +55,8 @@ def capture(config: AppConfig, proof_path: Path, output: Path, *, template_id: s
         not re.fullmatch(r"[0-9a-f]{64}", str(item.get("request_fingerprint", ""))) for item in samples):
         raise ValueError("来源快照摘要格式无效")
     source = config.section("source")
-    if source.get("kind") not in {"static_html", "url_list", "crawl", "focused", "incremental"}:
-        raise ValueError("首期仅捕获公开 HTTP 页面任务；登录/API/插件任务使用本地配置历史")
-    if source.get("pagination") or source.get("auth_check") or config.section("extract").get("mode") == "json":
-        raise ValueError("首期捕获简单 HTML seeds 任务；分页、认证和 JSON 任务使用原始配置历史")
-    if any(config.section("crawl").get(key) for key in ("allow_patterns", "deny_patterns")):
-        raise ValueError("首期不捕获带自定义 URL 过滤器的任务，请保留原始配置")
-    if config.section("download").get("enabled"):
-        raise ValueError("首期捕获页面记录任务；附件下载任务请保留原配置及交付清单")
+    if source.get("kind") not in {"static_html", "url_list", "crawl", "focused", "incremental", "rest", "graphql", "form", "browser"}:
+        raise ValueError("仅捕获内置 HTTP/API/浏览器任务；插件任务使用本地配置历史")
     # Deliberately allowlist the public scenario instead of guessing whether arbitrary
     # headers, bodies, plugin fields, database URLs or unknown keys contain secrets.
     data: dict[str, Any] = {"config_version": 5,
@@ -86,14 +81,16 @@ def capture(config: AppConfig, proof_path: Path, output: Path, *, template_id: s
         specifications = json.loads(parameter_path.read_text(encoding="utf-8"))
     if not isinstance(specifications, dict) or len(specifications) > 30:
         raise ValueError("参数声明需要对象且至多 30 项")
-    declarations = {}
+    declarations = extend_workflow(config, data)
     used_paths = set()
     for name, specification in specifications.items():
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) or not isinstance(specification, dict):
             raise ValueError("参数名或声明无效")
+        if name in declarations:
+            raise ValueError("参数名与工作流输入重名")
         location = specification.get("path", "")
         if not isinstance(location, str) or not re.fullmatch(
-                r"(?:source\.seeds\.\d+|crawl\.(?:max_pages|max_depth|concurrency)|http\.(?:timeout_seconds|delay_seconds)|extract\.fields\.[A-Za-z_][A-Za-z0-9_]*\.(?:selector|xpath))", location):
+                r"(?:source\.seeds\.\d+(?:\.url)?|crawl\.(?:max_pages|max_depth|concurrency)|http\.(?:timeout_seconds|delay_seconds)|extract\.fields\.[A-Za-z_][A-Za-z0-9_]*\.(?:selector|xpath))", location):
             raise ValueError("参数路径不属于可分享字段")
         if location in used_paths:
             raise ValueError("参数路径重复")
@@ -112,13 +109,18 @@ def capture(config: AppConfig, proof_path: Path, output: Path, *, template_id: s
             parent[key] = "{{" + name + "}}"
         declarations[name] = spec
     for index in range(len(data["source"]["seeds"])):
-        if f"source.seeds.{index}" in used_paths:
+        location = f"source.seeds.{index}" + (".url" if isinstance(data["source"]["seeds"][index], dict) else "")
+        if location in used_paths:
             continue
         name = f"seed_url_{index + 1}"
         if name in declarations:
             raise ValueError("自动网址参数与声明重名")
         declarations[name] = {"type": "string", "required": True}
-        data["source"]["seeds"][index] = "{{" + name + "}}"
+        parent, key = _location(data, location)
+        if isinstance(parent, list):
+            parent[int(key)] = "{{" + name + "}}"
+        else:
+            parent[key] = "{{" + name + "}}"
     # Reconstruct reference metadata; never serialize arbitrary proof fields or errors.
     safe_reference = {"format": 1, "config_sha256": config_digest(config),
         "captured_at": str(proof.get("captured_at", "")), "run_id": str(proof.get("run_id", "")),
@@ -127,10 +129,10 @@ def capture(config: AppConfig, proof_path: Path, output: Path, *, template_id: s
         "versions": _safe_versions(proof.get("versions", {})), "historical_reference_only": True}
     data["template_version"] = 1
     data["template"] = {"id": template_id, "name": template_id, "category": "user/public-http",
-        "version": "1.0.0", "description": "由已试跑公开 HTTP 配置捕获；新参数须正常验证与试跑",
+        "version": "1.0.0", "description": "已试跑任务的参数化工作流；新网址、输入、会话均须验证与试跑",
         "capabilities": ["http"], "placeholders": declarations,
         "verified_at": safe_reference["captured_at"], "acceptance_reference": safe_reference,
-        "limitations": "仅公开 HTTP 范围；移除登录、代理、请求正文、插件、数据库及未知设置；不恢复运行批准"}
+        "limitations": "保留分页/API/动作/附件语义；网址、请求正文、动作值、认证请求头与会话名须重新填写；不含凭据、代理或插件；不恢复运行批准"}
     output = output.expanduser().resolve()
     if output.exists() and not force:
         raise FileExistsError("目标已存在；使用 --force 授权覆盖")
@@ -150,18 +152,19 @@ def capture(config: AppConfig, proof_path: Path, output: Path, *, template_id: s
 
 
 def _public_extract(section: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"selector", "xpath", "type", "attr", "all", "required", "regex", "group", "join"}
-    if any(section.get(key) for key in ("parser", "extractor", "deduplicate_by", "enrich", "scene", "processor_options", "parser_options", "extractor_options")):
+    allowed = {"selector", "xpath", "path", "paths", "type", "attr", "all", "required", "regex", "group", "join"}
+    if any(section.get(key) for key in ("parser", "extractor", "enrich", "scene", "processor_options", "parser_options", "extractor_options")):
         raise ValueError("首期不捕获自定义提取扩展；请保留原始配置")
     fields = section.get("fields", {})
     normalized = {}
     for name, rule in fields.items():
         if isinstance(rule, str):
-            rule = {"selector": rule}
+            rule = {"path" if section.get("mode") == "json" else "selector": rule}
         if not isinstance(rule, dict) or set(rule) - allowed:
             raise ValueError("提取规则包含首期未支持的属性，不能静默移除")
         normalized[name] = copy.deepcopy(rule)
-    return {"mode": section.get("mode", "auto"), "item_selector": section.get("item_selector", ""),
+    return {"mode": section.get("mode", "auto"),
+            **({"item_path": section.get("item_path", "$")} if section.get("mode") == "json" else {"item_selector": section.get("item_selector", "")}),
             "fields": normalized, "quality_threshold": section.get("quality_threshold", 0.8),
             "review_low_confidence": True}
 

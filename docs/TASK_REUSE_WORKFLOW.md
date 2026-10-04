@@ -35,3 +35,7 @@ sample 生成绑定加载配置摘要、当前运行响应哈希/请求指纹、
 离线分享使用 templates export-pack/import-pack 的哈希包；公开发布继续走既有签名市场流程。普通导入不等于受信市场发布，不自动批准网络执行。Agent 根据结构化 validate/plan/sample 返回值识别待补项，登录与缺组件按现有预检解释处理；执行、恢复和交付契约见 AGENT_GUIDE.md。
 
 examples/task_reuse/templates/public_list.yaml 包含自建合成 HTML 与完整 expected，模板 metadata 内保存样例、许可、兼容版本与适用限制，正常 render 去除 metadata，不自动执行样例。可在 examples/task_reuse 目录执行 `templates export-pack examples/public-list -o scene.zip`，再在独立目录 import-pack；离线验收复用实际 HTMLProcessor 核对完整记录。包导入限制条目/解压体积、拒绝重复/未列文件、别名 YAML 和空集合；哈希验证成功不代表签名或真实网页验收。
+
+## 2026-10-04 复杂工作流捕获
+
+捕获支持内置 HTML、分页、REST/GraphQL/表单、浏览器动作和附件下载。保留 item_path/path 与分页发现语义；网址、API 正文/查询/变量、动作输入值、认证请求头及会话名生成无默认值必填参数，凭据和登录快照不进入分享模板。下载目录、插件和转换器扩展仍应保留原本地配置；不支持的动作/下载属性明确拒绝。新任务必须 render、validate、plan、sample，不继承历史批准。
