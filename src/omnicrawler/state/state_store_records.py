@@ -164,6 +164,7 @@ class RecordsMixin:
         self,
         run_id: str,
         records: list[ExtractedRecord],
+        identity_fields: tuple[str, ...] = (),
     ) -> dict[tuple[str, str, str], str | None]:
         """Batch-load previous record_versions to eliminate N+1 queries.
 
@@ -175,7 +176,7 @@ class RecordsMixin:
             return {}
         keys: list[tuple[str, str, str]] = []
         for record in records:
-            identity = record_identity(record.data, record.source_url)
+            identity = record_identity(record.data, record.source_url, identity_fields=identity_fields)
             keys.append((record.source_url, record.record_type, identity))
         seen: set[tuple[str, str, str]] = set()
         unique_keys: list[tuple[str, str, str]] = []
@@ -239,6 +240,7 @@ class RecordsMixin:
         self,
         run_id: str,
         records: list[ExtractedRecord],
+        *, identity_fields: tuple[str, ...] = (), ignored_fields: set[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Persist semantic record versions and annotate meaningful field-level changes."""
 
@@ -246,17 +248,17 @@ class RecordsMixin:
         changes: list[dict[str, Any]] = []
         now = utcnow()
         with self._lock, self.conn:
-            version_cache = self._preload_versions(run_id, records)
+            version_cache = self._preload_versions(run_id, records, identity_fields)
             # 首轮同步：本次是该任务的第一个产出记录的周期 ⇒ 初始记录的 added 属"基线"，
             # 不是"发生了变化"。只标事实，不在数据层判断"要不要提示用户"。
             first_cycle = self._is_first_record_cycle(run_id)
             for record in records:
-                identity = record_identity(record.data, record.source_url)
-                digest = semantic_hash(record.data)
+                identity = record_identity(record.data, record.source_url, identity_fields=identity_fields)
+                digest = semantic_hash(record.data, ignored_fields=ignored_fields)
                 cache_key = (record.source_url, record.record_type, identity)
                 before_json = version_cache.get(cache_key)
                 before = json.loads(before_json) if before_json else None
-                change = compare_record_data(before, record.data, identity=identity)
+                change = compare_record_data(before, record.data, identity=identity, ignored_fields=ignored_fields)
                 if first_cycle and change.change_type == "added":
                     change = replace(change, baseline=True)
                 change_data = change.to_dict()

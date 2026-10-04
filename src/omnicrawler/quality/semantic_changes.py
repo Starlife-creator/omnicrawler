@@ -37,7 +37,12 @@ def normalize_value(value: Any) -> Any:
     return value
 
 
-def record_identity(data: dict[str, Any], source_url: str = "") -> str:
+def record_identity(data: dict[str, Any], source_url: str = "", *, identity_fields: tuple[str, ...] = ()) -> str:
+    if identity_fields:
+        if any(data.get(key) in (None, "", []) for key in identity_fields):
+            raise ValueError("显式业务主键缺失；不能退化为标题或内容身份")
+        stable = json.dumps([(key, normalize_value(data[key])) for key in identity_fields], ensure_ascii=False, default=str)
+        return "key:" + hashlib.sha256(stable.encode()).hexdigest()
     # 中英文等价键都要认：本项目分析器产出的字段名是中文（标题/编号/链接地址/名称），
     # 而这里原先只认英文键 ⇒ 中文配置下退化成"按内容哈希取身份"，
     # 于是**任何字段变化（如改价）都会被判成「删除+新增」而不是「修改」**，
@@ -56,7 +61,7 @@ def record_identity(data: dict[str, Any], source_url: str = "") -> str:
 
 
 def semantic_hash(data: dict[str, Any], *, ignored_fields: set[str] | None = None) -> str:
-    ignored = ignored_fields or {"fetched_at", "updated_at", "crawl_time", "timestamp"}
+    ignored = {"fetched_at", "updated_at", "crawl_time", "timestamp"} if ignored_fields is None else {key.casefold() for key in ignored_fields}
     cleaned = {key: value for key, value in data.items() if key.casefold() not in ignored}
     payload = json.dumps(normalize_value(cleaned), ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -75,7 +80,7 @@ def compare_record_data(
         return SemanticChange("removed", identity, 0.0, removed_fields=tuple(sorted(before)), before=before)
     before = before or {}
     after = after or {}
-    ignored = ignored_fields or {"fetched_at", "updated_at", "crawl_time", "timestamp"}
+    ignored = {"fetched_at", "updated_at", "crawl_time", "timestamp"} if ignored_fields is None else {key.casefold() for key in ignored_fields}
     before_keys = {key for key in before if key.casefold() not in ignored}
     after_keys = {key for key in after if key.casefold() not in ignored}
     added = tuple(sorted(after_keys - before_keys))

@@ -236,7 +236,11 @@ class _PipelineExtract(_PipelineBase):
                     )
                 if isinstance(fields, dict) and fields:
                     self._stage_quality(run_id, outcome.records, fields, extract_config)
-                semantic_changes = self.state.track_semantic_changes(run_id, outcome.records)
+                semantic_changes = self.state.track_semantic_changes(
+                    run_id, outcome.records,
+                    identity_fields=tuple(self.config.section("updates").get("identity_fields", [])),
+                    ignored_fields=set(self.config.section("updates").get("ignored_fields", ["fetched_at", "updated_at", "crawl_time", "timestamp"])),
+                )
                 self.metrics.increment("omnicrawler_semantic_changes_total", len(semantic_changes))
                 observation = self.template_monitor.observe(
                     result,

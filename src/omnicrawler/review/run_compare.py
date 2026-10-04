@@ -8,8 +8,11 @@ from ..state import StateStore
 
 
 def compare_runs(state: StateStore, before_run: str, after_run: str) -> dict[str, Any]:
-    before = _records(state, before_run)
-    after = _records(state, after_run)
+    before_settings = (state.checkpoint(before_run, "setup", "setup") or {}).get("payload", {}).get("semantic_settings", {})
+    after_settings = (state.checkpoint(after_run, "setup", "setup") or {}).get("payload", {}).get("semantic_settings", {})
+    before = _records(state, before_run, tuple(before_settings.get("identity_fields", [])))
+    after = _records(state, after_run, tuple(after_settings.get("identity_fields", [])))
+    ignored = set(after_settings["ignored_fields"]) if "ignored_fields" in after_settings else None
     keys = sorted(set(before) | set(after))
     run_rows = state.rows("SELECT run_id, status, summary_json FROM runs WHERE run_id IN (?,?)", (before_run, after_run))
     statuses = {row["run_id"]: row["status"] for row in run_rows}
@@ -20,7 +23,7 @@ def compare_runs(state: StateStore, before_run: str, after_run: str) -> dict[str
     for key in keys:
         old = before.get(key)
         new = after.get(key)
-        change = compare_record_data(old, new, identity=key)
+        change = compare_record_data(old, new, identity=key, ignored_fields=ignored)
         if change.change_type != "unchanged":
             item = change.to_dict()
             if change.change_type == "removed" and not after_complete:
@@ -43,10 +46,12 @@ def compare_runs(state: StateStore, before_run: str, after_run: str) -> dict[str
         "deletion_confirmation_reasons": reasons,
         **counts,
         "changes": changes,
+        "notification_summary": {"total": len(changes), **counts, "requires_review": bool(possible_removed),
+                                 "changed_fields": sorted({field for item in changes for field in item.get("modified_fields", [])})},
     }
 
 
-def _records(state: StateStore, run_id: str) -> dict[str, dict[str, Any]]:
+def _records(state: StateStore, run_id: str, identity_fields: tuple[str, ...] = ()) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
     snapshots = state.rows(
         "SELECT payload_json FROM stage_checkpoints "
@@ -55,7 +60,7 @@ def _records(state: StateStore, run_id: str) -> dict[str, dict[str, Any]]:
     if snapshots:
         for snapshot in snapshots:
             for record in json.loads(snapshot["payload_json"])["records"]:
-                identity = record_identity(record["data"], record["source_url"])
+                identity = record_identity(record["data"], record["source_url"], identity_fields=identity_fields)
                 result[f"{record['record_type']}|{identity}"] = record["data"]
         return result
     rows = state.rows(
@@ -64,7 +69,7 @@ def _records(state: StateStore, run_id: str) -> dict[str, dict[str, Any]]:
     )
     for row in rows:
         data = json.loads(row["data_json"])
-        identity = record_identity(data, str(row["source_url"]))
+        identity = record_identity(data, str(row["source_url"]), identity_fields=identity_fields)
         result[f"{row['record_type']}|{identity}"] = data
     return result
 

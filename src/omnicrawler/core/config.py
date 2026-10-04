@@ -149,6 +149,8 @@ DEFAULTS: dict[str, Any] = {
     },
     "updates": {
         "enabled": False, "revisit_completed": False,
+        "identity_fields": [],
+        "ignored_fields": ["fetched_at", "updated_at", "crawl_time", "timestamp"],
         "detect_same_url_changes": True, "keep_versions": True,
         # ★★ `confirm_missing_runs` 已**删除**（2026-09-30 用户拍板）。
         #   它从 v1.1.0（初始历史）起就**只有默认值与校验、零消费点** —— 连它引用的测试文件
@@ -903,6 +905,10 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     enabled_formats = [key for key in ("jsonl", "csv", "xlsx") if bool(outputs.get(key, False))]
     if not enabled_formats and not outputs.get("plugin_exporters"):
         warnings.append("outputs未启用任何导出格式（jsonl/csv/xlsx）或 plugin_exporters，运行只会产出辅助/状态文件")
+    for key in ("identity_fields", "ignored_fields"):
+        value = config.section("updates").get(key, [])
+        if not isinstance(value, list) or any(not isinstance(item, str) or not item.strip() for item in value) or len(set(value)) != len(value):
+            errors.append(f"updates.{key}须为不重复的非空字段名列表")
     resources = config.section("resources")
     if str(resources.get("profile", "balanced")).casefold() not in {
         "economy", "balanced", "performance"

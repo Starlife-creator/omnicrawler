@@ -153,6 +153,7 @@ class _PipelineRun(_PipelineBase):
                     "resume": resume, "retry_failed": retry_failed,
                     "revisit_completed": reset_all or reset_api_pagination,
                     "comparison_scope": _comparison_scope(self.config),
+                    "semantic_settings": self.config.section("updates"),
                 },
             )
             self.metrics.record_stage("setup", time.monotonic() - setup_started)
@@ -531,6 +532,7 @@ class _PipelineRun(_PipelineBase):
         setup = (self.state.checkpoint(run_id, "setup", "setup") or {}).get("payload", {})
         self.state.save_checkpoint(run_id, "setup", "setup", {
             **setup, "comparison_scope": _comparison_scope(self.config),
+                    "semantic_settings": self.config.section("updates"),
         })
         self.state.add_audit_event(
             "reprocess_records_started", run_id=run_id, actor="local-user",
