@@ -106,7 +106,7 @@ omnicrawler reprocess -c config.yaml --run-id <id>
 │       → quality → export → archive → cleanup           │
 ├────────────────────────────────────────────────────────┤
 │  StateStore (SQLite WAL) │ EgressBroker (policy)       │
-│  Config   │   Templates (78 sets)   │   Plugins        │
+│  Config   │   Templates (registry)   │   Plugins        │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -180,7 +180,7 @@ omnicrawler reprocess -c config.yaml --run-id <id>
 
 ---
 
-## 模板库（41 套）
+## 模板库（以注册表为准）
 
 ```powershell
 omnicrawler templates list              # 按类别列出
@@ -420,7 +420,7 @@ src/omnicrawler/
 ├── services/                    # 应用服务编排、统一进度协议、场景基因
 ├── state/                       # SQLite WAL schema + StateStore/SceneStore/CapsuleStore
 ├── sdk/                         # 公共 API（稳定性标记）
-├── templates/                   # 41 套采集模板 + recipe
+├── templates/                   # 注册表发现的采集模板 + recipe
 ├── pdfx/                        # PDF 解析/OCR/抽取子系统
 ├── convertx/                    # 任意格式互转（CSV/JSONL/Parquet/DuckDB/文档族）
 ├── sources/                     # 数据源适配器、镜像注册表
@@ -518,3 +518,7 @@ pytest tests/gui/visual/ -v                      # 像素级对比
 | [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) | Apache-2.0 | 多语言 OCR 引擎 |
 
 完整第三方声明见 [`NOTICE`](NOTICE) 文件和 [`docs/RESEARCH_AND_FUSION.md`](docs/RESEARCH_AND_FUSION.md)。
+
+<!-- current-facts:start -->
+当前内置模板：**41** 个稳定 ID；真源：`omnicrawler templates list`。配置协议：**v5**。
+<!-- current-facts:end -->

@@ -1,0 +1,412 @@
+# OmniCrawler 0.15.0 配置参考
+
+> 适用版本：0.15.0 · 配置协议：v5 · 维护状态：现行
+
+配置为 UTF-8 YAML。未知顶层字段会在迁移和 GUI 往返保存时保留。相对路径以配置文件所在项目根目录解析。
+
+## 最小配置
+
+```yaml
+config_version: 5
+project: {name: demo, workspace: work/demo}
+source: {kind: static_html, seeds: [https://example.org/]}
+http:
+  user_agent: "DemoCrawler/1.0 (+contact: owner@example.org)"
+  respect_robots: true
+extract: {mode: auto, fields: {}}
+outputs: {jsonl: true, csv: true, xlsx: true}
+```
+
+## project
+
+- `name`：任务名。
+- `workspace`：状态库、原始响应、附件、诊断与结果目录。
+
+## source
+
+- `kind`：`static_html`、`crawl`、`focused`、`incremental`、`url_list`、`rest`、`graphql`、`form`、`sitemap`、`feed`、`browser`、`file`、`media`、`websocket`、`sse`、`long_poll`、`redis`、`scrapy`，或插件注册名称。
+- `seeds`：URL 字符串，或含 `url/method/headers/payload/render/kind` 的对象。
+- `method/headers/params/payload/content_type`：API 或表单请求参数。
+- `pagination`：页码型使用 `type: page`、`parameter/start/end`；服务端 next URL 使用 `next_path`。
+  ★ **`location`（`query` ／ `body`，缺省 `query`）** 是分页参数**发到哪里**。
+  **真实前置＝该种子请求的 `method` 为 `POST`**（`sources.py` 的判断是
+  `template.method == "POST" and pagination.get("location") == "body"`）：不是 POST 时这一支
+  不走，页码会照旧拼到 URL query —— **分页仍然工作**，只是位置不是 body。
+  `source.payload` **不是前置条件**：缺省即 `{}`，页码照样进请求体；它可以是**映射**
+  （如 `{"size": 10}`）或字符串，随 `content_type` 编码。
+  ★ 表单里 `location` 渲染为**下拉**（选项即契约的 `choices`，见 `core/pagination.py` 的
+  `PAGE_SHAPE`）；`payload` 仍**不在表单**里 —— 它属**透传字段**，从配置加载后**原样保留**，
+  需要请求体请手写 YAML（`task_canvas_draft`）。
+- `query/query_file/variables`：GraphQL。
+- `login`：`url/method/content_type/fields/headers`，先登录再复用 Cookie。
+- `max_messages/duration_seconds/subscribe`：流式来源的硬边界。
+
+## crawl
+
+- `strategy`：`bfs`、`dfs`、`priority` 或 `random`。
+- `max_pages/max_depth/concurrency`：任务硬上限。
+- `same_host/allow_domains/allow_patterns/deny_patterns`：范围控制。
+- `focus_keywords`：根据 URL 与锚文本计分。
+
+## http
+
+- `user_agent`：应含真实维护者联系方式。
+- `timeout_seconds/retries/delay_seconds`：超时、重试与每主机间隔。`retries` 为总尝试次数（0 表示不重试，仍会尝试 1 次）。
+- `retry_base_seconds/retry_max_seconds/retry_jitter`：指数退避。
+- `retry_on_status`：发生重试的状态码列表，默认 `[408, 425, 429, 500, 502, 503, 504]`；设为空数组 `[]` 表示不重试任何 HTTP 状态码。
+- `retry_max`：旧轨兼容别名，等价 `retries`，仅在未写 `retries` 时生效（非负整数，0 表示不重试）。
+- `respect_robots/robots_fail_closed/robots_cache_ttl_seconds/robots_max_bytes`。
+- `max_redirects/max_response_bytes`。
+- `verify_tls`（默认 `true`）与 `tls_insecure_domains`：**TLS 校验降级必须是有作用域的**。
+  这两个键共同构成一个开关，不能被单独使用：
+  - `verify_tls: true`（默认）：一切照旧，`tls_insecure_domains` 不生效（若配了会提示「不生效」）。
+  - `verify_tls: false`：**必须**用 `tls_insecure_domains` 逐台声明允许免校验的主机，
+    否则配置校验直接失败。免校验只对名单内主机生效，**访问名单外主机会被出网层拦截**。
+  - 条目只写主机名（不带协议/路径/端口，不支持通配符）；看起来不像内网的主机会产生风险提示。
+  - 为什么不能只关全局开关：校验开关在传输栈里是**客户端级**的（httpx / Playwright 无法
+    按请求逐主机切换）。若只做一半，就会出现「以为只对 A 放宽、其实对 B 也放宽」。
+    因此这里选择明确不可混用，而不是留下看不见的全局降级。
+- `allow_private_network`：默认 `false`；仅对自有或已授权内网站点开启。
+- `resolve_dns/dns_fail_closed/dns_cache_ttl_seconds`：DNS 结果安全检查。异步 HTTP 传输无法安装
+  DNS 固定后端时默认 `dns_fail_closed: true` 并拒绝启动；只有明确接受 DNS 重绑定降级风险时
+  才可设为 `false`，其他后端初始化异常不会被该开关吞掉。
+- `auto_browser_fallback`：检测到空壳动态页面时升级到浏览器。
+- `engine`：`urllib` 或 `httpx_async`。
+- `headers/proxy`：全局请求头和单个授权代理。未填写 `proxy` 时不会继承环境代理变量；显式代理
+  被视为可信网络边界，OmniCrawler 验证并固定代理地址，但目标域名的最终解析由代理负责。
+
+## browser
+
+- `engine`：`playwright` 或 `selenium`。
+- `headless/pool_size/wait_until`。
+- `actions`：`wait_for`、`click`、`fill`、`press`、`scroll_bottom`、`wait_ms`。
+- `capture_api_responses`：捕获 XHR/fetch JSON。
+- `max_api_response_bytes/max_api_capture_bytes`：单响应与单页面总捕获上限。
+
+## session 与 auth
+
+```yaml
+session: {persist_cookies: false, name: default}
+auth:
+  provider: my_auth_plugin
+  options: {audience: example}
+```
+
+`auth.provider` 在每次请求前调用插件。配置内密钥使用完整值 `secret://name`；运行时从 `OMNICRAW_SECRET_NAME` 或系统 keyring 读取。
+
+## extract
+
+- `mode`：`auto/html/json/table/text` 或 processor 插件名。
+- `parser/extractor`：独立 parser/extractor 插件；不可同时指定。
+- `parser_options/extractor_options`：插件选项。
+- `item_selector`：HTML 重复项 CSS 选择器。
+- `item_path`：JSON 数组路径，支持点号、数字下标和 `[*]`。
+- `quality_threshold/review_low_confidence`。
+
+HTML 字段规则：
+
+```yaml
+extract:
+  mode: html
+  item_selector: article
+  fields:
+    title:
+      selectors: [h1, h2.title, "meta[property='og:title']"]
+      attr: content
+      required: true
+      transforms: [normalize_space]
+    price:
+      xpath: ".//span[contains(@class, 'price')]"
+      regex: "([0-9.,]+)"
+      data_type: money
+    canonical:
+      source: opengraph
+      property: url
+    schema_name:
+      source: jsonld
+      path: name
+    api_value:
+      source: browser_response
+      url_pattern: "/api/items"
+      path: "items.0.value"
+```
+
+通用属性包括 `selector/selectors/xpath/attr/all/join/regex/group/default/transforms`。每个字段保存命中路径、原始值、清洗值、来源 URL 和置信度。
+
+JSON 字段使用 `selector` 或 `path` 与 `type: jsonpath`。质量属性可使用：
+
+- `required`、`required_if`（`equals/in/present`）。
+- `data_type`：`string/integer/number/money/date/datetime/enum`。
+- `pattern/min_length/max_length/min/max/values`。
+- `cross_field`：`equals/not_equals/gt/gte/lt/lte`。
+- `duplicate_key` 与 `anomaly`（字段、z-score、最小样本）。
+
+## transformers
+
+```yaml
+transformers:
+  - name: normalize_company
+    options: {dictionary: data/companies.csv}
+```
+
+按配置顺序在质量检查和存储前执行；插件可返回修改后的记录或字典。
+
+## download 与 incremental
+
+- `download.enabled/extensions/media`：附件扩展名白名单和媒体下载。
+- `incremental.skip_unchanged`：内容哈希不变时跳过派生阶段。
+- `incremental.archive_raw`：保留原始响应；阶段级 `reprocess` 依赖此项。
+
+## processors.pdf
+
+- `enabled`：采集后运行 PDF 流水线。
+- `config`：首次创建 PDF 子项目时使用的字段模板。
+- `project_config`：已有 PDF 子项目配置；留空则创建 `<workspace>/pdf/project.yaml`。
+- `skip_ocr/ocr_backend`。
+
+PDF 子项目的 parser、OCR、retrieval、extraction、normalization、validation 和 fields 详见生成配置中的注释及用户指南。
+
+## outputs
+
+```yaml
+outputs:
+  jsonl: true
+  csv: true
+  xlsx: true
+  parquet: false
+  duckdb: false
+  exporter: default
+  plugin_exporters: [warehouse]
+  exporter_options:
+    warehouse: {table: records}
+  ai_act_summary: false
+```
+
+主 exporter 失败会使任务失败；额外 exporter 是否失败开放由 `plugins.fail_open` 决定。
+
+`ai_act_summary` 额外产出 `output/ai_act_training_summary.json`——EU AI Act
+Art. 53(1)(d) 要求的「训练内容公开摘要」，按委员会 2025-07-24 发布的模板三节结构
+（通用信息 / 数据来源清单 / 相关数据处理 aspects）组织。内容侧取自 `artifacts` 表
+并逐文件重算 sha256，来源侧取自 `source_url` 的实测域名摘要与模板元数据里人工声明的
+`source_urls`/`license`/`verified_at`；**取不到的字段一律标 `GAP` 并附理由，不写
+空白**（空白会被读成「无需申报」）。产物含四类**分离**的哈希，第三方可各自独立重算。
+默认关闭：多数任务并不训练模型，开着只是多产出一份文件。
+
+## storage
+
+```yaml
+storage:
+  objects:
+    backend: local        # local 或 s3
+    local_directory: .
+    bucket: ""
+    prefix: omnicrawler
+  records:
+    backends:
+      - {kind: postgresql, dsn: "secret://postgres_dsn", table: omnicrawler_records}
+      - {kind: opensearch, hosts: [https://search.example], index: omnicrawler}
+    fail_open: true
+    max_errors: 200
+  retention:
+    raw_days: 30
+    artifacts_days: 90
+    diagnostics_days: 14
+```
+
+SQLite 始终是本地恢复权威；外部后端是记录镜像。`max_errors` 限制摘要中保留的最近失败数（`0` 表示不保留样本），但 `storage.error_counts` 始终记录每个镜像后端的完整失败计数，避免长任务因重复故障无限占用内存。错误样本同时保留在兼容字段 `storage_warnings`。
+
+## resources
+
+- `minimum_free_disk_bytes`：磁盘低于此值安全停止，默认 512 MiB。
+- `maximum_runtime_seconds`：0 表示不限制。
+- `maximum_workspace_bytes`：0 表示不限制。
+- `check_interval_seconds`：资源检查间隔。
+
+## egress（1.2.0统一网络出口）
+
+```yaml
+egress:
+  enabled: true
+  allowed_schemes: [http, https, ws, wss]
+  allowed_ports: []             # 空表示按协议默认；否则只允许列出的端口
+  allowed_domains: []           # 空表示沿用任务目标策略
+  credential_domains: []        # 空时从入口、登录、AI与存储端点推导
+  credential_purposes: [fetch, login, redirect, robots, browser, stream, ai, storage, plugin]
+  maximum_requests: 0           # 0表示不限
+  maximum_bytes: 0
+  maximum_concurrency: 0
+  maximum_runtime_seconds: 0
+  maximum_cost: 0
+  circuit_failure_threshold: 5
+  circuit_recovery_seconds: 30
+  audit: true
+  allow_unintercepted_selenium: false
+  experimental_selenium_bidi_guard: false
+```
+
+默认使用 Playwright 对浏览器每个子请求执行出口检查。Selenium 在当前兼容矩阵中不能稳定证明最终
+子请求拦截，因此默认拒绝启动；`allow_unintercepted_selenium` 是显式降级边界，会进入审计，
+不应在不可信目标上启用。用 `omnicrawler security-report -c <config>` 查看访问边界。
+
+## plugins
+
+```yaml
+plugins:
+  paths: [plugins/, plugins_installed/]
+  allow_external_paths: false
+  # 多索引（#77 Phase 1）：可同时启用多个 catalog 源。未配置时由 catalog_url 派生**唯一一条官方源**
+  #（行为与升级前完全一致）。详见 docs/MARKET_ECOSYSTEM.md「多索引」。
+  catalogs:
+    - url: https://raw.githubusercontent.com/<owner>/<index-repo>/main
+      kind: community        # curated（官方策展）| community（社区索引）| topic（主题聚合）
+      priority: 10           # 同一 id 出现在多个索引时的展示优先级（小的在前，缺省 100）
+      trust: ""              # 该索引的信任根（PEM 文本/路径/base64/hex:）；留空＝官方内置信任根
+      enabled: true
+  enabled_market_plugins: [site]
+  permission_grants:
+    site:
+      version: 1.0.0
+      artifact_sha256: "<64位SHA-256>"
+      creator_fingerprint: "<有签名身份时填写>"
+      permissions: [network:scoped]
+  fail_open: false
+  hook_fail_open: true
+```
+
+★ **`catalogs[].trust` 留空**不是"不校验"，而是**用官方内置信任根**；取数或验签失败的源会
+**带着原因出现在报告里**（不静默丢弃）。三级信任信号（官方策展 / 社区索引 / P2P 未审核）
+及其**各自不保证什么**见 `docs/MARKET_ECOSYSTEM.md`。
+
+权限授权绑定插件 ID、版本和载荷哈希；插件代码或整包 manifest 变化后必须重新批准。旧字段
+`approved_permissions` 仅在只启用一个插件时临时兼容，多插件配置必须迁移，避免权限横向复用。
+`enabled_market_plugins` 是当前项目允许加载的市场插件 ID 白名单。缺失或 `null` 时保留旧项目
+“已安装即启用”的兼容行为；市场 GUI 首次发生安装、启用、禁用或卸载后会写入显式列表。新下载插件只有
+完成版本、载荷、作者与权限绑定后才加入白名单。
+
+市场中的“安装”只把已验签文件放入本机，不会执行插件。需要先打开或新建一个项目，再在
+“插件市场”选择插件并点击“启用到当前项目”，核对权限后确认。启用成功后，宿主会立即按当前
+项目配置重新加载插件；带 `view` 的插件会出现在工作台侧边面板，带 `resource_provider` 的插件
+则通过该面板选择资源目录。面板没有出现时，应查看启用弹窗中的首条加载错误；常见原因是项目
+仍未授权、插件载荷变化导致旧授权失效，或当前版本不满足插件要求。安装、启用和授权都按项目
+隔离，不应通过手工编辑 `plugins_installed/` 绕过。
+
+声明式背景插件控制的是 OmniCrawler 工作台背景，不是 Windows 桌面壁纸。关闭插件面板只会
+隐藏界面；要停止加载，应点击“在当前项目禁用”。禁用会立即卸载运行态并撤销当前项目授权，
+但保留安装文件且不影响其他项目；卸载还会删除本机插件文件并清理相关项目状态。
+背景表面始终处于操作控件底层并强制输入穿透；可选择整个应用客户区、完整工作区或当前内容画布。
+背景可见度与前景面板不透明度是两个独立参数，高对比度模式会强制前景完全不透明。图片和视频由
+宿主渲染，本地 HTML 使用受限渲染结果。无需插件时也可从“设置 → 工作台背景”选择本地媒体；
+未启用背景时不会创建播放器或启动浏览器。
+路径默认必须位于项目目录。生命周期事件包括 `before_run/before_fetch/after_fetch/after_extract/before_export/after_export/after_run/on_error/before_reprocess/after_reprocess`。
+
+## self_update（应用自更新）
+
+与上面的 `plugins.catalog_url`（**插件市场**）和 `updates`（**网站变更监控**）都无关，
+是"把应用本体升到新版本"。★ 别名混淆点：`updates` 段是变更监控，**不是**自更新配置。
+
+```yaml
+self_update:
+  feed_url: ""                 # 更新源基址（https://… 或本地目录）；留空 = 用默认更新源（见下）
+  trusted_public_key: ""       # 留空 = 用随包内置信任根 configs/update_trust.pub.pem
+                               # （也可写 PEM 文本 / PEM 文件路径 / base64 / "hex:"）
+  edition: "Standard"          # 本机版本，用于选 (平台, 版本) 清单与资产键：Standard | Full
+```
+
+- **feed_url 默认值**＝
+  `https://github.com/Starlife-creator/omnicrawler/releases/latest/download`
+  （GitHub「最新 release 资产」固定链接：每版把更新清单当普通 Release 资产上传，
+  客户端永远拿到最新那一份——免版本号、免 API、零额外托管）。
+  显式配置可指向镜像/本地目录；**清单带 sha256 ⇒ 镜像不必可信**（只承担带宽）。
+- **full_fallback（已删除）**：该字段曾是"小版本不重建全量包"的兜底，指向"最近一次带全量包的
+  发布"。**它已随"统一发布形态"删除** —— 每版都发本平台全量包，字段的存在理由消失；而它的
+  跨版本兜底会把应用**静默降级成旧版**却把版本号报成新版（`--to-versions` 还会把版本号写进
+  `current.txt`），错的状态比没有自动路径更糟。缺本平台本版本键时客户端**明确报错并指路**
+  （手动下载某个已发布的完整包；或 Standard + `omnicrawler components import`）。
+
+- **平台能力声明 `auto_apply`**（清单顶层可选，缺省 true）：`false` 表示**本平台只提示、不落地**，
+  请手动下载替换。判据与客户端的 `AUTO_APPLY_PLATFORMS` **取与** ⇒ 清单声明 `true` 也不能越权
+  （避免发布侧一个笔误让客户端去尝试注定失败的落地）。
+  **macOS 恒为 false**：主产物是 `.dmg`（`apply_archive()` 只认 zip，Release 里没有 zip/tar.gz）、
+  `browsers/` 在 `.app` **之外**（以 `app_root` 为根的载荷覆盖不到它）、ad-hoc 签名会被改坏 ⇒
+  自动更新在 macOS 上**做不到完整替换**。客户端会在 `options.manual_install` 为真时只给
+  "下载哪个文件、多大"，不提供必然失败的动作。
+
+- **信任根**：未显式配置时读内置 `configs/update_trust.pub.pem`（ed25519，指纹 `bf981f1d…`）。
+  它**刻意与市场信任根 `d92fa9fb…` 是两把钥匙**：市场根授权“沙箱内的插件”，
+  更新根授权“替换应用本体”，两者权威不同级、不可互替。内置文件缺失 ⇒ 回退空串 ⇒ 判“禁用”
+  （fail-closed，**不存在跳过验签的降级路径**）。
+- **更新源文档**：按**精度逐级回退**取——`<feed_url>/update-<平台>-<版本>.json` →
+  `<feed_url>/update-<平台>.json` → `<feed_url>/update.json`，命中哪个报哪个
+  （`feed_document` 字段）。为什么分文件名而不是在文档里分键：`payload.files` 是**扁平**的
+  逐文件哈希，而三平台载荷（`.exe/.dll` vs ELF/`.so`）与 Standard/Full 的 `runtime/`、OCR
+  载荷都不同 ⇒ 一份清单只可能描述一个 (平台, 版本)。后两层是兼容路径。
+  字段：`version` / `published_at` / `notes` / `platform`（可选）/ `edition`（可选）/
+  `auto_apply`（可选，缺省 true）/ `assets` / 可选的 `payload` / `signature`。
+  - `platform` / `edition`：清单**自述**的平台与版本。客户端会**交叉校验**：声明了就必须与
+    本机一致，否则**拒绝使用**（否则 Windows 客户端可能拿 Linux 的清单把 ELF/`.so` 覆盖进来，
+    或把 Full 的清单套在 Standard 安装上）。留空＝不校验（兼容只发一份粗粒度清单的老更新源）。
+  - `assets.{<平台>-<版本>}`：整包资源 `{name, sha256, size}`（`name` 是**相对基址**的文件名）；全量用。
+  - `payload.base_url`：载荷基址（留空＝feed 基址）。
+  - `payload.files`：**逐文件清单** `{"<相对路径>": {sha256, size}}` ——
+    客户端据此只下载与本机哈希不同的文件（“自动跳过一样的”全部依据）。
+  - `payload.delta`：`{"<旧版本号>": {name, sha256, size}}` 变更包（相对该旧版变化的文件）。
+  - `payload.deleted`：本版**已移除**的相对路径（逐文件差异必须显式声明删除，否则旧文件会残留）。
+- ★ **fail-closed**：`trusted_public_key` 或 `feed_url` 任一为空 ⇒ 命令直接报“已禁用”（退出码 2），
+  **不会**降级为“不校验”。签名规范化方式与升级包的 `upgrade.json` 逐字一致 ⇒ 两者共用同一信任根。
+- 取回走与市场同一条**受控出站读**（认 `http.proxy`、DNS 逐地址尝试可回退 IPv4、重定向过策略与审计）。
+- 命令见 `docs/INSTALLATION.md`「升级到新版本」；退出码 `0` 已最新 / `1` 有更新 / `2` 禁用 / `3` 失败。
+
+## 依赖安装与镜像加速
+
+运行前预检会检测两类缺失依赖：**原生依赖**（缺失即阻断，判 `error`）与**插件声明依赖**
+（manifest 声明的依赖全集，本次可能用不到，判 `warning`）。两者都带 `action: install`，
+GUI 会给出「下载并安装」入口——原生依赖阻断运行，插件依赖只提示、不阻断。
+
+安装走统一的多源回退安装器（`services.dependency_installer`）：**官方源恒为首选**，
+官方失败后才按健康分在镜像间顺序回退；每个源单次 `--index-url` 调用，绝不并行跨源混版。
+超时按包体积自适应：先做一次 dry-run 取下载体积估算，重型包（paddle/torch/opencv 等）
+用更高上限，超时归因到「大包」而非误判为「源不可用」。
+
+镜像路由默认 **不启用**。`mirrors` 节缺失时引擎零开销直通官方源，绝不偷偷导流。
+当**安装真实失败**、且失败归因里有**官方源的网络类失败**（连接超时/传输故障）、且当前
+**尚未启用**镜像时，GUI 才**弹一次**提示询问是否启用国内镜像加速；用户点「启用并重试」
+才写入下述预置组并**立即用镜像源重试**（官方仍在首位）。版本类失败（源可达但无该版本）
+与约束冲突**不弹**此提示——换镜像救不了，提示只会误导。也可以从「设置 → 环境与依赖」
+手动启用：
+
+```yaml
+mirrors:
+  enabled: true
+  groups:
+    pypi.org:
+      - host: pypi.org                          # 官方源，健康时恒定置顶
+        weight: 3.0
+      - host: mirrors.tuna.tsinghua.edu.cn      # 需已在 egress 白名单内
+        weight: 2.0
+      - host: mirrors.aliyun.com
+        weight: 1.5
+      - host: mirrors.cloud.tencent.com
+        weight: 1.2
+      - host: pypi.mirrors.ustc.edu.cn
+        weight: 1.0
+  probe_interval_seconds: 60
+  probe_timeout_seconds: 5
+  failure_threshold: 3
+  success_threshold: 2
+```
+
+排障要点：**镜像上找不到指定版本不会摘流**（那是版本问题，不是源故障，摘健康源会误伤）；
+官方源被连续失败摘流后仍作为**列表末尾兜底**保留，不会彻底消失。
+
+## 环境变量与迁移
+
+- `${NAME}` 与 `${NAME:-default}` 在加载配置时展开。
+- `secret://name` 只解析完整字符串，不支持拼接。
+- 2.x/3.x 配置会在内存中迁移并产生迁移说明；用 `omnicrawler migrate` 输出新文件，原文件不会覆盖。
+
+
+### 自动分析的下一页范围与实体去重
+
+`source.follow_xpath` 可指定下一页链接的 XPath。配置后网页链接发现只跟进匹配链接，附件下载沿用原有设置，页面预算、robots 与允许范围仍生效。
+
+`extract.deduplicate_by: [链接地址]` 指定稳定实体字段。一次运行内只有实体标识和完整数据都相同的记录才合并；标识缺失时保留原请求记录，不按标题猜测实体。相同实体的不同内容仍保留。多值字段使用 `all: true`，例如全部标签可作为数组交付 Excel。

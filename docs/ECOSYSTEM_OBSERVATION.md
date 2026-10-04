@@ -1,6 +1,6 @@
 # OmniCrawler 生态观察清单（Ecosystem Observation List）
 
-> 适用版本：0.13.1 · 配置协议：v5 · 维护状态：现行
+> 适用版本：0.15.0 · 配置协议：v5 · 维护状态：现行（历史状态见归档；功能验证以验收账本为准）
 
 > 对应 [RESEARCH_AND_FUSION.md](RESEARCH_AND_FUSION.md) 的「持续观察 / 计划借鉴」行。
 > 状态由 `omnicrawler doctor` 自动校验：标「✅ 已融合」的行，其落点模块必须真实存在，

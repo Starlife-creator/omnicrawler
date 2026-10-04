@@ -1,7 +1,7 @@
 # AGENTS.md — 给 AI / 自动化维护者的开发时指引
 
-> 适用版本：**0.13.1** · 配置协议：v5 · 维护状态：现行
-> 骨架来自 `docs/archive/OmniCrawler-0.5.0-Agent-Prompt.md` 的 7 条原则（0.5.0 时期），已按 0.13.1 升级。
+> 适用版本：**0.15.0** · 配置协议：v5 · 维护状态：现行
+> 骨架来自 `docs/archive/OmniCrawler-0.5.0-Agent-Prompt.md` 的 7 条原则（0.5.0 时期），按当前 0.15.0 维护。
 > ★ 调用面（命令 / 参数 / 退出码 / stdout 形态）请看 [`docs/AGENT_GUIDE.md`](docs/AGENT_GUIDE.md)；
 > 本文件是**开发时**的原则与纪律，两者不重复。
 
@@ -25,7 +25,7 @@
 
 **门禁**：
 - 本地轻量自证：`python tools/self_verify.py --set static`（清单真源 `tools/gate_registry.py`）。
-- 重活（三平台构建、便携冒烟、浏览器与 GUI 矩阵）**都在 CI**，本地不跑。
+- 三平台构建与便携冒烟留在 CI。维护者于 2026-10-04 明确授权本轮使用本机完整依赖执行实际 GUI/浏览器/Full 功能验收，证据写入工作区 user-test-runs；此授权不要求便携包构建。
 - 每批改动**本地提交**；红绿全绿再进下一批。
 
 **判据纪律（最容易翻车）**：

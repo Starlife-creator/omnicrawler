@@ -59,3 +59,7 @@
 
 - 新文档默认不进归档区；确需归档时在文件首部标注冻结版本与归档日期。
 - 本门页由 `tools/check_docs_consistency.py` 校验存在性，请勿删除。
+
+## 2026-10-04 全面优化前快照
+
+[快照索引](2026-10-04-before-comprehensive/README.md)：归档完成记录及所有现行文档修改前原文。混合文档保留规则和未完成条件；完整哈希清单在维护者 user-test-runs 全面优化 evidence/documentation-archive.json。

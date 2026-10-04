@@ -1,0 +1,1129 @@
+# OmniCrawler 0.15.0 — 全能采集平台
+
+> 从全类型网站采集、PDF 解析/OCR 到结构化导出和人工复核的模块化工作台。
+> 支持可视化点选、零配置智能分析、AI 驱动提取、反检测执行。
+
+---
+
+## 目录
+
+1. [项目概述](#1-项目概述)
+2. [核心能力矩阵](#2-核心能力矩阵)
+3. [安装指南](#3-安装指南)
+4. [5 分钟快速开始](#4-5-分钟快速开始)
+5. [CLI 命令完整参考](#5-cli-命令完整参考)
+6. [GUI 桌面使用指南](#6-gui-桌面使用指南)
+7. [配置体系详解](#7-配置体系详解)
+8. [可视化选择器](#8-可视化选择器)
+9. [智能爬虫 — 零配置采集](#9-智能爬虫--零配置采集)
+10. [反检测增强](#10-反检测增强)
+11. [EasySpider 任务导入](#11-easyspider-任务导入)
+12. [Crawl4AI 轻量 JS 渲染](#12-crawl4ai-轻量-js-渲染)
+13. [Apify/Zyte 站点模板](#13-apifyzyte-站点模板)
+14. [输出与导出](#14-输出与导出)
+15. [安全模型](#15-安全模型)
+16. [故障排除与诊断](#16-故障排除与诊断)
+17. [常见问题 FAQ](#17-常见问题-faq)
+18. [项目架构](#18-项目架构)
+
+---
+
+## 1. 项目概述
+
+OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台。它从以下来源获取数据：
+
+- **静态网页** — HTML 解析、CSS/XPath 选择器
+- **动态网页** — Playwright/Selenium 浏览器渲染
+- **REST API / GraphQL** — 结构化接口采集
+- **RSS/Atom 订阅源** — 持续监控
+- **Sitemap** — 网站地图遍历
+- **WebSocket / SSE / 长轮询** — 实时数据流
+- **PDF / Office / 压缩包** — 文档解析和 OCR
+- **图片 OCR** — Tesseract + PaddleOCR + ddddocr 验证码识别
+
+输出格式：JSONL、CSV、Excel、Parquet、PostgreSQL、DuckDB、OpenSearch。
+
+### 设计理念
+
+- **安全优先**：默认阻止内网/保留地址、遵守 robots.txt、凭据不入配置
+- **渐进复杂度**：同一任务工作台按简单模式 → 专业模式 → 开发者模式逐步展示高级能力
+- **可恢复**：SQLite WAL 状态存储，中断可从断点继续
+- **可解释**：每步操作有原因说明，自适应调整有审计记录
+
+---
+
+## 2. 核心能力矩阵
+
+| 能力 | 说明 | 入口 |
+|------|------|------|
+| **任务工作台** | GUI 持续编辑、试跑和运行；CLI 保留六步问答生成配置 | GUI 首页或 `omnicrawler wizard` |
+| **56 套内置模板** | 覆盖 CMS/电商/新闻/政务/论坛等 | `omnicrawler templates list` |
+| **可视化选择器** | 浏览器中右键点选元素，自动生成配置 | `omnicrawler visual-select` |
+| **智能页面分析** | 零配置：贴 URL → 自动推断字段和分页 | `omnicrawler auto-analyze` |
+| **EasySpider 导入** | 兼容 EasySpider JSON 任务格式 | `omnicrawler import-easyspider` |
+| **Crawl4AI 渲染** | 轻量 JS 页面渲染（省 5-10x 资源） | `omnicrawler c4a-fetch` |
+| **反检测增强** | 10 维指纹随机化 + 代理轮换 + 行为模拟 | `omnicrawler stealth-fingerprint` |
+| **自适应执行** | 实时监测 → 自动调整并发/延迟/OCR | 内置 AutoPilot |
+| **统一诊断** | 12 类错误诊断 + 自动修复建议 | CLI/GUI 自动触发 |
+| **站点模板生成** | Apify 130+ 平台知识 → YAML 模板 | `omnicrawler gen-templates --all` |
+| **插件系统** | 子进程沙箱 + 权限白名单 | 开发者模式 |
+| **分布式支持** | Redis frontier/锁 + Scrapy 桥接 | 专业模式配置 |
+
+---
+
+## 3. 安装指南
+
+### 方式一：Windows 便携版（推荐）
+
+1. 下载当前构建生成的 `OmniCrawler-0.15.0-Windows-Portable-Standard.zip`
+2. 解压到普通可写目录（如 `D:\OmniCrawler`）
+3. 双击 `OmniCrawler.exe`；若没有窗口出现（例如 exe 被杀软首次扫描拦下，或文件缺失），再双击 `OmniCrawler-Launcher.bat` 查看中文报错
+
+> Standard 版含 GUI + Chromium + 常规网页/API/PDF 文本处理。
+> Full 版额外含 ChromeDriver + Tesseract + PaddleOCR 离线模型。
+
+### 方式二：源码安装
+
+```powershell
+# 创建虚拟环境
+py -3.12 -m venv .venv
+.venv\Scripts\python -m pip install -U pip
+
+# 安装全部功能
+.venv\Scripts\python -m pip install -e ".[full,dev]"
+
+# 安装 Playwright 浏览器
+.venv\Scripts\python -m playwright install chromium
+```
+
+### 可选依赖
+
+```powershell
+pip install -e ".[html]"          # 网页解析
+pip install -e ".[browser]"       # Playwright 浏览器
+pip install -e ".[pdf]"           # PDF 解析
+pip install -e ".[ocr-captcha]"   # 验证码识别
+pip install -e ".[crawl4ai]"      # 轻量 JS 渲染
+pip install -e ".[distributed]"   # Redis 分布式
+pip install -e ".[storage]"       # S3/DuckDB
+pip install -e ".[postgresql]"    # PostgreSQL
+pip install -e ".[search]"        # OpenSearch
+```
+
+### 环境要求
+
+- Python 3.10+
+- Windows 10+ / macOS 12+ / Linux (Ubuntu 20.04+)
+- 2GB+ 可用内存（浏览器模式建议 4GB+）
+- 1GB+ 磁盘空间
+
+---
+
+## 4. 5 分钟快速开始
+
+### 命令行三分钟流程
+
+```powershell
+# 1. 查看可用模板
+omnicrawler templates list
+
+# 2. 探测目标网站并推荐模板
+omnicrawler templates inspect https://example.org
+
+# 3. 生成配置并校验
+omnicrawler templates render generic/list-detail -o configs/my_site.yaml --set seed_url=https://example.org
+omnicrawler validate -c configs/my_site.yaml
+omnicrawler doctor -c configs/my_site.yaml
+
+# 4. 小样本试跑
+omnicrawler sample -c configs/my_site.yaml --pages 3
+
+# 5. 正式运行
+omnicrawler run -c configs/my_site.yaml
+```
+
+### 从一句中文需求开始（先看它打算做什么）
+
+```powershell
+# 把需求编译成可审阅的任务设置：字段 / 范围 / 输出 / 当前做不到的部分
+omnicrawler task "抓取 https://books.toscrape.com 的全部 50 页书籍的标题、价格，输出 CSV"
+```
+
+输出里「为什么这样设置」说明每项设置从哪来，「当前不支持」如实列出当下没有对等能力的部分
+（例如点击类交互需先用 `record-actions` 录制）。**排序 / 分组 / 聚合统计已有对等能力**，
+会直接给出可复制的 `transform` 命令 —— 见下方「数据变换与后处理」。
+只做解析、不发起任何网络请求，确认无误后再走下面的零配置流程。
+
+### 智能零配置流程（最快）
+
+```powershell
+# 一行命令：分析页面 → 生成配置 → 试跑
+omnicrawler auto-analyze https://shop.example.com/products -o configs/shop.yaml
+omnicrawler sample -c configs/shop.yaml --pages 3
+omnicrawler run -c configs/shop.yaml
+```
+
+> **JSON / API 地址**：记录路径（`extract.item_path`）由**候选打分**自动选出 ——
+> 看数组规模、元素字段数、是否含标识字段、键名与 URL 路径词是否吻合。
+> **单对象响应按「整份响应即一条记录」处理**（例如 `dummyjson.com/products/1` 不会再去取
+> 里面的 `reviews`）；拿不太准时命令会把候选列出来，可显式指定：
+>
+> ```powershell
+> omnicrawler auto-analyze https://dummyjson.com/products/1 --item-path '$.reviews[*]' -o configs/reviews.yaml
+> ```
+>
+> 记录里的**嵌套对象会铺平成 1–2 层字段**（如 `dimensions.width`、`company.address.city`）；
+> 记录内的**对象数组**不铺成列（会撑爆列数），但会在输出里说明，并给出取子字段的写法。
+
+### 可视化点选流程（最直观）
+
+```powershell
+# 启动 WebSocket 服务
+omnicrawler visual-select --output configs/my_site.yaml
+
+# 然后在 Chrome 中：
+# 1. 打开目标网页
+# 2. 加载 EasySpider Chrome 扩展（位于 assets/extensions/ 目录）
+# 3. 右键点选要采集的元素 → "选中元素" → "选中全部" → "采集数据"
+# 4. 配置自动写入 configs/my_site.yaml
+```
+
+### 中断后恢复
+
+```powershell
+omnicrawler resume -c configs/my_site.yaml
+```
+
+### 规则修改后重新导出（不重新访问网站）
+
+```powershell
+omnicrawler reprocess -c configs/my_site.yaml --run-id <run_id>
+```
+
+---
+
+## 5. CLI 命令完整参考
+
+### 任务管理
+
+| 命令 | 说明 |
+|------|------|
+| `omnicrawler wizard` | 交互式配置向导（6 步问答） |
+| `omnicrawler run -c <config>` | 运行采集任务 |
+| `omnicrawler resume -c <config>` | 从断点恢复任务 |
+| `omnicrawler sample -c <config> --pages N` | 小样本试跑 N 页 |
+| `omnicrawler preflight -c <config>` | 运行前检查（依赖/磁盘/配置） |
+| `omnicrawler plan -c <config> -o plan.json` | 编译可解释执行计划 |
+| `omnicrawler control -c <config> pause/resume/stop` | 控制正在运行的任务 |
+| `omnicrawler status -c <config>` | 查看任务状态 |
+| `omnicrawler export -c <config>` | 重新导出数据 |
+| `omnicrawler reprocess -c <config> --run-id <id>` | 从归档重做提取（不重新访问） |
+| `omnicrawler recovery -c <config> overview` | 查看恢复中心 |
+| `omnicrawler recovery -c <config> retry-failed` | 重试失败项 |
+
+### 数据变换与后处理
+
+对**已落盘**的数据做「值级清洗 → 记录级排序/分组聚合」，全程不访问网络；
+**默认不写文件**，要落盘必须显式 `--confirm`（`--dry-run` 只预览）。
+
+| 命令 | 说明 |
+|------|------|
+| `omnicrawler transform <源> [<目标>] --map "列 = 表达式"` | 值级变换：结果追加 `{列名}_parsed` 列，**原列永不被改写** |
+| `omnicrawler transform <源> <目标> --sort "列[:asc\|:desc]" --confirm` | 按列排序（可多次，**先出现的键为主键**；空值恒排最后） |
+| `omnicrawler transform <源> <目标> --group-by 分类 --agg "sum(价格):总价" --confirm` | 分组聚合，交付物是聚合表 |
+| `omnicrawler transform <源> <目标> --dry-run` | 预览前 N 条，不写文件 |
+
+`--agg` 只认 6 个函数：`count`（行数）、`count_distinct(列)`、`sum(列)`、`avg(列)`、`min(列)`、`max(列)`。
+`--map` 表达式里可调用 `parse_number` / `parse_money` / `parse_time` / `trim` / `clean_html` /
+`regex_extract` / `coalesce` / `concat`。
+
+> **先转数值、再聚合。** CSV/JSONL 读入的单元格**全是文本**，而 `sum` / `avg` 只认「严格十进制
+> 字面量」（`51.77` 可以；`£51.77`、`1,234`、`1e5` 不行）。所以金额列要先
+> `--map "价格 = parse_money(价格)"`，再对 `价格_parsed` 做 `--agg "sum(价格_parsed):总价"`。
+>
+> 取不到数值时命令会**主动说出来**：跳过多少个值、以及一条可直接复制的补救命令；
+> **一个都修不好时不会编建议**，而是如实回报"该列无法自动转换成数值"。
+> 同理，排序口径（数值 / 文本）会写进回执 —— 按文本排数字列是"看着排好了其实没排对"。
+
+一条命令完成清洗 + 分组 + 按聚合结果排序：
+
+```powershell
+omnicrawler transform books.csv grouped.csv `
+  --map "价格 = parse_money(价格)" `
+  --group-by 分类 --agg count --agg "sum(价格_parsed):总价" --agg "avg(价格_parsed):均价" `
+  --sort "总价:desc" --confirm
+```
+
+### 智能工具
+
+| 命令 | 说明 |
+|------|------|
+| `omnicrawler task "<中文需求>" [--fallback-url <url>]` | 把中文需求编译成可审阅的任务设置（字段/范围/输出/当前做不到的部分；不联网） |
+| `omnicrawler auto-analyze <url\|file> -o config.yaml` | 智能分析页面结构，自动生成配置 |
+| `omnicrawler visual-select [--port 8084] [-o config.yaml]` | 启动可视化选择器 WebSocket 服务 |
+| `omnicrawler import-easyspider <task.json> -o config.yaml` | 导入 EasySpider 任务 |
+| `omnicrawler stealth-fingerprint [--count N] [--json]` | 生成随机浏览器指纹 |
+| `omnicrawler gen-templates --list` | 列出 Apify 130+ 已知平台 |
+| `omnicrawler gen-templates --all templates/sites/` | 批量生成平台模板 |
+
+### 模板管理
+
+| 命令 | 说明 |
+|------|------|
+| `omnicrawler templates list` | 列出内置和用户模板 |
+| `omnicrawler templates inspect <url>` | 探测公开网址并推荐模板 |
+| `omnicrawler templates render <name> -o config.yaml --set key=value` | 填充模板变量生成配置 |
+| `omnicrawler templates validate [--include-legacy]` | 离线检查模板元数据 |
+| `omnicrawler templates recommend --url <url>` | 根据 URL 推荐模板 |
+| `omnicrawler templates diff <a> <b>` | 对比模板版本差异 |
+| `omnicrawler templates merge <base> <theirs> <ours>` | 三方合并模板升级 |
+| `omnicrawler templates export-pack <names...> --output pack.zip` | 导出可校验模板包 |
+| `omnicrawler templates import-pack <pack.zip> --target templates` | 导入模板包 |
+
+### 定时与备份
+
+| 命令 | 说明 |
+|------|------|
+| `omnicrawler schedule add -c <config> --name daily --every-seconds 86400` | 添加定时任务 |
+| `omnicrawler schedule list` | 列出定时任务 |
+| `omnicrawler schedule run-due` | 运行到期任务 |
+| `omnicrawler backup create -c <config> -o backup.zip [--include-raw]` | 创建完整备份 |
+| `omnicrawler backup restore backup.zip --target <dir>` | 恢复备份 |
+| `omnicrawler research-package -c <config> -o research.zip` | 创建脱敏研究复现包 |
+
+### 工具与诊断
+
+| 命令 | 说明 |
+|------|------|
+| `omnicrawler doctor -c <config>` | 全面诊断 |
+| `omnicrawler validate -c <config>` | 校验配置 |
+| `omnicrawler capabilities` | 检查 Python/浏览器/OCR/存储能力 |
+| `omnicrawler security-report -c <config>` | 汇总网络访问边界 |
+| `omnicrawler compare-runs -c <config> <run_a> <run_b> -o diff.json` | 对比两次运行差异 |
+| `omnicrawler regression -c <config>` | 离线验证已保存样本 |
+| `omnicrawler cleanup -c <config>` | 预览或执行数据保留策略 |
+| `omnicrawler runtime-verify` | 验证便携运行时清单 |
+| `omnicrawler components list` | 查看已注册组件 |
+| `omnicrawler serve` | 启动可远程监控面板 |
+| `omnicrawler workbench` | 启动统一桌面工作台 |
+| `omnicrawler init` | 复制可编辑项目配置 |
+| `omnicrawler migrate` | 迁移旧配置到当前版本 |
+| `omnicrawler field-suggest` | 从保存的 HTML 自动推荐字段选择器 |
+| `omnicrawler record-actions` | 打开浏览器录制点击/输入/滚动 |
+| `omnicrawler api-discover` | 从浏览器 API 捕获 JSON 生成 REST 模板 |
+| `omnicrawler plugins` | 列出已注册插件 |
+| `omnicrawler pdf --help` | PDF 子系统：解析、OCR、字段抽取、导出与人工复核 |
+
+### 命令入口与别名
+
+装好之后一共有 6 个可执行入口。它们**不是 6 套命令**，而是「一个统一 CLI + 若干别名」：
+
+| 入口 | 定位 |
+|---|---|
+| `omnicrawler` | 唯一的主入口，全部能力都是它的子命令 |
+| `omnicrawler pdf <子命令>` | PDF 子系统（等价 `pdfx`），参数原样转发 |
+| `pdfx` | PDF 子系统的独立入口（等价 `omnicrawler pdf`） |
+| `pdf-process` | PDF 解析/OCR/文本导出入口（已发布，保留为别名） |
+| `pdf-extract` | PDF 字段抽取/复核入口（已发布，保留为别名） |
+| `omnicrawler-workbench` | 统一桌面工作台（等价 `omnicrawler workbench`） |
+| `omnicrawler-gui` | 主 GUI 启动器 |
+
+说明：`pdf-process` / `pdf-extract` 是**已发布的入口**，为不破坏既有脚本与文档而保留；
+新写的命令请优先用 `omnicrawler pdf ...`（它出现在 `omnicrawler --help` 里，
+也受 CLI 文档一致性门禁的约束）。
+
+---
+
+## 6. GUI 桌面使用指南
+
+### 启动 GUI
+
+```powershell
+run_gui_windows.bat          # Windows
+./run_gui_linux.sh           # Linux
+./run_gui_macos.command      # macOS
+```
+
+### 三种渐进模式
+
+GUI 提供三种模式，通过工具栏下拉框切换：
+
+| 模式 | 可见内容 | 适用人群 |
+|------|---------|---------|
+| **简单模式** | 任务工作台 + 运行进度 + 结果 | 第一次使用 / 非技术用户 |
+| **专业模式** | YAML 编辑器 + 高级规则 + 模板 + 定时任务 | 日常使用 |
+| **开发者模式** | 完整配置 + 插件 + 诊断 + SDK | 开发和调试 |
+
+> 模式切换不会丢失隐藏字段；保存时保留旧配置中 GUI 尚未认识的扩展段。
+
+### 任务工作台
+
+任务工作台使用可随时返回修改的连续界面，而不是强制按顺序前进的五步表单：
+
+- **任务目标** — 输入网址或一句话任务描述
+- **采集方案** — 复核自动生成的来源、范围和资源设置
+- **字段规则** — 使用自动补全、可视化选择器或手动 CSS/XPath
+- **试跑验证** — 小样本试跑、查看结果并修正配置
+- **输出与交付** — 设置输出格式，通过试跑后开始全量运行
+
+### 首页快捷操作
+
+- **统一任务输入**：在同一个输入框粘贴 URL，或描述范围、下载和监测要求 → “创建任务”
+- **自动判断**：纯 URL 生成安全本地草稿；自然语言和文件任务自动选择相应流程
+- **最近任务**：首页展示最近 4 个真实运行任务，可直接继续编辑或查看结果
+- **次级入口**：打开空白任务、导入任务和 5 分钟离线演示
+
+### 结果图表与市场橱窗
+
+- **结果页图表**：字段完整率以水平条形图展示（最需要关注的字段排最前），
+  颜色随主题走设计令牌；数据在后台线程加载，不阻塞界面。
+  环境缺少 QtCharts 时自动回退为进度条视图，并提示如何安装。
+- **任务历史 / 变更监控**：分别提供近期任务耗时趋势与本次检查的差异概览；
+  尚未完成的任务不会画成 0（会显式说明"未计入"）。
+- **市场橱窗（QML 试点）**：工具分组里的试验页面，用 QML 渲染本地市场条目，
+  颜色与主题跟随设计令牌；缺 QML 运行时显式提示，不影响其它页面。
+
+### 登录会话（需要登录的站点）
+
+「工具 → 登录会话」页用于**浏览器里登录一次、之后采集免登录**：
+
+- 填写站点地址与账户标识 → **打开登录窗口** → 由**你本人**在弹出的浏览器窗口里登录
+  → 点「保存并关闭」（不点也可以：默认 15 分钟后自动收尾，期间可反复「延长 15 分钟」）。
+- 程序**不代填密码、不代过验证码**，也不读取或显示 cookie 内容。
+  登录窗口与采集任务使用同一套引擎与同一份启动参数，登录态天然被后续采集复用。
+- 表格列出已保存的会话（账户 / 域名 / cookie 数 / 时间），可选中删除。
+- 跑任务时若命中 **HTTP 401**、或被重定向到登录页，界面会**提示一次**并给出
+  「去登录」按钮 —— 点它直接跳到本页，并预填账户与站点地址。
+- 落盘位置、保护方式与同步开关的说明见 **[7. 配置体系详解 → 登录会话](#登录会话浏览器登录一次采集免登录)**。
+
+### 验证与运行
+
+- 工作台底部常驻显示验证状态、“试跑 N 页”和“开始全量运行”，滚动长配置时也不会消失。
+- 修改网址、采集范围、抓取参数或字段规则会使试跑失效。
+- 修改输出格式或调度不会重新访问网站；输出格式由“输出与交付”区域单独验证。
+- 试跑结果显示处理页面数、记录数、平均每页记录及针对零页面、零记录或部分失败的修正入口。
+- 首次使用在工作台内显示可跳过的检查清单，不再维护另一套新手向导。
+
+### YAML 编辑器
+
+专业模式下可用的 YAML 编辑器功能：
+- 语法高亮
+- 与任务工作台双向同步
+- 格式化 + 外部编辑器打开
+- 与表单同步按钮
+- 差异对比
+
+### 系统托盘
+
+任务完成后系统托盘会弹出通知（成功/失败）。
+
+### GUI 外观与无障碍
+
+高级 GUI 支持丰富的视觉定制和辅助功能：
+
+**主题切换**：菜单栏「视图 → 主题」可在明亮 / 暗黑 / 高对比度之间即时切换，另有色盲友好配色可选。所有颜色由语义化令牌管理，组件可以自动跟随主题变化。
+
+**减少动画**：菜单栏「视图 → 减少动画」开启后，Hero 背景光晕、状态指示器闪烁等动画效果全部静止，适合对运动敏感的用户。
+
+**界面缩放**：菜单栏「视图 → 缩放」支持 90% 紧凑 / 100% 标准 / 125% 大字体 / 150% 特大字体四档。
+
+**键盘导航**：所有可交互控件（按钮、输入框、下拉菜单、列表项、选项卡）在获得焦点时显示 2px 清晰轮廓。Tab 键可在表单字段间顺序跳转。
+
+**屏幕阅读器**：任务工作台各区域已添加辅助标签，状态指示器附带文字描述，所有弹窗和 Toast 通知可被屏幕阅读器捕获。
+
+> 主题、缩放和动画偏好会自动保存，下次启动时生效。
+
+---
+
+## 7. 配置体系详解
+
+### 最小配置示例
+
+```yaml
+project:
+  name: my_task
+  workspace: work/my_task
+
+source:
+  kind: static_html
+  seeds:
+    - https://example.com/page
+
+extract:
+  mode: html
+  fields:
+    title:
+      selector: h1
+    content:
+      selector: article p
+
+outputs:
+  jsonl: true
+  csv: true
+```
+
+### 完整配置段
+
+| 配置段 | 说明 | 关键字段 |
+|--------|------|---------|
+| `project` | 项目元数据 | name, workspace |
+| `source` | 来源定义 | kind, seeds, headers |
+| `crawl` | 爬取策略 | max_pages, max_depth, concurrency, strategy |
+| `http` | HTTP 设置 | user_agent, respect_robots, delay_seconds, timeout_seconds |
+| `browser` | 浏览器设置 | engine, headless, actions, pool_size |
+| `extract` | 提取规则 | mode, fields, selectors |
+| `download` | 附件下载 | enabled, extensions, media |
+| `processors.pdf` | PDF 处理 | enabled, ocr |
+| `outputs` | 输出格式 | jsonl, csv, xlsx, parquet, duckdb |
+| `updates` | 变更监测 | enabled, revisit_completed, detect_content_changes |
+| `schedule` | 定时任务 | enabled, interval_seconds |
+| `plugins` | 插件配置 | paths, approved_permissions, fail_open |
+
+> **地址类字段会自动补成绝对 URL**：当字段取自 `href` / `src` / `poster` / `action` 这类
+> **资源地址属性**，或取值路径/属性名是 `url` / `image` / `thumbnail` / `link` 这类**地址键**时，
+> 取值会补全成绝对地址（`media/a.jpg`、`../../media/a.jpg`、`/images/a.svg` → `https://站点/…`）；
+> **原值保留在每条记录的 `evidence` 里**（`absolutized_from`），溯源与核对不受影响。
+> 判断依据是**属性 / 键名**，不是字段名 —— 所以叫「链接文本」的字段里那个 `2015` 不会被拼成 URL。
+> 已经绝对、纯 `#锚点`、以及 `mailto:` / `tel:` / `data:` / `javascript:` 等非资源地址一律原样保留。
+>
+> **值写在 class 名里的元素也能取到**（如 books.toscrape 的评分 `<p class="star-rating Three">`：
+> 元素**没有文本**，值在类名里）：自动分析会产出 `attr: class` + `value_map`（`Three` → 3），
+> 并且字段选择器与列表项选择器都会**去掉值词** —— 否则只会匹配到恰好那一种取值的条目
+> （实测 20 条里只取到 3 条）。`value_map` 只写**分析页见过**的词：运行页出现表外取值时
+> **原样保留**（可见、可回查），不会变成空值或猜出来的数字。
+> 手工写规则时也可直接用 `value_map` 做取值映射（键匹配整体值或其中一个 token、大小写不敏感）。
+>
+> **分页与 iframe 会被明确处理或明确告知**：
+> - **页码式分页**（`?page=2`、`?offset=50` 这类）：自动写入 `source.pagination`
+>   （`type: page` + `parameter` + **`start`/`end`/`step`**），`end` 取自页面自身链接里的最大页码；
+> - **「下一页」链接**：不自动生成点击动作（自动点会**丢掉入口页内容**），由 `crawl` 的
+>   **通用链接发现**跟进（同站链接，受 `crawl.max_depth` 限制）—— 命令会如实说明这一点；
+> - **加载更多 / 无限滚动**：产出浏览器滚动动作（`browser.actions`）；
+> - **iframe**：给出**定位信息**（`iframe#id` / `[name=]` / `[src=]` + src），
+>   据此用 `record-actions` 录制或显式声明 frame 定位。
+
+### 凭据管理
+
+配置中用 `secret://name` 占位，运行时从环境变量或系统 keyring 读取：
+
+```yaml
+source:
+  headers:
+    Authorization: secret://api_key
+```
+
+```powershell
+$env:OMNICRAW_SECRET_API_KEY = "Bearer token123"
+omnicrawler run -c config.yaml
+```
+
+### 登录会话（浏览器登录一次，采集免登录）
+
+需要登录才能采集的站点，用 GUI 的 **「工具 → 登录会话」** 页完成一次手动登录；
+登录态会被后续采集直接复用（Playwright 引擎读同一份快照，HTTP 引擎经会话桥取用）。
+
+- **程序不代填密码、不代过验证码**，也不读取或显示 cookie 内容；
+  登录窗口与采集任务走同一套引擎与同一份启动参数。
+- **落盘位置**：`work/<project>/sessions/<账户>-<身份摘要>.playwright.json`。
+  文件名只含账户前缀与摘要 —— 代理（可能内嵌用户名口令）**不会出现在文件名里**。
+- **保护方式（请如实知悉）**：该快照是**明文 JSON**，仅靠文件权限
+  （类 Unix 下 `0600`）与目录隔离保护。**请勿把工作区目录放在同步盘或共享目录。**
+  用 AES-GCM 加密该快照列在后续批次 —— 首期先保证可用并**显式声明**，不静默。
+- **同步开关**：默认把登录后的 cookie 同步给内置 HTTP 引擎使用，
+  且**严格只归还给目标站点**（任务声明的种子域名 + 本次登录地址）；
+  第三方域（统计 / CDN）的 cookie **不会**被倒进 HTTP 引擎的 cookie 罐。
+  关闭开关只影响**之后**的同步，不会删除已经保存的会话。
+- 首次打开该页会弹一次说明（本地标记 `session.notice_ack_v1`）。
+
+```yaml
+session:
+  persist_cookies: true      # 必须开启；关闭时页内会直接提示"登录态无处保存"
+  name: default              # 账户标识：决定会话身份与文件名前缀
+  bridge_to_http: true       # 登录后是否同步给 HTTP 引擎（默认 true）
+```
+
+### 输出目录结构
+
+```
+work/<project>/
+├── state.sqlite3          # 队列、响应、记录、质量、错误、审计
+├── raw/                   # 版本化原始响应与浏览器接口证据
+├── artifacts/             # PDF、Office、压缩包、图片、媒体
+├── diagnostics/<run_id>/  # 脱敏失败诊断
+├── sessions/              # 登录会话快照（明文 JSON + 0600，见「登录会话」）
+├── pdf/                   # 可独立续跑的 PDF 子项目
+└── output/
+    ├── records.jsonl      # 结构化记录
+    ├── records.csv        # CSV 导出
+    ├── extraction_results.xlsx
+    ├── review_queue.csv   # 人工复核队列
+    ├── metrics.json       # 指标
+    └── pipeline_summary.json
+```
+
+---
+
+## 8. 可视化选择器
+
+### 概述
+
+无需手写 CSS/XPath —— 在浏览器中**右键点选元素**，系统自动：
+1. 检测页面中所有同类元素
+2. 生成最优 CSS/XPath 选择器
+3. 推断字段名（标题/价格/链接/日期等）
+4. 输出 OmniCrawler 配置
+
+### 使用方式
+
+#### CLI 模式
+
+```powershell
+# 启动 WebSocket 服务
+omnicrawler visual-select --output configs/my_site.yaml
+
+# 打开 Chrome，加载 EasySpider 扩展
+# 在目标网页上右键点选元素 → "选中元素" → "选中全部" → "采集数据"
+# 选择结果自动写入 configs/my_site.yaml
+```
+
+#### GUI 模式
+
+1. 打开 GUI → 进入任务工作台 → 展开“字段规则”
+2. 点击 **"可视化选择字段 (右键点选)"** 按钮
+3. 选择 **"高级点选模式"**
+4. 系统启动 WebSocket 服务 → 弹出操作指引
+5. 在 Chrome 中右键点选元素 → 回到 GUI 点击"导入字段"
+
+### 技术原理
+
+基于 EasySpider 的同类元素检测算法：
+
+```
+用户选中元素 XPath: /html/body/div[3]/div[1]/a[1]
+                    ↓ 逐层去掉索引
+测试: /html/body/div[3]/div[1]/a    → 匹配 1 个 ❌
+测试: /html/body/div[3]/div/a[1]    → 匹配 3 个 ✅  ← 同类组找到！
+                    ↓
+生成通用 XPath + 收集所有匹配元素 → 字段配置
+```
+
+---
+
+## 9. 智能爬虫 — 零配置采集
+
+### 概述
+
+只需提供一个 URL，系统自动：
+1. 抓取页面 → 构建 DOM 特征树
+2. 检测重复模式 → 识别列表项（商品卡片、文章条目）
+3. 分析子元素 → 推断字段名（标题/价格/日期/链接/图片）
+4. 检测分页 → 识别"下一页"或 URL 参数模式
+5. 输出完整的 OmniCrawler YAML 配置
+
+### 使用方式
+
+```powershell
+# 从 URL 分析（需安装 crawl4ai）
+omnicrawler auto-analyze https://shop.example.com/products -o config.yaml
+
+# 从本地 HTML 文件分析
+omnicrawler auto-analyze page.html --url https://example.com -o config.yaml
+```
+
+### 支持的页面类型
+
+| 类型 | 特征 | 检测准确率 |
+|------|------|:---:|
+| **列表页** | 3+ 重复结构（商品卡片/文章条目） | 95% |
+| **详情页** | 单个实体（产品/文章详情） | 70% |
+| **单页** | 简单信息展示 | 50% |
+
+### 字段推断规则
+
+| DOM 特征 | 推断字段 | 示例 |
+|---------|---------|------|
+| `<a>` 含 "title/name" class | 标题 | "iPhone 15" |
+| "price/￥" 类名 | 价格 | "¥6,999" |
+| "date/time" 类名 | 日期 | "2024-01-15" |
+| `<img>` 标签 | 图片地址 | "/images/p1.jpg" |
+| `<a href>` 标签 | 链接地址 | "/products/123" |
+
+---
+
+## 10. 反检测增强
+
+> **合规提示（B14-🟡-1）**：本章的隐身/undetected 能力属于**合规敏感**功能，
+> 仅应用于**你已获得授权访问**的站点，且须经 EgressBroker 统一出口并显式声明。
+> 项目立场不变：默认遵守 robots.txt、只采同域名，**不绕过验证码和付费墙**
+> （与 FAQ / PLUGIN_CONTRACT / 审计口径一致）。
+
+### 多层防护
+
+```
+Layer 1 — 浏览器指纹随机化
+  ├── User-Agent（12 种主流浏览器）
+  ├── 屏幕分辨率（11 种常见尺寸）
+  ├── WebGL 供应商/渲染器（4 种 GPU 组合）
+  ├── Canvas 噪声注入
+  ├── 时区/语言/平台伪装
+  └── navigator.webdriver 隐藏
+
+Layer 2 — 代理轮换
+  ├── 轮询模式
+  ├── 随机模式（自动排除失败代理）
+  └── 按域名绑定模式
+
+Layer 3 — 人类行为模拟
+  ├── 对数正态分布思考延迟
+  ├── 贝塞尔曲线鼠标轨迹
+  ├── 真实打字速度
+  └── 分段阅读停顿滚动
+
+Layer 4 — Crawl4AI Undetected 模式
+  └── Patchright 浏览器（隐身模式；合规敏感：仅用于已授权站点、经 EgressBroker 出口）
+```
+
+### 使用方式
+
+```powershell
+# 生成随机指纹
+omnicrawler stealth-fingerprint --count 3 --json
+
+# 在配置中启用
+# browser_fetcher.py 自动注入 stealth.min.js + CDP 命令
+
+# 使用 Crawl4AI undetected 模式
+omnicrawler c4a-fetch https://protected-site.com --stealth
+```
+
+### 代码集成
+
+```python
+from omnicrawler.stealth_enhanced import StealthEnhancer
+
+enhancer = StealthEnhancer(proxy_list=["http://proxy1:8080", "http://proxy2:8080"])
+fingerprint = enhancer.randomize()
+
+# 应用到 Playwright context
+enhancer.apply_to_playwright_context(context, fingerprint)
+
+# 代理轮换
+proxy = enhancer.rotator.next_round_robin()
+enhancer.rotator.report_success(proxy)   # 成功时调用
+enhancer.rotator.report_failure(proxy)   # 失败时调用
+```
+
+---
+
+## 11. EasySpider 任务导入
+
+### 概述
+
+兼容 EasySpider（易采集）的 JSON 任务格式。支持：
+- 操作节点：打开网页、点击元素、提取数据、滚动
+- 流程控制：循环、条件判断
+- XPath 候选列表 → 自动选最优
+
+### 使用方式
+
+```powershell
+# 基础导入
+omnicrawler import-easyspider task.json -o config.yaml
+
+# 输出 Task IR 格式
+omnicrawler import-easyspider task.json --ir
+
+# 然后正常运行
+omnicrawler run -c config.yaml
+```
+
+### 支持的 EasySpider 操作映射
+
+| EasySpider 操作 | OmniCrawler 配置 |
+|----------------|-----------------|
+| 打开网页 (option:1) | `source.seeds` + `browser.actions[wait_ms]` |
+| 点击元素 (option:2) | `browser.actions[click]` |
+| 提取数据 (option:3) | `extract.fields` |
+| 循环 (option:8) | `crawl.pagination` 或 `browser.actions` |
+| 滚动 | `browser.actions[scroll_bottom]` |
+
+---
+
+## 12. Crawl4AI 轻量 JS 渲染
+
+### 概述
+
+集成 [Crawl4AI](https://github.com/unclecode/crawl4ai)（74.9k stars），提供：
+
+- **轻量 JS 渲染**：比 Playwright 全浏览器省 5-10x 资源
+- **自适应爬取**：自动学习网站模式、探索相关内容
+- **BFS 深度爬取**：全站遍历 + 域名过滤
+- **LLM 提取**：用 AI 从页面提取结构化数据
+- **Undetected 模式**：隐身渲染（合规敏感——仅用于你已获授权访问的站点，须经 EgressBroker 统一出口并显式声明）
+- **虚拟滚动**：无限滚动页面全量加载
+- **内存自适应调度**：批量并发控制
+
+### 安装依赖
+
+```powershell
+pip install omnicrawler-platform[crawl4ai]
+crawl4ai-setup
+```
+
+### 使用方式
+
+```python
+from omnicrawler.crawl4ai_bridge import Crawl4AIEngine, C4AConfig
+
+# 基础抓取
+engine = Crawl4AIEngine()
+result = engine.fetch("https://spa-site.com")
+print(result.markdown[:500])
+
+# Undetected 模式
+config = C4AConfig(browser_type="undetected")
+result = Crawl4AIEngine(config).fetch("https://protected.com")
+
+# CSS schema 结构化提取
+schema = {
+    "name": "Products",
+    "baseSelector": ".product-card",
+    "fields": [
+        {"name": "title", "selector": ".title", "type": "text"},
+        {"name": "price", "selector": ".price", "type": "text"},
+    ]
+}
+result = Crawl4AIEngine(C4AConfig(extraction_strategy="css", extraction_schema=schema)).fetch(url)
+```
+
+---
+
+## 13. Apify/Zyte 站点模板
+
+### 概述
+
+提取了 Apify Ultimate Scraper 覆盖的 25 个主流平台的站点知识，包括典型字段、采集提示和注意事项。
+
+### 已覆盖平台
+
+| 类别 | 平台 |
+|------|------|
+| **社交媒体** | Instagram, Facebook, TikTok, YouTube, X(Twitter), LinkedIn, Reddit |
+| **搜索引擎** | Google Search, Google Maps, Google Trends |
+| **电商** | Amazon, Walmart, eBay |
+| **旅游** | Booking.com, TripAdvisor, Airbnb, Yelp |
+| **开发者** | GitHub |
+
+### 使用方式
+
+```powershell
+# 列出所有已知平台
+omnicrawler gen-templates --list
+
+# 批量生成模板文件
+omnicrawler gen-templates --all templates/sites/
+
+# 查看某个平台
+omnicrawler gen-templates --generate amazon
+```
+
+生成的模板包含字段定义和注释，选择器需根据实际页面填写或配合 `auto-analyze` 自动生成。
+
+---
+
+## 14. 输出与导出
+
+### 输出格式对照
+
+| 格式 | 适用场景 | 配置 |
+|------|---------|------|
+| **JSONL** | 每行一条 JSON 记录，流式处理 | `outputs: {jsonl: true}` |
+| **CSV** | 表格数据，Excel 兼容 | `outputs: {csv: true}` |
+| **Excel (.xlsx)** | 多 sheet 报告 | `outputs: {xlsx: true}` |
+| **Parquet** | 大数据分析 | `outputs: {parquet: true}` |
+| **DuckDB** | 本地 SQL 分析 | `outputs: {duckdb: true}` |
+| **PostgreSQL** | 生产数据库 | `outputs: {postgresql: {...}}` |
+| **OpenSearch** | 全文搜索 | `outputs: {opensearch: {...}}` |
+| **MySQL** | 传统数据库 | `outputs: {mysql: {...}}` |
+
+### 质量报告
+
+每次运行后自动生成 `output/quality_report.html`：
+- 字段覆盖率统计
+- 缺失值分布
+- 异常值检测
+- 提取位置证据
+
+### 人工复核
+
+```powershell
+# 查看复核队列
+omnicrawler status -c configs/my_site.yaml
+
+# 导出复核队列
+# output/review_queue.csv — 在 Excel 中标注"有效/存疑/错误"
+```
+
+---
+
+## 15. 安全模型
+
+### 网络安全
+
+| 防护 | 实现 |
+|------|------|
+| **协议白名单** | 仅允许 HTTP/HTTPS |
+| **地址过滤** | 阻止本机/内网/保留地址 |
+| **DNS 重绑定** | 每次重定向重新检查 |
+| **robots.txt** | 默认遵守，失败关闭 |
+| **响应限额** | max_response_bytes, max_api_capture_bytes |
+| **磁盘保护** | 低于 512MB 自动暂停 |
+
+### 凭据安全
+
+- 配置中只用 `secret://name` 占位
+- 运行时从 `OMNICRAW_SECRET_<NAME>` 环境变量读取
+- 或从系统 keyring 读取
+- 解析后的密钥不会写回配置文件
+- 日志和诊断自动脱敏
+
+### 插件沙箱
+
+- 新插件默认在独立子进程运行，并使用 Python `-I -S`、环境白名单和能力代理
+- 网络、记录、工件、临时文件、输入文件和密钥访问按声明权限控制
+- 网络和输入文件必须分别受 `domains`、`input_files` 精确白名单限制
+- 超时、配额、签名不符和未批准能力均失败关闭
+- 当前尚未接入完整的 AppContainer/seccomp/Landlock 级 OS confinement；子进程隔离不能保证
+  任意恶意原生代码绝对安全
+
+### 存档安全
+
+- Zip Slip 路径穿越防护
+- 符号链接拒绝
+- 压缩炸弹检测（解压比 > 100:1 拒绝）
+- 单个文件 100MB 上限
+- 临时目录 + 原子 `os.replace`
+
+---
+
+## 16. 故障排除与诊断
+
+### 自动诊断
+
+OmniCrawler 内置统一诊断系统，覆盖 12 类错误类型：
+
+| HTTP 状态 | 诊断 | 自动修复 |
+|-----------|------|---------|
+| 401 | 需要身份验证 | 提示配置 secret:// 或登录 |
+| 403 | 访问被拒 | 提示更换 UA/代理 |
+| 429 | 请求过频 | 自动降低并发至 1 + 延迟至 5s |
+| 502/503 | 服务器暂时不可用 | 建议等待后重试 |
+| 验证码 | 人机验证 | 提示降速或使用 undetected 模式 |
+
+### 常用诊断命令
+
+```powershell
+omnicrawler doctor -c config.yaml     # 全面体检
+omnicrawler validate -c config.yaml    # 配置校验
+omnicrawler capabilities               # 环境能力检查
+omnicrawler preflight -c config.yaml   # 运行前检查
+omnicrawler runtime-verify             # 便携版完整性检查
+```
+
+### 错误恢复
+
+```powershell
+# 查看恢复中心
+omnicrawler recovery -c config.yaml overview
+
+# 重试失败项
+omnicrawler recovery -c config.yaml retry-failed
+
+# 从原始归档重做提取（不重新访问）
+omnicrawler reprocess -c config.yaml --run-id <run_id>
+```
+
+---
+
+## 17. 常见问题 FAQ
+
+### 安装与环境
+
+**Q: 解压后双击没反应？**
+A: 确保解压到普通可写目录（如 `D:\OmniCrawler`），不要直接在 ZIP 内运行。
+
+**Q: 缺少 Chromium 或 Playwright？**
+A: 便携版已内置。源码版运行 `python -m playwright install chromium`。
+
+**Q: OCR 不可用？**
+A: Standard 版不含 OCR，下载 Full 版获取 Tesseract+PaddleOCR。文本 PDF 无需 OCR。
+
+**Q: Crawl4AI 不可用？**
+A: 安装 `pip install omnicrawler-platform[crawl4ai]` 后运行 `crawl4ai-setup`。
+
+### 采集配置
+
+**Q: 翻页但地址栏网址不变？**
+A: 切换到浏览器模式 → 使用可视化选择器（`omnicrawler visual-select`）自动捕获后台 API。
+
+**Q: 采集速度太慢？**
+A: 增加 concurrency 到 4-8，减少 delay_seconds 到 0.5-1s。但过高会被限速。
+
+**Q: 被网站封 IP？**
+A: 增加 delay_seconds 到 2-3s，降低 concurrency 到 1-2。使用代理轮换。使用 undetected 模式。
+
+**Q: 附件没下载？**
+A: 确认 `download.enabled=true`，extensions 包含需要的后缀。
+
+**Q: 字段提取为空？**
+A: 检查页面类型（HTML/JSON），切换到对应 mode。动态页面用浏览器模式。先用 `auto-analyze` 重新分析页面。
+
+### 运行与恢复
+
+**Q: 任务中断了？**
+A: `omnicrawler resume -c <config>` 从中断点继续，进度在 SQLite 中不丢失。
+
+**Q: 改了规则重新导出？**
+A: `omnicrawler reprocess -c <config>` 从原始归档重新提取，不重新访问网站。
+
+**Q: 定期自动采集？**
+A: 专业模式启用定时任务，或系统调度器执行 `omnicrawler schedule run-due`。
+
+**Q: 复制到另一台电脑？**
+A: 便携版复制整个文件夹。源码版复制 `work/<project>/` 目录。
+
+### 输出与导出
+
+**Q: 没有 Excel？**
+A: 需要 openpyxl。便携版已含；源码版 `pip install openpyxl`。
+
+**Q: CSV 中文乱码？**
+A: Excel 中 "数据 → 从文本/CSV" 选择 UTF-8 编码导入。
+
+**Q: 导出到数据库？**
+A: 支持 PostgreSQL/DuckDB/MySQL/OpenSearch，安装对应依赖后在 outputs 段配置。
+
+### 安全
+
+**Q: 有什么规则？**
+A: 默认遵守 robots.txt、只采同域名。确保有访问权限，不绕过验证码。
+
+**Q: 凭据安全？**
+A: 配置中用 `secret://name` 占位，通过 `OMNICRAW_SECRET_name` 环境变量注入。
+
+**Q: 界面颜色太刺眼或太暗？**
+A: 菜单栏「视图 → 主题」可在明亮、暗黑和高对比度三种主题间切换。选「色盲友好」可替换红/绿状态色为蓝/橙学术配色。界面缩放可在「视图 → 缩放」中选 90%~150% 四档。
+
+**Q: 如何减少界面动画？**
+A: 打开菜单栏「视图 → 减少动画」。开启后 Hero 背景光晕停止运动，状态指示器停止闪烁，页面切换淡入效果关闭。
+
+**Q: 支持英文界面吗？**
+A: 当前版本已建立国际化管道。开发者在 `locale/` 目录添加英文 `.po` 翻译并编译 `.mo` 后即可切换。目前约 95% 的界面文字已有英文翻译，欢迎贡献更多翻译。
+
+---
+
+## 18. 项目架构
+
+### 核心模块
+
+```
+src/omnicrawler/
+├── cli/                     # CLI 入口：_main.py 参数 + _handlers.py 分发（47 个顶层命令）
+├── core/                    # 配置、异常、迁移、站点分类器、编码、站点别名
+├── pipeline/                # 采集 Pipeline 编排（星型编排器）
+├── pipeline_ops/            # 任务 IR、计划、批处理
+├── commands/                # CLI 子命令处理器（16 个模块）
+├── fetching/                # HTTP 异步抓取、浏览器引擎、镜像路由、会话管理
+├── extraction/              # CSS/XPath/JSON 多策略提取、智能页面分析
+├── doc_extractors/          # 文档/PDF 槽位抽取（document_type=auto 归一）
+├── document_ir/             # 统一文档中间表示（txt/html/docx/pptx/odt/epub）
+├── quality/                 # 质量校验、证据链、观测与自动应用
+├── review/                  # 人工复核台、证据查看器
+├── security/                # Egress Broker、沙箱、脱敏
+├── runtime/                 # 状态存储、仓库、锁定
+├── services/                # 应用服务编排、统一进度协议、场景基因
+├── state/                   # SQLite WAL schema + StateStore/SceneStore/CapsuleStore
+├── sdk/                     # Python SDK（稳定性标记）
+├── templates/               # 56 套内置 YAML 模板 + recipe
+├── pdfx/                    # PDF 解析/OCR/抽取子系统
+├── convertx/                # 任意格式互转（CSV/JSONL/Parquet/DuckDB/文档族）
+├── sources/                 # 数据源适配器、镜像注册表
+├── plugins/                 # 插件系统（沙箱 + 签名）
+├── scenes/                  # 出厂场景定义（annual_report.yaml）
+├── data/                    # 内置数据（站点分类默认域名映射）
+├── apps/                    # PDF 处理独立 CLI（pdf-process / pdf-extract）
+├── visual_selector/         # 可视化选择器（WebSocket 服务 + 字段转换）
+│   ├── similarity.py        # 同类元素检测引擎
+│   ├── field_converter.py   # 选择器→字段转换
+│   └── server.py            # WebSocket 服务
+├── gui/                     # PyQt6 桌面 GUI
+│   ├── main.py              # 主窗口 + 导航
+│   ├── home.py              # 首页（快速任务）
+│   ├── views/               # 结果/证据/场景/格式互转/插件市场/开发者检查器/变更监控/反检测
+│   └── wizard/              # 任务工作台复用的字段选择组件
+├── scheduling/              # 变更检测引擎
+└── export/                  # Markdown 导出器
+```
+
+`locale/`（.pot + 翻译文件）位于仓库根目录。旧路径兼容由 `omnicrawler/__init__.py` 的兼容重定向提供（如 `omnicrawler.config` → `omnicrawler.core.config`）。
+
+### 数据流
+
+```
+用户输入 → 配置生成 → Pipeline 编排
+              ↓
+    ┌─────────┴──────────┐
+    │  可视化选择器       │  ← 浏览器扩展
+    │  智能爬虫           │  ← auto-analyze
+    │  EasySpider 导入    │  ← import-easyspider
+    │  模板渲染           │  ← templates render
+    │  交互式向导         │  ← CLI/GUI wizard
+    └─────────┬──────────┘
+              ↓
+    ┌─────────┴──────────┐
+    │  Crawl4AI (轻量)    │  ← 可选
+    │  Playwright (完整)  │
+    │  Selenium (兼容)    │
+    │  HTTP (静态)        │
+    └─────────┬──────────┘
+              ↓
+    ┌─────────┴──────────┐
+    │  Egress 安全边界    │  ← 协议/域名/预算
+    │  AutoPilot 自适应   │  ← 并发/延迟/OCR
+    └─────────┬──────────┘
+              ↓
+    ┌─────────┴──────────┐
+    │  提取 + 质量检查     │
+    │  StateStore (SQLite) │
+    └─────────┬──────────┘
+              ↓
+    ┌─────────┴──────────┐
+    │  导出               │
+    │  JSONL/CSV/Excel/   │
+    │  Parquet/PostgreSQL │
+    └─────────────────────┘
+```
+
+---
+
+## 附录
+
+### 许可证
+
+Apache License 2.0（SPDX 标识 `Apache-2.0`）— 详见 `LICENSE` 文件。
+
+### 自动化与 AI
+
+- 想让 AI / 脚本接管命令行：见仓库根 `AGENTS.md`（开发时原则）与 `docs/AGENT_GUIDE.md`（调用面契约：命令 / 参数 / 退出码 / stdout 形态）。
+
+### 相关项目
+
+- [Crawl4AI](https://github.com/unclecode/crawl4ai) — 轻量 AI 爬虫引擎
+- [EasySpider](https://github.com/NaiboWang/EasySpider) — 可视化无代码爬虫（任务导入、相似元素检测算法、Chrome 扩展）
+- [Apify Agent Skills](https://github.com/apify/agent-skills) — 专业爬虫平台技能
+
+### 版本历史
+
+详见 `CHANGELOG.md` 和各版本 `RELEASE_REPORT_*.md`。
+
+当前 0.15.0 版本额外提供本地可复用 E2E：它只使用临时本机 HTTP 服务，不会采集互联网或生产数据。首页会优先接收自然语言任务描述，并将其转化为可检查的配置草案；其余必填项也集中在第一页，减少向导中途被阻断的情况。开发者可在仓库根目录执行 `./e2e/run.ps1 -Browser`（Windows）或 `./e2e/run.sh --browser`（macOS/Linux）复验完整链路；结果写入 `docs/E2E_TEST_REPORT.md`。
