@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -55,8 +56,14 @@ class TemplateMonitor:
         }
         html = result.body.decode("utf-8", errors="replace")
         current = StructureSnapshot.from_html(template_id, result.final_url, html, successes)
-        snapshot_path = self.directory / f"{safe_filename(template_id)}.json"
+        page_key = hashlib.sha256(result.final_url.encode()).hexdigest()
+        snapshot_path = self.directory / f"{safe_filename(template_id)}.{page_key}.json"
         previous = StructureSnapshot.load(snapshot_path) if snapshot_path.is_file() else None
+        if previous is None:
+            legacy_path = self.directory / f"{safe_filename(template_id)}.json"
+            legacy = StructureSnapshot.load(legacy_path) if legacy_path.is_file() else None
+            if legacy is not None and legacy.source_url == result.final_url:
+                previous = legacy
         similarity = current.similarity(previous) if previous else 1.0
         field_success = sum(successes.values()) / max(1, len(successes)) if successes else 1.0
         if similarity >= 0.75 and field_success >= 0.7:
