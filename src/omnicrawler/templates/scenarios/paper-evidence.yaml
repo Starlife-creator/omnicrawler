@@ -1,0 +1,70 @@
+template_version: 1
+template:
+  id: scenarios/paper-evidence
+  name: 论文 DOI 与 PDF 资料包
+  category: scenarios
+  version: 1.0.0
+  description: 固定样本验收的可编辑场景；更换目标后必须检查选择器、权限与完整性
+  capabilities:
+  - http
+  - provenance
+  - attachment-download
+  placeholders:
+    seed_url:
+      type: string
+      required: true
+      label: 列表或接口入口
+  min_core_version: 0.15.0
+  limitations: 只验证本地自造样本；字段结构需按目标调整。PDF需已有下载权限；不绕过登录、付费墙或站点政策。
+project:
+  name: paper-evidence
+  workspace: work/paper-evidence
+source:
+  kind: crawl
+  seeds:
+  - '{{seed_url}}'
+crawl:
+  max_pages: 100
+  max_depth: 2
+  same_host: true
+  concurrency: 2
+http:
+  respect_robots: true
+  delay_seconds: 1.0
+resources:
+  adaptive_concurrency: true
+updates:
+  enabled: true
+  revisit_completed: true
+  identity_fields:
+  - doi
+  ignored_fields:
+  - fetched_at
+  - timestamp
+  - noise
+outputs:
+  jsonl: true
+  csv: true
+  xlsx: true
+extract:
+  mode: html
+  item_selector: .record
+  fields:
+    doi:
+      selector: h1
+      attr: data-id
+      required: true
+    title:
+      selector: h1
+      required: true
+    body:
+      selector: .body
+    pdf_url:
+      selector: a.pdf
+      attr: href
+download:
+  enabled: true
+  extensions:
+  - .pdf
+  media: false
+  verified_pdf_manifest: true
