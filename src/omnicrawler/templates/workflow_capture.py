@@ -67,6 +67,15 @@ def extend_workflow(config: AppConfig, data: dict[str, Any]) -> dict[str, Any]:
         data["egress"]["credential_domains"] = copy.deepcopy(config.section("egress").get("credential_domains", []))
     if config.raw.get("transformers"):
         raise ValueError("转换器扩展暂不捕获，请保留原始任务配置")
+    pdf = config.section("processors").get("pdf", {})
+    if pdf.get("enabled"):
+        data["processors"] = {"pdf": copy.deepcopy(pdf)}
+        if pdf.get("project_config"):
+            data["processors"]["pdf"]["project_config"] = parameter("pdf_project_config", "string")
+        if pdf.get("config") and not str(pdf["config"]).startswith("builtin:"):
+            data["processors"]["pdf"]["config"] = parameter("pdf_template_config", "string")
+    data["resources"] = {key: copy.deepcopy(config.section("resources")[key])
+                         for key in ("adaptive_concurrency", "maximum_process_tree_bytes")}
     updates = config.section("updates")
     data["updates"] = copy.deepcopy(updates)
     if config.section("extract").get("deduplicate_by"):

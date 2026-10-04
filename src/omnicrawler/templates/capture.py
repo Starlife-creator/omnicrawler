@@ -130,7 +130,7 @@ def capture(config: AppConfig, proof_path: Path, output: Path, *, template_id: s
     data["template_version"] = 1
     data["template"] = {"id": template_id, "name": template_id, "category": "user/public-http",
         "version": "1.0.0", "description": "已试跑任务的参数化工作流；新网址、输入、会话均须验证与试跑",
-        "capabilities": ["http"], "placeholders": declarations,
+        "capabilities": ["http", *(["browser"] if "browser" in data else []), *(["api"] if source["kind"] in {"rest", "graphql", "form"} else []), *(["pdf"] if "processors" in data else [])], "min_core_version": __version__, "placeholders": declarations,
         "verified_at": safe_reference["captured_at"], "acceptance_reference": safe_reference,
         "limitations": "保留分页/API/动作/附件语义；网址、请求正文、动作值、认证请求头与会话名须重新填写；不含凭据、代理或插件；不恢复运行批准"}
     output = output.expanduser().resolve()

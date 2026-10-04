@@ -2,7 +2,7 @@
 
 > 适用版本：0.15.0 · 配置协议：v5 · 维护状态：现行
 
-复用现有草案、配置历史、TemplateCatalog 和 CLI，不增加任务协议。首次捕获支持简单公开 HTTP HTML seeds 任务；认证、分页、JSON、API 与插件任务保留本地原配置和历史，不能伪装成已验分享模板。
+复用现有草案、配置历史、TemplateCatalog 和 CLI，不增加任务协议。捕获支持内置 HTTP HTML、JSON/API分页、浏览器动作、已有会话引用、附件下载和PDF处理；插件与未支持扩展任务保留本地原配置和历史。历史验收不能批准新目标。
 
 先审阅任务和样本交付，再显式 capture：
 
@@ -20,7 +20,7 @@ omnicrawler run -c new-task.yaml
 
 sample 生成绑定加载配置摘要、当前运行响应哈希/请求指纹、时间、结果与版本的 preflight_acceptance.json；旧摘要、失败或空样本不能 capture。capture 是维护者审阅后的显式保存操作，试跑成功不等于字段语义已人工验收。所有摘要只作历史参考，导入、换参数及跨工作区不会恢复“试跑通过”。版本或内容修改仍需重新试跑。
 
-每个 seeds 网址转换为无默认值的必填参数，避免 URL 查询签名泄露。只保留公开任务允许字段；移除所有请求头、请求正文、AI 配置、代理/登录、数据库、未知扩展设置，保留出口域范围与预算。复杂任务会明确拒绝；原配置及未知 GUI 字段不改。新任务需要的本地上下文由用户重新配置。
+每个 seeds 网址转换为无默认值的必填参数，避免 URL 查询签名泄露。只保留支持的工作流字段；API正文、动作值和认证请求头转为无默认值的必填输入，会话只保留待选引用。移除AI配置、代理、登录快照、数据库和未知扩展设置，保留出口域范围与预算。PDF内置模板保留，外部PDF配置路径必须重新填写。原配置不改。
 
 可用 --parameters 指定额外 JSON 参数声明，例如：
 
@@ -28,7 +28,7 @@ sample 生成绑定加载配置摘要、当前运行响应哈希/请求指纹、
 {"pages":{"path":"crawl.max_pages","type":"integer","required":true,"minimum":1,"maximum":10,"default":3},"title_selector":{"path":"extract.fields.title.selector","type":"string","required":true}}
 ```
 
-支持范围为 seeds、页数/深度/并发、HTTP 时延/超时和既有字段 CSS/XPath 选择器。保留 attr、all、正则分组和 join 的提取语义；字符串规则转为 selector。附件、自定义提取扩展和未支持的规则属性明确拒绝，不静默丢失语义。每项必须声明类型；路径不能指向请求头或凭据。使用现有参数校验和健康门禁，参数越界或缺失时拒绝。--force 覆盖前保留 ConfigHistory；已有任务 render 也先验证再原子替换。
+支持范围为 seeds、页数/深度/并发、HTTP 时延/超时和既有字段 CSS/XPath 选择器。保留 attr、all、正则分组和 join 的提取语义；HTML字符串规则转为selector，JSON字符串规则转为path。自定义提取扩展和未支持的规则属性明确拒绝，不静默丢失语义。每项必须声明类型；路径不能指向请求头或凭据。使用现有参数校验和健康门禁，参数越界或缺失时拒绝。--force 覆盖前保留 ConfigHistory；已有任务 render 也先验证再原子替换。
 
 修改使用现有 templates diff/merge 与配置历史。自然语言只提出可编辑草案，继续沿用已有范围、权限、预算守卫与 GUI crawl_fingerprint；试跑过程中改输入，旧结果只保留为历史。输出/调度由既有独立验证处理。
 

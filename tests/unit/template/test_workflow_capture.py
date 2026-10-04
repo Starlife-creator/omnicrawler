@@ -60,3 +60,14 @@ def test_browser_actions_and_session_reference_rebind_without_copying_values(tmp
     assert result["source"]["seeds"][0]["payload"] == {"term": "new"}
     assert result["browser"]["actions"][0]["value"] == "new"
     assert result["session"]["name"] == "chosen-local-session"
+
+
+def test_pdf_processing_and_resource_settings_survive_capture(tmp_path):
+    output, catalog = captured(tmp_path, {"kind": "static_html", "seeds": ["https://example.org/list"]},
+        processors={"pdf": {"enabled": True, "config": "builtin:pdf/generic_template.yaml", "skip_ocr": True}},
+        resources={"adaptive_concurrency": False, "maximum_process_tree_bytes": 100000000})
+    result = catalog.render("user/complex", {"seed_url_1": "https://example.org/new"})
+    assert result["processors"]["pdf"]["enabled"] is True
+    assert result["processors"]["pdf"]["skip_ocr"] is True
+    assert result["resources"] == {"adaptive_concurrency": False, "maximum_process_tree_bytes": 100000000}
+    assert "pdf" in catalog.get("user/complex").metadata.capabilities
