@@ -18,7 +18,7 @@ def dialog(tmp_path):
     app = QApplication.instance() or QApplication([])
     parent = QWidget()
     config = tmp_path / "task.yaml"
-    config.write_text("project: {name: tools, workspace: work}\n", encoding="utf-8")
+    config.write_text("project: {name: tools, workspace: work}\nsource: {kind: static_html, seeds: [https://example.test/]}\n", encoding="utf-8")
     state = {"path": config, "token": "saved", "reloads": 0}
     def reload_config():
         state["reloads"] += 1
@@ -37,7 +37,7 @@ def test_selection_is_explicit_and_ai_is_opt_in(dialog, monkeypatch):
     window, _ = dialog
     calls = []
     monkeypatch.setattr(window, "_launch", lambda *args: calls.append(args))
-    assert window.tabs.count() == 4 and not window.use_ai.isChecked()
+    assert window.tabs.count() == 5 and not window.use_ai.isChecked()
     window._analyze()
     window._retry()
     assert not calls
@@ -153,3 +153,15 @@ def test_task_identity_ignores_serializer_time_and_does_not_mutate_model(monkeyp
     assert tools._config_token(model) == tools._config_token(model)
     assert all(config is not model for config in calls)
     assert model.project_name != "mutated copy"
+
+
+def test_workflow_stage_selection_shows_diagnostic_guidance(dialog):
+    window, _state = dialog
+    window._launch("workflow", {})
+    worker = window._worker
+    assert worker is not None and worker.wait(5000)
+    QTest.qWait(100)
+    assert window.workflow_steps.count() >= 4
+    window.workflow_steps.setCurrentRow(window.workflow_steps.count() - 1)
+    assert "交付" in window.workflow_details.toPlainText()
+    assert "尚无试跑" in window.result_view.toPlainText()
