@@ -1,6 +1,6 @@
 # OmniCrawler 文档导航
 
-当前版本 **0.15.0**，配置协议 **v5**，覆盖率门禁 **≥73%**。
+当前版本 **0.15.0**，配置协议 **v5**，覆盖率门禁 **≥75%**。
 
 本页是仓库内文档的唯一索引入口。未出现在本页的 `docs/*.md` 视为孤儿页，会被
 `tools/check_docs_consistency.py` 拦截。新增或删除顶层文档时必须同步更新第 2 节。
@@ -41,11 +41,12 @@
 
 - [桌面运行、工作区与组件](DESKTOP_RUNTIME_1.4.md)
 - [可选组件管理](COMPONENTS.md)：离线信任、注册表事务、回滚和搬迁。
+- [2026-10-04 全面优化实施与验收](COMPREHENSIVE_OPTIMIZATION_2026-10-04.md)：本机 Full 实测、开发场景、证据与发布边界。
 - [2026-10-03 专项优化执行记录](OPTIMIZATION_EXECUTION_2026-10-03.md)：批次、验证边界与剩余工作。
 - [2026-10-03 专项优化基线](OPTIMIZATION_BASELINE_2026-10-03.md)：依赖归因、代表任务与未知指标。
 - [本地证据驱动的提取修复](REPAIR_WORKFLOW.md)：候选预览、分级应用、观察与恢复。
 - [选定交付文档分析](ARCHIVE_ANALYSIS.md)：事实回链、可选模型解释和阶段恢复。
-- [公开任务参数化复用](TASK_REUSE_WORKFLOW.md)：试跑摘要、脱敏捕获、参数重填和重新验收。
+- [工作流参数化复用](TASK_REUSE_WORKFLOW.md)：试跑摘要、脱敏捕获、参数重填和重新验收。
 - [公开论文下载验收](PAPER_DOWNLOAD_ACCEPTANCE.md)：选定失败重试、累计校验清单与市场插件停止证据。
 - [桌面视觉与交互规范](GUI_DESIGN_2.1.md)
 

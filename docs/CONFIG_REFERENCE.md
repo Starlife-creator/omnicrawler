@@ -79,6 +79,7 @@ outputs: {jsonl: true, csv: true, xlsx: true}
 
 - `engine`：`playwright` 或 `selenium`。
 - `headless/pool_size/wait_until`。
+- `selenium_fallback_engine`：默认 `none`；显式 `playwright` 允许 Selenium 受保护运行时不可用时使用相同出口策略的 Playwright，并保存 `renderer_fallback` 原因。只适用于公开任务；持久会话、浏览器持久配置或 `source.auth_check` 存在时拒绝回退，避免丢失登录状态。
 - `actions`：`wait_for`、`click`、`fill`、`press`、`scroll_bottom`、`wait_ms`。
 - `capture_api_responses`：捕获 XHR/fetch JSON。
 - `max_api_response_bytes/max_api_capture_bytes`：单响应与单页面总捕获上限。
@@ -221,6 +222,8 @@ SQLite 始终是本地恢复权威；外部后端是记录镜像。`max_errors` 
 - `maximum_runtime_seconds`：0 表示不限制。
 - `maximum_workspace_bytes`：0 表示不限制。
 - `check_interval_seconds`：资源检查间隔。
+- `adaptive_concurrency`：默认 `true`，根据实际延迟、失败/429 和资源压力调节新请求认领量，始终处于 1 与 `crawl.concurrency` 之间；关闭后使用固定上限。不会取消已在途请求，也不会改变 robots、延迟、任务范围或出口预算。
+- `maximum_process_tree_bytes`：默认 `0`，不设置进程树 RSS 压力阈值；正整数提供自适应认领的内存压力参考，不能视为操作系统硬内存上限。缺少资源采样依赖时不伪报零占用。
 
 ## egress（1.2.0统一网络出口）
 
@@ -410,3 +413,16 @@ mirrors:
 `source.follow_xpath` 可指定下一页链接的 XPath。配置后网页链接发现只跟进匹配链接，附件下载沿用原有设置，页面预算、robots 与允许范围仍生效。
 
 `extract.deduplicate_by: [链接地址]` 指定稳定实体字段。一次运行内只有实体标识和完整数据都相同的记录才合并；标识缺失时保留原请求记录，不按标题猜测实体。相同实体的不同内容仍保留。多值字段使用 `all: true`，例如全部标签可作为数组交付 Excel。
+
+## updates：记录身份与噪声
+
+```yaml
+updates:
+  enabled: true
+  identity_fields: [sku]
+  ignored_fields: [fetched_at, updated_at, crawl_time, timestamp, noise]
+```
+
+`identity_fields` 默认为空，沿用既有身份规则；显式字段组成稳定业务身份，任何字段缺失都报错，避免悄悄退回内容哈希。字段列表必须非空字符串且无重复。`ignored_fields` 缺省忽略 fetched_at、updated_at、crawl_time、timestamp（字段名不区分大小写）；显式 `[]` 表示所有字段参与比较。只在完整且可比运行后判断删除，分页中断或范围不完整不会据此批量删除。比较报告保存变化类型、变化字段及复核摘要；调整身份规则后应重新建立可比基线。
+
+模板诊断基线按模板和完整页面 URL 保存，列表与详情互不比较。改变 URL 查询参数会形成新基线；历史基线只有来自同一 URL 时才复用。

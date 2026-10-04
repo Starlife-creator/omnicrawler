@@ -9,7 +9,7 @@
 
 ## 2026-10-04 本轮验收口径
 
-维护者授权以本机已安装全部依赖的环境进行 Full 功能验收，无需便携包。本轮结果保存在工作区 `user-test-runs/comprehensive-optimization-20261004/evidence/`，最终报告登记后才升级状态。此前便携待验条目保留为历史发布条件，不阻塞本轮功能验收。
+维护者授权以本机已安装全部依赖的环境进行 Full 功能验收，无需便携包。本轮结果保存在工作区 `user-test-runs/comprehensive-optimization-20261004/evidence/`，当前结果已登记于 [本轮实施记录](COMPREHENSIVE_OPTIMIZATION_2026-10-04.md) 和验收目录的 `验收报告.md`。此前便携待验条目保留为历史发布条件，不阻塞本轮功能验收。
 
 本账本记录“当前版本真实证明了什么”。历史报告不自动等于当前版本通过；没有当前证据的
 能力标为未知。每次执行必须使用独立 workspace 与 data_dir，恢复测试只复用本任务状态。
@@ -557,3 +557,16 @@ GUI-01—08 均未闭环；GUI-08 已确认启动进程残留，未确认根因�
 本轮定义的 ADV-01—11 已完成定向修复。原高级报告仍是 811ece3 的失败历史，不改写原证据；源码/本机高级复验及问题闭环不能替代冻结 Full、跨机/跨平台和生产账号验收。
 
 复验截图另发现合法 follow_xpath 被误报未知字段，已将分页范围与实体去重字段加入配置登记；严格校验仍拒绝拼写错误。原生任务配置的正式 CLI 校验通过，目录分离的 workspace 提示保留。现有 Chromium 显式启用后，真实动态分页、无限滚动、去重和浏览器回收专项通过；快速跨轮回归中的 POSIX AF_UNIX 路径用例在 Windows 不适用，未算通过。最终汇总见根目录 user-test-runs/optimization-advanced-20261002/优化完成与复验报告.md。
+
+## 2026-10-04 全面优化当前结果
+
+| 旅程 | 当前证据 | 判定 |
+|---|---|---|
+| CLI 列表/详情/API/增量、恢复与导出 | `quality.json`、`integration-final.xml` | 本机固定真值通过；不继承为所有公网网站通过 |
+| 动态浏览器分页/滚动与请求边界 | `real-browser-final.xml`、`integration-final.xml`、实际 `renderer.json` | 真实 Playwright 与进程回收通过；Selenium 显式回退至 Playwright，原生 BiDi 挂起仍存在 |
+| PDF/OCR 与证据 | `pdf-quality.json`、`documents.xml`、`native-component-ocr.json` | 原生/表格/扫描/低质扫描真值通过；组件属于 Windows 开发试点 |
+| 公告、论文和商品监测模板 | `scenes.xml`、固定场景 `scene-result.json` | 附件 SHA 与来源、PDF 页级事实、三周期业务身份与噪声判定通过 |
+| Qt 流程诊断、保存/试跑/生命周期 | `workflow.xml`、`template-gui-regression.xml`、`workflow-diagnostics.png` | 实际 Qt 自动运行通过，截图为 offscreen；不代表完整人工 A—G 走查 |
+| 插件与市场信任链 | `academic-plugin.xml`、`signed-market-acceptance.log` | 既有签名插件实际安装/加载/固定输入通过；断网条件未核验，真实出版商登录未测 |
+
+完整单进程合跑曾在 Qt 样式初始化发生 Windows access violation；记录保留，最终采用独立进程的单元、集成和 Qt 分组，均通过。共享 Qt 状态污染属于推测，确切根因未关闭，不能声明合跑模式通过。跳过项见各 JUnit 和日志。

@@ -182,3 +182,9 @@ plugins:
 静态镜像只复制 catalog、包和签名，不重签，信任等级保持不变。若未来贡献量、撤销时效或统计
 需求证明需要服务器，服务器只应承担索引、审核排队和通知；包身份和离线验签仍由本协议决定，
 不能把安全退化成“服务器说用户名是谁就是谁”。
+
+## 场景说明卡（2026-10-04）
+
+目录条目可附 `scenario_card`，GUI 仅以有界纯文本显示。格式 1 声明 problem、inputs、outputs、permissions、components、offline、host_version、limitations；每项为非空有限文本。状态分为 unverified、fixture_verified、site_verified；已验证状态必须给出 verified_at 和 evidence（相对路径及 SHA-256）。`tools/check_scenario_cards.py <卡片...> --evidence-root <目录>` 校验非空集合、路径边界与实际证据摘要，零输入、缺失、越界或摘要不符均拒绝。
+
+卡片不运行任务，不授予权限，不替代签名，也不把本地固定样本验证升级为真实站点验证。新公告、商品和论文卡片位于工作区开发目录；未改写历史签名包或正式市场目录。当前市场安装验收证明本地签名注册表与固定样本插件可用，未证明主机断网或真实出版商登录。
