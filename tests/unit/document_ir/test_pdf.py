@@ -26,7 +26,7 @@ def test_real_pdf_delivery_analysis_has_page_provenance_and_resumes(tmp_path, mo
     path = tmp_path / "selected.pdf"
     _pdf(path, ["Observed price: 12.", "Observed price: 34."])
     document = parse_document(path)
-    assert document.paragraph_locators == [{"page": 1, "page_paragraph": 1}, {"page": 2, "page_paragraph": 1}]
+    assert [{key: row[key] for key in ("page", "page_paragraph")} for row in document.paragraph_locators] == [{"page": 1, "page_paragraph": 1}, {"page": 2, "page_paragraph": 1}]
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps({"format": 1, "sources": [{"id": "pdf-one", "path": path.name,
                          "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}]}))

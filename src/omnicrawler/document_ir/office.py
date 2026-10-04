@@ -55,7 +55,7 @@ def _parse_docx(path: Path, options: dict[str, Any]) -> DocumentIR:
 
     core = document.core_properties
     title = paragraphs[0] if paragraphs else (core.title or path.stem)
-    if title == paragraphs[0] and paragraphs:
+    if paragraphs and title == paragraphs[0]:
         paragraphs = paragraphs[1:]
     elif not paragraphs:
         title = path.stem
@@ -102,7 +102,7 @@ def _parse_pptx(path: Path, options: dict[str, Any]) -> DocumentIR:
                 )
 
     title = paragraphs[0] if paragraphs else path.stem
-    if title == paragraphs[0] and paragraphs:
+    if paragraphs and title == paragraphs[0]:
         paragraphs = paragraphs[1:]
 
     return DocumentIR(
@@ -133,7 +133,7 @@ def _parse_odt(path: Path, options: dict[str, Any]) -> DocumentIR:
             paragraphs.append(" ".join(text.split()))
 
     title = paragraphs[0] if paragraphs else path.stem
-    if title == paragraphs[0] and paragraphs:
+    if paragraphs and title == paragraphs[0]:
         paragraphs = paragraphs[1:]
 
     return DocumentIR(
@@ -226,7 +226,7 @@ def _parse_epub(path: Path, options: dict[str, Any]) -> DocumentIR:
                     paragraphs.append(item)
 
     title = paragraphs[0] if paragraphs else path.stem
-    if title == paragraphs[0] and paragraphs:
+    if paragraphs and title == paragraphs[0]:
         paragraphs = paragraphs[1:]
 
     return DocumentIR(

@@ -13,7 +13,7 @@ from .config import ProjectConfig
 from .database import Database
 from .utils import clean_text, utcnow
 
-PARSER_VERSION = "native-1.0"
+PARSER_VERSION = "native-1.1"
 
 # D16：同一文档解析失败最大次数，超过后置 parse_dead 排除
 MAX_PARSE_ATTEMPTS = 3
@@ -73,7 +73,7 @@ def open_document(path: str):
     return pdfium.PdfDocument(path)
 
 
-def _iter_parsed_pages(path: str, min_chars: int, max_garbled_ratio: float):
+def _iter_parsed_pages(path: str, min_chars: int, max_garbled_ratio: float, *, include_structure: bool = False):
     """D36：逐页 yield 解析结果，避免整文档 pages 列表常驻内存（数千页大文件内存峰值受控）。
 
     Phase 0（M0a）：fitz → pdfplumber（文本/表格/图像）+ pypdf 前置加密检测。
@@ -94,12 +94,14 @@ def _iter_parsed_pages(path: str, min_chars: int, max_garbled_ratio: float):
                 # D12：页面图像覆盖超 60%（纯图表格页夹带页眉页脚误判有文字层）→ 强制 OCR
                 needs_ocr = True
             final_text = text
+            structures = _extract_table_structures(page) if include_structure and not needs_ocr else None
             if not needs_ocr:
                 # D8：原生文字层表格结构恢复（find_tables → Markdown），期初/期末等列归属不再丢失
-                table_md = _extract_tables_markdown(page)
+                table_md = _extract_tables_markdown(page, structures=structures)
                 if table_md:
                     final_text = f"{text}\n\n[表格结构]\n{table_md}".strip()
             yield {
+                **({"words": page.extract_words(), "tables": structures or []} if include_structure and not needs_ocr else {}),
                 "page_no": page_index + 1,
                 "width": float(page.width),
                 "height": float(page.height),
@@ -119,40 +121,32 @@ def parse_document(path: str, min_chars: int, max_garbled_ratio: float) -> dict[
     return {"page_count": len(pages), "pages": pages}
 
 
-def _extract_tables_markdown(page) -> str:
-    """用 pdfplumber find_tables 把页面表格恢复为 Markdown 表格。
-
-    D8：纯文本提取会把表格行列压平；这里保留列结构，
-    供下游（LLM/规则/人工）按列归属读取财务数据。
-    Phase 0：fitz.find_tables → pdfplumber.find_tables（API 同构：extract() 返回行列二维数组）。
-    """
+def _extract_table_structures(page) -> list[dict[str, Any]]:
     try:
         tables = page.find_tables()
-    except Exception:  # noqa: BLE001 - 表格检测失败不应中断解析
-        return ""
-    if not tables:
-        return ""
-    parts: list[str] = []
+    except Exception:  # noqa: BLE001 - optional table detection
+        return []
+    structures = []
     for table in tables:
         data = table.extract()
-        if not data:
-            continue
-        rows: list[list[str]] = []
-        for row in data:
-            rows.append([
-                str(cell).replace("\r", " ").replace("\n", " ").strip()
-                if cell is not None else ""
-                for cell in row
-            ])
-        if not rows:
-            continue
+        if data:
+            rows = [[str(cell).replace("\r", " ").replace("\n", " ").strip() if cell is not None else "" for cell in row] for row in data]
+            structures.append({"cells": rows, **({"bbox": list(table.bbox)} if hasattr(table, "bbox") else {})})
+    return structures
+
+
+def _extract_tables_markdown(page, *, structures: list[dict[str, Any]] | None = None) -> str:
+    tables = _extract_table_structures(page) if structures is None else structures
+    parts = []
+    for table in tables:
+        rows = table["cells"]
         width = max(len(row) for row in rows)
-        header = rows[0]
-        parts.append("| " + " | ".join(header) + " |")
-        parts.append("|" + "|".join(["---"] * max(width, 1)) + "|")
-        for row in rows[1:]:
+        def render(row, width=width):
             padded = row + [""] * (width - len(row))
-            parts.append("| " + " | ".join(padded) + " |")
+            return "| " + " | ".join(cell.replace("|", "\\|") for cell in padded) + " |"
+        parts.append(render(rows[0]))
+        parts.append("|" + "|".join(["---"] * max(width, 1)) + "|")
+        parts.extend(render(row) for row in rows[1:])
         parts.append("")
     return "\n".join(parts).strip()
 
