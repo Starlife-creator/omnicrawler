@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -64,6 +65,21 @@ class FieldDef:
     example: str = ""           # 示例值（帮助 LLM 理解）
     required: bool = False
     field_type: str = "text"    # text | number | date | url | list
+    nullable: bool | None = None
+    allow_empty: bool = False
+    minimum: float | None = None
+    maximum: float | None = None
+    values: tuple[Any, ...] = ()
+    items: dict[str, Any] | None = None
+    properties: dict[str, Any] | None = None
+
+    def contract_rule(self) -> dict[str, Any]:
+        from ..quality.schema_registry import FieldContract
+
+        return FieldContract(self.name, self.field_type, self.description, required=self.required,
+                             nullable=self.nullable, allow_empty=self.allow_empty, minimum=self.minimum,
+                             maximum=self.maximum, enum=self.values, items=self.items,
+                             properties=self.properties).to_rule()
 
 
 @dataclass
@@ -159,19 +175,22 @@ class AIGraphExtractor:
 
         semaphore = asyncio.Semaphore(self._concurrency)
 
-        async def run_one(chunk: str) -> dict[str, Any]:
+        async def run_one(index: int, chunk: str) -> dict[str, Any]:
             async with semaphore:
-                return await self._extract_chunk(chunk, fields, max_tokens_per_chunk, session=session)
+                result = await self._extract_chunk(chunk, fields, max_tokens_per_chunk, session=session)
+                return {**result, "_chunk_index": index}
 
         # D56：复用单个 Session + asyncio.gather 并发，不再每分块新建连接
         async with self._create_session() as session:
             results = await asyncio.gather(
-                *(run_one(c) for c in chunks), return_exceptions=True
+                *(run_one(index, chunk) for index, chunk in enumerate(chunks)), return_exceptions=True
             )
 
         ok_results: list[dict] = []
         errors: list[str] = []
         for index, item in enumerate(results):
+            if isinstance(item, asyncio.CancelledError):
+                raise item
             if isinstance(item, Exception):
                 errors.append(f"chunk[{index}]: {item}")
                 LOGGER.warning("AI 提取分块失败: %s", item)
@@ -182,7 +201,7 @@ class AIGraphExtractor:
         if not ok_results:
             raise RuntimeError(f"AI 提取全部分块失败: {'; '.join(str(e) for e in errors[:3])}")
 
-        merged = self._merge_results(ok_results, len(chunks))
+        merged = self._merge_results(ok_results, len(chunks), fields=fields)
         merged["failed_chunks"] = len(errors)
         merged["errors"] = errors
         self._assess_target(merged, fields)
@@ -419,6 +438,7 @@ class AIGraphExtractor:
                 line += f" (如: {f.example})"
             if f.required:
                 line += " [必填]"
+            line += "\n  " + json.dumps(f.contract_rule(), ensure_ascii=False)
             lines.append(line)
         return "\n".join(lines)
 
@@ -473,7 +493,7 @@ class AIGraphExtractor:
 
         if not fields:
             return  # Legacy graph-only responses have no declared target fields.
-        schema = {field.name: {"type": field.field_type, "required": field.required} for field in fields}
+        schema = {field.name: field.contract_rule() for field in fields}
         if len(schema) != len(fields) or any(not name.strip() for name in schema):
             raise ValueError("AI 目标字段名称必须非空且唯一")
         values = result.get("fields", {})
@@ -482,32 +502,41 @@ class AIGraphExtractor:
         result["review_required"] = bool(missing or result.get("conflicts") or result.get("failed_chunks"))
 
     def _merge_results(
-        self, results: list[dict], total_chunks: int
+        self, results: list[dict], total_chunks: int, *, fields: list[FieldDef] | None = None
     ) -> dict[str, Any]:
         """合并多个分块的提取结果。
 
         D59：记录字段冲突（后者非空且与首个不同）；置信度仅对实际产出字段的分块求均。
         """
+        rules = {field.name: field for field in fields or []}
         merged_fields: dict[str, Any] = {}
         confidences: list[float] = []
         conflicts: list[dict[str, Any]] = []
 
-        for r in results:
-            fields = r.get("fields", {})
-            if isinstance(fields, dict):
-                for name, value in fields.items():
-                    if value is None or value == "" or value == []:  # Preserve legitimate 0 and False values.
+        sources: dict[str, list[int]] = {}
+        for index, r in enumerate(results):
+            chunk_fields = r.get("fields", {})
+            chunk_index = r.get("_chunk_index", index)
+            if isinstance(chunk_fields, dict):
+                for name, value in chunk_fields.items():
+                    rule = rules.get(name)
+                    if value is None and (rule is None or rule.nullable is not True):
                         continue
+                    if (value == "" or value == []) and (rule is None or not rule.allow_empty):
+                        continue
+                    sources.setdefault(name, []).append(chunk_index)
                     if name not in merged_fields:
                         merged_fields[name] = value
-                    elif merged_fields[name] != value:
+                    elif json.dumps(merged_fields[name], sort_keys=True) != json.dumps(value, sort_keys=True):
                         conflicts.append({
                             "field": name,
                             "first": merged_fields[name],
                             "later": value,
+                            "chunk_index": chunk_index,
+                            "first_chunk_index": sources[name][0],
                         })
             conf = r.get("confidence", 0.0)
-            if fields and isinstance(conf, (int, float)):
+            if chunk_fields and type(conf) in (int, float):
                 confidences.append(float(conf))
 
         avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
@@ -518,6 +547,7 @@ class AIGraphExtractor:
             "chunks_processed": len(results),
             "total_chunks": total_chunks,
             "conflicts": conflicts,
+            "field_sources": sources,
         }
 
 

@@ -8,10 +8,23 @@ from typing import Any
 
 from ..core.models import ExtractedRecord
 from ..core.safe_data import safe_regex_search
+from .schema_registry import validate_target_fields
 
 
 def _missing(value: Any) -> bool:
     return value is None or value == "" or value == []
+
+
+def _field_missing(data: dict[str, Any], name: str, rule: Any) -> bool:
+    if name not in data:
+        return True
+    value = data[name]
+    if isinstance(rule, dict) and rule.get("strict_json"):
+        if value is None and rule.get("nullable") is True:
+            return False
+        if (value == "" or value == []) and rule.get("allow_empty"):
+            return False
+    return _missing(value)
 
 
 def _required_fields(record: ExtractedRecord, fields: dict[str, Any]) -> list[str]:
@@ -73,15 +86,30 @@ def assess_record(
     threshold: float = 0.8,
 ) -> dict[str, Any]:
     required = _required_fields(record, fields)
-    missing = [name for name in required if _missing(record.data.get(name))]
+    missing = [name for name in required if _field_missing(record.data, name, fields.get(name))]
     errors: list[str] = []
     present = 0
     for name, raw_rule in fields.items():
         field_name = str(name)
         value = record.data.get(field_name)
-        if not _missing(value):
+        if not _field_missing(record.data, field_name, raw_rule):
             present += 1
-        if not isinstance(raw_rule, dict) or _missing(value):
+        if not isinstance(raw_rule, dict):
+            continue
+        if raw_rule.get("strict_json"):
+            try:
+                strict_missing = validate_target_fields(
+                    {field_name: value} if field_name in record.data else {}, {field_name: raw_rule},
+                )
+            except ValueError as exc:
+                errors.append(f"{field_name}: {exc}")
+            else:
+                if field_name not in strict_missing and field_name in missing:
+                    missing.remove(field_name)
+            if not _missing(value) or raw_rule.get("allow_empty") or raw_rule.get("nullable") is True:
+                _compare_fields(record, field_name, value, raw_rule, errors)
+            continue
+        if _missing(value):
             continue
         rule = raw_rule
         # B06-002：pattern 匹配统一走 safe_regex_search（与 normalizers 对齐），防病态正则自 DOS。
@@ -199,7 +227,7 @@ def assess_records(
     field_stats: dict[str, dict[str, int]] = {}
     for name in fields:
         field_name = str(name)
-        present = sum(not _missing(record.data.get(field_name)) for record in records)
+        present = sum(not _field_missing(record.data, field_name, fields[name]) for record in records)
         invalid = sum(
             any(
                 str(error).startswith(f"{field_name}:")
