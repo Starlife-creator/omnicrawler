@@ -181,6 +181,7 @@ class AIGraphExtractor:
         merged = self._merge_results(ok_results, len(chunks))
         merged["failed_chunks"] = len(errors)
         merged["errors"] = errors
+        self._assess_target(merged, fields)
         return merged
 
     async def extract_single_page(
@@ -190,7 +191,9 @@ class AIGraphExtractor:
         import aiohttp
 
         async with aiohttp.ClientSession() as session:
-            return await self._extract_chunk(html, fields, self._provider.max_tokens, session=session)
+            result = await self._extract_chunk(html, fields, self._provider.max_tokens, session=session)
+            self._assess_target(result, fields)
+            return result
 
     # ── 内部分块 ──────────────────────────────────────────────────────
 
@@ -360,10 +363,10 @@ class AIGraphExtractor:
         if not isinstance(choices, list) or not choices:
             # S2.5.15：LLM 返回 {"choices":[]} 时记 warning 降级，不再 IndexError
             LOGGER.warning("AI API 返回空 choices，按空内容降级: %s", self._provider.base_url)
-            return self._parse_response("{}")
+            return self._parse_response("{}", fields)
 
         content = choices[0].get("message", {}).get("content", "{}")
-        return self._parse_response(content)
+        return self._parse_response(content, fields)
 
     def _build_fields_spec(self, fields: list[FieldDef]) -> str:
         """构建字段描述。"""
@@ -379,7 +382,7 @@ class AIGraphExtractor:
             lines.append(line)
         return "\n".join(lines)
 
-    def _parse_response(self, content: str) -> dict[str, Any]:
+    def _parse_response(self, content: str, fields: list[FieldDef] | None = None) -> dict[str, Any]:
         """解析 LLM JSON 响应（S3.2.1：解析结果经 validate_ai_output 校验）。"""
         # 尝试提取 JSON（可能有 markdown 包裹）
         content = content.strip()
@@ -396,12 +399,14 @@ class AIGraphExtractor:
             if match:
                 parsed = safe_json_loads(match.group())
         if not isinstance(parsed, dict):
+            if fields is not None:
+                raise ValueError("AI 响应不是 JSON 对象")
             LOGGER.warning("无法解析 AI 响应为 JSON: %.200s", content)
             return {"fields": {}, "confidence": 0.0}
         try:
             from ..services.ai_safety import validate_ai_output
 
-            return validate_ai_output(parsed, {
+            result = validate_ai_output(parsed, {
                 "fields": dict,
                 "confidence": (int, float),
                 "messages": list,
@@ -409,10 +414,30 @@ class AIGraphExtractor:
                 "edges": list,
                 "summary": str,
             })
+            if fields is not None:
+                confidence = result.get("confidence", 0.0)
+                if type(confidence) not in (int, float) or not 0 <= confidence <= 1:
+                    raise ValueError("AI 置信度需要 0 到 1 之间的数字")
+                self._assess_target(result, fields)
+            return result
         except ValueError as exc:
+            if fields is not None:
+                raise
             # LLM 返回未声明字段/类型错误——按不可信输入降级，不中断管线
             LOGGER.warning("AI 输出校验未通过，按空结果降级: %s", exc)
             return {"fields": {}, "confidence": 0.0}
+
+    @staticmethod
+    def _assess_target(result: dict[str, Any], fields: list[FieldDef]) -> None:
+        from ..services.ai_safety import validate_target_fields
+
+        schema = {field.name: {"type": field.field_type, "required": field.required} for field in fields}
+        if len(schema) != len(fields) or any(not name.strip() for name in schema):
+            raise ValueError("AI 目标字段名称必须非空且唯一")
+        values = result.get("fields", {})
+        missing = validate_target_fields(values, schema)
+        result["missing_required"] = missing
+        result["review_required"] = bool(missing or result.get("conflicts") or result.get("failed_chunks"))
 
     def _merge_results(
         self, results: list[dict], total_chunks: int
