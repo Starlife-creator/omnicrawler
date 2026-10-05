@@ -35,7 +35,7 @@ class RunsMixin:
     if TYPE_CHECKING:
         @staticmethod
         def _require_run_id(run_id: str | None) -> str | None: ...
-    def start_run(self, project_name: str, config_path: str) -> str:
+    def start_run(self, project_name: str, config_path: str, *, task_id: str = "") -> str:
         run_id = uuid.uuid4().hex
         with self._lock, self.conn:
             self.conn.execute(
@@ -48,6 +48,10 @@ class RunsMixin:
                 (run_id, "pending", "running", "start", "{}", utcnow()),
             )
             self.conn.execute("UPDATE runs SET status='running' WHERE run_id=?", (run_id,))
+            self.conn.execute(
+                "INSERT INTO run_identities(run_id, task_key) VALUES(?,?)",
+                (run_id, "id:" + task_id if task_id else "legacy:" + project_name),
+            )
         return run_id
 
     def finish_run(self, run_id: str, status: str, summary: dict[str, Any]) -> None:

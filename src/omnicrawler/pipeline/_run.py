@@ -109,7 +109,7 @@ class _PipelineRun(_PipelineBase):
         self.resource_guard.check(force=True)
         self.run_control.reset()
         self.egress.reconnect_task()
-        run_id = self.state.start_run(self.config.project_name, str(self.config.path))
+        run_id = self.state.start_run(self.config.project_name, str(self.config.path), task_id=str(self.config.section("project").get("task_id", "")))
         self.registry.bind_plugin_run(run_id)
         tracker._task_id = run_id
         tracker.start()
@@ -631,7 +631,7 @@ class _PipelineRun(_PipelineBase):
         self.resource_guard.check(force=True)
         self.run_control.reset()
         self.egress.reconnect_task()
-        run_id = self.state.start_run(self.config.project_name, str(self.config.path))
+        run_id = self.state.start_run(self.config.project_name, str(self.config.path), task_id=str(self.config.section("project").get("task_id", "")))
         self.registry.bind_plugin_run(run_id)
 
         stages = (

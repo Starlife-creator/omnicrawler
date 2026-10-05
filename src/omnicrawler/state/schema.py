@@ -101,6 +101,26 @@ CREATE TABLE IF NOT EXISTS records (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS run_identities (
+    run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
+    task_key TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS entity_observations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL REFERENCES runs(run_id),
+    task_key TEXT NOT NULL,
+    comparison_scope TEXT NOT NULL,
+    source_url TEXT NOT NULL,
+    record_type TEXT NOT NULL,
+    identity TEXT NOT NULL,
+    data_json TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    UNIQUE(run_id, source_url, record_type, identity)
+);
+CREATE INDEX IF NOT EXISTS idx_entity_observations_lookup
+    ON entity_observations(task_key, comparison_scope, record_type, identity, id);
+
 CREATE TABLE IF NOT EXISTS record_versions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id TEXT NOT NULL REFERENCES runs(run_id),

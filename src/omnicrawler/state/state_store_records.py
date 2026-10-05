@@ -64,11 +64,16 @@ class RecordsMixin:
                 "SELECT content_sha256 FROM responses WHERE run_id=? AND request_fingerprint=? "
                 "ORDER BY id DESC LIMIT 1", (run_id, result.request.fingerprint),
             ).fetchone()
+            task_key, _scope = self._observation_context(run_id)
             row = self.conn.execute(
-                "SELECT run_id, payload_json FROM stage_checkpoints "
-                "WHERE stage='record_observation' AND idempotency_key=? AND run_id<>? "
-                "ORDER BY updated_at DESC, rowid DESC LIMIT 1",
-                (result.request.fingerprint, run_id),
+                "SELECT c.run_id, c.payload_json FROM stage_checkpoints c "
+                "JOIN runs u ON u.run_id=c.run_id LEFT JOIN run_identities i ON i.run_id=c.run_id "
+                "JOIN stage_checkpoints s ON s.run_id=c.run_id AND s.stage='setup' AND s.idempotency_key='setup' "
+                "WHERE c.stage='record_observation' AND c.idempotency_key=? AND c.run_id<>? "
+                "AND COALESCE(i.task_key, 'legacy:' || u.project_name)=? "
+                "AND json_extract(s.payload_json,'$.comparison_scope')=? "
+                "ORDER BY c.updated_at DESC, c.rowid DESC LIMIT 1",
+                (result.request.fingerprint, run_id, task_key, scope),
             ).fetchone()
         if row is None:
             return False
@@ -160,6 +165,17 @@ class RecordsMixin:
                 inserted += self.conn.total_changes - before
         return inserted
 
+    def _observation_context(self, run_id: str) -> tuple[str, str]:
+        identity = self.conn.execute("SELECT task_key FROM run_identities WHERE run_id=?", (run_id,)).fetchone()
+        task_key = identity["task_key"] if identity is not None else None
+        if not task_key:
+            row = self.conn.execute("SELECT project_name FROM runs WHERE run_id=?", (run_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"运行不存在: {run_id}")
+            task_key = "legacy:" + str(row["project_name"])
+        scope = (self.checkpoint(run_id, "setup", "setup") or {}).get("payload", {}).get("comparison_scope", "")
+        return str(task_key), str(scope)
+
     def _preload_versions(
         self,
         run_id: str,
@@ -195,20 +211,30 @@ class RecordsMixin:
             "INSERT INTO _rv_lookup VALUES(?,?,?)",
             unique_keys,
         )
+        task_key, scope = self._observation_context(run_id)
         rows = self.conn.execute(
             """
-            SELECT l.source_url, l.record_type, l.identity,
-                   r.data_json AS data_json
+            SELECT l.source_url, l.record_type, l.identity, r.data_json
             FROM _rv_lookup l
-            LEFT JOIN record_versions r
-                ON r.source_url = l.source_url
-               AND r.record_type = l.record_type
-               AND r.identity = l.identity
-               AND r.run_id <> ?
+            LEFT JOIN entity_observations r
+                ON (r.source_url = l.source_url OR ?)
+               AND r.record_type = l.record_type AND r.identity = l.identity
+               AND r.run_id <> ? AND r.task_key = ? AND r.comparison_scope = ?
             ORDER BY r.id DESC
             """,
-            (run_id,),
+            (bool(identity_fields), run_id, task_key, scope),
         ).fetchall()
+        # Legacy versions are a fallback only for legacy tasks without scoped observations.
+        if task_key.startswith("legacy:") and not scope:
+            legacy = self.conn.execute(
+                "SELECT l.source_url, l.record_type, l.identity, v.data_json "
+                "FROM _rv_lookup l JOIN record_versions v ON v.source_url=l.source_url "
+                "AND v.record_type=l.record_type AND v.identity=l.identity "
+                "JOIN runs u ON u.run_id=v.run_id WHERE v.run_id<>? AND u.project_name=? "
+                "ORDER BY v.last_seen_at DESC, v.id DESC",
+                (run_id, task_key.removeprefix("legacy:")),
+            ).fetchall()
+            rows.extend(legacy)
         self.conn.execute("DELETE FROM _rv_lookup")
         seen_results: set[tuple[str, str, str]] = set()
         for row in rows:
@@ -219,21 +245,23 @@ class RecordsMixin:
         return result
 
     def _is_first_record_cycle(self, run_id: str) -> bool:
-        """本 run 是否是该任务的**首个产出记录周期**（决定初始记录算不算"基线"）。
+        """Identify the first observation cycle within the stable task and scope.
 
-        ★ 按 **project_name** 判定，**不能按 config_path**：GUI 每次运行都会把配置另存为
-        `configs/<项目名>_<时间戳>.yaml`（见 `WorkerTaskRunner.start`），因此 config_path
-        每次都是新的 —— 用它判定会把"同一任务的第二轮"误当首轮（实测：第二轮的新增记录
-        被错标为基线，端到端用例当场失败）。同一工作区里不同任务由 project_name 区分。
-
-        `LIMIT 1` 只做存在性判断，成本低。
+        Legacy callers retain project-name isolation; explicit IDs survive renaming.
         """
+        task_key, scope = self._observation_context(run_id)
         row = self.conn.execute(
-            "SELECT 1 FROM records r JOIN runs u ON u.run_id = r.run_id "
-            "WHERE r.run_id != ? "
-            "AND u.project_name = (SELECT project_name FROM runs WHERE run_id = ?) LIMIT 1",
-            (run_id, run_id),
+            "SELECT 1 FROM entity_observations WHERE run_id<>? AND task_key=? AND comparison_scope=? LIMIT 1",
+            (run_id, task_key, scope),
         ).fetchone()
+        if row is not None:
+            return False
+        if task_key.startswith("legacy:") and not scope:
+            row = self.conn.execute(
+                "SELECT 1 FROM records r JOIN runs u ON u.run_id=r.run_id "
+                "WHERE r.run_id<>? AND u.project_name=? LIMIT 1",
+                (run_id, task_key.removeprefix("legacy:")),
+            ).fetchone()
         return row is None
 
     def track_semantic_changes(
@@ -252,12 +280,22 @@ class RecordsMixin:
             # 首轮同步：本次是该任务的第一个产出记录的周期 ⇒ 初始记录的 added 属"基线"，
             # 不是"发生了变化"。只标事实，不在数据层判断"要不要提示用户"。
             first_cycle = self._is_first_record_cycle(run_id)
+            task_key, scope = self._observation_context(run_id)
             for record in records:
                 identity = record_identity(record.data, record.source_url, identity_fields=identity_fields)
                 digest = semantic_hash(record.data, ignored_fields=ignored_fields)
                 cache_key = (record.source_url, record.record_type, identity)
                 before_json = version_cache.get(cache_key)
                 before = json.loads(before_json) if before_json else None
+                observed = self.conn.execute(
+                    "SELECT data_json FROM entity_observations WHERE run_id=? AND record_type=? "
+                    "AND identity=? AND (source_url=? OR ?) LIMIT 1",
+                    (run_id, record.record_type, identity, record.source_url, bool(identity_fields)),
+                ).fetchone()
+                if observed is not None:
+                    if semantic_hash(json.loads(observed["data_json"]), ignored_fields=ignored_fields) != digest:
+                        raise ValueError("同轮业务身份存在冲突值；请复核，不能静默覆盖")
+                    before = record.data
                 change = compare_record_data(before, record.data, identity=identity, ignored_fields=ignored_fields)
                 if first_cycle and change.change_type == "added":
                     change = replace(change, baseline=True)
@@ -293,6 +331,12 @@ class RecordsMixin:
                             now,
                         ),
                     )
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO entity_observations "
+                    "(run_id,task_key,comparison_scope,source_url,record_type,identity,data_json,observed_at) "
+                    "VALUES(?,?,?,?,?,?,?,?)",
+                    (run_id, task_key, scope, record.source_url, record.record_type, identity, json_text(record.data), now),
+                )
                 self.conn.execute(
                     """
                     INSERT INTO record_versions(
@@ -338,5 +382,6 @@ class RecordsMixin:
             self.conn.execute(
                 "DELETE FROM stage_checkpoints WHERE run_id=? AND stage='record_observation'", (run_id,),
             )
+            self.conn.execute("DELETE FROM entity_observations WHERE run_id=?", (run_id,))
             self.conn.execute("DELETE FROM record_versions WHERE run_id=?", (run_id,))
         return {"records": int(record_count), "quality_stats": int(quality_count)}
