@@ -31,12 +31,14 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from ..core.safe_data import safe_regex_search
@@ -82,10 +84,36 @@ class MonitorRule:
     last_content: str | None = None
     last_checked: datetime | None = None
     created_at: datetime | None = None
+    consecutive_checks: int = 1
+    cooldown_seconds: int = 0
+    minimum_absolute_change: float | None = None
+    minimum_relative_change: float | None = None
+    ignored_selectors: list[str] = field(default_factory=list)
+    webhook_url: str = ""
+    webhook_token_ref: str = ""
+    candidate_hash: str | None = None
+    candidate_count: int = 0
+    observed_content: str | None = None
+    observed_hash: str | None = None
+    last_notified: datetime | None = None
+    last_notified_content: str | None = None
 
     def __post_init__(self) -> None:
         import uuid
 
+        if type(self.consecutive_checks) is not int or not 1 <= self.consecutive_checks <= 100:
+            raise ValueError("连续确认次数需要在 1 到 100 之间")
+        if type(self.cooldown_seconds) is not int or not 0 <= self.cooldown_seconds <= 604800:
+            raise ValueError("冷却时间需要在 0 到 604800 秒之间")
+        for value in (self.minimum_absolute_change, self.minimum_relative_change):
+            if value is not None and (type(value) not in (int, float) or not math.isfinite(value) or value < 0):
+                raise ValueError("变化阈值需要是有限非负数字")
+        if self.webhook_url:
+            parsed = urlparse(self.webhook_url)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+                raise ValueError("Webhook 需要不含明文凭据的 HTTP(S) URL")
+        if self.webhook_token_ref and not self.webhook_token_ref.startswith("secret://"):
+            raise ValueError("Webhook 凭据必须使用 secret:// 引用")
         if not self.rule_id:
             self.rule_id = uuid.uuid4().hex[:12]
         if self.created_at is None:
@@ -96,12 +124,13 @@ class MonitorRule:
         d = asdict(self)
         d["created_at"] = self.created_at.isoformat() if self.created_at else None
         d["last_checked"] = self.last_checked.isoformat() if self.last_checked else None
+        d["last_notified"] = self.last_notified.isoformat() if self.last_notified else None
         return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> MonitorRule:
         data = dict(data)
-        for key in ("created_at", "last_checked"):
+        for key in ("created_at", "last_checked", "last_notified"):
             val = data.get(key)
             if isinstance(val, str):
                 try:
@@ -137,6 +166,8 @@ class ChangeEvent:
     current_content: str | None = None
     diff_summary: str = ""
     event_id: str = field(default_factory=lambda: uuid4().hex)
+    notification_eligible: bool = True
+    notification_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -198,9 +229,12 @@ class ChangeDetector:
         使每轮重建规则对象仍能正确比较。
         """
         baseline = self._baselines.get(rule.rule_id)
-        if baseline and rule.last_hash is None:
-            rule.last_hash = baseline.get("last_hash")
-            rule.last_content = baseline.get("last_content")
+        if baseline:
+            for name in ("last_hash", "last_content", "candidate_hash", "candidate_count", "last_notified_content"):
+                if name in baseline:
+                    setattr(rule, name, baseline[name])
+            if baseline.get("last_notified"):
+                rule.last_notified = datetime.fromisoformat(baseline["last_notified"])
         self._rules[rule.rule_id] = rule
         LOGGER.info("添加监控规则: %s (%s)", rule.name, rule.rule_id)
         return rule.rule_id
@@ -458,8 +492,21 @@ class ChangeDetector:
             return None
 
         # 提取目标区域
+        if rule.ignored_selectors:
+            from ..extraction.html_tools import MiniNode, node_markup, parse_html, select_nodes
+            tree = parse_html(html)
+            for selector in rule.ignored_selectors:
+                for node in select_nodes(tree, selector):
+                    if isinstance(node, MiniNode):
+                        if node.parent is not None and node in node.parent.children:
+                            node.parent.children.remove(node)
+                    else:
+                        node.decompose()
+            html = node_markup(tree)
         content = self._extract_content(html, rule.selector)
+        rule.observed_content = content
         current_hash = self._compute_hash(content)
+        rule.observed_hash = current_hash
 
         # 首次检查：建立基线
         if rule.last_hash is None:
@@ -471,6 +518,7 @@ class ChangeDetector:
 
         # 无变化
         if current_hash == rule.last_hash:
+            rule.candidate_hash, rule.candidate_count = None, 0
             rule.last_checked = now
             self._persist_baseline(rule)
             return None
@@ -478,6 +526,13 @@ class ChangeDetector:
         # 检查条件
         if not self._check_condition(content, rule.condition):
             rule.last_checked = now
+            self._persist_baseline(rule)
+            return None
+        rule.candidate_count = rule.candidate_count + 1 if rule.candidate_hash == current_hash else 1
+        rule.candidate_hash = current_hash
+        if rule.candidate_count < rule.consecutive_checks:
+            rule.last_checked = now
+            self._persist_baseline(rule)
             return None
 
         # 变化事件
@@ -493,6 +548,11 @@ class ChangeDetector:
             diff_summary=self._build_diff_summary(rule.last_content or "", content),
         )
 
+        event.notification_reason = self._notification_reason(rule, content, now)
+        event.notification_eligible = not event.notification_reason
+        if event.notification_eligible:
+            rule.last_notified, rule.last_notified_content = now, content
+        rule.candidate_hash, rule.candidate_count = None, 0
         # 更新基线
         rule.last_hash = current_hash
         rule.last_content = content
@@ -511,6 +571,37 @@ class ChangeDetector:
 
         LOGGER.info("检测到变化: %s — %s", rule.name, event.diff_summary)
         return event
+
+    @staticmethod
+    def _notification_reason(rule: MonitorRule, content: str, now: datetime) -> str:
+        if rule.cooldown_seconds and rule.last_notified and (now - rule.last_notified).total_seconds() < rule.cooldown_seconds:
+            return "cooldown"
+        if rule.minimum_absolute_change is not None or rule.minimum_relative_change is not None:
+            try:
+                before = float(rule.last_notified_content if rule.last_notified_content is not None else rule.last_content or "")
+                after = float(content)
+            except ValueError:
+                return "numeric_value_unavailable"
+            if not math.isfinite(before) or not math.isfinite(after):
+                return "numeric_value_unavailable"
+            delta = abs(after - before)
+            if rule.minimum_absolute_change is not None and delta < rule.minimum_absolute_change:
+                return "below_absolute_threshold"
+            if rule.minimum_relative_change is not None:
+                if before == 0:
+                    return "relative_baseline_zero"
+                if delta / abs(before) < rule.minimum_relative_change:
+                    return "below_relative_threshold"
+        return ""
+
+    def pending_notifications(self, *, force: bool = False) -> list[ChangeEvent]:
+        active = {key for key, rule in self._rules.items() if rule.enabled}
+        events = []
+        for row in self._store.pending(active, force=force):
+            payload = json.loads(row["body_json"])
+            payload["detected_at"] = datetime.fromisoformat(payload["detected_at"])
+            events.append(ChangeEvent(**payload))
+        return events
 
     def retry_notifications(self, *, force: bool = False, _event: ChangeEvent | None = None) -> None:
         if self._cancelled or not self._running or self._on_notify is None:
@@ -575,22 +666,33 @@ class ChangeDetector:
 
     def _persist_baseline(self, rule: MonitorRule, event: ChangeEvent | None = None) -> None:
         """把规则的 last_hash/last_content/last_checked 写入磁盘基线。"""
+        from .webhook import webhook_target_id
+
         previous = self._baselines.get(rule.rule_id)
         self._baselines[rule.rule_id] = {
             "last_hash": rule.last_hash,
             "last_content": rule.last_content,
             "last_checked": rule.last_checked.isoformat() if rule.last_checked else None,
+            "candidate_hash": rule.candidate_hash, "candidate_count": rule.candidate_count,
+            "observed_content": rule.observed_content, "observed_hash": rule.observed_hash,
+            "last_notified": rule.last_notified.isoformat() if rule.last_notified else None,
+            "last_notified_content": rule.last_notified_content,
         }
         try:
             self._store.save(rule.rule_id, self._baselines[rule.rule_id],
                              event.to_dict() if event is not None else None,
-                             pending=self._on_notify is not None or self._durable_delivery)
+                             pending=self._on_notify is not None or self._durable_delivery,
+                             targets=[webhook_target_id(rule)] if rule.webhook_url else [], expected=previous)
         except Exception:
             restored = previous or {"last_hash": event.previous_hash if event else None,
                                     "last_content": event.previous_content if event else None}
             rule.last_hash = restored.get("last_hash")
             rule.last_content = restored.get("last_content")
             rule.last_checked = None
+            rule.candidate_hash = restored.get("candidate_hash")
+            rule.candidate_count = restored.get("candidate_count", 0)
+            rule.last_notified_content = restored.get("last_notified_content")
+            rule.last_notified = datetime.fromisoformat(restored["last_notified"]) if restored.get("last_notified") else None
             if previous is None:
                 self._baselines.pop(rule.rule_id, None)
             else:

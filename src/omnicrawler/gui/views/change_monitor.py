@@ -34,6 +34,8 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QSpinBox,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -88,8 +90,10 @@ class _CheckWorker(QThread):
         parent: QWidget | None = None,
         *,
         fetcher: Any = None,
+        mode: str = "check",
     ) -> None:
         super().__init__(parent)
+        self.mode = mode
         self._rules_json = rules_json
         self._fetcher = fetcher
         # 仅在**工作线程内**赋值/清空；`cancel()` 从 GUI 线程读取它并转调 detector
@@ -125,7 +129,17 @@ class _CheckWorker(QThread):
             if self.is_cancelled():
                 detector.cancel()
 
-            events = asyncio.run(detector.check_all())
+            events: list[Any]
+            if self.mode == "status":
+                events = detector.delivery_report()
+            elif self.mode == "retry":
+                events = detector.pending_notifications(force=True)
+            else:
+                events = asyncio.run(detector.check_all())
+            if self.mode != "status" and not self.is_cancelled():
+                from omnicrawler.scheduling.webhook import dispatch_webhooks
+                dispatch_webhooks(detector._store, detector.list_rules(), getattr(self._fetcher, "egress", None),
+                                  force=self.mode == "retry", cancelled=self.is_cancelled)
             if self.is_cancelled():
                 # 取消是正常终态：**不把（可能被截断的）结果当成功交付**，
                 # 但仍要发一个终态信号，调用方才能复位「进行中」状态。
@@ -154,7 +168,14 @@ class NewRuleDialog(QDialog):
         self.setMinimumSize(480, 420)
         self._rule_data = rule_data
 
-        layout = QFormLayout(self)
+        outer = QVBoxLayout(self)
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setAccessibleName(_("监控规则设置"))
+        content = QWidget(scroll)
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+        layout = QFormLayout(content)
         layout.setSpacing(10)
 
         # 规则名称
@@ -203,6 +224,35 @@ class NewRuleDialog(QDialog):
         self._interval_combo.setCurrentIndex(3)  # 默认 30 分钟
         layout.addRow(_("检查间隔:"), self._interval_combo)
 
+        self._consecutive = QSpinBox()
+        self._consecutive.setRange(1, 100)
+        self._consecutive.setAccessibleName(_("连续确认次数"))
+        layout.addRow(_("连续确认次数:"), self._consecutive)
+        self._cooldown = QSpinBox()
+        self._cooldown.setRange(0, 604800)
+        self._cooldown.setSuffix(_(" 秒"))
+        self._cooldown.setAccessibleName(_("通知冷却时间"))
+        layout.addRow(_("通知冷却:"), self._cooldown)
+        self._absolute = QLineEdit()
+        self._absolute.setPlaceholderText(_("可选；选区必须是数字"))
+        self._absolute.setAccessibleName(_("最小绝对变化"))
+        layout.addRow(_("最小绝对变化:"), self._absolute)
+        self._relative = QLineEdit()
+        self._relative.setPlaceholderText(_("可选；百分比，原值为零时需复核"))
+        self._relative.setAccessibleName(_("最小相对变化百分比"))
+        layout.addRow(_("最小相对变化 %:"), self._relative)
+        self._ignored = QLineEdit()
+        self._ignored.setPlaceholderText(_("用分号分隔 CSS 选择器"))
+        self._ignored.setAccessibleName(_("忽略区域"))
+        layout.addRow(_("忽略区域:"), self._ignored)
+        self._webhook = QLineEdit()
+        self._webhook.setPlaceholderText(_("可选；变化内容将发送至该地址"))
+        self._webhook.setAccessibleName(_("Webhook 接收地址"))
+        layout.addRow(_("Webhook:"), self._webhook)
+        self._webhook_token = QLineEdit()
+        self._webhook_token.setPlaceholderText(_("可选；secret:// 凭据引用"))
+        self._webhook_token.setAccessibleName(_("Webhook 凭据引用"))
+        layout.addRow(_("Webhook 凭据:"), self._webhook_token)
         # 通知方式
         notify_group = QGroupBox(_("通知方式"))
         notify_layout = QVBoxLayout(notify_group)
@@ -244,6 +294,15 @@ class NewRuleDialog(QDialog):
                 self._interval_combo.setCurrentIndex(idx)
                 break
 
+        self._consecutive.setValue(data.get("consecutive_checks", 1))
+        self._cooldown.setValue(data.get("cooldown_seconds", 0))
+        if data.get("minimum_absolute_change") is not None:
+            self._absolute.setText(str(data["minimum_absolute_change"]))
+        if data.get("minimum_relative_change") is not None:
+            self._relative.setText(str(data["minimum_relative_change"] * 100))
+        self._ignored.setText("; ".join(data.get("ignored_selectors", [])))
+        self._webhook.setText(data.get("webhook_url", ""))
+        self._webhook_token.setText(data.get("webhook_token_ref", ""))
         notify = data.get("notify_methods", ["desktop"])
         self._notify_desktop.setChecked("desktop" in notify)
         self._notify_sound.setChecked("sound" in notify)
@@ -322,6 +381,12 @@ class NewRuleDialog(QDialog):
             QMessageBox.warning(self, _("提示"), _("请输入目标 URL"))
             return
 
+        try:
+            from ...scheduling.change_detector import MonitorRule
+            MonitorRule.from_dict(self.get_rule_data())
+        except (ValueError, TypeError) as exc:
+            QMessageBox.warning(self, _("规则无效"), str(exc))
+            return
         self.accept()
 
     def get_rule_data(self) -> dict:
@@ -346,6 +411,11 @@ class NewRuleDialog(QDialog):
             "check_interval": self._interval_combo.currentData(),
             "notify_methods": notify_methods,
             "enabled": True,
+            "consecutive_checks": self._consecutive.value(), "cooldown_seconds": self._cooldown.value(),
+            "minimum_absolute_change": float(self._absolute.text()) if self._absolute.text().strip() else None,
+            "minimum_relative_change": float(self._relative.text()) / 100 if self._relative.text().strip() else None,
+            "ignored_selectors": [item.strip() for item in self._ignored.text().split(";") if item.strip()],
+            "webhook_url": self._webhook.text().strip(), "webhook_token_ref": self._webhook_token.text().strip(),
         }
 
         if self._rule_data:
@@ -496,6 +566,12 @@ class ChangeMonitorView(QWidget):
         check_all_btn.clicked.connect(self._check_all)
         toolbar.addWidget(check_all_btn)
 
+        delivery_btn = QPushButton(_("投递状态"))
+        delivery_btn.clicked.connect(lambda: self._delivery_action("status"))
+        toolbar.addWidget(delivery_btn)
+        retry_btn = QPushButton(_("重试通知"))
+        retry_btn.clicked.connect(lambda: self._delivery_action("retry"))
+        toolbar.addWidget(retry_btn)
         self._pause_btn = QPushButton(_("⏸ 暂停监控"))
         self._pause_btn.clicked.connect(self._toggle_pause)
         toolbar.addWidget(self._pause_btn)
@@ -764,6 +840,40 @@ class ChangeMonitorView(QWidget):
         self._worker.error.connect(self._on_check_error)
         self._worker.start()
 
+    def _delivery_action(self, mode: str) -> None:
+        if self._shutting_down or self._paused or self._worker is not None:
+            return
+        self._worker = _CheckWorker(self._rules_data, self, fetcher=self._fetcher, mode=mode)
+        self._worker.finished.connect(self._on_delivery_status if mode == "status" else self._on_check_finished)
+        self._worker.error.connect(self._on_check_error)
+        self._worker.start()
+
+    @Slot(list)
+    def _on_delivery_status(self, rows: list) -> None:
+        if self.sender() is not self._worker:
+            return
+        self._worker = None
+        if self._shutting_down:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle(_("通知投递状态"))
+        dialog.setAccessibleName(_("通知投递状态"))
+        dialog.resize(720, 420)
+        layout = QVBoxLayout(dialog)
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setAccessibleName(_("每个目标的状态、尝试次数和原因"))
+        statuses = {"pending": _("待发送"), "retrying": _("等待重试"), "sending": _("发送中"),
+                    "failed": _("发送失败"), "submitted": _("已提交"), "suppressed": _("规则抑制"), "cancelled": _("目标已撤销")}
+        text.setPlainText("\n".join(f"{row['rule_id']} | {row['target_id'][:20]} | "
+                                     f"{statuses.get(row['status'], row['status'])} | {row['attempts']} | {row['error']}" for row in rows)
+                          or _("尚无投递记录。已提交不代表用户已读。"))
+        layout.addWidget(text)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec()
+
     def _periodic_check(self) -> None:
         """定时器触发的后台检查。"""
         if self._shutting_down or self._paused or not self._rules_data or self._worker is not None:
@@ -814,7 +924,8 @@ class ChangeMonitorView(QWidget):
                         rule["last_hash"] = ed["current_hash"]
                         rule["last_checked"] = ed["detected_at"]
                         # 桌面通知
-                        if self._notify_desktop_cb.isChecked():
+                        if (self._notify_desktop_cb.isChecked() and ed.get("notification_eligible", True)
+                                and "desktop" in rule.get("notify_methods", ["desktop"])):
                             self.desktop_notify.emit(
                                 _(f"变更监控: {ed['rule_name']}"),
                                 ed.get("diff_summary", _("检测到变化")),
@@ -828,7 +939,8 @@ class ChangeMonitorView(QWidget):
             from ...scheduling.monitor_store import MonitorStore
             store = MonitorStore(Path(".omnicrawler_monitor"))
             for event in events_list:
-                store.acknowledge(event.event_id)
+                if event.notification_eligible:
+                    store.acknowledge(event.event_id)
 
             # 弹出详情
             first_event = events_list[0]
