@@ -1,9 +1,11 @@
 """Configuration new/open/save/import/export and history management."""
 from __future__ import annotations
 
+import copy
 import json
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
@@ -11,6 +13,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFileDialog,
+    QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -95,10 +98,26 @@ class ConfigManager(_BaseDelegate):
             _("YAML 文件 (*.yaml *.yml)"))
         if not filepath:
             return
+        destination = Path(filepath)
+        candidate = copy.deepcopy(mw._config)
+        if mw._config_path and destination.resolve() != mw._config_path.resolve():
+            revision = _("同一任务修订（保留身份）")
+            independent = _("独立任务副本（新身份与工作区）")
+            choice, accepted = QInputDialog.getItem(
+                mw, _("另存为任务"), _("选择修订或独立副本；独立副本不会继承监控基线。"),
+                [revision, independent], 0, False,
+            )
+            if not accepted:
+                return
+            if choice == independent:
+                candidate.task_id = str(uuid4())
+                candidate.created_at = datetime.now().isoformat()
+                candidate.workspace = str(destination.parent / "work" / f"{destination.stem}_{candidate.task_id[:8]}")
         try:
-            mw._config_path = Path(filepath)
-            mw._config_history.snapshot(mw._config_path, reason="before_save_as")
-            save_yaml(mw._config, mw._config_path)
+            mw._config_history.snapshot(destination, reason="before_save_as")
+            save_yaml(candidate, destination)
+            mw._config = candidate
+            mw._config_path = destination
             mw._bind_application_controllers()
             mw._config_label.setText(mw._config_path.name)
             mw._settings.add_recent_file(filepath)
