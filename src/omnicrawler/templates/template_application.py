@@ -51,12 +51,17 @@ class TemplateApplication:
 
 def apply_template(
     current: dict[str, Any], template: dict[str, Any], sections: Iterable[str] | None = None,
+    *, preserve_choices: bool = False,
 ) -> TemplateApplication:
     """Apply selected top-level sections; unspecified and unknown fields are preserved."""
     selected = tuple(dict.fromkeys(sections if sections is not None else template.keys()))
     patch = {key: copy.deepcopy(template[key]) for key in selected if key in template}
     before = copy.deepcopy(current)
-    after = deep_merge(before, patch)
+    if preserve_choices:
+        from .recipe_engine import compose_recipe
+        after = compose_recipe(before, patch)
+    else:
+        after = deep_merge(before, patch)
     # B11-006：安全键不被模板段覆盖（回盖用户既有安全值），diff 也随之收敛。
     _restore_safe_baseline(after, before)
     changes = []

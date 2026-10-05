@@ -1815,7 +1815,25 @@ class MainWindow(QMainWindow):
 
                 recipe = yaml.safe_load(template.filepath.read_text(encoding="utf-8")) or {}
                 current = yaml.safe_load(to_yaml(self._config)) or {}
-                application = apply_template(current, recipe)
+                from ..templates.template_catalog import TemplateCatalog
+                from .views.template_parameters import TemplateParametersDialog
+
+                catalog = TemplateCatalog(template.filepath.parent)
+                record = next((item for item in catalog.discover() if item.path == template.filepath.resolve()), None)
+                if record is None:
+                    raise ValueError("所选模板记录不可用")
+                if record.metadata.placeholders:
+                    initial: dict[str, Any] = {}
+                    seeds = current.get("source", {}).get("seeds", [])
+                    if seeds:
+                        for name in record.metadata.placeholders:
+                            if name.casefold() == "site_url":
+                                initial[name] = seeds[0]
+                    parameters = TemplateParametersDialog(record.metadata.placeholders, initial, self)
+                    if parameters.exec() != QDialog.DialogCode.Accepted:
+                        return
+                    recipe = catalog.render(record, parameters.values(), strict=True)
+                application = apply_template(current, recipe, preserve_choices=True)
             except Exception as exc:
                 QMessageBox.warning(self, _("模板不可用"), str(exc))
                 return
