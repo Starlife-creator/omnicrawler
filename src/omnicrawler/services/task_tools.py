@@ -47,7 +47,20 @@ def execute(action: TaskAction) -> dict[str, Any]:
     args = action.arguments
     if action.name == "workflow":
         from .workflow_diagnostics import describe
-        return describe(load_config(action.config_path))
+        return describe(load_config(action.config_path), run_id=str(args.get("run_id", "")))
+    if action.name == "replay":
+        from ..state import StateStore
+        from .replay import replay_field
+        from .workflow_diagnostics import read_runtime
+        config = load_config(action.config_path)
+        run_id, field_name = str(args.get("run_id", "")), str(args.get("field", ""))
+        if not run_id or not field_name:
+            raise ValueError("请选择运行并填写字段名")
+        if read_runtime(config, run_id=run_id).get("run_id") != run_id:
+            raise ValueError("运行记录不可用")
+        with StateStore(config.workspace / "state.sqlite3") as state:
+            result = replay_field(run_id, field_name, store=state)
+        return {**result, "historical_content": True, "candidate_only": True}
     if action.name == "capture":
         from ..templates.capture import capture
         return capture(load_config(action.config_path), Path(args["proof"]), Path(args["output"]),

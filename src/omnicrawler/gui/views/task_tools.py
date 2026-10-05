@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -68,7 +69,10 @@ class TaskToolsDialog(QDialog):
         self.tabs.setAccessibleName(_("任务工具分类"))
         layout.addWidget(self.tabs)
         workflow = self._tab(_("流程与诊断"))
-        self._button(workflow, _("查看当前流程与试跑状态"), lambda: self._launch("workflow", {}))
+        self.run_id = QLineEdit()
+        self.run_id.setAccessibleName(_("运行 ID，留空查看当前任务最近运行"))
+        workflow.addRow(_("运行 ID（可选）"), self.run_id)
+        self._button(workflow, _("查看当前流程与实际运行"), lambda: self._launch("workflow", {"run_id": self.run_id.text().strip()}))
         self.workflow_steps = QListWidget()
         self.workflow_steps.setAccessibleName(_("任务流程步骤"))
         workflow.addRow(self.workflow_steps)
@@ -77,6 +81,12 @@ class TaskToolsDialog(QDialog):
         self.workflow_details.setAccessibleName(_("所选步骤与验证建议"))
         workflow.addRow(self.workflow_details)
         self.workflow_steps.currentItemChanged.connect(self._show_step)
+        self.replay_field = QLineEdit()
+        self.replay_field.setAccessibleName(_("需要离线重放的字段名"))
+        workflow.addRow(_("离线重放字段"), self.replay_field)
+        self._button(workflow, _("用历史归档重放字段"), lambda: self._launch("replay", {
+            "run_id": self.run_id.text().strip(), "field": self.replay_field.text().strip()}))
+        workflow.addRow(QLabel(_("重放使用原运行归档，结果仅供比较，不修改正式数据。缺少归档时需重新试跑。")))
         capture = self._tab(_("保存为模板"))
         self.proof = self._file(capture, _("成功试跑摘要"))
         self.template_id = QLineEdit()
@@ -277,7 +287,7 @@ class TaskToolsDialog(QDialog):
         if name == "workflow":
             self.workflow_steps.clear()
             for step in result.get("stages", []):
-                item = QListWidgetItem(step["title"])
+                item = QListWidgetItem(step["title"] + " — " + self._runtime_label(step.get("runtime_status", "not_observed")))
                 item.setData(Qt.ItemDataRole.UserRole, step)
                 self.workflow_steps.addItem(item)
             if self.workflow_steps.count():
@@ -285,7 +295,15 @@ class TaskToolsDialog(QDialog):
             labels = {"missing": _("尚无试跑"), "matching_history": _("历史试跑匹配当前配置"),
                       "stale_or_incomplete": _("试跑过期或未完整成功"), "invalid": _("试跑记录无效")}
             lines.append(labels.get(result.get("trial", {}).get("state"), _("试跑状态未知")))
-            lines.append(_("阶段说明表示配置，不代表已通过。请回任务工作台试跑，或选中步骤查看验证建议。"))
+            runtime = result.get("runtime", {})
+            if runtime.get("run_id"):
+                self.run_id.setText(runtime["run_id"])
+                lines.append(_("实际运行：{0}；状态：{1}；配置：{2}").format(
+                    runtime["run_id"], runtime.get("status", "unknown"), runtime.get("config_match", "unknown")))
+            lines.append(_("未记录步骤显示为未观察；历史配置匹配不代表当前任务已通过。"))
+        if name == "replay":
+            lines.append(_("历史内容重放；候选结果未写入正式数据。"))
+            lines.append(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         if "retried" in result:
             lines.append(_("已重入队：{0}。请回到任务页恢复运行。").format(result["retried"]))
         self._report_path = str(result.get("report") or result.get("created") or "")
@@ -299,7 +317,14 @@ class TaskToolsDialog(QDialog):
             self.workflow_details.clear()
             return
         step = current.data(Qt.ItemDataRole.UserRole)
-        self.workflow_details.setPlainText(_("配置：{0}\n\n验证建议：{1}").format(step["detail"], step["check"]))
+        self.workflow_details.setPlainText(_("配置：{0}\n\n实际记录：{1}\n{2}\n\n验证建议：{3}").format(
+            step["detail"], self._runtime_label(step.get("runtime_status", "not_observed")),
+            json.dumps(step.get("runtime_detail", {}), ensure_ascii=False, indent=2), step["check"]))
+
+    @staticmethod
+    def _runtime_label(status: str) -> str:
+        return {"not_observed": _("未观察"), "completed": _("已记录完成"), "succeeded": _("已记录成功"),
+                "failed": _("存在失败"), "running": _("运行中")}.get(status, status)
 
     def _finished(self) -> None:
         self._worker = None

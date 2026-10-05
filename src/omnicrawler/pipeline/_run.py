@@ -53,6 +53,10 @@ _PIPELINE_STAGES = (
 
 
 class _PipelineRun(_PipelineBase):
+    def _diagnostic_config_digest(self) -> str:
+        from ..templates.capture import config_digest
+        return config_digest(self.config)
+
     def run(
         self,
         *,
@@ -153,6 +157,7 @@ class _PipelineRun(_PipelineBase):
                     "resume": resume, "retry_failed": retry_failed,
                     "revisit_completed": reset_all or reset_api_pagination,
                     "comparison_scope": _comparison_scope(self.config),
+                    "config_sha256": self._diagnostic_config_digest(),
                     "semantic_settings": self.config.section("updates"),
                 },
             )

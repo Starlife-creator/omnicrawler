@@ -2,15 +2,17 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+from datetime import datetime
 from typing import Any
 
 from ..core.config import AppConfig
 from ..templates.capture import config_digest
 
 
-def describe(config: AppConfig) -> dict[str, Any]:
+def describe(config: AppConfig, *, run_id: str = "") -> dict[str, Any]:
     source, extract = config.section("source"), config.section("extract")
-    stages = []
+    stages: list[dict[str, Any]] = []
     def add(identity: str, title: str, detail: str, check: str) -> None:
         stages.append({"id": identity, "title": title, "detail": detail, "check": check})
     add("ingest", "输入与范围", f"来源类型：{config.source_kind}；种子：{len(source.get('seeds', []))}", "核对访问域、页数和预算；运行计划不会访问网页。")
@@ -43,5 +45,77 @@ def describe(config: AppConfig) -> dict[str, Any]:
             trial.update(state="matching_history" if matched and complete else "stale_or_incomplete", captured_at=proof.get("captured_at", ""))
         except (ValueError, OSError, AttributeError):
             trial["state"] = "invalid"
-    return {"status": "workflow_described", "stages": stages, "trial": trial,
+    runtime = read_runtime(config, run_id=run_id)
+    observed = {item["stage"]: item for item in runtime.get("stages", [])}
+    for step in stages:
+        item = observed.get(step["id"])
+        step["runtime_status"] = item["status"] if item else "not_observed"
+        step["runtime_detail"] = item or {}
+    return {"status": "workflow_described", "stages": stages, "trial": trial, "runtime": runtime,
             "note": "阶段说明表示配置，不代表每一步已通过；历史试跑不批准新任务。"}
+
+
+def read_runtime(config: AppConfig, *, run_id: str = "") -> dict[str, Any]:
+    """Read one task's actual checkpoints without migration or network access."""
+    database = config.workspace / "state.sqlite3"
+    if not database.is_file():
+        return {"state": "not_started", "stages": []}
+    connection = sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
+    connection.row_factory = sqlite3.Row
+    try:
+        connection.execute("BEGIN")
+        has_identity = connection.execute("SELECT 1 FROM sqlite_master WHERE name='run_identities'").fetchone()
+        task_id = str(config.section("project").get("task_id", ""))
+        if task_id and has_identity:
+            query = "SELECT r.* FROM runs r JOIN run_identities i ON i.run_id=r.run_id WHERE i.task_key=?"
+            params = ["id:" + task_id]
+        else:
+            query = "SELECT r.* FROM runs r WHERE r.project_name=? AND r.config_path=?"
+            params = [config.project_name, str(config.path)]
+        if run_id:
+            query += " AND r.run_id=?"
+            params.append(run_id)
+        query += " ORDER BY r.started_at DESC,r.rowid DESC LIMIT 1"
+        row = connection.execute(query, params).fetchone()
+        if row is None:
+            if run_id:
+                raise ValueError("运行不属于当前任务或不存在")
+            return {"state": "not_started", "stages": []}
+        identity = row["run_id"]
+        checkpoints = connection.execute(
+            "SELECT stage,status,COUNT(*) AS observations,MIN(updated_at) AS first_observed_at,MAX(updated_at) AS last_observed_at "
+            "FROM stage_checkpoints WHERE run_id=? GROUP BY stage,status ORDER BY first_observed_at", (identity,)).fetchall()
+        errors = connection.execute("SELECT stage,error_type,COUNT(*) AS total FROM errors WHERE run_id=? GROUP BY stage,error_type", (identity,)).fetchall()
+        grouped: dict[str, dict[str, Any]] = {}
+        for checkpoint in checkpoints:
+            stage = checkpoint["stage"]
+            item = grouped.setdefault(stage, {"stage": stage, "status": checkpoint["status"], "observations": 0,
+                                             "error_types": {}, "duration_seconds": None})
+            item["observations"] += checkpoint["observations"]
+            item["first_observed_at"] = checkpoint["first_observed_at"]
+            item["last_observed_at"] = checkpoint["last_observed_at"]
+            if checkpoint["status"] not in {"completed", "succeeded"}:
+                item["status"] = checkpoint["status"]
+        for error in errors:
+            item = grouped.setdefault(error["stage"], {"stage": error["stage"], "observations": 0,
+                                                       "error_types": {}, "duration_seconds": None})
+            item["status"] = "failed"
+            item["error_types"][error["error_type"]] = error["total"]
+        setup = connection.execute("SELECT payload_json FROM stage_checkpoints WHERE run_id=? AND stage='setup' AND idempotency_key='setup'", (identity,)).fetchone()
+        digest = json.loads(setup[0]).get("config_sha256") if setup else None
+        duration = None
+        if row["finished_at"]:
+            try:
+                duration = (datetime.fromisoformat(row["finished_at"]) - datetime.fromisoformat(row["started_at"])).total_seconds()
+            except ValueError:
+                pass
+        return {"state": "observed", "run_id": identity, "status": row["status"],
+                "started_at": row["started_at"], "finished_at": row["finished_at"], "duration_seconds": duration,
+                "config_match": "unknown" if not digest else "matching" if digest == config_digest(config) else "stale",
+                "identity_confidence": "stable" if task_id and has_identity else "legacy_path",
+                "stages": list(grouped.values()),
+                "note": "checkpoint 表示已记录的阶段结果；缺少起止证据的阶段耗时为未知。"}
+    except sqlite3.Error:
+        return {"state": "unavailable", "stages": [], "reason": "运行数据库暂不可读，请稍后重试"}
+    finally:
+        connection.close()

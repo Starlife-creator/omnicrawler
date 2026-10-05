@@ -130,9 +130,9 @@ def replay_field(
     rows: list[dict[str, Any]] = []
     if url:
         rows = store.rows(
-            "SELECT raw_path FROM responses WHERE final_url=? OR url=? "
+            "SELECT raw_path FROM responses WHERE run_id=? AND (final_url=? OR url=?) "
             "ORDER BY id DESC LIMIT 1",
-            (url, url),
+            (run_id, url, url),
         )
     raw_path = str(rows[0]["raw_path"]) if rows and rows[0].get("raw_path") else ""
     if not raw_path:
