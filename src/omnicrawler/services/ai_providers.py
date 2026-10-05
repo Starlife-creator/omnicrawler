@@ -14,7 +14,7 @@ import ssl
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
 
@@ -22,7 +22,8 @@ from ..core.config import DEFAULTS, AppConfig
 from ..core.errors import ResponseTooLargeError
 from ..fetching.http_client import build_safe_opener
 from ..security.egress import EgressBroker
-from .ai_safety import AIBudget, AIBudgetExceededError
+from .ai_accounting import AIRequestAccounting
+from .ai_safety import AIBudget
 
 # C5/C6/C7 配套常量：AI 请求对网络瞬断做指数退避重试（HTTP/解析错误不重试）
 AI_RETRY_ATTEMPTS = 3
@@ -93,6 +94,7 @@ class AIResult:
     model: str
     usage: dict[str, Any]
     raw: dict[str, Any]
+    accounting: dict[str, Any] = field(default_factory=dict)
 
 
 class DisabledProvider:
@@ -100,10 +102,6 @@ class DisabledProvider:
 
     def generate(self, *_args: Any, **_kwargs: Any) -> AIResult:
         raise RuntimeError("AI 已关闭；请在「AI 服务中心」选择本地、云端或自定义服务")
-
-
-# 费用预算按 token 估算（与审计一致；实际计费以 provider 账单为准）
-_ESTIMATED_COST_PER_TOKEN = 0.000002
 
 
 class OpenAICompatibleProvider:
@@ -128,6 +126,7 @@ class OpenAICompatibleProvider:
         self.egress = egress
         # C33：费用/次数上限默认无上限但保持计数；配置了上限后 consume 生效
         self.budget = budget or AIBudget()
+        self.accounting = AIRequestAccounting(self.budget, config.get("pricing", {}))
         # C8：base_url 必须是合法 http(s) URL，提前失败给出清晰错误而非请求时诡异异常
         parsed = urlparse(self.base_url)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
@@ -184,32 +183,12 @@ class OpenAICompatibleProvider:
         if self.app_config is None or self.egress is None:
             raise RuntimeError("AI网络请求必须通过应用Egress Broker创建provider")
         maximum = int(self.app_config.section("http").get("max_response_bytes", 50_000_000))
-        # C33：请求前预占——只递增请求次数；token/费用已耗尽则直接拒发
-        self.budget.consume(tokens=0, cost=0.0)
-        if self.budget.maximum_tokens and self.budget.tokens >= self.budget.maximum_tokens:
-            raise AIBudgetExceededError("AI Token 预算已用完")
-        if self.budget.maximum_cost and self.budget.cost >= self.budget.maximum_cost:
-            raise AIBudgetExceededError("AI 费用预算已用完")
-        # C5/C6/C7：带重试退避与异常覆盖、HTTP 响应体透出的网络请求
         value = self._open_json(request, maximum)
-        # C33：响应后结算 token——先记账再检查，超限也记账（熔断：后续预占/结算持续失败）
-        usage = value.get("usage", {}) if isinstance(value, dict) else {}
-        try:
-            tokens = int(usage.get("total_tokens", 0) or 0)
-        except (TypeError, ValueError):
-            tokens = 0
-        if tokens:
-            self.budget.tokens += tokens
-            self.budget.cost += tokens * _ESTIMATED_COST_PER_TOKEN
-            if self.budget.maximum_tokens and self.budget.tokens > self.budget.maximum_tokens:
-                raise AIBudgetExceededError("AI Token 预算已用完")
-            if self.budget.maximum_cost and self.budget.cost > self.budget.maximum_cost:
-                raise AIBudgetExceededError("AI 费用预算已用完")
         choices = value.get("choices", [])
         if not choices:
             raise RuntimeError(f"AI provider {self.name} 未返回 choices")
         text = str(choices[0].get("message", {}).get("content", ""))
-        return AIResult(text, self.name, self.model, dict(value.get("usage", {})), value)
+        return AIResult(text, self.name, self.model, dict(value.get("usage", {}) or {}), value, dict(value.get("_accounting", {})))
 
 
     def _open_json(self, request: urllib.request.Request, maximum: int) -> dict[str, Any]:
@@ -220,7 +199,10 @@ class OpenAICompatibleProvider:
         - 覆盖 socket.timeout / ssl.SSLError / UnicodeDecodeError 等原被逃逸的异常（C5）
         """
         assert self.egress is not None, "generate() 已校验 egress 非空"
+        payload = json.loads(request.data.decode("utf-8")) if isinstance(request.data, bytes) else {}
         for attempt in range(AI_RETRY_ATTEMPTS):
+            reservation = self.accounting.reserve(payload)
+            settled = False
             try:
                 with self.egress.request(request.full_url, purpose="ai", headers=request.headers):
                     opener = build_safe_opener(
@@ -235,7 +217,12 @@ class OpenAICompatibleProvider:
                         if len(raw) > maximum:
                             raise ResponseTooLargeError(f"AI响应超过大小限制: > {maximum}")
                         self.egress.record_response(len(raw), url=response.geturl())
-                        return json.loads(raw.decode("utf-8"))
+                        value = json.loads(raw.decode("utf-8"))
+                        if not isinstance(value, dict):
+                            raise RuntimeError("AI 响应必须是 JSON 对象")
+                        settled = True
+                        value["_accounting"] = self.accounting.settle(reservation, value)
+                        return value
             except urllib.error.HTTPError as exc:
                 # HTTP 错误（含 429/401/403/404/5xx）不重试，直接透出详情
                 body = _read_error_body(exc)
@@ -250,6 +237,10 @@ class OpenAICompatibleProvider:
                     f"AI provider {self.name} 响应不是合法 JSON（可能返回了错误页/HTML）。"
                     f"请确认 base_url 指向 /chat/completions 端点。原始错误: {exc}"
                 ) from exc
+            finally:
+                if not settled:
+                    # A timeout or rejected response cannot prove that billing was zero.
+                    self.accounting.settle(reservation, None)
         # 理论不可达（循环内已 raise）；保留以保证类型与逻辑完整
         raise RuntimeError(f"AI provider {self.name} 请求失败（重试耗尽）")
 
@@ -292,6 +283,11 @@ def build_provider(
         app_config=app_config,
         egress=egress,
         max_tokens=request_max_tokens,
+        budget=AIBudget(
+            maximum_requests=int(budget_section.get("maximum_requests", 0)),
+            maximum_tokens=int(budget_section.get("maximum_tokens", 0)),
+            maximum_cost=float(budget_section.get("maximum_cost", 0.0)),
+        ),
     )
 
 

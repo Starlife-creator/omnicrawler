@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 try:
@@ -75,6 +75,7 @@ class Provider:
     model: str = "gpt-4o"
     timeout_seconds: int = 60
     max_tokens: int = 4096
+    pricing: dict[str, Any] = field(default_factory=dict)
 
 
 class AIGraphExtractor:
@@ -111,6 +112,7 @@ class AIGraphExtractor:
         max_retries: int = 3,
         project_root: str | None = None,
         egress: Any | None = None,
+        budget: Any | None = None,
     ) -> None:
         self._provider = provider or Provider()
         self._prompt_template = prompt_template or self.DEFAULT_PROMPT
@@ -121,6 +123,10 @@ class AIGraphExtractor:
         # P9-A2（B13-002）：EgressBroker 出口审计；未注入时发送前
         # fail-closed 拒绝外发（见 _post_with_retry）
         self._egress = egress
+        from ..services.ai_accounting import AIRequestAccounting
+        from ..services.ai_safety import AIBudget
+
+        self._accounting = AIRequestAccounting(budget or AIBudget(), self._provider.pricing)
 
     # ── 公共 API ─────────────────────────────────────────────────────
 
@@ -147,8 +153,6 @@ class AIGraphExtractor:
         Raises:
             RuntimeError: 全部分块提取失败（不再静默返回空结果）。
         """
-        import aiohttp
-
         chunks = self._split_html(html, strategy)
         if not chunks:
             chunks = [html]
@@ -160,7 +164,7 @@ class AIGraphExtractor:
                 return await self._extract_chunk(chunk, fields, max_tokens_per_chunk, session=session)
 
         # D56：复用单个 Session + asyncio.gather 并发，不再每分块新建连接
-        async with aiohttp.ClientSession() as session:
+        async with self._create_session() as session:
             results = await asyncio.gather(
                 *(run_one(c) for c in chunks), return_exceptions=True
             )
@@ -188,9 +192,7 @@ class AIGraphExtractor:
         self, html: str, fields: list[FieldDef]
     ) -> dict[str, Any]:
         """一站式：单次调用提取，不做分块。"""
-        import aiohttp
-
-        async with aiohttp.ClientSession() as session:
+        async with self._create_session() as session:
             result = await self._extract_chunk(html, fields, self._provider.max_tokens, session=session)
             self._assess_target(result, fields)
             return result
@@ -265,29 +267,64 @@ class AIGraphExtractor:
             raise RuntimeError(
                 "AIGraphExtractor: 未注入 EgressBroker（fail-closed，拒绝外发请求）"
             )
-        self._egress.authorize(url, purpose="ai")
+        from ..core.errors import ResponseTooLargeError
+        from ..core.safe_data import safe_json_loads
+        from ..services.ai_providers import _scrub_token_like
 
         last_error: Exception | None = None
+        maximum = 50_000_000
+        config = getattr(self._egress, "config", None)
+        if config is not None:
+            maximum = int(config.section("http").get("max_response_bytes", maximum))
         for attempt in range(self._max_retries):
+            reservation = self._accounting.reserve(payload)
+            settled = False
             try:
-                async with session.post(url, json=payload, headers=headers, timeout=timeout) as resp:
-                    if resp.status == 429 or resp.status >= 500:
-                        if attempt + 1 < self._max_retries:
-                            await asyncio.sleep(1.0 * (2 ** attempt))
-                            continue
-                    # D54：非 2xx 显式抛带状态码异常（含响应体前 500 字符），不再被吞
-                    if resp.status < 200 or resp.status >= 300:
-                        body = await resp.text()
-                        raise RuntimeError(
-                            f"AI API 返回 HTTP {resp.status}: {body[:500]}"
-                        )
-                    return await resp.json()
+                with self._egress.request(url, purpose="ai", headers=headers):
+                    async with session.post(url, json=payload, headers=headers, timeout=timeout, allow_redirects=False) as resp:
+                        parts: list[bytes] = []
+                        size = 0
+                        while True:
+                            part = await resp.content.read(min(64 * 1024, maximum + 1 - size))
+                            if not part:
+                                break
+                            size += len(part)
+                            if size > maximum:
+                                raise ResponseTooLargeError("AI 响应超过大小限制")
+                            parts.append(part)
+                        raw = b"".join(parts)
+                        self._egress.record_response(len(raw), url=url)
+                        if resp.status == 429 or resp.status >= 500:
+                            if attempt + 1 < self._max_retries:
+                                await asyncio.sleep(1.0 * (2 ** attempt))
+                                continue
+                        if resp.status < 200 or resp.status >= 300:
+                            body = _scrub_token_like(raw.decode("utf-8", errors="replace")[:500])
+                            raise RuntimeError(f"AI API 返回 HTTP {resp.status}: {body}")
+                        value = safe_json_loads(raw.decode("utf-8"))
+                        if not isinstance(value, dict):
+                            raise ValueError("AI 响应必须是 JSON 对象")
+                        settled = True
+                        value["_accounting"] = self._accounting.settle(reservation, value)
+                        return value
             except (aiohttp.ClientConnectionError, TimeoutError) as exc:
                 last_error = exc
                 if attempt + 1 < self._max_retries:
                     await asyncio.sleep(1.0 * (2 ** attempt))
                     continue
+            finally:
+                if not settled:
+                    self._accounting.settle(reservation, None)
         raise RuntimeError(f"AI 请求失败（重试 {self._max_retries} 次后）: {last_error}")
+
+    def _create_session(self) -> Any:
+        import aiohttp
+
+        if self._egress is None:
+            return aiohttp.ClientSession()
+        from ..security.ai_resolver import PolicyResolver
+
+        return aiohttp.ClientSession(connector=aiohttp.TCPConnector(resolver=PolicyResolver(self._egress.policy)))
 
     async def _extract_chunk(
         self,
@@ -317,7 +354,7 @@ class AIGraphExtractor:
             )
 
         if session is None:
-            async with aiohttp.ClientSession() as owned_session:
+            async with self._create_session() as owned_session:
                 return await self._extract_chunk(html, fields, max_tokens, session=owned_session)
 
         fields_spec = self._build_fields_spec(fields)
@@ -366,7 +403,9 @@ class AIGraphExtractor:
             return self._parse_response("{}", fields)
 
         content = choices[0].get("message", {}).get("content", "{}")
-        return self._parse_response(content, fields)
+        result = self._parse_response(content, fields)
+        result["accounting"] = data.get("_accounting", {})
+        return result
 
     def _build_fields_spec(self, fields: list[FieldDef]) -> str:
         """构建字段描述。"""

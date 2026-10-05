@@ -144,6 +144,9 @@ def test_c7_retry_then_success(monkeypatch) -> None:
         result = provider.generate([{"role": "user", "content": "hi"}])
     assert result.text == "ok"
     assert calls["n"] == 2  # 第一次失败，重试成功
+    assert provider.budget.requests == 2
+    assert provider.budget.unknown_usage_requests == 1
+    assert result.accounting["cost_known"] is False
 
 
 def test_c5_non_json_response_surfaced_with_guidance(monkeypatch) -> None:

@@ -47,8 +47,9 @@ def _provider(budget: AIBudget) -> OpenAICompatibleProvider:
         "api_key": "sk-x",
         "model": "gpt-x",
         "timeout_seconds": 30,
+        "pricing": {"input_per_million": 2, "output_per_million": 2},
     }
-    provider = OpenAICompatibleProvider("default", config, budget=budget)
+    provider = OpenAICompatibleProvider("default", config, budget=budget, max_tokens=100)
     raw = {
         "project": {"name": "test"},
         "source": {"kind": "crawl"},
@@ -65,7 +66,7 @@ def _patch_opener(provider: OpenAICompatibleProvider) -> None:
 
     class _FakeOpener:
         def open(self, request, timeout=None):
-            payload = '{"choices":[{"message":{"content":"ok"}}],"usage":{"total_tokens": 100}}'
+            payload = '{"choices":[{"message":{"content":"ok"}}],"usage":{"total_tokens": 100,"prompt_tokens":50,"completion_tokens":50}}'
             return _FakeResponse(payload.encode("utf-8"))
 
     return patch(
@@ -86,32 +87,28 @@ def test_request_count_single_increment_per_call() -> None:
         provider.generate([{"role": "user", "content": "hi"}])
 
 
-def test_token_budget_trips_and_stays_tripped() -> None:
-    """maximum_tokens=250：两次调用（各 100）后第三次响应结算超限，
-    且超限后预占检查也应拒发（熔断），而非无限发出。"""
-    budget = AIBudget(maximum_tokens=250)
+def test_token_budget_blocks_before_insufficient_reservation() -> None:
+    budget = AIBudget(maximum_tokens=500)
     provider = _provider(budget)
     with _patch_opener(provider):
-        provider.generate([{"role": "user", "content": "hi"}])  # tokens=100
-        provider.generate([{"role": "user", "content": "hi"}])  # tokens=200
-        with pytest.raises(AIBudgetExceededError, match="Token 预算"):
-            provider.generate([{"role": "user", "content": "hi"}])  # 结算 300 > 250
-        # 熔断：下一次请求在预占阶段即被拒（请求未发出）
+        provider.generate([{"role": "user", "content": "hi"}])
+        provider.generate([{"role": "user", "content": "hi"}])
         with pytest.raises(AIBudgetExceededError, match="Token 预算"):
             provider.generate([{"role": "user", "content": "hi"}])
+    assert budget.tokens == 200
+    assert budget.requests == 2
 
 
-def test_cost_budget_trips_and_stays_tripped() -> None:
-    """maximum_cost 按估算单价结算：超限抛可区分异常且后续预占拒发。"""
-    # 0.000002 * 100 tokens = 0.0002/次；上限 0.0003 → 第 2 次结算即超
-    budget = AIBudget(maximum_cost=0.0003)
+def test_configured_model_prices_settle_and_block_before_send() -> None:
+    budget = AIBudget(maximum_cost=0.001)
     provider = _provider(budget)
     with _patch_opener(provider):
-        provider.generate([{"role": "user", "content": "hi"}])  # cost=0.0002
+        provider.generate([{"role": "user", "content": "hi"}])
+        provider.generate([{"role": "user", "content": "hi"}])
         with pytest.raises(AIBudgetExceededError, match="费用预算"):
-            provider.generate([{"role": "user", "content": "hi"}])  # 结算 0.0004 > 0.0003
-        with pytest.raises(AIBudgetExceededError, match="费用预算"):
-            provider.generate([{"role": "user", "content": "hi"}])  # 预占熔断
+            provider.generate([{"role": "user", "content": "hi"}])
+    assert budget.cost == pytest.approx(0.0004)
+    assert budget.unknown_cost_requests == 0
 
 
 def test_budget_exceeded_is_distinct_error() -> None:

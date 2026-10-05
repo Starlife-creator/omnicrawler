@@ -25,7 +25,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from ..core.safe_data import safe_json_loads
-from .ai_providers import _ESTIMATED_COST_PER_TOKEN, AIResult
+from .ai_providers import AIResult
 from .ai_safety import ai_audit_record, mark_untrusted, validate_ai_output
 
 # 审计 JSONL 写入互斥（_append_ai_audit 并发安全）
@@ -596,13 +596,13 @@ def ai_task_design_audit(
         total_tokens = int(usage.get("total_tokens", 0) or 0)
     except (TypeError, ValueError):
         total_tokens = 0
-    if total_tokens > 0:
-        # 与 AIBudget 记账使用同一单价常量，避免审计与预算两套口径
-        cost = total_tokens * _ESTIMATED_COST_PER_TOKEN
-        cost_note = f"按 {_ESTIMATED_COST_PER_TOKEN}/token 粗略估算（{total_tokens} tokens），非账单实际金额"
+    accounting = getattr(result, "accounting", {}) or {}
+    if accounting.get("cost_known"):
+        cost = float(accounting["estimated_cost"])
+        cost_note = f"按该模型配置单价估算（{total_tokens} tokens），非账单实际金额"
     else:
-        cost = 0.0
-        cost_note = "未知费用（provider 未返回 usage）"
+        cost = 0.0  # Compatibility value; cost_known is authoritative.
+        cost_note = "未知费用（缺少 usage 分项或模型单价）"
     record = ai_audit_record(
         provider=str(getattr(result, "provider", "unknown")),
         model=str(getattr(result, "model", "")),
@@ -617,6 +617,7 @@ def ai_task_design_audit(
         cost=cost,
     )
     record["cost_note"] = cost_note
+    record["cost_known"] = bool(accounting.get("cost_known"))
     return record
 
 

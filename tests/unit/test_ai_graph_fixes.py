@@ -15,6 +15,13 @@ class _FakeResp:
     def __init__(self, status: int, body: str) -> None:
         self.status = status
         self._body = body
+        self.content = self
+        self._offset = 0
+
+    async def read(self, limit: int) -> bytes:
+        raw = self._body.encode()[self._offset:self._offset + limit]
+        self._offset += len(raw)
+        return raw
 
     async def text(self) -> str:
         return self._body
@@ -47,8 +54,12 @@ class _FakeSession:
 class _AllowAllEgress:
     """出口审计 stub：放行任意目标（测试聚焦 HTTP 语义，非出口策略）。"""
 
-    def authorize(self, url: str, **kwargs) -> tuple[str, ...]:
-        return ()
+    def request(self, url: str, **kwargs):
+        from contextlib import nullcontext
+        return nullcontext()
+
+    def record_response(self, size: int, **kwargs) -> None:
+        pass
 
 
 @pytest.mark.asyncio
