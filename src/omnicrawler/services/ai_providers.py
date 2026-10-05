@@ -8,6 +8,7 @@ the existing ``secret://`` resolver.
 from __future__ import annotations
 
 import json
+import math
 import re
 import socket
 import ssl
@@ -15,11 +16,12 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from threading import Event
 from typing import Any
 from urllib.parse import urlparse
 
 from ..core.config import DEFAULTS, AppConfig
-from ..core.errors import ResponseTooLargeError
+from ..core.errors import PolicyBlockedError, ResponseTooLargeError, TaskStoppedError
 from ..fetching.http_client import build_safe_opener
 from ..security.egress import EgressBroker
 from .ai_accounting import AIRequestAccounting
@@ -114,12 +116,17 @@ class OpenAICompatibleProvider:
         egress: EgressBroker | None = None,
         budget: AIBudget | None = None,
         max_tokens: int | None = None,
+        cancel_event: Event | None = None,
     ) -> None:
         self.name = name
         self.base_url = str(config.get("base_url", "")).rstrip("/")
         self.api_key = str(config.get("api_key", ""))
         self.model = str(config.get("model", ""))
         self.timeout = float(config.get("timeout_seconds", 60))
+        self.total_timeout = float(config.get("total_timeout_seconds", self.timeout * AI_RETRY_ATTEMPTS + 3))
+        if not all(math.isfinite(value) and value > 0 for value in (self.timeout, self.total_timeout)):
+            raise ValueError("AI 超时和总截止时间必须是有限正数")
+        self.cancel_event = cancel_event
         # C10：单次最大 token（UI "最大响应长度" 落点）；<=0 视为不限制
         self.max_tokens = int(max_tokens) if max_tokens and int(max_tokens) > 0 else None
         self.app_config = app_config
@@ -161,6 +168,8 @@ class OpenAICompatibleProvider:
         temperature: float = 0.0,
         response_format: dict[str, Any] | None = None,
     ) -> AIResult:
+        self._check_cancelled()
+        self.budget.begin_logical_request()
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -191,29 +200,50 @@ class OpenAICompatibleProvider:
         return AIResult(text, self.name, self.model, dict(value.get("usage", {}) or {}), value, dict(value.get("_accounting", {})))
 
 
-    def _open_json(self, request: urllib.request.Request, maximum: int) -> dict[str, Any]:
-        """带重试退避的 JSON 请求（C5/C6/C7 综合修复）。
+    def _check_cancelled(self) -> None:
+        if self.cancel_event is not None and self.cancel_event.is_set():
+            raise TaskStoppedError("AI 请求已取消")
 
-        - 网络瞬断（超时 / SSL / 连接错）按指数退避重试；HTTP 错误与解析错误不重试
-        - HTTPError 透出响应体前 ~1KB 与中文处置建议（C6）
-        - 覆盖 socket.timeout / ssl.SSLError / UnicodeDecodeError 等原被逃逸的异常（C5）
+    def _remaining(self, deadline: float) -> float:
+        self._check_cancelled()
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("AI 请求总截止时间已到")
+        return remaining
+
+    def _wait_retry(self, delay: float, deadline: float) -> None:
+        duration = min(delay, self._remaining(deadline))
+        if self.cancel_event is not None:
+            self.cancel_event.wait(duration)
+        else:
+            time.sleep(duration)
+        self._remaining(deadline)
+
+    def _open_json(self, request: urllib.request.Request, maximum: int) -> dict[str, Any]:
+        """Authorize and account for every bounded attempt; waits are cancellable.
+
+        urllib's active socket call is bounded by its timeout. Cancellation is
+        checked around it, and never starts another attempt after cancellation.
         """
         assert self.egress is not None, "generate() 已校验 egress 非空"
         payload = json.loads(request.data.decode("utf-8")) if isinstance(request.data, bytes) else {}
+        deadline = time.monotonic() + self.total_timeout
         for attempt in range(AI_RETRY_ATTEMPTS):
+            timeout = min(self.timeout, self._remaining(deadline))
             reservation = self.accounting.reserve(payload)
             settled = False
+            delay: float | None = None
             try:
                 with self.egress.request(request.full_url, purpose="ai", headers=request.headers):
                     opener = build_safe_opener(
                         self.app_config,  # type: ignore[arg-type]
-                        target_policy=self.egress.policy,
-                        include_cookies=False,
-                        egress=self.egress,
-                        purpose="ai",
+                        target_policy=self.egress.policy, include_cookies=False,
+                        egress=self.egress, purpose="ai",
                     )
-                    with opener.open(request, timeout=self.timeout) as response:
+                    with opener.open(request, timeout=timeout) as response:
+                        self._remaining(deadline)
                         raw = response.read(maximum + 1)
+                        self._remaining(deadline)
                         if len(raw) > maximum:
                             raise ResponseTooLargeError(f"AI响应超过大小限制: > {maximum}")
                         self.egress.record_response(len(raw), url=response.geturl())
@@ -223,25 +253,34 @@ class OpenAICompatibleProvider:
                         settled = True
                         value["_accounting"] = self.accounting.settle(reservation, value)
                         return value
+            except PolicyBlockedError:
+                raise
             except urllib.error.HTTPError as exc:
-                # HTTP 错误（含 429/401/403/404/5xx）不重试，直接透出详情
-                body = _read_error_body(exc)
-                raise RuntimeError(_format_http_error(self.name, exc, body)) from exc
+                try:
+                    body = _read_error_body(exc)
+                    retryable = exc.code in {408, 429} or 500 <= exc.code <= 599
+                    if not retryable or attempt + 1 >= AI_RETRY_ATTEMPTS:
+                        raise RuntimeError(_format_http_error(self.name, exc, body)) from exc
+                    delay = min(8.0, AI_RETRY_BASE_DELAY * (2 ** attempt))
+                    retry_after = exc.headers.get("Retry-After", "") if exc.headers is not None else ""
+                    if str(retry_after).isdigit():
+                        delay = min(60.0, float(retry_after))
+                finally:
+                    exc.close()
             except (ssl.SSLError, TimeoutError, ConnectionError, OSError, urllib.error.URLError) as exc:
-                if attempt + 1 < AI_RETRY_ATTEMPTS:
-                    time.sleep(min(8.0, AI_RETRY_BASE_DELAY * (2 ** attempt)))
-                    continue
-                raise RuntimeError(_format_network_error(self.name, exc, self.timeout)) from exc
+                if attempt + 1 >= AI_RETRY_ATTEMPTS:
+                    raise RuntimeError(_format_network_error(self.name, exc, self.timeout)) from exc
+                delay = min(8.0, AI_RETRY_BASE_DELAY * (2 ** attempt))
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 raise RuntimeError(
                     f"AI provider {self.name} 响应不是合法 JSON（可能返回了错误页/HTML）。"
-                    f"请确认 base_url 指向 /chat/completions 端点。原始错误: {exc}"
+                    "请确认 base_url 指向 /chat/completions 端点。"
                 ) from exc
             finally:
                 if not settled:
-                    # A timeout or rejected response cannot prove that billing was zero.
                     self.accounting.settle(reservation, None)
-        # 理论不可达（循环内已 raise）；保留以保证类型与逻辑完整
+            if delay is not None:
+                self._wait_retry(delay, deadline)
         raise RuntimeError(f"AI provider {self.name} 请求失败（重试耗尽）")
 
 

@@ -41,6 +41,7 @@ class AIBudget:
     tokens: int = 0
     cost: float = 0.0
 
+    logical_requests: int = 0
     unknown_usage_requests: int = 0
     unknown_cost_requests: int = 0
     _reservations: dict[str, tuple[int, float]] = field(default_factory=dict, init=False, repr=False)
@@ -54,10 +55,16 @@ class AIBudget:
         if self.maximum_cost and self.cost + reserved_cost + cost > self.maximum_cost:
             raise AIBudgetExceededError("AI 费用预算已用完")
 
+    def begin_logical_request(self) -> None:
+        with self._lock:
+            self.logical_requests += 1
+
     def reserve(self, *, tokens: int, cost: float) -> str:
         if tokens < 0 or cost < 0 or not math.isfinite(cost):
             raise ValueError("AI 预留用量必须有限且非负")
         with self._lock:
+            if (self.maximum_tokens and self.unknown_usage_requests) or (self.maximum_cost and self.unknown_cost_requests):
+                raise AIBudgetExceededError("AI 用量或费用未知；有限预算下已停止后续请求")
             if self.maximum_requests and self.requests >= self.maximum_requests:
                 raise AIBudgetExceededError("AI 请求预算已用完")
             self._check(tokens, cost)

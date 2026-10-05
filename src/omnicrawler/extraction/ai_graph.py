@@ -30,6 +30,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -92,6 +93,7 @@ class Provider:
     timeout_seconds: int = 60
     max_tokens: int = 4096
     pricing: dict[str, Any] = field(default_factory=dict)
+    total_timeout_seconds: float | None = None
 
 
 class AIGraphExtractor:
@@ -169,6 +171,7 @@ class AIGraphExtractor:
         Raises:
             RuntimeError: 全部分块提取失败（不再静默返回空结果）。
         """
+        self._accounting.budget.begin_logical_request()
         chunks = self._split_html(html, strategy)
         if not chunks:
             chunks = [html]
@@ -211,6 +214,7 @@ class AIGraphExtractor:
         self, html: str, fields: list[FieldDef]
     ) -> dict[str, Any]:
         """一站式：单次调用提取，不做分块。"""
+        self._accounting.budget.begin_logical_request()
         async with self._create_session() as session:
             result = await self._extract_chunk(html, fields, self._provider.max_tokens, session=session)
             self._assess_target(result, fields)
@@ -276,7 +280,19 @@ class AIGraphExtractor:
         headers: dict[str, str],
         timeout: Any,
     ) -> dict[str, Any]:
-        """POST 并解析 JSON；429/5xx/连接/超时指数退避重试，4xx 立即抛（D60）。"""
+        """Bound the complete asynchronous operation, including retries and waits."""
+        seconds = getattr(self._provider, "total_timeout_seconds", None)
+        if seconds is None:
+            seconds = self._provider.timeout_seconds * self._max_retries + sum(2 ** i for i in range(self._max_retries - 1))
+        if not math.isfinite(seconds) or seconds <= 0:
+            raise ValueError("AI 总截止时间必须是有限正数")
+        async with asyncio.timeout(seconds):
+            return await self._post_attempts(session, url, payload=payload, headers=headers, timeout=timeout)
+
+    async def _post_attempts(
+        self, session: Any, url: str, *, payload: dict[str, Any], headers: dict[str, str], timeout: Any,
+    ) -> dict[str, Any]:
+        """Authorize and settle each actual network attempt."""
         import aiohttp
 
         # P9-A2（B13-002）：发送前强制过出口策略——被禁目标（私网/未批准

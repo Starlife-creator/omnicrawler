@@ -19,7 +19,7 @@ class AIRequestAccounting:
 
     @property
     def priced(self) -> bool:
-        return all(key in self.pricing for key in ("input_per_million", "output_per_million"))
+        return all(type(self.pricing.get(key)) in (int, float) for key in ("input_per_million", "output_per_million"))
 
     def reserve(self, payload: dict[str, Any]) -> str:
         output = payload.get("max_tokens")
@@ -55,4 +55,7 @@ class AIRequestAccounting:
         self.budget.settle(identity, tokens=tokens, cost=cost)
         return {"usage_known": tokens is not None, "cost_known": cost is not None,
                 "estimated_cost": cost, "currency": self.pricing.get("currency", "unspecified"),
-                "reservation_estimate": "utf8_bytes_plus_margin"}
+                "reservation_estimate": "utf8_bytes_plus_margin",
+                "logical_requests": self.budget.logical_requests, "network_attempts": self.budget.requests,
+                "unknown_usage_attempts": self.budget.unknown_usage_requests,
+                "unknown_cost_attempts": self.budget.unknown_cost_requests}
