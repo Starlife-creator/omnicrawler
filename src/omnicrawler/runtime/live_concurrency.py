@@ -17,23 +17,29 @@ class LiveConcurrency:
         self._controller = AdaptiveController(maximum_concurrency=self.maximum, minimum_free_disk=0)
         self._samples: deque[tuple[float, bool, bool]] = deque(maxlen=16)
         self._healthy = 0
+        self._healthy_latency: float | None = None
         self.audit: list[dict[str, Any]] = []
 
     def observe(self, latency: float, *, failed: bool = False, rate_limited: bool = False,
                 resource_pressure: bool = False) -> int:
         if not self.enabled:
             return self.current
-        self._samples.append((max(0.0, latency), failed, rate_limited))
+        if not resource_pressure:
+            self._samples.append((max(0.0, latency), failed, rate_limited))
+        if not (failed or rate_limited or resource_pressure):
+            self._healthy_latency = (max(0.0, latency) if self._healthy_latency is None
+                                     else self._healthy_latency * 0.8 + max(0.0, latency) * 0.2)
         self._healthy = 0 if failed or rate_limited or resource_pressure else self._healthy + 1
         if not (failed or rate_limited or resource_pressure or self._healthy >= 8):
             return self.current
         signals = RuntimeSignals(
-            latency_seconds=sum(item[0] for item in self._samples) / len(self._samples),
-            error_rate=sum(item[1] for item in self._samples) / len(self._samples),
+            latency_seconds=sum(item[0] for item in self._samples) / max(1, len(self._samples)),
+            error_rate=sum(item[1] for item in self._samples) / max(1, len(self._samples)),
             rate_limited=rate_limited or resource_pressure, dom_stability=0.5,
             text_layer_quality=0.5, free_disk_bytes=0,
         )
-        for adjustment in self._controller.propose({"concurrency": self.current, "ocr": False}, signals):
+        for adjustment in self._controller.propose({"concurrency": self.current, "ocr": False,
+                                                  "healthy_latency_seconds": self._healthy_latency or 0.8}, signals):
             if adjustment.parameter == "concurrency" and adjustment.before != adjustment.after:
                 self.current = int(adjustment.after)
                 item = asdict(adjustment)

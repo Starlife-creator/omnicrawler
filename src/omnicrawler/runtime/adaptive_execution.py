@@ -41,8 +41,8 @@ class AdaptiveController:
         concurrency = max(self.minimum_concurrency, min(self.maximum_concurrency, int(current.get("concurrency", 2))))
         if signals.rate_limited or signals.error_rate > 0.2:
             result.append(Adjustment("concurrency", concurrency, max(self.minimum_concurrency, concurrency - 1), "限流或错误率升高", self.minimum_concurrency, self.maximum_concurrency))
-        elif signals.latency_seconds < 1 and signals.error_rate < 0.02:
-            result.append(Adjustment("concurrency", concurrency, min(self.maximum_concurrency, concurrency + 1), "响应稳定且延迟较低", self.minimum_concurrency, self.maximum_concurrency))
+        elif signals.latency_seconds <= float(current.get("healthy_latency_seconds", 0.8)) * 1.25 and signals.error_rate < 0.02:
+            result.append(Adjustment("concurrency", concurrency, min(self.maximum_concurrency, concurrency + 1), "响应稳定且符合健康延迟基线", self.minimum_concurrency, self.maximum_concurrency))
         wait = float(current.get("wait_seconds", 1))
         if signals.dom_stability > 0.95:
             result.append(Adjustment("wait_seconds", wait, max(0.2, wait * 0.75), "DOM连续样本稳定", 0.2, 30.0))

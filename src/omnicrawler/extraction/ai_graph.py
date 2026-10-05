@@ -429,9 +429,9 @@ class AIGraphExtractor:
             fields = r.get("fields", {})
             if isinstance(fields, dict):
                 for name, value in fields.items():
-                    if not value:  # 空值不参与合并
+                    if value is None or value == "" or value == []:  # Preserve legitimate 0 and False values.
                         continue
-                    if name not in merged_fields or not merged_fields[name]:
+                    if name not in merged_fields:
                         merged_fields[name] = value
                     elif merged_fields[name] != value:
                         conflicts.append({
