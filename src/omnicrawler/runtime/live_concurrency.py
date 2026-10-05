@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections import deque
 from dataclasses import asdict
 from typing import Any
@@ -15,7 +16,7 @@ class LiveConcurrency:
         self.current = self.maximum
         self.enabled = enabled
         self._controller = AdaptiveController(maximum_concurrency=self.maximum, minimum_free_disk=0)
-        self._samples: deque[tuple[float, bool, bool]] = deque(maxlen=16)
+        self._samples: deque[tuple[float, bool, bool, float]] = deque(maxlen=16)
         self._healthy = 0
         self._healthy_latency: float | None = None
         self.audit: list[dict[str, Any]] = []
@@ -24,8 +25,14 @@ class LiveConcurrency:
                 resource_pressure: bool = False) -> int:
         if not self.enabled:
             return self.current
+        now = time.monotonic()
+        if self._samples and now - self._samples[-1][3] > 120:
+            self._healthy = 0
+            self._healthy_latency = None
+        while self._samples and now - self._samples[0][3] > 120:
+            self._samples.popleft()
         if not resource_pressure:
-            self._samples.append((max(0.0, latency), failed, rate_limited))
+            self._samples.append((max(0.0, latency), failed, rate_limited, now))
         if not (failed or rate_limited or resource_pressure):
             self._healthy_latency = (max(0.0, latency) if self._healthy_latency is None
                                      else self._healthy_latency * 0.8 + max(0.0, latency) * 0.2)
@@ -48,6 +55,52 @@ class LiveConcurrency:
                 self.audit = (self.audit + [item])[-200:]
         self._healthy = 0
         return self.current
+
+
+class DomainAdmission:
+    """Separate host feedback from global machine pressure and scheduling slots."""
+
+    def __init__(self, maximum: int, *, enabled: bool = True, per_domain: int = 0) -> None:
+        self.global_control = LiveConcurrency(maximum, enabled=enabled)
+        self.per_domain = max(1, min(maximum, per_domain or maximum))
+        self._domains: dict[str, LiveConcurrency] = {}
+
+    @property
+    def maximum(self) -> int:
+        return self.global_control.maximum
+
+    @property
+    def current(self) -> int:
+        return self.global_control.current
+
+    @property
+    def enabled(self) -> bool:
+        return self.global_control.enabled
+
+    def domain_limit(self, scope: str) -> int:
+        control = self._domains.get(scope)
+        return control.current if control else self.per_domain
+
+    def observe(self, latency: float, *, domain: str = "", failed: bool = False, rate_limited: bool = False,
+                resource_pressure: bool = False) -> int:
+        if resource_pressure:
+            return self.global_control.observe(0, resource_pressure=True)
+        if not domain:
+            return self.current
+        if domain not in self._domains and len(self._domains) >= 1000:
+            self._domains.pop(next(iter(self._domains)))
+        control = self._domains.setdefault(domain, LiveConcurrency(self.per_domain, enabled=self.enabled))
+        control.observe(latency, failed=failed, rate_limited=rate_limited)
+        if not failed and not rate_limited:
+            self.global_control.observe(latency)
+        return self.current
+
+    @property
+    def audit(self) -> list[dict[str, Any]]:
+        entries = [{**item, "scope": "machine"} for item in self.global_control.audit]
+        for scope, control in self._domains.items():
+            entries.extend({**item, "scope": scope} for item in control.audit)
+        return entries[-200:]
 
 
 def local_resource_pressure(maximum_memory_bytes: int = 0) -> bool:

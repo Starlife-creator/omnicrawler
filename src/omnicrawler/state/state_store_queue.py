@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from ..core.errors import SessionExpiredError
@@ -188,19 +188,30 @@ class QueueMixin:
             )
             return cursor.rowcount > 0
 
-    def claim(self, limit: int, strategy: str = "bfs") -> list[CrawlRequest]:
+    def claim(self, limit: int, strategy: str = "bfs", *,
+              domain_capacity: Callable[[str], int] | None = None,
+              domain_scope: Callable[[str], str] | None = None) -> list[CrawlRequest]:
         order = self._CLAIM_ORDER.get(strategy)
         if order is None:
             order = self._CLAIM_ORDER["bfs"]
         claimed: list[sqlite3.Row] = []
         with self._lock, self.conn:
+            recent: dict[str, int] = getattr(self, "_claim_domain_recent", {})
+            claimed_by_domain: dict[str, int] = {}
+            if domain_capacity is not None and domain_scope is not None:
+                self.conn.create_function("claim_scope", 1, domain_scope)
+                self.conn.create_function("claim_recent", 1, lambda url: recent.get(domain_scope(url), 0))
+                self.conn.create_function("claim_available", 1, lambda url: max(0, domain_capacity(url) - claimed_by_domain.get(domain_scope(url), 0)))
             # S2.5.3：候选先 SELECT 排序，再用条件 UPDATE（WHERE status='pending'）原子认领；
             # 被并发进程抢走的行 UPDATE 影响 0 行，跳过重取，杜绝 SELECT→UPDATE 双重认领。
             while len(claimed) < limit:
-                rows = self.conn.execute(
-                    f"SELECT * FROM frontier WHERE status='pending' ORDER BY {order} LIMIT ?",
-                    (limit - len(claimed),),
-                ).fetchall()
+                if domain_capacity is not None and domain_scope is not None:
+                    query = (f"WITH eligible AS (SELECT *,ROW_NUMBER() OVER(PARTITION BY claim_scope(url) ORDER BY {order}) AS domain_rank "
+                             "FROM frontier WHERE status='pending') SELECT * FROM eligible WHERE domain_rank<=claim_available(url) "
+                             f"ORDER BY domain_rank,claim_recent(url),{order} LIMIT ?")
+                else:
+                    query = f"SELECT * FROM frontier WHERE status='pending' ORDER BY {order} LIMIT ?"
+                rows = self.conn.execute(query, (limit - len(claimed),)).fetchall()
                 if not rows:
                     break
                 for row in rows:
@@ -210,6 +221,14 @@ class QueueMixin:
                         (utcnow(), row["fingerprint"]),
                     )
                     if cursor.rowcount == 1:
+                        if domain_scope is not None:
+                            scope = domain_scope(row["url"])
+                            claimed_by_domain[scope] = claimed_by_domain.get(scope, 0) + 1
+                            recent[scope] = max(recent.values(), default=0) + 1
+                            if len(recent) > 1000:
+                                oldest = min(recent, key=lambda key: recent[key])
+                                del recent[oldest]
+                            self._claim_domain_recent = recent
                         claimed.append(row)
                         if len(claimed) >= limit:
                             break

@@ -19,10 +19,11 @@ from ..core.errors import (
 )
 from ..core.models import CrawlRequest, FetchResult
 from ..extraction import extractors
+from ..fetching.domain_semaphore import _resolve_scope
 from ..fetching.streams import collect_sse, collect_websocket
 from ..pipeline_ops.pdf_integration import run_pdf_pipeline
 from ..plugins.plugin_runtime import prepare_request, transform_record
-from ..runtime.live_concurrency import LiveConcurrency, local_resource_pressure
+from ..runtime.live_concurrency import DomainAdmission, local_resource_pressure
 from ..runtime.resource_profiles import effective_concurrency
 from ..runtime.resources import ResourceLimitError
 from ..security.policy import is_private_target
@@ -177,7 +178,8 @@ class _PipelineRun(_PipelineBase):
         if limit < 0:
             raise ValueError(f"max_pages 不能为负数: {limit}")
         concurrency = effective_concurrency(self.config, int(crawl.get("concurrency", 4)))
-        admission = LiveConcurrency(concurrency, enabled=self.config.section("resources").get("adaptive_concurrency", True))
+        admission = DomainAdmission(concurrency, enabled=self.config.section("resources").get("adaptive_concurrency", True),
+                                    per_domain=int(crawl.get("per_domain_concurrency", 0)))
         pressure_checked = 0.0
         resource_pressure = False
         strategy = str(crawl.get("strategy", "bfs"))
@@ -192,6 +194,12 @@ class _PipelineRun(_PipelineBase):
         status = "succeeded"
         pdf_summary: dict[str, Any] | None = None
         inflight: dict[Future[FetchResult], CrawlRequest] = {}
+
+        def domain_capacity(url: str) -> int:
+            scope = _resolve_scope(url)
+            active = sum(_resolve_scope(item.url) == scope for item in inflight.values())
+            return max(0, admission.domain_limit(scope) - active)
+
         frontier_exhausted = False
         # 出网是否被我们**主动**关停（取消/中断）。用于区分「这个 URL 被策略拒绝」与
         # 「我们正在停，请求没机会发出去」——后者不能记成终态 blocked，否则 resume 不再重试，
@@ -206,8 +214,11 @@ class _PipelineRun(_PipelineBase):
             request = inflight.pop(future)
             try:
                 result = future.result()
-                admission.observe(result.elapsed_seconds, failed=result.status >= 400, rate_limited=result.status == 429)
+                admission.observe(result.elapsed_seconds, domain=_resolve_scope(request.url),
+                                  failed=result.status >= 400, rate_limited=result.status == 429)
+                consume_started = time.monotonic()
                 self._handle_result(run_id, result, maximum_depth)
+                self.metrics.record_stage("result_processing", time.monotonic() - consume_started)
                 frontier_exhausted = False
                 # 已成功处理重定向响应后，把精确最终 URL 记为同一请求的已完成别名。
                 # _handle_result 可能已从页面发现该 URL 并入队，因此这里同时收敛
@@ -264,7 +275,8 @@ class _PipelineRun(_PipelineBase):
                 self._emit("on_error", run_id=run_id, stage="extract", error=exc, request=request)
             except Exception as exc:  # Per-URL isolation and retry boundary.
                 response = getattr(exc, "response", None)
-                admission.observe(0, failed=True, rate_limited=getattr(response, "status_code", None) == 429)
+                admission.observe(0, domain=_resolve_scope(request.url), failed=True,
+                                  rate_limited=getattr(response, "status_code", None) == 429)
                 info = describe_error(exc)
                 self.state.add_error(run_id, request, "fetch", exc, retryable=info.retryable)
                 self.state.mark_failed(request, exc, attempts, retryable=info.retryable)
@@ -339,7 +351,8 @@ class _PipelineRun(_PipelineBase):
                         limit - processed - len(inflight),
                         max_requests - attempted - len(inflight),
                     )
-                    batch = self.state.claim(want, strategy)
+                    batch = self.state.claim(want, strategy, domain_scope=_resolve_scope,
+                                             domain_capacity=domain_capacity)
                     if not batch:
                         frontier_exhausted = True
                         break

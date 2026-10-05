@@ -72,6 +72,7 @@ class DomainConcurrencyLimiter:
         "_max_cache",
         "_env",
         "_sems",
+        "_references",
         "_lock",  # 同步锁：保护 _sems dict（async 侧不应并发 mutate，加一层防御）
     )
 
@@ -92,7 +93,8 @@ class DomainConcurrencyLimiter:
         self._env = environment
         # host → asyncio.Semaphore
         self._sems: dict[str, asyncio.Semaphore] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self._references: dict[str, int] = {}
 
     # ── 公共属性（用于检查/测试） ─────────────────────────
     @property
@@ -112,17 +114,24 @@ class DomainConcurrencyLimiter:
     async def acquire(self, url: str) -> AsyncIterator[None]:
         """获取「全局 + 域名」双层信号量，退出时自动释放。
 
-        order：先拿全局（防止单域名饿死小域名→全局槽被大站点全占），
-        再拿域名（保证单域名不会占满全局）。
-        注：如果顺序反过来「先拿域名再拿全局」，多个域名都能先各自进入等待队列，
-        最终等待全局那一把，效果相同；但 Colly/大多数实现都采用 global-first。
+        Waiting for a domain slot must not consume a global slot. Cancellation
+        releases either acquired semaphore through the context managers.
         """
         scope = _resolve_scope(url, environment=self._env)
-        domain_sem = self._get_or_create_sem(scope)
-        # 先全局，再域名
-        async with self._global_sem:
+        with self._lock:
+            domain_sem = self._get_or_create_sem(scope)
+            self._references[scope] = self._references.get(scope, 0) + 1
+        try:
             async with domain_sem:
-                yield
+                async with self._global_sem:
+                    yield
+        finally:
+            with self._lock:
+                references = self._references.get(scope, 1) - 1
+                if references:
+                    self._references[scope] = references
+                else:
+                    self._references.pop(scope, None)
 
     # ── 内部 ──────────────────────────────────────────────
     def _get_or_create_sem(self, scope: str) -> asyncio.Semaphore:
@@ -150,8 +159,10 @@ class DomainConcurrencyLimiter:
             if removed >= target:
                 break
             s = self._sems[host]
+            if self._references.get(host, 0):
+                continue
             try:
-                if s._value >= self._per_limit:  # type: ignore[attr-defined]
+                if s._value >= self._per_limit and not getattr(s, "_waiters", None):  # type: ignore[attr-defined]
                     del self._sems[host]
                     removed += 1
             except AttributeError:
