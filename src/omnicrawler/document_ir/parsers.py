@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.encoding import read_text_auto
-from ..extraction.html_tools import discover_links, node_attr, node_text, parse_html, select_nodes
+from ..extraction.html_tools import MiniNode, discover_links, node_attr, node_text, parse_html, select_nodes
 from .base import DocumentIR
 
 #: 解析器签名：输入文件 + options → 统一中间表示
@@ -153,11 +153,8 @@ def _parse_html(path: Path, options: dict[str, Any]) -> DocumentIR:
     if options.get("main_content", True):
         main_node = _select_main_container(document)
     content_root = main_node if main_node is not None else document
-    paragraphs: list[str] = []
-    for node in select_nodes(content_root, _CONTENT_SELECTOR):
-        text = node_text(node)
-        if text and text not in paragraphs:
-            paragraphs.append(text)
+    result = DocumentIR(source=path, kind=".html", title=title)
+    _append_html_blocks(result, content_root)
 
     links: list[tuple[str, str]] = []
     for href, text, kind in discover_links(document):
@@ -173,14 +170,42 @@ def _parse_html(path: Path, options: dict[str, Any]) -> DocumentIR:
         if desc:
             meta["description"] = desc
 
-    return DocumentIR(
-        source=path,
-        kind=".html",
-        title=title,
-        paragraphs=paragraphs,
-        links=links,
-        metadata=meta,
-    )
+    result.links = links
+    result.metadata.update(meta)
+    return result
+
+
+def _append_html_blocks(result: DocumentIR, root: Any, *, part: str = "", include_h1: bool = False) -> None:
+    # Traverse both optional BeautifulSoup and the built-in MiniNode in DOM order.
+    iterator = root.iter_descendants() if isinstance(root, MiniNode) else root.descendants
+    tags = set(_CONTENT_SELECTOR.split(",")) | {"table"}
+    if include_h1:
+        tags.add("h1")
+    for position, node in enumerate(iterator):
+        tag = getattr(node, "tag", None) or getattr(node, "name", None)
+        if tag not in tags:
+            continue
+        parent = getattr(node, "parent", None)
+        nested = False
+        while parent is not None and parent is not root:
+            parent_tag = getattr(parent, "tag", None) or getattr(parent, "name", None)
+            if parent_tag in tags:
+                nested = True
+                break
+            parent = getattr(parent, "parent", None)
+        if nested:
+            continue
+        locator = {"part": part, "dom_position": position, "tag": tag}
+        if tag == "table":
+            cells = [[node_text(cell) for cell in select_nodes(row, "th,td")]
+                     for row in select_nodes(node, "tr")]
+            if cells:
+                result.add_table(cells, locator=locator)
+        else:
+            text = node_text(node)
+            if text:
+                level = int(tag[1]) if tag.startswith("h") else 0
+                result.add_paragraph(text, locator=locator, heading_level=level)
 
 
 # ── .eml ─────────────────────────────────────────────────

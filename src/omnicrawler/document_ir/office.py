@@ -17,9 +17,9 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from ..extraction.html_tools import node_text, parse_html, select_nodes
+from ..extraction.html_tools import parse_html
 from .base import DocumentIR
-from .parsers import _require_file, _require_parser, register_document_parser
+from .parsers import _append_html_blocks, _require_file, _require_parser, register_document_parser
 
 #: 正文候选容器（与 parsers.py 的 HTML 解析一致）
 _CONTENT_SELECTOR = "p,li,blockquote,h1,h2,h3,h4,h5,h6"
@@ -46,35 +46,38 @@ def _parse_docx(path: Path, options: dict[str, Any]) -> DocumentIR:
     except ImportError:
         _require_parser(".docx", "python-docx")
 
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
     document = docx.Document(str(path))
-    paragraphs = [p.text.strip() for p in document.paragraphs if p.text.strip()]
-    tables = [
-        [[cell.text.strip() for cell in row.cells] for row in table.rows]
-        for table in document.tables
-    ]
-
     core = document.core_properties
-    title = paragraphs[0] if paragraphs else (core.title or path.stem)
-    if paragraphs and title == paragraphs[0]:
-        paragraphs = paragraphs[1:]
-    elif not paragraphs:
-        title = path.stem
-
-    metadata: dict[str, Any] = {"author": core.author or ""}
+    result = DocumentIR(source=path, kind=".docx", title=core.title or path.stem,
+                        metadata={"author": core.author or ""})
+    title_consumed = False
+    for index, element in enumerate(document.element.body):
+        locator = {"part": "word/document.xml", "body_index": index}
+        if element.tag.endswith("}p"):
+            paragraph = Paragraph(element, document)
+            text = paragraph.text.strip()
+            if not text:
+                continue
+            if not title_consumed:
+                result.title = text
+                title_consumed = True
+                result.metadata["title_locator"] = locator
+                continue
+            style = paragraph.style.name if paragraph.style is not None else ""
+            level = int(style[-1]) if style.startswith("Heading ") and style[-1:].isdigit() else 0
+            result.add_paragraph(text, locator=locator, heading_level=level)
+        elif element.tag.endswith("}tbl"):
+            table = Table(element, document)
+            result.add_table([[cell.text.strip() for cell in row.cells] for row in table.rows], locator=locator)
     if core.created is not None:
-        metadata["created"] = core.created.isoformat()
+        result.metadata["created"] = core.created.isoformat()
     if core.modified is not None:
-        metadata["modified"] = core.modified.isoformat()
-    metadata["paragraph_count"] = len(paragraphs)
-
-    return DocumentIR(
-        source=path,
-        kind=".docx",
-        title=title,
-        paragraphs=paragraphs,
-        tables=tables,
-        metadata=metadata,
-    )
+        result.metadata["modified"] = core.modified.isoformat()
+    result.metadata["paragraph_count"] = len(result.paragraphs)
+    return result
 
 
 # ── .pptx ────────────────────────────────────────────────
@@ -87,32 +90,21 @@ def _parse_pptx(path: Path, options: dict[str, Any]) -> DocumentIR:
         _require_parser(".pptx", "python-pptx")
 
     prs = Presentation(str(path))
-    paragraphs: list[str] = []
-    tables: list[list[list[str]]] = []
-    for slide in prs.slides:
-        for shape in slide.shapes:
+    result = DocumentIR(source=path, kind=".pptx", title=path.stem)
+    for slide_no, slide in enumerate(prs.slides, 1):
+        for shape_no, shape in enumerate(slide.shapes, 1):
+            locator = {"slide": slide_no, "shape": shape_no, "shape_id": shape.shape_id,
+                       "order_source": "shape_tree"}
             if shape.has_text_frame:
-                for para in shape.text_frame.paragraphs:
-                    text = "".join(run.text for run in para.runs).strip()
+                for paragraph_no, paragraph in enumerate(shape.text_frame.paragraphs, 1):
+                    text = "".join(run.text for run in paragraph.runs).strip()
                     if text:
-                        paragraphs.append(text)
+                        result.add_paragraph(text, locator={**locator, "paragraph": paragraph_no})
             elif shape.has_table:
-                tables.append(
-                    [[cell.text.strip() for cell in row.cells] for row in shape.table.rows]
-                )
-
-    title = paragraphs[0] if paragraphs else path.stem
-    if paragraphs and title == paragraphs[0]:
-        paragraphs = paragraphs[1:]
-
-    return DocumentIR(
-        source=path,
-        kind=".pptx",
-        title=title,
-        paragraphs=paragraphs,
-        tables=tables,
-        metadata={"slide_count": len(prs.slides), "paragraph_count": len(paragraphs)},
-    )
+                result.add_table([[cell.text.strip() for cell in row.cells] for row in shape.table.rows], locator=locator)
+    result.promote_first_paragraph_to_title()
+    result.metadata.update(slide_count=len(prs.slides), paragraph_count=len(result.paragraphs))
+    return result
 
 
 # ── .odt ─────────────────────────────────────────────────
@@ -126,23 +118,27 @@ def _parse_odt(path: Path, options: dict[str, Any]) -> DocumentIR:
         raise ValueError(f"document_ir: 无效的 ODT 文件: {path} ({exc})") from exc
 
     tree = ET.parse(io.BytesIO(content))
-    paragraphs: list[str] = []
-    for elem in tree.iter(_ODT_TEXT_NS + "p"):
-        text = "".join(elem.itertext()).strip()
-        if text:
-            paragraphs.append(" ".join(text.split()))
-
-    title = paragraphs[0] if paragraphs else path.stem
-    if paragraphs and title == paragraphs[0]:
-        paragraphs = paragraphs[1:]
-
-    return DocumentIR(
-        source=path,
-        kind=".odt",
-        title=title,
-        paragraphs=paragraphs,
-        metadata={"paragraph_count": len(paragraphs)},
-    )
+    result = DocumentIR(source=path, kind=".odt", title=path.stem)
+    table_ns = "{urn:oasis:names:tc:opendocument:xmlns:table:1.0}"
+    def visit(element: Any, location: str) -> None:
+        if element.tag == table_ns + "table":
+            cells = [[" ".join("".join(cell.itertext()).split()) for cell in row
+                      if cell.tag in {table_ns + "table-cell", table_ns + "covered-table-cell"}]
+                     for row in element.iter(table_ns + "table-row")]
+            result.add_table(cells, locator={"part": "content.xml", "element_path": location})
+        elif element.tag in {_ODT_TEXT_NS + "p", _ODT_TEXT_NS + "h"}:
+            text = " ".join("".join(element.itertext()).split())
+            if text:
+                level = element.get(_ODT_TEXT_NS + "outline-level", "0")
+                result.add_paragraph(text, locator={"part": "content.xml", "element_path": location},
+                                     heading_level=int(level) if level.isdigit() else 0)
+        else:
+            for index, child in enumerate(element):
+                visit(child, f"{location}/{index}")
+    visit(tree.getroot(), "0")
+    result.promote_first_paragraph_to_title()
+    result.metadata["paragraph_count"] = len(result.paragraphs)
+    return result
 
 
 # ── .epub ────────────────────────────────────────────────
@@ -214,28 +210,14 @@ def _parse_epub(path: Path, options: dict[str, Any]) -> DocumentIR:
         if not ordered:
             ordered = sorted(content_files)
 
-        paragraphs: list[str] = []
-        title = path.stem
+        result = DocumentIR(source=path, kind=".epub", title=path.stem)
         for name in ordered:
             raw = _read_zip_entry(zf, name)
-            text = raw.decode("utf-8", errors="replace")
-            document = parse_html(text)
-            for node in select_nodes(document, _CONTENT_SELECTOR):
-                item = node_text(node)
-                if item and item not in paragraphs:
-                    paragraphs.append(item)
-
-    title = paragraphs[0] if paragraphs else path.stem
-    if paragraphs and title == paragraphs[0]:
-        paragraphs = paragraphs[1:]
-
-    return DocumentIR(
-        source=path,
-        kind=".epub",
-        title=title,
-        paragraphs=paragraphs,
-        metadata={"content_files": len(ordered), "paragraph_count": len(paragraphs)},
-    )
+            document = parse_html(raw.decode("utf-8", errors="replace"))
+            _append_html_blocks(result, document, part=name, include_h1=True)
+    result.promote_first_paragraph_to_title()
+    result.metadata.update(content_files=len(ordered), paragraph_count=len(result.paragraphs))
+    return result
 
 
 __all__ = ["_epub_spine_order"]

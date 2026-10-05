@@ -126,7 +126,7 @@ class AIGraphExtractor:
         from ..services.ai_accounting import AIRequestAccounting
         from ..services.ai_safety import AIBudget
 
-        self._accounting = AIRequestAccounting(budget or AIBudget(), self._provider.pricing)
+        self._accounting = AIRequestAccounting(budget or AIBudget(), getattr(self._provider, "pricing", {}))
 
     # ── 公共 API ─────────────────────────────────────────────────────
 
@@ -404,7 +404,8 @@ class AIGraphExtractor:
 
         content = choices[0].get("message", {}).get("content", "{}")
         result = self._parse_response(content, fields)
-        result["accounting"] = data.get("_accounting", {})
+        if "_accounting" in data:
+            result["accounting"] = data["_accounting"]
         return result
 
     def _build_fields_spec(self, fields: list[FieldDef]) -> str:
@@ -470,6 +471,8 @@ class AIGraphExtractor:
     def _assess_target(result: dict[str, Any], fields: list[FieldDef]) -> None:
         from ..services.ai_safety import validate_target_fields
 
+        if not fields:
+            return  # Legacy graph-only responses have no declared target fields.
         schema = {field.name: {"type": field.field_type, "required": field.required} for field in fields}
         if len(schema) != len(fields) or any(not name.strip() for name in schema):
             raise ValueError("AI 目标字段名称必须非空且唯一")

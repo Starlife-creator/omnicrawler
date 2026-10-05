@@ -28,24 +28,39 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
             if page["needs_ocr"]:
                 omitted.append(page["page_no"])
                 continue
+            page_blocks: list[tuple[str, Any, dict[str, Any]]] = []
             for table_no, table in enumerate(page.get("tables", []), 1):
-                document.tables.append(table["cells"])
-                document.table_locators.append({"page": page["page_no"], "page_table": table_no,
-                                                "bbox": table["bbox"], "coordinate_system": "pdf_points_top_left"})
+                page_blocks.append(("table", table["cells"], {"page": page["page_no"], "page_table": table_no,
+                                    "bbox": table["bbox"], "coordinate_system": "pdf_points_top_left"}))
             for paragraph_no, paragraph in enumerate(str(page["final_text"]).split("\n\n"), 1):
                 if paragraph.strip():
-                    document.paragraphs.append(paragraph.strip())
                     locator: dict[str, Any] = {"page": page["page_no"], "page_paragraph": paragraph_no}
                     region = _paragraph_region(paragraph, page.get("words", []))
                     if region is not None:
                         locator.update(bbox=region, coordinate_system="pdf_points_top_left")
-                    document.paragraph_locators.append(locator)
+                    page_blocks.append(("paragraph", paragraph.strip(), locator))
+            if page_blocks and all("bbox" in block[2] for block in page_blocks):
+                page_blocks.sort(key=lambda block: (block[2]["bbox"][1], block[2]["bbox"][0]))
+                ordering = "geometric_top_left"
+            else:
+                ordering = "native_groups_unknown_reading_order"
+                if page.get("tables"):
+                    document.warnings.append(f"Page {page['page_no']}: paragraph/table reading order could not be established")
+                # Text-only native order is useful; tables have no proven insertion point.
+                page_blocks.sort(key=lambda block: block[0] == "table")
+            for kind, value, locator in page_blocks:
+                locator["order_source"] = ordering
+                if kind == "table":
+                    document.add_table(value, locator=locator)
+                else:
+                    document.add_paragraph(value, locator=locator)
     finally:
         iterator.close()
     document.metadata["omitted_pages_needing_ocr"] = omitted
     if omitted:
+        document.metadata["repair_action"] = {"service": "processors.pdf", "requires_ocr": True, "pages": omitted}
         document.warnings.append(f"Native text only; pages needing OCR were omitted: {omitted}")
-    if not document.paragraphs:
+    if not document.paragraphs and not document.tables:
         raise ValueError("PDF has no usable native text; OCR is required")
     return document
 

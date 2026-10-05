@@ -105,7 +105,9 @@ def _mini_select(context: MiniNode, selector: str) -> list[MiniNode]:
         for item in current:
             if item not in results:
                 results.append(item)
-    return results
+    # CSS selector groups describe a set, returned in DOM order like bs4.
+    selected = set(results)
+    return [node for node in context.iter_descendants() if node in selected]
 
 
 def parse_html(text: str) -> Any:
