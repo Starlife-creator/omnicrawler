@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QThread, QTimer, Signal, Slot
@@ -117,7 +118,7 @@ class _CheckWorker(QThread):
         try:
             from omnicrawler.scheduling.change_detector import ChangeDetector, MonitorRule
 
-            detector = ChangeDetector(fetcher=self._fetcher)
+            detector = ChangeDetector(fetcher=self._fetcher, durable_delivery=True)
             self._detector = detector
             for item in self._rules_json:
                 detector.add_rule(MonitorRule.from_dict(item))
@@ -798,6 +799,8 @@ class ChangeMonitorView(QWidget):
             return
         self._worker = None
         events_list = list(events)
+        if self._shutting_down:
+            return
 
         if events_list:
             self._status_label.setText(_(f"检测到 {len(events_list)} 个变化"))
@@ -821,6 +824,11 @@ class ChangeMonitorView(QWidget):
             self._save_rules()
             self._refresh_list()
             self._refresh_overview(events_list)
+            # Receipt means the view submitted the event, never that a user read it.
+            from ...scheduling.monitor_store import MonitorStore
+            store = MonitorStore(Path(".omnicrawler_monitor"))
+            for event in events_list:
+                store.acknowledge(event.event_id)
 
             # 弹出详情
             first_event = events_list[0]

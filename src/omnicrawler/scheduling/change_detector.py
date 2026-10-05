@@ -37,6 +37,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from ..core.safe_data import safe_regex_search
 from ..core.utils import atomic_write
@@ -135,6 +136,7 @@ class ChangeEvent:
     previous_content: str | None = None
     current_content: str | None = None
     diff_summary: str = ""
+    event_id: str = field(default_factory=lambda: uuid4().hex)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -163,10 +165,15 @@ class ChangeDetector:
         *,
         egress: Any = None,
         fetcher: Any = None,
+        durable_delivery: bool = False,
     ) -> None:
         self._rules: dict[str, MonitorRule] = {}
         self._history: dict[str, list[ChangeEvent]] = {}
         self._data_dir = data_dir or Path(".omnicrawler_monitor")
+        from .monitor_store import MonitorStore
+
+        self._store = MonitorStore(self._data_dir)
+        self._durable_delivery = durable_delivery
         self._on_notify = on_notify
         self._running: bool = True
         # 协作式取消（终态，与 pause/resume 的可逆开关不同）：置位后不再发起新抓取。
@@ -180,6 +187,7 @@ class ChangeDetector:
         # 消除 GUI 侧 "__baseline__" 哨兵假哈希导致的每轮误报变化
         self._baselines: dict[str, dict[str, Any]] = {}
         self._load_baselines()
+        self._baselines.update(self._store.baselines())
 
     # ── 规则管理 ────────────────────────────────────────────────────
 
@@ -435,6 +443,7 @@ class ChangeDetector:
         if rule is None or not rule.enabled:
             return None
 
+        self.retry_notifications()
         now = datetime.now(tz=UTC)
 
         # 检查间隔
@@ -488,7 +497,7 @@ class ChangeDetector:
         rule.last_hash = current_hash
         rule.last_content = content
         rule.last_checked = now
-        self._persist_baseline(rule)
+        self._persist_baseline(rule, event)
 
         # 记录历史（S3.2.1 ⑥：每规则历史有界，防内存无限增长）
         history = self._history.setdefault(rule_id, [])
@@ -498,13 +507,35 @@ class ChangeDetector:
 
         # 触发通知
         if self._on_notify:
-            try:
-                self._on_notify(event)
-            except Exception as exc:
-                LOGGER.error("通知回调异常: %s", exc)
+            self.retry_notifications(_event=event)
 
         LOGGER.info("检测到变化: %s — %s", rule.name, event.diff_summary)
         return event
+
+    def retry_notifications(self, *, force: bool = False, _event: ChangeEvent | None = None) -> None:
+        if self._cancelled or not self._running or self._on_notify is None:
+            return
+        active = {key for key, rule in self._rules.items() if rule.enabled}
+        for row in self._store.pending(active, force=force):
+            if self._cancelled or not self._running:
+                break
+            if not self._store.claim(row["event_id"]):
+                continue
+            payload = json.loads(row["body_json"])
+            payload["detected_at"] = datetime.fromisoformat(payload["detected_at"])
+            try:
+                self._on_notify(_event if _event is not None and _event.event_id == row["event_id"] else ChangeEvent(**payload))
+            except Exception as exc:
+                self._store.fail(row["event_id"])
+                LOGGER.error("通知回调异常: %s", exc)
+            else:
+                self._store.acknowledge(row["event_id"])
+
+    def acknowledge_notification(self, event_id: str) -> None:
+        self._store.acknowledge(event_id)
+
+    def delivery_report(self) -> list[dict[str, Any]]:
+        return self._store.report()
 
     async def check_all(self) -> list[ChangeEvent]:
         """检查所有已启用的规则。返回所有变化事件列表。"""
@@ -519,6 +550,14 @@ class ChangeDetector:
                     events.append(event)
             except Exception as exc:
                 LOGGER.error("检查规则 %s 异常: %s", rule_id, exc)
+        if self._durable_delivery and not self._cancelled:
+            active = {key for key, rule in self._rules.items() if rule.enabled}
+            known = {event.event_id for event in events}
+            for row in self._store.pending(active):
+                if row["event_id"] not in known:
+                    payload = json.loads(row["body_json"])
+                    payload["detected_at"] = datetime.fromisoformat(payload["detected_at"])
+                    events.append(ChangeEvent(**payload))
         return events
 
     # ── S3.2.1：基线持久化 ─────────────────────────────────────────
@@ -534,13 +573,29 @@ class ChangeDetector:
         except (OSError, json.JSONDecodeError):
             self._baselines = {}
 
-    def _persist_baseline(self, rule: MonitorRule) -> None:
+    def _persist_baseline(self, rule: MonitorRule, event: ChangeEvent | None = None) -> None:
         """把规则的 last_hash/last_content/last_checked 写入磁盘基线。"""
+        previous = self._baselines.get(rule.rule_id)
         self._baselines[rule.rule_id] = {
             "last_hash": rule.last_hash,
             "last_content": rule.last_content,
             "last_checked": rule.last_checked.isoformat() if rule.last_checked else None,
         }
+        try:
+            self._store.save(rule.rule_id, self._baselines[rule.rule_id],
+                             event.to_dict() if event is not None else None,
+                             pending=self._on_notify is not None or self._durable_delivery)
+        except Exception:
+            restored = previous or {"last_hash": event.previous_hash if event else None,
+                                    "last_content": event.previous_content if event else None}
+            rule.last_hash = restored.get("last_hash")
+            rule.last_content = restored.get("last_content")
+            rule.last_checked = None
+            if previous is None:
+                self._baselines.pop(rule.rule_id, None)
+            else:
+                self._baselines[rule.rule_id] = previous
+            raise
         try:
             self._baseline_path().parent.mkdir(parents=True, exist_ok=True)
             temporary = self._baseline_path().with_suffix(".tmp")
