@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from ..core.database_lease import database_lease
 from .schema import SCHEMA
 from .state_store_artifacts import ArtifactsMixin
 from .state_store_plugin_state import PluginStateMixin
@@ -36,16 +37,25 @@ class StateStore(
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(path, timeout=60, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA busy_timeout=60000")
-        self.conn.execute("PRAGMA journal_mode=WAL")
-        self.conn.execute("PRAGMA synchronous=NORMAL")
-        self.conn.executescript(SCHEMA)
-        self._ensure_response_columns()
-        self._ensure_semantic_change_columns()
         self._lock = threading.RLock()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._lease = database_lease(path)
+        self._lease.__enter__()
+        try:
+            self.conn = sqlite3.connect(path, timeout=60, check_same_thread=False)
+            self.conn.row_factory = sqlite3.Row
+            self.conn.execute("PRAGMA busy_timeout=60000")
+            self.conn.execute("PRAGMA journal_mode=WAL")
+            self.conn.execute("PRAGMA synchronous=NORMAL")
+            self.conn.executescript(SCHEMA)
+            self._ensure_response_columns()
+            self._ensure_semantic_change_columns()
+        except BaseException:
+            connection = getattr(self, "conn", None)
+            if connection is not None:
+                connection.close()
+            self._lease.__exit__(None, None, None)
+            raise
 
     @staticmethod
     def _require_run_id(run_id: str | None) -> str | None:
@@ -83,7 +93,10 @@ class StateStore(
         with self._lock:
             if not self.conn or isinstance(self.conn, _ClosedConnection):
                 return
-            self.conn.close()
+            try:
+                self.conn.close()
+            finally:
+                self._lease.__exit__(None, None, None)
             # S2.5.42：关闭后方法调用得到受控 RuntimeError，而非 AttributeError
             self.conn = _ClosedConnection()  # type: ignore[assignment]
 
