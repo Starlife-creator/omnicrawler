@@ -7,7 +7,13 @@ from ..core.config import load_config
 from ..services.workspace import WorkspaceManager
 
 
-def execute(config: str, action: str, *, target: str = "", kind: str = "full") -> dict[str, Any]:
+def execute(config: str, action: str, *, target: str = "", kind: str = "full", destination: str = "") -> dict[str, Any]:
+    if action == "import":
+        if not target or not destination:
+            raise ValueError("workspace import必须提供--target工作区包和--destination新目录")
+        return WorkspaceManager.import_package(Path(target), Path(destination))
+    if not config:
+        raise ValueError("当前工作区操作必须提供--config")
     manager = WorkspaceManager(load_config(config))
     if action == "init":
         return manager.initialize()

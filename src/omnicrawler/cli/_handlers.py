@@ -692,8 +692,12 @@ def _run_workspace(args: argparse.Namespace) -> None:
 
     if args.action == "rollback":
         require_explicit_apply("workspace rollback")
-    load_config(args.config)
-    _json(cmd_workspace.execute(args.config, args.action, target=args.target or "", kind=args.kind))
+    if args.action != "import":
+        if not args.config:
+            raise ValueError("当前工作区操作必须提供--config")
+        load_config(args.config)
+    _json(cmd_workspace.execute(args.config or "", args.action, target=args.target or "", kind=args.kind,
+                                destination=getattr(args, "destination", "") or ""))
 
 
 @_register("plan")

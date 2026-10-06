@@ -305,10 +305,14 @@ omnicrawler regression -c config.yaml
 ```powershell
 omnicrawler components list
 omnicrawler plugins -c config.yaml
-omnicrawler workspace {init|health|package|snapshot|rollback}
+omnicrawler workspace {init|health|package|snapshot|rollback|import}
+omnicrawler workspace package -c config.yaml --target workspace.zip --kind complete
+omnicrawler workspace import --target workspace.zip --destination "新 工作区"
 omnicrawler migrate -c config.yaml -o migrated.yaml [--force]
 omnicrawler serve -c config.yaml [--host 127.0.0.1] [--port 8765]
 ```
+
+`complete` 保留历史导出，适合备份和搬迁；`full` 保留既有精简行为，排除旧导出。导入会校验文件哈希和数据库，仅创建新目录。打开新目录中的 `config.yaml`；原配置副本和引用检查记录分别保存在 `config.before-relocation.yaml` 与 `workspace/relocation.json`。外部文件、未包含的附件及旧包缺少原位置的信息需要复核，原有凭据引用需在新环境中可用。
 
 ---
 

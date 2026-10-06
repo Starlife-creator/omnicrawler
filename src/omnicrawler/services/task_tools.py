@@ -48,6 +48,13 @@ def execute(action: TaskAction) -> dict[str, Any]:
     if action.name.startswith("components:"):
         from .component_tools import execute as component_action
         return component_action(action.name.partition(":")[2], args)
+    if action.name.startswith("workspace:"):
+        from ..commands.workspace import execute as workspace_action
+        operation = action.name.partition(":")[2]
+        if operation == "import" and args.get("confirmed") is not True:
+            raise ValueError("请确认工作区包和新的导入目录")
+        return workspace_action(str(action.config_path), operation, target=str(args.get("target", "")),
+                                destination=str(args.get("destination", "")), kind=str(args.get("kind", "full")))
     if action.name == "workflow":
         from .workflow_diagnostics import describe
         return describe(load_config(action.config_path), run_id=str(args.get("run_id", "")))

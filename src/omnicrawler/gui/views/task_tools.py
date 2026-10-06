@@ -142,6 +142,19 @@ class TaskToolsDialog(QDialog):
         self.components.currentItemChanged.connect(self._show_component)
         self._button(components, _("卸载所选组件"), lambda: self._manage_component("uninstall"))
         self._button(components, _("恢复本次卸载"), lambda: self._manage_component("rollback"))
+        workspace = self._tab(_("工作区与搬迁"))
+        self._button(workspace, _("检查当前工作区"), lambda: self._launch("workspace:health", {}))
+        self.workspace_backup = self._file(workspace, _("工作区包保存位置"), save=True)
+        self.include_exports = QCheckBox(_("保留历史导出（搬迁推荐）"))
+        self.include_exports.setChecked(True)
+        self.include_exports.setAccessibleName(_("备份保留历史导出"))
+        workspace.addRow(self.include_exports)
+        self._button(workspace, _("创建工作区包"), lambda: self._launch("workspace:package", {
+            "target": self.workspace_backup.text(), "kind": "complete" if self.include_exports.isChecked() else "full"}))
+        self.workspace_package = self._file(workspace, _("需要导入的工作区包"))
+        self.workspace_destination = self._file(workspace, _("新工作区目录（尚不存在）"), save=True)
+        workspace.addRow(QLabel(_("导入保留任务身份与原有凭据引用；缺失文件或外部引用需要检查。完成后打开新目录中的配置。")))
+        self._button(workspace, _("导入到新目录"), self._import_workspace)
         self.result_view = QTextEdit()
         self.result_view.setReadOnly(True)
         self.result_view.setAccessibleName(_("操作结果和候选比较"))
@@ -196,6 +209,16 @@ class TaskToolsDialog(QDialog):
         path = self._current_path()
         return path is not None and path.resolve() == self.config_path and self._current_token() == self._token
 
+    def _import_workspace(self) -> None:
+        package, destination = self.workspace_package.text().strip(), self.workspace_destination.text().strip()
+        if not package or not destination:
+            self.result_view.setPlainText(_("请选择工作区包，并输入尚不存在的新目录。"))
+            return
+        if QMessageBox.question(self, _("确认导入工作区"), _("工作区包：{0}\n新目录：{1}\n\n校验后导入；已有目录不能覆盖。继续吗？").format(package, destination),
+                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            self._launch("workspace:import", {"target": package, "destination": destination, "confirmed": True})
+
     def _show_component(self, current: QListWidgetItem | None, _previous: QListWidgetItem | None = None) -> None:
         if current is not None:
             self.component_details.setPlainText(self._component_text(current.data(Qt.ItemDataRole.UserRole)))
@@ -239,7 +262,7 @@ class TaskToolsDialog(QDialog):
                                 QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
             self._launch("components:" + operation, arguments)
 
-    def _component_done(self, name: str, arguments: dict[str, Any], result: dict[str, Any]) -> None:
+    def _management_done(self, name: str, arguments: dict[str, Any], result: dict[str, Any]) -> None:
         if name.startswith("components:"):
             self._component_registry_sha = result.get("registry_sha256", "")
             if name == "components:list":
@@ -265,6 +288,17 @@ class TaskToolsDialog(QDialog):
                 elif name == "components:rollback":
                     self._uninstalled_component = ""
                 self.result_view.setPlainText(_("组件操作已完成；请重新读取列表核对。卸载保留可恢复的版本。"))
+            return
+        if name.startswith("workspace:"):
+            if name == "workspace:health":
+                self.result_view.setPlainText(_("工作区检查：{0}\n数据库：{1}\n可用磁盘（字节）：{2}\n附件校验：{3}").format(
+                    _("通过") if result.get("ok") else _("需要处理"), result.get("database", ""),
+                    result.get("disk", {}).get("free", 0), json.dumps(result.get("artifacts", {}), ensure_ascii=False, indent=2)))
+            else:
+                self._report_path = str(result.get("config") or result.get("created") or "")
+                self.open_report.setEnabled(bool(self._report_path))
+                self.result_view.setPlainText(_("工作区操作已完成：{0}\n需要检查的引用：{1}\n凭据保持原有引用，请核对新环境的可用性。").format(
+                    self._report_path, len(result.get("unresolved_references", []))))
             return
 
     def _launch(self, name: str, arguments: dict[str, Any]) -> None:
@@ -341,8 +375,8 @@ class TaskToolsDialog(QDialog):
         if not self._same_task():
             self.result_view.setPlainText(_("操作结果属于原任务；当前任务已变化，请重新打开工具核对。"))
             return
-        if name.startswith("components:"):
-            self._component_done(name, arguments, result)
+        if name.startswith(("components:", "workspace:")):
+            self._management_done(name, arguments, result)
             return
         if name in {"sources", "failures"}:
             widget = self.sources if name == "sources" else self.failures

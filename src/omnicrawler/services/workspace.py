@@ -75,12 +75,12 @@ class WorkspaceManager:
 
     def package(self, target: Path, *, kind: str = "full") -> dict[str, Any]:
         _reject_plaintext_config(self.config.path)
-        if kind == "full":
-            return self._full_package(target)
+        if kind in {"full", "complete"}:
+            return self._full_package(target, include_outputs=kind == "complete")
         if kind == "support":
             return create_research_package(self.config, target, include_raw=False, include_artifacts=False)
         if kind != "config":
-            raise ValueError("工作区包类型必须是full、config或support")
+            raise ValueError("工作区包类型必须是full、complete、config或support")
         payload = self.config.path.read_bytes()
         digest = hashlib.sha256(payload).hexdigest()
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -91,29 +91,40 @@ class WorkspaceManager:
             }, ensure_ascii=False, indent=2))
         return {"created": str(target), "kind": kind, "files": 1, "sha256": _sha256(target)}
 
-    def _full_package(self, target: Path) -> dict[str, Any]:
+    @staticmethod
+    def import_package(package: Path, destination: Path, *, expected_sha256: str = "") -> dict[str, Any]:
+        from .workspace_import import import_package
+        return import_package(package, destination, expected_sha256=expected_sha256)
+
+    def _full_package(self, target: Path, *, include_outputs: bool = False) -> dict[str, Any]:
         target = target.resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
         descriptor, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
         os.close(descriptor)
         staged = Path(temporary)
         try:
-            result = self._write_full_package(staged, exclude=target)
+            result = self._write_full_package(staged, exclude=target, include_outputs=include_outputs)
             os.replace(staged, target)
             return {**result, "created": str(target)}
         finally:
             staged.unlink(missing_ok=True)
 
-    def _write_full_package(self, target: Path, *, exclude: Path) -> dict[str, Any]:
+    def _write_full_package(self, target: Path, *, exclude: Path, include_outputs: bool = False) -> dict[str, Any]:
         self.initialize()
         target = target.resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
         hashes: dict[str, str] = {}
         file_count = 0
+        paths = sorted(item for item in self.root.rglob("*") if item.is_file())
+        for path in paths:
+            if path.is_symlink() or any(parent.is_symlink() or parent.is_junction() for parent in path.parents if self.root in parent.parents):
+                raise ValueError("工作区打包不支持链接到其它位置的文件")
         with tempfile.TemporaryDirectory(prefix="omnicrawler-full-package-") as temporary:
             database_snapshots: dict[Path, Path] = {}
-            for database in self.root.rglob("*"):
+            for database in paths:
                 if not database.is_file() or database.suffix not in {".sqlite3", ".sqlite", ".db"}:
+                    continue
+                if not include_outputs and database.relative_to(self.root).parts[0] == "output":
                     continue
                 with database.open("rb") as handle:
                     if handle.read(16) != b"SQLite format 3\0":
@@ -142,21 +153,26 @@ class WorkspaceManager:
 
                 _add_bytes("project/config.yaml", self.config.path.read_bytes())
                 _add_bytes("project/workspace.json", self.manifest_path.read_bytes())
-                for path in sorted(item for item in self.root.rglob("*") if item.is_file()):
+                for path in paths:
                     if path.resolve() in {target, exclude} or path in database_snapshots:
                         continue
                     relative = path.relative_to(self.root).as_posix()
+                    if path.is_symlink() or any(parent.is_symlink() or parent.is_junction() for parent in path.parents if self.root in parent.parents):
+                        raise ValueError("工作区打包不支持链接到其它位置的文件")
                     if path.name.endswith(("-wal", "-shm", ".lock", ".restore.pending.json")) or any(
                         part.endswith(".leases") for part in path.relative_to(self.root).parts
                     ):
                         continue
-                    if relative.split("/", 1)[0] == "output":
+                    if not include_outputs and relative.split("/", 1)[0] == "output":
                         continue  # S2.5.17：排除旧导出，避免重复与体积
                     _add_file(f"project/workspace/{relative}", path)
                 for database, copied in database_snapshots.items():
                     _add_file(f"project/workspace/{database.relative_to(self.root).as_posix()}", copied)
                 manifest = {
                     "format": 1, "kind": "full-workspace", "created_at": utcnow(), "files": hashes,
+                    "workspace_origin": str(self.root), "config_origin": str(self.config.path),
+                    "project_root_origin": str(self.config.root),
+                    "exports_included": include_outputs,
                 }
                 archive.writestr(
                     "omnicrawler-package.json",

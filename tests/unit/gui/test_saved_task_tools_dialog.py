@@ -37,7 +37,7 @@ def test_selection_is_explicit_and_ai_is_opt_in(dialog, monkeypatch):
     window, _ = dialog
     calls = []
     monkeypatch.setattr(window, "_launch", lambda *args: calls.append(args))
-    assert window.tabs.count() == 6 and not window.use_ai.isChecked()
+    assert window.tabs.count() == 7 and not window.use_ai.isChecked()
     window._analyze()
     window._retry()
     assert not calls
@@ -177,6 +177,24 @@ def test_component_inspection_cannot_rebind_old_install_list(dialog, monkeypatch
         "compatible": True, "package_sha256": "new-package", "registry_sha256": "new-state"})
     window._manage_component("uninstall")
     assert calls[0][1]["registry_sha256"] == "old"
+
+
+def test_workspace_import_requires_explicit_destination_and_confirmation(dialog, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    window, _ = dialog
+    calls = []
+    monkeypatch.setattr(window, "_launch", lambda *args: calls.append(args))
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.Yes)
+    window._import_workspace()
+    assert not calls
+    window.workspace_package.setText("reviewed.zip")
+    window.workspace_destination.setText("new workspace")
+    window._import_workspace()
+    assert calls == [("workspace:import", {"target": "reviewed.zip", "destination": "new workspace", "confirmed": True})]
+    window._done("workspace:import", {}, {"config": "new workspace/config.yaml", "unresolved_references": [{"reason": "missing"}]})
+    assert "1" in window.result_view.toPlainText()
+    assert window.open_report.isEnabled()
 
 
 def test_forced_deletion_waits_for_owned_task_worker(tmp_path, monkeypatch):
