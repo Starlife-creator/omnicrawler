@@ -40,7 +40,10 @@ def test_cli_local_report_has_stable_references_and_no_provider(tmp_path, monkey
     assert json.loads(capsys.readouterr().out)["status"] == "completed_local"
     report = json.loads((output / "analysis.json").read_text(encoding="utf-8"))
     assert report["documents"][0]["sha256"] == hashlib.sha256(source.read_bytes()).hexdigest()
-    assert report["evidence"][0]["locator"] == {"paragraph": 1, "page": None}
+    locator = report["evidence"][0]["locator"]
+    assert {key: locator[key] for key in ("paragraph", "page")} == {"paragraph": 1, "page": None}
+    assert locator["node_id"].startswith("node-")
+    assert locator["source_sha256"] == hashlib.sha256(source.read_bytes()).hexdigest()
     assert report["interpretations"] == [] and report["requires_review"]
     assert "PRIVATE-UNSELECTED" not in str(report)
     evidence = report["evidence"]

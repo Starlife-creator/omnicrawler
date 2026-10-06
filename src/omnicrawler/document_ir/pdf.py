@@ -41,7 +41,8 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
                     page_blocks.append(("paragraph", paragraph.strip(), locator))
             if page_blocks and all("bbox" in block[2] for block in page_blocks):
                 page_blocks.sort(key=lambda block: (block[2]["bbox"][1], block[2]["bbox"][0]))
-                ordering = "geometric_top_left"
+                ordering = "geometric_top_left_not_verified"
+                document.warnings.append(f"Page {page['page_no']}: geometric order is a heuristic; multi-column reading order is not verified")
             else:
                 ordering = "native_groups_unknown_reading_order"
                 if page.get("tables"):

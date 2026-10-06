@@ -154,7 +154,7 @@ def _parse_html(path: Path, options: dict[str, Any]) -> DocumentIR:
         main_node = _select_main_container(document)
     content_root = main_node if main_node is not None else document
     result = DocumentIR(source=path, kind=".html", title=title)
-    _append_html_blocks(result, content_root)
+    _append_html_blocks(result, content_root, include_h1=True)
 
     links: list[tuple[str, str]] = []
     for href, text, kind in discover_links(document):
