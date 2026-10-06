@@ -19,8 +19,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QEvent, QThread, QTimer, Signal, Slot
-from PySide6.QtGui import QColor, QContextMenuEvent
+from PySide6.QtCore import QCoreApplication, QEvent, QThread, QTimer, Signal, Slot
+from PySide6.QtGui import QCloseEvent, QColor, QContextMenuEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -82,7 +82,7 @@ CONDITION_OPTIONS = [
 class _CheckWorker(QThread):
     """后台执行 change_detector.check_all()，避免阻塞 GUI。"""
 
-    finished = Signal(list)   # list[ChangeEvent]
+    checked = Signal(list)   # Results are separate from QThread.finished().
     error = Signal(str)
 
     def __init__(
@@ -148,9 +148,9 @@ class _CheckWorker(QThread):
             if self.is_cancelled():
                 # 取消是正常终态：**不把（可能被截断的）结果当成功交付**，
                 # 但仍要发一个终态信号，调用方才能复位「进行中」状态。
-                self.finished.emit([])
+                self.checked.emit([])
             else:
-                self.finished.emit(events)
+                self.checked.emit(events)
         except Exception as exc:
             self.error.emit(str(exc))
         finally:
@@ -707,6 +707,8 @@ class ChangeMonitorView(QWidget):
         # 关闭后**不得**再启动检查：30s 轮询若在关闭流程之后触发，
         # 那次检查不会被任何人等待（进程收尾时线程仍在跑）
         self._shutting_down = False
+        self._close_after_check = False
+        self._delete_after_check = False
 
         # ── 首次渲染 ────────────────────────────────────────────────
         self._refresh_list()
@@ -905,7 +907,7 @@ class ChangeMonitorView(QWidget):
     def _check_all(self) -> None:
         if self._shutting_down:
             return
-        if self._worker is not None and self._worker.isRunning():
+        if self._worker is not None:
             ToastManager.instance().warning(_("检查仍在进行中，请稍候"))
             return
         if not self._rules_data:
@@ -916,23 +918,52 @@ class ChangeMonitorView(QWidget):
         self._set_status_style("info")
 
         self._worker = _CheckWorker(self._rules_data, self, fetcher=self._fetcher)
-        self._worker.finished.connect(self._on_check_finished)
-        self._worker.error.connect(self._on_check_error)
-        self._worker.start()
+        self._start_check(self._worker, self._on_check_finished)
+
+    def _start_check(self, worker: _CheckWorker, receive: Any) -> None:
+        worker.checked.connect(receive)
+        worker.error.connect(self._on_check_error)
+        worker.finished.connect(self._check_stopped)
+        worker.start()
+
+    @Slot()
+    def _check_stopped(self) -> None:
+        worker = self.sender()
+        if worker is self._worker:
+            self._worker = None
+        if worker is not None:
+            worker.deleteLater()
+        if self._close_after_check:
+            self.close()
+        if self._delete_after_check:
+            QCoreApplication.postEvent(self, QEvent(QEvent.Type.DeferredDelete))
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt override
+        self.shutdown(wait_ms=0)
+        if self._worker is not None and self._worker.isRunning():
+            self._close_after_check = True
+            event.ignore()
+            return
+        super().closeEvent(event)
+
+    def event(self, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.DeferredDelete:
+            self.shutdown(wait_ms=0)
+            if self._worker is not None and self._worker.isRunning():
+                self._delete_after_check = True
+                return True
+        return super().event(event)
 
     def _delivery_action(self, mode: str) -> None:
         if self._shutting_down or self._paused or self._worker is not None:
             return
         self._worker = _CheckWorker(self._rules_data, self, fetcher=self._fetcher, mode=mode)
-        self._worker.finished.connect(self._on_delivery_status if mode == "status" else self._on_check_finished)
-        self._worker.error.connect(self._on_check_error)
-        self._worker.start()
+        self._start_check(self._worker, self._on_delivery_status if mode == "status" else self._on_check_finished)
 
     @Slot(list)
     def _on_delivery_status(self, rows: list) -> None:
         if self.sender() is not self._worker:
             return
-        self._worker = None
         if self._shutting_down:
             return
         dialog = QDialog(self)
@@ -999,7 +1030,6 @@ class ChangeMonitorView(QWidget):
                 ):
                     current["last_checked"] = observed.get("last_checked")
                     current["last_hash"] = observed.get("last_hash")
-        self._worker = None
         original_rules = getattr(worker, "rules_after", [])
         events_list = [event for event in events if not original_rules or any(
             current.get("rule_id") == original.get("rule_id") == event.rule_id
@@ -1059,7 +1089,8 @@ class ChangeMonitorView(QWidget):
     def _on_check_error(self, error: str) -> None:
         if self.sender() is not self._worker:
             return
-        self._worker = None
+        if self._shutting_down:
+            return
         self._status_label.setText(_("检查失败"))
         self._set_status_style("danger")
         ToastManager.instance().error(_(f"变更检查失败: {error}"))
@@ -1159,7 +1190,5 @@ class ChangeMonitorView(QWidget):
                 self._status_label.setText(_("检查中..."))
                 self._set_status_style("info")
                 self._worker = _CheckWorker([rule], self, fetcher=self._fetcher)
-                self._worker.finished.connect(self._on_check_finished)
-                self._worker.error.connect(self._on_check_error)
-                self._worker.start()
+                self._start_check(self._worker, self._on_check_finished)
                 return

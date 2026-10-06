@@ -33,6 +33,25 @@ def qapp() -> QApplication:
     return QApplication.instance() or QApplication([])
 
 
+@pytest.fixture(autouse=True)
+def _reap_chart_widgets(qapp):
+    """Charts and monitor timers must finish while QApplication is still alive."""
+    import shiboken6
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    previous = set(QApplication.topLevelWidgets())
+    yield
+    for widget in set(QApplication.topLevelWidgets()) - previous:
+        if not shiboken6.isValid(widget):
+            continue
+        shutdown = getattr(widget, "shutdown", None)
+        if callable(shutdown):
+            shutdown()
+        widget.close()
+        widget.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
 # ── BarChart 本体 ────────────────────────────────────────
 
 

@@ -139,7 +139,7 @@ def test_cancel_mid_flight_drops_payload_and_skips_remaining_rules() -> None:
         fetcher=fetcher,
     )
     delivered: list[list] = []
-    worker.finished.connect(delivered.append)
+    worker.checked.connect(delivered.append)
 
     worker.start()
     assert _wait_until(lambda: len(fetcher.requested) >= 1, timeout=5), "第一次抓取未开始"
@@ -239,9 +239,9 @@ def test_late_finished_from_old_worker_is_ignored() -> None:
     current = _CheckWorker([], view)
     view._worker = current
     stale = _CheckWorker([], view)
-    stale.finished.connect(view._on_check_finished)
+    stale.checked.connect(view._on_check_finished)
 
-    stale.finished.emit([])  # 旧任务的迟到信号
+    stale.checked.emit([])  # 旧任务的迟到信号
 
     assert view._worker is current, "迟到信号把当前 worker 引用清掉了"
     app.processEvents()
