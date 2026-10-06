@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QCoreApplication, QEvent, Qt, QUrl
 from PySide6.QtGui import QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -59,6 +59,12 @@ class TaskToolsDialog(QDialog):
         self._config_sha = hashlib.sha256(config_path.read_bytes()).hexdigest()
         self._worker: TaskToolsWorker | None = None
         self._close_pending = False
+        self._delete_pending = False
+        self._component_preview: dict[str, Any] = {}
+        self._component_registry_sha = ""
+        self._component_list_sha = ""
+        self._component_recovery_sha = ""
+        self._uninstalled_component = ""
         self._buttons: list[QPushButton] = []
         self._manifest_sha = ""
         self._preview_binding = ""
@@ -119,6 +125,23 @@ class TaskToolsDialog(QDialog):
         for operation, label in (("preview", _("预览比较")), ("apply", _("应用已预览候选")),
                                  ("observe", _("用新证据观察")), ("rollback", _("回滚本次修复"))):
             self._button(repair, label, lambda _checked=False, op=operation: self._repair(op))
+        components = self._tab(_("可选组件"))
+        components.addRow(QLabel(_("离线导入受信组件包；安装前检查兼容性与磁盘需求。运行时仍会校验组件内容。")))
+        self.component_package = self._file(components, _("离线组件包"))
+        self.component_package.textChanged.connect(lambda: self._component_preview.clear())
+        self._button(components, _("检查离线包"), lambda: self._launch("components:inspect", {"package": self.component_package.text()}))
+        self._button(components, _("安装已检查的组件"), lambda: self._manage_component("import"))
+        self._button(components, _("读取已安装组件"), lambda: self._launch("components:list", {}))
+        self.components = QListWidget()
+        self.components.setAccessibleName(_("已安装的可选组件"))
+        components.addRow(self.components)
+        self.component_details = QTextEdit()
+        self.component_details.setReadOnly(True)
+        self.component_details.setAccessibleName(_("组件用途、兼容与卸载影响"))
+        components.addRow(self.component_details)
+        self.components.currentItemChanged.connect(self._show_component)
+        self._button(components, _("卸载所选组件"), lambda: self._manage_component("uninstall"))
+        self._button(components, _("恢复本次卸载"), lambda: self._manage_component("rollback"))
         self.result_view = QTextEdit()
         self.result_view.setReadOnly(True)
         self.result_view.setAccessibleName(_("操作结果和候选比较"))
@@ -173,12 +196,85 @@ class TaskToolsDialog(QDialog):
         path = self._current_path()
         return path is not None and path.resolve() == self.config_path and self._current_token() == self._token
 
+    def _show_component(self, current: QListWidgetItem | None, _previous: QListWidgetItem | None = None) -> None:
+        if current is not None:
+            self.component_details.setPlainText(self._component_text(current.data(Qt.ItemDataRole.UserRole)))
+
+    @staticmethod
+    def _component_text(info: dict[str, Any]) -> str:
+        return _("组件：{0} {1}\n用途：{2}\n磁盘需求（字节）：{3}\n核心版本要求：{4}\n系统：{5}\n架构：{6}\n依赖：{7}\n卸载影响：{8}").format(
+            info.get("name", ""), info.get("version", ""), info.get("purpose", ""), info.get("disk_bytes", 0),
+            info.get("core_version") or _("未限定"), ", ".join(info.get("platforms", [])) or _("未限定"),
+            ", ".join(info.get("architectures", [])) or _("未限定"), ", ".join(info.get("dependencies", [])) or _("无"),
+            info.get("uninstall_impact", _("恢复时使用保留版本")))
+
+    def _manage_component(self, operation: str) -> None:
+        arguments: dict[str, Any] = {"confirmed": True, "registry_sha256": self._component_registry_sha}
+        if operation == "import":
+            preview = self._component_preview
+            if not preview.get("compatible") or not preview.get("package_sha256"):
+                self.result_view.setPlainText(_("请先检查当前离线包，解决签名、依赖与兼容问题。"))
+                return
+            arguments.update(package=self.component_package.text(), package_sha256=preview["package_sha256"],
+                             registry_sha256=preview["registry_sha256"])
+            detail = self._component_text(preview["component"])
+        elif operation == "uninstall":
+            selected = self.components.currentItem()
+            if selected is None or not self._component_list_sha:
+                self.result_view.setPlainText(_("请先读取组件信息并选择需要卸载的组件。"))
+                return
+            info = selected.data(Qt.ItemDataRole.UserRole)
+            arguments["name"] = info["name"]
+            arguments["registry_sha256"] = self._component_list_sha
+            detail = self._component_text(info)
+        else:
+            if not self._uninstalled_component or not self._component_recovery_sha:
+                self.result_view.setPlainText(_("本窗口没有可恢复的卸载；其它版本可通过组件命令恢复。"))
+                return
+            arguments["name"] = self._uninstalled_component
+            arguments["registry_sha256"] = self._component_recovery_sha
+            detail = _("恢复刚刚卸载的保留版本：{0}").format(self._uninstalled_component)
+        if QMessageBox.question(self, _("确认组件操作"), detail,
+                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            self._launch("components:" + operation, arguments)
+
+    def _component_done(self, name: str, arguments: dict[str, Any], result: dict[str, Any]) -> None:
+        if name.startswith("components:"):
+            self._component_registry_sha = result.get("registry_sha256", "")
+            if name == "components:list":
+                self._component_list_sha = result.get("registry_sha256", "")
+                self.components.clear()
+                for info in result.get("components", []):
+                    item = QListWidgetItem(f"{info['name']} {info['version']} — {info.get('purpose', '')}", self.components)
+                    item.setData(Qt.ItemDataRole.UserRole, info)
+                self.result_view.setPlainText(_("组件列表已读取；选择组件查看用途与卸载影响。"))
+            elif name == "components:inspect":
+                self._component_preview = result if arguments.get("package") == self.component_package.text() else {}
+                self.component_details.setPlainText(self._component_text(result["component"]) + "\n" +
+                    _("签名：已通过受信校验；兼容：{0}\n{1}").format(_("通过") if result.get("compatible") else _("未通过"), result.get("compatibility_reason", "")))
+                self.result_view.setPlainText(_("离线包已检查，请核对详情后安装。"))
+            else:
+                self._component_preview.clear()
+                self.components.clear()
+                self._component_list_sha = ""
+                self._component_recovery_sha = ""
+                if name == "components:uninstall":
+                    self._uninstalled_component = str(result["component"]["uninstalled"])
+                    self._component_recovery_sha = result.get("registry_sha256", "")
+                elif name == "components:rollback":
+                    self._uninstalled_component = ""
+                self.result_view.setPlainText(_("组件操作已完成；请重新读取列表核对。卸载保留可恢复的版本。"))
+            return
+
     def _launch(self, name: str, arguments: dict[str, Any]) -> None:
         if self._worker is not None:
             return
         if not self._same_task():
             self.result_view.setPlainText(_("当前任务或草稿已变化，请保存后重新打开任务工具。"))
             return
+        if name == "components:inspect":
+            self._component_preview.clear()
         action = TaskAction(name, self.config_path, self._config_sha, arguments)
         worker = TaskToolsWorker(action, self)
         self._worker = worker
@@ -244,6 +340,9 @@ class TaskToolsDialog(QDialog):
             return
         if not self._same_task():
             self.result_view.setPlainText(_("操作结果属于原任务；当前任务已变化，请重新打开工具核对。"))
+            return
+        if name.startswith("components:"):
+            self._component_done(name, arguments, result)
             return
         if name in {"sources", "failures"}:
             widget = self.sources if name == "sources" else self.failures
@@ -331,6 +430,15 @@ class TaskToolsDialog(QDialog):
         self.tabs.setEnabled(True)
         if self._close_pending:
             super().reject()
+        if self._delete_pending:
+            QCoreApplication.postEvent(self, QEvent(QEvent.Type.DeferredDelete))
+
+    def event(self, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.DeferredDelete and self._worker is not None and self._worker.isRunning():
+            self._delete_pending = True
+            self.reject()
+            return True
+        return super().event(event)
 
     def reject(self) -> None:
         if self._worker is not None and self._worker.isRunning():

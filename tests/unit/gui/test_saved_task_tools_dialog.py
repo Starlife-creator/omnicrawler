@@ -37,7 +37,7 @@ def test_selection_is_explicit_and_ai_is_opt_in(dialog, monkeypatch):
     window, _ = dialog
     calls = []
     monkeypatch.setattr(window, "_launch", lambda *args: calls.append(args))
-    assert window.tabs.count() == 5 and not window.use_ai.isChecked()
+    assert window.tabs.count() == 6 and not window.use_ai.isChecked()
     window._analyze()
     window._retry()
     assert not calls
@@ -138,6 +138,77 @@ def test_failed_worker_restores_controls(dialog, monkeypatch):
     QTest.qWait(100)
     assert window._worker is None and window.tabs.isEnabled()
     assert "injected failure" in window.result_view.toPlainText() and state["reloads"] == 0
+
+
+def test_component_requires_review_and_confirmation_and_clears_changed_package(dialog, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    window, _ = dialog
+    calls = []
+    monkeypatch.setattr(window, "_launch", lambda *args: calls.append(args))
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.Yes)
+    window._manage_component("import")
+    assert calls == []
+    window.component_package.setText("reviewed.ocp")
+    window._done("components:inspect", {"package": "reviewed.ocp"}, {
+        "component": {"name": "ocr", "version": "1.0", "purpose": "中文OCR", "disk_bytes": 123,
+                      "uninstall_impact": "扫描页不可用"}, "compatible": True,
+        "package_sha256": "reviewed", "registry_sha256": "state"})
+    assert "扫描页不可用" in window.component_details.toPlainText()
+    window._manage_component("import")
+    assert calls[0][0] == "components:import"
+    assert calls[0][1]["package_sha256"] == "reviewed"
+    window.component_package.setText("changed.ocp")
+    window._manage_component("import")
+    assert len(calls) == 1
+
+
+def test_component_inspection_cannot_rebind_old_install_list(dialog, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    window, _ = dialog
+    calls = []
+    monkeypatch.setattr(window, "_launch", lambda *args: calls.append(args))
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.Yes)
+    window._done("components:list", {}, {"components": [{"name": "ocr", "version": "1.0"}], "registry_sha256": "old"})
+    window.components.setCurrentRow(0)
+    window.component_package.setText("new.ocp")
+    window._done("components:inspect", {"package": "new.ocp"}, {"component": {"name": "ocr", "version": "2.0"},
+        "compatible": True, "package_sha256": "new-package", "registry_sha256": "new-state"})
+    window._manage_component("uninstall")
+    assert calls[0][1]["registry_sha256"] == "old"
+
+
+def test_forced_deletion_waits_for_owned_task_worker(tmp_path, monkeypatch):
+    import shiboken6
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    app = QApplication.instance() or QApplication([])
+    parent = QWidget()
+    config = tmp_path / "task.yaml"
+    config.write_text("project: {name: lifecycle}\n")
+    window = tools.TaskToolsDialog(config, lambda: config, lambda: "saved", lambda: None, parent)
+    entered, release = threading.Event(), threading.Event()
+    def work(action):
+        entered.set()
+        assert release.wait(5)
+        return {"components": [], "registry_sha256": "state"}
+    monkeypatch.setattr(tools, "execute", work)
+    window._launch("components:list", {})
+    worker = window._worker
+    try:
+        assert entered.wait(5)
+        window.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        assert shiboken6.isValid(window)
+        assert worker.isInterruptionRequested()
+    finally:
+        release.set()
+        assert worker.wait(5000)
+        app.processEvents()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert not shiboken6.isValid(window)
+    parent.close()
 
 
 def test_task_identity_ignores_serializer_time_and_does_not_mutate_model(monkeypatch):

@@ -105,10 +105,14 @@ class ComponentManager:
                 _safe_component_path(entrypoint)
                 if entrypoint not in files or not isinstance(runtime.get("model_license"), str) or not runtime["model_license"].strip():
                     raise ValueError("OCR组件必须声明已校验入口和模型许可")
+            declared_disk = raw.get("disk_bytes", 0)
+            if type(declared_disk) is not int or declared_disk < 0:
+                raise ValueError("组件磁盘需求必须是非负整数")
+            payload_disk = sum(members[name].file_size for name in files)
         return ComponentInfo(
             name=str(raw["name"]), version=str(raw["version"]), purpose=str(raw.get("purpose", "")),
             edition=str(raw.get("edition", "optional")), download_bytes=package.stat().st_size,
-            disk_bytes=int(raw.get("disk_bytes", 0)), dependencies=tuple(str(item) for item in raw.get("dependencies", [])),
+            disk_bytes=max(declared_disk, payload_disk), dependencies=tuple(str(item) for item in raw.get("dependencies", [])),
             uninstall_impact=str(raw.get("uninstall_impact", "依赖此组件的任务将无法运行")),
             files={str(key): str(value) for key, value in files.items()},
             core_version=str(raw.get("core_version", "")),
@@ -116,18 +120,37 @@ class ComponentManager:
             runtime=runtime,
         )
 
-    def import_offline(self, package: Path, *, allow_unsigned: bool = False) -> dict[str, Any]:
+    def registry_digest(self) -> str:
         with registry_lock(self.root):
             recover_document(self.root)
-            return self._import_locked(package, allow_unsigned=allow_unsigned)
+            return self._registry_digest_locked()
 
-    def _import_locked(self, package: Path, *, allow_unsigned: bool) -> dict[str, Any]:
+    def _registry_digest_locked(self) -> str:
+        payload = json.dumps(self._installed(), sort_keys=True, separators=(",", ":")).encode()
+        return hashlib.sha256(payload).hexdigest()
+
+    def _require_reviewed_registry(self, expected: str) -> None:
+        if expected and expected != self._registry_digest_locked():
+            raise ValueError("组件状态已变化，请重新读取并确认")
+
+    def import_offline(self, package: Path, *, allow_unsigned: bool = False,
+                       expected_registry_sha256: str = "", expected_package_sha256: str = "") -> dict[str, Any]:
+        with registry_lock(self.root):
+            recover_document(self.root)
+            self._require_reviewed_registry(expected_registry_sha256)
+            return self._import_locked(package, allow_unsigned=allow_unsigned, expected_package_sha256=expected_package_sha256)
+
+    def _import_locked(self, package: Path, *, allow_unsigned: bool, expected_package_sha256: str = "") -> dict[str, Any]:
         # Use the same private package bytes for signature verification and extraction.
         staging = contained_path(self.root, ".staging")
         staging.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=staging) as temporary:
             snapshot = Path(temporary) / "package.ocp"
+            if shutil.disk_usage(self.root).free < package.stat().st_size:
+                raise OSError("磁盘空间不足，无法暂存组件包")
             shutil.copyfile(package, snapshot)
+            if expected_package_sha256 and _sha256(snapshot) != expected_package_sha256:
+                raise ValueError("组件包已变化，请重新检查并确认")
             return self._install_snapshot(snapshot, allow_unsigned=allow_unsigned)
 
     def _install_snapshot(self, package: Path, *, allow_unsigned: bool) -> dict[str, Any]:
@@ -148,6 +171,8 @@ class ComponentManager:
                 raise ValueError("保留组件目录与受信包文件集合不一致")
             self._verify_files({**asdict(info), "path": target.relative_to(self.root).as_posix()})
         else:
+            if shutil.disk_usage(self.root).free < info.disk_bytes:
+                raise OSError("磁盘空间不足，无法安装组件")
             payload_root = package.parent / "payload"
             payload_root.mkdir()
             with zipfile.ZipFile(package) as archive:
@@ -197,10 +222,11 @@ class ComponentManager:
         partial.replace(completed)
         return {"package": str(completed), "resumed_from": offset, "bytes": completed.stat().st_size}
 
-    def uninstall(self, name: str) -> dict[str, Any]:
+    def uninstall(self, name: str, *, expected_registry_sha256: str = "") -> dict[str, Any]:
         safe_identifier(name)
         with registry_lock(self.root):
             recover_document(self.root)
+            self._require_reviewed_registry(expected_registry_sha256)
             return self._uninstall_locked(name)
 
     def _uninstall_locked(self, name: str) -> dict[str, Any]:
@@ -216,10 +242,11 @@ class ComponentManager:
         # Keep immutable bytes for rollback and tasks already using this version.
         return {"uninstalled": name, "recoverable_from": str(path), "impact": entry.get("uninstall_impact", "")}
 
-    def rollback(self, name: str) -> dict[str, Any]:
+    def rollback(self, name: str, *, expected_registry_sha256: str = "") -> dict[str, Any]:
         safe_identifier(name)
         with registry_lock(self.root):
             recover_document(self.root)
+            self._require_reviewed_registry(expected_registry_sha256)
             return self._rollback_locked(name)
 
     def _rollback_locked(self, name: str) -> dict[str, Any]:

@@ -45,6 +45,9 @@ def execute(action: TaskAction) -> dict[str, Any]:
     if hashlib.sha256(action.config_path.read_bytes()).hexdigest() != action.config_sha256:
         raise ValueError("已保存配置已变化，请重新打开任务工具")
     args = action.arguments
+    if action.name.startswith("components:"):
+        from .component_tools import execute as component_action
+        return component_action(action.name.partition(":")[2], args)
     if action.name == "workflow":
         from .workflow_diagnostics import describe
         return describe(load_config(action.config_path), run_id=str(args.get("run_id", "")))
