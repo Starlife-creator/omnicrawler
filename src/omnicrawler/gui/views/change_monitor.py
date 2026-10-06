@@ -13,12 +13,13 @@ GUI 接入链路:
 
 from __future__ import annotations
 
+import copy
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QThread, QTimer, Signal, Slot
+from PySide6.QtCore import QEvent, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QContextMenuEvent
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -41,9 +42,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from omnicrawler.core.utils import user_agent
 from omnicrawler.gui.widgets.toast import ToastManager
 
+from ..core.background_worker import BackgroundWorker
 from ..design_system import FONT_FAMILY_MONO, SPACING, ThemeManager, scaled_font_px
 from ..i18n import _
 from ..widgets.charts import BarChart
@@ -94,7 +95,9 @@ class _CheckWorker(QThread):
     ) -> None:
         super().__init__(parent)
         self.mode = mode
-        self._rules_json = rules_json
+        self._rules_json = copy.deepcopy(rules_json)
+        self.report: dict[str, dict[str, Any]] = {}
+        self.rules_after: list[dict[str, Any]] = []
         self._fetcher = fetcher
         # 仅在**工作线程内**赋值/清空；`cancel()` 从 GUI 线程读取它并转调 detector
         self._detector: Any = None
@@ -136,9 +139,11 @@ class _CheckWorker(QThread):
                 events = detector.pending_notifications(force=True)
             else:
                 events = asyncio.run(detector.check_all())
+            self.report = detector.check_report()
+            self.rules_after = [rule.to_dict() for rule in detector.list_rules()]
             if self.mode != "status" and not self.is_cancelled():
                 from omnicrawler.scheduling.webhook import dispatch_webhooks
-                dispatch_webhooks(detector._store, detector.list_rules(), getattr(self._fetcher, "egress", None),
+                dispatch_webhooks(detector._store, detector.list_rules(), detector._egress,
                                   force=self.mode == "retry", cancelled=self.is_cancelled)
             if self.is_cancelled():
                 # 取消是正常终态：**不把（可能被截断的）结果当成功交付**，
@@ -152,6 +157,23 @@ class _CheckWorker(QThread):
             self._detector = None
 
 
+class _ProbeWorker(BackgroundWorker):
+    def __init__(self, url: str, selector: str, fetcher: Any, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.url, self.selector, self.fetcher = url, selector, fetcher
+
+    def work(self) -> dict[str, Any]:
+        from ...extraction.extractors import decode_body
+        from ...fetching.page_probe import fetch_static_page
+        from ...scheduling.change_detector import ChangeDetector
+
+        if self.isInterruptionRequested():
+            return {}
+        response = fetch_static_page(self.url, fetcher=self.fetcher)
+        return {"status": response.status,
+                "content": ChangeDetector._extract_content(decode_body(response), self.selector) if self.selector else ""}
+
+
 # ── 新建规则对话框 ──────────────────────────────────────────────────
 
 class NewRuleDialog(QDialog):
@@ -161,8 +183,15 @@ class NewRuleDialog(QDialog):
         self,
         parent: QWidget | None = None,
         rule_data: dict | None = None,
+        *, fetcher: Any = None,
     ) -> None:
         super().__init__(parent)
+        self._fetcher = fetcher
+        self._probe_worker: _ProbeWorker | None = None
+        self._probe_result: dict[str, Any] | None = None
+        self._probe_error = ""
+        self._pending_done: int | None = None
+        self._delete_after_probe = False
         self.setAccessibleName(_("新建监控规则"))
         self.setWindowTitle(_("新建变更监控规则") if rule_data is None else _("编辑变更监控规则"))
         self.setMinimumSize(480, 420)
@@ -204,6 +233,10 @@ class NewRuleDialog(QDialog):
         test_btn.clicked.connect(self._test_selector)
         selector_row.addWidget(test_btn)
         layout.addRow(_("CSS 选择器:"), selector_row)
+        self._probe_status = QLabel(_("探测使用任务出口和 robots 策略；取消后等待当前请求收尾。"))
+        self._probe_status.setWordWrap(True)
+        self._probe_status.setAccessibleName(_("探测状态"))
+        layout.addRow(self._probe_status)
 
         # 检测条件
         self._condition_combo = QComboBox()
@@ -312,62 +345,94 @@ class NewRuleDialog(QDialog):
         self._condition_value_edit.setVisible(cond_key != "changed")
 
     def _probe_url(self) -> None:
-        url = self._url_edit.text().strip()
-        if not url:
-            QMessageBox.warning(self, _("提示"), _("请先输入目标 URL"))
-            return
-        # 简单异步探测
-        import urllib.request
-
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": user_agent("Probe")})
-            with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
-                QMessageBox.information(self, _("探测成功"), _(f"URL 可达\nHTTP {resp.status}"))
-        except Exception as exc:
-            QMessageBox.warning(self, _("探测失败"), _(f"无法访问该 URL:\n{exc}"))
+        self._start_probe("")
 
     def _test_selector(self) -> None:
-        """测试 CSS 选择器在当前 URL 上是否匹配到内容。"""
-        url = self._url_edit.text().strip()
         selector = self._selector_edit.text().strip()
-        if not url:
-            QMessageBox.warning(self, _("提示"), _("请先输入目标 URL"))
-            return
         if not selector:
             QMessageBox.warning(self, _("提示"), _("请先输入 CSS 选择器"))
             return
+        self._start_probe(selector)
 
-        import urllib.request
+    def _start_probe(self, selector: str) -> None:
+        url = self._url_edit.text().strip()
+        if not url:
+            QMessageBox.warning(self, _("提示"), _("请先输入目标 URL"))
+            return
+        if self._probe_worker is not None:
+            return
+        self._probe_result, self._probe_error = None, ""
+        worker = _ProbeWorker(url, selector, self._fetcher, self)
+        self._probe_worker = worker
+        worker.succeeded.connect(self._capture_probe_result)
+        worker.failed.connect(self._capture_probe_error)
+        worker.finished.connect(self._probe_stopped)
+        self._probe_status.setText(_("探测中…可以取消；当前请求有超时上限。"))
+        worker.start()
 
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={
-                    "User-Agent": (
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+    @Slot(object)
+    def _capture_probe_result(self, result: dict[str, Any]) -> None:
+        if self.sender() is self._probe_worker:
+            self._probe_result = result
 
-                        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+    @Slot(str)
+    def _capture_probe_error(self, error: str) -> None:
+        if self.sender() is self._probe_worker:
+            self._probe_error = error
 
-                        "Chrome/127.0.0.0 Safari/537.36"
-                    ),
-                },
-            )
-            with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310
-                html = resp.read().decode(resp.headers.get_content_charset("utf-8"), errors="replace")
-
-            from omnicrawler.scheduling.change_detector import ChangeDetector
-
-            content = ChangeDetector._extract_content(html, selector)
+    @Slot()
+    def _probe_stopped(self) -> None:
+        worker = self._probe_worker
+        if worker is None or self.sender() is not worker:
+            return
+        self._probe_worker = None
+        worker.deleteLater()
+        if self._delete_after_probe:
+            self.deleteLater()
+            return
+        if self._pending_done is not None:
+            super().done(self._pending_done)
+            return
+        if self._url_edit.text().strip() != worker.url or (
+            worker.selector and self._selector_edit.text().strip() != worker.selector
+        ):
+            self._probe_status.setText(_("输入已变化，请重新探测。"))
+            return
+        if worker.isInterruptionRequested():
+            self._probe_status.setText(_("探测已取消。"))
+            return
+        if self._probe_error:
+            self._probe_status.setText(_("探测失败。"))
+            QMessageBox.warning(self, _("探测失败"), self._probe_error)
+            return
+        result = self._probe_result or {}
+        self._probe_status.setText(_("探测完成。"))
+        if worker.selector:
+            content = str(result.get("content", ""))
             if content.strip():
-                preview = content[:200] + ("..." if len(content) > 200 else "")
-                QMessageBox.information(
-                    self, _("选择器测试成功"),
-                    _(f"选择器匹配到 {len(content)} 个字符\n\n预览:\n{preview}"),
-                )
+                QMessageBox.information(self, _("选择器测试成功"),
+                                        _("匹配到 {0} 个字符\n\n{1}").format(len(content), content[:200]))
             else:
                 QMessageBox.warning(self, _("选择器测试"), _("选择器未匹配到任何内容"))
-        except Exception as exc:
-            QMessageBox.warning(self, _("测试失败"), f"{exc}")
+        else:
+            QMessageBox.information(self, _("探测成功"), _("URL 可达\nHTTP {0}").format(result.get("status", "未知")))
+
+    def done(self, result: int) -> None:
+        worker = self._probe_worker
+        if worker is not None and worker.isRunning():
+            self._pending_done = result
+            worker.requestInterruption()
+            self._probe_status.setText(_("取消中，等待当前请求收尾…"))
+            return
+        super().done(result)
+
+    def event(self, event: QEvent) -> bool:
+        worker = getattr(self, "_probe_worker", None)
+        if event.type() == QEvent.Type.DeferredDelete and worker is not None and worker.isRunning():
+            self._delete_after_probe = True
+            worker.requestInterruption()
+            return True
+        return super().event(event)
 
     def _validate_and_accept(self) -> None:
         url = self._url_edit.text().strip()
@@ -669,6 +734,17 @@ class ChangeMonitorView(QWidget):
                 changed_ids.add(str(data.get("rule_id", "")))
         changed_ids.discard("")
         changed = min(len(changed_ids), len(enabled))
+        report = getattr(self, "_last_check_report", {})
+        if report:
+            stable = sum(item.get("status") in {"baseline", "unchanged", "condition_not_met"} for item in report.values())
+            failed = sum(item.get("status") == "failed" for item in report.values())
+            unknown = max(0, len(enabled) - changed - stable - failed)
+            self._overview_chart.set_data([(_("有变化"), changed), (_("已观察未触发"), stable),
+                                           (_("失败"), failed), (_("未确认"), unknown)], color_token="warning")
+            self._overview_chart.setVisible(True)
+            self._overview_note.setText(_("仅统计本轮实际观察；未到期、待连续确认和取消单独保留。"))
+            self._overview_note.setVisible(True)
+            return
         self._overview_chart.set_data(
             [(_("有变化"), changed), (_("无变化"), len(enabled) - changed)],
             color_token="warning",
@@ -739,7 +815,7 @@ class ChangeMonitorView(QWidget):
             self._rule_list.addItem(item)
 
     def _new_rule(self) -> None:
-        dialog = NewRuleDialog(self)
+        dialog = NewRuleDialog(self, fetcher=self._fetcher)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             rule_data = dialog.get_rule_data()
             self._rules_data.append(rule_data)
@@ -750,7 +826,7 @@ class ChangeMonitorView(QWidget):
     def _edit_rule(self, rule_id: str) -> None:
         for i, r in enumerate(self._rules_data):
             if r.get("rule_id") == rule_id:
-                dialog = NewRuleDialog(self, rule_data=r)
+                dialog = NewRuleDialog(self, rule_data=r, fetcher=self._fetcher)
                 if dialog.exec() == QDialog.DialogCode.Accepted:
                     updated = dialog.get_rule_data()
                     updated["rule_id"] = rule_id
@@ -907,6 +983,18 @@ class ChangeMonitorView(QWidget):
         # 迟到信号守卫：被放弃/被取代的旧 worker 的终态不得改动当前状态
         if self.sender() is not self._worker:
             return
+        worker = self._worker
+        report = getattr(worker, "report", {})
+        self._last_check_report = report
+        for observed in getattr(worker, "rules_after", []):
+            if report.get(observed["rule_id"], {}).get("status") in {"failed", "disabled", "not_due", "cancelled"}:
+                continue
+            for current in self._rules_data:
+                if current.get("rule_id") == observed["rule_id"] and all(
+                    current.get(key, "") == observed.get(key, "") for key in ("url", "selector", "condition")
+                ):
+                    current["last_checked"] = observed.get("last_checked")
+                    current["last_hash"] = observed.get("last_hash")
         self._worker = None
         events_list = list(events)
         if self._shutting_down:
@@ -946,13 +1034,13 @@ class ChangeMonitorView(QWidget):
             first_event = events_list[0]
             self._show_event_detail(first_event.to_dict())
         else:
-            self._status_label.setText(_("无变化"))
-            self._set_status_style("success")
+            failures = sum(item.get("status") == "failed" for item in report.values())
+            observed = any(item.get("status") in {"baseline", "unchanged", "condition_not_met"} for item in report.values())
+            self._status_label.setText(_("检查失败") if failures else (_("本次观察未触发变化") if observed else _("本次未完成变化确认")))
+            self._set_status_style("danger" if failures else "muted")
             # 更新检查时间（S3.2.1：不再写 "__baseline__" 哨兵假哈希——
             # 基线由 ChangeDetector 内部持久化，每轮比较真实哈希）
-            now = datetime.now(tz=UTC).isoformat()
-            for rule in self._rules_data:
-                rule["last_checked"] = now
+
             self._save_rules()
             self._refresh_list()
             self._refresh_overview(events_list)

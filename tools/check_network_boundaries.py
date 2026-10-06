@@ -8,14 +8,6 @@ from pathlib import Path
 
 APPROVED_DIRECT_CALLS = {
     "fetching/streams.py": "Streaming transport is authorized by its shared EgressBroker.",
-    "scheduling/change_detector.py": (
-        "Every urlopen is wrapped in EgressBroker.request (S4.5); AST-level "
-        "scan cannot see the context manager, same precedent as streams.py."
-    ),
-    "gui/views/change_monitor.py": (
-        "User-initiated interactive probe (explicit URL input + button click); "
-        "not automated crawling, no policy-bypass intent."
-    ),
     "plugins/market_client.py": (
         "Every remote urlopen is wrapped in EgressBroker.request (purpose='plugin') "
         "when the caller supplies a broker; the AST-level scan cannot see the "

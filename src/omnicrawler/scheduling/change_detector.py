@@ -211,7 +211,9 @@ class ChangeDetector:
         # 跨线程只做一次布尔赋值（CPython 下原子），不引入锁以免在事件循环里阻塞。
         self._cancelled: bool = False
         # 网络边界（S4.5 门禁）：注入 EgressBroker 后所有抓取走授权路径
-        self._egress = egress
+        self._egress = egress or getattr(fetcher, "egress", None)
+        self._check_results: dict[str, dict[str, Any]] = {}
+        self._fetch_errors: dict[str, str] = {}
         # A3：注入 AsyncFetcher 后复用其连接池/限速/隐身/EgressBroker 审计通道
         self._fetcher = fetcher
         # S3.2.1：基线持久化——每轮重建规则对象也能恢复 last_hash，
@@ -358,59 +360,31 @@ class ChangeDetector:
                 result = await loop.run_in_executor(
                     None, self._fetcher.fetch, CrawlRequest(url, kind="page")
                 )
+                if getattr(result, "status", 200) >= 400:
+                    raise RuntimeError("监控页面返回 HTTP 错误")
                 content_type = result.headers.get("content-type", "")
                 charset = "utf-8"
                 if "charset=" in content_type:
                     charset = content_type.split("charset=", 1)[-1].split(";")[0].strip()
                 return result.body.decode(charset, errors="replace")
             except Exception as exc:  # noqa: BLE001
-                LOGGER.warning("AsyncFetcher 获取页面失败 %s: %s", url, exc)
+                self._fetch_errors[url] = type(exc).__name__
+                LOGGER.warning("共享抓取器获取监控页面失败: %s", type(exc).__name__)
                 return None
         try:
-            import urllib.request
+            from ..core.config import AppConfig
+            from ..extraction.extractors import decode_body
+            from ..fetching.page_probe import build_inspection_config, fetch_static_page
+            from ..security.egress import EgressBroker
 
-            loop = asyncio.get_running_loop()
-
-            def _sync_fetch() -> str:
-                req = urllib.request.Request(
-                    url,
-                    headers={
-                        "User-Agent": (
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                            "AppleWebKit/537.36 (KHTML, like Gecko) "
-                            "Chrome/127.0.0.0 Safari/537.36"
-                        ),
-                        "Accept": "text/html,application/xhtml+xml",
-                    },
-                )
-                if self._egress is not None:
-                    with self._egress.request(
-                        url, purpose="change_monitor", headers=req.headers
-                    ):
-                        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
-                            return resp.read().decode(
-                                resp.headers.get_content_charset("utf-8"), errors="replace"
-                            )
-                # B08-002：egress=None 的回退路径同样必须过 SSRF 守卫（fail-closed），
-                # 拒绝私网/保留/回环目标，而不是裸 urlopen 直连。
-                from ..core.config import DEFAULTS, AppConfig, deep_merge
-                from ..security.policy import NetworkTargetPolicy
-
-                default_cfg = AppConfig(
-                    Path("<change-monitor>"), Path.cwd(),
-                    deep_merge(dict(DEFAULTS), {"http": {"resolve_dns": False}}),
-                    Path.cwd(),
-                )
-                NetworkTargetPolicy(default_cfg).require(url)
-                with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
-                    return resp.read().decode(
-                        resp.headers.get_content_charset("utf-8"), errors="replace"
-                    )
-
-            return await loop.run_in_executor(None, _sync_fetch)
-
+            if self._egress is None:
+                initial = build_inspection_config(url)
+                self._egress = EgressBroker(AppConfig(initial.path, initial.root, initial.raw, self._data_dir))
+            result = await asyncio.to_thread(fetch_static_page, url, egress=self._egress)
+            return decode_body(result)
         except Exception as exc:
-            LOGGER.warning("获取页面失败 %s: %s", url, exc)
+            self._fetch_errors[url] = type(exc).__name__
+            LOGGER.warning("获取监控页面失败: %s", type(exc).__name__)
             return None
 
     # ── 条件判断 ────────────────────────────────────────────────────
@@ -474,7 +448,9 @@ class ChangeDetector:
     async def check_rule(self, rule_id: str) -> ChangeEvent | None:
         """检查单条规则。返回 ChangeEvent（有变化时）或 None（无变化）。"""
         rule = self._rules.get(rule_id)
+        self._check_results[rule_id] = {"status": "not_checked"}
         if rule is None or not rule.enabled:
+            self._check_results[rule_id]["status"] = "disabled"
             return None
 
         self.retry_notifications()
@@ -484,11 +460,14 @@ class ChangeDetector:
         if rule.last_checked is not None:
             elapsed = (now - rule.last_checked).total_seconds()
             if elapsed < rule.check_interval:
+                self._check_results[rule_id]["status"] = "not_due"
                 return None
 
         # 获取页面内容
         html = await self._fetch_content(rule.url)
         if html is None:
+            self._check_results[rule_id] = {"status": "cancelled" if self._cancelled else "failed",
+                                            "error_type": self._fetch_errors.pop(rule.url, "fetch_failed")}
             return None
 
         # 提取目标区域
@@ -514,6 +493,7 @@ class ChangeDetector:
             rule.last_content = content
             rule.last_checked = now
             self._persist_baseline(rule)
+            self._check_results[rule_id]["status"] = "baseline"
             return None
 
         # 无变化
@@ -521,18 +501,21 @@ class ChangeDetector:
             rule.candidate_hash, rule.candidate_count = None, 0
             rule.last_checked = now
             self._persist_baseline(rule)
+            self._check_results[rule_id]["status"] = "unchanged"
             return None
 
         # 检查条件
         if not self._check_condition(content, rule.condition):
             rule.last_checked = now
             self._persist_baseline(rule)
+            self._check_results[rule_id]["status"] = "condition_not_met"
             return None
         rule.candidate_count = rule.candidate_count + 1 if rule.candidate_hash == current_hash else 1
         rule.candidate_hash = current_hash
         if rule.candidate_count < rule.consecutive_checks:
             rule.last_checked = now
             self._persist_baseline(rule)
+            self._check_results[rule_id]["status"] = "awaiting_confirmation"
             return None
 
         # 变化事件
@@ -569,8 +552,12 @@ class ChangeDetector:
         if self._on_notify:
             self.retry_notifications(_event=event)
 
+        self._check_results[rule_id]["status"] = "changed" if event.notification_eligible else "suppressed"
         LOGGER.info("检测到变化: %s — %s", rule.name, event.diff_summary)
         return event
+
+    def check_report(self) -> dict[str, dict[str, Any]]:
+        return {key: dict(value) for key, value in self._check_results.items()}
 
     @staticmethod
     def _notification_reason(rule: MonitorRule, content: str, now: datetime) -> str:

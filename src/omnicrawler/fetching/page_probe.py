@@ -93,3 +93,20 @@ def fetch_analysis_page(
     except Exception as exc:  # noqa: BLE001 - retain the static evidence and explicit failure
         return result, False, f"浏览器补充未完成：{type(exc).__name__}: {exc}"
 
+
+
+def fetch_static_page(
+    url: str, *, config: AppConfig | None = None, fetcher: Any | None = None, egress: Any | None = None,
+) -> FetchResult:
+    """Bounded static inspection with the task's broker and robots policy."""
+    config = config or getattr(fetcher, "config", None) or getattr(egress, "config", None) or build_inspection_config(url)
+    client = fetcher or HTTPFetcher(config, egress=egress, purpose="change_monitor")
+    broker = getattr(client, "egress", None)
+    if broker is None:
+        raise RuntimeError("页面探测必须使用统一出口 Broker")
+    if not RobotsPolicy(config, egress=broker).allowed(url):
+        raise PermissionError("robots.txt does not allow automated inspection of this URL")
+    result = client.fetch(CrawlRequest(url, meta={"root_url": url}))
+    if result.status >= 400:
+        raise RuntimeError(f"页面探测失败：HTTP {result.status}")
+    return result
