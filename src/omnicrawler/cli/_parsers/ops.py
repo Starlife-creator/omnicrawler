@@ -7,6 +7,11 @@ import argparse
 
 
 def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    notices = sub.add_parser("notifications", help="查看记录变化通知及补发所选事件")
+    notices.add_argument("--config", "-c", required=True)
+    notices.add_argument("action", choices=["report", "retry"])
+    notices.add_argument("--event-id", action="append", default=[], help="仅补发指定通知；可重复")
+    notices.add_argument("--apply", "--yes", action="store_true", help="确认补发所选通知")
     server = sub.add_parser("serve", help="启动只读监控面板")
     server.add_argument("--config", "-c", required=True)
     server.add_argument("--host", default="127.0.0.1")

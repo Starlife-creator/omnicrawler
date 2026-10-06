@@ -55,6 +55,14 @@ def execute(action: TaskAction) -> dict[str, Any]:
             raise ValueError("请确认工作区包和新的导入目录")
         return workspace_action(str(action.config_path), operation, target=str(args.get("target", "")),
                                 destination=str(args.get("destination", "")), kind=str(args.get("kind", "full")))
+    if action.name.startswith("notifications:"):
+        from .record_notifications import dispatch, report
+        config = load_config(action.config_path)
+        if action.name == "notifications:retry":
+            if args.get("confirmed") is not True:
+                raise ValueError("请确认补发明确选中的通知")
+            return dispatch(config, force=True, event_ids=set(args.get("event_ids", [])))
+        return report(config)
     if action.name == "workflow":
         from .workflow_diagnostics import describe
         return describe(load_config(action.config_path), run_id=str(args.get("run_id", "")))

@@ -119,6 +119,13 @@ class TaskToolsDialog(QDialog):
         recovery.addRow(self.failures)
         recovery.addRow(QLabel(_("认证过期请求请先到登录会话页验证登录。重试只修改所选失败的队列状态，之后仍需恢复任务。")))
         self._button(recovery, _("仅重试所选失败"), self._retry)
+        notices = self._tab(_("变化通知"))
+        notices.addRow(QLabel(_("记录变化通知使用任务配置中的Webhook；首轮基线不提醒。补发仅处理勾选事件，采集失败项与通知失败项分别恢复。")))
+        self._button(notices, _("读取投递状态"), lambda: self._launch("notifications:report", {}))
+        self.notifications = QListWidget()
+        self.notifications.setAccessibleName(_("选择需要补发的记录变化通知"))
+        notices.addRow(self.notifications)
+        self._button(notices, _("补发所选通知"), self._retry_notifications)
         repair = self._tab(_("规则修复"))
         self.evidence = self._file(repair, _("独立快照证据"))
         self.candidate = self._file(repair, _("本地候选规则"))
@@ -344,6 +351,14 @@ class TaskToolsDialog(QDialog):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes
 
+    def _retry_notifications(self) -> None:
+        event_ids = self._checked(self.notifications)
+        if not event_ids:
+            self.result_view.setPlainText(_("请先选择需要补发的通知。"))
+            return
+        if self._confirm():
+            self._launch("notifications:retry", {"event_ids": event_ids, "confirmed": True})
+
     def _retry(self) -> None:
         fingerprints = self._checked(self.failures)
         if not fingerprints:
@@ -377,6 +392,19 @@ class TaskToolsDialog(QDialog):
             return
         if name.startswith(("components:", "workspace:")):
             self._management_done(name, arguments, result)
+            return
+        if name.startswith("notifications:"):
+            self.notifications.clear()
+            labels = {"pending": _("待投递"), "sending": _("投递中"), "retrying": _("等待重试"),
+                      "failed": _("失败"), "submitted": _("已送达"), "cancelled": _("已撤销")}
+            for row in result.get("deliveries", []):
+                item = QListWidgetItem(" / ".join((labels.get(row["status"], row["status"]),
+                                                 str(row["attempts"]), str(row.get("detected_at", "")))), self.notifications)
+                item.setData(Qt.ItemDataRole.UserRole, row["event_id"])
+                item.setCheckState(Qt.CheckState.Unchecked)
+                if row["status"] not in {"pending", "retrying", "failed"} or not result.get("enabled"):
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+            self.result_view.setPlainText(_("投递状态已加载；补发保持原事件身份，接收方应按事件身份去重。"))
             return
         if name in {"sources", "failures"}:
             widget = self.sources if name == "sources" else self.failures

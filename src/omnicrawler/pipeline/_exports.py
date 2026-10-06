@@ -119,6 +119,11 @@ class _PipelineExports(_PipelineBase):
         summary["plugins"] = self.registry.describe()
         summary["storage"] = self.record_sinks.status()
         summary["storage_warnings"] = summary["storage"]["recent_errors"]
+        from ..services.record_notifications import dispatch, report
+        try:
+            summary["notifications"] = dispatch(self.config, egress=self.egress) if status == "succeeded" else report(self.config)
+        except Exception as exc:
+            summary["notifications"] = {"status": "unavailable", "error_type": type(exc).__name__}
         summary["egress_audit"] = self.egress.audit_status()
         self._emit("after_run", run_id=run_id, summary=summary)
         self._write_pipeline_summary(summary)

@@ -239,8 +239,10 @@ class _PipelineExtract(_PipelineBase):
                     )
                 if isinstance(fields, dict) and fields:
                     self._stage_quality(run_id, outcome.records, fields, extract_config)
+                from ..services.record_notifications import notification_binding
                 semantic_changes = self.state.track_semantic_changes(
                     run_id, outcome.records,
+                    notification=notification_binding(self.config),
                     identity_fields=tuple(self.config.section("updates").get("identity_fields", [])),
                     ignored_fields=set(self.config.section("updates").get("ignored_fields", ["fetched_at", "updated_at", "crawl_time", "timestamp"])),
                 )

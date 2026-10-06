@@ -37,7 +37,7 @@ def test_selection_is_explicit_and_ai_is_opt_in(dialog, monkeypatch):
     window, _ = dialog
     calls = []
     monkeypatch.setattr(window, "_launch", lambda *args: calls.append(args))
-    assert window.tabs.count() == 7 and not window.use_ai.isChecked()
+    assert window.tabs.count() == 8 and not window.use_ai.isChecked()
     window._analyze()
     window._retry()
     assert not calls
@@ -254,3 +254,23 @@ def test_workflow_stage_selection_shows_diagnostic_guidance(dialog):
     window.workflow_steps.setCurrentRow(window.workflow_steps.count() - 1)
     assert "交付" in window.workflow_details.toPlainText()
     assert "尚无试跑" in window.result_view.toPlainText()
+
+
+def test_record_notice_retry_requires_selection_and_preserves_task_binding(dialog, monkeypatch):
+    window, state = dialog
+    calls = []
+    monkeypatch.setattr(window, "_launch", lambda *args: calls.append(args))
+    monkeypatch.setattr(window, "_confirm", lambda: True)
+    window._retry_notifications()
+    assert calls == []
+    window._done("notifications:report", {}, {"enabled": True, "deliveries": [
+        {"event_id": "failed", "status": "retrying", "attempts": 1},
+        {"event_id": "done", "status": "submitted", "attempts": 1},
+    ]})
+    window.notifications.item(0).setCheckState(Qt.CheckState.Checked)
+    window.notifications.item(1).setCheckState(Qt.CheckState.Checked)
+    window._retry_notifications()
+    assert calls == [("notifications:retry", {"event_ids": ["failed"], "confirmed": True})]
+    state["token"] = "edited"
+    window._done("notifications:retry", {}, {"enabled": True, "deliveries": []})
+    assert window.notifications.count() == 2

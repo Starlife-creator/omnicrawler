@@ -45,6 +45,8 @@ def test_webhook_recovers_after_desktop_receipt_and_respects_revocation(tmp_path
         assert len(received) == 2
         assert received[0][0] == received[1][0] == event.event_id
         assert received[1][1]["current_content"] == "80"
+        assert received[1][1]["source_kind"] == "page_text"
+        assert received[1][1]["envelope_version"] == 1
         asyncio.run(detector.check_rule(rule.rule_id))
         rule.webhook_url = url + "/changed"
         dispatch_webhooks(detector._store, [rule], egress)

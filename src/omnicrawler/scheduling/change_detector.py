@@ -169,6 +169,8 @@ class ChangeEvent:
     event_id: str = field(default_factory=lambda: uuid4().hex)
     notification_eligible: bool = True
     notification_reason: str = ""
+    envelope_version: int = 1
+    source_kind: str = "page_text"
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

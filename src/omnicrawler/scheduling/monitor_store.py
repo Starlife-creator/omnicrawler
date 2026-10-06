@@ -80,7 +80,7 @@ class MonitorStore:
             if event is not None:
                 enqueue_event(connection, rule_id, event, targets=targets or [], pending=pending)
 
-    def pending(self, rule_ids: set[str], *, force: bool = False, target: bool = False) -> list[dict[str, Any]]:
+    def pending(self, rule_ids: set[str], *, force: bool = False, target: bool = False, event_ids: set[str] | None = None) -> list[dict[str, Any]]:
         if not self.path.is_file() or not rule_ids:
             return []
         now = time.time()
@@ -88,9 +88,10 @@ class MonitorStore:
             table = "target_deliveries" if target else "deliveries"
             rows = connection.execute(
                 f"SELECT * FROM {table} WHERE rule_id IN (SELECT value FROM json_each(?)) "
+                "AND (? OR event_id IN (SELECT value FROM json_each(?))) "
                 "AND status IN ('pending','retrying','sending','failed') AND lease_until<=? "
                 "AND (? OR (status!='failed' AND next_attempt<=?)) ORDER BY rowid LIMIT 1000",
-                (json.dumps(sorted(rule_ids)), now, force, now)).fetchall()
+                (json.dumps(sorted(rule_ids)), event_ids is None, json.dumps(sorted(event_ids or set())), now, force, now)).fetchall()
         return [dict(row) for row in rows]
 
     def claim(self, event_id: str, *, target_id: str = "") -> str:
@@ -135,9 +136,11 @@ class MonitorStore:
         if self._claims.get((event_id, target_id)) == token:
             self._claims.pop((event_id, target_id), None)
 
-    def revoke_targets(self, active: dict[str, set[str]]) -> None:
+    def revoke_targets(self, active: dict[str, set[str]], *, rule_ids: set[str] | None = None) -> None:
         with self.connection() as connection:
-            rows = connection.execute("SELECT event_id,target_id,rule_id FROM target_deliveries WHERE status IN ('pending','retrying','sending','failed')").fetchall()
+            rows = connection.execute("SELECT event_id,target_id,rule_id FROM target_deliveries WHERE status IN ('pending','retrying','sending','failed') "
+                "AND (? OR rule_id IN (SELECT value FROM json_each(?)))",
+                (rule_ids is None, json.dumps(sorted(rule_ids or set())))).fetchall()
             for row in rows:
                 if row["target_id"] not in active.get(row["rule_id"], set()):
                     connection.execute("UPDATE target_deliveries SET status='cancelled',lease_until=0 WHERE event_id=? AND target_id=?",

@@ -151,6 +151,7 @@ DEFAULTS: dict[str, Any] = {
     "updates": {
         "enabled": False, "revisit_completed": False,
         "identity_fields": [],
+        "notifications": {"enabled": False, "webhook_url": "", "webhook_token_ref": ""},
         "ignored_fields": ["fetched_at", "updated_at", "crawl_time", "timestamp"],
         "detect_same_url_changes": True, "keep_versions": True,
         # ★★ `confirm_missing_runs` 已**删除**（2026-09-30 用户拍板）。
@@ -908,6 +909,30 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     enabled_formats = [key for key in ("jsonl", "csv", "xlsx") if bool(outputs.get(key, False))]
     if not enabled_formats and not outputs.get("plugin_exporters"):
         warnings.append("outputs未启用任何导出格式（jsonl/csv/xlsx）或 plugin_exporters，运行只会产出辅助/状态文件")
+    notice = config.section("updates").get("notifications", {})
+    if not isinstance(notice, dict):
+        errors.append("updates.notifications必须是对象")
+    else:
+        if type(notice.get("enabled", False)) is not bool:
+            errors.append("updates.notifications.enabled必须为布尔值")
+        endpoint = notice.get("webhook_url", "")
+        token_ref = notice.get("webhook_token_ref", "")
+        if not isinstance(endpoint, str) or not isinstance(token_ref, str):
+            errors.append("通知URL和凭据引用必须是字符串")
+        else:
+            if endpoint:
+                from urllib.parse import urlsplit
+                try:
+                    parsed_notice = urlsplit(endpoint)
+                    if (parsed_notice.scheme not in {"http", "https"} or not parsed_notice.hostname
+                            or parsed_notice.username or parsed_notice.password or parsed_notice.fragment):
+                        errors.append("通知Webhook需要不含明文凭据的HTTP(S) URL")
+                except ValueError:
+                    errors.append("通知Webhook URL无效")
+            if token_ref and not token_ref.startswith("secret://"):
+                errors.append("通知凭据必须使用secret://引用")
+            if notice.get("enabled") is True and not endpoint:
+                errors.append("启用记录通知需要webhook_url")
     for key in ("identity_fields", "ignored_fields"):
         value = config.section("updates").get(key, [])
         if not isinstance(value, list) or any(not isinstance(item, str) or not item.strip() for item in value) or len(set(value)) != len(value):

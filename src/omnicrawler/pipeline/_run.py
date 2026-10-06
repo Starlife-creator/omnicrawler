@@ -37,6 +37,7 @@ def _comparison_scope(config: Any) -> str:
     scope = {key: config.section(key) for key in (
         "source", "extract", "selection", "browser", "http", "session", "updates",
     )}
+    scope["updates"] = {key: value for key, value in scope["updates"].items() if key != "notifications"}
     scope["crawl_scope"] = {
         key: config.section("crawl").get(key) for key in (
             "allow_patterns", "deny_patterns", "same_host", "max_depth",

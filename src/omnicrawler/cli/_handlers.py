@@ -888,3 +888,15 @@ def _run_convert(args: argparse.Namespace) -> None:
         "extra": result.extra,
     })
 
+
+
+@_register("notifications")
+def _run_notifications(args: argparse.Namespace) -> None:
+    from ..services.record_notifications import dispatch, report
+    config = load_config(args.config)
+    if args.action == "retry":
+        from ..core.safe_action import require_explicit_apply
+        require_explicit_apply("notifications retry")
+        _json(dispatch(config, force=True, event_ids=set(args.event_id)))
+    else:
+        _json(report(config))

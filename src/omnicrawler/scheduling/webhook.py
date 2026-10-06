@@ -19,10 +19,10 @@ def webhook_target_id(rule: Any) -> str:
 
 
 def dispatch_webhooks(store: MonitorStore, rules: list[Any], egress: Any, *,
-                      force: bool = False, cancelled: Callable[[], bool] = lambda: False) -> None:
+                      force: bool = False, scope_rule_ids: set[str] | None = None, event_ids: set[str] | None = None, cancelled: Callable[[], bool] = lambda: False) -> None:
     active = {rule.rule_id: rule for rule in rules if rule.enabled and rule.webhook_url}
-    store.revoke_targets({key: {webhook_target_id(rule)} for key, rule in active.items()})
-    for row in store.pending(set(active), force=force, target=True):
+    store.revoke_targets({key: {webhook_target_id(rule)} for key, rule in active.items()}, rule_ids=scope_rule_ids)
+    for row in store.pending(set(active), force=force, target=True, event_ids=event_ids):
         if cancelled():
             break
         rule = active[row["rule_id"]]

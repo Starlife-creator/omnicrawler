@@ -532,3 +532,17 @@ pytest tests/gui/visual/ -v                      # 像素级对比
 <!-- current-facts:start -->
 当前内置模板：**41** 个稳定 ID；真源：`omnicrawler templates list`。配置协议：**v5**。
 <!-- current-facts:end -->
+
+
+记录字段变化通知可在 `updates.notifications` 中配置 `enabled: true`、`webhook_url` 和可选的 `webhook_token_ref: secret://...`。
+首次同步建立基线；后续已观察到的新增/字段修改与待投递事件在同一数据库事务保存。未完成遍历不推断删除。
+Webhook 接收地址必须满足当前任务 EgressBroker 的域名、私网、凭据作用域和预算设置；不继承抓取 Cookie。
+正常完成后尝试投递；失败保留回执，不改变采集成功状态。GUI 任务工具的“变化通知”页可查看和补发所选事件，CLI 示例：
+
+```bash
+omnicrawler notifications --config task.yaml report
+omnicrawler notifications --config task.yaml retry --event-id EVENT_ID --apply
+```
+
+更换接收地址或关闭通知会撤销当前任务旧目标的待投递事件；补发不会重新采集，也不会处理其他任务。
+投递携带固定 `Idempotency-Key`；HTTP 回执丢失时仍可能重复，接收端需要去重。当前自动通知覆盖已观察到的新增与修改，删除保护继续由完整运行比较提供。
