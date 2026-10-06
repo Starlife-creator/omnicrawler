@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.database_lease import database_lease
+from .migrations import initialize_schema
 from .schema import SCHEMA
 from .state_store_artifacts import ArtifactsMixin
 from .state_store_plugin_state import PluginStateMixin
@@ -45,11 +46,7 @@ class StateStore(
             self.conn = sqlite3.connect(path, timeout=60, check_same_thread=False)
             self.conn.row_factory = sqlite3.Row
             self.conn.execute("PRAGMA busy_timeout=60000")
-            self.conn.execute("PRAGMA journal_mode=WAL")
-            self.conn.execute("PRAGMA synchronous=NORMAL")
-            self.conn.executescript(SCHEMA)
-            self._ensure_response_columns()
-            self._ensure_semantic_change_columns()
+            initialize_schema(self.conn, path, SCHEMA)
         except BaseException:
             connection = getattr(self, "conn", None)
             if connection is not None:
