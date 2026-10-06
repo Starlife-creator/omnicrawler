@@ -546,3 +546,8 @@ omnicrawler notifications --config task.yaml retry --event-id EVENT_ID --apply
 
 更换接收地址或关闭通知会撤销当前任务旧目标的待投递事件；补发不会重新采集，也不会处理其他任务。
 投递携带固定 `Idempotency-Key`；HTTP 回执丢失时仍可能重复，接收端需要去重。当前自动通知覆盖已观察到的新增与修改，删除保护继续由完整运行比较提供。
+
+
+CSV交付同时包含 `record_quality.csv`，Excel交付包含“质量与复核”工作表，均通过 `record_id` 与数据记录关联。
+状态分为 `valid`（当前字段契约无需复核）、`review_required` 和 `unassessed`，字段错误、缺失、重复和异常保留明细。
+JSONL继续保留原始结构化 `_quality` 证据；表格中的空值不等于已通过，业务字段不会被复核状态列覆盖。

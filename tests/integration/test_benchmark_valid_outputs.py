@@ -58,11 +58,28 @@ def test_benchmark_counts_valid_outputs_and_preserves_zero_false_across_exports(
         with (output / "records.csv").open(encoding="utf-8-sig", newline="") as stream:
             csv_rows = list(csv.DictReader(stream))
         assert csv_rows[0]["price"] == "0" and csv_rows[0]["in_stock"].casefold() == "false"
+        with (output / "record_quality.csv").open(encoding="utf-8-sig", newline="") as stream:
+            quality_csv = {row["record_id"]: row for row in csv.DictReader(stream)}
+        assert len(quality_csv) == len(rows)
+        for row in rows:
+            assessed = row["evidence"]["_quality"]
+            exported = quality_csv[row["record_id"]]
+            assert exported["status"] == ("review_required" if assessed["review_required"] else "valid")
+            assert json.loads(exported["validation_errors"]) == assessed["validation_errors"]
+            assert json.loads(exported["missing_required"]) == assessed["missing_required"]
         book = load_workbook(output / "extraction_results.xlsx", read_only=True, data_only=True)
         try:
             table = list(book.active.values)
             xlsx_rows = [dict(zip(table[0], row, strict=True)) for row in table[1:]]
             assert xlsx_rows[0]["price"] == 0 and xlsx_rows[0]["in_stock"] is False
+            status_table = list(book["质量与复核"].values)
+            quality_xlsx = {row[0]: dict(zip(status_table[0], row, strict=True)) for row in status_table[1:]}
+            assert set(quality_xlsx) == set(quality_csv)
+            for record_id, item in quality_xlsx.items():
+                assert item["status"] == quality_csv[record_id]["status"]
+                assert item["review_required"] == (quality_csv[record_id]["review_required"] == "True")
+                assert item["validation_errors"] == quality_csv[record_id]["validation_errors"]
+
         finally:
             book.close()
     finally:

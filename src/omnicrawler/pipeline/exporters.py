@@ -12,6 +12,7 @@ from ..core.config import AppConfig
 from ..core.utils import excel_safe, utcnow
 from ..quality.artifact_integrity import verify_artifacts
 from ..quality.error_center import build_error_center
+from ..quality.output_metrics import record_quality_counts
 from ..quality.quality_report import build_quality_report
 from ..state import StateStore
 
@@ -111,7 +112,7 @@ def _preserve_previous_delivery(
         return []
     saved: list[str] = []
     stamp = re.sub(r"[^0-9A-Za-z]", "", str(run_id or utcnow()))[:24] or "previous"
-    for name, min_lines in (("records.csv", 2), ("records.jsonl", 1)):
+    for name, min_lines in (("records.csv", 2), ("records.jsonl", 1), ("record_quality.csv", 2)):
         source = output / name
         if not source.is_file() or source.stat().st_size == 0:
             continue
@@ -151,6 +152,25 @@ def export_all(config: AppConfig, state: StateStore, run_id: str | None = None) 
             else:
                 flat[key] = value
         records.append(flat)
+
+    quality_headers = ["record_id", "run_id", "status", "score", "review_required",
+                       "validation_errors", "missing_required", "duplicate", "anomalies"]
+    quality_rows: list[dict[str, Any]] = []
+    for row in raw_records:
+        evidence = json.loads(row["evidence_json"])
+        counts = record_quality_counts([evidence])
+        quality = evidence.get("_quality", {}) if isinstance(evidence, dict) else {}
+        assessed = counts["assessed"] == 1
+        quality_rows.append({
+            "record_id": row["record_id"], "run_id": row["run_id"],
+            "status": "unassessed" if not assessed else "review_required" if counts["review"] else "valid",
+            "score": quality.get("score") if assessed else None,
+            "review_required": bool(counts["review"]) if assessed else None,
+            "validation_errors": json.dumps(quality.get("validation_errors", []), ensure_ascii=False) if assessed else "",
+            "missing_required": json.dumps(quality.get("missing_required", []), ensure_ascii=False) if assessed else "",
+            "duplicate": bool(counts["duplicates"]) if assessed else None,
+            "anomalies": json.dumps(quality.get("anomalies", []), ensure_ascii=False) if assessed else "",
+        })
 
     files: dict[str, str] = {}
     optional_warnings: list[str] = []
@@ -199,6 +219,13 @@ def export_all(config: AppConfig, state: StateStore, run_id: str | None = None) 
                 {key: excel_safe(value) for key, value in row.items()} for row in records
             )
         files["csv"] = str(path)
+        quality_path = output / "record_quality.csv"
+        with quality_path.open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=quality_headers)
+            writer.writeheader()
+            writer.writerows({key: excel_safe(value) for key, value in row.items()} for row in quality_rows)
+        files["quality_csv"] = str(quality_path)
+
 
     # S3.4.1 ⑤：responses.csv/errors.csv 文件受 outputs.csv 开关约束；
     # 数据本身始终加载（xlsx 内嵌"抓取清单/错误记录"sheet 也需要）
@@ -250,6 +277,11 @@ def export_all(config: AppConfig, state: StateStore, run_id: str | None = None) 
                 )
             for row in records[:XLSX_ROW_LIMIT]:
                 sheet.append([_excel_cell(row.get(key, "")) for key in headers])
+            quality_sheet = workbook.create_sheet("质量与复核")
+            quality_sheet.freeze_panes = "A2"
+            quality_sheet.append(quality_headers)
+            for row in quality_rows[:XLSX_ROW_LIMIT]:
+                quality_sheet.append([_excel_cell(row.get(key)) for key in quality_headers])
             response_sheet = workbook.create_sheet("抓取清单")
             response_sheet.append(response_headers)
             for row in response_rows[:XLSX_ROW_LIMIT]:
