@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from omnicrawler.cli._main import build_parser
 from omnicrawler.core.config import load_config
 
@@ -45,13 +47,35 @@ def test_cli_config_is_required_everywhere() -> None:
     )
     checked = 0
     for sub in subparsers.choices.values():
-        if sub.prog == "omnicrawler plugins":
-            continue  # plugins 列表命令允许不带 config
+        if sub.prog in {"omnicrawler plugins", "omnicrawler workspace"}:
+            continue  # workspace import 使用归档包，其他工作区操作单独验证。
         for action in sub._actions:
             if action.dest == "config":
                 assert action.required, f"{sub.prog} 的 --config 不是 required"
                 checked += 1
     assert checked >= 10  # 主要命令全部 required
+
+
+@pytest.mark.parametrize("action", ["init", "health", "package", "snapshot", "rollback"])
+def test_existing_workspace_actions_still_require_config(action):
+    with pytest.raises(SystemExit) as caught:
+        build_parser().parse_args(["workspace", action])
+    assert caught.value.code == 2
+
+
+@pytest.mark.parametrize("options", [[], ["--target", "archive.zip"], ["--destination", "new"]])
+def test_workspace_import_requires_both_package_and_destination(options):
+    with pytest.raises(SystemExit) as caught:
+        build_parser().parse_args(["workspace", "import", *options])
+    assert caught.value.code == 2
+
+
+def test_workspace_import_does_not_require_unavailable_original_config():
+    parsed = build_parser().parse_args([
+        "workspace", "import", "--target", "archive.zip", "--destination", "new",
+    ])
+    assert parsed.config is None
+    assert parsed.target == "archive.zip"
 
 
 def test_workspace_resolves_relative_to_project_root(tmp_path: Path) -> None:

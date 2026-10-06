@@ -6,8 +6,9 @@ import io
 import json
 import re
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar, overload
 
 import yaml
 
@@ -57,13 +58,39 @@ SECTION_ORDER: tuple[str, ...] = (
 )
 
 
+_NamespaceT = TypeVar("_NamespaceT")
+
+
+class _ArgumentParser(argparse.ArgumentParser):
+    @overload
+    def parse_args(self, args: Iterable[str] | None = None, namespace: None = None) -> argparse.Namespace: ...
+
+    @overload
+    def parse_args(self, args: Iterable[str] | None, namespace: _NamespaceT) -> _NamespaceT: ...
+
+    @overload
+    def parse_args(self, *, namespace: _NamespaceT) -> _NamespaceT: ...
+
+    def parse_args(
+        self, args: Iterable[str] | None = None, namespace: Any = None,
+    ) -> Any:
+        parsed = super().parse_args(args, namespace)
+        if getattr(parsed, "command", None) == "workspace":
+            if parsed.action == "import":
+                if not parsed.target or not parsed.destination:
+                    self.error("workspace import requires --target and --destination")
+            elif not parsed.config:
+                self.error("workspace requires --config except for import")
+        return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
     """组装顶层 parser。
 
     FINAL-G4：参数定义按域拆分至 ``_parsers/`` 各模块（原 335 行单体函数），
     本函数只负责全局选项与组装；新增命令在对应域模块的 ``configure`` 内定义。
     """
-    parser = argparse.ArgumentParser(prog="omnicrawler", description="模块化网站采集、附件下载与PDF字段抽取平台")
+    parser = _ArgumentParser(prog="omnicrawler", description="模块化网站采集、附件下载与PDF字段抽取平台")
     parser.add_argument("--version", action="version", version=f"omnicrawler {__version__}")
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     parser.add_argument("--log-format", default="text", choices=["text", "json"])
