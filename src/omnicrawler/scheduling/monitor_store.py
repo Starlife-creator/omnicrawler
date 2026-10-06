@@ -12,6 +12,10 @@ from uuid import uuid4
 _UNSET = object()
 
 
+class BaselineConflictError(RuntimeError):
+    """Another owner changed or removed the expected monitor baseline."""
+
+
 class MonitorStore:
     def __init__(self, directory: Path) -> None:
         self.path = directory / "monitor.sqlite3"
@@ -64,8 +68,9 @@ class MonitorStore:
         with self.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             previous = connection.execute("SELECT body_json FROM baselines WHERE rule_id=?", (rule_id,)).fetchone()
-            if expected is not _UNSET and previous is not None and json.loads(previous[0]) != expected:
-                raise RuntimeError("监控基线已被其它执行更新，请重新检查")
+            current = json.loads(previous[0]) if previous is not None else None
+            if expected is not _UNSET and current != expected:
+                raise BaselineConflictError("监控基线已被其它执行更新，请重新检查")
             if "observed_content" in baseline:
                 connection.execute("INSERT INTO observations(rule_id,body_json,observed_at) VALUES(?,?,?)",
                                    (rule_id, json.dumps({"content": baseline["observed_content"],

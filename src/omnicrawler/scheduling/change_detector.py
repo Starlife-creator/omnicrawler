@@ -43,6 +43,7 @@ from uuid import uuid4
 
 from ..core.safe_data import safe_regex_search
 from ..core.utils import atomic_write
+from .monitor_store import BaselineConflictError
 
 LOGGER = logging.getLogger(__name__)
 
@@ -220,6 +221,15 @@ class ChangeDetector:
         # 消除 GUI 侧 "__baseline__" 哨兵假哈希导致的每轮误报变化
         self._baselines: dict[str, dict[str, Any]] = {}
         self._load_baselines()
+        # Import the old JSON baseline through CAS once; SQLite owns subsequent
+        # updates. A concurrent importer must never overwrite the winning owner.
+        persisted = self._store.baselines()
+        for rule_id, baseline in self._baselines.items():
+            if rule_id not in persisted:
+                try:
+                    self._store.save(rule_id, baseline, expected=None)
+                except BaselineConflictError:
+                    pass
         self._baselines.update(self._store.baselines())
 
     # ── 规则管理 ────────────────────────────────────────────────────
@@ -643,6 +653,7 @@ class ChangeDetector:
                 if event:
                     events.append(event)
             except Exception as exc:
+                self._check_results[rule_id] = {"status": "failed", "error_type": type(exc).__name__}
                 LOGGER.error("检查规则 %s 异常: %s", rule_id, exc)
         if self._durable_delivery and not self._cancelled:
             active = {key for key, rule in self._rules.items() if rule.enabled}
@@ -686,14 +697,20 @@ class ChangeDetector:
                              event.to_dict() if event is not None else None,
                              pending=self._on_notify is not None or self._durable_delivery,
                              targets=[webhook_target_id(rule)] if rule.webhook_url else [], expected=previous)
-        except Exception:
+        except Exception as exc:
+            if isinstance(exc, BaselineConflictError):
+                previous = self._store.baselines().get(rule.rule_id)
             restored = previous or {"last_hash": event.previous_hash if event else None,
                                     "last_content": event.previous_content if event else None}
+            if isinstance(exc, BaselineConflictError) and previous is None:
+                restored = {}
             rule.last_hash = restored.get("last_hash")
             rule.last_content = restored.get("last_content")
             rule.last_checked = None
             rule.candidate_hash = restored.get("candidate_hash")
             rule.candidate_count = restored.get("candidate_count", 0)
+            rule.observed_hash = restored.get("observed_hash")
+            rule.observed_content = restored.get("observed_content")
             rule.last_notified_content = restored.get("last_notified_content")
             rule.last_notified = datetime.fromisoformat(restored["last_notified"]) if restored.get("last_notified") else None
             if previous is None:
