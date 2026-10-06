@@ -122,6 +122,9 @@ class OpenAICompatibleProvider:
         self.base_url = str(config.get("base_url", "")).rstrip("/")
         self.api_key = str(config.get("api_key", ""))
         self.model = str(config.get("model", ""))
+        self.supports_json_schema = config.get("supports_json_schema", False)
+        if type(self.supports_json_schema) is not bool:
+            raise ValueError("supports_json_schema必须是布尔值")
         self.timeout = float(config.get("timeout_seconds", 60))
         self.total_timeout = float(config.get("total_timeout_seconds", self.timeout * AI_RETRY_ATTEMPTS + 3))
         if not all(math.isfinite(value) and value > 0 for value in (self.timeout, self.total_timeout)):
@@ -188,7 +191,18 @@ class OpenAICompatibleProvider:
         *,
         temperature: float = 0.0,
         response_format: dict[str, Any] | None = None,
+        response_schema: dict[str, Any] | None = None,
+        schema_name: str = "omnicrawler_output",
+        schema_strict: bool = False,
     ) -> AIResult:
+        if response_schema is not None and self.supports_json_schema:
+            if response_format is not None:
+                raise ValueError("response_schema与response_format不能同时指定")
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", schema_name):
+                raise ValueError("无效的结构化响应schema名称")
+            response_format = {"type": "json_schema", "json_schema": {
+                "name": schema_name, "schema": response_schema, "strict": schema_strict,
+            }}
         self._check_cancelled()
         self.budget.begin_logical_request()
         payload: dict[str, Any] = {

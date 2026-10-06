@@ -128,6 +128,12 @@ class AdaptiveExtractor:
                         {"role": "user", "content": prompt},
                     ],
                     temperature=0.1,
+                    **({"schema_name": "selector_candidate", "schema_strict": True, "response_schema": {
+                        "type": "object", "properties": {
+                            "rule_type": {"type": "string", "enum": ["css", "xpath"]},
+                            "selector": {"type": "string"},
+                        }, "required": ["rule_type", "selector"], "additionalProperties": False,
+                    }} if getattr(provider, "supports_json_schema", False) else {}),
                 )
                 return result.text
 

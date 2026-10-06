@@ -314,6 +314,8 @@ omnicrawler serve -c config.yaml [--host 127.0.0.1] [--port 8765]
 
 `complete` 保留历史导出，适合备份和搬迁；`full` 保留既有精简行为，排除旧导出。导入会校验文件哈希和数据库，仅创建新目录。打开新目录中的 `config.yaml`；原配置副本和引用检查记录分别保存在 `config.before-relocation.yaml` 与 `workspace/relocation.json`。外部文件、未包含的附件及旧包缺少原位置的信息需要复核，原有凭据引用需在新环境中可用。
 
+支持 JSON Schema 的 AI 端点可在 `ai.providers.<名称>` 中显式设置 `supports_json_schema: true`。资料分析与选择器候选会请求严格结构化响应；实验性字段提取由共享字段契约生成 schema，允许某个分块缺少字段，最终合并后仍检查必填项。未声明能力的端点保持原请求方式；所有路径继续执行本地类型、冲突及引用证据校验。该能力需要按具体端点和模型验证，不能从“OpenAI 兼容”推断支持。
+
 ---
 
 ## 开发者命令速查

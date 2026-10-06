@@ -75,12 +75,14 @@ def test_model_cannot_invent_quote_and_retry_reuses_facts(tmp_path, monkeypatch)
     _source, manifest, output = _inputs(tmp_path)
     config = tmp_path / "task.yaml"
     config.write_text("project: {name: analysis, workspace: work}\nsource: {kind: static_html, seeds: [https://example.test/]}\nai: {mode: local, privacy: {allow_page_text: true}}\n", encoding="utf-8")
-    provider = SimpleNamespace(check_content_allowed=lambda *_: None)
+    provider = SimpleNamespace(check_content_allowed=lambda *_: None, supports_json_schema=True)
     calls = []
     invented = True
 
-    def generate(messages):
+    def generate(messages, **kwargs):
         calls.append(messages)
+        assert kwargs["schema_strict"] is True
+        assert kwargs["response_schema"]["required"] == ["interpretations", "suggestions"]
         assert "PRIVATE-UNSELECTED" not in str(messages)
         facts = json.loads((output / "facts.json").read_text(encoding="utf-8"))
         item = facts["evidence"][0]

@@ -176,6 +176,56 @@ def compile_field_contract(name: str, rule: dict[str, Any]) -> FieldContract:
                          min_length=rule.get("min_length"), max_length=rule.get("max_length"))
 
 
+def field_contract_schema(
+    schema: dict[str, dict[str, Any]], *, enforce_required: bool = True, _depth: int = 0,
+) -> dict[str, Any]:
+    """Compile the same field rules for provider guidance; local validation remains authoritative."""
+    if _depth > 20:
+        raise ValueError("字段契约超过嵌套深度限制")
+    types = {"text": "string", "string": "string", "date": "string", "datetime": "string",
+             "url": "string", "enum": "string", "number": "number", "float": "number", "money": "number",
+             "integer": "integer", "int": "integer", "boolean": "boolean", "bool": "boolean",
+             "list": "array", "array": "array", "object": "object", "dict": "object"}
+    properties: dict[str, Any] = {}
+    required = []
+    for name, rule in schema.items():
+        contract = compile_field_contract(name, rule)
+        if contract.data_type not in types:
+            raise ValueError(f"字段 {name} 未知类型: {contract.data_type}")
+        kind = types[contract.data_type]
+        nullable = contract.nullable is True or (contract.nullable is None and not contract.required)
+        item: dict[str, Any] = {"type": [kind, "null"] if nullable else kind}
+        if contract.meaning:
+            item["description"] = contract.meaning
+        if contract.data_type == "enum":
+            if not contract.enum:
+                raise ValueError(f"字段 {name} 枚举不能为空")
+            item["enum"] = [*contract.enum, *([None] if nullable else [])]
+        if kind in {"number", "integer"}:
+            for key, bound in (("minimum", contract.minimum), ("maximum", contract.maximum)):
+                if bound is not None:
+                    item[key] = bound
+        if kind in {"string", "array", "object"}:
+            suffix = {"string": "Length", "array": "Items", "object": "Properties"}[kind]
+            for prefix, bound in (("min", contract.min_length), ("max", contract.max_length)):
+                if bound is not None:
+                    item[prefix + suffix] = bound
+        if kind == "array" and contract.items is not None:
+            child = field_contract_schema({"item": {**contract.items, "required": True}}, _depth=_depth + 1)
+            item["items"] = child["properties"]["item"]
+        if kind == "object":
+            if contract.properties is None:
+                item["additionalProperties"] = True
+            else:
+                children = field_contract_schema(contract.properties, enforce_required=enforce_required, _depth=_depth + 1)
+                item.update(properties=children["properties"], required=children["required"],
+                            additionalProperties=contract.additional_properties)
+        properties[name] = item
+        if enforce_required and contract.required:
+            required.append(name)
+    return {"type": "object", "properties": properties, "required": required, "additionalProperties": False}
+
+
 def validate_target_fields(
     value: dict[str, Any], schema: dict[str, dict[str, Any]], *, allow_extra: bool = False, _depth: int = 0,
 ) -> list[str]:

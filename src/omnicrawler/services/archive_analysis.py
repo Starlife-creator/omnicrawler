@@ -231,7 +231,21 @@ def execute(manifest: Path, output: Path, *, config_path: Path | None = None, us
             maximum = int(limits.get("maximum_input_characters", 0))
             if maximum and len(prompt) > maximum:
                 raise ValueError("完整提示超过输入字符预算，事实阶段已保留")
-            response = provider.generate([{"role": "user", "content": prompt}])
+            schema_options: dict[str, Any] = {}
+            if getattr(provider, "supports_json_schema", False):
+                citation = {"type": "object", "properties": {
+                    "evidence_id": {"type": "string"}, "quote": {"type": "string"},
+                }, "required": ["evidence_id", "quote"], "additionalProperties": False}
+                claim = {"type": "object", "properties": {
+                    "text": {"type": "string"}, "uncertainty": {"type": "string"},
+                    "citations": {"type": "array", "items": citation},
+                }, "required": ["text", "uncertainty", "citations"], "additionalProperties": False}
+                schema_options = {"schema_name": "archive_claims", "schema_strict": True, "response_schema": {
+                    "type": "object", "properties": {key: {"type": "array", "items": claim}
+                    for key in ("interpretations", "suggestions")},
+                    "required": ["interpretations", "suggestions"], "additionalProperties": False,
+                }}
+            response = provider.generate([{"role": "user", "content": prompt}], **schema_options)
             claims = _validate_claims(json.loads(response.text), selected)
             report.update(claims)
             report.update(status="completed_with_interpretations", model={"provider": response.provider, "model": response.model},

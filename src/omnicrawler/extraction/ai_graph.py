@@ -94,6 +94,7 @@ class Provider:
     max_tokens: int = 4096
     pricing: dict[str, Any] = field(default_factory=dict)
     total_timeout_seconds: float | None = None
+    supports_json_schema: bool = False
 
 
 class AIGraphExtractor:
@@ -419,6 +420,16 @@ class AIGraphExtractor:
             "max_tokens": max_tokens,
             "temperature": 0.1,
         }
+        if getattr(self._provider, "supports_json_schema", False):
+            from ..quality.schema_registry import field_contract_schema
+            target_schema = field_contract_schema({item.name: item.contract_rule() for item in fields}, enforce_required=False)
+            payload["response_format"] = {"type": "json_schema", "json_schema": {
+                "name": "extracted_fields", "strict": False, "schema": {
+                    "type": "object", "properties": {
+                        "fields": target_schema, "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                    }, "required": ["fields"], "additionalProperties": False,
+                },
+            }}
 
         data = await self._post_with_retry(
             session,
