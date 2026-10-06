@@ -119,7 +119,7 @@ class _PipelineExtract(_PipelineBase):
             # 请求会在新周期清理；若在这里提前返回，种子未变化时后续页永远不再
             # 访问。普通 HTML 发现到的既有 URL 仍由 frontier 指纹去重。
             if self.state.reuse_record_observation(run_id, result):
-                self._enqueue_discovered(result, maximum_depth, discover=discover)
+                self._discover_checked(run_id, result, maximum_depth, discover=discover)
                 return
             # Older databases or changed extraction scopes need one fresh extraction.
 
@@ -275,19 +275,34 @@ class _PipelineExtract(_PipelineBase):
                 raise ExtractionError(f"{type(exc).__name__}: {exc}") from exc
 
         # === Stage: Discover ===
-        self._enqueue_discovered(result, maximum_depth, discover=discover)
+        self._discover_checked(run_id, result, maximum_depth, discover=discover)
+
+    def _discover_checked(self, run_id: str, result: FetchResult, maximum_depth: int, *, discover: bool) -> None:
+        try:
+            with self.state.observed_step(run_id, "discover", result.request.fingerprint,
+                                          parent_id="fetch:" + result.request.fingerprint) as summary:
+                try:
+                    self._enqueue_discovered(result, maximum_depth, discover=discover, summary=summary)
+                finally:
+                    summary.update(result.meta.get("pagination_diagnostic", {}))
+        except Exception as exc:
+            raise ExtractionError(f"{type(exc).__name__}: discovery failed") from exc
 
     def _enqueue_discovered(
         self,
         result: FetchResult,
         maximum_depth: int,
         *,
-        discover: bool,
+        discover: bool, summary: dict[str, Any] | None = None,
     ) -> None:
         """按统一的主题与作用域规则发现并入队子请求。"""
+        summary = summary if summary is not None else {}
+        summary.update(discovered=0, enqueued=0, rejected=0, duplicates=0)
         if not discover or result.request.depth >= maximum_depth:
+            summary["stop_reason"] = "discovery_disabled" if not discover else "depth_limit"
             return
         for child in self.source.discover(result):
+            summary["discovered"] += 1
             topic_config = self.config.section("selection").get("topic", {})
             strict_prefilter = isinstance(topic_config, dict) and bool(
                 topic_config.get("strict_link_prefilter", False)
@@ -298,11 +313,17 @@ class _PipelineExtract(_PipelineBase):
                 and child.kind == "page"
                 and child.priority <= 0
             ):
+                summary["rejected"] += 1
                 continue
             root = child.meta.get("root_url")
             allowed, _reason = self.scope.allowed(child.url, str(root) if root else None)
             if allowed:
-                self.state.enqueue(child)
+                if self.state.enqueue(child):
+                    summary["enqueued"] += 1
+                else:
+                    summary["duplicates"] += 1
+            else:
+                summary["rejected"] += 1
 
     def _per_url_extract_override(
         self, result: FetchResult

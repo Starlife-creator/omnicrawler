@@ -193,9 +193,21 @@ class RunsMixin:
         finally:
             # Only scalar summaries are retained; credentials and full content
             # have no place in the step ledger.
-            for name in ("records", "response_bytes", "http_status", "discovered", "rejected"):
+            for name in ("records", "response_bytes", "http_status", "discovered", "rejected", "enqueued", "duplicates", "pages_seen"):
                 if type(outcome.get(name)) is int and outcome[name] >= 0:
                     payload[name] = outcome[name]
+            for name in ("cursor_sha256", "next_cursor_sha256"):
+                value = outcome.get(name)
+                if isinstance(value, str) and len(value) == 64 and all(char in "0123456789abcdef" for char in value):
+                    payload[name] = value
+            if outcome.get("pagination_kind") == "cursor":
+                payload["pagination_kind"] = "cursor"
+            reason = outcome.get("stop_reason")
+            if isinstance(reason, str) and reason in {
+                "discovery_disabled", "depth_limit", "invalid_pagination_response", "unsupported_cursor_type",
+                "no_next_value", "invalid_next_url", "repeated_continuation", "pagination_history_limit", "next_request_generated",
+            }:
+                payload["stop_reason"] = outcome["stop_reason"]
             payload.update(finished_at=utcnow(), duration_seconds=max(0.0, time.monotonic() - clock))
             self.save_checkpoint(run_id, stage, key, payload, status=status)
 

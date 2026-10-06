@@ -551,3 +551,7 @@ omnicrawler notifications --config task.yaml retry --event-id EVENT_ID --apply
 CSV交付同时包含 `record_quality.csv`，Excel交付包含“质量与复核”工作表，均通过 `record_id` 与数据记录关联。
 状态分为 `valid`（当前字段契约无需复核）、`review_required` 和 `unassessed`，字段错误、缺失、重复和异常保留明细。
 JSONL继续保留原始结构化 `_quality` 证据；表格中的空值不等于已通过，业务字段不会被复核状态列覆盖。
+
+
+游标分页诊断记录实际推进、发现、入队、拒绝及重复计数和停止原因。数字游标 `0` 可继续分页；重复续页会标记未完整遍历，避免把漏采报成完成。
+诊断只保存游标SHA-256摘要，原始游标不进入步骤清单；配置深度/页数限制仍是采集边界。

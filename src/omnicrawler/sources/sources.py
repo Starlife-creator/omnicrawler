@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import random
@@ -225,29 +226,48 @@ class GenericSource:
         next_path = pagination.get("next_path")
         if not next_path:
             return []
+        diagnostic: dict[str, Any] = {"pagination_kind": "cursor", "pages_seen": result.request.depth + 1}
+        result.meta["pagination_diagnostic"] = diagnostic
+        parameter = str(pagination.get("parameter", "")).strip()
+        current = urllib.parse.parse_qs(urllib.parse.urlsplit(result.request.url).query).get(parameter, [])
+        diagnostic["cursor_sha256"] = hashlib.sha256(json.dumps(current).encode()).hexdigest()
         try:
             values = json_path(json.loads(decode_body(result)), str(next_path))
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as exc:
+            diagnostic["stop_reason"] = "invalid_pagination_response"
+            raise ValueError("分页响应无法解析；不能确认已完整遍历") from exc
+        if not values or values[0] is None or values[0] == "" or values[0] is False:
+            diagnostic["stop_reason"] = "no_next_value"
             return []
-        if not values or not values[0]:
-            return []
+        if type(values[0]) not in {str, int, float}:
+            diagnostic["stop_reason"] = "unsupported_cursor_type"
+            raise ValueError("下一页游标必须是标量；不能确认已完整遍历")
         next_value = str(values[0])
-        parameter = str(pagination.get("parameter", "")).strip()
-        if parameter:
-            # 游标代表同一个查询参数的下一状态，必须替换旧值。旧实现逐页追加，
-            # 第二跳会得到 cursor=old&cursor=new；读取首值的服务端会重复旧页。
-            url = _replace_query(result.request.url, {parameter: next_value})
-        else:
-            url = canonicalize_url(result.final_url, next_value) or ""
+        diagnostic["next_cursor_sha256"] = hashlib.sha256(json.dumps(values[0]).encode()).hexdigest()
+        url = (_replace_query(result.request.url, {parameter: next_value}) if parameter
+               else canonicalize_url(result.final_url, next_value) or "")
         if not url:
-            return []
-        return [CrawlRequest(
+            diagnostic["stop_reason"] = "invalid_next_url"
+            raise ValueError("下一页地址无效；不能确认已完整遍历")
+        child = CrawlRequest(
             url, method=result.request.method, headers=dict(result.request.headers),
             body=result.request.body, kind=result.request.kind, render=result.request.render,
             priority=result.request.priority, depth=result.request.depth + 1,
             parent_url=result.final_url,
             meta={**result.request.meta, "_api_pagination_generated": True},
-        )]
+        )
+        seen = list(result.request.meta.get("_api_pagination_seen", []))
+        if result.request.fingerprint not in seen:
+            seen.append(result.request.fingerprint)
+        if child.fingerprint in seen:
+            diagnostic["stop_reason"] = "repeated_continuation"
+            raise ValueError("分页重复返回已访问的游标/地址；不能确认已完整遍历")
+        if len(seen) >= 2000:
+            diagnostic["stop_reason"] = "pagination_history_limit"
+            raise ValueError("分页跟踪达到上限；不能确认已完整遍历")
+        child.meta["_api_pagination_seen"] = seen
+        diagnostic["stop_reason"] = "next_request_generated"
+        return [child]
 
 
 def _with_query(url: str, params: dict[str, Any]) -> str:

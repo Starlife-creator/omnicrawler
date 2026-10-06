@@ -96,6 +96,8 @@ def read_runtime(config: AppConfig, *, run_id: str = "") -> dict[str, Any]:
                 "step_id", "parent_id", "started_at", "finished_at", "duration_seconds",
                 "error_type", "records", "response_bytes", "http_status", "discovered", "rejected",
                 "index", "attempt", "engine", "action", "omitted",
+                "pagination_kind", "pages_seen", "cursor_sha256", "next_cursor_sha256",
+                "stop_reason", "enqueued", "duplicates",
             ) if key in payload}
             steps.append({"stage": observed["stage"], "status": observed["status"], **allowed})
         grouped: dict[str, dict[str, Any]] = {}

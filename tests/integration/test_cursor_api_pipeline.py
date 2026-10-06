@@ -13,6 +13,7 @@ import yaml
 
 from omnicrawler.core.config import load_config
 from omnicrawler.pipeline import Pipeline
+from omnicrawler.services.workflow_diagnostics import read_runtime
 
 
 class _CursorApi(BaseHTTPRequestHandler):
@@ -96,6 +97,12 @@ def test_cursor_api_reaches_last_page_once_and_stops(cursor_api, tmp_path: Path)
 
     assert summary["status"] == "succeeded", summary
     assert summary["processed"] == 3
+    steps = [step for step in read_runtime(config, run_id=summary["run_id"])["steps"] if step["stage"] == "discover"]
+    assert len(steps) == 3
+    assert [step["stop_reason"] for step in steps] == ["next_request_generated", "next_request_generated", "no_next_value"]
+    assert [step["enqueued"] for step in steps] == [1, 1, 0]
+    assert all(step["status"] == "succeeded" for step in steps)
+    assert "page-2" not in json.dumps(steps) and "page-3" not in json.dumps(steps)
     assert cursor_api.hits == [
         "/items?scope=all",
         "/items?scope=all&cursor=page-2",
@@ -137,3 +144,28 @@ def test_cursor_api_reaches_last_page_once_and_stops(cursor_api, tmp_path: Path)
     assert [record["data"] for record in changed] == [
         {"id": 3, "value": "last-updated"},
     ]
+
+
+def test_numeric_zero_cursor_is_followed(cursor_api, tmp_path):
+    cursor_api.pages = {"": ({"id": 1, "value": "first"}, 0), "0": ({"id": 2, "value": "last"}, None)}
+    config = load_config(_write_config(tmp_path, f"http://127.0.0.1:{cursor_api.server_port}/items"))
+    with Pipeline(config) as pipeline:
+        summary = pipeline.run()
+    assert summary["status"] == "succeeded" and summary["processed"] == 2
+    assert cursor_api.hits == ["/items", "/items?cursor=0"]
+
+
+def test_repeated_cursor_is_incomplete_and_preserves_failed_diagnostic(cursor_api, tmp_path):
+    cursor_api.pages = {"": ({"id": 1, "value": "first"}, "page-2"),
+                        "page-2": ({"id": 2, "value": "loop"}, "page-2")}
+    config = load_config(_write_config(tmp_path, f"http://127.0.0.1:{cursor_api.server_port}/items"))
+    with Pipeline(config) as pipeline:
+        summary = pipeline.run()
+    assert summary["status"] != "succeeded" and summary["errors"] > 0
+    assert cursor_api.hits == ["/items", "/items?cursor=page-2"]
+    steps = [step for step in read_runtime(config, run_id=summary["run_id"])["steps"] if step["stage"] == "discover"]
+    assert len(steps) == 2
+    assert steps[-1]["status"] == "failed"
+    assert steps[-1]["stop_reason"] == "repeated_continuation"
+    assert steps[-1]["error_type"] == "ValueError"
+    assert "page-2" not in json.dumps(steps)
