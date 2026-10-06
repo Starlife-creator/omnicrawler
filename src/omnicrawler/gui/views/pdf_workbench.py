@@ -180,6 +180,11 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
         self._ocr_checkbox = QCheckBox(_("启用 OCR（扫描件/图片 PDF 建议开启）"))
         self._ocr_checkbox.setChecked(True)
         config_layout.addWidget(self._ocr_checkbox)
+        self._ocr_pages_input = QLineEdit()
+        self._ocr_pages_input.setAccessibleName(_("OCR 页码"))
+        self._ocr_pages_input.setPlaceholderText(_("仅 OCR 页码：如 2,4；每份 PDF 同一页码，留空处理全部待识别页"))
+        self._ocr_checkbox.toggled.connect(self._ocr_pages_input.setEnabled)
+        config_layout.addWidget(self._ocr_pages_input)
 
         config_layout.addSpacing(16)
 
@@ -308,6 +313,18 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
 
         template_id = self._template_combo.currentData()
         run_ocr = self._ocr_checkbox.isChecked()
+        ocr_pages = None
+        if run_ocr and self._ocr_pages_input.text().strip():
+            try:
+                parts = self._ocr_pages_input.text().replace("，", ",").split(",")
+                if len(parts) > 2000 or any(not part.strip().isascii() or not part.strip().isdecimal() for part in parts):
+                    raise ValueError("invalid page list")
+                ocr_pages = sorted({int(part.strip()) for part in parts})
+                if any(page < 1 for page in ocr_pages):
+                    raise ValueError("invalid page number")
+            except ValueError:
+                QMessageBox.warning(self, _("OCR 页码无效"), _("请输入以逗号分隔的正整数页码；最多2000项。"))
+                return
         input_dir = self._dir_input.text().strip()
 
         if run_ocr:
@@ -387,7 +404,7 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
             return
 
         self._worker = _PdfPipelineWorker(
-            config_path, run_ocr=run_ocr, parent=self
+            config_path, run_ocr=run_ocr, ocr_pages=ocr_pages, parent=self
         )
         self._worker.stage_started.connect(self._on_stage_started)
         self._worker.stage_finished.connect(self._on_stage_finished)

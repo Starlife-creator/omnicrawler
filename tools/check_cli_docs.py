@@ -43,6 +43,9 @@ def cli_contracts(parser: argparse.ArgumentParser | None = None) -> dict[str, di
         if not isinstance(action, argparse._SubParsersAction):
             continue
         for command, command_parser in action.choices.items():
+            if command == "pdf":
+                from omnicrawler.pdfx.cli import build_parser as build_pdf_parser
+                command_parser = build_pdf_parser()
             options = {
                 option
                 for item in command_parser._actions
@@ -86,6 +89,10 @@ def check_docs(project_root: Path, paths: tuple[str, ...] = DEFAULT_DOCS) -> lis
             for option in sorted(set(OPTION.findall(remainder)) - contract["options"]):
                 issues.append(f"{label}: omnicrawler {command} documents unsupported option {option}")
             if contract["subcommands"]:
+                if command == "pdf":
+                    # The forwarding entry accepts the PDF parser's global
+                    # config option before its stage; the path is not a stage.
+                    remainder = re.sub(r'''--config(?:=|\s+)(?:"[^"]*"|'[^']*'|[^\s]+)''', "", remainder)
                 words = re.findall(r"(?<![-\w])[a-z][a-z0-9-]*", remainder)
                 candidate = next((word for word in words if not word.startswith("http")), "")
                 if candidate and candidate not in contract["subcommands"]:

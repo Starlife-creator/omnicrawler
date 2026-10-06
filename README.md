@@ -316,6 +316,8 @@ omnicrawler serve -c config.yaml [--host 127.0.0.1] [--port 8765]
 
 支持 JSON Schema 的 AI 端点可在 `ai.providers.<名称>` 中显式设置 `supports_json_schema: true`。资料分析与选择器候选会请求严格结构化响应；实验性字段提取由共享字段契约生成 schema，允许某个分块缺少字段，最终合并后仍检查必填项。未声明能力的端点保持原请求方式；所有路径继续执行本地类型、冲突及引用证据校验。该能力需要按具体端点和模型验证，不能从“OpenAI 兼容”推断支持。
 
+PDF 工作台可填写 `2,4` 等 OCR 页码；页码作用于当前输入中的每份 PDF，留空处理全部待识别页。CLI 可运行 `omnicrawler pdf --config pdf.yaml ocr --page-number 2 --page-number 4`。未选页保留待识别状态，已识别页不重复 OCR。调用文档 IR 时可显式传入 `ocr_pages` 与本地 `ocr_backend`；识别文字保留页码、后端及置信度，缺少区域或阅读顺序证据时明确标注未验证，不自动初始化或下载 OCR 模型。
+
 ---
 
 ## 开发者命令速查

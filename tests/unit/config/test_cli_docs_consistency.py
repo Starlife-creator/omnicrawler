@@ -20,6 +20,18 @@ def test_cli_contracts_include_documented_nested_commands_and_options():
     assert "--json" in contracts["stealth-fingerprint"]["options"]
     assert "--generate" in contracts["gen-templates"]["options"]
     assert "--url" in contracts["templates"]["options"]
+    assert "ocr" in contracts["pdf"]["subcommands"]
+    assert "--page-number" in contracts["pdf"]["options"]
+
+
+def test_pdf_forwarded_documentation_uses_actual_stage_contract(tmp_path):
+    document = tmp_path / "commands.md"
+    document.write_text('omnicrawler pdf --config "a directory/pdf.yaml" ocr --page-number 2\n')
+    assert check_docs(tmp_path, paths=(document.name,)) == []
+    document.write_text('omnicrawler pdf --config task.yaml fictional-stage --made-up 2\n')
+    issues = check_docs(tmp_path, paths=(document.name,))
+    assert any("unsupported subcommand fictional-stage" in issue for issue in issues)
+    assert any("unsupported option --made-up" in issue for issue in issues)
 
 
 def test_plugin_contract_docs_metadata_is_static_literal():

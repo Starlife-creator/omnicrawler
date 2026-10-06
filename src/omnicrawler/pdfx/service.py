@@ -73,6 +73,7 @@ def run_processing(
     limit: int | None = None,
     workers: int | None = None,
     ocr_workers: int | None = None,
+    ocr_pages: list[int] | None = None,
     run_ocr: bool = True,
     callback: EventCallback | None = None,
     should_stop: StopCallback | None = None,
@@ -119,6 +120,7 @@ def run_processing(
                     db,
                     ocr_workers=ocr_workers or 1,
                     should_stop=should_stop,
+                    page_numbers=ocr_pages,
                 )
             except Exception as exc:  # noqa: BLE001 - stage isolation keeps partial results
                 LOGGER.exception("PDF 管线阶段 ocr 失败")
@@ -158,6 +160,7 @@ def run_extraction(
     auto_prepare: bool = True,
     run_ocr: bool = True,
     ocr_workers: int | None = None,
+    ocr_pages: list[int] | None = None,
     callback: EventCallback | None = None,
     should_stop: StopCallback | None = None,
     on_document: Callable[[int, int], None] | None = None,
@@ -171,6 +174,7 @@ def run_extraction(
             workers=workers,
             run_ocr=run_ocr,
             ocr_workers=ocr_workers,
+            ocr_pages=ocr_pages,
             callback=callback,
             should_stop=should_stop,
         )

@@ -269,7 +269,11 @@ def test_image_only_pdf_runs_real_ocr_and_extracts(tmp_path: Path) -> None:
     _write_config(config, project, ocr_backend="tesseract", ocr_command=TESSERACT.as_posix())
 
     for stage in ("ingest", "parse", "ocr", "extract", "export"):
-        _run_pdfx(config, stage)
+        if stage == "ocr":
+            result = _run_pdfx(config, stage, "--page-number", "1")
+            assert result["result"]["page_numbers"] == [1]
+        else:
+            _run_pdfx(config, stage)
 
     with _db(project) as db:
         page = dict(

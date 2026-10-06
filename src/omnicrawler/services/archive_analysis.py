@@ -143,7 +143,7 @@ def _facts(sources: list[dict[str, Any]]) -> dict[str, Any]:
             evidence.append({"id": hashlib.sha256(f"{source['id']}:{source['sha256']}:{index}".encode()).hexdigest(),
                              "source_id": source["id"], "locator": locator,
                              "quote": paragraph[:2000]})
-    return {"format": 1, "fact_stage_version": 6, "documents": documents, "evidence": evidence,
+    return {"format": 1, "fact_stage_version": 7, "documents": documents, "evidence": evidence,
             "statistics": {"documents": len(documents), "paragraphs": sum(item["paragraph_count"] for item in documents),
                            "evidence_paragraphs": len(evidence), "evidence_characters": characters},
             "coverage": "bounded_excerpts; omitted paragraphs/pages are not analyzed; page unknown unless parser supplies provenance",
@@ -189,7 +189,7 @@ def execute(manifest: Path, output: Path, *, config_path: Path | None = None, us
         try:
             cached = _json(facts_path)
             digest = cached.pop("stage_sha256", None)
-            if cached.get("fact_stage_version") == 6 and cached.get("input_sha256") == identity and digest == _stage_digest(cached):
+            if cached.get("fact_stage_version") == 7 and cached.get("input_sha256") == identity and digest == _stage_digest(cached):
                 report = cached
         except (ValueError, OSError):
             pass

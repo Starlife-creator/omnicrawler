@@ -102,6 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
     parse_parser.add_argument("--workers", type=int)
     ocr_parser = sub.add_parser("ocr", help="只OCR缺少可用文字层的页面")
     ocr_parser.add_argument("--limit-pages", type=int)
+    ocr_parser.add_argument("--page-number", type=int, action="append", help="只识别指定页码（可重复，每份PDF同一页码）")
     ocr_parser.add_argument("--ocr-workers", type=int, default=1,
                             help="OCR 并行 worker 数（默认 1，串行；增加可加速但占用更多内存）")
     extract_parser = sub.add_parser("extract", help="候选页召回、结构化抽取和校验")
@@ -153,7 +154,8 @@ def main() -> None:
             elif args.command == "parse":
                 emit("parse", parse_stage(config, db, args.limit, args.workers))
             elif args.command == "ocr":
-                emit("ocr", ocr_stage(config, db, args.limit_pages, ocr_workers=args.ocr_workers))
+                emit("ocr", ocr_stage(config, db, args.limit_pages, ocr_workers=args.ocr_workers,
+                                      page_numbers=args.page_number))
             elif args.command == "extract":
                 emit("extract", extraction_stage(config, db, args.limit, args.workers))
             elif args.command == "export":

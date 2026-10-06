@@ -51,6 +51,16 @@ def _main(monkeypatch, args):
     cli.main()
 
 
+def test_ocr_cli_forwards_explicit_page_numbers(tmp_path, monkeypatch):
+    config = _fake_config(tmp_path)
+    captured = []
+    monkeypatch.setattr(cli, "load_config", lambda path: config)
+    monkeypatch.setattr(cli, "Database", _Database)
+    monkeypatch.setattr(cli, "ocr_stage", lambda *args, **kwargs: captured.append(kwargs) or {"selected": 1})
+    _main(monkeypatch, ["--config", str(config.path), "ocr", "--page-number", "2", "--page-number", "4"])
+    assert captured[0]["page_numbers"] == [2, 4]
+
+
 def test_pdfx_cli_all_offline_stage_branches(tmp_path: Path, monkeypatch, capsys) -> None:
     config = _fake_config(tmp_path)
     calls = []

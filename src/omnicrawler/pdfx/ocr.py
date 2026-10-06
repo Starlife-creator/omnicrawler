@@ -382,6 +382,7 @@ def ocr_stage(
     *,
     ocr_workers: int = 1,
     should_stop: Callable[[], bool] | None = None,
+    page_numbers: list[int] | None = None,
 ) -> dict[str, Any]:
     """OCR 阶段：对缺少文字层的页面执行 OCR 识别。
 
@@ -391,19 +392,30 @@ def ocr_stage(
         limit_pages: 限制处理页数（用于小规模试跑）
         ocr_workers: OCR 并行 worker 数（默认 1 即串行；>1 使用多进程并行加速）
     """
-    if limit_pages is not None and limit_pages < 0:
+    if limit_pages is not None and (type(limit_pages) is not int or limit_pages < 0):
         raise ValueError("limit_pages 不能为负数")
+    if page_numbers is not None and (
+        not isinstance(page_numbers, list) or len(page_numbers) > 2000
+        or any(type(page) is not int or page < 1 for page in page_numbers)
+    ):
+        raise ValueError("OCR页码必须是最多2000个正整数")
+    selected_pages = sorted(set(page_numbers)) if page_numbers is not None else None
+    if selected_pages == []:
+        return {"selected": 0, "recognized": 0, "failed": 0, "skipped": 0, "page_numbers": []}
+    # A literal integer list avoids SQLite's platform-dependent bind-variable
+    # limit; every member was strictly validated before constructing SQL.
+    page_filter = "" if selected_pages is None else " AND p.page_no IN (" + ",".join(map(str, selected_pages)) + ")"
     select_sql = """
         SELECT p.doc_id, p.page_no, d.primary_path
         FROM pages p JOIN documents d ON d.doc_id=p.doc_id
         WHERE p.needs_ocr=1 AND p.ocr_status IN ('pending','failed')
-        ORDER BY p.doc_id, p.page_no
         """
+    select_sql += page_filter + " ORDER BY p.doc_id, p.page_no"
     select_params: tuple[Any, ...] = ()
     if hasattr(db, "iter_rows"):
         total_row = db.fetchone(
             """SELECT COUNT(*) AS n FROM pages p
-               WHERE p.needs_ocr=1 AND p.ocr_status IN ('pending','failed')"""
+               WHERE p.needs_ocr=1 AND p.ocr_status IN ('pending','failed')""" + page_filter
         )
         selected = int(total_row["n"] if total_row else 0)
         if limit_pages is not None:
@@ -413,6 +425,8 @@ def ocr_stage(
         rows: Iterable[Any] = db.iter_rows(select_sql, select_params)
     else:  # Lightweight test doubles and third-party Database adapters.
         buffered_rows = db.fetchall(select_sql, select_params)
+        if selected_pages is not None:
+            buffered_rows = [row for row in buffered_rows if row["page_no"] in selected_pages]
         if limit_pages is not None:
             buffered_rows = buffered_rows[:limit_pages]
         selected = len(buffered_rows)
@@ -420,6 +434,8 @@ def ocr_stage(
     summary: dict[str, Any] = {
         "selected": selected, "recognized": 0, "failed": 0, "skipped": 0,
     }
+    if selected_pages is not None:
+        summary["page_numbers"] = selected_pages
     if not selected:
         return summary
     dpi = int(config.ocr.get("dpi", 220))

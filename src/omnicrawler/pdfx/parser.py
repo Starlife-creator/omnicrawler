@@ -101,6 +101,14 @@ def _iter_parsed_pages(path: str, min_chars: int, max_garbled_ratio: float, *, i
                 if table_md:
                     final_text = f"{text}\n\n[表格结构]\n{table_md}".strip()
             yield {
+                **({"page_geometry": {
+                    "native_size": [float(page.width), float(page.height)],
+                    "rotation_degrees": int(reader.pages[page_index].rotation),
+                    "media_box_pdf": [float(value) for value in reader.pages[page_index].mediabox],
+                    "crop_box_pdf": [float(value) for value in reader.pages[page_index].cropbox],
+                    "boxes_coordinate_system": "pdf_points_bottom_left",
+                    "text_coordinate_system": "pdfplumber_points_top_left",
+                }} if include_structure else {}),
                 **({"words": page.extract_words(), "tables": structures or []} if include_structure and not needs_ocr else {}),
                 "page_no": page_index + 1,
                 "width": float(page.width),

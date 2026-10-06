@@ -51,3 +51,42 @@ def test_omitted_pages_are_explicit_and_empty_pdf_is_not_success(tmp_path):
     _pdf(path, [""])
     with pytest.raises(ValueError, match="OCR"):
         parse_document(path)
+
+
+def test_selected_ocr_pages_have_page_evidence_without_invented_regions(tmp_path):
+    path = tmp_path / "mixed.pdf"
+    _pdf(path, ["", "Native text.", ""])
+    calls = []
+
+    class LocalOCR:
+        def recognize(self, png):
+            assert png.startswith(b"\x89PNG")
+            calls.append(png)
+            return "Recovered scan.", 0.8
+
+    parsed = parse_document(path, {"ocr_pages": [1], "ocr_backend": LocalOCR(), "ocr_dpi": 100})
+    assert len(calls) == 1
+    assert parsed.paragraphs == ["Recovered scan.", "Native text."]
+    assert parsed.metadata["ocr_pages_recognized"] == [1]
+    assert parsed.metadata["omitted_pages_needing_ocr"] == [3]
+    locator = parsed.paragraph_locators[0]
+    assert locator["page"] == 1 and locator["text_source"] == "ocr"
+    assert locator["ocr_confidence"] == 0.8
+    assert "bbox" not in locator
+    assert parsed.metadata["page_geometry"]["1"]["rotation_degrees"] == 0
+
+
+def test_selected_ocr_requires_backend_and_preserves_failed_omission(tmp_path):
+    path = tmp_path / "mixed.pdf"
+    _pdf(path, ["", "Known text."])
+    with pytest.raises(ValueError, match="local ocr_backend"):
+        parse_document(path, {"ocr_pages": [1]})
+
+    class FailingOCR:
+        def recognize(self, png):
+            raise RuntimeError("fixture failure")
+
+    parsed = parse_document(path, {"ocr_pages": [1], "ocr_backend": FailingOCR()})
+    assert parsed.metadata["ocr_pages_recognized"] == []
+    assert parsed.metadata["ocr_failures"] == [{"page": 1, "error_type": "RuntimeError"}]
+    assert parsed.metadata["omitted_pages_needing_ocr"] == [1]

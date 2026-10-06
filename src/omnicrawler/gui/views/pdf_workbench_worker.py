@@ -40,11 +40,13 @@ class _PdfPipelineWorker(QThread):
         config_path: str,
         *,
         run_ocr: bool = True,
+        ocr_pages: list[int] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._config_path = config_path
         self._run_ocr = run_ocr
+        self._ocr_pages = list(ocr_pages) if ocr_pages is not None else None
         self._cancelled = False
 
     def cancel(self) -> None:
@@ -143,6 +145,7 @@ class _PdfPipelineWorker(QThread):
                 self._config_path,
                 auto_prepare=True,
                 run_ocr=self._run_ocr,
+                ocr_pages=self._ocr_pages,
                 callback=_callback,
                 should_stop=_should_stop,
                 on_document=_doc_callback,
