@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 from ..core.models import CrawlRequest, ExtractedRecord, FetchResult
 from ..core.utils import json_text, utcnow
 from ..quality.semantic_changes import compare_record_data, record_identity, semantic_hash
+from .notification_queue import enqueue_event
 
 if TYPE_CHECKING:
     import sqlite3
@@ -269,6 +270,7 @@ class RecordsMixin:
         run_id: str,
         records: list[ExtractedRecord],
         *, identity_fields: tuple[str, ...] = (), ignored_fields: set[str] | None = None,
+        notification: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         """Persist semantic record versions and annotate meaningful field-level changes."""
 
@@ -331,6 +333,21 @@ class RecordsMixin:
                             now,
                         ),
                     )
+                if notification and not change.baseline and change.change_type in {"added", "modified"}:
+                    event_id = uuid.uuid5(uuid.NAMESPACE_URL, json_text(
+                        [run_id, task_key, scope, record.record_type, identity, digest])).hex
+                    event = {
+                        "envelope_version": 1, "source_kind": "record_fields", "event_id": event_id,
+                        "rule_id": notification["rule_id"], "rule_name": notification.get("name", "记录变化"),
+                        "task_key": task_key, "run_id": run_id, "comparison_scope": scope,
+                        "config_sha256": notification["config_sha256"], "url": record.source_url,
+                        "detected_at": now, "previous_hash": semantic_hash(before) if before is not None else None,
+                        "current_hash": digest, "previous_content": json_text(before) if before is not None else None,
+                        "current_content": json_text(record.data), "diff_summary": change.change_type,
+                        "notification_eligible": True, "details": change_data,
+                    }
+                    enqueue_event(self.conn, notification["rule_id"], event,
+                                  targets=[notification["target_id"]], desktop=False)
                 self.conn.execute(
                     "INSERT OR IGNORE INTO entity_observations "
                     "(run_id,task_key,comparison_scope,source_url,record_type,identity,data_json,observed_at) "

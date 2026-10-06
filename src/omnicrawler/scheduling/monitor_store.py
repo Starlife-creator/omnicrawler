@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from ..state.notification_queue import DELIVERY_SCHEMA, enqueue_event
+
 _UNSET = object()
 
 
@@ -17,32 +19,30 @@ class BaselineConflictError(RuntimeError):
 
 
 class MonitorStore:
-    def __init__(self, directory: Path) -> None:
-        self.path = directory / "monitor.sqlite3"
+    def __init__(self, directory: Path, *, delivery_only: bool = False) -> None:
+        self.path = directory if delivery_only else directory / "monitor.sqlite3"
+        self.delivery_only = delivery_only
         self._claims: dict[tuple[str, str], str] = {}
 
     @contextmanager
     def connection(self):
+        if self.delivery_only and not self.path.is_file():
+            raise FileNotFoundError("记录通知状态库不存在")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.path, timeout=5)
         connection.row_factory = sqlite3.Row
         try:
-            connection.execute("PRAGMA journal_mode=WAL")
-            connection.executescript("""
-                CREATE TABLE IF NOT EXISTS baselines(rule_id TEXT PRIMARY KEY, body_json TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS observations(
-                    id INTEGER PRIMARY KEY,rule_id TEXT NOT NULL,body_json TEXT NOT NULL,observed_at REAL NOT NULL);
-                CREATE TABLE IF NOT EXISTS target_deliveries(
-                    event_id TEXT NOT NULL,target_id TEXT NOT NULL,rule_id TEXT NOT NULL,body_json TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending',attempts INTEGER NOT NULL DEFAULT 0,
-                    next_attempt REAL NOT NULL DEFAULT 0,lease_until REAL NOT NULL DEFAULT 0,error TEXT NOT NULL DEFAULT '',
-                    PRIMARY KEY(event_id,target_id));
-                CREATE TABLE IF NOT EXISTS deliveries(
-                    event_id TEXT PRIMARY KEY, rule_id TEXT NOT NULL, body_json TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
-                    next_attempt REAL NOT NULL DEFAULT 0, lease_until REAL NOT NULL DEFAULT 0,
-                    error TEXT NOT NULL DEFAULT '');
-            """)
+            if self.delivery_only:
+                from ..state.migrations import SCHEMA_VERSION
+                if connection.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
+                    raise ValueError("请通过StateStore先升级记录通知状态库，未修改数据库")
+            else:
+                connection.execute("PRAGMA journal_mode=WAL")
+                connection.executescript("""
+                    CREATE TABLE IF NOT EXISTS baselines(rule_id TEXT PRIMARY KEY, body_json TEXT NOT NULL);
+                    CREATE TABLE IF NOT EXISTS observations(
+                        id INTEGER PRIMARY KEY,rule_id TEXT NOT NULL,body_json TEXT NOT NULL,observed_at REAL NOT NULL);
+                """ + DELIVERY_SCHEMA)
             connection.execute("BEGIN IMMEDIATE")
             for table in ("deliveries", "target_deliveries"):
                 columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
@@ -78,12 +78,7 @@ class MonitorStore:
             connection.execute("INSERT INTO baselines VALUES(?,?) ON CONFLICT(rule_id) DO UPDATE SET body_json=excluded.body_json",
                                (rule_id, json.dumps(baseline, ensure_ascii=False)))
             if event is not None:
-                connection.execute("INSERT OR IGNORE INTO deliveries(event_id,rule_id,body_json,status) VALUES(?,?,?,?)",
-                                   (event["event_id"], rule_id, json.dumps(event, ensure_ascii=False), "suppressed" if not event.get("notification_eligible", True) else "pending" if pending else "submitted"))
-                for target in targets or []:
-                    connection.execute("INSERT OR IGNORE INTO target_deliveries(event_id,target_id,rule_id,body_json,status) VALUES(?,?,?,?,?)",
-                                       (event["event_id"], target, rule_id, json.dumps(event, ensure_ascii=False),
-                                        "pending" if event.get("notification_eligible", True) else "suppressed"))
+                enqueue_event(connection, rule_id, event, targets=targets or [], pending=pending)
 
     def pending(self, rule_ids: set[str], *, force: bool = False, target: bool = False) -> list[dict[str, Any]]:
         if not self.path.is_file() or not rule_ids:

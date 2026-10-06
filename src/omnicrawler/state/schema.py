@@ -1,5 +1,7 @@
 """SQLite 数据库模式定义。"""
 
+from .notification_queue import DELIVERY_SCHEMA
+
 SCHEMA = """
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
@@ -235,3 +237,5 @@ CREATE INDEX IF NOT EXISTS idx_stage_checkpoints_run ON stage_checkpoints(run_id
 CREATE INDEX IF NOT EXISTS idx_plugin_state_namespace
     ON plugin_state(project_scope, plugin_id, author_fingerprint, schema_version);
 """
+
+SCHEMA += DELIVERY_SCHEMA

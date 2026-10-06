@@ -4,6 +4,7 @@ from contextlib import closing
 import pytest
 
 from omnicrawler.state import state_store
+from omnicrawler.state.migrations import SCHEMA_VERSION
 from omnicrawler.state.state_store import StateStore
 
 
@@ -18,7 +19,7 @@ def test_legacy_upgrade_creates_consistent_backup_and_is_idempotent(tmp_path):
     path = tmp_path / "state.sqlite"
     legacy_database(path)
     with StateStore(path) as store:
-        assert store.conn.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert store.conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         backup = store.conn.execute("SELECT backup_name FROM schema_migrations").fetchone()[0]
         assert store.conn.execute("SELECT content FROM preserved").fetchone()[0] == "original"
     with closing(sqlite3.connect(tmp_path / backup)) as conn:

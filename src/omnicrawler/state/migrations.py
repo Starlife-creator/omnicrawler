@@ -8,7 +8,7 @@ from contextlib import closing
 from pathlib import Path
 from uuid import uuid4
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _backup(conn: sqlite3.Connection, path: Path, version: int) -> Path | None:
