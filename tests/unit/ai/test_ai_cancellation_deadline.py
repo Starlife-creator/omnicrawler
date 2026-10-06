@@ -57,6 +57,28 @@ def test_unknown_usage_stops_further_finite_token_budget_requests():
         value.reserve(payload)
 
 
+def test_operation_budget_replacement_updates_admission_and_retry_accounting(monkeypatch):
+    value = provider()
+    operation_budget = AIBudget(maximum_requests=1)
+    value.budget = operation_budget
+    monkeypatch.setattr(value, "_wait_retry", lambda *_args: None)
+    with patch("omnicrawler.services.ai_providers.build_safe_opener") as factory:
+        factory.return_value.open.side_effect = TimeoutError("retryable")
+        with pytest.raises(AIBudgetExceededError):
+            value.generate([{"role": "user", "content": "bounded operation"}])
+    assert factory.return_value.open.call_count == 1
+    assert value.accounting.budget is operation_budget
+    assert operation_budget.requests == 1 and operation_budget.logical_requests == 1
+    assert operation_budget.unknown_usage_requests == 1
+
+
+def test_spent_budget_cannot_be_reset_by_replacement():
+    value = provider()
+    value.budget.reserve(tokens=1, cost=0)
+    with pytest.raises(ValueError, match="不能替换预算"):
+        value.budget = AIBudget()
+
+
 @pytest.mark.parametrize("timeout", [0, -1, float("inf"), float("nan")])
 def test_timeout_must_be_finite_positive(timeout):
     with pytest.raises(ValueError):

@@ -143,6 +143,27 @@ class OpenAICompatibleProvider:
         if not self.model:
             raise ValueError(f"AI provider {name} 需要 base_url 和 model")
 
+    @property
+    def budget(self) -> AIBudget:
+        return self._budget
+
+    @budget.setter
+    def budget(self, value: AIBudget) -> None:
+        if not isinstance(value, AIBudget):
+            raise TypeError("AI预算必须使用AIBudget")
+        accounting = getattr(self, "accounting", None)
+        if accounting is not None:
+            previous = accounting.budget
+            with previous._lock:
+                if value is previous:
+                    return
+                if previous.requests or previous.logical_requests or previous._reservations:
+                    raise ValueError("AI调用已开始，不能替换预算；请为新操作创建独立provider")
+                accounting.budget = value
+                self._budget = value
+        else:
+            self._budget = value
+
     def check_content_allowed(self, content_kind: str, what: str) -> None:
         """AI 外发隐私闸门（B05-019 接线）：未显式开启对应开关则拒发。
 
