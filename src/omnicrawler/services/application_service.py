@@ -105,7 +105,9 @@ class ApplicationService:
                         target("after_fetch", {"engine": context.get("engine"),
                                                "escalated": bool(context.get("escalated", False))})
                     def extracted(**context: Any) -> None:
-                        target("after_extract", {"count": context.get("count", 0)})
+                        from ..quality.output_metrics import record_quality_counts
+                        counts = record_quality_counts(getattr(record, "evidence", {}) for record in context.get("records", []))
+                        target("after_extract", {"count": context.get("count", 0), "output_quality": counts})
                     pipeline.registry.register_hook("after_fetch", fetched)
                     pipeline.registry.register_hook("after_extract", extracted)
                 result = pipeline.run(resume=resume, retry_failed=retry_failed, max_pages=max_pages, callback=callback)

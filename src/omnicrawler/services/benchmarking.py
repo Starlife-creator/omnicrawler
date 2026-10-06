@@ -88,10 +88,20 @@ class BenchmarkResult:
     browser_fetches: int = 0
     browser_escalations: int = 0
     fresh_process_start_seconds: float | None = None
+    time_to_first_valid_record_seconds: float | None = None
+    output_quality_scope: str = "unmeasured"
+    output_metrics: tuple[tuple[str, int], ...] = ()
 
     @property
     def pages_per_second(self) -> float:
         return self.pages / self.duration_seconds if self.duration_seconds else 0.0
+
+    @property
+    def valid_records_per_second(self) -> float | None:
+        counts = dict(self.output_metrics)
+        if self.output_quality_scope != "declared_contract_v1" or not counts or counts.get("unassessed", 1):
+            return None
+        return counts["valid"] / self.duration_seconds if self.duration_seconds > 0 else None
 
     @property
     def seconds_per_thousand_pages(self) -> float:
@@ -122,6 +132,8 @@ class BenchmarkResult:
             **asdict(self),
             "profile_settings": dict(self.profile_settings),
             "environment": dict(self.environment),
+            "output_metrics": dict(self.output_metrics),
+            "valid_records_per_second": self.valid_records_per_second,
             "pages_per_second": self.pages_per_second,
             "seconds_per_thousand_pages": self.seconds_per_thousand_pages,
         }
@@ -198,8 +210,14 @@ def compare_benchmark(before: BenchmarkResult, after: BenchmarkResult, *, regres
     comparable, reasons = comparability(before, after)
     baseline = before.pages_per_second
     change = (after.pages_per_second - baseline) / baseline if baseline else 0.0
+    before_valid, after_valid = before.valid_records_per_second, after.valid_records_per_second
+    output_comparable = comparable and before_valid is not None and before_valid > 0 and after_valid is not None
+    valid_change = (after_valid - before_valid) / before_valid if comparable and before_valid is not None and before_valid > 0 and after_valid is not None else None
     return {
         "throughput_change": change,
+        "valid_output_comparable": output_comparable,
+        "valid_output_throughput_change": valid_change,
+        "valid_output_regression": output_comparable and valid_change is not None and valid_change < -abs(regression_threshold),
         "regression": comparable and change < -abs(regression_threshold),
         "memory_change": (after.peak_memory_bytes - before.peak_memory_bytes)
         if before.memory_scope == after.memory_scope and before.memory_complete and after.memory_complete else None,
@@ -337,14 +355,19 @@ class BenchmarkRunner:
 
         sampler = ProcessTreeSampler(_RSS_SAMPLE_INTERVAL)
         first_record: float | None = None
+        first_valid: float | None = None
+        output_counts: dict[str, int] | None = None
         fetches = browser_fetches = browser_escalations = 0
         event_lock = threading.Lock()
 
         def _sample_rss(event: str, payload: dict[str, Any]) -> None:
-            nonlocal first_record, fetches, browser_fetches, browser_escalations
+            nonlocal first_record, first_valid, fetches, browser_fetches, browser_escalations
             with event_lock:
                 if event == "after_extract" and payload.get("count", 0) > 0 and first_record is None:
                     first_record = time.monotonic() - started
+                if event == "after_extract" and first_valid is None:
+                    if payload.get("output_quality", {}).get("valid", 0) > 0:
+                        first_valid = time.monotonic() - started
                 if event == "after_fetch":
                     fetches += 1
                     browser_fetches += int(payload.get("engine") == "browser")
@@ -369,6 +392,7 @@ class BenchmarkRunner:
             errors = int(stats.get("errors", 0) or 0)
             bytes_xfer = _stored_bytes(source_config.workspace, run_id)
             input_sha = _stored_snapshot(source_config.workspace, run_id)
+            output_counts = _stored_output_quality(source_config.workspace, run_id)
         except Exception as exc:
             errors += 1
             _benchmark_logger.warning("Benchmark run failed: %s", exc)
@@ -400,6 +424,9 @@ class BenchmarkRunner:
             memory_complete=sampler.complete,
             memory_samples=sampler.samples,
             time_to_first_record_seconds=first_record,
+            time_to_first_valid_record_seconds=first_valid,
+            output_quality_scope="declared_contract_v1" if output_counts is not None else "unmeasured",
+            output_metrics=tuple(sorted(output_counts.items())) if output_counts is not None else (),
             fetches=fetches, browser_fetches=browser_fetches, browser_escalations=browser_escalations,
             fresh_process_start_seconds=startup_seconds,
             bytes_transferred=bytes_xfer,
@@ -576,6 +603,25 @@ def _stored_bytes(workspace: Path | None, run_id: str) -> int:
     return int(row[0]) if row and row[0] is not None else 0
 
 
+def _stored_output_quality(workspace: Path | None, run_id: str) -> dict[str, int] | None:
+    """Read final persisted records; missing measurement stays unknown rather than zero."""
+    if workspace is None or not run_id:
+        return None
+    database = Path(workspace) / "state.sqlite3"
+    if not database.is_file():
+        return None
+    import sqlite3
+    from contextlib import closing
+
+    from ..quality.output_metrics import record_quality_counts
+    try:
+        with closing(sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)) as connection:
+            rows = connection.execute("SELECT evidence_json FROM records WHERE run_id=?", (run_id,))
+            return record_quality_counts(json.loads(row[0]) for row in rows)
+    except (sqlite3.Error, ValueError, TypeError):
+        return None
+
+
 def _stored_snapshot(workspace: Path | None, run_id: str) -> str:
     """这次运行实际取到的**输入**摘要：`url` + `content_sha256` 逐行哈希。
 
@@ -712,6 +758,9 @@ def _dict_to_result(entry: dict[str, Any]) -> BenchmarkResult:
         memory_complete=bool(entry.get("memory_complete", False)),
         memory_samples=int(entry.get("memory_samples", 0)),
         time_to_first_record_seconds=entry.get("time_to_first_record_seconds"),
+        time_to_first_valid_record_seconds=entry.get("time_to_first_valid_record_seconds"),
+        output_quality_scope=str(entry.get("output_quality_scope", "unmeasured")),
+        output_metrics=tuple((str(key), int(value)) for key, value in _pairs(entry.get("output_metrics"))),
         fetches=int(entry.get("fetches", 0)),
         browser_fetches=int(entry.get("browser_fetches", 0)),
         browser_escalations=int(entry.get("browser_escalations", 0)),
