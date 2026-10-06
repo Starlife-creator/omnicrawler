@@ -35,6 +35,7 @@ from ...plugins.market_client import (
 )
 from ...services.scenario_cards import describe_card
 from ..core.background_worker import BackgroundWorker
+from ..core.worker_owned_widget import WorkerOwnedWidget
 from ..design_system import FONT_FAMILY_MONO, RADIUS, ThemeManager, scaled_font_px
 from ..i18n import _
 from ..widgets.empty_state import EmptyState, sync_list_empty_state
@@ -141,7 +142,7 @@ class _TemplateInstallWorker(BackgroundWorker):
         return self._template_id
 
 
-class TemplateMarketView(QWidget):
+class TemplateMarketView(WorkerOwnedWidget):
     """模板市场面板：列表 + 详情 + 安装/卸载/校验。"""
 
     def __init__(
@@ -299,6 +300,8 @@ class TemplateMarketView(QWidget):
 
     # ── 数据 ────────────────────────────────────────────
     def refresh(self) -> None:
+        if self._worker_shutdown_requested:
+            return
         catalog_url = self._catalog_url or (self._bundled_catalog_dir or str(self._local_fallback))
         self._state = "loading"
         self._status_indicator.state = "running"
@@ -318,6 +321,8 @@ class TemplateMarketView(QWidget):
         self._catalog_worker.start()
 
     def _on_catalog_loaded(self, catalog: dict[str, Any]) -> None:
+        if self._worker_shutdown_requested:
+            return
         self._catalog = catalog
         self._state = "ready"
         self._status_indicator.state = "finished"
@@ -326,6 +331,8 @@ class TemplateMarketView(QWidget):
         self._populate_list()
 
     def _on_catalog_error(self, msg: str) -> None:
+        if self._worker_shutdown_requested:
+            return
         self._state = "offline"
         self._status_indicator.state = "error"
         self._status_label.setText(_("离线"))
@@ -404,15 +411,21 @@ class TemplateMarketView(QWidget):
                 self._listing_worker.start()
 
     def _on_listing_loaded(self, template_id: str, text: str) -> None:
+        if self._worker_shutdown_requested:
+            return
         if template_id == self._selected_id:
             self._detail_listing.setText(text)
 
     def _on_listing_error(self, template_id: str) -> None:
+        if self._worker_shutdown_requested:
+            return
         if template_id == self._selected_id:
             self._detail_listing.setText(_("（功能说明加载失败）"))
 
     # ── 操作 ────────────────────────────────────────────
     def _on_install(self) -> None:
+        if self._worker_shutdown_requested:
+            return
         tid = self._selected_id
         if not tid or self._state != "ready":
             ToastManager.instance().warning(_("请先联网刷新并选择模板"))
@@ -428,12 +441,16 @@ class TemplateMarketView(QWidget):
         self._install_worker.start()
 
     def _on_installed(self, template_id: str) -> None:
+        if self._worker_shutdown_requested:
+            return
         ToastManager.instance().success(_(f"已安装并校验通过：{template_id}"))
         self._footer.setText(_(f"已安装 {template_id}（templates_installed/ 将被模板库自动发现）"))
         self._populate_list()
         self._update_action_buttons()
 
     def _on_install_error(self, msg: str) -> None:
+        if self._worker_shutdown_requested:
+            return
         ToastManager.instance().error(_(f"安装失败：{msg.split(chr(10))[0]}"))
         self._footer.setText(_(f"安装失败：{msg.split(chr(10))[0]}"))
         self._update_action_buttons()

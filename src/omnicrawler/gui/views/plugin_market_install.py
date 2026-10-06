@@ -60,6 +60,8 @@ class MarketInstallMixin(_Base):
         def _is_installed(self, plugin_id: str) -> bool: ...
         def _update_action_buttons(self, installed: bool | None = None) -> None: ...
     def _on_install(self) -> None:
+        if getattr(self, "_worker_shutdown_requested", False):
+            return
         from PySide6.QtWidgets import QMessageBox
 
         pid = self._selected_id
@@ -108,6 +110,8 @@ class MarketInstallMixin(_Base):
         self._install_worker.start()
 
     def _on_installed(self, plugin_id: str) -> None:
+        if getattr(self, "_worker_shutdown_requested", False):
+            return
         from PySide6.QtWidgets import QMessageBox
 
         _append_market_event(self._dest_root, "install", plugin_id)
@@ -168,6 +172,8 @@ class MarketInstallMixin(_Base):
             ToastManager.instance().info(_(f"创作者 {creator.username} 已在信任列表"))
 
     def _on_install_error(self, msg: str) -> None:
+        if getattr(self, "_worker_shutdown_requested", False):
+            return
         """安装失败收尾：Toast 给一句结论，**持久对话框给完整原因链**（可复制）。
 
         由来（P0）：此前只取异常第一行塞进会消失的 Toast —— 卡在哪一步、为什么、

@@ -79,6 +79,8 @@ class MarketCatalogMixin(_Base):
             self.refresh()
 
     def refresh(self) -> None:
+        if getattr(self, "_worker_shutdown_requested", False):
+            return
         if self._state == "loading":
             return
         self._consume_app_config()
@@ -173,6 +175,8 @@ class MarketCatalogMixin(_Base):
         self.refresh()
 
     def _on_catalog_loaded(self, catalog: dict[str, Any]) -> None:
+        if getattr(self, "_worker_shutdown_requested", False):
+            return
         self._catalog = catalog
         self._state = "ready"
         self._status_indicator.state = "finished"
@@ -202,11 +206,15 @@ class MarketCatalogMixin(_Base):
         worker.start()
 
     def _on_dependency_scanned(self, status: dict[str, Any]) -> None:
+        if getattr(self, "_worker_shutdown_requested", False):
+            return
         self._dependency_status = dict(status or {})
         # 依赖徽标变化后重绘列表（保持选中/滚动由 _populate_list 自身负责）
         self._populate_list()
 
     def _on_catalog_error(self, msg: str) -> None:
+        if getattr(self, "_worker_shutdown_requested", False):
+            return
         self._state = "offline"
         self._status_indicator.state = "error"
         self._status_label.setText(_("离线"))

@@ -341,10 +341,14 @@ class MarketBrowseMixin(_Base):
                 self._listing_worker.start()
 
     def _on_listing_loaded(self, plugin_id: str, text: str) -> None:
+        if getattr(self, "_worker_shutdown_requested", False):
+            return
         if plugin_id == self._selected_id:
             self._detail_listing.setText(text)
 
     def _on_listing_error(self, plugin_id: str) -> None:
+        if getattr(self, "_worker_shutdown_requested", False):
+            return
         if plugin_id == self._selected_id:
             self._detail_listing.setText(_("（功能说明加载失败）"))
 

@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 
 from ...core.config import DEFAULTS
 from ...plugins.plugins import OFFICIAL_PLUGIN_TYPES
+from ..core.worker_owned_widget import WorkerOwnedWidget
 from ..design_system import FONT_FAMILY_MONO, RADIUS, ThemeManager, scaled_font_px
 from ..i18n import _
 from ..widgets.status_indicator import StatusIndicator
@@ -87,7 +88,7 @@ LOGGER = logging.getLogger(__name__)
 
 # ── 视图 ──────────────────────────────────────────────────────────
 class PluginMarketView(
-    MarketCatalogMixin, MarketInstallMixin, MarketBrowseMixin, MarketActionsMixin, QWidget
+    MarketCatalogMixin, MarketInstallMixin, MarketBrowseMixin, MarketActionsMixin, WorkerOwnedWidget
 ):
     """策展式插件市场面板。
 
