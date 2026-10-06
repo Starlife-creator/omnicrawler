@@ -1821,7 +1821,7 @@ class MainWindow(QMainWindow):
                 catalog = TemplateCatalog(template.filepath.parent)
                 record = next((item for item in catalog.discover() if item.path == template.filepath.resolve()), None)
                 if record is None:
-                    raise ValueError("所选模板记录不可用")
+                    raise ValueError(_("所选模板记录不可用"))
                 if record.metadata.placeholders:
                     initial: dict[str, Any] = {}
                     seeds = current.get("source", {}).get("seeds", [])

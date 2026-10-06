@@ -154,7 +154,9 @@ class EnvironmentChecker(_BaseDelegate):
         demo_btn = msg.addButton(_("2. 5 分钟演示"), QMessageBox.ButtonRole.ActionRole)
         tmpl_btn = msg.addButton(_("3. 浏览模板"), QMessageBox.ButtonRole.ActionRole)
         msg.setDefaultButton(wizard_btn)
-        cb = QCheckBox(_("不再显示"))
+        # Establish Qt ownership before setCheckBox: on PySide6 a parentless
+        # local wrapper can otherwise disappear while QMessageBox retains it.
+        cb = QCheckBox(_("不再显示"), msg)
         cb.setChecked(False)
         msg.setCheckBox(cb)
         shortcut_cb = self._add_shortcut_checkbox(msg)
@@ -179,7 +181,7 @@ class EnvironmentChecker(_BaseDelegate):
 
         if not is_platform_supported():
             return None
-        checkbox = QCheckBox(_("在桌面创建快捷方式"))
+        checkbox = QCheckBox(_("在桌面创建快捷方式"), msg)
         checkbox.setObjectName(SHORTCUT_CHECKBOX_NAME)
         checkbox.setChecked(False)
         # QMessageBox 只有一个 setCheckBox 槽位（被"不再显示"占了）⇒ 第二个复选框

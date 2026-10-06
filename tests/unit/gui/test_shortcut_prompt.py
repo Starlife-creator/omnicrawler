@@ -114,6 +114,19 @@ def test_default_unchecked_creates_nothing(monkeypatch: pytest.MonkeyPatch) -> N
     assert calls == [], "默认不勾时不得创建快捷方式"
 
 
+def test_welcome_checkbox_is_owned_before_messagebox_retains_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = QMessageBox.setCheckBox
+    owners = []
+
+    def attach(box, checkbox):
+        owners.append(checkbox.parent() is box)
+        original(box, checkbox)
+
+    monkeypatch.setattr(QMessageBox, "setCheckBox", attach)
+    _drive_welcome_dialog(monkeypatch, check_shortcut=False)
+    assert owners == [True], "Qt owner must exist before the local checkbox wrapper leaves scope"
+
+
 def test_checked_creates_exactly_once(monkeypatch: pytest.MonkeyPatch) -> None:
     """勾了 ⇒ 恰好一次（不多不少）。"""
     if not win_shortcut.is_platform_supported():
