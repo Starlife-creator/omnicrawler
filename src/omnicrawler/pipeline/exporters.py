@@ -128,6 +128,18 @@ def _preserve_previous_delivery(
 
 
 def export_all(config: AppConfig, state: StateStore, run_id: str | None = None) -> dict[str, Any]:
+    """Record actual delivery boundaries when exporting a specific run."""
+    if run_id is None:
+        return _export_delivery(config, state, run_id)
+    with state.observed_step(run_id, "export", "delivery") as outcome:
+        summary = _export_delivery(config, state, run_id)
+        paths = {Path(name) for name in summary["files"].values() if Path(name).is_file()}
+        outcome.update(records=summary["records"], files=len(paths),
+                       output_bytes=sum(path.stat().st_size for path in paths))
+        return summary
+
+
+def _export_delivery(config: AppConfig, state: StateStore, run_id: str | None = None) -> dict[str, Any]:
     output = config.workspace / "output"
     output.mkdir(parents=True, exist_ok=True)
     where, params = (" WHERE run_id=?", (run_id,)) if run_id else ("", ())

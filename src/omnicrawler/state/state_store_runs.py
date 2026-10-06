@@ -193,7 +193,7 @@ class RunsMixin:
         finally:
             # Only scalar summaries are retained; credentials and full content
             # have no place in the step ledger.
-            for name in ("records", "response_bytes", "http_status", "discovered", "rejected", "enqueued", "duplicates", "pages_seen"):
+            for name in ("records", "files", "output_bytes", "response_bytes", "http_status", "discovered", "rejected", "enqueued", "duplicates", "pages_seen"):
                 if type(outcome.get(name)) is int and outcome[name] >= 0:
                     payload[name] = outcome[name]
             for name in ("cursor_sha256", "next_cursor_sha256"):

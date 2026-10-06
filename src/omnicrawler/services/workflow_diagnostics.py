@@ -94,7 +94,7 @@ def read_runtime(config: AppConfig, *, run_id: str = "") -> dict[str, Any]:
             payload = json.loads(observed["payload_json"])
             allowed = {key: payload[key] for key in (
                 "step_id", "parent_id", "started_at", "finished_at", "duration_seconds",
-                "error_type", "records", "response_bytes", "http_status", "discovered", "rejected",
+                "error_type", "records", "files", "output_bytes", "response_bytes", "http_status", "discovered", "rejected",
                 "index", "attempt", "engine", "action", "omitted",
                 "pagination_kind", "pages_seen", "cursor_sha256", "next_cursor_sha256",
                 "stop_reason", "enqueued", "duplicates",
