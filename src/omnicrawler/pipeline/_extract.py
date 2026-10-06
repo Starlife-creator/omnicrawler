@@ -147,7 +147,10 @@ class _PipelineExtract(_PipelineBase):
                     if extractor_name
                     else self._processor(processor_name, config=per_url_config)
                 )
-                outcome = processor.process(result)
+                with self.state.observed_step(run_id, "extract", result.request.fingerprint,
+                                              parent_id="fetch:" + result.request.fingerprint) as summary:
+                    outcome = processor.process(result)
+                    summary["records"] = len(outcome.records)
                 for transformer in self._transformers:
                     outcome.records = [transform_record(transformer, record) for record in outcome.records]
                 # B-1 证据胶囊：提取后、归一化前（门控 OMNICRAWL_CAPSULE_ENABLED=true）

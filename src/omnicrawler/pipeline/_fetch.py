@@ -43,6 +43,12 @@ class _PipelineFetch(_PipelineBase):
         return fetchers[name]
 
     def _fetch_checked(self, run_id: str, request: CrawlRequest) -> FetchResult:
+        with self.state.observed_step(run_id, "fetch", request.fingerprint) as summary:
+            result = self._fetch_checked_impl(run_id, request)
+            summary.update(response_bytes=len(result.body), http_status=result.status)
+            return result
+
+    def _fetch_checked_impl(self, run_id: str, request: CrawlRequest) -> FetchResult:
         # === Stage: Fetch ===
         if self._auth_provider is not None:
             request = prepare_request(self._auth_provider, request)

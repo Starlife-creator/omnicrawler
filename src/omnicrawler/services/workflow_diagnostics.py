@@ -86,6 +86,17 @@ def read_runtime(config: AppConfig, *, run_id: str = "") -> dict[str, Any]:
             "SELECT stage,status,COUNT(*) AS observations,MIN(updated_at) AS first_observed_at,MAX(updated_at) AS last_observed_at "
             "FROM stage_checkpoints WHERE run_id=? GROUP BY stage,status ORDER BY first_observed_at", (identity,)).fetchall()
         errors = connection.execute("SELECT stage,error_type,COUNT(*) AS total FROM errors WHERE run_id=? GROUP BY stage,error_type", (identity,)).fetchall()
+        step_rows = connection.execute(
+            "SELECT stage,status,payload_json FROM stage_checkpoints WHERE run_id=? AND idempotency_key LIKE 'step:%' "
+            "ORDER BY updated_at,idempotency_key LIMIT 501", (identity,)).fetchall()
+        steps = []
+        for observed in step_rows[:500]:
+            payload = json.loads(observed["payload_json"])
+            allowed = {key: payload[key] for key in (
+                "step_id", "parent_id", "started_at", "finished_at", "duration_seconds",
+                "error_type", "records", "response_bytes", "http_status", "discovered", "rejected",
+            ) if key in payload}
+            steps.append({"stage": observed["stage"], "status": observed["status"], **allowed})
         grouped: dict[str, dict[str, Any]] = {}
         for checkpoint in checkpoints:
             stage = checkpoint["stage"]
@@ -101,6 +112,9 @@ def read_runtime(config: AppConfig, *, run_id: str = "") -> dict[str, Any]:
                                                        "error_types": {}, "duration_seconds": None})
             item["status"] = "failed"
             item["error_types"][error["error_type"]] = error["total"]
+        for item in grouped.values():
+            item["steps"] = [step for step in steps if step["stage"] == item["stage"]]
+            item["steps_truncated"] = len(step_rows) > 500
         setup = connection.execute("SELECT payload_json FROM stage_checkpoints WHERE run_id=? AND stage='setup' AND idempotency_key='setup'", (identity,)).fetchone()
         digest = json.loads(setup[0]).get("config_sha256") if setup else None
         duration = None
@@ -114,7 +128,8 @@ def read_runtime(config: AppConfig, *, run_id: str = "") -> dict[str, Any]:
                 "config_match": "unknown" if not digest else "matching" if digest == config_digest(config) else "stale",
                 "identity_confidence": "stable" if task_id and has_identity else "legacy_path",
                 "stages": list(grouped.values()),
-                "note": "checkpoint 表示已记录的阶段结果；缺少起止证据的阶段耗时为未知。"}
+                "steps": steps, "steps_truncated": len(step_rows) > 500,
+                "note": "步骤起止为实际执行证据；并发步骤耗时不能相加作为总耗时。缺少起止证据的阶段耗时为未知。"}
     except sqlite3.Error:
         return {"state": "unavailable", "stages": [], "reason": "运行数据库暂不可读，请稍后重试"}
     finally:

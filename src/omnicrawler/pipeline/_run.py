@@ -354,7 +354,10 @@ class _PipelineRun(_PipelineBase):
                     batch = self.state.claim(want, strategy, domain_scope=_resolve_scope,
                                              domain_capacity=domain_capacity)
                     if not batch:
-                        frontier_exhausted = True
+                        # Domain slots can be occupied while pending work remains.
+                        # A temporary admission gap must not end the crawl after
+                        # the last in-flight request fails.
+                        frontier_exhausted = self.state.pending_count() == 0
                         break
                     for request in batch:
                         inflight[executor.submit(self._fetch_checked, run_id, request)] = request

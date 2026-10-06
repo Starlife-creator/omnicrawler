@@ -94,6 +94,42 @@ def _frontier_by_status(pipeline: Pipeline) -> dict[str, int]:
     return {row["status"]: row["n"] for row in rows}
 
 
+def test_occupied_domain_then_failed_inflight_does_not_drop_pending(tmp_path: Path) -> None:
+    import threading
+
+    config = _make_config(tmp_path, concurrency=2, max_pages=100)
+    release = threading.Event()
+    calls = []
+
+    def fetch(run_id, request):
+        index = request.meta["index"]
+        calls.append(index)
+        if index == 1:
+            assert release.wait(3)
+        if index < 2:
+            raise ConnectionError("controlled failure")
+        return _fake_result(request)
+
+    with Pipeline(config) as pipeline:
+        _install_frontier(pipeline, total=3, fetch=fetch)
+        claim = pipeline.state.claim
+
+        def controlled_claim(*args, **kwargs):
+            batch = claim(*args, **kwargs)
+            if not batch:
+                release.set()
+            return batch
+
+        pipeline.state.claim = controlled_claim
+        try:
+            result = pipeline.run()
+            assert sorted(calls) == [0, 1, 2]
+            assert result["processed"] == 1
+            assert _frontier_by_status(pipeline).get("pending", 0) == 0
+        finally:
+            release.set()
+
+
 def test_successful_redirect_target_discovered_during_handling_is_not_refetched(
     tmp_path: Path,
 ) -> None:

@@ -11,7 +11,10 @@
 from __future__ import annotations
 
 import json
+import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 from ..core.run_state import (
@@ -170,6 +173,31 @@ class RunsMixin:
                 """,
                 (run_id, stage, idempotency_key, status, json_text(payload), utcnow()),
             )
+
+    @contextmanager
+    def observed_step(self, run_id: str, stage: str, step_id: str, *, parent_id: str = "") -> Iterator[dict[str, Any]]:
+        """Persist real boundaries; an interrupted process leaves an observed running step."""
+        started = utcnow()
+        clock = time.monotonic()
+        payload: dict[str, Any] = {"step_id": f"{stage}:{step_id}", "parent_id": parent_id, "started_at": started}
+        key = "step:" + step_id
+        self.save_checkpoint(run_id, stage, key, payload, status="running")
+        outcome: dict[str, Any] = {}
+        status = "succeeded"
+        try:
+            yield outcome
+        except BaseException as exc:
+            status = "failed"
+            payload["error_type"] = type(exc).__name__
+            raise
+        finally:
+            # Only scalar summaries are retained; credentials and full content
+            # have no place in the step ledger.
+            for name in ("records", "response_bytes", "http_status", "discovered", "rejected"):
+                if type(outcome.get(name)) is int and outcome[name] >= 0:
+                    payload[name] = outcome[name]
+            payload.update(finished_at=utcnow(), duration_seconds=max(0.0, time.monotonic() - clock))
+            self.save_checkpoint(run_id, stage, key, payload, status=status)
 
     def checkpoint(self, run_id: str, stage: str, idempotency_key: str) -> dict[str, Any] | None:
         self._require_run_id(run_id)
