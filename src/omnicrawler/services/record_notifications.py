@@ -25,11 +25,12 @@ def rule_for(config: AppConfig) -> MonitorRule:
                        webhook_url=notice.get("webhook_url", ""), webhook_token_ref=notice.get("webhook_token_ref", ""))
 
 
-def notification_binding(config: AppConfig) -> dict[str, str] | None:
+def notification_binding(config: AppConfig) -> dict[str, Any] | None:
     rule = rule_for(config)
     if not rule.enabled or not rule.webhook_url:
         return None
     return {"rule_id": rule.rule_id, "name": rule.name, "target_id": webhook_target_id(rule),
+            "policy": config.section("updates").get("notifications", {}).get("policy", {}),
             "config_sha256": hashlib.sha256(json.dumps(config.raw, sort_keys=True, default=str).encode()).hexdigest()}
 
 
@@ -49,7 +50,7 @@ def report(config: AppConfig) -> dict[str, Any]:
     for row in rows:
         item = dict(row)
         body = json.loads(item.pop("body_json"))
-        item.update({key: body.get(key) for key in ("task_key", "run_id", "config_sha256", "source_kind", "detected_at")})
+        item.update({key: body.get(key) for key in ("task_key", "run_id", "config_sha256", "source_kind", "detected_at", "suppression_reason")})
         deliveries.append(item)
     return {"enabled": rule.enabled, "deliveries": deliveries}
 

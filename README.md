@@ -547,6 +547,25 @@ omnicrawler notifications --config task.yaml retry --event-id EVENT_ID --apply
 更换接收地址或关闭通知会撤销当前任务旧目标的待投递事件；补发不会重新采集，也不会处理其他任务。
 投递携带固定 `Idempotency-Key`；HTTP 回执丢失时仍可能重复，接收端需要去重。当前自动通知覆盖已观察到的新增与修改，删除保护继续由完整运行比较提供。
 
+字段通知可配置 `updates.notifications.policy`：
+
+```yaml
+policy:
+  confirmations: 2
+  cooldown_seconds: 60
+  fields:
+    price:
+      direction: decrease
+      minimum_absolute_change: 5
+      minimum_relative_change: 0.1
+```
+
+连续确认按不同采集运行计数，重复请求不增加确认次数；304 与未变化内容复用也参与确认。
+每个实体独立保存规则状态。阈值与冷却以最后入队的值为基线，小变化可累积，冷却后在下一次实际观察时发送最新差异摘要。
+同一字段的条件全部满足才触发，多个字段中任一个满足即可；未配置字段表示观察所有业务字段。
+相对阈值遇到原值零时明确抑制；布尔值、缺项及非有限数不能当数字。被抑制的变化仍保留事实与原因，不能强行补发。
+修改规则或接收目标后，规则状态从上一次实际观察初始化；这不重建采集事实基线，也不补发过去被抑制的事件。
+
 
 CSV交付同时包含 `record_quality.csv`，Excel交付包含“质量与复核”工作表，均通过 `record_id` 与数据记录关联。
 状态分为 `valid`（当前字段契约无需复核）、`review_required` 和 `unassessed`，字段错误、缺失、重复和异常保留明细。

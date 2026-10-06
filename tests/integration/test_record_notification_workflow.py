@@ -106,3 +106,65 @@ def test_disabling_one_task_only_revokes_its_own_deliveries(tmp_path):
     configs[0].raw["updates"]["notifications"]["enabled"] = False
     assert dispatch(configs[0])["deliveries"][0]["status"] == "cancelled"
     assert report(configs[1])["deliveries"][0]["status"] == "pending"
+
+
+@pytest.mark.parametrize("conditional", [False, True])
+def test_confirmation_counts_real_unchanged_or_304_observation(tmp_path, conditional):
+    value, received, statuses = [100], [], []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            tag = f'"price-{value[0]}"'
+            unchanged = conditional and self.headers.get("If-None-Match") == tag
+            status = 304 if unchanged else 200
+            statuses.append(status)
+            body = b"" if unchanged else json.dumps({"items": [{"id": 1, "price": value[0]}]}).encode()
+            self.send_response(status)
+            self.send_header("ETag", tag)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):  # noqa: N802
+            received.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+            self.send_response(204)
+            self.end_headers()
+
+        def log_message(self, *_):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    path = tmp_path / "task.yaml"
+    path.write_text(yaml.safe_dump({
+        "project": {"name": "Confirmation", "task_id": "confirmed", "workspace": str(tmp_path / "work")},
+        "source": {"kind": "rest", "seeds": [base + "/items"]},
+        "http": {"allow_private_network": True, "respect_robots": False, "delay_seconds": 0, "retries": 0},
+        "crawl": {"max_pages": 1, "allow_domains": ["127.0.0.1"]},
+        "extract": {"mode": "json", "item_path": "$.items[*]", "fields": {"id": {"path": "id"}, "price": {"path": "price"}}},
+        "updates": {"enabled": conditional, "identity_fields": ["id"], "notifications": {
+            "enabled": True, "webhook_url": base + "/events", "policy": {"confirmations": 2},
+        }},
+        "outputs": {"jsonl": True, "csv": True, "xlsx": False},
+    }), encoding="utf8")
+    config = load_config(path)
+    try:
+        for index, price in enumerate((100, 80, 80, 80)):
+            value[0] = price
+            with Pipeline(config) as pipeline:
+                summary = pipeline.run()
+            assert summary["status"] == "succeeded"
+            assert len(received) == (0 if index < 2 else 1)
+        assert received[0]["details"]["before"]["price"] == 100
+        assert received[0]["details"]["after"]["price"] == 80
+        assert statuses[-2:] == ([304, 304] if conditional else [200, 200])
+        with StateStore(config.workspace / "state.sqlite3") as store:
+            assert len(store.rows("SELECT * FROM entity_observations")) == 4
+            assert len(store.rows("SELECT * FROM semantic_changes WHERE baseline=0")) == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(5)

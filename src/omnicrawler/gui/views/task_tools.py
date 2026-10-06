@@ -396,11 +396,21 @@ class TaskToolsDialog(QDialog):
         if name.startswith("notifications:"):
             self.notifications.clear()
             labels = {"pending": _("待投递"), "sending": _("投递中"), "retrying": _("等待重试"),
-                      "failed": _("失败"), "submitted": _("已送达"), "cancelled": _("已撤销")}
+                      "failed": _("失败"), "submitted": _("已送达"), "cancelled": _("已撤销"),
+                      "suppressed": _("已抑制")}
+            reasons = {"awaiting_confirmation": _("等待连续观察确认"), "cooldown": _("处于通知冷却期"),
+                       "below_absolute_threshold": _("变化未达到绝对阈值"),
+                       "below_relative_threshold": _("变化未达到相对阈值"),
+                       "relative_baseline_zero": _("原值为零，无法计算相对变化"),
+                       "numeric_value_unavailable": _("缺少可比较的有限数值"),
+                       "direction_not_matched": _("变化方向不符合规则"),
+                       "watched_fields_unchanged": _("所选字段未变化"), "no_change": _("没有新的变化")}
             for row in result.get("deliveries", []):
                 item = QListWidgetItem(" / ".join((labels.get(row["status"], row["status"]),
                                                  str(row["attempts"]), str(row.get("detected_at", "")))), self.notifications)
                 item.setData(Qt.ItemDataRole.UserRole, row["event_id"])
+                if row.get("suppression_reason"):
+                    item.setToolTip(_("未发送原因：{0}").format(reasons.get(row["suppression_reason"], _("规则未满足"))))
                 item.setCheckState(Qt.CheckState.Unchecked)
                 if row["status"] not in {"pending", "retrying", "failed"} or not result.get("enabled"):
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)

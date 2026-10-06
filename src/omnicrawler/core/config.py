@@ -913,6 +913,8 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     if not isinstance(notice, dict):
         errors.append("updates.notifications必须是对象")
     else:
+        from ..quality.notification_rules import validate_policy
+        errors.extend(validate_policy(notice.get("policy", {})))
         if type(notice.get("enabled", False)) is not bool:
             errors.append("updates.notifications.enabled必须为布尔值")
         endpoint = notice.get("webhook_url", "")

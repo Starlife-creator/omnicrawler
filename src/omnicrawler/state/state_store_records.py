@@ -19,6 +19,7 @@ from ..core.models import CrawlRequest, ExtractedRecord, FetchResult
 from ..core.utils import json_text, utcnow
 from ..quality.semantic_changes import compare_record_data, record_identity, semantic_hash
 from .notification_queue import enqueue_event
+from .record_notification_policy import evaluate_policy
 
 if TYPE_CHECKING:
     import sqlite3
@@ -54,7 +55,10 @@ class RecordsMixin:
             ],
         })
 
-    def reuse_record_observation(self, run_id: str, result: FetchResult) -> bool:
+    def reuse_record_observation(
+        self, run_id: str, result: FetchResult, *, notification: dict[str, Any] | None = None,
+        identity_fields: tuple[str, ...] = (), ignored_fields: set[str] | None = None,
+    ) -> bool:
         """Reuse only a matching observed response under the same extraction scope."""
         setup = (self.checkpoint(run_id, "setup", "setup") or {}).get("payload", {})
         scope = setup.get("comparison_scope")
@@ -84,6 +88,12 @@ class RecordsMixin:
                 or payload.get("content_sha256") != (response["content_sha256"] if response else result.content_hash)
                 or payload.get("final_url") != result.final_url):
             return False
+        if notification:
+            self.track_semantic_changes(
+                run_id, [ExtractedRecord(item["source_url"], item["record_type"], item["data"])
+                         for item in payload.get("records", [])],
+                identity_fields=identity_fields, ignored_fields=ignored_fields, notification=notification,
+            )
         self.save_checkpoint(run_id, "record_observation", result.request.fingerprint, payload)
         return True
 
@@ -270,7 +280,7 @@ class RecordsMixin:
         run_id: str,
         records: list[ExtractedRecord],
         *, identity_fields: tuple[str, ...] = (), ignored_fields: set[str] | None = None,
-        notification: dict[str, str] | None = None,
+        notification: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Persist semantic record versions and annotate meaningful field-level changes."""
 
@@ -333,7 +343,15 @@ class RecordsMixin:
                             now,
                         ),
                     )
-                if notification and not change.baseline and change.change_type in {"added", "modified"}:
+                notice_change, suppression = change, ""
+                if notification and observed is None:
+                    notice_change, suppression = evaluate_policy(
+                        self.conn, run_id, record, task_key=task_key, scope=scope, identity=identity,
+                        before=before, notification=notification, ignored_fields=ignored_fields,
+                        cross_page=bool(identity_fields), now=now, baseline=change.baseline,
+                    )
+                if (notification and observed is None and not change.baseline
+                        and (not suppression or change.change_type in {"added", "modified"})):
                     event_id = uuid.uuid5(uuid.NAMESPACE_URL, json_text(
                         [run_id, task_key, scope, record.record_type, identity, digest])).hex
                     event = {
@@ -341,10 +359,11 @@ class RecordsMixin:
                         "rule_id": notification["rule_id"], "rule_name": notification.get("name", "记录变化"),
                         "task_key": task_key, "run_id": run_id, "comparison_scope": scope,
                         "config_sha256": notification["config_sha256"], "url": record.source_url,
-                        "detected_at": now, "previous_hash": semantic_hash(before) if before is not None else None,
-                        "current_hash": digest, "previous_content": json_text(before) if before is not None else None,
-                        "current_content": json_text(record.data), "diff_summary": change.change_type,
-                        "notification_eligible": True, "details": change_data,
+                        "detected_at": now, "previous_hash": semantic_hash(notice_change.before) if notice_change.before is not None else None,
+                        "current_hash": digest, "previous_content": json_text(notice_change.before) if notice_change.before is not None else None,
+                        "current_content": json_text(record.data), "diff_summary": notice_change.change_type,
+                        "notification_eligible": not suppression, "suppression_reason": suppression,
+                        "details": notice_change.to_dict(), "observed_change_type": change.change_type,
                     }
                     enqueue_event(self.conn, notification["rule_id"], event,
                                   targets=[notification["target_id"]], desktop=False)

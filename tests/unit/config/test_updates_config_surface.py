@@ -13,7 +13,25 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from omnicrawler.core.config import DEFAULTS, load_config, validate_config
+
+
+@pytest.mark.parametrize("policy", [
+    {"confirmations": True}, {"confirmations": 0}, {"cooldown_seconds": -1},
+    {"fields": {"price": {"minimum_absolute_change": True}}},
+    {"fields": {"price": {"minimum_relative_change": float("nan")}}},
+    {"fields": {"price": {"direction": []}}}, {"unknown": True},
+])
+def test_invalid_record_notification_policy_is_rejected(tmp_path, policy):
+    from omnicrawler.core.config import AppConfig, deep_merge
+
+    raw = deep_merge(DEFAULTS, {"source": {"seeds": ["https://example.test"]},
+                              "updates": {"notifications": {"policy": policy}}})
+    config = AppConfig(tmp_path / "task.yaml", tmp_path, raw, tmp_path / "work")
+    errors, _ = validate_config(config)
+    assert any("通知" in error for error in errors)
 
 
 def test_confirm_missing_runs_is_no_longer_a_default_key() -> None:

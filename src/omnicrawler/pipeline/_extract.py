@@ -90,7 +90,7 @@ class _PipelineExtract(_PipelineBase):
 
         if result.status == 304:
             # A conditional response has no body: never interpret it as an empty page.
-            self.state.reuse_record_observation(run_id, result)
+            self._reuse_notification_observation(run_id, result)
             return
 
         # S4.5 P3#136：choose_processor 只调一次（binary 判定与提取选择共用）
@@ -118,7 +118,7 @@ class _PipelineExtract(_PipelineBase):
             # 未变化只表示无需重复提取，不表示无需重建发现链。游标 API 的派生
             # 请求会在新周期清理；若在这里提前返回，种子未变化时后续页永远不再
             # 访问。普通 HTML 发现到的既有 URL 仍由 frontier 指纹去重。
-            if self.state.reuse_record_observation(run_id, result):
+            if self._reuse_notification_observation(run_id, result):
                 self._discover_checked(run_id, result, maximum_depth, discover=discover)
                 return
             # Older databases or changed extraction scopes need one fresh extraction.
@@ -276,6 +276,19 @@ class _PipelineExtract(_PipelineBase):
 
         # === Stage: Discover ===
         self._discover_checked(run_id, result, maximum_depth, discover=discover)
+
+    def _reuse_notification_observation(self, run_id: str, result: FetchResult) -> bool:
+        from ..services.record_notifications import notification_binding
+
+        notice = notification_binding(self.config)
+        if notice is None:
+            return self.state.reuse_record_observation(run_id, result)
+        updates = self.config.section("updates")
+        return self.state.reuse_record_observation(
+            run_id, result, notification=notice,
+            identity_fields=tuple(updates.get("identity_fields", [])),
+            ignored_fields=set(updates.get("ignored_fields", ["fetched_at", "updated_at", "crawl_time", "timestamp"])),
+        )
 
     def _discover_checked(self, run_id: str, result: FetchResult, maximum_depth: int, *, discover: bool) -> None:
         try:
