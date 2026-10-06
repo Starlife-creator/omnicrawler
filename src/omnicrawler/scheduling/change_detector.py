@@ -612,17 +612,18 @@ class ChangeDetector:
         for row in self._store.pending(active, force=force):
             if self._cancelled or not self._running:
                 break
-            if not self._store.claim(row["event_id"]):
+            lease = self._store.claim(row["event_id"])
+            if not lease:
                 continue
             payload = json.loads(row["body_json"])
             payload["detected_at"] = datetime.fromisoformat(payload["detected_at"])
             try:
                 self._on_notify(_event if _event is not None and _event.event_id == row["event_id"] else ChangeEvent(**payload))
             except Exception as exc:
-                self._store.fail(row["event_id"])
+                self._store.fail(row["event_id"], lease_token=lease)
                 LOGGER.error("通知回调异常: %s", exc)
             else:
-                self._store.acknowledge(row["event_id"])
+                self._store.acknowledge(row["event_id"], lease_token=lease)
 
     def acknowledge_notification(self, event_id: str) -> None:
         self._store.acknowledge(event_id)

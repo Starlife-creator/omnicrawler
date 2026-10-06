@@ -7,6 +7,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 _UNSET = object()
 
@@ -14,6 +15,7 @@ _UNSET = object()
 class MonitorStore:
     def __init__(self, directory: Path) -> None:
         self.path = directory / "monitor.sqlite3"
+        self._claims: dict[tuple[str, str], str] = {}
 
     @contextmanager
     def connection(self):
@@ -37,6 +39,12 @@ class MonitorStore:
                     next_attempt REAL NOT NULL DEFAULT 0, lease_until REAL NOT NULL DEFAULT 0,
                     error TEXT NOT NULL DEFAULT '');
             """)
+            connection.execute("BEGIN IMMEDIATE")
+            for table in ("deliveries", "target_deliveries"):
+                columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+                if "lease_token" not in columns:
+                    connection.execute(f"ALTER TABLE {table} ADD COLUMN lease_token TEXT NOT NULL DEFAULT ''")
+            connection.commit()
             yield connection
             connection.commit()
         except Exception:
@@ -78,39 +86,54 @@ class MonitorStore:
         now = time.time()
         with self.connection() as connection:
             table = "target_deliveries" if target else "deliveries"
-            rows = connection.execute(f"SELECT * FROM {table} WHERE status IN ('pending','retrying','sending','failed') ORDER BY rowid LIMIT 1000").fetchall()
-        return [dict(row) for row in rows if row["rule_id"] in rule_ids
-                and row["lease_until"] <= now
-                and (force or row["status"] != "failed" and row["next_attempt"] <= now)]
+            rows = connection.execute(
+                f"SELECT * FROM {table} WHERE rule_id IN (SELECT value FROM json_each(?)) "
+                "AND status IN ('pending','retrying','sending','failed') AND lease_until<=? "
+                "AND (? OR (status!='failed' AND next_attempt<=?)) ORDER BY rowid LIMIT 1000",
+                (json.dumps(sorted(rule_ids)), now, force, now)).fetchall()
+        return [dict(row) for row in rows]
 
-    def claim(self, event_id: str, *, target_id: str = "") -> bool:
+    def claim(self, event_id: str, *, target_id: str = "") -> str:
         with self.connection() as connection:
             now = time.time()
             table = "target_deliveries" if target_id else "deliveries"
             suffix, params = (" AND target_id=?", [target_id]) if target_id else ("", [])
-            cursor = connection.execute(f"UPDATE {table} SET status='sending',lease_until=?,attempts=attempts+1 "
+            token = uuid4().hex
+            cursor = connection.execute(f"UPDATE {table} SET status='sending',lease_until=?,lease_token=?,attempts=attempts+1 "
                                         "WHERE event_id=? AND status IN ('pending','retrying','failed','sending') AND lease_until<=?" + suffix,
-                                        [now + 120, event_id, now, *params])
-            return cursor.rowcount == 1
+                                        [now + 120, token, event_id, now, *params])
+            if cursor.rowcount == 1:
+                self._claims[(event_id, target_id)] = token
+                return token
+            return ""
 
-    def acknowledge(self, event_id: str, *, target_id: str = "") -> None:
+    def acknowledge(self, event_id: str, *, target_id: str = "", lease_token: str = "") -> None:
         with self.connection() as connection:
             table = "target_deliveries" if target_id else "deliveries"
             suffix, params = (" AND target_id=?", [target_id]) if target_id else ("", [])
-            connection.execute(f"UPDATE {table} SET status='submitted',lease_until=0,error='' WHERE event_id=?" + suffix,
-                               [event_id, *params])
+            token = lease_token or self._claims.get((event_id, target_id), "")
+            guard = " AND status='sending' AND lease_token=?" if token else " AND status IN ('pending','retrying','failed') AND lease_until<=?"
+            connection.execute(f"UPDATE {table} SET status='submitted',lease_until=0,error='' WHERE event_id=?" + suffix + guard,
+                               [event_id, *params, token or time.time()])
+        if self._claims.get((event_id, target_id)) == token:
+            self._claims.pop((event_id, target_id), None)
 
-    def fail(self, event_id: str, *, target_id: str = "", error: str = "notification_failed", delay: float | None = None, permanent: bool = False) -> None:
+    def fail(self, event_id: str, *, target_id: str = "", error: str = "notification_failed", delay: float | None = None, permanent: bool = False, lease_token: str = "") -> None:
         with self.connection() as connection:
             table = "target_deliveries" if target_id else "deliveries"
             suffix, params = (" AND target_id=?", [target_id]) if target_id else ("", [])
-            row = connection.execute(f"SELECT attempts FROM {table} WHERE event_id=?" + suffix, [event_id, *params]).fetchone()
+            token = lease_token or self._claims.get((event_id, target_id), "")
+            guard = " AND status='sending' AND lease_token=?" if token else " AND status IN ('pending','retrying','failed') AND lease_until<=?"
+            guarded = [event_id, *params, token or time.time()]
+            row = connection.execute(f"SELECT attempts FROM {table} WHERE event_id=?" + suffix + guard, guarded).fetchone()
             if row is not None:
                 attempts = int(row["attempts"])
-                connection.execute(f"UPDATE {table} SET status=?,lease_until=0,next_attempt=?,error=? WHERE event_id=?" + suffix,
+                connection.execute(f"UPDATE {table} SET status=?,lease_until=0,next_attempt=?,error=? WHERE event_id=?" + suffix + guard,
                                    ["failed" if attempts >= 8 or permanent else "retrying",
                                     time.time() + min(300, max(0, delay if delay is not None else 2 ** attempts)),
-                                    error, event_id, *params])
+                                    error, *guarded])
+        if self._claims.get((event_id, target_id)) == token:
+            self._claims.pop((event_id, target_id), None)
 
     def revoke_targets(self, active: dict[str, set[str]]) -> None:
         with self.connection() as connection:

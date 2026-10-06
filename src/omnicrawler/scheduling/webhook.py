@@ -27,7 +27,10 @@ def dispatch_webhooks(store: MonitorStore, rules: list[Any], egress: Any, *,
             break
         rule = active[row["rule_id"]]
         target = webhook_target_id(rule)
-        if row["target_id"] != target or not store.claim(row["event_id"], target_id=target):
+        if row["target_id"] != target:
+            continue
+        lease = store.claim(row["event_id"], target_id=target)
+        if not lease:
             continue
         try:
             if egress is None:
@@ -47,7 +50,7 @@ def dispatch_webhooks(store: MonitorStore, rules: list[Any], egress: Any, *,
                         raise RuntimeError("Webhook did not accept notification")
                     raw = response.read(1025)
                     egress.record_response(len(raw), url=response.geturl())
-            store.acknowledge(row["event_id"], target_id=target)
+            store.acknowledge(row["event_id"], target_id=target, lease_token=lease)
         except urllib.error.HTTPError as exc:
             delay = None
             if exc.headers is not None:
@@ -56,8 +59,8 @@ def dispatch_webhooks(store: MonitorStore, rules: list[Any], egress: Any, *,
                 except ValueError:
                     pass
             exc.close()
-            store.fail(row["event_id"], target_id=target, error=f"http_{exc.code}", delay=delay,
+            store.fail(row["event_id"], target_id=target, lease_token=lease, error=f"http_{exc.code}", delay=delay,
                        permanent=400 <= exc.code < 500 and exc.code not in {408, 429})
         except Exception:
             # Never write provider bodies, endpoints with query secrets or tokens to the receipt.
-            store.fail(row["event_id"], target_id=target, error="webhook_failed")
+            store.fail(row["event_id"], target_id=target, lease_token=lease, error="webhook_failed")
