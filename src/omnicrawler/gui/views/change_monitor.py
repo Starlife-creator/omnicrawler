@@ -143,7 +143,7 @@ class _CheckWorker(QThread):
             self.rules_after = [rule.to_dict() for rule in detector.list_rules()]
             if self.mode != "status" and not self.is_cancelled():
                 from omnicrawler.scheduling.webhook import dispatch_webhooks
-                dispatch_webhooks(detector._store, detector.list_rules(), detector._egress,
+                dispatch_webhooks(detector._store, detector.list_rules(), detector.network_broker(),
                                   force=self.mode == "retry", cancelled=self.is_cancelled)
             if self.is_cancelled():
                 # 取消是正常终态：**不把（可能被截断的）结果当成功交付**，
@@ -388,7 +388,11 @@ class NewRuleDialog(QDialog):
         self._probe_worker = None
         worker.deleteLater()
         if self._delete_after_probe:
-            self.deleteLater()
+            from PySide6.QtCore import QCoreApplication
+
+            # Qt keeps deleteLater's posted flag after the intercepted event.
+            # Repost the consumed event once the owned thread has stopped.
+            QCoreApplication.postEvent(self, QEvent(QEvent.Type.DeferredDelete))
             return
         if self._pending_done is not None:
             super().done(self._pending_done)
@@ -996,7 +1000,13 @@ class ChangeMonitorView(QWidget):
                     current["last_checked"] = observed.get("last_checked")
                     current["last_hash"] = observed.get("last_hash")
         self._worker = None
-        events_list = list(events)
+        original_rules = getattr(worker, "rules_after", [])
+        events_list = [event for event in events if not original_rules or any(
+            current.get("rule_id") == original.get("rule_id") == event.rule_id
+            and current.get("enabled", True)
+            and all(current.get(key, "") == original.get(key, "") for key in ("url", "selector", "condition"))
+            for current in self._rules_data for original in original_rules
+        )]
         if self._shutting_down:
             return
 
@@ -1142,7 +1152,7 @@ class ChangeMonitorView(QWidget):
 
     def _check_single(self, rule_id: str) -> None:
         """手动检查单条规则。"""
-        if self._shutting_down:
+        if self._shutting_down or self._worker is not None:
             return
         for rule in self._rules_data:
             if rule.get("rule_id") == rule_id:

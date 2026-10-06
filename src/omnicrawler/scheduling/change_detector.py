@@ -372,20 +372,35 @@ class ChangeDetector:
                 LOGGER.warning("共享抓取器获取监控页面失败: %s", type(exc).__name__)
                 return None
         try:
-            from ..core.config import AppConfig
             from ..extraction.extractors import decode_body
-            from ..fetching.page_probe import build_inspection_config, fetch_static_page
-            from ..security.egress import EgressBroker
+            from ..fetching.page_probe import fetch_static_page
 
-            if self._egress is None:
-                initial = build_inspection_config(url)
-                self._egress = EgressBroker(AppConfig(initial.path, initial.root, initial.raw, self._data_dir))
-            result = await asyncio.to_thread(fetch_static_page, url, egress=self._egress)
+            result = await asyncio.to_thread(fetch_static_page, url, egress=self.network_broker(url))
             return decode_body(result)
         except Exception as exc:
             self._fetch_errors[url] = type(exc).__name__
             LOGGER.warning("获取监控页面失败: %s", type(exc).__name__)
             return None
+
+    def network_broker(self, url: str = "") -> Any:
+        """Reuse task policy; standalone monitoring scopes secrets to configured targets."""
+        if self._egress is None:
+            from urllib.parse import urlsplit
+
+            from ..core.config import AppConfig
+            from ..fetching.page_probe import build_inspection_config
+            from ..security.egress import EgressBroker
+
+            rules = self.list_rules()
+            initial = build_inspection_config(url or next((rule.url for rule in rules), "https://example.com"))
+            initial.raw["source"]["seeds"] = [rule.url for rule in rules] or [url]
+            targets = [rule.webhook_url for rule in rules if rule.enabled and rule.webhook_url]
+            initial.raw["egress"]["credential_domains"] = sorted({
+                host for target in targets if (host := urlsplit(target).hostname)
+            })
+            initial.raw["egress"]["credential_purposes"] = ["notification"]
+            self._egress = EgressBroker(AppConfig(initial.path, initial.root, initial.raw, self._data_dir))
+        return self._egress
 
     # ── 条件判断 ────────────────────────────────────────────────────
 

@@ -7,6 +7,57 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from omnicrawler.gui.views.change_monitor import NewRuleDialog
 
 
+def test_single_check_cannot_replace_active_worker():
+    from omnicrawler.gui.views.change_monitor import ChangeMonitorView
+
+    worker = object()
+    view = SimpleNamespace(_shutting_down=False, _worker=worker, _rules_data=[{"rule_id": "r1"}])
+    ChangeMonitorView._check_single(view, "r1")
+    assert view._worker is worker
+
+
+def test_deferred_delete_waits_for_owned_probe(monkeypatch):
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from shiboken6 import isValid
+
+    from omnicrawler.fetching import page_probe
+
+    app = QApplication.instance() or QApplication([])
+    started, release = threading.Event(), threading.Event()
+
+    def safe_fetch(*args, **kwargs):
+        started.set()
+        release.wait(3)
+        return SimpleNamespace(body=b"hello", headers={}, status=200)
+
+    monkeypatch.setattr(page_probe, "fetch_static_page", safe_fetch)
+    dialog = NewRuleDialog()
+    dialog._url_edit.setText("https://example.com")
+    try:
+        dialog._probe_url()
+        assert started.wait(1)
+        worker = dialog._probe_worker
+        dialog.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        assert isValid(dialog), "Active owned thread must finish before destruction"
+        assert worker.isInterruptionRequested()
+        release.set()
+        assert worker.wait(3000)
+        deadline = time.monotonic() + 2
+        while isValid(dialog) and time.monotonic() < deadline:
+            app.processEvents()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        assert not isValid(dialog)
+    finally:
+        release.set()
+        if isValid(dialog):
+            if dialog._probe_worker:
+                dialog._probe_worker.wait(3000)
+            app.processEvents()
+            dialog.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
 def test_probe_runs_off_gui_thread_and_defers_close_until_finished(monkeypatch):
     import urllib.request
 

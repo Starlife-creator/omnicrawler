@@ -29,3 +29,18 @@ def test_failed_fetch_is_reported_as_failed_check(tmp_path):
         assert asyncio.run(detector.check_rule(rule.rule_id)) is None
     assert detector.check_report()[rule.rule_id]["status"] == "failed"
     assert rule.last_hash is None
+
+
+def test_retry_only_builds_broker_with_explicit_notification_scope(tmp_path):
+    detector = ChangeDetector(data_dir=tmp_path)
+    detector.add_rule(MonitorRule(url="https://example.com", webhook_url="https://hooks.example.org/inbox"))
+    broker = detector.network_broker()
+    assert broker.credential_domains == ("hooks.example.org",)
+    assert broker.credential_purposes == ("notification",)
+    assert detector.network_broker() is broker
+
+
+def test_injected_task_broker_is_not_widened(tmp_path):
+    broker = object()
+    detector = ChangeDetector(data_dir=tmp_path, egress=broker)
+    assert detector.network_broker() is broker
