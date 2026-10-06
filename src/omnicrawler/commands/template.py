@@ -46,9 +46,16 @@ def execute(
     before: str = "", after: str = "",
     base: str = "", user: str = "", update: str = "",
     config: str = "", acceptance: str = "", parameter_file: str = "",
+    expected: str = "",
 ) -> Any:
     # B4a：与 GUI 同源发现 <cwd>/templates 与 <cwd>/templates_installed（市场安装模板）
     catalog = bundled_template_catalog(user_template_dirs(Path.cwd()))
+    if action == "verify-fixture":
+        from ..services.template_verification import verify_fixture
+        return verify_fixture(catalog, template_id, url, Path(body_file), Path(expected), values=_key_values(sets or [], "="))
+    if action == "verification-history":
+        from ..templates.verification import VerificationStore
+        return {"template_id": template_id, "checks": VerificationStore().history(template_id)}
 
     if action == "capture":
         from ..core.config import load_config

@@ -315,6 +315,7 @@ def _run_templates(args: argparse.Namespace) -> None:
         base=getattr(args, 'base', ''), user=getattr(args, 'user', ''), update=getattr(args, 'update', ''),
         config=getattr(args, 'config', ''), acceptance=getattr(args, 'acceptance', ''),
         parameter_file=getattr(args, 'parameters', ''),
+        expected=getattr(args, 'expected', ''),
     )
     if isinstance(result, dict) and result.get("ok") is False:
         _json(result)

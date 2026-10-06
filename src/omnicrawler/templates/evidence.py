@@ -4,10 +4,8 @@ import hashlib
 import json
 from typing import Any
 
-from .template_catalog import TemplateRecord
 
-
-def template_binding(record: TemplateRecord, parameters: dict[str, Any]) -> dict[str, Any]:
+def template_binding(record: Any, parameters: dict[str, Any]) -> dict[str, Any]:
     """Share identity, never raw parameter values or an execution approval."""
     def digest(value: Any) -> str:
         return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False,

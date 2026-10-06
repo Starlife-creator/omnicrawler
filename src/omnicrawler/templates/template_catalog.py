@@ -5,8 +5,10 @@ import fnmatch
 import json
 import logging
 import re
+import sqlite3
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -14,7 +16,7 @@ from urllib.parse import urlparse
 import yaml
 
 from ..core.safe_data import safe_regex_search
-from .parameters import validate_parameters
+from .parameters import template_placeholders, validate_parameters
 
 LOGGER = logging.getLogger(__name__)
 
@@ -224,6 +226,9 @@ class TemplateCatalog:
         return [record for _score, record in sorted(ranked, key=lambda item: (-item[0], item[1].metadata.template_id))]
 
     def recommend(self, probe: TemplateProbe, limit: int = 5, *, intent: str = "") -> list[TemplateMatch]:
+        from .template_health import validate_template
+        from .verification import VerificationStore
+        verification_store = VerificationStore()
         parsed = urlparse(probe.url)
         hostname = (parsed.hostname or "").casefold()
         url = probe.url.casefold()
@@ -236,8 +241,24 @@ class TemplateCatalog:
             meta = record.metadata
             if meta.deprecated:
                 continue
+            if not validate_template(record).ok:
+                continue
+            try:
+                verification = verification_store.latest(record, probe.url)
+            except (ValueError, OSError, TypeError, sqlite3.Error) as exc:
+                LOGGER.warning("模板复验历史不可用，请检查历史或重新复验: %s", type(exc).__name__)
+                continue
+            if verification and verification["status"] == "failed":
+                continue
             score = 0
             reasons: list[str] = []
+            if verification and verification["status"] == "passed":
+                try:
+                    age = (datetime.now(UTC) - datetime.fromisoformat(verification["checked_at"])).days
+                    reasons.append("fixture:recheck_due" if age > verification["valid_for_days"] or age < 0
+                                   else "fixture:last_success:" + verification["checked_at"])
+                except (ValueError, TypeError):
+                    reasons.append("fixture:date_needs_review")
             if intent and intent.casefold() in {item.casefold() for item in meta.intents}:
                 score += 60
                 reasons.append(f"intent:{intent}")
@@ -329,8 +350,7 @@ class TemplateCatalog:
 
     @staticmethod
     def placeholders(record: TemplateRecord) -> set[str]:
-        text = yaml.safe_dump(dict(record.config), allow_unicode=True, sort_keys=False)
-        return set(PLACEHOLDER_RE.findall(text))
+        return template_placeholders(record.config)
 
     def _records_by_id(self) -> dict[str, TemplateRecord]:
         if self._records is None:

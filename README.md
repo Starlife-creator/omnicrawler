@@ -318,6 +318,8 @@ omnicrawler serve -c config.yaml [--host 127.0.0.1] [--port 8765]
 
 PDF 工作台可填写 `2,4` 等 OCR 页码；页码作用于当前输入中的每份 PDF，留空处理全部待识别页。CLI 可运行 `omnicrawler pdf --config pdf.yaml ocr --page-number 2 --page-number 4`。未选页保留待识别状态，已识别页不重复 OCR。调用文档 IR 时可显式传入 `ocr_pages` 与本地 `ocr_backend`；识别文字保留页码、后端及置信度，缺少区域或阅读顺序证据时明确标注未验证，不自动初始化或下载 OCR 模型。
 
+模板可以用 `omnicrawler templates verify-fixture <模板ID> --url <来源网址> --body-file sample.html --expected expected.json` 离线复验。真值为非空的原始提取记录 JSON 列表；这里只检查内置 HTML/JSON 处理器，后续质量校验、浏览器动作和导出需另行验收。失败在相同模板内容、来源网址及默认参数范围内暂离推荐，成功复验后恢复；自定义参数的失败不影响默认参数推荐。`omnicrawler templates verification-history <模板ID>` 保留历次成功、失败和版本摘要。证据过期只提示复验；已解析配置无效的模板也不进入默认推荐，仍可查看与修复。
+
 ---
 
 ## 开发者命令速查

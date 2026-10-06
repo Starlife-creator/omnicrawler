@@ -15,8 +15,7 @@ import yaml
 
 from ..core.archive_security import ZipReadLimits, read_zip_member, validate_zip_archive
 from ..core.utils import atomic_write, validate_user_agent_honesty
-from .parameters import validate_parameters
-from .template_catalog import TemplateCatalog, TemplateRecord
+from .parameters import template_placeholders, validate_parameters
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +70,7 @@ class StructureSnapshot:
         return cls(**raw)
 
 
-def validate_template(record: TemplateRecord) -> TemplateHealth:
+def validate_template(record: Any) -> TemplateHealth:
     errors: list[str] = []
     warnings: list[str] = []
     meta = record.metadata
@@ -89,7 +88,7 @@ def validate_template(record: TemplateRecord) -> TemplateHealth:
         warnings.append("template.capabilities is empty")
     if not meta.verified_at:
         warnings.append("template.verified_at is missing")
-    placeholders = TemplateCatalog.placeholders(record)
+    placeholders = template_placeholders(record.config)
     undeclared = placeholders - set(meta.placeholders)
     if undeclared:
         errors.append("undeclared placeholders: " + ", ".join(sorted(undeclared)))
@@ -174,7 +173,7 @@ def _unsafe_security_overrides(config: Any) -> list[str]:
     return violations
 
 
-def validate_catalog(catalog: TemplateCatalog, *, include_legacy: bool = False) -> list[TemplateHealth]:
+def validate_catalog(catalog: Any, *, include_legacy: bool = False) -> list[TemplateHealth]:
     records = catalog.discover()
     results: list[TemplateHealth] = []
     # B1：catalog 现在对单个坏文件容错（跳过而非炸掉整个目录），
@@ -207,7 +206,7 @@ class TemplatePack:
                            max_file_bytes=2 * 1024**2, max_manifest_bytes=1024**2)
 
     @classmethod
-    def export(cls, records: Iterable[TemplateRecord], target: Path) -> Path:
+    def export(cls, records: Iterable[Any], target: Path) -> Path:
         selected = list(records)
         if not 1 <= len(selected) <= 100:
             raise ValueError("模板包需要 1–100 个模板，空包不能代表成功")

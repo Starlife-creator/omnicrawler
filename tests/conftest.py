@@ -70,6 +70,7 @@ def _isolated_secret_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     """
     monkeypatch.setenv("OMNICRAWL_SECRET_STORE_PATH", str(tmp_path / "secrets.bin"))
     monkeypatch.setenv("OMNICRAWL_MASTER_PASSWORD", "test-only-master-password")
+    monkeypatch.setenv("OMNICRAWL_TEMPLATE_CHECKS_PATH", str(tmp_path / "template_checks.sqlite3"))
 
 
 @pytest.fixture(autouse=True)

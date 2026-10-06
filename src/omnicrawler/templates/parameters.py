@@ -8,6 +8,8 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+import yaml
+
 
 def validate_parameters(declarations: Mapping[str, Any], values: Mapping[str, Any], *, strict: bool) -> dict[str, Any]:
     merged = {key: spec.get("default") if isinstance(spec, Mapping) else spec
@@ -63,3 +65,8 @@ def validate_parameters(declarations: Mapping[str, Any], values: Mapping[str, An
                 raise ValueError(f"Template parameter outside enum: {key}")
         merged[key] = value
     return merged
+
+
+def template_placeholders(config: Mapping[str, Any]) -> set[str]:
+    text = yaml.safe_dump(dict(config), allow_unicode=True, sort_keys=False)
+    return set(re.findall(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}", text))
