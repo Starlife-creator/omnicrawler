@@ -2260,6 +2260,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self._autosave.stop()
+        self._home.shutdown()
         # An unsaved or recovered draft is the only durable copy of the user's
         # work. Closing the window must not erase it. Saved configurations may
         # discard their redundant crash-recovery draft.

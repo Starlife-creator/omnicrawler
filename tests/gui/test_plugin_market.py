@@ -34,6 +34,8 @@ def _make_view(tmp_path):
     # 确保 MotionSignal 单例绑定到当前存活的 QApplication
     MotionSignal._instance = None
     view = PluginMarketView(project_root=str(tmp_path))
+    # 浏览/滚动测试自行提供目录，不因 show() 自动访问真实市场。
+    view._auto_loaded = True
     return view
 
 

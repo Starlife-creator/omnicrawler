@@ -21,23 +21,45 @@ if str(_REPO_ROOT) not in sys.path:
 os.environ.setdefault("PYTHONHASHSEED", "42")
 
 
-def _dispose_qt_test_widgets(app) -> None:
+def _dispose_qt_test_widgets(app, widgets=None) -> None:
     """Dispose leaked test windows while their QApplication still owns Qt."""
     from PySide6.QtCore import QCoreApplication, QEvent, QThread
     from shiboken6 import isValid
 
-    widgets = list(app.topLevelWidgets())
+    widgets = list(app.topLevelWidgets()) if widgets is None else widgets
     for widget in widgets:
         if not isValid(widget):
             continue
         shutdown = getattr(widget, "shutdown", None)
         if callable(shutdown):
             shutdown()
-        assert not any(thread.isRunning() for thread in widget.findChildren(QThread)), (
+        request_shutdown = getattr(widget, "_request_background_shutdown", None)
+        if callable(request_shutdown):
+            request_shutdown()
+        threads = widget.findChildren(QThread)
+        for thread in threads:
+            if thread.isRunning():
+                thread.requestInterruption()
+                thread.quit()
+                thread.wait(5000)
+        assert not any(thread.isRunning() for thread in threads), (
             f"Running Qt thread remains in {type(widget).__name__}"
         )
         widget.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+@pytest.fixture(autouse=True)
+def _owned_qt_test_widgets(_owned_qt_test_session, monkeypatch):
+    """Dispose this test's windows before another test changes the global theme."""
+    qt_widgets = sys.modules.get("PySide6.QtWidgets")
+    app = qt_widgets.QApplication.instance() if qt_widgets is not None else None
+    if app is None:
+        yield
+        return
+    previous = set(app.topLevelWidgets())
+    yield
+    _dispose_qt_test_widgets(app, list(set(app.topLevelWidgets()) - previous))
 
 
 @pytest.fixture(scope="session", autouse=True)

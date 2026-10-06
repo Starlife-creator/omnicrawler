@@ -6,7 +6,7 @@ import logging
 import math
 from typing import cast
 
-from PySide6.QtCore import QThread, QTimer, Signal
+from PySide6.QtCore import QEvent, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -105,12 +105,11 @@ class AmbientHero(QWidget):
         app = QApplication.instance()
         assert app is not None
         self._reduced_motion = app.property("omnicrawlerReducedMotion") or False
-        MotionSignal.instance().reduced_motion_changed.connect(
-            lambda v: setattr(self, "_reduced_motion", v)
-        )
+        self._shutting_down = False
+        MotionSignal.instance().reduced_motion_changed.connect(self._on_motion_changed)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._advance)
-        self._timer.start(50)
+        self._timer.setInterval(50)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(
             SPACING["xl"], SPACING["lg"], _HERO_DECOR_INSET, SPACING["lg"]
@@ -152,6 +151,29 @@ class AmbientHero(QWidget):
             y = 32 + index * 30 + math.cos(self._phase + index) * 6
             painter.drawEllipse(int(x - radius), int(y - radius), radius * 2, radius * 2)
         painter.end()
+
+    def _on_motion_changed(self, reduced: bool) -> None:
+        self._reduced_motion = reduced
+        self._sync_animation()
+
+    def _sync_animation(self) -> None:
+        if self.isVisible() and not self._reduced_motion and not self._shutting_down:
+            self._timer.start()
+        else:
+            self._timer.stop()
+
+    def event(self, event: QEvent) -> bool:
+        handled = super().event(event)
+        if event.type() in {QEvent.Type.Show, QEvent.Type.Hide}:
+            self._sync_animation()
+        return handled
+
+    def shutdown(self) -> None:
+        if self._shutting_down:
+            return
+        self._shutting_down = True
+        self._timer.stop()
+        MotionSignal.instance().reduced_motion_changed.disconnect(self._on_motion_changed)
 
     def _advance(self) -> None:
         """Tick the glow animation phase. Skips update() when reduced_motion is on."""
@@ -460,6 +482,8 @@ class HomePage(QWidget):
         """Idempotently cancel enrichment; the window waits for live threads."""
         self._enrich_shutting_down = True
         self._cancel_ai_enrich()
+        for hero in self.findChildren(AmbientHero):
+            hero.shutdown()
 
     def _start_pending_ai_enrich(self) -> None:
         request = self._pending_enrich_request
