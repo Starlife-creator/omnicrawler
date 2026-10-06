@@ -282,7 +282,8 @@ class BrowserFetcher:
                 except Exception:
                     time.sleep(1.0)
                     driver.get(request.url)
-                self._run_selenium_actions(driver, self.config.section("browser").get("actions", []))
+                run_actions(self.config.section("browser").get("actions", []), SeleniumAdapter(driver),
+                            trace=request.meta.get("_browser_action_trace"))
                 body = driver.page_source.encode("utf-8")
                 final_url = driver.current_url
             if watchdog.fired:

@@ -209,7 +209,8 @@ class PlaywrightPool:
                         request.url, wait_until,
                     )
                     response = None
-                run_actions_for_page(page, browser_config.get("actions", []))
+                run_actions_for_page(page, browser_config.get("actions", []),
+                                     trace=request.meta.get("_browser_action_trace"), attempt=attempt + 1)
                 body = page.content().encode("utf-8")
                 final_url = page.url
                 self.egress.authorize(final_url, purpose="browser", count_request=False)

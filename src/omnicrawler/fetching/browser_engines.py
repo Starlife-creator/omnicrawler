@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 
 
@@ -279,22 +280,42 @@ def _dispatch_action(action: BrowserAction, engine: BrowserEngine) -> None:
         case _:
             raise ValueError(f"不支持的浏览器动作: {action.name}")
 
-def run_actions_for_page(page: Any, actions: list[dict[str, Any]]) -> None:
+def run_actions_for_page(page: Any, actions: list[dict[str, Any]], *, trace: list[dict[str, Any]] | None = None,
+                         attempt: int = 1) -> None:
     """对 Playwright page 执行动作序列（run_actions + PlaywrightAdapter 的组合）。
 
     自 BrowserFetcher._run_actions 迁出实现；宿主保留同名静态委托以兼容测试调用点。
     """
-    run_actions(actions, PlaywrightAdapter(page))
+    run_actions(actions, PlaywrightAdapter(page), trace=trace, attempt=attempt)
 
-def run_actions(actions: list[dict], engine: BrowserEngine) -> None:
+def run_actions(actions: list[dict], engine: BrowserEngine, *, trace: list[dict[str, Any]] | None = None,
+                attempt: int = 1) -> None:
     """Iterate over raw action dicts, convert to :class:`BrowserAction`, and dispatch."""
     for index, raw in enumerate(actions, 1):
         action = BrowserAction.from_dict(raw)
-        if action.if_present and engine.locate(action) is None:
-            continue
+        started = time.monotonic()
+        supported = {"wait_for", "wait_for_url", "click", "fill", "press", "select_option", "check",
+                     "scroll_bottom", "scroll", "wait_ms", "manual_pause"}
+        row: dict[str, Any] = {"index": index, "attempt": attempt, "engine": type(engine).__name__,
+                               "action": action.name if action.name in supported else "unsupported",
+                               "started_at": datetime.now(UTC).isoformat(), "status": "running"}
+        if trace is not None:
+            if len(trace) < 200:
+                trace.append(row)
+            elif len(trace) == 200:
+                trace.append({"index": 0, "attempt": attempt, "action": "trace_limit", "status": "unobserved", "omitted": 1})
+            else:
+                trace[-1]["omitted"] += 1
         try:
+            if action.if_present and engine.locate(action) is None:
+                row["status"] = "skipped_absent"
+                continue
             _dispatch_action(action, engine)
+            row["status"] = "succeeded"
         except Exception as exc:
+            row.update(status="optional_failed" if action.optional else "failed", error_type=type(exc).__name__)
             if action.optional:
                 continue
             raise RuntimeError(f"浏览器动作第 {index} 步失败 ({action.name}): {exc}") from exc
+        finally:
+            row.update(finished_at=datetime.now(UTC).isoformat(), duration_seconds=max(0.0, time.monotonic() - started))

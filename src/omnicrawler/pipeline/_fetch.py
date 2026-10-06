@@ -43,10 +43,26 @@ class _PipelineFetch(_PipelineBase):
         return fetchers[name]
 
     def _fetch_checked(self, run_id: str, request: CrawlRequest) -> FetchResult:
+        trace: list[dict] = []
+        request.meta["_browser_action_trace"] = trace
         with self.state.observed_step(run_id, "fetch", request.fingerprint) as summary:
-            result = self._fetch_checked_impl(run_id, request)
-            summary.update(response_bytes=len(result.body), http_status=result.status)
-            return result
+            try:
+                result = self._fetch_checked_impl(run_id, request)
+                summary.update(response_bytes=len(result.body), http_status=result.status)
+                return result
+            finally:
+                request.meta.pop("_browser_action_trace", None)
+                if "result" in locals():
+                    result.request.meta.pop("_browser_action_trace", None)
+                for ordinal, row in enumerate(trace, 1):
+                    step_id = f"{request.fingerprint}:{ordinal}"
+                    payload = {key: value for key, value in row.items() if key in {
+                        "index", "attempt", "engine", "action", "started_at", "finished_at", "duration_seconds",
+                        "status", "error_type", "omitted",
+                    }}
+                    payload.update(step_id="browser_action:" + step_id, parent_id="fetch:" + request.fingerprint)
+                    self.state.save_checkpoint(run_id, "browser_action", "step:" + step_id,
+                                               payload, status=row["status"])
 
     def _fetch_checked_impl(self, run_id: str, request: CrawlRequest) -> FetchResult:
         # === Stage: Fetch ===
