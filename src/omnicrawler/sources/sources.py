@@ -41,6 +41,7 @@ class GenericSource:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
         self.source = config.section("source")
+        self._pagination_seen: dict[str, list[str]] = {}
         self.kind = config.source_kind
 
     def seed(self) -> list[CrawlRequest]:
@@ -233,9 +234,9 @@ class GenericSource:
         diagnostic["cursor_sha256"] = hashlib.sha256(json.dumps(current).encode()).hexdigest()
         try:
             values = json_path(json.loads(decode_body(result)), str(next_path))
-        except (ValueError, TypeError) as exc:
+        except (ValueError, TypeError):
             diagnostic["stop_reason"] = "invalid_pagination_response"
-            raise ValueError("分页响应无法解析；不能确认已完整遍历") from exc
+            return []
         if not values or values[0] is None or values[0] == "" or values[0] is False:
             diagnostic["stop_reason"] = "no_next_value"
             return []
@@ -256,7 +257,7 @@ class GenericSource:
             parent_url=result.final_url,
             meta={**result.request.meta, "_api_pagination_generated": True},
         )
-        seen = list(result.request.meta.get("_api_pagination_seen", []))
+        seen = list(self._pagination_seen.get(result.request.fingerprint, []))
         if result.request.fingerprint not in seen:
             seen.append(result.request.fingerprint)
         if child.fingerprint in seen:
@@ -265,7 +266,7 @@ class GenericSource:
         if len(seen) >= 2000:
             diagnostic["stop_reason"] = "pagination_history_limit"
             raise ValueError("分页跟踪达到上限；不能确认已完整遍历")
-        child.meta["_api_pagination_seen"] = seen
+        self._pagination_seen[child.fingerprint] = seen
         diagnostic["stop_reason"] = "next_request_generated"
         return [child]
 

@@ -283,6 +283,8 @@ class _PipelineExtract(_PipelineBase):
                                           parent_id="fetch:" + result.request.fingerprint) as summary:
                 try:
                     self._enqueue_discovered(result, maximum_depth, discover=discover, summary=summary)
+                    if result.meta.get("pagination_diagnostic", {}).get("stop_reason") == "invalid_pagination_response":
+                        raise ValueError("分页响应无法解析；不能确认已完整遍历")
                 finally:
                     summary.update(result.meta.get("pagination_diagnostic", {}))
         except Exception as exc:
