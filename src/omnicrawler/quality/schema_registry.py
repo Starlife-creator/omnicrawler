@@ -64,6 +64,49 @@ class ContractImpact:
     required_changes: tuple[str, ...]
     affected_consumers: tuple[str, ...]
     historical_reprocess_required: bool
+    constraint_changes: tuple[str, ...] = ()
+    meaning_changes: tuple[str, ...] = ()
+
+
+def _tightens_rule(before: dict[str, Any], after: dict[str, Any], depth: int = 0) -> bool:
+    """Conservatively detect restrictions that may invalidate stored JSON values."""
+    if depth > 20:
+        return before != after
+    if before.get("type", "text") != after.get("type", "text"):
+        return True
+    for key in ("required",):
+        if after.get(key, False) and not before.get(key, False):
+            return True
+    if after.get("nullable") is False and before.get("nullable") is not False:
+        return True
+    if before.get("nullable") is True and after.get("nullable") is not True:
+        return True
+    if before.get("allow_empty", False) and not after.get("allow_empty", False):
+        return True
+    for key in ("min", "min_length", "max", "max_length"):
+        old, new = before.get(key), after.get(key)
+        if new is not None and (old is None or (new > old if key.startswith("min") else new < old)):
+            return True
+    if after.get("type") == "enum" and any(item not in after.get("values", []) for item in before.get("values", [])):
+        return True
+    old_items, new_items = before.get("items"), after.get("items")
+    if new_items is not None and (old_items is None or _tightens_rule(old_items, new_items, depth + 1)):
+        return True
+    old_properties, new_properties = before.get("properties"), after.get("properties")
+    if new_properties is not None:
+        if old_properties is None:
+            return True
+        if before.get("additional_properties", False) and not after.get("additional_properties", False):
+            return True
+        if set(old_properties) - set(new_properties) and not after.get("additional_properties", False):
+            return True
+        for name, rule in new_properties.items():
+            if name not in old_properties:
+                if rule.get("required", False) or before.get("additional_properties", False):
+                    return True
+            elif _tightens_rule(old_properties[name], rule, depth + 1):
+                return True
+    return False
 
 
 def analyse_contract_change(before: DatasetContract, after: DatasetContract) -> ContractImpact:
@@ -73,13 +116,19 @@ def analyse_contract_change(before: DatasetContract, after: DatasetContract) -> 
     removed = tuple(sorted(set(old) - set(new)))
     type_changes = tuple(sorted(name for name in set(old) & set(new) if old[name].data_type != new[name].data_type))
     required = tuple(sorted(name for name in set(old) & set(new) if not old[name].required and new[name].required))
-    if removed or type_changes:
+    constraints = tuple(sorted(name for name in set(old) & set(new) if (
+        _tightens_rule(old[name].to_rule(), new[name].to_rule())
+        or (new[name].unique and not old[name].unique)
+        or (new[name].evidence_required and not old[name].evidence_required)
+    )))
+    meanings = tuple(sorted(name for name in set(old) & set(new) if old[name].meaning != new[name].meaning))
+    if removed or type_changes or meanings:
         level: Literal["compatible", "migration_required", "breaking"] = "breaking"
-    elif required or any(new[name].required for name in added):
+    elif required or constraints or any(new[name].required for name in added) or after.quality_threshold > before.quality_threshold:
         level = "migration_required"
     else:
         level = "compatible"
-    return ContractImpact(level, added, removed, type_changes, required, tuple(sorted(set(before.consumers) | set(after.consumers))), level != "compatible")
+    return ContractImpact(level, added, removed, type_changes, required, tuple(sorted(set(before.consumers) | set(after.consumers))), level != "compatible", constraints, meanings)
 
 
 class SchemaRegistry:
