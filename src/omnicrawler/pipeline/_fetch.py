@@ -77,7 +77,11 @@ class _PipelineFetch(_PipelineBase):
         if not self.robots.allowed(request.url):
             raise PermissionError("robots.txt不允许抓取此地址，或robots检查失败且配置为fail-closed")
         updates = self.config.section("updates")
+        discovery_body = getattr(self.source, "requires_discovery_body", None)
+        requires_body = callable(discovery_body) and discovery_body(request)
         should_use_conditional = (
+            not requires_body
+            and
             request.method.upper() == "GET"
             and (
                 (

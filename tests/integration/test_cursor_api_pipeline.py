@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 import urllib.parse
@@ -31,11 +32,15 @@ class _CursorApi(BaseHTTPRequestHandler):
         self.server.hits.append(self.path)  # type: ignore[attr-defined]
         item, next_cursor = self.server.pages[cursor]  # type: ignore[attr-defined]
         body = json.dumps({"items": [item], "next": next_cursor}).encode()
-        self.send_response(200)
+        etag = '"' + hashlib.sha256(body).hexdigest() + '"'
+        not_modified = self.server.conditional_enabled and self.headers.get("If-None-Match") == etag
+        self.send_response(304 if not_modified else 200)
+        self.send_header("ETag", etag)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        if not not_modified:
+            self.wfile.write(body)
 
     def log_message(self, *_args):  # noqa: N802
         return
@@ -44,6 +49,7 @@ class _CursorApi(BaseHTTPRequestHandler):
 @pytest.fixture
 def cursor_api():
     server = ThreadingHTTPServer(("127.0.0.1", 0), _CursorApi)
+    server.conditional_enabled = False
     server.hits = []  # type: ignore[attr-defined]
     server.pages = dict(_CursorApi.pages)  # type: ignore[attr-defined]
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -88,9 +94,13 @@ def _write_config(tmp_path: Path, seed: str) -> Path:
     return path
 
 
-def test_cursor_api_reaches_last_page_once_and_stops(cursor_api, tmp_path: Path) -> None:
+@pytest.mark.parametrize("conditional", [False, True])
+def test_cursor_api_reaches_last_page_once_and_stops(cursor_api, tmp_path: Path, conditional) -> None:
     seed = f"http://127.0.0.1:{cursor_api.server_port}/items?scope=all"
     config = load_config(_write_config(tmp_path, seed))
+    cursor_api.conditional_enabled = conditional
+    config.raw["updates"]["enabled"] = conditional
+    config.raw["incremental"]["archive_raw"] = not conditional
 
     with Pipeline(config) as pipeline:
         summary = pipeline.run()

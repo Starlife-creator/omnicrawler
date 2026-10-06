@@ -43,6 +43,10 @@ class GenericSource:
         self.source = config.section("source")
         self.kind = config.source_kind
 
+    def requires_discovery_body(self, request: CrawlRequest) -> bool:
+        """Cursor continuation must be read every cycle, including without raw archives."""
+        return request.kind != "asset" and bool(self.source.get("pagination", {}).get("next_path"))
+
     def seed(self) -> list[CrawlRequest]:
         requests: list[CrawlRequest] = []
         for raw in self.source.get("seeds", []):
