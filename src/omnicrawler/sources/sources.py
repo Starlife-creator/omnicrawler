@@ -41,7 +41,6 @@ class GenericSource:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
         self.source = config.section("source")
-        self._pagination_seen: dict[str, list[str]] = {}
         self.kind = config.source_kind
 
     def seed(self) -> list[CrawlRequest]:
@@ -257,7 +256,7 @@ class GenericSource:
             parent_url=result.final_url,
             meta={**result.request.meta, "_api_pagination_generated": True},
         )
-        seen = list(self._pagination_seen.get(result.request.fingerprint, []))
+        seen = list(result.request.meta.get("_api_pagination_seen", []))
         if result.request.fingerprint not in seen:
             seen.append(result.request.fingerprint)
         if child.fingerprint in seen:
@@ -266,7 +265,7 @@ class GenericSource:
         if len(seen) >= 2000:
             diagnostic["stop_reason"] = "pagination_history_limit"
             raise ValueError("分页跟踪达到上限；不能确认已完整遍历")
-        self._pagination_seen[child.fingerprint] = seen
+        child.meta["_api_pagination_seen"] = seen
         diagnostic["stop_reason"] = "next_request_generated"
         return [child]
 

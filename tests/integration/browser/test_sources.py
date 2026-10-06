@@ -4,12 +4,14 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import yaml
 
 from omnicrawler.core.config import load_config
 from omnicrawler.core.models import CrawlRequest, FetchResult
 from omnicrawler.plugins.plugins import Registry
 from omnicrawler.sources.sources import GenericSource, _with_query, register
+from omnicrawler.state import StateStore
 
 
 def _config(tmp_path: Path, kind: str, source=None, crawl=None, download=None):
@@ -243,6 +245,7 @@ def test_api_next_page_parameter_url_and_invalid_payloads(tmp_path: Path) -> Non
     assert next_request.meta == {
         "root_url": "https://example.org/api",
         "_api_pagination_generated": True,
+        "_api_pagination_seen": [request.fingerprint],
     }
 
     second_result = _result(
@@ -274,6 +277,33 @@ def test_api_next_page_parameter_url_and_invalid_payloads(tmp_path: Path) -> Non
     ) == []
     no_pagination = GenericSource(_config(tmp_path, "rest"))
     assert no_pagination._discover_api_next(result) == []
+
+
+def test_cursor_cycle_is_rejected_after_state_reopen(tmp_path: Path) -> None:
+    config = _config(
+        tmp_path, "rest",
+        source={"pagination": {"next_path": "$.next", "parameter": "cursor"}},
+    )
+    first = CrawlRequest("https://example.org/api?cursor=private-first", kind="api")
+    child = GenericSource(config).discover(_result(
+        first.url, b'{"next": "private-second"}', request=first,
+        content_type="application/json",
+    ))[0]
+    database = tmp_path / "state.sqlite3"
+    with StateStore(database) as state:
+        assert state.enqueue(child)
+    with StateStore(database) as reopened:
+        resumed = reopened.claim(1)[0]
+    result = _result(
+        resumed.url, b'{"next": "private-first"}', request=resumed,
+        content_type="application/json",
+    )
+    with pytest.raises(ValueError, match="分页重复"):
+        GenericSource(config).discover(result)
+    assert result.meta["pagination_diagnostic"]["stop_reason"] == "repeated_continuation"
+    assert resumed.meta["_api_pagination_seen"] == [first.fingerprint]
+    assert "private-first" not in json.dumps(resumed.meta)
+    assert "private-second" not in json.dumps(result.meta)
 
 
 def test_query_helper_and_source_registration() -> None:
