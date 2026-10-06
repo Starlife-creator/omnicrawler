@@ -446,11 +446,10 @@ def from_yaml(yaml_str: str) -> CrawlConfig:
             config.resource_profile = profile  # type: ignore[assignment]
 
     # ---- 尝试从注释中提取 task_id ----
-    if hasattr(raw, "ca") and raw.ca and raw.ca.comment:
-        comment_text = "\n".join(str(c) for c in (raw.ca.comment[1] if len(raw.ca.comment) > 1 else []) if c)
-        match = re.search(r"task_id:\s*([a-f0-9-]+)", comment_text or "")
-        if match and not project.get("task_id"):
-            config.task_id = match.group(1)
+    match = re.search(r"^\s*#\s*task_id:\s*([a-f0-9-]+)\s*$", yaml_str, re.MULTILINE)
+    explicit_id = isinstance(project, dict) and isinstance(project.get("task_id"), str) and project["task_id"].strip()
+    if match and not explicit_id:
+        config.task_id = match.group(1)
 
     return config
 

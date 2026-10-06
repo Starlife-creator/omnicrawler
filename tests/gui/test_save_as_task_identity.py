@@ -34,6 +34,7 @@ def test_independent_copy_gets_new_identity_and_workspace(tmp_path, monkeypatch)
     from omnicrawler.gui.core import config_serializer
 
     config = CrawlConfig(project_name="A", workspace="work/A")
+    config.passthrough["project"] = {"identity_origin": "legacy_config_path"}
     new_path = tmp_path / "copy.yaml"
     saved = []
     window = SimpleNamespace(_config=config, _config_path=tmp_path / "old.yaml", _project_root=tmp_path,
@@ -52,3 +53,5 @@ def test_independent_copy_gets_new_identity_and_workspace(tmp_path, monkeypatch)
     assert window._config.workspace != config.workspace
     assert config.workspace == "work/A"
     assert window._config_path == new_path
+    assert "identity_origin" not in window._config.passthrough["project"]
+    assert config.passthrough["project"]["identity_origin"] == "legacy_config_path"

@@ -111,6 +111,9 @@ class ConfigManager(_BaseDelegate):
                 return
             if choice == independent:
                 candidate.task_id = str(uuid4())
+                project = candidate.passthrough.get("project")
+                if isinstance(project, dict):
+                    project.pop("identity_origin", None)
                 candidate.created_at = datetime.now().isoformat()
                 candidate.workspace = str(destination.parent / "work" / f"{destination.stem}_{candidate.task_id[:8]}")
         try:

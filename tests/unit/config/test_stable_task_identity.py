@@ -34,3 +34,19 @@ def test_legacy_comment_identity_is_not_replaced_by_path_identity(tmp_path):
     source = tmp_path / "old.yaml"
     source.write_text("# task_id: abc123-456\nproject:\n  name: old\n", encoding="utf8")
     assert load_yaml(source).task_id == "abc123-456"
+
+
+def test_legacy_comment_after_config_is_recognized_consistently(tmp_path):
+    source = tmp_path / "tail-comment.yaml"
+    source.write_text("project: {name: old}\n# task_id: abc123-456\n", encoding="utf8")
+    assert from_yaml(source.read_text(encoding="utf8")).task_id == "abc123-456"
+    assert load_yaml(source).task_id == "abc123-456"
+    assert load_yaml(source).task_id == load_yaml(source).task_id
+
+
+def test_incidental_comment_does_not_claim_persisted_identity(tmp_path):
+    source = tmp_path / "example.yaml"
+    source.write_text("# example task_id: abc123-456\nproject: {name: old}\n", encoding="utf8")
+    restored = load_yaml(source)
+    assert restored.task_id != "abc123-456"
+    assert restored.passthrough["project"]["identity_origin"] == "legacy_config_path"
