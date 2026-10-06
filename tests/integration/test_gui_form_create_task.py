@@ -830,10 +830,23 @@ def test_form_authored_pagination_reaches_config_and_survives_extras(
     """
     app, window = _window(tmp_path, monkeypatch)
     _silence_side_effects(window)
+    previous_mode = window._mode_combo.currentIndex()
     try:
         window._config_delegate.new_config()
         canvas = window._task_canvas
         assert not canvas._pagination_rows["next_path"].isVisibleTo(canvas), "不翻页时不该出现分页字段"
+
+        # 分页是专业模式入口；通过工具栏切换，不能只操作隐藏的控件。
+        window._mode_combo.setCurrentIndex(window._mode_combo.findData("simple"))
+        assert not canvas._pagination_combo.isVisibleTo(canvas)
+        window._mode_combo.setCurrentIndex(window._mode_combo.findData("professional"))
+        if canvas._draft_section.collapsed():
+            canvas._draft_section._fold_btn.click()
+        assert canvas._advanced_btn.isVisibleTo(canvas)
+        if canvas._advanced_box.isHidden():
+            canvas._advanced_btn.click()
+        app.processEvents()
+        assert canvas._pagination_combo.isVisibleTo(canvas)
 
         canvas._pagination_combo.setCurrentIndex(canvas._pagination_combo.findData("page"))
         app.processEvents()
@@ -929,6 +942,7 @@ def test_form_authored_pagination_reaches_config_and_survives_extras(
         app.processEvents()
         assert window._config.pagination == {"type": "scroll", "batches": 3}, "未知形状必须原样保留"
     finally:
+        window._mode_combo.setCurrentIndex(previous_mode)
         window.close()
         app.processEvents()
 
