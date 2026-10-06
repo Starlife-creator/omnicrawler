@@ -37,6 +37,21 @@ def normalize_value(value: Any) -> Any:
     return value
 
 
+def _equal_normalized(left: Any, right: Any) -> bool:
+    if type(left) is bool or type(right) is bool:
+        return type(left) is type(right) and left == right
+    if isinstance(left, dict) and isinstance(right, dict):
+        return left.keys() == right.keys() and all(_equal_normalized(value, right[key]) for key, value in left.items())
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(_equal_normalized(one, two) for one, two in zip(left, right, strict=True))
+    return left == right
+
+
+def values_equal(left: Any, right: Any) -> bool:
+    """Normalize text while preserving boolean types throughout nested values."""
+    return _equal_normalized(normalize_value(left), normalize_value(right))
+
+
 def record_identity(data: dict[str, Any], source_url: str = "", *, identity_fields: tuple[str, ...] = ()) -> str:
     if identity_fields:
         if any(data.get(key) in (None, "", []) for key in identity_fields):
@@ -88,7 +103,7 @@ def compare_record_data(
     modified = tuple(
         sorted(
             key for key in before_keys & after_keys
-            if normalize_value(before[key]) != normalize_value(after[key])
+            if not values_equal(before[key], after[key])
         )
     )
     left = json.dumps(normalize_value(before), ensure_ascii=False, sort_keys=True, default=str)

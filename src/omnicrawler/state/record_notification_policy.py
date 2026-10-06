@@ -38,13 +38,15 @@ def evaluate_policy(connection: sqlite3.Connection, run_id: str, record: Extract
     ).fetchone() if previous is not None else None
     state: dict[str, Any] = json.loads(saved["payload_json"]) if saved is not None else {
         "baseline": record.data if baseline else before,
-        "candidate_hash": "", "candidate_count": 0, "last_enqueued_at": None,
+        "candidate_hash": "", "candidate": None, "candidate_count": 0, "last_enqueued_at": None,
     }
     fields = policy.get("fields", {})
     projected = {name: record.data[name] for name in fields if name in record.data} if fields else record.data
     digest = semantic_hash(projected, ignored_fields=ignored_fields)
-    state["candidate_count"] = min(100, state["candidate_count"] + 1) if state["candidate_hash"] == digest else 1
+    same_candidate = compare_record_data(state.get("candidate"), projected, ignored_fields=ignored_fields).change_type == "unchanged"
+    state["candidate_count"] = min(100, state["candidate_count"] + 1) if same_candidate else 1
     state["candidate_hash"] = digest
+    state["candidate"] = projected
     change = compare_record_data(state["baseline"], record.data, identity=identity, ignored_fields=ignored_fields)
     reason = ""
     if change.change_type == "unchanged":

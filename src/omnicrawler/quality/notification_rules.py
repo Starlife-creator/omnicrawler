@@ -4,6 +4,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from .semantic_changes import values_equal
+
 
 def validate_policy(policy: Any) -> list[str]:
     if not isinstance(policy, dict):
@@ -43,7 +45,7 @@ def threshold_reason(before: dict[str, Any], after: dict[str, Any], fields: dict
     """Any watched field can trigger; thresholds within one field all apply."""
     reasons = []
     for name, rule in fields.items():
-        if (name in before) == (name in after) and before.get(name) == after.get(name):
+        if (name in before) == (name in after) and values_equal(before.get(name), after.get(name)):
             continue
         numeric = any(key in rule for key in ("minimum_absolute_change", "minimum_relative_change"))
         numeric = numeric or rule.get("direction", "any") != "any"

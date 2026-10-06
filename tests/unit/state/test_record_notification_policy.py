@@ -79,3 +79,23 @@ def test_relative_zero_baseline_is_explicitly_suppressed(tmp_path):
         row = store.rows("SELECT status,body_json FROM target_deliveries")[0]
         assert row["status"] == "suppressed"
         assert json.loads(row["body_json"])["suppression_reason"] == "relative_baseline_zero"
+
+
+def test_watched_boolean_to_zero_change_is_retained_and_notified(tmp_path):
+    policy = {"fields": {"price": {}}}
+    with StateStore(tmp_path / "state.sqlite3") as store:
+        _observe(store, False, policy)
+        _, changes = _observe(store, 0, policy)
+        assert changes[0]["modified_fields"] == ("price",)
+        notice = _pending(store)[0]
+        assert notice["details"]["before"]["price"] is False
+        assert type(notice["details"]["after"]["price"]) is int
+
+
+def test_confirmation_uses_same_numeric_semantics_as_changes(tmp_path):
+    policy = {"confirmations": 2}
+    with StateStore(tmp_path / "state.sqlite3") as store:
+        _observe(store, 100, policy)
+        _observe(store, 80, policy)
+        _observe(store, 80.0, policy)
+        assert len(_pending(store)) == 1
