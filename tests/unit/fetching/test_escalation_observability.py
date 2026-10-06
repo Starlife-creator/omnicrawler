@@ -8,10 +8,17 @@ from omnicrawler.core.config import AppConfig
 from omnicrawler.core.models import CrawlRequest, FetchResult
 from omnicrawler.pipeline._fetch import _PipelineFetch
 from omnicrawler.services.metrics import RunMetrics
+from omnicrawler.state import StateStore
+
+
+@pytest.fixture
+def state(tmp_path):
+    with StateStore(tmp_path / "state.sqlite") as store:
+        yield store
 
 
 @pytest.mark.parametrize("enabled", [True, False])
-def test_production_escalation_preserves_reason_and_http_cost(tmp_path, enabled):
+def test_production_escalation_preserves_reason_and_http_cost(tmp_path, enabled, state):
     pipeline = _PipelineFetch()
     pipeline.config = AppConfig(tmp_path / "c.yaml", tmp_path, {
         "http": {"auto_browser_fallback": enabled},
@@ -21,6 +28,8 @@ def test_production_escalation_preserves_reason_and_http_cost(tmp_path, enabled)
     pipeline.scope = SimpleNamespace(allowed=lambda *_args: (True, ""))
     pipeline.robots = SimpleNamespace(allowed=lambda *_args: True)
     pipeline.metrics = RunMetrics()
+    pipeline.state = state
+    run_id = state.start_run("test", str(tmp_path / "c.yaml"))
     calls = []
     body = b'<div id="root"></div><script></script><script></script><script></script>'
 
@@ -31,7 +40,7 @@ def test_production_escalation_preserves_reason_and_http_cost(tmp_path, enabled)
                            0.25 if name == "http" else 0.75)
 
     pipeline._thread_fetcher = lambda name: SimpleNamespace(fetch=lambda request: fetch(name, request))
-    result = pipeline._fetch_checked("run", CrawlRequest("https://example.test/"))
+    result = pipeline._fetch_checked(run_id, CrawlRequest("https://example.test/"))
     assert calls == (["http", "browser"] if enabled else ["http"])
     snapshot = pipeline.metrics.snapshot()
     decisions = [row for row in snapshot["counters"] if row["name"] == "omnicrawler_browser_decisions_total"]

@@ -6,11 +6,13 @@
 from __future__ import annotations
 
 import copy
+import os
 import re
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
 
 import ruamel.yaml
 from ruamel.yaml.comments import CommentedMap
@@ -484,7 +486,20 @@ def load_yaml(filepath: Path) -> CrawlConfig:
         yaml_str = filepath.read_text(encoding="utf-8")
     except UnicodeDecodeError as e:
         raise ValueError(_(f"文件编码错误，请使用 UTF-8 编码: {e}")) from e
-    return from_yaml(yaml_str)
+    config = from_yaml(yaml_str)
+    project = config.passthrough.get("project", {})
+    explicit_id = isinstance(project, dict) and isinstance(project.get("task_id"), str) and project["task_id"].strip()
+    comment_id = re.search(r"^\s*#\s*task_id:\s*([a-f0-9-]+)\s*$", yaml_str, re.MULTILINE)
+    if not explicit_id and not comment_id:
+        # Legacy files have no persisted identity. Reopening the same canonical
+        # path must retain its new baseline; never infer an older task's identity.
+        canonical = os.path.normcase(str(filepath.resolve()))
+        config.task_id = str(uuid5(NAMESPACE_URL, "omnicrawler:legacy-config:" + canonical))
+        if not isinstance(project, dict):
+            project = {}
+        project["identity_origin"] = "legacy_config_path"
+        config.passthrough["project"] = project
+    return config
 
 
 def format_yaml(yaml_str: str) -> str:

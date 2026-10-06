@@ -126,7 +126,8 @@ def read_runtime(config: AppConfig, *, run_id: str = "") -> dict[str, Any]:
         return {"state": "observed", "run_id": identity, "status": row["status"],
                 "started_at": row["started_at"], "finished_at": row["finished_at"], "duration_seconds": duration,
                 "config_match": "unknown" if not digest else "matching" if digest == config_digest(config) else "stale",
-                "identity_confidence": "stable" if task_id and has_identity else "legacy_path",
+                "identity_confidence": ("legacy_config_path" if config.section("project").get("identity_origin") == "legacy_config_path"
+                                        else "stable" if task_id and has_identity else "legacy_path"),
                 "stages": list(grouped.values()),
                 "steps": steps, "steps_truncated": len(step_rows) > 500,
                 "note": "步骤起止为实际执行证据；并发步骤耗时不能相加作为总耗时。缺少起止证据的阶段耗时为未知。"}
