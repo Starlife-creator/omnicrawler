@@ -21,6 +21,42 @@ if str(_REPO_ROOT) not in sys.path:
 os.environ.setdefault("PYTHONHASHSEED", "42")
 
 
+def _dispose_qt_test_widgets(app) -> None:
+    """Dispose leaked test windows while their QApplication still owns Qt."""
+    from PySide6.QtCore import QCoreApplication, QEvent, QThread
+    from shiboken6 import isValid
+
+    widgets = list(app.topLevelWidgets())
+    for widget in widgets:
+        if not isValid(widget):
+            continue
+        shutdown = getattr(widget, "shutdown", None)
+        if callable(shutdown):
+            shutdown()
+        assert not any(thread.isRunning() for thread in widget.findChildren(QThread)), (
+            f"Running Qt thread remains in {type(widget).__name__}"
+        )
+        widget.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _owned_qt_test_session():
+    # Collection already imported GUI modules if this run needs Qt. Do not add a
+    # Qt dependency to the minimal/core test environment.
+    qt_widgets = sys.modules.get("PySide6.QtWidgets")
+    if qt_widgets is None:
+        yield
+        return
+    app = qt_widgets.QApplication.instance() or qt_widgets.QApplication([])
+    yield
+    _dispose_qt_test_widgets(app)
+    # Python wrappers may have reference cycles. Collect before releasing our
+    # application owner, rather than letting interpreter shutdown choose order.
+    import gc
+    gc.collect()
+
+
 @pytest.fixture(autouse=True)
 def _isolated_secret_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """SecretsStore 缺省路径隔离（U5 起 session 链路会在测试中触达默认密钥库）。
