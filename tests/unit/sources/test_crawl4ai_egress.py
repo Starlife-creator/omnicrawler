@@ -55,8 +55,8 @@ def test_convert_status_code_passthrough() -> None:
     engine = Crawl4AIEngine()
     assert engine._convert(_Raw(status_code=404)).status == 404
     assert engine._convert(_Raw(status_code=403)).status == 403
-    assert engine._convert(_Raw(status_code=0)).status == 200
-    assert engine._convert(_Raw(status_code=None)).status == 200
+    assert engine._convert(_Raw(status_code=0)).status == 0
+    assert engine._convert(_Raw(status_code=None)).status == 0
 
 
 # ── EgressBroker 接入 ─────────────────────────────────────────────────

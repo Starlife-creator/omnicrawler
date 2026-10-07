@@ -50,10 +50,10 @@ def test_crawl4ai_sync_fetch_preserves_real_errors_with_and_without_running_loop
     engine = Crawl4AIEngine(C4AConfig(allow_private_network=True))
     engine._available = True
 
-    async def fail(_url, _config):
+    def fail(_url, _config):
         raise RuntimeError("render failed")
 
-    monkeypatch.setattr(engine, "_fetch_async", fail)
+    monkeypatch.setattr(engine, "_fetch_guarded", fail)
     direct = engine.fetch("http://127.0.0.1/page")
 
     async def call_from_loop():

@@ -1,28 +1,20 @@
-"""Crawl4AI 桥接 — 将 crawl4ai 的 AI 驱动抓取能力集成到 OmniCrawler。
-
-功能:
-    - 轻量 JS 渲染（比 Playwright 省 5-10x 资源）
-    - LLM 友好的 Markdown 输出
-    - 自适应爬取（学习网站模式）
-    - Undetected 浏览器模式（绕过 Cloudflare/Akamai）
-    - 虚拟滚动支持（无限滚动页面）
-    - CSS/XPath/LLM 多策略结构化提取
-    - 内存自适应批处理调度
-
-依赖: omnicrawler[crawl4ai]  或  pip install crawl4ai
-"""
+"""Crawl4AI offline Markdown/CSS/XPath processing over guarded native rendering."""
 
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
-import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from ..core.config import DEFAULTS, AppConfig
+from ..core.models import CrawlRequest
+from ..fetching.browser_fetcher import BrowserFetcher
+from ..security.egress import EgressBroker
 from ..security.policy import NetworkTargetPolicy
 
 logger = logging.getLogger(__name__)
@@ -71,7 +63,7 @@ class C4AConfig:
     user_agent: str = ""
 
     # 抓取
-    wait_until: str = "networkidle"      # commit / domcontentloaded / networkidle
+    wait_until: str = "domcontentloaded"      # commit / domcontentloaded / networkidle
     timeout_ms: int = 30000
     word_count_threshold: int = 10       # 低于此字数视为无内容
     cache_mode: str = "bypass"           # enabled / bypass / disabled / write_only
@@ -208,11 +200,7 @@ class C4AConfig:
 # ── 核心引擎 ──────────────────────────────────────────────────────────
 
 class Crawl4AIEngine:
-    """crawl4ai 抓取引擎 — 轻量 JS 渲染 + AI 提取。
-
-    支持注入 EgressBroker：注入后所有抓取走 审计/预算/熔断 边界
-    （S2.5.5），不再走直连校验；未注入时保留轻量 NetworkTargetPolicy 直连校验。
-    """
+    """Native guarded rendering with offline Crawl4AI processing."""
 
     def __init__(
         self,
@@ -237,177 +225,135 @@ class Crawl4AIEngine:
             return False
 
     def fetch(self, url: str, *, config: C4AConfig | None = None) -> C4AResult:
-        """同步抓取单个 URL。"""
         cfg = config or self.config
-        self._authorize(url, cfg)
+        _require_target(url, cfg) if self.egress is None else None
+        self._validate_modes(cfg)
         if not self.available:
-            raise RuntimeError("crawl4ai 未安装，请执行 pip install crawl4ai 或 pip install omnicrawler[crawl4ai]")
+            raise RuntimeError("crawl4ai 未安装")
         try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            try:
-                result = asyncio.run(self._fetch_async(url, cfg))
-            except Exception as exc:
-                logger.exception("crawl4ai 抓取失败")
-                result = C4AResult(url=url, status=0, error=f"{type(exc).__name__}: {exc}")
-        else:
-            result_box: list[C4AResult] = []
-            error_box: list[Exception] = []
-
-            def _run():
-                try:
-                    result_box.append(asyncio.run(self._fetch_async(url, cfg)))
-                except Exception as exc:
-                    error_box.append(exc)
-
-            thread = threading.Thread(target=_run, name="c4a-fetch", daemon=True)
-            thread.start()
-            thread.join(timeout=cfg.timeout_ms / 1000 + 30)
-            if result_box:
-                result = result_box[0]
-            elif error_box:
-                err = error_box[0]
-                logger.error("crawl4ai 抓取失败: %s: %s", type(err).__name__, err)
-                result = C4AResult(url=url, status=0, error=f"{type(err).__name__}: {err}")
-            else:
-                result = C4AResult(url=url, status=0, error="crawl4ai 抓取超时")
-        self._record_result(url, result)
-        return result
+            return self._fetch_guarded(url, cfg)
+        except Exception as exc:
+            logger.exception("crawl4ai guarded fetch failed")
+            return C4AResult(url=url, status=0, error=f"{type(exc).__name__}: {exc}")
 
     async def fetch_async(self, url: str, *, config: C4AConfig | None = None) -> C4AResult:
-        cfg = config or self.config
-        self._authorize(url, cfg)
-        if not self.available:
-            raise RuntimeError("crawl4ai 未安装")
-        result = await self._fetch_async(url, cfg)
-        self._record_result(url, result)
-        return result
-
-    async def fetch_many(
-        self, urls: list[str], *, config: C4AConfig | None = None,
-    ) -> list[C4AResult]:
-        cfg = config or self.config
-        for url in urls:
-            self._authorize(url, cfg)
-        if not self.available:
-            raise RuntimeError("crawl4ai 未安装")
+        # Shield the owned render so cancellation cannot orphan a background crawler.
+        job = asyncio.create_task(asyncio.to_thread(self.fetch, url, config=config))
         try:
-            from crawl4ai import AsyncWebCrawler
-            browser_cfg = cfg.to_browser_config()
-            crawler_cfg = cfg.to_crawler_config()
-            results: list[C4AResult] = []
-            async with AsyncWebCrawler(config=browser_cfg) as crawler:
-                for url in urls:
-                    raw = await crawler.arun(url, config=crawler_cfg)
-                    results.append(self._convert(raw))
-            for url, result in zip(urls, results, strict=False):
-                self._record_result(url, result)
-            return results
-        except Exception as exc:
-            logger.exception("crawl4ai 批量抓取失败")
-            for url in urls:
-                self._record_result(url, C4AResult(url=url, status=0, error=str(exc)))
-            return [C4AResult(url=u, status=0, error=str(exc)) for u in urls]
+            return await asyncio.shield(job)
+        except asyncio.CancelledError:
+            if self.egress is not None:
+                self.egress.disconnect_task()
+            await asyncio.shield(job)
+            raise
 
-    async def adaptive_fetch(
-        self, start_url: str, query: str = "", *, config: C4AConfig | None = None,
-    ) -> list[C4AResult]:
-        """自适应抓取：自动学习网站模式，深度探索。"""
+    async def fetch_many(self, urls: list[str], *, config: C4AConfig | None = None) -> list[C4AResult]:
+        if len(urls) > 1000:
+            raise ValueError("Crawl4AI batch exceeds 1000 URLs")
+        return [await self.fetch_async(url, config=config) for url in urls]
+
+    async def adaptive_fetch(self, start_url: str, query: str = "", *, config: C4AConfig | None = None) -> list[C4AResult]:
+        raise ValueError("Crawl4AI autonomous networking is unavailable; use the native focused scheduler")
+
+    def deep_crawl(self, start_url: str, *, config: C4AConfig | None = None,
+                   max_pages: int = 100, max_depth: int = 3) -> list[C4AResult]:
+        from collections import deque
+        from urllib.parse import urldefrag, urljoin
+        if type(max_pages) is not int or not 1 <= max_pages <= 1000 or type(max_depth) is not int or not 0 <= max_depth <= 20:
+            raise ValueError("Crawl4AI crawl bounds are invalid")
+        queue = deque([(start_url, 0)])
+        seen = {start_url}
+        results: list[C4AResult] = []
+        while queue and len(results) < max_pages:
+            url, depth = queue.popleft()
+            result = self.fetch(url, config=config)
+            results.append(result)
+            if result.error or not 200 <= result.status < 300 or depth >= max_depth:
+                continue
+            for link in result.links:
+                target = urldefrag(urljoin(result.final_url, link))[0]
+                if target not in seen and urlsplit(target).hostname == urlsplit(start_url).hostname:
+                    if len(seen) >= max_pages:
+                        break
+                    seen.add(target)
+                    queue.append((target, depth + 1))
+        return results
+
+    @staticmethod
+    def _validate_modes(cfg: C4AConfig) -> None:
+        if cfg.browser_type != "chromium" or cfg.adaptive or cfg.virtual_scroll or cfg.score_links:
+            raise ValueError("Use native browser readiness/collection/focused scheduling for this mode")
+        if cfg.extraction_strategy not in {"", "css", "xpath"}:
+            raise ValueError("Crawl4AI bridge supports offline CSS/XPath; use native AI for model extraction")
+        if cfg.proxy_rotation or cfg.markdown_generator != "default" or cfg.cache_mode != "bypass":
+            raise ValueError("Crawl4AI bridge requires native networking and bypass cache")
+
+    def _native_config(self, url: str, cfg: C4AConfig) -> AppConfig:
+        base = self.egress.config if self.egress is not None else None
+        raw = copy.deepcopy(base.raw if base is not None else DEFAULTS)
+        if base is None:
+            raw["source"]["seeds"] = [url]
+            raw["http"]["allow_private_network"] = cfg.allow_private_network
+        raw["browser"].update(engine="playwright", headless=cfg.headless, pool_size=1,
+                              wait_until=cfg.wait_until, viewport={"width": cfg.viewport_width, "height": cfg.viewport_height})
+        raw["http"]["timeout_seconds"] = min(float(raw["http"]["timeout_seconds"]), cfg.timeout_ms / 1000)
+        if cfg.user_agent:
+            raw["http"]["user_agent"] = cfg.user_agent
+        if cfg.proxy:
+            raw["http"]["proxy"] = cfg.proxy
+        root = base.root if base is not None else Path.cwd()
+        return AppConfig(base.path if base is not None else root / "crawl4ai.yaml", root, raw,
+                         base.workspace if base is not None else root / "work" / "crawl4ai")
+
+    def _fetch_guarded(self, url: str, cfg: C4AConfig) -> C4AResult:
+        native = self._native_config(url, cfg)
+        broker = self.egress or EgressBroker(native)
+        with BrowserFetcher(native, egress=broker) as fetcher:
+            rendered = fetcher.fetch(CrawlRequest(url))
+        processed = self.process_html(rendered.body.decode("utf-8", errors="replace"), rendered.final_url,
+                                      status=rendered.status, config=cfg)
+        processed.metadata["network_contract"] = "native_guarded"
+        return processed
+
+    def process_html(self, html: str, url: str, *, status: int = 200,
+                     config: C4AConfig | None = None) -> C4AResult:
+        """Pure offline dependency use; no crawl4ai browser/LLM/image fetchers."""
+        from bs4 import BeautifulSoup
+        from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
         cfg = config or self.config
-        self._authorize(start_url, cfg)
-        if not self.available:
-            raise RuntimeError("crawl4ai 未安装")
-        try:
-            from crawl4ai import AdaptiveConfig, AdaptiveCrawler, AsyncWebCrawler
-            browser_cfg = cfg.to_browser_config()
-            adaptive_cfg = AdaptiveConfig(
-                max_depth=cfg.adaptive_max_depth,
-                max_pages=cfg.adaptive_max_pages,
-            )
-            async with AsyncWebCrawler(config=browser_cfg) as crawler:
-                adaptive = AdaptiveCrawler(crawler, adaptive_cfg)
-                state = await adaptive.digest(start_url=start_url, query=query or "")
-                results = [self._convert(r) for r in state.results] if hasattr(state, "results") else []
-            for item in results:
-                self._record_result(item.url, item)
-            return results
-        except Exception as exc:
-            logger.exception("crawl4ai 自适应抓取失败")
-            return [C4AResult(url=start_url, status=0, error=str(exc))]
-
-    def deep_crawl(
-        self, start_url: str, *, config: C4AConfig | None = None,
-        max_pages: int = 100, max_depth: int = 3,
-    ) -> list[C4AResult]:
-        """BFS 深度爬取整个网站。"""
-        cfg = config or self.config
-        self._authorize(start_url, cfg)
-        if not self.available:
-            raise RuntimeError("crawl4ai 未安装")
-        result_box: list[list[C4AResult]] = []
-
-        def _run():
-            async def _async():
-                try:
-                    from crawl4ai import (
-                        AsyncWebCrawler,
-                        BFSDeepCrawlStrategy,
-                        DomainFilter,
-                        FilterChain,
-                    )
-                    browser_cfg = cfg.to_browser_config()
-                    filter_chain = FilterChain([
-                        DomainFilter(allowed_domains=[self._extract_domain(start_url)]),
-                    ])
-                    strategy = BFSDeepCrawlStrategy(
-                        max_depth=max_depth, max_pages=max_pages,
-                        filter_chain=filter_chain,
-                    )
-                    async with AsyncWebCrawler(config=browser_cfg) as crawler:
-                        raw_results = await crawler.arun(url=start_url, config=strategy)
-                        converted = [self._convert(r) for r in raw_results] if raw_results else []
-                        for item in converted:
-                            self._record_result(item.url, item)
-                        result_box.append(converted)
-                except Exception as exc:
-                    logger.exception("crawl4ai 深度爬取失败")
-                    result_box.append([C4AResult(url=start_url, status=0, error=str(exc))])
-            asyncio.run(_async())
-
-        thread = threading.Thread(target=_run, name="c4a-deep", daemon=True)
-        thread.start()
-        thread.join(timeout=600)
-        return result_box[0] if result_box else [C4AResult(url=start_url, status=0, error="crawl4ai 深度抓取超时")]
-
-    # ── 内部 ──────────────────────────────────────────────────────────
+        self._validate_modes(cfg)
+        if len(html.encode("utf-8")) > 50_000_000:
+            raise ValueError("Crawl4AI offline input exceeds budget")
+        soup = BeautifulSoup(html, "lxml")
+        title = soup.title.get_text(" ", strip=True) if soup.title else ""
+        if cfg.excluded_selector:
+            for node in soup.select(cfg.excluded_selector):
+                node.decompose()
+        content = "".join(str(node) for node in soup.select(cfg.css_selector)) if cfg.css_selector else str(soup)
+        markdown = DefaultMarkdownGenerator().generate_markdown(content, base_url=url).raw_markdown
+        extracted: dict[str, Any] = {}
+        if cfg.extraction_strategy:
+            extracted = {"records": cfg._build_extraction_strategy().run(url, [content])}
+        return C4AResult(url=url, final_url=url, status=status, html=html, markdown=markdown,
+                         text=soup.get_text(" ", strip=True), title=title, extracted=extracted,
+                         links=[str(node["href"]) for node in soup.select("a[href]")],
+                         metadata={"network_contract": "no_network", "processing": "offline_crawl4ai",
+                                   "completeness": "unknown", "confidence": None})
 
     def _authorize(self, url: str, cfg: C4AConfig) -> None:
-        """S2.5.5：egress 注入时走 broker 审计/预算/熔断边界；否则直连校验。"""
         if self.egress is not None:
             self.egress.authorize(url, purpose="browser")
-            return
-        _require_target(url, cfg)
+        else:
+            _require_target(url, cfg)
 
     def _record_result(self, url: str, result: C4AResult) -> None:
-        """S2.5.5：把抓取结果计入 egress 审计（响应字节/成功/失败）。"""
         if self.egress is None:
             return
-        size = len(result.html) + len(result.markdown) + len(result.text)
-        self.egress.record_response(size, url=url)
-        if result.status and not result.error:
+        self.egress.record_response(len((result.html + result.markdown + result.text).encode("utf-8")), url=url)
+        if 200 <= result.status < 300 and not result.error:
             self.egress.record_success(url)
         else:
-            self.egress.record_failure(
-                url, error=result.error or f"status={result.status}"
-            )
-
-    async def _fetch_async(self, url: str, cfg: C4AConfig) -> C4AResult:
-        from crawl4ai import AsyncWebCrawler
-        browser_cfg = cfg.to_browser_config()
-        crawler_cfg = cfg.to_crawler_config()
-        async with AsyncWebCrawler(config=browser_cfg) as crawler:
-            raw = await crawler.arun(url, config=crawler_cfg)
-            return self._convert(raw)
+            self.egress.record_failure(url, error=result.error or f"status={result.status}")
 
     def _convert(self, raw: Any) -> C4AResult:
         """将 crawl4ai CrawlResult 转换为 C4AResult。"""
@@ -417,7 +363,7 @@ class Crawl4AIEngine:
             metadata = metadata if isinstance(metadata, dict) else {}
             # S2.5.5：status_code 真实透传（404/403 不再兜底成 200），仅 0/None 回退 200
             status = getattr(raw, "status_code", None)
-            status = status if isinstance(status, int) and status > 0 else 200
+            status = status if type(status) is int and 100 <= status <= 599 else 0
             return C4AResult(
                 url=getattr(raw, "url", ""),
                 final_url=getattr(raw, "url", ""),

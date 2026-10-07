@@ -613,6 +613,8 @@ PDF 批量 OCR 的词/文本块坐标、置信度及表格单元格结构会保�
 非严格 JSON 的 number/float 校验继续接受数字字符串和规范千分位，科学计数法按实际数值比较；任意夹杂文字、非有限数及歧义逗号格式进入复核。money 校验复用金额解析，对万/亿倍率按元比较边界，不改写原字段、不执行汇率换算。业务单位文本应显式使用 money 或先执行有证据的归一化；strict_json 的原生类型要求保持。
 # 浏览器数据就绪与虚拟列表
 
+Crawl4AI 桥接使用本项目的受控 Playwright 渲染，再离线调用 Crawl4AI 的 Markdown 与 CSS/XPath 提取。未使用 Crawl4AI 自带的联网浏览器、自治探索、LLM 或隐匿模式；这些配置会明确报错。动态等待和虚拟列表使用上述原生浏览器配置，自适应探索使用主任务的 focused 调度。`process_html()` 可直接处理已有 HTML，无需联网；不再宣称未经基准验证的资源节省倍数。
+
 重新提取遇到含人工修订的来源时，会保留该来源的已交付记录和编辑历史，将新的提取结果保存为 `reprocess_candidate` 阶段检查点，并把保留记录放入复核队列。不会按记录位置自动移植修订，也不会为这些候选发送变更通知。重提取摘要的 `manual_review_required` 表示需要审阅候选；导出继续使用保留的值。
 
 动态页面可以通过 `browser.readiness` 声明 `selector`、`min_count`、`hidden_selector`（加载指示器）、`text_not`、`stable_ms` 和 `timeout_ms`。Playwright 还支持 `response_url` 模式匹配成功的 API 响应。数据就绪只代表可开始提取，不代表遍历完整。
