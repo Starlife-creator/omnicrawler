@@ -413,6 +413,22 @@ def adaptive_ocr_workers(requested: int) -> int:
     return max(1, min(recommended, mem_limit, cpu))
 
 
+def preflight_backend(config: ProjectConfig) -> bool:
+    """Check Paddle dependencies without constructing another parent-side model."""
+    if config.ocr.get("component") or str(config.ocr.get("backend", "none")).lower() != "paddle":
+        return create_backend(config) is not None
+    import importlib.util
+    missing = [name for name in ("paddleocr", "paddle", "numpy", "PIL") if importlib.util.find_spec(name) is None]
+    if missing:
+        raise RuntimeError("缺少PaddleOCR依赖: " + ", ".join(missing))
+    device = str(config.ocr.get("device", "cpu"))
+    if device.startswith("gpu"):
+        import paddle
+        if not paddle.is_compiled_with_cuda() or paddle.device.cuda.device_count() < 1:
+            raise RuntimeError("Paddle GPU device is unavailable")
+    return True
+
+
 def _check_temperature() -> bool:
     """检查 CPU 温度是否超过阈值。返回 True 表示温度正常。"""
     try:
@@ -584,12 +600,10 @@ def ocr_stage(
             config, db, rows, backend, dpi, summary, should_stop=should_stop,
         )
 
-    # 多进程路径：D39 父进程不保留 backend 实例（PPStructureV3 占 1-2GB），
-    # 但 S2.3.1 要求进入进程池前在本进程预检一次依赖（缺依赖/GPU 不可用早失败，
-    # 提示"依赖缺失"并按 D13 语义标记 skipped 写 errors，不崩管线）。
-    precheck_backend: OCRBackend | None = None
+    # The parent checks dependencies/devices without constructing a Paddle model.
+    # Model initialization failures still reach the existing worker failure path.
     try:
-        precheck_backend = create_backend(config)
+        precheck_available = preflight_backend(config)
     except Exception as exc:  # noqa: BLE001 - missing optional OCR dependency must degrade
         logger.error("OCR 依赖缺失，跳过 OCR 阶段: %s", exc)
         for row in rows:
@@ -600,10 +614,9 @@ def ocr_stage(
             )
         summary["skipped"] = selected
         return summary
-    if precheck_backend is None:
+    if not precheck_available:
         summary["skipped"] = selected
         return summary
-    del precheck_backend  # 预检实例即刻释放，父进程不驻留模型
 
     logger.info("OCR 阶段启动 %d 个 worker 进程", workers)
     ocr_config = dict(config.ocr)

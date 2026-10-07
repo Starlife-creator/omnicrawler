@@ -62,7 +62,7 @@ def test_s231_serial_backend_failure_degrades(monkeypatch: pytest.MonkeyPatch) -
 
 def test_s231_mp_precheck_failure_degrades(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ocr, "adaptive_ocr_workers", lambda _n: 4)
-    monkeypatch.setattr(ocr, "create_backend", lambda _config: (_ for _ in ()).throw(RuntimeError("缺少PaddleOCR依赖")))
+    monkeypatch.setattr(ocr, "preflight_backend", lambda _config: (_ for _ in ()).throw(RuntimeError("缺少PaddleOCR依赖")))
     db = FakeDb(_rows())
     summary = ocr.ocr_stage(_ocr_config(), db, ocr_workers=4)
     assert summary["selected"] == 2 and summary["skipped"] == 2
