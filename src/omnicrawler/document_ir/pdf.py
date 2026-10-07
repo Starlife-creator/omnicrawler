@@ -8,6 +8,7 @@ from typing import Any
 
 from .base import DocumentIR
 from .parsers import register_document_parser
+from .pdf_layout import column_blocks, mark_table_continuations, validate_columns
 
 
 @register_document_parser(".pdf")
@@ -19,6 +20,7 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
     limit = options.get("max_pages", 200)
     if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 2000:
         raise ValueError("PDF max_pages must be an integer between 1 and 2000")
+    boundaries = validate_columns(options.get("column_boundaries", []))
     selected = options.get("ocr_pages", [])
     if not isinstance(selected, list) or len(selected) > 2000 or any(type(page) is not int or not 1 <= page <= limit for page in selected):
         raise ValueError("PDF ocr_pages must be a bounded list of positive page numbers")
@@ -30,6 +32,8 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
     if type(dpi) is not int or not 72 <= dpi <= 600:
         raise ValueError("PDF ocr_dpi must be between 72 and 600")
     document = DocumentIR(source=path, kind=".pdf", title=path.stem)
+    if boundaries:
+        document.metadata["column_boundaries"] = boundaries
     omitted: list[int] = []
     recognized: list[int] = []
     failures: list[dict[str, Any]] = []
@@ -74,7 +78,13 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
                     if region is not None:
                         locator.update(bbox=region, coordinate_system="pdf_points_top_left")
                     page_blocks.append(("paragraph", paragraph.strip(), locator))
-            if page_blocks and all("bbox" in block[2] for block in page_blocks):
+            if boundaries and source_method == "native":
+                page_blocks = column_blocks(page, boundaries)
+                ordering = "explicit_columns"
+                if any(block[2].get("spanning_columns") for block in page_blocks):
+                    ordering = "explicit_columns_spanning_region_unverified"
+                    document.warnings.append(f"Page {page['page_no']}: spanning table order requires review")
+            elif page_blocks and all("bbox" in block[2] for block in page_blocks):
                 page_blocks.sort(key=lambda block: (block[2]["bbox"][1], block[2]["bbox"][0]))
                 ordering = "geometric_top_left_not_verified"
                 document.warnings.append(f"Page {page['page_no']}: geometric order is a heuristic; multi-column reading order is not verified")
@@ -96,6 +106,7 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
                     document.add_paragraph(value, locator=locator)
     finally:
         iterator.close()
+    mark_table_continuations(document)
     document.metadata["omitted_pages_needing_ocr"] = omitted
     if selected_pages:
         if selected_pages - set(range(1, document.metadata.get("page_count", 0) + 1)):
