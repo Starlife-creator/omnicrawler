@@ -215,6 +215,9 @@ class _PipelineExtract(_PipelineBase):
                 fields = extract_config.get("fields", {})
                 if self.state.preserve_reprocess_candidate(
                     run_id, result, outcome.records,
+                    fields=fields if isinstance(fields, dict) else None,
+                    quality_threshold=float(extract_config.get("quality_threshold", 0.8)),
+                    unique_by=[str(item) for item in extract_config.get("unique_by", [])],
                 ):
                     return
                 # S4.5 P3#137：enrich 增加开关（extract.enrich 默认开，兼容现状）

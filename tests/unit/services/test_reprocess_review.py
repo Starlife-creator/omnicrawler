@@ -19,7 +19,7 @@ def pending(tmp_path):
         result = FetchResult(request, request.url, 200, {}, b"source", 0)
         candidates = [ExtractedRecord(request.url, "item", {"name": "B", "amount": 0}, {"name": {"source": "B"}}),
                       ExtractedRecord(request.url, "item", {"name": "A", "amount": None}, {"name": {"source": "A"}})]
-        state.preserve_reprocess_candidate(run, result, candidates)
+        state.preserve_reprocess_candidate(run, result, candidates, fields={"name": {"required": True}})
         yield state, run, request, result, candidates, ids
 
 

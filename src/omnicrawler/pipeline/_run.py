@@ -524,7 +524,7 @@ class _PipelineRun(_PipelineBase):
             raise ValueError("No previous run is available for reprocessing")
         rows = self.state.rows(
             "SELECT request_fingerprint, url, final_url, status_code, content_type, "
-            "raw_path, elapsed_seconds FROM responses WHERE run_id=? AND raw_path IS NOT NULL "
+            "raw_path, elapsed_seconds, content_sha256 FROM responses WHERE run_id=? AND raw_path IS NOT NULL "
             "ORDER BY id",
             (run_id,),
         )
@@ -548,6 +548,12 @@ class _PipelineRun(_PipelineBase):
             path = Path(str(row["raw_path"])).resolve()
             if workspace not in path.parents or not path.is_file() or path.is_symlink():
                 raise RuntimeError(f"Archived response is unavailable or outside workspace: {path}")
+            digest = hashlib.sha256()
+            with path.open("rb") as archived_file:
+                while block := archived_file.read(1024 * 1024):
+                    digest.update(block)
+            if digest.hexdigest() != row["content_sha256"]:
+                raise RuntimeError(f"Archived response hash mismatch; existing records were not reset: {path}")
             prepared.append((row, path))
 
         reset = self.state.reset_record_stage(run_id)
@@ -571,12 +577,15 @@ class _PipelineRun(_PipelineBase):
                     str(row["url"]),
                     meta={"_fingerprint_override": str(row["request_fingerprint"]), "reprocessed": True},
                 )
+                body = path.read_bytes()
+                if hashlib.sha256(body).hexdigest() != row["content_sha256"]:
+                    raise RuntimeError("Archived response changed after preflight")
                 result = FetchResult(
                     request,
                     str(row["final_url"]),
                     int(row["status_code"]),
                     {"content-type": str(row["content_type"] or "application/octet-stream")},
-                    path.read_bytes(),
+                    body,
                     float(row["elapsed_seconds"] or 0),
                 )
             except Exception as exc:
