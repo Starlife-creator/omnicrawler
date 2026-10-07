@@ -9,6 +9,7 @@ from typing import Any
 
 from ..core.models import ExtractedRecord
 from ..core.utils import json_text
+from ..quality.business_events import mapped_events
 from ..quality.notification_rules import threshold_reason, validate_policy
 from ..quality.semantic_changes import (
     SemanticChange,
@@ -65,6 +66,11 @@ def evaluate_policy(connection: sqlite3.Connection, run_id: str, record: Extract
         reason = "no_change"
     elif fields:
         reason = threshold_reason(state["baseline"] or {}, record.data, fields)
+    if not reason and policy.get("event_types"):
+        events = mapped_events(state["baseline"], record.data, policy.get("semantic_fields", {}),
+                               identity=identity, source_url=record.source_url, observed_at=now)
+        if not any(event["event_type"] in policy["event_types"] for event in events):
+            reason = "business_event_not_matched"
     if not reason and state["candidate_count"] < policy.get("confirmations", 1):
         reason = "awaiting_confirmation"
     if not reason and state["last_enqueued_at"] is not None:

@@ -568,6 +568,18 @@ policy:
 相对阈值遇到原值零时明确抑制；布尔值、缺项及非有限数不能当数字。被抑制的变化仍保留事实与原因，不能强行补发。
 修改规则或接收目标后，规则状态从上一次实际观察初始化；这不重建采集事实基线，也不补发过去被抑制的事件。
 
+业务事件通过显式字段映射接入同一通知队列，例如只关注截止时间提前或延期：
+
+```yaml
+policy:
+  semantic_fields:
+    closing_time: {kind: deadline}
+    total: {kind: amount, unit_field: unit, currency_field: currency}
+  event_types: [advanced, postponed, amount_changed]
+```
+
+`kind` 支持 `deadline/date/status/amount/price/budget`。不配置 `event_types` 时仅在通知详情附加事件解释；配置后，至少一条已映射字段的事件须匹配。原有字段阈值、确认与冷却条件继续生效。单位和币种只读取声明的字段，无法解释时不猜测转换；金额单位支持元、万元、亿元。同一时刻的不同时区表示视为未变。缺失字段、null、未知日期与状态不推断为撤回；观察时间不冒充生效时间，事件置信度仍为未知。不进行实体自动合并，也不将页面缺失解释为业务撤回。
+
 
 CSV交付同时包含 `record_quality.csv`，Excel交付包含“质量与复核”工作表，均通过 `record_id` 与数据记录关联。
 状态分为 `valid`（当前字段契约无需复核）、`review_required` 和 `unassessed`，字段错误、缺失、重复和异常保留明细。

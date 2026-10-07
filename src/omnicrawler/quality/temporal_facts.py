@@ -61,7 +61,8 @@ def infer_business_event(before: TemporalFact | None, after: TemporalFact) -> Bu
         withdrawn_values = {"withdrawn", "withdraw", "cancelled", "canceled", "撤回", "已撤回", "取消", "已取消", "作废", "已作废"}
         withdrawn = value.strip() in withdrawn_values
         was_withdrawn = str(before.value).casefold().strip() in withdrawn_values
-        event_type = "withdrawn" if withdrawn else "reappeared" if was_withdrawn else "status_changed"
+        active_values = {"active", "open", "published", "available", "listed", "valid", "正常", "有效", "已发布", "在售", "重新发布"}
+        event_type = "withdrawn" if withdrawn else "reappeared" if was_withdrawn and value.strip() in active_values else "status_changed"
     elif after.field in {"deadline", "date"}:
         event_type = _date_event(before.value, after.value)
     else:

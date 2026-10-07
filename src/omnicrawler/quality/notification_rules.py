@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from .business_events import EVENT_TYPES
 from .semantic_changes import values_equal
 
 
@@ -11,8 +12,25 @@ def validate_policy(policy: Any) -> list[str]:
     if not isinstance(policy, dict):
         return ["通知policy必须是对象"]
     errors = []
-    if set(policy) - {"fields", "confirmations", "cooldown_seconds"}:
+    if set(policy) - {"fields", "confirmations", "cooldown_seconds", "semantic_fields", "event_types"}:
         errors.append("通知policy包含未知规则")
+    semantics = policy.get("semantic_fields", {})
+    if not isinstance(semantics, dict) or len(semantics) > 1000:
+        errors.append("通知semantic_fields必须是最多1000个字段的对象")
+    else:
+        for name, rule in semantics.items():
+            if not isinstance(name, str) or not name.strip() or not isinstance(rule, dict):
+                errors.append("通知语义字段须使用非空字段名和对象")
+                continue
+            if set(rule) - {"kind", "unit_field", "currency_field"} or rule.get("kind") not in ("deadline", "date", "status", "amount", "price", "budget"):
+                errors.append(f"通知语义字段{name}的kind或规则无效")
+            for key in ("unit_field", "currency_field"):
+                if key in rule and (not isinstance(rule[key], str) or not rule[key].strip() or rule.get("kind") not in ("amount", "price", "budget")):
+                    errors.append(f"通知语义字段{name}的{key}无效")
+    if "event_types" in policy:
+        types = policy["event_types"]
+        if not semantics or not isinstance(types, list) or not types or any(not isinstance(item, str) or item not in EVENT_TYPES - {"unchanged"} for item in types):
+            errors.append("通知event_types须为已声明语义字段的非空事件类型列表，不含unchanged")
     for name, default, lower, upper in (("confirmations", 1, 1, 100), ("cooldown_seconds", 0, 0, 604800)):
         value = policy.get(name, default)
         if type(value) is not int or not lower <= value <= upper:

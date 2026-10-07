@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 from ..core.models import CrawlRequest, ExtractedRecord, FetchResult
 from ..core.record_storage_identity import storage_identity
 from ..core.utils import json_text, utcnow
+from ..quality.business_events import mapped_events
 from ..quality.semantic_changes import (
     compare_record_data,
     entity_checkpoint_key,
@@ -374,6 +375,11 @@ class RecordsMixin:
                         "notification_eligible": not suppression, "suppression_reason": suppression,
                         "details": notice_change.to_dict(), "observed_change_type": change.change_type,
                     }
+                    if notification.get("policy", {}).get("semantic_fields"):
+                        event["details"]["business_events"] = mapped_events(
+                            notice_change.before, record.data, notification["policy"]["semantic_fields"],
+                            identity=identity, source_url=record.source_url, observed_at=now,
+                        )
                     enqueue_event(self.conn, notification["rule_id"], event,
                                   targets=[notification["target_id"]], desktop=False)
                 self.conn.execute(
