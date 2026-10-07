@@ -70,6 +70,12 @@ class _PipelineFetch(_PipelineBase):
             request = prepare_request(self._auth_provider, request)
         hook_results = self._emit("before_fetch", run_id=run_id, request=request)
         fetch_advice = choose_fetch_advice(hook_results)
+        if self.config.source_kind == "file" and self.config.section("source").get("local_files") is not None:
+            from ..sources.local_files import fetch
+            result = fetch(self.config, request)
+            self.metrics.record_fetch(result, engine="local_file", escalated=False)
+            self._emit("after_fetch", run_id=run_id, request=request, result=result, engine="local_file", escalated=False)
+            return result
         root = request.meta.get("root_url")
         allowed, reason = self.scope.allowed(request.url, str(root) if root else None)
         if not allowed:

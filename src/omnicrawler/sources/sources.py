@@ -48,6 +48,9 @@ class GenericSource:
         return request.kind != "asset" and bool(self.source.get("pagination", {}).get("next_path"))
 
     def seed(self) -> list[CrawlRequest]:
+        if self.kind == "file" and self.source.get("local_files") is not None:
+            from .local_files import seed
+            return seed(self.config)
         requests: list[CrawlRequest] = []
         for raw in self.source.get("seeds", []):
             request = self._seed_request(raw)
@@ -136,6 +139,8 @@ class GenericSource:
         )
 
     def discover(self, result: FetchResult) -> list[CrawlRequest]:
+        if self.kind == "file" and self.source.get("local_files") is not None:
+            return []
         if self.kind in {"sitemap", "feed"}:
             return self._discover_xml(result)
         discovered: list[CrawlRequest] = []

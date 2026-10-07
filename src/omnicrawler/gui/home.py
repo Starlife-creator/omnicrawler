@@ -11,6 +11,7 @@ from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLayout,
@@ -198,6 +199,8 @@ class HomePage(QWidget):
     import_task = Signal()
     run_doctor = Signal()
     create_demo = Signal()
+    create_starter = Signal()
+    open_getting_started = Signal()
     open_convert_tool = Signal()  # 格式互转：B-4 ConvertX 面板
     open_scene = Signal()  # 场景管理：S4 场景/槽位/基因面板
     open_run_compare = Signal()  # 运行对比：review/run_compare
@@ -294,6 +297,20 @@ class HomePage(QWidget):
         self.feedback.setAccessibleName(_("快速任务分析结果"))
         card_layout.addWidget(self.feedback)
         layout.addWidget(card)
+        first_steps = QGroupBox(_("第一次使用"))
+        first_layout = QVBoxLayout(first_steps)
+        first_label = QLabel(_("配置与字段 → 小样本试跑 → 全量运行 → 核对并导出。离线入门任务无需账号、网络、OCR 或模型，可直接体验完整流程。"))
+        first_label.setWordWrap(True)
+        first_layout.addWidget(first_label)
+        first_buttons = QHBoxLayout()
+        self.starter_button = QPushButton(_("创建离线入门任务"))
+        self.starter_button.clicked.connect(self.create_starter.emit)
+        first_buttons.addWidget(self.starter_button)
+        progress_button = QPushButton(_("查看当前任务下一步"))
+        progress_button.clicked.connect(self.open_getting_started.emit)
+        first_buttons.addWidget(progress_button)
+        first_layout.addLayout(first_buttons)
+        layout.addWidget(first_steps)
 
         recent_header = QHBoxLayout()
         recent_header.addWidget(QLabel(_("最近任务")))

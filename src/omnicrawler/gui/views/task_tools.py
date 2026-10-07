@@ -82,6 +82,7 @@ class TaskToolsDialog(QDialog):
         workflow.addRow(_("运行 ID（可选）"), self.run_id)
         self._button(workflow, _("查看当前流程与实际运行"), lambda: self._launch("workflow", {"run_id": self.run_id.text().strip()}))
         self._button(workflow, _("检查本机浏览器兼容性"), lambda: self._launch("browser:probe", {}))
+        self._button(workflow, _("查看入门进度与下一步"), lambda: self._launch("onboarding", {}))
         self.workflow_steps = QListWidget()
         self.workflow_steps.setAccessibleName(_("任务流程步骤"))
         workflow.addRow(self.workflow_steps)
@@ -449,6 +450,11 @@ class TaskToolsDialog(QDialog):
         if name == "browser:probe":
             self.result_view.setPlainText(json.dumps(result, ensure_ascii=False, indent=2))
             return
+        if name == "onboarding":
+            labels = {"passed": _("已验证"), "pending": _("待执行"), "stale": _("证据已过期"), "awaiting_user_review": _("待人工核对")}
+            self.result_view.setPlainText("\n\n".join(labels[row["state"]] + " — " + row["action"] for row in result["steps"]) +
+                "\n\n" + _("下一步：{0}\n交付目录：{1}").format(result["next_step"]["action"], result["output_directory"]))
+            return
         if self._close_pending:
             return
         if not self._same_task():
@@ -605,7 +611,7 @@ def _config_token(config: Any) -> str:
     return json.dumps(yaml.safe_load(to_yaml(copy.deepcopy(config))), sort_keys=True, ensure_ascii=False)
 
 
-def open_task_tools(window: Any) -> None:
+def open_task_tools(window: Any, *, initial_action: str = "") -> None:
     from ..core.config_serializer import load_yaml
 
     path = window._config_path
@@ -617,4 +623,6 @@ def open_task_tools(window: Any) -> None:
         return
     dialog = TaskToolsDialog(path, lambda: window._config_path, lambda: _config_token(window._config),
                              lambda: window._config_delegate._open_recent(str(path)), window)
+    if initial_action:
+        dialog._launch(initial_action, {})
     dialog.exec()

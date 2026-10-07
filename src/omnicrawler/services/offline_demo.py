@@ -114,8 +114,9 @@ def create_demo_workspace(root: Path) -> DemoWorkspace:
     config = root / 'offline-demo.yaml'
     config.write_text(
         'config_version: 3\nproject:\n  name: offline_demo\n  workspace: work/offline_demo\n'
-        'source:\n  kind: file\n  seeds:\n    - ' + repr((root / 'index.html').as_uri()) + '\n'
-        'crawl:\n  max_pages: 5\n  same_host: true\nextract:\n  mode: auto\n  fields: {}\n'
+        'source:\n  kind: file\n  local_files: [index.html, report.pdf, scan.pdf]\n  seeds:\n'
+        + ''.join('    - ' + repr((root / name).resolve().as_uri()) + '\n' for name in ('index.html', 'report.pdf', 'scan.pdf'))
+        + 'crawl:\n  max_pages: 5\n  same_host: true\nextract:\n  mode: auto\n  fields: {}\n'
         'download:\n  enabled: true\n  extensions: [\'.pdf\']\n'
         'processors:\n  pdf:\n    enabled: true\n    skip_ocr: false\n'
         'outputs:\n  jsonl: true\n  csv: true\n  xlsx: true\n',

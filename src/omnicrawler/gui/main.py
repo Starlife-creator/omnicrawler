@@ -795,6 +795,8 @@ class MainWindow(QMainWindow):
         self._home.import_task.connect(self._config_delegate.import_config_package)
         self._home.run_doctor.connect(self._env_checker.recheck_env)
         self._home.create_demo.connect(self._create_offline_demo)
+        self._home.create_starter.connect(self._create_starter)
+        self._home.open_getting_started.connect(self._show_getting_started)
         # B-4 ConvertX：首页按钮跳到格式互转面板（NavIndex.CONVERT_TOOL）
         self._home.open_convert_tool.connect(
             lambda: self._nav.setCurrentRow(NavIndex.CONVERT_TOOL)
@@ -1237,6 +1239,25 @@ class MainWindow(QMainWindow):
         goal = self._config.passthrough.setdefault("task", {})
         goal.update(requested_fields=list(draft.fields), multi_value_fields=list(draft.multi_value_fields),
                     goal_warnings=list(draft.warnings), unsupported=list(draft.unsupported))
+
+    def _show_getting_started(self) -> None:
+        from .views.task_tools import open_task_tools
+
+        open_task_tools(self, initial_action="onboarding")
+
+    def _create_starter(self) -> None:
+        from ..services.getting_started import create_starter
+
+        try:
+            path = create_starter(self._project_root / "demos" / "getting-started")
+            self._config = load_yaml(path)
+            self._config_path = path
+            self._config_label.setText(str(path))
+            self._refresh_canvas()
+            self._nav.setCurrentRow(NavIndex.WORKSPACE)
+            self._set_status(_("离线入门任务已创建：先查看字段并试跑，通过后运行，再到结果页核对导出。"))
+        except (OSError, ValueError) as exc:
+            self._error_helper.show_error_dialog(exc, _("创建入门任务"))
 
     def _create_offline_demo(self) -> None:
         demo = create_demo_workspace(self._project_root / "demos" / "offline-onboarding")
