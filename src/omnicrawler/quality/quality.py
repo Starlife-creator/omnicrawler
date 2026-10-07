@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 import statistics
 from collections.abc import Callable
@@ -180,12 +181,52 @@ def assess_record(
         0.0,
         min(1.0, completeness * 0.4 + required_score * 0.6 - min(0.5, len(errors) * 0.1)),
     )
+    evidence_status: dict[str, str] = {}
+    evidence_issues: list[str] = []
+    from .semantic_changes import values_equal
+
+    for name, raw_rule in fields.items():
+        if _field_missing(record.data, str(name), raw_rule):
+            continue
+        rule = raw_rule if isinstance(raw_rule, dict) else {}
+        trace = record.evidence.get(str(name))
+        status = "unassessed"
+        if isinstance(trace, dict):
+            status = "supported" if trace.get("matches", 0) and trace.get("source_url") == record.source_url else "unsupported"
+            if trace.get("conflicts"):
+                status = "conflict"
+            clean = trace.get("clean_value")
+            normalizations = record.evidence.get("_normalization", {})
+            normalization = normalizations.get(str(name), {}) if isinstance(normalizations, dict) else {}
+            normalization = normalization if isinstance(normalization, dict) else {}
+            observed = normalization.get("original", record.data.get(str(name)))
+            if "clean_value" in trace and not values_equal(clean, observed):
+                status = "value_mismatch"
+            if rule.get("expected_label") is not None and trace.get("label") != rule["expected_label"]:
+                status = "label_mismatch"
+        evidence_status[str(name)] = status
+        if (rule.get("evidence_required") or rule.get("critical")) and status != "supported":
+            evidence_issues.append(f"{name}: evidence {status}")
+        if rule.get("min_confidence") is not None:
+            confidence_threshold = float(_numeric_value(rule["min_confidence"]))
+            if not 0 <= confidence_threshold <= 1:
+                raise ValueError("min_confidence 必须在0到1之间")
+            confidence = trace.get("confidence") if isinstance(trace, dict) else None
+            if (not isinstance(confidence, (int, float)) or isinstance(confidence, bool) or not math.isfinite(confidence)
+                    or not 0 <= confidence <= 1 or confidence < confidence_threshold):
+                evidence_issues.append(f"{name}: source confidence insufficient")
     return {
+        "score_semantics": "contract_compliance_v1",
         "score": round(score, 4),
         "completeness": round(completeness, 4),
         "missing_required": missing,
         "validation_errors": errors,
-        "review_required": bool(missing or errors or score < threshold),
+        "evidence_status": evidence_status,
+        "evidence_issues": evidence_issues,
+        "dimensions": {"contract": "failed" if missing or errors else "passed",
+                       "evidence": "failed" if evidence_issues else "unassessed" if any(value == "unassessed" for value in evidence_status.values()) else "assessed",
+                       "conflicts": "present" if any(value == "conflict" for value in evidence_status.values()) else "none_observed"},
+        "review_required": bool(missing or errors or evidence_issues or score < threshold),
     }
 
 
@@ -194,32 +235,44 @@ def _annotate_anomalies(records: list[ExtractedRecord], fields: dict[str, Any]) 
     for name, rule in fields.items():
         if not isinstance(rule, dict) or not rule.get("anomaly", False):
             continue
-        numeric: list[tuple[ExtractedRecord, float]] = []
+        groups: dict[tuple[str, ...], list[tuple[ExtractedRecord, float]]] = {}
+        group_fields = rule.get("anomaly_group_by", [])
+        if not isinstance(group_fields, list) or any(not isinstance(field, str) for field in group_fields):
+            raise ValueError("anomaly_group_by 必须是字段名称列表")
         for record in records:
             try:
-                value = float(str(record.data.get(str(name), "")).replace(",", ""))
+                value = float(_numeric_value(record.data.get(str(name), ""), money=rule.get("type") == "money"))
             except (TypeError, ValueError):
                 continue
-            numeric.append((record, value))
-        minimum = max(3, int(rule.get("anomaly_min_samples", 5)))
-        if len(numeric) < minimum:
-            continue
-        values = [value for _record, value in numeric]
-        deviation = statistics.pstdev(values)
-        if deviation == 0:
-            continue
-        center = statistics.fmean(values)
-        threshold_z = max(0.1, float(rule.get("anomaly_zscore", 3.0)))
-        for record, value in numeric:
-            zscore = abs(value - center) / deviation
-            if zscore <= threshold_z:
+            if not math.isfinite(value):
                 continue
-            quality = record.evidence["_quality"]
-            quality.setdefault("anomalies", []).append(
-                {"field": str(name), "value": value, "zscore": round(zscore, 4)}
-            )
-            quality["review_required"] = True
-            anomalies += 1
+            key = tuple(str(record.data.get(str(field), "")) for field in group_fields)
+            groups.setdefault(key, []).append((record, value))
+        minimum = max(3, int(rule.get("anomaly_min_samples", 5)))
+        for numeric in groups.values():
+            for record, _value in numeric:
+                record.evidence["_quality"].setdefault("anomaly_assessment", {})[str(name)] = "insufficient_samples" if len(numeric) < minimum else "assessed"
+            if len(numeric) < minimum:
+                continue
+            scale = max(abs(value) for _record, value in numeric) or 1.0
+            values = [value / scale for _record, value in numeric]
+            method = str(rule.get("anomaly_method", "zscore" if "anomaly_zscore" in rule else "mad"))
+            if method not in {"zscore", "mad"}:
+                raise ValueError("anomaly_method 必须是 zscore 或 mad")
+            center = statistics.fmean(values) if method == "zscore" else statistics.median(values)
+            deviation = statistics.pstdev(values) if method == "zscore" else statistics.median(abs(value - center) for value in values) * 1.4826
+            threshold_z = max(0.1, float(rule.get("anomaly_zscore", 3.0)))
+            for record, value in numeric:
+                zscore = abs(value / scale - center) / deviation if deviation else None
+                if (zscore is not None and zscore <= threshold_z) or (zscore is None and value / scale == center):
+                    continue
+                quality = record.evidence["_quality"]
+                quality.setdefault("anomalies", []).append(
+                    {"field": str(name), "value": value, "zscore": round(zscore, 4) if zscore is not None else None,
+                     "method": method, "reason": "outlier" if deviation else "differs_from_constant_majority"}
+                )
+                quality["review_required"] = True
+                anomalies += 1
     return anomalies
 
 
