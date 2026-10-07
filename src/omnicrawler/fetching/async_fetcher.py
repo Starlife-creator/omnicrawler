@@ -209,7 +209,7 @@ class HTTPXAsyncFetcher:
             LOGGER.warning("%s", message)
             return
         pool._network_backend = _PinnedAsyncNetworkBackend(
-            httpcore.AsyncNetworkBackend(), self.target_policy
+            pool._network_backend, self.target_policy
         )
 
     def close(self) -> None:
@@ -361,9 +361,9 @@ class HTTPXAsyncFetcher:
                                 ):
                                     method, content = "GET", None
                                 continue
-                            if response.status_code in retry_statuses:
+                            auth_error = response.status_code >= 400 and bool(self.config.section("source").get("auth_check")) and request.kind != "asset"
+                            if not auth_error:
                                 response.raise_for_status()
-                            response.raise_for_status()
                             declared = response.headers.get("content-length", "")
                             if declared.isdigit() and int(declared) > maximum:
                                 raise ResponseTooLargeError(f"响应超过大小限制: {declared} > {maximum}")
@@ -375,6 +375,15 @@ class HTTPXAsyncFetcher:
                                     raise ResponseTooLargeError(f"响应超过大小限制: > {maximum}")
                                 chunks.append(chunk)
                             self.egress.record_response(size, url=str(response.url))
+                            if auth_error:
+                                from .authentication import check_authentication
+
+                                check_authentication(self.config, FetchResult(
+                                    request, str(response.url), response.status_code,
+                                    {key.lower(): value for key, value in response.headers.items()},
+                                    b"".join(chunks), time.monotonic() - started,
+                                ))
+                                response.raise_for_status()
                             self.egress.record_success(str(response.url))
                             return FetchResult(
                                 request, str(response.url), response.status_code,

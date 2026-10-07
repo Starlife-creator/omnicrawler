@@ -291,6 +291,20 @@ class HTTPFetcher:
                         )
             except urllib.error.HTTPError as exc:
                 last_error = exc
+                if self.config.section("source").get("auth_check") and request.kind != "asset" and exc.code != 304:
+                    from .authentication import check_authentication
+
+                    response_headers = _flatten_headers(exc.headers)
+                    with exc:
+                        wire_body = exc.read(max_bytes + 1)
+                    if len(wire_body) > max_bytes:
+                        raise ResponseTooLargeError(f"响应超过大小限制: > {max_bytes}") from exc
+                    self.egress.record_response(len(wire_body), url=exc.geturl() or request.url)
+                    check_authentication(self.config, FetchResult(
+                        request, exc.geturl() or request.url, exc.code, response_headers,
+                        self._decode_content(wire_body, response_headers.get("content-encoding", ""), max_bytes),
+                        time.monotonic() - started,
+                    ))
                 if exc.code == 304:
                     self.egress.record_success(request.url)
                     response_headers = _flatten_headers(exc.headers)
