@@ -28,9 +28,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -119,7 +121,9 @@ class AIGraphExtractor:
         "```\n\n"
         "## 输出格式\n"
         "请只返回 JSON，不要有任何其他文字。格式如下：\n"
-        '{{"fields": {{"field_name": "extracted_value", ...}}, "confidence": 0.0-1.0}}\n'
+        '{{"fields": {{"field_name": "extracted_value", ...}}, "confidence": 0.0-1.0, '
+        '"evidence": {{"field_name": {{"quote": "逐字原文", "raw_value": "原始值"}}}}}}\n'
+        "每个字段附上包含主体、字段含义及单位的逐字原文；没有原文依据的字段请省略。\n"
     )
 
     def __init__(
@@ -132,12 +136,16 @@ class AIGraphExtractor:
         project_root: str | None = None,
         egress: Any | None = None,
         budget: Any | None = None,
+        max_chunks: int = 256,
     ) -> None:
         self._provider = provider or Provider()
         self._prompt_template = prompt_template or self.DEFAULT_PROMPT
         self._chunk_size = max(500, min(chunk_size, 32000))
         self._concurrency = max(1, concurrency)
         self._max_retries = max(1, max_retries)
+        if type(max_chunks) is not int or not 1 <= max_chunks <= 1024:
+            raise ValueError("max_chunks must be between 1 and 1024")
+        self._max_chunks = max_chunks
         self.project_root = project_root
         # P9-A2（B13-002）：EgressBroker 出口审计；未注入时发送前
         # fail-closed 拒绝外发（见 _post_with_retry）
@@ -173,15 +181,20 @@ class AIGraphExtractor:
             RuntimeError: 全部分块提取失败（不再静默返回空结果）。
         """
         self._accounting.budget.begin_logical_request()
+        if type(max_tokens_per_chunk) is not int or not 1 <= max_tokens_per_chunk <= self._provider.max_tokens:
+            raise ValueError("max_tokens_per_chunk must fit the provider output budget")
         chunks = self._split_html(html, strategy)
         if not chunks:
             chunks = [html]
+        if len(chunks) > self._max_chunks:
+            raise ValueError("AI input exceeds max_chunks; select a smaller document range")
 
         semaphore = asyncio.Semaphore(self._concurrency)
 
         async def run_one(index: int, chunk: str) -> dict[str, Any]:
             async with semaphore:
                 result = await self._extract_chunk(chunk, fields, max_tokens_per_chunk, session=session)
+                self._ground_fields(result, chunk)
                 return {**result, "_chunk_index": index}
 
         # D56：复用单个 Session + asyncio.gather 并发，不再每分块新建连接
@@ -208,6 +221,13 @@ class AIGraphExtractor:
         merged = self._merge_results(ok_results, len(chunks), fields=fields)
         merged["failed_chunks"] = len(errors)
         merged["errors"] = errors
+        merged["status"] = "partial" if errors else "completed"
+        merged["input_sha256"] = hashlib.sha256(html.encode()).hexdigest()
+        merged["chunk_sha256"] = [hashlib.sha256(chunk.encode()).hexdigest() for chunk in chunks]
+        merged["model"] = self._provider.model
+        merged["prompt_sha256"] = hashlib.sha256(self._prompt_template.encode()).hexdigest()
+        merged["target_schema_sha256"] = hashlib.sha256(json.dumps(
+            {field.name: field.contract_rule() for field in fields}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         self._assess_target(merged, fields)
         return merged
 
@@ -216,8 +236,11 @@ class AIGraphExtractor:
     ) -> dict[str, Any]:
         """一站式：单次调用提取，不做分块。"""
         self._accounting.budget.begin_logical_request()
+        if len(html) > self._chunk_size:
+            raise ValueError("single-page AI input exceeds chunk_size; use extract for bounded splitting")
         async with self._create_session() as session:
             result = await self._extract_chunk(html, fields, self._provider.max_tokens, session=session)
+            self._ground_fields(result, html)
             self._assess_target(result, fields)
             return result
 
@@ -231,10 +254,40 @@ class AIGraphExtractor:
         if strategy == SplitStrategy.HEADING:
             chunks = self._heading_split(html)
             if chunks:
-                return chunks
+                return [part for chunk in chunks for part in self._bounded_section(chunk)]
+
+        if strategy == SplitStrategy.AUTO:
+            sections = self._heading_split(html)
+            if sections:
+                return [part for section in sections for part in self._bounded_section(section)]
+            return self._bounded_section(html)
 
         # auto 或 heading 失败时回退到固定分块
         return self._fixed_chunk_split(html)
+
+    def _bounded_section(self, html: str) -> list[str]:
+        """Prefer structural boundaries and repeat short headings/table headers."""
+        if len(html) <= self._chunk_size:
+            return [html]
+        heading = re.match(r"\s*(<h[1-6]\b[^>]*>.*?</h[1-6]>)", html, re.S | re.I)
+        context = heading.group(1) if heading and len(heading.group(1)) <= self._chunk_size // 4 else ""
+        table_header = re.search(r"(<tr\b[^>]*>.*?<th\b.*?</tr>)", html, re.S | re.I)
+        if table_header and len(table_header.group(1)) <= self._chunk_size // 4:
+            context += table_header.group(1)
+        capacity = self._chunk_size - len(context)
+        units = re.split(r"(?=<(?:p|tr|li|article|section|table)\b)", html, flags=re.I)
+        pieces: list[str] = []
+        current = ""
+        for unit in units:
+            for start in range(0, len(unit), capacity):
+                piece = unit[start:start + capacity]
+                if current and len(current) + len(piece) > capacity:
+                    pieces.append(context + current)
+                    current = ""
+                current += piece
+        if current:
+            pieces.append(context + current)
+        return pieces
 
     def _fixed_chunk_split(self, html: str) -> list[str]:
         """按字符数平分 HTML。"""
@@ -427,6 +480,9 @@ class AIGraphExtractor:
                 "name": "extracted_fields", "strict": False, "schema": {
                     "type": "object", "properties": {
                         "fields": target_schema, "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                        "evidence": {"type": "object", "additionalProperties": {"type": "object", "properties": {
+                            "quote": {"type": "string"}, "raw_value": {},
+                        }, "required": ["quote"], "additionalProperties": False}},
                     }, "required": ["fields"], "additionalProperties": False,
                 },
             }}
@@ -496,6 +552,7 @@ class AIGraphExtractor:
             result = validate_ai_output(parsed, {
                 "fields": dict,
                 "confidence": (int, float),
+                "evidence": dict,
                 "messages": list,
                 "nodes": list,
                 "edges": list,
@@ -526,7 +583,30 @@ class AIGraphExtractor:
         values = result.get("fields", {})
         missing = validate_target_fields(values, schema)
         result["missing_required"] = missing
-        result["review_required"] = bool(missing or result.get("conflicts") or result.get("failed_chunks"))
+        result["review_required"] = bool(missing or result.get("conflicts") or result.get("failed_chunks") or result.get("unsupported_fields"))
+
+    @staticmethod
+    def _ground_fields(result: dict[str, Any], chunk: str) -> None:
+        from .html_tools import node_text, parse_html
+
+        text = node_text(parse_html(chunk))
+        evidence = result.get("evidence", {})
+        evidence = evidence if isinstance(evidence, dict) else {}
+        unsupported: list[str] = []
+        grounded: dict[str, Any] = {}
+        for name, value in result.get("fields", {}).items():
+            trace = evidence.get(name, {})
+            quote = trace.get("quote") if isinstance(trace, dict) else None
+            quote = " ".join(quote.split()) if isinstance(quote, str) else ""
+            needle = str(value).casefold() if not isinstance(value, (dict, list)) else json.dumps(value, ensure_ascii=False)
+            valid = bool(quote and quote in text and needle in quote.casefold())
+            if not valid:
+                unsupported.append(name)
+            grounded[name] = {"quote": quote, "status": "quoted_value_present" if valid else "unsupported",
+                              "chunk_sha256": hashlib.sha256(chunk.encode()).hexdigest(),
+                              "text_offset": text.find(quote) if valid else None}
+        result["grounding"] = grounded
+        result["unsupported_fields"] = unsupported
 
     def _merge_results(
         self, results: list[dict], total_chunks: int, *, fields: list[FieldDef] | None = None
@@ -541,11 +621,18 @@ class AIGraphExtractor:
         conflicts: list[dict[str, Any]] = []
 
         sources: dict[str, list[int]] = {}
+        grounding: dict[str, list[dict[str, Any]]] = {}
+        unsupported: set[str] = set()
         for index, r in enumerate(results):
             chunk_fields = r.get("fields", {})
             chunk_index = r.get("_chunk_index", index)
             if isinstance(chunk_fields, dict):
                 for name, value in chunk_fields.items():
+                    source_grounding = r.get("grounding", {}).get(name)
+                    if source_grounding is not None:
+                        grounding.setdefault(name, []).append({**source_grounding, "chunk_index": chunk_index})
+                    if name in r.get("unsupported_fields", []):
+                        unsupported.add(name)
                     rule = rules.get(name)
                     if value is None and (rule is None or rule.nullable is not True):
                         continue
@@ -575,6 +662,9 @@ class AIGraphExtractor:
             "total_chunks": total_chunks,
             "conflicts": conflicts,
             "field_sources": sources,
+            "grounding": grounding,
+            "unsupported_fields": sorted(unsupported),
+            "confidence_semantics": "model_self_report_unvalidated",
         }
 
 
