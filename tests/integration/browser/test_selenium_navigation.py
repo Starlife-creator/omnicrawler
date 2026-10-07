@@ -20,7 +20,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.mark.parametrize("scenario", ["plain", "redirect", "actions", "actions-no-wait", "actions-role", "blocked", "session", "timeout"])
+@pytest.mark.parametrize("scenario", ["plain", "redirect", "actions", "actions-no-wait", "actions-slow-no-wait", "actions-role", "blocked", "session", "timeout"])
 def test_selenium_navigation_without_fallback(tmp_path, monkeypatch, scenario):
     if not os.environ.get("OMNICRAWL_SELENIUM_DRIVER"):
         pytest.skip("OMNICRAWL_SELENIUM_DRIVER is not configured")
@@ -44,6 +44,8 @@ def test_selenium_navigation_without_fallback(tmp_path, monkeypatch, scenario):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):  # noqa: N802
             hits.append(self.path)
+            if scenario == "actions-slow-no-wait" and self.path.startswith("/next"):
+                time.sleep(1.5)
             if self.path == "/timeout":
                 release.wait(15)
                 return
@@ -84,7 +86,7 @@ onclick="location.href='/next?value='+encodeURIComponent(document.querySelector(
                 {"action": "click", "selector": "#go"},
                 {"action": "wait_for", "selector": "#ready", "timeout_ms": 5000}]
                if scenario.startswith("actions") else [])
-    if scenario == "actions-no-wait":
+    if scenario in {"actions-no-wait", "actions-slow-no-wait"}:
         actions.pop()
     if scenario == "actions-role":
         actions = [actions[0], {"action": "press", "selector": "#value", "key": "End"},
