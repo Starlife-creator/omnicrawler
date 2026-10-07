@@ -137,6 +137,8 @@ class AIGraphExtractor:
         egress: Any | None = None,
         budget: Any | None = None,
         max_chunks: int = 256,
+        cache_entries: int = 0,
+        rule_version: str = "1",
     ) -> None:
         self._provider = provider or Provider()
         self._prompt_template = prompt_template or self.DEFAULT_PROMPT
@@ -146,6 +148,9 @@ class AIGraphExtractor:
         if type(max_chunks) is not int or not 1 <= max_chunks <= 1024:
             raise ValueError("max_chunks must be between 1 and 1024")
         self._max_chunks = max_chunks
+        from .ai_chunk_cache import ChunkCache
+        self._chunk_cache = ChunkCache(cache_entries)
+        self._rule_version = rule_version
         self.project_root = project_root
         # P9-A2（B13-002）：EgressBroker 出口审计；未注入时发送前
         # fail-closed 拒绝外发（见 _post_with_retry）
@@ -415,7 +420,29 @@ class AIGraphExtractor:
 
         return aiohttp.ClientSession(connector=aiohttp.TCPConnector(resolver=PolicyResolver(self._egress.policy)))
 
-    async def _extract_chunk(
+    def _cache_key(self, html: str, fields: list[FieldDef], max_tokens: int) -> str:
+        identity = {"format": "grounded_chunk_v1", "content": html,
+                    "fields": self._build_fields_spec(fields), "prompt": self._prompt_template,
+                    "model": self._provider.model, "endpoint": self._provider.base_url,
+                    "structured": getattr(self._provider, "supports_json_schema", False), "rule_version": self._rule_version,
+                    "max_tokens": max_tokens, "project_root": self.project_root}
+        return hashlib.sha256(json.dumps(identity, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+    async def _extract_chunk(self, html: str, fields: list[FieldDef], max_tokens: int, *,
+                             session: Any | None = None) -> dict[str, Any]:
+        from ..core.ai_env import require_ai_privacy
+        require_ai_privacy(self.project_root, content_kind="allow_page_text", what="页面 HTML 内容")
+        if not self._chunk_cache.entries:
+            return await self._extract_chunk_uncached(html, fields, max_tokens, session=session)
+        key = self._cache_key(html, fields, max_tokens)
+        cached = self._chunk_cache.get(key)
+        if cached is not None:
+            return cached
+        result = await self._extract_chunk_uncached(html, fields, max_tokens, session=session)
+        self._chunk_cache.put(key, result)
+        return result
+
+    async def _extract_chunk_uncached(
         self,
         html: str,
         fields: list[FieldDef],

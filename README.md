@@ -613,6 +613,8 @@ PDF 批量 OCR 的词/文本块坐标、置信度及表格单元格结构会保�
 非严格 JSON 的 number/float 校验继续接受数字字符串和规范千分位，科学计数法按实际数值比较；任意夹杂文字、非有限数及歧义逗号格式进入复核。money 校验复用金额解析，对万/亿倍率按元比较边界，不改写原字段、不执行汇率换算。业务单位文本应显式使用 money 或先执行有证据的归一化；strict_json 的原生类型要求保持。
 # 浏览器数据就绪与虚拟列表
 
+实验性 `AIGraphExtractor` 可用 `cache_entries` 开启进程内缓存（默认关闭，上限 1024 项和 8 MiB）。缓存键覆盖 HTML、字段定义、提示、模型、API 地址、输出预算、项目范围与 `rule_version`；修改规则版本会失效旧缓存。返回副本保留候选与冲突，缓存命中不重复计入模型费用，仍检查当前隐私授权。缓存不写磁盘。
+
 OCR 富结果保留词、区域、表格单元格和跨度。PDF 字段的 `ocr_region` 保存匹配区域及坐标来源；只有唯一匹配且区域分数有效时才使用其识别分，没有定位依据时进入复核。识别分与规则评分均未校准为正确概率。Paddle 方向校正或展平后的坐标标为 `ocr_engine_pixels_top_left`、`original_mapping: unverified`；没有经验证的变换时不能直接叠加到原 PDF。组件 OCR 的结果可提供 `structure` 对象，含 `words`、`blocks`、`tables` 和 `metadata`；只有文本输出的组件会明确缺少字段区域依据。
 
 Scrapy 桥接属于运行受信任 Python spider 的外部执行模式，需要显式设置 `source.execution_contract: trusted_external`。支持 `timeout_seconds`（默认 60，最多 300）、`max_output_bytes` 和取消请求；输出及日志受预算限制，退出成功后还必须验证 JSONL 对象，结果才会原子替换上一份文件。空结果默认失败，可用 `allow_empty: true` 明确接受。此模式不提供原生网络审计、字段质量或断点恢复；声明了原生出口限制的任务会被拒绝，避免误认为这些限制已对 spider 生效。
