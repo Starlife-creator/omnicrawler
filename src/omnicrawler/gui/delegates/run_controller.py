@@ -213,6 +213,8 @@ class RunController(_BaseDelegate):
     @Slot(int, str)
     def on_progress(self, percent: int, url: str) -> None:
         mw = self._mw
+        if is_terminal(mw._status_indicator.state):
+            return
         mw._progress_bar.setRange(0, 100)
         mw._progress_bar.setValue(percent)
         mw._progress_url_label.setText(url)
@@ -233,6 +235,9 @@ class RunController(_BaseDelegate):
             mw._pause_btn.setEnabled(True)
             mw._pause_btn.setText(_("Ⅱ 暂停"))
         if is_terminal(state):
+            observed_progress = max(0, mw._progress_bar.value())
+            mw._progress_bar.setRange(0, 100)
+            mw._progress_bar.setValue(100 if normalize_state(state) == "succeeded" else observed_progress)
             mw._run_btn.setEnabled(True)
             mw._stop_btn.setEnabled(False)
             mw._pause_btn.setEnabled(False)

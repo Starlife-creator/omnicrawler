@@ -338,3 +338,35 @@ def test_editor_toolbar_works_from_monitor_home_and_results(monkeypatch):
         window.close()
         window.deleteLater()
         app.processEvents()
+
+
+@pytest.mark.parametrize("terminal,expected", [("succeeded", 100), ("finished", 100),
+                                              ("partial_success", 33), ("failed", 33), ("cancelled", 33)])
+def test_terminal_progress_matches_completion_and_ignores_late_updates(tmp_path, monkeypatch, terminal, expected):
+    from PySide6.QtWidgets import QApplication
+
+    from omnicrawler.gui.main import MainWindow
+    monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    window._project_root = tmp_path
+    window._rebuild_project_components()
+    window._settings.auto_open_result = False
+    window._settings.sound_enabled = False
+    window._settings.markdown_export_enabled = False
+    monkeypatch.setattr(window, "_auto_load_results", lambda: None)
+    try:
+        window._run_delegate.on_task_state_changed("running")
+        window._run_delegate.on_progress(33, "https://example.test/last")
+        window._run_delegate.on_task_state_changed(terminal)
+        assert window._progress_bar.maximum() == 100 and window._progress_bar.value() == expected
+        window._run_delegate.on_progress(20, "https://example.test/late")
+        assert window._progress_bar.value() == expected
+        assert window._progress_url_label.text() == "https://example.test/last"
+        window._run_delegate.on_task_state_changed("running")
+        window._run_delegate.on_progress(12, "https://example.test/restarted")
+        assert window._progress_bar.value() == 12
+    finally:
+        window.close()
+        window.deleteLater()
+        app.processEvents()
