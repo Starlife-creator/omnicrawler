@@ -192,10 +192,10 @@ class SeleniumAdapter:
         return list(dict.fromkeys(result))
 
     def locate(self, action: BrowserAction):
-        expected_name = str(action.role or "").strip()
+        expected_name = action.role_name
         for selector in self._choices(action):
             for element in self._driver.find_elements(self._By.CSS_SELECTOR, selector):
-                if not expected_name or element.accessible_name == expected_name or element.text == expected_name:
+                if expected_name is None or element.accessible_name == expected_name:
                     return element
         return None
 

@@ -4,11 +4,37 @@ import re
 import statistics
 from collections.abc import Callable
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from ..core.models import ExtractedRecord
 from ..core.safe_data import safe_regex_search
 from .schema_registry import validate_target_fields
+
+
+def _numeric_value(value: Any, *, money: bool = False) -> Decimal:
+    """Read a finite decimal without deleting units or arbitrary characters."""
+    if isinstance(value, bool):
+        raise ValueError("boolean is not a number")
+    text = str(value).strip()
+    if len(text) > 4096:
+        raise ValueError("numeric value is too long")
+    pattern = r"[+-]?(?:(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?"
+    if not re.fullmatch(pattern, text):
+        if not money:
+            raise ValueError("not a decimal literal")
+        from .normalizers import parse_money
+
+        text = str(parse_money(text))
+        if not re.fullmatch(pattern, text):
+            raise ValueError("unrecognized money value")
+    try:
+        number = Decimal(text.replace(",", ""))
+    except InvalidOperation as exc:
+        raise ValueError("invalid decimal") from exc
+    if not number.is_finite():
+        raise ValueError("non-finite number")
+    return number
 
 
 def _missing(value: Any) -> bool:
@@ -60,7 +86,7 @@ def _compare_fields(
     differs = rule.get("not_equals_field")
     if differs and value == record.data.get(str(differs)):
         errors.append(f"{name}: must differ from field {differs}")
-    comparisons: tuple[tuple[str, Callable[[float, float], bool]], ...] = (
+    comparisons: tuple[tuple[str, Callable[[Decimal, Decimal], bool]], ...] = (
         ("gt_field", lambda left, right: left > right),
         ("gte_field", lambda left, right: left >= right),
         ("lt_field", lambda left, right: left < right),
@@ -71,8 +97,8 @@ def _compare_fields(
         if not other_name or _missing(record.data.get(str(other_name))):
             continue
         try:
-            left = float(str(value).replace(",", ""))
-            right = float(str(record.data[str(other_name)]).replace(",", ""))
+            left = _numeric_value(value, money=rule.get("type") == "money")
+            right = _numeric_value(record.data[str(other_name)], money=rule.get("type") == "money")
         except (TypeError, ValueError):
             errors.append(f"{name}: cannot compare numerically with field {other_name}")
         else:
@@ -118,16 +144,17 @@ def assess_record(
         expected = str(rule.get("type", "string")).casefold()
         if expected in {"int", "integer"}:
             try:
-                int(str(value).replace(",", ""))
+                numeric = _numeric_value(value)
+                if numeric != numeric.to_integral_value():
+                    raise ValueError("not an integer")
             except ValueError:
                 errors.append(f"{field_name}: is not an integer")
         elif expected in {"float", "number", "money"}:
             try:
-                numeric_text = re.sub(r"[^0-9.+-]", "", str(value).replace(",", ""))
-                numeric = float(numeric_text)
-                if rule.get("min") is not None and numeric < float(rule["min"]):
+                numeric = _numeric_value(value, money=expected == "money")
+                if rule.get("min") is not None and numeric < _numeric_value(rule["min"]):
                     errors.append(f"{field_name}: below minimum")
-                if rule.get("max") is not None and numeric > float(rule["max"]):
+                if rule.get("max") is not None and numeric > _numeric_value(rule["max"]):
                     errors.append(f"{field_name}: above maximum")
             except ValueError:
                 errors.append(f"{field_name}: is not numeric")

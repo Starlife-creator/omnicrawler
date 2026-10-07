@@ -77,7 +77,9 @@ def test_offline_regression_fixture_capture_and_verify(tmp_path: Path) -> None:
         0.1,
     )
     library = RegressionLibrary(config)
-    manifest = library.capture(result, records=1, processor="html")
+    from omnicrawler.extraction.extractors import HTMLProcessor
+
+    manifest = library.capture(result, records=HTMLProcessor(config).process(result).records, processor="html")
     assert manifest is not None and manifest.is_file()
     loaded = library.load()
     assert loaded[0][1].body == result.body

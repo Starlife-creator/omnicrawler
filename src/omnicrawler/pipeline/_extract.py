@@ -151,6 +151,11 @@ class _PipelineExtract(_PipelineBase):
                                               parent_id="fetch:" + result.request.fingerprint) as summary:
                     outcome = processor.process(result)
                     summary["records"] = len(outcome.records)
+                if persist_response:
+                    self.regression_library.capture(
+                        result, records=outcome.records, processor=processor_name,
+                        replay_supported=not (parser_name or extractor_name or per_url_config is not None),
+                    )
                 for transformer in self._transformers:
                     outcome.records = [transform_record(transformer, record) for record in outcome.records]
                 # B-1 证据胶囊：提取后、归一化前（门控 OMNICRAWL_CAPSULE_ENABLED=true）
@@ -257,10 +262,6 @@ class _PipelineExtract(_PipelineBase):
                 deduplicate_by = tuple(str(name) for name in extract_config.get("deduplicate_by", []))
                 self.state.save_records(run_id, result.request, outcome.records, deduplicate_by=deduplicate_by)
                 self.state.save_record_observation(run_id, result, outcome.records)
-                if persist_response:
-                    self.regression_library.capture(
-                        result, records=len(outcome.records), processor=processor_name
-                    )
                 self.record_sinks.write(run_id, result.request, outcome.records)
                 self.metrics.increment("omnicrawler_records_total", len(outcome.records), processor=processor_name)
                 self._emit(

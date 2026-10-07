@@ -53,13 +53,24 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
                     try:
                         from ..pdfx.parser import render_page, text_quality
                         assert backend is not None
-                        text, confidence = backend.recognize(render_page(str(path), page["page_no"], dpi=dpi))
+                        rendered = render_page(str(path), page["page_no"], dpi=dpi)
+                        rich = getattr(backend, "recognize_rich", None)
+                        if callable(rich):
+                            rich_result = rich(rendered)
+                            text, confidence = rich_result.text, rich_result.confidence
+                            rich_words = list(rich_result.words)
+                            rich_tables = list(rich_result.tables)
+                        else:
+                            text, confidence = backend.recognize(rendered)
+                            rich_words, rich_tables = [], []
                         if not isinstance(text, str) or text_quality(text)[0] < 1 or text_quality(text)[1] > 0.1:
                             raise ValueError("OCR returned no usable text")
                         if confidence is not None and (type(confidence) not in (int, float) or not math.isfinite(confidence)
                                                        or not 0 <= confidence <= 1):
                             raise ValueError("OCR confidence must be between 0 and 1")
-                        page = {**page, "final_text": text, "words": [], "tables": []}
+                        page = {**page, "final_text": text, "words": rich_words, "tables": rich_tables}
+                        if rich_tables:
+                            document.metadata.setdefault("ocr_tables", {})[str(page["page_no"])] = rich_tables
                         recognized.append(page["page_no"])
                         source_method = "ocr"
                         document.warnings.append(f"Page {page['page_no']}: OCR text; paragraph regions and reading order are not verified")
@@ -72,8 +83,21 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
                     continue
             page_blocks: list[tuple[str, Any, dict[str, Any]]] = []
             for table_no, table in enumerate(page.get("tables", []), 1):
-                page_blocks.append(("table", table["cells"], {"page": page["page_no"], "page_table": table_no,
-                                    "bbox": table["bbox"], "coordinate_system": "pdf_points_top_left"}))
+                table_locator = {"page": page["page_no"], "page_table": table_no,
+                                 "coordinate_system": "pdf_points_top_left"}
+                if "bbox" in table:
+                    table_locator["bbox"] = table["bbox"]
+                if source_method == "ocr":
+                    table_locator["ocr_structure"] = "富结果"
+                cells = table.get("cells", table)
+                if cells and isinstance(cells, list) and isinstance(cells[0], dict):
+                    max_row = max(int(cell.get("row", 0)) for cell in cells)
+                    max_col = max(int(cell.get("column", 0)) for cell in cells)
+                    rows = [["" for _ in range(max_col + 1)] for _ in range(max_row + 1)]
+                    for cell in cells:
+                        rows[int(cell.get("row", 0))][int(cell.get("column", 0))] = str(cell.get("text", ""))
+                    cells = rows
+                page_blocks.append(("table", cells, table_locator))
             for paragraph_no, paragraph in enumerate(str(page["final_text"]).split("\n\n"), 1):
                 if paragraph.strip():
                     locator: dict[str, Any] = {"page": page["page_no"], "page_paragraph": paragraph_no}
@@ -134,6 +158,14 @@ def _paragraph_region(text: str, words: list[dict[str, Any]]) -> list[float] | N
     for index in range(max(0, len(tokens) - len(wanted) + 1)):
         if wanted and tokens[index:index + len(wanted)] == wanted:
             matched = words[index:index + len(wanted)]
+            boxes: list[list[Any]] = []
+            for word in matched:
+                value = word.get("bbox")
+                if isinstance(value, list) and len(value) == 4:
+                    boxes.append(value)
+            if boxes:
+                return [min(float(box[0]) for box in boxes), min(float(box[1]) for box in boxes),
+                        max(float(box[2]) for box in boxes), max(float(box[3]) for box in boxes)]
             return [min(float(word["x0"]) for word in matched), min(float(word["top"]) for word in matched),
                     max(float(word["x1"]) for word in matched), max(float(word["bottom"]) for word in matched)]
     return None

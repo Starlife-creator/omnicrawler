@@ -9,6 +9,7 @@ import re
 import statistics
 import time
 from collections.abc import Callable, Iterable, Iterator
+from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 from .concurrency import iter_bounded_futures
@@ -26,6 +27,18 @@ _OCR_MAX_TEMP = float(os.environ.get("OMNICRAWL_OCR_MAX_TEMP", "85"))
 @runtime_checkable
 class OCRBackend(Protocol):
     def recognize(self, png_bytes: bytes) -> tuple[str, float | None]: ...
+
+
+@dataclass(slots=True)
+class OCRRichResult:
+    """Optional structured page output; legacy tuple output remains supported."""
+
+    text: str
+    confidence: float | None
+    words: list[dict[str, Any]] = field(default_factory=list)
+    blocks: list[dict[str, Any]] = field(default_factory=list)
+    tables: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class PaddleStructureBackend:
@@ -53,24 +66,39 @@ class PaddleStructureBackend:
         )
 
     def recognize(self, png_bytes: bytes) -> tuple[str, float | None]:
+        rich = self.recognize_rich(png_bytes)
+        return rich.text, rich.confidence
+
+    def recognize_rich(self, png_bytes: bytes) -> OCRRichResult:
         image = self.Image.open(io.BytesIO(png_bytes)).convert("RGB")
         array = self.np.asarray(image)
         output = list(self.pipeline.predict(array))
         parts: list[str] = []
         confidences: list[float | None] = []
+        pages: list[OCRRichResult] = []
         for result in output:
-            text, confidence = _paddle_page_text(
+            page = _paddle_page_result(
                 getattr(result, "json", {}) or {}, getattr(result, "markdown", {}) or {}
             )
-            parts.append(text)
-            confidences.append(confidence)
+            pages.append(page)
+            parts.append(page.text)
+            confidences.append(page.confidence)
         confidence = min(score for score in confidences if score is not None) if confidences and all(
             score is not None for score in confidences
         ) else None
-        return clean_text("\n".join(parts)), confidence
+        return OCRRichResult(clean_text("\n".join(parts)), confidence,
+                             words=[item for page in pages for item in page.words],
+                             blocks=[item for page in pages for item in page.blocks],
+                             tables=[item for page in pages for item in page.tables],
+                             metadata={"backend": type(self).__name__, "pages": len(pages)})
 
 
 def _paddle_page_text(result_json: dict[str, Any], markdown: dict[str, Any]) -> tuple[str, float | None]:
+    page = _paddle_page_result(result_json, markdown)
+    return page.text, page.confidence
+
+
+def _paddle_page_result(result_json: dict[str, Any], markdown: dict[str, Any]) -> OCRRichResult:
     """Preserve OCR line boundaries inside text blocks without flattening tables."""
     payload = result_json.get("res", result_json)
     if not isinstance(payload, dict):
@@ -79,6 +107,18 @@ def _paddle_page_text(result_json: dict[str, Any], markdown: dict[str, Any]) -> 
     texts = overall.get("rec_texts", []) or []
     boxes = overall.get("rec_boxes", []) or []
     text = str(markdown.get("markdown_texts", ""))
+    raw_scores = overall.get("rec_scores", []) or []
+    words: list[dict[str, Any]] = []
+    for index, (line, box) in enumerate(zip(texts, boxes, strict=False)):
+        if isinstance(box, (list, tuple)) and len(box) == 4:
+            try:
+                coords = [float(item) for item in box]
+            except (TypeError, ValueError):
+                continue
+            score = raw_scores[index] if index < len(raw_scores) else None
+            words.append({"index": index, "text": str(line), "bbox": coords,
+                          "confidence": float(score) if isinstance(score, (int, float)) and math.isfinite(float(score)) else None})
+    blocks: list[dict[str, Any]] = []
     for block in payload.get("parsing_res_list", []) or []:
         if not isinstance(block, dict) or block.get("block_label") != "text":
             continue
@@ -86,6 +126,7 @@ def _paddle_page_text(result_json: dict[str, Any], markdown: dict[str, Any]) -> 
         bounds = block.get("block_bbox", [])
         if not content or len(bounds) != 4 or len(boxes) != len(texts):
             continue
+        blocks.append({"label": "text", "bbox": [float(item) for item in bounds], "text": content})
         lines = []
         for line, box in zip(texts, boxes, strict=True):
             if len(box) != 4:
@@ -119,13 +160,33 @@ def _paddle_page_text(result_json: dict[str, Any], markdown: dict[str, Any]) -> 
         try:
             number = float(score)
         except (TypeError, ValueError):
-            return clean_text(text), None
+            return OCRRichResult(clean_text(text), None, words=words, blocks=blocks)
         if not math.isfinite(number) or not 0 <= number <= 1:
-            return clean_text(text), None
+            return OCRRichResult(clean_text(text), None, words=words, blocks=blocks)
         scores.append(number)
     # A strong line cannot hide an uncertain line on the same source page.
     confidence = min(scores) if scores and (not texts or len(scores) == len(texts)) else None
-    return clean_text(text), confidence
+    return OCRRichResult(clean_text(text), confidence, words=words, blocks=blocks,
+                         tables=[{"html": html, "cells": _table_html_to_cells(html)} for html in table_htmls])
+
+
+def _table_html_to_cells(html: str) -> list[dict[str, Any]]:
+    """Keep spans and header semantics; Markdown is only a presentation view."""
+    import html as html_lib
+    cells: list[dict[str, Any]] = []
+    for row_index, row_html in enumerate(re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S | re.I)):
+        for column_index, match in enumerate(re.finditer(r"<(td|th)([^>]*)>(.*?)</\1>", row_html, re.S | re.I)):
+            attrs, raw = match.group(2), match.group(3)
+            value = re.sub(r"<[^>]+>", "", raw)
+            cells.append({"row": row_index, "column": column_index, "header": match.group(1).lower() == "th",
+                          "row_span": _html_attr_span(attrs, "rowspan"), "column_span": _html_attr_span(attrs, "colspan"),
+                          "text": html_lib.unescape(value).replace("\\n", " ").strip()})
+    return cells
+
+
+def _html_attr_span(attrs: str, name: str) -> int:
+    found = re.search(rf"\b{name}\s*=\s*[\"'](\d+)[\"']", attrs, re.I)
+    return int(found.group(1)) if found else 1
 
 
 def _table_html_to_markdown(html_parts: list[str]) -> str:
@@ -199,12 +260,17 @@ class TesseractBackend:
             self.pytesseract.pytesseract.tesseract_cmd = command
 
     def recognize(self, png_bytes: bytes) -> tuple[str, float | None]:
+        rich = self.recognize_rich(png_bytes)
+        return rich.text, rich.confidence
+
+    def recognize_rich(self, png_bytes: bytes) -> OCRRichResult:
         image = self.Image.open(io.BytesIO(png_bytes)).convert("RGB")
         data = self.pytesseract.image_to_data(
             image, lang=self.lang, output_type=self.pytesseract.Output.DICT
         )
         # D9：按 (block, par, line) 分行、left 分列重建，扫描件表格不再拍平为一行
         lines: dict[tuple[int, int, int], list[tuple[float, float, str]]] = {}
+        words: list[dict[str, Any]] = []
         scores: list[float] = []
         text_list = data.get("text", [])
         for index, text in enumerate(text_list):
@@ -216,24 +282,33 @@ class TesseractBackend:
                 int(data["par_num"][index]),
                 int(data["line_num"][index]),
             )
-            lines.setdefault(key, []).append((
-                float(data["left"][index]),
-                float(data["width"][index]),
-                word,
-            ))
+            left_values = data.get("left", [])
+            top_values = data.get("top", [])
+            width_values = data.get("width", [])
+            height_values = data.get("height", [])
+            left = float(left_values[index] if index < len(left_values) else 0)
+            top = float(top_values[index] if index < len(top_values) else 0)
+            width = float(width_values[index] if index < len(width_values) else 0)
+            height = float(height_values[index] if index < len(height_values) else 0)
+            lines.setdefault(key, []).append((left, width, word))
+            conf: float | None
             try:
                 conf = float(data["conf"][index])
                 if conf >= 0:
                     scores.append(conf / 100)
+                else:
+                    conf = None
             except (TypeError, ValueError):
-                pass
+                conf = None
+            words.append({"index": index, "text": word, "bbox": [left, top, left + width, top + height],
+                          "confidence": conf})
         ordered = sorted(lines.items(), key=lambda item: (item[0][0], item[0][1], item[0][2]))
         text_lines: list[str] = []
-        for _key, words in ordered:
-            words.sort(key=lambda item: item[0])  # 行内按 left 排序
+        for _key, line_words in ordered:
+            line_words.sort(key=lambda item: item[0])  # 行内按 left 排序
             parts: list[str] = []
             prev_right: float | None = None
-            for left, width, word in words:
+            for left, width, word in line_words:
                 if prev_right is None:
                     parts.append(word)
                 else:
@@ -246,7 +321,8 @@ class TesseractBackend:
                 prev_right = left + width
             text_lines.append("".join(parts))
         text = "\n".join(text_lines)
-        return clean_text(text, compress_ws=False), statistics.fmean(scores) if scores else None
+        return OCRRichResult(clean_text(text, compress_ws=False), statistics.fmean(scores) if scores else None,
+                             words=words, metadata={"backend": type(self).__name__})
 
 
 def create_backend(config: ProjectConfig) -> OCRBackend | None:
