@@ -54,3 +54,26 @@ def test_empty_declared_end_and_budget_do_not_claim_complete():
     assert status["completeness"] == "partial"
     _, status = collect_virtual_items(reader([frame([1, 2], ended=True)]), config, maximum_bytes=10000)
     assert status["completeness"] == "partial" and status["stop_reason"] == "collection_budget_exhausted"
+
+
+@pytest.mark.parametrize("ids,ended,loading,expected,reason", [
+    ([1], True, False, 2, "expected_count_not_reached"),
+    ([1, 2], True, False, 1, "expected_count_exceeded"),
+    ([1, 2], False, False, 2, "step_limit"),
+    ([1, 2], True, True, 2, "step_limit"),
+])
+def test_virtual_collection_requires_consistent_count_and_end(ids, ended, loading, expected, reason):
+    config = {"item_selector": "article", "container_selector": "#list", "identity_attribute": "data-id",
+              "max_steps": 1, "pause_ms": 1, "end_selector": "#end", "expected_count": expected}
+    _, status = collect_virtual_items(reader([frame(ids, ended=ended, loading=loading)]), config, maximum_bytes=10000)
+    assert status["completeness"] == "partial" and status["stop_reason"] == reason
+
+
+@pytest.mark.parametrize("with_end,ids,allow_empty", [(True, [1, 2], False), (False, [1, 2], False), (True, [], True)])
+def test_virtual_collection_accepts_satisfied_declarations(with_end, ids, allow_empty):
+    config = {"item_selector": "article", "container_selector": "#list", "identity_attribute": "data-id",
+              "max_steps": 1, "pause_ms": 1, "expected_count": len(ids), "allow_empty": allow_empty}
+    if with_end:
+        config["end_selector"] = "#end"
+    _, status = collect_virtual_items(reader([frame(ids, ended=with_end)]), config, maximum_bytes=10000)
+    assert status["completeness"] == "complete"

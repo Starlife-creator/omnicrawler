@@ -626,3 +626,5 @@ Crawl4AI 桥接使用本项目的受控 Playwright 渲染，再离线调用 Craw
 动态页面可以通过 `browser.readiness` 声明 `selector`、`min_count`、`hidden_selector`（加载指示器）、`text_not`、`stable_ms` 和 `timeout_ms`。Playwright 还支持 `response_url` 模式匹配成功的 API 响应。数据就绪只代表可开始提取，不代表遍历完整。
 
 虚拟列表使用 `browser.collection`：必须设置与 `extract.item_selector` 相同的 `item_selector`，以及 `container_selector`、`identity_attribute`。采集保存每个稳定标识对应的 HTML，保留滚动后被 DOM 移除的记录。用 `end_selector` 或 `expected_count` 声明结束条件；`max_steps`、`max_items`、`timeout_ms`、响应字节预算共同限制采集。未达到结束条件、标识内容变化或预算耗尽会标记为部分结果，并阻止发现阶段报告完整成功。空列表只有明确配置 `allow_empty: true` 且满足结束条件时才算完整。
+
+同时设置 `end_selector` 和 `expected_count` 时，两项都必须满足且加载已结束。结束标记出现但记录不足，或采集数量超过声明值，均报告部分结果；不能用结束标记掩盖数量冲突，也不能仅因数量达到就提前结束声明了终点的遍历。

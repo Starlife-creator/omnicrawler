@@ -101,11 +101,15 @@ def collect_virtual_items(read: Reader, config: dict[str, Any], *, maximum_bytes
             progress = True
         if reason in {"identity_content_changed", "collection_budget_exhausted"}:
             break
-        if not snapshot["loading"] and (snapshot["ended"] or expected is not None and len(captured) == expected) and (captured or config.get("allow_empty") is True):
-            reason, complete = "declared_end", True
-            break
         if expected is not None and len(captured) > expected:
             reason = "expected_count_exceeded"
+            break
+        if not snapshot["loading"] and snapshot["ended"] and expected is not None and len(captured) != expected:
+            reason = "expected_count_not_reached"
+            break
+        declared_end = snapshot["ended"] if config.get("end_selector") else expected is not None and len(captured) == expected
+        if not snapshot["loading"] and declared_end and (captured or config.get("allow_empty") is True):
+            reason, complete = "declared_end", True
             break
         stagnant = 0 if progress else stagnant + 1
         if stagnant >= stagnant_limit:

@@ -11,7 +11,8 @@ from omnicrawler.pipeline import Pipeline
 pytestmark = pytest.mark.skipif(os.environ.get("OMNICRAWL_BROWSER_TESTS") != "1", reason="requires local Chromium")
 
 
-def test_real_pipeline_collects_virtual_records_and_waits_for_data(tmp_path):
+@pytest.mark.parametrize("expected_count", [4, 5])
+def test_real_pipeline_collects_virtual_records_and_waits_for_data(tmp_path, expected_count):
     html = """<html><body><div id="list" style="height:100px;overflow:auto"></div>
     <div id="end" style="display:none">End</div><script>
     const list=document.querySelector('#list'); let batch=0;
@@ -39,7 +40,7 @@ def test_real_pipeline_collects_virtual_records_and_waits_for_data(tmp_path):
         "crawl": {"max_depth": 0},
         "browser": {"wait_until": "domcontentloaded", "readiness": {"selector": "article", "min_count": 2, "stable_ms": 0},
                     "collection": {"item_selector": "article", "container_selector": "#list", "identity_attribute": "data-id",
-                                   "end_selector": "#end", "pause_ms": 100, "max_steps": 10}},
+                                   "end_selector": "#end", "expected_count": expected_count, "pause_ms": 100, "max_steps": 10}},
         "extract": {"mode": "html", "item_selector": "article", "fields": {"title": {"selector": "h2"}}},
     }), encoding="utf-8")
     try:
@@ -49,7 +50,11 @@ def test_real_pipeline_collects_virtual_records_and_waits_for_data(tmp_path):
             import json
             assert {json.loads(row["data_json"])["title"] for row in rows} == {"Item 1", "Item 2", "Item 3", "Item 4"}
             checkpoints = pipeline.state.rows("SELECT status FROM stage_checkpoints WHERE run_id=? AND stage='discover'", (summary["run_id"],))
-            assert checkpoints and all(row["status"] == "succeeded" for row in checkpoints)
+            assert checkpoints
+            if expected_count == 4:
+                assert all(row["status"] == "succeeded" for row in checkpoints)
+            else:
+                assert all(row["status"] != "succeeded" for row in checkpoints)
     finally:
         server.shutdown()
         server.server_close()
