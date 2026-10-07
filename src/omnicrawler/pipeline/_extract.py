@@ -159,7 +159,6 @@ class _PipelineExtract(_PipelineBase):
                 for transformer in self._transformers:
                     outcome.records = [transform_record(transformer, record) for record in outcome.records]
                 # B-1 证据胶囊：提取后、归一化前（门控 OMNICRAWL_CAPSULE_ENABLED=true）
-                self._capture_capsules(run_id, result, outcome.records, extract_sec)
                 # N1：场景基因增强（默认关闭：无 extract.scene 时零行为）
                 # 在归一化前补提缺失字段，让增强值经过 _normalize_records 收敛类型
                 scene_name = str(extract_sec.get("scene", "") or "")
@@ -214,7 +213,7 @@ class _PipelineExtract(_PipelineBase):
                 # B-2：质量评估使用覆盖后的提取段（fields/quality_threshold/unique_by 同步生效）
                 extract_config = extract_sec
                 fields = extract_config.get("fields", {})
-                if result.request.meta.get("reprocessed") and self.state.preserve_reprocess_candidate(
+                if self.state.preserve_reprocess_candidate(
                     run_id, result, outcome.records,
                 ):
                     return
@@ -264,6 +263,7 @@ class _PipelineExtract(_PipelineBase):
                 if observation and observation.invalidated:
                     LOGGER.warning("Template invalidated for %s: %s", result.final_url, observation.suggestions)
                 deduplicate_by = tuple(str(name) for name in extract_config.get("deduplicate_by", []))
+                self._capture_capsules(run_id, result, outcome.records, extract_sec)
                 self.state.save_records(run_id, result.request, outcome.records, deduplicate_by=deduplicate_by)
                 self.state.save_record_observation(run_id, result, outcome.records)
                 self.record_sinks.write(run_id, result.request, outcome.records)
@@ -434,7 +434,7 @@ class _PipelineExtract(_PipelineBase):
             store = CapsuleStore(Path(self.state.path).parent / "capsules")
             dom_hash = sha256(result.body).hexdigest()
             item_selector = str(extract_sec.get("item_selector", "") or "")
-            import uuid
+            from ..core.record_storage_identity import storage_identity
 
             response_rows = self.state.rows(
                 "SELECT id FROM responses WHERE run_id=? AND request_fingerprint=? AND content_sha256=? ORDER BY id DESC LIMIT 1",
@@ -449,7 +449,8 @@ class _PipelineExtract(_PipelineBase):
                 if not isinstance(data, dict):
                     continue
                 item_index = evidence.get("item", record_index) if isinstance(evidence, dict) else record_index
-                record_id = uuid.uuid5(uuid.NAMESPACE_URL, f"{run_id}:{result.request.fingerprint}:{record_index}").hex
+                record_id, _stable = storage_identity(run_id, result.request, record, record_index,
+                    tuple(str(name) for name in extract_sec.get("deduplicate_by", [])))
                 if isinstance(evidence, dict):
                     evidence["_provenance"] = {"run_id": run_id, "response_id": response_id,
                                                "record_id": record_id, "record_index": record_index,
@@ -478,6 +479,8 @@ class _PipelineExtract(_PipelineBase):
                     output={
                         "dom_hash": dom_hash,
                         "value": data.get(field_name),
+                        "normalization": evidence.get("_normalization", {}).get(field_name) if isinstance(evidence, dict) else None,
+                        "quality": evidence.get("_quality") if isinstance(evidence, dict) else None,
                         "trace": trace,
                     },
                     code_location="omnicrawler.pipeline._extract:_handle_result",

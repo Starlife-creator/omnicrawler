@@ -250,10 +250,13 @@ def replay_field(
             "error", run_id, field, stage, url=url,
             message=outcome.get("message", "unknown") if isinstance(outcome, dict) else "invalid_result_object",
         )
-    return _result(
+    replayed = _result(
         "ok", run_id, field, stage, url=url, dom_hash=current_hash,
         value=outcome.get("value"), trace=outcome.get("trace"),
     )
+    replayed.update(recorded_value=capsule.output.get("value"),
+                    normalization=capsule.output.get("normalization"), replay_semantics="extraction_only")
+    return replayed
 
 
 def _result(
@@ -278,7 +281,7 @@ def _result(
         result["url"] = url
     if dom_hash is not None:
         result["dom_hash"] = dom_hash
-    if value is not None:
+    if value is not None or status == "ok":
         result["value"] = value
     if trace is not None:
         result["trace"] = trace

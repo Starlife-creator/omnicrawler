@@ -9,13 +9,13 @@
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import uuid
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from ..core.models import CrawlRequest, ExtractedRecord, FetchResult
+from ..core.record_storage_identity import storage_identity
 from ..core.utils import json_text, utcnow
 from ..quality.semantic_changes import (
     compare_record_data,
@@ -161,12 +161,7 @@ class RecordsMixin:
         inserted = 0
         with self._lock, self.conn:
             for index, record in enumerate(records, 1):
-                identity = [record.data.get(name) for name in deduplicate_by]
-                stable = bool(identity) and all(value not in (None, "", []) for value in identity)
-                key = f"{run_id}:{request.fingerprint}:{index}"
-                if stable:
-                    digest = hashlib.sha256(json_text(record.data).encode("utf-8")).hexdigest()
-                    key = f"{run_id}:entity:{record.record_type}:{json_text(identity)}:{digest}"
+                record_id, stable = storage_identity(run_id, request, record, index, deduplicate_by)
                 sql = "INSERT OR IGNORE" if stable else "INSERT OR REPLACE"
                 before = self.conn.total_changes
                 self.conn.execute(
@@ -174,7 +169,7 @@ class RecordsMixin:
                         record_id, run_id, request_fingerprint, source_url, record_type,
                         data_json, evidence_json, created_at
                     ) VALUES(?,?,?,?,?,?,?,?)""",
-                    (uuid.uuid5(uuid.NAMESPACE_URL, key).hex, run_id, request.fingerprint,
+                    (record_id, run_id, request.fingerprint,
                      record.source_url, record.record_type, json_text(record.data),
                      json_text(record.evidence), utcnow()),
                 )
