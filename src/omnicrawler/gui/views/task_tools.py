@@ -12,6 +12,7 @@ from PySide6.QtCore import QCoreApplication, QEvent, Qt, QUrl
 from PySide6.QtGui import QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QFileDialog,
     QFormLayout,
@@ -69,6 +70,7 @@ class TaskToolsDialog(QDialog):
         self._manifest_sha = ""
         self._preview_binding = ""
         self._report_path = ""
+        self._reference_plan: dict[str, Any] = {}
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(_("基于当前已保存任务操作。分析默认本地；保存的模板仍需用新参数验证和试跑。")))
         self.tabs = QTabWidget()
@@ -162,6 +164,23 @@ class TaskToolsDialog(QDialog):
         self.workspace_destination = self._file(workspace, _("新工作区目录（尚不存在）"), save=True)
         workspace.addRow(QLabel(_("导入保留任务身份与原有凭据引用；缺失文件或外部引用需要检查。完成后打开新目录中的配置。")))
         self._button(workspace, _("导入到新目录"), self._import_workspace)
+        self.reference_config = self._file(workspace, _("需要修复引用的配置"))
+        self.reference_config.setText(str(self.config_path))
+        self._button(workspace, _("检查已声明的文件引用"), lambda: self._launch("references:inspect", {"config": self.reference_config.text()}))
+        self.reference_field = QComboBox()
+        self.reference_field.setAccessibleName(_("需要修复的文件引用"))
+        workspace.addRow(_("引用字段"), self.reference_field)
+        self.reference_source = QLineEdit()
+        self.reference_source.setAccessibleName(_("引用替代文件或目录"))
+        workspace.addRow(_("替代文件或目录"), self.reference_source)
+        self._button(workspace, _("选择替代文件或目录"), self._choose_reference_source)
+        self.reference_mode = QComboBox()
+        self.reference_mode.addItem(_("复制到工作区"), "copy")
+        self.reference_mode.addItem(_("绑定原位置"), "rebind")
+        self.reference_mode.setAccessibleName(_("引用修复方式"))
+        workspace.addRow(_("处理方式"), self.reference_mode)
+        self._button(workspace, _("预览引用修复"), lambda: self._launch("references:preview", self._reference_arguments()))
+        self._button(workspace, _("确认生成修复配置"), self._apply_reference)
         self.result_view = QTextEdit()
         self.result_view.setReadOnly(True)
         self.result_view.setAccessibleName(_("操作结果和候选比较"))
@@ -215,6 +234,31 @@ class TaskToolsDialog(QDialog):
     def _same_task(self) -> bool:
         path = self._current_path()
         return path is not None and path.resolve() == self.config_path and self._current_token() == self._token
+
+    def _reference_arguments(self) -> dict[str, Any]:
+        info = self.reference_field.currentData() or {}
+        return {"config": self.reference_config.text().strip(), "field": info.get("field", ""),
+                "source": self.reference_source.text().strip(), "mode": self.reference_mode.currentData()}
+
+    def _choose_reference_source(self) -> None:
+        info = self.reference_field.currentData() or {}
+        if info.get("kind") == "directory":
+            path = QFileDialog.getExistingDirectory(self, _("选择替代目录"))
+        else:
+            path, _filter = QFileDialog.getOpenFileName(self, _("选择替代文件"))
+        if path:
+            self.reference_source.setText(path)
+
+    def _apply_reference(self) -> None:
+        args = self._reference_arguments()
+        plan = self._reference_plan
+        if not plan or any(str(args[key]) != str(plan.get(key, "")) for key in ("config", "field", "source", "mode")):
+            self.result_view.setPlainText(_("请先预览当前配置、字段、替代位置与处理方式。"))
+            return
+        if QMessageBox.question(self, _("确认引用修复"), _("字段：{0}\n替代：{1}\n方式：{2}\n大小：{3} 字节\n生成新配置，原配置保留。").format(
+                plan["field"], plan["source"], plan["mode"], plan["bytes"]),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            self._launch("references:apply", {**args, "binding": plan["binding"], "confirmed": True})
 
     def _import_workspace(self) -> None:
         package, destination = self.workspace_package.text().strip(), self.workspace_destination.text().strip()
@@ -270,6 +314,22 @@ class TaskToolsDialog(QDialog):
             self._launch("components:" + operation, arguments)
 
     def _management_done(self, name: str, arguments: dict[str, Any], result: dict[str, Any]) -> None:
+        if name.startswith("references:"):
+            if name == "references:inspect":
+                self.reference_field.clear()
+                for row in result["references"]:
+                    self.reference_field.addItem(row["field"] + (" ✓" if row["exists"] else " — " + _("缺失")), row)
+                self._reference_plan.clear()
+                self.result_view.setPlainText(_("已读取声明的引用，请选择字段和替代文件。"))
+            elif name == "references:preview":
+                self._reference_plan = result
+                self.result_view.setPlainText(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                self._reference_plan.clear()
+                self._report_path = result["config"]
+                self.open_report.setEnabled(True)
+                self.result_view.setPlainText(_("修复配置已生成：{0}\n请打开新配置检查并试跑，原配置保留。").format(self._report_path))
+            return
         if name.startswith("components:"):
             self._component_registry_sha = result.get("registry_sha256", "")
             if name == "components:list":
@@ -390,7 +450,7 @@ class TaskToolsDialog(QDialog):
         if not self._same_task():
             self.result_view.setPlainText(_("操作结果属于原任务；当前任务已变化，请重新打开工具核对。"))
             return
-        if name.startswith(("components:", "workspace:")):
+        if name.startswith(("components:", "workspace:", "references:")):
             self._management_done(name, arguments, result)
             return
         if name.startswith("notifications:"):

@@ -45,6 +45,18 @@ def execute(action: TaskAction) -> dict[str, Any]:
     if hashlib.sha256(action.config_path.read_bytes()).hexdigest() != action.config_sha256:
         raise ValueError("已保存配置已变化，请重新打开任务工具")
     args = action.arguments
+    if action.name.startswith("references:"):
+        from . import workspace_references
+
+        path = Path(str(args.get("config") or action.config_path))
+        if action.name == "references:inspect":
+            return workspace_references.inspect(path)
+        values = (path, str(args.get("field", "")), Path(str(args.get("source", ""))), str(args.get("mode", "copy")))
+        if action.name == "references:preview":
+            return workspace_references.preview(*values)
+        if action.name == "references:apply" and args.get("confirmed") is True:
+            return workspace_references.apply(*values, binding=str(args.get("binding", "")))
+        raise ValueError("请预览并确认引用修复")
     if action.name.startswith("components:"):
         from .component_tools import execute as component_action
         return component_action(action.name.partition(":")[2], args)

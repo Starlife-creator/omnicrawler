@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 
 import pytest
 
@@ -67,6 +68,37 @@ def test_authentication_failure_cannot_be_retried(dialog, monkeypatch):
     window.failures.item(1).setCheckState(Qt.CheckState.Checked)
     window._retry()
     assert calls == [("retry", {"fingerprints": ["selected"], "confirmed": True})]
+
+
+def test_declared_reference_can_be_previewed_and_repaired(dialog, tmp_path, monkeypatch):
+    window, _state = dialog
+    target = tmp_path / "imported.yaml"
+    target.write_text("project: {name: imported, task_id: stable, workspace: imported-work}\n"
+                      "source: {seeds: [https://example.org]}\n"
+                      "plugins: {workspace_paths: [{pointer: /custom/input, kind: file}]}\n"
+                      "custom: {input: missing.txt}\n", encoding="utf8")
+    source = tmp_path / "replacement.txt"
+    source.write_text("proof")
+    window.reference_config.setText(str(target))
+    def wait():
+        deadline = time.monotonic() + 10
+        app = QApplication.instance()
+        while window._worker is not None and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(.01)
+        assert window._worker is None
+    window._launch("references:inspect", {"config": str(target)})
+    wait()
+    assert window.reference_field.currentData()["field"] == "/custom/input"
+    window.reference_source.setText(str(source))
+    window._launch("references:preview", window._reference_arguments())
+    wait()
+    assert window._reference_plan["binding"]
+    monkeypatch.setattr(tools.QMessageBox, "question", lambda *_: tools.QMessageBox.StandardButton.Yes)
+    window._apply_reference()
+    wait()
+    assert window._report_path.endswith(".yaml") and "repaired-" in window._report_path
+    assert target.read_text(encoding="utf8").endswith("custom: {input: missing.txt}\n")
 
 
 def test_changed_task_blocks_dispatch_and_stale_reload(dialog):
