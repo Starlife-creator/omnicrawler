@@ -131,6 +131,7 @@ class _PipelineExports(_PipelineBase):
         if status == "succeeded" and self.config.section("updates").get("notifications", {}).get("include_removed") is True:
             from ..services.record_deletions import finalize_removed
             removals = finalize_removed(self.config, self.state, run_id)
+            summary.update(self.state.stats(run_id))
             try:
                 summary["notifications"] = dispatch(self.config, egress=self.egress)
             except Exception as exc:

@@ -56,6 +56,9 @@ def test_complete_removal_and_reappearance_share_durable_notices(tmp_path, inclu
         with Pipeline(config) as pipeline:
             removed = pipeline.run()
         assert removed["status"] == "succeeded"
+        assert removed["semantic_changes"] == int(include_removed)
+        persisted = json.loads((config.workspace / "output/pipeline_summary.json").read_text(encoding="utf8"))
+        assert persisted["semantic_changes"] == removed["semantic_changes"]
         assert len(received) == int(include_removed)
         if include_removed:
             assert received[0]["details"]["change_type"] == "removed"
