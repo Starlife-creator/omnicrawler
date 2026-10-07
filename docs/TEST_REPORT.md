@@ -140,3 +140,12 @@ Selenium 的逐请求拦截兼容降级只在测试进程拥有的回环服务�
 - `scroll_pattern` 源码 edge-case bug：`randint(300, min(800, remaining-pos))` 在剩余空间 < 300 时 ValueError，测试中用 `pytest.skip()` 防御
 - 覆盖率阶梯继续提升：66% → 70% → 75% → 80%（核心 >=85%）
 - 逐步收紧 mypy GUI overrides（Phase 2: 开启 disallow_untyped_defs）
+
+
+## 2026-10-07 测试跳过项收口
+
+插件公共契约套件使用随源码交付的独立离线样板，不再依赖 plugins_installed 的安装状态。Windows 打开目录和展示文件的白名单测试验证真实平台分支的启动参数，单元测试不弹关联程序；实际系统打开另行验收。Windows 联接测试在临时目录创建真实 junction，验证源入口和 files.read 两条路径解析后的逃逸拒绝，清理只移除链接本身。文件符号链接需要本机额外权限，保留平台条件，不修改系统安全设置。
+
+视觉回归由 tools/check_visual_regression.py 对 constraints/visual-ref.txt 中经过审查的完整提交生成参考截图，然后在同一 Qt/字体环境比较当前代码。参考代码只通过 git archive 读取；测试验证实际加载来源，拒绝空集合、跳过或失败。基线保存在新的证据目录，禁止覆盖已有结果。CI 的 GUI 作业执行此门禁并上传基线与比较结果；不使用当前截图自动接受当前改变。更新参考提交必须先复核截图和布局。截图采用实际布局尺寸，逐主题应用样式，避免强制尺寸裁切和只改主题属性却没有应用样式。
+
+Zstandard 为可选解码依赖；本机实测解压和缺依赖提示，CI 核心回归安装固定版本 zstandard==0.25.0。在线市场用例仍须显式启用 OMNICRAWL_TEST_LIVE_MARKET=1；启用后走生产 EgressBroker、精确 HTTPS 域范围、预算和审计，连接失败按失败处理。需要本机代理时显式设置 OMNICRAWL_TEST_MARKET_PROXY。

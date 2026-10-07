@@ -259,18 +259,17 @@ def test_market_proxy_is_bypassed_for_no_proxy_targets(remote_market, monkeypatc
     not os.environ.get("OMNICRAWL_TEST_LIVE_MARKET"),
     reason="真实网络访问公开市场；设 OMNICRAWL_TEST_LIVE_MARKET=1 启用",
 )
-def test_fetch_catalog_live_remote() -> None:
-    """Real-user path: pull the live public market catalog over HTTPS (flaky-safe, opt-in)."""
+def test_fetch_catalog_live_remote(tmp_path: Path) -> None:
+    """Opt-in real catalog read with production scope, DNS policy, budget and audit."""
+    from omnicrawler.security.controlled_http import scoped_network_config
+    from omnicrawler.security.egress import EgressBroker
+
     url = "https://raw.githubusercontent.com/Starlife-creator/OmniCrawler-market/main"
-    last_exc: Exception | None = None
-    catalog = None
-    for _ in range(3):
-        try:
-            catalog = market_client.fetch_catalog(url, egress=_AllowAllEgress())
-            break
-        except Exception as exc:  # noqa: BLE001 - transient network/rate-limit tolerance
-            last_exc = exc
-    if catalog is None:
-        pytest.skip(f"live market 不可达，跳过: {last_exc}")
+    proxy = os.environ.get("OMNICRAWL_TEST_MARKET_PROXY", "").strip()
+    config = scoped_network_config(url, workspace=tmp_path, purpose="plugin-market", allow_private_network=bool(proxy))
+    config.raw["http"]["proxy"] = proxy
+    broker = EgressBroker(config)
+    catalog = market_client.fetch_catalog(url, egress=broker)
     assert catalog["schema_version"] == 1
     assert isinstance(catalog.get("plugins"), list)
+    assert (tmp_path / "logs" / "egress-audit.jsonl").is_file()

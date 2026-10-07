@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -258,3 +259,24 @@ def test_quota_propagates_through_session(tmp_path: Path) -> None:
         adapter.seed()
     adapter.close()
 
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows directory junction")
+def test_files_read_escape_via_windows_junction_rejected(tmp_path):
+    import _winapi
+    allow = tmp_path / "allow"
+    allow.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("private", encoding="utf8")
+    link = allow / "linked"
+    _winapi.CreateJunction(str(outside), str(link))
+    try:
+        assert link.is_junction()
+        broker = _make_broker(permissions={"files:read"}, input_files=(str(allow),))
+        with pytest.raises(CapabilityError) as error:
+            broker.dispatch("files.read", {"path": str(link / "secret.txt")})
+        assert error.value.code == "E_PERMISSION"
+    finally:
+        link.rmdir()
+    assert (outside / "secret.txt").read_text(encoding="utf8") == "private"

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -119,3 +120,21 @@ def test_non_array_files_is_rejected(tmp_path: Path) -> None:
 def test_blank_entries_are_ignored(tmp_path: Path) -> None:
     root = _workspace(tmp_path)
     assert resolve_input_entries("  ", ["", "   "], workspace=root) == (None, [])
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows directory junction")
+def test_windows_junction_pointing_outside_workspace_is_rejected(tmp_path):
+    import _winapi
+    root = _workspace(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.csv").write_text("private", encoding="utf8")
+    link = root / "linked"
+    _winapi.CreateJunction(str(outside), str(link))
+    try:
+        assert link.is_junction()
+        with pytest.raises(PolicyBlockedError, match="escapes the workspace"):
+            resolve_input_entries("linked/secret.csv", None, workspace=root)
+    finally:
+        link.rmdir()  # Remove only the owned junction; never traverse its target.
+    assert (outside / "secret.csv").read_text(encoding="utf8") == "private"

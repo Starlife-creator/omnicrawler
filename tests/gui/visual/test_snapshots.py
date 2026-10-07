@@ -27,8 +27,17 @@ THEMES = ["light", "dark", "high_contrast"]
 
 def _snap(widget, name: str, theme: str) -> None:
     """Helper: show widget, grab screenshot, compare."""
+    # Polish before measuring: forced 400x200 clipped the large wrapped hero title.
+    from PySide6.QtWidgets import QApplication
+
+    widget.ensurePolished()
+    width = max(400, widget.minimumSizeHint().width(), widget.sizeHint().width())
+    layout = widget.layout()
+    wrapped_height = layout.totalHeightForWidth(width) if layout is not None else -1
+    height = max(200, widget.minimumSizeHint().height(), widget.sizeHint().height(), wrapped_height)
+    widget.resize(width, height)
     widget.show()
-    widget.resize(400, 200)
+    QApplication.processEvents()
     widget.repaint()
     pixmap = widget.grab()
     result = compare_snapshot(name, theme, pixmap)
@@ -42,7 +51,7 @@ def test_empty_state_snapshot(theme_manager):
     from omnicrawler.gui.widgets.empty_state import EmptyState
 
     for theme in THEMES:
-        theme_manager._app.setProperty("omnicrawlerTheme", theme)
+        theme_manager.apply(theme_manager._app, theme)
         widget = EmptyState(
             icon="✓",
             title=_("专业复核台 · 功能开发中"),
@@ -56,7 +65,7 @@ def test_status_indicator_snapshot(theme_manager):
     from omnicrawler.gui.widgets.status_indicator import StatusIndicator
 
     for theme in THEMES:
-        theme_manager._app.setProperty("omnicrawlerTheme", theme)
+        theme_manager.apply(theme_manager._app, theme)
         widget = StatusIndicator()
         for state in ("idle", "running", "finished", "error"):
             widget.state = state
@@ -75,7 +84,7 @@ def test_help_tooltip_snapshot(theme_manager, qapp):
     from omnicrawler.gui.widgets.help_tooltip import HelpTooltip
 
     for theme in THEMES:
-        qapp.setProperty("omnicrawlerTheme", theme)
+        theme_manager.apply(qapp, theme)
         widget = HelpTooltip("task.name")
         _snap(widget, "help_tooltip", theme)
 
@@ -91,7 +100,7 @@ def test_home_hero_snapshot(theme_manager, qapp):
     qapp.setProperty("omnicrawlerReducedMotion", True)
     try:
         for theme in THEMES:
-            theme_manager._app.setProperty("omnicrawlerTheme", theme)
+            theme_manager.apply(theme_manager._app, theme)
             widget = AmbientHero()
             _snap(widget, "home_hero", theme)
             widget._timer.stop()  # type: ignore[attr-defined]

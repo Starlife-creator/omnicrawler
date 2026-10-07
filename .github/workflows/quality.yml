@@ -121,6 +121,8 @@ jobs:
       # pyarrow 缺失让 3 条 convertx 用例在 ubuntu/macOS 上失败（2026-09-15 实测）。
       # 依赖范围以 pyproject 为唯一真源，CI 不再手抄版本号。
       - run: python -m pip install -e ".[html,pdf,dev,async-http,gui,tls,storage,ai,document]" cryptography
+      - name: Exercise optional Zstandard decoding on every supported platform
+        run: python -m pip install zstandard==0.25.0
       - if: runner.os == 'Linux'
         name: Install Qt runtime dependencies
         run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libpulse0 fonts-noto-cjk
