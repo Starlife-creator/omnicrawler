@@ -647,6 +647,7 @@ def _run_replay(args: argparse.Namespace) -> None:
     _json(cmd_capsule.replay(
         args.config, run_id=args.run, field=args.field,
         stage=args.stage, capsule_dir=args.capsule_dir, timeout=args.timeout,
+        record_index=args.record_index, response_id=args.response_id, capsule_id=args.capsule_id,
     ))
 
 

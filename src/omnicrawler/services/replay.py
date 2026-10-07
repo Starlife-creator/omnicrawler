@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -44,7 +45,9 @@ stdout = sys.stdout
 if isinstance(stdout, io.TextIOWrapper):
     stdout.reconfigure(encoding="utf-8", errors="replace")
 try:
-    from omnicrawler.extraction.extractors import _apply_rule
+    from omnicrawler.extraction.extractors import _apply_rule, HTMLProcessor, JSONProcessor, TableProcessor
+    from omnicrawler.core.models import CrawlRequest, FetchResult
+    from types import SimpleNamespace
     from omnicrawler.extraction.html_tools import parse_html, select_nodes
 except Exception as exc:  # noqa: BLE001 —— 通道约定：任何失败都输出到 stdout
     print(json.dumps({"status": "error", "message": f"import_failed: {exc}"}))
@@ -52,7 +55,27 @@ except Exception as exc:  # noqa: BLE001 —— 通道约定：任何失败都�
 
 params = json.load(sys.stdin)
 try:
-    html = pathlib.Path(params["html_path"]).read_text(encoding="utf-8", errors="replace")
+    body = pathlib.Path(params["html_path"]).read_bytes()
+    extract_config = params.get("extract_config")
+    if extract_config:
+        mode = str(extract_config.get("mode", "html"))
+        processors = {"html": HTMLProcessor, "json": JSONProcessor, "table": TableProcessor}
+        if mode not in processors:
+            raise ValueError("unsupported_replay_processor")
+        config = SimpleNamespace(section=lambda name: extract_config if name == "extract" else {})
+        url = params.get("base_url") or ""
+        fetched = FetchResult(CrawlRequest(url), url, 200, params.get("headers", {}), body, 0)
+        records = processors[mode](config).process(fetched).records
+        item_index = params.get("item_index", 1)
+        selected = [record for index, record in enumerate(records, 1)
+                    if record.evidence.get("item", index) == item_index]
+        if len(selected) != 1:
+            raise ValueError("record_locator_no_unique_match")
+        record = selected[0]
+        print(json.dumps({"status": "ok", "value": record.data.get(params["field"]),
+                          "trace": record.evidence.get(params["field"])}, ensure_ascii=False, default=str))
+        raise SystemExit(0)
+    html = body.decode("utf-8", errors="replace")
     document = parse_html(html)
     context = document
     item_selector = params.get("item_selector") or ""
@@ -61,7 +84,10 @@ try:
         if not items:
             print(json.dumps({"status": "error", "message": "item_selector_no_match"}))
             raise SystemExit(0)
-        context = items[0]
+        item_index = params.get("item_index", 1)
+        if not 1 <= item_index <= len(items):
+            raise ValueError("record_locator_out_of_range")
+        context = items[item_index - 1]
     value, trace = _apply_rule(context, params["rule"], base_url=params.get("base_url") or "")
     print(json.dumps({"status": "ok", "value": value, "trace": trace}, ensure_ascii=False, default=str))
 except Exception as exc:  # noqa: BLE001 —— 提取异常同样输出到 stdout
@@ -88,6 +114,9 @@ def replay_field(
     store: StateStore,
     capsule_dir: Path | None = None,
     timeout: float = _REPLAY_TIMEOUT,
+    record_index: int | None = None,
+    response_id: int | None = None,
+    capsule_id: str | None = None,
 ) -> dict[str, Any]:
     """限定重放：重放 run 中最近一次提取 ``field`` 的动作。
 
@@ -105,6 +134,10 @@ def replay_field(
         dict：status 为 ok / no_capsule / archive_missing / dom_changed / timeout / error，
         附加 field / stage / run_id / url / dom_hash / value / trace / message 等字段。
     """
+    if not math.isfinite(timeout) or not 0 < timeout <= 300:
+        raise ValueError("重放超时必须在0到300秒之间")
+    if any(value is not None and (type(value) is not int or value < 1) for value in (record_index, response_id)):
+        raise ValueError("记录序号和响应ID必须是正整数")
     base_dir = capsule_dir or (Path(store.path).parent / "capsules")
     capsules = CapsuleStore(base_dir).read(run_id)
     action_type = f"{stage}_field"
@@ -112,9 +145,14 @@ def replay_field(
         capsule
         for capsule in capsules
         if capsule.action_type == action_type and capsule.action_name == field
+        and (record_index is None or capsule.input.get("record_index") == record_index)
+        and (response_id is None or capsule.input.get("response_id") == response_id)
+        and (capsule_id is None or capsule.capsule_id == capsule_id)
     ]
     if not matches:
         return _result("no_capsule", run_id, field, stage)
+    if len({capsule.input.get("record_index", 1) for capsule in matches}) > 1:
+        return _result("ambiguous_record", run_id, field, stage, message="select_record_index_or_capsule_id")
 
     capsule = matches[-1]  # 最近一次提取动作
     input_data = capsule.input if isinstance(capsule.input, dict) else {}
@@ -123,17 +161,32 @@ def replay_field(
     rule = input_data.get("rule")
     expected_hash = output_data.get("dom_hash")
 
-    if not isinstance(rule, dict) or not rule:
+    if not isinstance(expected_hash, str) or len(expected_hash) != 64:
+        return _result("error", run_id, field, stage, message="capsule_hash_missing")
+
+    if not isinstance(rule, (dict, str)) or not rule:
         return _result("error", run_id, field, stage, message="capsule_rule_missing")
 
     # ── 定位归档 raw ──────────────────────────────────────
     rows: list[dict[str, Any]] = []
-    if url:
+    selected_response = input_data.get("response_id")
+    if selected_response is not None:
+        rows = store.rows("SELECT raw_path FROM responses WHERE run_id=? AND id=?", (run_id, selected_response))
+    elif url:
         rows = store.rows(
             "SELECT raw_path FROM responses WHERE run_id=? AND (final_url=? OR url=?) "
-            "ORDER BY id DESC LIMIT 1",
+            "ORDER BY id DESC",
             (run_id, url, url),
         )
+    # Match an older response by content when the capsule predates response IDs.
+    if selected_response is None and len(rows) > 1:
+        for row in rows:
+            path = row.get("raw_path")
+            if path:
+                checked = require_workspace_path(str(path), root=store.path.parent, what="replay 归档 raw_path")
+                if checked.is_file() and _dom_hash(checked.read_bytes()) == expected_hash:
+                    rows = [row]
+                    break
     raw_path = str(rows[0]["raw_path"]) if rows and rows[0].get("raw_path") else ""
     if not raw_path:
         return _result("archive_missing", run_id, field, stage, url=url)
@@ -159,6 +212,10 @@ def replay_field(
             "html_path": raw_path,
             "item_selector": input_data.get("item_selector") or "",
             "rule": rule,
+            "field": field,
+            "item_index": input_data.get("item_index", 1),
+            "extract_config": input_data.get("extract_config"),
+            "headers": input_data.get("headers", {}),
             # 走查 R4.3：字段取值会把相对资源地址补成绝对 URL ⇒ 重放必须拿到同一个 base，
             # 否则"重放值"与"运行值"不一致（同一件事两处口径）。
             "base_url": url or "",
@@ -188,10 +245,10 @@ def replay_field(
             "error", run_id, field, stage, url=url,
             message=f"invalid_subprocess_output: {proc.stdout[:500]!r}",
         )
-    if outcome.get("status") != "ok":
+    if proc.returncode != 0 or not isinstance(outcome, dict) or outcome.get("status") != "ok":
         return _result(
             "error", run_id, field, stage, url=url,
-            message=outcome.get("message", "unknown"),
+            message=outcome.get("message", "unknown") if isinstance(outcome, dict) else "invalid_result_object",
         )
     return _result(
         "ok", run_id, field, stage, url=url, dom_hash=current_hash,

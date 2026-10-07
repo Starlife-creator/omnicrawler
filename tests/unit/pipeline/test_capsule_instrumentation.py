@@ -76,3 +76,42 @@ def test_capsules_written_when_enabled(tmp_path, http_server, monkeypatch) -> No
     assert capsule.input["rule"] == {"selector": "h1"}
     assert capsule.output["value"] == "标题"
     assert capsule.output["dom_hash"] == hashlib.sha256(HTML.encode("utf-8")).hexdigest()
+
+
+def test_capsules_replay_each_record_and_pin_historical_response(tmp_path, http_server, monkeypatch):
+    import sys
+
+    from omnicrawler.core.models import CrawlRequest, FetchResult
+    from omnicrawler.services.replay import replay_field
+    from omnicrawler.state import StateStore
+
+    monkeypatch.setenv("OMNICRAWL_CAPSULE_ENABLED", "true")
+    monkeypatch.setattr(sys.modules[__name__], "HTML", '<article><h2>A</h2></article><article><h2>B</h2></article>')
+    config = _write_config(tmp_path, http_server)
+    config.raw["extract"].update(item_selector="article", fields={"title": {"selector": "h2"}})
+    with Pipeline(config) as pipeline:
+        summary = pipeline.run()
+    run_id = summary["run_id"]
+    capsules = CapsuleStore(config.workspace / "capsules").read(run_id)
+    assert [capsule.output["value"] for capsule in capsules] == ["A", "B"]
+    assert [capsule.input["record_index"] for capsule in capsules] == [1, 2]
+    assert capsules[0].input["record_id"] != capsules[1].input["record_id"]
+    with StateStore(config.workspace / "state.sqlite3") as state:
+        unrelated = config.workspace / "newer.html"
+        unrelated.write_bytes(b"<h2>Newer unrelated response</h2>")
+        request = CrawlRequest(http_server)
+        state.save_response(run_id, FetchResult(request, http_server, 200, {}, unrelated.read_bytes(), 0), str(unrelated))
+        assert replay_field(run_id, "title", store=state)["status"] == "ambiguous_record"
+        result = replay_field(run_id, "title", record_index=2, response_id=capsules[1].input["response_id"], store=state)
+        assert result["status"] == "ok" and result["value"] == "B"
+        assert replay_field(run_id, "title", capsule_id=capsules[0].capsule_id, store=state)["value"] == "A"
+
+
+def test_capsule_capture_reports_capacity_omissions(tmp_path):
+    from omnicrawler.state.capsule_store import Capsule
+
+    store = CapsuleStore(tmp_path, max_lines=1)
+    capture = store.append_many("run", [Capsule("run", "extract_field"), Capsule("run", "extract_field")])
+    assert capture == {"written": 1, "omitted": 1}
+    assert store.append_many("run", [Capsule("run", "extract_field")]) == {"written": 0, "omitted": 1}
+    assert store.count("run") == 1

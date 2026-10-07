@@ -425,18 +425,30 @@ class _PipelineExtract(_PipelineBase):
             store = CapsuleStore(Path(self.state.path).parent / "capsules")
             dom_hash = sha256(result.body).hexdigest()
             item_selector = str(extract_sec.get("item_selector", "") or "")
-            for field_name, rule in fields.items():
-                value: Any = None
-                trace: dict[str, Any] | None = None
-                for record in records:
-                    data = getattr(record, "data", None)
-                    if isinstance(data, dict) and field_name in data:
-                        value = data[field_name]
-                        evidence = getattr(record, "evidence", None)
-                        if isinstance(evidence, dict):
-                            trace = evidence.get(field_name)
-                        break
-                capsule = Capsule(
+            import uuid
+
+            response_rows = self.state.rows(
+                "SELECT id FROM responses WHERE run_id=? AND request_fingerprint=? AND content_sha256=? ORDER BY id DESC LIMIT 1",
+                (run_id, result.request.fingerprint, dom_hash),
+            )
+            response_id = response_rows[0]["id"] if response_rows else None
+            rule_hash = sha256(json.dumps(extract_sec, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+            capsules = []
+            for record_index, record in enumerate(records, 1):
+                data = getattr(record, "data", {})
+                evidence = getattr(record, "evidence", {})
+                if not isinstance(data, dict):
+                    continue
+                item_index = evidence.get("item", record_index) if isinstance(evidence, dict) else record_index
+                record_id = uuid.uuid5(uuid.NAMESPACE_URL, f"{run_id}:{result.request.fingerprint}:{record_index}").hex
+                if isinstance(evidence, dict):
+                    evidence["_provenance"] = {"run_id": run_id, "response_id": response_id,
+                                               "record_id": record_id, "record_index": record_index,
+                                               "item_index": item_index, "content_sha256": dom_hash,
+                                               "rule_hash": rule_hash}
+                for field_name, rule in fields.items():
+                    trace = evidence.get(field_name) if isinstance(evidence, dict) else None
+                    capsule = Capsule(
                     run_id=run_id,
                     action_type="extract_field",
                     action_name=str(field_name),
@@ -444,15 +456,30 @@ class _PipelineExtract(_PipelineBase):
                         "url": result.final_url,
                         "item_selector": item_selector,
                         "rule": rule,
+                        "task_id": self.config.section("project").get("task_id", self.config.project_name),
+                        "response_id": response_id,
+                        "request_fingerprint": result.request.fingerprint,
+                        "record_id": record_id,
+                        "record_index": record_index,
+                        "item_index": item_index,
+                        "extract_config": extract_sec,
+                        "headers": {"content-type": result.headers.get("content-type", "")},
+                        "rule_hash": rule_hash,
                     },
                     output={
                         "dom_hash": dom_hash,
-                        "value": value,
+                        "value": data.get(field_name),
                         "trace": trace,
                     },
                     code_location="omnicrawler.pipeline._extract:_handle_result",
                 )
-                store.append(run_id, capsule)
+                    capsules.append(capsule)
+            capture = store.append_many(run_id, capsules)
+            result.meta["capsule_capture"] = capture
+            self.metrics.increment("omnicrawler_capsules_captured_total", capture["written"])
+            self.metrics.increment("omnicrawler_capsules_omitted_total", capture["omitted"])
+            if capture["omitted"]:
+                LOGGER.warning("证据胶囊达到容量限制，未保存 %s 条字段动作", capture["omitted"])
         except Exception as exc:  # noqa: BLE001 —— 埋点失败不阻断采集
             LOGGER.warning("证据胶囊埋点跳过：%s", exc)
 

@@ -119,7 +119,7 @@ class ReplayTest(unittest.TestCase):
                 raw.write_bytes(b"<html><body>changed</body></html>")
                 self._seed(state, run_id, raw_path=str(raw), html=b"<html><body>changed</body></html>")
                 CapsuleStore(temp / "capsules").append(
-                    run_id, self._capsule(run_id, output={"dom_hash": "deadbeef"})
+                    run_id, self._capsule(run_id, output={"dom_hash": "0" * 64})
                 )
                 result = replay_field(run_id, "title", store=state, capsule_dir=temp / "capsules")
                 self.assertEqual(result["status"], "dom_changed")

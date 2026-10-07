@@ -16,6 +16,7 @@ import json
 import os
 import re
 import shutil
+import threading
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -30,6 +31,7 @@ _RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 
 _CAPSULE_KEEP_DAYS = 7
 _CAPSULE_MAX_LINES = 10_000
+_APPEND_LOCK = threading.RLock()
 
 
 @dataclass(slots=True)
@@ -66,6 +68,16 @@ class CapsuleStore:
         self.max_lines = max_lines
 
     # ── 写 ──────────────────────────────────────────────
+    def append_many(self, run_id: str, capsules: list[Capsule]) -> dict[str, int]:
+        """Bound one run's evidence and serialize concurrent page writers."""
+        self._run_file(run_id)
+        with _APPEND_LOCK:
+            remaining = max(0, self.max_lines - self.count(run_id))
+            accepted = capsules[:remaining]
+            for capsule in accepted:
+                self.append(run_id, capsule)
+        return {"written": len(accepted), "omitted": len(capsules) - len(accepted)}
+
     def append(self, run_id: str, capsule: Capsule) -> Path:
         """原子追加一条胶囊（单行写入）；持久化屏障移至 rotate（FINAL-D5）。
 

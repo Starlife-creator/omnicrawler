@@ -64,6 +64,10 @@ def _timeline_run(store: CapsuleStore, run_id: str, limit: int) -> dict[str, Any
             "timestamp": capsule.timestamp,
             "action": f"{capsule.action_type}:{capsule.action_name}",
             "parent_id": capsule.parent_id,
+            "capsule_id": capsule.capsule_id,
+            "record_id": input_data.get("record_id"),
+            "record_index": input_data.get("record_index"),
+            "response_id": input_data.get("response_id"),
             "url": input_data.get("url"),
             "rule": rule_hint,
             "value": output.get("value"),
@@ -87,6 +91,9 @@ def replay(
     stage: str = "extract",
     capsule_dir: str | None = None,
     timeout: float = 10.0,
+    record_index: int | None = None,
+    response_id: int | None = None,
+    capsule_id: str | None = None,
 ) -> dict[str, Any]:
     """基于胶囊 + 归档 raw 限定重放字段提取。"""
     from ..services.replay import replay_field
@@ -98,6 +105,7 @@ def replay(
         return replay_field(
             run_id, field, stage=stage, store=state,
             capsule_dir=base_dir, timeout=timeout,
+            record_index=record_index, response_id=response_id, capsule_id=capsule_id,
         )
 
 
