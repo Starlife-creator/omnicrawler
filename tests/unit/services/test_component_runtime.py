@@ -130,6 +130,22 @@ def test_backend_rejects_wrong_input_result_and_changed_version(tmp_path, monkey
         backend.recognize(b"\x89PNG\r\n\x1a\nfixture")
 
 
+def test_component_backend_preserves_structured_result(tmp_path, monkeypatch):
+    manager, _key = _install(tmp_path)
+    def execute(command, **kwargs):
+        request = json.loads(Path(command[2]).read_text(encoding="utf-8"))
+        Path(command[4]).write_text(json.dumps({"format": 1, "input_sha256": request["input_sha256"],
+            "text": "A", "confidence": .8, "structure": {
+                "words": [{"text": "A", "confidence": .8, "bbox": [0, 0, 10, 10]}],
+                "metadata": {"coordinate_system": "image_pixels_top_left", "original_mapping": "identity"}}}), encoding="utf-8")
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(subprocess, "run", execute)
+    backend = ComponentOCRBackend({"component": "ocr-paddle", "backend": "paddle"}, manager=manager)
+    result = backend.recognize_rich(b"\x89PNG\r\n\x1a\nfixture")
+    assert result.words[0]["bbox"] == [0, 0, 10, 10]
+    assert result.metadata["original_mapping"] == "identity"
+
+
 def test_production_ocr_factory_and_preflight_use_the_component_resolver(tmp_path, monkeypatch):
     from omnicrawler.core.config import load_config
     from omnicrawler.pdfx import ocr

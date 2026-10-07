@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .config import ProjectConfig
@@ -17,6 +17,7 @@ class CandidatePage:
     score: float
     parse_method: str
     ocr_confidence: float | None
+    ocr_structure: dict[str, Any] = field(default_factory=dict)
 
 
 def score_page(text: str, config: ProjectConfig) -> tuple[float, dict[str, Any]]:
@@ -51,7 +52,7 @@ def score_page(text: str, config: ProjectConfig) -> tuple[float, dict[str, Any]]
 
 def select_candidates(config: ProjectConfig, db: Database, doc_id: str) -> list[CandidatePage]:
     rows = db.fetchall(
-        "SELECT page_no, final_text, parse_method, ocr_confidence FROM pages WHERE doc_id=? ORDER BY page_no",
+        "SELECT page_no, final_text, parse_method, ocr_confidence, ocr_structure_json FROM pages WHERE doc_id=? ORDER BY page_no",
         (doc_id,),
     )
     if not rows:
@@ -105,6 +106,7 @@ def select_candidates(config: ProjectConfig, db: Database, doc_id: str) -> list[
             score=score,
             parse_method=row["parse_method"] or "unknown",
             ocr_confidence=row["ocr_confidence"],
+            ocr_structure=json.loads(row["ocr_structure_json"]) if row["ocr_structure_json"] else {},
         ))
     return result
 

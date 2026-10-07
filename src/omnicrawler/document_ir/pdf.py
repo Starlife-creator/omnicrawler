@@ -60,9 +60,11 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
                             text, confidence = rich_result.text, rich_result.confidence
                             rich_words = list(rich_result.words)
                             rich_tables = list(rich_result.tables)
+                            ocr_geometry = dict(rich_result.metadata)
                         else:
                             text, confidence = backend.recognize(rendered)
                             rich_words, rich_tables = [], []
+                            ocr_geometry = {}
                         if not isinstance(text, str) or text_quality(text)[0] < 1 or text_quality(text)[1] > 0.1:
                             raise ValueError("OCR returned no usable text")
                         if confidence is not None and (type(confidence) not in (int, float) or not math.isfinite(confidence)
@@ -130,6 +132,9 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
                 if source_method == "ocr":
                     locator.update(ocr_backend=type(backend).__name__, ocr_dpi=dpi,
                                    ocr_confidence=confidence)
+                    locator.update(coordinate_system=ocr_geometry.get("coordinate_system", "unknown"),
+                                   original_mapping=ocr_geometry.get("original_mapping", "unknown"),
+                                   original_image_size=ocr_geometry.get("original_image_size"))
                 locator["order_source"] = ordering
                 if kind == "table":
                     document.add_table(value, locator=locator)

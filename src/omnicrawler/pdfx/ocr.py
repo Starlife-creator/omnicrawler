@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import concurrent.futures
 import io
-import json
 import logging
 import math
 import os
@@ -10,12 +9,12 @@ import re
 import statistics
 import time
 from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 from .concurrency import iter_bounded_futures
 from .config import ProjectConfig
 from .database import Database
+from .ocr_result import OCRRichResult as OCRRichResult
 from .parser import render_page, text_quality
 from .utils import clean_text, utcnow
 
@@ -29,21 +28,6 @@ _OCR_MAX_TEMP = float(os.environ.get("OMNICRAWL_OCR_MAX_TEMP", "85"))
 class OCRBackend(Protocol):
     def recognize(self, png_bytes: bytes) -> tuple[str, float | None]: ...
 
-
-@dataclass(slots=True)
-class OCRRichResult:
-    """Text plus source geometry and table semantics from a local OCR engine."""
-
-    text: str
-    confidence: float | None
-    words: list[dict[str, Any]] = field(default_factory=list)
-    blocks: list[dict[str, Any]] = field(default_factory=list)
-    tables: list[dict[str, Any]] = field(default_factory=list)
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    def structure_json(self, *, dpi: int) -> str:
-        return json.dumps({"words": self.words, "blocks": self.blocks, "tables": self.tables,
-                           "metadata": {**self.metadata, "dpi": dpi}}, ensure_ascii=False, allow_nan=False)
 
 
 def recognize_page(backend: OCRBackend, png_bytes: bytes) -> OCRRichResult:
@@ -63,6 +47,21 @@ def recognize_page(backend: OCRBackend, png_bytes: bytes) -> OCRRichResult:
                                   or not math.isfinite(confidence) or not 0 <= confidence <= 1):
         raise ValueError("OCR confidence must be between 0 and 1")
     result.metadata.setdefault("backend", type(backend).__name__)
+    for entries in (result.words, result.blocks):
+        if not isinstance(entries, list) or len(entries) > 100000:
+            raise ValueError("OCR structure exceeds limits")
+        for item in entries:
+            if not isinstance(item, dict):
+                raise ValueError("OCR structure entry must be an object")
+            box = item.get("bbox")
+            if box is not None and (not isinstance(box, (list, tuple)) or len(box) != 4
+                                    or any(type(coord) not in (int, float) or not math.isfinite(coord) for coord in box)
+                                    or box[0] > box[2] or box[1] > box[3]):
+                raise ValueError("OCR structure has invalid geometry")
+    if png_bytes.startswith(b"\x89PNG\r\n\x1a\n") and len(png_bytes) >= 24:
+        import struct
+        result.metadata.setdefault("original_image_size", list(struct.unpack(">II", png_bytes[16:24])))
+    result.metadata.setdefault("original_mapping", "unknown")
     return result
 
 
@@ -79,6 +78,7 @@ class PaddleStructureBackend:
             ) from exc
         self.np = np
         self.Image = Image
+        self.transforms_enabled = bool(config.get("orientation", True)) or bool(config.get("unwarping", False))
         self.pipeline = PPStructureV3(
             lang=config.get("lang", "ch"),
             device=config.get("device", "cpu"),
@@ -116,7 +116,9 @@ class PaddleStructureBackend:
                              blocks=[item for page in pages for item in page.blocks],
                              tables=[item for page in pages for item in page.tables],
                              metadata={"backend": type(self).__name__, "pages": len(pages),
-                                       "coordinate_system": "image_pixels_top_left"})
+                                       "coordinate_system": "ocr_engine_pixels_top_left",
+                                       "original_mapping": "unverified" if self.transforms_enabled else "identity",
+                                       "original_image_size": list(image.size)})
 
 
 def _paddle_page_text(result_json: dict[str, Any], markdown: dict[str, Any]) -> tuple[str, float | None]:
@@ -363,7 +365,8 @@ class TesseractBackend:
         text = "\n".join(text_lines)
         return OCRRichResult(clean_text(text, compress_ws=False), statistics.fmean(scores) if scores else None,
                              words=words, metadata={"backend": type(self).__name__,
-                                                    "coordinate_system": "image_pixels_top_left"})
+                                                    "coordinate_system": "image_pixels_top_left",
+                                                    "original_mapping": "identity"})
 
 
 def create_backend(config: ProjectConfig) -> OCRBackend | None:

@@ -111,7 +111,8 @@ def test_structured_ocr_regions_use_pixels_and_tables_retain_spanned_grid(tmp_pa
     parsed = parse_document(path, {"ocr_pages": [1], "ocr_backend": LocalOCR(), "ocr_dpi": 144})
     locator = parsed.paragraph_locators[0]
     assert locator["bbox"] == [20, 40, 200, 80]
-    assert locator["coordinate_system"] == "image_pixels_top_left"
+    assert locator["coordinate_system"] == "unknown"
+    assert locator["original_mapping"] == "unknown"
     assert locator["ocr_dpi"] == 144
     assert parsed.tables[0] == [["Revenue", ""]]
     assert parsed.metadata["ocr_tables"]["1"][0]["cells"][0]["column_span"] == 2

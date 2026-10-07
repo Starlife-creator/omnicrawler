@@ -4,7 +4,6 @@ import copy
 import hashlib
 import json
 import logging
-import math
 import re
 import threading
 from collections.abc import Callable
@@ -157,13 +156,16 @@ def _observable_confidence(value: dict[str, Any], pages_by_no: dict[int, Candida
     raw = str(value.get("raw_value") or "").strip()
     evidence = str(value.get("evidence") or "").strip()
     page = _page_of(value, pages_by_no)
+    if page is not None and page.parse_method == "ocr":
+        from .ocr_result import field_region
+        region = field_region(raw, page.ocr_structure)
+        score = region.get("confidence")
+        if score is None:
+            return 0.55
+        # Engine recognition scores are observable, not calibrated probabilities.
+        return min(0.98 * score, 0.55) if method == "content_rule" and not value.get("matched_by_pattern") else 0.98 * score
     if method in {"filename_rule", "content_rule"}:
         if value.get("matched_by_pattern"):
-            if method == "content_rule" and page is not None and page.parse_method == "ocr":
-                quality = page.ocr_confidence
-                if quality is None or not math.isfinite(quality) or not 0 <= quality <= 1:
-                    return 0.55
-                return 0.98 * quality
             return 0.98
         # D22：alias 宽松兜底一律低置信（<0.6），进复核
         return 0.55
@@ -175,9 +177,6 @@ def _observable_confidence(value: dict[str, Any], pages_by_no: dict[int, Candida
     ) or bool(evidence and _collapse_ws(evidence) in _collapse_ws(page.text))
     if not supported:
         return 0.55
-    if page.parse_method == "ocr":
-        quality = page.ocr_confidence if page.ocr_confidence is not None else 0.75
-        return min(0.90, 0.65 + 0.25 * quality)
     return 0.92
 
 
@@ -278,7 +277,11 @@ def extract_document(
                     "confidence": confidence,
                     "source_is_ocr": bool(page is not None and page.parse_method == "ocr"),
                     "source_ocr_confidence": page.ocr_confidence if page is not None else None,
+                    "confidence_semantics": "recognition_score_unvalidated" if page is not None and page.parse_method == "ocr" else "heuristic_unvalidated",
                 }
+                if page is not None and page.parse_method == "ocr":
+                    from .ocr_result import field_region
+                    values[name]["ocr_region"] = field_region(str(raw_value or ""), page.ocr_structure)
             record_confidence = sum(confidences) / len(confidences) if confidences else 0.0
             validation = validate_record(config, values, record_confidence)
             record_id = hashlib.sha256(f"{doc_id}:{index}".encode()).hexdigest()

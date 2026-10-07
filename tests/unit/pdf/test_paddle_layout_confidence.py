@@ -47,8 +47,9 @@ def test_missing_or_invalid_ocr_score_never_gets_pattern_certainty(score: float 
 
 
 def test_ocr_pattern_confidence_follows_source_quality() -> None:
-    page = CandidatePage(1, "编号：A-123", 1.0, "ocr", .4)
-    value = {"page_no": 1, "extraction_method": "content_rule", "matched_by_pattern": True}
+    page = CandidatePage(1, "编号：A-123", 1.0, "ocr", .4,
+                         {"words": [{"text": "编号：A-123", "confidence": .4}]})
+    value = {"raw_value": "A-123", "page_no": 1, "extraction_method": "content_rule", "matched_by_pattern": True}
     assert _observable_confidence(value, {1: page}) == pytest.approx(.392)
 
 

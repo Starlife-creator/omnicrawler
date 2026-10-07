@@ -11,6 +11,7 @@ from typing import Any
 
 from ..services.component_manager import ComponentManager
 from ..services.component_runtime import leased_ocr_runtime
+from .ocr_result import OCRRichResult
 
 
 class ComponentOCRBackend:
@@ -28,6 +29,10 @@ class ComponentOCRBackend:
             self.version = runtime.version
 
     def recognize(self, png_bytes: bytes) -> tuple[str, float | None]:
+        result = self.recognize_rich(png_bytes)
+        return result.text, result.confidence
+
+    def recognize_rich(self, png_bytes: bytes) -> OCRRichResult:
         if not png_bytes.startswith(b"\x89PNG\r\n\x1a\n") or len(png_bytes) > 20 * 1024**2:
             raise ValueError("OCR组件只接收大小受限的 PNG 输入")
         with leased_ocr_runtime(self.name, engine=self.engine, manager=self.manager) as runtime:
@@ -66,4 +71,17 @@ class ComponentOCRBackend:
                     raise ValueError("OCR组件结果文本无效")
                 if confidence is not None and (isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not math.isfinite(confidence) or not 0 <= confidence <= 1):
                     raise ValueError("OCR组件结果置信度无效")
-                return text, confidence
+                structure = response.get("structure", {})
+                if not isinstance(structure, dict):
+                    raise ValueError("OCR组件结构无效")
+                values: dict[str, Any] = {}
+                for key in ("words", "blocks", "tables"):
+                    entries = structure.get(key, [])
+                    if not isinstance(entries, list) or len(entries) > 100000 or any(not isinstance(entry, dict) for entry in entries):
+                        raise ValueError("OCR组件结构条目无效")
+                    values[key] = entries
+                metadata = structure.get("metadata", {})
+                if not isinstance(metadata, dict):
+                    raise ValueError("OCR组件结构元数据无效")
+                return OCRRichResult(text, confidence, **values, metadata={**metadata,
+                                     "component": self.name, "component_version": self.version})
