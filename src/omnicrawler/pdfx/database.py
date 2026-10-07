@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS pages (
     needs_ocr INTEGER NOT NULL DEFAULT 0,
     ocr_status TEXT NOT NULL DEFAULT 'not_needed',
     ocr_confidence REAL,
+    ocr_structure_json TEXT,
     candidate_score REAL NOT NULL DEFAULT 0,
     is_candidate INTEGER NOT NULL DEFAULT 0,
     evidence_json TEXT,
@@ -133,6 +134,10 @@ class Database:
         self._migrate_schema()
 
     def _migrate_schema(self) -> None:
+        page_columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(pages)")}
+        if "ocr_structure_json" not in page_columns:
+            self.connection.execute("ALTER TABLE pages ADD COLUMN ocr_structure_json TEXT")
+            self.connection.commit()
         columns = {
             row["name"]
             for row in self.connection.execute("PRAGMA table_info(document_sources)")
@@ -229,7 +234,7 @@ class Database:
                     """UPDATE pages SET ocr_text=NULL, final_text=native_text,
                            parse_method='native',
                            ocr_status=CASE WHEN needs_ocr=1 THEN 'pending' ELSE 'not_needed' END,
-                           ocr_confidence=NULL, candidate_score=0, is_candidate=0,
+                           ocr_confidence=NULL, ocr_structure_json=NULL, candidate_score=0, is_candidate=0,
                            evidence_json=NULL, updated_at=?""",
                     (now,),
                 )

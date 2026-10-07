@@ -84,15 +84,15 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
             page_blocks: list[tuple[str, Any, dict[str, Any]]] = []
             for table_no, table in enumerate(page.get("tables", []), 1):
                 table_locator = {"page": page["page_no"], "page_table": table_no,
-                                 "coordinate_system": "pdf_points_top_left"}
+                                 "coordinate_system": "image_pixels_top_left" if source_method == "ocr" else "pdf_points_top_left"}
                 if "bbox" in table:
                     table_locator["bbox"] = table["bbox"]
                 if source_method == "ocr":
                     table_locator["ocr_structure"] = "富结果"
                 cells = table.get("cells", table)
                 if cells and isinstance(cells, list) and isinstance(cells[0], dict):
-                    max_row = max(int(cell.get("row", 0)) for cell in cells)
-                    max_col = max(int(cell.get("column", 0)) for cell in cells)
+                    max_row = max(int(cell.get("row", 0)) + int(cell.get("row_span", 1)) - 1 for cell in cells)
+                    max_col = max(int(cell.get("column", 0)) + int(cell.get("column_span", 1)) - 1 for cell in cells)
                     rows = [["" for _ in range(max_col + 1)] for _ in range(max_row + 1)]
                     for cell in cells:
                         rows[int(cell.get("row", 0))][int(cell.get("column", 0))] = str(cell.get("text", ""))
@@ -103,7 +103,7 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
                     locator: dict[str, Any] = {"page": page["page_no"], "page_paragraph": paragraph_no}
                     region = _paragraph_region(paragraph, page.get("words", []))
                     if region is not None:
-                        locator.update(bbox=region, coordinate_system="pdf_points_top_left")
+                        locator.update(bbox=region, coordinate_system="image_pixels_top_left" if source_method == "ocr" else "pdf_points_top_left")
                     page_blocks.append(("paragraph", paragraph.strip(), locator))
             page_boundaries = infer_columns(page) if automatic and source_method == "native" else boundaries
             if page_boundaries and source_method == "native":
@@ -154,18 +154,21 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
 
 def _paragraph_region(text: str, words: list[dict[str, Any]]) -> list[float] | None:
     wanted = text.split()
-    tokens = [str(word["text"]) for word in words]
+    token_words = [(token, word) for word in words for token in str(word.get("text", "")).split()]
+    tokens = [token for token, _word in token_words]
     for index in range(max(0, len(tokens) - len(wanted) + 1)):
         if wanted and tokens[index:index + len(wanted)] == wanted:
-            matched = words[index:index + len(wanted)]
+            matched = [word for _token, word in token_words[index:index + len(wanted)]]
             boxes: list[list[Any]] = []
             for word in matched:
                 value = word.get("bbox")
                 if isinstance(value, list) and len(value) == 4:
                     boxes.append(value)
-            if boxes:
+            if len(boxes) == len(matched):
                 return [min(float(box[0]) for box in boxes), min(float(box[1]) for box in boxes),
                         max(float(box[2]) for box in boxes), max(float(box[3]) for box in boxes)]
-            return [min(float(word["x0"]) for word in matched), min(float(word["top"]) for word in matched),
-                    max(float(word["x1"]) for word in matched), max(float(word["bottom"]) for word in matched)]
+            if all(all(key in word for key in ("x0", "top", "x1", "bottom")) for word in matched):
+                return [min(float(word["x0"]) for word in matched), min(float(word["top"]) for word in matched),
+                        max(float(word["x1"]) for word in matched), max(float(word["bottom"]) for word in matched)]
+            return None
     return None

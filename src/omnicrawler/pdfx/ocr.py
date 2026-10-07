@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import io
+import json
 import logging
 import math
 import os
@@ -31,7 +32,7 @@ class OCRBackend(Protocol):
 
 @dataclass(slots=True)
 class OCRRichResult:
-    """Optional structured page output; legacy tuple output remains supported."""
+    """Text plus source geometry and table semantics from a local OCR engine."""
 
     text: str
     confidence: float | None
@@ -39,6 +40,30 @@ class OCRRichResult:
     blocks: list[dict[str, Any]] = field(default_factory=list)
     tables: list[dict[str, Any]] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def structure_json(self, *, dpi: int) -> str:
+        return json.dumps({"words": self.words, "blocks": self.blocks, "tables": self.tables,
+                           "metadata": {**self.metadata, "dpi": dpi}}, ensure_ascii=False, allow_nan=False)
+
+
+def recognize_page(backend: OCRBackend, png_bytes: bytes) -> OCRRichResult:
+    """Use engine structure when available and reject unusable page output."""
+    rich = getattr(backend, "recognize_rich", None)
+    if callable(rich):
+        result = rich(png_bytes)
+        if not isinstance(result, OCRRichResult):
+            raise ValueError("OCR rich result must be OCRRichResult")
+    else:
+        text, confidence = backend.recognize(png_bytes)
+        result = OCRRichResult(text, confidence)
+    if not isinstance(result.text, str) or not result.text.strip():
+        raise ValueError("OCR returned no usable text")
+    confidence = result.confidence
+    if confidence is not None and (type(confidence) not in (int, float)
+                                  or not math.isfinite(confidence) or not 0 <= confidence <= 1):
+        raise ValueError("OCR confidence must be between 0 and 1")
+    result.metadata.setdefault("backend", type(backend).__name__)
+    return result
 
 
 class PaddleStructureBackend:
@@ -90,7 +115,8 @@ class PaddleStructureBackend:
                              words=[item for page in pages for item in page.words],
                              blocks=[item for page in pages for item in page.blocks],
                              tables=[item for page in pages for item in page.tables],
-                             metadata={"backend": type(self).__name__, "pages": len(pages)})
+                             metadata={"backend": type(self).__name__, "pages": len(pages),
+                                       "coordinate_system": "image_pixels_top_left"})
 
 
 def _paddle_page_text(result_json: dict[str, Any], markdown: dict[str, Any]) -> tuple[str, float | None]:
@@ -116,8 +142,10 @@ def _paddle_page_result(result_json: dict[str, Any], markdown: dict[str, Any]) -
             except (TypeError, ValueError):
                 continue
             score = raw_scores[index] if index < len(raw_scores) else None
+            if not all(math.isfinite(coord) for coord in coords):
+                continue
             words.append({"index": index, "text": str(line), "bbox": coords,
-                          "confidence": float(score) if isinstance(score, (int, float)) and math.isfinite(float(score)) else None})
+                          "confidence": float(score) if isinstance(score, (int, float)) and not isinstance(score, bool) and math.isfinite(score) and 0 <= score <= 1 else None})
     blocks: list[dict[str, Any]] = []
     for block in payload.get("parsing_res_list", []) or []:
         if not isinstance(block, dict) or block.get("block_label") != "text":
@@ -143,7 +171,7 @@ def _paddle_page_result(result_json: dict[str, Any], markdown: dict[str, Any]) -
     table_htmls = []
     for table in payload.get("table_res_list", []) or []:
         html = table.get("pred_html", "") if isinstance(table, dict) else ""
-        if isinstance(html, str) and html.strip() and html not in text:
+        if isinstance(html, str) and html.strip() and html not in table_htmls:
             table_htmls.append(html)
     # Older Paddle adapters expose regions as res=[{type: table, res: {html: ...}}].
     regions = result_json.get("res", [])
@@ -151,42 +179,53 @@ def _paddle_page_result(result_json: dict[str, Any], markdown: dict[str, Any]) -
         if isinstance(region, dict) and str(region.get("type", "")).casefold() == "table":
             html = region.get("res", {})
             html = html.get("html", "") if isinstance(html, dict) else html
-            if isinstance(html, str) and html.strip() and html not in text:
+            if isinstance(html, str) and html.strip() and html not in table_htmls:
                 table_htmls.append(html)
     if table_htmls:
-        text += "\n" + _table_html_to_markdown(table_htmls)
+        text += "\n" + _table_html_to_markdown([html for html in table_htmls if html not in text])
     scores = []
+    tables = [{"html": html, "cells": _table_html_to_cells(html)} for html in table_htmls]
     for score in overall.get("rec_scores", []) or []:
         try:
+            if isinstance(score, bool):
+                raise ValueError("boolean is not an OCR score")
             number = float(score)
         except (TypeError, ValueError):
-            return OCRRichResult(clean_text(text), None, words=words, blocks=blocks)
+            return OCRRichResult(clean_text(text), None, words=words, blocks=blocks, tables=tables)
         if not math.isfinite(number) or not 0 <= number <= 1:
-            return OCRRichResult(clean_text(text), None, words=words, blocks=blocks)
+            return OCRRichResult(clean_text(text), None, words=words, blocks=blocks, tables=tables)
         scores.append(number)
     # A strong line cannot hide an uncertain line on the same source page.
     confidence = min(scores) if scores and (not texts or len(scores) == len(texts)) else None
     return OCRRichResult(clean_text(text), confidence, words=words, blocks=blocks,
-                         tables=[{"html": html, "cells": _table_html_to_cells(html)} for html in table_htmls])
+                         tables=tables)
 
 
 def _table_html_to_cells(html: str) -> list[dict[str, Any]]:
     """Keep spans and header semantics; Markdown is only a presentation view."""
     import html as html_lib
     cells: list[dict[str, Any]] = []
+    occupied: set[tuple[int, int]] = set()
     for row_index, row_html in enumerate(re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S | re.I)):
-        for column_index, match in enumerate(re.finditer(r"<(td|th)([^>]*)>(.*?)</\1>", row_html, re.S | re.I)):
+        column_index = 0
+        for match in re.finditer(r"<(td|th)([^>]*)>(.*?)</\1>", row_html, re.S | re.I):
             attrs, raw = match.group(2), match.group(3)
+            row_span, column_span = _html_attr_span(attrs, "rowspan"), _html_attr_span(attrs, "colspan")
+            while any((row_index, column_index + offset) in occupied for offset in range(column_span)):
+                column_index += 1
             value = re.sub(r"<[^>]+>", "", raw)
             cells.append({"row": row_index, "column": column_index, "header": match.group(1).lower() == "th",
-                          "row_span": _html_attr_span(attrs, "rowspan"), "column_span": _html_attr_span(attrs, "colspan"),
-                          "text": html_lib.unescape(value).replace("\\n", " ").strip()})
+                          "row_span": row_span, "column_span": column_span,
+                          "text": html_lib.unescape(value).replace("\n", " ").strip()})
+            occupied.update((row, column) for row in range(row_index, row_index + row_span)
+                            for column in range(column_index, column_index + column_span))
+            column_index += column_span
     return cells
 
 
 def _html_attr_span(attrs: str, name: str) -> int:
-    found = re.search(rf"\b{name}\s*=\s*[\"'](\d+)[\"']", attrs, re.I)
-    return int(found.group(1)) if found else 1
+    found = re.search(rf"\b{name}\s*=\s*[\"']?(\d+)", attrs, re.I)
+    return min(100, max(1, int(found.group(1)))) if found else 1
 
 
 def _table_html_to_markdown(html_parts: list[str]) -> str:
@@ -294,8 +333,9 @@ class TesseractBackend:
             conf: float | None
             try:
                 conf = float(data["conf"][index])
-                if conf >= 0:
-                    scores.append(conf / 100)
+                if math.isfinite(conf) and 0 <= conf <= 100:
+                    conf /= 100
+                    scores.append(conf)
                 else:
                     conf = None
             except (TypeError, ValueError):
@@ -322,7 +362,8 @@ class TesseractBackend:
             text_lines.append("".join(parts))
         text = "\n".join(text_lines)
         return OCRRichResult(clean_text(text, compress_ws=False), statistics.fmean(scores) if scores else None,
-                             words=words, metadata={"backend": type(self).__name__})
+                             words=words, metadata={"backend": type(self).__name__,
+                                                    "coordinate_system": "image_pixels_top_left"})
 
 
 def create_backend(config: ProjectConfig) -> OCRBackend | None:
@@ -414,11 +455,11 @@ _worker_document_path: str | None = None
 
 def _ocr_worker_process(
     args: tuple[str, int, int],
-) -> tuple[str, int, str | None, float | None, int, float, str | None]:
+) -> tuple[str, int, str | None, float | None, int, float, str | None, str | None]:
     """单个 worker 进程的处理函数：渲染 + OCR 识别。
 
     Returns:
-        (doc_id, page_no, text, confidence, printable_chars, garbled_ratio)
+        (doc_id, page_no, text, confidence, printable_chars, garbled_ratio, error, structure_json)
         若失败则 text 为 None。
     """
     global _worker_backend, _worker_document, _worker_document_path
@@ -443,12 +484,14 @@ def _ocr_worker_process(
             _worker_document = open_document(primary_path)
             _worker_document_path = primary_path
         png = render_page(primary_path, page_no, dpi=dpi, document=_worker_document)
-        text, confidence = _worker_backend.recognize(png)
+        result = recognize_page(_worker_backend, png)
+        structure = result.structure_json(dpi=dpi)
+        text, confidence = result.text, result.confidence
         printable, garbled = text_quality(text)
-        return (doc_id, page_no, text, confidence, printable, garbled, None)
+        return (doc_id, page_no, text, confidence, printable, garbled, None, structure)
     except Exception as exc:  # noqa: BLE001
         # D15：worker 把错误信息带回主进程，主进程写 errors 表而非仅标 failed
-        return (doc_id, page_no, None, None, 0, 0.0, str(exc))
+        return (doc_id, page_no, None, None, 0, 0.0, str(exc), None)
 
 
 def ocr_stage(
@@ -651,9 +694,9 @@ def ocr_stage(
                             """
                             UPDATE pages SET ocr_text=?, final_text=?, parse_method='ocr',
                                 printable_chars=?, garbled_ratio=?, ocr_status='done',
-                                ocr_confidence=?, updated_at=? WHERE doc_id=? AND page_no=?
+                                ocr_confidence=?, ocr_structure_json=?, updated_at=? WHERE doc_id=? AND page_no=?
                             """,
-                            (text, text, printable, garbled, confidence, utcnow(), doc_id, page_no),
+                            (text, text, printable, garbled, confidence, results[7], utcnow(), doc_id, page_no),
                         )
                         summary["recognized"] += 1
                     pending_items.discard((doc_id, page_no))
@@ -710,15 +753,17 @@ def _ocr_serial(
         affected_docs.add(doc_id)
         try:
             png = render_page(row["primary_path"], page_no, dpi=dpi)
-            text, confidence = backend.recognize(png)
+            result = recognize_page(backend, png)
+            structure = result.structure_json(dpi=dpi)
+            text, confidence = result.text, result.confidence
             printable, garbled = text_quality(text)
             db.execute(
                 """
                 UPDATE pages SET ocr_text=?, final_text=?, parse_method='ocr',
                     printable_chars=?, garbled_ratio=?, ocr_status='done',
-                    ocr_confidence=?, updated_at=? WHERE doc_id=? AND page_no=?
+                    ocr_confidence=?, ocr_structure_json=?, updated_at=? WHERE doc_id=? AND page_no=?
                 """,
-                (text, text, printable, garbled, confidence, utcnow(), doc_id, page_no),
+                (text, text, printable, garbled, confidence, structure, utcnow(), doc_id, page_no),
             )
             summary["recognized"] += 1
         except Exception as exc:  # noqa: BLE001

@@ -111,7 +111,7 @@ def test_ocr_pool_crash_marks_exact_unfinished_pages(
         def submit(self, _function, args):
             _path, page_no, _dpi = args
             future = concurrent.futures.Future()
-            future.set_result(("worker-id", page_no, f"text-{page_no}", 0.9, 6, 0.0, None))
+            future.set_result(("worker-id", page_no, f"text-{page_no}", 0.9, 6, 0.0, None, "{}"))
             return future
 
     def finish_second_then_crash(items, submit, **_kwargs):

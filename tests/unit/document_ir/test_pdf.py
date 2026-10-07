@@ -90,3 +90,28 @@ def test_selected_ocr_requires_backend_and_preserves_failed_omission(tmp_path):
     assert parsed.metadata["ocr_pages_recognized"] == []
     assert parsed.metadata["ocr_failures"] == [{"page": 1, "error_type": "RuntimeError"}]
     assert parsed.metadata["omitted_pages_needing_ocr"] == [1]
+
+
+def test_structured_ocr_regions_use_pixels_and_tables_retain_spanned_grid(tmp_path):
+    from omnicrawler.pdfx.ocr import OCRRichResult
+
+    path = tmp_path / "scan.pdf"
+    _pdf(path, [""])
+
+    class LocalOCR:
+        def recognize(self, png):
+            pytest.fail("rich structure bypassed")
+
+        def recognize_rich(self, png):
+            return OCRRichResult("Recovered scan.", 0.8,
+                                 words=[{"text": "Recovered scan.", "bbox": [20, 40, 200, 80]}],
+                                 tables=[{"cells": [{"row": 0, "column": 0, "text": "Revenue",
+                                                      "column_span": 2, "row_span": 1}]}])
+
+    parsed = parse_document(path, {"ocr_pages": [1], "ocr_backend": LocalOCR(), "ocr_dpi": 144})
+    locator = parsed.paragraph_locators[0]
+    assert locator["bbox"] == [20, 40, 200, 80]
+    assert locator["coordinate_system"] == "image_pixels_top_left"
+    assert locator["ocr_dpi"] == 144
+    assert parsed.tables[0] == [["Revenue", ""]]
+    assert parsed.metadata["ocr_tables"]["1"][0]["cells"][0]["column_span"] == 2

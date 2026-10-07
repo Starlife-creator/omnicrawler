@@ -63,7 +63,7 @@ def export_text_stage(
             for document in documents:
                 pages = db.fetchall(
                     """SELECT page_no, final_text, parse_method, needs_ocr, ocr_status,
-                              ocr_confidence, printable_chars, garbled_ratio
+                              ocr_confidence, ocr_structure_json, printable_chars, garbled_ratio
                        FROM pages WHERE doc_id=? ORDER BY page_no""",
                     (document["doc_id"],),
                 )
@@ -94,6 +94,8 @@ def export_text_stage(
                                 "printable_chars": page["printable_chars"],
                                 "garbled_ratio": page["garbled_ratio"],
                                 "text": text,
+                                "ocr_structure": json.loads(page["ocr_structure_json"])
+                                if "ocr_structure_json" in page.keys() and page["ocr_structure_json"] else None,
                             }
                             pages_stream.write(json.dumps(row, ensure_ascii=False) + "\n")
                             page_count += 1
