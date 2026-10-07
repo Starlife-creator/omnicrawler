@@ -349,6 +349,9 @@ def build_provider(
     # C10：从 ai.budget.max_tokens_per_request 读取单次最大 token（缺省回退 DEFAULTS）
     raw_budget = ai_config.get("budget")
     budget_section = raw_budget if isinstance(raw_budget, dict) else {}
+    raw_cost = budget_section.get("maximum_cost", budget_section.get("max_cost", 0.0))
+    if not isinstance(raw_cost, (int, float)) or isinstance(raw_cost, bool) or not math.isfinite(raw_cost) or raw_cost < 0:
+        raise ValueError("AI费用预算必须为有限非负数字")
     raw_max = int(budget_section.get("max_tokens_per_request", DEFAULTS["ai"]["budget"]["max_tokens_per_request"]))
     request_max_tokens = raw_max if raw_max > 0 else None
     return OpenAICompatibleProvider(
@@ -360,7 +363,7 @@ def build_provider(
         budget=AIBudget(
             maximum_requests=int(budget_section.get("maximum_requests", 0)),
             maximum_tokens=int(budget_section.get("maximum_tokens", 0)),
-            maximum_cost=float(budget_section.get("maximum_cost", 0.0)),
+            maximum_cost=float(raw_cost),
         ),
     )
 

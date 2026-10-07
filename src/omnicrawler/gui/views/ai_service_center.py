@@ -14,14 +14,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from threading import Event
 from typing import Any
 
 from PySide6.QtCore import QStandardPaths, QThread, Signal
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -36,8 +39,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...core.utils import user_agent
-from ...security.controlled_http import scoped_json_request
+from ...services.ai_diagnostics import discover, estimate, failure_message, test_generation
 from ..i18n import _
 
 
@@ -45,77 +47,63 @@ class AITestWorker(QThread):
     """测试 AI 连接（不在 UI 线程阻塞）。"""
     test_done = Signal(bool, str)
 
-    def __init__(self, base_url: str, api_key: str, model: str, timeout: int, workspace: Path) -> None:
+    def __init__(self, base_url: str, api_key: str, model: str, timeout: int, workspace: Path,
+                 *, generate_options: dict[str, Any] | None = None, allow_private: bool = False) -> None:
         super().__init__()
         self._base_url = base_url
         self._api_key = api_key
         self._model = model
         self._timeout = timeout
         self._workspace = workspace
+        self._generate_options = generate_options
+        self._allow_private = allow_private
+        self._cancel = Event()
+
+    def requestInterruption(self) -> None:  # noqa: N802
+        self._cancel.set()
+        super().requestInterruption()
 
     def run(self) -> None:
         try:
             if self.isInterruptionRequested():
                 return
-            payload = json.dumps({
-                "model": self._model,
-                "messages": [{"role": "user", "content": "Hi"}],
-                "max_tokens": 5,
-            }).encode("utf-8")
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self._api_key}",
-            }
-            data = scoped_json_request(
-                f"{self._base_url}/chat/completions",
-                workspace=self._workspace,
-                purpose="ai",
-                method="POST",
-                headers=headers,
-                body=payload,
-                timeout_seconds=self._timeout,
-                max_response_bytes=1_048_576,
-        user_agent=user_agent("AI connection test"),
-            )
-            model_name = data.get("model", self._model)
+            if self._generate_options is None:
+                models = discover(self._base_url, self._api_key, self._workspace, timeout=self._timeout, allow_private=self._allow_private)
+                message = _("连接可达；所选模型在列表中。生成与结构化输出尚未验证。") if self._model in models else _("连接可达，但所选模型未列出；请核对名称或单独验收生成接口。")
+            else:
+                result = test_generation(self._base_url, self._api_key, self._model, self._workspace,
+                                         timeout=self._timeout, allow_private=self._allow_private,
+                                         cancel_event=self._cancel, **self._generate_options)
+                message = json.dumps(result, ensure_ascii=False, indent=2)
             if not self.isInterruptionRequested():
-                self.test_done.emit(True, _(f"连接成功！模型：{model_name}"))
+                self.test_done.emit(True, message)
         except Exception as exc:
             if not self.isInterruptionRequested():
-                self.test_done.emit(False, _(f"连接失败：{exc}"))
+                self.test_done.emit(False, failure_message(exc))
 
 
 class AIListModelsWorker(QThread):
     """获取可用模型列表。"""
     models_ready = Signal(list, str)
 
-    def __init__(self, base_url: str, api_key: str, timeout: int, workspace: Path) -> None:
+    def __init__(self, base_url: str, api_key: str, timeout: int, workspace: Path, *, allow_private: bool = False) -> None:
         super().__init__()
         self._base_url = base_url
         self._api_key = api_key
         self._timeout = timeout
         self._workspace = workspace
+        self._allow_private = allow_private
 
     def run(self) -> None:
         try:
             if self.isInterruptionRequested():
                 return
-            headers = {"Authorization": f"Bearer {self._api_key}"}
-            data = scoped_json_request(
-                f"{self._base_url}/models",
-                workspace=self._workspace,
-                purpose="ai",
-                headers=headers,
-                timeout_seconds=self._timeout,
-                max_response_bytes=1_048_576,
-        user_agent=user_agent("model discovery"),
-            )
-            models = [str(item.get("id", "")) for item in data.get("data", []) if isinstance(item, dict)]
+            models = discover(self._base_url, self._api_key, self._workspace, timeout=self._timeout, allow_private=self._allow_private)
             if not self.isInterruptionRequested():
                 self.models_ready.emit(models, "")
         except Exception as exc:
             if not self.isInterruptionRequested():
-                self.models_ready.emit([], str(exc))
+                self.models_ready.emit([], failure_message(exc))
 
 
 class AIServiceCenterDialog(QDialog):
@@ -129,6 +117,8 @@ class AIServiceCenterDialog(QDialog):
         workspace: str | Path | None = None,
     ) -> None:
         super().__init__(parent)
+        self._active_workers: list[QThread] = []
+        self._close_pending = False
         self.setAccessibleName(_("AI 服务设置"))
         self._ai_config = ai_config
         self._workspace = Path(workspace).expanduser().resolve() if workspace else None
@@ -202,8 +192,12 @@ class AIServiceCenterDialog(QDialog):
         self._allow_screenshots.setChecked(bool(privacy.get("allow_screenshots", False)))
         self._allow_cookies.setChecked(bool(privacy.get("allow_cookies", False)))
         budget = self._ai_config.get("budget", {})
-        if budget.get("max_cost") is not None:
-            self._cost_limit.setValue(int(budget["max_cost"]))
+        self._cost_limit.setValue(float(budget.get("maximum_cost", budget.get("max_cost", 0))))
+        pricing = provider.get("pricing", {})
+        self._input_rate.setValue(float(pricing.get("input_per_million", 0)))
+        self._output_rate.setValue(float(pricing.get("output_per_million", 0)))
+        self._pricing_confirmed.setChecked("input_per_million" in pricing and "output_per_million" in pricing)
+        self._allow_private_endpoint.setChecked(bool(provider.get("diagnostics_allow_private", False)))
         # B4：回填「最大响应长度」(max_tokens_per_request)，否则重开配置丢失
         if budget.get("max_tokens_per_request") is not None:
             self._max_tokens.setValue(int(budget["max_tokens_per_request"]))
@@ -266,6 +260,9 @@ class AIServiceCenterDialog(QDialog):
         self._list_models_button = QPushButton(_("📋 获取模型列表"))
         self._list_models_button.clicked.connect(self._list_models)
         action_layout.addWidget(self._list_models_button)
+        self._generation_button = QPushButton(_("单次小额生成验收"))
+        self._generation_button.clicked.connect(self._test_generation)
+        action_layout.addWidget(self._generation_button)
 
         self._status_label = QLabel("")
         self._status_label.setWordWrap(True)
@@ -273,6 +270,26 @@ class AIServiceCenterDialog(QDialog):
         provider_layout.addRow("", action_layout)
 
         layout.addWidget(provider_group)
+        self._allow_private_endpoint = QCheckBox(_("允许所选本地或内网模型地址（仍限定端点域与端口）"))
+        self._allow_private_endpoint.setAccessibleName(_("允许本地模型诊断"))
+        layout.addWidget(self._allow_private_endpoint)
+        probe_form = QFormLayout()
+        self._input_rate = QDoubleSpinBox()
+        self._output_rate = QDoubleSpinBox()
+        self._probe_cost = QDoubleSpinBox()
+        for control in (self._input_rate, self._output_rate, self._probe_cost):
+            control.setDecimals(6)
+            control.setRange(0, 1000000)
+        self._probe_cost.setValue(.001)
+        probe_form.addRow(_("输入单价 / 百万 Token"), self._input_rate)
+        probe_form.addRow(_("输出单价 / 百万 Token"), self._output_rate)
+        probe_form.addRow(_("本次生成验收费用上限"), self._probe_cost)
+        self._pricing_confirmed = QCheckBox(_("已核对模型单价，0 表示免费；估算不替代服务商账单"))
+        probe_form.addRow(self._pricing_confirmed)
+        self._structured_probe = QCheckBox(_("本次验证严格 JSON Schema 支持"))
+        probe_form.addRow(self._structured_probe)
+        probe_form.addRow(QLabel(_("连接检查仅读取模型列表。生成验收只发送固定测试文本，最多一次请求、16 输出 Token；可能产生费用。")))
+        layout.addLayout(probe_form)
 
         # 超时和响应设置
         perf_group = QGroupBox(_("性能设置"))
@@ -324,11 +341,12 @@ class AIServiceCenterDialog(QDialog):
         audit_group = QGroupBox(_("审计与成本控制"))
         audit_layout = QFormLayout(audit_group)
 
-        self._cost_limit = QSpinBox()
+        self._cost_limit = QDoubleSpinBox()
+        self._cost_limit.setDecimals(6)
         self._cost_limit.setRange(0, 1000)
         self._cost_limit.setValue(0)
         self._cost_limit.setSpecialValueText(_("无限制"))
-        self._cost_limit.setPrefix("$")
+        self._cost_limit.setSuffix(_("（按模型单价币种）"))
         self._cost_limit.setToolTip(_("单次任务 AI 调用的费用上限；超过后自动回退到本地模式。"))
         audit_layout.addRow(_("费用上限："), self._cost_limit)
 
@@ -449,7 +467,77 @@ class AIServiceCenterDialog(QDialog):
         fallback.mkdir(parents=True, exist_ok=True)
         return fallback
 
+    def _probe_pricing(self) -> dict[str, Any]:
+        if not self._pricing_confirmed.isChecked():
+            return {}
+        previous = self._ai_config.get("providers", {}).get("default", {}).get("pricing", {})
+        return {**previous, "input_per_million": self._input_rate.value(), "output_per_million": self._output_rate.value()}
+
+    def _test_generation(self) -> None:
+        if self._active_workers:
+            return
+        try:
+            prediction = estimate(self._probe_pricing())
+            if prediction["estimated_cost"] is None or self._probe_cost.value() <= 0 or prediction["estimated_cost"] > self._probe_cost.value():
+                raise ValueError(_("请核对单价，并设置大于预估费用的正数验收预算。"))
+        except ValueError as exc:
+            self._status_label.setText(str(exc))
+            return
+        base, key, model = self._base_url.text().strip().rstrip("/"), self._api_key.text().strip(), self._model_name.text().strip()
+        if not base or not model:
+            self._status_label.setText(_("请先填写地址和模型。"))
+            return
+        if QMessageBox.question(self, _("确认小额生成验收"), _("模型：{0}\n一次请求，最多16输出Token\n预估：{1}；本次上限：{2}\n仅发送固定测试文本；费用以服务商账单为准。").format(
+                model, prediction["estimated_cost"], self._probe_cost.value()), QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+            return
+        self._probe_snapshot = (base, key, model)
+        self._test_worker = AITestWorker(base, key, model, self._timeout.value(), self._resolve_workspace(),
+            generate_options={"pricing": self._probe_pricing(), "maximum_cost": self._probe_cost.value(), "structured": self._structured_probe.isChecked()},
+            allow_private=self._allow_private_endpoint.isChecked())
+        self._test_worker.setParent(self)
+        self._test_worker.test_done.connect(self._on_test_complete)
+        self._track_worker(self._test_worker)
+        self._status_label.setText(_("正在进行有预算的生成验收…"))
+        self._test_worker.start()
+
+    def _track_worker(self, worker: QThread) -> None:
+        self._active_workers.append(worker)
+        self._test_button.setEnabled(False)
+        self._generation_button.setEnabled(False)
+        self._list_models_button.setEnabled(False)
+        worker.finished.connect(self._worker_finished)
+
+    def _worker_finished(self) -> None:
+        worker = self.sender()
+        if isinstance(worker, QThread) and worker in self._active_workers:
+            self._active_workers.remove(worker)
+            worker.deleteLater()
+        self._test_button.setEnabled(True)
+        self._generation_button.setEnabled(True)
+        self._list_models_button.setEnabled(True)
+        if self._close_pending and not self._active_workers:
+            self.close()
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        if self._active_workers:
+            self._close_pending = True
+            for worker in self._active_workers:
+                worker.requestInterruption()
+            self._status_label.setText(_("正在取消诊断，结束后关闭。"))
+            event.ignore()
+            return
+        super().closeEvent(event)
+
+    def reject(self) -> None:
+        if self._active_workers:
+            self.close()
+        else:
+            super().reject()
+
     def _test_connection(self) -> None:
+        if self._active_workers:
+            return
         """测试 AI 服务连接。"""
         base_url = self._base_url.text().strip().rstrip("/")
         api_key = self._api_key.text().strip()
@@ -465,18 +553,26 @@ class AIServiceCenterDialog(QDialog):
         self._test_button.setEnabled(False)
         self._status_label.setText(_("正在测试连接…"))
 
-        self._test_worker = AITestWorker(base_url, api_key, model, timeout, self._resolve_workspace())
+        self._probe_snapshot = (base_url, api_key, model)
+        self._test_worker = AITestWorker(base_url, api_key, model, timeout, self._resolve_workspace(), allow_private=self._allow_private_endpoint.isChecked())
         self._test_worker.setParent(self)
         self._test_worker.test_done.connect(self._on_test_complete)
-        self._test_worker.finished.connect(self._test_worker.deleteLater)
+        self._track_worker(self._test_worker)
         self._test_worker.start()
 
     def _on_test_complete(self, success: bool, message: str) -> None:
+        if self._close_pending:
+            return
+        if self._probe_snapshot != (self._base_url.text().strip().rstrip("/"), self._api_key.text().strip(), self._model_name.text().strip()):
+            self._status_label.setText(_("模型配置已变化，请重新检查。"))
+            return
         self._test_button.setEnabled(True)
         icon = "✅" if success else "❌"
         self._status_label.setText(f"{icon} {message}")
 
     def _list_models(self) -> None:
+        if self._active_workers:
+            return
         """获取可用模型列表。"""
         base_url = self._base_url.text().strip().rstrip("/")
         api_key = self._api_key.text().strip()
@@ -491,19 +587,25 @@ class AIServiceCenterDialog(QDialog):
         self._list_models_button.setEnabled(False)
         self._status_label.setText(_("正在获取模型列表…"))
 
-        self._models_worker = AIListModelsWorker(base_url, api_key, timeout, self._resolve_workspace())
+        self._models_snapshot = (base_url, api_key)
+        self._models_worker = AIListModelsWorker(base_url, api_key, timeout, self._resolve_workspace(), allow_private=self._allow_private_endpoint.isChecked())
         self._models_worker.setParent(self)
         self._models_worker.models_ready.connect(self._on_models_ready)
-        self._models_worker.finished.connect(self._models_worker.deleteLater)
+        self._track_worker(self._models_worker)
         self._models_worker.start()
 
     def _on_models_ready(self, models: list[str], error: str) -> None:
+        if self._close_pending:
+            return
+        if self._models_snapshot != (self._base_url.text().strip().rstrip("/"), self._api_key.text().strip()):
+            self._status_label.setText(_("模型地址已变化，请重新获取列表。"))
+            return
         self._list_models_button.setEnabled(True)
         if error:
             self._status_label.setText(f"❌ {error}")
             return
         if models:
-            self._model_name.setText(models[0])
+            # Discovery must not silently replace a model selected by the user.
             models_text = "\n".join(models[:20])
             if len(models) > 20:
                 models_text += _(f"\n… 还有 {len(models) - 20} 个模型")
@@ -515,6 +617,9 @@ class AIServiceCenterDialog(QDialog):
             self._status_label.setText(_("⚠ 未找到可用模型"))
 
     def _save_and_accept(self) -> None:
+        if self._active_workers:
+            self._status_label.setText(_("请等待诊断结束，或取消后关闭。"))
+            return
         """保存设置并关闭对话框。"""
         provider_type = str(self._provider_type.currentData())
         if provider_type == "disabled":
@@ -532,12 +637,15 @@ class AIServiceCenterDialog(QDialog):
                 return
             self._ai_config["mode"] = "enabled"
             self._ai_config["default_provider"] = "default"
-            self._ai_config.setdefault("providers", {})["default"] = {
+            previous = self._ai_config.setdefault("providers", {}).get("default", {})
+            self._ai_config["providers"]["default"] = {**previous,
                 "type": provider_type,
                 "base_url": base_url,
                 "model": model,
                 "api_key": self._api_key.text().strip(),
                 "timeout_seconds": self._timeout.value(),
+                "pricing": self._probe_pricing(),
+                "diagnostics_allow_private": self._allow_private_endpoint.isChecked(),
             }
             # 安全与隐私设置
             self._ai_config["privacy"] = {
@@ -546,8 +654,9 @@ class AIServiceCenterDialog(QDialog):
                 "allow_screenshots": self._allow_screenshots.isChecked(),
                 "allow_cookies": self._allow_cookies.isChecked(),
             }
-            self._ai_config["budget"] = {
+            self._ai_config["budget"] = {**self._ai_config.get("budget", {}),
                 "max_cost": self._cost_limit.value(),
+                "maximum_cost": self._cost_limit.value(),
                 "max_tokens_per_request": self._max_tokens.value(),
                 "log_calls": self._log_ai_calls.isChecked(),
             }

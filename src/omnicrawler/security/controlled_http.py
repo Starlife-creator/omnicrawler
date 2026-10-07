@@ -32,6 +32,7 @@ def scoped_network_config(
     timeout_seconds: float = 30,
     max_response_bytes: int = 1_048_576,
     user_agent: str = user_agent("scoped operation"),
+    allow_private_network: bool = False,
 ) -> AppConfig:
     """Create a strict in-memory config for one user-initiated endpoint.
 
@@ -41,6 +42,8 @@ def scoped_network_config(
     """
 
     parts = urlsplit(endpoint)
+    if type(allow_private_network) is not bool:
+        raise ValueError("allow_private_network必须是布尔值")
     if parts.scheme not in {"http", "https"} or not parts.hostname:
         raise ValueError("受控网络请求必须使用有效的 HTTP(S) 地址")
     if parts.username is not None or parts.password is not None:
@@ -67,7 +70,7 @@ def scoped_network_config(
                 "delay_seconds": 0,
                 "max_redirects": 3,
                 "max_response_bytes": int(max_response_bytes),
-                "allow_private_network": False,
+                "allow_private_network": allow_private_network,
                 "resolve_dns": True,
                 "dns_fail_closed": True,
                 "proxy": "",
@@ -105,6 +108,7 @@ def scoped_fetch(
     timeout_seconds: float = 30,
     max_response_bytes: int = 1_048_576,
     user_agent: str = user_agent("scoped operation"),
+    allow_private_network: bool = False,
 ) -> FetchResult:
     """Fetch one endpoint through the shared policy, budget and audit path."""
 
@@ -115,6 +119,7 @@ def scoped_fetch(
         timeout_seconds=timeout_seconds,
         max_response_bytes=max_response_bytes,
         user_agent=user_agent,
+        allow_private_network=allow_private_network,
     )
     request = CrawlRequest(
         url=endpoint,
