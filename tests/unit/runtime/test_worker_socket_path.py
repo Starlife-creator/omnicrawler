@@ -14,7 +14,6 @@ CI 上 ubuntu 与 macOS 都能复现（挂掉 4 条 GUI 端到端），属**产�
 from __future__ import annotations
 
 import os
-import tempfile
 import uuid
 from pathlib import Path
 
@@ -47,7 +46,9 @@ def test_socket_path_fits_the_budget_even_for_deep_workspaces() -> None:
     用真实的系统临时区做根（显式传 roots 是为了可测；pytest 的 `tmp_path` 本身就深，
     在 Windows 上会超预算 ⇒ 那种情况应由"回退"用例覆盖，而不是这里）。
     """
-    root = Path(tempfile.gettempdir())
+    # Pure path arithmetic: an explicitly short root isolates the socket budget
+    # from pytest/sandbox TEMP overrides. Oversized roots have their own test.
+    root = Path("/short-temp")
     path = _worker_socket_path(DEEP_WORKSPACE, uuid.uuid4().hex, roots=(root,))
     assert len(str(path).encode("utf-8")) <= UNIX_SOCKET_PATH_BUDGET, str(path)
     assert DEEP_WORKSPACE not in path.parents, f"套接字不应落在工作区里：{path}"

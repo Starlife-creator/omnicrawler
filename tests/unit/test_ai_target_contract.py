@@ -27,9 +27,10 @@ async def test_invalid_model_fields_are_not_success(body, monkeypatch):
 async def test_required_fields_checked_after_merge_and_conflicts_need_review():
     ex = AIGraphExtractor(chunk_size=500)
     fields = [FieldDef("title", required=True), FieldDef("price", required=True, field_type="number")]
-    responses = [{"fields": {"title": "A"}, "confidence": 1}, {"fields": {"price": 0}, "confidence": 1}]
+    responses = [{"fields": {"title": "A"}, "confidence": 1, "evidence": {"title": {"quote": "A"}}},
+                 {"fields": {"price": 0}, "confidence": 1, "evidence": {"price": {"quote": "0"}}}]
     with patch.object(ex, "_extract_chunk", new_callable=AsyncMock, side_effect=responses):
-        result = await ex.extract("a" * 600, fields)
+        result = await ex.extract("<p>A</p>" + "a" * 500 + "<p>0</p>", fields)
     assert result["fields"]["price"] == 0
     assert result["review_required"] is False
     with patch.object(ex, "_extract_chunk", new_callable=AsyncMock, return_value={"fields": {"price": 0}}):

@@ -16,6 +16,12 @@ def test_date_events_follow_actual_direction_without_invented_probability(value,
     assert result.confidence is None
 
 
+@pytest.mark.parametrize("value", ["not withdrawn", "未撤回", "取消限制"])
+def test_negative_status_text_cannot_become_a_withdrawal(value):
+    before = TemporalFact("id", "status", "open", "now", "now", "https://a", "e1")
+    assert infer_business_event(before, replace(before, value=value)).event_type == "status_changed"
+
+
 def test_amount_equivalence_requires_explicit_matching_units_and_currency():
     before = TemporalFact("id", "amount", 100, "now", "now", "https://a", "e1", unit="万元", currency="CNY")
     after = replace(before, value=1000000, unit="元")

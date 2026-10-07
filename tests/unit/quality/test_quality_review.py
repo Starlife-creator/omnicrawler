@@ -128,6 +128,20 @@ def test_review_queue_applies_limit_after_exact_quality_filter(tmp_path) -> None
             state.review_queue(run_id, limit=-1)
 
 
+def test_review_queue_limit_retains_high_impact_later_record(tmp_path):
+    with StateStore(tmp_path / "state.sqlite3") as state:
+        run_id = state.start_run("priority", "project.yaml")
+        request = CrawlRequest("https://example.org/")
+        state.save_records(run_id, request, [
+            ExtractedRecord(request.url, "item", {"title": "uncertain"}, {"_quality": {"review_required": True}}),
+            ExtractedRecord(request.url, "item", {"title": "conflict"}, {"_quality": {
+                "review_required": True, "dimensions": {"conflicts": "present"}}}),
+        ])
+        queue = state.review_queue(run_id, limit=1)
+        assert queue[0]["data"]["title"] == "conflict"
+        assert queue[0]["review_priority"] == 3
+
+
 def test_conditional_cross_field_anomaly_and_persisted_rule_stats(tmp_path) -> None:
     fields = {
         "status": {"type": "enum", "values": ["open", "closed"]},

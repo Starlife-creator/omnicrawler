@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import heapq
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -104,6 +105,8 @@ class QualityMixin:
             + " AND ".join(clauses)
         )
         queue: list[dict[str, Any]] = []
+        ranked: list[tuple[int, int, dict[str, Any]]] = []
+        position = 0
         batch_size = 256 if limit is None else max(64, min(1024, limit * 2))
         with self._lock:
             cursor = self.conn.execute(sql, params)
@@ -113,16 +116,28 @@ class QualityMixin:
                     quality = evidence.get("_quality", {}) if isinstance(evidence, dict) else {}
                     if not quality.get("review_required"):
                         continue
-                    queue.append({
+                    priority = (3 if quality.get("dimensions", {}).get("conflicts") == "present" else
+                                2 if quality.get("evidence_issues") or quality.get("validation_errors") or quality.get("missing_required") else 1)
+                    item = {
                         "record_id": row["record_id"],
                         "run_id": row["run_id"],
                         "source_url": row["source_url"],
                         "data": json.loads(row["data_json"]),
                         "evidence": evidence,
-                    })
-                    if limit is not None and len(queue) >= limit:
-                        return queue
-        return queue
+                        "review_priority": priority,
+                    }
+                    position += 1
+                    if limit is None:
+                        queue.append(item)
+                    else:
+                        entry = (priority, -position, item)
+                        if len(ranked) < limit:
+                            heapq.heappush(ranked, entry)
+                        elif entry[:2] > ranked[0][:2]:
+                            heapq.heapreplace(ranked, entry)
+        if limit is not None:
+            return [item for _priority, _position, item in sorted(ranked, reverse=True)]
+        return sorted(queue, key=lambda item: -item["review_priority"])
 
     def edit_record(
         self,
