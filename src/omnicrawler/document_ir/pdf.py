@@ -8,7 +8,7 @@ from typing import Any
 
 from .base import DocumentIR
 from .parsers import register_document_parser
-from .pdf_layout import column_blocks, mark_table_continuations, validate_columns
+from .pdf_layout import column_blocks, infer_columns, mark_table_continuations, validate_columns
 
 
 @register_document_parser(".pdf")
@@ -21,6 +21,9 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
     if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 2000:
         raise ValueError("PDF max_pages must be an integer between 1 and 2000")
     boundaries = validate_columns(options.get("column_boundaries", []))
+    automatic = options.get("auto_columns", False)
+    if type(automatic) is not bool or (automatic and boundaries):
+        raise ValueError("PDF auto_columns must be boolean and cannot accompany column_boundaries")
     selected = options.get("ocr_pages", [])
     if not isinstance(selected, list) or len(selected) > 2000 or any(type(page) is not int or not 1 <= page <= limit for page in selected):
         raise ValueError("PDF ocr_pages must be a bounded list of positive page numbers")
@@ -78,9 +81,13 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
                     if region is not None:
                         locator.update(bbox=region, coordinate_system="pdf_points_top_left")
                     page_blocks.append(("paragraph", paragraph.strip(), locator))
-            if boundaries and source_method == "native":
-                page_blocks = column_blocks(page, boundaries)
-                ordering = "explicit_columns"
+            page_boundaries = infer_columns(page) if automatic and source_method == "native" else boundaries
+            if page_boundaries and source_method == "native":
+                page_blocks = column_blocks(page, page_boundaries)
+                ordering = "inferred_columns_unverified" if automatic else "explicit_columns"
+                if automatic:
+                    document.metadata.setdefault("inferred_columns", {})[str(page["page_no"])] = page_boundaries
+                    document.warnings.append(f"Page {page['page_no']}: inferred column order requires review")
                 if any(block[2].get("spanning_columns") for block in page_blocks):
                     ordering = "explicit_columns_spanning_region_unverified"
                     document.warnings.append(f"Page {page['page_no']}: spanning table order requires review")

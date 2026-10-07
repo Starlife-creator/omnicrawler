@@ -173,6 +173,9 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
         for _i, t in enumerate(_PDF_TEMPLATES):
             self._template_combo.addItem(f"{t['name']} — {t['desc']}", t["id"])
         config_layout.addWidget(self._template_combo)
+        review_btn = QPushButton(_("版式预览与校正..."))
+        review_btn.clicked.connect(self._review_layout)
+        config_layout.addWidget(review_btn)
 
         config_layout.addSpacing(12)
 
@@ -305,6 +308,22 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
 
     # ── 执行 ───────────────────────────────────────────────────
     @Slot()
+    def _review_layout(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        from .pdf_layout_review import PdfLayoutReviewDialog
+
+        index = self._file_list.currentRow()
+        path = self._pdf_files[index] if 0 <= index < len(self._pdf_files) else None
+        if path is None:
+            selected, _filter = QFileDialog.getOpenFileName(self, _("选择待校正 PDF"), "", "PDF (*.pdf)")
+            if not selected:
+                return
+            path = Path(selected)
+        dialog = PdfLayoutReviewDialog(path, self)
+        dialog.show()
+        dialog._load()
+
     def _execute(self) -> None:
         if self._scan_worker is not None or self._close_requested:
             return
