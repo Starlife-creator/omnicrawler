@@ -10,7 +10,12 @@ from typing import Any
 from ..core.models import ExtractedRecord
 from ..core.utils import json_text
 from ..quality.notification_rules import threshold_reason, validate_policy
-from ..quality.semantic_changes import SemanticChange, compare_record_data, semantic_hash
+from ..quality.semantic_changes import (
+    SemanticChange,
+    compare_record_data,
+    entity_checkpoint_key,
+    semantic_hash,
+)
 
 
 def evaluate_policy(connection: sqlite3.Connection, run_id: str, record: ExtractedRecord, *,
@@ -28,9 +33,16 @@ def evaluate_policy(connection: sqlite3.Connection, run_id: str, record: Extract
     # The existing entity index finds the previous observation. Its run then
     # addresses the checkpoint primary key; no scan of all checkpoint JSON.
     previous = connection.execute(
-        "SELECT run_id FROM entity_observations WHERE task_key=? AND comparison_scope=? "
-        "AND record_type=? AND identity=? AND run_id<>? AND (source_url=? OR ?) ORDER BY id DESC LIMIT 1",
-        (task_key, scope, record.record_type, identity, run_id, record.source_url, cross_page),
+        "SELECT o.run_id, u.rowid AS cycle FROM entity_observations o JOIN runs u ON u.run_id=o.run_id "
+        "WHERE o.task_key=? AND comparison_scope=? "
+        "AND record_type=? AND identity=? AND o.run_id<>? AND (source_url=? OR ?) "
+        "UNION ALL SELECT c.run_id, u.rowid AS cycle FROM stage_checkpoints c "
+        "JOIN runs u ON u.run_id=c.run_id JOIN run_identities i ON i.run_id=c.run_id "
+        "WHERE c.stage='record_deletion' AND c.idempotency_key=? AND c.run_id<>? "
+        "AND i.task_key=? AND ? AND json_extract(c.payload_json, '$.comparison_scope')=? "
+        "ORDER BY cycle DESC LIMIT 1",
+        (task_key, scope, record.record_type, identity, run_id, record.source_url, cross_page,
+         entity_checkpoint_key(record.record_type, identity), run_id, task_key, cross_page, scope),
     ).fetchone()
     saved = connection.execute(
         "SELECT payload_json FROM stage_checkpoints WHERE run_id=? AND stage='record_notification_policy' "

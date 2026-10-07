@@ -27,6 +27,11 @@ class SemanticChange:
         return asdict(self)
 
 
+def entity_checkpoint_key(record_type: str, identity: str) -> str:
+    """Address a presence tombstone without scanning checkpoint payloads."""
+    return "entity:" + hashlib.sha256(json.dumps([record_type, identity], ensure_ascii=False).encode()).hexdigest()
+
+
 def normalize_value(value: Any) -> Any:
     if isinstance(value, str):
         return re.sub(r"\s+", " ", value).strip()

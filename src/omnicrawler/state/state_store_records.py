@@ -17,7 +17,12 @@ from typing import TYPE_CHECKING, Any
 
 from ..core.models import CrawlRequest, ExtractedRecord, FetchResult
 from ..core.utils import json_text, utcnow
-from ..quality.semantic_changes import compare_record_data, record_identity, semantic_hash
+from ..quality.semantic_changes import (
+    compare_record_data,
+    entity_checkpoint_key,
+    record_identity,
+    semantic_hash,
+)
 from .notification_queue import enqueue_event
 from .record_notification_policy import evaluate_policy
 
@@ -216,24 +221,33 @@ class RecordsMixin:
             return result
         # Batch query via temporary table + LEFT JOIN (single round-trip)
         self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS _rv_lookup("
-                          "source_url TEXT, record_type TEXT, identity TEXT)")
+                          "source_url TEXT, record_type TEXT, identity TEXT, tombstone_key TEXT)")
         self.conn.execute("DELETE FROM _rv_lookup")
         self.conn.executemany(
-            "INSERT INTO _rv_lookup VALUES(?,?,?)",
-            unique_keys,
+            "INSERT INTO _rv_lookup VALUES(?,?,?,?)",
+            [(*key, entity_checkpoint_key(key[1], key[2])) for key in unique_keys],
         )
         task_key, scope = self._observation_context(run_id)
         rows = self.conn.execute(
             """
-            SELECT l.source_url, l.record_type, l.identity, r.data_json
+            SELECT l.source_url, l.record_type, l.identity, r.data_json, u.rowid AS cycle
             FROM _rv_lookup l
-            LEFT JOIN entity_observations r
+            JOIN entity_observations r
                 ON (r.source_url = l.source_url OR ?)
                AND r.record_type = l.record_type AND r.identity = l.identity
                AND r.run_id <> ? AND r.task_key = ? AND r.comparison_scope = ?
-            ORDER BY r.id DESC
+            JOIN runs u ON u.run_id=r.run_id
+            UNION ALL
+            SELECT l.source_url, l.record_type, l.identity, 'null', u.rowid AS cycle
+            FROM _rv_lookup l JOIN stage_checkpoints c
+              ON c.stage='record_deletion' AND c.idempotency_key=l.tombstone_key
+            JOIN runs u ON u.run_id=c.run_id
+            JOIN run_identities i ON i.run_id=c.run_id
+            WHERE c.run_id<>? AND i.task_key=? AND ?
+              AND json_extract(c.payload_json, '$.comparison_scope')=?
+            ORDER BY cycle DESC
             """,
-            (bool(identity_fields), run_id, task_key, scope),
+            (bool(identity_fields), run_id, task_key, scope, run_id, task_key, bool(identity_fields), scope),
         ).fetchall()
         # Legacy versions are a fallback only for legacy tasks without scoped observations.
         if task_key.startswith("legacy:") and not scope:

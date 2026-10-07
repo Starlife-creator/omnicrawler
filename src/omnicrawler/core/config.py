@@ -151,7 +151,7 @@ DEFAULTS: dict[str, Any] = {
     "updates": {
         "enabled": False, "revisit_completed": False,
         "identity_fields": [],
-        "notifications": {"enabled": False, "webhook_url": "", "webhook_token_ref": ""},
+        "notifications": {"enabled": False, "include_removed": False, "webhook_url": "", "webhook_token_ref": ""},
         "ignored_fields": ["fetched_at", "updated_at", "crawl_time", "timestamp"],
         "detect_same_url_changes": True, "keep_versions": True,
         # ★★ `confirm_missing_runs` 已**删除**（2026-09-30 用户拍板）。
@@ -917,6 +917,12 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         errors.extend(validate_policy(notice.get("policy", {})))
         if type(notice.get("enabled", False)) is not bool:
             errors.append("updates.notifications.enabled必须为布尔值")
+        if type(notice.get("include_removed", False)) is not bool:
+            errors.append("updates.notifications.include_removed必须为布尔值")
+        if notice.get("include_removed") is True and (
+            not config.section("project").get("task_id") or not config.section("updates").get("identity_fields")
+        ):
+            errors.append("删除通知需要稳定task_id和显式identity_fields")
         endpoint = notice.get("webhook_url", "")
         token_ref = notice.get("webhook_token_ref", "")
         if not isinstance(endpoint, str) or not isinstance(token_ref, str):

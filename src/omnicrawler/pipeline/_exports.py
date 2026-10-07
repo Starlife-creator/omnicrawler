@@ -128,6 +128,17 @@ class _PipelineExports(_PipelineBase):
         self._emit("after_run", run_id=run_id, summary=summary)
         self._write_pipeline_summary(summary)
         self.state.finish_run(run_id, status, summary)
+        if status == "succeeded" and self.config.section("updates").get("notifications", {}).get("include_removed") is True:
+            from ..services.record_deletions import finalize_removed
+            removals = finalize_removed(self.config, self.state, run_id)
+            try:
+                summary["notifications"] = dispatch(self.config, egress=self.egress)
+            except Exception as exc:
+                summary["notifications"] = {"status": "unavailable", "error_type": type(exc).__name__}
+            summary["notifications"]["removals"] = removals
+            summary["egress_audit"] = self.egress.audit_status()
+            self._write_pipeline_summary(summary)
+            self.state.finish_run(run_id, status, summary)
         if callback:
             callback("completed", summary)
         return summary
