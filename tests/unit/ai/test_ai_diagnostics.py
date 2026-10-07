@@ -47,6 +47,7 @@ def test_discovery_never_generates_and_bounded_probe_verifies_schema(endpoint, t
     result = generate_probe(base, "", "fixture", tmp_path, pricing=pricing, maximum_cost=.001,
                             allow_private=True, structured=True)
     assert result["status"] == "passed" and result["accounting"]["network_attempts"] == 1
+    assert result["total_tokens"] == 7
     payload = requests[-1][2]
     assert payload["max_tokens"] == 16 and payload["response_format"]["type"] == "json_schema"
     assert result["accounting"]["billing_verified"] is False

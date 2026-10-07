@@ -49,3 +49,34 @@ def test_close_waits_for_owned_probe_and_late_result_is_discarded(tmp_path, monk
     release.set()
     _wait(lambda: not dialog._active_workers, app)
     assert not dialog.isVisible()
+
+
+def test_generation_result_is_readable_and_settings_scroll_in_small_window(tmp_path, monkeypatch):
+    from PySide6.QtTest import QSignalSpy, QTest
+    from PySide6.QtWidgets import QScrollArea
+
+    app = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(module, "test_generation", lambda *_args, **_kwargs: {
+        "accounting": {"network_attempts": 1, "total_tokens": 7, "estimated_cost": .000012},
+        "total_tokens": 7, "structured_output_tested": True})
+    worker = module.AITestWorker("https://example.org/v1", "", "fixture", 20, tmp_path, generate_options={})
+    signal = QSignalSpy(worker.test_done)
+    worker.start()
+    assert worker.wait(5000)
+    app.processEvents()
+    assert signal.count() == 1
+    message = signal.at(0)[1]
+    assert "7 Token" in message and "账单" in message and "JSON Schema" in message
+    assert '"accounting"' not in message and len(message) < 200
+    dialog = module.AIServiceCenterDialog({}, workspace=tmp_path)
+    dialog.resize(760, 580)
+    dialog.show()
+    QTest.qWait(100)
+    scroll = dialog.findChild(QScrollArea)
+    assert scroll is not None
+    scroll.ensureWidgetVisible(dialog._max_tokens)
+    app.processEvents()
+    center = dialog._max_tokens.mapTo(scroll.viewport(), dialog._max_tokens.rect().center())
+    assert scroll.viewport().rect().contains(center)
+    dialog.close()
+    app.processEvents()

@@ -12,7 +12,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from threading import Event
 from typing import Any
@@ -26,6 +25,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTabWidget,
     QVBoxLayout,
@@ -74,7 +75,15 @@ class AITestWorker(QThread):
                 result = test_generation(self._base_url, self._api_key, self._model, self._workspace,
                                          timeout=self._timeout, allow_private=self._allow_private,
                                          cancel_event=self._cancel, **self._generate_options)
-                message = json.dumps(result, ensure_ascii=False, indent=2)
+                accounting = result["accounting"]
+                cost = accounting.get("estimated_cost")
+                charge = str(cost) if cost is not None else _("待核对")
+                tokens = result.get("total_tokens")
+                usage = str(tokens) + " Token" if tokens is not None else _("用量未返回")
+                message = _("生成验收通过：{0}；{1} 次请求，{2}。\n按所填单价估算费用：{3}；账单仍需到服务商核对。").format(
+                    self._model, accounting.get("network_attempts", 1), usage, charge)
+                if result["structured_output_tested"]:
+                    message += "\n" + _("固定 JSON Schema 样例校验通过。")
             if not self.isInterruptionRequested():
                 self.test_done.emit(True, message)
         except Exception as exc:
@@ -266,8 +275,8 @@ class AIServiceCenterDialog(QDialog):
 
         self._status_label = QLabel("")
         self._status_label.setWordWrap(True)
-        action_layout.addWidget(self._status_label, 1)
         provider_layout.addRow("", action_layout)
+        provider_layout.addRow(self._status_label)
 
         layout.addWidget(provider_group)
         self._allow_private_endpoint = QCheckBox(_("允许所选本地或内网模型地址（仍限定端点域与端口）"))
@@ -310,7 +319,12 @@ class AIServiceCenterDialog(QDialog):
         layout.addWidget(perf_group)
 
         layout.addStretch()
-        return widget
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setAccessibleName(_("AI 服务设置，可滚动"))
+        scroll.setWidget(widget)
+        return scroll
 
     def _build_privacy_tab(self) -> QWidget:
         widget = QWidget()

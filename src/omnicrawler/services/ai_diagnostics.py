@@ -58,6 +58,7 @@ def test_generation(base_url: str, api_key: str, model: str, workspace: Path, *,
     if not isinstance(value, dict) or set(value) != {"ok"} or value["ok"] is not True:
         raise ValueError("生成结果未通过固定验收内容校验")
     return {"status": "passed", "model": model, "structured_output_tested": structured, "prediction": prediction,
+            "total_tokens": provider.budget.tokens if result.accounting.get("usage_known") else None,
             "accounting": result.accounting, "payload_scope": "fixed_test_prompt_no_user_content"}
 
 
