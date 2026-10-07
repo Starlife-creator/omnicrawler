@@ -9,6 +9,7 @@ Phase 2 落地：完整证据链展示（原始数据 + 字段表格 + 置信度
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -67,6 +68,12 @@ def _origin_label(origin: str) -> str:
     return {"raw": _("原始值"), "rule": _("规则"), "ai": "AI", "human": _("人工")}.get(origin, origin)
 
 
+def _field_confidence(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if math.isfinite(value) and 0 <= value <= 1 else None
+
+
 def _build_review_item(record: dict[str, Any]) -> ReviewItem:
     """从 JSONL 记录构建 ReviewItem。"""
     record_id = str(record.get("record_id", ""))
@@ -82,7 +89,7 @@ def _build_review_item(record: dict[str, Any]) -> ReviewItem:
                     value=fv.get("normalized_value", fv.get("value", "")),
                     origin=fv.get("extraction_method", fv.get("origin", "raw")),  # type: ignore[arg-type]
                     evidence=str(fv.get("evidence", ""))[:300],
-                    confidence=float(fv.get("confidence", 1.0)),
+                    confidence=_field_confidence(fv.get("confidence")),
                     page=fv.get("page_no", fv.get("page")),
                 ))
     elif isinstance(field_values, dict):
@@ -93,9 +100,18 @@ def _build_review_item(record: dict[str, Any]) -> ReviewItem:
                     value=fv.get("normalized_value", fv.get("value", "")),
                     origin=fv.get("extraction_method", fv.get("origin", "raw")),  # type: ignore[arg-type]
                     evidence=str(fv.get("evidence", ""))[:300],
-                    confidence=float(fv.get("confidence", 1.0)),
+                    confidence=_field_confidence(fv.get("confidence")),
                     page=fv.get("page_no", fv.get("page")),
                 ))
+
+    if not fields and isinstance(record.get("data"), dict):
+        evidence = record.get("evidence", {})
+        for name, value in record["data"].items():
+            trace = evidence.get(name, {})
+            trace = trace if isinstance(trace, dict) else {}
+            fields.append(ReviewField(name=name, value=value, origin="raw",
+                                      evidence=json.dumps(trace, ensure_ascii=False),
+                                      confidence=_field_confidence(trace.get("confidence"))))
 
     return ReviewItem(
         record_id=record_id,
@@ -156,6 +172,11 @@ class EvidenceView(QWidget):
         self._export_md_btn.setToolTip(_("将当前记录的完整证据链导出为 Markdown 文件"))
         self._export_md_btn.clicked.connect(self._export_markdown)
         top_bar.addWidget(self._export_md_btn)
+        self._reprocess_btn = QPushButton(_("复核重提取候选"))
+        self._reprocess_btn.setAccessibleName(_("复核重提取候选"))
+        self._reprocess_btn.clicked.connect(self._review_reprocess)
+        self._reprocess_btn.setEnabled(False)
+        top_bar.addWidget(self._reprocess_btn)
         top_bar.addStretch()
 
         self._record_title = QLabel("")
@@ -386,18 +407,44 @@ class EvidenceView(QWidget):
         """从 JSONL 记录字典加载并展示完整证据链。"""
         self._raw_record = record
         self._current_item = _build_review_item(record)
+        self._reprocess_btn.setEnabled(bool(record.get("record_id")) and self._capsule_workspace is not None)
         self._render()
+
+    def set_workspace(self, workspace: Path) -> None:
+        self._capsule_workspace = workspace
+        self._capsule_store = None
+
+    def _review_reprocess(self) -> None:
+        from .reprocess_review import ReprocessReviewDialog
+        if self._capsule_workspace is None or self._raw_record is None:
+            return
+        database = self._capsule_workspace / "state.sqlite3"
+        if not database.is_file():
+            QMessageBox.information(self, _("无法复核"), _("当前工作区没有运行数据库。"))
+            return
+        try:
+            dialog = ReprocessReviewDialog(database, str(self._raw_record["record_id"]), self)
+        except (ValueError, KeyError) as exc:
+            QMessageBox.information(self, _("没有待确认候选"), str(exc))
+            return
+        try:
+            if dialog.exec() and dialog.result_record is not None:
+                self.show_record(dialog.result_record)
+        finally:
+            dialog.deleteLater()
 
     def show_item(self, item: ReviewItem) -> None:
         """从 ReviewItem 加载并展示。"""
         self._current_item = item
         self._raw_record = None
+        self._reprocess_btn.setEnabled(False)
         self._render()
 
     def clear(self) -> None:
         """清空视图。"""
         self._current_item = None
         self._raw_record = None
+        self._reprocess_btn.setEnabled(False)
         self._record_title.setText("")
         self._info_record_id.setText("")
         self._info_source.setText("")
@@ -494,10 +541,10 @@ class EvidenceView(QWidget):
             self._field_table.setItem(row, 3, evidence_item)
 
             # 置信度（带颜色）
-            conf_text = f"{field.confidence:.0%}" if field.confidence <= 1 else f"{field.confidence:.2f}"
+            conf_text = _("未知") if field.confidence is None else f"{field.confidence:.0%}"
             conf_item = QTableWidgetItem(conf_text)
-            conf_color = _confidence_color(field.confidence)
-            conf_item.setForeground(conf_color)
+            if field.confidence is not None:
+                conf_item.setForeground(_confidence_color(field.confidence))
             conf_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self._field_table.setItem(row, 4, conf_item)
 

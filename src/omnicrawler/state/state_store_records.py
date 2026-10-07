@@ -421,9 +421,21 @@ class RecordsMixin:
                 "SELECT record_id,evidence_json FROM records WHERE run_id=? AND request_fingerprint=?",
                 (run_id, result.request.fingerprint),
             ).fetchall()
+            previous = self.checkpoint(run_id, "reprocess_candidate", result.request.fingerprint)
+            previous_payload = previous["payload"] if previous else {}
+            if previous_payload.get("candidate_id"):
+                self.save_checkpoint(run_id, "reprocess_review_history", previous_payload["candidate_id"], previous_payload)
             self.save_checkpoint(run_id, "reprocess_candidate", result.request.fingerprint, {
+                "candidate_id": uuid.uuid4().hex,
                 "content_sha256": result.content_hash,
                 "preserved_record_ids": [row["record_id"] for row in rows],
+                "previous_review_required": {
+                    row["record_id"]: previous_payload.get("previous_review_required", {}).get(
+                        row["record_id"], json.loads(row["evidence_json"]).get("_quality", {}).get("review_required", False),
+                    ) if row["record_id"] not in previous_payload.get("decisions", {}) else
+                    json.loads(row["evidence_json"]).get("_quality", {}).get("review_required", False)
+                    for row in rows
+                },
                 "records": [{"source_url": r.source_url, "record_type": r.record_type,
                              "data": r.data, "evidence": r.evidence} for r in records],
                 "status": "manual_review_required", "mapping": "unconfirmed",

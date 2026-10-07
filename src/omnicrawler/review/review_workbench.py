@@ -14,7 +14,7 @@ class ReviewField:
     value: Any
     origin: Origin
     evidence: str
-    confidence: float = 1.0
+    confidence: float | None = 1.0
     page: int | None = None
     historical_value: Any = None
 

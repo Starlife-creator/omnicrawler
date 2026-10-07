@@ -1221,6 +1221,8 @@ class MainWindow(QMainWindow):
 
     def _on_record_selected_for_review(self, record: dict) -> None:
         """从结果表格跳转到证据查看器。"""
+        workspace = Path(self._config.workspace).expanduser()
+        self._evidence_view.set_workspace(workspace if workspace.is_absolute() else self._project_root / workspace)
         self._evidence_view.show_record(record)
         self._nav.setCurrentRow(NavIndex.EVIDENCE)  # 导航到证据查看器
 

@@ -628,3 +628,5 @@ Crawl4AI 桥接使用本项目的受控 Playwright 渲染，再离线调用 Craw
 虚拟列表使用 `browser.collection`：必须设置与 `extract.item_selector` 相同的 `item_selector`，以及 `container_selector`、`identity_attribute`。采集保存每个稳定标识对应的 HTML，保留滚动后被 DOM 移除的记录。用 `end_selector` 或 `expected_count` 声明结束条件；`max_steps`、`max_items`、`timeout_ms`、响应字节预算共同限制采集。未达到结束条件、标识内容变化或预算耗尽会标记为部分结果，并阻止发现阶段报告完整成功。空列表只有明确配置 `allow_empty: true` 且满足结束条件时才算完整。
 
 同时设置 `end_selector` 和 `expected_count` 时，两项都必须满足且加载已结束。结束标记出现但记录不足，或采集数量超过声明值，均报告部分结果；不能用结束标记掩盖数量冲突，也不能仅因数量达到就提前结束声明了终点的遍历。
+
+人工修订后的重提取结果可在“结果与复核 → 证据查看器 → 复核重提取候选”确认：显式选择对应候选、查看字段和来源证据差异、填写理由后接受或拒绝。接受替换整条数据（包括移除候选缺失字段），保留编辑历史和决定审计；拒绝保留当前值。陈旧候选与重复映射不能提交，不自动新增／删除记录或发送通知，已有导出文件需重新导出。
