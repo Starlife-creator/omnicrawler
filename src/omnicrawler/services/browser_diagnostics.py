@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import copy
 import importlib.metadata
+import os
+import shutil
 import tempfile
 import threading
 import time
@@ -49,6 +51,11 @@ def probe(config: AppConfig) -> dict[str, Any]:
             versions[name] = "missing"
     report: dict[str, Any] = {"engine": config.section("browser").get("engine", "playwright"), "versions": versions,
                              "fallback": fallback_policy(config), "scope": "owned_local_fixture_no_account_or_task_actions"}
+    if report["engine"] == "selenium":
+        driver = os.environ.get("OMNICRAWL_SELENIUM_DRIVER", "").strip() or shutil.which("chromedriver")
+        if not driver or not Path(driver).is_file():
+            return {**report, "status": "unavailable", "error_type": "LocalDriverMissing", "duration_seconds": 0,
+                    "detail": "未找到本机 ChromeDriver；请选择已安装驱动。兼容性检查不会自动下载组件。"}
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

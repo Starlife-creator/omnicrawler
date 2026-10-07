@@ -46,3 +46,15 @@ def test_probe_isolates_accounts_actions_and_closes_renderer(tmp_path, monkeypat
     assert not result["fallback"]["allowed"]
     assert "PRIVATE" not in str(result)
     assert not owned[0].config.workspace.exists()
+
+
+def test_selenium_probe_without_installed_driver_never_starts_manager(tmp_path, monkeypatch):
+    config = _config(tmp_path)
+    config.raw["browser"]["engine"] = "selenium"
+    monkeypatch.delenv("OMNICRAWL_SELENIUM_DRIVER", raising=False)
+    monkeypatch.setattr("omnicrawler.services.browser_diagnostics.shutil.which", lambda _: None)
+    def unexpected(*_args, **_kwargs):
+        raise AssertionError("A missing driver must not start a renderer or downloader")
+    monkeypatch.setattr("omnicrawler.fetching.browser_fetcher.BrowserFetcher", unexpected)
+    result = probe(config)
+    assert result["status"] == "unavailable" and result["error_type"] == "LocalDriverMissing"

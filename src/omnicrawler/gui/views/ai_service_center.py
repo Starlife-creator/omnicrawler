@@ -454,6 +454,7 @@ class AIServiceCenterDialog(QDialog):
         self._api_key.setEnabled(is_enabled and provider_type != "local")
         self._test_button.setEnabled(is_enabled)
         self._list_models_button.setEnabled(is_enabled)
+        self._generation_button.setEnabled(is_enabled)
 
     def _resolve_workspace(self) -> Path:
         """C43：活动任务工作区为空时回退到用户数据目录，保证探测类操作仍可进行。"""

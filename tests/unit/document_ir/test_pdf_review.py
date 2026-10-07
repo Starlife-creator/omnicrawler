@@ -55,3 +55,16 @@ def test_reviewed_continuation_chain_keeps_original_regions(tmp_path):
     with pytest.raises(ValueError, match="candidates"):
         confirm_table_continuations(original, [(0, 2)])
 
+
+def test_review_does_not_materialize_or_mutate_legacy_source_blocks(tmp_path):
+    import copy
+
+    from omnicrawler.document_ir.base import DocumentIR
+    original = DocumentIR(kind="pdf", source=tmp_path / "legacy.pdf", tables=[[["A", "B"], ["1", "2"]], [["A", "B"], ["3", "4"]]],
+                          table_locators=[{"page": 1}, {"page": 2}],
+                          metadata={"table_continuation_candidates": [{"before_table": 0, "after_table": 1}]})
+    before = copy.deepcopy(original)
+    reviewed = confirm_table_continuations(original, [(0, 1)])
+    assert original == before and original.blocks == []
+    assert len(reviewed.ordered_blocks()) == 1
+

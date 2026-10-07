@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -210,7 +211,7 @@ class BrowserFetcher:
         if not verify_tls:
             LOGGER.warning("浏览器路径 verify_tls=false：TLS 校验已关闭（仅限受控内网站点）")
         started = time.monotonic()
-        driver_path = os.environ.get("OMNICRAWL_SELENIUM_DRIVER", "").strip()
+        driver_path = os.environ.get("OMNICRAWL_SELENIUM_DRIVER", "").strip() or shutil.which("chromedriver") or ""
         if not driver_path:
             from ..core.runtime_paths import application_dir, is_frozen
 

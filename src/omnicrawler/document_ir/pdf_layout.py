@@ -45,6 +45,7 @@ def confirm_table_continuations(document: DocumentIR, pairs: list[tuple[int, int
     if len(set(pairs)) != len(pairs) or any(pair not in allowed for pair in pairs):
         raise ValueError("Only distinct table continuation candidates can be confirmed")
     result = copy.deepcopy(document)
+    original_blocks = list(result.ordered_blocks())
     roots = {index: index for index in range(len(document.tables))}
     for before, after in sorted(pairs):
         root = roots[before]
@@ -61,7 +62,7 @@ def confirm_table_continuations(document: DocumentIR, pairs: list[tuple[int, int
     indexes = {old: new for new, old in enumerate(kept)}
     result.tables = [result.tables[index] for index in kept]
     result.table_locators = [result.table_locators[index] for index in kept]
-    result.blocks = [copy.copy(block) for block in document.ordered_blocks() if block.kind != "table" or roots[block.index] == block.index]
+    result.blocks = [copy.copy(block) for block in original_blocks if block.kind != "table" or roots[block.index] == block.index]
     for block in result.blocks:
         if block.kind == "table":
             block.index = indexes[block.index]
