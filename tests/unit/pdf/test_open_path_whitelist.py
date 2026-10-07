@@ -30,23 +30,25 @@ def test_open_path_rejects_unknown_extension(tmp_path: Path) -> None:
 
 def test_open_path_allows_directory(tmp_path: Path) -> None:
     """目录放行（文件管理器中打开安全）。"""
-    if sys.platform == "win32":
-        pytest.skip("Windows os.startfile 实际拉起资源管理器，跳过")
     # 非 Windows：Popen 命令不真正执行（mock），仅验证不抛白名单异常
     from unittest.mock import patch
 
-    with patch("omnicrawler.pdfx.desktop.subprocess.Popen") as popen:
+    target = "omnicrawler.pdfx.desktop.os.startfile" if sys.platform == "win32" else "omnicrawler.pdfx.desktop.subprocess.Popen"
+    with patch(target) as launch:
         open_path(tmp_path)
-        assert popen.called
+        launch.assert_called_once()
+        if sys.platform == "win32":
+            launch.assert_called_once_with(str(tmp_path.resolve()))
 
 
 def test_open_path_allows_openable_extension(tmp_path: Path) -> None:
     ok = tmp_path / "report.pdf"
     ok.write_bytes(b"%PDF")
-    if sys.platform == "win32":
-        pytest.skip("Windows os.startfile 实际拉起关联程序，跳过")
     from unittest.mock import patch
 
-    with patch("omnicrawler.pdfx.desktop.subprocess.Popen") as popen:
+    target = "omnicrawler.pdfx.desktop.os.startfile" if sys.platform == "win32" else "omnicrawler.pdfx.desktop.subprocess.Popen"
+    with patch(target) as launch:
         open_path(ok)
-        assert popen.called
+        launch.assert_called_once()
+        if sys.platform == "win32":
+            launch.assert_called_once_with(str(ok.resolve()))

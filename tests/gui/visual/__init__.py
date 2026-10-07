@@ -34,8 +34,9 @@ Directory structure::
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-BASELINE_DIR = HERE / "baselines"
+BASELINE_DIR = Path(os.environ.get("OMNI_BASELINE_DIR", str(HERE / "baselines")))
 TOLERANCE = 0.01  # 1% pixel difference threshold
