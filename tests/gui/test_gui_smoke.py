@@ -342,31 +342,38 @@ def test_editor_toolbar_works_from_monitor_home_and_results(monkeypatch):
 
 @pytest.mark.parametrize("terminal,expected", [("succeeded", 100), ("finished", 100),
                                               ("partial_success", 33), ("failed", 33), ("cancelled", 33)])
-def test_terminal_progress_matches_completion_and_ignores_late_updates(tmp_path, monkeypatch, terminal, expected):
-    from PySide6.QtWidgets import QApplication
+def test_terminal_progress_matches_completion_and_ignores_late_updates(terminal, expected):
+    from PySide6.QtWidgets import QApplication, QLabel, QProgressBar, QPushButton, QWidget
 
-    from omnicrawler.gui.main import MainWindow
-    monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
+    from omnicrawler.gui.delegates.run_controller import RunController
     app = QApplication.instance() or QApplication([])
-    window = MainWindow()
-    window._project_root = tmp_path
-    window._rebuild_project_components()
-    window._settings.auto_open_result = False
-    window._settings.sound_enabled = False
-    window._settings.markdown_export_enabled = False
-    # No instance monkeypatch survives deletion of the native Qt object.
+    owner = QWidget()
+    # Exercise the real delegate and progress widget with explicit Qt ownership.
+    # Full MainWindow execution is covered by the native desktop acceptance.
+    window = SimpleNamespace(
+        _progress_bar=QProgressBar(owner), _progress_url_label=QLabel(owner),
+        _status_indicator=SimpleNamespace(state="idle"), _monitor_status=SimpleNamespace(state="idle"),
+        _status_text=QLabel(owner), _monitor_status_text=QLabel(owner),
+        _run_btn=QPushButton(owner), _stop_btn=QPushButton(owner), _pause_btn=QPushButton(owner),
+        _task_elapsed_timer=None, _running_task_id=None, _config=SimpleNamespace(task_id="fixture"),
+        _task_history=SimpleNamespace(update_record=lambda *_: None),
+        _settings=SimpleNamespace(auto_open_result=False, sound_enabled=False, markdown_export_enabled=False),
+        _auto_load_results=lambda: None, _tray_icon=None,
+        _resource_monitor=SimpleNamespace(set_pid=lambda *_: None), _task_start_time=None,
+    )
+    controller = RunController(window)
     try:
-        window._run_delegate.on_task_state_changed("running")
-        window._run_delegate.on_progress(33, "https://example.test/last")
-        window._run_delegate.on_task_state_changed(terminal)
+        controller.on_task_state_changed("running")
+        controller.on_progress(33, "https://example.test/last")
+        controller.on_task_state_changed(terminal)
         assert window._progress_bar.maximum() == 100 and window._progress_bar.value() == expected
-        window._run_delegate.on_progress(20, "https://example.test/late")
+        controller.on_progress(20, "https://example.test/late")
         assert window._progress_bar.value() == expected
         assert window._progress_url_label.text() == "https://example.test/last"
-        window._run_delegate.on_task_state_changed("running")
-        window._run_delegate.on_progress(12, "https://example.test/restarted")
+        controller.on_task_state_changed("running")
+        controller.on_progress(12, "https://example.test/restarted")
         assert window._progress_bar.value() == 12
     finally:
-        window.close()
-        window.deleteLater()
+        owner.close()
+        owner.deleteLater()
         app.processEvents()
