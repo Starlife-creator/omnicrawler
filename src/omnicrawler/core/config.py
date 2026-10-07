@@ -214,6 +214,7 @@ DEFAULTS: dict[str, Any] = {
         "retention": {"raw_days": None, "artifacts_days": None, "diagnostics_days": None},
     },
     "plugins": {
+        "workspace_paths": [],
         "paths": ["plugins/", "plugins_installed/"], "allow_external_paths": False, "fail_open": False,
         "hook_fail_open": False,
         # 旧版全局权限池仅用于单插件迁移兼容；新授权必须绑定插件与载荷哈希。
@@ -909,6 +910,11 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     enabled_formats = [key for key in ("jsonl", "csv", "xlsx") if bool(outputs.get(key, False))]
     if not enabled_formats and not outputs.get("plugin_exporters"):
         warnings.append("outputs未启用任何导出格式（jsonl/csv/xlsx）或 plugin_exporters，运行只会产出辅助/状态文件")
+    from .workspace_paths import declared_paths
+    try:
+        declared_paths(config.raw)
+    except ValueError as exc:
+        errors.append(str(exc))
     notice = config.section("updates").get("notifications", {})
     if not isinstance(notice, dict):
         errors.append("updates.notifications必须是对象")

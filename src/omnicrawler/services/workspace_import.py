@@ -21,6 +21,7 @@ from ..core.archive_security import (
     validate_zip_archive,
 )
 from ..core.utils import utcnow
+from ..core.workspace_paths import declared_paths
 from ..security.security_audit import scan_config_text
 from ..state.migrations import SCHEMA_VERSION
 
@@ -129,11 +130,16 @@ def import_package(package: Path, destination: Path, *, expected_sha256: str = "
             raise ValueError("工作区原位置必须是绝对路径")
         unresolved: list[dict[str, str]] = []
         final_workspace = destination / "workspace"
+        references = declared_paths(raw)
         for section_name, field in (("source", "query_file"), ("source", "spider_file"), ("download", "output_dir")):
             section = raw.get(section_name, {})
             value = section.get(field) if isinstance(section, dict) else None
-            if not isinstance(value, str) or not value:
-                continue
+            if isinstance(value, str) and value:
+                label = section_name + "." + field
+                if not any(node is section and key == field for node, key, _, _ in references):
+                    references.append((section, field, label, "directory" if field == "output_dir" else "file"))
+        for section, reference_key, label, kind in references:
+            value = section[reference_key]
             candidate = value
             original_root = str(manifest.get("project_root_origin") or "")
             if original_root and not PureWindowsPath(value).is_absolute() and not PurePosixPath(value).is_absolute():
@@ -141,11 +147,11 @@ def import_package(package: Path, destination: Path, *, expected_sha256: str = "
                 candidate = str(path_type(original_root) / value)
             relative = _relative(candidate, origin) if origin else None
             if relative is not None:
-                section[field] = str(Path("workspace").joinpath(*relative))
-                if field != "output_dir" and not workspace.joinpath(*relative).is_file():
-                    unresolved.append({"config_field": section_name + "." + field, "reason": "referenced_file_not_in_package"})
+                section[reference_key] = str(Path("workspace").joinpath(*relative))
+                if kind == "file" and not workspace.joinpath(*relative).is_file():
+                    unresolved.append({"config_field": label, "reason": "referenced_file_not_in_package"})
             else:
-                unresolved.append({"config_field": section_name + "." + field, "reason": "external_or_unknown_origin"})
+                unresolved.append({"config_field": label, "reason": "external_or_unknown_origin"})
         for database in workspace.rglob("*"):
             if not database.is_file():
                 continue

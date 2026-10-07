@@ -119,3 +119,64 @@ def test_relative_config_files_are_rebound_and_external_files_need_review(tmp_pa
     assert not result["review_required"]
     config = load_config(destination / "config.yaml")
     assert config.resolve(config.section("download")["output_dir"]) == config.workspace / "attachments"
+
+
+def test_declared_plugin_paths_relocate_without_loading_plugin_code(tmp_path):
+    import yaml
+    manager, package, _ = _package(tmp_path)
+    source = manager.root / "raw/plugin fixture.txt"
+    source.write_text("plugin input", encoding="utf8")
+    raw = yaml.safe_load(manager.config.path.read_text(encoding="utf8"))
+    raw["custom_plugin"] = {"inputs": [str(source)], "output": str(manager.root / "output/plugin"),
+                            "external": "C:/outside/private.txt", "url": "https://example.test/file.txt"}
+    raw["plugins"] = {"workspace_paths": [
+        {"pointer": "/custom_plugin/inputs/0", "kind": "file"},
+        {"pointer": "/custom_plugin/output", "kind": "directory"},
+        {"pointer": "/custom_plugin/external", "kind": "file"},
+    ]}
+    manager.config.path.write_text(yaml.safe_dump(raw), encoding="utf8")
+    manager = WorkspaceManager(load_config(manager.config.path))
+    manager.package(package, kind="complete")
+    destination = tmp_path / "plugin relocation"
+    report = WorkspaceManager.import_package(package, destination)
+    config = load_config(destination / "config.yaml")
+    settings = config.section("custom_plugin")
+    assert config.resolve(settings["inputs"][0]).is_relative_to(config.workspace)
+    assert config.resolve(settings["inputs"][0]).read_text(encoding="utf8") == "plugin input"
+    assert config.resolve(settings["output"]) == config.workspace / "output/plugin"
+    assert settings["url"] == raw["custom_plugin"]["url"]
+    assert settings["external"] == raw["custom_plugin"]["external"]
+    assert report["review_required"]
+    assert {"config_field": "/custom_plugin/external", "reason": "external_or_unknown_origin"} in report["unresolved_references"]
+
+
+@pytest.mark.parametrize("declaration", [
+    {"pointer": "/project/root", "kind": "directory"},
+    {"pointer": "/plugins/workspace_paths", "kind": "file"},
+    {"pointer": "/custom_plugin/inputs/00", "kind": "file"},
+    {"pointer": "/custom_plugin/inputs/9", "kind": "file"},
+    {"pointer": "/custom_plugin/missing", "kind": "file"},
+    {"pointer": "/custom_plugin/inputs", "kind": "file"},
+    {"pointer": "/custom_plugin/~2", "kind": "file"},
+    {"pointer": "/custom_plugin/inputs/0", "kind": []},
+])
+def test_invalid_plugin_path_declarations_fail_closed(declaration):
+    from omnicrawler.core.workspace_paths import declared_paths
+    raw = {"project": {"root": "."}, "custom_plugin": {"inputs": ["work/input"]},
+           "plugins": {"workspace_paths": [declaration]}}
+    with pytest.raises(ValueError, match="workspace_paths"):
+        declared_paths(raw)
+
+
+def test_pointer_escaping_and_duplicate_bounds():
+    from omnicrawler.core.workspace_paths import declared_paths
+    item = {"pointer": "/custom_plugin/a~1b~0c", "kind": "file"}
+    raw = {"custom_plugin": {"a/b~c": "work/raw.txt"}, "plugins": {"workspace_paths": [item]}}
+    node, key, _, _ = declared_paths(raw)[0]
+    assert node is raw["custom_plugin"] and key == "a/b~c"
+    raw["plugins"]["workspace_paths"] = [item, item]
+    with pytest.raises(ValueError, match="重复"):
+        declared_paths(raw)
+    raw["plugins"]["workspace_paths"] = [item] * 129
+    with pytest.raises(ValueError, match="128"):
+        declared_paths(raw)

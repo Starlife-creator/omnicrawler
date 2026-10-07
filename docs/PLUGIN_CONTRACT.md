@@ -245,3 +245,19 @@ PLUGIN_METADATA = {
 - 输出必须可 JSON 序列化；证据不得包含 Token/Cookie。
 - 插件应提供本地 fixture 集成测试和明确 fallback；发布前运行 `plugins audit --local .` 和
   `pytest -m plugin_contract`。本地与 CI 使用同一套契约检查。
+
+### 工作区文件路径搬迁声明
+
+自定义插件配置可在任务 YAML 的 `plugins.workspace_paths` 中声明 JSON Pointer。导入完整工作区包时，只重绑定指向原工作区内部的路径；外部引用或缺失文件进入搬迁报告，导入过程不执行插件代码。声明支持字典键和数组索引（`~0` / `~1` 转义），最多128项，每项必须为非空路径字段。项目根、工作区根和声明自身不可作为目标。工作区外文件不会自动打包，凭据仍使用安全引用。
+
+```yaml
+plugins:
+  workspace_paths:
+    - pointer: /custom_plugin/inputs/0
+      kind: file
+    - pointer: /custom_plugin/output
+      kind: directory
+custom_plugin:
+  inputs: [work/default/raw/input.json]
+  output: work/default/output/plugin
+```
