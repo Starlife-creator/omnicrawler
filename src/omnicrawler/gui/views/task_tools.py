@@ -81,6 +81,7 @@ class TaskToolsDialog(QDialog):
         self.run_id.setAccessibleName(_("运行 ID，留空查看当前任务最近运行"))
         workflow.addRow(_("运行 ID（可选）"), self.run_id)
         self._button(workflow, _("查看当前流程与实际运行"), lambda: self._launch("workflow", {"run_id": self.run_id.text().strip()}))
+        self._button(workflow, _("检查本机浏览器兼容性"), lambda: self._launch("browser:probe", {}))
         self.workflow_steps = QListWidget()
         self.workflow_steps.setAccessibleName(_("任务流程步骤"))
         workflow.addRow(self.workflow_steps)
@@ -445,6 +446,9 @@ class TaskToolsDialog(QDialog):
                                               "confirmed": operation != "preview", "preview_binding": self._binding()})
 
     def _done(self, name: str, arguments: dict[str, Any], result: dict[str, Any]) -> None:
+        if name == "browser:probe":
+            self.result_view.setPlainText(json.dumps(result, ensure_ascii=False, indent=2))
+            return
         if self._close_pending:
             return
         if not self._same_task():

@@ -52,6 +52,47 @@ def test_bidi_guard_installed_by_default(tmp_path: Path, monkeypatch) -> None:
     assert network.handler is not None
 
 
+def test_guard_subscription_is_already_inside_owned_driver_watchdog(tmp_path, monkeypatch):
+    import threading
+
+    webdriver = pytest.importorskip("selenium.webdriver")
+
+    from omnicrawler.core.models import CrawlRequest
+    from omnicrawler.fetching.browser_fetcher import SeleniumRuntimeUnavailableError
+
+    stopped = threading.Event()
+    driver = SimpleNamespace(service=SimpleNamespace(process=SimpleNamespace(pid=2147483647), stop=stopped.set),
+                             quit=lambda: None)
+    monkeypatch.setattr(webdriver, "Chrome", lambda **_kwargs: driver)
+    config = load_config(_config(tmp_path))
+    config.raw["http"]["selenium_watchdog_seconds"] = 1
+    fetcher = BrowserFetcher(config)
+    def hung_guard(*_args, **_kwargs):
+        assert stopped.wait(3), "guard setup was outside the watchdog"
+        raise RuntimeError("owned driver interrupted")
+    monkeypatch.setattr(fetcher, "_install_selenium_guard", hung_guard)
+    with pytest.raises(SeleniumRuntimeUnavailableError):
+        fetcher._selenium(CrawlRequest("https://example.org/"))
+    assert stopped.is_set()
+
+
+def test_persistent_startup_failure_never_retries_with_blank_account(tmp_path, monkeypatch):
+    webdriver = pytest.importorskip("selenium.webdriver")
+    from omnicrawler.core.models import CrawlRequest
+
+    calls = []
+    def unavailable(**kwargs):
+        calls.append(list(kwargs["options"].arguments))
+        raise RuntimeError("profile is occupied")
+    monkeypatch.setattr(webdriver, "Chrome", unavailable)
+    config = load_config(_config(tmp_path))
+    config.raw["browser"]["persist_profile"] = True
+    fetcher = BrowserFetcher(config)
+    with pytest.raises(RuntimeError, match="未切换到空白会话"):
+        fetcher._selenium(CrawlRequest("https://example.org/"))
+    assert len(calls) == 1 and any(argument.startswith("--user-data-dir=") for argument in calls[0])
+
+
 def test_bidi_guard_permission_error_blocks_request(tmp_path: Path, monkeypatch) -> None:
     fetcher = BrowserFetcher(load_config(_config(tmp_path)))
 

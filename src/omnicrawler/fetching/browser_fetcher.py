@@ -212,7 +212,7 @@ class BrowserFetcher:
         started = time.monotonic()
         driver_path = os.environ.get("OMNICRAWL_SELENIUM_DRIVER", "").strip()
         if not driver_path:
-            from ...core.runtime_paths import application_dir, is_frozen
+            from ..core.runtime_paths import application_dir, is_frozen
 
             if is_frozen():
                 expected = application_dir() / "runtime" / "selenium" / "chromedriver.exe"
@@ -227,16 +227,9 @@ class BrowserFetcher:
         service = Service(executable_path=driver_path) if driver_path else Service()
         try:
             driver = webdriver.Chrome(service=service, options=options)
-        except Exception:
-            # P2-2：profile_dir 下 Chromium 可能残留 SingletonLock，
-            # 回退到临时 profile（放弃持久化）保证主流程仍可运行
+        except Exception as exc:
             if profile_dir is not None:
-                # P2-2：arguments 是只读 property（getter 返回内部列表引用），
-                # 原地清掉 --user-data-dir= 以放弃 profile 持久化。
-                options.arguments[:] = [
-                    a for a in options.arguments if not a.startswith("--user-data-dir=")
-                ]
-                driver = webdriver.Chrome(service=service, options=options)
+                raise RuntimeError("持久化浏览器启动失败，请关闭占用此任务会话的窗口、检查驱动，再重新登录后恢复；未切换到空白会话") from exc
             else:
                 raise
         guard_failed = threading.Event()
@@ -262,8 +255,6 @@ class BrowserFetcher:
                         pass
                 driver.service.stop()
         try:
-            self._install_selenium_guard(driver, failure=guard_failed, stop_driver=stop_owned_driver)
-            driver.set_page_load_timeout(float(self.config.section("http").get("timeout_seconds", 60)))
             # 看门狗：BiDi 拦截在个别平台上 continue_request 可能超时挂起（selenium
             # 4.47 + Chrome 151 组合问题），导航/actions 不返回。driver.quit() 也走
             # WebSocket 同样阻塞——超时必须杀 chromedriver 进程（service.stop）强制
@@ -275,6 +266,8 @@ class BrowserFetcher:
                 on_timeout=stop_owned_driver,
             )
             with watchdog:
+                self._install_selenium_guard(driver, failure=guard_failed, stop_driver=stop_owned_driver)
+                driver.set_page_load_timeout(float(self.config.section("http").get("timeout_seconds", 60)))
                 # BiDi 订阅竞态：guard 注册后首导航偶发命令超时（Windows/macOS CI
                 # 实测），driver 通常仍存活——同 driver 重试一次通常可过。
                 try:
@@ -293,7 +286,7 @@ class BrowserFetcher:
                 )
             self.egress.authorize(final_url, purpose="browser", count_request=False)
         except Exception as exc:
-            if guard_failed.is_set():
+            if guard_failed.is_set() or ("watchdog" in locals() and watchdog.fired):
                 raise SeleniumRuntimeUnavailableError("Selenium BiDi拦截命令未完成") from exc
             raise
         finally:

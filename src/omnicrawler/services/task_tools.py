@@ -45,6 +45,10 @@ def execute(action: TaskAction) -> dict[str, Any]:
     if hashlib.sha256(action.config_path.read_bytes()).hexdigest() != action.config_sha256:
         raise ValueError("已保存配置已变化，请重新打开任务工具")
     args = action.arguments
+    if action.name == "browser:probe":
+        from .browser_diagnostics import probe
+
+        return probe(load_config(action.config_path))
     if action.name.startswith("references:"):
         from . import workspace_references
 
