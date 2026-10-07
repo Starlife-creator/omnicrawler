@@ -191,6 +191,15 @@ GATES: tuple[Gate, ...] = (
         sets=frozenset({"tests"}),
         description="测试套件（CI 以 coverage run 形式执行同一入口）",
     ),
+    Gate(
+        name="check_visual_regression",
+        args=("tools/check_visual_regression.py",),
+        sets=frozenset({"tests"}),
+        description="同一渲染环境下比较已审查提交与当前界面，空集合或跳过判失败",
+        script="tools/check_visual_regression.py",
+        needs_args=("output",),
+        ci_note="需提供新的证据目录；本地直接执行 --output <新目录>，CI 的 GUI 作业提供目录并上传截图。",
+    ),
     # ---------- coverage ----------
     Gate(
         name="check_coverage_gates",

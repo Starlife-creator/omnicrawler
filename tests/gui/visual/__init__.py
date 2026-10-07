@@ -7,6 +7,14 @@ Prerequisites::
 
     pip install omnicrawler-platform[gui] Pillow
 
+CI 与本地正式验收优先使用固定参考源码门禁（无需预装基线）：
+
+    python tools/check_visual_regression.py --output <新的证据目录>
+
+门禁从 constraints/visual-ref.txt 读取已审查提交，在相同环境生成参考，再比较
+当前界面；CI 的 GUI 作业强制执行并上传证据。OMNI_BASELINE_DIR 可指定独立
+参考目录；不要将来源或渲染环境未知的旧基线作为最终验收依据。
+
 ★ **基线不随源码包分发**（`baselines/` 不在版本控制里，因为像素结果与平台字体/
 渲染器绑定，入仓会让 CI 变成随机红）。因此**新检出会整块 skip** 本模块 ——
 这不是"通过"，是"没跑"。要做视觉回归请先在本机生成基线：
