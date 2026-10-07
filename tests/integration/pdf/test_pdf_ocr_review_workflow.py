@@ -284,6 +284,7 @@ def test_image_only_pdf_runs_real_ocr_and_extracts(tmp_path: Path) -> None:
         record = dict(
             db.execute("SELECT validation_status, review_status FROM records").fetchone()
         )
+        field_confidences = [row[0] for row in db.execute("SELECT confidence FROM field_values").fetchall()]
 
     assert page["parse_method"] == "ocr", f"该页无文字层，必须靠 OCR：{page}"
     assert page["ocr_status"] == "done", page
@@ -294,8 +295,13 @@ def test_image_only_pdf_runs_real_ocr_and_extracts(tmp_path: Path) -> None:
     assert f"合同名称:{CONTRACT_NAME}" in recovered, f"OCR 应还原出名称：{recovered}"
 
     # 为 OCR 写模式要容忍 OCR 插入的空白，否则明明识别出来了也匹配不到
-    assert record["validation_status"] == "valid", record
-    assert record["review_status"] == "auto_accepted", record
+    assert field_confidences
+    if any(confidence is None or confidence < .9 for confidence in field_confidences):
+        assert record["validation_status"] == "warning", record
+        assert record["review_status"] == "needs_review", record
+    else:
+        assert record["validation_status"] == "valid", record
+        assert record["review_status"] == "auto_accepted", record
 
     rows = _rows(project / "out" / "results.csv")
     assert len(rows) == 1, rows

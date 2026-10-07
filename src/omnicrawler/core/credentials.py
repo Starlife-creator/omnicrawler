@@ -41,7 +41,11 @@ def get_secret(name: str) -> str:
     except ImportError:
         pass
     else:
-        value = keyring.get_password("omnicrawler", name)
+        try:
+            value = keyring.get_password("omnicrawler", name)
+        except Exception as exc:  # noqa: BLE001 - optional OS backend may raise platform-specific errors
+            LOGGER.info("System credential backend unavailable (%s)", type(exc).__name__)
+            value = None
         if value is not None:
             # 显式收窄：`keyring` 是可选依赖 —— 装了有类型信息（`str | None`），CI 的 test job 没装
             # （`ignore_missing_imports` ⇒ `Any`）⇒ 严格档下 `no-any-return` 只在 CI 上炸。

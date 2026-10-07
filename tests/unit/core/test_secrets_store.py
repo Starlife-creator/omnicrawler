@@ -39,6 +39,17 @@ class _BrokenKeyring:
         raise RuntimeError("no keyring backend")
 
 
+def test_silent_keyring_write_uses_recoverable_password_key(tmp_path, monkeypatch):
+    class NoopKeyring:
+        def get_password(self, *args):
+            return None
+        def set_password(self, *args):
+            pass
+    monkeypatch.setenv(ENV_PASSWORD, "test-master")
+    path = tmp_path / "silent.bin"
+    SecretsStore(path, keyring_api=NoopKeyring()).set("sample", "test-value")
+    assert SecretsStore(path, keyring_api=NoopKeyring()).get("sample") == "test-value"
+
 def _store(tmp_path: Path, keyring_api=None, **kwargs) -> SecretsStore:
     return SecretsStore(tmp_path / "secrets.bin", keyring_api=keyring_api, **kwargs)
 

@@ -142,7 +142,10 @@ class SecretsStore:
                 if encoded:
                     return base64.b64decode(str(encoded).encode("ascii"))
                 raw = secrets.token_bytes(KEY_LENGTH)
-                self.keyring.set_password(SERVICE, ACCOUNT, base64.b64encode(raw).decode("ascii"))
+                new_encoded = base64.b64encode(raw).decode("ascii")
+                self.keyring.set_password(SERVICE, ACCOUNT, new_encoded)
+                if self.keyring.get_password(SERVICE, ACCOUNT) != new_encoded:
+                    raise SecretsStoreError("keyring did not persist the master key")
                 return raw
             except Exception as exc:
                 # FINAL-D6：fallback 不再完全静默——keyring 可用性切换会导致

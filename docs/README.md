@@ -24,6 +24,7 @@
 - [配置参考](CONFIG_REFERENCE.md)：YAML 配置协议 v5 字段全集。
 - [编码规范](CODING_STANDARDS.md)
 - [能力成熟度矩阵](CAPABILITY_MATURITY.md)
+- [能力强度与依赖利用实施](DEPENDENCY_DEPTH_IMPLEMENTATION.md)：证据、OCR、浏览器与桥接契约的落地和验收边界。
 - [支持矩阵](SUPPORT_MATRIX.md)
 - [兼容与回滚](COMPATIBILITY_0.15.0.md)
 
