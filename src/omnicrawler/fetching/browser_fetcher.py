@@ -39,6 +39,7 @@ from .browser_pool import PlaywrightPool
 from .browser_pool import (
     _PoolTask as _PoolTask,
 )
+from .selenium_bidi import SeleniumBiDiAdapter
 
 LOGGER = logging.getLogger(__name__)
 
@@ -168,10 +169,9 @@ class BrowserFetcher:
         # 的 BiDi 握手要求。
         options.add_argument("--enable-bidi")
         options.add_argument("--disable-background-timer-throttling")
-        # macOS/CI 渲染慢时 driver.get() 等待渲染进程可能超时（'Timed out
-        # receiving message from renderer'）。pageLoadStrategy=none 让 get()
-        # 在 HTML 下载完成后即返回，配合下方 actions 的显式等待取内容，
-        # 避免 chromedriver 新版本对慢渲染的卡死（v0.9.1 macOS CI 实测）。
+        # Classic commands must not wait for a navigation paused by our BiDi
+        # intercept. Navigate through BiDi below and await document readiness
+        # before issuing classic element/page-source commands.
         options.page_load_strategy = "none"
         # P2-2：可选持久化 Chromium profile（按 host+account 维度分配）。
         # 开关：browser.persist_profile = true（默认 false，保持旧行为）
@@ -266,10 +266,9 @@ class BrowserFetcher:
                         pass
                 driver.service.stop()
         try:
-            # 看门狗：BiDi 拦截在个别平台上 continue_request 可能超时挂起（selenium
-            # 4.47 + Chrome 151 组合问题），导航/actions 不返回。driver.quit() 也走
-            # WebSocket 同样阻塞——超时必须杀 chromedriver 进程（service.stop）强制
-            # 断开，主线程的 WebDriver 调用才会抛异常恢复，随后 fail-closed 报错。
+            # A stuck renderer or interception command must not leave owned
+            # processes running. A classic quit command can itself queue behind
+            # the stuck command, so the watchdog stops only this driver's tree.
             # FINAL-D2：秒数提为局部变量，超时消息与构造同源（不再硬编码 90）
             watchdog_seconds = float(self.config.section("http").get("selenium_watchdog_seconds", 90))
             watchdog = _Watchdog(
@@ -277,19 +276,26 @@ class BrowserFetcher:
                 on_timeout=stop_owned_driver,
             )
             with watchdog:
+                # Bound BiDi command waits as well as classic HTTP commands;
+                # closing the driver alone does not wake Selenium's reply poll.
+                client_config = getattr(getattr(driver, "command_executor", None), "client_config", None)
+                if client_config is not None and hasattr(client_config, "websocket_timeout"):
+                    client_config.websocket_timeout = min(
+                        float(client_config.websocket_timeout or 30), watchdog_seconds,
+                        float(self.config.section("http").get("timeout_seconds", 60)),
+                    )
                 self._install_selenium_guard(driver, failure=guard_failed, stop_driver=stop_owned_driver)
                 driver.set_page_load_timeout(float(self.config.section("http").get("timeout_seconds", 60)))
-                # BiDi 订阅竞态：guard 注册后首导航偶发命令超时（Windows/macOS CI
-                # 实测），driver 通常仍存活——同 driver 重试一次通常可过。
-                try:
-                    driver.get(request.url)
-                except Exception:
-                    time.sleep(1.0)
-                    driver.get(request.url)
-                run_actions(self.config.section("browser").get("actions", []), SeleniumAdapter(driver),
+                # ChromeDriver can block network.continueRequest behind a
+                # classic page-source/navigation command waiting on that same
+                # paused request. A BiDi navigation allows interception commands
+                # to progress concurrently and completes before classic reads.
+                context = driver.current_window_handle
+                driver.browsing_context.navigate(context=context, url=request.url, wait="complete")
+                adapter = SeleniumBiDiAdapter(driver, context)
+                run_actions(self.config.section("browser").get("actions", []), adapter,
                             trace=request.meta.get("_browser_action_trace"))
-                body = driver.page_source.encode("utf-8")
-                final_url = driver.current_url
+                final_url, body = adapter.read_document(float(self.config.section("http").get("timeout_seconds", 60)))
             if watchdog.fired:
                 # FINAL-D2：秒数取自实际配置，不再硬编码 90（与 :561 构造同源）
                 raise RuntimeError(
@@ -372,12 +378,6 @@ class BrowserFetcher:
                 network.add_request_handler(guard)
             else:
                 network.add_request_handler("before_request", guard)
-            # BiDi 网络订阅广播与首个导航请求存在竞态：guard 刚注册完浏览器
-            # 事件流尚未完全稳定，首请求立即拦截时 continue_request 命令可能
-            # 超时（'Timed out waiting for response to BiDi command'，selenium
-            # 4.47 + Chrome 151，Windows/macOS CI 实测）。给事件流短暂稳定期，
-            # 显著降低首请求命中竞态的概率。
-            time.sleep(0.5)
         except Exception as exc:
             raise RuntimeError(
                 "Selenium BiDi 逐请求拦截不可用；请改用Playwright"

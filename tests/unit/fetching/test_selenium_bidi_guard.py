@@ -52,6 +52,58 @@ def test_bidi_guard_installed_by_default(tmp_path: Path, monkeypatch) -> None:
     assert network.handler is not None
 
 
+def test_navigation_completes_through_bidi_before_classic_reads(tmp_path, monkeypatch):
+    webdriver = pytest.importorskip("selenium.webdriver")
+    from omnicrawler.core.models import CrawlRequest
+
+    events = []
+
+    class Driver:
+        service = SimpleNamespace(process=SimpleNamespace(pid=2147483647), stop=lambda: None)
+        current_window_handle = "active-account-context"
+        command_executor = SimpleNamespace(client_config=SimpleNamespace(websocket_timeout=30))
+
+        def __init__(self):
+            self.browsing_context = SimpleNamespace(navigate=self.navigate)
+            self.script = SimpleNamespace(evaluate=self.evaluate)
+
+        def evaluate(self, **kwargs):
+            assert events[-1] == "ready"
+            assert kwargs["target"] == {"context": self.current_window_handle}
+            return {"type": "success", "result": {"type": "string", "value": '["https://example.org/", "verified", "complete"]'}}
+
+        def navigate(self, **kwargs):
+            assert events == ["guard"]
+            assert self.command_executor.client_config.websocket_timeout == 5
+            assert kwargs == {"context": self.current_window_handle,
+                              "url": "https://example.org/", "wait": "complete"}
+            events.append("ready")
+
+        def get(self, _url):
+            pytest.fail("classic navigation can block the BiDi continue command")
+
+        def set_page_load_timeout(self, _timeout):
+            pass
+
+        @property
+        def page_source(self):
+            pytest.fail("classic source read can block the BiDi continue command")
+
+        current_url = "https://example.org/"
+
+        def quit(self):
+            events.append("closed")
+
+    monkeypatch.setattr(webdriver, "Chrome", lambda **_kwargs: Driver())
+    config = load_config(_config(tmp_path))
+    config.raw["http"].update(timeout_seconds=5, selenium_watchdog_seconds=10)
+    fetcher = BrowserFetcher(config)
+    fetcher.egress = SimpleNamespace(authorize=lambda *_a, **_k: None, record_response=lambda *_a, **_k: None)
+    monkeypatch.setattr(fetcher, "_install_selenium_guard", lambda *_a, **_k: events.append("guard"))
+    result = fetcher._selenium(CrawlRequest("https://example.org/"))
+    assert result.body == b"verified" and events == ["guard", "ready", "closed"]
+
+
 def test_guard_subscription_is_already_inside_owned_driver_watchdog(tmp_path, monkeypatch):
     import threading
 
