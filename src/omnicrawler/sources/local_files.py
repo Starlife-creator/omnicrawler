@@ -16,7 +16,12 @@ def declared_files(config: AppConfig) -> dict[str, Path]:
     values = config.section("source").get("local_files")
     if not isinstance(values, list) or not values or len(values) > 1000:
         raise ValueError("source.local_files 必须明确列出 1 到 1000 个配置目录内的文件")
-    root = config.path.parent.resolve()
+    value = config.section("source").get("local_root")
+    if value is not None and (not isinstance(value, str) or not value.strip()):
+        raise ValueError("source.local_root 必须是明确的本地输入目录")
+    root = (config.path.parent / value).absolute() if value else config.path.parent.resolve()
+    if str(root).startswith(("\\\\", "//")):
+        raise PermissionError("本地输入目录不允许网络共享路径")
     paths = {}
     for value in values:
         if not isinstance(value, str) or not value.strip():
@@ -31,8 +36,8 @@ def declared_files(config: AppConfig) -> dict[str, Path]:
             if part.is_symlink() or getattr(part, "is_junction", lambda: False)():
                 raise PermissionError("本地导入不允许符号链接或目录联接")
         resolved = absolute.resolve()
-        if not resolved.is_relative_to(root):
-            raise PermissionError("本地文件不能越过配置文件目录")
+        if not resolved.is_relative_to(root.resolve()):
+            raise PermissionError("本地文件不能越过配置文件目录或明确选择的输入目录")
         paths[resolved.as_uri()] = resolved
     return paths
 

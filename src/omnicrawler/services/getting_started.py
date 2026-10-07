@@ -22,8 +22,8 @@ def create_starter(parent: Path) -> Path:
                                           {"name": "香蕉", "price": 22, "in_stock": True},
                                           {"name": "樱桃", "price": 33, "in_stock": True}]}, ensure_ascii=False), encoding="utf8")
     config = root / "starter.yaml"
-    raw = {"project": {"name": "离线入门", "task_id": uuid.uuid4().hex, "workspace": "work"},
-           "source": {"kind": "file", "local_files": [data.name], "seeds": [data.as_uri()]}, "crawl": {"max_pages": 1, "concurrency": 1},
+    raw = {"project": {"name": "离线入门", "task_id": uuid.uuid4().hex, "workspace": str(root / "work")},
+           "source": {"kind": "file", "local_root": str(root), "local_files": [data.name], "seeds": [data.as_uri()]}, "crawl": {"max_pages": 1, "concurrency": 1},
            "extract": {"mode": "json", "item_path": "$.items[*]", "fields": {
                "name": {"path": "name"}, "price": {"path": "price"}, "in_stock": {"path": "in_stock"}}},
            "ai": {"mode": "disabled"}, "download": {"enabled": False}, "processors": {"pdf": {"enabled": False}},

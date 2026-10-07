@@ -17,6 +17,15 @@ def test_home_starter_button_and_gui_config_round_trip(tmp_path):
     restored = to_yaml(load_yaml(source))
     assert "$.items[*]" in restored and "in_stock" in restored
     assert "kind: file" in restored
+    from omnicrawler.core.config import load_config
+    from omnicrawler.pipeline import Pipeline
+    moved = tmp_path / "worker-configs" / "task.yaml"
+    moved.parent.mkdir()
+    moved.write_text(restored, encoding="utf8")
+    with Pipeline(load_config(moved)) as pipeline:
+        summary = pipeline.run()
+    assert summary["status"] == "succeeded" and summary["records"] == 3
+    assert load_config(moved).workspace == load_config(source).workspace
     home.shutdown()
     home.close()
     app.processEvents()
