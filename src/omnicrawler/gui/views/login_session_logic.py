@@ -131,7 +131,7 @@ def session_row(summary: SessionSummary) -> tuple[str, str, str, str]:
     return (
         summary.account,
         domains,
-        str(summary.cookie_count),
+        str(summary.cookie_count) + (_("（{0} 到期）").format(summary.expired_cookie_count) if summary.expired_cookie_count else ""),
         format_timestamp(summary.modified_at),
     )
 

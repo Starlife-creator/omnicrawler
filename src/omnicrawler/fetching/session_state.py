@@ -31,6 +31,8 @@
 from __future__ import annotations
 
 import hashlib
+import math
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -199,6 +201,10 @@ class SessionSummary:
     "没有这个会话"，与"枚举为空要显式"是同一条纪律。
     """
 
+    expired_cookie_count: int = 0
+    session_cookie_count: int = 0
+    earliest_cookie_expiry: float | None = None
+
     @property
     def size_bytes(self) -> int:
         try:
@@ -231,6 +237,9 @@ def summarize_session(path: Path) -> SessionSummary:
     cookie_count = 0
     domains: tuple[str, ...] = ()
     readable = False
+    expired = 0
+    session_cookies = 0
+    expiries: list[float] = []
     try:
         data = load_storage_state(file_path, migrate=False)
     except (OSError, SessionCryptoError, SecretsStoreError):
@@ -240,6 +249,17 @@ def summarize_session(path: Path) -> SessionSummary:
         if isinstance(cookies, list):
             readable = True
             cookie_count = len(cookies)
+            now = time.time()
+            for item in cookies:
+                if not isinstance(item, Mapping):
+                    continue
+                expiry = item.get("expires", -1)
+                if type(expiry) in (int, float) and math.isfinite(expiry):
+                    if expiry > 0:
+                        expiries.append(float(expiry))
+                        expired += int(expiry <= now)
+                    elif expiry == -1:
+                        session_cookies += 1
             domains = tuple(
                 sorted(
                     {
@@ -257,6 +277,9 @@ def summarize_session(path: Path) -> SessionSummary:
         cookie_count=cookie_count,
         domains=domains,
         readable=readable,
+        expired_cookie_count=expired,
+        session_cookie_count=session_cookies,
+        earliest_cookie_expiry=min(expiries) if expiries else None,
     )
 
 

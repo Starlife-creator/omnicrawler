@@ -32,6 +32,20 @@ def test_list_sessions_returns_empty_for_missing_dir(tmp_path: Path) -> None:
     assert list_sessions(tmp_path / "no-workspace") == ()
 
 
+def test_expiry_metadata_is_read_only_and_does_not_claim_server_validity(tmp_path, monkeypatch):
+    monkeypatch.setattr("omnicrawler.fetching.session_state.time.time", lambda: 1000)
+    path = _write(tmp_path, "expiry", [
+        {"name": "old", "value": "PRIVATE", "domain": "example.org", "expires": 999},
+        {"name": "live", "value": "PRIVATE", "domain": "example.org", "expires": 2000},
+        {"name": "session", "value": "PRIVATE", "domain": "example.org", "expires": -1},
+    ])
+    before = path.read_bytes()
+    summary = summarize_session(path)
+    assert summary.expired_cookie_count == 1 and summary.session_cookie_count == 1
+    assert summary.earliest_cookie_expiry == 999 and "PRIVATE" not in repr(summary)
+    assert path.read_bytes() == before
+
+
 def test_list_sessions_reports_metadata_only(tmp_path: Path) -> None:
     path = _write(
         tmp_path,

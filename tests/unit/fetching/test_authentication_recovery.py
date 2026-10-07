@@ -100,7 +100,8 @@ def test_invalid_auth_checks_rejected(check):
     assert validate_auth_check(check)
 
 
-def test_saved_login_retries_only_cookie_covered_domain_and_bound_account(tmp_path, monkeypatch):
+@pytest.mark.parametrize("expired", [False, True])
+def test_saved_login_retries_only_cookie_covered_domain_and_bound_account(tmp_path, monkeypatch, expired):
     config = _config(tmp_path)
     passwords = {}
     keyring = SimpleNamespace(get_password=lambda service, account: passwords.get((service, account)),
@@ -111,14 +112,15 @@ def test_saved_login_retries_only_cookie_covered_domain_and_bound_account(tmp_pa
     other = CrawlRequest("https://other.test/")
     snapshot = require_session_state_path(config, context_key_for_request(config, request))
     session_crypto.save_storage_state({"cookies": [
-        {"name": "session", "value": "test-value", "domain": "example.test", "path": "/", "expires": -1},
+        {"name": "session", "value": "test-value", "domain": "example.test", "path": "/", "expires": 1 if expired else -1},
     ]}, snapshot, store=store)
     with StateStore(config.workspace / "state.sqlite3") as state:
         for item in (request, other):
             state.enqueue(item)
             state.mark_failed(item, SessionExpiredError(session_scope(config, item)), 3, retryable=False)
     result = RecoveryCenter(config).retry_after_login(snapshot, hosts=("example.test", "other.test"))
-    assert result["retried"] == 1
+    assert result["retried"] == (0 if expired else 1)
+    assert result["requires_login"] is expired
     assert RecoveryCenter(config).retry_after_login(snapshot, hosts=("example.test",))["retried"] == 0
     different_account = require_session_state_path(config, context_key_for_request(config, CrawlRequest(request.url, meta={"account": "another"})))
     different_account.write_bytes(snapshot.read_bytes())

@@ -221,14 +221,20 @@ class RecoveryCenter:
             if not self.database.is_file():
                 return {"retried": 0, "generation": generation}
             count = 0
+            expired_hosts: list[str] = []
             with StateStore(self.database) as state:
                 for host in dict.fromkeys(hosts):
                     matched, _foreign = select_bridgeable_cookies(captured["cookies"], hosts=[host])
+                    if matched and all(cookie.is_expired() for cookie in matched):
+                        expired_hosts.append(host)
+                        continue
                     if not matched:
                         continue
                     scope = session_scope(self.config, CrawlRequest(f"https://{host}/"))
                     count += state.retry_authentication(state.authentication_failures(scope), scope=scope, generation=generation)
             return {"retried": count, "generation": generation,
+                    "expired_cookie_hosts": expired_hosts, "requires_login": bool(expired_hosts),
+                    "verification": "local_cookie_metadata_only; server authentication is checked during resume",
                     "next_command": f"omnicrawler resume -c {self.config.path}"}
 
     def _reset_login_stopped(self) -> dict[str, Any]:

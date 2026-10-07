@@ -219,11 +219,12 @@ def bridge_storage_state(
         )
     raw_cookies = _extract_cookies(state)
     selected, foreign = select_bridgeable_cookies(raw_cookies, hosts=hosts)
+    selected = [cookie for cookie in selected if not cookie.is_expired()]
     if not selected:
         # ★ 判据纪律：假成功比失败更危险 —— 用户会以为"已经登录了"。
         raise SessionBridgeError(
-            f"storage_state 里没有属于目标站点的 cookie（共 {len(raw_cookies)} 条，"
-            "全部属于其它域名）；桥接未发生。"
+            f"storage_state 里没有可用的目标站点 cookie（共 {len(raw_cookies)} 条，"
+            "已到期或属于其它域名）；桥接未发生，请重新登录。"
         )
     for cookie in selected:
         session.jar.set_cookie(cookie)

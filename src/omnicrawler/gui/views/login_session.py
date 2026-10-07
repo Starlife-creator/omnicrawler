@@ -239,6 +239,10 @@ class LoginSessionView(QWidget):
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
         layout.addWidget(self._table)
+        self._expiry_hint = QLabel(_("本地快照存在不代表站点仍接受登录；请用任务试跑验证。"))
+        self._expiry_hint.setWordWrap(True)
+        self._expiry_hint.setAccessibleName(_("登录有效性提示"))
+        layout.addWidget(self._expiry_hint)
 
         self._empty = EmptyState(
             icon="🔐",
@@ -338,6 +342,9 @@ class LoginSessionView(QWidget):
 
     def _refresh_sessions(self) -> None:
         self._sessions = list_sessions(self._config.workspace)
+        expired = sum(summary.expired_cookie_count for summary in self._sessions)
+        self._expiry_hint.setText(_("本地快照中有 {0} 条 Cookie 已到期，建议重新登录。未到期 Cookie 和会话 Cookie 仍需站点验证；不会自动恢复失败请求。").format(expired)
+                                  if expired else _("本地快照存在不代表站点仍接受登录；请用任务试跑验证。"))
         self._table.setRowCount(len(self._sessions))
         for row, summary in enumerate(self._sessions):
             for column, text in enumerate(session_row(summary)):
