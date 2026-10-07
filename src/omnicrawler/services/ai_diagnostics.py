@@ -54,7 +54,8 @@ def test_generation(base_url: str, api_key: str, model: str, workspace: Path, *,
     schema = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False}
     result = provider.generate([{"role": "user", "content": 'Return only {"ok":true}.'}],
                                response_schema=schema if structured else None, schema_strict=structured)
-    if json.loads(result.text) != {"ok": True}:
+    value = json.loads(result.text)
+    if not isinstance(value, dict) or set(value) != {"ok"} or value["ok"] is not True:
         raise ValueError("生成结果未通过固定验收内容校验")
     return {"status": "passed", "model": model, "structured_output_tested": structured, "prediction": prediction,
             "accounting": result.accounting, "payload_scope": "fixed_test_prompt_no_user_content"}

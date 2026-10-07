@@ -20,7 +20,7 @@ def endpoint():
         def do_POST(self):  # noqa: N802
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             requests.append(("POST", self.path, body))
-            self.reply({"choices": [{"message": {"content": '{"ok":true}'}}],
+            self.reply({"choices": [{"message": {"content": '{"ok":1}' if body["model"] == "numeric-boolean" else '{"ok":true}'}}],
                         "usage": {"prompt_tokens": 2, "completion_tokens": 5, "total_tokens": 7}})
         def reply(self, value):
             data = json.dumps(value).encode()
@@ -68,3 +68,11 @@ def test_legacy_ui_cost_limit_is_effective_in_common_provider():
         "providers": {"default": {"base_url": "https://example.org/v1", "model": "fixture"}},
         "budget": {"max_cost": .125}})
     assert provider.budget.maximum_cost == .125
+
+
+def test_generation_rejects_numeric_value_in_boolean_schema(endpoint, tmp_path):
+    base, requests = endpoint
+    with pytest.raises(ValueError, match="固定验收内容校验"):
+        generate_probe(base, "", "numeric-boolean", tmp_path, pricing={"input_per_million": 1, "output_per_million": 2},
+                       maximum_cost=.001, allow_private=True, structured=True)
+    assert len(requests) == 1 and requests[0][0] == "POST"
