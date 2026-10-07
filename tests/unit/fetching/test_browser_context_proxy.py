@@ -49,6 +49,30 @@ def test_new_context_uses_config_proxy(tmp_path: Path) -> None:
     assert calls["proxy"] == {"server": "http://user:pass@proxy.example:8080"}
 
 
+def test_new_context_preserves_declared_viewport(tmp_path: Path) -> None:
+    pool = _pool(_config(tmp_path))
+    pool.config.section("browser")["viewport"] = {"width": 1280, "height": 800}
+    calls: dict = {}
+
+    class Browser:
+        def new_context(self, **options):
+            calls.update(options)
+            return SimpleNamespace()
+
+    request = CrawlRequest("https://example.org/")
+    pool._new_context(Browser(), pool._context_key(request), request)
+    assert calls["viewport"] == {"width": 1280, "height": 800}
+
+
+@pytest.mark.parametrize("viewport", [{"width": True, "height": 800}, {"width": 0, "height": 800}, {"width": 20000, "height": 800}, {"width": 1280}])
+def test_new_context_rejects_invalid_viewport(tmp_path: Path, viewport) -> None:
+    pool = _pool(_config(tmp_path))
+    pool.config.section("browser")["viewport"] = viewport
+    request = CrawlRequest("https://example.org/")
+    with pytest.raises(ValueError, match="viewport"):
+        pool._new_context(SimpleNamespace(), pool._context_key(request), request)
+
+
 def test_new_context_meta_proxy_overrides_config(tmp_path: Path) -> None:
     pool = _pool(_config(tmp_path, proxy="http://config-proxy.example:8080"))
     calls: dict = {}

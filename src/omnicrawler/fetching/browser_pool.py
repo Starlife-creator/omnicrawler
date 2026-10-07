@@ -312,6 +312,13 @@ class PlaywrightPool:
     def _new_context(self, browser: Any, context_key: str, request: CrawlRequest) -> Any:
         state_path = self._state_path(context_key)
         options: dict[str, Any] = {"user_agent": self.config.section("http").get("user_agent"), "service_workers": "block"}
+        viewport = self.config.section("browser").get("viewport")
+        if viewport is not None:
+            if not isinstance(viewport, dict) or set(viewport) != {"width", "height"}:
+                raise ValueError("browser.viewport must contain width and height")
+            if any(type(value) is not int or not 1 <= value <= 16384 for value in viewport.values()):
+                raise ValueError("browser.viewport dimensions must be integers in 1..16384")
+            options["viewport"] = dict(viewport)
         if state_path and state_path.is_file():
             # U5（§11.8）：快照读取统一走 session_crypto —— 信封解密 / 旧明文一次性迁移；
             # 解密后的 dict 直接传 Playwright，**绝不落临时明文文件**。

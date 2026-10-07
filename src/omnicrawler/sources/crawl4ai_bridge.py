@@ -402,7 +402,7 @@ def fetch_structured(url: str, schema: dict[str, Any]) -> C4AResult:
 
 
 def fetch_stealth(url: str) -> C4AResult:
-    """用 undetected 模式绕过反爬。"""
+    """请求不受支持的 undetected 模式；受控桥接明确拒绝此请求。"""
     config = C4AConfig(browser_type="undetected")
     return Crawl4AIEngine(config).fetch(url)
 
@@ -434,7 +434,7 @@ def main() -> None:
     import argparse
     parser = argparse.ArgumentParser(description="Crawl4AI 桥接 — 轻量 JS 渲染抓取")
     parser.add_argument("url", help="目标 URL")
-    parser.add_argument("--stealth", action="store_true", help="使用 undetected 模式")
+    parser.add_argument("--stealth", action="store_true", help="请求 undetected 模式（受控桥接不支持，会报错）")
     parser.add_argument("--extract", help="CSS/XPath 提取 schema JSON 文件")
     parser.add_argument("-o", "--output", help="输出 JSON 文件路径")
     args = parser.parse_args()

@@ -67,7 +67,7 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     )
     c4a = sub.add_parser("c4a-fetch", help="使用 Crawl4AI 进行轻量 JS 渲染抓取")
     c4a.add_argument("url", help="目标 URL")
-    c4a.add_argument("--stealth", action="store_true", help="使用 undetected 浏览器模式")
+    c4a.add_argument("--stealth", action="store_true", help="请求 undetected 模式（受控桥接不支持，会报错）")
     c4a.add_argument("--extract", help="CSS 提取 schema JSON 文件")
     c4a.add_argument("-o", "--output", help="输出 JSON 文件路径")
     # 反检测增强
