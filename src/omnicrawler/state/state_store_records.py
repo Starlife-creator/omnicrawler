@@ -410,6 +410,37 @@ class RecordsMixin:
                 )
         return changes
 
+    def preserve_reprocess_candidate(
+        self, run_id: str, result: FetchResult, records: list[ExtractedRecord],
+    ) -> bool:
+        """Keep reviewed source records; expose new extraction without positional remapping."""
+        with self._lock, self.conn:
+            edited = self.conn.execute(
+                "SELECT 1 FROM records r JOIN record_edits e ON e.record_id=r.record_id "
+                "WHERE r.run_id=? AND r.request_fingerprint=? LIMIT 1",
+                (run_id, result.request.fingerprint),
+            ).fetchone()
+            if edited is None:
+                return False
+            rows = self.conn.execute(
+                "SELECT record_id,evidence_json FROM records WHERE run_id=? AND request_fingerprint=?",
+                (run_id, result.request.fingerprint),
+            ).fetchall()
+            self.save_checkpoint(run_id, "reprocess_candidate", result.request.fingerprint, {
+                "content_sha256": result.content_hash,
+                "preserved_record_ids": [row["record_id"] for row in rows],
+                "records": [{"source_url": r.source_url, "record_type": r.record_type,
+                             "data": r.data, "evidence": r.evidence} for r in records],
+                "status": "manual_review_required", "mapping": "unconfirmed",
+            })
+            for row in rows:
+                evidence = json.loads(row["evidence_json"])
+                evidence.setdefault("_quality", {})["review_required"] = True
+                evidence.setdefault("_review", {})["reprocess_candidate"] = result.request.fingerprint
+                self.conn.execute("UPDATE records SET evidence_json=? WHERE record_id=?",
+                                  (json_text(evidence), row["record_id"]))
+            return True
+
     def reset_record_stage(self, run_id: str) -> dict[str, int]:
         """Clear derived record outputs while preserving responses and raw archives."""
 
@@ -421,12 +452,13 @@ class RecordsMixin:
             quality_count = self.conn.execute(
                 "SELECT COUNT(*) AS n FROM quality_stats WHERE run_id=?", (run_id,)
             ).fetchone()["n"]
-            self.conn.execute(
-                "DELETE FROM record_edits WHERE record_id IN "
-                "(SELECT record_id FROM records WHERE run_id=?)",
-                (run_id,),
-            )
-            self.conn.execute("DELETE FROM records WHERE run_id=?", (run_id,))
+            # A selector/schema change may reorder or split records. Preserve the entire
+            # reviewed source rather than applying edits to a guessed positional match.
+            deleted = self.conn.execute(
+                "DELETE FROM records WHERE run_id=? AND request_fingerprint NOT IN "
+                "(SELECT r.request_fingerprint FROM records r JOIN record_edits e "
+                "ON e.record_id=r.record_id WHERE r.run_id=?)", (run_id, run_id),
+            ).rowcount
             self.conn.execute("DELETE FROM quality_stats WHERE run_id=?", (run_id,))
             self.conn.execute("DELETE FROM semantic_changes WHERE run_id=?", (run_id,))
             self.conn.execute(
@@ -434,4 +466,5 @@ class RecordsMixin:
             )
             self.conn.execute("DELETE FROM entity_observations WHERE run_id=?", (run_id,))
             self.conn.execute("DELETE FROM record_versions WHERE run_id=?", (run_id,))
-        return {"records": int(record_count), "quality_stats": int(quality_count)}
+        return {"records": int(deleted), "preserved_records": int(record_count - deleted),
+                "quality_stats": int(quality_count)}

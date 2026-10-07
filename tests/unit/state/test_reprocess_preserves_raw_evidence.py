@@ -28,6 +28,27 @@ _HTML = b"<html><body><h1>title</h1></body></html>"
 _DERIVED_TABLES = ("records", "quality_stats", "semantic_changes", "record_versions")
 
 
+def test_reprocess_keeps_manual_values_and_separates_reordered_candidates(tmp_path: Path) -> None:
+    import json
+    with StateStore(tmp_path / "state.sqlite3") as state:
+        run = state.start_run("reviewed", "config.yaml")
+        request = CrawlRequest(_URL)
+        state.save_records(run, request, [ExtractedRecord(_URL, "item", {"title": "auto"}),
+                                         ExtractedRecord(_URL, "item", {"title": "second"})])
+        record_id = state.rows("SELECT record_id FROM records ORDER BY rowid")[0]["record_id"]
+        state.edit_record(record_id, "title", "corrected")
+        reset = state.reset_record_stage(run)
+        assert reset["preserved_records"] == 2
+        assert len(state.rows("SELECT * FROM record_edits")) == 1
+        result = FetchResult(request, _URL, 200, {"content-type": "text/html"}, _HTML, 0)
+        assert state.preserve_reprocess_candidate(run, result, [ExtractedRecord(_URL, "item", {"title": "new"})])
+        assert json.loads(state.rows("SELECT data_json FROM records WHERE record_id=?", (record_id,))[0]["data_json"])["title"] == "corrected"
+        candidate = state.checkpoint(run, "reprocess_candidate", request.fingerprint)["payload"]
+        assert candidate["records"][0]["data"] == {"title": "new"}
+        assert candidate["mapping"] == "unconfirmed"
+        assert len(state.review_queue(run)) == 2
+
+
 def _count(state: StateStore, table: str, run_id: str) -> int:
     return int(state.rows(f"SELECT COUNT(*) AS n FROM {table} WHERE run_id=?", (run_id,))[0]["n"])
 

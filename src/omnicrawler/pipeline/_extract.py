@@ -214,6 +214,10 @@ class _PipelineExtract(_PipelineBase):
                 # B-2：质量评估使用覆盖后的提取段（fields/quality_threshold/unique_by 同步生效）
                 extract_config = extract_sec
                 fields = extract_config.get("fields", {})
+                if result.request.meta.get("reprocessed") and self.state.preserve_reprocess_candidate(
+                    run_id, result, outcome.records,
+                ):
+                    return
                 # S4.5 P3#137：enrich 增加开关（extract.enrich 默认开，兼容现状）
                 # 显式标注：enrich 关闭时的兜底字典与 enrich_records 的返回都是
                 # 「名字 → 混合类型」，不加标注 mypy 会推成 dict[str, Any | object]（arg-type 判红）。

@@ -628,6 +628,7 @@ class _PipelineRun(_PipelineBase):
             "status": "succeeded",
             "has_errors": bool(failures),
             "reprocessed_responses": processed,
+            "manual_review_required": bool(reset.get("preserved_records")),
             "failures": failures,
             "reset": reset,
             **self.state.stats(run_id),
