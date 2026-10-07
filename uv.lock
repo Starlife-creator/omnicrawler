@@ -2625,6 +2625,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+ai = [
+    { name = "aiohttp" },
+]
 async-http = [
     { name = "httpx" },
 ]
@@ -2654,6 +2657,7 @@ document = [
 ]
 full = [
     { name = "aiofiles" },
+    { name = "aiohttp" },
     { name = "beautifulsoup4" },
     { name = "boto3" },
     { name = "chardet" },
@@ -2696,6 +2700,7 @@ full = [
 ]
 full-macos = [
     { name = "aiofiles" },
+    { name = "aiohttp" },
     { name = "beautifulsoup4" },
     { name = "boto3" },
     { name = "chardet" },
@@ -2801,6 +2806,9 @@ tls = [
 requires-dist = [
     { name = "aiofiles", marker = "extra == 'full'", specifier = ">=25,<26" },
     { name = "aiofiles", marker = "extra == 'full-macos'", specifier = ">=25,<26" },
+    { name = "aiohttp", marker = "extra == 'ai'", specifier = ">=3.11,<4" },
+    { name = "aiohttp", marker = "extra == 'full'", specifier = ">=3.11,<4" },
+    { name = "aiohttp", marker = "extra == 'full-macos'", specifier = ">=3.11,<4" },
     { name = "beautifulsoup4", marker = "extra == 'full'", specifier = ">=4.12,<5" },
     { name = "beautifulsoup4", marker = "extra == 'full-macos'", specifier = ">=4.12,<5" },
     { name = "beautifulsoup4", marker = "extra == 'html'", specifier = ">=4.12,<5" },
@@ -2930,7 +2938,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'full-macos'", specifier = ">=14,<18" },
     { name = "websockets", marker = "extra == 'streams'", specifier = ">=14,<18" },
 ]
-provides-extras = ["html", "pdf", "browser", "selenium", "async-http", "tls", "streams", "distributed", "scrapy", "ocr-tesseract", "ocr-paddle", "ocr-captcha", "crawl4ai", "gui", "dev", "security", "storage", "postgresql", "search", "document", "full", "full-macos"]
+provides-extras = ["html", "pdf", "browser", "selenium", "async-http", "ai", "tls", "streams", "distributed", "scrapy", "ocr-tesseract", "ocr-paddle", "ocr-captcha", "crawl4ai", "gui", "dev", "security", "storage", "postgresql", "search", "document", "full", "full-macos"]
 
 [[package]]
 name = "onnxruntime"

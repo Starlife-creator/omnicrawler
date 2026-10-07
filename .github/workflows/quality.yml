@@ -53,7 +53,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: [html, pdf, async-http, tls, streams, storage, security]
+        profile: [html, pdf, async-http, tls, streams, storage, security, ai, document]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -120,7 +120,7 @@ jobs:
       # storage extra 同时提供 duckdb 与 pyarrow：此前只在命令里临时加 duckdb，
       # pyarrow 缺失让 3 条 convertx 用例在 ubuntu/macOS 上失败（2026-09-15 实测）。
       # 依赖范围以 pyproject 为唯一真源，CI 不再手抄版本号。
-      - run: python -m pip install -e ".[html,pdf,dev,async-http,gui,tls,storage]" cryptography
+      - run: python -m pip install -e ".[html,pdf,dev,async-http,gui,tls,storage,ai,document]" cryptography
       - if: runner.os == 'Linux'
         name: Install Qt runtime dependencies
         run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libpulse0 fonts-noto-cjk

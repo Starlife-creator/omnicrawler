@@ -289,6 +289,19 @@ def test_export_thread_xlsx_escapes_formula_injection(tmp_path, monkeypatch):
 
 
 def test_editor_toolbar_works_from_monitor_home_and_results(monkeypatch):
+    from datetime import datetime, timedelta
+
+    import omnicrawler.gui.core.config_serializer as serializer
+
+    class AdvancingClock:
+        calls = 0
+
+        @classmethod
+        def now(cls):
+            cls.calls += 1
+            return datetime(2026, 10, 7) + timedelta(seconds=cls.calls)
+
+    monkeypatch.setattr(serializer, "datetime", AdvancingClock)
     from PySide6.QtWidgets import QApplication
 
     from omnicrawler.gui.core.config_serializer import to_yaml
@@ -297,14 +310,18 @@ def test_editor_toolbar_works_from_monitor_home_and_results(monkeypatch):
     monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
     app = QApplication.instance() or QApplication([])
     window = MainWindow()
-    original = to_yaml(window._config)
+    import yaml
+
+    original = yaml.safe_load(to_yaml(window._config))
+    original_task_id = window._config.task_id
     try:
         for page in (NavIndex.MONITOR, NavIndex.HOME, NavIndex.RESULTS):
             window._nav.setCurrentRow(page)
             window._toggle_workspace_editor()
             assert window._nav.currentRow() == NavIndex.YAML_EDITOR
             assert window._toggle_btn.text() == "⇄ 工作台"
-            assert to_yaml(window._config) == original
+            assert yaml.safe_load(to_yaml(window._config)) == original
+            assert window._config.task_id == original_task_id
             window._toggle_workspace_editor()
             assert window._nav.currentRow() == NavIndex.WORKSPACE
             assert window._toggle_btn.text() == "⇄ 编辑器"
@@ -314,7 +331,8 @@ def test_editor_toolbar_works_from_monitor_home_and_results(monkeypatch):
         window._nav.setCurrentRow(NavIndex.MONITOR)
         window._toggle_workspace_editor()
         assert window._nav.currentRow() == NavIndex.YAML_EDITOR
-        assert to_yaml(window._config) == original
+        assert yaml.safe_load(to_yaml(window._config)) == original
+        assert window._config.task_id == original_task_id
     finally:
         window._task_runner._state = "idle"
         window.close()

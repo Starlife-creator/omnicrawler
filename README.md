@@ -39,6 +39,8 @@ pip install -e ".[full,dev]"
 playwright install chromium
 ```
 
+实验性异步 AI 字段提取可单独安装 `pip install -e ".[ai]"`；Office 文档能力使用 `[document]`。`[full]` 包含这些依赖。未启用相关能力时，核心采集不要求它们。
+
 ### 双仓库布局（源码版必读）
 
 插件市场采用 **git-as-registry** 模式，源码仓库与市场仓库**必须放在同一父目录下、且目录名保持默认**：

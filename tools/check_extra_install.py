@@ -10,6 +10,8 @@ PROFILE_IMPORTS: dict[str, tuple[str, ...]] = {
     "html": ("bs4", "lxml", "cssselect", "selectolax"),
     "pdf": ("pypdfium2", "pdfplumber", "pypdf", "reportlab", "openpyxl"),
     "async-http": ("httpx",),
+    "ai": ("aiohttp",),
+    "document": ("docx", "pptx", "chardet"),
     "tls": ("curl_cffi",),
     "streams": ("websockets",),
     "storage": ("boto3", "duckdb", "pyarrow"),
