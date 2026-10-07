@@ -354,7 +354,7 @@ def test_terminal_progress_matches_completion_and_ignores_late_updates(tmp_path,
     window._settings.auto_open_result = False
     window._settings.sound_enabled = False
     window._settings.markdown_export_enabled = False
-    monkeypatch.setattr(window, "_auto_load_results", lambda: None)
+    # No instance monkeypatch survives deletion of the native Qt object.
     try:
         window._run_delegate.on_task_state_changed("running")
         window._run_delegate.on_progress(33, "https://example.test/last")
