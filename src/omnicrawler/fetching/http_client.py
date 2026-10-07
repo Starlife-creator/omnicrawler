@@ -252,7 +252,7 @@ class HTTPFetcher:
         last_error: Exception | None = None
         for attempt in range(retries):
             self.limiter.wait(request.url)
-            started = time.monotonic()
+            started = time.perf_counter()
             raw_request = urllib.request.Request(
                 request.url,
                 data=request.body,
@@ -287,7 +287,7 @@ class HTTPFetcher:
                             status=int(getattr(response, "status", 200)),
                             headers=response_headers,
                             body=body,
-                            elapsed_seconds=time.monotonic() - started,
+                            elapsed_seconds=time.perf_counter() - started,
                         )
             except urllib.error.HTTPError as exc:
                 last_error = exc
@@ -303,7 +303,7 @@ class HTTPFetcher:
                     check_authentication(self.config, FetchResult(
                         request, exc.geturl() or request.url, exc.code, response_headers,
                         self._decode_content(wire_body, response_headers.get("content-encoding", ""), max_bytes),
-                        time.monotonic() - started,
+                        time.perf_counter() - started,
                     ))
                 if exc.code == 304:
                     self.egress.record_success(request.url)
@@ -314,7 +314,7 @@ class HTTPFetcher:
                         status=304,
                         headers=response_headers,
                         body=b"",
-                        elapsed_seconds=time.monotonic() - started,
+                        elapsed_seconds=time.perf_counter() - started,
                         meta={"not_modified": True},
                     )
                 if exc.code not in retry_cfg["status_codes"] or attempt + 1 >= retries:

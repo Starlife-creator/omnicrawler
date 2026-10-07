@@ -341,7 +341,7 @@ class HTTPXAsyncFetcher:
         max_redirects = int(http.get("max_redirects", 10))
         last: Exception | None = None
         for attempt in range(retries):
-            started = time.monotonic()
+            started = time.perf_counter()
             try:
                 current_url = request.url
                 method = request.method
@@ -381,14 +381,14 @@ class HTTPXAsyncFetcher:
                                 check_authentication(self.config, FetchResult(
                                     request, str(response.url), response.status_code,
                                     {key.lower(): value for key, value in response.headers.items()},
-                                    b"".join(chunks), time.monotonic() - started,
+                                    b"".join(chunks), time.perf_counter() - started,
                                 ))
                                 response.raise_for_status()
                             self.egress.record_success(str(response.url))
                             return FetchResult(
                                 request, str(response.url), response.status_code,
                                 {key.lower(): value for key, value in response.headers.items()},
-                                b"".join(chunks), time.monotonic() - started,
+                                b"".join(chunks), time.perf_counter() - started,
                             )
                 raise PermanentFetchError("重定向处理未得到最终响应")
             except (ResponseTooLargeError, PermanentFetchError):

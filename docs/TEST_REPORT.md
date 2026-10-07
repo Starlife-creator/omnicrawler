@@ -160,3 +160,9 @@ Zstandard 为可选解码依赖；本机实测解压和缺依赖提示，CI 核�
 生产路径改用 BiDi 完成初始导航、元素定位、URL 等待和页面读取，继续使用原生点击与键盘输入；每个网络请求仍先经过 EgressBroker 授权。跳转提交期间仅重试已识别的短暂 JavaScript 上下文消失，其他协议错误立即失败。页面读取等待文档完成，命令等待受 HTTP 超时和看门狗约束，超时仍拒绝继续并清理自身进程。
 
 实机验收使用已有 Chromium 149 及系统 Chrome 152、各自匹配驱动，不下载或替换浏览器。必须验证无引擎回退的渲染、重定向、点击跳转、表单输入、禁止子请求及审计、持久会话 Cookie 保留、无响应页面退出和拥有的进程清理。反向回归临时恢复修复前代码，真实渲染必须失败，再按字节恢复候选代码重跑正向检查。修复在独立工作树完成，原提交及运行时保留；本次证据目录为工作区 user-test-runs/selenium-root-cause-20261007。
+
+## 2026-10-07 Windows 短响应耗时采样修复
+
+后续提交 `5e3279c` 的 Windows CI 在真实流水线反馈测试中观测到请求耗时全部为零，Linux/macOS 同项通过。Python 3.12 Windows 的 monotonic 实现使用 GetTickCount64，快速本地 HTTP 请求可能在同一时钟刻度内完成；这会使采集器交给自适应调度的短响应耗时失去精度。同步 urllib 与异步 HTTPX 采集器统一改用 perf_counter 测量每次尝试的耗时，返回值仍为秒，重试和超时策略保持原语义。[Python 短时测量说明](https://docs.python.org/3.12/library/time.html#time.perf_counter) 与 [CPython 3.12 Windows 实现](https://github.com/python/cpython/blob/3.12/Python/pytime.c) 为机制依据；具体失败记录来自本轮 CI。
+
+真实本地流水线回归同时覆盖两种 HTTP 引擎，仅将各采集器的旧时钟固定在同一刻度，仍使用真实高精度时钟、网络请求和交付真值。恢复旧采样后必须失败，再字节级还原候选代码并通过；不把耗时断言改成允许全零，也不添加人为最小耗时。证据目录为工作区 user-test-runs/admission-clock-20261007；原 CI 失败与 Selenium 补验记录继续保留。
