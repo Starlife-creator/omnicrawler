@@ -554,6 +554,8 @@ def run_case(
     图片版需要中文字体与 tesseract；缺则抛 :class:`RuntimeError`
     ——由调用方决定跳过（**不在这里假装通过**）。
     """
+    workdir = workdir.expanduser().resolve()
+    workdir.mkdir(parents=True, exist_ok=True)
     project = workdir / case.name
     sample = project / "in" / case.filename
     if case.needs_ocr:

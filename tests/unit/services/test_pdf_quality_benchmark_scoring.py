@@ -216,3 +216,23 @@ def test_shapes_cover_three_required_kinds_and_keep_own_thresholds() -> None:
     for case in PDF_CASES:
         if case.name != "low-quality-scan":
             assert case.min_confidence >= low_quality.min_confidence
+
+
+def test_relative_workdir_is_resolved_before_generating_config(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from omnicrawler.services import pdf_quality_benchmark as service
+    monkeypatch.chdir(tmp_path)
+    work = Path("relative benchmark")
+    work.mkdir()
+    seen = []
+    original = service._config_yaml
+    def config_yaml(case, project, **kwargs):
+        seen.append(project)
+        return original(case, project, **kwargs)
+    monkeypatch.setattr(service, "_config_yaml", config_yaml)
+    monkeypatch.setattr(service, "_run_pdfx", lambda *_: None)
+    monkeypatch.setattr(service, "_observations", lambda *_: [])
+    service.run_case(next(case for case in service.PDF_CASES if case.name == "digital-text-layer"), workdir=work)
+    assert seen and seen[0].is_absolute()
+    assert seen[0].is_relative_to(tmp_path)
