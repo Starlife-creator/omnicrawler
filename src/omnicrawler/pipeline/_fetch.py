@@ -70,7 +70,7 @@ class _PipelineFetch(_PipelineBase):
             request = prepare_request(self._auth_provider, request)
         hook_results = self._emit("before_fetch", run_id=run_id, request=request)
         fetch_advice = choose_fetch_advice(hook_results)
-        if self.config.source_kind == "file" and self.config.section("source").get("local_files") is not None:
+        if self.config.section("source").get("local_files") is not None and self.config.source_kind == "file":
             from ..sources.local_files import fetch
             result = fetch(self.config, request)
             self.metrics.record_fetch(result, engine="local_file", escalated=False)
