@@ -64,6 +64,7 @@ class BrowserFetcher:
             egress: Optional shared :class:`EgressBroker` for policy enforcement.
         """
         self.config = config
+        self.runtime_versions: dict[str, str] = {}
         self.limiter = limiter or HostRateLimiter(float(config.section("http").get("delay_seconds", 1)))
         self.target_policy = NetworkTargetPolicy(config)
         self.egress = egress or EgressBroker(config, policy=self.target_policy)
@@ -233,6 +234,15 @@ class BrowserFetcher:
                 raise RuntimeError("持久化浏览器启动失败，请关闭占用此任务会话的窗口、检查驱动，再重新登录后恢复；未切换到空白会话") from exc
             else:
                 raise
+        capabilities = getattr(driver, "capabilities", {})
+        if isinstance(capabilities, dict):
+            chrome = capabilities.get("chrome", {})
+            values = {"browser": capabilities.get("browserVersion"),
+                      "driver": chrome.get("chromedriverVersion") if isinstance(chrome, dict) else None}
+            for name, value in values.items():
+                version = value.split()[0] if isinstance(value, str) and value.strip() else ""
+                if len(version) <= 64 and version.replace(".", "").isdigit():
+                    self.runtime_versions[name] = version
         guard_failed = threading.Event()
         service_pid = driver.service.process.pid
         owned_children: list[Any] = []

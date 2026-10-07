@@ -84,9 +84,21 @@ def probe(config: AppConfig) -> dict[str, Any]:
                     raise ValueError("Renderer probe content did not match")
                 report.update(status="passed", actual_engine=report["engine"], detail="本机引擎完成了受控页面渲染与出口拦截；真实站点仍需试跑。")
             finally:
+                values = getattr(fetcher, "runtime_versions", {})
+                if isinstance(values, dict):
+                    report["runtime_versions"] = {
+                        key: value for key, value in values.items()
+                        if key in {"browser", "driver"} and isinstance(value, str)
+                        and len(value) <= 64 and value.replace(".", "").isdigit()
+                    }
                 fetcher.close()
     except Exception as exc:
-        report.update(status="unavailable", error_type=type(exc).__name__, detail="引擎探测未通过。检查浏览器和驱动组合；有会话的任务请先修复原引擎，再重新登录。")
+        detail = "引擎探测未通过。检查浏览器和驱动组合；有会话的任务请先修复原引擎，再重新登录。"
+        if type(exc).__name__ == "SeleniumRuntimeUnavailableError":
+            detail = "浏览器已启动，但强制 BiDi 拦截未完成；检查报告中的浏览器和驱动版本，或显式选择 Playwright 后重新登录。未关闭出口拦截。"
+        elif type(exc).__name__ == "SessionNotCreatedException":
+            detail = "浏览器会话创建失败；先核对本机浏览器与驱动版本是否匹配，再检查配置的会话目录是否被占用。"
+        report.update(status="unavailable", error_type=type(exc).__name__, detail=detail)
     finally:
         server.shutdown()
         server.server_close()

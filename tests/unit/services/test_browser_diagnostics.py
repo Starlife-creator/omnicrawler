@@ -58,3 +58,28 @@ def test_selenium_probe_without_installed_driver_never_starts_manager(tmp_path, 
     monkeypatch.setattr("omnicrawler.fetching.browser_fetcher.BrowserFetcher", unexpected)
     result = probe(config)
     assert result["status"] == "unavailable" and result["error_type"] == "LocalDriverMissing"
+
+
+def test_failed_selenium_probe_keeps_safe_runtime_versions_and_closes(tmp_path, monkeypatch):
+    from omnicrawler.fetching.browser_fetcher import SeleniumRuntimeUnavailableError
+    config = _config(tmp_path)
+    config.raw["browser"]["engine"] = "selenium"
+    driver = tmp_path / "driver.exe"
+    driver.write_bytes(b"fixture-not-executed")
+    monkeypatch.setenv("OMNICRAWL_SELENIUM_DRIVER", str(driver))
+    closed = []
+    class Renderer:
+        runtime_versions = {"browser": "152.0.7977.65", "driver": "152.0.7977.82", "private": "PRIVATE-TOKEN"}
+        def __init__(self, isolated):
+            pass
+        def fetch(self, request):
+            raise SeleniumRuntimeUnavailableError("PRIVATE failure content")
+        def close(self):
+            closed.append(True)
+    monkeypatch.setattr("omnicrawler.fetching.browser_fetcher.BrowserFetcher", Renderer)
+    result = probe(config)
+    assert result["status"] == "unavailable"
+    assert "BiDi" in result["detail"]
+    assert result["runtime_versions"] == {"browser": "152.0.7977.65", "driver": "152.0.7977.82"}
+    assert "PRIVATE" not in str(result)
+    assert closed == [True]

@@ -149,3 +149,6 @@ Selenium 的逐请求拦截兼容降级只在测试进程拥有的回环服务�
 视觉回归由 tools/check_visual_regression.py 对 constraints/visual-ref.txt 中经过审查的完整提交生成参考截图，然后在同一 Qt/字体环境比较当前代码。参考代码只通过 git archive 读取；测试验证实际加载来源，拒绝空集合、跳过或失败。基线保存在新的证据目录，禁止覆盖已有结果。CI 的 GUI 作业执行此门禁并上传基线与比较结果；不使用当前截图自动接受当前改变。更新参考提交必须先复核截图和布局。截图采用实际布局尺寸，逐主题应用样式，避免强制尺寸裁切和只改主题属性却没有应用样式。
 
 Zstandard 为可选解码依赖；本机实测解压和缺依赖提示，CI 核心回归安装固定版本 zstandard==0.25.0。在线市场用例仍须显式启用 OMNICRAWL_TEST_LIVE_MARKET=1；启用后走生产 EgressBroker、精确 HTTPS 域范围、预算和审计，连接失败按失败处理。需要本机代理时显式设置 OMNICRAWL_TEST_MARKET_PROXY。
+
+
+浏览器诊断区分会话创建失败和强制 BiDi 命令未完成，失败报告仍保留浏览器实际能力返回的版本号及驱动版本号。只允许 browser/driver 两个纯版本字段，不带路径、会话能力或异常原文。本机对 Chromium 149、系统 Chrome 152 与匹配官方驱动均复现 BiDi 命令阻塞，可见窗口与不同导航策略也未解决；没有以关闭出口拦截换取通过。官方驱动只放入独立验收目录，没有下载浏览器、便携包或覆盖保留运行时。相似上游问题记录：https://github.com/SeleniumHQ/selenium/issues/17373 ，该记录不是本机通过证据。
