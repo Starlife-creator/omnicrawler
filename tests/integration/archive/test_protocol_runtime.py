@@ -328,16 +328,17 @@ def test_scrapy_bridge_success_failure_and_validation(tmp_path: Path) -> None:
     spider.write_text("class Demo: pass\n", encoding="utf-8")
     config = _config(
         tmp_path,
-        source={"kind": "scrapy", "spider_file": str(spider), "arguments": {"topic": "policy"}},
+        source={"kind": "scrapy", "spider_file": str(spider), "execution_contract": "trusted_external", "arguments": {"topic": "policy"}},
     )
-    completed = SimpleNamespace(returncode=0, stdout="ok", stderr="")
-    with patch("subprocess.run", return_value=completed) as run:
+    def complete(command, **kwargs):
+        Path(command[command.index("-O") + 1]).write_text('{"title":"ok"}\n', encoding="utf-8")
+        return {"returncode": 0, "stdout_tail": "ok", "stderr_tail": ""}
+    with patch("omnicrawler.sources.frameworks._run_owned", side_effect=complete) as run:
         summary = run_scrapy(config)
     assert summary["status"] == "succeeded"
     assert "topic=policy" in run.call_args.args[0]
 
-    completed = SimpleNamespace(returncode=2, stdout="", stderr="failed")
-    with patch("subprocess.run", return_value=completed):
+    with patch("omnicrawler.sources.frameworks._run_owned", return_value={"returncode": 2}):
         with pytest.raises(RuntimeError, match="Scrapy"):
             run_scrapy(config)
 

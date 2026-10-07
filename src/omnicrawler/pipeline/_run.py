@@ -97,7 +97,7 @@ class _PipelineRun(_PipelineBase):
             raise RuntimeError("Redis分布式模式请使用 omnicrawler.redis_frontier.RedisFrontier；参见 docs/DISTRIBUTED.md")
         if self.config.source_kind == "scrapy":
             from ..sources.frameworks import run_scrapy
-            return run_scrapy(self.config)
+            return run_scrapy(self.config, should_stop=should_stop)
 
         # 进度协议初始化：task_id 先用 project_name，run_id 生成后再补
         tracker_task_id = ""
