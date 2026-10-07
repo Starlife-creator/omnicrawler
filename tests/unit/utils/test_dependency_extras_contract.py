@@ -11,6 +11,7 @@ FUNCTION_EXTRAS = (
     "browser",
     "selenium",
     "async-http",
+    "ai",
     "tls",
     "streams",
     "distributed",
