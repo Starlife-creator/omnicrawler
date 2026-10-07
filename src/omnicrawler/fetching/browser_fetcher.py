@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shutil
@@ -15,6 +16,7 @@ from ..core.models import CrawlRequest, FetchResult
 from ..runtime.resource_profiles import effective_browser_pool
 from ..security.egress import EgressBroker
 from ..security.policy import HostRateLimiter, NetworkTargetPolicy
+from .browser_data import collect_virtual_items, wait_for_data
 from .browser_engines import (
     BrowserAction as BrowserAction,
 )
@@ -295,7 +297,21 @@ class BrowserFetcher:
                 adapter = SeleniumBiDiAdapter(driver, context)
                 run_actions(self.config.section("browser").get("actions", []), adapter,
                             trace=request.meta.get("_browser_action_trace"))
+                def read(expression: str) -> Any:
+                    return json.loads(adapter._read_string("JSON.stringify(" + expression + ")"))
+                browser_config = self.config.section("browser")
+                if browser_config.get("readiness", {}).get("response_url"):
+                    raise ValueError("Selenium data readiness does not support response_url; use Playwright")
+                readiness = wait_for_data(read, browser_config.get("readiness", {}))
                 final_url, body = adapter.read_document(float(self.config.section("http").get("timeout_seconds", 60)))
+                collection_status: dict[str, Any] = {}
+                collection = browser_config.get("collection", {})
+                if collection:
+                    if collection.get("item_selector") != self.config.section("extract").get("item_selector"):
+                        raise ValueError("browser collection item_selector must equal extract.item_selector")
+                    html, collection_status = collect_virtual_items(read, collection,
+                        maximum_bytes=int(self.config.section("http").get("max_response_bytes", 50_000_000)))
+                    body = html.encode("utf-8")
             if watchdog.fired:
                 # FINAL-D2：秒数取自实际配置，不再硬编码 90（与 :561 构造同源）
                 raise RuntimeError(
@@ -315,7 +331,8 @@ class BrowserFetcher:
         if len(body) > maximum:
             raise ResponseTooLargeError(f"浏览器页面超过大小限制: {len(body)} > {maximum}")
         self.egress.record_response(len(body), url=final_url)
-        return FetchResult(request, final_url, 200, {"content-type": "text/html; charset=utf-8"}, body, time.monotonic() - started)
+        return FetchResult(request, final_url, 200, {"content-type": "text/html; charset=utf-8"}, body, time.monotonic() - started,
+                           {"data_readiness": readiness, "collection": collection_status})
 
     def _install_selenium_guard(self, driver: Any, *, failure: threading.Event | None = None, stop_driver: Any = None) -> None:
         """Use WebDriver BiDi interception so Selenium subrequests cannot bypass policy."""

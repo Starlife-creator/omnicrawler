@@ -71,7 +71,7 @@ def test_render_completed_then_discarded_releases_context(tmp_path: Path, monkey
     contexts: dict = {key: ctx}
     task = _PoolTask(request, threading.Event())
 
-    def _fake_render(_browser, _contexts, _request):
+    def _fake_render(_browser, _contexts, _request, **_kwargs):
         # 渲染期间调用方超时标记丢弃
         task.discarded.set()
         return "result"

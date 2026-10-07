@@ -26,6 +26,7 @@ from ..core.utils import canonicalize_url
 from ..security.egress import EgressBroker
 from ..security.policy import NetworkTargetPolicy
 from . import session_crypto, session_state
+from .browser_data import collect_virtual_items, wait_for_data
 from .browser_engines import run_actions_for_page
 from .browser_guards import strip_cross_origin_credentials
 from .browser_launch import build_launch_args
@@ -152,7 +153,7 @@ class PlaywrightPool:
             task.done.set()
             return
         try:
-            task.result = self._render(browser, contexts, task.request)
+            task.result = self._render(browser, contexts, task.request, should_stop=task.discarded.is_set)
             if task.discarded.is_set():
                 # 渲染期间被标记丢弃：关闭该 context 并移除，防资源滞留
                 context_key = self._context_key(task.request)
@@ -167,9 +168,11 @@ class PlaywrightPool:
         finally:
             task.done.set()
 
-    def _render(self, browser: Any, contexts: dict[str, Any], request: CrawlRequest) -> FetchResult:
+    def _render(self, browser: Any, contexts: dict[str, Any], request: CrawlRequest, *, should_stop: Any = None) -> FetchResult:
         context_key = self._context_key(request)
         for attempt in range(2):
+            if should_stop and should_stop():
+                raise InterruptedError("browser render cancelled")
             context = contexts.get(context_key)
             if context is None:
                 context = contexts[context_key] = self._new_context(browser, context_key, request)
@@ -211,7 +214,23 @@ class PlaywrightPool:
                     response = None
                 run_actions_for_page(page, browser_config.get("actions", []),
                                      trace=request.meta.get("_browser_action_trace"), attempt=attempt + 1)
-                body = page.content().encode("utf-8")
+                def read(expression: str, current_page: Any = page) -> Any:
+                    return current_page.evaluate(expression)
+                readiness = wait_for_data(read, browser_config.get("readiness", {}),
+                                          responses=api_candidates, should_stop=should_stop)
+                collection = browser_config.get("collection", {})
+                collection_status: dict[str, Any] = {}
+                if collection:
+                    if collection.get("item_selector") != self.config.section("extract").get("item_selector"):
+                        raise ValueError("browser collection item_selector must equal extract.item_selector")
+                    html, collection_status = collect_virtual_items(
+                        page.evaluate, collection,
+                        maximum_bytes=int(self.config.section("http").get("max_response_bytes", 50_000_000)),
+                        should_stop=should_stop,
+                    )
+                    body = html.encode("utf-8")
+                else:
+                    body = page.content().encode("utf-8")
                 final_url = page.url
                 self.egress.authorize(final_url, purpose="browser", count_request=False)
                 maximum = int(self.config.section("http").get("max_response_bytes", 50_000_000))
@@ -244,10 +263,12 @@ class PlaywrightPool:
                     {
                         "api_responses": api_candidates,
                         "navigation_timed_out": navigation_timed_out,
+                        "data_readiness": readiness,
+                        "collection": collection_status,
                     },
                 )
             except Exception as exc:
-                if attempt == 0:
+                if attempt == 0 and not (should_stop and should_stop()):
                     LOGGER.warning("浏览器渲染第 1 次尝试失败: %s", exc)
                     try:
                         context.close()
@@ -290,7 +311,7 @@ class PlaywrightPool:
 
     def _new_context(self, browser: Any, context_key: str, request: CrawlRequest) -> Any:
         state_path = self._state_path(context_key)
-        options: dict[str, Any] = {"user_agent": self.config.section("http").get("user_agent")}
+        options: dict[str, Any] = {"user_agent": self.config.section("http").get("user_agent"), "service_workers": "block"}
         if state_path and state_path.is_file():
             # U5（§11.8）：快照读取统一走 session_crypto —— 信封解密 / 旧明文一次性迁移；
             # 解密后的 dict 直接传 Playwright，**绝不落临时明文文件**。

@@ -611,3 +611,8 @@ PDF 批量 OCR 的词/文本块坐标、置信度及表格单元格结构会保�
 旧的仅条数基线、没有样本、或当前不能重放的自定义提取/逐 URL 覆盖会报告未验证并返回非零；归档缺失或哈希不匹配也不会通过。请备份旧 `regression_fixtures` 后移到工作区外保留，再重新采集建立当前格式基线；不要把重新采集当作人工批准。已有基线不会自动刷新为新规则的结果。
 
 非严格 JSON 的 number/float 校验继续接受数字字符串和规范千分位，科学计数法按实际数值比较；任意夹杂文字、非有限数及歧义逗号格式进入复核。money 校验复用金额解析，对万/亿倍率按元比较边界，不改写原字段、不执行汇率换算。业务单位文本应显式使用 money 或先执行有证据的归一化；strict_json 的原生类型要求保持。
+# 浏览器数据就绪与虚拟列表
+
+动态页面可以通过 `browser.readiness` 声明 `selector`、`min_count`、`hidden_selector`（加载指示器）、`text_not`、`stable_ms` 和 `timeout_ms`。Playwright 还支持 `response_url` 模式匹配成功的 API 响应。数据就绪只代表可开始提取，不代表遍历完整。
+
+虚拟列表使用 `browser.collection`：必须设置与 `extract.item_selector` 相同的 `item_selector`，以及 `container_selector`、`identity_attribute`。采集保存每个稳定标识对应的 HTML，保留滚动后被 DOM 移除的记录。用 `end_selector` 或 `expected_count` 声明结束条件；`max_steps`、`max_items`、`timeout_ms`、响应字节预算共同限制采集。未达到结束条件、标识内容变化或预算耗尽会标记为部分结果，并阻止发现阶段报告完整成功。空列表只有明确配置 `allow_empty: true` 且满足结束条件时才算完整。
