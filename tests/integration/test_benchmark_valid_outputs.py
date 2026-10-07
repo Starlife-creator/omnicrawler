@@ -10,7 +10,8 @@ from openpyxl import load_workbook
 from omnicrawler.services.benchmarking import BenchmarkProfile, BenchmarkRunner
 
 
-def test_benchmark_counts_valid_outputs_and_preserves_zero_false_across_exports(tmp_path):
+def test_benchmark_counts_valid_outputs_and_preserves_zero_false_across_exports(tmp_path, monkeypatch):
+    monkeypatch.setattr("omnicrawler.state.state_store_records.utcnow", lambda: "2026-10-07T00:00:00+00:00")
     truth = [{"id": 1, "price": 0, "in_stock": False}, {"id": 2, "price": 4, "in_stock": True},
              {"id": 3, "price": True, "in_stock": False}, {"id": 4, "in_stock": False},
              {"id": 2, "price": 4, "in_stock": True}]
@@ -53,11 +54,12 @@ def test_benchmark_counts_valid_outputs_and_preserves_zero_false_across_exports(
         assert result.time_to_first_valid_record_seconds >= result.time_to_first_record_seconds
         output = tmp_path / "work" / "output"
         rows = [json.loads(line) for line in (output / "records.jsonl").read_text(encoding="utf8").splitlines()]
-        first = rows[0]["data"]
-        assert first["price"] == 0 and first["in_stock"] is False
+        zero = next(row["data"] for row in rows if row["data"]["id"] == 1)
+        assert type(zero["price"]) in (int, float) and zero["price"] == 0 and zero["in_stock"] is False
         with (output / "records.csv").open(encoding="utf-8-sig", newline="") as stream:
             csv_rows = list(csv.DictReader(stream))
-        assert csv_rows[0]["price"] == "0" and csv_rows[0]["in_stock"].casefold() == "false"
+        csv_zero = next(row for row in csv_rows if row["id"] == "1")
+        assert csv_zero["price"] == "0" and csv_zero["in_stock"].casefold() == "false"
         with (output / "record_quality.csv").open(encoding="utf-8-sig", newline="") as stream:
             quality_csv = {row["record_id"]: row for row in csv.DictReader(stream)}
         assert len(quality_csv) == len(rows)
@@ -71,7 +73,8 @@ def test_benchmark_counts_valid_outputs_and_preserves_zero_false_across_exports(
         try:
             table = list(book.active.values)
             xlsx_rows = [dict(zip(table[0], row, strict=True)) for row in table[1:]]
-            assert xlsx_rows[0]["price"] == 0 and xlsx_rows[0]["in_stock"] is False
+            xlsx_zero = next(row for row in xlsx_rows if row["id"] == 1)
+            assert type(xlsx_zero["price"]) in (int, float) and xlsx_zero["price"] == 0 and xlsx_zero["in_stock"] is False
             status_table = list(book["质量与复核"].values)
             quality_xlsx = {row[0]: dict(zip(status_table[0], row, strict=True)) for row in status_table[1:]}
             assert set(quality_xlsx) == set(quality_csv)
