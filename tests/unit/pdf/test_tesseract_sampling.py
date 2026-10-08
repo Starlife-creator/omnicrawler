@@ -1,9 +1,19 @@
 import io
+import sys
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image
 
 from omnicrawler.pdfx.ocr import TesseractBackend, recognize_page
+
+
+@pytest.fixture(autouse=True)
+def _recognition_dependency(monkeypatch):
+    # 识别结果由测试提供，保留真实图像缩放与坐标计算，不要求核心安装包含 OCR。
+    module = SimpleNamespace(Output=SimpleNamespace(DICT="dict"),
+                             image_to_data=lambda *args, **kwargs: pytest.fail("unexpected OCR call"))
+    monkeypatch.setitem(sys.modules, "pytesseract", module)
 
 
 def test_enlarged_ocr_coordinates_still_refer_to_original_image(monkeypatch):

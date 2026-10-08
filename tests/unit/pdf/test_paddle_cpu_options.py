@@ -6,6 +6,12 @@ import pytest
 from omnicrawler.pdfx.ocr import PaddleStructureBackend
 
 
+@pytest.fixture(autouse=True)
+def _constructor_dependencies(monkeypatch):
+    # 只测试参数接线，不调用真实模型；核心安装无需 NumPy。
+    monkeypatch.setitem(sys.modules, "numpy", SimpleNamespace())
+
+
 @pytest.mark.parametrize("config, expected", [({}, False), ({"enable_mkldnn": False}, False), ({"enable_mkldnn": True}, True)])
 def test_cpu_acceleration_is_explicit_and_passed_to_actual_constructor(monkeypatch, config, expected):
     captured = {}
