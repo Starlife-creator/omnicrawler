@@ -38,7 +38,7 @@ def test_selection_is_explicit_and_ai_is_opt_in(dialog, monkeypatch):
     window, _ = dialog
     calls = []
     monkeypatch.setattr(window, "_launch", lambda *args: calls.append(args))
-    assert window.tabs.count() == 8 and not window.use_ai.isChecked()
+    assert window.tabs.count() == 9 and not window.use_ai.isChecked()
     window._analyze()
     window._retry()
     assert not calls

@@ -221,6 +221,8 @@ class _PipelineExtract(_PipelineBase):
                     unique_by=[str(item) for item in extract_config.get("unique_by", [])],
                     force=result.request.meta.get("review_candidates_only") is True,
                 ):
+                    if discover:
+                        self._discover_checked(run_id, result, maximum_depth, discover=True)
                     return
                 # S4.5 P3#137：enrich 增加开关（extract.enrich 默认开，兼容现状）
                 # 显式标注：enrich 关闭时的兜底字典与 enrich_records 的返回都是
@@ -305,7 +307,7 @@ class _PipelineExtract(_PipelineBase):
             with self.state.observed_step(run_id, "discover", result.request.fingerprint,
                                           parent_id="fetch:" + result.request.fingerprint) as summary:
                 try:
-                    self._enqueue_discovered(result, maximum_depth, discover=discover, summary=summary)
+                    self._enqueue_discovered(result, maximum_depth, discover=discover, summary=summary, run_id=run_id)
                     collection = result.meta.get("collection", {})
                     if collection:
                         summary["browser_collection"] = collection
@@ -315,6 +317,8 @@ class _PipelineExtract(_PipelineBase):
                         raise ValueError("分页响应无法解析；不能确认已完整遍历")
                 finally:
                     summary.update(result.meta.get("pagination_diagnostic", {}))
+            if result.request.meta.get("rediscover") is True:
+                self.state.clear_discovery_retry(result.request.fingerprint)
         except Exception as exc:
             raise ExtractionError(f"{type(exc).__name__}: discovery failed") from exc
 
@@ -323,37 +327,50 @@ class _PipelineExtract(_PipelineBase):
         result: FetchResult,
         maximum_depth: int,
         *,
-        discover: bool, summary: dict[str, Any] | None = None,
+        discover: bool, summary: dict[str, Any] | None = None, run_id: str | None = None,
     ) -> None:
         """按统一的主题与作用域规则发现并入队子请求。"""
         summary = summary if summary is not None else {}
         summary.update(discovered=0, enqueued=0, rejected=0, duplicates=0)
-        if not discover or result.request.depth >= maximum_depth:
-            summary["stop_reason"] = "discovery_disabled" if not discover else "depth_limit"
+        if not discover:
+            summary["stop_reason"] = "discovery_disabled"
             return
-        for child in self.source.discover(result):
-            summary["discovered"] += 1
-            topic_config = self.config.section("selection").get("topic", {})
-            strict_prefilter = isinstance(topic_config, dict) and bool(
-                topic_config.get("strict_link_prefilter", False)
-            )
-            if (
-                self.config.source_kind == "focused"
-                and strict_prefilter
-                and child.kind == "page"
-                and child.priority <= 0
-            ):
-                summary["rejected"] += 1
-                continue
-            root = child.meta.get("root_url")
-            allowed, _reason = self.scope.allowed(child.url, str(root) if root else None)
-            if allowed:
-                if self.state.enqueue(child):
-                    summary["enqueued"] += 1
+        edges: list[dict[str, Any]] = []
+        depth_limited = result.request.depth >= maximum_depth
+        if depth_limited:
+            summary["stop_reason"] = "depth_limit"
+        try:
+            for child in self.source.discover(result):
+                summary["discovered"] += 1
+                root = child.meta.get("root_url")
+                allowed, reason = self.scope.allowed(child.url, str(root) if root else None)
+                topic_config = self.config.section("selection").get("topic", {})
+                strict_prefilter = isinstance(topic_config, dict) and bool(
+                    topic_config.get("strict_link_prefilter", False)
+                )
+                if not allowed:
+                    decision = "scope_rejected"
+                elif depth_limited:
+                    decision, reason = "depth_limit", "crawl.max_depth"
+                elif self.config.source_kind == "focused" and strict_prefilter and child.kind == "page" and child.priority <= 0:
+                    decision, reason = "topic_prefilter", "selection.topic.strict_link_prefilter"
+                elif self.state.enqueue(child):
+                    decision, reason = "enqueued", ""
                 else:
-                    summary["duplicates"] += 1
-            else:
+                    decision, reason = "duplicate", "already in frontier"
+                summary[{"enqueued": "enqueued", "duplicate": "duplicates"}.get(decision, "rejected")] += 1
+                edges.append({
+                    "fingerprint": child.fingerprint, "url": child.url, "kind": child.kind,
+                    "depth": child.depth, "decision": decision, "reason": reason,
+                    "parent_fingerprint": result.request.fingerprint, "parent_url": result.final_url,
+                })
+            for filtered in result.meta.get("discovery_filtered_links", []):
+                summary["discovered"] += 1
                 summary["rejected"] += 1
+                edges.append({**filtered, "parent_fingerprint": result.request.fingerprint, "parent_url": result.final_url})
+        finally:
+            if run_id is not None:
+                self.state.save_discovery_edges(run_id, result.request.fingerprint, edges)
 
     def _per_url_extract_override(
         self, result: FetchResult

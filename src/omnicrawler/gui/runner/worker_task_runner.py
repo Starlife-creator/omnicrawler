@@ -202,6 +202,11 @@ class WorkerTaskRunner(QObject):
         if status in {"succeeded", "failed", "cancelled", "partial_success"}:
             self._poller.stop()
             self._log_path = None  # 任务终态，停止增量读日志
+            coverage = result.get("coverage", {})
+            if isinstance(coverage, dict) and coverage.get("observed_traversal") == "partial":
+                self.log_line.emit(_("发现尚未完整：已知遗漏链接 {0}，未完成请求 {1}，历史未解决路径 {2}。请在任务工具中查看发现遗漏清单；全站覆盖仍未知。").format(
+                    coverage.get("known_discovery_gaps", 0), coverage.get("workspace_unfinished_requests", 0),
+                    coverage.get("historical_gap_paths", 0)), "warn")
             if status == "partial_success":
                 self.log_line.emit(_("任务部分成功(存在错误记录)，见详情。"), "warn")
                 # 规范名就是 partial_success：此前压成 finished，界面再也分不出

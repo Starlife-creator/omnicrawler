@@ -58,7 +58,7 @@ def test_handlers_enforce_apply(monkeypatch, command, args, requires_apply) -> N
     handler = {"workspace": handlers._run_workspace, "recovery": handlers._run_recovery,
                "components": handlers._run_components}[name]
     ns = SimpleNamespace(command=name, action=command[1], config="task.yaml", target="", kind="",
-                         limit=10, backup="", package="", name="ocr", allow_unsigned=False,
+                         limit=10, backup="", run_id=None, offset=0, package="", name="ocr", allow_unsigned=False,
                          sha256="")
     monkeypatch.setattr("sys.argv", ["omnicrawler", *command, *args])
     if requires_apply:

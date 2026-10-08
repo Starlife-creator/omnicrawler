@@ -43,7 +43,7 @@ def test_recovery_center_continue_retry_and_relogin_are_recoverable(tmp_path: Pa
     assert reset["moved"] == 1
     assert Path(reset["quarantine"]).joinpath("default.cookies").is_file()
     assert center.overview()["actions"] == [
-        "continue", "retry-failed", "relogin", "reprocess", "rollback-config"
+        "continue", "retry-failed", "retry-discovery", "relogin", "reprocess", "rollback-config"
     ]
 
 

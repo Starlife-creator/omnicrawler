@@ -118,6 +118,16 @@ def execute(action: TaskAction) -> dict[str, Any]:
             raise ValueError("必须明确选择分析文档")
         return archive_analysis.execute(manifest, Path(args["output"]), config_path=action.config_path,
                                         use_ai=args.get("use_ai") is True, selected_ids=args["selected_ids"])
+    if action.name in {"coverage", "retry-discovery"}:
+        from ..commands.recovery import execute as recover
+
+        if action.name == "coverage":
+            return recover(str(action.config_path), "coverage", limit=100,
+                           run_id=args.get("run_id") or None, offset=int(args.get("offset", 0)))
+        if args.get("confirmed") is not True or not args.get("fingerprints"):
+            raise ValueError("必须明确选择发现清单中的父页面并确认")
+        return recover(str(action.config_path), "retry-discovery",
+                       fingerprints=args["fingerprints"], run_id=args.get("run_id") or None)
     if action.name in {"failures", "retry"}:
         from ..commands.recovery import execute as recover
         if action.name == "failures":

@@ -83,3 +83,5 @@ omnicrawler plugins audit --report --format json
 将需求页数、字段、多值及输出格式写入自动配置；无法可靠推断的字段或不支持的自动操作明确报错，不写假成功配置。随后按常规先试跑再运行。HTML 下一页使用 `source.follow_xpath` 仅跟进已识别的下一页链接，避免登录或导航消耗页面预算；它不关闭域名、robots 或出网边界。
 
 自动列表中，标题属性仅在对应可见标题时采用；标签用 `all: true` 保留数组。稳定详情链接对应 `extract.deduplicate_by` 时，同实体、同数据在同轮只交付一次，内容变化或标识缺失保留原记录，不按同名标题合并。
+
+发现遗漏用 `recovery coverage --limit 100 --offset 0`，可用 `--run-id` 核对历史。明确选择父请求后 `recovery retry-discovery --fingerprint ...`，再 `run --resume`；范围、robots 与预算仍生效。参见 [发现清单与补采](DISCOVERY_COVERAGE.md)。

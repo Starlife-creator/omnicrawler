@@ -716,10 +716,12 @@ def _run_recovery(args: argparse.Namespace) -> None:
         require_explicit_apply("recovery rollback-config")
     load_config(args.config)
     fingerprints = getattr(args, "fingerprint", None)
-    if fingerprints and args.action != "retry-failed":
-        raise ValueError("fingerprint 仅用于 retry-failed")
+    if fingerprints and args.action not in {"retry-failed", "retry-discovery"}:
+        raise ValueError("fingerprint 仅用于 retry-failed / retry-discovery")
+    if args.run_id and args.action not in {"coverage", "retry-discovery"} or args.offset and args.action != "coverage":
+        raise ValueError("run-id / offset 仅用于发现清单与发现重试")
     _json(cmd_recovery.execute(args.config, args.action, limit=args.limit, backup=args.backup or "",
-                              fingerprints=fingerprints))
+                              fingerprints=fingerprints, run_id=args.run_id, offset=args.offset))
 
 
 @_register("compare-runs")

@@ -12,6 +12,7 @@ from omnicrawler.pdfx.ocr import TesseractBackend, recognize_page
 def _recognition_dependency(monkeypatch):
     # 识别结果由测试提供，保留真实图像缩放与坐标计算，不要求核心安装包含 OCR。
     module = SimpleNamespace(Output=SimpleNamespace(DICT="dict"),
+                             pytesseract=SimpleNamespace(tesseract_cmd="tesseract"),
                              image_to_data=lambda *args, **kwargs: pytest.fail("unexpected OCR call"))
     monkeypatch.setitem(sys.modules, "pytesseract", module)
 
@@ -49,3 +50,11 @@ def test_scaling_budget_rejects_before_allocating_or_invoking_ocr(monkeypatch):
     Image.new("RGB", (2000, 1000), "white").save(buffer, "PNG")
     with pytest.raises(ValueError, match="像素预算"):
         backend.recognize_rich(buffer.getvalue())
+
+
+def test_configured_tesseract_command_is_forwarded_without_running_ocr(monkeypatch):
+    monkeypatch.setenv('TESSERACT_CMD', 'environment-tesseract')
+    backend = TesseractBackend({})
+    assert backend.pytesseract.pytesseract.tesseract_cmd == 'environment-tesseract'
+    configured = TesseractBackend({'command': 'configured-tesseract'})
+    assert configured.pytesseract.pytesseract.tesseract_cmd == 'configured-tesseract'

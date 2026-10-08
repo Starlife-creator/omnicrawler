@@ -33,6 +33,7 @@
 - [安装、运行与平台矩阵](INSTALLATION.md)
 - [生产部署指南](PRODUCTION_GUIDE.md)
 - [生产运行、恢复与质量验收](OPERATIONS.md)
+- [发现清单与选择性补采](DISCOVERY_COVERAGE.md)：未跟随链接、拒绝原因、历史线索与安全重访。
 - [低门槛使用指南](UX_GUIDE.md)
 - [FAQ](FAQ.md)
 

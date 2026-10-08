@@ -10,6 +10,7 @@ from ..core.database_lease import database_lease
 from .migrations import initialize_schema
 from .schema import SCHEMA
 from .state_store_artifacts import ArtifactsMixin
+from .state_store_discovery import DiscoveryMixin
 from .state_store_plugin_state import PluginStateMixin
 from .state_store_quality import QualityMixin
 from .state_store_queue import QueueMixin
@@ -26,6 +27,7 @@ class _ClosedConnection:
 
 class StateStore(
     ArtifactsMixin,
+    DiscoveryMixin,
     PluginStateMixin,
     QualityMixin,
     QueueMixin,

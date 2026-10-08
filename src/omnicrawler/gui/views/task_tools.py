@@ -123,6 +123,22 @@ class TaskToolsDialog(QDialog):
         recovery.addRow(self.failures)
         recovery.addRow(QLabel(_("认证过期请求请先到登录会话页验证登录。重试只修改所选失败的队列状态，之后仍需恢复任务。")))
         self._button(recovery, _("仅重试所选失败"), self._retry)
+        coverage = self._tab(_("发现遗漏与补采"))
+        coverage.addRow(QLabel(_("清单仅包含已观察到的链接，不能证明全站没有遗漏。调整深度或过滤规则后需重新打开工具读取清单。")))
+        self.discovery_run_id = QLineEdit()
+        self.discovery_run_id.setAccessibleName(_("发现清单运行 ID，留空查看最近运行"))
+        coverage.addRow(_("运行 ID（可选）"), self.discovery_run_id)
+        self._coverage_run_id = ""
+        self._coverage_offset = 0
+        self._coverage_next: int | None = None
+        self._button(coverage, _("读取发现遗漏清单"), lambda: self._launch("coverage", {
+            "run_id": self.discovery_run_id.text().strip(), "offset": 0}))
+        self.discovery_gaps = QListWidget()
+        self.discovery_gaps.setAccessibleName(_("未跟随链接及补采父页面选择"))
+        coverage.addRow(self.discovery_gaps)
+        self._button(coverage, _("读取下一页遗漏"), self._next_coverage)
+        self._button(coverage, _("重访本页勾选链接的父页面"), self._retry_discovery)
+        coverage.addRow(QLabel(_("仅重访本页勾选项的父页面；不直接抓取被拒绝的子地址。入队后需回到任务页恢复运行。")))
         notices = self._tab(_("变化通知"))
         notices.addRow(QLabel(_("记录变化通知使用任务配置中的Webhook；首轮基线不提醒。补发仅处理勾选事件，采集失败项与通知失败项分别恢复。")))
         self._button(notices, _("读取投递状态"), lambda: self._launch("notifications:report", {}))
@@ -429,6 +445,20 @@ class TaskToolsDialog(QDialog):
         if self._confirm():
             self._launch("retry", {"fingerprints": fingerprints, "confirmed": True})
 
+    def _next_coverage(self) -> None:
+        if self._coverage_next is None:
+            self.result_view.setPlainText(_("没有下一页；历史遗漏可填写对应运行 ID 后重新读取。"))
+            return
+        self._launch("coverage", {"run_id": self._coverage_run_id, "offset": self._coverage_next})
+
+    def _retry_discovery(self) -> None:
+        parents = list(dict.fromkeys(self._checked(self.discovery_gaps)))
+        if not parents or not self._coverage_run_id:
+            self.result_view.setPlainText(_("请先读取清单并勾选需要重访的父页面。"))
+            return
+        if self._confirm():
+            self._launch("retry-discovery", {"fingerprints": parents, "run_id": self._coverage_run_id, "confirmed": True})
+
     def _binding(self) -> str:
         if not self.evidence.text() or not self.candidate.text():
             return ""
@@ -459,6 +489,32 @@ class TaskToolsDialog(QDialog):
             return
         if not self._same_task():
             self.result_view.setPlainText(_("操作结果属于原任务；当前任务已变化，请重新打开工具核对。"))
+            return
+        if name == "coverage":
+            self.discovery_gaps.clear()
+            self._coverage_run_id = str(result.get("run_id", ""))
+            self._coverage_offset = int(result.get("offset", 0))
+            self._coverage_next = result.get("next_offset")
+            labels = {"depth_limit": _("深度上限"), "scope_rejected": _("范围或安全规则"),
+                      "topic_prefilter": _("主题预过滤"), "follow_filter": _("链接选择规则")}
+            for row in result.get("gap_paths", []):
+                item = QListWidgetItem(row["url"] + "\n" + labels.get(row["decision"], row["decision"]) +
+                                       " — " + row["reason"])
+                item.setToolTip(_("父页面：{0}").format(row["parent_url"]))
+                item.setData(Qt.ItemDataRole.UserRole, row["parent_fingerprint"])
+                item.setCheckState(Qt.CheckState.Unchecked)
+                self.discovery_gaps.addItem(item)
+            self.result_view.setPlainText(_("全站覆盖：未知\n本次已知遗漏链接：{0}\n当前工作区未完成请求：{1}\n历史未解决发现路径：{2}\n清单总路径：{3}；当前偏移：{4}").format(
+                result.get("known_discovery_gaps", 0), result.get("workspace_unfinished_requests", 0),
+                result.get("historical_gap_paths", 0), result.get("gap_paths_total", 0), self._coverage_offset) +
+                "\n" + _("历史遗漏可能已经过时，请按运行 ID 核对。") +
+                "\n" + json.dumps(result.get("historical_gap_runs", []), ensure_ascii=False))
+            return
+        if name == "retry-discovery":
+            self.discovery_gaps.clear()
+            self._coverage_run_id = ""
+            self._coverage_next = None
+            self.result_view.setPlainText(_("已重入队父页面：{0}。请回到任务页恢复运行；子链接仍按当前策略检查。").format(result["queued"]))
             return
         if name.startswith(("components:", "workspace:", "references:")):
             self._management_done(name, arguments, result)

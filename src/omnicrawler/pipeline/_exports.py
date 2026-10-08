@@ -104,6 +104,7 @@ class _PipelineExports(_PipelineBase):
             "run_id": run_id, "status": status, "processed": processed,
             **self.state.stats(run_id), "export": exported, "pdf": pdf_summary,
         }
+        summary["coverage"] = self.state.discovery_coverage(run_id, limit=20)
         if delivery is not None:
             summary["pdf_delivery"] = delivery
         summary["api_discovery"] = {

@@ -144,6 +144,7 @@ class GenericSource:
         if self.kind in {"sitemap", "feed"}:
             return self._discover_xml(result)
         discovered: list[CrawlRequest] = []
+        result.meta["discovery_filtered_links"] = []
         if "html" in result.content_type:
             document = parse_html(decode_body(result))
             # browser 也参与链接发现：浏览器源同样受 crawl.max_pages / max_depth /
@@ -173,8 +174,15 @@ class GenericSource:
                     discovered.append(self._child(result, url, "asset", label))
                 elif is_media and (download.get("media") or self.kind == "media"):
                     discovered.append(self._child(result, url, "asset", label))
-                elif can_crawl and link_kind == "link" and (allowed_links is None or href.strip() in allowed_links):
-                    discovered.append(self._child(result, url, "page", label))
+                elif can_crawl and link_kind == "link":
+                    child = self._child(result, url, "page", label)
+                    if allowed_links is None or href.strip() in allowed_links:
+                        discovered.append(child)
+                    else:
+                        result.meta["discovery_filtered_links"].append({
+                            "fingerprint": child.fingerprint, "url": child.url, "kind": child.kind,
+                            "depth": child.depth, "decision": "follow_filter", "reason": "source.follow_xpath",
+                        })
         if self.kind in {"rest", "graphql"}:
             discovered.extend(self._discover_api_next(result))
         return discovered

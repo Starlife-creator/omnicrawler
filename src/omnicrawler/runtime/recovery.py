@@ -42,11 +42,13 @@ class RecoveryCenter:
         with StateStore(self.database) as state:
             totals = state.stats()
             previews = self._action_previews(state, totals)
+            latest = state.latest_run()
             return {
                 "status": "ready",
                 "database": str(self.database),
-                "latest_run": state.latest_run(),
+                "latest_run": latest,
                 "totals": totals,
+                "coverage": state.discovery_coverage(latest["run_id"], limit=20) if latest else None,
                 "actions": self.actions(),
                 "action_previews": previews,
                 "recommended_action": self._recommended_action(previews),
@@ -54,7 +56,7 @@ class RecoveryCenter:
 
     @staticmethod
     def actions() -> list[str]:
-        return ["continue", "retry-failed", "relogin", "reprocess", "rollback-config"]
+        return ["continue", "retry-failed", "retry-discovery", "relogin", "reprocess", "rollback-config"]
 
     @staticmethod
     def _empty_previews() -> dict[str, dict[str, Any]]:
@@ -68,6 +70,10 @@ class RecoveryCenter:
                 "available": False,
                 "affected": {"failed_requests": 0},
                 "effect": "没有断点数据库；此操作不会创建或删除结果。",
+            },
+            "retry-discovery": {
+                "available": False, "affected": {"discovery_gaps": 0},
+                "effect": "先读取发现清单并明确选择父页面，再按当前规则重新发现；不会放行被策略拒绝的地址。",
             },
             "relogin": {
                 "available": False,
@@ -94,6 +100,8 @@ class RecoveryCenter:
         incomplete_runs = state.rows(
             "SELECT run_id, status FROM runs WHERE status IN ('running', 'paused', 'retrying') ORDER BY started_at"
         )
+        latest = state.latest_run()
+        discovery_gaps = state.discovery_coverage(latest["run_id"], limit=1)["known_discovery_gaps"] if latest else 0
         sessions = self.config.workspace / "sessions"
         session_files = [path for path in sessions.iterdir() if path.is_file()] if sessions.is_dir() else []
         return {
@@ -119,6 +127,11 @@ class RecoveryCenter:
                 "available": bool(failed),
                 "affected": {"failed_requests": failed},
                 "effect": "只把失败请求放回待处理并清除其错误计数；不会重置已完成请求或删除输出。",
+            },
+            "retry-discovery": {
+                "available": bool(discovery_gaps),
+                "affected": {"discovery_gaps": discovery_gaps},
+                "effect": "先读取发现清单并选择父请求；调整任务规则后重访，范围、robots 与预算仍生效。",
             },
             "relogin": {
                 "available": bool(session_files),
@@ -192,6 +205,75 @@ class RecoveryCenter:
                              "attempts": row["attempts"], "reason": reason,
                              "next_action": "verified_login_recovery" if expired else "review_then_select_retry"})
         return {"failures": failures, "total": total, "truncated": total > len(failures)}
+
+    def coverage(self, limit: int = 100, *, offset: int = 0, run_id: str | None = None) -> dict[str, Any]:
+        if type(limit) is not int or not 1 <= limit <= 1000 or type(offset) is not int or offset < 0:
+            raise ValueError("coverage limit must be 1..1000 and offset must be nonnegative")
+        if not self.database.is_file():
+            return {"status": "not_started", "site_coverage": "unknown", "gap_paths": []}
+        with StateStore(self.database) as state:
+            latest = state.latest_run()
+            selected = run_id or (latest["run_id"] if latest else None)
+            if selected is None:
+                return {"status": "not_started", "site_coverage": "unknown", "gap_paths": []}
+            return state.discovery_coverage(selected, limit=limit, offset=offset)
+
+    def retry_discovery(self, fingerprints: list[str], *, run_id: str | None = None) -> dict[str, Any]:
+        """Revisit explicitly selected GET parents; current policy is enforced again on resume."""
+        from ..security.policy import ScopePolicy
+
+        if (not fingerprints or len(fingerprints) > 100
+                or not all(isinstance(item, str) and item for item in fingerprints)
+                or len(set(fingerprints)) != len(fingerprints)):
+            raise ValueError("retry-discovery requires 1..100 distinct parent fingerprints")
+        if not self.database.is_file():
+            raise ValueError("No discovery database")
+        with StateStore(self.database) as state:
+            state.conn.execute("BEGIN IMMEDIATE")
+            latest = state.latest_run()
+            selected = run_id or (latest["run_id"] if latest else None)
+            if selected is None:
+                raise ValueError("No discovery run")
+            state._require_run_id(selected)
+            policy = ScopePolicy(self.config)
+            requests = []
+            for fingerprint in fingerprints:
+                edge = state.conn.execute(
+                    "SELECT 1 FROM stage_checkpoints WHERE run_id=? AND stage='discovery_edge' "
+                    "AND json_extract(payload_json,'$.parent_fingerprint')=? "
+                    "AND status IN ('depth_limit','scope_rejected','topic_prefilter','follow_filter') LIMIT 1",
+                    (selected, fingerprint),
+                ).fetchone()
+                row = state.conn.execute("SELECT * FROM frontier WHERE fingerprint=?", (fingerprint,)).fetchone()
+                if edge is None or row is None:
+                    raise ValueError("Selected parent has no recorded discovery gap")
+                request = state._row_to_request(row)
+                if request.fingerprint != fingerprint:
+                    raise ValueError("Discovery parent identity cannot be restored from redacted headers; rebuild the entry from current configuration")
+                if request.method != "GET" or request.body is not None or request.kind == "asset":
+                    raise ValueError("Discovery retry requires a GET page without a request body")
+                if row['status'] == 'in_progress':
+                    raise ValueError("Discovery parent is currently in progress")
+                allowed, reason = policy.allowed(request.url, request.meta.get('root_url'))
+                if not allowed:
+                    raise ValueError("Discovery parent is outside current scope: " + reason)
+                if request.depth >= int(self.config.section('crawl').get('max_depth', 3)):
+                    raise ValueError("Increase crawl.max_depth before retrying this discovery parent")
+                request.meta['rediscover'] = True
+                requests.append(request)
+            with state._lock, state.conn:
+                for request in requests:
+                    state.conn.execute(
+                        "UPDATE frontier SET status='pending', attempts=0, last_error=NULL, meta_json=?, updated_at=? WHERE fingerprint=?",
+                        (json.dumps(request.meta, ensure_ascii=False), utcnow(), request.fingerprint),
+                    )
+                state.conn.execute(
+                    "INSERT INTO audit_events(action, run_id, actor, details_json, created_at) VALUES(?,?,?,?,?)",
+                    ('retry_discovery', selected, 'local-user', json.dumps({'parents': fingerprints}), utcnow()),
+                )
+        return {"status": "queued", "parents": fingerprints, "run_id": selected, "queued": len(requests),
+                "next_action": "run --resume", "records_preserved": True,
+                "effect": "Re-fetch selected parents and rediscover under current depth, scope, robots and budgets."}
 
     def reset_login(self) -> dict[str, Any]:
         with session_lease(self.config.workspace):
