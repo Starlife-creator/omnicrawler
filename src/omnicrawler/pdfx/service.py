@@ -203,6 +203,8 @@ def run_extraction(
             return results
         results["extract"] = result
         _emit(callback, "extract", result)
+        if result.get("dependency_notice"):
+            _emit(callback, "warnings", {"items": [result["dependency_notice"]]})
         if _stopped(should_stop):
             results["stopped"] = True
             return results

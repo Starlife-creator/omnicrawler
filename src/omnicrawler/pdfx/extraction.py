@@ -13,6 +13,7 @@ from typing import Any
 from .concurrency import iter_bounded_futures
 from .config import FieldSpec, ProjectConfig
 from .database import Database
+from .dependencies import extraction_digest
 from .llm import build_user_content, create_llm_client
 from .normalization import EntityResolver, normalize_value
 from .retrieval import CandidatePage, select_candidates
@@ -212,7 +213,8 @@ def extract_document(
     # D19：含人工复核记录的文档不自动重抽（record_id 确定性生成会与保留记录冲突；
     # 人工修正值优先，需用户手动清除复核状态后才会被新抽取覆盖）
     reviewed = db.fetchone(
-        "SELECT COUNT(*) AS n FROM records WHERE doc_id=? AND review_status='human_accepted'",
+        "SELECT COUNT(*) AS n FROM records WHERE doc_id=? "
+        "AND (review_status='human_accepted' OR review_status='human_rejected')",
         (doc_id,),
     )
     if reviewed and reviewed["n"]:
@@ -244,9 +246,14 @@ def extract_document(
     field_map = config.field_map()
     now = utcnow()
     with db.transaction() as conn:
-        # D19：不覆盖人工复核过的记录（human_accepted 保留，下次续跑/重抽不静默清空人工修正值）
+        # A review may complete while rules/model processing is in progress.
+        if conn.execute(
+            "SELECT 1 FROM records WHERE doc_id=? AND review_status IN ('human_accepted','human_rejected')",
+            (doc_id,),
+        ).fetchone():
+            return 0
         conn.execute(
-            "DELETE FROM records WHERE doc_id=? AND review_status != 'human_accepted'",
+            "DELETE FROM records WHERE doc_id=? AND review_status NOT IN ('human_accepted','human_rejected')",
             (doc_id,),
         )
         for index, record in enumerate(records, start=1):
@@ -319,7 +326,31 @@ def extract_document(
                 payload.get("document_type"), now, doc_id,
             ),
         )
+        digest = doc_row.get("_dependency_digest") if isinstance(doc_row, dict) else None
+        digest = digest or extraction_digest(config, entity_resolver)
+        conn.execute(
+            "INSERT INTO extraction_dependencies(doc_id,digest,updated_at) VALUES(?,?,?) "
+            "ON CONFLICT(doc_id) DO UPDATE SET digest=excluded.digest,updated_at=excluded.updated_at",
+            (doc_id, digest, now),
+        )
     return len(records)
+
+
+def _report_dependency_reviews(summary: dict[str, Any], db: Database, digest: str) -> None:
+    protected = db.fetchone(
+        "SELECT COUNT(*) AS n FROM documents d LEFT JOIN extraction_dependencies x ON x.doc_id=d.doc_id "
+        "WHERE (x.digest IS NULL OR x.digest!=?) AND EXISTS ("
+        "SELECT 1 FROM records r WHERE r.doc_id=d.doc_id AND r.review_status IN ('human_accepted','human_rejected'))",
+        (digest,),
+    )
+    previous = summary.get("reviewed_dependency_changes", 0)
+    summary["reviewed_dependency_changes"] = int(protected["n"] if protected else 0)
+    if summary["reviewed_dependency_changes"]:
+        summary["dependency_notice"] = (
+            "人工复核文档的抽取依赖已经变化或尚未记录，已保留人工决定；新规则未自动应用，请复核。"
+        )
+        if previous != summary["reviewed_dependency_changes"]:
+            LOGGER.warning(summary["dependency_notice"])
 
 
 def extraction_stage(
@@ -332,22 +363,28 @@ def extraction_stage(
 ) -> dict[str, Any]:
     if limit is not None and limit < 0:
         raise ValueError("limit 不能为负数")
-    select_sql = """
-        SELECT doc_id, filename, primary_path FROM documents
-        WHERE status IN ('parsed','parsed_partial','parsed_native','extract_failed')
-        ORDER BY filename, doc_id
+    resolver = EntityResolver.from_config(config)
+    digest = extraction_digest(config, resolver)
+    dependency_clause = """
+        FROM documents d LEFT JOIN extraction_dependencies x ON x.doc_id=d.doc_id
+        WHERE (d.status IN ('parsed','parsed_partial','parsed_native','extract_failed')
+               OR (d.status IN ('extracted','extracted_no_data') AND (x.digest IS NULL OR x.digest!=?)))
+        AND NOT EXISTS (
+            SELECT 1 FROM records r WHERE r.doc_id=d.doc_id
+            AND r.review_status IN ('human_accepted','human_rejected')
+        )
         """
-    select_params: tuple[Any, ...] = ()
+    select_sql = "SELECT d.doc_id,d.filename,d.primary_path " + dependency_clause + " ORDER BY d.filename,d.doc_id"
+    select_params: tuple[Any, ...] = (digest,)
     if hasattr(db, "iter_rows"):
         total_row = db.fetchone(
-            "SELECT COUNT(*) AS n FROM documents "
-            "WHERE status IN ('parsed','parsed_partial','parsed_native','extract_failed')"
+            "SELECT COUNT(*) AS n " + dependency_clause, select_params,
         )
         selected = int(total_row["n"] if total_row else 0)
         if limit is not None:
             selected = min(selected, limit)
             select_sql += " LIMIT ?"
-            select_params = (limit,)
+            select_params = (digest, limit)
         rows = db.iter_rows(select_sql, select_params)
     else:  # Lightweight test doubles and third-party Database adapters.
         buffered_rows = db.fetchall(select_sql, select_params)
@@ -361,6 +398,7 @@ def extraction_stage(
     summary: dict[str, Any] = {
         "selected": selected, "documents": 0, "records": 0, "no_data": 0, "failed": 0,
     }
+    _report_dependency_reviews(summary, db, digest)
     if not selected:
         return summary
     # S2.3.2：LLM 客户端构造失败（Key 空/参数非法/依赖缺失）降级为纯规则模式，不中断抽取
@@ -369,8 +407,6 @@ def extraction_stage(
     except Exception as exc:  # noqa: BLE001 - missing/empty LLM config must not break extraction
         LOGGER.warning("LLM 客户端构造失败，降级为纯规则抽取: %s", exc)
         client = None
-    resolver = EntityResolver.from_config(config)
-
     # D40：每线程复用数据库连接（十万文档不再十万次建连+建表脚本）；
     # D41 的 BEGIN IMMEDIATE + busy_timeout 保证线程并发写不冲突
     _thread_db = threading.local()
@@ -382,7 +418,9 @@ def extraction_stage(
             worker_db = Database(config.database)
             _thread_db.db = worker_db
             _thread_connections.append(worker_db)  # list.append 在 GIL 下线程安全
-        return extract_document(config, worker_db, row, client, resolver)
+        prepared_row = dict(row)
+        prepared_row["_dependency_digest"] = digest
+        return extract_document(config, worker_db, prepared_row, client, resolver)
 
     def mark_stopped() -> None:
         summary["stopped"] = True
@@ -420,6 +458,7 @@ def extraction_stage(
                 conn.close()
             except Exception as exc:  # noqa: BLE001
                 LOGGER.warning("关闭抽取线程数据库连接失败: %s", exc)
+    _report_dependency_reviews(summary, db, digest)
     # C49/D2：抽取方式分布（rules / hybrid / rules_fallback），供 GUI 明示"是否真的用了大模型"
     summary["extraction_methods"] = {
         row["method"]: row["n"]

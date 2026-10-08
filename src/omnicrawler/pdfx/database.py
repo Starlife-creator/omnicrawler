@@ -112,6 +112,12 @@ CREATE TABLE IF NOT EXISTS runs (
     summary_json TEXT
 );
 
+CREATE TABLE IF NOT EXISTS extraction_dependencies (
+    doc_id TEXT PRIMARY KEY REFERENCES documents(doc_id) ON DELETE CASCADE,
+    digest TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
 CREATE INDEX IF NOT EXISTS idx_pages_ocr ON pages(needs_ocr, ocr_status);
 CREATE INDEX IF NOT EXISTS idx_pages_candidate ON pages(doc_id, is_candidate);

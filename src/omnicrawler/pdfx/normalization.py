@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import re
 import threading
 from dataclasses import dataclass, field
@@ -171,31 +172,34 @@ def normalize_percent(raw: str) -> tuple[str | None, str]:
     return text, "%"
 
 
-# Module-level entity cache with double-checked locking for thread safety.
-# S4.5 P3#144：缓存键含 mtime——CSV 变更后重新加载，不再永不过期。
-_entity_cache: dict[str, dict[str, str]] = {}
+# Content-versioned cache: replacing a CSV while preserving timestamps must refresh aliases.
+_entity_cache: dict[str, tuple[str, dict[str, str]]] = {}
 _entity_lock = threading.Lock()
 
 
-def _load_entities(csv_path: Path) -> dict[str, str]:
-    """Load entity aliases from a CSV file with thread-safe caching.
-
-    Uses double-checked locking: the cache is checked first without the lock,
-    then re-checked under the lock before performing the actual load.
-    """
-    resolved = csv_path.resolve()
+def _entity_content_digest(path: Path) -> str:
+    digest = hashlib.sha256()
     try:
-        mtime = resolved.stat().st_mtime_ns
-    except OSError:
-        mtime = -1
-    cache_key = f"{resolved}|{mtime}"
+        with path.open("rb") as handle:
+            for block in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(block)
+    except FileNotFoundError:
+        return "missing"
+    return digest.hexdigest()
+
+
+def _load_entities(csv_path: Path) -> dict[str, str]:
+    """Cache entity aliases by content using bounded-memory file hashing."""
+    resolved = csv_path.resolve()
+    content_digest = _entity_content_digest(resolved)
+    cache_key = str(resolved)
     cached = _entity_cache.get(cache_key)
-    if cached is not None:
-        return cached
+    if cached is not None and cached[0] == content_digest:
+        return cached[1]
     with _entity_lock:
         cached = _entity_cache.get(cache_key)
-        if cached is not None:
-            return cached
+        if cached is not None and cached[0] == content_digest:
+            return cached[1]
         aliases: dict[str, str] = {}
         if resolved.exists():
             with resolved.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -207,7 +211,10 @@ def _load_entities(csv_path: Path) -> dict[str, str]:
                     for alias in (row.get("aliases") or "").split("|"):
                         if alias.strip():
                             aliases[alias.strip().casefold()] = canonical
-        _entity_cache[cache_key] = aliases
+        if _entity_content_digest(resolved) == content_digest:
+            _entity_cache[cache_key] = (content_digest, aliases)
+            while len(_entity_cache) > 8:
+                _entity_cache.pop(next(iter(_entity_cache)))
         return aliases
 
 
