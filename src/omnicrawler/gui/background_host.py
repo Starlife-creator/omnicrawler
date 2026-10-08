@@ -281,7 +281,7 @@ class BackgroundController(QtCore.QObject):
 
         was_active = self.active
         pixmap = QtGui.QPixmap()
-        if not png or not pixmap.loadFromData(png, b"PNG"):
+        if not png or not png.startswith(b"\x89PNG\r\n\x1a\n") or not pixmap.loadFromData(png):
             raise ValueError(_("宿主渲染结果不是有效 PNG"))
         current = getattr(self.main_window, "_active_plugin_background", None)
         if current is not None and current is not self:
