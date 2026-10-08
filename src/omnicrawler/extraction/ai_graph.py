@@ -29,12 +29,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import ipaddress
 import json
 import logging
 import math
 import re
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 try:
     from enum import StrEnum
@@ -97,6 +99,21 @@ class Provider:
     pricing: dict[str, Any] = field(default_factory=dict)
     total_timeout_seconds: float | None = None
     supports_json_schema: bool = False
+    allow_keyless_local: bool = False
+
+    def permits_keyless_local(self) -> bool:
+        """Explicit opt-in only for literal loopback endpoints; no DNS aliases."""
+        if self.allow_keyless_local is not True:
+            return False
+        try:
+            endpoint = urlsplit(self.base_url)
+            _ = endpoint.port  # Reject malformed ports before creating a request.
+            return (endpoint.scheme in {"http", "https"}
+                    and endpoint.username is None and endpoint.password is None
+                    and not endpoint.query and not endpoint.fragment
+                    and ipaddress.ip_address(endpoint.hostname or "").is_loopback)
+        except ValueError:
+            return False
 
 
 class AIGraphExtractor:
@@ -479,9 +496,9 @@ class AIGraphExtractor:
 
         from ..services.ai_safety import mark_untrusted
 
-        # B13-002：未配置 API key 时 fail-closed——拒绝携带空 Bearer 对外发请求，
-        # 防止 ai 模式被误启用时向外部 API 泄露元数据（HTTP 客户端行为可见）。
-        if not self._provider.api_key:
+        # Missing cloud credentials remain fail-closed. Local development requires
+        # explicit opt-in and a literal loopback endpoint; privacy/egress still apply.
+        if not self._provider.api_key and not self._provider.permits_keyless_local():
             raise RuntimeError(
                 "AIGraphExtractor: 未配置 AI API key（fail-closed，拒绝外发请求）"
             )
@@ -499,8 +516,9 @@ class AIGraphExtractor:
 
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self._provider.api_key}",
         }
+        if self._provider.api_key:
+            headers["Authorization"] = f"Bearer {self._provider.api_key}"
         payload = {
             "model": self._provider.model,
             "messages": [
