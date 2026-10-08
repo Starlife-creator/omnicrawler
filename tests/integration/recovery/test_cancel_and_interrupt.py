@@ -292,3 +292,32 @@ def test_completed_rerun_reports_cumulative_delivery(site, tmp_path):
     assert repeat["records"] == 0
     assert repeat["export"]["delivery"]["cumulative_records"] == first["records"]
     assert repeat["export"]["delivery"]["frontier_pending"] == 0
+
+
+def test_interrupt_resume_with_stale_egress_control_read(site, tmp_path: Path, monkeypatch) -> None:
+    """An in-flight read may precede stop-file replacement; task switch must retain work."""
+    from omnicrawler.security.egress import EgressBroker
+
+    monkeypatch.setattr(EgressBroker, "_control_stopped", lambda self: False)
+    test_interrupted_run_is_resumable_to_completion(site, tmp_path, monkeypatch)
+
+
+def test_task_disconnect_has_typed_stop_even_before_control_file(tmp_path: Path) -> None:
+    from copy import deepcopy
+
+    from omnicrawler.core.config import AppConfig, DEFAULTS
+    from omnicrawler.core.errors import EgressDisabledError, TaskStoppedError
+    from omnicrawler.security.egress import EgressBroker
+
+    config = AppConfig(tmp_path / "task.yaml", tmp_path, deepcopy(DEFAULTS), tmp_path)
+    broker = EgressBroker(config)
+    broker.disconnect_task()
+    with pytest.raises(TaskStoppedError):
+        broker._check_switches()
+    broker.reconnect_task()
+    broker._check_switches()
+    config.raw["egress"]["enabled"] = False
+    disabled = EgressBroker(config)
+    with pytest.raises(EgressDisabledError) as caught:
+        disabled._check_switches()
+    assert not isinstance(caught.value, TaskStoppedError)

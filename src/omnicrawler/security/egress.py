@@ -255,7 +255,7 @@ class EgressBroker:
         if self._control_stopped():
             raise TaskStoppedError("任务已停止，禁止产生新的网络请求")
         if self._task_disabled.is_set():
-            raise EgressDisabledError("网络出口已关闭")
+            raise TaskStoppedError("网络出口已关闭")
 
     def _check_time_and_cost(self) -> None:
         elapsed = time.monotonic() - self._started
