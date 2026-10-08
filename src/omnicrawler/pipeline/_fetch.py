@@ -84,7 +84,8 @@ class _PipelineFetch(_PipelineBase):
             raise PermissionError("robots.txt不允许抓取此地址，或robots检查失败且配置为fail-closed")
         updates = self.config.section("updates")
         discovery_body = getattr(getattr(self, "source", None), "requires_discovery_body", None)
-        requires_body = request.meta.get("rediscover") is True or callable(discovery_body) and discovery_body(request)
+        requires_body = (request.meta.get("rediscover") is True or request.meta.get("_require_extraction_body") is True
+                         or callable(discovery_body) and discovery_body(request))
         should_use_conditional = (
             not requires_body
             and

@@ -35,7 +35,7 @@ LOGGER = logging.getLogger("omnicrawler")
 
 def _comparison_scope(config: Any) -> str:
     scope = {key: config.section(key) for key in (
-        "source", "extract", "selection", "browser", "http", "session", "updates",
+        "source", "extract", "selection", "browser", "http", "session", "updates", "quality",
     )}
     scope["updates"] = {key: value for key, value in scope["updates"].items() if key != "notifications"}
     scope["crawl_scope"] = {

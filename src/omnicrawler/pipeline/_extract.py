@@ -6,6 +6,7 @@ import json
 import logging
 import mimetypes
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -89,8 +90,18 @@ class _PipelineExtract(_PipelineBase):
         )
 
         if result.status == 304:
-            # A conditional response has no body: never interpret it as an empty page.
-            self._reuse_notification_observation(run_id, result)
+            # A 304 only validates bytes, not extraction rules or quality settings.
+            if self._reuse_notification_observation(run_id, result):
+                return
+            headers = {key: value for key, value in result.request.headers.items()
+                       if key.casefold() not in {"if-none-match", "if-modified-since"}}
+            request = replace(result.request, headers=headers, meta={**result.request.meta,
+                              "_fingerprint_override": result.request.fingerprint,
+                              "_require_extraction_body": True})
+            refreshed = self._fetch_checked(run_id, request)
+            if refreshed.status == 304:
+                raise ExtractionError("提取依赖已变化，但重新请求仍未返回正文，不能复用旧字段")
+            self._handle_result(run_id, refreshed, maximum_depth, persist_response=persist_response, discover=discover)
             return
 
         # S4.5 P3#136：choose_processor 只调一次（binary 判定与提取选择共用）
