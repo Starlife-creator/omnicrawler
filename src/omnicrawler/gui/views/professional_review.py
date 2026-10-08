@@ -475,7 +475,14 @@ class EvidenceView(QWidget):
         # 风险评分
         risk = item.risk_score
         risk_color = _risk_color(risk)
-        self._risk_badge.setText(f"{risk:.0f}")
+        record_evidence = (self._raw_record or {}).get("evidence", {})
+        quality = record_evidence.get("_quality", {}) if isinstance(record_evidence, dict) else {}
+        quality = quality if isinstance(quality, dict) else {}
+        assessment_unknown = self._raw_record is not None and not quality
+        review_required = bool(quality.get("review_required"))
+        if review_required or assessment_unknown:
+            risk_color = QColor(ThemeManager.instance().tokens.warning)
+        self._risk_badge.setText(_("待复核") if review_required else _("未评估") if assessment_unknown else f"{risk:.0f}")
         self._risk_badge.setStyleSheet(
             f"background-color: {risk_color.name()}; color: white; " +
 
@@ -495,6 +502,10 @@ class EvidenceView(QWidget):
             risks_parts.append(_("OCR质量低"))
         if item.duplicate:
             risks_parts.append(_("重复"))
+        if review_required:
+            risks_parts.insert(0, _("当前质量评估要求复核"))
+        elif assessment_unknown:
+            risks_parts.insert(0, _("未提供质量评估"))
         self._risk_details.setText(", ".join(risks_parts) if risks_parts else _("无风险"))
 
         # 原始证据

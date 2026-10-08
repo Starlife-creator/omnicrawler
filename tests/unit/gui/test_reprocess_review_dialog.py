@@ -40,6 +40,10 @@ def test_user_selects_reordered_candidate_and_confirms_difference(tmp_path):
     view.show_record(dialog.result_record)
     assert view._field_table.rowCount() == 2
     assert all(view._field_table.item(row, 4).text() != "100%" for row in range(2))
+    assert view._risk_badge.text() != "0"
+    assert "复核" in view._risk_details.text()
+    view.show_record({"record_id": record_id, "data": {"name": "not assessed"}, "evidence": {}})
+    assert view._risk_badge.text() != "0" and "评估" in view._risk_details.text()
     view.clear()
     assert not view._reprocess_btn.isEnabled()
     view.close()
