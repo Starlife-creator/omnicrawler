@@ -218,6 +218,7 @@ class _PipelineExtract(_PipelineBase):
                     fields=fields if isinstance(fields, dict) else None,
                     quality_threshold=float(extract_config.get("quality_threshold", 0.8)),
                     unique_by=[str(item) for item in extract_config.get("unique_by", [])],
+                    force=result.request.meta.get("review_candidates_only") is True,
                 ):
                     return
                 # S4.5 P3#137：enrich 增加开关（extract.enrich 默认开，兼容现状）

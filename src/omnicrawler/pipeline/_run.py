@@ -503,8 +503,14 @@ class _PipelineRun(_PipelineBase):
         *,
         callback: Callable[[str, dict[str, Any]], None] | None = None,
         on_progress: Callable[[TaskProgressEvent], None] | None = None,
+        record_id: str | None = None,
     ) -> dict[str, Any]:
         """Re-run extraction, quality and export from archived responses without fetching."""
+
+        if record_id is not None:
+            from ._reprocess_source import reprocess_source
+
+            return reprocess_source(self, record_id, run_id=run_id, choose_processor=extractors.choose_processor)
 
         # 只在有新回调时启用 progress tracker（不影响旧的 callback 语义）
         stages = (

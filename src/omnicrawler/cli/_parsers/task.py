@@ -46,6 +46,7 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     )
     reprocess.add_argument("--config", "-c", required=True)
     reprocess.add_argument("--run-id")
+    reprocess.add_argument("--record-id", help="仅重算该记录所属归档响应，保留当前记录并生成复核候选")
     preflight = sub.add_parser("preflight", help="运行前检查依赖、磁盘、配置和资源估算")
     preflight.add_argument("--config", "-c", required=True)
     sample = sub.add_parser("sample", help="在独立工作区执行 1-10 页小样本试跑")

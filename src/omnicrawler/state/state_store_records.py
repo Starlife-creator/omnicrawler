@@ -414,7 +414,7 @@ class RecordsMixin:
     def preserve_reprocess_candidate(
         self, run_id: str, result: FetchResult, records: list[ExtractedRecord],
         *, fields: dict[str, Any] | None = None, quality_threshold: float = 0.8,
-        unique_by: list[str] | None = None,
+        unique_by: list[str] | None = None, force: bool = False,
     ) -> bool:
         """Keep reviewed source records; expose new extraction without positional remapping."""
         with self._lock, self.conn:
@@ -423,7 +423,7 @@ class RecordsMixin:
                 "WHERE r.run_id=? AND r.request_fingerprint=? LIMIT 1",
                 (run_id, result.request.fingerprint),
             ).fetchone()
-            if edited is None:
+            if edited is None and not force:
                 return False
             if fields:
                 from ..quality.quality import assess_records

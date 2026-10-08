@@ -829,7 +829,7 @@ def _run_export(args: argparse.Namespace) -> None:
 def _run_reprocess(args: argparse.Namespace) -> None:
     config = load_config(args.config)
     with Pipeline(config) as pipeline:
-        _json(pipeline.reprocess_records(args.run_id))
+        _json(pipeline.reprocess_records(args.run_id, record_id=args.record_id))
 
 
 @_register("serve")
