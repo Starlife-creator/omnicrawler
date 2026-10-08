@@ -336,6 +336,7 @@ def test_d9_tesseract_rebuilds_lines_and_columns() -> None:
     backend.lang = "chi_sim+eng"
     backend.image_scale = 1
     backend.psm = 3
+    backend.adaptive_policy = None
     text, _confidence = backend.recognize(b"png")
     lines = text.splitlines()
     assert len(lines) == 3  # 三行而非拍平一行

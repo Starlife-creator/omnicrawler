@@ -428,3 +428,33 @@ def test_ocr_whitespace_collapse_is_opt_in(tmp_path: Path) -> None:
     # 归一不改证据：原始值仍在
     assert rows[0]["合同名称_原始值"], "原始值必须仍保留（归一不动证据）"
     assert rows[0]["合同名称_页码"] == "1"
+
+
+def test_adaptive_ocr_review_survives_real_pipeline_and_export(tmp_path: Path) -> None:
+    import yaml
+
+    font = _require_ocr_env()
+    project = tmp_path / "adaptive"
+    _make_image_only_pdf(project / "in" / "scan.pdf", font)
+    config = tmp_path / "adaptive.yaml"
+    _write_config(config, project, ocr_backend="tesseract", ocr_command=TESSERACT.as_posix())
+    raw = yaml.safe_load(config.read_text(encoding="utf-8"))
+    raw["ocr"]["adaptive_retry"] = {"enabled": True, "minimum_characters": 100000,
+                                   "total_timeout_seconds": 60,
+                                   "profiles": [{"image_scale": 1, "page_segmentation_mode": 6},
+                                                {"image_scale": 2, "page_segmentation_mode": 11}]}
+    raw["validation"] = {"auto_accept_confidence": 0}
+    config.write_text(yaml.safe_dump(raw, allow_unicode=True), encoding="utf-8")
+    for stage in ("ingest", "parse", "ocr", "extract", "export"):
+        _run_pdfx(config, stage)
+    with _db(project) as conn:
+        page = conn.execute("SELECT ocr_status, ocr_structure_json FROM pages").fetchone()
+        record = conn.execute("SELECT review_status, validation_messages FROM records").fetchone()
+    assert page["ocr_status"] == "done"
+    retry = json.loads(page["ocr_structure_json"])["metadata"]["adaptive_retry"]
+    assert len(retry["attempts"]) == 3 and retry["review_required"]
+    assert record["review_status"] == "needs_review"
+    assert "OCR重试" in record["validation_messages"]
+    rows = _rows(project / "out" / "results.csv")
+    assert len(rows) == 1 and rows[0]["复核状态"] == "needs_review"
+    assert rows[0]["合同编号"] == CONTRACT_NO

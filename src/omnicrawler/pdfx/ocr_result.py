@@ -49,7 +49,20 @@ def field_region(raw: str, structure: dict[str, Any]) -> dict[str, Any]:
             return {"status": "ambiguous", "confidence": None}
         start = text.find(target, start + 1)
     metadata = structure.get("metadata", {})
+    retry = metadata.get("adaptive_retry", {})
+    retry = retry if isinstance(retry, dict) else {}
     return {"status": "matched" if len(matches) == 1 else "ambiguous" if matches else "unmapped",
             "confidence": matches[0]["confidence"] if len(matches) == 1 else None,
             "matches": matches, "coordinate_system": metadata.get("coordinate_system", "unknown"),
-            "original_mapping": metadata.get("original_mapping", "unknown"), "dpi": metadata.get("dpi")}
+            "original_mapping": metadata.get("original_mapping", "unknown"), "dpi": metadata.get("dpi"),
+            "adaptive_retry_review": bool(retry.get("review_required"))}
+
+
+def text_quality(text: str) -> tuple[int, float]:
+    printable = sum(1 for char in text if char.isprintable() and not char.isspace())
+    if not text:
+        return 0, 1.0
+    bad = text.count("\ufffd") + text.count("\x00")
+    control = sum(1 for char in text if ord(char) < 32 and char not in "\n\r\t")
+    ratio = min(1.0, (bad + control) / max(1, len(text)))
+    return printable, ratio

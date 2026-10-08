@@ -106,10 +106,11 @@ def test_spans_reserve_grid_positions_and_bad_scores_keep_tables():
 
 def test_tesseract_word_and_page_confidence_use_same_scale():
     backend = ocr.TesseractBackend.__new__(ocr.TesseractBackend)
-    backend.Image = SimpleNamespace(open=lambda stream: SimpleNamespace(convert=lambda mode: SimpleNamespace(size=(200, 100))))
+    backend.Image = SimpleNamespace(open=lambda stream: SimpleNamespace(size=(200, 100), convert=lambda mode: SimpleNamespace(size=(200, 100))))
     backend.lang = "eng"
     backend.image_scale = 1
     backend.psm = 3
+    backend.adaptive_policy = None
     backend.pytesseract = SimpleNamespace(
         Output=SimpleNamespace(DICT="dict"),
         image_to_data=lambda *args, **kwargs: {

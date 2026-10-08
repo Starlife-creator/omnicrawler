@@ -11,6 +11,7 @@ from pdfminer.layout import LAParams
 from .concurrency import iter_bounded_futures
 from .config import ProjectConfig
 from .database import Database
+from .ocr_result import text_quality as text_quality
 from .utils import clean_text, utcnow
 
 PARSER_VERSION = "native-1.1"
@@ -27,16 +28,6 @@ class ParseOutcome(TypedDict, total=False):
 # Phase 0（M0a）：pdfplumber 底层 pdfminer 的布局参数——sort 语义对齐原
 # fitz get_text(sort=True)（阅读顺序），laparams 控制词/行合并容差。
 _TEXT_LAPARAMS = LAParams(line_margin=0.3, word_margin=0.1, char_margin=2.0, boxes_flow=0.5)
-
-
-def text_quality(text: str) -> tuple[int, float]:
-    printable = sum(1 for char in text if char.isprintable() and not char.isspace())
-    if not text:
-        return 0, 1.0
-    bad = text.count("\ufffd") + text.count("\x00")
-    control = sum(1 for char in text if ord(char) < 32 and char not in "\n\r\t")
-    ratio = min(1.0, (bad + control) / max(1, len(text)))
-    return printable, ratio
 
 
 def _image_coverage_ratio(page) -> float:

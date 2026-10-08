@@ -242,7 +242,12 @@ def load_config(config_path: str | Path) -> ProjectConfig:
 
 def validate_runtime_config(config: ProjectConfig) -> list[str]:
     warnings: list[str] = []
+    from .adaptive_ocr import AdaptiveOCRPolicy
+
+    adaptive = AdaptiveOCRPolicy.from_config(config.ocr.get("adaptive_retry"))
     backend = str(config.ocr.get("backend", "none")).lower()
+    if adaptive is not None and (backend != "tesseract" or config.ocr.get("component")):
+        raise ValueError("adaptive_retry 当前仅支持本机 Tesseract 后端")
     if config.ocr.get("component") and backend not in {"paddle", "tesseract"}:
         raise ValueError("指定ocr.component时需选择paddle或tesseract后端")
     if backend not in {"none", "paddle", "tesseract"}:

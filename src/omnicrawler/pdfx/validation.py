@@ -109,6 +109,8 @@ def validate_record(
         if raw and not value.get("evidence"):
             messages.append(f"字段缺少原文证据：{spec.label}")
         if raw and value.get("source_is_ocr"):
+            if value.get("ocr_region", {}).get("adaptive_retry_review"):
+                messages.append(f"OCR重试结果不一致或预算受限，需要复核：{spec.label}")
             threshold = float(config.validation.get("auto_accept_confidence", 0.90))
             quality = value.get("source_ocr_confidence")
             if quality is None or not math.isfinite(float(quality)) or not 0 <= float(quality) <= 1:

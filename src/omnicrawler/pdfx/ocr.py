@@ -300,6 +300,9 @@ class TesseractBackend:
             ) from exc
         self.pytesseract = pytesseract
         self.Image = Image
+        from .adaptive_ocr import AdaptiveOCRPolicy
+
+        self.adaptive_policy = AdaptiveOCRPolicy.from_config(config.get("adaptive_retry"))
         self.lang = normalize_ocr_lang(config.get("lang", "chi_sim+eng"))
         self.image_scale = config.get("image_scale", 1)
         self.psm = config.get("page_segmentation_mode", 3)
@@ -316,14 +319,25 @@ class TesseractBackend:
         return rich.text, rich.confidence
 
     def recognize_rich(self, png_bytes: bytes) -> OCRRichResult:
-        image = self.Image.open(io.BytesIO(png_bytes)).convert("RGB")
+        if self.adaptive_policy is not None:
+            from .adaptive_ocr import recognize_adaptive
+            return recognize_adaptive(png_bytes, self._recognize_once,
+                                      (self.image_scale, self.psm), self.adaptive_policy)
+        return self._recognize_once(png_bytes, scale=self.image_scale, psm=self.psm)
+
+    def _recognize_once(self, png_bytes: bytes, *, scale: int, psm: int,
+                        timeout_seconds: float | None = None) -> OCRRichResult:
+        source_image = self.Image.open(io.BytesIO(png_bytes))
+        if source_image.size[0] * source_image.size[1] * scale ** 2 > 20_000_000:
+            raise ValueError("OCR放大后图像超过2000万像素预算")
+        image = source_image.convert("RGB")
         original_size = list(image.size)
-        if self.image_scale > 1:
-            if image.width * image.height * self.image_scale ** 2 > 20_000_000:
-                raise ValueError("OCR放大后图像超过2000万像素预算")
-            image = image.resize((image.width * self.image_scale, image.height * self.image_scale),
+        if scale > 1:
+            image = image.resize((image.width * scale, image.height * scale),
                                  self.Image.Resampling.LANCZOS)
-        options = {"config": f"--psm {self.psm}"} if self.psm != 3 else {}
+        options: dict[str, Any] = {"config": f"--psm {psm}"} if psm != 3 else {}
+        if timeout_seconds is not None:
+            options["timeout"] = timeout_seconds
         data = self.pytesseract.image_to_data(
             image, lang=self.lang, output_type=self.pytesseract.Output.DICT, **options
         )
@@ -345,10 +359,10 @@ class TesseractBackend:
             top_values = data.get("top", [])
             width_values = data.get("width", [])
             height_values = data.get("height", [])
-            left = float(left_values[index] if index < len(left_values) else 0) / self.image_scale
-            top = float(top_values[index] if index < len(top_values) else 0) / self.image_scale
-            width = float(width_values[index] if index < len(width_values) else 0) / self.image_scale
-            height = float(height_values[index] if index < len(height_values) else 0) / self.image_scale
+            left = float(left_values[index] if index < len(left_values) else 0) / scale
+            top = float(top_values[index] if index < len(top_values) else 0) / scale
+            width = float(width_values[index] if index < len(width_values) else 0) / scale
+            height = float(height_values[index] if index < len(height_values) else 0) / scale
             lines.setdefault(key, []).append((left, width, word))
             conf: float | None
             try:
@@ -385,7 +399,7 @@ class TesseractBackend:
                              words=words, metadata={"backend": type(self).__name__,
                                                     "coordinate_system": "image_pixels_top_left",
                                                     "original_image_size": original_size,
-                                                    "image_scale": self.image_scale, "page_segmentation_mode": self.psm,
+                                                    "image_scale": scale, "page_segmentation_mode": psm,
                                                     "original_mapping": "identity"})
 
 
