@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from collections.abc import Callable
@@ -47,16 +48,28 @@ class _PipelineExports(_PipelineBase):
             if not isinstance(options, dict):
                 raise TypeError(f"Exporter options must be a mapping: {name}")
             idempotency_key = f"{run_id}:export:{name}"
+            record_digest = self.state.record_export_digest(run_id) if name == "default" else None
+            input_fingerprint = None
+            refresh = force
+            if record_digest is not None:
+                input_fingerprint = hashlib.sha256(json.dumps(
+                    {"records": record_digest, "outputs": outputs, "crawl": self.config.section("crawl"),
+                     "extract": self.config.section("extract")},
+                    sort_keys=True, ensure_ascii=False, default=str,
+                ).encode("utf-8")).hexdigest()
+                checkpoint = self.state.checkpoint(run_id, "export_input", idempotency_key)
+                refresh = force or checkpoint is None or checkpoint["payload"].get("fingerprint") != input_fingerprint
             if not self.state.begin_export(run_id, name, idempotency_key):
                 commit = self.state.export_commit(idempotency_key)
-                if not force and commit and commit["status"] == "succeeded":
+                if not refresh and commit and commit["status"] == "succeeded":
                     results[name] = commit["result"]
                     continue
                 # S2.5.2：force（reprocess）路径绕过幂等提交缓存，重新导出刷新输出文件
-                if force:
+                if refresh:
                     if commit is None:
                         raise RuntimeError(f"导出器{name}提交状态异常，拒绝重复提交")
-                    self.state.begin_export(run_id, name, idempotency_key, force=True)
+                    if not self.state.begin_export(run_id, name, idempotency_key, force=True):
+                        raise RuntimeError(f"导出器{name}已有未完成提交，拒绝重复提交")
                 else:
                     raise RuntimeError(f"导出器{name}已有未完成提交，拒绝重复提交")
             try:
@@ -64,7 +77,13 @@ class _PipelineExports(_PipelineBase):
                     self.registry.exporters[name], self.config, self.state, run_id, options
                 )
                 result_value = value if isinstance(value, dict) else {"value": value}
-                self.state.finish_export(idempotency_key, result_value)
+                if record_digest is None:
+                    self.state.finish_export(idempotency_key, result_value)
+                else:
+                    self.state.finish_export(
+                        idempotency_key, result_value, record_digest=record_digest,
+                        input_fingerprint=input_fingerprint,
+                    )
                 results[name] = result_value
             except Exception as exc:
                 self.state.fail_export(idempotency_key, str(exc))

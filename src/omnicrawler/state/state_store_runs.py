@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 import uuid
@@ -255,8 +256,32 @@ class RunsMixin:
                 )
             return cursor.rowcount > 0
 
-    def finish_export(self, idempotency_key: str, result: dict[str, Any]) -> None:
+    def record_export_digest(self, run_id: str) -> str:
+        """Fingerprint current record values and review evidence, without exposing them."""
+        with self._lock:
+            digest = hashlib.sha256()
+            for row in self.conn.execute(
+                "SELECT * FROM records WHERE run_id=? ORDER BY record_id", (run_id,),
+            ):
+                digest.update(json_text(dict(row)).encode("utf-8"))
+                digest.update(b"\n")
+            return digest.hexdigest()
+
+    def finish_export(
+        self, idempotency_key: str, result: dict[str, Any], *,
+        record_digest: str | None = None, input_fingerprint: str | None = None,
+    ) -> None:
         with self._lock, self.conn:
+            if record_digest is not None:
+                # Serialize the final freshness check with edits on other connections.
+                if not self.conn.in_transaction:
+                    self.conn.execute("BEGIN IMMEDIATE")
+                commit = self.conn.execute(
+                    "SELECT run_id FROM export_commits WHERE idempotency_key=?",
+                    (idempotency_key,),
+                ).fetchone()
+                if commit is None or self.record_export_digest(commit["run_id"]) != record_digest:
+                    raise ValueError("导出过程中记录已变化，请重新导出；本次不能标记为最新交付")
             cursor = self.conn.execute(
                 "UPDATE export_commits SET status='succeeded', result_json=?, updated_at=? "
                 "WHERE idempotency_key=? AND status='running'",
@@ -264,6 +289,14 @@ class RunsMixin:
             )
             if cursor.rowcount != 1:
                 raise ValueError("导出提交不存在、已完成或状态无效")
+            if input_fingerprint is not None:
+                self.conn.execute(
+                    "INSERT INTO stage_checkpoints(run_id,stage,idempotency_key,status,payload_json,updated_at) "
+                    "SELECT run_id,'export_input',idempotency_key,'succeeded',?,? FROM export_commits "
+                    "WHERE idempotency_key=? ON CONFLICT(run_id,stage,idempotency_key) DO UPDATE SET "
+                    "status=excluded.status,payload_json=excluded.payload_json,updated_at=excluded.updated_at",
+                    (json_text({"fingerprint": input_fingerprint}), utcnow(), idempotency_key),
+                )
 
     def fail_export(self, idempotency_key: str, error: str) -> None:
         with self._lock, self.conn:
