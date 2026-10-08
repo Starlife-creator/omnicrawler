@@ -111,7 +111,10 @@ def assess_record(
     record: ExtractedRecord,
     fields: dict[str, Any],
     threshold: float = 0.8,
+    *, review_policy: str = "contract",
 ) -> dict[str, Any]:
+    if review_policy not in {"recall", "contract"}:
+        raise ValueError("review_policy 必须是 recall 或 contract")
     required = _required_fields(record, fields)
     missing = [name for name in required if _field_missing(record.data, name, fields.get(name))]
     errors: list[str] = []
@@ -148,6 +151,10 @@ def assess_record(
                 numeric = _numeric_value(value)
                 if numeric != numeric.to_integral_value():
                     raise ValueError("not an integer")
+                if rule.get("min") is not None and numeric < _numeric_value(rule["min"]):
+                    errors.append(f"{field_name}: below minimum")
+                if rule.get("max") is not None and numeric > _numeric_value(rule["max"]):
+                    errors.append(f"{field_name}: above maximum")
             except ValueError:
                 errors.append(f"{field_name}: is not an integer")
         elif expected in {"float", "number", "money"}:
@@ -205,7 +212,8 @@ def assess_record(
             if rule.get("expected_label") is not None and trace.get("label") != rule["expected_label"]:
                 status = "label_mismatch"
         evidence_status[str(name)] = status
-        if (rule.get("evidence_required") or rule.get("critical")) and status != "supported":
+        if ((rule.get("evidence_required") or rule.get("critical") or review_policy == "recall")
+                and status != "supported") or status in {"conflict", "value_mismatch", "label_mismatch"}:
             evidence_issues.append(f"{name}: evidence {status}")
         if rule.get("min_confidence") is not None:
             confidence_threshold = float(_numeric_value(rule["min_confidence"]))
@@ -215,7 +223,21 @@ def assess_record(
             if (not isinstance(confidence, (int, float)) or isinstance(confidence, bool) or not math.isfinite(confidence)
                     or not 0 <= confidence <= 1 or confidence < confidence_threshold):
                 evidence_issues.append(f"{name}: source confidence insufficient")
+    missing_fields = [str(name) for name in fields if _field_missing(record.data, str(name), fields[name])]
+    field_checks = {
+        str(name): {
+            "presence": "missing" if str(name) in missing_fields else "present",
+            "required": str(name) in required,
+            "validation_errors": [error for error in errors if error.startswith(f"{name}:")],
+            "evidence": evidence_status.get(str(name), "not_applicable"),
+            "evidence_issues": [issue for issue in evidence_issues if issue.startswith(f"{name}:")],
+        }
+        for name in fields
+    }
     return {
+        "review_policy": review_policy,
+        "missing_fields": missing_fields,
+        "field_checks": field_checks,
         "score_semantics": "contract_compliance_v1",
         "score": round(score, 4),
         "completeness": round(completeness, 4),
@@ -226,7 +248,8 @@ def assess_record(
         "dimensions": {"contract": "failed" if missing or errors else "passed",
                        "evidence": "failed" if evidence_issues else "unassessed" if any(value == "unassessed" for value in evidence_status.values()) else "assessed",
                        "conflicts": "present" if any(value == "conflict" for value in evidence_status.values()) else "none_observed"},
-        "review_required": bool(missing or errors or evidence_issues or score < threshold),
+        "review_required": bool(missing or errors or evidence_issues or score < threshold
+                                or (review_policy == "recall" and missing_fields)),
     }
 
 
@@ -281,11 +304,12 @@ def assess_records(
     fields: dict[str, Any],
     threshold: float = 0.8,
     unique_by: list[str] | None = None,
+    *, review_policy: str = "contract",
 ) -> dict[str, Any]:
     duplicates = 0
     seen: set[tuple[str, ...]] = set()
     for record in records:
-        quality = assess_record(record, fields, threshold)
+        quality = assess_record(record, fields, threshold, review_policy=review_policy)
         prior_quality = record.evidence.get("_quality", {})
         if isinstance(prior_quality, dict):
             for key, value in prior_quality.items():

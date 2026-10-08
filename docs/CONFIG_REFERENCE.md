@@ -103,6 +103,7 @@ auth:
 - `item_selector`：HTML 重复项 CSS 选择器。
 - `item_path`：JSON 数组路径，支持点号、数字下标和 `[*]`。
 - `quality_threshold/review_low_confidence`。
+- `review_policy`：默认 `recall`，所有配置字段缺失、已提取字段证据未验证或不支持均进入复核；不删除候选记录。`contract` 只按显式必填、证据要求和评分阈值判定，但已有证据冲突、值不匹配或标签不匹配始终要求复核。评分是契约符合程度，不是正确概率。该设置用于通用记录管线及其重提取候选；PDF 工作台使用自身字段校验和 OCR 复核配置。
 
 HTML 字段规则：
 

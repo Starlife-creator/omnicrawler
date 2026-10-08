@@ -113,11 +113,21 @@ def _build_review_item(record: dict[str, Any]) -> ReviewItem:
                                       evidence=json.dumps(trace, ensure_ascii=False),
                                       confidence=_field_confidence(trace.get("confidence"))))
 
+    raw_evidence = record.get("evidence", {})
+    quality = raw_evidence.get("_quality", {}) if isinstance(raw_evidence, dict) else {}
+    quality = quality if isinstance(quality, dict) else {}
+    existing = {item.name for item in fields}
+    for name in quality.get("missing_fields", []):
+        if isinstance(name, str) and name not in existing:
+            fields.append(ReviewField(name=name, value=None, origin="raw",
+                                      evidence=_("未提取字段；请检查原文与提取规则"), confidence=None))
+            existing.add(name)
+
     return ReviewItem(
         record_id=record_id,
         source_url=source_url,
         fields=fields,
-        missing_required=tuple(record.get("missing_required", ())),
+        missing_required=tuple(quality.get("missing_required", record.get("missing_required", ()))),
         rule_conflicts=int(record.get("rule_conflicts", 0)),
         ai_conflicts=int(record.get("ai_conflicts", 0)),
         structure_drift=float(record.get("structure_drift", 0.0)),
@@ -490,6 +500,8 @@ class EvidenceView(QWidget):
         )
 
         risks_parts: list[str] = []
+        if quality.get("missing_fields"):
+            risks_parts.append(_(f"缺{len(quality['missing_fields'])}项配置字段"))
         if item.missing_required:
             risks_parts.append(_(f"缺{len(item.missing_required)}项必填"))
         if item.rule_conflicts:
@@ -535,7 +547,8 @@ class EvidenceView(QWidget):
             self._field_table.setItem(row, 0, name_item)
 
             # 值
-            value_text = str(field.value) if field.value is not None else "—"
+            missing_fields = quality.get("missing_fields", [])
+            value_text = _("未提取") if field.name in missing_fields else str(field.value) if field.value is not None else "—"
             value_item = QTableWidgetItem(value_text)
             value_item.setToolTip(value_text)
             self._field_table.setItem(row, 1, value_item)

@@ -217,6 +217,7 @@ class _PipelineExtract(_PipelineBase):
                     run_id, result, outcome.records,
                     fields=fields if isinstance(fields, dict) else None,
                     quality_threshold=float(extract_config.get("quality_threshold", 0.8)),
+                    review_policy=str(extract_config.get("review_policy", "recall")),
                     unique_by=[str(item) for item in extract_config.get("unique_by", [])],
                     force=result.request.meta.get("review_candidates_only") is True,
                 ):
@@ -544,6 +545,7 @@ class _PipelineExtract(_PipelineBase):
             fields,
             float(extract_config.get("quality_threshold", 0.8)),
             [str(item) for item in extract_config.get("unique_by", [])],
+            review_policy=str(extract_config.get("review_policy", "recall")),
         )
         self.metrics.increment("omnicrawler_review_required_total", quality_summary["review_required"])
         self.metrics.increment("omnicrawler_duplicate_records_total", quality_summary["duplicates"])

@@ -79,7 +79,12 @@ class PaddleStructureBackend:
         self.np = np
         self.Image = Image
         self.transforms_enabled = bool(config.get("orientation", True)) or bool(config.get("unwarping", False))
+        # 当前 CPU oneDNN 路径实测存在未实现算子；默认采用普通推理，优化需显式启用。
+        enable_mkldnn = config.get("enable_mkldnn", False)
+        if type(enable_mkldnn) is not bool:
+            raise ValueError("enable_mkldnn 必须是布尔值")
         self.pipeline = PPStructureV3(
+            enable_mkldnn=enable_mkldnn,
             lang=config.get("lang", "ch"),
             device=config.get("device", "cpu"),
             use_doc_orientation_classify=bool(config.get("orientation", True)),
@@ -296,6 +301,12 @@ class TesseractBackend:
         self.pytesseract = pytesseract
         self.Image = Image
         self.lang = normalize_ocr_lang(config.get("lang", "chi_sim+eng"))
+        self.image_scale = config.get("image_scale", 1)
+        self.psm = config.get("page_segmentation_mode", 3)
+        if type(self.image_scale) is not int or not 1 <= self.image_scale <= 4:
+            raise ValueError("image_scale 必须是1到4的整数")
+        if type(self.psm) is not int or self.psm not in {1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}:
+            raise ValueError("page_segmentation_mode 必须是可输出文本的Tesseract模式")
         command = str(config.get("command") or os.environ.get("TESSERACT_CMD", "")).strip()
         if command:
             self.pytesseract.pytesseract.tesseract_cmd = command
@@ -306,8 +317,15 @@ class TesseractBackend:
 
     def recognize_rich(self, png_bytes: bytes) -> OCRRichResult:
         image = self.Image.open(io.BytesIO(png_bytes)).convert("RGB")
+        original_size = list(image.size)
+        if self.image_scale > 1:
+            if image.width * image.height * self.image_scale ** 2 > 20_000_000:
+                raise ValueError("OCR放大后图像超过2000万像素预算")
+            image = image.resize((image.width * self.image_scale, image.height * self.image_scale),
+                                 self.Image.Resampling.LANCZOS)
+        options = {"config": f"--psm {self.psm}"} if self.psm != 3 else {}
         data = self.pytesseract.image_to_data(
-            image, lang=self.lang, output_type=self.pytesseract.Output.DICT
+            image, lang=self.lang, output_type=self.pytesseract.Output.DICT, **options
         )
         # D9：按 (block, par, line) 分行、left 分列重建，扫描件表格不再拍平为一行
         lines: dict[tuple[int, int, int], list[tuple[float, float, str]]] = {}
@@ -327,10 +345,10 @@ class TesseractBackend:
             top_values = data.get("top", [])
             width_values = data.get("width", [])
             height_values = data.get("height", [])
-            left = float(left_values[index] if index < len(left_values) else 0)
-            top = float(top_values[index] if index < len(top_values) else 0)
-            width = float(width_values[index] if index < len(width_values) else 0)
-            height = float(height_values[index] if index < len(height_values) else 0)
+            left = float(left_values[index] if index < len(left_values) else 0) / self.image_scale
+            top = float(top_values[index] if index < len(top_values) else 0) / self.image_scale
+            width = float(width_values[index] if index < len(width_values) else 0) / self.image_scale
+            height = float(height_values[index] if index < len(height_values) else 0) / self.image_scale
             lines.setdefault(key, []).append((left, width, word))
             conf: float | None
             try:
@@ -366,6 +384,8 @@ class TesseractBackend:
         return OCRRichResult(clean_text(text, compress_ws=False), statistics.fmean(scores) if scores else None,
                              words=words, metadata={"backend": type(self).__name__,
                                                     "coordinate_system": "image_pixels_top_left",
+                                                    "original_image_size": original_size,
+                                                    "image_scale": self.image_scale, "page_segmentation_mode": self.psm,
                                                     "original_mapping": "identity"})
 
 

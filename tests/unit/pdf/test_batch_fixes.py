@@ -307,6 +307,8 @@ def test_d9_tesseract_rebuilds_lines_and_columns() -> None:
     from omnicrawler.pdfx.ocr import TesseractBackend
 
     class _FakeImage:
+        size = (200, 100)
+
         def open(self, *args, **kwargs):
             return self
 
@@ -332,6 +334,8 @@ def test_d9_tesseract_rebuilds_lines_and_columns() -> None:
     backend.Image = _FakeImage()
     backend.pytesseract = _FakePyTesseract()
     backend.lang = "chi_sim+eng"
+    backend.image_scale = 1
+    backend.psm = 3
     text, _confidence = backend.recognize(b"png")
     lines = text.splitlines()
     assert len(lines) == 3  # 三行而非拍平一行

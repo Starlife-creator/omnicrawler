@@ -415,6 +415,7 @@ class RecordsMixin:
         self, run_id: str, result: FetchResult, records: list[ExtractedRecord],
         *, fields: dict[str, Any] | None = None, quality_threshold: float = 0.8,
         unique_by: list[str] | None = None, force: bool = False,
+        review_policy: str = "contract",
     ) -> bool:
         """Keep reviewed source records; expose new extraction without positional remapping."""
         with self._lock, self.conn:
@@ -428,7 +429,7 @@ class RecordsMixin:
             if fields:
                 from ..quality.quality import assess_records
 
-                assess_records(records, fields, quality_threshold, unique_by)
+                assess_records(records, fields, quality_threshold, unique_by, review_policy=review_policy)
             else:
                 for record in records:
                     record.evidence.setdefault("_quality", {}).update(review_required=True, assessment="unassessed")

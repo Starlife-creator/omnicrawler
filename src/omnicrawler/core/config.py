@@ -119,7 +119,7 @@ DEFAULTS: dict[str, Any] = {
     "auth": {"provider": "", "options": {}},
     "extract": {
         "mode": "auto", "parser": "", "extractor": "", "item_selector": "", "fields": {},
-        "quality_threshold": 0.8, "review_low_confidence": True,
+        "quality_threshold": 0.8, "review_low_confidence": True, "review_policy": "recall",
     },
     "data_quality": {
         "entity_fields": [],
@@ -847,6 +847,9 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     #   "location":"body"})` 本就返回 `[]`（`tests/unit/core/test_pagination_contract.py`）。
     #   ⇒ 不在此处发明前置条件；**真实前置写在 GUI 字段标签与 `docs/CONFIG_REFERENCE.md` 里**。
     fields = config.section("extract").get("fields", {})
+    review_policy = config.section("extract").get("review_policy", "recall")
+    if not isinstance(review_policy, str) or review_policy not in {"recall", "contract"}:
+        errors.append("extract.review_policy必须是recall或contract")
     if fields and not isinstance(fields, dict):
         errors.append("extract.fields必须是字段名到规则的映射")
     deduplicate_by = config.section("extract").get("deduplicate_by", [])
