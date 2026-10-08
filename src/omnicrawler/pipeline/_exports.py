@@ -12,6 +12,7 @@ from ..core.utils import atomic_write
 from ..plugins.plugin_runtime import run_exporter
 from ..runtime.resource_profiles import profile_for
 from ._mixin_base import _PipelineBase
+from .export_receipts import capture_export_receipts, export_receipts_match
 
 
 def _as_int(value: object) -> int:
@@ -48,17 +49,23 @@ class _PipelineExports(_PipelineBase):
             if not isinstance(options, dict):
                 raise TypeError(f"Exporter options must be a mapping: {name}")
             idempotency_key = f"{run_id}:export:{name}"
-            record_digest = self.state.record_export_digest(run_id) if name == "default" else None
+            state_digest = self.state.export_input_digest(run_id) if name == "default" else None
             input_fingerprint = None
             refresh = force
-            if record_digest is not None:
+            if state_digest is not None:
+                from ..quality.artifact_integrity import verify_artifacts
+                artifact_snapshot = verify_artifacts(self.state, run_id, workspace=self.workspace)
                 input_fingerprint = hashlib.sha256(json.dumps(
-                    {"records": record_digest, "outputs": outputs, "crawl": self.config.section("crawl"),
-                     "extract": self.config.section("extract")},
+                    {"state": state_digest, "config": self.config.raw, "artifacts": artifact_snapshot},
                     sort_keys=True, ensure_ascii=False, default=str,
                 ).encode("utf-8")).hexdigest()
                 checkpoint = self.state.checkpoint(run_id, "export_input", idempotency_key)
                 refresh = force or checkpoint is None or checkpoint["payload"].get("fingerprint") != input_fingerprint
+                if not refresh and checkpoint is not None:
+                    cached = self.state.export_commit(idempotency_key)
+                    refresh = cached is None or not export_receipts_match(
+                        self.workspace, cached["result"], checkpoint["payload"].get("output_receipts"),
+                    )
             if not self.state.begin_export(run_id, name, idempotency_key):
                 commit = self.state.export_commit(idempotency_key)
                 if not refresh and commit and commit["status"] == "succeeded":
@@ -77,12 +84,15 @@ class _PipelineExports(_PipelineBase):
                     self.registry.exporters[name], self.config, self.state, run_id, options
                 )
                 result_value = value if isinstance(value, dict) else {"value": value}
-                if record_digest is None:
+                if state_digest is None:
                     self.state.finish_export(idempotency_key, result_value)
                 else:
+                    if verify_artifacts(self.state, run_id, workspace=self.workspace) != artifact_snapshot:
+                        raise ValueError("导出过程中源文件已变化，请重新导出")
+                    receipts = capture_export_receipts(self.workspace, result_value)
                     self.state.finish_export(
-                        idempotency_key, result_value, record_digest=record_digest,
-                        input_fingerprint=input_fingerprint,
+                        idempotency_key, result_value, state_digest=state_digest,
+                        input_fingerprint=input_fingerprint, output_receipts=receipts,
                     )
                 results[name] = result_value
             except Exception as exc:

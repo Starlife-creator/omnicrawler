@@ -65,7 +65,7 @@ def test_edit_during_export_cannot_be_marked_fresh(tmp_path):
                 reviewer.edit_record(record_id, "amount", 102)
             return result
         pipeline.registry.exporters["default"] = exporter
-        with pytest.raises(ValueError, match="导出过程中记录已变化"):
+        with pytest.raises(ValueError, match="导出过程中.*已变化"):
             pipeline._run_exports(run)
         assert pipeline.state.export_commit(f"{run}:export:default")["status"] == "failed"
         pipeline.registry.exporters["default"] = lambda cfg, state, run_id, options: export_all(cfg, state, run_id)

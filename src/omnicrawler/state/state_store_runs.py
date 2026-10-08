@@ -256,23 +256,41 @@ class RunsMixin:
                 )
             return cursor.rowcount > 0
 
-    def record_export_digest(self, run_id: str) -> str:
-        """Fingerprint current record values and review evidence, without exposing them."""
+    def export_input_digest(self, run_id: str) -> str:
+        """Fingerprint the database inputs consumed by the default delivery."""
         with self._lock:
-            digest = hashlib.sha256()
-            for row in self.conn.execute(
-                "SELECT * FROM records WHERE run_id=? ORDER BY record_id", (run_id,),
-            ):
-                digest.update(json_text(dict(row)).encode("utf-8"))
-                digest.update(b"\n")
-            return digest.hexdigest()
+            started = not self.conn.in_transaction
+            if started:
+                self.conn.execute("BEGIN")
+            try:
+                digest = hashlib.sha256()
+                for table in ("records", "responses", "errors", "artifacts", "quality_stats",
+                              "semantic_changes", "runs"):
+                    digest.update(table.encode("ascii"))
+                    for row in self.conn.execute(
+                        f"SELECT * FROM {table} WHERE run_id=? ORDER BY rowid", (run_id,),
+                    ):
+                        digest.update(json_text(dict(row)).encode("utf-8"))
+                        digest.update(b"\n")
+                # Delivery summaries explicitly describe workspace-wide totals/frontier.
+                for row in self.conn.execute(
+                    "SELECT status,COUNT(*) n FROM frontier GROUP BY status ORDER BY status",
+                ):
+                    digest.update(json_text(dict(row)).encode("utf-8"))
+                count = self.conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+                digest.update(str(count).encode("ascii"))
+                return digest.hexdigest()
+            finally:
+                if started:
+                    self.conn.rollback()  # End only our own read snapshot.
 
     def finish_export(
         self, idempotency_key: str, result: dict[str, Any], *,
-        record_digest: str | None = None, input_fingerprint: str | None = None,
+        state_digest: str | None = None, input_fingerprint: str | None = None,
+        output_receipts: dict[str, Any] | None = None,
     ) -> None:
         with self._lock, self.conn:
-            if record_digest is not None:
+            if state_digest is not None:
                 # Serialize the final freshness check with edits on other connections.
                 if not self.conn.in_transaction:
                     self.conn.execute("BEGIN IMMEDIATE")
@@ -280,8 +298,8 @@ class RunsMixin:
                     "SELECT run_id FROM export_commits WHERE idempotency_key=?",
                     (idempotency_key,),
                 ).fetchone()
-                if commit is None or self.record_export_digest(commit["run_id"]) != record_digest:
-                    raise ValueError("导出过程中记录已变化，请重新导出；本次不能标记为最新交付")
+                if commit is None or self.export_input_digest(commit["run_id"]) != state_digest:
+                    raise ValueError("导出过程中记录或交付数据已变化，请重新导出；本次不能标记为最新交付")
             cursor = self.conn.execute(
                 "UPDATE export_commits SET status='succeeded', result_json=?, updated_at=? "
                 "WHERE idempotency_key=? AND status='running'",
@@ -295,7 +313,7 @@ class RunsMixin:
                     "SELECT run_id,'export_input',idempotency_key,'succeeded',?,? FROM export_commits "
                     "WHERE idempotency_key=? ON CONFLICT(run_id,stage,idempotency_key) DO UPDATE SET "
                     "status=excluded.status,payload_json=excluded.payload_json,updated_at=excluded.updated_at",
-                    (json_text({"fingerprint": input_fingerprint}), utcnow(), idempotency_key),
+                    (json_text({"fingerprint": input_fingerprint, "output_receipts": output_receipts}), utcnow(), idempotency_key),
                 )
 
     def fail_export(self, idempotency_key: str, error: str) -> None:

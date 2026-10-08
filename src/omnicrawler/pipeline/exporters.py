@@ -14,7 +14,9 @@ from ..quality.artifact_integrity import verify_artifacts
 from ..quality.error_center import build_error_center
 from ..quality.output_metrics import record_quality_counts
 from ..quality.quality_report import build_quality_report
+from ..security.paths import require_workspace_path
 from ..state import StateStore
+from .export_receipts import validate_default_export_directory
 
 LOGGER = logging.getLogger("omnicrawler")
 
@@ -121,7 +123,8 @@ def _preserve_previous_delivery(
             continue
         target_dir = output / "previous"
         target_dir.mkdir(parents=True, exist_ok=True)
-        target = target_dir / f"{stamp}_{name}"
+        target = require_workspace_path(target_dir / f"{stamp}_{name}", root=output,
+                                        what="previous delivery destination")
         shutil.copy2(source, target)
         saved.append(f"previous/{target.name}")
     return saved
@@ -140,7 +143,7 @@ def export_all(config: AppConfig, state: StateStore, run_id: str | None = None) 
 
 
 def _export_delivery(config: AppConfig, state: StateStore, run_id: str | None = None) -> dict[str, Any]:
-    output = config.workspace / "output"
+    output = validate_default_export_directory(config.workspace)
     output.mkdir(parents=True, exist_ok=True)
     where, params = (" WHERE run_id=?", (run_id,)) if run_id else ("", ())
     raw_records = state.rows(f"SELECT * FROM records{where} ORDER BY created_at, record_id", params)
