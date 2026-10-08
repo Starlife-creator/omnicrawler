@@ -13,6 +13,21 @@ def test_long_sections_repeat_unit_and_table_header_with_bounded_input():
     assert all(any(f"entity-{index}</td>" in chunk for chunk in chunks) for index in range(30))
 
 
+def test_multiple_tables_keep_their_own_headers_and_units():
+    extractor = AIGraphExtractor(chunk_size=500)
+    tables = []
+    for label, unit in (("expense", "USD"), ("revenue", "CNY")):
+        rows = "".join(f"<tr><td>{label}-{index}</td><td>{index}</td></tr>" for index in range(20))
+        tables.append(f"<table><caption>Units {unit}</caption><tr><th>{label}</th><th>Amount</th></tr>{rows}</table>")
+    chunks = extractor._split_html("<h1>Annual report</h1>" + "".join(tables), SplitStrategy.HEADING)
+    assert all(len(chunk) <= 500 for chunk in chunks)
+    for label, unit, other in (("expense", "USD", "revenue"), ("revenue", "CNY", "expense")):
+        relevant = [chunk for chunk in chunks if f"{label}-" in chunk]
+        assert relevant and all(f"<th>{label}</th>" in chunk and f"Units {unit}" in chunk for chunk in relevant)
+        assert all(f"<th>{other}</th>" not in chunk for chunk in relevant)
+        assert all(any(f"{label}-{index}</td>" in chunk for chunk in relevant) for index in range(20))
+
+
 def test_unsupported_and_conflicting_model_values_retain_review_state_and_locations():
     extractor = AIGraphExtractor()
     first = {"fields": {"amount": 10}, "confidence": 0.99, "evidence": {"amount": {"quote": "Amount 10 USD"}}}

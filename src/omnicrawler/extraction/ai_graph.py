@@ -276,8 +276,25 @@ class AIGraphExtractor:
             return [html]
         heading = re.match(r"\s*(<h[1-6]\b[^>]*>.*?</h[1-6]>)", html, re.S | re.I)
         context = heading.group(1) if heading and len(heading.group(1)) <= self._chunk_size // 4 else ""
+        tables = list(re.finditer(r"<table\b[^>]*>.*?</table>", html, re.S | re.I))
+        flat_tables = all(len(re.findall(r"<table\b", match.group(0), re.I)) == 1 for match in tables)
+        if len(tables) > 1 and flat_tables:
+            table_pieces: list[str] = []
+            position = 0
+            for table in tables:
+                prefix = html[position:table.start()]
+                if prefix.strip():
+                    table_pieces.extend(self._bounded_section(prefix))
+                table_pieces.extend(self._bounded_section(context + table.group(0)))
+                position = table.end()
+            if html[position:].strip():
+                table_pieces.extend(self._bounded_section(context + html[position:]))
+            return table_pieces
+        caption = re.search(r"(<caption\b[^>]*>.*?</caption>)", html, re.S | re.I)
+        if caption and flat_tables and len(caption.group(1)) <= self._chunk_size // 4:
+            context += caption.group(1)
         table_header = re.search(r"(<tr\b[^>]*>.*?<th\b.*?</tr>)", html, re.S | re.I)
-        if table_header and len(table_header.group(1)) <= self._chunk_size // 4:
+        if table_header and flat_tables and len(table_header.group(1)) <= self._chunk_size // 4:
             context += table_header.group(1)
         capacity = self._chunk_size - len(context)
         units = re.split(r"(?=<(?:p|tr|li|article|section|table)\b)", html, flags=re.I)
