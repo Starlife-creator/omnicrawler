@@ -137,7 +137,9 @@ class AIGraphExtractor:
         "{html_chunk}\n"
         "```\n\n"
         "## 输出格式\n"
-        "请只返回 JSON，不要有任何其他文字。格式如下：\n"
+        "只返回 JSON。字段值只包含目标值，不包含标签或说明。原文没有的字段省略，\n"
+        "不能用 0、false 或空串替代缺失值；原文确实出现的 0 和 false 要保留。\n"
+        "每个返回字段都在 evidence 中提供包含该值的逐字原文 quote。格式如下：\n"
         '{{"fields": {{"field_name": "extracted_value", ...}}, "confidence": 0.0-1.0, '
         '"evidence": {{"field_name": {{"quote": "逐字原文", "raw_value": "原始值"}}}}}}\n'
         "每个字段附上包含主体、字段含义及单位的逐字原文；没有原文依据的字段请省略。\n"
@@ -542,10 +544,15 @@ class AIGraphExtractor:
                 "name": "extracted_fields", "strict": False, "schema": {
                     "type": "object", "properties": {
                         "fields": target_schema, "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-                        "evidence": {"type": "object", "additionalProperties": {"type": "object", "properties": {
-                            "quote": {"type": "string"}, "raw_value": {},
-                        }, "required": ["quote"], "additionalProperties": False}},
-                    }, "required": ["fields"], "additionalProperties": False,
+                        "evidence": {"type": "object", "properties": {
+                            item.name: {"type": "object", "properties": {
+                                "quote": {"type": "string", "minLength": 1,
+                                          "description": "Exact source text containing the extracted value"},
+                                "raw_value": {"type": "string"},
+                            }, "required": ["quote"], "additionalProperties": False}
+                            for item in fields
+                        }, "additionalProperties": False},
+                    }, "required": ["fields", "evidence"], "additionalProperties": False,
                 },
             }}
 

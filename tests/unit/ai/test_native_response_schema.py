@@ -91,3 +91,33 @@ async def test_graph_native_guidance_keeps_zero_false_and_local_validation(monke
     values["price"] = False
     with pytest.raises(ValueError, match="类型错误"):
         await extractor._extract_chunk("fixture", fields, 256, session=object())
+
+
+@pytest.mark.asyncio
+async def test_graph_schema_names_evidence_fields_and_requires_nonempty_quote(tmp_path, monkeypatch):
+    from omnicrawler.core.ai_env import save_ai_config_sidecar
+    from omnicrawler.extraction.ai_graph import AIGraphExtractor, FieldDef, Provider
+
+    save_ai_config_sidecar(tmp_path, {"privacy": {"allow_page_text": True}})
+    extractor = AIGraphExtractor(provider=Provider(api_key="fixture", supports_json_schema=True), project_root=tmp_path)
+    captured = []
+
+    async def post(*args, **kwargs):
+        captured.append(kwargs["payload"])
+        return {"choices": [{"message": {"content": '{"fields":{},"evidence":{}}'}}]}
+
+    monkeypatch.setattr(extractor, "_post_with_retry", post)
+    await extractor._extract_chunk("<p>Price: 0</p>", [FieldDef("price", field_type="number", required=True)],
+                                   256, session=object())
+    assert len(captured) == 1
+    schema = captured[0]["response_format"]["json_schema"]["schema"]
+    evidence = schema["properties"]["evidence"]
+    assert set(evidence["properties"]) == {"price"}
+    assert schema["required"] == ["fields", "evidence"]
+    assert schema["properties"]["fields"]["required"] == []  # Missing stays optional per chunk.
+    assert evidence["additionalProperties"] is False
+    trace = evidence["properties"]["price"]
+    assert trace["required"] == ["quote"]
+    assert trace["additionalProperties"] is False
+    assert trace["properties"]["quote"]["type"] == "string"
+    assert trace["properties"]["quote"]["minLength"] == 1
