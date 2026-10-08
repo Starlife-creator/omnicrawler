@@ -83,7 +83,7 @@ def test_s231_mp_pool_crash_degrades(monkeypatch: pytest.MonkeyPatch) -> None:
     from concurrent.futures.process import BrokenProcessPool
 
     monkeypatch.setattr(ocr, "adaptive_ocr_workers", lambda _n: 4)
-    monkeypatch.setattr(ocr, "create_backend", lambda _config: SimpleNamespace())
+    monkeypatch.setattr(ocr, "preflight_backend", lambda _config: True)
 
     class Boom:
         def __init__(self, *_a, **_k) -> None:

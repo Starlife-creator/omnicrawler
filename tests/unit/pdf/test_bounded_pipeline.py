@@ -121,7 +121,7 @@ def test_ocr_pool_crash_marks_exact_unfinished_pages(
         raise BrokenProcessPool("worker died after out-of-order completion")
 
     monkeypatch.setattr(ocr, "adaptive_ocr_workers", lambda _workers: 2)
-    monkeypatch.setattr(ocr, "create_backend", lambda _config: SimpleNamespace())
+    monkeypatch.setattr(ocr, "preflight_backend", lambda _config: True)
     monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", FakePool)
     monkeypatch.setattr(ocr, "iter_bounded_futures", finish_second_then_crash)
 
