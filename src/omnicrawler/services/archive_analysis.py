@@ -88,8 +88,14 @@ def _verified_sources(manifest: Path, selected_ids: list[str] | None = None) -> 
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         if digest != entry.get("sha256"):
             raise ValueError("分析文档与已验证交付哈希不一致")
+        options = entry.get("parse_options", {})
+        if (not isinstance(options, dict) or set(options) - {
+                "confirmed_table_continuations", "column_boundaries", "auto_columns", "max_pages"}):
+            raise ValueError("分析文档 parse_options 只支持 PDF 布局与明确确认的续表选项")
+        if options and path.suffix.lower() != ".pdf":
+            raise ValueError("分析文档 parse_options 当前仅支持 PDF")
         result.append({"id": entry["id"], "path": str(path), "sha256": digest,
-                       "source_url": str(entry.get("source_url", ""))})
+                       "source_url": str(entry.get("source_url", "")), **({"parse_options": options} if options else {})})
     if len({entry["id"] for entry in result}) != len(result):
         raise ValueError("分析文档 id 重复")
     return result
@@ -102,7 +108,7 @@ def _facts(sources: list[dict[str, Any]]) -> dict[str, Any]:
     for source in sources:
         document_characters = 0
         document_evidence = 0
-        parsed = parse_document(source["path"])
+        parsed = parse_document(source["path"], source["parse_options"]) if source.get("parse_options") else parse_document(source["path"])
         locators = getattr(parsed, "paragraph_locators", [])
         if locators and len(locators) != len(parsed.paragraphs):
             raise ValueError("文档段落定位与正文不一致")
@@ -132,8 +138,10 @@ def _facts(sources: list[dict[str, Any]]) -> dict[str, Any]:
                                **(locators[index] if locators else {}), **node}))
             else:
                 for row_no, row in enumerate(parsed.tables[index], 1):
+                    row_locator = getattr(parsed, "table_row_locator", None)
+                    origin = row_locator(index, row_no - 1) if callable(row_locator) else (table_locators[index] if table_locators else {})
                     chunks.append((" | ".join(row), {"table": index + 1, "row": row_no, "page": None,
-                                   **(table_locators[index] if table_locators else {}), **node}))
+                                   **node, **origin}))
         for index, (paragraph, locator) in enumerate(chunks, 1):
             if document_evidence >= 400 // len(sources) or document_characters + len(paragraph[:2000]) > 100000 // len(sources):
                 continue
@@ -143,7 +151,7 @@ def _facts(sources: list[dict[str, Any]]) -> dict[str, Any]:
             evidence.append({"id": hashlib.sha256(f"{source['id']}:{source['sha256']}:{index}".encode()).hexdigest(),
                              "source_id": source["id"], "locator": locator,
                              "quote": paragraph[:2000]})
-    return {"format": 1, "fact_stage_version": 7, "documents": documents, "evidence": evidence,
+    return {"format": 1, "fact_stage_version": 8, "documents": documents, "evidence": evidence,
             "statistics": {"documents": len(documents), "paragraphs": sum(item["paragraph_count"] for item in documents),
                            "evidence_paragraphs": len(evidence), "evidence_characters": characters},
             "coverage": "bounded_excerpts; omitted paragraphs/pages are not analyzed; page unknown unless parser supplies provenance",
@@ -189,7 +197,7 @@ def execute(manifest: Path, output: Path, *, config_path: Path | None = None, us
         try:
             cached = _json(facts_path)
             digest = cached.pop("stage_sha256", None)
-            if cached.get("fact_stage_version") == 7 and cached.get("input_sha256") == identity and digest == _stage_digest(cached):
+            if cached.get("fact_stage_version") == 8 and cached.get("input_sha256") == identity and digest == _stage_digest(cached):
                 report = cached
         except (ValueError, OSError):
             pass

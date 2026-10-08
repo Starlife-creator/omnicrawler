@@ -8,7 +8,13 @@ from typing import Any
 
 from .base import DocumentIR
 from .parsers import register_document_parser
-from .pdf_layout import column_blocks, infer_columns, mark_table_continuations, validate_columns
+from .pdf_layout import (
+    column_blocks,
+    confirm_table_continuations,
+    infer_columns,
+    mark_table_continuations,
+    validate_columns,
+)
 
 
 @register_document_parser(".pdf")
@@ -154,7 +160,10 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
         document.warnings.append(f"Native text only; pages needing OCR were omitted: {omitted}")
     if not document.paragraphs and not document.tables:
         raise ValueError("PDF has no usable native text; OCR is required")
-    return document
+    pairs = options.get("confirmed_table_continuations", [])
+    if not isinstance(pairs, list) or len(pairs) > 2000 or any(not isinstance(pair, list) or len(pair) != 2 for pair in pairs):
+        raise ValueError("confirmed_table_continuations must be a bounded list of table-index pairs")
+    return confirm_table_continuations(document, [(pair[0], pair[1]) for pair in pairs]) if pairs else document
 
 
 def _paragraph_region(text: str, words: list[dict[str, Any]]) -> list[float] | None:

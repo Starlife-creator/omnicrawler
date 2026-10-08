@@ -24,3 +24,9 @@ omnicrawler analyze-archive --manifest delivered/manifest.json -o analysis --ai 
 本地验证覆盖实际 CLI、可回链事实、缓存完整性、变更拒绝、摘录限制、失败恢复和受控模型引文；外部模型与真实费用未测。2026-10-04 补验覆盖本机原生 PDF 与真实 Tesseract OCR；完整主程序冻结环境仍未测，独立 OCR 组件试点见本轮报告。
 
 文字型 PDF（2026-10-04）：document_ir 已接入现有 pdfx 原生解析，证据 locator 保存真实页码与页内段落，报告保存解析警告和遗漏页。默认最多 200 页，空白/扫描/严重乱码页不启动 OCR，明确标为遗漏；完全没有可用原生文字则拒绝，不生成虚假的成功报告。新事实阶段版本为 4，旧缓存须重建；缓存完整性校验涵盖段落、表格和定位证据。分析默认本地，AI 仍需显式启用。
+
+2026-10-08 人工确认续表：PDF 清单条目可提供 `parse_options`，仅接受 `confirmed_table_continuations`、`column_boundaries`、`auto_columns`、`max_pages`。例如 `"parse_options":{"confirmed_table_continuations":[[0,1],[1,2]]}` 使用从 0 开始的原始表序号，表示用户已明确确认这些候选属于同一续表；只允许解析器实际标记的候选，重复、逆序、越界或非法序号拒绝。不会仅凭相同表头自动合并。也可用相同选项调用 `parse_document`；OCR 后端/凭据不接受为清单选项。
+
+确认后的逻辑表仍保留原始表定位，每一行另有 `row_locators`。分析证据中的 `table`/`row` 是合并视图序号，`source_table`/`source_row`、`page`、`bbox`、`node_id` 对应原始来源；不能把第二页数据行误标为第一页。重复表头从视图中移除，原始文档和来源表引用完整保留；GUI 校正导出的 document.json 同样包含逐行映射。确认的是续表关系，不证明数值、单位、主体和期间都正确。
+
+当前事实阶段版本为 8，布局/确认选项进入缓存身份，改变选项会重建事实；旧缺少逐行来源的事实缓存也重建。文档哈希、摘录和报告限制继续有效，不能用合并后的局部摘录宣称全文完整。

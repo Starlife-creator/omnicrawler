@@ -41,6 +41,11 @@ def infer_columns(page: dict[str, Any]) -> list[float]:
 
 def confirm_table_continuations(document: DocumentIR, pairs: list[tuple[int, int]]) -> DocumentIR:
     """Create a reviewed view; preserve original IR and every source-table locator."""
+    if (not isinstance(pairs, list) or len(pairs) > 2000
+            or any(not isinstance(pair, tuple) or len(pair) != 2
+                   or any(type(index) is not int for index in pair)
+                   or not 0 <= pair[0] < pair[1] < len(document.tables) for pair in pairs)):
+        raise ValueError("Only valid table continuation candidates can be confirmed")
     allowed = {(item["before_table"], item["after_table"]) for item in document.metadata.get("table_continuation_candidates", [])}
     if len(set(pairs)) != len(pairs) or any(pair not in allowed for pair in pairs):
         raise ValueError("Only distinct table continuation candidates can be confirmed")
@@ -51,8 +56,12 @@ def confirm_table_continuations(document: DocumentIR, pairs: list[tuple[int, int
         root = roots[before]
         if any(len(row) != len(document.tables[root][0]) for row in document.tables[after]):
             raise ValueError("Continuation table row widths do not match")
-        result.tables[root].extend(copy.deepcopy(document.tables[after][1:]))
         locator = result.table_locators[root]
+        row_locators = locator.setdefault("row_locators", [
+            copy.deepcopy(document.table_row_locator(root, row)) for row in range(len(document.tables[root]))])
+        row_locators.extend(copy.deepcopy(document.table_row_locator(after, row))
+                            for row in range(1, len(document.tables[after])))
+        result.tables[root].extend(copy.deepcopy(document.tables[after][1:]))
         locator.setdefault("source_tables", [{"index": root, **copy.deepcopy(document.table_locators[root])}])
         locator["source_tables"].append({"index": after, **copy.deepcopy(document.table_locators[after])})
         locator["continuation_verified"] = True

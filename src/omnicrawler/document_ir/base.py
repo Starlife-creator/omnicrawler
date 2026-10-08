@@ -80,6 +80,27 @@ class DocumentIR:
         self.tables.append(cells)
         self.table_locators.append(dict(locator or {}))
 
+    def table_row_locator(self, table_index: int, row_index: int) -> dict[str, Any]:
+        """Resolve a logical table row to its original source, including reviewed merges."""
+        if (type(table_index) is not int or type(row_index) is not int or table_index < 0
+                or table_index >= len(self.tables) or row_index < 0 or row_index >= len(self.tables[table_index])):
+            raise ValueError("Table row locator indexes are invalid")
+        if self.table_locators and len(self.table_locators) != len(self.tables):
+            raise ValueError("Table locators do not match table views")
+        locator = self.table_locators[table_index] if self.table_locators else {}
+        result = {key: value for key, value in locator.items() if key not in {"row_locators", "source_tables"}}
+        rows = locator.get("row_locators")
+        if rows is not None:
+            if not isinstance(rows, list) or len(rows) != len(self.tables[table_index]) or not isinstance(rows[row_index], dict):
+                raise ValueError("Table row provenance does not match table content")
+            result.update(rows[row_index])
+        else:
+            result.update(source_table=table_index + 1, source_row=row_index + 1)
+            block = next((block for block in self.blocks if block.kind == "table" and block.index == table_index), None)
+            if block is not None:
+                result.update(node_id=block.node_id, parent_id=block.parent_id)
+        return result
+
     def promote_first_paragraph_to_title(self) -> None:
         if not self.paragraphs:
             return
