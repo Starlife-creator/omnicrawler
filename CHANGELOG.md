@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- chore(deps): **一次性对齐质量工具链，并把 4 个工作流的 uv pin 同步跟升** — `constraints/quality.txt`
+  的 `uv 0.12.18→0.12.23`、`coverage 7.16.1→7.16.2`、`ruff 0.16.8→0.16.10`、`mypy 2.3.1→2.4.0`、
+  `cryptography >=50.0.1→>=50.0.2`；**同步**把 `reusable-build-{linux,macos,windows}` 与
+  `reusable-finalize-release` 四处 `setup-uv` 的 `version:` pin 改成 `0.12.23`。★ 本批取代并关闭
+  dependabot 的 #124 / #125 / #126 / #127 / #129：它们各自只改 `constraints/quality.txt` 的**一部分**，
+  而仓库有一条防复发守卫 `test_release_build_toolchain_uv_version_matches_constraints` 要求 4 个工作流的
+  pin 与该文件的 `uv==X` **逐字相等**——单独合任何一个都会红（这正是守卫在起作用，不是它误报）。
+  分成 5 个 PR 还会让同一个文件的相邻行互相冲突，故改为一次原子升级。★ 反向断言（把任一工作流的 pin
+  改回 `0.12.18` ⇒ 该用例必须红）已在本地按字节实测通过。
+
 ## 0.15.0 - 2026-10-01
 
 ### 变更
