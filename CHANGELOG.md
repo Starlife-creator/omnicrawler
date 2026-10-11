@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- fix(gui): **按钮 padding / min-height 随缩放走令牌，并给 ConvertX 与场景页补滚动区** —
+  此前 QSS 里 `padding: 7px` 与 `min-height: 20px` 是写死的绝对值，而字号走
+  `scaled_font_px()`；放大后控件需要的高度随字号长、布局仍按固定值分配，文字被垂直裁切
+  （实测 scale 160 × 窗口 560 时逐行裁字）。同时修掉 `_open_sources_dialog` 只判
+  `path is None`、未判文件是否存在，导致新建项目首次打开市场源管理时 `FileNotFoundError`
+  崩整个窗口。
+
+- chore(ci): **视觉回归参考基线跟到本批（`constraints/visual-ref.txt`
+  `02066cd`→`1d5237a`）** — `tools/check_visual_regression.py` 从该文件读一个**已审查
+  提交**，在**同一环境**渲染参考再与当前比像素。按钮高度一变，`help_tooltip` 快照即
+  `32×36`→`32×40` 报红（6 个快照里只有它变）。★ 这里**不是**去重录基线 PNG：基线目录
+  `tests/gui/visual/baselines/` 是 `.gitignore` 第 59 行排除的本机产物，像素与平台字体/
+  渲染器绑定，入仓会让 CI 随机红。移动这个 pin 才是该门禁设计上的接受动作。
+  ★ 本机离屏实测（PySide6 offscreen，逐档核对）：scale 100/130/160 下按钮总高
+  `40/52/64`，字号 `14/18/22`，padding `6/8/10`。⚠️ 由此可算出 `min-height` 取的是
+  `字号 + 2×padding`，而 Qt 的 `min-height` 约束的是**内容矩形**、padding 会在其外再加一次，
+  于是内容区比字号多出 `2×padding` 的冗余（100% 时 +12px、160% 时 +20px）。不影响正确性
+  （只会更宽松，不会裁字），但与该函数自述的「保证控件外框尺寸不变」不符——若要严格对齐
+  意图，`min-height` 应取 `scaled_font_px("body")`。**此项尚未改动，留给维护者定夺。**
+
 ## 0.15.0 - 2026-10-01
 
 ### 变更
