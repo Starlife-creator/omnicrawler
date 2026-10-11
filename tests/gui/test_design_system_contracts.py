@@ -32,6 +32,7 @@ from omnicrawler.gui.design_system import (
     assert_qss_supported,
     rgba_token_to_qcolor,
     scaled_font_px,
+    scaled_padding_px,
     stylesheet,
     theme_tokens,
 )
@@ -166,6 +167,50 @@ def test_qss_cache_invalidates_on_scale_change_only(qt_app: QApplication) -> Non
 def test_scale_is_clamped_to_declared_range() -> None:
     assert scaled_font_px("body", scale=10) == scaled_font_px("body", scale=SCALE_MIN)
     assert scaled_font_px("body", scale=999) == scaled_font_px("body", scale=SCALE_MAX)
+
+
+def test_push_button_min_height_clears_real_line_height() -> None:
+    """★ 防回退：`QPushButton` 的 `min-height` 必须盖住**真实字体行高**，不能只取名义 px。
+
+    QSS 的 ``min-height`` 约束内容矩形，Qt 要求它 ≥ 字体度量行高；而行高比
+    ``scaled_font_px`` 给的**名义 px 更大**。实测四种字体（Arial / Segoe UI /
+    Tahoma / Microsoft YaHei）行高最多到名义值的 **30/22 ≈ 1.36 倍**。
+
+    守卫写成**倍率**而不是与本机字体比对，是为了让判据**确定性**：不同 CI runner
+    字体不同，直接比 ``fontMetrics().height()`` 会变成环境相关断言。
+
+    ★ 这条守的是 `design_system.py` 里 `+ 2 * scaled_padding_px(...)` 那半截：
+    把它"简化"成只剩 `scaled_font_px("body")` ⇒ 比值退化成 1.0 ⇒ 本用例必须转红。
+    """
+    for scale in range(SCALE_MIN, SCALE_MAX + 1, 10):
+        qss = stylesheet(theme_tokens("light"), scale=scale)
+        min_height = _px(_declarations(qss, "QPushButton")["min-height"])
+        nominal = scaled_font_px("body", scale=scale)
+        assert min_height >= nominal * 1.4, (
+            f"scale {scale}: QPushButton min-height={min_height}px 未盖住真实行高"
+            f"（名义 {nominal}px，实测最差行高约为其 1.36 倍 ⇒ 需 ≥{nominal * 1.4:.0f}px）"
+        )
+
+
+def test_padding_actually_scales_in_generated_qss() -> None:
+    """★ `scaled_padding_px` 要名副其实：QSS 里的 padding 必须真的随缩放变大。
+
+    这条与上一条互补：上一条钉住 ``min-height`` 不得退化，这条钉住 padding 不得退回
+    写死值（那正是 2026-10-10 那批改动要解决的问题）。
+
+    ★ 同时更正一条被推翻的因果（2026-10-11 按实测）：padding 缩放**不会**改变内容盒
+    高度——Qt 已把 ``QLineEdit`` / 表格行算到刚好装下文字，``sizeHint =
+    行高 + 2*padding + 2*border``。所以「padding 缩放 ⇒ 不裁字」并不成立，
+    真正防裁字的是 ``min-height`` 随缩放走。本用例守的是「外框留白随缩放变厚」
+    这个**确实成立**的效果，不承担防裁字的职责。
+    """
+    values: dict[int, int] = {}
+    for scale in (100, 130, 160):
+        qss = stylesheet(theme_tokens("light"), scale=scale)
+        padding = _px(_declarations(qss, "QPushButton")["padding"].split()[0])
+        assert padding == scaled_padding_px("sm", scale=scale)
+        values[scale] = padding
+    assert values[100] < values[130] < values[160], f"padding 未随缩放变大：{values}"
 
 
 def test_only_design_system_reads_font_size_directly() -> None:

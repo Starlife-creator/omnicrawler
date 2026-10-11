@@ -4,6 +4,44 @@
 
 > 当前版本：0.15.0。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-10-11 QPushButton min-height 余量核查（不改取值，只加守卫 + 更正归因）
+
+起因：上一批把 `QPushButton` 的 `min-height` 改成 `字号 + 2×padding`，看着像重复计算。
+
+**环境警告（影响任何 Qt 度量结论）**：本机 Qt offscreen 插件默认**一个字体都加载不到**
+（`QFontDatabase.families()` 返回 0），此时 `fontMetrics().height()` 只回显 pixelSize
+（ascent=14 / descent=0），据此算出的「需要多少高度」是**假的**，会得到「不裁字」的错误结论。
+本次先用 `QFontDatabase.addApplicationFont()` 注册 Arial / Segoe UI / Microsoft YaHei /
+Tahoma 后再测。
+
+真实行高 vs 名义 px（四字体取最差）：
+
+| scale | 名义 px | 真实行高最大值 | 差额 | `2×padding` | 覆盖? |
+|---|---|---|---|---|---|
+| 100 | 14 | 19 | 5 | 12 | YES |
+| 110 | 15 | 20 | 5 | 14 | YES |
+| 130 | 18 | 24 | 6 | 16 | YES |
+| 150 | 21 | 28 | 7 | 18 | YES |
+| 160 | 22 | 30 | 8 | 20 | YES |
+
+⇒ `+ 2×padding` 是**必需余量**，去掉则每档裁字 5~8px。**取值保持不变。**
+
+另实测推翻 `scaled_padding_px` 原 docstring 的归因：160% 下 `QLineEdit` 的 padding 取 6 或 10，
+**内容盒高度都是 27px**（Qt 的 `sizeHint = 行高 + 2×padding + 2×border`，内容盒与 padding 无关）。
+padding 只决定外框，加大只会让控件更高、更易被压缩布局挤扁。
+
+**验证**：
+- `tests/gui/test_design_system_contracts.py` **18 passed**（含 2 条新增守卫）。
+- **反向断言**：把 `min-height` 字节级改回只留 `scaled_font_px("body")` ⇒
+  `assert 11 >= (11 * 1.4)` 转红；随后**字节级还原**，SHA256 前后一致（`427a7bfe…`）。
+- **零视觉影响**（本批不改任何渲染结果）：36 次渲染（3 主题 × 3 缩放 × 4 控件）像素摘要前后
+  均为 `aa82dccc6c6b87d4`；15 个**剥掉注释后**的 QSS 变体（3 主题 × 5 缩放）逐字节一致。
+  ⇒ `constraints/visual-ref.txt` **无需推进**。
+- ruff 0.16.10 对两个改动文件 **All checks passed**。
+
+**未验证**：三平台 pytest 全量回归、便携包构建、真实桌面会话下的**字形**排版
+（离屏环境不渲染字形，须在有字形的桌面会话看图确认）。
+
 ## 2026-10-11 质量工具链原子升级（uv/coverage/ruff/mypy/cryptography）
 
 `constraints/quality.txt` 一次性升 `uv 0.12.23`、`coverage 7.16.2`、`ruff 0.16.10`、`mypy 2.4.0`、

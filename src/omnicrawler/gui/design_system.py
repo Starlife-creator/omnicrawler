@@ -476,20 +476,29 @@ def scaled_font_px(key: str, *, scale: int | None = None) -> int:
 
 #: 控件内边距刻度（100% 缩放下的 px）。与 :data:`FONT_SIZE` 同步缩放——见
 #: :func:`scaled_padding_px` 的说明 why。
-PADDING_SIZE = {"tight": 4, "sm": 6, "md": 10}
+#: ★ 只列**已被调用点使用**的键；新增调用点时再往这里加，不预置没人用的刻度。
+PADDING_SIZE = {"sm": 6}
 
 
 def scaled_padding_px(key: str, *, scale: int | None = None) -> int:
     """按界面缩放取控件内边距（px），与字号同步。
 
     为什么必须有它：QSS 的 ``padding`` 是**写死的绝对值**，而字号走
-    :func:`scaled_font_px` 跟缩放。控件高度由 Qt 按**字号**算（不含 QSS 的
-    padding），于是内容盒 = 控件高 − padding − border 随缩放**越缩越小**：
-    实测 scale 100 时 30px 高的 ``QLineEdit`` 内容空间只剩 16px，而字高已是
-    20px ⇒ 文字被垂直裁切（放大到 150% 时行高 34px 而需要 42px，表格逐行裁字）。
+    :func:`scaled_font_px` 跟缩放。控件外框随字号一起长高，但 padding 不长 ⇒
+    **padding 占外框的比例**随缩放**越缩越小**，高缩放下控件显得越挤、留白越薄。
 
-    padding 跟着缩放才不会与字号脱节；这与 §A-31「边框 +1px ⇒ 内边距 −1px，
-    保证控件外框尺寸不变」是同一条约束的两面。
+    ★ 这条 docstring 此前描述的因果是**错的**（2026-10-11 按实测更正）。原文称
+    「padding 不缩放会让内容盒越缩越小 ⇒ 文字被垂直裁切」，并拿 ``QLineEdit`` /
+    表格行举证。实测（Qt 6.12 offscreen，注册真实字体后）否掉了这一条：
+
+    * Qt 会按字体度量把 ``QLineEdit`` / ``QComboBox`` / 表格行**算到刚好装下文字**，
+      ``sizeHint = 行高 + 2*padding + 2*border``。于是无论 padding 取 6 还是 10，
+      内容盒高度**完全相同**（160% 下都是 27px）——padding 只改变控件外框大小，
+      **不改变内容盒**。把它调大只会让控件更高、更容易被压缩布局挤扁。
+    * 真正会被固定高度卡住内容盒的，是 QSS 里写了 ``min-height`` 的控件。
+
+    所以本函数**不是**修裁字的开关；修裁字的是 :func:`scaled_font_px` 给
+    ``QPushButton`` 的 ``min-height`` 随缩放走（见 :func:`stylesheet` 内注释）。
     """
     if scale is None:
         scale = ThemeManager.instance().scale
@@ -582,7 +591,12 @@ def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
         font-weight: 600;
     }}
 
-    /* === 按钮：完整状态体系 === */
+    /* === 按钮：完整状态体系 ===
+       ★ 下面 min-height 里的 `+ 2*padding` **不是重复计算，是必需余量**，不要"顺手简化"
+       成只剩 `scaled_font_px("body")`：Qt 要的最小内容高度是**字体度量行高**，比名义 px
+       大（实测四字体最差约 1.36 倍，如 scale160 名义 22px / 行高 30px），只写名义 px
+       会每档裁字 5~8px。守卫与完整实测见
+       tests/gui/test_design_system_contracts.py::test_push_button_min_height_clears_real_line_height。 */
     QPushButton {{
         background: {tokens.surface}; color: {tokens.text};
         border: 1px solid {tokens.border}; border-radius: {RADIUS["sm"]}px;

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-<- fix(gui): **按钮 padding / min-height 随缩放走令牌，并给 ConvertX 与场景页补滚动区** —
+- fix(gui): **按钮 padding / min-height 随缩放走令牌，并给 ConvertX 与场景页补滚动区** —
   此前 QSS 里 `padding: 7px` 与 `min-height: 20px` 是写死的绝对值，而字号走
   `scaled_font_px()`；放大后控件需要的高度随字号长、布局仍按固定值分配，文字被垂直裁切
   （实测 scale 160 × 窗口 560 时逐行裁字）。同时修掉 `_open_sources_dialog` 只判
@@ -16,11 +16,9 @@
   `tests/gui/visual/baselines/` 是 `.gitignore` 第 59 行排除的本机产物，像素与平台字体/
   渲染器绑定，入仓会让 CI 随机红。移动这个 pin 才是该门禁设计上的接受动作。
   ★ 本机离屏实测（PySide6 offscreen，逐档核对）：scale 100/130/160 下按钮总高
-  `40/52/64`，字号 `14/18/22`，padding `6/8/10`。⚠️ 由此可算出 `min-height` 取的是
-  `字号 + 2×padding`，而 Qt 的 `min-height` 约束的是**内容矩形**、padding 会在其外再加一次，
-  于是内容区比字号多出 `2×padding` 的冗余（100% 时 +12px、160% 时 +20px）。不影响正确性
-  （只会更宽松，不会裁字），但与该函数自述的「保证控件外框尺寸不变」不符——若要严格对齐
-  意图，`min-height` 应取 `scaled_font_px("body")`。**此项尚未改动，留给维护者定夺。**
+  `40/52/64`，字号 `14/18/22`，padding `6/8/10`。⇒ `min-height` 实取 `字号 + 2×padding`。
+  ⚠️ **本条曾据「冗余」推断 `min-height` 应改取 `scaled_font_px("body")` —— 该结论已被实测
+  推翻，见下条 `fix(gui)`；不要按早期推断动手。**
 
 - chore(deps): **一次性对齐质量工具链，并把 4 个工作流的 uv pin 同步跟升** — `constraints/quality.txt`
   的 `uv 0.12.18→0.12.23`、`coverage 7.16.1→7.16.2`、`ruff 0.16.8→0.16.10`、`mypy 2.3.1→2.4.0`、
@@ -31,6 +29,24 @@
   pin 与该文件的 `uv==X` **逐字相等**——单独合任何一个都会红（这正是守卫在起作用，不是它误报）。
   分成 5 个 PR 还会让同一个文件的相邻行互相冲突，故改为一次原子升级。★ 反向断言（把任一工作流的 pin
   改回 `0.12.18` ⇒ 该用例必须红）已在本地按字节实测通过。
+
+- fix(gui): **钉住 `QPushButton` 的 `min-height` 余量，并更正 `scaled_padding_px` 的错误归因** —
+  上一条留了个待办：`min-height` 取 `字号 + 2×padding` 看着像重复计算。本批按实测结论**不改
+  取值**，改为补守卫 + 更正文档。★ 关键事实：QSS 的 `min-height` 约束的是**内容矩形**，
+  而 Qt 要的最小内容高度是**字体度量行高**，它比 `scaled_font_px` 的**名义 px 更大**
+  （实测 Arial/Segoe UI/Tahoma/Microsoft YaHei 四字体，最差约 1.36 倍：scale 160 名义 22px、
+  行高 30px）。所以 `+ 2×padding`（12/16/20px）**正是覆盖该差额的必需余量**，去掉它会让按钮
+  在**每一档裁字 5~8px**——它不是冗余，是承重件。新增
+  `test_push_button_min_height_clears_real_line_height` 把它钉死（反向断言：简化成只剩
+  `scaled_font_px("body")` ⇒ 比值退化为 1.0 ⇒ 必红，已按字节实测）。
+  ★ 同时更正 `scaled_padding_px` docstring 的因果：它原称「padding 不缩放 ⇒ 内容盒越缩越小 ⇒
+  裁字」，并以 `QLineEdit`/表格行举证 —— **实测否掉**。Qt 把这些控件算到刚好装下文字，
+  `sizeHint = 行高 + 2×padding + 2×border`，内容盒与 padding 无关（160% 下 padding 取 6 或 10，
+  内容盒**都是 27px**），padding 只决定外框大小、加大它只会让控件更高更易被压缩布局挤扁。
+  真正防裁字的是 `min-height` 随缩放走，与 padding 无关。另清掉 `PADDING_SIZE` 里零引用的
+  `"tight"`/`"md"` 两个刻度。★ 本批**不产生任何视觉变化**：36 次渲染（3 主题 × 3 缩放 ×
+  4 控件）像素摘要前后一致 `aa82dccc6c6b87d4`，15 个剥注释 QSS 变体逐字节一致，
+  故 `constraints/visual-ref.txt` 无需推进。
 
 ## 0.15.0 - 2026-10-01
 
