@@ -4,6 +4,20 @@
 
 > 当前版本：0.15.0。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-10-11 质量工具链原子升级（uv/coverage/ruff/mypy/cryptography）
+
+`constraints/quality.txt` 一次性升 `uv 0.12.23`、`coverage 7.16.2`、`ruff 0.16.10`、`mypy 2.4.0`、
+`cryptography >=50.0.2`，并把 4 个 reusable 工作流的 `setup-uv` pin 同步到 `0.12.23`。
+
+本地验证（纯标准库，无第三方依赖）：`tests/unit/utils/test_dependency_extras_contract.py` 与
+`tests/unit/utils/test_release_workflow_contract.py` 共 13 条契约用例全部通过。
+★ 反向断言：把任一工作流的 pin 改回 `0.12.18` 后，
+`test_release_build_toolchain_uv_version_matches_constraints` 立即转红（字节级还原后复绿）——
+证明这条守卫确实承重，不是恒真断言。
+
+未在本地验证：三平台 pytest 全量回归、`mypy 2.4.0` 对 `src/omnicrawler` 的新增报错、便携包构建与
+端到端冒烟——这些只在 CI 三平台成立，本机无 `uv` 与已安装的 `omnicrawler`，留给 CI 判。
+
 ## 2026-10-04 当前本机 Full 分组回归
 
 单元、集成、Qt 模板与既有论文插件分组通过，跳过按各 JUnit 登记；最终页面基线修复另外定向补验，完整静态门禁通过。当前行为、资源测量和原始结果见 [全面优化实施与验收](COMPREHENSIVE_OPTIMIZATION_2026-10-04.md)。

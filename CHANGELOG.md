@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- fix(gui): **按钮 padding / min-height 随缩放走令牌，并给 ConvertX 与场景页补滚动区** —
+<- fix(gui): **按钮 padding / min-height 随缩放走令牌，并给 ConvertX 与场景页补滚动区** —
   此前 QSS 里 `padding: 7px` 与 `min-height: 20px` 是写死的绝对值，而字号走
   `scaled_font_px()`；放大后控件需要的高度随字号长、布局仍按固定值分配，文字被垂直裁切
   （实测 scale 160 × 窗口 560 时逐行裁字）。同时修掉 `_open_sources_dialog` 只判
@@ -21,6 +21,16 @@
   于是内容区比字号多出 `2×padding` 的冗余（100% 时 +12px、160% 时 +20px）。不影响正确性
   （只会更宽松，不会裁字），但与该函数自述的「保证控件外框尺寸不变」不符——若要严格对齐
   意图，`min-height` 应取 `scaled_font_px("body")`。**此项尚未改动，留给维护者定夺。**
+
+- chore(deps): **一次性对齐质量工具链，并把 4 个工作流的 uv pin 同步跟升** — `constraints/quality.txt`
+  的 `uv 0.12.18→0.12.23`、`coverage 7.16.1→7.16.2`、`ruff 0.16.8→0.16.10`、`mypy 2.3.1→2.4.0`、
+  `cryptography >=50.0.1→>=50.0.2`；**同步**把 `reusable-build-{linux,macos,windows}` 与
+  `reusable-finalize-release` 四处 `setup-uv` 的 `version:` pin 改成 `0.12.23`。★ 本批取代并关闭
+  dependabot 的 #124 / #125 / #126 / #127 / #129：它们各自只改 `constraints/quality.txt` 的**一部分**，
+  而仓库有一条防复发守卫 `test_release_build_toolchain_uv_version_matches_constraints` 要求 4 个工作流的
+  pin 与该文件的 `uv==X` **逐字相等**——单独合任何一个都会红（这正是守卫在起作用，不是它误报）。
+  分成 5 个 PR 还会让同一个文件的相邻行互相冲突，故改为一次原子升级。★ 反向断言（把任一工作流的 pin
+  改回 `0.12.18` ⇒ 该用例必须红）已在本地按字节实测通过。
 
 ## 0.15.0 - 2026-10-01
 
