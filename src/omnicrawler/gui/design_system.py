@@ -474,6 +474,28 @@ def scaled_font_px(key: str, *, scale: int | None = None) -> int:
     return max(8, round(FONT_SIZE[key] * _scale_factor(scale)))
 
 
+#: 控件内边距刻度（100% 缩放下的 px）。与 :data:`FONT_SIZE` 同步缩放——见
+#: :func:`scaled_padding_px` 的说明 why。
+PADDING_SIZE = {"tight": 4, "sm": 6, "md": 10}
+
+
+def scaled_padding_px(key: str, *, scale: int | None = None) -> int:
+    """按界面缩放取控件内边距（px），与字号同步。
+
+    为什么必须有它：QSS 的 ``padding`` 是**写死的绝对值**，而字号走
+    :func:`scaled_font_px` 跟缩放。控件高度由 Qt 按**字号**算（不含 QSS 的
+    padding），于是内容盒 = 控件高 − padding − border 随缩放**越缩越小**：
+    实测 scale 100 时 30px 高的 ``QLineEdit`` 内容空间只剩 16px，而字高已是
+    20px ⇒ 文字被垂直裁切（放大到 150% 时行高 34px 而需要 42px，表格逐行裁字）。
+
+    padding 跟着缩放才不会与字号脱节；这与 §A-31「边框 +1px ⇒ 内边距 −1px，
+    保证控件外框尺寸不变」是同一条约束的两面。
+    """
+    if scale is None:
+        scale = ThemeManager.instance().scale
+    return max(2, round(PADDING_SIZE[key] * _scale_factor(scale)))
+
+
 def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
     """生成完整 QSS，所有颜色引用令牌，覆盖 40+ 控件与全状态。
 
@@ -564,12 +586,13 @@ def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
     QPushButton {{
         background: {tokens.surface}; color: {tokens.text};
         border: 1px solid {tokens.border}; border-radius: {RADIUS["sm"]}px;
-        padding: 7px 14px; min-height: 20px;
+        padding: {scaled_padding_px("sm", scale=scale)}px 14px;
+        min-height: {scaled_font_px("body", scale=scale) + 2 * scaled_padding_px("sm", scale=scale)}px;
         font-weight: 500;
     }}
     QPushButton:hover {{ border-color: {tokens.primary}; background: {tokens.selection}; }}
     QPushButton:pressed {{ background: {tokens.border}; }}
-    QPushButton:focus {{ border: 2px solid {tokens.primary}; padding: 6px 13px; }}
+    QPushButton:focus {{ border: 2px solid {tokens.primary}; padding: {scaled_padding_px("sm", scale=scale) - 1}px 13px; }}
     QPushButton:disabled {{ color: {tokens.muted}; background: {tokens.canvas}; border-color: {tokens.border}; }}
 
     QPushButton[primary="true"] {{

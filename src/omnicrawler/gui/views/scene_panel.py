@@ -19,12 +19,14 @@ from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QFileDialog,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -67,7 +69,19 @@ class ScenePanel(QWidget):
 
     # ── UI ────────────────────────────────────────────────
     def _build_ui(self) -> None:
-        root = QVBoxLayout(self)
+        # 与 convert_tool 同理：整体套滚动区。槽位/基因/候选三张表 + 场景下拉在
+        # 界面缩放放大或窗口偏矮时最小高度会超过视口，没有滚动区时 Qt 挤压弹性行，
+        # 表格行与下拉被压到低于 minimumSizeHint，文字被垂直裁切。
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setAccessibleName(_("场景管理内容"))
+        outer.addWidget(scroll)
+        content = QWidget(scroll)
+        scroll.setWidget(content)
+        root = QVBoxLayout(content)
         root.setContentsMargins(28, 24, 28, 24)
         root.setSpacing(14)
 
@@ -162,6 +176,11 @@ class ScenePanel(QWidget):
         cand_layout.addLayout(cand_row)
         root.addWidget(cand_box, 1)
 
+        # 长选择器（正则/JSONPath）必须换行显示：不换行时行高按单行算，长内容会被
+        # 行高压住只露一行（见 _fit_table_heights 的实测数据）。
+        for _table in (self._slot_table, self._gene_table, self._cand_table):
+            _table.setWordWrap(True)
+
     # ── 行为 ──────────────────────────────────────────────
     @Slot()
     def refresh_scenes(self) -> None:
@@ -252,6 +271,31 @@ class ScenePanel(QWidget):
             )
             self._cand_table.setItem(row, 4, QTableWidgetItem(str(item.get("created_at", ""))))
         self._btn_accept.setEnabled(bool(candidates))
+        self._fit_table_heights()
+
+    def _fit_table_heights(self) -> None:
+        """按内容给三张表一个最小高度，使行不被压扁。
+
+        ``QTableWidget`` 默认纵向策略允许被压到 0，若不给最小高度，外层布局在
+        窗口偏矮／界面缩放放大时会把行压到远小于 ``sizeHintForRow``（实测 36 < 65），
+        行内文字被垂直裁切——与 convert_tool 同一个根因，这里补上最小高度这一半。
+        超出部分交给外层滚动区，不裁字。
+
+        必须先 :meth:`QTableWidget.setWordWrap`（在三张表建好时统一开）：不换行时
+        ``sizeHintForRow`` 按单行算，而「模式/选择器」列存的是长正则（年报场景
+        ``report_date`` 实测需 129px），行高压到 36px 后文字只露一行——正是截图里
+        槽位表只剩半截字的直接原因。
+        """
+        for table in (self._slot_table, self._gene_table, self._cand_table):
+            rows = table.rowCount()
+            header = table.horizontalHeader().height() if table.horizontalHeader() else 0
+            # 开了 wordWrap 还要显式 resizeRowsToContents：换行只影响内容排版，
+            # 行高本身不会自动跟着变（实测开启后仍为 36px 而 sizeHintForRow 需 65px）。
+            if rows:
+                table.resizeRowsToContents()
+            needed = header + sum(table.sizeHintForRow(r) for r in range(rows))
+            # 空表也给一行的高度，避免塌成一条线。
+            table.setMinimumHeight(needed if rows else header + table.sizeHintForRow(0))
 
     @Slot()
     def _accept_selected(self) -> None:

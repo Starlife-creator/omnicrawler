@@ -198,6 +198,11 @@ class PluginMarketView(
         if config_path is None:
             ToastManager.instance().info(_("未加载项目配置，无法管理索引源"))
             return
+        # 尚未落盘的配置（新建项目未保存）也走同一条提示：对话框与命令层都会
+        # 直接读这个文件，缺失时抛 FileNotFoundError 会变成未捕获异常崩掉整个窗口。
+        if not Path(config_path).exists():
+            ToastManager.instance().info(_("项目配置尚未保存，先保存配置后再管理索引源"))
+            return
         from .market_sources_dialog import MarketSourcesDialog
 
         dialog = MarketSourcesDialog(config_path, self)

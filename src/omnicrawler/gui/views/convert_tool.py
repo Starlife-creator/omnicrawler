@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QTabWidget,
     QTextEdit,
@@ -240,7 +241,19 @@ class ConvertView(QWidget):
         return ToastManager.instance()
 
     def _build_ui(self) -> None:
-        root = QVBoxLayout(self)
+        # 内容整体放进滚动区：本页在界面缩放 ≥130 或窗口 <1100px 高时，内容最小高度
+        # （scale 160 实测 966px）会超过视口。没有滚动区时 Qt 不会滚动，而是去挤压
+        # 弹性行——表单控件被压到低于自身 minimumSizeHint（42 < 48px），文字被垂直裁切。
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setAccessibleName(_("格式转换内容"))
+        outer.addWidget(scroll)
+        content = QWidget(scroll)
+        scroll.setWidget(content)
+        root = QVBoxLayout(content)
         root.setContentsMargins(28, 24, 28, 24)
         root.setSpacing(16)
 

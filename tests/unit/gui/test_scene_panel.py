@@ -97,3 +97,42 @@ def test_scene_panel_csv_export_escapes_formula(qt_app, tmp_path: Path, monkeypa
     content = out.read_text(encoding="utf-8")
     assert "'=SUM(A1:A2)" in content
     assert "'=cmd|' /C calc'!A1" in content
+
+
+def test_scene_panel_has_scroll_area(qt_app, tmp_path: Path) -> None:
+    """页面必须套滚动区：内容高于视口时应滚动，而不是挤压控件裁掉文字。
+
+    回归：此前本页没有 QScrollArea，窗口偏矮或界面缩放放大时 Qt 会去压缩弹性行，
+    下拉被压到 42 < minimumSizeHint 48px，文字被垂直裁切。
+    """
+    from PySide6.QtWidgets import QScrollArea
+
+    from omnicrawler.gui.views.scene_panel import ScenePanel
+
+    panel = ScenePanel(tmp_path)
+    panel.refresh_scenes()
+    assert panel.findChildren(QScrollArea), "场景页应提供滚动区，避免挤压控件"
+
+
+def test_scene_panel_rows_are_not_flattened(qt_app, tmp_path: Path) -> None:
+    """槽位表行高不得小于 sizeHintForRow（长正则选择器要能换行完整显示）。"""
+    from omnicrawler.gui.views.scene_panel import ScenePanel
+
+    panel = ScenePanel(tmp_path)
+    panel.refresh_scenes()
+    table = panel._slot_table
+    assert table.rowCount() >= 1
+    for row in range(table.rowCount()):
+        assert table.rowHeight(row) >= table.sizeHintForRow(row), (
+            f"第 {row} 行被压扁：{table.rowHeight(row)} < {table.sizeHintForRow(row)}"
+        )
+
+
+def test_convert_view_has_scroll_area(qt_app) -> None:
+    """ConvertX 页同样必须套滚动区（scale 160 时内容最小高 966px > 常见视口）。"""
+    from PySide6.QtWidgets import QScrollArea
+
+    from omnicrawler.gui.views.convert_tool import ConvertView
+
+    view = ConvertView()
+    assert view.findChildren(QScrollArea), "ConvertX 页应提供滚动区"
