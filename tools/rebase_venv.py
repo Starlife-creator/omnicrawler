@@ -23,15 +23,28 @@ from pathlib import Path
 
 _SOURCE_VERSION_RE = re.compile(r'^__version__\s*=\s*"([^"]+)"', re.MULTILINE)
 
+#: 版本真源按序探测：`_version.py` 是唯一权威来源（AGENTS.md），
+#: `__init__.py` 只经模块级 `__getattr__` re-export、**没有**模块级字面量，
+#: 保留它作旧布局兜底。曾只读 `__init__.py` ⇒ 永远返回 None ⇒ 版本对账被静默跳过。
+_VERSION_SOURCE_FILES = ("_version.py", "__init__.py")
+
 
 def read_source_version(project_root: Path) -> str | None:
-    """Read __version__ from src/omnicrawler/__init__.py (dependency-free)."""
-    init_path = project_root / "src" / "omnicrawler" / "__init__.py"
-    try:
-        match = _SOURCE_VERSION_RE.search(init_path.read_text(encoding="utf-8"))
-    except OSError:
-        return None
-    return match.group(1) if match else None
+    """Read ``__version__`` from the authoritative source file (dependency-free).
+
+    Checks ``src/omnicrawler/_version.py`` first (the single source of truth),
+    then falls back to ``src/omnicrawler/__init__.py`` for older layouts.
+    """
+    package = project_root / "src" / "omnicrawler"
+    for name in _VERSION_SOURCE_FILES:
+        try:
+            text = (package / name).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        match = _SOURCE_VERSION_RE.search(text)
+        if match:
+            return match.group(1)
+    return None
 
 
 def read_installed_version(venv_python: Path) -> str | None:
