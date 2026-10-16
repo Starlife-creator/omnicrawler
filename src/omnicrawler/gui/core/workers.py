@@ -17,10 +17,10 @@
   （对应计划 §3.3 的 ``cancelling → cancelled``），调用方应据此复位进行中状态，而非当作错误；
 - ``finished`` 信号可用于释放调用方持有的引用。
 
-**关于本模块保留的三类「未接线」worker**：``JsonlLoadWorker`` / ``SqliteQueryWorker`` /
-``TemplateCombineWorker`` 当前没有调用点，但它们**不是遗留垃圾，而是尚未接线的能力**，
-各自对应一条仍然开放的文档化需求（见各类 docstring 中的出处）。删除它们等于删除需求
-本身，因此一律保留并显式标注为「待接线」。
+**关于本模块保留的两类「未接线」worker**：``SqliteQueryWorker`` / ``TemplateCombineWorker``
+当前没有调用点，但它们**不是遗留垃圾，而是尚未接线的能力**，各自对应一条仍然开放的
+文档化需求（见各类 docstring 中的出处）。删除它们等于删除需求本身，因此一律保留并
+显式标注为「待接线」。（``JsonlLoadWorker`` 已接线到 ``views/task_history.py``。）
 
 历史上 ``async_workers.AsyncWorkerManager`` 的线程簿记与 5 个便捷入口已删除，依据是：
 其唯一职责「统一取消」已由视图侧实现等价替代——视图把 worker 挂进 MainWindow 的对象树

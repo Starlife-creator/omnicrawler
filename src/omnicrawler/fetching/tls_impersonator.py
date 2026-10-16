@@ -12,7 +12,9 @@ ALPN、Header 顺序），对抗基于 TLS 握手的服务器端检测。
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
@@ -106,7 +108,6 @@ class TLSImpersonator:
         """同步抓取（curl_cffi 不可用时委托 fallback）。"""
         if not self._available:
             return self.fallback.fetch(request)
-        import asyncio
 
         loop = asyncio.new_event_loop()
         try:
@@ -148,11 +149,11 @@ class TLSImpersonator:
         proxy = str(http.get("proxy")) or None
         if proxy:
             self.target_policy.require(proxy)
-        resolve = self._resolve_override(request.url)
+        resolve = await asyncio.to_thread(self._resolve_override, request.url)
         session_options: dict[str, Any] = {"impersonate": self._resolved_target}
         if resolve:
             session_options["curl_options"] = {CurlOpt.RESOLVE: resolve}
-        start = __import__("time").monotonic()
+        start = time.monotonic()
 
         async with AsyncSession(**session_options) as session:
             with self._egress.request(request.url, purpose="fetch", headers=headers):
@@ -177,5 +178,5 @@ class TLSImpersonator:
                     status=response.status_code,
                     headers=dict(response.headers),
                     body=bytes(body),
-                    elapsed_seconds=__import__("time").monotonic() - start,
+                    elapsed_seconds=time.monotonic() - start,
                 )

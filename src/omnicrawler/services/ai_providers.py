@@ -263,6 +263,13 @@ class OpenAICompatibleProvider:
         assert self.egress is not None, "generate() 已校验 egress 非空"
         payload = json.loads(request.data.decode("utf-8")) if isinstance(request.data, bytes) else {}
         deadline = time.monotonic() + self.total_timeout
+        # 与 HTTPFetcher 同法：opener 只依赖配置与 egress 策略（重试之间不变），
+        # 构造一次并复用——避免每次重试都重建 SSL context（加载系统 CA 证书集）。
+        opener = build_safe_opener(
+            self.app_config,  # type: ignore[arg-type]
+            target_policy=self.egress.policy, include_cookies=False,
+            egress=self.egress, purpose="ai",
+        )
         for attempt in range(AI_RETRY_ATTEMPTS):
             timeout = min(self.timeout, self._remaining(deadline))
             reservation = self.accounting.reserve(payload)
@@ -270,11 +277,6 @@ class OpenAICompatibleProvider:
             delay: float | None = None
             try:
                 with self.egress.request(request.full_url, purpose="ai", headers=request.headers):
-                    opener = build_safe_opener(
-                        self.app_config,  # type: ignore[arg-type]
-                        target_policy=self.egress.policy, include_cookies=False,
-                        egress=self.egress, purpose="ai",
-                    )
                     with opener.open(request, timeout=timeout) as response:
                         self._remaining(deadline)
                         raw = response.read(maximum + 1)

@@ -20,7 +20,7 @@ from ..core.archive_security import (
     read_zip_member,
     validate_zip_archive,
 )
-from ..core.utils import utcnow
+from ..core.utils import atomic_write_text, utcnow
 from ..core.workspace_paths import declared_paths
 from ..security.security_audit import scan_config_text
 from ..state.migrations import SCHEMA_VERSION
@@ -163,8 +163,8 @@ def import_package(package: Path, destination: Path, *, expected_sha256: str = "
         raw["project"]["root"] = "."
         raw["project"]["workspace"] = "workspace"
         original_path = project / "config.before-relocation.yaml"
-        original_path.write_text(original, encoding="utf8")
-        config_path.write_text(yaml.safe_dump(raw, allow_unicode=True, sort_keys=False), encoding="utf8")
+        atomic_write_text(original_path, original)
+        atomic_write_text(config_path, yaml.safe_dump(raw, allow_unicode=True, sort_keys=False))
         report = {"format": 1, "imported_at": utcnow(), "package_sha256": package_sha,
                   "workspace_origin": origin, "workspace": str(final_workspace), "config": str(destination / "config.yaml"),
                   "identity": "persisted" if raw["project"].get("task_id") else "legacy_unverified",

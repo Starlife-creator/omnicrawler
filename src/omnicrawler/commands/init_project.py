@@ -9,6 +9,8 @@ from typing import Any
 
 import yaml
 
+from ..core.utils import atomic_write_text
+
 # B09-002：name 参与文件路径构造，必须为纯文件名（拒绝路径分隔符与穿越段）。
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
@@ -71,7 +73,7 @@ def execute(template: str, output: str, name: str) -> dict[str, Any]:
     data = yaml.safe_load(source.read_text(encoding="utf-8"))
     data.setdefault("project", {})["name"] = name
     data["project"]["workspace"] = f"work/{name}"
-    target.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    atomic_write_text(target, yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
     # pdf_end_to_end 特判按**用户原始请求名**判定（别名改向后仍要带上 bundled/pdf 资产，
     # documents/pdf_collection 的 processors 引用 builtin:pdf/generic_template.yaml）。
     if requested == "pdf_end_to_end" or requested.endswith("pdf_end_to_end"):

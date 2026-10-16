@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 
-from .utils import deep_merge
+from .utils import atomic_write_text, deep_merge
 
 CURRENT_CONFIG_VERSION = 5
 
@@ -104,5 +104,5 @@ def migrate_file(source: Path, target: Path, *, overwrite: bool = False) -> tupl
         raise ValueError("Configuration root must be a YAML mapping")
     migrated, notes = migrate_config(value)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(yaml.safe_dump(migrated, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    atomic_write_text(target, yaml.safe_dump(migrated, allow_unicode=True, sort_keys=False))
     return target, notes

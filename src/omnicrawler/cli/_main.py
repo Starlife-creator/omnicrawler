@@ -15,7 +15,7 @@ import yaml
 from .._version import __version__
 from ..core.logging_utils import configure_logging
 from ..core.runtime_paths import configure_runtime_environment
-from ..core.utils import user_agent
+from ..core.utils import atomic_write_text, user_agent
 from ..services.benchmarking import BenchmarkHistory, BenchmarkRunner
 
 # Source installs discover project-local .runtime assets, while frozen builds
@@ -404,7 +404,7 @@ def _wizard(output: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if output_path.exists():
         raise FileExistsError(f"目标已存在，不会覆盖: {output_path}")
-    output_path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    atomic_write_text(output_path, yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
 
     print(f"\n✅ 配置已生成: {output_path}")
     print()

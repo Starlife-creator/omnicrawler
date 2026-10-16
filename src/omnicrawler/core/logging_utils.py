@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+from ..security.redaction import redact_url
+
 _KNOWN_LEVELS = {
     "DEBUG": logging.DEBUG,
     "INFO": logging.INFO,
@@ -20,8 +22,6 @@ _KNOWN_LEVELS = {
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        from ..security.redaction import redact_url
-
         value = {
             "timestamp": datetime.now(UTC).isoformat(timespec="milliseconds"),
             "level": record.levelname,
@@ -47,8 +47,6 @@ class _RedactingFormatter(logging.Formatter):
     """
 
     def format(self, record: logging.LogRecord) -> str:
-        from ..security.redaction import redact_url
-
         record.msg = redact_url(record.getMessage())
         record.args = None
         return super().format(record)

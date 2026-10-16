@@ -56,7 +56,7 @@ class _PinnedAsyncNetworkBackend:
         local_address: str | None = None,
         socket_options: Any = None,
     ) -> Any:
-        addresses = self._policy.approved_addresses(host, port)
+        addresses = await asyncio.to_thread(self._policy.approved_addresses, host, port)
         last_error: OSError | None = None
         for address in addresses:
             try:

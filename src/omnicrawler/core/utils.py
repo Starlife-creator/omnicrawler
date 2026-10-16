@@ -184,6 +184,15 @@ def atomic_write(path: Path, data: bytes) -> None:
         raise
 
 
+def atomic_write_text(path: Path, text: str, *, encoding: str = "utf-8") -> None:
+    """文本版的 :func:`atomic_write`。
+
+    统一配置/文档写入路径，避免散落的裸 ``Path.write_text`` 在崩溃/断电时留下
+    截断的目标文件（尤其配置文件，下次 ``load_config`` 会解析失败）。
+    """
+    atomic_write(path, text.encode(encoding))
+
+
 def json_text(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
 
@@ -215,9 +224,10 @@ def excel_safe(value: Any, max_length: int = 32700) -> Any:
 #   3. 绝不以指纹对抗为目的（canvas/webgl/audio/fonts 等指纹相关字样一律禁止出现在
 #      profile 名、描述、suffix 中）—— doctor 预检会额外扫描反指纹关键词。
 # ★ 边界说明：fetching/browser_pool.py 的浏览器路径有独立的反检测行为
-# （stealth.min.js 注入 / navigator.webdriver 隐藏），fetching/stealth_enhanced.py
-# 提供实验性的指纹随机化（当前未接入抓取主链路）。本铁则约束的是"自称是谁"
-# 的 UA 身份，与浏览器侧的反自动化规避属两个层面，后者由 README 的合规边界约束。
+# （stealth.min.js 注入 / navigator.webdriver 隐藏），并按 stealth level 调用
+# fetching/stealth_enhanced.py 的分级指纹脚本（medium/high 时接入，见 browser_pool 的
+# _stealth_level / apply_to_playwright_context）。本铁则约束的是"自称是谁"的 UA 身份，
+# 与浏览器侧的反自动化规避属两个层面，后者由 README 的合规边界约束。
 
 UA_PROFILES: dict[str, dict[str, str]] = {
     # 推荐默认：机器人标识 + 联系信息 留给 suffix（如 +contact: a@b.c），

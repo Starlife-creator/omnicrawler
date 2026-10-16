@@ -152,6 +152,18 @@ def _print_summary(report: EvidenceReport) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows 默认控制台是 GBK。门禁描述含 `↔`(U+2194) 等非 GBK 字符时，
+    # `--list` 会抛 UnicodeEncodeError（同族的 check_*.py 已有 cp1252 回归测试，
+    # 本入口此前漏了）。只放宽 errors 而不改 encoding——中文仍走 GBK 正常显示，
+    # 仅少数非 GBK 字符退化为 `?`，不再崩溃。
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(errors="replace")
+            except (ValueError, OSError):
+                pass
+
     parser = argparse.ArgumentParser(description="按门禁清单执行并产出证据报告")
     parser.add_argument(
         "--set",

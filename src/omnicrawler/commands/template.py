@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from ..core.utils import atomic_write
+from ..core.utils import atomic_write, atomic_write_text
 from ..services.config_history import ConfigHistory
 from ..sources.site_inspector import inspect_url
 from ..templates.evidence import template_binding
@@ -163,6 +163,6 @@ def execute(
         if target_path.exists() and not force:
             raise FileExistsError(f"目标已存在；使用 --force 才会覆盖: {target_path}")
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_text(yaml.safe_dump(merged, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        atomic_write_text(target_path, yaml.safe_dump(merged, allow_unicode=True, sort_keys=False))
         return {"created": str(target_path), "conflicts": [item.to_dict() for item in conflicts]}
     raise ValueError(f"未知模板操作: {action}")

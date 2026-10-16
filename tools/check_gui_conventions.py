@@ -1,6 +1,6 @@
 """Enforce GUI conventions so new pages inherit the design system instead of reinventing it.
 
-背景（2026-09-11 实测）：设计体系的基础资产都已建成——令牌与三套主题、`stylesheet()`、
+背景（2026-09-11 实测，计数按当时）：设计体系的基础资产都已建成——令牌与三套主题、`stylesheet()`、
 `assert_no_raw_hex` 守卫、动效信号、图标注册表、无障碍模块、`EmptyState`/`Toast`/
 `StatusIndicator`/`LogConsole` 等共享组件。但**继承路径没建立**：
 
@@ -13,9 +13,9 @@
     B. 不得使用内联 `setStyleSheet`（应走 `design_system.stylesheet()` / 令牌）
     C. 不得出现裸十六进制色值（应以 `design_system.py` 的令牌为准）
 
-存量处理：`tools/gui-conventions-baseline.json` 记录既有违规（**只降不升**）——
-不在清单中的文件**零容忍**（新代码立即受约束）；清单内文件不得新增；减少时提示同步下调。
-与 `check_lint_budget.py` / `architecture-cycle-budget.json` 同一 ratchet 范式。
+**现状**：上述存量已全部清零，`tools/gui-conventions-baseline.json` 的 `files` 为空
+（ratchet 只降不升，已降到 0）——本门禁现为**纯零容忍**：任何新增违规立即失败。
+ratchet 结构与 `check_lint_budget.py` / `architecture-cycle-budget.json` 同一范式。
 
 用法：
     python tools/check_gui_conventions.py [--baseline tools/gui-conventions-baseline.json]
@@ -51,7 +51,21 @@ WIDGET_BASES = frozenset(
 )
 
 HEX_PATTERN = re.compile(r"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b")
-A11Y_MARKERS = ("setAccessibleName(", "setAccessibleDescription(")
+#: 判定「无障碍名」只看真实调用（见 `_has_a11y_call`），不认 docstring/注释里的字符串。
+A11Y_METHODS = frozenset({"setAccessibleName", "setAccessibleDescription"})
+
+
+def _has_a11y_call(node: ast.ClassDef) -> bool:
+    """类体内是否存在真实的 `*.setAccessibleName(...)` / `*.setAccessibleDescription(...)` 调用。
+
+    此前用 ``ast.get_source_segment`` + 子串匹配：类 docstring 或注释里出现该方法名
+    也会被算作「已设置无障碍名」——一个只绿不红的假通过。改为只看真实 ``ast.Call`` 节点。
+    """
+    for child in ast.walk(node):
+        if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute):
+            if child.func.attr in A11Y_METHODS:
+                return True
+    return False
 
 
 def _base_names(node: ast.ClassDef) -> set[str]:
@@ -88,8 +102,7 @@ def scan_file(path: Path, whitelist: set[str]) -> dict[str, int]:
             continue
         if not (_base_names(node) & WIDGET_BASES):
             continue
-        body = ast.get_source_segment(text, node) or ""
-        if not any(marker in body for marker in A11Y_MARKERS):
+        if not _has_a11y_call(node):
             missing_a11y += 1
 
     # 规则 B（2026-09-11 收紧）：只拦**纯字面量**样式串——

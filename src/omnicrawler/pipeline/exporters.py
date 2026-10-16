@@ -118,8 +118,16 @@ def _preserve_previous_delivery(
         source = output / name
         if not source.is_file() or source.stat().st_size == 0:
             continue
-        lines = [line for line in source.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()]
-        if len(lines) < min_lines:  # 空/仅表头 => 没有值得保护的内容
+        # 只需判定「是否有 >= min_lines 行非空内容」（min_lines 最大为 2）；
+        # 逐行计数 + 提前退出，避免为阈值把整个（可能数百 MB 的）jsonl 读进内存。
+        nonblank = 0
+        with source.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                if line.strip():
+                    nonblank += 1
+                    if nonblank >= min_lines:
+                        break
+        if nonblank < min_lines:  # 空/仅表头 => 没有值得保护的内容
             continue
         target_dir = output / "previous"
         target_dir.mkdir(parents=True, exist_ok=True)

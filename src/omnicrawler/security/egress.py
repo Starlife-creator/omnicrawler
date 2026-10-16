@@ -55,7 +55,14 @@ def _normalise_domains(values: Any) -> tuple[str, ...]:
     return tuple(dict.fromkeys(str(value).casefold().strip().lstrip(".") for value in values if str(value).strip()))
 
 
-def redact_url(url: str) -> str:
+def redact_url_for_audit(url: str) -> str:
+    """构造写入**审计链**的脱敏 URL。
+
+    与 :func:`omnicrawler.security.redaction.redact_url` **语义不同、勿互换**：
+    本函数**整个丢弃 userinfo**（连 username 也丢）并把敏感 query 参数值换成 ``***``，
+    供 append-only 审计使用；redaction 版本只把口令换成 ``<redacted>``、保留用户名，
+    供日志使用。二者都叫 ``redact_url`` 时极易误用，故名以用途区分。
+    """
     parts = urllib.parse.urlsplit(url)
     query = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
     safe_query = urllib.parse.urlencode(
@@ -539,7 +546,7 @@ class EgressBroker:
     def _audit(self, event: str, *, url: str = "", **details: Any) -> None:
         if not self.audit_enabled:
             return
-        record = {"timestamp": utcnow(), "event": event, "url": redact_url(url), **details}
+        record = {"timestamp": utcnow(), "event": event, "url": redact_url_for_audit(url), **details}
         try:
             self.audit_path.parent.mkdir(parents=True, exist_ok=True)
             with self._audit_lock, self.audit_path.open("a", encoding="utf-8") as handle:

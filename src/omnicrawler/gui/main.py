@@ -1,6 +1,8 @@
 """OmniCrawler GUI 工作台 — 主入口。
 
-启动 Application 主窗口，支持 --headless/--run 无 GUI 模式参数。
+启动 Application 主窗口。本入口**始终**需要 PySide6；
+无 GUI 的任务执行请直接用 CLI：``omnicrawler run -c <配置>``
+（该入口不依赖 PySide6，可用于 CI/CD 与 SSH 会话）。
 
 架构说明：MainWindow 是组合根，通过 8 个 delegate 类分发功能：
   MenuBuilder / ToolbarManager / ThemeManager / ErrorDialogHelper
@@ -24,6 +26,10 @@ from typing import Any
 import yaml
 
 from .._version import __version__ as APP_VERSION  # noqa: N812
+
+# 冷启动提速：低频功能（AI 设置/插件管理/运行对比）的重型依赖在
+# 使用点函数内懒导入（ai_env≈70ms/plugin_inspector≈53ms/run_compare≈26ms）
+from ..core.config import load_config as load_core_config
 from ..core.logging_utils import configure_logging
 from ..core.runtime_paths import (
     application_dir,
@@ -33,128 +39,116 @@ from ..core.runtime_paths import (
     portable_data_root,
     resolve_cli_command,
 )
+from ..pipeline_ops.preflight import run_preflight
+from ..services.application_service import ApplicationService
+from ..services.config_history import ConfigHistory
+from ..services.controllers import ResultController, RunController, TaskController
+from ..services.natural_language_task import NaturalLanguageDraft
+from ..services.offline_demo import create_demo_workspace
+from ..services.ux_service import QuickTaskDraft
+from ..templates.recipe_engine import compose_recipe, diff_config
+from ..templates.template_catalog import bundled_template_catalog
 from .app_icon import app_icon
+from .core.autosave import AutosaveManager
+from .core.config_model import CrawlConfig
+from .core.config_serializer import from_yaml, load_yaml, to_yaml
+from .core.template_loader import TemplateLoader
+from .core.workers import (
+    ActionRecorderWorker,
+    SampleRunWorker,
+    SiteInspectionWorker,
+)
+from .delegates import (
+    ConfigManager as ConfigDelegate,
+)
+from .delegates import (
+    EnvironmentChecker,
+    ErrorDialogHelper,
+    HelpDialogManager,
+    LoginSessionDelegate,
+    MenuBuilder,
+    ThemeManager,
+    ToolbarManager,
+)
+from .delegates import (
+    RunController as RunDelegate,
+)
+from .design_system import PageTransitionController, VisualTokens
+from .help_center import HelpCenterDock
+from .home import HomePage
 from .i18n import _
 from .navigation import NavIndex  # noqa: F401  # S3.1.2 re-export
+from .runner.env_checker import (
+    find_project_root,
+)
+from .runner.worker_task_runner import WorkerTaskRunner as TaskRunner
+from .settings import AppSettings
+from .shortcuts import GlobalShortcutManager
+from .template_library_dialog import TemplateLibraryDialog
+from .views.change_monitor import ChangeMonitorView
+from .views.chart_view import ChartView
+from .views.convert_tool import ConvertView  # B-4：ConvertX 格式互转面板
+from .views.developer_inspector import DeveloperInspector
+from .views.file_list import FileList
+from .views.pdf_region_selector import PdfRegionSelectorDialog
+from .views.pdf_workbench import PdfWorkbenchView
+from .views.plugin_market import PluginMarketView
+from .views.professional_review import EvidenceView  # ProfessionalReviewView 别名保持兼容
+from .views.result_table import ResultTable
+from .views.task_history import TaskHistory
+from .views.yaml_editor import YamlEditor
+from .widgets.log_console import LogConsole
+from .widgets.resource_monitor import ResourceMonitor
+from .widgets.status_indicator import StatusIndicator
+from .widgets.toast import ToastManager
 
 LOGGER = logging.getLogger(__name__)
 
 
-def _cli_mode() -> bool:
-    """S3.1.7：只读判定 CLI 模式（无副作用）。"""
-    return any(arg in ("--headless", "--run") for arg in sys.argv[1:])
-
-
 _GUI_APP_HOLD = None
 
-if not _cli_mode():
-    try:
-        from PySide6.QtCore import (
-            QProcess,
-            Qt,
-            QThread,
-            QTimer,
-            QUrl,
-            Slot,
-        )
-        from PySide6.QtGui import (
-            QAction,
-            QCloseEvent,
-            QDesktopServices,
-            QDragEnterEvent,
-            QDropEvent,
-        )
-        from PySide6.QtWidgets import (
-            QApplication,
-            QComboBox,
-            QDialog,
-            QHBoxLayout,
-            QInputDialog,
-            QLabel,
-            QListWidget,
-            QListWidgetItem,
-            QMainWindow,
-            QMenu,
-            QMessageBox,
-            QProgressBar,
-            QPushButton,
-            QStackedWidget,
-            QStatusBar,
-            QSystemTrayIcon,
-            QVBoxLayout,
-            QWidget,
-        )
-    except ImportError as e:
-        print(_(f"PySide6 未安装，无法启动图形界面: {e}"), file=sys.stderr)
-        print(_("请运行: pip install omnicrawler-platform[gui]"), file=sys.stderr)
-        sys.exit(1)
 
-    # 冷启动提速：低频功能（AI 设置/插件管理/运行对比）的重型依赖在
-    # 使用点函数内懒导入（ai_env≈70ms/plugin_inspector≈53ms/run_compare≈26ms）
-    from ..core.config import load_config as load_core_config
-    from ..pipeline_ops.preflight import run_preflight
-    from ..services.application_service import ApplicationService
-    from ..services.config_history import ConfigHistory
-    from ..services.controllers import ResultController, RunController, TaskController
-    from ..services.natural_language_task import NaturalLanguageDraft
-    from ..services.offline_demo import create_demo_workspace
-    from ..services.ux_service import QuickTaskDraft
-    from ..templates.recipe_engine import compose_recipe, diff_config
-    from ..templates.template_catalog import bundled_template_catalog
-    from .core.autosave import AutosaveManager
-    from .core.config_model import CrawlConfig
-    from .core.config_serializer import from_yaml, load_yaml, to_yaml
-    from .core.template_loader import TemplateLoader
-    from .core.workers import (
-        ActionRecorderWorker,
-        SampleRunWorker,
-        SiteInspectionWorker,
+try:
+    from PySide6.QtCore import (
+        QProcess,
+        Qt,
+        QThread,
+        QTimer,
+        QUrl,
+        Slot,
     )
-    from .delegates import (
-        ConfigManager as ConfigDelegate,
+    from PySide6.QtGui import (
+        QAction,
+        QCloseEvent,
+        QDesktopServices,
+        QDragEnterEvent,
+        QDropEvent,
     )
-    from .delegates import (
-        EnvironmentChecker,
-        ErrorDialogHelper,
-        HelpDialogManager,
-        LoginSessionDelegate,
-        MenuBuilder,
-        ThemeManager,
-        ToolbarManager,
+    from PySide6.QtWidgets import (
+        QApplication,
+        QComboBox,
+        QDialog,
+        QHBoxLayout,
+        QInputDialog,
+        QLabel,
+        QListWidget,
+        QListWidgetItem,
+        QMainWindow,
+        QMenu,
+        QMessageBox,
+        QProgressBar,
+        QPushButton,
+        QStackedWidget,
+        QStatusBar,
+        QSystemTrayIcon,
+        QVBoxLayout,
+        QWidget,
     )
-    from .delegates import (
-        RunController as RunDelegate,
-    )
-    from .design_system import PageTransitionController, VisualTokens
-    from .help_center import HelpCenterDock
-    from .home import HomePage
-    from .runner.env_checker import (
-        find_project_root,
-    )
-    from .runner.worker_task_runner import WorkerTaskRunner as TaskRunner
-    from .settings import AppSettings
-    from .shortcuts import GlobalShortcutManager
-    from .template_library_dialog import TemplateLibraryDialog
-    from .views.change_monitor import ChangeMonitorView
-    from .views.chart_view import ChartView
-    from .views.convert_tool import ConvertView  # B-4：ConvertX 格式互转面板
-    from .views.developer_inspector import DeveloperInspector
-    from .views.file_list import FileList
-    from .views.pdf_region_selector import PdfRegionSelectorDialog
-    from .views.pdf_workbench import PdfWorkbenchView
-    from .views.plugin_market import PluginMarketView
-    from .views.professional_review import EvidenceView  # ProfessionalReviewView 别名保持兼容
-    from .views.result_table import ResultTable
-    from .views.task_history import TaskHistory
-    from .views.yaml_editor import YamlEditor
-    from .widgets.log_console import LogConsole
-    from .widgets.resource_monitor import ResourceMonitor
-    from .widgets.status_indicator import StatusIndicator
-    from .widgets.toast import ToastManager
-
-    GUI_VERSION = APP_VERSION
-
-
+except ImportError as e:
+    print(_(f"PySide6 未安装，无法启动图形界面: {e}"), file=sys.stderr)
+    print(_("请运行: pip install omnicrawler-platform[gui]"), file=sys.stderr)
+    sys.exit(1)
+GUI_VERSION = APP_VERSION
 class MainWindow(QMainWindow):
     """OmniCrawler GUI 主窗口 — 组合根，通过 delegate 分发功能。"""
 
@@ -2490,28 +2484,12 @@ def main() -> int:
         description=_("OmniCrawler GUI 工作台 — 可视化爬虫配置与管理工具"),
     )
     parser.add_argument(
-        "--run", type=str, default=None,
-        help=_("无 GUI 模式：直接执行指定的 YAML 配置文件"),
-    )
-    parser.add_argument(
-        "--headless", action="store_true",
-        help=_("无 GUI 模式（与 --run 等效，不显示图形界面）"),
-    )
-    parser.add_argument(
         "--log-level", type=str, default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help=_("日志级别（默认: INFO）"),
     )
 
     args = parser.parse_args()
-
-    if args.run or args.headless:
-        config_path = args.run
-        if not config_path:
-            print(_("错误: --headless 模式下需要指定 --run <yaml_path>"), file=sys.stderr)
-            return 1
-        from .runner.headless_runner import run_headless
-        return run_headless(config_path=config_path, log_level=args.log_level)
 
     try:
         configure_logging(args.log_level, log_format="text")

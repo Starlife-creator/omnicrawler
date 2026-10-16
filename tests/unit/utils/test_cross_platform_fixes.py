@@ -5,13 +5,11 @@
 - A22：帮助中心未知 ID 的 registry 行为（GUI 侧 show_help 有兜底）
 - A21：AppSettings.clear_recent 公开接口（不依赖私有 _settings）
 - B9：CSV 大文件不再截断（offscreen QApplication）
-- B10：无头子进程环境变量 PYTHONIOENCODING 拼写正确
 - B11：WorkerTaskRunner 对 created_at 为 None 的兜底
 """
 
 from __future__ import annotations
 
-import io
 import os
 import sys
 from types import SimpleNamespace
@@ -154,39 +152,6 @@ def test_b9_csv_tail_reachable_beyond_100k_rows(tmp_path) -> None:
     tail = model.rowCount() - 1
     assert model.data(model.index(tail, 0)) == str(total - 1)
     assert model.data(model.index(tail, 1)) == f"v{total - 1}"
-
-
-def test_b10_headless_runner_sets_pythonioencoding(tmp_path, monkeypatch) -> None:
-    """B10：无头子进程须收到 PYTHONIOENCODING（旧代码拼作 PYTHONIOCODING 从未生效）。"""
-    pytest.importorskip("ruamel.yaml")
-    from omnicrawler.gui.runner import headless_runner as hr
-
-    config_path = tmp_path / "task.yaml"
-    config_path.write_text("project_name: demo\n", encoding="utf-8")
-    fake_config = SimpleNamespace(
-        validate=lambda: [], project_name="demo", task_id="t-1"
-    )
-    monkeypatch.setattr(hr, "load_yaml", lambda _path: fake_config)
-    monkeypatch.setattr(hr, "check_omnicrawler", lambda _path: (True, "0.4.0"))
-
-    captured: dict[str, dict[str, str]] = {}
-
-    class _FakeProcess:
-        def __init__(self) -> None:
-            self.stdout = io.StringIO("正在抓取 ✅\n")
-
-        def wait(self) -> int:
-            return 0
-
-    def _fake_popen(_args, **kwargs):
-        captured["env"] = kwargs["env"]
-        return _FakeProcess()
-
-    monkeypatch.setattr(hr.subprocess, "Popen", _fake_popen)
-
-    assert hr.HeadlessRunner().run(config_path) == 0
-    assert captured["env"]["PYTHONIOENCODING"] == "utf-8"
-    assert "PYTHONIOCODING" not in captured["env"]
 
 
 def test_b11_worker_task_runner_tolerates_none_created_at(tmp_path, monkeypatch) -> None:

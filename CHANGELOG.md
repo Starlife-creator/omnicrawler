@@ -2,6 +2,93 @@
 
 ## Unreleased
 
+- fix(persistence): **配置写入统一走原子写** — 此前部分配置走 `core.utils.atomic_write`
+  （fsync + Windows `PermissionError` 指数重试），部分走**裸** `Path.write_text`——崩溃/断电
+  可能留下截断的目标文件，下次 `load_config` 解析失败。新增 `core.utils.atomic_write_text`
+  薄封装（文本版），并统一：`cli/_main`（生成配置）、`commands/init_project`、
+  `commands/template`（merge 输出；该文件本就已 import `atomic_write`）、`core/migrations`、
+  `services/getting_started`、`services/workspace_import`（含 relocation 前备份）、
+  `services/quality_benchmark`、`gui/core/config_serializer.save_yaml`（**用户配置保存**）。
+
+- refactor(security/fetching/sources): **去重与治理** —
+  ① `normalize_host` 真源抽到新的 **stdlib-only 叶子模块** `core/hostnorm.py`；`core/site_aliases`
+  改为 re-export（既有 `from ...core.site_aliases import normalize_host` 不受影响），
+  3 处 `except Exception` 退化分支由「重定义函数」改为「导入该叶子模块」——**结构保留、去重、
+  语义单一**（此前 3 处逐字副本会随真源改动而静默漂移）；
+  ② `security/egress.redact_url` 更名为 `redact_url_for_audit`，并在 docstring 写明它与
+  `security/redaction.redact_url` **语义不同、勿互换**（前者整个丢弃 userinfo + 脱敏 query 供
+  审计，后者只把口令换 `<redacted>`、保留用户名供日志）——两个同名导出此前极易误用；
+  ③ `fetching/session_crypto._atomic_write` 的固定临时名 ``<name>.tmp`` 改为
+  ``tempfile.mkstemp`` + ``fsync``——固定名在并发写同一路径时会互相覆盖，破坏「原子」保证；
+  ④ `omnicrawler/__init__.py` 的 `_CompatMetaFinder.find_spec` 先查别名表再做路径探测，
+  非别名的单段导入不再付出一次文件系统探测。
+
+- perf(fetching/services/core): **三处局部重复开销清理** —
+  ① `core/logging_utils.py`：`redact_url` 的两处**函数内 import**（`JsonFormatter.format`、
+  `_RedactingFormatter.format`）提到模块顶层——此前**每条日志记录**都执行一次 import；
+  ② `fetching/http_client.py`：`Accept-Encoding` 的 brotli/zstandard 探测结果缓存
+  （`_accept_encoding()` + `lru_cache`）——此前每次 `fetch()` 都重新 `__import__` 探测；
+  ③ `services/ai_providers.py`：`build_safe_opener` 提到重试循环**之外**构造一次——
+  此前每次重试都重建 SSL context（`ssl.create_default_context()` 会加载系统 CA 证书集），
+  与 `HTTPFetcher`（`__init__` 建、重试内复用）保持一致。
+
+- chore(cleanup): **死代码与局部低效清理** —
+  ① 删除 `omnicrawler/__init__.py` 的死函数 `_setup_compat_aliases()`（零引用；兼容别名由
+  `_AliasLoader`/`_CompatMetaFinder`/模块级 `__getattr__` 惰性接管，且已有测试覆盖），
+  并清掉其中两处冗余的 `import importlib`；
+  ② `pipeline/exporters.py` 的 `_preserve_previous_delivery` 改为**逐行计数 + 提前退出**，
+  不再为判定阈值把整个（可能数百 MB 的）jsonl 读进内存；
+  ③ `fetching/http_client.py` 把 `_flatten_headers` 函数移出 import 块——该文件 5 处相对
+  导入原是 E402，现清零，`lint-exemption-budget.json` 的 E402 预算同步 45 → 40；
+  ④ `fetching/tls_impersonator.py` 的 `__import__("time")` 改为模块级 `import time`；
+  ⑤ 修正两处过时说明：`core/utils.py` 称 stealth 指纹"当前未接入抓取主链路"（实际
+  `browser_pool.py` 已按 stealth level 接入）、`gui/core/workers.py` 称三类未接线 worker
+  （实际 `JsonlLoadWorker` 已接线到 `task_history`）；
+  ⑥ `security/policy.py` 的 `AsyncHostRateLimiter` 补文档：其当前**未接入生产路径**，
+  抓取统一使用同步 `HostRateLimiter`（保留以备原生异步限速需求）。
+
+- chore(tools): **门禁与配置的漂移清理** —
+  ① `tools/self_verify.py` 的 `--list` 在非 UTF-8 控制台（Windows GBK / cp1252 runner）
+  因门禁描述里的 `↔`(U+2194) 抛 `UnicodeEncodeError`；入口加 `reconfigure(errors="replace")`
+  兜底，并补同族工具同款的 cp1252 回归测试；
+  ② `tools/check_cli_docs.py` 的 `DEFAULT_DOCS` 补上 `docs/AGENT_GUIDE.md`（此前它不在校验
+  范围内，正是 `run --resume` 这类漂移溜过的原因）；
+  ③ `tools/check_gui_conventions.py` 的无障碍名判定从「类源码文本子串包含」改为**真实 AST
+  调用**（docstring/注释里出现方法名不再算通过）；同步更新其描述已清零 baseline 的 docstring；
+  ④ `tests/unit/tools/test_gate_registry.py` 增加第三向断言（磁盘 `check_*.py` 必须登记为门禁
+  或在库白名单里显式说明），并显式登记两个校验库 `check_linux_delivery.py` / `check_scenario_cards.py`；
+  ⑤ `pyproject.toml` 移除零命中的死 ignore（`N816`/`B028`/B018），保留 `N803`（boto3 风格测试参数）；
+  ⑥ `.pre-commit-config.yaml` 的 mypy 排除收敛为与 `pyproject.toml` 一致（不再排除 `gui`/`pdfx`），
+  ruff/mypy 的 `rev` 对齐 `constraints/quality.txt`（`v0.16.10`/`v2.4.0`）；
+  ⑦ 文档计数修正：`tools/gate_registry.py` 与 `CONTRIBUTING.md` 的 `check_*.py` 数量、`README.md`
+  的「ruff (lint + format)」表述（`ruff format` 并未在 CI 强制）。
+
+- fix(fetching): **async 路径的 DNS 解析改走 `asyncio.to_thread`** —
+  `_PinnedAsyncNetworkBackend.connect_tcp`（`async_fetcher.py`）与
+  `TLSImpersonator._impersonate_fetch`（`tls_impersonator.py`）此前在事件循环线程上
+  直接调用 `socket.getaddrinfo`（经 `target_policy.approved_addresses`），一次慢解析
+  会把同 loop 上所有并发抓取串行化（实测 300ms 慢 DNS 会拖慢同 loop 其它任务）。
+  改用与 `security/ai_resolver.py` 相同的 `asyncio.to_thread` 桥接，`getaddrinfo`
+  释放 GIL、可真正并行。安全语义不变：仍返回策略批准的地址字面量、调用方仍只连
+  该字面量，DNS 重绑定防护（S1.3.5）的 TOCTOU 窗口不受影响。
+
+- test(scheduler): **并行执行判据改为区间相交** —
+  `tests/unit/runtime/test_scheduler_parallel.py` 原断言 `elapsed < 1.0s`，但 3 个
+  0.2s 任务串行（0.6s）同样通过，无法因「未并行」而失败。改为记录每个 executor 的
+  执行区间并断言存在相交，与机器速度无关；另保留宽松上界 `elapsed < 3.0s` 仅抓整体卡死。
+
+- refactor(gui): **移除 `omnicrawler-gui --headless/--run`（该能力从未生效）** —
+  无 GUI 的任务执行请直接用 CLI：`omnicrawler run -c <配置>`（不依赖 PySide6，
+  适用于 CI/CD 与 SSH 会话）。原 `--headless/--run` 有两处独立缺陷使其不可达：
+  ① `gui/main.py` 的 `_cli_mode()` 导入守卫把 PySide6 关在块内，而模块级
+  `class MainWindow(QMainWindow)` 在守卫外，带 `--headless` 导入即
+  `NameError`；② `headless_runner.py` 把 `--log-level` 放在 `run` 子命令之后，
+  `omnicrawler run` 不接受该位置的该参数（exit 2）。仅有的单测用
+  `_FakeProcess` 打桩 `subprocess.Popen`，真实 argv 从未与真实 parser 对账，
+  故两个缺陷长期未被拦截。本次删除 `_cli_mode()` 守卫、两个 flag、
+  `gui/runner/headless_runner.py` 及其模块级单测；`MainWindow` 与 `NavIndex`
+  等既有导出保持不变。
+
 - fix(gui): **按钮 padding / min-height 随缩放走令牌，并给 ConvertX 与场景页补滚动区** —
   此前 QSS 里 `padding: 7px` 与 `min-height: 20px` 是写死的绝对值，而字号走
   `scaled_font_px()`；放大后控件需要的高度随字号长、布局仍按固定值分配，文字被垂直裁切

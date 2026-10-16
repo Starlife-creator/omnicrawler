@@ -455,7 +455,7 @@ src/omnicrawler/
 
 | 工具 | 状态 |
 |------|------|
-| ruff (lint + format) | 0 violations |
+| ruff (lint) | 0 violations（`E501`/`E402` 等按 `pyproject.toml` 豁免；`ruff format` 未在 CI 强制，仅经本地 pre-commit 提供） |
 | mypy (gui/core strict) | 通过 |
 | pytest | 以 CI 全量结果为准；本地基线见 `docs/TEST_REPORT.md` |
 | coverage | 全源码 ≥75%，并执行分组门禁（长期目标 80%、核心 ≥85%） |

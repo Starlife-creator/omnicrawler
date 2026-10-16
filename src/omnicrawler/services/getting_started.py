@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from ..core.config import AppConfig, load_config
+from ..core.utils import atomic_write_text
 from .workflow_diagnostics import describe
 
 
@@ -28,7 +29,7 @@ def create_starter(parent: Path) -> Path:
                "name": {"path": "name"}, "price": {"path": "price"}, "in_stock": {"path": "in_stock"}}},
            "ai": {"mode": "disabled"}, "download": {"enabled": False}, "processors": {"pdf": {"enabled": False}},
            "outputs": {"jsonl": True, "csv": True, "xlsx": True}}
-    config.write_text(yaml.safe_dump(raw, allow_unicode=True, sort_keys=False), encoding="utf8")
+    atomic_write_text(config, yaml.safe_dump(raw, allow_unicode=True, sort_keys=False))
     load_config(config)
     return config
 

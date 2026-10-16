@@ -23,17 +23,11 @@ import threading
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
+# normalize_host 的**唯一真源**在 core.hostnorm（stdlib-only 叶子）；此处 re-export，
+# 使既有 `from omnicrawler.core.site_aliases import normalize_host` 不受影响。
+from .hostnorm import normalize_host
+
 DEFAULT_ENVIRONMENT_VAR = "OMNICRAWL_ENVIRONMENT"
-
-
-def normalize_host(host: str) -> str:
-    """域名键归一化：去末尾点、全小写、去前后空白；空串返回 ''。
-
-    与 services/metrics.py、security/policy.py 内 casefold 约定保持一致。
-    """
-    if not host:
-        return ""
-    return host.strip().rstrip(".").casefold()
 
 
 @dataclass

@@ -25,12 +25,11 @@ from urllib.parse import urlsplit
 
 __all__ = ["DomainConcurrencyLimiter"]
 
-# 安全导入 site_aliases：不可用时退化到纯 normalize_host
+# 安全导入 site_aliases：别名层不可用时退化到共享叶子模块 core.hostnorm（仅依赖 stdlib）
 try:
     from ..core.site_aliases import SiteAliasRegistry, normalize_host
 except Exception:  # noqa: BLE001
-    def normalize_host(host: str) -> str:  # type: ignore[misc]
-        return (host or "").strip().rstrip(".").casefold()
+    from ..core.hostnorm import normalize_host
 
     SiteAliasRegistry = None  # type: ignore[assignment,misc]
 

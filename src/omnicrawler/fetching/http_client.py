@@ -10,11 +10,17 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
+from functools import lru_cache
 from typing import Any
 
 from ..core.config import AppConfig
 from ..core.errors import LoginFailedError, PermanentFetchError, ResponseTooLargeError
 from ..core.models import CrawlRequest, FetchResult
+from ..core.utils import user_agent
+from ..security.egress import EgressBroker, NetworkCapability
+from ..security.policy import HostRateLimiter, NetworkTargetPolicy
+from .retry import backoff_seconds, parse_retry_config, retry_after_seconds
+from .session import get_cookie_session
 
 
 def _flatten_headers(headers: Any) -> dict[str, str]:
@@ -23,11 +29,23 @@ def _flatten_headers(headers: Any) -> dict[str, str]:
     if get_all is not None:
         return {k.lower(): ",".join(get_all(k, ())) for k in headers.keys()}
     return {str(k).lower(): str(v) for k, v in headers.items()}
-from ..core.utils import user_agent
-from ..security.egress import EgressBroker, NetworkCapability
-from ..security.policy import HostRateLimiter, NetworkTargetPolicy
-from .retry import backoff_seconds, parse_retry_config, retry_after_seconds
-from .session import get_cookie_session
+
+
+@lru_cache(maxsize=1)
+def _accept_encoding() -> str:
+    """S2.5.6：按**进程内**已安装的解码库声明 Accept-Encoding（br/zstd）。
+
+    结果只取决于已安装的包（进程内不变），因此缓存——此前每次 ``fetch()`` 都
+    对同一份包做两次 ``__import__`` 探测。
+    """
+    value = "gzip, deflate"
+    for package_name, token in (("brotli", "br"), ("zstandard", "zstd")):
+        try:
+            __import__(package_name)
+            value += f", {token}"
+        except ImportError:
+            pass
+    return value
 
 
 class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -234,13 +252,7 @@ class HTTPFetcher:
         timeout = float(self.http.get("timeout_seconds", 25))
         max_bytes = int(self.http.get("max_response_bytes", 50_000_000))
         # S2.5.6：按已安装的解码库声明 Accept-Encoding（br/zstd 支持时启用）
-        accept_encoding = "gzip, deflate"
-        for package_name, token in (("brotli", "br"), ("zstandard", "zstd")):
-            try:
-                __import__(package_name)
-                accept_encoding += f", {token}"
-            except ImportError:
-                pass
+        accept_encoding = _accept_encoding()
         headers = {
             "User-Agent": str(self.http.get("user_agent", user_agent())),
             "Accept": "*/*",

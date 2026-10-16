@@ -1,13 +1,14 @@
 """门禁清单与 CI 必须双向一致——漂移要变成测试失败，而不是悄悄发生的分歧。
 
-起因（2026-09-11 实测）：仓库有 14 个 `tools/check_*.py`，CI 全都跑了，
+起因（2026-09-11 实测）：仓库的 `tools/check_*.py` 门禁 CI 全都跑了，
 但 `CONTRIBUTING.md` 的门禁表只列了 5 项，本地也没有聚合入口。
-于是「照文档自证」会漏掉 9 项，而且没有任何机制能发现这件事。
+于是「照文档自证」会漏掉多项，而且没有任何机制能发现这件事。
 
 本文件把「清单 ⇄ CI」的一致性变成断言。**注意两侧都断言**：
 
 * 漏登记（CI 跑了但清单里没有）→ 失败；
-* 漏接线（清单里有但 CI 不跑）→ 失败。
+* 漏接线（清单里有但 CI 不跑）→ 失败；
+* 磁盘上有、但既没登记也没接线的 `check_*.py` → 失败（除非在库白名单里显式说明）。
 
 另外先断言「确实扫到了脚本」，否则正则写错会让双向比较变成空集对空集的**假通过**。
 
@@ -18,8 +19,10 @@
 
 from __future__ import annotations
 
+import io
 import json
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -61,6 +64,33 @@ def test_every_registered_gate_is_wired_into_ci() -> None:
     """清单里的门禁必须真的被 CI 执行（漏接线 → 清单承诺了不存在的保障）。"""
     unwired = set(ci_managed_scripts()) - _scripts_referenced_by_ci()
     assert not unwired, f"以下门禁已登记但没有任何 workflow 执行: {sorted(unwired)}"
+
+
+# 非门禁的 `tools/check_*.py`：被构建脚本或测试 import 的**校验库**，没有独立 CLI 入口。
+# 显式登记在案，既避免被误判为「漏登记的门禁」，也保证新增脚本时不会无人察觉。
+_LIBRARY_ONLY_SCRIPTS = frozenset({
+    "tools/check_linux_delivery.py",   # build_linux.sh 与单测共用的判据函数
+    "tools/check_scenario_cards.py",   # 被 tests 直接 import 的校验库
+})
+
+
+def test_no_gate_script_is_silently_unaccounted() -> None:
+    """磁盘上的每个 `tools/check_*.py` 要么登记为门禁，要么在库白名单里显式说明。
+
+    原有的双向断言只比较「CI 引用」与「清单登记」，两者都是脚本的子集——
+    磁盘上多出的脚本（既没登记也没接线）不会被发现。这一条补上第三向。
+    """
+    on_disk = {f"tools/{path.name}" for path in (_REPO_ROOT / "tools").glob("check_*.py")}
+    unaccounted = on_disk - set(ci_managed_scripts()) - _LIBRARY_ONLY_SCRIPTS
+    assert not unaccounted, (
+        f"以下 check_*.py 既未登记为门禁、也不在库白名单: {sorted(unaccounted)}"
+    )
+
+
+def test_library_only_scripts_are_not_registered() -> None:
+    """库白名单里的脚本不应同时被登记为门禁——否则白名单会掩盖真正的接线缺失。"""
+    overlap = _LIBRARY_ONLY_SCRIPTS & set(ci_managed_scripts())
+    assert not overlap, f"库白名单与已登记门禁重叠: {sorted(overlap)}"
 
 
 def test_gate_names_and_sets_are_well_formed() -> None:
@@ -129,3 +159,23 @@ def test_list_mode_lists_selected_gates(capsys) -> None:
     for name in ("ruff", "mypy", "check_architecture", "check_gui_conventions"):
         assert name in out
     assert "check_extra_install" not in out, "install 集合的门禁不应出现在 static 列表里"
+
+
+def test_list_survives_a_non_utf8_console() -> None:
+    """`--list` 曾在非 UTF-8 控制台因门禁描述里的 `↔`(U+2194) 抛 UnicodeEncodeError。
+
+    Windows 默认控制台是 GBK、CI 的 cp1252 runner 同样不可编码该字符；本仓同族工具
+    （check_coverage_gates / offline_acceptance / portable_archive_smoke）都有此回归，
+    唯独自证入口此前漏了。用 cp1252 控制台复现（`↔` 不可编码）。
+    """
+    buffer = io.BytesIO()
+    console = io.TextIOWrapper(buffer, encoding="cp1252")
+    original = sys.stdout
+    sys.stdout = console
+    try:
+        code = main(["--set", "static", "--list"])
+    finally:
+        sys.stdout = original
+        console.flush()
+    assert code == 0, "--list 在非 UTF-8 控制台上不应失败"
+    assert buffer.getvalue(), "--list 在非 UTF-8 控制台上未输出任何内容"

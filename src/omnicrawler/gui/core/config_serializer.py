@@ -20,6 +20,7 @@ from ruamel.yaml.comments import CommentedMap
 from ..._version import __version__ as GUI_VERSION  # noqa: N812
 from ...core.field_value_source import ATTR_KEY, position_of
 from ...core.secrets_store import SecretsStore
+from ...core.utils import atomic_write_text
 from ..i18n import _
 from .config_model import CrawlConfig, DownloadConfig, FieldDef
 
@@ -463,7 +464,7 @@ def save_yaml(config: CrawlConfig, filepath: Path) -> None:
     """
     filepath.parent.mkdir(parents=True, exist_ok=True)
     yaml_str = to_yaml(config)
-    filepath.write_text(yaml_str, encoding="utf-8")
+    atomic_write_text(filepath, yaml_str)
 
 
 def load_yaml(filepath: Path) -> CrawlConfig:

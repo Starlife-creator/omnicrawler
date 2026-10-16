@@ -13,7 +13,7 @@ from omnicrawler.core.config import DEFAULTS, AppConfig, validate_config
 from omnicrawler.core.errors import CredentialScopeError, EgressBudgetExceededError, EgressDisabledError
 from omnicrawler.fetching.browser_fetcher import BrowserFetcher
 from omnicrawler.pipeline import build_registry
-from omnicrawler.security.egress import EgressBroker, redact_url
+from omnicrawler.security.egress import EgressBroker, redact_url_for_audit
 from omnicrawler.security.security_audit import egress_audit_report
 from omnicrawler.services.ai_providers import build_provider
 
@@ -74,9 +74,9 @@ def test_redaction_domain_port_scheme_and_audit(tmp_path: Path) -> None:
     assert policy.urls == ["https://api.example.com/items?token=secret&page=2"]
     audit = broker.audit_path.read_text(encoding="utf-8")
     assert "secret" not in audit and "never-log-this" not in audit and "token=%2A%2A%2A" in audit
-    assert "#fragment" not in redact_url("https://example.com/?key=x#fragment")
-    assert "secret" not in redact_url("https://user:secret@example.com/private?token=value")
-    assert redact_url("https://user:secret@example.com:8443/private") == (
+    assert "#fragment" not in redact_url_for_audit("https://example.com/?key=x#fragment")
+    assert "secret" not in redact_url_for_audit("https://user:secret@example.com/private?token=value")
+    assert redact_url_for_audit("https://user:secret@example.com:8443/private") == (
         "https://example.com:8443/private"
     )
 

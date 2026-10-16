@@ -160,17 +160,15 @@ ignore = [
   "E402",     # module-import-not-at-top (legacy compat)
   "E731",     # lambda-assignment (intentional)
   "N802",     # function-name-lowercase (some legacy names)
-  "N803",     # argument-name-lowercase
+  "N803",     # argument-name-lowercase (boto3-style S3 params in capability tests)
   "N806",     # non-lowercase-variable-in-function
   "N815",     # mixed-case-variable-in-class-scope
-  "N816",     # mixed-case-variable-in-global-scope
   "B904",     # raise-without-from-inside-except (intentional in some contexts)
-  "B028",     # no-explicit-stacklevel (not all callers need this)
   "UP042",    # str,Enum fallback shim in ai_graph (guarded compat branch; py>=3.12 path uses enum.StrEnum)
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["N802", "N803", "N806", "N815", "N816", "B018"]
+"tests/*" = ["N802", "N806", "N815"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["omnicrawler"]

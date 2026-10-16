@@ -50,7 +50,8 @@ def test_full_extra_covers_all_function_extras() -> None:
             assert previous == requirement, (
                 f"功能 extra 对 {package} 的约束不一致: {previous!r} != {requirement!r}"
             )
-    # aiofiles 是 Full 构建链的显式附加依赖，尚无独立功能 extra。
+    # aiofiles 是 crawl4ai 的传递依赖（Full 构建链经 collect_all("crawl4ai") 带入），
+    # 无独立功能 extra；在此显式登记以锁定版本。
     expected["aiofiles"] = "aiofiles>=25,<26"
     assert _requirements_by_package(extras["full"]) == expected
 

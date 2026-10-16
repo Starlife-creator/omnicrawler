@@ -20,6 +20,7 @@ DEFAULT_DOCS = (
     "README.md",
     "docs/INSTALLATION.md",
     "docs/FAQ.md",
+    "docs/AGENT_GUIDE.md",
 )
 
 

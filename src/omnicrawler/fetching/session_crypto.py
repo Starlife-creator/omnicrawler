@@ -32,6 +32,7 @@ import base64
 import json
 import os
 import secrets as _random
+import tempfile
 import zlib
 from collections.abc import Mapping
 from pathlib import Path
@@ -147,14 +148,25 @@ def open_storage_state(
 
 
 def _atomic_write(path: Path, blob: bytes) -> None:
-    """原子写 + 0600（与登录捕获/桥接落盘的既有惯例一致）。"""
+    """原子写 + 0600（与登录捕获/桥接落盘的既有惯例一致）。
+
+    用 ``tempfile.mkstemp`` 生成**唯一**临时名并 ``fsync``：固定 ``<name>.tmp`` 在
+    并发写同一路径时会互相覆盖，破坏「原子」保证；fsync 保证崩溃后不残留半写内容。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
-        tmp.write_bytes(blob)
-        os.replace(tmp, path)
-    finally:
-        tmp.unlink(missing_ok=True)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(blob)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
     try:
         os.chmod(path, 0o600)
     except OSError:

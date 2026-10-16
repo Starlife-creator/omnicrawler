@@ -133,6 +133,14 @@ class HostRateLimiter:
 
 
 class AsyncHostRateLimiter:
+    """异步版 host 限速器。
+
+    **当前未接入生产路径**：抓取统一使用同步的 :class:`HostRateLimiter`（单请求与
+    批量路径共享同一实例，见 ``tests/unit/fetching/test_rate_limiter_unified.py``），
+    异步上下文里经 ``asyncio.to_thread`` 桥接。本类保留以备将来需要「原生异步、
+    无线程跳」的限速实现；在接线前不要假定它已被使用。
+    """
+
     def __init__(self, delay_seconds: float) -> None:
         self.delay = max(0.0, delay_seconds)
         self._last: dict[str, float] = {}

@@ -150,25 +150,6 @@ _DEPRECATED_MODULE_MAP = {
     "workspace": "services.workspace",
 }
 
-def _setup_compat_aliases() -> None:
-    """注册向后兼容模块别名，使 `from omnicrawler.config import AppConfig` 仍可用。
-
-    S4.1：不再于包加载时调用——eager 注册会导入全部兼容模块（约 287ms）。
-    由模块级 __getattr__ 与 _CompatMetaFinder 惰性接管。
-    """
-    import importlib
-    import sys
-
-    for old_name, new_subpath in _DEPRECATED_MODULE_MAP.items():
-        old_full = f"omnicrawler.{old_name}"
-        if old_full not in sys.modules:
-            try:
-                module = importlib.import_module(f"omnicrawler.{new_subpath}")
-                sys.modules[old_full] = module
-            except Exception:
-                logger.debug("Failed to import optional compat module '%s'", old_name, exc_info=True)
-
-
 class _AliasLoader(importlib.abc.Loader):
     """S4.1：为已加载的壳模块提供兼容 spec。
 
@@ -198,16 +179,16 @@ class _CompatMetaFinder:
         short = fullname[len("omnicrawler."):]
         if "." in short:
             return None
-        import importlib.machinery
-
-        # 物理上真实存在的子包/模块（quality/utils/state 等与旧别名同名）
-        # 不被拦截——只有旧名路径不存在时才走兼容重定向
-        if importlib.machinery.PathFinder.find_spec(fullname, path) is not None:
-            return None
+        # 先查别名表：不在表里的（绝大多数）单段导入直接放行，免去一次 FS 探测。
         new_subpath = _DEPRECATED_MODULE_MAP.get(short)
         if new_subpath is None:
             return None
-        import importlib
+        # 物理上真实存在的子包/模块（quality/utils/state 等与旧别名同名）
+        # 不被拦截——只有旧名路径不存在时才走兼容重定向。
+        import importlib.machinery
+
+        if importlib.machinery.PathFinder.find_spec(fullname, path) is not None:
+            return None
         import importlib.util
 
         new_path = f"omnicrawler.{new_subpath}"
@@ -221,7 +202,6 @@ def __getattr__(name: str):
     例如 `from omnicrawler.config import AppConfig` 会自动重定向到
     `from omnicrawler.core.config import AppConfig`。
     """
-    import importlib
     import sys
 
     if name in _DEPRECATED_MODULE_MAP:

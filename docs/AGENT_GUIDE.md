@@ -84,4 +84,4 @@ omnicrawler plugins audit --report --format json
 
 自动列表中，标题属性仅在对应可见标题时采用；标签用 `all: true` 保留数组。稳定详情链接对应 `extract.deduplicate_by` 时，同实体、同数据在同轮只交付一次，内容变化或标识缺失保留原记录，不按同名标题合并。
 
-发现遗漏用 `recovery coverage --limit 100 --offset 0`，可用 `--run-id` 核对历史。明确选择父请求后 `recovery retry-discovery --fingerprint ...`，再 `run --resume`；范围、robots 与预算仍生效。参见 [发现清单与补采](DISCOVERY_COVERAGE.md)。
+发现遗漏用 `recovery coverage --limit 100 --offset 0`，可用 `--run-id` 核对历史。明确选择父请求后 `recovery retry-discovery --fingerprint ...`，再 `resume -c <配置>`；范围、robots 与预算仍生效。参见 [发现清单与补采](DISCOVERY_COVERAGE.md)。

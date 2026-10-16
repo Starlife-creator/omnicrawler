@@ -39,6 +39,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from ..core.config import load_config
+from ..core.utils import atomic_write_text
 from ..pipeline import Pipeline
 from .benchmarking import _environment, _sha256_file
 
@@ -449,7 +450,7 @@ def run_task(task: BenchmarkTask, *, workdir: Path) -> QualityScore:
         base_url = f"http://127.0.0.1:{server.server_port}/"
         config_data = _task_config(task, base_url=base_url, workspace=workdir / "work")
         config_path = workdir / "task.yaml"
-        config_path.write_text(yaml.safe_dump(config_data, sort_keys=False), encoding="utf-8")
+        atomic_write_text(config_path, yaml.safe_dump(config_data, sort_keys=False))
         with Pipeline(load_config(config_path)) as pipeline:
             pipeline.run()
     finally:

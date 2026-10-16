@@ -3,22 +3,25 @@
 # Run manually: pre-commit run --all-files
 
 repos:
-  # Ruff: lint + format
+  # Ruff: lint + format (rev follows constraints/quality.txt for a reproducible
+  # toolchain; a stale rev here would make local pre-commit disagree with CI).
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.0
+    rev: v0.16.10
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
 
-  # Mypy: type checking (excludes GUI/pdfx/apps per project config)
+  # Mypy: type checking. Scope mirrors pyproject.toml: only apps/ is excluded
+  # (gui/ and core/ are strict-mode per pyproject; excluding them here would make
+  # local pre-commit weaker than CI, contradicting the "不得再宽松" note there).
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.16.0
+    rev: v2.4.0
     hooks:
       - id: mypy
         additional_dependencies: [types-PyYAML]
         args: [--config-file=pyproject.toml]
-        exclude: ^(src/omnicrawler/(gui|pdfx|apps)/|tests/)
+        exclude: ^(src/omnicrawler/apps/|tests/)
 
   # General file hygiene
   - repo: https://github.com/pre-commit/pre-commit-hooks
