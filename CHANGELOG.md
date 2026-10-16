@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.0.0 - 2026-10-16
+
+### 变更
+
 - fix(persistence): **配置写入统一走原子写** — 此前部分配置走 `core.utils.atomic_write`
   （fsync + Windows `PermissionError` 指数重试），部分走**裸** `Path.write_text`——崩溃/断电
   可能留下截断的目标文件，下次 `load_config` 解析失败。新增 `core.utils.atomic_write_text`
@@ -134,6 +138,187 @@
   `"tight"`/`"md"` 两个刻度。★ 本批**不产生任何视觉变化**：36 次渲染（3 主题 × 3 缩放 ×
   4 控件）像素摘要前后一致 `aa82dccc6c6b87d4`，15 个剥注释 QSS 变体逐字节一致，
   故 `constraints/visual-ref.txt` 无需推进。
+
+### 自 0.15.0 起的全部提交
+
+- chore: 综合整治（功能/门禁/清理/性能/原子写），准备发布 1.0.0
+- Guard QPushButton min-height margin and correct scaled_padding_px attribution (#134)
+- fix(gui): 布局压缩修复 + 推进视觉回归参考 pin（接住 #130） (#133)
+- chore(deps): 一次性对齐质量工具链并同步 4 个工作流的 uv pin（取代 #124/#125/#126/#127/#129） (#132)
+- chore(tests): 归一 test_consumer_existence.py 行尾为 LF (#131)
+- Refresh finished PDF extraction when semantic dependencies change
+- Decode rendered PNGs through the common Qt image API
+- Validate default delivery cache inputs and output file receipts
+- Refresh reviewed default exports and guard concurrent delivery
+- Refresh extraction bodies when rules or quality settings change
+- Preserve original row provenance in reviewed cross-page tables
+- Retry weak Tesseract output within budgets and retain review alternatives
+- Guide HTML extraction with explicit field evidence schemas
+- Allow explicit loopback keyless HTML graph extraction
+- Track unvisited discovery paths and safely revisit selected parents
+- Keep interrupted requests resumable across stop-file races
+- Keep OCR adapter guards runnable without optional inference packages
+- Preserve uncertain records and improve offline OCR reliability
+- Keep OCR pool fault tests independent of optional Paddle installation
+- Display pending and unassessed quality honestly in evidence review
+- Add source-scoped re-extraction candidates selected by record ID
+- Keep AI table headers and units within their own table context
+- Assess protected candidates and verify archives before resetting extraction
+- Connect explicitly mapped business events to record notification policy
+- Complete explicit review of protected re-extraction candidates
+- Require consistent virtual-list counts and declared end before completion
+- Honor guarded browser viewport and finalize dependency depth verification
+- Validate credential key persistence and document dependency depth verification
+- Prioritize conflicting review records and reject negated withdrawals
+- Align evidence IDs with persisted records and preserve retry edits
+- Avoid constructing Paddle models during parent process preflight
+- Add bounded versioned cache for AI extraction candidates
+- Ground OCR field confidence in regions and expose coordinate uncertainty
+- Bound trusted Scrapy execution and verify output before publication
+- Reuse guarded rendering for offline Crawl4AI processing
+- Preserve reviewed records and isolate reprocessing candidates
+- Wait for declared browser data and retain virtual list records
+- Bound AI chunks and retain field grounding for review
+- Separate evidence quality and correct temporal event semantics
+- Capture and replay evidence by record and archived response
+- Preserve structured OCR through batch storage and export
+- Improve validation, regression, and OCR fidelity
+- fix(fetching): measure short response latency with a high resolution clock
+- test(browser): verify slow click navigation and refresh acceptance status
+- fix(browser): avoid classic command deadlocks during BiDi interception
+- fix(ci): register mandatory visual gate in the shared gate inventory
+- fix(browser): report safe runtime versions and actionable interception failures
+- test: validate Windows junction confinement and audited live market access
+- test: make contract and Windows checks executable and gate reviewed visual regressions
+- fix(gui): show readable AI acceptance and keep settings usable in small windows
+- fix(ai): require a real boolean in structured generation acceptance
+- fix(auth): evaluate real HTTP errors and preserve the working pinned async backend
+- fix(pipeline): preserve minimal HTTP fetch configurations
+- fix(onboarding): keep local input scope and workspace stable in GUI workers
+- fix(review): preserve source IR and keep driver probes offline
+- feat(onboarding): add evidence-bound starter and explicit local imports
+- feat(ai): separate discovery from bounded generation tests and connect decimal cost budgets
+- fix(session): surface cookie expiry and prevent expired snapshot recovery
+- fix(browser): bound interception startup and diagnose renderer compatibility without account reuse
+- feat(workspace): preview and repair declared file references without overwriting configuration
+- feat(pdf): review inferred columns and confirm source-preserving table continuations
+- fix: refresh persisted run statistics after removal confirmation
+- test: exercise terminal progress with explicitly owned Qt widgets
+- fix: release GUI test patches before native Qt object disposal
+- fix: verify typed exports by business identity under timestamp ties
+- fix: finish successful GUI progress and ignore late terminal updates
+- fix: resolve PDF acceptance work directories before configuration
+- feat: preserve explicit PDF column order and review table continuations
+- feat: relocate declared plugin workspace file references safely
+- feat: confirm complete record removals with durable presence tracking
+- fix: include AI feature in full dependency contract
+- fix: align CI feature dependencies and stabilize semantic GUI checks
+- fix: keep discovery body requirements optional for fetch contexts
+- fix: fetch cursor continuation bodies on every update cycle
+- feat: record actual export delivery boundaries and output size
+- fix: distinguish boolean changes throughout nested values
+- feat: persist record notification thresholds and confirmations
+- fix: retain market workers until native thread completion
+- fix: stop home animation and dispose test-owned Qt windows
+- test: exercise pagination through professional mode controls
+- fix: persist cursor cycle history across resumptions
+- pagination-diagnostic-compatibility
+- pagination-discovery-diagnostics
+- feat(exports): deliver record quality and review status consistently across tables
+- feat(benchmarks): measure declared-contract valid outputs and first valid result
+- feat(notifications): deliver task record changes and retry selected receipts in GUI and CLI
+- feat(state): atomically enqueue record changes using shared durable deliveries
+- feat(templates): persist scoped fixture checks and quarantine failed recommendations
+- feat(diagnostics): persist safe actual browser action boundaries
+- feat(pdf): select OCR pages and preserve native geometry and repair evidence
+- feat(ai): prefer declared native schemas while retaining local validation
+- fix(identity): recognize legacy comments consistently and reset copied origin
+- test(gui): retain Qt owner through test session cleanup
+- fix(cli): validate workspace arguments by operation
+- fix: bind operation AI budgets to actual request accounting
+- fix: preserve monitor ownership until native Qt thread completion
+- feat: verify and relocate complete workspaces safely
+- feat: add reviewed offline component management to GUI
+- fix: recover monitoring after concurrent baseline conflicts
+- fix: retain legacy GUI task identity across reopening
+- Own welcome checkbox before attachment to prevent later Qt style crashes
+- Bind delivery receipts to lease ownership and filter eligible backlog before limiting
+- Bind document nodes and section ancestry to portable source evidence
+- Persist actual workflow step boundaries and retain temporarily blocked work
+- Account for cached AI token classes without inventing prices
+- Back up and migrate legacy state schemas atomically with version guards
+- Report restrictive field contract upgrades before reusing historical data
+- Preserve monitor ownership across retries and deferred destruction
+- Route monitor probes through guarded egress and track check outcomes
+- Guard workspace restores and snapshot live databases consistently
+- Bound AI retries and propagate cancellation and uncertain billing
+- Share native field contracts and preserve declared empty values
+- Keep run comparisons task scoped and make save-as transactional
+- Validate template inputs and preserve task choices when composing
+- fix: isolate host admission and fairly claim runnable domains
+- feat: add durable monitor policies and independent webhook delivery receipts
+- feat: show task-bound runtime diagnostics and historical field replay
+- fix: preserve document reading order and source locators through exports
+- fix: reserve AI budgets atomically and audit every request attempt
+- fix: enforce declared AI field types and mark incomplete results for review
+- fix: persist monitor deliveries and recover failed notifications
+- fix: isolate task observations and retain the latest seen entity values
+- fix: preserve zero AI values and recover healthy slow-site admission
+- docs: register comprehensive local Full acceptance and runtime boundaries
+- fix: compare template structure against the same page baseline
+- fix: honor configured proxies and recover public browser tasks with explicit renderer evidence
+- fix: preserve PDF processing and resource policy in captured workflows
+- fix: close PDF benchmark database connections before returning evidence
+- feat: deliver verified announcement product and paper scene templates
+- feat: explain market scenarios and verify local evidence claims
+- feat: retain PDF table geometry and table-row provenance in archive analysis
+- feat: monitor stable business identities and ignore declared noise fields
+- feat: explain saved task stages and trial validity in desktop tools
+- feat: capture reusable paginated API browser and attachment workflows
+- feat: adapt production request admission to responses and local resource pressure
+- docs: archive completed optimization records and refresh current guidance
+- fix: wire benchmark measurements to actual pipeline lifecycle hooks
+- fix: preserve unknown memory summaries and bound GUI analysis inputs
+- test: give saved-task dialog regressions a unique collection name
+- feat: add saved-task GUI tools with explicit selections and reviewed repair
+- feat: analyze native PDF deliveries with page provenance
+- feat: measure process-tree resources and first-record latency
+- fix: select older project-version deltas only when requested
+- fix: preserve CLI compatibility and meaningful login lifecycle checks
+- fix(templates): preserve extraction semantics and close optimization scope
+- fix(workflows): reverify exports and bind trials to stable component versions
+- feat(workflows): ship bounded offline template scenes through existing CLI
+- feat(delivery): verify cumulative PDF artifacts and retry selected failures
+- feat(templates): capture scoped public tasks with historical trial references
+- feat(analysis): produce cited reports from selected verified deliveries
+- feat(repair): wire measured candidates through observation and rollback
+- feat(ocr): resolve signed offline component runtimes before execution
+- feat(metrics): record dependency attribution and unknown frozen baselines
+- fix(templates): bind trial completion to captured task input
+- fix(gui): drain workers before login and resume scoped failures
+- feat(recovery): requeue scoped authentication failures after verified login
+- fix(sessions): drain task resources before editing persistent login state
+- fix(components): enforce dependency compatibility and recover interrupted activation
+- fix(fetching): classify browser escalation and avoid weak-marker false positives
+- fix(templates): validate parameters before replacing task configs
+- fix(quality): require measured snapshots for LLM repair comparisons
+- fix(components): serialize registry commits and restore trusted metadata
+- fix(ci): keep JUnit diagnostics outside clean source archives
+- fix(ci): verify scroll content and retain platform diagnostics
+- fix(gui): synchronize run navigation and UTF-8 worker diagnostics
+- fix: synchronize market policy and read encrypted session summaries
+- fix: preserve advanced task goals and stable product records
+- fix: share guarded dynamic page analysis and restore draft controls
+- fix: replace CMS pagination parameters and reject continuation loops
+- fix: retain Paddle OCR line boundaries and review uncertain fields
+- fix: own PDF scan workers and defer close until threads stop
+- fix: compare observed snapshots instead of incremental delivery
+- docs: record local optimization rounds and affected desktop acceptance
+- fix(runtime): retire terminal worker sessions before starting another run
+- fix(gui): make editor navigation and home layout usable at default size
+- fix(runtime): distinguish user cancellation and explain incremental results
+- fix(gui): manage home AI worker lifetime and preserve exception details
+- docs: 登记 0.15.0 本地 Full 实机验收结果与待修问题
 
 ## 0.15.0 - 2026-10-01
 
