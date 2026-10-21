@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.0.1 - 2026-10-21
+
 ### 变更
 
 - feat(convertx): **借鉴 Filee 架构完成转换子系统升级**（只吸收设计，不复制源码）——
@@ -22,6 +24,11 @@
   ⑧ `concurrency.py`：`EngineGate` 按图片/PDF/文档/列式表格分域限流 + `convert_many` 批量 API；
   单任务失败不中断整批。
   ⑨ 修复显式格式 `csv` / `jsonl`（无前导点）被拒绝的问题（GUI 目标格式键即无点形态）。
+
+- fix(tools): **`rebase_venv` 的环境版本对账恢复生效** —— 版本真源早已迁到
+  `_version.py`，但脚本仍只从 `__init__.py` 读取版本字面量，导致对账恒被静默跳过；
+  现按序探测 `_version.py` → `__init__.py`（旧布局兜底），并补回归测试：
+  注入陈旧 editable 元数据 0.12.0 后可由 `rebase_venv` 自愈回源码版本。
 
 ## 1.0.0 - 2026-10-16
 

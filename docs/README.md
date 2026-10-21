@@ -1,6 +1,6 @@
 # OmniCrawler 文档导航
 
-当前版本 **1.0.0**，配置协议 **v5**，覆盖率门禁 **≥75%**。
+当前版本 **1.0.1**，配置协议 **v5**，覆盖率门禁 **≥75%**。
 
 本页是仓库内文档的唯一索引入口。未出现在本页的 `docs/*.md` 视为孤儿页，会被
 `tools/check_docs_consistency.py` 拦截。新增或删除顶层文档时必须同步更新第 2 节。
@@ -26,7 +26,7 @@
 - [能力成熟度矩阵](CAPABILITY_MATURITY.md)
 - [能力强度与依赖利用实施](DEPENDENCY_DEPTH_IMPLEMENTATION.md)：证据、OCR、浏览器与桥接契约的落地和验收边界。
 - [支持矩阵](SUPPORT_MATRIX.md)
-- [兼容与回滚](COMPATIBILITY_1.0.0.md)
+- [兼容与回滚](COMPATIBILITY_1.0.1.md)
 
 ### 安装、运行与运维
 
@@ -40,7 +40,7 @@
 
 ### 桌面与交互
 
-- [1.0.0 实机问题优化记录](LOCAL_OPTIMIZATION_2026-10-02.md)
+- [1.0.1 实机问题优化记录](LOCAL_OPTIMIZATION_2026-10-02.md)
 
 - [桌面运行、工作区与组件](DESKTOP_RUNTIME_1.4.md)
 - [可选组件管理](COMPONENTS.md)：离线信任、注册表事务、回滚和搬迁。
