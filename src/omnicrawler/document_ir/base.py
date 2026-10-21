@@ -166,11 +166,14 @@ class DocumentIR:
             if not width:
                 continue
             rows = [row + [""] * (width - len(row)) for row in table]
-            lines.append("| " + " | ".join(escape(cell) for cell in rows[0]) + " |")
-            lines.append("| " + " | ".join("---" for _ in range(width)) + " |")
+            table_lines = [
+                "| " + " | ".join(escape(cell) for cell in rows[0]) + " |",
+                "| " + " | ".join("---" for _ in range(width)) + " |",
+            ]
             for row in rows[1:]:
-                lines.append("| " + " | ".join(escape(cell) for cell in row) + " |")
-            lines.append("")
+                table_lines.append("| " + " | ".join(escape(cell) for cell in row) + " |")
+            # 表格块必须内部用单换行：逐行 join 会生成空行，Markdown 渲染器会截断表格。
+            lines.append("\n".join(table_lines))
         return "\n\n".join(lines).strip()
 
     def paragraph_count(self) -> int:

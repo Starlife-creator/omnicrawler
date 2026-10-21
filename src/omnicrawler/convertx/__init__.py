@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+from . import document as _document  # noqa: F401 — document 自身依赖 _core，导入即完成族注册
 from ._core import (
     _DECODE_CHUNK_BYTES,
     _ENCODING_SAMPLE_BYTES,
@@ -24,6 +25,8 @@ from ._core import (
     XLSX_ROW_LIMIT,
     CanonicalRecords,
     ConversionCancelledError,
+    ConversionIssue,
+    ConversionStatus,
     ConvertResult,
     ProgressTracker,
     ReaderFn,
@@ -35,6 +38,8 @@ from ._core import (
     atomic_output,
     check_cancel,
     convert,
+    convert_image,
+    normalize_format_spec,
     read_csv,
     read_jsonl,
     register_reader,
@@ -43,13 +48,20 @@ from ._core import (
     write_csv,
     write_jsonl,
 )
+from .formats import IMAGE_EXTENSIONS
+from .output_rules import CONFLICT_POLICIES, OutputRule, resolve_output_path, sanitize_filename
 
 __all__ = [
     "READERS",
     "WRITERS",
+    "CONFLICT_POLICIES",
+    "IMAGE_EXTENSIONS",
     "CanonicalRecords",
     "ConversionCancelledError",
+    "ConversionIssue",
+    "ConversionStatus",
     "ConvertResult",
+    "OutputRule",
     "ProgressTracker",
     "ReaderFn",
     "StageSpec",
@@ -59,10 +71,14 @@ __all__ = [
     "atomic_output",
     "check_cancel",
     "convert",
+    "convert_image",
+    "normalize_format_spec",
     "read_csv",
     "read_jsonl",
     "register_reader",
     "register_writer",
+    "resolve_output_path",
+    "sanitize_filename",
     "sniff_format",
     "write_csv",
     "write_jsonl",

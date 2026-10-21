@@ -434,7 +434,7 @@ src/omnicrawler/
 ├── sdk/                         # 公共 API（稳定性标记）
 ├── templates/                   # 注册表发现的采集模板 + recipe
 ├── pdfx/                        # PDF 解析/OCR/抽取子系统
-├── convertx/                    # 任意格式互转（CSV/JSONL/Parquet/DuckDB/文档族）
+├── convertx/                    # 任意格式互转（表格/文档/图片 + watch + preset）
 ├── sources/                     # 数据源适配器、镜像注册表
 ├── plugins/                     # 插件系统
 ├── scenes/                      # 出厂场景定义（annual_report.yaml）

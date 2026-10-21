@@ -110,6 +110,7 @@ HTTP 客户端行为核验自 [HTTPX Client/连接池](https://www.python-httpx.
 |---|---|---|---|
 | [VERT](https://github.com/VERT-sh/VERT) | 格式注册表 + 最短路径图搜索 + 零信任 + 流式分块 | convertx/paths.py + convertx/__main__.py | ✅ 已融合 P3-2（FORMAT_FAMILIES 族目录 + READERS/WRITERS 注册表 + `python -m omnicrawler.convertx --list-paths` 路径枚举） |
 | [ConvertX](https://github.com/xieren58/ConvertX) | 异步任务状态机 + 统一进度事件 + 幂等重试 | services/progress.py **&** omnicrawler/convertx/（CLI: `omnicrawler convert`） | ✅ 已融合 P2-4（ProgressTracker 统一进度协议）**+ P3-2（CSV/JSONL/XLSX/Parquet/DuckDB 5×5 互转）** |
+| [Filee](https://github.com/KnifeLemon/Filee) | 转换边图 + 能力目录 + 输出命名/冲突策略 + watcher 稳定性语义 + preset 配方 | convertx/planner.py convertx/catalog.py convertx/output_rules.py convertx/watch.py convertx/presets.py | ✅ 已吸收设计（只借鉴架构、不复制源码；不引入其 FFmpeg/Ghostscript 等外部引擎链） |
 | [everythingtohtml](https://github.com/He-wei-gui/everythingtohtml) | 统一文档中间表示 + 下游复用 | document_ir/（计划新建，不重构 pdfx） | 计划借鉴（仅处理 pdfx 不支持的格式） |
 
 ### 配置与网址

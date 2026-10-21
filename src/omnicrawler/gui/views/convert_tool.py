@@ -123,6 +123,9 @@ class _ConvertWorker(QThread):
                     compression=self._compression,
                     on_progress=_on_progress,
                     should_stop=self._should_stop,
+                    # 目标路径由用户显式选择；沿用历史语义（允许覆盖）。
+                    # 自动建议路径已用同一 OutputRule 的 rename 语义避让。
+                    output_rule=convertx.OutputRule(on_conflict="overwrite"),
                 )
             except convertx.ConversionCancelledError:
                 self.cancelled.emit()
@@ -223,6 +226,13 @@ class ConvertView(QWidget):
         (_("Excel (.xlsx)"),      "xlsx",    ".xlsx"),
         (_("Parquet (.parquet)"), "parquet", ".parquet"),
         (_("DuckDB (.duckdb)"),   "duckdb",  ".duckdb"),
+        (_("文本（.txt）"),        "txt",     ".txt"),
+        (_("Markdown（.md）"),     "md",      ".md"),
+        (_("HTML（.html）"),       "html",    ".html"),
+        (_("Word（.docx）"),       "docx",    ".docx"),
+        (_("PDF（.pdf）"),         "pdf",     ".pdf"),
+        (_("PNG（.png）"),         "png",     ".png"),
+        (_("JPEG（.jpg）"),        "jpg",     ".jpg"),
     ]
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -322,6 +332,11 @@ class ConvertView(QWidget):
         opt_row.addWidget(self._chk_nested)
         opt_row.addStretch(1)
         info_layout.addLayout(opt_row)
+        self._capability_hint = QLabel("")
+        self._capability_hint.setWordWrap(True)
+        self._capability_hint.setObjectName("ConvertCapabilityHint")
+        self._capability_hint.setVisible(False)
+        info_layout.addWidget(self._capability_hint)
 
         adv_row = QHBoxLayout()
         adv_row.addWidget(QLabel(_("DuckDB 表名：")))
@@ -398,7 +413,9 @@ class ConvertView(QWidget):
             return
         if paths == ["__PICK__"]:
             filters = (
-                _("可读格式 (*.csv *.jsonl *.ndjson *.xlsx *.parquet *.duckdb *.db);;")
+                _("可读格式 (*.csv *.jsonl *.ndjson *.xlsx *.parquet *.duckdb *.db "
+                  "*.txt *.md *.html *.htm *.eml *.docx *.pptx *.odt *.epub *.pdf "
+                  "*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff *.gif);;")
                 + _("所有文件 (*.*)")
             )
             selected, _selected_filter = QFileDialog.getOpenFileName(
@@ -450,21 +467,16 @@ class ConvertView(QWidget):
     def _auto_suggest_dst(self) -> None:
         if self._src_path is None:
             return
+        from omnicrawler.convertx import OutputRule, resolve_output_path
+
         key = self._fmt_combo.currentData()
-        ext = next((e for _l, k, e in self._SUPPORTED_FORMATS if k == key), "")
-        if not ext:
-            suggested = self._src_path.with_suffix(".out")
-        else:
-            suggested = self._src_path.with_suffix(ext)
-        i = 1
-        while suggested.exists():
-            stem = self._src_path.stem
-            if ext:
-                suggested = self._src_path.with_name(f"{stem}-{i}{ext}")
-            else:
-                suggested = self._src_path.with_name(f"{stem}-{i}.out")
-            i += 1
-        self._dst_path_edit.setText(str(suggested))
+        ext = next((e for _l, k, e in self._SUPPORTED_FORMATS if k == key), ".out")
+        suggested = self._src_path.with_suffix(ext)
+        # 与库层共用同一套重名策略，避免 GUI 自己维护 "-1" 命名规则。
+        resolution = resolve_output_path(
+            self._src_path, suggested, OutputRule(on_conflict="rename"),
+        )
+        self._dst_path_edit.setText(str(resolution.path or suggested))
 
     def _on_flat_nested_toggle(self, flat_checked: bool) -> None:
         if flat_checked and self._chk_nested.isChecked():
@@ -486,10 +498,30 @@ class ConvertView(QWidget):
             self._chk_flat.setChecked(True)
             self._chk_flat.blockSignals(False)
 
+    def _target_available(self) -> bool:
+        key = str(self._fmt_combo.currentData() or "")
+        if not key:
+            self._capability_hint.setText("")
+            self._capability_hint.setVisible(False)
+            return True
+        try:
+            from omnicrawler.convertx.catalog import format_status
+
+            status = format_status(key)
+        except Exception:  # noqa: BLE001 - 能力提示失败不得阻断转换入口
+            return True
+        hint = ""
+        if not status.writable:
+            hint = _("目标格式当前不可写：{0}").format(status.install_hint or status.reason)
+        self._capability_hint.setText(hint)
+        self._capability_hint.setVisible(bool(hint))
+        return status.writable
+
     def _update_runnable_state(self) -> None:
         src_ok = self._src_path is not None
         running = self._worker is not None
-        self._btn_run.setEnabled(src_ok and not running)
+        target_ok = self._target_available()
+        self._btn_run.setEnabled(src_ok and target_ok and not running)
         self._btn_cancel.setEnabled(running)
         if not running and src_ok and not self._dst_path_edit.text().strip():
             self._auto_suggest_dst()
@@ -669,6 +701,7 @@ class _DocWorker(QThread):
             try:
                 result = convertx.convert(
                     self._src, self._dst, on_progress=_on_progress, should_stop=self._should_stop,
+                    output_rule=convertx.OutputRule(on_conflict="overwrite"),
                 )
             except convertx.ConversionCancelledError:
                 self.cancelled.emit()
@@ -699,7 +732,7 @@ class _DocExtractTab(QWidget):
         src_row = QHBoxLayout()
         self._src_edit = QLineEdit()
         self._src_edit.setReadOnly(True)
-        self._src_edit.setPlaceholderText(_("支持：.txt .html .eml .docx .pptx .odt .epub"))
+        self._src_edit.setPlaceholderText(_("支持：.txt .md .html .eml .docx .pptx .odt .epub .pdf"))
         self._btn_pick = QPushButton(_("选择文档..."))
         self._btn_pick.clicked.connect(self._pick_document)
         src_row.addWidget(self._src_edit, 1)
@@ -711,6 +744,9 @@ class _DocExtractTab(QWidget):
         self._fmt_combo = QComboBox()
         self._fmt_combo.addItem(_("文本（.txt）"), ".txt")
         self._fmt_combo.addItem(_("Markdown（.md）"), ".md")
+        self._fmt_combo.addItem(_("HTML（.html）"), ".html")
+        self._fmt_combo.addItem(_("Word（.docx）"), ".docx")
+        self._fmt_combo.addItem(_("PDF（.pdf）"), ".pdf")
         opt_row.addWidget(self._fmt_combo)
         opt_row.addSpacing(20)
         opt_row.addWidget(QLabel(_("输出路径：")))
@@ -761,7 +797,7 @@ class _DocExtractTab(QWidget):
     def _pick_document(self) -> None:
         path, _selected = QFileDialog.getOpenFileName(
             self, _("选择文档"), "",
-            _("文档 (*.txt *.html *.htm *.eml *.docx *.pptx *.odt *.epub);;所有文件 (*)"),
+            _("文档 (*.txt *.md *.html *.htm *.eml *.docx *.pptx *.odt *.epub *.pdf);;所有文件 (*)"),
         )
         if path:
             self._src_path = Path(path)

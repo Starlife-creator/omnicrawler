@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### 变更
+
+- feat(convertx): **借鉴 Filee 架构完成转换子系统升级**（只吸收设计，不复制源码）——
+  ① `output_rules.py`：命名模板（`{name}{ext}{date}{time}{index}`）、
+  `overwrite/rename/skip/error` 四种冲突策略、时间戳保留、非法字符清洗；源文件在任何策略下
+  都不会被覆盖。CLI `convert` 与模块 CLI 增加对应开关，GUI 自动建议路径改用同一套 rename 语义。
+  ② `catalog.py` + `--list-paths --assume-installed`：能力目录给出缺失模块、安装 extra 与
+  “装上后新增哪些格式对”；`--capabilities-json` 供机器消费。
+  ③ `ConvertResult.status` / `issues`：区分完成、有警告、**部分成功（有记录被跳过）** 与跳过。
+  ④ `document_ir/writers.py`：HTML / DOCX / PDF / XLSX 出口保留表格与标题层级；新增 `.pdf`
+  输入，文档族形成 txt/md/html/docx/pdf/xlsx 双向（可写方向）能力；Markdown 表格不再被空行截断。
+  ⑤ `planner.py`：格式级边图 + Dijkstra（默认 3 步）+ image guard + `--plan`；由于 records/IR
+  已提供直连，默认路由不会为多跳而多跳，多跳执行保留给受限边/插件扩展。
+  ⑥ `watch.py`：静置确认、独占打开探测、临时后缀/隐藏文件过滤、`(size, mtime_ns)` 去重、全量
+  重扫、目标目录排除；支持 `--watch-once` 与常驻监听。
+  ⑦ `presets.py` + `--preset/--preset-file`：内置 `table-archive/table-share/document-web/image-web`；
+  未知键与未知枚举降级并告警，旧配置不炸。
+  ⑧ `concurrency.py`：`EngineGate` 按图片/PDF/文档/列式表格分域限流 + `convert_many` 批量 API；
+  单任务失败不中断整批。
+  ⑨ 修复显式格式 `csv` / `jsonl`（无前导点）被拒绝的问题（GUI 目标格式键即无点形态）。
+
 ## 1.0.0 - 2026-10-16
 
 ### 变更

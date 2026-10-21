@@ -55,6 +55,18 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     convert.add_argument("--nested", action="store_true", help="JSONL Writer 按 pipeline 原始 records.jsonl 结构：{record_id, source_url, data:{...}, evidence:{...}}")
     convert.add_argument("--table", default="records", help="DuckDB 读写时使用的表名（默认 records）")
     convert.add_argument("--compression", default="zstd", help="Parquet 压缩（默认 zstd）")
+    convert.add_argument("--output-dir", default=None, help="输出目录（默认与 --to 同目录）")
+    convert.add_argument(
+        "--on-conflict", choices=("overwrite", "rename", "skip", "error"), default=None,
+        help="目标已存在时的策略：overwrite（默认）/rename/skip/error",
+    )
+    convert.add_argument(
+        "--name-template", default=None,
+        help="输出文件名模板，占位符 {name}{ext}{date}{time}{index}（默认 {name}{ext}）",
+    )
+    convert.add_argument("--preserve-timestamps", action="store_true", help="保留源文件的访问/修改时间")
+    convert.add_argument("--preset", default=None, help="使用内置/文件中同名的具名配方")
+    convert.add_argument("--preset-file", default=None, help="自定义 preset JSON 文件")
     convert.add_argument("--quiet", action="store_true", help="仅输出结果 JSON，不打印进度提示")
     # EasySpider 导入
     import_es = sub.add_parser("import-easyspider", help="将 EasySpider JSON 任务转换为 OmniCrawler YAML 配置")

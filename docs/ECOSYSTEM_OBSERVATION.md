@@ -45,6 +45,7 @@
 | 状态 | 资源 | 关注重点 | 落点模块 | 备注 |
 |---|---|---|---|---|
 | ✅ 已融合 | ConvertX | 统一进度事件 + 幂等重试 + 5×5 互转 | `services/progress.py` `convertx/` | P2-4 + P3-2 + CLI `python -m omnicrawler.convertx` |
+| ✅ 已吸收设计 | Filee | 转换边图/最短路、能力目录、输出命名与冲突策略、watcher 稳定性、preset | `convertx/planner.py` `convertx/catalog.py` `convertx/output_rules.py` `convertx/watch.py` `convertx/presets.py` | 只借鉴架构与行为，不复制源码；不引入其 GPL/AGPL 外部引擎链 |
 
 ## 配置与网址
 

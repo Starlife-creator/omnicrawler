@@ -851,25 +851,77 @@ def _run_benchmark_cmd(args: argparse.Namespace) -> None:
 @_register("convert")
 def _run_convert(args: argparse.Namespace) -> None:
     """P3-2 任意格式互转：Reader × Writer = N×N 矩阵。"""
+    from ..convertx import OutputRule
     from ..convertx import convert as convertx_convert
 
-    options: dict[str, Any] = {
-        "reader_jsonl": {"flat": bool(getattr(args, "flat", True))},
-        "writer_jsonl": {"nested": bool(getattr(args, "nested", False))},
-        "reader_duckdb": {"table": str(getattr(args, "table", "records"))},
-        "writer_duckdb": {"table": str(getattr(args, "table", "records"))},
-        "writer_parquet": {"compression": str(getattr(args, "compression", "zstd"))},
-    }
+    preset = None
+    if getattr(args, "preset_file", None) or getattr(args, "preset", None):
+        if not getattr(args, "preset", None):
+            print("convert: --preset-file 需要同时指定 --preset NAME", file=sys.stderr)
+            raise SystemExit(2)
+        from ..convertx.presets import get_preset
+
+        try:
+            preset = get_preset(args.preset, args.preset_file)
+        except (KeyError, ValueError) as exc:
+            print(f"convert: {exc}", file=sys.stderr)
+            raise SystemExit(2) from exc
+        for warning in preset.warnings:
+            print(f"convert: WARN {warning}", file=sys.stderr)
+
+    preset_kwargs = dict(preset.convert_kwargs) if preset else {}
+    table = str(getattr(args, "table", "records"))
+    compression = str(getattr(args, "compression", "zstd"))
+    on_error = str(getattr(args, "on_error", "skip"))
+    if table == "records":
+        table = str(preset_kwargs.get("table", table))
+    if compression == "zstd":
+        compression = str(preset_kwargs.get("compression", compression))
+    if on_error == "skip":
+        on_error = str(preset_kwargs.get("on_error", on_error))
+    nested = bool(getattr(args, "nested", False) or preset_kwargs.get("nested", False))
+    flat = bool(getattr(args, "flat", True) and not nested)
+
+    rule_kwargs: dict[str, Any] = dict(preset.output_rule) if preset else {}
+    if getattr(args, "output_dir", None):
+        rule_kwargs["directory"] = args.output_dir
+    if getattr(args, "on_conflict", None):
+        rule_kwargs["on_conflict"] = args.on_conflict
+    if getattr(args, "name_template", None):
+        rule_kwargs["template"] = args.name_template
+    if getattr(args, "preserve_timestamps", False):
+        rule_kwargs["preserve_timestamps"] = True
+    output_rule = OutputRule(**rule_kwargs) if rule_kwargs else None
+
+    options: dict[str, Any] = dict(preset.options) if preset else {}
+    options.update({
+        "reader_jsonl": {"flat": flat},
+        "writer_jsonl": {"nested": nested},
+        "reader_duckdb": {"table": table},
+        "writer_duckdb": {"table": table},
+        "writer_parquet": {"compression": compression},
+    })
     result = convertx_convert(
         args.src,
         args.dst,
         src_format=getattr(args, "src_format", None) or None,
         dst_format=getattr(args, "dst_format", None) or None,
         options=options,
+        table=table,
+        compression=compression,
+        on_error=on_error,
+        output_rule=output_rule,
     )
     if not getattr(args, "quiet", False):
         written = result.extra.get("written_records")
-        status = "⚠ 转换完成（有异常）" if result.warnings else "✅ 转换完成"
+        if result.status == "skipped":
+            status = "⏭ 已跳过"
+        elif result.status == "completed_with_errors":
+            status = "⚠ 转换完成（有跳过记录）"
+        elif result.warnings:
+            status = "⚠ 转换完成（有异常）"
+        else:
+            status = "✅ 转换完成"
         # ★ 人类可读摘要一律走 stderr：stdout 必须保持**纯 JSON**，
         #   否则 `omnicrawler convert ... | jq` 这类管道会被这段文本打断（P2-2 唯一真 bug）。
         print(
@@ -880,13 +932,18 @@ def _run_convert(args: argparse.Namespace) -> None:
         for w in result.warnings:
             print(f"  ⚠ {w}", file=sys.stderr)
     _json({
-        "ok": True,
+        "ok": result.status != "skipped",
+        "status": str(result.status),
         "source_format": result.source_format,
         "target_format": result.target_format,
         "rows": result.rows,
         "written_records": result.extra.get("written_records"),
         "columns": result.columns,
         "warnings": result.warnings,
+        "issues": [
+            {"code": issue.code, "message": issue.message, "severity": issue.severity}
+            for issue in result.issues
+        ],
         "output": str(result.output_path) if result.output_path else None,
         "extra": result.extra,
     })

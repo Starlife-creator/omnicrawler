@@ -63,6 +63,36 @@ omnicrawler convert --from in.csv --to out.jsonl --quiet
 omnicrawler plugins audit --report --format json
 ```
 
+## 格式转换（convertx）
+
+`convert` 的 stdout 仍是纯 JSON；新增 `status`（`completed` / `completed_with_warnings` /
+`completed_with_errors` / `skipped`）与结构化 `issues`，批处理不要只看退出码。
+
+```bash
+# 输出命名/冲突/时间戳（库层与 GUI 共用同一策略）
+omnicrawler convert --from in.csv --to out.xlsx --on-conflict rename --preserve-timestamps
+omnicrawler convert --from in.csv --to out.xlsx --output-dir delivered --name-template "{name}_{date}{ext}"
+
+# 具名配方：内置 + 自定义 JSON（未知键/枚举降级并告警，不炸旧配置）
+omnicrawler convert --from in.csv --to out.parquet --preset table-archive
+python -m omnicrawler.convertx --list-presets
+
+# 能力目录：缺依赖时给出“装什么能解锁哪条路径”
+python -m omnicrawler.convertx --list-paths
+python -m omnicrawler.convertx --list-paths --assume-installed storage
+python -m omnicrawler.convertx --list-paths --capabilities-json
+
+# 路由计划（不写文件）
+python -m omnicrawler.convertx --plan --from .pdf --to .docx
+
+# 监听目录：静置确认 + 临时后缀过滤 + 去重 + 输出目录防回环
+python -m omnicrawler.convertx --watch inbox --to .xlsx --watch-output out --watch-once
+python -m omnicrawler.convertx --watch inbox --to .jsonl --watch-settle 5 --watch-interval 2
+```
+
+文档族出口：`txt/md/html/docx/pdf/xlsx`（表格与标题层级保留）；图片族：
+`png/jpg/webp/bmp/tiff/gif`（Pillow）。图片只与图片互转，不做图片→表格。
+
 ## 边界（如实说明）
 
 提取修复使用结构化 CLI：先 `omnicrawler repair preview -c task.yaml --evidence evidence.json --candidate candidate.json`，确认完整留出与历史证据后显式 apply，后续 observe 或 rollback。详情见 [修复工作流](REPAIR_WORKFLOW.md)；缺证据不覆盖配置，模型网页内容不能扩展工具权限。

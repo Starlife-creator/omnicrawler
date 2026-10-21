@@ -18,7 +18,7 @@ from omnicrawler.convertx.paths import (
 
 def test_format_families_catalog() -> None:
     families = format_families()
-    assert set(families) == {"csv", "jsonl", "xlsx", "parquet", "duckdb", "document"}
+    assert set(families) == {"csv", "jsonl", "xlsx", "parquet", "duckdb", "document", "image"}
 
 
 def test_enumerate_covers_full_cartesian_product() -> None:
@@ -92,3 +92,48 @@ def test_describe_text() -> None:
     assert "ConvertX 转换路径" in text
     assert "csv → jsonl" in text
     assert text.count("\n") >= 25  # 全部路径都在清单里
+
+
+def test_catalog_reports_missing_and_unlocks(monkeypatch) -> None:
+    from omnicrawler.convertx import READERS, WRITERS
+    from omnicrawler.convertx.catalog import format_status, unlock_hints
+
+    monkeypatch.delitem(READERS, ".parquet", raising=False)
+    monkeypatch.delitem(WRITERS, ".parquet", raising=False)
+
+    missing = format_status(".parquet")
+    assert missing.available is False
+    assert missing.install_hint == "omnicrawler[storage]"
+
+    simulated = format_status(".parquet", assume_installed=["storage"])
+    assert simulated.available is True
+    assert simulated.simulated is True
+
+    hints = unlock_hints()
+    assert any(hint.install == "omnicrawler[storage]" for hint in hints)
+    parquet_hint = next(hint for hint in hints if hint.install == "omnicrawler[storage]")
+    assert ".parquet" in parquet_hint.formats
+    assert any("csv → .parquet" == edge for edge in parquet_hint.edges)
+
+
+def test_assume_installed_preview_adds_paths(monkeypatch) -> None:
+    from omnicrawler.convertx import READERS, WRITERS
+    from omnicrawler.convertx.paths import newly_unlocked_paths
+
+    monkeypatch.delitem(READERS, ".parquet", raising=False)
+    monkeypatch.delitem(WRITERS, ".parquet", raising=False)
+
+    new_paths = newly_unlocked_paths(["storage"])
+    pairs = {(path.src_family, path.dst_family) for path in new_paths}
+    assert ("csv", "parquet") in pairs
+    assert ("parquet", "csv") in pairs
+    assert all(path.simulated for path in new_paths)
+
+
+def test_unknown_assume_installed_name_is_rejected() -> None:
+    import pytest
+
+    from omnicrawler.convertx.catalog import normalize_assume_installed
+
+    with pytest.raises(ValueError, match="未知"):
+        normalize_assume_installed(["not-a-real-extra"])
