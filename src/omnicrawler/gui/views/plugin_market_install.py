@@ -72,7 +72,7 @@ class MarketInstallMixin(_Base):
         if entry is None:
             ToastManager.instance().error(_("目录中找不到所选插件"))
             return
-        block_reason = _install_block_reason(entry)
+        block_reason = _install_block_reason(entry, catalog=self._catalog, plugin_id=pid)
         if block_reason:
             ToastManager.instance().warning(block_reason)
             return

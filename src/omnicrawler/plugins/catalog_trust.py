@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
 from datetime import UTC, datetime
@@ -52,7 +53,7 @@ def check_download_hash(
             return True, "存量无 sha256（sha256_unknown，仅提示不阻断）"
         return True, "catalog 未固化 sha256（旧 catalog，跳过哈希校验）"
     actual = sha256_hex(plugin_bytes)
-    if actual != declared:
+    if not hmac.compare_digest(actual, declared):
         return False, (
             f"sha256 不匹配（declared={declared[:16]}… actual={actual[:16]}…）——"
             "内容可能被篡改或缓存陈旧（decision: hash_mismatch）"
@@ -60,21 +61,47 @@ def check_download_hash(
     return True, "sha256 匹配"
 
 
-def check_revocation(entry: dict[str, Any], version: str | None = None) -> tuple[bool, str]:
+def check_revocation(
+    entry: dict[str, Any],
+    version: str | None = None,
+    *,
+    tombstones: list[dict[str, Any]] | None = None,
+    plugin_id: str | None = None,
+) -> tuple[bool, str]:
     """G2：吊销/弃用状态裁决。返回 (allowed, reason)。
 
-    - revoked（整插件吊销）或 revoked_versions 命中当前版本 → 禁运行
-    - deprecated → 允许但提示（作者停更/迁移）
+    两类来源同时裁决（fail-closed，互不替代）：
+    - 条目级：``revoked``（整插件吊销）、``revoked_versions`` 命中当前版本；
+    - 目录顶层 ``tombstones``：已下架/墓碑条目（正常与在线条目互斥，跨源聚合或
+      旧轨遗留时仍可能被索引带回），命中 ``id``（可选 ``version``）即拒装。
+    - ``deprecated`` → 允许但提示（作者停更/迁移）。
     吊销优先级最高：豁免表/逃生开关均不能复活（调用方保证）。
     """
+    target_version = version or str(entry.get("version", ""))
     revoked = entry.get("revoked")
     if revoked:
         reason = revoked.get("reason", "") if isinstance(revoked, dict) else str(revoked)
         return False, f"插件已被吊销（{reason}）——decision: revoked_denied"
-    target_version = version or str(entry.get("version", ""))
     revoked_versions = entry.get("revoked_versions") or []
     if target_version in revoked_versions:
         return False, f"版本 {target_version} 已被吊销——decision: revoked_denied"
+    # 顶层墓碑（P0-2）：目录级已下架记录，独立于条目级 revoked 字段。
+    if tombstones:
+        target_id = plugin_id or str(entry.get("id", ""))
+        for tomb in tombstones:
+            if not isinstance(tomb, dict):
+                continue
+            if str(tomb.get("id", "")) != target_id:
+                continue
+            t_version = tomb.get("version") or tomb.get("versions")
+            if t_version:
+                wanted = {t_version} if isinstance(t_version, str) else set(t_version)
+                if target_version and target_version not in wanted:
+                    continue  # 版本级墓碑仅拒绝命中版本，其余版本放行
+            reason = tomb.get("reason") or tomb.get("removed_at") or "已下架"
+            removed_at = tomb.get("removed_at")
+            when = f"，下架于 {removed_at}" if removed_at else ""
+            return False, f"插件已下架（{reason}{when}）——decision: tombstone_denied"
     deprecated = entry.get("deprecated")
     if deprecated:
         reason = deprecated.get("reason", "") if isinstance(deprecated, dict) else str(deprecated)

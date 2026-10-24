@@ -92,3 +92,41 @@ def test_cached_catalog_roundtrip(tmp_path: Path) -> None:
     # 损坏缓存返回 None（不抛异常）
     cache.write_text("{broken json", encoding="utf-8")
     assert ct.load_cached_catalog(cache) is None
+
+
+# --- P0-2：目录顶层 tombstones 裁决（与条目级 revoked 并列的第二来源）---
+def test_tombstone_denies_install() -> None:
+    """G2：顶层 tombstone 命中条目 → 拒装（tombstone_denied）。"""
+    tombstones = [{"id": "demo", "removed_at": "2026-08-21", "reason": "恶意吊销"}]
+    allowed, reason = ct.check_revocation(
+        _entry(), tombstones=tombstones, plugin_id="demo"
+    )
+    assert not allowed and "tombstone_denied" in reason and "恶意吊销" in reason
+
+
+def test_tombstone_version_scoped() -> None:
+    """G2：版本级墓碑仅拒绝命中版本，其他版本放行。"""
+    tombstones = [{"id": "demo", "version": "1.0.0", "reason": "该版本被撤"}]
+    hit, reason = ct.check_revocation(
+        _entry(version="1.0.0"), tombstones=tombstones, plugin_id="demo"
+    )
+    assert not hit and "tombstone_denied" in reason
+    miss, _ = ct.check_revocation(
+        _entry(version="1.1.0"), tombstones=tombstones, plugin_id="demo"
+    )
+    assert miss
+
+
+def test_tombstone_other_id_passes() -> None:
+    tombstones = [{"id": "other", "removed_at": "2026-08-21", "reason": "下架"}]
+    allowed, _ = ct.check_revocation(
+        _entry(), tombstones=tombstones, plugin_id="demo"
+    )
+    assert allowed
+
+
+def test_tombstone_empty_passes_through() -> None:
+    allowed, reason = ct.check_revocation(
+        _entry(), tombstones=[], plugin_id="demo"
+    )
+    assert allowed and reason == ""

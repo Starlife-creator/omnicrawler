@@ -369,12 +369,29 @@ def _technical_details(entry: dict[str, Any]) -> list[tuple[str, str]]:
     return [(label, str(value)) for label, value in mapping if str(value or "").strip()]
 
 
-def _install_block_reason(entry: dict[str, Any]) -> str:
+def _install_block_reason(
+    entry: dict[str, Any],
+    catalog: dict[str, Any] | None = None,
+    plugin_id: str | None = None,
+) -> str:
     compatibility, detail = _compatibility(entry)
     if compatibility in {"incompatible", "blocked"}:
         return detail
     if "ui" in _entry_plugin_types(entry):
         return _("原生 UI 插件仅允许作为受信任本地插件使用，不能从市场安装")
+    # G2 条目级吊销（P0-2）：与安装裁决同口径，入口即阻断，不进入安装流程。
+    revoked = entry.get("revoked")
+    if revoked:
+        reason = revoked.get("reason", "") if isinstance(revoked, dict) else str(revoked)
+        return _("插件已被吊销") + (f"：{reason}" if reason else "")
+    target_version = str(entry.get("version", ""))
+    if target_version and target_version in (entry.get("revoked_versions") or []):
+        return _("版本 {version} 已被吊销").format(version=target_version)
+    # 目录顶层墓碑（P0-2）：已下架条目在展示层即禁用安装按钮/动作。
+    if catalog and plugin_id:
+        tomb = _tombstone_reason(catalog, plugin_id)
+        if tomb:
+            return tomb
     return ""
 
 
