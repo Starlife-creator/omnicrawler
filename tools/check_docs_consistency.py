@@ -41,6 +41,7 @@ CURRENT_DOCS = (
     "docs/releases/RELEASE_REPORT_1.0.1.md",
     "docs/RESEARCH_AND_FUSION.md",
     "docs/E2E_TEST_REPORT.md",
+    "docs/PRIVACY.md",
 )
 
 CURRENT_METADATA = (
@@ -53,6 +54,16 @@ DOC_INDEX = "docs/README.md"
 INDEX_ENTRYPOINTS = ("README.md", "CONTRIBUTING.md")
 GATE_PAGES = ("docs/archive/README.md", "docs/releases/README.md")
 METADATA_MARKER = "> 适用版本："
+
+#: 历史归档入口与特殊账本：头部版本保持原样，不参与现行版本值比对（C-#5）。
+DOC_VERSION_EXCLUSIONS = {
+    "docs/LOCAL_OPTIMIZATION_2026-10-02.md",
+    "docs/OPTIMIZATION_BASELINE_2026-10-03.md",
+    "docs/OPTIMIZATION_EXECUTION_2026-10-03.md",
+    "docs/TASK_ACCEPTANCE_LEDGER.md",
+}
+
+_MARKER_VERSION = re.compile(r"适用版本：\**([0-9]+\.[0-9]+\.[0-9]+)\**")
 
 # 文档里「项目许可」的散文别名 → SPDX 标识（用于许可陈述一致性门禁）。
 # 只收**可能被写成项目自身许可**的那几个；第三方组件的许可表不在此列（由行内
@@ -120,7 +131,7 @@ def current_config_version(root: Path) -> int:
     return int(match.group(1))
 
 
-def check_docs_governance(root: Path, texts: dict[str, str]) -> list[str]:
+def check_docs_governance(root: Path, texts: dict[str, str], version: str) -> list[str]:
     """Keep docs/ navigable: the index, its entry points and per-doc metadata."""
     issues: list[str] = []
     index = texts.get(DOC_INDEX, "")
@@ -139,11 +150,35 @@ def check_docs_governance(root: Path, texts: dict[str, str]) -> list[str]:
         name = f"docs/{path.name}"
         if f"]({path.name})" not in index:
             issues.append(f"{DOC_INDEX}: missing index entry for {name}")
-        if METADATA_MARKER not in path.read_text(encoding="utf-8"):
+        body = path.read_text(encoding="utf-8")
+        if METADATA_MARKER not in body:
             issues.append(f"{name}: missing version metadata line ({METADATA_MARKER}...)")
+        elif name not in DOC_VERSION_EXCLUSIONS:
+            # C-#5：门禁从「只校验标记存在」升级为「标记版本值 == 应用版本」。
+            match = _MARKER_VERSION.search(body)
+            if match is None:
+                issues.append(f"{name}: 无法解析适用版本标记中的版本号")
+            elif match.group(1) != version:
+                issues.append(
+                    f"{name}: 文档版本 {match.group(1)} 与应用版本 {version} 不一致"
+                    "（运行 tools/refresh_doc_versions.py 刷新）"
+                )
     for path in sorted((docs_dir / "adr").glob("*.md")):
         if f"](adr/{path.name})" not in index:
             issues.append(f"{DOC_INDEX}: missing index entry for docs/adr/{path.name}")
+
+    # AGENTS.md 同样携带现行版本标记，纳入同一版本值比对（C-#5）。
+    agents = root / "AGENTS.md"
+    if agents.is_file():
+        body = agents.read_text(encoding="utf-8")
+        match = _MARKER_VERSION.search(body)
+        if match is None:
+            issues.append("AGENTS.md: 缺少适用版本标记")
+        elif match.group(1) != version:
+            issues.append(
+                f"AGENTS.md: 文档版本 {match.group(1)} 与应用版本 {version} 不一致"
+                "（运行 tools/refresh_doc_versions.py 刷新）"
+            )
     return issues
 
 
@@ -350,7 +385,7 @@ def check(root: Path) -> list[str]:
             issues.append("PORTABLE_README.txt 硬编码版本号，应去掉或由构建渲染")
 
     issues.extend(check_walkthrough_sample_numbers(root))
-    issues.extend(check_docs_governance(root, texts))
+    issues.extend(check_docs_governance(root, texts, version))
     issues.extend(check_license_statements(root, texts))
     return issues
 

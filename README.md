@@ -91,6 +91,35 @@ omnicrawler resume -c config.yaml
 omnicrawler reprocess -c config.yaml --run-id <id>
 ```
 
+### 容器部署
+
+镜像为最小运行时（默认 `html,async-http,streams` extras，非 root 运行，工作目录 `/data`）；
+完整服务端拓扑、外部组件与备份策略见 [生产部署指南](docs/PRODUCTION_GUIDE.md)。
+
+```bash
+# 构建镜像（可用 --build-arg EXTRAS=html,pdf,async-http,security 裁剪能力面）
+docker build -t omnicrawler .
+
+# 按 docker-compose.yml 启动（默认命令：doctor -c configs/project.yaml）
+docker compose up
+```
+
+挂载约定（`docker-compose.yml`）：
+
+| 宿主机路径 | 容器路径 | 权限 | 用途 |
+|---|---|---|---|
+| `./configs` | `/data/configs` | 只读 | 任务配置与凭据引用 |
+| `./work` | `/data/work` | 读写 | 工作区与断点状态 |
+| `./output` | `/data/output` | 读写 | 导出交付物 |
+| `./data` | `/data/data` | 读写 | 本地原始副本 |
+
+- `distributed` profile：`docker compose --profile distributed up` 才会启动 Redis 服务，
+  默认不启用。
+- 日志落在容器内 `/data/logs/`（随 `./work` 或您挂载的数据卷持久化）；容器健康检查
+  执行 `omnicrawler doctor` 轻量探活，编排系统据此判断容器存活。
+- 镜像内不打包 `locale/` 语言包与历史文档（wheel 布局边界见 `pyproject.toml` 注释）；
+  容器内界面回退源码基准语言，需要英文界面时在镜像构建参数中显式纳入资源。
+
 ---
 
 ## 架构总览
@@ -180,6 +209,10 @@ omnicrawler reprocess -c config.yaml --run-id <id>
 | 审计 | 网络访问边界报告 + AI 调用详情日志 |
 | 脱敏 | 研究复现包（SHA-256 清单） |
 
+本地数据清单、无遥测承诺、日志/缓存/凭据位置与卸载清理范围见
+[隐私政策与数据留存说明](docs/PRIVACY.md)；网络安全模型与部署方义务见
+[安全与合规](docs/SECURITY_AND_COMPLIANCE.md)。
+
 ---
 
 ## 模板库（44 套）
@@ -219,9 +252,13 @@ omnicrawler templates validate          # 校验完整性
 
 ### 国际化
 
-- 567 条界面字符串已提取为 `.pot` 模板
-- 英文翻译 `.po` 就绪（约 95% 覆盖）
-- 新增语言：`python tools/generate_en_po.py` → 翻译 → `python tools/compile_i18n.py`
+- 界面字符串以中文为源码基准；`.pot` 模板条目数与英文覆盖率由
+  `python tools/i18n_stats.py` 实测（当前模板 1434 条；英文包登记 603 条、
+  非空译文 465 条，有效覆盖约 32.4%，翻译进行中）。
+- 覆盖率口径与缺失清单以上述脚本输出为准，README 不再手抄数字；`--check`
+  可作为 CI 覆盖率门禁（阈值见质量工作流）。
+- 新增语言：`python tools/extract_i18n.py` → 复制 `locale/en_US/` 为目标目录 →
+  翻译 `.po` 文件 → `python tools/compile_i18n.py <lang>` 编译 `.mo`。
 
 ---
 

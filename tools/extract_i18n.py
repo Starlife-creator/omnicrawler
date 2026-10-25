@@ -60,6 +60,21 @@ def _get_func_name(node: ast.expr) -> str | None:
     return None
 
 
+def _escape_msgid(text: str) -> str:
+    """按 gettext 规范转义 ``.pot`` 条目文本（C-#4）。
+
+    此前只转义双引号，换行 / 反斜杠原样写入模板，产生未闭合 ``msgid`` 行，
+    标准 gettext 工具（polib / ``msgfmt -c``）无法解析。这里先反斜杠再转义
+    其它字符，避免二次转义；换行压成字面 ``\\n`` 单行形式。
+    """
+    return (
+        text.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+    )
+
+
 def generate_pot(output: Path) -> int:
     """Generate .pot template. Returns number of unique strings."""
     seen: dict[str, list[tuple[Path, int]]] = {}
@@ -81,8 +96,7 @@ def generate_pot(output: Path) -> int:
             for loc_file, loc_line in locations[:3]:
                 rel = loc_file.relative_to(PROJECT_ROOT)
                 f.write(f"#: {rel}:{loc_line}\n")
-            escaped = msgid.replace('"', '\\"')
-            f.write(f'msgid "{escaped}"\n')
+            f.write(f'msgid "{_escape_msgid(msgid)}"\n')
             f.write('msgstr ""\n\n')
 
     return len(seen)

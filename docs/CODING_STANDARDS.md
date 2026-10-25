@@ -1,6 +1,6 @@
 # 编码规范（CODING_STANDARDS）
 
-> 适用版本：0.15.0 · 配置协议：v5 · 维护状态：现行（历史状态见归档；功能验证以验收账本为准）
+> 适用版本：1.0.1 · 配置协议：v5 · 维护状态：现行（历史状态见归档；功能验证以验收账本为准）
 
 > 本规范是各阶段优化必须遵循的全局纪律，源于审计根因 1（浅拷贝/可变默认值）。
 > CI 层由 `tools/check_coding_standards.py` 强制执行；本地可运行 `python tools/check_coding_standards.py src tools cli`（默认扫 `src`）。
@@ -69,3 +69,14 @@
 | 种子密封/凭据 | `core/secrets_store.py` + `secret://` 引用 | gui config_serializer、credentials | 明文落盘 |
 
 > 迁移新样板时：① 先在唯一实现处补单测；② 新调用点只 import 唯一实现；③ 旧实现标记 deprecated 并在下个大版本移除。
+
+## 11. 行尾（换行）规则
+
+换行规则以仓库根 `.gitattributes` 为唯一准据，文档与注释不得另起一套表述：
+
+- 文本文件默认 LF（`* text=auto` 兜底）；
+- 仅 `*.bat` / `*.cmd` 检出转 CRLF（cmd.exe 对 LF 兼容性差）；
+- `*.ps1` / `*.sh` / `*.command` 与 `packaging/linux/**` 启动器钉死 LF，禁止在 Windows 检出后变成 CRLF；
+- 签名载荷（`examples/plugins/**/*.py`、`plugins_installed/**/*.py` 及其 `.sig`）标记 `-text`，禁止改写字节。
+
+写脚本注入式锚点（heredoc、字节比对、正则匹配行首行尾）前，先按字节确认目标文件的实际行尾；不要凭「本仓都是 CRLF / LF」的旧印象假设。

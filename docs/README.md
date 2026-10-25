@@ -68,6 +68,7 @@
 ### 安全、打包与发布
 
 - [安全与合规](SECURITY_AND_COMPLIANCE.md)
+- [隐私政策与数据留存说明（终端用户）](PRIVACY.md)：本地数据清单、无遥测承诺、日志/缓存/凭据位置与卸载清理范围。
 - [便携版构建（Windows / Linux / macOS）](PORTABLE_PACKAGING.md)
 - [Linux 用户级安装（应用菜单条目与图标）](LINUX_INSTALL.md)
 - [Windows 便携版构建](WINDOWS_PACKAGING.md)
