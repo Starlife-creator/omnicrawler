@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import logging
 import re
 import socket
 import threading
@@ -15,6 +16,43 @@ from urllib.parse import urlsplit
 
 from ..core.config import AppConfig
 from ..core.errors import PolicyBlockedError, ResponseTooLargeError
+
+LOGGER = logging.getLogger(__name__)
+
+
+def classify_robots_error(exc: Exception) -> tuple[str, str]:
+    """A-P2-7：把 robots.txt 加载异常拆成可诊断的错误类型。
+
+    返回 ``(kind, detail)``；kind ∈ ``dns / timeout / http / too_large / parse / other``。
+    分类只用于诊断日志与审计事件，**不改变** ``fail_closed`` 放行/拒绝语义。
+    """
+    if isinstance(exc, urllib.error.HTTPError):
+        return "http", f"HTTP {exc.code}"
+    reason = getattr(exc, "reason", exc)
+    if isinstance(exc, socket.gaierror) or isinstance(reason, socket.gaierror):
+        return "dns", f"DNS 解析失败: {reason}"
+    if isinstance(exc, (socket.timeout, TimeoutError)) or isinstance(reason, (socket.timeout, TimeoutError)):
+        return "timeout", f"请求超时: {reason}"
+    if isinstance(exc, ResponseTooLargeError):
+        return "too_large", str(exc)
+    if isinstance(exc, ValueError):
+        return "parse", f"robots.txt 解析失败: {exc}"
+    return "other", f"{type(exc).__name__}: {exc}"
+
+
+# ── A-P3-1：无界内存表容量上限（FIFO 淘汰最旧条目），防止海量域名 / 循环键撑大堆。 ──
+_DNS_CACHE_MAX_HOSTS = 512
+_HOST_RATE_MAX_HOSTS = 1024
+_ROBOTS_CACHE_MAX_ORIGINS = 512
+
+
+def _bound_fifo(table: dict[Any, Any], capacity: int) -> None:
+    """在持锁状态下把 ``table`` 压到 ``capacity`` 以内，FIFO 淘汰最旧插入条目。"""
+    while len(table) > capacity:
+        oldest = next(iter(table), None)
+        if oldest is None:
+            break
+        table.pop(oldest, None)
 
 
 def is_private_target(url: str) -> bool:
@@ -71,6 +109,7 @@ class NetworkTargetPolicy:
             return ()
         with self._lock:
             self._cache[key] = (now + self.ttl, values)
+            _bound_fifo(self._cache, _DNS_CACHE_MAX_HOSTS)
         return values
 
     def approved_addresses(self, host: str, port: int) -> tuple[str, ...]:
@@ -127,6 +166,7 @@ class HostRateLimiter:
             # Reserve this host's slot while holding the lock, then sleep outside it.
             # Otherwise one delayed host serializes requests to every other host.
             self._last[host] = scheduled
+            _bound_fifo(self._last, _HOST_RATE_MAX_HOSTS)
         remaining = scheduled - now
         if remaining > 0:
             time.sleep(remaining)
@@ -152,6 +192,7 @@ class AsyncHostRateLimiter:
             now = time.monotonic()
             scheduled = max(now, self._last.get(host, 0.0) + self.delay)
             self._last[host] = scheduled
+            _bound_fifo(self._last, _HOST_RATE_MAX_HOSTS)
         remaining = scheduled - now
         if remaining > 0:
             await asyncio.sleep(remaining)
@@ -185,6 +226,8 @@ class RobotsPolicy:
         self._opener = opener
         self._egress = egress
         self._opener_lock = threading.Lock()
+        #: A-P2-7：最近一次 robots 加载失败的分类诊断（类型 / 摘要 / 判定结果），供测试与排障读取。
+        self.last_error: dict[str, str | bool] | None = None
 
     def allowed(self, url: str) -> bool:
         if not self.enabled:
@@ -205,6 +248,11 @@ class RobotsPolicy:
                     policy = self._load(origin)
                     with self._lock:
                         self._cache[origin] = _RobotsCacheEntry(time.monotonic() + self.ttl, policy)
+                        # A-P3-1：缓存与锁表同步封顶；缓存淘汰后回收对应 origin 锁。
+                        _bound_fifo(self._cache, _ROBOTS_CACHE_MAX_ORIGINS)
+                        for stale in [key for key in self._origin_locks if key not in self._cache]:
+                            self._origin_locks.pop(stale, None)
+                        _bound_fifo(self._origin_locks, _ROBOTS_CACHE_MAX_ORIGINS)
         else:
             policy = entry.policy
         if isinstance(policy, bool):
@@ -237,9 +285,31 @@ class RobotsPolicy:
             parser.parse(body.decode("utf-8", errors="replace").splitlines())
             return parser
         except urllib.error.HTTPError as exc:
-            return True if 400 <= exc.code < 500 else not self.fail_closed
-        except Exception:
-            return not self.fail_closed
+            # 4xx 视为站点未配置 robots（允许）；5xx 按 fail_closed 语义收敛。
+            allowed = True if 400 <= exc.code < 500 else not self.fail_closed
+            self._record_robots_outcome(origin, "http", f"HTTP {exc.code}", allowed)
+            return allowed
+        except Exception as exc:
+            # A-P2-7：DNS / 超时 / 解析 / 其它分别分类落诊断日志与审计事件；
+            # fail_closed 语义保持不变（拒绝或放行只由 self.fail_closed 决定）。
+            kind, detail = classify_robots_error(exc)
+            allowed = not self.fail_closed
+            self._record_robots_outcome(origin, kind, detail, allowed)
+            return allowed
+
+    def _record_robots_outcome(self, origin: str, kind: str, detail: str, allowed: bool) -> None:
+        self.last_error = {"kind": kind, "detail": detail, "allowed": allowed, "origin": origin}
+        LOGGER.warning(
+            "robots.txt 加载失败 [%s] %s: %s（fail_closed=%s，判定=%s）",
+            kind, origin, detail, self.fail_closed, "允许" if allowed else "拒绝",
+        )
+        if self._egress is not None:
+            try:
+                self._egress.record_robots_issue(
+                    kind, f"{origin}/robots.txt", detail=detail, allowed=allowed,
+                )
+            except Exception:  # 审计事件写入失败不得反向阻断 robots 判定
+                LOGGER.debug("robots 审计事件写入失败", exc_info=True)
 
     def _safe_opener(self) -> Any:
         if self._opener is not None:
@@ -301,9 +371,20 @@ WRITE_GUARD_REASON = "内置写操作保护：URL 含状态变更语义（加入
 class ScopePolicy:
     config: AppConfig
     _network: NetworkTargetPolicy = field(init=False, repr=False)
+    # A-P3-2：用户正则在策略对象初始化时一次性预编译缓存，判定路径不再逐请求编译。
+    _deny_patterns: tuple[re.Pattern[str], ...] = field(init=False, repr=False)
+    _allow_patterns: tuple[re.Pattern[str], ...] = field(init=False, repr=False)
+    _write_guard_patterns: tuple[re.Pattern[str], ...] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._network = NetworkTargetPolicy(self.config)
+        crawl = self.config.section("crawl")
+        self._deny_patterns = tuple(re.compile(str(item)) for item in crawl.get("deny_patterns", []) or [])
+        self._allow_patterns = tuple(re.compile(str(item)) for item in crawl.get("allow_patterns", []) or [])
+        self._write_guard_patterns = tuple(
+            re.compile(str(item), re.IGNORECASE)
+            for item in (crawl.get("allow_write_patterns", []) or [])
+        )
 
     def allowed(self, url: str, root_url: str | None = None) -> tuple[bool, str]:
         parts = urlsplit(url)
@@ -322,24 +403,18 @@ class ScopePolicy:
             # "超出种子站点"，整轮 run 因"无页面交付"失败——归一化 www. 前缀。
             if _site_key(host) != _site_key(root_host):
                 return False, "超出种子站点"
-        for pattern in crawl.get("deny_patterns", []):
-            if re.search(str(pattern), url):
+        for pattern in self._deny_patterns:
+            if pattern.search(url):
                 return False, "命中deny_patterns"
-        allow_patterns = crawl.get("allow_patterns", [])
-        if allow_patterns and not any(re.search(str(pattern), url) for pattern in allow_patterns):
+        if self._allow_patterns and not any(pattern.search(url) for pattern in self._allow_patterns):
             return False, "未命中allow_patterns"
         # 内置写操作保护（走查 R1.4）：默认拒绝，显式放行表可覆盖。
-        if not self._write_guard_exempt(url, crawl):
+        if not self._write_guard_exempt(url):
             for guard in _BUILTIN_WRITE_GUARDS:
                 if guard.search(url):
                     return False, WRITE_GUARD_REASON
         return True, ""
 
-    @staticmethod
-    def _write_guard_exempt(url: str, crawl: dict[str, Any]) -> bool:
-        """``crawl.allow_write_patterns`` 里任一正则命中即视为显式放行。"""
-        for pattern in crawl.get("allow_write_patterns", []) or []:
-            text = str(pattern)
-            if text and re.search(text, url, re.IGNORECASE):
-                return True
-        return False
+    def _write_guard_exempt(self, url: str) -> bool:
+        """``crawl.allow_write_patterns`` 里任一正则命中即视为显式放行（预编译缓存）。"""
+        return any(pattern.search(url) for pattern in self._write_guard_patterns)

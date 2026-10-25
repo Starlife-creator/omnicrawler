@@ -717,6 +717,17 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
                 errors.append(f"crawl.{key}必须在{minimum}到{maximum}之间")
         except (TypeError, ValueError):
             errors.append(f"crawl.{key}必须是整数")
+    # A-P3-2：用户正则在配置校验期编译，非法模式在此拒绝（与 ScopePolicy 预编译缓存同源）。
+    for pattern_key in ("deny_patterns", "allow_patterns", "allow_write_patterns"):
+        patterns = crawl.get(pattern_key, [])
+        if not isinstance(patterns, list):
+            errors.append(f"crawl.{pattern_key}必须是正则数组")
+            continue
+        for pattern in patterns:
+            try:
+                re.compile(str(pattern))
+            except re.error as exc:
+                errors.append(f"crawl.{pattern_key} 正则非法 {str(pattern)!r}: {exc}")
     http = config.section("http")
     try:
         if float(http.get("delay_seconds", 1)) < 0:
@@ -818,7 +829,6 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     # 分页形状由 core.pagination 的契约统一判定与校验（唯一真源）；
     # 这里只负责把结果并入 errors —— 此前核心只校验 type=page，
     # 游标配置缺 next_path 时既不报错也不翻页（静默少采几页）。
-    _source_section = config.section("source")
     _source_section = config.section("source")
     errors.extend(validate_pagination(_source_section.get("pagination", {})))
     # ★ 跨字段判据（2026-09-30，**这条有据**）：`location: body` 时 `source.payload` 必须能被

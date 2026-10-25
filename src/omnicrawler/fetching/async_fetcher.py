@@ -35,6 +35,9 @@ except Exception:  # noqa: BLE001
 
 LOGGER = logging.getLogger(__name__)
 
+# A-P3-1：跨事件循环客户端表容量上限；超出后先回收已关闭循环残留，再 FIFO 淘汰最旧条目。
+_MAX_LOOP_CLIENTS = 32
+
 
 class _PinnedAsyncNetworkBackend:
     """Duck-typed httpcore network backend that pins every socket to a
@@ -173,7 +176,23 @@ class HTTPXAsyncFetcher:
             return entry[1]
         client = self._build_client()
         self._loop_clients[id(loop)] = (loop, client)
+        self._evict_loop_clients()
         return client
+
+    def _evict_loop_clients(self) -> None:
+        """回收已关闭循环残留条目，并把循环客户端表压到 ``_MAX_LOOP_CLIENTS`` 以内。
+
+        容量超限时只丢弃最旧条目的引用（其生命周期由对应事件循环负责关闭），
+        不在同步路径里跨循环调用 ``aclose``，避免 ``Future attached to a different loop``。
+        """
+        stale = [key for key, (stale_loop, _) in self._loop_clients.items() if stale_loop is None or stale_loop.is_closed()]
+        for key in stale:
+            self._loop_clients.pop(key, None)
+        while len(self._loop_clients) > _MAX_LOOP_CLIENTS:
+            oldest_key = next(iter(self._loop_clients), None)
+            if oldest_key is None:
+                break
+            self._loop_clients.pop(oldest_key, None)
 
     def _ensure_loop(self) -> asyncio.AbstractEventLoop:
         """Lazily create and reuse a persistent event loop for the sync ``fetch`` path."""
@@ -181,6 +200,7 @@ class HTTPXAsyncFetcher:
             self._loop = asyncio.new_event_loop()
             self._client = self._build_client()
             self._loop_clients[id(self._loop)] = (self._loop, self._client)
+            self._evict_loop_clients()
         return self._loop
 
     def _pin_transport_dns(self, transport: Any) -> None:
