@@ -197,11 +197,13 @@ class _PipelineRun(_PipelineBase):
         status = "succeeded"
         pdf_summary: dict[str, Any] | None = None
         inflight: dict[Future[FetchResult], CrawlRequest] = {}
+        # A-P3-4：域名在途占用增量表——提交 +1、完成 -1，替代旧实现每次容量查询
+        # 全量扫描 inflight 的 O(n) 口径；容量查询 O(1)。
+        domain_active: dict[str, int] = {}
 
         def domain_capacity(url: str) -> int:
             scope = _resolve_scope(url)
-            active = sum(_resolve_scope(item.url) == scope for item in inflight.values())
-            return max(0, admission.domain_limit(scope) - active)
+            return max(0, admission.domain_limit(scope) - domain_active.get(scope, 0))
 
         frontier_exhausted = False
         # 出网是否被我们**主动**关停（取消/中断）。用于区分「这个 URL 被策略拒绝」与
@@ -217,6 +219,13 @@ class _PipelineRun(_PipelineBase):
             request = inflight.pop(future, None)
             if request is None:
                 return
+            # A-P3-4：在途占用 -1（所有退出路径统一在此回收，含取消/拦截/失败分支）。
+            scope = _resolve_scope(request.url)
+            remaining = domain_active.get(scope, 0) - 1
+            if remaining <= 0:
+                domain_active.pop(scope, None)
+            else:
+                domain_active[scope] = remaining
             try:
                 result = future.result()
                 admission.observe(result.elapsed_seconds, domain=_resolve_scope(request.url),
@@ -398,7 +407,10 @@ class _PipelineRun(_PipelineBase):
                         frontier_exhausted = self.state.pending_count() == 0
                         break
                     for request in batch:
-                        inflight[executor.submit(self._fetch_checked, run_id, request)] = request
+                        future = executor.submit(self._fetch_checked, run_id, request)
+                        inflight[future] = request
+                        scope = _resolve_scope(request.url)
+                        domain_active[scope] = domain_active.get(scope, 0) + 1
                         attempted += 1
 
                 if not inflight:
