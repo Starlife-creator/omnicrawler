@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -25,6 +26,9 @@ from pathlib import Path
 from typing import Any
 
 from . import plugin_backend
+from .plugin_os_sandbox import E_UNSUPPORTED_ENV, confinement_argv_prefix, resolve_sandbox_mode
+
+LOGGER = logging.getLogger(__name__)
 
 ALLOWED_PERMISSIONS = {
     "records:read", "records:write", "artifacts:read", "artifacts:write",
@@ -88,6 +92,8 @@ class PluginSubprocessSession:
         timeout_seconds: float = 30.0,
         handshake_timeout: float | None = None,
         verified_bytes: bytes | None = None,
+        sandbox_escape: bool = False,
+        allow_degraded_sandbox: bool = False,
     ) -> None:
         root = plugin_root.resolve()
         if not root.is_dir():
@@ -105,12 +111,35 @@ class PluginSubprocessSession:
         # 验签的这份字节（磁盘原件验签后被替换也不影响，TOCTOU 关闭）。
         self._verified_bytes = verified_bytes
         self._verified_entry_dir: Path | None = None
+        # A-P1-2：spawn 前置沙箱裁决参数；escape 仅关闭 OS 层、保留子进程边界。
+        self._sandbox_escape = sandbox_escape
+        self._allow_degraded_sandbox = allow_degraded_sandbox
+        self.sandbox_mode = ""
+        self.sandbox_reason = ""
 
     # ---- 生命周期 ----
 
     def start(self) -> None:
+        # A-P1-2：spawn 前置 OS 沙箱裁决——不可用 fail-closed 拒载，降级档须显式开关，
+        # 逃生开关仅关闭 OS 层并在日志横幅显式告警。实际 Landlock/seccomp/AppContainer/
+        # Job Object/Seatbelt 包装待对应平台 CI 验证后接入（见 confinement_argv_prefix）。
+        mode, reason = resolve_sandbox_mode(
+            sandbox_escape=self._sandbox_escape,
+            allow_restricted_token_fallback=self._allow_degraded_sandbox,
+        )
+        self.sandbox_mode = mode
+        self.sandbox_reason = reason
+        if mode == "refuse":
+            raise RuntimeError(f"{E_UNSUPPORTED_ENV}: {reason}")
+        if mode == "degraded":
+            LOGGER.warning("插件沙箱显式降级档（未达 OS 级隔离）: %s", reason)
+        elif mode == "none":
+            LOGGER.warning("插件沙箱逃生开关开启，仅保留子进程边界: %s", reason)
+        else:
+            LOGGER.info("插件 OS 沙箱裁决: %s", reason)
+
         command, default_handshake = plugin_backend.resolve_backend_command()
-        command = [*command, self.entry_module, str(self.plugin_root)]
+        command = [*confinement_argv_prefix(mode, ""), *command, self.entry_module, str(self.plugin_root)]
         if self._verified_bytes is not None:
             import tempfile
 

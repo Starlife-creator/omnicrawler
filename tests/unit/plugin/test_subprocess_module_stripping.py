@@ -4,7 +4,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from omnicrawler.plugins import plugin_router
-from omnicrawler.plugins.plugin_subprocess import BANNED_SUBPROCESS_MODULES, strip_banned_modules
+from omnicrawler.plugins.plugin_subprocess import (
+    BANNED_SUBPROCESS_MODULES,
+    _apply_windows_job_object,
+    strip_banned_modules,
+)
 
 
 def test_strip_banned_modules_removes_banned_and_keeps_safe() -> None:
@@ -65,3 +69,14 @@ def test_decide_route_legacy_escape_hatch_returns_in_process_with_audit_reason()
     assert decision.backend == "in_process"
     assert "legacy_in_process" in decision.reason
     assert decision.tier == "config"
+
+
+def test_windows_job_object_guard_returns_unsupported_on_non_windows() -> None:
+    # A-P3-14：非 Windows 平台不导入 ctypes、不触碰 Win32 API；真实 Job Object 待 Windows CI。
+    import sys
+
+    status = _apply_windows_job_object()
+    if sys.platform == "win32":
+        assert status == "skeleton_pending_windows_ci"
+    else:
+        assert status == "unsupported_platform"

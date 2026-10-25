@@ -199,11 +199,15 @@ class _SubprocessSessionHost:
 
     def _ensure(self) -> tuple[PluginSubprocessSession, CapabilityBroker]:
         if self._session is None or self._session._proc is None:  # noqa: SLF001
+            plugins_cfg = self._config.section("plugins") if self._config is not None else {}
             self._session = PluginSubprocessSession(
                 self._plugin_root,
                 self._entry_module,
                 timeout_seconds=self._timeout,
                 verified_bytes=self._verified_bytes,
+                # A-P1-2：沙箱逃生 / 显式降级档由配置驱动，默认 fail-closed 裁决。
+                sandbox_escape=bool(plugins_cfg.get("sandbox_escape", False)),
+                allow_degraded_sandbox=bool(plugins_cfg.get("allow_degraded_sandbox", False)),
             )
             self._session.start()
             self._broker = None  # 新建会话必重建 broker（run 依赖可能变化）
