@@ -34,6 +34,10 @@ from ..core.utils import utcnow
 WORKER_TTL_SECONDS = 120
 #: Redis 探测连接超时（秒）
 _REDIS_PROBE_TIMEOUT = 1.0
+#: A-P1-1：本地 SQLite 队列在途租约时长（秒）；超时未 ack 的任务由其他 worker 回收重派。
+LEASE_SECONDS = 120
+#: A-P1-1：单任务在本地队列内的最大尝试次数；超限进入死信台账。
+MAX_LEASE_ATTEMPTS = 3
 
 
 @dataclass(slots=True)
@@ -44,6 +48,10 @@ class TaskSpec:
     config_path: str
     submitted_at: str
     source: str = "cli"
+    #: A-P1-1：认领时签发的租约令牌；ack/nack 必须携带同一令牌，防止误删他人在途任务。
+    lease_token: str = ""
+    #: A-P1-1：当前已是第几次尝试（认领时读取，回收重派时递增）。
+    attempts: int = 1
 
     def to_dict(self) -> dict[str, str]:
         return dict(asdict(self))
@@ -71,7 +79,12 @@ class _LocalQueue:
                 task_id TEXT PRIMARY KEY,
                 config_path TEXT NOT NULL,
                 submitted_at TEXT NOT NULL,
-                source TEXT NOT NULL
+                source TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued',
+                lease_token TEXT NOT NULL DEFAULT '',
+                leased_by TEXT NOT NULL DEFAULT '',
+                visible_at REAL NOT NULL DEFAULT 0,
+                attempts INTEGER NOT NULL DEFAULT 1
             );
             CREATE TABLE IF NOT EXISTS workers(
                 worker_id TEXT PRIMARY KEY,
@@ -90,6 +103,18 @@ class _LocalQueue:
             );
             """
         )
+        # A-P1-1：旧库补齐租约列（幂等，已存在则跳过）。
+        existing = {row["name"] for row in self.conn.execute("PRAGMA table_info(tasks)")}
+        if "status" not in existing:
+            self.conn.execute("ALTER TABLE tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'queued'")
+        if "lease_token" not in existing:
+            self.conn.execute("ALTER TABLE tasks ADD COLUMN lease_token TEXT NOT NULL DEFAULT ''")
+        if "leased_by" not in existing:
+            self.conn.execute("ALTER TABLE tasks ADD COLUMN leased_by TEXT NOT NULL DEFAULT ''")
+        if "visible_at" not in existing:
+            self.conn.execute("ALTER TABLE tasks ADD COLUMN visible_at REAL NOT NULL DEFAULT 0")
+        if "attempts" not in existing:
+            self.conn.execute("ALTER TABLE tasks ADD COLUMN attempts INTEGER NOT NULL DEFAULT 1")
 
     def close(self) -> None:
         self.conn.close()
@@ -98,26 +123,41 @@ class _LocalQueue:
     def submit(self, task: TaskSpec) -> None:
         with self.conn:
             self.conn.execute(
-                "INSERT OR IGNORE INTO tasks(task_id, config_path, submitted_at, source) VALUES(?,?,?,?)",
+                """
+                INSERT OR IGNORE INTO tasks(task_id, config_path, submitted_at, source,
+                                            status, lease_token, leased_by, visible_at, attempts)
+                VALUES(?,?,?,?,'queued','','',0,1)
+                """,
                 (task.task_id, task.config_path, task.submitted_at, task.source),
             )
 
-    def pop(self) -> TaskSpec | None:
-        """原子弹出最早任务。
+    def pop(self, worker_id: str = "", *, lease_seconds: float | None = None) -> TaskSpec | None:
+        """原子认领最早排队任务（A-P1-1 在途租约）。
 
-        FINAL-R2：SELECT 后用条件 DELETE 并校验 rowcount——deferred 事务下两个
-        worker 可同时读到同一行，后提交者 DELETE 影响 0 行却仍返回 TaskSpec，
-        造成同一任务重复派发。rowcount!=1 时循环取下一条。
+        先回收 ``visible_at`` 已过期的在途任务（退回排队、尝试次数 +1），再用条件
+        UPDATE 签发 ``lease_token``：rowcount!=1 表示被其他 worker 抢先，循环取下一条。
+        租约超时未 ack 的任务可由其他 worker 重派，避免 worker 崩溃后任务永久丢失。
         """
+        now = time.time()
+        lease_seconds = lease_seconds if lease_seconds is not None else LEASE_SECONDS
         while True:
             with self.conn:
+                self.conn.execute(
+                    "UPDATE tasks SET status='queued', lease_token='', leased_by='', visible_at=0,"
+                    " attempts=attempts+1 WHERE status='in_flight' AND visible_at < ?",
+                    (now,),
+                )
                 row = self.conn.execute(
-                    "SELECT * FROM tasks ORDER BY submitted_at ASC, rowid ASC LIMIT 1"
+                    "SELECT * FROM tasks WHERE status='queued'"
+                    " ORDER BY submitted_at ASC, rowid ASC LIMIT 1"
                 ).fetchone()
                 if row is None:
                     return None
+                token = uuid.uuid4().hex
                 cursor = self.conn.execute(
-                    "DELETE FROM tasks WHERE task_id=?", (row["task_id"],)
+                    "UPDATE tasks SET status='in_flight', lease_token=?, leased_by=?, visible_at=?,"
+                    " attempts=? WHERE task_id=? AND status='queued'",
+                    (token, worker_id, now + lease_seconds, row["attempts"], row["task_id"]),
                 )
                 if cursor.rowcount == 1:
                     return TaskSpec(
@@ -125,8 +165,44 @@ class _LocalQueue:
                         config_path=row["config_path"],
                         submitted_at=row["submitted_at"],
                         source=row["source"],
+                        lease_token=token,
+                        attempts=int(row["attempts"]),
                     )
-            # 该行被其他进程抢先消费，继续取下一条
+            # 该行被其他 worker 抢先认领，继续取下一条
+
+    def ack(self, task_id: str, lease_token: str = "") -> None:
+        """任务执行成功：带令牌确认后从队列表移除（令牌不符不删除，防止误删在途任务）。"""
+        with self.conn:
+            if lease_token:
+                self.conn.execute(
+                    "DELETE FROM tasks WHERE task_id=? AND lease_token=?", (task_id, lease_token),
+                )
+            else:
+                self.conn.execute("DELETE FROM tasks WHERE task_id=?", (task_id,))
+
+    def nack(
+        self, task: TaskSpec, lease_token: str, error: str, worker_id: str, *,
+        max_attempts: int = MAX_LEASE_ATTEMPTS,
+    ) -> None:
+        """任务执行失败：未超尝试次数退回排队重派；超限写入死信台账并移除。"""
+        with self.conn:
+            row = self.conn.execute(
+                "SELECT attempts FROM tasks WHERE task_id=? AND lease_token=?",
+                (task.task_id, lease_token),
+            ).fetchone()
+            if row is None:
+                # 租约已被回收或确认，不重复处置
+                return
+            attempts = int(row["attempts"])
+            if attempts >= max_attempts:
+                self.dead_letter_record(task, error, worker_id)
+                self.conn.execute("DELETE FROM tasks WHERE task_id=?", (task.task_id,))
+            else:
+                self.conn.execute(
+                    "UPDATE tasks SET status='queued', lease_token='', leased_by='', visible_at=0,"
+                    " attempts=attempts+1 WHERE task_id=?",
+                    (task.task_id,),
+                )
 
     def size(self) -> int:
         row = self.conn.execute("SELECT COUNT(*) AS n FROM tasks").fetchone()
@@ -224,7 +300,9 @@ class _RedisQueue:
         pipe.hset(self._payload_key, task.task_id, json.dumps(task.to_dict(), ensure_ascii=False))
         pipe.execute()
 
-    def pop(self) -> TaskSpec | None:
+    def pop(self, worker_id: str = "", *, lease_seconds: float | None = None) -> TaskSpec | None:
+        # A-P1-1 待办（环境受限）：Redis 侧 in-flight 有序集合 + lease_token + visible_at
+        # 可见性超时尚未接线；当前仍是 zpopmin 弹出即删。需 Redis 与多 worker 集成环境验证。
         rows = cast(list[tuple[str, float]], self.client.zpopmin(self._queue_key, 1))
         if not rows:
             return None
@@ -234,6 +312,18 @@ class _RedisQueue:
         if raw is None:
             return None
         return TaskSpec(**json.loads(raw))
+
+    def ack(self, task_id: str, lease_token: str = "") -> None:
+        # A-P1-1 待办：弹出即删口径下无需确认；接入 Redis in-flight 租约后按令牌确认移除。
+        return None
+
+    def nack(
+        self, task: TaskSpec, lease_token: str, error: str, worker_id: str, *,
+        max_attempts: int = MAX_LEASE_ATTEMPTS,
+    ) -> None:
+        # A-P1-1 待办：Redis 退回排队（score 重入 zset）与租约回收待多 worker 环境集成；
+        # 当前失败任务按既有口径直接落死信台账。
+        self.dead_letter_record(task, error, worker_id)
 
     def size(self) -> int:
         return int(cast(int, self.client.zcard(self._queue_key)))
@@ -385,8 +475,19 @@ class RemoteQueue:
         self._backend.submit(task)
         return task
 
-    def pop(self) -> TaskSpec | None:
-        return self._backend.pop()
+    def pop(self, worker_id: str = "", *, lease_seconds: float | None = None) -> TaskSpec | None:
+        return self._backend.pop(worker_id, lease_seconds=lease_seconds)
+
+    def ack(self, task_id: str, lease_token: str = "") -> None:
+        """成功确认（A-P1-1 租约口径）：带令牌移除在途任务。"""
+        self._backend.ack(task_id, lease_token)
+
+    def nack(
+        self, task: TaskSpec, lease_token: str, error: str, worker_id: str, *,
+        max_attempts: int = MAX_LEASE_ATTEMPTS,
+    ) -> None:
+        """失败处置（A-P1-1 租约口径）：退队重派或超限死信；Redis 侧待多 worker 环境验证。"""
+        self._backend.nack(task, lease_token, error, worker_id, max_attempts=max_attempts)
 
     def size(self) -> int:
         return self._backend.size()
@@ -473,7 +574,7 @@ def consume_loop(
 
     try:
         while max_tasks is None or processed < max_tasks:
-            task = queue.pop()
+            task = queue.pop(worker_id)
             if task is None:
                 if max_tasks is not None and processed >= max_tasks:
                     break
@@ -488,7 +589,9 @@ def consume_loop(
                 failed += 1
                 error = f"{type(exc).__name__}: {exc}"
                 on_log(f"[worker:{worker_id}] 任务 {task.task_id} 失败: {error}")
-                queue.dead_letter_record(task, error, worker_id)
+                # A-P1-1：失败按租约口径处置（退队重派或超限死信）；CLI 消费口径
+                # 单次失败即落死信（max_attempts=1），与 A-P2-6 既有台账契约保持一致。
+                queue.nack(task, task.lease_token, error, worker_id, max_attempts=1)
                 _emit({
                     "kind": "task_failed",
                     "task_id": task.task_id,
@@ -499,6 +602,7 @@ def consume_loop(
                 })
             else:
                 succeeded += 1
+                queue.ack(task.task_id, task.lease_token)
                 _emit({
                     "kind": "task_succeeded",
                     "task_id": task.task_id,
