@@ -275,54 +275,41 @@ def _parse_and_store(
     min_chars: int,
     max_garbled: float,
 ) -> ParseOutcome:
-    """先流式解析到内存页列表，再开单事务 executemany（S1.5.1 短事务批写）。
+    """流式解析页面并在单事务内分批 executemany（S1.5.1 短事务批写；B-P2-8 不再整文档入内存列表）。
 
     长事务覆盖整个解析会与其他线程互相阻塞；改为把解析（纯内存，无锁）与
-    写库（单次 BEGIN IMMEDIATE 短事务）分离，避免 SQLITE_BUSY / 嵌套事务。
+    写库（单次 BEGIN IMMEDIATE 短事务）分离，避免 SQLITE_BUSY / 嵌套事务；
+    页面元组仅在 500 条批次缓冲内驻留，内存峰值不再随整文档页数线性增长。
     """
     doc_id = row["doc_id"]
     try:
         now = utcnow()
         page_count = 0
         ocr_pages = 0
-        pages: list[tuple] = []
-        for page in _iter_parsed_pages(row["primary_path"], min_chars, max_garbled):
-            pages.append((
-                doc_id, page["page_no"], page["width"], page["height"],
-                page["native_text"], page["final_text"], page["parse_method"],
-                page["printable_chars"], page["garbled_ratio"],
-                page["needs_ocr"], page["ocr_status"], now,
-            ))
-            page_count += 1
-            ocr_pages += page["needs_ocr"]
+        insert_sql = """
+            INSERT INTO pages(
+                doc_id, page_no, width, height, native_text, final_text,
+                parse_method, printable_chars, garbled_ratio, needs_ocr,
+                ocr_status, updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+        """
         with db.transaction() as conn:
             conn.execute("DELETE FROM pages WHERE doc_id=?", (doc_id,))
             batch: list[tuple] = []
-            for item in pages:
-                batch.append(item)
+            for page in _iter_parsed_pages(row["primary_path"], min_chars, max_garbled):
+                batch.append((
+                    doc_id, page["page_no"], page["width"], page["height"],
+                    page["native_text"], page["final_text"], page["parse_method"],
+                    page["printable_chars"], page["garbled_ratio"],
+                    page["needs_ocr"], page["ocr_status"], now,
+                ))
+                page_count += 1
+                ocr_pages += page["needs_ocr"]
                 if len(batch) >= 500:
-                    conn.executemany(
-                        """
-                        INSERT INTO pages(
-                            doc_id, page_no, width, height, native_text, final_text,
-                            parse_method, printable_chars, garbled_ratio, needs_ocr,
-                            ocr_status, updated_at
-                        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
-                        """,
-                        batch,
-                    )
+                    conn.executemany(insert_sql, batch)
                     batch.clear()
             if batch:
-                conn.executemany(
-                    """
-                    INSERT INTO pages(
-                        doc_id, page_no, width, height, native_text, final_text,
-                        parse_method, printable_chars, garbled_ratio, needs_ocr,
-                        ocr_status, updated_at
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
-                    """,
-                    batch,
-                )
+                conn.executemany(insert_sql, batch)
         return {"page_count": page_count, "ocr_pages": ocr_pages}
     except Exception as exc:  # noqa: BLE001 - 由调用方按文档隔离处理
         return {"error": exc}

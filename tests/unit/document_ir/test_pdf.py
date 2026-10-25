@@ -88,7 +88,9 @@ def test_selected_ocr_requires_backend_and_preserves_failed_omission(tmp_path):
 
     parsed = parse_document(path, {"ocr_pages": [1], "ocr_backend": FailingOCR()})
     assert parsed.metadata["ocr_pages_recognized"] == []
-    assert parsed.metadata["ocr_failures"] == [{"page": 1, "error_type": "RuntimeError"}]
+    assert parsed.metadata["ocr_failures"] == [
+        {"page": 1, "error_type": "RuntimeError", "error": "fixture failure"},
+    ]
     assert parsed.metadata["omitted_pages_needing_ocr"] == [1]
 
 

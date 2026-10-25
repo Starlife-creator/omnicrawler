@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from ..core.safe_data import safe_json_loads
 from ..core.utils import excel_safe
 from .config import ProjectConfig
 from .database import Database
@@ -50,6 +51,7 @@ def export_text_stage(
     pages_path = config.output_dir / "pages.jsonl"
     manifest_path = config.output_dir / "text_manifest.csv"
     page_count = 0
+    skipped_malformed = 0  # B-P2-8：损坏 OCR 结构 JSON 页计数，降级继续导出。
     with atomic_output_path(pages_path) as pages_temp, atomic_output_path(
         manifest_path
     ) as manifest_temp:
@@ -75,6 +77,10 @@ def export_text_stage(
                     with text_temp.open("w", encoding="utf-8") as text_stream:
                         for index, page in enumerate(pages):
                             text = page["final_text"] or ""
+                            raw_structure = (
+                                page["ocr_structure_json"]
+                                if "ocr_structure_json" in page.keys() else None
+                            )
                             if index:
                                 text_stream.write("\n\n")
                             text_stream.write(
@@ -94,9 +100,13 @@ def export_text_stage(
                                 "printable_chars": page["printable_chars"],
                                 "garbled_ratio": page["garbled_ratio"],
                                 "text": text,
-                                "ocr_structure": json.loads(page["ocr_structure_json"])
-                                if "ocr_structure_json" in page.keys() and page["ocr_structure_json"] else None,
+                                # B-P2-8：损坏结构 JSON 降级为 None 并计数跳过，不中断整批导出。
+                                "ocr_structure": safe_json_loads(
+                                    raw_structure, default=None,
+                                ),
                             }
+                            if raw_structure and row["ocr_structure"] is None:
+                                skipped_malformed += 1
                             pages_stream.write(json.dumps(row, ensure_ascii=False) + "\n")
                             page_count += 1
                         text_stream.write("\n")
@@ -111,6 +121,7 @@ def export_text_stage(
     return {
         "documents": exported,
         "pages": page_count,
+        "skipped_malformed": skipped_malformed,
         "text_dir": str(text_dir),
         "pages_jsonl": str(pages_path),
         "manifest": str(manifest_path),

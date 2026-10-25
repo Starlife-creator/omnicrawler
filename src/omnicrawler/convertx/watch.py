@@ -16,7 +16,9 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,6 +31,10 @@ _TEMP_SUFFIXES = (
     ".tmp", ".part", ".crdownload", ".download", ".partial", ".swp", ".lock", ".bak",
 )
 _PLATFORM_SETTLE = 2.0 if os.name == "nt" else 5.0
+
+# B-P3-7：成功签名表容量上限（LRU 淘汰）；失败签名单独保留短重试窗口，过期后自动重试。
+_MAX_PROCESSED = 10_000
+_FAILED_RETRY_SECONDS = 300.0
 
 
 def default_settle_seconds() -> float:
@@ -143,7 +149,10 @@ class FolderWatcher:
     def __init__(self, config: WatchConfig, *, converter: Converter | None = None) -> None:
         self.config = config
         self._converter = converter or self._default_converter
-        self._processed: dict[Path, tuple[int, int]] = {}
+        # B-P3-7：成功签名 LRU（容量淘汰）；失败签名独立短重试窗口；映射访问加锁。
+        self._processed: OrderedDict[Path, tuple[int, int]] = OrderedDict()
+        self._failed: dict[Path, tuple[tuple[int, int], float]] = {}
+        self._lock = threading.RLock()
         source_resolved = config.source_dir.resolve()
         target_resolved = config.target_dir.resolve()
         # 目标目录与源目录相同时不能整体排除，否则一个文件都扫不到；
@@ -201,8 +210,17 @@ class FolderWatcher:
                 signature = _signature(path)
             except OSError:
                 continue
-            if signature == self._processed.get(path):
-                continue
+            with self._lock:
+                # 成功签名命中：跳过
+                if self._processed.get(path) == signature:
+                    continue
+                # 失败签名在短重试窗口内：跳过；窗口过期或签名变化则重新尝试
+                failed = self._failed.get(path)
+                if failed is not None:
+                    old_signature, failed_at = failed
+                    if old_signature == signature and current - failed_at < _FAILED_RETRY_SECONDS:
+                        continue
+                    self._failed.pop(path, None)
             if signature[0] == 0:
                 continue  # 空文件通常是刚创建，等下一轮
             try:
@@ -224,14 +242,26 @@ class FolderWatcher:
             try:
                 result = self._converter(path, target, rule)
             except Exception as exc:  # noqa: BLE001 - 单个文件失败不得中断监听
-                self._processed[path] = signature
+                # B-P3-7：失败签名单独进短重试窗口，不进成功表；窗口过期后允许重试。
+                with self._lock:
+                    self._processed.pop(path, None)
+                    self._failed[path] = (signature, current)
                 events.append(WatchEvent(path, "error", error=f"{type(exc).__name__}: {exc}"))
                 continue
-            self._processed[path] = signature
+            with self._lock:
+                self._processed[path] = signature
+                self._failed.pop(path, None)
+                # B-P3-7：成功签名表超容量时 LRU 淘汰最旧条目，避免长期运行无界增长。
+                while len(self._processed) > _MAX_PROCESSED:
+                    self._processed.popitem(last=False)
             output = getattr(result, "output_path", None)
             if output is not None:
                 try:
-                    self._processed[Path(output)] = _signature(Path(output))
+                    output_signature = _signature(Path(output))
+                    with self._lock:
+                        self._processed[Path(output)] = output_signature
+                        while len(self._processed) > _MAX_PROCESSED:
+                            self._processed.popitem(last=False)
                 except OSError:
                     pass
             status = "skipped" if str(getattr(result, "status", "")) == "skipped" else "converted"

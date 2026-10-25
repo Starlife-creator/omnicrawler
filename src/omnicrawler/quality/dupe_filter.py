@@ -10,11 +10,15 @@
 
 from __future__ import annotations
 
+import logging
+import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from ..quality.data_intelligence import hamming_distance, simhash
+
+LOGGER = logging.getLogger(__name__)
 
 # 常见 tracking 参数：这些参数不影响页面内容，仅用于归因统计
 _TRACKING_PARAMS = {
@@ -74,7 +78,8 @@ def canonical_url(url: str) -> str:
     )
     host = hostname if not port or default_port else f"{hostname}:{port}"
     query = urlencode(sorted(parse_qsl(parts.query, keep_blank_values=True)))
-    return urlunsplit((parts.scheme.lower(), host, parts.path or "/", query, parts.fragment))
+    # B-P2-13：canonical 剥离 fragment（锚点不影响页面身份，避免同页不同锚点绕过去重）。
+    return urlunsplit((parts.scheme.lower(), host, parts.path or "/", query, ""))
 
 
 def _is_duplicate(hash_value: int, buckets: dict[tuple[int, int], list[tuple[int, object]]], threshold: int) -> bool:
@@ -89,7 +94,7 @@ def _is_duplicate(hash_value: int, buckets: dict[tuple[int, int], list[tuple[int
 
 @dataclass(slots=True)
 class DualLayerDupeFilter:
-    """双层去重过滤器（内存版，线程不安全，单采集任务内使用）。
+    """双层去重过滤器（内存版；集合访问经 RLock 串行化，可在单任务多线程下安全使用）。
 
     Args:
         hamming_threshold: 内容相似判定阈值（海明距离）。
@@ -106,31 +111,47 @@ class DualLayerDupeFilter:
         default_factory=lambda: defaultdict(list), init=False, repr=False
     )
     _content_count: int = field(default=0, init=False, repr=False)
+    _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
+    _capacity_warned: bool = field(default=False, init=False, repr=False)
+
+    def _capacity_degraded(self, kind: str) -> None:
+        # B-P2-13：容量上限后拒绝新增并一次性告警，不再静默返回「未见过」绕过去重。
+        if not self._capacity_warned:
+            self._capacity_warned = True
+            LOGGER.warning(
+                "去重 %s 集合已达容量上限（urls=%d, content=%d），新条目不再登记，"
+                "去重能力降级为仅对存量集合生效（B-P2-13）。",
+                kind, len(self._seen_urls), self._content_count,
+            )
 
     def url_seen(self, url: str) -> bool:
         """第一层：URL 规范化去重。True 表示已见过（应跳过）。"""
         key = canonical_url(url)
-        if key in self._seen_urls:
-            return True
-        if len(self._seen_urls) >= self.max_urls:
+        with self._lock:
+            if key in self._seen_urls:
+                return True
+            if len(self._seen_urls) >= self.max_urls:
+                self._capacity_degraded("URL")
+                return False
+            self._seen_urls.add(key)
             return False
-        self._seen_urls.add(key)
-        return False
 
     def content_seen(self, text: str) -> bool:
         """第二层：内容指纹相似去重。True 表示与已见内容相似（应跳过）。"""
         if not text.strip():
             return False
         hash_value = simhash(text)
-        if _is_duplicate(hash_value, self._content_buckets, self.hamming_threshold):
-            return True
-        if self._content_count >= self.max_content:
+        with self._lock:
+            if _is_duplicate(hash_value, self._content_buckets, self.hamming_threshold):
+                return True
+            if self._content_count >= self.max_content:
+                self._capacity_degraded("内容指纹")
+                return False
+            for band in range(4):
+                band_value = (hash_value >> (band * 16)) & 0xFFFF
+                self._content_buckets[(band, band_value)].append((hash_value, None))
+            self._content_count += 1
             return False
-        for band in range(4):
-            band_value = (hash_value >> (band * 16)) & 0xFFFF
-            self._content_buckets[(band, band_value)].append((hash_value, None))
-        self._content_count += 1
-        return False
 
     def observe(self, url: str, text: str) -> None:
         """记录一条已处理结果（供后续判断去重）。"""
@@ -138,4 +159,5 @@ class DualLayerDupeFilter:
         self.content_seen(text)
 
     def size(self) -> dict[str, int]:
-        return {"urls": len(self._seen_urls), "content": self._content_count}
+        with self._lock:
+            return {"urls": len(self._seen_urls), "content": self._content_count}

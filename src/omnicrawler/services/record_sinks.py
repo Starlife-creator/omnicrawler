@@ -14,6 +14,10 @@ from ..core.models import CrawlRequest, ExtractedRecord
 from ..core.utils import utcnow
 from ..security.egress import EgressBroker
 
+# B-P2-9：PG 与 OpenSearch 写入分批大小（单批 SQL/请求规模上限，避免超大批次长事务）。
+_PG_BATCH_SIZE = 500
+_OPENSEARCH_BULK_SIZE = 500
+
 
 @runtime_checkable
 class RecordSink(Protocol):
@@ -100,17 +104,19 @@ class PostgreSQLRecordSink:
             return 0
         with self._sdk_request():
             with self.connection.cursor() as cursor:
-                cursor.executemany(
-                    f"""
-                    INSERT INTO {self.table}(
-                        record_id, run_id, request_fingerprint, source_url, record_type,
-                        data, evidence, created_at
-                    ) VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s)
-                    ON CONFLICT(record_id) DO UPDATE SET
-                        data=excluded.data, evidence=excluded.evidence
-                    """,
-                    values,
-                )
+                # B-P2-9：executemany 按批切片提交，限制单条 SQL/事务规模；最终统一提交一次。
+                for start in range(0, len(values), _PG_BATCH_SIZE):
+                    cursor.executemany(
+                        f"""
+                        INSERT INTO {self.table}(
+                            record_id, run_id, request_fingerprint, source_url, record_type,
+                            data, evidence, created_at
+                        ) VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s)
+                        ON CONFLICT(record_id) DO UPDATE SET
+                            data=excluded.data, evidence=excluded.evidence
+                        """,
+                        values[start:start + _PG_BATCH_SIZE],
+                    )
             self.connection.commit()
         return len(values)
 
@@ -164,24 +170,48 @@ class OpenSearchRecordSink:
         return self.egress.sdk_request(self.endpoints[0], transport="opensearch-py")
 
     def write(self, run_id: str, request: CrawlRequest, records: list[ExtractedRecord]) -> int:
+        actions: list[dict[str, Any]] = []
+        for index, record in enumerate(records, 1):
+            record_id = hashlib.sha256(
+                f"{run_id}:{request.fingerprint}:{index}".encode()
+            ).hexdigest()
+            actions.append({
+                "_index": self.index,
+                "_id": record_id,
+                "_source": {
+                    "run_id": run_id,
+                    "request_fingerprint": request.fingerprint,
+                    "source_url": record.source_url,
+                    "record_type": record.record_type,
+                    "data": record.data,
+                    "evidence": record.evidence,
+                    "created_at": utcnow(),
+                },
+            })
+        if not actions:
+            return 0
         with self._sdk_request():
-            for index, record in enumerate(records, 1):
-                record_id = hashlib.sha256(
-                    f"{run_id}:{request.fingerprint}:{index}".encode()
-                ).hexdigest()
-                self.client.index(
-                    index=self.index,
-                    id=record_id,
-                    body={
-                        "run_id": run_id,
-                        "request_fingerprint": request.fingerprint,
-                        "source_url": record.source_url,
-                        "record_type": record.record_type,
-                        "data": record.data,
-                        "evidence": record.evidence,
-                        "created_at": utcnow(),
-                    },
-                )
+            # B-P2-9：可用 helpers.bulk 时按 500/批提交，避免逐条 index 产生海量往返；
+            # 未安装 opensearchpy 或注入测试假客户端时回退逐条 index，保持既有契约。
+            helpers_module: Any = None
+            try:
+                from opensearchpy import helpers as helpers_module  # type: ignore[import-untyped]
+            except ImportError:
+                helpers_module = None
+            if helpers_module is not None:
+                for start in range(0, len(actions), _OPENSEARCH_BULK_SIZE):
+                    helpers_module.bulk(
+                        self.client,
+                        actions[start:start + _OPENSEARCH_BULK_SIZE],
+                        index=self.index,
+                    )
+            else:
+                for action in actions:
+                    self.client.index(
+                        index=action["_index"],
+                        id=action["_id"],
+                        body=action["_source"],
+                    )
         return len(records)
 
     def close(self) -> None:

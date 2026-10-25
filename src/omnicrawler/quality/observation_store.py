@@ -108,7 +108,8 @@ class ObservationStore:
         path = db_path if isinstance(db_path, Path) else Path(db_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         self._path = path
-        self._conn = sqlite3.connect(str(path), timeout=5.0)
+        # B-P2-13：观察存储在服务层跨线程共享同一连接，关闭同线程检查；写路径经 _tx 串行化。
+        self._conn = sqlite3.connect(str(path), timeout=5.0, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
@@ -258,10 +259,10 @@ class ObservationStore:
         with self._tx() as con:
             self._ensure_row(con, candidate, now)
             if comparison.evidence_sha256:
-                inserted = con.execute("INSERT OR IGNORE INTO obs_evidence VALUES (?, ?)",
-                                       (candidate.candidate_id, comparison.evidence_sha256)).rowcount
-                if inserted == 0:
-                    return None
+                # B-P2-13：证据哈希仅做去重登记；重复证据不再提前返回 None——
+                # 稳定证据上的回归计数/风险更新必须继续落库，避免回归信号丢失。
+                con.execute("INSERT OR IGNORE INTO obs_evidence VALUES (?, ?)",
+                            (candidate.candidate_id, comparison.evidence_sha256))
             row = con.execute(
                 """SELECT applied_count, observation_rounds, regression_count,
                           false_positive_risk, fp_risk_samples, last_applied_tier,
@@ -364,15 +365,29 @@ class ObservationStore:
             )
 
     # ── 快照诊断 ────────────────────────────────────────
-    def snapshot(self, candidate_id: str | None = None) -> list[dict[str, Any]]:
-        """读取当前 DB 状态（用于 metrics / 调试）。"""
+    def snapshot(
+        self,
+        candidate_id: str | None = None,
+        *,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """读取当前 DB 状态（用于 metrics / 调试）。
+
+        B-P3-11：候选表查询补 LIMIT 与分页，避免表增大后整表拉取造成内存/耗时线性增长。
+        """
+        limit = max(1, min(int(limit), 5000))
+        offset = max(0, int(offset))
         with self._tx() as con:
             if candidate_id:
                 rows = con.execute(
                     "SELECT * FROM obs_candidates WHERE candidate_id=?", (candidate_id,)
                 ).fetchall()
             else:
-                rows = con.execute("SELECT * FROM obs_candidates ORDER BY last_seen_ts DESC").fetchall()
+                rows = con.execute(
+                    "SELECT * FROM obs_candidates ORDER BY last_seen_ts DESC LIMIT ? OFFSET ?",
+                    (limit, offset),
+                ).fetchall()
             return [dict(r) for r in rows]
 
     # ── 内部 ────────────────────────────────────────────

@@ -853,6 +853,9 @@ def _write_duckdb_batches(
                 con.executemany(f"INSERT INTO {table} VALUES ({placeholders})", values)
                 written += len(batch)
                 batch.clear()
+                # B-P2-7：分批提交，避免整批插入包在单一长事务内持锁过久。
+                con.execute("COMMIT")
+                con.execute("BEGIN TRANSACTION")
                 pe.emit(written=written, total=total)
             if batch:
                 values = [[row.get(column) for column in safe_columns] for row in batch]

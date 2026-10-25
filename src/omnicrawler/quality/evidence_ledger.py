@@ -66,25 +66,35 @@ class EvidenceLedger:
         self.append_audit("field_lineage", {"record_id": lineage.record_id, "field": lineage.field, "response_id": lineage.response_id})
 
     def field_history(self, record_id: str, field: str) -> tuple[dict[str, Any], ...]:
+        # B-P2-5：台账按行流式扫描，不再整份 JSONL 读入内存。
         if not self.lineage_path.is_file():
             return ()
-        return tuple(
-            item for item in (json.loads(line) for line in self.lineage_path.read_text(encoding="utf-8").splitlines())
-            if item.get("record_id") == record_id and item.get("field") == field
-        )
+        matches: list[dict[str, Any]] = []
+        with self.lineage_path.open(encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                item = json.loads(line)
+                if item.get("record_id") == record_id and item.get("field") == field:
+                    matches.append(item)
+        return tuple(matches)
 
     def replay_payload(self, node_id: str) -> bytes:
         """Return the immutable stage payload selected by node id for deterministic replay."""
+        # B-P2-5：节点索引按行流式扫描，不再整份 nodes JSONL 入内存。
         if not self.nodes_path.is_file():
             raise KeyError(node_id)
-        for line in self.nodes_path.read_text(encoding="utf-8").splitlines():
-            item = json.loads(line)
-            if item.get("node_id") == node_id:
-                digest = str(item["sha256"])
-                payload = (self.objects / digest[:2] / digest[2:]).read_bytes()
-                if hashlib.sha256(payload).hexdigest() != digest:
-                    raise ValueError("证据对象哈希不匹配")
-                return payload
+        with self.nodes_path.open(encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                item = json.loads(line)
+                if item.get("node_id") == node_id:
+                    digest = str(item["sha256"])
+                    payload = (self.objects / digest[:2] / digest[2:]).read_bytes()
+                    if hashlib.sha256(payload).hexdigest() != digest:
+                        raise ValueError("证据对象哈希不匹配")
+                    return payload
         raise KeyError(node_id)
 
     def append_audit(self, event: str, payload: dict[str, Any]) -> str:
@@ -99,14 +109,18 @@ class EvidenceLedger:
         count = 0
         if not self.audit_path.is_file():
             return True, 0
-        for line in self.audit_path.read_text(encoding="utf-8").splitlines():
-            item = json.loads(line)
-            claimed = item.pop("entry_hash")
-            actual = hashlib.sha256(json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-            if claimed != actual or item["previous_hash"] != previous:
-                return False, count
-            previous = claimed
-            count += 1
+        # B-P2-5：审计链按行流式校验，不再整份读入内存。
+        with self.audit_path.open(encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                item = json.loads(line)
+                claimed = item.pop("entry_hash")
+                actual = hashlib.sha256(json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                if claimed != actual or item["previous_hash"] != previous:
+                    return False, count
+                previous = claimed
+                count += 1
         return True, count
 
     def manifest(self, *, config_hash: str, ir_hash: str, plan_hash: str, software_version: str, components: dict[str, str]) -> Path:
@@ -120,10 +134,17 @@ class EvidenceLedger:
         return path
 
     def _last_hash(self) -> str:
+        # B-P2-5：尾部单行取哈希，仅流式扫描到最后一条非空行，不再整份重读审计链（O(n²) 消除）。
         if not self.audit_path.is_file():
             return "0" * 64
-        lines = self.audit_path.read_text(encoding="utf-8").splitlines()
-        return str(json.loads(lines[-1])["entry_hash"]) if lines else "0" * 64
+        last_line: str | None = None
+        with self.audit_path.open(encoding="utf-8") as handle:
+            for line in handle:
+                if line.strip():
+                    last_line = line.strip()
+        if last_line is None:
+            return "0" * 64
+        return str(json.loads(last_line)["entry_hash"])
 
     @staticmethod
     def _append_json(path: Path, value: dict[str, Any]) -> None:

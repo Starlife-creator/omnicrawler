@@ -8,6 +8,7 @@ import re
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 from typing import Any
 
 from .concurrency import iter_bounded_futures
@@ -27,6 +28,14 @@ LOGGER = logging.getLogger(__name__)
 def _collapse_ws(value: str) -> str:
     """空白归一（D34：证据比对双方统一压缩空白，避免模型原文抄写带空格误判）。"""
     return re.sub(r"\s+", " ", str(value)).strip()
+
+
+@lru_cache(maxsize=512)
+def _alias_pattern(alias: str) -> re.Pattern[str]:
+    """B-P2-6：别名动态正则按别名缓存，避免「别名 × 页面」循环内重复编译。"""
+    return re.compile(
+        rf"{re.escape(alias)}\s*[：:]\s*(?P<value>[^\n；;]{{1,100}})", re.I
+    )
 
 
 def _evidence_window(text: str, start: int, end: int, radius: int = 100) -> str:
@@ -68,9 +77,7 @@ def rule_extract_field(
                 }
         for alias in spec.search_terms:
             # D23：alias 兜底必须存在分隔符（：:），且按字段类型校验值形态
-            alias_pattern = re.compile(
-                rf"{re.escape(alias)}\s*[：:]\s*(?P<value>[^\n；;]{{1,100}})", re.I
-            )
+            alias_pattern = _alias_pattern(alias)
             match = alias_pattern.search(text)
             if match:
                 candidate = match.group("value").strip(" ：:")
