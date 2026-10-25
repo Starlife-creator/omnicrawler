@@ -80,3 +80,11 @@
 - 签名载荷（`examples/plugins/**/*.py`、`plugins_installed/**/*.py` 及其 `.sig`）标记 `-text`，禁止改写字节。
 
 写脚本注入式锚点（heredoc、字节比对、正则匹配行首行尾）前，先按字节确认目标文件的实际行尾；不要凭「本仓都是 CRLF / LF」的旧印象假设。
+
+## 12. 覆盖率分组门禁与排除记录
+
+覆盖率分组门禁的唯一判据在 `tools/check_coverage_gates.py`：既有阻断分组按 CI 三平台实测最小值 − 2 设定下限，只升不降。
+
+C-#8 风险优先补充分组 `services`、`plugins`、`commands`、`gui_views` 当前处于 **baseline pending** 状态：门禁会打印实测值与占位下限，但**不阻断合并**；首轮 CI 覆盖率数据落地后，按同一口径（min − 2）填回实数下限并从 `BASELINE_PENDING_GATES` 移出，即转为阻断。
+
+`src/omnicrawler/visual_selector/` 在 `pyproject.toml` 的 coverage `omit` 中排除：它是浏览器坐标选择 E2E 工具，依赖真实页面与浏览器运行时，不进单测覆盖率。**复核期限：2026-12 前**为其补 offscreen/集成测试，达标后从 omit 移除并纳入分组门禁；在此之前不得以「覆盖率低」为由删除该模块功能。

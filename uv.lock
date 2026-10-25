@@ -2658,7 +2658,6 @@ document = [
     { name = "python-pptx" },
 ]
 full = [
-    { name = "aiofiles" },
     { name = "aiohttp" },
     { name = "beautifulsoup4" },
     { name = "boto3" },
@@ -2701,7 +2700,6 @@ full = [
     { name = "websockets" },
 ]
 full-macos = [
-    { name = "aiofiles" },
     { name = "aiohttp" },
     { name = "beautifulsoup4" },
     { name = "boto3" },
@@ -2717,7 +2715,7 @@ full-macos = [
     { name = "lxml" },
     { name = "numpy" },
     { name = "onnxruntime" },
-    { name = "opencv-contrib-python" },
+    { name = "opencv-python-headless" },
     { name = "openpyxl" },
     { name = "opensearch-py" },
     { name = "patchright" },
@@ -2806,8 +2804,6 @@ tls = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiofiles", marker = "extra == 'full'", specifier = ">=25,<26" },
-    { name = "aiofiles", marker = "extra == 'full-macos'", specifier = ">=25,<26" },
     { name = "aiohttp", marker = "extra == 'ai'", specifier = ">=3.11,<4" },
     { name = "aiohttp", marker = "extra == 'full'", specifier = ">=3.11,<4" },
     { name = "aiohttp", marker = "extra == 'full-macos'", specifier = ">=3.11,<4" },
@@ -2857,7 +2853,7 @@ requires-dist = [
     { name = "onnxruntime", marker = "extra == 'full'", specifier = ">=1.17,<2" },
     { name = "onnxruntime", marker = "extra == 'full-macos'", specifier = ">=1.17,<2" },
     { name = "onnxruntime", marker = "extra == 'ocr-captcha'", specifier = ">=1.17,<2" },
-    { name = "opencv-contrib-python", marker = "extra == 'full-macos'", specifier = ">=4.10,<6" },
+    { name = "opencv-python-headless", marker = "extra == 'full-macos'", specifier = ">=4.10,<6" },
     { name = "openpyxl", marker = "extra == 'full'", specifier = ">=3.1,<4" },
     { name = "openpyxl", marker = "extra == 'full-macos'", specifier = ">=3.1,<4" },
     { name = "openpyxl", marker = "extra == 'gui'", specifier = ">=3.1,<4" },

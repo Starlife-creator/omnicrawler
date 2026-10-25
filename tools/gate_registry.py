@@ -171,6 +171,13 @@ GATES: tuple[Gate, ...] = (
         ci_note="权威复现由专门的 lockfile CI job 负责（uv lock --check + uv sync --locked）；本门禁在无 uv 环境下也能跑。",
     ),
     Gate(
+        name="check_dependency_consistency",
+        args=("tools/check_dependency_consistency.py",),
+        sets=_STATIC,
+        description="依赖声明一致性（OpenCV 单变体、无死依赖、版本上下界齐备）",
+        script="tools/check_dependency_consistency.py",
+    ),
+    Gate(
         name="check_minimal_install",
         args=("tools/check_minimal_install.py",),
         sets=_STATIC,
