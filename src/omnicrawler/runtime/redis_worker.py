@@ -78,6 +78,16 @@ class _LocalQueue:
                 heartbeat_at TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'idle'
             );
+            CREATE TABLE IF NOT EXISTS dead_letter(
+                task_id TEXT PRIMARY KEY,
+                config_path TEXT NOT NULL,
+                submitted_at TEXT NOT NULL,
+                source TEXT NOT NULL,
+                error TEXT NOT NULL,
+                worker_id TEXT NOT NULL,
+                failed_at TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 1
+            );
             """
         )
 
@@ -141,6 +151,28 @@ class _LocalQueue:
         with self.conn:
             self.conn.execute("DELETE FROM workers WHERE worker_id=?", (worker_id,))
 
+    # ── A-P2-6：死信台账（失败任务留痕，便于排查与人工重放） ──
+    def dead_letter_record(self, task: TaskSpec, error: str, worker_id: str) -> None:
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO dead_letter(task_id, config_path, submitted_at, source,
+                                        error, worker_id, failed_at, attempts)
+                VALUES(?,?,?,?,?,?,?,1)
+                ON CONFLICT(task_id) DO UPDATE SET
+                    error=excluded.error, worker_id=excluded.worker_id,
+                    failed_at=excluded.failed_at, attempts=attempts+1
+                """,
+                (task.task_id, task.config_path, task.submitted_at, task.source,
+                 error[:4000], worker_id, utcnow()),
+            )
+
+    def dead_letter(self) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT * FROM dead_letter ORDER BY failed_at ASC"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
     def list_workers(self, *, now: str | None = None) -> list[dict[str, Any]]:
         rows = self.conn.execute("SELECT * FROM workers").fetchall()
         cutoff = _stale_cutoff(now)
@@ -165,6 +197,7 @@ class _RedisQueue:
     _WORKERS_KEY = "workers"
     _TASK_KEY = "taskqueue"
     _PAYLOAD_KEY = "taskpayload"
+    _DEADLETTER_KEY = "deadletter"
 
     def __init__(self, redis_url: str, namespace: str = "omnicrawler") -> None:
         from .redis_frontier import RedisFrontier
@@ -221,6 +254,46 @@ class _RedisQueue:
 
     def unregister_worker(self, worker_id: str) -> None:
         self.client.hdel(self._workers_key, worker_id)
+
+    # ── A-P2-6：死信台账（Redis hash + zset 序号，口径与本地队列一致） ──
+    def dead_letter_record(self, task: TaskSpec, error: str, worker_id: str) -> None:
+        previous = cast(str | None, self.client.hget(self._deadletter_key, task.task_id))
+        attempts = 1
+        if previous is not None:
+            try:
+                attempts = int(json.loads(previous).get("attempts", 1)) + 1
+            except (json.JSONDecodeError, TypeError, ValueError):
+                attempts = 1
+        record = {
+            "task_id": task.task_id,
+            "config_path": task.config_path,
+            "submitted_at": task.submitted_at,
+            "source": task.source,
+            "error": error[:4000],
+            "worker_id": worker_id,
+            "failed_at": utcnow(),
+            "attempts": attempts,
+        }
+        pipe = self.client.pipeline(transaction=True)
+        pipe.hset(self._deadletter_key, task.task_id, json.dumps(record, ensure_ascii=False))
+        pipe.zadd(self._deadletter_index, {task.task_id: time.time()})
+        pipe.execute()
+
+    def dead_letter(self) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for task_id in cast(list[str], self.client.zrange(self._deadletter_index, 0, -1)):
+            raw = cast(str | None, self.client.hget(self._deadletter_key, task_id))
+            if raw is not None:
+                records.append(json.loads(raw))
+        return records
+
+    @property
+    def _deadletter_key(self) -> str:
+        return f"{self.namespace}:{self._DEADLETTER_KEY}"
+
+    @property
+    def _deadletter_index(self) -> str:
+        return f"{self.namespace}:{self._DEADLETTER_KEY}:index"
 
     def list_workers(self, *, now: str | None = None) -> list[dict[str, Any]]:
         cutoff = _stale_cutoff(now)
@@ -332,6 +405,14 @@ class RemoteQueue:
     def list_workers(self) -> list[dict[str, Any]]:
         return self._backend.list_workers()
 
+    def dead_letter_record(self, task: TaskSpec, error: str, worker_id: str) -> None:
+        """A-P2-6：把失败任务写入后端死信台账（门面透传，Redis / SQLite 口径一致）。"""
+        self._backend.dead_letter_record(task, error, worker_id)
+
+    def dead_letter(self) -> list[dict[str, Any]]:
+        """A-P2-6：失败任务死信台账（成功 / 失败计数拆分后的失败侧证据）。"""
+        return self._backend.dead_letter()
+
     def status(self) -> dict[str, Any]:
         return {
             "backend": self.backend_kind(),
@@ -354,8 +435,13 @@ def consume_loop(
     interval: float = 1.0,
     max_tasks: int | None = None,
     on_log: Callable[[str], None] = print,
+    on_event: Callable[[dict[str, Any]], None] | None = None,
+    stats: dict[str, int] | None = None,
 ) -> int:
     """持续消费队列任务并执行。
+
+    A-P2-6：成功 / 失败计数拆分；失败任务落死信台账并触发 ``task_failed`` 事件；
+    成功任务触发 ``task_succeeded`` 事件。
 
     Args:
         queue: 远程队列门面。
@@ -364,12 +450,27 @@ def consume_loop(
         interval: 空队列时的轮询间隔（秒）。
         max_tasks: 最多执行任务数；None 表示无限（Ctrl+C 中断）。
         on_log: 日志输出回调。
+        on_event: 任务结果事件回调（成功 / 失败）；回调自身异常不拖垮消费循环。
+        stats: 可选字典，回填 ``processed`` / ``succeeded`` / ``failed`` 拆分计数。
 
     Returns:
-        实际执行的任务数。
+        实际执行任务总数（succeeded + failed）。
     """
     worker_id = queue.register_worker(worker_id)
     processed = 0
+    succeeded = 0
+    failed = 0
+    if stats is None:
+        stats = {}
+
+    def _emit(event: dict[str, Any]) -> None:
+        if on_event is None:
+            return
+        try:
+            on_event(event)
+        except Exception:  # noqa: BLE001 —— 事件回调异常不得中断消费循环
+            pass
+
     try:
         while max_tasks is None or processed < max_tasks:
             task = queue.pop()
@@ -384,12 +485,34 @@ def consume_loop(
             try:
                 executor(task)
             except Exception as exc:  # noqa: BLE001 —— 单任务失败不拖垮消费循环
-                on_log(f"[worker:{worker_id}] 任务 {task.task_id} 失败: {type(exc).__name__}: {exc}")
+                failed += 1
+                error = f"{type(exc).__name__}: {exc}"
+                on_log(f"[worker:{worker_id}] 任务 {task.task_id} 失败: {error}")
+                queue.dead_letter_record(task, error, worker_id)
+                _emit({
+                    "kind": "task_failed",
+                    "task_id": task.task_id,
+                    "config_path": task.config_path,
+                    "worker_id": worker_id,
+                    "error": error,
+                    "timestamp": utcnow(),
+                })
+            else:
+                succeeded += 1
+                _emit({
+                    "kind": "task_succeeded",
+                    "task_id": task.task_id,
+                    "worker_id": worker_id,
+                    "timestamp": utcnow(),
+                })
             processed += 1
     except KeyboardInterrupt:
         on_log(f"[worker:{worker_id}] 收到中断，已消费 {processed} 个任务")
     finally:
         queue.unregister_worker(worker_id)
+    stats["processed"] = processed
+    stats["succeeded"] = succeeded
+    stats["failed"] = failed
     return processed
 
 

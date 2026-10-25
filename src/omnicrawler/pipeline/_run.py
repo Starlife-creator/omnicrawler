@@ -7,7 +7,7 @@ import json
 import logging
 import time
 from collections.abc import Callable
-from concurrent.futures import FIRST_COMPLETED, Future, as_completed, wait
+from concurrent.futures import FIRST_COMPLETED, CancelledError, Future, as_completed, wait
 from pathlib import Path
 from typing import Any
 
@@ -189,6 +189,8 @@ class _PipelineRun(_PipelineBase):
         max_requests = int(crawl.get("max_requests", limit * 5))
         if max_requests < 1:
             raise ValueError(f"max_requests 不能小于 1: {max_requests}")
+        # A-P2-1：退出路径 drain 总超时（默认 30s）；超时后取消在途 future 并安全收尾。
+        drain_timeout = max(1.0, float(crawl.get("drain_timeout_seconds", 30)))
         processed = 0
         attempted = 0
         started_monotonic = time.monotonic()
@@ -212,7 +214,9 @@ class _PipelineRun(_PipelineBase):
 
         def consume(future: Future[FetchResult]) -> None:
             nonlocal processed, frontier_exhausted, extract_processed, status
-            request = inflight.pop(future)
+            request = inflight.pop(future, None)
+            if request is None:
+                return
             try:
                 result = future.result()
                 admission.observe(result.elapsed_seconds, domain=_resolve_scope(request.url),
@@ -252,6 +256,11 @@ class _PipelineRun(_PipelineBase):
                             "eta_seconds": round((limit - processed) / rate, 1) if rate else None,
                         },
                     )
+            except CancelledError:
+                # A-P2-1：drain 总超时取消的在途任务退回 pending，不记失败、不污染终态聚合。
+                self.state.mark_done(request.fingerprint, status="pending")
+                LOGGER.info("在途任务被收尾超时取消，退回待处理: %s", request.url)
+                return
             except (PermissionError, PolicyBlockedError) as exc:
                 if isinstance(exc, TaskStoppedError) and self.run_control.read().get("stop_requested"):
                     # 出网是被我们自己关的，不是这个 URL 被策略拒绝。
@@ -286,9 +295,37 @@ class _PipelineRun(_PipelineBase):
                 self.metrics.increment("omnicrawler_failures_total", stage="fetch", error=type(exc).__name__)
                 self._emit("on_error", run_id=run_id, stage="fetch", error=exc, request=request)
 
-        def drain() -> None:
-            for future in as_completed(list(inflight)):
+        def drain(timeout: float | None = None) -> None:
+            """消费在途 future；带 ``timeout`` 时到点取消未完成任务并安全收尾。
+
+            A-P2-1：旧实现 ``as_completed(list(inflight))`` 无总超时——卡死的在途任务
+            会让取消 / 中断 / 异常三条退出路径永久挂住。现在带总超时等待，超时后
+            ``future.cancel()`` 剩余任务，被取消项由 ``consume`` 退回 pending。
+            """
+            pending = list(inflight)
+            if not pending:
+                return
+            if timeout is None:
+                for future in as_completed(pending):
+                    consume(future)
+                return
+            done, remaining = wait(pending, return_when=FIRST_COMPLETED, timeout=timeout)
+            for future in done:
                 consume(future)
+            if remaining:
+                LOGGER.warning("drain 总超时 %.1fs：取消 %d 个未完成在途任务", timeout, len(remaining))
+                for future in remaining:
+                    future.cancel()
+                wait(remaining, timeout=1.0)
+                for future in remaining:
+                    consume(future)
+
+        def safe_drain() -> None:
+            """三路退出路径复用的安全收尾：带超时 drain，异常隔离不阻断终态落库。"""
+            try:
+                drain(timeout=drain_timeout)
+            except Exception:  # noqa: BLE001 —— 收尾阶段再抛错不得掩盖原始异常 / 终态
+                LOGGER.warning("收尾 drain 阶段出现异常（已隔离，继续落终态）", exc_info=True)
 
         try:
             executor = self._get_executor(max(1, concurrency))
@@ -308,13 +345,13 @@ class _PipelineRun(_PipelineBase):
                 if not self.run_control.wait_if_paused(notify=control_notify):
                     status = "cancelled"
                     self.egress.disconnect_task()
-                    drain()
+                    safe_drain()
                     break
                 if should_stop and should_stop():
                     status = "cancelled"
                     self.run_control.request_stop()
                     self.egress.disconnect_task()
-                    drain()
+                    safe_drain()
                     break
                 try:
                     resource_snapshot = self.resource_guard.check()
@@ -327,7 +364,7 @@ class _PipelineRun(_PipelineBase):
                         "omnicrawler_failures_total", stage="resources", error=type(exc).__name__
                     )
                     self._emit("on_error", run_id=run_id, stage="resources", error=exc, request=None)
-                    drain()
+                    safe_drain()
                     break
                 if resource_snapshot.get("disk_free_bytes") is not None:
                     self.metrics.gauge(
@@ -469,10 +506,10 @@ class _PipelineRun(_PipelineBase):
             self.egress.disconnect_task()
             # 收尾必须**在任何中断下都完成**：否则 run 会永远停在 running，
             # 运维侧看到的是「还在跑」——一个会误导人的状态。
-            # 二次 Ctrl-C 是常见操作，而 drain() 会把在途请求的异常一并抛出，
+            # 二次 Ctrl-C 是常见操作，而 drain 会把在途请求的异常一并抛出，
             # 因此这里用 try/finally 保证终态落库，而不吞掉异常。
             try:
-                drain()
+                safe_drain()
             finally:
                 summary = {"run_id": run_id, "status": status, "processed": processed, **self.state.stats(run_id)}
                 self._write_pipeline_summary(summary)
@@ -483,7 +520,7 @@ class _PipelineRun(_PipelineBase):
             status = "failed"
             self.egress.disconnect_task()
             try:
-                drain()
+                safe_drain()
             finally:
                 # 同上：错误收尾期间若再收到中断，终态仍须落库。
                 tracker.fail(f"pipeline failed: {exc}")
@@ -495,7 +532,7 @@ class _PipelineRun(_PipelineBase):
                 self.state.finish_run(run_id, status, summary)
             raise
         finally:
-            drain()
+            safe_drain()
 
     def reprocess_records(
         self,

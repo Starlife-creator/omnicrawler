@@ -190,11 +190,19 @@ class QueueMixin:
 
     def claim(self, limit: int, strategy: str = "bfs", *,
               domain_capacity: Callable[[str], int] | None = None,
-              domain_scope: Callable[[str], str] | None = None) -> list[CrawlRequest]:
+              domain_scope: Callable[[str], str] | None = None,
+              worker: str | None = None) -> list[CrawlRequest]:
+        """原子认领 pending 请求为 in_progress。
+
+        A-P3-10：认领只记录 ``claimed_at`` / ``worker`` 在途元数据，**不再递增
+        ``attempts``**——attempts 是真实失败计数，仅在 :meth:`mark_failed` 时 +1；
+        进程崩溃后 ``prepare_cycle`` 把在途项回 pending，重试额度不被重放扣减。
+        """
         order = self._CLAIM_ORDER.get(strategy)
         if order is None:
             order = self._CLAIM_ORDER["bfs"]
         claimed: list[sqlite3.Row] = []
+        claimed_at = utcnow()
         with self._lock, self.conn:
             recent: dict[str, int] = getattr(self, "_claim_domain_recent", {})
             claimed_by_domain: dict[str, int] = {}
@@ -216,9 +224,9 @@ class QueueMixin:
                     break
                 for row in rows:
                     cursor = self.conn.execute(
-                        "UPDATE frontier SET status='in_progress', attempts=attempts+1, updated_at=? "
+                        "UPDATE frontier SET status='in_progress', claimed_at=?, worker=?, updated_at=? "
                         "WHERE fingerprint=? AND status='pending'",
-                        (utcnow(), row["fingerprint"]),
+                        (claimed_at, worker, claimed_at, row["fingerprint"]),
                     )
                     if cursor.rowcount == 1:
                         if domain_scope is not None:
@@ -251,16 +259,23 @@ class QueueMixin:
             )
 
     def mark_failed(self, request: CrawlRequest, exc: Exception, max_attempts: int, retryable: bool = True) -> None:
+        """记录一次真实失败并递增 ``attempts``（A-P3-10：仅失败时扣重试额度）。
+
+        重试预算保持历史口径：``max_attempts`` = 最多尝试次数，允许 ``max_attempts - 1``
+        次重试。认领不扣额度，崩溃重放（``prepare_cycle``）不经过本方法，因此不消耗
+        重试额度。超过预算置终态 ``failed``，否则回 ``pending`` 等待下一轮认领。
+        """
         with self._lock, self.conn:
             row = self.conn.execute("SELECT attempts, meta_json FROM frontier WHERE fingerprint=?", (request.fingerprint,)).fetchone()
-            retry = bool(row and int(row["attempts"]) < max_attempts and retryable)
+            previous = int(row["attempts"]) if row else 0
+            retry = bool(row and previous < max_attempts - 1 and retryable)
             meta = json.loads(row["meta_json"]) if row else {}
             meta.pop("_auth_failure", None)
             if isinstance(exc, SessionExpiredError):
                 retry = False
                 meta["_auth_failure"] = {"code": exc.code, "scope": exc.scope}
             self.conn.execute(
-                "UPDATE frontier SET status=?, last_error=?, meta_json=?, updated_at=? WHERE fingerprint=?",
+                "UPDATE frontier SET status=?, attempts=attempts+1, last_error=?, meta_json=?, updated_at=? WHERE fingerprint=?",
                 ("pending" if retry else "failed", str(exc)[:4000], json_text(meta), utcnow(), request.fingerprint),
             )
 

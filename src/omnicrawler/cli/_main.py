@@ -155,7 +155,15 @@ def main(argv: list[str] | None = None) -> None:
         print("已中断；已完成状态保存在SQLite中，可用resume继续。", file=sys.stderr)
         raise SystemExit(130)
     except Exception as exc:  # CLI error boundary.
-        print(f"错误: {type(exc).__name__}: {exc}", file=sys.stderr)
+        # A-P3-8：错误出口统一走脱敏管道；仅调试模式（--log-level DEBUG）保留原始异常文本。
+        debug = getattr(args, "log_level", "INFO") == "DEBUG"
+        if debug:
+            import traceback
+
+            print(f"错误: {type(exc).__name__}: {exc}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+        else:
+            print(f"错误: {_format_cli_error(exc)}", file=sys.stderr)
         _print_error_hint(exc)
         raise SystemExit(1)
 
@@ -204,6 +212,19 @@ def _print_welcome() -> None:
   详细帮助: omnicrawler -h
   文档: OmniCrawler-用户指南.md
 """)
+
+
+def _format_cli_error(exc: Exception, *, debug: bool = False) -> str:
+    """A-P3-8：CLI 错误出口消息格式化。
+
+    非调试模式经 :func:`redact_value` 脱敏管道，URL 内嵌凭据不外泄；
+    调试模式才保留原始异常类型与消息（堆栈由调用方在 ``main`` 内打印）。
+    """
+    if debug:
+        return f"{type(exc).__name__}: {exc}"
+    from ..security.redaction import redact_value
+
+    return f"{type(exc).__name__}: {redact_value(str(exc))}"
 
 
 def _print_error_hint(exc: Exception) -> None:

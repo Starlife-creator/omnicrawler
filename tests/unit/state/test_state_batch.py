@@ -162,14 +162,17 @@ class TestClaimBatch(unittest.TestCase):
                 self.assertEqual(claimed[1].url, "https://example.com/mid")
                 self.assertEqual(claimed[2].url, "https://example.com/shallow")
 
-    def test_batch_claim_increments_attempts(self):
+    def test_batch_claim_does_not_increment_attempts(self):
+        # A-P3-10：认领只登记在途元数据，失败计数由 mark_failed 维护。
         with tempfile.TemporaryDirectory() as temp:
             with StateStore(Path(temp) / "state.sqlite3") as state:
                 state.enqueue(_make_request("https://example.com/a"))
                 state.enqueue(_make_request("https://example.com/b"))
-                state.claim(2)
+                state.claim(2, worker="batch-worker")
                 attempts = state.rows("SELECT attempts FROM frontier ORDER BY url")
-                self.assertTrue(all(int(r["attempts"]) == 1 for r in attempts))
+                self.assertTrue(all(int(r["attempts"]) == 0 for r in attempts))
+                claimed = state.rows("SELECT worker, claimed_at FROM frontier ORDER BY url")
+                self.assertTrue(all(r["worker"] == "batch-worker" and r["claimed_at"] for r in claimed))
 
     def test_batch_claim_empty_frontier(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -220,8 +223,8 @@ class TestRetryFailedBatch(unittest.TestCase):
             with StateStore(Path(temp) / "state.sqlite3") as state:
                 req = _make_request("https://example.com/retry")
                 state.enqueue(req)
-                state.claim(1)  # attempts = 1
-                state.mark_failed(req, Exception("fail"), max_attempts=1, retryable=False)
+                state.claim(1)  # A-P3-10：认领不递增 attempts
+                state.mark_failed(req, Exception("fail"), max_attempts=1, retryable=False)  # attempts=1
                 state.retry_failed()
                 row = state.rows("SELECT attempts, status FROM frontier WHERE url=?", (req.url,))[0]
                 self.assertEqual(row["status"], "pending")

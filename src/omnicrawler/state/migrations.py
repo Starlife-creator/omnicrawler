@@ -67,6 +67,7 @@ def initialize_schema(conn: sqlite3.Connection, path: Path, schema: str) -> None
         for table, columns in {
             "responses": {"etag": "TEXT", "last_modified": "TEXT"},
             "semantic_changes": {"baseline": "INTEGER NOT NULL DEFAULT 0"},
+            "frontier": {"claimed_at": "TEXT", "worker": "TEXT"},
         }.items():
             present = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
             for name, declaration in columns.items():

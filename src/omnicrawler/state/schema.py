@@ -60,6 +60,9 @@ CREATE TABLE IF NOT EXISTS frontier (
     meta_json TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     attempts INTEGER NOT NULL DEFAULT 0,
+    -- A-P3-10：认领只记录在途元数据；attempts 仅 mark_failed 时递增，崩溃重放不扣额度。
+    claimed_at TEXT,
+    worker TEXT,
     last_error TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL

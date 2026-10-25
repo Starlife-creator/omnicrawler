@@ -73,15 +73,23 @@ def execute(
         if action == "consume":
             # B09-003：本地降级队列的 config_path 必须位于 CWD 内（消费方与提交方同目录）。
             local_only = queue.backend_kind() == "local"
-            processed = consume_loop(
+            stats: dict[str, int] = {}
+            consume_loop(
                 queue,
                 _make_executor(executor, local_only=local_only),
                 worker_id=worker_id or None,
                 interval=interval,
                 max_tasks=max_tasks,
                 on_log=print,
+                stats=stats,
             )
-            return {"backend": queue.backend_kind(), "processed": processed}
+            return {
+                "backend": queue.backend_kind(),
+                "processed": stats.get("processed", 0),
+                "succeeded": stats.get("succeeded", 0),
+                "failed": stats.get("failed", 0),
+                "dead_letter": queue.dead_letter(),
+            }
         raise ValueError(f"未知队列操作: {action}")
     finally:
         queue.close()
