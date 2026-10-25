@@ -186,7 +186,11 @@ CREATE TABLE IF NOT EXISTS audit_events (
     action TEXT NOT NULL,
     actor TEXT NOT NULL,
     details_json TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    -- A-P2-2：审计哈希链列（单调序号 / 前一条哈希 / 本条哈希），旧库由迁移补齐。
+    chain_seq INTEGER,
+    prev_hash TEXT,
+    record_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS artifacts (
