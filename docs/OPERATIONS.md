@@ -136,6 +136,20 @@ GUI 专业模式可添加、启用和停用相同任务。SQLite 调度库用租
 
 人工修改写审计信息，Excel/CSV 输出会防止公式注入。
 
+## 日志与事件流
+
+**当前版本（1.0.1）实际行为**：
+
+- 日志目录：便携/源码布局可移植数据根下 `logs/`；文件日志为单文件 `logs/omnicrawler.log`，5 MB × 3 份轮转；默认级别 INFO，格式由 `--log-level` 与 `--log-format text|json` 控制。
+- 文本与 JSON 两路输出都会对 URL 内嵌凭据做脱敏；`json` 格式记录 `run_id / request_id / task_id / stage / url / site` 等上下文字段（存在时）。
+- 长时间运行后旧运行记录会被轮转覆盖；多任务并发写同一文件时事件顺序以时间戳为准。
+
+**规划口径（C-#25，配置草案 `configs/logging.example.yaml`，初始化接线待对接）**：
+
+- 按运行分文件：`logs/omnicrawler-<run-id>-<timestamp>.log`，配合 `retention_days` 自动清理旧运行日志，事故复盘证据链不再被轮转覆盖。
+- 结构化事件流：`logs/events-<run-id>.jsonl` 每行一条 JSON，覆盖启动、任务开始、任务结束、投递、错误五类关键事件，供事后检索与指标回放。
+- 配置键与默认值以 `configs/logging.example.yaml` 为准；日志初始化代码位于归属外模块（`core/logging_utils.py`），本轮仅落地配置草案与本文档口径，接线需求由集成步骤协调。
+
 ## 保留与清理
 
 先预览，再显式执行：

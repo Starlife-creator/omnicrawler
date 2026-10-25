@@ -44,6 +44,11 @@ source:
 
 采集 JSON 日志、`metrics.prom`、`pipeline_summary.json` 与 diagnostics。告警至少覆盖：任务失败、资源限制、连续 fetch 错误、质量完整率下降、frontier 长时间不收敛、存储 warning 和 PDF/OCR 失败。
 
+**指标采集两种模式（C-#26）**：
+
+- **单机模式（当前版本默认）**：指标为进程内计数与有界延迟样本，运行结束落盘 `output/metrics.json` 与 `output/metrics.prom`；外部监控经文件采集，不监听网络端口。
+- **可选 HTTP 端点（配置草案 `configs/metrics.example.yaml`，服务实现待对接）**：`/metrics` 只读 GET 端点，默认关闭；开启后仅绑定回环地址 `127.0.0.1`，跨主机采集必须启用 `bearer-token` 鉴权并配置 600 权限令牌文件；端点纳入 EgressBroker 网络边界审计，禁止注册任何变更类路由。服务进程实现位于 `services/`（归属外），由集成步骤统一接线，当前版本不得把该端点视为已可用。
+
 ## 发布
 
 发布物应包含源码包、wheel、SBOM、验证报告和变更记录。生产升级先复制工作目录，在副本执行 `omnicrawler migrate` 和小样本回归；不要直接覆盖唯一状态库。

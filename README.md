@@ -113,16 +113,21 @@ docker compose up
 | 宿主机路径 | 容器路径 | 权限 | 用途 |
 |---|---|---|---|
 | `./configs` | `/data/configs` | 只读 | 任务配置与凭据引用 |
+| `./examples` | `/data/examples` | 只读 | 示例任务模板 |
 | `./work` | `/data/work` | 读写 | 工作区与断点状态 |
 | `./output` | `/data/output` | 读写 | 导出交付物 |
 | `./data` | `/data/data` | 读写 | 本地原始副本 |
+| `./market`（可选） | `/data/market` | 只读 | 离线市场样例目录，默认不挂载 |
 
 - `distributed` profile：`docker compose --profile distributed up` 才会启动 Redis 服务，
   默认不启用。
-- 日志落在容器内 `/data/logs/`（随 `./work` 或您挂载的数据卷持久化）；容器健康检查
-  执行 `omnicrawler doctor` 轻量探活，编排系统据此判断容器存活。
-- 镜像内不打包 `locale/` 语言包与历史文档（wheel 布局边界见 `pyproject.toml` 注释）；
-  容器内界面回退源码基准语言，需要英文界面时在镜像构建参数中显式纳入资源。
+- 容器以 `tini` 作为 PID 1 初始化进程回收僵尸子进程、转发信号；健康检查每 30s 执行
+  `omnicrawler doctor -c configs/project.yaml`（10s 超时、10s 启动宽限、3 次重试），
+  编排系统据此判断存活；未挂载配置的裸 `docker run` 会在探活窗口失败，属预期边界。
+- 日志落在容器内 `/data/logs/`（随 `./work` 或您挂载的数据卷持久化）。
+- 镜像内已纳入 `schemas/` SDK 契约；不打包 `locale/` 语言包、`market/` 与历史文档
+  （wheel 布局边界见 `pyproject.toml` 注释）；容器内界面回退源码基准语言，需要英文
+  界面时在镜像构建参数中显式纳入资源。
 
 ---
 

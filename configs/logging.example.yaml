@@ -1,0 +1,27 @@
+# C-#25 日志与结构化事件流配置草案。
+#
+# ⚠️ 本文件是配置口径与对接契约，**当前版本尚未被日志初始化代码消费**；
+# 现有日志由 CLI `--log-level` / `--log-format` 控制（core/logging_utils.py），
+# per-run 文件与 JSONL 事件流的初始化接线见 docs/OPERATIONS.md「日志与事件流」。
+
+logging:
+  # 日志级别：DEBUG / INFO / WARNING / ERROR / CRITICAL（未知级别回退 INFO）。
+  level: INFO
+  # 输出格式：text（文本轮转文件 + stderr）| json（结构化 stderr）。
+  format: text
+
+  file:
+    # 每次运行写独立文件 `logs/omnicrawler-<run-id>-<timestamp>.log`；
+    # false 时维持现状：单文件 `logs/omnicrawler.log` 5 MB × 3 份轮转。
+    per_run_files: false
+    # per_run_files 模式下自动清理 N 天前的运行日志；0 表示不自动清理。
+    retention_days: 14
+    # 单文件轮转上限（字节）与保留份数（单文件模式沿用此两项）。
+    max_bytes: 5242880
+    backup_count: 3
+
+  events:
+    # 独立结构化事件流 `logs/events-<run-id>.jsonl`（每行一条 JSON，便于事后检索）。
+    structured_jsonl: false
+    # 纳入事件流的关键事件类别：启动、任务开始、任务结束、投递、错误。
+    include: [start, task_start, task_end, dispatch, error]
