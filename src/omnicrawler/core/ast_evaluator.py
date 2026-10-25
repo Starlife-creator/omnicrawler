@@ -43,6 +43,12 @@ ALLOWED_FUNCTIONS: dict[str, Callable[..., Any]] = {
     "concat": concat,
 }
 
+# B-P3-9：表达式静态规模边界——节点总数上限；幂运算常量底数/指数上限，
+# 防止 ``2**100000`` 类表达式在求值前就造成 CPU/内存膨胀。
+_MAX_EXPRESSION_NODES = 200
+_MAX_POW_EXPONENT = 64
+_MAX_POW_BASE = 1_000_000
+
 _ALLOWED_NODES: frozenset[type[ast.AST]] = frozenset({
     ast.Expression,
     ast.Constant,
@@ -88,8 +94,17 @@ def safe_eval(expression: str, variables: dict[str, Any]) -> Any:
     return eval(compile(tree, "<expr>", "eval"), {"__builtins__": {}}, context)
 
 
+def _constant_number(node: ast.AST) -> int | float | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return node.value
+    return None
+
+
 def _validate(tree: ast.AST) -> None:
-    for node in ast.walk(tree):
+    nodes = list(ast.walk(tree))
+    if len(nodes) > _MAX_EXPRESSION_NODES:
+        raise ValueError(f"表达式节点数超出静态上限({_MAX_EXPRESSION_NODES})")
+    for node in nodes:
         if type(node) not in _ALLOWED_NODES:
             raise ValueError(f"表达式包含不允许的节点: {type(node).__name__}")
         if isinstance(node, ast.Call):
@@ -97,6 +112,13 @@ def _validate(tree: ast.AST) -> None:
             name = getattr(node.func, "id", None)
             if name not in ALLOWED_FUNCTIONS:
                 raise ValueError(f"表达式不允许调用: {name!r}")
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
+            base = _constant_number(node.left)
+            exponent = _constant_number(node.right)
+            if base is not None and abs(base) > _MAX_POW_BASE:
+                raise ValueError(f"幂运算底数超出规模上限({_MAX_POW_BASE})")
+            if exponent is not None and abs(exponent) > _MAX_POW_EXPONENT:
+                raise ValueError(f"幂运算指数超出规模上限({_MAX_POW_EXPONENT})")
 
 
 __all__ = ["safe_eval", "ALLOWED_FUNCTIONS"]

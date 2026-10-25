@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import html
 from dataclasses import dataclass
 
 
@@ -170,22 +171,23 @@ def field_help_html(field_id: str, *, mode: str = "simple") -> str:
     """
     spec = get_field_spec(field_id)
     if spec is None:
-        return f"<p>未找到字段 '{field_id}' 的帮助信息。</p>"
+        return f"<p>未找到字段 '{html.escape(field_id)}' 的帮助信息。</p>"
 
-    label = spec.label
+    # B-P2-19：所有插值统一 html.escape；技术名进入 <code> 前同样转义（纵深防御）。
+    label = html.escape(spec.label)
     if mode != "simple" and spec.technical_name:
-        label = f"{spec.label}（<code>{spec.technical_name}</code>）"
+        label = f"{label}（<code>{html.escape(spec.technical_name)}</code>）"
 
     parts = [
         f"<h3>{label}</h3>",
         "<dl>",
-        f"<dt><b>这是什么</b></dt><dd>{spec.what}</dd>",
-        f"<dt><b>为什么需要</b></dt><dd>{spec.why}</dd>",
-        f"<dt><b>推荐设置</b></dt><dd>{spec.recommendation}</dd>",
-        f"<dt><b>当前默认值</b></dt><dd>{spec.default}</dd>",
-        f"<dt><b>修改影响</b></dt><dd>{spec.impact}</dd>",
-        f"<dt><b>示例</b></dt><dd>{spec.example}</dd>",
-        f"<dt><b>常见错误</b></dt><dd>{spec.common_errors}</dd>",
+        f"<dt><b>这是什么</b></dt><dd>{html.escape(spec.what)}</dd>",
+        f"<dt><b>为什么需要</b></dt><dd>{html.escape(spec.why)}</dd>",
+        f"<dt><b>推荐设置</b></dt><dd>{html.escape(spec.recommendation)}</dd>",
+        f"<dt><b>当前默认值</b></dt><dd>{html.escape(spec.default)}</dd>",
+        f"<dt><b>修改影响</b></dt><dd>{html.escape(spec.impact)}</dd>",
+        f"<dt><b>示例</b></dt><dd>{html.escape(spec.example)}</dd>",
+        f"<dt><b>常见错误</b></dt><dd>{html.escape(spec.common_errors)}</dd>",
     ]
     if spec.can_modify_later:
         parts.append("<dt><b>可否稍后修改</b></dt><dd>✓ 可以，在运行前均可修改</dd>")

@@ -52,6 +52,9 @@ from ..core.safe_data import safe_json_loads
 
 LOGGER = logging.getLogger(__name__)
 
+#: B-P2-6：标题分块正则提升为模块级常量，避免 _heading_split 每次调用重复编译。
+_HEADING_SPLIT_RE = re.compile(r"<(h[1-6])[^>]*>(.*?)</\1>", re.IGNORECASE | re.DOTALL)
+
 
 class SplitStrategy(StrEnum):
     """HTML 分块策略。"""
@@ -343,10 +346,8 @@ class AIGraphExtractor:
 
     def _heading_split(self, html: str) -> list[str]:
         """按 h1-h6 标签分块（D58：首个标题前的内容保留为第 0 块）。"""
-        import re
-        # 找到所有标题位置
-        pattern = re.compile(r'<(h[1-6])[^>]*>(.*?)</\1>', re.IGNORECASE | re.DOTALL)
-        matches = list(pattern.finditer(html))
+        # 找到所有标题位置（B-P2-6：模块级编译缓存）
+        matches = list(_HEADING_SPLIT_RE.finditer(html))
         if not matches:
             return []
 

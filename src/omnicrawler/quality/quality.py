@@ -12,6 +12,34 @@ from ..core.models import ExtractedRecord
 from ..core.safe_data import safe_regex_search
 from .schema_registry import validate_target_fields
 
+# ── B-P3-1：质量评分权重（模块顶部命名常量，取值依据见注释）────────────────────────────
+# 取值依据：
+#   * 0.4 完整性：已填字段占比，反映记录整体覆盖度；
+#   * 0.6 必填满足率：必填缺失属于契约硬伤，权重高于整体覆盖；
+#   * 0.1/错误 扣分：每个校验错误扣 0.1 分；单条记录扣分上限 0.5，
+#     避免少量格式瑕疵把总分压到 0。
+_SCORE_WEIGHT_COMPLETENESS = 0.4
+_SCORE_WEIGHT_REQUIRED = 0.6
+_SCORE_ERROR_PENALTY_PER_ERROR = 0.1
+_SCORE_ERROR_PENALTY_CAP = 0.5
+
+
+def _compile_confidence_thresholds(fields: dict[str, Any]) -> dict[str, float]:
+    """B-P3-1：规则加载期一次性解析并校验 ``min_confidence`` 阈值（0..1）。
+
+    批量评估路径在 ``assess_records`` 入口调用一次，避免每条记录逐字段重复
+    ``float()`` 转换与范围校验；独立单条评估时由 ``assess_record`` 内部编译。
+    """
+    thresholds: dict[str, float] = {}
+    for name, raw_rule in fields.items():
+        if not isinstance(raw_rule, dict) or raw_rule.get("min_confidence") is None:
+            continue
+        threshold = float(_numeric_value(raw_rule["min_confidence"]))
+        if not 0 <= threshold <= 1:
+            raise ValueError("min_confidence 必须在0到1之间")
+        thresholds[str(name)] = threshold
+    return thresholds
+
 
 def _numeric_value(value: Any, *, money: bool = False) -> Decimal:
     """Read a finite decimal without deleting units or arbitrary characters."""
@@ -112,9 +140,13 @@ def assess_record(
     fields: dict[str, Any],
     threshold: float = 0.8,
     *, review_policy: str = "contract",
+    confidence_thresholds: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     if review_policy not in {"recall", "contract"}:
         raise ValueError("review_policy 必须是 recall 或 contract")
+    # B-P3-1：min_confidence 阈值一次性解析校验；批量路径由调用方传入编译结果。
+    if confidence_thresholds is None:
+        confidence_thresholds = _compile_confidence_thresholds(fields)
     required = _required_fields(record, fields)
     missing = [name for name in required if _field_missing(record.data, name, fields.get(name))]
     errors: list[str] = []
@@ -186,7 +218,12 @@ def assess_record(
     required_score = 1.0 if not required else (len(required) - len(missing)) / len(required)
     score = max(
         0.0,
-        min(1.0, completeness * 0.4 + required_score * 0.6 - min(0.5, len(errors) * 0.1)),
+        min(
+            1.0,
+            completeness * _SCORE_WEIGHT_COMPLETENESS
+            + required_score * _SCORE_WEIGHT_REQUIRED
+            - min(_SCORE_ERROR_PENALTY_CAP, len(errors) * _SCORE_ERROR_PENALTY_PER_ERROR),
+        ),
     )
     evidence_status: dict[str, str] = {}
     evidence_issues: list[str] = []
@@ -215,10 +252,8 @@ def assess_record(
         if ((rule.get("evidence_required") or rule.get("critical") or review_policy == "recall")
                 and status != "supported") or status in {"conflict", "value_mismatch", "label_mismatch"}:
             evidence_issues.append(f"{name}: evidence {status}")
-        if rule.get("min_confidence") is not None:
-            confidence_threshold = float(_numeric_value(rule["min_confidence"]))
-            if not 0 <= confidence_threshold <= 1:
-                raise ValueError("min_confidence 必须在0到1之间")
+        if field_name in confidence_thresholds:
+            confidence_threshold = confidence_thresholds[field_name]
             confidence = trace.get("confidence") if isinstance(trace, dict) else None
             if (not isinstance(confidence, (int, float)) or isinstance(confidence, bool) or not math.isfinite(confidence)
                     or not 0 <= confidence <= 1 or confidence < confidence_threshold):
@@ -308,8 +343,13 @@ def assess_records(
 ) -> dict[str, Any]:
     duplicates = 0
     seen: set[tuple[str, ...]] = set()
+    # B-P3-1：阈值在批量入口一次性编译校验，循环内不再重复解析。
+    confidence_thresholds = _compile_confidence_thresholds(fields)
     for record in records:
-        quality = assess_record(record, fields, threshold, review_policy=review_policy)
+        quality = assess_record(
+            record, fields, threshold,
+            review_policy=review_policy, confidence_thresholds=confidence_thresholds,
+        )
         prior_quality = record.evidence.get("_quality", {})
         if isinstance(prior_quality, dict):
             for key, value in prior_quality.items():

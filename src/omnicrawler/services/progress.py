@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import math
+import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field, fields
@@ -156,77 +157,95 @@ class ProgressTracker:
         self._ema_rate_percent_per_sec: float = 0.0  # % 每秒
 
         self.last_event: TaskProgressEvent | None = None
+        # B-P3-6：进度可变状态（阶段/子项计数/EMA 样本/最新事件）跨线程访问加锁。
+        self._lock = threading.RLock()
+
+    def last_event_snapshot(self) -> TaskProgressEvent | None:
+        """线程安全地读取最新事件快照（返回事件对象本身，消费方不应原地改写）。"""
+        with self._lock:
+            return self.last_event
 
     # ── 状态流转 ─────────────────────────────────────────
     def start(self) -> TaskProgressEvent:
-        self._started_at = time.time()
-        self._state = "running"
-        return self._emit(self._build_event(0.0))
+        with self._lock:
+            self._started_at = time.time()
+            self._state = "running"
+            return self._emit(self._build_event(0.0))
 
     def finish(self) -> TaskProgressEvent:
-        self._finished_at = time.time()
-        self._state = "finished"
-        self._current_stage = ""
-        return self._emit(self._build_event(100.0, state="finished"))
+        with self._lock:
+            self._finished_at = time.time()
+            self._state = "finished"
+            self._current_stage = ""
+            return self._emit(self._build_event(100.0, state="finished"))
 
     def cancel(self) -> TaskProgressEvent:
-        self._state = "cancelled"
-        return self._emit(self._build_event(self._overall_percent(), state="cancelled"))
+        with self._lock:
+            self._state = "cancelled"
+            return self._emit(self._build_event(self._overall_percent(), state="cancelled"))
 
     def fail(self, message: str = "") -> TaskProgressEvent:
-        self._state = "failed"
-        ev = self._build_event(self._overall_percent(), state="failed")
-        ev.message = message
-        return self._emit(ev)
+        with self._lock:
+            self._state = "failed"
+            ev = self._build_event(self._overall_percent(), state="failed")
+            ev.message = message
+            return self._emit(ev)
 
     def pause(self) -> TaskProgressEvent:
-        if self._state == "running":
-            self._state = "paused"
-        return self._emit(self._build_event(self._overall_percent(), state="paused"))
+        with self._lock:
+            if self._state == "running":
+                self._state = "paused"
+            return self._emit(self._build_event(self._overall_percent(), state="paused"))
 
     def resume(self) -> TaskProgressEvent:
-        if self._state == "paused":
-            self._state = "running"
-        return self._emit(self._build_event(self._overall_percent(), state="running"))
+        with self._lock:
+            if self._state == "paused":
+                self._state = "running"
+            return self._emit(self._build_event(self._overall_percent(), state="running"))
 
     # ── 阶段级控制 ────────────────────────────────────────
     def begin_stage(self, stage_name: str, *, expected_items: int = 0) -> TaskProgressEvent:
-        spec = self._get_spec(stage_name)
-        self._current_stage = stage_name
-        self._stage_started_at = time.time()
-        self._items_current = 0
-        self._items_total = max(expected_items, spec.expected_items) if spec else expected_items
-        ev = self._build_event(self._overall_percent())
-        if spec and spec.display_name:
-            ev.message = spec.display_name
-        return self._emit(ev)
+        with self._lock:
+            spec = self._get_spec(stage_name)
+            self._current_stage = stage_name
+            self._stage_started_at = time.time()
+            self._items_current = 0
+            self._items_total = max(expected_items, spec.expected_items) if spec else expected_items
+            ev = self._build_event(self._overall_percent())
+            if spec and spec.display_name:
+                ev.message = spec.display_name
+            return self._emit(ev)
 
     def end_stage(self, stage_name: str) -> TaskProgressEvent:
-        span = self._stage_span.get(stage_name, 0.0)
-        baseline = self._stage_baseline.get(stage_name, 0.0)
-        # 阶段结束时强制推进到该阶段 100%，避免子项偏差累积
-        return self._emit(self._build_event(baseline + span))
+        with self._lock:
+            span = self._stage_span.get(stage_name, 0.0)
+            baseline = self._stage_baseline.get(stage_name, 0.0)
+            # 阶段结束时强制推进到该阶段 100%，避免子项偏差累积
+            return self._emit(self._build_event(baseline + span))
 
     # ── 子项级控制 ────────────────────────────────────────
     def advance_item(self, *, by: int = 1, item_total_override: int = 0) -> TaskProgressEvent:
         """阶段内子项前进（例如处理完一份文档）。"""
-        if item_total_override > 0:
-            self._items_total = item_total_override
-        self._items_current = max(self._items_current, min(self._items_current + by, self._items_total))
-        return self._emit(self._build_event(self._overall_percent()))
+        with self._lock:
+            if item_total_override > 0:
+                self._items_total = item_total_override
+            self._items_current = max(self._items_current, min(self._items_current + by, self._items_total))
+            return self._emit(self._build_event(self._overall_percent()))
 
     def set_item_progress(self, current: int, total: int | None = None) -> TaskProgressEvent:
-        if total is not None and total > 0:
-            self._items_total = total
-        self._items_current = max(0, min(current, self._items_total))
-        return self._emit(self._build_event(self._overall_percent()))
+        with self._lock:
+            if total is not None and total > 0:
+                self._items_total = total
+            self._items_current = max(0, min(current, self._items_total))
+            return self._emit(self._build_event(self._overall_percent()))
 
     # ── 直接设置百分（兼容旧式事件桥接） ──────────────────
     def set_percent(self, percent: float, *, message: str = "") -> TaskProgressEvent:
-        ev = self._build_event(max(0.0, min(percent, 100.0)))
-        if message:
-            ev.message = message
-        return self._emit(ev)
+        with self._lock:
+            ev = self._build_event(max(0.0, min(percent, 100.0)))
+            if message:
+                ev.message = message
+            return self._emit(ev)
 
     # ── 内部 ──────────────────────────────────────────────
     def _get_spec(self, stage_name: str) -> StageSpec | None:
@@ -305,7 +324,8 @@ class ProgressTracker:
         return ev
 
     def _emit(self, ev: TaskProgressEvent) -> TaskProgressEvent:
-        self.last_event = ev
+        with self._lock:
+            self.last_event = ev
         if self._on_event is not None:
             try:
                 self._on_event(ev)
