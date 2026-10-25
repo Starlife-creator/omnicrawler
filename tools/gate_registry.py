@@ -178,6 +178,27 @@ GATES: tuple[Gate, ...] = (
         script="tools/check_dependency_consistency.py",
     ),
     Gate(
+        name="check_gui_test_layout",
+        args=("tools/check_gui_test_layout.py",),
+        sets=_STATIC,
+        description="GUI 测试双目录归属规则（无双名文件、单元层不反向依赖集成层）",
+        script="tools/check_gui_test_layout.py",
+    ),
+    Gate(
+        name="check_gui_state_threading",
+        args=("tools/check_gui_state_threading.py",),
+        sets=_STATIC,
+        description="UI 层直连 StateStore 点位白名单（只降不升，新文件禁止直连）",
+        script="tools/check_gui_state_threading.py",
+    ),
+    Gate(
+        name="check_main_window_size",
+        args=("tools/check_main_window_size.py",),
+        sets=_STATIC,
+        description="MainWindow 组合根规模 ratchet（行数/方法数/最长方法只降不升）",
+        script="tools/check_main_window_size.py",
+    ),
+    Gate(
         name="check_minimal_install",
         args=("tools/check_minimal_install.py",),
         sets=_STATIC,

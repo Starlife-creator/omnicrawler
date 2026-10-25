@@ -139,6 +139,12 @@ jobs:
       - run: python tools/check_shell_scripts.py
       # C-#14 / C-#20：OpenCV 单变体、死依赖退役、版本上下界一致性
       - run: python tools/check_dependency_consistency.py
+      # C-#30：tests/unit/gui 与 tests/gui 归属规则（双名文件 / 反向跨目录依赖）
+      - run: python tools/check_gui_test_layout.py
+      # C-#13：UI 层直连 StateStore 点位白名单（禁止新增、存量只降不升）
+      - run: python tools/check_gui_state_threading.py
+      # C-#19：MainWindow 组合根规模 ratchet（行数 / 方法数 / 最长方法只降不升）
+      - run: python tools/check_main_window_size.py
       # C-#4 / C-#27：英文翻译覆盖率下限门禁（实测 20.5%；阈值 20.0% 只防下滑，补译完成后上调）
       - run: python tools/i18n_stats.py --check --min-coverage 0.20
       # C-#4 / C-#27：.po/.pot 格式与占位符校验（msgfmt --check-format）；
