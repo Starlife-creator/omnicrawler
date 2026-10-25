@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .review_persistence import ReviewStore
+
 
 @dataclass(frozen=True, slots=True)
 class FeedbackSample:
@@ -19,11 +21,16 @@ class FeedbackSample:
 
 
 class FeedbackCorpus:
-    def __init__(self) -> None:
+    def __init__(self, *, store: ReviewStore | None = None) -> None:
         self.samples: list[FeedbackSample] = []
+        self.store = store
+        #: A-P1-3：每条样本落库后的版本号 / 内容哈希 / 时间戳回执。
+        self.persisted: list[dict[str, Any]] = []
 
     def add(self, sample: FeedbackSample) -> None:
         self.samples.append(sample)
+        if self.store is not None:
+            self.persisted.append(self.store.save_feedback(sample))
 
     def review_order(self) -> tuple[FeedbackSample, ...]:
         return tuple(sorted(self.samples, key=lambda item: (-(item.risk * 0.7 + item.information_gain * 0.3), item.sample_id)))
