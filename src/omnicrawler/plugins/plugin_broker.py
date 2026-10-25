@@ -224,14 +224,19 @@ class CapabilityBroker(
         }
         try:
             self._audit_hook("plugin.subprocess.call", details)
-        except Exception as exc:  # noqa: BLE001 - 审计钩子异常按配置处置
+        except Exception:  # noqa: BLE001 - 审计钩子异常按配置处置
             if self._audit_hook_fail_closed:
                 LOGGER.error(
                     "插件审计钩子失败（fail-closed 配置：抛出阻断）: plugin=%s op=%s",
                     self._plugin_id, operation,
+                    exc_info=True,
                 )
                 raise
-            LOGGER.warning("插件审计写入失败（不阻断运行）: plugin=%s op=%s", self._plugin_id, operation)
+            LOGGER.warning(
+                "插件审计写入失败（不阻断运行）: plugin=%s op=%s",
+                self._plugin_id, operation,
+                exc_info=True,
+            )
 
     def temp_dir(self) -> Path | None:
         return self._temp_dir

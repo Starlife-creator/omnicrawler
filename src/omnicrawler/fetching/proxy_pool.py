@@ -48,7 +48,7 @@ class ProxyPool:
         *,
         cooldown_seconds: float = 30.0,
         max_failures: int = 3,
-    ) -> "ProxyPool":
+    ) -> ProxyPool:
         entries = [ProxyEntry(url=url) for url in dict.fromkeys(str(url).strip() for url in urls if str(url).strip())]
         return cls(proxies=entries, cooldown_seconds=cooldown_seconds, max_failures=max_failures)
 
