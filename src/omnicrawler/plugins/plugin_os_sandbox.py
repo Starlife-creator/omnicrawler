@@ -151,3 +151,20 @@ def resolve_sandbox_mode(
         "受支持范围: Win10 22H2+/Win11、内核 ≥5.13 主流发行版；"
         "请运行 plugins audit --report 反馈环境信息"
     )
+
+
+def confinement_argv_prefix(mode: str, backend: str) -> list[str]:
+    """spawn 前置平台隔离参数骨架（A-P1-2 代码层落地，待平台 CI 验证）。
+
+    当前一律返回空前缀：真实隔离包装——Linux ``unshare`` + seccomp + Landlock、
+    Windows AppContainer / Job Object、macOS ``sandbox-exec`` Seatbelt profile——
+    待对应平台 CI 矩阵接入后在此返回参数 / 前置命令。裁决结果（mode/reason）已随
+    spawn 路径进入日志与诊断，不在代码层伪装已完成 OS 隔离。
+    """
+    if mode != "os":
+        return []
+    # 待对应平台 CI：
+    # - Linux: unshare --user --map-root-user + seccomp/Landlock 安装器前缀
+    # - Windows: AppContainer profile / Job Object 资源限额注入（见 A-P3-14）
+    # - macOS: sandbox-exec + Seatbelt profile 文件参数
+    return []

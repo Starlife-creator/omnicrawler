@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.config import AppConfig
+from ..core.utils import utcnow
 from ..security.egress import EgressBroker
 from .plugin_contracts import (
     CORE_VERSION,
@@ -337,6 +338,35 @@ def _load_local_plugin(
         contract_version=contract_shape,
         approver=None,  # 加载器无头：in_process 申请 fail-closed 降级
     )
+
+    # A-P2-4：in_process 仅限显式信任本地目录；不在清单内一律 fail-closed 降级 subprocess。
+    trusted_dirs = plugin_router.trusted_local_dirs(plugins_section)
+    if route.backend == "in_process" and not plugin_router.is_under_local_trusted_dir(path, trusted_dirs):
+        LOGGER.warning(
+            "in_process 仅限 plugins.trusted_local_dirs 显式信任目录；降级 subprocess: %s",
+            path,
+        )
+        route = plugin_router.RouteDecision(
+            "subprocess",
+            "插件不在信任本地目录清单内，fail-closed 降级 subprocess",
+            route.tier,
+        )
+
+    # A-P2-4：逃生开关（legacy_in_process 全局回退）命中时落显著审计台账 + 横幅告警。
+    if "legacy_in_process" in route.reason:
+        registry.escape_hatch_events.append({
+            "plugin_id": plugin_id,
+            "path": str(path),
+            "backend": route.backend,
+            "reason": route.reason,
+            "at": utcnow(),
+        })
+        LOGGER.warning(
+            "⚠ 逃生开关审计：插件经 legacy_in_process 全局回退在主进程执行 "
+            "(plugin=%s, file=%s)；仅限受信开发环境，生产环境请改用 subprocess + 验签。",
+            plugin_id, path,
+        )
+
     if route.backend == "subprocess" and contract_shape == 2:
         LOGGER.info("契约 2 插件走子进程沙箱: %s（%s）", path, route.reason)
         # Phase 2b：配额与 egress_policy 从 plugins 配置节解析（daily 配额按

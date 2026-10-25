@@ -1,3 +1,12 @@
+"""链接发现与来源类型注册表。
+
+A-P3-18 信任边界说明：``source.follow_xpath`` 等表达式来自**本地任务配置**，
+按既定设计由操作者本人编写，配置文件写入即视为受信，执行时不再二次沙化。
+若未来引入远程 / 市场来源任务配置，表达式必须先经 ``core/ast_evaluator`` 节点
+白名单校验（钩子落点在归属外模块，见分片 A 回传报告 A-P3-18 待办），不得直接
+把远程表达式送入本模块的 ``xpath`` / 提取器执行路径。
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -155,6 +164,8 @@ class GenericSource:
             can_crawl = self.kind in {"crawl", "focused", "incremental", "media", "browser"}
             download = self.config.section("download")
             extensions = tuple(str(item).lower() for item in download.get("extensions", []))
+            # A-P3-18：follow_xpath 仅接受本地受信任务配置；远程/市场来源表达式
+            # 须先过 core/ast_evaluator 白名单校验（归属外钩子，待集成步骤落地）。
             follow_xpath = str(self.source.get("follow_xpath") or "").strip()
             allowed_links = None
             if follow_xpath:

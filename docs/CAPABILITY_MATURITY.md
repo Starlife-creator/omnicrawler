@@ -23,7 +23,7 @@
 | 原始归档、SQLite WAL 状态、重处理 | Stable | 单机本地权威状态；SQLiteRunRepository 已标记 DeprecationWarning |
 | 安全压缩包解压、凭据作用域、诊断脱敏 | Stable | 默认安全策略开启；凭据作用域和熔断 |
 | SDK run/query 与扩展协议 | Preview | 按弃用期演进；stable 接口按语义化版本维护，删除前至少一个小版本弃用期 |
-| 隔离插件、影子修复、自适应执行 | Preview | 人工批准、权限和边界不可跳过；插件在隔离沙箱/子进程中运行 |
+| 隔离插件、影子修复、自适应执行 | Preview | 人工批准、权限和边界不可跳过；插件在子进程隔离边界内运行（进程边界 + `-I -S` 导入隔离 + 权限代理 + 静态预检）；OS 级沙箱（AppContainer/Landlock/seccomp/Seatbelt/Job Object）为 Roadmap，当前未接线 |
 | 远程 Worker/团队编排 | Reserved | 当前版本不提供服务端控制面 |
 
 > "支持多种网站"表示具有多协议、浏览器回退和模板扩展能力，不表示任何网站都无需配置或授权即可采集。

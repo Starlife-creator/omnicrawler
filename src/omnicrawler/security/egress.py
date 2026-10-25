@@ -22,7 +22,7 @@ from ..core.errors import (
 )
 from ..core.utils import utcnow
 from . import tls_scope
-from .policy import NetworkTargetPolicy
+from .policy import NetworkTargetPolicy, _bound_fifo
 
 _SENSITIVE_HEADER = re.compile(
     r"^(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api-key|x-auth-token)$",
@@ -33,6 +33,11 @@ _SENSITIVE_QUERY = re.compile(
     re.IGNORECASE,
 )
 LOGGER = logging.getLogger(__name__)
+
+# A-P3-1：熔断器主机表与能力令牌计数表容量上限（FIFO 淘汰最旧条目），防止长尾域名 /
+# 海量一次性令牌把进程堆撑大；容量只影响冷缓存重新计票，不改变预算与熔断语义。
+_CIRCUIT_MAX_HOSTS = 1024
+_CAPABILITY_MAX_TOKENS = 512
 
 
 def _domain_matches(host: str, allowed: tuple[str, ...]) -> bool:
@@ -371,6 +376,7 @@ class EgressBroker:
                 self._requests += 1
                 if capability is not None:
                     self._capability_counts[capability.token] = capability_used + 1
+                    _bound_fifo(self._capability_counts, _CAPABILITY_MAX_TOKENS)
         self._audit(
             "authorized",
             url=url,
@@ -478,12 +484,26 @@ class EgressBroker:
                 else 0.0
             )
             self._circuits[host] = (failures, open_until)
+            _bound_fifo(self._circuits, _CIRCUIT_MAX_HOSTS)
         self._audit(
             "circuit_failure",
             url=url,
             failures=failures,
             open=bool(open_until),
             error=error[:300],
+        )
+
+    def record_robots_issue(self, kind: str, url: str, *, detail: str, allowed: bool) -> None:
+        """A-P2-7：记录 robots.txt 加载失败的分类诊断事件（DNS / 超时 / HTTP / 解析 / 其它）。
+
+        与熔断器、响应计数解耦；仅写审计证据链，不改变 robots fail_closed 语义。
+        """
+        self._audit(
+            "robots_issue",
+            url=url,
+            kind=kind,
+            detail=detail[:300],
+            allowed=bool(allowed),
         )
 
     @contextmanager

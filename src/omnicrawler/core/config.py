@@ -102,6 +102,29 @@ DEFAULTS: dict[str, Any] = {
         # 引擎不支持或拦截不可用时给出清晰指引而非静默直连
         "experimental_selenium_bidi_guard": True,
     },
+    # A-P2-2：审计哈希链配置。strict_chain=True 时重放校验失败 fail-closed 抛错；
+    # chain_path 相对项目工作区解析，默认落 logs/audit-chain.jsonl。
+    "audit": {
+        "chain_enabled": True,
+        "strict_chain": False,
+        "chain_path": "logs/audit-chain.jsonl",
+    },
+    # A-P3-5：自适应 / 限流 / 复核权重等阈值集中口径（默认值 + 校验区间见 validate_config）。
+    "tuning": {
+        # 复核风险评分权重（review/review_workbench.py risk_score），均为非负数值。
+        "review_weights": {
+            "missing_required": 30, "rule_conflict": 20, "ai_conflict": 15,
+            "structure_drift": 20, "ocr_quality": 20, "duplicate": 10, "pending_deletion": 25,
+        },
+        "adaptive_window": 30,
+        "adaptive_audit_limit": 200,
+        "adaptive_cooldown_seconds": 10,
+        "live_history_window": 16,
+        "live_audit_limit": 200,
+        "live_domain_capacity": 1000,
+        "run_control_poll_min_seconds": 0.05,
+        "run_control_poll_max_seconds": 1.0,
+    },
     "browser": {
         "engine": "playwright", "headless": True, "pool_size": 2, "actions": [],
         "selenium_fallback_engine": "none",
@@ -591,6 +614,8 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         "crawl": set(DEFAULTS["crawl"]) | {"max_requests", "wait_timeout_seconds"},
         "download": set(DEFAULTS["download"]) | {"output_dir"},
         "egress": set(DEFAULTS["egress"]),
+        "audit": set(DEFAULTS["audit"]),
+        "tuning": set(DEFAULTS["tuning"]),
         "extract": set(DEFAULTS["extract"]) | {
             "item_path", "enrich", "scene",
             "parser_options", "processor_options", "extractor_options", "deduplicate_by",
@@ -717,6 +742,17 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
                 errors.append(f"crawl.{key}必须在{minimum}到{maximum}之间")
         except (TypeError, ValueError):
             errors.append(f"crawl.{key}必须是整数")
+    # A-P3-2：用户正则在配置校验期编译，非法模式在此拒绝（与 ScopePolicy 预编译缓存同源）。
+    for pattern_key in ("deny_patterns", "allow_patterns", "allow_write_patterns"):
+        patterns = crawl.get(pattern_key, [])
+        if not isinstance(patterns, list):
+            errors.append(f"crawl.{pattern_key}必须是正则数组")
+            continue
+        for pattern in patterns:
+            try:
+                re.compile(str(pattern))
+            except re.error as exc:
+                errors.append(f"crawl.{pattern_key} 正则非法 {str(pattern)!r}: {exc}")
     http = config.section("http")
     try:
         if float(http.get("delay_seconds", 1)) < 0:
@@ -805,6 +841,46 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         errors.append("egress.allow_unintercepted_selenium必须是true或false")
     if not isinstance(egress.get("experimental_selenium_bidi_guard", False), bool):
         errors.append("egress.experimental_selenium_bidi_guard必须是true或false")
+    # A-P2-2：审计哈希链开关与严格模式类型校验（严格模式校验失败 fail-closed）。
+    audit = config.section("audit")
+    for _audit_key in ("chain_enabled", "strict_chain"):
+        if not isinstance(audit.get(_audit_key, DEFAULTS["audit"][_audit_key]), bool):
+            errors.append(f"audit.{_audit_key}必须是true或false")
+    if not isinstance(audit.get("chain_path", ""), str) or not str(audit.get("chain_path", "")).strip():
+        errors.append("audit.chain_path不能为空字符串")
+    # A-P3-5：集中阈值 / 权重区间校验（非负数值；轮询上下限 min <= max；窗口 / 容量 >= 1）。
+    tuning = config.section("tuning")
+    weights = tuning.get("review_weights", DEFAULTS["tuning"]["review_weights"])
+    if not isinstance(weights, dict):
+        errors.append("tuning.review_weights必须是映射表")
+    else:
+        for _wkey, _wdefault in DEFAULTS["tuning"]["review_weights"].items():
+            try:
+                if float(weights.get(_wkey, _wdefault)) < 0:
+                    errors.append(f"tuning.review_weights.{_wkey}不能为负数")
+            except (TypeError, ValueError):
+                errors.append(f"tuning.review_weights.{_wkey}必须是非负数")
+    for _tkey, _minimum in (
+        ("adaptive_window", 1), ("adaptive_audit_limit", 1), ("live_history_window", 1),
+        ("live_audit_limit", 1), ("live_domain_capacity", 1),
+    ):
+        try:
+            if int(tuning.get(_tkey, DEFAULTS["tuning"][_tkey])) < _minimum:
+                errors.append(f"tuning.{_tkey}不能小于{_minimum}")
+        except (TypeError, ValueError):
+            errors.append(f"tuning.{_tkey}必须是整数")
+    try:
+        if float(tuning.get("adaptive_cooldown_seconds", DEFAULTS["tuning"]["adaptive_cooldown_seconds"])) < 0:
+            errors.append("tuning.adaptive_cooldown_seconds不能为负数")
+    except (TypeError, ValueError):
+        errors.append("tuning.adaptive_cooldown_seconds必须是数值")
+    try:
+        poll_min = float(tuning.get("run_control_poll_min_seconds", DEFAULTS["tuning"]["run_control_poll_min_seconds"]))
+        poll_max = float(tuning.get("run_control_poll_max_seconds", DEFAULTS["tuning"]["run_control_poll_max_seconds"]))
+        if poll_min < 0 or poll_max < poll_min:
+            errors.append("tuning.run_control_poll 区间非法（min >= 0 且 min <= max）")
+    except (TypeError, ValueError):
+        errors.append("tuning.run_control_poll 必须是数值")
     if config.section("browser").get("selenium_fallback_engine") not in {"none", "playwright"}:
         errors.append("browser.selenium_fallback_engine只能是none或playwright")
     if config.source_kind == "browser" and not config.section("browser").get("engine"):
@@ -818,7 +894,6 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     # 分页形状由 core.pagination 的契约统一判定与校验（唯一真源）；
     # 这里只负责把结果并入 errors —— 此前核心只校验 type=page，
     # 游标配置缺 next_path 时既不报错也不翻页（静默少采几页）。
-    _source_section = config.section("source")
     _source_section = config.section("source")
     errors.extend(validate_pagination(_source_section.get("pagination", {})))
     # ★ 跨字段判据（2026-09-30，**这条有据**）：`location: body` 时 `source.payload` 必须能被

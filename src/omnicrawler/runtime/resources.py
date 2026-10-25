@@ -52,6 +52,8 @@ class ResourceGuard:
 
 
 # S2.5.27：工作区大小缓存——目录 mtime 摘要不变时跳过全量 stat
+# A-P3-1：缓存条目封顶（FIFO 淘汰最旧根目录），避免多任务 / 多目录场景下无界增长。
+_SIZE_CACHE_MAX_ROOTS = 256
 _SIZE_CACHE: dict[Path, tuple[int, int]] = {}
 
 
@@ -59,6 +61,7 @@ def _directory_size(root: Path) -> int:
     key = _tree_mtime_digest(root)
     cached = _SIZE_CACHE.get(root)
     if cached is not None and cached[1] == key:
+        # A-P3-4：mtime 指纹命中时直接复用已算大小，不重复全量 stat。
         return cached[0]
     total = 0
     for path in root.rglob("*"):
@@ -68,6 +71,8 @@ def _directory_size(root: Path) -> int:
         except OSError:
             continue
     _SIZE_CACHE[root] = (total, key)
+    while len(_SIZE_CACHE) > _SIZE_CACHE_MAX_ROOTS:
+        _SIZE_CACHE.pop(next(iter(_SIZE_CACHE)), None)
     return total
 
 

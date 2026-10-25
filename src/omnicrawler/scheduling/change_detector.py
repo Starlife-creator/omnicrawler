@@ -47,6 +47,11 @@ from .monitor_store import BaselineConflictError
 
 LOGGER = logging.getLogger(__name__)
 
+# A-P3-1：抓取错误表与检查结果表容量上限（FIFO 淘汰最旧条目），避免规则 / 域名
+# 长尾场景下状态字典无界增长；淘汰只影响排障缓存，不改变监控判定语义。
+_FETCH_ERRORS_MAX = 512
+_CHECK_RESULTS_MAX = 512
+
 
 # ── 数据模型 ────────────────────────────────────────────────────────
 
@@ -234,6 +239,15 @@ class ChangeDetector:
                     pass
         self._baselines.update(self._store.baselines())
 
+    @staticmethod
+    def _bound_dict(table: dict[str, Any], capacity: int) -> None:
+        """A-P3-1：FIFO 淘汰最旧条目，把内存表压到容量以内。"""
+        while len(table) > capacity:
+            oldest = next(iter(table), None)
+            if oldest is None:
+                break
+            table.pop(oldest, None)
+
     # ── 规则管理 ────────────────────────────────────────────────────
 
     def add_rule(self, rule: MonitorRule) -> str:
@@ -381,6 +395,7 @@ class ChangeDetector:
                 return result.body.decode(charset, errors="replace")
             except Exception as exc:  # noqa: BLE001
                 self._fetch_errors[url] = type(exc).__name__
+                self._bound_dict(self._fetch_errors, _FETCH_ERRORS_MAX)
                 LOGGER.warning("共享抓取器获取监控页面失败: %s", type(exc).__name__)
                 return None
         try:
@@ -391,6 +406,7 @@ class ChangeDetector:
             return decode_body(result)
         except Exception as exc:
             self._fetch_errors[url] = type(exc).__name__
+            self._bound_dict(self._fetch_errors, _FETCH_ERRORS_MAX)
             LOGGER.warning("获取监控页面失败: %s", type(exc).__name__)
             return None
 
@@ -476,6 +492,7 @@ class ChangeDetector:
         """检查单条规则。返回 ChangeEvent（有变化时）或 None（无变化）。"""
         rule = self._rules.get(rule_id)
         self._check_results[rule_id] = {"status": "not_checked"}
+        self._bound_dict(self._check_results, _CHECK_RESULTS_MAX)
         if rule is None or not rule.enabled:
             self._check_results[rule_id]["status"] = "disabled"
             return None
@@ -495,6 +512,7 @@ class ChangeDetector:
         if html is None:
             self._check_results[rule_id] = {"status": "cancelled" if self._cancelled else "failed",
                                             "error_type": self._fetch_errors.pop(rule.url, "fetch_failed")}
+            self._bound_dict(self._check_results, _CHECK_RESULTS_MAX)
             return None
 
         # 提取目标区域
@@ -656,6 +674,7 @@ class ChangeDetector:
                     events.append(event)
             except Exception as exc:
                 self._check_results[rule_id] = {"status": "failed", "error_type": type(exc).__name__}
+                self._bound_dict(self._check_results, _CHECK_RESULTS_MAX)
                 LOGGER.error("检查规则 %s 异常: %s", rule_id, exc)
         if self._durable_delivery and not self._cancelled:
             active = {key for key, rule in self._rules.items() if rule.enabled}
