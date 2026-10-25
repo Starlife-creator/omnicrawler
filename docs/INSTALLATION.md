@@ -7,11 +7,44 @@
 | 使用者 | 推荐方式 | 是否需要系统 Python | 默认能力 |
 |---|---|---:|---|
 | Windows 普通用户 | 全量便携 ZIP | 否 | 全部本地功能与客户端依赖 |
-| Windows 开发者 | `setup_windows.bat` | 是 | `full + dev` |
+| Windows 开发者 | `setup_windows.bat`（`-Minimal` 可精简） | 是 | 默认 `full + dev` |
 | Linux 普通用户 | 便携 tar.xz（可选 `installer/install-user.sh` 装进应用菜单） | 否 | 全部本地功能与客户端依赖 |
-| Linux 开发者/服务器 | `./setup_linux.sh` | 是 | `full + dev` |
-| macOS 开发者 | `./setup_macos.command` | 是 | `full + dev` |
+| Linux 开发者/服务器 | `./setup_linux.sh` | 是 | 默认 `standard` 档（可切 `minimal` / `full`） |
+| macOS 开发者 | `./setup_macos.command` | 是 | 默认 `standard` 档（`full` 使用 `full-macos` extras） |
 | 容器/定制服务 | Docker/选择性 extras | 否 | 按镜像用途裁剪 |
+
+## 源码依赖档位（Linux / macOS）
+
+`setup_linux.sh` 与 `setup_macos.command` 默认安装 **standard** 档（GUI、HTML、
+异步 HTTP、浏览器、PDF、文档解析、安全、TLS、存储、流式协议等常用能力）；
+PaddleOCR、Scrapy、crawl4ai、Selenium、重型本地 AI/OCR 模型只在显式选择 `full` 档时安装。
+
+| 档位 | extras（`OMNICRAW_PROFILE`） | 适用场景 |
+|---|---|---|
+| `minimal` | `html,gui,async-http` | 无头基础环境、CI 最小镜像、只跑 CLI 采集 |
+| `standard`（默认） | `gui,html,async-http,browser,pdf,document,security,tls,storage,streams` | 本地开发与日常使用，不拉大模型与重型浏览器之外的组件 |
+| `full` | Linux `full,dev`；macOS `full-macos,dev`（无 Selenium/Paddle wheel 的部分以 `full-macos` 收敛） | 全量 OCR、Scrapy、crawl4ai、Selenium、本地 AI 等重型能力 |
+
+```bash
+# 默认 standard 档
+./setup_linux.sh
+
+# 显式切档
+OMNICRAW_PROFILE=minimal ./setup_linux.sh
+OMNICRAW_PROFILE=full ./setup_macos.command
+
+# 显式指定 extras，覆盖档位（例如只加装 Selenium 与 PaddleOCR）
+OMNICRAW_EXTRAS="selenium,paddleocr" ./setup_linux.sh
+```
+
+可配置项：
+
+- `OMNICRAW_PIP_INDEX_URL` / `OMNICRAW_PIP_EXTRA_INDEX_URL`：pip 镜像源；
+- `OMNICRAW_MODEL_SOURCE=modelscope|aistudio|huggingface`：离线模型下载源（仅 `full` 档触发模型拉取）；
+- `OMNICRAWL_SKIP_SYSTEM_PACKAGES=1`：跳过系统 Tesseract 安装。
+
+`dev` extra 只装测试/lint 工具（pytest、ruff、mypy 等）；`build` extra 只装
+PyInstaller 打包工具，二者不进便携包构建 venv（见 `pyproject.toml` 注释）。
 
 ## Windows 源码模式
 

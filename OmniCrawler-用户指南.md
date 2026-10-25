@@ -89,8 +89,8 @@ OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台�
 py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install -U pip
 
-# 安装全部功能
-.venv\Scripts\python -m pip install -e ".[full,dev]"
+# 安装常用能力（standard 档 + 开发工具；需要全量 OCR/Scrapy/Selenium 时改用 `.[full,dev]`）
+.venv\Scripts\python -m pip install -e ".[gui,html,async-http,browser,pdf,document,security,tls,storage,streams,dev]"
 
 # 安装 Playwright 浏览器
 .venv\Scripts\python -m playwright install chromium

@@ -121,6 +121,20 @@ GATES: tuple[Gate, ...] = (
         script="tools/check_docs_consistency.py",
     ),
     Gate(
+        name="check_line_endings_policy",
+        args=("tools/check_line_endings_policy.py",),
+        sets=_STATIC,
+        description="换行规则与 .gitattributes 一致（文本默认 LF，bat/cmd 检出 CRLF）",
+        script="tools/check_line_endings_policy.py",
+    ),
+    Gate(
+        name="check_shell_scripts",
+        args=("tools/check_shell_scripts.py",),
+        sets=_STATIC,
+        description="根目录 shell/command 脚本语法、失败保护、venv 守卫、Python 断言与 extras 语义",
+        script="tools/check_shell_scripts.py",
+    ),
+    Gate(
         name="check_network_boundaries",
         args=("tools/check_network_boundaries.py",),
         sets=_STATIC,
@@ -246,6 +260,19 @@ GATES: tuple[Gate, ...] = (
         script="tools/check_artifact_budget.py",
         needs_args=("platform", "directory"),
         ci_note="需先构建对应平台产物。",
+    ),
+    Gate(
+        name="check_portable_doc_manifest",
+        args=("tools/check_portable_doc_manifest.py", "--release-root", "<release-root>"),
+        sets=frozenset({"release"}),
+        description="便携包文档清单（历史目录不得随包分发、必备根文件齐备）",
+        script="tools/check_portable_doc_manifest.py",
+        needs_args=("release-root",),
+        ci_note=(
+            "构建期由三个 build_* 脚本对暂存目录本地执行；归档级复核在 portable_archive_smoke "
+            "解压后的 release_root 上由 tools/portable_archive_smoke.py 内部调用；"
+            "本门禁独立执行需 --release-root 指向解压后的便携包根目录。"
+        ),
     ),
 )
 

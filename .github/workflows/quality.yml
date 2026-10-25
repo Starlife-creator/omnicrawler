@@ -132,6 +132,11 @@ jobs:
       - run: python tools/check_sdk_api.py
       - run: python tools/check_cli_docs.py
       - run: python tools/check_docs_consistency.py
+      # C-#23：换行规则与 .gitattributes 现行规则一致性门禁
+      - run: python tools/check_line_endings_policy.py
+      # C-#17 / C-#18 / C-#11：根目录 shell/command 脚本语法、失败保护、venv 守卫、
+      # Python ≥3.12 断言与构建 venv extras 语义静态检查
+      - run: python tools/check_shell_scripts.py
       - run: python tools/check_network_boundaries.py
       - name: egress policy runtime check (B13-001)
         # Windows runner 默认 pwsh 不支持 bash heredoc → 显式用 bash

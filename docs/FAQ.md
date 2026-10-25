@@ -14,7 +14,7 @@ A: 便携版已内置。源码版运行 `python -m playwright install chromium`�
 A: Standard 版不含 OCR 组件，下载 Full 版获取 Tesseract+PaddleOCR。文本 PDF 无需 OCR 也可提取。
 
 **Q: 提示缺少 Python 或 CLI？**
-A: Standard/Full 便携版无需安装 Python。源码版需 Python 3.10+ 并运行 `pip install -e ".[full]"`。
+A: Standard/Full 便携版无需安装 Python。源码版需 Python 3.12+：Windows 运行 `setup_windows.bat`，Linux/macOS 运行 `./setup_linux.sh` / `./setup_macos.command`（默认 standard 档，`OMNICRAW_PROFILE=full` 切换全量依赖，详见 [安装指南](INSTALLATION.md) 档位表）。
 
 ---
 

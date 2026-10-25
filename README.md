@@ -39,6 +39,10 @@ pip install -e ".[full,dev]"
 playwright install chromium
 ```
 
+Linux / macOS 源码脚本（`setup_linux.sh`、`setup_macos.command`）默认安装 `standard`
+档常用能力；`OMNICRAW_PROFILE=minimal|standard|full` 切换档位，重型 OCR、Scrapy、
+crawl4ai、Selenium 与本地 AI 只在 `full` 档安装，详见 [安装、运行与平台矩阵](docs/INSTALLATION.md) 的档位表。
+
 实验性异步 AI 字段提取可单独安装 `pip install -e ".[ai]"`；Office 文档能力使用 `[document]`。`[full]` 包含这些依赖。未启用相关能力时，核心采集不要求它们。
 
 ### 双仓库布局（源码版必读）
