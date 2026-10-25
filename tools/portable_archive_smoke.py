@@ -89,6 +89,17 @@ def _load_smoke_module() -> Any:
     return module
 
 
+def _load_doc_manifest_module() -> Any:
+    """Import the sibling ``check_portable_doc_manifest`` by path（C-#15 清单复核）。"""
+    path = _TOOLS_DIR / "check_portable_doc_manifest.py"
+    spec = importlib.util.spec_from_file_location("_check_portable_doc_manifest", path)
+    if spec is None or spec.loader is None:  # pragma: no cover - 只在文件缺失时发生
+        raise RuntimeError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def find_archive(directory: Path, platform: str) -> Path:
     """返回该平台要验证的便携归档（按 `_patterns_for()` 的顺序取第一个命中）。"""
     listing = sorted(p.name for p in directory.iterdir()) if directory.is_dir() else []
@@ -321,6 +332,12 @@ def run(
         # （比冒烟抛一个笼统的 self-test 失败信息有用得多）。
         runtime_verify(release_root)
         _load_smoke_module().run_smoke_test(release_root, edition)
+        # C-#15：归档级复核便携包文档清单（历史目录不得随包分发、必备文件齐备）。
+        doc_issues = _load_doc_manifest_module().check_doc_manifest(release_root)
+        if doc_issues:
+            # 控制台约束：本工具在 Windows cp1252 runner 上运行，异常文案保持 ASCII；
+            # 中文明细由构建期暂存目录上的 tools/check_portable_doc_manifest.py 直接输出。
+            raise RuntimeError(f"portable doc manifest check failed: {len(doc_issues)} issue(s)")
         relative_root = "." if release_root == extract_dir else str(release_root.relative_to(extract_dir))
         manifest: dict[str, Any] = {
             "platform": platform,
@@ -333,6 +350,7 @@ def run(
             "release_root": relative_root,
             "runtime_verify": "ok",
             "smoke": "ok",
+            "doc_manifest": "ok",
         }
         if platform == "linux":
             # I1：安装脚本只随 Linux 包分发，故该键只对 linux 出现 —— 不是静默跳过，

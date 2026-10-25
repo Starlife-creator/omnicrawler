@@ -44,6 +44,7 @@ gui = [
   "psutil>=5.9,<8",
   "requests>=2.28,<3",
 ]
+# 开发/测试/lint 工具集：仅源码贡献者与 CI 测试环境安装；构建打包 venv 不装本 extra。
 dev = [
   "pytest>=8,<10",
   "coverage>=7,<8",
@@ -51,8 +52,10 @@ dev = [
   "mypy>=1.16,<3",
   "pytest-asyncio>=1,<2",
   "pytest-cov>=7,<8",
+]
+# 构建打包专用（C-#11）：仅便携包构建 venv 安装；测试/lint 工具留在 dev，不进生产构建环境。
+build = [
   "pyinstaller>=6,<7",
-  "tomli>=2,<3; python_version < '3.11'",
 ]
 security = ["keyring>=25,<27", "cryptography>=44,<51"]
 storage = ["boto3>=1.35,<2", "duckdb>=1.2,<2", "pyarrow>=18,<26"]

@@ -40,7 +40,7 @@ OmniCrawler-<version>-<Platform>-Portable-<Edition>.<ext>
 ### Linux（build_linux.sh）
 
 - 仅支持 x86_64 / aarch64（脚本内 `uname -m` 断言）。
-- 在隔离 venv（`<BuildRoot>/venv`）安装 `.[full,dev]` 或 Standard extras 后构建。
+- 在隔离 venv（`<BuildRoot>/venv`）按 edition 安装运行时 extras + `build` extra（PyInstaller 打包工具；测试/lint 工具留在 `dev`，不进生产构建环境）后构建。
 - 产物为 `OmniCrawler-<version>-Linux-Portable-<Edition>.tar.xz`，解压后：
   - GUI：`OmniCrawler`
   - CLI：`omnicrawler`

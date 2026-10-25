@@ -199,7 +199,9 @@ if (-not $SkipDependencyInstall) {
         throw '-BuilderPythonPath 指向非构建 venv 的解释器；自动安装会污染该系统 Python，请改用 -SkipDependencyInstall。'
     }
     $extras = if ($Edition -eq 'Full') { 'full' } else { 'gui,html,pdf,browser,async-http,security' }
-    $syncArgs = @('sync', '--locked', '--no-dev', '--python', 'python', '--extra', 'dev')
+    # C-#11：构建 venv 只装运行时 extras + `build`（PyInstaller 打包工具）；
+    # 测试/lint 工具留在 `dev` extra，不进生产构建环境。`--no-dev` 同时排除 dev 依赖组。
+    $syncArgs = @('sync', '--locked', '--no-dev', '--python', 'python', '--extra', 'build')
     foreach ($extra in $extras.Split(',')) { $syncArgs += @('--extra', $extra) }
     $previousUvProjectEnvironment = $env:UV_PROJECT_ENVIRONMENT
     try {
@@ -346,9 +348,22 @@ foreach ($file in @('packaging\PORTABLE_README.txt', 'packaging\THIRD_PARTY_NOTI
 }
 "OmniCrawler $Edition portable edition" |
     ForEach-Object { [IO.File]::WriteAllText((Join-Path $releaseRoot 'EDITION.txt'), $_, (New-Object Text.UTF8Encoding($false))) }
-foreach ($directory in @('configs', 'docs', 'examples', 'market')) {
+foreach ($directory in @('configs', 'examples', 'market')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $directory) -Destination $releaseRoot -Recurse
 }
+# C-#15：便携包只带现行文档；docs/archive（历史评测/研究记录/旧版兼容）与
+# docs/releases（历史发布报告）不随包分发，避免体积膨胀与历史口径误导。
+$docsSrc = Join-Path $projectRoot 'docs'
+$docsDest = Join-Path $releaseRoot 'docs'
+New-Item -ItemType Directory -Force -Path $docsDest | Out-Null
+Get-ChildItem -LiteralPath $docsSrc -Directory |
+    Where-Object { $_.Name -notin @('archive', 'releases') } |
+    Copy-Item -Destination $docsDest -Recurse
+Get-ChildItem -LiteralPath $docsSrc -File -Filter '*.md' |
+    Copy-Item -Destination $docsDest
+# C-#15：暂存目录兜底校验——历史文档目录漏排除或必备文件缺失即构建失败。
+& $builderPython (Join-Path $projectRoot 'tools\check_portable_doc_manifest.py') --release-root $releaseRoot
+Assert-LastExit "Portable doc manifest check failed."
 
 # F14：只清理 _internal/browsers/runtime 内第三方 wheel 携带的 .sh/.command，
 # 不再误删 docs/examples 等随包跨平台示例脚本（文档引用它们）

@@ -2635,13 +2635,15 @@ browser = [
     { name = "patchright" },
     { name = "playwright" },
 ]
+build = [
+    { name = "pyinstaller" },
+]
 crawl4ai = [
     { name = "crawl4ai" },
 ]
 dev = [
     { name = "coverage" },
     { name = "mypy" },
-    { name = "pyinstaller" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -2888,7 +2890,7 @@ requires-dist = [
     { name = "pyarrow", marker = "extra == 'full'", specifier = ">=18,<26" },
     { name = "pyarrow", marker = "extra == 'full-macos'", specifier = ">=18,<26" },
     { name = "pyarrow", marker = "extra == 'storage'", specifier = ">=18,<26" },
-    { name = "pyinstaller", marker = "extra == 'dev'", specifier = ">=6,<7" },
+    { name = "pyinstaller", marker = "extra == 'build'", specifier = ">=6,<7" },
     { name = "pypdf", marker = "extra == 'full'", specifier = ">=4,<7" },
     { name = "pypdf", marker = "extra == 'full-macos'", specifier = ">=4,<7" },
     { name = "pypdf", marker = "extra == 'pdf'", specifier = ">=4,<7" },
@@ -2933,7 +2935,6 @@ requires-dist = [
     { name = "selenium", marker = "extra == 'full'", specifier = ">=4.27,<5" },
     { name = "selenium", marker = "extra == 'full-macos'", specifier = ">=4.27,<5" },
     { name = "selenium", marker = "extra == 'selenium'", specifier = ">=4.27,<5" },
-    { name = "tomli", marker = "python_full_version < '3.11' and extra == 'dev'", specifier = ">=2,<3" },
     { name = "websockets", marker = "extra == 'full'", specifier = ">=14,<18" },
     { name = "websockets", marker = "extra == 'full-macos'", specifier = ">=14,<18" },
     { name = "websockets", marker = "extra == 'streams'", specifier = ">=14,<18" },

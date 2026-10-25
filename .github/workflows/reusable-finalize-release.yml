@@ -76,40 +76,66 @@ jobs:
         shell: bash
         run: ls -lh "$RUNNER_TEMP/artifacts"
 
-      # 阶段 C-11：Linux GPG detached 签名（行业标配，见方案 5.6）。
-      # 需仓库配置 GPG_PRIVATE_KEY / GPG_PASSPHRASE secret 才生效；
-      # 未配置时跳过（不阻塞发布）。签名发布后，用户以公钥验证 SHA256SUMS。
+      # C-#28：签名状态 fail-closed 登记。GPG 仅在配置 secret 时执行；无论是否签名，
+      # 都把三平台签名状态写入 SIGNING-STATUS.json 发布清单，未签名显式标注，不再静默跳过。
       # 注意：secrets 上下文不可用于 if: 条件（工作流解析报错），改在步骤内判断。
-      - name: 生成 GPG 签名（可选，需配置 secret）
+      - name: 登记签名状态并条件执行 GPG 签名（C-#28）
         env:
           GPG_PRIVATE_KEY: ${{ secrets.gpg_private_key }}
           GPG_PASSPHRASE: ${{ secrets.gpg_passphrase }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${GPG_PRIVATE_KEY:-}" ]; then
-            echo "未配置 GPG_PRIVATE_KEY secret，跳过 GPG 签名"
-            exit 0
-          fi
-          # 多行 secret 经环境变量传递，用 printf 落文件避免 heredoc 展开问题
-          printf '%s' "$GPG_PRIVATE_KEY" > gpg-import.key
-          if [ -n "${GPG_PASSPHRASE:-}" ]; then
-            printf '%s\n' "$GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
-              --passphrase-fd 0 --import gpg-import.key 2>/dev/null
-          else
-            gpg --batch --yes --import gpg-import.key 2>/dev/null
-          fi
-          for checksum in "$RUNNER_TEMP"/artifacts/SHA256SUMS-*.txt; do
-            [ -e "$checksum" ] || continue
+          ARTIFACTS="$RUNNER_TEMP/artifacts"
+          SIGNED=0
+          if [ -n "${GPG_PRIVATE_KEY:-}" ]; then
+            SIGNED=1
+            # 多行 secret 经环境变量传递，用 printf 落文件避免 heredoc 展开问题
+            printf '%s' "$GPG_PRIVATE_KEY" > gpg-import.key
             if [ -n "${GPG_PASSPHRASE:-}" ]; then
               printf '%s\n' "$GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
-                --passphrase-fd 0 --detach-sign --armor -o "$checksum.sig" "$checksum" 2>/dev/null
+                --passphrase-fd 0 --import gpg-import.key 2>/dev/null
             else
-              gpg --batch --yes --detach-sign --armor -o "$checksum.sig" "$checksum" 2>/dev/null
+              gpg --batch --yes --import gpg-import.key 2>/dev/null
             fi
-            echo "GPG 签名: $(basename "$checksum").sig"
-          done
-          rm -f gpg-import.key
+            for checksum in "$ARTIFACTS"/SHA256SUMS-*.txt; do
+              [ -e "$checksum" ] || continue
+              if [ -n "${GPG_PASSPHRASE:-}" ]; then
+                printf '%s\n' "$GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
+                  --passphrase-fd 0 --detach-sign --armor -o "$checksum.sig" "$checksum" 2>/dev/null
+              else
+                gpg --batch --yes --detach-sign --armor -o "$checksum.sig" "$checksum" 2>/dev/null
+              fi
+              echo "GPG 签名: $(basename "$checksum").sig"
+            done
+            rm -f gpg-import.key
+          else
+            echo "未配置 GPG_PRIVATE_KEY secret：SHA256SUMS 不做 GPG 签名，状态已显式登记为未签名。"
+          fi
+          python3 - "$ARTIFACTS/SIGNING-STATUS.json" "$SIGNED" <<'PY'
+          import json, pathlib, sys
+          status_path, signed = pathlib.Path(sys.argv[1]), sys.argv[2] == "1"
+          payload = {
+            "schema": 1,
+            "linux_gpg": {
+              "signed": signed,
+              "method": "gpg-detached-armor" if signed else "none",
+              "note": "SHA256SUMS 已 GPG detached 签名，随附 .sig 文件" if signed
+                      else "GPG_PRIVATE_KEY secret 未配置，SHA256SUMS 未签名；请以 SHA-256 校验和核验完整性",
+            },
+            "windows_authenticode": {
+              "signed": False,
+              "method": "none",
+              "note": "未配置 Authenticode 代码签名证书，Windows 便携包未做代码签名",
+            },
+            "macos_developer_id": {
+              "signed": False,
+              "method": "ad-hoc",
+              "note": "仅 ad-hoc 签名，未做 Developer ID 签名与 Apple 公证；首次打开请右键 → 打开",
+            },
+          }
+          status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+          PY
 
       # ── 上传到 GitHub Release ──────────────────────────────────────
       # FINAL L2：先组装说明（含 L1 缺席声明），创建 Release 元数据，
@@ -139,7 +165,14 @@ jobs:
             echo "- 各平台产物附带 SHA256SUMS-platform.txt 校验和（与 omnicrawler-provenance.json 对应）"
             echo "- omnicrawler-sbom-platform.cdx.json：各平台依赖物料清单（CycloneDX）"
             echo "- 可用 gh attestation verify 包名 --owner Starlife-creator 验证标准 SLSA 构建来源证明（无需导入任何密钥）"
-            echo "- 本版本未做代码签名（Windows Authenticode / macOS Developer ID）；校验完整性请以 SHA-256 为准"
+            # C-#28：签名状态从 SIGNING-STATUS.json 读，按真实状态写发布说明，不再硬编码"未签名"。
+            SIG_SIGNED="$(python3 -c 'import json,sys; print("yes" if json.load(open(sys.argv[1]))["linux_gpg"]["signed"] else "no")' "$DIR/SIGNING-STATUS.json")"
+            if [ "$SIG_SIGNED" = "yes" ]; then
+              echo "- SHA256SUMS 已附 GPG detached 签名（.sig）；Windows Authenticode / macOS Developer ID 状态详见随附 SIGNING-STATUS.json"
+            else
+              echo "- **本版本 SHA256SUMS 未做 GPG 签名；Windows 未做 Authenticode 代码签名；macOS 仅 ad-hoc 签名**"
+              echo "- 各平台签名状态以随附 SIGNING-STATUS.json 为准；完整性请以 SHA-256 校验和与 SLSA 来源证明核验"
+            fi
             shopt -s nullglob
             manifests=("$DIR"/SKIPPED-*.txt)
             if [ ${#manifests[@]} -gt 0 ]; then

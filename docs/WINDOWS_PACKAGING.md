@@ -45,7 +45,7 @@ OmniCrawler-{version}-Windows-Portable-{edition}.zip
 
 脚本在 `%TEMP%\OmniCrawler-build-<edition>`（隔离 venv 在 `%TEMP%\OmniCrawler-build-<edition>-venv`）创建隔离环境并按顺序执行：
 
-1. 安装 `.[full,dev]`、PyInstaller 和构建工具。
+1. 按 edition 安装运行时 extras、`build` extra（PyInstaller 打包工具；测试/lint 工具留在 `dev`，不进构建 venv）。
 2. 下载 Playwright Chromium。
 3. 解析浏览器版本并下载匹配 ChromeDriver。
 4. 纯提取 Tesseract 5，下载 `chi_sim/eng/osd`；不写注册表或系统 PATH。
