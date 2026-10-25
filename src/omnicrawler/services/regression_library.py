@@ -12,6 +12,27 @@ from ..core.utils import atomic_write, redact_headers, utcnow
 from ..security.paths import require_workspace_path
 
 
+# B-P3-6：回归 fixture 压缩体与解压后大小上限（20 MiB），防止畸形 gzip 解压爆炸内存。
+_MAX_FIXTURE_BODY_BYTES = 20 * 1024 * 1024
+
+
+def _(text: str) -> str:
+    """B-P3-8：懒加载 gettext；翻译资源由 i18n 目录统一补齐。"""
+    from ..i18n import _ as __translate
+
+    return __translate(text)
+
+
+def _read_bounded_gzip(path: Path) -> bytes:
+    compressed = path.read_bytes()
+    if len(compressed) > _MAX_FIXTURE_BODY_BYTES:
+        raise ValueError(_("回归 fixture 压缩体超出大小上限: {name}").format(name=path.name))
+    body = gzip.decompress(compressed)
+    if len(body) > _MAX_FIXTURE_BODY_BYTES:
+        raise ValueError(_("回归 fixture 解压后超出大小上限: {name}").format(name=path.name))
+    return body
+
+
 def _record_snapshot(records: list[ExtractedRecord]) -> list[dict[str, Any]]:
     return [{"source_url": record.source_url, "record_type": record.record_type,
              "data": record.data} for record in records]
@@ -86,7 +107,7 @@ class RegressionLibrary:
             manifest = json.loads(path.read_text(encoding="utf-8"))
             request_data = manifest["request"]
             body_path = require_workspace_path(self.directory / manifest["body"], root=self.directory, what="regression body")
-            body = gzip.decompress(body_path.read_bytes())
+            body = _read_bounded_gzip(body_path)
             if hashlib.sha256(body).hexdigest() != manifest.get("body_sha256"):
                 raise ValueError(f"Regression fixture hash mismatch: {path.name}")
             request = CrawlRequest(

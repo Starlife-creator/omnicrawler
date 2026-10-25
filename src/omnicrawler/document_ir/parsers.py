@@ -25,6 +25,9 @@ DocumentParserFn = Callable[[Path, dict[str, Any]], DocumentIR]
 
 DOCUMENT_PARSERS: dict[str, DocumentParserFn] = {}
 
+# B-P2-14b：邮件整封读入内存，设大小上限（10 MiB），超限截断并在 metadata 标注。
+_EML_MAX_BYTES = 10 * 1024 * 1024
+
 
 def register_document_parser(*extensions: str) -> Callable[[DocumentParserFn], DocumentParserFn]:
     """注册一个文档解析器（装饰器）。extensions 含前导点，如 '.txt'。"""
@@ -227,8 +230,10 @@ def _decode_header_value(value: str) -> str:
 @register_document_parser(".eml")
 def _parse_eml(path: Path, options: dict[str, Any]) -> DocumentIR:
     _require_file(path)
+    file_size = path.stat().st_size
+    truncated = file_size > _EML_MAX_BYTES
     with path.open("rb") as fh:
-        raw = fh.read()
+        raw = fh.read(_EML_MAX_BYTES) if truncated else fh.read()
     msg = email.message_from_bytes(raw)
     headers: dict[str, str] = {}
     for key in _EML_HEADERS:
@@ -282,7 +287,12 @@ def _parse_eml(path: Path, options: dict[str, Any]) -> DocumentIR:
         kind=".eml",
         title=title,
         paragraphs=paragraphs,
-        metadata={"headers": headers, "body_parts": len(body_parts), "body_source": body_source},
+        metadata={
+            "headers": headers,
+            "body_parts": len(body_parts),
+            "body_source": body_source,
+            "truncated": truncated,
+        },
     )
 
 

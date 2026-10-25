@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import platform
+import shutil
 import sqlite3
 import tempfile
 import zipfile
@@ -140,9 +141,15 @@ def create_research_package(
             "include_artifacts": include_artifacts,
             "files": hashes,
         }
+        # B-P3-6：路径条目分块流式写入 zip，避免整文件先读入内存再打包。
+        zip_chunk = 1024 * 1024
         with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
             for name, value in entries.items():
-                archive.writestr(name, value.read_bytes() if isinstance(value, Path) else value)
+                if isinstance(value, Path):
+                    with archive.open(name, "w") as target_handle, value.open("rb") as source_handle:
+                        shutil.copyfileobj(source_handle, target_handle, zip_chunk)
+                else:
+                    archive.writestr(name, value)
             archive.writestr(MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2))
     return {"created": str(target), "files": len(entries), "sha256": _sha256(target)}
 

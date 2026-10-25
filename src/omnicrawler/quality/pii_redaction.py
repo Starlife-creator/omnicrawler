@@ -146,7 +146,20 @@ def _validate(kind: str, value: str) -> bool:
         return check[total % 11] == value[17].upper()
     if kind == "secret_token":
         # 纯数字长串交给 bank_card / phone 判定，否则 16 位订单号会被当密钥
-        return not value.isdigit()
+        if value.isdigit():
+            return False
+        # B-P3-6：纯字母长串多为普通英文词，不当密钥；要求形态信号混合（大小写/数字/符号），
+        # 并排除重复单字符串，降低长 base64 形态普通词的误报。
+        if value.isalpha():
+            return False
+        has_upper = any(char.isupper() for char in value)
+        has_lower = any(char.islower() for char in value)
+        has_digit = any(char.isdigit() for char in value)
+        has_symbol = any(char in "+/=" for char in value)
+        signals = int(has_upper) + int(has_lower) + int(has_digit) + int(has_symbol)
+        if signals < 2:
+            return False
+        return len(set(value)) > 2
     if kind == "ipv4":
         return all(0 <= int(part) <= 255 for part in value.split("."))
     return True

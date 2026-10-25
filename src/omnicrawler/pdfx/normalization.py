@@ -38,6 +38,34 @@ _FOREIGN_CURRENCY_RE = re.compile(
 #: 不先收敛会让同一份文本走不同分支。
 _SEPARATOR_TRANSLATION = str.maketrans({"，": ",", "．": ".", "。": ".", "｡": "."})
 
+# B-P3-2：比率上下文标记——出现这些词时 0–1 不再按百分数乘 100（避免比率被误判成百分数）。
+_RATIO_CONTEXT_RE = re.compile(r"比例|比率|占比|系数|ratio", re.IGNORECASE)
+
+# B-P3-2：别名否定词：多字否定词回溯 6 字符窗口；单字否定词仅回溯紧邻 2 字符。
+_NEGATION_MULTI = ("不是", "并非", "并未", "没有", "不属", "无权", "不构成")
+_NEGATION_SINGLE = "非不未无"
+_ALIAS_NEGATION_WINDOW = 6
+
+
+def _alias_match_index(text: str, alias: str) -> int:
+    """定位别名起点；含字母数字的别名要求两侧词边界，避免嵌入更长 token 误匹配。"""
+    if not alias:
+        return -1
+    if re.search(r"[A-Za-z0-9]", alias):
+        match = re.search(
+            rf"(?<![A-Za-z0-9]){re.escape(alias)}(?![A-Za-z0-9])", text
+        )
+        return match.start() if match else -1
+    return text.find(alias)
+
+
+def _alias_is_negated(text: str, index: int) -> bool:
+    prefix = text[max(0, index - _ALIAS_NEGATION_WINDOW):index]
+    if any(token in prefix for token in _NEGATION_MULTI):
+        return True
+    tail = prefix[-2:]
+    return any(ch in tail for ch in _NEGATION_SINGLE)
+
 
 def _grouping_valid(token: str) -> bool:
     """千分位分组是否规范：首段 1–3 位数字，其后每段**恰好** 3 位。"""
@@ -136,14 +164,19 @@ def normalize_amount(raw: str, target_unit: str | None = "元") -> tuple[str | N
     return _format_decimal(normalized), target
 
 
+# B-P3-2：日期年份模式与合理性边界（未来日期 / 过早年份不作为可交付日期）。
+_DATE_YEAR_PATTERN = r"(?:19|20)\d{2}"
+_DATE_PATTERNS = [
+    rf"(?P<y>{_DATE_YEAR_PATTERN})[年./-](?P<m>\d{{1,2}})[月./-](?P<d>\d{{1,2}})日?",
+    rf"(?P<y>{_DATE_YEAR_PATTERN})年(?P<m>\d{{1,2}})月",
+    rf"(?P<y>{_DATE_YEAR_PATTERN})年?",
+]
+_DATE_YEAR_MIN = 1900
+
+
 def normalize_date(raw: str) -> tuple[str | None, None]:
     text = raw.strip()
-    patterns = [
-        r"(?P<y>20\d{2}|19\d{2})[年./-](?P<m>\d{1,2})[月./-](?P<d>\d{1,2})日?",
-        r"(?P<y>20\d{2}|19\d{2})年(?P<m>\d{1,2})月",
-        r"(?P<y>20\d{2}|19\d{2})年?",
-    ]
-    for pattern in patterns:
+    for pattern in _DATE_PATTERNS:
         match = re.search(pattern, text)
         if not match:
             continue
@@ -154,6 +187,9 @@ def normalize_date(raw: str) -> tuple[str | None, None]:
             parsed = date(year, month, day)
         except ValueError:
             # D52：该 pattern 解析失败（如 2023年13月 的 OCR 错字）继续尝试下一 pattern
+            continue
+        # B-P3-2：未来日期与早于 1900 年的年份不作为有效交付日期，继续尝试下一模式。
+        if parsed.year > date.today().year or parsed.year < _DATE_YEAR_MIN:
             continue
         if "d" not in match.groupdict() or not match.groupdict().get("d"):
             normalized = f"{year:04d}-{month:02d}" if match.groupdict().get("m") else f"{year:04d}"
@@ -166,7 +202,9 @@ def normalize_percent(raw: str) -> tuple[str | None, str]:
     value = _number(raw)
     if value is None:
         return None, "%"
-    if "%" not in raw and "百分之" not in raw and 0 <= value <= 1:
+    # B-P3-2：比率上下文（比例/比率/占比/系数/ratio）下 0–1 视为比率，不再误乘 100。
+    ratio_context = bool(_RATIO_CONTEXT_RE.search(raw))
+    if "%" not in raw and "百分之" not in raw and not ratio_context and 0 <= value <= 1:
         value *= 100
     text = str(int(value)) if value.is_integer() else f"{value:.8f}".rstrip("0").rstrip(".")
     return text, "%"
@@ -324,11 +362,12 @@ def normalize_value(
         best_length = -1
         for canonical, aliases in spec.value_aliases.items():
             for alias in aliases:
-                index = text.find(alias)
+                index = _alias_match_index(text, alias)
                 if index < 0:
                     continue
-                if index > 0 and any(ch in text[max(0, index - 2):index] for ch in "非不未无"):
-                    continue  # “不是/并非/并未 全资子公司”不得归一为正向关系
+                # B-P3-2：否定词加长回溯窗口并识别多字否定词，避免“不是/并非/并未…全资子公司”误归一。
+                if _alias_is_negated(text, index):
+                    continue
                 if len(alias) > best_length:
                     best = canonical
                     best_length = len(alias)
