@@ -400,7 +400,8 @@ def _write_csv_iter(
     with atomic_output(path, options) as tmp:
         with tmp.open("w", encoding=encoding, newline="") as fh:
             writer = csv.DictWriter(fh, fieldnames=columns, extrasaction="ignore")
-            writer.writeheader()
+            # B-P2-18：表头列名同样经 excel_safe 中和公式注入（与数据行同口径）。
+            csv.writer(fh).writerow([excel_safe(column) for column in columns])
             buf: list[dict[str, Any]] = []
             for row in rows:
                 check_cancel(options)
@@ -960,7 +961,8 @@ def _write_xlsx_iter(
     ws = wb.create_sheet()
     ws.title = "结构化记录"
     ws.freeze_panes = "A2"
-    header = [WriteOnlyCell(ws, value=column) for column in columns]
+    # B-P2-18：表头单元格统一经 excel_safe 中和公式注入（数据行已处理，补齐表头面）。
+    header = [WriteOnlyCell(ws, value=excel_safe(column)) for column in columns]
     for cell in header:
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="1F4E78")
