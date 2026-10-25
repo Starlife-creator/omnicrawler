@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 import time
 import urllib.parse
 from typing import TYPE_CHECKING, Any
@@ -135,6 +136,10 @@ class HTTPXAsyncFetcher:
         self._client: httpx.AsyncClient | None = None
         # 跨事件循环缓存：插件线程各自的 loop 各自持有客户端（S1.5.8）
         self._loop_clients: dict[int, tuple[asyncio.AbstractEventLoop, Any]] = {}
+        # A-P3-3：关闭期线程安全锁 + 关闭诊断台账（关闭路径可观测、可单测）。
+        self._close_lock = threading.Lock()
+        self._closed = False
+        self.close_diagnostics: list[dict[str, str]] = []
 
     def _build_client(self) -> Any:
         """Build a fresh httpx AsyncClient wired to the current policy."""
@@ -175,8 +180,9 @@ class HTTPXAsyncFetcher:
         if entry is not None and not entry[0].is_closed():
             return entry[1]
         client = self._build_client()
-        self._loop_clients[id(loop)] = (loop, client)
-        self._evict_loop_clients()
+        with self._close_lock:
+            self._loop_clients[id(loop)] = (loop, client)
+            self._evict_loop_clients()
         return client
 
     def _evict_loop_clients(self) -> None:
@@ -184,6 +190,7 @@ class HTTPXAsyncFetcher:
 
         容量超限时只丢弃最旧条目的引用（其生命周期由对应事件循环负责关闭），
         不在同步路径里跨循环调用 ``aclose``，避免 ``Future attached to a different loop``。
+        调用方须持有 ``self._close_lock``（A-P3-3 线程安全）。
         """
         stale = [key for key, (stale_loop, _) in self._loop_clients.items() if stale_loop is None or stale_loop.is_closed()]
         for key in stale:
@@ -197,10 +204,13 @@ class HTTPXAsyncFetcher:
     def _ensure_loop(self) -> asyncio.AbstractEventLoop:
         """Lazily create and reuse a persistent event loop for the sync ``fetch`` path."""
         if self._loop is None or self._loop.is_closed():
-            self._loop = asyncio.new_event_loop()
-            self._client = self._build_client()
-            self._loop_clients[id(self._loop)] = (self._loop, self._client)
-            self._evict_loop_clients()
+            loop = asyncio.new_event_loop()
+            client = self._build_client()
+            with self._close_lock:
+                self._loop = loop
+                self._client = client
+                self._loop_clients[id(loop)] = (loop, client)
+                self._evict_loop_clients()
         return self._loop
 
     def _pin_transport_dns(self, transport: Any) -> None:
@@ -233,19 +243,42 @@ class HTTPXAsyncFetcher:
         )
 
     def close(self) -> None:
-        """Clean up all per-loop clients and the persistent event loop."""
-        for loop, client in list(self._loop_clients.values()):
+        """Clean up all per-loop clients and the persistent event loop（线程安全、幂等）。
+
+        A-P3-3：关闭期单个客户端/事件循环异常不再静默吞掉——逐条记入
+        ``close_diagnostics`` 并写诊断日志；其余资源继续关闭。重复调用安全返回。
+        """
+        with self._close_lock:
+            if self._closed:
+                return
+            self._closed = True
+            clients = list(self._loop_clients.values())
+
+        for loop, client in clients:
             if loop is not None and not loop.is_closed() and client is not None:
                 try:
                     loop.run_until_complete(client.aclose())
-                except RuntimeError:
-                    # loop 正在运行（如被插件关闭）时无法 run_until_complete，忽略即可
-                    pass
-        self._loop_clients.clear()
-        self._client = None
-        if self._loop is not None and not self._loop.is_closed():
-            self._loop.close()
-            self._loop = None
+                except Exception as exc:  # noqa: BLE001 —— 单个关闭失败不阻断其余资源清理
+                    self.close_diagnostics.append({
+                        "stage": "client.aclose",
+                        "error": f"{type(exc).__name__}: {exc}",
+                    })
+                    LOGGER.warning("关闭代理客户端失败（已记录诊断，继续清理其余资源）: %s", exc)
+
+        with self._close_lock:
+            self._loop_clients.clear()
+            self._client = None
+            if self._loop is not None and not self._loop.is_closed():
+                try:
+                    self._loop.close()
+                except Exception as exc:  # noqa: BLE001
+                    self.close_diagnostics.append({
+                        "stage": "loop.close",
+                        "error": f"{type(exc).__name__}: {exc}",
+                    })
+                    LOGGER.warning("关闭持久事件循环失败（已记录诊断）: %s", exc)
+                finally:
+                    self._loop = None
 
     def fetch(self, request: CrawlRequest) -> FetchResult:
         loop = self._ensure_loop()

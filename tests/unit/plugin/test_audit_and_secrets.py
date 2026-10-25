@@ -44,17 +44,46 @@ def test_audit_hook_failure_does_not_block() -> None:
 
 
 def test_trace_full_records_sequence() -> None:
-    """C6：trace_full=True 记全序列；False 时仅降采样计数。"""
+    """A-P3-13：两种粒度均逐条留痕；trace_full 仅作为粒度标记。"""
     full = _make_broker(trace_full=True)
     full.dispatch("system.info", {})
     full.dispatch("system.info", {})
     assert len(full.trace_log) == 2
     assert full.trace_log[0]["operation"] == "system.info"
+    assert full.trace_log[0]["trace_full"] is True
 
     sampled = _make_broker(trace_full=False)
     sampled.dispatch("system.info", {})
-    assert sampled.trace_log == []
+    # 默认模式同样逐条留痕（元数据，不含 payload 内容）
+    assert len(sampled.trace_log) == 1
+    assert sampled.trace_log[0]["trace_full"] is False
     assert sampled.op_counts["system.info"] == 1
+
+
+def test_default_trace_records_operation_duration_domain_bytes_without_payload() -> None:
+    """A-P3-13：默认逐条留 operation/时间戳/时长/域名/字节数，不落 payload 内容。"""
+    broker = _make_broker()
+    broker.dispatch("system.info", {"url": "https://example.com/path?q=1"})
+
+    entry = broker.trace_log[0]
+    assert entry["operation"] == "system.info"
+    assert entry["timestamp"] > 0
+    assert entry["duration_ms"] >= 0
+    assert entry["domain"] == "example.com"
+    assert entry["payload_bytes"] > 0
+    # payload 内容本身不进 trace_log
+    assert "payload" not in entry
+    assert "q=1" not in str(entry)
+
+
+def test_audit_hook_fail_closed_raises_when_configured() -> None:
+    """A-P3-13：审计钩子异常按配置处置——fail-closed 时重新抛出阻断运行。"""
+    def bad_hook(action, details):
+        raise RuntimeError("audit store down")
+
+    broker = _make_broker(audit_hook=bad_hook, audit_hook_fail_closed=True, plugin_id="x")
+    with pytest.raises(RuntimeError, match="audit store down"):
+        broker.dispatch("system.info", {})
 
 
 def test_secrets_get_requires_permission() -> None:

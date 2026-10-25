@@ -30,6 +30,31 @@ _MAX_OUTPUT_BYTES = 8 * 1024 * 1024  # stdout 单条上限 8MB（C4/N2 硬化同
 E_CONTRACT = "E_CONTRACT"
 E_INTERNAL = "E_INTERNAL"
 
+# A-P2-4：子进程内禁止复用宿主已导入句柄的高危模块。
+# 说明：从 sys.modules 裁剪缓存是纵深防御的一层；真正的隔离仍由 -I/-S 源码模式、
+# 冻结最小宿主 exe 与 OS 沙箱（Landlock/seccomp/AppContainer/Job Object/Seatbelt）
+# 共同保证，本裁剪不能替代 OS 级强制。
+BANNED_SUBPROCESS_MODULES = frozenset({
+    "os", "subprocess", "socket", "ctypes", "multiprocessing", "threading",
+    "importlib", "pickle", "shelve", "sqlite3", "shutil", "glob",
+})
+
+
+def strip_banned_modules(modules: dict[str, object]) -> list[str]:
+    """从模块缓存中移除禁用模块及其子模块（A-P2-4，纯函数可单测）。
+
+    返回被移除的顶层模块名（保持发现顺序、去重）。调用方传入 ``sys.modules``
+    时直接就地裁剪；测试可传拷贝以避免污染全局缓存。
+    """
+    removed: list[str] = []
+    for name in list(modules):
+        top = str(name).split(".")[0]
+        if top in BANNED_SUBPROCESS_MODULES:
+            modules.pop(name, None)
+            if top not in removed:
+                removed.append(top)
+    return removed
+
 
 def _install_sdk_shim() -> None:
     """注入 ``omnicrawler_sdk`` 能力代理客户端（C3）。
@@ -157,6 +182,8 @@ def main() -> int:
         sys.path.insert(0, verified_entry_dir)
     # 注入 omnicrawler_sdk 能力代理客户端（C3）——必须在 import 入口前就位
     _install_sdk_shim()
+    # A-P2-4：裁剪宿主级高危模块缓存，避免插件复用宿主已导入的句柄。
+    strip_banned_modules(sys.modules)
     try:
         module = importlib.import_module(entry_module)
     except Exception as exc:  # noqa: BLE001

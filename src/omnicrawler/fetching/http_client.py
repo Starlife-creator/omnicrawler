@@ -5,6 +5,7 @@ import http.client
 import json
 import socket
 import ssl
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -216,6 +217,14 @@ def build_safe_opener(
 
 
 class HTTPFetcher:
+    """同步 HTTP 抓取器。
+
+    线程约束（A-P3-15）：本实例与其 opener / cookie_jar 绑定，默认按线程局部
+    使用（见 ``pipeline/core.py`` per-thread 实例化）；``_login_done`` 登录态由
+    ``_login_lock`` 保护，供未来跨线程复用时避免并发重复登录，不改变现有
+    线程局部实例化口径。登录失败不置位成功标志，下次 ``fetch`` 可重试。
+    """
+
     def __init__(
         self,
         config: AppConfig,
@@ -242,6 +251,7 @@ class HTTPFetcher:
             purpose=self.purpose,
         )
         self._login_done = False
+        self._login_lock = threading.Lock()
 
     def fetch(self, request: CrawlRequest) -> FetchResult:
         self._ensure_login()
@@ -361,31 +371,37 @@ class HTTPFetcher:
         raise last_error
 
     def _ensure_login(self) -> None:
-        login = self.config.section("source").get("login")
-        if self._login_done or not login:
+        # A-P3-15：双检锁——已完成直接返回；持锁后复查，避免并发重复登录。
+        if self._login_done:
             return
-        url = str(login.get("url", ""))
-        if not url:
-            raise ValueError("source.login.url不能为空")
-        method = str(login.get("method", "POST")).upper()
-        content_type = str(login.get("content_type", "application/x-www-form-urlencoded"))
-        body, payload_headers = encode_request_payload(method, login.get("fields", {}), content_type)
-        headers = {
-            "User-Agent": str(self.http.get("user_agent", user_agent())),
-            **payload_headers,
-            **{str(k): str(v) for k, v in login.get("headers", {}).items()},
-        }
-        self.limiter.wait(url)
-        raw = urllib.request.Request(url, data=body, headers=headers, method=method)
-        with self.egress.request(url, purpose="login", headers=headers):
-            with self.opener.open(raw, timeout=float(self.http.get("timeout_seconds", 25))) as response:
-                response_body = response.read(1024 * 1024)
-                self.egress.record_response(len(response_body), url=response.geturl())
-                self.egress.record_success(response.geturl())
-                if int(getattr(response, "status", 200)) >= 400:
-                    raise LoginFailedError(f"登录失败: HTTP {response.status}")
-        self._login_done = True
-        self.cookie_session.save()
+        with self._login_lock:
+            if self._login_done:
+                return
+            login = self.config.section("source").get("login")
+            if not login:
+                return
+            url = str(login.get("url", ""))
+            if not url:
+                raise ValueError("source.login.url不能为空")
+            method = str(login.get("method", "POST")).upper()
+            content_type = str(login.get("content_type", "application/x-www-form-urlencoded"))
+            body, payload_headers = encode_request_payload(method, login.get("fields", {}), content_type)
+            headers = {
+                "User-Agent": str(self.http.get("user_agent", user_agent())),
+                **payload_headers,
+                **{str(k): str(v) for k, v in login.get("headers", {}).items()},
+            }
+            self.limiter.wait(url)
+            raw = urllib.request.Request(url, data=body, headers=headers, method=method)
+            with self.egress.request(url, purpose="login", headers=headers):
+                with self.opener.open(raw, timeout=float(self.http.get("timeout_seconds", 25))) as response:
+                    response_body = response.read(1024 * 1024)
+                    self.egress.record_response(len(response_body), url=response.geturl())
+                    self.egress.record_success(response.geturl())
+                    if int(getattr(response, "status", 200)) >= 400:
+                        raise LoginFailedError(f"登录失败: HTTP {response.status}")
+            self._login_done = True
+            self.cookie_session.save()
 
     @staticmethod
     def _decode_content(body: bytes, encoding: str, max_bytes: int) -> bytes:

@@ -26,6 +26,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 LOGGER = logging.getLogger(__name__)
@@ -164,6 +165,42 @@ def decide_route(
         return RouteDecision("in_process", f"批准矩阵 {tier} 用户确认批准", tier)
     # 拒绝 → 自动降级 subprocess（不拒载，B4 核心语义）
     return RouteDecision("subprocess", f"批准矩阵 {tier} 用户拒绝，自动降级 subprocess", tier)
+
+
+def trusted_local_dirs(plugins_section: dict[str, Any] | None) -> list[str]:
+    """A-P2-4：读取 ``plugins.trusted_local_dirs`` 显式信任本地目录清单（去空、去重保序）。"""
+    section = plugins_section if isinstance(plugins_section, dict) else {}
+    raw = section.get("trusted_local_dirs", [])
+    if not isinstance(raw, list):
+        return []
+    result: list[str] = []
+    for item in raw:
+        value = str(item).strip()
+        if value and value not in result:
+            result.append(value)
+    return result
+
+
+def is_under_local_trusted_dir(path: str | Path, trusted_dirs: list[str]) -> bool:
+    """A-P2-4：判断插件文件是否位于显式信任本地目录内（resolve 后做父子包含判定）。
+
+    空清单一律返回 False（fail-closed：未显式声明信任目录时不允许进程内运行）；
+    路径不可解析时跳过该目录，不抛异常。
+    """
+    if not trusted_dirs:
+        return False
+    try:
+        resolved = Path(path).resolve()
+    except OSError:
+        return False
+    for raw in trusted_dirs:
+        try:
+            root = Path(raw).resolve()
+        except OSError:
+            continue
+        if root == resolved or root in resolved.parents:
+            return True
+    return False
 
 
 def resolve_runtime_backend(plugins_section: dict[str, Any] | None) -> tuple[str, bool]:
