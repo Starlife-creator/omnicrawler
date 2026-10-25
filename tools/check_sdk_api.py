@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,28 @@ def _assignments(path: Path) -> dict[str, Any]:
     return values
 
 
+def _application_version(project_root: Path) -> str | None:
+    """应用版本真源：``src/omnicrawler/_version.py`` 的 ``__version__``；缺失时回退 pyproject。
+
+    C-#22：SDK 契约版本（``sdk_version``，对应 ``SDK_VERSION``）与应用发布版本
+    （``application_version``，对应 ``__version__`` / pyproject ``version``）是两个独立
+    口径，本函数只负责后者，避免把契约稳定度与应用版本混为一谈。
+    """
+    version_path = project_root / "src" / "omnicrawler" / "_version.py"
+    if version_path.is_file():
+        tree = ast.parse(version_path.read_text(encoding="utf-8"), filename=str(version_path))
+        for node in tree.body:
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == "__version__":
+                        return ast.literal_eval(node.value)
+    pyproject = project_root / "pyproject.toml"
+    if pyproject.is_file():
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        return data["project"]["version"]
+    return None
+
+
 def check(project_root: Path) -> list[str]:
     expected = json.loads(
         (project_root / "schemas" / "sdk-public-api.json").read_text(encoding="utf-8")
@@ -35,6 +58,7 @@ def check(project_root: Path) -> list[str]:
     )
     actual = {
         "sdk_version": sdk.get("SDK_VERSION"),
+        "application_version": _application_version(project_root),
         "sdk_exports": sorted(sdk.get("__all__", [])),
         "stability": sdk.get("API_STABILITY"),
         "plugin_sdk_exports": sorted(plugin_sdk.get("__all__", [])),

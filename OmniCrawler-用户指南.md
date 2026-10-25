@@ -89,8 +89,8 @@ OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台�
 py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install -U pip
 
-# 安装全部功能
-.venv\Scripts\python -m pip install -e ".[full,dev]"
+# 安装常用能力（standard 档 + 开发工具；需要全量 OCR/Scrapy/Selenium 时改用 `.[full,dev]`）
+.venv\Scripts\python -m pip install -e ".[gui,html,async-http,browser,pdf,document,security,tls,storage,streams,dev]"
 
 # 安装 Playwright 浏览器
 .venv\Scripts\python -m playwright install chromium
@@ -887,6 +887,14 @@ omnicrawler status -c configs/my_site.yaml
 - 解析后的密钥不会写回配置文件
 - 日志和诊断自动脱敏
 
+### 隐私与本地数据
+
+- 本软件**不含遥测与崩溃上报**：不内置埋点或第三方分析服务，异常现场只留在本地日志。
+- 任务数据、原始副本、日志、缓存与导出物均存放在本机工作目录；凭据经环境变量或
+  系统 keyring 引用，不写明文凭据到配置文件。
+- 本地数据清单、留存口径、日志/缓存/凭据位置与卸载清理范围见
+  [隐私政策与数据留存说明](docs/PRIVACY.md)。
+
 ### 插件沙箱
 
 - 新插件默认在独立子进程运行，并使用 Python `-I -S`、环境白名单和能力代理
@@ -1018,7 +1026,9 @@ A: 菜单栏「视图 → 主题」可在明亮、暗黑和高对比度三种主
 A: 打开菜单栏「视图 → 减少动画」。开启后 Hero 背景光晕停止运动，状态指示器停止闪烁，页面切换淡入效果关闭。
 
 **Q: 支持英文界面吗？**
-A: 当前版本已建立国际化管道。开发者在 `locale/` 目录添加英文 `.po` 翻译并编译 `.mo` 后即可切换。目前约 95% 的界面文字已有英文翻译，欢迎贡献更多翻译。
+A: 国际化管道已建立，英文翻译进行中：模板 1434 条界面字符串中，英文包非空译文约
+32.4%（实测以 `python tools/i18n_stats.py` 为准）。欢迎在 `locale/` 目录补译 `.po`
+并运行编译脚本后贡献。
 
 ---
 
@@ -1056,7 +1066,7 @@ src/omnicrawler/
 │   ├── similarity.py        # 同类元素检测引擎
 │   ├── field_converter.py   # 选择器→字段转换
 │   └── server.py            # WebSocket 服务
-├── gui/                     # PyQt6 桌面 GUI
+├── gui/                     # PySide6 桌面 GUI
 │   ├── main.py              # 主窗口 + 导航
 │   ├── home.py              # 首页（快速任务）
 │   ├── views/               # 结果/证据/场景/格式互转/插件市场/开发者检查器/变更监控/反检测

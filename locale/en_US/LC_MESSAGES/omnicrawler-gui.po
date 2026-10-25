@@ -1168,7 +1168,7 @@ msgid "提示"
 msgstr "Tip"
 
 #: src\omnicrawler\gui\wizard\step4_download.py:151
-msgid "提示: 扩展名用逗号分隔，如 \\".pdf,.jpg\\"。输出目录相对于项目根目录。"
+msgid "提示: 扩展名用逗号分隔，如 \".pdf,.jpg\"。输出目录相对于项目根目录。"
 msgstr "Tip: separate extensions with commas, e.g. \".pdf,.jpg\". The output directory is relative to the project root."
 
 #: src\omnicrawler\gui\main.py:279

@@ -1,6 +1,6 @@
 # 本地证据驱动的提取修复
 
-> 适用版本：0.15.0 · 配置协议：v5 · 维护状态：现行
+> 适用版本：1.0.1 · 配置协议：v5 · 维护状态：现行
 
 生产入口为 `omnicrawler repair preview/apply/observe/rollback`，继续使用 LLMCandidateGenerator、生产 HTMLProcessor、L0–L3、ObservationStore 与 ConfigHistory。页面不会触发无限模型重试，默认无网络；命令明确选择 --generate 时才使用配置的 AI，并检查 allow_page_text。只向模型发送训练快照，留出和历史样本留在本地确定性比较。
 

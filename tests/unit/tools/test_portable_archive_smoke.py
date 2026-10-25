@@ -207,13 +207,20 @@ def test_run_checks_the_manifest_before_running_the_smoke(
         order.append("runtime-verify" if "runtime-verify" in command else str(command[0]))
         return subprocess.CompletedProcess(command, 0, "{}", "")
 
+    class _FakeDocManifest:
+        def check_doc_manifest(self, root: Path) -> list[str]:
+            order.append("doc_manifest")
+            return []
+
     monkeypatch.setattr(module, "_load_smoke_module", lambda: _FakeSmoke(Path("stub"), order))
+    monkeypatch.setattr(module, "_load_doc_manifest_module", lambda: _FakeDocManifest())
     monkeypatch.setattr(module, "_run", fake_run)
 
     manifest = module.run(archive_dir, "windows", "Full")
-    assert order[:2] == ["runtime-verify", "run_smoke_test"], order
+    assert order[:3] == ["runtime-verify", "run_smoke_test", "doc_manifest"], order
     assert manifest["runtime_verify"] == "ok"
     assert manifest["smoke"] == "ok"
+    assert manifest["doc_manifest"] == "ok"
 
 
 def test_prints_survive_a_cp1252_console(tmp_path: Path, capsys) -> None:

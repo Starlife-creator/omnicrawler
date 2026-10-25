@@ -230,8 +230,19 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ runner.temp }}/downloaded
       # ★ 单行命令：Windows runner 的默认 shell 是 pwsh，反斜杠续行在那里不成立。
+      # C-#15：保留解压目录，供后续文档清单复核步骤使用。
       - name: 解压并冒烟（包内入口 + 本地 fixture 站点）
-        run: python tools/portable_archive_smoke.py "${{ runner.temp }}/downloaded" --platform ${{ matrix.platform }} --edition Full --manifest "${{ runner.temp }}/portable-smoke-${{ matrix.platform }}.json"
+        run: python tools/portable_archive_smoke.py "${{ runner.temp }}/downloaded" --platform ${{ matrix.platform }} --edition Full --extract-dir "${{ runner.temp }}/kept" --manifest "${{ runner.temp }}/portable-smoke-${{ matrix.platform }}.json"
+      # C-#15：归档解压后复核便携包文档清单（docs/archive、docs/releases 不得随包分发，
+      # README/LICENSE/第三方声明/EDITION.txt 必须齐备）。
+      - name: 便携包文档清单复核
+        shell: bash
+        env:
+          SMOKE_MANIFEST: ${{ runner.temp }}/portable-smoke-${{ matrix.platform }}.json
+          KEEP_DIR: ${{ runner.temp }}/kept
+        run: |
+          ROOT="$(python -c 'import json, os, pathlib; m=json.load(open(os.environ["SMOKE_MANIFEST"])); print(pathlib.Path(os.environ["KEEP_DIR"]) / m["release_root"])')"
+          python tools/check_portable_doc_manifest.py --release-root "$ROOT"
       - name: 上传冒烟日志与清单
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

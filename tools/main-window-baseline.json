@@ -1,0 +1,13 @@
+{
+  "_meta": {
+    "purpose": "MainWindow 组合根规模上限：只降不升（C-#19）。",
+    "rules": "file_lines=main.py 总行数；method_count=MainWindow 类方法数；longest_method_lines=最长方法行跨度；拆分迁移见 docs/MAINWINDOW_REFACTOR.md。"
+  },
+  "file": "src/omnicrawler/gui/main.py",
+  "class": "MainWindow",
+  "limits": {
+    "file_lines": 2533,
+    "method_count": 110,
+    "longest_method_lines": 227
+  }
+}

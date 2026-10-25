@@ -292,11 +292,12 @@ class LogConsole(QWidget):
 
         try:
             with open(filepath, "w", encoding="utf-8") as f:
-                f.write(_("# OmniCrawler GUI 日志导出\n"))
-                f.write(_(f"# 导出时间: {datetime.now().isoformat()}\n"))
-                f.write(_("# ---- 以下日志已自动脱敏 ----\n"))
-                f.write(_("# 本日志已自动脱敏：URL 域名和查询参数、选择器内容已被隐藏\n"))
-                f.write(_("# 字段名称和统计信息保留不变\n"))
+                # C-#4：报告注释头不是待翻译界面文案，不应包进 _() 污染 .pot 消息表。
+                f.write("# OmniCrawler GUI 日志导出\n")
+                f.write(f"# 导出时间: {datetime.now().isoformat()}\n")
+                f.write("# ---- 以下日志已自动脱敏 ----\n")
+                f.write("# 本日志已自动脱敏：URL 域名和查询参数、选择器内容已被隐藏\n")
+                f.write("# 字段名称和统计信息保留不变\n")
                 f.write("#\n\n")
 
                 for msg, level in self._all_logs:

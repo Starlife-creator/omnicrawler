@@ -2635,13 +2635,15 @@ browser = [
     { name = "patchright" },
     { name = "playwright" },
 ]
+build = [
+    { name = "pyinstaller" },
+]
 crawl4ai = [
     { name = "crawl4ai" },
 ]
 dev = [
     { name = "coverage" },
     { name = "mypy" },
-    { name = "pyinstaller" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -2656,7 +2658,6 @@ document = [
     { name = "python-pptx" },
 ]
 full = [
-    { name = "aiofiles" },
     { name = "aiohttp" },
     { name = "beautifulsoup4" },
     { name = "boto3" },
@@ -2699,7 +2700,6 @@ full = [
     { name = "websockets" },
 ]
 full-macos = [
-    { name = "aiofiles" },
     { name = "aiohttp" },
     { name = "beautifulsoup4" },
     { name = "boto3" },
@@ -2715,7 +2715,7 @@ full-macos = [
     { name = "lxml" },
     { name = "numpy" },
     { name = "onnxruntime" },
-    { name = "opencv-contrib-python" },
+    { name = "opencv-python-headless" },
     { name = "openpyxl" },
     { name = "opensearch-py" },
     { name = "patchright" },
@@ -2804,8 +2804,6 @@ tls = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiofiles", marker = "extra == 'full'", specifier = ">=25,<26" },
-    { name = "aiofiles", marker = "extra == 'full-macos'", specifier = ">=25,<26" },
     { name = "aiohttp", marker = "extra == 'ai'", specifier = ">=3.11,<4" },
     { name = "aiohttp", marker = "extra == 'full'", specifier = ">=3.11,<4" },
     { name = "aiohttp", marker = "extra == 'full-macos'", specifier = ">=3.11,<4" },
@@ -2855,7 +2853,7 @@ requires-dist = [
     { name = "onnxruntime", marker = "extra == 'full'", specifier = ">=1.17,<2" },
     { name = "onnxruntime", marker = "extra == 'full-macos'", specifier = ">=1.17,<2" },
     { name = "onnxruntime", marker = "extra == 'ocr-captcha'", specifier = ">=1.17,<2" },
-    { name = "opencv-contrib-python", marker = "extra == 'full-macos'", specifier = ">=4.10,<6" },
+    { name = "opencv-python-headless", marker = "extra == 'full-macos'", specifier = ">=4.10,<6" },
     { name = "openpyxl", marker = "extra == 'full'", specifier = ">=3.1,<4" },
     { name = "openpyxl", marker = "extra == 'full-macos'", specifier = ">=3.1,<4" },
     { name = "openpyxl", marker = "extra == 'gui'", specifier = ">=3.1,<4" },
@@ -2888,7 +2886,7 @@ requires-dist = [
     { name = "pyarrow", marker = "extra == 'full'", specifier = ">=18,<26" },
     { name = "pyarrow", marker = "extra == 'full-macos'", specifier = ">=18,<26" },
     { name = "pyarrow", marker = "extra == 'storage'", specifier = ">=18,<26" },
-    { name = "pyinstaller", marker = "extra == 'dev'", specifier = ">=6,<7" },
+    { name = "pyinstaller", marker = "extra == 'build'", specifier = ">=6,<7" },
     { name = "pypdf", marker = "extra == 'full'", specifier = ">=4,<7" },
     { name = "pypdf", marker = "extra == 'full-macos'", specifier = ">=4,<7" },
     { name = "pypdf", marker = "extra == 'pdf'", specifier = ">=4,<7" },
@@ -2933,7 +2931,6 @@ requires-dist = [
     { name = "selenium", marker = "extra == 'full'", specifier = ">=4.27,<5" },
     { name = "selenium", marker = "extra == 'full-macos'", specifier = ">=4.27,<5" },
     { name = "selenium", marker = "extra == 'selenium'", specifier = ">=4.27,<5" },
-    { name = "tomli", marker = "python_full_version < '3.11' and extra == 'dev'", specifier = ">=2,<3" },
     { name = "websockets", marker = "extra == 'full'", specifier = ">=14,<18" },
     { name = "websockets", marker = "extra == 'full-macos'", specifier = ">=14,<18" },
     { name = "websockets", marker = "extra == 'streams'", specifier = ">=14,<18" },

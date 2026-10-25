@@ -1,4 +1,11 @@
-#!/usr/bin/env sh
+#!/bin/sh
+# OmniCrawler Linux Web 工作台启动器（源码目录内使用）。
 set -eu
 cd "$(dirname "$0")"
+
+if [ ! -x .venv/bin/python ]; then
+  echo "[ERROR] Virtual environment not found. Run ./setup_linux.sh first." >&2
+  exit 1
+fi
+
 exec .venv/bin/python -m omnicrawler workbench "$@"

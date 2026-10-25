@@ -24,8 +24,8 @@ permissions:
   contents: read
 
 jobs:
-  e2e:
-    name: Python 3.12 / Chromium E2E
+  e2e-linux:
+    name: Linux Python 3.12 / Chromium E2E
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -39,6 +39,8 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[html,pdf,browser,dev]"
       - run: python -m playwright install --with-deps chromium
+      # 覆盖率口径：仅度量 e2e.harness 与 e2e.render_report（见 e2e/run.py --source），
+      # 不代表应用代码覆盖率；E2E_TEST_REPORT.md 按同一口径标注，避免端到端覆盖误读。
       - run: bash e2e/run.sh --browser
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -47,4 +49,37 @@ jobs:
           path: |
             docs/E2E_TEST_REPORT.md
             e2e-artifacts/
+          if-no-files-found: warn
+
+  gui-offscreen-smoke:
+    # C-#12：三平台 GUI offscreen 冒烟矩阵占位。Windows/macOS 桌面链路此前无 E2E 兜底；
+    # 当前先跑不依赖 Qt widget 的 GUI 纯逻辑用例，widget offscreen 套件待 CI 环境
+    # 安装 Qt 运行时与窗口管理器后纳入本 job。continue-on-error: true 直至矩阵连续转绿，
+    # 随后改为阻断。Python 固定 3.12（交付物冻结 3.12；3.13 不进本矩阵）。
+    name: GUI offscreen smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    continue-on-error: true
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[html,gui,dev]"
+      - name: Qt-free GUI logic smoke（widget offscreen 套件待 Qt 环境补齐）
+        shell: bash
+        run: python -m pytest -q tests/unit/gui/test_log_parser.py tests/unit/gui/test_pdf_workbench_logic.py
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gui-smoke-${{ matrix.os }}
+          path: e2e-artifacts/
           if-no-files-found: warn
