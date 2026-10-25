@@ -10,6 +10,9 @@ from typing import Any
 # S2.5.14：大页面节点上限，防止冻结数分钟
 MAX_ANALYZED_ELEMENTS = 50_000
 
+#: 候选字段最低评分（基础分 0.25；B-P3-4：合并原先重复的 < / <= 阈值判断）。
+_MIN_CANDIDATE_SCORE = 0.25
+
 _HASHY = re.compile(r"^(?:[a-f0-9]{8,}|[A-Za-z_-]*\d[A-Za-z0-9_-]{10,})$")
 _NAME_HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"价格|金额|price|amount|cost", re.I), "price"),
@@ -69,11 +72,9 @@ def analyze_html(html: str, *, limit: int = 200) -> list[FieldCandidate]:
             continue
         seen.add(key)
         score = _candidate_score(element, tag, preview, reasons, attribute)
-        if score < 0.25:
-            continue
         # S4.5 P3#153：阈值必须高于基础分（基础 0.25）才有效过滤；
-        # 低于阈值=全候选通过=白过滤
-        if score <= 0.25:
+        # 低于阈值=全候选通过=白过滤（B-P3-4：两条重复判断合并为一条）。
+        if score <= _MIN_CANDIDATE_SCORE:
             continue
         candidates.append(
             FieldCandidate(

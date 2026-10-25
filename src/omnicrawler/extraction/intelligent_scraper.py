@@ -2308,7 +2308,9 @@ def main(task_settings: dict[str, Any] | None = None) -> None:
             try:
                 apply_task_goal(config, task_settings)
                 _check_verified(config, html)
-            except ValueError as exc:
+            except (ValueError, AutoConfigUnverifiedError) as exc:
+                # B-P2-2：自动配置验证失败（RuntimeError 子类）与参数错误统一转
+                # 友好 SystemExit(3)，不再以 Python traceback 退出。
                 print(f"错误: {exc}", file=sys.stderr)
                 raise SystemExit(3) from exc
         # 走查 R3.1：让用户知道运行期会用哪种抓取方式（这直接决定耗时可否省下浏览器）。
@@ -2328,7 +2330,12 @@ def main(task_settings: dict[str, Any] | None = None) -> None:
         for line in chosen_advisories:
             print(f"提示: {line}", file=sys.stderr)
         output = yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        report = verify_config(config, html)
+        try:
+            report = verify_config(config, html)
+        except AutoConfigUnverifiedError as exc:
+            # B-P2-2：最终验证失败同样转友好 SystemExit(3)，不抛 traceback。
+            print(f"错误: {exc}", file=sys.stderr)
+            raise SystemExit(3) from exc
         print(
             f"已验证: {report['records']} 条记录 / {report['items']} 个列表项"
             f" / 字段 {report['fields']}",

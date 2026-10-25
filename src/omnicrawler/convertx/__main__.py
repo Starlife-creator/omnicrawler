@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import logging
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -31,6 +32,8 @@ from . import (
     TaskProgressEvent,
     convert,  # lazy-import OK，避免 __init__ 里启动时执行所有 register
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _build_progress_printer(
@@ -418,7 +421,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             print(line, flush=True)
         except Exception:  # noqa: BLE001
-            pass
+            # B-P3-3：stdout 写出失败留痕，不再静默吞掉。
+            LOGGER.debug("进度行 stdout 写出失败: ", exc_info=True)
 
     on_progress = _build_progress_printer(mode=args.on_progress, out=_stdout)
 

@@ -11,10 +11,13 @@ css（HTML）、regex（文本/PDF/HTML）、jsonpath（JSON）、text（包含�
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from ..core.safe_data import safe_regex_search
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +28,16 @@ class SlotHit:
     value: Any
     confidence: float
     evidence: dict[str, Any] = field(default_factory=dict)
+
+
+def _error_hit(definition: Any, exc: Exception) -> SlotHit:
+    """B-P2-14e：定义级异常隔离，产出带错误类型与消息的错误槽位，不中断其余定义。"""
+    return SlotHit(
+        definition.slot_key,
+        None,
+        0.0,
+        {"error_type": type(exc).__name__, "error": str(exc), "matches": 0},
+    )
 
 
 def _regex_value(pattern: str, text: str) -> tuple[Any, float, dict[str, Any]]:
@@ -43,16 +56,21 @@ class TextDocExtractor:
     def extract(self, text: str, definitions: list[Any]) -> list[SlotHit]:
         hits: list[SlotHit] = []
         for definition in definitions:
-            if definition.extractor_type == "regex":
-                value, confidence, evidence = _regex_value(definition.pattern, text)
-                if value is not None:
-                    hits.append(SlotHit(definition.slot_key, value, confidence, evidence))
-            elif definition.extractor_type == "text":
-                if definition.pattern and definition.pattern in text:
-                    hits.append(SlotHit(
-                        definition.slot_key, definition.pattern, 1.0,
-                        {"pattern": definition.pattern, "matches": 1},
-                    ))
+            try:
+                if definition.extractor_type == "regex":
+                    value, confidence, evidence = _regex_value(definition.pattern, text)
+                    if value is not None:
+                        hits.append(SlotHit(definition.slot_key, value, confidence, evidence))
+                elif definition.extractor_type == "text":
+                    if definition.pattern and definition.pattern in text:
+                        hits.append(SlotHit(
+                            definition.slot_key, definition.pattern, 1.0,
+                            {"pattern": definition.pattern, "matches": 1},
+                        ))
+            except Exception as exc:  # noqa: BLE001 - 定义级隔离，坏正则不中断其余槽位
+                LOGGER.warning("文本槽位 %s 提取失败，记录错误槽位: %s: %s",
+                               definition.slot_key, type(exc).__name__, exc)
+                hits.append(_error_hit(definition, exc))
         return hits
 
 
@@ -65,17 +83,22 @@ class JSONDocExtractor:
         hits: list[SlotHit] = []
         text_repr = json.dumps(payload, ensure_ascii=False, default=str)
         for definition in definitions:
-            if definition.extractor_type == "jsonpath":
-                values = json_path(payload, definition.pattern)
-                if values:
-                    hits.append(SlotHit(
-                        definition.slot_key, values[0], 1.0,
-                        {"jsonpath": definition.pattern, "matches": len(values)},
-                    ))
-            elif definition.extractor_type == "regex":
-                value, confidence, evidence = _regex_value(definition.pattern, text_repr)
-                if value is not None:
-                    hits.append(SlotHit(definition.slot_key, value, confidence, evidence))
+            try:
+                if definition.extractor_type == "jsonpath":
+                    values = json_path(payload, definition.pattern)
+                    if values:
+                        hits.append(SlotHit(
+                            definition.slot_key, values[0], 1.0,
+                            {"jsonpath": definition.pattern, "matches": len(values)},
+                        ))
+                elif definition.extractor_type == "regex":
+                    value, confidence, evidence = _regex_value(definition.pattern, text_repr)
+                    if value is not None:
+                        hits.append(SlotHit(definition.slot_key, value, confidence, evidence))
+            except Exception as exc:  # noqa: BLE001 - 定义级隔离
+                LOGGER.warning("JSON 槽位 %s 提取失败，记录错误槽位: %s: %s",
+                               definition.slot_key, type(exc).__name__, exc)
+                hits.append(_error_hit(definition, exc))
         return hits
 
 

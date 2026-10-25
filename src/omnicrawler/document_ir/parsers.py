@@ -237,22 +237,38 @@ def _parse_eml(path: Path, options: dict[str, Any]) -> DocumentIR:
             headers[key] = _decode_header_value(str(value))
     title = headers.get("subject", path.stem)
 
+    def _decode(part: Any) -> str:
+        payload = part.get_payload(decode=True)
+        if not payload:
+            return ""
+        charset = part.get_content_charset() or "utf-8"
+        if not isinstance(payload, bytes):
+            payload = str(payload).encode("utf-8", errors="replace")
+        try:
+            return payload.decode(charset, errors="replace")
+        except LookupError:
+            return payload.decode("utf-8", errors="replace")
+
     body_parts: list[str] = []
+    html_parts: list[str] = []
     for part in msg.walk():
         content_type = part.get_content_type()
         if content_type == "text/plain":
-            payload = part.get_payload(decode=True)
-            if payload:
-                charset = part.get_content_charset() or "utf-8"
-                if not isinstance(payload, bytes):
-                    payload = str(payload).encode("utf-8", errors="replace")
-                try:
-                    body_parts.append(payload.decode(charset, errors="replace"))
-                except LookupError:
-                    body_parts.append(payload.decode("utf-8", errors="replace"))
+            body_parts.append(_decode(part))
+            continue
+        if content_type == "text/html":
+            html_parts.append(_decode(part))
             continue
         if content_type == "multipart/alternative":
             continue  # 子 part 已单独遍历
+
+    body_source = "plain"
+    if not body_parts and html_parts:
+        # B-P2-14b：纯 HTML 邮件无 text/plain 时降级为 HTML 文本提取，避免正文静默为空。
+        body_source = "html_fallback"
+        for html_text in html_parts:
+            document = parse_html(html_text)
+            body_parts.append(node_text(document))
 
     paragraphs: list[str] = []
     for body in body_parts:
@@ -266,7 +282,7 @@ def _parse_eml(path: Path, options: dict[str, Any]) -> DocumentIR:
         kind=".eml",
         title=title,
         paragraphs=paragraphs,
-        metadata={"headers": headers, "body_parts": len(body_parts)},
+        metadata={"headers": headers, "body_parts": len(body_parts), "body_source": body_source},
     )
 
 

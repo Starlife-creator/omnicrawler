@@ -10,11 +10,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from ..core.safe_data import safe_json_loads
 from ..extraction.html_tools import node_text, parse_html, select_nodes
-from .base import SlotHit, _regex_value
+from .base import SlotHit, _error_hit, _regex_value
+
+LOGGER = logging.getLogger(__name__)
 
 
 class HTMLDocExtractor:
@@ -25,20 +28,26 @@ class HTMLDocExtractor:
         full_text = node_text(document)
         hits: list[SlotHit] = []
         for definition in definitions:
-            if definition.extractor_type == "css":
-                nodes = select_nodes(document, definition.pattern)
-                if nodes:
-                    value = node_text(nodes[0]).strip()
-                    hits.append(SlotHit(
-                        definition.slot_key, value, 1.0,
-                        {"css": definition.pattern, "matches": len(nodes)},
-                    ))
-            elif definition.extractor_type == "regex":
-                value, confidence, evidence = _regex_value(definition.pattern, full_text)
-                if value is not None:
-                    hits.append(SlotHit(definition.slot_key, value, confidence, evidence))
-            elif definition.extractor_type == "jsonpath":
-                self._jsonld_hits(html_text, definition, hits)
+            # B-P2-14e：每个定义独立 try/except，坏 CSS/正则不中断其余槽位，失败记入错误槽位。
+            try:
+                if definition.extractor_type == "css":
+                    nodes = select_nodes(document, definition.pattern)
+                    if nodes:
+                        value = node_text(nodes[0]).strip()
+                        hits.append(SlotHit(
+                            definition.slot_key, value, 1.0,
+                            {"css": definition.pattern, "matches": len(nodes)},
+                        ))
+                elif definition.extractor_type == "regex":
+                    value, confidence, evidence = _regex_value(definition.pattern, full_text)
+                    if value is not None:
+                        hits.append(SlotHit(definition.slot_key, value, confidence, evidence))
+                elif definition.extractor_type == "jsonpath":
+                    self._jsonld_hits(html_text, definition, hits)
+            except Exception as exc:  # noqa: BLE001 - 定义级隔离
+                LOGGER.warning("HTML 槽位 %s 提取失败，记录错误槽位: %s: %s",
+                               definition.slot_key, type(exc).__name__, exc)
+                hits.append(_error_hit(definition, exc))
         return hits
 
     def _jsonld_hits(self, html_text: str, definition: Any, hits: list[SlotHit]) -> None:

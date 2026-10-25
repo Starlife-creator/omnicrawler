@@ -91,7 +91,8 @@ class _ProgressEmitter:
         try:
             self._hook(dict(fields))
         except Exception:  # noqa: BLE001 — 用户回调/进度桥接报错不影响转换
-            pass
+            # B-P3-3：用户回调异常留痕，不再静默吞掉。
+            LOGGER.debug("用户进度回调抛错，已忽略: ", exc_info=True)
         self._last_emit_ts = now
         self._since_last = 0
 
@@ -1350,7 +1351,8 @@ def convert(
             try:
                 on_read_progress(payload)
             except Exception:  # noqa: BLE001 — hook 错误不得中断转换
-                pass
+                # B-P3-3：读进度 hook 异常留痕。
+                LOGGER.debug("读取进度 hook 抛错，已忽略: ", exc_info=True)
         # 2) 再更新 tracker：records_so_far 当前处理条数
         if tracker is not None and not stream_path:
             records_so_far = int(payload.get("records_so_far") or 0)
@@ -1361,7 +1363,8 @@ def convert(
             try:
                 on_write_progress(payload)
             except Exception:  # noqa: BLE001
-                pass
+                # B-P3-3：写进度 hook 异常留痕。
+                LOGGER.debug("写出进度 hook 抛错，已忽略: ", exc_info=True)
         if tracker is not None and not stream_path:
             current = int(payload.get("written") or payload.get("records_written") or 0)
             total = int(payload.get("total") or tracker._items_total or current)  # type: ignore[attr-defined]

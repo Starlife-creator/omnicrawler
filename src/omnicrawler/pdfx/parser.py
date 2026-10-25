@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -13,6 +14,8 @@ from .config import ProjectConfig
 from .database import Database
 from .ocr_result import text_quality as text_quality
 from .utils import clean_text, utcnow
+
+LOGGER = logging.getLogger(__name__)
 
 PARSER_VERSION = "native-1.1"
 
@@ -260,7 +263,8 @@ def parse_stage(
             try:
                 conn.close()
             except Exception:  # noqa: BLE001 - 线程连接关闭失败不应影响调用方
-                pass
+                # B-P3-3：关闭失败留痕（debug + exc_info），不再静默吞掉。
+                LOGGER.debug("线程数据库连接关闭失败: ", exc_info=True)
     return summary
 
 

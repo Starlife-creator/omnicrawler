@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import html as _html
+import logging
 import os
 import re
 import tempfile
@@ -20,6 +21,8 @@ from typing import Any
 
 from ..core.utils import atomic_write_text, excel_safe
 from .base import DocumentIR
+
+LOGGER = logging.getLogger(__name__)
 
 _MAX_SHEET_TITLE = 31
 _INVALID_SHEET_CHARS = re.compile(r"[\\/*?:\[\]]")
@@ -138,7 +141,8 @@ def write_docx(ir: DocumentIR, path: Path, options: dict[str, Any]) -> dict[str,
     try:
         document.core_properties.title = ir.title
     except Exception:  # noqa: BLE001 - 旧版 python-docx 无 core_properties 时不影响正文
-        pass
+        # B-P3-3：元数据写入失败留痕，不再静默吞掉。
+        LOGGER.debug("DOCX core_properties 标题写入失败，跳过元数据: ", exc_info=True)
     document.save(str(path))
     return {"rows": ir.paragraph_count() + ir.table_count(), "tables": ir.table_count(), "format": "docx"}
 

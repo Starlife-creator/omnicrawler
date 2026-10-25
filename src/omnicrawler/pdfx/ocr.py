@@ -479,7 +479,8 @@ def _check_temperature() -> bool:
                     )
                     return False
     except Exception:
-        pass
+        # B-P3-3：温度探测失败 fail-open，但异常类型/消息必须留痕，避免静默丢失诊断。
+        logger.debug("CPU 温度探测失败，按未超温放行: ", exc_info=True)
     return True
 
 
@@ -529,7 +530,7 @@ def _ocr_worker_process(
                 try:
                     _worker_document.close()
                 except Exception:  # noqa: BLE001 - 句柄关闭失败不影响后续流程
-                    pass
+                    logger.debug("复用 PDF 句柄关闭失败: ", exc_info=True)
             _worker_document = None
         if _worker_document is None:
             from .parser import open_document

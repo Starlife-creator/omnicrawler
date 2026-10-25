@@ -6,10 +6,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 from .base import SlotHit, TextDocExtractor
+
+LOGGER = logging.getLogger(__name__)
 
 
 class PDFDocExtractor:
@@ -24,12 +27,18 @@ class PDFDocExtractor:
             raise RuntimeError(
                 "PDF 槽位抽取需要 pdfplumber；请安装 omnicrawler[pdf]（pip install pdfplumber）"
             ) from exc
+        #: B-P2-14d：扫描件（无文本层）标记，供上层触发 OCR 降级。
+        self.needs_ocr = False
 
     def extract(self, pdf_path: str | Path, definitions: list[Any]) -> list[SlotHit]:
         path = Path(pdf_path)
         if not path.is_file():
             raise FileNotFoundError(f"PDF 文档不存在: {path}")
         text = self._extract_text(path)
+        if not text.strip():
+            # B-P2-14d：无文本层判定为扫描件，显式标记 needs_ocr 并告警，不再静默返回空槽位。
+            self.needs_ocr = True
+            LOGGER.warning("PDF 无文本层，疑似扫描件，需 OCR 降级处理: %s", path)
         return TextDocExtractor().extract(text, definitions)
 
     def _extract_text(self, path: Path) -> str:
