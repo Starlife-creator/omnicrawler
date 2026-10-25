@@ -13,12 +13,16 @@ def iter_bounded_futures[ItemT, ResultT](
     max_in_flight: int,
     should_stop: Callable[[], bool] | None = None,
     on_stop: Callable[[], None] | None = None,
+    future_timeout: float | None = None,
 ) -> Iterator[tuple[Future[ResultT], ItemT]]:
     """Submit at most ``max_in_flight`` jobs and yield them as they finish.
 
     Stop requests are latched: no new work is consumed after the callback first
     returns true.  Already-running jobs are drained so callers can safely close
     thread-local database connections and persist deterministic outcomes.
+
+    B-P2-3：``future_timeout`` 为单轮 ``wait`` 整体超时；超时后在途 future 取消并
+    作为失败项交调用方记账（``future.result()`` 抛 ``CancelledError``），释放 worker。
     """
     if max_in_flight < 1:
         raise ValueError("max_in_flight 必须大于等于1")
@@ -51,7 +55,16 @@ def iter_bounded_futures[ItemT, ResultT](
             if not pending:
                 break
 
-            done, _ = wait(pending, return_when=FIRST_COMPLETED)
+            done, timed_out_pending = wait(
+                pending, return_when=FIRST_COMPLETED, timeout=future_timeout,
+            )
+            if not done and timed_out_pending:
+                # B-P2-3：整体超时——取消在途任务并作为失败项交出，避免挂死任务长期占住 worker。
+                for future in timed_out_pending:
+                    future.cancel()
+                for future in list(timed_out_pending):
+                    yield future, pending.pop(future)
+                continue
             for future in done:
                 yield future, pending.pop(future)
     finally:

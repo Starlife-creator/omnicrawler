@@ -69,34 +69,33 @@ class SelectionToFieldSpec:
         elem = self.elements[0]
         tag = elem.tag.upper() if elem.tag else ""
 
-        # 根据元素类型决定字段属性
+        # B-P1-2：键名对齐提取引擎契约——浏览器点选产出 XPath，走 ``xpath`` 分支；
+        # 属性统一用 ``attr``；纯文本字段不带 attr（引擎回退 text_content）。
         if tag == "IMG":
             fields[f"{self.field_prefix}_图片地址"] = {
-                "selector": selector,
-                "attribute": "src",
+                "xpath": selector,
+                "attr": "src",
                 "desc": "图片地址",
             }
         elif tag == "A":
             fields[f"{self.field_prefix}_链接文本"] = {
-                "selector": selector,
-                "attribute": "text",
+                "xpath": selector,
                 "desc": "链接文本",
             }
             fields[f"{self.field_prefix}_链接地址"] = {
-                "selector": selector,
-                "attribute": "href",
+                "xpath": selector,
+                "attr": "href",
                 "desc": "链接地址",
             }
         elif tag in ("INPUT", "TEXTAREA", "SELECT"):
             fields[f"{self.field_prefix}_值"] = {
-                "selector": selector,
-                "attribute": "value",
+                "xpath": selector,
+                "attr": "value",
                 "desc": "输入值",
             }
         else:
             fields[f"{self.field_prefix}_文本"] = {
-                "selector": selector,
-                "attribute": "text",
+                "xpath": selector,
                 "desc": "元素文本内容",
             }
 
