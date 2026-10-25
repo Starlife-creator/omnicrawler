@@ -2,6 +2,14 @@
 
 ⚠ 已废弃：归档安全实现已收敛到 :mod:`omnicrawler.core.archive_security`，
 本模块仅供历史调用方过渡，新代码禁止使用。
+
+A-P3-7 迁移清单（2026-10-25 检索残留 import 结果）：
+- 生产源码：除 ``omnicrawler/__init__.py`` 惰性别名表（``_DEPRECATED_MODULE_MAP``）
+  外，``src/`` 内无任何模块直接 import 本模块；生产调用方已迁移至
+  :mod:`omnicrawler.core.archive_security`。
+- 残留测试调用方（下个大版本随模块一并移除）：
+  ``tests/unit/utils/test_archives.py``、``tests/unit/core/test_consumer_existence.py``。
+- 移除计划：下个大版本删除本模块与 ``__init__`` 别名；移除前任何新代码不得再引用。
 """
 
 from __future__ import annotations
