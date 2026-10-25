@@ -23,6 +23,8 @@
 - [架构](ARCHITECTURE.md)：模块边界、执行模型与兼容性原则。
 - [配置参考](CONFIG_REFERENCE.md)：YAML 配置协议 v5 字段全集。
 - [编码规范](CODING_STANDARDS.md)
+- [GUI 状态加载线程边界](GUI_STATE_LOADING.md)：直连点位基线、后台迁移触发条件与线程纪律。
+- [MainWindow 拆分迁移计划](MAINWINDOW_REFACTOR.md)：组合根上帝对象的委派拆分路线与门禁口径。
 - [能力成熟度矩阵](CAPABILITY_MATURITY.md)
 - [能力强度与依赖利用实施](DEPENDENCY_DEPTH_IMPLEMENTATION.md)：证据、OCR、浏览器与桥接契约的落地和验收边界。
 - [支持矩阵](SUPPORT_MATRIX.md)

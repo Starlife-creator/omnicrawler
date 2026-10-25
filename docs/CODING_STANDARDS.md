@@ -88,3 +88,22 @@
 C-#8 风险优先补充分组 `services`、`plugins`、`commands`、`gui_views` 当前处于 **baseline pending** 状态：门禁会打印实测值与占位下限，但**不阻断合并**；首轮 CI 覆盖率数据落地后，按同一口径（min − 2）填回实数下限并从 `BASELINE_PENDING_GATES` 移出，即转为阻断。
 
 `src/omnicrawler/visual_selector/` 在 `pyproject.toml` 的 coverage `omit` 中排除：它是浏览器坐标选择 E2E 工具，依赖真实页面与浏览器运行时，不进单测覆盖率。**复核期限：2026-12 前**为其补 offscreen/集成测试，达标后从 omit 移除并纳入分组门禁；在此之前不得以「覆盖率低」为由删除该模块功能。
+
+## 13. GUI 测试归属：`tests/unit/gui` 与 `tests/gui`
+
+两个目录的职责边界成文如下，新增 GUI 测试前先按本表选目录：
+
+| 维度 | `tests/unit/gui` | `tests/gui` |
+| --- | --- | --- |
+| 定位 | 纯逻辑、组件单元、信号/参数契约 | 窗口/对话框生命周期、集成、跨组件契约、offscreen 端到端冒烟 |
+| QApplication | 不依赖完整生命周期；Qt 不可用时 `pytest.importorskip("PySide6")` 跳过 | 集中使用 `tests/gui/conftest.py` 的 offscreen 环境 |
+| 夹具 | 不引用 `tests/gui` 的 fixture/helper | 可复用 `tests/unit/gui` 已沉淀的 helper，反向禁止 |
+| 覆盖率归属 | `desktop_core` 等单测分组 | 集成/生命周期覆盖，不进单测分组下限 |
+
+阻断规则由 `tools/check_gui_test_layout.py` 执行（接入 `quality.yml` 静态 job）：
+
+1. 两目录不得出现同名测试文件；
+2. `tests/unit/gui` 不得 import `tests/gui`（单元层禁止依赖集成层）；
+3. `tests/gui` 不得 import `tests/unit/gui`（避免单元层被集成夹具绑架）。
+
+**重复覆盖候选清单（advisory，非阻断）**：`tools/check_gui_test_layout.py --report` 实时列出「同一 `omnicrawler.gui` 源模块被两个目录同时引用」的测试文件对。2026-10 盘点共 26 个模块处于双目录覆盖状态，集中在 `core.config_model`、`design_system`、`views.plugin_market`、`views.change_monitor`、`delegates.*` 等簇；去重原则：纯函数/信号契约留在 `tests/unit/gui`，生命周期与跨组件装配断言并入 `tests/gui`，合并后删除重复用例。物理去重需在可运行 Qt offscreen 的 CI 环境逐簇回归验证，本轮先落归属规则与候选清单，去重迁移列入后续迭代。
