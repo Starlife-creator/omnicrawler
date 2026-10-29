@@ -4,10 +4,9 @@ Redis 侧 in-flight 有序集合租约待 Redis 与多 worker 环境集成验证
 """
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
-from omnicrawler.runtime.redis_worker import _LocalQueue, TaskSpec
+from omnicrawler.runtime.redis_worker import TaskSpec, _LocalQueue
 
 
 def _task(task_id: str, path: Path) -> TaskSpec:
@@ -24,7 +23,8 @@ def test_atomic_claim_prevents_double_dispatch(tmp_path: Path) -> None:
         assert first is not None and first.task_id == "t1"
         assert second is None
     finally:
-        q1.close(); q2.close()
+        q1.close()
+        q2.close()
 
 
 def test_expired_lease_is_reclaimed_with_attempt_increment(tmp_path: Path) -> None:

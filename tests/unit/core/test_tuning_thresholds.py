@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawler.core.config import AppConfig, DEFAULTS, deep_merge, validate_config
+from omnicrawler.core.config import DEFAULTS, AppConfig, deep_merge, validate_config
 from omnicrawler.review import review_workbench
 from omnicrawler.review.review_workbench import ReviewItem
 

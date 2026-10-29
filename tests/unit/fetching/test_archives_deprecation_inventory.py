@@ -9,8 +9,6 @@ import re
 import warnings
 from pathlib import Path
 
-import pytest
-
 SRC_ROOT = Path(__file__).resolve().parents[3] / "src" / "omnicrawler"
 
 _IMPORT_PATTERNS = (

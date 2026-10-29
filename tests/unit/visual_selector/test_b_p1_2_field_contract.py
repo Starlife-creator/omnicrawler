@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from omnicrawler.visual_selector.field_converter import FieldConverter, SelectionToFieldSpec, SelectedElement
+from omnicrawler.visual_selector.field_converter import FieldConverter, SelectedElement, SelectionToFieldSpec
 
 
 def _spec(tag: str, xpath: str) -> SelectionToFieldSpec:

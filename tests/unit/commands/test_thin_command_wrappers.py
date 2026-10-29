@@ -15,7 +15,6 @@ from omnicrawler.commands import template as template_command
 from omnicrawler.commands import transform as transform_command
 from omnicrawler.commands import workspace as workspace_command
 
-
 # ---------- template._key_values ----------
 
 def test_key_values_parses_name_equals_value() -> None:

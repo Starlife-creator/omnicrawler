@@ -2,11 +2,11 @@
 
 复用既有 ``record_edits`` / ``audit_events`` 表结构，不新增独立表：
 
-- 复核决策（:class:`~omnicrawler.review.review_workbench.ReviewDecision`）写入
+- 复核决策（:class:`~omnicrawler.review.review_models.ReviewDecision`）写入
   ``record_edits``（old/new/actor=reviewer/reason=scope），并在 ``audit_events``
   落一条 ``review_decision`` 事件，附带 ``reviewer`` / ``created_at`` / 内容哈希 /
   版本号 / schema 版本；
-- 反馈样本（:class:`~omnicrawler.review.review_feedback.FeedbackSample`）落
+- 反馈样本（:class:`~omnicrawler.review.review_models.FeedbackSample`）落
   ``audit_events`` 的 ``review_feedback`` 事件，同样带内容哈希与版本号。
 
 内容哈希 = 规范化 JSON 的 SHA-256；版本号按业务键递增（决策按 record_id，
@@ -16,13 +16,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from ..core.utils import json_text, utcnow
-
-if TYPE_CHECKING:
-    from .review_feedback import FeedbackSample
-    from .review_workbench import ReviewDecision
+from .review_models import FeedbackSample, ReviewDecision
 
 #: 持久化结构版本：字段口径变化时递增，便于旧库兼容判断。
 REVIEW_SCHEMA_VERSION = 1

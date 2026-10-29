@@ -4,9 +4,9 @@ from __future__ import annotations
 import pytest
 
 from omnicrawler.pipeline_ops.plan_compiler import (
+    _redact_for_hash,
     compile_task_plan,
     diff_plans,
-    _redact_for_hash,
 )
 from omnicrawler.pipeline_ops.task_ir import TaskIR
 

@@ -41,7 +41,7 @@ class _StubResponse:
     def read(self, _limit: int = -1) -> bytes:
         return self._body
 
-    def __enter__(self) -> "_StubResponse":
+    def __enter__(self) -> _StubResponse:
         return self
 
     def __exit__(self, *_exc: object) -> None:
@@ -81,7 +81,7 @@ def test_classify_dns_failure() -> None:
 
 
 def test_classify_timeout() -> None:
-    kind, _detail = classify_robots_error(urllib.error.URLError(socket.timeout("timed out")))
+    kind, _detail = classify_robots_error(urllib.error.URLError(TimeoutError("timed out")))
     assert kind == "timeout"
 
 
@@ -113,7 +113,7 @@ def test_classify_other() -> None:
     ("exc", "kind"),
     [
         (urllib.error.URLError(socket.gaierror("nodename")), "dns"),
-        (urllib.error.URLError(socket.timeout("timed out")), "timeout"),
+        (urllib.error.URLError(TimeoutError("timed out")), "timeout"),
         (ValueError("parse fail"), "parse"),
     ],
 )
@@ -129,7 +129,7 @@ def test_network_failure_fail_closed_blocks(tmp_path: Path, exc: Exception, kind
 
 @pytest.mark.parametrize(
     "exc",
-    [urllib.error.URLError(socket.gaierror("nodename")), urllib.error.URLError(socket.timeout("x"))],
+    [urllib.error.URLError(socket.gaierror("nodename")), urllib.error.URLError(TimeoutError("x"))],
 )
 def test_network_failure_fail_open_allows(tmp_path: Path, exc: Exception) -> None:
     policy = _policy(tmp_path, fail_closed=False, opener=_StubOpener(exc=exc))

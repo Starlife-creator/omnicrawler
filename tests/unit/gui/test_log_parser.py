@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from omnicrawler.gui.runner.log_parser import LogParser
 
-
 # ---- 级别判定 ---------------------------------------------------------------
 
 

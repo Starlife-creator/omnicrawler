@@ -9,8 +9,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-import pytest
-
 _ROOT = Path(__file__).resolve().parents[3]
 
 

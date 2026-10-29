@@ -77,7 +77,7 @@ class TextDocExtractor(BaseDocExtractor):
     def extract(self, text: str, definitions: list[Any]) -> list[SlotHit]:
         hits: list[SlotHit] = []
         for definition in definitions:
-            def _extract() -> None:
+            def _extract(definition: Any = definition) -> None:
                 if definition.extractor_type == "regex":
                     value, confidence, evidence = _regex_value(definition.pattern, text)
                     if value is not None:
@@ -103,7 +103,7 @@ class JSONDocExtractor(BaseDocExtractor):
         hits: list[SlotHit] = []
         text_repr = json.dumps(payload, ensure_ascii=False, default=str)
         for definition in definitions:
-            def _extract() -> None:
+            def _extract(definition: Any = definition) -> None:
                 if definition.extractor_type == "jsonpath":
                     values = json_path(payload, definition.pattern)
                     if values:

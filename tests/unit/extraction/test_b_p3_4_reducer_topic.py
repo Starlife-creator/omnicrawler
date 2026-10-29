@@ -7,7 +7,6 @@ from __future__ import annotations
 from omnicrawler.extraction.markdown_reducer import html_to_markdown
 from omnicrawler.extraction.topic_filter import evaluate_topic, filter_records
 
-
 # ── 锚点 href 不丢失 ─────────────────────────────────────────────────────
 
 def test_anchor_href_emitted_in_markdown() -> None:

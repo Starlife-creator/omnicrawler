@@ -17,14 +17,13 @@ from pathlib import Path
 
 import pytest
 
+import omnicrawler.services.regression_library as regression_library
 from omnicrawler.core.config import DEFAULTS, AppConfig
 from omnicrawler.core.models import CrawlRequest, FetchResult
 from omnicrawler.services.application_service import ApplicationService
 from omnicrawler.services.progress import ProgressTracker, StageSpec
-from omnicrawler.services.research_package import create_research_package
-import omnicrawler.services.regression_library as regression_library
 from omnicrawler.services.regression_library import RegressionLibrary
-
+from omnicrawler.services.research_package import create_research_package
 
 # ── ProgressTracker 并发 ──────────────────────────────────────────────────────
 

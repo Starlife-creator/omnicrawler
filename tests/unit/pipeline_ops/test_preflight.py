@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from omnicrawler.core.config import AppConfig, DEFAULTS, deep_merge
+from omnicrawler.core.config import DEFAULTS, AppConfig, deep_merge
 from omnicrawler.pipeline_ops.preflight import (
     _install_requirement,
     _required_dependencies,

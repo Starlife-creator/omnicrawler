@@ -4,8 +4,8 @@ from __future__ import annotations
 import pytest
 
 from omnicrawler.pipeline_ops.pipeline_stages import (
-    FunctionStage,
     PIPELINE_STAGE_ORDER,
+    FunctionStage,
     StageContext,
     require_stage_order,
 )

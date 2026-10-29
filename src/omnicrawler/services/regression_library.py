@@ -11,7 +11,6 @@ from ..core.models import CrawlRequest, ExtractedRecord, FetchResult
 from ..core.utils import atomic_write, redact_headers, utcnow
 from ..security.paths import require_workspace_path
 
-
 # B-P3-6：回归 fixture 压缩体与解压后大小上限（20 MiB），防止畸形 gzip 解压爆炸内存。
 _MAX_FIXTURE_BODY_BYTES = 20 * 1024 * 1024
 

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 
-from omnicrawler.visual_selector.server import VisualSelectorServer, _MAX_SELECTIONS
+from omnicrawler.visual_selector.server import _MAX_SELECTIONS, VisualSelectorServer
 
 
 class _FakeWebSocket:

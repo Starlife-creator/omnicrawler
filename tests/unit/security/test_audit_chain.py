@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawler.security.audit_chain import AuditChain, AuditChainBrokenError, GENESIS_HASH
+from omnicrawler.security.audit_chain import GENESIS_HASH, AuditChain, AuditChainBrokenError
 from omnicrawler.state import StateStore
 
 

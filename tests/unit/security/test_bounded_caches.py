@@ -73,7 +73,7 @@ class _OkResponse:
     def read(self, _limit: int = -1) -> bytes:
         return b"User-agent: *\nDisallow: /private/\n"
 
-    def __enter__(self) -> "_OkResponse":
+    def __enter__(self) -> _OkResponse:
         return self
 
     def __exit__(self, *_exc: object) -> None:

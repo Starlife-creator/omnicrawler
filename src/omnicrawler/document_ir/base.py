@@ -17,7 +17,6 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-
 #: Markdown 结构字符转义顺序：反斜杠必须最先处理（B-P3-5 导出一致性纵深加固）。
 _MD_ESCAPE_TABLE: tuple[tuple[str, str], ...] = (
     ("\\", "\\\\"),

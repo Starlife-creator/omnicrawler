@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from ..core.config import DEFAULTS
+from .review_models import ReviewDecision
 from .review_persistence import ReviewStore
 
 Origin = Literal["raw", "rule", "ai", "human"]
@@ -60,16 +61,6 @@ class ReviewItem:
             + int(self.pending_deletion) * w["pending_deletion"],
             3,
         )
-
-
-@dataclass(frozen=True, slots=True)
-class ReviewDecision:
-    record_id: str
-    field: str
-    old_value: Any
-    new_value: Any
-    scope: Literal["record", "similar", "rule_suggestion", "regression", "reprocess"]
-    reviewer: str
 
 
 class ReviewQueue:

@@ -28,7 +28,7 @@ class HTMLDocExtractor(BaseDocExtractor):
         hits: list[SlotHit] = []
         for definition in definitions:
             # B-P2-14e：每个定义独立 try/except，坏 CSS/正则不中断其余槽位，失败记入错误槽位。
-            def _extract() -> None:
+            def _extract(definition: Any = definition) -> None:
                 if definition.extractor_type == "css":
                     nodes = select_nodes(document, definition.pattern)
                     if nodes:

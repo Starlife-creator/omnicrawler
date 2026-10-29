@@ -1,8 +1,6 @@
 """C-#16：``apps`` 入口参数解析、退出码与错误处理直接冒烟单测（不触碰 pdfx 内部实现）。"""
 from __future__ import annotations
 
-import argparse
-
 import pytest
 
 from omnicrawler.apps import _pdf_cli, field_extractor, pdf_processor

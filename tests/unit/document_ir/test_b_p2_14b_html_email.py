@@ -20,7 +20,7 @@ def test_plain_text_email_marks_plain_source(tmp_path: Path) -> None:
             "Content-Type: text/plain; charset=utf-8\r\n"
             "\r\n"
             "这是纯文本正文。"
-        ).encode("utf-8"),
+        ).encode(),
     )
     doc = parse_document(eml)
     assert doc.metadata["body_source"] == "plain"
@@ -37,7 +37,7 @@ def test_html_only_email_falls_back_to_plain_text(tmp_path: Path) -> None:
             "Content-Type: text/html; charset=utf-8\r\n"
             "\r\n"
             "<html><body><p>这是HTML正文内容，包含<b>加粗</b>片段。</p></body></html>"
-        ).encode("utf-8"),
+        ).encode(),
     )
     doc = parse_document(eml)
     assert doc.metadata["body_source"] == "html_fallback"

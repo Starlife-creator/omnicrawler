@@ -2,22 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
+from .review_models import FeedbackSample
 from .review_persistence import ReviewStore
-
-
-@dataclass(frozen=True, slots=True)
-class FeedbackSample:
-    sample_id: str
-    input_evidence: str
-    predicted: Any
-    corrected: Any
-    rule_or_model: str
-    risk: float
-    information_gain: float
-    approved_for_regression: bool
 
 
 class FeedbackCorpus:
