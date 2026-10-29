@@ -19,6 +19,19 @@ _PG_BATCH_SIZE = 500
 _OPENSEARCH_BULK_SIZE = 500
 
 
+def _opensearch_helpers() -> Any:
+    """解析 ``opensearchpy.helpers``；未安装返回 None（调用方回退逐条 index）。
+
+    单列为模块级函数是为了让「无 helpers」这条回退路径可被用例确定性覆盖——
+    直接把 import 写在写入路径里时，装了 opensearchpy 的环境永远走不到回退分支。
+    """
+    try:
+        from opensearchpy import helpers  # type: ignore[import-untyped]
+    except ImportError:
+        return None
+    return helpers
+
+
 @runtime_checkable
 class RecordSink(Protocol):
     def write(self, run_id: str, request: CrawlRequest, records: list[ExtractedRecord]) -> int: ...
@@ -192,12 +205,8 @@ class OpenSearchRecordSink:
             return 0
         with self._sdk_request():
             # B-P2-9：可用 helpers.bulk 时按 500/批提交，避免逐条 index 产生海量往返；
-            # 未安装 opensearchpy 或注入测试假客户端时回退逐条 index，保持既有契约。
-            helpers_module: Any = None
-            try:
-                from opensearchpy import helpers as helpers_module  # type: ignore[import-untyped]
-            except ImportError:
-                helpers_module = None
+            # 未安装 opensearchpy 时回退逐条 index，保持既有契约。
+            helpers_module = _opensearch_helpers()
             if helpers_module is not None:
                 for start in range(0, len(actions), _OPENSEARCH_BULK_SIZE):
                     helpers_module.bulk(

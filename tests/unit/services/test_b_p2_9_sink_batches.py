@@ -6,17 +6,17 @@ from pathlib import Path
 
 from omnicrawler.core.models import CrawlRequest, ExtractedRecord
 from omnicrawler.services.record_sinks import (
+    _PG_BATCH_SIZE,
     OpenSearchRecordSink,
     PostgreSQLRecordSink,
-    _PG_BATCH_SIZE,
 )
 
 
 class _Cursor:
-    def __init__(self, connection: "_FakeConnection") -> None:
+    def __init__(self, connection: _FakeConnection) -> None:
         self.connection = connection
 
-    def __enter__(self) -> "_Cursor":
+    def __enter__(self) -> _Cursor:
         return self
 
     def __exit__(self, *_args: object) -> None:
@@ -76,7 +76,10 @@ class _SearchClient:
         pass
 
 
-def test_opensearch_fallback_indexes_per_record_without_helpers(tmp_path: Path) -> None:
+def test_opensearch_fallback_indexes_per_record_without_helpers(tmp_path: Path, monkeypatch) -> None:
+    from omnicrawler.services import record_sinks
+
+    monkeypatch.setattr(record_sinks, "_opensearch_helpers", lambda: None)
     client = _SearchClient()
     sink = OpenSearchRecordSink([], client=client)
     request = CrawlRequest("https://example.org/item")
@@ -87,3 +90,26 @@ def test_opensearch_fallback_indexes_per_record_without_helpers(tmp_path: Path) 
     assert sink.write("run", request, records) == 2
     assert len(client.documents) == 2
     assert client.documents[0]["body"]["data"] == {"title": "A"}
+
+
+def test_opensearch_uses_helpers_bulk_and_stops_per_record_index(monkeypatch) -> None:
+    from omnicrawler.services import record_sinks
+
+    batches: list[list[dict[str, object]]] = []
+
+    class _Helpers:
+        @staticmethod
+        def bulk(_client, actions, **_kwargs) -> None:
+            batches.append(list(actions))
+
+    monkeypatch.setattr(record_sinks, "_opensearch_helpers", lambda: _Helpers)
+    client = _SearchClient()
+    sink = OpenSearchRecordSink([], client=client)
+    request = CrawlRequest("https://example.org/item")
+    records = [
+        ExtractedRecord(request.url, "item", {"title": str(index)}, {"source": "test"})
+        for index in range(3)
+    ]
+    assert sink.write("run", request, records) == 3
+    assert [len(batch) for batch in batches] == [3]
+    assert client.documents == []
