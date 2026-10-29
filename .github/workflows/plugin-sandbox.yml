@@ -2,8 +2,10 @@ name: plugin-sandbox
 
 # Phase 2a F3：插件子进程运行时契约与穿透矩阵（CI 分级）。
 # - 双后端（源码 -I -S / 冻结宿主 exe 由 release 管线覆盖）跑同一套契约与穿透用例
-# - windows-latest AppContainer 探测 spike（fail-fast 探针，第 73 轮）
-# - AC 用例豁免语义：runner 无完整 AppContainer 能力时 skip + 缺口标注，不算门禁红（第 74 轮）
+# - windows-latest AppContainer 探测 spike（诊断探针，第 73 轮）
+# - AC 缺口口径（2026-10-29 校正）：第 74 轮设想的"skip + 缺口标注"从未落进用例，
+#   而 spawn 前置裁决是 fail-closed —— runner 缺 AppContainer 时矩阵腿**判红**。
+#   spike 本身仍不判红，只把探测/裁决结论打进日志供定位。
 #
 # 触发：插件运行时/契约相关代码变更；nightly 全量穿透矩阵（方案第 19 轮）。
 
@@ -68,31 +70,42 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.12"
-      # 探针：检测 runner 是否具备完整 AppContainer 能力（第 73 轮）。
-      # 失败仅告警不红——AC 用例走豁免语义（skip + 缺口标注，H4），
-      # 由真实环境报告（--report）在具备 AC 的机器补验（第 74 轮）。
+      # 探针：**直接调用产品里的同一份探测**（此前此处自成一套 hasattr(advapi32, …)，
+      # 查错导出模块 ⇒ 恒为 false，又因为不判红而长期没人核对，与 spawn 前置口径脱节）。
+      # 按文件路径加载 plugin_os_sandbox.py（只用标准库）：本 job 不装包，走
+      # `omnicrawler.plugins` 包名导入会经 __init__ 带出 PyYAML 而直接把探针跑崩。
+      # 失败仅告警不红：矩阵腿才是门禁，这里只回答"这台 runner 到底有没有 AC"。
       - name: AppContainer 能力探测
         id: ac_probe
         run: |
           python - << 'PY'
-          import ctypes, sys
-          ok = True
-          try:
-              advapi = ctypes.windll.advapi32
-              sid = ctypes.c_void_p()
-              # CreateAppContainerProfile 存在性探测
-              if not hasattr(advapi, "CreateAppContainerProfile"):
-                  ok = False
-          except Exception as e:
-              print(f"探测异常: {e}")
-              ok = False
-          print(f"appcontainer_available={'true' if ok else 'false'}")
-          with open(__import__('os').environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"ac_ok={'true' if ok else 'false'}\n")
+          import importlib.util
+          import os
+          import sys
+
+          spec = importlib.util.spec_from_file_location(
+              "plugin_os_sandbox",
+              os.path.join("src", "omnicrawler", "plugins", "plugin_os_sandbox.py"),
+          )
+          mod = importlib.util.module_from_spec(spec)
+          # 先登记再执行：SandboxProbe 用 @dataclass(slots=True) + 延迟注解，
+          # dataclasses 会按 cls.__module__ 回查 sys.modules，缺登记即 AttributeError。
+          sys.modules[spec.name] = mod
+          spec.loader.exec_module(mod)
+
+          probe = mod.probe_os_sandbox()
+          mode, reason = mod.resolve_sandbox_mode()
+          print(f"backend={probe.backend} available={probe.available} supported_range={probe.supported_range}")
+          print(f"verdict={mode}")
+          print(f"detail={probe.detail}")
+          print(f"reason={reason}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"ac_ok={'true' if probe.available else 'false'}\n")
+              fh.write(f"verdict={mode}\n")
           PY
         shell: bash
       - name: 缺口标注（AC 不可用时）
         if: steps.ac_probe.outputs.ac_ok == 'false'
         run: |
-          echo "::warning::windows-latest runner 无完整 AppContainer 能力；完整 AC 穿透用例标记 skip + 缺口标注（H4），待真实环境报告补验。"
+          echo "::warning::windows-latest runner 探不到 AppContainer 导出（verdict=${{ steps.ac_probe.outputs.verdict }}）；spawn 前置 fail-closed 会让契约/穿透用例判红，请运行 plugins audit --report 反馈环境。"
         shell: bash
