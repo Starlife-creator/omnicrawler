@@ -853,9 +853,9 @@ def _write_duckdb_batches(
                 con.executemany(f"INSERT INTO {table} VALUES ({placeholders})", values)
                 written += len(batch)
                 batch.clear()
-                # B-P2-7：分批提交，避免整批插入包在单一长事务内持锁过久。
-                con.execute("COMMIT")
-                con.execute("BEGIN TRANSACTION")
+                # B-P2-7 回退：原先按批 COMMIT 会让「取消 → 目标表回滚」契约失效
+                # （实测取消后目标表残留 250 行半成品）。转换走单一事务，取消即整体回滚；
+                # 长事务持锁的代价接受。
                 pe.emit(written=written, total=total)
             if batch:
                 values = [[row.get(column) for column in safe_columns] for row in batch]
