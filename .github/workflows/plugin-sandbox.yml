@@ -77,6 +77,9 @@ jobs:
       # 失败仅告警不红：矩阵腿才是门禁，这里只回答"这台 runner 到底有没有 AC"。
       - name: AppContainer 能力探测
         id: ac_probe
+        env:
+          # runner 默认 stdout 是 cp1252，打印中文 detail/reason 即 UnicodeEncodeError
+          PYTHONIOENCODING: utf-8
         run: |
           python - << 'PY'
           import importlib.util
