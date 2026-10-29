@@ -59,7 +59,12 @@ class _SearchClient:
         self.closed = True
 
 
-def test_postgresql_and_opensearch_contracts_with_injected_clients():
+def test_postgresql_and_opensearch_contracts_with_injected_clients(monkeypatch):
+    from omnicrawler.services import record_sinks
+
+    # 注入的假 client 没有 transport，走不了 helpers.bulk；本条只锁逐条 index 契约
+    # （批量路径由 tests/unit/services/test_b_p2_9_sink_batches.py 覆盖）。
+    monkeypatch.setattr(record_sinks, "_opensearch_helpers", lambda: None)
     request = CrawlRequest("https://example.org/item")
     records = [ExtractedRecord(request.url, "item", {"title": "A"}, {"source": "test"})]
 
@@ -95,7 +100,10 @@ def test_optional_record_backend_fail_open_is_reported(tmp_path: Path):
     assert manager.errors[0]["sink"] == "unknown"
 
 
-def test_opensearch_sdk_calls_are_preauthorized_and_audited():
+def test_opensearch_sdk_calls_are_preauthorized_and_audited(monkeypatch):
+    from omnicrawler.services import record_sinks
+
+    monkeypatch.setattr(record_sinks, "_opensearch_helpers", lambda: None)
     broker = MagicMock()
     broker.sdk_request.return_value = nullcontext()
     client = _SearchClient()
