@@ -127,7 +127,8 @@ jobs:
         run: python -m pip install zstandard==0.25.0
       - if: runner.os == 'Linux'
         name: Install Qt runtime dependencies
-        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libpulse0 fonts-noto-cjk
+        # gettext：msgfmt --check-format 需要（ubuntu-latest 实测不预装）
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libpulse0 fonts-noto-cjk gettext
       - run: python -m compileall -q src tests examples
       - run: python tools/check_release_integrity.py
       - run: python tools/check_architecture.py
@@ -149,8 +150,9 @@ jobs:
       - run: python tools/check_main_window_size.py
       # C-#4 / C-#27：英文翻译覆盖率下限门禁（实测 20.5%；阈值 20.0% 只防下滑，补译完成后上调）
       - run: python tools/i18n_stats.py --check --min-coverage 0.20
-      # C-#4 / C-#27：.po/.pot 格式与占位符校验（msgfmt --check-format）；
-      # 仅 Linux runner 预装 gettext，Windows/macOS 平台同类校验待对应环境补装 gettext 后纳入矩阵。
+      # C-#4 / C-#27：.po/.pot 格式与占位符校验（msgfmt --check-format）。
+      # ★ ubuntu-latest **不预装** gettext（实测 `msgfmt: command not found`，exit 127），
+      #   所以上面的 apt 步骤显式装了 gettext；Windows/macOS 平台同类校验待补装后纳入矩阵。
       - name: Validate translation catalog format with msgfmt
         if: runner.os == 'Linux'
         run: |
@@ -258,7 +260,7 @@ jobs:
       # 不阻塞合并。扫描范围 omnicrawler:ci 测试镜像，severity 仅 HIGH/CRITICAL。
       - name: Image vulnerability scan（trivy 占位，待基线三审）
         continue-on-error: true
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           image-ref: omnicrawler:ci
           format: json
@@ -385,7 +387,11 @@ jobs:
           PIP_AUDIT_IGNORE: ${{ vars.PIP_AUDIT_IGNORE }}
         run: |
           ignore_args=()
+          # 已审基线：无可用修复版本的告警随仓库走（可评审），vars.PIP_AUDIT_IGNORE 作临时补充
+          while IFS= read -r vuln; do ignore_args+=(--ignore-vuln "$vuln"); done \
+            < <(grep -E '^(CVE|PYSEC|GHSA)-' tools/pip-audit-ignore.txt 2>/dev/null || true)
           for vuln in $PIP_AUDIT_IGNORE; do ignore_args+=(--ignore-vuln "$vuln"); done
+          echo "pip-audit 已审基线：忽略 ${#ignore_args[@]} 条告警（新增漏洞仍阻断）"
           pip-audit --local "${ignore_args[@]}" --format json --output dependency-audit.json
       - run: python -m omnicrawler.cli capabilities --verify-imports
         env:
@@ -413,6 +419,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Scan PR dependency changes
+        # 本仓 Dependency graph 未启用（`GET /dependency-graph/sbom` 实测 404），action 只会
+        # 报 "Dependency review is not supported on this repository" ⇒ 每条 PR 恒定红。
+        # 在 Settings → Code security 打开 Dependency graph 后去掉本行恢复阻断。
+        continue-on-error: true
         uses: actions/dependency-review-action@v4
 
   # C-#2：SAST 静态安全扫描占位（bandit，覆盖安全与配置敏感模块）。
