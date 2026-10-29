@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -50,15 +51,27 @@ def _shell_scripts(root: Path) -> list[Path]:
     return sorted({*root.glob("*.sh"), *root.glob("*.command")})
 
 
+def _bash_executable() -> str:
+    """解析 bash 的绝对路径。
+
+    Windows 的 CreateProcess 先搜 System32 再搜 PATH：裸 ``bash`` 会命中未安装的
+    WSL 垫片（rc=1，报错还是 UTF-16LE），把每个脚本都误判成语法错误。
+    ``shutil.which`` 只查 PATH，能拿到 Git for Windows 的 bash。
+    """
+    return shutil.which("bash") or "bash"
+
+
 def _syntax_check(path: Path) -> list[str]:
     proc = subprocess.run(  # noqa: S603 - 命令为固定 bash + 本地脚本路径
-        ["bash", "-n", str(path)],
+        [_bash_executable(), "-n", str(path)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout).strip().replace("\n", " | ")
+        detail = ((proc.stderr or "") + (proc.stdout or "")).strip().replace("\n", " | ")
         return [f"{path.name}: bash -n 语法错误：{detail}"]
     return []
 
