@@ -1,7 +1,9 @@
 name: quality
 
 concurrency:
-  group: ${{ github.ref }}
+  # 组名带前缀：并发组是全仓共享的，裸 `github.ref` 会与任何同样裸写的工作流互撞并
+  # 互相 cancel-in-progress（实测把 7 个必需检查整条取消成 cancelled）。
+  group: quality-${{ github.ref }}
   cancel-in-progress: true
 
 env:
