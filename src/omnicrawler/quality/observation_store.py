@@ -258,19 +258,26 @@ class ObservationStore:
         )
         with self._tx() as con:
             self._ensure_row(con, candidate, now)
-            if comparison.evidence_sha256:
-                # B-P2-13：证据哈希仅做去重登记；重复证据不再提前返回 None——
-                # 稳定证据上的回归计数/风险更新必须继续落库，避免回归信号丢失。
-                con.execute("INSERT OR IGNORE INTO obs_evidence VALUES (?, ?)",
-                            (candidate.candidate_id, comparison.evidence_sha256))
             row = con.execute(
                 """SELECT applied_count, observation_rounds, regression_count,
                           false_positive_risk, fp_risk_samples, last_applied_tier,
-                          last_baseline_quality, last_rollback_sha, rollback_required
+                          last_baseline_quality, last_rollback_sha, rollback_required,
+                          last_compare_json
                    FROM obs_candidates WHERE candidate_id = ?""",
                 (candidate.candidate_id,),
             ).fetchone()
             assert row is not None
+            if comparison.evidence_sha256:
+                # 判重放要看两件事：证据哈希相同 **且** 比较结果与上一轮逐字相同。
+                # - 只有哈希相同就跳过：会丢「同一证据、换配置后结论变了」的新观察（B-P2-13）；
+                # - 完全不判重放：重试/重放同一份失败证据能把 regression_count 顶到自动回滚
+                #   阈值（契约见 test_llm_application_observes_across_runs_and_rolls_back_regression）。
+                # last_compare_json 为 NULL 表示哈希由 record_application 登记、尚无观察轮次：
+                # 观察自己应用时用的那份证据不算新的一轮。
+                inserted = con.execute("INSERT OR IGNORE INTO obs_evidence VALUES (?, ?)",
+                                       (candidate.candidate_id, comparison.evidence_sha256)).rowcount
+                if inserted == 0 and row["last_compare_json"] in (None, compare_json):
+                    return None
             applied_count = int(row["applied_count"])
             obs_rounds = int(row["observation_rounds"])
             regression_count = int(row["regression_count"])
