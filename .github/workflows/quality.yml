@@ -232,7 +232,7 @@ jobs:
 
       - name: Preserve core test and coverage diagnostics
         if: ${{ !cancelled() && (steps.core_tests.outcome == 'success' || steps.core_tests.outcome == 'failure') }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: core-diagnostics-${{ matrix.os }}-${{ matrix.python-version }}
           path: |
@@ -269,7 +269,7 @@ jobs:
           exit-code: "1"
       - name: Upload trivy report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: trivy-report-${{ matrix.os || 'ubuntu' }}
           path: trivy-report.json
@@ -312,7 +312,7 @@ jobs:
         run: python tools/check_visual_regression.py --output artifacts/visual-regression
       - name: Preserve visual regression evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: visual-regression
           path: artifacts/visual-regression
@@ -403,7 +403,7 @@ jobs:
       - run: python tools/check_network_boundaries.py
       - run: python tools/check_coding_standards.py src
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dependency-audit-windows-full
           path: dependency-audit.json
@@ -443,7 +443,7 @@ jobs:
         run: bandit -r src/omnicrawler/security src/omnicrawler/core -f json -o bandit-report.json
       - name: Upload bandit report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bandit-report
           path: bandit-report.json
