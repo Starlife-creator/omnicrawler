@@ -4,6 +4,27 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-10-30 dependabot 批次收编（质量工具链 + 四个 Actions）
+
+`constraints/quality.txt` 一次性升 `pip 26.2.1→26.2.2`、`uv 0.12.23→0.13.5`、
+`coverage 7.16.2→7.17.0`、`ruff 0.16.10→0.17.2`；4 个 reusable 工作流的 `setup-uv` `version:` pin
+同步到 `0.13.5`，`.pre-commit-config.yaml` 的 ruff `rev` 同步到 `v0.17.2`。
+四个 Actions 按 SHA 升：`setup-python` 7.0.0→7.1.0、`setup-uv` 10.2.0→10.3.2、
+`upload-artifact` 7.0.1→7.0.2、`download-artifact` 8.0.1→8.0.2。
+
+本机验证：
+- 5 个新版本在 PyPI 均存在（`pypi.org/pypi/<name>/<version>/json` 逐个 200）。
+- 4 个新 Action SHA 逐个用 `gh api repos/<org>/<action>/git/ref/tags/<tag>` 反查，与 pin 一致
+  （`setup-python` 的 `6d4fd22b…` 同时是 `v7` 与 `v7.1.0` 指向的提交）。
+- `ruff 0.17.2 check src tests tools` = All checks passed（与 0.16.10 同结果，豁免预算未变）。
+- `uv 0.13.5 lock --check` 通过：`uv.lock`（revision 3）无需重解。
+- ★ 反向断言：`test_release_build_toolchain_uv_version_matches_constraints` 的期望值派生自
+  `constraints/quality.txt`，若不同步那 4 个 `version:` pin，3 条测试腿会直接报红
+  ——这正是 #151/#152 在 CI 上红的唯一原因。
+
+未在本地验证：三平台 pytest 全量回归、`.[full]` 在 Python 3.13 下的新 resolver 行为、便携包构建
+——由本批 PR 的 CI 判定。
+
 ## 2026-10-11 QPushButton min-height 余量核查（不改取值，只加守卫 + 更正归因）
 
 起因：上一批把 `QPushButton` 的 `min-height` 改成 `字号 + 2×padding`，看着像重复计算。

@@ -4,7 +4,15 @@
 
 ### 变更
 
-- chore(deps): `constraints/quality.txt` 的 setuptools 84.0.0 → 84.2.1（修 GHSA-xmj3-9gf7-h52w）。
+- chore(deps): `constraints/quality.txt` 一次性升 `pip 26.2.1→26.2.2`、`uv 0.12.23→0.13.5`、
+  `coverage 7.16.2→7.17.0`、`ruff 0.16.10→0.17.2`，并把 4 个 reusable 工作流的 `setup-uv`
+  `version:` pin 同步到 `0.13.5`（守卫 `test_release_build_toolchain_uv_version_matches_constraints`
+  要求逐字相等，漏一处即全局报红），`.pre-commit-config.yaml` 的 ruff `rev` 同步到 `v0.17.2`。
+  ★ 本批取代并关闭 #147/#148/#150/#151/#152。
+- chore(ci): 四个 Actions 按 SHA 升级并逐一核对上游 tag：`actions/setup-python` 7.0.0→7.1.0（#146）、
+  `astral-sh/setup-uv` 10.2.0→10.3.2（#149）、`actions/upload-artifact` 7.0.1→7.0.2（#136）、
+  `actions/download-artifact` 8.0.1→8.0.2（#135）。
+- chore(deps): setuptools 84.0.0 → 84.2.1（修 GHSA-xmj3-9gf7-h52w）。
 - ci(deps): pip-audit 阻断门禁改为随仓库携带已审基线 `tools/pip-audit-ignore.txt`——
   pillow 的 39 条受 `Pillow>=10,<13` 钉版与视觉回归基线约束（12.x 线无补丁版）、
   twisted 的 7 条上游尚未发修复版；**新增**漏洞仍然阻断。
