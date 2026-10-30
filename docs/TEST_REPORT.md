@@ -4,6 +4,94 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-10-30 pip-audit 基线清空 pillow 一节 + 计数口径修正 + dependabot 忽略 selectolax 大版本
+
+三件事都来自 #153/#157 那批实测出来的副产品，不是新猜的。
+
+### ① 39 条 pillow 告警整段删除（不是继续放行）
+
+它们存在的唯一原因是我们自己钉的 `Pillow>=10,<13` 把 `.[full]`（= pip-audit 扫的那套环境）
+压在无补丁版的 12.3.0 上。放宽到 `<14` 之后，PR #153 同一条 run 的
+`windows-full-dependency-matrix`（job 123815597720，success）实测：
+
+```
+Collecting Pillow<14,>=10
+... Pillow-13.0.0
+pip-audit 已审基线：忽略 94 条告警（新增漏洞仍阻断）
+No known vulnerabilities found, 8 ignored
+```
+
+`8 ignored` = 只剩 twisted 那 8 条，39 条 pillow **一条都不再命中**。外部数据源同一口径
+（OSV `api.osv.dev/v1/query`，2026-10-30）：pillow 12.3.0 → 59 条已知漏洞，13.0.0 → 0 条。
+
+⇒ 留在基线里只会做一件坏事：将来任何约束把 pillow 退回 12.x 时**不阻断**。删除后它会重新阻断。
+反向确认：`pip-audit --local --ignore-vuln CVE-9999-99999 --ignore-vuln PYSEC-9999-99999`
+本机退出码 0（`No known vulnerabilities found`）—— 删与不删都不会让门禁误红，所以这一步是纯口径修正。
+
+### ② 计数报错了（顺手修）
+
+上面那行"忽略 94 条告警"实际是 47 个 id：每个 id 展开成 `--ignore-vuln` + id 两个参数，
+原脚本把**数组长度**当成了条数。改为单独计 `n_baseline`。本机用同一段 bash 模拟验证：
+`n_baseline=8 args=16`（本批删除后的真实数字）。
+
+另外这个作业跑在 **windows runner** 上，`grep` 出的 id 若带 `\r` 就匹配不上任何告警 ⇒
+基线**静默失效**（既不放行也不说为什么）。补了 `tr -d '\r'`，并用 CRLF 样例做过对照。
+
+### ③ dependabot 不再提 selectolax 大版本
+
+1.0 删了 `selectolax.parser`（Modest）后端，`change_detector.py:324` 的快路径装上是静默降级
+而不是报错（详见上一节 #157 的实测）。只忽略 `version-update:semver-major`，0.x 的补丁/次版本
+照常提；写法沿用仓内 `PyYAML` 那条「理由写进 ignore 块」的既有格式。
+
+**为什么现在不加 `Pillow<13` 之类的反向保护**：上界放宽本身已由 #157 落地并带锁刷新，
+再叠一层 ignore 会把"退回 12.x 应当阻断"这条信号也一起屏蔽掉。
+
+未在本地验证：改后的 audit 步骤需在真实 windows runner + `.[full]` 装机上跑（本批 CI 判）；
+dependabot 配置只在下一轮扫描才生效，无法本地验证。
+## 2026-10-30 extras 上界放宽（3 项采纳 / 1 项否决）+ 锁文件同步刷新
+
+#153 把 4 个 extras 上界放宽（`selectolax <1→<2`、`Pillow <13→<14`、`duckdb <2→<3`、
+`pyarrow <26→<27`），dependabot 只能看见 `pyproject.toml`，没重解 `uv.lock`，
+`dependency lock / reproducible install` 腿因此报红：
+
+```
+error: The lockfile at `uv.lock` needs to be updated, but `--check` was provided.
+```
+
+（run 40979465961 / job 123815598214）
+
+同一 run 的三条平台 test 腿各装出 `duckdb-2.0.0`、`pillow-13.0.0`、`pyarrow-26.0.0`、
+`selectolax-1.0.2`，**5767 passed** 且覆盖率门禁通过，mypy 只报**一条**错误：
+
+```
+src/omnicrawler/scheduling/change_detector.py:324: error: Module "selectolax.parser"
+has no attribute "HTMLParser"  [attr-defined]
+```
+
+本机用 `pip install --target` 隔离装 selectolax 1.0.2 实测（不靠 mypy 的措辞推断）：
+`import selectolax.parser` 直接抛 `ImportError`，文案是「Modest backend is deprecated since
+selectolax 1.0 … 请改用 `from selectolax.lexbor import LexborHTMLParser`」。⇒ 放宽 selectolax
+需要一次**后端迁移**（现在这条快路径会静默降级到 lxml/BS4），不属于依赖升版，**本批否决这一项**。
+
+本批采纳另外 3 项 + `uv lock` 刷新。
+
+本机证据：
+- 锁刷新**不动任何包版本**：`git diff -U0 uv.lock` 里 `^[-+]version = ` 命中 0 行；变更只有
+  specifier 记录（pillow/duckdb/pyarrow 各 3 行）、`revision 3→5` 与 resolution-markers 排序。
+- `uvx uv@0.13.5 lock --check` 退出码 0；`tools/check_lockfile_consistency.py` 通过
+  （它比对 pyproject 与锁的版本/requires-python/依赖/extras）。
+- revision 5 向后兼容实测：本机 `uv 0.12.3 lock --check` 对该锁退出码 0（读旧写新，不炸）。
+- `self_verify --set static` = 22 通过 / 0 失败 / 1 跳过（缺同级 `../OmniCrawler-market` 检出，CI 有）。
+- ★ Pillow 的真相来自 main 自己的 CI 日志（run `40978941217`，2026-10-30）：
+  ubuntu/macOS/windows 三条 test 腿与 `feature install / pdf` 都装 **Pillow 13.0.0**
+  （`Collecting Pillow>=12.2.0 (from pdfplumber<1,>=0.11)`，pdfplumber 那条约束没有上界）且全绿
+  —— 只有 `windows-full-dependency-matrix` 因我们自钉 `<13` 仍解析 12.3.0
+  （`Collecting Pillow<13,>=10`），而那正是跑 pip-audit 的那套环境。
+  ⇒ 放宽到 `<14` 是让声明与已测事实对齐；视觉回归作业显式钉 `Pillow==12.3.0` 属基线控件，不受影响。
+
+未在本地验证：`uv sync --locked` 的完整装机、三平台全量 pytest、`.[full]` 在 Python 3.13 +
+Pillow 13 下的 `capabilities --verify-imports`、以及 main 下一次审计是否真的不再报那 39 条
+（后者由 `tools/pip-audit-ignore.txt` 顶部标注的"过渡"条件跟踪，确认后就删）。
 ## 2026-10-30 dependabot 批次收编（质量工具链 + 四个 Actions）
 
 `constraints/quality.txt` 一次性升 `pip 26.2.1→26.2.2`、`uv 0.12.23→0.13.5`、

@@ -11,6 +11,14 @@ updates:
       # paddlex 3.7.2 精确锁 PyYAML==6.0.2；PIP_CONSTRAINT 全局作用于 matrix job 的
       # ".[full]" 安装，升级 PyYAML 必致 ResolutionImpossible（PR #47/#51/#53 三次复现）。
       - dependency-name: "PyYAML"
+      # selectolax 1.0 删掉了 selectolax.parser（Modest 后端）：隔离实测 import 即抛
+      # ImportError，要求改用 selectolax.lexbor.LexborHTMLParser。而
+      # src/omnicrawler/scheduling/change_detector.py:324 走的正是旧后端，且它在
+      # try/except 回退链里 —— 装上 1.x 不报错，只静默降级到 lxml/BeautifulSoup 丢掉快路径
+      # （PR #153 里 mypy 唯一的报错就是这条）。放宽上界需要的是一次后端迁移，
+      # 不是版本号；迁移落地前不要再开这条 PR。0.x 的补丁/次版本仍照常提。
+      - dependency-name: "selectolax"
+        update-types: ["version-update:semver-major"]
     groups:
       runtime:
         dependency-type: "production"

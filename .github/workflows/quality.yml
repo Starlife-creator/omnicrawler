@@ -387,11 +387,17 @@ jobs:
           PIP_AUDIT_IGNORE: ${{ vars.PIP_AUDIT_IGNORE }}
         run: |
           ignore_args=()
+          n_baseline=0
           # 已审基线：无可用修复版本的告警随仓库走（可评审），vars.PIP_AUDIT_IGNORE 作临时补充
-          while IFS= read -r vuln; do ignore_args+=(--ignore-vuln "$vuln"); done \
-            < <(grep -E '^(CVE|PYSEC|GHSA)-' tools/pip-audit-ignore.txt 2>/dev/null || true)
+          # 本作业跑在 windows runner 上 ⇒ 必须剥掉 \r：带着 \r 的 id 不会与任何告警匹配，
+          # 基线会**静默失效**（放行不了，也报不出为什么）。
+          for vuln in $(grep -E '^(CVE|PYSEC|GHSA)-' tools/pip-audit-ignore.txt 2>/dev/null | tr -d '\r'); do
+            ignore_args+=(--ignore-vuln "$vuln")
+            n_baseline=$((n_baseline + 1))
+          done
           for vuln in $PIP_AUDIT_IGNORE; do ignore_args+=(--ignore-vuln "$vuln"); done
-          echo "pip-audit 已审基线：忽略 ${#ignore_args[@]} 条告警（新增漏洞仍阻断）"
+          # 报**条数**而不是数组长度：每个 id 展开成 2 个参数，用 ${#ignore_args[@]} 会翻倍。
+          echo "pip-audit 已审基线：放行 ${n_baseline} 条 id（仓库内可评审），新增漏洞仍阻断"
           pip-audit --local "${ignore_args[@]}" --format json --output dependency-audit.json
       - run: python -m omnicrawler.cli capabilities --verify-imports
         env:
