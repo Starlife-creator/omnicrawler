@@ -319,11 +319,11 @@ class ChangeDetector:
         if not selector:
             return html
 
-        # 尝试 selectolax
+        # 尝试 selectolax（lexbor 后端；1.0 起 selectolax.parser 的 Modest 后端已被删除）
         try:
-            from selectolax.parser import HTMLParser
+            from selectolax.lexbor import LexborHTMLParser
 
-            tree = HTMLParser(html)
+            tree = LexborHTMLParser(html)
             nodes = tree.css(selector)
             if nodes:
                 return "\n".join(node.text(strip=True) for node in nodes if node.text())

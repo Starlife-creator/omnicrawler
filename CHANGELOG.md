@@ -4,6 +4,18 @@
 
 ### 变更
 
+- refactor(scheduling): `change_detector` 的 HTML 抽取从 selectolax 的 **Modest 后端**
+  (`selectolax.parser.HTMLParser`) 迁到 **lexbor** (`selectolax.lexbor.LexborHTMLParser`)，
+  extras 上界随之 `selectolax>=0.2,<1` → `>=0.4.2,<2`（下界抬到 lexbor 实际存在的版本，
+  0.4.2 起有；不再声称兼容 0.x 旧后端），并撤销 `.github/dependabot.yml` 里刚加的
+  selectolax semver-major 忽略。
+  ★ 这条不是"版本放宽"：1.0 删了 `selectolax.parser`（import 即 `ImportError`），而旧写法
+  包在 `try/except ImportError` 回退链里 ⇒ 装上 1.x **不报错，只静默降级**到 lxml/BS4 丢掉快路径；
+  本仓 57 条 change_detector 用例在"改回旧后端"后**全部仍绿**（实测），只有新加的
+  `test_html_backend_is_lexbor` 会红 ⇒ 这条契约必须有用例钉住，不能只靠 mypy。
+  抽取行为经逐字比对无变化：modest(0.4.11) / lexbor(0.4.11) / lexbor(1.0.2) 在 10 个易差异样例
+  （`&nbsp;`、`<br>` 相邻、未闭合 `<li>`、表格、`<script>` 过滤、转义文本、未加引号属性、
+  `hidden`、未闭合标签、`<textarea>`）输出完全一致 ⇒ 已存快照哈希不会因升级而误报"变化"。
 - chore(ci): 三处 Action 引用收进「commit SHA + 版本注释」的统一写法，并覆盖 #159/#160/#163：
   `gitleaks-action` v2→v3（`e0c47f4f…`，实测该账号无需 license）、`dependency-review-action`
   v4→v5.0.0（`a1d282b3…`，原先是浮动 major 引用 `@v4`）、`trivy-action` 的 pin 由**注解 tag 对象
