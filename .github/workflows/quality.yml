@@ -425,11 +425,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Scan PR dependency changes
-        # 2026-10-30：Dependency graph 已在 Settings → Code security 开启，本步恢复阻断。
-        # 开启前的记录留作对照：未启用时 action 只报 "Dependency review is not supported on
-        # this repository"（job 123830119816 的 ##[error] 行），当时挂 continue-on-error 降为提示性。
+        # 本仓 Dependency graph 未启用 ⇒ action 只会报 "Dependency review is not supported on
+        # this repository"。2026-10-30 实测复核（去掉 continue-on-error 后 PR #169 的 job
+        # 123887017664 仍是这条 ##[error]；旁证 GET /dependency-graph/sbom = 404、
+        # GET /dependency-graph/compare = 403）⇒ 开关尚未生效，故继续降为提示性。
+        # 验证开关是否真生效：去掉本行 continue-on-error，看该 job 日志里是否还出现
+        # "not supported on this repository"；不再出现才恢复阻断。
         # pin 写法：原先是浮动 major 引用 `@v4`（Actions 解析到 v4.9.0 的提交 2031cfc0），
         # 现与本仓其它 action 统一成「commit SHA + 版本注释」，避免引用随上游 major tag 漂移。
+        continue-on-error: true
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
 
   # C-#2：SAST 静态安全扫描占位（bandit，覆盖安全与配置敏感模块）。
