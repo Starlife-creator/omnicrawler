@@ -26,8 +26,9 @@
   ——mypy 报 `has no attribute "HTMLParser"`，运行时则静默回退到 lxml/BS4、丢掉快路径。
   放宽它需要一次后端迁移，不属于依赖升版。
   ★ `Pillow<13` 这条自钉此前把 `.[full]`（= pip-audit 扫的那套环境）压在无补丁版的 12.3.0 上，
-  是 `tools/pip-audit-ignore.txt` 里 39 条 pillow 告警存在的唯一原因；三平台 test 腿其实一直在
-  装 Pillow 13.0.0（pdfplumber 的 `Pillow>=12.2.0` 没有上界）并且是绿的。
+  是 `tools/pip-audit-ignore.txt` 里 39 条 pillow 告警存在的唯一原因；而三平台 test 腿其实**不受这条
+  自钉保护**——它们经 pdfplumber 的 `Pillow>=12.2.0`（没有上界）装的就是 Pillow 13.0.0
+  （main 2026-10-30 run 40978941217 三条腿逐个核对），并且是绿的。
 - chore(deps): `constraints/quality.txt` 一次性升 `pip 26.2.1→26.2.2`、`uv 0.12.23→0.13.5`、
   `coverage 7.16.2→7.17.0`、`ruff 0.16.10→0.17.2`，并把 4 个 reusable 工作流的 `setup-uv`
   `version:` pin 同步到 `0.13.5`（守卫 `test_release_build_toolchain_uv_version_matches_constraints`
