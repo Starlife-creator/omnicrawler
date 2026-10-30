@@ -527,12 +527,14 @@ def gate_dependencies_consistency(plugin_dir: Path) -> list[AuditFinding]:
 
     declared = meta.get("dependencies")
     if declared is None:
-        # 第 67 轮：dependencies 必填，缺省视为非法（除非零依赖显式 []）
+        # 第 67 轮：dependencies 必填，缺省视为非法（除非零依赖显式 []）。
+        # 2026-10-30 升为 error：市场投稿校验器（validate_submission.gate3_dependencies_consistency）
+        # 对同一情形是 ValueError 硬拒；本地只报 warning 会造成「本地 audit 过、投稿 CI 被拒」。
         findings.append(
             AuditFinding(
-                level="warning",
+                level="error",
                 code="gate3_dependencies_missing",
-                message="PLUGIN_METADATA.dependencies 未声明（零依赖请显式填 []）",
+                message="PLUGIN_METADATA.dependencies 未声明（零依赖请显式填 []；市场投稿会直接拒收）",
             )
         )
         declared = []
