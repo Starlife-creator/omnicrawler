@@ -4,6 +4,51 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-10-30 市场快照推进到 f33fcac（并修掉「审计读错载荷」）
+
+用户点头「市场快照继续推进」。钉值 `8744302…` → **`f33fcac397e050d02e7fb2ae80cd93504fd19697`**，
+同步器自报 `--check` 通过（`OK registry: 9 个插件 + 15 个模板清单一致，签名校验完成`），
+写盘结果 `更新 2 项，删除 1 项`：
+
+| 文件 | 变化 |
+|---|---|
+| `constraints/market-ref.txt` | 8744302… → f33fcac… |
+| `market/catalog.json` | 8 个插件版本各 +2 minor（academic-paper 0.6.4→0.8.0、chronicle-capsule 0.2.0→0.4.0、community-guide 1.0.0→1.2.0、issue-wishlist 1.0.0→1.2.0、lumen-drift 0.4.0→0.6.0、signal-sieve 0.2.0→0.4.0、tideprint-gate 0.2.0→0.4.0、upstream-lantern 0.1.0→0.3.0）；模板 15 条未变；`schema_version` 仍为 1；`sequence` 升 |
+| `market/authors/starlife-creator.yaml` | 注释里的创作者公钥改为 `4c3014804d85…` |
+| `market/keys/5dcd59f7….pub.pem` | **删除** |
+
+删钥单独核过：该键由市场仓 `f8b6f46`（2026-10-25）主动删除，同步后 `catalog.json`/`authors/`/`keys/`
+里对 `5dcd59f7` 的引用 **0 命中**，新键 `4c3014804d85…pub.pem` 在位 ⇒ 属镜像语义，不是丢文件。
+
+守卫从红转绿：`test_market_catalog_cross_repo.py` + `test_sync_snapshot_pin.py` = **7 通过**
+（推进前 `test_snapshot_plugins_match_market_repo` 是红的唯一一条）。
+
+### 顺带修掉：`tools/audit_paper_scenario.py` 一直审的是根目录遗留载荷
+
+推进后重跑审计，发现 SHA 与文档里 0.6.4 时代那条**完全一样**（`5e8628b3…`），而插件已到 0.8.0 ——
+工具硬编码 `directory / "plugin.py"`。实测市场仓同时存在：
+
+- 根 `plugin.py`：`5e8628b3…`，根 `package.manifest.json` 版本 **0.3.0**，两者**不一致**；
+- `versions/0.8.0/plugin.py`：`a6b87214…`，`versions/0.8.0/package.manifest.json` 版本 0.8.0，**一致**；
+- `market.yaml` 的 `plugin_file` 指向后者 —— 用户安装时下载的也是后者。
+
+⇒ 此前的「清单与源不一致」结论是**读错文件**的产物。修法：按 `market.yaml` 的
+`plugin_file` / `package_manifest_file` 解析（无 `market.yaml` 时回退扁平布局），报告新增
+`source_file` 字段；边界用例加布局守卫 —— `source_file` 必须落在 `versions/<manifest_version>/`，
+退回根目录遗留副本即红（`tests/unit/plugin/test_paper_scenario_boundary.py`，含两条
+`resolve_payload` 单测）。修后：
+
+```
+source_sha256   a6b87214e25e7066dbecd8b34228a3f2d1affdc087c46d22fa0985083ee1927c
+source_file     …/versions/0.8.0/plugin.py
+manifest_version 0.8.0   manifest_source_matches true
+direct_network_modules ["httpx"]   decision stop_plugin_route
+```
+
+**结论不变**（0.8.0 仍直连 httpx、仍自建 `sync_playwright()` 两处、Cookie 仍走
+`_state_get` 的插件 state 命名空间），但依据换成了真载荷；`docs/PAPER_DOWNLOAD_ACCEPTANCE.md`
+已按新证据重写并留更正记录。
+
 ## 2026-10-30 GUI 隐私用例污染开发者真实配置（那条「环境型失败」的真因）
 
 §前面把它记作「`AppSettings` 读真实用户配置目录，属用例没隔离用户状态」—— 复核后**定性要升级**：
@@ -86,10 +131,12 @@ test_template_favorites_go_through_app_settings` 往真实设置写 `favorite_te
 - ⇒ **主仓随安装包分发的离线市场快照，内容是 10-01 之前的一版**，九个条目 id 仍一致
   （所以 id 列表断言先过，条目内容断言才红）。
 - CI 不受影响：CI 按 `market-ref.txt` 检出 `8744302`，快照与之一致 ⇒ 恒绿。
-- 未做（需产品点头）：推进 `market-ref.txt` 并跑 `tools/sync_snapshot.py` 重新 vendoring。
-  这条改动的实质是**把八个第三方插件的新版本连同其签名装进主仓产物**，属内容决策，
-  不是清理；且 `AGENTS.md`、`constraints/README.md`、`test_plugin_audit.py:158`、
-  `tools/test_sync_snapshot_pin.py`、`docs/PAPER_DOWNLOAD_ACCEPTANCE.md` 都钉在这个值上。
+- 已做（2026-10-30 用户点头，见上一节）：推进 `market-ref.txt` 到 `f33fcac` 并跑 `tools/sync_snapshot.py`。
+  **更正**：这里原先写「把八个插件的新版本连同签名装进主仓产物」，**不对** —— `market/` 只镜像
+  `catalog.json` + `authors/` + `keys/`（纯元数据；实测 `find market -name plugin.py` 为空），
+  插件载荷仍是安装时从市场仓取。同步实际只改目录元数据与一把被市场仓淘汰的作者公钥。
+  钉值消费者仍是 `AGENTS.md`、`constraints/README.md`、`test_plugin_audit.py:158`、
+  `tools/test_sync_snapshot_pin.py`、`docs/PAPER_DOWNLOAD_ACCEPTANCE.md`（后者已随之重基线）。
 - 严重性次一级的口径分叉顺带记录：同一门 3，主仓 `plugin_audit.gate_dependencies_consistency`
   是 `level="warning"` 后 `declared = []` 继续跑，市场投稿校验器是 `ValueError` 硬拒 ⇒
   作者本地 audit 过了、投稿 CI 才被拒；且 GUI 投稿路径（`market_home.py:341`）不调 audit。

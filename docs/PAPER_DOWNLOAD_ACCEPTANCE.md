@@ -37,7 +37,20 @@ verified_pdf_manifest 在任务实际导出阶段启用，与 PDF 解析/OCR 分
 
 ## 市场插件路线停止证据
 
-快照 `87443026e414341b6a2a6b302ac927f33dbf201d` 的插件 YAML 为 0.6.4，包清单标记 0.3.0，plugin.py SHA-256 为 `5e8628b3a5837f83f10996c6960c21428edb760789f626af8dab08e7dd00b23d`，与该清单声明不一致。只读审查还发现 httpx 直接网络和自建 Playwright 上下文；Cookie 通过插件 state 命名空间保存，不能视为已映射到宿主会话中心。
+快照 `f33fcac397e050d02e7fb2ae80cd93504fd19697`（2026-10-30 推进）的
+`academic-paper-downloader` 为 **0.8.0**：`market.yaml` 指向的载荷是
+`plugins/academic-paper-downloader/versions/0.8.0/plugin.py`，SHA-256
+`a6b87214e25e7066dbecd8b34228a3f2d1affdc087c46d22fa0985083ee1927c`，
+包清单声明与源文件一致（`manifest_source_matches: true`）。只读审查仍发现
+httpx 直接网络、自建 Playwright 上下文（`sync_playwright()` 两处），
+Cookie 经插件 state 命名空间保存（`_state_get`），不能视为已映射到宿主会话中心。
+
+> 更正（2026-10-30）：本条此前引的是快照 `8744302` 的 0.6.4 与 SHA `5e8628b3…`，
+> 并称包清单（0.3.0）与源不一致。那次 `tools/audit_paper_scenario.py` 实际读的是市场仓
+> **根目录的遗留扁平载荷**，而不是 `market.yaml` 指向的当前版本 —— 工具已改为按指针解析，
+> 并在边界用例里加了布局守卫（`source_file` 必须落在 `versions/<manifest_version>/`）。
+> 修好后 0.8.0 的清单与源是一致的；「停止路线」的结论不变，依据改为
+> httpx 直连 + 内建 Playwright 上下文 + state 命名空间 Cookie。
 
 ```bash
 python tools/audit_paper_scenario.py ../OmniCrawler-market/plugins/academic-paper-downloader --json audit.json

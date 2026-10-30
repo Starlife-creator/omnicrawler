@@ -13,7 +13,8 @@
 
 # 注意：文件名虽带 -creator 后缀，但本文件持的是【维护者冷密钥】
 # （keys/plugin_trust.pub.pem，市场分发信任根）；真正的创作者热密钥
-# 由 authors/starlife.yaml 持有（creator.identity 指向 5dcd… 公钥）。
+# 由 authors/starlife.yaml 持有（creator.identity 指向 4c3014804d85de2568f85e62a3048429
+# 公钥，即 keys/4c3014804d85de2568f85e62a3048429.pub.pem）。
 # 文件名保留历史命名，角色以 roles 与 pubkey_ref 为准。
 
 username: starlife-creator
