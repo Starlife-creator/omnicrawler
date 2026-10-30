@@ -164,7 +164,8 @@ test_template_favorites_go_through_app_settings` 往真实设置写 `favorite_te
   `tools/test_sync_snapshot_pin.py`、`docs/PAPER_DOWNLOAD_ACCEPTANCE.md`（后者已随之重基线）。
 - 严重性次一级的口径分叉顺带记录：同一门 3，主仓 `plugin_audit.gate_dependencies_consistency`
   是 `level="warning"` 后 `declared = []` 继续跑，市场投稿校验器是 `ValueError` 硬拒 ⇒
-  作者本地 audit 过了、投稿 CI 才被拒；且 GUI 投稿路径（`market_home.py:341`）不调 audit。
+  作者本地 audit 过了、投稿 CI 才被拒；且 GUI 投稿路径（`market_home._on_upload`）当时压根不调 audit
+  —— 这两点已在「门 3 口径收口」一节处理（audit 升 error + 投稿前自查）。
 
 ## 2026-10-30 三处 Action 引用的形态核对（#159 / #160 / #163）
 
