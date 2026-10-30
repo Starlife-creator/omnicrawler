@@ -4,6 +4,45 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-10-30 GUI 隐私用例污染开发者真实配置（那条「环境型失败」的真因）
+
+§前面把它记作「`AppSettings` 读真实用户配置目录，属用例没隔离用户状态」—— 复核后**定性要升级**：
+它不只是没隔离，而是会**改坏开发者机器上的真实隐私配置**。
+
+机制（逐环可定位）：源码模式下 `make_qsettings` 走 `QSettings("OmniCrawler", "OmniCrawlerGUI")`
+⇒ Windows 落 HKCU 注册表（`src/omnicrawler/gui/settings.py:36`）；同文件
+`test_privacy_redact_setter_persists_across_instance` 置 `privacy_redact_enabled = False` 并
+`sync()`（`tests/unit/gui/test_privacy_settings.py:48-49`），而原 autouse 夹具只做
+`AppSettings.reset()`，**不还原落盘值** ⇒ 跑一次测试，用户自己的日志脱敏就关掉，
+且下一趟真实运行不再脱敏；顺带把只读默认值的
+`test_privacy_defaults_match_product_policy` 污染成 `assert False is True`。
+
+本机取证：`reg query "HKCU\Software\OmniCrawler\OmniCrawlerGUI\privacy"` →
+`redact_enabled REG_SZ false`（产品默认 true）。这与「该机跑过本文件用例」一致，但**不单独归因**——
+在 GUI 里手动关掉也是同一个值，注册表不带来源。要修的点是机制，不是这个值本身。
+
+修法：autouse 夹具把落点重定向到 `tmp_path`，**走 `is_frozen()` 那条已测的便携分支**
+（不能用 `QSettings.setPath`/`setDefaultFormat` —— `make_qsettings` docstring 与本仓
+`test_portable_write_boundary.py:4-6` 都实测记录过它们对 `QSettings(org, app)` 构造在
+Windows 上不生效）。
+
+证据：
+- 隔离后 `tests/unit/gui/test_privacy_settings.py` + `test_portable_write_boundary.py` = 8 通过；
+- 写入落点实测：`--basetemp` 下生成 `<bt>/test_privacy_redact_setter_per0/settings.ini`
+  内含 `redact_enabled=false`，注册表未被本次运行改动；
+- **变异实验**：摘掉夹具两行 `monkeypatch.setattr` ⇒ 默认值用例立刻红回
+  `assert False is True`，证明是夹具承重而不是运气。
+
+同一次核查查出**第二处同类污染**：`tests/gui/test_audit_20260805_fixes.py::
+test_template_favorites_go_through_app_settings` 往真实设置写 `favorite_templates=["demo"]`
+且不还原（该机注册表现值 `templates/favorites REG_MULTI_SZ demo`；跑前没留快照，
+不单独归因，但这个赋值只出现在这条用例里）。那里**不做 autouse** —— 本文件多数用例要
+构造真实 `MainWindow`，而 `is_frozen()` 同时决定数据根口径，全局改写会牵动无关行为；
+改成给这条用例单独挂 `tmp_settings_store`。该文件 17 通过与改前持平，favorites 写入实测
+落在 `<basetemp>/test_template_favorites_go_thr0/settings.ini`。
+同文件 `:238`/`:248` 两处已把 `_settings` 整体换成抛 `RuntimeError` 的 `_DestroyedQSettings`
+（`value`/`setValue`/`sync`/`isWritable`/`status` 齐），不落真实存储。
+
 ## 2026-10-30 跨仓投稿 fixture 补齐（门 3 必填 + finalize 参数面）
 
 市场仓把门 3（`dependencies` 必填、零依赖显式 `[]`）下沉到投稿校验器（市场 `8110658`），

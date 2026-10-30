@@ -32,6 +32,28 @@ def _chinese_ui() -> None:
 
 
 @pytest.fixture
+def tmp_settings_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
+    """把 AppSettings 的落点改到 tmp_path —— 供**真往设置里写**的用例显式声明。
+
+    源码模式 `QSettings("OmniCrawler", "OmniCrawlerGUI")` 落 HKCU 注册表，写进去的值
+    不会随用例结束消失（`AppSettings.reset()` 只丢单例，不还原落盘值）。Windows 上
+    `setPath`/`setDefaultFormat` 对这个构造不生效（实测见
+    tests/unit/gui/test_portable_write_boundary.py），所以复用 `is_frozen()` 的便携分支。
+
+    不做成 autouse：本文件多数用例要构造真实 MainWindow，而 `is_frozen()` 同时决定
+    数据根口径，全局改写会牵动与设置无关的行为。
+    """
+    from omnicrawler.core import runtime_paths
+    from omnicrawler.gui.settings import AppSettings
+
+    monkeypatch.setattr(runtime_paths, "is_frozen", lambda: True)
+    monkeypatch.setattr(runtime_paths, "portable_data_root", lambda: tmp_path)
+    AppSettings.reset()
+    yield
+    AppSettings.reset()
+
+
+@pytest.fixture
 def window(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[MainWindow]:
     """构造一个真实的 MainWindow（跳过首启引导，避免弹窗）。"""
     monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
@@ -308,7 +330,9 @@ def test_schedule_without_start_date_starts_now(qt_only: QApplication, tmp_path:
 # ---------------------------------------------------------------------------
 
 
-def test_template_favorites_go_through_app_settings(qt_only: QApplication) -> None:
+def test_template_favorites_go_through_app_settings(
+    qt_only: QApplication, tmp_settings_store: None
+) -> None:
     from omnicrawler.gui.settings import AppSettings
     from omnicrawler.gui.template_library_dialog import TemplateLibraryDialog
 

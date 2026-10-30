@@ -10,13 +10,27 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from omnicrawler.gui.settings import AppSettings
 
 
 @pytest.fixture(autouse=True)
-def _reset_settings() -> None:
+def _reset_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """把设置层落到 tmp_path 内的 INI，不碰开发者真实配置。
+
+    源码模式下 ``QSettings("OmniCrawler", "OmniCrawlerGUI")`` 落 HKCU 注册表，而本文件
+    的往返用例会写 ``privacy/redact_enabled`` 且从不还原 ⇒ 跑一次测试就把用户日志脱敏
+    开关关掉（下一趟真实运行就不再脱敏）。Windows 上 ``setPath``/``setDefaultFormat``
+    对这个构造不生效（实测见 test_portable_write_boundary.py），所以借已测的
+    ``is_frozen()`` 便携分支把落点改到 tmp_path。
+    """
+    from omnicrawler.core import runtime_paths
+
+    monkeypatch.setattr(runtime_paths, "is_frozen", lambda: True)
+    monkeypatch.setattr(runtime_paths, "portable_data_root", lambda: tmp_path)
     AppSettings.reset()
     yield
     AppSettings.reset()
