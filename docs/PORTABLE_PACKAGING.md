@@ -1,6 +1,6 @@
 # 便携版构建（Windows / Linux / macOS）
 
-> 适用版本：0.15.0 · 配置协议：v5 · 维护状态：现行（历史状态见归档；功能验证以验收账本为准）
+> 适用版本：1.0.1 · 配置协议：v5 · 维护状态：现行（历史状态见归档；功能验证以验收账本为准）
 
 本文是三平台便携包构建的**总纲**。各平台细节与历史沿革见：
 
@@ -40,7 +40,7 @@ OmniCrawler-<version>-<Platform>-Portable-<Edition>.<ext>
 ### Linux（build_linux.sh）
 
 - 仅支持 x86_64 / aarch64（脚本内 `uname -m` 断言）。
-- 在隔离 venv（`<BuildRoot>/venv`）安装 `.[full,dev]` 或 Standard extras 后构建。
+- 在隔离 venv（`<BuildRoot>/venv`）按 edition 安装运行时 extras + `build` extra（PyInstaller 打包工具；测试/lint 工具留在 `dev`，不进生产构建环境）后构建。
 - 产物为 `OmniCrawler-<version>-Linux-Portable-<Edition>.tar.xz`，解压后：
   - GUI：`OmniCrawler`
   - CLI：`omnicrawler`

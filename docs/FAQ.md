@@ -1,6 +1,6 @@
 # FAQ (常见问题)
 
-> 适用版本：0.15.0 · 配置协议：v5 · 维护状态：现行（历史状态见归档；功能验证以验收账本为准）
+> 适用版本：1.0.1 · 配置协议：v5 · 维护状态：现行（历史状态见归档；功能验证以验收账本为准）
 
 ## 安装与环境
 
@@ -14,7 +14,7 @@ A: 便携版已内置。源码版运行 `python -m playwright install chromium`�
 A: Standard 版不含 OCR 组件，下载 Full 版获取 Tesseract+PaddleOCR。文本 PDF 无需 OCR 也可提取。
 
 **Q: 提示缺少 Python 或 CLI？**
-A: Standard/Full 便携版无需安装 Python。源码版需 Python 3.10+ 并运行 `pip install -e ".[full]"`。
+A: Standard/Full 便携版无需安装 Python。源码版需 Python 3.12+：Windows 运行 `setup_windows.bat`，Linux/macOS 运行 `./setup_linux.sh` / `./setup_macos.command`（默认 standard 档，`OMNICRAW_PROFILE=full` 切换全量依赖，详见 [安装指南](INSTALLATION.md) 档位表）。
 
 ---
 

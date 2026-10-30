@@ -27,11 +27,23 @@ import json
 import logging
 import tempfile
 import time
+import urllib.parse
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _payload_domain(payload: dict[str, Any]) -> str:
+    """从能力调用载荷提取目标域名（A-P3-13 审计留痕用；失败返回空串，不抛错）。"""
+    url = payload.get("url") if isinstance(payload, dict) else None
+    if not isinstance(url, str) or not url:
+        return ""
+    try:
+        return urllib.parse.urlsplit(url).hostname or ""
+    except ValueError:
+        return ""
 
 from .plugin_broker_artifacts import BrokerArtifactsMixin
 from .plugin_broker_contracts import (
@@ -109,6 +121,7 @@ class CapabilityBroker(
         plugin_state_schema: int = 1,
         project_scope: str = "",
         trace_full: bool = False,
+        audit_hook_fail_closed: bool = False,
         daily_quota: Any | None = None,
         egress_policy: str = "prompt",
         resource_broker: Any | None = None,
@@ -142,7 +155,10 @@ class CapabilityBroker(
         self._plugin_state_schema = int(plugin_state_schema)
         self._project_scope = project_scope
         self._trace_full = trace_full
-        self.trace_log: list[dict[str, Any]] = []  # 仅 trace_full 时填充
+        # A-P3-13：默认模式即逐条留痕（operation/时间戳/时长/域名/字节数，不含 payload 内容）；
+        # trace_full 仅提升审计粒度标记，不再决定是否留痕。
+        self._audit_hook_fail_closed = audit_hook_fail_closed
+        self.trace_log: list[dict[str, Any]] = []
         # Phase 2b D4.4：每日网络配额（E_QUOTA 来源）；egress_policy 共现检测
         self._daily_quota = daily_quota
         self._egress_policy = egress_policy
@@ -175,20 +191,25 @@ class CapabilityBroker(
         return result
 
     def _audit_call(self, operation: str, payload: dict[str, Any], started: float) -> None:
-        """C6 审计留痕：每次能力调用记录（不阻断插件运行——钩子异常吞掉）。
+        """A-P3-13 审计留痕：默认逐条记录元数据（operation/时间戳/时长/域名/字节数），
+        不落 payload 内容；``trace_full`` 仅作为粒度标记透传给审计报告。
 
-        trace_full=False 时降采样（仅 op_counts，已在本方法外累加）；
-        trace_full=True 记全序列（operation×时间×数据量，企业审计）。
+        审计钩子异常默认按既有口径吞掉并告警（不阻断插件运行）；
+        ``audit_hook_fail_closed=True`` 时改为 fail-closed 重新抛出。
         """
         duration_ms = int((time.monotonic() - started) * 1000)
-        if self._trace_full:
-            self.trace_log.append(
-                {
-                    "operation": operation,
-                    "timestamp": time.time(),
-                    "payload_bytes": len(json.dumps(payload, ensure_ascii=False)),
-                }
-            )
+        domain = _payload_domain(payload)
+        payload_bytes = len(json.dumps(payload, ensure_ascii=False, default=str))
+        self.trace_log.append(
+            {
+                "operation": operation,
+                "timestamp": time.time(),
+                "duration_ms": duration_ms,
+                "domain": domain,
+                "payload_bytes": payload_bytes,
+                "trace_full": self._trace_full,
+            }
+        )
         if self._audit_hook is None:
             return
         details = {
@@ -196,12 +217,26 @@ class CapabilityBroker(
             "operation": operation,
             "execution_mode": "subprocess",
             "duration_ms": duration_ms,
+            "domain": domain,
+            "payload_bytes": payload_bytes,
+            "trace_full": self._trace_full,
             "decision": "executed",
         }
         try:
             self._audit_hook("plugin.subprocess.call", details)
-        except Exception:  # noqa: BLE001 - 审计写入失败不阻断插件运行（第 35 轮）
-            LOGGER.warning("插件审计写入失败（不阻断运行）: plugin=%s op=%s", self._plugin_id, operation)
+        except Exception:  # noqa: BLE001 - 审计钩子异常按配置处置
+            if self._audit_hook_fail_closed:
+                LOGGER.error(
+                    "插件审计钩子失败（fail-closed 配置：抛出阻断）: plugin=%s op=%s",
+                    self._plugin_id, operation,
+                    exc_info=True,
+                )
+                raise
+            LOGGER.warning(
+                "插件审计写入失败（不阻断运行）: plugin=%s op=%s",
+                self._plugin_id, operation,
+                exc_info=True,
+            )
 
     def temp_dir(self) -> Path | None:
         return self._temp_dir

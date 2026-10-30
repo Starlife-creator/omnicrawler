@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
@@ -8,6 +9,8 @@ from ..core.models import ExtractedRecord, FetchResult, ProcessResult
 from ..core.safe_data import safe_json_loads, safe_regex_search
 from ..core.utils import absolutize_resource_url
 from .html_tools import node_attr, node_markup, node_text, parse_html, select_nodes
+
+LOGGER = logging.getLogger(__name__)
 
 #: 「这个字段取的是**资源地址**」的确定性信号之一：**属性名**。
 #: ★ 刻意**不用字段名**判断 —— 走查里就有 `链接文本: 2015`（锚文字），
@@ -435,7 +438,13 @@ class HTMLProcessor:
         structured = _structured_metadata(document, result)
         extract = self.config.section("extract")
         item_selector = str(extract.get("item_selector", ""))
-        items = select_nodes(document, item_selector) if item_selector else [document]
+        # B-P2-1：坏 item_selector 不中断整页提取，回退整文档并留告警。
+        try:
+            items = select_nodes(document, item_selector) if item_selector else [document]
+        except Exception as exc:  # noqa: BLE001 - 选择器语法异常按页面降级处理
+            LOGGER.warning("item_selector 选择器执行失败，回退整文档提取: %s: %s",
+                           type(exc).__name__, exc)
+            items = [document]
         fields = extract.get("fields", {})
         records: list[ExtractedRecord] = []
         for index, item in enumerate(items, 1):
@@ -443,11 +452,24 @@ class HTMLProcessor:
             evidence: dict[str, Any] = {}
             if fields:
                 for name, rule in fields.items():
-                    handled, value, trace = _structured_rule(
-                        str(name), rule, structured, base_url=result.final_url
-                    )
-                    if not handled:
-                        value, trace = _apply_rule(item, rule, base_url=result.final_url)
+                    # B-P2-1：单条规则 CSS/XPath 语法异常按字段隔离，失败字段记入 trace
+                    # （错误类型 + 消息）并跳过，其余字段继续提取。
+                    try:
+                        handled, value, trace = _structured_rule(
+                            str(name), rule, structured, base_url=result.final_url
+                        )
+                        if not handled:
+                            value, trace = _apply_rule(item, rule, base_url=result.final_url)
+                    except Exception as exc:  # noqa: BLE001 - 字段级隔离，禁止冒泡中断整页
+                        LOGGER.warning("字段 %s 选择器/规则执行失败，已跳过: %s: %s",
+                                       name, type(exc).__name__, exc)
+                        evidence[str(name)] = {
+                            "source_url": result.final_url,
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                            "confidence": 0.0,
+                        }
+                        continue
                     if value is not None:
                         data[str(name)] = value
                     evidence[str(name)] = {"source_url": result.final_url, **trace}
@@ -619,26 +641,31 @@ def _extract_table_fields(row: Any, headers: list[str], fields: dict[str, Any]) 
     cells = select_nodes(row, "th, td")
     data: dict[str, Any] = {}
     for name, rule in fields.items():
-        column = rule if isinstance(rule, str) else (rule or {}).get("column")
-        target: list[Any] = []
-        if column is None:
-            selector = (rule or {}).get("selector")
-            if isinstance(selector, str) and selector:
-                target = select_nodes(row, selector)
-        elif isinstance(column, int):
-            if 0 <= column < len(cells):
-                target = [cells[column]]
-        else:
-            wanted = str(column).strip().casefold()
-            index = next(
-                (i for i, header in enumerate(headers) if str(header).strip().casefold() == wanted),
-                None,
-            )
-            if index is not None and index < len(cells):
-                target = [cells[index]]
-        value = " ".join(node_text(cell).strip() for cell in target).strip() if target else None
-        if value:
-            data[str(name)] = value
+        # B-P2-1：表格字段规则异常按字段隔离，坏选择器不中断整行提取。
+        try:
+            column = rule if isinstance(rule, str) else (rule or {}).get("column")
+            target: list[Any] = []
+            if column is None:
+                selector = (rule or {}).get("selector")
+                if isinstance(selector, str) and selector:
+                    target = select_nodes(row, selector)
+            elif isinstance(column, int):
+                if 0 <= column < len(cells):
+                    target = [cells[column]]
+            else:
+                wanted = str(column).strip().casefold()
+                index = next(
+                    (i for i, header in enumerate(headers) if str(header).strip().casefold() == wanted),
+                    None,
+                )
+                if index is not None and index < len(cells):
+                    target = [cells[index]]
+            value = " ".join(node_text(cell).strip() for cell in target).strip() if target else None
+            if value:
+                data[str(name)] = value
+        except Exception as exc:  # noqa: BLE001 - 字段级隔离
+            LOGGER.warning("表格字段 %s 提取失败，已跳过: %s: %s", name, type(exc).__name__, exc)
+            continue
     return data
 
 

@@ -15,7 +15,7 @@
 | 分级 | 能力 | 验证方式 |
 |---|---|---|
 | 基础 | YAML、静态 HTML、SQLite WAL、JSONL/CSV、模板、恢复 | 单元/集成测试与质量工作流 |
-| Standard | PyQt6、Playwright Chromium、PDF 文本、Excel、异步 HTTP、流协议 | GUI/浏览器工作流与便携版冒烟 |
+| Standard | PySide6、Playwright Chromium、PDF 文本、Excel、异步 HTTP、流协议 | GUI/浏览器工作流与便携版冒烟 |
 | Full | Selenium、Tesseract、PaddleOCR 和离线模型 | Windows Full 依赖矩阵与便携版构建验证 |
 | 可选 | Redis、Scrapy、S3、DuckDB、Parquet、PostgreSQL、OpenSearch | 按依赖安装后通过 `omnicrawler capabilities` 检查 |
 | 显式例外 | 私网、代理、未拦截 Selenium、外部插件与外部 AI | 用户配置确认、出口审计与安全报告 |

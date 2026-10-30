@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -38,23 +39,27 @@ class ApplicationService:
         self.event_sink = event_sink
         self._config_cache: AppConfig | None = None
         self._config_signature: tuple[int, int] | None = None
+        # B-P3-6：配置缓存按 mtime/size 判定，跨线程 reload 竞争由 RLock 串行化。
+        self._config_lock = threading.RLock()
 
     def _ensure_config(self) -> AppConfig:
         """Return cached config dict, reloading only when the file mtime has changed."""
-        try:
-            stat = self.config_path.stat()
-            signature = (stat.st_mtime_ns, stat.st_size)
-        except OSError:
-            signature = (0, 0)
-        if self._config_cache is None or signature != self._config_signature:
-            self._config_cache = load_config(self.config_path)
-            self._config_signature = signature
-        return self._config_cache
+        with self._config_lock:
+            try:
+                stat = self.config_path.stat()
+                signature = (stat.st_mtime_ns, stat.st_size)
+            except OSError:
+                signature = (0, 0)
+            if self._config_cache is None or signature != self._config_signature:
+                self._config_cache = load_config(self.config_path)
+                self._config_signature = signature
+            return self._config_cache
 
     def reload(self) -> None:
         """Reset the cached config so the next access re-reads the file."""
-        self._config_cache = None
-        self._config_signature = None
+        with self._config_lock:
+            self._config_cache = None
+            self._config_signature = None
 
     def load(self) -> dict[str, Any]:
         config = self._ensure_config()

@@ -319,7 +319,7 @@ def test_d9_tesseract_rebuilds_lines_and_columns() -> None:
         class Output:
             DICT = "dict"
 
-        def image_to_data(self, image, lang=None, output_type=None):
+        def image_to_data(self, image, lang=None, output_type=None, **kwargs):
             return {
                 "text": ["项目", "期初余额", "应收", "1,000", "存货", "500"],
                 "conf": [95, 90, 88, 92, 85, 80],

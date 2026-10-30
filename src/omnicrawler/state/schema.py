@@ -60,6 +60,9 @@ CREATE TABLE IF NOT EXISTS frontier (
     meta_json TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     attempts INTEGER NOT NULL DEFAULT 0,
+    -- A-P3-10：认领只记录在途元数据；attempts 仅 mark_failed 时递增，崩溃重放不扣额度。
+    claimed_at TEXT,
+    worker TEXT,
     last_error TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -183,7 +186,11 @@ CREATE TABLE IF NOT EXISTS audit_events (
     action TEXT NOT NULL,
     actor TEXT NOT NULL,
     details_json TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    -- A-P2-2：审计哈希链列（单调序号 / 前一条哈希 / 本条哈希），旧库由迁移补齐。
+    chain_seq INTEGER,
+    prev_hash TEXT,
+    record_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS artifacts (

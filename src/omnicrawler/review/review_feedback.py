@@ -2,28 +2,23 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
-
-@dataclass(frozen=True, slots=True)
-class FeedbackSample:
-    sample_id: str
-    input_evidence: str
-    predicted: Any
-    corrected: Any
-    rule_or_model: str
-    risk: float
-    information_gain: float
-    approved_for_regression: bool
+from .review_models import FeedbackSample
+from .review_persistence import ReviewStore
 
 
 class FeedbackCorpus:
-    def __init__(self) -> None:
+    def __init__(self, *, store: ReviewStore | None = None) -> None:
         self.samples: list[FeedbackSample] = []
+        self.store = store
+        #: A-P1-3：每条样本落库后的版本号 / 内容哈希 / 时间戳回执。
+        self.persisted: list[dict[str, Any]] = []
 
     def add(self, sample: FeedbackSample) -> None:
         self.samples.append(sample)
+        if self.store is not None:
+            self.persisted.append(self.store.save_feedback(sample))
 
     def review_order(self) -> tuple[FeedbackSample, ...]:
         return tuple(sorted(self.samples, key=lambda item: (-(item.risk * 0.7 + item.information_gain * 0.3), item.sample_id)))

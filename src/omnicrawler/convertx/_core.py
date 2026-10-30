@@ -91,7 +91,8 @@ class _ProgressEmitter:
         try:
             self._hook(dict(fields))
         except Exception:  # noqa: BLE001 — 用户回调/进度桥接报错不影响转换
-            pass
+            # B-P3-3：用户回调异常留痕，不再静默吞掉。
+            LOGGER.debug("用户进度回调抛错，已忽略: ", exc_info=True)
         self._last_emit_ts = now
         self._since_last = 0
 
@@ -400,7 +401,8 @@ def _write_csv_iter(
     with atomic_output(path, options) as tmp:
         with tmp.open("w", encoding=encoding, newline="") as fh:
             writer = csv.DictWriter(fh, fieldnames=columns, extrasaction="ignore")
-            writer.writeheader()
+            # B-P2-18：表头列名同样经 excel_safe 中和公式注入（与数据行同口径）。
+            csv.writer(fh).writerow([excel_safe(column) for column in columns])
             buf: list[dict[str, Any]] = []
             for row in rows:
                 check_cancel(options)
@@ -851,6 +853,9 @@ def _write_duckdb_batches(
                 con.executemany(f"INSERT INTO {table} VALUES ({placeholders})", values)
                 written += len(batch)
                 batch.clear()
+                # B-P2-7 回退：原先按批 COMMIT 会让「取消 → 目标表回滚」契约失效
+                # （实测取消后目标表残留 250 行半成品）。转换走单一事务，取消即整体回滚；
+                # 长事务持锁的代价接受。
                 pe.emit(written=written, total=total)
             if batch:
                 values = [[row.get(column) for column in safe_columns] for row in batch]
@@ -960,7 +965,8 @@ def _write_xlsx_iter(
     ws = wb.create_sheet()
     ws.title = "结构化记录"
     ws.freeze_panes = "A2"
-    header = [WriteOnlyCell(ws, value=column) for column in columns]
+    # B-P2-18：表头单元格统一经 excel_safe 中和公式注入（数据行已处理，补齐表头面）。
+    header = [WriteOnlyCell(ws, value=excel_safe(column)) for column in columns]
     for cell in header:
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="1F4E78")
@@ -1348,7 +1354,8 @@ def convert(
             try:
                 on_read_progress(payload)
             except Exception:  # noqa: BLE001 — hook 错误不得中断转换
-                pass
+                # B-P3-3：读进度 hook 异常留痕。
+                LOGGER.debug("读取进度 hook 抛错，已忽略: ", exc_info=True)
         # 2) 再更新 tracker：records_so_far 当前处理条数
         if tracker is not None and not stream_path:
             records_so_far = int(payload.get("records_so_far") or 0)
@@ -1359,7 +1366,8 @@ def convert(
             try:
                 on_write_progress(payload)
             except Exception:  # noqa: BLE001
-                pass
+                # B-P3-3：写进度 hook 异常留痕。
+                LOGGER.debug("写出进度 hook 抛错，已忽略: ", exc_info=True)
         if tracker is not None and not stream_path:
             current = int(payload.get("written") or payload.get("records_written") or 0)
             total = int(payload.get("total") or tracker._items_total or current)  # type: ignore[attr-defined]

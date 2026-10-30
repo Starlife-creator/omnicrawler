@@ -1,0 +1,29 @@
+# C-#26 `/metrics` 只读指标端点配置草案。
+#
+# ⚠️ 当前版本（1.0.1）指标仅为进程内计数 + 落盘快照（output/metrics.json、
+# output/metrics.prom），**尚无 HTTP 端点**；本文件是未来端点的配置口径与鉴权
+# 契约，服务实现位于归属外模块（services/metrics.py），接线需求见
+# docs/PRODUCTION_GUIDE.md「可观测性」与集成回传报告 C-#26。
+
+metrics:
+  endpoint:
+    # 默认关闭：单机本地工具不主动暴露网络端口；分布式部署显式开启。
+    enabled: false
+    # 仅允许回环地址；禁止绑定 0.0.0.0 或公网网卡。
+    bind: 127.0.0.1
+    port: 9100
+    path: /metrics
+    # 只读约束：端点只允许 GET；禁止注册任何变更类路由（启停任务、清空状态等）。
+    read_only: true
+
+  auth:
+    # none：仅回环绑定下免鉴权；bearer-token：必须配置令牌文件并校验
+    # Authorization: Bearer <token>；远程采集一律使用 bearer-token。
+    mode: none
+    # 令牌文件路径（600 权限，不进版本库）；mode=bearer-token 时必填。
+    token_file: ""
+
+  egress:
+    # 端点纳入 EgressBroker / 配置审计范围；跨主机采集走 distributed extra，
+    # 不绕过本地网络边界策略。
+    allow_remote: false

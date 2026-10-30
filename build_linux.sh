@@ -85,7 +85,9 @@ if [[ "$EDITION" == "Full" ]]; then
 else
   EXTRAS="gui,html,pdf,browser,async-http,security"
 fi
-SYNC_ARGS=(sync --locked --no-dev --python python3 --extra dev)
+# C-#11：构建 venv 只装运行时 extras + `build`（PyInstaller 打包工具）；
+# 测试/lint 工具留在 `dev` extra，不进生产构建环境。`--no-dev` 同时排除 dev 依赖组。
+SYNC_ARGS=(sync --locked --no-dev --python python3 --extra build)
 IFS=',' read -r -a EXTRA_LIST <<< "$EXTRAS"
 for extra in "${EXTRA_LIST[@]}"; do SYNC_ARGS+=(--extra "$extra"); done
 UV_PROJECT_ENVIRONMENT="$BUILDER_VENV" uv "${SYNC_ARGS[@]}"
@@ -219,9 +221,18 @@ if [[ "$EDITION" == "Full" ]]; then
 fi
 cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/packaging/THIRD_PARTY_NOTICES.md" "$RELEASE_ROOT/"
 echo "OmniCrawler $EDITION portable edition" > "$RELEASE_ROOT/EDITION.txt"
-for directory in configs docs examples market; do
+for directory in configs examples market; do
   cp -r "$PROJECT_ROOT/$directory" "$RELEASE_ROOT/"
 done
+# C-#15：便携包只带现行文档；docs/archive（历史评测/研究记录/旧版兼容）与
+# docs/releases（历史发布报告）不随包分发，避免体积膨胀与历史口径误导。
+mkdir -p "$RELEASE_ROOT/docs"
+find "$PROJECT_ROOT/docs" -mindepth 1 -maxdepth 1 -type d ! -name archive ! -name releases \
+  -exec cp -R {} "$RELEASE_ROOT/docs/" \;
+find "$PROJECT_ROOT/docs" -maxdepth 1 -type f -name "*.md" \
+  -exec cp {} "$RELEASE_ROOT/docs/" \;
+# C-#15：暂存目录兜底校验——历史文档目录漏排除或必备文件缺失即构建失败。
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/check_portable_doc_manifest.py" --release-root "$RELEASE_ROOT"
 touch "$RELEASE_ROOT/PORTABLE.flag"
 for relative_dir in data/input data/pdfs work output logs; do
   mkdir -p "$RELEASE_ROOT/$relative_dir"

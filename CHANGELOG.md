@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### 变更
+
+- chore(deps): `constraints/quality.txt` 的 setuptools 84.0.0 → 84.2.1（修 GHSA-xmj3-9gf7-h52w）。
+- ci(deps): pip-audit 阻断门禁改为随仓库携带已审基线 `tools/pip-audit-ignore.txt`——
+  pillow 的 39 条受 `Pillow>=10,<13` 钉版与视觉回归基线约束（12.x 线无补丁版）、
+  twisted 的 7 条上游尚未发修复版；**新增**漏洞仍然阻断。
+
 ## 1.0.1 - 2026-10-21
 
 ### 变更

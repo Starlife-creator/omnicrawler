@@ -14,31 +14,36 @@ from typing import Any
 
 from ..core.safe_data import safe_json_loads
 from ..extraction.html_tools import node_text, parse_html, select_nodes
-from .base import SlotHit, _regex_value
+from .base import BaseDocExtractor, SlotHit, _regex_value
 
 
-class HTMLDocExtractor:
+class HTMLDocExtractor(BaseDocExtractor):
     """HTML 文档抽取器：css / regex / jsonpath(JSON-LD) 槽位。"""
+
+    source_label = "HTML"
 
     def extract(self, html_text: str, definitions: list[Any]) -> list[SlotHit]:
         document = parse_html(html_text)
         full_text = node_text(document)
         hits: list[SlotHit] = []
         for definition in definitions:
-            if definition.extractor_type == "css":
-                nodes = select_nodes(document, definition.pattern)
-                if nodes:
-                    value = node_text(nodes[0]).strip()
-                    hits.append(SlotHit(
-                        definition.slot_key, value, 1.0,
-                        {"css": definition.pattern, "matches": len(nodes)},
-                    ))
-            elif definition.extractor_type == "regex":
-                value, confidence, evidence = _regex_value(definition.pattern, full_text)
-                if value is not None:
-                    hits.append(SlotHit(definition.slot_key, value, confidence, evidence))
-            elif definition.extractor_type == "jsonpath":
-                self._jsonld_hits(html_text, definition, hits)
+            # B-P2-14e：每个定义独立 try/except，坏 CSS/正则不中断其余槽位，失败记入错误槽位。
+            def _extract(definition: Any = definition) -> None:
+                if definition.extractor_type == "css":
+                    nodes = select_nodes(document, definition.pattern)
+                    if nodes:
+                        value = node_text(nodes[0]).strip()
+                        hits.append(SlotHit(
+                            definition.slot_key, value, 1.0,
+                            {"css": definition.pattern, "matches": len(nodes)},
+                        ))
+                elif definition.extractor_type == "regex":
+                    value, confidence, evidence = _regex_value(definition.pattern, full_text)
+                    if value is not None:
+                        hits.append(SlotHit(definition.slot_key, value, confidence, evidence))
+                elif definition.extractor_type == "jsonpath":
+                    self._jsonld_hits(html_text, definition, hits)
+            self._isolate(hits, definition, _extract)
         return hits
 
     def _jsonld_hits(self, html_text: str, definition: Any, hits: list[SlotHit]) -> None:

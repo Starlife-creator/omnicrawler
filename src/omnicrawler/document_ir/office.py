@@ -12,10 +12,14 @@
 from __future__ import annotations
 
 import io
-import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from typing import Any
+from xml.etree.ElementTree import ParseError
+
+# B-P3-12：ODT/EPUB 统一改用 defusedxml（禁 DTD/外部实体，防 XXE/billion-laughs），
+# 与 sources/sources.py 口径一致。
+from defusedxml import ElementTree as SafeET
 
 from ..extraction.html_tools import parse_html
 from .base import DocumentIR
@@ -26,6 +30,9 @@ _CONTENT_SELECTOR = "p,li,blockquote,h1,h2,h3,h4,h5,h6"
 
 #: ODT 文本命名空间（段落标签）
 _ODT_TEXT_NS = "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
+
+#: ODT 递归深度上限（B-P2-14c）：防恶意深嵌套 XML 触发 RecursionError。
+_ODT_MAX_DEPTH = 40
 
 
 def _dedupe(items: list[str]) -> list[str]:
@@ -117,10 +124,11 @@ def _parse_odt(path: Path, options: dict[str, Any]) -> DocumentIR:
     except (zipfile.BadZipFile, KeyError) as exc:
         raise ValueError(f"document_ir: 无效的 ODT 文件: {path} ({exc})") from exc
 
-    tree = ET.parse(io.BytesIO(content))
+    tree = SafeET.parse(io.BytesIO(content))
     result = DocumentIR(source=path, kind=".odt", title=path.stem)
     table_ns = "{urn:oasis:names:tc:opendocument:xmlns:table:1.0}"
-    def visit(element: Any, location: str) -> None:
+
+    def visit(element: Any, location: str, depth: int = 0) -> None:
         if element.tag == table_ns + "table":
             cells = [[" ".join("".join(cell.itertext()).split()) for cell in row
                       if cell.tag in {table_ns + "table-cell", table_ns + "covered-table-cell"}]
@@ -132,9 +140,12 @@ def _parse_odt(path: Path, options: dict[str, Any]) -> DocumentIR:
                 level = element.get(_ODT_TEXT_NS + "outline-level", "0")
                 result.add_paragraph(text, locator={"part": "content.xml", "element_path": location},
                                      heading_level=int(level) if level.isdigit() else 0)
-        else:
+        elif depth < _ODT_MAX_DEPTH:
             for index, child in enumerate(element):
-                visit(child, f"{location}/{index}")
+                visit(child, f"{location}/{index}", depth + 1)
+        else:
+            result.warnings.append(f"ODT XML 嵌套超过深度上限 {_ODT_MAX_DEPTH}，深层节点已截断: {location}")
+
     visit(tree.getroot(), "0")
     result.promote_first_paragraph_to_title()
     result.metadata["paragraph_count"] = len(result.paragraphs)
@@ -161,8 +172,8 @@ def _read_zip_entry(
 def _epub_spine_order(zf: zipfile.ZipFile) -> list[str]:
     """按 EPUB 阅读顺序返回内容文件相对路径列表；无 OPF 时返回空。"""
     try:
-        container = ET.parse(io.BytesIO(_read_zip_entry(zf, "META-INF/container.xml")))
-    except (KeyError, ET.ParseError):
+        container = SafeET.parse(io.BytesIO(_read_zip_entry(zf, "META-INF/container.xml")))
+    except (KeyError, ParseError):
         return []
     ns = {"c": "urn:oasis:names:tc:opendocument:xmlns:container"}
     rootfile = container.find(".//c:rootfile", ns)
@@ -172,8 +183,8 @@ def _epub_spine_order(zf: zipfile.ZipFile) -> list[str]:
     if not opf_path:
         return []
     try:
-        opf = ET.parse(io.BytesIO(_read_zip_entry(zf, opf_path)))
-    except (KeyError, ET.ParseError):
+        opf = SafeET.parse(io.BytesIO(_read_zip_entry(zf, opf_path)))
+    except (KeyError, ParseError):
         return []
 
     base_dir = opf_path.rsplit("/", 1)[0] if "/" in opf_path else ""

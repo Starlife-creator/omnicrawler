@@ -57,14 +57,20 @@ class StateTest(unittest.TestCase):
                     "UPDATE frontier SET status='in_progress' WHERE fingerprint=?",
                     (first.fingerprint,),
                 )
-                claimed = state.claim(2)
+                claimed = state.claim(2, worker="worker-1")
                 self.assertEqual([req.url for req in claimed], [second.url])
-                # attempts 只在成功认领时 +1
+                # A-P3-10：认领不递增 attempts（仅 mark_failed 递增），只记录在途元数据。
                 attempts = {
                     row["url"]: row["attempts"]
                     for row in state.rows("SELECT url, attempts FROM frontier")
                 }
-                self.assertEqual(attempts[second.url], 1)
+                self.assertEqual(attempts[second.url], 0)
+                in_flight = state.rows(
+                    "SELECT claimed_at, worker FROM frontier WHERE fingerprint=?",
+                    (second.fingerprint,),
+                )[0]
+                self.assertTrue(in_flight["claimed_at"])
+                self.assertEqual(in_flight["worker"], "worker-1")
 
     def test_s253_claim_refills_when_candidates_are_stolen(self):
         with tempfile.TemporaryDirectory() as temp:

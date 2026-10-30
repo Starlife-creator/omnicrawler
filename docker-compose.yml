@@ -3,10 +3,15 @@ services:
     build: .
     volumes:
       - ./configs:/data/configs:ro
+      - ./examples:/data/examples:ro
       - ./work:/data/work
       - ./output:/data/output
       - ./data:/data/data
+      # 可选：离线市场样例目录（默认不打包进镜像；需要内置市场时取消注释）
+      # - ./market:/data/market:ro
     command: ["doctor", "-c", "configs/project.yaml"]
+    # HEALTHCHECK 由 Dockerfile 统一提供（omnicrawler doctor -c configs/project.yaml，
+    # 30s 间隔 / 10s 超时 / 10s 启动宽限 / 3 次重试）；此处不重复定义。
 
   redis:
     image: redis:7-alpine

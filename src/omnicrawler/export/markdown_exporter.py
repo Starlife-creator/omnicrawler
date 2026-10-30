@@ -3,6 +3,9 @@
 Supports both batch export (CSV/JSONL → .md) and single-record export
 (card / table / list styles).  Integrates with the GUI via ResultTable and
 EvidenceView export buttons.
+
+B-P2-12：补齐 Markdown 特殊字符转义；非数值置信度跳过并计数；批量导出行级流式写出，
+避免整份报告在内存拼接。
 """
 
 from __future__ import annotations
@@ -17,6 +20,26 @@ from typing import Any
 from ..core.safe_data import safe_json_loads
 
 _logger = logging.getLogger(__name__)
+
+#: Markdown 结构字符转义顺序：反斜杠必须最先处理。
+_MD_ESCAPE_TABLE: tuple[tuple[str, str], ...] = (
+    ("\\", "\\\\"),
+    ("`", "\\`"),
+    ("*", "\\*"),
+    ("[", "\\["),
+    ("]", "\\]"),
+    ("#", "\\#"),
+    ("|", "\\|"),
+)
+
+
+def _md_escape(value: Any) -> str:
+    """转义 Markdown 特殊字符；换行/回车折叠为空格；纯文本保持原样。"""
+    text = "" if value is None else str(value)
+    text = text.replace("\n", " ").replace("\r", " ")
+    for char, replacement in _MD_ESCAPE_TABLE:
+        text = text.replace(char, replacement)
+    return text
 
 
 class MarkdownExporter:
@@ -66,15 +89,38 @@ class MarkdownExporter:
         if include_evidence and jsonl_path and jsonl_path.is_file():
             evidence_index = MarkdownExporter._load_jsonl_index(jsonl_path)
 
-        md = MarkdownExporter._build_markdown(
-            headers=headers,
-            rows=rows,
-            evidence_index=evidence_index,
-            group_by=group_by,
-            include_evidence=include_evidence,
-        )
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if group_by and group_by in headers:
+            # 分组模式需要先聚合再排序，保留整份拼接路径。
+            md = MarkdownExporter._build_markdown(
+                headers=headers,
+                rows=rows,
+                evidence_index=evidence_index,
+                group_by=group_by,
+                include_evidence=include_evidence,
+            )
+            output.write_text(md, encoding="utf-8")
+        else:
+            # B-P2-12：行级流式写出，避免整份 Markdown 在内存拼接。
+            with output.open("w", encoding="utf-8") as fh:
+                fh.write("# Crawl Results\n\n")
+                fh.write(f"**Total records**: {len(rows)}\n\n")
+                if not rows:
+                    fh.write("_No results._\n")
+                else:
+                    fh.write("| " + " | ".join(_md_escape(h) for h in headers) + " |\n")
+                    fh.write("| " + " | ".join("---" for _ in headers) + " |\n")
+                    for row in rows:
+                        fh.write(MarkdownExporter._row_to_md(headers, row) + "\n")
+                        if include_evidence:
+                            rid = row.get("record_id", "")
+                            if rid and rid in evidence_index:
+                                fh.write("\n```json\n")
+                                fh.write(json.dumps(
+                                    evidence_index[rid], ensure_ascii=False, indent=2, default=str,
+                                ))
+                                fh.write("\n```\n\n")
 
-        output.write_text(md, encoding="utf-8")
         _logger.info("Markdown exported → %s (%d records)", output, len(rows))
         return output
 
@@ -100,10 +146,10 @@ class MarkdownExporter:
         field_values = record.get("field_values", record.get("fields", {}))
 
         lines: list[str] = []
-        lines.append(f"# Record: {record_id[:60]}")
+        lines.append(f"# Record: {_md_escape(record_id[:60])}")
         lines.append("")
-        lines.append(f"- **Source**: {source_url}")
-        lines.append(f"- **Record ID**: `{record_id}`")
+        lines.append(f"- **Source**: {_md_escape(source_url)}")
+        lines.append(f"- **Record ID**: `{_md_escape(record_id)}`")
         lines.append("")
 
         if isinstance(field_values, list):
@@ -123,11 +169,12 @@ class MarkdownExporter:
         md = "\n".join(lines) + "\n"
 
         if output_path:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(md, encoding="utf-8")
 
         return md
 
-    # ── internal helpers ────────────────────────────────────────
+    # ── internal helpers ─────────────────────────────────────────
 
     @staticmethod
     def _load_jsonl_index(jsonl_path: Path) -> dict[str, dict[str, Any]]:
@@ -149,6 +196,15 @@ class MarkdownExporter:
         return index
 
     @staticmethod
+    def _format_confidence(conf: Any) -> str | None:
+        """格式化为百分比；非数值返回 None（B-P2-12：跳过该行并计 skipped）。"""
+        try:
+            value = float(conf)
+        except (TypeError, ValueError):
+            return None
+        return f"{value:.0%}"
+
+    @staticmethod
     def _build_markdown(
         headers: Sequence[str],
         rows: list[dict[str, str]],
@@ -167,7 +223,7 @@ class MarkdownExporter:
             return "\n".join(lines) + "\n"
 
         # Table header
-        lines.append("| " + " | ".join(headers) + " |")
+        lines.append("| " + " | ".join(_md_escape(h) for h in headers) + " |")
         lines.append("| " + " | ".join("---" for _ in headers) + " |")
 
         # Grouped or flat
@@ -180,9 +236,9 @@ class MarkdownExporter:
             for group_key in sorted(groups):
                 group_rows = groups[group_key]
                 lines.append("")
-                lines.append(f"## {group_key} ({len(group_rows)} records)")
+                lines.append(f"## {_md_escape(group_key)} ({len(group_rows)} records)")
                 lines.append("")
-                lines.append("| " + " | ".join(headers) + " |")
+                lines.append("| " + " | ".join(_md_escape(h) for h in headers) + " |")
                 lines.append("| " + " | ".join("---" for _ in headers) + " |")
                 for row in group_rows:
                     lines.append(MarkdownExporter._row_to_md(headers, row))
@@ -210,27 +266,34 @@ class MarkdownExporter:
 
     @staticmethod
     def _row_to_md(headers: Sequence[str], row: dict[str, str]) -> str:
-        vals = [row.get(h, "").replace("|", "\\|") for h in headers]
+        vals = [_md_escape(row.get(h, "")) for h in headers]
         return "| " + " | ".join(vals) + " |"
 
     @staticmethod
     def _render_card(fields: list[dict[str, Any]]) -> list[str]:
         lines: list[str] = []
+        skipped_confidence = 0
         for f in fields:
             name = f.get("field_name", f.get("name", "?"))
             value = f.get("normalized_value", f.get("value", ""))
             conf = f.get("confidence")
-            lines.append(f"### {name}")
+            lines.append(f"### {_md_escape(name)}")
             lines.append("")
-            lines.append(f"**值**: {value}")
+            lines.append(f"**值**: {_md_escape(value)}")
             if conf is not None:
-                pct = f"{float(conf):.0%}"
-                lines.append(f"**置信度**: {pct}")
+                pct = MarkdownExporter._format_confidence(conf)
+                if pct is None:
+                    skipped_confidence += 1
+                    _logger.warning("字段 %s 置信度非数值，已跳过置信度行: %r", name, conf)
+                else:
+                    lines.append(f"**置信度**: {pct}")
             if f.get("evidence"):
                 # S2.5.28：dict 证据安全截断（str()），不再对 dict 做 [:200] 切片 KeyError
                 evidence = str(f["evidence"])
-                lines.append(f"**证据**: {evidence[:200]}")
+                lines.append(f"**证据**: {_md_escape(evidence[:200])}")
             lines.append("")
+        if skipped_confidence:
+            _logger.info("Markdown 卡片跳过 %d 条非数值置信度", skipped_confidence)
         return lines
 
     @staticmethod
@@ -242,8 +305,10 @@ class MarkdownExporter:
             name = f.get("field_name", f.get("name", "?"))
             value = str(f.get("normalized_value", f.get("value", "")))
             conf = f.get("confidence")
-            pct = f"{float(conf):.0%}" if conf is not None else "—"
-            lines.append(f"| {name} | {value[:80]} | {pct} |")
+            pct = MarkdownExporter._format_confidence(conf) if conf is not None else None
+            if conf is not None and pct is None:
+                _logger.warning("字段 %s 置信度非数值，表格以占位符显示: %r", name, conf)
+            lines.append(f"| {_md_escape(name)} | {_md_escape(value[:80])} | {pct or '—'} |")
         lines.append("")
         return lines
 
@@ -253,6 +318,6 @@ class MarkdownExporter:
         for f in fields:
             name = f.get("field_name", f.get("name", "?"))
             value = f.get("normalized_value", f.get("value", ""))
-            lines.append(f"- **{name}**: {value}")
+            lines.append(f"- **{_md_escape(name)}**: {_md_escape(value)}")
         lines.append("")
         return lines

@@ -1,6 +1,6 @@
 # 2026-10-04 全面优化实施与验收
 
-> 适用版本：0.15.0 · 配置协议：v5 · 维护状态：本轮完成记录；发布条件独立登记
+> 适用版本：1.0.1 · 配置协议：v5 · 维护状态：本轮完成记录；发布条件独立登记
 
 本轮从 f3278e3 起，按维护者授权使用本机完整依赖验收，主程序无需便携包。旧计划和过时文档原字节归档于 `docs/archive/2026-10-04-before-comprehensive` 与工作区 `archive/2026-10-04-before-comprehensive`，归档摘要可核验。当前实施与验收证据位于工作区 `user-test-runs/comprehensive-optimization-20261004`；插件/模板开发位于 `market-plugin-and-template-development/comprehensive-20261004`。
 

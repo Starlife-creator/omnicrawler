@@ -41,6 +41,8 @@ class Registry:
         self.backgrounds: dict[str, BackgroundRegistration] = {}
         self.plugins: list[PluginMetadata] = []
         self.plugin_errors: list[dict[str, str]] = []
+        # A-P2-4：逃生开关（legacy_in_process / 豁免表）进程内执行审计事件台账。
+        self.escape_hatch_events: list[dict[str, Any]] = []
         self._resources: list[Any] = []
         self._error_lock = threading.Lock()
 

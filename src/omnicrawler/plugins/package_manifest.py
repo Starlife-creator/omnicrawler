@@ -9,6 +9,7 @@ sharing and curated-market distribution.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -210,7 +211,9 @@ def verify_package(
         creator = CreatorIdentity.from_dict(identity_data)
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         raise PackageManifestError(f"creator.identity 无效: {exc}") from exc
-    if manifest.get("creator_fingerprint") != creator.key_fingerprint:
+    if not hmac.compare_digest(
+        str(manifest.get("creator_fingerprint") or ""), str(creator.key_fingerprint)
+    ):
         raise PackageManifestError("manifest 的创作者指纹与 creator.identity 公钥不一致")
     if manifest.get("requested_username") != creator.username:
         raise PackageManifestError("manifest 的 requested_username 与 creator.identity 不一致")
@@ -229,7 +232,7 @@ def verify_package(
         if not isinstance(expected, str) or not expected.startswith("sha256:"):
             raise PackageManifestError(f"文件哈希格式非法: {rel}")
         digest = hashlib.sha256((package_dir / Path(*safe.parts)).read_bytes()).hexdigest()
-        if expected != f"sha256:{digest}":
+        if not hmac.compare_digest(expected, f"sha256:{digest}"):
             raise PackageManifestError(f"文件哈希不一致: {rel}")
 
     maintainer_path = package_dir / MAINTAINER_SIGNATURE_NAME

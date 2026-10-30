@@ -43,8 +43,9 @@ class ErrorDialogHelper(_BaseDelegate):
         _clipboard = QApplication.clipboard()
         assert _clipboard is not None
         help_btn.clicked.connect(lambda: (msg.close(), mw._help_center.show_help("troubleshooting")))  # type: ignore[func-returns-value]
+        # C-#4：报告注释头不是待翻译界面文案，不应包进 _() 污染 .pot 消息表。
         copy_btn.clicked.connect(lambda: _clipboard.setText(
-            _("# OmniCrawler GUI 错误报告\n# 配置中的网址和选择器已被隐藏以保护隐私\n# \n") + redacted_tb
+            "# OmniCrawler GUI 错误报告\n# 配置中的网址和选择器已被隐藏以保护隐私\n# \n" + redacted_tb  # noqa
         ))
         msg.exec()
 

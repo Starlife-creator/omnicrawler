@@ -11,10 +11,13 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 from ..state.scene_store import SceneStore
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,7 +67,8 @@ class GenePool:
 
             maybe_maintain(self.store)
         except Exception:  # noqa: BLE001 — 维护失败不影响推荐
-            pass
+            # B-P3-3：维护失败留痕（warning + exc_info），fail-open 但不再静默。
+            LOGGER.warning("基因池维护失败，本次推荐跳过维护: ", exc_info=True)
         rows = self.store.top_genes(
             scene, slot_key, limit=limit, min_trials=min_trials,
         )

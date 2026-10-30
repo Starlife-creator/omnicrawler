@@ -38,6 +38,7 @@ class _ReducerParser(HTMLParser):
         self._in_pre = False
         self._pending_newline = False
         self._td_cells: list[str] = []
+        self._anchor_hrefs: list[str] = []
 
     def _flush_newline(self) -> None:
         if self._pending_newline:
@@ -76,6 +77,8 @@ class _ReducerParser(HTMLParser):
                 self._list_stack[-1] = f"{int(self._list_stack[-1].rstrip('. ')) + 1}. "
             return
         if tag == "a":
+            # B-P3-4：锚点 href 在结束标签回填，避免链接地址丢失。
+            self._anchor_hrefs.append(dict(attrs).get("href", "") or "")
             self.out.append("[")
             return
         if tag == "img":
@@ -107,6 +110,7 @@ class _ReducerParser(HTMLParser):
             self._flush_newline()
             return
         if tag == "th" or tag == "td":
+            # B-P3-4：表格单元格先累积到单元格缓冲，结束标签再补 `|` 分隔，避免被拍平。
             self._td_cells.append("")
             return
         if tag == "table":
@@ -126,7 +130,8 @@ class _ReducerParser(HTMLParser):
             self._in_pre = False
             return
         if tag == "a":
-            self.out.append("]")
+            href = self._anchor_hrefs.pop() if self._anchor_hrefs else ""
+            self.out.append(f"]({href})" if href else "]")
             return
         if tag == "strong" or tag == "b":
             self.out.append("**")
@@ -147,10 +152,11 @@ class _ReducerParser(HTMLParser):
             return
         if tag == "th" or tag == "td":
             cell = self._td_cells.pop() if self._td_cells else ""
-            self.out.append(cell.strip())
+            self.out.append(f"| {cell.strip()} ")
             return
         if tag == "tr":
-            self.out.append("\n")
+            # B-P3-4：行尾补闭合竖线，形成完整 GFM 表格行。
+            self.out.append("|\n")
             return
         if tag in _BLOCK_TAGS:
             self._pending_newline = True
@@ -161,9 +167,11 @@ class _ReducerParser(HTMLParser):
         if self._in_pre:
             self.out.append(data)
             return
-        self.out.append(data)
         if self._td_cells:
+            # 表格单元格文本只进单元格缓冲，结束标签统一补竖线分隔（B-P3-4）。
             self._td_cells[-1] += data
+            return
+        self.out.append(data)
 
     def text(self) -> str:
         raw = "".join(self.out)

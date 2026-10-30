@@ -280,6 +280,12 @@ _LANG_ALIASES = {
 }
 
 
+# B-P2-3：自适应关闭路径也传默认 OCR 超时（秒），避免 pytesseract 子进程无超时挂死。
+_DEFAULT_OCR_TIMEOUT_SECONDS = 30.0
+# B-P2-3：OCR 并发轮次整体等待超时（秒）；超时后在途 future 取消并计 failed，释放 worker。
+_OCR_POLL_TIMEOUT_SECONDS = 120.0
+
+
 def normalize_ocr_lang(lang: str) -> str:
     """把 ``+`` 分隔的 Tesseract 语言串归一为标准语言名（未知项原样保留）。"""
     parts = [part.strip() for part in str(lang).split("+") if part.strip()]
@@ -306,6 +312,13 @@ class TesseractBackend:
         self.lang = normalize_ocr_lang(config.get("lang", "chi_sim+eng"))
         self.image_scale = config.get("image_scale", 1)
         self.psm = config.get("page_segmentation_mode", 3)
+        # B-P2-3：默认超时兜底；配置项非正数回退默认值。
+        configured_timeout = config.get("timeout_seconds", _DEFAULT_OCR_TIMEOUT_SECONDS)
+        try:
+            parsed_timeout = float(configured_timeout)
+        except (TypeError, ValueError):
+            parsed_timeout = _DEFAULT_OCR_TIMEOUT_SECONDS
+        self.timeout_seconds = parsed_timeout if parsed_timeout > 0 else _DEFAULT_OCR_TIMEOUT_SECONDS
         if type(self.image_scale) is not int or not 1 <= self.image_scale <= 4:
             raise ValueError("image_scale 必须是1到4的整数")
         if type(self.psm) is not int or self.psm not in {1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}:
@@ -323,7 +336,11 @@ class TesseractBackend:
             from .adaptive_ocr import recognize_adaptive
             return recognize_adaptive(png_bytes, self._recognize_once,
                                       (self.image_scale, self.psm), self.adaptive_policy)
-        return self._recognize_once(png_bytes, scale=self.image_scale, psm=self.psm)
+        # B-P2-3：自适应关闭路径同样携带默认超时，防止子进程无超时挂死。
+        # getattr 兜底手工构造的测试夹具（不经 __init__）。
+        timeout_seconds = getattr(self, "timeout_seconds", None) or _DEFAULT_OCR_TIMEOUT_SECONDS
+        return self._recognize_once(png_bytes, scale=self.image_scale, psm=self.psm,
+                                    timeout_seconds=timeout_seconds)
 
     def _recognize_once(self, png_bytes: bytes, *, scale: int, psm: int,
                         timeout_seconds: float | None = None) -> OCRRichResult:
@@ -479,7 +496,8 @@ def _check_temperature() -> bool:
                     )
                     return False
     except Exception:
-        pass
+        # B-P3-3：温度探测失败 fail-open，但异常类型/消息必须留痕，避免静默丢失诊断。
+        logger.debug("CPU 温度探测失败，按未超温放行: ", exc_info=True)
     return True
 
 
@@ -529,7 +547,7 @@ def _ocr_worker_process(
                 try:
                     _worker_document.close()
                 except Exception:  # noqa: BLE001 - 句柄关闭失败不影响后续流程
-                    pass
+                    logger.debug("复用 PDF 句柄关闭失败: ", exc_info=True)
             _worker_document = None
         if _worker_document is None:
             from .parser import open_document
@@ -714,6 +732,7 @@ def ocr_stage(
                     max_in_flight=max(1, workers * 2),
                     should_stop=should_stop,
                     on_stop=mark_stopped,
+                    future_timeout=_OCR_POLL_TIMEOUT_SECONDS,
                 )
                 for fut, item in completed:
                     doc_id, page_no, _path, _dpi = item

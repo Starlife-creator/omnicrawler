@@ -81,7 +81,9 @@ class MarketActionsMixin(_Base):
             return
         entry = self._entry_of(pid)
         if entry:
-            block_reason = _install_block_reason(entry)
+            block_reason = _install_block_reason(
+                entry, catalog=getattr(self, "_catalog", None), plugin_id=pid
+            )
             if block_reason:
                 ToastManager.instance().warning(block_reason)
                 return

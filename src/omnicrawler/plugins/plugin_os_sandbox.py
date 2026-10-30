@@ -36,26 +36,48 @@ class SandboxProbe:
     supported_range: bool = True
 
 
+# 这两个导出只在 userenv.dll（advapi32/kernel32/ntdll/ole32 实测均无）；模块与符号名
+# 写成常量，便于跨平台用例锁定"查对了导出模块"这条口径。
+AC_EXPORT_MODULE = "userenv.dll"
+AC_EXPORT_SYMBOLS = (
+    "CreateAppContainerProfile",
+    "DeriveAppContainerSidFromAppContainerName",
+)
+
+
 def _probe_windows() -> SandboxProbe:
     """Windows：AppContainer API 存在性探测（GetProcAddress 精确判定）。"""
     try:
         import ctypes
 
         k32 = ctypes.windll.kernel32  # type: ignore[attr-defined]  # Windows 专属 API
-        adv = k32.LoadLibraryW("advapi32.dll")
+        # HMODULE 与函数地址都是 64 位指针：不设 c_void_p 会按默认 c_int 截断，
+        # 截断后的句柄传给 GetProcAddress 恒失败 ⇒ 探测恒为"缺失"。
+        k32.LoadLibraryW.restype = ctypes.c_void_p
+        k32.LoadLibraryW.argtypes = [ctypes.c_wchar_p]
+        k32.GetProcAddress.restype = ctypes.c_void_p
+        k32.GetProcAddress.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        k32.FreeLibrary.argtypes = [ctypes.c_void_p]
+        module = k32.LoadLibraryW(AC_EXPORT_MODULE)
+        if not module:
+            return SandboxProbe(False, "none", f"{AC_EXPORT_MODULE} 加载失败")
         try:
-            ac_profile = bool(k32.GetProcAddress(adv, b"CreateAppContainerProfile"))
-            ac_derive = bool(
-                k32.GetProcAddress(adv, b"DeriveAppContainerSidFromAppContainerName")
-            )
+            missing = [
+                name
+                for name in AC_EXPORT_SYMBOLS
+                if not k32.GetProcAddress(module, name.encode("ascii"))
+            ]
         finally:
-            k32.FreeLibrary(adv)
-        if ac_profile and ac_derive:
-            return SandboxProbe(True, "appcontainer", "AppContainer API 可用")
+            k32.FreeLibrary(module)
+        if not missing:
+            return SandboxProbe(
+                True, "appcontainer", f"AppContainer API 可用（{AC_EXPORT_MODULE} 导出）"
+            )
         return SandboxProbe(
             False,
             "none",
-            "AppContainer API 缺失（受支持范围异常——Win10 22H2+/Win11 应内置；"
+            f"AppContainer API 缺失（{AC_EXPORT_MODULE} 无 {'、'.join(missing)}——"
+            "受支持范围异常，Win10 22H2+/Win11 应内置；"
             "请运行 plugins audit --report 反馈环境）",
         )
     except Exception as exc:  # noqa: BLE001 - 探测失败按不可用处理（fail-closed）
@@ -151,3 +173,20 @@ def resolve_sandbox_mode(
         "受支持范围: Win10 22H2+/Win11、内核 ≥5.13 主流发行版；"
         "请运行 plugins audit --report 反馈环境信息"
     )
+
+
+def confinement_argv_prefix(mode: str, backend: str) -> list[str]:
+    """spawn 前置平台隔离参数骨架（A-P1-2 代码层落地，待平台 CI 验证）。
+
+    当前一律返回空前缀：真实隔离包装——Linux ``unshare`` + seccomp + Landlock、
+    Windows AppContainer / Job Object、macOS ``sandbox-exec`` Seatbelt profile——
+    待对应平台 CI 矩阵接入后在此返回参数 / 前置命令。裁决结果（mode/reason）已随
+    spawn 路径进入日志与诊断，不在代码层伪装已完成 OS 隔离。
+    """
+    if mode != "os":
+        return []
+    # 待对应平台 CI：
+    # - Linux: unshare --user --map-root-user + seccomp/Landlock 安装器前缀
+    # - Windows: AppContainer profile / Job Object 资源限额注入（见 A-P3-14）
+    # - macOS: sandbox-exec + Seatbelt profile 文件参数
+    return []

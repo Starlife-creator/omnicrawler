@@ -83,7 +83,12 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
                         source_method = "ocr"
                         document.warnings.append(f"Page {page['page_no']}: OCR text; paragraph regions and reading order are not verified")
                     except Exception as exc:
-                        failures.append({"page": page["page_no"], "error_type": type(exc).__name__})
+                        # B-P2-17：失败记录补截断后的异常消息，失败原因可追溯，不再只存类型名。
+                        failures.append({
+                            "page": page["page_no"],
+                            "error_type": type(exc).__name__,
+                            "error": str(exc)[:400],
+                        })
                         omitted.append(page["page_no"])
                         continue
                 else:
@@ -168,21 +173,33 @@ def parse_pdf(path: Path, options: dict[str, Any]) -> DocumentIR:
 
 def _paragraph_region(text: str, words: list[dict[str, Any]]) -> list[float] | None:
     wanted = text.split()
+    if not wanted:
+        return None
     token_words = [(token, word) for word in words for token in str(word.get("text", "")).split()]
     tokens = [token for token, _word in token_words]
-    for index in range(max(0, len(tokens) - len(wanted) + 1)):
-        if wanted and tokens[index:index + len(wanted)] == wanted:
-            matched = [word for _token, word in token_words[index:index + len(wanted)]]
-            boxes: list[list[Any]] = []
-            for word in matched:
-                value = word.get("bbox")
-                if isinstance(value, list) and len(value) == 4:
-                    boxes.append(value)
-            if len(boxes) == len(matched):
-                return [min(float(box[0]) for box in boxes), min(float(box[1]) for box in boxes),
-                        max(float(box[2]) for box in boxes), max(float(box[3]) for box in boxes)]
-            if all(all(key in word for key in ("x0", "top", "x1", "bottom")) for word in matched):
-                return [min(float(word["x0"]) for word in matched), min(float(word["top"]) for word in matched),
-                        max(float(word["x1"]) for word in matched), max(float(word["bottom"]) for word in matched)]
-            return None
+    # B-P2-17：首词倒排索引定位候选起点，替代段落词 × 文档词双重窗口 O(n·m) 全扫。
+    first_token_positions: dict[str, list[int]] = {}
+    for index, token in enumerate(tokens):
+        first_token_positions.setdefault(token, []).append(index)
+    starts = first_token_positions.get(wanted[0])
+    if not starts:
+        return None
+    for index in starts:
+        if index + len(wanted) > len(tokens):
+            continue
+        if tokens[index:index + len(wanted)] != wanted:
+            continue
+        matched = [word for _token, word in token_words[index:index + len(wanted)]]
+        boxes: list[list[Any]] = []
+        for word in matched:
+            value = word.get("bbox")
+            if isinstance(value, list) and len(value) == 4:
+                boxes.append(value)
+        if len(boxes) == len(matched):
+            return [min(float(box[0]) for box in boxes), min(float(box[1]) for box in boxes),
+                    max(float(box[2]) for box in boxes), max(float(box[3]) for box in boxes)]
+        if all(all(key in word for key in ("x0", "top", "x1", "bottom")) for word in matched):
+            return [min(float(word["x0"]) for word in matched), min(float(word["top"]) for word in matched),
+                    max(float(word["x1"]) for word in matched), max(float(word["bottom"]) for word in matched)]
+        return None
     return None

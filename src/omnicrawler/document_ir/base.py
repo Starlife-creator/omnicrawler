@@ -17,6 +17,32 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+#: Markdown 结构字符转义顺序：反斜杠必须最先处理（B-P3-5 导出一致性纵深加固）。
+_MD_ESCAPE_TABLE: tuple[tuple[str, str], ...] = (
+    ("\\", "\\\\"),
+    ("`", "\\`"),
+    ("*", "\\*"),
+    ("_", "\\_"),
+    ("[", "\\["),
+    ("]", "\\]"),
+    ("#", "\\#"),
+    ("~", "\\~"),
+    ("|", "\\|"),
+    ("<", "\\<"),
+    (">", "\\>"),
+)
+
+
+def markdown_escape(text: str) -> str:
+    """转义 Markdown 特殊字符，避免被采集文本破坏标题/表格/链接结构。
+
+    换行/回车统一折叠为空格；普通纯文本（无特殊字符）保持原样。
+    """
+    escaped = str(text).replace("\n", " ").replace("\r", " ")
+    for char, replacement in _MD_ESCAPE_TABLE:
+        escaped = escaped.replace(char, replacement)
+    return escaped
+
 
 @dataclass(slots=True)
 class DocumentBlock:
@@ -146,18 +172,17 @@ class DocumentIR:
         return "\n\n".join(blocks).strip()
 
     def to_markdown(self) -> str:
-        """拼成 Markdown（标题 #、表格 | 分隔）。"""
+        """拼成 Markdown（标题 #、表格 | 分隔）；标题/段落/单元格统一转义（B-P3-5）。"""
         lines: list[str] = []
         if self.title:
-            lines.append(f"# {self.title}")
+            lines.append(f"# {markdown_escape(self.title)}")
             lines.append("")
-        def escape(cell: str) -> str:
-            return cell.replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ").replace("\r", " ")
 
         for block in self.ordered_blocks():
             if block.kind == "paragraph":
+                text = markdown_escape(self.paragraphs[block.index])
                 prefix = "#" * min(6, max(0, block.heading_level))
-                lines.append((prefix + " " if prefix else "") + self.paragraphs[block.index])
+                lines.append((prefix + " " if prefix else "") + text)
                 continue
             table = self.tables[block.index]
             if not table:
@@ -167,11 +192,11 @@ class DocumentIR:
                 continue
             rows = [row + [""] * (width - len(row)) for row in table]
             table_lines = [
-                "| " + " | ".join(escape(cell) for cell in rows[0]) + " |",
+                "| " + " | ".join(markdown_escape(cell) for cell in rows[0]) + " |",
                 "| " + " | ".join("---" for _ in range(width)) + " |",
             ]
             for row in rows[1:]:
-                table_lines.append("| " + " | ".join(escape(cell) for cell in row) + " |")
+                table_lines.append("| " + " | ".join(markdown_escape(cell) for cell in row) + " |")
             # 表格块必须内部用单换行：逐行 join 会生成空行，Markdown 渲染器会截断表格。
             lines.append("\n".join(table_lines))
         return "\n\n".join(lines).strip()

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from omnicrawler.gui.views.plugin_market_logic import _tombstone_reason
+from omnicrawler.gui.views.plugin_market_logic import (
+    _install_block_reason,
+    _tombstone_reason,
+)
 
 _CATALOG = {
     "tombstones": [
@@ -31,3 +34,28 @@ def test_catalog_without_tombstones_returns_none() -> None:
     assert _tombstone_reason({}, "removed-plugin") is None
     assert _tombstone_reason({"tombstones": None}, "removed-plugin") is None
     assert _tombstone_reason({"tombstones": "oops"}, "removed-plugin") is None
+
+
+# --- P0-2：安装按钮/动作在吊销与墓碑命中时即阻断（展示层 G2 裁决）---
+def test_block_reason_denies_entry_level_revoked() -> None:
+    entry = {"id": "demo", "version": "1.0.0", "plugin_types": ["processor"],
+             "revoked": {"reason": "恶意代码"}}
+    reason = _install_block_reason(entry)
+    assert reason and "吊销" in reason and "恶意代码" in reason
+
+
+def test_block_reason_denies_revoked_version() -> None:
+    entry = {"id": "demo", "version": "1.0.0", "plugin_types": ["processor"],
+             "revoked_versions": ["1.0.0"]}
+    assert _install_block_reason(entry)
+
+
+def test_block_reason_denies_catalog_tombstone() -> None:
+    entry = {"id": "removed-plugin", "version": "1.0.0", "plugin_types": ["processor"]}
+    reason = _install_block_reason(entry, catalog=_CATALOG, plugin_id="removed-plugin")
+    assert reason and "已下架" in reason
+
+
+def test_block_reason_allows_live_entry() -> None:
+    entry = {"id": "lumen-drift", "version": "1.0.0", "plugin_types": ["processor"]}
+    assert _install_block_reason(entry, catalog=_CATALOG, plugin_id="lumen-drift") == ""

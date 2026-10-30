@@ -34,6 +34,10 @@ _SENSITIVE_KEYS: set[str] = {
 }
 _SENSITIVE_PATTERN = re.compile(r"(key|secret|token|password|passwd|pwd|auth|credential)", re.IGNORECASE)
 
+#: B-P2-16：响应递归遍历的深度与节点总数上限，防深嵌套 JSON 触发 RecursionError / 内存膨胀。
+_WALK_MAX_DEPTH = 12
+_WALK_MAX_NODES = 20_000
+
 
 def _is_sensitive_key(name: str) -> bool:
     lowered = name.casefold()
@@ -119,7 +123,8 @@ def discover_api_endpoints(responses: list[dict[str, Any]]) -> list[ApiEndpointP
                     for key, value in (response.get("request_headers", {}) or {}).items()
                     if not _is_sensitive_key(str(key))
                 },
-                response.get("request_payload"),
+                # B-P2-16：对象构造早期即脱敏，密钥不进入下游内存结构（写出时再幂等脱敏兜底）。
+                redact_payload(response.get("request_payload")),
             )
         )
     profiles.sort(key=lambda item: (-item.confidence, -item.item_count, item.endpoint))
@@ -170,16 +175,22 @@ def infer_schema(value: Any, *, depth: int = 0) -> dict[str, Any]:
     return {"type": type(value).__name__}
 
 
-def _walk(value: Any, path: str = ""):
+def _walk(value: Any, path: str = "", *, depth: int = 0, _count: dict[str, int] | None = None):
+    # B-P2-16：深度 + 节点总数双上限；超限分支停止展开，不再递归。
+    if _count is None:
+        _count = {"nodes": 0}
+    if _count["nodes"] >= _WALK_MAX_NODES or depth > _WALK_MAX_DEPTH:
+        return
+    _count["nodes"] += 1
     yield path, value
     if isinstance(value, dict):
         for key, item in value.items():
             child = f"{path}.{key}" if path else str(key)
-            yield from _walk(item, child)
+            yield from _walk(item, child, depth=depth + 1, _count=_count)
     elif isinstance(value, list):
         for index, item in enumerate(value[:5]):
             child = f"{path}.{index}" if path else str(index)
-            yield from _walk(item, child)
+            yield from _walk(item, child, depth=depth + 1, _count=_count)
 
 
 def _best_item_array(payload: Any) -> tuple[str, list[Any]]:

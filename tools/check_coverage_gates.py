@@ -85,7 +85,33 @@ GATES: dict[str, tuple[float, Matcher]] = {
             "src/omnicrawler/gui/wizard/step5_preview.py",
         },
     ),
+    # C-#8：风险优先补充分组（services / plugins / commands / gui_views）。
+    # ⬜ 基线待校准：本地无对应覆盖率数据，先以「告警不阻断」挂入；首轮 CI 实测
+    # 覆盖率后按既有口径（三平台实测最小值 − 2）把实数下限填回本字典，并从
+    # BASELINE_PENDING_GATES 移出即转为阻断。下限数字仅为占位护栏，不代表实测水平。
+    "services": (
+        30.0,
+        _starts_with("src/omnicrawler/services/"),
+    ),
+    "plugins": (
+        40.0,
+        _starts_with("src/omnicrawler/plugins/"),
+    ),
+    "commands": (
+        20.0,
+        _starts_with("src/omnicrawler/commands/"),
+    ),
+    "gui_views": (
+        25.0,
+        _starts_with("src/omnicrawler/gui/views/"),
+    ),
 }
+
+#: C-#8：基线尚未经 CI 实测校准的分组——当前只打印实测值与占位下限、**不阻断**；
+#: 首轮 CI 覆盖率数据落地后按 min − 2 口径填实数并移出本集合。
+BASELINE_PENDING_GATES: frozenset[str] = frozenset(
+    {"services", "plugins", "commands", "gui_views"}
+)
 
 OVERALL_COVERAGE_GATE = 75.0
 
@@ -275,13 +301,21 @@ def main() -> int:
 
     # browser 档位只跑浏览器子集 ⇒ 总/分组指标不适用（该档只查浏览器专属单文件下限）
     for name, (minimum, matcher) in (GATES if check_groups else {}).items():
+        pending = name in BASELINE_PENDING_GATES
         try:
             covered, statements, actual = _coverage(files, matcher)
         except ValueError as exc:
+            if pending:
+                # 基线待校准分组：报告缺该组数据时只告警，不阻断（首轮 CI 实测后转阻断）。
+                print(f"{name:29} {'missing':>13} {'--':>8} {minimum:7.2f}%  [baseline pending: warn only]")
+                continue
             failures.append(f"{name}: {exc}")
             print(f"{name:29} {'missing':>13} {'--':>8} {minimum:7.2f}%")
             continue
         print(f"{name:29} {covered:5}/{statements:<7} {actual:7.2f}% {minimum:7.2f}%")
+        if pending:
+            print(f"{'  (baseline pending)':29} warn only until first CI measurement; floor to be recalibrated")
+            continue
         if actual < minimum:
             failures.append(f"{name} {actual:.2f}% < {minimum:.2f}%")
 

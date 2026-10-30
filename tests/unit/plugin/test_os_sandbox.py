@@ -76,3 +76,73 @@ def test_unsupported_range_flagged() -> None:
     assert probe.supported_range is False
     mode, reason = sandbox.resolve_sandbox_mode(probe=probe)
     assert mode == "refuse"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="真实 AppContainer 导出只在 Windows 上可探")
+def test_windows_probe_finds_builtin_appcontainer_and_yields_os_mode() -> None:
+    """Win10 22H2+/Win11 应探到 AC：恒判"缺失"会让 spawn 前置 fail-closed 拒载全部插件。"""
+    probe = sandbox.probe_os_sandbox()
+    assert probe.backend == "appcontainer", probe.detail
+    assert probe.available is True
+    # 默认开关（无 escape/降级）下不得 refuse，否则 Windows 装机即不可用
+    assert sandbox.resolve_sandbox_mode()[0] == "os"
+
+
+class _FakeApi:
+    """记录 ctypes 签名声明与实参的假 kernel32（句柄/地址在这里只是标记值）。"""
+
+    def __init__(self, resolved: tuple[bytes, ...]) -> None:
+        self._resolved = resolved
+        self.LoadLibraryW = _FakeFunction(lambda name: 0x7FF6_1234_5678)
+        self.GetProcAddress = _FakeFunction(
+            lambda module, symbol: 0x7FF6_9ABC_0000 if symbol in self._resolved else 0
+        )
+        self.FreeLibrary = _FakeFunction(lambda module: 1)
+
+
+class _FakeFunction:
+    def __init__(self, impl) -> None:
+        self._impl = impl
+        self.restype = None
+        self.argtypes = None
+        self.calls: list[tuple] = []
+
+    def __call__(self, *args):
+        self.calls.append(args)
+        return self._impl(*args)
+
+
+def _install_fake_kernel32(monkeypatch: pytest.MonkeyPatch, resolved: tuple[bytes, ...]) -> _FakeApi:
+    import ctypes
+
+    fake = _FakeApi(resolved)
+    windll = type("_Windll", (), {"kernel32": fake})()
+    monkeypatch.setattr(ctypes, "windll", windll, raising=False)
+    return fake
+
+
+def test_windows_probe_reads_pointer_sized_handles_from_exporting_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """锁定两处历史误判：导出模块写成 advapi32；句柄未按 c_void_p 声明而被截成 32 位。"""
+    import ctypes
+
+    fake = _install_fake_kernel32(monkeypatch, resolved=())
+    probe = sandbox._probe_windows()
+    assert fake.LoadLibraryW.calls == [(sandbox.AC_EXPORT_MODULE,)]
+    assert fake.LoadLibraryW.restype is ctypes.c_void_p
+    assert fake.GetProcAddress.restype is ctypes.c_void_p
+    assert fake.GetProcAddress.argtypes == [ctypes.c_void_p, ctypes.c_char_p]
+    assert probe.available is False
+
+
+def test_windows_probe_requires_every_appcontainer_symbol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """只解析到一半符号不得判可用（缺口写进 detail 供 audit 回传定位）。"""
+    first = sandbox.AC_EXPORT_SYMBOLS[0].encode("ascii")
+    missing = sandbox.AC_EXPORT_SYMBOLS[1]
+    _install_fake_kernel32(monkeypatch, resolved=(first,))
+    probe = sandbox._probe_windows()
+    assert probe.available is False
+    assert missing in probe.detail

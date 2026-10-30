@@ -39,6 +39,10 @@ pip install -e ".[full,dev]"
 playwright install chromium
 ```
 
+Linux / macOS 源码脚本（`setup_linux.sh`、`setup_macos.command`）默认安装 `standard`
+档常用能力；`OMNICRAW_PROFILE=minimal|standard|full` 切换档位，重型 OCR、Scrapy、
+crawl4ai、Selenium 与本地 AI 只在 `full` 档安装，详见 [安装、运行与平台矩阵](docs/INSTALLATION.md) 的档位表。
+
 实验性异步 AI 字段提取可单独安装 `pip install -e ".[ai]"`；Office 文档能力使用 `[document]`。`[full]` 包含这些依赖。未启用相关能力时，核心采集不要求它们。
 
 ### 双仓库布局（源码版必读）
@@ -90,6 +94,40 @@ omnicrawler run -c config.yaml
 omnicrawler resume -c config.yaml
 omnicrawler reprocess -c config.yaml --run-id <id>
 ```
+
+### 容器部署
+
+镜像为最小运行时（默认 `html,async-http,streams` extras，非 root 运行，工作目录 `/data`）；
+完整服务端拓扑、外部组件与备份策略见 [生产部署指南](docs/PRODUCTION_GUIDE.md)。
+
+```bash
+# 构建镜像（可用 --build-arg EXTRAS=html,pdf,async-http,security 裁剪能力面）
+docker build -t omnicrawler .
+
+# 按 docker-compose.yml 启动（默认命令：doctor -c configs/project.yaml）
+docker compose up
+```
+
+挂载约定（`docker-compose.yml`）：
+
+| 宿主机路径 | 容器路径 | 权限 | 用途 |
+|---|---|---|---|
+| `./configs` | `/data/configs` | 只读 | 任务配置与凭据引用 |
+| `./examples` | `/data/examples` | 只读 | 示例任务模板 |
+| `./work` | `/data/work` | 读写 | 工作区与断点状态 |
+| `./output` | `/data/output` | 读写 | 导出交付物 |
+| `./data` | `/data/data` | 读写 | 本地原始副本 |
+| `./market`（可选） | `/data/market` | 只读 | 离线市场样例目录，默认不挂载 |
+
+- `distributed` profile：`docker compose --profile distributed up` 才会启动 Redis 服务，
+  默认不启用。
+- 容器以 `tini` 作为 PID 1 初始化进程回收僵尸子进程、转发信号；健康检查每 30s 执行
+  `omnicrawler doctor -c configs/project.yaml`（10s 超时、10s 启动宽限、3 次重试），
+  编排系统据此判断存活；未挂载配置的裸 `docker run` 会在探活窗口失败，属预期边界。
+- 日志落在容器内 `/data/logs/`（随 `./work` 或您挂载的数据卷持久化）。
+- 镜像内已纳入 `schemas/` SDK 契约；不打包 `locale/` 语言包、`market/` 与历史文档
+  （wheel 布局边界见 `pyproject.toml` 注释）；容器内界面回退源码基准语言，需要英文
+  界面时在镜像构建参数中显式纳入资源。
 
 ---
 
@@ -180,6 +218,10 @@ omnicrawler reprocess -c config.yaml --run-id <id>
 | 审计 | 网络访问边界报告 + AI 调用详情日志 |
 | 脱敏 | 研究复现包（SHA-256 清单） |
 
+本地数据清单、无遥测承诺、日志/缓存/凭据位置与卸载清理范围见
+[隐私政策与数据留存说明](docs/PRIVACY.md)；网络安全模型与部署方义务见
+[安全与合规](docs/SECURITY_AND_COMPLIANCE.md)。
+
 ---
 
 ## 模板库（44 套）
@@ -219,9 +261,13 @@ omnicrawler templates validate          # 校验完整性
 
 ### 国际化
 
-- 567 条界面字符串已提取为 `.pot` 模板
-- 英文翻译 `.po` 就绪（约 95% 覆盖）
-- 新增语言：`python tools/generate_en_po.py` → 翻译 → `python tools/compile_i18n.py`
+- 界面字符串以中文为源码基准；`.pot` 模板条目数与英文覆盖率由
+  `python tools/i18n_stats.py` 实测（当前模板 2239 条；英文包登记 603 条、
+  非空译文 460 条，有效覆盖约 20.5%，按模板条目登记口径 603/2239 ≈ 26.9%，翻译进行中）。
+- 覆盖率口径与缺失清单以上述脚本输出为准，README 不再手抄数字；`--check`
+  可作为 CI 覆盖率门禁（阈值见质量工作流，当前下限 20.0%，只防下滑、不替代补译）。
+- 新增语言：`python tools/extract_i18n.py` → 复制 `locale/en_US/` 为目标目录 →
+  翻译 `.po` 文件 → `python tools/compile_i18n.py <lang>` 编译 `.mo`。
 
 ---
 

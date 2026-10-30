@@ -436,6 +436,8 @@ def _download_manifest_package(
     main_name: str,
     timeout: float,
     egress: EgressBroker | None,
+    tombstones: list[dict[str, Any]] | None = None,
+    plugin_id: str | None = None,
 ) -> Path:
     """Download and verify every creator-signed payload byte before install."""
     from pathlib import PurePosixPath
@@ -499,6 +501,25 @@ def _download_manifest_package(
             raise PermissionError("市场包 manifest 哈希与 catalog 不一致")
         if verified.package_id != entry.get("id") or verified.version != entry.get("version"):
             raise PermissionError("市场包 ID/版本与 catalog 不一致")
+
+        # G2（P0-1/P0-2）：现代整包路径同样执行吊销/墓碑裁决，与 legacy 单文件
+        # 路径同口径——条目级 revoked/revoked_versions 与目录顶层 tombstones 任一
+        # 命中即拒装，不再因走 manifest 路径而绕过吊销承诺。
+        from .catalog_trust import check_revocation
+
+        allowed, revocation_reason = check_revocation(
+            entry,
+            str(entry.get("version", "")),
+            tombstones=tombstones,
+            plugin_id=plugin_id or str(entry.get("id", "")),
+        )
+        if not allowed:
+            raise PermissionError(
+                f"插件 {entry.get('id')} 拒绝安装: {revocation_reason}（fail-closed 拒装）"
+            )
+        if revocation_reason:
+            LOGGER.warning("插件 %s: %s", entry.get("id"), revocation_reason)
+
         if dest_dir.exists():
             backup = dest_dir.with_name(dest_dir.name + ".previous")
             if backup.exists():
@@ -565,6 +586,21 @@ def download_and_verify(
         egress=egress,
     )
     entry = resolve_entry(catalog, plugin_id)
+    # G2（P0-1/P0-2）：入口先统一裁决吊销/墓碑——现代 manifest 与 legacy 单文件
+    # 路径在选择安装形态前先被拦截；条目级 revoked 与目录顶层 tombstones 任一命中
+    # 即拒装。已弃用（deprecated）仅提示放行。
+    from .catalog_trust import check_revocation
+
+    tombstones = catalog.get("tombstones")
+    allowed, revocation_reason = check_revocation(
+        entry, tombstones=tombstones, plugin_id=plugin_id,
+    )
+    if not allowed:
+        raise PermissionError(
+            f"插件 {plugin_id} 拒绝安装: {revocation_reason}（fail-closed 拒装）"
+        )
+    if revocation_reason:
+        LOGGER.warning("插件 %s: %s", plugin_id, revocation_reason)
     # ★ 索引可以只背书、不搬运：条目用 `source_base` 指向创作者自己的仓库。
     #   清单与包都从**这个**基址取；下面三条判据（创作者签名 / 固化 sha256 / egress 策略）
     #   一个都不因此放松 —— 索引能决定"去哪儿取"，决定不了"算不算数"。
@@ -578,6 +614,8 @@ def download_and_verify(
             main_name="plugin.py",
             timeout=timeout,
             egress=egress,
+            tombstones=tombstones,
+            plugin_id=plugin_id,
         )
     plugin_bytes = fetch_resource(asset_base, entry["plugin_file"], timeout=timeout, egress=egress)
     sig_bytes = fetch_resource(asset_base, entry["signature_file"], timeout=timeout, egress=egress)
@@ -594,8 +632,11 @@ def download_and_verify(
     if hash_reason and "sha256_unknown" in hash_reason:
         LOGGER.info("插件 %s 存量无 sha256，跳过哈希校验: %s", plugin_id, hash_reason)
 
-    # G2：吊销/弃用状态裁决——命中吊销禁安装（优先级最高）。
-    allowed, revocation_reason = check_revocation(entry)
+    # G2：吊销/弃用状态裁决——命中吊销禁安装（优先级最高）。入口已裁决一次，
+    # 此处纵深复核 tombstone/条目级状态，避免跨源聚合后条目被替换。
+    allowed, revocation_reason = check_revocation(
+        entry, tombstones=tombstones, plugin_id=plugin_id,
+    )
     if not allowed:
         raise PermissionError(f"插件 {plugin_id} 拒绝安装: {revocation_reason}")
     if revocation_reason:
@@ -700,6 +741,17 @@ def download_template_and_verify(
         egress=egress,
     )
     entry = resolve_template_entry(catalog, template_id)
+    # G2（P0-2）：模板同样执行吊销/墓碑裁决，与插件路径同口径。
+    from .catalog_trust import check_revocation
+
+    tombstones = catalog.get("tombstones")
+    allowed, revocation_reason = check_revocation(
+        entry, tombstones=tombstones, plugin_id=template_id,
+    )
+    if not allowed:
+        raise PermissionError(f"模板 {template_id} 拒绝安装: {revocation_reason}（fail-closed 拒装）")
+    if revocation_reason:
+        LOGGER.warning("模板 %s: %s", template_id, revocation_reason)
     if entry.get("package_manifest_file"):
         return _download_manifest_package(
             entry,
@@ -709,6 +761,8 @@ def download_template_and_verify(
             main_name="template.yaml",
             timeout=timeout,
             egress=egress,
+            tombstones=tombstones,
+            plugin_id=template_id,
         )
     template_bytes = fetch_resource(catalog_url, entry["template_file"], timeout=timeout, egress=egress)
     sig_bytes = fetch_resource(catalog_url, entry["signature_file"], timeout=timeout, egress=egress)

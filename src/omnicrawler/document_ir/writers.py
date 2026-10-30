@@ -4,19 +4,25 @@
 - 只依赖 ``DocumentIR``，不依赖 convertx（避免包级循环）。
 - 富文档写出按需懒加载：python-docx / reportlab / openpyxl 缺失时抛
   ``ModuleNotFoundError``，由上层给出安装提示。
-- 写出函数接收**已存在的目标路径**；原子替换由调用方（convertx）负责。
+- 文本类写出走 :func:`core.utils.atomic_write_text`，xlsx 内部临时文件 + 原子替换（B-P3-5）。
 - 表格与标题层级是 IR 的一等公民：docx/pdf/xlsx 导出保留表格，而不是退化为纯文本。
 """
 
 from __future__ import annotations
 
 import html as _html
+import logging
+import os
 import re
+import tempfile
 import xml.sax.saxutils as _xml_escape
 from pathlib import Path
 from typing import Any
 
+from ..core.utils import atomic_write_text, excel_safe
 from .base import DocumentIR
+
+LOGGER = logging.getLogger(__name__)
 
 _MAX_SHEET_TITLE = 31
 _INVALID_SHEET_CHARS = re.compile(r"[\\/*?:\[\]]")
@@ -87,19 +93,19 @@ def render_html(ir: DocumentIR) -> str:
 
 def write_text(ir: DocumentIR, path: Path, options: dict[str, Any]) -> dict[str, Any]:
     content = ir.to_text()
-    path.write_text(content, encoding=str(options.get("encoding", "utf-8")))
+    atomic_write_text(path, content, encoding=str(options.get("encoding", "utf-8")))
     return {"rows": ir.paragraph_count() + ir.table_count(), "chars": len(content), "tables": ir.table_count()}
 
 
 def write_markdown(ir: DocumentIR, path: Path, options: dict[str, Any]) -> dict[str, Any]:
     content = ir.to_markdown()
-    path.write_text(content, encoding=str(options.get("encoding", "utf-8")))
+    atomic_write_text(path, content, encoding=str(options.get("encoding", "utf-8")))
     return {"rows": ir.paragraph_count() + ir.table_count(), "chars": len(content), "tables": ir.table_count()}
 
 
 def write_html(ir: DocumentIR, path: Path, options: dict[str, Any]) -> dict[str, Any]:
     content = render_html(ir)
-    path.write_text(content, encoding=str(options.get("encoding", "utf-8")))
+    atomic_write_text(path, content, encoding=str(options.get("encoding", "utf-8")))
     return {"rows": ir.paragraph_count() + ir.table_count(), "chars": len(content), "tables": ir.table_count()}
 
 
@@ -135,7 +141,8 @@ def write_docx(ir: DocumentIR, path: Path, options: dict[str, Any]) -> dict[str,
     try:
         document.core_properties.title = ir.title
     except Exception:  # noqa: BLE001 - 旧版 python-docx 无 core_properties 时不影响正文
-        pass
+        # B-P3-3：元数据写入失败留痕，不再静默吞掉。
+        LOGGER.debug("DOCX core_properties 标题写入失败，跳过元数据: ", exc_info=True)
     document.save(str(path))
     return {"rows": ir.paragraph_count() + ir.table_count(), "tables": ir.table_count(), "format": "docx"}
 
@@ -241,6 +248,7 @@ def _safe_sheet_title(value: str, used: set[str]) -> str:
 def write_xlsx(ir: DocumentIR, path: Path, options: dict[str, Any]) -> dict[str, Any]:
     try:
         from openpyxl import Workbook
+        from openpyxl.cell import WriteOnlyCell
         from openpyxl.styles import Font
     except ModuleNotFoundError as exc:  # pragma: no cover - 依赖缺失路径
         raise ModuleNotFoundError(
@@ -248,32 +256,41 @@ def write_xlsx(ir: DocumentIR, path: Path, options: dict[str, Any]) -> dict[str,
             name="openpyxl",
         ) from exc
 
-    workbook = Workbook()
-    default = workbook.active
-    default.title = "Document"
-    default["A1"] = ir.title or ir.source.stem
-    default["A1"].font = Font(bold=True, size=13)
-    row_pointer = 3
-    for block in ir.ordered_blocks():
-        if block.kind != "paragraph":
-            continue
-        text = _paragraph_text(ir, block.index)
-        if not text:
-            continue
-        default.cell(row=row_pointer, column=1, value=text)
-        row_pointer += 1
-    used_titles: set[str] = {"document"}
-    table_count = 0
-    for table_index, table in enumerate(ir.tables, start=1):
-        rows, width = _table_rows(table)
-        if not rows:
-            continue
-        sheet = workbook.create_sheet(_safe_sheet_title(f"Table {table_index}", used_titles))
-        for row_index, row in enumerate(rows, start=1):
-            for column_index, cell_text in enumerate(row, start=1):
-                sheet.cell(row=row_index, column=column_index, value=cell_text)
-        table_count += 1
-    workbook.save(str(path))
+    # B-P1-1：标题/段落/表头/单元格统一经 excel_safe 中和公式注入；
+    # B-P3-5：write_only 流式工作簿降低大文档内存峰值；原子替换收进函数内部。
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.stem}-", suffix=".xlsx", dir=path.parent)
+    os.close(fd)
+    temporary = Path(tmp_name)
+    try:
+        workbook = Workbook(write_only=True)
+        default = workbook.create_sheet("Document")
+        title_cell = WriteOnlyCell(default, value=excel_safe(ir.title or ir.source.stem))
+        title_cell.font = Font(bold=True, size=13)
+        default.append([title_cell])
+        default.append([])
+        for block in ir.ordered_blocks():
+            if block.kind != "paragraph":
+                continue
+            text = _paragraph_text(ir, block.index)
+            if not text:
+                continue
+            default.append([excel_safe(text)])
+        used_titles: set[str] = {"document"}
+        table_count = 0
+        for table_index, table in enumerate(ir.tables, start=1):
+            rows, width = _table_rows(table)
+            if not rows:
+                continue
+            sheet = workbook.create_sheet(_safe_sheet_title(f"Table {table_index}", used_titles))
+            for row in rows:
+                sheet.append([excel_safe(cell_text) for cell_text in row])
+            table_count += 1
+        workbook.save(str(temporary))
+        temporary.replace(path)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
     return {"rows": ir.paragraph_count() + ir.table_count(), "tables": table_count, "format": "xlsx"}
 
 

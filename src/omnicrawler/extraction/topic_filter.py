@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import functools
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -49,7 +50,9 @@ def filter_records(records: list[dict[str, Any]], config: dict[str, Any]) -> lis
     filtered: list[dict[str, Any]] = []
     for record in records:
         decision = evaluate_topic(record, config)
-        # S2.5.31：深拷贝后再写元数据，不污染调用方 record dict
+        if not (decision.matched or (decision.uncertain and keep_uncertain)):
+            continue
+        # B-P3-4：仅在需要保留并写入元数据时才深拷贝，未入选记录不产生拷贝开销。
         record = copy.deepcopy(record)
         record["_topic_match"] = {
             "matched": decision.matched,
@@ -58,8 +61,7 @@ def filter_records(records: list[dict[str, Any]], config: dict[str, Any]) -> lis
             "excluded": list(decision.excluded),
             "reason": decision.reason,
         }
-        if decision.matched or (decision.uncertain and keep_uncertain):
-            filtered.append(record)
+        filtered.append(record)
     return filtered
 
 
@@ -79,8 +81,16 @@ def _terms_cached(key: tuple) -> tuple[str, ...]:
     )
 
 
+@functools.lru_cache(maxsize=256)
+def _term_pattern(term: str) -> re.Pattern[str]:
+    # B-P3-4：英文/数字词按词边界匹配，避免短词命中英文单词内部；
+    # 中文词两侧无字母数字边界，仍按子串匹配（CJK 无空格分词）。
+    return re.compile(rf"(?<![A-Za-z0-9]){re.escape(term)}(?![A-Za-z0-9])", re.IGNORECASE)
+
+
 def _hit(term: str, texts: tuple[str, ...]) -> bool:
-    return any(term in text for text in texts)
+    pattern = _term_pattern(term)
+    return any(pattern.search(text) for text in texts)
 
 
 def _field_texts(value: Any, match_on: Any) -> tuple[str, ...]:

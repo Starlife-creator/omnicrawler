@@ -373,7 +373,7 @@ class MarketBrowseMixin(_Base):
             installed = self._is_installed(pid)
         can_network = self._state == "ready"
         entry = self._entry_of(pid)
-        block_reason = _install_block_reason(entry) if entry else ""
+        block_reason = _install_block_reason(entry, catalog=self._catalog, plugin_id=pid) if entry else ""
         self._install_btn.setEnabled(can_network and not installed and not block_reason)
         self._install_btn.setText(_("重装") if installed else _("安装"))
         self._install_btn.setToolTip(block_reason)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import threading
@@ -13,6 +14,8 @@ from ..core.models import FetchResult
 from ..core.site_aliases import SiteAliasRegistry
 from ..core.structure_fingerprint import StructureFingerprintRegistry, structure_fingerprint
 from ..core.utils import atomic_write, utcnow
+
+LOGGER = logging.getLogger(__name__)
 
 MAX_TIMING_SAMPLES = 10_000
 
@@ -58,6 +61,8 @@ class RunMetrics:
         try:
             host = SiteAliasRegistry.default().resolve(raw_host) or raw_host
         except Exception:  # noqa: BLE001 — 别名解析异常绝不影响主流程
+            # B-P3-3：解析失败回退 raw_host 并留痕，不再静默。
+            LOGGER.debug("站点别名解析失败，回退原始 host: ", exc_info=True)
             host = raw_host
         self.increment("omnicrawler_requests_total", host=host, engine=engine, status=result.status)
         self.increment("omnicrawler_response_bytes_total", len(result.body), host=host)
@@ -90,7 +95,8 @@ class RunMetrics:
             if is_drift:
                 self.increment("omnicrawler_structure_drift_total", url=source_url)
         except Exception:  # noqa: BLE001 — 观测层异常不得影响提取主流程
-            pass
+            # B-P3-3：观测层异常留痕（debug + exc_info），fail-open 但不再静默吞掉。
+            LOGGER.debug("结构指纹观测失败，跳过本条记录观测: ", exc_info=True)
 
     def record_stage(self, stage: str, seconds: float) -> None:
         """Record a completed pipeline stage without retaining unbounded samples."""

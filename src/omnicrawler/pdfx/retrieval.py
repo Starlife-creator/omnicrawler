@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..core.safe_data import safe_json_loads
 from .config import ProjectConfig
 from .database import Database
 from .safe_regex import findall_count
@@ -87,7 +89,6 @@ def select_candidates(config: ProjectConfig, db: Database, doc_id: str) -> list[
             (now, doc_id),
         )
         for page_no, score, evidence, _row in scored:
-            import json
             conn.execute(
                 "UPDATE pages SET candidate_score=?, is_candidate=?, evidence_json=?, updated_at=? WHERE doc_id=? AND page_no=?",
                 (score, int(page_no in selected_numbers), json.dumps(evidence, ensure_ascii=False), now, doc_id, page_no),
@@ -106,7 +107,8 @@ def select_candidates(config: ProjectConfig, db: Database, doc_id: str) -> list[
             score=score,
             parse_method=row["parse_method"] or "unknown",
             ocr_confidence=row["ocr_confidence"],
-            ocr_structure=json.loads(row["ocr_structure_json"]) if row["ocr_structure_json"] else {},
+            # B-P2-8：损坏 OCR 结构 JSON 降级为空结构并告警，不再整体中断检索。
+            ocr_structure=safe_json_loads(row["ocr_structure_json"], default={}),
         ))
     return result
 

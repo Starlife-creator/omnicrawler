@@ -108,7 +108,8 @@ class ObservationStore:
         path = db_path if isinstance(db_path, Path) else Path(db_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         self._path = path
-        self._conn = sqlite3.connect(str(path), timeout=5.0)
+        # B-P2-13：观察存储在服务层跨线程共享同一连接，关闭同线程检查；写路径经 _tx 串行化。
+        self._conn = sqlite3.connect(str(path), timeout=5.0, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
@@ -257,19 +258,26 @@ class ObservationStore:
         )
         with self._tx() as con:
             self._ensure_row(con, candidate, now)
-            if comparison.evidence_sha256:
-                inserted = con.execute("INSERT OR IGNORE INTO obs_evidence VALUES (?, ?)",
-                                       (candidate.candidate_id, comparison.evidence_sha256)).rowcount
-                if inserted == 0:
-                    return None
             row = con.execute(
                 """SELECT applied_count, observation_rounds, regression_count,
                           false_positive_risk, fp_risk_samples, last_applied_tier,
-                          last_baseline_quality, last_rollback_sha, rollback_required
+                          last_baseline_quality, last_rollback_sha, rollback_required,
+                          last_compare_json
                    FROM obs_candidates WHERE candidate_id = ?""",
                 (candidate.candidate_id,),
             ).fetchone()
             assert row is not None
+            if comparison.evidence_sha256:
+                # 判重放要看两件事：证据哈希相同 **且** 比较结果与上一轮逐字相同。
+                # - 只有哈希相同就跳过：会丢「同一证据、换配置后结论变了」的新观察（B-P2-13）；
+                # - 完全不判重放：重试/重放同一份失败证据能把 regression_count 顶到自动回滚
+                #   阈值（契约见 test_llm_application_observes_across_runs_and_rolls_back_regression）。
+                # last_compare_json 为 NULL 表示哈希由 record_application 登记、尚无观察轮次：
+                # 观察自己应用时用的那份证据不算新的一轮。
+                inserted = con.execute("INSERT OR IGNORE INTO obs_evidence VALUES (?, ?)",
+                                       (candidate.candidate_id, comparison.evidence_sha256)).rowcount
+                if inserted == 0 and row["last_compare_json"] in (None, compare_json):
+                    return None
             applied_count = int(row["applied_count"])
             obs_rounds = int(row["observation_rounds"])
             regression_count = int(row["regression_count"])
@@ -364,15 +372,29 @@ class ObservationStore:
             )
 
     # ── 快照诊断 ────────────────────────────────────────
-    def snapshot(self, candidate_id: str | None = None) -> list[dict[str, Any]]:
-        """读取当前 DB 状态（用于 metrics / 调试）。"""
+    def snapshot(
+        self,
+        candidate_id: str | None = None,
+        *,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """读取当前 DB 状态（用于 metrics / 调试）。
+
+        B-P3-11：候选表查询补 LIMIT 与分页，避免表增大后整表拉取造成内存/耗时线性增长。
+        """
+        limit = max(1, min(int(limit), 5000))
+        offset = max(0, int(offset))
         with self._tx() as con:
             if candidate_id:
                 rows = con.execute(
                     "SELECT * FROM obs_candidates WHERE candidate_id=?", (candidate_id,)
                 ).fetchall()
             else:
-                rows = con.execute("SELECT * FROM obs_candidates ORDER BY last_seen_ts DESC").fetchall()
+                rows = con.execute(
+                    "SELECT * FROM obs_candidates ORDER BY last_seen_ts DESC LIMIT ? OFFSET ?",
+                    (limit, offset),
+                ).fetchall()
             return [dict(r) for r in rows]
 
     # ── 内部 ────────────────────────────────────────────

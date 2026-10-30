@@ -223,9 +223,15 @@ class AppSettings:
         self._set_value("templates/favorites", sorted({str(item) for item in value}))
 
     # ---- 隐私选项 ----
+    # C-#3：默认口径——日志/导出中的个人标识默认脱敏开启；崩溃上报默认关闭
+    # （当前版本无遥测/上报通道，开关仅作为设置层契约留存，消费链路待接线）。
     @property
     def privacy_redact_enabled(self) -> bool:
         return self._value("privacy/redact_enabled", True, bool)
+
+    @privacy_redact_enabled.setter
+    def privacy_redact_enabled(self, value: bool) -> None:
+        self._set_value("privacy/redact_enabled", bool(value))
 
     @property
     def crash_report_enabled(self) -> bool:
@@ -233,7 +239,7 @@ class AppSettings:
 
     @crash_report_enabled.setter
     def crash_report_enabled(self, value: bool) -> None:
-        self._set_value("privacy/crash_report", value)
+        self._set_value("privacy/crash_report", bool(value))
 
     # ---- 体验选项 ----
     @property

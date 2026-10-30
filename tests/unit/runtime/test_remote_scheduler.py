@@ -54,6 +54,8 @@ class RemoteQueueLocalTest(unittest.TestCase):
                 assert popped is not None
                 self.assertEqual(popped.task_id, task.task_id)
                 self.assertEqual(popped.config_path, str(cfg.resolve()))
+                # A-P1-1 租约口径：pop 仅认领，ack 带令牌确认后才移除
+                queue.ack(popped.task_id, popped.lease_token)
                 self.assertEqual(queue.size(), 0)
                 self.assertIsNone(queue.pop())  # 空队列
             finally:
@@ -224,6 +226,9 @@ class LocalQueuePopExhaustsEachTaskExactlyOnce(unittest.TestCase):
                 # FIFO：两次弹出不重复
                 self.assertNotEqual(first.task_id, second.task_id)
                 self.assertIsNone(third)
+                # A-P1-1：ack 确认后任务才从队列表移除
+                queue.ack(first.task_id, first.lease_token)
+                queue.ack(second.task_id, second.lease_token)
                 self.assertEqual(queue.size(), 0)
             finally:
                 queue.close()
