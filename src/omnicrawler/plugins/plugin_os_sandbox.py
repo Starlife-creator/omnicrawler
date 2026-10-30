@@ -158,7 +158,13 @@ def resolve_sandbox_mode(
     probe = probe or probe_os_sandbox()
     if probe.available:
         if probe.backend in ("appcontainer", "landlock", "seatbelt"):
-            return "os", f"OS 沙箱启用: {probe.backend}"
+            # 只陈述「探测可用 + OS 级隔离未接线」：本版 confinement_argv_prefix() 恒返回 []，
+            # 规则集/令牌/Seatbelt profile 都还没装（见该函数 docstring）。SECURITY.md 禁止
+            # 在此之前把当前子进程边界表述为「OS 沙箱」，故这里不得出现「启用」二字。
+            return "os", (
+                f"OS 级隔离未接线（{probe.backend} 探测可用）；"
+                "当前实际为子进程边界 + -I -S 导入隔离"
+            )
         # seccomp_only 属降级档，需显式开关
         if allow_restricted_token_fallback:
             return "degraded", f"降级档显式开启: {probe.backend}（{probe.detail}）"
