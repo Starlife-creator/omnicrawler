@@ -4,6 +4,18 @@
 
 ### 变更
 
+- chore(deps): extras 上界放宽 `Pillow <13→<14`、`duckdb <2→<3`、`pyarrow <26→<27`，并按 uv 的要求
+  **同步刷新 `uv.lock`** —— #153 只改 pyproject 没重解锁，`uv lock --check` 因此报红
+  （`error: The lockfile at uv.lock needs to be updated`）。刷新后锁内 226 个包的版本**一个没变**，
+  只多了 specifier 记录与 uv 的规范化重写（revision 3→5）。
+  ★ 同一批里的 `selectolax <1→<2` **没有采纳**：selectolax 1.0 直接删掉了 `selectolax.parser`
+  后端（import 即 `ImportError`，提示改用 `selectolax.lexbor.LexborHTMLParser`），而
+  `change_detector.py` 的 HTML 抽取走的就是 `from selectolax.parser import HTMLParser`
+  ——mypy 报 `has no attribute "HTMLParser"`，运行时则静默回退到 lxml/BS4、丢掉快路径。
+  放宽它需要一次后端迁移，不属于依赖升版。
+  ★ `Pillow<13` 这条自钉此前把 `.[full]`（= pip-audit 扫的那套环境）压在无补丁版的 12.3.0 上，
+  是 `tools/pip-audit-ignore.txt` 里 39 条 pillow 告警存在的唯一原因；三平台 test 腿其实一直在
+  装 Pillow 13.0.0（pdfplumber 的 `Pillow>=12.2.0` 没有上界）并且是绿的。
 - chore(deps): `constraints/quality.txt` 一次性升 `pip 26.2.1→26.2.2`、`uv 0.12.23→0.13.5`、
   `coverage 7.16.2→7.17.0`、`ruff 0.16.10→0.17.2`，并把 4 个 reusable 工作流的 `setup-uv`
   `version:` pin 同步到 `0.13.5`（守卫 `test_release_build_toolchain_uv_version_matches_constraints`

@@ -4,6 +4,50 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-10-30 extras 上界放宽（3 项采纳 / 1 项否决）+ 锁文件同步刷新
+
+#153 把 4 个 extras 上界放宽（`selectolax <1→<2`、`Pillow <13→<14`、`duckdb <2→<3`、
+`pyarrow <26→<27`），dependabot 只能看见 `pyproject.toml`，没重解 `uv.lock`，
+`dependency lock / reproducible install` 腿因此报红：
+
+```
+error: The lockfile at `uv.lock` needs to be updated, but `--check` was provided.
+```
+
+（run 40979465961 / job 123815598214）
+
+同一 run 的三条平台 test 腿各装出 `duckdb-2.0.0`、`pillow-13.0.0`、`pyarrow-26.0.0`、
+`selectolax-1.0.2`，**5767 passed** 且覆盖率门禁通过，mypy 只报**一条**错误：
+
+```
+src/omnicrawler/scheduling/change_detector.py:324: error: Module "selectolax.parser"
+has no attribute "HTMLParser"  [attr-defined]
+```
+
+本机用 `pip install --target` 隔离装 selectolax 1.0.2 实测（不靠 mypy 的措辞推断）：
+`import selectolax.parser` 直接抛 `ImportError`，文案是「Modest backend is deprecated since
+selectolax 1.0 … 请改用 `from selectolax.lexbor import LexborHTMLParser`」。⇒ 放宽 selectolax
+需要一次**后端迁移**（现在这条快路径会静默降级到 lxml/BS4），不属于依赖升版，**本批否决这一项**。
+
+本批采纳另外 3 项 + `uv lock` 刷新。
+
+本机证据：
+- 锁刷新**不动任何包版本**：`git diff -U0 uv.lock` 里 `^[-+]version = ` 命中 0 行；变更只有
+  specifier 记录（pillow/duckdb/pyarrow 各 3 行）、`revision 3→5` 与 resolution-markers 排序。
+- `uvx uv@0.13.5 lock --check` 退出码 0；`tools/check_lockfile_consistency.py` 通过
+  （它比对 pyproject 与锁的版本/requires-python/依赖/extras）。
+- revision 5 向后兼容实测：本机 `uv 0.12.3 lock --check` 对该锁退出码 0（读旧写新，不炸）。
+- `self_verify --set static` = 22 通过 / 0 失败 / 1 跳过（缺同级 `../OmniCrawler-market` 检出，CI 有）。
+- ★ Pillow 的真相来自 main 自己的 CI 日志（run `40978941217`，2026-10-30）：
+  ubuntu/macOS/windows 三条 test 腿与 `feature install / pdf` 都装 **Pillow 13.0.0**
+  （`Collecting Pillow>=12.2.0 (from pdfplumber<1,>=0.11)`，pdfplumber 那条约束没有上界）且全绿
+  —— 只有 `windows-full-dependency-matrix` 因我们自钉 `<13` 仍解析 12.3.0
+  （`Collecting Pillow<13,>=10`），而那正是跑 pip-audit 的那套环境。
+  ⇒ 放宽到 `<14` 是让声明与已测事实对齐；视觉回归作业显式钉 `Pillow==12.3.0` 属基线控件，不受影响。
+
+未在本地验证：`uv sync --locked` 的完整装机、三平台全量 pytest、`.[full]` 在 Python 3.13 +
+Pillow 13 下的 `capabilities --verify-imports`、以及 main 下一次审计是否真的不再报那 39 条
+（后者由 `tools/pip-audit-ignore.txt` 顶部标注的"过渡"条件跟踪，确认后就删）。
 ## 2026-10-30 dependabot 批次收编（质量工具链 + 四个 Actions）
 
 `constraints/quality.txt` 一次性升 `pip 26.2.1→26.2.2`、`uv 0.12.23→0.13.5`、
