@@ -53,7 +53,7 @@ jobs:
       - name: 移除无关的 aws/tap（Homebrew tap trust 警告）
         run: brew untap aws/tap 2>/dev/null || true
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "${{ env.BUILD_PYTHON_VERSION }}"
           cache: pip
