@@ -429,7 +429,7 @@ jobs:
         # 报 "Dependency review is not supported on this repository" ⇒ 每条 PR 恒定红。
         # 在 Settings → Code security 打开 Dependency graph 后去掉本行恢复阻断。
         continue-on-error: true
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@v5
 
   # C-#2：SAST 静态安全扫描占位（bandit，覆盖安全与配置敏感模块）。
   # ⬜ 待 CI 环境完成存量告警基线三审、建立 .bandit 配置与白名单后改为阻断；
