@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -193,6 +194,40 @@ class TestExtractContent:
         """When selector is empty, full HTML is returned — no parser needed."""
         html = "<html><body><p>Hello</p></body></html>"
         assert ChangeDetector._extract_content(html, "") == html
+
+    def test_html_backend_is_lexbor(self) -> None:
+        """★ 防复发：HTML 抽取必须走 selectolax.lexbor，不得再引用被删除的 Modest 后端。
+
+        selectolax 1.0 删了 ``selectolax.parser``，而它包在 ``try/except ImportError``
+        回退链里 ⇒ 装上 1.x **不会报错，只会静默降级**到 lxml/BS4 丢掉快路径。
+        这条用例把"用哪个后端"变成显式契约：改回旧写法即红（不依赖 mypy 是否跑）。
+        """
+        source = (
+            Path(__file__).resolve().parents[2]
+            / "src" / "omnicrawler" / "scheduling" / "change_detector.py"
+        ).read_text(encoding="utf-8")
+        assert "from selectolax.lexbor import LexborHTMLParser" in source
+        # 只禁"导入旧后端"这件事本身（注释里提到 selectolax.parser 是允许的）
+        assert "from selectolax.parser import" not in source
+        assert "import selectolax.parser" not in source
+
+    def test_selector_extraction_returns_matched_text(self) -> None:
+        pytest.importorskip("selectolax.lexbor")
+        html = '<div class="box"><p>alpha</p><p>beta</p></div>'
+        assert ChangeDetector._extract_content(html, ".box p") == "alpha\nbeta"
+
+    def test_selector_without_match_yields_empty_string(self) -> None:
+        """匹配不到 ⇒ 空串，而不是退回全文（否则"内容没变"会被误判成"整页都变了"）。"""
+        pytest.importorskip("selectolax.lexbor")
+        html = '<div class="box"><p>alpha</p></div>'
+        assert ChangeDetector._extract_content(html, ".missing") == ""
+
+    def test_extract_content_survives_selectolax_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """没有 selectolax 时仍要给出文本（走 lxml/BS4），且不得静默返回全文。"""
+        # sys.modules[...]=None 会让 ``from selectolax.lexbor import ...`` 抛 ImportError
+        monkeypatch.setitem(sys.modules, "selectolax.lexbor", None)
+        html = '<div class="box"><p>alpha</p><p>beta</p></div>'
+        assert ChangeDetector._extract_content(html, ".box p") == "alpha\nbeta"
 
 
 # ── ChangeDetector — _check_condition ──────────────────────────────────

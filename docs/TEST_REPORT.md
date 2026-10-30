@@ -41,6 +41,54 @@ checkout 出来 42 行 CRLF，而 `core.autocrlf=true`）。它不是任何人�
 
 未在本地验证：三平台全量 pytest、`.[full]` 装机与审计 —— 由本批 CI 判定。
 
+## 2026-10-30 selectolax 后端迁移到 lexbor（含一次"放宽上界"的真相纠正）
+
+上一批把 `selectolax <1→<2` 判成"需要后端迁移，不属于依赖升版"而否决。本批做掉那次迁移，
+并**只按 lexbor 走，不为旧后端写兼容**（用户定案）。
+
+改动：`change_detector._extract_content` 用 `selectolax.lexbor.LexborHTMLParser`；
+extras `selectolax>=0.2,<1` → `>=0.4.2,<2`（下界抬到 lexbor 存在的版本：0.4.2 起有，实测过）；
+撤销 dependabot 的 semver-major 忽略；`uv lock --upgrade-package selectolax` 把锁定环境
+从 0.4.11 升到 **1.0.2**（否则放宽只在 pip 安装腿被测到，`uv sync --locked` 那条路永远跑旧版）。
+
+### 为什么必须有静态守卫，而不是只靠 mypy
+
+本机变异实验：把源码改回 `from selectolax.parser import HTMLParser` 后，
+`tests/unit/test_change_detector.py` 的 **57 条用例全部照旧通过**，只有一条新用例红
+（`test_html_backend_is_lexbor`）。原因是这个调用点包在 `try/except ImportError` 回退链里：
+旧后端在 1.x 不存在 ⇒ import 抛 ImportError ⇒ 静默降级到 lxml/BS4，**输出仍然正确**。
+所以"用了哪个后端"这件事行为上不可见，只能当显式契约钉住。
+
+### 抽取行为是否变化（关系到已存快照哈希）
+
+三个组合逐字比对，10 个刻意挑易差异的样例（`&nbsp;`、`<br>` 相邻、未闭合 `<li>`、表格单元格、
+`<script>` 过滤、`&lt;tag&gt;` 转义、未加引号属性、`hidden`、未闭合标签、`<textarea>`）：
+
+```
+modest 0.4.11（venv pyd）  ==  lexbor 0.4.11（venv pyd）  ==  lexbor 1.0.2（Temp/slx1 pyd）
+```
+
+三者输出**完全一致**，且每次运行都打印了实际加载的 `.pyd` 路径来证明不是"三份都在跑同一个后端"。
+⇒ 已存快照哈希不会因为升级而集体误报"变化"。
+限定语要说清：这是我构造的 10 个样例，不等于任意网页上两个引擎的 DOM 修复永远一致
+（它们本就是两个不同的解析引擎）；真出现差异时表现是"某页被报一次变化"，不是错误。
+
+### 本机新暴露的一件事：跨仓门 3 的版本差（与本次改动无关）
+
+`tests/unit/plugin/` 有 3 条用例在本机红、在 CI 绿，**不是本批引入的**（在未改动的 main 检出上同样红）：
+`test_finalize_submission.py::test_maintainer_finalize_preserves_creator_package_and_publishes`、
+`test_submission_validator.py::test_market_submission_validator_accepts_gui_payload`
+与 `..._accepts_declarative_view_permissions`。
+
+真实原因（读报错读出来的，不是猜的）：这三条会 subprocess 调用**同级市场仓检出**的
+`tools/validate_submission.py`，而市场仓 main 已经带上门 3「`PLUGIN_METADATA.dependencies`
+必填，零依赖要显式填 `[]`」（由主仓 #42 那批下沉的规则）；本仓测试 payload 没声明 `dependencies` ⇒ 被拒。
+CI 之所以绿，是因为主仓按 `constraints/market-ref.txt` 钉的是 **8744302**（早于门 3 下沉的市场快照）。
+
+⇒ 两件事待办，性质不同：① 把这 3 条 fixture 补成合规投稿（声明 `dependencies: []`），
+这条改法对旧/新两版校验器都成立；② 要不要把 `market-ref.txt` 从 8744302 推进到市场仓当前 main
+（`f33fcac`）是一次跨仓快照推进，会同时把市场仓新门规带进 CI，需单独一轮验证 —— 不是顺手就能改的。
+
 ## 2026-10-30 pip-audit 基线清空 pillow 一节 + 计数口径修正 + dependabot 忽略 selectolax 大版本
 
 三件事都来自 #153/#157 那批实测出来的副产品，不是新猜的。
