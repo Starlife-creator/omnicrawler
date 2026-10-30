@@ -13,8 +13,10 @@
 | Linux | 内核 ≥5.13 主流发行版 | 同上 + `resource` rlimit 限额 |
 
 > 安全边界说明：OS 级 confinement（AppContainer / unshare+seccomp+Landlock）
-> 属**远期蓝图，当前未接线**——`plugin_os_sandbox.probe_os_sandbox` 仅产出环境诊断
-> 报告，不参与 spawn 拒载裁决。插件能力收口由 broker 能力令牌 + 静态审批实现，
+> 属**远期蓝图，当前未接线**——`confinement_argv_prefix()` 恒返回空，spawn 时不注入任何
+> 规则集/令牌/profile；裁决日志与 `plugins audit --report` 里的措辞是「OS 级隔离未接线」。
+> 但 `resolve_sandbox_mode()` **确实参与 spawn 拒载**：探测不到可用后端时 fail-closed 抛
+> `E_UNSUPPORTED_ENV`（降级档须显式开关）。插件能力收口由 broker 能力令牌 + 静态审批实现，
 > 不依赖 OS 沙箱；冻结宿主 exe 缺失时 fail-closed 拒载仍然生效。
 
 非受支持环境作者：**门禁/AST/逻辑用例本地照跑 + 沙箱用例 fork + PR 由 CI 矩阵代跑**

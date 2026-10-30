@@ -31,9 +31,10 @@ seccomp / Seatbelt / Windows Job Object 等 OS 级 confinement：
 
 OS 级隔离（Linux Landlock/seccomp、Windows AppContainer/Job Object、
 macOS Seatbelt）列入 Roadmap，待对应平台 CI 矩阵验证后接入；在此之前不可将
-当前子进程边界对外表述为「OS 沙箱」。逃生开关 `sandbox_escape`（关闭 OS 层，
-仍保留子进程边界）与遗留 `legacy_in_process` 进程内路径均为显式降级动作，
-会写入审计台账并在日志中横幅告警，默认路径 fail-closed。
+当前子进程边界对外表述为「OS 沙箱」，裁决日志与诊断报告为此统一写作
+「OS 级隔离未接线」。逃生开关 `sandbox_escape`（跳过上述裁决直接放行）与遗留
+`legacy_in_process` 进程内路径均为显式降级动作，会写入审计台账并在日志中横幅告警，
+默认路径 fail-closed：探测不到可用后端即拒载。
 
 ### 任务配置信任边界（A-P3-18）
 
