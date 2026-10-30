@@ -4,6 +4,18 @@
 
 ### 变更
 
+- chore(security): `tools/pip-audit-ignore.txt` 的 39 条 pillow 告警**整段删除**。它们只因
+  extras 自钉 `Pillow>=10,<13` 把 `.[full]`（= pip-audit 扫的那套环境）压在无补丁版的 12.3.0 上；
+  放宽到 `<14` 后同一 run 实测装出 `Pillow-13.0.0`，审计步骤报 `No known vulnerabilities found,
+  8 ignored` —— 8 条全是 twisted，39 条 pillow 一条都不再命中（OSV：12.3.0 → 59 条，13.0.0 → 0 条）。
+  今后任何约束把 pillow 退回 12.x 都会**重新阻断**，这才是基线该有的口径。
+- fix(ci): pip-audit 步骤的放行计数与行尾健壮性。① 原先 `echo "忽略 ${#ignore_args[@]} 条"` 报的是
+  **参数个数**（每个 id 占 2 个参数），47 条显示成"94 条" —— 改为单独计 `n_baseline` 报真实条数；
+  ② 该作业跑在 windows runner 上，`grep` 出来的 id 若带 `\r` 就**谁都匹配不上**（基线静默失效），
+  现补 `tr -d '\r'`，并用 CRLF 样例做过对照。
+- chore(deps): `.github/dependabot.yml` 对 `selectolax` 只忽略 **semver-major**：1.0 删除了
+  `selectolax.parser`（Modest）后端，`change_detector` 的快路径装上是静默降级而不是报错，
+  需要的是后端迁移；0.x 的补丁/次版本仍照常提（写法沿用仓内 `PyYAML` 那条的理由注释格式）。
 - chore(deps): extras 上界放宽 `Pillow <13→<14`、`duckdb <2→<3`、`pyarrow <26→<27`，并按 uv 的要求
   **同步刷新 `uv.lock`** —— #153 只改 pyproject 没重解锁，`uv lock --check` 因此报红
   （`error: The lockfile at uv.lock needs to be updated`）。刷新后锁内 226 个包的版本**一个没变**，
