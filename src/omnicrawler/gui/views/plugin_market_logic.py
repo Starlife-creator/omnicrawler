@@ -563,3 +563,16 @@ def _market_egress(project_root: Path, app_config: Any | None = None) -> Any:
     raw.setdefault("project", {"name": "plugin-market", "workspace": str(project_root)})
     config = AppConfig(Path("<plugin-market>"), project_root, raw, project_root)
     return EgressBroker(config)
+
+
+def pre_submit_blockers(plugin_dir: str | Path) -> list[str]:
+    """投稿前本地门禁自查：返回市场侧会硬拒的条目（空列表 = 可提交）。
+
+    市场投稿校验器的门 1/门 3 与主仓 ``plugin_audit`` 同源；投稿路径此前直接
+    ``build_plugin_submission`` 打包上传，作者要等市场 CI 才被告知缺
+    ``PLUGIN_METADATA.dependencies`` 之类的必填项。这里只看 error 级（warning 不拦）。
+    """
+    from ...plugins.plugin_audit import audit_local_plugin_full
+
+    result = audit_local_plugin_full(Path(plugin_dir))
+    return [f"{f.code}: {f.message}" for f in result.findings if f.level == "error"]

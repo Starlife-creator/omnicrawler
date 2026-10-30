@@ -51,6 +51,7 @@ from ..design_system import SPACING
 from ..i18n import _
 from ..widgets.empty_state import EmptyState, sync_list_empty_state
 from ..widgets.toast import ToastManager
+from .plugin_market_logic import pre_submit_blockers
 
 LOGGER = logging.getLogger(__name__)
 
@@ -336,6 +337,16 @@ class _LocalPluginsPane(QWidget):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         listing = dialog.listing()
+        blockers = pre_submit_blockers(entry.path)
+        if blockers:
+            QMessageBox.warning(
+                self,
+                _("投稿前自查未通过"),
+                _("以下问题会让市场投稿被直接拒收，请先修正：")
+                + "\n\n"
+                + "\n".join(f"• {item}" for item in blockers),
+            )
+            return
         self._upload_btn.setEnabled(False)
         try:
             payload = build_plugin_submission(

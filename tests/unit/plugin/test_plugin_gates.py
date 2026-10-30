@@ -132,11 +132,17 @@ def test_gate3_dependency_license_allowlist(tmp_path: Path) -> None:
     assert "gate3_dependency_license_not_allowlisted" in codes
 
 
-def test_gate3_missing_dependencies_warns(tmp_path: Path) -> None:
+def test_gate3_missing_dependencies_is_error_like_market(tmp_path: Path) -> None:
+    """门 3 缺 dependencies 必须是 error：市场投稿校验器对同一情形是硬拒。
+
+    2026-10-30 前主仓这里是 warning，导致「本地 audit 过、投稿 CI 被拒」的口径分叉。
+    """
     plugin = _write_plugin(
         tmp_path,
         "{'name':'p','version':'1.0'}",
         "def handle(op, p):\n    return {}",
     )
     findings = gate_dependencies_consistency(plugin)
-    assert any(f.code == "gate3_dependencies_missing" and f.level == "warning" for f in findings)
+    missing = [f for f in findings if f.code == "gate3_dependencies_missing"]
+    assert missing and all(f.level == "error" for f in missing)
+    assert "市场投稿" in missing[0].message

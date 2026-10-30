@@ -4,6 +4,31 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-10-30 门 3 口径收口：本地 audit 升 error + GUI 投稿前自查
+
+分叉形态（此前只记录、未改）：主仓 `plugin_audit.gate_dependencies_consistency` 对「缺
+`PLUGIN_METADATA.dependencies`」报 `warning` 后按 `declared=[]` 继续跑；市场投稿校验器
+（`validate_submission.py:209`）对同一情形是 `ValueError` 硬拒；而 GUI 投稿路径
+`market_home._on_upload` 直接 `build_plugin_submission`，**从不跑 audit** ⇒ 作者本地一路"过"、
+提交后由市场 CI 拒收。市场仓 `8110658` 把门 3 下沉进投稿校验器、且 `market-ref.txt` 已推进到
+`f33fcac`（#170），这条分叉从"隐患"变成"必然踩到"。
+
+改法（三处，互相咬合）：
+
+1. `gate3_dependencies_missing` 由 `warning` 升 `error`，消息补「市场投稿会直接拒收」——
+   与该函数 docstring 自己写的「必填」一致；
+2. 新增 `plugin_market_logic.pre_submit_blockers(plugin_dir)`（无 Qt 依赖的纯函数，只看 error 级），
+   `market_home._on_upload` 在打包前调用，命中即弹窗逐条列出并中止上传；
+3. 夹具同步：`tests/unit/plugin/test_plugin_audit.py::_make_plugin` 补 `'dependencies': []`
+   —— 它造的那个 "good" 插件按新口径本来就该合法（此改动也是全量回归里唯一一处连带）。
+
+**变异实验**：把 level 改回 `warning` ⇒ `test_gate3_missing_dependencies_is_error_like_market`
+与 `test_missing_dependencies_blocks_submission` **双双红**（11 通过 / 2 失败），恢复后 13 通过
+⇒ 证明 GUI 守卫真的依赖 audit 口径，不是两条互不相干的死断言。
+
+影响面（有意为之）：`plugins audit --local <dir>` 对这类插件现在退出码 **1**（此前 0）。
+这是 fail-fast：市场侧本来就会拒，早一点告诉作者更好。
+
 ## 2026-10-30 市场快照推进到 f33fcac（并修掉「审计读错载荷」）
 
 用户点头「市场快照继续推进」。钉值 `8744302…` → **`f33fcac397e050d02e7fb2ae80cd93504fd19697`**，

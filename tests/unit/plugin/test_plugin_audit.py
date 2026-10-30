@@ -45,6 +45,8 @@ def _make_plugin(tmp_path: Path, *, license_value: str | None = "MIT", name: str
         "    'name': 'demo', 'version': '1.0.0',",
         "    'plugin_types': ['source'],",
         "    'permissions': [],",
+        # 门 3 必填（2026-10-30 起缺省为 error，与市场投稿校验器同口径）
+        "    'dependencies': [],",
     ]
     if license_value is not None:
         metadata_lines.append(f"    'license': '{license_value}',")
