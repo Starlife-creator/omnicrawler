@@ -260,7 +260,7 @@ jobs:
       # 不阻塞合并。扫描范围 omnicrawler:ci 测试镜像，severity 仅 HIGH/CRITICAL。
       - name: Image vulnerability scan（trivy 占位，待基线三审）
         continue-on-error: true
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: omnicrawler:ci
           format: json
@@ -425,11 +425,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Scan PR dependency changes
-        # 本仓 Dependency graph 未启用（`GET /dependency-graph/sbom` 实测 404），action 只会
-        # 报 "Dependency review is not supported on this repository" ⇒ 每条 PR 恒定红。
-        # 在 Settings → Code security 打开 Dependency graph 后去掉本行恢复阻断。
+        # 本仓 Dependency graph 未启用 ⇒ action 只会报 "Dependency review is not supported on
+        # this repository"（实测见 job 123830119816 的 ##[error] 行）。在 Settings → Code security
+        # 打开 Dependency graph 后去掉本行 continue-on-error 恢复阻断。
+        # pin 写法：原先是浮动 major 引用 `@v4`（Actions 解析到 v4.9.0 的提交 2031cfc0），
+        # 现与本仓其它 action 统一成「commit SHA + 版本注释」，避免引用随上游 major tag 漂移。
         continue-on-error: true
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
 
   # C-#2：SAST 静态安全扫描占位（bandit，覆盖安全与配置敏感模块）。
   # ⬜ 待 CI 环境完成存量告警基线三审、建立 .bandit 配置与白名单后改为阻断；
