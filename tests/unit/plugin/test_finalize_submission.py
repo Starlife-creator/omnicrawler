@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,6 +20,31 @@ from omnicrawler.plugins.identity import IdentityStore
 from omnicrawler.plugins.market_client import download_and_verify, verify_installed
 from omnicrawler.plugins.plugin_packaging import build_plugin_submission
 from omnicrawler.plugins.signing import generate_keypair
+
+
+def _finalize_args(submission_dir: Path, manifest: bytes, maintainer_key: Path) -> SimpleNamespace:
+    """对齐 market finalize_submission CLI 的默认参数面——市场侧新增旗标时只改这一处。"""
+    return SimpleNamespace(
+        submission_dir=str(submission_dir),
+        reviewed_manifest_sha256=hashlib.sha256(manifest).hexdigest(),
+        maintainer_key=str(maintainer_key),
+        market_id=None,
+        reviewer=None,
+        review_comment=None,
+        review_decision="approved",
+    )
+
+
+def test_finalize_args_helper_covers_market_cli_surface() -> None:
+    """护栏：市场 finalize_submission 读的每个 args.* 都必须由 _finalize_args 提供。
+
+    市场侧新增旗标而主仓 fixture 没跟，表现为 SimpleNamespace AttributeError；
+    钉版（constraints/market-ref.txt）与最新市场仓都只要求本 fixture 是其超集。
+    """
+    source = (MARKET_TOOLS / "finalize_submission.py").read_text(encoding="utf-8")
+    required = set(re.findall(r"args\.([a-z_][a-z0-9_]*)", source))
+    provided = set(vars(_finalize_args(Path("s"), b"m", Path("k"))))
+    assert required - provided == set(), f"市场侧新增旗标未进 fixture: {sorted(required - provided)}"
 
 
 def test_maintainer_finalize_preserves_creator_package_and_publishes(
@@ -74,16 +101,7 @@ def test_maintainer_finalize_preserves_creator_package_and_publishes(
         if path.is_file()
     }
     with pytest.raises(ValueError, match="维护者私钥与市场信任根不匹配"):
-        module.finalize(
-            SimpleNamespace(
-                submission_dir=str(submission_dir),
-                reviewed_manifest_sha256=__import__("hashlib")
-                .sha256(manifest_before)
-                .hexdigest(),
-                maintainer_key=str(wrong_private_path),
-                market_id=None,
-            )
-        )
+        module.finalize(_finalize_args(submission_dir, manifest_before, wrong_private_path))
     after_wrong_key = {
         path.relative_to(market).as_posix(): path.read_bytes()
         for path in market.rglob("*")
@@ -91,14 +109,7 @@ def test_maintainer_finalize_preserves_creator_package_and_publishes(
     }
     assert after_wrong_key == before_wrong_key
 
-    result = module.finalize(
-        SimpleNamespace(
-            submission_dir=str(submission_dir),
-            reviewed_manifest_sha256=__import__("hashlib").sha256(manifest_before).hexdigest(),
-            maintainer_key=str(private_path),
-            market_id=None,
-        )
-    )
+    result = module.finalize(_finalize_args(submission_dir, manifest_before, private_path))
     assert result == 0
     published = market / "plugins" / "demo"
     assert (published / "package.manifest.json").read_bytes() == manifest_before
@@ -131,14 +142,7 @@ def test_maintainer_finalize_preserves_creator_package_and_publishes(
     update_submission = market / Path(*update_submission_key.split("/")).parent
     update_manifest = (update_submission / "package.manifest.json").read_bytes()
 
-    assert module.finalize(
-        SimpleNamespace(
-            submission_dir=str(update_submission),
-            reviewed_manifest_sha256=__import__("hashlib").sha256(update_manifest).hexdigest(),
-            maintainer_key=str(private_path),
-            market_id=None,
-        )
-    ) == 0
+    assert module.finalize(_finalize_args(update_submission, update_manifest, private_path)) == 0
     assert (published / "package.manifest.json").read_bytes() == manifest_before
     versioned = published / "versions" / "1.1.0"
     assert (versioned / "package.manifest.json").read_bytes() == update_manifest
@@ -156,11 +160,4 @@ def test_maintainer_finalize_preserves_creator_package_and_publishes(
         "verified-package",
     )
     with pytest.raises(ValueError, match="must increase monotonically"):
-        module.finalize(
-            SimpleNamespace(
-                submission_dir=str(update_submission),
-                reviewed_manifest_sha256=__import__("hashlib").sha256(update_manifest).hexdigest(),
-                maintainer_key=str(private_path),
-                market_id=None,
-            )
-        )
+        module.finalize(_finalize_args(update_submission, update_manifest, private_path))

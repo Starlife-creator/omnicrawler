@@ -36,7 +36,9 @@ def _payload(
     types_field = "" if plugin_types is None else f",'plugin_types':{plugin_types!r}"
     permissions_field = "" if permissions is None else f",'permissions':{permissions!r}"
     (package / "plugin.py").write_text(
-        "PLUGIN_METADATA={'name':'demo','version':'1.0.0','description':'d','license':'MIT'"
+        # 门 3 要 dependencies 必填（零依赖显式 []）；市场校验器缺了它会硬拒投稿
+        "PLUGIN_METADATA={'name':'demo','version':'1.0.0','description':'d','license':'MIT',"
+        "'dependencies':[]"
         + types_field
         + permissions_field
         + "}\n"

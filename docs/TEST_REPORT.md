@@ -4,7 +4,59 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-10-30 跨仓投稿 fixture 补齐（门 3 必填 + finalize 参数面）
+
+市场仓把门 3（`dependencies` 必填、零依赖显式 `[]`）下沉到投稿校验器（市场 `8110658`），
+又给 `finalize_submission` 加了 `--reviewer` / `--review-comment` / `--review-decision`
+（市场 `6ee7044`）。主仓两处用例仍按旧契约造夹具，**本机跑活的市场仓检出即红**：
+
+- `test_submission_validator.py`：`PLUGIN_METADATA` 缺 `dependencies` →
+  `ValueError: … PLUGIN_METADATA.dependencies 未声明（零依赖请显式填 []）（门 3）`；
+- `test_finalize_submission.py`：`SimpleNamespace` 缺属性 →
+  `AttributeError: 'types.SimpleNamespace' object has no attribute 'reviewer'`，补一个又冒一个
+  （`review_decision`），共 3 个。
+
+补法：fixture 声明 `'dependencies':[]`；新增 `_finalize_args()` 对齐市场 CLI 默认值，
+市场侧再加旗标时只改一处。
+
+钉版两侧惰性（这是 CI 仍绿、且本改动不会把 CI 打红的原因）：
+- `constraints/market-ref.txt = 8744302` 那版 `validate_submission.py` **没有** `dependencies`
+  这条门，也不拒绝未知键（`git show 8744302:tools/validate_submission.py | grep dependencies`
+  命中 0 行）；
+- 同一版 `finalize_submission.py` 只读 `args.{submission_dir, reviewed_manifest_sha256,
+  market_id, maintainer_key}` 4 个属性 ⇒ 多出来的 3 个字段是惰性的。
+
+新护栏（会真红）：`test_finalize_args_helper_covers_market_cli_surface` 用正则扫市场脚本里
+所有 `args.*`，断言 fixture 的属性面是其**超集**。变异实验：删掉 `review_decision` 一行，
+该用例报 `市场侧新增旗标未进 fixture: ['review_decision']`，恢复后 6 条全绿。
+
+本机口径：`tests/unit/plugin` = 467 通过 / 1 失败 / 3 跳过，`self_verify --set static` = 23/0/0。
+唯一失败 `test_snapshot_plugins_match_market_repo` **与本改动无关**，见下。
+
+## 2026-10-30 快照落后：主仓内置市场快照比市场 HEAD 少两个 signed release
+
+把同级 `OmniCrawler-market` 拉到 `f33fcac` 之后，`test_snapshot_plugins_match_market_repo`
+转红——不是回归，是这条守卫第一次真说话（此前本机没有市场仓检出，整组用例 skip）。
+
+- 落后量：`8744302..f33fcac` = **14 个提交**，其中 `8fb0b34`、`34def4a` 两个是
+  `publish: signed … updates for eight plugins`，动了 `catalog.json` 与 `plugins/`。
+- 条目级差异（节选）：`chronicle-capsule` 0.2.0→0.4.0、`issue-wishlist` 1.0.0→1.2.0
+  （权限面从 `['network:scoped']` 扩到 `+state:read +state:write`）、
+  `academic-paper-downloader` 0.6.4→0.8.0；`updated_at` 从 8/9 月推到 2026-10-04；
+  所有签名/清单文件路径改走 `versions/<v>/` 布局，`package_manifest_sha256` 全部换值。
+- ⇒ **主仓随安装包分发的离线市场快照，内容是 10-01 之前的一版**，九个条目 id 仍一致
+  （所以 id 列表断言先过，条目内容断言才红）。
+- CI 不受影响：CI 按 `market-ref.txt` 检出 `8744302`，快照与之一致 ⇒ 恒绿。
+- 未做（需产品点头）：推进 `market-ref.txt` 并跑 `tools/sync_snapshot.py` 重新 vendoring。
+  这条改动的实质是**把八个第三方插件的新版本连同其签名装进主仓产物**，属内容决策，
+  不是清理；且 `AGENTS.md`、`constraints/README.md`、`test_plugin_audit.py:158`、
+  `tools/test_sync_snapshot_pin.py`、`docs/PAPER_DOWNLOAD_ACCEPTANCE.md` 都钉在这个值上。
+- 严重性次一级的口径分叉顺带记录：同一门 3，主仓 `plugin_audit.gate_dependencies_consistency`
+  是 `level="warning"` 后 `declared = []` 继续跑，市场投稿校验器是 `ValueError` 硬拒 ⇒
+  作者本地 audit 过了、投稿 CI 才被拒；且 GUI 投稿路径（`market_home.py:341`）不调 audit。
+
 ## 2026-10-30 三处 Action 引用的形态核对（#159 / #160 / #163）
+
 
 三个 PR 都不是"版本有没有问题"，而是**引用写法与本仓约定不一致**，逐个用上游 ref 与 CI 日志核对：
 
