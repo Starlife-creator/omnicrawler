@@ -4,6 +4,11 @@
 
 ### 变更
 
+- chore(deps): `constraints/quality.txt` 续升 `uv 0.13.5→0.13.6`、`ruff 0.17.2→0.17.3`
+  （#158；两版均为 2026-10-27 发布的正式版，非 RC），并按同一条守卫补齐 dependabot 看不见的两处：
+  4 个 reusable 工作流的 `setup-uv version:` pin → `0.13.6`、`.pre-commit-config.yaml` 的
+  ruff `rev` → `v0.17.3`。实测 `ruff 0.17.3 check src tests tools` 全通过、
+  `uv 0.13.6 lock --check` 退出码 0（锁无需重解）。
 - chore(security): `tools/pip-audit-ignore.txt` 的 39 条 pillow 告警**整段删除**。它们只因
   extras 自钉 `Pillow>=10,<13` 把 `.[full]`（= pip-audit 扫的那套环境）压在无补丁版的 12.3.0 上；
   放宽到 `<14` 后同一 run 实测装出 `Pillow-13.0.0`，审计步骤报 `No known vulnerabilities found,

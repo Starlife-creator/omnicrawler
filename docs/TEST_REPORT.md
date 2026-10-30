@@ -4,6 +4,27 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-10-30 工具链续升（uv 0.13.6 / ruff 0.17.3）与守卫复现
+
+#158 只改 `constraints/quality.txt`，与 #151/#152 完全同型：`_pinned_uv_version()` 从约束文件派生期望值，
+断言 4 个 reusable 工作流的 `setup-uv version:` pin 逐字相等 ⇒ 单改约束必然让三条平台测试腿红。
+本批把 pin 与 `.pre-commit-config.yaml` 的 ruff `rev` 一起同步。
+
+本机实测：
+- `uv 0.13.6` / `ruff 0.17.3` 均在 PyPI（JSON 200），发布日期 2026-10-27，且**都不是 RC**
+  （与 twisted 那条"唯一修复版是预发布"的处置口径一致：RC 不进交付依赖）。
+- `ruff 0.17.3 check src tests tools` = All checks passed（与 0.17.2 同结果，豁免预算不变）。
+- `uvx uv@0.13.6 lock --check` 退出码 0 —— `uv.lock`（现在 revision 5）无需重解。
+- `ruff-pre-commit` 的 `v0.17.3` tag 存在（`f368fb36…` 是 v0.17.2，本次核对 v0.17.3 = `25bcf950…`）。
+
+一处**与本次改动无关**的现象值得记录，避免下一个人重踩：新建 worktree 后 `git status` 把
+`src/omnicrawler/gui/accessibility.py` 报成已修改，但 `git diff` 里两侧文本一模一样。
+按字节核对是**纯行尾差异**（该文件在 HEAD 里本就是混合行尾：committed blob 有 5 行 CRLF，
+checkout 出来 42 行 CRLF，而 `core.autocrlf=true`）。它不是任何人的编辑，
+因此本批只 `git add` 明确点名的文件，绝不用 `git add -A`。
+
+未在本地验证：三平台全量 pytest、`.[full]` 装机与审计 —— 由本批 CI 判定。
+
 ## 2026-10-30 pip-audit 基线清空 pillow 一节 + 计数口径修正 + dependabot 忽略 selectolax 大版本
 
 三件事都来自 #153/#157 那批实测出来的副产品，不是新猜的。
