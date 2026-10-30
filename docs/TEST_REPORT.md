@@ -4,6 +4,22 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-10-30 三处 Action 引用的形态核对（#159 / #160 / #163）
+
+三个 PR 都不是"版本有没有问题"，而是**引用写法与本仓约定不一致**，逐个用上游 ref 与 CI 日志核对：
+
+| PR | 原引用 | 核对结果 |
+|---|---|---|
+| #163 | `trivy-action@a9c7b0f0… # v0.36.0` | `a9c7b0f0` 是 **v0.36.0 注解 tag 对象的 SHA**（`commits/a9c7b0f0` 实测 422 "No commit found"，`git/tags/a9c7b0f0` 返回 tag 对象，其 `object.sha = ed142fd0`）。原写法**能跑**（run 40983833402 的 `docker` 作业下载日志实证：`Download action repository '…@a9c7b0f0'`），但它不是 commit ⇒ 换成 `ed142fd0…`，同一发行版，形态对齐 |
+| #160 | `dependency-review-action@v4` | 浮动 major 引用。job 123830119816 日志实证 Actions 把它解析到 `2031cfc0…`（= v4.9.0），作业**真的跑了**，只因 Dependency graph 未启用而报 `##[error]Dependency review is not supported on this repository`。改成 v5.0.0 的 commit `a1d282b3…` + 版本注释 |
+| #159 | `gitleaks-action@v2` | v2 解析到 `ff98106e…`（job 123837305938 日志），v3 tag 存在（`e0c47f4f…`，同时是 v3.0.0）。license 问题实测过：同一作业打印 `[Starlife-creator] is an individual user. No license key is required.` ⇒ 不需要新增 secret |
+
+⚠ 一处我自己差点写错的推断：看到 `GET /repos/…/git/ref/tags/v4` 返回 404 就差点断言"`@v4` 解析不了、这一步从没跑过"。
+CI 日志证明它解析到了 v4.9.0 —— **API 的 ref 查询与 Actions 的解析不是一回事**，涉及"这步到底有没有跑"必须看作业日志。
+
+依赖关系提醒：`dependency review` 仍是提示性检查（`continue-on-error`），它的实际覆盖面要等 Settings → Code security
+里打开 Dependency graph 才有；那是一次仓库设置改动，本批没动，留给需要它真阻断的时候。
+
 ## 2026-10-30 工具链续升（uv 0.13.6 / ruff 0.17.3）与守卫复现
 
 #158 只改 `constraints/quality.txt`，与 #151/#152 完全同型：`_pinned_uv_version()` 从约束文件派生期望值，
