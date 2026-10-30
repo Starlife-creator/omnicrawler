@@ -43,7 +43,7 @@ jobs:
       # 不代表应用代码覆盖率；E2E_TEST_REPORT.md 按同一口径标注，避免端到端覆盖误读。
       - run: bash e2e/run.sh --browser
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-artifacts-python-3.12
           path: |
@@ -78,7 +78,7 @@ jobs:
         shell: bash
         run: python -m pytest -q tests/unit/gui/test_log_parser.py tests/unit/gui/test_pdf_workbench_logic.py
       - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gui-smoke-${{ matrix.os }}
           path: e2e-artifacts/
