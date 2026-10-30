@@ -33,6 +33,16 @@ Windows 上不生效）。
 - **变异实验**：摘掉夹具两行 `monkeypatch.setattr` ⇒ 默认值用例立刻红回
   `assert False is True`，证明是夹具承重而不是运气。
 
+同一次核查查出**第二处同类污染**：`tests/gui/test_audit_20260805_fixes.py::
+test_template_favorites_go_through_app_settings` 往真实设置写 `favorite_templates=["demo"]`
+且不还原（该机注册表现值 `templates/favorites REG_MULTI_SZ demo`；跑前没留快照，
+不单独归因，但这个赋值只出现在这条用例里）。那里**不做 autouse** —— 本文件多数用例要
+构造真实 `MainWindow`，而 `is_frozen()` 同时决定数据根口径，全局改写会牵动无关行为；
+改成给这条用例单独挂 `tmp_settings_store`。该文件 17 通过与改前持平，favorites 写入实测
+落在 `<basetemp>/test_template_favorites_go_thr0/settings.ini`。
+同文件 `:238`/`:248` 两处已把 `_settings` 整体换成抛 `RuntimeError` 的 `_DestroyedQSettings`
+（`value`/`setValue`/`sync`/`isWritable`/`status` 齐），不落真实存储。
+
 ## 2026-10-30 跨仓投稿 fixture 补齐（门 3 必填 + finalize 参数面）
 
 市场仓把门 3（`dependencies` 必填、零依赖显式 `[]`）下沉到投稿校验器（市场 `8110658`），
