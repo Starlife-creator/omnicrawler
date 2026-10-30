@@ -4,6 +4,35 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-10-30 GUI 隐私用例污染开发者真实配置（那条「环境型失败」的真因）
+
+§前面把它记作「`AppSettings` 读真实用户配置目录，属用例没隔离用户状态」—— 复核后**定性要升级**：
+它不只是没隔离，而是会**改坏开发者机器上的真实隐私配置**。
+
+机制（逐环可定位）：源码模式下 `make_qsettings` 走 `QSettings("OmniCrawler", "OmniCrawlerGUI")`
+⇒ Windows 落 HKCU 注册表（`src/omnicrawler/gui/settings.py:36`）；同文件
+`test_privacy_redact_setter_persists_across_instance` 置 `privacy_redact_enabled = False` 并
+`sync()`（`tests/unit/gui/test_privacy_settings.py:48-49`），而原 autouse 夹具只做
+`AppSettings.reset()`，**不还原落盘值** ⇒ 跑一次测试，用户自己的日志脱敏就关掉，
+且下一趟真实运行不再脱敏；顺带把只读默认值的
+`test_privacy_defaults_match_product_policy` 污染成 `assert False is True`。
+
+本机取证：`reg query "HKCU\Software\OmniCrawler\OmniCrawlerGUI\privacy"` →
+`redact_enabled REG_SZ false`（产品默认 true）。这与「该机跑过本文件用例」一致，但**不单独归因**——
+在 GUI 里手动关掉也是同一个值，注册表不带来源。要修的点是机制，不是这个值本身。
+
+修法：autouse 夹具把落点重定向到 `tmp_path`，**走 `is_frozen()` 那条已测的便携分支**
+（不能用 `QSettings.setPath`/`setDefaultFormat` —— `make_qsettings` docstring 与本仓
+`test_portable_write_boundary.py:4-6` 都实测记录过它们对 `QSettings(org, app)` 构造在
+Windows 上不生效）。
+
+证据：
+- 隔离后 `tests/unit/gui/test_privacy_settings.py` + `test_portable_write_boundary.py` = 8 通过；
+- 写入落点实测：`--basetemp` 下生成 `<bt>/test_privacy_redact_setter_per0/settings.ini`
+  内含 `redact_enabled=false`，注册表未被本次运行改动；
+- **变异实验**：摘掉夹具两行 `monkeypatch.setattr` ⇒ 默认值用例立刻红回
+  `assert False is True`，证明是夹具承重而不是运气。
+
 ## 2026-10-30 跨仓投稿 fixture 补齐（门 3 必填 + finalize 参数面）
 
 市场仓把门 3（`dependencies` 必填、零依赖显式 `[]`）下沉到投稿校验器（市场 `8110658`），
