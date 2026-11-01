@@ -70,7 +70,7 @@ def test_linux_passes_verified_entry_and_runtime_roots(
     monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.setattr(enforcement, "_landlock", lambda access, paths: calls.append(paths))
     program = ctypes.c_int()
-    monkeypatch.setattr(enforcement, "_sock_filter", lambda: ("array", program))
+    monkeypatch.setattr(enforcement, "_sock_filter", lambda: (b"array", program))
     monkeypatch.setattr(os, "uname", lambda: os.uname_result(("Linux", "host", "6", "v", "x86_64")), raising=False)
     monkeypatch.setattr(
         enforcement, "_standard_library_roots", lambda: (tmp_path / "stdlib",)

@@ -71,7 +71,7 @@ jobs:
             for path in /usr /System /Library /opt /private /Users /Applications /var /tmp; do
               printf '(version 1)\n(deny default)\n(allow process-exec process-fork mach-lookup sysctl-read)\n(allow file-read* (subpath "%s"))\n' "$path" > /tmp/one.sb
               echo "TESTPATH=$path"
-              /usr/bin/sandbox-exec -f /tmp/one.sb python -I -S -c 'print("started")' || true
+              /usr/bin/sandbox-exec -f /tmp/one.sb python -I -S -c 'print("started")'; echo "EXIT=$?"
             done
           fi
       - name: 真实内核与 Seatbelt 隔离用例

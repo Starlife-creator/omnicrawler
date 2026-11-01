@@ -187,7 +187,10 @@ PyMODINIT_FUNC PyInit_omnicrawler_landlock(void) { return PyModule_Create(&modul
 
 
 def _native_helper():
-    """Use a narrowly scoped native extension; Python's ctypes syscall is not ABI-safe here."""
+    """Build once before irreversible file confinement; ctypes is not ABI-safe here."""
+    cached = globals().get("_native_module")
+    if cached is not None:
+        return cached
     import sysconfig
     directory = tempfile.mkdtemp(prefix="omnicrawler-landlock-")
     source = Path(directory) / "landlock.c"
@@ -204,6 +207,7 @@ def _native_helper():
         raise RuntimeError(f"{E_UNSUPPORTED_ENV}: native Landlock shim cannot load")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    globals()["_native_module"] = module
     return module
 
 
