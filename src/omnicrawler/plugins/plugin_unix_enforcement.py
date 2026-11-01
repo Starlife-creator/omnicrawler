@@ -152,7 +152,13 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     handled = access_fs & _LANDLOCK_ACCESS_V1
     attr = Attr(handled_access_fs=handled)
     ctypes.set_errno(0)
-    ruleset = libc.syscall(445, ctypes.byref(attr), ctypes.sizeof(Attr), 0)
+    create = getattr(libc, "landlock_create_ruleset", None)
+    if create is not None:
+        create.restype = ctypes.c_int
+        create.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint32]
+    else:
+        create = lambda pointer, size, flags: libc.syscall(445, pointer, size, flags)
+    ruleset = create(ctypes.byref(attr), ctypes.sizeof(Attr), 0)
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
     try:
@@ -242,7 +248,9 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
   (subpath "/Library/Apple")
   (subpath "/Library/Frameworks/Python.framework")
   (subpath "/private/var/db/dyld")
-  (subpath "/dev"))
+  (subpath "/dev")
+  (subpath "/private/etc")
+  (subpath "/etc"))
 (allow file-read-metadata)
 (allow file-write* (literal "/dev/null"))
 (deny network*)
