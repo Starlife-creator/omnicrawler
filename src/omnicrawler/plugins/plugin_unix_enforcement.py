@@ -153,7 +153,7 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     handled = access_fs & _LANDLOCK_ACCESS_V1
     # The v1-sized structure cannot request REFER, even when the kernel
     # supports a newer ABI; negotiate the v1 access subset explicitly.
-    handled &= _LANDLOCK_ACCESS_V1
+    handled &= (1 << 13) - 1
     ctypes.set_errno(0)
     buffer = ctypes.create_string_buffer(ctypes.sizeof(Attr))
     attr = Attr.from_buffer(buffer, 0)
