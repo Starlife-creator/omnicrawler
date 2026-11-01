@@ -54,7 +54,9 @@ jobs:
         if: runner.os == 'Linux' || runner.os == 'macOS'
         shell: bash
         run: |
-          if [ "$RUNNER_OS" != Linux ]; then
+          if [ "$RUNNER_OS" = Linux ]; then
+            strace -f -e seccomp,prctl,rt_sigaction,write python -I -S -c 'import importlib.util; from pathlib import Path; spec=importlib.util.spec_from_file_location("enforcement","src/omnicrawler/plugins/plugin_unix_enforcement.py"); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); print("MACHINE",module.os.uname(),flush=True); print("BPF",[(x.code,x.jt,x.jf,x.k) for x in module._sock_filter()[0]],flush=True); module.apply_linux(plugin_root=Path("src/omnicrawler/plugins"))' || true
+          else
             python -I -S -c 'import importlib.util; from pathlib import Path; spec=importlib.util.spec_from_file_location("enforcement","src/omnicrawler/plugins/plugin_unix_enforcement.py"); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); Path("/tmp/full.sb").write_text(module.darwin_profile(plugin_root=Path("src/omnicrawler/plugins")))'
             printf '(version 1)\n(deny default)\n(allow process-exec process-fork mach-lookup sysctl-read)\n(allow file-read* (literal "/dev/null"))\n(allow file-write* (literal "/dev/null"))\n(allow file-read* (subpath "/Library") (subpath "/System") (subpath "/usr") (subpath "/private") (subpath "/Users/runner/hostedtoolcache") (subpath "/dev"))\n' > /tmp/min.sb
             /usr/bin/sandbox-exec -f /tmp/min.sb python -I -S -c 'import json; print("minimal-import")' || true
