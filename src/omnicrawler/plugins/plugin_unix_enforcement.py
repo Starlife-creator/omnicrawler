@@ -140,7 +140,7 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     libc.syscall.restype = ctypes.c_long
 
     class Attr(ctypes.Structure):
-        # Only the stable v1 filesystem mask is negotiated with the kernel.
+        _pack_ = 1
         _fields_ = [("handled_access_fs", ctypes.c_uint64)]
 
     class PathBeneath(ctypes.Structure):
@@ -154,16 +154,10 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     handled = access_fs & _LANDLOCK_ACCESS_V1
     attr = Attr(handled_access_fs=handled)
     ctypes.set_errno(0)
-    create = getattr(libc, "landlock_create_ruleset", None)
-    if create is not None:
-        create.restype = ctypes.c_int
-        create.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint32]
-    else:
-        create = lambda pointer, size, flags: libc.syscall(445, pointer, size, flags)
     buffer = ctypes.create_string_buffer(ctypes.sizeof(Attr))
     attr = Attr.from_buffer(buffer, 0)
     attr.handled_access_fs = handled
-    ruleset = create(ctypes.byref(buffer), ctypes.c_size_t(ctypes.sizeof(buffer)), ctypes.c_uint(0))
+    ruleset = libc.syscall(445, ctypes.byref(buffer), ctypes.c_size_t(ctypes.sizeof(buffer)), ctypes.c_uint(0))
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
     try:
