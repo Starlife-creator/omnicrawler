@@ -105,6 +105,12 @@ jobs:
           del libc.syscall.argtypes
           print('python system-getpid', libc.syscall(39), ctypes.get_errno())
           print('python lib', libc._name)
+          print('raw bytes', bytes(fresh).hex() if 'fresh' in globals() else bytes(a).hex())
+          fn2 = libc.syscall
+          fn2.restype = ctypes.c_long
+          fn2.argtypes = None
+          x = A(8191)
+          print('python fresh only', fn2(445, ctypes.byref(x), ctypes.c_size_t(8), ctypes.c_uint(0)), ctypes.get_errno())
           for value in (0, 1, 0x1FFF):
               ctypes.set_errno(0)
               a.handled_access_fs = value
