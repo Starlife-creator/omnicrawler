@@ -148,7 +148,7 @@ PLUGIN_METADATA = {
 
 ### execution_mode 语义
 
-- **subprocess（缺省）**：隔离沙箱 + 能力代理（默认路径，无特权申请）。
+- **subprocess（缺省）**：独立进程 + 能力代理（默认路径，无特权申请；不等于 OS 沙箱）。
 - **in_process（特权申请）**：进程内运行，必须经过风险分级、用户确认和限时豁免；
   `in_process_allowlist` 条目必须包含 `expires`。无交互确认时失败关闭并降级为 subprocess。
   契约 1 一律采用最高风险审批档。
@@ -192,7 +192,15 @@ PLUGIN_METADATA = {
   `required_capabilities` 声明最低版本（正整数或 `>=正整数`）；不满足时在启动插件代码前拒载。
 - 状态命名空间绑定项目、插件 ID、作者指纹与 `state_schema_version`，不绑定插件版本或载荷哈希。
   因此正常升级可延续状态，换作者不会继承；schema 升级需调用 `state.migrate` 明确迁移，目标非空
-  时拒绝覆盖。单值最大 64 KiB。
+  时拒绝覆盖。单值最大 64 KiB。普通插件 state 只用于游标、条件请求等业务状态，不能存 Cookie、
+  登录会话、Token 或其他凭据；`state.get/set` 对敏感键失败关闭并返回 `E_PERMISSION`。
+  鉴权使用 `network.fetch` 的宿主 auth 注入，确需明文时走显式审批的 `secrets.get`。
+- 当前**没有**通用交互浏览器、页面 DOM 或宿主登录会话代理。`render.html.*` 仅断网渲染本地 HTML；
+  需要真实浏览器流程的插件尚未适配，不能自行启动 Playwright/Selenium 或读取浏览器 Cookie。
+- 发布前 `plugins audit --local .` 对缺省 subprocess 插件包内的 Python 文件做静态边界检查：拒绝
+  原始网络客户端/套接字、自建浏览器、读取浏览器凭据、原始文件 I/O 与本地数据库，以及敏感 state 键。
+  `in_process` 是受信任特权路径，不能套用该结论。静态门禁是人工审核的必要证据，不识别所有动态
+  导入、反射或二进制行为，也不构成 AppContainer/seccomp/Landlock 等 OS 沙箱。
 - 工件流单块最大 1 MiB、单会话最多同时打开 8 个；未提交、超限或异常流会由宿主删除。
 
 ## 错误码（C4 权威清单，I2 比对源）

@@ -45,6 +45,19 @@ def test_plugin_state_is_scoped_by_author_and_schema(tmp_path) -> None:
         }
 
 
+@pytest.mark.parametrize("key", ["login_cookie", "session", "auth-token", "credentials"])
+def test_plugin_state_rejects_session_material_without_touching_store(tmp_path, key: str) -> None:
+    with StateStore(tmp_path / "state.sqlite3") as store:
+        broker = _broker(store, author="author-a")
+        with pytest.raises(CapabilityError) as error:
+            broker.dispatch("state.set", {"key": key, "value": "sensitive"})
+        assert error.value.code == "E_PERMISSION"
+        # 敏感 state 不是凭据泄漏后的可读取渠道。
+        with pytest.raises(CapabilityError) as read_error:
+            broker.dispatch("state.get", {"key": key})
+        assert read_error.value.code == "E_PERMISSION"
+
+
 def test_plugin_state_enforces_key_size_and_permission(tmp_path) -> None:
     with StateStore(tmp_path / "state.sqlite3") as store:
         broker = _broker(store, author="author-a")

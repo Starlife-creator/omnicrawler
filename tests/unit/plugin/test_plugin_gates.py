@@ -9,6 +9,7 @@ import pytest
 from omnicrawler.plugins.plugin_audit import (
     gate_declaration_consistency,
     gate_dependencies_consistency,
+    gate_host_boundaries,
 )
 
 
@@ -81,6 +82,49 @@ def test_gate1_files_read_requires_allowlist(tmp_path: Path) -> None:
     )
     codes = _codes(gate_declaration_consistency(plugin))
     assert "gate1_files_read_without_allowlist" in codes
+
+
+@pytest.mark.parametrize(
+    ("body", "code"),
+    [
+        ("import httpx\ndef handle(op, p): return {}", "gate1_direct_network"),
+        ("import urllib.request\ndef handle(op, p): return {}", "gate1_direct_network"),
+        ("from playwright.sync_api import sync_playwright\ndef handle(op, p): return {}", "gate1_direct_browser"),
+        ("import browser_cookie3\ndef handle(op, p): return {}", "gate1_direct_session"),
+        ("from pathlib import Path\ndef handle(op, p): return {'data': Path(p['path']).read_text()}", "gate1_uncontrolled_file_io"),
+        ("import tempfile\ndef handle(op, p): return {'path': tempfile.mkdtemp()}", "gate1_uncontrolled_file_io"),
+        ("def handle(op, p): return {'data': open(p['path']).read()}", "gate1_uncontrolled_file_io"),
+        ("import omnicrawler_sdk\ndef handle(op, p): return omnicrawler_sdk.call('state.set', {'key': 'login_cookie', 'value': p['value']})", "gate1_session_in_plugin_state"),
+    ],
+)
+def test_host_boundary_bypass_rejected(tmp_path: Path, body: str, code: str) -> None:
+    plugin = _write_plugin(tmp_path, "{'dependencies':[]}", body)
+    findings = gate_host_boundaries(plugin)
+    assert code in _codes(findings)
+    assert all(item.level == "error" for item in findings if item.code == code)
+
+
+def test_host_boundary_scan_includes_plugin_modules(tmp_path: Path) -> None:
+    plugin = _write_plugin(tmp_path, "{'dependencies':[]}", "def handle(op, p): return {}")
+    (plugin / "helper.py").write_text("import requests\n", encoding="utf-8")
+    assert "gate1_direct_network" in _codes(gate_host_boundaries(plugin))
+
+
+def test_host_boundaries_allow_sdk_and_temp_path_use(tmp_path: Path) -> None:
+    plugin = _write_plugin(
+        tmp_path, "{'dependencies':[]}",
+        "import omnicrawler_sdk\n"
+        "def handle(op, p):\n"
+        "    response = omnicrawler_sdk.call('network.fetch', {'url': p['url']})\n"
+        "    state = omnicrawler_sdk.call('state.set', {'key': 'cursor', 'value': p['cursor']})\n"
+        "    return {'response': response, 'state': state}\n",
+    )
+    assert gate_host_boundaries(plugin) == []
+
+
+def test_host_boundaries_do_not_claim_to_sandbox_privileged_plugins(tmp_path: Path) -> None:
+    plugin = _write_plugin(tmp_path, "{'execution_mode':'in_process','dependencies':[]}", "import requests\ndef handle(op, p): return {}")
+    assert gate_host_boundaries(plugin) == []
 
 
 def test_gate3_zero_dependency_explicit_ok(ok_plugin: Path) -> None:
