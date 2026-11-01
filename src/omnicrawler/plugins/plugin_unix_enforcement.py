@@ -179,21 +179,21 @@ def _native_landlock(handled: int, paths: Sequence[Path]) -> None:
     """Use a narrowly scoped native extension; Python's ctypes syscall is not ABI-safe here."""
     import sysconfig
     directory = tempfile.mkdtemp(prefix="omnicrawler-landlock-")
-        source = Path(directory) / "landlock.c"
-        extension = Path(directory) / "omnicrawler_landlock.so"
-        source.write_text(_NATIVE_LANDLOCK_SOURCE, encoding="utf-8")
-        includes = sysconfig.get_paths()["include"]
-        command = [os.environ.get("CC", "cc"), "-shared", "-fPIC", str(source), "-I", includes, "-o", str(extension)]
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
-        if result.returncode:
-            raise RuntimeError(f"{E_UNSUPPORTED_ENV}: native Landlock shim compilation failed: {result.stderr[-500:]}")
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("omnicrawler_landlock", extension)
-        if spec is None or spec.loader is None:
-            raise RuntimeError(f"{E_UNSUPPORTED_ENV}: native Landlock shim cannot load")
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        module.install(handled, tuple(str(path) for path in paths))
+    source = Path(directory) / "landlock.c"
+    extension = Path(directory) / "omnicrawler_landlock.so"
+    source.write_text(_NATIVE_LANDLOCK_SOURCE, encoding="utf-8")
+    includes = sysconfig.get_paths()["include"]
+    command = [os.environ.get("CC", "cc"), "-shared", "-fPIC", str(source), "-I", includes, "-o", str(extension)]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode:
+        raise RuntimeError(f"{E_UNSUPPORTED_ENV}: native Landlock shim compilation failed: {result.stderr[-500:]}")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("omnicrawler_landlock", extension)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"{E_UNSUPPORTED_ENV}: native Landlock shim cannot load")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.install(handled, tuple(str(path) for path in paths))
 
 
 def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
