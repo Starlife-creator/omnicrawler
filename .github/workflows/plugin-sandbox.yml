@@ -54,28 +54,18 @@ jobs:
         if: runner.os == 'Linux' || runner.os == 'macOS'
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = Linux ]; then
-            strace -f -e seccomp,prctl,landlock_create_ruleset,write,exit_group,execve,mmap,mprotect,munmap,brk,rt_sigaction,rt_sigprocmask python -I -S -c 'import importlib.util; from pathlib import Path; spec=importlib.util.spec_from_file_location("enforcement","src/omnicrawler/plugins/plugin_unix_enforcement.py"); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); module.apply_linux(plugin_root=Path("src/omnicrawler/plugins"))' || true
-          else
-            printf '(version 1)\n(deny default)\n(allow file-read* process-exec process-fork mach-lookup sysctl-read)\n(allow file-write* (literal "/dev/null"))\n' > /tmp/minimal.sb
-            /usr/bin/sandbox-exec -f /tmp/minimal.sb python -I -S -c 'print("minimal")' || true
-            /usr/bin/sandbox-exec -f /tmp/minimal.sb /usr/bin/python3 -I -S -c 'print("system python")' || true
+          if [ "$RUNNER_OS" != Linux ]; then
             python -I -S -c 'import importlib.util; from pathlib import Path; spec=importlib.util.spec_from_file_location("enforcement","src/omnicrawler/plugins/plugin_unix_enforcement.py"); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); Path("/tmp/full.sb").write_text(module.darwin_profile(plugin_root=Path("src/omnicrawler/plugins")))'
-            /usr/bin/sandbox-exec -f /tmp/full.sb python -I -S -c 'print("full")' || true
-            sed 's/(deny default)/(deny default)\n(allow file-read*)/' /tmp/full.sb > /tmp/readall.sb
-            /usr/bin/sandbox-exec -f /tmp/readall.sb python -I -S -c 'print("readall")' || true
             sed 's/(deny default)/(deny default)\n(allow file-read*)\n(allow file-write*)/' /tmp/full.sb > /tmp/readwrite.sb
             /usr/bin/sandbox-exec -f /tmp/readwrite.sb python -I -S -c 'print("readwrite")' || true
-            sed 's/(allow file-read\* process-exec/(allow file-read* file-write* process-exec/' /tmp/full.sb > /tmp/scopedwrite.sb
-            /usr/bin/sandbox-exec -f /tmp/scopedwrite.sb python -I -S -c 'print("scopedwrite")' || true
-            command -v python; python -c 'import sys; print(sys.executable); print(sys.path); print(sys.base_prefix)'
-            cat /tmp/full.sb
-            set +e
-            for path in /usr /System /Library /opt /private /Users /Applications /var /tmp; do
-              printf '(version 1)\n(deny default)\n(allow process-exec process-fork mach-lookup sysctl-read)\n(allow file-read* (subpath "%s"))\n' "$path" > /tmp/one.sb
-              echo "TESTPATH=$path"
-              /usr/bin/sandbox-exec -f /tmp/one.sb "$(command -v python)" -I -S -c 'print("started")'; echo "EXIT=$?"
-            done
+            /usr/bin/sandbox-exec -f /tmp/readwrite.sb python -I -S -c 'from pathlib import Path; print(Path("/etc/passwd").read_text()[:1]); import json; print(json.dumps({"a": 1}))' || true
+            sed '/(deny default)/r /tmp/extra.sb' /tmp/full.sb > /tmp/extra-full.sb
+            printf '(allow file-read* (subpath "/System"))\n' > /tmp/extra.sb
+            /usr/bin/sandbox-exec -f /tmp/extra-full.sb python -I -S -c 'print("system")' || true
+            printf '(allow file-read* (subpath "/Library"))\n' > /tmp/extra.sb
+            /usr/bin/sandbox-exec -f /tmp/extra-full.sb python -I -S -c 'print("library")' || true
+            printf '(allow file-read* (subpath "/Users"))\n' > /tmp/extra.sb
+            /usr/bin/sandbox-exec -f /tmp/extra-full.sb python -I -S -c 'print("users")' || true
           fi
       - name: 真实内核与 Seatbelt 隔离用例
         run: python -m pytest tests/unit/plugin/test_unix_os_sandbox.py -q -p no:cacheprovider
