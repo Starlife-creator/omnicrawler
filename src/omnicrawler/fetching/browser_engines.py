@@ -183,13 +183,13 @@ class SeleniumAdapter:
         self._driver = driver
 
     @property
-    def _By(self):
+    def _by_class(self):
         from selenium.webdriver.common.by import By
 
         return By
 
     @property
-    def _WebDriverWait(self):
+    def _wait_class(self):
         from selenium.webdriver.support.ui import WebDriverWait
 
         return WebDriverWait
@@ -207,25 +207,25 @@ class SeleniumAdapter:
     def locate(self, action: BrowserAction):
         expected_name = action.role_name
         for selector in self._choices(action):
-            for element in self._driver.find_elements(self._By.CSS_SELECTOR, selector):
+            for element in self._driver.find_elements(self._by_class.CSS_SELECTOR, selector):
                 if expected_name is None or element.accessible_name == expected_name:
                     return element
         return None
 
     def _ensure(self, action: BrowserAction):
         timeout = max(0.1, action.timeout_ms / 1000)
-        return self._WebDriverWait(self._driver, timeout).until(lambda _: self.locate(action))
+        return self._wait_class(self._driver, timeout).until(lambda _: self.locate(action))
 
     def wait_for(self, action: BrowserAction) -> None:
         timeout = max(0.1, action.timeout_ms / 1000)
-        self._WebDriverWait(self._driver, timeout).until(lambda _: self.locate(action))
+        self._wait_class(self._driver, timeout).until(lambda _: self.locate(action))
 
     def wait_for_url(self, action: BrowserAction) -> None:
         from fnmatch import fnmatch
 
         timeout = max(0.1, action.timeout_ms / 1000)
         pattern = str(action.value or "**/*").replace("**", "*")
-        self._WebDriverWait(self._driver, timeout).until(lambda _: fnmatch(self._driver.current_url, pattern))
+        self._wait_class(self._driver, timeout).until(lambda _: fnmatch(self._driver.current_url, pattern))
 
     def click(self, action: BrowserAction) -> None:
         self._ensure(action).click()
