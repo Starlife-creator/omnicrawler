@@ -143,6 +143,7 @@ def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
         pc = 0
         while pc < len(array):
             instruction = array[pc]
+            print("STEP", number, arch, pc, instruction.code, instruction.jt, instruction.jf, instruction.k, flush=True)
             if instruction.code & 0x07 == enforcement._BPF_LD:
                 accumulator = number if instruction.k == 0 else arch
             elif instruction.code & 0x07 == enforcement._BPF_JMP:

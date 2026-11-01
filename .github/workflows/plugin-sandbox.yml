@@ -59,15 +59,14 @@ jobs:
             sed 's/(deny default)/(deny default)\n(allow file-read*)\n(allow file-write*)/' /tmp/full.sb > /tmp/readwrite.sb
             /usr/bin/sandbox-exec -f /tmp/readwrite.sb python -I -S -c 'print("readwrite")' || true
             /usr/bin/sandbox-exec -f /tmp/readwrite.sb python -I -S -c 'from pathlib import Path; print(Path("/etc/passwd").read_text()[:1]); import json; print(json.dumps({"a": 1}))' || true
-            printf '(allow file-read* (subpath "/System"))\n' > /tmp/extra.sb
-            sed '/(deny default)/r /tmp/extra.sb' /tmp/full.sb > /tmp/extra-full.sb
-            /usr/bin/sandbox-exec -f /tmp/extra-full.sb python -I -S -c 'print("system")' || true
-            printf '(allow file-read* (subpath "/Library"))\n' > /tmp/extra.sb
-            sed '/(deny default)/r /tmp/extra.sb' /tmp/full.sb > /tmp/extra-full.sb
-            /usr/bin/sandbox-exec -f /tmp/extra-full.sb python -I -S -c 'print("library")' || true
-            printf '(allow file-read* (subpath "/Users"))\n' > /tmp/extra.sb
-            sed '/(deny default)/r /tmp/extra.sb' /tmp/full.sb > /tmp/extra-full.sb
-            /usr/bin/sandbox-exec -f /tmp/extra-full.sb python -I -S -c 'print("users")' || true
+            printf '(version 1)\n(deny default)\n(allow process-exec process-fork mach-lookup sysctl-read)\n(allow file-read* (literal "/dev/null"))\n(allow file-write* (literal "/dev/null"))\n' > /tmp/min.sb
+            /usr/bin/sandbox-exec -f /tmp/min.sb python -I -S -c 'print("minimal")' || true
+            printf '(allow file-read* (subpath "/Library"))\n' >> /tmp/min.sb
+            /usr/bin/sandbox-exec -f /tmp/min.sb python -I -S -c 'print("min-library")' || true
+            printf '(allow file-read* (subpath "/System"))\n' >> /tmp/min.sb
+            /usr/bin/sandbox-exec -f /tmp/min.sb python -I -S -c 'print("min-system")' || true
+            printf '(allow signal (target self))\n' >> /tmp/min.sb
+            /usr/bin/sandbox-exec -f /tmp/min.sb python -I -S -c 'print("min-signal")' || true
           fi
       - name: 真实内核与 Seatbelt 隔离用例
         run: python -m pytest tests/unit/plugin/test_unix_os_sandbox.py -q -p no:cacheprovider
