@@ -149,6 +149,7 @@ def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
             elif instruction.code & 0x07 == enforcement._BPF_JMP:
                 operation = instruction.code & 0xF0
                 matched = ((accumulator & instruction.k) != 0) if operation == enforcement._BPF_JSET else accumulator == instruction.k
+                print("JUMP", accumulator, operation, enforcement._BPF_JSET, matched, flush=True)
                 assert operation in (enforcement._BPF_JEQ, enforcement._BPF_JSET)
                 assert instruction.code & 0x07 == enforcement._BPF_JMP
                 pc = pc + 1 + (instruction.jt if matched else instruction.jf)
