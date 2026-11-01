@@ -273,7 +273,7 @@ def darwin_launch(
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             stream.write(profile)
-        yield [executable, "-D", os.path.dirname(name), "-f", name, *command]
+        yield [executable, "-f", name, *command]
     finally:
         try:
             os.unlink(name)

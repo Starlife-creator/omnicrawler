@@ -45,7 +45,7 @@ def test_landlock_v1_layout_and_version_query(monkeypatch: pytest.MonkeyPatch) -
             if number == 445 or getattr(number, 'value', None) == 445:
                 raw = ctypes.cast(args[0], ctypes.POINTER(ctypes.c_uint64)).contents
                 assert args[1] == 8 or args[1].value == 8
-                assert raw.value == enforcement._LANDLOCK_ACCESS_V1
+                assert raw.value == 0x1FFF  # v1 excludes the ABI-v2 REFER bit.
                 return -1
             raise AssertionError(number)
 
