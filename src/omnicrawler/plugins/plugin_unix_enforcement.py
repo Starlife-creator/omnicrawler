@@ -106,9 +106,8 @@ def _sock_filter() -> Any:
     audit = 62 if machine == "x86_64" else 183
     # seccomp_data.nr and arch are fixed by the kernel ABI on both supported CPUs.
     instructions = [
-        (_BPF_LD | 0x20 | _BPF_K, 0, 0, 0),
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 4),
-        (_BPF_JMP | _BPF_JEQ | _BPF_K, audit, 1, 0),
+        (_BPF_JMP | _BPF_JEQ | _BPF_K, audit, 0, 1),
         (_BPF_RET | _BPF_K, 0, 0, _RET_KILL),
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 0),
         # x32 syscall numbers have this bit; never confuse them with native ABI.
@@ -179,7 +178,7 @@ PyMODINIT_FUNC PyInit_omnicrawler_landlock(void) { return PyModule_Create(&modul
 def _native_landlock(handled: int, paths: Sequence[Path]) -> None:
     """Use a narrowly scoped native extension; Python's ctypes syscall is not ABI-safe here."""
     import sysconfig
-    with tempfile.TemporaryDirectory(prefix="omnicrawler-landlock-") as directory:
+    directory = tempfile.mkdtemp(prefix="omnicrawler-landlock-")
         source = Path(directory) / "landlock.c"
         extension = Path(directory) / "omnicrawler_landlock.so"
         source.write_text(_NATIVE_LANDLOCK_SOURCE, encoding="utf-8")
