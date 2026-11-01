@@ -140,11 +140,13 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     libc.syscall.restype = ctypes.c_long
 
     class Attr(ctypes.Structure):
-        # Keep the stable ABI v1 prefix; later kernels accept this short layout.
+        # Only the stable v1 filesystem mask is negotiated with the kernel.
         _fields_ = [("handled_access_fs", ctypes.c_uint64)]
 
     class PathBeneath(ctypes.Structure):
         _fields_ = [("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32)]
+
+
 
     abi = _landlock_abi(libc)
     if abi < 1:
@@ -158,7 +160,7 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
         create.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint32]
     else:
         create = lambda pointer, size, flags: libc.syscall(445, pointer, size, flags)
-    ruleset = create(ctypes.byref(attr), ctypes.sizeof(Attr), 0)
+    ruleset = create(ctypes.byref(attr), ctypes.c_size_t(ctypes.sizeof(Attr)), ctypes.c_uint(0))
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
     try:
