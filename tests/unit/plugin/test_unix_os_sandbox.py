@@ -18,12 +18,12 @@ def test_landlock_v1_layout_and_version_query(monkeypatch: pytest.MonkeyPatch) -
             self.syscall = self
 
         def __call__(self, number: int, *args: object) -> int:
-            if number == 444:
+            if number == 444 or getattr(number, 'value', None) == 444:
                 assert args[0] is None or args[0].value is None
                 assert args[1] == 0 or args[1].value == 0
                 assert args[2] == 1 or args[2].value == 1
                 return 5
-            if number == 445:
+            if number == 445 or getattr(number, 'value', None) == 445:
                 raw = ctypes.cast(args[0], ctypes.POINTER(ctypes.c_uint64)).contents
                 assert args[1] == 8 or args[1].value == 8
                 assert raw.value == enforcement._LANDLOCK_ACCESS_V1
@@ -140,12 +140,13 @@ def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
                 matched = ((accumulator & instruction.k) != 0) if operation == enforcement._BPF_JSET else accumulator == instruction.k
                 assert operation in (enforcement._BPF_JEQ, enforcement._BPF_JSET)
                 assert instruction.code & 0x07 == enforcement._BPF_JMP
-                pc += instruction.jt if matched else instruction.jf
+                pc += (instruction.jt if matched else instruction.jf) + 1
             elif opcode == enforcement._BPF_RET:
                 return instruction.k
             else:
                 pytest.fail("unknown BPF operation")
-            pc += 1
+            if opcode != enforcement._BPF_JMP:
+                pc += 1
         pytest.fail("BPF program has no return")
 
     socket = enforcement._syscall_number("socket")
