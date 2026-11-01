@@ -85,31 +85,19 @@ def _probe_windows() -> SandboxProbe:
 
 
 def _probe_linux() -> SandboxProbe:
-    """Linux：能力探测——user namespaces + Landlock（内核 ≥5.13）。"""
+    """探测实际 Landlock/seccomp ABI，不把内核版本当作可用性证明。"""
     try:
         import os
 
+        from omnicrawler.plugins.plugin_unix_enforcement import linux_capability
+
         release = os.uname().release  # type: ignore[attr-defined]  # Unix 专属 API
+        if linux_capability():
+            return SandboxProbe(True, "landlock", f"内核 {release}：Landlock v1+/seccomp ABI 可用")
         major, minor = (int(part) for part in release.split(".")[:2])
-        kernel_ok = (major, minor) >= (5, 13)
-        # user namespaces 可用性：试读 unprivileged userns 开关
-        userns_ok = True
-        try:
-            with open("/proc/sys/kernel/unprivileged_userns_clone", encoding="utf-8") as fh:
-                userns_ok = fh.read().strip() == "1"
-        except OSError:
-            pass  # 无该文件 = 发行版未禁用（Debian/Ubuntu 默认无此开关）
-        if kernel_ok and userns_ok:
-            return SandboxProbe(True, "landlock", f"内核 {release} ≥5.13，userns 可用")
-        if kernel_ok:
-            return SandboxProbe(
-                True, "seccomp_only", f"内核 {release} ≥5.13 但 userns 受限（降级档）"
-            )
         return SandboxProbe(
-            False,
-            "none",
-            f"内核 {release} <5.13，非受支持范围（fail-closed，第 68 轮收窄）",
-            supported_range=False,
+            False, "none", f"内核 {release}：Landlock v1+/seccomp ABI 不可用",
+            supported_range=(major, minor) >= (5, 13),
         )
     except Exception as exc:  # noqa: BLE001
         return SandboxProbe(False, "none", f"探测异常: {exc}", supported_range=False)

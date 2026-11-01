@@ -12,6 +12,47 @@ import pytest
 from omnicrawler.plugins import plugin_unix_enforcement as enforcement
 
 
+def test_landlock_v1_layout_and_version_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Libc:
+        def __init__(self) -> None:
+            self.syscall = self
+
+        def __call__(self, number: int, *args: object) -> int:
+            if number == 444:
+                assert args[0] is None or args[0].value is None
+                assert args[1] == 0 or args[1].value == 0
+                assert args[2] == 1 or args[2].value == 1
+                return 5
+            if number == 445:
+                raw = ctypes.cast(args[0], ctypes.POINTER(ctypes.c_uint64)).contents
+                assert args[1] == 8
+                assert raw.value == enforcement._LANDLOCK_ACCESS_V1
+                return -1
+            raise AssertionError(number)
+
+    monkeypatch.setattr(ctypes, "CDLL", lambda *args, **kwargs: _Libc())
+    with pytest.raises(OSError, match="ruleset creation"):
+        enforcement._landlock(enforcement._LANDLOCK_ACCESS_V1, ())
+
+
+def test_linux_capability_checks_landlock_and_seccomp(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "platform", "linux")
+    class _Libc:
+        def __init__(self) -> None:
+            self.syscall = self
+
+        def __call__(self, *args: object) -> int:
+            return 0
+
+    monkeypatch.setattr(ctypes, "CDLL", lambda *args, **kwargs: _Libc())
+    monkeypatch.setattr(os, "uname", lambda: os.uname_result(("Linux", "host", "6", "v", "x86_64")), raising=False)
+    monkeypatch.setattr(enforcement, "_landlock_abi", lambda libc: 3)
+    monkeypatch.setattr(enforcement, "_prctl", lambda libc, option, arg2=0: 2)
+    assert enforcement.linux_capability()
+    monkeypatch.setattr(enforcement, "_prctl", lambda libc, option, arg2=0: -1)
+    assert not enforcement.linux_capability()
+
+
 def test_linux_does_not_install_on_other_platforms(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "platform", "darwin")
     with pytest.raises(RuntimeError, match="E_UNSUPPORTED_ENV"):
@@ -45,7 +86,7 @@ def test_linux_passes_verified_entry_and_runtime_roots(
     assert root in calls[0] and verified in calls[0]
     assert any(len(call) > 3 and call[1] == enforcement._PR_SET_NO_NEW_PRIVS for call in calls[1:] if isinstance(call, tuple))
     assert calls[-1][1] == enforcement._PR_SET_SECCOMP
-    assert calls[-1][2] == enforcement._SECCOMP_SET_MODE_FILTER
+    assert calls[-1][2].value == enforcement._SECCOMP_SET_MODE_FILTER
 
 
 def test_landlock_failures_are_not_silently_ignored(

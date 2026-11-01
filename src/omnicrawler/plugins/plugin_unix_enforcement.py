@@ -48,9 +48,41 @@ def _syscall_number(name: str) -> int:
     return numbers[name][0 if machine == "x86_64" else 1]
 
 
+def _landlock_abi(libc: Any) -> int:
+    """Query ABI using the kernel's NULL/zero/1 version-query contract."""
+    import ctypes
+
+    ctypes.set_errno(0)
+    return libc.syscall(444, ctypes.c_void_p(), ctypes.c_size_t(0), ctypes.c_uint(1))
+
+
+def linux_capability() -> bool:
+    """Probe real v1+ Landlock and seccomp availability without enforcing them."""
+    import ctypes
+
+    if sys.platform != "linux" or os.uname().machine not in ("x86_64", "aarch64"):
+        return False
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        libc.syscall.restype = ctypes.c_long
+        abi = _landlock_abi(libc)
+        if abi < 1:
+            return False
+        # This changes no process state; PR_GET_SECCOMP only reads the mode.
+        return _prctl(libc, 21, 0) >= 0
+    except (OSError, AttributeError, TypeError):
+        return False
+
+
 def _prctl(libc: Any, option: int, arg2: Any = 0, arg3: Any = 0) -> int:
+    import ctypes
+
     number = 157 if os.uname().machine == "x86_64" else 167
-    return libc.syscall(number, option, arg2, arg3, 0, 0)
+
+    def argument(value: Any) -> Any:
+        return ctypes.c_ulong(value) if isinstance(value, int) else value
+
+    return libc.syscall(number, option, argument(arg2), argument(arg3), 0, 0)
 
 
 def _sock_filter() -> Any:
@@ -106,19 +138,20 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     libc.syscall.restype = ctypes.c_long
 
     class Attr(ctypes.Structure):
-        _fields_ = [("allowed_access", ctypes.c_uint64), ("handled_access_fs", ctypes.c_uint64)]
+        # Keep the stable ABI v1 prefix; later kernels accept this short layout.
+        _fields_ = [("handled_access_fs", ctypes.c_uint64)]
 
     class PathBeneath(ctypes.Structure):
         _fields_ = [("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32)]
 
-    abi = libc.syscall(444, 0, 0, 0)
+    abi = _landlock_abi(libc)
     if abi < 1:
         raise OSError(ctypes.get_errno(), "Landlock ABI unavailable")
-    if abi > 1:
-        raise OSError(95, "Landlock ABI newer than the verified v1 policy")
     handled = access_fs & _LANDLOCK_ACCESS_V1
-    attr = Attr(0, handled)
-    ruleset = libc.syscall(445, ctypes.byref(attr), ctypes.sizeof(attr), 0)
+    buffer = ctypes.create_string_buffer(ctypes.sizeof(Attr))
+    attr = Attr.from_buffer(buffer)
+    attr.handled_access_fs = handled
+    ruleset = libc.syscall(445, ctypes.byref(buffer), ctypes.sizeof(buffer), 0)
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
     try:

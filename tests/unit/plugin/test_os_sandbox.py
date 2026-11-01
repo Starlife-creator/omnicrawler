@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 import pytest
@@ -26,6 +27,21 @@ def test_sandbox_escape_disables_os_sandbox_keeps_subprocess() -> None:
     mode, reason = sandbox.resolve_sandbox_mode(sandbox_escape=True)
     assert mode == "none"
     assert "sandbox_escape" in reason
+
+
+def test_linux_probe_requires_real_abi(monkeypatch: pytest.MonkeyPatch) -> None:
+    """内核版本足够但 Landlock 被禁用时必须拒绝加载，而非在 spawn 后崩溃。"""
+    monkeypatch.setattr(
+        "omnicrawler.plugins.plugin_unix_enforcement.linux_capability", lambda: False
+    )
+    monkeypatch.setattr(
+        os, "uname", lambda: os.uname_result(("Linux", "host", "6.8.0", "v", "x86_64")),
+        raising=False,
+    )
+    probe = sandbox._probe_linux()
+    assert probe.available is False
+    assert "ABI 不可用" in probe.detail
+    assert sandbox.resolve_sandbox_mode(probe=probe)[0] == "refuse"
 
 
 def test_os_sandbox_enabled_when_probe_ok() -> None:
