@@ -140,6 +140,8 @@ _NATIVE_LANDLOCK_SOURCE = r'''
 #include <stdint.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
+#include <linux/seccomp.h>
+#include <linux/filter.h>
 #include <unistd.h>
 struct attr { uint64_t handled_access_fs, handled_access_net, scoped; };
 struct beneath { uint64_t allowed_access; int32_t parent_fd; };
@@ -169,13 +171,22 @@ static PyObject *install(PyObject *self, PyObject *args) {
   }
   close(ruleset); Py_RETURN_NONE;
 }
-static PyMethodDef methods[] = {{"install", install, METH_VARARGS}, {NULL, NULL, 0, NULL}};
+static PyObject *seccomp_install(PyObject *self, PyObject *args) {
+  Py_buffer bytes;
+  if (!PyArg_ParseTuple(args, "y*", &bytes)) return NULL;
+  struct sock_fprog program = {(unsigned short)(bytes.len / sizeof(struct sock_filter)), (struct sock_filter *)bytes.buf};
+  int result = (int)syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, &program);
+  PyBuffer_Release(&bytes);
+  if (result < 0) return PyErr_SetFromErrno(PyExc_OSError);
+  Py_RETURN_NONE;
+}
+static PyMethodDef methods[] = {{"install", install, METH_VARARGS}, {"seccomp_install", seccomp_install, METH_VARARGS}, {NULL, NULL, 0, NULL}};
 static struct PyModuleDef module = {PyModuleDef_HEAD_INIT, "omnicrawler_landlock", NULL, -1, methods};
 PyMODINIT_FUNC PyInit_omnicrawler_landlock(void) { return PyModule_Create(&module); }
 '''
 
 
-def _native_landlock(handled: int, paths: Sequence[Path]) -> None:
+def _native_helper():
     """Use a narrowly scoped native extension; Python's ctypes syscall is not ABI-safe here."""
     import sysconfig
     directory = tempfile.mkdtemp(prefix="omnicrawler-landlock-")
@@ -193,7 +204,11 @@ def _native_landlock(handled: int, paths: Sequence[Path]) -> None:
         raise RuntimeError(f"{E_UNSUPPORTED_ENV}: native Landlock shim cannot load")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    module.install(handled, tuple(str(path) for path in paths))
+    return module
+
+
+def _native_landlock(handled: int, paths: Sequence[Path]) -> None:
+    _native_helper().install(handled, tuple(str(path) for path in paths))
 
 
 def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
@@ -249,9 +264,7 @@ def apply_linux(*, plugin_root: Path, verified_entry_dir: Path | None = None) ->
     if _prctl(libc, _PR_SET_NO_NEW_PRIVS, 1):
         raise OSError(ctypes.get_errno(), "no_new_privs failed")
     array, program = _sock_filter()
-    seccomp_number = 318 if os.uname().machine == "x86_64" else 277
-    if libc.syscall(seccomp_number, _SECCOMP_SET_MODE_FILTER, ctypes.byref(program), 0, 0, 0):
-        raise OSError(ctypes.get_errno(), "seccomp filter installation failed")
+    _native_helper().seccomp_install(bytes(array))
     # Keep the BPF program alive for the interpreter lifetime.
     globals()["_installed_filter"] = (array, program)
     return "landlock+seccomp"
