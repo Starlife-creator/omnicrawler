@@ -16,6 +16,7 @@ def test_landlock_v1_layout_and_version_query(monkeypatch: pytest.MonkeyPatch) -
     class _Libc:
         def __init__(self) -> None:
             self.syscall = self
+            self.landlock_create_ruleset = self.create_call()
             self.argtypes: list[object] = []
 
         @property
@@ -25,6 +26,15 @@ def test_landlock_v1_layout_and_version_query(monkeypatch: pytest.MonkeyPatch) -
         @argtypes.setter
         def argtypes(self, value: object) -> None:
             self._argtypes = value
+
+        class Create:
+            def __call__(self, *args: object) -> int:
+                raw = ctypes.cast(args[0], ctypes.POINTER(ctypes.c_uint64)).contents
+                assert raw.value == enforcement._LANDLOCK_ACCESS_V1
+                return -1
+
+        def create_call(self) -> object:
+            return self.Create()
 
         def __call__(self, number: int, *args: object) -> int:
             if number == 444 or getattr(number, 'value', None) == 444:

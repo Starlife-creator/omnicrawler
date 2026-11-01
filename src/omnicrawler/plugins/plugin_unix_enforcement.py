@@ -150,9 +150,11 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
         raise OSError(ctypes.get_errno(), "Landlock ABI unavailable")
     handled = access_fs & _LANDLOCK_ACCESS_V1
     attr = Attr(handled_access_fs=handled)
-    libc.syscall.argtypes = [ctypes.c_long, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint]
     ctypes.set_errno(0)
-    ruleset = libc.syscall(445, ctypes.byref(attr), ctypes.sizeof(Attr), 0)
+    create = libc.landlock_create_ruleset
+    create.argtypes = [ctypes.POINTER(Attr), ctypes.c_size_t, ctypes.c_uint]
+    create.restype = ctypes.c_int
+    ruleset = create(ctypes.byref(attr), ctypes.sizeof(Attr), 0)
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
     try:
