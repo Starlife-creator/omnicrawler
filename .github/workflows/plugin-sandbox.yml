@@ -141,10 +141,17 @@ jobs:
           print('python full only', libc.syscall(445, ctypes.byref(z), 24, 0), ctypes.get_errno())
           import os
           print('nr values', os.sysconf_names.get('SC_PAGE_SIZE'))
+          libc.syscall.argtypes = None
           for number in (444, 445, 446):
               ctypes.set_errno(0)
               fd = libc.syscall(number, None, 0, 1)
               print('syscall version', number, fd, ctypes.get_errno())
+          import sysconfig
+          print('python SOABI', sysconfig.get_config_var('SOABI'))
+          attr = A(8191)
+          for flags in (0, 1):
+              fd = libc.syscall(445, ctypes.byref(attr), 8, flags)
+              print('flags probe', flags, fd, ctypes.get_errno())
           print('first syscall in fresh subprocess follows')
           libc.syscall.argtypes = [ctypes.c_long, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint]
           for value in (8191, 16383):
