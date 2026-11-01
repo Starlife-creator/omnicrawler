@@ -104,14 +104,14 @@ def _sock_filter() -> Any:
     audit = 62 if machine == "x86_64" else 183
     # seccomp_data.nr and arch are fixed by the kernel ABI on both supported CPUs.
     instructions = [
-        (_BPF_LD | _BPF_K, 0, 0, 0),
+        (_BPF_LD | 0x20 | _BPF_K, 0, 0, 0),
         # x32 syscall numbers have this bit; never confuse them with native ABI.
         (_BPF_JMP | _BPF_JSET | _BPF_K, 0x40000000, 5, 0),
         (_BPF_RET | _BPF_K, 0, 0, _RET_ALLOW),
         (_BPF_LD | _BPF_K, 0, 0, 4),
         (_BPF_JMP | _BPF_JEQ | _BPF_K, audit, 0, 1),
         (_BPF_RET | _BPF_K, 0, 0, _RET_KILL),
-        (_BPF_LD | _BPF_K, 0, 0, 0),
+        (_BPF_LD | 0x20 | _BPF_K, 0, 0, 0),
     ]
     instructions.extend(
         (_BPF_JMP | _BPF_JEQ | _BPF_K, _syscall_number(name), 0, 1)
@@ -153,7 +153,7 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     attr = Attr.from_buffer(buffer)
     attr.handled_access_fs = handled
     ctypes.set_errno(0)
-    ruleset = libc.syscall(445, ctypes.byref(buffer), ctypes.c_size_t(ctypes.sizeof(buffer)), ctypes.c_uint(0))
+    ruleset = libc.syscall(445, ctypes.byref(attr), ctypes.c_size_t(ctypes.sizeof(Attr)), ctypes.c_uint(0))
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
     try:
@@ -228,7 +228,7 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
     return f"""(version 1)
 (deny default)
 (allow signal (target self))
-(allow file-read* file-execute
+(allow file-read* process-exec
 {allow}
   (subpath "/usr/lib")
   (subpath "/usr/bin")
@@ -241,7 +241,6 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
 (allow file-read-metadata)
 (allow file-write* (literal "/dev/null"))
 (deny network*)
-(deny process-exec*)
 """
 
 

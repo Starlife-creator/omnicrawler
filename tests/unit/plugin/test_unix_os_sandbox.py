@@ -109,7 +109,7 @@ def test_darwin_launch_wraps_command_and_deletes_profile(
         profile = Path(command[2]).read_text(encoding="utf-8")
         assert "(deny default)" in profile
         assert "(deny network*)" in profile
-        assert "(deny process-exec*)" in profile
+        assert "(allow file-read* process-exec" in profile
         assert f"(subpath {enforcement._quote(root)})" in profile
     assert not Path(command[2]).exists()
 
