@@ -165,6 +165,9 @@ def test_linux_enforcement_allows_imports_and_blocks_escape(tmp_path: Path) -> N
     plugin.write_text("def handle(operation, payload):\n    return {'ok': True}\n", encoding="utf-8")
     probe = r"""
 import json, os, socket, sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[2])))
+sys.path.insert(0, str(Path(sys.argv[1])))
 from plugin_unix_enforcement import apply_linux
 from pathlib import Path
 apply_linux(plugin_root=Path(sys.argv[1]))
@@ -184,7 +187,7 @@ print(json.dumps(result))
 """
     source = Path(__file__).parents[3] / "src"
     completed = subprocess.run(
-        [sys.executable, "-S", "-c", "import sys;" + probe, str(tmp_path)],
+        [sys.executable, "-I", "-S", "-c", probe, str(tmp_path), str(source)],
         capture_output=True, text=True, timeout=15,
         env={key: value for key, value in {**os.environ, "PYTHONPATH": str(source)}.items()
              if key != "PYTHONHOME"}, check=False,
