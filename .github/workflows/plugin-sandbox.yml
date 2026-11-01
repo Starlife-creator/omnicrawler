@@ -157,6 +157,13 @@ jobs:
           for num in (444, 445):
               fd = libc.syscall(ctypes.c_long(num), ctypes.c_void_p(ctypes.addressof(attr)), ctypes.c_size_t(8), ctypes.c_uint(0))
               print('pointer numeric', num, fd, ctypes.get_errno())
+          import os
+          print('new privs', open('/proc/self/status').read().split('NoNewPrivs:')[1].splitlines()[0])
+          fd = libc.syscall(445, ctypes.byref(attr), ctypes.c_size_t(8), ctypes.c_ulong(0))
+          print('all ulong size flags', fd, ctypes.get_errno())
+          f = ctypes.CDLL(None, use_errno=True).syscall
+          f.restype = ctypes.c_long
+          print('untyped all', f(445, ctypes.byref(attr), 8, 0), ctypes.get_errno())
           print('first syscall in fresh subprocess follows')
           libc.syscall.argtypes = [ctypes.c_long, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint]
           for value in (8191, 16383):
