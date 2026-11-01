@@ -119,6 +119,13 @@ jobs:
           libdl.syscall.restype = ctypes.c_long
           y = A(8191)
           print('python libc-explicit', libdl.syscall(445, ctypes.byref(y), ctypes.c_size_t(8), ctypes.c_uint(0)), ctypes.get_errno())
+          print('python flags', ctypes.sizeof(A), ctypes.alignment(A))
+          for arg in (ctypes.byref(y), ctypes.c_void_p(ctypes.addressof(y)), y):
+              for number in (445,):
+                  ctypes.set_errno(0)
+                  fd = libdl.syscall(number, arg, 8, 0)
+                  print('python variant', type(arg).__name__, fd, ctypes.get_errno())
+          print('python getpid', libdl.syscall(39))
           for value in (0, 1, 0x1FFF):
               ctypes.set_errno(0)
               a.handled_access_fs = value
