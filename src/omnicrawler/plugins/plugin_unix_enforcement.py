@@ -107,7 +107,7 @@ def _sock_filter() -> Any:
     instructions = [
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 0),
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 4),
-        (_BPF_JMP | _BPF_JEQ | _BPF_K, audit, 0, 1),
+        (_BPF_JMP | _BPF_JEQ | _BPF_K, audit, 1, 0),
         (_BPF_RET | _BPF_K, 0, 0, _RET_KILL),
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 0),
         # x32 syscall numbers have this bit; never confuse them with native ABI.
@@ -153,9 +153,10 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     handled = access_fs & _LANDLOCK_ACCESS_V1
     attr = Attr(handled_access_fs=handled)
     ctypes.set_errno(0)
+    print(f"LANDLOCK abi={abi} handled={handled} size={ctypes.sizeof(Attr)}", file=sys.stderr, flush=True)
     ruleset = libc.syscall(ctypes.c_long(445), ctypes.byref(attr), ctypes.c_size_t(ctypes.sizeof(Attr)), ctypes.c_uint(0))
     if ruleset < 0:
-        raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
+        raise OSError(ctypes.get_errno(), f"Landlock ruleset creation failed (abi={abi}, handled={handled}, size={ctypes.sizeof(Attr)}, machine={os.uname().machine if hasattr(os, 'uname') else sys.platform})")
     try:
         for path in paths:
             fd = os.open(path, getattr(os, "O_PATH", os.O_RDONLY) | getattr(os, "O_CLOEXEC", 0))
