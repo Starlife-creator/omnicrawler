@@ -1,0 +1,151 @@
+"""Unix enforcement semantics and real-kernel/Seatbelt smoke coverage."""
+
+from __future__ import annotations
+
+import ctypes
+import os
+import sys
+from pathlib import Path
+
+import pytest
+
+from omnicrawler.plugins import plugin_unix_enforcement as enforcement
+
+
+def test_linux_does_not_install_on_other_platforms(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "platform", "darwin")
+    with pytest.raises(RuntimeError, match="E_UNSUPPORTED_ENV"):
+        enforcement.apply_linux(plugin_root=Path("."))
+
+
+def test_linux_passes_verified_entry_and_runtime_roots(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(enforcement, "_landlock", lambda access, paths: calls.append(paths))
+    program = ctypes.c_int()
+    monkeypatch.setattr(enforcement, "_sock_filter", lambda: ("array", program))
+    monkeypatch.setattr(os, "uname", lambda: os.uname_result(("Linux", "host", "6", "v", "x86_64")), raising=False)
+    monkeypatch.setattr(
+        enforcement, "_standard_library_roots", lambda: (tmp_path / "stdlib",)
+    )
+    monkeypatch.setattr(enforcement, "_linux_runtime_roots", lambda: ())
+
+    class _Libc:
+        @staticmethod
+        def syscall(*args: object) -> int:
+            calls.append(args)
+            return 0
+
+    monkeypatch.setattr(ctypes, "CDLL", lambda *args, **kwargs: _Libc())
+    root = tmp_path / "plugin"
+    verified = tmp_path / "verified"
+    assert enforcement.apply_linux(plugin_root=root, verified_entry_dir=verified) == "landlock+seccomp"
+    assert root in calls[0] and verified in calls[0]
+    assert any(len(call) > 3 and call[1] == enforcement._PR_SET_NO_NEW_PRIVS for call in calls[1:] if isinstance(call, tuple))
+    assert calls[-1][1] == enforcement._PR_SET_SECCOMP
+    assert calls[-1][2] == enforcement._SECCOMP_SET_MODE_FILTER
+
+
+def test_landlock_failures_are_not_silently_ignored(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(enforcement, "_landlock", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("denied")))
+    with pytest.raises(OSError, match="denied"):
+        enforcement.apply_linux(plugin_root=tmp_path)
+
+
+def test_darwin_launch_wraps_command_and_deletes_profile(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(enforcement.shutil, "which", lambda name: "/usr/bin/sandbox-exec")
+    root = tmp_path / "plugin"
+    with enforcement.darwin_launch(["host", "demo"], plugin_root=root) as command:
+        assert command[:3] == ["/usr/bin/sandbox-exec", "-f", command[2]]
+        assert command[3:] == ["host", "demo"]
+        profile = Path(command[2]).read_text(encoding="utf-8")
+        assert "(deny default)" in profile
+        assert "(deny network*)" in profile
+        assert "(deny process-exec*)" in profile
+        assert f"(subpath {enforcement._quote(root)})" in profile
+    assert not Path(command[2]).exists()
+
+
+def test_darwin_launch_requires_seatbelt(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(enforcement.shutil, "which", lambda name: None)
+    with pytest.raises(RuntimeError, match="E_UNSUPPORTED_ENV"):
+        with enforcement.darwin_launch(["host"], plugin_root=tmp_path):
+            pass
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="requires the real Linux kernel")
+def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
+    """The syscall filter must deny socket, not accidentally allow everything."""
+    array, _program = enforcement._sock_filter()
+    assert array[0].k == 0  # load seccomp_data.nr before checking the ABI
+    for instruction in array:
+        if instruction.code == (0x05 | 0x15 | 0x06) and instruction.k == 0x40000000:
+            assert instruction.jt == 5  # jumps past arch check to RET_KILL
+            break
+    else:
+        pytest.fail("missing x32 syscall ABI guard")
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="requires the real Linux kernel")
+def test_linux_enforcement_allows_imports_and_blocks_escape(tmp_path: Path) -> None:
+    """Run in a child: the filter is intentionally irreversible."""
+    import json
+    import subprocess
+
+    plugin = tmp_path / "probe.py"
+    plugin.write_text("def handle(operation, payload):\n    return {'ok': True}\n", encoding="utf-8")
+    probe = r"""
+import json, os, socket, sys
+from plugin_unix_enforcement import apply_linux
+from pathlib import Path
+apply_linux(plugin_root=Path(sys.argv[1]))
+import probe
+result = {}
+try:
+    socket.socket()
+except OSError:
+    result['network'] = 'denied'
+try:
+    Path('/etc/passwd').read_text()
+    result['file'] = 'allowed'
+except OSError:
+    result['file'] = 'denied'
+result['import'] = probe.handle('', {})['ok']
+print(json.dumps(result))
+"""
+    source = Path(__file__).parents[3] / "src"
+    completed = subprocess.run(
+        [sys.executable, "-S", "-c", "import sys;" + probe, str(tmp_path)],
+        capture_output=True, text=True, timeout=15, check=True,
+        env={**os.environ, "PYTHONPATH": str(source)},
+    )
+    assert json.loads(completed.stdout) == {"network": "denied", "file": "denied", "import": True}
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="requires real macOS Seatbelt")
+def test_seatbelt_allows_plugin_read_and_blocks_escape(tmp_path: Path) -> None:
+    import json
+    import subprocess
+
+    plugin = tmp_path / "probe.py"
+    plugin.write_text("value = 42\n", encoding="utf-8")
+    probe = "import json,socket,sys; sys.path.insert(0,sys.argv[1]); import probe; result={'import': probe.value}; "
+    probe += "\n".join((
+        "try: socket.socket(); result['network']='allowed'",
+        "except OSError: result['network']='denied'",
+        "try: open('/etc/passwd').read(); result['file']='allowed'",
+        "except OSError: result['file']='denied'",
+        "print(json.dumps(result))",
+    ))
+    with enforcement.darwin_launch(
+        [sys.executable, "-S", "-c", probe, str(tmp_path)], plugin_root=tmp_path
+    ) as command:
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=15, check=True)
+    assert json.loads(completed.stdout) == {"import": 42, "network": "denied", "file": "denied"}

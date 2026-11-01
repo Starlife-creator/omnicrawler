@@ -1,0 +1,230 @@
+"""Standard-library-only Unix confinement for the plugin host.
+
+``apply_linux`` is a one-way, in-process operation and must be called *before*
+loading a plugin. It combines Landlock with a seccomp deny filter: Landlock
+confines file access, while seccomp prevents direct sockets, child processes,
+and attempts to remove either protection.
+
+``darwin_launch`` wraps the already-resolved sandbox-host command with
+``sandbox-exec``. This module deliberately has no dependency on the host
+package, so its Linux entry point remains usable in the frozen host.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import sys
+import tempfile
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any
+
+E_UNSUPPORTED_ENV = "E_UNSUPPORTED_ENV"
+_PR_SET_NO_NEW_PRIVS = 38
+_PR_SET_SECCOMP = 22
+_SECCOMP_SET_MODE_FILTER = 1
+_RET_KILL = 0x80000000
+_RET_ERRNO = 0x00050001
+_RET_ALLOW = 0x7FFF0000
+_LANDLOCK_ACCESS_V1 = (1 << 14) - 1
+_BPF_LD = 0
+_BPF_JMP = 5
+_BPF_JEQ = 0x15
+_BPF_K = 6
+_BPF_RET = 6
+
+
+def _syscall_number(name: str) -> int:
+    machine = os.uname().machine
+    if machine not in ("x86_64", "aarch64"):
+        raise RuntimeError(f"{E_UNSUPPORTED_ENV}: unsupported seccomp architecture {machine}")
+    numbers = {
+        "socket": (41, 198), "socketpair": (53, 199), "ptrace": (101, 117),
+        "bpf": (321, 280), "process_vm_readv": (310, 270),
+        "process_vm_writev": (311, 271), "kexec_load": (246, 104),
+    }
+    return numbers[name][0 if machine == "x86_64" else 1]
+
+
+def _prctl(libc: Any, option: int, arg2: Any = 0, arg3: Any = 0) -> int:
+    number = 157 if os.uname().machine == "x86_64" else 167
+    return libc.syscall(number, option, arg2, arg3, 0, 0)
+
+
+def _sock_filter() -> Any:
+    """Kill unknown ABIs and deny network/cross-process/kernel attack surfaces."""
+    import ctypes
+    import struct
+
+    class Filter(ctypes.Structure):
+        _fields_ = [
+            ("code", ctypes.c_ushort), ("jt", ctypes.c_ubyte),
+            ("jf", ctypes.c_ubyte), ("k", ctypes.c_uint32),
+        ]
+
+    class Program(ctypes.Structure):
+        _fields_ = [("len", ctypes.c_ushort), ("filter", ctypes.POINTER(Filter))]
+
+    machine = os.uname().machine
+    audit = 0xC000003E | (62 if machine == "x86_64" else 183)
+    # seccomp_data.nr and arch are fixed by the kernel ABI on both supported CPUs.
+    instructions = [
+        (_BPF_LD | _BPF_K, 0, 0, 0),
+        # x32 syscall numbers have this bit; never confuse them with native ABI.
+        (_BPF_JMP | _BPF_JEQ | _BPF_K, 0x40000000, 5, 0),
+        (_BPF_RET | _BPF_K, 0, 0, _RET_ALLOW),
+        (_BPF_LD | _BPF_K, 0, 0, 4),
+        (_BPF_JMP | _BPF_JEQ | _BPF_K, audit, 1, 0),
+        (_BPF_RET | _BPF_K, 0, 0, _RET_KILL),
+        (_BPF_LD | _BPF_K, 0, 0, 0),
+    ]
+    instructions.extend(
+        (_BPF_JMP | _BPF_JEQ | _BPF_K, _syscall_number(name), 0, 1)
+        for name in (
+            "socket", "socketpair", "ptrace", "bpf", "process_vm_readv",
+            "process_vm_writev", "kexec_load",
+        )
+    )
+    instructions.extend([
+        (_BPF_RET | _BPF_K, 0, 0, _RET_ERRNO),
+        (_BPF_RET | _BPF_K, 0, 0, _RET_ALLOW),
+    ])
+    if struct.calcsize("P") != 8:
+        raise RuntimeError(f"{E_UNSUPPORTED_ENV}: seccomp requires a 64-bit interpreter")
+    array = (Filter * len(instructions))(
+        *(Filter(code, jt, jf, k) for code, jt, jf, k in instructions)
+    )
+    return array, Program(len(array), array)
+
+
+def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
+    import ctypes
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.syscall.restype = ctypes.c_long
+
+    class Attr(ctypes.Structure):
+        _fields_ = [("allowed_access", ctypes.c_uint64), ("handled_access_fs", ctypes.c_uint64)]
+
+    class PathBeneath(ctypes.Structure):
+        _fields_ = [("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32)]
+
+    abi = libc.syscall(444, 0, 0, 0)
+    if abi < 1:
+        raise OSError(ctypes.get_errno(), "Landlock ABI unavailable")
+    if abi > 1:
+        raise OSError(95, "Landlock ABI newer than the verified v1 policy")
+    handled = access_fs & _LANDLOCK_ACCESS_V1
+    attr = Attr(0, handled)
+    ruleset = libc.syscall(445, ctypes.byref(attr), ctypes.sizeof(attr), 0)
+    if ruleset < 0:
+        raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
+    try:
+        for path in paths:
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_PATH", 0))
+            try:
+                rule = PathBeneath(access_fs, fd)
+                if libc.syscall(446, ruleset, 1, ctypes.byref(rule), 0):
+                    raise OSError(ctypes.get_errno(), f"Landlock rule rejected: {path}")
+            finally:
+                os.close(fd)
+        if _prctl(libc, _PR_SET_NO_NEW_PRIVS, 1):
+            raise OSError(ctypes.get_errno(), "no_new_privs failed")
+        if libc.syscall(447, ruleset, 0):
+            raise OSError(ctypes.get_errno(), "Landlock enforcement failed")
+    finally:
+        os.close(ruleset)
+
+
+def _standard_library_roots() -> tuple[Path, ...]:
+    roots = {Path(path).resolve() for path in sys.path if path and Path(path).is_dir()}
+    roots.update(Path(value).resolve() for value in (sys.prefix, sys.base_prefix) if value)
+    return tuple(sorted(roots, key=str))
+
+
+def _linux_runtime_roots() -> tuple[Path, ...]:
+    return tuple(
+        Path(value) for value in (
+            "/lib", "/lib64", "/usr/lib", "/usr/local/lib",
+            "/etc/ssl", "/etc/localtime", "/usr/share/zoneinfo",
+        ) if Path(value).exists()
+    )
+
+
+def apply_linux(*, plugin_root: Path, verified_entry_dir: Path | None = None) -> str:
+    """Install irreversible file and socket confinement before plugin import.
+
+    A failure is fail-closed: the caller must not load plugin code. Read-only
+    access is limited to interpreter/standard-library roots, the verified
+    entry, and the plugin itself. No writable directory is exposed; files and
+    artifacts remain capability-proxy operations.
+    """
+    if sys.platform != "linux":
+        raise RuntimeError(f"{E_UNSUPPORTED_ENV}: Landlock requires Linux")
+    roots = (*_standard_library_roots(), *_linux_runtime_roots(), plugin_root.resolve())
+    if verified_entry_dir is not None:
+        roots += (verified_entry_dir.resolve(),)
+    _landlock(_LANDLOCK_ACCESS_V1, roots)
+    import ctypes
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    if _prctl(libc, _PR_SET_NO_NEW_PRIVS, 1):
+        raise OSError(ctypes.get_errno(), "no_new_privs failed")
+    array, program = _sock_filter()
+    if _prctl(libc, _PR_SET_SECCOMP, _SECCOMP_SET_MODE_FILTER, ctypes.byref(program)):
+        raise OSError(ctypes.get_errno(), "seccomp filter installation failed")
+    # Keep the BPF program alive for the interpreter lifetime.
+    globals()["_installed_filter"] = (array, program)
+    return "landlock+seccomp"
+
+
+def _quote(path: Path) -> str:
+    return '"' + str(path.resolve()).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None) -> str:
+    """Return a fail-closed Seatbelt profile with no direct network access."""
+    roots = (*_standard_library_roots(), plugin_root.resolve())
+    if verified_entry_dir is not None:
+        roots += (verified_entry_dir.resolve(),)
+    allow = "\n".join(f"  (subpath {_quote(root)})" for root in roots)
+    return f"""(version 1)
+(deny default)
+(allow signal (target self))
+(allow file-read* file-execute
+{allow}
+  (subpath "/usr/lib")
+  (subpath "/usr/bin")
+  (subpath "/bin")
+  (subpath "/System/Library")
+  (subpath "/Library/Apple")
+  (subpath "/private/var/db/dyld")
+  (subpath "/dev"))
+(allow file-read-metadata)
+(allow file-write* (literal "/dev/null"))
+(deny network*)
+(deny process-exec*)
+"""
+
+
+@contextmanager
+def darwin_launch(
+    command: Sequence[str], *, plugin_root: Path, verified_entry_dir: Path | None = None
+) -> Iterator[list[str]]:
+    """Yield a ``sandbox-exec`` command and clean up its private profile."""
+    executable = shutil.which("sandbox-exec")
+    if executable is None:
+        raise RuntimeError(f"{E_UNSUPPORTED_ENV}: sandbox-exec unavailable")
+    profile = darwin_profile(plugin_root=plugin_root, verified_entry_dir=verified_entry_dir)
+    descriptor, name = tempfile.mkstemp(prefix="omnicrawler-seatbelt-", suffix=".sb")
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(profile)
+        yield [executable, "-f", name, *command]
+    finally:
+        try:
+            os.unlink(name)
+        except FileNotFoundError:
+            pass
