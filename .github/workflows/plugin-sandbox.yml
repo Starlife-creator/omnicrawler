@@ -96,6 +96,12 @@ jobs:
           print('python typed', libc.syscall(445, ctypes.byref(a), 8, 0), ctypes.get_errno())
           ctypes.set_errno(0)
           print('python no-restype', libc.syscall(445, ctypes.byref(a), ctypes.c_size_t(8), ctypes.c_uint(0)), ctypes.get_errno())
+          fn = getattr(libc, 'syscall')
+          print('abi ptr size', ctypes.sizeof(ctypes.c_void_p), hex(ctypes.addressof(a)))
+          for number in (444, 445):
+              ctypes.set_errno(0)
+              fd = fn(number, ctypes.byref(a), 8, 0 if number == 445 else 1)
+              print('direct-number', number, fd, ctypes.get_errno())
           PY
         shell: bash
       - name: 真实内核与 Seatbelt 隔离用例
