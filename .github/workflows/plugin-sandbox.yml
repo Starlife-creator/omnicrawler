@@ -152,6 +152,11 @@ jobs:
           for flags in (0, 1):
               fd = libc.syscall(445, ctypes.byref(attr), 8, flags)
               print('flags probe', flags, fd, ctypes.get_errno())
+          import struct
+          print('constants', hex(445), struct.pack('Q', 8191).hex(), struct.calcsize('P'))
+          for num in (444, 445):
+              fd = libc.syscall(ctypes.c_long(num), ctypes.c_void_p(ctypes.addressof(attr)), ctypes.c_size_t(8), ctypes.c_uint(0))
+              print('pointer numeric', num, fd, ctypes.get_errno())
           print('first syscall in fresh subprocess follows')
           libc.syscall.argtypes = [ctypes.c_long, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint]
           for value in (8191, 16383):
