@@ -162,6 +162,8 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     libc.syscall.restype = ctypes.c_long
     raw = ctypes.create_string_buffer(ctypes.sizeof(Attr))
     ctypes.memmove(raw, ctypes.byref(attr), ctypes.sizeof(Attr))
+    import sys
+    print("LANDLOCK_FINAL", abi, handled, ctypes.sizeof(Attr), bytes(raw).hex(), flush=True, file=sys.stderr)
     ruleset = libc.syscall(445, ctypes.byref(raw), ctypes.c_size_t(8), ctypes.c_uint(0))
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
