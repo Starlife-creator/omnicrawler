@@ -182,6 +182,8 @@ jobs:
           print('fresh packed buffer', libc2.syscall(445, ctypes.byref(b), ctypes.c_size_t(8), ctypes.c_uint(0)), ctypes.get_errno())
           print('pointer int buffer', libc2.syscall(ctypes.c_long(445), ctypes.c_void_p(ctypes.addressof(b)), ctypes.c_ulong(8), ctypes.c_ulong(0)), ctypes.get_errno())
           import subprocess
+          subprocess.run(['sh', '-c', 'cat > /tmp/pyland.c <<"C"\n#include <Python.h>\n#include <unistd.h>\n#include <sys/syscall.h>\n#include <linux/landlock.h>\nstatic PyObject *f(PyObject *s, PyObject *a) { struct landlock_ruleset_attr x = {8191}; return PyLong_FromLong(syscall(__NR_landlock_create_ruleset, &x, 8, 0)); }\nstatic PyMethodDef m[] = {{"f", f, METH_NOARGS}, {NULL}};\nstatic struct PyModuleDef d = {PyModuleDef_HEAD_INIT, "pyland", 0, -1, m};\nPyMODINIT_FUNC PyInit_pyland(void) { return PyModule_Create(&d); }\nC\ncc -shared -fPIC /tmp/pyland.c $(python3-config --includes) -o /tmp/pyland.so\nPYTHONPATH=/tmp python -c "import pyland; print(pyland.f())"'])
+          import subprocess
           traced = subprocess.run(['strace', '-f', '-e', 'trace=all', '-o', '/tmp/landlock-python.strace', os.sys.executable, '-c', 'import ctypes; A=type("A",(ctypes.Structure,),{"_fields_":[("handled",ctypes.c_uint64)]}); a=A(8191); f=ctypes.CDLL(None,use_errno=True).syscall; f.restype=ctypes.c_long; print(f(445,ctypes.byref(a),8,0),ctypes.get_errno())'], capture_output=True, text=True)
           print('strace', traced.returncode, traced.stdout, traced.stderr)
           print(open('/tmp/landlock-python.strace').read() if os.path.exists('/tmp/landlock-python.strace') else 'no strace')
