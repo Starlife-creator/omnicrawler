@@ -30,8 +30,9 @@ _RET_ERRNO = 0x00050001
 _RET_ALLOW = 0x7FFF0000
 _LANDLOCK_ACCESS_V1 = (1 << 14) - 1
 _BPF_LD = 0
-_BPF_JMP = 5
-_BPF_JEQ = 0x15
+_BPF_JMP = 0x05
+_BPF_JEQ = 0x10
+_BPF_JSET = 0x40
 _BPF_K = 6
 _BPF_RET = 6
 
@@ -100,12 +101,12 @@ def _sock_filter() -> Any:
         _fields_ = [("len", ctypes.c_ushort), ("filter", ctypes.POINTER(Filter))]
 
     machine = os.uname().machine
-    audit = 0xC000003E | (62 if machine == "x86_64" else 183)
+    audit = 62 if machine == "x86_64" else 183
     # seccomp_data.nr and arch are fixed by the kernel ABI on both supported CPUs.
     instructions = [
         (_BPF_LD | _BPF_K, 0, 0, 0),
         # x32 syscall numbers have this bit; never confuse them with native ABI.
-        (_BPF_JMP | _BPF_JEQ | _BPF_K, 0x40000000, 5, 0),
+        (_BPF_JMP | _BPF_JSET | _BPF_K, 0x40000000, 5, 0),
         (_BPF_RET | _BPF_K, 0, 0, _RET_ALLOW),
         (_BPF_LD | _BPF_K, 0, 0, 4),
         (_BPF_JMP | _BPF_JEQ | _BPF_K, audit, 1, 0),
@@ -156,9 +157,9 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
         raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
     try:
         for path in paths:
-            fd = os.open(path, os.O_RDONLY | getattr(os, "O_PATH", 0))
+            fd = os.open(path, getattr(os, "O_PATH", os.O_RDONLY) | getattr(os, "O_CLOEXEC", 0))
             try:
-                rule = PathBeneath(access_fs, fd)
+                rule = PathBeneath(handled, fd)
                 if libc.syscall(446, ruleset, 1, ctypes.byref(rule), 0):
                     raise OSError(ctypes.get_errno(), f"Landlock rule rejected: {path}")
             finally:

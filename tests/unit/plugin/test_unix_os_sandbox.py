@@ -121,17 +121,38 @@ def test_darwin_launch_requires_seatbelt(monkeypatch: pytest.MonkeyPatch, tmp_pa
             pass
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="requires the real Linux kernel")
+@pytest.mark.skipif(sys.platform != "linux", reason="requires Linux syscall numbers")
 def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
-    """The syscall filter must deny socket, not accidentally allow everything."""
+    """Evaluate the exact BPF control flow, including x32 and wrong ABIs."""
     array, _program = enforcement._sock_filter()
-    assert array[0].k == 0  # load seccomp_data.nr before checking the ABI
-    for instruction in array:
-        if instruction.code == (0x05 | 0x15 | 0x06) and instruction.k == 0x40000000:
-            assert instruction.jt == 5  # jumps past arch check to RET_KILL
-            break
-    else:
-        pytest.fail("missing x32 syscall ABI guard")
+    audit = 62 if os.uname().machine == "x86_64" else 183
+
+    def evaluate(number: int, arch: int) -> int:
+        accumulator = 0
+        pc = 0
+        while pc < len(array):
+            instruction = array[pc]
+            opcode = instruction.code & 0x07
+            if opcode == enforcement._BPF_LD:
+                accumulator = number if instruction.k == 0 else arch
+            elif opcode == enforcement._BPF_JMP:
+                operation = instruction.code & 0xF0
+                matched = ((accumulator & instruction.k) != 0) if operation == enforcement._BPF_JSET else accumulator == instruction.k
+                assert operation in (enforcement._BPF_JEQ, enforcement._BPF_JSET)
+                pc += instruction.jt if matched else instruction.jf
+            elif opcode == enforcement._BPF_RET:
+                return instruction.k
+            else:
+                pytest.fail("unknown BPF operation")
+            pc += 1
+        pytest.fail("BPF program has no return")
+
+    socket = enforcement._syscall_number("socket")
+    assert evaluate(0, audit) == enforcement._RET_ALLOW
+    assert evaluate(socket, audit) == enforcement._RET_ERRNO
+    assert evaluate(0, 0) == enforcement._RET_KILL
+    assert evaluate(0x40000000, audit) == enforcement._RET_KILL
+    assert evaluate(0x40000000 | socket, audit) == enforcement._RET_KILL
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="requires the real Linux kernel")
@@ -164,9 +185,11 @@ print(json.dumps(result))
     source = Path(__file__).parents[3] / "src"
     completed = subprocess.run(
         [sys.executable, "-S", "-c", "import sys;" + probe, str(tmp_path)],
-        capture_output=True, text=True, timeout=15, check=True,
-        env={**os.environ, "PYTHONPATH": str(source)},
+        capture_output=True, text=True, timeout=15,
+        env={key: value for key, value in {**os.environ, "PYTHONPATH": str(source)}.items()
+             if key != "PYTHONHOME"}, check=False,
     )
+    assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout) == {"network": "denied", "file": "denied", "import": True}
 
 

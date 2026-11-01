@@ -46,12 +46,15 @@
 - 与沙箱、IPC、Selenium、GUI 恢复相关的源码定向 mypy 为 **34 source files** 无错误；完整 lint 预算 **99/99**，N802 回到 **28/28**，没有放宽预算。
 - 不安全 Windows AppContainer 原型保留在未跟踪工作区、未接线且未纳入提交；静态检查不把该原型的类型/lint 错误归到生产提交。
 - `static-autonomous-final.json`：静态门禁 **22 passed / 1 failed / 0 skipped**；compileall、ruff、完整 mypy、编码标准、lint 预算、网络边界、发布完整性等均通过，唯一失败仍是本机 Bash/MSYS `0x80070422`。该报告生成于最终提交前的同一源码内容，不能代替最终提交的 CI。
+- `5ea9ac3`：Linux 能力探测改用真实 Landlock ABI / seccomp 查询；v1 ruleset 保留稳定的 8 字节布局，移除对新 ABI 的误拒。普通插件 CI 暴露内核错误后，新增直接内核/Seatbelt 测试门禁；后续内核修正以 `user-test-runs/2026-11-01` 中的最新 CI 结果为准。
+- `826ff0e` 之后已修复 SeleniumBiDi 对应的新增惰性属性命名，没有调整 N802 预算。
+- 完全隔离、正确指定 `PYTHONPATH=src` 的全量单元回归为 **5258 passed / 32 skipped / 5 failed**；五项仍是下文记录的 Bash/MSYS 环境失败。
 
 ## 全量回归与保留环境失败
 
 最终全量命令使用仓外 `E:\tool\biancheng\omnicrawler\.dsh-temp\unit-temp-final` 和 `PYTHONUTF8=1`，并将 `TEMP/TMP` 与 pytest `--basetemp` 同时放在仓外，避免标准库 `tempfile` 的临时配置上溯仓库 `pyproject.toml` 造成共享 `work/`，并修复子进程默认 GBK 解码问题。
 
-完全隔离的全量结果为 **5 failed / 5237 passed / 29 skipped**。此前只改 `--basetemp` 时的配置和签名两个额外失败，在同时隔离 `TEMP/TMP` 后为 **16 passed**；市场缺失和 Windows 外部工作区测试也已分别通过。剩余五项均在本机 Bash/MSYS 边界：
+自主收尾前一次全量结果为 **5 failed / 5237 passed / 29 skipped**；自主收尾后的正确导入路径全量结果为 **5 failed / 5258 passed / 32 skipped**。此前只改 `--basetemp` 时的配置和签名两个额外失败，在同时隔离 `TEMP/TMP` 后为 **16 passed**；市场缺失和 Windows 外部工作区测试也已分别通过。剩余五项均在本机 Bash/MSYS 边界：
 
 - 两个 shell 脚本用例：`bash -n` 无法运行。WSL 垫片报 `0x80070422`，Git Bash/MSYS 报 `NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0...): 0xC0000022`。
 - 三个本地市场检出用例：Python 启动的 Git 子进程在同一 MSYS 边界失败，`git fetch` 返回 128。直接 PowerShell 的本地 fetch 可成功，但不能替代工具子进程的成功证明。尝试 `remote.origin.uploadpack` 与 `core.gitProxy` 均未消除该子进程失败，已还原，未把失败实现提交。
