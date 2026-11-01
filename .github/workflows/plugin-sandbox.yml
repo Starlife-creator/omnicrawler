@@ -66,6 +66,10 @@ jobs:
             long fd = syscall(__NR_landlock_create_ruleset, &attr, sizeof(attr), 0);
             printf("native abi=%ld handled=%llu size=%zu fd=%ld errno=%d\n", abi, (unsigned long long)attr.handled_access_fs, sizeof(attr), fd, errno);
             if (fd >= 0) close(fd);
+            struct landlock_ruleset_attr short_attr = { .handled_access_fs = (1ULL << 13) - 1 };
+            fd = syscall(__NR_landlock_create_ruleset, &short_attr, 8, 0);
+            printf("native short8 fd=%ld errno=%d\n", fd, errno);
+            if (fd >= 0) close(fd);
             return 0;
           }
           C
