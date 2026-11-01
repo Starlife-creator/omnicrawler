@@ -4,6 +4,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import pytest
+
 from omnicrawler.plugins.plugin_sandbox import PluginSubprocessSession
 
 
@@ -13,16 +15,13 @@ def test_timeout_closes_streams_and_joins_reader(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     session = PluginSubprocessSession(
-        tmp_path, "slow", timeout_seconds=0.15, handshake_timeout_seconds=0, sandbox_escape=True
+        tmp_path, "slow", timeout_seconds=0.15, handshake_timeout=0, sandbox_escape=True
     )
     with session:
+        session._handshake_timeout = 0  # 本用例测请求超时，不测冻结宿主冷启动宽限。
         started = time.monotonic()
-        try:
+        with pytest.raises(TimeoutError, match="响应超时"):
             session.call("slow", {})
-        except TimeoutError:
-            pass
-        else:
-            raise AssertionError("slow plugin should time out")
         assert time.monotonic() - started < 3
         assert session._proc is None
     session._kill()  # 幂等关闭；不残留临时入口或下一次会话。

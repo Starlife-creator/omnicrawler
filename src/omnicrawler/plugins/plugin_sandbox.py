@@ -180,9 +180,11 @@ class PluginSubprocessSession:
 
     def end(self) -> None:
         """发送 session.end 并回收进程与临时入口；已终止时静默。"""
-        if self._proc is None or self._proc.poll() is not None:
-            self._proc = None
+        if self._proc is None:
             self._cleanup_verified_entry()
+            return
+        if self._proc.poll() is not None:
+            self._kill()
             return
         try:
             self._request("session.end", {}, expect_response=True)
@@ -196,6 +198,10 @@ class PluginSubprocessSession:
         if proc is not None:
             # 先关闭协议管道，使超时后仍在 readline 的读线程确定性退出；
             # 仅 kill+wait 会积累阻塞线程并留下子进程持有管道。
+            # 关闭子进程端再关闭父进程读端；先 close 父进程读端在
+            # Windows 会等另一个线程退出 readline，从而死锁。
+            if proc.poll() is None:
+                proc.kill()
             for stream in (proc.stdin, proc.stdout, proc.stderr):
                 if stream is not None:
                     try:
@@ -252,6 +258,9 @@ class PluginSubprocessSession:
             if not expect_response:
                 return {}
             response = self._read_response(proc, effective_timeout)
+        except TimeoutError:
+            self._kill()
+            raise
         except (OSError, ValueError) as exc:
             self._kill()
             raise RuntimeError(f"E_RESOURCE: 插件进程通信失败: {exc}") from exc
@@ -279,11 +288,16 @@ class PluginSubprocessSession:
             except OSError as exc:
                 holder["error"] = exc
 
-        reader = threading.Thread(target=_read, daemon=True)
+        reader = threading.Thread(target=_read, daemon=True, name="plugin-ipc-reader")
         reader.start()
         reader.join(timeout)
         if reader.is_alive():
             self._kill()
+            # 关闭读管道会解除后台线程的 readline 阻塞。Windows 文本 IO
+            # 另一个线程可能刚进入 read，所以给出一个有界回收时间。
+            reader.join(5)
+            if reader.is_alive():
+                raise RuntimeError("E_RESOURCE: 插件 IPC 读线程未在超时后退出")
             raise TimeoutError("响应超时")
         if "error" in holder:
             raise holder["error"]
