@@ -55,12 +55,12 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
-            strace -f -e seccomp,prctl,landlock_create_ruleset python -I -S -c 'import sys; sys.path.insert(0,"src"); from pathlib import Path; from omnicrawler.plugins.plugin_unix_enforcement import apply_linux; apply_linux(plugin_root=Path("src/omnicrawler/plugins"))' || true
+            strace -f -e seccomp,prctl,landlock_create_ruleset python -I -S -c 'import importlib.util; from pathlib import Path; spec=importlib.util.spec_from_file_location("enforcement","src/omnicrawler/plugins/plugin_unix_enforcement.py"); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); module.apply_linux(plugin_root=Path("src/omnicrawler/plugins"))' || true
           else
             printf '(version 1)\n(deny default)\n(allow file-read* process-exec process-fork mach-lookup sysctl-read)\n(allow file-write* (literal "/dev/null"))\n' > /tmp/minimal.sb
             /usr/bin/sandbox-exec -f /tmp/minimal.sb python -I -S -c 'print("minimal")' || true
             /usr/bin/sandbox-exec -f /tmp/minimal.sb /usr/bin/python3 -I -S -c 'print("system python")' || true
-            python -I -S -c 'import sys; sys.path.insert(0,"src"); from pathlib import Path; from omnicrawler.plugins.plugin_unix_enforcement import darwin_profile; Path("/tmp/full.sb").write_text(darwin_profile(plugin_root=Path("src/omnicrawler/plugins")))'
+            python -I -S -c 'import importlib.util; from pathlib import Path; spec=importlib.util.spec_from_file_location("enforcement","src/omnicrawler/plugins/plugin_unix_enforcement.py"); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); Path("/tmp/full.sb").write_text(module.darwin_profile(plugin_root=Path("src/omnicrawler/plugins")))'
             /usr/bin/sandbox-exec -f /tmp/full.sb python -I -S -c 'print("full")' || true
           fi
       - name: 真实内核与 Seatbelt 隔离用例
