@@ -130,6 +130,15 @@ jobs:
                   fd = libdl.syscall(number, arg, 8, 0)
                   print('python variant', type(arg).__name__, fd, ctypes.get_errno())
           print('python getpid', libdl.syscall(39))
+          libc.syscall.argtypes = None
+          for value in (0, 1, 8191):
+              z = A(value)
+              ctypes.set_errno(0)
+              print('clean call', value, libc.syscall(445, ctypes.byref(z), 8, 0), ctypes.get_errno())
+          class Full(ctypes.Structure):
+              _fields_ = [('handled_access_fs', ctypes.c_uint64), ('handled_access_net', ctypes.c_uint64), ('scoped', ctypes.c_uint64)]
+          z = Full(8191, 0, 0)
+          print('python full only', libc.syscall(445, ctypes.byref(z), 24, 0), ctypes.get_errno())
           for value in (0, 1, 0x1FFF):
               ctypes.set_errno(0)
               a.handled_access_fs = value
