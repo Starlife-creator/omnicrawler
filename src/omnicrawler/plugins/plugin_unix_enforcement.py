@@ -106,7 +106,7 @@ def _sock_filter() -> Any:
     instructions = [
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 0),
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 4),
-        (_BPF_JMP | _BPF_JEQ | _BPF_K, audit, 0, 1),
+        (_BPF_JMP | _BPF_JEQ | _BPF_K, audit, 1, 0),
         (_BPF_RET | _BPF_K, 0, 0, _RET_KILL),
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 0),
         # x32 syscall numbers have this bit; never confuse them with native ABI.
@@ -151,10 +151,10 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     handled = access_fs & _LANDLOCK_ACCESS_V1
     attr = Attr(handled_access_fs=handled)
     ctypes.set_errno(0)
-    create = libc.landlock_create_ruleset
-    create.argtypes = [ctypes.POINTER(Attr), ctypes.c_size_t, ctypes.c_uint]
-    create.restype = ctypes.c_int
-    ruleset = create(ctypes.byref(attr), ctypes.sizeof(Attr), 0)
+    create = ctypes.CDLL("libc.so.6", use_errno=True).syscall
+    create.restype = ctypes.c_long
+    create.argtypes = [ctypes.c_long, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint]
+    ruleset = create(445, ctypes.byref(attr), ctypes.sizeof(Attr), 0)
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
     try:
