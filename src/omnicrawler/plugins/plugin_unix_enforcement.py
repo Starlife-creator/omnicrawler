@@ -143,6 +143,8 @@ _NATIVE_LANDLOCK_SOURCE = r'''
 #include <linux/seccomp.h>
 #include <linux/filter.h>
 #include <asm/unistd.h>
+#include <linux/audit.h>
+#include <stddef.h>
 #include <unistd.h>
 struct attr { uint64_t handled_access_fs, handled_access_net, scoped; };
 struct beneath { uint64_t allowed_access; int32_t parent_fd; };
@@ -173,12 +175,34 @@ static PyObject *install(PyObject *self, PyObject *args) {
   close(ruleset); Py_RETURN_NONE;
 }
 static PyObject *seccomp_install(PyObject *self, PyObject *args) {
-  Py_buffer bytes;
-  if (!PyArg_ParseTuple(args, "y*", &bytes)) return NULL;
-  struct sock_fprog program = {(unsigned short)(bytes.len / sizeof(struct sock_filter)), (struct sock_filter *)bytes.buf};
-  int result = (int)syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, 0UL, &program);
-  PyBuffer_Release(&bytes);
-  if (result < 0) return PyErr_SetFromErrno(PyExc_OSError);
+  unsigned int audit;
+  if (!PyArg_ParseTuple(args, "I", &audit)) return NULL;
+  int socket_nr = audit == AUDIT_ARCH_X86_64 ? 41 : 198;
+  int socketpair_nr = audit == AUDIT_ARCH_X86_64 ? 53 : 199;
+  int ptrace_nr = audit == AUDIT_ARCH_X86_64 ? 101 : 117;
+  int bpf_nr = audit == AUDIT_ARCH_X86_64 ? 321 : 280;
+  int readv_nr = audit == AUDIT_ARCH_X86_64 ? 310 : 270;
+  int writev_nr = audit == AUDIT_ARCH_X86_64 ? 311 : 271;
+  int kexec_nr = audit == AUDIT_ARCH_X86_64 ? 246 : 104;
+  struct sock_filter filters[] = {
+    BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, audit, 0, 1),
+    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+    BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
+    BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x40000000, 0, 1),
+    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, socket_nr, 0, 1),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, socketpair_nr, 0, 1),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ptrace_nr, 0, 1),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, bpf_nr, 0, 1),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, readv_nr, 0, 1),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, writev_nr, 0, 1),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kexec_nr, 0, 1),
+    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+  };
+  struct sock_fprog program = {(unsigned short)(sizeof(filters) / sizeof(filters[0])), filters};
+  if (syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, 0UL, &program) < 0) return PyErr_SetFromErrno(PyExc_OSError);
   Py_RETURN_NONE;
 }
 static PyMethodDef methods[] = {{"install", install, METH_VARARGS}, {"seccomp_install", seccomp_install, METH_VARARGS}, {NULL, NULL, 0, NULL}};
@@ -269,7 +293,8 @@ def apply_linux(*, plugin_root: Path, verified_entry_dir: Path | None = None) ->
     if _prctl(libc, _PR_SET_NO_NEW_PRIVS, 1):
         raise OSError(ctypes.get_errno(), "no_new_privs failed")
     array, program = _sock_filter()
-    _native_helper().seccomp_install(bytes(array))
+    audit = 62 if os.uname().machine == "x86_64" else 183
+    _native_helper().seccomp_install(audit)
     # Keep the BPF program alive for the interpreter lifetime.
     globals()["_installed_filter"] = (array, program)
     return "landlock+seccomp"
@@ -279,13 +304,24 @@ def _quote(path: Path) -> str:
     return '"' + str(path.resolve()).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def _macos_runtime_roots() -> tuple[Path, ...]:
+    executable = Path(sys.executable).resolve()
+    roots = [executable, executable.parent, sys.base_prefix and Path(sys.base_prefix).resolve()]
+    for parent in executable.parents:
+        if parent.name in ("Python", "hostedtoolcache"):
+            roots.append(parent)
+            if parent.name == "Python":
+                roots.append(parent.parent)
+    return tuple(path for path in roots if path)
+
+
 def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None) -> str:
     """Return a fail-closed Seatbelt profile with no direct network access."""
-    roots = (*_standard_library_roots(), plugin_root.resolve())
+    roots = (*_standard_library_roots(), *_macos_runtime_roots(), plugin_root.resolve())
     if verified_entry_dir is not None:
         roots += (verified_entry_dir.resolve(),)
     allow = "\n".join(f"  (subpath {_quote(root)})" for root in roots)
-    runtime = "\n".join(f"  (literal {_quote(path)})" for path in (Path(sys.executable).resolve(), *Path(sys.executable).resolve().parents[:2]))
+    runtime = "\n".join(f"  (subpath {_quote(path)})" for path in (Path(sys.executable).resolve(), *Path(sys.executable).resolve().parents[:4]))
     return f"""(version 1)
 (deny default)
 (allow signal (target self))

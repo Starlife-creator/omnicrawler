@@ -79,8 +79,8 @@ def test_linux_passes_verified_entry_and_runtime_roots(
 
     class _Native:
         @staticmethod
-        def seccomp_install(payload: bytes) -> None:
-            calls.append(payload)
+        def seccomp_install(audit: int) -> None:
+            calls.append(audit)
 
     monkeypatch.setattr(enforcement, "_native_helper", lambda: _Native())
 
@@ -96,7 +96,7 @@ def test_linux_passes_verified_entry_and_runtime_roots(
     assert enforcement.apply_linux(plugin_root=root, verified_entry_dir=verified) == "landlock+seccomp"
     assert root in calls[0] and verified in calls[0]
     assert any(len(call) > 3 and call[1] == enforcement._PR_SET_NO_NEW_PRIVS for call in calls[1:] if isinstance(call, tuple))
-    assert calls[-1] == b"array"
+    assert calls[-1] == 62
 
 
 def test_landlock_failures_are_not_silently_ignored(
