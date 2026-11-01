@@ -180,12 +180,19 @@ class SeleniumAdapter:
     """Adapt a Selenium ``driver`` object to the :class:`BrowserEngine` protocol."""
 
     def __init__(self, driver: Any) -> None:
+        self._driver = driver
+
+    @property
+    def _By(self):
         from selenium.webdriver.common.by import By
+
+        return By
+
+    @property
+    def _WebDriverWait(self):
         from selenium.webdriver.support.ui import WebDriverWait
 
-        self._driver = driver
-        self._By = By
-        self._WebDriverWait = WebDriverWait
+        return WebDriverWait
 
     def _choices(self, action: BrowserAction) -> list[str]:
         result: list[str] = []

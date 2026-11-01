@@ -241,6 +241,14 @@ def test_stalled_selenium_scroll_returns_to_top_before_retry() -> None:
     ]
 
 
+def test_scroll_does_not_import_optional_selenium_package() -> None:
+    driver = _Driver()
+    driver.execute_script = lambda script: driver.scripts.append(script) or False
+    with patch.dict("sys.modules", {"selenium": None}):
+        BrowserFetcher._run_selenium_actions(driver, [{"action": "scroll_bottom", "times": 1}])
+    assert driver.scripts == [SCROLL_POSITION_SCRIPT, "window.scrollTo(0,0)"]
+
+
 class _Context:
     def __init__(self):
         self.headers = None
