@@ -152,14 +152,14 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     if abi < 1:
         raise OSError(ctypes.get_errno(), "Landlock ABI unavailable")
     handled = access_fs & _LANDLOCK_ACCESS_V1
-    attr = Attr(handled_access_fs=handled)
+    # The v1-sized structure cannot request REFER, even when the kernel
+    # supports a newer ABI; negotiate the v1 access subset explicitly.
+    handled &= (1 << 13) - 1
     ctypes.set_errno(0)
     buffer = ctypes.create_string_buffer(ctypes.sizeof(Attr))
     attr = Attr.from_buffer(buffer, 0)
     attr.handled_access_fs = handled
-    import sys
-    print("LANDLOCK", abi, handled, ctypes.sizeof(Attr), bytes(buffer).hex(), flush=True, file=sys.stderr)
-    ruleset = libc.syscall(445, ctypes.byref(buffer), ctypes.c_size_t(8), ctypes.c_uint(0))
+    ruleset = libc.syscall(445, ctypes.byref(buffer), ctypes.c_size_t(ctypes.sizeof(buffer)), ctypes.c_uint(0))
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
     try:
