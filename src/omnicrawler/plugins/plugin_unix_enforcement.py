@@ -292,11 +292,8 @@ def apply_linux(*, plugin_root: Path, verified_entry_dir: Path | None = None) ->
     libc.syscall.restype = ctypes.c_long
     if _prctl(libc, _PR_SET_NO_NEW_PRIVS, 1):
         raise OSError(ctypes.get_errno(), "no_new_privs failed")
-    array, program = _sock_filter()
     audit = 0xC000003E if os.uname().machine == "x86_64" else 0xC00000B7
     _native_helper().seccomp_install(audit)
-    # Keep the BPF program alive for the interpreter lifetime.
-    globals()["_installed_filter"] = (array, program)
     return "landlock+seccomp"
 
 
@@ -328,10 +325,13 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
 (allow process-exec process-fork)
 (allow mach-lookup)
 (allow sysctl-read)
-(allow file-read* process-exec
+(allow file-read*
 {allow}
+)
+(allow process-exec
 {runtime}
-  (subpath "/usr/lib")
+  (literal "/usr/bin/sandbox-exec"))
+(allow file-read*
   (subpath "/usr/bin")
   (subpath "/bin")
   (subpath "/System/Library")

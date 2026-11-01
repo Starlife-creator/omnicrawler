@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
-            strace -f -e seccomp,prctl,landlock_create_ruleset python -I -S -c 'import importlib.util; from pathlib import Path; spec=importlib.util.spec_from_file_location("enforcement","src/omnicrawler/plugins/plugin_unix_enforcement.py"); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); module.apply_linux(plugin_root=Path("src/omnicrawler/plugins"))' || true
+            strace -f -e seccomp,prctl,landlock_create_ruleset,write,exit_group,execve,mmap,mprotect,munmap,brk,rt_sigaction,rt_sigprocmask python -I -S -c 'import importlib.util; from pathlib import Path; spec=importlib.util.spec_from_file_location("enforcement","src/omnicrawler/plugins/plugin_unix_enforcement.py"); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); module.apply_linux(plugin_root=Path("src/omnicrawler/plugins"))' || true
           else
             printf '(version 1)\n(deny default)\n(allow file-read* process-exec process-fork mach-lookup sysctl-read)\n(allow file-write* (literal "/dev/null"))\n' > /tmp/minimal.sb
             /usr/bin/sandbox-exec -f /tmp/minimal.sb python -I -S -c 'print("minimal")' || true
