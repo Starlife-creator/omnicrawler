@@ -146,6 +146,10 @@ jobs:
               fd = libc.syscall(number, None, 0, 1)
               print('syscall version', number, fd, ctypes.get_errno())
           print('first syscall in fresh subprocess follows')
+          libc.syscall.argtypes = [ctypes.c_long, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint]
+          for value in (8191, 16383):
+              z = A(value)
+              print('fresh typed value', value, libc.syscall(445, ctypes.byref(z), ctypes.sizeof(A), 0), ctypes.get_errno())
           for value in (0, 1, 0x1FFF):
               ctypes.set_errno(0)
               a.handled_access_fs = value
