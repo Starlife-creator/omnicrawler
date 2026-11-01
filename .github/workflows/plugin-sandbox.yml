@@ -150,6 +150,9 @@ jobs:
           for value in (8191, 16383):
               z = A(value)
               print('fresh typed value', value, libc.syscall(445, ctypes.byref(z), ctypes.sizeof(A), 0), ctypes.get_errno())
+          import subprocess
+          code = 'import ctypes; L=ctypes.CDLL(None,use_errno=True); L.syscall.restype=ctypes.c_long; A=type("A",(ctypes.Structure,),{"_fields_":[("handled_access_fs",ctypes.c_uint64)]}); a=A(8191); print("new subprocess", L.syscall(445,ctypes.byref(a),8,0),ctypes.get_errno())'
+          subprocess.run(['python', '-c', code], check=False)
           for value in (0, 1, 0x1FFF):
               ctypes.set_errno(0)
               a.handled_access_fs = value
