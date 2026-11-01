@@ -103,7 +103,7 @@ def _sock_filter() -> Any:
         _fields_ = [("len", ctypes.c_ushort), ("filter", ctypes.POINTER(Filter))]
 
     machine = os.uname().machine
-    audit = 62 if machine == "x86_64" else 183
+    audit = 0xC000003E if machine == "x86_64" else 0xC00000B7
     # seccomp_data.nr and arch are fixed by the kernel ABI on both supported CPUs.
     instructions = [
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 4),
@@ -293,7 +293,7 @@ def apply_linux(*, plugin_root: Path, verified_entry_dir: Path | None = None) ->
     if _prctl(libc, _PR_SET_NO_NEW_PRIVS, 1):
         raise OSError(ctypes.get_errno(), "no_new_privs failed")
     array, program = _sock_filter()
-    audit = 62 if os.uname().machine == "x86_64" else 183
+    audit = 0xC000003E if os.uname().machine == "x86_64" else 0xC00000B7
     _native_helper().seccomp_install(audit)
     # Keep the BPF program alive for the interpreter lifetime.
     globals()["_installed_filter"] = (array, program)

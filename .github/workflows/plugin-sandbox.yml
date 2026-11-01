@@ -68,6 +68,9 @@ jobs:
             /usr/bin/sandbox-exec -f /tmp/readwrite.sb python -I -S -c 'print("readwrite")' || true
             sed 's/(allow file-read\* process-exec/(allow file-read* file-write* process-exec/' /tmp/full.sb > /tmp/scopedwrite.sb
             /usr/bin/sandbox-exec -f /tmp/scopedwrite.sb python -I -S -c 'print("scopedwrite")' || true
+            command -v python; python -c 'import sys; print(sys.executable); print(sys.path); print(sys.base_prefix)'
+            cat /tmp/full.sb
+            set +e
             for path in /usr /System /Library /opt /private /Users /Applications /var /tmp; do
               printf '(version 1)\n(deny default)\n(allow process-exec process-fork mach-lookup sysctl-read)\n(allow file-read* (subpath "%s"))\n' "$path" > /tmp/one.sb
               echo "TESTPATH=$path"

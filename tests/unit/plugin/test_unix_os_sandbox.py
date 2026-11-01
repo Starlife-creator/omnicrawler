@@ -96,7 +96,7 @@ def test_linux_passes_verified_entry_and_runtime_roots(
     assert enforcement.apply_linux(plugin_root=root, verified_entry_dir=verified) == "landlock+seccomp"
     assert root in calls[0] and verified in calls[0]
     assert any(len(call) > 3 and call[1] == enforcement._PR_SET_NO_NEW_PRIVS for call in calls[1:] if isinstance(call, tuple))
-    assert calls[-1] == 62
+    assert calls[-1] == 0xC000003E
 
 
 def test_landlock_failures_are_not_silently_ignored(
@@ -135,7 +135,7 @@ def test_darwin_launch_requires_seatbelt(monkeypatch: pytest.MonkeyPatch, tmp_pa
 def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
     """Evaluate the exact BPF control flow, including x32 and wrong ABIs."""
     array, _program = enforcement._sock_filter()
-    audit = 62 if os.uname().machine == "x86_64" else 183
+    audit = 0xC000003E if os.uname().machine == "x86_64" else 0xC00000B7
 
     def evaluate(number: int, arch: int) -> int:
         accumulator = 0
