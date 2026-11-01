@@ -55,6 +55,14 @@ def create_project_config(
             yaml.safe_dump(raw, allow_unicode=True, sort_keys=False, width=120),
             encoding="utf-8",
         )
+    from shutil import copyfile
+
+    from .template_merge import template_digest
+    from .utils import atomic_write_json
+    baseline = destination.with_name(destination.name + ".template-base.yaml")
+    copyfile(template, baseline)
+    atomic_write_json(destination.with_name(destination.name + ".template-base.json"),
+                      {"version": 1, "sha256": template_digest(baseline), "path": str(baseline)})
     return destination
 
 
