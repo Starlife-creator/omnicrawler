@@ -175,6 +175,9 @@ jobs:
           print('single exact call', libc2.syscall(445, ctypes.byref(a2), ctypes.c_size_t(8), ctypes.c_uint(0)), ctypes.get_errno())
           raw = ctypes.c_uint64(8191)
           print('single raw call', libc2.syscall(445, ctypes.byref(raw), ctypes.c_size_t(8), ctypes.c_uint(0)), ctypes.get_errno())
+          for number in (444, 445, 446):
+              print('number-before', number)
+              print('number-result', libc2.syscall(number, None, 0, 1), ctypes.get_errno())
           import subprocess
           traced = subprocess.run(['strace', '-f', '-e', 'trace=all', '-o', '/tmp/landlock-python.strace', os.sys.executable, '-c', 'import ctypes; A=type("A",(ctypes.Structure,),{"_fields_":[("handled",ctypes.c_uint64)]}); a=A(8191); f=ctypes.CDLL(None,use_errno=True).syscall; f.restype=ctypes.c_long; print(f(445,ctypes.byref(a),8,0),ctypes.get_errno())'], capture_output=True, text=True)
           print('strace', traced.returncode, traced.stdout, traced.stderr)
