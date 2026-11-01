@@ -111,6 +111,14 @@ jobs:
           fn2.argtypes = None
           x = A(8191)
           print('python fresh only', fn2(445, ctypes.byref(x), ctypes.c_size_t(8), ctypes.c_uint(0)), ctypes.get_errno())
+          import os
+          import struct
+          import sys
+          print('arch', os.uname().machine, 'size', struct.calcsize('Q'))
+          libdl = ctypes.CDLL('libc.so.6', use_errno=True)
+          libdl.syscall.restype = ctypes.c_long
+          y = A(8191)
+          print('python libc-explicit', libdl.syscall(445, ctypes.byref(y), ctypes.c_size_t(8), ctypes.c_uint(0)), ctypes.get_errno())
           for value in (0, 1, 0x1FFF):
               ctypes.set_errno(0)
               a.handled_access_fs = value
