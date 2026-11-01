@@ -39,10 +39,31 @@ def test_plugin_state_is_scoped_by_author_and_schema(tmp_path) -> None:
         migrated = next_schema.dispatch(
             "state.migrate", {"source_schema": 1, "strategy": "copy"}
         )
-        assert migrated == {"copied": 2, "schema_version": 2}
+        assert migrated == {"copied": 2, "skipped_sensitive": 0, "schema_version": 2}
         assert next_schema.dispatch("state.get", {"key": "url.example"})["value"] == {
             "hash": "abc"
         }
+
+
+def test_plugin_state_migration_copies_business_keys_and_skips_sensitive_history(tmp_path) -> None:
+    with StateStore(tmp_path / "state.sqlite3") as store:
+        namespace = ("project-a", "tideprint-gate", "author-a", 1)
+        store.plugin_state_set(namespace, "url.example", {"hash": "abc"})
+        store.plugin_state_set(namespace, "login_cookie", "historical-secret")
+        store.plugin_state_set(namespace, "session", {"storage": "historical-secret"})
+        next_schema = _broker(store, author="author-a", schema=2)
+        assert next_schema.dispatch("state.migrate", {"source_schema": 1}) == {
+            "copied": 1,
+            "skipped_sensitive": 2,
+            "schema_version": 2,
+        }
+        assert next_schema.dispatch("state.get", {"key": "url.example"})["value"] == {"hash": "abc"}
+        migrated = store.conn.execute(
+            "SELECT state_key FROM plugin_state WHERE schema_version=2"
+        ).fetchall()
+        assert [row["state_key"] for row in migrated] == ["url.example"]
+        # 过滤迁移不冒充历史清理，旧 schema 仍由原版本或宿主流程处理。
+        assert store.plugin_state_get(namespace, "login_cookie") == (True, "historical-secret")
 
 
 @pytest.mark.parametrize("key", ["login_cookie", "session", "auth-token", "credentials"])

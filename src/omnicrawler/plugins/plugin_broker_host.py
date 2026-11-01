@@ -129,10 +129,16 @@ class BrokerStateMixin:
             raise CapabilityError(E_CONTRACT, "state.migrate 当前仅支持显式 copy 策略")
         try:
             source_schema = int(str(payload.get("source_schema", "")))
-            copied = state.plugin_state_copy_schema(namespace, source_schema)
+            copied, skipped_sensitive = state.plugin_state_copy_schema(
+                namespace, source_schema, exclude_keys=is_sensitive_state_key
+            )
         except (TypeError, ValueError) as exc:
             raise CapabilityError(E_CONTRACT, str(exc)) from exc
-        return {"copied": copied, "schema_version": self._plugin_state_schema}
+        return {
+            "copied": copied,
+            "skipped_sensitive": skipped_sensitive,
+            "schema_version": self._plugin_state_schema,
+        }
 
     def _plugin_state_namespace(self) -> tuple[Any, tuple[str, str, str, int]]:
         if self._state is None:

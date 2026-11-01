@@ -194,6 +194,8 @@ PLUGIN_METADATA = {
   因此正常升级可延续状态，换作者不会继承；schema 升级需调用 `state.migrate` 明确迁移，目标非空
   时拒绝覆盖。单值最大 64 KiB。普通插件 state 只用于游标、条件请求等业务状态，不能存 Cookie、
   登录会话、Token 或其他凭据；`state.get/set` 对敏感键失败关闭并返回 `E_PERMISSION`。
+  `state.migrate` 跳过旧 schema 中的敏感键、继续复制普通业务状态，并返回 `copied`、
+  `skipped_sensitive` 与 `schema_version`；源 schema 原样保留，不自动删除历史数据。
   鉴权使用 `network.fetch` 的宿主 auth 注入，确需明文时走显式审批的 `secrets.get`。
 - 当前**没有**通用交互浏览器、页面 DOM 或宿主登录会话代理。`render.html.*` 仅断网渲染本地 HTML；
   需要真实浏览器流程的插件尚未适配，不能自行启动 Playwright/Selenium 或读取浏览器 Cookie。
