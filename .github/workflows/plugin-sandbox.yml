@@ -102,6 +102,13 @@ jobs:
               ctypes.set_errno(0)
               fd = fn(number, ctypes.byref(a), 8, 0 if number == 445 else 1)
               print('direct-number', number, fd, ctypes.get_errno())
+          del libc.syscall.argtypes
+          print('python system-getpid', libc.syscall(39), ctypes.get_errno())
+          print('python lib', libc._name)
+          for value in (0, 1, 0x1FFF):
+              ctypes.set_errno(0)
+              a.handled_access_fs = value
+              print('python mask', value, libc.syscall(445, ctypes.byref(a), 8, 0), ctypes.get_errno())
           PY
         shell: bash
       - name: 真实内核与 Seatbelt 隔离用例
