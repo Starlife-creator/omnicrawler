@@ -249,7 +249,8 @@ def apply_linux(*, plugin_root: Path, verified_entry_dir: Path | None = None) ->
     if _prctl(libc, _PR_SET_NO_NEW_PRIVS, 1):
         raise OSError(ctypes.get_errno(), "no_new_privs failed")
     array, program = _sock_filter()
-    if _prctl(libc, _PR_SET_SECCOMP, _SECCOMP_SET_MODE_FILTER, ctypes.byref(program)):
+    seccomp_number = 318 if os.uname().machine == "x86_64" else 277
+    if libc.syscall(seccomp_number, _SECCOMP_SET_MODE_FILTER, ctypes.byref(program), 0, 0, 0):
         raise OSError(ctypes.get_errno(), "seccomp filter installation failed")
     # Keep the BPF program alive for the interpreter lifetime.
     globals()["_installed_filter"] = (array, program)

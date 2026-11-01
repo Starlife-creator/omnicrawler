@@ -89,8 +89,8 @@ def test_linux_passes_verified_entry_and_runtime_roots(
     assert enforcement.apply_linux(plugin_root=root, verified_entry_dir=verified) == "landlock+seccomp"
     assert root in calls[0] and verified in calls[0]
     assert any(len(call) > 3 and call[1] == enforcement._PR_SET_NO_NEW_PRIVS for call in calls[1:] if isinstance(call, tuple))
-    assert calls[-1][1] == enforcement._PR_SET_SECCOMP
-    assert calls[-1][2].value == enforcement._SECCOMP_SET_MODE_FILTER
+    assert calls[-1][0] == 318
+    assert calls[-1][1] == enforcement._SECCOMP_SET_MODE_FILTER
 
 
 def test_landlock_failures_are_not_silently_ignored(
