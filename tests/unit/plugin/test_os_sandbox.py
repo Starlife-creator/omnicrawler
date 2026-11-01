@@ -79,13 +79,15 @@ def test_unsupported_range_flagged() -> None:
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="真实 AppContainer 导出只在 Windows 上可探")
-def test_windows_probe_finds_builtin_appcontainer_and_yields_os_mode() -> None:
-    """Win10 22H2+/Win11 应探到 AC：恒判"缺失"会让 spawn 前置 fail-closed 拒载全部插件。"""
+def test_windows_probe_does_not_confuse_availability_with_verified_sandbox() -> None:
+    """能探测 AppContainer API 不等于已具备安全的 Python 运行与回收边界。"""
     probe = sandbox.probe_os_sandbox()
     assert probe.backend == "appcontainer", probe.detail
     assert probe.available is True
-    # 默认开关（无 escape/降级）下不得 refuse，否则 Windows 装机即不可用
-    assert sandbox.resolve_sandbox_mode()[0] == "os"
+    mode, reason = sandbox.resolve_sandbox_mode()
+    assert mode == "os"
+    assert "未接线" in reason
+    assert "启用" not in reason
 
 
 class _FakeApi:

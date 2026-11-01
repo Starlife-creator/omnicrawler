@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from . import plugin_backend
-from .plugin_os_sandbox import E_UNSUPPORTED_ENV, confinement_argv_prefix, resolve_sandbox_mode
+from .plugin_os_sandbox import E_UNSUPPORTED_ENV, resolve_sandbox_mode
 
 LOGGER = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ class PluginSubprocessSession:
             LOGGER.info("插件 OS 沙箱裁决: %s", reason)
 
         command, default_handshake = plugin_backend.resolve_backend_command()
-        command = [*confinement_argv_prefix(mode, ""), *command, self.entry_module, str(self.plugin_root)]
+        command = [*command, self.entry_module, str(self.plugin_root)]
         if self._verified_bytes is not None:
             import tempfile
 
@@ -162,10 +162,20 @@ class PluginSubprocessSession:
         if sys.platform == "win32":
             # CREATE_NO_WINDOW（0x08000000，env_checker.py:62 模式）
             kwargs["creationflags"] = 0x08000000
+        if mode == "os" and sys.platform == "darwin":
+            from .plugin_unix_enforcement import darwin_launch
+            command, kwargs["env"] = darwin_launch(
+                command,
+                plugin_root=self.plugin_root,
+                verified_entry_dir=self._verified_entry_dir,
+            )
         try:
             self._proc = subprocess.Popen(command, **kwargs)
         except FileNotFoundError as exc:
             raise RuntimeError(f"沙箱后端不可用: {exc}") from exc
+        except OSError as exc:
+            self._cleanup_verified_entry()
+            raise RuntimeError(f"插件 OS 沙箱创建失败: {exc}") from exc
         self._handshake_timeout = self._handshake_timeout or default_handshake
 
     def end(self) -> None:
@@ -182,13 +192,23 @@ class PluginSubprocessSession:
         self._cleanup_verified_entry()
 
     def _kill(self) -> None:
-        if self._proc is not None and self._proc.poll() is None:
-            self._proc.kill()
-            try:
-                self._proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                pass
-        self._proc = None
+        proc, self._proc = self._proc, None
+        if proc is not None:
+            # 先关闭协议管道，使超时后仍在 readline 的读线程确定性退出；
+            # 仅 kill+wait 会积累阻塞线程并留下子进程持有管道。
+            for stream in (proc.stdin, proc.stdout, proc.stderr):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
+            if proc.poll() is None:
+                proc.kill()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+        self._cleanup_verified_entry()
 
     def _cleanup_verified_entry(self) -> None:
         """会话结束即删验签临时入口（C2 V2：防残留被本地攻击者替换利用）。"""

@@ -157,14 +157,11 @@ def resolve_sandbox_mode(
 
     probe = probe or probe_os_sandbox()
     if probe.available:
-        if probe.backend in ("appcontainer", "landlock", "seatbelt"):
-            # 只陈述「探测可用 + OS 级隔离未接线」：本版 confinement_argv_prefix() 恒返回 []，
-            # 规则集/令牌/Seatbelt profile 都还没装（见该函数 docstring）。SECURITY.md 禁止
-            # 在此之前把当前子进程边界表述为「OS 沙箱」，故这里不得出现「启用」二字。
-            return "os", (
-                f"OS 级隔离未接线（{probe.backend} 探测可用）；"
-                "当前实际为子进程边界 + -I -S 导入隔离"
-            )
+        if probe.backend == "appcontainer":
+            # 能探测 API 不等于 Python、ACL 和回收边界已完成；拒绝虚报启用。
+            return "os", "OS 级隔离未接线（appcontainer 探测可用）；当前实际为子进程边界 + -I -S 导入隔离"
+        if probe.backend in ("landlock", "seatbelt"):
+            return "os", f"OS 沙箱启用: {probe.backend}（{probe.detail}）"
         # seccomp_only 属降级档，需显式开关
         if allow_restricted_token_fallback:
             return "degraded", f"降级档显式开启: {probe.backend}（{probe.detail}）"
@@ -182,12 +179,11 @@ def resolve_sandbox_mode(
 
 
 def confinement_argv_prefix(mode: str, backend: str) -> list[str]:
-    """spawn 前置平台隔离参数骨架（A-P1-2 代码层落地，待平台 CI 验证）。
+    """兼容的诊断接口；平台隔离由 :mod:`plugin_sandbox` 的启动路径安装。
 
-    当前一律返回空前缀：真实隔离包装——Linux ``unshare`` + seccomp + Landlock、
-    Windows AppContainer / Job Object、macOS ``sandbox-exec`` Seatbelt profile——
-    待对应平台 CI 矩阵接入后在此返回参数 / 前置命令。裁决结果（mode/reason）已随
-    spawn 路径进入日志与诊断，不在代码层伪装已完成 OS 隔离。
+    Linux 在插件导入前安装 Landlock/seccomp，macOS 使用 ``darwin_launch``；
+    Windows AppContainer 仍未接线，直到真实运行与回收验证完成。它们都不是可以通过字符串参数安全拼接的
+    前缀，因此本函数对实际平台保持空数组；不得将其存在解释为沙箱已验证。
     """
     if mode != "os":
         return []

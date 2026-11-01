@@ -55,18 +55,16 @@ def test_confinement_prefix_is_empty_skeleton_pending_platform_ci() -> None:
     assert confinement_argv_prefix("os", "landlock") == []
 
 
-def test_os_mode_reason_never_claims_enabled_while_prefix_is_empty() -> None:
-    """口径护栏：spawn 前缀为空时，reason 不得声称 OS 沙箱「启用」。
-
-    回归形态：`resolve_sandbox_mode` 曾返回 "OS 沙箱启用: landlock"，而
-    `confinement_argv_prefix()` 恒为 [] —— 日志说了没做的事，且 SECURITY.md
-    明文禁止这种表述。真接线（前缀非空）之后本断言自然失效，由那时的新口径接管。
-    """
-    for backend in ("appcontainer", "landlock", "seatbelt"):
+def test_os_reason_describes_platform_launcher_not_argv_prefix() -> None:
+    """OS 后端在启动路径安装，不用 shell 前缀伪装隔离。"""
+    for backend in ("landlock", "seatbelt"):
         mode, reason = resolve_sandbox_mode(probe=SandboxProbe(True, backend, "探测可用"))
         assert mode == "os"
-        if not confinement_argv_prefix(mode, backend):
-            assert "启用" not in reason, f"{backend}: 前缀为空却声称启用：{reason}"
+        assert "启用" in reason
+    mode, reason = resolve_sandbox_mode(probe=SandboxProbe(True, "appcontainer", "探测可用"))
+    assert mode == "os"
+    assert "未接线" in reason
+    assert "启用" not in reason
 
 
 def _session(tmp_path: Path, **kwargs: object) -> plugin_sandbox.PluginSubprocessSession:
