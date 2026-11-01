@@ -66,7 +66,7 @@ def linux_capability() -> bool:
     try:
         libc = ctypes.CDLL(None, use_errno=True)
         libc.syscall.restype = ctypes.c_long
-        libc.syscall.argtypes = [ctypes.c_long]
+        libc.syscall.argtypes = []
         abi = _landlock_abi(libc)
         if abi < 1:
             return False
@@ -138,7 +138,7 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
 
     libc = ctypes.CDLL(None, use_errno=True)
     libc.syscall.restype = ctypes.c_long
-    libc.syscall.argtypes = [ctypes.c_long]
+    libc.syscall.argtypes = []
 
     class Attr(ctypes.Structure):
         # Keep the stable ABI v1 prefix; later kernels accept this short layout.
@@ -208,7 +208,7 @@ def apply_linux(*, plugin_root: Path, verified_entry_dir: Path | None = None) ->
 
     libc = ctypes.CDLL(None, use_errno=True)
     libc.syscall.restype = ctypes.c_long
-    libc.syscall.argtypes = [ctypes.c_long]
+    libc.syscall.argtypes = []
     if _prctl(libc, _PR_SET_NO_NEW_PRIVS, 1):
         raise OSError(ctypes.get_errno(), "no_new_privs failed")
     array, program = _sock_filter()
