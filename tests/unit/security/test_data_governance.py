@@ -41,7 +41,7 @@ def test_manifest_detects_tampered_created_at(tmp_path: Path) -> None:
 
 
 def test_deletion_manifest_rejects_outside_workspace(tmp_path: Path) -> None:
-    outside = Path("/tmp/omni-a-outside-evidence.txt")
+    outside = tmp_path.parent / "omni-a-outside-evidence.txt"
     outside.write_text("x", encoding="utf-8")
     with pytest.raises(ValueError, match="工作区安全范围"):
         deletion_manifest([outside], tmp_path)
