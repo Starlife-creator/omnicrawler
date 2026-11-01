@@ -215,5 +215,6 @@ def test_seatbelt_allows_plugin_read_and_blocks_escape(tmp_path: Path) -> None:
     with enforcement.darwin_launch(
         [sys.executable, "-S", "-c", probe, str(tmp_path)], plugin_root=tmp_path
     ) as command:
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=15, check=True)
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=15, check=False)
+    assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout) == {"import": 42, "network": "denied", "file": "denied"}

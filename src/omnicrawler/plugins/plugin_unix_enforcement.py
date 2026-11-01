@@ -33,7 +33,7 @@ _BPF_LD = 0
 _BPF_JMP = 0x05
 _BPF_JEQ = 0x10
 _BPF_JSET = 0x40
-_BPF_K = 0
+_BPF_K = 0x00  # immediate constant in BPF_LD/JMP/RET, not the RET register class
 _BPF_RET = 6
 
 
@@ -152,7 +152,8 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     buffer = ctypes.create_string_buffer(ctypes.sizeof(Attr))
     attr = Attr.from_buffer(buffer)
     attr.handled_access_fs = handled
-    ruleset = libc.syscall(445, ctypes.byref(buffer), ctypes.sizeof(buffer), 0)
+    ctypes.set_errno(0)
+    ruleset = libc.syscall(445, ctypes.byref(buffer), ctypes.size_t(ctypes.sizeof(buffer)), ctypes.c_uint(0))
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
     try:
@@ -234,6 +235,7 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
   (subpath "/bin")
   (subpath "/System/Library")
   (subpath "/Library/Apple")
+  (subpath "/Library/Frameworks/Python.framework")
   (subpath "/private/var/db/dyld")
   (subpath "/dev"))
 (allow file-read-metadata)
