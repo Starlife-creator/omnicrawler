@@ -152,6 +152,7 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     if abi < 1:
         raise OSError(ctypes.get_errno(), "Landlock ABI unavailable")
     handled = access_fs & _LANDLOCK_ACCESS_V1
+    handled &= (1 << 13) - 1
 
     # The v1-sized structure cannot request REFER, even when the kernel
     # supports a newer ABI; negotiate the v1 access subset explicitly.
