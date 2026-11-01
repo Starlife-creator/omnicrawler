@@ -137,7 +137,6 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
 
     libc = ctypes.CDLL(None, use_errno=True)
     libc.syscall.restype = ctypes.c_long
-    libc.syscall.argtypes = [ctypes.c_long, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint]
 
     class Attr(ctypes.Structure):
         # Keep the stable ABI v1 prefix; later kernels accept this short layout.
@@ -151,10 +150,11 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
         raise OSError(ctypes.get_errno(), "Landlock ABI unavailable")
     handled = access_fs & _LANDLOCK_ACCESS_V1
     attr = Attr(handled_access_fs=handled)
+    libc.syscall.argtypes = [ctypes.c_long, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint]
     ctypes.set_errno(0)
-    ruleset = libc.syscall(ctypes.c_long(445), ctypes.byref(attr), ctypes.c_size_t(ctypes.sizeof(Attr)), ctypes.c_uint(0))
+    ruleset = libc.syscall(445, ctypes.byref(attr), ctypes.sizeof(Attr), 0)
     if ruleset < 0:
-        raise OSError(ctypes.get_errno(), f"Landlock ruleset creation failed: number={libc.syscall(444, None, 0, 1)}, handled={handled}, raw={bytes(attr).hex()}")
+        raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
     try:
         for path in paths:
             fd = os.open(path, getattr(os, "O_PATH", os.O_RDONLY) | getattr(os, "O_CLOEXEC", 0))
