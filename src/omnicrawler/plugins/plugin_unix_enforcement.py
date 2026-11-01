@@ -153,7 +153,7 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     ctypes.set_errno(0)
     create = ctypes.CDLL("libc.so.6", use_errno=True).syscall
     create.restype = ctypes.c_long
-    create.argtypes = [ctypes.c_long, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint]
+    create.argtypes = [ctypes.c_long]
     ruleset = create(445, ctypes.byref(attr), ctypes.sizeof(Attr), 0)
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
