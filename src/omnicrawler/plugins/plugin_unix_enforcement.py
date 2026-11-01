@@ -106,13 +106,13 @@ def _sock_filter() -> Any:
     # seccomp_data.nr and arch are fixed by the kernel ABI on both supported CPUs.
     instructions = [
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 0),
-        # x32 syscall numbers have this bit; never confuse them with native ABI.
-        (_BPF_JMP | _BPF_JSET | _BPF_K, 0x40000000, 5, 0),
-        (_BPF_RET | _BPF_K, 0, 0, _RET_ALLOW),
-        (_BPF_LD | _BPF_K, 0, 0, 4),
-        (_BPF_JMP | _BPF_JEQ | _BPF_K, audit, 0, 1),
+        (_BPF_LD | 0x20 | _BPF_K, 0, 0, 4),
+        (_BPF_JMP | _BPF_JEQ | _BPF_K, audit, 1, 0),
         (_BPF_RET | _BPF_K, 0, 0, _RET_KILL),
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 0),
+        # x32 syscall numbers have this bit; never confuse them with native ABI.
+        (_BPF_JMP | _BPF_JSET | _BPF_K, 0x40000000, 0, 1),
+        (_BPF_RET | _BPF_K, 0, 0, _RET_KILL),
     ]
     instructions.extend(
         (_BPF_JMP | _BPF_JEQ | _BPF_K, _syscall_number(name), 0, 1)
@@ -234,6 +234,8 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
 (deny default)
 (allow signal (target self))
 (allow process-exec process-fork)
+(allow mach-lookup)
+(allow sysctl-read)
 (allow file-read* process-exec
 {allow}
 {runtime}

@@ -16,6 +16,7 @@ def test_landlock_v1_layout_and_version_query(monkeypatch: pytest.MonkeyPatch) -
     class _Libc:
         def __init__(self) -> None:
             self.syscall = self
+            self.argtypes: list[object] = []
 
         @property
         def argtypes(self) -> object:
@@ -48,6 +49,7 @@ def test_linux_capability_checks_landlock_and_seccomp(monkeypatch: pytest.Monkey
     class _Libc:
         def __init__(self) -> None:
             self.syscall = self
+            self.argtypes: list[object] = []
 
         def __call__(self, *args: object) -> int:
             return 0
