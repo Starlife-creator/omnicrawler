@@ -142,6 +142,7 @@ _NATIVE_LANDLOCK_SOURCE = r'''
 #include <sys/syscall.h>
 #include <linux/seccomp.h>
 #include <linux/filter.h>
+#include <asm/unistd.h>
 #include <unistd.h>
 struct attr { uint64_t handled_access_fs, handled_access_net, scoped; };
 struct beneath { uint64_t allowed_access; int32_t parent_fd; };
@@ -175,7 +176,7 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   Py_buffer bytes;
   if (!PyArg_ParseTuple(args, "y*", &bytes)) return NULL;
   struct sock_fprog program = {(unsigned short)(bytes.len / sizeof(struct sock_filter)), (struct sock_filter *)bytes.buf};
-  int result = (int)syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, &program);
+  int result = (int)syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, 0UL, &program);
   PyBuffer_Release(&bytes);
   if (result < 0) return PyErr_SetFromErrno(PyExc_OSError);
   Py_RETURN_NONE;
