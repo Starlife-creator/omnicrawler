@@ -140,8 +140,11 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     libc.syscall.restype = ctypes.c_long
 
     class Attr(ctypes.Structure):
-        _pack_ = 1
-        _fields_ = [("handled_access_fs", ctypes.c_uint64)]
+        _fields_ = [
+            ("handled_access_fs", ctypes.c_uint64),
+            ("handled_access_net", ctypes.c_uint64),
+            ("scoped", ctypes.c_uint64),
+        ]
 
     class PathBeneath(ctypes.Structure):
         _fields_ = [("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32)]
@@ -154,33 +157,10 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     handled = access_fs & _LANDLOCK_ACCESS_V1
     handled &= (1 << 13) - 1
 
-    # The v1-sized structure cannot request REFER, even when the kernel
-    # supports a newer ABI; negotiate the v1 access subset explicitly.
-
+    # Match the native C proof: full zeroed attr, short v1 rights, direct syscall.
     ctypes.set_errno(0)
-    buffer = ctypes.create_string_buffer(ctypes.sizeof(Attr))
-    attr = Attr.from_buffer(buffer, 0)
-    attr.handled_access_fs = handled
-    libc.syscall.restype = ctypes.c_long
-    raw = ctypes.create_string_buffer(ctypes.sizeof(Attr))
-    ctypes.memmove(raw, ctypes.byref(attr), ctypes.sizeof(Attr))
-    raw = ctypes.create_string_buffer(ctypes.sizeof(Attr))
-    ctypes.memmove(raw, ctypes.byref(attr), ctypes.sizeof(Attr))
-    import sys
-    print("LANDLOCK_ARGUMENTS", abi, handled, bytes(raw).hex(), flush=True, file=sys.stderr)
-    for form in range(4):
-        ctypes.set_errno(0)
-        if form == 0:
-            ruleset = libc.syscall(445, ctypes.byref(attr), 8, 0)
-        elif form == 1:
-            ruleset = libc.syscall(445, ctypes.byref(raw), 8, 0)
-        elif form == 2:
-            ruleset = libc.syscall(445, ctypes.addressof(attr), 8, 0)
-        else:
-            ruleset = libc.syscall(445, raw, 8, 0)
-        print("LANDLOCK_FORM", form, ruleset, ctypes.get_errno(), flush=True, file=sys.stderr)
-        if ruleset >= 0:
-            os.close(ruleset)
+    attr = Attr(handled_access_fs=handled)
+    ruleset = libc.syscall(445, ctypes.byref(attr), ctypes.c_size_t(ctypes.sizeof(Attr)), ctypes.c_uint(0))
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
     try:
