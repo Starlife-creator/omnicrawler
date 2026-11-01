@@ -187,8 +187,7 @@ def confinement_argv_prefix(mode: str, backend: str) -> list[str]:
     """
     if mode != "os":
         return []
-    # 待对应平台 CI：
-    # - Linux: unshare --user --map-root-user + seccomp/Landlock 安装器前缀
-    # - Windows: AppContainer profile / Job Object 资源限额注入（见 A-P3-14）
-    # - macOS: sandbox-exec + Seatbelt profile 文件参数
+    # - Linux: 已接线导入前 Landlock/seccomp，非 argv 前缀。
+    # - Windows: AppContainer profile / Job Object 资源限额注入仍待实现。
+    # - macOS: 已接线 sandbox-exec + Seatbelt 私有 profile。
     return []

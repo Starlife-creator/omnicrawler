@@ -69,7 +69,7 @@ class SeleniumBiDiAdapter(SeleniumAdapter):
 
     def wait_for_url(self, action: BrowserAction) -> None:
         pattern = str(action.value or "**/*").replace("**", "*")
-        self._WebDriverWait(self._driver, max(0.1, action.timeout_ms / 1000),
+        self._wait_class(self._driver, max(0.1, action.timeout_ms / 1000),
                             ignored_exceptions=(_NavigationTransitionError,)).until(
             lambda _: fnmatch(self._read_string("location.href"), pattern),
         )
@@ -106,6 +106,6 @@ class SeleniumBiDiAdapter(SeleniumAdapter):
                 raise RuntimeError("BiDi document read returned invalid URL/content")
             return values[:2] if values[2] == "complete" else False
 
-        values = self._WebDriverWait(self._driver, max(0.1, timeout),
+        values = self._wait_class(self._driver, max(0.1, timeout),
                                     ignored_exceptions=(_NavigationTransitionError,)).until(snapshot)
         return values[0], values[1].encode("utf-8")

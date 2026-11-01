@@ -3,7 +3,7 @@
 ## 范围与终态
 
 - 分支：`preacceptance-closure-20261101`；工作树：`.agents/worktrees/preacceptance-closure-20261101`。
-- 本批从提交 `0ea02e3` 至 `412d518`；这是源码环境预验，不是新版本发布、便携包验收或人工验收完成声明。
+- 本批从提交 `0ea02e3` 开始，覆盖后续自动化收尾；这是源码环境预验，不是新版本发布、便携包验收或人工验收完成声明。
 - 本机已获授权使用完整依赖进行 GUI/浏览器/Full 验收；本轮只记录实际执行过的项目，未执行项不以自动测试替代。
 
 ## 本批实际收口
@@ -16,6 +16,13 @@
 - `3de2b4d`：PDF 处理依赖（解析器、OCR 组件与 Tesseract 可执行文件）变化时失效并重建可重建输出；人工复核结果受保护；OCR 失败不推进成功指纹。PDF 单元、集成和 CLI 转发回归为 **219 passed / 7 skipped**。临时移除刷新调用后四个依赖刷新用例均失败，恢复后通过。
 - `112b162`：收口上述实现的静态类型；全量 mypy **513 source files** 无错误。
 - `412d518`：外部工作区治理测试不再向 Windows 根目录 `/tmp` 写文件，使用 `tmp_path.parent` 的真实外部临时路径。
+- `467c80e` / `334456c`：登记前一批本机证据、环境失败和验收清单；后续修复继续追加到本记录。
+- `62e6b3b`：纯滚动 Selenium 契约不导入可选 selenium 包；新增惰性属性的命名保持 N802 预算不放宽。
+- `c70fa46` / `977d0a6`：Linux 在插件导入前安装 Landlock v1 + seccomp，macOS 由 Seatbelt 启动路径实施隔离；失败拒载。真内核/Seatbelt 穿透用例在本机 Windows 跳过，需对应平台 CI。Windows AppContainer 原型经审查未接线、未提交。
+- `56725a1`：GUI 自动验收覆盖子控件聚焦时的 Home/End、Ctrl+Enter、Ctrl+Shift+P 与 Escape，及任务运行器取消。
+- `c233f9d`：插件超时先终止子进程再关闭父进程 IPC 管道并等待，避免 Windows 后台 `readline` 与 `TextIOWrapper.close()` 死锁；读线程有界回收。
+- `1b515c3`：新增 `tools/portable_upgrade_smoke.py`，在真实 old/new 归档与签名升级包可用时验证非默认配置、旧任务和插件保留、离线 `self-update apply`、完整性和本地真值任务。当前仅验证工具与外部进程 mock 边界，未宣称真实升级通过。
+- `6878c53`：PDF 模板三方合并使用深拷贝隔离 YAML 对象，补齐调用合并函数的项目配置路径；编码标准检查与 5 个合并用例通过。
 
 ## 真实入口与插件证据
 
@@ -32,6 +39,13 @@
 - `constraints/market-ref.txt` 的精确提交：`f33fcac397e050d02e7fb2ae80cd93504fd19697`。
 - 实际检出到 `.agents/worktrees/OmniCrawler-market`；`tests/unit/plugin/test_paper_scenario_boundary.py` **3 passed**，验证不适配的论文插件在执行前被拒绝。
 - 这不等于完成市场 GUI 的安装、更新、卸载体验，也不改变既定的不融合 `academic-paper-downloader` 当前实现、不融合 stealth-browser-mcp 的决定。
+
+## 后续自动化收尾
+
+- GUI/插件、归档升级工具、浏览器契约、lint 守卫与真实 GUI 预验脚本组合回归为 **1018 passed / 7 skipped / 1 failed**；唯一失败为仓内标准库临时目录导致的既有配置上溯问题，随后在仓外 `TEMP/TMP` 的定向终态回归为 **88 passed / 3 skipped**。
+- 与沙箱、IPC、Selenium、GUI 恢复相关的源码定向 mypy 为 **34 source files** 无错误；完整 lint 预算 **99/99**，N802 回到 **28/28**，没有放宽预算。
+- 不安全 Windows AppContainer 原型保留在未跟踪工作区、未接线且未纳入提交；静态检查不把该原型的类型/lint 错误归到生产提交。
+- `static-autonomous-final.json`：静态门禁 **22 passed / 1 failed / 0 skipped**；compileall、ruff、完整 mypy、编码标准、lint 预算、网络边界、发布完整性等均通过，唯一失败仍是本机 Bash/MSYS `0x80070422`。该报告生成于最终提交前的同一源码内容，不能代替最终提交的 CI。
 
 ## 全量回归与保留环境失败
 
@@ -54,6 +68,7 @@
 - 完整 A–G 真实桌面点击、视觉、键盘/无障碍与 PDF/OCR 人工复核；offscreen 与自动测试不能代替。
 - 真实站点账号、验证码/双因素、供应商实际计费与业务 PDF 真值。
 - 干净机器断网安装、正式便携产物内的关键旅程、三平台实机与正式签名/组件归属。
-- 插件 OS 沙箱仍为 Roadmap；远端 Worker 仍 Reserved。不得把 Python 子进程隔离称为 AppContainer、Landlock、seccomp、Seatbelt 或 Job Object。
+- Linux Landlock/seccomp 与 macOS Seatbelt 已实现且带平台穿透测试，但本机未执行相应平台；Windows AppContainer/Job Object 仍未接线。不得把 `sandbox_escape` 子进程隔离称为 OS 沙箱。远端 Worker 仍 Reserved。
+- 固定市场快照中的论文插件没有可合规迁移版本，仍停止融合；需上游改为统一 Egress、受控登录/文件与有预算浏览器能力后再评估。
 - PDF/OCR 的远端同名模型、Paddle 隐式缓存和 Tesseract 语言数据仍不是完整内容身份；业务真值校准也仍需真实样本。
 - 当前变更分支尚需维护者合入/推送后，在最终提交上核验 quality / end-to-end CI；历史主分支绿色不继承为当前提交通过。
