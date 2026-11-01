@@ -163,7 +163,13 @@ class PlaywrightAdapter:
 
     def scroll_bottom(self, action: BrowserAction) -> None:
         for _ in range(action.times):
-            self._page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            moved = self._page.evaluate(
+                "(()=>{const before=window.scrollY;"
+                "window.scrollTo(0,document.documentElement.scrollHeight);"
+                "return window.scrollY>before;})()"
+            )
+            if not moved:
+                self._page.evaluate("window.scrollTo(0,0)")
             if action.pause_ms:
                 self._page.wait_for_timeout(action.pause_ms)
 
@@ -240,7 +246,13 @@ class SeleniumAdapter:
 
     def scroll_bottom(self, action: BrowserAction) -> None:
         for _ in range(action.times):
-            self._driver.execute_script("window.scrollTo(0, document.body.scrollHeight)")
+            moved = self._driver.execute_script(
+                "const before=window.scrollY;"
+                "window.scrollTo(0,document.documentElement.scrollHeight);"
+                "return window.scrollY>before;"
+            )
+            if not moved:
+                self._driver.execute_script("window.scrollTo(0,0)")
             if action.pause_ms:
                 time.sleep(action.pause_ms / 1000)
 

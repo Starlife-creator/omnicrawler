@@ -76,10 +76,24 @@ class SeleniumBiDiAdapter(SeleniumAdapter):
 
     def scroll_bottom(self, action: BrowserAction) -> None:
         for _ in range(action.times):
-            self._driver.script.evaluate(
-                expression="window.scrollTo(0, document.body.scrollHeight)",
+            raw = self._driver.script.evaluate(
+                expression=(
+                    "(()=>{const before=window.scrollY;"
+                    "window.scrollTo(0,document.documentElement.scrollHeight);"
+                    "return window.scrollY>before;})()"
+                ),
                 target={"context": self.context}, await_promise=False,
             )
+            result = raw.get("result", {}) if isinstance(raw, dict) else {}
+            moved = (
+                isinstance(raw, dict) and raw.get("type") == "success"
+                and result.get("type") == "boolean" and result.get("value") is True
+            )
+            if not moved:
+                self._driver.script.evaluate(
+                    expression="window.scrollTo(0,0)",
+                    target={"context": self.context}, await_promise=False,
+                )
             if action.pause_ms:
                 time.sleep(action.pause_ms / 1000)
 

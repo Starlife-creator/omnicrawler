@@ -50,6 +50,27 @@ def test_only_known_navigation_context_transition_is_retried():
         adapter.locate(action)
 
 
+def test_stalled_bidi_scroll_returns_to_top_without_classic_reads():
+    calls = []
+
+    def evaluate(**kwargs):
+        calls.append(kwargs["expression"])
+        return {"type": "success", "result": {"type": "boolean", "value": False}}
+
+    adapter = SeleniumBiDiAdapter(_driver(evaluate=evaluate), "owned-context")
+    adapter.scroll_bottom(BrowserAction(name="scroll_bottom", times=2))
+    assert calls == [
+        "(()=>{const before=window.scrollY;"
+        "window.scrollTo(0,document.documentElement.scrollHeight);"
+        "return window.scrollY>before;})()",
+        "window.scrollTo(0,0)",
+        "(()=>{const before=window.scrollY;"
+        "window.scrollTo(0,document.documentElement.scrollHeight);"
+        "return window.scrollY>before;})()",
+        "window.scrollTo(0,0)",
+    ]
+
+
 def test_document_wait_retries_transition_and_loading_without_classic_reads():
     attempts = iter([WebDriverException("Cannot find context with specified id"),
                      ["https://example.org/", "incomplete", "loading"],

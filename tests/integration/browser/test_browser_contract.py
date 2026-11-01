@@ -38,6 +38,14 @@ def _config(tmp_path: Path, *, persist=False, capture_limit=1024):
     return load_config(path)
 
 
+SCROLL_POSITION_SCRIPT = (
+    "const before=window.scrollY;"
+    "window.scrollTo(0,document.documentElement.scrollHeight);"
+    "return window.scrollY>before;"
+)
+PLAYWRIGHT_SCROLL_POSITION_SCRIPT = f"(()=>{{{SCROLL_POSITION_SCRIPT}}})()"
+
+
 class _Locator:
     def __init__(self, count=1):
         self._count = count
@@ -82,6 +90,7 @@ class _Page:
 
     def evaluate(self, script):
         self.calls.append(("evaluate", script))
+        return getattr(self, "scroll_position", 0)
 
     def wait_for_timeout(self, value):
         self.calls.append(("wait_for_timeout", value))
@@ -106,7 +115,7 @@ def test_playwright_action_contract_all_actions_optional_and_errors() -> None:
     BrowserFetcher._run_actions(page, actions)
     assert ("click", {"timeout": 10000}) in page.locators["#fallback"].calls
     assert ("fill", "policy") in page.locators["#ok"].calls
-    assert len([item for item in page.calls if item[0] == "evaluate"]) == 2
+    assert len([item for item in page.calls if item[0] == "evaluate"]) == 4
     assert ("wait_for_timeout", 12) in page.calls
     assert ("wait_for_timeout", 13) in page.calls
 
@@ -150,6 +159,7 @@ class _Driver:
 
     def execute_script(self, script):
         self.scripts.append(script)
+        return getattr(self, "scroll_position", 0)
 
 
 def test_selenium_action_contract_all_actions(monkeypatch) -> None:
@@ -197,12 +207,38 @@ def test_selenium_action_contract_all_actions(monkeypatch) -> None:
         ],
     )
     assert selected == ["two"]
-    assert len(driver.scripts) == 2
+    assert len(driver.scripts) == 4
     assert ("clear", None) in driver.element.calls
     assert any(call[0] == "send_keys" for call in driver.element.calls)
 
     with pytest.raises(RuntimeError, match="浏览器动作第 1 步失败"):
         BrowserFetcher._run_selenium_actions(driver, [{"action": "unknown"}])
+
+
+def test_stalled_playwright_scroll_returns_to_top_before_retry() -> None:
+    page = _Page()
+    page.evaluate = lambda script: (
+        page.calls.append(("evaluate", script)) or (False if "return" in script else None)
+    )
+    BrowserFetcher._run_actions(page, [{"action": "scroll_bottom", "times": 2, "pause_ms": 0}])
+    assert [script for name, script in page.calls if name == "evaluate"] == [
+        PLAYWRIGHT_SCROLL_POSITION_SCRIPT,
+        "window.scrollTo(0,0)",
+        PLAYWRIGHT_SCROLL_POSITION_SCRIPT,
+        "window.scrollTo(0,0)",
+    ]
+
+
+def test_stalled_selenium_scroll_returns_to_top_before_retry() -> None:
+    driver = _Driver()
+    driver.execute_script = lambda script: driver.scripts.append(script) or False
+    BrowserFetcher._run_selenium_actions(driver, [{"action": "scroll_bottom", "times": 2, "pause_ms": 0}])
+    assert driver.scripts == [
+        SCROLL_POSITION_SCRIPT,
+        "window.scrollTo(0,0)",
+        SCROLL_POSITION_SCRIPT,
+        "window.scrollTo(0,0)",
+    ]
 
 
 class _Context:
