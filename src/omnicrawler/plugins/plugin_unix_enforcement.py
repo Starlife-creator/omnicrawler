@@ -140,11 +140,7 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     libc.syscall.restype = ctypes.c_long
 
     class Attr(ctypes.Structure):
-        _fields_ = [
-            ("handled_access_fs", ctypes.c_uint64),
-            ("handled_access_net", ctypes.c_uint64),
-            ("scoped", ctypes.c_uint64),
-        ]
+        _fields_ = [("handled_access_fs", ctypes.c_uint64)]
 
     class PathBeneath(ctypes.Structure):
         _fields_ = [("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32)]
@@ -162,7 +158,11 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     buffer = ctypes.create_string_buffer(ctypes.sizeof(Attr))
     attr = Attr.from_buffer(buffer, 0)
     attr.handled_access_fs = handled
+    import sys
+    print("LANDLOCK_CALL", abi, handled, flush=True, file=sys.stderr)
     ruleset = libc.syscall(445, ctypes.byref(attr), ctypes.sizeof(Attr), 0)
+    if ruleset < 0:
+        print("LANDLOCK_FAIL", ctypes.get_errno(), flush=True, file=sys.stderr)
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
     try:
