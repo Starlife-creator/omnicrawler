@@ -104,6 +104,8 @@ def _sock_filter() -> Any:
 
     machine = os.uname().machine
     audit = 0xC000003E if machine == "x86_64" else 0xC00000B7
+    if sys.platform != "linux" or machine not in ("x86_64", "aarch64"):
+        raise RuntimeError(f"{E_UNSUPPORTED_ENV}: seccomp requires a supported Linux architecture")
     # seccomp_data.nr and arch are fixed by the kernel ABI on both supported CPUs.
     instructions = [
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 4),

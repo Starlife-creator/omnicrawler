@@ -56,17 +56,8 @@ jobs:
         run: |
           if [ "$RUNNER_OS" != Linux ]; then
             python -I -S -c 'import importlib.util; from pathlib import Path; spec=importlib.util.spec_from_file_location("enforcement","src/omnicrawler/plugins/plugin_unix_enforcement.py"); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); Path("/tmp/full.sb").write_text(module.darwin_profile(plugin_root=Path("src/omnicrawler/plugins")))'
-            sed 's/(deny default)/(deny default)\n(allow file-read*)\n(allow file-write*)/' /tmp/full.sb > /tmp/readwrite.sb
-            /usr/bin/sandbox-exec -f /tmp/readwrite.sb python -I -S -c 'print("readwrite")' || true
-            /usr/bin/sandbox-exec -f /tmp/readwrite.sb python -I -S -c 'from pathlib import Path; print(Path("/etc/passwd").read_text()[:1]); import json; print(json.dumps({"a": 1}))' || true
-            printf '(version 1)\n(deny default)\n(allow process-exec process-fork mach-lookup sysctl-read)\n(allow file-read* (literal "/dev/null"))\n(allow file-write* (literal "/dev/null"))\n' > /tmp/min.sb
-            /usr/bin/sandbox-exec -f /tmp/min.sb python -I -S -c 'print("minimal")' || true
-            printf '(allow file-read* (subpath "/Library"))\n' >> /tmp/min.sb
-            /usr/bin/sandbox-exec -f /tmp/min.sb python -I -S -c 'print("min-library")' || true
-            printf '(allow file-read* (subpath "/System"))\n' >> /tmp/min.sb
-            /usr/bin/sandbox-exec -f /tmp/min.sb python -I -S -c 'print("min-system")' || true
-            printf '(allow signal (target self))\n' >> /tmp/min.sb
-            /usr/bin/sandbox-exec -f /tmp/min.sb python -I -S -c 'print("min-signal")' || true
+            printf '(version 1)\n(deny default)\n(allow process-exec process-fork mach-lookup sysctl-read)\n(allow file-read* (literal "/dev/null"))\n(allow file-write* (literal "/dev/null"))\n(allow file-read* (subpath "/Library") (subpath "/System") (subpath "/usr") (subpath "/private") (subpath "/Users/runner/hostedtoolcache") (subpath "/dev"))\n' > /tmp/min.sb
+            /usr/bin/sandbox-exec -f /tmp/min.sb python -I -S -c 'import json; print("minimal-import")' || true
           fi
       - name: 真实内核与 Seatbelt 隔离用例
         run: python -m pytest tests/unit/plugin/test_unix_os_sandbox.py -q -p no:cacheprovider
