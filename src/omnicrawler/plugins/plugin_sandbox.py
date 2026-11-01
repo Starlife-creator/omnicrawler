@@ -122,7 +122,7 @@ class PluginSubprocessSession:
     def start(self) -> None:
         # A-P1-2：spawn 前置 OS 沙箱裁决——不可用 fail-closed 拒载，降级档须显式开关，
         # 逃生开关仅关闭 OS 层并在日志横幅显式告警。实际 Landlock/seccomp/AppContainer/
-        # Job Object/Seatbelt 包装待对应平台 CI 验证后接入（见 confinement_argv_prefix）。
+        # Job Object/Seatbelt 按平台启动路径安装；Windows AppContainer 仍未接线。
         mode, reason = resolve_sandbox_mode(
             sandbox_escape=self._sandbox_escape,
             allow_restricted_token_fallback=self._allow_degraded_sandbox,
@@ -196,9 +196,7 @@ class PluginSubprocessSession:
     def _kill(self) -> None:
         proc, self._proc = self._proc, None
         if proc is not None:
-            # 先关闭协议管道，使超时后仍在 readline 的读线程确定性退出；
-            # 仅 kill+wait 会积累阻塞线程并留下子进程持有管道。
-            # 关闭子进程端再关闭父进程读端；先 close 父进程读端在
+            # 先关闭子进程端再关闭父进程读端；先 close 父进程读端在
             # Windows 会等另一个线程退出 readline，从而死锁。
             if proc.poll() is None:
                 proc.kill()
@@ -208,12 +206,10 @@ class PluginSubprocessSession:
                         stream.close()
                     except OSError:
                         pass
-            if proc.poll() is None:
-                proc.kill()
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    pass
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
         self._cleanup_verified_entry()
 
     def _cleanup_verified_entry(self) -> None:
