@@ -30,7 +30,7 @@ def test_landlock_v1_layout_and_version_query(monkeypatch: pytest.MonkeyPatch) -
         class Create:
             def __call__(self, *args: object) -> int:
                 raw = ctypes.cast(args[0], ctypes.POINTER(ctypes.c_uint64)).contents
-                assert raw.value == enforcement._LANDLOCK_ACCESS_V1
+                assert raw.value == 0x1FFF
                 return -1
 
         def create_call(self) -> object:
