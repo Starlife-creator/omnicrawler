@@ -168,7 +168,19 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     ctypes.memmove(raw, ctypes.byref(attr), ctypes.sizeof(Attr))
     import sys
     print("LANDLOCK_ARGUMENTS", abi, handled, bytes(raw).hex(), flush=True, file=sys.stderr)
-    ruleset = libc.syscall(445, ctypes.byref(raw), ctypes.c_size_t(ctypes.sizeof(raw)), ctypes.c_uint(0))
+    for form in range(4):
+        ctypes.set_errno(0)
+        if form == 0:
+            ruleset = libc.syscall(445, ctypes.byref(attr), 8, 0)
+        elif form == 1:
+            ruleset = libc.syscall(445, ctypes.byref(raw), 8, 0)
+        elif form == 2:
+            ruleset = libc.syscall(445, ctypes.addressof(attr), 8, 0)
+        else:
+            ruleset = libc.syscall(445, raw, 8, 0)
+        print("LANDLOCK_FORM", form, ruleset, ctypes.get_errno(), flush=True, file=sys.stderr)
+        if ruleset >= 0:
+            os.close(ruleset)
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
     try:
