@@ -11,6 +11,8 @@
 - `0ea02e3`：登录会话视图测试使用独立临时工作区，避免共享 `work/` 的 cookie 污染。Qt offscreen 全量 GUI 回归曾得到 **495 passed / 1 skipped**。
 - `5995740`：真实测量 200 runs / 100000 `run_state_events` 的三处 GUI 查询。`run_compare_rows_30`、`reprocess_review_load`、`reprocess_review_resolve_reject` 中位分别为 **0.115 / 0.032 / 0.255 ms**，均低于 50 ms 异步迁移阈值。补充 `list_runs_500` 中位 0.228 ms、最大 0.623 ms；`run_events` 中位 1.948 ms、最大 2.848 ms。证据：`gui-state-loading.json`。这些只是本机 SQLite 测量，不是跨平台性能承诺。
 - `2d0b6d6`：插件 `state.migrate` 在源 schema 中排除敏感键，并报告跳过项，不把凭据复制进新 schema 的可见 state。
+- `3d4eda3`：插件凭据读取按目标主机限制，并补充静态检查、broker 契约与回归；插件 OS 沙箱不因此被宣称完成。
+- `f9f3d3c`：滚动停顿后的事件驱动加载继续受完成条件约束，覆盖 Playwright 与 Selenium 读取路径，避免旧文档被当作新结果。
 - `3de2b4d`：PDF 处理依赖（解析器、OCR 组件与 Tesseract 可执行文件）变化时失效并重建可重建输出；人工复核结果受保护；OCR 失败不推进成功指纹。PDF 单元、集成和 CLI 转发回归为 **219 passed / 7 skipped**。临时移除刷新调用后四个依赖刷新用例均失败，恢复后通过。
 - `112b162`：收口上述实现的静态类型；全量 mypy **513 source files** 无错误。
 - `412d518`：外部工作区治理测试不再向 Windows 根目录 `/tmp` 写文件，使用 `tmp_path.parent` 的真实外部临时路径。
@@ -33,9 +35,9 @@
 
 ## 全量回归与保留环境失败
 
-最终全量命令使用仓外 `E:\tool\biancheng\omnicrawler\.dsh-temp\unit-final-verified` 和 `PYTHONUTF8=1`，避免临时配置上溯仓库 `pyproject.toml` 造成共享 `work/`，并修复子进程默认 GBK 解码问题。
+最终全量命令使用仓外 `E:\tool\biancheng\omnicrawler\.dsh-temp\unit-temp-final` 和 `PYTHONUTF8=1`，并将 `TEMP/TMP` 与 pytest `--basetemp` 同时放在仓外，避免标准库 `tempfile` 的临时配置上溯仓库 `pyproject.toml` 造成共享 `work/`，并修复子进程默认 GBK 解码问题。
 
-上一轮相同隔离条件下为 **7 failed / 5177 passed / 87 skipped**。随后已消除：外部工作区路径 1 项、市场快照缺失 1 项。剩余 **5 项**均在本机 Bash/MSYS 边界，最终结果以本轮命令输出为准：
+完全隔离的全量结果为 **5 failed / 5237 passed / 29 skipped**。此前只改 `--basetemp` 时的配置和签名两个额外失败，在同时隔离 `TEMP/TMP` 后为 **16 passed**；市场缺失和 Windows 外部工作区测试也已分别通过。剩余五项均在本机 Bash/MSYS 边界：
 
 - 两个 shell 脚本用例：`bash -n` 无法运行。WSL 垫片报 `0x80070422`，Git Bash/MSYS 报 `NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0...): 0xC0000022`。
 - 三个本地市场检出用例：Python 启动的 Git 子进程在同一 MSYS 边界失败，`git fetch` 返回 128。直接 PowerShell 的本地 fetch 可成功，但不能替代工具子进程的成功证明。尝试 `remote.origin.uploadpack` 与 `core.gitProxy` 均未消除该子进程失败，已还原，未把失败实现提交。
