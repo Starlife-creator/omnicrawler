@@ -28,8 +28,8 @@ _SECCOMP_SET_MODE_FILTER = 1
 _RET_KILL = 0x80000000
 _RET_ERRNO = 0x00050001
 _RET_ALLOW = 0x7FFF0000
-# ABI v2 adds REFER (bit 13); requesting it in the v1-sized ABI is EINVAL.
-_LANDLOCK_ACCESS_V1 = (1 << 13) - 1
+# ABI v1 includes the full file/access set through REFER (bit 13).
+_LANDLOCK_ACCESS_V1 = (1 << 14) - 1
 _BPF_LD = 0
 _BPF_JMP = 0x05
 _BPF_JEQ = 0x10
@@ -107,7 +107,7 @@ def _sock_filter() -> Any:
     instructions = [
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 0),
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 4),
-        (_BPF_JMP | _BPF_JEQ | _BPF_K, audit, 1, 0),
+        (_BPF_JMP | _BPF_JEQ | _BPF_K, audit, 0, 1),
         (_BPF_RET | _BPF_K, 0, 0, _RET_KILL),
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 0),
         # x32 syscall numbers have this bit; never confuse them with native ABI.
