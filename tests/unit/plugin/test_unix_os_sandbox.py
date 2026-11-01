@@ -141,6 +141,7 @@ def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
         accumulator = 0
         pc = 0
         while pc < len(array):
+            print('BPF', pc, array[pc].code, array[pc].jt, array[pc].jf, array[pc].k, 'arch', arch)
             instruction = array[pc]
             opcode = instruction.code & 0x07
             if opcode == enforcement._BPF_LD:
