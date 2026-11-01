@@ -27,6 +27,7 @@ class ParseOutcome(TypedDict, total=False):
     page_count: int
     ocr_pages: int
     error: Exception
+    protected_review: bool
 
 # Phase 0（M0a）：pdfplumber 底层 pdfminer 的布局参数——sort 语义对齐原
 # fitz get_text(sort=True)（阅读顺序），laparams 控制词/行合并容差。
@@ -273,9 +274,9 @@ def parse_stage(
                         ),
                     )
     finally:
-        for conn in _thread_connections:
+        for worker_db in _thread_connections:
             try:
-                conn.close()
+                worker_db.close()
             except Exception:  # noqa: BLE001 - 线程连接关闭失败不应影响调用方
                 # B-P3-3：关闭失败留痕（debug + exc_info），不再静默吞掉。
                 LOGGER.debug("线程数据库连接关闭失败: ", exc_info=True)

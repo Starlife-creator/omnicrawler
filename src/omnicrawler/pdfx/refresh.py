@@ -47,32 +47,32 @@ def refresh_processing(config: ProjectConfig, db: Database) -> dict[str, Any]:
             "SELECT 1 FROM records WHERE doc_id=? AND review_status IN ('" + _REVIEWED + "') LIMIT 1",
             (doc_id,),
         ) is not None
-        parse_row = db.fetchone(
+        parse_record = db.fetchone(
             "SELECT digest FROM processing_dependencies WHERE doc_id=? AND stage='parse'", (doc_id,))
         ocr_row = db.fetchone(
             "SELECT pd.digest FROM processing_dependencies pd WHERE pd.doc_id=? AND pd.stage='ocr' "
             "AND NOT EXISTS(SELECT 1 FROM pages p WHERE p.doc_id=pd.doc_id "
             "AND p.needs_ocr=1 AND p.ocr_status!='done')", (doc_id,))
-        if parse_row is None:
+        if parse_record is None:
             with db.transaction() as conn:
                 db.record_dependency(conn, doc_id, "parse", parser, "baseline")
             summary["baseline_documents"] += 1
-            parse_row = {"digest": parser}
+        parse_digest = parser if parse_record is None else parse_record["digest"]
         if ocr_row is None and db.fetchone(
             "SELECT 1 FROM pages WHERE doc_id=? AND (needs_ocr=0 OR ocr_status='done') LIMIT 1",
             (doc_id,),
         ):
             with db.transaction() as conn:
                 db.record_dependency(conn, doc_id, "ocr", ocr, "baseline")
-            ocr_row = {"digest": ocr}
-        parse_changed = parse_row["digest"] != parser
-        ocr_changed = ocr_row is not None and ocr_row["digest"] != ocr
+        parse_changed = parse_digest != parser
+        ocr_old_digest = ocr if ocr_row is None else ocr_row["digest"]
+        ocr_changed = ocr_old_digest != ocr
         if not parse_changed and not ocr_changed:
             continue
         if protected:
             summary["protected_reviewed"] += 1
             stage = "parse" if parse_changed else "ocr"
-            old = parse_row["digest"] if parse_changed else ocr_row["digest"]
+            old = parse_digest if parse_changed else ocr_old_digest
             new = parser if parse_changed else ocr
             _event(db, doc_id, stage, "protected_review", old, new)
             continue
@@ -85,7 +85,7 @@ def refresh_processing(config: ProjectConfig, db: Database) -> dict[str, Any]:
             ).fetchone():
                 continue
             if parse_changed:
-                old = parse_row["digest"]
+                old = parse_digest
                 conn.execute("DELETE FROM records WHERE doc_id=?", (doc_id,))
                 conn.execute("DELETE FROM pages WHERE doc_id=?", (doc_id,))
                 conn.execute(
@@ -100,7 +100,8 @@ def refresh_processing(config: ProjectConfig, db: Database) -> dict[str, Any]:
                 )
                 summary["parse_invalidated"] += 1
             elif ocr_changed:
-                old = ocr_row["digest"]
+                assert ocr_old_digest is not None
+                old = ocr_old_digest
                 conn.execute("DELETE FROM records WHERE doc_id=?", (doc_id,))
                 conn.execute(
                     "UPDATE pages SET ocr_text=NULL,final_text=native_text,parse_method='native',"
