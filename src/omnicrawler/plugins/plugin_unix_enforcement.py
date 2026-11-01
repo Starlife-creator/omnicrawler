@@ -140,8 +140,11 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     libc.syscall.restype = ctypes.c_long
 
     class Attr(ctypes.Structure):
-        _pack_ = 1
-        _fields_ = [("handled_access_fs", ctypes.c_uint64)]
+        _fields_ = [
+            ("handled_access_fs", ctypes.c_uint64),
+            ("handled_access_net", ctypes.c_uint64),
+            ("scoped", ctypes.c_uint64),
+        ]
 
     class PathBeneath(ctypes.Structure):
         _fields_ = [("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32)]
@@ -154,7 +157,7 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     handled = access_fs & _LANDLOCK_ACCESS_V1
     # The v1-sized structure cannot request REFER, even when the kernel
     # supports a newer ABI; negotiate the v1 access subset explicitly.
-    handled &= (1 << 13) - 1
+    handled &= _LANDLOCK_ACCESS_V1
     ctypes.set_errno(0)
     buffer = ctypes.create_string_buffer(ctypes.sizeof(Attr))
     attr = Attr.from_buffer(buffer, 0)
