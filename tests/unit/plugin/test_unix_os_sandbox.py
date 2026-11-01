@@ -168,7 +168,6 @@ def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
                 pc += 1
         pytest.fail("BPF program has no return")
 
-    print('AUDIT', audit, 'instructions', [(i.code, i.jt, i.jf, i.k) for i in array])
     socket = enforcement._syscall_number("socket")
     assert evaluate(0, audit) == enforcement._RET_ALLOW
     assert evaluate(socket, audit) == enforcement._RET_ERRNO
