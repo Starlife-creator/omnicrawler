@@ -86,6 +86,25 @@ def test_parser_change_reparses_and_reextracts(tmp_path):
     assert run_extraction(path)["processing"]["parse"]["parsed"] == 0
 
 
+def test_tesseract_traineddata_change_refreshes_ocr(tmp_path, monkeypatch):
+    path, data = project(tmp_path, native=False)
+    data["ocr"]["lang"] = "eng"
+    save(path, data)
+    tessdata = tmp_path / "tessdata"
+    tessdata.mkdir()
+    model = tessdata / "eng.traineddata"
+    model.write_bytes(b"signed-model-v1")
+    monkeypatch.setenv("TESSDATA_PREFIX", str(tessdata))
+    install_ocr(monkeypatch, FakeOCR())
+    assert run_extraction(path)["extract"]["records"] == 1
+    assert run_extraction(path)["processing"]["ocr"]["selected"] == 0
+    model.write_bytes(b"signed-model-v2")
+    install_ocr(monkeypatch, FakeOCR("Invoice: OCR2"))
+    result = run_extraction(path)
+    assert result["processing"]["ocr"]["recognized"] == 1
+    assert value(load_config(path)) == "OCR2"
+
+
 def test_ocr_version_change_recognizes_and_reextracts(tmp_path, monkeypatch):
     path, data = project(tmp_path, native=False)
     install_ocr(monkeypatch, FakeOCR())

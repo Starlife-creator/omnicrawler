@@ -56,6 +56,31 @@ def parser_digest(config: ProjectConfig, parser_version: str) -> str:
                     "parser": {key: value for key, value in config.parser.items() if key != "workers"}})
 
 
+def _tessdata_identities(config: ProjectConfig, base: Path) -> dict[str, Any]:
+    """Hash the selected traineddata files, not an unversioned directory name.
+
+    Tesseract's language models affect output independently of the executable.
+    Only the languages explicitly selected by the task participate: unrelated
+    installed models do not invalidate otherwise reusable OCR results.
+    """
+    ocr = config.ocr
+    if str(ocr.get("backend", "tesseract")).lower() != "tesseract":
+        return {"configured": False}
+    directory = Path(os.environ.get("TESSDATA_PREFIX", "")).expanduser() if os.environ.get("TESSDATA_PREFIX") else None
+    if directory is None:
+        candidates = [base / "tessdata"]
+        command = str(ocr.get("command") or os.environ.get("TESSERACT_CMD", ""))
+        if command:
+            command_path = Path(command).expanduser()
+            command_path = command_path if command_path.is_absolute() else base / command_path
+            candidates.extend([command_path.parent / "tessdata", command_path.parent.parent / "share" / "tessdata"])
+        directory = next((path for path in candidates if path.is_dir()), candidates[0])
+    languages = [language.strip() for language in str(ocr.get("lang", "eng")).split("+") if language.strip()]
+    return {"configured": True, "languages": languages,
+            "files": {language: _file_identity(str(directory / f"{language}.traineddata"), base)
+                      for language in languages}}
+
+
 def ocr_digest(config: ProjectConfig, component_version: str | None = None) -> str:
     ocr = {key: value for key, value in config.ocr.items() if not key.startswith("_")}
     component_version = component_version or config.ocr.get("_resolved_component_version")
@@ -65,5 +90,6 @@ def ocr_digest(config: ProjectConfig, component_version: str | None = None) -> s
     identity = {
         "component_version": component_version,
         "command": _file_identity(command, base),
+        "tessdata": _tessdata_identities(config, base),
     }
     return _digest({"contract": 1, "ocr": ocr, "runtime": identity})
