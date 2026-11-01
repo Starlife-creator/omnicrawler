@@ -227,22 +227,36 @@ def parse_stage(
                 doc_id = row["doc_id"]
                 try:
                     outcome = future.result()
+                    if outcome.get("protected_review"):
+                        summary["protected_reviewed"] = summary.get("protected_reviewed", 0) + 1
+                        summary["dependency_notice"] = "人工复核在解析期间完成；旧结果已保留，新依赖未自动应用。"
+                        continue
                     if "error" in outcome:
                         raise outcome["error"]
                     summary["parsed"] += 1
                     summary["ocr_pages"] += outcome["ocr_pages"]
                     status = "parsed" if outcome["ocr_pages"] == 0 else "parsed_native"
-                    db.execute(
-                        """
-                        UPDATE documents SET page_count=?, status=?, text_page_count=?,
-                            ocr_page_count=0, error=NULL, parser_version=?, updated_at=?
-                        WHERE doc_id=?
-                        """,
-                        (
-                            outcome["page_count"], status,
-                            outcome["page_count"] - outcome["ocr_pages"], PARSER_VERSION, utcnow(), doc_id,
-                        ),
-                    )
+                    from .dependencies import ocr_digest, parser_digest
+                    with db.transaction() as conn:
+                        if conn.execute(
+                            "SELECT 1 FROM records WHERE doc_id=? AND review_status IN ('human_accepted','human_rejected')",
+                            (doc_id,),
+                        ).fetchone():
+                            summary["protected_reviewed"] = summary.get("protected_reviewed", 0) + 1
+                            summary["dependency_notice"] = "人工复核在解析期间完成；旧结果已保留，新依赖未自动应用。"
+                            continue
+                        conn.execute(
+                            """
+                            UPDATE documents SET page_count=?, status=?, text_page_count=?,
+                                ocr_page_count=0, error=NULL, parser_version=?, updated_at=?
+                            WHERE doc_id=?
+                            """,
+                            (outcome["page_count"], status,
+                             outcome["page_count"] - outcome["ocr_pages"], PARSER_VERSION, utcnow(), doc_id),
+                        )
+                        db.record_dependency(conn, doc_id, "parse", parser_digest(config, PARSER_VERSION), "applied")
+                        if outcome["ocr_pages"] == 0:
+                            db.record_dependency(conn, doc_id, "ocr", ocr_digest(config), "applied")
                 except Exception as exc:  # noqa: BLE001 - per-file isolation is intentional
                     summary["failed"] += 1
                     db.add_error(doc_id, "parse", exc)
@@ -294,6 +308,11 @@ def _parse_and_store(
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
         """
         with db.transaction() as conn:
+            if conn.execute(
+                "SELECT 1 FROM records WHERE doc_id=? AND review_status IN ('human_accepted','human_rejected')",
+                (doc_id,),
+            ).fetchone():
+                return {"error": RuntimeError("人工复核在处理期间完成，保留原页面和记录"), "protected_review": True}
             conn.execute("DELETE FROM pages WHERE doc_id=?", (doc_id,))
             batch: list[tuple] = []
             for page in _iter_parsed_pages(row["primary_path"], min_chars, max_garbled):
