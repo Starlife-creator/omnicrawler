@@ -46,7 +46,7 @@
 - 与沙箱、IPC、Selenium、GUI 恢复相关的源码定向 mypy 为 **34 source files** 无错误；完整 lint 预算 **99/99**，N802 回到 **28/28**，没有放宽预算。
 - 不安全 Windows AppContainer 原型保留在未跟踪工作区、未接线且未纳入提交；静态检查不把该原型的类型/lint 错误归到生产提交。
 - `static-autonomous-final.json`：静态门禁 **22 passed / 1 failed / 0 skipped**；compileall、ruff、完整 mypy、编码标准、lint 预算、网络边界、发布完整性等均通过，唯一失败仍是本机 Bash/MSYS `0x80070422`。该报告生成于最终提交前的同一源码内容，不能代替最终提交的 CI。
-- `5ea9ac3`：Linux 能力探测改用真实 Landlock ABI / seccomp 查询；v1 ruleset 保留稳定的 8 字节布局，移除对新 ABI 的误拒。普通插件 CI 暴露内核错误后，新增直接内核/Seatbelt 测试门禁；后续内核修正以 `user-test-runs/2026-11-01` 中的最新 CI 结果为准。
+- `5ea9ac3` / `1ffaa01`：Linux 能力探测改用真实 Landlock ABI / seccomp 查询；v1 ruleset 保留稳定的 8 字节布局，移除对新 ABI 的误拒。修正 BPF `JEQ/JSET` 操作码、x32 位测试与 Landlock `O_PATH|O_CLOEXEC` 和 v1 权限掩码。普通插件 CI 暴露内核错误后，新增直接内核/Seatbelt 测试门禁；以 PR #174 的最终 CI 结果为准。
 - `826ff0e` 之后已修复 SeleniumBiDi 对应的新增惰性属性命名，没有调整 N802 预算。
 - 完全隔离、正确指定 `PYTHONPATH=src` 的全量单元回归为 **5258 passed / 32 skipped / 5 failed**；五项仍是下文记录的 Bash/MSYS 环境失败。
 

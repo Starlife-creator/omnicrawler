@@ -185,7 +185,7 @@ except OSError:
 result['import'] = probe.handle('', {})['ok']
 print(json.dumps(result))
 """
-    source = Path(__file__).parents[3] / "src"
+    source = Path(enforcement.__file__).resolve().parent
     completed = subprocess.run(
         [sys.executable, "-I", "-S", "-c", probe, str(tmp_path), str(source)],
         capture_output=True, text=True, timeout=15,

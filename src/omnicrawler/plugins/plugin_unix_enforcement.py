@@ -33,7 +33,7 @@ _BPF_LD = 0
 _BPF_JMP = 0x05
 _BPF_JEQ = 0x10
 _BPF_JSET = 0x40
-_BPF_K = 6
+_BPF_K = 0
 _BPF_RET = 6
 
 

@@ -1,7 +1,8 @@
 name: plugin-sandbox
 
 # Phase 2a F3：插件子进程运行时契约与穿透矩阵（CI 分级）。
-# - 双后端（源码 -I -S / 冻结宿主 exe 由 release 管线覆盖）跑同一套契约与穿透用例
+# - 双后端（源码 -I -S / 冻结宿主 exe 由 release 管线覆盖）跑同一套契约与穿透用例。
+#   Linux 跑真实内核，macOS 跑真实 Seatbelt，Windows 保持明确未接线边界。
 # - windows-latest AppContainer 探测 spike（诊断探针，第 73 轮）
 # - AC 缺口口径（2026-10-29 校正）：第 74 轮设想的"skip + 缺口标注"从未落进用例，
 #   而 spawn 前置裁决是 fail-closed —— runner 缺 AppContainer 时矩阵腿**判红**。
@@ -39,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.12"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
