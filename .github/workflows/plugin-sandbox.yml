@@ -59,12 +59,14 @@ jobs:
             sed 's/(deny default)/(deny default)\n(allow file-read*)\n(allow file-write*)/' /tmp/full.sb > /tmp/readwrite.sb
             /usr/bin/sandbox-exec -f /tmp/readwrite.sb python -I -S -c 'print("readwrite")' || true
             /usr/bin/sandbox-exec -f /tmp/readwrite.sb python -I -S -c 'from pathlib import Path; print(Path("/etc/passwd").read_text()[:1]); import json; print(json.dumps({"a": 1}))' || true
-            sed '/(deny default)/r /tmp/extra.sb' /tmp/full.sb > /tmp/extra-full.sb
             printf '(allow file-read* (subpath "/System"))\n' > /tmp/extra.sb
+            sed '/(deny default)/r /tmp/extra.sb' /tmp/full.sb > /tmp/extra-full.sb
             /usr/bin/sandbox-exec -f /tmp/extra-full.sb python -I -S -c 'print("system")' || true
             printf '(allow file-read* (subpath "/Library"))\n' > /tmp/extra.sb
+            sed '/(deny default)/r /tmp/extra.sb' /tmp/full.sb > /tmp/extra-full.sb
             /usr/bin/sandbox-exec -f /tmp/extra-full.sb python -I -S -c 'print("library")' || true
             printf '(allow file-read* (subpath "/Users"))\n' > /tmp/extra.sb
+            sed '/(deny default)/r /tmp/extra.sb' /tmp/full.sb > /tmp/extra-full.sb
             /usr/bin/sandbox-exec -f /tmp/extra-full.sb python -I -S -c 'print("users")' || true
           fi
       - name: 真实内核与 Seatbelt 隔离用例
