@@ -109,6 +109,7 @@ def _sock_filter() -> Any:
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 0),
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 4),
         (_BPF_JMP | _BPF_JEQ | _BPF_K, audit, 1, 0),
+        (_BPF_RET | _BPF_K, 0, 0, _RET_KILL),
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 0),
         # x32 syscall numbers have this bit; never confuse them with native ABI.
         (_BPF_JMP | _BPF_JSET | _BPF_K, 0x40000000, 0, 1),
@@ -155,12 +156,12 @@ static PyObject *install(PyObject *self, PyObject *args) {
     const char *text = PyUnicode_AsUTF8(path);
     if (!text) { close(ruleset); return NULL; }
     int fd = open(text, O_PATH | O_CLOEXEC);
-    fprintf(stderr, "landlock path=%s fd=%d rule=%d errno=%d\\n", text, fd, 0, errno);
+
     Py_DECREF(path);
     if (fd < 0) { close(ruleset); return PyErr_SetFromErrno(PyExc_OSError); }
     struct beneath rule = {(uint64_t)handled, fd};
     int result = (int)syscall(SYS_landlock_add_rule, ruleset, 1, &rule, 0);
-    fprintf(stderr, "landlock add result=%d errno=%d handled=%llu\\n", result, errno, (unsigned long long)handled);
+
     int saved = errno; close(fd);
     if (result < 0) { close(ruleset); errno = saved; return PyErr_SetFromErrno(PyExc_OSError); }
   }
@@ -223,7 +224,7 @@ def _linux_runtime_roots() -> tuple[Path, ...]:
     return tuple(
         Path(value) for value in (
             "/lib", "/lib64", "/usr/lib", "/usr/local/lib",
-            "/etc/ssl", "/etc/localtime", "/usr/share/zoneinfo",
+            "/etc/ssl", "/usr/share/zoneinfo",
         ) if Path(value).exists()
     )
 
