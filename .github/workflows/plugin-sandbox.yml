@@ -70,6 +70,10 @@ jobs:
             fd = syscall(__NR_landlock_create_ruleset, &short_attr, 8, 0);
             printf("native short8 fd=%ld errno=%d\n", fd, errno);
             if (fd >= 0) close(fd);
+            unsigned long long only = (1ULL << 13) - 1;
+            fd = syscall(445, &only, 8, 0);
+            printf("native bare8 fd=%ld errno=%d\n", fd, errno);
+            if (fd >= 0) close(fd);
             return 0;
           }
           C
