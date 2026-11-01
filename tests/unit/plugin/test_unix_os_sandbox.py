@@ -17,6 +17,14 @@ def test_landlock_v1_layout_and_version_query(monkeypatch: pytest.MonkeyPatch) -
         def __init__(self) -> None:
             self.syscall = self
 
+        @property
+        def argtypes(self) -> object:
+            return getattr(self, '_argtypes', None)
+
+        @argtypes.setter
+        def argtypes(self, value: object) -> None:
+            self._argtypes = value
+
         def __call__(self, number: int, *args: object) -> int:
             if number == 444 or getattr(number, 'value', None) == 444:
                 assert args[0] is None or args[0].value is None

@@ -66,6 +66,7 @@ def linux_capability() -> bool:
     try:
         libc = ctypes.CDLL(None, use_errno=True)
         libc.syscall.restype = ctypes.c_long
+        libc.syscall.argtypes = [ctypes.c_long]
         abi = _landlock_abi(libc)
         if abi < 1:
             return False
@@ -137,6 +138,7 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
 
     libc = ctypes.CDLL(None, use_errno=True)
     libc.syscall.restype = ctypes.c_long
+    libc.syscall.argtypes = [ctypes.c_long]
 
     class Attr(ctypes.Structure):
         # Keep the stable ABI v1 prefix; later kernels accept this short layout.
@@ -205,6 +207,8 @@ def apply_linux(*, plugin_root: Path, verified_entry_dir: Path | None = None) ->
     import ctypes
 
     libc = ctypes.CDLL(None, use_errno=True)
+    libc.syscall.restype = ctypes.c_long
+    libc.syscall.argtypes = [ctypes.c_long]
     if _prctl(libc, _PR_SET_NO_NEW_PRIVS, 1):
         raise OSError(ctypes.get_errno(), "no_new_privs failed")
     array, program = _sock_filter()
@@ -225,11 +229,14 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
     if verified_entry_dir is not None:
         roots += (verified_entry_dir.resolve(),)
     allow = "\n".join(f"  (subpath {_quote(root)})" for root in roots)
+    runtime = "\n".join(f"  (literal {_quote(path)})" for path in (Path(sys.executable).resolve(), *Path(sys.executable).resolve().parents[:2]))
     return f"""(version 1)
 (deny default)
 (allow signal (target self))
+(allow process-exec process-fork)
 (allow file-read* process-exec
 {allow}
+{runtime}
   (subpath "/usr/lib")
   (subpath "/usr/bin")
   (subpath "/bin")
