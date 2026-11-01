@@ -76,6 +76,20 @@ jobs:
           cc /tmp/landlock-probe.c -o /tmp/landlock-probe
           /tmp/landlock-probe
         shell: bash
+      - name: Python 最小 Landlock ABI 调用
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          python - <<'PY'
+          import ctypes
+          class A(ctypes.Structure):
+              _fields_ = [('handled_access_fs', ctypes.c_uint64)]
+          libc = ctypes.CDLL(None, use_errno=True)
+          libc.syscall.restype = ctypes.c_long
+          a = A(8191)
+          fd = libc.syscall(445, ctypes.byref(a), 8, 0)
+          print('python minimal', fd, ctypes.get_errno())
+          PY
+        shell: bash
       - name: 真实内核与 Seatbelt 隔离用例
         run: python -m pytest tests/unit/plugin/test_unix_os_sandbox.py -q -p no:cacheprovider
         shell: bash
