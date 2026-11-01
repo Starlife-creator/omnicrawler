@@ -160,7 +160,9 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     attr.handled_access_fs = handled
     import sys
     print("LANDLOCK_CALL", abi, handled, flush=True, file=sys.stderr)
-    ruleset = libc.syscall(445, ctypes.byref(attr), ctypes.sizeof(Attr), 0)
+    raw = ctypes.create_string_buffer(ctypes.sizeof(Attr))
+    ctypes.memmove(raw, ctypes.byref(attr), ctypes.sizeof(Attr))
+    ruleset = libc.syscall(445, raw, ctypes.c_size_t(ctypes.sizeof(Attr)), ctypes.c_uint(0))
     if ruleset < 0:
         print("LANDLOCK_FAIL", ctypes.get_errno(), flush=True, file=sys.stderr)
     if ruleset < 0:
