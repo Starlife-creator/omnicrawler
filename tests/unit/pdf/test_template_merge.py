@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 
 from omnicrawler.pdfx.project import create_project_config
-from omnicrawler.pdfx.template_merge import merge_project_template
+from omnicrawler.pdfx.template_merge import merge_project_template, merge_template_config
 
 
 def _template(path: Path, pattern: str, engine: str = "regex") -> None:
@@ -72,6 +72,18 @@ def test_cli_uses_snapshotted_base_and_reports_conflicts(tmp_path: Path):
     assert error.value.code == 2
     result = json.loads(output.getvalue())["result"]
     assert result["conflicts"] == ["fields"]
+
+
+def test_template_merge_does_not_alias_loaded_yaml_documents(tmp_path: Path):
+    base, current, new = (tmp_path / name for name in ("base.yaml", "project.yaml", "new.yaml"))
+    _template(base, "A")
+    _template(current, "A")
+    new_data = yaml.safe_load(base.read_text(encoding="utf-8"))
+    new_data["extraction"]["cache"] = True
+    new.write_text(yaml.safe_dump(new_data), encoding="utf-8")
+    result = merge_template_config(current, base, new)
+    assert result["applied"] == ["extraction.cache"]
+    assert result["config"]["extraction"]["workers"] == 1
 
 
 def test_new_nested_option_merges_without_touching_local_worker_count(tmp_path: Path):

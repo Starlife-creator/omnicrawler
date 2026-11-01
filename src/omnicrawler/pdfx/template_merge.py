@@ -1,6 +1,7 @@
 """Auditable, three-way PDF template updates; no silent overwrite of edits."""
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import shutil
@@ -34,7 +35,7 @@ def merge_template_config(current_path: str | Path, base_path: str | Path,
     current, base, new = (_mapping(yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {})
                           for path in (current_path, base_path, new_path))
     protected = {"project_name", "input_dir", "work_dir", "output_dir", "database"}
-    merged: dict[str, Any] = dict(current)
+    merged: dict[str, Any] = copy.deepcopy(current)
     applied: list[str] = []
     conflicts: list[str] = []
     skipped: list[str] = []
@@ -43,7 +44,7 @@ def merge_template_config(current_path: str | Path, base_path: str | Path,
         if before == after:
             return existing
         if isinstance(before, dict) and isinstance(after, dict) and isinstance(existing, dict):
-            result = dict(existing)
+            result = copy.deepcopy(existing)
             for child in sorted(set(before) | set(after) | set(existing)):
                 name = f"{key}.{child}"
                 old_child, new_child = before.get(child), after.get(child)
