@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from collections.abc import Iterator, Sequence
@@ -29,7 +30,7 @@ _RET_KILL = 0x80000000
 _RET_ERRNO = 0x00050001
 _RET_ALLOW = 0x7FFF0000
 # ABI v1 includes the full file/access set through REFER (bit 13).
-_LANDLOCK_ACCESS_V1 = (1 << 14) - 1
+_LANDLOCK_ACCESS_V1 = (1 << 13) - 1
 _BPF_LD = 0
 _BPF_JMP = 0x05
 _BPF_JEQ = 0x10
@@ -133,23 +134,73 @@ def _sock_filter() -> Any:
     return array, Program(len(array), array)
 
 
+_NATIVE_LANDLOCK_SOURCE = r'''
+#include <Python.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <stdint.h>
+#include <sys/prctl.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+struct attr { uint64_t handled_access_fs, handled_access_net, scoped; };
+struct beneath { uint64_t allowed_access; int32_t parent_fd; };
+static PyObject *install(PyObject *self, PyObject *args) {
+  unsigned long long handled; PyObject *paths;
+  if (!PyArg_ParseTuple(args, "KO", &handled, &paths)) return NULL;
+  struct attr attr = {(uint64_t)handled, 0, 0};
+  int ruleset = (int)syscall(SYS_landlock_create_ruleset, &attr, 8, 0);
+  if (ruleset < 0) return PyErr_SetFromErrno(PyExc_OSError);
+  Py_ssize_t count = PySequence_Size(paths);
+  for (Py_ssize_t i = 0; i < count; ++i) {
+    PyObject *path = PySequence_GetItem(paths, i);
+    const char *text = PyUnicode_AsUTF8(path);
+    int fd = text ? open(text, O_PATH | O_CLOEXEC) : -1;
+    Py_DECREF(path);
+    if (fd < 0) { close(ruleset); return PyErr_SetFromErrno(PyExc_OSError); }
+    struct beneath rule = {(uint64_t)handled, fd};
+    int result = (int)syscall(SYS_landlock_add_rule, ruleset, 1, &rule, 0);
+    int saved = errno; close(fd);
+    if (result < 0) { close(ruleset); errno = saved; return PyErr_SetFromErrno(PyExc_OSError); }
+  }
+  if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) || syscall(SYS_landlock_restrict_self, ruleset, 0)) {
+    int saved = errno; close(ruleset); errno = saved; return PyErr_SetFromErrno(PyExc_OSError);
+  }
+  close(ruleset); Py_RETURN_NONE;
+}
+static PyMethodDef methods[] = {{"install", install, METH_VARARGS}, {NULL, NULL, 0, NULL}};
+static struct PyModuleDef module = {PyModuleDef_HEAD_INIT, "omnicrawler_landlock", NULL, -1, methods};
+PyMODINIT_FUNC PyInit_omnicrawler_landlock(void) { return PyModule_Create(&module); }
+'''
+
+
+def _native_landlock(handled: int, paths: Sequence[Path]) -> None:
+    """Use a narrowly scoped native extension; Python's ctypes syscall is not ABI-safe here."""
+    import sysconfig
+    with tempfile.TemporaryDirectory(prefix="omnicrawler-landlock-") as directory:
+        source = Path(directory) / "landlock.c"
+        extension = Path(directory) / "omnicrawler_landlock.so"
+        source.write_text(_NATIVE_LANDLOCK_SOURCE, encoding="utf-8")
+        includes = sysconfig.get_paths()["include"]
+        command = [os.environ.get("CC", "cc"), "-shared", "-fPIC", str(source), "-I", includes, "-o", str(extension)]
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        if result.returncode:
+            raise RuntimeError(f"{E_UNSUPPORTED_ENV}: native Landlock shim compilation failed: {result.stderr[-500:]}")
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("omnicrawler_landlock", extension)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"{E_UNSUPPORTED_ENV}: native Landlock shim cannot load")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.install(handled, tuple(str(path) for path in paths))
+
+
 def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     import ctypes
 
+    if sys.platform != "linux":
+        raise OSError(22, "Landlock is unavailable on this platform")
     libc = ctypes.CDLL(None, use_errno=True)
     libc.syscall.restype = ctypes.c_long
-
-    class Attr(ctypes.Structure):
-        _fields_ = [
-            ("handled_access_fs", ctypes.c_uint64),
-            ("handled_access_net", ctypes.c_uint64),
-            ("scoped", ctypes.c_uint64),
-        ]
-
-    class PathBeneath(ctypes.Structure):
-        _fields_ = [("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32)]
-
-
 
     abi = _landlock_abi(libc)
     if abi < 1:
@@ -157,27 +208,7 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     handled = access_fs & _LANDLOCK_ACCESS_V1
     handled &= (1 << 13) - 1
 
-    # Match the native C proof: full zeroed attr, short v1 rights, direct syscall.
-    ctypes.set_errno(0)
-    attr = Attr(handled_access_fs=handled)
-    ruleset = libc.syscall(445, ctypes.byref(attr), ctypes.c_size_t(ctypes.sizeof(Attr)), ctypes.c_uint(0))
-    if ruleset < 0:
-        raise OSError(ctypes.get_errno(), "Landlock ruleset creation failed")
-    try:
-        for path in paths:
-            fd = os.open(path, getattr(os, "O_PATH", os.O_RDONLY) | getattr(os, "O_CLOEXEC", 0))
-            try:
-                rule = PathBeneath(handled, fd)
-                if libc.syscall(446, ruleset, 1, ctypes.byref(rule), 0):
-                    raise OSError(ctypes.get_errno(), f"Landlock rule rejected: {path}")
-            finally:
-                os.close(fd)
-        if _prctl(libc, _PR_SET_NO_NEW_PRIVS, 1):
-            raise OSError(ctypes.get_errno(), "no_new_privs failed")
-        if libc.syscall(447, ruleset, 0):
-            raise OSError(ctypes.get_errno(), "Landlock enforcement failed")
-    finally:
-        os.close(ruleset)
+    _native_landlock(handled, paths)
 
 
 def _standard_library_roots() -> tuple[Path, ...]:

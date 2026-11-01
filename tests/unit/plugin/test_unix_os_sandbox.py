@@ -12,46 +12,30 @@ import pytest
 from omnicrawler.plugins import plugin_unix_enforcement as enforcement
 
 
-def test_landlock_v1_layout_and_version_query(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_landlock_v1_uses_short_native_abi(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[int, tuple[Path, ...]]] = []
     class _Libc:
-        def __init__(self) -> None:
-            self.syscall = self
-            self.landlock_create_ruleset = self.create_call()
-            self.argtypes: list[object] = []
-
-        @property
-        def argtypes(self) -> object:
-            return getattr(self, '_argtypes', None)
-
-        @argtypes.setter
-        def argtypes(self, value: object) -> None:
-            self._argtypes = value
-
-        class Create:
-            def __call__(self, *args: object) -> int:
-                raw = ctypes.cast(args[0], ctypes.POINTER(ctypes.c_uint64)).contents
-                assert raw.value == 0x1FFF
-                return -1
-
-        def create_call(self) -> object:
-            return self.Create()
-
-        def __call__(self, number: int, *args: object) -> int:
-            if number == 444 or getattr(number, 'value', None) == 444:
-                assert args[0] is None or args[0].value is None
-                assert args[1] == 0 or args[1].value == 0
-                assert args[2] == 1 or args[2].value == 1
-                return 5
-            if number == 445 or getattr(number, 'value', None) == 445:
-                raw = ctypes.cast(args[0], ctypes.POINTER(ctypes.c_uint64)).contents
-                assert args[1] == 8 or args[1].value == 8
-                assert raw.value == 0x1FFF  # v1 excludes the ABI-v2 REFER bit.
-                return -1
-            raise AssertionError(number)
-
+        syscall = type("Call", (), {})()
     monkeypatch.setattr(ctypes, "CDLL", lambda *args, **kwargs: _Libc())
-    with pytest.raises(OSError, match="ruleset creation"):
-        enforcement._landlock(enforcement._LANDLOCK_ACCESS_V1, ())
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(enforcement, "_landlock_abi", lambda libc: 5)
+    monkeypatch.setattr(
+        enforcement, "_native_landlock",
+        lambda handled, paths: calls.append((handled, tuple(paths))),
+    )
+    assert enforcement._LANDLOCK_ACCESS_V1 == 0x1FFF
+    enforcement._landlock(enforcement._LANDLOCK_ACCESS_V1 | (1 << 13), (Path("plugin"),))
+    assert calls == [(0x1FFF, (Path("plugin"),))]
+
+
+def test_native_landlock_requires_working_toolchain(monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, "", "compiler unavailable"),
+    )
+    with pytest.raises(RuntimeError, match="native Landlock shim compilation failed"):
+        enforcement._native_landlock(0x1FFF, ())
 
 
 def test_linux_capability_checks_landlock_and_seccomp(monkeypatch: pytest.MonkeyPatch) -> None:
