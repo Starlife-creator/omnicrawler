@@ -162,19 +162,21 @@ class PluginSubprocessSession:
         if sys.platform == "win32":
             # CREATE_NO_WINDOW（0x08000000，env_checker.py:62 模式）
             kwargs["creationflags"] = 0x08000000
-        if mode == "os" and sys.platform == "darwin":
-            from .plugin_unix_enforcement import darwin_launch
-            command, kwargs["env"] = darwin_launch(
-                command,
-                plugin_root=self.plugin_root,
-                verified_entry_dir=self._verified_entry_dir,
-            )
         if mode == "os" and sys.platform == "linux":
             from .plugin_unix_enforcement import _native_helper
             helper = _native_helper()  # compile in parent before child confinement
             kwargs["env"]["OMNICRAWL_LANDLOCK_HELPER"] = helper.__file__
         try:
-            self._proc = subprocess.Popen(command, **kwargs)
+            if mode == "os" and sys.platform == "darwin":
+                from .plugin_unix_enforcement import darwin_launch
+                with darwin_launch(
+                    command,
+                    plugin_root=self.plugin_root,
+                    verified_entry_dir=self._verified_entry_dir,
+                ) as command:
+                    self._proc = subprocess.Popen(command, **kwargs)
+            else:
+                self._proc = subprocess.Popen(command, **kwargs)
         except FileNotFoundError as exc:
             raise RuntimeError(f"沙箱后端不可用: {exc}") from exc
         except OSError as exc:
