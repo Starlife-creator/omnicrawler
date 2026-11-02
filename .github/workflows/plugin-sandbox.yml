@@ -74,19 +74,25 @@ jobs:
           from omnicrawler.plugins.plugin_unix_enforcement import darwin_profile
           executable = pathlib.Path(sys.executable).resolve()
           profile = darwin_profile(plugin_root=pathlib.Path.cwd())
-          probes = [
-              ('process', '(allow process-exec process-fork)'),
-              ('process-mach', '(allow process-exec process-fork)(allow mach-lookup)'),
-              ('process-sysctl', '(allow process-exec process-fork)(allow sysctl-read)'),
-              ('process-system', '(allow process-exec process-fork)(allow system-info)'),
-              ('process-iokit', '(allow process-exec process-fork)(allow iokit-open)'),
-              ('process-signal', '(allow process-exec process-fork)(allow signal (target self))'),
-              ('process-mach-sysctl', '(allow process-exec process-fork)(allow mach-lookup)(allow sysctl-read)'),
-              ('process-all-runtime', '(allow process-exec process-fork)(allow mach-lookup)(allow sysctl-read)(allow system-info)(allow iokit-open)(allow signal (target self))'),
-              ('process-all-files', '(allow process-exec process-fork)(allow file-read* file-write*)'),
-              ('process-mach-sysctl-files', '(allow process-exec process-fork)(allow mach-lookup)(allow sysctl-read)(allow file-read* file-write*)'),
-              ('process-all-runtime-files', '(allow process-exec process-fork)(allow mach-lookup)(allow sysctl-read)(allow system-info)(allow iokit-open)(allow signal (target self))(allow file-read* file-write*)'),
-              ('product', profile),
+          process = '(allow process-exec process-fork)'
+          files = '(allow file-read* file-write*)'
+          roots = [
+              '/System', '/System/Library', '/Library', '/Library/Frameworks',
+              '/usr', '/usr/bin', '/usr/lib', '/usr/share', '/private',
+              '/private/etc', '/private/var', '/private/var/db', '/private/var/db/dyld',
+              '/dev', '/Applications', '/Library/Apple', '/Library/Developer',
+              '/Library/Frameworks/Python.framework',
+              '/Library/Frameworks/Python.framework/Versions/3.12',
+              '/Users/runner', '/Users/runner/hostedtoolcache', '/opt', '/opt/homebrew',
+          ]
+          probes = [('process-all-files', process + files), ('product', profile)]
+          probes += [(path, process + f'(allow file-read* file-write* (subpath "{path}"))') for path in roots]
+          probes += [
+              ('product-all-read', profile + '(allow file-read*)'),
+              ('product-all-write', profile + '(allow file-write*)'),
+              ('product-all-files', profile + '(allow file-read* file-write*)'),
+              ('product-no-dev-write', profile.replace('(allow file-read* file-write* (subpath "/dev"))', '')),
+              ('product-no-etc', profile.replace('(subpath "/private/etc")', '').replace('(subpath "/etc")', '')),
           ]
           for label, extra in probes:
               with tempfile.NamedTemporaryFile('w', suffix='.sb') as stream:
