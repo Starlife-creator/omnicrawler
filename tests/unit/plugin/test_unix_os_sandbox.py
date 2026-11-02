@@ -80,14 +80,36 @@ def test_darwin_profile_grants_only_declared_temp_scope(
     assert '(deny default)' in profile
 
 
-def test_native_landlock_requires_working_toolchain(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_native_landlock_requires_working_toolchain() -> None:
+    """A successful compile would sandbox the caller; isolate this probe in a child."""
     import subprocess
-    monkeypatch.setattr(
-        subprocess, "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, "", "compiler unavailable"),
+    probe = """
+import subprocess, sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1])))
+from plugin_unix_enforcement import _native_landlock
+subprocess.run = lambda *args, **kwargs: subprocess.CompletedProcess(
+    args[0], 1, "", "compiler unavailable"
+)
+try:
+    _native_landlock(0x1FFF, (), ())
+except RuntimeError as error:
+    assert "native Landlock shim compilation failed" in str(error), error
+else:
+    raise AssertionError("compiler failure was not propagated")
+"""
+    completed = subprocess.run(
+        [enforcement.sys.executable, "-I", "-S", "-c", probe,
+         str(Path(enforcement.__file__).resolve().parent)],
+        cwd=Path(enforcement.__file__).resolve().parent,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+        env={key: value for key, value in os.environ.items()
+             if key not in {"PYTHONHOME", "PYTHONPATH", "OMNICRAWL_LANDLOCK_HELPER"}},
     )
-    with pytest.raises(RuntimeError, match="native Landlock shim compilation failed"):
-        enforcement._native_landlock(0x1FFF, (), ())
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_linux_capability_checks_landlock_and_seccomp(monkeypatch: pytest.MonkeyPatch) -> None:

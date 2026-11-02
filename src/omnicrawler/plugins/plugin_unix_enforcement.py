@@ -247,8 +247,6 @@ def _native_helper():
 def _native_landlock(
     handled: int, read_paths: Sequence[Path], write_paths: Sequence[Path]
 ) -> None:
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        os.abort()
     _native_helper().install(
         handled,
         tuple(str(path) for path in read_paths),
