@@ -65,35 +65,10 @@ jobs:
             -q -p no:cacheprovider
         shell: bash
 
-      - name: macOS 最小运行时诊断
+      - name: macOS 崩溃报告诊断
         if: failure() && matrix.os == 'macos-latest'
         run: |
-          set +e
-          python - <<'PY'
-          import pathlib, subprocess, sys, tempfile
-          from omnicrawler.plugins.plugin_unix_enforcement import darwin_profile
-          executable = pathlib.Path(sys.executable).resolve()
-          base = '''(version 1)
-(deny default)
-(allow process-exec process-fork)
-(allow file-read* file-write*)
-'''
-          probes = [
-              ('file-only', base),
-              ('plus-mach', base + '(allow mach-lookup)\n'),
-              ('plus-sysctl', base + '(allow mach-lookup)\n(allow sysctl-read)\n'),
-              ('plus-system', base + '(allow mach-lookup)\n(allow sysctl-read)\n(allow system-info)\n'),
-              ('plus-iokit', base + '(allow mach-lookup)\n(allow sysctl-read)\n(allow system-info)\n(allow iokit-open)\n'),
-              ('plus-signal', base + '(allow mach-lookup)\n(allow sysctl-read)\n(allow system-info)\n(allow iokit-open)\n(allow signal (target self))\n'),
-              ('product', darwin_profile(plugin_root=pathlib.Path.cwd())),
-          ]
-          for label, profile in probes:
-              with tempfile.NamedTemporaryFile('w', suffix='.sb') as stream:
-                  stream.write(profile)
-                  stream.flush()
-                  result = subprocess.run(['/usr/bin/sandbox-exec', '-f', stream.name, str(executable), '-S', '-c', 'print("STARTED")'], capture_output=True, text=True, timeout=15)
-              print(label, result.returncode, result.stdout.strip(), result.stderr.strip())
-          PY
+          log show --style compact --last 10m --predicate 'process == "sandboxd" OR eventMessage CONTAINS "Python"' | tail -80 || true
         shell: bash
 
   appcontainer-spike:
