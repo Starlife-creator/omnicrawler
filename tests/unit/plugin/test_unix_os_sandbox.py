@@ -102,8 +102,7 @@ def test_linux_capability_checks_landlock_and_seccomp(monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(ctypes, "CDLL", lambda *args, **kwargs: _Libc())
     monkeypatch.setattr(os, "uname", lambda: os.uname_result(("Linux", "host", "6", "v", "x86_64")), raising=False)
-    monkeypatch.setattr(enforcement, "_landlock_abi", lambda libc: 3)
-    monkeypatch.setattr(enforcement, "_prctl", lambda libc, option, arg2=0: 2)
+    monkeypatch.setattr(enforcement, "_landlock_abi", lambda libc: 4)
     assert enforcement.linux_capability()
     monkeypatch.setattr(enforcement, "_prctl", lambda libc, option, arg2=0: -1)
     assert not enforcement.linux_capability()
