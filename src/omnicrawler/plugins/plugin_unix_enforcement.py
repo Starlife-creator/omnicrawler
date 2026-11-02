@@ -208,6 +208,7 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   };
   struct sock_fprog program = {(unsigned short)(sizeof(filters) / sizeof(filters[0])), filters};
   if (syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, 0UL, &program) < 0) return PyErr_SetFromErrno(PyExc_OSError);
+  write(2, "SECCOMP_INSTALLED\n", 18);
   Py_RETURN_NONE;
 }
 static PyMethodDef methods[] = {{"install", install, METH_VARARGS}, {"seccomp_install", seccomp_install, METH_VARARGS}, {NULL, NULL, 0, NULL}};
