@@ -202,7 +202,7 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   int kexec_nr = audit == AUDIT_ARCH_X86_64 ? 246 : 104;
   struct sock_filter filters[] = {
     BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, audit, 0, 0),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, audit, 0, 1),
     BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
     BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
     BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x40000000, 0, 1),
@@ -220,13 +220,9 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   struct sock_fprog program = {(unsigned short)(sizeof(filters) / sizeof(filters[0])), filters};
   for (unsigned int i = 0; i < program.len; ++i) fprintf(stderr, "F%u=%u,%u,%u,%u\n", i, filters[i].code, filters[i].jt, filters[i].jf, filters[i].k);
   fprintf(stderr, "AUDIT=%u EXPECT=%u\n", audit, AUDIT_ARCH_X86_64);
-  filters[2].k = SECCOMP_RET_LOG;
-  filters[2].k = SECCOMP_RET_LOG;
-  filters[5].k = SECCOMP_RET_TRAP;
-  filters[6].k = 0;
-  filters[6].jt = 0;
-  filters[6].jf = 0;
-  filters[6].code = 0;
+  filters[2].k = SECCOMP_RET_TRAP;
+  filters[5].k = SECCOMP_RET_ALLOW;
+  filters[6].k = SECCOMP_RET_TRAP;
   filters[13].k = SECCOMP_RET_ERRNO | EPERM;
   stack_t stack = {sigsys_stack, 0, sizeof(sigsys_stack)};
   sigaltstack(&stack, NULL);
