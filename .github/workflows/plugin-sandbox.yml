@@ -72,7 +72,7 @@ jobs:
               profile = profile.replace('(deny network*)', '')
               path = Path(tempfile.gettempdir()) / f'seatbelt-{name}.sb'
               path.write_text(profile, encoding='utf-8')
-              probe = subprocess.run(['/usr/bin/sandbox-exec', '-f', str(path), sys.executable, '-S', '-c', 'print("STARTED")'], capture_output=True, text=True)
+              probe = subprocess.run(['/usr/bin/sandbox-exec', '-f', str(path), sys.executable, '-S', '-c', 'open("/private/etc/passwd").read(); print("STARTED")'], capture_output=True, text=True)
               print('GROUP', name, 'returncode', probe.returncode, probe.stdout.strip(), probe.stderr[:200])
           PY
         shell: bash
