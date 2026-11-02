@@ -66,13 +66,14 @@ jobs:
           import subprocess
           import sys
           import tempfile
-          clauses = re.findall(r'\((?:subpath|literal|regex) "[^"]+"\)', profile)
-          for i, clause in enumerate(clauses):
-              reduced = profile.replace(clause, '(literal "/__omnicrawler_nonexistent__")')
+          for i, line in enumerate(profile.splitlines()):
+              if not any(operation in line for operation in ('allow', 'deny')) or 'deny default' in line:
+                  continue
+              reduced = profile.replace(line, '; removed for diagnostic')
               path = Path(tempfile.gettempdir()) / f'omnicrawler-seatbelt-{i}.sb'
               path.write_text(reduced, encoding='utf-8')
               probe = subprocess.run(['/usr/bin/sandbox-exec', '-f', str(path), sys.executable, '-S', '-c', 'open("/etc/passwd").read()'], capture_output=True, text=True)
-              print('REMOVE', i, clause, 'returncode', probe.returncode)
+              print('REMOVE', i, line, 'returncode', probe.returncode, probe.stderr[:100])
           PY
         shell: bash
       # F1 公共契约夹具 + F2 差分 + 隔离/路由/适配器/broker 全套
