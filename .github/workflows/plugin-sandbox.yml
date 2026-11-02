@@ -68,11 +68,7 @@ jobs:
       - name: macOS 崩溃报告诊断
         if: failure() && matrix.os == 'macos-latest'
         run: |
-          for report in "$HOME/Library/Logs/DiagnosticReports"/* "$HOME/Library/Logs/CrashReporter"/*; do
-            test -f "$report" || continue
-            echo "=== $report ==="
-            grep -E 'Termination|Exception|Dyld|Sandbox|deny|Called|Reason|Application Specific' "$report" | tail -30 || true
-          done
+          log show --style compact --last 10m --predicate 'process == "sandboxd" OR eventMessage CONTAINS "Python"' | tail -80 || true
         shell: bash
 
   appcontainer-spike:
