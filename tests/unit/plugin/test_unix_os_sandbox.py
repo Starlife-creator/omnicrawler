@@ -154,6 +154,7 @@ def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
                     matched = accumulator == instruction.k
                 assert jump in (enforcement._BPF_JEQ, enforcement._BPF_JSET)
                 if matched:
+                    print("JUMP-TRUE", pc, instruction.jt, flush=True)
                     pc += 1 + instruction.jt
                 else:
                     pc += 1 + instruction.jf
