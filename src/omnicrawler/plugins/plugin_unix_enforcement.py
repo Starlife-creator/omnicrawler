@@ -179,6 +179,7 @@ static PyObject *install(PyObject *self, PyObject *args) {
 }
 static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   unsigned int audit;
+  fprintf(stderr, "NATIVE_AUDIT=%u EXPECTED=%u\n", audit, AUDIT_ARCH_X86_64);
   if (!PyArg_ParseTuple(args, "I", &audit)) return NULL;
   int socket_nr = audit == AUDIT_ARCH_X86_64 ? 41 : 198;
   int socketpair_nr = audit == AUDIT_ARCH_X86_64 ? 53 : 199;
