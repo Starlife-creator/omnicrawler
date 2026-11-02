@@ -54,7 +54,8 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          python -I -S -c 'import ctypes, importlib.util, signal; from pathlib import Path; class Sig(ctypes.Structure): _fields_=[("number",ctypes.c_int),("errno",ctypes.c_int),("code",ctypes.c_int),("pid",ctypes.c_int),("uid",ctypes.c_uint),("status",ctypes.c_int),("addr",ctypes.c_ulong),("value",ctypes.c_long),("band",ctypes.c_long),("pad",ctypes.c_int*7),("syscall",ctypes.c_int),("arch",ctypes.c_uint)]; libc=ctypes.CDLL(None); libc.sigaction.argtypes=[ctypes.c_int,ctypes.c_void_p,ctypes.c_void_p]; class Action(ctypes.Structure): _fields_=[("handler",ctypes.c_void_p),("mask",ctypes.c_ulong*16),("flags",ctypes.c_ulong),("restorer",ctypes.c_void_p)]; cb=ctypes.CFUNCTYPE(None,ctypes.c_int,ctypes.POINTER(Sig),ctypes.c_void_p)(lambda n,i,c: (print("SYS",i.contents.syscall,hex(i.contents.arch),flush=True), libc.signal(n,0), ctypes.CDLL(None).syscall(i.contents.syscall))); action=Action(ctypes.cast(cb,ctypes.c_void_p),(ctypes.c_ulong*16)(),4,None); libc.sigaction(31,ctypes.byref(action),None); spec=importlib.util.spec_from_file_location("enforcement","src/omnicrawler/plugins/plugin_unix_enforcement.py"); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); module.apply_linux(plugin_root=Path("src/omnicrawler/plugins"))' || true
+          strace -f -o /tmp/trace.txt python -I -S -c 'import importlib.util; from pathlib import Path; spec=importlib.util.spec_from_file_location("enforcement","src/omnicrawler/plugins/plugin_unix_enforcement.py"); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); module.apply_linux(plugin_root=Path("src/omnicrawler/plugins"))' || true
+          tail -80 /tmp/trace.txt
       - name: 真实内核与 Seatbelt 隔离用例
         run: python -m pytest tests/unit/plugin/test_unix_os_sandbox.py -q -p no:cacheprovider
         shell: bash
