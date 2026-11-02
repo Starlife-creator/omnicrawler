@@ -53,6 +53,47 @@ jobs:
       - name: 真实内核与 Seatbelt 隔离用例
         run: python -m pytest tests/unit/plugin/test_unix_os_sandbox.py -q -p no:cacheprovider
         shell: bash
+      - name: Seatbelt 组诊断（定位 /etc/passwd 放行子句）
+        if: failure() && runner.os == 'macOS'
+        run: |
+          set +e
+          for group in stdlib macos_runtime plugin_literal dev_etc system library usr private_etc_ssl; do
+            case "$group" in
+              stdlib) allow='(subpath "/Library/Frameworks/Python.framework")' ;;
+              macos_runtime) allow='(subpath "/opt/hostedtoolcache")' ;;
+              plugin_literal) allow='(literal "/")' ;;
+              dev_etc) allow='(subpath "/dev") (literal "/private/etc/resolv.conf") (literal "/private/etc/hosts")' ;;
+              system) allow='(subpath "/System/Library")' ;;
+              library) allow='(subpath "/Library/Apple") (subpath "/Library/Frameworks") (subpath "/Library/Developer")' ;;
+              usr) allow='(subpath "/usr/bin") (subpath "/bin") (subpath "/usr/local/share") (subpath "/usr/share")' ;;
+              private_etc_ssl) allow='(subpath "/private/etc/ssl")' ;;
+            esac
+            cat > /tmp/diag-$group.sb <<EOF
+          (version 1)
+          (deny default)
+          (allow signal (target self))
+          (allow process-exec process-fork)
+          (allow mach-lookup)
+          (allow sysctl-read)
+          (allow system-info)
+          (allow iokit-open)
+          (allow file-read* file-write* (subpath "/dev"))
+          (allow file-read*
+            $allow
+          )
+          (allow process-exec
+            (subpath "$(python -c 'import sys,pathlib; print(pathlib.Path(sys.executable).resolve().parent)')")
+            (literal "/usr/bin/sandbox-exec"))
+          (allow file-read* (literal "/"))
+          (allow file-write* (literal "/dev/null"))
+          (deny network*)
+          EOF
+            echo "=== group=$group ==="
+            sandbox-exec -f /tmp/diag-$group.sb "$(python -c 'import sys; print(sys.executable)')" -S -c "open('/etc/passwd').read(); print('ALLOWED')" 2>&1 | head -2
+            echo "exit=$?"
+          done
+          set -e
+        shell: bash
       # F1 公共契约夹具 + F2 差分 + 隔离/路由/适配器/broker 全套
       - name: 插件契约与穿透用例（源码后端）
         run: |
