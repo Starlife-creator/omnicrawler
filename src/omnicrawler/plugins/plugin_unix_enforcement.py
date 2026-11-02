@@ -180,7 +180,7 @@ static PyObject *install(PyObject *self, PyObject *args) {
 static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   PyObject *audit_object = PyTuple_GetItem(args, 0);
   if (audit_object == NULL || !PyLong_Check(audit_object)) return PyErr_Format(PyExc_TypeError, "audit must be an integer");
-  unsigned int audit = (unsigned int)PyLong_AsUnsignedLong(audit_object);
+  unsigned long audit = PyLong_AsUnsignedLong(audit_object);
   if (PyErr_Occurred()) return NULL;
   int socket_nr = audit == AUDIT_ARCH_X86_64 ? 41 : 198;
   int socketpair_nr = audit == AUDIT_ARCH_X86_64 ? 53 : 199;
@@ -207,6 +207,7 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
     BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
   };
   struct sock_fprog program = {(unsigned short)(sizeof(filters) / sizeof(filters[0])), filters};
+  for (unsigned int i = 0; i < program.len; ++i) fprintf(stderr, "F%u=%u,%u,%u,%u\n", i, filters[i].code, filters[i].jt, filters[i].jf, filters[i].k);
   if (syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, 0UL, &program) < 0) return PyErr_SetFromErrno(PyExc_OSError);
   Py_RETURN_NONE;
 }
