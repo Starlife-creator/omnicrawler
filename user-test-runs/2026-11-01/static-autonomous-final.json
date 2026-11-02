@@ -3,147 +3,147 @@
   "sets": [
     "static"
   ],
-  "started_at": "2026-11-01T12:08:40+00:00",
-  "duration_seconds": 46.53,
-  "head": "1b515c3",
+  "started_at": "2026-11-02T04:47:43+00:00",
+  "duration_seconds": 41.36,
+  "head": "3872fc2b",
   "dirty": true,
   "gates": [
     {
       "name": "compileall",
       "status": "passed",
-      "duration_seconds": 2.79,
+      "duration_seconds": 1.33,
       "detail": ""
     },
     {
       "name": "ruff",
       "status": "passed",
-      "duration_seconds": 4.17,
+      "duration_seconds": 2.61,
       "detail": ""
     },
     {
       "name": "mypy",
       "status": "passed",
-      "duration_seconds": 3.85,
+      "duration_seconds": 6.49,
       "detail": ""
     },
     {
       "name": "templates_validate",
       "status": "passed",
-      "duration_seconds": 4.34,
+      "duration_seconds": 2.59,
       "detail": ""
     },
     {
       "name": "check_coding_standards",
       "status": "passed",
-      "duration_seconds": 2.58,
+      "duration_seconds": 2.24,
       "detail": ""
     },
     {
       "name": "check_architecture",
       "status": "passed",
-      "duration_seconds": 3.65,
+      "duration_seconds": 2.52,
       "detail": ""
     },
     {
       "name": "check_sdk_api",
       "status": "passed",
-      "duration_seconds": 2.04,
+      "duration_seconds": 0.34,
       "detail": ""
     },
     {
       "name": "check_cli_docs",
       "status": "passed",
-      "duration_seconds": 2.08,
+      "duration_seconds": 1.98,
       "detail": ""
     },
     {
       "name": "check_docs_consistency",
       "status": "passed",
-      "duration_seconds": 3.24,
+      "duration_seconds": 0.46,
       "detail": ""
     },
     {
       "name": "check_line_endings_policy",
       "status": "passed",
-      "duration_seconds": 0.08,
+      "duration_seconds": 1.51,
       "detail": ""
     },
     {
       "name": "check_shell_scripts",
       "status": "failed",
-      "duration_seconds": 0.56,
-      "detail": "退出码 1\nShell 脚本静态检查失败：\n- build_linux.sh: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- build_macos.sh: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- run_gui_linux.sh: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- run_gui_macos.command: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- run_linux.sh: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- run_macos.sh: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- run_workbench_linux.sh: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- setup_linux.sh: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- setup_macos.command: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000"
+      "duration_seconds": 1.43,
+      "detail": "退出码 1\nShell �ű���̬���ʧ�ܣ�\n- build_linux.sh: bash -n �﷨����\\ufffde\\ufffdl/T\\ufffdR | g\\ufffdR\n\\ufffd\\ufffdS\\ufffdV\\ufffdS\\ufffd\\ufffd/f\\ufffd]\\ufffd\\ufffd\\ufffdy(u\u0016b\u000eNvQ\\ufffdvsQT\\ufffd\\ufffdv\\ufffd\\ufffd\u0007Y\\ufffdl\tg/T\\ufffdR\u00020 \u0000 | \u0000 | \u0000\u0019\\ufffd\\ufffd\\ufffdN\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- build_macos.sh: bash -n �﷨����\\ufffde\\ufffdl/T\\ufffdR | g\\ufffdR\n\\ufffd\\ufffdS\\ufffdV\\ufffdS\\ufffd\\ufffd/f\\ufffd]\\ufffd\\ufffd\\ufffdy(u\u0016b\u000eNvQ\\ufffdvsQT\\ufffd\\ufffdv\\ufffd\\ufffd\u0007Y\\ufffdl\tg/T\\ufffdR\u00020 \u0000 | \u0000 | \u0000\u0019\\ufffd\\ufffd\\ufffdN\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- run_gui_linux.sh: bash -n �﷨����\\ufffde\\ufffdl/T\\ufffdR | g\\ufffdR\n\\ufffd\\ufffdS\\ufffdV\\ufffdS\\ufffd\\ufffd/f\\ufffd]\\ufffd\\ufffd\\ufffdy(u\u0016b\u000eNvQ\\ufffdvsQT\\ufffd\\ufffdv\\ufffd\\ufffd\u0007Y\\ufffdl\tg/T\\ufffdR\u00020 \u0000 | \u0000 | \u0000\u0019\\ufffd\\ufffd\\ufffdN\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- run_gui_macos.command: bash -n �﷨����\\ufffde\\ufffdl/T\\ufffdR | g\\ufffdR\n\\ufffd\\ufffdS\\ufffdV\\ufffdS\\ufffd\\ufffd/f\\ufffd]\\ufffd\\ufffd\\ufffdy(u\u0016b\u000eNvQ\\ufffdvsQT\\ufffd\\ufffdv\\ufffd\\ufffd\u0007Y\\ufffdl\tg/T\\ufffdR\u00020 \u0000 | \u0000 | \u0000\u0019\\ufffd\\ufffd\\ufffdN\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- run_linux.sh: bash -n �﷨����\\ufffde\\ufffdl/T\\ufffdR | g\\ufffdR\n\\ufffd\\ufffdS\\ufffdV\\ufffdS\\ufffd\\ufffd/f\\ufffd]\\ufffd\\ufffd\\ufffdy(u\u0016b\u000eNvQ\\ufffdvsQT\\ufffd\\ufffdv\\ufffd\\ufffd\u0007Y\\ufffdl\tg/T\\ufffdR\u00020 \u0000 | \u0000 | \u0000\u0019\\ufffd\\ufffd\\ufffdN\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- run_macos.sh: bash -n �﷨����\\ufffde\\ufffdl/T\\ufffdR | g\\ufffdR\n\\ufffd\\ufffdS\\ufffdV\\ufffdS\\ufffd\\ufffd/f\\ufffd]\\ufffd\\ufffd\\ufffdy(u\u0016b\u000eNvQ\\ufffdvsQT\\ufffd\\ufffdv\\ufffd\\ufffd\u0007Y\\ufffdl\tg/T\\ufffdR\u00020 \u0000 | \u0000 | \u0000\u0019\\ufffd\\ufffd\\ufffdN\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- run_workbench_linux.sh: bash -n �﷨����\\ufffde\\ufffdl/T\\ufffdR | g\\ufffdR\n\\ufffd\\ufffdS\\ufffdV\\ufffdS\\ufffd\\ufffd/f\\ufffd]\\ufffd\\ufffd\\ufffdy(u\u0016b\u000eNvQ\\ufffdvsQT\\ufffd\\ufffdv\\ufffd\\ufffd\u0007Y\\ufffdl\tg/T\\ufffdR\u00020 \u0000 | \u0000 | \u0000\u0019\\ufffd\\ufffd\\ufffdN\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- setup_linux.sh: bash -n �﷨����\\ufffde\\ufffdl/T\\ufffdR | g\\ufffdR\n\\ufffd\\ufffdS\\ufffdV\\ufffdS\\ufffd\\ufffd/f\\ufffd]\\ufffd\\ufffd\\ufffdy(u\u0016b\u000eNvQ\\ufffdvsQT\\ufffd\\ufffdv\\ufffd\\ufffd\u0007Y\\ufffdl\tg/T\\ufffdR\u00020 \u0000 | \u0000 | \u0000\u0019\\ufffd\\ufffd\\ufffdN\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- setup_macos.command: bash -n �﷨����\\ufffde\\ufffdl/T\\ufffdR | g\\ufffdR\n\\ufffd\\ufffdS\\ufffdV\\ufffdS\\ufffd\\ufffd/f\\ufffd]\\ufffd\\ufffd\\ufffdy(u\u0016b\u000eNvQ\\ufffdvsQT\\ufffd\\ufffdv\\ufffd\\ufffd\u0007Y\\ufffdl\tg/T\\ufffdR\u00020 \u0000 | \u0000 | \u0000\u0019\\ufffd\\ufffd\\ufffdN\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000"
     },
     {
       "name": "check_network_boundaries",
       "status": "passed",
-      "duration_seconds": 1.62,
+      "duration_seconds": 1.6,
       "detail": ""
     },
     {
       "name": "check_release_integrity",
       "status": "passed",
-      "duration_seconds": 3.24,
+      "duration_seconds": 3.98,
       "detail": ""
     },
     {
       "name": "check_lint_budget",
       "status": "passed",
-      "duration_seconds": 8.93,
+      "duration_seconds": 0.91,
       "detail": ""
     },
     {
       "name": "check_gui_conventions",
       "status": "passed",
-      "duration_seconds": 0.58,
+      "duration_seconds": 1.52,
       "detail": ""
     },
     {
       "name": "check_lockfile_consistency",
       "status": "passed",
-      "duration_seconds": 0.21,
+      "duration_seconds": 1.23,
       "detail": ""
     },
     {
       "name": "check_dependency_consistency",
       "status": "passed",
-      "duration_seconds": 0.12,
+      "duration_seconds": 0.38,
       "detail": ""
     },
     {
       "name": "check_gui_test_layout",
       "status": "passed",
-      "duration_seconds": 0.16,
+      "duration_seconds": 3.5,
       "detail": ""
     },
     {
       "name": "check_gui_state_threading",
       "status": "passed",
-      "duration_seconds": 0.13,
+      "duration_seconds": 0.09,
       "detail": ""
     },
     {
       "name": "check_main_window_size",
       "status": "passed",
-      "duration_seconds": 0.21,
+      "duration_seconds": 0.37,
       "detail": ""
     },
     {
       "name": "check_minimal_install",
       "status": "passed",
-      "duration_seconds": 0.29,
+      "duration_seconds": 1.57,
       "detail": ""
     },
     {
       "name": "check_market_content",
       "status": "passed",
-      "duration_seconds": 0.36,
+      "duration_seconds": 1.31,
       "detail": ""
     },
     {
       "name": "check_agent_surface",
       "status": "passed",
-      "duration_seconds": 1.32,
+      "duration_seconds": 1.4,
       "detail": ""
     }
   ],

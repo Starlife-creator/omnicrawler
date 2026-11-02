@@ -74,4 +74,4 @@
 - Linux Landlock ABI 4+ 文件/网络规则与 macOS Seatbelt 已通过真实平台穿透和完整插件契约 CI（`0a309452`，run `41389641717`）；Windows 契约通过，但 AppContainer/Job Object 仍未接线。不得把 `sandbox_escape` 子进程隔离称为 OS 沙箱。远端 Worker 仍 Reserved。
 - 固定市场快照中的论文插件没有可合规迁移版本，仍停止融合；需上游改为统一 Egress、受控登录/文件与有预算浏览器能力后再评估。
 - PDF/OCR 的远端同名模型、Paddle 隐式缓存和 Tesseract 语言数据仍不是完整内容身份；业务真值校准也仍需真实样本。
-- 当前变更分支尚需维护者合入/推送后，在最终提交上核验 quality / end-to-end CI；历史主分支绿色不继承为当前提交通过。
+- 当前变更分支已推送 PR #174；最终 head 的 quality / end-to-end / plugin-sandbox 以实际运行结果为准，历史主分支绿色不继承为当前提交通过。Windows OS 隔离仍是 Roadmap，不因契约通过而完成。
