@@ -75,19 +75,18 @@ jobs:
           executable = pathlib.Path(sys.executable).resolve()
           profile = darwin_profile(plugin_root=pathlib.Path.cwd())
           probes = [
-              ('base', ''),
-              ('mach', '(allow mach-lookup)'),
-              ('sysctl', '(allow sysctl-read)'),
-              ('system-info', '(allow system-info)'),
-              ('iokit', '(allow iokit-open)'),
-              ('lookup', '(allow network-lookup)'),
-              ('mach-sysctl', '(allow mach-lookup)(allow sysctl-read)'),
-              ('system-iokit', '(allow system-info)(allow iokit-open)'),
-              ('all-runtime', '(allow mach-lookup)(allow sysctl-read)(allow system-info)(allow iokit-open)(allow network-lookup)'),
-              ('signal', '(allow signal (target self))'),
               ('process', '(allow process-exec process-fork)'),
-              ('file-all', '(allow file-read* file-write*)'),
-              ('mach-sysctl-system-iokit-lookup-signal', '(allow mach-lookup)(allow sysctl-read)(allow system-info)(allow iokit-open)(allow network-lookup)(allow signal (target self))'),
+              ('process-mach', '(allow process-exec process-fork)(allow mach-lookup)'),
+              ('process-sysctl', '(allow process-exec process-fork)(allow sysctl-read)'),
+              ('process-system', '(allow process-exec process-fork)(allow system-info)'),
+              ('process-iokit', '(allow process-exec process-fork)(allow iokit-open)'),
+              ('process-signal', '(allow process-exec process-fork)(allow signal (target self))'),
+              ('process-mach-sysctl', '(allow process-exec process-fork)(allow mach-lookup)(allow sysctl-read)'),
+              ('process-all-runtime', '(allow process-exec process-fork)(allow mach-lookup)(allow sysctl-read)(allow system-info)(allow iokit-open)(allow signal (target self))'),
+              ('process-all-files', '(allow process-exec process-fork)(allow file-read* file-write*)'),
+              ('process-mach-sysctl-files', '(allow process-exec process-fork)(allow mach-lookup)(allow sysctl-read)(allow file-read* file-write*)'),
+              ('process-all-runtime-files', '(allow process-exec process-fork)(allow mach-lookup)(allow sysctl-read)(allow system-info)(allow iokit-open)(allow signal (target self))(allow file-read* file-write*)'),
+              ('product', profile),
           ]
           for label, extra in probes:
               with tempfile.NamedTemporaryFile('w', suffix='.sb') as stream:

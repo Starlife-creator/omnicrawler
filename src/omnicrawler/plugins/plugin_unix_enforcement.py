@@ -320,7 +320,6 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
 (allow sysctl-read)
 (allow system-info)
 (allow iokit-open)
-(allow network-lookup)
 (allow file-read* file-write* (subpath "/dev"))
 (allow file-read*
 {allow}
