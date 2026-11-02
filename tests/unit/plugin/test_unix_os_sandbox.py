@@ -76,7 +76,8 @@ def test_darwin_profile_grants_only_declared_temp_scope(
     profile = enforcement.darwin_profile(plugin_root=tmp_path / "plugin")
     assert f"(subpath {enforcement._quote(scope)})" in profile
     assert f"(subpath {enforcement._quote(host_temp)})" in profile
-    assert '(subpath "/private/var/folders")' not in profile
+    assert '(allow file-read* file-write* (subpath "/private/var/folders"))' not in profile
+    assert '(deny file-read*\n  (literal "/etc/passwd")' in profile
 
 
 def test_native_landlock_requires_working_toolchain(monkeypatch: pytest.MonkeyPatch) -> None:

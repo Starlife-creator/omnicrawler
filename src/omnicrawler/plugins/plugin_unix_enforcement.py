@@ -413,6 +413,12 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
 (allow file-read* file-write*
 {writable}
 )
+(deny file-read*
+  (literal "/etc/passwd")
+  (literal "/private/etc/passwd")
+  (subpath "/private/var/folders")
+  (subpath "/Users")
+  (subpath "/tmp"))
 (deny network*)
 """
 
