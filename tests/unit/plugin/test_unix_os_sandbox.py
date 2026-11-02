@@ -218,7 +218,7 @@ def test_seatbelt_allows_plugin_read_and_blocks_escape(tmp_path: Path) -> None:
 
     plugin = tmp_path / "probe.py"
     plugin.write_text("value = 42\n", encoding="utf-8")
-    probe = "import json,socket,sys; sys.path.insert(0,sys.argv[1]); import probe; result={'import': probe.value}; "
+    probe = "import json,socket,sys; sys.path.insert(0,sys.argv[1]); import probe; result={'import': probe.value}\n"
     probe += "\n".join((
         "try: s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',1)); s.close(); result['network']='allowed'",
         "except OSError: result['network']='denied'",
