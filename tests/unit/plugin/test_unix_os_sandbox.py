@@ -135,6 +135,7 @@ def test_darwin_launch_requires_seatbelt(monkeypatch: pytest.MonkeyPatch, tmp_pa
 def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
     """Evaluate the exact BPF control flow, including x32 and wrong ABIs."""
     array, _program = enforcement._sock_filter()
+    print("EXECUTING", Path(__file__).read_text(encoding="utf-8").splitlines()[140:165], flush=True)
     print("ARRAY", [(x.code, x.jt, x.jf, x.k) for x in array], flush=True)
     audit = 0xC000003E if os.uname().machine == "x86_64" else 0xC00000B7
 
