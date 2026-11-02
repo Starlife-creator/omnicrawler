@@ -13,7 +13,7 @@ from omnicrawler.plugins import plugin_unix_enforcement as enforcement
 
 
 def test_landlock_v1_uses_short_native_abi(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[tuple[int, tuple[Path, ...]]] = []
+    calls: list[tuple[int, tuple[Path, ...], tuple[Path, ...]]] = []
     class _Libc:
         syscall = type("Call", (), {})()
     monkeypatch.setattr(ctypes, "CDLL", lambda *args, **kwargs: _Libc())
@@ -21,17 +21,20 @@ def test_landlock_v1_uses_short_native_abi(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(enforcement, "_landlock_abi", lambda libc: 5)
     monkeypatch.setattr(
         enforcement, "_native_landlock",
-        lambda handled, paths: calls.append((handled, tuple(paths))),
+        lambda handled, read_paths, write_paths: calls.append(
+            (handled, tuple(read_paths), tuple(write_paths))
+        ),
     )
     assert enforcement._LANDLOCK_ACCESS_V1 == 0x1FFF
-    enforcement._landlock(enforcement._LANDLOCK_ACCESS_V1 | (1 << 13), (Path("plugin"),))
-    assert calls == [(0x1FFF, (Path("plugin"),))]
+    enforcement._landlock(
+        enforcement._LANDLOCK_ACCESS_V1 | (1 << 13), (Path("plugin"),), (Path("scope"),)
+    )
+    assert calls == [(0x1FFF, (Path("plugin"),), (Path("scope"),))]
 
 
 def test_landlock_grants_only_declared_temp_scope(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """The generic host temp root is never recursively authorized for a plugin."""
-    calls: list[tuple[Path, ...]] = []
-    allowed_writes: list[tuple[str, ...]] = []
+    calls: list[tuple[tuple[Path, ...], tuple[Path, ...]]] = []
     scope = tmp_path / "plugin-scope"
     scope.mkdir()
     host_temp = tmp_path / "host-temp"
@@ -44,18 +47,19 @@ def test_landlock_grants_only_declared_temp_scope(monkeypatch: pytest.MonkeyPatc
     )
     monkeypatch.setenv("OMNICRAWL_PLUGIN_RUNTIME_READ_ROOTS", str(host_temp))
     monkeypatch.setattr(enforcement, "_linux_runtime_roots", lambda: ())
-    monkeypatch.setattr(enforcement, "_landlock", lambda access, paths: calls.append(tuple(paths)))
+    monkeypatch.setattr(
+        enforcement,
+        "_landlock",
+        lambda access, read_paths, write_paths: calls.append(
+            (tuple(read_paths), tuple(write_paths))
+        ),
+    )
     monkeypatch.setenv("OMNICRAWL_PLUGIN_RUNTIME_ROOTS", str(scope))
-    helper = type(
-        "Helper",
-        (),
-        {"allow_write": staticmethod(lambda paths: allowed_writes.append(tuple(paths)))},
-    )()
-    monkeypatch.setattr(enforcement, "_native_helper", lambda: helper)
     assert enforcement.apply_linux(plugin_root=tmp_path / "plugin") == "landlock"
-    assert host_temp in calls[0]
-    assert scope not in calls[0]
-    assert allowed_writes == [(str(scope),)]
+    read_paths, write_paths = calls[0]
+    assert host_temp in read_paths
+    assert scope not in read_paths
+    assert write_paths == (scope,)
 
 
 def test_darwin_profile_grants_only_declared_temp_scope(
@@ -82,7 +86,7 @@ def test_native_landlock_requires_working_toolchain(monkeypatch: pytest.MonkeyPa
         lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, "", "compiler unavailable"),
     )
     with pytest.raises(RuntimeError, match="native Landlock shim compilation failed"):
-        enforcement._native_landlock(0x1FFF, ())
+        enforcement._native_landlock(0x1FFF, (), ())
 
 
 def test_linux_capability_checks_landlock_and_seccomp(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -148,9 +152,15 @@ def test_parent_compiled_helper_is_loaded_without_compiling(
 def test_linux_passes_verified_entry_and_runtime_roots(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    calls: list[object] = []
+    calls: list[tuple[tuple[Path, ...], tuple[Path, ...]]] = []
     monkeypatch.setattr(sys, "platform", "linux")
-    monkeypatch.setattr(enforcement, "_landlock", lambda access, paths: calls.append(paths))
+    monkeypatch.setattr(
+        enforcement,
+        "_landlock",
+        lambda access, read_paths, write_paths: calls.append(
+            (tuple(read_paths), tuple(write_paths))
+        ),
+    )
     monkeypatch.setattr(
         enforcement, "_standard_library_roots", lambda: (tmp_path / "stdlib",)
     )
@@ -158,7 +168,8 @@ def test_linux_passes_verified_entry_and_runtime_roots(
     root = tmp_path / "plugin"
     verified = tmp_path / "verified"
     assert enforcement.apply_linux(plugin_root=root, verified_entry_dir=verified) == "landlock"
-    assert root in calls[0] and verified in calls[0]
+    read_paths, _write_paths = calls[0]
+    assert root in read_paths and verified in read_paths
 
 
 def test_landlock_failures_are_not_silently_ignored(
@@ -185,6 +196,8 @@ def test_darwin_launch_embeds_profile(
     assert '(literal "/")' in profile
     assert '(subpath "/private/etc")' not in profile
     assert '(subpath "/etc")' not in profile
+    # Global read-metadata would let sandboxed code open arbitrary user files.
+    assert "(allow file-read-metadata)" not in profile
     assert all(not line.strip().startswith("#") for line in profile.splitlines())
     assert f"(subpath {enforcement._quote(root)})" in profile
 

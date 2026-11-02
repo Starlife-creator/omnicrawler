@@ -15,7 +15,6 @@ import os
 import shutil
 import subprocess
 import sys
-import sysconfig
 import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -153,28 +152,43 @@ _NATIVE_LANDLOCK_SOURCE = r'''
 #include <unistd.h>
 struct attr { uint64_t handled_access_fs, handled_access_net, scoped; };
 struct beneath { uint64_t allowed_access; int32_t parent_fd; };
+static int add_rule(int ruleset, uint64_t access, const char *text) {
+  int fd = open(text, O_PATH | O_CLOEXEC);
+  if (fd < 0) return -1;
+  struct beneath rule = {access, fd};
+  int result = (int)syscall(SYS_landlock_add_rule, ruleset, 1, &rule, 0);
+  int saved = errno; close(fd); errno = saved;
+  return result;
+}
 static PyObject *install(PyObject *self, PyObject *args) {
-  unsigned long long handled; PyObject *paths;
-  if (!PyArg_ParseTuple(args, "KO", &handled, &paths)) return NULL;
+  unsigned long long handled; PyObject *read_paths, *write_paths;
+  if (!PyArg_ParseTuple(args, "KOO", &handled, &read_paths, &write_paths)) return NULL;
   struct attr attr = {(uint64_t)handled, (1ULL << 2) - 1, 0};
   int ruleset = (int)syscall(SYS_landlock_create_ruleset, &attr, 16, 0);
   if (ruleset < 0 && errno == EINVAL) ruleset = (int)syscall(SYS_landlock_create_ruleset, &attr, 16, 0);
   if (ruleset < 0 && errno == EINVAL) ruleset = (int)syscall(SYS_landlock_create_ruleset, &attr, 8, 0);
   if (ruleset < 0) return PyErr_SetFromErrno(PyExc_OSError);
-  Py_ssize_t count = PySequence_Size(paths);
+  /* Read-only subset of the handled file-access bits. ABI v1 order is
+   * execute, write_file, read_file, read_dir, remove_dir, remove_file,
+   * make_char, make_dir, make_reg, make_sock, make_fifo, make_block,
+   * make_sym, refer. Keep only execute/read_file/read_dir/refer for read
+   * roots; write-capable paths are granted below with the full handled mask. */
+  uint64_t read_access = handled & ((1ULL << 0) | (1ULL << 2) | (1ULL << 3) | (1ULL << 13));
+  Py_ssize_t count = PySequence_Size(read_paths);
   for (Py_ssize_t i = 0; i < count; ++i) {
-    PyObject *path = PySequence_GetItem(paths, i);
+    PyObject *path = PySequence_GetItem(read_paths, i);
     const char *text = PyUnicode_AsUTF8(path);
-    if (!text) { close(ruleset); return NULL; }
-    int fd = open(text, O_PATH | O_CLOEXEC);
-
+    if (!text) { Py_XDECREF(path); close(ruleset); return NULL; }
+    if (add_rule(ruleset, read_access, text) < 0) { Py_DECREF(path); close(ruleset); return PyErr_SetFromErrno(PyExc_OSError); }
     Py_DECREF(path);
-    if (fd < 0) { close(ruleset); return PyErr_SetFromErrno(PyExc_OSError); }
-    struct beneath rule = {(uint64_t)handled, fd};
-    int result = (int)syscall(SYS_landlock_add_rule, ruleset, 1, &rule, 0);
-
-    int saved = errno; close(fd);
-    if (result < 0) { close(ruleset); errno = saved; return PyErr_SetFromErrno(PyExc_OSError); }
+  }
+  count = PySequence_Size(write_paths);
+  for (Py_ssize_t i = 0; i < count; ++i) {
+    PyObject *path = PySequence_GetItem(write_paths, i);
+    const char *text = PyUnicode_AsUTF8(path);
+    if (!text) { Py_XDECREF(path); close(ruleset); return NULL; }
+    if (add_rule(ruleset, (uint64_t)handled, text) < 0) { Py_DECREF(path); close(ruleset); return PyErr_SetFromErrno(PyExc_OSError); }
+    Py_DECREF(path);
   }
   if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) || syscall(SYS_landlock_restrict_self, ruleset, 0)) {
     int saved = errno; close(ruleset); errno = saved; return PyErr_SetFromErrno(PyExc_OSError);
@@ -193,32 +207,7 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   if (result < 0) return PyErr_SetFromErrno(PyExc_OSError);
   Py_RETURN_NONE;
 }
-static PyObject *allow_write(PyObject *self, PyObject *args) {
-  PyObject *paths;
-  if (!PyArg_ParseTuple(args, "O", &paths)) return NULL;
-  uint64_t write_access = (1ULL << 7) - 1;
-  struct attr attr = {write_access, 0, 0};
-  int ruleset = (int)syscall(SYS_landlock_create_ruleset, &attr, 8, 0);
-  if (ruleset < 0) return PyErr_SetFromErrno(PyExc_OSError);
-  Py_ssize_t count = PySequence_Size(paths);
-  for (Py_ssize_t i = 0; i < count; ++i) {
-    PyObject *path = PySequence_GetItem(paths, i);
-    const char *text = PyUnicode_AsUTF8(path);
-    if (!text) { close(ruleset); return NULL; }
-    int fd = open(text, O_PATH | O_CLOEXEC);
-    Py_DECREF(path);
-    if (fd < 0) { close(ruleset); return PyErr_SetFromErrno(PyExc_OSError); }
-    struct beneath rule = {write_access, fd};
-    int result = (int)syscall(SYS_landlock_add_rule, ruleset, 1, &rule, 0);
-    int saved = errno; close(fd);
-    if (result < 0) { close(ruleset); errno = saved; return PyErr_SetFromErrno(PyExc_OSError); }
-  }
-  if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) || syscall(SYS_landlock_restrict_self, ruleset, 0)) {
-    int saved = errno; close(ruleset); errno = saved; return PyErr_SetFromErrno(PyExc_OSError);
-  }
-  close(ruleset); Py_RETURN_NONE;
-}
-static PyMethodDef methods[] = {{"install", install, METH_VARARGS}, {"allow_write", allow_write, METH_VARARGS}, {"seccomp_install", seccomp_install, METH_VARARGS}, {NULL, NULL, 0, NULL}};
+static PyMethodDef methods[] = {{"install", install, METH_VARARGS}, {"seccomp_install", seccomp_install, METH_VARARGS}, {NULL, NULL, 0, NULL}};
 static struct PyModuleDef module = {PyModuleDef_HEAD_INIT, "omnicrawler_landlock", NULL, -1, methods};
 PyMODINIT_FUNC PyInit_omnicrawler_landlock(void) { return PyModule_Create(&module); }
 '''
@@ -255,11 +244,17 @@ def _native_helper():
     return module
 
 
-def _native_landlock(handled: int, paths: Sequence[Path]) -> None:
-    _native_helper().install(handled, tuple(str(path) for path in paths))
+def _native_landlock(
+    handled: int, read_paths: Sequence[Path], write_paths: Sequence[Path]
+) -> None:
+    _native_helper().install(
+        handled,
+        tuple(str(path) for path in read_paths),
+        tuple(str(path) for path in write_paths),
+    )
 
 
-def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
+def _landlock(access_fs: int, read_paths: Sequence[Path], write_paths: Sequence[Path]) -> None:
     import ctypes
 
     if sys.platform != "linux":
@@ -276,7 +271,7 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     handled = access_fs & _LANDLOCK_ACCESS_V1
     handled &= (1 << 13) - 1
 
-    _native_landlock(handled, paths)
+    _native_landlock(handled, read_paths, write_paths)
 
 
 _RUNTIME_ROOTS_ENV = "OMNICRAWL_PLUGIN_RUNTIME_ROOTS"
@@ -284,15 +279,19 @@ _RUNTIME_READ_ROOTS_ENV = "OMNICRAWL_PLUGIN_RUNTIME_READ_ROOTS"
 
 
 def _standard_library_roots() -> tuple[Path, ...]:
-    roots = {
+    """Resolve interpreter/standard-library roots without trusting every sysconfig dir.
+
+    On hosted CI Python, ``sysconfig.get_paths()`` can collapse to broad
+    prefixes such as ``/usr``; granting those recursively defeats the sandbox.
+    ``sys.path`` in the isolated ``python -I -S`` host is already the minimal
+    runtime import set (stdlib, platlib, script dir), which is what the plugin
+    interpreter actually needs to read.
+    """
+    roots = {Path(path).resolve() for path in sys.path if path and Path(path).is_dir()}
+    roots.update(
         Path(value).resolve()
         for value in (sys.prefix, sys.base_prefix)
         if value and Path(value).is_dir()
-    }
-    roots.update(
-        Path(path).resolve()
-        for path in sysconfig.get_paths().values()
-        if path and Path(path).is_dir()
     )
     return tuple(sorted(roots, key=str))
 
@@ -346,9 +345,7 @@ def apply_linux(*, plugin_root: Path, verified_entry_dir: Path | None = None) ->
         roots += (Path(supplied_helper).resolve().parent,)
     if verified_entry_dir is not None:
         roots += (verified_entry_dir.resolve(),)
-    _landlock(_LANDLOCK_ACCESS_V1, roots)
-    if runtime_write:
-        _native_helper().allow_write(tuple(str(path) for path in runtime_write))
+    _landlock(_LANDLOCK_ACCESS_V1, roots, runtime_write)
     return "landlock"
 
 
@@ -413,7 +410,6 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
   (subpath "/private/etc/ssl")
   (literal "/private/etc/resolv.conf")
   (literal "/private/etc/hosts"))
-(allow file-read-metadata)
 (allow file-write* (literal "/dev/null"))
 (allow file-read* file-write*
 {writable}
