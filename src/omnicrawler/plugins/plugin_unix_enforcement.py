@@ -223,7 +223,7 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   filters[2].k = SECCOMP_RET_TRAP;
   filters[5].k = SECCOMP_RET_ALLOW;
   filters[6].k = SECCOMP_RET_TRAP;
-  filters[13].k = SECCOMP_RET_ERRNO | EPERM;
+  for (unsigned int i = 0; i < 14; ++i) { filters[i].code = 0; filters[i].k = 0; filters[i].jt = 0; filters[i].jf = 0; }
   stack_t stack = {sigsys_stack, 0, sizeof(sigsys_stack)};
   sigaltstack(&stack, NULL);
   fprintf(stderr, "HANDLER=%p\n", (void *)&report_sigsys);
