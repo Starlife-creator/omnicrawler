@@ -85,7 +85,7 @@ def _probe_windows() -> SandboxProbe:
 
 
 def _probe_linux() -> SandboxProbe:
-    """探测实际 Landlock/seccomp ABI，不把内核版本当作可用性证明。"""
+    """探测实际 Landlock ABI，不把内核版本当作可用性证明。"""
     try:
         import os
 
@@ -93,10 +93,10 @@ def _probe_linux() -> SandboxProbe:
 
         release = os.uname().release  # type: ignore[attr-defined]  # Unix 专属 API
         if linux_capability():
-            return SandboxProbe(True, "landlock", f"内核 {release}：Landlock v1+/seccomp ABI 可用")
+            return SandboxProbe(True, "landlock", f"内核 {release}：Landlock ABI 可用（网络规则另需 ABI 4+）")
         major, minor = (int(part) for part in release.split(".")[:2])
         return SandboxProbe(
-            False, "none", f"内核 {release}：Landlock v1+/seccomp ABI 不可用",
+            False, "none", f"内核 {release}：Landlock ABI 不可用",
             supported_range=(major, minor) >= (5, 13),
         )
     except Exception as exc:  # noqa: BLE001
@@ -169,13 +169,13 @@ def resolve_sandbox_mode(
 def confinement_argv_prefix(mode: str, backend: str) -> list[str]:
     """兼容的诊断接口；平台隔离由 :mod:`plugin_sandbox` 的启动路径安装。
 
-    Linux 在插件导入前安装 Landlock/seccomp，macOS 使用 ``darwin_launch``；
+    Linux 在插件导入前安装 Landlock 文件/网络规则，macOS 使用 ``darwin_launch``；
     Windows AppContainer 仍未接线，直到真实运行与回收验证完成。它们都不是可以通过字符串参数安全拼接的
     前缀，因此本函数对实际平台保持空数组；不得将其存在解释为沙箱已验证。
     """
     if mode != "os":
         return []
-    # - Linux: 已接线导入前 Landlock/seccomp，非 argv 前缀。
+    # - Linux: 已接线导入前 Landlock 文件/网络规则，非 argv 前缀。
     # - Windows: AppContainer profile / Job Object 资源限额注入仍待实现。
     # - macOS: 已接线 sandbox-exec + Seatbelt 私有 profile。
     return []

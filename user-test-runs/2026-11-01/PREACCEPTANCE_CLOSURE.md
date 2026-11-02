@@ -18,7 +18,7 @@
 - `412d518`：外部工作区治理测试不再向 Windows 根目录 `/tmp` 写文件，使用 `tmp_path.parent` 的真实外部临时路径。
 - `467c80e` / `334456c`：登记前一批本机证据、环境失败和验收清单；后续修复继续追加到本记录。
 - `62e6b3b`：纯滚动 Selenium 契约不导入可选 selenium 包；新增惰性属性的命名保持 N802 预算不放宽。
-- `c70fa46` / `977d0a6`：Linux 在插件导入前安装 Landlock v1 + seccomp，macOS 由 Seatbelt 启动路径实施隔离；失败拒载。真内核/Seatbelt 穿透用例在本机 Windows 跳过，需对应平台 CI。Windows AppContainer 原型经审查未接线、未提交。
+- `c70fa46` / `977d0a6` 及后续 `fb318d81` / `0a309452`：Linux 在插件导入前安装 Landlock ABI 4+ 文件与网络规则，macOS 使用内联 Seatbelt profile 启动；失败拒载。父进程编译原生 ABI helper，子进程只加载。真实平台 CI 已验证插件导入、TCP connect 和越权文件拒绝及完整插件契约。Windows AppContainer 原型经审查未接线、未提交。
 - `56725a1`：GUI 自动验收覆盖子控件聚焦时的 Home/End、Ctrl+Enter、Ctrl+Shift+P 与 Escape，及任务运行器取消。
 - `c233f9d`：插件超时先终止子进程再关闭父进程 IPC 管道并等待，避免 Windows 后台 `readline` 与 `TextIOWrapper.close()` 死锁；读线程有界回收。
 - `1b515c3`：新增 `tools/portable_upgrade_smoke.py`，在真实 old/new 归档与签名升级包可用时验证非默认配置、旧任务和插件保留、离线 `self-update apply`、完整性和本地真值任务。当前仅验证工具与外部进程 mock 边界，未宣称真实升级通过。
@@ -71,7 +71,7 @@
 - 完整 A–G 真实桌面点击、视觉、键盘/无障碍与 PDF/OCR 人工复核；offscreen 与自动测试不能代替。
 - 真实站点账号、验证码/双因素、供应商实际计费与业务 PDF 真值。
 - 干净机器断网安装、正式便携产物内的关键旅程、三平台实机与正式签名/组件归属。
-- Linux Landlock/seccomp 与 macOS Seatbelt 已实现且带平台穿透测试，但本机未执行相应平台；Windows AppContainer/Job Object 仍未接线。不得把 `sandbox_escape` 子进程隔离称为 OS 沙箱。远端 Worker 仍 Reserved。
+- Linux Landlock ABI 4+ 文件/网络规则与 macOS Seatbelt 已通过真实平台穿透和完整插件契约 CI（`0a309452`，run `41389641717`）；Windows 契约通过，但 AppContainer/Job Object 仍未接线。不得把 `sandbox_escape` 子进程隔离称为 OS 沙箱。远端 Worker 仍 Reserved。
 - 固定市场快照中的论文插件没有可合规迁移版本，仍停止融合；需上游改为统一 Egress、受控登录/文件与有预算浏览器能力后再评估。
 - PDF/OCR 的远端同名模型、Paddle 隐式缓存和 Tesseract 语言数据仍不是完整内容身份；业务真值校准也仍需真实样本。
 - 当前变更分支尚需维护者合入/推送后，在最终提交上核验 quality / end-to-end CI；历史主分支绿色不继承为当前提交通过。

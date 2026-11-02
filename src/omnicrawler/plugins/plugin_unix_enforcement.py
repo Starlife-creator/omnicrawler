@@ -1,9 +1,8 @@
 """Standard-library-only Unix confinement for the plugin host.
 
 ``apply_linux`` is a one-way, in-process operation and must be called *before*
-loading a plugin. It combines Landlock with a seccomp deny filter: Landlock
-confines file access, while seccomp prevents direct sockets, child processes,
-and attempts to remove either protection.
+loading a plugin. Landlock ABI 4+ confines file access and network bind/connect.
+The native ABI helper is compiled in the parent before child confinement.
 
 ``darwin_launch`` wraps the already-resolved sandbox-host command with
 ``sandbox-exec``. This module deliberately has no dependency on the host
