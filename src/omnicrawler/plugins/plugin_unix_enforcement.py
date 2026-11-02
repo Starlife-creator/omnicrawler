@@ -373,9 +373,11 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
     roots += runtime_read
     writable = "\n".join(f"  (subpath {_quote(root)})" for root in runtime_write)
     allow = "\n".join(f"  (subpath {_quote(root)})" for root in roots)
+    executable = Path(sys.executable).resolve()
     runtime = "\n".join(
         f"  (subpath {_quote(path)})"
-        for path in (Path(sys.executable).resolve(), *Path(sys.executable).resolve().parents[:4])
+        for path in (executable, *executable.parents[:4])
+        if path != Path(path.anchor)
     )
     return f"""(version 1)
 (deny default)
