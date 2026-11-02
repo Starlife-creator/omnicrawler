@@ -69,6 +69,34 @@ jobs:
         if: failure() && matrix.os == 'macos-latest'
         run: |
           log show --style compact --last 10m --predicate 'process == "sandboxd" OR eventMessage CONTAINS "Python"' | tail -80 || true
+          python - <<'PY'
+          import pathlib, subprocess, sys, tempfile
+          from omnicrawler.plugins.plugin_unix_enforcement import darwin_profile
+          executable = pathlib.Path(sys.executable).resolve()
+          profile = darwin_profile(plugin_root=pathlib.Path.cwd())
+          probes = [
+              ('base', ''),
+              ('mach', '(allow mach-lookup)'),
+              ('sysctl', '(allow sysctl-read)'),
+              ('system-info', '(allow system-info)'),
+              ('iokit', '(allow iokit-open)'),
+              ('lookup', '(allow network-lookup)'),
+              ('mach-sysctl', '(allow mach-lookup)(allow sysctl-read)'),
+              ('system-iokit', '(allow system-info)(allow iokit-open)'),
+              ('all-runtime', '(allow mach-lookup)(allow sysctl-read)(allow system-info)(allow iokit-open)(allow network-lookup)'),
+              ('signal', '(allow signal (target self))'),
+              ('process', '(allow process-exec process-fork)'),
+              ('file-all', '(allow file-read* file-write*)'),
+              ('mach-sysctl-system-iokit-lookup-signal', '(allow mach-lookup)(allow sysctl-read)(allow system-info)(allow iokit-open)(allow network-lookup)(allow signal (target self))'),
+          ]
+          for label, extra in probes:
+              with tempfile.NamedTemporaryFile('w', suffix='.sb') as stream:
+                  stream.write('(version 1)(deny default)' + extra)
+                  stream.flush()
+                  result = subprocess.run(['/usr/bin/sandbox-exec', '-f', stream.name, str(executable), '-S', '-c', 'print("STARTED")'], capture_output=True, text=True, timeout=15)
+              print(label, result.returncode, result.stdout.strip(), result.stderr.strip(), flush=True)
+          print(profile, flush=True)
+          PY
         shell: bash
 
   appcontainer-spike:
