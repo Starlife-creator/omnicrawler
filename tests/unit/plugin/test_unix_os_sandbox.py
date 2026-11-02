@@ -63,6 +63,41 @@ def test_linux_does_not_install_on_other_platforms(monkeypatch: pytest.MonkeyPat
         enforcement.apply_linux(plugin_root=Path("."))
 
 
+def test_parent_compiled_helper_is_loaded_without_compiling(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The confined child loads only the explicitly supplied parent-built shim."""
+    helper_path = tmp_path / "omnicrawler_landlock.so"
+    helper_path.write_bytes(b"compiled by the trusted parent")
+    import importlib.util
+    import subprocess
+    from types import SimpleNamespace
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail("compiled in child"))
+    monkeypatch.setenv("OMNICRAWL_LANDLOCK_HELPER", str(helper_path))
+    monkeypatch.setattr(enforcement, "_native_module", None, raising=False)
+    loaded: list[Path] = []
+
+    class Loader:
+        path = str(helper_path)
+
+        @staticmethod
+        def create_module(spec: object) -> object:
+            return SimpleNamespace(__file__=str(helper_path))
+
+        @staticmethod
+        def exec_module(module: object) -> None:
+            loaded.append(Path(module.__file__))
+
+    monkeypatch.setattr(
+        importlib.util,
+        "spec_from_file_location",
+        lambda name, path: importlib.machinery.ModuleSpec(name, Loader()),
+        raising=False,
+    )
+    assert Path(enforcement._native_helper().__file__) == helper_path
+    assert loaded == [helper_path]
+
+
 def test_linux_passes_verified_entry_and_runtime_roots(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -170,7 +205,6 @@ print(json.dumps(result))
         env={key: value for key, value in {**os.environ, "PYTHONPATH": str(source)}.items()
              if key != "PYTHONHOME"}, check=False,
     )
-    print("SANDBOX_STDERR", completed.stderr, flush=True)
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout) == {"network": "denied", "file": "denied", "import": True}
 

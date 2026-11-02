@@ -206,15 +206,21 @@ def _native_helper():
     if cached is not None:
         return cached
     import sysconfig
-    directory = tempfile.mkdtemp(prefix="omnicrawler-landlock-")
-    source = Path(directory) / "landlock.c"
-    extension = Path(directory) / "omnicrawler_landlock.so"
-    source.write_text(_NATIVE_LANDLOCK_SOURCE, encoding="utf-8")
-    includes = sysconfig.get_paths()["include"]
-    command = [os.environ.get("CC", "cc"), "-shared", "-fPIC", str(source), "-I", includes, "-o", str(extension)]
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
-    if result.returncode:
-        raise RuntimeError(f"{E_UNSUPPORTED_ENV}: native Landlock shim compilation failed: {result.stderr[-500:]}")
+    supplied = os.environ.get("OMNICRAWL_LANDLOCK_HELPER")
+    if supplied:
+        extension = Path(supplied)
+        if not extension.is_file():
+            raise RuntimeError(f"{E_UNSUPPORTED_ENV}: prebuilt native Landlock shim is unavailable")
+    else:
+        directory = tempfile.mkdtemp(prefix="omnicrawler-landlock-")
+        source = Path(directory) / "landlock.c"
+        extension = Path(directory) / "omnicrawler_landlock.so"
+        source.write_text(_NATIVE_LANDLOCK_SOURCE, encoding="utf-8")
+        includes = sysconfig.get_paths()["include"]
+        command = [os.environ.get("CC", "cc"), "-shared", "-fPIC", str(source), "-I", includes, "-o", str(extension)]
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        if result.returncode:
+            raise RuntimeError(f"{E_UNSUPPORTED_ENV}: native Landlock shim compilation failed: {result.stderr[-500:]}")
     import importlib.util
     spec = importlib.util.spec_from_file_location("omnicrawler_landlock", extension)
     if spec is None or spec.loader is None:
@@ -275,6 +281,9 @@ def apply_linux(*, plugin_root: Path, verified_entry_dir: Path | None = None) ->
     if sys.platform != "linux":
         raise RuntimeError(f"{E_UNSUPPORTED_ENV}: Landlock requires Linux")
     roots = (*_standard_library_roots(), *_linux_runtime_roots(), plugin_root.resolve())
+    supplied_helper = os.environ.get("OMNICRAWL_LANDLOCK_HELPER")
+    if supplied_helper:
+        roots += (Path(supplied_helper).resolve().parent,)
     if verified_entry_dir is not None:
         roots += (verified_entry_dir.resolve(),)
     _landlock(_LANDLOCK_ACCESS_V1, roots)

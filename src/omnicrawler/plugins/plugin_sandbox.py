@@ -169,6 +169,10 @@ class PluginSubprocessSession:
                 plugin_root=self.plugin_root,
                 verified_entry_dir=self._verified_entry_dir,
             )
+        if mode == "os" and sys.platform == "linux":
+            from .plugin_unix_enforcement import _native_helper
+            helper = _native_helper()  # compile in parent before child confinement
+            kwargs["env"]["OMNICRAWL_LANDLOCK_HELPER"] = helper.__file__
         try:
             self._proc = subprocess.Popen(command, **kwargs)
         except FileNotFoundError as exc:
