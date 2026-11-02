@@ -247,8 +247,6 @@ def _native_helper():
 def _native_landlock(
     handled: int, read_paths: Sequence[Path], write_paths: Sequence[Path]
 ) -> None:
-    if os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("OMNICRAWL_PLUGIN_SANDBOX"):
-        raise RuntimeError("LANDLOCK_PARENT: " + os.environ["PYTEST_CURRENT_TEST"])
     _native_helper().install(
         handled,
         tuple(str(path) for path in read_paths),
