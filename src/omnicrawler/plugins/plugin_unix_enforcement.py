@@ -188,9 +188,8 @@ __attribute__((noinline)) static void report_sigsys(int number, siginfo_t *info,
   _exit(128);
 }
 static PyObject *seccomp_install(PyObject *self, PyObject *args) {
-  unsigned long audit;
-  if (!PyArg_ParseTuple(args, "k", &audit)) return NULL;
-  fprintf(stderr, "AUDIT=%lu EXPECT=%u\n", audit, AUDIT_ARCH_X86_64);
+  unsigned int audit;
+  if (!PyArg_ParseTuple(args, "I", &audit)) return NULL;
   if (PyErr_Occurred()) return NULL;
   int socket_nr = audit == AUDIT_ARCH_X86_64 ? 41 : 198;
   int socketpair_nr = audit == AUDIT_ARCH_X86_64 ? 53 : 199;
@@ -217,6 +216,7 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
     BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
   };
   struct sock_fprog program = {(unsigned short)(sizeof(filters) / sizeof(filters[0])), filters};
+  fprintf(stderr, "AUDIT=%u EXPECT=%u\n", audit, AUDIT_ARCH_X86_64);
   filters[2].k = SECCOMP_RET_TRAP;
   filters[5].k = SECCOMP_RET_TRAP;
   stack_t stack = {sigsys_stack, 0, sizeof(sigsys_stack)};
