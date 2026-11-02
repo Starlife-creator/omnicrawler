@@ -202,7 +202,7 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   int kexec_nr = audit == AUDIT_ARCH_X86_64 ? 246 : 104;
   struct sock_filter filters[] = {
     BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, audit, 0, 1),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, audit, 1, 0),
     BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
     BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
     BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x40000000, 0, 1),
