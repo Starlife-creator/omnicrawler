@@ -118,11 +118,12 @@ def _sock_filter() -> Any:
     ]
     names = ("socket",)
     instructions.extend(
-        (_BPF_JMP | _BPF_JEQ | _BPF_K, 0, 1, _syscall_number(name))
+        (_BPF_JMP | _BPF_JEQ | _BPF_K, 0, 0, _syscall_number(name))
         for name in names
     )
     instructions.extend([
         (_BPF_RET | _BPF_K, 0, 0, _RET_ALLOW),
+        (_BPF_RET | _BPF_K, 0, 0, _RET_ERRNO),
         (_BPF_RET | _BPF_K, 0, 0, _RET_ERRNO),
     ])
     if struct.calcsize("P") != 8:
