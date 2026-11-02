@@ -177,6 +177,10 @@ static PyObject *install(PyObject *self, PyObject *args) {
   }
   close(ruleset); Py_RETURN_NONE;
 }
+static void report_sigsys(int number, siginfo_t *info, void *context) {
+  fprintf(stderr, "SECCOMP_DENIED_NR=%d ARCH=%u CODE=%d\n", info->si_syscall, info->si_arch, info->si_code);
+  _exit(128);
+}
 static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   PyObject *audit_object = PyTuple_GetItem(args, 0);
   if (audit_object == NULL || !PyLong_Check(audit_object)) return PyErr_Format(PyExc_TypeError, "audit must be an integer");
@@ -207,9 +211,12 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
     BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
   };
   struct sock_fprog program = {(unsigned short)(sizeof(filters) / sizeof(filters[0])), filters};
-  write(2, "SECCOMP_BEFORE\n", 15);
+  struct sigaction action = {0};
+  action.sa_sigaction = report_sigsys;
+  action.sa_flags = SA_SIGINFO | SA_NODEFER;
+  sigemptyset(&action.sa_mask);
+  if (sigaction(SIGSYS, &action, NULL)) return PyErr_SetFromErrno(PyExc_OSError);
   if (syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, 0UL, &program) < 0) return PyErr_SetFromErrno(PyExc_OSError);
-  write(2, "SECCOMP_INSTALLED\n", 18);
   Py_RETURN_NONE;
 }
 static PyMethodDef methods[] = {{"install", install, METH_VARARGS}, {"seccomp_install", seccomp_install, METH_VARARGS}, {NULL, NULL, 0, NULL}};
