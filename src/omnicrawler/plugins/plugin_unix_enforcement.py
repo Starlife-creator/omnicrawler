@@ -328,8 +328,8 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
 {runtime}
   (literal "/usr/bin/sandbox-exec"))
 (allow file-read*
-  # dyld reads the volume root itself while loading Python. This is not a
-  # recursive filesystem grant; all user data remains denied by default.
+  ; dyld reads the volume root itself while loading Python. This is not a
+  ; recursive filesystem grant; all user data remains denied by default.
   (literal "/")
   (subpath "/usr/bin")
   (subpath "/bin")
