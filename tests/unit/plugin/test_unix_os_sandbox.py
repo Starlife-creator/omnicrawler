@@ -135,7 +135,6 @@ def test_darwin_launch_requires_seatbelt(monkeypatch: pytest.MonkeyPatch, tmp_pa
 def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
     """Evaluate the exact BPF control flow, including x32 and wrong ABIs."""
     array, _program = enforcement._sock_filter()
-    print("PRODUCTION_BPF", [(x.code, x.jt, x.jf, x.k) for x in array], flush=True)
     audit = 0xC000003E if os.uname().machine == "x86_64" else 0xC00000B7
 
     def evaluate(number: int, arch: int) -> int:
@@ -153,11 +152,9 @@ def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
                     matched = (accumulator & instruction.k) != 0
                 else:
                     matched = accumulator == instruction.k
-                if pc == 1:
-                    print("MATCHED", matched, accumulator, instruction.k, flush=True)
-                    print("OFFSET", instruction.jt, instruction.jf, flush=True)
                 assert jump in (enforcement._BPF_JEQ, enforcement._BPF_JSET)
-                pc = pc + 1 + (instruction.jt if matched else instruction.jf)
+                next_pc = pc + 1 + (instruction.jt if matched else instruction.jf)
+                pc = next_pc
             elif operation == enforcement._BPF_RET:
                 return instruction.k
             else:
