@@ -157,6 +157,7 @@ def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
             else:
                 pytest.fail("unknown BPF operation")
             pc += 1
+            print("NEXT", pc, flush=True)
         pytest.fail("BPF program has no return")
 
     socket = enforcement._syscall_number("socket")
