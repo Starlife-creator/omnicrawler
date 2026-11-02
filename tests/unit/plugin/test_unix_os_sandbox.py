@@ -140,11 +140,14 @@ def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
         (32, 0, 0, 4), (21, 0, 1, audit), (6, 0, 0, enforcement._RET_KILL),
         (32, 0, 0, 0), (69, 0, 1, 0x40000000), (6, 0, 0, enforcement._RET_KILL),
     ]
-    assert array[-2].k == enforcement._RET_ERRNO
-    assert array[-1].k == enforcement._RET_ALLOW
+    # Each dangerous syscall jumps exactly one instruction to ERRNO. The final
+    # comparison therefore also has a fall-through to ALLOW for ordinary calls.
+    assert array[-2].k == enforcement._RET_ALLOW
+    assert array[-1].k == enforcement._RET_ERRNO
+    assert all((item.code, item.jt, item.jf) == (21, 0, 1) for item in array[6:-2])
 
-    # The real child below exercises the kernel-installed C filter. Keep this
-    # reference check focused on the compiled program's fail-closed structure.
+    # The real child below exercises the kernel-installed C filter, including
+    # a normal exit and blocked socket; the static branch check cannot replace it.
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="requires the real Linux kernel")

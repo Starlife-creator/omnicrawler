@@ -121,12 +121,12 @@ def _sock_filter() -> Any:
         "process_vm_writev", "kexec_load",
     )
     instructions.extend(
-        (_BPF_JMP | _BPF_JEQ | _BPF_K, len(names) - index - 1, 0, _syscall_number(name))
-        for index, name in enumerate(names)
+        (_BPF_JMP | _BPF_JEQ | _BPF_K, 0, 1, _syscall_number(name))
+        for name in names
     )
     instructions.extend([
-        (_BPF_RET | _BPF_K, 0, 0, _RET_ERRNO),
         (_BPF_RET | _BPF_K, 0, 0, _RET_ALLOW),
+        (_BPF_RET | _BPF_K, 0, 0, _RET_ERRNO),
     ])
     if struct.calcsize("P") != 8:
         raise RuntimeError(f"{E_UNSUPPORTED_ENV}: seccomp requires a 64-bit interpreter")
@@ -179,14 +179,9 @@ static PyObject *install(PyObject *self, PyObject *args) {
   }
   close(ruleset); Py_RETURN_NONE;
 }
-static void report_sigsys(int number, siginfo_t *info, void *context) {
-  fprintf(stderr, "SECCOMP_DENIED_NR=%d ARCH=%u CODE=%d\n", info->si_syscall, info->si_arch, info->si_code);
-  _exit(128);
-}
 static PyObject *seccomp_install(PyObject *self, PyObject *args) {
-  PyObject *audit_object = PyTuple_GetItem(args, 0);
-  if (audit_object == NULL || !PyLong_Check(audit_object)) return PyErr_Format(PyExc_TypeError, "audit must be an integer");
-  unsigned long audit = PyLong_AsUnsignedLong(audit_object);
+  unsigned long audit;
+  if (!PyArg_ParseTuple(args, "k", &audit)) return NULL;
   if (PyErr_Occurred()) return NULL;
   int socket_nr = audit == AUDIT_ARCH_X86_64 ? 41 : 198;
   int socketpair_nr = audit == AUDIT_ARCH_X86_64 ? 53 : 199;
@@ -202,22 +197,17 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
     BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
     BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x40000000, 0, 1),
     BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, socket_nr, 6, 0),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, socketpair_nr, 5, 0),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ptrace_nr, 4, 0),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, bpf_nr, 3, 0),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, readv_nr, 2, 0),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, writev_nr, 1, 0),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kexec_nr, 0, 0),
-    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, socket_nr, 0, 1),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, socketpair_nr, 0, 1),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ptrace_nr, 0, 1),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, bpf_nr, 0, 1),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, readv_nr, 0, 1),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, writev_nr, 0, 1),
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kexec_nr, 0, 1),
     BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
   };
   struct sock_fprog program = {(unsigned short)(sizeof(filters) / sizeof(filters[0])), filters};
-  struct sigaction action = {0};
-  action.sa_sigaction = report_sigsys;
-  action.sa_flags = SA_SIGINFO | SA_NODEFER;
-  sigemptyset(&action.sa_mask);
-  if (sigaction(SIGSYS, &action, NULL)) return PyErr_SetFromErrno(PyExc_OSError);
   if (syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, 0UL, &program) < 0) return PyErr_SetFromErrno(PyExc_OSError);
   Py_RETURN_NONE;
 }
