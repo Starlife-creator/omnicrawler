@@ -180,7 +180,8 @@ static PyObject *install(PyObject *self, PyObject *args) {
   close(ruleset); Py_RETURN_NONE;
 }
 static char sigsys_stack[65536];
-static void report_sigsys(int number, siginfo_t *info, void *context) {
+__attribute__((noinline)) static void report_sigsys(int number, siginfo_t *info, void *context) {
+  __asm__ volatile("" ::: "memory");
   char text[128];
   int length = snprintf(text, sizeof(text), "SECCOMP_DENIED_NR=%d ARCH=%u CODE=%d\n", info->si_syscall, info->si_arch, info->si_code);
   write(2, text, length);
