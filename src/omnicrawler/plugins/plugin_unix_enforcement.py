@@ -372,8 +372,10 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
     runtime_read, runtime_write = _runtime_roots(os.environ)
     roots += runtime_read
     writable_roots = runtime_write
-    if not writable_roots and sys.platform == "darwin":
-        writable_roots = (Path(tempfile.gettempdir()).resolve(),)
+    if sys.platform == "darwin":
+        # The interpreter's runtime temp directory is read/write; unrelated
+        # temporary paths remain read-only. Never grant the whole /Users tree.
+        writable_roots = (*writable_roots, Path(tempfile.gettempdir()).resolve())
     writable = "\n".join(f"  (subpath {_quote(root)})" for root in writable_roots)
     roots = tuple(root for root in roots if root not in writable_roots)
     allow = "\n".join(f"  (subpath {_quote(root)})" for root in roots)
@@ -422,6 +424,10 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
   (literal "/private/etc/passwd")
   (subpath "/private/var/folders")
   (subpath "/Users")
+  (subpath "/tmp"))
+(allow file-read*
+  (subpath "/private/var/folders")
+  (subpath "/private/tmp")
   (subpath "/tmp"))
 (deny network*)
 """
