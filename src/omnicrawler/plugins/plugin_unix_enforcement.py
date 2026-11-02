@@ -116,9 +116,12 @@ def _sock_filter() -> Any:
         (_BPF_JMP | _BPF_JSET | _BPF_K, 0, 1, 0x40000000),
         (_BPF_RET | _BPF_K, 0, 0, _RET_KILL),
     ]
-    names = ("socket",)
+    names = (
+        "socket", "socketpair", "ptrace", "bpf", "process_vm_readv",
+        "process_vm_writev", "kexec_load",
+    )
     instructions.extend(
-        (_BPF_JMP | _BPF_JEQ | _BPF_K, 0, 0, _syscall_number(name))
+        (_BPF_JMP | _BPF_JEQ | _BPF_K, 0, 1, _syscall_number(name))
         for name in names
     )
     instructions.extend([
