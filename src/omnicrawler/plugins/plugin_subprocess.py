@@ -174,8 +174,11 @@ def _apply_unix_enforcement(plugin_root: str, verified_entry_dir: str) -> None:
         raise RuntimeError("E_UNSUPPORTED_ENV: Unix enforcement module missing")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    if sys.platform == "linux":
-        module._native_helper()  # load the parent-compiled shim, never compile under Landlock
+    if sys.platform != "linux":
+        # macOS is confined by the parent's sandbox-exec launch wrapper;
+        # installing Landlock here would fail closed on every plugin spawn.
+        return
+    module._native_helper()  # load the parent-compiled shim, never compile under Landlock
     module.apply_linux(
         plugin_root=Path(plugin_root),
         verified_entry_dir=Path(verified_entry_dir) if verified_entry_dir else None,

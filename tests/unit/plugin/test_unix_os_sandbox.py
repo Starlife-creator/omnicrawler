@@ -222,7 +222,7 @@ def test_landlock_abi_below_4_refuses_to_load() -> None:
     monkeypatch.setattr(ctypes, "CDLL", lambda *a, **k: _Libc())
     monkeypatch.setattr(sys, "platform", "linux")
     with pytest.raises(OSError, match="ABI >= 4"):
-        enforcement._landlock(0x1FFF, [])
+        enforcement._landlock(0x1FFF, [], [])
     monkeypatch.undo()
 
 
