@@ -157,6 +157,8 @@ def _apply_unix_enforcement(plugin_root: str, verified_entry_dir: str) -> None:
         return
     if os.environ.get("OMNICRAWL_PLUGIN_SANDBOX") != "1":
         return
+    from pathlib import Path
+
     # Never redirect Python's process-wide temp root: it can contain other
     # applications' private files and directories. The plugin uses temp.open
     # for writes; the parent separately grants only that broker-owned root.
