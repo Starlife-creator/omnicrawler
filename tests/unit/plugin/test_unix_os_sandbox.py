@@ -135,7 +135,6 @@ def test_darwin_launch_requires_seatbelt(monkeypatch: pytest.MonkeyPatch, tmp_pa
 def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
     """Evaluate the exact BPF control flow, including x32 and wrong ABIs."""
     array, _program = enforcement._sock_filter()
-    print("BPF", [(x.code, x.jt, x.jf, x.k) for x in array], flush=True)
     audit = 0xC000003E if os.uname().machine == "x86_64" else 0xC00000B7
 
     def evaluate(number: int, arch: int) -> int:
@@ -143,22 +142,19 @@ def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
         pc = 0
         while pc < len(array):
             instruction = array[pc]
-            print("STEP", pc, instruction.code, instruction.jt, instruction.jf, instruction.k, accumulator, flush=True)
             if instruction.code & 0x07 == enforcement._BPF_LD:
                 accumulator = number if instruction.k == 0 else arch
             elif instruction.code & 0x07 == enforcement._BPF_JMP:
                 operation = instruction.code & 0xF0
-                print("CMP", accumulator == instruction.k, operation, enforcement._BPF_JSET, flush=True)
                 matched = ((accumulator & instruction.k) != 0) if operation == enforcement._BPF_JSET else accumulator == instruction.k
                 assert operation in (enforcement._BPF_JEQ, enforcement._BPF_JSET)
                 assert instruction.code & 0x07 == enforcement._BPF_JMP
-                pc = pc + 1 + (instruction.jt if matched else instruction.jf)
+                pc += instruction.jt if matched else instruction.jf
             elif instruction.code & 0x07 == enforcement._BPF_RET:
                 return instruction.k
             else:
                 pytest.fail("unknown BPF operation")
-            if instruction.code & 0x07 != enforcement._BPF_JMP:
-                pc += 1
+            pc += 1
         pytest.fail("BPF program has no return")
 
     socket = enforcement._syscall_number("socket")
