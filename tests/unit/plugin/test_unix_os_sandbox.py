@@ -282,7 +282,7 @@ def test_seatbelt_allows_plugin_read_and_blocks_escape(tmp_path: Path) -> None:
     probe += "\n".join((
         "try: s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',1)); s.close(); result['network']='allowed'",
         "except OSError: result['network']='denied'",
-        "try: open('/etc/passwd').read(); result['file']='allowed'",
+        "try: open('/private/etc/passwd').read(); result['file']='allowed'",
         "except OSError: result['file']='denied'",
         "print(json.dumps(result))",
     ))

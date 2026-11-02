@@ -373,7 +373,10 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
     roots += runtime_read
     writable = "\n".join(f"  (subpath {_quote(root)})" for root in runtime_write)
     allow = "\n".join(f"  (subpath {_quote(root)})" for root in roots)
-    runtime = "\n".join(f"  (subpath {_quote(path)})" for path in (Path(sys.executable).resolve(), *Path(sys.executable).resolve().parents[:4]))
+    runtime = "\n".join(
+        f"  (subpath {_quote(path)})"
+        for path in (Path(sys.executable).resolve(), *Path(sys.executable).resolve().parents[:4])
+    )
     return f"""(version 1)
 (deny default)
 (allow signal (target self))
@@ -389,10 +392,8 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
 (allow process-exec
 {runtime}
   (literal "/usr/bin/sandbox-exec"))
+(allow file-read-metadata (literal "/"))
 (allow file-read*
-  ; dyld reads the volume root itself while loading Python. This is not a
-  ; recursive filesystem grant; all user data remains denied by default.
-  (literal "/")
   (subpath "/usr/bin")
   (subpath "/bin")
   (subpath "/System/Library")
