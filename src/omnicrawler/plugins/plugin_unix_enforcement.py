@@ -226,6 +226,7 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   stack_t stack = {sigsys_stack, 0, sizeof(sigsys_stack)};
   sigaltstack(&stack, NULL);
   fprintf(stderr, "HANDLER=%p\n", (void *)&report_sigsys);
+  fprintf(stderr, "ARCH_OFF=%zu NR_OFF=%zu SOCKET_NR=%d\n", offsetof(struct seccomp_data, arch), offsetof(struct seccomp_data, nr), socket_nr);
   struct sigaction action = {0};
   action.sa_sigaction = report_sigsys;
   action.sa_flags = SA_SIGINFO | SA_NODEFER | SA_ONSTACK;
