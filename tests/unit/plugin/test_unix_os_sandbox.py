@@ -169,7 +169,10 @@ apply_linux(plugin_root=Path(sys.argv[1]))
 import probe
 result = {}
 try:
-    socket.socket()
+    s = socket.socket()
+    s.settimeout(2)
+    s.connect(('127.0.0.1', 1))
+    s.close()
     result['network'] = 'allowed'
 except OSError:
     result['network'] = 'denied'
@@ -202,7 +205,7 @@ def test_seatbelt_allows_plugin_read_and_blocks_escape(tmp_path: Path) -> None:
     plugin.write_text("value = 42\n", encoding="utf-8")
     probe = "import json,socket,sys; sys.path.insert(0,sys.argv[1]); import probe; result={'import': probe.value}; "
     probe += "\n".join((
-        "try: socket.socket(); result['network']='allowed'",
+        "try: s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',1)); s.close(); result['network']='allowed'",
         "except OSError: result['network']='denied'",
         "try: open('/etc/passwd').read(); result['file']='allowed'",
         "except OSError: result['file']='denied'",

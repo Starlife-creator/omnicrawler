@@ -238,8 +238,11 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     libc.syscall.restype = ctypes.c_long
 
     abi = _landlock_abi(libc)
-    if abi < 1:
-        raise OSError(ctypes.get_errno(), "Landlock ABI unavailable")
+    if abi < 4:
+        raise OSError(
+            22,
+            "Landlock network rules require ABI >= 4; refusing to load without socket confinement",
+        )
     handled = access_fs & _LANDLOCK_ACCESS_V1
     handled &= (1 << 13) - 1
 
@@ -275,15 +278,7 @@ def apply_linux(*, plugin_root: Path, verified_entry_dir: Path | None = None) ->
     if verified_entry_dir is not None:
         roots += (verified_entry_dir.resolve(),)
     _landlock(_LANDLOCK_ACCESS_V1, roots)
-    import ctypes
-
-    libc = ctypes.CDLL(None, use_errno=True)
-    libc.syscall.restype = ctypes.c_long
-    if _prctl(libc, _PR_SET_NO_NEW_PRIVS, 1):
-        raise OSError(ctypes.get_errno(), "no_new_privs failed")
-    audit = 0xC000003E if os.uname().machine == "x86_64" else 0xC00000B7
-    _native_helper().seccomp_install(_sock_filter())
-    return "landlock+seccomp"
+    return "landlock"
 
 
 def _quote(path: Path) -> str:
