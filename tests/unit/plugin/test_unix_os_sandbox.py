@@ -170,6 +170,7 @@ import probe
 result = {}
 try:
     socket.socket()
+    result['network'] = 'allowed'
 except OSError:
     result['network'] = 'denied'
 try:
