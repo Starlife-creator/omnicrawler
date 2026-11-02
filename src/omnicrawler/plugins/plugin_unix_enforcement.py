@@ -185,17 +185,17 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   unsigned int audit;
   if (!PyArg_ParseTuple(args, "I", &audit)) return NULL;
   if (PyErr_Occurred()) return NULL;
-  int socket_nr = audit == AUDIT_ARCH_X86_64 ? 41 : 198;
-  int socketpair_nr = audit == AUDIT_ARCH_X86_64 ? 53 : 199;
-  int ptrace_nr = audit == AUDIT_ARCH_X86_64 ? 101 : 117;
-  int bpf_nr = audit == AUDIT_ARCH_X86_64 ? 321 : 280;
-  int readv_nr = audit == AUDIT_ARCH_X86_64 ? 310 : 270;
-  int writev_nr = audit == AUDIT_ARCH_X86_64 ? 311 : 271;
-  int kexec_nr = audit == AUDIT_ARCH_X86_64 ? 246 : 104;
+  int socket_nr = (int)__NR_socket;
+  int socketpair_nr = (int)__NR_socketpair;
+  int ptrace_nr = (int)__NR_ptrace;
+  int bpf_nr = (int)__NR_bpf;
+  int readv_nr = (int)__NR_process_vm_readv;
+  int writev_nr = (int)__NR_process_vm_writev;
+  int kexec_nr = (int)__NR_kexec_load;
   struct sock_filter filters[] = {
     BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
     BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, audit, 0, 1),
-    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
     BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
     BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x40000000, 0, 1),
     BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
