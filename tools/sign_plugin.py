@@ -172,12 +172,10 @@ def _append_transparency_log(
     MARKET_ECOSYSTEM §5）。路径字段只记录相对/文件名，绝不写绝对路径。
     """
     digest = hashlib.sha256(plugin.read_bytes()).hexdigest()
-    # FINAL-U5：优先相对 cwd 的正斜杠路径；否则退化为裸文件名（sha256 可区分同名），
-    # 绝不把操作者机器的绝对目录结构写进仓库文件。
-    try:
-        display_path = plugin.resolve().relative_to(Path.cwd()).as_posix()
-    except ValueError:
-        display_path = plugin.name
+    # FINAL-U5：透明日志绝不写绝对路径，也不写 cwd 下的相对路径——相对路径仍可能
+    # 包含本机用户名等机器身份（例如 pytest-of-<user>/...）。只记录裸文件名，
+    # sha256 足以区分同名文件；后续操作者可通过哈希与私钥位置人工对应。
+    display_path = plugin.name
     entry = {
         "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
         "plugin": display_path,
