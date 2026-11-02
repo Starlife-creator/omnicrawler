@@ -98,6 +98,8 @@ jobs:
               ('users-runner', profile + '(allow file-read* (subpath "/Users/runner"))'),
               ('private-var', profile + '(allow file-read* (subpath "/private/var"))'),
               ('etc-system', profile + '(allow file-read* (subpath "/private/etc")(subpath "/System"))'),
+              ('literal-root', profile + '(allow file-read* (literal "/"))'),
+              ('literal-root-groups', profile + f'(allow file-read* (literal "/") {group_a} {group_b} {group_c})'),
           ]
           for label, extra in probes:
               with tempfile.NamedTemporaryFile('w', suffix='.sb') as stream:
