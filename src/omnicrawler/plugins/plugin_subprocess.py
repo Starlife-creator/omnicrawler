@@ -21,6 +21,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import json
+import os
 import sys
 import traceback
 import types
@@ -149,9 +150,14 @@ def _apply_unix_enforcement(plugin_root: str, verified_entry_dir: str) -> None:
     macOS is confined by the parent's ``sandbox-exec`` launch wrapper instead;
     it must not weaken that wrapper by installing a child-side partial filter.
     """
-    if sys.platform != "linux":
+    if sys.platform not in ("linux", "darwin"):
         return
     from pathlib import Path
+
+    # Never redirect Python's process-wide temp root: it can contain other
+    # applications' private files and directories. The plugin uses temp.open
+    # for writes; the parent separately grants only that broker-owned root.
+    os.environ.pop("TMPDIR", None)
 
     if getattr(sys, "frozen", False):
         # Declared by packaging/OmniCrawler-SandboxHost.spec; no host package import.

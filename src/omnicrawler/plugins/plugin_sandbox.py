@@ -116,6 +116,7 @@ class PluginSubprocessSession:
         self._allow_degraded_sandbox = allow_degraded_sandbox
         self.sandbox_mode = ""
         self.sandbox_reason = ""
+        self._owned_temp_root: Path | None = None
 
     # ---- 生命周期 ----
 
@@ -138,11 +139,11 @@ class PluginSubprocessSession:
         else:
             LOGGER.info("插件 OS 沙箱裁决: %s", reason)
 
+        import tempfile
+
         command, default_handshake = plugin_backend.resolve_backend_command()
         command = [*command, self.entry_module, str(self.plugin_root)]
         if self._verified_bytes is not None:
-            import tempfile
-
             self._verified_entry_dir = Path(
                 tempfile.mkdtemp(prefix="omnicrawler-verified-entry-")
             )
@@ -162,10 +163,27 @@ class PluginSubprocessSession:
         if sys.platform == "win32":
             # CREATE_NO_WINDOW（0x08000000，env_checker.py:62 模式）
             kwargs["creationflags"] = 0x08000000
-        if mode == "os" and sys.platform == "linux":
-            from .plugin_unix_enforcement import _native_helper
-            helper = _native_helper()  # compile in parent before child confinement
-            kwargs["env"]["OMNICRAWL_LANDLOCK_HELPER"] = helper.__file__
+        if mode == "os" and sys.platform in ("linux", "darwin"):
+            import os
+
+            from . import plugin_broker
+            from .plugin_unix_enforcement import (
+                _RUNTIME_READ_ROOTS_ENV,
+                _RUNTIME_ROOTS_ENV,
+                _standard_library_roots,
+            )
+
+            temp_root = Path(tempfile.mkdtemp(prefix="omnicrawler-plugin-scope-"))
+            self._owned_temp_root = temp_root
+            plugin_broker.CapabilityBroker(permissions=set(), system_info={}, temp_root=temp_root)
+            kwargs["env"][_RUNTIME_ROOTS_ENV] = str(temp_root)
+            kwargs["env"][_RUNTIME_READ_ROOTS_ENV] = os.pathsep.join(
+                str(root) for root in _standard_library_roots()
+            )
+            if sys.platform == "linux":
+                from .plugin_unix_enforcement import _native_helper
+                helper = _native_helper()  # compile in parent before child confinement
+                kwargs["env"]["OMNICRAWL_LANDLOCK_HELPER"] = helper.__file__
         try:
             if mode == "os" and sys.platform == "darwin":
                 from .plugin_unix_enforcement import darwin_launch
@@ -215,6 +233,15 @@ class PluginSubprocessSession:
             except subprocess.TimeoutExpired:
                 pass
         self._cleanup_verified_entry()
+        self._cleanup_owned_temp_root()
+
+    def _cleanup_owned_temp_root(self) -> None:
+        if self._owned_temp_root is None:
+            return
+        import shutil
+
+        shutil.rmtree(self._owned_temp_root, ignore_errors=True)
+        self._owned_temp_root = None
 
     def _cleanup_verified_entry(self) -> None:
         """会话结束即删验签临时入口（C2 V2：防残留被本地攻击者替换利用）。"""
@@ -222,6 +249,7 @@ class PluginSubprocessSession:
             import shutil
 
             shutil.rmtree(self._verified_entry_dir, ignore_errors=True)
+            self._cleanup_owned_temp_root()
             self._verified_entry_dir = None
 
     def __enter__(self) -> PluginSubprocessSession:

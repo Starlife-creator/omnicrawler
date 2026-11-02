@@ -15,8 +15,9 @@ import os
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -192,7 +193,32 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   if (result < 0) return PyErr_SetFromErrno(PyExc_OSError);
   Py_RETURN_NONE;
 }
-static PyMethodDef methods[] = {{"install", install, METH_VARARGS}, {"seccomp_install", seccomp_install, METH_VARARGS}, {NULL, NULL, 0, NULL}};
+static PyObject *allow_write(PyObject *self, PyObject *args) {
+  PyObject *paths;
+  if (!PyArg_ParseTuple(args, "O", &paths)) return NULL;
+  uint64_t write_access = (1ULL << 7) - 1;
+  struct attr attr = {write_access, 0, 0};
+  int ruleset = (int)syscall(SYS_landlock_create_ruleset, &attr, 8, 0);
+  if (ruleset < 0) return PyErr_SetFromErrno(PyExc_OSError);
+  Py_ssize_t count = PySequence_Size(paths);
+  for (Py_ssize_t i = 0; i < count; ++i) {
+    PyObject *path = PySequence_GetItem(paths, i);
+    const char *text = PyUnicode_AsUTF8(path);
+    if (!text) { close(ruleset); return NULL; }
+    int fd = open(text, O_PATH | O_CLOEXEC);
+    Py_DECREF(path);
+    if (fd < 0) { close(ruleset); return PyErr_SetFromErrno(PyExc_OSError); }
+    struct beneath rule = {write_access, fd};
+    int result = (int)syscall(SYS_landlock_add_rule, ruleset, 1, &rule, 0);
+    int saved = errno; close(fd);
+    if (result < 0) { close(ruleset); errno = saved; return PyErr_SetFromErrno(PyExc_OSError); }
+  }
+  if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) || syscall(SYS_landlock_restrict_self, ruleset, 0)) {
+    int saved = errno; close(ruleset); errno = saved; return PyErr_SetFromErrno(PyExc_OSError);
+  }
+  close(ruleset); Py_RETURN_NONE;
+}
+static PyMethodDef methods[] = {{"install", install, METH_VARARGS}, {"allow_write", allow_write, METH_VARARGS}, {"seccomp_install", seccomp_install, METH_VARARGS}, {NULL, NULL, 0, NULL}};
 static struct PyModuleDef module = {PyModuleDef_HEAD_INIT, "omnicrawler_landlock", NULL, -1, methods};
 PyMODINIT_FUNC PyInit_omnicrawler_landlock(void) { return PyModule_Create(&module); }
 '''
@@ -253,10 +279,43 @@ def _landlock(access_fs: int, paths: Sequence[Path]) -> None:
     _native_landlock(handled, paths)
 
 
+_RUNTIME_ROOTS_ENV = "OMNICRAWL_PLUGIN_RUNTIME_ROOTS"
+_RUNTIME_READ_ROOTS_ENV = "OMNICRAWL_PLUGIN_RUNTIME_READ_ROOTS"
+
+
 def _standard_library_roots() -> tuple[Path, ...]:
-    roots = {Path(path).resolve() for path in sys.path if path and Path(path).is_dir()}
-    roots.update(Path(value).resolve() for value in (sys.prefix, sys.base_prefix) if value)
+    roots = {
+        Path(value).resolve()
+        for value in (sys.prefix, sys.base_prefix)
+        if value and Path(value).is_dir()
+    }
+    roots.update(
+        Path(path).resolve()
+        for path in sysconfig.get_paths().values()
+        if path and Path(path).is_dir()
+    )
     return tuple(sorted(roots, key=str))
+
+
+def _runtime_roots(environment: Mapping[str, str]) -> tuple[tuple[Path, ...], tuple[Path, ...]]:
+    read = tuple(
+        Path(value).resolve()
+        for value in environment.get(_RUNTIME_READ_ROOTS_ENV, "").split(os.pathsep)
+        if value and Path(value).is_dir()
+    )
+    write = tuple(
+        Path(value).resolve()
+        for value in environment.get(_RUNTIME_ROOTS_ENV, "").split(os.pathsep)
+        if value and Path(value).is_dir()
+    )
+    return read, write
+
+
+def _runtime_scope(environment: Mapping[str, str]) -> dict[str, object]:
+    """Confinement operations that touch only the declared plugin temp scope."""
+    return {
+        "runtime_roots": _runtime_roots(environment)[1],
+    }
 
 
 def _linux_runtime_roots() -> tuple[Path, ...]:
@@ -273,18 +332,23 @@ def apply_linux(*, plugin_root: Path, verified_entry_dir: Path | None = None) ->
 
     A failure is fail-closed: the caller must not load plugin code. Read-only
     access is limited to interpreter/standard-library roots, the verified
-    entry, and the plugin itself. No writable directory is exposed; files and
-    artifacts remain capability-proxy operations.
+    entry, and the plugin itself. Only the broker's dedicated temporary scope
+    is writable; unrelated process temporary directories are never authorized.
     """
     if sys.platform != "linux":
         raise RuntimeError(f"{E_UNSUPPORTED_ENV}: Landlock requires Linux")
+    runtime_read, runtime_write = _runtime_roots(os.environ)
     roots = (*_standard_library_roots(), *_linux_runtime_roots(), plugin_root.resolve())
+    roots = tuple(root for root in roots if root not in runtime_write)
+    roots += tuple(root for root in runtime_read if root not in runtime_write)
     supplied_helper = os.environ.get("OMNICRAWL_LANDLOCK_HELPER")
     if supplied_helper:
         roots += (Path(supplied_helper).resolve().parent,)
     if verified_entry_dir is not None:
         roots += (verified_entry_dir.resolve(),)
     _landlock(_LANDLOCK_ACCESS_V1, roots)
+    if runtime_write:
+        _native_helper().allow_write(tuple(str(path) for path in runtime_write))
     return "landlock"
 
 
@@ -308,6 +372,9 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
     roots = (*_standard_library_roots(), *_macos_runtime_roots(), plugin_root.resolve())
     if verified_entry_dir is not None:
         roots += (verified_entry_dir.resolve(),)
+    runtime_read, runtime_write = _runtime_roots(os.environ)
+    roots += runtime_read
+    writable = "\n".join(f"  (subpath {_quote(root)})" for root in runtime_write)
     allow = "\n".join(f"  (subpath {_quote(root)})" for root in roots)
     runtime = "\n".join(f"  (subpath {_quote(path)})" for path in (Path(sys.executable).resolve(), *Path(sys.executable).resolve().parents[:4]))
     return f"""(version 1)
@@ -348,6 +415,9 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
   (literal "/private/etc/hosts"))
 (allow file-read-metadata)
 (allow file-write* (literal "/dev/null"))
+(allow file-read* file-write*
+{writable}
+)
 (deny network*)
 """
 

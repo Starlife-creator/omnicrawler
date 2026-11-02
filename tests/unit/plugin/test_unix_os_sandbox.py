@@ -28,6 +28,53 @@ def test_landlock_v1_uses_short_native_abi(monkeypatch: pytest.MonkeyPatch) -> N
     assert calls == [(0x1FFF, (Path("plugin"),))]
 
 
+def test_landlock_grants_only_declared_temp_scope(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The generic host temp root is never recursively authorized for a plugin."""
+    calls: list[tuple[Path, ...]] = []
+    allowed_writes: list[tuple[str, ...]] = []
+    scope = tmp_path / "plugin-scope"
+    scope.mkdir()
+    host_temp = tmp_path / "host-temp"
+    host_temp.mkdir()
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        enforcement,
+        "_standard_library_roots",
+        lambda: (tmp_path / "stdlib",),
+    )
+    monkeypatch.setenv("OMNICRAWL_PLUGIN_RUNTIME_READ_ROOTS", str(host_temp))
+    monkeypatch.setattr(enforcement, "_linux_runtime_roots", lambda: ())
+    monkeypatch.setattr(enforcement, "_landlock", lambda access, paths: calls.append(tuple(paths)))
+    monkeypatch.setenv("OMNICRAWL_PLUGIN_RUNTIME_ROOTS", str(scope))
+    helper = type(
+        "Helper",
+        (),
+        {"allow_write": staticmethod(lambda paths: allowed_writes.append(tuple(paths)))},
+    )()
+    monkeypatch.setattr(enforcement, "_native_helper", lambda: helper)
+    assert enforcement.apply_linux(plugin_root=tmp_path / "plugin") == "landlock"
+    assert host_temp in calls[0]
+    assert scope not in calls[0]
+    assert allowed_writes == [(str(scope),)]
+
+
+def test_darwin_profile_grants_only_declared_temp_scope(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    scope = tmp_path / "plugin-scope"
+    scope.mkdir()
+    host_temp = tmp_path / "host-temp"
+    host_temp.mkdir()
+    monkeypatch.setattr(enforcement, "_standard_library_roots", lambda: (host_temp,))
+    monkeypatch.setattr(enforcement, "_macos_runtime_roots", lambda: ())
+    monkeypatch.setattr(enforcement.sys, "executable", str(tmp_path / "python"))
+    monkeypatch.setenv("OMNICRAWL_PLUGIN_RUNTIME_ROOTS", str(scope))
+    profile = enforcement.darwin_profile(plugin_root=tmp_path / "plugin")
+    assert f"(subpath {enforcement._quote(scope)})" in profile
+    assert f"(subpath {enforcement._quote(host_temp)})" in profile
+    assert '(subpath "/private/var/folders")' not in profile
+
+
 def test_native_landlock_requires_working_toolchain(monkeypatch: pytest.MonkeyPatch) -> None:
     import subprocess
     monkeypatch.setattr(
