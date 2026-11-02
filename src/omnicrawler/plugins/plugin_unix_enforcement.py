@@ -393,7 +393,6 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
 {runtime}
   (literal "/usr/bin/sandbox-exec"))
 (allow file-read*
-  (literal "/")
   (subpath "/usr/bin")
   (subpath "/bin")
   (subpath "/System/Library")

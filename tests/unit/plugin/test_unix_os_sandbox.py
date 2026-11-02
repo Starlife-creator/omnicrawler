@@ -192,7 +192,7 @@ def test_darwin_launch_embeds_profile(
     profile = command[2]
     assert "(deny default)" in profile
     assert "(deny network*)" in profile
-    assert '(literal "/")' in profile
+    assert '(literal "/")' not in profile
     assert '(subpath "/private/etc")' not in profile
     assert '(subpath "/private/etc/ssl")' not in profile
     assert '(subpath "/etc")' not in profile
