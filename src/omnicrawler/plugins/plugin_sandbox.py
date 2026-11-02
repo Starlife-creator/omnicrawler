@@ -169,14 +169,12 @@ class PluginSubprocessSession:
         try:
             if mode == "os" and sys.platform == "darwin":
                 from .plugin_unix_enforcement import darwin_launch
-                with darwin_launch(
+                command = darwin_launch(
                     command,
                     plugin_root=self.plugin_root,
                     verified_entry_dir=self._verified_entry_dir,
-                ) as command:
-                    self._proc = subprocess.Popen(command, **kwargs)
-            else:
-                self._proc = subprocess.Popen(command, **kwargs)
+                )
+            self._proc = subprocess.Popen(command, **kwargs)
         except FileNotFoundError as exc:
             raise RuntimeError(f"沙箱后端不可用: {exc}") from exc
         except OSError as exc:

@@ -17,8 +17,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -354,22 +353,12 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
 """
 
 
-@contextmanager
 def darwin_launch(
     command: Sequence[str], *, plugin_root: Path, verified_entry_dir: Path | None = None
-) -> Iterator[list[str]]:
-    """Yield a ``sandbox-exec`` command and clean up its private profile."""
+) -> list[str]:
+    """Return a ``sandbox-exec`` command with the profile embedded inline."""
     executable = shutil.which("sandbox-exec")
     if executable is None:
         raise RuntimeError(f"{E_UNSUPPORTED_ENV}: sandbox-exec unavailable")
     profile = darwin_profile(plugin_root=plugin_root, verified_entry_dir=verified_entry_dir)
-    descriptor, name = tempfile.mkstemp(prefix="omnicrawler-seatbelt-", suffix=".sb")
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            stream.write(profile)
-        yield [executable, "-f", name, *command]
-    finally:
-        try:
-            os.unlink(name)
-        except FileNotFoundError:
-            pass
+    return [executable, "-p", profile, *command]

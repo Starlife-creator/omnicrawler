@@ -107,14 +107,11 @@ def test_session_records_decision_and_invokes_popen_with_prefix(
     session.end()
 
 
-def test_darwin_launcher_context_closes_after_spawn(
+def test_darwin_launcher_prefixes_command(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from contextlib import contextmanager
-
     from omnicrawler.plugins import plugin_unix_enforcement
 
-    events: list[str] = []
     monkeypatch.setattr(plugin_sandbox.sys, "platform", "darwin")
     monkeypatch.setattr(
         plugin_sandbox, "resolve_sandbox_mode",
@@ -127,16 +124,12 @@ def test_darwin_launcher_context_closes_after_spawn(
     fake_popen = MagicMock()
     fake_popen.return_value.poll.return_value = 0
     monkeypatch.setattr(plugin_sandbox.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        plugin_unix_enforcement, "darwin_launch",
+        lambda command, **kwargs: ["sandbox-exec", "-p", "profile", *command],
+    )
 
-    @contextmanager
-    def launcher(*args: object, **kwargs: object):
-        events.append("enter")
-        yield ["sandbox-exec", "-f", "profile", "python"]
-        events.append("exit")
-
-    monkeypatch.setattr(plugin_unix_enforcement, "darwin_launch", launcher)
     session = _session(tmp_path)
     session.start()
-    assert events == ["enter", "exit"]
-    assert fake_popen.call_count == 1
+    assert fake_popen.call_args.args[0][:3] == ["sandbox-exec", "-p", "profile"]
     session.end()

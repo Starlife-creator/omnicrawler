@@ -123,31 +123,29 @@ def test_landlock_failures_are_not_silently_ignored(
         enforcement.apply_linux(plugin_root=tmp_path)
 
 
-def test_darwin_launch_wraps_command_and_deletes_profile(
+def test_darwin_launch_embeds_profile(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr(enforcement.shutil, "which", lambda name: "/usr/bin/sandbox-exec")
     root = tmp_path / "plugin"
-    with enforcement.darwin_launch(["host", "demo"], plugin_root=root) as command:
-        assert command[:3] == ["/usr/bin/sandbox-exec", "-f", command[2]]
-        assert command[3:] == ["host", "demo"]
-        profile = Path(command[2]).read_text(encoding="utf-8")
-        assert "(deny default)" in profile
-        assert "(deny network*)" in profile
-        assert '(allow file-read*\n  ; dyld' in profile
-        assert '(literal "/")' in profile
-        assert '(subpath "/private/etc")' not in profile
-        assert '(subpath "/etc")' not in profile
-        assert all(not line.strip().startswith("#") for line in profile.splitlines())
-        assert f"(subpath {enforcement._quote(root)})" in profile
-    assert not Path(command[2]).exists()
+    command = enforcement.darwin_launch(["host", "demo"], plugin_root=root)
+    assert command[:2] == ["/usr/bin/sandbox-exec", "-p"]
+    assert command[3:] == ["host", "demo"]
+    profile = command[2]
+    assert "(deny default)" in profile
+    assert "(deny network*)" in profile
+    assert '(allow file-read*\n  ; dyld' in profile
+    assert '(literal "/")' in profile
+    assert '(subpath "/private/etc")' not in profile
+    assert '(subpath "/etc")' not in profile
+    assert all(not line.strip().startswith("#") for line in profile.splitlines())
+    assert f"(subpath {enforcement._quote(root)})" in profile
 
 
 def test_darwin_launch_requires_seatbelt(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(enforcement.shutil, "which", lambda name: None)
     with pytest.raises(RuntimeError, match="E_UNSUPPORTED_ENV"):
-        with enforcement.darwin_launch(["host"], plugin_root=tmp_path):
-            pass
+        enforcement.darwin_launch(["host"], plugin_root=tmp_path)
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="requires Linux Landlock ABI")
@@ -228,9 +226,9 @@ def test_seatbelt_allows_plugin_read_and_blocks_escape(tmp_path: Path) -> None:
         "except OSError: result['file']='denied'",
         "print(json.dumps(result))",
     ))
-    with enforcement.darwin_launch(
+    command = enforcement.darwin_launch(
         [sys.executable, "-S", "-c", probe, str(tmp_path)], plugin_root=tmp_path
-    ) as command:
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=15, check=False)
+    )
+    completed = subprocess.run(command, capture_output=True, text=True, timeout=15, check=False)
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout) == {"import": 42, "network": "denied", "file": "denied"}
