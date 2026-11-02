@@ -376,9 +376,15 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
     roots = tuple(root for root in roots if root not in writable_roots)
     allow = "\n".join(f"  (subpath {_quote(root)})" for root in roots)
     executable = Path(sys.executable).resolve()
+    runtime_paths = (executable, *executable.parents[:4])
     runtime = "\n".join(
         f"  (subpath {_quote(path)})"
-        for path in (executable, *executable.parents[:4])
+        for path in runtime_paths
+        if path != Path(path.anchor)
+    )
+    deny_runtime = "\n".join(
+        f"  (subpath {_quote(path)})"
+        for path in runtime_paths
         if path != Path(path.anchor)
     )
     return f"""(version 1)
@@ -414,6 +420,9 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
 (allow file-write* (literal "/dev/null"))
 (allow file-read* file-write*
 {writable}
+)
+(deny file-read*
+  (literal "/private/etc/passwd")
 )
 (deny network*)
 """
