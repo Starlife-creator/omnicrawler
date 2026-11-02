@@ -152,16 +152,9 @@ def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
                 matched = ((accumulator & instruction.k) != 0) if operation == enforcement._BPF_JSET else accumulator == instruction.k
                 assert operation in (enforcement._BPF_JEQ, enforcement._BPF_JSET)
                 assert instruction.code & 0x07 == enforcement._BPF_JMP
-                print("BEFORE", pc, flush=True)
-                old_pc = pc
-                print("IF", bool(matched), flush=True)
-                if matched:
-                    print("TRUE-BRANCH", flush=True)
-                    pc = pc + 1
-                else:
-                    pc = pc + 1 + instruction.jf
-                print("ARITH", old_pc, pc, flush=True)
-                print("RELATIVE", pc, matched, instruction.jt, instruction.jf, flush=True)
+                offset = instruction.jt if matched else instruction.jf
+                pc = pc + 1 + offset
+                print("PC", pc, flush=True)
                 continue
             elif instruction.code & 0x07 == enforcement._BPF_RET:
                 return instruction.k
