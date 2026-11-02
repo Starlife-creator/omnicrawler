@@ -152,6 +152,7 @@ def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
                 matched = ((accumulator & instruction.k) != 0) if operation == enforcement._BPF_JSET else accumulator == instruction.k
                 assert operation in (enforcement._BPF_JEQ, enforcement._BPF_JSET)
                 assert instruction.code & 0x07 == enforcement._BPF_JMP
+                print("BEFORE", pc, flush=True)
                 old_pc = pc
                 print("IF", bool(matched), flush=True)
                 if matched:
