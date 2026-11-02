@@ -89,10 +89,13 @@ jobs:
           probes += [(path, process + f'(allow file-read* file-write* (subpath "{path}"))') for path in roots]
           probes += [
               ('product-all-read', profile + '(allow file-read*)'),
-              ('product-all-write', profile + '(allow file-write*)'),
-              ('product-all-files', profile + '(allow file-read* file-write*)'),
-              ('product-no-dev-write', profile.replace('(allow file-read* file-write* (subpath "/dev"))', '')),
-              ('product-no-etc', profile.replace('(subpath "/private/etc")', '').replace('(subpath "/etc")', '')),
+              ('root-read', profile + '(allow file-read* (subpath "/"))'),
+              ('root-read-no-etc', profile + '(allow file-read* (subpath "/"))' + '(deny file-read* (subpath "/private/etc"))'),
+              ('root-read-no-home', profile + '(allow file-read* (subpath "/"))' + '(deny file-read* (subpath "/Users"))'),
+              ('root-read-no-data', profile + '(allow file-read* (subpath "/"))' + '(deny file-read* (subpath "/private"))'),
+              ('root-read-no-tmp', profile + '(allow file-read* (subpath "/"))' + '(deny file-read* (subpath "/private/var/folders"))'),
+              ('root-read-no-preboot', profile + '(allow file-read* (subpath "/"))' + '(deny file-read* (subpath "/System/Volumes/Preboot"))'),
+              ('root-read-no-etc-and-tmp', profile + '(allow file-read* (subpath "/"))' + '(deny file-read* (subpath "/private/etc"))' + '(deny file-read* (subpath "/private/var/folders"))'),
           ]
           for label, extra in probes:
               with tempfile.NamedTemporaryFile('w', suffix='.sb') as stream:
