@@ -109,11 +109,11 @@ def _sock_filter() -> Any:
     # seccomp_data.nr and arch are fixed by the kernel ABI on both supported CPUs.
     instructions = [
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 4),
-        (_BPF_JMP | _BPF_JEQ | _BPF_K, audit, 0, 1),
+        (_BPF_JMP | _BPF_JEQ | _BPF_K, 0, 1, audit),
         (_BPF_RET | _BPF_K, 0, 0, _RET_KILL),
         (_BPF_LD | 0x20 | _BPF_K, 0, 0, 0),
         # x32 syscall numbers have this bit; never confuse them with native ABI.
-        (_BPF_JMP | _BPF_JSET | _BPF_K, 0x40000000, 0, 1),
+        (_BPF_JMP | _BPF_JSET | _BPF_K, 0, 1, 0x40000000),
         (_BPF_RET | _BPF_K, 0, 0, _RET_KILL),
     ]
     names = (
@@ -121,7 +121,7 @@ def _sock_filter() -> Any:
         "process_vm_writev", "kexec_load",
     )
     instructions.extend(
-        (_BPF_JMP | _BPF_JEQ | _BPF_K, _syscall_number(name), len(names) - index - 1, 0)
+        (_BPF_JMP | _BPF_JEQ | _BPF_K, len(names) - index - 1, 0, _syscall_number(name))
         for index, name in enumerate(names)
     )
     instructions.extend([
