@@ -137,6 +137,8 @@ def _sock_filter() -> Any:
 
 
 _NATIVE_LANDLOCK_SOURCE = r'''
+#define _GNU_SOURCE
+#include <signal.h>
 #include <Python.h>
 #include <errno.h>
 #include <fcntl.h>
