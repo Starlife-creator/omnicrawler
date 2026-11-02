@@ -54,12 +54,6 @@ jobs:
         run: python -m pytest tests/unit/plugin/test_unix_os_sandbox.py -q -p no:cacheprovider
         shell: bash
       # F1 公共契约夹具 + F2 差分 + 隔离/路由/适配器/broker 全套
-      - name: 沙箱最小启动诊断
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          printf '(version 1)\n(deny default)\n(allow process-exec process-fork)\n(allow mach-lookup)\n(allow sysctl-read)\n(allow file-read* (subpath "/System") (subpath "/Library") (subpath "/usr") (subpath "/Users") (subpath "/private") (subpath "/opt"))\n' > /tmp/min.sb
-          /usr/bin/sandbox-exec -f /tmp/min.sb python -I -S -c 'print("minimal-read-import")' || true
       - name: 插件契约与穿透用例（源码后端）
         run: |
           python -m pytest tests/unit/plugin/test_sandbox_isolation.py \

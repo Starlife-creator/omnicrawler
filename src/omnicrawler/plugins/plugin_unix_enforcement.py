@@ -181,14 +181,6 @@ static PyObject *install(PyObject *self, PyObject *args) {
   }
   close(ruleset); Py_RETURN_NONE;
 }
-static char sigsys_stack[65536];
-__attribute__((noinline)) static void report_sigsys(int number, siginfo_t *info, void *context) {
-  __asm__ volatile("" ::: "memory");
-  char text[128];
-  int length = snprintf(text, sizeof(text), "SECCOMP_DENIED_NR=%d ARCH=%u CODE=%d\n", info->si_syscall, info->si_arch, info->si_code);
-  write(2, text, length);
-  _exit(128);
-}
 static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   unsigned int audit;
   if (!PyArg_ParseTuple(args, "I", &audit)) return NULL;
@@ -215,7 +207,7 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
     BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, writev_nr, 0, 1),
     BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kexec_nr, 0, 1),
     BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
   };
   struct sock_fprog program = {(unsigned short)(sizeof(filters) / sizeof(filters[0])), filters};
   if (syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, 0UL, &program) < 0) return PyErr_SetFromErrno(PyExc_OSError);
