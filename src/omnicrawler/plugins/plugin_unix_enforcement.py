@@ -179,8 +179,11 @@ static PyObject *install(PyObject *self, PyObject *args) {
   }
   close(ruleset); Py_RETURN_NONE;
 }
+static char sigsys_stack[65536];
 static void report_sigsys(int number, siginfo_t *info, void *context) {
-  fprintf(stderr, "SECCOMP_DENIED_NR=%d ARCH=%u CODE=%d\n", info->si_syscall, info->si_arch, info->si_code);
+  char text[128];
+  int length = snprintf(text, sizeof(text), "SECCOMP_DENIED_NR=%d ARCH=%u CODE=%d\n", info->si_syscall, info->si_arch, info->si_code);
+  write(2, text, length);
   _exit(128);
 }
 static PyObject *seccomp_install(PyObject *self, PyObject *args) {
@@ -215,9 +218,11 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   struct sock_fprog program = {(unsigned short)(sizeof(filters) / sizeof(filters[0])), filters};
   filters[2].k = SECCOMP_RET_TRAP;
   filters[5].k = SECCOMP_RET_TRAP;
+  stack_t stack = {sigsys_stack, 0, sizeof(sigsys_stack)};
+  sigaltstack(&stack, NULL);
   struct sigaction action = {0};
   action.sa_sigaction = report_sigsys;
-  action.sa_flags = SA_SIGINFO | SA_NODEFER;
+  action.sa_flags = SA_SIGINFO | SA_NODEFER | SA_ONSTACK;
   sigemptyset(&action.sa_mask);
   if (sigaction(SIGSYS, &action, NULL)) return PyErr_SetFromErrno(PyExc_OSError);
   if (syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, 0UL, &program) < 0) return PyErr_SetFromErrno(PyExc_OSError);
