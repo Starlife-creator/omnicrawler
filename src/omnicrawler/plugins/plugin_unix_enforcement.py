@@ -222,7 +222,7 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   fprintf(stderr, "AUDIT=%u EXPECT=%u\n", audit, AUDIT_ARCH_X86_64);
   filters[2].k = SECCOMP_RET_TRAP;
   filters[5].k = SECCOMP_RET_TRAP;
-  for (unsigned int i = 2; i < 6; ++i) if (i != 3) filters[i].k = SECCOMP_RET_ALLOW;
+  filters[2].k = SECCOMP_RET_TRAP;
   stack_t stack = {sigsys_stack, 0, sizeof(sigsys_stack)};
   sigaltstack(&stack, NULL);
   fprintf(stderr, "HANDLER=%p\n", (void *)&report_sigsys);
