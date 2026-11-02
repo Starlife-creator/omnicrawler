@@ -247,6 +247,8 @@ def _native_helper():
 def _native_landlock(
     handled: int, read_paths: Sequence[Path], write_paths: Sequence[Path]
 ) -> None:
+    if os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("OMNICRAWL_PLUGIN_SANDBOX"):
+        raise RuntimeError("LANDLOCK_PARENT: " + os.environ["PYTEST_CURRENT_TEST"])
     _native_helper().install(
         handled,
         tuple(str(path) for path in read_paths),
@@ -259,9 +261,6 @@ def _landlock(access_fs: int, read_paths: Sequence[Path], write_paths: Sequence[
 
     if sys.platform != "linux":
         raise OSError(22, "Landlock is unavailable on this platform")
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        sys.stderr.write("LANDLOCK_TRACE: " + os.environ["PYTEST_CURRENT_TEST"] + "\n")
-        sys.stderr.flush()
     libc = ctypes.CDLL(None, use_errno=True)
     libc.syscall.restype = ctypes.c_long
 
