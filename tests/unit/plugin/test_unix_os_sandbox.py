@@ -136,6 +136,8 @@ def test_darwin_launch_wraps_command_and_deletes_profile(
         assert "(deny network*)" in profile
         assert '(allow file-read*\n  ; dyld' in profile
         assert '(literal "/")' in profile
+        assert '(subpath "/private/etc")' not in profile
+        assert '(subpath "/etc")' not in profile
         assert all(not line.strip().startswith("#") for line in profile.splitlines())
         assert f"(subpath {enforcement._quote(root)})" in profile
     assert not Path(command[2]).exists()
