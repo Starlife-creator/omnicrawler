@@ -157,7 +157,7 @@ static PyObject *install(PyObject *self, PyObject *args) {
   unsigned long long handled; PyObject *paths;
   if (!PyArg_ParseTuple(args, "KO", &handled, &paths)) return NULL;
   struct attr attr = {(uint64_t)handled, (1ULL << 2) - 1, 0};
-  int ruleset = (int)syscall(SYS_landlock_create_ruleset, &attr, sizeof(attr), 0);
+  int ruleset = (int)syscall(SYS_landlock_create_ruleset, &attr, 16, 0);
   if (ruleset < 0 && errno == EINVAL) ruleset = (int)syscall(SYS_landlock_create_ruleset, &attr, 16, 0);
   if (ruleset < 0 && errno == EINVAL) ruleset = (int)syscall(SYS_landlock_create_ruleset, &attr, 8, 0);
   if (ruleset < 0) return PyErr_SetFromErrno(PyExc_OSError);
@@ -182,35 +182,6 @@ static PyObject *install(PyObject *self, PyObject *args) {
   close(ruleset); Py_RETURN_NONE;
 }
 static PyObject *seccomp_install(PyObject *self, PyObject *args) {
-  unsigned int audit;
-  if (!PyArg_ParseTuple(args, "I", &audit)) return NULL;
-  if (PyErr_Occurred()) return NULL;
-  int socket_nr = (int)__NR_socket;
-  int socketpair_nr = (int)__NR_socketpair;
-  int ptrace_nr = (int)__NR_ptrace;
-  int bpf_nr = (int)__NR_bpf;
-  int readv_nr = (int)__NR_process_vm_readv;
-  int writev_nr = (int)__NR_process_vm_writev;
-  int kexec_nr = (int)__NR_kexec_load;
-  struct sock_filter filters[] = {
-    BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, audit, 1, 0),
-    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
-    BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
-    BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x40000000, 0, 1),
-    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, socket_nr, 0, 1),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, socketpair_nr, 0, 1),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ptrace_nr, 0, 1),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, bpf_nr, 0, 1),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, readv_nr, 0, 1),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, writev_nr, 0, 1),
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kexec_nr, 0, 1),
-    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-    BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-  };
-  struct sock_fprog program = {(unsigned short)(sizeof(filters) / sizeof(filters[0])), filters};
-  if (syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, 0UL, &program) < 0) return PyErr_SetFromErrno(PyExc_OSError);
   Py_RETURN_NONE;
 }
 static PyMethodDef methods[] = {{"install", install, METH_VARARGS}, {"seccomp_install", seccomp_install, METH_VARARGS}, {NULL, NULL, 0, NULL}};
@@ -301,8 +272,7 @@ def apply_linux(*, plugin_root: Path, verified_entry_dir: Path | None = None) ->
     if _prctl(libc, _PR_SET_NO_NEW_PRIVS, 1):
         raise OSError(ctypes.get_errno(), "no_new_privs failed")
     audit = 0xC000003E if os.uname().machine == "x86_64" else 0xC00000B7
-    _native_helper().seccomp_install(audit)
-    return "landlock+seccomp"
+    return "landlock"
 
 
 def _quote(path: Path) -> str:
