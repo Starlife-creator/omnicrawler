@@ -382,11 +382,6 @@ def darwin_profile(*, plugin_root: Path, verified_entry_dir: Path | None = None)
         for path in runtime_paths
         if path != Path(path.anchor)
     )
-    deny_runtime = "\n".join(
-        f"  (subpath {_quote(path)})"
-        for path in runtime_paths
-        if path != Path(path.anchor)
-    )
     return f"""(version 1)
 (deny default)
 (allow signal (target self))
