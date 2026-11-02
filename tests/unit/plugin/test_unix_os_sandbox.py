@@ -153,7 +153,9 @@ def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
                 assert operation in (enforcement._BPF_JEQ, enforcement._BPF_JSET)
                 assert instruction.code & 0x07 == enforcement._BPF_JMP
                 old_pc = pc
+                print("IF", bool(matched), flush=True)
                 if matched:
+                    print("TRUE-BRANCH", flush=True)
                     pc = pc + 1 + instruction.jt
                 else:
                     pc = pc + 1 + instruction.jf
