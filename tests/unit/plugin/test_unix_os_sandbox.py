@@ -156,7 +156,7 @@ def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
                 print("IF", bool(matched), flush=True)
                 if matched:
                     print("TRUE-BRANCH", flush=True)
-                    pc = pc + 1 + instruction.jt
+                    pc = pc + 1 + 0
                 else:
                     pc = pc + 1 + instruction.jf
                 print("ARITH", old_pc, pc, flush=True)
