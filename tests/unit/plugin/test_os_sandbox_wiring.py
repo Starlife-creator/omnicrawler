@@ -5,8 +5,9 @@
 """
 from __future__ import annotations
 
-from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
+from pathlib import Path
 
 import pytest
 
@@ -132,4 +133,31 @@ def test_darwin_launcher_prefixes_command(
     session = _session(tmp_path)
     session.start()
     assert fake_popen.call_args.args[0][:3] == ["sandbox-exec", "-p", "profile"]
+    session.end()
+
+
+def test_linux_parent_precompiles_helper_into_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from omnicrawler.plugins import plugin_unix_enforcement
+
+    monkeypatch.setattr(plugin_sandbox.sys, "platform", "linux")
+    monkeypatch.setattr(
+        plugin_sandbox, "resolve_sandbox_mode",
+        lambda **_kwargs: ("os", "Landlock 启用"),
+    )
+    monkeypatch.setattr(
+        plugin_sandbox.plugin_backend, "resolve_backend_command",
+        lambda: (["python", "-I", "-S", "plugin_subprocess.py"], 30.0),
+    )
+    helper = SimpleNamespace(__file__=str(tmp_path / "helper.cpython-312.so"))
+    monkeypatch.setattr(plugin_unix_enforcement, "_native_helper", lambda: helper)
+    monkeypatch.setattr(plugin_unix_enforcement, "_standard_library_roots", lambda: [])
+    fake_popen = MagicMock()
+    fake_popen.return_value.poll.return_value = 0
+    monkeypatch.setattr(plugin_sandbox.subprocess, "Popen", fake_popen)
+
+    session = _session(tmp_path)
+    session.start()
+    assert fake_popen.call_args.kwargs["env"]["OMNICRAWL_LANDLOCK_HELPER"] == helper.__file__
     session.end()

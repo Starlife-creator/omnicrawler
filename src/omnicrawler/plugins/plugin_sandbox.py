@@ -160,6 +160,8 @@ class PluginSubprocessSession:
             cwd=self.plugin_root,
             env=_subprocess_env(),
         )
+        if mode == "os":
+            kwargs["env"]["OMNICRAWL_PLUGIN_SANDBOX"] = "1"
         if sys.platform == "win32":
             # CREATE_NO_WINDOW（0x08000000，env_checker.py:62 模式）
             kwargs["creationflags"] = 0x08000000
@@ -184,6 +186,8 @@ class PluginSubprocessSession:
                 from .plugin_unix_enforcement import _native_helper
                 helper = _native_helper()  # compile in parent before child confinement
                 kwargs["env"]["OMNICRAWL_LANDLOCK_HELPER"] = helper.__file__
+            # Keep the helper valid while the child host imports it. It is a
+            # module containing irreversible confinement, not plugin payload.
         try:
             if mode == "os" and sys.platform == "darwin":
                 from .plugin_unix_enforcement import darwin_launch
