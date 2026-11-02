@@ -53,28 +53,26 @@ jobs:
       - name: 真实内核与 Seatbelt 隔离用例
         run: python -m pytest tests/unit/plugin/test_unix_os_sandbox.py -q -p no:cacheprovider
         shell: bash
-      - name: Seatbelt 最终 profile 诊断
+      - name: Seatbelt 最小运行时二分
         if: failure() && runner.os == 'macOS'
         run: |
           python - <<'PY'
           from pathlib import Path
           from omnicrawler.plugins import plugin_unix_enforcement as p
-          profile = p.darwin_profile(plugin_root=Path.cwd())
-          print('=== FINAL_PROFILE ===')
-          print(profile)
-          import re
-          import subprocess
-          import sys
-          import tempfile
-          path = Path(tempfile.gettempdir()) / 'omnicrawler-seatbelt-full.sb'
-          path.write_text(profile, encoding='utf-8')
-          minimal = '(version 1) (deny default) (allow process-exec process-fork) (allow file-read* (subpath "/System/Library") (subpath "/usr") (subpath "/Library")) (allow mach-lookup) (allow sysctl-read)'
-          minimal_path = Path(tempfile.gettempdir()) / 'omnicrawler-seatbelt-min.sb'
-          minimal_path.write_text(minimal, encoding='utf-8')
-          for candidate in (path, minimal_path):
-              for target in ('/etc/passwd', '/private/etc/passwd'):
-                  probe = subprocess.run(['/usr/bin/sandbox-exec', '-f', str(candidate), sys.executable, '-S', '-c', f'open("{target}").read()'], capture_output=True, text=True)
-                  print('PROBE', candidate.name, target, probe.returncode, probe.stderr[:300])
+          import subprocess, sys, tempfile
+          base = p.darwin_profile(plugin_root=Path(tempfile.gettempdir()))
+          groups = {
+              'runtime': '(allow file-read* (subpath "/System/Library") (subpath "/usr") (subpath "/Library") (subpath "/private/var/db/dyld"))',
+              'runtime-etc': '(allow file-read* (subpath "/System/Library") (subpath "/usr") (subpath "/Library") (subpath "/private/var/db/dyld") (subpath "/private/etc"))',
+              'runtime-root': '(allow file-read* (subpath "/System/Library") (subpath "/usr") (subpath "/Library") (subpath "/private/var/db/dyld") (literal "/"))',
+              'runtime-metadata': '(allow file-read* (subpath "/System/Library") (subpath "/usr") (subpath "/Library") (subpath "/private/var/db/dyld")) (allow file-read-metadata)',
+          }
+          for name, allow in groups.items():
+              profile = base.replace('(deny default)', '(deny default) ' + allow)
+              path = Path(tempfile.gettempdir()) / f'seatbelt-{name}.sb'
+              path.write_text(profile, encoding='utf-8')
+              probe = subprocess.run(['/usr/bin/sandbox-exec', '-f', str(path), sys.executable, '-S', '-c', 'print("STARTED")'], capture_output=True, text=True)
+              print('GROUP', name, 'returncode', probe.returncode, probe.stdout.strip(), probe.stderr[:200])
           PY
         shell: bash
       # F1 公共契约夹具 + F2 差分 + 隔离/路由/适配器/broker 全套
