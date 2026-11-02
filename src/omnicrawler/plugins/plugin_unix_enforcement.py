@@ -218,21 +218,6 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
     BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
   };
   struct sock_fprog program = {(unsigned short)(sizeof(filters) / sizeof(filters[0])), filters};
-  for (unsigned int i = 0; i < program.len; ++i) fprintf(stderr, "F%u=%u,%u,%u,%u\n", i, filters[i].code, filters[i].jt, filters[i].jf, filters[i].k);
-  fprintf(stderr, "AUDIT=%u EXPECT=%u\n", audit, AUDIT_ARCH_X86_64);
-  filters[2].k = SECCOMP_RET_TRAP;
-  filters[5].k = SECCOMP_RET_ALLOW;
-  filters[6].k = SECCOMP_RET_TRAP;
-  for (unsigned int i = 0; i < 14; ++i) { filters[i].code = 0; filters[i].k = 0; filters[i].jt = 0; filters[i].jf = 0; }
-  stack_t stack = {sigsys_stack, 0, sizeof(sigsys_stack)};
-  sigaltstack(&stack, NULL);
-  fprintf(stderr, "HANDLER=%p\n", (void *)&report_sigsys);
-  fprintf(stderr, "ARCH_OFF=%zu NR_OFF=%zu SOCKET_NR=%d\n", offsetof(struct seccomp_data, arch), offsetof(struct seccomp_data, nr), socket_nr);
-  struct sigaction action = {0};
-  action.sa_sigaction = report_sigsys;
-  action.sa_flags = SA_SIGINFO | SA_NODEFER | SA_ONSTACK;
-  sigemptyset(&action.sa_mask);
-  if (sigaction(SIGSYS, &action, NULL)) return PyErr_SetFromErrno(PyExc_OSError);
   if (syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, 0UL, &program) < 0) return PyErr_SetFromErrno(PyExc_OSError);
   Py_RETURN_NONE;
 }
