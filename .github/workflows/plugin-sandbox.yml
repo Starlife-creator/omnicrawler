@@ -57,16 +57,17 @@ jobs:
         if: failure() && runner.os == 'macOS'
         run: |
           set +e
-          for group in stdlib macos_runtime plugin_literal dev_etc system library usr private_etc_ssl; do
+          PYEXE="$(python -c 'import sys; print(sys.executable)')"
+          for group in only_system only_library only_usr only_etc_ssl only_literal_root only_framework only_etc_literals no_dev; do
             case "$group" in
-              stdlib) allow='(subpath "/Library/Frameworks/Python.framework")' ;;
-              macos_runtime) allow='(subpath "/opt/hostedtoolcache")' ;;
-              plugin_literal) allow='(literal "/")' ;;
-              dev_etc) allow='(subpath "/dev") (literal "/private/etc/resolv.conf") (literal "/private/etc/hosts")' ;;
-              system) allow='(subpath "/System/Library")' ;;
-              library) allow='(subpath "/Library/Apple") (subpath "/Library/Frameworks") (subpath "/Library/Developer")' ;;
-              usr) allow='(subpath "/usr/bin") (subpath "/bin") (subpath "/usr/local/share") (subpath "/usr/share")' ;;
-              private_etc_ssl) allow='(subpath "/private/etc/ssl")' ;;
+              only_system) allow='(subpath "/System/Library")' ;;
+              only_library) allow='(subpath "/Library/Apple") (subpath "/Library/Frameworks/Python.framework") (subpath "/Library/Frameworks") (subpath "/Library/Developer")' ;;
+              only_usr) allow='(subpath "/usr/bin") (subpath "/bin") (subpath "/usr/local/share") (subpath "/usr/share")' ;;
+              only_etc_ssl) allow='(subpath "/private/etc/ssl")' ;;
+              only_literal_root) allow='(literal "/")' ;;
+              only_framework) allow='(subpath "/Library/Frameworks/Python.framework")' ;;
+              only_etc_literals) allow='(literal "/private/etc/resolv.conf") (literal "/private/etc/hosts")' ;;
+              no_dev) allow='(subpath "/Library/Frameworks/Python.framework")' ;;
             esac
             cat > /tmp/diag-$group.sb <<EOF
           (version 1)
@@ -75,21 +76,17 @@ jobs:
           (allow process-exec process-fork)
           (allow mach-lookup)
           (allow sysctl-read)
-          (allow system-info)
-          (allow iokit-open)
-          (allow file-read* file-write* (subpath "/dev"))
           (allow file-read*
             $allow
           )
           (allow process-exec
-            (subpath "$(python -c 'import sys,pathlib; print(pathlib.Path(sys.executable).resolve().parent)')")
+            (subpath "$(dirname "$PYEXE")")
             (literal "/usr/bin/sandbox-exec"))
-          (allow file-read* (literal "/"))
           (allow file-write* (literal "/dev/null"))
           (deny network*)
           EOF
             echo "=== group=$group ==="
-            sandbox-exec -f /tmp/diag-$group.sb "$(python -c 'import sys; print(sys.executable)')" -S -c "open('/etc/passwd').read(); print('ALLOWED')" 2>&1 | head -2
+            sandbox-exec -f /tmp/diag-$group.sb "$PYEXE" -S -c "import sys; open('/etc/passwd').read(); sys.exit(0)" 2>&1 | head -3
             echo "exit=$?"
           done
           set -e
