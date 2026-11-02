@@ -179,9 +179,14 @@ static PyObject *install(PyObject *self, PyObject *args) {
   }
   close(ruleset); Py_RETURN_NONE;
 }
+static void report_sigsys(int number, siginfo_t *info, void *context) {
+  fprintf(stderr, "SECCOMP_DENIED_NR=%d ARCH=%u CODE=%d\n", info->si_syscall, info->si_arch, info->si_code);
+  _exit(128);
+}
 static PyObject *seccomp_install(PyObject *self, PyObject *args) {
   unsigned long audit;
   if (!PyArg_ParseTuple(args, "k", &audit)) return NULL;
+  fprintf(stderr, "AUDIT=%lu EXPECT=%u\n", audit, AUDIT_ARCH_X86_64);
   if (PyErr_Occurred()) return NULL;
   int socket_nr = audit == AUDIT_ARCH_X86_64 ? 41 : 198;
   int socketpair_nr = audit == AUDIT_ARCH_X86_64 ? 53 : 199;
@@ -208,6 +213,13 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
     BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
   };
   struct sock_fprog program = {(unsigned short)(sizeof(filters) / sizeof(filters[0])), filters};
+  filters[2].k = SECCOMP_RET_TRAP;
+  filters[5].k = SECCOMP_RET_TRAP;
+  struct sigaction action = {0};
+  action.sa_sigaction = report_sigsys;
+  action.sa_flags = SA_SIGINFO | SA_NODEFER;
+  sigemptyset(&action.sa_mask);
+  if (sigaction(SIGSYS, &action, NULL)) return PyErr_SetFromErrno(PyExc_OSError);
   if (syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, 0UL, &program) < 0) return PyErr_SetFromErrno(PyExc_OSError);
   Py_RETURN_NONE;
 }
