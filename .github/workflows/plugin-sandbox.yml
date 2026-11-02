@@ -58,7 +58,9 @@ jobs:
         run: |
           set +e
           PYEXE="$(python -c 'import sys; print(sys.executable)')"
-          for group in only_system only_library only_usr only_etc_ssl only_literal_root only_framework only_etc_literals no_dev; do
+          PYEXE_DIR="$(dirname "$PYEXE")"
+          PYEXE_BASE="$(python -c 'import sys,pathlib; print(pathlib.Path(sys.executable).resolve().parent)')"
+          for group in only_system only_library only_usr only_etc_ssl only_literal_root only_framework only_etc_literals no_dev full_test; do
             case "$group" in
               only_system) allow='(subpath "/System/Library")' ;;
               only_library) allow='(subpath "/Library/Apple") (subpath "/Library/Frameworks/Python.framework") (subpath "/Library/Frameworks") (subpath "/Library/Developer")' ;;
@@ -68,6 +70,7 @@ jobs:
               only_framework) allow='(subpath "/Library/Frameworks/Python.framework")' ;;
               only_etc_literals) allow='(literal "/private/etc/resolv.conf") (literal "/private/etc/hosts")' ;;
               no_dev) allow='(subpath "/Library/Frameworks/Python.framework")' ;;
+              full_test) allow='(subpath "/Library/Frameworks/Python.framework") (subpath "/opt/hostedtoolcache") (literal "/") (subpath "/usr/bin") (subpath "/bin") (subpath "/System/Library") (subpath "/Library/Apple") (subpath "/Library/Frameworks/Python.framework") (subpath "/Library/Frameworks") (subpath "/Library/Developer") (subpath "/System/Volumes/Preboot") (subpath "/usr/local/share") (subpath "/usr/share") (subpath "/private/var/db/dyld") (subpath "/dev") (subpath "/private/etc/ssl") (literal "/private/etc/resolv.conf") (literal "/private/etc/hosts")' ;;
             esac
             cat > /tmp/diag-$group.sb <<EOF
           (version 1)
@@ -76,11 +79,14 @@ jobs:
           (allow process-exec process-fork)
           (allow mach-lookup)
           (allow sysctl-read)
+          (allow file-read* file-write* (subpath "/dev"))
           (allow file-read*
             $allow
           )
           (allow process-exec
-            (subpath "$(dirname "$PYEXE")")
+            (subpath "$PYEXE")
+            (subpath "$PYEXE_DIR")
+            (subpath "$PYEXE_BASE")
             (literal "/usr/bin/sandbox-exec"))
           (allow file-write* (literal "/dev/null"))
           (deny network*)
