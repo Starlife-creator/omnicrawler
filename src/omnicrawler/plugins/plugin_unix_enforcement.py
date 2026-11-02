@@ -216,6 +216,7 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
     BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
   };
   struct sock_fprog program = {(unsigned short)(sizeof(filters) / sizeof(filters[0])), filters};
+  for (unsigned int i = 0; i < program.len; ++i) fprintf(stderr, "F%u=%u,%u,%u,%u\n", i, filters[i].code, filters[i].jt, filters[i].jf, filters[i].k);
   fprintf(stderr, "AUDIT=%u EXPECT=%u\n", audit, AUDIT_ARCH_X86_64);
   filters[2].k = SECCOMP_RET_TRAP;
   filters[5].k = SECCOMP_RET_TRAP;
