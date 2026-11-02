@@ -65,51 +65,6 @@ jobs:
             -q -p no:cacheprovider
         shell: bash
 
-      - name: macOS 崩溃报告诊断
-        if: failure() && matrix.os == 'macos-latest'
-        run: |
-          log show --style compact --last 10m --predicate 'process == "sandboxd" OR eventMessage CONTAINS "Python"' | tail -80 || true
-          python - <<'PY'
-          import pathlib, subprocess, sys, tempfile
-          from omnicrawler.plugins.plugin_unix_enforcement import darwin_profile
-          executable = pathlib.Path(sys.executable).resolve()
-          profile = darwin_profile(plugin_root=pathlib.Path.cwd())
-          process = '(allow process-exec process-fork)'
-          files = '(allow file-read* file-write*)'
-          roots = [
-              '/System', '/System/Library', '/Library', '/Library/Frameworks',
-              '/usr', '/usr/bin', '/usr/lib', '/usr/share', '/private',
-              '/private/etc', '/private/var', '/private/var/db', '/private/var/db/dyld',
-              '/dev', '/Applications', '/Library/Apple', '/Library/Developer',
-              '/Library/Frameworks/Python.framework',
-              '/Library/Frameworks/Python.framework/Versions/3.12',
-              '/Users/runner', '/Users/runner/hostedtoolcache', '/opt', '/opt/homebrew',
-          ]
-          probes = [('process-all-files', process + files), ('product', profile)]
-          probes += [(path, process + f'(allow file-read* file-write* (subpath "{path}"))') for path in roots]
-          group_a = ' '.join(f'(subpath "{path}")' for path in ['/System', '/Library', '/usr', '/private/etc'])
-          group_b = ' '.join(f'(subpath "{path}")' for path in ['/private/var', '/dev', '/opt'])
-          group_c = ' '.join(f'(subpath "{path}")' for path in ['/Applications', '/Users/runner'])
-          probes += [
-              ('groups-a', profile + f'(allow file-read* {group_a})'),
-              ('groups-ab', profile + f'(allow file-read* {group_a} {group_b})'),
-              ('groups-abc', profile + f'(allow file-read* {group_a} {group_b} {group_c})'),
-              ('groups-c', profile + f'(allow file-read* {group_c})'),
-              ('users-runner', profile + '(allow file-read* (subpath "/Users/runner"))'),
-              ('private-var', profile + '(allow file-read* (subpath "/private/var"))'),
-              ('etc-system', profile + '(allow file-read* (subpath "/private/etc")(subpath "/System"))'),
-              ('literal-root', profile + '(allow file-read* (literal "/"))'),
-              ('literal-root-groups', profile + f'(allow file-read* (literal "/") {group_a} {group_b} {group_c})'),
-          ]
-          for label, extra in probes:
-              with tempfile.NamedTemporaryFile('w', suffix='.sb') as stream:
-                  stream.write('(version 1)(deny default)' + extra)
-                  stream.flush()
-                  result = subprocess.run(['/usr/bin/sandbox-exec', '-f', stream.name, str(executable), '-S', '-c', 'print("STARTED")'], capture_output=True, text=True, timeout=15)
-              print(label, result.returncode, result.stdout.strip(), result.stderr.strip(), flush=True)
-          print(profile, flush=True)
-          PY
-        shell: bash
 
   appcontainer-spike:
     name: Windows AppContainer 探测 spike（fail-fast 探针）
