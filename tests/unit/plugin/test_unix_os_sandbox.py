@@ -69,34 +69,14 @@ def test_linux_passes_verified_entry_and_runtime_roots(
     calls: list[object] = []
     monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.setattr(enforcement, "_landlock", lambda access, paths: calls.append(paths))
-    program = ctypes.c_int()
-    monkeypatch.setattr(enforcement, "_sock_filter", lambda: (b"array", program))
-    monkeypatch.setattr(os, "uname", lambda: os.uname_result(("Linux", "host", "6", "v", "x86_64")), raising=False)
     monkeypatch.setattr(
         enforcement, "_standard_library_roots", lambda: (tmp_path / "stdlib",)
     )
     monkeypatch.setattr(enforcement, "_linux_runtime_roots", lambda: ())
-
-    class _Native:
-        @staticmethod
-        def seccomp_install(audit: int) -> None:
-            calls.append(audit)
-
-    monkeypatch.setattr(enforcement, "_native_helper", lambda: _Native())
-
-    class _Libc:
-        @staticmethod
-        def syscall(*args: object) -> int:
-            calls.append(args)
-            return 0
-
-    monkeypatch.setattr(ctypes, "CDLL", lambda *args, **kwargs: _Libc())
     root = tmp_path / "plugin"
     verified = tmp_path / "verified"
-    assert enforcement.apply_linux(plugin_root=root, verified_entry_dir=verified) == "landlock+seccomp"
+    assert enforcement.apply_linux(plugin_root=root, verified_entry_dir=verified) == "landlock"
     assert root in calls[0] and verified in calls[0]
-    assert any(len(call) > 3 and call[1] == enforcement._PR_SET_NO_NEW_PRIVS for call in calls[1:] if isinstance(call, tuple))
-    assert calls[-1] == 0xC000003E
 
 
 def test_landlock_failures_are_not_silently_ignored(
@@ -131,23 +111,22 @@ def test_darwin_launch_requires_seatbelt(monkeypatch: pytest.MonkeyPatch, tmp_pa
             pass
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="requires Linux syscall numbers")
-def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
-    """Evaluate the exact BPF control flow, including x32 and wrong ABIs."""
-    array, _program = enforcement._sock_filter()
-    audit = 0xC000003E if os.uname().machine == "x86_64" else 0xC00000B7
-    assert [(item.code, item.jt, item.jf, item.k) for item in array[:6]] == [
-        (32, 0, 0, 4), (21, 0, 1, audit), (6, 0, 0, enforcement._RET_KILL),
-        (32, 0, 0, 0), (69, 0, 1, 0x40000000), (6, 0, 0, enforcement._RET_KILL),
-    ]
-    # Each dangerous syscall jumps exactly one instruction to ERRNO. The final
-    # comparison therefore also has a fall-through to ALLOW for ordinary calls.
-    assert array[-2].k == enforcement._RET_ALLOW
-    assert array[-1].k == enforcement._RET_ERRNO
-    assert all((item.code, item.jt, item.jf) == (21, 0, 1) for item in array[6:-2])
+@pytest.mark.skipif(sys.platform != "linux", reason="requires Linux Landlock ABI")
+def test_landlock_abi_below_4_refuses_to_load() -> None:
+    """Landlock network rules need ABI >= 4; older kernels must fail closed."""
+    import ctypes
 
-    # The real child below exercises the kernel-installed C filter, including
-    # a normal exit and blocked socket; the static branch check cannot replace it.
+    class _Libc:
+        @staticmethod
+        def syscall(*args: object) -> int:
+            return 3  # ABI 3 — no network handled support
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(ctypes, "CDLL", lambda *a, **k: _Libc())
+    monkeypatch.setattr(sys, "platform", "linux")
+    with pytest.raises(OSError, match="ABI >= 4"):
+        enforcement._landlock(0x1FFF, [])
+    monkeypatch.undo()
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="requires the real Linux kernel")
