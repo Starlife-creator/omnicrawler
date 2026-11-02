@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           strace -f -o /tmp/trace.txt python -I -S -c 'import importlib.util; from pathlib import Path; spec=importlib.util.spec_from_file_location("enforcement","src/omnicrawler/plugins/plugin_unix_enforcement.py"); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); module.apply_linux(plugin_root=Path("src/omnicrawler/plugins"))' || true
-          tail -80 /tmp/trace.txt
+          strace -f -e trace=%signal -s 200 python -I -S -c 'import importlib.util; from pathlib import Path; spec=importlib.util.spec_from_file_location("enforcement","src/omnicrawler/plugins/plugin_unix_enforcement.py"); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); module.apply_linux(plugin_root=Path("src/omnicrawler/plugins"))' || true
       - name: 真实内核与 Seatbelt 隔离用例
         run: python -m pytest tests/unit/plugin/test_unix_os_sandbox.py -q -p no:cacheprovider
         shell: bash

@@ -207,7 +207,6 @@ static PyObject *seccomp_install(PyObject *self, PyObject *args) {
     BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
   };
   struct sock_fprog program = {(unsigned short)(sizeof(filters) / sizeof(filters[0])), filters};
-  for (unsigned int i = 0; i < program.len; ++i) fprintf(stderr, "F%u=%u,%u,%u,%u\n", i, filters[i].code, filters[i].jt, filters[i].jf, filters[i].k);
   if (syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, 0UL, &program) < 0) return PyErr_SetFromErrno(PyExc_OSError);
   Py_RETURN_NONE;
 }
