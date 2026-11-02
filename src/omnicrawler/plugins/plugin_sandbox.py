@@ -70,7 +70,7 @@ def _subprocess_env() -> dict[str, str]:
     Windows 解释器初始化依赖 SystemRoot/TEMP——全量替换会丢，历史引发
     _Py_HashRandomization_Init 偶发失败，故继承保留这四个键。
     """
-    env = {"OMNICRAWL_PLUGIN_SANDBOX": "1"}
+    env = {}
     for key in ("SystemRoot", "SYSTEMROOT", "TEMP", "TMP"):
         if key in os.environ:
             env[key] = os.environ[key]
