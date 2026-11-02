@@ -12,7 +12,7 @@ name: plugin-sandbox
 
 on:
   push:
-    branches: [main]
+    branches: [main, preacceptance-closure-20261101]
     paths:
       - "src/omnicrawler/plugins/**"
       - "packaging/OmniCrawler-SandboxHost.spec"
