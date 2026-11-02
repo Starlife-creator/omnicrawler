@@ -1,11 +1,13 @@
 """A-P2-4：子进程 sys.modules 裁剪纯函数与 in_process 信任目录裁决回归测试。"""
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from omnicrawler.plugins import plugin_router
 from omnicrawler.plugins.plugin_subprocess import (
     BANNED_SUBPROCESS_MODULES,
+    _apply_unix_enforcement,
     _apply_windows_job_object,
     strip_banned_modules,
 )
@@ -39,6 +41,19 @@ def test_strip_operates_on_passed_dict_without_global_side_effects() -> None:
     before = set(sys.modules)
     strip_banned_modules(dict(sys.modules))  # 传拷贝：不触达宿主全局缓存
     assert set(sys.modules) == before
+
+
+def test_sandbox_escape_does_not_compile_or_apply_os_confinement(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.delenv("OMNICRAWL_PLUGIN_SANDBOX", raising=False)
+
+    def fail(*args, **kwargs) -> None:
+        raise AssertionError("escape mode must not prepare the native helper")
+
+    monkeypatch.setattr("pathlib.Path.exists", fail)
+    _apply_unix_enforcement(str(tmp_path), "")
 
 
 def test_trusted_local_dirs_parses_and_dedupes() -> None:
