@@ -178,9 +178,10 @@ static PyObject *install(PyObject *self, PyObject *args) {
   close(ruleset); Py_RETURN_NONE;
 }
 static PyObject *seccomp_install(PyObject *self, PyObject *args) {
-  unsigned int audit;
-  fprintf(stderr, "NATIVE_ARGC=%ld NATIVE_AUDIT=%u EXPECTED=%u\n", (long)PyTuple_Size(args), audit, AUDIT_ARCH_X86_64);
-  if (!PyArg_ParseTuple(args, "I", &audit)) return NULL;
+  PyObject *audit_object = PyTuple_GetItem(args, 0);
+  if (audit_object == NULL || !PyLong_Check(audit_object)) return PyErr_Format(PyExc_TypeError, "audit must be an integer");
+  unsigned int audit = (unsigned int)PyLong_AsUnsignedLong(audit_object);
+  if (PyErr_Occurred()) return NULL;
   int socket_nr = audit == AUDIT_ARCH_X86_64 ? 41 : 198;
   int socketpair_nr = audit == AUDIT_ARCH_X86_64 ? 53 : 199;
   int ptrace_nr = audit == AUDIT_ARCH_X86_64 ? 101 : 117;
