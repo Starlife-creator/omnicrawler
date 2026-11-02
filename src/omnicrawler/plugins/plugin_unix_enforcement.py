@@ -156,8 +156,10 @@ struct beneath { uint64_t allowed_access; int32_t parent_fd; };
 static PyObject *install(PyObject *self, PyObject *args) {
   unsigned long long handled; PyObject *paths;
   if (!PyArg_ParseTuple(args, "KO", &handled, &paths)) return NULL;
-  struct attr attr = {(uint64_t)handled, 0, 0};
-  int ruleset = (int)syscall(SYS_landlock_create_ruleset, &attr, 8, 0);
+  struct attr attr = {(uint64_t)handled, (1ULL << 2) - 1, 0};
+  int ruleset = (int)syscall(SYS_landlock_create_ruleset, &attr, sizeof(attr), 0);
+  if (ruleset < 0 && errno == EINVAL) ruleset = (int)syscall(SYS_landlock_create_ruleset, &attr, 16, 0);
+  if (ruleset < 0 && errno == EINVAL) ruleset = (int)syscall(SYS_landlock_create_ruleset, &attr, 8, 0);
   if (ruleset < 0) return PyErr_SetFromErrno(PyExc_OSError);
   Py_ssize_t count = PySequence_Size(paths);
   for (Py_ssize_t i = 0; i < count; ++i) {
