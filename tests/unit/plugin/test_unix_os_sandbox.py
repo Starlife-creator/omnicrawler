@@ -144,7 +144,6 @@ def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
         while pc < len(array):
             instruction = array[pc]
             print("TRACE", pc, instruction.code, instruction.jt, instruction.jf, instruction.k, accumulator, flush=True)
-            print("JUMP", (instruction.jt if (accumulator == instruction.k) else instruction.jf), flush=True)
             if instruction.code & 0x07 == enforcement._BPF_LD:
                 accumulator = number if instruction.k == 0 else arch
             elif instruction.code & 0x07 == enforcement._BPF_JMP:
@@ -152,14 +151,13 @@ def test_seccomp_does_not_allow_nonmatching_syscalls() -> None:
                 matched = ((accumulator & instruction.k) != 0) if operation == enforcement._BPF_JSET else accumulator == instruction.k
                 assert operation in (enforcement._BPF_JEQ, enforcement._BPF_JSET)
                 assert instruction.code & 0x07 == enforcement._BPF_JMP
-                pc += (instruction.jt if matched else instruction.jf)
-                print("SELECT", pc, matched, flush=True)
+                pc = pc + 1 + (instruction.jt if matched else instruction.jf)
+                continue
             elif instruction.code & 0x07 == enforcement._BPF_RET:
                 return instruction.k
             else:
                 pytest.fail("unknown BPF operation")
             pc += 1
-            print("NEXT", pc, flush=True)
         pytest.fail("BPF program has no return")
 
     socket = enforcement._syscall_number("socket")
