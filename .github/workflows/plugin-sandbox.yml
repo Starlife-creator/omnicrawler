@@ -87,15 +87,17 @@ jobs:
           ]
           probes = [('process-all-files', process + files), ('product', profile)]
           probes += [(path, process + f'(allow file-read* file-write* (subpath "{path}"))') for path in roots]
+          group_a = ' '.join(f'(subpath "{path}")' for path in ['/System', '/Library', '/usr', '/private/etc'])
+          group_b = ' '.join(f'(subpath "{path}")' for path in ['/private/var', '/dev', '/opt'])
+          group_c = ' '.join(f'(subpath "{path}")' for path in ['/Applications', '/Users/runner'])
           probes += [
-              ('product-all-read', profile + '(allow file-read*)'),
-              ('root-read', profile + '(allow file-read* (subpath "/"))'),
-              ('root-read-no-etc', profile + '(allow file-read* (subpath "/"))' + '(deny file-read* (subpath "/private/etc"))'),
-              ('root-read-no-home', profile + '(allow file-read* (subpath "/"))' + '(deny file-read* (subpath "/Users"))'),
-              ('root-read-no-data', profile + '(allow file-read* (subpath "/"))' + '(deny file-read* (subpath "/private"))'),
-              ('root-read-no-tmp', profile + '(allow file-read* (subpath "/"))' + '(deny file-read* (subpath "/private/var/folders"))'),
-              ('root-read-no-preboot', profile + '(allow file-read* (subpath "/"))' + '(deny file-read* (subpath "/System/Volumes/Preboot"))'),
-              ('root-read-no-etc-and-tmp', profile + '(allow file-read* (subpath "/"))' + '(deny file-read* (subpath "/private/etc"))' + '(deny file-read* (subpath "/private/var/folders"))'),
+              ('groups-a', profile + f'(allow file-read* {group_a})'),
+              ('groups-ab', profile + f'(allow file-read* {group_a} {group_b})'),
+              ('groups-abc', profile + f'(allow file-read* {group_a} {group_b} {group_c})'),
+              ('groups-c', profile + f'(allow file-read* {group_c})'),
+              ('users-runner', profile + '(allow file-read* (subpath "/Users/runner"))'),
+              ('private-var', profile + '(allow file-read* (subpath "/private/var"))'),
+              ('etc-system', profile + '(allow file-read* (subpath "/private/etc")(subpath "/System"))'),
           ]
           for label, extra in probes:
               with tempfile.NamedTemporaryFile('w', suffix='.sb') as stream:
