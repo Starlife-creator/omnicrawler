@@ -32,6 +32,7 @@ def _finalize_args(submission_dir: Path, manifest: bytes, maintainer_key: Path) 
         reviewer=None,
         review_comment=None,
         review_decision="approved",
+        registry=None,
     )
 
 
