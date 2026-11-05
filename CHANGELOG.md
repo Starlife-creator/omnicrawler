@@ -4,6 +4,19 @@
 
 ### 变更
 
+- docs: 用户指南与文档索引按 1.0.1 源码现状全面对齐。① 数字口径全部改为可复现真源：
+  内置模板 44 套（`templates list`）、Apify 18 个平台（`APIFY_ACTOR_MAP`）、Python 3.12+
+  （`requires-python`）、53 个顶层命令（`--help`）、19 个命令处理器模块、UA 指纹 10 条
+  （`fetching/stealth_enhanced.py`）、i18n 已译 460/2239 条（`tools/i18n_stats.py`）。
+  ② 删掉与实现不符的说法：数据库导出写 `outputs`（实际是 `storage.records.backends`，
+  且不支持 MySQL）、`auto-analyze` 需要 crawl4ai（实际自有 HTTP/浏览器栈）、`serve` 可远程
+  监控（实际只读本地）、模板"检测准确率 95/70/50%"（无对应实现，改为处理方式）。
+  ③ 归档限额对齐 `fetching/archives.py`（解压比 200:1、单文件 512MB、整包 2GB、10 000 条目），
+  `templates` 补齐 capture / verify-fixture / verification-history，补 12 个高级运维命令与
+  12 类错误分类。④ 索引侧：终端用户入口指向用户指南；三篇「归档入口」桩页移出第 2 节、
+  单列到归档区；修正 `docs/archive/README.md`（0.13.1→1.0.1）、`WINDOWS_PACKAGING.md`、
+  `TEST_REPORT.md`、`constraints/README.md`、`docs/FAQ.md` 的过时口径，`CONTRIBUTING.md`
+  的类型注解风格表述改为 PEP 604（不再暗示仍支持 3.10）。
 - refactor(scheduling): `change_detector` 的 HTML 抽取从 selectolax 的 **Modest 后端**
   (`selectolax.parser.HTMLParser`) 迁到 **lexbor** (`selectolax.lexbor.LexborHTMLParser`)，
   extras 上界随之 `selectolax>=0.2,<1` → `>=0.4.2,<2`（下界抬到 lexbor 实际存在的版本，

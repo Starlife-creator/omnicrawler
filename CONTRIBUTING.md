@@ -106,7 +106,7 @@ pre-commit hooks 会在提交时自动运行 ruff 和 mypy，从源头防止退�
 ## 提交流程
 
 1. **创建分支**：`feat/`、`fix/`、`refactor/`、`docs/`、`test/` 前缀
-2. **编写代码**：遵循类型注解规范（Python 3.10+ 风格：`str | None` 而非 `Optional[str]`）
+2. **编写代码**：遵循类型注解规范（PEP 604 风格：`str | None` 而非 `Optional[str]`）
 3. **补充测试**：新增功能必须带对应测试；可选/重型能力用 skip 优雅降级
 4. **本地验证**：运行 `pre-commit run --all-files` 确保门禁全绿
 5. **提交 PR**：PR 描述包含变更摘要、测试方式、是否触及架构原则

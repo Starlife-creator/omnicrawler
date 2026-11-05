@@ -9,7 +9,7 @@
 
 | 你是谁 | 先看这几篇 |
 |---|---|
-| 终端用户 | [低门槛使用指南](UX_GUIDE.md)、[FAQ](FAQ.md) |
+| 终端用户 | [用户指南](../OmniCrawler-用户指南.md)（从安装到排障的完整说明）、[低门槛使用指南](UX_GUIDE.md)、[FAQ](FAQ.md) |
 | 运维 / 部署 | [安装、运行与平台矩阵](INSTALLATION.md)、[生产部署指南](PRODUCTION_GUIDE.md)、[生产运行、恢复与质量验收](OPERATIONS.md) |
 | 桌面 GUI 用户 | [桌面运行、工作区与组件](DESKTOP_RUNTIME_1.4.md)、[桌面视觉与交互规范](GUI_DESIGN_2.1.md) |
 | 插件作者 | [插件契约](PLUGIN_CONTRACT.md)、[插件作者指南](AUTHOR_GUIDE.md)、[SDK 使用指南](SDK_USAGE.md) |
@@ -42,13 +42,9 @@
 
 ### 桌面与交互
 
-- [1.0.1 实机问题优化记录](LOCAL_OPTIMIZATION_2026-10-02.md)
-
 - [桌面运行、工作区与组件](DESKTOP_RUNTIME_1.4.md)
 - [可选组件管理](COMPONENTS.md)：离线信任、注册表事务、回滚和搬迁。
 - [2026-10-04 全面优化实施与验收](COMPREHENSIVE_OPTIMIZATION_2026-10-04.md)：本机 Full 实测、开发场景、证据与发布边界。
-- [2026-10-03 专项优化执行记录](OPTIMIZATION_EXECUTION_2026-10-03.md)：批次、验证边界与剩余工作。
-- [2026-10-03 专项优化基线](OPTIMIZATION_BASELINE_2026-10-03.md)：依赖归因、代表任务与未知指标。
 - [本地证据驱动的提取修复](REPAIR_WORKFLOW.md)：候选预览、分级应用、观察与恢复。
 - [选定交付文档分析](ARCHIVE_ANALYSIS.md)：事实回链、可选模型解释和阶段恢复。
 - [工作流参数化复用](TASK_REUSE_WORKFLOW.md)：试跑摘要、脱敏捕获、参数重填和重新验收。
@@ -126,11 +122,20 @@
   注意：其中 `omnicrawler-evaluation-report/_shared/` 下存放随仓再分发的第三方字体与 JS 资产，
   根目录 `THIRD_PARTY_NOTICES.md` 依赖这些文件完成许可声明。清理归档时**不得删除该目录**。
 
+### 归档入口（顶层桩页）
+
+以下三篇正文已冻结进 `archive/2026-10-04-before-comprehensive/docs/`，顶层只保留**入口桩页**
+（抬头标注「维护状态：归档入口」），供历史链接与工具链（版本刷新、一致性门禁、用例）继续解析：
+
+- [1.0.1 实机问题优化记录](LOCAL_OPTIMIZATION_2026-10-02.md)
+- [2026-10-03 专项优化执行记录](OPTIMIZATION_EXECUTION_2026-10-03.md)
+- [2026-10-03 专项优化基线](OPTIMIZATION_BASELINE_2026-10-03.md)
+
 ## 维护约定
 
 `tools/check_docs_consistency.py` 强制以下四条，防止文档再次腐化：
 
 1. 本页必须被根目录 `README.md` 与 `CONTRIBUTING.md` 引用（防导航页变孤儿）。
-2. `docs/` 下每个顶层 Markdown 都必须被本页第 2 节收录（防文档变孤儿）。
+2. `docs/` 下每个顶层 Markdown 都必须被本页收录（现行文档进第 2 节，归档入口进第 4 节；防文档变孤儿）。
 3. `docs/archive/` 与 `docs/releases/` 必须各有一份门页 README。
 4. 每篇现行文档首部须带版本元信息（适用版本 / 配置协议 / 维护状态）。

@@ -62,7 +62,8 @@ A: 需要 `openpyxl`。便携版已包含；源码版 `pip install openpyxl`。
 A: Excel 中用"数据→从文本/CSV"选择 UTF-8 编码导入。建议同时导出 Excel 格式。
 
 **Q: 如何导出到数据库？**
-A: 支持 PostgreSQL（psycopg）和 DuckDB（duckdb），安装对应可选依赖后在 `outputs` 段配置。
+A: 文件格式走 `outputs`（duckdb 需安装 duckdb）；要写入数据库用 `storage.records.backends`——
+PostgreSQL 需 `.[postgresql]`（psycopg）、OpenSearch 需 `.[search]`。SQLite 始终是本地恢复权威。不支持 MySQL。
 
 ---
 

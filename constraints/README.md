@@ -47,7 +47,7 @@ the script's `--repository` option.
 
 When updating a pin:
 
-1. test Python 3.10, 3.12 and 3.13 on Windows and Linux;
+1. test Python 3.12 and 3.13 on Windows and Linux;
 2. run the complete quality workflow;
 3. update `docs/TEST_REPORT.md` and `CHANGELOG.md`;
 4. regenerate the SBOM and release hashes.

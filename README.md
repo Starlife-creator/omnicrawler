@@ -232,7 +232,7 @@ omnicrawler templates recommend <url>   # 智能推荐
 omnicrawler templates validate          # 校验完整性
 ```
 
-覆盖场景：通用单页 · 列表详情 · 分页 · 无限滚动 · 表格 · 搜索 · 新闻 · 政务 · 电商 · 招聘 · 地产 · 金融 · 论文 · 社交媒体（Twitter/微博/知乎/小红书） · WordPress · Drupal · MediaWiki · Shopify · GitHub API · Crossref · OpenAlex
+覆盖场景：通用（单页/列表详情/分页/无限滚动/表格/搜索/SPA API 发现） · 认证（API Key/Bearer/Cookie/表单登录） · 文档（PDF/Office/OCR/压缩包） · 协议（GraphQL/REST/RSS/Atom/Sitemap/WebSocket/SSE/长轮询） · 行业（新闻/政务/电商/招聘/地产/金融/论文/论坛/开放数据/招投标/公司公告） · 配方（新闻聚合/价格追踪/公告监控/动态主题 PDF 监控） · 场景（论文取证/公告取证/产品变更）。站点专用模板由 `gen-templates` 按 Apify 平台知识动态生成。
 
 ---
 
@@ -578,7 +578,7 @@ pytest tests/gui/visual/ -v                      # 像素级对比
 完整第三方声明见 [`NOTICE`](NOTICE) 文件和 [`docs/RESEARCH_AND_FUSION.md`](docs/RESEARCH_AND_FUSION.md)。
 
 <!-- current-facts:start -->
-当前内置模板：**41** 个稳定 ID；真源：`omnicrawler templates list`。配置协议：**v5**。
+当前内置模板：**44** 个稳定 ID；真源：`omnicrawler templates list`。配置协议：**v5**。
 <!-- current-facts:end -->
 
 

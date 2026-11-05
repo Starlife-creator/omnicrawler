@@ -37,7 +37,7 @@ OmniCrawler-{version}-Windows-Portable-{edition}.zip
 
 ## 一键构建
 
-在 64 位 Windows、Python 3.10+ 环境运行：
+在 64 位 Windows、Python 3.12+ 环境运行：
 
 ```powershell
 .\build_windows.ps1

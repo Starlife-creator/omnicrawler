@@ -23,9 +23,9 @@
 
 `docs/archive/releases/` 下的 `RELEASE_REPORT_1.x` / `2.x` 属于**旧编号体系**。
 
-当前版本线为 **0.13.1**（见 `pyproject.toml` 与 `src/omnicrawler/_version.py`）。
+当前版本线为 **1.0.1**（见 `pyproject.toml` 与 `src/omnicrawler/_version.py`）。
 归档中的 `RELEASE_REPORT_2.3.1.md` 等文件版本号虽然"更大"，但**时间上更早**，
-把它与当前 0.13.1 做任何大小比较都是错的。当前版本的发布报告位于
+把它与当前 1.0.1 做任何大小比较都是错的。当前版本的发布报告位于
 [`docs/releases/`](../releases/README.md)。
 
 ## 内容构成

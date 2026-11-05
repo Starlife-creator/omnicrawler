@@ -41,7 +41,7 @@ OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台�
 - **PDF / Office / 压缩包** — 文档解析和 OCR
 - **图片 OCR** — Tesseract + PaddleOCR + ddddocr 验证码识别
 
-输出格式：JSONL、CSV、Excel、Parquet、PostgreSQL、DuckDB、OpenSearch。
+输出格式：JSONL、CSV、Excel、Parquet、DuckDB；记录可另镜像到 PostgreSQL / OpenSearch。
 
 ### 设计理念
 
@@ -57,15 +57,15 @@ OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台�
 | 能力 | 说明 | 入口 |
 |------|------|------|
 | **任务工作台** | GUI 持续编辑、试跑和运行；CLI 保留六步问答生成配置 | GUI 首页或 `omnicrawler wizard` |
-| **56 套内置模板** | 覆盖 CMS/电商/新闻/政务/论坛等 | `omnicrawler templates list` |
+| **44 套内置模板** | 覆盖认证、文档、通用、行业、协议、配方、场景等 | `omnicrawler templates list` |
 | **可视化选择器** | 浏览器中右键点选元素，自动生成配置 | `omnicrawler visual-select` |
 | **智能页面分析** | 零配置：贴 URL → 自动推断字段和分页 | `omnicrawler auto-analyze` |
 | **EasySpider 导入** | 兼容 EasySpider JSON 任务格式 | `omnicrawler import-easyspider` |
-| **Crawl4AI 渲染** | 轻量 JS 页面渲染（省 5-10x 资源） | `omnicrawler c4a-fetch` |
+| **Crawl4AI 渲染** | 轻量 JS 页面渲染（可选依赖，未装时走自有浏览器栈） | `omnicrawler c4a-fetch` |
 | **反检测增强** | 10 维指纹随机化 + 代理轮换 + 行为模拟 | `omnicrawler stealth-fingerprint` |
 | **自适应执行** | 实时监测 → 自动调整并发/延迟/OCR | 内置 AutoPilot |
 | **统一诊断** | 12 类错误诊断 + 自动修复建议 | CLI/GUI 自动触发 |
-| **站点模板生成** | Apify 130+ 平台知识 → YAML 模板 | `omnicrawler gen-templates --all` |
+| **站点模板生成** | Apify 18 个内置平台知识 → YAML 模板 | `omnicrawler gen-templates --all` |
 | **插件系统** | 子进程沙箱 + 权限白名单 | 开发者模式 |
 | **分布式支持** | Redis frontier/锁 + Scrapy 桥接 | 专业模式配置 |
 
@@ -112,7 +112,7 @@ pip install -e ".[search]"        # OpenSearch
 
 ### 环境要求
 
-- Python 3.10+
+- Python 3.12+
 - Windows 10+ / macOS 12+ / Linux (Ubuntu 20.04+)
 - 2GB+ 可用内存（浏览器模式建议 4GB+）
 - 1GB+ 磁盘空间
@@ -263,7 +263,7 @@ omnicrawler transform books.csv grouped.csv `
 | `omnicrawler visual-select [--port 8084] [-o config.yaml]` | 启动可视化选择器 WebSocket 服务 |
 | `omnicrawler import-easyspider <task.json> -o config.yaml` | 导入 EasySpider 任务 |
 | `omnicrawler stealth-fingerprint [--count N] [--json]` | 生成随机浏览器指纹 |
-| `omnicrawler gen-templates --list` | 列出 Apify 130+ 已知平台 |
+| `omnicrawler gen-templates --list` | 列出 Apify 内置 18 个已知平台 |
 | `omnicrawler gen-templates --all templates/sites/` | 批量生成平台模板 |
 
 ### 模板管理
@@ -273,8 +273,11 @@ omnicrawler transform books.csv grouped.csv `
 | `omnicrawler templates list` | 列出内置和用户模板 |
 | `omnicrawler templates inspect <url>` | 探测公开网址并推荐模板 |
 | `omnicrawler templates render <name> -o config.yaml --set key=value` | 填充模板变量生成配置 |
-| `omnicrawler templates validate [--include-legacy]` | 离线检查模板元数据 |
-| `omnicrawler templates recommend --url <url>` | 根据 URL 推荐模板 |
+| `omnicrawler templates validate [--include-legacy]` | 离线检查模板元数据与配置契约 |
+| `omnicrawler templates capture` | 从已试跑任务保存脱敏模板 |
+| `omnicrawler templates verify-fixture` | 离线复验固定 HTML/JSON 样本（失败暂离默认推荐） |
+| `omnicrawler templates verification-history` | 查看模板复验成功/失败及历史版本 |
+| `omnicrawler templates recommend --url <url>` | 根据 URL 和页面证据推荐模板 |
 | `omnicrawler templates diff <a> <b>` | 对比模板版本差异 |
 | `omnicrawler templates merge <base> <theirs> <ours>` | 三方合并模板升级 |
 | `omnicrawler templates export-pack <names...> --output pack.zip` | 导出可校验模板包 |
@@ -304,7 +307,7 @@ omnicrawler transform books.csv grouped.csv `
 | `omnicrawler cleanup -c <config>` | 预览或执行数据保留策略 |
 | `omnicrawler runtime-verify` | 验证便携运行时清单 |
 | `omnicrawler components list` | 查看已注册组件 |
-| `omnicrawler serve` | 启动可远程监控面板 |
+| `omnicrawler serve` | 启动**只读**本地监控面板 |
 | `omnicrawler workbench` | 启动统一桌面工作台 |
 | `omnicrawler init` | 复制可编辑项目配置 |
 | `omnicrawler migrate` | 迁移旧配置到当前版本 |
@@ -313,6 +316,25 @@ omnicrawler transform books.csv grouped.csv `
 | `omnicrawler api-discover` | 从浏览器 API 捕获 JSON 生成 REST 模板 |
 | `omnicrawler plugins` | 列出已注册插件 |
 | `omnicrawler pdf --help` | PDF 子系统：解析、OCR、字段抽取、导出与人工复核 |
+
+### 高级与运维命令
+
+日常用不到、但排障/规模化时会用到的子命令。
+
+| 命令 | 说明 |
+|------|------|
+| `omnicrawler worker` | 启动或重新连接认证的独立本地 Worker |
+| `omnicrawler queue` | 远程任务调度队列（Redis 可用时共享，否则本地降级） |
+| `omnicrawler benchmark` | 运行性能基准测试并对比历史基线 |
+| `omnicrawler timeline` | 查看证据胶囊时间线（run 内提取动作序列） |
+| `omnicrawler replay` | 基于胶囊 + 归档 raw 限定重放字段提取 |
+| `omnicrawler repair` | 用独立本地快照比较、应用、观察或回滚提取候选 |
+| `omnicrawler analyze-archive` | 分析明确选择且哈希已验证的交付文档，生成可回链报告 |
+| `omnicrawler convert` | CSV/JSONL/XLSX/Parquet/DuckDB 两两互转 |
+| `omnicrawler notifications` | 查看记录变化通知及补发所选事件 |
+| `omnicrawler self-update` | 检查新版本 / 应用签名升级包 |
+| `omnicrawler scene` | 场景 / 槽位 / 基因管理（DB 单一真源） |
+| `omnicrawler workspace` | 管理项目工作区：体检、打包、快照、回滚 |
 
 ### 命令入口与别名
 
@@ -474,7 +496,9 @@ outputs:
 | `extract` | 提取规则 | mode, fields, selectors |
 | `download` | 附件下载 | enabled, extensions, media |
 | `processors.pdf` | PDF 处理 | enabled, ocr |
-| `outputs` | 输出格式 | jsonl, csv, xlsx, parquet, duckdb |
+| `outputs` | 输出格式 | jsonl, csv, xlsx, parquet, duckdb, plugin_exporters, ai_act_summary |
+| `storage` | 存储与记录镜像 | objects.backend(local/s3), records.backends(postgres/opensearch), retention |
+| `session` | 登录会话 | persist_cookies, name, bridge_to_http |
 | `updates` | 变更监测 | enabled, revisit_completed, detect_content_changes |
 | `schedule` | 定时任务 | enabled, interval_seconds |
 | `plugins` | 插件配置 | paths, approved_permissions, fail_open |
@@ -623,7 +647,7 @@ omnicrawler visual-select --output configs/my_site.yaml
 ### 使用方式
 
 ```powershell
-# 从 URL 分析（需安装 crawl4ai）
+# 从 URL 分析（优先用产品自有 HTTP 栈；JS 页面自动回退浏览器渲染，不需要 crawl4ai）
 omnicrawler auto-analyze https://shop.example.com/products -o config.yaml
 
 # 从本地 HTML 文件分析
@@ -632,11 +656,11 @@ omnicrawler auto-analyze page.html --url https://example.com -o config.yaml
 
 ### 支持的页面类型
 
-| 类型 | 特征 | 检测准确率 |
-|------|------|:---:|
-| **列表页** | 3+ 重复结构（商品卡片/文章条目） | 95% |
-| **详情页** | 单个实体（产品/文章详情） | 70% |
-| **单页** | 简单信息展示 | 50% |
+| 类型 | 特征 | 处理方式 |
+|------|------|------|
+| **列表页** | 3+ 重复结构（商品卡片/文章条目） | 按候选打分选出列表项与字段，最可靠 |
+| **详情页** | 单个实体（产品/文章详情） | 按「整个页面即一条记录」处理 |
+| **单页** | 简单信息展示 | 输出单记录配置，字段靠选择器补齐 |
 
 ### 字段推断规则
 
@@ -661,7 +685,7 @@ omnicrawler auto-analyze page.html --url https://example.com -o config.yaml
 
 ```
 Layer 1 — 浏览器指纹随机化
-  ├── User-Agent（12 种主流浏览器）
+  ├── User-Agent（10 条：Windows / macOS / Linux × Chrome / Firefox / Edge / Safari）
   ├── 屏幕分辨率（11 种常见尺寸）
   ├── WebGL 供应商/渲染器（4 种 GPU 组合）
   ├── Canvas 噪声注入
@@ -699,7 +723,8 @@ omnicrawler c4a-fetch https://protected-site.com --stealth
 ### 代码集成
 
 ```python
-from omnicrawler.stealth_enhanced import StealthEnhancer
+from omnicrawler.fetching.stealth_enhanced import StealthEnhancer
+# 旧路径 omnicrawler.stealth_enhanced 仍可用（__init__ 兼容重定向）
 
 enhancer = StealthEnhancer(proxy_list=["http://proxy1:8080", "http://proxy2:8080"])
 fingerprint = enhancer.randomize()
@@ -753,9 +778,9 @@ omnicrawler run -c config.yaml
 
 ### 概述
 
-集成 [Crawl4AI](https://github.com/unclecode/crawl4ai)（74.9k stars），提供：
+集成 [Crawl4AI](https://github.com/unclecode/crawl4ai)，提供：
 
-- **轻量 JS 渲染**：比 Playwright 全浏览器省 5-10x 资源
+- **轻量 JS 渲染**：直接取 HTML / Markdown，不常驻完整浏览器上下文（需要时仍回退 Playwright）
 - **自适应爬取**：自动学习网站模式、探索相关内容
 - **BFS 深度爬取**：全站遍历 + 域名过滤
 - **LLM 提取**：用 AI 从页面提取结构化数据
@@ -802,7 +827,7 @@ result = Crawl4AIEngine(C4AConfig(extraction_strategy="css", extraction_schema=s
 
 ### 概述
 
-提取了 Apify Ultimate Scraper 覆盖的 25 个主流平台的站点知识，包括典型字段、采集提示和注意事项。
+提取了 Apify Ultimate Scraper 覆盖的 18 个内置平台的站点知识，包括典型字段、采集提示和注意事项。
 
 ### 已覆盖平台
 
@@ -842,9 +867,12 @@ omnicrawler gen-templates --generate amazon
 | **Excel (.xlsx)** | 多 sheet 报告 | `outputs: {xlsx: true}` |
 | **Parquet** | 大数据分析 | `outputs: {parquet: true}` |
 | **DuckDB** | 本地 SQL 分析 | `outputs: {duckdb: true}` |
-| **PostgreSQL** | 生产数据库 | `outputs: {postgresql: {...}}` |
-| **OpenSearch** | 全文搜索 | `outputs: {opensearch: {...}}` |
-| **MySQL** | 传统数据库 | `outputs: {mysql: {...}}` |
+| **PostgreSQL**（记录镜像） | 生产数据库 | `storage.records.backends: [{kind: postgresql, dsn: "secret://pg_dsn"}]`（需 `.[postgresql]`） |
+| **OpenSearch**（记录镜像） | 全文搜索 | `storage.records.backends: [{kind: opensearch, hosts: ["https://search.example"], index: omnicrawler}]`（需 `.[search]`） |
+
+> PostgreSQL / OpenSearch 是**记录镜像后端**，写在 `storage.records.backends`，不在 `outputs` 段；
+> SQLite 始终是本地恢复权威。镜像写入失败默认 **fail-closed**（`storage.records.fail_open: false`），
+> 需自行保证外部库可达。**MySQL 不在支持范围内**。
 
 ### 质量报告
 
@@ -908,8 +936,8 @@ omnicrawler status -c configs/my_site.yaml
 
 - Zip Slip 路径穿越防护
 - 符号链接拒绝
-- 压缩炸弹检测（解压比 > 100:1 拒绝）
-- 单个文件 100MB 上限
+- 压缩炸弹检测（解压比 > 200:1 拒绝）
+- 单个文件 512MB 上限、整包 2GB、条目数 10 000 上限
 - 临时目录 + 原子 `os.replace`
 
 ---
@@ -927,6 +955,14 @@ OmniCrawler 内置统一诊断系统，覆盖 12 类错误类型：
 | 429 | 请求过频 | 自动降低并发至 1 + 延迟至 5s |
 | 502/503 | 服务器暂时不可用 | 建议等待后重试 |
 | 验证码 | 人机验证 | 提示降速或使用 undetected 模式 |
+
+12 类错误分类（`omnicrawler.quality.diagnostics.ErrorCategory`）：
+访问策略（401/403/robots）、限流（429）、网络瞬时（502/503/超时）、网络永久（DNS/IP 封锁）、
+选择器语法、选择器无匹配、模板/提取、本地资源（磁盘/内存）、环境（Python/依赖）、
+缺少可选依赖、验证码、未知。
+
+每条诊断都带「用户解释 / 可能原因 / 建议动作 / 数据影响」四段，
+`omnicrawler doctor` 与 GUI 错误中心展示同一套结论。
 
 ### 常用诊断命令
 
@@ -1009,7 +1045,8 @@ A: 需要 openpyxl。便携版已含；源码版 `pip install openpyxl`。
 A: Excel 中 "数据 → 从文本/CSV" 选择 UTF-8 编码导入。
 
 **Q: 导出到数据库？**
-A: 支持 PostgreSQL/DuckDB/MySQL/OpenSearch，安装对应依赖后在 outputs 段配置。
+A: 文件格式用 `outputs` 的 jsonl/csv/xlsx/parquet/duckdb；写入数据库用 `storage.records.backends`
+（PostgreSQL 需 `.[postgresql]`，OpenSearch 需 `.[search]`）。**不支持 MySQL**。
 
 ### 安全
 
@@ -1026,8 +1063,8 @@ A: 菜单栏「视图 → 主题」可在明亮、暗黑和高对比度三种主
 A: 打开菜单栏「视图 → 减少动画」。开启后 Hero 背景光晕停止运动，状态指示器停止闪烁，页面切换淡入效果关闭。
 
 **Q: 支持英文界面吗？**
-A: 国际化管道已建立，英文翻译进行中：模板 1434 条界面字符串中，英文包非空译文约
-32.4%（实测以 `python tools/i18n_stats.py` 为准）。欢迎在 `locale/` 目录补译 `.po`
+A: 国际化管道已建立，英文翻译进行中：模板条目 2239 条中，语言包已译 460 条、覆盖率约
+20.5%（实测以 `python tools/i18n_stats.py` 为准）。欢迎在 `locale/` 目录补译 `.po`
 并运行编译脚本后贡献。
 
 ---
@@ -1038,11 +1075,11 @@ A: 国际化管道已建立，英文翻译进行中：模板 1434 条界面字�
 
 ```
 src/omnicrawler/
-├── cli/                     # CLI 入口：_main.py 参数 + _handlers.py 分发（47 个顶层命令）
+├── cli/                     # CLI 入口：_main.py 参数 + _handlers.py 分发（53 个顶层命令）
 ├── core/                    # 配置、异常、迁移、站点分类器、编码、站点别名
 ├── pipeline/                # 采集 Pipeline 编排（星型编排器）
 ├── pipeline_ops/            # 任务 IR、计划、批处理
-├── commands/                # CLI 子命令处理器（16 个模块）
+├── commands/                # CLI 子命令处理器（19 个模块）
 ├── fetching/                # HTTP 异步抓取、浏览器引擎、镜像路由、会话管理
 ├── extraction/              # CSS/XPath/JSON 多策略提取、智能页面分析
 ├── doc_extractors/          # 文档/PDF 槽位抽取（document_type=auto 归一）
@@ -1054,7 +1091,7 @@ src/omnicrawler/
 ├── services/                # 应用服务编排、统一进度协议、场景基因
 ├── state/                   # SQLite WAL schema + StateStore/SceneStore/CapsuleStore
 ├── sdk/                     # Python SDK（稳定性标记）
-├── templates/               # 56 套内置 YAML 模板 + recipe
+├── templates/               # 44 套内置 YAML 模板 + recipe
 ├── pdfx/                    # PDF 解析/OCR/抽取子系统
 ├── convertx/                # 任意格式互转（表格/文档/图片 + watch + preset）
 ├── sources/                 # 数据源适配器、镜像注册表
@@ -1110,7 +1147,8 @@ src/omnicrawler/
     ┌─────────┴──────────┐
     │  导出               │
     │  JSONL/CSV/Excel/   │
-    │  Parquet/PostgreSQL │
+    │  Parquet/DuckDB     │
+    │  （记录镜像 PG/OS） │
     └─────────────────────┘
 ```
 
@@ -1139,5 +1177,5 @@ Apache License 2.0（SPDX 标识 `Apache-2.0`）— 详见 `LICENSE` 文件。
 当前 1.0.1 版本额外提供本地可复用 E2E：它只使用临时本机 HTTP 服务，不会采集互联网或生产数据。首页会优先接收自然语言任务描述，并将其转化为可检查的配置草案；其余必填项也集中在第一页，减少向导中途被阻断的情况。开发者可在仓库根目录执行 `./e2e/run.ps1 -Browser`（Windows）或 `./e2e/run.sh --browser`（macOS/Linux）复验完整链路；结果写入 `docs/E2E_TEST_REPORT.md`。
 
 <!-- current-facts:start -->
-当前内置模板：**41** 个稳定 ID；真源：`omnicrawler templates list`。配置协议：**v5**。
+当前内置模板：**44** 个稳定 ID；真源：`omnicrawler templates list`。配置协议：**v5**。
 <!-- current-facts:end -->

@@ -475,7 +475,7 @@ Selenium 的逐请求拦截兼容降级只在测试进程拥有的回环服务�
 以下事项需要发布组织的外部基础设施，未伪装为本机已通过：
 
 - Authenticode：需要正式代码签名证书和可信时间戳；
-- 托管 CI：Windows/Linux 与 Python 3.10/3.12/3.13 矩阵；
+- 托管 CI：Windows/Linux 与 Python 3.12/3.13 矩阵；
 - Docker 镜像：当前机器没有可用 Docker 引擎；
 - 物理机长期稳定性、不同 DPI/显卡/辅助技术组合验收。
 
