@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -52,13 +53,44 @@ def _shell_scripts(root: Path) -> list[Path]:
 
 
 def _bash_executable() -> str:
-    """解析 bash 的绝对路径。
+    """解析可用的 bash 绝对路径。
 
     Windows 的 CreateProcess 先搜 System32 再搜 PATH：裸 ``bash`` 会命中未安装的
     WSL 垫片（rc=1，报错还是 UTF-16LE），把每个脚本都误判成语法错误。
-    ``shutil.which`` 只查 PATH，能拿到 Git for Windows 的 bash。
+    ``shutil.which`` 只查 PATH，但本机 PATH 里可能只有 ``Git\\cmd``（含 git.exe、
+    不含 bash.exe），且 System32 排在它前面，导致 ``shutil.which("bash")`` 命中
+    WSL 垫片而非 Git for Windows 的 bash。因此这里在 Windows 上按优先级探测真 bash：
+
+    1. ``shutil.which("bash")`` 命中且不在 System32/WSL 垫片位置时直接采用；
+    2. 从 ``git.exe`` 反推同根 ``bin/bash.exe`` 与 ``usr/bin/bash.exe``；
+    3. 常见安装路径 ``Program Files\\Git\\bin\\bash.exe`` 与 ``usr\\bin\\bash.exe``。
     """
-    return shutil.which("bash") or "bash"
+    def _is_wsl_shim(exe: str) -> bool:
+        lowered = exe.lower()
+        return "system32" in lowered or "windowsapps" in lowered
+
+    found = shutil.which("bash")
+    if found and not _is_wsl_shim(found):
+        return found
+
+    if sys.platform == "win32":
+        git = shutil.which("git")
+        if git:
+            git_root = Path(git).resolve().parents[1]
+            for rel in ("bin/bash.exe", "usr/bin/bash.exe"):
+                candidate = git_root / rel
+                if candidate.is_file():
+                    return str(candidate)
+        for base in (
+            Path("C:/Program Files/Git"),
+            Path("C:/Program Files (x86)/Git"),
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Git",
+        ):
+            for rel in ("bin/bash.exe", "usr/bin/bash.exe"):
+                candidate = base / rel
+                if candidate.is_file():
+                    return str(candidate)
+    return found or "bash"
 
 
 def _syntax_check(path: Path) -> list[str]:
