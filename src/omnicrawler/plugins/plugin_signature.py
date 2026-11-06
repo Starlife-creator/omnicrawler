@@ -145,11 +145,18 @@ def _verify_plugin_signature(
             f"--pubkey <作者的 .pem 公钥文件> --name {creator.username}"
         )
     if signature_policy == SIGNATURE_POLICY_DEVELOPER:
-        LOGGER.warning(
-            "开发者模式：未验签加载本地插件 %s（%s）；"
-            "生产环境应使用 strict 策略并配置信任根",
-            path,
-            decision.reason,
-        )
+        if not decision.trust_root_available:
+            LOGGER.warning(
+                "开发者模式：未配置信任根，加载本地未验签插件 %s（%s）",
+                path,
+                decision.reason,
+            )
+        else:
+            LOGGER.warning(
+                "开发者模式：未验签加载本地插件 %s（%s）；"
+                "生产环境应使用 strict 策略并配置信任根",
+                path,
+                decision.reason,
+            )
         return decision
     raise signing.PluginSignatureError(f"插件签名校验失败，拒绝加载: {path}（{decision.reason}）")

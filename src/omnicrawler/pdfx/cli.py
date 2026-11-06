@@ -17,6 +17,7 @@ from .parser import parse_stage
 from .project import validate_project_template
 from .review import apply_review
 from .service import database_status, run_extraction, run_processing
+from .template_merge import merge_project_template
 from .templates import DEFAULT_PDF_TEMPLATE
 from .text_export import export_text_stage
 
@@ -95,6 +96,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("doctor", help="检查配置和运行环境")
     sub.add_parser("validate", help="只读校验配置、字段和正则")
+    merge_parser = sub.add_parser("merge-template", help="基于保存的模板基线合并新版配置，不覆盖本地编辑")
+    merge_parser.add_argument("--template", required=True, help="新版模板 YAML")
+    merge_parser.add_argument("--base", help="生成项目时保存的模板 YAML；默认从项目目录的模板基线读取")
+    merge_parser.add_argument("--apply", action="store_true", help="校验后原子写入项目配置；默认仅预览")
     ingest_parser = sub.add_parser("ingest", help="扫描PDF、去重并建立文件清单")
     ingest_parser.add_argument("--limit", type=int)
     parse_parser = sub.add_parser("parse", help="解析PDF原生文字层")
@@ -140,6 +145,29 @@ def main() -> None:
             result = validate_project_template(args.config)
             emit("validate", result)
             if not result["valid"]:
+                raise SystemExit(2)
+            return
+        if args.command == "merge-template":
+            from .templates import resolve_pdf_project_config
+            template = resolve_pdf_project_config(args.template)
+            base = args.base
+            if base is None:
+                import json
+                sidecar = str(args.config) + ".template-base.json"
+                saved = json.loads((resolve_pdf_project_config(sidecar)).read_text(encoding="utf-8"))
+                if saved.get("version") != 1:
+                    raise ValueError("PDF 模板基线格式无效")
+                # The creator snapshots the exact original YAML; current local
+                # edits are never treated as a common ancestor.
+                base = saved.get("path")
+                if not base:
+                    raise ValueError("缺少 --base：请提供创建项目时保存的原始模板")
+                from .template_merge import template_digest
+                if template_digest(base) != saved.get("sha256"):
+                    raise ValueError("模板基线内容已变化；请恢复原始基线或显式确认 --base")
+            result = merge_project_template(args.config, base, template, apply=args.apply)
+            emit("merge-template", result)
+            if result["conflicts"]:
                 raise SystemExit(2)
             return
         config = load_config(args.config)

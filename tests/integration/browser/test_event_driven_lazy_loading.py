@@ -29,24 +29,14 @@
   `test_infinite_scroll_fixed_sample.py`：不依赖帧、不依赖事件，连跑稳定）；
 * 两者是**互补**关系：轮询给确定性，事件驱动给真实站点覆盖面。
 
-## 为什么不把"事件驱动"写成断言（本轮实测结论）
+## 产品动作的停滞恢复（2026-11-01 收口）
 
-跑过三套夹具后确认：**能否触发取决于"那一刻滚动位置是否真的变化"**，而这由**页面的滚动结构**
-与**产品当前的 `scroll_bottom` 动作语义**共同决定：
+**能否触发取决于滚动位置是否真的变化**。旧版 `scroll_bottom` 连发当前底部后不再产生位移，
+scroll 事件只拿到首屏 4 条、IO 拿到 8 条，而位置轮询 12 条稳定。
 
-* 独立测量（每次滚动后回顶，保证位移）：IO 与 scroll 事件 **6/6 达标**；
-* 走产品的动作（`scrollTo(0, document.body.scrollHeight)` 连发，位置不再变化）：
-  scroll 事件只拿到首屏 4 条、IO 拿到 8 条，而**位置轮询 12 条稳定**。
-
-⇒ 结论分成两半，分别落在该落的地方：
-
-1. **平台能力已验收**：无头 Chromium 下 IO 与 scroll 事件都能派发（独立测量 6/6，证据见上表），
-   2026-09-13 那条"事件派发不稳定"的怀疑**根因是夹具未让触发元素'离开再进入'**；
-2. **产品动作的已知限制**：`scroll_bottom` 只"滚到当前底部"，当位置不再变化时不会产生事件 ⇒
-   对"首屏短、靠事件长内容"的页面可能一次都不触发。**替代＝位置轮询**（本文件与
-   `test_infinite_scroll_fixed_sample.py` 都守它）。
-   **后续项**（需要时再做）：让 `scroll_bottom` 校验"位置确实变了"，没变则回顶重试 ——
-   那时再把这里的两条断言补回套件（现在写成断言只会得到随机红）。
+现在 `scroll_bottom` 会读取滚动前后位置：停滞时先回顶，再执行下一次滚底，使哨兵有机会
+离开并重新进入视口。IO、scroll 事件与位置轮询均通过真实 Chromium 产品流水线断言。
+位置轮询仍保留为不依赖事件的确定性对照；本结论不保证任意真实站点的加载策略。
 
 ## 与产品的关系
 
@@ -229,3 +219,10 @@ def test_polling_remains_the_deterministic_alternative(tmp_path: Path, lazy_site
     """位置轮询仍是**确定性替代**（不依赖帧、不依赖事件）—— 保留它作为验收默认。"""
     records = _run(tmp_path / "poll", lazy_site, "poll", SCROLL_ACTIONS)
     assert len(records) == TOTAL, f"位置轮询应稳定取满 {TOTAL} 条，实际 {len(records)}"
+
+
+@pytest.mark.parametrize("mode", ["io", "scroll-events"])
+def test_product_scroll_retries_event_driven_loading(tmp_path: Path, lazy_site: str, mode: str) -> None:
+    """停滞时回顶再滚，使 IO 哨兵重新进入视口并产生后续 scroll 事件。"""
+    records = _run(tmp_path / mode, lazy_site, mode, SCROLL_ACTIONS)
+    assert len(records) == TOTAL, f"{mode} 应由产品动作取满 {TOTAL} 条，实际 {len(records)}"

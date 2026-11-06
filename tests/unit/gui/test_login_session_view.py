@@ -164,7 +164,7 @@ def _config(
 ) -> AppConfig:
     config_path = tmp_path / "task.yaml"
     config_path.write_text(
-        "project: {name: u3, workspace: work}\n"
+        f'project: {{name: u3, workspace: "{tmp_path.as_posix()}/work"}}\n'
         f"source: {{kind: static_html, seeds: {seeds}}}\n"
         f"session: {{persist_cookies: {str(persist).lower()}, name: default}}\n",
         encoding="utf-8",

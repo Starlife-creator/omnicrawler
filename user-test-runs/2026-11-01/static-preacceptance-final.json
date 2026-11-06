@@ -1,0 +1,153 @@
+{
+  "ok": false,
+  "sets": [
+    "static"
+  ],
+  "started_at": "2026-11-01T10:09:15+00:00",
+  "duration_seconds": 56.34,
+  "head": "412d518",
+  "dirty": true,
+  "gates": [
+    {
+      "name": "compileall",
+      "status": "passed",
+      "duration_seconds": 1.91,
+      "detail": ""
+    },
+    {
+      "name": "ruff",
+      "status": "passed",
+      "duration_seconds": 3.0,
+      "detail": ""
+    },
+    {
+      "name": "mypy",
+      "status": "passed",
+      "duration_seconds": 3.51,
+      "detail": ""
+    },
+    {
+      "name": "templates_validate",
+      "status": "passed",
+      "duration_seconds": 3.71,
+      "detail": ""
+    },
+    {
+      "name": "check_coding_standards",
+      "status": "passed",
+      "duration_seconds": 2.06,
+      "detail": ""
+    },
+    {
+      "name": "check_architecture",
+      "status": "passed",
+      "duration_seconds": 4.15,
+      "detail": ""
+    },
+    {
+      "name": "check_sdk_api",
+      "status": "passed",
+      "duration_seconds": 0.92,
+      "detail": ""
+    },
+    {
+      "name": "check_cli_docs",
+      "status": "passed",
+      "duration_seconds": 2.4,
+      "detail": ""
+    },
+    {
+      "name": "check_docs_consistency",
+      "status": "passed",
+      "duration_seconds": 1.71,
+      "detail": ""
+    },
+    {
+      "name": "check_line_endings_policy",
+      "status": "passed",
+      "duration_seconds": 3.72,
+      "detail": ""
+    },
+    {
+      "name": "check_shell_scripts",
+      "status": "failed",
+      "duration_seconds": 0.6,
+      "detail": "退出码 1\nShell 脚本静态检查失败：\n- build_linux.sh: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- build_macos.sh: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- run_gui_linux.sh: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- run_gui_macos.command: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- run_linux.sh: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- run_macos.sh: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- run_workbench_linux.sh: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- setup_linux.sh: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000\n- setup_macos.command: bash -n 语法错误：�e�l/T�R | g�R\n��S�V�S��/f�]���y(u\u0016b\u000eNvQ�vsQT��v��\u0007Y�l\tg/T�R\u00020 \u0000 | \u0000 | \u0000\u0019���N\u0001x:\u0000 \u0000B\u0000a\u0000s\u0000h\u0000/\u00000\u0000x\u00008\u00000\u00000\u00007\u00000\u00004\u00002\u00002\u0000 | \u0000 | \u0000"
+    },
+    {
+      "name": "check_network_boundaries",
+      "status": "passed",
+      "duration_seconds": 2.54,
+      "detail": ""
+    },
+    {
+      "name": "check_release_integrity",
+      "status": "passed",
+      "duration_seconds": 5.98,
+      "detail": ""
+    },
+    {
+      "name": "check_lint_budget",
+      "status": "passed",
+      "duration_seconds": 4.02,
+      "detail": ""
+    },
+    {
+      "name": "check_gui_conventions",
+      "status": "passed",
+      "duration_seconds": 1.96,
+      "detail": ""
+    },
+    {
+      "name": "check_lockfile_consistency",
+      "status": "passed",
+      "duration_seconds": 1.18,
+      "detail": ""
+    },
+    {
+      "name": "check_dependency_consistency",
+      "status": "passed",
+      "duration_seconds": 0.94,
+      "detail": ""
+    },
+    {
+      "name": "check_gui_test_layout",
+      "status": "passed",
+      "duration_seconds": 1.78,
+      "detail": ""
+    },
+    {
+      "name": "check_gui_state_threading",
+      "status": "passed",
+      "duration_seconds": 1.12,
+      "detail": ""
+    },
+    {
+      "name": "check_main_window_size",
+      "status": "passed",
+      "duration_seconds": 1.01,
+      "detail": ""
+    },
+    {
+      "name": "check_minimal_install",
+      "status": "passed",
+      "duration_seconds": 3.85,
+      "detail": ""
+    },
+    {
+      "name": "check_market_content",
+      "status": "passed",
+      "duration_seconds": 0.47,
+      "detail": ""
+    },
+    {
+      "name": "check_agent_surface",
+      "status": "passed",
+      "duration_seconds": 3.79,
+      "detail": ""
+    }
+  ],
+  "passed": 22,
+  "failed": 1,
+  "skipped": 0
+}

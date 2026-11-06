@@ -1,0 +1,34 @@
+{
+  "runs": 200,
+  "state_events": 100000,
+  "measurements": {
+    "run_compare_rows_30": {
+      "median_ms": 0.115,
+      "max_ms": 0.197
+    },
+    "reprocess_review_load": {
+      "median_ms": 0.032,
+      "max_ms": 0.09
+    },
+    "reprocess_review_resolve_reject": {
+      "median_ms": 0.255,
+      "max_ms": 0.255
+    },
+    "list_runs_50": {
+      "median_ms": 0.098,
+      "max_ms": 0.146
+    },
+    "list_runs_500": {
+      "median_ms": 0.228,
+      "max_ms": 0.623
+    },
+    "run_events": {
+      "median_ms": 1.948,
+      "max_ms": 2.848
+    },
+    "run_stages": {
+      "median_ms": 0.006,
+      "max_ms": 0.102
+    }
+  }
+}

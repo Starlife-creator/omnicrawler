@@ -32,7 +32,9 @@ class PDFModuleTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "output").mkdir(parents=True)
-            config_path = root / "fields.yaml"
+            (root / ".ignore").mkdir(exist_ok=True)
+            (root / "pyproject.toml").write_text("", encoding="utf-8")
+            config_path = root / ".ignore" / "fields.yaml"
             config_path.write_text(
                 "project_name: test\ninput_dir: data/pdfs\nwork_dir: work\n"
                 "output_dir: output\ndatabase: work/pipeline.sqlite3\n"
@@ -64,7 +66,9 @@ class PDFModuleTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "data" / "pdfs").mkdir(parents=True)
-            config_path = root / "fields.yaml"
+            (root / ".ignore").mkdir(exist_ok=True)
+            (root / "pyproject.toml").write_text("", encoding="utf-8")
+            config_path = root / ".ignore" / "fields.yaml"
             config_path.write_text(
                 r"""
 project_name: test

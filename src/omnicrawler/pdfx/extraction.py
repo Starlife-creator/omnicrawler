@@ -335,6 +335,7 @@ def extract_document(
         )
         digest = doc_row.get("_dependency_digest") if isinstance(doc_row, dict) else None
         digest = digest or extraction_digest(config, entity_resolver)
+        conn.execute("DELETE FROM extraction_dependencies WHERE doc_id=?", (doc_id,))
         conn.execute(
             "INSERT INTO extraction_dependencies(doc_id,digest,updated_at) VALUES(?,?,?) "
             "ON CONFLICT(doc_id) DO UPDATE SET digest=excluded.digest,updated_at=excluded.updated_at",
@@ -375,7 +376,10 @@ def extraction_stage(
     dependency_clause = """
         FROM documents d LEFT JOIN extraction_dependencies x ON x.doc_id=d.doc_id
         WHERE (d.status IN ('parsed','parsed_partial','parsed_native','extract_failed')
-               OR (d.status IN ('extracted','extracted_no_data') AND (x.digest IS NULL OR x.digest!=?)))
+               OR (d.status IN ('extracted','extracted_no_data') AND (x.digest IS NULL OR x.digest!=?
+                    OR EXISTS(SELECT 1 FROM pages p WHERE p.doc_id=d.doc_id
+                              AND p.needs_ocr=1 AND p.ocr_status='done'
+                              AND p.updated_at>x.updated_at))))
         AND NOT EXISTS (
             SELECT 1 FROM records r WHERE r.doc_id=d.doc_id
             AND r.review_status IN ('human_accepted','human_rejected')

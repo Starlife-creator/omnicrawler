@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from . import plugin_backend
-from .plugin_os_sandbox import E_UNSUPPORTED_ENV, confinement_argv_prefix, resolve_sandbox_mode
+from .plugin_os_sandbox import E_UNSUPPORTED_ENV, resolve_sandbox_mode
 
 LOGGER = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ def _subprocess_env() -> dict[str, str]:
     Windows 解释器初始化依赖 SystemRoot/TEMP——全量替换会丢，历史引发
     _Py_HashRandomization_Init 偶发失败，故继承保留这四个键。
     """
-    env = {"OMNICRAWL_PLUGIN_SANDBOX": "1"}
+    env = {}
     for key in ("SystemRoot", "SYSTEMROOT", "TEMP", "TMP"):
         if key in os.environ:
             env[key] = os.environ[key]
@@ -116,13 +116,14 @@ class PluginSubprocessSession:
         self._allow_degraded_sandbox = allow_degraded_sandbox
         self.sandbox_mode = ""
         self.sandbox_reason = ""
+        self._owned_temp_root: Path | None = None
 
     # ---- 生命周期 ----
 
     def start(self) -> None:
         # A-P1-2：spawn 前置 OS 沙箱裁决——不可用 fail-closed 拒载，降级档须显式开关，
         # 逃生开关仅关闭 OS 层并在日志横幅显式告警。实际 Landlock/seccomp/AppContainer/
-        # Job Object/Seatbelt 包装待对应平台 CI 验证后接入（见 confinement_argv_prefix）。
+        # Job Object/Seatbelt 按平台启动路径安装；Windows AppContainer 仍未接线。
         mode, reason = resolve_sandbox_mode(
             sandbox_escape=self._sandbox_escape,
             allow_restricted_token_fallback=self._allow_degraded_sandbox,
@@ -138,11 +139,11 @@ class PluginSubprocessSession:
         else:
             LOGGER.info("插件 OS 沙箱裁决: %s", reason)
 
-        command, default_handshake = plugin_backend.resolve_backend_command()
-        command = [*confinement_argv_prefix(mode, ""), *command, self.entry_module, str(self.plugin_root)]
-        if self._verified_bytes is not None:
-            import tempfile
+        import tempfile
 
+        command, default_handshake = plugin_backend.resolve_backend_command()
+        command = [*command, self.entry_module, str(self.plugin_root)]
+        if self._verified_bytes is not None:
             self._verified_entry_dir = Path(
                 tempfile.mkdtemp(prefix="omnicrawler-verified-entry-")
             )
@@ -159,20 +160,57 @@ class PluginSubprocessSession:
             cwd=self.plugin_root,
             env=_subprocess_env(),
         )
+        if mode == "os":
+            kwargs["env"]["OMNICRAWL_PLUGIN_SANDBOX"] = "1"
         if sys.platform == "win32":
             # CREATE_NO_WINDOW（0x08000000，env_checker.py:62 模式）
             kwargs["creationflags"] = 0x08000000
+        if mode == "os" and sys.platform in ("linux", "darwin"):
+            import os
+
+            from . import plugin_broker
+            from .plugin_unix_enforcement import (
+                _RUNTIME_READ_ROOTS_ENV,
+                _RUNTIME_ROOTS_ENV,
+                _standard_library_roots,
+            )
+
+            temp_root = Path(tempfile.mkdtemp(prefix="omnicrawler-plugin-scope-"))
+            self._owned_temp_root = temp_root
+            plugin_broker.CapabilityBroker(permissions=set(), system_info={}, temp_root=temp_root)
+            kwargs["env"][_RUNTIME_ROOTS_ENV] = str(temp_root)
+            kwargs["env"][_RUNTIME_READ_ROOTS_ENV] = os.pathsep.join(
+                str(root) for root in _standard_library_roots()
+            )
+            if sys.platform == "linux":
+                from .plugin_unix_enforcement import _native_helper
+                helper = _native_helper()  # compile in parent before child confinement
+                kwargs["env"]["OMNICRAWL_LANDLOCK_HELPER"] = helper.__file__
+            # Keep the helper valid while the child host imports it. It is a
+            # module containing irreversible confinement, not plugin payload.
         try:
+            if mode == "os" and sys.platform == "darwin":
+                from .plugin_unix_enforcement import darwin_launch
+                command = darwin_launch(
+                    command,
+                    plugin_root=self.plugin_root,
+                    verified_entry_dir=self._verified_entry_dir,
+                )
             self._proc = subprocess.Popen(command, **kwargs)
         except FileNotFoundError as exc:
             raise RuntimeError(f"沙箱后端不可用: {exc}") from exc
+        except OSError as exc:
+            self._cleanup_verified_entry()
+            raise RuntimeError(f"插件 OS 沙箱创建失败: {exc}") from exc
         self._handshake_timeout = self._handshake_timeout or default_handshake
 
     def end(self) -> None:
         """发送 session.end 并回收进程与临时入口；已终止时静默。"""
-        if self._proc is None or self._proc.poll() is not None:
-            self._proc = None
+        if self._proc is None:
             self._cleanup_verified_entry()
+            return
+        if self._proc.poll() is not None:
+            self._kill()
             return
         try:
             self._request("session.end", {}, expect_response=True)
@@ -182,13 +220,32 @@ class PluginSubprocessSession:
         self._cleanup_verified_entry()
 
     def _kill(self) -> None:
-        if self._proc is not None and self._proc.poll() is None:
-            self._proc.kill()
+        proc, self._proc = self._proc, None
+        if proc is not None:
+            # 先关闭子进程端再关闭父进程读端；先 close 父进程读端在
+            # Windows 会等另一个线程退出 readline，从而死锁。
+            if proc.poll() is None:
+                proc.kill()
+            for stream in (proc.stdin, proc.stdout, proc.stderr):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
             try:
-                self._proc.wait(timeout=5)
+                proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 pass
-        self._proc = None
+        self._cleanup_verified_entry()
+        self._cleanup_owned_temp_root()
+
+    def _cleanup_owned_temp_root(self) -> None:
+        if self._owned_temp_root is None:
+            return
+        import shutil
+
+        shutil.rmtree(self._owned_temp_root, ignore_errors=True)
+        self._owned_temp_root = None
 
     def _cleanup_verified_entry(self) -> None:
         """会话结束即删验签临时入口（C2 V2：防残留被本地攻击者替换利用）。"""
@@ -196,6 +253,7 @@ class PluginSubprocessSession:
             import shutil
 
             shutil.rmtree(self._verified_entry_dir, ignore_errors=True)
+            self._cleanup_owned_temp_root()
             self._verified_entry_dir = None
 
     def __enter__(self) -> PluginSubprocessSession:
@@ -232,6 +290,9 @@ class PluginSubprocessSession:
             if not expect_response:
                 return {}
             response = self._read_response(proc, effective_timeout)
+        except TimeoutError:
+            self._kill()
+            raise
         except (OSError, ValueError) as exc:
             self._kill()
             raise RuntimeError(f"E_RESOURCE: 插件进程通信失败: {exc}") from exc
@@ -259,11 +320,16 @@ class PluginSubprocessSession:
             except OSError as exc:
                 holder["error"] = exc
 
-        reader = threading.Thread(target=_read, daemon=True)
+        reader = threading.Thread(target=_read, daemon=True, name="plugin-ipc-reader")
         reader.start()
         reader.join(timeout)
         if reader.is_alive():
             self._kill()
+            # 关闭读管道会解除后台线程的 readline 阻塞。Windows 文本 IO
+            # 另一个线程可能刚进入 read，所以给出一个有界回收时间。
+            reader.join(5)
+            if reader.is_alive():
+                raise RuntimeError("E_RESOURCE: 插件 IPC 读线程未在超时后退出")
             raise TimeoutError("响应超时")
         if "error" in holder:
             raise holder["error"]

@@ -41,7 +41,8 @@ python tools/check_market_content.py
 7. 生成市场 overlay 和已签名 catalog。
 
 外部投稿代码不得在普通 CI 中 import 或执行。动态测试不能代替静态检查、创作者签名或
-维护者复签。
+维护者复签。静态边界检查也不能识别所有动态导入、反射和二进制行为；`in_process` 仍须单独审批。
+缺省 subprocess 路径不是 OS 级沙箱，门禁通过不表示可以安全运行不可信代码。
 
 ## 1. 包完整性和作者归属
 
@@ -58,6 +59,10 @@ python tools/check_market_content.py
 - [ ] 使用契约 2：顶层 `handle(operation, payload) -> dict`；
 - [ ] `PLUGIN_METADATA` 是可由 AST 静态读取的 `dict` 字面量；
 - [ ] 插件不导入 `omnicrawler`，宿主能力只经 `omnicrawler_sdk` 请求；
+- [ ] 整个插件包没有原始网络、自建浏览器、浏览器 Cookie/keyring 读取、原始文件 I/O 或本地数据库；
+      `plugins audit --local .` 的宿主边界错误必须清零，不能仅依赖 `plugin.py` 入口检查；
+- [ ] 不把 Cookie、登录会话或 Token 写入普通 `state`；鉴权使用宿主 auth 注入；
+- [ ] 插件没有声称使用通用交互浏览器、DOM 或宿主登录会话：当前 SDK 仅提供断网 `render.html.*`；
 - [ ] 每个 operation 正确分派，所有结果都是可 JSON 序列化的对象；
 - [ ] 无 `eval`、`exec`、任意子进程、`os.system` 或其他绕过能力代理的危险行为；
 - [ ] 实际行为与 `listing.md` 描述一致，没有隐藏功能；

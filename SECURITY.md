@@ -19,20 +19,20 @@ OmniCrawler 内置多层安全防护，包括：
 - 凭据脱敏与密钥管理
 - 安全归档解压（路径穿越、符号链接、压缩比与体积上限校验）
 
-### 插件隔离当前边界（请勿误解为 OS 级沙箱）
+### 插件隔离当前边界（按平台区分）
 
-当前版本插件隔离由以下四层构成，**不等同于** AppContainer / Landlock /
-seccomp / Seatbelt / Windows Job Object 等 OS 级 confinement：
+当前版本插件隔离由以下通用层与平台 OS 强制层共同构成：
 
 1. **子进程边界**：插件在独立子进程中执行，宿主解释器与依赖不注入；
 2. **导入隔离**：源码模式以 `python -I -S` 启动，冻结模式使用最小宿主 exe；
 3. **权限代理**：manifest 权限白名单 + 批准审批，能力经宿主代理桥接；
 4. **静态预检**：加载前完成清单、签名与 AST 静态检查。
+5. **OS 强制层**：Linux 在导入前安装 Landlock ABI 4+ 文件和 TCP 网络规则；
+   macOS 通过内联 Seatbelt profile 启动。两者均已在对应平台 CI 验证插件导入、
+   越权文件读取与 TCP 连接拒绝及完整插件契约。Windows AppContainer/Job Object
+   仍未接线，契约通过和探测可用**不代表 Windows OS 隔离已启用**。
 
-OS 级隔离（Linux Landlock/seccomp、Windows AppContainer/Job Object、
-macOS Seatbelt）列入 Roadmap，待对应平台 CI 矩阵验证后接入；在此之前不可将
-当前子进程边界对外表述为「OS 沙箱」，裁决日志与诊断报告为此统一写作
-「OS 级隔离未接线」。逃生开关 `sandbox_escape`（跳过上述裁决直接放行）与遗留
+通用层不可单独表述为全平台「OS 沙箱」。逃生开关 `sandbox_escape`（跳过上述裁决直接放行）与遗留
 `legacy_in_process` 进程内路径均为显式降级动作，会写入审计台账并在日志中横幅告警，
 默认路径 fail-closed：探测不到可用后端即拒载。
 

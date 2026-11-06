@@ -14,6 +14,7 @@ from .extraction import extraction_stage
 from .ingest import ingest
 from .ocr import ocr_stage
 from .parser import parse_stage
+from .refresh import refresh_processing
 from .text_export import export_text_stage
 
 LOGGER = logging.getLogger(__name__)
@@ -84,6 +85,18 @@ def run_processing(
     _emit(callback, "warnings", {"items": warnings})
     results: dict[str, Any] = {"warnings": warnings}
     with Database(config.database) as db:
+        # The backend version participates in the identity. Resolve it before
+        # comparing stored results, rather than after the OCR queue is selected.
+        from .ocr import preflight_backend
+        try:
+            preflight_backend(config)
+        except Exception as exc:  # noqa: BLE001 - OCR's existing failure path reports this
+            LOGGER.debug("OCR 依赖身份预检失败，交由 OCR 阶段处理: %s", exc)
+        refreshed = refresh_processing(config, db)
+        results["dependency_refresh"] = refreshed
+        _emit(callback, "dependency_refresh", refreshed)
+        if refreshed["dependency_notice"]:
+            _emit(callback, "warnings", {"items": [refreshed["dependency_notice"]]})
         for stage, operation in (
             ("ingest", lambda: ingest(config, db, limit)),
             (

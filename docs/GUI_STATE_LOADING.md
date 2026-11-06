@@ -16,9 +16,9 @@
 | --- | --- | --- | --- |
 | `gui/views/developer_inspector.py:334` | `list_runs(50)` 刷新运行下拉 | 200 次运行 / 100k 条事件实测 0.3 ms（见 `gui/core/workers.py` `SqliteQueryWorker` docstring） | 当前不阻塞，保留同步；数量计入门禁基线 |
 | `gui/views/developer_inspector.py:365` | `list_runs(500)` + `run_events` + `run_stages` | 同上场景 0.5 / 0.7 / 0.0 ms | 当前不阻塞，保留同步；数量计入门禁基线 |
-| `gui/views/project_dialogs.py:55` | 最近 30 条运行 `rows(...)` 对比选择器 | ⬜ 待补耗时测量（轻量单行 SQL，当前未做事件量级实测） | 保留同步；下次负载复测时补记录 |
-| `gui/views/reprocess_review.py:37` | `ReprocessReview(state).load(record_id)` 快照 | ⬜ 待补耗时测量（单记录读取） | 保留同步；弹窗构建期一次性读取 |
-| `gui/views/reprocess_review.py:101` | `ReprocessReview(state).resolve(...)` 写回复核结果 | 写路径，受用户操作触发，非轮询 | 保留同步；错误已就地提示 |
+| `gui/views/project_dialogs.py:55` | 最近 30 条运行 `rows(...)` 对比选择器 | 200 次运行 / 100k 条事件实测中位数 0.115 ms、最大 0.197 ms（20 次） | 保留同步；数量计入门禁基线 |
+| `gui/views/reprocess_review.py:37` | `ReprocessReview(state).load(record_id)` 快照 | 同一负载中位数 0.032 ms、最大 0.090 ms（20 次） | 保留同步；弹窗构建期一次性读取 |
+| `gui/views/reprocess_review.py:101` | `ReprocessReview(state).resolve(...)` 写回复核结果 | 同一负载拒绝候选路径实测 0.255 ms（1 次状态变更） | 保留同步；错误已就地提示 |
 
 ## 3. 适配层（骨架就位，尚未接线）
 
@@ -47,6 +47,6 @@
 
 ## 5. 待办与环境依赖
 
-- `project_dialogs.py:55`、`reprocess_review.py:37,101` 三处补负载测量记录（需可构造大容量状态库的测试环境）；
+- 三处遗留点位于 2026-11-01 在 Windows 本机完成测量，脚本与原始结果见 `user-test-runs/2026-11-01/gui_state_loading_measure.py`、`gui-state-loading.json`；耗时为单次服务/SQL 调用，不代表完整控件绘制时间，且不是跨平台性能承诺。
 - 后台线程迁移后的 widget 信号契约测试待 Qt offscreen CI 环境补齐；
 - 本文件与门禁只约束「不新增、不超基线」，不替代上述复测与迁移。

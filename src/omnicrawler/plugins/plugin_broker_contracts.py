@@ -55,6 +55,15 @@ CAPABILITY_VERSIONS: dict[str, int] = {
 }
 
 _CAPABILITY_REQUIREMENT = re.compile(r"^(?:>=)?([1-9][0-9]*)$")
+_SENSITIVE_STATE_KEY = re.compile(
+    r"(?:^|[_\-])(?:cookies?|sessions?|tokens?|credentials?|passwords?|storage_state)(?:$|[_\-])",
+    re.IGNORECASE,
+)
+
+
+def is_sensitive_state_key(key: object) -> bool:
+    """普通插件 state 只能保存游标等业务状态，不得替代宿主凭据库。"""
+    return _SENSITIVE_STATE_KEY.search(str(key)) is not None
 
 
 def validate_required_capabilities(required: dict[str, Any]) -> None:
