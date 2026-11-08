@@ -205,6 +205,13 @@ GATES: tuple[Gate, ...] = (
         script="tools/check_dependency_consistency.py",
     ),
     Gate(
+        name="check_build_profiles",
+        args=("tools/check_build_profiles.py",),
+        sets=_STATIC,
+        description="安装/构建档位与 constraints/profiles.toml 逐字符一致（档位唯一真源）",
+        script="tools/check_build_profiles.py",
+    ),
+    Gate(
         name="check_gui_test_layout",
         args=("tools/check_gui_test_layout.py",),
         sets=_STATIC,

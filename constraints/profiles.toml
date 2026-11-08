@@ -1,0 +1,87 @@
+# 安装 / 构建档位（extras 组合）的唯一真源。
+#
+# ## 为什么需要这个文件
+#
+# 同一个「标准安装」在仓库里有 5 套互不相同的写法：
+#   build_linux.sh / build_macos.sh / build_windows.ps1  → gui,html,pdf,browser,async-http,security
+#   setup_linux.sh / setup_macos.command 的 standard      → 那 6 项 + document,tls,storage,streams（10 项）
+#   install_windows.ps1 的非 minimal                       → full,dev
+#   Dockerfile                                            → html,async-http,streams
+#   FAQ.md 又声称「默认 standard」
+# 没有任何一份是真源，改一处不会提醒另一处。本文件把每个档位**命名并声明一次**，
+# 由 `tools/check_build_profiles.py` 逐条比对脚本里的字面量——漂移即红。
+#
+# ## 边界（重要）
+#
+# 构建脚本**仍然各自持有字面量**，不从本文件生成。原因是这些脚本在 bash / pwsh /
+# Dockerfile 三种执行环境里运行，让它们都去解析 TOML 会把「档位正确性」依赖到
+# 另一种运行时上。本文件的价值是**可机检的声明**，不是代码生成：改档位时门禁会
+# 指名哪个文件哪一行不一致，而不是静默漂移。
+#
+# ## 字段
+#
+#   extras      = 逗号分隔的 extra 名，必须都在 pyproject 的 [project.optional-dependencies] 里
+#   purpose     = 这个档位给谁用（一句话）
+#   ci_evidence = 该档位是否有远端实跑证据；"local-only" 必须写清为什么
+
+[profiles]
+
+[profiles.build-standard]
+extras = "gui,html,pdf,browser,async-http,security"
+purpose = "三平台便携包 Standard edition 的构建 venv"
+ci_evidence = "build.yml 三平台矩阵"
+
+[profiles.build-full-linux]
+extras = "full"
+purpose = "Linux 便携包 Full edition 的构建 venv"
+ci_evidence = "build.yml Linux Full"
+
+[profiles.build-full-macos]
+extras = "full-macos"
+purpose = "macOS 便携包 Full edition 的构建 venv（无 paddle 稳定 wheel）"
+ci_evidence = "build.yml macOS Full"
+
+[profiles.setup-linux-minimal]
+extras = "html,gui,async-http"
+purpose = "Linux 源码环境最小档：能开 GUI、能抓 HTML、能并发"
+ci_evidence = "local-only：无 CI job 安装该组合"
+
+[profiles.setup-linux-standard]
+extras = "gui,html,async-http,browser,pdf,document,security,tls,storage,streams"
+purpose = "Linux 源码环境标准档：日常开发与大多数场景"
+ci_evidence = "local-only：无 CI job 安装该组合"
+
+[profiles.setup-linux-full]
+extras = "full,dev"
+purpose = "Linux 源码环境全量档：含 OCR / 全部后端 / 测试工具"
+ci_evidence = "local-only：CI 用分散的 feature-install matrix 而非全量安装"
+
+[profiles.setup-macos-minimal]
+extras = "html,gui,async-http"
+purpose = "macOS 源码环境最小档"
+ci_evidence = "local-only：无 CI job 安装该组合"
+
+[profiles.setup-macos-standard]
+extras = "gui,html,async-http,browser,pdf,document,security,tls,storage,streams"
+purpose = "macOS 源码环境标准档"
+ci_evidence = "local-only：无 CI job 安装该组合"
+
+[profiles.setup-macos-full]
+extras = "full-macos,dev"
+purpose = "macOS 源码环境全量档"
+ci_evidence = "local-only：CI 用分散的 feature-install matrix 而非全量安装"
+
+[profiles.install-windows-minimal]
+extras = "html,gui"
+purpose = "Windows 源码环境最小档（-Minimal）"
+ci_evidence = "local-only：Windows 安装脚本不在 CI 实跑"
+
+[profiles.install-windows-full]
+extras = "full,dev"
+purpose = "Windows 源码环境默认档"
+ci_evidence = "local-only：Windows 安装脚本不在 CI 实跑"
+
+[profiles.docker]
+extras = "html,async-http,streams"
+purpose = "容器镜像：只装服务端抓取所需，不含 GUI / 浏览器 / OCR"
+ci_evidence = "quality.yml docker job（构建镜像 + doctor 探活）"
