@@ -13,10 +13,10 @@
 构建脚本**不从命令行接收版本号**，直接从源码读取：
 
 ```
-src/omnicrawler/__init__.py  →  __version__
+src/omnicrawler/_version.py  →  __version__
            ↓
 构建脚本启动时立刻读取并校验三重一致：
-  ① omnicrawler.__version__
+  ① omnicrawler.__version__（对 _version.py 的惰性 re-export，不是第二份真源）
   ② pyproject.toml project.version
   ③ 构建 venv 中 installed 的 omnicrawler-platform 版本
            ↓

@@ -2,7 +2,8 @@
 
 ## 版本来源（必读）
 
-**构建产物的版本号唯一来源是 `src/omnicrawler/__init__.py` 中的 `__version__`。**
+**构建产物的版本号唯一来源是 `src/omnicrawler/_version.py` 中的 `__version__`。**
+（`omnicrawler.__version__` 仍可用，但它只是对 `_version.py` 的惰性 re-export，不是第二份真源。）
 `build_windows.ps1` 启动时会自动读取，产物命名由脚本决定，严禁在构建
 过程中手动修改版本号。版本号的变更是一个独立操作（通过 `tools/bump_version.py`），
 绝对不与构建、修复、测试等其他操作混在一起。

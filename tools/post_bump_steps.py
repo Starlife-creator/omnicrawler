@@ -6,6 +6,7 @@
     python tools/post_bump_steps.py --old 0.13.0 --new 0.13.1
     python tools/post_bump_steps.py --old 0.13.0 --new 0.13.1 --report-draft draft.md
     python tools/post_bump_steps.py --check --old 0.13.0 --new 0.13.1   # 只读：还有哪些没做
+    python tools/post_bump_steps.py --check-current                     # 门禁用：当前版本自洽性
 
 为什么存在
 ----------
@@ -41,6 +42,20 @@ _VERSION_STATEMENT_PAGES = ("docs/releases/README.md", "docs/archive/README.md")
 _REPORT_PATH = "docs/releases/RELEASE_REPORT_{version}.md"
 _VERSION_HEADER = "> 适用版本："
 _PROJECT_ANCHOR = 'name = "omnicrawler-platform"\n'
+
+#: 每份版本声明页里「当前版本」那句的**唯一锚点**（一条正则、一个捕获组）。
+#: 这是 `--check-current` 的判据来源：锚点缺失或解析不出 ⇒ 报错，**不是**静默跳过。
+#: 只抓「当前版本」那一句，历史版本（归档页里的 1.x / 2.x）不在锚点内，不会被误判。
+_CURRENT_VERSION_ANCHORS: tuple[tuple[str, str], ...] = (
+    ("docs/releases/README.md", r"`RELEASE_REPORT_(\d+\.\d+\.\d+)\.md`\s*\|\s*当前版本"),
+    ("docs/archive/README.md", r"当前版本线为\s*\**(\d+\.\d+\.\d+)\**"),
+)
+
+#: `> 适用版本：` 后的版本号；同时接受裸值与加粗 `**1.0.1**` 两种写法。
+#: 曾经的 `(\S+)` 会把 `**1.0.1**` 整体当作版本串 ⇒ 加粗文档被误报为漂移（批次 3 修正）。
+_HEADER_VERSION = re.compile(
+    r"^" + re.escape(_VERSION_HEADER) + r"\s*\**([0-9]+\.[0-9]+\.[0-9]+)\**", re.MULTILINE
+)
 
 _STATUS_DONE = "done"
 _STATUS_SKIP = "skip"
@@ -97,6 +112,14 @@ def fix_version_statements(
             results.append(StepResult(_STATUS_ERROR, f"ERROR  {rel} not found"))
             continue
         text = path.read_text(encoding="utf-8")
+        if old == new:
+            # 同版本重跑：replace 是空操作，若仍报 done 会让 --check 永远判「未完成」
+            # （批次 3 实测：--old 1.0.1 --new 1.0.1 时 2 步 pending 恒红）。判据是
+            # 「页面里是否还留着旧版引用」，同版本时没有可比对的新旧之分 ⇒ 只能 skip。
+            results.append(
+                StepResult(_STATUS_SKIP, f"skip   {rel}: old == new ({new}), nothing to rewrite")
+            )
+            continue
         hits = text.count(old)
         if hits == 0:
             results.append(StepResult(_STATUS_SKIP, f"skip   {rel}: no {old} reference"))
@@ -120,18 +143,20 @@ def fix_version_headers(
       按子串匹配会造出"假漂移"（实测：``docs/README.md`` 被误报）。
     * **跳过 ``docs/README.md``**：它是导航页、不是带元数据的文档 —— 文档门禁本身也是这么
       排除的（``docs/*.md`` 里除 README 外都必须带标记）。
+
+    ★ 版本号按**数值**取，不按原始 token：``**1.0.1**`` 与 ``1.0.1`` 是同一版本
+    （批次 3 修正：此前用 ``(\\S+)`` 会把加粗写法整体当作版本串 ⇒ 8 条假漂移）。
     """
     results: list[StepResult] = []
     drift: list[str] = []
     docs_dir = root / "docs"
     if not docs_dir.is_dir():
         return [StepResult(_STATUS_ERROR, f"ERROR  docs/ not found under {root}")], drift
-    metadata = re.compile(r"^" + re.escape(_VERSION_HEADER) + r"(\S+)", re.MULTILINE)
     for path in sorted(docs_dir.glob("*.md")):
         if path.name == "README.md":
             continue
         text = path.read_text(encoding="utf-8")
-        found = metadata.search(text)
+        found = _HEADER_VERSION.search(text)
         if found is None:
             continue
         rel = f"docs/{path.name}"
@@ -168,6 +193,64 @@ def install_report(
     return StepResult(
         _STATUS_DONE, f"done   {_REPORT_PATH.format(version=new)}: content installed from {draft.name}"
     )
+
+
+def _project_version(root: Path) -> str:
+    """当前版本真值：``pyproject.toml`` 的 ``project.version``。
+
+    只读这一处是**有意**的——``_version.py`` 与 ``uv.lock`` 与它的一致性已分别由
+    ``check_docs_consistency`` / ``check_lockfile_consistency`` 断言，这里不重复造判据。
+    """
+    import tomllib
+
+    metadata = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    return str(metadata["project"]["version"])
+
+
+def check_current(root: Path) -> list[str]:
+    """``--check-current`` 的判据：**当前版本**是否已经落到「bump 工具不碰」的那些位置。
+
+    这是本工具能挂进门禁的唯一形态：``--check --old X --new Y`` 需要两个版本号，
+    门禁没有「上一个版本」可问；而这一模式只问一件事——「声明当前版本的锚点页，
+    说的还是当前版本吗？」。它覆盖的正是实测漂移过两次的那类位置：
+
+    * ``docs/releases/README.md``：``| `RELEASE_REPORT_<v>.md` | 当前版本 <v> …``
+    * ``docs/archive/README.md``：``当前版本线为 **<v>**``
+
+    每条锚点都用**一条正则**取值：解析不到（页面改写了句式）⇒ 报错而不是静默跳过，
+    因为「锚点消失」和「版本正确」必须能区分开。
+    """
+    problems: list[str] = []
+    try:
+        version = _project_version(root)
+    except (OSError, KeyError, ValueError) as exc:
+        return [f"pyproject.toml: cannot read project.version ({exc})"]
+
+    for rel, pattern in _CURRENT_VERSION_ANCHORS:
+        path = root / rel
+        if not path.is_file():
+            problems.append(f"{rel}: file not found")
+            continue
+        match = re.search(pattern, path.read_text(encoding="utf-8"))
+        if match is None:
+            problems.append(f"{rel}: version anchor not found (page wording changed?)")
+        elif match.group(1) != version:
+            problems.append(
+                f"{rel}: states {match.group(1)} but project version is {version}"
+            )
+    return problems
+
+
+def run_check_current(root: Path) -> int:
+    """打印 ``--check-current`` 的结果并给出退出码。"""
+    problems = check_current(root)
+    if problems:
+        for problem in problems:
+            print(f"ERROR  {problem}")
+        print(f"check-current: {len(problems)} problem(s)")
+        return 1
+    print("check-current: version statement pages match the project version")
+    return 0
 
 
 def run(root: Path, old: str, new: str, draft: Path | None, *, dry_run: bool) -> int:
@@ -207,8 +290,8 @@ def main(argv: list[str] | None = None) -> int:
         description="Complete the post-bump manual steps that bump_version.py does not do."
     )
     parser.add_argument("--root", type=Path, default=Path("."))
-    parser.add_argument("--old", required=True, help="version before the bump, e.g. 0.13.0")
-    parser.add_argument("--new", required=True, help="version after the bump, e.g. 0.13.1")
+    parser.add_argument("--old", help="version before the bump, e.g. 0.13.0")
+    parser.add_argument("--new", help="version after the bump, e.g. 0.13.1")
     parser.add_argument(
         "--report-draft",
         type=Path,
@@ -220,7 +303,23 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="read-only: report which steps are still pending; non-zero exit if any",
     )
+    parser.add_argument(
+        "--check-current",
+        action="store_true",
+        help=(
+            "read-only gate mode: assert the pages that state the CURRENT version still state "
+            "the version in pyproject.toml (no --old/--new needed)"
+        ),
+    )
     args = parser.parse_args(argv)
+
+    if args.check_current:
+        if args.old or args.new:
+            parser.error("--check-current does not take --old/--new")
+        return run_check_current(args.root)
+
+    if not args.old or not args.new:
+        parser.error("--old and --new are required (or use --check-current)")
     return run(args.root, args.old, args.new, args.report_draft, dry_run=args.check)
 
 

@@ -14,7 +14,7 @@
 
 步骤:
     1. 读取 pyproject.toml 旧版本号
-    2. 更新 pyproject.toml / __init__.py / 约束文件
+    2. 更新 pyproject.toml / _version.py / 约束文件
     3. 重命名版本化文件名
     4. 替换所有文档正文中的旧版本号
     5. 同步 check_docs_consistency.py
@@ -26,7 +26,8 @@
 
 架构说明:
     项目版本号唯一数据源在 pyproject.toml (project.version) 和
-    src/omnicrawler/__init__.py (__version__)。所有 User-Agent 字符串均通过
+    src/omnicrawler/_version.py (__version__)；__init__.py 只经模块级 __getattr__
+    惰性 re-export，不是第二份真源。所有 User-Agent 字符串均通过
     core.utils.user_agent() 动态生成，无需手动维护各模块的版本号。
 """
 
@@ -142,7 +143,7 @@ def _replace_version_in_file(filepath: Path, old: str, new: str) -> bool:
 
 
 def step_update_core_files(root: Path, old: str, new: str) -> None:
-    """Step 2: 更新 pyproject.toml 和 __init__.py。"""
+    """Step 2: 更新 pyproject.toml 和 _version.py。"""
     print(f"  [core] pyproject.toml: {old} → {new}")
 
     pyproject_path = root / "pyproject.toml"

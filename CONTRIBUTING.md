@@ -182,7 +182,8 @@ DCO 静态检查，不 import 或执行投稿插件。维护者人工固定 mani
 **Windows 便携版构建详见 [`docs/WINDOWS_PACKAGING.md`](docs/WINDOWS_PACKAGING.md)。**
 下面是最关键的规则：
 
-1. **版本号唯一来源**：`src/omnicrawler/__init__.py` 中的 `__version__`。构建脚本自动读取，
+1. **版本号唯一来源**：`src/omnicrawler/_version.py` 中的 `__version__`（叶子模块；
+   `omnicrawler.__version__` 只是对它的惰性 re-export，不是第二份真源）。构建脚本自动读取，
    产物文件名由脚本生成，任何人（包括自动化工具）都不应在构建流程中手动修改版本号。
 2. **修改版本号是独立操作**：使用 `tools/bump_version.py`，不与构建、测试、修复混在一起。
 3. **产物归档**：所有构建产物放入 `artifacts/` 版本化目录，规则见 [`artifacts/README.md`](artifacts/README.md)。

@@ -177,3 +177,129 @@ def test_index_page_and_prose_mentions_are_not_treated_as_headers(tmp_path: Path
     assert "PROSE_MENTION.md" not in touched, "正文提及不得被当成元数据头"
     # 桩里那份**有意**漂移的 OPERATIONS.md 仍应被报出；但不得多出这两条的假漂移
     assert len(drift) == 1 and "OPERATIONS.md" in drift[0], drift
+
+
+def test_bold_version_header_is_not_reported_as_drift(tmp_path: Path) -> None:
+    """★ 加粗写法 `**1.0.1**` 是**同一版本**，不是漂移。
+
+    由来（批次 3 实测）：旧的 `^> 适用版本：(\\S+)` 会把 `**1.0.1**` 整体当作版本串，
+    于是 8 份用加粗写法的文档被报成「假漂移」——而它们其实完全正确。
+    版本号必须按**数值**取，不能按原始 token 比。
+    """
+    root = _stage(tmp_path)
+    for name in ("BOLD_ONE.md", "BOLD_TWO.md"):
+        (root / "docs" / name).write_text(
+            f"# {name}\n\n{pbs._VERSION_HEADER}**{NEW}** · 配置协议：v5\n", encoding="utf-8"
+        )
+
+    results, drift = pbs.fix_version_headers(root, OLD, NEW, dry_run=False)
+    messages = " ".join(r.message for r in results)
+
+    assert not any("BOLD_ONE.md" in line or "BOLD_TWO.md" in line for line in drift), drift
+    assert "BOLD_ONE.md: header already" in messages, "加粗且已同步的文档应判 skip"
+
+
+def test_bold_old_header_is_rewritten_to_plain_new(tmp_path: Path) -> None:
+    """加粗的**旧**版本仍必须被改写（别为了避假漂移而漏改）。"""
+    root = _stage(tmp_path)
+    (root / "docs" / "BOLD_OLD.md").write_text(
+        f"# x\n\n{pbs._VERSION_HEADER}**{OLD}** · 配置协议：v5\n", encoding="utf-8"
+    )
+
+    assert pbs.run(root, OLD, NEW, None, dry_run=False) == 0
+    body = (root / "docs" / "BOLD_OLD.md").read_text(encoding="utf-8")
+    assert f"{pbs._VERSION_HEADER}{NEW}" in body, body
+    assert OLD not in body, body
+
+
+def test_same_version_check_does_not_report_pending(tmp_path: Path) -> None:
+    """★ 同版本重跑（--old == --new）不得判「未完成」。
+
+    由来（批次 3 实测）：`--check --old 1.0.1 --new 1.0.1` 恒报 2 step(s) pending，
+    因为 `str.replace(old, new)` 在同版本下是空操作、文件里仍有旧引用 ⇒ 永远 done。
+    这会让该工具无法作为门禁挂进 CI。
+    """
+    root = _stage(tmp_path)
+    for name in ("INSTALLATION.md", "OPERATIONS.md"):
+        (root / "docs" / name).write_text(
+            f"# {name}\n\n{pbs._VERSION_HEADER}{OLD} · 配置协议：v5\n", encoding="utf-8"
+        )
+    (root / "docs" / "releases" / "README.md").write_text(
+        f"| `RELEASE_REPORT_{OLD}.md` | 当前版本 {OLD} 的发布报告 |\n", encoding="utf-8"
+    )
+    (root / "docs" / "archive" / "README.md").write_text(
+        f"当前版本线为 **{OLD}**（见 pyproject.toml）。\n", encoding="utf-8"
+    )
+    lock = (root / "uv.lock").read_text(encoding="utf-8").replace(f'"{NEW}"', f'"{OLD}"')
+    (root / "uv.lock").write_text(lock, encoding="utf-8")
+
+    assert pbs.run(root, OLD, OLD, None, dry_run=True) == 0, "同版本时必须判完成"
+
+
+def test_check_current_passes_when_anchors_match(tmp_path: Path) -> None:
+    """`--check-current` 在版本自洽时通过（这就是它能挂门禁的形态）。"""
+    root = _stage(tmp_path)
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "omnicrawler-platform"\nversion = "1.0.1"\n', encoding="utf-8"
+    )
+    (root / "docs" / "releases" / "README.md").write_text(
+        "| `RELEASE_REPORT_1.0.1.md` | 当前版本 1.0.1 的发布报告 |\n", encoding="utf-8"
+    )
+    (root / "docs" / "archive" / "README.md").write_text(
+        "当前版本线为 **1.0.1**（见 pyproject.toml）。\n", encoding="utf-8"
+    )
+
+    assert pbs.check_current(root) == []
+    assert pbs.run_check_current(root) == 0
+
+
+def test_check_current_reports_a_drifted_statement_page(tmp_path: Path) -> None:
+    """★ 正向判据：门禁页还写着旧版本 ⇒ 必须报出来（这正是漏过两次的那类漂移）。"""
+    root = _stage(tmp_path)
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "omnicrawler-platform"\nversion = "1.0.1"\n', encoding="utf-8"
+    )
+    (root / "docs" / "releases" / "README.md").write_text(
+        "| `RELEASE_REPORT_1.0.1.md` | 当前版本 1.0.1 的发布报告 |\n", encoding="utf-8"
+    )
+    (root / "docs" / "archive" / "README.md").write_text(
+        "当前版本线为 **0.12.0**（见 pyproject.toml）。\n", encoding="utf-8"
+    )
+
+    problems = pbs.check_current(root)
+    assert len(problems) == 1 and "0.12.0" in problems[0], problems
+    assert pbs.run_check_current(root) == 1
+
+
+def test_check_current_anchor_missing_is_an_error_not_a_silent_pass(tmp_path: Path) -> None:
+    """★ 反向断言：锚点被改写 ⇒ 报「找不到锚点」，**不是**静默跳过。
+
+    若有人把句式改了却没人更新锚点正则，这里必须红——「锚点消失」与「版本正确」
+    是两件事，不能让前者伪装成后者。
+    """
+    root = _stage(tmp_path)
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "omnicrawler-platform"\nversion = "1.0.1"\n', encoding="utf-8"
+    )
+    (root / "docs" / "releases" / "README.md").write_text(
+        "| `RELEASE_REPORT_1.0.1.md` | 当前版本 1.0.1 的发布报告 |\n", encoding="utf-8"
+    )
+    (root / "docs" / "archive" / "README.md").write_text(
+        "本目录内容已冻结。\n", encoding="utf-8"
+    )
+
+    problems = pbs.check_current(root)
+    assert any("anchor not found" in line for line in problems), problems
+    assert pbs.run_check_current(root) == 1
+
+
+def test_check_current_missing_page_is_an_error(tmp_path: Path) -> None:
+    """门禁页整个不见了 ⇒ 报错（它是文档门禁要求存在的页面）。"""
+    root = _stage(tmp_path)
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "omnicrawler-platform"\nversion = "1.0.1"\n', encoding="utf-8"
+    )
+    (root / "docs" / "releases" / "README.md").unlink()
+
+    problems = pbs.check_current(root)
+    assert any("releases/README.md: file not found" in line for line in problems), problems

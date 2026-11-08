@@ -7,7 +7,7 @@
 构建脚本 **不会从命令行参数接收版本号**。它直接从源码读取：
 
 ```
-src/omnicrawler/__init__.py  →  __version__
+src/omnicrawler/_version.py  →  __version__
            ↓
 build_windows.ps1（启动时立刻打印版本、产物命名使用该值）
            ↓

@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [switch]$SkipDependencyInstall,
     [switch]$SkipBrowserDownload,
@@ -73,7 +73,7 @@ if ($Offline) {
 
 # =============================================================================
 # Version guard — version is read from source code, never hardcoded or guessed.
-# If you want a different version, bump __version__ in src/omnicrawler/__init__.py
+# If you want a different version, bump __version__ in src/omnicrawler/_version.py
 # *before* running this script.  Do NOT edit __version__ as a side effect of
 # other work — that is a separate, deliberate operation.
 # F1：版本读取移到依赖安装之后（全新构建时构建 venv 尚未创建）。

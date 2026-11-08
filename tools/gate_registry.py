@@ -125,6 +125,17 @@ GATES: tuple[Gate, ...] = (
         script="tools/check_docs_consistency.py",
     ),
     Gate(
+        name="post_bump_steps",
+        args=("tools/post_bump_steps.py", "--check-current"),
+        sets=_STATIC,
+        description="版本收口：声明「当前版本」的锚点页（releases/archive README）与 pyproject 版本一致",
+        script="tools/post_bump_steps.py",
+        ci_note=(
+            "CI 与本地都用 `--check-current`（只读、不需要 --old/--new）。"
+            "`--check --old X --new Y` 是发布后的人工补步模式，两者判据不同。"
+        ),
+    ),
+    Gate(
         name="check_line_endings_policy",
         args=("tools/check_line_endings_policy.py",),
         sets=_STATIC,

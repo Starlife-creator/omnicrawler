@@ -135,6 +135,9 @@ jobs:
       - run: python tools/check_sdk_api.py
       - run: python tools/check_cli_docs.py
       - run: python tools/check_docs_consistency.py
+      # 版本收口：声明「当前版本」的锚点页（releases/archive README）必须与 pyproject 一致。
+      # 这类漂移曾两次漏过——因为它不在任何 check_*.py 的判据里。
+      - run: python tools/post_bump_steps.py --check-current
       # C-#23：换行规则与 .gitattributes 现行规则一致性门禁
       - run: python tools/check_line_endings_policy.py
       # C-#17 / C-#18 / C-#11：根目录 shell/command 脚本语法、失败保护、venv 守卫、

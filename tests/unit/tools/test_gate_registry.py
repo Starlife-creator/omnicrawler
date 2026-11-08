@@ -37,7 +37,18 @@ from tools.self_verify import main
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _WORKFLOW_DIR = _REPO_ROOT / ".github" / "workflows"
-_SCRIPT_RE = re.compile(r"tools/(check_[a-z0-9_]+\.py)")
+
+# 门禁脚本的命名约定是 `check_*.py`，但**不是所有门禁都叫这个名字**
+# （例：`tools/post_bump_steps.py --check-current` 是版本收口门禁）。
+# 这里显式列出这类脚本——不改成「扫 tools/ 下所有 .py」是**有意**的：
+# CI 里还有构建与辅助脚本（build_wheel.py、i18n_stats.py、generate_sbom.py、
+# checkout_market.py …），它们不是门禁，一律纳入会让双向断言立刻变成噪声红。
+_NON_CHECK_GATE_SCRIPTS = ("post_bump_steps.py",)
+_SCRIPT_RE = re.compile(
+    r"tools/(check_[a-z0-9_]+\.py|"
+    + "|".join(re.escape(name) for name in _NON_CHECK_GATE_SCRIPTS)
+    + r")"
+)
 
 
 def _scripts_referenced_by_ci() -> set[str]:
@@ -116,6 +127,8 @@ def test_static_set_covers_the_red_lines() -> None:
         "check_architecture", "check_docs_consistency", "check_gui_conventions",
         "check_lint_budget", "check_network_boundaries", "check_release_integrity",
         "check_sdk_api", "check_cli_docs", "check_coding_standards", "check_minimal_install",
+        # 版本收口：锚点页声明的「当前版本」与 pyproject 一致（曾两次静默漂移）
+        "post_bump_steps",
     }
     assert required <= names, f"static 集合缺少: {sorted(required - names)}"
 
