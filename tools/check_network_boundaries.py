@@ -13,10 +13,23 @@ APPROVED_DIRECT_CALLS = {
         "when the caller supplies a broker; the AST-level scan cannot see the "
         "context manager, same precedent as streams.py/change_detector.py."
     ),
+    "fetching/http_client.py": (
+        "build_safe_opener is the single authorized safe-opener builder; its "
+        "build_opener/ProxyHandler construction happens inside the EgressBroker-"
+        "wired path (P0 fail-closed batch, 优化方案 §14.2)."
+    ),
+    "fetching/stealth_enhanced.py": (
+        "validate_proxy probes the proxy under test, so the request must travel "
+        "through that proxy itself; routing it via EgressBroker would be circular. "
+        "The public httpbin default was removed; callers must pass an explicit "
+        "test_url (B03-010, 优化方案 §14.2)."
+    ),
 }
 
 DIRECT_TRANSPORTS = {
     "urllib.request.urlopen",
+    "urllib.request.build_opener",
+    "urllib.request.ProxyHandler",
     "requests.get",
     "requests.post",
     "requests.request",

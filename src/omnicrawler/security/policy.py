@@ -269,17 +269,20 @@ class RobotsPolicy:
                 headers={"User-Agent": self.user_agent, "Accept": "text/plain,*/*;q=0.1"},
             )
             if self._egress is None:
+                # P0 fail-closed（优化方案 §14.2）：调用方注入了 opener 却没有接 EgressBroker，
+                # 属于接线缺陷而非网络故障——一律拒绝出网，不受 robots_fail_closed 开关影响。
+                self._record_robots_outcome(
+                    origin, "policy", "未接入 EgressBroker：拒绝直连抓取 robots.txt（fail-closed）", False,
+                )
+                return False
+            with self._egress.request(
+                request.full_url,
+                purpose="robots",
+                headers={str(key): str(value) for key, value in request.header_items()},
+            ):
                 with opener.open(request, timeout=self.timeout) as response:
                     body = response.read(self.max_bytes + 1)
-            else:
-                with self._egress.request(
-                    request.full_url,
-                    purpose="robots",
-                    headers={str(key): str(value) for key, value in request.header_items()},
-                ):
-                    with opener.open(request, timeout=self.timeout) as response:
-                        body = response.read(self.max_bytes + 1)
-                    self._egress.record_response(len(body), url=request.full_url)
+                self._egress.record_response(len(body), url=request.full_url)
             if len(body) > self.max_bytes:
                 raise ResponseTooLargeError("robots.txt超过配置的大小上限")
             parser.parse(body.decode("utf-8", errors="replace").splitlines())

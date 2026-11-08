@@ -25,6 +25,19 @@ def test_probe_without_config_still_validates_url() -> None:
     assert "base_url 无效" in result["detail"]
 
 
+def test_probe_valid_url_without_config_refuses_fail_closed(monkeypatch) -> None:
+    """P0 fail-closed（优化方案 §14.2）：合法 URL 但缺 config 时不得退回默认 opener 直连。"""
+    import urllib.request
+
+    def _boom(*_a, **_k):  # 任何直连构造都视为回归
+        raise AssertionError("config=None 时不得构造默认 opener")
+
+    monkeypatch.setattr(urllib.request, "build_opener", _boom)
+    result = _probe_models("https://llm.example.invalid/v1", "key", "model")
+    assert result["ok"] is False
+    assert "fail-closed" in result["detail"]
+
+
 def test_probe_private_target_rejected_by_policy(tmp_path: Path) -> None:
     config = load_config(_config(tmp_path, base_url="http://127.0.0.1:9999"))
     result = _probe_models("http://127.0.0.1:9999/v1", "key", "model", config=config)

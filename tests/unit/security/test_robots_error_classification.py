@@ -132,23 +132,36 @@ def test_network_failure_fail_closed_blocks(tmp_path: Path, exc: Exception, kind
     [urllib.error.URLError(socket.gaierror("nodename")), urllib.error.URLError(TimeoutError("x"))],
 )
 def test_network_failure_fail_open_allows(tmp_path: Path, exc: Exception) -> None:
-    policy = _policy(tmp_path, fail_closed=False, opener=_StubOpener(exc=exc))
+    policy = _policy(tmp_path, fail_closed=False, opener=_StubOpener(exc=exc), egress=_StubEgress())
     assert policy.allowed("https://example.com/private/") is True
     assert policy.last_error is not None and policy.last_error["allowed"] is True
 
 
 def test_http_4xx_allows_and_5xx_follows_fail_closed(tmp_path: Path) -> None:
     not_found = urllib.error.HTTPError("https://x/robots.txt", 404, "nope", {}, None)
-    policy = _policy(tmp_path, fail_closed=True, opener=_StubOpener(exc=not_found))
+    policy = _policy(tmp_path, fail_closed=True, opener=_StubOpener(exc=not_found), egress=_StubEgress())
     assert policy.allowed("https://example.com/") is True
     assert policy.last_error is not None and policy.last_error["kind"] == "http"
 
     busy = urllib.error.HTTPError("https://x/robots.txt", 503, "busy", {}, None)
-    policy = _policy(tmp_path, fail_closed=True, opener=_StubOpener(exc=busy))
+    policy = _policy(tmp_path, fail_closed=True, opener=_StubOpener(exc=busy), egress=_StubEgress())
     assert policy.allowed("https://example.com/") is False
 
-    policy_open = _policy(tmp_path, fail_closed=False, opener=_StubOpener(exc=busy))
+    policy_open = _policy(tmp_path, fail_closed=False, opener=_StubOpener(exc=busy), egress=_StubEgress())
     assert policy_open.allowed("https://example.com/") is True
+
+
+@pytest.mark.parametrize("fail_closed", [True, False])
+def test_missing_egress_refuses_regardless_of_fail_closed_switch(tmp_path: Path, fail_closed: bool) -> None:
+    """P0 fail-closed（优化方案 §14.2）：注入 opener 而未接 EgressBroker 属接线缺陷，
+    一律拒绝出网，不受 robots_fail_closed 开关影响；opener 不得被调用。"""
+    opener = _StubOpener(body=b"User-agent: *\nDisallow:\n")
+    policy = _policy(tmp_path, fail_closed=fail_closed, opener=opener, egress=None)
+    assert policy.allowed("https://example.com/") is False
+    assert policy.last_error is not None
+    assert policy.last_error["kind"] == "policy"
+    assert policy.last_error["allowed"] is False
+    assert "EgressBroker" in str(policy.last_error["detail"])
 
 
 def test_successful_robots_not_recorded_as_issue(tmp_path: Path) -> None:

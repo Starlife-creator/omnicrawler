@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import contextlib
 import socket
 from pathlib import Path
 from unittest.mock import patch
@@ -85,9 +86,22 @@ class _OkOpener:
         return _OkResponse()
 
 
+class _NoopEgress:
+    """P0 fail-closed 后 RobotsPolicy 出网必须接 egress；缓存淘汰测试不关心审计内容。"""
+
+    def request(self, _url: str, **_kwargs: object):
+        return contextlib.nullcontext()
+
+    def record_response(self, _size: int, **_kwargs: object) -> None:
+        return None
+
+    def record_robots_issue(self, *_args: object, **_kwargs: object) -> None:
+        return None
+
+
 def test_robots_cache_and_locks_evict_oldest_origin(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(policy_module, "_ROBOTS_CACHE_MAX_ORIGINS", 5)
-    robots = RobotsPolicy(_config(tmp_path), opener=_OkOpener())
+    robots = RobotsPolicy(_config(tmp_path), opener=_OkOpener(), egress=_NoopEgress())
     for index in range(8):
         robots.allowed(f"https://robots-{index}.example.com/page")
     assert len(robots._cache) == 5

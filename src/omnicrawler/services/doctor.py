@@ -86,13 +86,14 @@ def _probe_models(
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     request = urllib.request.Request(url, headers=headers, method="GET")
-    if config is not None:
-        from ..fetching.http_client import build_safe_opener
-        from ..security.egress import EgressBroker
+    if config is None:
+        # P0 fail-closed（优化方案 §14.2）：体检工具缺 config 时不得退回默认 opener 直连，
+        # 按 probe-skipped 语义返回诊断结果，由 ai_health 归入 warnings。
+        return {"ok": False, "detail": "缺少 config：拒绝直连 /models 探活（fail-closed），请在项目环境中运行诊断"}
+    from ..fetching.http_client import build_safe_opener
+    from ..security.egress import EgressBroker
 
-        opener = build_safe_opener(config, egress=EgressBroker(config))
-    else:
-        opener = urllib.request.build_opener()
+    opener = build_safe_opener(config, egress=EgressBroker(config))
     try:
         with opener.open(request, timeout=5) as response:
             body = json.loads(response.read(1024 * 1024).decode("utf-8", "replace"))
