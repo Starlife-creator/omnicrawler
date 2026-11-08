@@ -67,6 +67,7 @@ from .delegates import (
     MenuBuilder,
     ThemeManager,
     ToolbarManager,
+    WindowChromeBuilder,
 )
 from .delegates import (
     ConfigManager as ConfigDelegate,
@@ -75,7 +76,6 @@ from .delegates import (
     RunController as RunDelegate,
 )
 from .design_system import VisualTokens
-from .help_center import HelpCenterDock
 from .i18n import _
 from .navigation import NavIndex  # noqa: F401  # S3.1.2 re-export
 from .runner.env_checker import (
@@ -88,7 +88,6 @@ from .template_library_dialog import TemplateLibraryDialog
 from .views.pdf_region_selector import PdfRegionSelectorDialog
 from .views.task_history import TaskHistory
 from .widgets.resource_monitor import ResourceMonitor
-from .widgets.status_indicator import StatusIndicator
 from .widgets.toast import ToastManager
 
 LOGGER = logging.getLogger(__name__)
@@ -100,7 +99,6 @@ _GUI_APP_HOLD = None
 try:
     from PySide6.QtCore import (
         QProcess,
-        Qt,
         QThread,
         QTimer,
         QUrl,
@@ -152,6 +150,15 @@ class MainWindow(QMainWindow):
     _dnd_mode: bool
     _statusbar: QStatusBar
     _tray_icon: QSystemTrayIcon | None
+    # ---- 由 WindowChromeBuilder 装配的窗口外壳部件（批次 6-4d） ----
+    # 与中央区域同理：主窗口只按名字持有、跨面板共享，不碰类型细节。
+    _project_label: QLabel
+    _config_label: QLabel
+    _status_indicator: Any
+    _status_text: QLabel
+    _dnd_label: QLabel
+    _finish_label: QLabel
+    _help_center: Any
     # ---- 由 CentralAreaBuilder.setup() 装配的中央区域控件 ----
     # 批次 6-4b 把 226 行装配搬进 delegates/central_area.py 之后，本类不再 import
     # 那些 view/widget 类型（否则又把耦合搬回来）。这里的 Any 是**有意**的：
@@ -193,6 +200,14 @@ class MainWindow(QMainWindow):
         global _GUI_APP_HOLD
         _GUI_APP_HOLD = QApplication.instance()
         super().__init__()
+        self._init_window_frame()
+        self._init_core_state()
+        self._init_project_context()
+        self._init_runtime_state()
+        self._init_ui_and_signals()
+
+    def _init_window_frame(self) -> None:
+        """窗口外壳：对象名、初始运行状态、标题与尺寸。"""
         self.setObjectName("omnicrawlerMainWindow")
         # 先置空：运行状态回调可能在任何一次 `run` 之前抵达（见类注解处的 CI 实测说明）
         self._running_task_id = None
@@ -238,6 +253,8 @@ class MainWindow(QMainWindow):
 
         set_default_trust_prompter(_gui_trust_prompter)
 
+    def _init_core_state(self) -> None:
+        """核心状态：设置/配置/控制器/去抖定时器，以及各 delegate 的构造。"""
         # ---- 核心状态 ----
         self._settings = AppSettings.instance()
         self._config = CrawlConfig()
@@ -268,7 +285,10 @@ class MainWindow(QMainWindow):
         self._config_delegate = ConfigDelegate(self)
         self._login_session = LoginSessionDelegate(self)
         self._central_area = CentralAreaBuilder(self)
+        self._chrome = WindowChromeBuilder(self)
 
+    def _init_project_context(self) -> None:
+        """项目上下文：项目根目录、CLI 路径探测、依赖项目根的核心组件。"""
         # ---- 项目根目录 ----
         project_root_str = self._settings.project_root
         if project_root_str and Path(project_root_str).is_dir():
@@ -291,6 +311,8 @@ class MainWindow(QMainWindow):
         # ---- 核心组件（S3.1.27：抽方法，切换项目可重建）----
         self._build_project_components()
 
+    def _init_runtime_state(self) -> None:
+        """运行期状态容器（任务计时、后台作业列表、插件注册表等）。"""
         # ---- 运行状态 ----
         self._task_start_time: datetime | None = None
         self._task_elapsed_timer: QTimer | None = None
@@ -304,6 +326,8 @@ class MainWindow(QMainWindow):
         self._plugin_registry: Any | None = None
         self._builtin_background_controller: Any | None = None
 
+    def _init_ui_and_signals(self) -> None:
+        """构建界面（菜单/工具栏/状态栏/中央区域/托盘）并连接全局信号。"""
         # ---- 构建 UI ----
         self._theme_manager.refresh_accessibility()
         self._env_checker.ensure_data_mode_choice()
@@ -311,12 +335,12 @@ class MainWindow(QMainWindow):
         self._settings = AppSettings.instance()
         self._menu_builder.setup()
         self._toolbar_manager.setup()
-        self._setup_status_bar()
+        self._chrome.setup_status_bar()
         self._central_area.setup()
-        self._restore_workspace_background()
-        self._setup_help_center()
+        self._chrome.restore_workspace_background()
+        self._chrome.setup_help_center()
         self._theme_manager.apply_ui_mode(self._settings.ui_mode)
-        self._setup_system_tray()
+        self._chrome.setup_system_tray()
         self._install_plugin_ui()
 
         # ---- 连接信号 ----
@@ -452,15 +476,6 @@ class MainWindow(QMainWindow):
         buttons.rejected.connect(dialog.reject)
         dialog.exec()
 
-    def _restore_workspace_background(self) -> None:
-        selected = self._settings.workspace_background_path
-        if not selected:
-            return
-        try:
-            self._builtin_background().set_media(selected)
-        except (OSError, ValueError):
-            self._settings.workspace_background_path = ""
-
     # --- ErrorDialogHelper ---
     def _show_error_dialog(
         self, exc: BaseException, context: str = "", *, retry_callback: Callable[[], None] | None = None,
@@ -493,29 +508,6 @@ class MainWindow(QMainWindow):
     # ================================================================
     #  UI 构建
     # ================================================================
-
-    def _setup_status_bar(self) -> None:
-        sb = self.statusBar()
-        assert sb is not None
-        self._statusbar = sb
-        self._project_label = QLabel()
-        self._project_label.setObjectName("muted")
-        self._env_checker.update_project_label()
-        self._statusbar.addWidget(self._project_label)
-        self._config_label = QLabel(_("未保存"))
-        self._config_label.setObjectName("muted")
-        self._statusbar.addWidget(self._config_label)
-        self._status_indicator = StatusIndicator(size=12)
-        self._statusbar.addPermanentWidget(self._status_indicator)
-        self._status_text = QLabel(_("空闲"))
-        self._statusbar.addPermanentWidget(self._status_text)
-        self._dnd_label = QLabel()
-        self._dnd_label.setVisible(self._dnd_mode)
-        self._statusbar.addPermanentWidget(self._dnd_label)
-        self._theme_manager.update_dnd_label()
-        self._finish_label = QLabel()
-        self._finish_label.setObjectName("muted")
-        self._statusbar.addPermanentWidget(self._finish_label)
 
     def _market_app_config(self) -> Any:
         """市场视图使用的 AppConfig：与插件运行时同源，失败则回退内置默认。
@@ -620,11 +612,6 @@ class MainWindow(QMainWindow):
             return False
         return True
 
-    def _setup_help_center(self) -> None:
-        self._help_center = HelpCenterDock(self)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._help_center)
-        self._help_center.hide()
-
     def _build_project_components(self) -> None:
         """S3.1.27：构建/重建依赖项目根的组件（switch_project 时复用）。"""
         self._config_history = ConfigHistory(self._project_root / ".config_history")
@@ -670,29 +657,6 @@ class MainWindow(QMainWindow):
         for widget in (old_autosave, old_task_history):
             if isinstance(widget, QWidget):
                 widget.deleteLater()
-
-    def _setup_system_tray(self) -> None:
-        if QSystemTrayIcon.isSystemTrayAvailable():
-            self._tray_icon = QSystemTrayIcon(self)
-            # B1：托盘用带牌图标（自带不透明底，深浅托盘对比度都达标，见《优化方案》§九附录 A §3.5）
-            self._tray_icon.setIcon(app_icon())
-            self._tray_icon.setToolTip(_("OmniCrawler GUI 工作台"))
-            self._tray_icon.activated.connect(self._on_tray_activated)
-            # S3.1.2：QMenu(self) 接管所有权，托盘右键菜单不因父对象销毁而悬空
-            tray_menu = QMenu(self)
-            show_action = QAction(_("显示主窗口"), self)
-            show_action.triggered.connect(self.show)
-            tray_menu.addAction(show_action)
-            update_action = QAction(_("检查更新"), self)
-            update_action.triggered.connect(self._check_for_updates)
-            tray_menu.addAction(update_action)
-            quit_action = QAction(_("退出"), self)
-            quit_action.triggered.connect(self.close)
-            tray_menu.addAction(quit_action)
-            self._tray_icon.setContextMenu(tray_menu)
-            self._tray_icon.show()
-        else:
-            self._tray_icon = None
 
     def _check_for_updates(self) -> None:
         """托盘"检查更新"：后台线程跑 check，结果以 Toast/对话框呈现。
@@ -1956,21 +1920,6 @@ class MainWindow(QMainWindow):
                 ToastManager.instance().success(_("草稿已恢复"))
 
     # ================================================================
-    #  系统托盘
-    # ================================================================
-
-    def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        # ★ 修 §A-37：此前只处理双击，单击托盘图标毫无反应（多数平台的默认预期是单击
-        # 唤回窗口）。单击与双击都给同一反馈，重复触发是无害的幂等操作。
-        if reason in (
-            QSystemTrayIcon.ActivationReason.Trigger,
-            QSystemTrayIcon.ActivationReason.DoubleClick,
-        ):
-            self.show()
-            self.raise_()
-            self.activateWindow()
-
-    # ================================================================
     #  窗口事件
     # ================================================================
 
@@ -2143,11 +2092,6 @@ class MainWindow(QMainWindow):
 
         dialog = StealthSettingsDialog(self._settings, parent=self)
         dialog.exec()
-
-    def _on_monitor_desktop_notify(self, title: str, message: str) -> None:
-        """变更监控触发桌面通知 — 通过系统托盘弹窗。"""
-        if self._tray_icon and self._tray_icon.isSystemTrayAvailable():
-            self._tray_icon.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 8000)
 
     def _load_ai_config_from_env(self) -> dict[str, Any]:
         """从单一真源 .env 加载 AI 配置（优先级 os.environ > 项目 .env > 用户级 .env）。"""

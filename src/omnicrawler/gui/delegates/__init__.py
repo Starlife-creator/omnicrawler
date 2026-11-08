@@ -10,6 +10,7 @@ Only loaded when PySide6 is available.
 """
 from ._base import _BaseDelegate as _BaseDelegate
 from .central_area import CentralAreaBuilder as CentralAreaBuilder
+from .chrome import WindowChromeBuilder as WindowChromeBuilder
 from .config_manager import ConfigManager as ConfigManager
 from .env_checker import EnvironmentChecker as EnvironmentChecker
 from .error_dialog import ErrorDialogHelper as ErrorDialogHelper

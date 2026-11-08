@@ -87,12 +87,20 @@ def test_branding_assets_present_and_structurally_valid() -> None:
 
 
 def test_main_py_wires_the_icon_calls() -> None:
-    """源码级断言：main.py 里的三处接线真实存在（判据 ③，防日后重构删掉）。"""
-    source = (_REPO_ROOT / "src" / "omnicrawler" / "gui" / "main.py").read_text(encoding="utf-8")
-    assert "app.setWindowIcon(app_icon())" in source, "main.py 缺少 setWindowIcon 接线"
-    assert "self._tray_icon.setIcon(" in source, "main.py 缺少托盘 setIcon 接线"
+    """源码级断言：三处接线真实存在（判据 ③，防日后重构删掉）。
+
+    批次 6-4d 把托盘装配下沉到 ``gui/delegates/chrome.py``，所以这里扫描
+    「主窗口外壳」两处来源的拼接文本。判据是**托盘用品牌图标**，不是
+    「这一行必须写在 main.py 里」——下沉后仍必须存在，只是换了文件。
+    """
+    gui_root = _REPO_ROOT / "src" / "omnicrawler" / "gui"
+    source = (gui_root / "main.py").read_text(encoding="utf-8") + (
+        gui_root / "delegates" / "chrome.py"
+    ).read_text(encoding="utf-8")
+    assert "app.setWindowIcon(app_icon())" in source, "缺少 setWindowIcon 接线"
+    assert "_tray_icon.setIcon(" in source, "缺少托盘 setIcon 接线"
     assert 'app.setDesktopFileName("omnicrawler")' in source, (
-        "main.py 缺少 setDesktopFileName（Wayland app_id / .desktop 匹配，触点 2）"
+        "缺少 setDesktopFileName（Wayland app_id / .desktop 匹配，触点 2）"
     )
 
 

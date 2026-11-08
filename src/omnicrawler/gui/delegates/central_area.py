@@ -240,7 +240,7 @@ class CentralAreaBuilder(_BaseDelegate):
             except Exception:  # noqa: BLE001 — 构建失败静默降级，监控回退 urllib
                 mw._probe_fetcher = None
         mw._change_monitor = ChangeMonitorView(settings=mw._settings, fetcher=mw._probe_fetcher)
-        mw._change_monitor.desktop_notify.connect(mw._on_monitor_desktop_notify)
+        mw._change_monitor.desktop_notify.connect(mw._chrome.on_monitor_desktop_notify)
         mw._stack.addWidget(mw._change_monitor)
 
         mw._plugin_market = PluginMarketView(
