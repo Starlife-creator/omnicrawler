@@ -7,7 +7,7 @@ from typing import Any
 from PySide6.QtCore import QTimer, Slot
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
-from ..core.run_states import is_terminal, normalize_state, state_label
+from ..core.run_states import is_delivered, is_success, is_terminal, normalize_state, state_label
 from ..i18n import _
 from ..navigation import NavIndex
 from ..views.login_session_logic import LoginHintGate
@@ -248,11 +248,11 @@ class RunController(_BaseDelegate):
             completed_task_id = mw._running_task_id or mw._config.task_id
             mw._task_history.update_record(completed_task_id, state)
             mw._running_task_id = None
-            if normalize_state(state) in {"succeeded", "partial_success", "cancelled"}:
+            if is_delivered(state):
                 # 取消也把**已采到的**结果载入结果页（"已有有效输出受保护"）；
                 # 下面的自动打开目录/自动导出/提示音只属于正常完成。
                 mw._auto_load_results()
-            if normalize_state(state) in {"succeeded", "partial_success"}:
+            if is_success(state):
                 if mw._settings.auto_open_result:
                     mw._open_result_folder()
                 if mw._settings.sound_enabled and not mw._dnd_mode:

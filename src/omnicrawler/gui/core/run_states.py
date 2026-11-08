@@ -24,7 +24,13 @@
 
 from __future__ import annotations
 
-from ...core.run_state import STATUS_ALIASES, TERMINAL_RUN_STATES, canonical_run_state
+from ...core.run_state import (
+    DELIVERED_RUN_STATES,
+    STATUS_ALIASES,
+    SUCCESS_RUN_STATES,
+    TERMINAL_RUN_STATES,
+    canonical_run_state,
+)
 from ..i18n import _
 
 #: GUI 专有的生命周期词（不属于核心运行状态机，但界面状态会用它）。
@@ -97,6 +103,16 @@ def normalize_state(value: str) -> str:
 def is_terminal(state: str) -> bool:
     """是否终态（核心的 `TERMINAL_RUN_STATES`，含别名归一）。"""
     return normalize_state(state) in TERMINAL_RUN_STATES
+
+
+def is_delivered(state: str) -> bool:
+    """终态里**有产出可看**的那些（含 `cancelled`：取消也保留已采到的结果）。"""
+    return normalize_state(state) in DELIVERED_RUN_STATES
+
+
+def is_success(state: str) -> bool:
+    """「算完成」的终态（`succeeded` / `partial_success`），用于提示音/自动导出/托盘通知。"""
+    return normalize_state(state) in SUCCESS_RUN_STATES
 
 
 def state_label(state: str) -> str:

@@ -41,6 +41,9 @@ class _StubResponse:
     def read(self, _limit: int = -1) -> bytes:
         return self._body
 
+    def geturl(self) -> str:
+        return "https://example.com/robots.txt"
+
     def __enter__(self) -> _StubResponse:
         return self
 

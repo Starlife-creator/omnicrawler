@@ -17,7 +17,14 @@ def provider(event=None):
     value = OpenAICompatibleProvider("test", {"base_url": "https://example.com/v1", "model": "test",
                                              "timeout_seconds": 5}, cancel_event=event)
     value.app_config = AppConfig(Path("test.yaml"), Path.cwd(), {"http": {}}, Path.cwd(), ())
-    value.egress = type("Broker", (), {"policy": None, "request": lambda *a, **k: nullcontext()})()
+    value.egress = type(
+        "Broker", (),
+        {
+            "policy": None,
+            "request": lambda *a, **k: nullcontext(),
+            "record_response": lambda *a, **k: None,
+        },
+    )()
     return value
 
 

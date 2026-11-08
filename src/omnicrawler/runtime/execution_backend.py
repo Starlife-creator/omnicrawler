@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from ..core.config import load_config
+from ..core.run_state import TERMINAL_RUN_STATES
 from ..core.utils import atomic_write, utcnow
 from ..services.application_service import ApplicationService
 
@@ -192,7 +193,7 @@ class LocalWorkerBackend:
         # session before replacing its metadata and Popen handle on a new run.
         if self.session is not None:
             previous = self.status()
-            if previous.get("status") not in {"succeeded", "failed", "cancelled", "partial_success"}:
+            if previous.get("status") not in TERMINAL_RUN_STATES:
                 raise RuntimeError("已有独立 Worker 任务正在运行，请先停止或等待完成")
             self.shutdown()
         config = load_config(config_path)
@@ -283,7 +284,7 @@ class LocalWorkerBackend:
         if self.session is None:
             return True
         if not self._session_shutdown_requested:
-            if self.status().get("status") not in {"succeeded", "failed", "cancelled", "partial_success"}:
+            if self.status().get("status") not in TERMINAL_RUN_STATES:
                 return False
             self._request("shutdown")
             self._session_shutdown_requested = True

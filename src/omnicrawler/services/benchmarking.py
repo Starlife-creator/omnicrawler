@@ -35,6 +35,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ..core.run_state import SUCCESS_RUN_STATES
+
 if TYPE_CHECKING:
     from ..core.config import AppConfig
 
@@ -265,7 +267,7 @@ _RSS_SAMPLE_INTERVAL = 0.25
 #: 能被基准采信的终态。`partial_success` 表示「有交付但存在错误记录」——
 #: 它确实交付了页面，吞吐量因此仍是一次有效测量，不应被排除在基线之外。
 #: 2026-09-11：流水线开始发出该终态（此前从不发出），故此处同步放宽 `ok`。
-_OK_STATUSES = frozenset({"succeeded", "partial_success"})
+_OK_STATUSES = SUCCESS_RUN_STATES
 #: `usable` 额外接受空状态——2026-09-11 之前写入的历史条目没有 `status` 字段，
 #: 无法回溯判定，只能沿用其 `ok` 字段。
 _USABLE_STATUSES = _OK_STATUSES | {""}

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
 
+from ..core.bounded_io import read_bounded
 from ..core.config import AppConfig
 from ..core.errors import PolicyBlockedError, ResponseTooLargeError
 
@@ -281,10 +282,7 @@ class RobotsPolicy:
                 headers={str(key): str(value) for key, value in request.header_items()},
             ):
                 with opener.open(request, timeout=self.timeout) as response:
-                    body = response.read(self.max_bytes + 1)
-                self._egress.record_response(len(body), url=request.full_url)
-            if len(body) > self.max_bytes:
-                raise ResponseTooLargeError("robots.txt超过配置的大小上限")
+                    body = read_bounded(response, self.max_bytes, egress=self._egress, label="robots.txt")
             parser.parse(body.decode("utf-8", errors="replace").splitlines())
             return parser
         except urllib.error.HTTPError as exc:

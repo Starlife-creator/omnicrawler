@@ -7,6 +7,14 @@ RUN_STATES = frozenset(
     }
 )
 TERMINAL_RUN_STATES = frozenset({"succeeded", "failed", "cancelled", "partial_success"})
+#: 真正交付了产出的终态：终态里去掉 `failed`。取消也会保留「已采到的结果」，
+#: 所以「结果页能不能载入」与「任务是否成功」是两个判据，不要混用。
+DELIVERED_RUN_STATES = TERMINAL_RUN_STATES - {"failed"}
+#: 成功终态（含「部分成功」）：用于提示音、自动导出、托盘通知这类「算完成」的场合。
+SUCCESS_RUN_STATES = frozenset({"succeeded", "partial_success"})
+#: 完整成功（不含「部分成功」）：只有它才敢把「记录消失」判成删除 ——
+#: 部分成功的运行里消失的记录也可能只是没采到。
+COMPLETE_RUN_STATES = frozenset({"succeeded"})
 STATUS_ALIASES = {
     "completed": "succeeded",
     "completed_with_errors": "partial_success",

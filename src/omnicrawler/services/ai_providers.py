@@ -20,8 +20,9 @@ from threading import Event
 from typing import Any
 from urllib.parse import urlparse
 
+from ..core.bounded_io import read_bounded
 from ..core.config import DEFAULTS, AppConfig
-from ..core.errors import PolicyBlockedError, ResponseTooLargeError, TaskStoppedError
+from ..core.errors import PolicyBlockedError, TaskStoppedError
 from ..fetching.http_client import build_safe_opener
 from ..security.egress import EgressBroker
 from .ai_accounting import AIRequestAccounting
@@ -279,11 +280,8 @@ class OpenAICompatibleProvider:
                 with self.egress.request(request.full_url, purpose="ai", headers=request.headers):
                     with opener.open(request, timeout=timeout) as response:
                         self._remaining(deadline)
-                        raw = response.read(maximum + 1)
+                        raw = read_bounded(response, maximum, egress=self.egress, label="AI响应")
                         self._remaining(deadline)
-                        if len(raw) > maximum:
-                            raise ResponseTooLargeError(f"AI响应超过大小限制: > {maximum}")
-                        self.egress.record_response(len(raw), url=response.geturl())
                         value = json.loads(raw.decode("utf-8"))
                         if not isinstance(value, dict):
                             raise RuntimeError("AI 响应必须是 JSON 对象")

@@ -9,7 +9,7 @@ from ...core.utils import utcnow
 from ...runtime.execution_backend import LocalWorkerBackend
 from ..core.config_model import CrawlConfig
 from ..core.config_serializer import save_yaml
-from ..core.run_states import normalize_state
+from ..core.run_states import is_terminal, normalize_state
 from ..core.validator import plugin_source_kinds, validate_full_config
 from ..i18n import _
 from .log_parser import LogParser
@@ -199,7 +199,7 @@ class WorkerTaskRunner(QObject):
             self.log_line.emit(_(f"Worker连接中断，可从会话文件重新连接: {exc}"), "error")
             return
         status = str(result.get("status", "running"))
-        if status in {"succeeded", "failed", "cancelled", "partial_success"}:
+        if is_terminal(status):
             self._poller.stop()
             self._log_path = None  # 任务终态，停止增量读日志
             coverage = result.get("coverage", {})

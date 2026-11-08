@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..core.run_state import COMPLETE_RUN_STATES, STATUS_ALIASES
 from ..quality.semantic_changes import compare_record_data, record_identity, semantic_hash
 from ..state import StateStore
 
@@ -108,7 +109,10 @@ def _deletion_reasons(
 ) -> list[str]:
     after = next((row for row in runs if row["run_id"] == after_run), {})
     reasons: list[str] = []
-    if after.get("status") not in {"succeeded", "completed"}:
+    # 只有「完整成功」才敢把记录消失判成删除：旧词 `completed` 是 `succeeded` 的别名，
+    # 这里按真源归一后再比，避免同一判据在别处又写成一份字面量集合。
+    raw_status = str(after.get("status") or "")
+    if STATUS_ALIASES.get(raw_status.casefold(), raw_status.casefold()) not in COMPLETE_RUN_STATES:
         reasons.append("run_incomplete")
     summary = json.loads(after.get("summary_json") or "{}")
     delivery = (summary.get("export") or {}).get("delivery") or {}

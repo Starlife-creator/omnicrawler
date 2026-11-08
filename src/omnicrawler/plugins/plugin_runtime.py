@@ -6,8 +6,8 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+from ..core.bounded_io import read_bounded
 from ..core.config import AppConfig
-from ..core.errors import ResponseTooLargeError
 from ..core.models import CrawlRequest, ExtractedRecord, FetchResult
 from ..fetching.http_client import build_safe_opener
 from ..security.egress import EgressBroker, NetworkCapability
@@ -61,10 +61,7 @@ class PluginNetworkClient:
                 raw,
                 timeout=float(self.config.section("http").get("timeout_seconds", 25)),
             ) as response:
-                payload = response.read(maximum + 1)
-                if len(payload) > maximum:
-                    raise ResponseTooLargeError(f"插件响应超过大小限制: > {maximum}")
-                self.egress.record_response(len(payload), url=response.geturl())
+                payload = read_bounded(response, maximum, egress=self.egress, label="插件响应")
                 return FetchResult(
                     request,
                     response.geturl(),

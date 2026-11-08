@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import email.utils
 import tempfile
 import threading
@@ -165,6 +166,9 @@ class ProductionFoundationTest(unittest.TestCase):
             def __exit__(self, *_args):
                 return None
 
+            def geturl(self):
+                return "https://a.example/robots.txt"
+
             def read(self, _maximum):
                 with guard:
                     state["active"] += 1
@@ -182,9 +186,21 @@ class ProductionFoundationTest(unittest.TestCase):
                 self.urls.append((request.full_url, timeout))
                 return _ConcurrentResponse()
 
+        class _NoopEgress:
+            """P0 fail-closed 后 RobotsPolicy 出网必须接 EgressBroker；本用例只测并发。"""
+
+            def request(self, _url, **_kwargs):
+                return contextlib.nullcontext()
+
+            def record_response(self, _size, **_kwargs):
+                return None
+
+            def record_robots_issue(self, *_args, **_kwargs):
+                return None
+
         opener = _ConcurrentOpener()
         policy = RobotsPolicy(
-            self.config({"http": {"respect_robots": True}}), opener=opener
+            self.config({"http": {"respect_robots": True}}), opener=opener, egress=_NoopEgress()
         )
         values = []
         threads = [
