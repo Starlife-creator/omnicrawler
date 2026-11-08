@@ -36,5 +36,7 @@
 
 ## 5. 当前状态与环境依赖
 
-- 本轮仅落地规模 ratchet 门禁（`tools/check_main_window_size.py`）与本计划文档；**物理拆分待 Qt offscreen 测试网保护与 GUI CI 环境**，在测试网就位前 `main.py` 只允许缩减、不得增长（门禁阻断新增膨胀）。
+- 已落地：规模 ratchet 门禁（`tools/check_main_window_size.py`）、本计划文档，以及 §3 第 1 条要求的 **offscreen 契约测试网** `tests/gui/test_main_window_contract.py`（启动 → 导航/页面栈结构 → 每个菜单动作已接线 → 导航切换每页 → 关闭生命周期完整；含两条反向断言锁住判据本身）。该测试已接入 `.github/workflows/quality.yml` 的 `gui-and-browser` 腿。
+- 契约测试只断言窗口**最终长成的结构**，不断言由哪个方法拼出来——因此后续把装配搬进 delegate、或把 `__init__` 分段时它仍须全绿；反之搬迁漏接信号、少挂页面、导航映射错位会立刻变红。
+- 尚未开始物理拆分。拆分期间 `main.py` 只允许缩减、不得增长（门禁阻断新增膨胀），每阶段完成后用 `--write-baseline` 按实测下调。
 - 历史迁移教训与 delegate 边界见 `gui/delegates/` 目录注释与 `docs/CODING_STANDARDS.md`。
