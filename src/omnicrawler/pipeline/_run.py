@@ -21,7 +21,7 @@ from ..core.models import CrawlRequest, FetchResult
 from ..extraction import extractors
 from ..fetching.domain_semaphore import _resolve_scope
 from ..fetching.streams import collect_sse, collect_websocket
-from ..pipeline_ops.pdf_integration import run_pdf_pipeline
+from ..pipeline_ops.pdf_stage import run_pdf_stage
 from ..plugins.plugin_runtime import prepare_request, transform_record
 from ..runtime.live_concurrency import DomainAdmission, local_resource_pressure
 from ..runtime.resource_profiles import effective_concurrency
@@ -474,32 +474,17 @@ class _PipelineRun(_PipelineBase):
                 callback("crawl", crawl_status)
 
             # === Stage: PDF ===
-            configured_pdf = self.config.section("processors").get("pdf", {}).get("enabled", False)
-            pdf_enabled = configured_pdf if run_pdf is None else run_pdf
-            if pdf_enabled and status != "cancelled":
-                pdf_started = time.monotonic()
-                pdf_summary = run_pdf_pipeline(
-                    self.config,
-                    self.state,
-                    run_id=run_id,
-                    callback=(
-                        (lambda stage, value: callback(f"pdf_{stage}", value))
-                        if callback
-                        else None
-                    ),
-                    should_stop=should_stop,
-                )
-                self.metrics.gauge(
-                    "omnicrawler_pdf_documents", float(pdf_summary.get("documents", 0))
-                )
-                result_summary = pdf_summary.get("result", {})
-                if isinstance(result_summary, dict):
-                    for key in ("processed", "succeeded", "failed", "ocr_pages", "pages"):
-                        value = result_summary.get(key)
-                        if isinstance(value, (int, float)):
-                            self.metrics.gauge(f"omnicrawler_pdf_{key}", float(value))
-                self.state.save_checkpoint(run_id, "pdf", "pdf", pdf_summary)
-                self.metrics.record_stage("pdf", time.monotonic() - pdf_started)
+            # 阶段定义（启用判据、指标、检查点）在 pipeline_ops.pdf_stage；这里只调用。
+            pdf_summary = run_pdf_stage(
+                self.config,
+                self.state,
+                run_id=run_id,
+                run_pdf=run_pdf,
+                status=status,
+                callback=callback,
+                should_stop=should_stop,
+                metrics=self.metrics,
+            )
 
             # === Stage: Export ===
             tracker.begin_stage("export")

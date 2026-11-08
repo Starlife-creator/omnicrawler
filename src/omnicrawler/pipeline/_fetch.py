@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from ..core.artifact_kinds import CATEGORY_PDF, classify_artifact
 from ..core.models import CrawlRequest, FetchResult
 from ..core.utils import safe_filename
 from ..fetching.authentication import check_authentication
@@ -171,18 +172,17 @@ class _PipelineFetch(_PipelineBase):
         return result
 
     def _save_artifact(self, result: FetchResult) -> Path:
-        suffix = Path(result.final_url.split("?", 1)[0]).suffix.lower()
-        if result.content_type == "application/pdf" or suffix == ".pdf" or result.body.startswith(b"%PDF-"):
-            category = "pdf"
-            content_type = "application/pdf"
-        elif result.content_type.startswith(("image/", "audio/", "video/")):
-            category = "media"
-            content_type = result.content_type
-        else:
-            category = "files"
-            content_type = result.content_type
+        # 格式判定是「由内容推断」的通用职责，收在 core/artifact_kinds 里（原则 3：
+        # 不把格式特例写进编排层）；这里只负责按判定结果落盘。
+        kind = classify_artifact(
+            content_type=result.content_type,
+            final_url=result.final_url,
+            body=result.body,
+        )
+        category = kind.category
+        content_type = kind.content_type
         name = safe_filename(result.final_url, content_type, result.headers.get("content-disposition", ""))
-        if category == "pdf" and not name.lower().endswith(".pdf"):
+        if category == CATEGORY_PDF and not name.lower().endswith(".pdf"):
             name += ".pdf"
         named = Path(name)
         name = f"{named.stem}_{result.content_hash[:12]}{named.suffix}"
