@@ -4,10 +4,10 @@
 无 GUI 的任务执行请直接用 CLI：``omnicrawler run -c <配置>``
 （该入口不依赖 PySide6，可用于 CI/CD 与 SSH 会话）。
 
-架构说明：MainWindow 是组合根，通过 8 个 delegate 类分发功能：
-  MenuBuilder / ToolbarManager / ThemeManager / ErrorDialogHelper
-  EnvironmentChecker / HelpDialogManager / RunDelegate / ConfigDelegate
-每个 delegate 用 ``__getattr__`` 透明转发到 MainWindow 属性。
+架构说明：MainWindow 是组合根，通过 delegate 类分发功能（菜单 / 工具栏 / 主题 /
+错误对话框 / 环境检查 / 帮助 / 运行控制 / 配置 / 登录会话 / 中央区域装配）。
+每个 delegate 持有主窗口的**弱引用**，并显式写作 ``self._mw.X`` 访问它——
+历史上的 ``__getattr__`` 透明转发已删除（FINAL 长期债 #1 Phase B）。
 """
 
 from __future__ import annotations
@@ -59,9 +59,7 @@ from .core.workers import (
     SiteInspectionWorker,
 )
 from .delegates import (
-    ConfigManager as ConfigDelegate,
-)
-from .delegates import (
+    CentralAreaBuilder,
     EnvironmentChecker,
     ErrorDialogHelper,
     HelpDialogManager,
@@ -71,11 +69,13 @@ from .delegates import (
     ToolbarManager,
 )
 from .delegates import (
+    ConfigManager as ConfigDelegate,
+)
+from .delegates import (
     RunController as RunDelegate,
 )
-from .design_system import PageTransitionController, VisualTokens
+from .design_system import VisualTokens
 from .help_center import HelpCenterDock
-from .home import HomePage
 from .i18n import _
 from .navigation import NavIndex  # noqa: F401  # S3.1.2 re-export
 from .runner.env_checker import (
@@ -85,19 +85,8 @@ from .runner.worker_task_runner import WorkerTaskRunner as TaskRunner
 from .settings import AppSettings
 from .shortcuts import GlobalShortcutManager
 from .template_library_dialog import TemplateLibraryDialog
-from .views.change_monitor import ChangeMonitorView
-from .views.chart_view import ChartView
-from .views.convert_tool import ConvertView  # B-4：ConvertX 格式互转面板
-from .views.developer_inspector import DeveloperInspector
-from .views.file_list import FileList
 from .views.pdf_region_selector import PdfRegionSelectorDialog
-from .views.pdf_workbench import PdfWorkbenchView
-from .views.plugin_market import PluginMarketView
-from .views.professional_review import EvidenceView  # ProfessionalReviewView 别名保持兼容
-from .views.result_table import ResultTable
 from .views.task_history import TaskHistory
-from .views.yaml_editor import YamlEditor
-from .widgets.log_console import LogConsole
 from .widgets.resource_monitor import ResourceMonitor
 from .widgets.status_indicator import StatusIndicator
 from .widgets.toast import ToastManager
@@ -128,20 +117,14 @@ try:
         QApplication,
         QComboBox,
         QDialog,
-        QHBoxLayout,
         QInputDialog,
         QLabel,
-        QListWidget,
-        QListWidgetItem,
         QMainWindow,
         QMenu,
         QMessageBox,
-        QProgressBar,
         QPushButton,
-        QStackedWidget,
         QStatusBar,
         QSystemTrayIcon,
-        QVBoxLayout,
         QWidget,
     )
 except ImportError as e:
@@ -169,6 +152,35 @@ class MainWindow(QMainWindow):
     _dnd_mode: bool
     _statusbar: QStatusBar
     _tray_icon: QSystemTrayIcon | None
+    # ---- 由 CentralAreaBuilder.setup() 装配的中央区域控件 ----
+    # 批次 6-4b 把 226 行装配搬进 delegates/central_area.py 之后，本类不再 import
+    # 那些 view/widget 类型（否则又把耦合搬回来）。这里的 Any 是**有意**的：
+    # 主窗口只按名字持有它们、只做跨面板协调，不碰它们的类型细节。
+    _nav: Any
+    _nav_pages: dict[int, int]
+    _stack: Any
+    _workspace_widget: Any
+    _advanced_summary: Any
+    _task_canvas: Any
+    _yaml_editor: Any
+    _monitor_status: Any
+    _monitor_status_text: Any
+    _elapsed_label: Any
+    _progress_bar: Any
+    _progress_url_label: Any
+    _result_table: Any
+    _file_list: Any
+    _chart_view: Any
+    _home: Any
+    _evidence_view: Any
+    _pdf_workbench: Any
+    _convert_tool: Any
+    _change_monitor: Any
+    _plugin_market: Any
+    _developer_inspector: Any
+    _scene_panel: Any
+    _login_session_view: Any
+    _qml_showcase: Any
     # 委托/后台构建的方法内赋值属性（方法内局部 import 类型，注解延迟求值）
     _log_console: Any
     _page_transition: Any
@@ -255,6 +267,7 @@ class MainWindow(QMainWindow):
         self._run_delegate = RunDelegate(self)
         self._config_delegate = ConfigDelegate(self)
         self._login_session = LoginSessionDelegate(self)
+        self._central_area = CentralAreaBuilder(self)
 
         # ---- 项目根目录 ----
         project_root_str = self._settings.project_root
@@ -299,7 +312,7 @@ class MainWindow(QMainWindow):
         self._setup_menu_bar()
         self._setup_toolbar()
         self._setup_status_bar()
-        self._setup_central_area()
+        self._central_area.setup()
         self._restore_workspace_background()
         self._setup_help_center()
         self._theme_manager.apply_ui_mode(self._settings.ui_mode)
@@ -632,234 +645,6 @@ class MainWindow(QMainWindow):
         self._help_center = HelpCenterDock(self)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._help_center)
         self._help_center.hide()
-
-    def _setup_central_area(self) -> None:
-        central = QWidget()
-        self.setCentralWidget(central)
-        main_layout = QHBoxLayout(central)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-
-        self._nav = QListWidget()
-        self._nav.setObjectName("mainNavigation")
-        self._nav.setAccessibleName(_("主导航"))
-        self._nav.setFixedWidth(190)
-
-        nav_items: list[tuple[str, int | None]] = [
-            (_("工作"), None),
-            ("⌂ " + _("首页"), 4),
-            ("⚙ " + _("任务工作台"), 0),
-            ("▶ " + _("运行与历史"), 2),
-            ("📊 " + _("结果与复核"), 3),
-            (_("自动化"), None),
-            ("🔔 " + _("变更监控"), 8),
-            (_("工具"), None),
-            ("📄 " + _("PDF 工作台"), 6),
-            ("🔁 " + _("格式互转"), 7),
-            ("🎯 " + _("场景与模板"), 11),
-            ("🔐 " + _("登录会话"), 12),
-            ("🪟 " + _("市场橱窗（QML 试点）"), 13),
-            (_("高级"), None),
-            ("📝 " + _("YAML 编辑器"), 1),
-            ("🔍 " + _("证据查看器"), 5),
-            ("🧩 " + _("插件市场"), 9),
-            ("🛠 " + _("开发者检查器"), 10),
-        ]
-        self._nav_pages: dict[int, int] = {}
-        for row, (label, page) in enumerate(nav_items):
-            item = QListWidgetItem(label)
-            if page is None:
-                item.setFlags(Qt.ItemFlag.NoItemFlags)
-                item.setData(Qt.ItemDataRole.AccessibleDescriptionRole, _("导航分组"))
-            else:
-                self._nav_pages[row] = page
-            self._nav.addItem(item)
-
-        self._nav.currentRowChanged.connect(self._on_nav_changed)
-        main_layout.addWidget(self._nav)
-
-        self._stack = QStackedWidget()
-
-        self._workspace_widget = QWidget()
-        workspace_layout = QVBoxLayout(self._workspace_widget)
-        workspace_layout.setContentsMargins(0, 0, 0, 0)
-        self._advanced_summary = QLabel("")
-        self._advanced_summary.setWordWrap(True)
-        self._advanced_summary.setAccessibleName(_("已启用高级规则摘要"))
-        self._advanced_summary.setObjectName("advancedSummary")
-        self._advanced_summary.setProperty("status", "warning")
-        workspace_layout.addWidget(self._advanced_summary)
-
-        # P0：任务工作台（Task Canvas）
-        from .views.task_canvas import TaskCanvas
-
-        self._task_canvas = TaskCanvas(self._config, project_root=str(self._project_root))
-        workspace_layout.addWidget(self._task_canvas)
-        workspace_layout.addWidget(self._task_canvas.persistent_action_bar())
-        self._stack.addWidget(self._workspace_widget)
-
-        # P0：画布信号接线（保存/试跑/运行/查看 YAML）
-        self._task_canvas.config_changed.connect(self._on_workspace_changed)
-        self._task_canvas.save_requested.connect(self._config_delegate.save_config)
-        self._task_canvas.trial_run_requested.connect(self._request_trial_run)
-        self._task_canvas.run_requested.connect(self._request_run)
-        self._task_canvas.yaml_view_requested.connect(self._open_yaml_view)
-        # P2：意图区 URL 探活（600ms 停顿由画布内部调度，这里只负责发起与回填）
-        self._task_canvas.probe_requested.connect(self._probe_site)
-
-        self._yaml_editor = YamlEditor()
-        self._yaml_editor.sync_to_form.connect(self._on_editor_sync_to_form)
-        self._yaml_editor.sync_status.connect(self._set_status)
-        self._stack.addWidget(self._yaml_editor)
-
-        monitor_widget = QWidget()
-        monitor_layout = QVBoxLayout(monitor_widget)
-        monitor_layout.setContentsMargins(8, 8, 8, 8)
-
-        status_layout = QHBoxLayout()
-        self._monitor_status = StatusIndicator(size=16)
-        status_layout.addWidget(self._monitor_status)
-        self._monitor_status_text = QLabel(_("空闲"))
-        status_layout.addWidget(self._monitor_status_text)
-        status_layout.addStretch()
-        self._elapsed_label = QLabel("")
-        status_layout.addWidget(self._elapsed_label)
-        monitor_layout.addLayout(status_layout)
-
-        self._progress_bar = QProgressBar()
-        self._progress_bar.setRange(0, 100)
-        self._progress_bar.setValue(0)
-        self._progress_bar.setTextVisible(True)
-        monitor_layout.addWidget(self._progress_bar)
-
-        self._progress_url_label = QLabel("")
-        self._progress_url_label.setObjectName("muted")
-        monitor_layout.addWidget(self._progress_url_label)
-
-        monitor_layout.addWidget(self._resource_monitor)
-
-        self._log_console = LogConsole()
-        monitor_layout.addWidget(self._log_console)
-
-        ctrl_layout = QHBoxLayout()
-        ctrl_run = QPushButton(_("▶ 运行"))
-        ctrl_run.clicked.connect(self._request_run)
-        ctrl_layout.addWidget(ctrl_run)
-        ctrl_stop = QPushButton(_("■ 停止"))
-        ctrl_stop.clicked.connect(self._run_delegate.stop_task)
-        ctrl_layout.addWidget(ctrl_stop)
-        ctrl_pause = QPushButton(_("Ⅱ 暂停/继续"))
-        ctrl_pause.clicked.connect(self._run_delegate.toggle_pause)
-        ctrl_layout.addWidget(ctrl_pause)
-        ctrl_layout.addStretch()
-        monitor_layout.addLayout(ctrl_layout)
-
-        self._task_history.load_history()
-        monitor_layout.addWidget(self._task_history)
-        self._stack.addWidget(monitor_widget)
-
-        results_widget = QWidget()
-        results_layout = QVBoxLayout(results_widget)
-        results_layout.setContentsMargins(8, 8, 8, 8)
-        self._result_table = ResultTable()
-        self._result_table.record_selected_for_review.connect(self._on_record_selected_for_review)
-        results_layout.addWidget(self._result_table)
-        self._file_list = FileList()
-        results_layout.addWidget(self._file_list)
-        self._chart_view = ChartView()
-        results_layout.addWidget(self._chart_view)
-        self._stack.addWidget(results_widget)
-
-        self._home = HomePage(project_root=str(self._project_root))
-        self._home.quick_task_ready.connect(self._apply_quick_task)
-        self._home.natural_task_ready.connect(self._apply_natural_task)
-        self._home.open_workspace.connect(lambda: self._nav.setCurrentRow(NavIndex.WORKSPACE))
-        self._home.open_recent.connect(lambda: self._nav.setCurrentRow(NavIndex.MONITOR))
-        self._home.open_recent_config.connect(self._load_history_config)
-        self._home.open_recent_results.connect(self._load_history_results)
-        self._home.set_recent_tasks(self._task_history.recent_records())
-        self._task_history.history_changed.connect(
-            lambda: self._home.set_recent_tasks(self._task_history.recent_records())
-        )
-        # S3.1.2：修复"结果与复核"错页（原误用 NavIndex.MONITOR）
-        self._home.open_results.connect(lambda: self._nav.setCurrentRow(NavIndex.RESULTS))
-        # §A-27：首页 PDF 指引 → 真跳转，并把需求原文交给 PDF 工作台
-        self._home.open_pdf_workbench.connect(self._open_pdf_workbench)
-        self._home.open_schedule.connect(self._manage_schedules)
-        self._home.import_task.connect(self._config_delegate.import_config_package)
-        self._home.run_doctor.connect(self._env_checker.recheck_env)
-        self._home.create_demo.connect(self._create_offline_demo)
-        self._home.create_starter.connect(self._create_starter)
-        self._home.open_getting_started.connect(self._show_getting_started)
-        # B-4 ConvertX：首页按钮跳到格式互转面板（NavIndex.CONVERT_TOOL）
-        self._home.open_convert_tool.connect(
-            lambda: self._nav.setCurrentRow(NavIndex.CONVERT_TOOL)
-        )
-        # S4 场景管理：首页按钮跳到场景面板（NavIndex.SCENE）
-        self._home.open_scene.connect(
-            lambda: self._nav.setCurrentRow(NavIndex.SCENE)
-        )
-        # 运行对比：首页按钮复用菜单既有入口（review/run_compare）
-        self._home.open_run_compare.connect(self._show_run_comparison)
-        self._stack.addWidget(self._home)
-
-        self._evidence_view = EvidenceView(workspace=Path(self._config.workspace).expanduser())
-        self._evidence_view.back_to_results.connect(lambda: self._nav.setCurrentRow(NavIndex.RESULTS))  # 返回结果与复核页
-        self._stack.addWidget(self._evidence_view)
-        self._pdf_workbench = PdfWorkbenchView()
-        self._stack.addWidget(self._pdf_workbench)
-        # B-4：ConvertX 格式互转工具页（stack index 7）
-        self._convert_tool = ConvertView()
-        self._convert_tool.open_output_folder_requested.connect(
-            lambda p: QDesktopServices.openUrl(QUrl.fromLocalFile(p))
-        )
-        self._stack.addWidget(self._convert_tool)
-
-        # A3：变更监控复用共享探活 AsyncFetcher（惰性构建，走 EgressBroker 审计）
-        if self._probe_fetcher is None:
-            try:
-                self._probe_fetcher = self._build_probe_fetcher()
-            except Exception:  # noqa: BLE001 — 构建失败静默降级，监控回退 urllib
-                self._probe_fetcher = None
-        self._change_monitor = ChangeMonitorView(settings=self._settings, fetcher=self._probe_fetcher)
-        self._change_monitor.desktop_notify.connect(self._on_monitor_desktop_notify)
-        self._stack.addWidget(self._change_monitor)
-
-        self._plugin_market = PluginMarketView(
-            project_root=self._project_root,
-            app_config=self._market_app_config(),
-        )
-        self._plugin_market.installation_completed.connect(self._on_market_plugin_installed)
-        self._plugin_market.activation_requested.connect(self._activate_market_plugin)
-        self._plugin_market.deactivation_requested.connect(self._deactivate_market_plugin)
-        self._plugin_market.uninstall_completed.connect(self._on_market_plugin_uninstalled)
-        self._plugin_market.set_enabled_plugins(self._configured_market_plugin_ids())
-        self._stack.addWidget(self._plugin_market)
-
-        self._developer_inspector = DeveloperInspector(self._config, self._project_root)
-        self._stack.addWidget(self._developer_inspector)
-
-        # S4：场景管理面板（懒加载 SceneStore，workspace/scene.sqlite3）
-        from .views.scene_panel import ScenePanel
-
-        self._scene_panel = ScenePanel(Path(self._config.workspace).expanduser())
-        self._stack.addWidget(self._scene_panel)
-
-        # U3：登录会话独立导航页（工具分组）—— headed 登录窗口 + 会话列表
-        self._login_session_view = self._login_session.setup()
-        self._stack.addWidget(self._login_session_view)
-
-        # Q1：QML 试点页（仅新增页面；不建 delegate，避免再往 GUI 大环里加一条边）
-        from .views.qml_showcase import QmlShowcaseView
-
-        self._qml_showcase = QmlShowcaseView(self._project_root)
-        self._stack.addWidget(self._qml_showcase)
-
-        main_layout.addWidget(self._stack)
-        self._page_transition = PageTransitionController(
-            self._stack, reduced_motion=self._settings.reduced_motion,
-        )
-        self._nav.setCurrentRow(NavIndex.HOME)
 
     def _build_project_components(self) -> None:
         """S3.1.27：构建/重建依赖项目根的组件（switch_project 时复用）。"""

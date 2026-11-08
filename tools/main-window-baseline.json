@@ -6,8 +6,8 @@
   "file": "src/omnicrawler/gui/main.py",
   "class": "MainWindow",
   "limits": {
-    "file_lines": 2533,
-    "method_count": 110,
-    "longest_method_lines": 227
+    "file_lines": 2318,
+    "method_count": 109,
+    "longest_method_lines": 134
   }
 }

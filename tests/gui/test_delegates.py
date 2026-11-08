@@ -16,6 +16,7 @@ pytestmark = pytest.mark.skipif(
     reason="delegate contract test requires PySide6",
 )
 
+from omnicrawler.gui.delegates.central_area import CentralAreaBuilder  # noqa: E402
 from omnicrawler.gui.delegates.config_manager import ConfigManager  # noqa: E402
 from omnicrawler.gui.delegates.env_checker import EnvironmentChecker  # noqa: E402
 from omnicrawler.gui.delegates.error_dialog import ErrorDialogHelper  # noqa: E402
@@ -33,6 +34,7 @@ MW_BACKED_DELEGATES = (
     EnvironmentChecker,
     HelpDialogManager,
     ConfigManager,  # main.py 以别名 ConfigDelegate 接线（self._config_delegate）
+    CentralAreaBuilder,  # 批次 6-4b：中央区域面板装配（self._central_area）
 )
 
 
@@ -64,7 +66,7 @@ def test_mw_backed_delegates_are_wired(main_window) -> None:  # type: ignore[no-
 def test_delegate_backref_points_to_main_window(main_window) -> None:  # type: ignore[no-untyped-def]
     for attr in ("_menu_builder", "_toolbar_manager", "_theme_manager",
                  "_error_helper", "_env_checker", "_help_dialogs",
-                 "_config_delegate"):
+                 "_config_delegate", "_central_area"):
         delegate = getattr(main_window, attr)
         assert delegate._mw is main_window, f"{attr}._mw 未回指主窗口"
 
