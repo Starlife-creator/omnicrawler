@@ -55,7 +55,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: [html, pdf, async-http, tls, streams, storage, security, ai, document]
+        # 清单真源是 tools/check_extra_install.py 的 ci_matrix_profiles()：
+        # 全部 feature extra 减去 HEAVY_PROFILES（理由写在该文件的 dict 里）。
+        # tests/unit/utils/test_extra_install_contract.py 断言本行与之逐项一致。
+        profile: [html, pdf, browser, selenium, async-http, ai, tls, streams, distributed, scrapy, ocr-tesseract, ocr-captcha, security, storage, postgresql, search, document]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
