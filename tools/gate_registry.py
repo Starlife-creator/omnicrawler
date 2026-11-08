@@ -212,6 +212,13 @@ GATES: tuple[Gate, ...] = (
         script="tools/check_build_profiles.py",
     ),
     Gate(
+        name="check_silent_exception_handlers",
+        args=("tools/check_silent_exception_handlers.py",),
+        sets=_STATIC,
+        description="宽类型静默吞异常必须带 '# noqa: BLE001'（吞可以，静默不行）",
+        script="tools/check_silent_exception_handlers.py",
+    ),
+    Gate(
         name="check_gui_test_layout",
         args=("tools/check_gui_test_layout.py",),
         sets=_STATIC,

@@ -131,6 +131,8 @@ def test_static_set_covers_the_red_lines() -> None:
         "post_bump_steps",
         # 锚段完整性：唯一「不可擅动」的真源恰好零守卫（根目录不是 git 仓）
         "check_anchor_integrity",
+        # 静默吞异常：宽类型 except + 单条 pass/continue 必须留痕
+        "check_silent_exception_handlers",
     }
     assert required <= names, f"static 集合缺少: {sorted(required - names)}"
 

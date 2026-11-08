@@ -345,8 +345,8 @@ class ChangeDetector:
                         parts.append(text)
                 return "\n".join(parts)
             return ""
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - 解析器回退链：失败要落到下一层，但必须留痕
+            LOGGER.debug("lxml 选择器 %s 解析失败，回退 BeautifulSoup: %s", selector, exc, exc_info=True)
 
         # 尝试 BeautifulSoup
         try:
@@ -357,8 +357,8 @@ class ChangeDetector:
             if elements:
                 return "\n".join(el.get_text(strip=True) for el in elements if el.get_text(strip=True))
             return ""
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - 最后一层解析器，失败后回退全文，但必须留痕
+            LOGGER.debug("BeautifulSoup 选择器 %s 解析失败，回退全文: %s", selector, exc, exc_info=True)
 
         # 回退：返回原始 HTML
         LOGGER.warning("未能加载 DOM 解析器，对选择器 %s 返回全文", selector)

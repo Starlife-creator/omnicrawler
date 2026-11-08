@@ -153,6 +153,9 @@ jobs:
       # C-#14 / C-#20：OpenCV 单变体、死依赖退役、版本上下界一致性
       - run: python tools/check_dependency_consistency.py
       - run: python tools/check_build_profiles.py
+      # 批次6-2：宽类型 except 静默 pass/continue 必须带显式 '# noqa: BLE001'
+      # （吞异常有时正确，静默不行：yaml_editor 外部改动探测、change_detector 解析器回退链）
+      - run: python tools/check_silent_exception_handlers.py
       # C-#30：tests/unit/gui 与 tests/gui 归属规则（双名文件 / 反向跨目录依赖）
       - run: python tools/check_gui_test_layout.py
       # C-#13：UI 层直连 StateStore 点位白名单（禁止新增、存量只降不升）

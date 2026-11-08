@@ -6,8 +6,11 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _split_xpath(xpath: str) -> tuple[list[str], list[int]]:
@@ -71,7 +74,8 @@ def find_similar_elements(
         test_xpath = _combine_xpath(names, test_indices)
         try:
             elements = lxml_doc.xpath(test_xpath)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - 探测失败只跳过该层候选，但必须留痕
+            LOGGER.debug("xpath 探测失败，跳过该层候选 %s: %s", test_xpath, exc)
             continue
         if len(elements) >= 2:
             return test_xpath, elements

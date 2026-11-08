@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -34,6 +35,8 @@ from ..core.validator import validate_schema
 from ..design_system import FONT_FAMILY_MONO, RADIUS, ThemeManager, scaled_font_px
 from ..i18n import _
 from ..widgets.help_tooltip import HelpTooltip
+
+LOGGER = logging.getLogger(__name__)
 
 # YAML 编辑器中可用但向导无对应控件的高级设置 help_id
 _YAML_ONLY_HELP_IDS = (
@@ -580,5 +583,5 @@ class YamlEditor(QWidget):
                 )
                 if reply == QMessageBox.StandardButton.Yes:
                     self.load_file(self._filepath)
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - 外部改动探测失败不得打断编辑，但必须留痕
+            LOGGER.warning("external change check failed for %s: %s", self._filepath, exc)

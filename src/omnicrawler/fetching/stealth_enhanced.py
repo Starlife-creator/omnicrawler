@@ -255,7 +255,9 @@ class ProxyRotator:
             latency = (time.time() - start) * 1000
             resp.close()
             return True, latency
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - 契约返回 (False, 0)，但失败原因必须留痕
+            # 不记录 proxy 本身：代理 URL 可能内嵌凭据（user:pass@host）。
+            LOGGER.debug("代理验证失败（探针 %s）: %s", test_url, exc, exc_info=True)
             return False, 0
 
     @property
