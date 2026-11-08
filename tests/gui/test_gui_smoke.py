@@ -54,16 +54,16 @@ def test_task_workspace_template_library_and_rebuild_start_offscreen(monkeypatch
     assert window._nav.currentRow() == NavIndex.MONITOR
 
     # 简单模式保留完整核心闭环，专业/开发者工具按能力渐进披露。
-    window._apply_ui_mode("simple")
+    window._theme_manager.apply_ui_mode("simple")
     for index in (NavIndex.HOME, NavIndex.WORKSPACE, NavIndex.MONITOR, NavIndex.RESULTS):
         assert not window._nav.item(index).isHidden()
     for index in (NavIndex.YAML_EDITOR, NavIndex.EVIDENCE, NavIndex.PLUGIN_MARKET, NavIndex.DEVELOPER):
         assert window._nav.item(index).isHidden()
-    window._apply_ui_mode("professional")
+    window._theme_manager.apply_ui_mode("professional")
     assert not window._nav.item(NavIndex.YAML_EDITOR).isHidden()
     assert not window._nav.item(NavIndex.RESULTS).isHidden()
     assert window._nav.item(NavIndex.DEVELOPER).isHidden()
-    window._apply_ui_mode("developer")
+    window._theme_manager.apply_ui_mode("developer")
     assert all(not window._nav.item(index).isHidden() for index in range(window._nav.count()))
 
     templates = window._template_loader.discover_templates(force=True)

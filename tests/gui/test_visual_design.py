@@ -58,9 +58,9 @@ def test_visual_theme_home_transition_and_help_visibility(monkeypatch, tmp_path)
     card = window._home.findChild(QFrame, "quickTaskCard")
     assert isinstance(card.graphicsEffect(), QGraphicsDropShadowEffect)
 
-    window._set_theme("light")
+    window._theme_manager.set_theme("light")
     before = app.palette().window().color().name()
-    window._set_theme("dark")
+    window._theme_manager.set_theme("dark")
     after = app.palette().window().color().name()
     assert before != after
     image = tmp_path / "visual-smoke.png"
