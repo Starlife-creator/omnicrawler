@@ -136,6 +136,18 @@ GATES: tuple[Gate, ...] = (
         ),
     ),
     Gate(
+        name="check_anchor_integrity",
+        args=("tools/check_anchor_integrity.py",),
+        sets=_STATIC,
+        description="锚段完整性：项目根 优化方案.md 的 §一/§1.1/§1.2/§1.3 与登记摘要一致",
+        script="tools/check_anchor_integrity.py",
+        ci_note=(
+            "锚文件在**项目根**（主仓的上一级），CI checkout 拿不到 ⇒ CI 里显式 SKIP"
+            "（仍会校验摘要登记表结构）。它守的是维护者本机：根目录不是 git 仓，"
+            "改锚不会有任何 diff，摘要变更就是唯一可审痕迹。"
+        ),
+    ),
+    Gate(
         name="check_line_endings_policy",
         args=("tools/check_line_endings_policy.py",),
         sets=_STATIC,

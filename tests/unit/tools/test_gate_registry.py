@@ -129,6 +129,8 @@ def test_static_set_covers_the_red_lines() -> None:
         "check_sdk_api", "check_cli_docs", "check_coding_standards", "check_minimal_install",
         # 版本收口：锚点页声明的「当前版本」与 pyproject 一致（曾两次静默漂移）
         "post_bump_steps",
+        # 锚段完整性：唯一「不可擅动」的真源恰好零守卫（根目录不是 git 仓）
+        "check_anchor_integrity",
     }
     assert required <= names, f"static 集合缺少: {sorted(required - names)}"
 
