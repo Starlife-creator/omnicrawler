@@ -309,8 +309,8 @@ class MainWindow(QMainWindow):
         self._env_checker.ensure_data_mode_choice()
         # F53：数据模式弹窗可能重置设置单例（settings.ini 换目录），重新绑定当前实例
         self._settings = AppSettings.instance()
-        self._setup_menu_bar()
-        self._setup_toolbar()
+        self._menu_builder.setup()
+        self._toolbar_manager.setup()
         self._setup_status_bar()
         self._central_area.setup()
         self._restore_workspace_background()
@@ -332,27 +332,6 @@ class MainWindow(QMainWindow):
             maybe_show_identity_welcome(self)
         except Exception:  # noqa: BLE001 - 引导失败不影响使用
             pass
-
-    # ================================================================
-    #  Delegate 转发方法
-    # ================================================================
-
-    # --- MenuBuilder ---
-    def _setup_menu_bar(self) -> None:
-        self._menu_builder.setup()
-
-    # --- ToolbarManager ---
-    def _setup_toolbar(self) -> None:
-        self._toolbar_manager.setup()
-
-    # --- ThemeManager ---
-    # 兼容转发（保留）：tests/gui 直接调用 window._apply_ui_mode/_set_theme；
-    # 域内其余调用点（menu/toolbar/main 内部）已直连 self._theme_manager。
-    def _apply_ui_mode(self, mode: str) -> None:
-        self._theme_manager.apply_ui_mode(mode)
-
-    def _set_theme(self, theme: str) -> None:
-        self._theme_manager.set_theme(theme)
 
     def _builtin_background(self) -> Any:
         """Lazily create the plugin-independent host visual surface."""

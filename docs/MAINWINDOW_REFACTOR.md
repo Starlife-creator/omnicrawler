@@ -6,19 +6,20 @@
 
 | 指标 | 实测值 | 门禁基线（`tools/main-window-baseline.json`） |
 | --- | ---: | ---: |
-| `gui/main.py` 总行数 | 2318 | ≤ 2318 |
-| `MainWindow` 类方法数 | 109 | ≤ 109 |
+| `gui/main.py` 总行数 | 2297 | ≤ 2297 |
+| `MainWindow` 类方法数 | 105 | ≤ 105 |
 | 最长方法 `__init__` 行数 | 134（192–325 行） | ≤ 134 |
-| 次长方法 `_show_workspace_background_settings` 行数 | 72（403–474 行） | 观察项 |
+| 次长方法 `_save_ai_config_to_env` 行数 | 116（2182–2297 行） | 观察项 |
 
 既有拆分：delegate 体系（`gui/delegates/`，弱引用显式持有）已替代旧 `__getattr__` 魔法转发；
 中央区域装配已下沉为 `gui/delegates/central_area.py` 的 `CentralAreaBuilder`（批次 6-4b），主类不再 import 那些 view/widget 类型；
-菜单 / 工具栏 / 主题管理器仍在主类保留转发壳（`main.py:341-357` 一带），与 delegate 存在双份调用点漂移风险。
+菜单 / 工具栏 / 主题管理器的**纯转发壳已删除**（批次 6-4c）：主类不再有 `_setup_menu_bar` / `_setup_toolbar` / `_apply_ui_mode` / `_set_theme`，全部调用点直连 `self._menu_builder` / `self._toolbar_manager` / `self._theme_manager`。
+仍保留的两个同名方法是**有意保留**：`_show_error_dialog` 被 `main.py` 末尾的全局异常钩子以 `hasattr(window, '_show_error_dialog')` **动态**探测（静态引用扫不到，删掉会静默失去错误弹窗）；`_on_workspace_changed` 不是转发壳（内含 300ms 去抖定时器与 `_updating_editor` 回声抑制，§A-11 修复），且被 `delegates/central_area.py` 直接接线、被测试直接调用。
 
 ## 2. 拆分目标
 
 1. ✅ **装配职责下沉**（批次 6-4b 已完成）：`_setup_central_area` 的 227 行面板装配迁入独立面板装配 delegate（参照 `delegates/` 既有弱引用模式），主类只保留组合顺序与跨面板协调。
-2. **删除纯转发壳**：菜单 / 工具栏 / 主题访问改为调用点直连 `self._theme_manager` 等成员，不再经 `MainWindow` 转发方法；逐个删除转发壳并更新调用点。
+2. ✅ **删除纯转发壳**（批次 6-4c 已完成）：菜单 / 工具栏 / 主题访问改为调用点直连 `self._theme_manager` 等成员，4 个转发方法已删除；按 §3 第 4 条先单独提交调用点直连（`00e40678`）再删壳，保留一个可回退的分界。
 3. **构造分段**：`__init__` 134 行拆为「基础框架 → 中央区域 → 侧边/底部 → 菜单工具栏 → 信号连接」五个私有装配段，段间不共享可变临时状态。
 4. 拆分后用 `tools/check_main_window_size.py --write-baseline` 按实测下调基线，维持只降不升。
 
@@ -41,5 +42,6 @@
 - 契约测试只断言窗口**最终长成的结构**，不断言由哪个方法拼出来——因此后续把装配搬进 delegate、或把 `__init__` 分段时它仍须全绿；反之搬迁漏接信号、少挂页面、导航映射错位会立刻变红。
 - 已完成 §2 第 1 条（批次 6-4b）：226 行面板装配整块平移进 `gui/delegates/central_area.py` 的 `CentralAreaBuilder.setup()`，`self.` 全量改写为 `mw.`，**未改任何 connect 目标、未改装配顺序**；主类只保留 `self._central_area.setup()` 一次调用，并不再 import 那些 view/widget 类型（改为类级 `Any` 注解，注释写明「主窗口只按名字持有、不碰类型细节」）。
 - 该搬迁让 `MainWindow` 的规模实测降到 2318 行 / 109 方法 / 最长方法 134 行（`__init__`），基线已按 `--write-baseline` 下调到逐项相等。环预算随之按实测上调 39/61/12 → 40/63/13：新 delegate 必然落进既有 GUI 大环（`delegates → central_area → _base →(TYPE_CHECKING) main → delegates`），增量可逐条归因（modules +1 / edges +2 / largest +1），与 `e3e41bf7` 同一模式。
-- 仍未开始的部分：§2 第 2 条（删菜单/工具栏/主题转发壳）与第 3 条（`__init__` 分五段）。拆分期间 `main.py` 只允许缩减、不得增长（门禁阻断新增膨胀），每阶段完成后用 `--write-baseline` 按实测下调。
+- 已完成 §2 第 2 条（批次 6-4c）：先提交调用点直连（`00e40678`，5 处测试改直连 `_theme_manager`），再单独提交删除 4 个纯转发方法。规模实测进一步降到 2297 行 / 105 方法，ratchet 基线按实测下调到逐项相等。
+- 仍未开始的部分：§2 第 3 条（`__init__` 分五段，现 134 行）。拆分期间 `main.py` 只允许缩减、不得增长（门禁阻断新增膨胀），每阶段完成后用 `--write-baseline` 按实测下调。
 - 历史迁移教训与 delegate 边界见 `gui/delegates/` 目录注释与 `docs/CODING_STANDARDS.md`。
