@@ -123,11 +123,17 @@ omnicrawler = ["templates/**/*.yaml", "templates/**/*.yml", "templates/**/*.csv"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# `--strict-markers`：未登记的 marker 直接判错，而不是静默创建一个「新 marker」。
+# 由来（批次 2 判据可信）：此前 markers 表只声明不校验，打错字（如 `@pytest.mark.netwrok`）
+# 会静默生成一个从未被任何 `-m` 选择或 CI 过滤命中的 marker —— 测试照常跑、门禁照常绿，
+# 而「按 marker 选择/跳过」的意图完全落空。实测 `pytest tests e2e --collect-only
+# --strict-markers` = 5856 项全收集、零报错，故可无痛开启。
+addopts = "--strict-markers"
 markers = [
   "e2e: full workflow test that exercises real local services and external runtime adapters",
   "e2e_browser: optional local Chromium extension; never accesses a remote service",
   "asyncio: mark a test as an async test",
-  "network: requires external network access; skipped by default, enable via env or -m network",
+  "network: 需要真实外网/远端市场索引；由用例内 skipif(OMNICRAWL_TEST_LIVE_MARKET) 默认跳过，不依赖 -m 过滤",
   "plugin_contract: public contract-2 test suite shared by authors and CI (F1: local green = CI green)",
 ]
 asyncio_mode = "auto"

@@ -14,7 +14,11 @@ python tools/self_verify.py --set static --fail-fast
 跳过不是「通过」——要么缺前置产物（`requires_file`），要么需要调用方提供参数（`needs_args`），
 两者都会写明原因并计入 `skipped`，不会被静默吞掉。
 
-退出码：全部门禁（含被跳过的之外）通过返回 0；有失败返回 1。
+证据结论是三态（`verdict`）：`passed` / `failed` / `unverified`。
+**全部跳过或选中 0 条门禁时判 `unverified`（未验证）并返回非 0**——空集合不是通过，
+否则「一条都没跑」会被当成「全部通过」混进证据链。
+
+退出码：结论为 `passed` 返回 0；`failed` 或 `unverified` 返回 1。
 """
 
 from __future__ import annotations
@@ -57,11 +61,37 @@ class EvidenceReport:
     dirty: bool
     gates: list[GateOutcome] = field(default_factory=list)
 
+    @property
+    def passed(self) -> int:
+        return sum(1 for g in self.gates if g.status == "passed")
+
+    @property
+    def failed(self) -> int:
+        return sum(1 for g in self.gates if g.status == "failed")
+
+    @property
+    def skipped(self) -> int:
+        return sum(1 for g in self.gates if g.status == "skipped")
+
+    @property
+    def verdict(self) -> str:
+        """三态结论：``passed`` / ``failed`` / ``unverified``。
+
+        「跳过」不等于「通过」：一条门禁都没真正执行（选中 0 条，或全部因缺前置
+        条件被跳过）时判 ``unverified``——证据链上是**未验证**，不是通过。
+        """
+        if self.failed:
+            return "failed"
+        if self.passed == 0:
+            return "unverified"
+        return "passed"
+
     def to_json(self) -> str:
         payload = asdict(self)
-        payload["passed"] = sum(1 for g in self.gates if g.status == "passed")
-        payload["failed"] = sum(1 for g in self.gates if g.status == "failed")
-        payload["skipped"] = sum(1 for g in self.gates if g.status == "skipped")
+        payload["passed"] = self.passed
+        payload["failed"] = self.failed
+        payload["skipped"] = self.skipped
+        payload["verdict"] = self.verdict
         return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
@@ -136,19 +166,21 @@ def verify(sets: list[str], *, fail_fast: bool = False) -> EvidenceReport:
                 break
 
     report.duration_seconds = round(time.monotonic() - started, 2)
-    if any(outcome.status == "failed" for outcome in report.gates):
-        report.ok = False
+    # 「跳过」不是「通过」：全部跳过（或选中 0 条）判未验证，证据链上不得记为通过。
+    report.ok = report.verdict == "passed"
     return report
 
 
 def _print_summary(report: EvidenceReport) -> None:
-    passed = sum(1 for g in report.gates if g.status == "passed")
-    failed = sum(1 for g in report.gates if g.status == "failed")
-    skipped = sum(1 for g in report.gates if g.status == "skipped")
     print()
-    print(f"汇总：{passed} 通过 / {failed} 失败 / {skipped} 跳过，共 {report.duration_seconds}s")
+    print(
+        f"汇总：{report.passed} 通过 / {report.failed} 失败 / {report.skipped} 跳过，"
+        f"共 {report.duration_seconds}s"
+    )
     print(f"证据：HEAD={report.head or '<未知>'}，工作区={'有未提交改动' if report.dirty else '干净'}")
-    print(f"结论：{'通过' if report.ok else '未通过'}")
+    print(f"结论：{'通过' if report.verdict == 'passed' else ('未通过' if report.verdict == 'failed' else '未验证')}")
+    if report.verdict == "unverified":
+        print("说明：没有任何门禁真正执行（全部跳过）——跳过不等于通过，本报告不能作为交付证据。")
 
 
 def main(argv: list[str] | None = None) -> int:

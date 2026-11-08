@@ -124,23 +124,87 @@ def test_all_set_includes_every_gate() -> None:
     assert set(gates_for(GATE_SETS)) == set(GATES)
 
 
+def test_docs_do_not_hardcode_gate_counts() -> None:
+    """文档不得写死门禁数量——写死的数字必然漂移。
+
+    由来（批次 2 判据可信）：`tools/gate_registry.py` 的 docstring 曾写「现有 19 个
+    `tools/check_*.py`」，而磁盘上早已是 28 个；`CONTRIBUTING.md` 同样写死「13 项」。
+    两处都靠人手同步，于是「文档说 19、实际 28」长期共存且无人发现。
+
+    本用例不比对具体数字，而是**禁止在文档里用「N 项/N 个 + 门禁」的句式**——
+    数量以 `GATES` / `ci_managed_scripts()` 为准。
+    """
+    import re
+
+    pattern = re.compile(r"(\d+)\s*(?:项|个)\s*`?tools/check_")
+    offenders: list[str] = []
+    for relative in ("CONTRIBUTING.md", "tools/gate_registry.py"):
+        text = (_REPO_ROOT / relative).read_text(encoding="utf-8")
+        for match in pattern.finditer(text):
+            offenders.append(f"{relative}: {match.group(0)!r}")
+    assert not offenders, (
+        f"文档里写死了门禁数量（会随新增门禁而漂移）：{offenders}；"
+        "请改成「以 tools/gate_registry.py 为准」这类不自带数字的表述"
+    )
+
+
 def test_unknown_set_is_rejected() -> None:
     with pytest.raises(ValueError, match="未知门禁集合"):
         gates_for(("nonsense",))
 
 
-def test_skipped_gates_are_reported_and_not_treated_as_failure(tmp_path: Path) -> None:
-    """跳过必须**显式列出并给出原因**，且不能算作通过——也不能让整体判失败。"""
+def test_skipped_gates_are_reported_and_not_treated_as_passed(tmp_path: Path) -> None:
+    """跳过必须**显式列出并给出原因**，且**不能算作通过**。
+
+    批次 2 修正（优化方案 §14.3）：此前 `ok` 初始化为 True、只在失败时置 False，
+    于是「全 skipped」也判 ok=True、退出 0——空集合被当成通过混进证据链。
+    现在结论是三态，全跳过 ⇒ `unverified` ⇒ 非 0 退出。
+    """
     report_path = tmp_path / "evidence.json"
     code = main(["--set", "install", "--json", str(report_path)])
 
-    assert code == 0, "仅因前置条件不足而跳过，不应判为失败"
+    assert code == 1, "全部跳过时不得返回 0（跳过不等于通过）"
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     assert payload["skipped"] >= 1
+    assert payload["passed"] == 0
     assert payload["failed"] == 0
     skipped = [gate for gate in payload["gates"] if gate["status"] == "skipped"]
     assert all(gate["detail"] for gate in skipped), "跳过必须写明原因"
-    assert payload["ok"] is True
+    assert payload["verdict"] == "unverified"
+    assert payload["ok"] is False, "全跳过不得记为 ok"
+
+
+def test_reverse_assertion_empty_selection_is_not_a_pass(tmp_path: Path) -> None:
+    """反向断言：把「全跳过仍判通过」的缺口装回去，本用例必须红。
+
+    直接构造「只有 skipped、没有 passed」的报告，断言 `verdict` 不是 `passed`——
+    若有人把 `ok` 改回「只在失败时置 False」，这里立刻失败。
+    """
+    from tools.self_verify import EvidenceReport, GateOutcome
+
+    report = EvidenceReport(
+        ok=True, sets=["install"], started_at="now", duration_seconds=0.0,
+        head="deadbee", dirty=False,
+        gates=[GateOutcome("check_extra_install", "skipped", 0.0, "需要参数 profile")],
+    )
+    assert report.passed == 0 and report.failed == 0
+    assert report.verdict == "unverified"
+    assert not report.ok or report.verdict != "passed"
+
+
+def test_mixed_pass_and_skip_is_a_pass(tmp_path: Path) -> None:
+    """只要有门禁真正通过、且没有失败，结论仍是通过（不能矫枉过正）。"""
+    from tools.self_verify import EvidenceReport, GateOutcome
+
+    report = EvidenceReport(
+        ok=False, sets=["static"], started_at="now", duration_seconds=0.0,
+        head="deadbee", dirty=False,
+        gates=[
+            GateOutcome("ruff", "passed", 0.1),
+            GateOutcome("check_extra_install", "skipped", 0.0, "需要参数 profile"),
+        ],
+    )
+    assert report.verdict == "passed"
 
 
 def test_missing_prerequisite_is_reported_with_reason(tmp_path: Path) -> None:

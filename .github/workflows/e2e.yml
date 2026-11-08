@@ -56,6 +56,8 @@ jobs:
     # 当前先跑不依赖 Qt widget 的 GUI 纯逻辑用例，widget offscreen 套件待 CI 环境
     # 安装 Qt 运行时与窗口管理器后纳入本 job。continue-on-error: true 直至矩阵连续转绿，
     # 随后改为阻断。Python 固定 3.12（交付物冻结 3.12；3.13 不进本矩阵）。
+    # 豁免到期：2027-03-31 —— 到期仍未转绿则必须在本 job 上显式续期（并说明卡在哪一步），
+    # 否则 tests/unit/tools/test_ci_waiver_expiry.py 会判红；不允许无限期「占位」。
     name: GUI offscreen smoke (${{ matrix.os }})
     strategy:
       fail-fast: false

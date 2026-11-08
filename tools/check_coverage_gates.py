@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 from collections.abc import Callable
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -107,11 +108,22 @@ GATES: dict[str, tuple[float, Matcher]] = {
     ),
 }
 
-#: C-#8：基线尚未经 CI 实测校准的分组——当前只打印实测值与占位下限、**不阻断**；
-#: 首轮 CI 覆盖率数据落地后按 min − 2 口径填实数并移出本集合。
+#: C-#8：基线尚未经 CI 实测校准的分组——当前只打印实测值与占位下限、**不阻断**。
+#:
+#: ★ 逾期登记项（2026-11-08 批次 2 复核）：注释自 2026-09 起就写「首轮 CI 覆盖率数据
+#:   落地后填实数并移出本集合」，但两个月未落地，且没有任何机制会提醒——「待校准」
+#:   于是变成永久的「永不阻断」。现在给它一个**到期日**：到期后本集合必须为空，
+#:   否则 check_coverage_gates 直接判红（见 `_pending_expired`）。到期前新增待校准分组
+#:   也必须写明依据，避免又变成一次静默挂账。
+#:   处置口径：从 CI 的 coverage.json 取该组实测值（三平台取最小值），按既有
+#:   「min − 2」填回 GATES 的实数下限，然后把组名从本集合删除。
 BASELINE_PENDING_GATES: frozenset[str] = frozenset(
     {"services", "plugins", "commands", "gui_views"}
 )
+
+#: 待校准分组的到期日（ISO 日期）。到期后 `BASELINE_PENDING_GATES` 必须为空，
+#: 否则门禁判红——「暂时豁免」不允许无限期挂着。
+BASELINE_PENDING_EXPIRES = "2027-01-31"
 
 OVERALL_COVERAGE_GATE = 75.0
 
@@ -269,6 +281,34 @@ def _resolve_profile(requested: str) -> tuple[str, str]:
     return ("full", "auto: playwright detected") if has_browser else ("core", "auto: playwright missing")
 
 
+def _pending_gate_problems(today: date | None = None) -> list[str]:
+    """待校准豁免的自检：到期必须清空、且每条都必须对应一个真实分组。
+
+    没有这一层，「待校准」就等于永久不阻断：既不会到期，也不会有任何信号提示
+    某个组名已经不存在（改完名后豁免会一直挂着，且无人察觉）。
+
+    返回的文本**必须是 ASCII**：这些字符串会被打印到 CI runner 的 stdout/stderr，
+    而 Windows runner 是 cp1252（同族崩溃见 test_prints_survive_a_cp1252_console）。
+    """
+    problems: list[str] = []
+    unknown = sorted(set(BASELINE_PENDING_GATES) - set(GATES))
+    if unknown:
+        problems.append(
+            f"BASELINE_PENDING_GATES lists unknown group(s) {unknown}"
+            " -- the exemption points at renamed/removed groups and can never fire"
+        )
+    current = today or date.today()
+    expires = date.fromisoformat(BASELINE_PENDING_EXPIRES)
+    if current >= expires and BASELINE_PENDING_GATES:
+        problems.append(
+            f"baseline-pending exemption expired on {BASELINE_PENDING_EXPIRES}, but"
+            f" {sorted(BASELINE_PENDING_GATES)} still have no measured floor"
+            " -- fill real floors (CI three-platform min - 2) into GATES and drop them"
+            " from BASELINE_PENDING_GATES"
+        )
+    return problems
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Enforce OmniCrawler subsystem coverage gates")
     parser.add_argument("report", nargs="?", default="coverage.json", type=Path)
@@ -281,12 +321,22 @@ def main() -> int:
     args = parser.parse_args()
     payload = json.loads(args.report.read_text(encoding="utf-8"))
     files: dict[str, Any] = payload.get("files", {})
-    failures: list[str] = []
+    failures: list[str] = list(_pending_gate_problems())
 
     profile, reason = _resolve_profile(args.profile)
     check_overall = profile in {"core", "full"}
     check_groups = profile in {"core", "full"}
     print(f"profile={profile} ({reason})")
+    # 注意：本脚本的打印必须是 ASCII 安全的（Windows runner 的 stdout 是 cp1252，
+    # 全角字符/中文会让 quality job 直接崩在 UnicodeEncodeError）。
+    for problem in failures:
+        print(f"[pending-gate self-check FAILED] {problem}", file=sys.stderr)
+    if BASELINE_PENDING_GATES:
+        print(
+            f"baseline-pending groups {sorted(BASELINE_PENDING_GATES)}"
+            f" (expires {BASELINE_PENDING_EXPIRES}; warn-only until then,"
+            " must be calibrated to real floors before the expiry date)"
+        )
     print("coverage gate                 covered/lines   actual   minimum")
     print("-" * 67)
     total = payload.get("totals", {})

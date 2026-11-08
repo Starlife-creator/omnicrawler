@@ -283,3 +283,54 @@ def test_coverage_ratchet_never_lowers_a_floor() -> None:
     )
     lowered = {k: (v, current[k]) for k, v in expected.items() if current[k] < v}
     assert not lowered, f"这些覆盖率下限被调低了（快照->现值）：{lowered}"
+
+
+# --- 批次 2（优化方案 §14.3）：待校准豁免必须有到期日 ---------------------------
+#
+# 由来：`BASELINE_PENDING_GATES` 自 2026-09 起就是「首轮 CI 数据落地后填实数」，
+# 两个月没有落地，也没有任何机制提醒 ⇒ 「暂时豁免」实际等于「永久不阻断」。
+# 这里把「到期必须清空」变成会失败的检查。
+
+
+def test_pending_exemption_is_currently_clean() -> None:
+    """当前状态必须自洽：豁免指向的分组都真实存在，且尚未到期。"""
+    checker = _load_checker()
+    assert checker._pending_gate_problems() == []
+
+
+def test_pending_exemption_has_an_expiry_date() -> None:
+    """豁免必须写明到期日——没有到期日的豁免就是永久豁免。"""
+    from datetime import date
+
+    checker = _load_checker()
+    expires = date.fromisoformat(checker.BASELINE_PENDING_EXPIRES)
+    assert expires > date.today(), (
+        f"待校准豁免已于 {expires} 过期；请按 CI 实测填实数下限后清空 BASELINE_PENDING_GATES"
+    )
+
+
+def test_reverse_assertion_expired_exemption_turns_red() -> None:
+    """**反向断言**：装回「到期仍挂着豁免」的缺口，本用例必须红。
+
+    把「今天」推到到期日之后，若 `_pending_gate_problems` 仍返回空（即豁免永不到期），
+    这里立刻失败——保证到期机制不是装饰。
+    """
+    from datetime import date
+
+    checker = _load_checker()
+    assert checker.BASELINE_PENDING_GATES, "本反向断言假定仍存在待校准分组"
+    expired = date.fromisoformat(checker.BASELINE_PENDING_EXPIRES)
+    problems = checker._pending_gate_problems(expired)
+    assert problems, "到期后仍返回空 ⇒ 豁免永不到期，等于永久不阻断"
+    assert "expired" in problems[0]
+
+
+def test_reverse_assertion_stale_exemption_name_is_reported() -> None:
+    """**反向断言**：豁免里写了不存在的分组名（改名的残留）必须被报出来。"""
+    checker = _load_checker()
+    checker.BASELINE_PENDING_GATES = frozenset({"services", "this_group_was_renamed"})
+    try:
+        problems = checker._pending_gate_problems()
+    finally:
+        checker.BASELINE_PENDING_GATES = frozenset({"services", "plugins", "commands", "gui_views"})
+    assert problems and "unknown" in problems[0]

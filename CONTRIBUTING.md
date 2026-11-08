@@ -51,14 +51,15 @@ python tools/self_verify.py --json evidence.json   # 写出机器可读的证据
 
 | 集合 | 何时能跑 | 内容 |
 |---|---|---|
-| `static` | 干净的开发检出 | compileall、ruff、mypy、模板校验，以及 13 项 `tools/check_*.py`（架构、SDK 契约、CLI 文档、文档一致性、网络边界、发布完整性、豁免预算、GUI 约定、编码规范、最小安装、依赖锁一致性、市场内容、agent 面） |
+| `static` | 干净的开发检出 | compileall、ruff、mypy、模板校验，以及全部 `tools/check_*.py`（架构、SDK 契约、CLI 文档、文档一致性、编码与行尾策略、shell 脚本、网络边界、发布完整性、豁免预算、GUI 约定、编码规范、锁一致性、依赖一致性、GUI 测试布局与线程状态、主窗口体积、最小安装、市场内容、agent 面）——**具体条目以 `tools/gate_registry.py` 为准，本文档不重复记账**（写死的数量必然漂移） |
 | `tests` | 同上（较慢） | 测试套件 |
 | `coverage` | 先跑一次覆盖率统计 | 覆盖率下限与分组门禁（需 `coverage.json`；总体 `>= 75%`，长期目标 80%） |
 | `install` | 逐 extras profile 安装 | 每个 profile 可独立安装且导入完整 |
 | `release` | 有构建产物后 | SBOM 与许可护栏、产物体积预算 |
 
-报告如实区分**通过 / 失败 / 跳过**；跳过会写明原因（缺前置产物，或需 CI 提供的参数），
-不会被当成通过。
+报告如实区分**通过 / 失败 / 跳过**，并且结论是**三态**：`passed` / `failed` / `unverified`。
+跳过会写明原因（缺前置产物，或需 CI 提供的参数），**不会被当成通过**——
+全部跳过（或选中 0 条门禁）判 `unverified` 并返回非 0，因为「一条都没跑」不等于「全部通过」。
 
 pre-commit hooks 会在提交时自动运行 ruff 和 mypy，从源头防止退化。
 
