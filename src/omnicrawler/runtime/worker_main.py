@@ -13,6 +13,7 @@ from typing import Any
 from ..core.logging_utils import configure_logging
 from ..services.application_service import ApplicationService
 from .execution_backend import WorkerSession, _read_session, _write_session
+from .result_state import succeeded_payload
 
 
 class WorkerRuntime:
@@ -70,10 +71,7 @@ class WorkerRuntime:
         else:
             # S2.5.47：非 dict 返回正常置终态，不卡 running
             with self._lock:
-                self.state = {
-                    "status": "succeeded",
-                    "result": {"status": "succeeded", "value": result},
-                }
+                self.state = succeeded_payload(result)
 
     def _progress_to_stderr(self, event: str, details: dict[str, Any]) -> None:
         """把采集进度事件打印为 'PROGRESS: pct% url' 到 stderr（进 local-worker.log）。

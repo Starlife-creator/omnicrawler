@@ -20,6 +20,7 @@ from ..core.config import load_config
 from ..core.run_state import TERMINAL_RUN_STATES
 from ..core.utils import atomic_write, utcnow
 from ..services.application_service import ApplicationService
+from .result_state import succeeded_payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +48,11 @@ class ExecutionBackend(Protocol):
 
 
 class InProcessBackend:
-    """Development/test backend. Desktop production should use LocalWorkerBackend."""
+    """Development/test backend. Desktop production should use LocalWorkerBackend.
+
+    Production code deliberately does not construct this backend: it exists so
+    tests and source checkouts can run a task without spawning a worker process.
+    """
 
     def __init__(self) -> None:
         self._service: ApplicationService | None = None
@@ -75,10 +80,7 @@ class InProcessBackend:
                         self._state = {"status": result.get("status", "succeeded"), "result": result}
                 else:
                     with self._lock:
-                        self._state = {
-                            "status": "succeeded",
-                            "result": {"status": "succeeded", "value": result},
-                        }
+                        self._state = succeeded_payload(result)
 
         self._thread = threading.Thread(target=run, name="omnicrawler-in-process", daemon=True)
         self._thread.start()
@@ -270,9 +272,7 @@ class LocalWorkerBackend:
         response = {"shutdown": True} if self._session_shutdown_requested else self._request("shutdown")
         if not self.reap(timeout=10.0):
             raise RuntimeError("本地 Worker 尚未退出，请稍后重试")
-        self.session = None
-        self.session_file = None
-        self._session_shutdown_requested = False
+        self._clear_session()
         return response
 
     def close_for_session_edit(self) -> bool:
@@ -304,10 +304,14 @@ class LocalWorkerBackend:
                     return False
             except psutil.NoSuchProcess:
                 pass
+        self._clear_session()
+        return True
+
+    def _clear_session(self) -> None:
+        """忘掉当前会话（三个字段是一组，必须一起清）。"""
         self.session = None
         self.session_file = None
         self._session_shutdown_requested = False
-        return True
 
     def reap(self, *, timeout: float = 10.0) -> bool:
         """回收（wait）本进程启动的 worker 子进程；返回是否已回收。
@@ -350,7 +354,13 @@ class LocalWorkerBackend:
 
 
 class FutureRemoteBackend:
-    """Interface reservation only; intentionally not exposed in desktop UI."""
+    """Interface reservation only; intentionally not exposed in desktop UI.
+
+    Nothing in production constructs this class, and that is intentional rather
+    than dead code: it pins the ExecutionBackend shape a future remote backend
+    must satisfy, so tests can assert the contract before the implementation
+    lands.
+    """
 
     def _unavailable(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
         raise NotImplementedError("远程执行后端尚未发布")
