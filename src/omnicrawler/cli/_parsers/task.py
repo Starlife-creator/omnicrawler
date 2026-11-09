@@ -69,7 +69,12 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
         action="append",
         default=[],
         metavar="FEATURE",
-        help="task 模式需要的能力，可重复：web/pdf/browser/ocr-tesseract/ocr-paddle/gui/streams/storage-*",
+        help=(
+            "task 模式需要的能力，可重复，名字与安装时的 extra 同名："
+            "html/pdf/browser/selenium/async-http/ai/tls/streams/distributed/scrapy/"
+            "ocr-tesseract/ocr-paddle/ocr-captcha/crawl4ai/gui/security/storage/"
+            "postgresql/search/document（历史别名 web、streams、storage-s3 等仍可用）"
+        ),
     )
     capabilities.add_argument("--verify-imports", action="store_true", help="兼容选项：实际导入全部已安装模块（较慢）")
     capabilities.add_argument("--self-test", action="store_true", help="用生成样本离线运行 Tesseract 与 PaddleOCR（分钟级）")

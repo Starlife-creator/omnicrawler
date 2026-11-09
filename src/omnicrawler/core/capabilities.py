@@ -30,39 +30,68 @@ MODULES = {
     "playwright": "playwright",
     "selenium": "selenium",
     "async_http": "httpx",
+    "ai_http": "aiohttp",
     "tls_impersonate": "curl_cffi",
     "websocket": "websockets",
     "redis": "redis",
     "scrapy": "scrapy",
+    "crawl4ai": "crawl4ai",
     "tesseract_wrapper": "pytesseract",
+    "pillow": "PIL",
     "paddle": "paddle",
     "paddleocr": "paddleocr",
+    "numpy": "numpy",
+    "captcha_engine": "ddddocr",
+    "onnx_runtime": "onnxruntime",
     "gui": "PySide6",  # Phase 0 M0b：PyQt6(GPL) → PySide6(LGPL) 探测
     "keyring": "keyring",
+    "cryptography": "cryptography",
     "s3": "boto3",
     "duckdb": "duckdb",
     "parquet": "pyarrow",
     "postgresql": "psycopg",
     "opensearch": "opensearchpy",
+    "document_docx": "docx",
+    "document_pptx": "pptx",
+    "charset": "chardet",
 }
 
 # A task check verifies only the components needed by the user's next action.
 # Keep feature names stable because they are exposed by the CLI and diagnostics.
+# 每个功能 extra 都要有同名能力名：装上了 extra 却查不到对应能力，
+# 「安装成功」与「能力可用」就会各说各话。能力只承诺 extra 的一个子集
+# （例如 html 只验 bs4/lxml，不验 cssselect），因为子集就足以决定任务能否跑。
+# extra 侧的真源是 tools/check_extra_install.py 的 PROFILE_IMPORTS，
+# tests/unit/core/test_capabilities_extra_contract.py 钉住两者的对应关系。
+# 历史名字（web / streams / storage-*）继续保留：它们出现在既有配置、文档和脚本里。
 FEATURE_REQUIREMENTS: dict[str, dict[str, tuple[str, ...]]] = {
     "core": {"modules": ("core_yaml",), "native": ()},
+    "html": {"modules": ("html", "xml"), "native": ()},
     "web": {"modules": ("html", "xml"), "native": ()},
     "pdf": {"modules": ("pdf", "xlsx"), "native": ()},
     "browser": {"modules": ("playwright",), "native": ("chromium",)},
     "selenium": {"modules": ("selenium",), "native": ("selenium_driver",)},
-    "ocr-tesseract": {"modules": ("tesseract_wrapper",), "native": ("tesseract",)},
-    "ocr-paddle": {"modules": ("paddle", "paddleocr"), "native": ("paddle_models",)},
-    "gui": {"modules": ("gui",), "native": ()},
+    "async-http": {"modules": ("async_http",), "native": ()},
+    "ai": {"modules": ("ai_http",), "native": ()},
+    "tls": {"modules": ("tls_impersonate",), "native": ()},
     "streams": {"modules": ("websocket",), "native": ()},
+    "distributed": {"modules": ("redis",), "native": ()},
+    "scrapy": {"modules": ("scrapy",), "native": ()},
+    "ocr-tesseract": {"modules": ("tesseract_wrapper", "pillow"), "native": ("tesseract",)},
+    "ocr-paddle": {"modules": ("paddle", "paddleocr", "numpy"), "native": ("paddle_models",)},
+    "ocr-captcha": {"modules": ("captcha_engine", "onnx_runtime"), "native": ()},
+    "crawl4ai": {"modules": ("crawl4ai",), "native": ()},
+    "gui": {"modules": ("gui",), "native": ()},
+    "security": {"modules": ("keyring", "cryptography"), "native": ()},
+    "storage": {"modules": ("s3", "duckdb", "parquet"), "native": ()},
     "storage-s3": {"modules": ("s3",), "native": ()},
     "storage-duckdb": {"modules": ("duckdb",), "native": ()},
     "storage-parquet": {"modules": ("parquet",), "native": ()},
     "storage-postgresql": {"modules": ("postgresql",), "native": ()},
     "storage-opensearch": {"modules": ("opensearch",), "native": ()},
+    "postgresql": {"modules": ("postgresql",), "native": ()},
+    "search": {"modules": ("opensearch",), "native": ()},
+    "document": {"modules": ("document_docx", "document_pptx", "charset"), "native": ()},
 }
 
 
@@ -313,6 +342,15 @@ def _build_optional_capabilities(modules: dict[str, dict[str, Any]]) -> dict[str
                                     "关系数据库后端", "optional")
     items["opensearch"] = _cap_item("OpenSearch 全文检索", modules.get("opensearch", {}).get("installed", False),
                                     "全文搜索和分析", "optional")
+    items["crawl4ai"] = _cap_item("crawl4ai 抽取桥接", modules.get("crawl4ai", {}).get("installed", False),
+                                  "用 crawl4ai 的正文抽取处理难解页面", "optional")
+    items["ocr_captcha"] = _cap_item("验证码识别 (ddddocr)", modules.get("captcha_engine", {}).get("installed", False)
+                                     and modules.get("onnx_runtime", {}).get("installed", False),
+                                     "登录页和限流页的验证码识别", "optional")
+    items["document"] = _cap_item("Office 文档输出 (python-docx/pptx)",
+                                  modules.get("document_docx", {}).get("installed", False)
+                                  and modules.get("document_pptx", {}).get("installed", False),
+                                  "把结果导出为 Word/PowerPoint", "optional")
 
     installed = sum(1 for item in items.values() if item["ready"])
     return {
