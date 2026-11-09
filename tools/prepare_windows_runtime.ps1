@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$Python,
     [Parameter(Mandatory = $true)][string]$RuntimeRoot,
@@ -236,20 +236,7 @@ if (-not $SkipOcrModels) {
     if ($LASTEXITCODE -ne 0) { throw 'PaddleOCR model verification failed.' }
 }
 
-$files = Get-ChildItem -LiteralPath $RuntimeRoot -Recurse -File
-$manifest = [ordered]@{
-    schema = 1
-    generated_at = [DateTime]::UtcNow.ToString('o')
-    chrome = $chrome.FullName
-    files = $files.Count
-    bytes = ($files | Measure-Object Length -Sum).Sum
-    sha256 = @($files | ForEach-Object {
-        [ordered]@{
-            path = $_.FullName.Substring($RuntimeRoot.Length + 1).Replace('\', '/')
-            bytes = $_.Length
-            sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
-        }
-    })
-}
-$manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $RuntimeRoot 'runtime-manifest.json') -Encoding utf8
+# runtime-manifest.json（与 Linux/macOS 对齐；生成逻辑在 tools/build_common.py）
+& $Python (Join-Path $ProjectRoot 'tools\build_common.py') manifest --runtime-root $RuntimeRoot --chrome $chrome.FullName
+if ($LASTEXITCODE -ne 0) { throw 'Runtime manifest generation failed.' }
 Write-Host "Windows runtime ready: $RuntimeRoot"

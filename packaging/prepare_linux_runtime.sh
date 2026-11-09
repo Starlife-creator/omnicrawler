@@ -231,32 +231,8 @@ if [[ "$SKIP_OCR_MODELS" -eq 0 ]]; then
     || die "PaddleOCR model verification failed"
 fi
 
-# ---- runtime-manifest.json（与 Windows 对齐）--------------------------------
-"$PYTHON" - "$RUNTIME_ROOT" "$CHROME_BIN" <<'PYEOF'
-import datetime, hashlib, json, os, sys
-from pathlib import Path
-runtime_root = Path(sys.argv[1])
-chrome = sys.argv[2]
-files = []
-total = 0
-for p in sorted(runtime_root.rglob("*")):
-    if p.is_file():
-        total += p.stat().st_size
-        files.append({
-            "path": str(p.relative_to(runtime_root)).replace(os.sep, "/"),
-            "bytes": p.stat().st_size,
-            "sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
-        })
-manifest = {
-    "schema": 1,
-    "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-    "chrome": chrome,
-    "files": len(files),
-    "bytes": total,
-    "sha256": files,
-}
-(runtime_root / "runtime-manifest.json").write_text(
-    json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
-)
-print(f"Linux runtime ready: {runtime_root}")
-PYEOF
+# ---- runtime-manifest.json（与 Windows 对齐；生成逻辑在 tools/build_common.py）----
+"$PYTHON" "$PROJECT_ROOT/tools/build_common.py" manifest \
+    --runtime-root "$RUNTIME_ROOT" --chrome "$CHROME_BIN" \
+  || die "runtime manifest generation failed"
+echo "Linux runtime ready: $RUNTIME_ROOT"
