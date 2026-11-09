@@ -153,6 +153,9 @@ jobs:
       # C-#14 / C-#20：OpenCV 单变体、死依赖退役、版本上下界一致性
       - run: python tools/check_dependency_consistency.py
       - run: python tools/check_build_profiles.py
+      # 批次5-①：full / full-macos 必须逐条等于 20 个功能 extra 的展开序
+      # （集合已由 tests/unit/utils/test_dependency_extras_contract.py 覆盖，这里钉顺序）
+      - run: python tools/check_extras_expansion.py
       # 批次6-2：宽类型 except 静默 pass/continue 必须带显式 '# noqa: BLE001'
       # （吞异常有时正确，静默不行：yaml_editor 外部改动探测、change_detector 解析器回退链）
       - run: python tools/check_silent_exception_handlers.py

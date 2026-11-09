@@ -212,6 +212,13 @@ GATES: tuple[Gate, ...] = (
         script="tools/check_build_profiles.py",
     ),
     Gate(
+        name="check_extras_expansion",
+        args=("tools/check_extras_expansion.py",),
+        sets=_STATIC,
+        description="聚合 extra（full / full-macos）必须逐条等于功能 extra 的展开序（顺序唯一真源）",
+        script="tools/check_extras_expansion.py",
+    ),
+    Gate(
         name="check_silent_exception_handlers",
         args=("tools/check_silent_exception_handlers.py",),
         sets=_STATIC,
