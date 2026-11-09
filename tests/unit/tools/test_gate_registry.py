@@ -133,6 +133,8 @@ def test_static_set_covers_the_red_lines() -> None:
         "check_anchor_integrity",
         # 静默吞异常：宽类型 except + 单条 pass/continue 必须留痕
         "check_silent_exception_handlers",
+        # 公开的 .gitignore：注释不得泄露本机布局，且它自己不得被忽略
+        "check_gitignore_hygiene",
     }
     assert required <= names, f"static 集合缺少: {sorted(required - names)}"
 

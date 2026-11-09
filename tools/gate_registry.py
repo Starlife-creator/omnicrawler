@@ -226,6 +226,13 @@ GATES: tuple[Gate, ...] = (
         script="tools/check_silent_exception_handlers.py",
     ),
     Gate(
+        name="check_gitignore_hygiene",
+        args=("tools/check_gitignore_hygiene.py",),
+        sets=_STATIC,
+        description="公开 .gitignore 的注释不含绝对路径/本机用户名/悬空文档引用（规则本身不得被忽略）",
+        script="tools/check_gitignore_hygiene.py",
+    ),
+    Gate(
         name="check_gui_test_layout",
         args=("tools/check_gui_test_layout.py",),
         sets=_STATIC,

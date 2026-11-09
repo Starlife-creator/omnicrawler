@@ -50,10 +50,8 @@ cov_baseline.txt
 e2e-artifacts/
 test-results/
 .pytest_session/
-# pytest 的 basetemp 兜底目录（`pytest-of-<用户名>/pytest-<n>/`，内含各用例的
-# tmp_path 残留：task.yaml、secrets.bin、chrome.exe 桩等）。默认应落在系统临时区，
-# 但本仓实测有测试把它解析到了仓库根 —— 于是"每跑一次测试就多出一个未跟踪目录"。
-# 目录名带本机用户名（Linux/CI 上各不相同），故按前缀通配，不写死 Lenovo。
+# pytest 的 basetemp 兜底目录（`pytest-of-<user>/pytest-<n>/`），内含各用例 tmp_path 残留。
+# 目录名带运行者的系统用户名（各平台不同），故按前缀通配，不写死具体名字。
 pytest-of-*/
 
 # ★ 视觉快照基线：**不入仓**。像素结果与平台字体/渲染器绑定（本仓实测：离屏环境
@@ -131,20 +129,9 @@ tmp_es.json
 .benchmark/
 bench_history.json
 
-# === 维护者本地产物（不入仓，机器相关、不可复现） ===
-# 这几条都不是业务数据，而是「跑一次就在仓库根多出来一个目录」的副产物；
-# 此前全部挂在 git status 上，`git add -A` 一不小心就会把它们提交进去。
-#
-# .agents/：维护者本机 AI 代理工作区（含 worktrees/ 下的活动工作树，
-#   其自身已有 .gitignore = *）。
-# .scratch/：批次提交信息与一次性脚本的临时目录（同 .test-tmp/ 性质）。
-# imported-work/：tests/unit/gui/test_saved_task_tools_dialog.py 造出
-#   workspace: imported-work 后由 services/workspace_references.py 的 copy 模式
-#   真实落盘到仓库根，是测试副产物。
-# user-test-runs/：仓内这份只剩 pytest 缓存残留；真正的验收证据库在仓库外
-#   （见优化方案 §14.8：根级活跃证据库保留不动，仓内补忽略规则）。
-# .field_designer/ 与 .field_designer.yaml：extraction/field_designer.py 的
-#   analyze_url 以 cwd 为 workspace 生成，属运行期工作区产物。
+# === 本地产物（测试与运行期自动生成；内容机器相关，不入仓） ===
+# 共同点：跑一次测试或工具就在仓库根多出一个目录，此前常年挂在 git status 上。
+# 规则只写通用形态；本机专属的额外忽略项放 .git/info/exclude（该文件不入库）。
 .agents/
 .scratch/
 imported-work/
