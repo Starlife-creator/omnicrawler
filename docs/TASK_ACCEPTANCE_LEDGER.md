@@ -7,6 +7,14 @@
 > ★ **「便携产物内复跑」仍未做**（那是本账本原定的下一步验收，必须在**打包产物**里跑）——
 > 因此**没有任何一行**被标为「已按便携产物验收」，`适用版本` 也不靠改字升级。
 
+## 2026-11-10 收尾登记（追加，不改写历史行）
+
+本段为收尾复核的追加登记。文件头「最近登记：2026-10-04」指上一轮**完整功能验收**，按「每行独立历史声明」纪律原样保留，不因本段追加而改动版本头。
+
+- **PR #174 合并**：悬空 8 天的 `preacceptance-closure-20261101`（291 commits / 55 文件：插件凭据与主机边界、state.migrate 敏感键过滤、PDF 依赖失效重建、Linux Landlock / macOS Seatbelt 沙箱等验收前安全收口）于 2026-11-10 以 squash 合并进 `main`（`2b2e553c`）。合并前：PR head 27/27 checks 绿、两侧文件集不相交、merge-tree 干净、合并树静态门禁 28/29 通过（唯一失败为本沙箱 Git bash signal-pipe 环境限制）。**这不等于 §6.6.5 的便携产物内复跑已完成** —— 本账本「没有任何一行按便携产物验收」的结论不变。
+- **过期表述订正**（见下方两处「已收口 / 已归一」标注）：`pip wheel` 二次失败已由 `tools/build_wheel.py` 收口、GUI/核心终态词表已由 `gui/core/run_states.py` W6.7 归一，原「未修 / 未做」措辞不再代表当前状态。
+- **仍开放**：§6.6.5 与《优化方案》§14.9 的 12 类外部验收（PDF 人工复核、真实登录会话、官方插件实机、PaddleOCR Full、冻结包 QML、远端 CI、U6、label 远程图片、代理因果、多索引 Phase 2/3、creator_fingerprint、自更新首发链路）维持「未验证」，不因本次合并或文档订正而打勾。
+
 ## 2026-10-04 本轮验收口径
 
 维护者授权以本机已安装全部依赖的环境进行 Full 功能验收，无需便携包。本轮结果保存在工作区 `user-test-runs/comprehensive-optimization-20261004/evidence/`，当前结果已登记于 [本轮实施记录](COMPREHENSIVE_OPTIMIZATION_2026-10-04.md) 和验收目录的 `验收报告.md`。此前便携待验条目保留为历史发布条件，不阻塞本轮功能验收。
@@ -178,9 +186,11 @@ GUI-01—08 均未闭环；GUI-08 已确认启动进程残留，未确认根因�
   **实测**：对本仓库真实构建的 wheel 对账 **0 问题**；把锁里一个 specifier 改一个字后
   CLI **退出码 1** 并给出"产物声明了锁里没有的依赖 / 锁里有的依赖产物没声明"两向提示。
 
-  **顺带发现（维护者体验，未修）**：`pip wheel .` 在同一工作树里**第二次**会失败 ——
+  **顺带发现（维护者体验，已收口）**：`pip wheel .` 在同一工作树里**第二次**会失败 ——
   setuptools 复用的 `build/` 里已有上次的 `.dist-info`，报 `[WinError 183] 当文件已存在时，
   无法创建该文件`。`rm -rf build` 后正常。CI 每次是干净检出，因此不受影响。
+  **2026-11-10 复核**：已由 `tools/build_wheel.py`（先清 `build/` 再调 `pip wheel`）收口，
+  `.github/workflows/quality.yml` 也改走该脚本；原「未修」措辞不再代表当前状态，保留现象描述供回归对照。
 - **质量基准曾只有 1 个任务、1 种形态**（2026-09-14 扩到 **4 个任务 / 3 种取数形态**）。
   原状：`services/quality_benchmark.TASKS` 只有 `list-three-details`（HTML 列表 + 详情链接）；
   分页**配置**、API 通道、单页卡片这些形态在基准里**没有任何代表** —— 而"可复现的任务基准"
@@ -379,8 +389,11 @@ GUI-01—08 均未闭环；GUI-08 已确认启动进程残留，未确认根因�
     但自动打开目录/自动导出/提示音仍只属于正常完成。
   - 回归护栏：`test_worker_task_runner.py` 新增终态映射用例（cancelled → 独立终态 + 退出码 1 +
     有提示），`test_gui_worker_local_task.py` 用例 5 改断言独立终态。
-  - 遗留（设计层，未做）：GUI 用 UI 本地名（`finished`/`error`）而核心用规范名
+  - 遗留（设计层，已归一）：GUI 用 UI 本地名（`finished`/`error`）而核心用规范名
     （`succeeded`/`failed`），本次只把 `cancelled` 对齐规范名，词表统一属后续重构。
+    **2026-11-10 复核**：`gui/core/run_states.py`（W6.7）已把词表归一到 `core/run_state.py`
+    唯一真源（生产发规范词，`finished`/`error` 只作兼容读取别名，文案/颜色/图标只定义一次），
+    原「未做」措辞不再代表当前状态，保留原记录供演进对照。
 - **等宽字体链不含中文字形**（2026-09-13 读代码发现，**待实机确认后再定是否修**）。
   `gui/design_system.py`：UI 链 `PingFang SC → Microsoft YaHei → Noto Sans CJK SC → Segoe UI`
   有跨平台中文回退 ✓；但

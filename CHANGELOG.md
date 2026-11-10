@@ -4,6 +4,9 @@
 
 ### 变更
 
+- security: 合并悬空 8 天的 PR #174（`preacceptance-closure-20261101`，291 commits / 55 文件）到 `main`：插件凭据与目标主机边界、`state.migrate` 排除敏感键、PDF 处理依赖变化时失效重建 + 人工复核保护、Linux Landlock / macOS Seatbelt 沙箱、Unix 沙箱强制执行、便携升级冒烟工具等验收前安全收口此前一直停留在未合并分支；squash 合并提交 `2b2e553ce777e0ebc1e33c80288166c3d0593ea2`。合并前实测：PR head `825a486b` 27/27 GitHub checks 绿、`main` 与分支自分歧点起的改动文件集完全不相交（100 vs 55，零重叠）、`git merge-tree` 干净、合并树 28/29 静态门禁通过（唯一失败 `check_shell_scripts` 是本沙箱 Git bash 无法建 signal pipe 的已登记环境限制，非脚本缺陷）。
+- docs: 收尾补登记与文档漂移订正 —— 本文件与 `docs/TASK_ACCEPTANCE_LEDGER.md` 追加 2026-11-10 登记；订正 `tools/check_agent_surface.py` 与 `docs/RESEARCH_AND_FUSION.md` 的 agent-surface 脚本路径笔误、`tools/check_coverage_gates.py` 注释引用的失效函数名、`docs/CODING_STANDARDS.md` 补 baseline-pending 到期日、`docs/TEST_REPORT.md` 把已修复的 `scroll_pattern` 改为已修复登记、`docs/TASK_ACCEPTANCE_LEDGER.md` 两处过期表述（pip wheel 二次失败已收口 / GUI 终态词表已归一）。均为零逻辑改动，由 static 门禁与 diff 自证。
+
 - docs: 用户指南与文档索引按 1.0.1 源码现状全面对齐。① 数字口径全部改为可复现真源：
   内置模板 44 套（`templates list`）、Apify 18 个平台（`APIFY_ACTOR_MAP`）、Python 3.12+
   （`requires-python`）、53 个顶层命令（`--help`）、19 个命令处理器模块、UA 指纹 10 条

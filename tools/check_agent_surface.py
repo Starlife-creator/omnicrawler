@@ -17,9 +17,9 @@ AI / 脚本要稳定接管 CLI，必须能**在调用前**知道：有哪些命�
 
 ## 用法
 
-    python tools/agent_surface.py              # 输出人类可读摘要
-    python tools/agent_surface.py --json       # 输出机器可读契约
-    python tools/agent_surface.py --check      # 校验（有问题则退出码 1）
+    python tools/check_agent_surface.py              # 输出人类可读摘要
+    python tools/check_agent_surface.py --json       # 输出机器可读契约
+    python tools/check_agent_surface.py --check      # 校验（有问题则退出码 1）
 """
 
 from __future__ import annotations

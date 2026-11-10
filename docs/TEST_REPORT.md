@@ -547,7 +547,7 @@ Selenium 的逐请求拦截兼容降级只在测试进程拥有的回环服务�
 
 ### 已知待解决
 
-- `scroll_pattern` 源码 edge-case bug：`randint(300, min(800, remaining-pos))` 在剩余空间 < 300 时 ValueError，测试中用 `pytest.skip()` 防御
+- `scroll_pattern` 源码 edge-case bug（**已修复，2026-11-10 复核，不再是待办**）：`randint(300, min(800, remaining-pos))` 曾在剩余空间 < 300 时抛 ValueError、测试靠 `pytest.skip()` 防御；现 `fetching/stealth_enhanced.py` 改为 `gap < 300` 时取 `gap`、否则 `randint(300, min(800, gap))`，`tests/unit/test_stealth_enhanced.py` 以 `test_scroll_pattern_small_page` / `test_scroll_pattern_large_page` 两条用例实跑覆盖、无 skip。保留登记供回归对照。
 - 覆盖率阶梯继续提升：66% → 70% → 75% → 80%（核心 >=85%）
 - 逐步收紧 mypy GUI overrides（Phase 2: 开启 disallow_untyped_defs）
 

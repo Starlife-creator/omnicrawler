@@ -85,7 +85,7 @@
 
 覆盖率分组门禁的唯一判据在 `tools/check_coverage_gates.py`：既有阻断分组按 CI 三平台实测最小值 − 2 设定下限，只升不降。
 
-C-#8 风险优先补充分组 `services`、`plugins`、`commands`、`gui_views` 当前处于 **baseline pending** 状态：门禁会打印实测值与占位下限，但**不阻断合并**；首轮 CI 覆盖率数据落地后，按同一口径（min − 2）填回实数下限并从 `BASELINE_PENDING_GATES` 移出，即转为阻断。
+C-#8 风险优先补充分组 `services`、`plugins`、`commands`、`gui_views` 当前处于 **baseline pending** 状态：门禁会打印实测值与占位下限，但**不阻断合并**；首轮 CI 覆盖率数据落地后，按同一口径（min − 2）填回实数下限并从 `BASELINE_PENDING_GATES` 移出，即转为阻断。到期日 `BASELINE_PENDING_EXPIRES = 2027-01-31`：到期后该集合必须为空，否则 `tools/check_coverage_gates.py` 的 `_pending_gate_problems` 判红（见 `tests/unit/utils/test_coverage_gates.py` 契约测试）。
 
 `src/omnicrawler/visual_selector/` 在 `pyproject.toml` 的 coverage `omit` 中排除：它是浏览器坐标选择 E2E 工具，依赖真实页面与浏览器运行时，不进单测覆盖率。**复核期限：2026-12 前**为其补 offscreen/集成测试，达标后从 omit 移除并纳入分组门禁；在此之前不得以「覆盖率低」为由删除该模块功能。
 
