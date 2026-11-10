@@ -163,7 +163,13 @@ class PlaywrightAdapter:
 
     def scroll_bottom(self, action: BrowserAction) -> None:
         for _ in range(action.times):
-            self._page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            moved = self._page.evaluate(
+                "(()=>{const before=window.scrollY;"
+                "window.scrollTo(0,document.documentElement.scrollHeight);"
+                "return window.scrollY>before;})()"
+            )
+            if not moved:
+                self._page.evaluate("window.scrollTo(0,0)")
             if action.pause_ms:
                 self._page.wait_for_timeout(action.pause_ms)
 
@@ -174,12 +180,19 @@ class SeleniumAdapter:
     """Adapt a Selenium ``driver`` object to the :class:`BrowserEngine` protocol."""
 
     def __init__(self, driver: Any) -> None:
+        self._driver = driver
+
+    @property
+    def _by_class(self):
         from selenium.webdriver.common.by import By
+
+        return By
+
+    @property
+    def _wait_class(self):
         from selenium.webdriver.support.ui import WebDriverWait
 
-        self._driver = driver
-        self._By = By
-        self._WebDriverWait = WebDriverWait
+        return WebDriverWait
 
     def _choices(self, action: BrowserAction) -> list[str]:
         result: list[str] = []
@@ -194,25 +207,25 @@ class SeleniumAdapter:
     def locate(self, action: BrowserAction):
         expected_name = action.role_name
         for selector in self._choices(action):
-            for element in self._driver.find_elements(self._By.CSS_SELECTOR, selector):
+            for element in self._driver.find_elements(self._by_class.CSS_SELECTOR, selector):
                 if expected_name is None or element.accessible_name == expected_name:
                     return element
         return None
 
     def _ensure(self, action: BrowserAction):
         timeout = max(0.1, action.timeout_ms / 1000)
-        return self._WebDriverWait(self._driver, timeout).until(lambda _: self.locate(action))
+        return self._wait_class(self._driver, timeout).until(lambda _: self.locate(action))
 
     def wait_for(self, action: BrowserAction) -> None:
         timeout = max(0.1, action.timeout_ms / 1000)
-        self._WebDriverWait(self._driver, timeout).until(lambda _: self.locate(action))
+        self._wait_class(self._driver, timeout).until(lambda _: self.locate(action))
 
     def wait_for_url(self, action: BrowserAction) -> None:
         from fnmatch import fnmatch
 
         timeout = max(0.1, action.timeout_ms / 1000)
         pattern = str(action.value or "**/*").replace("**", "*")
-        self._WebDriverWait(self._driver, timeout).until(lambda _: fnmatch(self._driver.current_url, pattern))
+        self._wait_class(self._driver, timeout).until(lambda _: fnmatch(self._driver.current_url, pattern))
 
     def click(self, action: BrowserAction) -> None:
         self._ensure(action).click()
@@ -240,7 +253,13 @@ class SeleniumAdapter:
 
     def scroll_bottom(self, action: BrowserAction) -> None:
         for _ in range(action.times):
-            self._driver.execute_script("window.scrollTo(0, document.body.scrollHeight)")
+            moved = self._driver.execute_script(
+                "const before=window.scrollY;"
+                "window.scrollTo(0,document.documentElement.scrollHeight);"
+                "return window.scrollY>before;"
+            )
+            if not moved:
+                self._driver.execute_script("window.scrollTo(0,0)")
             if action.pause_ms:
                 time.sleep(action.pause_ms / 1000)
 

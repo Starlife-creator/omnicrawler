@@ -85,31 +85,19 @@ def _probe_windows() -> SandboxProbe:
 
 
 def _probe_linux() -> SandboxProbe:
-    """Linux：能力探测——user namespaces + Landlock（内核 ≥5.13）。"""
+    """探测实际 Landlock ABI，不把内核版本当作可用性证明。"""
     try:
         import os
 
+        from omnicrawler.plugins.plugin_unix_enforcement import linux_capability
+
         release = os.uname().release  # type: ignore[attr-defined]  # Unix 专属 API
+        if linux_capability():
+            return SandboxProbe(True, "landlock", f"内核 {release}：Landlock ABI 可用（网络规则另需 ABI 4+）")
         major, minor = (int(part) for part in release.split(".")[:2])
-        kernel_ok = (major, minor) >= (5, 13)
-        # user namespaces 可用性：试读 unprivileged userns 开关
-        userns_ok = True
-        try:
-            with open("/proc/sys/kernel/unprivileged_userns_clone", encoding="utf-8") as fh:
-                userns_ok = fh.read().strip() == "1"
-        except OSError:
-            pass  # 无该文件 = 发行版未禁用（Debian/Ubuntu 默认无此开关）
-        if kernel_ok and userns_ok:
-            return SandboxProbe(True, "landlock", f"内核 {release} ≥5.13，userns 可用")
-        if kernel_ok:
-            return SandboxProbe(
-                True, "seccomp_only", f"内核 {release} ≥5.13 但 userns 受限（降级档）"
-            )
         return SandboxProbe(
-            False,
-            "none",
-            f"内核 {release} <5.13，非受支持范围（fail-closed，第 68 轮收窄）",
-            supported_range=False,
+            False, "none", f"内核 {release}：Landlock ABI 不可用",
+            supported_range=(major, minor) >= (5, 13),
         )
     except Exception as exc:  # noqa: BLE001
         return SandboxProbe(False, "none", f"探测异常: {exc}", supported_range=False)
@@ -157,14 +145,11 @@ def resolve_sandbox_mode(
 
     probe = probe or probe_os_sandbox()
     if probe.available:
-        if probe.backend in ("appcontainer", "landlock", "seatbelt"):
-            # 只陈述「探测可用 + OS 级隔离未接线」：本版 confinement_argv_prefix() 恒返回 []，
-            # 规则集/令牌/Seatbelt profile 都还没装（见该函数 docstring）。SECURITY.md 禁止
-            # 在此之前把当前子进程边界表述为「OS 沙箱」，故这里不得出现「启用」二字。
-            return "os", (
-                f"OS 级隔离未接线（{probe.backend} 探测可用）；"
-                "当前实际为子进程边界 + -I -S 导入隔离"
-            )
+        if probe.backend == "appcontainer":
+            # 能探测 API 不等于 Python、ACL 和回收边界已完成；拒绝虚报启用。
+            return "os", "OS 级隔离未接线（appcontainer 探测可用）；当前实际为子进程边界 + -I -S 导入隔离"
+        if probe.backend in ("landlock", "seatbelt"):
+            return "os", f"OS 沙箱启用: {probe.backend}（{probe.detail}）"
         # seccomp_only 属降级档，需显式开关
         if allow_restricted_token_fallback:
             return "degraded", f"降级档显式开启: {probe.backend}（{probe.detail}）"
@@ -182,17 +167,15 @@ def resolve_sandbox_mode(
 
 
 def confinement_argv_prefix(mode: str, backend: str) -> list[str]:
-    """spawn 前置平台隔离参数骨架（A-P1-2 代码层落地，待平台 CI 验证）。
+    """兼容的诊断接口；平台隔离由 :mod:`plugin_sandbox` 的启动路径安装。
 
-    当前一律返回空前缀：真实隔离包装——Linux ``unshare`` + seccomp + Landlock、
-    Windows AppContainer / Job Object、macOS ``sandbox-exec`` Seatbelt profile——
-    待对应平台 CI 矩阵接入后在此返回参数 / 前置命令。裁决结果（mode/reason）已随
-    spawn 路径进入日志与诊断，不在代码层伪装已完成 OS 隔离。
+    Linux 在插件导入前安装 Landlock 文件/网络规则，macOS 使用 ``darwin_launch``；
+    Windows AppContainer 仍未接线，直到真实运行与回收验证完成。它们都不是可以通过字符串参数安全拼接的
+    前缀，因此本函数对实际平台保持空数组；不得将其存在解释为沙箱已验证。
     """
     if mode != "os":
         return []
-    # 待对应平台 CI：
-    # - Linux: unshare --user --map-root-user + seccomp/Landlock 安装器前缀
-    # - Windows: AppContainer profile / Job Object 资源限额注入（见 A-P3-14）
-    # - macOS: sandbox-exec + Seatbelt profile 文件参数
+    # - Linux: 已接线导入前 Landlock 文件/网络规则，非 argv 前缀。
+    # - Windows: AppContainer profile / Job Object 资源限额注入仍待实现。
+    # - macOS: 已接线 sandbox-exec + Seatbelt 私有 profile。
     return []

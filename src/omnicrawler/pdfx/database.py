@@ -118,6 +118,24 @@ CREATE TABLE IF NOT EXISTS extraction_dependencies (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS processing_dependencies (
+    doc_id TEXT NOT NULL REFERENCES documents(doc_id) ON DELETE CASCADE,
+    stage TEXT NOT NULL CHECK(stage IN ('parse','ocr')),
+    digest TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(doc_id, stage)
+);
+
+CREATE TABLE IF NOT EXISTS dependency_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id TEXT,
+    stage TEXT NOT NULL,
+    action TEXT NOT NULL,
+    old_digest TEXT,
+    new_digest TEXT,
+    created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
 CREATE INDEX IF NOT EXISTS idx_pages_ocr ON pages(needs_ocr, ocr_status);
 CREATE INDEX IF NOT EXISTS idx_pages_candidate ON pages(doc_id, is_candidate);
@@ -220,6 +238,33 @@ class Database:
             "INSERT INTO errors(doc_id, stage, error_type, message, retryable, created_at) VALUES(?,?,?,?,?,?)",
             (doc_id, stage, type(exc).__name__, str(exc)[:4000], int(retryable), utcnow()),
         )
+
+    def record_dependency(self, conn: sqlite3.Connection, doc_id: str, stage: str,
+                          digest: str, action: str, old_digest: str | None = None) -> None:
+        now = utcnow()
+        conn.execute(
+            "INSERT INTO processing_dependencies(doc_id,stage,digest,updated_at) VALUES(?,?,?,?) "
+            "ON CONFLICT(doc_id,stage) DO UPDATE SET digest=excluded.digest,updated_at=excluded.updated_at",
+            (doc_id, stage, digest, now),
+        )
+        conn.execute(
+            "INSERT INTO dependency_events(doc_id,stage,action,old_digest,new_digest,created_at) VALUES(?,?,?,?,?,?)",
+            (doc_id, stage, action, old_digest, digest, now),
+        )
+
+    def protect_reviewed_page(self, conn: sqlite3.Connection, doc_id: str, page_no: int) -> bool:
+        """Keep human-derived values even when a concurrent review races OCR."""
+        reviewed = conn.execute(
+            "SELECT 1 FROM records WHERE doc_id=? AND review_status IN ('human_accepted','human_rejected')",
+            (doc_id,),
+        ).fetchone()
+        if not reviewed:
+            return False
+        conn.execute(
+            "INSERT INTO dependency_events(doc_id,stage,action,created_at) VALUES(?,'ocr','protected_review',?)",
+            (doc_id, utcnow()),
+        )
+        return True
 
     def reset_stage(self, stage: str) -> None:
         now = utcnow()

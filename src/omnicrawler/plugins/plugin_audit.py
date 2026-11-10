@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .plugin_broker_contracts import is_sensitive_state_key
+
 # 门 2 SPDX 白名单 —— ★ **本仓唯一真源**：门 2、门 3 与 `tools/check_market_content.py`
 # 均引用本常量；市场仓 `tools/catalog_lib/common.py` 因**跨仓无法 import** 而保留一份副本，
 # 由 `tests/unit/plugin/test_plugin_audit.py` 的**双向相等**断言锁死（任一侧漂移即红）。
@@ -615,10 +617,148 @@ def gate_dependencies_consistency(plugin_dir: Path) -> list[AuditFinding]:
     return findings
 
 
+# 宿主边界静态门禁。它不是 OS 沙箱：静态分析无法识别所有动态导入或别名，
+# 但必须在发布前拒绝明确绕过能力代理的常见实现。
+_HOST_BOUNDARY_NETWORK_MODULES = frozenset({
+    "aiohttp", "ftplib", "http", "httplib2", "httpx", "pycurl", "requests",
+    "smtplib", "socket", "socketserver", "telnetlib", "urllib", "urllib3", "websocket",
+    "websockets",
+})
+_HOST_BOUNDARY_BROWSER_MODULES = frozenset({
+    "cefpython3", "playwright", "pyppeteer", "selenium", "splinter", "webbrowser",
+})
+_HOST_BOUNDARY_SESSION_MODULES = frozenset({"browser_cookie3", "keyring", "pycookiecheat"})
+_HOST_BOUNDARY_FILE_MODULES = frozenset({"dbm", "shelve", "sqlite3"})
+_HOST_BOUNDARY_FILE_METHODS = frozenset({
+    "chmod", "chown", "copy", "copy2", "copyfile", "link", "mkdir", "mkdtemp",
+    "mkstemp", "move", "NamedTemporaryFile", "open", "read_bytes", "read_text",
+    "remove", "rename", "replace", "rmdir", "rmtree", "symlink_to",
+    "TemporaryDirectory", "unlink", "write_bytes", "write_text",
+})
+
+
+def _call_path(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        prefix = _call_path(node.value)
+        return f"{prefix}.{node.attr}" if prefix else node.attr
+    return None
+
+
+def _host_boundary_source_findings(path: Path, source: str) -> list[AuditFinding]:
+    try:
+        tree = ast.parse(source, filename=str(path))
+    except (SyntaxError, UnicodeError):
+        # 语法错误已由契约门拒绝，不重复报告同一缺陷。
+        return []
+
+    aliases: dict[str, str] = {}
+    imported_modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for item in node.names:
+                root = item.name.split(".")[0]
+                imported_modules.add(root)
+                aliases[item.asname or item.name.split(".")[0]] = item.name
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            root = node.module.split(".")[0]
+            imported_modules.add(root)
+            for item in node.names:
+                if item.name != "*":
+                    aliases[item.asname or item.name] = f"{node.module}.{item.name}"
+
+    findings: list[AuditFinding] = []
+
+    for code, category, modules in (
+        ("gate1_direct_network", "network.fetch / EgressBroker", _HOST_BOUNDARY_NETWORK_MODULES),
+        ("gate1_direct_browser", "浏览器能力（当前仅支持 render.html.* 本地渲染）", _HOST_BOUNDARY_BROWSER_MODULES),
+        ("gate1_direct_session", "会话/凭据边界", _HOST_BOUNDARY_SESSION_MODULES),
+    ):
+        names = imported_modules & modules
+        if names:
+            findings.append(AuditFinding(
+                level="error", code=code,
+                message=f"{path.name}: subprocess 插件不得绕过宿主{category}: {sorted(names)}",
+            ))
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        raw_name = _call_path(node.func)
+        if raw_name is None:
+            continue
+        parts = raw_name.split(".")
+        resolved = ".".join([aliases.get(parts[0], parts[0]), *parts[1:]])
+        root = resolved.split(".")[0]
+        leaf = resolved.rsplit(".", 1)[-1]
+        is_file_call = (
+            raw_name == "open"
+            or (
+                root in {"builtins", "io", "os", "pathlib", "shutil", "tempfile"}
+                and leaf in _HOST_BOUNDARY_FILE_METHODS
+            )
+            or (root in _HOST_BOUNDARY_FILE_MODULES and leaf in _HOST_BOUNDARY_FILE_METHODS | {"connect"})
+            or (
+                leaf in {"read_bytes", "read_text", "write_bytes", "write_text"}
+                and not raw_name.startswith("omnicrawler_sdk")
+            )
+        )
+        if is_file_call:
+            findings.append(AuditFinding(
+                level="error", code="gate1_uncontrolled_file_io",
+                message=f"{path.name}:{node.lineno}: 文件访问须经 files.read/resources/temp.open/artifact.stream（检测到 {raw_name}）",
+            ))
+        if raw_name.endswith(".call") and node.args and isinstance(node.args[0], ast.Constant) and node.args[0].value == "state.set":
+            for keyword in node.keywords:
+                if (
+                    keyword.arg == "key"
+                    and isinstance(keyword.value, ast.Constant)
+                    and is_sensitive_state_key(keyword.value.value)
+                ):
+                    findings.append(AuditFinding(
+                        level="error", code="gate1_session_in_plugin_state",
+                        message=f"{path.name}:{node.lineno}: Cookie/会话/凭据不得存入插件 state；使用宿主 auth 注入",
+                    ))
+            if len(node.args) > 1 and isinstance(node.args[1], ast.Dict):
+                for key, value in zip(node.args[1].keys, node.args[1].values, strict=False):
+                    if (
+                        isinstance(key, ast.Constant)
+                        and key.value == "key"
+                        and isinstance(value, ast.Constant)
+                        and is_sensitive_state_key(value.value)
+                    ):
+                        findings.append(AuditFinding(
+                            level="error", code="gate1_session_in_plugin_state",
+                            message=f"{path.name}:{node.lineno}: Cookie/会话/凭据不得存入插件 state；使用宿主 auth 注入",
+                        ))
+    return findings
+
+
+def gate_host_boundaries(plugin_dir: Path) -> list[AuditFinding]:
+    """静态拒绝明确的网络、浏览器、会话和文件边界绕过。
+
+    仅适用于缺省隔离路径；in_process 是经单独审批的受信任代码。结果不能
+    代替人工审查，也不意味着插件已被 OS 沙箱约束。
+    """
+    meta = _extract_static_metadata(plugin_dir)
+    if meta is None or str(meta.get("execution_mode", "subprocess")).strip() == "in_process":
+        return []
+    findings: list[AuditFinding] = []
+    for path in sorted(plugin_dir.rglob("*.py")):
+        if path.is_file():
+            try:
+                findings.extend(_host_boundary_source_findings(path, path.read_text(encoding="utf-8")))
+            except (OSError, UnicodeDecodeError):
+                continue
+    return findings
+
+
 def audit_local_plugin_full(plugin_dir: Path) -> AuditResult:
-    """完整审计：Phase 1（许可+凭据+契约一致性）+ Phase 2a 门 1/门 3。"""
+    """完整审计：许可/契约/依赖，以及明确的宿主边界绕过。"""
     result = audit_local_plugin(plugin_dir)  # 已含契约一致性检查
     result.findings.extend(gate_declaration_consistency(plugin_dir))
+    result.findings.extend(gate_host_boundaries(plugin_dir))
     result.findings.extend(gate_dependencies_consistency(plugin_dir))
     return result
 

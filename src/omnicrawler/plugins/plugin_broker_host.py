@@ -22,6 +22,7 @@ from .plugin_broker_contracts import (
     E_PERMISSION,
     E_RESOURCE,
     CapabilityError,
+    is_sensitive_state_key,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -79,6 +80,14 @@ class BrokerProgressMixin:
 class BrokerStateMixin:
     """state 能力域：插件状态读写/删除/迁移（命名空间隔离）。"""
 
+    @staticmethod
+    def _require_non_sensitive_state_key(key: str) -> None:
+        if is_sensitive_state_key(key):
+            raise CapabilityError(
+                E_PERMISSION,
+                "Cookie、会话或凭据不得存入插件 state；请使用宿主 auth 注入",
+            )
+
     _state: Any
     _run_id: str
     _project_scope: str
@@ -86,6 +95,7 @@ class BrokerStateMixin:
     _plugin_author_fingerprint: str
     _plugin_state_schema: int
     def _cap_state_get(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._require_non_sensitive_state_key(str(payload.get("key", "")))
         state, namespace = self._plugin_state_namespace()
         key = str(payload.get("key", ""))
         try:
@@ -95,6 +105,7 @@ class BrokerStateMixin:
         return {"found": found, "value": value}
 
     def _cap_state_set(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._require_non_sensitive_state_key(str(payload.get("key", "")))
         state, namespace = self._plugin_state_namespace()
         key = str(payload.get("key", ""))
         try:
@@ -118,10 +129,16 @@ class BrokerStateMixin:
             raise CapabilityError(E_CONTRACT, "state.migrate 当前仅支持显式 copy 策略")
         try:
             source_schema = int(str(payload.get("source_schema", "")))
-            copied = state.plugin_state_copy_schema(namespace, source_schema)
+            copied, skipped_sensitive = state.plugin_state_copy_schema(
+                namespace, source_schema, exclude_keys=is_sensitive_state_key
+            )
         except (TypeError, ValueError) as exc:
             raise CapabilityError(E_CONTRACT, str(exc)) from exc
-        return {"copied": copied, "schema_version": self._plugin_state_schema}
+        return {
+            "copied": copied,
+            "skipped_sensitive": skipped_sensitive,
+            "schema_version": self._plugin_state_schema,
+        }
 
     def _plugin_state_namespace(self) -> tuple[Any, tuple[str, str, str, int]]:
         if self._state is None:

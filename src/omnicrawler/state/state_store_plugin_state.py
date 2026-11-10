@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from collections.abc import Callable
 from typing import Any
 
 from ..core.utils import utcnow
@@ -77,7 +78,13 @@ class PluginStateMixin:
         self,
         namespace: tuple[str, str, str, int],
         source_schema: int,
-    ) -> int:
+        *,
+        exclude_keys: Callable[[str], bool] | None = None,
+    ) -> tuple[int, int]:
+        """复制普通业务状态，返回 ``(copied, excluded)``。
+
+        源 schema 不变；被排除的键不进入目标 schema，也不自动删除历史数据。
+        """
         project_scope, plugin_id, author_fingerprint, target_schema = namespace
         if source_schema < 1 or source_schema >= target_schema:
             raise ValueError("插件状态迁移源版本必须小于当前 schema_version")
@@ -89,22 +96,26 @@ class PluginStateMixin:
             ).fetchone()
             if occupied is not None:
                 raise ValueError("目标插件状态命名空间非空，拒绝覆盖迁移")
-            cursor = self.conn.execute(
-                "INSERT INTO plugin_state(project_scope, plugin_id, author_fingerprint, "
-                "schema_version, state_key, value_json, updated_at) "
-                "SELECT project_scope, plugin_id, author_fingerprint, ?, state_key, value_json, ? "
-                "FROM plugin_state WHERE project_scope=? AND plugin_id=? "
+            rows = self.conn.execute(
+                "SELECT state_key, value_json FROM plugin_state WHERE project_scope=? AND plugin_id=? "
                 "AND author_fingerprint=? AND schema_version=?",
-                (
-                    target_schema,
-                    utcnow(),
-                    project_scope,
-                    plugin_id,
-                    author_fingerprint,
-                    source_schema,
-                ),
+                (project_scope, plugin_id, author_fingerprint, source_schema),
+            ).fetchall()
+            excluded = (
+                sum(1 for row in rows if exclude_keys(row["state_key"]))
+                if exclude_keys
+                else 0
             )
-        return cursor.rowcount
+            self.conn.executemany(
+                "INSERT INTO plugin_state(project_scope, plugin_id, author_fingerprint, "
+                "schema_version, state_key, value_json, updated_at) VALUES(?,?,?,?,?,?,?)",
+                [
+                    (*namespace, row["state_key"], row["value_json"], utcnow())
+                    for row in rows
+                    if exclude_keys is None or not exclude_keys(row["state_key"])
+                ],
+            )
+        return len(rows) - excluded, excluded
 
     @classmethod
     def _require_plugin_state_key(cls, key: str) -> None:

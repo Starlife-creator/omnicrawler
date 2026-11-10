@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -55,18 +56,16 @@ def test_confinement_prefix_is_empty_skeleton_pending_platform_ci() -> None:
     assert confinement_argv_prefix("os", "landlock") == []
 
 
-def test_os_mode_reason_never_claims_enabled_while_prefix_is_empty() -> None:
-    """口径护栏：spawn 前缀为空时，reason 不得声称 OS 沙箱「启用」。
-
-    回归形态：`resolve_sandbox_mode` 曾返回 "OS 沙箱启用: landlock"，而
-    `confinement_argv_prefix()` 恒为 [] —— 日志说了没做的事，且 SECURITY.md
-    明文禁止这种表述。真接线（前缀非空）之后本断言自然失效，由那时的新口径接管。
-    """
-    for backend in ("appcontainer", "landlock", "seatbelt"):
+def test_os_reason_describes_platform_launcher_not_argv_prefix() -> None:
+    """OS 后端在启动路径安装，不用 shell 前缀伪装隔离。"""
+    for backend in ("landlock", "seatbelt"):
         mode, reason = resolve_sandbox_mode(probe=SandboxProbe(True, backend, "探测可用"))
         assert mode == "os"
-        if not confinement_argv_prefix(mode, backend):
-            assert "启用" not in reason, f"{backend}: 前缀为空却声称启用：{reason}"
+        assert "启用" in reason
+    mode, reason = resolve_sandbox_mode(probe=SandboxProbe(True, "appcontainer", "探测可用"))
+    assert mode == "os"
+    assert "未接线" in reason
+    assert "启用" not in reason
 
 
 def _session(tmp_path: Path, **kwargs: object) -> plugin_sandbox.PluginSubprocessSession:
@@ -106,4 +105,59 @@ def test_session_records_decision_and_invokes_popen_with_prefix(
     assert session.sandbox_mode == "none"
     argv = fake_popen.call_args.args[0]
     assert argv[:3] == ["python", "-I", "-S"]
+    session.end()
+
+
+def test_darwin_launcher_prefixes_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from omnicrawler.plugins import plugin_unix_enforcement
+
+    monkeypatch.setattr(plugin_sandbox.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        plugin_sandbox, "resolve_sandbox_mode",
+        lambda **_kwargs: ("os", "Seatbelt 启用"),
+    )
+    monkeypatch.setattr(
+        plugin_sandbox.plugin_backend, "resolve_backend_command",
+        lambda: (["python", "-I", "-S", "plugin_subprocess.py"], 30.0),
+    )
+    fake_popen = MagicMock()
+    fake_popen.return_value.poll.return_value = 0
+    monkeypatch.setattr(plugin_sandbox.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        plugin_unix_enforcement, "darwin_launch",
+        lambda command, **kwargs: ["sandbox-exec", "-p", "profile", *command],
+    )
+
+    session = _session(tmp_path)
+    session.start()
+    assert fake_popen.call_args.args[0][:3] == ["sandbox-exec", "-p", "profile"]
+    session.end()
+
+
+def test_linux_parent_precompiles_helper_into_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from omnicrawler.plugins import plugin_unix_enforcement
+
+    monkeypatch.setattr(plugin_sandbox.sys, "platform", "linux")
+    monkeypatch.setattr(
+        plugin_sandbox, "resolve_sandbox_mode",
+        lambda **_kwargs: ("os", "Landlock 启用"),
+    )
+    monkeypatch.setattr(
+        plugin_sandbox.plugin_backend, "resolve_backend_command",
+        lambda: (["python", "-I", "-S", "plugin_subprocess.py"], 30.0),
+    )
+    helper = SimpleNamespace(__file__=str(tmp_path / "helper.cpython-312.so"))
+    monkeypatch.setattr(plugin_unix_enforcement, "_native_helper", lambda: helper)
+    monkeypatch.setattr(plugin_unix_enforcement, "_standard_library_roots", lambda: [])
+    fake_popen = MagicMock()
+    fake_popen.return_value.poll.return_value = 0
+    monkeypatch.setattr(plugin_sandbox.subprocess, "Popen", fake_popen)
+
+    session = _session(tmp_path)
+    session.start()
+    assert fake_popen.call_args.kwargs["env"]["OMNICRAWL_LANDLOCK_HELPER"] == helper.__file__
     session.end()

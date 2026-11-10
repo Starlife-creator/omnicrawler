@@ -19,7 +19,9 @@ PyInstaller onefile，不含 omnicrawler 与任何宿主依赖）启动，隔离
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import json
+import os
 import sys
 import traceback
 import types
@@ -142,6 +144,52 @@ def _apply_windows_job_object() -> str:
     return "skeleton_pending_windows_ci"
 
 
+def _apply_unix_enforcement(plugin_root: str, verified_entry_dir: str) -> None:
+    """Install Linux confinement only in the parent-approved OS-sandbox host.
+
+    ``sandbox_escape`` deliberately retains only the ``-I -S`` subprocess
+    boundary. It must not build and apply an incomplete child-side sandbox.
+
+    macOS is confined by the parent's ``sandbox-exec`` launch wrapper instead;
+    it must not weaken that wrapper by installing a child-side partial filter.
+    """
+    if sys.platform not in ("linux", "darwin"):
+        return
+    if os.environ.get("OMNICRAWL_PLUGIN_SANDBOX") != "1":
+        return
+    from pathlib import Path
+
+    # Never redirect Python's process-wide temp root: it can contain other
+    # applications' private files and directories. The plugin uses temp.open
+    # for writes; the parent separately grants only that broker-owned root.
+    os.environ.pop("TMPDIR", None)
+
+    if getattr(sys, "frozen", False):
+        # Declared by packaging/OmniCrawler-SandboxHost.spec; no host package import.
+        from plugin_unix_enforcement import apply_linux
+
+        apply_linux(
+            plugin_root=Path(plugin_root),
+            verified_entry_dir=Path(verified_entry_dir) if verified_entry_dir else None,
+        )
+        return
+    helper = Path(__file__).with_name("plugin_unix_enforcement.py")
+    spec = importlib.util.spec_from_file_location("plugin_unix_enforcement", helper)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("E_UNSUPPORTED_ENV: Unix enforcement module missing")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    if sys.platform != "linux":
+        # macOS is confined by the parent's sandbox-exec launch wrapper;
+        # installing Landlock here would fail closed on every plugin spawn.
+        return
+    module._native_helper()  # load the parent-compiled shim, never compile under Landlock
+    module.apply_linux(
+        plugin_root=Path(plugin_root),
+        verified_entry_dir=Path(verified_entry_dir) if verified_entry_dir else None,
+    )
+
+
 def _apply_resource_limits() -> None:
     """给子进程施加资源上限（NEW-A 沙箱硬化）。
 
@@ -196,6 +244,7 @@ def main() -> int:
     if not entry_module.isidentifier():
         return 2
 
+    _apply_unix_enforcement(plugin_root, verified_entry_dir)
     sys.path.insert(0, plugin_root)
     if verified_entry_dir:
         sys.path.insert(0, verified_entry_dir)

@@ -117,7 +117,7 @@ class LoaderSignatureGateTest(unittest.TestCase):
             root = Path(temp)
             plugin = root / "p.py"
             plugin.write_text("def register(registry): pass\n", encoding="utf-8")
-            config = self._config(root, f"{{paths: [{plugin}]}}")
+            config = self._config(root, f"{{paths: [{plugin}], trust_public_key: {plugin}!r}}")
             registry = Registry()
             with self.assertLogs(level=logging.WARNING) as log:
                 load_local_plugins(

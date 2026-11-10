@@ -9,6 +9,7 @@ import re
 import statistics
 import time
 from collections.abc import Callable, Iterable, Iterator
+from contextlib import nullcontext
 from typing import Any, Protocol, runtime_checkable
 
 from .concurrency import iter_bounded_futures
@@ -467,7 +468,10 @@ def adaptive_ocr_workers(requested: int) -> int:
 def preflight_backend(config: ProjectConfig) -> bool:
     """Check Paddle dependencies without constructing another parent-side model."""
     if config.ocr.get("component") or str(config.ocr.get("backend", "none")).lower() != "paddle":
-        return create_backend(config) is not None
+        backend = create_backend(config)
+        if backend is not None:
+            config.ocr["_resolved_component_version"] = getattr(backend, "version", None)
+        return backend is not None
     import importlib.util
     missing = [name for name in ("paddleocr", "paddle", "numpy", "PIL") if importlib.util.find_spec(name) is None]
     if missing:
@@ -565,6 +569,45 @@ def _ocr_worker_process(
         return (doc_id, page_no, None, None, 0, 0.0, str(exc), None)
 
 
+def protect_reviewed_page(db: Database, conn, doc_id: str, page_no: int) -> bool:
+    """Use the atomic protection check when the database adapter supports it."""
+    if not hasattr(db, "protect_reviewed_page"):
+        return False
+    return db.protect_reviewed_page(conn, doc_id, page_no)
+
+
+def complete_ocr_dependencies(config: ProjectConfig, db: Database) -> None:
+    """Advance OCR identity only when no required page remains pending or failed."""
+    # Lightweight third-party Database adapters may not expose transactions.
+    # They cannot provide the atomic dependency audit guaranteed by Database.
+    if not all(hasattr(db, name) for name in ("fetchone", "transaction")):
+        return
+    from .dependencies import ocr_digest
+    rows = db.fetchall("SELECT DISTINCT doc_id FROM pages WHERE needs_ocr=1")
+    for row in rows:
+        doc_id = row["doc_id"]
+        if db.fetchone(
+            "SELECT 1 FROM pages WHERE doc_id=? AND needs_ocr=1 AND ocr_status!='done'", (doc_id,),
+        ):
+            continue
+        with db.transaction() as conn:
+            if conn.execute(
+                "SELECT 1 FROM records WHERE doc_id=? AND review_status IN ('human_accepted','human_rejected')",
+                (doc_id,),
+            ).fetchone():
+                continue
+            previous = conn.execute(
+                "SELECT digest FROM processing_dependencies WHERE doc_id=? AND stage='ocr'", (doc_id,),
+            ).fetchone()
+            digest = ocr_digest(config)
+            if previous is not None and previous["digest"] == digest:
+                continue
+            db.record_dependency(
+                conn, doc_id, "ocr", digest, "applied",
+                None if previous is None else previous["digest"],
+            )
+
+
 def ocr_stage(
     config: ProjectConfig,
     db: Database,
@@ -626,15 +669,23 @@ def ocr_stage(
     }
     if selected_pages is not None:
         summary["page_numbers"] = selected_pages
-    if not selected:
-        return summary
     dpi = int(config.ocr.get("dpi", 220))
     workers = adaptive_ocr_workers(ocr_workers)
 
     if workers <= 1:
+        # Resolve identity even when no page is queued; an idle verification run
+        # must use the same backend identity as the run that completed OCR.
+        if not selected:
+            try:
+                preflight_backend(config)
+            except Exception as exc:  # noqa: BLE001 - optional backend must not break idle stages
+                logger.debug("空 OCR 队列的依赖身份检查失败: %s", exc)
+            return summary
         # 串行路径：父进程创建 backend（失败按 D13 降级跳过，不中断整批）
         try:
             backend = create_backend(config)
+            component_version = getattr(backend, "version", None) if backend is not None else None
+            config.ocr["_resolved_component_version"] = component_version
         except Exception as exc:  # noqa: BLE001 - missing optional OCR dependency must degrade
             logger.error("OCR backend 初始化失败，跳过 OCR 阶段: %s", exc)
             for row in rows:
@@ -647,10 +698,18 @@ def ocr_stage(
             return summary
         if backend is None:
             summary["skipped"] = selected
+            for row in rows:
+                db.execute(
+                    "UPDATE pages SET ocr_status='skipped', updated_at=? WHERE doc_id=? AND page_no=?",
+                    (utcnow(), row["doc_id"], row["page_no"]),
+                )
             return summary
-        return _ocr_serial(
+        result = _ocr_serial(
             config, db, rows, backend, dpi, summary, should_stop=should_stop,
         )
+        if not summary.get("stopped"):
+            complete_ocr_dependencies(config, db)
+        return result
 
     # The parent checks dependencies/devices without constructing a Paddle model.
     # Model initialization failures still reach the existing worker failure path.
@@ -759,14 +818,20 @@ def ocr_stage(
                         )
                         summary["failed"] += 1
                     else:
-                        db.execute(
-                            """
-                            UPDATE pages SET ocr_text=?, final_text=?, parse_method='ocr',
-                                printable_chars=?, garbled_ratio=?, ocr_status='done',
-                                ocr_confidence=?, ocr_structure_json=?, updated_at=? WHERE doc_id=? AND page_no=?
-                            """,
-                            (text, text, printable, garbled, confidence, results[7], utcnow(), doc_id, page_no),
-                        )
+                        with db.transaction() if hasattr(db, "transaction") else nullcontext(db) as conn:
+                            if protect_reviewed_page(db, conn, doc_id, page_no):
+                                summary["protected_reviewed"] = summary.get("protected_reviewed", 0) + 1
+                                summary["dependency_notice"] = "人工复核在OCR期间完成；旧结果已保留，新依赖未自动应用。"
+                                pending_items.discard((doc_id, page_no))
+                                continue
+                            conn.execute(
+                                """
+                                UPDATE pages SET ocr_text=?, final_text=?, parse_method='ocr',
+                                    printable_chars=?, garbled_ratio=?, ocr_status='done',
+                                    ocr_confidence=?, ocr_structure_json=?, updated_at=? WHERE doc_id=? AND page_no=?
+                                """,
+                                (text, text, printable, garbled, confidence, results[7], utcnow(), doc_id, page_no),
+                            )
                         summary["recognized"] += 1
                     pending_items.discard((doc_id, page_no))
         except Exception as exc:  # noqa: BLE001 - broken worker pool degrades without corrupting completed rows
@@ -799,6 +864,8 @@ def ocr_stage(
             "UPDATE documents SET status=?, ocr_page_count=?, updated_at=? WHERE doc_id=?",
             (status, done, utcnow(), doc_id),
         )
+    if not summary.get("stopped"):
+        complete_ocr_dependencies(config, db)
     return summary
 
 
@@ -826,14 +893,19 @@ def _ocr_serial(
             structure = result.structure_json(dpi=dpi)
             text, confidence = result.text, result.confidence
             printable, garbled = text_quality(text)
-            db.execute(
-                """
-                UPDATE pages SET ocr_text=?, final_text=?, parse_method='ocr',
-                    printable_chars=?, garbled_ratio=?, ocr_status='done',
-                    ocr_confidence=?, ocr_structure_json=?, updated_at=? WHERE doc_id=? AND page_no=?
-                """,
-                (text, text, printable, garbled, confidence, structure, utcnow(), doc_id, page_no),
-            )
+            with db.transaction() as conn:
+                if protect_reviewed_page(db, conn, doc_id, page_no):
+                    summary["protected_reviewed"] = summary.get("protected_reviewed", 0) + 1
+                    summary["dependency_notice"] = "人工复核在OCR期间完成；旧结果已保留，新依赖未自动应用。"
+                    continue
+                conn.execute(
+                    """
+                    UPDATE pages SET ocr_text=?, final_text=?, parse_method='ocr',
+                        printable_chars=?, garbled_ratio=?, ocr_status='done',
+                        ocr_confidence=?, ocr_structure_json=?, updated_at=? WHERE doc_id=? AND page_no=?
+                    """,
+                    (text, text, printable, garbled, confidence, structure, utcnow(), doc_id, page_no),
+                )
             summary["recognized"] += 1
         except Exception as exc:  # noqa: BLE001
             db.add_error(doc_id, "ocr", exc)
