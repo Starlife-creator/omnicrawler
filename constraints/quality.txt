@@ -6,7 +6,7 @@ wheel==0.48.0
 uv==0.13.6
 PyYAML==6.0.2
 pytest==9.2.0
-coverage==7.17.0
+coverage==7.17.2
 ruff==0.17.4
 mypy==2.4.1
 # quality.yml 裸装 cryptography；与 pyproject security extra 同约束，防验签行为随大版本漂移
