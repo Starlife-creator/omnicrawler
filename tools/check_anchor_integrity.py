@@ -242,7 +242,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ERROR  cannot update: anchor section(s) not found {sorted(missing)}")
             return 1
         _write_digest(sections)
-        print(f"updated {DIGEST_PATH.relative_to(REPO_ROOT)} ({len(sections)} section(s))")
+        # 摘要文件路径可变（测试用 monkeypatch 指向 tmp_path）：只在仓库内才显示相对路径，
+        # 否则直接显示绝对路径 —— 无条件 `relative_to(REPO_ROOT)` 会在仓外路径上抛 ValueError。
+        try:
+            shown = DIGEST_PATH.relative_to(REPO_ROOT)
+        except ValueError:
+            shown = DIGEST_PATH
+        print(f"updated {shown} ({len(sections)} section(s))")
         return 0
 
     problems = check(root)

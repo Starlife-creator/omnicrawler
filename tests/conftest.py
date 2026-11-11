@@ -21,8 +21,14 @@ if str(_REPO_ROOT) not in sys.path:
 os.environ.setdefault("PYTHONHASHSEED", "42")
 
 
-def _dispose_qt_test_widgets(app, widgets=None) -> None:
-    """Dispose leaked test windows while their QApplication still owns Qt."""
+def _dispose_qt_test_widgets(app, widgets=None, *, flush: bool = True) -> None:
+    """Dispose leaked test windows while their QApplication still owns Qt.
+
+    `flush=False` 只标记删除、不强制派发 DeferredDelete。逐用例强制派发会在
+    coverage 跟踪下把 Qt C++ 对象的销毁压在解释器最终化之前，导致 pytest 结束后
+    进程段错误（本地 Windows 0xC0000005 / Linux exit 139，2026-11-11 定位）。
+    待删对象统一在会话结束时派发一次即可。
+    """
     from PySide6.QtCore import QCoreApplication, QEvent, QThread
     from shiboken6 import isValid
 
@@ -46,7 +52,8 @@ def _dispose_qt_test_widgets(app, widgets=None) -> None:
             f"Running Qt thread remains in {type(widget).__name__}"
         )
         widget.deleteLater()
-    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    if flush:
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 @pytest.fixture(autouse=True)
@@ -59,7 +66,9 @@ def _owned_qt_test_widgets(_owned_qt_test_session, monkeypatch):
         return
     previous = set(app.topLevelWidgets())
     yield
-    _dispose_qt_test_widgets(app, list(set(app.topLevelWidgets()) - previous))
+    _dispose_qt_test_widgets(
+        app, list(set(app.topLevelWidgets()) - previous), flush=False
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)
