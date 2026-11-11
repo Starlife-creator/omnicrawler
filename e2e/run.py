@@ -14,6 +14,12 @@ def command(python: str, *args: str) -> list[str]:
     return [python, *args]
 
 
+# 单条用例超过 5 分钟就把调用栈打进日志。挂起时没有栈就只能等作业级超时、
+# 然后拿到「零输出 + cancelled」，无法定位（2026-11-11 实测 main 连续 5 次如此）。
+# 只加可观测性、不改判定：超时仍由作业级 timeout-minutes 兜底。
+_FAULTHANDLER = ("-o", "faulthandler_timeout=300")
+
+
 def run(args: argparse.Namespace) -> int:
     root = Path(__file__).resolve().parents[1]
     artifacts = root / "e2e-artifacts"
@@ -50,6 +56,7 @@ def run(args: argparse.Namespace) -> int:
             command(
                 args.python, "-m", "pytest", "-q", "tests",
                 "--basetemp", str(artifacts / "full-regression-tmp"),
+                *_FAULTHANDLER,
             ),
             cwd=root,
             env=environment,
@@ -62,6 +69,7 @@ def run(args: argparse.Namespace) -> int:
             args.python, "-m", "coverage", "run", "--source=e2e.harness,e2e.render_report", "-m", "pytest", "-q",
             "--basetemp", str(artifacts / "pytest-tmp"), "-m", marker, "e2e/tests",
             "--junitxml", str(artifacts / "junit.xml"),
+            *_FAULTHANDLER,
         ),
         cwd=root,
         env=environment,

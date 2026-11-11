@@ -4,6 +4,46 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-11-11 CI pytest 统一装 faulthandler 超时（把「黑箱超时」变成可定位）
+
+**问题**：`main` 上 `test` 作业（`quality.yml`）自 2026-11-09 起连续 5 次在
+`timeout-minutes: 45` 处被取消，`gui-and-browser` 在 30 分钟处被取消。取消日志的
+形态是确定性的：pytest 启动约 40 秒后输出恰好 72 个点 + `[1%]`，随后到取消为止
+**43 分钟零输出**（ubuntu job 130448299484 与 windows job 130448299605 形态一致）。
+作业最终状态只有 `cancelled`，**没有栈**——既不指向哪条用例，也无法区分「用例挂起」
+与「fixture/库内部死锁」。对照最后一次全绿 run 1418（`b9a6e686`，2026-11-05）
+`5777 passed, 48 skipped in 394.88s`，说明这是 11-05 之后的回归。
+
+**做法**：给 CI 里**每一个**真正执行用例的 pytest 入口加 `-o faulthandler_timeout=300`。
+单条用例超过 5 分钟即把调用栈打进日志，把「零输出挂起」变成「可定位的挂起点」。
+只加可观测性：判定逻辑一字未改，超时仍由作业级 `timeout-minutes` 兜底；
+300s 远高于实测最慢单条用例（本机 `20.22s`，Windows 实测 27–29 分是**整个 job** 而非单条）。
+
+**覆盖点（7 处）**：
+
+| 位置 | 执行步 |
+| --- | --- |
+| `quality.yml` | `core_tests`（三平台全量 pytest）、`gui-and-browser` 子集 |
+| `e2e.yml` | Qt-free 冒烟（`tests/unit/gui/test_log_parser.py` 等） |
+| `market-compatibility.yml` | `tests/unit/plugin` |
+| `plugin-sandbox.yml` | Unix 沙箱套件、契约与穿透套件（两处） |
+| `e2e/run.py` | `--full-regression` 全量回归、带 coverage 的 e2e 套件 |
+
+**守卫**：`tests/unit/utils/test_ci_trigger_contract.py`
+- `test_every_ci_pytest_run_arms_faulthandler_timeout`：遍历 `.github/workflows/*.yml`
+  全部执行步（排除 `--collect-only`），缺标志即判红并把违规命令打出来。
+- `test_e2e_runner_also_arms_faulthandler_timeout`：覆盖不在 YAML 里的 `e2e/run.py` 两个执行点。
+- `test_faulthandler_guard_detects_a_step_that_drops_the_flag`：**反向断言**——把带标志的
+  命令去掉标志后，判据必须识别为缺失；同时断言收集步不被误当执行步。
+
+**加守卫当场发现的既有缺口**：首次运行该守卫即判红，报出 4 个此前遗漏的执行步
+（`e2e.yml` 1 个、`market-compatibility.yml` 1 个、`plugin-sandbox.yml` 2 个），
+说明「CI 只看得到最终 `cancelled`、看不到栈」是系统性的而非单点失误。
+
+**验证（本机一手）**：`tests/unit/utils/test_ci_trigger_contract.py` = `5 passed`；
+反向断言在去掉标志时确实判红（首次运行即 `1 failed` 并列出 4 条违规）。
+`quality.yml` 等 4 个 YAML 均 `yaml.safe_load` 通过（9 个 jobs），行尾 CRLF、`bareLF=0`。
+
 ## 2026-11-11 `test_main_window_contract.py` 反向断言用例缺 QApplication（子集运行必崩）
 
 **症状**：`tests/gui/test_main_window_contract.py` 单独跑或与少量文件一起跑时，用例全部

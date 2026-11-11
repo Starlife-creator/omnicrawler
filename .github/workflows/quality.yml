@@ -209,8 +209,14 @@ jobs:
       # `--durations` 只追加报告、不改判定：把「哪条腿 / 哪个用例慢」变成可观测数据。
       # 热点必须在 CI 上量：本地开发机与 runner 的倍率可达 6~10×，用本地耗时推断 CI
       # 会得出错误结论（2026-09-21 实测：本地 0.5s 收尾的整段在 CI 上占 267s）。
+      # `-o faulthandler_timeout=300`：单条用例超过 5 分钟就立刻把**调用栈**打进日志。
+      # 没有它，挂起只能等到 45 分钟 `timeout-minutes` 触发取消，而取消的日志里
+      # 只有已经跑完的进度行、没有栈（2026-11-11 实测：main 连续 5 次 45 分钟超时取消，
+      # 每次都是 `[1%]` 之后 43 分钟零输出，无法定位是哪条用例）。
+      # 300s 远高于本机最慢用例（20.2s）与 Windows 实测（27–29 分是**整个 job**，
+      # 不是单条），因此不会对正常通过产生噪声；它只加可观测性，不改任何判定。
       - id: core_tests
-        run: python -m coverage run -m pytest -q --durations=25 --durations-min=0.5 --junitxml=artifacts/ci/pytest-core.xml
+        run: python -m coverage run -m pytest -q --durations=25 --durations-min=0.5 -o faulthandler_timeout=300 --junitxml=artifacts/ci/pytest-core.xml
       # `--fail-under=0`：本步骤只**取数据**，判定统一交给 `tools/check_coverage_gates.py`
       # （单一判据）。否则 pyproject.toml 的 `fail_under = 66` 会在这里先以 exit 2 抢跑——
       # 全量跑时它恰好也过，但在**子集**（如浏览器 job，实测总覆盖率 23%）会直接把门禁
@@ -343,7 +349,7 @@ jobs:
       - run: python -m pytest --collect-only -q tests/gui/test_gui_smoke.py tests/gui/test_main_window_contract.py tests/integration/browser/test_browser_integration.py
       # 装了 chromium 的环境 ⇒ 在这里执行「需浏览器运行时的单文件下限」（--profile browser）。
       # 这样 browser_engines / browser_pool 的严格下限**仍然有人查**，只是移到能达成的环境。
-      - run: python -m coverage run -m pytest -q tests/gui/test_gui_smoke.py tests/gui/test_main_window_contract.py tests/integration/browser/test_browser_integration.py
+      - run: python -m coverage run -m pytest -q -o faulthandler_timeout=300 tests/gui/test_gui_smoke.py tests/gui/test_main_window_contract.py tests/integration/browser/test_browser_integration.py
       # `--fail-under=0`：本步骤只**取数据**，判定统一交给 `tools/check_coverage_gates.py`
       # （单一判据）。否则 pyproject.toml 的 `fail_under = 66` 会在这里先以 exit 2 抢跑——
       # 全量跑时它恰好也过，但在**子集**（如浏览器 job，实测总覆盖率 23%）会直接把门禁

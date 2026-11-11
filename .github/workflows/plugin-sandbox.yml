@@ -51,7 +51,7 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev]" cryptography pyinstaller
       - name: 真实内核与 Seatbelt 隔离用例
-        run: python -m pytest tests/unit/plugin/test_unix_os_sandbox.py -q -p no:cacheprovider
+        run: python -m pytest tests/unit/plugin/test_unix_os_sandbox.py -q -p no:cacheprovider -o faulthandler_timeout=300
         shell: bash
       - name: Seatbelt 最小运行时二分
         if: failure() && runner.os == 'macOS'
@@ -85,7 +85,7 @@ jobs:
             tests/unit/plugin/test_subprocess_adapter.py \
             tests/unit/plugin/test_contract_suite_example.py \
             tests/unit/plugin/test_differential_equivalence.py \
-            -q -p no:cacheprovider
+            -q -p no:cacheprovider -o faulthandler_timeout=300
         shell: bash
 
 
