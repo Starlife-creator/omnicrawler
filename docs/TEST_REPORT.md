@@ -4,6 +4,33 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-11-11 conftest 的 GUI 处置在 coverage 下导致段错误（已修）
+
+**结论**：`tests/gui/test_main_window_contract.py` 在 coverage 下跑完 11 passed 后进程仍崩（Windows `0xC0000005` / Linux exit 139）的原因，是 `tests/conftest.py` 的 per-test fixture 在 teardown 里**强制派发 DeferredDelete**；不是产品逻辑缺陷，也不是 coverage 的 tracker 问题。
+
+**现象与定位链**
+
+| 实验 | 结果 |
+| --- | --- |
+| 无 coverage 跑该文件 | `EXIT=0`（11 passed） |
+| 有 coverage 跑该文件 | 11 passed 后 `EXIT=-1073741819`（栈 `Garbage-collecting` / `<no Python frame>`） |
+| 单条用例（coverage） | `EXIT=0`；**两条即崩** |
+| `COVERAGE_CORE` 默认 / `sysmon` / `pytrace` | 三种 tracker 全崩 ⇒ 与 tracker 实现无关 |
+| `gc.disable()` / `gc.freeze()` / `DEBUG_SAVEALL` | 全崩 ⇒ 与 Python 循环引用回收无关 |
+| 崩溃时机 | `pytest_unconfigure` 与 `atexit` 均已打印之后 ⇒ 解释器最终化阶段 |
+| 最终化期存活对象（coverage） | 426 个 QWidget / 511 个 QObject（MainWindow / TaskCanvas / LoginSessionView / ChartView 等） |
+| 把 conftest 的 per-test `_owned_qt_test_widgets` 覆盖成空 fixture | `EXIT=0`（11 passed） |
+| 只覆盖 session fixture `_owned_qt_test_session` | 仍崩 |
+| 只保留 teardown 里的 `shutdown()` + `_request_background_shutdown()` | `EXIT=1`（1 error，不崩） |
+| 只保留 `deleteLater()` | `EXIT=1`（1 error，不崩） |
+| 只保留 `QCoreApplication.sendPostedEvents(None, DeferredDelete)` | **崩** |
+
+**修法**：`_dispose_qt_test_widgets(app, widgets=None, *, flush: bool = True)`；per-test fixture 调用改传 `flush=False`（只 `deleteLater()` 标记），待删对象统一由 session 结束时的调用派发一次。这样既保留「禁止用例间泄漏窗口」的原意，又不把 C++ 销毁压在 coverage 仍在跟踪的解释器最终化之前。
+
+**验证**：coverage 下 `tests/gui/test_main_window_contract.py` 连跑两次均 `11 passed` 且 `EXIT=0`；CI 的 `gui-and-browser` 精确三文件组合 `24 passed, 2 skipped` `EXIT=0`；`tests/gui` 整目录在 coverage 下仍会崩（**HEAD 版 conftest 同样会崩，属既有行为，不是本次引入**）；全量 `tests` 在 coverage 下可跑完（`23 failed, 6046 passed, 55 skipped, 4 errors in 787.73s`，23 个失败全为本机环境限制：缺 `OmniCrawler-market` 兄弟仓、Windows 无 Landlock、Git bash signal pipe、命名管道被沙箱禁用）。
+
+**同时修掉的三平台唯一失败项**：`tools/check_anchor_integrity.py --update` 无条件 `DIGEST_PATH.relative_to(REPO_ROOT)`，测试把摘要路径 monkeypatch 到 `tmp_path` 时抛 `ValueError: ... is not in the subpath of ...`，令 `tests/unit/tools/test_anchor_integrity_gate.py::test_main_update_writes_digest` 在 ubuntu/windows/macos 上统一判红（`d73b6d55` 之后三条 `test` 腿的唯一失败）。改为仓内显示相对路径、仓外显示绝对路径；该测试文件 `19 passed`，真实 `--update` 输出不变。
+
 ## 2026-11-11 定位并修掉 `main` 上 test 作业连续超时取消的根因（模态 QMessageBox 无人应答）
 
 **结论先行**：`test` 作业自 2026-11-09 起连续 5 次（run 1424 / 1428 / 1431 / 1434 / 1445）
