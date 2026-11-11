@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 
 import pytest
 
@@ -91,9 +92,18 @@ def _chinese_ui() -> None:
 def main_window(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from omnicrawler.gui.main import MainWindow
+    from omnicrawler.gui.views.login_session import LoginSessionView
 
     # 首启欢迎是 100ms 后的定时弹窗，offscreen 下会打断后续断言。
     monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
+    # 首次进「登录会话」页会弹一次模态 `QMessageBox.information`
+    # （`login_session.py:577 _show_first_run_notice`）。本文件要逐行导航到
+    # **每个**页面，走到 LOGIN_SESSION 时没人点「确定」，offscreen 下就是永久
+    # 阻塞——CI 上表现为 30/45 分钟零输出后 cancelled（2026-11-11 用
+    # `-o faulthandler_timeout=300` 取到栈，顶层是 login_session.py:579）。
+    # 本文件只验证「导航行 → 页面栈索引」映射，不验证首次提示文案；
+    # 提示本身的判据在 `tests/unit/gui/test_login_session_view.py`。
+    monkeypatch.setattr(LoginSessionView, "_show_first_run_notice", lambda self: None)
     app = _ensure_app()
     window = MainWindow()
     yield window
@@ -214,6 +224,41 @@ def test_navigation_switches_every_page(main_window) -> None:  # type: ignore[no
     before = main_window._stack.currentIndex()
     main_window._nav.setCurrentRow(NavIndex.AUTOMATION_HEADER)
     assert main_window._stack.currentIndex() == before
+
+
+def test_first_run_notice_guard_is_real_not_a_silent_noop(main_window) -> None:  # type: ignore[no-untyped-def]
+    """反向断言：`_show_first_run_notice` 的替换必须真的生效。
+
+    取 `main_window` fixture 是**故意的**：fixture 执行后 patch 才在类上生效，
+    本用例断言的就是「此刻类属性已被替换」。若 fixture 里那行 monkeypatch 被
+    删掉或方法改名，`test_navigation_switches_every_page` 在「全新环境」（CI
+    runner 从无 `session.notice_ack_v1`）会退回成永久阻塞，本用例当场判红。
+
+    这里刻意**不**断言「调用后没弹窗」——那取决于 `session.notice_ack_v1` 的
+    本机状态（本机手工运行过 GUI，该键已是 True，`_needs_notice()` 返回 False，
+    真假守卫都表现为不弹窗，判据会被环境掩盖）。
+    """
+    from omnicrawler.gui.views.login_session import LoginSessionView
+
+    # 前提：产品侧这个提示是阻塞式模态调用，不是普通 setText。
+    # 注意从**类源码**里取，不能从模块属性取：fixture 已把类上的该方法换成
+    # no-op lambda，模块上也没有这个属性（它是 `LoginSessionView` 的方法）。
+    class_source = inspect.getsource(LoginSessionView)
+    assert "def _show_first_run_notice" in class_source, (
+        "登录会话首次提示的方法名变了，`main_window` fixture 的 monkeypatch 会静默失效"
+    )
+    notice_body = class_source.split("def _show_first_run_notice", 1)[1]
+    assert "QMessageBox.information" in notice_body.split("\n    def ", 1)[0], (
+        "登录会话首次提示不再是模态调用，本守卫的前提失效，需要重新评估阻塞风险"
+    )
+
+    # 判据：替换必须生效（方法改名/漏 patch 时这里就是原名函数）。
+    assert getattr(LoginSessionView._show_first_run_notice, "__name__", "") != (
+        "_show_first_run_notice"
+    ), (
+        "main_window fixture 未替换 `_show_first_run_notice`："
+        "全新环境下导航到登录会话页会弹模态框并永久阻塞"
+    )
 
 
 def test_close_runs_full_teardown(main_window, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]

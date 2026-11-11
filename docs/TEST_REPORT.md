@@ -4,6 +4,57 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-11-11 定位并修掉 `main` 上 test 作业连续超时取消的根因（模态 QMessageBox 无人应答）
+
+**结论先行**：`test` 作业自 2026-11-09 起连续 5 次（run 1424 / 1428 / 1431 / 1434 / 1445）
+在 `timeout-minutes: 45` 被取消、`gui-and-browser` 在 30 分钟处被取消，**根因不是死锁也不是性能回归**，
+而是一条 GUI 用例在遍历导航时触发了**阻塞式模态对话框**，offscreen 环境下永远没人点「确定」。
+
+**根因链（一手 faulthandler 栈）**。给 CI pytest 装上 `-o faulthandler_timeout=300` 的那个提交
+（`abd75ee6`）上线后，`gui-and-browser` 作业在 13:04:51.278Z——启动后**正好 5 分整**——打印出
+`Timeout (0:05:00)!` 与完整调用栈，栈顶依次为：
+
+```
+File ".../src/omnicrawler/gui/views/login_session.py", line 579 in _show_first_run_notice
+File ".../src/omnicrawler/gui/views/login_session.py", line 271 in activate
+File ".../src/omnicrawler/gui/main.py", line 919 in _on_nav_changed
+File ".../tests/gui/test_main_window_contract.py", line 205 in test_navigation_switches_every_page
+File ".../_pytest/python.py", line 187 in pytest_pyfunc_call
+```
+
+即 `test_navigation_switches_every_page` 会 `for row in main_window._nav_pages: main_window._nav.setCurrentRow(row)`
+遍历**每一个**导航行，走到「登录会话」页时触发
+`activate()` → `_needs_notice()` 返回真 → `_show_first_run_notice()` →
+`QMessageBox.information(self, "登录会话说明（只提示一次）", notice_text(...))`。
+模态事件循环在 `QT_QPA_PLATFORM=offscreen` 下无人应答，永久阻塞。
+
+**为什么本地一直全绿、CI 必挂**：`_needs_notice()` 的判据是
+`not bool(settings.value("session.notice_ack_v1", False, bool))`。
+CI runner 是全新环境，该键从不曾存在 ⇒ 首次进入必弹 ⇒ 必挂。
+本机该键**已被历史手工运行置为 `True`**，且本沙箱注册表不可写（`QSettings.isWritable()` 为假，
+`remove()` 后读回仍是 `True`），因此本地连「全新环境」都造不出来。
+这同时解释了历史上这条用例「时好时坏」——它取决于跑机器上有没有点过那个提示。
+
+**修法**（只动测试，不动产品语义）：
+1. `tests/gui/test_main_window_contract.py` 的 `main_window` fixture 增加
+   `monkeypatch.setattr(LoginSessionView, "_show_first_run_notice", lambda self: None)`，
+   并写清理由。本文件只验证「导航行 → 页面栈索引」映射；首次提示的语义判据本来就有
+   `tests/unit/gui/test_login_session_view.py::test_notice_marker_persisted_in_settings`（用 `_FakeSettings` 替身）覆盖。
+2. 新增**反向断言** `test_first_run_notice_guard_is_real_not_a_silent_noop`，同时断言两件事：
+   产品侧该提示仍是模态 `QMessageBox.information`；fixture 执行后类上的方法**已被替换**
+   （`__name__` 不再是原名）。方法改名或有人删掉那行 patch，此用例当场判红。
+
+**踩过的坑（写下来避免复发）**：第一版守卫断言的是「调用它时没弹出对话框」。
+但本机 `session.notice_ack_v1` 已是 `True`，`_needs_notice()` 返回假，`_show_first_run_notice`
+根本不会被调到——于是**删掉 patch 后守卫依然通过**，等于没守住。判据必须避开会被环境状态掩盖的观测点，
+改为直接断言「替换本身生效」。
+
+**验证（本机一手）**：去掉 patch ⇒ 该用例 `1 failed`；加回 ⇒ 文件 `11 passed`；
+`tests/gui` 整目录 `300 passed in 41.44s`；`tools/self_verify.py --set static`
+结论不变（28 通过 / 1 失败，唯一失败仍是 `check_shell_scripts` 的 Git bash signal-pipe 沙箱限制）。
+**待远端确认**：`abd75ee6` 之后的 run 里三条 `test (…)` 腿是否恢复全绿——本地无法复现原挂起，
+这条结论要由 CI 终态背书。
+
 ## 2026-11-11 CI pytest 统一装 faulthandler 超时（把「黑箱超时」变成可定位）
 
 **问题**：`main` 上 `test` 作业（`quality.yml`）自 2026-11-09 起连续 5 次在
@@ -43,6 +94,11 @@
 **验证（本机一手）**：`tests/unit/utils/test_ci_trigger_contract.py` = `5 passed`；
 反向断言在去掉标志时确实判红（首次运行即 `1 failed` 并列出 4 条违规）。
 `quality.yml` 等 4 个 YAML 均 `yaml.safe_load` 通过（9 个 jobs），行尾 CRLF、`bareLF=0`。
+
+**这次投资当场回本**：该提交 push 后，同一分支的 `gui-and-browser` 作业在启动后 5 分整
+打印出 `Timeout (0:05:00)!` 与完整调用栈，直接定位到真正的根因（见下一节
+「定位并修掉 `main` 上 test 作业连续超时取消的根因」）。在此之前，同一现象只能看到
+`[1%]` 加 43 分钟零输出。
 
 ## 2026-11-11 `test_main_window_contract.py` 反向断言用例缺 QApplication（子集运行必崩）
 
