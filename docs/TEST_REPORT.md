@@ -4,6 +4,50 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-11-11 dependabot 收口：工具链六项续升 + 两个 Actions SHA 升级
+
+8 个长期悬空的 dependabot PR（#175 / #176 / #177 / #179 / #180 / #181 / #182 / #183）本批一次收口。
+其中 6 个改同一个 `constraints/quality.txt`、指向同一组行，**逐个 squash 合并必然互相 behind**，
+且 #183 属于「审查不通过」形态：它把 `uv` 升到 `0.13.7` 却没同步 4 个 reusable 工作流的
+`setup-uv version:` pin —— 正是 `test_release_build_toolchain_uv_version_matches_constraints`
+守的那个复发缺口（#158 / #151 / #152 同型，2026-09-25 那次就是这么只改了约束）。因此本批不是
+机械合并，而是先按仓库纪律把缺口补齐再合并。
+
+实际落地（`constraints/quality.txt`）：
+
+- `pip 26.2.2 → 26.3`、`uv 0.13.6 → 0.13.7`、`pytest 9.1.1 → 9.2.0`、`coverage 7.17.0 → 7.17.2`、
+  `ruff 0.17.3 → 0.17.4`、`mypy 2.4.0 → 2.4.1`。
+- 4 个 reusable 工作流的 `setup-uv` `with.version` 全部 → `"0.13.7"`
+  （`reusable-build-linux.yml:60` / `reusable-build-macos.yml:64` / `reusable-build-windows.yml:57` /
+  `reusable-finalize-release.yml:43`），满足单一真源守卫。
+- `.pre-commit-config.yaml` 的 ruff `rev: v0.17.3 → v0.17.4`、mirrors-mypy `rev: v2.4.0 → v2.4.1`。
+  这两个 rev 目前**没有任何测试或门禁校验**（`git grep pre-commit-config -- tests tools .github` 零命中），
+  靠的是文件内注释「rev follows constraints/quality.txt」的自律口径，故属一致性修正而非门禁驱动。
+- GitHub Actions 两处 pin 升级：`astral-sh/setup-uv` → `v10.3.3`
+  （commit `68559e99cc807c1eb7e9238fd43a15bba460eec2`，4 个 reusable 工作流）；
+  `softprops/action-gh-release` → `v3.0.4`（annotated tag，解引用后 commit
+  `8a0cd651e5b2365bd640854a3fa5dfc70e4875f3`）。两者都保持 commit SHA pin 纪律，不用浮动 tag。
+
+版本真实性核对（一手）：
+
+- PyPI JSON 200 且 `yanked: false`、非预发布：`uv 0.13.7`（2026-11-03）、`ruff 0.17.4`（2026-11-05）、
+  `mypy 2.4.1`（2026-10-28）。`coverage 7.17.2` / `pytest 9.2.0` / `pip 26.3` 由对应 dependabot PR
+  的 GH checks 全绿间接佐证。
+- pre-commit tag 存在性：`astral-sh/ruff-pre-commit` `v0.17.4` → `c0f278f1254ccc8fb09676bcdb8d847e7db493e5`；
+  `pre-commit/mirrors-mypy` `v2.4.1` → `ad26ebfa797fcb9b8f83275937c1c1d6e126719c`。
+- `astral-sh/setup-uv` `v10.3.3` → `68559e99cc807c1eb7e9238fd43a15bba460eec2`（与 #175 的 pin 逐字相同）；
+  `softprops/action-gh-release` `v3.0.4` 的 annotated tag 对象 `28ab305d0ffa26d60ec4bd614126329e26c7a0ec`
+  → `.object.sha = 8a0cd651e5b2365bd640854a3fa5dfc70e4875f3`（与 #179 的 pin 逐字相同）。
+
+`uv.lock` 无需重解：它与 `constraints/quality.txt` 是**不同真源**（前者是便携构建依赖，
+后者是 CI 裸装工具链约束），锁里 `coverage` 仍是 `7.16.0`、`mypy` 仍是 `2.3.1` 属正常既存差异。
+
+自证手段与边界（诚实登记）：本机 pytest 被沙箱 ACL 挡住（`PermissionError: [WinError 5]`
+在 `_pytest/pathlib.py:354 cleanup_dead_symlinks`），三平台测试腿与
+`test_release_workflow_contract.py` **无法在本机复跑**，因此本批的守卫满足性靠
+「直接读 `constraints/quality.txt` 派生 `uv==0.13.7` + 逐字比对 4 个工作流 pin」的等价静态核对，
+以及 `python tools/self_verify.py --set static`；真正的三平台验证由本次推送到 `main` 后的远端 CI 承担。
+
 ## 2026-10-30 门 3 口径收口：本地 audit 升 error + GUI 投稿前自查
 
 分叉形态（此前只记录、未改）：主仓 `plugin_audit.gate_dependencies_consistency` 对「缺

@@ -3,7 +3,7 @@
 pip==26.3
 setuptools==84.2.1
 wheel==0.48.0
-uv==0.13.6
+uv==0.13.7
 PyYAML==6.0.2
 pytest==9.2.0
 coverage==7.17.2
