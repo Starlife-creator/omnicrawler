@@ -23,6 +23,26 @@ pytestmark = pytest.mark.skipif(
     reason="MainWindow contract test requires PySide6",
 )
 
+# 反向断言用例（`test_wiring_detector_*` / `test_navigation_map_check_*`）不取
+# `main_window` fixture，却要自己造 QWidget。**必须**保证 QApplication 已存在且
+# 被本模块强引用：
+# - 不存在时 Qt 直接 qFatal（`QWidget: Must construct a QApplication before a
+#   QWidget`，Windows 上进程以 0xC0000409 中止），单跑/指定用例跑必崩；
+# - 只存局部变量时会被 GC 连带销毁控件树（同 `test_field_value_source_columns.py`
+#   的注释），pytest 退出期还会踩 native access violation。
+# 全量跑时通常被前面的 GUI 用例“顺带”建好 app，所以该缺陷只在子集运行时暴露。
+_APP = None
+
+
+def _ensure_app():  # type: ignore[no-untyped-def]
+    """返回进程内唯一的 QApplication，并以模块级引用持有它。"""
+    global _APP
+
+    from PySide6.QtWidgets import QApplication
+
+    _APP = QApplication.instance() or QApplication([])
+    return _APP
+
 # 导航行号 → 页面栈索引。取自 `main.py` 的 nav_items 顺序；这是**产品结构**，
 # 不是实现细节，拆分前后都必须一致（`navigation.NavIndex` 亦按此顺序定义）。
 _EXPECTED_NAV_PAGES = {
@@ -70,13 +90,11 @@ def _chinese_ui() -> None:
 @pytest.fixture
 def main_window(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication
-
     from omnicrawler.gui.main import MainWindow
 
     # 首启欢迎是 100ms 后的定时弹窗，offscreen 下会打断后续断言。
     monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
-    app = QApplication.instance() or QApplication([])
+    app = _ensure_app()
     window = MainWindow()
     yield window
     window.close()
@@ -234,6 +252,7 @@ def test_wiring_detector_rejects_a_deliberately_dead_action() -> None:
     from PySide6.QtGui import QAction
     from PySide6.QtWidgets import QMainWindow
 
+    _ensure_app()
     window = QMainWindow()
     menu = window.menuBar()
     assert menu is not None
@@ -260,6 +279,7 @@ def test_navigation_map_check_rejects_a_dangling_row() -> None:
     """反向断言：映射校验必须能抓到「导航行指向不存在的页面」。"""
     from PySide6.QtWidgets import QStackedWidget, QWidget
 
+    _ensure_app()
     stack = QStackedWidget()
     # 真实页面栈有 14 页；这里照建，才能确认「唯一悬空的是我伪造的那行」。
     for _ in range(max(_EXPECTED_NAV_PAGES.values()) + 1):

@@ -4,6 +4,43 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-11-11 `test_main_window_contract.py` 反向断言用例缺 QApplication（子集运行必崩）
+
+**症状**：`tests/gui/test_main_window_contract.py` 单独跑或与少量文件一起跑时，用例全部
+`passed` 后进程以 `0xC0000409`（`-1073740791`，Windows）或 `0xC0000005`
+（`-1073741819`，Garbage-collecting 期 access violation）中止；`pytest` 报告里
+可能一条失败都没有。全量跑（`pytest tests`）反而正常——因为前面的 GUI 用例
+已顺手创建了 `QApplication`。
+
+**根因**：两个**反向断言**用例（`test_wiring_detector_rejects_a_deliberately_dead_action`、
+`test_navigation_map_check_rejects_a_dangling_row`）不取 `main_window` fixture，
+却直接构造 `QMainWindow()` / `QStackedWidget()`。没有 `QApplication` 时 Qt 直接
+`qFatal("QWidget: Must construct a QApplication before a QWidget")`；只把 app 存成
+局部变量时又会被 GC 连带销毁控件树，pytest 退出期踩 native access violation。
+
+**修复**（`tests/gui/test_main_window_contract.py`）：新增模块级 `_APP` 与
+`_ensure_app()`（`QApplication.instance() or QApplication([])`，模块级强引用），
+`main_window` fixture 改用它，两个反向断言用例在构造 widget 前显式调用。
+判据是「单跑也绿」，而不是「全量跑恰好绿」——这正是不加 fixture 就漏掉的形态。
+
+**验证（本机一手）**：
+
+- 两个反向断言用例单跑：各 `1 passed`，退出码 0（修复前分别 `-1073740791`）。
+- `tests/gui` 整目录 299 passed；带 `coverage` 同样 299 passed（32.89s）。
+- 修复不动任何产品代码，`python tools/self_verify.py --set static` 结论不变。
+
+**仍未闭环的相邻现象（已登记，勿误判为本修复未生效）**：本机以
+`coverage run -m pytest tests/gui/test_main_window_contract.py`（**带 coverage、只跑这一个
+文件**）时，10 个用例全绿后仍在 Garbage-collecting 期 `0xC0000005` 中止；去掉
+`coverage` 则退出码 0。逐用例 `-k` 单跑 10 条各自退出码全为 0，故不是某一条用例的
+断言问题；本机不再深挖（属 coverage 跟踪 + Qt 包装对象析构顺序的组合，CI 用的是
+同一 coverage 调用形态，但 CI 上是 45 分钟**无输出挂起**而非数秒崩溃，两者未证同源）。
+排查方法见下：`.test-tmp/shimpkg/sitecustomize.py` 把 `os.mkdir` 的 `0o700` 抬成
+`0o755` 以绕开沙箱 ACL，且 `TMP/TEMP/TMPDIR` 必须落在**仓库根之外**
+（`E:\tool\biancheng\omnicrawler\.test-tmp\run_*`）——放进 `OmniCrawler\` 内会让
+`core/config.py` 的 `pyproject.toml` 根探测把 workspace 塌缩到真实 `work/`，
+导致打包类用例读写 6000+ 个历史任务目录并误报哈希不一致。
+
 ## 2026-11-11 dependabot 收口：工具链六项续升 + 两个 Actions SHA 升级
 
 8 个长期悬空的 dependabot PR（#175 / #176 / #177 / #179 / #180 / #181 / #182 / #183）本批一次收口。
