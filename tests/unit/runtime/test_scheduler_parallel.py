@@ -46,8 +46,12 @@ def test_run_due_runs_in_parallel(tmp_path: Path) -> None:
         )
         assert overlapped, f"executor 未并发执行（区间无重叠）: {spans}"
 
-        # 宽松上界：仅用于抓整体卡死；即便 CI 有 6~10 倍倍率也不误报。
-        assert elapsed < 3.0, f"run_due 耗时异常: {elapsed:.2f}s"
+        # 宽松上界：**只用于抓整体卡死**，不承担并行判据（那是上面的区间相交）。
+        # 按实际工作量派生而不是写死秒数：串行下界是 3×0.2s=0.6s，慢 runner
+        # （Windows CI 实测有 6~10 倍倍率）能推到 4s 上下——写死 3.0s 会让这条
+        # 「防卡死」断言在只是慢的机器上判红（2026-11-12 windows 腿实测 3.98s，
+        # 同时 overlap 判据通过）。30 倍余量仍远小于作业级 timeout，真卡死必响。
+        assert elapsed < 0.2 * 3 * 30, f"run_due 耗时异常: {elapsed:.2f}s"
 
 
 

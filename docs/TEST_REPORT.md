@@ -4,6 +4,23 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-11-12 三平台首个全绿 run 的最后一项：一条「防卡死」上界写死了秒数
+
+`03b1c9d5` 之后 `gui-and-browser` 已 success、ubuntu 与 macos 两条 `test` 腿也 success，**只剩 windows 腿 `1 failed`**：
+
+```
+FAILED tests/unit/runtime/test_scheduler_parallel.py::test_run_due_runs_in_parallel
+  - AssertionError: run_due 耗时异常: 3.98s
+1 failed, 6035 passed, 75 skipped, 1 warning in 620.01s (0:10:20)
+All coverage gates passed.
+```
+
+**它不是并行性回归**。该用例声称的判据是 `:40-47` 的三区间两两相交（`assert overlapped`，与机器速度无关），那条**通过了**；判红的只是紧随其后的「宽松上界」`assert elapsed < 3.0`（原 `:49-50`）。原注释写的是「仅用于抓整体卡死；即便 CI 有 6~10 倍倍率也不误报」，但串行下界是 3×0.2s=0.6s，Windows runner 实测 3.98s 恰为 6.6 倍——**该断言自己违反了自己的注释**，既不可能因它声称的原因失败，又会在只是慢的机器上误报。
+
+修法：把上界按实际工作量派生，`assert elapsed < 0.2 * 3 * 30`（18s）。30 倍余量仍远小于作业级 `timeout-minutes: 45`，真卡死必响。本机 `tests/unit/runtime/test_scheduler_parallel.py` ⇒ `2 passed in 0.34s`。
+
+**教训（与 §2026-11-11 faulthandler 段同一类）**：CI 上任何「耗时上界」都必须从工作量派生并留足慢 runner 倍率，否则它检验的是机器快慢而不是它声称的性质；声称「不误报」的注释不构成判据。
+
 ## 2026-11-11 conftest 的 GUI 处置在 coverage 下导致段错误（已修）
 
 **结论**：`tests/gui/test_main_window_contract.py` 在 coverage 下跑完 11 passed 后进程仍崩（Windows `0xC0000005` / Linux exit 139）的原因，是 `tests/conftest.py` 的 per-test fixture 在 teardown 里**强制派发 DeferredDelete**；不是产品逻辑缺陷，也不是 coverage 的 tracker 问题。**注意：这条销毁本身是对的、不能省**，见下方「修法（第一版，已回退）」。
