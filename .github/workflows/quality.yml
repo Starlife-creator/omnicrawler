@@ -349,7 +349,11 @@ jobs:
       - run: python -m pytest --collect-only -q tests/gui/test_gui_smoke.py tests/gui/test_main_window_contract.py tests/integration/browser/test_browser_integration.py
       # 装了 chromium 的环境 ⇒ 在这里执行「需浏览器运行时的单文件下限」（--profile browser）。
       # 这样 browser_engines / browser_pool 的严格下限**仍然有人查**，只是移到能达成的环境。
-      - run: python -m coverage run -m pytest -q -o faulthandler_timeout=300 tests/gui/test_gui_smoke.py tests/gui/test_main_window_contract.py tests/integration/browser/test_browser_integration.py
+      # 用 tools/ci_coverage_pytest.py 而不是 `python -m coverage run -m pytest`：
+      # 子集运行下，conftest 的逐用例 Qt 处置（契约要求立即销毁窗口）会把 native
+      # 崩溃推迟到解释器最终化阶段——测试本身全绿，进程仍 exit 139。该 runner 在
+      # coverage 数据落盘后跳过最终化退出。全量 test 腿不出现该问题，仍用原生命令。
+      - run: python tools/ci_coverage_pytest.py -q -o faulthandler_timeout=300 tests/gui/test_gui_smoke.py tests/gui/test_main_window_contract.py tests/integration/browser/test_browser_integration.py
       # `--fail-under=0`：本步骤只**取数据**，判定统一交给 `tools/check_coverage_gates.py`
       # （单一判据）。否则 pyproject.toml 的 `fail_under = 66` 会在这里先以 exit 2 抢跑——
       # 全量跑时它恰好也过，但在**子集**（如浏览器 job，实测总覆盖率 23%）会直接把门禁

@@ -6,7 +6,7 @@
 
 ## 2026-11-11 conftest 的 GUI 处置在 coverage 下导致段错误（已修）
 
-**结论**：`tests/gui/test_main_window_contract.py` 在 coverage 下跑完 11 passed 后进程仍崩（Windows `0xC0000005` / Linux exit 139）的原因，是 `tests/conftest.py` 的 per-test fixture 在 teardown 里**强制派发 DeferredDelete**；不是产品逻辑缺陷，也不是 coverage 的 tracker 问题。
+**结论**：`tests/gui/test_main_window_contract.py` 在 coverage 下跑完 11 passed 后进程仍崩（Windows `0xC0000005` / Linux exit 139）的原因，是 `tests/conftest.py` 的 per-test fixture 在 teardown 里**强制派发 DeferredDelete**；不是产品逻辑缺陷，也不是 coverage 的 tracker 问题。**注意：这条销毁本身是对的、不能省**，见下方「修法（第一版，已回退）」。
 
 **现象与定位链**
 
@@ -25,9 +25,13 @@
 | 只保留 `deleteLater()` | `EXIT=1`（1 error，不崩） |
 | 只保留 `QCoreApplication.sendPostedEvents(None, DeferredDelete)` | **崩** |
 
-**修法**：`_dispose_qt_test_widgets(app, widgets=None, *, flush: bool = True)`；per-test fixture 调用改传 `flush=False`（只 `deleteLater()` 标记），待删对象统一由 session 结束时的调用派发一次。这样既保留「禁止用例间泄漏窗口」的原意，又不把 C++ 销毁压在 coverage 仍在跟踪的解释器最终化之前。
+**修法（第一版，已回退）**：`_dispose_qt_test_widgets(app, widgets=None, *, flush: bool = True)`；per-test fixture 调用改传 `flush=False`（只 `deleteLater()` 标记），待删对象统一由 session 结束时的调用派发一次。**该修法违反既有契约，已回退**：`tests/unit/gui/test_qt_session_cleanup.py::test_per_test_cleanup_preserves_existing_widget_and_deletes_new_owner` 用「Per-test widgets must be deleted before the next theme change」要求 per-test 窗口在**下一个用例改全局主题前**就已真正销毁（`shiboken6.isValid(owner)` 为假）。远端 macos 腿当场判红（`AssertionError: Per-test widgets must be deleted before the next theme change`，`1 failed, 6057 passed, 53 skipped in 480.07s`）——**契约是对的**：「只标记删除」会让仍 valid 的窗口活到下一用例，语义上就是泄漏。
 
-**验证**：coverage 下 `tests/gui/test_main_window_contract.py` 连跑两次均 `11 passed` 且 `EXIT=0`；CI 的 `gui-and-browser` 精确三文件组合 `24 passed, 2 skipped` `EXIT=0`；`tests/gui` 整目录在 coverage 下仍会崩（**HEAD 版 conftest 同样会崩，属既有行为，不是本次引入**）；全量 `tests` 在 coverage 下可跑完（`23 failed, 6046 passed, 55 skipped, 4 errors in 787.73s`，23 个失败全为本机环境限制：缺 `OmniCrawler-market` 兄弟仓、Windows 无 Landlock、Git bash signal pipe、命名管道被沙箱禁用）。
+**修法（第二版，现行）**：不碰销毁时机，改「退出方式」。新增 `tools/ci_coverage_pytest.py`：`Coverage(config_file=True).start()` → `pytest.main(argv)` → `stop()/save()` → `sys.stdout.flush(); sys.stderr.flush(); os._exit(code)`。崩溃本来发生在**数据已落盘之后**的解释器最终化阶段，跳过最终化即可既保住 `.coverage` 数据又不崩。`quality.yml` 的 `gui-and-browser` 执行步改用它；三条全量 `test` 腿不出现该问题（全量跑必不崩），仍保留 `python -m coverage run -m pytest` 原生命令。
+
+**第二版同时否决的替代方案**（都实测过退出码，避免以后重复试）：只派发待删控件自身的 `DeferredDelete`（仍崩）、逐用例 `gc.collect()`（仍崩）、`shiboken6.delete()` 立即销毁（仍崩）、`sendPostedEvents` 前后 `Coverage.current().stop()/start()`（仍崩，另引入 2870 warnings）、把 QApplication 挂到 `sys` 上活过最终化（仍崩）。
+
+**验证**：coverage 下 `tests/gui/test_main_window_contract.py` `11 passed` `EXIT=0`；CI 精确三文件组合 `24 passed, 1 failed` `EXIT=1` 但**不再崩溃**（唯一失败是本机沙箱禁命名管道，CI 上无此限制）；`tests/gui` 整目录 311 passed；`tests/unit/gui/test_qt_session_cleanup.py` 2 passed（契约恢复）；`ruff` / `mypy` 对新增脚本均通过；全量 `tests` 在 coverage 下可跑完（`23 failed, 6046 passed`，23 个失败全为本机环境限制：缺 `OmniCrawler-market` 兄弟仓、Windows 无 Landlock、Git bash signal pipe、命名管道被沙箱禁用）。
 
 **同时修掉的三平台唯一失败项**：`tools/check_anchor_integrity.py --update` 无条件 `DIGEST_PATH.relative_to(REPO_ROOT)`，测试把摘要路径 monkeypatch 到 `tmp_path` 时抛 `ValueError: ... is not in the subpath of ...`，令 `tests/unit/tools/test_anchor_integrity_gate.py::test_main_update_writes_digest` 在 ubuntu/windows/macos 上统一判红（`d73b6d55` 之后三条 `test` 腿的唯一失败）。改为仓内显示相对路径、仓外显示绝对路径；该测试文件 `19 passed`，真实 `--update` 输出不变。
 
