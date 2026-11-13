@@ -15,6 +15,13 @@
 用法::
 
     python tools/check_shell_scripts.py
+
+**环境能力缺失时以 :data:`tools.gate_registry.SKIP_EXIT_CODE` 退出**（不是失败）：
+Git for Windows 的 bash 在被禁命名管道的沙箱里连启动都做不到
+（`fatal error - couldn't create signal pipe, Win32 error 5`），于是 `bash -n` 对**每个**
+脚本都返回非 0。若不区分，9 个脚本会被同时写成「语法错误」——代码明明没坏，
+红的是环境。这类假红会让人开始怀疑一个没坏的仓库，所以这里先探一次「bash 能不能用」，
+不能用就跳过语法检查、只跑结构检查，并在末行写明缺的是哪种能力。
 """
 
 from __future__ import annotations
@@ -26,6 +33,11 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+if __package__ in (None, ""):  # 允许 `python tools/check_shell_scripts.py` 直接执行
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tools.gate_registry import SKIP_EXIT_CODE  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -48,7 +60,7 @@ BUILD_SCRIPTS = {"build_linux.sh", "build_macos.sh"}
 STALE_TOOL_REFS = ("download_ocr_models.py",)
 
 
-def _shell_scripts(root: Path) -> list[Path]:
+def _shell_scripts(root: Path = PROJECT_ROOT) -> list[Path]:
     return sorted({*root.glob("*.sh"), *root.glob("*.command")})
 
 
@@ -93,6 +105,30 @@ def _bash_executable() -> str:
     return found or "bash"
 
 
+def _bash_capability(exe: str) -> str | None:
+    """探测 ``bash`` 在本进程环境里能否真正跑起来；返回不可用原因，可用则返回 ``None``。
+
+    这一层是**为假红兜底**：Git for Windows 的 bash 在被禁命名管道的沙箱里连启动都做不到，
+    ``bash -n`` 会对**每个**脚本返回非 0，若不先探能力，9 个没坏的脚本会被同时写成
+    「语法错误」。所以先跑一次无副作用的 ``bash -c "exit 0"``：能退 0 才算可用。
+    """
+    try:
+        proc = subprocess.run(  # noqa: S603 - 命令为固定 bash + 常量表达式
+            [exe, "-c", "exit 0"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    except OSError as exc:
+        return f"无法启动 bash（{exe}）：{exc}"
+    if proc.returncode == 0:
+        return None
+    detail = ((proc.stderr or "") + (proc.stdout or "")).strip().replace("\n", " | ")
+    return f"bash 在此环境不可用（{exe}）：退出码 {proc.returncode}；{detail or '无输出'}"
+
+
 def _syntax_check(path: Path) -> list[str]:
     proc = subprocess.run(  # noqa: S603 - 命令为固定 bash + 本地脚本路径
         [_bash_executable(), "-n", str(path)],
@@ -106,6 +142,11 @@ def _syntax_check(path: Path) -> list[str]:
         detail = ((proc.stderr or "") + (proc.stdout or "")).strip().replace("\n", " | ")
         return [f"{path.name}: bash -n 语法错误：{detail}"]
     return []
+
+
+def bash_unavailable_reason() -> str | None:
+    """对外暴露「本机 bash 能否用于语法检查」，供测试与自证入口复用。"""
+    return _bash_capability(_bash_executable())
 
 
 def _structural_checks(path: Path, text: str) -> list[str]:
@@ -143,11 +184,13 @@ def _structural_checks(path: Path, text: str) -> list[str]:
     return issues
 
 
-def check(root: Path = PROJECT_ROOT) -> list[str]:
+def check(root: Path = PROJECT_ROOT, *, syntax_check: bool = True) -> list[str]:
+    """返回判红项。``syntax_check=False`` 时只跑结构检查（bash 不可用时的降级路径）。"""
     issues: list[str] = []
     for path in _shell_scripts(root):
         text = path.read_text(encoding="utf-8")
-        issues.extend(_syntax_check(path))
+        if syntax_check:
+            issues.extend(_syntax_check(path))
         issues.extend(_structural_checks(path, text))
     return issues
 
@@ -155,12 +198,25 @@ def check(root: Path = PROJECT_ROOT) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="根目录 shell / command 脚本静态检查")
     parser.parse_args(argv)
-    issues = check()
+
+    # 先探 bash 能力：不可用就只跑结构检查，并以**跳过码**退出（末行写原因）。
+    # 这不是放水——结构判据（pipefail / venv 守卫 / 版本断言 / extras 语义）照旧判红；
+    # 只是不把「环境建不出管道」记成「脚本语法坏了」。
+    unavailable = bash_unavailable_reason()
+    issues = check(syntax_check=unavailable is None)
     if issues:
         print("Shell 脚本静态检查失败：", file=sys.stderr)
         for issue in issues:
             print(f"- {issue}", file=sys.stderr)
         return 1
+
+    if unavailable is not None:
+        print("Shell 脚本结构检查通过，但语法检查被跳过：", file=sys.stderr)
+        print(f"- 已检查 {len(_shell_scripts())} 个脚本的失败保护 / venv 守卫 / 版本断言 / extras 语义", file=sys.stderr)
+        # 跳过码 + 末行原因：self_verify 取最后一行作为跳过理由。
+        print(f"bash 语法检查无法执行：{unavailable}", file=sys.stderr)
+        return SKIP_EXIT_CODE
+
     print("Shell 脚本静态检查通过（语法 / 失败保护 / venv 守卫 / 版本断言 / extras 语义）。")
     return 0
 

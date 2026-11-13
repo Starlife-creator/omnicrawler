@@ -58,8 +58,15 @@ python tools/self_verify.py --json evidence.json   # 写出机器可读的证据
 | `release` | 有构建产物后 | SBOM 与许可护栏、产物体积预算 |
 
 报告如实区分**通过 / 失败 / 跳过**，并且结论是**三态**：`passed` / `failed` / `unverified`。
-跳过会写明原因（缺前置产物，或需 CI 提供的参数），**不会被当成通过**——
-全部跳过（或选中 0 条门禁）判 `unverified` 并返回非 0，因为「一条都没跑」不等于「全部通过」。
+跳过的三种来源都会写明原因：缺前置产物（`requires_file`）、需 CI 提供的参数（`needs_args`）、
+或门禁**自己探测到运行环境缺能力**并以 `tools.gate_registry.SKIP_EXIT_CODE`（77）退出。
+**跳过不会被当成通过**——全部跳过（或选中 0 条门禁）判 `unverified` 并返回非 0，
+因为「一条都没跑」不等于「全部通过」。
+
+第三种跳过专治**环境假红**：Git for Windows 的 bash 在被禁命名管道的沙箱里连启动都做不到，
+`bash -n` 会对每个脚本返回非 0；不区分时 9 个没坏的脚本会被同时写成「语法错误」。
+现在 `tools/check_shell_scripts.py` 先探 bash 能力，探不通就以 77 退出并只跑结构检查——
+**放行的只有「跑不了语法检查」这一件事**，pipefail / venv 守卫 / 版本断言 / extras 语义照旧判红。
 
 pre-commit hooks 会在提交时自动运行 ruff 和 mypy，从源头防止退化。
 

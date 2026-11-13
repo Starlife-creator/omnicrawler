@@ -30,6 +30,8 @@ import pytest
 from tools.gate_registry import (
     GATE_SETS,
     GATES,
+    SKIP_EXIT_CODE,
+    Gate,
     ci_managed_scripts,
     gates_for,
 )
@@ -234,6 +236,71 @@ def test_missing_prerequisite_is_reported_with_reason(tmp_path: Path) -> None:
     coverage = next(gate for gate in payload["gates"] if gate["name"] == "check_coverage_gates")
     assert coverage["status"] == "skipped"
     assert "coverage.json" in coverage["detail"]
+
+
+# ---------- 门禁自述跳过（SKIP_EXIT_CODE）的三条边界 ----------
+
+
+def _synthetic_gate(code_expr: str) -> Gate:
+    """构造一条只做一件事的门禁：按给定表达式退出。"""
+    return Gate(
+        name="synthetic",
+        args=("-c", f"import sys; {code_expr}"),
+        sets=frozenset({"static"}),
+        description="仅用于测试跳过码语义",
+    )
+
+
+def test_gate_exit_77_is_recorded_as_skipped_with_reason() -> None:
+    """门禁以跳过码退出 ⇒ `skipped`，理由取输出末行（约定：门禁把缺的能力写在末行）。"""
+    from tools.self_verify import _run_gate
+
+    gate = _synthetic_gate('print("bash 语法检查无法执行：缺命名管道"); sys.exit(77)')
+    outcome = _run_gate(gate)
+    assert outcome.status == "skipped", outcome
+    assert outcome.detail.startswith("bash 语法检查无法执行"), outcome.detail
+
+
+def test_gate_exit_77_without_reason_is_still_accounted() -> None:
+    """跳过码但没写原因 ⇒ 仍记 `skipped`，并把「没写原因」显式记账（跳过不许无声）。"""
+    from tools.self_verify import _run_gate
+
+    outcome = _run_gate(_synthetic_gate("sys.exit(77)"))
+    assert outcome.status == "skipped"
+    assert "未写明原因" in outcome.detail, outcome.detail
+
+
+def test_any_other_failure_code_is_still_a_failure() -> None:
+    """**反向断言**：除跳过码以外的一切非 0 都必须判 `failed`——否则跳过码就成了逃生门。"""
+    from tools.self_verify import _run_gate
+
+    for code in (1, 2, 76, 78, 255):
+        outcome = _run_gate(_synthetic_gate(f'sys.exit({code})'))
+        assert outcome.status == "failed", f"退出码 {code} 被误判成 {outcome.status}"
+
+
+def test_skip_code_is_not_zero() -> None:
+    """跳过码必须非 0：与「通过」共用退出码会让 subprocess 层直接丢掉跳过这件事。"""
+    assert SKIP_EXIT_CODE != 0
+
+
+def test_skip_does_not_make_the_run_green(tmp_path: Path) -> None:
+    """**反向断言**：一条门禁被跳过不能让整轮自证从 failed 变 passed。
+
+    构造「failed + skipped」组合：结论仍必须是 failed，且 `ok` 为假。
+    """
+    from tools.self_verify import EvidenceReport, GateOutcome
+
+    report = EvidenceReport(
+        ok=True, sets=["static"], started_at="now", duration_seconds=0.0,
+        head="deadbee", dirty=False,
+        gates=[
+            GateOutcome("ruff", "passed", 0.1),
+            GateOutcome("check_shell_scripts", "skipped", 0.2, "bash 不可用"),
+            GateOutcome("mypy", "failed", 0.3, "退出码 1"),
+        ],
+    )
+    assert report.verdict == "failed", "有失败项时不能因存在跳过项而变通过"
 
 
 def test_list_mode_lists_selected_gates(capsys) -> None:

@@ -12,7 +12,13 @@ python tools/self_verify.py --set static --fail-fast
 
 报告里如实区分三种结果：**通过** / **失败** / **跳过**。
 跳过不是「通过」——要么缺前置产物（`requires_file`），要么需要调用方提供参数（`needs_args`），
-两者都会写明原因并计入 `skipped`，不会被静默吞掉。
+要么门禁**自己探测到所需能力缺失**并以 :data:`tools.gate_registry.SKIP_EXIT_CODE` 退出，
+三者都会写明原因并计入 `skipped`，不会被静默吞掉。
+
+第三类跳过的成因值得单独记一笔：Git for Windows 的 bash 在被禁命名管道的沙箱里连启动
+都做不到（`couldn't create signal pipe, Win32 error 5`），`check_shell_scripts` 因此把
+每个脚本都写成「语法错误」——**代码没坏，是环境缺能力**。门禁改用跳过码如实登记后，
+这种假红不会再被误读成脚本缺陷。
 
 证据结论是三态（`verdict`）：`passed` / `failed` / `unverified`。
 **全部跳过或选中 0 条门禁时判 `unverified`（未验证）并返回非 0**——空集合不是通过，
@@ -35,7 +41,7 @@ from pathlib import Path
 if __package__ in (None, ""):  # 允许 `python tools/self_verify.py` 直接执行
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools.gate_registry import GATE_SETS, Gate, gates_for  # noqa: E402
+from tools.gate_registry import GATE_SETS, SKIP_EXIT_CODE, Gate, gates_for  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -120,7 +126,19 @@ def _run_gate(gate: Gate) -> GateOutcome:
     if done.returncode == 0:
         return GateOutcome(gate.name, "passed", elapsed)
 
-    tail = "\n".join((done.stdout + done.stderr).strip().splitlines()[-_TAIL_LINES:])
+    output = (done.stdout + done.stderr).strip()
+    if done.returncode == SKIP_EXIT_CODE:
+        # 门禁自述「环境缺能力」：不是代码判红。原因取输出的最后一行——约定是门禁把
+        # 缺的能力写在末行；没写就显式记账，不假装有原因（跳过不允许无声）。
+        reason = output.splitlines()[-1].strip() if output else ""
+        return GateOutcome(
+            gate.name,
+            "skipped",
+            elapsed,
+            reason or "门禁以跳过码退出但未写明原因（应补一条可读理由）",
+        )
+
+    tail = "\n".join(output.splitlines()[-_TAIL_LINES:])
     return GateOutcome(gate.name, "failed", elapsed, f"退出码 {done.returncode}\n{tail}")
 
 
@@ -158,6 +176,9 @@ def verify(sets: list[str], *, fail_fast: bool = False) -> EvidenceReport:
         report.gates.append(outcome)
         if outcome.status == "passed":
             print(f"  [通过] {gate.name:<28} {outcome.duration_seconds:.2f}s")
+        elif outcome.status == "skipped":
+            # 门禁自述的能力缺失：如实记为跳过并打印原因，不算失败（环境假红不再污染判据）。
+            print(f"  [跳过] {gate.name:<28} {outcome.detail}")
         else:
             report.ok = False
             print(f"  [失败] {gate.name:<28} {outcome.duration_seconds:.2f}s")

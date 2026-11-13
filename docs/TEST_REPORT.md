@@ -4,6 +4,40 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-11-13 环境假红：门禁自述跳过（SKIP_EXIT_CODE=77）
+
+**现象**：`tools/self_verify.py --set static` 长期是 28 通过 / 1 失败，唯一失败恒为
+`check_shell_scripts`，报错是 9 个根目录脚本**全部**「bash -n 语法错误」，detail 一律为
+`bash.exe: *** fatal error - couldn't create signal pipe, Win32 error 5`（退出码 `-1073741502`）。
+
+**根因**：不是脚本坏了。Git for Windows 的 bash 在**被禁命名管道**的沙箱里连启动都做不到，
+`bash -n` 于是在**每个**脚本上都返回非 0。判据把「环境建不出管道」写成了「9 个脚本语法错误」——
+一个没坏的仓库看上去像坏了一整排。放开沙箱权限后单跑 `bash -n run_linux.sh` 退出 0，
+差异只在权限模式（`workspace-write` → `danger-full-access` 后同一命令 29/0/0）。
+顺带核掉两条猜测：改 `TEMP` **无效**（决定因素是权限模式）；`tempfile.mkdtemp(mode=0o777)`
+**根本不支持 `mode` 参数**（`TypeError`）——Windows 显式 DACL 的现象是真的（`os.mkdir` 0o700
+只留 SYSTEM / Administrators / OWNER RIGHTS 三条 ACE + Low Mandatory Level），但与本例无关。
+
+**修法（三层，均带反向断言）**：
+
+1. `tools/gate_registry.py` 新增 `SKIP_EXIT_CODE = 77`，并在模块文档写明三条边界：
+   只有门禁自己判定「能力缺失」才能用；跳过计入 `skipped` 不计入 `passed`；必须给出可读原因。
+2. `tools/self_verify.py` 的 `_run_gate()` 识别 77 ⇒ 记 `skipped`，**理由取输出末行**；
+   若门禁没写原因，显式记「未写明原因」而不是假装有原因。除 77 外一切非 0 仍是 `failed`。
+3. `tools/check_shell_scripts.py` 新增 `_bash_capability()`：先跑一次无副作用的
+   `bash -c "exit 0"`，探不通就**只跑结构检查**并以 77 退出，末行写
+   `bash 语法检查无法执行：…`。`check(root, *, syntax_check=False)` 为此保留降级路径。
+
+**关键边界——跳过不是放水**：结构判据（`set -euo pipefail` / venv 守卫 / Python ≥3.12 断言 /
+废弃工具引用 / extras 语义）在 bash 不可用时**照旧判红**。反向断言
+`test_skip_path_does_not_silence_structural_defects` 装回一个缺 pipefail 的脚本，断言门禁返回 1
+而不是 77。实测：删掉能力探测（`unavailable = None`）⇒ 该组用例 2 条转红；把 `_run_gate` 的
+77 分支禁用 ⇒ `exit_77` 两条转红；两次都字节级还原后复绿。
+
+**结果**：`tools/self_verify.py --set static` = **29 通过 / 0 失败 / 0 跳过，26.12s，结论通过**
+（HEAD 仍是 `86e47372`）。沙箱内 `check_shell_scripts` 走能力探测返回 0 是另一回事——
+本机放权后 bash 真的可用；受限环境下它会如实报「1 跳过」而不是「1 失败」。
+
 ## 2026-11-12 三平台首个全绿 run 的最后一项：一条「防卡死」上界写死了秒数
 
 `03b1c9d5` 之后 `gui-and-browser` 已 success、ubuntu 与 macos 两条 `test` 腿也 success，**只剩 windows 腿 `1 failed`**：
@@ -99,7 +133,8 @@ CI runner 是全新环境，该键从不曾存在 ⇒ 首次进入必弹 ⇒ 必
 
 **验证（本机一手）**：去掉 patch ⇒ 该用例 `1 failed`；加回 ⇒ 文件 `11 passed`；
 `tests/gui` 整目录 `300 passed in 41.44s`；`tools/self_verify.py --set static`
-结论不变（28 通过 / 1 失败，唯一失败仍是 `check_shell_scripts` 的 Git bash signal-pipe 沙箱限制）。
+结论不变（该批次时为 28 通过 / 1 失败，唯一失败是 `check_shell_scripts` 的 Git bash signal-pipe
+沙箱限制 —— **2026-11-13 已改为门禁自述跳过**，见下方同名小节）。
 **待远端确认**：`abd75ee6` 之后的 run 里三条 `test (…)` 腿是否恢复全绿——本地无法复现原挂起，
 这条结论要由 CI 终态背书。
 

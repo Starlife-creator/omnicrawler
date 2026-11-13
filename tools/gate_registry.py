@@ -19,6 +19,22 @@
 * 门禁总数由 :data:`GATES` 与 :func:`ci_managed_scripts` 在运行时给出，
   文档里不重复记账（计数以代码为准，见该测试文件的门禁清单断言）。
 
+## 「跳过（SKIP）」是第三种结局
+
+门禁只有「通过 / 失败」两态时，**环境不具备所需能力**与**代码有问题**会混成同一个红。
+实证：Git for Windows 的 bash 在被禁命名管道的沙箱里连启动都不行，`bash -n` 对每个脚本
+都报 `couldn't create signal pipe, Win32 error 5`，于是 9 个脚本全被写成「语法错误」——
+这是**环境假红**，换到任何受限环境都会误导人。
+
+因此门禁可以**自述跳过**：以 :data:`SKIP_EXIT_CODE` 退出、并在最后一行写清缺的是什么能力；
+:mod:`tools.self_verify` 把它记成 `skipped` 而不是 `failed`。三条边界：
+
+1. 只有门禁**自己判定**「能力缺失」才允许用该退出码；参数缺失仍走 `needs_args`、
+   前置产物缺失仍走 `requires_file`——这两类在 :mod:`tools.self_verify` 里事先判掉，
+   与门禁无关。
+2. 跳过**计入 `skipped`、不计入 `passed`**；一次运行全是跳过时结论仍是 `unverified`（非 0）。
+3. 退出码是**约定不是豁免**：门禁必须给出可读原因，否则报告里只剩一个数字。
+
 ## 集合（`sets`）的含义
 
 | 集合 | 何时能跑 | 说明 |
@@ -59,6 +75,10 @@ class Gate:
     needs_args: tuple[str, ...] = ()
     ci_note: str = ""
 
+
+#: 门禁「环境能力缺失」的约定退出码（与 automake / pytest 的跳过约定同值）。
+#: 门禁以该码退出时，:mod:`tools.self_verify` 记 ``skipped`` 而非 ``failed``。
+SKIP_EXIT_CODE = 77
 
 _STATIC = frozenset({"static"})
 
