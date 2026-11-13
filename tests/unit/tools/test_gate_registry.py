@@ -12,9 +12,12 @@
 
 另外先断言「确实扫到了脚本」，否则正则写错会让双向比较变成空集对空集的**假通过**。
 
-**边界（如实说明）**：这里比较的是**脚本集合**，不是逐字命令行——workflow 里含
-`${{ matrix.profile }}` 之类的插值，逐字比较会脆。因此门禁的*参数*（如 `--sbom`）
-仍可能与本地不一致；这是本测试覆盖不到的部分，靠 code review 兜。
+**边界（如实说明）**：这里的比对分两层。①**脚本集合**必须双向一致；②**旗标集合**：
+workflow 里含 `${{ matrix.profile }}` 之类的插值、`"$RUNNER_TEMP/..."` 路径与反引号续行，
+逐字比较会脆，所以只比旗标名（`--profile` / `--sbom` …），**不比旗标的值**。
+CI 用了而清单未声明的旗标判红；声明了却不在 CI 出现的旗标同样判红。
+仍然覆盖不到的部分：同一旗标的值在两侧是否等价（例如 `--profile core` vs `--profile browser`），
+这需要人读 diff 判断，靠 code review 兜。
 """
 
 from __future__ import annotations
@@ -106,6 +109,78 @@ def test_library_only_scripts_are_not_registered() -> None:
     assert not overlap, f"库白名单与已登记门禁重叠: {sorted(overlap)}"
 
 
+#: 白名单条目必须由**仓内真实消费者**背书：构建脚本、其它门禁、或测试真正 import 它。
+#: 只写进白名单、没有任何调用方的脚本，就是「绕过校验的缺口」本身——它一旦出现在
+#: `tools/check_*.py` 下就被白名单静默豁免，永远没人发现它既没登记也没被调用。
+_WHITELIST_CONSUMER_ROOTS = ("tests", "tools")
+_WHITELIST_CONSUMER_FILES = ("build_linux.sh", "build_windows.ps1", "build_macos.sh")
+
+
+def _whitelist_consumers(script_stem: str) -> list[str]:
+    """返回真正引用该脚本的仓内文件（相对路径）。
+
+    刻意**跳过测试文件自身**：白名单定义在 test_gate_registry.py 里，若允许它自证，
+    任何写进白名单的名字都会「被引用」——那正是要防的自证循环。
+    只扫 ``tests/`` 与 ``tools/`` 两个目录，外加根目录的构建脚本：这三处是白名单脚本
+    唯一可能的调用方，全仓 ``rglob`` 既慢又会扫进 ``.audit-tmp`` 之类的历史快照。
+    """
+    this_file = Path(__file__).resolve()
+    candidates: list[Path] = []
+    for root_name in _WHITELIST_CONSUMER_ROOTS:
+        root = _REPO_ROOT / root_name
+        if root.is_dir():
+            candidates.extend(root.rglob("*.py"))
+            candidates.extend(root.rglob("*.sh"))
+    for name in _WHITELIST_CONSUMER_FILES:
+        candidate = _REPO_ROOT / name
+        if candidate.is_file():
+            candidates.append(candidate)
+    hits: list[str] = []
+    for path in candidates:
+        if not path.is_file():
+            continue
+        if any(part in {".git", ".venv", ".tmp", ".audit-tmp", ".agents", "node_modules"}
+               for part in path.relative_to(_REPO_ROOT).parts):
+            continue
+        if path.resolve() == this_file:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if script_stem in text:
+            hits.append(str(path.relative_to(_REPO_ROOT)))
+    return hits
+
+
+def test_library_only_scripts_have_real_consumers() -> None:
+    """白名单不是「塞进去就免疫」：每一条都必须有仓内真实调用方。
+
+    这条补的是白名单自身的漏洞——`test_no_gate_script_is_silently_unaccounted` 给白名单
+    开了豁免口子，若白名单可以随便加名字，那个口子就是「加个名字绕过校验」的通行证。
+    """
+    orphans = [
+        script
+        for script in sorted(_LIBRARY_ONLY_SCRIPTS)
+        if not _whitelist_consumers(Path(script).stem)
+    ]
+    assert not orphans, (
+        f"以下库白名单条目没有任何仓内消费者（既非构建脚本调用、也非测试/其它门禁 import）: "
+        f"{orphans}；没有调用方就不该被豁免——要么接上调用方，要么登记为门禁"
+    )
+
+
+def test_whitelist_consumer_scan_is_not_vacuous() -> None:
+    """反向断言：扫描必须真能发现消费者，也要真能发现「没有消费者」。
+
+    两个方向都断言，否则正则/路径写错时上一条会变成「永远为真」的空断言。
+    """
+    assert _whitelist_consumers("check_linux_delivery"), (
+        "连真实存在的消费者都扫不到 ⇒ 上一条的判据是假的"
+    )
+    assert not _whitelist_consumers("check_this_script_does_not_exist")
+
+
 def test_gate_names_and_sets_are_well_formed() -> None:
     names = [gate.name for gate in GATES]
     assert len(names) == len(set(names)), f"门禁名重复: {names}"
@@ -119,6 +194,100 @@ def test_gate_names_and_sets_are_well_formed() -> None:
         # 需要外部参数的门禁必须写明与 CI 的差异，否则跳过原因会不可解释。
         if gate.needs_args:
             assert gate.ci_note, f"{gate.name} 需要参数却没有说明与 CI 的差异"
+        # 声明了 CI 旗标就同样要解释差异——声明不是免审。
+        if gate.declared_ci_flags:
+            assert gate.ci_note, f"{gate.name} 声明了 CI 旗标却没说与本地自证的差异"
+
+
+# ---------- 旗标级比对：脚本名一致但参数不同，同样是「清单没说实话」 ----------
+#
+# 边界（原文档已如实写明）：按脚本名做集合比对覆盖不到**参数**。这里把它补上——
+# 不是逐字比较整条命令（workflow 里有 `${{ matrix.profile }}`、`"$RUNNER_TEMP/..."`、
+# 反引号续行，逐字比必脆），而是只比**旗标集合**：CI 用了而清单没声明的旗标 ⇒ 判红。
+
+_CI_COMMAND_RE = re.compile(
+    r"(?:python|py)\s+(tools/(?:check_[a-z0-9_]+|post_bump_steps)\.py)\b([^\n]*)"
+)
+
+
+def _merge_continuations(text: str) -> list[str]:
+    """把 `\\` 与 PowerShell 反引号续行合并成逻辑行，否则旗标会落在下一行扫不到。"""
+    merged: list[str] = []
+    buffer = ""
+    for line in text.splitlines():
+        stripped = line.rstrip()
+        if stripped.endswith("\\") or stripped.endswith("`"):
+            buffer += stripped[:-1].rstrip() + " "
+            continue
+        merged.append(buffer + stripped)
+        buffer = ""
+    if buffer:
+        merged.append(buffer)
+    return merged
+
+
+def _flags_in(rest: str) -> set[str]:
+    """取出命令尾部里的旗标名（`--dir=X` 归一成 `--dir`，值不是旗标）。"""
+    return {
+        token.split("=", 1)[0]
+        for token in rest.split()
+        if token.startswith("-") and not token.startswith("---")
+    }
+
+
+def _ci_flags_by_script() -> dict[str, set[str]]:
+    found: dict[str, set[str]] = {}
+    for workflow in sorted(_WORKFLOW_DIR.glob("*.yml")):
+        for line in _merge_continuations(workflow.read_text(encoding="utf-8")):
+            for match in _CI_COMMAND_RE.finditer(line):
+                script, rest = f"tools/{match.group(1).removeprefix('tools/')}", match.group(2)
+                found.setdefault(script, set()).update(_flags_in(rest))
+    return found
+
+
+def test_ci_flag_scan_is_not_vacuous() -> None:
+    """先证明扫描确实抓到了旗标——否则下面的比对会变成「空集 ⊆ 任何集合」的假通过。"""
+    by_script = _ci_flags_by_script()
+    assert by_script, "一条 CI 门禁命令都没扫到，正则或目录已失效"
+    assert by_script.get("tools/check_coverage_gates.py", set()) >= {"--profile"}
+    assert by_script.get("tools/check_release_integrity.py", set()) >= {"--wheel-dir"}
+
+
+def test_ci_flags_are_declared_in_the_registry() -> None:
+    """CI 实际使用的旗标必须被清单**声明**：`args` 自带、`needs_args` 映射、或 `declared_ci_flags`。
+
+    补的正是原文档承认的边界——脚本名对得上、参数悄悄多了/少了一个，此前无人发现。
+    反向断言见下一条：声明了却没在 CI 出现，同样判红，防止把旗标写成静态白名单。
+    """
+    by_script = _ci_flags_by_script()
+    offenders: list[str] = []
+    for gate in GATES:
+        if gate.script is None:
+            continue
+        allowed = {arg for arg in gate.args if arg.startswith("-")}
+        allowed |= {f"--{name}" for name in gate.needs_args}
+        allowed |= set(gate.declared_ci_flags)
+        undeclared = by_script.get(gate.script, set()) - allowed
+        if undeclared:
+            offenders.append(f"{gate.name}: {sorted(undeclared)}")
+    assert not offenders, (
+        f"以下门禁在 CI 里用了清单未声明的旗标（本地自证与 CI 已不一致而无人察觉）: {offenders}；"
+        "请在 Gate 上补 declared_ci_flags 并写清差异"
+    )
+
+
+def test_declared_ci_flags_actually_appear_in_ci() -> None:
+    """**反向断言**：声明了就必须真的在 CI 出现，否则声明会退化成「随便写都算数」的白名单。"""
+    by_script = _ci_flags_by_script()
+    stale: list[str] = []
+    for gate in GATES:
+        if gate.script is None or not gate.declared_ci_flags:
+            continue
+        present = by_script.get(gate.script, set())
+        missing = set(gate.declared_ci_flags) - present
+        if missing:
+            stale.append(f"{gate.name}: {sorted(missing)}")
+    assert not stale, f"以下声明的 CI 旗标在 workflow 里找不到（接线已变或已删）: {stale}"
 
 
 def test_static_set_covers_the_red_lines() -> None:

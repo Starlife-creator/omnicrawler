@@ -64,6 +64,10 @@ class Gate:
         requires_file: 运行前必须存在的**路径**（文件或目录）；缺失则**显式跳过**并说明原因。
         needs_args: 必须由调用方在运行期提供的参数名；非空表示本地自证无法直接执行。
         ci_note: 与 CI 的差异说明——如实写，不掩盖。
+        declared_ci_flags: CI 里对这条门禁额外使用的旗标（本地自证不用的那些）。
+            这是**声明**而不是豁免：:mod:`tests.unit.tools.test_gate_registry` 会把
+            workflow 里出现的旗标与「``args`` 自带旗标 + ``needs_args`` + 本字段」逐条比对，
+            多一个少一个都判红。留空表示「CI 与本地完全相同」。
     """
 
     name: str
@@ -74,6 +78,7 @@ class Gate:
     requires_file: str | None = None
     needs_args: tuple[str, ...] = ()
     ci_note: str = ""
+    declared_ci_flags: tuple[str, ...] = ()
 
 
 #: 门禁「环境能力缺失」的约定退出码（与 automake / pytest 的跳过约定同值）。
@@ -187,6 +192,8 @@ GATES: tuple[Gate, ...] = (
         sets=_STATIC,
         description="网络访问边界（出网只能经由受控通道）",
         script="tools/check_network_boundaries.py",
+        declared_ci_flags=("--source-root",),
+        ci_note="CI 的发布线用 --source-root src/omnicrawler 指向源码根；本地自证用默认根。",
     ),
     Gate(
         name="check_release_integrity",
@@ -194,6 +201,19 @@ GATES: tuple[Gate, ...] = (
         sets=_STATIC,
         description="发布完整性（无产物时可校验仓库侧约束）",
         script="tools/check_release_integrity.py",
+        declared_ci_flags=(
+            "--wheel-dir",
+            "--source-zip-dir",
+            "--require-released-changelog",
+            "--portable-zip-dir",
+            "--portable-deep",
+            "--portable-platform",
+            "--portable-tar",
+        ),
+        ci_note=(
+            "CI 会在有产物时追加 --wheel-dir / --source-zip-dir / --require-released-changelog，"
+            "归档线再追加 --portable-*；本地自证不传这些旗标（无产物），差异即此处声明。"
+        ),
     ),
     Gate(
         name="check_lint_budget",
@@ -325,6 +345,8 @@ GATES: tuple[Gate, ...] = (
         description="按包 / 关键模块的覆盖率下限与分组门禁",
         script="tools/check_coverage_gates.py",
         requires_file="coverage.json",
+        declared_ci_flags=("--profile",),
+        ci_note="CI 的两个覆盖率作业分别用 --profile core / --profile browser；本地不传则按环境自动选档。",
     ),
     # ---------- install（CI matrix 提供参数） ----------
     Gate(
@@ -362,7 +384,8 @@ GATES: tuple[Gate, ...] = (
         description="分发产物体积预算",
         script="tools/check_artifact_budget.py",
         needs_args=("platform", "directory"),
-        ci_note="需先构建对应平台产物。",
+        declared_ci_flags=("--output",),
+        ci_note="需先构建对应平台产物；CI 另传 --output 落报告文件。",
     ),
     Gate(
         name="check_portable_doc_manifest",

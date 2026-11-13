@@ -24,9 +24,16 @@
    只有门禁自己判定「能力缺失」才能用；跳过计入 `skipped` 不计入 `passed`；必须给出可读原因。
 2. `tools/self_verify.py` 的 `_run_gate()` 识别 77 ⇒ 记 `skipped`，**理由取输出末行**；
    若门禁没写原因，显式记「未写明原因」而不是假装有原因。除 77 外一切非 0 仍是 `failed`。
-3. `tools/check_shell_scripts.py` 新增 `_bash_capability()`：先跑一次无副作用的
-   `bash -c "exit 0"`，探不通就**只跑结构检查**并以 77 退出，末行写
+3. `tools/check_shell_scripts.py` 新增 `_bash_capability()`：**正面**探测本机是否具备
+   「跑语法检查」这项能力，三步各自独立承重、每步结论都能被证伪——
+   ① `bash -c "exit 0"` 必须退 0（进程能启动，假红的直接成因在这里）；
+   ② `bash -n <不存在的文件>` 必须**非 0 且**含 `No such file`（证明 `-n` 真在读文件，
+   而不是无脑返回非 0 / 无条件返回 0）；
+   ③ `bash -n <临时目录里的合法脚本>` 必须退 0（证明这条代码路径在本机真能通过）。
+   任一步偏离预期即返回原因，门禁**只跑结构检查**并以 77 退出，末行写
    `bash 语法检查无法执行：…`。`check(root, *, syntax_check=False)` 为此保留降级路径。
+   探测刻意**不写成 `try/except` 一把抓**：一把抓会在「bash 只是慢」或「某个脚本真坏了」时
+   把红一起吞掉；三步正面验证则每条失败路径都指向一个具体原因。
 
 **关键边界——跳过不是放水**：结构判据（`set -euo pipefail` / venv 守卫 / Python ≥3.12 断言 /
 废弃工具引用 / extras 语义）在 bash 不可用时**照旧判红**。反向断言
@@ -37,6 +44,33 @@
 **结果**：`tools/self_verify.py --set static` = **29 通过 / 0 失败 / 0 跳过，26.12s，结论通过**
 （HEAD 仍是 `86e47372`）。沙箱内 `check_shell_scripts` 走能力探测返回 0 是另一回事——
 本机放权后 bash 真的可用；受限环境下它会如实报「1 跳过」而不是「1 失败」。
+
+## 2026-11-13 清单守卫补两个洞：旗标级比对与白名单消费者
+
+同一天的后续批次。`tests/unit/tools/test_gate_registry.py` 原本就承认两处覆盖不到的地方，
+这次把它们各自变成断言。
+
+**洞一：脚本名对得上，参数悄悄不同。** 原双向断言只比**脚本集合**，workflow 里的
+`${{ matrix.profile }}`、`"$RUNNER_TEMP/..."`、反引号续行让逐字比较很脆，于是**参数**
+（`--profile` / `--sbom` / `--wheel-dir` / `--source-root` …）长期靠 code review 兜。
+现在 `Gate` 新增 `declared_ci_flags` 字段：CI 相对本地自证额外使用的旗标必须**显式声明**，
+测试把 workflow 里出现的旗标与「`args` 自带 + `needs_args` 映射 + `declared_ci_flags`」逐条比对，
+**多一个判红**（`test_ci_flags_are_declared_in_the_registry`），**少一个也判红**
+（`test_declared_ci_flags_actually_appear_in_ci`）——后一条防的是「声明退化成随便写的白名单」。
+仍然不做逐字命令比对：只比旗标集合，值一律不比。
+
+**洞二：库白名单可以成为「塞进去就免疫」的通行证。** `_LIBRARY_ONLY_SCRIPTS` 给
+`test_no_gate_script_is_silently_unaccounted` 开了豁免口子，若可以随便加名字，这个口子
+本身就是绕过校验的通道。现在每条白名单必须有**仓内真实消费者**（构建脚本、其它门禁、
+或测试真的 import 它），扫描时**刻意跳过定义白名单的测试文件自身**，否则名字一写进去就
+自证成立。`test_whitelist_consumer_scan_is_not_vacuous` 两个方向都断言：真消费者必须扫得到，
+不存在的名字必须扫不到。
+
+**反向断言（四处，全部字节级还原）**：把 `check_artifact_budget` 的 `declared_ci_flags`
+清空 ⇒ 旗标比对转红；往 `check_network_boundaries` 塞一个 workflow 里没有的
+`--not-used-anywhere` ⇒ 少一个的比对转红；往白名单加一条无人引用的
+`tools/check_never_used_anywhere.py` ⇒ 消费者检查转红；把 `_bash_capability` 第二步的
+`if absent.returncode == 0` 改成 `if False` ⇒ 可证伪性用例转红。
 
 ## 2026-11-12 三平台首个全绿 run 的最后一项：一条「防卡死」上界写死了秒数
 

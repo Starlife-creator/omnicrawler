@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 if __package__ in (None, ""):  # 允许 `python tools/check_shell_scripts.py` 直接执行
@@ -106,14 +107,23 @@ def _bash_executable() -> str:
 
 
 def _bash_capability(exe: str) -> str | None:
-    """探测 ``bash`` 在本进程环境里能否真正跑起来；返回不可用原因，可用则返回 ``None``。
+    """正面探测 ``bash`` 是否具备「跑语法检查」这项能力；可用返回 ``None``，否则返回原因。
 
-    这一层是**为假红兜底**：Git for Windows 的 bash 在被禁命名管道的沙箱里连启动都做不到，
-    ``bash -n`` 会对**每个**脚本返回非 0，若不先探能力，9 个没坏的脚本会被同时写成
-    「语法错误」。所以先跑一次无副作用的 ``bash -c "exit 0"``：能退 0 才算可用。
+    这一层是**为环境假红兜底**，但探测本身必须**可证伪**——不能写成
+    ``try: 跑一下全部脚本 except: 跳过``，那会在「bash 只是慢」或「某个脚本真坏了」时
+    也把红吞掉。所以分三步正面验证，每一步都能**独立地**失败：
+
+    1. ``bash -c "exit 0"`` 必须退 0 ⇒ 进程能启动（假红的直接成因就在这一步：
+       受限沙箱里 Git bash 连 ``couldn't create signal pipe`` 都过不去）。
+    2. ``bash -n <不存在的文件>`` 必须**非 0 且**说明文件不存在（``No such file``）
+       ⇒ ``-n`` 真的在读文件，而不是无脑返回非 0 或无条件返回 0。
+    3. ``bash -n <临时目录里一份合法脚本>`` 必须退 0 ⇒ 语法检查这条具体代码路径
+       在本机真的能通过，而不是「能启动但一碰文件就崩」。
+
+    三步全过才算「能力在」。任一步结论偏离预期都返回原因，由调用方判 SKIP 并写明。
     """
     try:
-        proc = subprocess.run(  # noqa: S603 - 命令为固定 bash + 常量表达式
+        launch = subprocess.run(  # noqa: S603 - 命令为固定 bash + 常量表达式
             [exe, "-c", "exit 0"],
             capture_output=True,
             text=True,
@@ -123,10 +133,53 @@ def _bash_capability(exe: str) -> str | None:
         )
     except OSError as exc:
         return f"无法启动 bash（{exe}）：{exc}"
-    if proc.returncode == 0:
-        return None
-    detail = ((proc.stderr or "") + (proc.stdout or "")).strip().replace("\n", " | ")
-    return f"bash 在此环境不可用（{exe}）：退出码 {proc.returncode}；{detail or '无输出'}"
+    if launch.returncode != 0:
+        detail = ((launch.stderr or "") + (launch.stdout or "")).strip().replace("\n", " | ")
+        return (
+            f"bash 无法在此环境启动（{exe}）：退出码 {launch.returncode}；"
+            f"{detail or '无输出'}（典型成因：受限沙箱禁命名管道）"
+        )
+
+    with tempfile.TemporaryDirectory(prefix="omnicrawler-bash-probe-") as scratch:
+        probe_dir = Path(scratch)
+        missing = probe_dir / "definitely-absent-probe.sh"
+        absent = subprocess.run(  # noqa: S603
+            [exe, "-n", str(missing)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        absent_text = ((absent.stderr or "") + (absent.stdout or "")).strip().replace("\n", " | ")
+        if absent.returncode == 0:
+            return (
+                f"bash -n 对不存在的文件返回 0（{exe}）⇒ `-n` 没有真正读取文件，"
+                "语法检查不可信"
+            )
+        if "No such file" not in absent_text and "cannot open" not in absent_text:
+            return (
+                f"bash -n 无法正常读取文件（{exe}）：退出码 {absent.returncode}；"
+                f"{absent_text or '无输出'}"
+            )
+
+        sample = probe_dir / "probe-ok.sh"
+        sample.write_text("#!/bin/sh\nset -eu\nexit 0\n", encoding="utf-8", newline="\n")
+        ok = subprocess.run(  # noqa: S603
+            [exe, "-n", str(sample)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        if ok.returncode != 0:
+            detail = ((ok.stderr or "") + (ok.stdout or "")).strip().replace("\n", " | ")
+            return (
+                f"bash -n 对合法脚本仍判错（{exe}）：退出码 {ok.returncode}；{detail or '无输出'}"
+            )
+
+    return None
 
 
 def _syntax_check(path: Path) -> list[str]:

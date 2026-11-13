@@ -150,3 +150,81 @@ def test_skip_path_does_not_silence_structural_defects(monkeypatch, tmp_path, ca
     captured = capsys.readouterr()
     assert code == 1, f"存在结构缺陷时必须判红，实际 {code}（跳过码 {SKIP_EXIT_CODE} 不能掩盖它）"
     assert "set -euo pipefail" in captured.err, captured
+
+
+# ---------- 探测本身必须可证伪（不能是 try/except 一把抓） ----------
+
+
+class _FakeCompleted:
+    def __init__(self, returncode: int, stderr: str = "", stdout: str = "") -> None:
+        self.returncode = returncode
+        self.stderr = stderr
+        self.stdout = stdout
+
+
+def _fake_run(behaviour):
+    """按 `behaviour(argv)` 返回伪 subprocess 结果的替身。"""
+
+    def runner(argv, **kwargs):  # noqa: ARG001 - 签名对齐 subprocess.run
+        return behaviour(argv)
+
+    return runner
+
+
+def test_probe_rejects_a_bash_that_never_reads_the_file(monkeypatch) -> None:
+    """**反向断言**：`bash -n` 对不存在的文件返回 0 ⇒ 探测必须判不可信。
+
+    这正是「try/except 一把抓」的反面：一个只会 `exit 0` 的假 bash 能让「全部脚本都通过」，
+    若不证伪就会被当成能力健全。真 bash 对不存在的文件必然非 0（实测 127 + No such file）。
+    """
+    monkeypatch.setattr(
+        GATE, "subprocess", type("s", (), {"run": staticmethod(_fake_run(lambda a: _FakeCompleted(0)))})
+    )
+    reason = GATE._bash_capability("fake-bash")  # noqa: SLF001
+    assert reason is not None
+    assert "没有真正读取文件" in reason, reason
+
+
+def test_probe_rejects_a_bash_that_fails_on_a_valid_script(monkeypatch) -> None:
+    """**反向断言**：能启动、也读文件，但对合法脚本判错 ⇒ 仍判不可信（第三步必须独立承重）。"""
+
+    def behaviour(argv):
+        if "-c" in argv:
+            return _FakeCompleted(0)
+        target = argv[-1]
+        if "definitely-absent-probe" in target:
+            return _FakeCompleted(127, f"'{target}': No such file or directory")
+        return _FakeCompleted(2, "syntax error near unexpected token")
+
+    monkeypatch.setattr(
+        GATE, "subprocess", type("s", (), {"run": staticmethod(_fake_run(behaviour))})
+    )
+    reason = GATE._bash_capability("fake-bash")  # noqa: SLF001
+    assert reason is not None
+    assert "对合法脚本仍判错" in reason, reason
+
+
+def test_probe_reports_launch_failure_distinctly(monkeypatch) -> None:
+    """启动就失败（本沙箱的真实形态）⇒ 原因必须指向「启动」，而不是含糊的「不可用」。"""
+    monkeypatch.setattr(
+        GATE,
+        "subprocess",
+        type(
+            "s",
+            (),
+            {
+                "run": staticmethod(
+                    _fake_run(
+                        lambda a: _FakeCompleted(
+                            -1073741502,
+                            "*** fatal error - couldn't create signal pipe, Win32 error 5",
+                        )
+                    )
+                )
+            },
+        ),
+    )
+    reason = GATE._bash_capability("fake-bash")  # noqa: SLF001
+    assert reason is not None
+    assert "无法在此环境启动" in reason, reason
+    assert "signal pipe" in reason, "原因里必须保留原始报错，否则无法定位"
