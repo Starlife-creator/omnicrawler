@@ -279,9 +279,10 @@ GATES: tuple[Gate, ...] = (
         description="现状文档的派生数字由工具算出（禁止手抄门禁数/测试数/i18n 数；生成块逐字比对）",
         script="tools/check_doc_numbers.py",
         ci_note=(
-            "扫根目录 *.md、docs/*.md、constraints/*.md；历史事实陈述（CHANGELOG.md、"
-            "*_REPORT.md、*_LEDGER.md、docs/archive/、docs/releases/、文件名带日期）不扫——"
-            "写当时的数字是对的。维护者改完文档跑 `--update` 让生成块重算。"
+            "扫描面是文件系统递归的全部 *.md（任意深度、含还没 git add 的新文件），"
+            "外加 tools/gate_registry.py 的 docstring；副本/依赖/生成产物目录与历史事实陈述"
+            "（CHANGELOG.md、*_REPORT.md、*_LEDGER.md、docs/archive/、docs/releases/、"
+            "路径任意一级带日期者）不扫——写当时的数字是对的。维护者改完文档跑 `--update` 让生成块重算。"
         ),
     ),
     Gate(

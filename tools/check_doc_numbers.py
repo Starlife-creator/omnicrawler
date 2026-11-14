@@ -28,9 +28,17 @@
 
 ## 扫描面与边界
 
-* 扫：根目录 `*.md`、`docs/*.md`、`constraints/*.md`。
+* 扫：**文件系统递归的全部 `.md`**（任意深度，含还没 `git add` 的新文件），外加 `tools/gate_registry.py` 的模块 docstring。
 * 不扫（历史事实陈述，改它们等于改历史）：`CHANGELOG.md`、`*_REPORT.md`、
-  `*_LEDGER.md`、`docs/archive/`、`docs/releases/`、文件名带 `YYYY-MM-DD` 的文档。
+  `*_LEDGER.md`、`docs/archive/`、`docs/releases/`、**路径任意一级**带 `YYYY-MM-DD` 的文档
+  （日期在目录上与在文件名上是同一个语义：`user-test-runs/2026-11-01/x.md` 属于那一天）。
+* 不扫（副本 / 生成产物 / 依赖，逐条列在 `_SKIP_PARTS` 与 `_SKIP_PREFIXES` 并写明理由）：
+  `.git`、`.venv`、`node_modules`、`__pycache__`、`.tmp`、`.audit-tmp`、`.agents`、
+  `.test-tmp`、`pytest-of-Lenovo`、`build_cache`、`e2e-artifacts`、`.runtime`、
+  `user-test-runs/dependency-depth-implementation-20261007/`（该批运行产物）。
+* HTML 注释 `<!-- ... -->` 里的内容不参与手抄扫描：那里常放**格式示例**（
+  `PULL_REQUEST_TEMPLATE.md` 的「例如：汇总：14 通过 / 0 失败 / 0 跳过」），
+  不是现状声明；注释外的正文照旧逐字扫描，屏蔽不会顺延到下一行。
 * 守的是「文档数字 == 工具输出」，**不守数字背后的判断对不对**（例如覆盖率够不够）。
 
 用法::
@@ -46,7 +54,7 @@ import argparse
 import json
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,7 +66,19 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 #: 参与扫描的文档形态：现状声明，不是历史记录。
-DOC_GLOBS = ("*.md", "docs/*.md", "constraints/*.md")
+#:
+#: **递归枚举全部 `.md`，不再用固定几层 glob。** 过去是
+#: ``("*.md", "docs/*.md", "constraints/*.md")`` 三条硬编码模式，只覆盖根目录、
+#: `docs/` 一层和 `constraints/` 一层；`docs/adr/`、`src/omnicrawler/gui/docs/`、
+#: `.github/`、`plugins/`、`packaging/` 这些**会新增文档**的位置一层都盖不到。
+#: 而漏扫是**静默**的：新文档里手抄了派生数字，门禁照样报「通过」。
+#: 2026-11-14 实测：往 `docs/adr/` 塞一份写「门禁共 31 项」的现状文档，旧扫描面命中 0 条；
+#: 同样的内容放在 `docs/` 下命中 1 条——缺口是真的，不是理论上的。
+#:
+#: 用文件系统递归而不是 ``git ls-files``：后者只列**已跟踪**文件，新增但还没
+#: `git add` 的文档照样漏，等于把同一个缺口换个形式放回来；打包副本与 worktree 下
+#: git 状态也不可靠。递归枚举 + 显式排除集，覆盖面才是可证伪的。
+DOC_SUFFIX = ".md"
 
 #: 文档之外、但同样**向读者声明现状**的源文件。
 #: `tools/gate_registry.py` 的模块 docstring 曾写死「现有 19 个 `tools/check_*.py`」，
@@ -70,12 +90,44 @@ HISTORY_DOCS = frozenset({"CHANGELOG.md"})
 HISTORY_SUFFIXES = ("_REPORT.md", "_LEDGER.md")
 HISTORY_DIRS = ("docs/archive/", "docs/releases/")
 
-#: 文件名里带日期 ⇒ 该文档描述的是那一天的状态。
-_DATE_IN_NAME = re.compile(r"\d{4}-\d{2}-\d{2}")
+#: 路径里（**任意一级目录**）带日期 ⇒ 该文档描述的是那一天的状态。
+#:
+#: 过去只认**文件名**里的日期，于是 `user-test-runs/2026-11-01/PREACCEPTANCE_CLOSURE.md`
+#: 因为日期在**目录**上而被当成现状文档，里面「495 passed / 1 skipped」这类当时的实测
+#: 数字全成了违规——那是分类错，不是内容漂。目录日期与文件名日期是同一个语义，
+#: 判据必须一致。
+_DATE_IN_PATH = re.compile(r"\d{4}-\d{2}-\d{2}")
 
-#: 不进入扫描的目录（历史快照 / 依赖 / 缓存）。
+#: 不进入扫描的目录（副本 / 生成产物 / 依赖 / 测试遗留）。
+#:
+#: 每条都写理由，不许无声跳过：排除集本身也是判据的一部分。
 _SKIP_PARTS = frozenset(
-    {".git", ".venv", ".tmp", ".audit-tmp", ".agents", "node_modules", "__pycache__", ".runtime"}
+    {
+        ".git",  # 版本库内部
+        ".venv",  # 依赖环境
+        "node_modules",  # 依赖环境
+        "__pycache__",  # 字节码缓存
+        ".tmp",  # 本仓库约定的临时脚本目录
+        ".audit-tmp",  # 审计快照副本，内容与真仓重复
+        ".agents",  # 子代理 worktree 副本（独立 git 树，另一份真仓）
+        ".test-tmp",  # pytest 的临时根（本仓把 TEMP 指到这里）
+        "pytest-of-Lenovo",  # 未重定向时 pytest 落在系统 TEMP 的遗留
+        "build_cache",  # 构建产物（含第三方模型的 README）
+        "e2e-artifacts",  # E2E 运行产物
+        ".runtime",  # 运行时缓存
+    }
+)
+
+#: 具体路径前缀排除（目录级 :data:`_SKIP_PARTS` 表达不了的，逐条给理由）。
+_SKIP_PREFIXES: tuple[tuple[str, str], ...] = (
+    (
+        "user-test-runs/dependency-depth-implementation-20261007/cache",
+        "pytest 自己的 cache 目录副本，里面的 README.md 是 pytest 模板不是本仓文档",
+    ),
+    (
+        "user-test-runs/dependency-depth-implementation-20261007",
+        "该批次的运行产物目录（含 cache/v/*），不是现状声明",
+    ),
 )
 
 AUTOGEN_BEGIN = "BEGIN AUTOGEN:"
@@ -162,14 +214,53 @@ def is_history_doc(relative: str) -> bool:
         return True
     if any(relative.startswith(prefix) for prefix in HISTORY_DIRS):
         return True
-    return bool(_DATE_IN_NAME.search(Path(relative).name))
+    # 日期在**任意一级**路径上——文件名或目录，语义相同。
+    return bool(_DATE_IN_PATH.search(relative))
+
+
+def is_skipped_path(relative: str) -> bool:
+    """判断一份文档是否落在副本 / 生成产物 / 缓存目录里（排除集的唯一真源）。"""
+    parts = relative.split("/")
+    if any(part in _SKIP_PARTS for part in parts[:-1]):
+        return True
+    return any(relative == prefix or relative.startswith(prefix + "/") for prefix, _ in _SKIP_PREFIXES)
+
+
+def _iter_documents(root: Path) -> Iterator[Path]:
+    """深度优先列出全部 ``.md``，**遇到副本目录整棵剪枝**。
+
+    为什么不用 ``root.rglob("*.md")``：它会把 ``.venv`` / ``.agents`` / ``.audit-tmp``
+    这些目录**整棵走一遍**再交给后面过滤，本仓这几个目录里有上千份 ``.md``，白白多花时间。
+    剪枝之后耗时与「实际要检查的文档数」成正比，而不是与「磁盘上的文件数」成正比——
+    这条门禁在 static 集合里，必须保持秒级。
+    """
+    stack: list[Path] = [root]
+    while stack:
+        current = stack.pop()
+        try:
+            entries = sorted(current.iterdir())
+        except OSError:
+            continue  # 读不到的目录不是致命错误：跳过，但要能看出「什么都没扫到」
+        for entry in entries:
+            try:
+                if entry.is_dir():
+                    if entry.name in _SKIP_PARTS or entry.is_symlink():
+                        continue  # 副本/依赖目录整棵跳过；符号链接不跟（防环）
+                    stack.append(entry)
+                elif entry.suffix.lower() == DOC_SUFFIX and entry.is_file():
+                    yield entry
+            except OSError:
+                continue
 
 
 def scan_targets(root: Path = PROJECT_ROOT) -> tuple[list[Path], list[Path]]:
-    """返回 （需要扫描的现状文档, 被排除的历史文档）。"""
-    candidates: set[Path] = set()
-    for pattern in DOC_GLOBS:
-        candidates.update(root.glob(pattern))
+    """返回 （需要扫描的现状文档, 被排除的历史文档）。
+
+    扫描面是**文件系统递归**（任意深度），不是固定层数的 glob：新增文档落在任何一层
+    都应被看见；漏扫必须是显式的（进 :data:`_SKIP_PARTS` / :data:`_SKIP_PREFIXES`
+    并写明理由），不能是「glob 没写到那儿」。
+    """
+    candidates: set[Path] = set(_iter_documents(root))
     for relative in EXTRA_SOURCES:
         extra = root / relative
         if extra.is_file():
@@ -179,9 +270,9 @@ def scan_targets(root: Path = PROJECT_ROOT) -> tuple[list[Path], list[Path]]:
     for path in sorted(candidates):
         if not path.is_file():
             continue
-        if any(part in _SKIP_PARTS for part in path.parts):
-            continue
         relative = path.relative_to(root).as_posix()
+        if is_skipped_path(relative):
+            continue
         (excluded if is_history_doc(relative) else scanned).append(path)
     return scanned, excluded
 
@@ -285,10 +376,58 @@ def _validate_blocks(
     return inside, blocks
 
 
+def mask_html_comments(lines: list[str]) -> list[str]:
+    """把 HTML 注释 ``<!-- ... -->`` 的内容换成空格（保留行数与列位置）。
+
+    为什么需要：注释经常用来**给出格式示例**，而不是声明现状。
+    `.github/PULL_REQUEST_TEMPLATE.md` 里就有
+
+        <!-- 粘贴实际输出（汇总行即可，例如：汇总：14 通过 / 0 失败 / 0 跳过，共 25.0s） -->
+
+    那句「14 通过 / 0 失败 / 0 跳过」是**占位格式**，不是本仓现在的数字——
+    按手抄数字判红属于误伤。生成块的标记本身也在注释里，但那部分由
+    :func:`_validate_blocks` 单独处理，不走本函数的扫描路径。
+
+    只屏蔽内容、不改行长：用空格替换可以在保持列号的前提下让正则失效，
+    报出来的行号仍然是原文行号。
+    """
+    masked: list[str] = []
+    inside = False
+    for line in lines:
+        chars = list(line)
+        index = 0
+        while index <= len(chars):
+            if not inside:
+                start = line.find("<!--", index)
+                if start < 0:
+                    break
+                stop = line.find("-->", start + 4)
+                if stop < 0:
+                    for pos in range(start, len(chars)):
+                        chars[pos] = " "
+                    inside = True
+                    break
+                for pos in range(start, stop + 3):
+                    chars[pos] = " "
+                index = stop + 3
+            else:
+                stop = line.find("-->", index)
+                if stop < 0:
+                    for pos in range(index, len(chars)):
+                        chars[pos] = " "
+                    break
+                for pos in range(0, stop + 3):
+                    chars[pos] = " "
+                inside = False
+                index = stop + 3
+        masked.append("".join(chars))
+    return masked
+
+
 def _scan_handcopied(
     relative: str, lines: list[str], inside: set[int], findings: list[Finding]
 ) -> None:
-    for number, line in enumerate(lines, start=1):
+    for number, line in enumerate(mask_html_comments(lines), start=1):
         if number - 1 in inside:
             continue  # 生成块内容由 provider 保证，不参与禁止句式扫描
         for rule, pattern in FORBIDDEN:
