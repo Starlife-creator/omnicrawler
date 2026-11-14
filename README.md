@@ -262,8 +262,14 @@ omnicrawler templates validate          # 校验完整性
 ### 国际化
 
 - 界面字符串以中文为源码基准；`.pot` 模板条目数与英文覆盖率由
-  `python tools/i18n_stats.py` 实测（当前模板 2239 条；英文包登记 603 条、
-  非空译文 460 条，有效覆盖约 20.5%，按模板条目登记口径 603/2239 ≈ 26.9%，翻译进行中）。
+  `python tools/i18n_stats.py` 实测，README 不手抄这些数字。
+
+下面的现状数字由 `python tools/check_doc_numbers.py --update` 按实测结果重写，
+CI 用同一入口逐字比对（手抄值与实测不一致即判红）：
+
+<!-- BEGIN AUTOGEN:i18n-summary -->
+模板条目 2239 条 · 语言包登记 603 条 · 非空译文 460 条 · 覆盖 20.5%（按登记口径 603/2239 ≈ 26.9%）
+<!-- END AUTOGEN:i18n-summary -->
 - 覆盖率口径与缺失清单以上述脚本输出为准，README 不再手抄数字；`--check`
   可作为 CI 覆盖率门禁（阈值见质量工作流，当前下限 20.0%，只防下滑、不替代补译）。
 - 新增语言：`python tools/extract_i18n.py` → 复制 `locale/en_US/` 为目标目录 →

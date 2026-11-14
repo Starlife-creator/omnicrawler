@@ -20,7 +20,7 @@ developer's checkout and local edits are not reset. Failed fresh checkouts are
 left for inspection rather than recursively deleted.
 
 The initial pin is `7912f85d72d2631a72f59e1b6c9ef5a383bec431`, the market snapshot
-used by the local plugin regression (337 passed, 8 skipped). It is a compatibility
+used by the local plugin regression (`python -m pytest tests/unit/plugin -q`). It is a compatibility
 baseline, not a statement that this is the latest market version.
 
 ★ **2026-09-22 推进到 `6642d9b26100738b35c1a6e1e370cbc73ca062ef`**（市场仓 `main`）：

@@ -321,21 +321,26 @@ def test_docs_do_not_hardcode_gate_counts() -> None:
     `tools/check_*.py`」，而磁盘上早已是 28 个；`CONTRIBUTING.md` 同样写死「13 项」。
     两处都靠人手同步，于是「文档说 19、实际 28」长期共存且无人发现。
 
-    本用例不比对具体数字，而是**禁止在文档里用「N 项/N 个 + 门禁」的句式**——
-    数量以 `GATES` / `ci_managed_scripts()` 为准。
-    """
-    import re
+    **2026-11-14 修正**：这条判据原先只认「N 项 `tools/check_`」一种句式、只扫
+    `CONTRIBUTING.md` 与 `tools/gate_registry.py` 两个文件，于是同类的其他形态
+    （手抄的测试通过数、i18n 条目数、别的目录下的文档）全都漏在扫描面之外。
+    判据本体已移交 `tools/check_doc_numbers.py`（扫描面 + 句式 + 生成块逐字比对，
+    见 `tests/unit/tools/test_doc_numbers_gate.py` 的五条反向断言）。
 
-    pattern = re.compile(r"(\d+)\s*(?:项|个)\s*`?tools/check_")
-    offenders: list[str] = []
-    for relative in ("CONTRIBUTING.md", "tools/gate_registry.py"):
-        text = (_REPO_ROOT / relative).read_text(encoding="utf-8")
-        for match in pattern.finditer(text):
-            offenders.append(f"{relative}: {match.group(0)!r}")
-    assert not offenders, (
-        f"文档里写死了门禁数量（会随新增门禁而漂移）：{offenders}；"
-        "请改成「以 tools/gate_registry.py 为准」这类不自带数字的表述"
+    本用例保留为**扫描面不得收窄**的守卫：新判据必须覆盖旧判据守过的每一处，
+    否则这次「扩宽」会在下一次重构里被悄悄退回去。
+    """
+    from tools import check_doc_numbers as doc_gate
+
+    scanned, _ = doc_gate.scan_targets(_REPO_ROOT)
+    covered = {path.relative_to(_REPO_ROOT).as_posix() for path in scanned}
+    # 旧判据守过的两个对象，一个都不能从扫描面里掉出去。
+    assert {"CONTRIBUTING.md", "tools/gate_registry.py"} <= covered, (
+        f"扫描面收窄了，缺少旧判据守过的文件: {sorted({'CONTRIBUTING.md', 'tools/gate_registry.py'} - covered)}"
     )
+    # 旧的句式必须仍被新判据抓住——否则「移交」等于取消。
+    findings = doc_gate.check_text("CONTRIBUTING.md", "以及 10 项 `tools/check_*.py`（架构、SDK 契约）")
+    assert "gate-count-phrase" in {finding.rule for finding in findings}, findings
 
 
 def test_unknown_set_is_rejected() -> None:

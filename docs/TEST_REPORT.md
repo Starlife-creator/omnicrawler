@@ -4,6 +4,38 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-11-14 文档数字一致性：手抄派生数字改由门禁算出
+
+**起因**：自查实测（非估计）出三处现状漂移——`CONTRIBUTING.md:89` 的「`pytest tests/gui` =
+158 passed, 1 skipped」（实测 `--collect-only -q` = 300 项；且 passed 与 collected 本不是同一
+口径，所以修法不是把 158 改成 300，而是**不再写数字**）、`constraints/README.md:23` 的
+「local plugin regression (337 passed, 8 skipped)」（实测 505 项）、`README.md` 手抄 i18n 四个
+数字而下一行声明「不再手抄数字」。
+
+**根因**：旧判据 `test_docs_do_not_hardcode_gate_counts` 只扫 `CONTRIBUTING.md` 与
+`tools/gate_registry.py`，句式只认「N 项 `tools/check_`」。判据的覆盖面没和「谁会手抄」对齐。
+
+**修法**（一个提交，只做这件事）：新增 `tools/check_doc_numbers.py`，两道判据——
+
+1. **禁用句式**：7 条正则覆盖门禁数量（3 种写法）、测试通过数（`N passed` 与 `N 通过 / M 失败`）、
+   用例条数、i18n 条目数。数值为 0 的表述放行——「选中 0 个用例必须判红」是规则，不是实测值。
+2. **生成块逐字比对**：`<!-- BEGIN AUTOGEN:i18n-summary -->` … `<!-- END … -->` 的内容由
+   provider **当场计算**，`--update` 负责重写。块内不参与句式扫描（否则生成块永远无法通过）。
+
+**扫描面与边界**：根 `*.md` + `docs/*.md` + `constraints/*.md` + `tools/gate_registry.py`；
+历史事实陈述一律不扫（`CHANGELOG.md`、`*_REPORT.md`、`*_LEDGER.md`、`docs/archive/`、
+`docs/releases/`、文件名带日期者）。扫不到文档判 `empty-selection`，全仓一个生成块都没有判
+`no-blocks`——空集合不是通过。
+
+**反向断言**（五条，全部实测转红后字节级还原）：块内改一字符必红；**monkeypatch provider 让
+算出的数多 1 ⇒ 文档未改也必须红**（这条才证明比的是计算值，不是仓库里那份副本）；删 BEGIN 与
+END 中任一个必红（残块判 `orphan-block-end` / `unbalanced-block`）；散文夹带裸数字必红；
+防空转（扫描集 ≥20 份且必须含 `CONTRIBUTING.md` / `README.md`、不含 `CHANGELOG.md`，7 条句式
+各有人工样例命中）。
+
+**结果**：`tools/self_verify.py --set static` = **30 通过 / 0 失败 / 0 跳过，19.38s**
+（HEAD `1f15ce74`）；`test_doc_numbers_gate.py` 与 `test_gate_registry.py` 合计 47 passed。
+
 ## 2026-11-13 环境假红：门禁自述跳过（SKIP_EXIT_CODE=77）
 
 **现象**：`tools/self_verify.py --set static` 长期是 28 通过 / 1 失败，唯一失败恒为

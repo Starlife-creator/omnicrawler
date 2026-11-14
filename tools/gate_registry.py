@@ -273,6 +273,18 @@ GATES: tuple[Gate, ...] = (
         script="tools/check_gitignore_hygiene.py",
     ),
     Gate(
+        name="check_doc_numbers",
+        args=("tools/check_doc_numbers.py",),
+        sets=_STATIC,
+        description="现状文档的派生数字由工具算出（禁止手抄门禁数/测试数/i18n 数；生成块逐字比对）",
+        script="tools/check_doc_numbers.py",
+        ci_note=(
+            "扫根目录 *.md、docs/*.md、constraints/*.md；历史事实陈述（CHANGELOG.md、"
+            "*_REPORT.md、*_LEDGER.md、docs/archive/、docs/releases/、文件名带日期）不扫——"
+            "写当时的数字是对的。维护者改完文档跑 `--update` 让生成块重算。"
+        ),
+    ),
+    Gate(
         name="check_gui_test_layout",
         args=("tools/check_gui_test_layout.py",),
         sets=_STATIC,
