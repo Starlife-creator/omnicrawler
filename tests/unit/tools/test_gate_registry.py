@@ -611,4 +611,3 @@ def test_dropping_env_entirely_reproduces_the_windows_defect(
     assert detail != "bash 语法检查无法执行：缺命名管道", (
         f"摘掉 env 后仍然可读，说明 Windows 侧成因不成立: {detail!r}"
     )
-
