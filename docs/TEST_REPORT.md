@@ -4,6 +4,31 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-11-14 子进程编码：门禁自己的中文不得在默认控制台下变成乱码
+
+**现象**：`test_gate_exit_77_is_recorded_as_skipped_with_reason` 在**默认 Windows 控制台**
+下单跑必红、`PYTHONUTF8=1` 下 47 passed。断言 `detail.startswith("bash 语法检查无法执行")`
+挂掉，实际值是 `'bash \ufffd...'`。
+
+**根因**：`tools/self_verify.py` 的 `_run_gate()` 以 `encoding="utf-8"` 解子进程输出，
+而 Windows 子进程写管道的默认编码是**控制台代码页**（简体中文 cp936/GBK）。门禁里带中文
+的输出先按 GBK 编码、再按 UTF-8 解码，就成了替换字符。**门禁做对了，断言判红**——这与
+Git bash signal-pipe 那条同属「门禁自己会在某种环境下装着红」。
+
+**修法**：新增 `_child_env()`，在 `dict(os.environ)` **副本**上叠加 `PYTHONUTF8=1` 与
+`PYTHONIOENCODING=utf-8`，交给 `subprocess.run(env=...)`。两处都设是有意的：前者让子解释器
+整体进入 UTF-8 模式，后者兜住只认它的旧行为；**必须合并而非替换**父环境，否则子进程丢掉
+`PATH` / `VIRTUAL_ENV` / 代理，门禁会以另一种更难查的方式坏掉。SKIP 语义与门禁清单未动。
+
+**反向断言**：①摘掉 `env=_child_env()` ⇒ 相关三条用例转红，装回复绿（真机实测，`finally`
+字节级还原）；②把 `_child_env()` 篡改成「注入失效、退回代码页」，在 Linux/macOS 上同样可
+判定——否则第一条在 UTF-8 默认的 CI 上只是恒绿的装饰。判据取「不再等于原文」而非「必含
+`\ufffd`」：GBK 字节恰好落在可解码区间时会变成形近乱码汉字，实测两种形态都出现过。
+
+**顺带发现（未在本批修）**：`tests/unit/tools/test_update_manifest_tools.py` 有同类缺陷——
+它的 `_run()` 也是 `subprocess.run(..., encoding="utf-8")` 且不传 env，默认控制台下 9 failed
+/ 8 errors，`PYTHONIOENCODING=utf-8` 下全绿。与本批修复同一类问题、不同文件，故未顺手改。
+
 ## 2026-11-14 文档数字一致性：手抄派生数字改由门禁算出
 
 **起因**：自查实测（非估计）出三处现状漂移——`CONTRIBUTING.md:89` 的「`pytest tests/gui` =

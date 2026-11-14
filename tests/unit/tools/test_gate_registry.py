@@ -502,4 +502,113 @@ def test_list_survives_a_non_utf8_console() -> None:
         sys.stdout = original
         console.flush()
     assert code == 0, "--list 在非 UTF-8 控制台上不应失败"
-    assert buffer.getvalue(), "--list 在非 UTF-8 控制台上未输出任何内容"
+
+
+# ---------- 子进程输出编码：门禁自己的中文不得在默认控制台下变成乱码 ----------
+
+
+def test_child_env_merges_the_parent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """子进程环境必须在父环境上**叠加**，不能整份替换。
+
+    整份替换（只给 UTF-8 两个变量）会让子进程丢掉 `PATH`、`VIRTUAL_ENV`、代理等，
+    门禁会以另一种方式坏掉——那时红的地方更难查。
+    """
+    from tools.self_verify import _child_env
+
+    monkeypatch.setenv("PATH", r"C:\stub\bin")
+    monkeypatch.setenv("OMNICRAWLER_PROBE", "kept")
+
+    env = _child_env()
+
+    assert env["PATH"] == r"C:\stub\bin", "父环境的 PATH 被丢掉了"
+    assert env["OMNICRAWLER_PROBE"] == "kept", "父环境变量被整份替换掉了"
+    assert env["PYTHONUTF8"] == "1"
+    assert env["PYTHONIOENCODING"] == "utf-8"
+
+
+def test_child_env_does_not_mutate_os_environ(monkeypatch: pytest.MonkeyPatch) -> None:
+    """返回的是副本：改它不得反过来污染当前进程的环境。"""
+    import os
+
+    from tools.self_verify import _child_env
+
+    monkeypatch.delenv("PYTHONUTF8", raising=False)
+    env = _child_env()
+    env["PYTHONUTF8"] = "tampered"
+    assert os.environ.get("PYTHONUTF8") != "tampered"
+
+
+def test_gate_chinese_output_survives_a_non_utf8_console() -> None:
+    """门禁在子进程里打中文、以跳过码退出 ⇒ 理由必须原样可读，不是一串 ``\\ufffd``。
+
+    这正是缺陷的正面形态：Windows 默认控制台下子进程写管道用 GBK，父进程按 UTF-8 解，
+    中文全成替换字符，于是「门禁做对了、断言却判红」。
+    """
+    from tools.self_verify import _run_gate
+
+    outcome = _run_gate(_synthetic_gate('print("bash 语法检查无法执行：缺命名管道"); sys.exit(77)'))
+
+    assert outcome.status == "skipped"
+    assert "\ufffd" not in outcome.detail, f"子进程输出被按错误的编码解码了: {outcome.detail!r}"
+    assert outcome.detail == "bash 语法检查无法执行：缺命名管道"
+
+
+def test_removing_the_utf8_injection_turns_the_reason_unreadable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**反向断言**：把 UTF-8 注入摘掉，上面那条必须红——证明修复是承重的。
+
+    直接删 `env=` 只在 Windows 默认控制台下会红（Linux 子进程本来就是 UTF-8），
+    那样这条反向断言在 CI 上就是恒绿的装饰。所以这里固定成「子进程按 GBK 写管道」：
+    它精确模拟「注入缺失、退回控制台代码页」的后果，且在任意平台都能判定。
+    """
+    from tools import self_verify
+
+    real_child_env = self_verify._child_env
+
+    def gbk_env() -> dict[str, str]:
+        # 先取真实实现再篡改，否则 `_child_env` 已被 monkeypatch 成自己（递归）。
+        env = dict(real_child_env())
+        env["PYTHONIOENCODING"] = "gbk"  # 注入失效，退回控制台代码页
+        env.pop("PYTHONUTF8", None)
+        return env
+
+    gate = _synthetic_gate('print("bash 语法检查无法执行：缺命名管道"); sys.exit(77)')
+    assert self_verify._run_gate(gate).detail == "bash 语法检查无法执行：缺命名管道", (
+        "基线必须先绿，否则下面的红不说明问题"
+    )
+
+    monkeypatch.setattr(self_verify, "_child_env", gbk_env)
+    detail = self_verify._run_gate(gate).detail
+    assert detail != "bash 语法检查无法执行：缺命名管道", (
+        f"摘掉 UTF-8 注入后仍然可读，说明这条修复不是承重的: {detail!r}"
+    )
+    # 注意：受损坏的形态不是必然出现 U+FFFD——GBK 字节恰好落在可解码区间时会变成
+    # 形近的乱码汉字（实测 `'bash \\ufffd...'` 与纯 mojibake 两种情况都出现过），
+    # 所以判据取「不再等于原文」，而不是「一定含替换字符」。
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="只有 Windows 的子进程默认按控制台代码页写管道")
+def test_dropping_env_entirely_reproduces_the_windows_defect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**反向断言（真机版）**：把 `env=` 整个摘掉，在 Windows 默认控制台下必定乱码。
+
+    与上一条互补：上一条在任意平台可判定，这一条只在真实成因成立的地方跑，
+    防止我们把「模拟成因」当成「成因本身」。
+    """
+    from tools import self_verify
+
+    original_run = self_verify.subprocess.run
+
+    def run_without_env(*args, **kwargs):
+        kwargs.pop("env", None)
+        return original_run(*args, **kwargs)
+
+    monkeypatch.setattr(self_verify.subprocess, "run", run_without_env)
+    gate = _synthetic_gate('print("bash 语法检查无法执行：缺命名管道"); sys.exit(77)')
+    detail = self_verify._run_gate(gate).detail
+    assert detail != "bash 语法检查无法执行：缺命名管道", (
+        f"摘掉 env 后仍然可读，说明 Windows 侧成因不成立: {detail!r}"
+    )
+

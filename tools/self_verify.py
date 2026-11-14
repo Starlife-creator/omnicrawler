@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -112,6 +113,26 @@ def _git(*args: str) -> str:
     return done.stdout.strip() if done.returncode == 0 else ""
 
 
+def _child_env() -> dict[str, str]:
+    """子进程环境：在父环境上**叠加** UTF-8 设置，供门禁的 stdout/stderr 走 UTF-8。
+
+    为什么需要它：`_run_gate` 以 ``encoding="utf-8"`` 解子进程输出，而 Windows 上
+    子进程写管道的默认编码是控制台代码页（简体中文环境为 cp936/GBK）。门禁里带中文
+    的输出（例如「bash 语法检查无法执行：……」）会先按 GBK 编码、再按 UTF-8 解码，
+    变成一串 ``\\ufffd``——于是**门禁明明做对了，断言却在默认控制台下判红**。
+    这是「门禁本身在某种环境里装着红」的隐患，与 SKIP 语义无关。
+
+    两处都设是有意的：``PYTHONUTF8=1`` 让子解释器整体进入 UTF-8 模式（文件系统、
+    stdio 一致），``PYTHONIOENCODING=utf-8`` 兜住只认后者的旧行为。**必须在
+    ``os.environ`` 上拷贝后合并**，不能整份替换——否则子进程会丢掉 ``PATH``、
+    ``VIRTUAL_ENV``、代理等，门禁会以另一种方式坏掉。
+    """
+    env = dict(os.environ)
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    return env
+
+
 def _run_gate(gate: Gate) -> GateOutcome:
     started = time.monotonic()
     done = subprocess.run(
@@ -121,6 +142,7 @@ def _run_gate(gate: Gate) -> GateOutcome:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=_child_env(),
     )
     elapsed = round(time.monotonic() - started, 2)
     if done.returncode == 0:
