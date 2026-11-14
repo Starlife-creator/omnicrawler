@@ -46,7 +46,7 @@
 `ruff check tools tests` 通过；`test_update_manifest_tools.py` **26 passed**；
 `test_child_env.py` 6 passed；`test_subprocess_encoding_gate.py` 13 passed；
 `test_gate_registry.py` 31 passed；`tools/check_subprocess_encoding.py --json` 报
-`sites=50 / sites_without_env=19 / allowlisted=19 / findings=[]`；
+`sites=53 / sites_without_env=19 / allowlisted=19 / findings=[]`（53 = 50 加本批新增的三处合规调用）；
 `tools/self_verify.py --set static` = **31 通过 / 0 失败 / 0 跳过**（较上一批 +1：新增本门禁）。
 
 ## 2026-11-14 子进程编码：门禁自己的中文不得在默认控制台下变成乱码
