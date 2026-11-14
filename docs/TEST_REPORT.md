@@ -4,6 +4,51 @@
 
 > 当前版本：1.0.1。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
+## 2026-11-14 子进程编码收口：一处共享 helper + 一条「不许再新增」的门禁
+
+**范围判定先于修复**。对全仓 git 已跟踪的 `.py` 做 AST 普查，`subprocess` 调用里显式
+`encoding=` 解输出却不传 `env=` 的位点共 20 处。逐条判定「会不会真红」，判据是三条同时成立：
+**①子进程是 Python**（只有 Python 子进程按控制台代码页写管道，git/bash 一律 UTF-8）、
+**②它没有自己 `reconfigure(encoding="utf-8")`**、**③被捕获的流上真的写了非 ASCII**。
+
+**真红 1 处**：`tests/unit/tools/test_update_manifest_tools.py` 的 `_run()`。实测
+`python tools/build_update_manifest.py --help` 输出可被 UTF-8 解码（该工具重配过 stdout），
+而 `python tools/sign_update_manifest.py --help` 报
+`'utf-8' codec can't decode byte 0xb8 in position 390: invalid start byte` —— sign 侧没有重配，
+且大量中文 `print`。默认控制台下该文件 9 failed / 15 passed / 8 errors，
+`PYTHONIOENCODING=utf-8` 下 24 passed。
+
+**不是缺陷 19 处**：git/bash 类 11 处（非 Python 程序按 UTF-8 写管道）；被探测方自
+`reconfigure` 的 4 处（CLI 与 `replay.py` 的内置脚本）；判据只比 ASCII 的 2 处；外部命令 1 处；
+输出只转发不判定 1 处。实测这些文件在默认控制台下全绿（5 / 14 / 12 / 12 / 4 / 11 passed）。
+
+**修法**：新增 `tools/child_env.py` 的 `utf8_env()` —— 在 `dict(os.environ)` 副本上叠加
+`PYTHONUTF8=1` 与 `PYTHONIOENCODING=utf-8`。必须合并而非整份替换：`env=` 会整体覆盖父环境，
+只给两个变量会让子进程丢掉 `PATH` / `VIRTUAL_ENV` / 代理，门禁以另一种更难查的方式坏掉。
+`tools/self_verify.py` 的 `_child_env()` 改为薄封装转调它（行为不变，去掉重复实现）。
+
+**新增门禁** `tools/check_subprocess_encoding.py`（C-#31，已进 static 集合与 CI）。按 AST 认
+`subprocess.<run|call|check_call|check_output|Popen|getoutput|getstatusoutput>(...)` 的
+`encoding=` 关键字——**不用正则**，否则 `Path.read_text(encoding=...)` 会被误伤，然后为了放行
+不断加白，守卫就成摆设。白名单 `ALLOWED` 每条必须写理由，且三种失效各自判红：
+`empty-selection`（扫描面为 0）、`blank-justification`（豁免没理由）、`stale-allowance`
+（豁免指向已不存在的位点 —— 防止「改好了但白还留着」把守卫悄悄撑大）。
+
+**反向断言**（四处，全部实测转红后字节级还原）：
+① 摘掉 `test_update_manifest_tools.py` 的 `env=utf8_env(),` ⇒ 9 条转红，装回复绿；
+② 白名单写空理由 ⇒ 红；③ 白名单塞不存在的位点 ⇒ 红；
+④ 扫描面为 0 或一个位点都没命中 ⇒ 红。
+另有一条**跨平台可判定**的成因断言：直接问子进程 `sys.stdout.encoding`——带注入必须是 UTF-8，
+去掉注入后（仅 Windows）必须**不是** UTF-8。这样「修复承重」在 Linux CI 上也有真断言，
+不至于退化成恒绿的装饰。
+
+**验证**（默认控制台，不设 `PYTHONUTF8` / `PYTHONIOENCODING`）：
+`ruff check tools tests` 通过；`test_update_manifest_tools.py` **26 passed**；
+`test_child_env.py` 6 passed；`test_subprocess_encoding_gate.py` 13 passed；
+`test_gate_registry.py` 31 passed；`tools/check_subprocess_encoding.py --json` 报
+`sites=50 / sites_without_env=19 / allowlisted=19 / findings=[]`；
+`tools/self_verify.py --set static` = **31 通过 / 0 失败 / 0 跳过**（较上一批 +1：新增本门禁）。
+
 ## 2026-11-14 子进程编码：门禁自己的中文不得在默认控制台下变成乱码
 
 **现象**：`test_gate_exit_77_is_recorded_as_skipped_with_reason` 在**默认 Windows 控制台**

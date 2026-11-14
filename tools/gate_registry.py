@@ -285,6 +285,20 @@ GATES: tuple[Gate, ...] = (
         ),
     ),
     Gate(
+        name="check_subprocess_encoding",
+        args=("tools/check_subprocess_encoding.py",),
+        sets=_STATIC,
+        description=(
+            "按 UTF-8 解子进程输出的调用必须给子进程 UTF-8 环境（防 Windows 控制台代码页造成的假红）"
+        ),
+        script="tools/check_subprocess_encoding.py",
+        ci_note=(
+            "AST 判据，只认同 subprocess 发起调用的 encoding= 关键字（不会误伤 "
+            "Path.read_text(encoding=...)）。git/bash 之类按 UTF-8 写的外部程序、以及被探测方"
+            "自己 reconfigure 的情形，在脚本的 ALLOWED 里逐条写理由放行。"
+        ),
+    ),
+    Gate(
         name="check_gui_test_layout",
         args=("tools/check_gui_test_layout.py",),
         sets=_STATIC,

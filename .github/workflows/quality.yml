@@ -165,6 +165,9 @@ jobs:
       # 现状文档的派生数字必须由工具算出：禁止手抄门禁数 / 测试数 / i18n 数，
       # 必须露出的数字放进 BEGIN/END AUTOGEN 生成块并与实测逐字比对（历史文档不扫）
       - run: python tools/check_doc_numbers.py
+      # C-#31：按 UTF-8 解子进程输出的调用必须给子进程 UTF-8 环境
+      #        （否则 Windows 控制台代码页会把中文写成 cp936，父进程解成 U+FFFD 假红）
+      - run: python tools/check_subprocess_encoding.py
       # C-#30：tests/unit/gui 与 tests/gui 归属规则（双名文件 / 反向跨目录依赖）
       - run: python tools/check_gui_test_layout.py
       # C-#13：UI 层直连 StateStore 点位白名单（禁止新增、存量只降不升）

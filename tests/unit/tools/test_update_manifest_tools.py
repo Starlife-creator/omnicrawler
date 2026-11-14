@@ -24,18 +24,28 @@ BUILD_TOOL = REPO_ROOT / "tools" / "build_update_manifest.py"
 SIGN_TOOL = REPO_ROOT / "tools" / "sign_update_manifest.py"
 
 sys.path.insert(0, str(REPO_ROOT / "src"))
+sys.path.insert(0, str(REPO_ROOT))
 
 from omnicrawler.plugins import signing  # noqa: E402
 from omnicrawler.services.update_feed import decode_public_key, verify_feed_document  # noqa: E402
+from tools.child_env import utf8_env  # noqa: E402
 
 
 def _run(tool: Path, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    """跑一个清单工具并**按 UTF-8** 解输出。
+
+    `sign_update_manifest.py` 没有把 stdout 重配成 UTF-8，Windows 默认控制台下它会按
+    控制台代码页（cp936）写中文；父进程再按 utf-8 解就是一串替换字符，断言随之挂掉。
+    `env=utf8_env()` 让子进程按 UTF-8 写，与这里的 `encoding="utf-8"` 对齐——
+    根因见 `tools/child_env.py` 的模块说明。
+    """
     return subprocess.run(
         [sys.executable, str(tool), *args],
         capture_output=True,
         text=True,
         encoding="utf-8",
         cwd=cwd or REPO_ROOT,
+        env=utf8_env(),
     )
 
 
@@ -654,3 +664,63 @@ def test_top_level_matching_is_case_insensitive() -> None:
     }
     assert manifest_common.is_excluded_top_level("PORTABLE.flag") is True
     assert manifest_common.is_excluded_top_level("Work") is True
+# ---------- 子进程 UTF-8 环境：真缺陷的定点回归 ----------
+
+
+def test_sign_tool_chinese_output_is_utf8_when_parent_asks_for_utf8() -> None:
+    """**真缺陷回归**：`sign_update_manifest.py` 没有把 stdout 重配成 UTF-8，Windows 默认
+    控制台下它按 cp936 写中文，父进程按 utf-8 解就是一串替换字符 —— 断言判红，代码没错。
+
+    这条钉住「`_run` 必须把 UTF-8 环境传给子进程」这个事实：拿 `utf8_env()` 跑 `--help`，
+    中文必须能原样读回。
+    """
+    done = _run(SIGN_TOOL, "--help")
+    text = (done.stdout or "") + (done.stderr or "")
+    assert "\ufffd" not in text, f"子进程输出被按错误编码解码了: {text[:200]!r}"
+    assert done.returncode == 0
+
+
+def test_without_the_utf8_injection_the_child_falls_back_to_the_code_page() -> None:
+    """**反向断言**：证明 `utf8_env()` 是承重的 —— 摘掉注入，子进程就不按 UTF-8 写。
+
+    不拿「解不出来」当判据：那会在子进程里抛在 reader 线程，pytest 只记一条
+    `UnhandledThreadExceptionWarning`，判定既不稳也不好读。改为**直接问子进程自己在用什么
+    编码**（`sys.stdout.encoding`）：带注入必须是 `utf-8`；去掉注入后，Windows 上必须**不是**
+    `utf-8`（回落到控制台代码页），这才是缺陷的成因本身。
+
+    注意后半段只在 Windows 上断言：Linux/macOS 的 Python 默认就是 UTF-8 模式，
+    没有这条缺陷，在那里硬断言会变成假红。
+    """
+    import os
+
+    probe = "import sys; print(sys.stdout.encoding)"
+
+    with_injection = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=utf8_env(),
+    ).stdout.strip()
+    assert with_injection.lower().replace("-", "") == "utf8", (
+        f"注入了 UTF-8 环境，子进程却报告 {with_injection!r}"
+    )
+
+    if sys.platform != "win32":
+        pytest.skip("非 Windows 的 Python 默认就是 UTF-8 模式，缺陷成因不成立")
+
+    stripped = dict(os.environ)
+    stripped.pop("PYTHONUTF8", None)
+    stripped.pop("PYTHONIOENCODING", None)
+    without_injection = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=stripped,
+    ).stdout.strip()
+    assert without_injection.lower().replace("-", "") != "utf8", (
+        f"去掉注入后子进程仍报告 {without_injection!r} ⇒ 这条修复不是承重的"
+    )
