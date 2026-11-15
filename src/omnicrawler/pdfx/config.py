@@ -246,12 +246,14 @@ def validate_runtime_config(config: ProjectConfig) -> list[str]:
 
     adaptive = AdaptiveOCRPolicy.from_config(config.ocr.get("adaptive_retry"))
     backend = str(config.ocr.get("backend", "none")).lower()
-    if adaptive is not None and (backend != "tesseract" or config.ocr.get("component")):
+    # auto 允许与 adaptive_retry 并存：运行期 resolve_auto_ocr_backend 会在
+    # 配置了 adaptive_retry 时优先选 tesseract（该策略只支持本机 Tesseract）。
+    if adaptive is not None and (backend not in {"tesseract", "auto"} or config.ocr.get("component")):
         raise ValueError("adaptive_retry 当前仅支持本机 Tesseract 后端")
     if config.ocr.get("component") and backend not in {"paddle", "tesseract"}:
         raise ValueError("指定ocr.component时需选择paddle或tesseract后端")
-    if backend not in {"none", "paddle", "tesseract"}:
-        raise ValueError("ocr.backend 只能是 none、paddle 或 tesseract")
+    if backend not in {"none", "paddle", "tesseract", "auto"}:
+        raise ValueError("ocr.backend 只能是 none、paddle、tesseract 或 auto")
     provider = str(config.llm.get("provider", "disabled")).lower()
     if provider not in {"disabled", "openai_compatible"}:
         raise ValueError("llm.provider 只能是 disabled 或 openai_compatible")

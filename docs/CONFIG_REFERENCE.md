@@ -164,7 +164,11 @@ transformers:
 - `enabled`：采集后运行 PDF 流水线。
 - `config`：首次创建 PDF 子项目时使用的字段模板。
 - `project_config`：已有 PDF 子项目配置；留空则创建 `<workspace>/pdf/project.yaml`。
-- `skip_ocr/ocr_backend`。
+- `skip_ocr`：跳过错字层识别阶段。
+- `ocr_backend`：`auto`（按本机实际可用后端在**运行期**选择：优先 Paddle，其次
+  Tesseract；都没有时给出可操作的原因并记为失败，不再静默跳过）、`none`（不启用后端）、
+  `paddle`、`tesseract`。`auto` 不会被固化成某台机器上的具体后端——任务搬到另一台
+  机器后仍按那台机器的真实可用性解析。
 
 PDF 子项目的 parser、OCR、retrieval、extraction、normalization、validation 和 fields 详见生成配置中的注释及用户指南。
 

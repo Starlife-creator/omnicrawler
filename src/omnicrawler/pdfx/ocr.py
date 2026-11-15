@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import concurrent.futures
+import importlib.util
 import io
 import logging
 import math
 import os
 import re
+import shutil
 import statistics
 import time
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import nullcontext
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from .concurrency import iter_bounded_futures
@@ -427,6 +430,19 @@ def create_backend(config: ProjectConfig) -> OCRBackend | None:
 
         return ComponentOCRBackend(config.ocr)
     name = str(config.ocr.get("backend", "none")).lower()
+    # 条目 2：「自动」必须在**运行期**解析，不能靠序列化时固化。
+    # 固化会把「保存配置那台机器」的后端状态写进配置，任务搬到另一台机器后失真；
+    # 而运行期解析永远反映当前机器真实可用性。
+    if name == AUTO_BACKEND:
+        name, reason = resolve_auto_ocr_backend(
+            str(config.ocr.get("_preferred_backend", "")),
+            adaptive_tesseract=config.ocr.get("adaptive_retry") is not None,
+        )
+        if name == "none":
+            mark_auto_unavailable(config, reason)
+            return None
+        config.ocr["_auto_resolved_backend"] = name
+        logger.info("OCR 自动模式解析为后端: %s", name)
     if name == "none":
         return None
     if name == "paddle":
@@ -463,6 +479,88 @@ def adaptive_ocr_workers(requested: int) -> int:
     # 内存约束：每个 worker 约需 2.5 GB
     mem_limit = max(1, int(avail_gb / 2.5))
     return max(1, min(recommended, mem_limit, cpu))
+
+
+#: ``ocr.backend`` 取该值时表示「按本机实际可用后端自动选择」。
+AUTO_BACKEND = "auto"
+
+
+def _tesseract_ready() -> bool:
+    """Tesseract 可用 = 可执行文件找得到，且任务所需语言中的英文/中文至少一个在。
+
+    与 ``core.capabilities`` 的判定口径保持一致（后者要求 eng+chi_sim 齐全）；
+    这里放宽为「至少一个」，因为 OCR 语言由配置决定，缺中文时英文仍可用。
+    """
+    command = os.environ.get("TESSERACT_CMD", "")
+    if command and Path(command).is_file():
+        return True
+    return shutil.which("tesseract") is not None
+
+
+def _paddle_ready() -> bool:
+    """Paddle 可用 = 推理包可导入（模型在首次使用时由上游按需下载）。"""
+    return all(
+        importlib.util.find_spec(name) is not None
+        for name in ("paddleocr", "paddle", "numpy", "PIL")
+    )
+
+
+def resolve_auto_ocr_backend(prefer: str = "", *, adaptive_tesseract: bool = False) -> tuple[str, str]:
+    """解析「自动」OCR 后端，返回 ``(后端, 说明)``。
+
+    **这是条目 2 的核心**：修复前 ``auto`` 在序列化时被折叠成 ``none``，
+    导致「自动」实际等于「没有 OCR」——扫描页被识别出需要 OCR 却被静默跳过。
+
+    选择顺序（确定性，不依赖随机或时间）：
+      0. ``adaptive_tesseract``（配置了 adaptive_retry）且 Tesseract 就绪 → ``tesseract``
+         ——该策略只支持本机 Tesseract，优先满足配置意图
+      1. ``prefer`` 显式给出且可用 → 用它
+      2. Paddle 就绪 → ``paddle``（结构化能力最强）
+      3. Tesseract 就绪 → ``tesseract``
+      4. 都不可用 → ``none`` + **可操作的原因**
+
+    返回的说明在 ``none`` 时**必须**给出用户能照做的下一步，
+    不允许返回空串——那是「静默失败」的另一种形式。
+    """
+    if adaptive_tesseract and _tesseract_ready():
+        return "tesseract", ""
+    prefer = str(prefer or "").strip().lower()
+    if prefer in {"paddle", "tesseract"}:
+        ready = _paddle_ready() if prefer == "paddle" else _tesseract_ready()
+        if ready:
+            return prefer, ""
+        return (
+            "none",
+            f"配置指定了 {prefer}，但本机未检测到该后端；"
+            f"请安装 OCR 组件或改用自动/其它后端",
+        )
+    if prefer not in {"", AUTO_BACKEND}:
+        return "none", f"不认识的 OCR 后端 {prefer!r}；可选 auto / paddle / tesseract / none"
+
+    if _paddle_ready():
+        return "paddle", ""
+    if _tesseract_ready():
+        return "tesseract", ""
+    return (
+        "none",
+        "未检测到任何 OCR 后端（PaddleOCR 或 Tesseract）。"
+        "扫描件需要 OCR 才能提取文字：请安装 OCR 组件，"
+        "或改用文字版 PDF（原生文字层无需 OCR）。",
+    )
+
+
+def mark_auto_unavailable(config: ProjectConfig, reason: str) -> None:
+    """把「自动模式下没有可用后端」记进配置，供 GUI/CLI 与摘要展示。
+
+    修复前这种情形完全是静默的：``backend is None`` 直接把页面标 ``skipped``，
+    既没有 error 也没提示，用户以为 OCR 跑过了。
+    """
+    config.ocr["_auto_ocr_unavailable"] = reason
+
+
+def auto_unavailable_reason(config: ProjectConfig) -> str:
+    """读取自动模式不可用的原因（无则空串）。"""
+    return str(config.ocr.get("_auto_ocr_unavailable", "") or "")
 
 
 def preflight_backend(config: ProjectConfig) -> bool:
@@ -506,14 +604,19 @@ def _check_temperature() -> bool:
 
 
 def _ocr_worker_init(ocr_config: dict[str, Any]) -> None:
-    """进程池初始化：为当前 worker 进程创建 OCR backend 实例。"""
+    """进程池初始化：为当前 worker 进程创建 OCR backend 实例。
+
+    ``auto`` 必须在**父进程**解析后再传入：worker 进程没有 GUI/能力探测上下文，
+    各自独立解析会得到可能不一致的结果，且失败原因无法回传。
+    """
     global _worker_backend
     if ocr_config.get("component"):
         from .component_ocr import ComponentOCRBackend
 
         _worker_backend = ComponentOCRBackend(ocr_config)
         return
-    name = str(ocr_config.get("backend", "none")).lower()
+    name = str(ocr_config.get("_auto_resolved_backend")
+               or ocr_config.get("backend", "none")).lower()
     if name == "paddle":
         _worker_backend = PaddleStructureBackend(ocr_config)
     elif name == "tesseract":
@@ -697,7 +800,23 @@ def ocr_stage(
             summary["skipped"] = selected
             return summary
         if backend is None:
+            # 条目 2：没有后端时**不再静默 skipped**。
+            # 旧行为把 needs_ocr 页标 skipped 且不写 error、不提示，用户会以为 OCR 跑过了，
+            # 实际导出的文档里没有文字。现在区分两种情形：
+            #   - 配置就是 none（用户主动关闭）→ 保持 skipped，这是预期行为；
+            #   - 自动模式解析失败 → 写明确错误 + 把可操作原因写进 summary。
+            reason = auto_unavailable_reason(config)
             summary["skipped"] = selected
+            if reason:
+                summary["reason"] = reason
+                summary["auto_unavailable"] = True
+                for row in rows:
+                    db.add_error(row["doc_id"], "ocr", RuntimeError(reason))
+                    db.execute(
+                        "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
+                        (utcnow(), row["doc_id"], row["page_no"]),
+                    )
+                return summary
             for row in rows:
                 db.execute(
                     "UPDATE pages SET ocr_status='skipped', updated_at=? WHERE doc_id=? AND page_no=?",
@@ -726,7 +845,18 @@ def ocr_stage(
         summary["skipped"] = selected
         return summary
     if not precheck_available:
+        # 条目 2：与串行路径一致——自动模式解析失败必须**可见**，不能静默 skipped。
+        reason = auto_unavailable_reason(config)
         summary["skipped"] = selected
+        if reason:
+            summary["reason"] = reason
+            summary["auto_unavailable"] = True
+            for row in rows:
+                db.add_error(row["doc_id"], "ocr", RuntimeError(reason))
+                db.execute(
+                    "UPDATE pages SET ocr_status='failed', updated_at=? WHERE doc_id=? AND page_no=?",
+                    (utcnow(), row["doc_id"], row["page_no"]),
+                )
         return summary
 
     logger.info("OCR 阶段启动 %d 个 worker 进程", workers)

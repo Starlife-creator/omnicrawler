@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### 修复
+
+- fix(pdfx): **「自动」OCR 后端不再静默退化为「无后端」**。此前 GUI 默认值 `pdf_ocr="auto"`
+  在保存时被折叠成 `ocr_backend: none`（`config_serializer.py`），而 `none` 在
+  `ocr_stage` 里把识别出的扫码页整批标成 `skipped`——既没有 error 也没有提示，
+  用户以为完成了 OCR，导出的文档里却没有文字。现在 `auto` 原样写入配置，由新增的
+  `pdfx.ocr.resolve_auto_ocr_backend()` 在**运行期**按本机真实可用性解析
+  （Paddle → Tesseract → 显式不可用原因）；配置了 `adaptive_retry` 时优先 Tesseract
+  （该策略只支持本机 Tesseract）。确实没有任何后端时，串行与多进程两条路径都会写入
+  可操作的错误原因并把页面标为 `failed`，不再静默 `skipped`。
+  同时修正反向链路：显式 `none` 不再被读成 `auto`（旧实现会把「用户主动关闭」
+  在往返后变成「自动」，反而可能开启 OCR）。反向断言：
+  `tests/unit/config/test_auto_ocr_backend_contract.py`（修复前 2 failed / 1 passed）。
+
 ## 1.0.2 - 2026-11-15
 
 ### 变更

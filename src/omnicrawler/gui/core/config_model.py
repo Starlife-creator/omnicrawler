@@ -149,6 +149,9 @@ class CrawlConfig:
     topic_exclude: list[str] = field(default_factory=list)
     keep_uncertain_topics: bool = True
     process_pdf: bool = False
+    #: PDF OCR 策略。``auto`` = 运行期按本机实际可用后端选择（不是"没有后端"）；
+    #: ``never`` = 关闭；``none`` = 显式不启用后端（保留旧配置语义，往返不丢）；
+    #: ``paddle`` / ``tesseract`` = 指定后端。
     pdf_ocr: str = "auto"
     monitor_same_url: bool = False
     output_formats: list[str] = field(default_factory=lambda: ["jsonl", "csv", "xlsx"])
@@ -285,7 +288,7 @@ class CrawlConfig:
             errors.append(_("并发数至少为 1"))
         if self.resource_profile not in ("economy", "balanced", "performance"):
             errors.append(_("资源模式必须是省电、均衡或全速"))
-        if self.pdf_ocr not in ("auto", "never", "paddle", "tesseract"):
+        if self.pdf_ocr not in ("auto", "never", "none", "paddle", "tesseract"):
             errors.append(_("PDF OCR 必须是自动、关闭、Paddle 或 Tesseract"))
         if self.ai_mode not in ("disabled", "local", "cloud", "custom"):
             errors.append(_("AI 模式无效"))

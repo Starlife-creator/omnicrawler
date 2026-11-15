@@ -175,7 +175,9 @@ def to_yaml(config: CrawlConfig) -> str:
             "enabled": config.process_pdf,
             "config": "builtin:pdf/generic_template.yaml",
             "skip_ocr": config.pdf_ocr == "never",
-            "ocr_backend": config.pdf_ocr if config.pdf_ocr in {"paddle", "tesseract"} else "none",
+            # 条目 2：auto 必须原样写出。旧实现把 auto 折叠成 none，等于
+            # 「自动」= 「没有 OCR」——扫描页会被静默跳过。auto 由 pdfx 运行期解析。
+            "ocr_backend": config.pdf_ocr,
         })
     })
 
@@ -406,7 +408,14 @@ def from_yaml(yaml_str: str) -> CrawlConfig:
     if isinstance(pdf, dict):
         config.process_pdf = bool(pdf.get("enabled", False))
         backend = str(pdf.get("ocr_backend", "none")).casefold()
-        config.pdf_ocr = "never" if pdf.get("skip_ocr", False) else backend if backend in {"paddle", "tesseract"} else "auto"
+        # 条目 2：auto 与 none 语义不同，必须原样保留。
+        # 旧实现把非 paddle/tesseract 一律当 auto，导致显式 none（用户主动关闭）
+        # 在往返后变成「自动」，反而可能开启 OCR。
+        config.pdf_ocr = (
+            "never" if pdf.get("skip_ocr", False)
+            else backend if backend in {"paddle", "tesseract", "none", "auto"}
+            else "auto"
+        )
 
     updates = raw.get("updates", {})
     if isinstance(updates, dict):

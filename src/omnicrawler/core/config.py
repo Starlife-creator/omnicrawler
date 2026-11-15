@@ -1101,8 +1101,8 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
             errors.append("processors.pdf.ocr_component必须是组件标识，不能包含路径")
         if ocr_component and backend not in {"paddle", "tesseract"}:
             errors.append("指定ocr_component时需选择paddle或tesseract后端")
-        if backend not in {"none", "paddle", "tesseract"}:
-            errors.append("processors.pdf.ocr_backend只能是none、paddle或tesseract")
+        if backend not in {"none", "paddle", "tesseract", "auto"}:
+            errors.append("processors.pdf.ocr_backend只能是none、paddle、tesseract或auto")
         if not isinstance(pdf.get("skip_ocr", False), bool):
             errors.append("processors.pdf.skip_ocr必须是true或false")
         raw_extensions = config.section("download").get("extensions", [])
