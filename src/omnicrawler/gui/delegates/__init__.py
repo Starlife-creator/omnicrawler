@@ -8,6 +8,7 @@ prefix is what makes a delegate's coupling to MainWindow greppable.
 
 Only loaded when PySide6 is available.
 """
+from . import navigation_host as navigation_host
 from ._base import _BaseDelegate as _BaseDelegate
 from .central_area import CentralAreaBuilder as CentralAreaBuilder
 from .chrome import WindowChromeBuilder as WindowChromeBuilder

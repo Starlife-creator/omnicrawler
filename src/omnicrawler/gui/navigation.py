@@ -66,10 +66,18 @@ class NavEntry:
     """一条导航项的声明。
 
     ``stack_key`` 为 ``None`` 表示分组标题（不可选、不映射栈页）。
+
+    ``requires`` 是**能力条件**（条目 6 第二步）：值为能力检查的 key 组合
+    （如 ``("pdf",)``），全部就绪才显示该项。``None`` 表示无条件显示。
+
+    为什么把条件写在编排表里而不是散在展示层：**"装了什么就看到什么"是产品判据**
+    （见《候选优化》条目 6），把它和导航顺序放在同一张表里，才不会出现
+    "删了功能但忘了删入口"这种残留在 UI 上的死页面。
     """
 
     key: str
     stack_key: str | None = None
+    requires: tuple[str, ...] | None = None
 
     @property
     def is_header(self) -> bool:
@@ -86,17 +94,73 @@ NAV_LAYOUT: tuple[NavEntry, ...] = (
     NavEntry(NavKey.GROUP_AUTOMATION),
     NavEntry(NavKey.CHANGE_MONITOR, stack_key=NavKey.CHANGE_MONITOR),
     NavEntry(NavKey.GROUP_TOOLS),
-    NavEntry(NavKey.PDF_WORKBENCH, stack_key=NavKey.PDF_WORKBENCH),
-    NavEntry(NavKey.CONVERT_TOOL, stack_key=NavKey.CONVERT_TOOL),
+    # PDF 工作台与格式互转依赖 PDF 栈；未装时整个入口不显示，
+    # 而不是让用户点进去看到一个空工作台（条目 6 的核心判据）。
+    NavEntry(NavKey.PDF_WORKBENCH, stack_key=NavKey.PDF_WORKBENCH, requires=("pdf",)),
+    NavEntry(NavKey.CONVERT_TOOL, stack_key=NavKey.CONVERT_TOOL, requires=("pdf",)),
     NavEntry(NavKey.SCENE, stack_key=NavKey.SCENE),
     NavEntry(NavKey.LOGIN_SESSION, stack_key=NavKey.LOGIN_SESSION),
-    NavEntry(NavKey.QML_SHOWCASE, stack_key=NavKey.QML_SHOWCASE),
+    # QML 橱窗在冻结包里已被 spec 排除（QtQml/QtQuick 不打包），
+    # 保留代码但**不显示入口**——这正是历史上那个"点了只会看到降级提示"的死页面。
+    NavEntry(NavKey.QML_SHOWCASE, stack_key=NavKey.QML_SHOWCASE, requires=("qml",)),
     NavEntry(NavKey.GROUP_ADVANCED),
     NavEntry(NavKey.YAML_EDITOR, stack_key=NavKey.YAML_EDITOR),
     NavEntry(NavKey.EVIDENCE, stack_key=NavKey.EVIDENCE),
     NavEntry(NavKey.PLUGIN_MARKET, stack_key=NavKey.PLUGIN_MARKET),
     NavEntry(NavKey.DEVELOPER, stack_key=NavKey.DEVELOPER),
 )
+
+
+def visible_entries(
+    ready: dict[str, bool],
+    layout: tuple[NavEntry, ...] = NAV_LAYOUT,
+) -> tuple[NavEntry, ...]:
+    """按能力就绪状态过滤导航项（条目 6 第二步）。
+
+    ``ready`` 是「能力 key → 是否就绪」；**缺失的 key 视为未就绪**
+    （而非默认显示）：宁可少显示一个入口，也不要让用户点进空页面。
+
+    分组标题的处理：**只有当它后面还有至少一个可见项时才保留**，
+    避免出现一个空分组（只剩标题的侧栏比少一行更糟）。
+    """
+    selected: list[NavEntry] = []
+    for entry in layout:
+        if entry.requires is None:
+            selected.append(entry)
+            continue
+        if all(ready.get(name, False) for name in entry.requires):
+            selected.append(entry)
+
+    # 去掉"后面没有可见项"的分组标题。
+    # ★ 关键：只在**到下一个分组标题之前**找子项——否则空分组会借用
+    #   后面分组的项，导致"工具"分组明明全被过滤掉却仍然留在侧栏。
+    result: list[NavEntry] = []
+    for index, entry in enumerate(selected):
+        if not entry.is_header:
+            result.append(entry)
+            continue
+        has_child = False
+        for following in selected[index + 1:]:
+            if following.is_header:
+                break  # 进入下一分组，本组到此为止
+            has_child = True
+            break
+        if has_child:
+            result.append(entry)
+    return tuple(result)
+
+
+def capability_keys(layout: tuple[NavEntry, ...] = NAV_LAYOUT) -> tuple[str, ...]:
+    """编排表用到的全部能力 key（去重、稳定顺序）。
+
+    供展示层一次性查询能力状态，避免在循环里反复探测。
+    """
+    seen: list[str] = []
+    for entry in layout:
+        for name in entry.requires or ():
+            if name not in seen:
+                seen.append(name)
+    return tuple(seen)
 
 
 def nav_rows(layout: tuple[NavEntry, ...] = NAV_LAYOUT) -> dict[str, int]:

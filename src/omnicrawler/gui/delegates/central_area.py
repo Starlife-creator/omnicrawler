@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 from ..design_system import PageTransitionController
 from ..home import HomePage
 from ..i18n import _
-from ..navigation import NAV_LAYOUT, STACK_INDEX, NavIndex, NavKey
+from ..navigation import STACK_INDEX, NavIndex, NavKey, visible_entries
 from ..views.change_monitor import ChangeMonitorView
 from ..views.chart_view import ChartView
 from ..views.convert_tool import ConvertView
@@ -87,11 +87,19 @@ class CentralAreaBuilder(_BaseDelegate):
         mw._nav.setAccessibleName(_("主导航"))
         mw._nav.setFixedWidth(190)
 
-        # 条目 6 第一步：导航顺序与栈映射改由 navigation.NAV_LAYOUT 派生，
-        # 不再手抄行号——历史上"行号与栈索引混用"正是「结果与复核错页」的成因。
+        # 条目 6：导航由 NAV_LAYOUT 派生，并按**能力就绪状态**过滤。
+        # 未装 PDF 就不显示 PDF 工作台——用户不该看到一个点进去空空的工作台。
+        # 行号因此是运行期算出来的，所以身份必须用 key（见 main._goto_nav）。
+        from ...core.capabilities import navigation_capabilities
+
+        entries = visible_entries(navigation_capabilities())
         mw._nav_pages = {}
-        for row, entry in enumerate(NAV_LAYOUT):
+        row_by_key: dict[str, int] = {}
+        key_by_row: dict[int, str] = {}
+        for row, entry in enumerate(entries):
             item = QListWidgetItem(_NAV_LABELS[entry.key])
+            row_by_key[entry.key] = row
+            key_by_row[row] = entry.key
             stack_key = entry.stack_key
             if stack_key is None:
                 item.setFlags(Qt.ItemFlag.NoItemFlags)
@@ -100,6 +108,8 @@ class CentralAreaBuilder(_BaseDelegate):
                 mw._nav_pages[row] = STACK_INDEX[stack_key]
             mw._nav.addItem(item)
 
+        mw._nav_row_by_key = row_by_key
+        mw._nav_key_by_row = key_by_row
         mw._nav.currentRowChanged.connect(mw._on_nav_changed)
         main_layout.addWidget(mw._nav)
 

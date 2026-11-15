@@ -368,6 +368,34 @@ def _cap_item(name: str, ready: bool, description: str, tier: str) -> dict[str, 
     return {"name": name, "ready": ready, "description": description, "tier": tier}
 
 
+def navigation_capabilities() -> dict[str, bool]:
+    """导航入口用的能力就绪表（条目 6 第二步）。
+
+    与 ``capability_report`` 的分工：那个是**面向用户的能力清单**
+    （带名称、描述、分级），本函数只回答"这个入口该不该出现"，
+    因此**只做最小探测、不导入重型模块**。
+
+    判据刻意保守：**探测不到即视为未就绪**——宁可少显示一个入口，
+    也不要让用户点进去看到空页面或降级提示（那正是要消除的形态）。
+
+    返回的 key 与 ``gui.navigation.NAV_LAYOUT`` 的 ``requires`` 对应。
+    """
+    ready: dict[str, bool] = {}
+
+    # PDF：栈依赖 pdfplumber（与 FEATURE_REQUIREMENTS["pdf"] 同口径，
+    # 但这里只要核心的 PDF 解析可用，不要求 xlsx 写出能力）。
+    ready["pdf"] = importlib.util.find_spec("pdfplumber") is not None
+
+    # QML 橱窗：PySide6 的 QML 运行时。冻结包里被 spec 排除，
+    # 因此这里天然为 False，入口不显示（替代原先"显示但点了降级"）。
+    ready["qml"] = (
+        importlib.util.find_spec("PySide6.QtQml") is not None
+        and importlib.util.find_spec("PySide6.QtQuickWidgets") is not None
+    )
+
+    return ready
+
+
 def capability_summary_text(report: dict[str, Any]) -> str:
     """生成面向用户的分级能力摘要文本。"""
     lines = [f"OmniCrawler {report['version']} — Python {report['python']} — {report['platform']}", ""]

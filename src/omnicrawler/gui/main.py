@@ -68,6 +68,7 @@ from .delegates import (
     ThemeManager,
     ToolbarManager,
     WindowChromeBuilder,
+    navigation_host,
 )
 from .delegates import (
     ConfigManager as ConfigDelegate,
@@ -77,7 +78,10 @@ from .delegates import (
 )
 from .design_system import VisualTokens
 from .i18n import _
-from .navigation import NavIndex  # noqa: F401  # S3.1.2 re-export
+from .navigation import (
+    NavIndex,  # noqa: F401  # S3.1.2 re-export
+    NavKey,
+)
 from .runner.env_checker import (
     find_project_root,
 )
@@ -165,6 +169,9 @@ class MainWindow(QMainWindow):
     # 主窗口只按名字持有它们、只做跨面板协调，不碰它们的类型细节。
     _nav: Any
     _nav_pages: dict[int, int]
+    #: 导航项 key → 行号 / 行号 → key（条目 6：导航按能力过滤后行号是运行期算的）
+    _nav_row_by_key: dict[str, int]
+    _nav_key_by_row: dict[int, str]
     _stack: Any
     _workspace_widget: Any
     _advanced_summary: Any
@@ -882,50 +889,20 @@ class MainWindow(QMainWindow):
 
     def _open_pdf_workbench(self, request: str) -> None:
         """从首页跳到 PDF 工作台，并带上自然语言需求（§A-27）。"""
-        self._nav.setCurrentRow(NavIndex.PDF_WORKBENCH)
+        navigation_host.goto_nav(self, NavKey.PDF_WORKBENCH)
         self._pdf_workbench.set_pending_request(request)
 
     def _on_nav_changed(self, index: int) -> None:
-        page = self._nav_pages.get(index)
-        if page is None:
-            return
-        self._page_transition.show(page)
-        if hasattr(self, "_toggle_btn"):
-            self._toggle_btn.setText(
-                _("⇄ 工作台") if index == NavIndex.YAML_EDITOR else _("⇄ 编辑器")
-            )
-        if page == 1:
-            self._yaml_editor.update_from_config(self._config)
-        elif page == 3:
-            self._auto_load_results()
-        elif page == 5:
-            pass  # 证据查看器数据由 record_selected_for_review 信号加载
-        elif page == self._nav_pages.get(NavIndex.PDF_WORKBENCH):
-            # §A-27：从侧栏进来也要带上首页记录的需求，否则指引仍是死胡同。
-            # 加 hasattr 守卫：导航处理器可能在页面创建完成前被触发。
-            if hasattr(self, "_pdf_workbench"):
-                self._pdf_workbench.set_pending_request(
-                    str(self._home.property("last_nl_request") or "")
-                )
-        elif page == 7:
-            pass  # 格式互转：进入即就绪，无需预加载数据
-        elif page == 10:
-            self._developer_inspector.refresh()
-        elif page == 11:
-            self._scene_panel.refresh_scenes()  # S4：进入场景面板时刷新
-        elif page == self._nav_pages.get(NavIndex.LOGIN_SESSION):
-            # U3：进入登录会话页才刷新列表 + 弹首次提醒（不做后台轮询）
-            if hasattr(self, "_login_session_view"):
-                self._login_session_view.activate()
-        elif page == self._nav_pages.get(NavIndex.QML_SHOWCASE):
-            # Q1：进入试点页才扫描本地市场条目（不做后台轮询）
-            if hasattr(self, "_qml_showcase"):
-                self._qml_showcase.refresh()
+        # 条目 6 第二步：页面切换与各页预加载按 key 分派，实现见
+        # delegates/navigation_host（main.py 受 C-#19 只降不升门禁约束）。
+        navigation_host.on_nav_changed(
+            self, index, toggle_text=(_("⇄ 工作台"), _("⇄ 编辑器"))
+        )
 
     def _apply_quick_task(self, draft: QuickTaskDraft) -> None:
         self._apply_task_draft(draft)
         self._refresh_canvas()
-        self._nav.setCurrentRow(NavIndex.WORKSPACE)
+        navigation_host.goto_nav(self, NavKey.WORKSPACE)
         self._set_status(_("快速草案已生成：请查看自动决定和修改入口，然后先试跑"))
 
     def _apply_natural_task(self, draft: NaturalLanguageDraft) -> None:
@@ -935,7 +912,7 @@ class MainWindow(QMainWindow):
         if draft.topics:
             self._config.topic_include_any = list(dict.fromkeys(topic for topic in draft.topics if topic.strip()))
         self._refresh_canvas()
-        self._nav.setCurrentRow(NavIndex.WORKSPACE)
+        navigation_host.goto_nav(self, NavKey.WORKSPACE)
         cadence = {"weekly": _("每周"), "daily": _("每天"), "monthly": _("每月"), "manual": _("手动")}
         self._set_status(_("已从自然语言生成草案；建议频率：{0}。请确认工作台内容并先试跑。").format(
             cadence.get(draft.schedule, draft.schedule)
@@ -946,7 +923,7 @@ class MainWindow(QMainWindow):
         workspace = Path(self._config.workspace).expanduser()
         self._evidence_view.set_workspace(workspace if workspace.is_absolute() else self._project_root / workspace)
         self._evidence_view.show_record(record)
-        self._nav.setCurrentRow(NavIndex.EVIDENCE)  # 导航到证据查看器
+        navigation_host.goto_nav(self, NavKey.EVIDENCE)  # 导航到证据查看器
 
     def _apply_task_draft(self, draft: QuickTaskDraft) -> None:
         self._config.seed_urls = [draft.url]
@@ -978,7 +955,7 @@ class MainWindow(QMainWindow):
             self._config_path = path
             self._config_label.setText(str(path))
             self._refresh_canvas()
-            self._nav.setCurrentRow(NavIndex.WORKSPACE)
+            navigation_host.goto_nav(self, NavKey.WORKSPACE)
             self._set_status(_("离线入门任务已创建：先查看字段并试跑，通过后运行，再到结果页核对导出。"))
         except (OSError, ValueError) as exc:
             self._error_helper.show_error_dialog(exc, _("创建入门任务"))
@@ -990,7 +967,7 @@ class MainWindow(QMainWindow):
             self._config_path = demo.config
             self._config_label.setText(str(demo.config))
             self._refresh_canvas()
-            self._nav.setCurrentRow(NavIndex.WORKSPACE)
+            navigation_host.goto_nav(self, NavKey.WORKSPACE)
             self._set_status(_("离线演示已准备：无需网络，可直接查看并试跑"))
         except (OSError, ValueError) as exc:
             self._error_helper.show_error_dialog(exc, _("创建离线演示"))
@@ -1002,12 +979,12 @@ class MainWindow(QMainWindow):
         ——用户看到的是「停在『任务工作台』但内容是 YAML 编辑器」。改为走导航
         （`_nav.setCurrentRow`），由 `_on_nav_changed` 统一负责页面切换与编辑器回填。
         """
-        target = (
-            NavIndex.WORKSPACE
-            if self._nav.currentRow() == NavIndex.YAML_EDITOR
-            else NavIndex.YAML_EDITOR
+        # 条目 6 第二步：按 key 判断当前页，不再比较静态行号。
+        current_key = self._nav_key_by_row.get(self._nav.currentRow())
+        navigation_host.goto_nav(
+            self,
+            NavKey.WORKSPACE if current_key == NavKey.YAML_EDITOR else NavKey.YAML_EDITOR,
         )
-        self._nav.setCurrentRow(target)
 
     def _bind_application_controllers(self) -> None:
         # U3：配置保存/重载后让登录会话页重新取一次配置（含 userspace/session 段改动）
@@ -1082,7 +1059,7 @@ class MainWindow(QMainWindow):
     def _open_yaml_view(self) -> None:
         """画布「查看 YAML」：切到侧栏 YAML 编辑器页并载入当前配置。"""
         self._yaml_editor.update_from_config(self._config)
-        self._nav.setCurrentRow(NavIndex.YAML_EDITOR)
+        navigation_host.goto_nav(self, NavKey.YAML_EDITOR)
 
     def _show_preflight(self) -> None:
         if not self._config_path:
@@ -1798,7 +1775,7 @@ class MainWindow(QMainWindow):
             self._config_label.setText(self._config_path.name)
             self._refresh_canvas()
             self._install_plugin_ui(notify=True)
-            self._nav.setCurrentRow(NavIndex.WORKSPACE)
+            navigation_host.goto_nav(self, NavKey.WORKSPACE)
             ToastManager.instance().success(_("历史配置已加载"))
         except Exception as e:
             QMessageBox.critical(self, _("加载失败"), str(e))
@@ -1820,7 +1797,7 @@ class MainWindow(QMainWindow):
                 ws_path,
             )
             self._file_list.set_directory(files)
-            self._nav.setCurrentRow(NavIndex.RESULTS)
+            navigation_host.goto_nav(self, NavKey.RESULTS)
         else:
             # ★ 修 §A-25：此前没有 else —— 缺 results.csv 时点了「查看结果」毫无反应，
             # 用户无法区分「没结果」与「按钮坏了」。
@@ -2055,7 +2032,7 @@ class MainWindow(QMainWindow):
                 self._result_table.load_csv(path)
                 self._chart_view.load_csv(path)
                 # 走导航而不是直接改栈：否则侧栏仍停在原页面（§A-24）
-                self._nav.setCurrentRow(NavIndex.RESULTS)
+                navigation_host.goto_nav(self, NavKey.RESULTS)
                 ToastManager.instance().success(_("结果文件已加载: {0}").format(path.name))
             elif suffix == ".zip":
                 self._config_delegate._import_from_path(path)
