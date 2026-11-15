@@ -44,10 +44,17 @@
 屏蔽保持行号。
 
 **验证**（默认控制台，不设 `PYTHONUTF8` / `PYTHONIOENCODING`）：
-`ruff check tools tests` 通过；`python tools/check_doc_numbers.py` 通过（**扫描 68 份现状文档 /
-跳过 123 份历史文档**，旧为 53 / 8）；`test_doc_numbers_gate.py` + `test_doc_numbers_surface.py`
-= **42 passed**；五个受影响文件合计 **92 passed**；`tools/self_verify.py --set static` =
-**31 通过 / 0 失败 / 0 跳过，18.87s**。
+
+- `ruff check tools tests` 通过；
+- `python tools/check_doc_numbers.py` 通过，扫描面规模以它当场输出的
+  「扫描 N 份现状文档 / 跳过 M 份历史文档」为准；
+- 受影响用例以 `pytest tests/unit/tools/test_doc_numbers_gate.py
+  tests/unit/tools/test_doc_numbers_surface.py` 等文件为准，实跑全绿；
+- `tools/self_verify.py --set static` 通过，通过数与耗时以当场输出为准。
+
+**为什么这里不写具体通过数与耗时**：它们是**某一次运行的历史结果**，不是现状声明。
+机器负载、用例增删、随机执行顺序都会让它们变——写进文档就一定会漂，而且漂了没人会发现
+（`*_REPORT.md` 属于历史类文档，本门禁按设计不扫它）。要看数字请当场跑命令。
 
 ## 2026-11-14 子进程编码收口：一处共享 helper + 一条「不许再新增」的门禁
 
