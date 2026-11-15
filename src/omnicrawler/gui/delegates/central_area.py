@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 from ..design_system import PageTransitionController
 from ..home import HomePage
 from ..i18n import _
-from ..navigation import NavIndex
+from ..navigation import NAV_LAYOUT, STACK_INDEX, NavIndex, NavKey
 from ..views.change_monitor import ChangeMonitorView
 from ..views.chart_view import ChartView
 from ..views.convert_tool import ConvertView
@@ -44,6 +44,30 @@ from ..views.yaml_editor import YamlEditor
 from ..widgets.log_console import LogConsole
 from ..widgets.status_indicator import StatusIndicator
 from ._base import _BaseDelegate
+
+#: 导航项 key → 展示标签。**必须经 _() 包裹**（i18n 门禁按此判据）。
+#: 标签放在展示层而不是 navigation.py：那个模块不依赖 Qt 与 i18n，
+#: 这样它才能在无 Qt 环境下被测试与工具直接引用。
+_NAV_LABELS: dict[str, str] = {
+    NavKey.GROUP_WORK: _("工作"),
+    NavKey.HOME: "⌂ " + _("首页"),
+    NavKey.WORKSPACE: "⚙ " + _("任务工作台"),
+    NavKey.MONITOR: "▶ " + _("运行与历史"),
+    NavKey.RESULTS: "📊 " + _("结果与复核"),
+    NavKey.GROUP_AUTOMATION: _("自动化"),
+    NavKey.CHANGE_MONITOR: "🔔 " + _("变更监控"),
+    NavKey.GROUP_TOOLS: _("工具"),
+    NavKey.PDF_WORKBENCH: "📄 " + _("PDF 工作台"),
+    NavKey.CONVERT_TOOL: "🔁 " + _("格式互转"),
+    NavKey.SCENE: "🎯 " + _("场景与模板"),
+    NavKey.LOGIN_SESSION: "🔐 " + _("登录会话"),
+    NavKey.QML_SHOWCASE: "🪟 " + _("市场橱窗（QML 试点）"),
+    NavKey.GROUP_ADVANCED: _("高级"),
+    NavKey.YAML_EDITOR: "📝 " + _("YAML 编辑器"),
+    NavKey.EVIDENCE: "🔍 " + _("证据查看器"),
+    NavKey.PLUGIN_MARKET: "🧩 " + _("插件市场"),
+    NavKey.DEVELOPER: "🛠 " + _("开发者检查器"),
+}
 
 
 class CentralAreaBuilder(_BaseDelegate):
@@ -63,34 +87,17 @@ class CentralAreaBuilder(_BaseDelegate):
         mw._nav.setAccessibleName(_("主导航"))
         mw._nav.setFixedWidth(190)
 
-        nav_items: list[tuple[str, int | None]] = [
-            (_("工作"), None),
-            ("⌂ " + _("首页"), 4),
-            ("⚙ " + _("任务工作台"), 0),
-            ("▶ " + _("运行与历史"), 2),
-            ("📊 " + _("结果与复核"), 3),
-            (_("自动化"), None),
-            ("🔔 " + _("变更监控"), 8),
-            (_("工具"), None),
-            ("📄 " + _("PDF 工作台"), 6),
-            ("🔁 " + _("格式互转"), 7),
-            ("🎯 " + _("场景与模板"), 11),
-            ("🔐 " + _("登录会话"), 12),
-            ("🪟 " + _("市场橱窗（QML 试点）"), 13),
-            (_("高级"), None),
-            ("📝 " + _("YAML 编辑器"), 1),
-            ("🔍 " + _("证据查看器"), 5),
-            ("🧩 " + _("插件市场"), 9),
-            ("🛠 " + _("开发者检查器"), 10),
-        ]
+        # 条目 6 第一步：导航顺序与栈映射改由 navigation.NAV_LAYOUT 派生，
+        # 不再手抄行号——历史上"行号与栈索引混用"正是「结果与复核错页」的成因。
         mw._nav_pages = {}
-        for row, (label, page) in enumerate(nav_items):
-            item = QListWidgetItem(label)
-            if page is None:
+        for row, entry in enumerate(NAV_LAYOUT):
+            item = QListWidgetItem(_NAV_LABELS[entry.key])
+            stack_key = entry.stack_key
+            if stack_key is None:
                 item.setFlags(Qt.ItemFlag.NoItemFlags)
                 item.setData(Qt.ItemDataRole.AccessibleDescriptionRole, _("导航分组"))
             else:
-                mw._nav_pages[row] = page
+                mw._nav_pages[row] = STACK_INDEX[stack_key]
             mw._nav.addItem(item)
 
         mw._nav.currentRowChanged.connect(mw._on_nav_changed)

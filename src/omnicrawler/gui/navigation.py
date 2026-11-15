@@ -1,34 +1,234 @@
-"""主导航行号常量（S3.1.2/15）——独立模块避免 delegates↔main 循环导入。"""
+"""主导航的**稳定标识**与派生索引（S3.1.2/15，条目 6 第一步）。
 
+为什么需要这个模块
+------------------
+历史实现用 ``NavIndex`` 的**行号常量**同时表达两件不同的事：
+
+* 侧栏 ``QListWidget`` 的**行号**（``setCurrentRow`` 用）；
+* 页面栈 ``QStackedWidget`` 的**索引**（``show`` 用）。
+
+两者是**独立编号**，而且都不稳定：往侧栏插一行、往栈里加一页，
+另一侧的数字就全错位。真实后果是历史 bug「结果与复核错页」
+（原实现把 ``NavIndex.MONITOR`` 当结果页用）。
+
+本模块的解决方式（**增量式，不破坏既有契约**）
+----------------------------------------------
+1. 导航项与栈页改用**字符串 key**（``NavKey``）标识身份；
+2. ``NAV_LAYOUT`` 是导航编排的**唯一真源**：每项声明 key 与对应栈页；
+3. ``NavIndex`` 的属性值**由这张表派生**，不再是手写常量。
+
+**本模块不存中文标签**：标签属于展示层，由 ``central_area`` 用 ``_()`` 包裹后
+按 key 取用（否则 i18n 门禁会正确地判红——UI 文案必须经过翻译）。
+本模块同样不依赖 Qt，因此可在无 Qt 环境下被测试与工具直接引用。
+"""
 from __future__ import annotations
 
+from dataclasses import dataclass
 
-class NavIndex:
-    """主导航列表行号（0-based）。替换魔法数字，杜绝"结果与复核"错页。
 
-    取值必须与 main.py 中 nav_items 的逐行顺序一致；页面栈的映射由
-    main._nav_pages 字典负责。
+class NavKey:
+    """导航项与栈页的稳定标识。
+
+    值一旦发布就**不要改名**：它可能出现在测试、插件与用户脚本里。
     """
 
-    WORK_HEADER = 0
-    HOME = 1
-    WORKSPACE = 2
-    # Backward-compatible alias for extensions/tests that still import the old name.
-    WIZARD = WORKSPACE
-    MONITOR = 3
-    RESULTS = 4
-    AUTOMATION_HEADER = 5
-    CHANGE_MONITOR = 6
-    TOOLS_HEADER = 7
-    PDF_WORKBENCH = 8
-    CONVERT_TOOL = 9  # B-4：ConvertX 格式互转工具
-    SCENE = 10  # S4：场景管理面板
-    LOGIN_SESSION = 11  # U3：登录会话（工具分组；headed 登录窗口 + 会话列表）
-    QML_SHOWCASE = 12  # Q1：市场橱窗（QML 试点；仅新增页面，不动存量 QWidget 视图）
-    ADVANCED_HEADER = 13
-    YAML_EDITOR = 14
-    EVIDENCE = 15
-    PLUGIN_MARKET = 16
-    DEVELOPER = 17
+    # ── 分组标题（不可选中）──
+    GROUP_WORK = "group:work"
+    GROUP_AUTOMATION = "group:automation"
+    GROUP_TOOLS = "group:tools"
+    GROUP_ADVANCED = "group:advanced"
 
-    HEADERS = frozenset({WORK_HEADER, AUTOMATION_HEADER, TOOLS_HEADER, ADVANCED_HEADER})
+    # ── 工作 ──
+    HOME = "home"
+    WORKSPACE = "workspace"
+    MONITOR = "monitor"
+    RESULTS = "results"
+
+    # ── 自动化 ──
+    CHANGE_MONITOR = "change_monitor"
+
+    # ── 工具 ──
+    PDF_WORKBENCH = "pdf_workbench"
+    CONVERT_TOOL = "convert_tool"
+    SCENE = "scene"
+    LOGIN_SESSION = "login_session"
+    QML_SHOWCASE = "qml_showcase"
+
+    # ── 高级 ──
+    YAML_EDITOR = "yaml_editor"
+    EVIDENCE = "evidence"
+    PLUGIN_MARKET = "plugin_market"
+    DEVELOPER = "developer"
+
+
+@dataclass(frozen=True, slots=True)
+class NavEntry:
+    """一条导航项的声明。
+
+    ``stack_key`` 为 ``None`` 表示分组标题（不可选、不映射栈页）。
+    """
+
+    key: str
+    stack_key: str | None = None
+
+    @property
+    def is_header(self) -> bool:
+        return self.stack_key is None
+
+
+#: **导航编排的唯一真源**。顺序即侧栏显示顺序；标签在展示层按 key 取。
+NAV_LAYOUT: tuple[NavEntry, ...] = (
+    NavEntry(NavKey.GROUP_WORK),
+    NavEntry(NavKey.HOME, stack_key=NavKey.HOME),
+    NavEntry(NavKey.WORKSPACE, stack_key=NavKey.WORKSPACE),
+    NavEntry(NavKey.MONITOR, stack_key=NavKey.MONITOR),
+    NavEntry(NavKey.RESULTS, stack_key=NavKey.RESULTS),
+    NavEntry(NavKey.GROUP_AUTOMATION),
+    NavEntry(NavKey.CHANGE_MONITOR, stack_key=NavKey.CHANGE_MONITOR),
+    NavEntry(NavKey.GROUP_TOOLS),
+    NavEntry(NavKey.PDF_WORKBENCH, stack_key=NavKey.PDF_WORKBENCH),
+    NavEntry(NavKey.CONVERT_TOOL, stack_key=NavKey.CONVERT_TOOL),
+    NavEntry(NavKey.SCENE, stack_key=NavKey.SCENE),
+    NavEntry(NavKey.LOGIN_SESSION, stack_key=NavKey.LOGIN_SESSION),
+    NavEntry(NavKey.QML_SHOWCASE, stack_key=NavKey.QML_SHOWCASE),
+    NavEntry(NavKey.GROUP_ADVANCED),
+    NavEntry(NavKey.YAML_EDITOR, stack_key=NavKey.YAML_EDITOR),
+    NavEntry(NavKey.EVIDENCE, stack_key=NavKey.EVIDENCE),
+    NavEntry(NavKey.PLUGIN_MARKET, stack_key=NavKey.PLUGIN_MARKET),
+    NavEntry(NavKey.DEVELOPER, stack_key=NavKey.DEVELOPER),
+)
+
+
+def nav_rows(layout: tuple[NavEntry, ...] = NAV_LAYOUT) -> dict[str, int]:
+    """``key → 行号``（由编排表派生，不手写）。"""
+    return {entry.key: row for row, entry in enumerate(layout)}
+
+
+#: 页面栈的**实际**顺序。必须与 ``central_area`` 里 ``addWidget`` 的调用顺序一致。
+#: 单独声明而不是从 NAV_LAYOUT 推导：栈顺序与导航顺序是两个独立事实
+#: （历史上首页在栈第 5 位、工作台在栈第 1 位）。
+STACK_ORDER: tuple[str, ...] = (
+    NavKey.WORKSPACE,
+    NavKey.YAML_EDITOR,
+    NavKey.MONITOR,
+    NavKey.RESULTS,
+    NavKey.HOME,
+    NavKey.EVIDENCE,
+    NavKey.PDF_WORKBENCH,
+    NavKey.CONVERT_TOOL,
+    NavKey.CHANGE_MONITOR,
+    NavKey.PLUGIN_MARKET,
+    NavKey.DEVELOPER,
+    NavKey.SCENE,
+    NavKey.LOGIN_SESSION,
+    NavKey.QML_SHOWCASE,
+)
+
+
+def build_stack_index(order: tuple[str, ...] = STACK_ORDER) -> dict[str, int]:
+    """``key → 栈索引``（由顺序表派生）。"""
+    return {key: index for index, key in enumerate(order)}
+
+
+STACK_INDEX: dict[str, int] = build_stack_index()
+
+
+class _ReadOnlyMeta(type):
+    """让 ``NavIndex`` 的类属性在初始化完成后不可改写。
+
+    为什么需要：这些值是**派生**出来的。若允许外部 ``NavIndex.HOME = 99``，
+    "派生"立刻退化成"可漂移"，下一个人又会拿到错页。
+    类级 ``__setattr__`` 只对实例生效，所以必须用元类拦在类型层。
+    """
+
+    def __setattr__(cls, name: str, value: object) -> None:
+        if getattr(cls, "__frozen__", False):
+            # 文案保持 ASCII：本模块不依赖 i18n（GUI 源码的未包裹中文会被门禁判红）。
+            raise AttributeError(f"NavIndex.{name} is a read-only constant")
+        type.__setattr__(cls, name, value)
+
+
+class NavIndex(metaclass=_ReadOnlyMeta):
+    """主导航**行号**常量（0-based，由 ``NAV_LAYOUT`` 派生）。
+
+    保留这个类是为了兼容既有调用方与测试（约 50 处引用 ``NavIndex.X``）。
+    **新代码请用 ``NavKey``**：行号会随导航增删而变，key 不会。
+
+    取值现在由 ``nav_rows()`` 派生，不再是手抄——因此"与 nav_items 顺序一致"
+    这条脆弱约定由代码保证，而不是靠注释提醒。
+
+    下方注解只是**给静态检查器的声明**；真实取值在模块尾部由 ``_ATTR_TO_KEY``
+    统一注入（注入完成后上锁，见 ``__frozen__``）。注解与注入若不一致，
+    ``test_derived_navindex_matches_legacy_values_exactly`` 会当场判红。
+    """
+
+    WORK_HEADER: int
+    HOME: int
+    WORKSPACE: int
+    WIZARD: int
+    MONITOR: int
+    RESULTS: int
+    AUTOMATION_HEADER: int
+    CHANGE_MONITOR: int
+    TOOLS_HEADER: int
+    PDF_WORKBENCH: int
+    CONVERT_TOOL: int
+    SCENE: int
+    LOGIN_SESSION: int
+    QML_SHOWCASE: int
+    ADVANCED_HEADER: int
+    YAML_EDITOR: int
+    EVIDENCE: int
+    PLUGIN_MARKET: int
+    DEVELOPER: int
+    HEADERS: frozenset[int]
+
+
+#: key → 行号（派生）。
+_ROW_BY_KEY = nav_rows()
+
+#: 常量名 → key。名字与历史实现保持一致，便于平滑迁移。
+_ATTR_TO_KEY: dict[str, str] = {
+    "WORK_HEADER": NavKey.GROUP_WORK,
+    "HOME": NavKey.HOME,
+    "WORKSPACE": NavKey.WORKSPACE,
+    "WIZARD": NavKey.WORKSPACE,  # 向后兼容别名
+    "MONITOR": NavKey.MONITOR,
+    "RESULTS": NavKey.RESULTS,
+    "AUTOMATION_HEADER": NavKey.GROUP_AUTOMATION,
+    "CHANGE_MONITOR": NavKey.CHANGE_MONITOR,
+    "TOOLS_HEADER": NavKey.GROUP_TOOLS,
+    "PDF_WORKBENCH": NavKey.PDF_WORKBENCH,
+    "CONVERT_TOOL": NavKey.CONVERT_TOOL,
+    "SCENE": NavKey.SCENE,
+    "LOGIN_SESSION": NavKey.LOGIN_SESSION,
+    "QML_SHOWCASE": NavKey.QML_SHOWCASE,
+    "ADVANCED_HEADER": NavKey.GROUP_ADVANCED,
+    "YAML_EDITOR": NavKey.YAML_EDITOR,
+    "EVIDENCE": NavKey.EVIDENCE,
+    "PLUGIN_MARKET": NavKey.PLUGIN_MARKET,
+    "DEVELOPER": NavKey.DEVELOPER,
+}
+
+for _attr, _key in _ATTR_TO_KEY.items():
+    setattr(NavIndex, _attr, _ROW_BY_KEY[_key])
+
+#: 分组标题的行号集合（派生）。
+NavIndex.HEADERS = frozenset(
+    _ROW_BY_KEY[key]
+    for key in (NavKey.GROUP_WORK, NavKey.GROUP_AUTOMATION,
+                NavKey.GROUP_TOOLS, NavKey.GROUP_ADVANCED)
+)
+
+#: 派生完成 → 上锁。此后任何 ``NavIndex.X = ...`` 都会抛 AttributeError。
+NavIndex.__frozen__ = True
+
+#: 行号 → 栈索引（供 ``_on_nav_changed`` 使用，替代手写映射）。
+ROW_TO_STACK: dict[int, int] = {
+    _ROW_BY_KEY[entry.key]: STACK_INDEX[entry.stack_key]
+    for entry in NAV_LAYOUT
+    if entry.stack_key is not None
+}
+
+#: 行号 → key（反向查询）。
+ROW_TO_KEY: dict[int, str] = {row: key for key, row in _ROW_BY_KEY.items()}
