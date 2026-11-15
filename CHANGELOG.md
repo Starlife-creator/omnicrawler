@@ -2,7 +2,11 @@
 
 ## Unreleased
 
+## 1.0.2 - 2026-11-15
+
 ### 变更
+
+工具与文档门禁收口：check_doc_numbers 扫描面递归枚举、子进程 UTF-8 编码统一、共享记忆表与发版流程。
 
 - fix(tools): `check_doc_numbers` 的扫描面从**三条硬编码 glob** 改为**文件系统递归**（任意深度，含还没 `git add` 的新文件），并把排除集显式化。旧扫描面只覆盖根目录、`docs/` 一层、`constraints/` 一层——`docs/adr/`、`src/omnicrawler/gui/docs/`、`.github/`、`plugins/`、`e2e/`、`packaging/`、`assets/` 这些会新增文档的位置一层都盖不到，而**漏扫是静默的**：往 `docs/adr/` 塞一份写「门禁共 31 项」的现状文档，旧扫描面命中 0 条、同样的内容放 `docs/` 下命中 1 条。扫描面规模（现状 / 历史各多少份）以 `tools/check_doc_numbers.py` 当场输出为准，不在文档里写死。三处配套修正：①排除集 `_SKIP_PARTS` 逐条写理由（副本/依赖/生成产物），并新增 `_SKIP_PREFIXES` 表达「具体路径前缀」这种目录级排除表达不了的项；②历史分类改判**路径任意一级**的日期——日期在目录上与在文件名上是同一个语义，`user-test-runs/2026-11-01/PREACCEPTANCE_CLOSURE.md` 过去因日期在目录上被当成现状文档，里面当时的实测数字全成误报；③HTML 注释 `<!-- ... -->` 内的内容不再参与手抄扫描（`PULL_REQUEST_TEMPLATE.md` 的「例如：汇总：14 通过 / 0 失败 / 0 跳过」是格式占位、不是现状声明），屏蔽只换内容不删行，报出的行号仍是原文行号，且不向下一行顺延。扫描用**剪枝递归**而非 `rglob`：副本目录整棵不进去，耗时只与待检文档数相关、不再受副本目录里的文件数影响（具体耗时以当场运行 `tools/check_doc_numbers.py` 为准）。新增 `tests/unit/tools/test_doc_numbers_surface.py` 21 条断言（递归覆盖任意深度、新文档必红、doc/adr 违规必红、扫描面不得收窄、排除集有理由且不越界、目录日期算历史、注释示例免检但注释外正文照抓、悬空注释不崩）。- fix(tools): 把 `self_verify` 里的 UTF-8 子进程环境提成共享工具 `tools/child_env.py`（`utf8_env()`），并修掉 `test_update_manifest_tools.py` 的同类假红。`sign_update_manifest.py` 没把 stdout 重配成 UTF-8，Windows 默认控制台下它按 cp936 写中文，父进程按 `encoding="utf-8"` 解就是一串替换字符 —— 那 9 条 failed / 8 条 error 是**断言假红、代码没错**。修法：`_run()` 加 `env=utf8_env()`（在 `dict(os.environ)` 副本上叠加 `PYTHONUTF8=1` / `PYTHONIOENCODING=utf-8`，不整份替换）。
 - feat(tools): 新增静态门禁 `tools/check_subprocess_encoding.py`（C-#31）——按 AST 找出「发起子进程 + 声明 `encoding=` + 没有 `env=`」的调用，要求带 `env=utf8_env()` 或写进 `ALLOWED` 并给出可复核的理由。git/bash 这类按 UTF-8 写的外部程序、以及被探测方自己 `reconfigure(utf-8)` 的情形逐条白名单。扫描面收窄、白名单空理由、白名单指向已消失的位点，三种失效各自判红。
