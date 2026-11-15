@@ -131,5 +131,12 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     components.add_argument("--sha256")
     components.add_argument("--allow-unsigned", action="store_true", help="仅用于本地开发包")
     components.add_argument("--apply", "--yes", action="store_true", help="执行破坏性操作（uninstall/rollback 需要）")
+    # 条目 4：模型一律从上游下载。本命令**不托管也不校验模型字节**，
+    # 只负责配置源、触发 PaddleX 自带下载器、并按能力口径复检。
+    models = sub.add_parser("models", help="从上游下载 OCR 模型（本项目不托管模型）")
+    models.add_argument("action", choices=["probe", "download"])
+    models.add_argument("--source", default="", help="下载源：aistudio（默认）/ huggingface / modelscope / bos")
+    models.add_argument("--cache-dir", default="", help="模型缓存目录；留空用运行时默认位置")
+    models.add_argument("--json", dest="json_output", action="store_true", help="以 JSON 输出")
     runtime_verify = sub.add_parser("runtime-verify", help="验证便携运行时清单是否缺失或被篡改")
     runtime_verify.add_argument("--root", default=".")

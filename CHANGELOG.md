@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### 新增
+
+- feat(models): **模型一律从上游下载，本项目不托管、不镜像、不校验模型字节**。
+  新增 `services/model_download.py` 与 `omnicrawler models probe|download` 子命令：
+  `probe` 只读列出已下载且权重完整的模型（判据与 `capabilities` 的 F41 一致，
+  要求存在 `inference.pdiparams` —— 目录存在不等于可用）；`download` 设置
+  `PADDLE_PDX_MODEL_SOURCE` / `PADDLE_PDX_CACHE_HOME` 后**构造 PaddleX 的
+  `PPStructureV3`，由 PaddleX 自带的多源下载器完成下载**，本项目不自己发任何 HTTP 请求。
+  默认源为 `aistudio` 而非 `huggingface`（后者在部分网络下直连不可达）；未知源回落到
+  默认源但写日志留痕。三种状态显式区分：`ok` / `unavailable`（本机无 PaddleOCR
+  运行时，预期降级，退出码 3）/ `failed`（退出码 4）。
+  **责任边界**：模型字节的内容完整性由上游负责，本项目不为其背书。
+  守卫 `tests/unit/services/test_model_download.py` 钉住四件事：不得自实现 HTTP、
+  未知源必须留痕、默认源不得是 huggingface、半截目录不得判为就绪；
+  反向断言实测（破坏三处 ⇒ 4 failed，逐字节还原 ⇒ 7 passed）。
+
 ### 修复
 
 - fix(pdfx): **「自动」OCR 后端不再静默退化为「无后端」**。此前 GUI 默认值 `pdf_ocr="auto"`

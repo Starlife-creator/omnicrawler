@@ -509,6 +509,34 @@ def _run_components(args: argparse.Namespace) -> None:
     ))
 
 
+@_register("models")
+def _run_models(args: argparse.Namespace) -> None:
+    """模型上游下载：``probe`` 只读；``download`` 联网拉权重。
+
+    退出码（便于脚本/agent 面判断，不靠解析文案）：
+    0 就绪/成功 · 3 本机无 PaddleOCR 运行时（预期降级）· 4 下载失败。
+    """
+    from pathlib import Path
+
+    from ..services import model_download
+
+    if args.action == "probe":
+        report = model_download.probe()
+        _json(report)
+        return
+
+    cache_dir = Path(args.cache_dir) if args.cache_dir else None
+    report = model_download.download(args.source or None, cache_dir=cache_dir)
+    _json(report)
+    status = str(report.get("status", ""))
+    if status == "cancelled":
+        return
+    if status == "unavailable":
+        raise SystemExit(3)
+    if status == "failed":
+        raise SystemExit(4)
+
+
 @_register("self-update")
 def _run_self_update(args: argparse.Namespace) -> None:
     """应用自更新：``check`` 只读；``apply`` 覆盖应用文件 ⇒ 破坏性，先过显式确认。
