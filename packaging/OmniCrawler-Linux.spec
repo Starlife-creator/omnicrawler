@@ -46,6 +46,13 @@ excludes = [
     #   Qt6ShaderTools DLL 与 PySide6/qml 目录（合计 ≈45 MB）。冻结包里橱窗页
     #   显式降级（qml_showcase.qml_available 判 ImportError 或页面文件缺失）。
     "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets",
+    # 条目 1：产品源码零 import WebEngine——login_session.py 明确否决内嵌
+    # （百 MB 级依赖 + 与爬取引擎不同核 ⇒ 指纹不一致），改用外部浏览器。
+    # PyInstaller 的三个 WebEngine hook 会连带收集 Qt6WebEngineCore.dll
+    # （本地实测 194.0 MiB）与 resources/ 下 WebEngine 数据（约 97.9 MiB）。
+    # 守卫：tests/unit/tools/test_portable_spec_qtwebengine.py
+    "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets",
+    "PySide6.QtWebEngineQuick",
 ]
 
 # lxml 的 C 扩展必须显式收集，静态扫描会漏掉共享库（与 Windows spec 同源）。
