@@ -87,6 +87,56 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
         if status is not None and self._pending_request:
             status.setText(_("来自首页的需求：{0}").format(self._pending_request))
 
+    def _resolve_ocr_backend(self) -> tuple[str, str, str]:
+        """解析本机实际可用的 OCR 后端，返回 ``(backend, component, reason)``。
+
+        条目 3.2：GUI 此前写死 ``ocr_backend="paddle"``，导致
+        ① Standard 版用户装好组件也用不上；② 只有 Tesseract 的机器被判"不可用"。
+
+        顺序与 ``pdfx.ocr.resolve_auto_ocr_backend`` 保持一致：
+        已安装组件 → Paddle → Tesseract → none（带可操作原因）。
+        """
+        # 1) 已安装的 OCR 组件优先（受信、自带运行时，不受宿主依赖影响）
+        component = self._pick_installed_component()
+        if component:
+            return "paddle", component, ""
+
+        # 2) 宿主已装 PaddleOCR
+        try:
+            import paddleocr  # noqa: F401
+        except ImportError:
+            pass
+        else:
+            return "paddle", "", ""
+
+        # 3) 宿主已装 Tesseract（可执行文件在即可）
+        from ...pdfx.ocr import _tesseract_ready
+
+        if _tesseract_ready():
+            return "tesseract", "", ""
+
+        return "none", "", _(
+            "扫描件需要 OCR 才能提取文字。请安装 OCR 组件（可选组件页），"
+            "或改用文字版 PDF（原生文字层无需 OCR）。"
+        )
+
+    def _pick_installed_component(self) -> str:
+        """返回一个已安装、且运行协议为 OCR 的组件名；没有则空串。
+
+        读取失败一律视为"没有组件"——这条路径在 GUI 构建/执行热路径上，
+        不能因为组件注册表损坏就把整个工作台拦住。
+        """
+        try:
+            from ...commands.components import manager
+
+            for row in manager().list():
+                runtime = row.get("runtime") or {}
+                if runtime.get("protocol") == "ocr-file-v1":
+                    return str(row.get("name") or "")
+        except Exception:  # noqa: BLE001 - 组件不可读不应阻断工作台
+            return ""
+        return ""
+
     def _setup_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 20)
@@ -347,21 +397,23 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
         input_dir = self._dir_input.text().strip()
 
         if run_ocr:
-            # D14：OCR 勾选前检测 paddleocr 可用性，不可用则询问降级（避免整批 skipped 无解释）
-            try:
-                import paddleocr  # noqa: F401
-            except ImportError:
+            # 条目 3.2：按**实际可用后端**判定，不再写死 paddleocr。
+            # 顺序：已安装组件 → Paddle → Tesseract（与 pdfx 的 auto 解析同源）。
+            ocr_backend, ocr_component, reason = self._resolve_ocr_backend()
+            if ocr_backend == "none":
                 reply = QMessageBox.question(
-                    self, _("OCR 依赖缺失"),
-                    _("未检测到 PaddleOCR 依赖，OCR 功能不可用。\n" +
-
-                      _("是否仍继续（本次仅规则抽取，不执行 OCR）？")),
+                    self, _("OCR 不可用"),
+                    _("未检测到可用的 OCR 后端（组件 / PaddleOCR / Tesseract 均不可用）。\n\n")
+                    + (reason or "")
+                    + _("\n\n是否仍继续（本次仅规则抽取，不执行 OCR）？"),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.Yes,
                 )
                 if reply != QMessageBox.StandardButton.Yes:
                     return
                 run_ocr = False
+        else:
+            ocr_backend, ocr_component = "none", ""
 
         self._state = "running"
         self._directory_group.setEnabled(False)
@@ -416,7 +468,10 @@ class PdfWorkbenchView(PdfResultMixin, PdfScanMixin, QWidget):
                 input_dir=input_dir,
                 work_dir=work_dir,
                 output_dir=output_dir,
-                ocr_backend="paddle" if run_ocr else "none",
+                # 条目 3.2：用前面解析出的真实后端，不再写死 paddle。
+                # 已装组件时同时传 ocr_component，走受信组件运行时。
+                ocr_backend=ocr_backend if run_ocr else "none",
+                ocr_component=ocr_component if run_ocr else "",
             )
         except Exception as exc:
             self._on_failed(_(f"创建项目配置失败: {exc}"))
