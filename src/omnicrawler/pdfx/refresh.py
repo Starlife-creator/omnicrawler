@@ -32,6 +32,19 @@ def refresh_processing(config: ProjectConfig, db: Database) -> dict[str, Any]:
 
     Existing installations get a baseline for their current pages: their historical
     runtime/model identity cannot be reconstructed reliably after the fact.
+
+    **条目 8 的契约升级（contract 1 → 2）不做自动基线。** 理由：
+
+    仅凭"库里的 digest 与当前值不同"**无法区分**两种情况——
+    ① 旧契约留下的旧值；② 用户真的换了 OCR 版本。
+    自动把①对齐成基线，会连②一起吞掉，导致"真的换了模型却不重新识别"，
+    而这正是条目 8 要修的 bug 本身。用"迁移标记"判据同样不行：
+    标记一旦写入就永久存在，之后的真实变更照样被吞。
+
+    因此这里保持**原有语义**（指纹不同 ⇒ 重跑），把"契约升级"当成一次
+    可预期的、显式的重跑代价。这与仓库既有立场一致
+    （`docs/DEPENDENCY_DEPTH_IMPLEMENTATION.md:159`：Paddle 模型身份"需要显式重跑"）。
+    代价与收益已记录在《候选优化》条目 8：**升级一次会重跑一次，换模型则必然重跑**。
     """
     parser = parser_digest(config, PARSER_VERSION)
     ocr = ocr_digest(config)
