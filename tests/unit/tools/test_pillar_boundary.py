@@ -170,16 +170,17 @@ def test_gene_augment_does_not_import_document_subsystem() -> None:
     )
 
 
-def test_capabilities_preserved_after_decoupling() -> None:
-    """解耦不是砍功能：两边能力都必须仍然可用（**按真实行为**验证）。"""
-    import tempfile
-    from pathlib import Path as _Path
+def test_capabilities_preserved_after_decoupling(tmp_path: Path) -> None:
+    """解耦不是砍功能：两边能力都必须仍然可用（**按真实行为**验证）。
 
+    用 pytest 的 ``tmp_path`` 而不是 ``tempfile.mkdtemp``：
+    后者在本仓会被落在**仓库内部**（pytest 临时根被配置在仓内），
+    每跑一次就在工作树里留下一个 `pillar-md-*` 目录。
+    """
     # 1) Markdown 导出仍能真的产出文件
     from omnicrawler.services.markdown_export import export_results_markdown
 
-    workdir = _Path(tempfile.mkdtemp(prefix="pillar-md-"))
-    csv_path = workdir / "results.csv"
+    csv_path = tmp_path / "results.csv"
     csv_path.write_text("a,b\n1,2\n", encoding="utf-8")
     output = export_results_markdown(csv_path)
     assert output.is_file(), "Markdown 导出没有产出文件"
