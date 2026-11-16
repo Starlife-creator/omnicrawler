@@ -235,6 +235,7 @@ class PluginMarketView(
         title.setObjectName("homeTitle")
         root.addWidget(title)
 
+        from .component_manager import ComponentManagerPanel
         from .market_home import build_market_home_tabs
         from .template_market import TemplateMarketView
 
@@ -252,6 +253,11 @@ class PluginMarketView(
             bundled_catalog_dir=self._bundled_catalog_dir, parent=self
         )
         market_tabs.addTab(self._template_market, _("模板"))
+        # 条目 10：组件管理与插件/模板并列。组件操作此前散落在「任务工具 →
+        # 可选组件」与「环境与依赖」两处，用户找不到；这里只做**合并**，
+        # 动作仍走既有的 services.component_tools。
+        self._component_manager = ComponentManagerPanel(self)
+        market_tabs.addTab(self._component_manager, _("组件"))
         market_layout.addWidget(market_tabs)
         self._tabs.addTab(market_pane, _("市场"))
         build_market_home_tabs(self._base, self._tabs)
