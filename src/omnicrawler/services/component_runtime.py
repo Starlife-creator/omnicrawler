@@ -18,7 +18,7 @@ from .component_registry import (
     registry_lock,
     safe_identifier,
 )
-from .update_feed import decode_public_key
+from .component_trust import describe_missing, load_trusted_key
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,11 +30,17 @@ class OCRRuntime:
 
 
 def default_component_manager() -> ComponentManager:
+    """运行期用的组件管理器（信任根按两级查找）。
+
+    信任根解析收口到 ``services.component_trust``：随包
+    ``configs/component_trust.pub.pem`` 兜底，显式配置优先。
+    **没有信任根就拒绝**——不存在"跳过验签"的降级路径。
+    """
     root = portable_data_root() / ".omnicrawler/components"
-    trust = root.parent / "component_trust.pub.pem"
-    if not trust.is_file():
-        raise ValueError("缺少组件受信公钥，请先配置 component_trust.pub.pem 并导入受信 OCR 组件")
-    return ComponentManager(root, trusted_public_key=decode_public_key(trust.read_text(encoding="utf-8")))
+    key = load_trusted_key()
+    if key is None:
+        raise ValueError(describe_missing())
+    return ComponentManager(root, trusted_public_key=key)
 
 
 @contextmanager

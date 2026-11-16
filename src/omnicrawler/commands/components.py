@@ -5,14 +5,19 @@ from typing import Any
 
 from ..core.runtime_paths import portable_data_root
 from ..services.component_manager import ComponentManager
-from ..services.update_feed import decode_public_key
+from ..services.component_trust import load_trusted_key
 
 
 def manager() -> ComponentManager:
+    """构造组件管理器（信任根按两级查找，见 services.component_trust）。
+
+    此前只认 ``portable_data_root()/.omnicrawler/component_trust.pub.pem``——
+    那是运行期数据目录，**不随包发布**，所以组件默认不可用。
+    现在与另外两把钥匙一致：随包 ``configs/component_trust.pub.pem`` 兜底，
+    显式配置（环境变量/数据目录文件）优先。
+    """
     root = portable_data_root() / ".omnicrawler" / "components"
-    trust_file = root.parent / "component_trust.pub.pem"
-    key = decode_public_key(trust_file.read_text(encoding="utf-8")) if trust_file.is_file() else None
-    return ComponentManager(root, trusted_public_key=key)
+    return ComponentManager(root, trusted_public_key=load_trusted_key())
 
 
 def execute(
