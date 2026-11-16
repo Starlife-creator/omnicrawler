@@ -240,6 +240,18 @@ def load_config(config_path: str | Path) -> ProjectConfig:
     )
 
 
+def ocr_engine_names() -> list[str]:
+    """已注册的 OCR 引擎名（条目 11）。
+
+    直接依赖 `ocr_engines` 这个**叶子模块**（它不导入任何 pdfx 模块）——
+    若在这里导入 `ocr.py`，会与 `ocr.py → config.py` 形成循环
+    （架构门禁的 cycle budget 会判红）。
+    """
+    from .ocr_engines import engine_names_or_builtin
+
+    return engine_names_or_builtin()
+
+
 def validate_runtime_config(config: ProjectConfig) -> list[str]:
     warnings: list[str] = []
     from .adaptive_ocr import AdaptiveOCRPolicy
@@ -250,10 +262,16 @@ def validate_runtime_config(config: ProjectConfig) -> list[str]:
     # 配置了 adaptive_retry 时优先选 tesseract（该策略只支持本机 Tesseract）。
     if adaptive is not None and (backend not in {"tesseract", "auto"} or config.ocr.get("component")):
         raise ValueError("adaptive_retry 当前仅支持本机 Tesseract 后端")
-    if config.ocr.get("component") and backend not in {"paddle", "tesseract"}:
-        raise ValueError("指定ocr.component时需选择paddle或tesseract后端")
-    if backend not in {"none", "paddle", "tesseract", "auto"}:
-        raise ValueError("ocr.backend 只能是 none、paddle、tesseract 或 auto")
+    if config.ocr.get("component") and backend not in set(ocr_engine_names()) | {"auto"}:
+        raise ValueError(
+            f"指定ocr.component时需选择已注册的引擎后端；"
+            f"当前可用: {', '.join(ocr_engine_names())}"
+        )
+    if backend not in {"none", "auto"} | set(ocr_engine_names()):
+        raise ValueError(
+            f"ocr.backend 只能是 none、auto 或已注册的引擎；"
+            f"当前已注册: {', '.join(ocr_engine_names())}"
+        )
     provider = str(config.llm.get("provider", "disabled")).lower()
     if provider not in {"disabled", "openai_compatible"}:
         raise ValueError("llm.provider 只能是 disabled 或 openai_compatible")

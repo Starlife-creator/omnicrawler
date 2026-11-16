@@ -15,6 +15,7 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+from . import ocr_engines
 from .concurrency import iter_bounded_futures
 from .config import ProjectConfig
 from .database import Database
@@ -445,11 +446,50 @@ def create_backend(config: ProjectConfig) -> OCRBackend | None:
         logger.info("OCR 自动模式解析为后端: %s", name)
     if name == "none":
         return None
-    if name == "paddle":
-        return PaddleStructureBackend(config.ocr)
-    if name == "tesseract":
-        return TesseractBackend(config.ocr)
-    raise ValueError(f"不支持的OCR后端: {name}")
+    # 条目 11：按注册表实例化，不再 if/else 写死。
+    # 内置的 paddle/tesseract 由模块底部注册；外部引擎走同一入口。
+    return resolve_ocr_engine(name, config.ocr)
+
+
+# ── 引擎注册与解析（条目 11）────────────────────────────────────────────
+#
+# 实现放在 `ocr_engines.py`（**叶子模块**，不导入任何 pdfx 模块）：
+# `config.validate_runtime_config` 也要查引擎名，若注册表留在本模块就会
+# 形成 `config ↔ ocr` 的循环（架构门禁的 cycle budget 会判红）。
+#
+# 这里保留同名的公开函数，作为本模块对外的稳定接口；
+# 内置引擎在模块底部注册（见文件末尾），放开注册≠拆除内置。
+
+
+def register_ocr_engine(
+    name: str,
+    factory: Callable[[dict[str, Any]], Any],
+    *,
+    available: Callable[[], bool] | None = None,
+    replace: bool = False,
+) -> None:
+    """注册一个 OCR 引擎（转调 ``ocr_engines.register_engine``）。"""
+    ocr_engines.register_engine(name, factory, available=available, replace=replace)
+
+
+def registered_ocr_engines() -> list[str]:
+    """已注册的引擎名（稳定排序）。"""
+    return ocr_engines.registered_engines()
+
+
+def is_ocr_engine_available(name: str) -> bool:
+    """该引擎在本机是否可用；未注册视为不可用。"""
+    return ocr_engines.is_available(name)
+
+
+def resolve_ocr_engine(name: str, config: dict[str, Any] | None = None) -> Any:
+    """按名字实例化引擎；未注册时抛可枚举的错误。"""
+    return ocr_engines.resolve(name, config)
+
+
+def _unregister_ocr_engine_for_tests(name: str) -> None:
+    """仅供测试清理：撤销一个注册项（不对外暴露）。"""
+    ocr_engines.unregister_for_tests(name)
 
 
 def adaptive_ocr_workers(requested: int) -> int:
@@ -521,26 +561,35 @@ def resolve_auto_ocr_backend(prefer: str = "", *, adaptive_tesseract: bool = Fal
 
     返回的说明在 ``none`` 时**必须**给出用户能照做的下一步，
     不允许返回空串——那是「静默失败」的另一种形式。
+
+    **条目 11：可用性判断一律走注册表**（``is_ocr_engine_available``），
+    不再直接调 ``_paddle_ready`` / ``_tesseract_ready``——否则新注册的引擎
+    永远轮不到被自动选中。
     """
-    if adaptive_tesseract and _tesseract_ready():
+    if adaptive_tesseract and is_ocr_engine_available("tesseract"):
         return "tesseract", ""
     prefer = str(prefer or "").strip().lower()
-    if prefer in {"paddle", "tesseract"}:
-        ready = _paddle_ready() if prefer == "paddle" else _tesseract_ready()
-        if ready:
+    if prefer and prefer not in {"", AUTO_BACKEND, "none"}:
+        if is_ocr_engine_available(prefer):
             return prefer, ""
+        known = ", ".join(registered_ocr_engines()) or "（无）"
         return (
             "none",
             f"配置指定了 {prefer}，但本机未检测到该后端；"
-            f"请安装 OCR 组件或改用自动/其它后端",
+            f"已注册的引擎: {known}。请安装 OCR 组件或改用自动/其它后端",
         )
-    if prefer not in {"", AUTO_BACKEND}:
-        return "none", f"不认识的 OCR 后端 {prefer!r}；可选 auto / paddle / tesseract / none"
 
-    if _paddle_ready():
-        return "paddle", ""
-    if _tesseract_ready():
-        return "tesseract", ""
+    # 自动挑选：按**固定优先级**遍历，只挑真正可用的。
+    # 顺序是产品决定（Paddle 结构化能力最强），不随注册顺序变化。
+    for candidate in ("paddle", "tesseract"):
+        if is_ocr_engine_available(candidate):
+            return candidate, ""
+    # 内置都不可用时，才考虑外部注册的引擎（按名字排序保证确定性）
+    for candidate in registered_ocr_engines():
+        if candidate in {"paddle", "tesseract"}:
+            continue
+        if is_ocr_engine_available(candidate):
+            return candidate, ""
     return (
         "none",
         "未检测到任何 OCR 后端（PaddleOCR 或 Tesseract）。"
@@ -1062,3 +1111,21 @@ def _ocr_serial(
             (status, done, utcnow(), doc_id),
         )
     return summary
+
+# ── 内置引擎注册（条目 11）──────────────────────────────────────────────
+#
+# 放在模块底部：工厂函数需要先完成定义。放开注册 ≠ 拆除内置——
+# paddle / tesseract 仍在这里注册，行为与写死时完全相同。
+# available 传 lambda 而非函数对象：`_paddle_ready` 这个名字在**调用时**才解析，
+# 因此运行期替换（如测试 monkeypatch）仍能影响探测结果。
+# （不能用"函数名字符串"，那需要 ocr_engines 反向导入本模块，会形成循环依赖。）
+register_ocr_engine(
+    "paddle",
+    lambda config: PaddleStructureBackend(config),
+    available=lambda: _paddle_ready(),
+)
+register_ocr_engine(
+    "tesseract",
+    lambda config: TesseractBackend(config),
+    available=lambda: _tesseract_ready(),
+)

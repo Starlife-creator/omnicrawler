@@ -99,8 +99,17 @@ class ComponentManager:
             if not isinstance(runtime, dict):
                 raise ValueError("组件runtime清单无效")
             if runtime:
-                if runtime.get("protocol") != "ocr-file-v1" or runtime.get("engine") not in {"paddle", "tesseract"}:
+                # 条目 11：引擎白名单来自 pdfx 的注册表，不再写死两个字面量。
+                # 这样新引擎（如 Xiaomi-OCR-0）的组件包**能装进来**；
+                # 协议名仍固定为 ocr-file-v1——那是文件协议，与引擎无关。
+                if runtime.get("protocol") != "ocr-file-v1":
                     raise ValueError("不支持的组件运行协议")
+                declared_engine = str(runtime.get("engine", "")).strip().lower()
+                if declared_engine not in _registered_engines():
+                    raise ValueError(
+                        f"组件声明的引擎 {declared_engine!r} 未注册；"
+                        f"当前已注册: {', '.join(_registered_engines())}"
+                    )
                 entrypoint = str(runtime.get("entrypoint", ""))
                 _safe_component_path(entrypoint)
                 if entrypoint not in files or not isinstance(runtime.get("model_license"), str) or not runtime["model_license"].strip():
@@ -301,6 +310,26 @@ class ComponentManager:
 
     def _public_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
         return {**entry, "path": str(self._entry_path(entry))}
+
+def _registered_engines() -> list[str]:
+    """已注册的 OCR 引擎名（条目 11）。
+
+    依赖 `pdfx.ocr_engines` 这个**叶子模块**（不导入任何 pdfx 模块），
+    因此不会与组件管理器形成循环。
+
+    **惰性导入**：组件管理器在"只列出已安装组件"这类只读路径上
+    不该为此付出导入成本。
+
+    导入失败时回落到内置名单：宁可**少**放开一个引擎名，
+    也不能因为导入问题把合法组件误判为非法。
+    """
+    try:
+        from ..pdfx.ocr_engines import engine_names_or_builtin
+
+        return engine_names_or_builtin()
+    except Exception:  # noqa: BLE001 - 只读路径不得因导入失败而崩
+        return ["paddle", "tesseract"]
+
 
 def _safe_component_path(value: str) -> PurePosixPath:
     path = PurePosixPath(value)
