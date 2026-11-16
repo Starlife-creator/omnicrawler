@@ -54,6 +54,13 @@ DOCUMENT_PACKAGES: tuple[str, ...] = (
 #: 真正能干活的是 service/config 这些。缺任何一个都不算可用。
 _REQUIRED_MODULES: tuple[str, ...] = ("pdfx.service", "pdfx.config", "pdfx.project")
 
+#: 探测用的**轻量**模块：只它真正 import 一次，用来发现"文件在但导入失败"。
+#:
+#: 选 `pdfx.config` 而不是 `pdfx.service`：前者是配置与 schema 校验，
+#: 不拉 OCR/parser/LLM，导入代价远小；后者会把整个处理链拖进来，
+#: 而那正是"问一句你有没有就已经加载全部"要避免的。
+_PROBE_MODULE: str = "pdfx.config"
+
 
 def require_document(module: str) -> Any:
     """取一个文档子系统模块；缺失时抛**可操作**的错误。
@@ -84,13 +91,19 @@ def document_capability() -> dict[str, Any]:
     * 可用时 ``reason`` 为空串；
     * 不可用时 ``missing`` 列出缺失的必需模块，``reason`` 是给用户看的一句话。
 
-    ⚠ **探测只看文件是否存在，绝不 import**。
+    ⚠ **探测不能主动 import 整个文档子系统**。
     第一版用 ``importlib.import_module`` 检查，一调用就把整个 `pdfx`
     （含 OCR、parser、LLM）拉进 `sys.modules`——那样"可选组件"是假的：
     光问一句"你有没有"就已经加载全部。
-    第二版改用 ``importlib.util.find_spec``，**它仍会导入父包**
-    （实测 `omnicrawler.pdfx` 照样进 `sys.modules`）。
-    所以这里直接按包目录下的文件存在性判断，代价恒定且零导入。
+
+    现在的做法分两步：
+    1. 先用 ``find_spec`` 判断**模块是否存在**（不执行模块体）；
+    2. 再用一个**轻量探针模块**（`pdfx.config`，它是纯数据/校验，不拉 OCR）
+       真正 import 一次，确认它**能被导入**。
+
+    第 2 步是必需的：只查文件存在会把"文件在、但导入会失败"误报成可用。
+    组件被禁用/隔离/依赖缺失时正是这种情况——用户会看到入口，点进去才崩。
+    代价可控：`pdfx.config` 的依赖闭包远小于 `pdfx.service`。
     """
     from pathlib import Path as _Path
 
@@ -104,6 +117,13 @@ def document_capability() -> dict[str, Any]:
             or (root / relative / "__init__.py").is_file()
         ):
             missing.append(module)
+            continue
+        # 文件在 ⇒ 还需确认**真的能导入**（隔离/禁用/依赖缺失时会失败）
+        if module == _PROBE_MODULE:
+            try:
+                importlib.import_module(f"omnicrawler.{module}")
+            except Exception:  # noqa: BLE001 - 任何导入失败都算不可用
+                missing.append(module)
     if missing:
         return {
             "available": False,

@@ -158,17 +158,29 @@ def test_facade_capabilities_still_work(tmp_path: Path) -> None:
     assert callable(creator)
 
 
-def test_facade_does_not_leak_at_import_time(tmp_path: Path) -> None:
-    """导入 facade 本身**不得**拉起文档子系统（否则"可选"就是假的）。"""
+def test_facade_import_does_not_leak_heavy_document_modules(tmp_path: Path) -> None:
+    """导入 facade 本身不得拉起**重型**文档模块（否则"可选"就是假的）。
+
+    ⚠ 判据在实现演进中调整过两次，记录在此：
+
+    * 最初写成"零泄漏"，但后来给 `document_capability()` 加了一个**轻量探针**
+      （真 import 一次 `pdfx.config`）以发现"文件在、但导入失败"的情况——
+      只查文件会把这种状态误报成可用，用户看到入口、点进去才崩；
+    * 所以现在的判据是：**允许**探针加载配置/常量级模块，
+      **禁止**拉起 `pdfx.service` / `pdfx.ocr` / `pdfx.parser` 这些重型链路。
+
+    探针的选择理由写在 `document_facade._PROBE_MODULE` 的注释里。
+    """
     import subprocess
     import sys
 
     script = (
         "import sys\n"
         f"sys.path.insert(0, {str(_SRC.parent)!r})\n"
-        "import omnicrawler.services.document_facade  # noqa: F401\n"
-        "loaded = [m for m in sys.modules if m.startswith(('omnicrawler.pdfx', 'omnicrawler.convertx'))]\n"
-        "print('DOC_LOADED=' + repr(loaded))\n"
+        "import omnicrawler.services.document_facade as f  # noqa: F401\n"
+        "f.document_capability()\n"
+        "loaded = sorted(m for m in sys.modules if m.startswith(('omnicrawler.pdfx', 'omnicrawler.convertx')))\n"
+        "print('LOADED=' + repr(loaded))\n"
     )
 
     out = tmp_path / "probe.txt"
@@ -179,7 +191,11 @@ def test_facade_does_not_leak_at_import_time(tmp_path: Path) -> None:
         )
     text = out.read_text(encoding="utf-8", errors="replace")
     assert result.returncode == 0, f"导入 facade 失败：\n{text[-1200:]}"
-    assert "DOC_LOADED=[]" in text, (
-        "导入 facade 就把 pdfx/convertx 拉进来了——那 facade 只掩盖了依赖，"
-        "没有真正解耦。\n" + text[-800:]
+
+    heavy = ("omnicrawler.pdfx.service", "omnicrawler.pdfx.ocr", "omnicrawler.pdfx.parser",
+             "omnicrawler.convertx")
+    offenders = [name for name in heavy if name in text]
+    assert offenders == [], (
+        "导入 facade 就拉起了重型文档模块：\n  " + "\n  ".join(offenders) +
+        "\n那 facade 只掩盖了依赖，没有真正解耦。\n" + text[-800:]
     )
