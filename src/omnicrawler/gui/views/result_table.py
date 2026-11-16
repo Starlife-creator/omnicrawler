@@ -711,9 +711,9 @@ class ResultTable(QWidget):
 
         class _MarkdownExportWorker(BackgroundWorker):
             def work(self) -> str:
-                from omnicrawler.export.markdown_exporter import MarkdownExporter
+                from omnicrawler.services.markdown_export import export_results_markdown
 
-                MarkdownExporter.export_results(
+                export_results_markdown(
                     csv_path=filepath,
                     jsonl_path=jsonl if jsonl.is_file() else None,
                     output_path=target,

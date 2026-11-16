@@ -82,9 +82,11 @@ def gene_augment_html(
     except Exception:  # noqa: BLE001
         lxml_html = None
     try:
-        from ..doc_extractors.base import TextDocExtractor
-        from ..doc_extractors.html import HTMLDocExtractor
+        # 第 1 批精简：抽取器入口移到宿主侧（services.text_extraction），
+        # 不再直接依赖 doc_extractors —— 那是文档子系统，而基因增强属于支柱①。
+        # 实现仍是同两个类，行为不变。
         from ..extraction.extractors import decode_body
+        from ..services.text_extraction import HTMLDocExtractor, TextDocExtractor
     except Exception:  # noqa: BLE001
         return stats
     stats["active"] = True

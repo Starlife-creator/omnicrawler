@@ -1846,7 +1846,7 @@ class MainWindow(QMainWindow):
                 _("自动导出 Markdown 跳过：未找到结果文件 records.csv 于 %s"), workspace)
             return
 
-        from omnicrawler.export.markdown_exporter import MarkdownExporter
+        from omnicrawler.services.markdown_export import export_results_markdown
 
         from .core.background_worker import BackgroundWorker, run_worker
 
@@ -1856,7 +1856,7 @@ class MainWindow(QMainWindow):
 
         class _AutoMarkdownWorker(BackgroundWorker):
             def work(self) -> str:
-                MarkdownExporter.export_results(
+                export_results_markdown(
                     csv_path=filepath,
                     jsonl_path=jsonl if jsonl.is_file() else None,
                     output_path=target,

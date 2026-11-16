@@ -317,19 +317,17 @@ class ComponentManager:
         return {**entry, "path": str(self._entry_path(entry))}
 
 def _registered_engines() -> list[str]:
-    """已注册的 OCR 引擎名（条目 11）。
+    """已注册的 OCR 引擎名（第 1 批精简后：**同包内**直接依赖）。
 
-    依赖 `pdfx.ocr_engines` 这个**叶子模块**（不导入任何 pdfx 模块），
-    因此不会与组件管理器形成循环。
+    此前这里是 `from ..pdfx.ocr_engines import ...`——支柱②的组件管理器
+    反向依赖文档子系统。注册表已上提到 `services/ocr_engines.py`，
+    语义与依赖方向都归位。
 
-    **惰性导入**：组件管理器在"只列出已安装组件"这类只读路径上
+    **惰性导入**保留：组件管理器在"只列出已安装组件"这类只读路径上
     不该为此付出导入成本。
-
-    导入失败时回落到内置名单：宁可**少**放开一个引擎名，
-    也不能因为导入问题把合法组件误判为非法。
     """
     try:
-        from ..pdfx.ocr_engines import engine_names_or_builtin
+        from .ocr_engines import engine_names_or_builtin
 
         return engine_names_or_builtin()
     except Exception:  # noqa: BLE001 - 只读路径不得因导入失败而崩

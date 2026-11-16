@@ -590,9 +590,9 @@ class EvidenceView(QWidget):
         try:
             from pathlib import Path
 
-            from omnicrawler.export.markdown_exporter import MarkdownExporter
+            from omnicrawler.services.markdown_export import export_single_record_markdown
 
-            MarkdownExporter.export_single_record(
+            export_single_record_markdown(
                 self._raw_record,
                 output_path=Path(output_path),
                 style="card",
