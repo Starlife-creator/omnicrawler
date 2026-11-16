@@ -77,7 +77,12 @@ class ComponentManager:
             if self.trusted_public_key:
                 _verify_ed25519(self.trusted_public_key, canonical, str(signature))
             elif not allow_unsigned:
-                raise ValueError("组件包没有可用的受信签名密钥")
+                # 配置问题（不是包的问题）：提示放哪把钥匙，而不是笼统拒绝。
+                raise ValueError(
+                    "未配置组件受信公钥（信任根），无法验证组件签名。"
+                    "请把 component_trust.pub.pem 放到 configs/ 或数据目录，"
+                    "或用 OMNICRAWL_COMPONENT_TRUST 指向它（--allow-unsigned 仅供本地开发）。"
+                )
             files = raw.get("files", {})
             if not isinstance(files, dict):
                 raise ValueError("组件files清单无效")
@@ -339,11 +344,38 @@ def _safe_component_path(value: str) -> PurePosixPath:
 
 
 def _verify_ed25519(public_key: bytes, payload: bytes, signature: str) -> None:
+    """验证 ed25519 签名；失败必须给出**可读**原因。
+
+    ⚠ 不能直接透传 ``cryptography.exceptions.InvalidSignature``：
+    它的 ``str()`` 是**空串**，用户会看到一个空白错误提示，无从判断该做什么。
+    仓库在 ``services/update_feed.py`` 里已处理过同一类问题，组件这条路径此前漏了。
+
+    三类原因要能区分（用户据此决定找谁）：
+    * 缺签名 / 签名不是合法 base64 ⇒ **包的问题**（重新取正确的包）；
+    * 签名不匹配 ⇒ **包的问题**（可能被改过、或用错了密钥签）；
+    * 信任根未配置 ⇒ **配置的问题**（由调用方负责，见 ``inspect_package``）。
+    """
     try:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
     except ImportError as exc:
         raise RuntimeError("验证组件签名需要cryptography") from exc
-    Ed25519PublicKey.from_public_bytes(public_key).verify(base64.b64decode(signature), payload)
+
+    if not str(signature or "").strip():
+        raise ValueError("组件包缺少签名字段（signature）：该包未签名或清单不完整")
+    try:
+        raw_signature = base64.b64decode(signature, validate=True)
+    except Exception as exc:  # noqa: BLE001 - 统一归为"签名格式无效"
+        raise ValueError(f"组件签名不是合法的 base64：{exc}") from exc
+    if len(raw_signature) != 64:
+        raise ValueError(
+            f"组件签名长度不对：ed25519 签名为 64 字节，实际 {len(raw_signature)} 字节"
+        )
+    try:
+        Ed25519PublicKey.from_public_bytes(public_key).verify(raw_signature, payload)
+    except Exception as exc:  # noqa: BLE001 - InvalidSignature 的 str() 为空串
+        raise ValueError(
+            "组件签名校验失败：清单可能被改过，或不是用当前信任根对应的私钥签的"
+        ) from exc
 
 
 def _sha256(path: Path) -> str:
