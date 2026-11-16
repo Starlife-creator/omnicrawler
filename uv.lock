@@ -2657,6 +2657,9 @@ document = [
     { name = "python-docx" },
     { name = "python-pptx" },
 ]
+excel = [
+    { name = "openpyxl" },
+]
 full = [
     { name = "aiohttp" },
     { name = "beautifulsoup4" },
@@ -2768,10 +2771,11 @@ ocr-tesseract = [
     { name = "pytesseract" },
 ]
 pdf = [
-    { name = "openpyxl" },
     { name = "pdfplumber" },
     { name = "pypdf" },
     { name = "pypdfium2" },
+]
+pdf-write = [
     { name = "reportlab" },
 ]
 postgresql = [
@@ -2856,8 +2860,8 @@ requires-dist = [
     { name = "opencv-python-headless", marker = "extra == 'full-macos'", specifier = ">=4.10,<6" },
     { name = "openpyxl", marker = "extra == 'full'", specifier = ">=3.1,<4" },
     { name = "openpyxl", marker = "extra == 'full-macos'", specifier = ">=3.1,<4" },
+    { name = "openpyxl", marker = "extra == 'excel'", specifier = ">=3.1,<4" },
     { name = "openpyxl", marker = "extra == 'gui'", specifier = ">=3.1,<4" },
-    { name = "openpyxl", marker = "extra == 'pdf'", specifier = ">=3.1,<4" },
     { name = "opensearch-py", marker = "extra == 'full'", specifier = ">=2.8,<4" },
     { name = "opensearch-py", marker = "extra == 'full-macos'", specifier = ">=2.8,<4" },
     { name = "opensearch-py", marker = "extra == 'search'", specifier = ">=2.8,<4" },
@@ -2914,7 +2918,7 @@ requires-dist = [
     { name = "redis", marker = "extra == 'full-macos'", specifier = ">=5,<9" },
     { name = "reportlab", marker = "extra == 'full'", specifier = ">=4,<6" },
     { name = "reportlab", marker = "extra == 'full-macos'", specifier = ">=4,<6" },
-    { name = "reportlab", marker = "extra == 'pdf'", specifier = ">=4,<6" },
+    { name = "reportlab", marker = "extra == 'pdf-write'", specifier = ">=4,<6" },
     { name = "requests", marker = "extra == 'full'", specifier = ">=2.28,<3" },
     { name = "requests", marker = "extra == 'full-macos'", specifier = ">=2.28,<3" },
     { name = "requests", marker = "extra == 'gui'", specifier = ">=2.28,<3" },
@@ -2935,7 +2939,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'full-macos'", specifier = ">=14,<18" },
     { name = "websockets", marker = "extra == 'streams'", specifier = ">=14,<18" },
 ]
-provides-extras = ["html", "pdf", "browser", "selenium", "async-http", "ai", "tls", "streams", "distributed", "scrapy", "ocr-tesseract", "ocr-paddle", "ocr-captcha", "crawl4ai", "gui", "dev", "build", "security", "storage", "postgresql", "search", "document", "full", "full-macos"]
+provides-extras = ["html", "pdf", "pdf-write", "excel", "browser", "selenium", "async-http", "ai", "tls", "streams", "distributed", "scrapy", "ocr-tesseract", "ocr-paddle", "ocr-captcha", "crawl4ai", "gui", "dev", "build", "security", "storage", "postgresql", "search", "document", "full", "full-macos"]
 
 [[package]]
 name = "onnxruntime"

@@ -4,15 +4,14 @@ import csv
 import re
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
-
-from openpyxl import Workbook
-from openpyxl.cell import WriteOnlyCell
-from openpyxl.styles import Alignment, Font, PatternFill
+from typing import TYPE_CHECKING, Any
 
 from .config import ProjectConfig
 from .database import Database
 from .utils import atomic_output_path, atomic_write_json, utcnow
+
+if TYPE_CHECKING:  # 仅为类型检查保留；运行期延迟导入（条目 12）
+    from openpyxl import Workbook
 
 BASE_HEADERS = [
     "记录ID", "文档ID", "文件名", "原始路径", "记录序号", "文档类型",
@@ -96,6 +95,10 @@ def _csv_to_sheet(
     *,
     max_rows: int = _EXCEL_MAX_ROWS,
 ) -> None:
+    # 条目 12：openpyxl 属跨支柱依赖，必须延迟导入——缺它时只应让 xlsx 写出
+    # 不可用，而不是让整个 pdfx.exporter 模块导入失败。
+    from openpyxl.cell import WriteOnlyCell
+    from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
     if max_rows < 2:
@@ -194,20 +197,40 @@ def export_stage(config: ProjectConfig, db: Database) -> dict[str, Any]:
     error_count = write_query_csv(db, errors_csv, error_headers, error_sql)
 
     workbook_path = output / "extraction_results.xlsx"
-    workbook = Workbook(write_only=True)
-    _csv_to_sheet(workbook, results_csv, "抽取结果")
-    _csv_to_sheet(workbook, review_csv, "人工复核队列")
-    _csv_to_sheet(workbook, long_csv, "字段长表")
-    _csv_to_sheet(workbook, documents_csv, "文件清单")
-    _csv_to_sheet(workbook, errors_csv, "错误记录")
-    with atomic_output_path(workbook_path, suffix=".xlsx") as temp_path:
-        workbook.save(temp_path)
+    # 条目 12：openpyxl 延迟导入。缺依赖时**不静默跳过**——把明确原因写进
+    # 摘要（与 pipeline/exporters.py 对 xlsx 的处理口径一致），CSV 仍然产出。
+    try:
+        from openpyxl import Workbook
+    except ImportError:
+        workbook_error = "未安装 openpyxl；已跳过 xlsx 导出（pip install openpyxl）"
+    else:
+        workbook = Workbook(write_only=True)
+        _csv_to_sheet(workbook, results_csv, "抽取结果")
+        _csv_to_sheet(workbook, review_csv, "人工复核队列")
+        _csv_to_sheet(workbook, long_csv, "字段长表")
+        _csv_to_sheet(workbook, documents_csv, "文件清单")
+        _csv_to_sheet(workbook, errors_csv, "错误记录")
+        with atomic_output_path(workbook_path, suffix=".xlsx") as temp_path:
+            workbook.save(temp_path)
+        workbook_error = ""
 
     status_counts = {
         row["status"]: row["n"]
         for row in db.fetchall("SELECT status, COUNT(*) AS n FROM documents GROUP BY status")
     }
-    summary = {
+    # files 用局部变量构造：直接在 summary 字面量里写 dict 会让 mypy 把它推导成
+    # object，后面 pop 就报 "object has no attribute pop"。
+    files: dict[str, str] = {
+        "excel": str(workbook_path),
+        "results_csv": str(results_csv),
+        "review_csv": str(review_csv),
+        "long_csv": str(long_csv),
+    }
+    if workbook_error:
+        # 缺 openpyxl 时明示原因：CSV 仍有交付，但用户必须知道 xlsx 没生成，
+        # 而不是打开 summary 发现少了个文件去猜。
+        files.pop("excel", None)
+    summary: dict[str, Any] = {
         "project": config.project_name,
         "exported_at": utcnow(),
         "documents": document_count,
@@ -215,12 +238,9 @@ def export_stage(config: ProjectConfig, db: Database) -> dict[str, Any]:
         "needs_review": review_count,
         "errors": error_count,
         "document_status": status_counts,
-        "files": {
-            "excel": str(workbook_path),
-            "results_csv": str(results_csv),
-            "review_csv": str(review_csv),
-            "long_csv": str(long_csv),
-        },
+        "files": files,
     }
+    if workbook_error:
+        summary["warnings"] = [workbook_error]
     atomic_write_json(output / "summary.json", summary)
     return summary

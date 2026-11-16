@@ -41,6 +41,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 FEATURE_EXTRAS: tuple[str, ...] = (
     "html",
     "pdf",
+    # 条目 12：pdf extra 按支柱拆分后新增的两个功能 extra。
+    # pdf-write 必须排在 excel 之前——full/full-macos 里 reportlab 就在 openpyxl
+    # 之前，顺序错位会让聚合校验报 entry #N 不匹配。
+    "pdf-write",
+    "excel",
     "browser",
     "selenium",
     "async-http",

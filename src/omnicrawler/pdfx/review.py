@@ -5,8 +5,6 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from openpyxl import load_workbook
-
 from .config import ProjectConfig
 from .database import Database
 from .utils import utcnow
@@ -21,6 +19,15 @@ def _rows_from_csv(path: Path) -> Iterator[dict[str, Any]]:
 
 
 def _rows_from_xlsx(path: Path) -> Iterator[dict[str, Any]]:
+    # 条目 12：openpyxl 延迟导入——它属跨支柱依赖（Excel 导出也用），
+    # 缺它时只应让"从 xlsx 读复核队列"不可用，不应让整个 review 模块导入失败。
+    try:
+        from openpyxl import load_workbook
+    except ImportError as exc:  # noqa: TRY003 - 提示需可操作
+        raise ValueError(
+            "读取 xlsx 复核队列需要 openpyxl；请执行 pip install openpyxl，"
+            "或改用 CSV 复核队列。"
+        ) from exc
     workbook = load_workbook(path, read_only=True, data_only=True)
     if "人工复核队列" not in workbook.sheetnames:
         raise ValueError("Excel中缺少“人工复核队列”工作表")
