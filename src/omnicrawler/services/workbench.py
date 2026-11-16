@@ -40,15 +40,24 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     from .._version import __version__
     from ..core.config import load_config
-    from ..pdfx.config import load_config as load_pdf_config
-    from ..pdfx.database import Database
-    from ..pdfx.desktop import open_path
-    from ..pdfx.review import apply_review
-    from ..pdfx.service import database_status, run_extraction, run_processing
     from ..pipeline import Pipeline
     from ..pipeline_ops.pdf_integration import ensure_pdf_project
     from ..pipeline_ops.provenance import write_pdf_source_manifest
+
+    # 第 2 批：PDF 后端全部经由 facade（组件化时只改一处）。
+    # 统一用模块前缀而不是逐个 `as` 别名：别名会让读者分不清
+    # 哪些名字是宿主侧、哪些来自可选组件。
+    from ..services import document_facade as _pdf
     from ..state import StateStore
+
+    load_pdf_config = _pdf.load_pdf_config
+    database_status = _pdf.pdf_database_status
+    run_extraction = _pdf.run_pdf_extraction
+    run_processing = _pdf.run_pdf_processing
+    apply_review = _pdf.apply_pdf_review
+
+    def open_path(*args, **kwargs):
+        return _pdf.require_document("pdfx.desktop").open_path(*args, **kwargs)
 
     class Workbench:
         def __init__(self, root: tk.Tk) -> None:
@@ -219,7 +228,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if not review.is_file():
                     raise FileNotFoundError(f"复核文件不存在: {review}")
                 config = load_pdf_config(self._resolved_pdf_project())
-                with Database(config.database) as database:
+                with _pdf.open_pdf_database(config.database) as database:
                     return apply_review(config, database, review)
             self._start("应用复核", worker)
 
@@ -235,7 +244,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     result["crawl"] = {"status": "not_started"}
                 try:
                     pdf = load_pdf_config(self._resolved_pdf_project())
-                    with Database(pdf.database) as database:
+                    with _pdf.open_pdf_database(pdf.database) as database:
                         result["pdf"] = database_status(database)
                 except (FileNotFoundError, ValueError) as exc:
                     result["pdf"] = {"status": "not_started", "message": str(exc)}

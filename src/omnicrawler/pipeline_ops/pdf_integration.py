@@ -31,7 +31,8 @@ def _pdf_input_dir(config: AppConfig) -> Path:
 
 def ensure_pdf_project(config: AppConfig) -> tuple[Path, bool]:
     """创建一份持久化的 PDF 工作台配置，之后可独立调整和续跑。"""
-    from ..pdfx.project import create_project_config
+    # 第 2 批：经由 facade。
+    from ..services.document_facade import create_project_config
 
     settings = config.section("processors").get("pdf", {})
     configured = str(settings.get("project_config", "")).strip()
@@ -45,7 +46,7 @@ def ensure_pdf_project(config: AppConfig) -> tuple[Path, bool]:
         # PDF 阶段空跑或报晦涩错误。复用 pdfx 自己的加载器做 schema 级校验。
         try:
             # 条目 7 续：函数内惰性导入，宿主启动期不依赖 pdfx 可选组件。
-            from ..pdfx.config import load_config
+            from ..services.document_facade import load_pdf_config as load_config
 
             load_config(project_path)
         except Exception as exc:  # noqa: BLE001 —— 任何加载失败都给可执行的提示
@@ -86,7 +87,7 @@ def run_pdf_pipeline(
     should_stop: StopCallback | None = None,
 ) -> dict[str, Any]:
     try:
-        from ..pdfx.service import run_extraction
+        from ..services.document_facade import run_pdf_extraction as run_extraction
     except ImportError as exc:
         raise RuntimeError(
             "PDF处理依赖未安装；请执行 pip install -e '.[pdf]'"

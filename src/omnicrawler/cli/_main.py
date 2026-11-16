@@ -251,24 +251,18 @@ def _print_error_hint(exc: Exception) -> None:
 
 
 def _dispatch_pdf(argv: list[str]) -> None:
+    # 第 2 批：文档子系统挂点统一经由 `services.document_facade`。
+    # 好处是组件化时只改 facade 一处；且缺组件时给的是可操作提示而非 ImportError 栈。
+    from ..services import document_facade
+
     cmd, rest = argv[0], argv[1:]
     if cmd == "pdf":
-        from ..pdfx.cli import main as pdf_main
-
-        old = sys.argv
-        try:
-            sys.argv = ["omnicrawler pdf", *rest]
-            pdf_main()
-        finally:
-            sys.argv = old
+        # pdfx.cli.main() 读 sys.argv；facade 负责按需替换（避免调用方各写一遍）。
+        document_facade.pdf_main(rest)
     elif cmd == "pdf-process":
-        from ..apps.pdf_processor import main as processor_main
-
-        raise SystemExit(processor_main(rest))
+        raise SystemExit(document_facade.pdf_processor_main(rest))
     elif cmd == "pdf-extract":
-        from ..apps.field_extractor import main as extractor_main
-
-        raise SystemExit(extractor_main(rest))
+        raise SystemExit(document_facade.field_extractor_main(rest))
 
 
 def _dispatch(args: argparse.Namespace) -> None:

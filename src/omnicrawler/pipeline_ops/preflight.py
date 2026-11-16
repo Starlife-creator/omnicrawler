@@ -76,7 +76,7 @@ def run_preflight(config: AppConfig) -> dict[str, Any]:
         project_path = config.resolve(configured_project) if configured_project else config.workspace / "pdf/project.yaml"
         if project_path.is_file():
             try:
-                from ..pdfx.config import load_config as load_pdf_config
+                from ..services.document_facade import load_pdf_config
 
                 ocr_settings = dict(load_pdf_config(project_path).ocr)
             except Exception as exc:  # noqa: BLE001 - invalid existing PDF projects must not pass preflight

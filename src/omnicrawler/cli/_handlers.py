@@ -754,7 +754,7 @@ def _run_recovery(args: argparse.Namespace) -> None:
 
 @_register("compare-runs")
 def _run_compare_runs(args: argparse.Namespace) -> None:
-    from ..review.run_compare import compare_runs
+    from ..services.document_facade import compare_runs
 
     config = load_config(args.config)
     with StateStore(config.workspace / "state.sqlite3") as state:
@@ -879,18 +879,23 @@ def _run_benchmark_cmd(args: argparse.Namespace) -> None:
 @_register("convert")
 def _run_convert(args: argparse.Namespace) -> None:
     """P3-2 任意格式互转：Reader × Writer = N×N 矩阵。"""
-    from ..convertx import OutputRule
-    from ..convertx import convert as convertx_convert
+    # 第 2 批：经由 facade，组件化时只改一处。
+    from ..services.document_facade import convert_with_preset, convertx_module
+
+    # 保留模块引用而不是 `OutputRule = ...` 这种大写局部变量：
+    # 后者会触发 N806（局部变量名混用类名风格），读者也会误以为它是导入的类。
+    _convertx = convertx_module()
+    convertx_convert = convert_with_preset
 
     preset = None
     if getattr(args, "preset_file", None) or getattr(args, "preset", None):
         if not getattr(args, "preset", None):
             print("convert: --preset-file 需要同时指定 --preset NAME", file=sys.stderr)
             raise SystemExit(2)
-        from ..convertx.presets import get_preset
+        from ..services.document_facade import convertx_preset
 
         try:
-            preset = get_preset(args.preset, args.preset_file)
+            preset = convertx_preset(args.preset, args.preset_file)
         except (KeyError, ValueError) as exc:
             print(f"convert: {exc}", file=sys.stderr)
             raise SystemExit(2) from exc
@@ -919,7 +924,7 @@ def _run_convert(args: argparse.Namespace) -> None:
         rule_kwargs["template"] = args.name_template
     if getattr(args, "preserve_timestamps", False):
         rule_kwargs["preserve_timestamps"] = True
-    output_rule = OutputRule(**rule_kwargs) if rule_kwargs else None
+    output_rule = _convertx.OutputRule(**rule_kwargs) if rule_kwargs else None
 
     options: dict[str, Any] = dict(preset.options) if preset else {}
     options.update({
