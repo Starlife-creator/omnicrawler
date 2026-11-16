@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 import tempfile
@@ -248,12 +249,78 @@ def _verify_brand_icon(release_dir: Path, gui_exe: Path) -> None:
         print("brand icon check: skipped on linux (desktop-entry branding ships with I1b)")
 
 
+def _probe_capabilities(executable: Path, release_dir: Path, env: dict[str, str]) -> dict | None:
+    """探测**产物实际具备**的能力（条目 13）。
+
+    为什么需要它：原先"要不要跑 OCR 自检"是按 `edition == "Full"` 判断的。
+    停发 Full 后 Standard 成为唯一发布版本，按版本名判断会让 OCR 自检
+    **永久失去覆盖**——哪怕 Standard 里其实有 OCR（用户按需装组件、
+    或本机已装 Tesseract/Paddle）。
+
+    正确判据是**能力是否存在**，不是**版本叫什么**。
+
+    返回 ``capabilities`` 子命令的 JSON 字典；探测本身失败时返回 ``None``
+    （由调用方决定是跳过还是判失败——不能默认当成"没有能力"）。
+
+    ⚠ 这里**不加** ``--json``：``capabilities`` 默认就输出 JSON，
+    传一个它不认识的参数会让命令直接报错退出（实测），
+    于是探测永远返回 None、所有检查被静默跳过。
+    """
+    try:
+        completed = subprocess.run(
+            [str(executable), "capabilities", "--mode", "quick"],
+            cwd=str(release_dir), capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=180, env=env,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    # 输出前面可能混有日志行，取第一个 JSON 对象的起点
+    stdout = completed.stdout or ""
+    start = stdout.find("{")
+    if start < 0:
+        return None
+    try:
+        report, _ = json.JSONDecoder().raw_decode(stdout[start:])
+    except json.JSONDecodeError:
+        return None
+    return report if isinstance(report, dict) else None
+
+
+def _capability_available(report: dict | None, key: str) -> bool:
+    """从能力报告里读某个能力是否可用（缺失一律视为**不可用**）。
+
+    保守取值：读不到就当没有。这与仓库既有的 fail-closed 口径一致——
+    宁可少跑一项检查并说明原因，也不假装测过了。
+
+    报告结构见 ``core.capabilities.capability_report()``：
+    ``modules`` 是逐模块的 ``{"module", "installed"}``，``features`` 是
+    extra 级别的可用性。两个都要看——OCR 既可能来自模块，也可能来自 extra。
+    """
+    if not report:
+        return False
+    modules = report.get("modules")
+    if isinstance(modules, dict):
+        for name, entry in modules.items():
+            if key in name and isinstance(entry, dict) and entry.get("installed"):
+                return True
+    features = report.get("features")
+    if isinstance(features, dict) and features.get(key):
+        return True
+    # 顶层同名字段（老版本报告的形态）
+    return bool(report.get(key))
+
+
 def run_smoke_test(release_dir: Path, edition: str = "Full") -> None:
     import os as _os
     _env = {**_os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
     executable = _resolve_executable(release_dir)
     if executable is None:
         raise FileNotFoundError(f"未找到 CLI 可执行文件（Windows/Linux/macOS 候选均不存在）: {release_dir}")
+    # 条目 13：先探测产物**实际具备**的能力，后续按能力而不是按版本名决定跑什么。
+    # 探测失败不当作"没有能力"——那会把"测不了"和"不支持"混为一谈。
+    _capabilities = _probe_capabilities(executable, release_dir, _env)
     # F21：GUI 壳（OmniCrawler.exe / OmniCrawler）也必须过冒烟——缺 PyQt 插件/
     # Qt DLL 只会在用户双击时才暴露。离屏启动：进程持续运行说明 GUI 正常初始化，
     # 然后主动退出。
@@ -279,23 +346,25 @@ def run_smoke_test(release_dir: Path, edition: str = "Full") -> None:
             root = Path(temp)
             url = f"http://127.0.0.1:{server.server_port}/"
             engines = ("playwright",)
-            if edition == "Full" and sys.platform == "linux":
+            # 条目 13：判断「这个产物里有没有 selenium 引擎」，而不是「版本名是不是 Full」。
+            # 原有注释解释的是**为什么有 selenium 也不冒烟它**（selenium 4.47 的 BiDi
+            # 平台 bug 会让完整爬取挂起），那段理由与版本名无关——停发 Full 后
+            # Standard 若带 selenium 同样会撞上。
+            has_selenium = _capability_available(_capabilities, "selenium")
+            if has_selenium:
                 # Linux 亦在 v0.9.1 CI 实测触发 selenium 4.47 + Chrome 151 的 BiDi
                 # 网络拦截超时（continue_request/fail_request 'Timed out waiting
                 # for response to BiDi command'），完整爬取挂起后 fail-closed。
-                # 与 win/mac 对齐：直接跳过 selenium 引擎冒烟。playwright 引擎不走
-                # BiDi 拦截故正常，已完整验证打包的 Chromium/ChromeDriver；运行时
-                # selenium 有 guard 兜底 + watchdog fail-closed 快速报错。
-                print(f"{sys.platform}: 跳过 selenium 引擎冒烟（selenium 4.47 BiDi 超时，与 win/mac 对齐）")
-            elif edition == "Full" and sys.platform in ("darwin", "win32"):
-                # Windows/macOS：selenium 4.47 BiDi 网络拦截（continue_request）有
-                # 平台相关 bug（'Timed out waiting for response to BiDi command'，
-                # Chrome 151，v0.9.1 CI 实测），完整爬取会挂起。playwright 引擎不走
-                # BiDi 拦截故正常，且已完整验证打包的 Chromium/ChromeDriver。
-                print(f"{sys.platform}: 跳过 selenium 引擎冒烟（selenium 4.47 BiDi 平台 bug，见注释）")
+                # 各平台统一跳过 selenium 引擎冒烟：playwright 引擎不走 BiDi 拦截
+                # 故正常，已完整验证打包的 Chromium/ChromeDriver；运行时 selenium
+                # 有 guard 兜底 + watchdog fail-closed 快速报错。
+                print(
+                    f"{sys.platform}: 跳过 selenium 引擎冒烟"
+                    "（selenium 4.47 BiDi 平台 bug，见注释；与 edition 无关）"
+                )
             for engine in engines:
                 _run_browser(executable, release_dir, root, url, engine)
-        if edition == "Full":
+        if _capability_available(_capabilities, "ocr"):
             completed = subprocess.run(
                 [str(executable), "capabilities", "--self-test"],
                 cwd=str(release_dir), capture_output=True, text=True, encoding="utf-8",
@@ -304,6 +373,12 @@ def run_smoke_test(release_dir: Path, edition: str = "Full") -> None:
             if completed.returncode != 0:
                 output = (completed.stdout + "\n" + completed.stderr).strip()
                 raise RuntimeError(f"portable OCR self-test failed:\n{output[-10000:]}")
+        else:
+            # 跳过必须说明原因：产物里确实没有 OCR 能力（而非"忘了测"）。
+            print(
+                f"跳过 OCR 自检：该产物未声明 OCR 能力"
+                f"（edition={edition}，能力报告={'可读' if _capabilities else '不可读'}）"
+            )
     finally:
         server.shutdown()
         server.server_close()
