@@ -60,6 +60,33 @@ _TLS_REJECT_MESSAGE = (
     "如需关闭请用可审计的 http.verify_tls=false"
 )
 
+#: **Playwright 的 channel，必须传给每一次 launch。**
+#:
+#: 为什么必须有这个常量（条目 5「先做减法」）：
+#: Playwright 选择可执行文件的逻辑是
+#: ``options.headless ? "chromium-headless-shell" : "chromium"``，
+#: 而传 ``channel`` 时会走另一个分支直接返回 ``"chromium"``
+#: （``coreBundle.js`` 的 ``getExecutableName``；``chromiumAliases = ["chrome-for-testing"]``）。
+#:
+#: 我们**不再打包** ``chromium_headless_shell``（269.6 MiB），所以 headless 路径
+#: 必须靠这个 channel 指向完整的 Chromium——否则运行期直接
+#: ``Executable doesn't exist``。完整 Chromium 是 headless_shell 的超集，
+#: 功能不会削弱（代价是 shell 启动更快、内存更省）。
+#:
+#: 用 ``chrome-for-testing`` 而不是 ``chromium``：前者是 Playwright 明确登记的
+#: chromium 别名（``isChromiumAlias`` 只认它），语义更准确。
+PLAYWRIGHT_CHROMIUM_CHANNEL = "chrome-for-testing"
+
+
+def launch_channel() -> str:
+    """返回应传给 ``chromium.launch(channel=...)`` 的值。
+
+    以函数形式提供（而不是让调用点直接引用常量）有两个好处：
+    ① 未来要按配置切换 channel 时只改这一处；
+    ② 静态守卫能据此识别"这个 launch 已经覆盖了 channel"。
+    """
+    return PLAYWRIGHT_CHROMIUM_CHANNEL
+
 
 def _merge_disable_features(args: list[str], feature: str) -> None:
     """把 *feature* 合并进已有的 ``--disable-features=``（就地修改）；没有该开关则追加。

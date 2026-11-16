@@ -11,6 +11,8 @@ from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
+from ..fetching.browser_launch import launch_channel
+
 MAX_HTML_BYTES = 2 * 1024 * 1024
 MAX_RENDER_OUTPUTS = 16
 MIN_VIEWPORT = 240
@@ -45,6 +47,7 @@ class BrowserRuntimeManager:
             browser = playwright.chromium.launch(
                 headless=True,
                 args=["--disable-extensions", "--disable-background-networking"],
+                channel=launch_channel(),
             )
             try:
                 context = browser.new_context(
@@ -89,6 +92,7 @@ class BrowserRuntimeManager:
             browser = playwright.chromium.launch(
                 headless=True,
                 args=["--disable-extensions", "--disable-background-networking"],
+                channel=launch_channel(),
             )
             try:
                 context = browser.new_context(

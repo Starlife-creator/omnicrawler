@@ -62,7 +62,7 @@ from ..core.errors import OmniCrawlError
 from ..security.policy import NetworkTargetPolicy
 from ..security.redaction import redact_url
 from . import session_crypto, session_state
-from .browser_launch import build_launch_args
+from .browser_launch import build_launch_args, launch_channel
 from .session_lease import session_lease
 
 __all__ = [
@@ -212,7 +212,10 @@ class PlaywrightLoginLauncher:
         manager = self._factory() if self._factory is not None else _default_sync_playwright()
         playwright = manager.start()
         try:
-            browser = playwright.chromium.launch(headless=False, args=launch_args)
+            # 条目 5：channel 由 browser_launch 单一来源提供（不再打包 headless_shell）。
+            browser = playwright.chromium.launch(
+                headless=False, args=launch_args, channel=launch_channel()
+            )
             options: dict[str, Any] = {"user_agent": user_agent}
             if storage_state_path.is_file():
                 # U5（§11.8）：与爬取加载同一入口 —— 信封解密 / 旧明文一次性迁移。

@@ -63,6 +63,25 @@ if [[ -z "$CHROME_BIN" ]]; then
 fi
 log "Bundled Chromium: $CHROME_BIN"
 
+# ---- 条目 5：剔除 chromium_headless_shell -----------------------------------
+# 为什么删了不削弱功能：Playwright 的选择逻辑是
+#   options.headless ? "chromium-headless-shell" : "chromium"
+# 但传了 channel 时直接返回 "chromium"（coreBundle.js 的 getExecutableName，
+# chromiumAliases = ["chrome-for-testing"]）。完整 Chromium 是 headless_shell 的
+# 超集；产品代码已在每次 launch 传 channel（browser_launch.launch_kwargs）。
+# 守卫：tests/unit/tools/test_browser_headless_shell_removed.py
+for shell in "$BROWSERS_ROOT"/chromium_headless_shell-*; do
+  if [[ -d "$shell" ]]; then
+    log "Prune headless shell: $(basename "$shell")"
+    rm -rf "$shell"
+  fi
+done
+if compgen -G "$BROWSERS_ROOT/chromium_headless_shell-*" > /dev/null; then
+  die "chromium_headless_shell still present after prune"
+fi
+log "chromium_headless_shell pruned; headless uses full Chromium via channel."
+
+
 # ---- ChromeDriver（Selenium Manager 按 bundled Chrome 匹配，动态解决 S2）----
 if [[ "$SKIP_SELENIUM" -eq 0 ]]; then
   log "Prepare matching ChromeDriver via Selenium Manager..."

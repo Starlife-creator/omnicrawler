@@ -116,6 +116,26 @@ if (-not $chrome) {
     throw "Playwright Chromium was not found under $BrowsersRoot"
 }
 
+# 条目 5：剔除 chromium_headless_shell（本地实测 269.6 MiB）。
+# 为什么删了不削弱功能：Playwright 的选择逻辑是
+#   options.headless ? "chromium-headless-shell" : "chromium"
+# 但传了 channel 时直接返回 "chromium"（coreBundle.js 的 getExecutableName，
+# chromiumAliases = ["chrome-for-testing"]）。完整 Chromium 是 headless_shell 的
+# 超集，产品代码已在每次 launch 传 channel（见 browser_launch.launch_kwargs）。
+# 守卫：tests/unit/tools/test_browser_headless_shell_removed.py
+$headlessShell = Get-ChildItem -LiteralPath $BrowsersRoot -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like 'chromium_headless_shell-*' }
+foreach ($shell in $headlessShell) {
+    Write-Host "Prune headless shell: $($shell.Name)"
+    Remove-Item -LiteralPath $shell.FullName -Recurse -Force
+}
+if (-not (Get-ChildItem -LiteralPath $BrowsersRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like 'chromium_headless_shell-*' })) {
+    Write-Host 'chromium_headless_shell pruned; headless uses full Chromium via channel.'
+} else {
+    throw 'chromium_headless_shell still present after prune.'
+}
+
 if (-not $SkipSelenium) {
     Write-Host 'Prepare matching ChromeDriver...'
     $manager = (& $Python -c "import os, selenium; print(os.path.join(os.path.dirname(selenium.__file__), 'webdriver', 'common', 'windows', 'selenium-manager.exe'))").Trim()
