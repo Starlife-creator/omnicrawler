@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+# 条目 7 续：金额归一的实现在宿主侧（quality.amounts），这里只委托。
+from ..quality import amounts as _amounts
 from .config import FieldSpec, ProjectConfig
 from .templates import is_builtin_pdf_reference, resolve_builtin_pdf_reference
 
@@ -67,101 +69,34 @@ def _alias_is_negated(text: str, index: int) -> bool:
     return any(ch in tail for ch in _NEGATION_SINGLE)
 
 
+# ── 金额归一：实现已上提到宿主侧 `quality.amounts`（条目 7 续）──────────
+#
+# 为什么搬：`services/pdf_quality_benchmark.py` 此前在**模块顶层**导入
+# `pdfx.normalization.normalize_amount`，导致「只导入质量基准」也硬依赖 pdfx。
+# 而 pdfx 要作为可选组件分发，组件缺失时宿主不该连带崩掉。
+#
+# 这里保留同名函数与同名常量（pdfx 内部仍有调用点），实现委托到宿主侧，
+# **只有一份逻辑**，不会出现两边漂移。
+
+
 def _grouping_valid(token: str) -> bool:
-    """千分位分组是否规范：首段 1–3 位数字，其后每段**恰好** 3 位。"""
-    parts = re.split(r"[,.]", token)
-    if not parts or not all(part.isdigit() for part in parts):
-        return False
-    if len(parts) == 1:
-        return bool(parts[0])
-    return 1 <= len(parts[0]) <= 3 and all(len(part) == 3 for part in parts[1:])
+    return _amounts._grouping_valid(token)
 
 
 def _parse_numeric_token(token: str) -> float | None:
-    """把数字串转成 float；**多个分隔符时做结构性判定，绝不静默截断**。
-
-    旧实现用 ``[-+]?\\d[\\d,，]*(?:\\.\\d+)?`` 抓数字，遇到被 OCR 误读的
-    ``12.345.67``（真值 ``12,345.67``）**只会匹配到 ``12.345``** —— 一个看起来完全合理、
-    却错误的值，且不留任何痕迹（同一个函数会把 ``1.234.567`` 截成 ``1.234``，
-    欧式 ``1.234,56`` 截成 ``1.234``）。这违反本项目"异常不得伪装成功／产出不许静默失效"
-    的既有原则，因此改为先判结构：
-
-    * 分隔符 ≤ 1 个：沿用常规读法（``1,234`` → 1234；``1.234`` → 1.234）；
-    * 分隔符 ≥ 2 个：只接受两种**可判定**的读法 ——
-      ① 全部当千分位（分组规范：``1.234.567`` → 1234567）；
-      ② 最右为小数点、其余为千分位（整数部分分组规范：``12.345.67`` → 12345.67，
-         欧式 ``1.234,56`` → 1234.56）；
-      两种都成立时取 ①（``1.234.567`` 在美式与欧式下同为 1234567）；
-      **都不成立则返回 None** —— 上层据此交人工复核，而不是交付一个猜出来的数。
-    """
-    normalized = token.translate(_SEPARATOR_TRANSLATION)
-    if sum(character in ",." for character in normalized) <= 1:
-        try:
-            return float(normalized.replace(",", ""))
-        except ValueError:
-            return None
-    if _grouping_valid(normalized):
-        try:
-            return float(normalized.replace(",", "").replace(".", ""))
-        except ValueError:
-            return None
-    cut = max(normalized.rfind(","), normalized.rfind("."))
-    integer_part, fraction = normalized[:cut], normalized[cut + 1 :]
-    if integer_part and fraction.isdigit() and _grouping_valid(integer_part):
-        digits = integer_part.replace(",", "").replace(".", "")
-        try:
-            return float(f"{digits}.{fraction}")
-        except ValueError:
-            return None
-    return None
+    return _amounts.parse_numeric_token(token)
 
 
 def _number(text: str) -> float | None:
-    """提取数字；识别会计负数括号 (1,234) / （1,234）（D49）。
-
-    多分隔符的读法判定见 :func:`_parse_numeric_token`：OCR 造成的千分位误读会被
-    **恢复**（可判定时）或**交人工复核**（不可判定时），不再静默截断。
-    """
-    stripped = text.strip()
-    bracket = re.search(r"[(（]\s*([\d,，.．。]+)\s*[)）]", stripped)
-    if bracket:
-        value = _parse_numeric_token(bracket.group(1))
-        return None if value is None else -value
-    match = re.search(r"[-+]?\d[\d,，.．。]*", text)
-    if not match:
-        return None
-    token = match.group(0).rstrip(",，．。")
-    sign = -1.0 if token.startswith("-") else 1.0
-    value = _parse_numeric_token(token.lstrip("+-"))
-    return None if value is None else sign * value
+    return _amounts.extract_number(text)
 
 
 def _format_decimal(value: object) -> str:
-    """D51：Decimal 换算格式化，避免 IEEE754 浮点误差（1.15亿 → 114999999.99999999）。"""
-    from decimal import Decimal
-
-    decimal_value = Decimal(str(value))
-    if decimal_value == decimal_value.to_integral_value():
-        return str(decimal_value.to_integral_value())
-    return format(decimal_value, "f").rstrip("0").rstrip(".")
+    return _amounts.format_decimal(value)
 
 
 def normalize_amount(raw: str, target_unit: str | None = "元") -> tuple[str | None, str | None]:
-    from decimal import Decimal
-
-    value = _number(raw)
-    if value is None:
-        return None, target_unit
-    # D50/S2.5.1：外币（亿美元/港币/$100/USD 100/€50）无法按人民币换算，拒绝交人工复核
-    if _FOREIGN_CURRENCY_RE.search(raw):
-        return None, target_unit
-    source_unit = next((unit for unit in AMOUNT_UNITS if unit in raw), None)
-    source_multiplier = AMOUNT_UNITS.get(source_unit or "元", 1)
-    target = target_unit or "元"
-    target_multiplier = AMOUNT_UNITS.get(target, 1)
-    yuan = Decimal(str(value)) * Decimal(source_multiplier)
-    normalized = yuan / Decimal(target_multiplier)
-    return _format_decimal(normalized), target
+    return _amounts.normalize_amount(raw, target_unit)
 
 
 # B-P3-2：日期年份模式与合理性边界（未来日期 / 过早年份不作为可交付日期）。

@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from ..core.config import AppConfig, resolve_pdf_template
-from ..pdfx.config import load_config
 from ..security.paths import require_workspace_path
 from ..state import StateStore
 from .provenance import write_pdf_source_manifest
@@ -45,6 +44,9 @@ def ensure_pdf_project(config: AppConfig) -> tuple[Path, bool]:
         # 审计（W6.4）：此前直接复用已存在的 project.yaml，**不校验内容** ⇒ 文件损坏时
         # PDF 阶段空跑或报晦涩错误。复用 pdfx 自己的加载器做 schema 级校验。
         try:
+            # 条目 7 续：函数内惰性导入，宿主启动期不依赖 pdfx 可选组件。
+            from ..pdfx.config import load_config
+
             load_config(project_path)
         except Exception as exc:  # noqa: BLE001 —— 任何加载失败都给可执行的提示
             raise ValueError(

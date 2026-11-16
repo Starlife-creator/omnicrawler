@@ -7,7 +7,9 @@ import json
 import sys
 from typing import Any
 
-from ..pdfx.templates import DEFAULT_PDF_TEMPLATE
+# 条目 7 续：常量真源在宿主侧 core.builtin_references，
+# 不再经由 pdfx.templates 转发（那会让宿主启动期硬依赖可选组件）。
+from ..core.builtin_references import DEFAULT_PDF_TEMPLATE
 
 
 def add_config_argument(parser: argparse.ArgumentParser) -> None:

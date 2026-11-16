@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..pdfx.normalization import normalize_amount
+from ..quality.amounts import normalize_amount as normalize_amount
 
 #: 真值（图片版 OCR 也会被归一到这些值）
 CONTRACT_NO = "HT-2026-0001"
