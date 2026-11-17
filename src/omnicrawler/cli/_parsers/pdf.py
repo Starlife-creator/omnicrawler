@@ -38,14 +38,14 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     # 这样 `omnicrawler pdf --help` 看到的是子系统真正的帮助，而不是这层薄包装。
     parser = sub.add_parser(
         "pdf",
-        help="PDF 子系统：解析、OCR、字段抽取、导出与人工复核（等价 pdfx 命令）",
+        help="PDF 子系统：解析、OCR、字段抽取、导出与人工复核（子命令由插件 pdf-workbench 提供）",
         add_help=False,
     )
     parser.add_argument(
         "-h", "--help",
         dest="pdf_help",
         action="store_true",
-        help="显示 PDF 子系统帮助（等价于 pdfx --help）",
+        help="显示 PDF 子系统帮助（需要已安装 pdf-workbench 插件）",
     )
     parser.add_argument(
         "pdf_args",

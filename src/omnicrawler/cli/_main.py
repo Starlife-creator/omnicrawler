@@ -135,7 +135,25 @@ def main(argv: list[str] | None = None) -> None:
         # 这里补齐同一套：配置日志（默认级别/格式，别名无顶层开关）+ 打关键路径。
         configure_logging("INFO", "text")
         _log_startup_paths()
-        _dispatch_pdf(argv)
+        try:
+            _dispatch_pdf(argv)
+        except RuntimeError as exc:
+            # **这条是"转发路径"，绕过 `_handlers` 注册表**（第 138 行直接调用）。
+            # 插件未安装时 facade 抛的 RuntimeError 会以裸 traceback 呈现——
+            # 用户跑 `omnicrawler pdf --help` 只是想看功能，不该看到栈。
+            #
+            # 转成干净提示 + 非零退出码：保留"这不是正常成功"的语义，
+            # 又不吓到人。
+            message = str(exc).strip()
+            if "插件" not in message and "plugin" not in message.lower():
+                raise
+            print(f"omnicrawler {' '.join(argv)}: {message}", file=sys.stderr)
+            print(
+                "\n提示：PDF 工作台的子命令与选项由插件提供。"
+                "装好 pdf-workbench 后\n  omnicrawler pdf --help   即可看到完整子命令列表。",
+                file=sys.stderr,
+            )
+            raise SystemExit(1) from None
         return
     if not argv:
         _print_welcome()
