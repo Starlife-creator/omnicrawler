@@ -1,0 +1,105 @@
+config_version: 5
+project:
+  name: reused_public_task
+  workspace: work/reused_public_task
+source:
+  kind: static_html
+  seeds:
+  - '{{seed_url_1}}'
+crawl:
+  strategy: bfs
+  max_pages: 5
+  max_depth: 3
+  same_host: true
+  concurrency: 4
+http:
+  timeout_seconds: 25
+  delay_seconds: 1.0
+  respect_robots: true
+egress:
+  allowed_schemes:
+  - http
+  - https
+  - ws
+  - wss
+  allowed_ports: []
+  allowed_domains:
+  - example.test
+  maximum_requests: 20
+  maximum_bytes: 0
+  maximum_concurrency: 0
+  maximum_runtime_seconds: 0
+  maximum_cost: 0
+  enabled: true
+  audit: true
+extract:
+  mode: fields
+  item_selector: .card
+  fields:
+    title:
+      selector: .title
+      type: text
+  quality_threshold: 0.8
+  review_low_confidence: true
+outputs:
+  jsonl: true
+  csv: true
+  xlsx: true
+resources:
+  adaptive_concurrency: true
+  maximum_process_tree_bytes: 0
+updates:
+  enabled: false
+  revisit_completed: false
+  identity_fields: []
+  notifications:
+    enabled: false
+    include_removed: false
+    webhook_url: ''
+    webhook_token_ref: ''
+  ignored_fields:
+  - fetched_at
+  - updated_at
+  - crawl_time
+  - timestamp
+  detect_same_url_changes: true
+  keep_versions: true
+template_version: 1
+template:
+  id: user/demo
+  name: user/demo
+  category: user/public-http
+  version: 1.0.0
+  description: 已试跑任务的参数化工作流；新网址、输入、会话均须验证与试跑
+  capabilities:
+  - http
+  min_core_version: 1.0.2
+  placeholders:
+    seed_url_1:
+      type: string
+      required: true
+  verified_at: '2026-11-17T13:31:24.032934+00:00'
+  acceptance_reference:
+    format: 1
+    config_sha256: 47bab598fba48dfcbe9c6c54fb63f9bd1a8d655845f2f74f24a639067c6782ed
+    captured_at: '2026-11-17T13:31:24.032934+00:00'
+    run_id: trial_1
+    samples:
+    - request_fingerprint: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      content_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      fetched_at: '2026-10-03T10:00:00Z'
+    summary:
+      status: succeeded
+      processed: 1
+      records: 1
+      failed: 0
+    versions:
+      core: 1.0.2
+      components_consistent: true
+      plugins:
+      - demo@1.0.0
+      components:
+      - name: ocr
+        version: 1.0.0
+    historical_reference_only: true
+  limitations: 保留分页/API/动作/附件语义；网址、请求正文、动作值、认证请求头与会话名须重新填写；不含凭据、代理或插件；不恢复运行批准
