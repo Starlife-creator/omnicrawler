@@ -14,6 +14,16 @@ from .ai_providers import build_provider
 from .ai_safety import AIBudget, mark_untrusted, validate_ai_output
 
 
+#: 供测试与调用方 monkeypatch 的公共名。
+#:
+#: 迁移后内部实现在 `_parse_document`（经 facade 走插件），这里把
+#: `parse_document` 暴露为**可替换入口**：既有测试用它断言
+#: "有效阶段不应重新解析"，改名会让这类断言失去抓手。
+def parse_document(*args: Any, **kwargs: Any) -> Any:
+    """解析文档（当前经 facade 走插件；此名可用于 monkeypatch）。"""
+    return _parse_document(*args, **kwargs)
+
+
 def _parse_document(*args: Any, **kwargs: Any) -> Any:
     """文档解析（延迟导入）。
 

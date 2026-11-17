@@ -127,19 +127,43 @@ def test_facade_provides_capability_probe() -> None:
 
 
 def test_missing_component_reason_is_actionable() -> None:
-    """缺组件时的提示必须可操作（说清缺什么/怎么装），不能是空串或栈。"""
-    from omnicrawler.services.document_facade import require_document
+    """缺能力时的提示必须可操作（说清缺什么/怎么装），不能是空串或栈。
 
-    # 本机装了文档子系统，所以这里验证"正常路径不抛"
-    module = require_document("pdfx.service")
-    assert module is not None
+    **迁移后语义**（2026-11-17）：PDF 工作台已迁成插件，宿主里不再有
+    `pdfx.service` 这类模块。这个测试要保护的意图不变——
+    "没有能力时给用户一条能照做的提示"，只是现在判据变成"插件装没装"。
+    """
+    from omnicrawler.services.document_facade import document_capability
 
-    # 请求一个不存在的子模块 ⇒ 必须抛**带说明**的错误，而不是裸 ImportError
-    with pytest.raises(Exception) as excinfo:
-        require_document("pdfx.no_such_module_xyz")
+    report = document_capability()
+    if report["available"]:
+        pytest.skip("本机已安装 pdf-workbench 插件，跳过「未安装」路径的断言")
+
+    message = report["reason"]
+    assert message.strip(), "能力不可用时原因不能是空串"
+    assert ("插件" in message) or ("安装" in message), (
+        f"原因没有告诉用户该怎么办：{message!r}"
+    )
+    assert "pdf-workbench" in message, (
+        f"原因里没点出要装哪个插件：{message!r}"
+    )
+
+
+def test_require_document_raises_actionable_when_plugin_absent() -> None:
+    """插件缺失时 `require_document` 必须抛**可操作**错误，不是裸 ImportError。"""
+    from omnicrawler.services.document_facade import (
+        document_capability,
+        require_document,
+    )
+
+    if document_capability()["available"]:
+        pytest.skip("本机已安装 pdf-workbench 插件，跳过「未安装」路径的断言")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        require_document("pdf.validate")
     message = str(excinfo.value)
-    assert message.strip(), "缺模块时错误消息为空"
-    assert ("组件" in message) or ("安装" in message) or ("document" in message.lower()), (
+    assert message.strip(), "缺能力时错误消息为空"
+    assert ("插件" in message) or ("安装" in message), (
         f"错误信息没有告诉用户该怎么办：{message!r}"
     )
 

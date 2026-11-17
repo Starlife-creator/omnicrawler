@@ -96,35 +96,49 @@ def _run_isolated(tmp_path: Path, body: str) -> str:
 
 
 def test_capability_probe_reports_unavailable(tmp_path: Path) -> None:
-    """屏蔽文档子系统后，能力探测必须报不可用并给出缺失清单。"""
+    """插件未安装时，能力探测必须报不可用并给出缺失清单。
+
+    **迁移后语义**（2026-11-17）：PDF 工作台迁成插件，判据从
+    "宿主里有没有 pdfx 模块"变成"**插件装没装**"。
+    所以"不可用"的模拟手段也换了：不再屏蔽模块（那对目录探测无效），
+    改为把插件根指到空目录。
+    """
     text = _run_isolated(
         tmp_path,
-        "from omnicrawler.services.document_facade import document_capability\n"
-        "report = document_capability()\n"
+        "from omnicrawler.services import document_facade as f\n"
+        "# 把插件目录解析指到空目录 ⇒ 等价于「未安装」\n"
+        "f._plugin_dir = lambda: None\n"
+        "report = f.document_capability()\n"
         "print('AVAILABLE=' + repr(report['available']))\n"
         "print('MISSING=' + repr(report['missing']))\n"
         "print('REASON=' + report['reason'])\n",
     )
     assert "AVAILABLE=False" in text, (
-        "文档子系统已被屏蔽，能力探测却报可用——那样「未装就不显示」无从判断。\n"
+        "插件目录为空，能力探测却报可用——那样「未装就不显示」无从判断。\n"
         + text[-800:]
     )
-    assert "MISSING=[" in text and "pdfx" in text, (
-        "缺失清单里没有 pdfx：用户不知道到底缺什么。\n" + text[-800:]
+    assert "pdf-workbench" in text, (
+        "缺失清单里没点出要装哪个插件：用户不知道到底缺什么。\n" + text[-800:]
     )
-    assert "组件" in text or "安装" in text, (
+    assert "安装" in text, (
         "不可用原因没有给安装指引。\n" + text[-800:]
     )
 
 
 def test_pdf_entrypoint_gives_actionable_error(tmp_path: Path) -> None:
-    """请求文档能力时必须是**可操作提示**，不是裸 ImportError。"""
+    """请求文档能力时必须是**可操作提示**，不是裸 ImportError。
+
+    迁移后 `require_document` 抛的是 `RuntimeError`（不再是 ImportError）——
+    因为宿主里已经没有那些模块可 import 了，缺的是**插件**。
+    判据意图不变：错误必须可操作、可定位。
+    """
     text = _run_isolated(
         tmp_path,
-        "from omnicrawler.services.document_facade import require_document\n"
+        "from omnicrawler.services import document_facade as f\n"
+        "f._plugin_dir = lambda: None\n"
         "try:\n"
-        "    require_document('pdfx.service')\n"
-        "except ImportError as exc:\n"
+        "    f.require_document('pdf.validate')\n"
+        "except Exception as exc:\n"
         "    print('MESSAGE_START')\n"
         "    print(str(exc))\n"
         "    print('MESSAGE_END')\n",

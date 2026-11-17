@@ -84,9 +84,6 @@ ALLOWED: dict[str, str] = {
     "tests/integration/test_gui_worker_local_task.py:469": (
         "子进程是 python -m omnicrawler compare-runs；CLI 自 reconfigure(utf-8)，且断言只看退出码与产出文件。"
     ),
-    "tests/unit/pdf/test_pdfx_config_position.py:82": (
-        "子进程是 python -m omnicrawler pdf；CLI 自 reconfigure(utf-8)，中文断言因此可靠。"
-    ),
     # ---- 子进程输出不参与中文断言（只比 ASCII 标记）/ 不参与判定 ----
     "tests/unit/tools/test_portable_archive_smoke.py:265": (
         "只断言 --help 里的 ASCII 选项名；即使中文乱码也不影响判定。"
@@ -105,7 +102,14 @@ ALLOWED: dict[str, str] = {
 }
 
 _SKIP_PARTS = frozenset(
-    {".git", ".venv", ".tmp", ".audit-tmp", ".agents", ".test-tmp", "node_modules", "__pycache__", ".runtime"}
+    {
+        ".git", ".venv", ".tmp", ".audit-tmp", ".agents", ".test-tmp",
+        "node_modules", "__pycache__", ".runtime",
+        # `archive/`：**已迁出宿主的代码归档**（2026-11-17 PDF 工作台迁移）。
+        # 它不再是运行中的代码，扫描它只会让门禁为历史文件报违规、
+        # 并让白名单位点失效（实测踩到）。
+        "archive",
+    }
 )
 
 
@@ -166,7 +170,13 @@ def tracked_python_files(root: Path) -> list[str]:
     except (OSError, subprocess.SubprocessError):
         done = None
     if done is not None and done.returncode == 0 and done.stdout.strip():
-        return sorted({p for p in done.stdout.split("\0") if p})
+        # git 分支同样要应用 `_SKIP_PARTS`：早先只有文件系统分支过滤，
+        # 于是 `archive/`（已迁出宿主的历史代码）里的旧文件照样被扫到、
+        # 报违规并让白名单位点失效（实测踩到）。
+        return sorted(
+            p for p in done.stdout.split("\0")
+            if p and not (_SKIP_PARTS & set(p.split("/")))
+        )
     return sorted(
         str(path.relative_to(root)).replace("\\", "/")
         for path in root.rglob("*.py")

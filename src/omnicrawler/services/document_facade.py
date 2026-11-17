@@ -60,6 +60,19 @@ def _plugin_dir() -> Any:
     from pathlib import Path
 
     candidates = []
+
+    # 显式覆盖（测试与非常规部署用）。
+    #
+    # 为什么需要它：普通探测依赖 cwd / 应用目录，而**插件自己的测试**运行时
+    # cwd 是插件仓、宿主 src 在别的路径，两者对不上，于是测试里
+    # `document_capability()` 误报"未安装"（实测踩到：
+    # document_ir 三组测试因此红）。给一条显式通道比继续猜路径可靠。
+    import os
+
+    explicit = os.environ.get("OMNICRAWL_PDF_PLUGIN_DIR", "").strip()
+    if explicit:
+        candidates.append(Path(explicit).expanduser())
+
     try:
         from ..core.config import load_config
 
@@ -78,6 +91,22 @@ def _plugin_dir() -> Any:
         from ..core.runtime_paths import portable_data_root
 
         candidates.append(portable_data_root() / "plugins_installed" / _PLUGIN_ID)
+    except Exception:  # noqa: BLE001
+        pass
+
+    # 工作目录与源码目录（开发/测试场景）。
+    #
+    # **这是实测补上的一处**：最初只查 config.root 与 portable_data_root，
+    # 结果把插件放到 `plugins_installed/` 后 facade 仍报"未安装"——
+    # 因为测试进程的 config.root 与工作目录不重合。
+    # 宿主自己的 `plugin_dependency_check` 也把工作目录当候选之一，
+    # 这里对齐同一约定，避免"插件装好了但宿主看不见"。
+    candidates.append(Path.cwd() / "plugins_installed" / _PLUGIN_ID)
+    try:
+        from ..core.runtime_paths import application_dir
+
+        candidates.append(application_dir() / "plugins_installed" / _PLUGIN_ID)
+        candidates.append(application_dir().parent / "plugins_installed" / _PLUGIN_ID)
     except Exception:  # noqa: BLE001
         pass
 
