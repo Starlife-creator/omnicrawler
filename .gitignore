@@ -138,3 +138,8 @@ imported-work/
 user-test-runs/
 .field_designer/
 .field_designer.yaml
+
+# 测试产物：某些用例用 tempfile.mkdtemp() 而不清理，且临时根落在源码目录内，
+# 会在 src/omnicrawler/plugins/ 下留下 omnicrawler-landlock-* 之类目录。
+# 实测已被误提交一次（b0067592），加这条防止复发。
+src/omnicrawler/plugins/omnicrawler-landlock-*/
