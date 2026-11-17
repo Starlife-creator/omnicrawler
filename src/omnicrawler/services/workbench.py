@@ -56,8 +56,39 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_processing = _pdf.run_pdf_processing
     apply_review = _pdf.apply_pdf_review
 
-    def open_path(*args, **kwargs):
-        return _pdf.require_document("pdfx.desktop").open_path(*args, **kwargs)
+    def open_path(target: Any) -> None:
+        """在系统文件管理器里打开一个路径。
+
+        **为什么在宿主侧实现而不是经插件**：这是通用桌面能力（打开文件夹），
+        与 PDF 无关。此前写成 `_pdf.require_document("pdfx.desktop").open_path(...)`
+        ——但 `require_document` 返回的是**插件模块**，没有 `open_path` 属性，
+        每次调用都会 AttributeError（实测）。
+
+        保留原实现的安全约束：**扩展名白名单**，拒绝 .exe/.bat/.cmd 等可执行件
+        （Windows `os.startfile` 会按扩展名关联执行，输出目录混入可执行文件
+        时双击即运行）。
+        """
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path as _Path
+
+        path = _Path(str(target))
+        _openable = {
+            ".txt", ".md", ".csv", ".xlsx", ".xls", ".json", ".jsonl", ".pdf",
+            ".html", ".htm", ".png", ".jpg", ".jpeg", ".log", ".yaml", ".yml",
+        }
+        if path.is_file() and path.suffix.casefold() not in _openable:
+            raise ValueError(f"拒绝打开该类型的文件（不在白名单内）: {path.suffix}")
+        if not path.exists():
+            raise FileNotFoundError(f"路径不存在: {path}")
+
+        if sys.platform == "win32":
+            os.startfile(str(path))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path)])
 
     class Workbench:
         def __init__(self, root: tk.Tk) -> None:
