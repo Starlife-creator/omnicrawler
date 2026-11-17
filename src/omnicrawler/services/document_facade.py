@@ -317,8 +317,15 @@ def field_extractor_main(argv: list[str] | None = None) -> Any:
 
 
 def convertx_module() -> Any:
-    """取格式转换模块（经插件）。"""
-    return require_document("convertx")
+    """取格式转换模块（经插件）。
+
+    **不能直接返回插件模块**：宿主 `_handlers.py` 需要
+    `module.OutputRule`，而插件模块没有这个属性（实测
+    `AttributeError: 'module' object has no attribute 'OutputRule'`）。
+    改为调插件暴露的 `convertx_module()`，它返回一个带宿主所需符号的对象。
+    """
+    module = require_document("convertx")
+    return module.convertx_module()
 
 
 def convert_with_preset(*args: Any, **kwargs: Any) -> Any:
