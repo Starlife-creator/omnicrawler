@@ -116,6 +116,33 @@ def _plugin_dir() -> Any:
                 return candidate
         except OSError:
             continue
+
+    # 市场安装的真实布局是**三层**：
+    #   <root>/<creator_fingerprint>/<plugin_id>/<version>/plugin.py
+    # （见 `package_importer.import_package_folder` 的 `final` 路径）。
+    #
+    # 上面只查了两层 `<root>/plugins_installed/<id>`——那是**开发态**布局
+    # （手工放进目录）。实测：从市场装完插件后，facade 报"未安装"，
+    # 用户装好了却用不了。
+    #
+    # 所以在各候选根下按 `<fingerprint>/<id>/<version>` 找一遍。
+    # 取版本号最大的那个（字符串比较对 semver 不严谨，但同一插件目录下
+    # 版本通常单一；真需要严格排序时再引入比较器）。
+    for base in candidates:
+        # **不要**在这里判 `base.is_dir()` 后 continue：
+        # 三层布局恰恰意味着两层路径（`<root>/plugins_installed/<id>`）
+        # 不存在——早先加了这个判断，结果市场装的插件永远发现不了（实测）。
+        # 正确的做法是对"可能的安装根"直接 glob，由 glob 自己处理不存在。
+        for root in (base.parent, base):
+            try:
+                matches = sorted(
+                    root.glob(f"*/{_PLUGIN_ID}/*/plugin.py"),
+                    key=lambda item: item.parent.name,
+                )
+            except OSError:
+                continue
+            if matches:
+                return matches[-1].parent
     return None
 
 
