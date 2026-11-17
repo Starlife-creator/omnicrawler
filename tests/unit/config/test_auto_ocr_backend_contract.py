@@ -80,7 +80,9 @@ def test_auto_backend_resolves_to_a_real_engine_or_says_why() -> None:
       b) 明确声明不可用，并带有可读原因。
     不允许：返回 none 却对外宣称「自动」。
     """
-    from omnicrawler.pdfx.ocr import resolve_auto_ocr_backend
+    # OCR 引擎注册表随 PDF 工作台迁入插件；本模块已在顶部 importorskip，
+    # 走到这里说明插件可用。
+    from omnicrawler_pdf.pdfx.ocr import resolve_auto_ocr_backend
 
     resolved, reason = resolve_auto_ocr_backend()
     assert resolved in {"paddle", "tesseract", "none"}, resolved

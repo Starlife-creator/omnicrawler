@@ -32,7 +32,18 @@ def test_demo_pdfs_are_valid_and_parseable(tmp_path: Path) -> None:
 
 
 def test_demo_pdfs_survive_pdfx_parse_pipeline(tmp_path: Path) -> None:
-    from omnicrawler.pdfx.parser import parse_document
+    """演示 PDF 能被 PDF 工作台的解析链读通。
+
+    迁移后（2026-11-17）：`pdfx` 随工作台迁入插件。这条测的是
+    宿主生成的演示 PDF **与插件解析器兼容**，属跨支柱判据——
+    插件未装时跳过（没有可比对的解析器），而不是删掉或让它红。
+    """
+    from omnicrawler.services.document_facade import document_capability
+
+    if not document_capability()["available"]:
+        pytest.skip("需要 pdf-workbench 插件：解析器由插件提供")
+
+    from omnicrawler_pdf.pdfx.parser import parse_document
 
     demo = create_demo_workspace(tmp_path / "demo2")
     parsed = parse_document(str(demo.root / "report.pdf"), min_chars=10, max_garbled_ratio=0.4)
