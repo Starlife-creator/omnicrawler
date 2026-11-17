@@ -26,6 +26,11 @@ FUNCTION_EXTRAS = (
     "postgresql",
     "search",
     "document",
+    # 368be657 把 pdf extra 按支柱拆开时新增的：reportlab 只用于**写** PDF
+    # （offline_demo 生成演示件、pdf_quality_benchmark 生成基准件），
+    # 与"读/解析 PDF"（pypdfium2/pdfplumber）是不同职责，故单列一个 extra。
+    # 当时漏了同步更新这份清单，导致 `full ⊃ 功能 extra 并集` 的断言失败。
+    "pdf-write",
 )
 
 

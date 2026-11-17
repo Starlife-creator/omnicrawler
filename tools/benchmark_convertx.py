@@ -18,6 +18,7 @@ import tempfile
 import time
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -227,18 +228,33 @@ def _validate_output(path: Path, *, format_name: str, rows: int) -> dict[str, An
 
 def run_worker(case: str, source: Path, target: Path, rows: int) -> dict[str, Any]:
     """Run one measured conversion; called only in a fresh subprocess."""
-    # 迁移后（2026-11-17）：convertx 随 PDF 工作台迁入插件 pdf-workbench。
-    # 经 facade 的 run_operation 走插件（**不要** `require_document("convertx")` ——
-    # 那返回的是插件模块本身，没有 `convert` 属性；实测踩到）。
-    from omnicrawler.services import document_facade
+    # **表格读写已上提到宿主**（`services/table_io.py`，2026-11-22）。
+    #
+    # 此前这里经 facade 走插件，导致基准工具在未装 PDF 插件时不可用——
+    # 与 `omnicrawler transform` 是同一类误绑（见 03635186 的 table_io 上提）。
+    #
+    # 这里只做"读源 → 写目标"，正是 table_io 暴露的能力，不需要插件。
+    from omnicrawler.services import table_io
 
     def convert(source, target, *, on_error="abort", options=None):  # noqa: ANN001
-        return document_facade.run_operation(
-            "convertx.convert",
-            {
-                "args": [source, target],
-                "kwargs": {"on_error": on_error, "options": options},
-            },
+        opts = dict(options or {})
+        opts.setdefault("on_error", on_error)
+        src = Path(source)
+        dst = Path(target)
+        src_fmt = table_io.sniff_format(src)
+        dst_fmt = table_io.sniff_format(dst)
+        if src_fmt not in table_io.READERS:
+            raise ValueError(f"基准：不支持的源格式 {src_fmt!r}")
+        if dst_fmt not in table_io.WRITERS:
+            raise ValueError(f"基准：不支持的目标格式 {dst_fmt!r}")
+        records = table_io.READERS[src_fmt](src, opts)
+        written = table_io.WRITERS[dst_fmt](records, dst, opts) or {}
+        # `convertx.convert` 返回带 `.rows` / `.extra` 的对象；table_io 的
+        # writer 返回 dict（{rows, nested, ...}）。这里包一层保持调用方接口
+        # 不变——基准只关心"实际写了几行"，不需要改下游断言。
+        return SimpleNamespace(
+            rows=int(written.get("rows", len(records))),
+            extra={"written_records": int(written.get("rows", len(records)))},
         )
 
     source_format, target_format = CASE_FORMATS[case]

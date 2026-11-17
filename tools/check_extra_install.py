@@ -27,7 +27,10 @@ import sys
 # extra 名 → 该 extra 承诺可导入的顶层模块。
 PROFILE_IMPORTS: dict[str, tuple[str, ...]] = {
     "html": ("bs4", "lxml", "cssselect", "selectolax"),
-    "pdf": ("pypdfium2", "pdfplumber", "pypdf", "reportlab", "openpyxl"),
+    # 368be657 按支柱拆分：pdf 只留"读/解析"依赖，写出与表格另立 extra。
+    "pdf": ("pypdfium2", "pdfplumber", "pypdf"),
+    "pdf-write": ("reportlab",),
+    "excel": ("openpyxl",),
     "browser": ("playwright", "patchright"),
     "selenium": ("selenium",),
     "async-http": ("httpx",),
