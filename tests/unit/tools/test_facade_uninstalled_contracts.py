@@ -1,0 +1,112 @@
+"""卸载态契约：插件没装时，每个入口都必须给**可操作**提示。
+
+## 为什么需要这个守卫
+
+用户要求"组件化让用户安心安装"，反面就是：**没装插件时不能崩、不能装死**。
+
+三种失败形态都会让用户困惑：
+
+1. 抛裸 `ImportError` / `ModuleNotFoundError` —— 用户不知道要装什么；
+2. 抛 `AttributeError` —— 看起来像程序坏了；
+3. **静默成功**（返回 `None` / 空对象）—— 最坏，用户以为功能在，实际什么都没做。
+
+正确行为是抛 `RuntimeError`，消息里点名 **`pdf-workbench`** 且给出安装指引。
+
+## 实现方式
+
+本测试**强制**把插件目录指到空位置（`_plugin_dir` 返回 `None`），
+所以无论本机装没装插件，测的都是"卸载态"。
+
+这条与 `test_facade_entry_contracts.py`（测"装了之后拿到什么"）
+是互补的两侧。
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from omnicrawler.services import document_facade
+
+#: 每个入口一组"能让它走到插件调用"的最小参数。
+ENTRIES: list[tuple[str, tuple[object, ...]]] = [
+    ("load_pdf_config", ("c.yaml",)),
+    ("create_project_config", ("builtin:pdf/generic_template.yaml",)),
+    ("run_pdf_extraction", ("c.yaml",)),
+    ("run_pdf_processing", ("c.yaml",)),
+    ("pdf_database_status", ("c.sqlite",)),
+    ("apply_pdf_review", (None, None)),
+    ("pdf_main", ([],)),
+    ("pdf_processor_main", ([],)),
+    ("field_extractor_main", ([],)),
+    ("convertx_module", ()),
+    ("convert_with_preset", ("a.csv", "b.jsonl")),
+    ("convertx_preset", ("x",)),
+    ("compare_runs", (None, None, None)),
+    ("parse_document", ("a.pdf",)),
+    ("document_block_class", ()),
+    ("ocr_backend_class", ()),
+    ("open_pdf_database", ("c.sqlite",)),
+    ("pdf_views", ()),
+    ("table_io", ()),
+    ("pdf_region_selector", ()),
+    ("run_operation", ("pdf.validate", {})),
+]
+
+
+@pytest.fixture
+def uninstalled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """强制"插件未安装"：让目录解析永远返回 None。"""
+    monkeypatch.setattr(document_facade, "_plugin_dir", lambda: None)
+
+
+@pytest.mark.parametrize("name,args", ENTRIES)
+def test_uninstalled_entry_gives_actionable_error(
+    uninstalled: None, name: str, args: tuple[object, ...]
+) -> None:
+    """未装插件时：必须抛 RuntimeError，消息点名插件并给安装指引。"""
+    entry = getattr(document_facade, name)
+    with pytest.raises(RuntimeError) as excinfo:
+        entry(*args)
+
+    message = str(excinfo.value)
+    assert message.strip(), f"{name}: 错误消息为空"
+    assert "pdf-workbench" in message, (
+        f"{name}: 消息没点名要装哪个插件，用户无法照做。实际: {message!r}"
+    )
+    assert "安装" in message or "插件市场" in message, (
+        f"{name}: 消息没给安装指引。实际: {message!r}"
+    )
+
+
+def test_uninstalled_never_silently_succeeds(uninstalled: None) -> None:
+    """未装插件时不得静默成功——那会让用户以为功能可用。
+
+    逐个入口确认"要么抛 RuntimeError，要么抛别的异常"，**不能正常返回**。
+    """
+    for name, args in ENTRIES:
+        entry = getattr(document_facade, name)
+        try:
+            result = entry(*args)
+        except RuntimeError:
+            continue  # 期望路径
+        except Exception:  # noqa: BLE001 - 只要不是 RuntimeError 但也没静默返回，记录
+            continue
+        pytest.fail(
+            f"{name} 在插件未安装时静默返回了 {type(result).__name__}"
+            f"（值 {result!r}）——用户会以为功能可用"
+        )
+
+
+def test_capability_report_is_consistent_when_uninstalled(uninstalled: None) -> None:
+    """能力报告与目录探测必须一致：都判不可用。"""
+    report = document_facade.document_capability()
+    assert report["available"] is False
+    assert report["plugin_installed"] is False
+    assert report["missing"], "缺失清单为空——用户不知道缺什么"
+    assert "pdf-workbench" in report["reason"]
+
+
+def test_migrated_packages_absent_regardless_of_plugin(uninstalled: None) -> None:
+    """四个包必须已从宿主移除（与插件装没装无关）。"""
+    absent = document_facade.migrated_packages_absent()
+    assert all(absent.values()), f"仍有包留在宿主: {absent}"
