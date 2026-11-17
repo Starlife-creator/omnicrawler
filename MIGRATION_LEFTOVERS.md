@@ -69,20 +69,69 @@
 **这个改动没做**，因为：收益是消除一份重复资源（约 7 KB），
 风险是改动一条已在生产运行的解析链。记在这里待评估。
 
-## 四、迁移后的验证覆盖
+## 四、迁移暴露并修掉的既有问题（不是迁移引入的）
 
-| 层次 | 守卫 |
-|---|---|
-| 代码完整性 | `test_migration_fidelity.py`（54 模块逐行比对） |
-| 功能等价（API） | `tests/e2e/test_full_pipeline.py`（4 条） |
-| 功能等价（CLI） | `tests/e2e/test_cli_pipeline.py`（2 条） |
-| 安全 | 签名闸门 4 条 + TOCTOU 1 条 |
-| 可发布 | 目录布局 4 条 + 发布链路 4 条 |
-| GUI | 装配 5 条 |
-| 卸载态 | 24 条 |
+迁移让一批**原本就存在**的问题显形。记录在此，因为它们不是"迁移的副作用"，
+而是迁移**顺带修好的**：
 
-## 五、仍未完成
+| 类别 | 问题 | 位置 |
+|---|---|---|
+| 安全 | 插件加载完全绕过验签（零签名即可执行任意代码） | `document_facade._plugin_handle` |
+| 安全 | 验签与执行两次读盘，TOCTOU 窗口 | 同上 |
+| 支柱 | `table_io` 被绑在插件上 ⇒ `omnicrawler transform` 未装插件时不可用 | `services/data_transform.py` |
+| 支柱 | `compare_runs` 同上 ⇒ `compare-runs` 与删除审计不可用 | `document_facade.compare_runs` |
+| 支柱 | `benchmark_convertx` 同上 | `tools/benchmark_convertx.py` |
+| 能力判据 | 导航/首页/能力报告用"pdfplumber 装没装"当"PDF 可用"的代理 | `core/capabilities.py` 等 5 处 |
+| 迁移遗漏 | LLM 出网丢 User-Agent（合规回退） | `pdfx/llm.py` |
+| 迁移遗漏 | 5 处函数内导入指向已迁走模块 | GUI 视图 / `compat` |
+| 迁移遗漏 | `selfcheck` 依赖清单只列 6 项（实际 24 项） | `plugin.py` |
+| 用户面 | 文档教用户跑已移除的 `pdfx` 命令 | `INSTALLATION.md` / `OPERATIONS.md` |
+| 用户面 | `omnicrawler pdf --help` 未装插件时抛 traceback | `cli/_main.py` |
+| 依赖契约 | `pdf-write` / `excel` 两个 extra 未登记契约 | 3 处清单 |
+
+**共同模式**：把"某个 Python 包在不在"或"某个模块在不在"当成"能力可用"的代理。
+迁移后唯一可靠的判据是**插件装没装**。
+
+## 五、迁移后的验证覆盖
+
+| 层次 | 守卫 | 规模 |
+|---|---|---|
+| 代码完整性 | `test_migration_fidelity.py` | 54 模块逐行比对 |
+| 插件模块级 | 插件仓 `tests/unit/` | 465 条 |
+| 功能等价（API） | `tests/e2e/test_full_pipeline.py` | 4 条 |
+| 功能等价（CLI） | `tests/e2e/test_cli_pipeline.py` | 2 条 |
+| 安全 | 签名闸门 / TOCTOU | 5 条 |
+| 可发布 | 目录布局 / 发布链路 | 8 条 |
+| GUI 装配 | 导航 / 视图 / 能力 | 8 条 |
+| 卸载态 | 每个 facade 入口均须可操作 | 24 条 |
+| 支柱独立性 | 支柱①能力不得依赖插件 | 12 条 |
+| 函数内导入 | AST + 真实 import 全量 | 153 处 / 2 条 |
+| 依赖自检 | 覆盖完整性 + 降级行为 | 5 条 |
+| CLI 用户面 | help/错误提示 | 3 条 |
+
+汇总数字不手抄（会随时间失真）。要复核请直接跑：
+
+```bash
+# 宿主静态门禁（当前应为全绿）
+python tools/self_verify.py --set static
+
+# 宿主 tools + core 两个测试目录
+python -m pytest tests/unit/tools tests/unit/core -q
+
+# 插件仓全套件
+cd ../OmniCrawler-market/submissions/plugins/4c3014804d85de2568f85e62a3048429/pdf-workbench
+python -m pytest tests -q
+```
+
+> 已知环境限制：`test_shell_scripts_gate` 的 3 条 + `test_gate_registry` 的 1 条
+> 需要 bash 创建命名管道，在受限沙箱里会失败（`NtCreateDirectoryObject ...
+> 0xC0000022`）。这与迁移无关，换到普通桌面环境即通过。
+
+## 六、仍未完成
 
 - **插件未签名**：需要维护者身份密码（不由 AI 代输）。
-  未签名时宿主 strict 策略会拒载，这是**正确行为**。
+  未签名时宿主 strict 策略会拒载，这是**正确行为**，不是故障。
 - 真实桌面环境的 GUI 走查（当前只有 offscreen 验证）。
+- **市场门 3 只检查 `plugin.py` 的导入图**，不看子模块——所以插件声明通过
+  不代表依赖真的齐备。缓解：`selfcheck()` 已覆盖 24 个包并在缺失时报告。
+  彻底修需扩展市场仓门禁，属规则变更，会影响现有 20 个投稿包，待评估。
