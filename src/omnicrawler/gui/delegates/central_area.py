@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QStackedWidget,
@@ -46,6 +47,31 @@ from ..widgets.status_indicator import StatusIndicator
 from ._base import _BaseDelegate
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _goto_nav_key(window: Any, nav_key: str, label: str) -> None:
+    """按 **NavKey** 跳到对应页面；该页不存在时给可操作提示。
+
+    为什么不直接用 `NavIndex.X`：那是**行号**，由 `visible_entries()`
+    派生，导航项增删就会变。实测未装 pdf-workbench 时
+    `NavIndex.CONVERT_TOOL` 指向的是"登录会话"页——点了会跳错地方。
+    key 不会变，找不到就是真的不存在。
+    """
+    from ...core.capabilities import navigation_capabilities
+    from ..navigation import visible_entries
+
+    # 与导航构建**同一判据**（`central_area` 里 `_build_nav` 用的就是它）：
+    # 能力由 `navigation_capabilities()` 现场算，不是一个缓存属性。
+    keys = [entry.key for entry in visible_entries(navigation_capabilities())]
+    if nav_key not in keys:
+        QMessageBox.information(
+            window,
+            _("功能未安装"),
+            _("{label} 由插件 pdf-workbench 提供，当前未安装。\n\n"
+              "可在「插件市场」中安装后使用。").format(label=label),
+        )
+        return
+    window._nav.setCurrentRow(keys.index(nav_key))
 
 
 def _load_pdf_views() -> Any:
@@ -249,9 +275,14 @@ class CentralAreaBuilder(_BaseDelegate):
         mw._home.create_demo.connect(mw._create_offline_demo)
         mw._home.create_starter.connect(mw._create_starter)
         mw._home.open_getting_started.connect(mw._show_getting_started)
-        # B-4 ConvertX：首页按钮跳到格式互转面板（NavIndex.CONVERT_TOOL）
+        # B-4 ConvertX：首页按钮跳到格式互转面板。
+        #
+        # **不能用 `NavIndex.CONVERT_TOOL`**：那是**行号**，随导航项增删而变。
+        # 未装 pdf-workbench 时该行实际指向 `login_session`（实测：
+        # `CONVERT_TOOL=9` → 无插件时是"登录会话"页），点了会跳到错误页面。
+        # 改为按 **key** 定位，找不到就给可操作提示。
         mw._home.open_convert_tool.connect(
-            lambda: mw._nav.setCurrentRow(NavIndex.CONVERT_TOOL)
+            lambda: _goto_nav_key(mw, NavKey.CONVERT_TOOL, _("格式互转"))
         )
         # S4 场景管理：首页按钮跳到场景面板（NavIndex.SCENE）
         mw._home.open_scene.connect(

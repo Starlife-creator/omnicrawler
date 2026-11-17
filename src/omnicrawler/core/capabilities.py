@@ -382,9 +382,19 @@ def navigation_capabilities() -> dict[str, bool]:
     """
     ready: dict[str, bool] = {}
 
-    # PDF：栈依赖 pdfplumber（与 FEATURE_REQUIREMENTS["pdf"] 同口径，
-    # 但这里只要核心的 PDF 解析可用，不要求 xlsx 写出能力）。
-    ready["pdf"] = importlib.util.find_spec("pdfplumber") is not None
+    # PDF：**判据是"插件装没装"，不是"pdfplumber 装没装"**。
+    #
+    # 2026-11-17 迁移后 PDF 工作台是可选插件 `pdf-workbench`。早先这里只探测
+    # `pdfplumber`（宿主的一个 Python 包）——后果是：装了 pdfplumber 的机器上
+    # 导航**显示 PDF 入口**，但点进去是"插件未安装"，正是"空荡荡界面"那种形态。
+    #
+    # 现在要求两者都成立：插件已安装（真正的功能来源），且宿主有 pdfplumber
+    # （宿主侧的 `doc_extractors` 等仍在用）。任一缺失都不显示入口。
+    from ..services.document_facade import document_capability
+
+    ready["pdf"] = bool(document_capability().get("available")) and (
+        importlib.util.find_spec("pdfplumber") is not None
+    )
 
     # QML 橱窗：PySide6 的 QML 运行时。冻结包里被 spec 排除，
     # 因此这里天然为 False，入口不显示（替代原先"显示但点了降级"）。
