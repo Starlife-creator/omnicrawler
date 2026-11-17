@@ -42,7 +42,21 @@ def extract_slots(
         # 富文档（docx/pptx/odt/epub/eml/txt/pdf/html）统一经 document_ir
         # 解析为纯文本后走 TextDocExtractor；css/jsonpath 槽位请显式指定
         # document_type="html"/"json" 以保留原始结构。
-        from ..document_ir import parse_document
+        #
+        # 迁移后（2026-11-17）：`document_ir` 已随 PDF 工作台迁入插件
+        # `pdf-workbench`。这里改为经 facade 按需取用：
+        # * 插件已装 ⇒ 走原来的富文档解析；
+        # * 插件未装 ⇒ 给出**可操作**提示，并指明可显式指定 document_type
+        #   绕开富文档解析（html/json/text/pdf 四条路径都不依赖 document_ir）。
+        from ..services.document_facade import document_capability
+
+        if not document_capability()["available"]:
+            raise RuntimeError(
+                "document_type='auto' 需要 PDF 工作台插件（富文档解析依赖其 document_ir）。\n"
+                "请安装 pdf-workbench 插件；或显式指定 document_type 为 "
+                "html / json / text / pdf 之一（这四条路径不需插件）。"
+            )
+        from ..services.document_facade import parse_document
 
         doc = parse_document(content)
         return TextDocExtractor().extract(doc.to_text(), definitions)

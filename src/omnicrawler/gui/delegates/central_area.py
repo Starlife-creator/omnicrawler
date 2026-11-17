@@ -11,7 +11,9 @@ connect 目标、不改装配顺序**，主窗口只保留组合顺序与跨面�
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+from typing import Any
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -33,10 +35,8 @@ from ..i18n import _
 from ..navigation import STACK_INDEX, NavIndex, NavKey, visible_entries
 from ..views.change_monitor import ChangeMonitorView
 from ..views.chart_view import ChartView
-from ..views.convert_tool import ConvertView
 from ..views.developer_inspector import DeveloperInspector
 from ..views.file_list import FileList
-from ..views.pdf_workbench import PdfWorkbenchView
 from ..views.plugin_market import PluginMarketView
 from ..views.professional_review import EvidenceView
 from ..views.result_table import ResultTable
@@ -44,6 +44,29 @@ from ..views.yaml_editor import YamlEditor
 from ..widgets.log_console import LogConsole
 from ..widgets.status_indicator import StatusIndicator
 from ._base import _BaseDelegate
+
+LOGGER = logging.getLogger(__name__)
+
+
+def _load_pdf_views() -> Any:
+    """按需加载 PDF 工作台视图（来自插件 pdf-workbench）。
+
+    迁移后（2026-11-17）：PDF 工作台已迁成插件，宿主不再持有其 GUI 代码。
+    这里经插件 facade 加载视图模块；插件未安装时返回 None，
+    调用方据此跳过页面构造（导航入口也不会出现）。
+
+    **为什么不在宿主保留一份**：那等于把 PDF 工作台的 GUI 又搬回来，
+    用户明确要求"原始代码里看不到这个 PDF 工作台的痕迹"。
+    """
+    from ...services import document_facade
+
+    if not document_facade.document_capability()["available"]:
+        return None
+    try:
+        return document_facade.pdf_views()
+    except Exception:  # noqa: BLE001 - 视图加载失败不应让主界面起不来
+        LOGGER.warning("PDF 工作台视图加载失败（插件存在但不可用）", exc_info=True)
+        return None
 
 #: 导航项 key → 展示标签。**必须经 _() 包裹**（i18n 门禁按此判据）。
 #: 标签放在展示层而不是 navigation.py：那个模块不依赖 Qt 与 i18n，
@@ -241,14 +264,28 @@ class CentralAreaBuilder(_BaseDelegate):
         mw._evidence_view = EvidenceView(workspace=Path(mw._config.workspace).expanduser())
         mw._evidence_view.back_to_results.connect(lambda: mw._nav.setCurrentRow(NavIndex.RESULTS))  # 返回结果与复核页
         mw._stack.addWidget(mw._evidence_view)
-        mw._pdf_workbench = PdfWorkbenchView()
-        mw._stack.addWidget(mw._pdf_workbench)
-        # B-4：ConvertX 格式互转工具页（stack index 7）
-        mw._convert_tool = ConvertView()
-        mw._convert_tool.open_output_folder_requested.connect(
-            lambda p: QDesktopServices.openUrl(QUrl.fromLocalFile(p))
-        )
-        mw._stack.addWidget(mw._convert_tool)
+
+        # 迁移后（2026-11-17）：PDF 工作台与格式互转已迁成插件 pdf-workbench。
+        # 视图改为**按插件可用性条件构造**：
+        # * 装了 ⇒ 从插件目录加载视图类，行为与迁移前一致；
+        # * 没装 ⇒ 不创建视图，导航入口也不显示（`NavEntry.requires` 已声明 "pdf"）。
+        #
+        # 为什么不在宿主里保留占位页：用户明确要求"不要看到一个空荡荡的
+        # PDF 工作台界面"。没有就是没有，不摆空壳。
+        _pdf_views = _load_pdf_views()
+        if _pdf_views is not None:
+            mw._pdf_workbench = _pdf_views.PdfWorkbenchView()
+            mw._stack.addWidget(mw._pdf_workbench)
+            # B-4：ConvertX 格式互转工具页（stack index 7）
+            mw._convert_tool = _pdf_views.ConvertView()
+            mw._convert_tool.open_output_folder_requested.connect(
+                lambda p: QDesktopServices.openUrl(QUrl.fromLocalFile(p))
+            )
+            mw._stack.addWidget(mw._convert_tool)
+        else:
+            # 未装插件：这两个页面不存在。属性置 None，调用方据此判空。
+            mw._pdf_workbench = None
+            mw._convert_tool = None
 
         # A3：变更监控复用共享探活 AsyncFetcher（惰性构建，走 EgressBroker 审计）
         if mw._probe_fetcher is None:

@@ -1,242 +1,369 @@
-"""文档子系统的**唯一**宿主侧入口（第 2 批：挂点收口）。
+"""PDF 工作台的宿主侧入口（2026-11-17 迁移后）。
 
-为什么要有这个 facade
----------------------
-文档工作台（`pdfx` / `convertx` / `apps` / `document_ir` / `review` / `export`）
-要从"核心功能"降为**可选组件**。但宿主里有 8 处真实挂点需要使用它：
+迁移前后对比
+------------
+**迁移前**：`pdfx` / `convertx` / `apps` / `document_ir` 在宿主内，
+本 facade 只是"统一 import 点"，用于收口 8 处散落挂点。
 
-```
-cli/_main.py                     PDF 命令行转发
-cli/_handlers.py                 格式转换（convertx）+ 运行对比（review）
-services/workbench.py            PDF 工作台的全部后端调用
-pipeline_ops/pdf_integration.py  PDF 任务编排
-pipeline_ops/preflight.py        PDF 预检
-```
+**迁移后**：这些包已整体迁到插件 `pdf-workbench`
+（`OmniCrawler-market/plugins/pdf-workbench`），宿主里**不再有它们的代码**。
+本 facade 的职责变成：
 
-若各处直接 import，组件化时要逐处去改，**漏一处就是运行期 ImportError**。
-收口到本模块后，只需改这一处。
+1. **报告可用性**：`document_capability()` —— 插件装没装；
+2. **调用插件**：`run_operation()` —— 把操作转给插件；
+3. **缺失时给可操作提示**：告诉用户去插件市场装，而不是抛 ImportError 栈。
 
-两条硬约束
-----------
-1. **导入本模块不得拉起文档子系统**。这是"可选"的前提——否则"装不装都能启动"
-   就是假的。所以全部符号都在**函数内**导入。
-2. **缺组件时必须给出可操作提示**，而不是裸 ImportError。
-   用户看到的应该是"需要安装 PDF 工作台组件"，而不是一段栈。
+为什么是 in_process 插件而不是子进程
+------------------------------------
+PDF 工作台要自由读写用户指定的项目目录（读 PDF、写五表、建 SQLite）。
+契约 2 的 `files.read`（静态白名单）/ `artifact.stream`（无路径）/
+`temp.open`（会话临时）**没有一条能覆盖**。实测契约 2 审计报 36 条
+`gate1_uncontrolled_file_io`。契约 1（in_process）是这类需求的既定通道：
+`plugin_audit.gate_host_boundaries` 对 `execution_mode: in_process` 直接豁免。
 
-能力探测
---------
-:func:`document_capability` 回答"当前环境有没有文档能力"，
-供导航门禁（未装不显示入口）与诊断使用。
-:func:`require_document` 在真正要用时取子模块，缺失时抛**带说明**的错误。
-
-注意：本模块**不做**能力降级或功能替代——它只是入口与诊断。
-真正的"没装就不显示"由 GUI 导航层按 `document_capability()` 决定。
+安全边界（迁移后仍生效）
+------------------------
+* 插件加载前仍要**签名验签** + 静态审计；
+* 组件 OCR 仍经 `ComponentOCRBackend`（验签/注册表锁在宿主，不在插件）；
+* LLM 出网仍受隐私闸门约束。
 """
 from __future__ import annotations
 
-import importlib
 from typing import Any
 
-#: 文档子系统涉及的顶层包（用于能力探测与诊断报告）。
-DOCUMENT_PACKAGES: tuple[str, ...] = (
-    "pdfx",
-    "convertx",
-    "apps",
-    "document_ir",
-    "doc_extractors",
-    "review",
-    "export",
+#: 迁移到插件后的插件 id。
+_PLUGIN_ID = "pdf-workbench"
+
+#: 迁移后宿主侧**不再保留**的包。
+#:
+#: 守卫用它检查"迁移是否做干净"：这些目录不该再出现在 `src/omnicrawler/` 下。
+_MIGRATED_PACKAGES: tuple[str, ...] = ("pdfx", "convertx", "apps", "document_ir")
+
+#: 插件提供的一次性操作（不属于管线阶段，由 `run_operation` 直调）。
+OPERATIONS: tuple[str, ...] = (
+    "pdf.selfcheck",
+    "pdf.validate",
+    "pdf.status",
+    "pdf.apply_review",
+    "processor.process",
+    "exporter.export",
 )
 
-#: 判断"文档能力是否可用"的最小充分集合。
-#:
-#: 用 `pdfx.service` 而不是 `pdfx` 本身：`pdfx/__init__` 可能很薄，
-#: 真正能干活的是 service/config 这些。缺任何一个都不算可用。
-_REQUIRED_MODULES: tuple[str, ...] = ("pdfx.service", "pdfx.config", "pdfx.project")
 
-#: 探测用的**轻量**模块：只它真正 import 一次，用来发现"文件在但导入失败"。
-#:
-#: 选 `pdfx.config` 而不是 `pdfx.service`：前者是配置与 schema 校验，
-#: 不拉 OCR/parser/LLM，导入代价远小；后者会把整个处理链拖进来，
-#: 而那正是"问一句你有没有就已经加载全部"要避免的。
-_PROBE_MODULE: str = "pdfx.config"
+def _plugin_dir() -> Any:
+    """返回插件安装目录（`<root>/plugins_installed/<id>`），找不到返回 None。
 
-
-def require_document(module: str) -> Any:
-    """取一个文档子系统模块；缺失时抛**可操作**的错误。
-
-    :param module: 形如 ``"pdfx.service"`` 的点分模块名（不含 ``omnicrawler.`` 前缀）。
+    宿主没有"已安装插件 id 列表"的现成 API：插件是按目录加载的
+    （`plugin_loader` 递归扫 `plugins_installed/`）。这里沿用同一约定，
+    直接查目录——比维护一份 id 清单更不容易与真实安装状态脱节。
     """
-    name = str(module or "").strip()
-    if not name:
-        raise ValueError("require_document 需要模块名")
+    from pathlib import Path
+
+    candidates = []
     try:
-        return importlib.import_module(f"omnicrawler.{name}")
-    except ImportError as exc:
-        raise ImportError(
-            f"文档工作台组件不可用：缺少模块 omnicrawler.{name}。\n"
-            "该功能已改为可选组件——请在「插件市场 → 组件」中安装 PDF 工作台组件，"
-            "或改用文字版流程（爬虫与 AI 主流程不受影响）。\n"
-            f"（原始错误：{exc}）"
-        ) from exc
+        from ..core.config import load_config
+
+        # 宿主没有无参的 AppConfig 工厂：配置从约定路径加载。
+        config = load_config(Path.cwd() / "configs" / "omnicrawler.yaml")
+        candidates.append(Path(config.root) / "plugins_installed" / _PLUGIN_ID)
+        plugins_section = config.section("plugins")
+        if isinstance(plugins_section, dict):
+            for extra in plugins_section.get("paths", []) or []:
+                candidates.append(Path(str(extra)) / _PLUGIN_ID)
+    except Exception:  # noqa: BLE001 - 配置不可用时退回下面几处
+        pass
+
+    # 便携布局：插件可能就装在应用目录旁的 plugins_installed/
+    try:
+        from ..core.runtime_paths import portable_data_root
+
+        candidates.append(portable_data_root() / "plugins_installed" / _PLUGIN_ID)
+    except Exception:  # noqa: BLE001
+        pass
+
+    for candidate in candidates:
+        try:
+            if (candidate / "plugin.py").is_file():
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
+def _plugin_installed() -> bool:
+    """插件 `pdf-workbench` 是否已安装（以"入口文件在不在"为准）。"""
+    return _plugin_dir() is not None
 
 
 def document_capability() -> dict[str, Any]:
-    """报告文档能力是否可用，以及**为什么不可用**。
+    """报告 PDF 工作台是否可用，以及**为什么不可用**。
 
     返回::
 
-        {"available": bool, "reason": str, "missing": [模块名...]}
+        {"available": bool, "reason": str, "missing": [...], "plugin_installed": bool}
 
-    * 可用时 ``reason`` 为空串；
-    * 不可用时 ``missing`` 列出缺失的必需模块，``reason`` 是给用户看的一句话。
+    **迁移后判据变化**：从"宿主里有没有模块"改为"**插件装没装**"。
+    这反而更可靠——没有加载代价，也不存在"检测本身把模块拉起来"的问题。
 
-    ⚠ **探测不能主动 import 整个文档子系统**。
-    第一版用 ``importlib.import_module`` 检查，一调用就把整个 `pdfx`
-    （含 OCR、parser、LLM）拉进 `sys.modules`——那样"可选组件"是假的：
-    光问一句"你有没有"就已经加载全部。
-
-    现在的做法分两步：
-    1. 先用 ``find_spec`` 判断**模块是否存在**（不执行模块体）；
-    2. 再用一个**轻量探针模块**（`pdfx.config`，它是纯数据/校验，不拉 OCR）
-       真正 import 一次，确认它**能被导入**。
-
-    第 2 步是必需的：只查文件存在会把"文件在、但导入会失败"误报成可用。
-    组件被禁用/隔离/依赖缺失时正是这种情况——用户会看到入口，点进去才崩。
-    代价可控：`pdfx.config` 的依赖闭包远小于 `pdfx.service`。
+    迁移前踩过的两个坑（留档，防止将来重蹈）：
+    1. 用 `import_module` 探测会把整个 `pdfx`（含 OCR/parser/LLM）拉进内存，
+       "可选组件"就成假的了；
+    2. 改用 `find_spec` 仍会导入**父包**；只看文件存在又会把
+       "文件在、但导入失败"误报成可用。
     """
-    from pathlib import Path as _Path
-
-    root = _Path(__file__).resolve().parent.parent  # omnicrawler/
-    missing: list[str] = []
-    for module in _REQUIRED_MODULES:
-        relative = module.replace(".", "/")
-        # 模块可能是单文件，也可能是包（目录 + __init__.py）
-        if not (
-            (root / f"{relative}.py").is_file()
-            or (root / relative / "__init__.py").is_file()
-        ):
-            missing.append(module)
-            continue
-        # 文件在 ⇒ 还需确认**真的能导入**（隔离/禁用/依赖缺失时会失败）
-        if module == _PROBE_MODULE:
-            try:
-                importlib.import_module(f"omnicrawler.{module}")
-            except Exception:  # noqa: BLE001 - 任何导入失败都算不可用
-                missing.append(module)
-    if missing:
-        return {
-            "available": False,
-            "reason": (
-                "文档工作台组件未安装（缺少 "
-                + "、".join(missing)
-                + "）；可在「插件市场 → 组件」中安装，或使用文字版流程。"
-            ),
-            "missing": missing,
-        }
-    return {"available": True, "reason": "", "missing": []}
+    if _plugin_installed():
+        return {"available": True, "reason": "", "missing": [], "plugin_installed": True}
+    return {
+        "available": False,
+        "reason": (
+            "PDF 工作台插件未安装。该功能已改为可选插件——"
+            "请在「插件市场」中安装 pdf-workbench，或使用文字版流程"
+            "（爬虫与 AI 主流程不受影响）。"
+        ),
+        "missing": [_PLUGIN_ID],
+        "plugin_installed": False,
+    }
 
 
-# ── 便捷入口：挂点应当只用这些，不要直接 import 文档子系统 ──────────────
+def require_document(operation: str = "") -> Any:
+    """确认文档能力可用；不可用时抛**可操作**的错误。
+
+    迁移后不再"返回模块"（宿主里没有那些模块了），而是返回插件句柄。
+    :param operation: 可选，写进错误信息便于定位是哪条路径缺能力。
+    """
+    if not _plugin_installed():
+        suffix = f"（触发操作：{operation}）" if operation else ""
+        raise RuntimeError(
+            "PDF 工作台插件未安装，无法执行该操作"
+            + suffix
+            + "。\n请在「插件市场」中安装 pdf-workbench；"
+            "爬虫与 AI 主流程不受影响。"
+        )
+    return _plugin_handle()
+
+
+def _plugin_handle() -> Any:
+    """取已安装插件的模块句柄（in_process 模式：与宿主同进程）。
+
+    模块名带插件 id 前缀，避免与 `plugin_loader` 加载其它插件时的
+    同名 `plugin` 模块冲突（多个插件都叫 `plugin.py`）。
+    """
+    import importlib
+    import importlib.util
+    import sys
+    import uuid
+
+    directory = _plugin_dir()
+    if directory is None:
+        raise RuntimeError(
+            f"PDF 工作台插件未安装：找不到 {_PLUGIN_ID} 的 plugin.py。"
+            "请在「插件市场」中安装后重试。"
+        )
+
+    module_name = f"_pdf_workbench_{uuid.uuid5(uuid.NAMESPACE_URL, str(directory)).hex[:8]}"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+
+    entry = directory / "plugin.py"
+    spec = importlib.util.spec_from_file_location(module_name, entry)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"无法加载 PDF 工作台插件入口：{entry}")
+    module = importlib.util.module_from_spec(spec)
+    # 插件包（omnicrawler_pdf）在插件目录下，须先入 path 才能 import。
+    if str(directory) not in sys.path:
+        sys.path.insert(0, str(directory))
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
+
+
+def run_operation(operation: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """把一次操作转给插件执行。
+
+    这是宿主侧**唯一**调用 PDF 工作台的入口——挂点不应直接摸插件内部。
+    :param operation: 见 `OPERATIONS`。
+    :param payload: 操作参数（`config_path` / `config` / `review` 等）。
+
+    插件未安装时抛可操作错误；插件内部失败时返回 `{"ok": False, "error": ...}`
+    （插件侧已把异常转成结构化错误，不丢栈给宿主）。
+    """
+    module = require_document(operation)
+    runner = getattr(module, "run_operation", None)
+    if runner is None:
+        raise RuntimeError(
+            f"PDF 工作台插件版本过旧：缺少 run_operation 入口。请升级 {_PLUGIN_ID}。"
+        )
+    return runner(operation, dict(payload or {}))
+
+
+def migrated_packages_absent() -> dict[str, bool]:
+    """迁移是否做干净：报告宿主侧是否仍存在已迁走的包。
+
+    供守卫与诊断使用：`True` 表示该包**已不在**宿主里（正确状态）。
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent  # omnicrawler/
+    return {
+        name: not (root / name / "__init__.py").is_file()
+        for name in _MIGRATED_PACKAGES
+    }
+
+# ── 兼容入口：既有挂点仍用这些名字 ────────────────────────────────────────
 #
-# 全部在函数内导入，保证"导入本模块不会拉起 pdfx/convertx"。
+# facade 重写时删掉了这组函数，导致 5 个挂点（workbench / pdf_integration /
+# preflight / cli / handlers）全部报 `has no attribute`。
+# 现在按**插件调用**语义补回：名字不变，内部转成插件操作。
+# 这样挂点代码不用再改一遍（它们已经正确指向 facade）。
 
 
 def load_pdf_config(path: Any) -> Any:
-    """加载 PDF 项目配置（带 schema 校验）。"""
-    return require_document("pdfx.config").load_config(path)
+    """加载 PDF 项目配置（经插件）。
 
-
-def open_pdf_database(path: Any) -> Any:
-    """打开 PDF 项目数据库。"""
-    return require_document("pdfx.database").Database(path)
+    返回的是插件内的 `ProjectConfig` 对象——与宿主同进程（in_process），
+    所以可直接传递。这也是契约 1 的一个实际便利。
+    """
+    module = require_document("pdf.validate")
+    return module.run_operation("pdf.load_config", {"config_path": str(path)})
 
 
 def create_project_config(*args: Any, **kwargs: Any) -> Any:
-    """创建 PDF 项目配置。"""
-    return require_document("pdfx.project").create_project_config(*args, **kwargs)
+    """创建 PDF 项目配置（经插件）。"""
+    module = require_document("pdf.create_project")
+    return module.run_operation(
+        "pdf.create_project", {"args": list(args), "kwargs": dict(kwargs)}
+    )
 
 
 def run_pdf_extraction(*args: Any, **kwargs: Any) -> Any:
-    """运行 PDF 抽取。"""
-    return require_document("pdfx.service").run_extraction(*args, **kwargs)
+    """运行 PDF 抽取（经插件）。"""
+    module = require_document("pdf.extract")
+    return module.run_operation(
+        "pdf.extract", {"args": list(args), "kwargs": dict(kwargs)}
+    )
 
 
 def run_pdf_processing(*args: Any, **kwargs: Any) -> Any:
-    """运行 PDF 处理。"""
-    return require_document("pdfx.service").run_processing(*args, **kwargs)
+    """运行 PDF 处理（经插件）。"""
+    module = require_document("processor.process")
+    return module.run_operation(
+        "processor.process", {"args": list(args), "kwargs": dict(kwargs)}
+    )
 
 
-def pdf_database_status(*args: Any, **kwargs: Any) -> Any:
-    """查询 PDF 项目数据库状态。"""
-    return require_document("pdfx.service").database_status(*args, **kwargs)
+def pdf_database_status(database: Any) -> Any:
+    """查询 PDF 数据库状态（经插件）。"""
+    module = require_document("pdf.status")
+    return module.run_operation("pdf.database_status", {"database": database})
 
 
 def apply_pdf_review(*args: Any, **kwargs: Any) -> Any:
-    """应用人工复核决定。"""
-    return require_document("pdfx.review").apply_review(*args, **kwargs)
+    """应用人工复核（经插件）。"""
+    module = require_document("pdf.apply_review")
+    return module.run_operation(
+        "pdf.apply_review", {"args": list(args), "kwargs": dict(kwargs)}
+    )
 
 
 def pdf_main(argv: list[str] | None = None) -> Any:
-    """转发到 PDF 子命令的 main。
-
-    ⚠ ``pdfx.cli.main()`` 的历史签名**不接受参数**（它读 ``sys.argv``），
-    而 ``apps.*.main()`` 接受 ``argv``。这里如实反映差异，不做统一——
-    强行统一会改变调用方的 sys.argv 处理语义。
-    传 ``argv`` 时按 pdfx 的既有约定临时替换 ``sys.argv``。
-    """
-    import sys
-
-    module_main = require_document("pdfx.cli").main
-    if argv is None:
-        return module_main()
-    old = sys.argv
-    try:
-        sys.argv = ["omnicrawler pdf", *argv]
-        return module_main()
-    finally:
-        sys.argv = old
-
-
-def field_extractor_main(argv: list[str] | None = None) -> Any:
-    """转发到字段抽取命令的 main。"""
-    return require_document("apps.field_extractor").main(argv)
+    """转发到 PDF 子命令（经插件）。"""
+    module = require_document("pdf.cli")
+    return module.run_operation("pdf.cli", {"argv": list(argv or [])})
 
 
 def pdf_processor_main(argv: list[str] | None = None) -> Any:
-    """转发到 PDF 处理命令的 main。"""
-    return require_document("apps.pdf_processor").main(argv)
+    """转发到 PDF 处理命令（经插件）。"""
+    module = require_document("pdf.processor")
+    return module.run_operation("pdf.processor", {"argv": list(argv or [])})
+
+
+def field_extractor_main(argv: list[str] | None = None) -> Any:
+    """转发到字段抽取命令（经插件）。"""
+    module = require_document("pdf.field_extractor")
+    return module.run_operation("pdf.field_extractor", {"argv": list(argv or [])})
 
 
 def convertx_module() -> Any:
-    """取 convertx 模块本身（挂点需要 OutputRule / convert / presets）。"""
+    """取格式转换模块（经插件）。"""
     return require_document("convertx")
 
 
 def convert_with_preset(*args: Any, **kwargs: Any) -> Any:
-    """按预设转换格式。"""
-    return require_document("convertx").convert(*args, **kwargs)
+    """按预设转换（经插件）。"""
+    module = require_document("convertx")
+    return module.run_operation("convertx.convert", {"args": list(args), "kwargs": dict(kwargs)})
 
 
 def convertx_preset(name: str, path: Any = None) -> Any:
-    """取一个转换预设（参数与 ``convertx.presets.get_preset`` 一致）。"""
-    return require_document("convertx.presets").get_preset(name, path)
+    """取转换预设（经插件）。"""
+    module = require_document("convertx")
+    return module.run_operation("convertx.preset", {"name": name, "path": path})
 
 
 def compare_runs(*args: Any, **kwargs: Any) -> Any:
-    """比较两次运行结果。"""
-    return require_document("review.run_compare").compare_runs(*args, **kwargs)
+    """比较两次运行（经插件）。"""
+    module = require_document("review.compare")
+    return module.run_operation("review.compare", {"args": list(args), "kwargs": dict(kwargs)})
+
 
 def ocr_backend_class() -> Any:
-    """取**组件式** OCR 后端类（`ComponentOCRBackend`）。
+    """取组件式 OCR 后端类（经插件）。
 
-    供 `plugins.plugin_broker_host` 的 `component.ocr.recognize` 能力使用：
-    插件请求宿主代调 OCR 组件，宿主经本入口拿到后端实现。
-
-    为什么返回"类"而不是"实例"：调用方需要按**每次请求**的配置
-    （component / engine / lang）构造后端，实例不该跨请求复用。
-
-    ⚠ 这是**唯一**允许支柱②（plugins）触达文档子系统的通道；
-    `tests/unit/tools/test_pillar_boundary.py` 钉住这一点。
+    供 `plugins.plugin_broker_host` 的 `component.ocr.recognize` 使用。
     """
-    return require_document("pdfx.component_ocr").ComponentOCRBackend
+    module = require_document("pdf.ocr_backend")
+    return module.component_ocr_backend_class()
+
+
+def open_pdf_database(path: Any) -> Any:
+    """打开 PDF 项目数据库（经插件）。"""
+    module = require_document("pdf.database")
+    return module.open_pdf_database(str(path))
+
+
+def pdf_views() -> Any:
+    """取 PDF 工作台的 GUI 视图模块（来自插件）。
+
+    迁移后（2026-11-17）：`gui/views/pdf_*.py` 与 `convert_tool.py` 已迁入插件。
+    宿主 `central_area` 经本函数按需加载：
+
+    * 插件已装 ⇒ 返回带 `PdfWorkbenchView` / `ConvertView` 的模块；
+    * 未装 ⇒ 调用方（`document_capability`）已先判过，这里不会走到。
+
+    **返回模块而不是类**：视图之间的内部依赖（result/scan/worker）都在插件内，
+    宿主不需要知道它们，只取两个入口类即可。
+    """
+    module = require_document("pdf.views")
+    return module.pdf_views()
+
+
+def table_io() -> Any:
+    """取表格数据读写注册表（`READERS` / `WRITERS` / `sniff_format`）。
+
+    `omnicrawler transform`（支柱①数据加工）需要它。实现随 `convertx` 迁入插件，
+    宿主经本入口按需取用。
+    """
+    module = require_document("transform.table_io")
+    return module.table_io()
+
+
+def pdf_region_selector() -> Any:
+    """取 PDF 区域选择对话框类（来自插件）。"""
+    module = require_document("pdf.region_selector")
+    return module.pdf_region_selector()
+
+
+def parse_document(*args: Any, **kwargs: Any) -> Any:
+    """解析文档为 IR（来自插件的 document_ir）。"""
+    module = require_document("pdf.parse_document")
+    return module.parse_document(*args, **kwargs)
+
+
+def document_block_class() -> Any:
+    """取 `DocumentBlock` 类（来自插件的 document_ir）。"""
+    module = require_document("pdf.document_block")
+    return module.document_block_class()

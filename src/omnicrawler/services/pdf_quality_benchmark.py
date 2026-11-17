@@ -500,7 +500,17 @@ def _config_yaml(case: PdfBenchmarkCase, root: Path, *, ocr_command: str) -> str
 
 def _run_pdfx(config: Path, *args: str) -> dict[str, Any]:
     """进程内调用 PDF 子系统（与顶层 `omnicrawler pdf` 同一条路径）。"""
-    from ..pdfx.cli import main as pdfx_main
+    # 迁移后（2026-11-17）：PDF 工作台已迁成插件，宿主不再有 pdfx。
+    # 经 facade 确认可用后再取插件入口。
+    from ..services import document_facade
+
+    document_facade.require_document("pdf.benchmark")
+    _plugin = document_facade._plugin_handle()
+    pdfx_main = getattr(_plugin, "run_operation", None)
+    if pdfx_main is None:
+        raise RuntimeError(
+            "PDF 工作台插件版本过旧：缺少 run_operation 入口，请升级 pdf-workbench。"
+        )
 
     buf, old_argv, code = io.StringIO(), sys.argv, 0
     try:

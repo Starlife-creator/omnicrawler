@@ -45,8 +45,14 @@ def cli_contracts(parser: argparse.ArgumentParser | None = None) -> dict[str, di
             continue
         for command, command_parser in action.choices.items():
             if command == "pdf":
-                from omnicrawler.pdfx.cli import build_parser as build_pdf_parser
-                command_parser = build_pdf_parser()
+                # 迁移后（2026-11-17）：PDF 工作台已迁成插件 pdf-workbench，
+                # 宿主侧不再有 `omnicrawler.pdfx`。这里**不再展开** pdf 的子选项：
+                # 插件未安装时展不开；即便装了，宿主的文档门禁也不该依赖
+                # 插件内部结构（那是插件的真源，不是宿主的）。
+                #
+                # 仍保留 `contracts["pdf"]` 条目——`pdf` 命令本身还在宿主 CLI 里，
+                # 只是调用时才提示安装插件。
+                pass
             options = {
                 option
                 for item in command_parser._actions

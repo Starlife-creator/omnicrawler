@@ -9,10 +9,31 @@ from typing import Any
 
 from ..core.config import load_config
 from ..core.utils import atomic_write
-from ..document_ir import parse_document
 from ..security.egress import EgressBroker
 from .ai_providers import build_provider
 from .ai_safety import AIBudget, mark_untrusted, validate_ai_output
+
+
+def _parse_document(*args: Any, **kwargs: Any) -> Any:
+    """文档解析（延迟导入）。
+
+    迁移后（2026-11-17）：`document_ir` 已随 PDF 工作台迁入插件
+    `pdf-workbench`，宿主侧不再有它。归档分析属文档能力，因此：
+
+    * 插件已装 ⇒ 正常解析；
+    * 未装 ⇒ 抛**可操作**错误（而不是模块导入期直接崩，
+      那会让整个 `services` 包都用不了）。
+    """
+    from .document_facade import document_capability
+
+    if not document_capability()["available"]:
+        raise RuntimeError(
+            "归档文档分析需要 PDF 工作台插件（解析依赖其 document_ir）。"
+            "请在「插件市场」中安装 pdf-workbench 后重试。"
+        )
+    from .document_facade import parse_document
+
+    return parse_document(*args, **kwargs)
 
 
 def _json(path: Path) -> dict[str, Any]:
@@ -108,7 +129,7 @@ def _facts(sources: list[dict[str, Any]]) -> dict[str, Any]:
     for source in sources:
         document_characters = 0
         document_evidence = 0
-        parsed = parse_document(source["path"], source["parse_options"]) if source.get("parse_options") else parse_document(source["path"])
+        parsed = _parse_document(source["path"], source["parse_options"]) if source.get("parse_options") else _parse_document(source["path"])
         locators = getattr(parsed, "paragraph_locators", [])
         if locators and len(locators) != len(parsed.paragraphs):
             raise ValueError("文档段落定位与正文不一致")
@@ -122,11 +143,14 @@ def _facts(sources: list[dict[str, Any]]) -> dict[str, Any]:
         table_locators = getattr(parsed, "table_locators", [])
         if table_locators and len(table_locators) != len(parsed.tables):
             raise ValueError("文档表格定位与内容不一致")
-        from ..document_ir.base import DocumentBlock
+        from .document_facade import document_block_class
+
+        # 用小写局部名绑定工厂调用的结果，避免把"类名"当局部变量（N806）。
+        block_factory = document_block_class()
         ordered = getattr(parsed, "ordered_blocks", None)
         blocks = ordered() if callable(ordered) else (
-            [DocumentBlock("paragraph", index) for index in range(len(parsed.paragraphs))]
-            + [DocumentBlock("table", index) for index in range(len(parsed.tables))])
+            [block_factory("paragraph", index) for index in range(len(parsed.paragraphs))]
+            + [block_factory("table", index) for index in range(len(parsed.tables))])
         chunks = []
         for block in blocks:
             index = block.index

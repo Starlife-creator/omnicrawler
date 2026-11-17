@@ -28,19 +28,34 @@ def execute(config: str, *, output_format: str = "json") -> dict[str, Any]:
         else loaded.workspace / "pdf" / "project.yaml"
     )
     if pdf_project.is_file():
-        from ..pdfx.config import load_config as load_pdf_config
-        from ..pdfx.database import Database
-        from ..pdfx.service import database_status
+        # 迁移后（2026-11-17）：PDF 工作台已迁成插件 pdf-workbench，
+        # 宿主侧不再有 pdfx。状态查询改为经 facade 转给插件。
+        #
+        # 注意这里**不能抛异常**：`status` 是诊断命令，用户正是用它来查
+        # "为什么没跑起来"。插件没装时给出 `plugin_not_installed` 比抛栈有用得多。
+        from ..services import document_facade
 
-        pdf_config = load_pdf_config(pdf_project)
-        if pdf_config.database.is_file():
-            with Database(pdf_config.database) as pdf_database:
+        if not document_facade.document_capability()["available"]:
+            result["pdf"] = {
+                "status": "plugin_not_installed",
+                "project_config": str(pdf_project),
+                "hint": "PDF 工作台插件未安装（插件市场 → pdf-workbench）",
+            }
+        else:
+            outcome = document_facade.run_operation(
+                "pdf.status", {"config_path": str(pdf_project)}
+            )
+            if outcome.get("ok"):
                 result["pdf"] = {
                     "project_config": str(pdf_project),
-                    **database_status(pdf_database),
+                    **dict(outcome.get("status") or {}),
                 }
-        else:
-            result["pdf"] = {"status": "not_started", "project_config": str(pdf_project)}
+            else:
+                result["pdf"] = {
+                    "status": "unavailable",
+                    "project_config": str(pdf_project),
+                    "error": dict(outcome.get("error") or {}),
+                }
     else:
         result["pdf"] = {"status": "not_configured"}
 

@@ -19,7 +19,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..convertx import READERS, WRITERS, sniff_format
 from ..core.ast_evaluator import ALLOWED_FUNCTIONS, safe_eval
 from ..security.paths import require_workspace_path
 from .data_postprocess import (
@@ -30,6 +29,23 @@ from .data_postprocess import (
     aggregate_records,
     sort_records,
 )
+
+
+def _table_io() -> Any:
+    """取表格数据读写注册表（`READERS` / `WRITERS` / `sniff_format`）。
+
+    迁移后（2026-11-17）：这些实现随 `convertx` 迁入插件 `pdf-workbench`。
+    `omnicrawler transform`（支柱①数据加工）需要它们，所以改为经 facade
+    按需取用，并在插件未安装时给**可操作**提示——而不是启动期 ImportError。
+
+    为什么经 facade 而不是在宿主复制一份：表格读写与文档格式转换共用
+    `CanonicalRecords` / writer 契约，复制会变成两份实现漂移。
+    """
+    from .document_facade import require_document
+
+    module = require_document("transform.table_io")
+    return module.table_io()
+
 
 #: 「追加列的后缀」的真源在 `services/data_postprocess.py`（记录级后处理要据此识别
 #: "失败列本就是 --map 的产物"，从而给出"换函数重做"而不是再加一层后缀的建议）；
@@ -290,10 +306,11 @@ def transform_file(
     src_path = Path(src)
     if not src_path.is_file():
         raise FileNotFoundError(f"transform: 源文件不存在: {src_path}")
-    src_fmt = src_format or sniff_format(src_path)
-    if src_fmt not in READERS:
-        raise ValueError(f"transform: 不支持的源格式 {src_fmt!r}（已注册: {sorted(READERS)}）")
-    records = READERS[src_fmt](src_path, {"on_error": on_error})
+    _io = _table_io()
+    src_fmt = src_format or _io.sniff_format(src_path)
+    if src_fmt not in _io.READERS:
+        raise ValueError(f"transform: 不支持的源格式 {src_fmt!r}（已注册: {sorted(_io.READERS)}）")
+    records = _io.READERS[src_fmt](src_path, {"on_error": on_error})
     if max_records is not None:
         records = records[:max_records]
     transformed, stats = transform_records(records, specs, batch_size=batch_size, on_progress=on_progress)
@@ -332,10 +349,10 @@ def transform_file(
     output_path: str | None = None
     if dst is not None:
         dst_path = Path(dst)
-        dst_fmt = dst_format or sniff_format(dst_path)
-        if dst_fmt not in WRITERS:
-            raise ValueError(f"transform: 不支持的目标格式 {dst_fmt!r}（已注册: {sorted(WRITERS)}）")
-        WRITERS[dst_fmt](transformed, dst_path, {"on_error": on_error})
+        dst_fmt = dst_format or _io.sniff_format(dst_path)
+        if dst_fmt not in _io.WRITERS:
+            raise ValueError(f"transform: 不支持的目标格式 {dst_fmt!r}（已注册: {sorted(_io.WRITERS)}）")
+        _io.WRITERS[dst_fmt](transformed, dst_path, {"on_error": on_error})
         written = True
         output_path = str(dst_path)
     preview: list[dict[str, Any]] = []

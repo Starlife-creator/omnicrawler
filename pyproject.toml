@@ -115,9 +115,10 @@ full-macos = [
 
 [project.scripts]
 omnicrawler = "omnicrawler.cli:main"
-pdfx = "omnicrawler.pdfx.cli:main"
-pdf-process = "omnicrawler.apps.pdf_processor:main"
-pdf-extract = "omnicrawler.apps.field_extractor:main"
+# 2026-11-17：`pdfx` / `pdf-process` / `pdf-extract` 三条 console script 已移除。
+# 它们的实现（pdfx.cli / apps.pdf_processor / apps.field_extractor）随 PDF 工作台
+# 迁到了插件 `pdf-workbench`，宿主里不再有这些模块。
+# 迁移后仍可用 `omnicrawler pdf …` 子命令（插件已装时可用）。
 omnicrawler-workbench = "omnicrawler.services.workbench:main"
 omnicrawler-gui = "omnicrawler.gui.main:main"
 

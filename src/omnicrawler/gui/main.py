@@ -89,7 +89,6 @@ from .runner.worker_task_runner import WorkerTaskRunner as TaskRunner
 from .settings import AppSettings
 from .shortcuts import GlobalShortcutManager
 from .template_library_dialog import TemplateLibraryDialog
-from .views.pdf_region_selector import PdfRegionSelectorDialog
 from .views.task_history import TaskHistory
 from .widgets.resource_monitor import ResourceMonitor
 from .widgets.toast import ToastManager
@@ -2052,7 +2051,12 @@ class MainWindow(QMainWindow):
 
     def _show_pdf_region_dialog(self) -> None:
         """MenuBuilder 引用 — 打开 PDF 区域选择对话框。"""
-        PdfRegionSelectorDialog(self).exec()
+        # 迁移后（2026-11-17）：该对话框随 PDF 工作台迁入插件 pdf-workbench。
+        # 经 facade 按需加载；插件未装时给可操作提示（不抛栈）。
+        from ..services import document_facade
+
+        document_facade.require_document("pdf.region_selector")
+        document_facade.pdf_region_selector()(self).exec()
 
     def _open_ai_service_center(self) -> None:
         """MenuBuilder 引用 — 打开 AI 服务中心对话框，写 .env 文件。"""

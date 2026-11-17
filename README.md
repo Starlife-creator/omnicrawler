@@ -370,7 +370,11 @@ omnicrawler serve -c config.yaml [--host 127.0.0.1] [--port 8765]
 
 支持 JSON Schema 的 AI 端点可在 `ai.providers.<名称>` 中显式设置 `supports_json_schema: true`。资料分析与选择器候选会请求严格结构化响应；实验性字段提取由共享字段契约生成 schema，允许某个分块缺少字段，最终合并后仍检查必填项。未声明能力的端点保持原请求方式；所有路径继续执行本地类型、冲突及引用证据校验。该能力需要按具体端点和模型验证，不能从“OpenAI 兼容”推断支持。
 
-PDF 工作台可填写 `2,4` 等 OCR 页码；页码作用于当前输入中的每份 PDF，留空处理全部待识别页。CLI 可运行 `omnicrawler pdf --config pdf.yaml ocr --page-number 2 --page-number 4`。未选页保留待识别状态，已识别页不重复 OCR。调用文档 IR 时可显式传入 `ocr_pages` 与本地 `ocr_backend`；识别文字保留页码、后端及置信度，缺少区域或阅读顺序证据时明确标注未验证，不自动初始化或下载 OCR 模型。
+PDF 工作台可填写 `2,4` 等 OCR 页码；页码作用于当前输入中的每份 PDF，留空处理全部待识别页。未选页保留待识别状态，已识别页不重复 OCR。调用文档 IR 时可显式传入 `ocr_pages` 与本地 `ocr_backend`；识别文字保留页码、后端及置信度，缺少区域或阅读顺序证据时明确标注未验证，不自动初始化或下载 OCR 模型。
+
+> **2026-11-17 起**：PDF 工作台已改为可选插件 `pdf-workbench`（在插件市场中安装）。
+> 宿主 CLI 仍保留 `pdf` 子命令入口，但**其子命令与选项由插件提供**，
+> 因此不再在本文档中逐条列举——请安装插件后运行 `omnicrawler pdf --help` 查看。
 
 模板可以用 `omnicrawler templates verify-fixture <模板ID> --url <来源网址> --body-file sample.html --expected expected.json` 离线复验。真值为非空的原始提取记录 JSON 列表；这里只检查内置 HTML/JSON 处理器，后续质量校验、浏览器动作和导出需另行验收。失败在相同模板内容、来源网址及默认参数范围内暂离推荐，成功复验后恢复；自定义参数的失败不影响默认参数推荐。`omnicrawler templates verification-history <模板ID>` 保留历次成功、失败和版本摘要。证据过期只提示复验；已解析配置无效的模板也不进入默认推荐，仍可查看与修复。
 
