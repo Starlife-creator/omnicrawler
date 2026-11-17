@@ -19,6 +19,13 @@ import importlib.util
 
 import pytest
 
+# OCR 引擎注册表随 PDF 工作台迁入插件（2026-11-17）。
+# 未装插件时整模块跳过，而不是让 pytest 收集阶段 ERROR。
+pytest.importorskip(
+    "omnicrawler_pdf.pdfx.ocr",
+    reason="OCR 引擎随 PDF 工作台迁入插件 pdf-workbench",
+)
+
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("ruamel") is None,
     reason="需要 GUI 配置序列化（ruamel.yaml）",

@@ -65,7 +65,7 @@ def _load_pdf_views() -> Any:
     try:
         return document_facade.pdf_views()
     except Exception:  # noqa: BLE001 - 视图加载失败不应让主界面起不来
-        LOGGER.warning("PDF 工作台视图加载失败（插件存在但不可用）", exc_info=True)
+        LOGGER.warning(_("PDF 工作台视图加载失败（插件存在但不可用）"), exc_info=True)
         return None
 
 #: 导航项 key → 展示标签。**必须经 _() 包裹**（i18n 门禁按此判据）。

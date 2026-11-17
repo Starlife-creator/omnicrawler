@@ -132,7 +132,12 @@ def test_convert_view_has_scroll_area(qt_app) -> None:
     """ConvertX 页同样必须套滚动区（scale 160 时内容最小高 966px > 常见视口）。"""
     from PySide6.QtWidgets import QScrollArea
 
-    from omnicrawler.gui.views.convert_tool import ConvertView
+    # 转换视图随 PDF 工作台迁入插件 pdf-workbench（2026-11-17）。
+    pytest.importorskip(
+        "omnicrawler_pdf.gui_views.convert_tool",
+        reason="转换视图随 PDF 工作台迁入插件 pdf-workbench",
+    )
+    from omnicrawler_pdf.gui_views.convert_tool import ConvertView
 
     view = ConvertView()
     assert view.findChildren(QScrollArea), "ConvertX 页应提供滚动区"
