@@ -149,3 +149,7 @@ src/omnicrawler/plugins/omnicrawler-landlock-*/
 # 同类但**是文件**（`tempfile.mkstemp` 产出，如 tmpe1j0m0_f）。
 # `/tmp*/` 只匹配目录，实测漏掉过（03635186 误提交两个空文件）。
 /tmp*
+
+# 配置历史（运行时由 GUI/CLI 写入，含时间戳与用户路径，不该入库）。
+# 实测被误提交过一次（297fb3e0 收了 4 个 json/yaml）。
+.config_history/
