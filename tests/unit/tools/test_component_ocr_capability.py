@@ -40,8 +40,8 @@ _SRC = _REPO_ROOT / "src" / "omnicrawler"
 def test_capability_registered_with_versions_and_permissions() -> None:
     """能力必须同时登记在版本表与权限映射里。"""
     from omnicrawler.plugins.plugin_broker_contracts import (
-        CAPABILITY_VERSIONS,
         _CAPABILITY_PERMISSIONS,
+        CAPABILITY_VERSIONS,
     )
 
     assert "component.ocr.recognize" in CAPABILITY_VERSIONS
