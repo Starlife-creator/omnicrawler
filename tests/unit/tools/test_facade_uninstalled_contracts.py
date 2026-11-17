@@ -23,11 +23,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from omnicrawler.services import document_facade
 
 #: 每个入口一组"能让它走到插件调用"的最小参数。
+#:
+#: **`table_io` 不在此列**：表格读写（csv/jsonl/xlsx/parquet/duckdb）已于
+#: 2026-11-22 上提到宿主（`services/table_io.py`），`transform` 是支柱①的
+#: 通用能力，不再依赖 PDF 插件。它在未装插件时必须**正常可用**——
+#: 由 `test_table_io_works_without_plugin` 单独钉住。
 ENTRIES: list[tuple[str, tuple[object, ...]]] = [
     ("load_pdf_config", ("c.yaml",)),
     ("create_project_config", ("builtin:pdf/generic_template.yaml",)),
@@ -47,7 +54,6 @@ ENTRIES: list[tuple[str, tuple[object, ...]]] = [
     ("ocr_backend_class", ()),
     ("open_pdf_database", ("c.sqlite",)),
     ("pdf_views", ()),
-    ("table_io", ()),
     ("pdf_region_selector", ()),
     ("run_operation", ("pdf.validate", {})),
 ]
@@ -110,3 +116,29 @@ def test_migrated_packages_absent_regardless_of_plugin(uninstalled: None) -> Non
     """四个包必须已从宿主移除（与插件装没装无关）。"""
     absent = document_facade.migrated_packages_absent()
     assert all(absent.values()), f"仍有包留在宿主: {absent}"
+
+
+def test_table_io_works_without_plugin(uninstalled: None, tmp_path: Path) -> None:
+    """表格读写必须**不依赖** PDF 插件（支柱①的通用能力）。
+
+    2026-11-22 前，`omnicrawler transform` 在未装 PDF 插件时完全不可用，
+    还给出"主流程不受影响"的误导提示——因为表格读写随 `convertx`
+    迁进了插件。现已上提到 `services/table_io.py`。
+
+    这条测试钉住"没装插件也能用"，防止有人把它搬回插件里。
+    """
+    table_io = document_facade.table_io()
+    assert table_io is not None, "未装插件时 table_io 返回 None"
+    assert table_io.READERS, "未装插件时 READERS 为空"
+    assert table_io.WRITERS, "未装插件时 WRITERS 为空"
+
+    # 真的能读能写，不是只有注册表
+    source = tmp_path / "in.csv"
+    source.write_text("a,b\n1,2\n", encoding="utf-8")
+    rows = table_io.READERS[".csv"](source, {})
+    assert rows == [{"a": "1", "b": "2"}], f"读取结果异常: {rows}"
+
+    target = tmp_path / "out.jsonl"
+    table_io.WRITERS[".jsonl"](rows, target, {})
+    assert target.is_file(), "写入失败"
+    assert '"a": "1"' in target.read_text(encoding="utf-8")

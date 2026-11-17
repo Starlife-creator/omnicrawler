@@ -190,7 +190,9 @@ def test_full_release_chain_ends_in_working_plugin(
     assert report.get("ok") is True, f"selfcheck 失败: {report}"
 
     table_io = document_facade.table_io()
-    assert len(table_io.READERS) >= 10, f"表格格式过少: {len(table_io.READERS)}"
+    # 7 种 = csv / jsonl+ndjson / parquet / duckdb+db / xlsx（别名算两项）。
+    # 表格读写已上提到宿主，插件的 table_io 入口返回宿主实现。
+    assert len(table_io.READERS) >= 5, f"表格格式过少: {len(table_io.READERS)}"
 
     views = document_facade.pdf_views()
     assert hasattr(views, "PdfWorkbenchView")

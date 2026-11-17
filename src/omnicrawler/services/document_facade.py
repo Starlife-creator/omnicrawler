@@ -493,11 +493,15 @@ def pdf_views() -> Any:
 def table_io() -> Any:
     """取表格数据读写注册表（`READERS` / `WRITERS` / `sniff_format`）。
 
-    `omnicrawler transform`（支柱①数据加工）需要它。实现随 `convertx` 迁入插件，
-    宿主经本入口按需取用。
+    **直接返回宿主实现**（`services/table_io.py`），不经插件。
+
+    此前它经插件取用，导致 `omnicrawler transform`（支柱①数据加工）
+    在未装 PDF 插件时不可用——而表格读写本就不是文档工作台的职责。
+    现已上提到宿主，插件与宿主共用这一份。
     """
-    module = require_document("transform.table_io")
-    return module.table_io()
+    from . import table_io as _table_io
+
+    return _table_io
 
 
 def pdf_region_selector() -> Any:

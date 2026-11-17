@@ -34,17 +34,18 @@ from .data_postprocess import (
 def _table_io() -> Any:
     """取表格数据读写注册表（`READERS` / `WRITERS` / `sniff_format`）。
 
-    迁移后（2026-11-17）：这些实现随 `convertx` 迁入插件 `pdf-workbench`。
-    `omnicrawler transform`（支柱①数据加工）需要它们，所以改为经 facade
-    按需取用，并在插件未安装时给**可操作**提示——而不是启动期 ImportError。
+    **表格读写已上提到宿主**（`services/table_io.py`，2026-11-22）。
 
-    为什么经 facade 而不是在宿主复制一份：表格读写与文档格式转换共用
-    `CanonicalRecords` / writer 契约，复制会变成两份实现漂移。
+    此前它随 `convertx` 迁进 PDF 插件，导致 `omnicrawler transform`
+    （支柱①数据加工）在未装插件时**完全不可用**，还给出"爬虫与 AI 主流程
+    不受影响"的误导提示。表格读写是通用数据能力，不是文档工作台的职责。
+
+    现在插件与宿主共用**同一份实现**（插件经 `document_facade.table_io()`
+    取到这里），不存在两份漂移的问题。
     """
-    from .document_facade import require_document
+    from . import table_io
 
-    module = require_document("transform.table_io")
-    return module.table_io()
+    return table_io
 
 
 #: 「追加列的后缀」的真源在 `services/data_postprocess.py`（记录级后处理要据此识别
