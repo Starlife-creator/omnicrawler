@@ -100,3 +100,49 @@ def test_gate_uses_host_trust_verifier(
     assert result.get("marker") == "UNSIGNED_PLUGIN_EXECUTED", (
         "闸门没有调用 trust.verify_plugin_trust（打桩后仍被拒绝）"
     )
+
+
+def test_executes_verified_bytes_not_a_second_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """必须执行**验签过的那份字节**，不能在执行时重新读盘。
+
+    判据：在 `verify_plugin_trust` 返回之后、执行之前把 `plugin.py` 换掉。
+    如果加载器重新读盘，执行的就是被换过的新内容（TOCTOU）；
+    如果执行的是 verified_bytes，则仍是验签时那份。
+    """
+    monkeypatch.delenv("OMNICRAWL_PLUGIN_SIGNATURE_POLICY", raising=False)
+
+    directory = tmp_path / "plugins_installed" / "pdf-workbench"
+    directory.mkdir(parents=True)
+    original = directory / "plugin.py"
+    original.write_text(_UNSIGNED_SOURCE, encoding="utf-8")
+    monkeypatch.setenv("OMNICRAWL_PDF_PLUGIN_DIR", str(directory))
+
+    import importlib
+
+    trust_model = importlib.import_module("omnicrawler.plugins.trust")
+
+    class _Decision:
+        level = trust_model.TrustLevel.MaintainerSigned
+        reason = "测试桩"
+        # 验签通过的字节 = 原始内容
+        verified_bytes = _UNSIGNED_SOURCE.encode("utf-8")
+
+    def _swap_then_approve(*args, **kwargs):
+        # 模拟验签后、执行前文件被替换（TOCTOU 窗口）
+        original.write_text(
+            'MARKER = "SWAPPED_AFTER_VERIFICATION"\n'
+            "def run_operation(operation, payload=None):\n"
+            '    return {"ok": True, "marker": MARKER}\n',
+            encoding="utf-8",
+        )
+        return _Decision()
+
+    monkeypatch.setattr(trust_model, "verify_plugin_trust", _swap_then_approve)
+
+    result = document_facade.run_operation("pdf.selfcheck", {})
+    assert result.get("marker") == "UNSIGNED_PLUGIN_EXECUTED", (
+        "执行了验签之后被替换的内容（TOCTOU）：应执行 verified_bytes，"
+        f"实际 marker={result.get('marker')!r}"
+    )

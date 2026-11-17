@@ -171,8 +171,10 @@ def require_document(operation: str = "") -> Any:
     return _plugin_handle()
 
 
-def _verify_plugin_signature_gate(entry: Any) -> None:
-    """校验插件签名（对齐 plugin_loader 的 strict 语义）。
+def _verify_plugin_signature_gate(entry: Any) -> bytes:
+    """校验插件签名，返回**通过校验的那份字节**（供调用方直接执行）。
+
+    对齐 plugin_loader 的 strict 语义。
 
     只接受两种情形：
     * **维护者签名**——信任根验签通过，自动信任；
@@ -198,7 +200,7 @@ def _verify_plugin_signature_gate(entry: Any) -> None:
     trust_model = importlib.import_module("omnicrawler.plugins.trust")
 
     if os.environ.get("OMNICRAWL_PLUGIN_SIGNATURE_POLICY", "").strip().lower() == "developer":
-        return
+        return entry.read_bytes()
 
     directory = entry.parent
     # 不读 AppConfig：`services -> core.config` 这条边会把 services 拖进
@@ -223,7 +225,8 @@ def _verify_plugin_signature_gate(entry: Any) -> None:
         trust_model.TrustLevel.CreatorTrusted,
     }
     if level in allowed:
-        return
+        verified = getattr(decision, "verified_bytes", None)
+        return verified if verified else entry.read_bytes()
 
     raise RuntimeError(
         f"PDF 工作台插件未通过签名校验，拒绝加载：{entry}\n"
@@ -240,9 +243,8 @@ def _plugin_handle() -> Any:
     模块名带插件 id 前缀，避免与 `plugin_loader` 加载其它插件时的
     同名 `plugin` 模块冲突（多个插件都叫 `plugin.py`）。
     """
-    import importlib
-    import importlib.util
     import sys
+    import types
     import uuid
 
     directory = _plugin_dir()
@@ -272,16 +274,22 @@ def _plugin_handle() -> Any:
     # 开发期需要放行时，用 `OMNICRAWL_PLUGIN_SIGNATURE_POLICY=developer`。
     _verify_plugin_signature_gate(entry)
 
-    spec = importlib.util.spec_from_file_location(module_name, entry)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"无法加载 PDF 工作台插件入口：{entry}")
-    module = importlib.util.module_from_spec(spec)
+    # 执行**验签过的那份字节**，而不是重新读盘。
+    #
+    # 这与 `plugin_loader` 的做法一致（它用 `decision.verified_bytes`）。
+    # 若验签与执行各读一次盘，中间就有 TOCTOU 窗口：验签时文件是 A，
+    # 执行时已被换成 B——验签形同虚设。两个仓库的加载器都不该有这道缝。
+    verified_bytes = _verify_plugin_signature_gate(entry)
+
+    module = types.ModuleType(module_name)
+    module.__file__ = str(entry)
     # 插件包（omnicrawler_pdf）在插件目录下，须先入 path 才能 import。
     if str(directory) not in sys.path:
         sys.path.insert(0, str(directory))
     sys.modules[module_name] = module
     try:
-        spec.loader.exec_module(module)
+        code = compile(verified_bytes, str(entry), "exec")
+        exec(code, module.__dict__)  # noqa: S102 - 执行的是已验签的字节
     except Exception:
         sys.modules.pop(module_name, None)
         raise
