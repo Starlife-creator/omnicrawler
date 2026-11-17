@@ -39,7 +39,7 @@ def execute(config: str, *, output_format: str = "json") -> dict[str, Any]:
             result["pdf"] = {
                 "status": "plugin_not_installed",
                 "project_config": str(pdf_project),
-                "hint": "文档工作台插件未安装（插件市场 → document-workbench）",
+                "hint": "文档工作台插件未安装（OmniCrawler 市场 → document-workbench）",
             }
         else:
             outcome = document_facade.run_operation(

@@ -58,13 +58,13 @@ def _write_plugin(root: Path, plugin_id: str, deps: list[object]) -> Path:
 def test_market_list_shows_dependency_badge_for_missing(tmp_path: Path) -> None:
     """已装插件缺声明依赖时，市场列表行必须出现只读徽标（且不弹框）。"""
     from omnicrawler.gui.motion_signal import MotionSignal
-    from omnicrawler.gui.views.plugin_market import PluginMarketView
+    from omnicrawler.gui.views.market import MarketView
 
     installed = tmp_path / "plugins_installed"
     _write_plugin(installed, "demo", [{"name": _MISSING}])
 
     MotionSignal._instance = None
-    view = PluginMarketView(project_root=str(tmp_path))
+    view = MarketView(project_root=str(tmp_path))
     view._catalog = {
         "plugins": [
             {
@@ -93,13 +93,13 @@ def test_market_list_shows_dependency_badge_for_missing(tmp_path: Path) -> None:
 def test_market_list_silent_when_dependencies_ready(tmp_path: Path) -> None:
     """依赖齐全 ⇒ 列表静默，不出现徽标（§R2 不打扰）。"""
     from omnicrawler.gui.motion_signal import MotionSignal
-    from omnicrawler.gui.views.plugin_market import PluginMarketView
+    from omnicrawler.gui.views.market import MarketView
 
     installed = tmp_path / "plugins_installed"
     _write_plugin(installed, "demo", [{"name": "json"}])
 
     MotionSignal._instance = None
-    view = PluginMarketView(project_root=str(tmp_path))
+    view = MarketView(project_root=str(tmp_path))
     view._catalog = {
         "plugins": [
             {

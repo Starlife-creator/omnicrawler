@@ -81,7 +81,7 @@ def test_uninstalled_entry_gives_actionable_error(
     assert "document-workbench" in message, (
         f"{name}: 消息没点名要装哪个插件，用户无法照做。实际: {message!r}"
     )
-    assert "安装" in message or "插件市场" in message, (
+    assert "安装" in message or "OmniCrawler 市场" in message, (
         f"{name}: 消息没给安装指引。实际: {message!r}"
     )
 

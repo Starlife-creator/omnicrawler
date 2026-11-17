@@ -2,7 +2,7 @@
 
 **背景**
 
-用户的方向调整：只保留「爬虫+AI」与「插件市场」两条支柱，其余尽量精简；
+用户的方向调整：只保留「爬虫+AI」与「OmniCrawler 市场」两条支柱，其余尽量精简；
 但**能组件化的组件化、能保留的保留，不删心血**。
 
 可达性分析（AST，533 模块）查出 20 个"支柱内引用文档子系统"的挂点。
@@ -111,7 +111,7 @@ def test_component_manager_does_not_depend_on_pdfx() -> None:
     offenders = _doc_imports_in("services/component_manager.py")
     assert offenders == [], (
         "组件管理器仍反向依赖文档子系统：\n  " + "\n  ".join(offenders) +
-        "\n组件管理器属于支柱②（插件市场/组件），OCR 引擎注册表不属于文档子系统。"
+        "\n组件管理器属于支柱②（OmniCrawler 市场/组件），OCR 引擎注册表不属于文档子系统。"
         "应把它上提到宿主侧（services/ 或 core/）。"
     )
 

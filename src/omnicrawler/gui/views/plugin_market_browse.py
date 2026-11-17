@@ -1,4 +1,4 @@
-"""PluginMarketView 的「浏览」域 —— 由 plugin_market.py 抽出的 Mixin（P1-3 第四批）。
+"""MarketView 的「浏览」域 —— 由 plugin_market.py 抽出的 Mixin（P1-3 第四批）。
 
 涵盖目录浏览与详情展示：
 - ``_populate_list`` / ``_matches_filters`` / ``_on_selection_changed``：列表填充与筛选
@@ -48,7 +48,7 @@ if TYPE_CHECKING:
         QWidget,
     )
 
-    # 类型检查期把宿主视作 QWidget；运行期仍为 object，不改变 PluginMarketView 的 MRO。
+    # 类型检查期把宿主视作 QWidget；运行期仍为 object，不改变 MarketView 的 MRO。
     _Base = QWidget
 else:
     _Base = object

@@ -15,7 +15,7 @@
 ## 判据
 
 1. `pdf` 能力必须**以插件安装状态为准**，不能只看 pdfplumber；
-2. `_open_pdf_workbench` 在视图为 None 时必须给提示 + 导向插件市场，不抛异常；
+2. `_open_pdf_workbench` 在视图为 None 时必须给提示 + 导向 OmniCrawler 市场，不抛异常；
 3. 格式互转跳转必须**按 key 定位**，页面不存在时提示而不是跳到错页。
 """
 
@@ -61,7 +61,7 @@ def test_pdf_capability_requires_plugin_not_just_pdfplumber(
 
 
 def test_open_pdf_workbench_handles_missing_view(monkeypatch: pytest.MonkeyPatch) -> None:
-    """视图为 None 时不得抛 AttributeError，要给提示并导向插件市场。"""
+    """视图为 None 时不得抛 AttributeError，要给提示并导向 OmniCrawler 市场。"""
     pytest.importorskip("PySide6")
     from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -89,7 +89,7 @@ def test_open_pdf_workbench_handles_missing_view(monkeypatch: pytest.MonkeyPatch
 
     assert shown, "没有给用户任何提示"
     assert navigation.NavKey.PLUGIN_MARKET in visited, (
-        "没有导向插件市场——用户不知道去哪里装"
+        "没有导向 OmniCrawler 市场——用户不知道去哪里装"
     )
 
 

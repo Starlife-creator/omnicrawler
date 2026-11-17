@@ -1,4 +1,4 @@
-"""插件市场面板的纯逻辑：目录条目解析、权限风险分级、版本兼容性裁决与安装审查文案。
+"""OmniCrawler 市场面板的纯逻辑：目录条目解析、权限风险分级、版本兼容性裁决与安装审查文案。
 
 从 plugin_market.py 迁出（P1-3 第一批）。无 Qt 依赖，可独立单测；
  heavyweight 依赖（plugin_broker / egress / AppConfig）保持函数内懒加载。

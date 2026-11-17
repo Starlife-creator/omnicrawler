@@ -29,11 +29,11 @@ def _qt_app():
 def _make_view(tmp_path):
     """构造一个隔离的插件市场视图（不触发联网）。"""
     from omnicrawler.gui.motion_signal import MotionSignal
-    from omnicrawler.gui.views.plugin_market import PluginMarketView
+    from omnicrawler.gui.views.market import MarketView
 
     # 确保 MotionSignal 单例绑定到当前存活的 QApplication
     MotionSignal._instance = None
-    view = PluginMarketView(project_root=str(tmp_path))
+    view = MarketView(project_root=str(tmp_path))
     # 浏览/滚动测试自行提供目录，不因 show() 自动访问真实市场。
     view._auto_loaded = True
     return view
@@ -53,12 +53,12 @@ def test_view_takes_catalog_and_egress_from_project_config(tmp_path):
     """#74 §4：目录源与出口配置取自**用户项目配置**，不再读死内置 DEFAULTS。"""
     from omnicrawler.core.config import DEFAULTS
     from omnicrawler.gui.motion_signal import MotionSignal
-    from omnicrawler.gui.views.plugin_market import PluginMarketView
+    from omnicrawler.gui.views.market import MarketView
 
     mirror = "https://mirror.example.invalid/market"
     proxy = "http://127.0.0.1:7897"
     MotionSignal._instance = None
-    view = PluginMarketView(
+    view = MarketView(
         project_root=str(tmp_path),
         app_config=_app_config(tmp_path, catalog_url=mirror, proxy=proxy),
     )
@@ -97,9 +97,9 @@ def test_view_instantiates_offline_by_default(tmp_path):
 
 
 def test_is_installed_detects_signature_pair(tmp_path):
-    from omnicrawler.gui.views.plugin_market import PluginMarketView
+    from omnicrawler.gui.views.market import MarketView
 
-    view = PluginMarketView(project_root=str(tmp_path))
+    view = MarketView(project_root=str(tmp_path))
 
     dest = tmp_path / "plugins_installed" / "demo"
     # 仅 plugin.py、缺 .sig → 不算已安装
@@ -116,9 +116,9 @@ def test_is_installed_detects_signature_pair(tmp_path):
 
 
 def test_installed_ids_enumerates_signed_plugin_dirs(tmp_path):
-    from omnicrawler.gui.views.plugin_market import PluginMarketView
+    from omnicrawler.gui.views.market import MarketView
 
-    view = PluginMarketView(project_root=str(tmp_path))
+    view = MarketView(project_root=str(tmp_path))
 
     dest = tmp_path / "plugins_installed"
     (dest / "a").mkdir(parents=True)
@@ -168,9 +168,9 @@ def test_installed_plugin_verify_fails_closed_with_real_signatures(tmp_path):
 
 
 def test_offline_populate_lists_only_local_installs(tmp_path):
-    from omnicrawler.gui.views.plugin_market import PluginMarketView
+    from omnicrawler.gui.views.market import MarketView
 
-    view = PluginMarketView(project_root=str(tmp_path))
+    view = MarketView(project_root=str(tmp_path))
 
     # 植入一个本地已安装插件（离线态应被补充展示）
     (tmp_path / "plugins_installed" / "local_only").mkdir(parents=True)
@@ -183,7 +183,7 @@ def test_offline_populate_lists_only_local_installs(tmp_path):
 
 
 def test_market_entry_capability_helpers_support_legacy_and_new_catalogs():
-    from omnicrawler.gui.views.plugin_market import (
+    from omnicrawler.gui.views.market import (
         _compatibility,
         _entry_plugin_types,
         _install_block_reason,

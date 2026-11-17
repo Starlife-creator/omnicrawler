@@ -1,4 +1,4 @@
-"""PluginMarketView 的「插件动作」域 —— 由 plugin_market.py 抽出的 Mixin（P1-3 第三批）。
+"""MarketView 的「插件动作」域 —— 由 plugin_market.py 抽出的 Mixin（P1-3 第三批）。
 
 涵盖已安装插件的状态查询与动作：
 - ``_is_installed`` / ``_installed_ids``：安装状态查询（唯一宿主依赖 ``_dest_root``）
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from PySide6.QtCore import Signal
     from PySide6.QtWidgets import QLabel, QWidget
 
-    # 类型检查期把宿主视作 QWidget；运行期仍为 object，不改变 PluginMarketView 的 MRO。
+    # 类型检查期把宿主视作 QWidget；运行期仍为 object，不改变 MarketView 的 MRO。
     _Base = QWidget
 else:
     _Base = object
@@ -34,7 +34,7 @@ LOGGER = logging.getLogger(__name__)
 class MarketActionsMixin(_Base):
     """插件动作域：安装状态查询 + 启用/禁用 + 卸载/验签。"""
 
-    # ---- 宿主契约：实例属性（由 PluginMarketView.__init__ / 类体提供）----
+    # ---- 宿主契约：实例属性（由 MarketView.__init__ / 类体提供）----
     _dest_root: Path
     _trust_source: str
     _selected_id: str | None

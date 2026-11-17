@@ -239,7 +239,7 @@ def plugin_dependency_status_from_dir(plugin_dir: Path) -> DependencyStatus | No
 def plugin_dependency_status(config: Any) -> dict[str, DependencyStatus]:
     """扫描**全部**已装插件（不限于本次 run 参与者）的依赖状态。
 
-    决策四「打开即检测」的数据源：插件市场页只需展示**已安装**插件的依赖徽标，
+    决策四「打开即检测」的数据源：市场页只需展示**已安装**插件的依赖徽标，
     与"本次 run 是否启用"无关，因此这里不沿用 ``_wanted_plugin_ids`` 过滤。
     """
     result: dict[str, DependencyStatus] = {}

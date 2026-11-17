@@ -287,7 +287,7 @@ def _build_standard_capabilities(modules: dict[str, dict[str, Any]], native: dic
         _workbench_ok = False
     items["pdf_workbench"] = _cap_item(
         "PDF 工作台 (插件 document-workbench)", _workbench_ok,
-        "表格/元数据抽取、OCR、人工复核与五表导出——需在插件市场安装", "standard")
+        "表格/元数据抽取、OCR、人工复核与五表导出——需在 OmniCrawler 市场安装", "standard")
     items["xlsx"] = _cap_item("Excel 导出 (openpyxl)", modules.get("xlsx", {}).get("installed", False),
                               "生成 Excel 格式结果", "standard")
     items["playwright"] = _cap_item("Playwright 浏览器自动化", modules.get("playwright", {}).get("installed", False),

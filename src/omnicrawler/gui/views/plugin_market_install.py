@@ -1,4 +1,4 @@
-"""PluginMarketView 的「安装流程」域 —— 由 plugin_market.py 抽出的 Mixin（P1-3 第五批）。
+"""MarketView 的「安装流程」域 —— 由 plugin_market.py 抽出的 Mixin（P1-3 第五批）。
 
 涵盖从点击安装到落盘完成的完整链路：
 - ``_on_install``：确认审查文案（权限风险/兼容性/来源）→ 启动 _InstallWorker
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from PySide6.QtCore import Signal
     from PySide6.QtWidgets import QLabel, QPushButton, QWidget
 
-    # 类型检查期把宿主视作 QWidget；运行期仍为 object，不改变 PluginMarketView 的 MRO。
+    # 类型检查期把宿主视作 QWidget；运行期仍为 object，不改变 MarketView 的 MRO。
     _Base = QWidget
 else:
     _Base = object

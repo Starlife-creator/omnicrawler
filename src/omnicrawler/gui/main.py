@@ -892,7 +892,7 @@ class MainWindow(QMainWindow):
         **插件未安装时 `_pdf_workbench` 是 None**（`central_area` 按可用性条件
         构造视图），此时不能直接调它的方法——实测会抛
         `AttributeError: 'NoneType' object has no attribute 'set_pending_request'`。
-        改为给用户一条可操作提示，并引导去插件市场。
+        改为给用户一条可操作提示，并引导去 OmniCrawler 市场。
         """
         if self._pdf_workbench is None:
             from ..services import document_facade
@@ -901,7 +901,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 _("PDF 工作台未安装"),
-                f"{reason}\n\n" + _("是否现在去插件市场查看？"),
+                f"{reason}\n\n" + _("是否现在去 OmniCrawler 市场查看？"),
             )
             navigation_host.goto_nav(self, NavKey.PLUGIN_MARKET)
             return

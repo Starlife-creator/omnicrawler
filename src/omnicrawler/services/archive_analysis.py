@@ -39,7 +39,7 @@ def _parse_document(*args: Any, **kwargs: Any) -> Any:
     if not document_capability()["available"]:
         raise RuntimeError(
             "归档文档分析需要 文档工作台插件（解析依赖其 document_ir）。"
-            "请在「插件市场」中安装 document-workbench 后重试。"
+            "请在「OmniCrawler 市场」中安装 document-workbench 后重试。"
         )
     from .document_facade import parse_document
 

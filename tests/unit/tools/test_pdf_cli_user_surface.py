@@ -79,7 +79,7 @@ def test_pdf_help_without_plugin_is_a_clean_message(tmp_path: Path) -> None:
         f"提示没点名要装哪个插件：\n{output[-500:]}"
     )
     # 给出下一步怎么做
-    assert "插件市场" in output or "安装" in output, (
+    assert "OmniCrawler 市场" in output or "安装" in output, (
         f"提示没告诉用户怎么办：\n{output[-500:]}"
     )
 

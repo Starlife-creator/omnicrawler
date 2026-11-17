@@ -166,7 +166,7 @@ def test_media_surface_v2_capabilities_are_bounded(app: QApplication) -> None:
 
 
 def test_market_blocks_unavailable_required_capability() -> None:
-    from omnicrawler.gui.views.plugin_market import _install_block_reason
+    from omnicrawler.gui.views.market import _install_block_reason
 
     reason = _install_block_reason(
         {

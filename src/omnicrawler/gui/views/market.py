@@ -1,4 +1,4 @@
-"""插件市场面板 — 策展式插件分发 GUI。
+"""OmniCrawler 市场面板 — 策展式插件分发 GUI。
 
 联网后从 ``catalog_url`` 拉取审核通过的插件目录，展示名称/版本/说明，
 用户按需下载安装；每份插件均经 ed25519 离线验签（fail-closed）后才落盘到
@@ -87,10 +87,10 @@ LOGGER = logging.getLogger(__name__)
 
 
 # ── 视图 ──────────────────────────────────────────────────────────
-class PluginMarketView(
+class MarketView(
     MarketCatalogMixin, MarketInstallMixin, MarketBrowseMixin, MarketActionsMixin, WorkerOwnedWidget
 ):
-    """策展式插件市场面板。
+    """策展式OmniCrawler 市场面板。
 
     状态: offline | loading | ready | error
     """
@@ -108,7 +108,7 @@ class PluginMarketView(
     ) -> None:
         super().__init__(parent)
         self.setObjectName("pluginMarket")
-        self.setAccessibleName(_("插件市场"))
+        self.setAccessibleName(_("OmniCrawler 市场"))
 
         base = _project_root_of(project_root)
         self._base = base

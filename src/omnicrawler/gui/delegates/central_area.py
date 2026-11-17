@@ -38,7 +38,7 @@ from ..views.change_monitor import ChangeMonitorView
 from ..views.chart_view import ChartView
 from ..views.developer_inspector import DeveloperInspector
 from ..views.file_list import FileList
-from ..views.plugin_market import PluginMarketView
+from ..views.market import MarketView
 from ..views.professional_review import EvidenceView
 from ..views.result_table import ResultTable
 from ..views.yaml_editor import YamlEditor
@@ -68,7 +68,7 @@ def _goto_nav_key(window: Any, nav_key: str, label: str) -> None:
             window,
             _("功能未安装"),
             _("{label} 由插件 document-workbench 提供，当前未安装。\n\n"
-              "可在「插件市场」中安装后使用。").format(label=label),
+              "可在「OmniCrawler 市场」中安装后使用。").format(label=label),
         )
         return
     window._nav.setCurrentRow(keys.index(nav_key))
@@ -114,7 +114,7 @@ _NAV_LABELS: dict[str, str] = {
     NavKey.GROUP_ADVANCED: _("高级"),
     NavKey.YAML_EDITOR: "📝 " + _("YAML 编辑器"),
     NavKey.EVIDENCE: "🔍 " + _("证据查看器"),
-    NavKey.PLUGIN_MARKET: "🧩 " + _("插件市场"),
+    NavKey.PLUGIN_MARKET: "🧩 " + _("OmniCrawler 市场"),
     NavKey.DEVELOPER: "🛠 " + _("开发者检查器"),
 }
 
@@ -328,7 +328,7 @@ class CentralAreaBuilder(_BaseDelegate):
         mw._change_monitor.desktop_notify.connect(mw._chrome.on_monitor_desktop_notify)
         mw._stack.addWidget(mw._change_monitor)
 
-        mw._plugin_market = PluginMarketView(
+        mw._plugin_market = MarketView(
             project_root=mw._project_root,
             app_config=mw._market_app_config(),
         )

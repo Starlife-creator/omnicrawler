@@ -85,12 +85,12 @@ def test_missing_config_file_does_not_raise(tmp_path: Path, sources_toasts: list
     回归：`_open_sources_dialog` 原先只判 ``path is None``，新建项目未保存配置时
     ``config_path`` 非空但文件不存在，对话框与命令层直接读文件 ⇒ 未捕获异常。
     """
-    from omnicrawler.gui.views.plugin_market import PluginMarketView
+    from omnicrawler.gui.views.market import MarketView
 
     _forbid_dialog(monkeypatch)
     host = _SourcesHost(tmp_path / "not-created-yet.yaml")
 
-    PluginMarketView._open_sources_dialog(host)  # type: ignore[arg-type]
+    MarketView._open_sources_dialog(host)  # type: ignore[arg-type]
 
     assert sources_toasts, "应给出提示而不是崩掉"
     assert host.refresh_calls == 0, "配置不存在时不应刷新"
@@ -98,11 +98,11 @@ def test_missing_config_file_does_not_raise(tmp_path: Path, sources_toasts: list
 
 def test_no_config_object_does_not_raise(sources_toasts: list[str], monkeypatch) -> None:
     """完全没有 ``_app_config`` 时同样只提示。"""
-    from omnicrawler.gui.views.plugin_market import PluginMarketView
+    from omnicrawler.gui.views.market import MarketView
 
     _forbid_dialog(monkeypatch)
     host = _SourcesHost(None)
 
-    PluginMarketView._open_sources_dialog(host)  # type: ignore[arg-type]
+    MarketView._open_sources_dialog(host)  # type: ignore[arg-type]
 
     assert sources_toasts

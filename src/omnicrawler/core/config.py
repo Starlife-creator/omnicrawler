@@ -253,7 +253,7 @@ DEFAULTS: dict[str, Any] = {
         # AST 静态检查豁免列表（加载前拦截 subprocess/ctypes/eval/os.system 等危险模式）。
         # 与插件文件内 "# omnicrawler: allow-ast <名称>" 注释等效；豁免必须显式、可审计。
         "ast_allowed_patterns": [],
-        # 插件市场 catalog 基址（单一可迁移配置）。所有 catalog 内部路径均为相对此基址
+        # OmniCrawler 市场 catalog 基址（单一可迁移配置）。所有 catalog 内部路径均为相对此基址
         # 的相对路径；迁移到独立仓库或自托管 HTTP 服务时，只需改这一项。
         # 默认连在线独立市场仓（GitHub raw 基址）；插件/模板上架即时可见、无需重新发版。
         # 联网失败自动回退 bundled_catalog_dir 内置离线快照。迁移/自托管改这一项即可。
@@ -367,7 +367,7 @@ class AppConfig:
 
     @property
     def plugin_catalog_url(self) -> str:
-        """插件市场 catalog 基址（单一可迁移配置）。
+        """OmniCrawler 市场 catalog 基址（单一可迁移配置）。
 
         所有 catalog 内部文件路径均为相对于此基址的相对路径。迁移到独立仓库或
         自托管 HTTP 服务时，只需修改此值（见 market/ 离线快照或

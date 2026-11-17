@@ -11,7 +11,7 @@
 
 1. **报告可用性**：`document_capability()` —— 插件装没装；
 2. **调用插件**：`run_operation()` —— 把操作转给插件；
-3. **缺失时给可操作提示**：告诉用户去插件市场装，而不是抛 ImportError 栈。
+3. **缺失时给可操作提示**：告诉用户去 OmniCrawler 市场装，而不是抛 ImportError 栈。
 
 为什么是 in_process 插件而不是子进程
 ------------------------------------
@@ -173,7 +173,7 @@ def document_capability() -> dict[str, Any]:
         "available": False,
         "reason": (
             "文档工作台插件未安装。该功能已改为可选插件——"
-            "请在「插件市场」中安装 document-workbench，或使用文字版流程"
+            "请在「OmniCrawler 市场」中安装 document-workbench，或使用文字版流程"
             "（爬虫与 AI 主流程不受影响）。"
         ),
         "missing": [_PLUGIN_ID],
@@ -192,7 +192,7 @@ def require_document(operation: str = "") -> Any:
         raise RuntimeError(
             "文档工作台插件未安装，无法执行该操作"
             + suffix
-            + "。\n请在「插件市场」中安装 document-workbench；"
+            + "。\n请在「OmniCrawler 市场」中安装 document-workbench；"
             "爬虫与 AI 主流程不受影响。"
         )
     return _plugin_handle()
@@ -244,7 +244,7 @@ def _verify_plugin_signature_gate(entry: Any) -> bytes:
     except Exception as exc:  # noqa: BLE001 - 验签过程异常按拒绝处理
         raise RuntimeError(
             f"文档工作台插件验签失败，拒绝加载：{entry}（{exc}）。"
-            "请在「插件市场」重新安装已签名的插件。"
+            "请在「OmniCrawler 市场」重新安装已签名的插件。"
         ) from exc
 
     allowed = {
@@ -259,7 +259,7 @@ def _verify_plugin_signature_gate(entry: Any) -> bytes:
         f"文档工作台插件未通过签名校验，拒绝加载：{entry}\n"
         f"原因：{decision.reason}\n"
         "该插件以 in_process 方式运行（与宿主同进程），因此必须验签。"
-        "请在「插件市场」安装官方签名版本；开发者本机调试可临时设置 "
+        "请在「OmniCrawler 市场」安装官方签名版本；开发者本机调试可临时设置 "
         "OMNICRAWL_PLUGIN_SIGNATURE_POLICY=developer（不验签，勿用于日常使用）。"
     )
 
@@ -278,7 +278,7 @@ def _plugin_handle() -> Any:
     if directory is None:
         raise RuntimeError(
             f"文档工作台插件未安装：找不到 {_PLUGIN_ID} 的 plugin.py。"
-            "请在「插件市场」中安装后重试。"
+            "请在「OmniCrawler 市场」中安装后重试。"
         )
 
     module_name = f"_pdf_workbench_{uuid.uuid5(uuid.NAMESPACE_URL, str(directory)).hex[:8]}"

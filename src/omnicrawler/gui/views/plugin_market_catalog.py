@@ -1,4 +1,4 @@
-"""PluginMarketView 的「目录加载」域 —— 由 plugin_market.py 抽出的 Mixin（P1-3 第六批）。
+"""MarketView 的「目录加载」域 —— 由 plugin_market.py 抽出的 Mixin（P1-3 第六批）。
 
 涵盖插件目录的加载编排与终态收尾：
 - ``showEvent`` / ``refresh``：首次展示自动加载 + 手动刷新（启动 _CatalogWorker）
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 
     from ..widgets.status_indicator import StatusIndicator
 
-    # 类型检查期把宿主视作 QWidget；运行期仍为 object，不改变 PluginMarketView 的 MRO。
+    # 类型检查期把宿主视作 QWidget；运行期仍为 object，不改变 MarketView 的 MRO。
     _Base = QWidget
 else:
     _Base = object

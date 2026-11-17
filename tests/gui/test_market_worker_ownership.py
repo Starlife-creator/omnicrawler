@@ -10,8 +10,8 @@ from shiboken6 import isValid
 
 def _view(kind, tmp_path):
     if kind == "plugin":
-        from omnicrawler.gui.views.plugin_market import PluginMarketView
-        return PluginMarketView(project_root=tmp_path)
+        from omnicrawler.gui.views.market import MarketView
+        return MarketView(project_root=tmp_path)
     from omnicrawler.gui.views.template_market import TemplateMarketView
     return TemplateMarketView(project_root=tmp_path, catalog_url="", trust_source="")
 

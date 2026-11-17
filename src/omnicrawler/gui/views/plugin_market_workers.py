@@ -1,4 +1,4 @@
-"""插件市场面板的后台工作线程：目录拉取、列表资源下载与签名安装。
+"""OmniCrawler 市场面板的后台工作线程：目录拉取、列表资源下载与签名安装。
 
 从 plugin_market.py 迁出（P1-3 第二批）。三者均继承 BackgroundWorker，
 终态信号契约（succeeded/failed/interrupted 三选一）由基类保证。

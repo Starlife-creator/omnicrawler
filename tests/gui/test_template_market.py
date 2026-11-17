@@ -63,11 +63,11 @@ def test_populate_lists_template_entries(tmp_path) -> None:
 
 def test_market_view_embeds_template_tab(tmp_path) -> None:
     from omnicrawler.gui.motion_signal import MotionSignal
-    from omnicrawler.gui.views.plugin_market import PluginMarketView
+    from omnicrawler.gui.views.market import MarketView
     from omnicrawler.gui.views.template_market import TemplateMarketView
 
     MotionSignal._instance = None
-    view = PluginMarketView(project_root=str(tmp_path))
+    view = MarketView(project_root=str(tmp_path))
     assert view._tabs.count() == 4
     market_pane = view._tabs.widget(0)
     assert isinstance(view._template_market, TemplateMarketView)
