@@ -12,11 +12,24 @@ import yaml
 from reportlab.pdfgen.canvas import Canvas
 
 from omnicrawler.core.config import load_config
-from omnicrawler.document_ir import parse_document
 from omnicrawler.pipeline import Pipeline
-from omnicrawler.review.run_compare import compare_runs
 from omnicrawler.services.archive_analysis import execute
+from omnicrawler.services.document_facade import compare_runs, parse_document
 from omnicrawler.templates.template_catalog import bundled_template_catalog
+
+
+@pytest.fixture(autouse=True)
+def _require_pdf_plugin():
+    """这些场景测试的 PDF 链路依赖插件 pdf-workbench。
+
+    迁移后（2026-11-17）`parse_document` 与 `compare_runs` 都随 PDF 工作台
+    迁入插件。未安装时它们会抛**可操作**错误——这里显式跳过，
+    而不是让测试红着（红着会掩盖真实回归）。
+    """
+    from omnicrawler.services.document_facade import document_capability
+
+    if not document_capability()["available"]:
+        pytest.skip("需要 pdf-workbench 插件（PDF 解析链路已迁出宿主）")
 
 
 @pytest.fixture
