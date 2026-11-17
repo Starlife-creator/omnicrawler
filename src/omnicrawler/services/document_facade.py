@@ -454,9 +454,18 @@ def convertx_preset(name: str, path: Any = None) -> Any:
 
 
 def compare_runs(*args: Any, **kwargs: Any) -> Any:
-    """比较两次运行（经插件）。"""
-    module = require_document("review.compare")
-    return module.run_operation("review.compare", {"args": list(args), "kwargs": dict(kwargs)})
+    """比较两次运行。
+
+    **直接返回宿主实现**（`review/run_compare.py`），不经插件。
+
+    它是 `omnicrawler compare-runs` 命令（运维能力）与
+    `services/record_deletions.py`（删除审计）的共同依赖，属支柱①。
+    此前经插件转发，导致未装 PDF 插件时这两条都不可用——与
+    `table_io` 是同一类误绑（见 2026-11-22 的 table_io 上提）。
+    """
+    from ..review.run_compare import compare_runs as _compare
+
+    return _compare(*args, **kwargs)
 
 
 def ocr_backend_class() -> Any:
