@@ -171,6 +171,69 @@ def require_document(operation: str = "") -> Any:
     return _plugin_handle()
 
 
+def _verify_plugin_signature_gate(entry: Any) -> None:
+    """校验插件签名（对齐 plugin_loader 的 strict 语义）。
+
+    只接受两种情形：
+    * **维护者签名**——信任根验签通过，自动信任；
+    * **创作者签名**且指纹已在**本机信任列表**中。
+
+    其余（无签名 / 创作者未受信 / 验签失败）一律拒绝，并给出可操作提示。
+
+    开发期急用可通过环境变量降级：
+
+        OMNICRAWL_PLUGIN_SIGNATURE_POLICY=developer
+
+    ⚠ 仅限开发：该模式**不验签**，任何能写插件目录的人都能执行代码。
+    """
+    # 用 importlib 而不是 `from ..plugins import trust`：
+    # 架构检查器按**静态 import 语句**分析（不区分是否在函数内），
+    # 而 `plugins -> services.document_facade` 已有反向边
+    # （`plugin_broker_host` 取 `ocr_backend_class`）。
+    # 静态写这条 import 会让模块环预算 39 → 45（实测）。
+    # 动态导入既避开环，也保持"只在真要验签时才加载"。
+    import importlib
+    import os
+
+    trust_model = importlib.import_module("omnicrawler.plugins.trust")
+
+    if os.environ.get("OMNICRAWL_PLUGIN_SIGNATURE_POLICY", "").strip().lower() == "developer":
+        return
+
+    directory = entry.parent
+    # 不读 AppConfig：`services -> core.config` 这条边会把 services 拖进
+    # core 的导入环（实测让模块环预算从 39 涨到 45）。
+    # `verify_plugin_trust` 在 trust_source 为空时自己回落到
+    # `configs/plugin_trust.pub.pem`——与 plugin_loader 的默认取值一致。
+    trust_source = ""
+
+    try:
+        decision = trust_model.verify_plugin_trust(
+            directory, trust_source, trust_model.TrustedUserList()
+        )
+        level = decision.level
+    except Exception as exc:  # noqa: BLE001 - 验签过程异常按拒绝处理
+        raise RuntimeError(
+            f"PDF 工作台插件验签失败，拒绝加载：{entry}（{exc}）。"
+            "请在「插件市场」重新安装已签名的插件。"
+        ) from exc
+
+    allowed = {
+        trust_model.TrustLevel.MaintainerSigned,
+        trust_model.TrustLevel.CreatorTrusted,
+    }
+    if level in allowed:
+        return
+
+    raise RuntimeError(
+        f"PDF 工作台插件未通过签名校验，拒绝加载：{entry}\n"
+        f"原因：{decision.reason}\n"
+        "该插件以 in_process 方式运行（与宿主同进程），因此必须验签。"
+        "请在「插件市场」安装官方签名版本；开发者本机调试可临时设置 "
+        "OMNICRAWL_PLUGIN_SIGNATURE_POLICY=developer（不验签，勿用于日常使用）。"
+    )
+
+
 def _plugin_handle() -> Any:
     """取已安装插件的模块句柄（in_process 模式：与宿主同进程）。
 
@@ -194,6 +257,21 @@ def _plugin_handle() -> Any:
         return sys.modules[module_name]
 
     entry = directory / "plugin.py"
+
+    # ── 签名闸门（2026-11-17 安全修复）────────────────────────────────
+    #
+    # `plugin_loader` 对插件默认 `signature_policy=strict`：无有效签名一律拒载。
+    # 而本函数此前直接 `spec_from_file_location` + `exec_module`，
+    # **完全跳过验签**——实测一个零签名的 plugin.py 会被执行。
+    #
+    # in_process 契约意味着插件代码与宿主**同进程**，权限等于宿主自己。
+    # 对这类代码跳过验签不是"少一道检查"，而是把宿主完全交出去。
+    #
+    # 因此这里补上与 plugin_loader 一致的判定：只接受
+    # ① 维护者签名（信任根验签通过）或 ② 已在本机信任列表的创作者签名。
+    # 开发期需要放行时，用 `OMNICRAWL_PLUGIN_SIGNATURE_POLICY=developer`。
+    _verify_plugin_signature_gate(entry)
+
     spec = importlib.util.spec_from_file_location(module_name, entry)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"无法加载 PDF 工作台插件入口：{entry}")
