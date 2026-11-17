@@ -227,7 +227,19 @@ def _validate_output(path: Path, *, format_name: str, rows: int) -> dict[str, An
 
 def run_worker(case: str, source: Path, target: Path, rows: int) -> dict[str, Any]:
     """Run one measured conversion; called only in a fresh subprocess."""
-    from omnicrawler.convertx import convert
+    # 迁移后（2026-11-17）：convertx 随 PDF 工作台迁入插件 pdf-workbench。
+    # 经 facade 的 run_operation 走插件（**不要** `require_document("convertx")` ——
+    # 那返回的是插件模块本身，没有 `convert` 属性；实测踩到）。
+    from omnicrawler.services import document_facade
+
+    def convert(source, target, *, on_error="abort", options=None):  # noqa: ANN001
+        return document_facade.run_operation(
+            "convertx.convert",
+            {
+                "args": [source, target],
+                "kwargs": {"on_error": on_error, "options": options},
+            },
+        )
 
     source_format, target_format = CASE_FORMATS[case]
     started = time.perf_counter()
