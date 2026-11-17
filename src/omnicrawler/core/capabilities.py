@@ -27,6 +27,7 @@ MODULES = {
     "xml": "lxml",
     "pdf": "pdfplumber",  # Phase 0：fitz(PyMuPDF) → pdfplumber 探测
     "xlsx": "openpyxl",
+    "pdf_write": "reportlab",
     "playwright": "playwright",
     "selenium": "selenium",
     "async_http": "httpx",
@@ -68,7 +69,11 @@ FEATURE_REQUIREMENTS: dict[str, dict[str, tuple[str, ...]]] = {
     "core": {"modules": ("core_yaml",), "native": ()},
     "html": {"modules": ("html", "xml"), "native": ()},
     "web": {"modules": ("html", "xml"), "native": ()},
-    "pdf": {"modules": ("pdf", "xlsx"), "native": ()},
+    "pdf": {"modules": ("pdf",), "native": ()},
+    # 368be657 把 pdf extra 按支柱拆开后新增的两项。
+    # `pdf` 只留读取依赖（pdfplumber）；写出与表格各自独立，便于按需安装。
+    "pdf-write": {"modules": ("pdf_write",), "native": ()},
+    "excel": {"modules": ("xlsx",), "native": ()},
     "browser": {"modules": ("playwright",), "native": ("chromium",)},
     "selenium": {"modules": ("selenium",), "native": ("selenium_driver",)},
     "async-http": {"modules": ("async_http",), "native": ()},
@@ -265,8 +270,24 @@ def _build_standard_capabilities(modules: dict[str, dict[str, Any]], native: dic
                                     "高性能网页和 API 请求", "standard")
     items["tls_impersonate"] = _cap_item("TLS 指纹伪装 (curl_cffi)", modules.get("tls_impersonate", {}).get("installed", False),
                                          "模拟浏览器 TLS 握手对抗检测", "standard")
+    # PDF 文本解析有**两条路**，要分开说清楚，否则用户会误判：
+    #   * 宿主内置的 `doc_extractors` 走 pdfplumber（只读文字层，能力有限）；
+    #   * 完整的 PDF 工作台（表格/元数据/OCR/五表导出）是插件 `pdf-workbench`。
+    #
+    # 早先这条只报 pdfplumber 的安装状态，描述却写着"提取 PDF 文字、表格和元数据"
+    # ——装了 pdfplumber 就显示"就绪"，而表格/元数据其实要插件才有。
+    # 现在分两条：pdf_text 只报文字层，pdf_workbench 单独报插件。
     items["pdf_text"] = _cap_item("PDF 文本解析 (pdfplumber)", modules.get("pdf", {}).get("installed", False),
-                                  "提取 PDF 文字、表格和元数据", "standard")
+                                  "提取 PDF 文字层（宿主内置，表格与元数据需 PDF 工作台插件）", "standard")
+    try:
+        from ..services.document_facade import document_capability
+
+        _workbench_ok = bool(document_capability().get("available"))
+    except Exception:  # noqa: BLE001 - 能力探测不应因探测本身失败而崩
+        _workbench_ok = False
+    items["pdf_workbench"] = _cap_item(
+        "PDF 工作台 (插件 pdf-workbench)", _workbench_ok,
+        "表格/元数据抽取、OCR、人工复核与五表导出——需在插件市场安装", "standard")
     items["xlsx"] = _cap_item("Excel 导出 (openpyxl)", modules.get("xlsx", {}).get("installed", False),
                               "生成 Excel 格式结果", "standard")
     items["playwright"] = _cap_item("Playwright 浏览器自动化", modules.get("playwright", {}).get("installed", False),
