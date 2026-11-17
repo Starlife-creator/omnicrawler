@@ -22,11 +22,21 @@
 * 容器里**不显示"空的下载列表"**：组件目录尚未建立时，只展示
   「已安装 + 从本地文件导入」，不画一个空的可下载列表（那比没有更糟）。
 
-前置阻塞（不是本模块能解决的）
-------------------------------
-`component_trust.pub.pem` 目前不存在（`configs/` 只有 plugin / update 两把钥匙），
-所以 `inspect_package` 会报「组件包没有可用的受信签名密钥」。
-本模块不绕过该检查——没有信任根就是不能装，这是设计意图。
+两条安装通道
+------------
+1. **市场通道（recipe 装配）**：从已验签的 catalog 取组件条目，按 recipe 声明的
+   上游 URL 下载并在本地组装。市场只托管几十 KB 的声明，**不托管字节**——
+   见 `services/component_recipe.py` 的设计说明。
+2. **离线通道（整包 .ocp）**：用户手工下载的受信包，安装前校验签名与每个文件
+   的哈希，运行时再次校验。
+
+前一条是本模块新增的（2026-11-18）；后一条是既有能力，保留不变。
+
+历史说明（已不成立）
+--------------------
+早期版本这里记着「`component_trust.pub.pem` 不存在，`inspect_package` 会报
+『组件包没有可用的受信签名密钥』」。**该阻塞已解除**：信任根现已存在
+（`configs/component_trust.pub.pem`），离线通道可正常验签。
 """
 from __future__ import annotations
 
@@ -79,7 +89,14 @@ class ComponentManagerPanel(WorkerOwnedWidget):
     关闭/删除时请求中断并等 ``finished``，**不阻塞 GUI 线程**。
     """
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        catalog_url: str = "",
+        base: Path | None = None,
+        trust_source: str = "",
+    ) -> None:
         super().__init__(parent)
         self.setAccessibleName(_("组件管理"))
         self._worker: _ComponentWorker | None = None
@@ -87,6 +104,11 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         self._registry_sha = ""
         self._uninstalled = ""
         self._recovery_sha = ""
+        # 市场上下文：有 catalog_url 才显示「可下载」区；否则只显示已安装 + 离线导入。
+        self._catalog_url = str(catalog_url or "")
+        self._base = base
+        self._trust_source = str(trust_source or "")
+        self._entries: list[Any] = []
         self._build_ui()
         self._loaded_once = False
         # **不在构造时启动线程**：面板可能被创建后就一直不可见（例如市场页
@@ -113,6 +135,40 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         intro.setWordWrap(True)
         root.addWidget(intro)
 
+        # ── 可下载（市场）────────────────────────────────────────────────
+        # 与插件/模板页同形态：从已验签的 catalog 取条目。
+        # **组件条目不含字节**，只声明"从哪拉、多大、什么哈希"——
+        # 所以这里展示的是上游域名与下载量，不是包签名。
+        if self._catalog_url:
+            self._market_label = QLabel(_("可下载组件（来自 OmniCrawler 市场）"))
+            self._market_label.setAccessibleName(_("可下载组件"))
+            root.addWidget(self._market_label)
+
+            self._market_list = QListWidget()
+            self._market_list.setAccessibleName(_("可下载组件列表"))
+            self._market_list.currentItemChanged.connect(self._show_market_selected)
+            self._market_list.setMaximumHeight(160)
+            root.addWidget(self._market_list)
+
+            market_row = QHBoxLayout()
+            self._market_refresh = QPushButton(_("刷新市场组件列表"))
+            self._market_refresh.clicked.connect(self._reload_catalog)
+            self._market_install = QPushButton(_("下载并安装所选组件"))
+            self._market_install.clicked.connect(self._install_from_market)
+            self._market_status = QLabel(_("尚未拉取市场目录。"))
+            self._market_status.setWordWrap(True)
+            market_row.addWidget(self._market_refresh)
+            market_row.addWidget(self._market_install)
+            market_row.addWidget(self._market_status, 1)
+            root.addLayout(market_row)
+        else:
+            # 没有 catalog 上下文时不画空列表——那比没有更糟。
+            # mypy 需要显式标注：这两条分支给同一个属性赋不同类型。
+            self._market_list = None  # type: ignore[assignment]
+            self._market_install = None  # type: ignore[assignment]
+            self._market_status = None  # type: ignore[assignment]
+            self._market_refresh = None  # type: ignore[assignment]
+
         row = QHBoxLayout()
         self._package = QLabel(_("未选择组件包"))
         self._package.setWordWrap(True)
@@ -134,7 +190,10 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         self._import_btn.clicked.connect(lambda: self._run("import"))
         self._reload_btn = QPushButton(_("刷新已安装列表"))
         self._reload_btn.clicked.connect(self.refresh)
-        for button in (self._inspect_btn, self._import_btn, self._reload_btn):
+        # 与插件/模板页对齐：三分支都应有「校验已安装」。
+        self._verify_btn = QPushButton(_("校验所选组件"))
+        self._verify_btn.clicked.connect(lambda: self._run("verify"))
+        for button in (self._inspect_btn, self._import_btn, self._reload_btn, self._verify_btn):
             actions.addWidget(button)
         root.addLayout(actions)
 
@@ -158,6 +217,140 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         root.addLayout(write_actions)
 
         self._set_write_enabled(False)
+
+    # ── 市场（可下载组件）────────────────────────────────────────────────
+    def _reload_catalog(self) -> None:
+        """拉取已验签的 catalog，填充可下载列表。
+
+        **只读**：不下载任何构件。真正的下载在用户点「下载并安装」并确认后。
+        """
+        if self._market_list is None or not self._catalog_url:
+            return
+        from ...plugins.market_client import fetch_catalog_verified
+
+        self._market_status.setText(_("正在拉取市场目录…"))
+        try:
+            catalog = fetch_catalog_verified(
+                self._catalog_url,
+                self._trust_source,
+                egress=_market_egress(self._base),
+            )
+        except Exception as exc:  # noqa: BLE001 - 市场不可用不该让面板崩
+            # 明确区分"拉不到"与"验签失败"：后者是安全问题，必须让用户看见。
+            kind = _("目录验签失败，已停止") if isinstance(exc, PermissionError) else _("无法拉取市场目录")
+            self._market_status.setText(f"{kind}：{exc}")
+            self._market_list.clear()
+            self._entries = []
+            return
+
+        from .component_market_logic import components_from_catalog
+
+        self._entries = components_from_catalog(catalog)
+        self._market_list.clear()
+        if not self._entries:
+            self._market_status.setText(_("市场暂无组件。"))
+            return
+        for entry in self._entries:
+            item = QListWidgetItem(f"{entry.name} {entry.version}")
+            item.setData(Qt.ItemDataRole.UserRole, entry.id)
+            self._market_list.addItem(item)
+        self._market_status.setText(
+            _("共 {n} 个组件。选中可查看上游域名与下载量。").format(n=len(self._entries))
+        )
+
+    def _selected_entry(self) -> Any:
+        if self._market_list is None:
+            return None
+        item = self._market_list.currentItem()
+        if item is None:
+            return None
+        component_id = item.data(Qt.ItemDataRole.UserRole)
+        for entry in self._entries:
+            if entry.id == component_id:
+                return entry
+        return None
+
+    def _show_market_selected(self) -> None:
+        """选中组件时展示**下载前须知**：上游域名、大小、阻断项。"""
+        entry = self._selected_entry()
+        if entry is None or self._market_status is None:
+            return
+        from .component_market_logic import human_bytes, pre_install_checks
+
+        blockers, warnings = pre_install_checks(entry)
+        parts = [f"{human_bytes(entry.declared_total_bytes)} · {', '.join(entry.hosts) or _('无上游')}"]
+        if warnings:
+            parts.append("；".join(warnings))
+        if blockers:
+            parts.append(_("无法安装：") + "；".join(blockers))
+        self._market_status.setText(" — ".join(parts))
+        if self._market_install is not None:
+            # 有阻断项就禁用按钮，而不是让用户点了才失败。
+            self._market_install.setEnabled(not blockers)
+
+    def _install_from_market(self) -> None:
+        """下载并安装所选组件（走 recipe 装配）。"""
+        entry = self._selected_entry()
+        if entry is None:
+            QMessageBox.information(self, _("未选择组件"), _("请先在列表中选择一个组件。"))
+            return
+        from .component_market_logic import describe_for_confirm, pre_install_checks
+
+        blockers, _warnings = pre_install_checks(entry)
+        if blockers:
+            QMessageBox.warning(
+                self, _("无法安装"), "\n".join(blockers)
+            )
+            return
+
+        reply = QMessageBox.question(
+            self,
+            _("确认下载并安装"),
+            describe_for_confirm(entry),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        recipe_rel = entry.recipe_file
+        if not recipe_rel:
+            QMessageBox.warning(self, _("无法安装"), _("条目缺少 recipe 文件路径。"))
+            return
+        if self._base is None:
+            QMessageBox.warning(self, _("无法安装"), _("缺少项目根目录，无法定位 recipe。"))
+            return
+
+        recipe_path = self._base.parent / "OmniCrawler-market" / recipe_rel
+        if not recipe_path.is_file():
+            QMessageBox.warning(
+                self, _("无法安装"), _("找不到本地 recipe 文件：{p}").format(p=recipe_path)
+            )
+            return
+
+        from ...services.component_install import RecipeInstallError, install_recipe_file
+
+        self._market_status.setText(_("正在从上游下载并装配…"))
+        try:
+            summary = install_recipe_file(
+                recipe_path,
+                self._base / "components",
+                egress=_market_egress(self._base),
+            )
+        except RecipeInstallError as exc:
+            self._market_status.setText(_("安装失败：") + str(exc))
+            QMessageBox.warning(self, _("安装失败"), str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            self._market_status.setText(_("安装失败：") + str(exc))
+            QMessageBox.warning(self, _("安装失败"), str(exc))
+            return
+
+        self._market_status.setText(
+            _("已安装：{path}").format(path=summary.get("path", "?"))
+        )
+        self.refresh()
+
 
     def _set_write_enabled(self, _enabled: bool = True) -> None:
         """按**当前真实前置条件**刷新按钮可用性。
@@ -352,3 +545,19 @@ def describe(info: dict[str, Any]) -> str:
 def dumps(info: dict[str, Any]) -> str:
     """把组件信息转成稳定的 JSON 文本（便于诊断与测试比对）。"""
     return json.dumps(info, ensure_ascii=False, sort_keys=True, indent=2)
+
+
+def _market_egress(base: Any) -> Any:
+    """构造受控出站（与插件/模板市场同一套：限制私网 + **强制审计**）。"""
+    import copy
+
+    from ...core.config import DEFAULTS, AppConfig
+    from ...security.egress import EgressBroker
+
+    root = Path(base) if base is not None else Path.cwd()
+    raw = copy.deepcopy(dict(DEFAULTS))
+    egress_cfg = raw.setdefault("egress", {})
+    if isinstance(egress_cfg, dict):
+        egress_cfg["audit"] = True
+    raw.setdefault("project", {"name": "component-market", "workspace": str(root)})
+    return EgressBroker(AppConfig(root, root, raw, root))

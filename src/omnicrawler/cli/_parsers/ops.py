@@ -128,7 +128,7 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     components.add_argument(
         "action",
         choices=[
-            "list", "inspect", "stage", "import", "uninstall", "rollback",
+            "list", "inspect", "verify", "stage", "import", "uninstall", "rollback",
             # recipe 装配：市场只托管声明（几十 KB），字节从上游拉、本地组装。
             # 与 `import` 的区别：import 装的是用户已下载的整包 zip，
             # install-recipe 按声明去上游下载并**在本地组装**。

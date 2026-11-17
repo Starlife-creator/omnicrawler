@@ -44,6 +44,10 @@ def execute(
         if not name:
             raise ValueError("components rollback必须提供--name")
         return component_manager.rollback(name)
+    if action == "verify":
+        if not name:
+            raise ValueError("components verify必须提供--name")
+        return component_manager.verify(name)
     if action == "stage":
         if not package or not sha256:
             raise ValueError("components stage必须提供--package和--sha256")

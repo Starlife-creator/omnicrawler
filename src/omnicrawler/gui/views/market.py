@@ -256,7 +256,14 @@ class MarketView(
         # 条目 10：组件管理与插件/模板并列。组件操作此前散落在「任务工具 →
         # 可选组件」与「环境与依赖」两处，用户找不到；这里只做**合并**，
         # 动作仍走既有的 services.component_tools。
-        self._component_manager = ComponentManagerPanel(self)
+        # 组件面板同样需要 catalog 上下文：它下面有「市场」与「已安装」两块，
+        # 前者拉 catalog 浏览 recipe，后者走既有的离线 zip 导入。
+        self._component_manager = ComponentManagerPanel(
+            self,
+            catalog_url=self._catalog_url,
+            base=self._base,
+            trust_source=self._trust_source,
+        )
         market_tabs.addTab(self._component_manager, _("组件"))
         market_layout.addWidget(market_tabs)
         self._tabs.addTab(market_pane, _("市场"))

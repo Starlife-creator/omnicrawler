@@ -21,7 +21,7 @@ PACKAGE_SCHEMA_VERSION = 1
 MANIFEST_NAME = "package.manifest.json"
 CREATOR_SIGNATURE_NAME = "package.manifest.creator.sig"
 MAINTAINER_SIGNATURE_NAME = "package.manifest.maintainer.sig"
-PackageType = Literal["plugin", "template"]
+PackageType = Literal["plugin", "template", "component"]
 
 _GENERATED_NAMES = {
     MANIFEST_NAME,
@@ -99,12 +99,17 @@ def build_manifest(
     creator: CreatorIdentity,
 ) -> dict[str, Any]:
     package_dir = package_dir.resolve()
-    if package_type not in ("plugin", "template"):
+    if package_type not in ("plugin", "template", "component"):
         raise PackageManifestError(f"不支持的包类型: {package_type!r}")
     if not package_id.strip() or not version.strip():
         raise PackageManifestError("package_id 与 version 不能为空")
     payload = _payload_files(package_dir)
-    required = "plugin.py" if package_type == "plugin" else "template.yaml"
+    # 组件包的载体是 recipe.json（声明式，不托管字节）。
+    required = {
+        "plugin": "plugin.py",
+        "template": "template.yaml",
+        "component": "recipe.json",
+    }[package_type]
     if required not in payload:
         raise PackageManifestError(f"{package_type} 包缺少 {required}")
     if "creator.identity" not in payload:

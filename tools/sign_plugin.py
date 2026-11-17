@@ -207,10 +207,24 @@ def _creator_sign(plugin_dir: Path, username: str, password: str, target: str) -
     if not target_path.is_file():
         raise FileNotFoundError(f"缺少待签名文件 {target}: {target_path}")
     identity = IdentityStore().load(username, password)
-    package_type = "template" if target == "template.yaml" else "plugin"
+    # 载体文件名决定包类型。组件包的载体是 recipe.json（声明式，不含字节）。
+    if target == "template.yaml":
+        package_type = "template"
+    elif target == "recipe.json":
+        package_type = "component"
+    else:
+        package_type = "plugin"
     package_id = plugin_dir.name
     version = "0.1.0"
-    if package_type == "plugin":
+    if package_type == "component":
+        import json
+
+        # recipe 是 JSON：id 取目录名（catalog 侧同样以目录名为 id），
+        # version 必须来自 recipe 本身——它决定安装目录名。
+        raw_recipe = json.loads(target_path.read_text(encoding="utf-8"))
+        if isinstance(raw_recipe, dict):
+            version = str(raw_recipe.get("version") or version)
+    elif package_type == "plugin":
         from omnicrawler.plugins.plugin_packaging import _read_metadata
 
         metadata = _read_metadata(target_path)

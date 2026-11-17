@@ -304,6 +304,83 @@ class ComponentManager:
                       for name, entry in (previous or {}).items()}
         commit_document(self.root, value, normalized)
 
+    def verify(self, name: str) -> dict[str, Any]:
+        """校验已安装组件：逐个比对 ``component.json`` 里声明的文件哈希。
+
+        纯只读——不修文件、不回滚、不改注册表。返回：
+
+        ``{"name", "version", "ok", "checked", "problems": [...]}``
+
+        ``problems`` 每项是 ``{"path", "reason"}``，reason 为
+        ``missing`` / ``digest_mismatch`` / ``unsafe_path``。
+        """
+        import json
+
+        safe_identifier(name)
+        installed = self.list()
+        entry = next((item for item in installed if item.get("name") == name), None)
+        if entry is None:
+            raise ValueError(f"组件未安装：{name}")
+
+        version = str(entry["version"])
+        manifest_file = contained_path(self.root, f".manifests/{name}/{version}.json")
+        if not manifest_file.is_file():
+            # 没有清单就无法校验——明确报出来，而不是假装通过。
+            return {
+                "name": name,
+                "version": version,
+                "ok": False,
+                "checked": 0,
+                "problems": [{"path": ".manifests", "reason": "missing_manifest"}],
+            }
+
+        try:
+            raw = json.loads(manifest_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return {
+                "name": name,
+                "version": version,
+                "ok": False,
+                "checked": 0,
+                "problems": [{"path": ".manifests", "reason": f"unreadable: {exc}"}],
+            }
+
+        files = raw.get("files", {}) if isinstance(raw, dict) else {}
+        if not isinstance(files, dict) or not files:
+            return {
+                "name": name,
+                "version": version,
+                "ok": False,
+                "checked": 0,
+                "problems": [{"path": ".manifests", "reason": "no_files_declared"}],
+            }
+
+        directory = self._entry_path(entry)
+        problems: list[dict[str, str]] = []
+        checked = 0
+        for relative, expected in sorted(files.items()):
+            try:
+                # 复用同一套路径规范化：越界即失败，不尝试"修正"路径。
+                target = contained_path(directory, str(relative))
+            except (ValueError, OSError):
+                problems.append({"path": str(relative), "reason": "unsafe_path"})
+                continue
+            if not target.is_file():
+                problems.append({"path": str(relative), "reason": "missing"})
+                continue
+            actual = _sha256(target)
+            checked += 1
+            if str(expected).lower() != actual:
+                problems.append({"path": str(relative), "reason": "digest_mismatch"})
+
+        return {
+            "name": name,
+            "version": version,
+            "ok": not problems,
+            "checked": checked,
+            "problems": problems,
+        }
+
     def _entry_path(self, entry: dict[str, Any]) -> Path:
         safe_identifier(str(entry["name"]))
         safe_identifier(str(entry["version"]))
