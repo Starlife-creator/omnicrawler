@@ -88,7 +88,13 @@ def signed_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     package_dir = tmp_path / "pdf-workbench"
     shutil.copytree(
         PLUGIN_SRC, package_dir,
-        ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", "work", "output"),
+        # 必须忽略**测试运行产物**：插件仓里的 pytest 临时目录会含 `.env`
+        # 之类文件，而 `_payload_files` 把它们判为"疑似凭据"直接拒签
+        # （实测：`pytest-of-Lenovo/.../proj/.env` 导致签名失败）。
+        ignore=shutil.ignore_patterns(
+            "__pycache__", ".pytest_cache", "work", "output",
+            "pytest-of-*", "tmp*", ".gitignore",
+        ),
     )
     signed = sign_creator_package(
         package_dir,

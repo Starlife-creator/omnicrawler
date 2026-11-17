@@ -41,10 +41,23 @@ _PLUGIN = (
 
 
 def _load_plugin():
+    """导入插件的 `plugin.py`。
+
+    **必须显式把插件根加入 sys.path**：`document_facade.pdf_views()` 确实会
+    注入路径，但那只在它**首次加载**插件时发生；若同一进程里别的测试已经
+    加载过（模块已缓存），路径注入就不会重跑，`import plugin` 会失败
+    （实测：与 `test_plugin_gui_imports_execute.py` 同跑时报
+    `ModuleNotFoundError: No module named 'plugin'`）。
+    """
     _require_plugin()
+    import sys
+
     from omnicrawler.services import document_facade
 
-    document_facade.pdf_views()  # 把插件根加入 sys.path
+    document_facade.pdf_views()  # 兜底：确保插件根在 sys.path
+    if str(_PLUGIN) not in sys.path:
+        sys.path.insert(0, str(_PLUGIN))
+
     import plugin as plugin_module
 
     return plugin_module

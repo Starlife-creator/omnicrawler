@@ -35,6 +35,9 @@ from omnicrawler.services import document_facade
 #: 2026-11-22 上提到宿主（`services/table_io.py`），`transform` 是支柱①的
 #: 通用能力，不再依赖 PDF 插件。它在未装插件时必须**正常可用**——
 #: 由 `test_table_io_works_without_plugin` 单独钉住。
+#:
+#: **`compare_runs` 也不在此列**：它同样已改回宿主实现（`review/run_compare.py`），
+#: 属支柱①运维能力，不依赖插件。
 ENTRIES: list[tuple[str, tuple[object, ...]]] = [
     ("load_pdf_config", ("c.yaml",)),
     ("create_project_config", ("builtin:pdf/generic_template.yaml",)),
@@ -48,7 +51,6 @@ ENTRIES: list[tuple[str, tuple[object, ...]]] = [
     ("convertx_module", ()),
     ("convert_with_preset", ("a.csv", "b.jsonl")),
     ("convertx_preset", ("x",)),
-    ("compare_runs", (None, None, None)),
     ("parse_document", ("a.pdf",)),
     ("document_block_class", ()),
     ("ocr_backend_class", ()),

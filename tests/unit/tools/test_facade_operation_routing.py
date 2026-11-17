@@ -74,7 +74,6 @@ def _assert_reaches_plugin(name: str, *args: object) -> None:
         ("run_pdf_extraction", ("",)),
         ("run_pdf_processing", ("",)),
         ("create_project_config", ("builtin:pdf/generic_template.yaml",)),
-        ("compare_runs", (None, None, None)),
         ("convert_with_preset", ("a.csv", "b.jsonl")),
         ("convertx_preset", ("nope",)),
     ],
