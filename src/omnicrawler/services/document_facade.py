@@ -5,8 +5,8 @@
 **迁移前**：`pdfx` / `convertx` / `apps` / `document_ir` 在宿主内，
 本 facade 只是"统一 import 点"，用于收口 8 处散落挂点。
 
-**迁移后**：这些包已整体迁到插件 `pdf-workbench`
-（`OmniCrawler-market/plugins/pdf-workbench`），宿主里**不再有它们的代码**。
+**迁移后**：这些包已整体迁到插件 `document-workbench`
+（`OmniCrawler-market/plugins/document-workbench`），宿主里**不再有它们的代码**。
 本 facade 的职责变成：
 
 1. **报告可用性**：`document_capability()` —— 插件装没装；
@@ -32,7 +32,7 @@ from __future__ import annotations
 from typing import Any
 
 #: 迁移到插件后的插件 id。
-_PLUGIN_ID = "pdf-workbench"
+_PLUGIN_ID = "document-workbench"
 
 #: 迁移后宿主侧**不再保留**的包。
 #:
@@ -147,7 +147,7 @@ def _plugin_dir() -> Any:
 
 
 def _plugin_installed() -> bool:
-    """插件 `pdf-workbench` 是否已安装（以"入口文件在不在"为准）。"""
+    """插件 `document-workbench` 是否已安装（以"入口文件在不在"为准）。"""
     return _plugin_dir() is not None
 
 
@@ -172,8 +172,8 @@ def document_capability() -> dict[str, Any]:
     return {
         "available": False,
         "reason": (
-            "PDF 工作台插件未安装。该功能已改为可选插件——"
-            "请在「插件市场」中安装 pdf-workbench，或使用文字版流程"
+            "文档工作台插件未安装。该功能已改为可选插件——"
+            "请在「插件市场」中安装 document-workbench，或使用文字版流程"
             "（爬虫与 AI 主流程不受影响）。"
         ),
         "missing": [_PLUGIN_ID],
@@ -190,9 +190,9 @@ def require_document(operation: str = "") -> Any:
     if not _plugin_installed():
         suffix = f"（触发操作：{operation}）" if operation else ""
         raise RuntimeError(
-            "PDF 工作台插件未安装，无法执行该操作"
+            "文档工作台插件未安装，无法执行该操作"
             + suffix
-            + "。\n请在「插件市场」中安装 pdf-workbench；"
+            + "。\n请在「插件市场」中安装 document-workbench；"
             "爬虫与 AI 主流程不受影响。"
         )
     return _plugin_handle()
@@ -243,7 +243,7 @@ def _verify_plugin_signature_gate(entry: Any) -> bytes:
         level = decision.level
     except Exception as exc:  # noqa: BLE001 - 验签过程异常按拒绝处理
         raise RuntimeError(
-            f"PDF 工作台插件验签失败，拒绝加载：{entry}（{exc}）。"
+            f"文档工作台插件验签失败，拒绝加载：{entry}（{exc}）。"
             "请在「插件市场」重新安装已签名的插件。"
         ) from exc
 
@@ -256,7 +256,7 @@ def _verify_plugin_signature_gate(entry: Any) -> bytes:
         return verified if verified else entry.read_bytes()
 
     raise RuntimeError(
-        f"PDF 工作台插件未通过签名校验，拒绝加载：{entry}\n"
+        f"文档工作台插件未通过签名校验，拒绝加载：{entry}\n"
         f"原因：{decision.reason}\n"
         "该插件以 in_process 方式运行（与宿主同进程），因此必须验签。"
         "请在「插件市场」安装官方签名版本；开发者本机调试可临时设置 "
@@ -277,7 +277,7 @@ def _plugin_handle() -> Any:
     directory = _plugin_dir()
     if directory is None:
         raise RuntimeError(
-            f"PDF 工作台插件未安装：找不到 {_PLUGIN_ID} 的 plugin.py。"
+            f"文档工作台插件未安装：找不到 {_PLUGIN_ID} 的 plugin.py。"
             "请在「插件市场」中安装后重试。"
         )
 
@@ -337,7 +337,7 @@ def run_operation(operation: str, payload: dict[str, Any] | None = None) -> dict
     runner = getattr(module, "run_operation", None)
     if runner is None:
         raise RuntimeError(
-            f"PDF 工作台插件版本过旧：缺少 run_operation 入口。请升级 {_PLUGIN_ID}。"
+            f"文档工作台插件版本过旧：缺少 run_operation 入口。请升级 {_PLUGIN_ID}。"
         )
     return runner(operation, dict(payload or {}))
 
@@ -489,7 +489,7 @@ def pdf_views() -> Any:
     迁移后（2026-11-17）：`gui/views/pdf_*.py` 与 `convert_tool.py` 已迁入插件。
     宿主 `central_area` 经本函数按需加载：
 
-    * 插件已装 ⇒ 返回带 `PdfWorkbenchView` / `ConvertView` 的模块；
+    * 插件已装 ⇒ 返回带 `DocumentWorkbenchView` / `ConvertView` 的模块；
     * 未装 ⇒ 调用方（`document_capability`）已先判过，这里不会走到。
 
     **返回模块而不是类**：视图之间的内部依赖（result/scan/worker）都在插件内，

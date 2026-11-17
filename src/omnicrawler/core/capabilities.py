@@ -272,13 +272,13 @@ def _build_standard_capabilities(modules: dict[str, dict[str, Any]], native: dic
                                          "模拟浏览器 TLS 握手对抗检测", "standard")
     # PDF 文本解析有**两条路**，要分开说清楚，否则用户会误判：
     #   * 宿主内置的 `doc_extractors` 走 pdfplumber（只读文字层，能力有限）；
-    #   * 完整的 PDF 工作台（表格/元数据/OCR/五表导出）是插件 `pdf-workbench`。
+    #   * 完整的 PDF 工作台（表格/元数据/OCR/五表导出）是插件 `document-workbench`。
     #
     # 早先这条只报 pdfplumber 的安装状态，描述却写着"提取 PDF 文字、表格和元数据"
     # ——装了 pdfplumber 就显示"就绪"，而表格/元数据其实要插件才有。
     # 现在分两条：pdf_text 只报文字层，pdf_workbench 单独报插件。
     items["pdf_text"] = _cap_item("PDF 文本解析 (pdfplumber)", modules.get("pdf", {}).get("installed", False),
-                                  "提取 PDF 文字层（宿主内置，表格与元数据需 PDF 工作台插件）", "standard")
+                                  "提取 PDF 文字层（宿主内置，表格与元数据需 文档工作台插件）", "standard")
     try:
         from ..services.document_facade import document_capability
 
@@ -286,7 +286,7 @@ def _build_standard_capabilities(modules: dict[str, dict[str, Any]], native: dic
     except Exception:  # noqa: BLE001 - 能力探测不应因探测本身失败而崩
         _workbench_ok = False
     items["pdf_workbench"] = _cap_item(
-        "PDF 工作台 (插件 pdf-workbench)", _workbench_ok,
+        "PDF 工作台 (插件 document-workbench)", _workbench_ok,
         "表格/元数据抽取、OCR、人工复核与五表导出——需在插件市场安装", "standard")
     items["xlsx"] = _cap_item("Excel 导出 (openpyxl)", modules.get("xlsx", {}).get("installed", False),
                               "生成 Excel 格式结果", "standard")
@@ -405,7 +405,7 @@ def navigation_capabilities() -> dict[str, bool]:
 
     # PDF：**判据是"插件装没装"，不是"pdfplumber 装没装"**。
     #
-    # 2026-11-17 迁移后 PDF 工作台是可选插件 `pdf-workbench`。早先这里只探测
+    # 2026-11-17 迁移后 PDF 工作台是可选插件 `document-workbench`。早先这里只探测
     # `pdfplumber`（宿主的一个 Python 包）——后果是：装了 pdfplumber 的机器上
     # 导航**显示 PDF 入口**，但点进去是"插件未安装"，正是"空荡荡界面"那种形态。
     #

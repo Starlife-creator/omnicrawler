@@ -2,7 +2,7 @@
 
 **为什么这个能力必须存在**
 
-PDF 工作台正在被迁成**插件**（契约 2，子进程）。它原先会自己调用已验签的
+文档工作台正在被迁成**插件**（契约 2，子进程）。它原先会自己调用已验签的
 OCR 组件（`ComponentOCRBackend`）。但组件调用涉及三件**宿主特权**：
 
 1. 读 `configs/component_trust.pub.pem` 验签；
@@ -123,14 +123,14 @@ def test_plugins_domain_does_not_import_pdfx_directly() -> None:
                 offenders.append(f"{path.relative_to(_SRC).as_posix()}:{lineno}")
     assert offenders == [], (
         "plugins 域直接依赖了 pdfx：\n  " + "\n  ".join(offenders) +
-        "\nPDF 工作台迁成插件后，plugins 不该硬依赖它。请经由 services.document_facade。"
+        "\n文档工作台迁成插件后，plugins 不该硬依赖它。请经由 services.document_facade。"
     )
 
 
 def test_facade_exposes_backend_class() -> None:
     """facade 必须提供后端类入口（plugins 侧的唯一通道）。
 
-    **迁移后语义**（2026-11-17）：后端实现随 PDF 工作台迁入插件。
+    **迁移后语义**（2026-11-17）：后端实现随 文档工作台迁入插件。
     所以这条测试分两路：
     * 插件已装 ⇒ 拿到的是**类**（不是实例，调用方要按每次请求的配置构造）；
     * 插件未装 ⇒ 抛**可操作**错误（不是 `AttributeError`，也不是返回 None）。
@@ -145,7 +145,7 @@ def test_facade_exposes_backend_class() -> None:
         with _pytest.raises(RuntimeError) as excinfo:
             document_facade.ocr_backend_class()
         message = str(excinfo.value)
-        assert ("插件" in message) or ("pdf-workbench" in message), (
+        assert ("插件" in message) or ("document-workbench" in message), (
             f"缺插件时错误不可操作：{message!r}"
         )
         return

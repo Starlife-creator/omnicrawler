@@ -22,7 +22,7 @@ def test_cli_contracts_include_documented_nested_commands_and_options():
     assert "--json" in contracts["stealth-fingerprint"]["options"]
     assert "--generate" in contracts["gen-templates"]["options"]
     assert "--url" in contracts["templates"]["options"]
-    # 迁移后（2026-11-17）：`pdf` 的子命令与选项由**插件 pdf-workbench** 提供，
+    # 迁移后（2026-11-17）：`pdf` 的子命令与选项由**插件 document-workbench** 提供，
     # 宿主侧 `cli_contracts` 不再展开它们（插件未装时也展不开）。
     # 所以这里只在插件已装时断言——否则等于要求宿主依赖插件的内部结构。
     from omnicrawler.services.document_facade import document_capability
@@ -47,7 +47,7 @@ def test_pdf_forwarded_documentation_uses_actual_stage_contract(tmp_path):
     from omnicrawler.services.document_facade import document_capability
 
     if not document_capability()["available"]:
-        pytest.skip("需要 pdf-workbench 插件：pdf 选项契约由插件提供")
+        pytest.skip("需要 document-workbench 插件：pdf 选项契约由插件提供")
 
     document = tmp_path / "commands.md"
     document.write_text('omnicrawler pdf --config "a directory/pdf.yaml" ocr --page-number 2\n')

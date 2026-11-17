@@ -25,9 +25,9 @@ SRC = Path(__file__).resolve().parents[3] / "src" / "omnicrawler"
 TOKENS = (
     "safe_regex_search",          # S2.5.14 核心防护——必须被消费
     # `value_pattern` **已移出本清单**：它的消费方是 `pdfx` 的 config+validation，
-    # 而那部分随 PDF 工作台迁入了插件（2026-11-17）。
+    # 而那部分随 文档工作台迁入了插件（2026-11-17）。
     # 宿主侧不再有该配置键的消费方——这不是"零消费孤儿"，是**能力搬家**。
-    # 插件侧的消费方由插件自己的测试覆盖（`pdf-workbench/tests/unit/pdf/`）。
+    # 插件侧的消费方由插件自己的测试覆盖（`document-workbench/tests/unit/pdf/`）。
     "history_max_entries",        # S3.2.1 ②：配置项消费方（settings+main 构造）
     "validate_ai_output",         # S3.2.1 ⑤：接入生产（ai_graph）
     "ai_audit_record",            # AI 审计（ai_task_designer）

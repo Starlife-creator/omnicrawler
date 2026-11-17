@@ -19,7 +19,7 @@
 2. 断言每一项都出现在 `selfcheck()` 的 required + optional 清单里；
 3. 反向：清单里的每一项也应当是真实用到的（防"列了但没用"）。
 
-`omnicrawler_pdf` 自身不算第三方（它是包内模块）。
+`omnicrawler_docs` 自身不算第三方（它是包内模块）。
 """
 
 from __future__ import annotations
@@ -36,11 +36,11 @@ _PLUGIN = (
     / "submissions"
     / "plugins"
     / "4c3014804d85de2568f85e62a3048429"
-    / "pdf-workbench"
+    / "document-workbench"
 )
 
 #: 不算第三方：宿主接口（契约 1 允许导入）、SDK、包自身。
-_NON_THIRD_PARTY = {"omnicrawler", "omnicrawler_sdk", "omnicrawler_pdf"}
+_NON_THIRD_PARTY = {"omnicrawler", "omnicrawler_sdk", "omnicrawler_docs"}
 
 
 def _local_module_names() -> set[str]:
@@ -55,7 +55,7 @@ def _third_party_imports() -> set[str]:
     found: set[str] = set()
     for path in _PLUGIN.rglob("*.py"):
         # 排除插件自带的测试：它们用 pytest 等测试期依赖，
-        # 不是运行时依赖（跑了 `pip install pdf-workbench` 不该被要求装 pytest）。
+        # 不是运行时依赖（跑了 `pip install document-workbench` 不该被要求装 pytest）。
         if "__pycache__" in path.parts or "tests" in path.parts:
             continue
         try:
@@ -120,7 +120,7 @@ def test_selfcheck_declares_nothing_unused() -> None:
     actual = _third_party_imports()
     declared = _selfcheck_declared()
 
-    # `required` 里是包内模块路径（如 omnicrawler_pdf.pdfx.config），
+    # `required` 里是包内模块路径（如 omnicrawler_docs.pdfx.config），
     # 与第三方顶层名不是同一维度，只比较"看起来像第三方"的键。
     extra = sorted(
         name for name in declared - actual

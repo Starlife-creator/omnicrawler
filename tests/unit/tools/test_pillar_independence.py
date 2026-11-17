@@ -15,7 +15,7 @@
 ## 判据分三类
 
 1. **支柱①能力**：未装插件时必须可用（`table_io` / `compare_runs`）；
-2. **PDF 工作台能力**：未装插件时必须给可操作提示（`pdf.*` / `convertx.*`）；
+2. **文档工作台能力**：未装插件时必须给可操作提示（`pdf.*` / `convertx.*`）；
 3. **插件机制自身**：只在插件加载路径上被调用（`ocr_backend_class`），
    依赖插件是对的。
 
@@ -105,8 +105,8 @@ def test_compare_runs_uses_host_review_module(uninstalled: None) -> None:
 def test_pdf_workbench_entries_do_require_plugin(
     uninstalled: None, name: str
 ) -> None:
-    """PDF 工作台自身的能力：未装插件时必须**明确拒绝**（不是静默返回 None）。"""
+    """文档工作台自身的能力：未装插件时必须**明确拒绝**（不是静默返回 None）。"""
     entry = getattr(document_facade, name)
     with pytest.raises(RuntimeError) as excinfo:
         entry()
-    assert "pdf-workbench" in str(excinfo.value)
+    assert "document-workbench" in str(excinfo.value)

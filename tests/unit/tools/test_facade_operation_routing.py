@@ -41,7 +41,7 @@ FATAL = (AttributeError, NameError, ImportError, ModuleNotFoundError)
 
 def _require_plugin() -> None:
     if not document_facade.document_capability()["available"]:
-        pytest.skip("需要 pdf-workbench 插件")
+        pytest.skip("需要 document-workbench 插件")
 
 
 def _assert_reaches_plugin(name: str, *args: object) -> None:

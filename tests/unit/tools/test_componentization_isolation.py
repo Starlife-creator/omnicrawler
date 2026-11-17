@@ -3,7 +3,7 @@
 **为什么先写这条，而不是先写打包脚本**
 
 组件化的风险不在"打不出包"，而在**装了或没装时宿主的行为**。
-用户的目标是"不要让用户看到一个空荡荡的 PDF 工作台"——所以真正要钉住的
+用户的目标是"不要让用户看到一个空荡荡的 文档工作台"——所以真正要钉住的
 是：**文档子系统缺失时，两大支柱的每条路径都必须正常**。
 
 本文件用**进程级隔离**验证：把文档子系统从导入路径中屏蔽掉，
@@ -98,7 +98,7 @@ def _run_isolated(tmp_path: Path, body: str) -> str:
 def test_capability_probe_reports_unavailable(tmp_path: Path) -> None:
     """插件未安装时，能力探测必须报不可用并给出缺失清单。
 
-    **迁移后语义**（2026-11-17）：PDF 工作台迁成插件，判据从
+    **迁移后语义**（2026-11-17）：文档工作台迁成插件，判据从
     "宿主里有没有 pdfx 模块"变成"**插件装没装**"。
     所以"不可用"的模拟手段也换了：不再屏蔽模块（那对目录探测无效），
     改为把插件根指到空目录。
@@ -117,7 +117,7 @@ def test_capability_probe_reports_unavailable(tmp_path: Path) -> None:
         "插件目录为空，能力探测却报可用——那样「未装就不显示」无从判断。\n"
         + text[-800:]
     )
-    assert "pdf-workbench" in text, (
+    assert "document-workbench" in text, (
         "缺失清单里没点出要装哪个插件：用户不知道到底缺什么。\n" + text[-800:]
     )
     assert "安装" in text, (

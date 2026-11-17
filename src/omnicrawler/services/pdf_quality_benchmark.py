@@ -509,7 +509,7 @@ def _run_pdfx(config: Path, *args: str) -> dict[str, Any]:
     pdfx_main = getattr(_plugin, "run_operation", None)
     if pdfx_main is None:
         raise RuntimeError(
-            "PDF 工作台插件版本过旧：缺少 run_operation 入口，请升级 pdf-workbench。"
+            "文档工作台插件版本过旧：缺少 run_operation 入口，请升级 document-workbench。"
         )
 
     buf, old_argv, code = io.StringIO(), sys.argv, 0

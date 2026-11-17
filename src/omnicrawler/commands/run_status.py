@@ -28,7 +28,7 @@ def execute(config: str, *, output_format: str = "json") -> dict[str, Any]:
         else loaded.workspace / "pdf" / "project.yaml"
     )
     if pdf_project.is_file():
-        # 迁移后（2026-11-17）：PDF 工作台已迁成插件 pdf-workbench，
+        # 迁移后（2026-11-17）：PDF 工作台已迁成插件 document-workbench，
         # 宿主侧不再有 pdfx。状态查询改为经 facade 转给插件。
         #
         # 注意这里**不能抛异常**：`status` 是诊断命令，用户正是用它来查
@@ -39,7 +39,7 @@ def execute(config: str, *, output_format: str = "json") -> dict[str, Any]:
             result["pdf"] = {
                 "status": "plugin_not_installed",
                 "project_config": str(pdf_project),
-                "hint": "PDF 工作台插件未安装（插件市场 → pdf-workbench）",
+                "hint": "文档工作台插件未安装（插件市场 → document-workbench）",
             }
         else:
             outcome = document_facade.run_operation(

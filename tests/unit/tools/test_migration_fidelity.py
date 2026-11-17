@@ -17,10 +17,10 @@ user_agent=user_agent("PDF LLM extraction"),
 
 ## 判据
 
-对每个迁移过来的模块，与 `archive/pdf-workbench-host/` 里的原始文件比对，
+对每个迁移过来的模块，与 `archive/document-workbench-host/` 里的原始文件比对，
 只允许两类差异：
 
-1. **导入语句**（承载方从 `omnicrawler.*` 变成 `omnicrawler_pdf.*` / 相对导入）；
+1. **导入语句**（承载方从 `omnicrawler.*` 变成 `omnicrawler_docs.*` / 相对导入）；
 2. **注释与文档字符串**（记录迁移决策是必要的）。
 
 其余任何差异都判红——那意味着业务逻辑被改动或遗漏。
@@ -40,15 +40,15 @@ from pathlib import Path
 import pytest
 
 _REPO = Path(__file__).resolve().parents[3]
-ARCHIVE = _REPO / "archive" / "pdf-workbench-host"
+ARCHIVE = _REPO / "archive" / "document-workbench-host"
 PLUGIN = (
     _REPO.parent
     / "OmniCrawler-market"
     / "submissions"
     / "plugins"
     / "4c3014804d85de2568f85e62a3048429"
-    / "pdf-workbench"
-    / "omnicrawler_pdf"
+    / "document-workbench"
+    / "omnicrawler_docs"
 )
 
 #: 允许的导入改写：`from omnicrawler…` / `from ..…` / `import omnicrawler…`

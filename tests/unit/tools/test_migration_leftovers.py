@@ -41,8 +41,8 @@ _PLUGIN = (
     / "submissions"
     / "plugins"
     / "4c3014804d85de2568f85e62a3048429"
-    / "pdf-workbench"
-    / "omnicrawler_pdf"
+    / "document-workbench"
+    / "omnicrawler_docs"
 )
 
 #: 这些是**入口层**，必须保留在宿主（详见 MIGRATION_LEFTOVERS.md §二）。

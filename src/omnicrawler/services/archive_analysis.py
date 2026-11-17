@@ -28,7 +28,7 @@ def _parse_document(*args: Any, **kwargs: Any) -> Any:
     """文档解析（延迟导入）。
 
     迁移后（2026-11-17）：`document_ir` 已随 PDF 工作台迁入插件
-    `pdf-workbench`，宿主侧不再有它。归档分析属文档能力，因此：
+    `document-workbench`，宿主侧不再有它。归档分析属文档能力，因此：
 
     * 插件已装 ⇒ 正常解析；
     * 未装 ⇒ 抛**可操作**错误（而不是模块导入期直接崩，
@@ -38,8 +38,8 @@ def _parse_document(*args: Any, **kwargs: Any) -> Any:
 
     if not document_capability()["available"]:
         raise RuntimeError(
-            "归档文档分析需要 PDF 工作台插件（解析依赖其 document_ir）。"
-            "请在「插件市场」中安装 pdf-workbench 后重试。"
+            "归档文档分析需要 文档工作台插件（解析依赖其 document_ir）。"
+            "请在「插件市场」中安装 document-workbench 后重试。"
         )
     from .document_facade import parse_document
 

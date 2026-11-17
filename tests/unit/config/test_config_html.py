@@ -8,16 +8,16 @@ from omnicrawler.core.config import load_config, resolve_pdf_template, validate_
 from omnicrawler.core.models import CrawlRequest, FetchResult
 from omnicrawler.extraction.extractors import HTMLProcessor, JSONProcessor, TableProcessor
 
-# PDF 项目配置随 PDF 工作台迁入插件 pdf-workbench（2026-11-17）。
+# PDF 项目配置随 文档工作台迁入插件 document-workbench（2026-11-17）。
 # 用 importorskip 而不是顶层裸导入：插件未装时整模块**跳过**，
 # 而不是让 pytest 在收集阶段 ERROR 掉整个测试套件。
 pytest.importorskip(
-    "omnicrawler_pdf.pdfx.project",
-    reason="PDF 项目配置随 PDF 工作台迁入插件 pdf-workbench",
+    "omnicrawler_docs.pdfx.project",
+    reason="PDF 项目配置随 文档工作台迁入插件 document-workbench",
 )
 
-from omnicrawler_pdf.pdfx.config import load_config as load_pdf_config  # noqa: E402
-from omnicrawler_pdf.pdfx.project import create_project_config  # noqa: E402
+from omnicrawler_docs.pdfx.config import load_config as load_pdf_config  # noqa: E402
+from omnicrawler_docs.pdfx.project import create_project_config  # noqa: E402
 
 
 class ConfigAndExtractorTest(unittest.TestCase):

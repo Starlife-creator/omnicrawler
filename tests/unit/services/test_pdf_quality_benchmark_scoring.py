@@ -127,7 +127,7 @@ def test_normalization_is_not_a_cover_up() -> None:
     千分位误读）由 `normalize_amount` 恢复；恢复不了的就不许算对。
     """
     # 金额归一已在宿主侧（`quality.amounts`，条目 9 时上提），
-    # 不随 PDF 工作台迁走——基准评分是支柱①能力，不该依赖插件。
+    # 不随 文档工作台迁走——基准评分是支柱①能力，不该依赖插件。
     from omnicrawler.quality.amounts import normalize_amount
 
     recovered, _ = normalize_amount("12.345.67 元")

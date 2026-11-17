@@ -19,11 +19,11 @@ import importlib.util
 
 import pytest
 
-# OCR 引擎注册表随 PDF 工作台迁入插件（2026-11-17）。
+# OCR 引擎注册表随 文档工作台迁入插件（2026-11-17）。
 # 未装插件时整模块跳过，而不是让 pytest 收集阶段 ERROR。
 pytest.importorskip(
-    "omnicrawler_pdf.pdfx.ocr",
-    reason="OCR 引擎随 PDF 工作台迁入插件 pdf-workbench",
+    "omnicrawler_docs.pdfx.ocr",
+    reason="OCR 引擎随 文档工作台迁入插件 document-workbench",
 )
 
 pytestmark = pytest.mark.skipif(
@@ -80,9 +80,9 @@ def test_auto_backend_resolves_to_a_real_engine_or_says_why() -> None:
       b) 明确声明不可用，并带有可读原因。
     不允许：返回 none 却对外宣称「自动」。
     """
-    # OCR 引擎注册表随 PDF 工作台迁入插件；本模块已在顶部 importorskip，
+    # OCR 引擎注册表随 文档工作台迁入插件；本模块已在顶部 importorskip，
     # 走到这里说明插件可用。
-    from omnicrawler_pdf.pdfx.ocr import resolve_auto_ocr_backend
+    from omnicrawler_docs.pdfx.ocr import resolve_auto_ocr_backend
 
     resolved, reason = resolve_auto_ocr_backend()
     assert resolved in {"paddle", "tesseract", "none"}, resolved

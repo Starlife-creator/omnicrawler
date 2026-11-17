@@ -3,7 +3,7 @@
 **为什么需要 facade**
 
 第 1 批盘点出 20 个"支柱内引用文档子系统"的挂点，其中 8 处是**真正的挂点**
-（PDF 工作台界面、PDF 命令行转发、转换工具、PDF 任务编排）。它们现在各自
+（文档工作台界面、PDF 命令行转发、转换工具、PDF 任务编排）。它们现在各自
 直接 import，分散在：
 
 ```
@@ -129,7 +129,7 @@ def test_facade_provides_capability_probe() -> None:
 def test_missing_component_reason_is_actionable() -> None:
     """缺能力时的提示必须可操作（说清缺什么/怎么装），不能是空串或栈。
 
-    **迁移后语义**（2026-11-17）：PDF 工作台已迁成插件，宿主里不再有
+    **迁移后语义**（2026-11-17）：文档工作台已迁成插件，宿主里不再有
     `pdfx.service` 这类模块。这个测试要保护的意图不变——
     "没有能力时给用户一条能照做的提示"，只是现在判据变成"插件装没装"。
     """
@@ -137,14 +137,14 @@ def test_missing_component_reason_is_actionable() -> None:
 
     report = document_capability()
     if report["available"]:
-        pytest.skip("本机已安装 pdf-workbench 插件，跳过「未安装」路径的断言")
+        pytest.skip("本机已安装 document-workbench 插件，跳过「未安装」路径的断言")
 
     message = report["reason"]
     assert message.strip(), "能力不可用时原因不能是空串"
     assert ("插件" in message) or ("安装" in message), (
         f"原因没有告诉用户该怎么办：{message!r}"
     )
-    assert "pdf-workbench" in message, (
+    assert "document-workbench" in message, (
         f"原因里没点出要装哪个插件：{message!r}"
     )
 
@@ -157,7 +157,7 @@ def test_require_document_raises_actionable_when_plugin_absent() -> None:
     )
 
     if document_capability()["available"]:
-        pytest.skip("本机已安装 pdf-workbench 插件，跳过「未安装」路径的断言")
+        pytest.skip("本机已安装 document-workbench 插件，跳过「未安装」路径的断言")
 
     with pytest.raises(RuntimeError) as excinfo:
         require_document("pdf.validate")

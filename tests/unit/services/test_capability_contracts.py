@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 
 pytest.importorskip(
-    "omnicrawler_pdf.pdfx.ocr",
-    reason="OCR 后端随 PDF 工作台迁入插件 pdf-workbench；本测试需在插件仓或装了插件的环境运行",
+    "omnicrawler_docs.pdfx.ocr",
+    reason="OCR 后端随 文档工作台迁入插件 document-workbench；本测试需在插件仓或装了插件的环境运行",
 )
 
-from omnicrawler_pdf.pdfx.ocr import (  # noqa: E402 - 必须在 importorskip 之后
+from omnicrawler_docs.pdfx.ocr import (  # noqa: E402 - 必须在 importorskip 之后
     OCRBackend,
     PaddleStructureBackend,
     TesseractBackend,

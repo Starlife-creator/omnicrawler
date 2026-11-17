@@ -7,7 +7,7 @@
 
 实测后果：一个零签名的 `plugin.py` 会被执行并返回结果。
 
-这不是"少一道检查"。PDF 工作台走的是 **in_process 契约**——插件代码与宿主
+这不是"少一道检查"。文档工作台走的是 **in_process 契约**——插件代码与宿主
 **同进程**，权限等于宿主自己。对它跳过验签，等于任何能写插件目录的人
 都能在宿主进程里执行任意代码。
 
@@ -38,7 +38,7 @@ def run_operation(operation, payload=None):
 @pytest.fixture
 def unsigned_plugin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """造一个零签名的插件目录，并让 facade 指向它。"""
-    directory = tmp_path / "plugins_installed" / "pdf-workbench"
+    directory = tmp_path / "plugins_installed" / "document-workbench"
     directory.mkdir(parents=True)
     (directory / "plugin.py").write_text(_UNSIGNED_SOURCE, encoding="utf-8")
     monkeypatch.setenv("OMNICRAWL_PDF_PLUGIN_DIR", str(directory))
@@ -113,7 +113,7 @@ def test_executes_verified_bytes_not_a_second_read(
     """
     monkeypatch.delenv("OMNICRAWL_PLUGIN_SIGNATURE_POLICY", raising=False)
 
-    directory = tmp_path / "plugins_installed" / "pdf-workbench"
+    directory = tmp_path / "plugins_installed" / "document-workbench"
     directory.mkdir(parents=True)
     original = directory / "plugin.py"
     original.write_text(_UNSIGNED_SOURCE, encoding="utf-8")

@@ -45,10 +45,10 @@ def test_all_ready_shows_every_selectable_entry() -> None:
 
 
 def test_missing_pdf_hides_pdf_and_convert_tool() -> None:
-    """未装 PDF 栈 ⇒ PDF 工作台与格式互转**都不显示**。"""
+    """未装 PDF 栈 ⇒ 文档工作台与格式互转**都不显示**。"""
     keys = _keys(_NONE_READY)
     assert nav.NavKey.PDF_WORKBENCH not in keys, (
-        "未装 PDF 却显示 PDF 工作台——用户点进去会看到一个空工作台"
+        "未装 PDF 却显示 文档工作台——用户点进去会看到一个空工作台"
     )
     assert nav.NavKey.CONVERT_TOOL not in keys, "格式互转同样依赖 PDF 栈"
 

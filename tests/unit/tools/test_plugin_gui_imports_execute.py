@@ -17,8 +17,8 @@
 | 文件 | 导入 |
 |---|---|
 | `convert_tool` | `OutputRule` / `resolve_output_path` / `format_status` |
-| `pdf_workbench_worker` | `run_extraction` |
-| `pdf_workbench` | `create_project_config` |
+| `document_workbench_worker` | `run_extraction` |
+| `document_workbench` | `create_project_config` |
 
 另有一条行为级测试：真的触发 `ConvertView._auto_suggest_dst()`，
 走完整回调（构造视图 → 设源文件 → 触发），验证路径建议能产出。
@@ -36,16 +36,16 @@ from omnicrawler.services import document_facade
 
 def _require_plugin() -> None:
     if not document_facade.document_capability()["available"]:
-        pytest.skip("需要 pdf-workbench 插件")
+        pytest.skip("需要 document-workbench 插件")
 
 
 def _plugin_modules():
     """载入插件视图模块（`pdf_views()` 会把插件目录加入 sys.path）。"""
     _require_plugin()
     document_facade.pdf_views()
-    from omnicrawler_pdf.gui_views import convert_tool, pdf_workbench, pdf_workbench_worker
+    from omnicrawler_docs.gui_views import convert_tool, document_workbench, document_workbench_worker
 
-    return convert_tool, pdf_workbench, pdf_workbench_worker
+    return convert_tool, document_workbench, document_workbench_worker
 
 
 def test_convert_tool_imports_resolve() -> None:
@@ -53,8 +53,8 @@ def test_convert_tool_imports_resolve() -> None:
     _require_plugin()
     document_facade.pdf_views()
 
-    from omnicrawler_pdf.convertx import OutputRule, resolve_output_path
-    from omnicrawler_pdf.convertx.catalog import format_status
+    from omnicrawler_docs.convertx import OutputRule, resolve_output_path
+    from omnicrawler_docs.convertx.catalog import format_status
 
     assert inspect.isclass(OutputRule)
     assert callable(resolve_output_path)
@@ -62,21 +62,21 @@ def test_convert_tool_imports_resolve() -> None:
 
 
 def test_worker_imports_resolve() -> None:
-    """`pdf_workbench_worker` 的 `run_extraction` 必须存在。"""
+    """`document_workbench_worker` 的 `run_extraction` 必须存在。"""
     _require_plugin()
     document_facade.pdf_views()
 
-    from omnicrawler_pdf.pdfx.service import run_extraction
+    from omnicrawler_docs.pdfx.service import run_extraction
 
     assert callable(run_extraction)
 
 
 def test_project_config_import_resolves() -> None:
-    """`pdf_workbench` 的 `create_project_config` 必须存在。"""
+    """`document_workbench` 的 `create_project_config` 必须存在。"""
     _require_plugin()
     document_facade.pdf_views()
 
-    from omnicrawler_pdf.pdfx.project import create_project_config
+    from omnicrawler_docs.pdfx.project import create_project_config
 
     assert callable(create_project_config)
 
@@ -87,7 +87,7 @@ def test_view_source_uses_relative_imports_only() -> None:
     与静态扫描守卫互补：这条只看这三处曾经出事的位置，
     给出更直接的定位信息。
     """
-    convert_tool, pdf_workbench, pdf_workbench_worker = _plugin_modules()
+    convert_tool, document_workbench, document_workbench_worker = _plugin_modules()
     broken_prefixes = (
         "omnicrawler.pdfx",
         "omnicrawler.convertx",
@@ -95,7 +95,7 @@ def test_view_source_uses_relative_imports_only() -> None:
         "omnicrawler.apps",
     )
     problems: list[str] = []
-    for module in (convert_tool, pdf_workbench, pdf_workbench_worker):
+    for module in (convert_tool, document_workbench, document_workbench_worker):
         source = inspect.getsource(module)
         for number, line in enumerate(source.splitlines(), 1):
             stripped = line.strip()

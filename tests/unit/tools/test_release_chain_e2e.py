@@ -51,7 +51,7 @@ PLUGIN_SRC = (
     / "submissions"
     / "plugins"
     / "4c3014804d85de2568f85e62a3048429"
-    / "pdf-workbench"
+    / "document-workbench"
 )
 
 
@@ -85,7 +85,7 @@ def signed_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     secrets = SecretsStore(tmp_path / "secrets.bin", keyring_api=_FakeKeyring())
     identity = IdentityStore(store=secrets).create("tester", "pw")
 
-    package_dir = tmp_path / "pdf-workbench"
+    package_dir = tmp_path / "document-workbench"
     shutil.copytree(
         PLUGIN_SRC, package_dir,
         # 必须忽略**测试运行产物**：插件仓里的 pytest 临时目录会含 `.env`
@@ -99,7 +99,7 @@ def signed_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     signed = sign_creator_package(
         package_dir,
         package_type="plugin",
-        package_id="pdf-workbench",
+        package_id="document-workbench",
         version="1.0.0",
         identity=identity,
         legacy_target="plugin.py",
@@ -177,7 +177,7 @@ def test_full_release_chain_ends_in_working_plugin(
     target = (
         tmp_path / "plugins_installed"
         / identity.key_fingerprint
-        / "pdf-workbench"
+        / "document-workbench"
         / "1.0.0"
     )
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -201,5 +201,5 @@ def test_full_release_chain_ends_in_working_plugin(
     assert len(table_io.READERS) >= 5, f"表格格式过少: {len(table_io.READERS)}"
 
     views = document_facade.pdf_views()
-    assert hasattr(views, "PdfWorkbenchView")
+    assert hasattr(views, "DocumentWorkbenchView")
     assert hasattr(views, "ConvertView")

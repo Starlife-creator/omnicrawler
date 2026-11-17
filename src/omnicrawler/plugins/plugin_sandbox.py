@@ -41,7 +41,7 @@ ALLOWED_PERMISSIONS = {
     # Phase 2a：files:read（manifest input_files 白名单，Phase 2b 正式化）；
     # secrets:read（O 例外路径，方案 O2-B；默认走代理密钥零暴露）
     "files:read", "secrets:read",
-    # 2026-11-17：组件式 OCR 代理（PDF 工作台插件化）。
+    # 2026-11-17：组件式 OCR 代理（文档工作台插件化）。
     # 授予的是「**请宿主代为调用已验签组件**」的权利，**不是**读信任根、
     # 拿注册表锁、或直接启动组件的权利 —— 那三项始终留在宿主。
     "component:ocr",

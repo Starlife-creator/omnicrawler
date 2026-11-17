@@ -10,7 +10,7 @@
 | 位置 | 问题 |
 |---|---|
 | `gui_views/pdf_layout_review.py` | `from ...pdfx.parser` —— 三跳越过了包根 |
-| `gui_views/pdf_workbench.py` | `from ...pdfx.ocr` —— 同上 |
+| `gui_views.document_workbench.py` | `from ...pdfx.ocr` —— 同上 |
 | `compat/ai_env.py` | `from .errors` —— `compat/errors.py` 从未搬入插件 |
 | `compat/progress.py` | `from ..i18n` —— i18n 就在 `compat/` 下 |
 | `pdfx/__main__.py` | `from ..cli` —— 应为 `from .cli` |
@@ -47,7 +47,7 @@ _PLUGIN = (
     / "submissions"
     / "plugins"
     / "4c3014804d85de2568f85e62a3048429"
-    / "pdf-workbench"
+    / "document-workbench"
 )
 
 
@@ -106,9 +106,9 @@ def _collect_lazy_imports() -> list[tuple[Path, ast.ImportFrom, str]]:
 def test_every_lazy_import_can_be_executed() -> None:
     """每一处无保护的函数内导入都必须能真实执行。"""
     if not document_facade.document_capability()["available"]:
-        pytest.skip("需要 pdf-workbench 插件（要先把插件目录加入 sys.path）")
+        pytest.skip("需要 document-workbench 插件（要先把插件目录加入 sys.path）")
 
-    # pdf_views() 会把插件根加入 sys.path，后续 import 才找得到 omnicrawler_pdf
+    # pdf_views() 会把插件根加入 sys.path，后续 import 才找得到 omnicrawler_docs
     document_facade.pdf_views()
     importlib.invalidate_caches()
 
@@ -159,12 +159,12 @@ def test_every_lazy_import_can_be_executed() -> None:
 @pytest.mark.skipif(not _PLUGIN.is_dir(), reason="需要 market 仓插件目录")
 def test_pdfx_main_forwarding_target_exists() -> None:
     """`pdfx.__main__` 转发的 CLI 必须存在（曾写成 `..cli` 越过包根）。"""
-    main_file = _PLUGIN / "omnicrawler_pdf" / "pdfx" / "__main__.py"
+    main_file = _PLUGIN / "omnicrawler_docs" / "pdfx" / "__main__.py"
     if not main_file.is_file():
         pytest.skip("找不到 pdfx/__main__.py")
 
     source = main_file.read_text(encoding="utf-8")
     assert "from .cli import" in source, (
         "`pdfx/__main__.py` 应 `from .cli import`（cli 与它同在 pdfx 包内）；"
-        "写成 `from ..cli` 会指向 omnicrawler_pdf.cli——那个模块不存在"
+        "写成 `from ..cli` 会指向 omnicrawler_docs.cli——那个模块不存在"
     )

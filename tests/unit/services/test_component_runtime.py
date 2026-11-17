@@ -12,13 +12,13 @@ from types import SimpleNamespace
 import pytest
 
 pytest.importorskip(
-    "omnicrawler_pdf.pdfx.component_ocr",
-    reason="组件式 OCR 后端随 PDF 工作台迁入插件 pdf-workbench",
+    "omnicrawler_docs.pdfx.component_ocr",
+    reason="组件式 OCR 后端随 文档工作台迁入插件 document-workbench",
 )
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from omnicrawler_pdf.pdfx.component_ocr import (  # noqa: E402 - 必须在 importorskip 之后
+from omnicrawler_docs.pdfx.component_ocr import (  # noqa: E402 - 必须在 importorskip 之后
     ComponentOCRBackend,
 )
 
@@ -155,7 +155,7 @@ def test_component_backend_preserves_structured_result(tmp_path, monkeypatch):
 
 
 def test_production_ocr_factory_and_preflight_use_the_component_resolver(tmp_path, monkeypatch):
-    from omnicrawler_pdf.pdfx import ocr
+    from omnicrawler_docs.pdfx import ocr
 
     from omnicrawler.core.config import load_config
     from omnicrawler.pipeline_ops.preflight import run_preflight

@@ -150,7 +150,7 @@ def main(argv: list[str] | None = None) -> None:
             print(f"omnicrawler {' '.join(argv)}: {message}", file=sys.stderr)
             print(
                 "\n提示：PDF 工作台的子命令与选项由插件提供。"
-                "装好 pdf-workbench 后\n  omnicrawler pdf --help   即可看到完整子命令列表。",
+                "装好 document-workbench 后\n  omnicrawler pdf --help   即可看到完整子命令列表。",
                 file=sys.stderr,
             )
             raise SystemExit(1) from None

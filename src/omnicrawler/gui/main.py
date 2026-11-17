@@ -2068,7 +2068,7 @@ class MainWindow(QMainWindow):
 
     def _show_pdf_region_dialog(self) -> None:
         """MenuBuilder 引用 — 打开 PDF 区域选择对话框。"""
-        # 迁移后（2026-11-17）：该对话框随 PDF 工作台迁入插件 pdf-workbench。
+        # 迁移后（2026-11-17）：该对话框随 PDF 工作台迁入插件 document-workbench。
         # 经 facade 按需加载；插件未装时给可操作提示（不抛栈）。
         from ..services import document_facade
 

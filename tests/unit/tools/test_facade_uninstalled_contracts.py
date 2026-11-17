@@ -10,7 +10,7 @@
 2. 抛 `AttributeError` —— 看起来像程序坏了；
 3. **静默成功**（返回 `None` / 空对象）—— 最坏，用户以为功能在，实际什么都没做。
 
-正确行为是抛 `RuntimeError`，消息里点名 **`pdf-workbench`** 且给出安装指引。
+正确行为是抛 `RuntimeError`，消息里点名 **`document-workbench`** 且给出安装指引。
 
 ## 实现方式
 
@@ -78,7 +78,7 @@ def test_uninstalled_entry_gives_actionable_error(
 
     message = str(excinfo.value)
     assert message.strip(), f"{name}: 错误消息为空"
-    assert "pdf-workbench" in message, (
+    assert "document-workbench" in message, (
         f"{name}: 消息没点名要装哪个插件，用户无法照做。实际: {message!r}"
     )
     assert "安装" in message or "插件市场" in message, (
@@ -111,7 +111,7 @@ def test_capability_report_is_consistent_when_uninstalled(uninstalled: None) -> 
     assert report["available"] is False
     assert report["plugin_installed"] is False
     assert report["missing"], "缺失清单为空——用户不知道缺什么"
-    assert "pdf-workbench" in report["reason"]
+    assert "document-workbench" in report["reason"]
 
 
 def test_migrated_packages_absent_regardless_of_plugin(uninstalled: None) -> None:

@@ -105,7 +105,7 @@ _SKIP_PARTS = frozenset(
     {
         ".git", ".venv", ".tmp", ".audit-tmp", ".agents", ".test-tmp",
         "node_modules", "__pycache__", ".runtime",
-        # `archive/`：**已迁出宿主的代码归档**（2026-11-17 PDF 工作台迁移）。
+        # `archive/`：**已迁出宿主的代码归档**（2026-11-17 文档工作台迁移）。
         # 它不再是运行中的代码，扫描它只会让门禁为历史文件报违规、
         # 并让白名单位点失效（实测踩到）。
         "archive",

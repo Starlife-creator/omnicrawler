@@ -53,7 +53,7 @@ def _goto_nav_key(window: Any, nav_key: str, label: str) -> None:
     """按 **NavKey** 跳到对应页面；该页不存在时给可操作提示。
 
     为什么不直接用 `NavIndex.X`：那是**行号**，由 `visible_entries()`
-    派生，导航项增删就会变。实测未装 pdf-workbench 时
+    派生，导航项增删就会变。实测未装 document-workbench 时
     `NavIndex.CONVERT_TOOL` 指向的是"登录会话"页——点了会跳错地方。
     key 不会变，找不到就是真的不存在。
     """
@@ -67,7 +67,7 @@ def _goto_nav_key(window: Any, nav_key: str, label: str) -> None:
         QMessageBox.information(
             window,
             _("功能未安装"),
-            _("{label} 由插件 pdf-workbench 提供，当前未安装。\n\n"
+            _("{label} 由插件 document-workbench 提供，当前未安装。\n\n"
               "可在「插件市场」中安装后使用。").format(label=label),
         )
         return
@@ -75,7 +75,7 @@ def _goto_nav_key(window: Any, nav_key: str, label: str) -> None:
 
 
 def _load_pdf_views() -> Any:
-    """按需加载 PDF 工作台视图（来自插件 pdf-workbench）。
+    """按需加载 PDF 工作台视图（来自插件 document-workbench）。
 
     迁移后（2026-11-17）：PDF 工作台已迁成插件，宿主不再持有其 GUI 代码。
     这里经插件 facade 加载视图模块；插件未安装时返回 None，
@@ -106,7 +106,7 @@ _NAV_LABELS: dict[str, str] = {
     NavKey.GROUP_AUTOMATION: _("自动化"),
     NavKey.CHANGE_MONITOR: "🔔 " + _("变更监控"),
     NavKey.GROUP_TOOLS: _("工具"),
-    NavKey.PDF_WORKBENCH: "📄 " + _("PDF 工作台"),
+    NavKey.PDF_WORKBENCH: "📄 " + _("文档工作台"),
     NavKey.CONVERT_TOOL: "🔁 " + _("格式互转"),
     NavKey.SCENE: "🎯 " + _("场景与模板"),
     NavKey.LOGIN_SESSION: "🔐 " + _("登录会话"),
@@ -278,7 +278,7 @@ class CentralAreaBuilder(_BaseDelegate):
         # B-4 ConvertX：首页按钮跳到格式互转面板。
         #
         # **不能用 `NavIndex.CONVERT_TOOL`**：那是**行号**，随导航项增删而变。
-        # 未装 pdf-workbench 时该行实际指向 `login_session`（实测：
+        # 未装 document-workbench 时该行实际指向 `login_session`（实测：
         # `CONVERT_TOOL=9` → 无插件时是"登录会话"页），点了会跳到错误页面。
         # 改为按 **key** 定位，找不到就给可操作提示。
         mw._home.open_convert_tool.connect(
@@ -296,7 +296,7 @@ class CentralAreaBuilder(_BaseDelegate):
         mw._evidence_view.back_to_results.connect(lambda: mw._nav.setCurrentRow(NavIndex.RESULTS))  # 返回结果与复核页
         mw._stack.addWidget(mw._evidence_view)
 
-        # 迁移后（2026-11-17）：PDF 工作台与格式互转已迁成插件 pdf-workbench。
+        # 迁移后（2026-11-17）：PDF 工作台与格式互转已迁成插件 document-workbench。
         # 视图改为**按插件可用性条件构造**：
         # * 装了 ⇒ 从插件目录加载视图类，行为与迁移前一致；
         # * 没装 ⇒ 不创建视图，导航入口也不显示（`NavEntry.requires` 已声明 "pdf"）。
@@ -305,7 +305,7 @@ class CentralAreaBuilder(_BaseDelegate):
         # PDF 工作台界面"。没有就是没有，不摆空壳。
         _pdf_views = _load_pdf_views()
         if _pdf_views is not None:
-            mw._pdf_workbench = _pdf_views.PdfWorkbenchView()
+            mw._pdf_workbench = _pdf_views.DocumentWorkbenchView()
             mw._stack.addWidget(mw._pdf_workbench)
             # B-4：ConvertX 格式互转工具页（stack index 7）
             mw._convert_tool = _pdf_views.ConvertView()

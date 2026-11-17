@@ -33,7 +33,7 @@ def test_pdf_capability_requires_plugin_not_just_pdfplumber(
     """`pdf` 能力必须以**插件安装状态**为准。
 
     仅仅有 pdfplumber 不算——那只是宿主的一个 Python 包，
-    不代表 PDF 工作台可用。
+    不代表 文档工作台可用。
     """
     from omnicrawler.services import document_facade
 
@@ -123,7 +123,7 @@ def test_convert_tool_navigation_uses_key_not_row_index() -> None:
 def test_capability_report_separates_pdf_text_from_pdf_workbench(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """能力报告必须**分开**报「PDF 文字层」与「PDF 工作台」。
+    """能力报告必须**分开**报「PDF 文字层」与「文档工作台」。
 
     早先只有一条 `pdf_text`，描述写着"提取 PDF 文字、表格和元数据"，
     而判据只是 `pdfplumber` 是否安装——装了 pdfplumber 就显示"就绪"，
@@ -144,7 +144,7 @@ def test_capability_report_separates_pdf_text_from_pdf_workbench(
 
     assert "pdf_text" in items, "缺少 PDF 文字层能力项"
     assert "pdf_workbench" in items, (
-        "缺少独立的 PDF 工作台能力项——用户会把「有 pdfplumber」误读成「工作台可用」"
+        "缺少独立的 文档工作台能力项——用户会把「有 pdfplumber」误读成「工作台可用」"
     )
     assert items["pdf_workbench"]["ready"] is False, "插件未装却报工作台就绪"
     description = str(items["pdf_workbench"].get("description", ""))

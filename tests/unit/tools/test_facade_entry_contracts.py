@@ -34,7 +34,7 @@ from omnicrawler.services import document_facade
 
 def _require_plugin() -> None:
     if not document_facade.document_capability()["available"]:
-        pytest.skip("需要 pdf-workbench 插件")
+        pytest.skip("需要 document-workbench 插件")
 
 
 def test_convertx_module_exposes_output_rule() -> None:
@@ -68,7 +68,7 @@ def test_pdf_views_exposes_both_view_classes() -> None:
     """`pdf_views()` 必须带两个视图类（`central_area` 按名取用）。"""
     _require_plugin()
     views = document_facade.pdf_views()
-    for name in ("PdfWorkbenchView", "ConvertView"):
+    for name in ("DocumentWorkbenchView", "ConvertView"):
         assert hasattr(views, name), f"pdf_views() 缺 {name}"
 
 

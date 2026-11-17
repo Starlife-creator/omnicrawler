@@ -36,7 +36,7 @@ _PLUGIN = (
     / "submissions"
     / "plugins"
     / "4c3014804d85de2568f85e62a3048429"
-    / "pdf-workbench"
+    / "document-workbench"
 )
 
 
@@ -67,7 +67,7 @@ def _require_plugin() -> None:
     from omnicrawler.services import document_facade
 
     if not document_facade.document_capability()["available"]:
-        pytest.skip("需要 pdf-workbench 插件")
+        pytest.skip("需要 document-workbench 插件")
 
 
 @pytest.fixture
@@ -110,7 +110,7 @@ def test_missing_optional_deps_are_reported_with_purpose(hide_modules) -> None:
 def test_missing_required_deps_sets_ok_false(hide_modules) -> None:
     """必需依赖缺失必须判 `ok=False`，且列出缺哪个。"""
     plugin_module = _load_plugin()
-    hide_modules({"omnicrawler_pdf.pdfx.config"})
+    hide_modules({"omnicrawler_docs.pdfx.config"})
 
     report = plugin_module.selfcheck()
     assert report["ok"] is False, "必需依赖缺失却判 ok=True"

@@ -8,7 +8,7 @@
 ```
 Traceback (most recent call last):
   ...
-RuntimeError: PDF 工作台插件未安装，无法执行该操作（触发操作：pdf.cli）。
+RuntimeError: 文档工作台插件未安装，无法执行该操作（触发操作：pdf.cli）。
 ```
 
 原因是 `cli/_main.py:138` 的**转发路径**直接调 `_dispatch_pdf`，
@@ -20,7 +20,7 @@ RuntimeError: PDF 工作台插件未安装，无法执行该操作（触发操�
 ## 判据
 
 1. `omnicrawler pdf --help`（未装插件）→ 退码非 0，但**不得出现 Traceback**；
-   消息里要点名 `pdf-workbench` 并给出下一步怎么做；
+   消息里要点名 `document-workbench` 并给出下一步怎么做；
 2. `omnicrawler --help` 的 pdf 条目**不得再提 `pdfx`**（那个命令不存在了）。
 """
 
@@ -75,7 +75,7 @@ def test_pdf_help_without_plugin_is_a_clean_message(tmp_path: Path) -> None:
     assert "Traceback" not in output, (
         f"用户看到的是 Python 栈，不是提示：\n{output[-800:]}"
     )
-    assert "pdf-workbench" in output, (
+    assert "document-workbench" in output, (
         f"提示没点名要装哪个插件：\n{output[-500:]}"
     )
     # 给出下一步怎么做
@@ -109,7 +109,7 @@ def test_pdf_help_works_when_plugin_installed(tmp_path: Path) -> None:
         / "submissions"
         / "plugins"
         / "4c3014804d85de2568f85e62a3048429"
-        / "pdf-workbench"
+        / "document-workbench"
     )
     if not plugin_dir.is_dir():
         pytest.skip(f"找不到插件目录：{plugin_dir}")

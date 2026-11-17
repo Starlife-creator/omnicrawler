@@ -1,11 +1,11 @@
-"""GUI 层：PDF 工作台按插件可用性条件装配（迁移批次 3 收尾）。
+"""GUI 层：文档工作台按插件可用性条件装配（迁移批次 3 收尾）。
 
 **要钉住的行为**
 
 用户对组件化的原始要求是：
 
 > 组件化的主要目的是为了让用户安心安装，而不是在打开应用之后
-> 看到一个空荡荡的 PDF 工作台界面。
+> 看到一个空荡荡的 文档工作台界面。
 
 所以"装了才显示、没装就不显示"不是顺手实现的效果，而是**核心验收判据**。
 这条测试把它固定下来，防止将来有人"简化"成无条件装配。
@@ -36,7 +36,7 @@ def _keys(capabilities: dict[str, bool]) -> set[str]:
 
 
 def test_pdf_entries_visible_when_capability_on() -> None:
-    """插件可用 ⇒ PDF 工作台与格式互转入口可见。"""
+    """插件可用 ⇒ 文档工作台与格式互转入口可见。"""
     keys = _keys({"pdf": True})
     assert "pdf_workbench" in keys, "PDF 能力可用，但工作台入口没出现"
     assert "convert_tool" in keys, "PDF 能力可用，但格式互转入口没出现"
@@ -95,9 +95,9 @@ def test_loader_returns_views_when_available() -> None:
     from omnicrawler.services import document_facade
 
     if not document_facade.document_capability()["available"]:
-        pytest.skip("本机未安装 pdf-workbench 插件")
+        pytest.skip("本机未安装 document-workbench 插件")
 
     views = central_area._load_pdf_views()
     assert views is not None
-    assert hasattr(views, "PdfWorkbenchView")
+    assert hasattr(views, "DocumentWorkbenchView")
     assert hasattr(views, "ConvertView")

@@ -284,7 +284,7 @@ class BrokerSecretsMixin:
         return {"value": value}
 
 class BrokerComponentOcrMixin:
-    """component.ocr.recognize 能力域（2026-11-17，PDF 工作台插件化）。
+    """component.ocr.recognize 能力域（2026-11-17，文档工作台插件化）。
 
     为什么由宿主代理而不是插件自己调组件
     ------------------------------------

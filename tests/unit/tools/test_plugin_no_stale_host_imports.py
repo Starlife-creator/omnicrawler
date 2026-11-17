@@ -15,7 +15,7 @@ from omnicrawler.pdfx.project import create_project_config
 
 * 导入期不报错（模块能正常 import）；
 * 471 个插件测试**全绿**；
-* 但用户点开"格式互转"或"PDF 工作台"时立刻 `ModuleNotFoundError`。
+* 但用户点开"格式互转"或"文档工作台"时立刻 `ModuleNotFoundError`。
 
 这正是"能 import ≠ 能调用"的又一例。测试覆盖不到的原因是：
 GUI 视图只做了构造测试，没有触发那些交互回调。
@@ -41,7 +41,7 @@ _PLUGIN = (
     / "submissions"
     / "plugins"
     / "4c3014804d85de2568f85e62a3048429"
-    / "pdf-workbench"
+    / "document-workbench"
 )
 
 #: 已从宿主迁出的包——插件里**不得**再出现 `from omnicrawler.<这些>...`。

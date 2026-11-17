@@ -6,10 +6,10 @@
 
 ```
 开发态（手工放进目录）：
-  <root>/plugins_installed/pdf-workbench/plugin.py
+  <root>/plugins_installed/document-workbench/plugin.py
 
 市场安装（package_importer.import_package_folder 的 final 路径）：
-  <root>/plugins_installed/<creator_fingerprint>/pdf-workbench/<version>/plugin.py
+  <root>/plugins_installed/<creator_fingerprint>/document-workbench/<version>/plugin.py
 ```
 
 `_plugin_dir()` 早先只查两层。后果：**从市场装完插件后 facade 报"未安装"**
@@ -47,7 +47,7 @@ def _clear_explicit_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _make_market_layout(root: Path, version: str = "1.0.0") -> Path:
     """造市场安装的三层布局。"""
-    directory = root / "plugins_installed" / _FINGERPRINT / "pdf-workbench" / version
+    directory = root / "plugins_installed" / _FINGERPRINT / "document-workbench" / version
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "plugin.py").write_text(_ENTRY, encoding="utf-8")
     return directory
@@ -55,7 +55,7 @@ def _make_market_layout(root: Path, version: str = "1.0.0") -> Path:
 
 def _make_dev_layout(root: Path) -> Path:
     """造开发态的两层布局。"""
-    directory = root / "plugins_installed" / "pdf-workbench"
+    directory = root / "plugins_installed" / "document-workbench"
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "plugin.py").write_text(_ENTRY, encoding="utf-8")
     return directory
