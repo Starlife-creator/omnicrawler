@@ -146,3 +146,6 @@ src/omnicrawler/plugins/omnicrawler-landlock-*/
 # 根目录下 ad-hoc 临时目录（脚本/验证用 mkdtemp 产生，形如 tmp9inxkvrv/、tmp_0ogayq4/）。
 # 已在 6f05a352 误提交过 evil.exe / x.exe，加这条防止复发。
 /tmp*/
+# 同类但**是文件**（`tempfile.mkstemp` 产出，如 tmpe1j0m0_f）。
+# `/tmp*/` 只匹配目录，实测漏掉过（03635186 误提交两个空文件）。
+/tmp*
