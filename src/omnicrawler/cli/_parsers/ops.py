@@ -125,12 +125,33 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     workspace.add_argument("--kind", choices=["full", "complete", "config", "support"], default="full", help="complete 保留历史导出，适用于搬迁")
     workspace.add_argument("--apply", "--yes", action="store_true", help="执行破坏性操作（rollback 需要）")
     components = sub.add_parser("components", help="查看、验证、离线导入或卸载可选组件")
-    components.add_argument("action", choices=["list", "inspect", "stage", "import", "uninstall", "rollback"])
+    components.add_argument(
+        "action",
+        choices=[
+            "list", "inspect", "stage", "import", "uninstall", "rollback",
+            # recipe 装配：市场只托管声明（几十 KB），字节从上游拉、本地组装。
+            # 与 `import` 的区别：import 装的是用户已下载的整包 zip，
+            # install-recipe 按声明去上游下载并**在本地组装**。
+            "inspect-recipe", "install-recipe",
+        ],
+    )
     components.add_argument("--package")
     components.add_argument("--name")
     components.add_argument("--sha256")
     components.add_argument("--allow-unsigned", action="store_true", help="仅用于本地开发包")
     components.add_argument("--apply", "--yes", action="store_true", help="执行破坏性操作（uninstall/rollback 需要）")
+    components.add_argument("--recipe", default="", help="recipe JSON 路径（inspect-recipe / install-recipe）")
+    components.add_argument(
+        "--component-root", default="",
+        help="组件安装根目录；留空用运行时默认位置",
+    )
+    components.add_argument(
+        "--download", action="store_true",
+        help=(
+            "允许 install-recipe 联网下载构件。默认**不下载**（只做声明校验）——"
+            "从上游拉字节必须显式确认，与卸载同一条「显式动作」纪律。"
+        ),
+    )
     # 条目 4：模型一律从上游下载。本命令**不托管也不校验模型字节**，
     # 只负责配置源、触发 PaddleX 自带下载器、并按能力口径复检。
     models = sub.add_parser("models", help="从上游下载 OCR 模型（本项目不托管模型）")

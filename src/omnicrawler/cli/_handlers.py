@@ -501,12 +501,83 @@ def _run_gen_templates(args: argparse.Namespace) -> None:
 def _run_components(args: argparse.Namespace) -> None:
     from ..core.safe_action import require_explicit_apply
 
+    # recipe 两个动作走独立入口：它们不碰 ComponentManager 的 zip 整包流程。
+    if args.action in {"inspect-recipe", "install-recipe"}:
+        _run_component_recipe(args)
+        return
+
     if args.action in {"uninstall", "rollback"}:
         require_explicit_apply(f"components {args.action}")
     _json(cmd_components.execute(
         args.action, package=args.package or "", name=args.name or "",
         allow_unsigned=bool(args.allow_unsigned), sha256=args.sha256 or "",
     ))
+
+
+def _run_component_recipe(args: argparse.Namespace) -> None:
+    """recipe 装配的两个动作。
+
+    **`install-recipe` 默认不下载**：从上游拉字节是显式的对外动作，
+    与 `uninstall`/`rollback` 同一条纪律——必须 `--download` 才联网。
+    不带标志时只做声明校验并打印将拉取的构件清单，让用户先看清再决定。
+    """
+    from ..services.component_install import (
+        RecipeInstallError,
+        describe_recipe,
+        dumps_summary,
+        install_recipe_file,
+    )
+
+    recipe = str(getattr(args, "recipe", "") or "").strip()
+    if not recipe:
+        raise SystemExit("components 需要 --recipe <recipe.json>")
+
+    if args.action == "inspect-recipe":
+        try:
+            _json(describe_recipe(recipe))
+        except RecipeInstallError as exc:
+            raise SystemExit(str(exc)) from exc
+        return
+
+    component_root = str(getattr(args, "component_root", "") or "").strip()
+    if not component_root:
+        from ..core.runtime_paths import portable_data_root
+
+        component_root = str(portable_data_root() / "components")
+
+    if not getattr(args, "download", False):
+        # 不给 --download：只校验 + 展示将拉什么，一个字节都不写。
+        try:
+            plan = describe_recipe(recipe)
+        except RecipeInstallError as exc:
+            raise SystemExit(str(exc)) from exc
+        total = plan.get("declared_total_bytes") or 0
+        print(
+            f"将安装组件 {plan['name']} {plan['version']}，"
+            f"需拉取 {len(plan['artifacts'])} 个构件（声明总大小 {total} 字节）。"
+        )
+        for item in plan["artifacts"]:
+            print(f"  - {item['url']}")
+        print("\n未加 --download，未做任何下载。确认无误后加 --download 执行。")
+        return
+
+    from ..core.config import DEFAULTS, AppConfig, deep_merge
+    from ..security.egress import EgressBroker
+
+    # 复用市场面板同一套出口策略：只限制私网目标、**强制开启审计**。
+    # 第三方构件下载必须留痕——这一条不交给用户配置决定。
+    raw = deep_merge(dict(DEFAULTS), {"egress": {"audit": True}})
+    base = Path(Path(component_root).anchor or ".")
+    raw.setdefault("project", {"name": "component-recipe", "workspace": str(base)})
+    config = AppConfig(base, base, raw, base)
+
+    try:
+        summary = install_recipe_file(
+            recipe, component_root, egress=EgressBroker(config)
+        )
+    except RecipeInstallError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(dumps_summary(summary))
 
 
 @_register("models")
