@@ -39,10 +39,12 @@ omnicrawler reprocess -c configs/project.yaml --run-id <run_id>
 
 PDF 子项目支持阶段重置：
 
+> 需要先安装插件 `pdf-workbench`（插件市场）；`pdfx` 独立命令已随迁移移除。
+
 ```powershell
-pdfx --config work/project/pdf/project.yaml reset parse
-pdfx --config work/project/pdf/project.yaml reset ocr
-pdfx --config work/project/pdf/project.yaml reset extract
+omnicrawler pdf --config work/project/pdf/project.yaml reset parse
+omnicrawler pdf --config work/project/pdf/project.yaml reset ocr
+omnicrawler pdf --config work/project/pdf/project.yaml reset extract
 ```
 
 ## 状态和诊断

@@ -419,6 +419,10 @@ GUI-01—08 均未闭环；GUI-08 已确认启动进程残留，未确认根因�
   `--help` 与 console script `pdfx` 不受影响。
   证据：`tests/unit/pdf/test_pdfx_config_position.py`（纯函数 8 例 + 解析器 3 形态 + 默认模板不变
   + **子进程端到端**两条位置都真的读到配置）。
+  > **2026-11-23 补注**：该测试随 PDF 工作台迁入插件仓
+  > （`OmniCrawler-market/.../pdf-workbench/tests/unit/pdf/`）。`pdfx` 这个
+  > console script 也已移除——现在统一用 `omnicrawler pdf <子命令>`（需装插件）。
+  > 本条记录的是 2026-09 当时的修复过程，保留原文不改写。
 - **OCR 文本的汉字间空格会原样进入 `text` 字段值**（2026-09-13 实测 → 同日**提供显式开关**）。
   `chi_sim` 会在汉字之间插空格（`示例服务合同` → `示例  服务  合同`），而取值模式
   `(?P<value>[^\n]+)` 会把整行余下内容都收进来，于是值里保留空格。

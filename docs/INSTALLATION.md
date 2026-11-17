@@ -91,8 +91,11 @@ Intel 与 Apple Silicon 均使用当前解释器对应的原生 wheel。Tesserac
 python -m omnicrawler --help
 python -m omnicrawler capabilities --verify-imports
 python -m omnicrawler.gui
-python -m omnicrawler.pdfx --help
 ```
+
+> **PDF 工作台不在宿主内**（2026-11-17 起）：它已迁成可选插件 `pdf-workbench`。
+> 装好插件后可用 `omnicrawler pdf <子命令>`；未装时该命令会提示去插件市场安装。
+> 爬虫、AI 与数据加工（`omnicrawler transform`）不受影响。
 
 所有平台使用同一 `src/omnicrawler` 核心、配置格式、插件 API、测试和文档。平台脚本
 只负责解释器路径、原生依赖与启动体验，不复制业务实现。
