@@ -31,16 +31,18 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
 
+from ..i18n import _
+
 #: 上游域名 → 风险说明。未列出的域名按「未知来源」处理，一律提示确认。
 _KNOWN_HOSTS: dict[str, tuple[str, str]] = {
-    "github.com": ("low", "GitHub 发布页"),
-    "raw.githubusercontent.com": ("low", "GitHub 原始文件"),
-    "objects.githubusercontent.com": ("low", "GitHub 对象存储"),
-    "huggingface.co": ("medium", "HuggingFace 模型仓"),
-    "cdn-lfs.huggingface.co": ("medium", "HuggingFace LFS 存储"),
-    "modelscope.cn": ("medium", "ModelScope 模型仓"),
-    "paddlepaddle.bj.bcebos.com": ("medium", "Paddle 官方对象存储"),
-    "paddleocr.bj.bcebos.com": ("medium", "PaddleOCR 官方对象存储"),
+    "github.com": ("low", _("GitHub 发布页")),
+    "raw.githubusercontent.com": ("low", _("GitHub 原始文件")),
+    "objects.githubusercontent.com": ("low", _("GitHub 对象存储")),
+    "huggingface.co": ("medium", _("HuggingFace 模型仓")),
+    "cdn-lfs.huggingface.co": ("medium", _("HuggingFace LFS 存储")),
+    "modelscope.cn": ("medium", _("ModelScope 模型仓")),
+    "paddlepaddle.bj.bcebos.com": ("medium", _("Paddle 官方对象存储")),
+    "paddleocr.bj.bcebos.com": ("medium", _("PaddleOCR 官方对象存储")),
 }
 
 #: 单次安装的声明大小阈值（字节）。超过则要求用户二次确认。
@@ -95,7 +97,7 @@ def _host_of(url: str) -> tuple[str, str, str]:
         host = urlsplit(url).hostname or ""
     except ValueError:
         host = ""
-    risk, label = _KNOWN_HOSTS.get(host, ("unknown", "未知来源"))
+    risk, label = _KNOWN_HOSTS.get(host, ("unknown", _("未知来源")))
     return host, risk, label
 
 
@@ -182,30 +184,30 @@ def pre_install_checks(entry: ComponentEntry) -> tuple[list[str], list[str]]:
     warnings: list[str] = []
 
     if not entry.artifacts:
-        blockers.append("该组件没有可下载的构件声明")
+        blockers.append(_("该组件没有可下载的构件声明"))
     for artifact in entry.artifacts:
         if not artifact.has_valid_digest:
             blockers.append(
-                f"构件缺少合法 sha256：{artifact.url}（没有哈希无法校验来源）"
+                _("构件缺少合法 sha256：{url}（没有哈希无法校验来源）").format(url=artifact.url)
             )
     if not entry.recipe_digest:
-        blockers.append("条目缺少 recipe 摘要，无法核对声明是否被改动")
+        blockers.append(_("条目缺少 recipe 摘要，无法核对声明是否被改动"))
 
     if entry.declared_total_bytes > LARGE_DOWNLOAD_BYTES:
         mb = entry.declared_total_bytes / (1024 * 1024)
-        warnings.append(f"需要下载 {mb:.0f} MB，请注意流量与磁盘占用")
+        warnings.append(_("需要下载 {mb:.0f} MB，请注意流量与磁盘占用").format(mb=mb))
     for artifact in entry.artifacts:
         if artifact.host_risk == "unknown":
-            warnings.append(f"上游域名未知：{artifact.host or '(无法解析)'} 请确认可信")
+            warnings.append(_("上游域名未知：{host} 请确认可信").format(host=artifact.host or _("(无法解析)")))
         elif artifact.host_risk == "medium":
-            warnings.append(f"上游为{artifact.host_label}：{artifact.host}")
+            warnings.append(_("上游为{label}：{host}").format(label=artifact.host_label, host=artifact.host))
     return blockers, warnings
 
 
 def human_bytes(value: int) -> str:
     """把字节数渲染成便于阅读的形态（CLI/GUI 共用）。"""
     if value <= 0:
-        return "未知"
+        return _("未知")
     for unit in ("B", "KB", "MB", "GB"):
         if value < 1024 or unit == "GB":
             return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
@@ -217,20 +219,39 @@ def describe_for_confirm(entry: ComponentEntry) -> str:
     """安装确认对话框的正文（纯文本，GUI 与 CLI 共用）。"""
     lines = [
         f"{entry.name} {entry.version}",
-        f"发布者：{entry.publisher}",
-        f"需要下载：{human_bytes(entry.declared_total_bytes)}",
-        f"上游域名：{', '.join(entry.hosts) or '(无)'}",
+        _("发布者：{p}").format(p=entry.publisher),
+        _("需要下载：{size}").format(size=human_bytes(entry.declared_total_bytes)),
+        _("上游域名：{hosts}").format(hosts=', '.join(entry.hosts) or _("(无)")),
         "",
-        "安装时会从上述上游拉取文件，并按条目声明的 sha256 校验。",
-        "本项目不托管这些字节，也不为上游内容背书。",
+        _("安装时会从上述上游拉取文件，并按条目声明的 sha256 校验。"),
+        _("本项目不托管这些字节，也不为上游内容背书。"),
     ]
     blockers, warnings = pre_install_checks(entry)
     if warnings:
         lines.append("")
-        lines.append("请注意：")
+        lines.append(_("请注意："))
         lines.extend(f"  · {w}" for w in warnings)
     if blockers:
         lines.append("")
-        lines.append("无法安装：")
+        lines.append(_("无法安装："))
         lines.extend(f"  · {b}" for b in blockers)
     return "\n".join(lines)
+
+
+def filter_components(entries: list[ComponentEntry], query: str) -> list[ComponentEntry]:
+    """按关键词过滤组件条目。
+
+    与插件页 `_matches_filters`、模板页 `_template_matches` 同口径：
+    匹配 id / name / publisher / 上游域名。**两侧都归一大小写**。
+    """
+    needle = (query or "").strip().casefold()
+    if not needle:
+        return list(entries)
+    matched: list[ComponentEntry] = []
+    for entry in entries:
+        haystack = " ".join(
+            [entry.id, entry.name, entry.publisher, *entry.hosts]
+        ).casefold()
+        if needle in haystack:
+            matched.append(entry)
+    return matched

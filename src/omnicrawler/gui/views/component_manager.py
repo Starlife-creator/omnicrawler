@@ -49,6 +49,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -144,6 +145,13 @@ class ComponentManagerPanel(WorkerOwnedWidget):
             self._market_label.setAccessibleName(_("可下载组件"))
             root.addWidget(self._market_label)
 
+            # 与插件/模板页对齐：组件也要能搜索（按 id/名称/发布者/上游域名）。
+            self._market_search = QLineEdit()
+            self._market_search.setPlaceholderText(_("按名称、ID、发布者或上游域名搜索…"))
+            self._market_search.setClearButtonEnabled(True)
+            self._market_search.textChanged.connect(self._reload_catalog_filtered)
+            root.addWidget(self._market_search)
+
             self._market_list = QListWidget()
             self._market_list.setAccessibleName(_("可下载组件列表"))
             self._market_list.currentItemChanged.connect(self._show_market_selected)
@@ -164,6 +172,7 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         else:
             # 没有 catalog 上下文时不画空列表——那比没有更糟。
             # mypy 需要显式标注：这两条分支给同一个属性赋不同类型。
+            self._market_search = None  # type: ignore[assignment]
             self._market_list = None  # type: ignore[assignment]
             self._market_install = None  # type: ignore[assignment]
             self._market_status = None  # type: ignore[assignment]
@@ -257,6 +266,32 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         self._market_status.setText(
             _("共 {n} 个组件。选中可查看上游域名与下载量。").format(n=len(self._entries))
         )
+
+    def _reload_catalog_filtered(self) -> None:
+        """按当前搜索词重画列表（数据已在 `self._entries`，不重新拉目录）。"""
+        if self._market_list is None:
+            return
+        from .component_market_logic import filter_components
+
+        query = self._market_search.text() if self._market_search is not None else ""
+        visible = filter_components(self._entries, query)
+        self._market_list.blockSignals(True)
+        self._market_list.clear()
+        for entry in visible:
+            item = QListWidgetItem(f"{entry.name} {entry.version}")
+            item.setData(Qt.ItemDataRole.UserRole, entry.id)
+            self._market_list.addItem(item)
+        self._market_list.blockSignals(False)
+        if self._market_status is not None:
+            total = len(self._entries)
+            if query.strip():
+                self._market_status.setText(
+                    _("匹配 {n} / {total} 个组件。").format(n=len(visible), total=total)
+                )
+            else:
+                self._market_status.setText(
+                    _("共 {n} 个组件。选中可查看上游域名与下载量。").format(n=total)
+                )
 
     def _selected_entry(self) -> Any:
         if self._market_list is None:

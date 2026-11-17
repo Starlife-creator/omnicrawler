@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -142,6 +143,25 @@ class _TemplateInstallWorker(BackgroundWorker):
         return self._template_id
 
 
+def _template_matches(entry: dict[str, Any], query: str) -> bool:
+    """模板条目是否匹配搜索词。
+
+    匹配 id / name / category / tags —— 与插件页 `_matches_filters` 同口径
+    （用户凭"名字"或"分类"找东西，两处行为不应不一致）。
+    """
+    parts = [
+        str(entry.get("id", "")),
+        str(entry.get("name", "")),
+        str(entry.get("category", "")),
+        str(entry.get("summary", "")),
+    ]
+    tags = entry.get("tags")
+    if isinstance(tags, list):
+        parts.extend(str(tag) for tag in tags)
+    # 两侧都归一：调用方可能传入未 casefold 的词（实测漏了这条）。
+    return query.casefold() in " ".join(parts).casefold()
+
+
 class TemplateMarketView(WorkerOwnedWidget):
     """模板市场面板：列表 + 详情 + 安装/卸载/校验。"""
 
@@ -206,6 +226,13 @@ class TemplateMarketView(WorkerOwnedWidget):
         list_header = QLabel(_("市场模板"))
         list_header.setObjectName("sectionSubtitle")
         list_layout.addWidget(list_header)
+        # 与插件页对齐：模板也要能搜索过滤。条目会随市场增长，
+        # 只能靠滚动的列表在几十个模板时就不好用了。
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText(_("按名称、ID、分类或标签搜索…"))
+        self._search_edit.setClearButtonEnabled(True)
+        self._search_edit.textChanged.connect(self._populate_list)
+        list_layout.addWidget(self._search_edit)
         self._list = QListWidget()
         self._list.setAlternatingRowColors(True)
         self._list.currentItemChanged.connect(self._on_selection_changed)
@@ -344,9 +371,12 @@ class TemplateMarketView(WorkerOwnedWidget):
         self._list.blockSignals(True)
         self._list.clear()
         templates = (self._catalog or {}).get("templates", []) if self._catalog else []
+        query = self._search_edit.text().strip().casefold() if hasattr(self, "_search_edit") else ""
         for entry in templates:
             tid = entry.get("id", "")
             name = entry.get("name", tid)
+            if query and not _template_matches(entry, query):
+                continue
             version = entry.get("version", "")
             installed = self._is_installed(tid)
             label = f"{name}  v{version}" if version else name
