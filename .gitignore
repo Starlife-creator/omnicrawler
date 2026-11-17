@@ -143,3 +143,6 @@ user-test-runs/
 # 会在 src/omnicrawler/plugins/ 下留下 omnicrawler-landlock-* 之类目录。
 # 实测已被误提交一次（b0067592），加这条防止复发。
 src/omnicrawler/plugins/omnicrawler-landlock-*/
+# 根目录下 ad-hoc 临时目录（脚本/验证用 mkdtemp 产生，形如 tmp9inxkvrv/、tmp_0ogayq4/）。
+# 已在 6f05a352 误提交过 evil.exe / x.exe，加这条防止复发。
+/tmp*/
