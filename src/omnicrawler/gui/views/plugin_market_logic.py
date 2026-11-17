@@ -65,7 +65,9 @@ def _permission_risk(entry: dict[str, Any]) -> tuple[str, str]:
     }
     if (
         str(entry.get("execution_mode") or "subprocess") == "in_process"
-        or permissions & {"secrets:read", "responses:payload", "render:scripted"}
+        # component:ocr 会让宿主代为启动**已验签的外部可执行文件**并读回其输出。
+        # 这比纯数据权限重（跨进程执行 + 读外部产物），按高风险呈现。
+        or permissions & {"secrets:read", "responses:payload", "render:scripted", "component:ocr"}
     ):
         return "high", _("高风险")
     if permissions & {

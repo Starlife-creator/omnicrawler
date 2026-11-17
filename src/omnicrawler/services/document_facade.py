@@ -226,3 +226,17 @@ def convertx_preset(name: str, path: Any = None) -> Any:
 def compare_runs(*args: Any, **kwargs: Any) -> Any:
     """比较两次运行结果。"""
     return require_document("review.run_compare").compare_runs(*args, **kwargs)
+
+def ocr_backend_class() -> Any:
+    """取**组件式** OCR 后端类（`ComponentOCRBackend`）。
+
+    供 `plugins.plugin_broker_host` 的 `component.ocr.recognize` 能力使用：
+    插件请求宿主代调 OCR 组件，宿主经本入口拿到后端实现。
+
+    为什么返回"类"而不是"实例"：调用方需要按**每次请求**的配置
+    （component / engine / lang）构造后端，实例不该跨请求复用。
+
+    ⚠ 这是**唯一**允许支柱②（plugins）触达文档子系统的通道；
+    `tests/unit/tools/test_pillar_boundary.py` 钉住这一点。
+    """
+    return require_document("pdfx.component_ocr").ComponentOCRBackend

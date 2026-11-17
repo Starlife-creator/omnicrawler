@@ -48,6 +48,16 @@ CAPABILITY_VERSIONS: dict[str, int] = {
     # 追加新段类型属可选扩展、不 bump（与文件头约定一致）。
     "view.richtext": 1,
     # 2026-09-24 U6：运行进度推送（插件 → 宿主 GUI，单向、可丢弃）。
+    # 2026-11-17：**组件式 OCR 代理**（PDF 工作台插件化时新增）。
+    #
+    # 为什么必须经宿主代理而不是让插件自己管组件：
+    # 组件验签依赖 `configs/component_trust.pub.pem`，租赁依赖跨进程注册表锁，
+    # 两者都是**宿主特权**。插件是子进程，一旦让它自己读信任根、拿锁，
+    # 等于把安全边界下移到不受控进程里 —— 与「安全与隔离」原则冲突。
+    #
+    # 语义：插件只交出 PNG 与引擎名，宿主完成验签、租赁、子进程调用，
+    # 回传文本与置信度。**插件看不到组件路径、信任根与注册表**。
+    "component.ocr.recognize": 1,
     # 语义：运行期插件经 omnicrawler_sdk.call("view.progress", {...}) 上报批处理
     # 进度，宿主合并限速后刷新对应插件面板；面板缺席时静默丢弃。载荷收窄为
     # 已知字段集，新增可选字段不 bump、剔除字段才 bump。
@@ -103,6 +113,7 @@ _CAPABILITY_PERMISSIONS: dict[str, str | None] = {
     "artifact.stream.abort": "artifacts:write",
     "network.fetch": "network:scoped",
     "temp.open": "temp:write",
+    "component.ocr.recognize": "component:ocr",
     "files.read": "files:read",
     "resources.describe": "resources:read",
     "resources.enumerate": "resources:read",

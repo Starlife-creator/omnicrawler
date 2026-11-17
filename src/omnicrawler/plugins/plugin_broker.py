@@ -77,6 +77,7 @@ from .plugin_broker_driver import (
     drive_loop as drive_loop,
 )
 from .plugin_broker_host import (
+    BrokerComponentOcrMixin,
     BrokerProgressMixin,
     BrokerSecretsMixin,
     BrokerStateMixin,
@@ -89,6 +90,7 @@ from .plugin_broker_records import BrokerRecordsMixin
 
 class CapabilityBroker(
     BrokerArtifactsMixin,
+    BrokerComponentOcrMixin,
     BrokerFilesMixin,
     BrokerNetworkMixin,
     BrokerRecordsMixin,

@@ -282,3 +282,91 @@ class BrokerSecretsMixin:
             except Exception:  # noqa: BLE001 - 审计失败不阻断
                 LOGGER.warning("密钥访问审计写入失败: plugin=%s ref=%s", self._plugin_id, ref)
         return {"value": value}
+
+class BrokerComponentOcrMixin:
+    """component.ocr.recognize 能力域（2026-11-17，PDF 工作台插件化）。
+
+    为什么由宿主代理而不是插件自己调组件
+    ------------------------------------
+    组件验签依赖 ``configs/component_trust.pub.pem``，租赁依赖跨进程注册表锁，
+    启动组件子进程还要裁剪环境变量。这三件事都是**宿主特权**：
+    插件是受沙箱约束的子进程，一旦让它自己做，等于把安全边界下移到
+    不受控进程里 —— 与仓库「安全与隔离」原则直接冲突。
+
+    因此本能力的边界是：
+
+    * 插件只交出 **PNG 字节** 与 **引擎名**；
+    * 宿主完成验签、租赁、子进程调用、输出裁剪；
+    * 回传**只有** text / confidence / engine / version；
+    * 插件**永远看不到**组件路径、信任根、注册表。
+
+    输入校验（fail-closed）
+    -----------------------
+    PNG 魔数 + 大小上限由宿主**再验一次**（不信任插件侧的自我约束）：
+    插件同样受沙箱限制，但边界检查不该只有一处。
+    """
+
+    #: 单次 OCR 的 PNG 上限；与组件运行入口的限制一致。
+    _OCR_MAX_PNG_BYTES = 20 * 1024 * 1024
+
+    #: PNG 魔数（组件运行入口同样要求）。
+    _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+    def _cap_component_ocr_recognize(self, payload: dict[str, Any]) -> dict[str, Any]:
+        engine = str(payload.get("engine", "")).strip().lower()
+        if not engine:
+            raise CapabilityError(E_CONTRACT, "component.ocr.recognize 需要 engine 参数")
+        component = str(payload.get("component", "")).strip()
+        if not component:
+            raise CapabilityError(E_CONTRACT, "component.ocr.recognize 需要 component 参数")
+
+        raw = payload.get("png_base64", "")
+        if not isinstance(raw, str) or not raw:
+            raise CapabilityError(E_CONTRACT, "component.ocr.recognize 需要 png_base64")
+        import base64
+
+        try:
+            png = base64.b64decode(raw, validate=True)
+        except Exception as exc:  # noqa: BLE001 - 统一归为参数错误
+            raise CapabilityError(E_CONTRACT, f"png_base64 不是合法 base64: {exc}") from exc
+        if not png.startswith(self._PNG_MAGIC):
+            raise CapabilityError(E_CONTRACT, "输入不是 PNG（魔数不符）")
+        if len(png) > self._OCR_MAX_PNG_BYTES:
+            raise CapabilityError(
+                E_RESOURCE,
+                f"PNG 超过上限：{len(png)} > {self._OCR_MAX_PNG_BYTES} 字节",
+            )
+
+        # 只有声明了 component:ocr 的插件才会走到这里（权限在路由层已校验）。
+        #
+        # 注意 `leased_ocr_runtime` 只返回**路径与版本**（OCRRuntime 是 dataclass），
+        # 真正调用组件可执行文件的是 `ComponentOCRBackend`——它内部再走一次
+        # 租赁、校验版本、裁剪环境变量、限制 PNG 输入。这里不重复那套逻辑，
+        # 避免出现"两份组件调用实现"（那正是最难保持一致的那种重复）。
+        #
+        # **经宿主 facade 取后端**而不是直接 import `pdfx`：PDF 工作台正在被
+        # 迁成插件，`plugins`（支柱②）不该硬依赖它（边界由
+        # `tests/unit/tools/test_pillar_boundary.py` 钉住）。
+        from ..services.document_facade import ocr_backend_class
+
+        try:
+            backend = ocr_backend_class()(
+                {"component": component, "backend": engine,
+                 "lang": str(payload.get("lang", "ch"))}
+            )
+            result = backend.recognize_rich(png)
+        except ValueError as exc:
+            # 缺信任根 / 组件未安装 / 验签失败 / 版本已变 —— 都是**可解释**的失败
+            raise CapabilityError(E_RESOURCE, str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001 - 组件崩溃不能让宿主进程倒下
+            LOGGER.warning("组件 OCR 调用失败: component=%s engine=%s", component, engine)
+            raise CapabilityError(E_INTERNAL, f"组件 OCR 调用失败: {exc}") from exc
+
+        text = str(getattr(result, "text", "") or "")
+        confidence = getattr(result, "confidence", None)
+        return {
+            "text": text,
+            "confidence": confidence,
+            "engine": engine,
+            "component": component,
+        }
