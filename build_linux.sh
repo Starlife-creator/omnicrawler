@@ -83,7 +83,7 @@ fi
 if [[ "$EDITION" == "Full" ]]; then
   EXTRAS="full"
 else
-  EXTRAS="gui,html,pdf,browser,async-http,security"
+  EXTRAS="gui,html,pdf,pdf-write,document,browser,async-http,security"
 fi
 # C-#11：构建 venv 只装运行时 extras + `build`（PyInstaller 打包工具）；
 # 测试/lint 工具留在 `dev` extra，不进生产构建环境。`--no-dev` 同时排除 dev 依赖组。

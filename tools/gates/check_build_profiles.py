@@ -47,6 +47,18 @@ PROFILE_SITES: dict[str, tuple[str, str]] = {
         "build_linux.sh",
         r'else\s*\n\s*EXTRAS="([^"]+)"',
     ),
+    "build-standard-macos": (
+        "build_macos.sh",
+        r'else\s*\n\s*EXTRAS="([^"]+)"',
+    ),
+    "build-standard-windows": (
+        "build_windows.ps1",
+        r"\$extras = if \(\$Edition -eq 'Full'\) \{ '[^']+' \} else \{ '([^']+)' \}",
+    ),
+    "build-full-windows": (
+        "build_windows.ps1",
+        r"\$extras = if \(\$Edition -eq 'Full'\) \{ '([^']+)' \} else \{ '[^']+' \}",
+    ),
     "build-full-linux": (
         "build_linux.sh",
         r'if \[\[ "\$EDITION" == "Full" \]\]; then' + _COMMENT_GAP + r'\s*\n\s*EXTRAS="([^"]+)"',

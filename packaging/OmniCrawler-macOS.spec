@@ -10,13 +10,15 @@ from pathlib import Path
 import sys
 import tomllib
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, copy_metadata
 
 
 project_root = Path(SPECPATH).parent
 src_root = project_root / "src"
 packaging_root = project_root / "packaging"
 sys.path.insert(0, str(src_root))
+
+from omnicrawler.runtime.stdlib_bundle import stdlib_hiddenimports
 
 # B12-004：bundle 版本从 pyproject.toml 读取，不再硬编码（防发布时 info.plist
 # 与包版本漂移）。bump_version.py 更新版本时 spec 无需手工同步。
@@ -70,7 +72,12 @@ hiddenimports = sorted(set(hiddenimports + _pw_hidden + _lxml_hidden))
 #   **只在 `ssl` 能导入时才由 CPython 定义** ⇒ 冻结包里缺 `ssl`/`_ssl` 时，
 #   PyInstaller 的 nltk 运行时钩子（pyi_rth_nltk）一启动就抛 AttributeError、整个 app 起不来。
 #   显式声明：三平台一起修（Win/Linux 的构建 job 只构建、不启动产物，所以此前只有 macOS 暴露）。
+for _light_pkg in ("docx", "pptx"):
+    datas += collect_data_files(_light_pkg)
+    hiddenimports += collect_submodules(_light_pkg)
+
 hiddenimports = sorted(set(hiddenimports + ["ssl", "_ssl"]))
+hiddenimports = sorted(set(hiddenimports + stdlib_hiddenimports()))
 
 common = dict(
     pathex=[str(src_root)], binaries=_lxml_binaries + _pw_binaries, datas=datas,

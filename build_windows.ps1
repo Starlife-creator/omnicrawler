@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [switch]$SkipDependencyInstall,
     [switch]$SkipBrowserDownload,
@@ -198,7 +198,7 @@ if (-not $SkipDependencyInstall) {
     if ($BuilderPythonPath -and $resolvedBuilder -ne $resolvedVenvPython) {
         throw '-BuilderPythonPath 指向非构建 venv 的解释器；自动安装会污染该系统 Python，请改用 -SkipDependencyInstall。'
     }
-    $extras = if ($Edition -eq 'Full') { 'full' } else { 'gui,html,pdf,browser,async-http,security' }
+    $extras = if ($Edition -eq 'Full') { 'full' } else { 'gui,html,pdf,pdf-write,document,browser,async-http,security' }
     # C-#11：构建 venv 只装运行时 extras + `build`（PyInstaller 打包工具）；
     # 测试/lint 工具留在 `dev` extra，不进生产构建环境。`--no-dev` 同时排除 dev 依赖组。
     $syncArgs = @('sync', '--locked', '--no-dev', '--python', 'python', '--extra', 'build')
@@ -222,7 +222,7 @@ if (-not $SkipDependencyInstall) {
     if ($Edition -eq 'Full') {
         & $builderPython -c 'import PyInstaller, paddleocr, selenium, PySide6, pyarrow, psycopg, opensearchpy, pdfplumber, pypdfium2'
     } else {
-        & $builderPython -c 'import PyInstaller, PySide6, playwright, pdfplumber, pypdfium2, pypdf, reportlab, openpyxl'
+        & $builderPython -c 'import PyInstaller, PySide6, playwright, pdfplumber, pypdfium2, pypdf, reportlab, openpyxl, docx, pptx'
     }
     Assert-LastExit "The selected builder Python does not contain all $Edition dependencies."
 }

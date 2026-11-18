@@ -338,3 +338,124 @@ def test_install_verifies_hashes_itself_not_only_via_extract(tmp_path: Path, mon
     root.mkdir()
     with pytest.raises(mod.RecipeError, match="哈希|sha256"):
         mod.install_from_recipe(recipe, root, downloader=fake_download)
+
+
+def test_entry_runner_validation() -> None:
+    """entry.runner 仅允许受支持的运行器枚举（native / worker-wheelpack）。"""
+    from omnicrawler.services.component_recipe import RecipeError, validate_recipe
+
+    valid_native = _recipe(entry={"path": "ocr.exe", "runner": "native"})
+    assert validate_recipe(valid_native)["entry"]["runner"] == "native"
+
+    valid_worker = _recipe(entry={"path": "runner.py", "runner": "worker-wheelpack"})
+    assert validate_recipe(valid_worker)["entry"]["runner"] == "worker-wheelpack"
+
+    invalid = _recipe(entry={"path": "ocr.exe", "runner": "arbitrary-eval"})
+    with pytest.raises(RecipeError, match="entry.runner 不受支持"):
+        validate_recipe(invalid)
+
+
+def test_raw_single_file_artifact_assembly(tmp_path: Path) -> None:
+    """raw 构件：单文件原子落地、支持 filename、且防路径穿越。"""
+    from omnicrawler.services.component_recipe import (
+        RecipeError,
+        current_abi,
+        current_architecture,
+        current_platform,
+        install_from_recipe,
+        validate_recipe,
+    )
+
+    raw_file = tmp_path / "eng.traineddata"
+    raw_payload = b"fake-tessdata-traineddata"
+    raw_file.write_bytes(raw_payload)
+    digest = hashlib.sha256(raw_payload).hexdigest()
+
+    recipe = _recipe(
+        platforms=[current_platform()],
+        architectures=[current_architecture()],
+        python_abi=current_abi(),
+        artifacts=[
+            {
+                "url": "https://example.org/eng.traineddata",
+                "sha256": digest,
+                "size": len(raw_payload),
+                "format": "raw",
+                "extract_to": "tessdata",
+                "filename": "eng.traineddata",
+            }
+        ],
+        entry={"path": "tessdata/eng.traineddata", "protocol": "ocr-file-v1", "engine": "tesseract"},
+    )
+    validate_recipe(recipe)
+
+    def fake_download(url: str, dest: Path) -> None:
+        dest.write_bytes(raw_file.read_bytes())
+
+    root = tmp_path / "components"
+    root.mkdir()
+    summary = install_from_recipe(recipe, root, downloader=fake_download)
+    installed_entry = Path(summary["entry"])
+    assert installed_entry.is_file()
+    assert installed_entry.read_bytes() == raw_payload
+
+    # 反向断言：raw 构件试图通过 filename 穿越目录
+    evil_recipe = _recipe(
+        artifacts=[
+            {
+                "url": "https://example.org/eng.traineddata",
+                "sha256": digest,
+                "format": "raw",
+                "extract_to": "tessdata",
+                "filename": "../escape.bin",
+            }
+        ]
+    )
+    with pytest.raises(RecipeError, match="单个安全文件名|路径穿越"):
+        validate_recipe(evil_recipe)
+
+
+def test_tar_gz_artifact_assembly_and_strip_components(tmp_path: Path) -> None:
+    """tar.gz 构件：流式安全提取、支持 strip_components 剥离外层目录。"""
+    import io
+    import tarfile
+
+    from omnicrawler.services.component_recipe import (
+        current_abi,
+        current_architecture,
+        current_platform,
+        install_from_recipe,
+    )
+
+    tar_path = tmp_path / "bundle.tar.gz"
+    payload = b"tar-binary-content"
+    with tarfile.open(tar_path, "w:gz") as tf:
+        info = tarfile.TarInfo(name="bundle-v1/bin/tool.exe")
+        info.size = len(payload)
+        tf.addfile(info, io.BytesIO(payload))
+
+    digest = hashlib.sha256(tar_path.read_bytes()).hexdigest()
+    recipe = _recipe(
+        platforms=[current_platform()],
+        architectures=[current_architecture()],
+        python_abi=current_abi(),
+        artifacts=[
+            {
+                "url": "https://example.org/bundle.tar.gz",
+                "sha256": digest,
+                "format": "tar.gz",
+                "strip_components": 1,
+                "extract_to": "runtime",
+            }
+        ],
+        entry={"path": "runtime/bin/tool.exe", "protocol": "ocr-file-v1", "engine": "tesseract"},
+    )
+
+    def fake_download(url: str, dest: Path) -> None:
+        dest.write_bytes(tar_path.read_bytes())
+
+    root = tmp_path / "components_tar"
+    root.mkdir()
+    summary = install_from_recipe(recipe, root, downloader=fake_download)
+    assert (Path(summary["path"]) / "runtime" / "bin" / "tool.exe").read_bytes() == payload
+

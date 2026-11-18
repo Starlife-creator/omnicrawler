@@ -27,9 +27,24 @@
 [profiles]
 
 [profiles.build-standard]
-extras = "gui,html,pdf,browser,async-http,security"
-purpose = "三平台便携包 Standard edition 的构建 venv"
+extras = "gui,html,pdf,pdf-write,document,browser,async-http,security"
+purpose = "Linux 便携包 Standard edition 的构建 venv（含轻量纯 Python 跨功能文档库）"
 ci_evidence = "build.yml 三平台矩阵"
+
+[profiles.build-standard-macos]
+extras = "gui,html,pdf,pdf-write,document,browser,async-http,security"
+purpose = "macOS 便携包 Standard edition 的构建 venv（与 Linux/Windows Standard 同构）"
+ci_evidence = "build.yml 三平台矩阵"
+
+[profiles.build-standard-windows]
+extras = "gui,html,pdf,pdf-write,document,browser,async-http,security"
+purpose = "Windows 便携包 Standard edition 的构建 venv（与 Linux/macOS Standard 同构）"
+ci_evidence = "build.yml 三平台矩阵"
+
+[profiles.build-full-windows]
+extras = "full"
+purpose = "Windows 便携包 Full edition 全量测试基准构建 venv"
+ci_evidence = "build.yml Windows Full"
 
 [profiles.build-full-linux]
 extras = "full"

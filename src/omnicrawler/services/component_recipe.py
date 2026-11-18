@@ -32,13 +32,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
+import tarfile
 import zipfile
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..core.archive_security import (
+    DEFAULT_ZIP_READ_LIMITS,
     UnsafePackageError,
     copy_zip_member,
 )
@@ -49,6 +53,17 @@ SUPPORTED_SCHEMA = 1
 #: recipe 文件只接受这些扩展名。**刻意不含** .sh/.bat/.py/.exe/.ps1：
 #: recipe 必须是数据，不是程序。
 ALLOWED_RECIPE_SUFFIXES = (".json",)
+
+#: 支持的构件归档/落地格式：
+#: - zip / whl：PEP 427 wheel 本质即纯数据 ZIP 归档（无安装脚本）；
+#: - tar.gz：常见 Linux/macOS 原生工具链归档；
+#: - raw：上游单文件构件（如 Tesseract `.traineddata` 语言包），显式声明才启用。
+SUPPORTED_ARTIFACT_FORMATS = frozenset({"zip", "whl", "tar.gz", "raw"})
+
+#: 支持的组件运行入口承载形态：
+#: - native：独立可执行文件或数据入口（默认）；
+#: - worker-wheelpack：由宿主 `omnicrawler-worker` 隔离子进程挂载已校验 Wheel-Pack 执行。
+SUPPORTED_ENTRY_RUNNERS = frozenset({"native", "worker-wheelpack"})
 
 #: 允许出现在 recipe 里的顶层键。未知键一律拒绝——
 #: 否则一个 `post_install` 之类的"顺手加的功能"就能变成任意执行入口。
@@ -72,11 +87,16 @@ ALLOWED_ARTIFACT_KEYS = frozenset(
         "url",
         "sha256",
         "size",
+        "format",
+        "filename",
         "extract_to",
         "include",
         "strip_components",
     }
 )
+
+#: entry 允许的键。
+ALLOWED_ENTRY_KEYS = frozenset({"path", "protocol", "engine", "runner"})
 
 
 class RecipeError(ValueError):
@@ -132,15 +152,58 @@ def validate_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
     _require(isinstance(entry, dict), "recipe 需要 entry（入口声明）")
     assert isinstance(entry, dict)  # 供类型检查收窄
     _require(
-        set(entry) <= {"path", "protocol", "engine"},
-        f"entry 含不允许的键：{sorted(set(entry) - {'path', 'protocol', 'engine'})}",
+        set(entry) <= ALLOWED_ENTRY_KEYS,
+        f"entry 含不允许的键：{sorted(set(entry) - ALLOWED_ENTRY_KEYS)}",
     )
     path = entry.get("path")
     _require(bool(isinstance(path, str) and path.strip()), "entry.path 不能为空")
     assert isinstance(path, str)
     _safe_relative(path)
+    runner = entry.get("runner")
+    if runner is not None:
+        _require(
+            isinstance(runner, str) and runner in SUPPORTED_ENTRY_RUNNERS,
+            f"entry.runner 不受支持：{runner!r}（仅支持 {sorted(SUPPORTED_ENTRY_RUNNERS)}）",
+        )
 
     return recipe
+
+
+def infer_artifact_format(artifact: dict[str, Any]) -> str:
+    """解析构件格式；`raw` 必须显式声明，归档可按 URL 后缀确定性推断。"""
+    explicit = artifact.get("format")
+    if explicit is not None:
+        _require(
+            isinstance(explicit, str) and explicit in SUPPORTED_ARTIFACT_FORMATS,
+            f"不支持的构件 format：{explicit!r}（仅支持 {sorted(SUPPORTED_ARTIFACT_FORMATS)}）",
+        )
+        return str(explicit)
+    url_path = urlsplit(str(artifact.get("url", ""))).path.lower()
+    if url_path.endswith((".tar.gz", ".tgz")):
+        return "tar.gz"
+    if url_path.endswith(".whl"):
+        return "whl"
+    return "zip"
+
+
+def _resolve_raw_relative_path(extract_to: str, filename: str | None) -> PurePosixPath:
+    """解析单文件构件相对落盘路径，确保不为空、不含目录穿越或驱动器前缀。"""
+    if filename is not None:
+        _require(isinstance(filename, str) and bool(filename.strip()), "raw 构件的 filename 不能为空")
+        assert isinstance(filename, str)
+        clean_name = _safe_relative(filename)
+        _require(
+            len(clean_name.parts) == 1 and clean_name.name not in {".", ".."},
+            f"raw 构件的 filename 必须是单个安全文件名：{filename!r}",
+        )
+        if extract_to:
+            return _safe_relative(extract_to) / clean_name
+        return clean_name
+    _require(
+        bool(extract_to and extract_to.strip()) and not extract_to.endswith(("/", "\\")),
+        "raw 单文件构件必须通过 filename 或 extract_to 指定相对文件落盘路径",
+    )
+    return _safe_relative(extract_to)
 
 
 def _validate_artifact(artifact: Any, index: int) -> None:
@@ -161,16 +224,38 @@ def _validate_artifact(artifact: Any, index: int) -> None:
         f"artifact #{index} 缺少合法的 sha256 —— 没有哈希就无法校验来源，拒绝整份 recipe（不做部分信任）",
     )
 
+    fmt = infer_artifact_format(artifact)
+
     extract_to = artifact.get("extract_to", "")
     _require(isinstance(extract_to, str), f"artifact #{index} 的 extract_to 必须是字符串")
     if extract_to:
         _safe_relative(extract_to)
+
+    filename = artifact.get("filename")
+    if fmt == "raw":
+        _resolve_raw_relative_path(extract_to, filename)
+        _require(
+            artifact.get("include") is None and artifact.get("strip_components") is None,
+            f"artifact #{index} 为 raw 单文件构件，不支持 include 或 strip_components",
+        )
+    else:
+        _require(
+            filename is None,
+            f"artifact #{index} 仅在 format='raw' 时允许指定 filename",
+        )
 
     size = artifact.get("size")
     if size is not None:
         _require(
             type(size) is int and size >= 0,
             f"artifact #{index} 的 size 必须是非负整数",
+        )
+
+    strip_components = artifact.get("strip_components")
+    if strip_components is not None:
+        _require(
+            type(strip_components) is int and strip_components >= 0,
+            f"artifact #{index} 的 strip_components 必须是非负整数",
         )
 
     include = artifact.get("include")
@@ -184,11 +269,13 @@ def _validate_artifact(artifact: Any, index: int) -> None:
 
 
 def _safe_relative(value: str) -> PurePosixPath:
-    """拒绝绝对路径与 `..`（路径穿越）。"""
-    path = PurePosixPath(value.replace("\\", "/"))
+    """拒绝绝对路径、Windows 盘符前缀与 `..`（路径穿越）。"""
+    normalized = value.replace("\\", "/")
+    path = PurePosixPath(normalized)
+    _require(bool(normalized) and bool(path.parts), f"路径不能为空：{value!r}")
     _require(not path.is_absolute(), f"不允许绝对路径：{value!r}")
-    _require(".." not in path.parts, f"不允许路径穿越（..）：{value!r}")
-    _require(bool(path.parts), f"路径不能为空：{value!r}")
+    _require(":" not in path.parts[0], f"不允许驱动器前缀路径：{value!r}")
+    _require(".." not in path.parts and "." not in path.parts, f"不允许路径穿越（.. / .）：{value!r}")
     return path
 
 
@@ -286,20 +373,131 @@ def check_compatibility(
         )
 
 
+def _strip_relative_components(relative: PurePosixPath, count: int) -> PurePosixPath | None:
+    if count <= 0:
+        return relative
+    if len(relative.parts) <= count:
+        return None
+    return PurePosixPath(*relative.parts[count:])
+
+
+def _place_raw_artifact(
+    source_file: Path,
+    target_destination: Path,
+) -> None:
+    target_destination.parent.mkdir(parents=True, exist_ok=True)
+    temp_name = target_destination.with_name(f".{target_destination.name}.{os.getpid()}.tmp")
+    try:
+        with source_file.open("rb") as src, temp_name.open("xb") as dst:
+            while chunk := src.read(1024 * 1024):
+                dst.write(chunk)
+        os.replace(temp_name, target_destination)
+    except Exception:
+        temp_name.unlink(missing_ok=True)
+        raise
+
+
+def _extract_tar_member(
+    tf: tarfile.TarFile,
+    info: tarfile.TarInfo,
+    destination: Path,
+) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temp_name = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
+    source = tf.extractfile(info)
+    if source is None:
+        return
+    written = 0
+    try:
+        with source, temp_name.open("xb") as target:
+            while chunk := source.read(1024 * 1024):
+                written += len(chunk)
+                if written > DEFAULT_ZIP_READ_LIMITS.max_file_bytes:
+                    raise UnsafePackageError(f"package member exceeds max size: {info.name!r}")
+                target.write(chunk)
+        if written != info.size:
+            raise UnsafePackageError(f"package member size mismatch: {info.name!r}")
+        mode = info.mode & 0o777 if info.mode else None
+        if mode:
+            try:
+                temp_name.chmod(mode)
+            except OSError:
+                pass
+        os.replace(temp_name, destination)
+    except Exception:
+        temp_name.unlink(missing_ok=True)
+        raise
+
+
+def _validate_and_select_tar(
+    tf: tarfile.TarFile,
+    wanted: set[str] | None,
+    strip_count: int = 0,
+) -> list[tuple[tarfile.TarInfo, PurePosixPath]]:
+    infos = tf.getmembers()
+    if len(infos) > DEFAULT_ZIP_READ_LIMITS.max_entries:
+        raise UnsafePackageError(f"package contains more than {DEFAULT_ZIP_READ_LIMITS.max_entries} entries")
+
+    selected: list[tuple[tarfile.TarInfo, PurePosixPath]] = []
+    total = 0
+    seen: set[str] = set()
+
+    for info in infos:
+        if info.isdir():
+            continue
+        if not (info.isreg() or info.isfile()):
+            raise UnsafePackageError(f"package links or special files are not supported: {info.name!r}")
+        if info.size < 0 or info.size > DEFAULT_ZIP_READ_LIMITS.max_file_bytes:
+            raise UnsafePackageError(f"package member is too large: {info.name!r}")
+        total += info.size
+        if total > DEFAULT_ZIP_READ_LIMITS.max_total_bytes:
+            raise UnsafePackageError("package exceeds the total uncompressed size limit")
+
+        relative = _safe_relative(info.name)
+        if strip_count > 0:
+            stripped = _strip_relative_components(relative, strip_count)
+            if stripped is None:
+                continue
+            relative = stripped
+
+        name = relative.as_posix()
+        key = name.casefold()
+        if key in seen:
+            raise UnsafePackageError(f"package contains a duplicate path: {info.name!r}")
+        seen.add(key)
+
+        if wanted is not None and name not in wanted:
+            continue
+        selected.append((info, relative))
+
+    return selected
+
+
 def extract_artifact(
     archive: Path,
     target: Path,
     *,
     expected_sha256: str | None = None,
     include: Iterable[str] | None = None,
+    artifact_format: str | None = None,
+    filename: str | None = None,
+    strip_components: int = 0,
 ) -> None:
-    """把构件解压到 ``target``，**先校验后落盘**。
+    """把构件解压/落盘到 ``target``，**先校验后落盘**。
+
+    支持格式：
+    - `zip` / `whl`：经 `archive_security` 流式校验解压；
+    - `tar.gz`：经流式边界校验解压；
+    - `raw`：校验单文件哈希并原子落地到目标文件位置。
 
     :param expected_sha256: 期望的归档哈希。为 None 时**不做哈希校验**
         （只应在测试或调用方已自行校验时使用）。
     :param include: 只解压这些相对路径；None 表示全部。
+    :param artifact_format: 构件格式（zip / whl / tar.gz / raw）；None 自动探测。
+    :param filename: 当 format='raw' 且 target 为目录时，指定单文件名称。
+    :param strip_components: 解压归档时剥离前 N 层目录。
 
-    **两阶段**：先在临时目录完成校验与解压，成功后才原子替换到 ``target``。
+    **两阶段**：先在临时目录/文件完成校验与提取，成功后才原子替换到 ``target``。
     任何失败都不会留下半装状态。
     """
     import tempfile
@@ -320,39 +518,74 @@ def extract_artifact(
             f"构件哈希不符：期望 {expected_sha256[:16]}…，实际 {actual[:16]}… —— 拒绝落盘",
         )
 
+    fmt = artifact_format
+    if fmt is None:
+        if tarfile.is_tarfile(archive):
+            fmt = "tar.gz"
+        else:
+            fmt = "zip"
+
+    if fmt == "raw":
+        destination = target / filename if filename else target
+        _place_raw_artifact(archive, destination)
+        return
+
     wanted = None
     if include is not None:
         wanted = {str(_safe_relative(item)) for item in include}
 
-    try:
-        with zipfile.ZipFile(archive) as zf:
-            resolved = _validate_and_select(zf, wanted)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.TemporaryDirectory(dir=target.parent, prefix=".assemble-") as staging:
-                staging_path = Path(staging)
-                # 用 copy_zip_member 而不是 read_zip_member：后者把整个成员读进内存，
-                # 而组件构件可能是几百 MB。前者流式写盘 + 原子改名 + 带出权限位。
-                for info, relative in resolved:
-                    destination = staging_path / relative
-                    copy_zip_member(zf, info, destination)
-                # 全部成功后才原子替换
-                if target.exists():
-                    import shutil
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=target.parent, prefix=".assemble-") as staging:
+        staging_path = Path(staging)
+        try:
+            if fmt == "tar.gz":
+                with tarfile.open(archive, "r:*") as tf:
+                    tar_resolved = _validate_and_select_tar(tf, wanted, strip_count=strip_components)
+                    for info, relative in tar_resolved:
+                        destination = staging_path / relative
+                        _extract_tar_member(tf, info, destination)
+            else:
+                with zipfile.ZipFile(archive) as zf:
+                    resolved = _validate_and_select(zf, wanted, strip_count=strip_components)
+                    for info, relative in resolved:
+                        destination = staging_path / relative
+                        copy_zip_member(zf, info, destination)
+        except UnsafePackageError as exc:
+            raise RecipeError(f"构件包不安全，已拒绝装配：{exc}") from exc
 
-                    shutil.rmtree(target)
-                staging_path.replace(target)
-    except UnsafePackageError as exc:
-        raise RecipeError(f"构件包不安全，已拒绝装配：{exc}") from exc
+        # 全部成功后才原子替换
+        if target.exists():
+            import shutil
+
+            shutil.rmtree(target)
+        staging_path.replace(target)
 
 
-def _validate_and_select(zf: zipfile.ZipFile, wanted: set[str] | None) -> list[tuple[Any, PurePosixPath]]:
-    """逐成员做路径安全检查，并按 include 过滤。"""
+def _validate_and_select(
+    zf: zipfile.ZipFile,
+    wanted: set[str] | None,
+    strip_count: int = 0,
+) -> list[tuple[Any, PurePosixPath]]:
+    """逐成员做路径安全检查，并按 include 过滤与 strip_components 剥离。"""
     selected: list[tuple[Any, PurePosixPath]] = []
+    seen: set[str] = set()
     for info in zf.infolist():
         if info.is_dir():
             continue
         relative = _safe_relative(info.filename)
-        if wanted is not None and str(relative) not in wanted:
+        if strip_count > 0:
+            stripped = _strip_relative_components(relative, strip_count)
+            if stripped is None:
+                continue
+            relative = stripped
+
+        name = relative.as_posix()
+        key = name.casefold()
+        if key in seen:
+            raise UnsafePackageError(f"package contains a duplicate path: {info.filename!r}")
+        seen.add(key)
+
+        if wanted is not None and name not in wanted:
             continue
         selected.append((info, relative))
     return selected
@@ -419,12 +652,16 @@ def install_from_recipe(
         # 阶段二：逐个解压到**暂存区**（不是 destination）
         for index, artifact in enumerate(artifacts):
             archive = downloaded / f"artifact-{index}.zip"
+            fmt = infer_artifact_format(artifact)
             sub = assembled / (artifact.get("extract_to") or "")
             extract_artifact(
                 archive,
                 sub,
                 expected_sha256=artifact["sha256"],
                 include=artifact.get("include"),
+                artifact_format=fmt,
+                filename=artifact.get("filename"),
+                strip_components=int(artifact.get("strip_components") or 0),
             )
 
         # 阶段三：入口必须存在，然后才原子替换

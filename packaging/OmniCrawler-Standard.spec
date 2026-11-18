@@ -3,13 +3,15 @@
 from pathlib import Path
 import sys
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, copy_metadata
 
 
 project_root = Path(SPECPATH).parent
 src_root = project_root / "src"
 packaging_root = project_root / "packaging"
 sys.path.insert(0, str(src_root))
+
+from omnicrawler.runtime.stdlib_bundle import stdlib_hiddenimports
 
 datas = [
     (str(src_root / "omnicrawler" / "templates"), "omnicrawler/templates"),
@@ -64,7 +66,14 @@ hiddenimports = sorted(set(hiddenimports + _lxml_hidden))
 #   **只在 `ssl` 能导入时才由 CPython 定义** ⇒ 冻结包里缺 `ssl`/`_ssl` 时，
 #   PyInstaller 的 nltk 运行时钩子（pyi_rth_nltk）一启动就抛 AttributeError、整个 app 起不来。
 #   显式声明：三平台一起修（Win/Linux 的构建 job 只构建、不启动产物，所以此前只有 macOS 暴露）。
+# 轻量纯 Python 跨功能文档库（docx / pptx 内置默认空白模板文件，需显式收集包内数据）
+for _light_pkg in ("docx", "pptx"):
+    datas += collect_data_files(_light_pkg)
+    hiddenimports += collect_submodules(_light_pkg)
+
 hiddenimports = sorted(set(hiddenimports + ["ssl", "_ssl"]))
+# 完整标准库底座：供冻结后按需安装的 Wheel-Pack 组件在 omnicrawler-worker 子进程内安全导入
+hiddenimports = sorted(set(hiddenimports + stdlib_hiddenimports()))
 
 common = dict(
     pathex=[str(src_root)], binaries=_lxml_binaries + _pw_binaries, datas=datas, hiddenimports=hiddenimports,
