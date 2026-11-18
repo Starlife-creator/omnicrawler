@@ -259,6 +259,17 @@ GATES: tuple[Gate, ...] = (
         script="tools/gates/check_extras_expansion.py",
     ),
     Gate(
+        name="benchmark_quality",
+        args=("tools/benchmarks/benchmark_quality.py",),
+        sets=_STATIC,
+        description="采集质量基准（离线）：完整/准确/来源匹配/无多余无重复，字段自报完整度可信",
+        script="tools/benchmarks/benchmark_quality.py",
+        ci_note=(
+            "全程离线（页面由本地 HTTP 服务提供），因此本地自证与 CI 逐字相同；"
+            "不需要浏览器、不联网、不写仓库。"
+        ),
+    ),
+    Gate(
         name="check_silent_exception_handlers",
         args=("tools/gates/check_silent_exception_handlers.py",),
         sets=_STATIC,

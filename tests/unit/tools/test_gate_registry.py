@@ -48,7 +48,12 @@ _WORKFLOW_DIR = _REPO_ROOT / ".github" / "workflows"
 # 这里显式列出这类脚本——不改成「扫 tools/ 下所有 .py」是**有意**的：
 # CI 里还有构建与辅助脚本（build_wheel.py、i18n_stats.py、generate_sbom.py、
 # checkout_market.py …），它们不是门禁，一律纳入会让双向断言立刻变成噪声红。
-_NON_CHECK_GATE_SCRIPTS = ("releasing/post_bump_steps.py",)
+_NON_CHECK_GATE_SCRIPTS = (
+    "releasing/post_bump_steps.py",
+    # 采集质量基线：不是 `check_*` 命名（它是可独立运行的基准工具，会产 JSON 报告），
+    # 但确实作为 static 门禁被 CI 执行 —— 判据是 4/4 任务满足精确交付契约。
+    "benchmarks/benchmark_quality.py",
+)
 _SCRIPT_RE = re.compile(
     r"tools/(gates/check_[a-z0-9_]+\.py|"
     + "|".join(re.escape(name) for name in _NON_CHECK_GATE_SCRIPTS)

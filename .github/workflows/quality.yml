@@ -238,6 +238,10 @@ jobs:
       - if: ${{ !cancelled() && steps.core_coverage.outcome == 'success' }}
         run: python -m coverage report
       - run: python -m omnicrawler.cli templates validate
+      # 采集质量基准（离线）：完整/准确/来源匹配/无多余无重复。
+      # 页面由本地 HTTP 服务提供 ⇒ 不联网、不需浏览器，本地与 CI 逐字相同。
+      # 判据是 4/4 任务满足精确交付契约；不满足时退出码 1 令作业判红。
+      - run: python tools/benchmarks/benchmark_quality.py --json artifacts/ci/quality-benchmark.json
       # 范围与 tools/gate_registry.py 的 ruff 门禁保持一致（含 tools）；
       # 本地 `python tools/self_verify.py` 跑的就是同一集合。
       - run: python -m ruff check src tests tools
