@@ -135,9 +135,20 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         executable = locate_executable(root)
         if executable is None:
-            print(f"::warning::{edition} 产物里没找到可执行文件，无法对账")
-            return 0
+            # 同样必须返回非 0：没有可执行文件就拿不到报告，对账无法进行。
+            # 早先这里返回 0，CI 会继续拿缺一份报告去对账（实测踩到）。
+            print(f"::error::{edition} 产物里没找到可执行文件，无法对账")
+            return 3
         report = probe(executable, root)
+        if not report:
+            # **探测失败必须显式报错**，不能写个空 {} 就当"这个 edition 零能力"。
+            # 否则对账会得出「Standard 缺 N 项能力」这种误导性结论——
+            # 真实原因是"能力报告没读出来"，不是产品缺功能（实测踩到）。
+            print(
+                f"::error::{edition} 的能力报告读不出来"
+                f"（executable={executable}），无法对账"
+            )
+            return 3
         target = output / f"cap-{edition}.json"
         target.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
         print(f"已写 {target}（{len(report)} 个顶层键）")

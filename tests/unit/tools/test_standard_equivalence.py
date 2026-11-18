@@ -256,8 +256,9 @@ def test_collector_missing_edition_warns_not_silently_passes(tmp_path: Path) -> 
 
     out = tmp_path / "out"
     code = collect.main([str(tmp_path), str(out)])
-    assert code == 0, "缺 edition 时不该硬失败（由对账步骤报「无法对账」）"
-    # 但必须留下可见线索
+    # 缺 edition ⇒ 对账无法进行 ⇒ 必须返回非 0（早期版本这里返回 0，
+    # 导致 CI 拿缺一份报告去对账并得出误导性结论）。
+    assert code == 3, f"缺 edition 应返回 3（无法对账），实际 {code}"
     assert not (out / "cap-standard.json").exists()
 
 
@@ -486,3 +487,50 @@ def test_real_capability_report_covers_native() -> None:
         "真实 capability_report 的 native 段一项都没被收集 —— "
         "对账会漏掉 chromium/tesseract/paddle_models 这些核心原生能力"
     )
+
+# ── 收集失败必须显式非 0，不能拿空报告去对账 ─────────────────────────────
+@pytest.mark.skipif(not _COLLECT.is_file(), reason="需要收集脚本")
+def test_collector_returns_nonzero_when_executable_missing(tmp_path: Path) -> None:
+    """没有可执行文件时返回 3，而不是 0。
+
+    早先这里只打 `::warning::` 然后 return 0，CI 会继续拿缺一份报告去对账，
+    得出「Standard 缺 N 项能力」这种**误导性结论**——真实原因是能力报告
+    根本没读出来。
+    """
+    collect = _load_collector()
+    root = tmp_path / "Full" / "OmniCrawler"
+    root.mkdir(parents=True)
+    (root / "EDITION.txt").write_text("OmniCrawler Full portable edition", encoding="utf-8")
+
+    code = collect.main([str(tmp_path), str(tmp_path / "out")])
+    assert code == 3, f"应返回 3（无法对账），实际 {code}"
+    assert not (tmp_path / "out" / "cap-full.json").exists(), (
+        "探测失败却写出了报告文件 —— 空报告会被当成「该 edition 零能力」"
+    )
+
+
+@pytest.mark.skipif(not _COLLECT.is_file(), reason="需要收集脚本")
+def test_probe_failure_is_not_written_as_empty_report(tmp_path: Path) -> None:
+    """探测返回空 dict 时必须报错，不能写 `{}` 当成有效报告。"""
+    collect = _load_collector()
+    root = tmp_path / "Full" / "OmniCrawler"
+    root.mkdir(parents=True)
+    (root / "EDITION.txt").write_text("OmniCrawler Full portable edition", encoding="utf-8")
+    # 有个"可执行文件"但不是真的可执行 —— probe 会失败返回空 dict
+    (root / "omnicrawler-cli").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+
+    code = collect.main([str(tmp_path), str(tmp_path / "out")])
+    if code == 0:
+        # 若环境恰好能跑起来，至少要写出非空报告
+        payload = json.loads((tmp_path / "out" / "cap-full.json").read_text(encoding="utf-8"))
+        assert payload, "写了空报告却返回成功"
+    else:
+        assert code == 3, f"探测失败应返回 3，实际 {code}"
+
+
+def test_ci_stops_when_collection_fails() -> None:
+    """CI 步骤必须在收集失败时停止，不能继续拿残缺报告对账。"""
+    release = _REPO / ".github" / "workflows" / "release.yml"
+    text = release.read_text(encoding="utf-8")
+    assert "collect_code" in text, "CI 未检查收集脚本退出码"
+    assert 'exit "$collect_code"' in text, "CI 未在收集失败时中止"
