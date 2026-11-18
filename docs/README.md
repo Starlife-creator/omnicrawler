@@ -44,7 +44,7 @@
 
 - [桌面运行、工作区与组件](DESKTOP_RUNTIME_1.4.md)
 - [可选组件管理](COMPONENTS.md)：离线信任、注册表事务、回滚和搬迁；**市场 recipe 装配与 Wheel-Pack 隔离子进程运行**（2026-11-19 起）。
-- [2026-10-04 全面优化实施与验收](COMPREHENSIVE_OPTIMIZATION_2026-10-04.md)：本机 Full 实测、开发场景、证据与发布边界。
+- [2026-10-04 全面优化实施与验收](COMPREHENSIVE_OPTIMIZATION_2026-10-04.md)：**已归档（2026-11-19）**，入口页列出原文位置、仍有效的三条边界与未完成项的去处。
 - [本地证据驱动的提取修复](REPAIR_WORKFLOW.md)：候选预览、分级应用、观察与恢复。
 - [选定交付文档分析](ARCHIVE_ANALYSIS.md)：事实回链、可选模型解释和阶段恢复。
 - [工作流参数化复用](TASK_REUSE_WORKFLOW.md)：试跑摘要、脱敏捕获、参数重填和重新验收。
