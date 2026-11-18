@@ -241,8 +241,19 @@ def aggregate_catalogs(
                 seen_sources_by_id.setdefault(entry_id, set()).add(fingerprint)
                 count += 1
         source_report.append(
-            {"url": url, "kind": kind, "trust": trust_level(kind), "ok": True,
-             "error": "", "count": count}
+            {
+                "url": url,
+                "kind": kind,
+                "trust": trust_level(kind),
+                "ok": True,
+                "error": "",
+                "count": count,
+                # 索引新鲜度：镜像源常有同步周期（数分钟至数小时），
+                # 用户需要知道"这个源的数据有多旧"。没有这两个字段，
+                # 镜像滞后会以"看不到刚发布的版本"的形式静默发生。
+                "generated_at": str(catalog.get("generated_at") or ""),
+                "sequence": catalog.get("sequence"),
+            }
         )
 
     # 同一 id 出现多个指纹 ⇒ 双方标记冲突（不静默择一）

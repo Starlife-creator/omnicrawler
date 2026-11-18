@@ -246,6 +246,7 @@ class ComponentManagerPanel(WorkerOwnedWidget):
             MarketAggregationError,
             aggregate_market_catalogs,
             failed_sources,
+            freshness_summary,
             source_summary,
         )
 
@@ -283,10 +284,12 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         self._entries = components_from_catalog(aggregated)
         self._market_list.clear()
         source_note = source_summary(aggregated)
+        stale_note = freshness_summary(aggregated)
         if not self._entries:
-            self._market_status.setText(
-                _("市场暂无组件。") + (f"（{source_note}）" if source_note else "")
-            )
+            detail = "（" + source_note + "）" if source_note else ""
+            if stale_note:
+                detail += _("；镜像索引滞后：") + stale_note
+            self._market_status.setText(_("市场暂无组件。") + detail)
             return
         broken = failed_sources(aggregated)
         for entry in self._entries:
@@ -299,10 +302,10 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         if broken:
             # 失败源必须可见——否则用户以为"就这么多"
             note += _("；{n} 个源不可用").format(n=len(broken))
+        if stale_note:
+            # 索引新鲜度：镜像有同步周期，用户需要知道"没有某条目"是不是因为滞后
+            note += _("；索引滞后：") + stale_note
         self._market_status.setText(note + _("。选中可查看上游域名与下载量。"))
-        self._market_status.setText(
-            _("共 {n} 个组件。选中可查看上游域名与下载量。").format(n=len(self._entries))
-        )
 
     def _reload_catalog_filtered(self) -> None:
         """按当前搜索词重画列表（数据已在 `self._entries`，不重新拉目录）。"""

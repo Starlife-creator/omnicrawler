@@ -136,3 +136,107 @@ def source_summary(aggregated: Mapping[str, Any]) -> str:
     if failed == 0:
         return f"{ok} 个市场源可用"
     return f"{ok} 个市场源可用，{failed} 个失败"
+
+#: 索引滞后多久算"需要注意"（秒）。镜像同步周期通常数分钟到数小时；
+#: 超过 24 小时基本可以确定对方没在同步了。
+STALE_AFTER_SECONDS = 24 * 3600
+
+#: 滞后多久开始温和提示（秒）。12 小时以上就值得标黄。
+AGING_AFTER_SECONDS = 12 * 3600
+
+
+def parse_generated_at(value: Any) -> float:
+    """把 catalog 的 `generated_at` 解析成 epoch 秒；无法解析返回 0。"""
+    text = str(value or "").strip()
+    if not text:
+        return 0.0
+    try:
+        from datetime import datetime
+
+        # catalog 用 ISO 8601 带时区（如 2026-11-18T16:28:59+00:00）
+        normalized = text.replace("Z", "+00:00")
+        return datetime.fromisoformat(normalized).timestamp()
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def index_freshness(
+    generated_at: Any,
+    *,
+    now: float | None = None,
+) -> tuple[str, str]:
+    """判断某个源的索引新鲜度，返回 (状态, 人类可读说明)。
+
+    状态取值：
+
+    * `fresh` —— 24 小时内，正常
+    * `aging` —— 12~24 小时，温和提示
+    * `stale` —— 超过 24 小时，明确提示
+    * `unknown` —— 无法解析时间戳（旧格式或缺失）
+
+    **为什么需要它**：镜像站有同步周期，可能拉不到刚发布的版本，或晚一步
+    收到下架墓碑。用户看到"镜像里没有这个插件"时，需要知道是"真没有"
+    还是"镜像还没同步"。
+    """
+    epoch = parse_generated_at(generated_at)
+    if epoch <= 0:
+        return "unknown", "索引时间未知"
+
+    import time as _time
+
+    reference = now if now is not None else _time.time()
+    age = reference - epoch
+    if age < 0:
+        # 时间在未来：时钟偏差或恶意的旧签名，按未知处理而不是"非常新鲜"
+        return "unknown", "索引时间异常"
+
+    hours = age / 3600
+    if age <= AGING_AFTER_SECONDS:
+        return "fresh", f"索引生成于 {hours:.0f} 小时前" if hours >= 1 else "索引刚刚更新"
+    if age <= STALE_AFTER_SECONDS:
+        return "aging", f"索引已 {hours:.0f} 小时未更新，可能缺少最新内容"
+    days = age / 86400
+    return "stale", f"索引已 {days:.0f} 天未更新，可能缺少最新内容"
+
+
+def freshness_of_sources(
+    aggregated: Mapping[str, Any],
+    *,
+    now: float | None = None,
+) -> list[dict[str, Any]]:
+    """对聚合结果里每个**成功**的源算新鲜度。
+
+    失败源不参与——它们已经有 `error` 说明，再算新鲜度只会分散注意力。
+    """
+    out: list[dict[str, Any]] = []
+    for item in aggregated.get("sources") or []:
+        if not item.get("ok"):
+            continue
+        state, note = index_freshness(item.get("generated_at"), now=now)
+        out.append(
+            {
+                "url": item.get("url", ""),
+                "kind": item.get("kind", ""),
+                "state": state,
+                "note": note,
+                "generated_at": item.get("generated_at", ""),
+                "count": item.get("count", 0),
+            }
+        )
+    return out
+
+
+def freshness_summary(
+    aggregated: Mapping[str, Any],
+    *,
+    now: float | None = None,
+) -> str:
+    """把各源新鲜度渲染成一行；全新鲜且单源时返回空串（不打扰）。"""
+    states = freshness_of_sources(aggregated, now=now)
+    if not states:
+        return ""
+    aging = [s for s in states if s["state"] in {"aging", "stale"}]
+    if not aging:
+        return ""
+    parts = [f"{s['url']}: {s['note']}" for s in aging]
+    return "；".join(parts)
