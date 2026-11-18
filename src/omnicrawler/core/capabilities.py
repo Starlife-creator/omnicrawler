@@ -18,6 +18,27 @@ from pathlib import Path
 from typing import Any
 
 from .._version import __version__
+from .capability_slots import (
+    CapabilityProvider as CapabilityProvider,
+)
+from .capability_slots import (
+    CapabilitySlot as CapabilitySlot,
+)
+from .capability_slots import (
+    CapabilitySlotRegistry as CapabilitySlotRegistry,
+)
+from .capability_slots import (
+    ProviderSource as ProviderSource,
+)
+from .capability_slots import (
+    build_builtin_slot_registry as build_builtin_slot_registry,
+)
+from .capability_slots import (
+    default_capability_slots as default_capability_slots,
+)
+from .capability_slots import (
+    discover_installed_providers as discover_installed_providers,
+)
 
 LOGGER = logging.getLogger(__name__)
 
