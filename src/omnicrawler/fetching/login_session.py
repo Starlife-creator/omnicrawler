@@ -193,6 +193,14 @@ class PlaywrightLoginLauncher:
         self._playwright: Any | None = None
         self._browser: Any | None = None
         self._context: Any | None = None
+        #: 当前登录窗使用的内核（`chromium` / `firefox` / `webkit`）。
+        #: 在 `open()` 时按解析结果赋值，`capture()` 时写进快照元数据。
+        self._engine_family: str = ""
+
+    @property
+    def engine_family(self) -> str:
+        """当前登录窗所用内核；未打开时为空串。"""
+        return self._engine_family
 
     # ── LoginLauncher 协议 ────────────────────────────────
     def open(
@@ -204,6 +212,7 @@ class PlaywrightLoginLauncher:
         storage_state_path: Path,
     ) -> None:
         runtime_spec = resolve_browser_runtime(self._config, headless=False)
+        self._engine_family = runtime_spec.engine_family
         user_agent = self._config.section("http").get("user_agent")
         manager = self._factory() if self._factory is not None else _default_sync_playwright()
         playwright = manager.start()
@@ -235,7 +244,17 @@ class PlaywrightLoginLauncher:
         cookies = context.cookies()
         # U5（§11.8）：storage_state() 取 dict → 信封原子写（0600）。
         # 旧实现的 .tmp 明文中转文件不复存在 —— 明文自始至终不落盘。
-        session_crypto.save_storage_state(context.storage_state(), storage_state_path)
+        state = context.storage_state()
+        # 记录录制时的内核：登录态与内核指纹绑定，跨内核复用要能被识别出来
+        # （否则用户在 Firefox 里复用 Chromium 的会话，UA/TLS 指纹不一致，
+        # 站点可能直接判会话异常而现场毫无线索）。
+        if isinstance(state, dict):
+            meta = state.get(session_state.SESSION_META_KEY)
+            if not isinstance(meta, dict):
+                meta = {}
+            meta["engine_family"] = self._engine_family
+            state[session_state.SESSION_META_KEY] = meta
+        session_crypto.save_storage_state(state, storage_state_path)
         domains = tuple(
             sorted({str(item.get("domain", "")) for item in cookies if item.get("domain")})
         )

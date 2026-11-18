@@ -79,6 +79,15 @@ SESSION_NAME_DIGEST_LENGTH = 12
 DEFAULT_NAME_FRAGMENT = "session"
 """账户名为空/全非法字符时的前缀兜底。"""
 
+SESSION_META_KEY = "_omnicrawler"
+"""快照里的**自有命名空间**键。
+
+Playwright 的 storage_state 标准字段只有 ``cookies`` 与 ``origins``；
+我们额外需要记录"这个快照是哪个内核录的"。用一个带前缀的命名空间键
+装这些自有元数据，而不是往顶层塞新键——第三方工具读这个快照时
+不会把我们的字段误当成 Playwright 约定。
+"""
+
 _CONTEXT_KEY_SEPARATOR = "|"
 _UNSAFE_NAME_FALLBACK = "_"
 _ALLOWED_NAME_CHARS = "-_"
@@ -204,6 +213,13 @@ class SessionSummary:
     expired_cookie_count: int = 0
     session_cookie_count: int = 0
     earliest_cookie_expiry: float | None = None
+    #: 该快照是在哪个浏览器内核下录制的（`chromium` / `firefox` / `webkit`）。
+    #:
+    #: **为什么必须记录**：登录态与内核指纹绑定——用 Chromium 登录拿到的 cookie
+    #: 到 Firefox 下复用，UA 与 TLS 指纹不一致，站点可能直接判定会话异常。
+    #: 空字符串表示「旧快照，录制时未记录」；读取方应视为**未知**而不是默认
+    #: chromium——默认会让跨内核复用变静默，正是要防的形态。
+    engine_family: str = ""
 
     @property
     def size_bytes(self) -> int:
@@ -240,11 +256,17 @@ def summarize_session(path: Path) -> SessionSummary:
     expired = 0
     session_cookies = 0
     expiries: list[float] = []
+    engine_family = ""
     try:
         data = load_storage_state(file_path, migrate=False)
     except (OSError, SessionCryptoError, SecretsStoreError):
         data = None
     if isinstance(data, Mapping):
+        # 内核标记存在 `_omnicrawler` 命名空间里，不污染 Playwright 的
+        # `cookies` / `origins` 标准字段——第三方工具读这个快照时不至于困惑。
+        meta = data.get(SESSION_META_KEY)
+        if isinstance(meta, Mapping):
+            engine_family = str(meta.get("engine_family") or "").strip().lower()
         cookies = data.get("cookies")
         if isinstance(cookies, list):
             readable = True
@@ -280,6 +302,7 @@ def summarize_session(path: Path) -> SessionSummary:
         expired_cookie_count=expired,
         session_cookie_count=session_cookies,
         earliest_cookie_expiry=min(expiries) if expiries else None,
+        engine_family=engine_family,
     )
 
 
