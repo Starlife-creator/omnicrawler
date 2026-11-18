@@ -9,7 +9,7 @@ from ..accessibility import AccessibilityProfile, apply_accessibility
 from ..design_system import apply_design_system
 from ..i18n import _
 from ..motion_signal import MotionSignal
-from ..navigation import NavIndex
+from ..navigation import ROW_TO_KEY, NavIndex, NavKey
 from ..widgets.toast import ToastManager
 from ._base import _BaseDelegate
 
@@ -30,36 +30,36 @@ class ThemeManager(_BaseDelegate):
             })
         if not hasattr(mw, "_nav"):
             return
-        # 核心工作流在所有模式都可见；技术工具随用户能力渐进披露。
-        simple_hidden = {
-            NavIndex.PDF_WORKBENCH,
-            NavIndex.CONVERT_TOOL,
-            NavIndex.YAML_EDITOR,
-            NavIndex.EVIDENCE,
-            NavIndex.SCENE,
-            NavIndex.LOGIN_SESSION,
-            NavIndex.QML_SHOWCASE,
-            NavIndex.CHANGE_MONITOR,
-            NavIndex.PLUGIN_MARKET,
-            NavIndex.DEVELOPER,
+        # 核心工作流在所有模式都可见；技术工具随用户能力渐进披露（按稳定 NavKey 判定，不依赖静态行号）。
+        simple_hidden_keys = {
+            NavKey.PDF_WORKBENCH,
+            NavKey.CONVERT_TOOL,
+            NavKey.YAML_EDITOR,
+            NavKey.EVIDENCE,
+            NavKey.SCENE,
+            NavKey.LOGIN_SESSION,
+            NavKey.QML_SHOWCASE,
+            NavKey.CHANGE_MONITOR,
+            NavKey.PLUGIN_MARKET,
+            NavKey.DEVELOPER,
         }
-        developer_only = {
-            NavIndex.EVIDENCE,
-            NavIndex.PLUGIN_MARKET,
-            NavIndex.DEVELOPER,
+        developer_only_keys = {
+            NavKey.EVIDENCE,
+            NavKey.PLUGIN_MARKET,
+            NavKey.DEVELOPER,
         }
+        key_by_row = getattr(mw, "_nav_key_by_row", ROW_TO_KEY)
         for index in range(mw._nav.count()):
             item = mw._nav.item(index)
             assert item is not None
-            if index == NavIndex.WORK_HEADER:
+            key = key_by_row.get(index)
+            if key == NavKey.GROUP_WORK:
                 hidden = False
-            elif index in (NavIndex.AUTOMATION_HEADER, NavIndex.TOOLS_HEADER):
-                hidden = mode == "simple"
-            elif index == NavIndex.ADVANCED_HEADER:
+            elif key in (NavKey.GROUP_AUTOMATION, NavKey.GROUP_TOOLS, NavKey.GROUP_ADVANCED):
                 hidden = mode == "simple"
             else:
-                hidden = index in simple_hidden if mode == "simple" else (
-                    index in developer_only if mode == "professional" else False
+                hidden = key in simple_hidden_keys if mode == "simple" else (
+                    key in developer_only_keys if mode == "professional" else False
                 )
             item.setHidden(hidden)
         mw._toggle_btn.setVisible(mode != "simple")
@@ -80,7 +80,8 @@ class ThemeManager(_BaseDelegate):
             )
         current_item = mw._nav.currentItem()
         if current_item is not None and current_item.isHidden():
-            mw._nav.setCurrentRow(NavIndex.WORKSPACE)
+            row_by_key = getattr(mw, "_nav_row_by_key", {})
+            mw._nav.setCurrentRow(row_by_key.get(NavKey.WORKSPACE, NavIndex.WORKSPACE))
         messages = {
             "simple": _("简单模式：仅显示创建、试跑、运行和结果等核心操作"),
             "professional": _("专业模式：可编辑 YAML 和高级采集规则"),

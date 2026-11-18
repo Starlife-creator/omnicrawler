@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
 from ..design_system import PageTransitionController
 from ..home import HomePage
 from ..i18n import _
-from ..navigation import STACK_INDEX, NavIndex, NavKey, visible_entries
+from ..navigation import NavIndex, NavKey, visible_entries
 from ..views.change_monitor import ChangeMonitorView
 from ..views.chart_view import ChartView
 from ..views.developer_inspector import DeveloperInspector
@@ -131,6 +131,22 @@ class CentralAreaBuilder(_BaseDelegate):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
+        nav_sidebar = QWidget()
+        nav_sidebar.setObjectName("navSidebar")
+        nav_sidebar.setAccessibleName(_("左侧导航栏"))
+        nav_sidebar.setFixedWidth(190)
+        nav_sidebar_layout = QVBoxLayout(nav_sidebar)
+        nav_sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        nav_sidebar_layout.setSpacing(0)
+
+        quick_jump_btn = QPushButton(_("🔍 快速跳转 (Ctrl+K)"))
+        quick_jump_btn.setObjectName("quickJumpButton")
+        quick_jump_btn.setAccessibleName(_("快速跳转与命令面板"))
+        quick_jump_btn.setToolTip(_("打开全局命令面板与页面快速切换 (Ctrl+K)"))
+        quick_jump_btn.clicked.connect(self.open_command_palette)
+        nav_sidebar_layout.addWidget(quick_jump_btn)
+        mw.__dict__["_command_palette_btn"] = quick_jump_btn
+
         mw._nav = QListWidget()
         mw._nav.setObjectName("mainNavigation")
         mw._nav.setAccessibleName(_("主导航"))
@@ -149,20 +165,18 @@ class CentralAreaBuilder(_BaseDelegate):
             item = QListWidgetItem(_NAV_LABELS[entry.key])
             row_by_key[entry.key] = row
             key_by_row[row] = entry.key
-            stack_key = entry.stack_key
-            if stack_key is None:
+            if entry.stack_key is None:
                 item.setFlags(Qt.ItemFlag.NoItemFlags)
                 item.setData(Qt.ItemDataRole.AccessibleDescriptionRole, _("导航分组"))
-            else:
-                mw._nav_pages[row] = STACK_INDEX[stack_key]
             mw._nav.addItem(item)
 
         mw._nav_row_by_key = row_by_key
         mw._nav_key_by_row = key_by_row
-        mw._nav.currentRowChanged.connect(mw._on_nav_changed)
-        main_layout.addWidget(mw._nav)
+        nav_sidebar_layout.addWidget(mw._nav, 1)
+        main_layout.addWidget(nav_sidebar)
 
         mw._stack = QStackedWidget()
+        stack_index_by_key: dict[str, int] = {}
 
         mw._workspace_widget = QWidget()
         workspace_layout = QVBoxLayout(mw._workspace_widget)
@@ -180,7 +194,7 @@ class CentralAreaBuilder(_BaseDelegate):
         mw._task_canvas = TaskCanvas(mw._config, project_root=str(mw._project_root))
         workspace_layout.addWidget(mw._task_canvas)
         workspace_layout.addWidget(mw._task_canvas.persistent_action_bar())
-        mw._stack.addWidget(mw._workspace_widget)
+        stack_index_by_key[NavKey.WORKSPACE] = mw._stack.addWidget(mw._workspace_widget)
 
         # P0：画布信号接线（保存/试跑/运行/查看 YAML）
         mw._task_canvas.config_changed.connect(mw._on_workspace_changed)
@@ -194,7 +208,7 @@ class CentralAreaBuilder(_BaseDelegate):
         mw._yaml_editor = YamlEditor()
         mw._yaml_editor.sync_to_form.connect(mw._on_editor_sync_to_form)
         mw._yaml_editor.sync_status.connect(mw._set_status)
-        mw._stack.addWidget(mw._yaml_editor)
+        stack_index_by_key[NavKey.YAML_EDITOR] = mw._stack.addWidget(mw._yaml_editor)
 
         monitor_widget = QWidget()
         monitor_layout = QVBoxLayout(monitor_widget)
@@ -240,7 +254,7 @@ class CentralAreaBuilder(_BaseDelegate):
 
         mw._task_history.load_history()
         monitor_layout.addWidget(mw._task_history)
-        mw._stack.addWidget(monitor_widget)
+        stack_index_by_key[NavKey.MONITOR] = mw._stack.addWidget(monitor_widget)
 
         results_widget = QWidget()
         results_layout = QVBoxLayout(results_widget)
@@ -252,7 +266,7 @@ class CentralAreaBuilder(_BaseDelegate):
         results_layout.addWidget(mw._file_list)
         mw._chart_view = ChartView()
         results_layout.addWidget(mw._chart_view)
-        mw._stack.addWidget(results_widget)
+        stack_index_by_key[NavKey.RESULTS] = mw._stack.addWidget(results_widget)
 
         mw._home = HomePage(project_root=str(mw._project_root))
         mw._home.quick_task_ready.connect(mw._apply_quick_task)
@@ -284,17 +298,17 @@ class CentralAreaBuilder(_BaseDelegate):
         mw._home.open_convert_tool.connect(
             lambda: _goto_nav_key(mw, NavKey.CONVERT_TOOL, _("格式互转"))
         )
-        # S4 场景管理：首页按钮跳到场景面板（NavIndex.SCENE）
+        # S4 场景管理：首页按钮按 key 跳到场景面板（不依赖静态行号）
         mw._home.open_scene.connect(
-            lambda: mw._nav.setCurrentRow(NavIndex.SCENE)
+            lambda: _goto_nav_key(mw, NavKey.SCENE, _("场景与模板"))
         )
         # 运行对比：首页按钮复用菜单既有入口（review/run_compare）
         mw._home.open_run_compare.connect(mw._show_run_comparison)
-        mw._stack.addWidget(mw._home)
+        stack_index_by_key[NavKey.HOME] = mw._stack.addWidget(mw._home)
 
         mw._evidence_view = EvidenceView(workspace=Path(mw._config.workspace).expanduser())
         mw._evidence_view.back_to_results.connect(lambda: mw._nav.setCurrentRow(NavIndex.RESULTS))  # 返回结果与复核页
-        mw._stack.addWidget(mw._evidence_view)
+        stack_index_by_key[NavKey.EVIDENCE] = mw._stack.addWidget(mw._evidence_view)
 
         # 迁移后（2026-11-17）：PDF 工作台与格式互转已迁成插件 document-workbench。
         # 视图改为**按插件可用性条件构造**：
@@ -306,13 +320,13 @@ class CentralAreaBuilder(_BaseDelegate):
         _pdf_views = _load_pdf_views()
         if _pdf_views is not None:
             mw._pdf_workbench = _pdf_views.DocumentWorkbenchView()
-            mw._stack.addWidget(mw._pdf_workbench)
-            # B-4：ConvertX 格式互转工具页（stack index 7）
+            stack_index_by_key[NavKey.PDF_WORKBENCH] = mw._stack.addWidget(mw._pdf_workbench)
+            # B-4：ConvertX 格式互转工具页
             mw._convert_tool = _pdf_views.ConvertView()
             mw._convert_tool.open_output_folder_requested.connect(
                 lambda p: QDesktopServices.openUrl(QUrl.fromLocalFile(p))
             )
-            mw._stack.addWidget(mw._convert_tool)
+            stack_index_by_key[NavKey.CONVERT_TOOL] = mw._stack.addWidget(mw._convert_tool)
         else:
             # 未装插件：这两个页面不存在。属性置 None，调用方据此判空。
             mw._pdf_workbench = None
@@ -326,7 +340,7 @@ class CentralAreaBuilder(_BaseDelegate):
                 mw._probe_fetcher = None
         mw._change_monitor = ChangeMonitorView(settings=mw._settings, fetcher=mw._probe_fetcher)
         mw._change_monitor.desktop_notify.connect(mw._chrome.on_monitor_desktop_notify)
-        mw._stack.addWidget(mw._change_monitor)
+        stack_index_by_key[NavKey.CHANGE_MONITOR] = mw._stack.addWidget(mw._change_monitor)
 
         mw._plugin_market = MarketView(
             project_root=mw._project_root,
@@ -337,29 +351,42 @@ class CentralAreaBuilder(_BaseDelegate):
         mw._plugin_market.deactivation_requested.connect(mw._deactivate_market_plugin)
         mw._plugin_market.uninstall_completed.connect(mw._on_market_plugin_uninstalled)
         mw._plugin_market.set_enabled_plugins(mw._configured_market_plugin_ids())
-        mw._stack.addWidget(mw._plugin_market)
+        stack_index_by_key[NavKey.PLUGIN_MARKET] = mw._stack.addWidget(mw._plugin_market)
 
         mw._developer_inspector = DeveloperInspector(mw._config, mw._project_root)
-        mw._stack.addWidget(mw._developer_inspector)
+        stack_index_by_key[NavKey.DEVELOPER] = mw._stack.addWidget(mw._developer_inspector)
 
         # S4：场景管理面板（懒加载 SceneStore，workspace/scene.sqlite3）
         from ..views.scene_panel import ScenePanel
 
         mw._scene_panel = ScenePanel(Path(mw._config.workspace).expanduser())
-        mw._stack.addWidget(mw._scene_panel)
+        stack_index_by_key[NavKey.SCENE] = mw._stack.addWidget(mw._scene_panel)
 
         # U3：登录会话独立导航页（工具分组）—— headed 登录窗口 + 会话列表
         mw._login_session_view = mw._login_session.setup()
-        mw._stack.addWidget(mw._login_session_view)
+        stack_index_by_key[NavKey.LOGIN_SESSION] = mw._stack.addWidget(mw._login_session_view)
 
         # Q1：QML 试点页（仅新增页面；不建 delegate，避免再往 GUI 大环里加一条边）
         from ..views.qml_showcase import QmlShowcaseView
 
         mw._qml_showcase = QmlShowcaseView(mw._project_root)
-        mw._stack.addWidget(mw._qml_showcase)
+        stack_index_by_key[NavKey.QML_SHOWCASE] = mw._stack.addWidget(mw._qml_showcase)
+
+        for row, entry in enumerate(entries):
+            if entry.stack_key is not None and entry.stack_key in stack_index_by_key:
+                mw._nav_pages[row] = stack_index_by_key[entry.stack_key]
 
         main_layout.addWidget(mw._stack)
         mw._page_transition = PageTransitionController(
             mw._stack, reduced_motion=mw._settings.reduced_motion,
         )
-        mw._nav.setCurrentRow(NavIndex.HOME)
+        mw._nav.currentRowChanged.connect(mw._on_nav_changed)
+        mw._nav.setCurrentRow(row_by_key.get(NavKey.HOME, NavIndex.HOME))
+
+    def open_command_palette(self) -> Any:
+        """打开 Ctrl+K 全局命令面板与快速跳转对话框。"""
+        from ..command_palette import CommandPaletteDialog
+
+        dialog = CommandPaletteDialog(self._mw, nav_labels=_NAV_LABELS)
+        dialog.exec()
+        return dialog

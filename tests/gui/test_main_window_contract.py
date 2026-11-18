@@ -63,14 +63,12 @@ _EXPECTED_NAV_PAGES = {
     17: 10,  # 开发者检查器
 }
 
-# 页面栈里的页面必须能被主窗口按名字持有（拆分后仍须如此，否则关闭期清理会漏）。
-_EXPECTED_PAGE_OWNERS = (
+# 核心宿主始终持有的页面属性；插件化可选页面（_pdf_workbench / _convert_tool）随能力动态挂载。
+_CORE_PAGE_OWNERS = (
     "_home",
     "_workspace_widget",
     "_yaml_editor",
     "_evidence_view",
-    "_pdf_workbench",
-    "_convert_tool",
     "_change_monitor",
     "_plugin_market",
     "_developer_inspector",
@@ -78,6 +76,24 @@ _EXPECTED_PAGE_OWNERS = (
     "_login_session_view",
     "_qml_showcase",
 )
+_PDF_PAGE_OWNERS = (
+    "_pdf_workbench",
+    "_convert_tool",
+)
+_KEY_TO_OWNER_ATTR = {
+    "home": "_home",
+    "workspace": "_workspace_widget",
+    "yaml_editor": "_yaml_editor",
+    "evidence": "_evidence_view",
+    "pdf_workbench": "_pdf_workbench",
+    "convert_tool": "_convert_tool",
+    "change_monitor": "_change_monitor",
+    "plugin_market": "_plugin_market",
+    "developer": "_developer_inspector",
+    "scene": "_scene_panel",
+    "login_session": "_login_session_view",
+    "qml_showcase": "_qml_showcase",
+}
 
 
 @pytest.fixture(autouse=True)
@@ -141,8 +157,11 @@ def _is_wired(action) -> bool:  # type: ignore[no-untyped-def]
 
 
 def test_window_starts_with_navigation_and_page_stack(main_window) -> None:  # type: ignore[no-untyped-def]
-    """启动即完成中央区域装配：左侧导航 + 右侧页面栈，且都挂在中央控件上。"""
+    """启动即完成中央区域装配：左侧导航 + 右侧页面栈，按当前能力就绪状态精确过滤。"""
     from PySide6.QtWidgets import QListWidget, QStackedWidget
+
+    from omnicrawler.core.capabilities import navigation_capabilities
+    from omnicrawler.gui.navigation import visible_entries
 
     central = main_window.centralWidget()
     assert central is not None, "中央控件缺失——装配未完成"
@@ -151,42 +170,57 @@ def test_window_starts_with_navigation_and_page_stack(main_window) -> None:  # t
     assert central.isAncestorOf(main_window._nav)
     assert central.isAncestorOf(main_window._stack)
 
-    # 18 行 = 14 个页面项 + 4 个分组标题；页面栈 14 页。
-    assert main_window._nav.count() == 18
-    assert main_window._stack.count() == 14
+    caps = navigation_capabilities()
+    expected_entries = visible_entries(caps)
+    expected_stack_count = 14 if caps.get("pdf") else 12
+    assert main_window._nav.count() == len(expected_entries)
+    assert main_window._stack.count() == expected_stack_count
     assert main_window._nav.objectName() == "mainNavigation"
     assert main_window._nav.width() == 190
 
 
 def test_navigation_map_points_at_real_pages(main_window) -> None:  # type: ignore[no-untyped-def]
-    """导航行号→页面索引的映射完整、无悬空、无重复指向。"""
-    assert main_window._nav_pages == _EXPECTED_NAV_PAGES
-
+    """导航行号→页面索引的映射完整、无悬空、无错位指向。"""
     for row, page_index in main_window._nav_pages.items():
         widget = main_window._stack.widget(page_index)
         assert widget is not None, f"导航第 {row} 行指向不存在的页面 {page_index}"
+        key = main_window._nav_key_by_row[row]
+        owner_attr = _KEY_TO_OWNER_ATTR.get(key)
+        if owner_attr is not None:
+            assert widget is getattr(main_window, owner_attr), (
+                f"导航键 {key}（第 {row} 行）未指向 {owner_attr}，实际错位到栈 {page_index}"
+            )
 
-    # 每个页面都被某个导航项引用（不允许有「造了但进不去」的孤儿页）。
-    assert set(main_window._nav_pages.values()) == set(range(main_window._stack.count()))
+    # 每个可见导航项都指向不同栈页（无重复指向）。
+    assert len(set(main_window._nav_pages.values())) == len(main_window._nav_pages)
 
 
 def test_group_headers_are_not_selectable(main_window) -> None:  # type: ignore[no-untyped-def]
     """分组标题（工作/自动化/工具/高级）不可选中，否则会跳到上一页造成错页。"""
     from PySide6.QtCore import Qt
 
-    from omnicrawler.gui.navigation import NavIndex
-
-    for row in NavIndex.HEADERS:
-        item = main_window._nav.item(row)
-        assert item.flags() == Qt.ItemFlag.NoItemFlags, f"第 {row} 行分组标题可选中"
+    for row, key in main_window._nav_key_by_row.items():
+        if key.startswith("group:"):
+            item = main_window._nav.item(row)
+            assert item.flags() == Qt.ItemFlag.NoItemFlags, f"第 {row} 行分组标题 {key} 可选中"
 
 
 def test_pages_are_owned_by_the_window(main_window) -> None:  # type: ignore[no-untyped-def]
-    """每个页面都必须由主窗口按名字持有（关闭期清理与信号协调依赖这些引用）。"""
-    for attr in _EXPECTED_PAGE_OWNERS:
+    """每个已装配页面都必须由主窗口按名字持有（未安装插件页则显式置 None）。"""
+    from omnicrawler.core.capabilities import navigation_capabilities
+
+    caps = navigation_capabilities()
+    for attr in _CORE_PAGE_OWNERS:
         page = getattr(main_window, attr, None)
         assert page is not None, f"页面 {attr} 未挂在主窗口上"
         assert main_window._stack.indexOf(page) >= 0, f"{attr} 不在页面栈里"
+
+    for attr in _PDF_PAGE_OWNERS:
+        page = getattr(main_window, attr, None)
+        if caps.get("pdf"):
+            assert page is not None and main_window._stack.indexOf(page) >= 0
+        else:
+            assert page is None, f"未安装 document-workbench 时 {attr} 应为 None"
 
 
 def test_every_menu_action_is_wired(main_window) -> None:  # type: ignore[no-untyped-def]

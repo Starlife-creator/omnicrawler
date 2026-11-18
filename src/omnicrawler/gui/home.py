@@ -6,7 +6,7 @@ import logging
 import math
 from typing import cast
 
-from PySide6.QtCore import QEvent, QThread, QTimer, Signal
+from PySide6.QtCore import QEvent, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -92,6 +92,27 @@ class _AIEnrichWorker(QThread):
 def _package_version() -> str:
     """Use the running application's version, including source checkouts."""
     return __version__
+
+
+def scenario_starter_specs() -> tuple[tuple[str, str, str], ...]:
+    """首页场景示例卡片规格：(标识, 按钮标题, 带网址与字段的可编辑草案示例)。"""
+    return (
+        (
+            "news_list",
+            _("示例：资讯列表采集"),
+            _("从 https://example.com/news 采集标题、日期、链接，共 5 页，导出 CSV"),
+        ),
+        (
+            "product_catalog",
+            _("示例：分页商品目录"),
+            _("从 https://example.com/catalog 采集名称、价格、库存，共 10 页，导出 Excel"),
+        ),
+        (
+            "json_api",
+            _("示例：JSON 接口提取"),
+            _("从 https://api.example.com/v1/items.json 提取标题、作者、摘要，导出 JSON"),
+        ),
+    )
 
 
 class AmbientHero(QWidget):
@@ -259,16 +280,17 @@ class HomePage(QWidget):
         card_layout.addWidget(self.task_input)
 
         examples = QHBoxLayout()
-        examples.addWidget(QLabel(_("示例：")))
-        for label, text in (
-            (_("采集新闻标题"), _("采集新闻栏目中的标题、日期和链接")),
-            (_("下载 PDF"), _("下载网页中的新增 PDF 附件")),
-            (_("监测变化"), _("每周监测网页内容变化")),
-        ):
+        examples.addWidget(QLabel(_("快速示例：")))
+        self.scenario_chips: dict[str, QPushButton] = {}
+        for scenario_key, label, _prompt_text in scenario_starter_specs():
             chip = QPushButton(label)
-            chip.setFlat(True)
+            chip.setObjectName(f"scenarioChip_{scenario_key}")
+            chip.setAccessibleName(label)
             chip.setProperty("exampleChip", True)
-            chip.clicked.connect(lambda _checked=False, value=text: self.task_input.setPlainText(value))
+            chip.clicked.connect(
+                lambda _checked=False, key=scenario_key: self.apply_starter_scenario(key)
+            )
+            self.scenario_chips[scenario_key] = chip
             examples.addWidget(chip)
         examples.addStretch()
         card_layout.addLayout(examples)
@@ -294,6 +316,7 @@ class HomePage(QWidget):
         card_layout.addLayout(action_row)
         self.feedback = QLabel("")
         self.feedback.setWordWrap(True)
+        self.feedback.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.feedback.setAccessibleName(_("快速任务分析结果"))
         card_layout.addWidget(self.feedback)
         layout.addWidget(card)
@@ -340,6 +363,34 @@ class HomePage(QWidget):
         secondary.addStretch()
         layout.addLayout(secondary)
         layout.addStretch()
+
+    def apply_starter_scenario(self, scenario_key: str) -> bool:
+        """点击场景示例芯片：填入带网址与字段的示例描述，生成本地草案预览并聚焦预览区。"""
+        matched = next(
+            (item for item in scenario_starter_specs() if item[0] == scenario_key),
+            None,
+        )
+        if matched is None:
+            return False
+        _key, _label, prompt_text = matched
+        self._cancel_ai_enrich()
+        self.task_input.setPlainText(prompt_text)
+        try:
+            compiled = compile_natural_language(prompt_text, fallback_url="")
+        except ValueError as exc:
+            self.feedback.setText(_("请补充：{0}").format(exc))
+            return True
+        if compiled.mode == "crawl":
+            decisions = "；".join(compiled.task.decisions)
+            self.pdf_button.setVisible(False)
+            self.feedback.setText(
+                _("草案预览（可修改上方网址与字段后点击「创建任务」）：") + decisions
+            )
+        else:
+            self._handle_pdf_mode(compiled)
+        self._scroll.ensureWidgetVisible(self.feedback)
+        self.feedback.setFocus()
+        return True
 
     def _create_task(self) -> None:
         self._cancel_ai_enrich()

@@ -558,10 +558,23 @@ def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
     }}
 
     /* === 侧导航 === */
+    QWidget#navSidebar {{
+        background: {tokens.nav};
+        border-right: 1px solid {tokens.border};
+    }}
+    QPushButton#quickJumpButton {{
+        background: {tokens.surface}; color: {tokens.muted};
+        border: 1px solid {tokens.border}; border-radius: {RADIUS["md"]}px;
+        margin: {SPACING["sm"]}px {SPACING["sm"]}px 0px {SPACING["sm"]}px;
+        text-align: left; font-size: {scaled_font_px("small", scale=scale)}px;
+    }}
+    QPushButton#quickJumpButton:hover {{
+        border-color: {tokens.primary}; color: {tokens.primary}; background: {tokens.selection};
+    }}
     QListWidget#mainNavigation {{
         background: {tokens.nav}; border: 0;
         border-right: 1px solid {tokens.border};
-        padding: {SPACING["md"]}px {SPACING["sm"]}px;
+        padding: {SPACING["sm"]}px {SPACING["sm"]}px;
     }}
     QListWidget#mainNavigation::item {{
         padding: 11px 12px; margin: 2px 0;
@@ -569,6 +582,28 @@ def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
     }}
     QListWidget#mainNavigation::item:hover {{ background: {tokens.surface}; color: {tokens.text}; }}
     QListWidget#mainNavigation::item:selected {{
+        background: {tokens.selection}; color: {tokens.primary}; font-weight: 600;
+    }}
+
+    /* === 全局命令面板（Ctrl+K） === */
+    QDialog#commandPaletteDialog {{
+        background: {tokens.elevated};
+    }}
+    QLineEdit#commandPaletteInput {{
+        background: {tokens.surface}; color: {tokens.text};
+        border: 2px solid {tokens.primary}; border-radius: {RADIUS["md"]}px;
+        padding: 7px 10px;
+    }}
+    QListWidget#commandPaletteList {{
+        background: {tokens.surface}; border: 1px solid {tokens.border};
+        border-radius: {RADIUS["md"]}px; padding: {SPACING["xs"]}px;
+    }}
+    QListWidget#commandPaletteList::item {{
+        padding: 9px 12px; margin: 1px 0;
+        border-radius: {RADIUS["sm"]}px; color: {tokens.text};
+    }}
+    QListWidget#commandPaletteList::item:hover {{ background: {tokens.nav}; }}
+    QListWidget#commandPaletteList::item:selected {{
         background: {tokens.selection}; color: {tokens.primary}; font-weight: 600;
     }}
 
@@ -630,6 +665,16 @@ def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
 
     QPushButton[success="true"] {{
         color: {tokens.success}; font-weight: 600; border: 1px solid {tokens.success}; background: {tokens.success_bg};
+    }}
+
+    QPushButton[exampleChip="true"] {{
+        background: {tokens.nav}; color: {tokens.primary};
+        border: 1px solid {tokens.border}; border-radius: {RADIUS["pill"]}px;
+        padding: {scaled_padding_px("sm", scale=scale)}px 12px;
+        font-size: {scaled_font_px("small", scale=scale)}px;
+    }}
+    QPushButton[exampleChip="true"]:hover {{
+        background: {tokens.selection}; border-color: {tokens.primary};
     }}
 
     /* === 单选 / 复选 === */
@@ -736,11 +781,28 @@ def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
     QLabel[status="muted"] {{ color: {tokens.muted}; }}
     QLabel[status="info"] {{ color: {tokens.info}; }}
 
-    /* === 高级规则摘要条 === */
+    /* === 高级规则摘要条 / 结果字段完整度摘要条 === */
     QLabel#advancedSummary {{
         background: {tokens.warning_bg}; color: {tokens.warning};
         border-bottom: 1px solid {tokens.border}; padding: 7px 12px;
         border-radius: 0;
+    }}
+    QLabel#completenessSummary {{
+        border: 1px solid {tokens.border}; border-radius: {RADIUS["sm"]}px;
+        padding: 5px 10px; font-size: {scaled_font_px("small", scale=scale)}px;
+        background: {tokens.surface};
+    }}
+    QLabel#completenessSummary[status="success"] {{
+        color: {tokens.success}; background: {tokens.success_bg}; border-color: {tokens.success};
+    }}
+    QLabel#completenessSummary[status="warning"] {{
+        color: {tokens.warning}; background: {tokens.warning_bg}; border-color: {tokens.warning};
+    }}
+    QLabel#completenessSummary[status="danger"] {{
+        color: {tokens.danger}; background: {tokens.danger_bg}; border-color: {tokens.danger};
+    }}
+    QLabel#completenessSummary[status="muted"] {{
+        color: {tokens.muted}; background: {tokens.nav};
     }}
 
     /* === 占位符提示 === */
@@ -808,6 +870,7 @@ def ambient_surface_stylesheet(
     QMainWindow[ambientBackground="true"] QGroupBox {{
         background-color: {surface};
     }}
+    QMainWindow[ambientBackground="true"] QWidget#navSidebar,
     QMainWindow[ambientBackground="true"] QListWidget#mainNavigation {{
         background-color: {nav};
     }}

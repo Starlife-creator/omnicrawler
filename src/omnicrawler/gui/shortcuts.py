@@ -65,15 +65,16 @@ class GlobalShortcutManager(QObject):
             self.__dict__[self._WINDOW_REF_KEY] = lambda: value
 
     def register_all(self, callbacks: dict[str, Callable[[], None]]) -> None:
-        """注册全部 8 个快捷键。
+        """注册全局快捷键（兼容既有 8 键契约，并在完整主窗口上自动接入 Ctrl+K 命令面板）。
 
         Args:
-            callbacks: 键名到回调函数的映射，键名必须为：
-                save, run, stop, toggle_editor, open_templates,
-                refresh, format_yaml, toggle_dnd
+            callbacks: 键名到回调函数的映射，支持：
+                command_palette, save, run, stop, toggle_editor,
+                open_templates, refresh, format_yaml, toggle_dnd
         """
         shortcuts = self._settings.shortcuts
         labels = {
+            "command_palette": _("命令面板与快速跳转"),
             "save": _("保存配置"),
             "run": _("运行任务"),
             "stop": _("停止任务"),
@@ -84,7 +85,17 @@ class GlobalShortcutManager(QObject):
             "toggle_dnd": _("切换请勿打扰模式"),
         }
 
-        for key, callback in callbacks.items():
+        effective_callbacks = dict(callbacks)
+        if (
+            "command_palette" not in effective_callbacks
+            and {"save", "run", "stop", "toggle_editor"} <= set(effective_callbacks)
+        ):
+            central_area = getattr(self._main_window, "_central_area", None)
+            palette_opener = getattr(central_area, "open_command_palette", None)
+            if callable(palette_opener):
+                effective_callbacks["command_palette"] = palette_opener
+
+        for key, callback in effective_callbacks.items():
             if key not in shortcuts:
                 continue
             seq = shortcuts[key]

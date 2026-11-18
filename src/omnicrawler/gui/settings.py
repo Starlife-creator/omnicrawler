@@ -188,6 +188,7 @@ class AppSettings:
     @property
     def shortcuts(self) -> dict[str, str]:
         defaults = {
+            "command_palette": "Ctrl+K",
             "save": "Ctrl+S",
             "run": "Ctrl+R",
             "stop": "Ctrl+Shift+S",
