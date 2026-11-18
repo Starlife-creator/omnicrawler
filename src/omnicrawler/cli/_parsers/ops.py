@@ -133,6 +133,9 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
             # 与 `import` 的区别：import 装的是用户已下载的整包 zip，
             # install-recipe 按声明去上游下载并**在本地组装**。
             "inspect-recipe", "install-recipe",
+            # Wheel-Pack 组件执行：在**隔离子进程**里挂载已校验的 site-packages。
+            # 只在子进程内改 sys.path 与原生库路径，宿主零污染。
+            "run",
         ],
     )
     components.add_argument("--package")
@@ -141,6 +144,14 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     components.add_argument("--allow-unsigned", action="store_true", help="仅用于本地开发包")
     components.add_argument("--apply", "--yes", action="store_true", help="执行破坏性操作（uninstall/rollback 需要）")
     components.add_argument("--recipe", default="", help="recipe JSON 路径（inspect-recipe / install-recipe）")
+    components.add_argument(
+        "--component-dir", default="",
+        help="已装配组件的目录（run 用；需含 component.json + site-packages/ + entry.json）",
+    )
+    components.add_argument(
+        "--payload", default="",
+        help="传给组件入口的 JSON 字符串或 @文件路径（run 用；缺省为 {}）",
+    )
     components.add_argument(
         "--component-root", default="",
         help="组件安装根目录；留空用运行时默认位置",

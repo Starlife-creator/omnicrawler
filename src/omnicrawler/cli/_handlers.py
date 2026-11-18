@@ -506,12 +506,74 @@ def _run_components(args: argparse.Namespace) -> None:
         _run_component_recipe(args)
         return
 
+    # Wheel-Pack 组件执行：隔离子进程。
+    if args.action == "run":
+        _run_component_in_subprocess(args)
+        return
+
     if args.action in {"uninstall", "rollback"}:
         require_explicit_apply(f"components {args.action}")
     _json(cmd_components.execute(
         args.action, package=args.package or "", name=args.name or "",
         allow_unsigned=bool(args.allow_unsigned), sha256=args.sha256 or "",
     ))
+
+
+def _run_component_in_subprocess(args: argparse.Namespace) -> None:
+    """在隔离子进程里运行 Wheel-Pack 组件。
+
+    **为什么要子进程**：`paddle` / `cv2` / `scipy` 与宿主已加载的
+    `PySide6` / `lxml` 同进程时极易触发原生库符号冲突；Linux 下部分库
+    还要求进程启动前设环境变量。只在该子进程内挂载，宿主零污染。
+
+    **启动前重新校验**：组件目录可能在上次校验之后被改动，子进程一旦
+    起来就没有拦截机会，所以每次运行前按 `component.json` 重算哈希。
+
+    摘要经 `--payload` 传入（JSON 字符串或 `@文件`），组件从 stdin 读、
+    向 stdout 写一个 JSON 对象——与既有 `ocr-file-v1` 同形的 JSON-over-stdio。
+    """
+    import json
+    from pathlib import Path
+
+    from ..services.component_runner import (
+        ComponentRunnerError,
+        build_wheelpack_spec,
+        describe_spec,
+        run_component,
+        verify_component_files,
+    )
+
+    component_dir = str(getattr(args, "component_dir", "") or "").strip()
+    if not component_dir:
+        raise SystemExit("components run 需要 --component-dir <已装配组件目录>")
+    root = Path(component_dir).expanduser()
+    if not root.is_dir():
+        raise SystemExit(f"组件目录不存在：{root}")
+
+    raw_payload = str(getattr(args, "payload", "") or "").strip()
+    if raw_payload.startswith("@"):
+        payload_file = Path(raw_payload[1:]).expanduser()
+        if not payload_file.is_file():
+            raise SystemExit(f"payload 文件不存在：{payload_file}")
+        raw_payload = payload_file.read_text(encoding="utf-8")
+    try:
+        payload = json.loads(raw_payload) if raw_payload else {}
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"--payload 不是合法 JSON：{exc}") from exc
+    if not isinstance(payload, dict):
+        raise SystemExit("--payload 顶层必须是 JSON 对象")
+
+    try:
+        spec = build_wheelpack_spec(root)
+        checked = verify_component_files(spec.component_root)
+        if not getattr(args, "json_output", False):
+            print(describe_spec(spec))
+            print(f"已校验文件：{checked} 个")
+        result = run_component(spec, payload)
+    except ComponentRunnerError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    _json(result)
 
 
 def _run_component_recipe(args: argparse.Namespace) -> None:
