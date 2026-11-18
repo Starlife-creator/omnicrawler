@@ -1,13 +1,17 @@
 """Task execution, stop, progress tracking, and state callbacks."""
 from __future__ import annotations
 
+import logging as _run_logging
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QTimer, Slot
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
+from ..core.background_worker import BackgroundWorker, run_worker
 from ..core.run_states import is_delivered, is_success, is_terminal, normalize_state, state_label
+from ..core.workers import SampleRunWorker
 from ..i18n import _
 from ..navigation import NavIndex
 from ..views.login_session_logic import LoginHintGate
@@ -271,3 +275,97 @@ class RunController(_BaseDelegate):
     @Slot(str, int)
     def on_task_finished(self, task_id: str, exit_code: int) -> None:
         pass  # state_changed handles everything
+
+    def start_sample_run(self, pages: int | None = None) -> None:
+        mw = self._mw
+        if not mw._config_path:
+            return
+        if mw._sample_jobs:
+            ToastManager.instance().info(_("已有试跑正在收尾，请等待完成后再试。"))
+            return
+        pages = 3 if pages is None else pages
+        from ..views.task_canvas_logic import crawl_fingerprint
+
+        input_fingerprint = crawl_fingerprint(mw._config)
+        input_config = mw._config
+        worker = SampleRunWorker(mw._config_path, pages, parent=mw)
+
+        def completed(result: dict[str, Any]) -> None:
+            if mw._close_after_background_jobs:
+                return
+            sample = result.get("sample", {})
+            status = str(sample.get("status") or "")
+            processed = int(sample.get("processed", 0) or 0)
+            records = int(sample.get("records", 0) or 0)
+            ok = bool(status) and status != "failed" and processed > 0
+            summary = _(f"状态：{status}\n处理页面：{processed}\n提取记录：{records}")
+            current = mw._config is input_config and crawl_fingerprint(mw._config) == input_fingerprint
+            mw._task_canvas.set_trial_result(
+                ok and current,
+                summary if current else _("配置已变化，旧试跑仅供参考。") + "\n" + summary,
+                sample,
+                input_fingerprint=input_fingerprint,
+            )
+            if ok and current:
+                ToastManager.instance().success(_("小样本试跑完成：请在工作台查看结果"))
+            else:
+                ToastManager.instance().warning(_("试跑未通过：请按工作台中的诊断建议修正"))
+
+        def failed(message: str) -> None:
+            if mw._close_after_background_jobs:
+                return
+            mw._task_canvas.set_trial_result(
+                False,
+                _("试跑失败：{0}").format(message),
+                {"status": "failed", "processed": 0, "records": 0, "error": message},
+                input_fingerprint=input_fingerprint,
+            )
+            ToastManager.instance().warning(_("小样本试跑失败：请在工作台查看诊断"))
+
+        worker.succeeded.connect(completed)
+        worker.failed.connect(failed)
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(lambda: mw._finish_sample_job(worker))
+        mw._sample_jobs.append(worker)
+        worker.start()
+        ToastManager.instance().info(_("正在独立工作区试跑 {0} 页，不会改变正式任务断点").format(pages))
+
+    def export_markdown(self) -> None:
+        mw = self._mw
+        workspace = Path(mw._config.workspace).expanduser()
+        if not workspace.is_absolute():
+            workspace = mw._project_root / workspace
+        csv_path = next(
+            (
+                path
+                for path in (workspace / "output" / "records.csv", workspace / "records.csv")
+                if path.is_file()
+            ),
+            None,
+        )
+        if csv_path is None:
+            _run_logging.getLogger(__name__).warning(_("自动导出 Markdown 跳过：未找到结果文件 records.csv 于 %s"), workspace)
+            return
+        from omnicrawler.services.markdown_export import export_results_markdown
+
+        filepath = Path(csv_path)
+        jsonl = filepath.with_name("records.jsonl")
+        target = filepath.with_name("records.md")
+
+        class _AutoMarkdownWorker(BackgroundWorker):
+            def work(self) -> str:
+                export_results_markdown(
+                    csv_path=filepath,
+                    jsonl_path=jsonl if jsonl.is_file() else None,
+                    output_path=target,
+                    include_evidence=True,
+                )
+                return str(target)
+
+        run_worker(
+            _AutoMarkdownWorker(),
+            on_succeeded=lambda path: mw._statusbar.showMessage(
+                _("已自动导出 Markdown：{0}").format(path), 6000
+            ),
+            on_failed=lambda err: _run_logging.getLogger(__name__).warning(_("自动导出 Markdown 失败: %s"), err),
+        )

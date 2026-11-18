@@ -15,11 +15,21 @@
 """
 from __future__ import annotations
 
+import logging as _chrome_logging
+from typing import Any
+
 from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt as CoreQt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
     QLabel,
     QMenu,
+    QMessageBox,
+    QSlider,
     QSystemTrayIcon,
 )
 
@@ -27,6 +37,7 @@ from ..app_icon import app_icon
 from ..help_center import HelpCenterDock
 from ..i18n import _
 from ..widgets.status_indicator import StatusIndicator
+from ..widgets.toast import ToastManager
 from ._base import _BaseDelegate
 
 
@@ -123,3 +134,215 @@ class WindowChromeBuilder(_BaseDelegate):
             mw._builtin_background().set_media(selected)
         except (OSError, ValueError):
             mw._settings.workspace_background_path = ""
+
+    def show_workspace_background_settings(self) -> None:
+        mw = self._mw
+        controller = mw._builtin_background_controller
+        if controller is None or not controller.active:
+            ToastManager.instance().info(_("请先选择一个本地工作台背景"))
+            return
+        dialog = QDialog(mw)
+        dialog.setWindowTitle(_("工作台背景显示设置"))
+        dialog.setAccessibleName(_("工作台背景显示设置"))
+        form = QFormLayout(dialog)
+
+        preset = QComboBox(dialog)
+        preset.setAccessibleName(_("视觉预设"))
+        for label, value in (
+            (_("清晰"), "clear"),
+            (_("平衡"), "balanced"),
+            (_("专注"), "focus"),
+            (_("沉浸"), "immersive"),
+            (_("纯背景"), "solid"),
+        ):
+            preset.addItem(label, value)
+        scope = QComboBox(dialog)
+        scope.setAccessibleName(_("背景范围"))
+        for label, value in (
+            (_("整个应用客户区"), "application"),
+            (_("完整工作区"), "workspace"),
+            (_("当前内容画布"), "canvas"),
+        ):
+            scope.addItem(label, value)
+        scope.setCurrentIndex(max(0, scope.findData(controller.scope)))
+
+        def slider(minimum: int, maximum: int, value: int, name: str) -> QSlider:
+            widget = QSlider(CoreQt.Orientation.Horizontal, dialog)
+            widget.setAccessibleName(name)
+            widget.setRange(minimum, maximum)
+            widget.setValue(value)
+            return widget
+
+        opacity = slider(5, 100, round(controller.layer.opacity * 100), _("背景可见度"))
+        panel = slider(65, 100, controller.panel_opacity, _("前景面板不透明度"))
+        dim = slider(0, 85, round(controller.dim * 100), _("暗色遮罩"))
+        blur = slider(0, 20, controller.layer.blur, _("静态背景模糊"))
+        form.addRow(_("视觉预设"), preset)
+        form.addRow(_("背景范围"), scope)
+        form.addRow(_("背景可见度"), opacity)
+        form.addRow(_("前景面板不透明度"), panel)
+        form.addRow(_("暗色遮罩"), dim)
+        form.addRow(_("静态背景模糊"), blur)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, parent=dialog)
+        form.addRow(buttons)
+
+        def apply_dialog_preset(_index: int) -> None:
+            controller.apply_preset(str(preset.currentData()))
+            opacity.setValue(round(controller.layer.opacity * 100))
+            panel.setValue(controller.panel_opacity)
+            dim.setValue(round(controller.dim * 100))
+            blur.setValue(controller.layer.blur)
+
+        preset.activated.connect(apply_dialog_preset)
+        scope.activated.connect(lambda _index: controller.set_scope(str(scope.currentData())))
+        opacity.valueChanged.connect(controller.set_opacity)
+        panel.valueChanged.connect(controller.set_panel_opacity)
+        dim.valueChanged.connect(controller.set_dim)
+        blur.valueChanged.connect(controller.set_blur)
+        buttons.rejected.connect(dialog.reject)
+        dialog.exec()
+
+    def check_for_updates(self) -> None:
+        from ..update_check import _CheckWorker
+
+        mw = self._mw
+        if mw._config_path is None:
+            ToastManager.instance().info(_("未加载任务配置，无法检查更新"))
+            return
+        if mw._update_check_worker is not None:
+            ToastManager.instance().info(_("更新检查正在进行中"))
+            return
+        ToastManager.instance().info(_("正在检查更新……"))
+        worker = _CheckWorker(str(mw._config_path), mw)
+        worker.finished_with.connect(self.on_update_checked)
+        mw._update_check_worker = worker
+        worker.start()
+
+    def on_update_checked(self, payload: dict[str, Any], _code: int) -> None:
+        mw = self._mw
+        mw._update_check_worker = None
+        status = str(payload.get("status", ""))
+        if status == "disabled":
+            ToastManager.instance().info(_("应用自更新已禁用（缺少随包信任根）"))
+            return
+        if status == "ignored":
+            ToastManager.instance().info(_("已忽略该版本的更新（命令行 ignore --clear 可恢复）"))
+            return
+        if status == "failed":
+            ToastManager.instance().warning(
+                _("检查更新失败：{0}").format(payload.get("detail", ""))
+            )
+            return
+        from ..update_check import (
+            available_apply_modes,
+            describe_apply_mode,
+            format_update_summary,
+        )
+
+        summary = format_update_summary(payload)
+        if status == "up-to-date":
+            ToastManager.instance().info(summary)
+            return
+
+        options = payload.get("options") or {}
+        modes = available_apply_modes(options)
+        if not modes:
+            box = QMessageBox(mw)
+            box.setWindowTitle(_("检查更新"))
+            box.setText(summary)
+            box.setAccessibleName(_("检查更新结果"))
+            box.exec()
+            return
+
+        box = QMessageBox(mw)
+        box.setWindowTitle(_("检查更新"))
+        box.setText(summary)
+        box.setAccessibleName(_("检查更新结果"))
+        apply_button = box.addButton(_("立即更新"), QMessageBox.ButtonRole.AcceptRole)
+        ignore_button = box.addButton(_("忽略此版本"), QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton(_("稍后"), QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is ignore_button:
+            self.ignore_current_update_version()
+            return
+        if clicked is not apply_button:
+            return
+        if len(modes) == 1:
+            self.start_update_apply(modes[0], describe_apply_mode(modes[0], options))
+            return
+        chooser = QMessageBox(mw)
+        chooser.setWindowTitle(_("选择更新方式"))
+        chooser.setAccessibleName(_("选择更新方式"))
+        chooser.setText(_("请选择更新方式："))
+        buttons: dict[Any, str] = {}
+        for mode in modes:
+            btn = chooser.addButton(describe_apply_mode(mode, options), QMessageBox.ButtonRole.AcceptRole)
+            buttons[btn] = mode
+        chooser.addButton(_("取消"), QMessageBox.ButtonRole.RejectRole)
+        chooser.exec()
+        chosen = buttons.get(chooser.clickedButton())
+        if chosen is not None:
+            self.start_update_apply(chosen, describe_apply_mode(chosen, options))
+
+    def ignore_current_update_version(self) -> None:
+        mw = self._mw
+        if mw._config_path is None:
+            return
+        from ...commands import self_update as cmd_self_update
+
+        try:
+            payload, _code = cmd_self_update.ignore(config_path=str(mw._config_path))
+        except Exception as exc:  # noqa: BLE001
+            _chrome_logging.getLogger(__name__).debug("update ignore failed: %s", exc, exc_info=True)
+            ToastManager.instance().warning(_("忽略该版本失败：{0}").format(exc))
+            return
+        ToastManager.instance().info(str(payload.get("detail") or _("已忽略该版本")))
+
+    def start_update_apply(self, mode: str, description: str) -> None:
+        from ..update_check import _ApplyWorker
+
+        mw = self._mw
+        confirm = QMessageBox(mw)
+        confirm.setWindowTitle(_("确认更新"))
+        confirm.setAccessibleName(_("确认更新"))
+        confirm.setIcon(QMessageBox.Icon.Warning)
+        confirm.setText(
+            _("将执行：{0}\n\n这会覆盖应用文件（不会动你的工作区数据）。继续吗？").format(description)
+        )
+        confirm.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        confirm.setDefaultButton(QMessageBox.StandardButton.No)
+        if confirm.exec() != QMessageBox.StandardButton.Yes:
+            return
+        if mw._update_apply_worker is not None:
+            ToastManager.instance().info(_("更新正在进行中"))
+            return
+        ToastManager.instance().info(_("正在下载并应用更新……"))
+        worker = _ApplyWorker(str(mw._config_path), mode, mw)
+        worker.finished_with.connect(self.on_update_applied)
+        mw._update_apply_worker = worker
+        worker.start()
+
+    def on_update_applied(self, payload: dict[str, Any], code: int) -> None:
+        from ..update_check import format_apply_result
+
+        mw = self._mw
+        mw._update_apply_worker = None
+        text = format_apply_result(payload, code)
+        if str(payload.get("status", "")) != "applied":
+            box = QMessageBox(mw)
+            box.setWindowTitle(_("更新未完成"))
+            box.setAccessibleName(_("更新未完成"))
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setText(text)
+            box.exec()
+            return
+        box = QMessageBox(mw)
+        box.setWindowTitle(_("更新完成"))
+        box.setAccessibleName(_("更新完成"))
+        box.setText(text)
+        restart_button = box.addButton(_("立即重启"), QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(_("稍后手动重启"), QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is restart_button:
+            mw._restart_application()

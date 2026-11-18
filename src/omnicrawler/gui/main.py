@@ -46,12 +46,10 @@ from ..services.controllers import ResultController, RunController, TaskControll
 from ..services.natural_language_task import NaturalLanguageDraft
 from ..services.offline_demo import create_demo_workspace
 from ..services.ux_service import QuickTaskDraft
-from ..templates.recipe_engine import compose_recipe, diff_config
-from ..templates.template_catalog import bundled_template_catalog
 from .app_icon import app_icon
 from .core.autosave import AutosaveManager
 from .core.config_model import CrawlConfig
-from .core.config_serializer import from_yaml, load_yaml, to_yaml
+from .core.config_serializer import load_yaml, to_yaml
 from .core.template_loader import TemplateLoader
 from .core.workers import (
     ActionRecorderWorker,
@@ -88,7 +86,6 @@ from .runner.env_checker import (
 from .runner.worker_task_runner import WorkerTaskRunner as TaskRunner
 from .settings import AppSettings
 from .shortcuts import GlobalShortcutManager
-from .template_library_dialog import TemplateLibraryDialog
 from .views.task_history import TaskHistory
 from .widgets.resource_monitor import ResourceMonitor
 from .widgets.toast import ToastManager
@@ -215,6 +212,7 @@ class MainWindow(QMainWindow):
     def _init_window_frame(self) -> None:
         """窗口外壳：对象名、初始运行状态、标题与尺寸。"""
         self.setObjectName("omnicrawlerMainWindow")
+        self.setAccessibleName(_("OmniCrawler 工作台主窗口"))
         # 先置空：运行状态回调可能在任何一次 `run` 之前抵达（见类注解处的 CI 实测说明）
         self._running_task_id = None
         self.setWindowTitle(_("OmniCrawler GUI 工作台 v{0}").format(GUI_VERSION))
@@ -410,77 +408,7 @@ class MainWindow(QMainWindow):
         ToastManager.instance().info(_("工作台背景已清除"))
 
     def _show_workspace_background_settings(self) -> None:
-        """Edit the same bounded visual vocabulary exposed to plugins."""
-
-        from PySide6.QtCore import Qt as CoreQt
-        from PySide6.QtWidgets import (
-            QComboBox as DialogComboBox,
-        )
-        from PySide6.QtWidgets import (
-            QDialogButtonBox,
-            QFormLayout,
-            QSlider,
-        )
-
-        controller = self._builtin_background_controller
-        if controller is None or not controller.active:
-            ToastManager.instance().info(_("请先选择一个本地工作台背景"))
-            return
-        dialog = QDialog(self)
-        dialog.setWindowTitle(_("工作台背景显示设置"))
-        form = QFormLayout(dialog)
-
-        preset = DialogComboBox(dialog)
-        for label, value in (
-            (_("清晰"), "clear"), (_("平衡"), "balanced"),
-            (_("专注"), "focus"), (_("沉浸"), "immersive"),
-            (_("纯背景"), "solid"),
-        ):
-            preset.addItem(label, value)
-        scope = DialogComboBox(dialog)
-        for label, value in (
-            (_("整个应用客户区"), "application"),
-            (_("完整工作区"), "workspace"),
-            (_("当前内容画布"), "canvas"),
-        ):
-            scope.addItem(label, value)
-        scope.setCurrentIndex(max(0, scope.findData(controller.scope)))
-
-        def slider(minimum: int, maximum: int, value: int) -> Any:
-            widget = QSlider(CoreQt.Orientation.Horizontal, dialog)
-            widget.setRange(minimum, maximum)
-            widget.setValue(value)
-            return widget
-
-        opacity = slider(5, 100, round(controller.layer.opacity * 100))
-        panel = slider(65, 100, controller.panel_opacity)
-        dim = slider(0, 85, round(controller.dim * 100))
-        blur = slider(0, 20, controller.layer.blur)
-        form.addRow(_("视觉预设"), preset)
-        form.addRow(_("背景范围"), scope)
-        form.addRow(_("背景可见度"), opacity)
-        form.addRow(_("前景面板不透明度"), panel)
-        form.addRow(_("暗色遮罩"), dim)
-        form.addRow(_("静态背景模糊"), blur)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, parent=dialog)
-        form.addRow(buttons)
-        def apply_dialog_preset(_index: int) -> None:
-            controller.apply_preset(str(preset.currentData()))
-            opacity.setValue(round(controller.layer.opacity * 100))
-            panel.setValue(controller.panel_opacity)
-            dim.setValue(round(controller.dim * 100))
-            blur.setValue(controller.layer.blur)
-
-        preset.activated.connect(apply_dialog_preset)
-        scope.activated.connect(
-            lambda _index: controller.set_scope(str(scope.currentData()))
-        )
-        opacity.valueChanged.connect(controller.set_opacity)
-        panel.valueChanged.connect(controller.set_panel_opacity)
-        dim.valueChanged.connect(controller.set_dim)
-        blur.valueChanged.connect(controller.set_blur)
-        buttons.rejected.connect(dialog.reject)
-        dialog.exec()
+        self._chrome.show_workspace_background_settings()
 
     # --- ErrorDialogHelper ---
     def _show_error_dialog(
@@ -665,161 +593,11 @@ class MainWindow(QMainWindow):
                 widget.deleteLater()
 
     def _check_for_updates(self) -> None:
-        """托盘"检查更新"：后台线程跑 check，结果以 Toast/对话框呈现。
+        self._chrome.check_for_updates()
 
-        ★ 检查与**执行**都在应用内（执行走同一套 `commands.self_update` 编排）；
-        本平台没有自动落地能力时只给下载信息（见 `options.manual_install`）。
-        """
-        from .update_check import _CheckWorker
 
-        if self._config_path is None:
-            ToastManager.instance().info(_("未加载任务配置，无法检查更新"))
-            return
-        if self._update_check_worker is not None:
-            ToastManager.instance().info(_("更新检查正在进行中"))
-            return
-        ToastManager.instance().info(_("正在检查更新……"))
-        worker = _CheckWorker(str(self._config_path), self)
-        worker.finished_with.connect(self._on_update_checked)
-        self._update_check_worker = worker
-        worker.start()
 
-    def _on_update_checked(self, payload: dict[str, Any], code: int) -> None:
-        # ★ 状态判断用 payload 的 status 字符串（"disabled"/"ignored"/"failed"/
-        #   "up-to-date"/"update-available"），**不导入 commands 层的退出码**——
-        #   退出码是 commands 的 API，GUI 只消费语义化的 status。
-        self._update_check_worker = None
-        status = str(payload.get("status", ""))
-        if status == "disabled":
-            ToastManager.instance().info(_("应用自更新已禁用（缺少随包信任根）"))
-            return
-        if status == "ignored":
-            ToastManager.instance().info(_("已忽略该版本的更新（命令行 ignore --clear 可恢复）"))
-            return
-        if status == "failed":
-            ToastManager.instance().warning(
-                _("检查更新失败：{0}").format(payload.get("detail", ""))
-            )
-            return
-        from .update_check import (
-            available_apply_modes,
-            describe_apply_mode,
-            format_update_summary,
-        )
 
-        summary = format_update_summary(payload)
-        if status == "up-to-date":
-            ToastManager.instance().info(summary)
-            return
-
-        options = payload.get("options") or {}
-        modes = available_apply_modes(options)
-        if not modes:
-            # 本平台没有自动落地能力（或本版没有可用资产）⇒ **只呈现信息**。
-            # 不提供"点了必然失败"的按钮。
-            box = QMessageBox(self)
-            box.setWindowTitle(_("检查更新"))
-            box.setText(summary)
-            box.setAccessibleName(_("检查更新结果"))
-            box.exec()
-            return
-
-        box = QMessageBox(self)
-        box.setWindowTitle(_("检查更新"))
-        box.setText(summary)
-        box.setAccessibleName(_("检查更新结果"))
-        apply_button = box.addButton(_("立即更新"), QMessageBox.ButtonRole.AcceptRole)
-        ignore_button = box.addButton(_("忽略此版本"), QMessageBox.ButtonRole.DestructiveRole)
-        box.addButton(_("稍后"), QMessageBox.ButtonRole.RejectRole)
-        box.exec()
-        clicked = box.clickedButton()
-        if clicked is ignore_button:
-            self._ignore_current_update_version()
-            return
-        if clicked is not apply_button:
-            return
-        if len(modes) == 1:
-            self._start_update_apply(modes[0], describe_apply_mode(modes[0], options))
-            return
-        # 多种方式可选 ⇒ 让用户选（含体积与磁盘代价，用户要据此决定）
-        chooser = QMessageBox(self)
-        chooser.setWindowTitle(_("选择更新方式"))
-        chooser.setAccessibleName(_("选择更新方式"))
-        chooser.setText(_("请选择更新方式："))
-        buttons: dict[Any, str] = {}
-        for mode in modes:
-            buttons[chooser.addButton(describe_apply_mode(mode, options), QMessageBox.ButtonRole.AcceptRole)] = mode
-        chooser.addButton(_("取消"), QMessageBox.ButtonRole.RejectRole)
-        chooser.exec()
-        chosen = buttons.get(chooser.clickedButton())
-        if chosen is None:
-            return
-        self._start_update_apply(chosen, describe_apply_mode(chosen, options))
-
-    def _ignore_current_update_version(self) -> None:
-        """托盘对话框的"忽略此版本"：与 CLI 的 `self-update ignore` 同一条路径。
-
-        ★ 复用 commands 层（它**必须先读更新源**拿当前版本号，不接受随手填 —— 记录一个
-        不存在的版本会导致永远收不到提示），不另写一份。
-        """
-        if self._config_path is None:
-            return
-        from ..commands import self_update as cmd_self_update
-
-        try:
-            payload, _code = cmd_self_update.ignore(config_path=str(self._config_path))
-        except Exception as exc:  # noqa: BLE001 - 异常需呈现给用户（C12/C25）
-            LOGGER.debug("update ignore failed: %s", exc, exc_info=True)
-            ToastManager.instance().warning(_("忽略该版本失败：{0}").format(exc))
-            return
-        ToastManager.instance().info(str(payload.get("detail") or _("已忽略该版本")))
-
-    def _start_update_apply(self, mode: str, description: str) -> None:
-        """确认后启动后台更新线程（确认框 ＝ CLI 的 `--yes` 判据）。"""
-        from .update_check import _ApplyWorker
-
-        confirm = QMessageBox(self)
-        confirm.setWindowTitle(_("确认更新"))
-        confirm.setAccessibleName(_("确认更新"))
-        confirm.setIcon(QMessageBox.Icon.Warning)
-        confirm.setText(
-            _("将执行：{0}\n\n这会覆盖应用文件（不会动你的工作区数据）。继续吗？").format(description)
-        )
-        confirm.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        confirm.setDefaultButton(QMessageBox.StandardButton.No)
-        if confirm.exec() != QMessageBox.StandardButton.Yes:
-            return
-        if self._update_apply_worker is not None:
-            ToastManager.instance().info(_("更新正在进行中"))
-            return
-        ToastManager.instance().info(_("正在下载并应用更新……"))
-        worker = _ApplyWorker(str(self._config_path), mode, self)
-        worker.finished_with.connect(self._on_update_applied)
-        self._update_apply_worker = worker
-        worker.start()
-
-    def _on_update_applied(self, payload: dict[str, Any], code: int) -> None:
-        from .update_check import format_apply_result
-
-        self._update_apply_worker = None
-        text = format_apply_result(payload, code)
-        if str(payload.get("status", "")) != "applied":
-            box = QMessageBox(self)
-            box.setWindowTitle(_("更新未完成"))
-            box.setAccessibleName(_("更新未完成"))
-            box.setIcon(QMessageBox.Icon.Warning)
-            box.setText(text)
-            box.exec()
-            return
-        box = QMessageBox(self)
-        box.setWindowTitle(_("更新完成"))
-        box.setAccessibleName(_("更新完成"))
-        box.setText(text)
-        restart_button = box.addButton(_("立即重启"), QMessageBox.ButtonRole.AcceptRole)
-        box.addButton(_("稍后手动重启"), QMessageBox.ButtonRole.RejectRole)
-        box.exec()
-        if box.clickedButton() is restart_button:
-            self._restart_application()
 
     def _restart_application(self) -> None:
         """拉起同一个可执行文件再退出当前进程。
@@ -1184,57 +962,7 @@ class MainWindow(QMainWindow):
             self._start_sample_run()
 
     def _start_sample_run(self, pages: int | None = None) -> None:
-        if not self._config_path:
-            return
-        if self._sample_jobs:
-            ToastManager.instance().info(_("已有试跑正在收尾，请等待完成后再试。"))
-            return
-        pages = 3 if pages is None else pages
-        from .views.task_canvas_logic import crawl_fingerprint
-
-        input_fingerprint = crawl_fingerprint(self._config)
-        input_config = self._config
-        worker = SampleRunWorker(self._config_path, pages, parent=self)
-
-        def completed(result: dict) -> None:
-            if self._close_after_background_jobs:
-                return
-            sample = result.get("sample", {})
-            status = str(sample.get("status") or "")
-            processed = int(sample.get("processed", 0) or 0)
-            records = int(sample.get("records", 0) or 0)
-            ok = bool(status) and status != "failed" and processed > 0
-            summary = _(f"状态：{status}\n处理页面：{processed}\n提取记录：{records}")
-            # P0：试跑结果回填工作台（决定「开始全量运行」是否可用）
-            current = self._config is input_config and crawl_fingerprint(self._config) == input_fingerprint
-            self._task_canvas.set_trial_result(
-                ok and current, summary if current else _("配置已变化，旧试跑仅供参考。") + "\n" + summary,
-                sample, input_fingerprint=input_fingerprint,
-            )
-            ok = ok and current
-            if ok:
-                ToastManager.instance().success(_("小样本试跑完成：请在工作台查看结果"))
-            else:
-                ToastManager.instance().warning(_("试跑未通过：请按工作台中的诊断建议修正"))
-
-        def failed(message: str) -> None:
-            if self._close_after_background_jobs:
-                return
-            self._task_canvas.set_trial_result(
-                False,
-                _("试跑失败：{0}").format(message),
-                {"status": "failed", "processed": 0, "records": 0, "error": message},
-                input_fingerprint=input_fingerprint,
-            )
-            ToastManager.instance().warning(_("小样本试跑失败：请在工作台查看诊断"))
-
-        worker.succeeded.connect(completed)
-        worker.failed.connect(failed)
-        worker.finished.connect(worker.deleteLater)
-        worker.finished.connect(lambda: self._finish_sample_job(worker))
-        self._sample_jobs.append(worker)
-        worker.start()
-        ToastManager.instance().info(_("正在独立工作区试跑 {0} 页，不会改变正式任务断点").format(pages))
+        self._run_delegate.start_sample_run(pages)
 
     def _finish_sample_job(self, worker: SampleRunWorker) -> None:
         self._sample_jobs = [job for job in self._sample_jobs if job is not worker]
@@ -1541,170 +1269,17 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _show_template_library(self) -> None:
-        templates = self._template_loader.discover_templates(force=True)
-        if not templates:
-            ToastManager.instance().info(_("未找到任何模板"))
-            return
-        dialog = TemplateLibraryDialog(templates, self)
-        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_template:
-            template = dialog.selected_template
-            try:
-                from ..templates.template_application import apply_template
-
-                recipe = yaml.safe_load(template.filepath.read_text(encoding="utf-8")) or {}
-                current = yaml.safe_load(to_yaml(self._config)) or {}
-                from ..templates.template_catalog import TemplateCatalog
-                from .views.template_parameters import TemplateParametersDialog
-
-                catalog = TemplateCatalog(template.filepath.parent)
-                record = next((item for item in catalog.discover() if item.path == template.filepath.resolve()), None)
-                if record is None:
-                    raise ValueError(_("所选模板记录不可用"))
-                if record.metadata.placeholders:
-                    initial: dict[str, Any] = {}
-                    seeds = current.get("source", {}).get("seeds", [])
-                    if seeds:
-                        for name in record.metadata.placeholders:
-                            if name.casefold() == "site_url":
-                                initial[name] = seeds[0]
-                    parameters = TemplateParametersDialog(record.metadata.placeholders, initial, self)
-                    if parameters.exec() != QDialog.DialogCode.Accepted:
-                        return
-                    recipe = catalog.render(record, parameters.values(), strict=True)
-                application = apply_template(current, recipe, preserve_choices=True)
-            except Exception as exc:
-                QMessageBox.warning(self, _("模板不可用"), str(exc))
-                return
-            preview = "\n".join(
-                f"{item.get('business_section', item['path'])}: " +
-
-                f"{item.get('business_change', item['change_type'])} — " +
-
-                f"{item['path']}"
-                for item in application.changes[:18]
-            )
-            box = QMessageBox(self)
-            box.setWindowTitle(_("组合模板"))
-            box.setText(_("将模板能力组合到当前任务，不覆盖名称、入口网址、主题、已有字段和输出选择。"))
-            box.setInformativeText(template.why or template.description)
-            box.setDetailedText(preview or _("没有需要修改的配置"))
-            box.setStandardButtons(QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel)
-            if box.exec() != QMessageBox.StandardButton.Apply:
-                return
-            self._config = from_yaml(yaml.safe_dump(application.after, allow_unicode=True, sort_keys=False))
-            self._config_path = None
-            self._config_label.setText(_("组合模板: ") + template.display_name)
-            self._refresh_canvas()
-            if self._config.has_placeholders():
-                # B14：模板组合后存在 {{...}} 占位符需显式警告，避免带着未替换占位符直接运行
-                QMessageBox.warning(
-                    self, _("存在占位符"),
-                    _("模板包含尚未替换的占位符（{{...}}），直接运行可能采集不到数据，请先在编辑器中替换。"),
-                )
-            else:
-                ToastManager.instance().success(_("模板能力已组合；建议先试跑 3 页"))
+        self._config_delegate.show_template_library()
 
     # ================================================================
     #  站点智能识别
     # ================================================================
 
     def _inspect_site(self, url: str) -> None:
-        self._statusbar.showMessage(_("正在安全探测网址并识别模板…"))
-        worker = SiteInspectionWorker(
-            url, self._config.task_intent,
-            robots_fail_closed=bool(
-                (self._config.passthrough.get("http") or {}).get("robots_fail_closed", True)
-            ),
-            parent=self,
-        )
-        worker.succeeded.connect(self._on_site_inspected)
-        worker.failed.connect(self._on_site_inspection_failed)
-        worker.finished.connect(worker.deleteLater)
-        worker.finished.connect(lambda: self._finish_inspection_job(worker))
-        self._inspection_jobs.append(worker)
-        worker.start()
+        self._config_delegate.inspect_site(url)
 
-    def _finish_inspection_job(self, worker: SiteInspectionWorker) -> None:
-        self._inspection_jobs = [job for job in self._inspection_jobs if job is not worker]
-        self._finish_deferred_close_if_safe()
 
-    def _on_site_inspection_failed(self, message: str) -> None:
-        if self._close_after_background_jobs:
-            return
-        ToastManager.instance().error(_("智能识别失败"))
-        QMessageBox.warning(
-            self, _("智能识别失败"),
-            _("无法安全完成探测。原配置没有改变。\n\n") + message,
-        )
 
-    def _on_site_inspected(self, payload: tuple) -> None:
-        """SiteInspectionWorker 成功回调；载荷为 (report, url) 元组。"""
-        if self._close_after_background_jobs:
-            return
-        report, url = payload
-        recommendations = list(report.get("recommendations", []))
-        lines = [
-            _("页面类型: ") + str(report.get("page_type", "unknown")),
-            _("动态页面: ") + (_("是") if report.get("dynamic") else _("否")),
-            _("CMS: ") + (", ".join(report.get("cms", [])) or _("未识别")),
-            _("分页: ") + (", ".join(report.get("pagination", [])) or _("未识别")),
-            "",
-            _("推荐模板:"),
-        ]
-        catalog = bundled_template_catalog([self._project_root / "templates"])
-        for index, item in enumerate(recommendations[:5], 1):
-            record = catalog.get(str(item.get("id", "")))
-            name = record.metadata.name if record else str(item.get("id"))
-            reasons = "、".join(str(value) for value in item.get("reasons", []))
-            lines.append(_(f"  {index}. {name} — {reasons or '安全通用回退'}"))
-        if not recommendations:
-            QMessageBox.information(self, _("智能识别结果"), "\n".join(lines))
-            return
-        best_id = str(recommendations[0].get("id", ""))
-        reply = QMessageBox.question(
-            self, _("智能识别结果"),
-            "\n".join(lines) + "\n\n" + _("是否套用第一项模板？"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        record = catalog.get(best_id)
-        if record is None:
-            QMessageBox.warning(self, _("模板不可用"), best_id)
-            return
-        origin = QUrl(url).adjusted(QUrl.UrlFormattingOption.RemovePath).toString().rstrip("/")  # type: ignore[arg-type]  # PySide6 存根枚举别名差异，运行时正确
-        values = {}
-        for key in record.metadata.placeholders:
-            lowered = key.casefold()
-            if lowered == "site_url":
-                values[key] = origin
-            elif "url" in lowered:
-                values[key] = url
-        rendered = catalog.render(record, values, strict=False)
-        current = yaml.safe_load(to_yaml(self._config)) or {}
-        composed = compose_recipe(current, rendered)
-        changes = diff_config(current, composed)
-        preview = []
-        for change in changes[:18]:
-            preview.append(f"{change.path}: {change.before!r} → {change.after!r}")
-        if len(changes) > 18:
-            preview.append(_(f"…另有 {len(changes) - 18} 项"))
-        confirm = QMessageBox(self)
-        confirm.setWindowTitle(_("组合建议预览"))
-        confirm.setText(_("模板只会补充所需能力；任务名称、入口网址、主题、已有字段和输出选择将保留。"))
-        confirm.setInformativeText(
-            (record.metadata.why or record.metadata.description)
-            + (_(f"\n限制：{record.metadata.limitations}") if record.metadata.limitations else "")
-        )
-        confirm.setDetailedText("\n".join(preview) or _("没有需要修改的配置"))
-        confirm.setStandardButtons(QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel)
-        if confirm.exec() != QMessageBox.StandardButton.Apply:
-            return
-        self._config = from_yaml(yaml.safe_dump(composed, allow_unicode=True, sort_keys=False))
-        self._config_path = None
-        self._config_label.setText(_("智能模板: ") + record.metadata.name)
-        self._refresh_canvas()
-        ToastManager.instance().info(_("智能模板已加载；请检查红色占位符后运行"))
 
     # ================================================================
     #  P2：意图区 URL 探活（画布徽标，失败静默降级）
@@ -1842,50 +1417,7 @@ class MainWindow(QMainWindow):
             self._file_list.set_directory(download_dir)
 
     def _export_markdown(self) -> None:
-        """任务完成自动导出结果 Markdown（P1-2 修复）。
-
-        run_controller 在 finished 时无参调用本方法；复用 _auto_load_results 的同款
-        workspace 归一化逻辑自动定位 records.csv 并导出一份 records.md。
-        失败仅记日志，不弹框、不阻塞事件循环（自动路径）；带保存对话框的手动导出
-        仍由 result_table 视图独立承担。
-        """
-        workspace = Path(self._config.workspace).expanduser()
-        if not workspace.is_absolute():
-            workspace = self._project_root / workspace
-        csv_path = next(
-            (path for path in (workspace / "output" / "records.csv", workspace / "records.csv")
-             if path.is_file()),
-            None,
-        )
-        if csv_path is None:
-            logging.getLogger(__name__).warning(
-                _("自动导出 Markdown 跳过：未找到结果文件 records.csv 于 %s"), workspace)
-            return
-
-        from omnicrawler.services.markdown_export import export_results_markdown
-
-        from .core.background_worker import BackgroundWorker, run_worker
-
-        filepath = Path(csv_path)
-        jsonl = filepath.with_name("records.jsonl")
-        target = filepath.with_name("records.md")
-
-        class _AutoMarkdownWorker(BackgroundWorker):
-            def work(self) -> str:
-                export_results_markdown(
-                    csv_path=filepath,
-                    jsonl_path=jsonl if jsonl.is_file() else None,
-                    output_path=target,
-                    include_evidence=True,
-                )
-                return str(target)
-
-        run_worker(
-            _AutoMarkdownWorker(),
-            on_succeeded=lambda path: self._statusbar.showMessage(
-                _("已自动导出 Markdown：{0}").format(path), 6000),
-            on_failed=lambda err: logging.getLogger(__name__).warning(_("自动导出 Markdown 失败: %s"), err),
-        )
+        self._run_delegate.export_markdown()
 
     def _open_result_folder(self) -> None:
         # A14：workspace 可能含 ~ 等用户目录标记，需 expanduser 后判断绝对路径
@@ -2076,13 +1608,7 @@ class MainWindow(QMainWindow):
         document_facade.pdf_region_selector()(self).exec()
 
     def _open_ai_service_center(self) -> None:
-        """MenuBuilder 引用 — 打开 AI 服务中心对话框，写 .env 文件。"""
-        from .views.ai_service_center import AIServiceCenterDialog
-
-        ai_config = self._load_ai_config_from_env()
-        dialog = AIServiceCenterDialog(ai_config, self, workspace=self._project_root)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            self._save_ai_config_to_env(ai_config)
+        self._config_delegate.open_ai_service_center()
 
     def _show_stealth_settings(self) -> None:
         """打开反检测与隐身设置对话框。"""
@@ -2091,77 +1617,7 @@ class MainWindow(QMainWindow):
         dialog = StealthSettingsDialog(self._settings, parent=self)
         dialog.exec()
 
-    def _load_ai_config_from_env(self) -> dict[str, Any]:
-        """从单一真源 .env 加载 AI 配置（优先级 os.environ > 项目 .env > 用户级 .env）。"""
-        from ..core.ai_env import load_ai_config_sidecar, load_ai_env
 
-        env_vars = load_ai_env(self._project_root)
-        config: dict[str, Any] = {"mode": "disabled"}
-        provider = env_vars.get("OMNICRAWL_AI_PROVIDER", "disabled")
-        if provider != "disabled":
-            config["mode"] = "enabled"
-            config["default_provider"] = "default"
-            config.setdefault("providers", {})["default"] = {
-                "type": provider,
-                "base_url": env_vars.get("OMNICRAWL_AI_BASE_URL", ""),
-                "model": env_vars.get("OMNICRAWL_AI_MODEL", ""),
-                "api_key": env_vars.get("OMNICRAWL_AI_API_KEY", ""),
-                "timeout_seconds": _safe_int(env_vars.get("OMNICRAWL_AI_TIMEOUT"), 60),
-            }
-        # C36：合并旁路 JSON 中的隐私/预算/路由/抽取设置（保留 .env 解析出的 api_key，
-        # 绝不信任旁路文件里的 api_key）
-        sidecar = load_ai_config_sidecar(self._project_root)
-        if sidecar:
-            sidecar_providers = sidecar.get("providers", {})
-            if isinstance(sidecar_providers, dict) and "default" in sidecar_providers:
-                sidecar_providers["default"].pop("api_key", None)
-            for key, value in sidecar.items():
-                if key == "api_key":
-                    continue
-                config[key] = value
-        return config
-
-    def _save_ai_config_to_env(self, config: dict[str, Any]) -> None:
-        """将 AI 配置行级写入单一真源 .env，并同步进程内 os.environ。
-
-        保留 .env 中的注释/空行/顺序；关闭 AI 时同步删除 KEY/BASE_URL/MODEL。
-        S2.2.2：OMNICRAWL_AI_API_KEY 明文先加密入 secrets_store，.env 只写
-        ``secret://`` 引用（引用幂等，不可存时拒绝写入绝不回退明文）。
-        """
-        from ..core.ai_env import save_ai_config_sidecar, save_ai_env, sync_ai_env_to_os
-        from ..core.credentials import seal_secret
-
-        updates: dict[str, str | None] = {}
-        if config.get("mode") == "disabled":
-            updates["OMNICRAWL_AI_PROVIDER"] = "disabled"
-            updates["OMNICRAWL_AI_BASE_URL"] = None
-            updates["OMNICRAWL_AI_MODEL"] = None
-            updates["OMNICRAWL_AI_API_KEY"] = None
-            updates["OMNICRAWL_AI_TIMEOUT"] = None
-        else:
-            provider = config.get("providers", {}).get("default", {})
-            api_key = str(provider.get("api_key", "")).strip()
-            try:
-                if api_key:
-                    api_key = seal_secret("ai.env.OMNICRAWL_AI_API_KEY", api_key)
-            except Exception:
-                QMessageBox.warning(
-                    self,
-                    _("无法安全保存"),
-                    _("API key 无法加密存储（secrets_store 不可用），已拒绝写入明文，请检查系统凭据库或设置 {var}。").format(
-                        var="OMNICRAWL_MASTER_PASSWORD"
-                    ),
-                )
-                return
-            updates["OMNICRAWL_AI_PROVIDER"] = provider.get("type", "openai_compatible")
-            updates["OMNICRAWL_AI_BASE_URL"] = provider.get("base_url", "")
-            updates["OMNICRAWL_AI_MODEL"] = provider.get("model", "")
-            updates["OMNICRAWL_AI_API_KEY"] = api_key
-            updates["OMNICRAWL_AI_TIMEOUT"] = str(provider.get("timeout_seconds", 60))
-        save_ai_env(updates, project_root=self._project_root)
-        sync_ai_env_to_os(updates)
-        # C36：将 .env 无法承载的隐私/预算/路由/抽取设置持久化到旁路 JSON（不含明文 api_key）
-        save_ai_config_sidecar(self._project_root, config)
 
 
 def _safe_int(value: Any, default: int) -> int:
