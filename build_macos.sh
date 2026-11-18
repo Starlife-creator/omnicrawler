@@ -213,7 +213,7 @@ touch "$APP_BUNDLE/Contents/MacOS/PORTABLE.flag"
 #   改（改 Mach-O 会破坏签名封条）。脚本只在依赖确实指向别的包副本时才动手，改不动就非零退出。
 if [[ "$EDITION" == "Full" ]]; then
   echo "[Full] 修正 _ssl 的 OpenSSL 依赖指向..."
-  "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/fix_macos_bundle_openssl.py" "$APP_BUNDLE" \
+  "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/builders/fix_macos_bundle_openssl.py" "$APP_BUNDLE" \
     || { echo "_ssl OpenSSL 依赖修正失败（ssl 可能不可用）" >&2; exit 1; }
 fi
 
@@ -253,26 +253,26 @@ find "$PROJECT_ROOT/docs" -mindepth 1 -maxdepth 1 -type d ! -name archive ! -nam
 find "$PROJECT_ROOT/docs" -maxdepth 1 -type f -name "*.md" \
   -exec cp {} "$RELEASE_ROOT/docs/" \;
 # C-#15：暂存目录兜底校验——历史文档目录漏排除或必备文件缺失即构建失败。
-"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/check_portable_doc_manifest.py" --release-root "$RELEASE_ROOT"
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/gates/check_portable_doc_manifest.py" --release-root "$RELEASE_ROOT"
 for relative_dir in data/input data/pdfs work output logs; do
   mkdir -p "$RELEASE_ROOT/$relative_dir"
 done
 
 # ---- 产物级测试（SBOM + CLI 冒烟 + portable 冒烟 + 完整性清单）--------------
 # 与 Windows 构建对齐：落盘 CAPABILITIES.json / RELEASE-INFO.json 并重刷清单
-"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/generate_sbom.py" --output "$RELEASE_ROOT/SBOM.json"
-"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/check_sbom_lock.py" \
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/releasing/generate_sbom.py" --output "$RELEASE_ROOT/SBOM.json"
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/gates/check_sbom_lock.py" \
   --sbom "$RELEASE_ROOT/SBOM.json" --lock "$PROJECT_ROOT/uv.lock"
 "$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli" --version
 "$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli" templates validate
 "$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli" capabilities --verify-imports --portable-paths > "$RELEASE_ROOT/CAPABILITIES.json"
-"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/generate_release_info.py" \
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/releasing/generate_release_info.py" \
     --project-root "$PROJECT_ROOT" --release-root "$RELEASE_ROOT" --edition "$EDITION"
 # P4-3：portable 冒烟（浏览器/原生运行时）。其 cwd=releaseRoot 会写缓存，
 # 必须在完整性清单生成之前运行（与 Windows F11 同约束）。
 # macOS 曾遇 selenium 引擎挂起（BiDi 事件流不返回），OMNICRAWL_SMOKE_LIVE=1
 # 实时透传子进程日志，失败时 CI 能看到卡住前的最后输出。
-OMNICRAWL_SMOKE_LIVE=1 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/portable_smoke_test.py" "$RELEASE_ROOT" --edition "$EDITION"
+OMNICRAWL_SMOKE_LIVE=1 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/portable/portable_smoke_test.py" "$RELEASE_ROOT" --edition "$EDITION"
 
 # M6（Full）：产物内 OCR 运行时可调用冒烟（Tesseract/ChromeDriver；Paddle 不打包）
 if [[ "$EDITION" == "Full" ]]; then
@@ -287,7 +287,7 @@ fi
 
 # 完整性清单：在新增 CAPABILITIES.json / RELEASE-INFO.json 之后生成，
 # 使清单覆盖这两个机器可读文件（与 Windows 同序：先加文件再刷清单）。
-"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/create_runtime_manifest.py" --release-root "$RELEASE_ROOT"
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/builders/create_runtime_manifest.py" --release-root "$RELEASE_ROOT"
 "$RELEASE_ROOT/OmniCrawler.app/Contents/MacOS/omnicrawler-cli" runtime-verify --root "$RELEASE_ROOT"
 # F32（2026-10-01）：同上——载荷根跑冒烟会把运行期状态写进 exe 同级；macOS 的可执行文件在
 # `OmniCrawler.app/Contents/MacOS/`，故两处都要清（`runtime_manifest` 侧对 `.omnicrawler`
@@ -320,7 +320,7 @@ else
   tar -czf "$TAR_ARCHIVE" -C "$BUILD_ROOT/release" --exclude='OmniCrawler/logs' OmniCrawler
   echo "Portable archive: $TAR_ARCHIVE"
   # P5：macOS tar.gz 回退产物跑容器级深校验（mac 平台弱 Full：不要求 Paddle）
-  "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/check_release_integrity.py" "$PROJECT_ROOT" \
+  "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/gates/check_release_integrity.py" "$PROJECT_ROOT" \
     --portable-tar "$TAR_ARCHIVE" --portable-platform mac --portable-deep \
     || { echo "macOS portable tar.gz 深校验失败" >&2; exit 1; }
 fi
@@ -350,7 +350,7 @@ if [[ -f "$DMG_ARCHIVE" ]]; then
 fi
 [[ -n "$MAC_ARCHIVE" ]] || { echo "既没有 dmg 也没有 tar.gz 产物" >&2; exit 1; }
 if [[ -n "${OMNICRAWL_DELTA_BASELINES:-}" ]]; then
-  "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/build_update_delta.py" \
+  "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/builders/build_update_delta.py" \
     --payload-archive "$MAC_ARCHIVE" \
     --version "$APP_VERSION" --platform macos --edition "$EDITION_LC" \
     --baselines "$OMNICRAWL_DELTA_BASELINES" \
@@ -360,7 +360,7 @@ if [[ -n "${OMNICRAWL_DELTA_BASELINES:-}" ]]; then
     || echo "[WARN] 变更包产出失败（macOS 本就只走全量）" >&2
 fi
 
-"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/build_update_manifest.py" \
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/builders/build_update_manifest.py" \
   --no-payload \
   --version "$APP_VERSION" --platform macos --edition "$EDITION_LC" \
   --notes-file "$UPDATE_NOTES_FILE" \

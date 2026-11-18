@@ -232,7 +232,7 @@ find "$PROJECT_ROOT/docs" -mindepth 1 -maxdepth 1 -type d ! -name archive ! -nam
 find "$PROJECT_ROOT/docs" -maxdepth 1 -type f -name "*.md" \
   -exec cp {} "$RELEASE_ROOT/docs/" \;
 # C-#15：暂存目录兜底校验——历史文档目录漏排除或必备文件缺失即构建失败。
-"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/check_portable_doc_manifest.py" --release-root "$RELEASE_ROOT"
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/gates/check_portable_doc_manifest.py" --release-root "$RELEASE_ROOT"
 touch "$RELEASE_ROOT/PORTABLE.flag"
 for relative_dir in data/input data/pdfs work output logs; do
   mkdir -p "$RELEASE_ROOT/$relative_dir"
@@ -261,7 +261,7 @@ BRANDING_SRC="$PROJECT_ROOT/src/omnicrawler/gui/branding"
 # 全在 tools/gates/check_linux_delivery.py 里；单测把 CRLF、BOM、缺图标装回去验证它会红。
 # （.sh / .desktop 若以 CRLF 交付，用户侧 `/usr/bin/env: 'bash\r'` 直接失败，
 #   而构建机是 Linux、本地看不出来 ⇒ 判据必须前移到装配期。）
-"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/check_linux_delivery.py" \
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/gates/check_linux_delivery.py" \
   --delivery-dir "$DELIVERY_LINUX" --branding-src "$BRANDING_SRC"
 
 mkdir -p "$INSTALL_DIR/icons/hicolor"
@@ -285,17 +285,17 @@ echo "[I1] installer bundle: 3 scripts + $icon_total hicolor icons -> $INSTALL_D
 
 # ---- 产物级测试（SBOM + CLI 冒烟 + portable 冒烟 + 完整性清单）--------------
 # 与 Windows 构建对齐：落盘 CAPABILITIES.json / RELEASE-INFO.json 并重刷清单
-"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/generate_sbom.py" --output "$RELEASE_ROOT/SBOM.json"
-"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/check_sbom_lock.py" \
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/releasing/generate_sbom.py" --output "$RELEASE_ROOT/SBOM.json"
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/gates/check_sbom_lock.py" \
   --sbom "$RELEASE_ROOT/SBOM.json" --lock "$PROJECT_ROOT/uv.lock"
 "$RELEASE_ROOT/omnicrawler" --version
 "$RELEASE_ROOT/omnicrawler" templates validate
 "$RELEASE_ROOT/omnicrawler" capabilities --verify-imports --portable-paths > "$RELEASE_ROOT/CAPABILITIES.json"
-"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/generate_release_info.py" \
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/releasing/generate_release_info.py" \
     --project-root "$PROJECT_ROOT" --release-root "$RELEASE_ROOT" --edition "$EDITION"
 # P4-3：portable 冒烟（浏览器/原生运行时）。其 cwd=releaseRoot 会写缓存，
 # 必须在完整性清单生成之前运行（与 Windows F11 同约束）。
-"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/portable_smoke_test.py" "$RELEASE_ROOT" --edition "$EDITION"
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/portable/portable_smoke_test.py" "$RELEASE_ROOT" --edition "$EDITION"
 
 # L5（Full）：产物内 OCR 运行时可调用冒烟——确保拷进包的 tesseract/chromedriver 真可用
 if [[ "$EDITION" == "Full" ]]; then
@@ -309,7 +309,7 @@ fi
 
 # 完整性清单：在新增 CAPABILITIES.json / RELEASE-INFO.json 之后生成，
 # 使清单覆盖这两个机器可读文件（与 Windows 同序：先加文件再刷清单）。
-"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/create_runtime_manifest.py" --release-root "$RELEASE_ROOT"
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/builders/create_runtime_manifest.py" --release-root "$RELEASE_ROOT"
 "$RELEASE_ROOT/omnicrawler" runtime-verify --root "$RELEASE_ROOT"
 # F32（2026-10-01）：同上——载荷根跑冒烟会把运行期状态写进 `<root>/.omnicrawler/`；
 # 它既不该随包发出，也会被 build_update_manifest 的受保护顶层守卫拒绝（release 预检实测）。
@@ -332,7 +332,7 @@ tar -cJf "$RELEASE_ARCHIVE" -C "$BUILD_ROOT/release" --exclude='OmniCrawler/logs
 
 # P5 完整版：Linux tar.xz 容器级深校验（与 Windows zip 对齐）。
 # --portable-deep 对包内每个文件做 SHA-256 与 RUNTIME-MANIFEST 双向核对。
-"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/check_release_integrity.py" "$PROJECT_ROOT" \
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/gates/check_release_integrity.py" "$PROJECT_ROOT" \
   --portable-tar "$RELEASE_ARCHIVE" --portable-platform linux --portable-deep \
   || { echo "Linux portable tar.xz 深校验失败" >&2; exit 1; }
 
@@ -361,7 +361,7 @@ PREV_ARGS_FILE="$BUILD_ROOT/.previous-args.txt"
 : > "$DELTA_ARGS_FILE"
 : > "$PREV_ARGS_FILE"
 if [[ -n "${OMNICRAWL_DELTA_BASELINES:-}" ]]; then
-  "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/build_update_delta.py" \
+  "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/builders/build_update_delta.py" \
     --payload-archive "$RELEASE_ARCHIVE" \
     --version "$APP_VERSION" --platform linux --edition "$EDITION_LC" \
     --baselines "$OMNICRAWL_DELTA_BASELINES" \
@@ -371,7 +371,7 @@ if [[ -n "${OMNICRAWL_DELTA_BASELINES:-}" ]]; then
     || echo "[WARN] 变更包产出失败 ⇒ 本版只发布全量（客户端会走全量，不会卡住）" >&2
 fi
 
-"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/build_update_manifest.py" \
+"$BUILDER_PYTHON" "$PROJECT_ROOT/tools/builders/build_update_manifest.py" \
   --payload-archive "$RELEASE_ARCHIVE" \
   --version "$APP_VERSION" --platform linux --edition "$EDITION_LC" \
   --notes-file "$UPDATE_NOTES_FILE" \
