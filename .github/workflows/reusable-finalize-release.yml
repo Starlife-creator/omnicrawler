@@ -219,9 +219,25 @@ jobs:
           cd "$RUNNER_TEMP/artifacts"
           shopt -s nullglob
           mounted=0
+          # ★ 「停发不停建」（2026-11-19，优化方案批次 5）：
+          # Full 构建**照常编译并跑通冒烟**（CI 产物留在本次 run 的 Actions
+          # artifacts 里，维护者可随时取用做冻结兼容性回归），但**不挂公开
+          # Release**——对外只发单一 Standard 包，消除用户面对双版本的选择困惑。
+          #
+          # 为什么不删 Full：它是 PyInstaller 冻结兼容性的试金石（paddle/cv2/
+          # lxml/PySide6/playwright 同处冻结环境时的 hooks 与命名空间包冲突，
+          # 只有全量构建能第一时间暴露）。删了它，后续升级 Python 或基础库就
+          # 失去自动化回归基准。
+          #
+          # 为什么在**挂载阶段**排除而不是在构建阶段：构建要照常跑，才能继续
+          # 提供回归证据；只有"对外可见"这一步需要收敛。
           for f in *; do
             case "$f" in
               SKIPPED-*.txt|RELEASE_BODY.md) continue ;;
+              # 公开 Release 只收 Standard；Full 留在 Actions artifacts
+              OmniCrawler-*-Full.*|*-Portable-Full.*) 
+                echo "::notice::停发不停建：$f 不进公开 Release（保留在 Actions artifacts）"
+                continue ;;
             esac
             gh release upload "$TAG" "$f" --clobber
             echo "已挂载: $f"
