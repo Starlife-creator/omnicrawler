@@ -60,6 +60,23 @@ def _market_egress(project_root: Path) -> Any:
     return EgressBroker(config)
 
 
+def _configured_sources(app_config: Any) -> list[dict[str, Any]]:
+    """从配置读出多市场源；无配置时返回空列表（退回单源路径）。
+
+    worker 跑在后台线程，不能直接把 `AppConfig` 传进去——它不是线程安全的。
+    所以在视图层（GUI 线程）先读出纯数据，再交给 worker。
+    """
+    if app_config is None:
+        return []
+    getter = getattr(app_config, "plugin_catalogs", None)
+    if not callable(getter):
+        return []
+    try:
+        return [dict(item) for item in (getter() or [])]
+    except Exception:  # noqa: BLE001 - 配置异常按"无多源"处理，退回单源
+        return []
+
+
 class _TemplateCatalogWorker(BackgroundWorker):
     """后台拉取 catalog（模板页共用，仅读 templates 数组）。"""
 
@@ -71,6 +88,8 @@ class _TemplateCatalogWorker(BackgroundWorker):
         cache_root: Path,
         egress: Any,
         parent: QWidget | None = None,
+        *,
+        sources: list[dict[str, Any]] | None = None,
     ) -> None:
         super().__init__(parent)
         self._catalog_url = catalog_url
@@ -78,8 +97,40 @@ class _TemplateCatalogWorker(BackgroundWorker):
         self._trust_source = trust_source
         self._cache_root = cache_root
         self._egress = egress
+        # 多源列表由视图层从配置读出后传入（worker 跑在后台线程，
+        # 不直接持有 AppConfig —— 配置对象不是线程安全的）。
+        self._sources = list(sources or [])
 
     def work(self) -> dict[str, Any]:
+        # 配了多源就走聚合（与插件栏同语义：逐源验签、失败可见、
+        # 全部失败才算整体失败）；否则退回原来的单源 + 本地兜底。
+        if self._sources:
+            from .market_aggregation import (
+                MarketAggregationError,
+                aggregate_market_catalogs,
+            )
+
+            class _Holder:
+                """只提供 `plugin_catalogs()` 的极简持有者，避免把 AppConfig 带进线程。"""
+
+                def plugin_catalogs(self_inner) -> list[dict[str, Any]]:  # noqa: N805
+                    return list(self._sources)
+
+            try:
+                aggregated = aggregate_market_catalogs(
+                    _Holder(),
+                    trust_source=self._trust_source,
+                    local_fallback=self._local_fallback,
+                    cache_root=self._cache_root,
+                    egress=self._egress,
+                )
+                aggregated["_source"] = self._catalog_url
+                return aggregated
+            except MarketAggregationError:
+                # 聚合全失败时退回单源路径，给它最后一次机会；
+                # 单源也失败则按原逻辑抛错（视图进离线态）。
+                pass
+
         try:
             catalog = fetch_catalog_verified(
                 self._catalog_url,
@@ -172,6 +223,8 @@ class TemplateMarketView(WorkerOwnedWidget):
         trust_source: str,
         bundled_catalog_dir: str = "",
         parent: QWidget | None = None,
+        *,
+        app_config: Any = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("templateMarket")
@@ -185,6 +238,8 @@ class TemplateMarketView(WorkerOwnedWidget):
         self._trust_source = trust_source
         # B08-002 家族：共享 EgressBroker（对齐 plugin_market），模板目录/安装均跨出口审计。
         self._egress = _market_egress(self._base)
+        # 多源：从配置读出后交给 worker（worker 在后台线程，不持有 AppConfig）
+        self._app_config = app_config
 
         self._state = "offline"
         self._catalog: dict[str, Any] | None = None
@@ -341,6 +396,7 @@ class TemplateMarketView(WorkerOwnedWidget):
             self._base / ".omnicrawler" / "catalog-cache",
             self._egress,
             parent=self,
+            sources=_configured_sources(self._app_config),
         )
         self._catalog_worker.succeeded.connect(self._on_catalog_loaded)
         self._catalog_worker.failed.connect(self._on_catalog_error)

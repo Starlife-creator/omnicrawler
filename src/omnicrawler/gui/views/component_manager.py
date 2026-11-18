@@ -97,6 +97,7 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         catalog_url: str = "",
         base: Path | None = None,
         trust_source: str = "",
+        app_config: Any = None,
     ) -> None:
         super().__init__(parent)
         self.setAccessibleName(_("组件管理"))
@@ -109,6 +110,8 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         self._catalog_url = str(catalog_url or "")
         self._base = base
         self._trust_source = str(trust_source or "")
+        # 多源聚合需要 AppConfig 才能读到用户配置的市场源列表。
+        self._app_config = app_config
         self._entries: list[Any] = []
         self._build_ui()
         self._loaded_once = False
@@ -229,21 +232,36 @@ class ComponentManagerPanel(WorkerOwnedWidget):
 
     # ── 市场（可下载组件）────────────────────────────────────────────────
     def _reload_catalog(self) -> None:
-        """拉取已验签的 catalog，填充可下载列表。
+        """拉取并聚合全部市场源，填充可下载列表。
 
         **只读**：不下载任何构件。真正的下载在用户点「下载并安装」并确认后。
+
+        **多源聚合**（2026-11-19）：与插件栏同语义——逐源独立验签、
+        失败可见、全部失败才算整体失败。此前组件栏只读单源，
+        用户配置了镜像源也看不到镜像里的组件。
         """
         if self._market_list is None or not self._catalog_url:
             return
-        from ...plugins.market_client import fetch_catalog_verified
+        from .market_aggregation import (
+            MarketAggregationError,
+            aggregate_market_catalogs,
+            failed_sources,
+            source_summary,
+        )
 
         self._market_status.setText(_("正在拉取市场目录…"))
         try:
-            catalog = fetch_catalog_verified(
-                self._catalog_url,
-                self._trust_source,
+            aggregated = aggregate_market_catalogs(
+                self._app_config,
+                trust_source=self._trust_source,
+                local_fallback=self._base.parent / "OmniCrawler-market" if self._base else None,
                 egress=_market_egress(self._base),
             )
+        except MarketAggregationError as exc:
+            self._market_status.setText(_("无法拉取市场目录：") + str(exc))
+            self._market_list.clear()
+            self._entries = []
+            return
         except Exception as exc:  # noqa: BLE001 - 市场不可用不该让面板崩
             # 明确区分"拉不到"与"验签失败"：后者是安全问题，必须让用户看见。
             kind = _("目录验签失败，已停止") if isinstance(exc, PermissionError) else _("无法拉取市场目录")
@@ -254,15 +272,26 @@ class ComponentManagerPanel(WorkerOwnedWidget):
 
         from .component_market_logic import components_from_catalog
 
-        self._entries = components_from_catalog(catalog)
+        self._entries = components_from_catalog(aggregated)
         self._market_list.clear()
+        source_note = source_summary(aggregated)
         if not self._entries:
-            self._market_status.setText(_("市场暂无组件。"))
+            self._market_status.setText(
+                _("市场暂无组件。") + (f"（{source_note}）" if source_note else "")
+            )
             return
+        broken = failed_sources(aggregated)
         for entry in self._entries:
             item = QListWidgetItem(f"{entry.name} {entry.version}")
             item.setData(Qt.ItemDataRole.UserRole, entry.id)
             self._market_list.addItem(item)
+        note = _("共 {n} 个组件").format(n=len(self._entries))
+        if source_note:
+            note += f"（{source_note}）"
+        if broken:
+            # 失败源必须可见——否则用户以为"就这么多"
+            note += _("；{n} 个源不可用").format(n=len(broken))
+        self._market_status.setText(note + _("。选中可查看上游域名与下载量。"))
         self._market_status.setText(
             _("共 {n} 个组件。选中可查看上游域名与下载量。").format(n=len(self._entries))
         )

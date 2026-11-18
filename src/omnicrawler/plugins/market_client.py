@@ -211,6 +211,9 @@ def aggregate_catalogs(
         for package_type, entries in (
             ("plugin", catalog.get("plugins") or []),
             ("template", catalog.get("templates") or []),
+            # 组件三栏之一。此前聚合只覆盖 plugin/template，
+            # 导致用户在镜像源里配了组件也永远看不到（实测）。
+            ("component", catalog.get("components") or []),
         ):
             for entry in entries:
                 if not isinstance(entry, dict):
@@ -254,6 +257,7 @@ def aggregate_catalogs(
     return {
         "plugins": [e for e in ordered if e.get("_package_type") == "plugin"],
         "templates": [e for e in ordered if e.get("_package_type") == "template"],
+        "components": [e for e in ordered if e.get("_package_type") == "component"],
         "sources": source_report,
         "conflicts": sorted(conflicted_ids),
     }

@@ -250,7 +250,8 @@ class MarketView(
         market_tabs.addTab(plugin_pane, _("插件"))
         self._template_market = TemplateMarketView(
             self._catalog_url, self._base, self._trust_source,
-            bundled_catalog_dir=self._bundled_catalog_dir, parent=self
+            bundled_catalog_dir=self._bundled_catalog_dir, parent=self,
+            app_config=self._app_config,
         )
         market_tabs.addTab(self._template_market, _("模板"))
         # 条目 10：组件管理与插件/模板并列。组件操作此前散落在「任务工具 →
@@ -263,6 +264,7 @@ class MarketView(
             catalog_url=self._catalog_url,
             base=self._base,
             trust_source=self._trust_source,
+            app_config=self._app_config,
         )
         market_tabs.addTab(self._component_manager, _("组件"))
         market_layout.addWidget(market_tabs)
