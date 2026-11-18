@@ -419,3 +419,70 @@ def test_release_yml_extracts_both_editions() -> None:
     assert "--also-extract-editions" in text, (
         "CI 未请求额外解压 Standard —— 等价性对账会因找不到两份报告而静默跳过"
     )
+
+# ── native 段必须参与对账 ────────────────────────────────────────────────
+def test_native_section_is_compared(equiv) -> None:
+    """顶层 `native` 段必须参与对账。
+
+    这一段装的正是 Full 相对 Standard 多出来的东西：
+    `chromium` / `selenium_driver` / `tesseract` / `paddle_models`。
+    早先只对账三段 `items`，等于把「全装齐后这些原生能力是否齐备」
+    这个核心问题整个跳过了。
+    """
+    full = {
+        "native": {
+            "chromium": {"ready": True},
+            "tesseract": {"ready": True},
+        }
+    }
+    standard = {
+        "native": {
+            "chromium": {"ready": False},  # 缺 chromium
+            "tesseract": {"ready": True},
+        }
+    }
+
+    report = equiv.compare_capability_sets(full, standard)
+    assert not report.ok, "native 段的缺口未被检出 —— 对账等于跳过了核心能力"
+    assert "native.chromium" in report.missing_in_standard
+    assert "native.tesseract" not in report.missing_in_standard, "已就绪的项不该误报"
+
+
+def test_native_section_uses_flat_structure(equiv) -> None:
+    """`native` 是扁平结构（key 直接是能力名），不是 `{items: {...}}`。
+
+    两种结构混用会让解析静默漏项 —— 所以单独钉住这个形状。
+    """
+    report = {
+        "native": {"chromium": {"ready": True}, "paddle_models": {"ready": True}},
+        "standard": {"items": {}},
+        "full": {"items": {}},
+        "optional": {"items": {}},
+    }
+    collected = equiv._collect_ready(report)
+    assert "native.chromium" in collected
+    assert "native.paddle_models" in collected
+    assert len([k for k in collected if k.startswith("native.")]) == 2
+
+
+def test_native_missing_key_is_not_counted(equiv) -> None:
+    """`native` 项若没有 ready 字段，不该被当成"已就绪"。"""
+    report = {"native": {"weird": {"path": "x"}}}
+    collected = equiv._collect_ready(report)
+    assert "native.weird" not in collected
+
+
+def test_real_capability_report_covers_native() -> None:
+    """用**真实** capability_report 验证 native 段被覆盖（不只测构造数据）。"""
+    from omnicrawler.core.capabilities import capability_report
+
+    report = capability_report(mode="quick")
+    assert isinstance(report.get("native"), dict), "真实报告里没有 native 段"
+
+    equiv = _load_equivalence()
+    collected = equiv._collect_ready(report)
+    native_keys = [k for k in collected if k.startswith("native.")]
+    assert native_keys, (
+        "真实 capability_report 的 native 段一项都没被收集 —— "
+        "对账会漏掉 chromium/tesseract/paddle_models 这些核心原生能力"
+    )

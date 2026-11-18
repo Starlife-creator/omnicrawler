@@ -38,6 +38,14 @@ from typing import Any
 #: 参与对账的能力段（`capability_report` 里的这些段含 `items`）。
 _ITEM_SECTIONS = ("standard", "full", "optional")
 
+#: 顶层 `native` 段（**扁平**结构：`{name: {ready, path}}`，不是 `{items: {...}}`）。
+#:
+#: **为什么必须对账这一段**：它装的正是 Full 相对 Standard 多出来的东西——
+#: `chromium` / `selenium_driver` / `tesseract` / `paddle_models`。
+#: 早先只对账三段 `items`，等于把「Standard 全装齐后这些原生能力是否齐备」
+#: 这个核心问题整个跳过了（实测核实 `capability_report` 的真实结构后发现）。
+_NATIVE_SECTION = "native"
+
 
 @dataclass(frozen=True)
 class EquivalenceReport:
@@ -91,6 +99,19 @@ def _collect_ready(report: dict[str, Any] | None) -> dict[str, bool]:
             if ready is None:
                 continue
             out[f"{section_name}.{key}"] = bool(ready)
+
+    # 顶层 native 段是**扁平**的（key 直接就是能力名），与上面三段不同。
+    native = report.get(_NATIVE_SECTION)
+    if isinstance(native, dict):
+        for key, value in native.items():
+            if not isinstance(value, dict):
+                continue
+            ready = value.get("ready")
+            if ready is None:
+                ready = value.get("installed")
+            if ready is None:
+                continue
+            out[f"{_NATIVE_SECTION}.{key}"] = bool(ready)
     return out
 
 
