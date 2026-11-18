@@ -103,15 +103,22 @@ def test_none_raw_args_is_accepted() -> None:
 
 
 def test_both_browser_paths_use_the_shared_helper() -> None:
-    """防再漂移守卫：Playwright 与 Selenium 两条路径都必须走这个助手。
+    """防再漂移守卫：Playwright 与 Selenium 两条路径都必须走同一个真源。
 
     规则一旦被重新内联回某一条路径，就会出现第二个真源（这正是本次修复前的状态）。
+
+    **2026-11-18 更新**：`browser_pool.py` 改走 `launch_kwargs(resolve_browser_runtime(...))`
+    —— 参数仍由 `browser_launch` 单点产出（`resolve_browser_runtime` 内部调用
+    `build_launch_args`），只是多了一层多内核解析。因此判据改为
+    「要么直接用 `build_launch_args`，要么用封装它的 `launch_kwargs`」，
+    两者都证明参数规则没有被内联。
     """
     pool = (_SRC / "browser_pool.py").read_text(encoding="utf-8")
     fetcher = (_SRC / "browser_fetcher.py").read_text(encoding="utf-8")
 
     for name, source in (("browser_pool.py", pool), ("browser_fetcher.py", fetcher)):
-        assert "build_launch_args(" in source, f"{name} 未使用共享助手"
+        uses_shared = "build_launch_args(" in source or "launch_kwargs(" in source
+        assert uses_shared, f"{name} 未使用共享助手（build_launch_args / launch_kwargs）"
         # 规则本身不应再在调用点出现
         assert "禁止关闭 TLS 校验（--ignore-certificate-errors）" not in source, (
             f"{name} 又重新内联了 TLS 规则文本"

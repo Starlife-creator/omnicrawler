@@ -62,7 +62,10 @@ from ..core.errors import OmniCrawlError
 from ..security.policy import NetworkTargetPolicy
 from ..security.redaction import redact_url
 from . import session_crypto, session_state
-from .browser_launch import build_launch_args, launch_channel
+from .browser_launch import (
+    launch_kwargs,
+    resolve_browser_runtime,
+)
 from .session_lease import session_lease
 
 __all__ = [
@@ -200,22 +203,13 @@ class PlaywrightLoginLauncher:
         proxy: str,
         storage_state_path: Path,
     ) -> None:
-        browser_config = self._config.section("browser")
-        verify_tls = bool(self._config.section("http").get("verify_tls", True))
-        # ★ 启动参数与爬取路径**共用同一份真源**；headed 时 headless=False ⇒ 不追加无头保真参数。
-        launch_args = build_launch_args(
-            browser_config.get("launch_args", []),
-            headless=False,
-            verify_tls=verify_tls,
-        )
+        runtime_spec = resolve_browser_runtime(self._config, headless=False)
         user_agent = self._config.section("http").get("user_agent")
         manager = self._factory() if self._factory is not None else _default_sync_playwright()
         playwright = manager.start()
         try:
-            # 条目 5：channel 由 browser_launch 单一来源提供（不再打包 headless_shell）。
-            browser = playwright.chromium.launch(
-                headless=False, args=launch_args, channel=launch_channel()
-            )
+            browser_engine = getattr(playwright, runtime_spec.engine_family, playwright.chromium)
+            browser = browser_engine.launch(**launch_kwargs(runtime_spec, headless=False))
             options: dict[str, Any] = {"user_agent": user_agent}
             if storage_state_path.is_file():
                 # U5（§11.8）：与爬取加载同一入口 —— 信封解密 / 旧明文一次性迁移。

@@ -29,7 +29,10 @@ from . import session_crypto, session_state
 from .browser_data import collect_virtual_items, wait_for_data
 from .browser_engines import run_actions_for_page
 from .browser_guards import strip_cross_origin_credentials
-from .browser_launch import build_launch_args, launch_channel
+from .browser_launch import (
+    launch_kwargs,
+    resolve_browser_runtime,
+)
 from .stealth_enhanced import StealthLevel
 
 LOGGER = logging.getLogger(__name__)
@@ -113,19 +116,13 @@ class PlaywrightPool:
                 # 启动参数（含无头"保真"参数）统一由 browser_launch.build_launch_args 生成，
                 # 不再与 Selenium 路径各存一份同样的规则。
                 headless = bool(browser_config.get("headless", True))
-                verify_tls = bool(self.config.section("http").get("verify_tls", True))
-                launch_args = build_launch_args(
-                    browser_config.get("launch_args", []),
-                    headless=headless,
-                    verify_tls=verify_tls,
-                )
-                if not verify_tls:
-                    LOGGER.warning("Playwright 路径 verify_tls=false：TLS 校验已关闭（仅限受控内网站点）")
                 # 条目 5：channel 由 browser_launch 单一来源提供——不再打包
                 # chromium_headless_shell，headless 必须靠它指向完整 Chromium。
-                browser = playwright.chromium.launch(
-                    headless=headless, args=launch_args, channel=launch_channel()
-                )
+                runtime_spec = resolve_browser_runtime(self.config, headless=headless)
+                if not runtime_spec.verify_tls:
+                    LOGGER.warning("Playwright 路径 verify_tls=false：TLS 校验已关闭（仅限受控内网站点）")
+                browser_engine = getattr(playwright, runtime_spec.engine_family, playwright.chromium)
+                browser = browser_engine.launch(**launch_kwargs(runtime_spec))
                 contexts: dict[str, Any] = {}
                 try:
                     while True:

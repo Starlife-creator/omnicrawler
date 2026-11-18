@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from .browser_launch import launch_channel
+from .browser_launch import launch_kwargs, resolve_browser_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -166,8 +166,10 @@ def record_with_playwright(url: str, output: Path, *, timeout_seconds: int = 300
     policy = NetworkTargetPolicy(config)
     policy.require(url)
     sequence = ActionSequence()
+    runtime_spec = resolve_browser_runtime(config, headless=False)
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=False, channel=launch_channel())
+        browser_engine = getattr(playwright, runtime_spec.engine_family, playwright.chromium)
+        browser = browser_engine.launch(**launch_kwargs(runtime_spec, headless=False))
         context = browser.new_context()
         page = context.new_page()
         page.expose_function("__omnicrawlerEmit", sequence.add_event)

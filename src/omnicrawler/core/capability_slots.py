@@ -268,17 +268,42 @@ def build_builtin_slot_registry() -> CapabilitySlotRegistry:
         )
     )
 
-    # 2. Browser automation engine slot
+    # 2. Browser automation engine slot (多内核与随包预置/外部浏览器平等槽位)
     browser_slot = reg.ensure_slot("browser", "动态网页渲染与交互浏览器引擎")
     browser_slot.register(
         CapabilityProvider(
             provider_id="playwright",
             slot_name="browser",
             source="builtin",
-            display_name="Playwright (Chromium)",
+            display_name="Playwright (Chromium 随包预置)",
             priority=120,
             availability_check=_spec_available("playwright"),
-            description="默认浏览器自动化引擎，支持请求级出网拦截与网络捕获",
+            description="默认浏览器自动化引擎，随包预置完整 Chromium，支持请求级拦截与保真渲染",
+            metadata={"engine_family": "chromium", "bundled": True},
+        )
+    )
+    browser_slot.register(
+        CapabilityProvider(
+            provider_id="playwright-firefox",
+            slot_name="browser",
+            source="builtin",
+            display_name="Playwright (Firefox 内核)",
+            priority=100,
+            availability_check=_spec_available("playwright"),
+            description="可选 Firefox 浏览器内核，支持独立 Gecko 协议栈渲染与登录态隔离",
+            metadata={"engine_family": "firefox", "bundled": False},
+        )
+    )
+    browser_slot.register(
+        CapabilityProvider(
+            provider_id="playwright-webkit",
+            slot_name="browser",
+            source="builtin",
+            display_name="Playwright (WebKit 内核)",
+            priority=90,
+            availability_check=_spec_available("playwright"),
+            description="可选 WebKit 渲染内核，支持 Safari 系列排版引擎模拟",
+            metadata={"engine_family": "webkit", "bundled": False},
         )
     )
     browser_slot.register(
@@ -286,10 +311,35 @@ def build_builtin_slot_registry() -> CapabilitySlotRegistry:
             provider_id="selenium",
             slot_name="browser",
             source="builtin",
-            display_name="Selenium WebDriver (BiDi)",
-            priority=90,
+            display_name="Selenium WebDriver (ChromeDriver)",
+            priority=85,
             availability_check=_spec_available("selenium"),
-            description="备用 WebDriver 引擎（需开启 BiDi 出网守卫）",
+            description="备用 WebDriver 引擎（需配合 ChromeDriver 运行）",
+            metadata={"engine_family": "chromium", "bundled": False},
+        )
+    )
+    browser_slot.register(
+        CapabilityProvider(
+            provider_id="selenium-firefox",
+            slot_name="browser",
+            source="builtin",
+            display_name="Selenium WebDriver (GeckoDriver)",
+            priority=80,
+            availability_check=_spec_available("selenium"),
+            description="备用 Firefox WebDriver 引擎（需配合 GeckoDriver 运行）",
+            metadata={"engine_family": "firefox", "bundled": False},
+        )
+    )
+    browser_slot.register(
+        CapabilityProvider(
+            provider_id="system-browser",
+            slot_name="browser",
+            source="builtin",
+            display_name="本机自有浏览器 (可执行路径)",
+            priority=75,
+            availability_check=_spec_available("playwright"),
+            description="连接用户本机已安装的 Edge / Chrome / Firefox 可执行文件",
+            metadata={"engine_family": "custom", "bundled": False},
         )
     )
 

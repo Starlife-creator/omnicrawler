@@ -39,7 +39,9 @@ IntersectionObserver 与 scroll 事件**各 6/6 达标**；2026-09-13 的"派发
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
+from typing import Any
 
 #: 无头模式下关闭后台/遮挡抑制，避免渲染帧预算被压低。
 _HEADLESS_FIDELITY_ARGS: tuple[str, ...] = (
@@ -78,6 +80,20 @@ _TLS_REJECT_MESSAGE = (
 PLAYWRIGHT_CHROMIUM_CHANNEL = "chrome-for-testing"
 
 
+@dataclass(frozen=True, slots=True)
+class BrowserRuntimeSpec:
+    """解析后的浏览器启动规格契约（供 Playwright/Selenium 与登录窗口共享）。"""
+
+    engine_family: str  # "chromium" | "firefox" | "webkit"
+    driver_kind: str  # "playwright" | "selenium"
+    channel: str | None
+    executable_path: str | None
+    launch_args: tuple[str, ...]
+    verify_tls: bool
+    headless: bool = True
+    firefox_user_prefs: dict[str, Any] = field(default_factory=dict)
+
+
 def launch_channel() -> str:
     """返回应传给 ``chromium.launch(channel=...)`` 的值。
 
@@ -86,6 +102,120 @@ def launch_channel() -> str:
     ② 静态守卫能据此识别"这个 launch 已经覆盖了 channel"。
     """
     return PLAYWRIGHT_CHROMIUM_CHANNEL
+
+
+def resolve_browser_runtime(
+    config: Any = None,
+    *,
+    slot_registry: Any = None,
+    preferred_id: str | None = None,
+    headless: bool | None = None,
+    custom_args: Iterable[object] | None = None,
+) -> BrowserRuntimeSpec:
+    """由当前配置或槽位首选项解析浏览器启动规范，实现跨内核参数隔离与同源复用。"""
+    browser_sec: dict[str, Any] = {}
+    http_sec: dict[str, Any] = {}
+    if config is not None:
+        if hasattr(config, "section"):
+            browser_sec = dict(config.section("browser") or {})
+            http_sec = dict(config.section("http") or {})
+        elif isinstance(config, Mapping):
+            browser_sec = dict(config.get("browser") or {})
+            http_sec = dict(config.get("http") or {})
+
+    # 若未传 preferred_id 且提供了 slot_registry，优先读取 browser 槽位的活跃偏好
+    active_preferred = preferred_id
+    if not active_preferred and slot_registry is not None and hasattr(slot_registry, "slot"):
+        bslot = slot_registry.slot("browser")
+        if bslot is not None and getattr(bslot, "preferred_id", None):
+            active_preferred = str(bslot.preferred_id)
+
+    target_id = (
+        active_preferred
+        or str(browser_sec.get("provider_id") or browser_sec.get("engine") or "playwright")
+    ).strip().lower()
+
+    if "firefox" in target_id or "gecko" in target_id:
+        engine_family = "firefox"
+        driver_kind = "selenium" if "selenium" in target_id else "playwright"
+    elif "webkit" in target_id or "safari" in target_id:
+        engine_family = "webkit"
+        driver_kind = "playwright"
+    elif "selenium" in target_id:
+        engine_family = "chromium"
+        driver_kind = "selenium"
+    else:
+        engine_family = "chromium"
+        driver_kind = "playwright"
+
+    raw_exec = str(browser_sec.get("executable_path") or "").strip()
+    executable_path = raw_exec if raw_exec else None
+
+    # channel 仅在 Playwright Chromium 未指定自定义可执行路径时生效
+    if driver_kind == "playwright" and engine_family == "chromium" and not executable_path:
+        configured_channel = str(browser_sec.get("channel") or "").strip()
+        channel = configured_channel if configured_channel else PLAYWRIGHT_CHROMIUM_CHANNEL
+    else:
+        channel = None
+
+    is_headless = bool(browser_sec.get("headless", True)) if headless is None else bool(headless)
+    verify_tls = bool(http_sec.get("verify_tls", True))
+
+    raw_args = list(custom_args) if custom_args is not None else list(browser_sec.get("launch_args") or [])
+    for item in raw_args:
+        arg = str(item)
+        if arg == _IGNORE_CERT_PREFIX or arg.startswith(_IGNORE_CERT_PREFIX + "="):
+            raise ValueError(_TLS_REJECT_MESSAGE)
+
+    if engine_family == "chromium":
+        final_args = tuple(build_launch_args(raw_args, headless=is_headless, verify_tls=verify_tls))
+    else:
+        # Firefox 与 WebKit 不接受 Chromium 专属无头保真参数与 occlusion 选项
+        cleaned_args: list[str] = [str(a) for a in raw_args]
+        final_args = tuple(cleaned_args)
+
+    user_prefs: dict[str, Any] = {}
+    if engine_family == "firefox" and not verify_tls:
+        user_prefs["webdriver_accept_untrusted_certs"] = True
+        user_prefs["acceptInsecureCerts"] = True
+
+    return BrowserRuntimeSpec(
+        engine_family=engine_family,
+        driver_kind=driver_kind,
+        channel=channel,
+        executable_path=executable_path,
+        launch_args=final_args,
+        verify_tls=verify_tls,
+        headless=is_headless,
+        firefox_user_prefs=user_prefs,
+    )
+
+
+def launch_kwargs(spec: BrowserRuntimeSpec, *, headless: bool | None = None) -> dict[str, Any]:
+    """生成传给 playwright.<engine>.launch(**launch_kwargs(spec)) 的参数字典。"""
+    is_headless = spec.headless if headless is None else bool(headless)
+    kwargs: dict[str, Any] = {
+        "headless": is_headless,
+        "args": list(spec.launch_args),
+    }
+    if spec.channel:
+        kwargs["channel"] = spec.channel
+    if spec.executable_path:
+        kwargs["executable_path"] = spec.executable_path
+    if spec.firefox_user_prefs:
+        kwargs["firefox_user_prefs"] = dict(spec.firefox_user_prefs)
+    return kwargs
+
+
+def launch_playwright_browser(
+    playwright: Any,
+    spec: BrowserRuntimeSpec,
+    *,
+    headless: bool | None = None,
+) -> Any:
+    """按 BrowserRuntimeSpec 拉起对应内核的 Playwright 浏览器实例。"""
+    launcher = getattr(playwright, spec.engine_family, playwright.chromium)
+    return launcher.launch(**launch_kwargs(spec, headless=headless))
 
 
 def _merge_disable_features(args: list[str], feature: str) -> None:
