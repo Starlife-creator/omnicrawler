@@ -27,6 +27,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tools.child_env import utf8_env
+
 #: 产物根目录下的可执行文件候选名（三平台不同）。
 _EXE_CANDIDATES = ("omnicrawler-cli.exe", "omnicrawler-cli", "omnicrawler")
 
@@ -69,6 +71,9 @@ def probe(executable: Path, root: Path, *, timeout: float = 180.0) -> dict:
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
+            # 必须给子进程 UTF-8 环境：父进程按 UTF-8 解码输出，而 Windows
+            # 默认控制台下 Python 子进程按 cp936 写，中文会变成 U+FFFD。
+            env=utf8_env(),
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
