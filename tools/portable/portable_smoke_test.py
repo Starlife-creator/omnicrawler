@@ -386,11 +386,86 @@ def run_smoke_test(release_dir: Path, edition: str = "Full") -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("release_dir", type=Path)
+    parser.add_argument("release_dir", type=Path, nargs="?")
     parser.add_argument("--edition", choices=["Standard", "Full"], default="Full")
+    # 等价性对账：拿两份能力报告比对，验证「Standard 全装齐 == Full」。
+    # 与冒烟分开，因为它只读 JSON、不需要运行产物。
+    parser.add_argument(
+        "--compare-capabilities",
+        nargs=2,
+        metavar=("FULL_REPORT", "STANDARD_FULL_REPORT"),
+        default=None,
+        help=(
+            "对账两份 capability JSON：第一个是 Full 基准，第二个是 "
+            "Standard+全量组件+document-workbench。有缺口时退出码非 0。"
+        ),
+    )
     args = parser.parse_args()
+
+    if args.compare_capabilities:
+        return _compare_capabilities(*args.compare_capabilities)
+
+    if args.release_dir is None:
+        parser.error("需要 release_dir（或改用 --compare-capabilities）")
     run_smoke_test(args.release_dir.resolve(), args.edition)
     print(f"portable {args.edition} runtime smoke tests: OK")
+    return 0
+
+
+def _compare_capabilities(full_path: str, standard_full_path: str) -> int:
+    """执行等价性对账并按结果给退出码。
+
+    **有缺口 ⇒ 非 0**：停发 Full 之后，Standard 全装齐必须能顶上；
+    缺任何一项都说明有东西没被组件化，这是必须让 CI 红的事实。
+
+    "Standard 比 Full 多"只警告不失败——可能只是基准该更新了。
+    """
+    # 同目录模块：直接执行脚本时 `tools` 包不在 sys.path 上（实测踩到
+    # ModuleNotFoundError），所以按文件路径加载，不依赖包结构。
+    import importlib.util as _ilu
+    import json
+
+    _spec = _ilu.spec_from_file_location(
+        "_std_equivalence", Path(__file__).resolve().parent / "standard_equivalence.py"
+    )
+    if _spec is None or _spec.loader is None:
+        print("无法加载 standard_equivalence 模块")
+        return 2
+    _module = _ilu.module_from_spec(_spec)
+    # 必须先注册到 sys.modules：`@dataclass` 在求值类型注解时会查
+    # `sys.modules[cls.__module__]`，未注册会 AttributeError（实测踩到）。
+    import sys as _sys
+
+    _sys.modules[_spec.name] = _module
+    _spec.loader.exec_module(_module)
+    compare_capability_sets = _module.compare_capability_sets
+    render_report = _module.render_report
+
+    try:
+        full_report = json.loads(Path(full_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"无法读取 Full 基准报告 {full_path}: {exc}")
+        return 2
+    try:
+        standard_report = json.loads(Path(standard_full_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"无法读取 Standard 报告 {standard_full_path}: {exc}")
+        return 2
+
+    report = compare_capability_sets(full_report, standard_report)
+    print(render_report(report))
+
+    if report.note:
+        return 2
+    if report.missing_in_standard:
+        print(
+            f"\n✗ 等价性对账失败：Standard 全装齐后仍缺 "
+            f"{len(report.missing_in_standard)} 项能力"
+        )
+        return 1
+    if report.beyond_full:
+        print("\n⚠ 注意：Standard 的能力超出 Full 基准，建议更新 Full 构建")
+    print("\n✓ 等价性对账通过")
     return 0
 
 

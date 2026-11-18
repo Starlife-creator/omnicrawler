@@ -1,0 +1,276 @@
+"""Standard 全装齐 ↔ Full 的能力等价性对账。
+
+## 为什么这条对账必须存在
+
+维护者的要求是「假如说有人全部安装并加载了，那么和现在的 Full 版一模一样」。
+停发 Full 之后，这句话不能只是声明——必须能被验证。Full 继续在 CI 里构建，
+正是为了当这个基准。
+
+## 判据
+
+1. Full 有、Standard 全装齐也有 ⇒ 等价（目标状态）；
+2. Full 有、Standard 没有 ⇒ **缺口**，判失败（有东西没被组件化）；
+3. Standard 有、Full 没有 ⇒ 只警告（可能基准该更新，不一定是坏事）；
+4. **空集合必须判失败**——否则所有断言恒真；
+5. 只比较**就绪**的能力项：Full 里本就未就绪的不要求 Standard 有。
+
+## 明确边界
+
+本文件验证的是**对账逻辑本身**（纯函数 + CLI 接线），用构造的报告数据。
+真实等价性需要 CI 跑完三平台构建后，拿实际产物报告来比——那一步本机做不到。
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+_REPO = Path(__file__).resolve().parents[3]
+_EQUIV = _REPO / "tools" / "portable" / "standard_equivalence.py"
+_SMOKE = _REPO / "tools" / "portable" / "portable_smoke_test.py"
+
+pytestmark = pytest.mark.skipif(not _EQUIV.is_file(), reason="需要 tools/portable")
+
+
+def _load_equivalence():
+    """按路径加载对账模块（与 smoke test 的做法一致）。"""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_equiv_under_test", _EQUIV)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(scope="module")
+def equiv():
+    return _load_equivalence()
+
+
+def _report(standard: dict[str, bool], full: dict[str, bool] | None = None) -> dict:
+    return {
+        "standard": {"items": {k: {"ready": v} for k, v in standard.items()}},
+        "full": {"items": {k: {"ready": v} for k, v in (full or {}).items()}},
+        "optional": {"items": {}},
+    }
+
+
+def test_identical_reports_are_equivalent(equiv) -> None:
+    report = equiv.compare_capability_sets(
+        _report({"a": True, "b": True}),
+        _report({"a": True, "b": True}),
+    )
+    assert report.ok
+    assert report.missing_in_standard == ()
+    assert report.checked == 2
+
+
+def test_missing_capability_is_a_failure(equiv) -> None:
+    """Full 有、Standard 没有 ⇒ 缺口，必须判失败。"""
+    report = equiv.compare_capability_sets(
+        _report({"a": True, "b": True}),
+        _report({"a": True}),
+    )
+    assert not report.ok
+    assert report.missing_in_standard == ("standard.b",)
+
+
+def test_extra_capability_is_only_a_warning(equiv) -> None:
+    """Standard 比 Full 多不算失败，但要被看见。"""
+    report = equiv.compare_capability_sets(
+        _report({"a": True}),
+        _report({"a": True, "c": True}),
+    )
+    assert report.ok, "超出基准不该判失败"
+    assert report.beyond_full == ("standard.c",)
+
+
+def test_empty_baseline_is_a_failure(equiv) -> None:
+    """空集合会让所有断言恒真 —— 必须显式判失败。"""
+    report = equiv.compare_capability_sets(_report({}), _report({"a": True}))
+    assert not report.ok
+    assert report.note, "空基准必须给出原因"
+
+
+def test_unreadable_report_is_a_failure(equiv) -> None:
+    assert not equiv.compare_capability_sets(None, _report({"a": True})).ok
+    assert not equiv.compare_capability_sets(_report({"a": True}), None).ok
+
+
+def test_only_ready_items_are_compared(equiv) -> None:
+    """Full 里本就未就绪的项，不要求 Standard 有。"""
+    report = equiv.compare_capability_sets(
+        _report({"a": True, "b": False}),
+        _report({"a": True}),
+    )
+    assert report.ok, "把 Full 里未就绪的项也算成缺口会误判"
+
+
+def test_sections_do_not_collide(equiv) -> None:
+    """不同段里的同名键不能被覆盖。"""
+    full = {
+        "standard": {"items": {"x": {"ready": True}}},
+        "optional": {"items": {"x": {"ready": True}}},
+        "full": {"items": {}},
+    }
+    standard = {
+        "standard": {"items": {"x": {"ready": True}}},
+        "optional": {"items": {"x": {"ready": False}}},
+        "full": {"items": {}},
+    }
+    report = equiv.compare_capability_sets(full, standard)
+    assert not report.ok, "optional.x 未就绪应被检出，不能被 standard.x 掩盖"
+    assert "optional.x" in report.missing_in_standard
+
+
+def test_render_report_mentions_gap(equiv) -> None:
+    report = equiv.compare_capability_sets(_report({"a": True, "b": True}), _report({"a": True}))
+    text = equiv.render_report(report)
+    assert "缺" in text
+    assert "standard.b" in text
+
+
+def test_cli_returns_zero_on_equivalence(tmp_path: Path) -> None:
+    """CLI 在等价时退出码 0。"""
+    payload = _report({"a": True})
+    full = tmp_path / "full.json"
+    standard = tmp_path / "std.json"
+    for path in (full, standard):
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+    env = {"PYTHONPATH": str(_REPO / "src")}
+    result = subprocess.run(
+        [sys.executable, str(_SMOKE), "--compare-capabilities", str(full), str(standard)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, **env},
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_cli_returns_nonzero_on_gap(tmp_path: Path) -> None:
+    """CLI 在有缺口时退出码非 0 —— CI 才能据此判红。"""
+    full = tmp_path / "full.json"
+    standard = tmp_path / "std.json"
+    full.write_text(json.dumps(_report({"a": True, "b": True})), encoding="utf-8")
+    standard.write_text(json.dumps(_report({"a": True})), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_SMOKE), "--compare-capabilities", str(full), str(standard)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONPATH": str(_REPO / "src")},
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode != 0, "有缺口却退出 0 —— CI 会放过真正的等价性破坏"
+
+
+def test_cli_returns_nonzero_on_unreadable_input(tmp_path: Path) -> None:
+    """输入不可读时退出码应是 2（区别于"有缺口"的 1）。"""
+    import os
+
+    missing = tmp_path / "nope.json"
+    ok = tmp_path / "ok.json"
+    ok.write_text(json.dumps(_report({"a": True})), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_SMOKE), "--compare-capabilities", str(missing), str(ok)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONPATH": str(_REPO / "src")},
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 2, f"应返回 2（输入错误），实际 {result.returncode}"
+
+# ── 能力报告收集脚本 ─────────────────────────────────────────────────────
+_COLLECT = _REPO / "tools" / "portable" / "collect_capability_reports.py"
+
+
+def _load_collector():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_collect_under_test", _COLLECT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.skipif(not _COLLECT.is_file(), reason="需要收集脚本")
+def test_collector_finds_both_editions(tmp_path: Path) -> None:
+    """能从解压目录里按 EDITION.txt 找出两个 edition。"""
+    collect = _load_collector()
+    for edition in ("Standard", "Full"):
+        directory = tmp_path / "OmniCrawler-1.0.2-win" / edition
+        directory.mkdir(parents=True)
+        (directory / "EDITION.txt").write_text(edition + "\n", encoding="utf-8")
+        (directory / "omnicrawler-cli.exe").write_text("", encoding="utf-8")
+
+    roots = collect.find_release_roots(tmp_path)
+    assert set(roots) == {"standard", "full"}
+    assert roots["full"].name == "Full"
+    assert roots["standard"].name == "Standard"
+
+
+@pytest.mark.skipif(not _COLLECT.is_file(), reason="需要收集脚本")
+def test_collector_handles_edition_prefix(tmp_path: Path) -> None:
+    """`Edition: Full` 这种写法也要认得（不同脚本产出的格式可能不同）。"""
+    collect = _load_collector()
+    directory = tmp_path / "pkg" / "Full"
+    directory.mkdir(parents=True)
+    (directory / "EDITION.txt").write_text("Edition: Full\n", encoding="utf-8")
+
+    roots = collect.find_release_roots(tmp_path)
+    assert "full" in roots
+
+
+@pytest.mark.skipif(not _COLLECT.is_file(), reason="需要收集脚本")
+def test_collector_missing_edition_warns_not_silently_passes(tmp_path: Path) -> None:
+    """缺某个 edition 时必须输出 warning，不能静默通过。
+
+    静默通过比失败更危险：对账步骤会以为"等价"。
+    """
+    collect = _load_collector()
+    directory = tmp_path / "pkg" / "Full"
+    directory.mkdir(parents=True)
+    (directory / "EDITION.txt").write_text("Full\n", encoding="utf-8")
+    (directory / "omnicrawler-cli.exe").write_text("", encoding="utf-8")
+
+    out = tmp_path / "out"
+    code = collect.main([str(tmp_path), str(out)])
+    assert code == 0, "缺 edition 时不该硬失败（由对账步骤报「无法对账」）"
+    # 但必须留下可见线索
+    assert not (out / "cap-standard.json").exists()
+
+
+@pytest.mark.skipif(not _COLLECT.is_file(), reason="需要收集脚本")
+def test_collector_locate_executable_prefers_exe(tmp_path: Path) -> None:
+    """三平台可执行文件候选名都要能识别。"""
+    collect = _load_collector()
+    for name in ("omnicrawler-cli.exe", "omnicrawler-cli", "omnicrawler"):
+        root = tmp_path / name
+        root.mkdir()
+        (root / name).write_text("", encoding="utf-8")
+        assert collect.locate_executable(root) is not None, f"未识别 {name}"
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert collect.locate_executable(empty) is None

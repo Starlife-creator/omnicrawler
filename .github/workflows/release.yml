@@ -243,12 +243,36 @@ jobs:
         run: |
           ROOT="$(python -c 'import json, os, pathlib; m=json.load(open(os.environ["SMOKE_MANIFEST"])); print(pathlib.Path(os.environ["KEEP_DIR"]) / m["release_root"])')"
           python tools/gates/check_portable_doc_manifest.py --release-root "$ROOT"
+      # ★ 等价性对账（2026-11-19，优化方案批次 5）：
+      # 停发 Full 之后对外只有 Standard。「Standard 全装齐后与 Full 一模一样」
+      # 这条要求必须被**验证**，否则它只是一句声明。
+      #
+      # 本 job 的 artifact 同时含 Standard 与 Full 两个包 ⇒ 可在同一处取两份
+      # 能力报告比对。有缺口则退出码非 0，阻断发布。
+      #
+      # 逻辑抽在 tools/portable/{collect_capability_reports,standard_equivalence}.py，
+      # 不内联 heredoc —— YAML 缩进与 shell 引号会互相打架，出错时报文指向
+      # YAML 而不是真正的逻辑。
+      - name: Standard 全装齐 ↔ Full 等价性对账
+        shell: bash
+        env:
+          KEEP_DIR: ${{ runner.temp }}/kept
+          OUT_DIR: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          python tools/portable/collect_capability_reports.py "$KEEP_DIR" "$OUT_DIR"
+          python tools/portable/portable_smoke_test.py --compare-capabilities \
+            "$OUT_DIR/cap-full.json" "$OUT_DIR/cap-standard.json"
+
       - name: 上传冒烟日志与清单
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: portable-smoke-${{ matrix.platform }}
-          path: ${{ runner.temp }}/portable-smoke-${{ matrix.platform }}.json
+          path: |
+            ${{ runner.temp }}/portable-smoke-${{ matrix.platform }}.json
+            ${{ runner.temp }}/cap-full.json
+            ${{ runner.temp }}/cap-standard.json
           if-no-files-found: warn
 
   release:
