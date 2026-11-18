@@ -258,7 +258,15 @@ class ComponentManagerPanel(WorkerOwnedWidget):
                 egress=_market_egress(self._base),
             )
         except MarketAggregationError as exc:
-            self._market_status.setText(_("无法拉取市场目录：") + str(exc))
+            # 失败归因决定"要不要提示换镜像"：
+            # 只有**网络类**失败才建议换源；签名/哈希/ABI 这类安全失败
+            # 一律阻断且绝不诱导换源（换源只会绕过校验）。
+            message = _("无法拉取市场目录：") + str(exc)
+            if _failures_allow_mirror_hint(exc):
+                message += "\n" + _(
+                    "当前源连接失败，可以尝试在「源与下载镜像设置」里切换镜像源重试。"
+                )
+            self._market_status.setText(message)
             self._market_list.clear()
             self._entries = []
             return
@@ -609,6 +617,36 @@ def describe(info: dict[str, Any]) -> str:
 def dumps(info: dict[str, Any]) -> str:
     """把组件信息转成稳定的 JSON 文本（便于诊断与测试比对）。"""
     return json.dumps(info, ensure_ascii=False, sort_keys=True, indent=2)
+
+
+def _failures_allow_mirror_hint(exc: Any) -> bool:
+    """聚合全失败时，判断是否可以向用户建议"换个镜像重试"。
+
+    **只认网络类失败**。签名校验失败、哈希不符、`sequence` 回退、ABI 不兼容
+    这类安全失败返回 False —— 换镜像不会让一个被篡改的包变合法，
+    提示用户换源等于诱导他绕过校验。
+
+    源报告里的 `error` 是文本，这里按 `mirror_failure_policy` 的关键词判据
+    归类；无法归类的一律当作"不建议换源"（默认保守）。
+    """
+    from ...services.mirror_failure_policy import should_suggest_mirror
+
+    reports = getattr(exc, "sources", None)
+    if not reports:
+        return False
+
+    network_like = False
+    for item in reports:
+        error_text = str(item.get("error") or "")
+        if not error_text:
+            continue
+        # 用伪异常承载文本，复用同一套关键词判据
+        probe = RuntimeError(error_text)
+        if not should_suggest_mirror(probe):
+            # 只要有一条不是网络类（即安全/配置类），整体就不建议换源
+            return False
+        network_like = True
+    return network_like
 
 
 def _market_egress(base: Any) -> Any:

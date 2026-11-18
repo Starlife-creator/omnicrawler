@@ -33,7 +33,14 @@ class MarketAggregationError(RuntimeError):
 
     **只在全部源都失败时抛**——只要有一条成功，调用方应展示数据并提示
     部分源不可用，而不是让整页空白。
+
+    `sources` 保留各源的失败报告，调用方据此判断"该不该建议换镜像"
+    （安全类失败绝不建议换源，见 `services/mirror_failure_policy.py`）。
     """
+
+    def __init__(self, message: str, *, sources: list[dict[str, Any]] | None = None) -> None:
+        super().__init__(message)
+        self.sources = list(sources or [])
 
 
 def collect_sources(
@@ -101,7 +108,9 @@ def aggregate_market_catalogs(
         failures = "; ".join(
             f"{item.get('url')}: {item.get('error')}" for item in reports
         )
-        raise MarketAggregationError(f"全部市场源都不可用：{failures}")
+        raise MarketAggregationError(
+            f"全部市场源都不可用：{failures}", sources=list(reports)
+        )
     return aggregated
 
 
