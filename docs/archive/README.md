@@ -64,11 +64,3 @@
 
 [快照索引](2026-10-04-before-comprehensive/README.md)：归档完成记录及所有现行文档修改前原文。混合文档保留规则和未完成条件；完整哈希清单在维护者 user-test-runs 全面优化 evidence/documentation-archive.json。
 
-## 2026-11-19 最终优化前快照
-
-[快照索引](2026-11-19-before-final-optimization/README.md)：五批次统一优化方案
-（浏览器内核可替换 / Wheel-Pack 运行器 / 市场三栏多源 / 停发不停建与能力对账）
-的方案原文。**该轮已实施完毕**，方案文档转为历史规划。
-
-同一 README 里记了原文与实测不符的三处（槽位登记、画布内核选择、spec hiddenimports
-——方案说待做，实测早已存在），以及仍未验证、只能由 CI 确认的两项。
