@@ -100,15 +100,30 @@ def _load_doc_manifest_module() -> Any:
     return module
 
 
-def find_archive(directory: Path, platform: str) -> Path:
-    """返回该平台要验证的便携归档（按 `_patterns_for()` 的顺序取第一个命中）。"""
+def find_archive(directory: Path, platform: str, *, edition: str = "") -> Path:
+    """返回该平台要验证的便携归档（按 `_patterns_for()` 的顺序取第一个命中）。
+
+    :param edition: 指定 `Standard` / `Full` 时只匹配该 edition 的归档。
+        不指定时保持原有行为（取第一个命中）——既有调用方不受影响。
+
+    **为什么需要 edition 过滤**：同一平台目录下同时有 Standard 与 Full 两个
+    归档，不带过滤会永远取到字典序靠前的那个（`...-Full...` < `...-Standard...`
+    在多数命名下），于是"验证 Standard"实际验的是 Full。
+    """
     listing = sorted(p.name for p in directory.iterdir()) if directory.is_dir() else []
+    wanted = f"-Portable-{edition}." if edition else ""
     for pattern in _patterns_for(platform):
         matches = sorted(p for p in directory.glob(pattern) if p.is_file())
+        if wanted:
+            matches = [p for p in matches if wanted in p.name]
+            if not matches:
+                continue
         if matches:
             return matches[0]
+    suffix = f" edition={edition}" if edition else ""
     raise FileNotFoundError(
-        f"no portable archive for platform={platform} in {directory}; found: {listing}"
+        f"no portable archive for platform={platform}{suffix} in {directory}; "
+        f"found: {listing}"
     )
 
 
@@ -312,7 +327,7 @@ def run(
     keep: Path | None = None,
 ) -> dict[str, Any]:
     """Full pipeline: find -> extract -> locate -> runtime-verify -> smoke."""
-    archive = find_archive(downloaded, platform)
+    archive = find_archive(downloaded, platform, edition=edition)
     print(f"portable archive: {archive.name} ({archive.stat().st_size} bytes)")
     digest = sha256_of(archive)
     print(f"sha256: {digest}")
@@ -325,8 +340,12 @@ def run(
     else:
         extract_dir = keep
     try:
-        extract(archive, extract_dir)
-        release_root = locate_release_root(extract_dir)
+        # 解压到 edition 子目录：Standard 与 Full 的顶层目录都叫 `OmniCrawler`，
+        # 解到同一处会互相覆盖，等价性对账就拿不到两份不同的报告（实测确认）。
+        edition_dir = extract_dir / edition
+        edition_dir.mkdir(parents=True, exist_ok=True)
+        extract(archive, edition_dir)
+        release_root = locate_release_root(edition_dir)
         print(f"release root: {release_root}")
         # 先做清单双向核对：若归档真的丢了文件，这条会**指名道姓**列出来
         # （比冒烟抛一个笼统的 self-test 失败信息有用得多）。
@@ -338,7 +357,7 @@ def run(
             # 控制台约束：本工具在 Windows cp1252 runner 上运行，异常文案保持 ASCII；
             # 中文明细由构建期暂存目录上的 tools/gates/check_portable_doc_manifest.py 直接输出。
             raise RuntimeError(f"portable doc manifest check failed: {len(doc_issues)} issue(s)")
-        relative_root = "." if release_root == extract_dir else str(release_root.relative_to(extract_dir))
+        relative_root = "." if release_root == edition_dir else str(release_root.relative_to(extract_dir))
         manifest: dict[str, Any] = {
             "platform": platform,
             "edition": edition,
@@ -376,7 +395,34 @@ def main() -> int:
     parser.add_argument(
         "--extract-dir", type=Path, help="extract here instead of a temp dir (debugging)"
     )
+    parser.add_argument(
+        "--also-extract-editions",
+        default="",
+        help=(
+            "额外解压这些 edition（逗号分隔）到 --extract-dir 的对应子目录，"
+            "但**不跑完整冒烟**。供 Standard↔Full 能力等价性对账取报告用；"
+            "不指定时行为与原来完全一致。"
+        ),
+    )
     args = parser.parse_args()
+
+    # 额外解压：只落盘、不冒烟。用于等价性对账拿第二份能力报告。
+    extras = [item.strip() for item in args.also_extract_editions.split(",") if item.strip()]
+    if extras:
+        if args.extract_dir is None:
+            parser.error("--also-extract-editions 需要同时给 --extract-dir")
+        for extra in extras:
+            if extra == args.edition:
+                continue
+            try:
+                archive = find_archive(args.downloaded, args.platform, edition=extra)
+            except FileNotFoundError as exc:
+                print(f"::warning::跳过额外解压 {extra}：{exc}")
+                continue
+            target = args.extract_dir / extra
+            target.mkdir(parents=True, exist_ok=True)
+            extract(archive, target)
+            print(f"已额外解压 {extra} -> {target}")
 
     manifest = run(args.downloaded, args.platform, args.edition, keep=args.extract_dir)
     # keep_ascii: the manifest must stay printable on a cp1252 console (Windows runner).

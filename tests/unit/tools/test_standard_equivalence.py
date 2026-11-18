@@ -344,3 +344,78 @@ def test_build_scripts_still_write_the_expected_marker() -> None:
         "构建脚本里的 EDITION.txt 写法变了（未找到 "
         '"OmniCrawler $Edition portable edition"），收集脚本的解析需要同步'
     )
+
+# ── 两个 edition 共存时的解压与定位 ─────────────────────────────────────
+_ARCHIVE_SMOKE = _REPO / "tools" / "portable" / "portable_archive_smoke.py"
+
+
+def _load_archive_smoke():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_archive_smoke_under_test", _ARCHIVE_SMOKE)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.skipif(not _ARCHIVE_SMOKE.is_file(), reason="需要归档冒烟脚本")
+def test_find_archive_filters_by_edition(tmp_path: Path) -> None:
+    """同一目录下两个 edition 必须能被区分。
+
+    不带 edition 过滤时永远取字典序靠前的那个（`Full` < `Standard`），
+    于是"验证 Standard"实际验的是 Full —— 等价性对账拿到两份相同报告，
+    永远报"完全等价"。
+    """
+    import zipfile
+
+    archive = _load_archive_smoke()
+    for edition in ("Standard", "Full"):
+        name = f"OmniCrawler-1.0.2-Windows-Portable-{edition}.zip"
+        with zipfile.ZipFile(tmp_path / name, "w") as zf:
+            zf.writestr("OmniCrawler/EDITION.txt", f"OmniCrawler {edition} portable edition")
+
+    standard = archive.find_archive(tmp_path, "windows", edition="Standard")
+    full = archive.find_archive(tmp_path, "windows", edition="Full")
+
+    assert "Standard" in standard.name, f"未取到 Standard：{standard.name}"
+    assert "Full" in full.name, f"未取到 Full：{full.name}"
+    assert standard != full, "两个 edition 取到了同一个归档"
+
+
+@pytest.mark.skipif(not _ARCHIVE_SMOKE.is_file(), reason="需要归档冒烟脚本")
+def test_find_archive_without_edition_keeps_old_behaviour(tmp_path: Path) -> None:
+    """不指定 edition 时保持原行为（取第一个命中）。"""
+    import zipfile
+
+    archive = _load_archive_smoke()
+    name = "OmniCrawler-1.0.2-Windows-Portable-Full.zip"
+    with zipfile.ZipFile(tmp_path / name, "w") as zf:
+        zf.writestr("OmniCrawler/EDITION.txt", "OmniCrawler Full portable edition")
+
+    found = archive.find_archive(tmp_path, "windows")
+    assert found.name == name
+
+
+@pytest.mark.skipif(not _ARCHIVE_SMOKE.is_file(), reason="需要归档冒烟脚本")
+def test_missing_edition_raises_with_names(tmp_path: Path) -> None:
+    """指定了不存在的 edition 时报错要说明找的是什么。"""
+    import zipfile
+
+    archive = _load_archive_smoke()
+    with zipfile.ZipFile(tmp_path / "OmniCrawler-1.0.2-Windows-Portable-Full.zip", "w") as zf:
+        zf.writestr("x", "")
+
+    with pytest.raises(FileNotFoundError) as excinfo:
+        archive.find_archive(tmp_path, "windows", edition="Standard")
+    assert "Standard" in str(excinfo.value)
+
+
+def test_release_yml_extracts_both_editions() -> None:
+    """CI 必须同时解压两个 edition，否则对账拿不到第二份报告。"""
+    release = _REPO / ".github" / "workflows" / "release.yml"
+    text = release.read_text(encoding="utf-8")
+    assert "--also-extract-editions" in text, (
+        "CI 未请求额外解压 Standard —— 等价性对账会因找不到两份报告而静默跳过"
+    )
