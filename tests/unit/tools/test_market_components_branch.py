@@ -65,24 +65,33 @@ def test_component_entries_carry_recipe_digest_and_hashes() -> None:
 
 
 def test_component_entries_do_not_host_bytes() -> None:
-    """组件条目**不得**带整包文件字段。
+    """组件条目**不得**带整包字节文件字段。
 
     这条是设计边界的守门：市场托管 recipe 声明，字节从上游拉。
-    一旦出现 `package_file` / `package_manifest_*`，说明有人把模型
-    塞进了市场仓——那会让仓库膨胀几百 MB，也让市场为第三方字节背书。
+    一旦出现 `package_file`，说明有人把模型/二进制塞进了市场仓——
+    那会让仓库膨胀几百 MB，也让市场为第三方字节背书。
+
+    **注意区分**：`package_manifest_file` 是**签名清单**（几百字节），
+    不是字节包。组件补签后 catalog 里必须有它，因此不在此列。
     """
+    #: 只有这些才是「整包字节」——`package_manifest_file` 是签名清单，不算。
     forbidden = (
         "package_file",
-        "package_manifest_sha256",
-        "package_manifest_file",
-        "maintainer_package_signature_file",
+        "payload_file",
+        "archive_file",
+        "bundle_file",
     )
     for entry in _catalog().get("components", []):
         cid = entry.get("id")
         present = [key for key in forbidden if entry.get(key)]
         assert not present, (
-            f"组件 {cid} 带了整包字段 {present} —— 市场只托管 recipe 声明，"
+            f"组件 {cid} 带了整包字节字段 {present} —— 市场只托管 recipe 声明，"
             "不托管字节（见 services/component_recipe.py 的设计说明）"
+        )
+        # 反向确认：若有人把字节路径塞进 recipe_file/额外键，也要能发现
+        recipe_rel = str(entry.get("recipe_file") or "")
+        assert recipe_rel.endswith("recipe.json"), (
+            f"组件 {cid} 的 recipe_file 不指向 recipe.json：{recipe_rel}"
         )
 
 
@@ -131,3 +140,47 @@ def test_host_tolerates_catalog_without_components() -> None:
     assert isinstance(parsed["plugins"], list)
     # 真实调用路径：宿主只强制校验 plugins 数组
     assert fetch_catalog is not None
+
+def test_component_entries_carry_python_abi() -> None:
+    """带 python_abi 的配方必须把该字段带进 catalog。
+
+    重型 C 扩展与解释器版本强耦合。客户端需要**在下载前**就知道
+    "这台机器装不了"，而不是拉完 100 MB 才失败。
+    """
+    for entry in _catalog().get("components", []):
+        # 字段必须存在（轻量为空列表也算"已声明"）
+        assert "python_abi" in entry, (
+            f"组件 {entry.get('id')} 的 catalog 条目缺 python_abi 字段"
+        )
+        abi = entry["python_abi"]
+        assert isinstance(abi, list), f"{entry.get('id')} 的 python_abi 必须是列表"
+
+
+def test_heavy_component_declares_abi_in_catalog() -> None:
+    """声明了 ABI 的配方，catalog 里必须能读到非空 python_abi。"""
+    market_components = _MARKET / "components"
+    if not market_components.is_dir():
+        pytest.skip("需要 market 仓的 components 目录")
+
+    declared = {}
+    for directory in market_components.iterdir():
+        recipe = directory / "recipe.json"
+        if recipe.is_file():
+            import json as _json
+
+            data = _json.loads(recipe.read_text(encoding="utf-8"))
+            if data.get("python_abi"):
+                declared[directory.name] = data["python_abi"]
+
+    if not declared:
+        pytest.skip("没有声明 ABI 的重型配方")
+
+    catalog_abi = {
+        entry.get("id"): entry.get("python_abi")
+        for entry in _catalog().get("components", [])
+    }
+    for component_id, abi in declared.items():
+        assert catalog_abi.get(component_id) == abi, (
+            f"{component_id} 的 ABI 声明未正确进入 catalog："
+            f"期望 {abi}，实际 {catalog_abi.get(component_id)}"
+        )
