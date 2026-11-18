@@ -103,7 +103,7 @@ SPACING = {"xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24, "xxl": 32}
 
 #: 首页 hero 区最小高度（**唯一来源**：`home.py` 的 AmbientHero 取它）。
 #: 之所以放进令牌层：它是"首页与其余页面留白层级"的一部分，改大时不该去 view 里翻数字。
-HERO_MIN_HEIGHT = 160
+HERO_MIN_HEIGHT = 168
 
 #: 阴影层级表 —— **数值与取色都只在这里出现一次**。
 #:
@@ -126,7 +126,7 @@ SHADOW_LEVELS: dict[str, tuple[int, int, Callable[[VisualTokens], str]]] = {
 ICON_ACCENT_PLACEHOLDER = "{{accent}}"
 ICON_ACCENT_TOKEN = "warning"  # 语义：监测活动 / 提醒
 #: 主题不可用时的兜底强调色（仅当 ThemeManager 取令牌失败时使用，故必须零依赖）。
-FALLBACK_ACCENT = "#176B87"
+FALLBACK_ACCENT = "#0F6E56"
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,75 +179,75 @@ class VisualTokens:
 
 
 LIGHT = VisualTokens(
-    canvas="#F3F7FB",
+    canvas="#F4F8F6",
     surface="#FFFFFF",
     elevated="#FFFFFF",
-    nav="#EAF2F7",
-    text="#172B3A",
-    muted="#607486",
-    border="#DCE6EE",
-    border_strong="#B8CDD9",
-    primary="#176B87",
-    primary_hover="#0E7C94",
-    primary_active="#0B5E74",
-    selection="#DDF2F5",
-    success="#23856D",
-    success_bg="#E3F5EE",
-    warning="#B7791F",
-    warning_bg="#FCF3E0",
-    danger="#C04444",
-    danger_bg="#FBEAEA",
-    info="#176B87",
-    info_bg="#DDF2F5",
+    nav="#ECF2EF",
+    text="#11241E",
+    muted="#566B63",
+    border="#D7E3DD",
+    border_strong="#A9C2B8",
+    primary="#0F6E56",
+    primary_hover="#138266",
+    primary_active="#0B5643",
+    selection="#DFF2EC",
+    success="#157F5F",
+    success_bg="#E2F5EE",
+    warning="#B46914",
+    warning_bg="#FDF3E1",
+    danger="#C23B3B",
+    danger_bg="#FCEAEA",
+    info="#0F6E56",
+    info_bg="#DFF2EC",
     indicator_idle="#B4B4B4",
-    indicator_running="#4CAF50",
-    indicator_finished="#2196F3",
-    indicator_error="#F44336",
-    indicator_paused="#F0A030",
-    indicator_warning="#E6A700",
-    indicator_cancelled="#9E9E9E",
-    code_bg="#1E2730",
-    code_fg="#E6EDF3",
-    code_border="#344957",
-    shadow="rgba(23,43,58,0.12)",
-    shadow_overlay="rgba(0,0,0,0.16)",
-    card_shadow="rgba(26,62,78,0.13)",
+    indicator_running="#1EA672",
+    indicator_finished="#0F6E56",
+    indicator_error="#E04F4F",
+    indicator_paused="#E59524",
+    indicator_warning="#D99B16",
+    indicator_cancelled="#94A39D",
+    code_bg="#121E1A",
+    code_fg="#E4EFEA",
+    code_border="#283D36",
+    shadow="rgba(15,45,36,0.10)",
+    shadow_overlay="rgba(10,28,22,0.18)",
+    card_shadow="rgba(15,52,41,0.11)",
 )
 
 DARK = VisualTokens(
-    canvas="#111A22",
-    surface="#192630",
-    elevated="#20313D",
-    nav="#162630",
-    text="#EDF5F7",
-    muted="#A6BAC6",
-    border="#344957",
-    border_strong="#4A6273",
-    primary="#49B4C6",
-    primary_hover="#69C7D5",
-    primary_active="#3A9AAB",
-    selection="#24444D",
-    success="#54B99B",
-    success_bg="#1A3329",
-    warning="#E3B15C",
-    warning_bg="#33291A",
-    danger="#EF7777",
-    danger_bg="#33201F",
-    info="#49B4C6",
-    info_bg="#1A2E33",
-    indicator_idle="#6B7B8A",
-    indicator_running="#54B99B",
-    indicator_finished="#49B4C6",
-    indicator_error="#EF7777",
-    indicator_paused="#E8B24A",
+    canvas="#0D1512",
+    surface="#14201C",
+    elevated="#1B2B25",
+    nav="#111C18",
+    text="#EAF4F0",
+    muted="#94ADA4",
+    border="#263932",
+    border_strong="#3B594E",
+    primary="#4CC3A5",
+    primary_hover="#6BD1B7",
+    primary_active="#38A388",
+    selection="#1B3B33",
+    success="#4CC3A5",
+    success_bg="#153129",
+    warning="#E5B45B",
+    warning_bg="#322816",
+    danger="#F07575",
+    danger_bg="#341E1E",
+    info="#4CC3A5",
+    info_bg="#17332C",
+    indicator_idle="#637870",
+    indicator_running="#4CC3A5",
+    indicator_finished="#38B29A",
+    indicator_error="#F07575",
+    indicator_paused="#E5B45B",
     indicator_warning="#D9A93C",
-    indicator_cancelled="#8A949E",
-    code_bg="#0D141A",
-    code_fg="#C8D3DC",
-    code_border="#2A3A47",
-    shadow="rgba(0,0,0,0.40)",
-    shadow_overlay="rgba(0,0,0,0.55)",
-    card_shadow="rgba(0,0,0,0.30)",
+    indicator_cancelled="#7E918A",
+    code_bg="#09100E",
+    code_fg="#CFE0DA",
+    code_border="#22342D",
+    shadow="rgba(0,0,0,0.42)",
+    shadow_overlay="rgba(0,0,0,0.58)",
+    card_shadow="rgba(0,0,0,0.34)",
 )
 
 HIGH_CONTRAST = VisualTokens(
@@ -512,7 +512,7 @@ def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
     因此缩放对 QSS 控件真实生效。
     """
     return f"""
-    /* === 基础容器 === */
+    /* === 基础容器（Swiss Botanical Engineering 精密墨绿工作台） === */
     QMainWindow, QDialog, QWidget {{
         background-color: {tokens.canvas}; color: {tokens.text};
         font-family: {FONT_FAMILY_UI};
@@ -535,29 +535,35 @@ def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
     /* === 菜单栏 / 菜单 === */
     QMenuBar {{
         background: {tokens.surface}; border-bottom: 1px solid {tokens.border};
-        padding: 3px 8px; spacing: 2px;
+        padding: 4px 10px; spacing: 3px;
     }}
-    QMenuBar::item {{ padding: 6px 10px; border-radius: {RADIUS["sm"]}px; }}
-    QMenuBar::item:selected, QMenu::item:selected {{ background: {tokens.selection}; color: {tokens.primary}; }}
+    QMenuBar::item {{
+        padding: 6px 11px; border-radius: {RADIUS["sm"]}px; color: {tokens.text};
+    }}
+    QMenuBar::item:selected, QMenu::item:selected {{
+        background: {tokens.selection}; color: {tokens.primary}; font-weight: 600;
+    }}
     QMenu {{
-        background: {tokens.elevated}; border: 1px solid {tokens.border};
+        background: {tokens.elevated}; border: 1px solid {tokens.border_strong};
         padding: 6px; border-radius: {RADIUS["md"]}px;
     }}
-    QMenu::item {{ padding: 7px 24px 7px 12px; border-radius: {RADIUS["xs"]}px; }}
-    QMenu::separator {{ height: 1px; background: {tokens.border}; margin: 4px 8px; }}
+    QMenu::item {{ padding: 7px 26px 7px 12px; border-radius: {RADIUS["sm"]}px; }}
+    QMenu::item:disabled {{ color: {tokens.muted}; background: transparent; }}
+    QMenu::separator {{ height: 1px; background: {tokens.border}; margin: 5px 8px; }}
 
     /* === 工具栏 / 状态栏 === */
     QToolBar {{
         background: {tokens.surface}; border: 0;
         border-bottom: 1px solid {tokens.border};
-        padding: 7px 10px; spacing: 6px;
+        padding: 6px 12px; spacing: 8px;
     }}
     QStatusBar {{
         background: {tokens.surface}; border-top: 1px solid {tokens.border};
-        color: {tokens.muted}; padding: 2px 8px;
+        color: {tokens.muted}; padding: 3px 10px;
+        font-size: {scaled_font_px("small", scale=scale)}px;
     }}
 
-    /* === 侧导航 === */
+    /* === 侧导航（悬浮胶囊 + Spotlight 搜索触发器） === */
     QWidget#navSidebar {{
         background: {tokens.nav};
         border-right: 1px solid {tokens.border};
@@ -565,46 +571,96 @@ def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
     QPushButton#quickJumpButton {{
         background: {tokens.surface}; color: {tokens.muted};
         border: 1px solid {tokens.border}; border-radius: {RADIUS["md"]}px;
-        margin: {SPACING["sm"]}px {SPACING["sm"]}px 0px {SPACING["sm"]}px;
+        padding: {scaled_padding_px("sm", scale=scale)}px 12px;
+        margin: 10px 8px 4px 8px;
         text-align: left; font-size: {scaled_font_px("small", scale=scale)}px;
+        font-weight: 500;
     }}
     QPushButton#quickJumpButton:hover {{
-        border-color: {tokens.primary}; color: {tokens.primary}; background: {tokens.selection};
+        border-color: {tokens.primary}; color: {tokens.primary};
+        background: {tokens.selection};
+    }}
+    QPushButton#quickJumpButton:pressed {{
+        border-color: {tokens.primary_active}; background: {tokens.selection};
     }}
     QListWidget#mainNavigation {{
         background: {tokens.nav}; border: 0;
         border-right: 1px solid {tokens.border};
-        padding: {SPACING["sm"]}px {SPACING["sm"]}px;
+        padding: 6px 0px;
     }}
     QListWidget#mainNavigation::item {{
-        padding: 11px 12px; margin: 2px 0;
-        border-radius: {RADIUS["md"]}px; color: {tokens.muted};
+        padding: 8px 12px; margin: 2px 8px;
+        border-radius: {RADIUS["md"]}px;
+        border-left: 3px solid transparent;
+        color: {tokens.muted};
     }}
-    QListWidget#mainNavigation::item:hover {{ background: {tokens.surface}; color: {tokens.text}; }}
+    QListWidget#mainNavigation::item:hover {{
+        background: {tokens.surface}; color: {tokens.text};
+    }}
     QListWidget#mainNavigation::item:selected {{
-        background: {tokens.selection}; color: {tokens.primary}; font-weight: 600;
+        background: {tokens.selection}; color: {tokens.primary};
+        border-left: 3px solid {tokens.primary};
+        font-weight: 600;
+    }}
+    QListWidget#mainNavigation::item:disabled {{
+        background: transparent; border-left: 0;
+        color: {tokens.muted}; font-weight: 700;
+        font-size: {scaled_font_px("caption", scale=scale)}px;
+        padding: 12px 12px 4px 12px; margin: 2px 6px 0px 6px;
     }}
 
-    /* === 全局命令面板（Ctrl+K） === */
+    /* === 全局命令面板（Ctrl+K Spotlight 模态窗） === */
     QDialog#commandPaletteDialog {{
         background: {tokens.elevated};
+        border: 1px solid {tokens.border_strong};
+        border-radius: {RADIUS["lg"]}px;
+    }}
+    QFrame#commandPaletteSearchFrame {{
+        background: {tokens.surface};
+        border: 1px solid {tokens.border_strong};
+        border-bottom: 2px solid {tokens.primary};
+        border-radius: {RADIUS["md"]}px;
+    }}
+    QLabel#commandPaletteBadge {{
+        color: {tokens.primary}; background: {tokens.selection};
+        border: 1px solid {tokens.border}; border-radius: {RADIUS["xs"]}px;
+        padding: 2px 7px; font-family: {FONT_FAMILY_MONO};
+        font-size: {scaled_font_px("caption", scale=scale)}px; font-weight: 700;
+    }}
+    QLabel#commandPaletteKeycap {{
+        color: {tokens.muted}; background: {tokens.nav};
+        border: 1px solid {tokens.border}; border-radius: {RADIUS["xs"]}px;
+        padding: 2px 6px; font-family: {FONT_FAMILY_MONO};
+        font-size: {scaled_font_px("caption", scale=scale)}px;
     }}
     QLineEdit#commandPaletteInput {{
-        background: {tokens.surface}; color: {tokens.text};
-        border: 2px solid {tokens.primary}; border-radius: {RADIUS["md"]}px;
-        padding: 7px 10px;
+        background: transparent; color: {tokens.text};
+        border: 0; padding: 8px 6px;
+        font-size: {scaled_font_px("subtitle", scale=scale)}px;
+    }}
+    QLineEdit#commandPaletteInput:focus {{
+        border: 0; padding: 8px 6px;
     }}
     QListWidget#commandPaletteList {{
         background: {tokens.surface}; border: 1px solid {tokens.border};
-        border-radius: {RADIUS["md"]}px; padding: {SPACING["xs"]}px;
+        border-radius: {RADIUS["md"]}px; padding: 6px;
     }}
     QListWidget#commandPaletteList::item {{
-        padding: 9px 12px; margin: 1px 0;
-        border-radius: {RADIUS["sm"]}px; color: {tokens.text};
+        padding: 10px 14px; margin: 2px 0;
+        border-radius: {RADIUS["sm"]}px;
+        border-left: 3px solid transparent;
+        color: {tokens.text};
     }}
-    QListWidget#commandPaletteList::item:hover {{ background: {tokens.nav}; }}
+    QListWidget#commandPaletteList::item:hover {{
+        background: {tokens.nav};
+    }}
     QListWidget#commandPaletteList::item:selected {{
-        background: {tokens.selection}; color: {tokens.primary}; font-weight: 600;
+        background: {tokens.selection}; color: {tokens.primary};
+        border-left: 3px solid {tokens.primary}; font-weight: 600;
+    }}
+    QFrame#commandPaletteFooter {{
+        background: {tokens.nav}; border: 1px solid {tokens.border};
+        border-radius: {RADIUS["sm"]}px;
     }}
 
     /* === 卡片 / 面板 === */
@@ -612,6 +668,26 @@ def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
         background: {tokens.surface}; border: 1px solid {tokens.border};
         border-radius: {RADIUS["lg"]}px;
     }}
+    QFrame#recentTaskCard {{
+        background: {tokens.surface}; border: 1px solid {tokens.border};
+        border-radius: {RADIUS["md"]}px;
+    }}
+    QFrame#recentTaskCard:hover {{
+        border-color: {tokens.border_strong};
+    }}
+
+    /* === Toast 浮动通知 === */
+    QFrame#toast {{
+        background: {tokens.elevated}; color: {tokens.text};
+        border: 1px solid {tokens.border_strong};
+        border-radius: {RADIUS["md"]}px;
+    }}
+    QFrame#toast[toastKind="success"] {{ border-left: 4px solid {tokens.success}; }}
+    QFrame#toast[toastKind="warning"] {{ border-left: 4px solid {tokens.warning}; }}
+    QFrame#toast[toastKind="error"] {{ border-left: 4px solid {tokens.danger}; }}
+    QFrame#toast[toastKind="info"] {{ border-left: 4px solid {tokens.info}; }}
+    QLabel#toastMessage {{ color: {tokens.text}; font-weight: 500; }}
+    QPushButton#toastAction {{ color: {tokens.primary}; font-weight: 600; border: 0; background: transparent; }}
 
     /* === 首页标题 === */
     /* V2：三层拉开层级对比 —— eyebrow(small 12) → lead(subtitle 15) → 标题(hero 34)。
@@ -634,13 +710,13 @@ def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
        tests/gui/test_design_system_contracts.py::test_push_button_min_height_clears_real_line_height。 */
     QPushButton {{
         background: {tokens.surface}; color: {tokens.text};
-        border: 1px solid {tokens.border}; border-radius: {RADIUS["sm"]}px;
+        border: 1px solid {tokens.border}; border-radius: {RADIUS["md"]}px;
         padding: {scaled_padding_px("sm", scale=scale)}px 14px;
         min-height: {scaled_font_px("body", scale=scale) + 2 * scaled_padding_px("sm", scale=scale)}px;
         font-weight: 500;
     }}
-    QPushButton:hover {{ border-color: {tokens.primary}; background: {tokens.selection}; }}
-    QPushButton:pressed {{ background: {tokens.border}; }}
+    QPushButton:hover {{ border-color: {tokens.primary}; background: {tokens.selection}; color: {tokens.primary}; }}
+    QPushButton:pressed {{ background: {tokens.border}; border-color: {tokens.primary_active}; }}
     QPushButton:focus {{ border: 2px solid {tokens.primary}; padding: {scaled_padding_px("sm", scale=scale) - 1}px 13px; }}
     QPushButton:disabled {{ color: {tokens.muted}; background: {tokens.canvas}; border-color: {tokens.border}; }}
 
@@ -648,64 +724,115 @@ def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
         background: {tokens.primary}; color: #FFFFFF;
         border-color: {tokens.primary}; font-weight: 600;
     }}
-    QPushButton[primary="true"]:hover {{ background: {tokens.primary_hover}; border-color: {tokens.primary_hover}; }}
-    QPushButton[primary="true"]:pressed {{ background: {tokens.primary_active}; }}
-    QPushButton[primary="true"]:disabled {{ background: {tokens.border}; color: {tokens.muted}; }}
+    QPushButton[primary="true"]:hover {{ background: {tokens.primary_hover}; border-color: {tokens.primary_hover}; color: #FFFFFF; }}
+    QPushButton[primary="true"]:pressed {{ background: {tokens.primary_active}; border-color: {tokens.primary_active}; color: #FFFFFF; }}
+    QPushButton[primary="true"]:disabled {{ background: {tokens.border}; color: {tokens.muted}; border-color: {tokens.border}; }}
 
     QPushButton[danger="true"] {{
-        background: {tokens.danger}; color: #FFFFFF; border-color: {tokens.danger};
+        background: {tokens.danger}; color: #FFFFFF; border-color: {tokens.danger}; font-weight: 600;
     }}
-    QPushButton[danger="true"]:hover {{ background: {tokens.danger}; }}
+    QPushButton[danger="true"]:hover {{ background: {tokens.danger}; color: #FFFFFF; }}
 
     QPushButton[homeAction="true"] {{
-        text-align: left; padding: 11px 14px; font-weight: 600;
-        background: {tokens.surface};
+        text-align: left; padding: 11px 16px; font-weight: 600;
+        background: {tokens.surface}; border: 1px solid {tokens.border};
+        border-radius: {RADIUS["md"]}px;
     }}
-    QPushButton[homeAction="true"]:hover {{ background: {tokens.selection}; border-color: {tokens.primary}; }}
+    QPushButton[homeAction="true"]:hover {{
+        background: {tokens.selection}; border-color: {tokens.primary}; color: {tokens.primary};
+    }}
 
     QPushButton[success="true"] {{
         color: {tokens.success}; font-weight: 600; border: 1px solid {tokens.success}; background: {tokens.success_bg};
     }}
 
-    QPushButton[exampleChip="true"] {{
+    QPushButton[exampleChip="true"], QPushButton#scenarioChip {{
         background: {tokens.nav}; color: {tokens.primary};
         border: 1px solid {tokens.border}; border-radius: {RADIUS["pill"]}px;
-        padding: {scaled_padding_px("sm", scale=scale)}px 12px;
+        padding: {scaled_padding_px("sm", scale=scale)}px 13px;
         font-size: {scaled_font_px("small", scale=scale)}px;
+        font-weight: 600;
     }}
-    QPushButton[exampleChip="true"]:hover {{
+    QPushButton[exampleChip="true"]:hover, QPushButton#scenarioChip:hover {{
         background: {tokens.selection}; border-color: {tokens.primary};
     }}
 
     /* === 单选 / 复选 === */
-    QRadioButton {{ spacing: 7px; padding: 4px 2px; color: {tokens.text}; }}
+    QRadioButton {{ spacing: 8px; padding: 4px 2px; color: {tokens.text}; }}
     QRadioButton::indicator {{ width: 16px; height: 16px; }}
-    QCheckBox {{ spacing: 7px; color: {tokens.text}; }}
+    QCheckBox {{ spacing: 8px; padding: 3px 2px; color: {tokens.text}; }}
+    QCheckBox::indicator {{ width: 16px; height: 16px; }}
 
     /* === 分割线 === */
     QSplitter::handle {{ background: {tokens.border}; width: 1px; height: 1px; }}
+    QSplitter::handle:hover {{ background: {tokens.primary}; }}
 
-    /* === 输入控件：全状态 === */
-    QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTableWidget {{
+    /* === 输入控件：全状态（保持 1px→2px 焦点内边距补偿，外框零跳动） === */
+    QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
         background: {tokens.surface}; color: {tokens.text};
-        border: 1px solid {tokens.border}; border-radius: {RADIUS["sm"]}px;
-        padding: 6px; selection-background-color: {tokens.primary};
+        border: 1px solid {tokens.border}; border-radius: {RADIUS["md"]}px;
+        padding: 6px 10px; selection-background-color: {tokens.primary};
         selection-color: #FFFFFF;
     }}
-    QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
-        border: 2px solid {tokens.primary}; padding: 5px;
+    QLineEdit:hover, QTextEdit:hover, QPlainTextEdit:hover, QComboBox:hover, QSpinBox:hover, QDoubleSpinBox:hover {{
+        border-color: {tokens.border_strong};
     }}
-    QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled {{ color: {tokens.muted}; background: {tokens.canvas}; }}
+    QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
+        border: 2px solid {tokens.primary}; padding: 5px 9px;
+    }}
+    QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {{
+        color: {tokens.muted}; background: {tokens.canvas}; border-color: {tokens.border};
+    }}
     QLineEdit[validation="error"], QTextEdit[validation="error"], QPlainTextEdit[validation="error"],
     QComboBox[validation="error"], QSpinBox[validation="error"], QDoubleSpinBox[validation="error"] {{
-        border: 2px solid {tokens.danger}; border-radius: {RADIUS["sm"]}px;
+        border: 2px solid {tokens.danger}; border-radius: {RADIUS["md"]}px;
+    }}
+    QComboBox QAbstractItemView {{
+        background: {tokens.elevated}; color: {tokens.text};
+        border: 1px solid {tokens.border_strong};
+        selection-background-color: {tokens.selection};
+        selection-color: {tokens.primary};
+        padding: 4px;
     }}
 
-    /* === 表格表头 === */
+    /* === 精密数据表格与列表（QTableView / QTableWidget / QTreeWidget / QHeaderView） === */
+    QTableView, QTableWidget, QTreeWidget {{
+        background: {tokens.surface};
+        alternate-background-color: {tokens.canvas};
+        color: {tokens.text};
+        gridline-color: {tokens.border};
+        border: 1px solid {tokens.border};
+        border-radius: {RADIUS["md"]}px;
+        selection-background-color: {tokens.selection};
+        selection-color: {tokens.primary};
+    }}
+    QTableView::item, QTableWidget::item, QTreeWidget::item {{
+        padding: 6px 10px;
+        border-bottom: 1px solid {tokens.border};
+    }}
+    QTableView::item:selected, QTableWidget::item:selected, QTreeWidget::item:selected {{
+        background: {tokens.selection};
+        color: {tokens.primary};
+    }}
+    QHeaderView {{
+        background: transparent; border: 0;
+    }}
     QHeaderView::section {{
         background: {tokens.nav}; color: {tokens.muted};
-        border: 0; border-bottom: 1px solid {tokens.border};
-        padding: 7px; font-weight: 600;
+        border: 0;
+        border-bottom: 2px solid {tokens.border};
+        border-right: 1px solid {tokens.border};
+        padding: 8px 10px;
+        font-size: {scaled_font_px("small", scale=scale)}px;
+        font-weight: 700;
+    }}
+    QHeaderView::section:hover {{
+        background: {tokens.selection}; color: {tokens.primary};
+    }}
+    QTableCornerButton::section {{
+        background: {tokens.nav}; border: 0;
+        border-bottom: 2px solid {tokens.border};
+        border-right: 1px solid {tokens.border};
     }}
 
     /* === 标签页 === */
@@ -713,69 +840,94 @@ def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
         border: 1px solid {tokens.border}; border-radius: {RADIUS["md"]}px;
         background: {tokens.surface};
     }}
-    QTabBar::tab {{ padding: 8px 14px; color: {tokens.muted}; }}
-    QTabBar::tab:selected {{
-        color: {tokens.primary}; border-bottom: 2px solid {tokens.primary}; font-weight: 600;
+    QTabBar::tab {{
+        padding: 8px 16px; margin-right: 4px;
+        color: {tokens.muted}; background: transparent;
+        border-top-left-radius: {RADIUS["sm"]}px;
+        border-top-right-radius: {RADIUS["sm"]}px;
+        border-bottom: 2px solid transparent;
+        font-weight: 500;
     }}
-    QTabBar::tab:hover:!selected {{ color: {tokens.text}; }}
+    QTabBar::tab:selected {{
+        background: {tokens.surface};
+        color: {tokens.primary};
+        border-bottom: 2px solid {tokens.primary};
+        font-weight: 600;
+    }}
+    QTabBar::tab:hover:!selected {{
+        background: {tokens.nav}; color: {tokens.text};
+    }}
 
     /* === 进度条 === */
     QProgressBar {{
-        background: {tokens.border}; border: 0; border-radius: {RADIUS["xs"]}px;
+        background: {tokens.nav}; border: 1px solid {tokens.border};
+        border-radius: {RADIUS["sm"]}px;
         text-align: center; min-height: 10px; color: {tokens.text};
+        font-size: {scaled_font_px("caption", scale=scale)}px;
     }}
     QProgressBar::chunk {{ background: {tokens.primary}; border-radius: {RADIUS["xs"]}px; }}
 
     /* === 工具提示 === */
     QToolTip {{
         background: {tokens.elevated}; color: {tokens.text};
-        border: 1px solid {tokens.border}; padding: 5px 8px;
-        border-radius: {RADIUS["xs"]}px;
+        border: 1px solid {tokens.border_strong}; padding: 6px 10px;
+        border-radius: {RADIUS["sm"]}px;
     }}
 
     /* === Dock === */
     QDockWidget {{ color: {tokens.text}; }}
-    QDockWidget::title {{ background: {tokens.surface}; padding: 4px 8px; }}
+    QDockWidget::title {{
+        background: {tokens.nav}; border-bottom: 1px solid {tokens.border};
+        padding: 6px 10px; font-weight: 600;
+    }}
 
-    /* === 滚动条 === */
+    /* === 极简圆角滚动条（6px 滑块） === */
     QScrollBar:vertical {{
-        background: transparent; width: 10px; margin: 0;
+        background: transparent; width: 8px; margin: 2px 1px;
     }}
     QScrollBar::handle:vertical {{
-        background: {tokens.border}; border-radius: {RADIUS["xs"]}px; min-height: 30px;
+        background: {tokens.border}; border-radius: 3px; min-height: 32px;
     }}
-    QScrollBar::handle:vertical:hover {{ background: {tokens.muted}; }}
+    QScrollBar::handle:vertical:hover {{ background: {tokens.border_strong}; }}
+    QScrollBar::handle:vertical:pressed {{ background: {tokens.primary}; }}
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
     QScrollBar:horizontal {{
-        background: transparent; height: 10px; margin: 0;
+        background: transparent; height: 8px; margin: 1px 2px;
     }}
     QScrollBar::handle:horizontal {{
-        background: {tokens.border}; border-radius: {RADIUS["xs"]}px; min-width: 30px;
+        background: {tokens.border}; border-radius: 3px; min-width: 32px;
     }}
-    QScrollBar::handle:horizontal:hover {{ background: {tokens.muted}; }}
+    QScrollBar::handle:horizontal:hover {{ background: {tokens.border_strong}; }}
+    QScrollBar::handle:horizontal:pressed {{ background: {tokens.primary}; }}
     QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
+    QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: transparent; }}
 
-    /* === 分组框 === */
+    /* === 卡片式分组框 === */
     QGroupBox {{
-        border: 1px solid {tokens.border}; border-radius: {RADIUS["md"]}px;
-        margin-top: 12px; padding-top: 10px;
+        background: {tokens.surface};
+        border: 1px solid {tokens.border}; border-radius: {RADIUS["lg"]}px;
+        margin-top: 14px; padding: 14px 12px 10px 12px;
         font-weight: 600; color: {tokens.text};
     }}
     QGroupBox::title {{
-        subcontrol-origin: margin; left: 12px; padding: 0 4px;
+        subcontrol-origin: margin; left: 14px; padding: 1px 8px;
+        background: {tokens.nav}; border: 1px solid {tokens.border};
+        border-radius: {RADIUS["xs"]}px;
         color: {tokens.primary};
+        font-size: {scaled_font_px("small", scale=scale)}px;
     }}
 
     /* === 代码编辑器（跟随主题） === */
     QPlainTextEdit[codeEditor="true"] {{
         background: {tokens.code_bg}; color: {tokens.code_fg};
-        border: 1px solid {tokens.code_border}; border-radius: {RADIUS["sm"]}px;
+        border: 1px solid {tokens.code_border}; border-radius: {RADIUS["md"]}px;
         font-family: {FONT_FAMILY_MONO}; font-size: {scaled_font_px("small", scale=scale)}px;
         selection-background-color: {tokens.primary};
     }}
 
     /* === 状态标签（通过 role 属性控制） === */
-    QLabel[status="success"] {{ color: {tokens.success}; }}
+    QLabel[status="success"], QLabel[status="ok"] {{ color: {tokens.success}; }}
     QLabel[status="warning"] {{ color: {tokens.warning}; background: {tokens.warning_bg}; }}
     QLabel[status="danger"] {{ color: {tokens.danger}; }}
     QLabel[status="muted"] {{ color: {tokens.muted}; }}
@@ -784,25 +936,31 @@ def stylesheet(tokens: VisualTokens, *, scale: int = 100) -> str:
     /* === 高级规则摘要条 / 结果字段完整度摘要条 === */
     QLabel#advancedSummary {{
         background: {tokens.warning_bg}; color: {tokens.warning};
-        border-bottom: 1px solid {tokens.border}; padding: 7px 12px;
-        border-radius: 0;
+        border-bottom: 1px solid {tokens.border}; padding: 8px 14px;
+        border-radius: 0; font-weight: 500;
     }}
     QLabel#completenessSummary {{
-        border: 1px solid {tokens.border}; border-radius: {RADIUS["sm"]}px;
-        padding: 5px 10px; font-size: {scaled_font_px("small", scale=scale)}px;
-        background: {tokens.surface};
+        border: 1px solid {tokens.border};
+        border-left: 4px solid {tokens.border_strong};
+        border-radius: {RADIUS["md"]}px;
+        padding: 6px 12px; font-size: {scaled_font_px("small", scale=scale)}px;
+        background: {tokens.surface}; font-weight: 500;
     }}
-    QLabel#completenessSummary[status="success"] {{
-        color: {tokens.success}; background: {tokens.success_bg}; border-color: {tokens.success};
+    QLabel#completenessSummary[status="success"], QLabel#completenessSummary[status="ok"] {{
+        color: {tokens.success}; background: {tokens.success_bg};
+        border-color: {tokens.border}; border-left: 4px solid {tokens.success};
     }}
     QLabel#completenessSummary[status="warning"] {{
-        color: {tokens.warning}; background: {tokens.warning_bg}; border-color: {tokens.warning};
+        color: {tokens.warning}; background: {tokens.warning_bg};
+        border-color: {tokens.border}; border-left: 4px solid {tokens.warning};
     }}
     QLabel#completenessSummary[status="danger"] {{
-        color: {tokens.danger}; background: {tokens.danger_bg}; border-color: {tokens.danger};
+        color: {tokens.danger}; background: {tokens.danger_bg};
+        border-color: {tokens.border}; border-left: 4px solid {tokens.danger};
     }}
     QLabel#completenessSummary[status="muted"] {{
         color: {tokens.muted}; background: {tokens.nav};
+        border-color: {tokens.border}; border-left: 4px solid {tokens.border_strong};
     }}
 
     /* === 占位符提示 === */

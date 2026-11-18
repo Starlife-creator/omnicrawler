@@ -6,8 +6,16 @@ import logging
 import math
 from typing import cast
 
-from PySide6.QtCore import QEvent, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPaintEvent
+from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import (
+    QColor,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPaintEvent,
+    QPen,
+    QRadialGradient,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -27,15 +35,15 @@ from .._version import __version__
 from ..services.natural_language_task import compile_natural_language
 from ..services.ux_service import QuickTaskDraft, draft_quick_task
 from .core.run_states import state_label
-from .design_system import HERO_MIN_HEIGHT, SPACING, shadow_effect
+from .design_system import HERO_MIN_HEIGHT, RADIUS, SPACING, ThemeManager, shadow_effect
 from .i18n import _
 from .motion_signal import MotionSignal
 from .widgets.empty_state import EmptyState
 
-#: hero 区右侧留给装饰光斑的宽度（本组件自己的几何常量，不是设计令牌）。
+#: hero 区右侧留给装饰光斑与几何轨道的宽度（本组件自己的几何常量，不是设计令牌）。
 #: ★ 必须放在**导入块之后**：夹在导入中间会让该文件后续导入全部记为 E402
 #:   （`check_lint_budget` 的存量预算只降不升，这是仓库既有先例）。
-_HERO_DECOR_INSET = 220
+_HERO_DECOR_INSET = 236
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +124,7 @@ def scenario_starter_specs() -> tuple[tuple[str, str, str], ...]:
 
 
 class AmbientHero(QWidget):
-    """Soft branded background with subtle optional motion and no external dependency."""
+    """Swiss Botanical Engineering hero surface with multi-layered glow, dot matrix and orbital rings."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -129,6 +137,7 @@ class AmbientHero(QWidget):
         self._reduced_motion = app.property("omnicrawlerReducedMotion") or False
         self._shutting_down = False
         MotionSignal.instance().reduced_motion_changed.connect(self._on_motion_changed)
+        ThemeManager.instance().theme_changed.connect(self._on_theme_changed)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._advance)
         self._timer.setInterval(50)
@@ -137,7 +146,7 @@ class AmbientHero(QWidget):
             SPACING["xl"], SPACING["lg"], _HERO_DECOR_INSET, SPACING["lg"]
         )
         layout.setSpacing(SPACING["sm"])
-        eyebrow = QLabel(f"OMNICRAWLER {_package_version()} · DESKTOP PROFESSIONAL")
+        eyebrow = QLabel(f"OMNICRAWLER {_package_version()} · SWISS DATA STUDIO")
         eyebrow.setObjectName("eyebrow")
         layout.addWidget(eyebrow)
         title = QLabel(_("把网页、PDF 和接口变成可复核的数据"))
@@ -149,29 +158,138 @@ class AmbientHero(QWidget):
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
 
+    def _on_theme_changed(self, *_args: object) -> None:
+        if not self._shutting_down:
+            self.update()
+
     def paintEvent(self, event: QPaintEvent | None) -> None:
         if event is None:
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        palette = self.palette()
-        gradient = QLinearGradient(0, 0, self.width(), self.height())
-        base = palette.base().color()
-        accent = palette.highlight().color()
-        gradient.setColorAt(0, base)
-        wash = QColor(accent)
-        wash.setAlpha(48)
-        gradient.setColorAt(1, wash)
-        painter.setPen(QColor(0, 0, 0, 0))
-        painter.setBrush(gradient)
-        painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 18, 18)
-        for index, radius in enumerate((72, 46, 24)):
-            glow = QColor(accent)
-            glow.setAlpha(18 + index * 8)
-            painter.setBrush(glow)
-            x = self.width() - 95 + math.sin(self._phase + index) * 9
-            y = 32 + index * 30 + math.cos(self._phase + index) * 6
-            painter.drawEllipse(int(x - radius), int(y - radius), radius * 2, radius * 2)
+
+        tokens = ThemeManager.instance().tokens
+        w = float(self.width())
+        h = float(self.height())
+        bounds = QRectF(1.0, 1.0, max(2.0, w - 2.0), max(2.0, h - 2.0))
+        corner = float(RADIUS["xl"])
+
+        clip_path = QPainterPath()
+        clip_path.addRoundedRect(bounds, corner, corner)
+        painter.save()
+        painter.setClipPath(clip_path)
+
+        # 1. 矿物瓷白 / 松墨深色三段斜向底纹渐变
+        surface_col = QColor(tokens.surface)
+        nav_col = QColor(tokens.nav)
+        sel_col = QColor(tokens.selection)
+        accent = QColor(tokens.primary)
+        border_col = QColor(tokens.border)
+
+        bg_grad = QLinearGradient(0.0, 0.0, w, h)
+        bg_grad.setColorAt(0.0, surface_col)
+        bg_grad.setColorAt(0.62, nav_col)
+        wash = QColor(sel_col)
+        wash.setAlpha(185)
+        bg_grad.setColorAt(1.0, wash)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(bg_grad)
+        painter.drawRect(bounds)
+
+        # 2. 右侧建筑感精密点阵（自左向右渐显，保证左侧标题零干扰）
+        grid_start_x = max(w * 0.46, w - 340.0)
+        grid_span = max(1.0, w - grid_start_x)
+        step = 18
+        dot_color = QColor(accent)
+        gx = int(grid_start_x)
+        while gx < int(w - 14):
+            fade = max(0.0, min(1.0, (gx - grid_start_x) / grid_span))
+            dot_color.setAlpha(int(10 + 34 * fade))
+            painter.setBrush(dot_color)
+            gy = 16
+            while gy < int(h - 14):
+                painter.drawEllipse(QPointF(float(gx), float(gy)), 1.25, 1.25)
+                gy += step
+            gx += step
+
+        # 3. 多层径向植物墨绿呼吸光晕
+        phase = 0.0 if self._reduced_motion else self._phase
+        breath = math.sin(phase) * 5.0
+        cx = w - 112.0 + math.sin(phase * 0.7) * 5.0
+        cy = h * 0.50 + math.cos(phase * 0.7) * 4.0
+
+        outer_glow = QRadialGradient(QPointF(cx, cy), 148.0 + breath)
+        c_core = QColor(accent)
+        c_core.setAlpha(46)
+        c_mid = QColor(accent)
+        c_mid.setAlpha(18)
+        c_zero = QColor(accent)
+        c_zero.setAlpha(0)
+        outer_glow.setColorAt(0.0, c_core)
+        outer_glow.setColorAt(0.55, c_mid)
+        outer_glow.setColorAt(1.0, c_zero)
+        painter.setBrush(outer_glow)
+        painter.drawEllipse(QPointF(cx, cy), 148.0 + breath, 148.0 + breath)
+
+        secondary_cx = w - 188.0 - math.cos(phase * 0.5) * 4.0
+        secondary_cy = h * 0.24 + math.sin(phase * 0.5) * 3.0
+        inner_glow = QRadialGradient(QPointF(secondary_cx, secondary_cy), 82.0)
+        c_sec = QColor(accent)
+        c_sec.setAlpha(26)
+        inner_glow.setColorAt(0.0, c_sec)
+        inner_glow.setColorAt(1.0, c_zero)
+        painter.setBrush(inner_glow)
+        painter.drawEllipse(QPointF(secondary_cx, secondary_cy), 82.0, 82.0)
+
+        # 4. 右侧精密几何轨道环与刻度卫星点
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        radii = (84.0 + breath * 0.35, 56.0 - breath * 0.2, 28.0 + breath * 0.15)
+        alphas = (58, 42, 68)
+        for ring_radius, ring_alpha in zip(radii, alphas, strict=True):
+            ring_col = QColor(accent)
+            ring_col.setAlpha(ring_alpha)
+            ring_pen = QPen(ring_col, 1.15)
+            painter.setPen(ring_pen)
+            painter.drawEllipse(QPointF(cx, cy), ring_radius, ring_radius)
+
+        # 十字准星细刻度线
+        axis_col = QColor(accent)
+        axis_col.setAlpha(32)
+        painter.setPen(QPen(axis_col, 1.0))
+        painter.drawLine(QPointF(cx - 98.0, cy), QPointF(cx + 98.0, cy))
+        painter.drawLine(QPointF(cx, cy - 98.0), QPointF(cx, cy + 98.0))
+
+        # 中心锚点与三颗轨道节点
+        hub_col = QColor(accent)
+        hub_col.setAlpha(150)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(hub_col)
+        painter.drawEllipse(QPointF(cx, cy), 3.6, 3.6)
+
+        orbit_specs = (
+            (radii[0], 0.65 + phase * 0.45, 3.4, 135),
+            (radii[1], 2.45 - phase * 0.60, 2.8, 115),
+            (radii[2], 4.20 + phase * 0.80, 2.3, 130),
+        )
+        for orbit_r, angle, node_r, node_alpha in orbit_specs:
+            nx = cx + math.cos(angle) * orbit_r
+            ny = cy + math.sin(angle) * orbit_r
+            halo_col = QColor(accent)
+            halo_col.setAlpha(36)
+            painter.setBrush(halo_col)
+            painter.drawEllipse(QPointF(nx, ny), node_r * 2.4, node_r * 2.4)
+            node_col = QColor(accent)
+            node_col.setAlpha(node_alpha)
+            painter.setBrush(node_col)
+            painter.drawEllipse(QPointF(nx, ny), node_r, node_r)
+
+        painter.restore()
+
+        # 5. 外框精密描边
+        frame_pen = QPen(border_col, 1.0)
+        painter.setPen(frame_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(bounds, corner, corner)
         painter.end()
 
     def _on_motion_changed(self, reduced: bool) -> None:
@@ -196,12 +314,13 @@ class AmbientHero(QWidget):
         self._shutting_down = True
         self._timer.stop()
         MotionSignal.instance().reduced_motion_changed.disconnect(self._on_motion_changed)
+        ThemeManager.instance().theme_changed.disconnect(self._on_theme_changed)
 
     def _advance(self) -> None:
         """Tick the glow animation phase. Skips update() when reduced_motion is on."""
         if self._reduced_motion:
             return
-        self._phase += 0.02
+        self._phase += 0.025
         self.update()
 
 
@@ -261,8 +380,11 @@ class HomePage(QWidget):
         # V2：阴影层级收口到 design_system（数值与取色只在那里出现一次）
         shadow_effect(card, "card")
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(20, 18, 20, 18)
-        card_layout.addWidget(QLabel(_("你想采集什么？")))
+        card_layout.setContentsMargins(24, 20, 24, 20)
+        card_layout.setSpacing(SPACING["sm"])
+        card_heading = QLabel(_("你想采集什么？"))
+        card_heading.setObjectName("sectionTitle")
+        card_layout.addWidget(card_heading)
         description_hint = QLabel(
             _("粘贴网址，或用一句话说明目标、范围、下载和监测要求。")
             + _("系统会自动选择安全起点，生成可修改草案，并始终先试跑。")
@@ -280,13 +402,17 @@ class HomePage(QWidget):
         card_layout.addWidget(self.task_input)
 
         examples = QHBoxLayout()
-        examples.addWidget(QLabel(_("快速示例：")))
+        examples.setSpacing(SPACING["sm"])
+        examples_label = QLabel(_("快速示例："))
+        examples_label.setObjectName("muted")
+        examples.addWidget(examples_label)
         self.scenario_chips: dict[str, QPushButton] = {}
         for scenario_key, label, _prompt_text in scenario_starter_specs():
             chip = QPushButton(label)
             chip.setObjectName(f"scenarioChip_{scenario_key}")
             chip.setAccessibleName(label)
             chip.setProperty("exampleChip", True)
+            chip.setCursor(Qt.CursorShape.PointingHandCursor)
             chip.clicked.connect(
                 lambda _checked=False, key=scenario_key: self.apply_starter_scenario(key)
             )
@@ -296,6 +422,7 @@ class HomePage(QWidget):
         card_layout.addLayout(examples)
 
         action_row = QHBoxLayout()
+        action_row.setSpacing(SPACING["sm"])
         self.create_button = QPushButton(_("创建任务"))
         self.create_button.setAccessibleName(_("创建任务并准备试跑"))
         self.create_button.setProperty("primary", True)
@@ -322,21 +449,26 @@ class HomePage(QWidget):
         layout.addWidget(card)
         first_steps = QGroupBox(_("第一次使用"))
         first_layout = QVBoxLayout(first_steps)
+        first_layout.setSpacing(SPACING["sm"])
         first_label = QLabel(_("配置与字段 → 小样本试跑 → 全量运行 → 核对并导出。离线入门任务无需账号、网络、OCR 或模型，可直接体验完整流程。"))
         first_label.setWordWrap(True)
         first_layout.addWidget(first_label)
         first_buttons = QHBoxLayout()
+        first_buttons.setSpacing(SPACING["sm"])
         self.starter_button = QPushButton(_("创建离线入门任务"))
         self.starter_button.clicked.connect(self.create_starter.emit)
         first_buttons.addWidget(self.starter_button)
         progress_button = QPushButton(_("查看当前任务下一步"))
         progress_button.clicked.connect(self.open_getting_started.emit)
         first_buttons.addWidget(progress_button)
+        first_buttons.addStretch()
         first_layout.addLayout(first_buttons)
         layout.addWidget(first_steps)
 
         recent_header = QHBoxLayout()
-        recent_header.addWidget(QLabel(_("最近任务")))
+        recent_title = QLabel(_("最近任务"))
+        recent_title.setObjectName("sectionTitle")
+        recent_header.addWidget(recent_title)
         recent_header.addStretch()
         all_recent = QPushButton(_("查看全部"))
         all_recent.setFlat(True)
@@ -346,11 +478,12 @@ class HomePage(QWidget):
         self._recent_tasks_host = QWidget()
         self._recent_tasks_layout = QVBoxLayout(self._recent_tasks_host)
         self._recent_tasks_layout.setContentsMargins(0, 0, 0, 0)
-        self._recent_tasks_layout.setSpacing(6)
+        self._recent_tasks_layout.setSpacing(SPACING["sm"])
         layout.addWidget(self._recent_tasks_host)
         self.set_recent_tasks([])
 
         secondary = QHBoxLayout()
+        secondary.setSpacing(SPACING["sm"])
         for label, callback in (
             (_("打开空白任务"), self.open_workspace.emit),
             (_("导入任务"), self.import_task.emit),
@@ -497,9 +630,11 @@ class HomePage(QWidget):
 
         for record in records[:4]:
             row = QFrame()
+            row.setObjectName("recentTaskCard")
             row.setProperty("card", True)
             row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(12, 8, 12, 8)
+            row_layout.setContentsMargins(16, 10, 16, 10)
+            row_layout.setSpacing(SPACING["sm"])
             name = str(record.get("project_name") or _("未命名任务"))
             started = str(record.get("started_at") or "")[:16].replace("T", " ")
             # 文案只在 `gui/core/run_states.py` 定义一次（W6.7 词表统一）；空值仍显示「待处理」

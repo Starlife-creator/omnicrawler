@@ -18,6 +18,7 @@ from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -337,15 +338,15 @@ def filter_palette_commands(
 
 
 def format_palette_item_text(cmd: PaletteCommand) -> str:
-    """格式化单行展示文本：主标题 · 分组徽标 + 右侧快捷键提示。"""
-    base = f"{cmd.title}   ·   {cmd.category}"
+    """格式化单行展示文本：主标题 · 分组徽标 + 右侧键帽快捷键提示。"""
+    base = f"{cmd.title}    ·    {cmd.category}"
     if cmd.shortcut:
-        return f"{base}    [{cmd.shortcut}]"
+        return f"{base}      ⌨ {cmd.shortcut}"
     return base
 
 
 class CommandPaletteDialog(QDialog):
-    """Ctrl+K 全局命令面板与快速页面切换对话框。"""
+    """Ctrl+K 全局命令面板与快速页面切换对话框（Raycast / Linear Spotlight 风格）。"""
 
     def __init__(
         self,
@@ -362,8 +363,8 @@ class CommandPaletteDialog(QDialog):
         self.setAccessibleName(_("全局命令面板与快速跳转"))
         self.setWindowTitle(_("命令面板与快速跳转"))
         self.setModal(True)
-        self.setMinimumWidth(560)
-        self.resize(600, 420)
+        self.setMinimumWidth(580)
+        self.resize(640, 448)
 
         self._all_commands: list[PaletteCommand] = build_palette_commands(
             window, capabilities=capabilities, nav_labels=nav_labels
@@ -373,10 +374,22 @@ class CommandPaletteDialog(QDialog):
         self._pending_callback: Callable[[], None] | None = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 14, 14, 12)
+        layout.setContentsMargins(16, 16, 16, 14)
         layout.setSpacing(10)
 
-        self.search_input = QLineEdit(self)
+        search_frame = QFrame(self)
+        search_frame.setObjectName("commandPaletteSearchFrame")
+        search_frame.setAccessibleName(_("命令面板搜索栏"))
+        search_layout = QHBoxLayout(search_frame)
+        search_layout.setContentsMargins(12, 4, 12, 4)
+        search_layout.setSpacing(8)
+
+        search_badge = QLabel("⌘K", search_frame)
+        search_badge.setObjectName("commandPaletteBadge")
+        search_badge.setAccessibleName(_("命令面板快捷键标识"))
+        search_layout.addWidget(search_badge)
+
+        self.search_input = QLineEdit(search_frame)
         self.search_input.setObjectName("commandPaletteInput")
         self.search_input.setAccessibleName(_("搜索页面或全局命令"))
         self.search_input.setPlaceholderText(
@@ -385,32 +398,44 @@ class CommandPaletteDialog(QDialog):
         self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self._refresh_list)
         self.search_input.installEventFilter(self)
-        layout.addWidget(self.search_input)
+        search_layout.addWidget(self.search_input, 1)
+
+        esc_keycap = QLabel("ESC", search_frame)
+        esc_keycap.setObjectName("commandPaletteKeycap")
+        esc_keycap.setAccessibleName(_("按 Esc 关闭"))
+        search_layout.addWidget(esc_keycap)
+        layout.addWidget(search_frame)
 
         self.result_list = QListWidget(self)
         self.result_list.setObjectName("commandPaletteList")
         self.result_list.setAccessibleName(_("匹配的页面与命令列表"))
+        self.result_list.setUniformItemSizes(True)
         self.result_list.itemActivated.connect(self._on_item_activated)
         layout.addWidget(self.result_list, 1)
 
-        footer = QHBoxLayout()
-        self.hint_label = QLabel(_("↑↓ 选择 · Enter 执行 · Esc 关闭"), self)
+        footer_frame = QFrame(self)
+        footer_frame.setObjectName("commandPaletteFooter")
+        footer_frame.setAccessibleName(_("命令面板底栏"))
+        footer = QHBoxLayout(footer_frame)
+        footer.setContentsMargins(10, 6, 10, 6)
+        footer.setSpacing(8)
+        self.hint_label = QLabel(_("↑↓ 选择 · Enter 执行 · Esc 关闭"), footer_frame)
         self.hint_label.setObjectName("muted")
         self.hint_label.setAccessibleName(_("命令面板操作提示"))
         footer.addWidget(self.hint_label)
         footer.addStretch()
 
-        self.execute_button = QPushButton(_("执行"), self)
+        self.execute_button = QPushButton(_("执行"), footer_frame)
         self.execute_button.setAccessibleName(_("执行当前选中的命令"))
         self.execute_button.setProperty("primary", True)
         self.execute_button.clicked.connect(self.execute_selected)
         footer.addWidget(self.execute_button)
 
-        self.close_button = QPushButton(_("关闭"), self)
+        self.close_button = QPushButton(_("关闭"), footer_frame)
         self.close_button.setAccessibleName(_("关闭命令面板"))
         self.close_button.clicked.connect(self.reject)
         footer.addWidget(self.close_button)
-        layout.addLayout(footer)
+        layout.addWidget(footer_frame)
 
         self._refresh_list("")
         self.search_input.setFocus()

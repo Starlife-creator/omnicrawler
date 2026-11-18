@@ -487,29 +487,38 @@ class MarketView(
             }}
             QLabel#capabilityLabel {{
                 color: {t.text};
-                padding: 6px 8px;
+                padding: 8px 10px;
                 border: 1px solid {t.border};
-                border-radius: {RADIUS["sm"]}px;
+                border-left: 3px solid {t.primary};
+                border-radius: {RADIUS["md"]}px;
                 background: {t.nav};
             }}
             QListWidget {{
                 border: 1px solid {t.border};
-                border-radius: {RADIUS["sm"]}px;
-                padding: 4px;
+                border-radius: {RADIUS["md"]}px;
+                padding: 6px;
                 background: {t.surface};
+                alternate-background-color: {t.canvas};
             }}
             QListWidget::item {{
-                padding: 6px 8px;
-                border-radius: 4px;
+                padding: 8px 10px;
+                margin: 1px 0;
+                border-radius: {RADIUS["sm"]}px;
+                border-left: 3px solid transparent;
+            }}
+            QListWidget::item:hover {{
+                background: {t.nav};
             }}
             QListWidget::item:selected {{
-                background: {t.primary}22;
-                color: {t.text};
+                background: {t.selection};
+                color: {t.primary};
+                border-left: 3px solid {t.primary};
+                font-weight: 600;
             }}
             QTextEdit {{
                 border: 1px solid {t.border};
-                border-radius: {RADIUS["sm"]}px;
-                padding: 8px;
+                border-radius: {RADIUS["md"]}px;
+                padding: 10px;
                 background: {t.surface};
                 font-family: {FONT_FAMILY_MONO};
                 font-size: {scaled_font_px("small")}px;
