@@ -1,6 +1,83 @@
 # Changelog
 
 ## Unreleased
+## 1.0.3 - 2026-11-19
+
+### 变更
+
+### 新增
+
+- feat(browser): **浏览器内核可替换**——新增 `fetching/browser_launch.py` 的
+  `BrowserRuntimeSpec` 与 `resolve_browser_runtime()`，把原先散在三处的
+  Chromium 硬编码收口成一处解析。引擎专属启动参数不再泄漏到 Firefox/WebKit
+  （`launch_args` 只按 `engine_family` 生成），画布与登录会话页都能选内核。
+- feat(session): **登录态记录录制时的浏览器内核**——`SessionSummary` 新增
+  `engine_family`（默认空串而非 chromium），`capture()` 把它写进快照的
+  `_omnicrawler` 命名空间；跨内核复用会话时界面明确说明原因。
+- feat(components): **Wheel-Pack 重型组件可在隔离子进程里运行**——新增
+  `services/component_runner.py`（`omnicrawler components run`）。三条安全边界：
+  零 pip/零安装脚本、**每次启动前重算文件哈希**（不信任「上次校验过」）、
+  只在子进程内改 `sys.path`。市场配方 `ocr-paddle` 以 1141 字节声明拉取
+  100.1 MB 运行时，ABI 按实际解释器填 `cp313`。
+- feat(market): **市场三栏共享多源聚合**——`aggregate_catalogs()` 此前只覆盖
+  插件与模板，组件栏即使配了镜像源也永远看不到组件。修后三栏同语义：
+  逐源独立验签、失败可见、全部失败才算整体失败、本地目录作最后兜底源。
+- feat(market): **索引新鲜度展示**——各源 `generated_at` / `sequence` 进入聚合
+  报告，界面区分 `fresh`（≤12h）/ `aging`（12–24h）/ `stale`（>24h）/ `unknown`
+  （无法解析或**时间在未来**）。后者按异常处理而非「非常新鲜」，因为那恰好是
+  旧签名重放的信号。
+- feat(market): **四类下载通道声明化**——`gui/views/download_channels.py` 把
+  市场索引 / Python 轮子 / 浏览器 CDN / 模型上游收成一份声明，界面只渲染。
+  镜像名单从既有 `mirror_presets`、`model_download` 读取，不重复维护。
+- feat(release): **停发不停建**——对外只发 Standard，Full 继续在 CI 里构建并跑通
+  冒烟（产物留在 Actions artifacts），作为 PyInstaller 冻结兼容性的回归基准。
+  排除发生在资产挂载阶段，不动构建步骤。
+- feat(release): **Standard 全装齐 ↔ Full 能力等价性对账**——新增
+  `tools/portable/{collect_capability_reports,standard_equivalence}.py`，
+  有缺口则阻断发布。判据覆盖 `standard`/`full`/`optional` 三段**以及顶层
+  `native` 段**（`chromium`/`selenium_driver`/`tesseract`/`paddle_models`
+  —— 正是 Full 相对 Standard 多出来的核心能力）。
+- feat(gates): **采集质量基准接入 CI**——`tools/benchmarks/benchmark_quality.py`
+  进入 `static` 集合，`test` 作业执行并写 JSON 报告。判据是 4 个内置任务全部
+  满足精确交付契约（完整、准确、来源匹配、无多余无重复）。
+
+### 安全
+
+- **换源提示只对网络类失败开放**——新增 `services/mirror_failure_policy.py`。
+  连接失败 / DNS / TLS 超时 / HTTP 5xx 可以建议换镜像；**签名校验失败、哈希不符、
+  `sequence` 回退、ABI 不兼容一律阻断且绝不提示换源**——换源只会绕过校验。
+  混合失败时安全类优先：只要一条是安全类，整体就不提示。
+- **模型绝不进 recipe**——`paddle_models` 等权重严禁出现在 `recipe.json` 里。
+  上游不提供模型文件的内容哈希，伪造一个会让「看起来验过了」比「没验」更危险。
+  模型继续走 `services/model_download.py` 的四源直拉。
+
+### 文档
+
+- `docs/PORTABLE_PACKAGING.md` 新增「发行规则：对外只发 Standard」——两张表对比
+  Release/CI/产物去向，说明为什么 Full 不删、排除发生在哪一步。
+- `docs/COMPONENTS.md` 新增两条安装通道（市场 recipe 装配 vs 离线整包）、
+  Wheel-Pack 隔离子进程运行、模型绝不进 recipe。
+- `docs/MARKET_ECOSYSTEM.md` 新增三栏多源聚合、四类下载通道、官方站 vs 镜像站
+  三条差异、换源提示边界、索引新鲜度。
+- `docs/adr/README.md`（新）：ADR 索引与判据——是什么/不是什么、只读纪律、
+  新增步骤、「没有后果的 ADR 不是公告而是决策记录」。
+- `docs/COMPREHENSIVE_OPTIMIZATION_2026-10-04.md` 转为归档入口，原文逐字节移入
+  `docs/archive/2026-10-04-before-comprehensive/docs/`。
+- `docs/FAQ.md` 更新发行形态表述。
+
+### 测试与质量
+
+- 新增守卫覆盖：浏览器参数隔离、登录态内核字段、跨内核提示、Wheel-Pack 运行器、
+  重型配方边界、三栏多源聚合、换源安全判据、索引新鲜度、四类通道、停发不停建、
+  能力等价性对账、workflow 行尾损坏与步骤重复。全部做反向断言并逐字节还原。
+- **修掉四类「守卫存在但恒为通过」的缺陷**：`EDITION.txt` 按裸值匹配认不出
+  edition；CI 只解压 Full 且两包顶层目录同名互相覆盖；对账漏掉 `native` 段；
+  探测失败返回 `{}` 被当成「零能力」并输出错误结论。共同形状是
+  **失败被当成「没有数据」，「没有数据」又被当成「通过」**。
+- `tests/unit/tools/test_gate_registry.py` 增加 `benchmark_quality` 的非
+  `check_*` 命名白名单登记。
+
+
 
 ### 新增
 
