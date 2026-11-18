@@ -1,6 +1,25 @@
 # Changelog
 
 ## Unreleased
+## 1.0.4 - 2026-11-19
+
+### 变更
+
+### 修复
+
+- fix(build): **修正 Linux/macOS 构建脚本里 13 处失效的工具路径**。`e32d58ff`
+  把工具脚本按职责域拆进 `tools/{gates,builders,releasing,portable}/` 时只同步了
+  `build_windows.ps1`，两个 shell 脚本仍指向旧位置 —— 真实 CI 上 Linux 与 macOS
+  构建都在 `can't open file 'tools/check_portable_doc_manifest.py'` 处 exit 2。
+  修正后三平台脚本的 `tools/*.py` 引用缺失归零。
+- test(tools): 新增 `test_build_script_tool_paths.py`（8 条）——三个构建脚本里
+  出现的每个 `tools/*.py` 引用都必须真实存在；含反向断言与「扫到 0 个引用判红」
+  防空集假通过。**边界如实写进 docstring**：它验证路径存在，不验证参数正确。
+
+### 说明
+
+v1.0.3 的 tag 指向一个 Linux/macOS 构建失败的提交，故发 1.0.4 而不是重打 tag。
+
 ## 1.0.3 - 2026-11-19
 
 ### 变更
