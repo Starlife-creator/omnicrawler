@@ -450,7 +450,7 @@ def user_template_dirs(project_root: str | Path | None) -> tuple[Path, ...]:
     B4a：此前只有 GUI 发现这两个目录（gui/main.py 的 user_dir =
     ``<project>/templates``、additional_user_dirs = ``<project>/templates_installed``），
     CLI（commands/template.py）与 doctor/_extract 都只看 bundled ——
-    市场安装的模板 CLI 不可见，而 tools/market.py 却提示"GUI/CLI 将自动发现"。
+    市场安装的模板 CLI 不可见，而 tools/market/market.py 却提示"GUI/CLI 将自动发现"。
     本函数是 CLI/categorizer/doctor/_extract 与 GUI 的**同一目录契约**，
     改动目录名必须两处同步。
     """

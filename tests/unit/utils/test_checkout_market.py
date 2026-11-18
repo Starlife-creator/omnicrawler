@@ -142,7 +142,7 @@ def test_workflows_share_checkout_script_but_only_manual_job_uses_latest():
         steps = quality["jobs"][name]["steps"]
         market = [step for step in steps if "checkout_market.py" in step.get("run", "")]
         assert len(market) == 1
-        assert market[0]["run"] == "python tools/checkout_market.py"
+        assert market[0]["run"] == "python tools/market/checkout_market.py"
         assert "MARKET_REPO_TOKEN" in market[0]["env"]
         assert any("actions/setup-python@" in step.get("uses", "") for step in steps[:steps.index(market[0])])
     latest = yaml.load((workflow_root / "market-compatibility.yml").read_text(encoding="utf-8"), Loader=yaml.BaseLoader)

@@ -250,7 +250,7 @@ if [[ "$SKIP_OCR_MODELS" -eq 0 ]]; then
     || die "PaddleOCR model verification failed"
 fi
 
-# ---- runtime-manifest.json（与 Windows 对齐；生成逻辑在 tools/build_common.py）----
+# ---- runtime-manifest.json（与 Windows 对齐；生成逻辑在 tools/builders/build_common.py）----
 "$PYTHON" "$PROJECT_ROOT/tools/build_common.py" manifest \
     --runtime-root "$RUNTIME_ROOT" --chrome "$CHROME_BIN" \
   || die "runtime manifest generation failed"

@@ -26,7 +26,7 @@
 
 撤销域刻意分开：组件出问题时应只吊销组件，不该逼着换掉**应用更新**的信任根
 （那会让所有用户的自更新跟着换根）。这沿用了仓库既有的「市场与更新刻意是两把
-钥匙」的判断（`tools/manifest_common.py:58`）。
+钥匙」的判断（`tools/builders/manifest_common.py:58`）。
 """
 from __future__ import annotations
 

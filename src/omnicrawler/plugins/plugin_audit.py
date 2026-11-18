@@ -20,7 +20,7 @@ from typing import Any
 
 from .plugin_broker_contracts import is_sensitive_state_key
 
-# 门 2 SPDX 白名单 —— ★ **本仓唯一真源**：门 2、门 3 与 `tools/check_market_content.py`
+# 门 2 SPDX 白名单 —— ★ **本仓唯一真源**：门 2、门 3 与 `tools/gates/check_market_content.py`
 # 均引用本常量；市场仓 `tools/catalog_lib/common.py` 因**跨仓无法 import** 而保留一份副本，
 # 由 `tests/unit/plugin/test_plugin_audit.py` 的**双向相等**断言锁死（任一侧漂移即红）。
 # ★ 2026-09-22 维护者拍板（方向 B「收紧」）：剔除 AGPL-3.0-* / GPL-3.0-*，补 ISC /

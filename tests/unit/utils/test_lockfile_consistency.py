@@ -10,7 +10,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from tools.check_lockfile_consistency import check
+from tools.gates.check_lockfile_consistency import check
 
 _PYPROJECT = """
 [project]

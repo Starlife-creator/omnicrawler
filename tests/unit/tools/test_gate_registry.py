@@ -44,13 +44,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _WORKFLOW_DIR = _REPO_ROOT / ".github" / "workflows"
 
 # 门禁脚本的命名约定是 `check_*.py`，但**不是所有门禁都叫这个名字**
-# （例：`tools/post_bump_steps.py --check-current` 是版本收口门禁）。
+# （例：`tools/releasing/post_bump_steps.py --check-current` 是版本收口门禁）。
 # 这里显式列出这类脚本——不改成「扫 tools/ 下所有 .py」是**有意**的：
 # CI 里还有构建与辅助脚本（build_wheel.py、i18n_stats.py、generate_sbom.py、
 # checkout_market.py …），它们不是门禁，一律纳入会让双向断言立刻变成噪声红。
-_NON_CHECK_GATE_SCRIPTS = ("post_bump_steps.py",)
+_NON_CHECK_GATE_SCRIPTS = ("releasing/post_bump_steps.py",)
 _SCRIPT_RE = re.compile(
-    r"tools/(check_[a-z0-9_]+\.py|"
+    r"tools/(gates/check_[a-z0-9_]+\.py|"
     + "|".join(re.escape(name) for name in _NON_CHECK_GATE_SCRIPTS)
     + r")"
 )
@@ -85,18 +85,38 @@ def test_every_registered_gate_is_wired_into_ci() -> None:
 # 非门禁的 `tools/check_*.py`：被构建脚本或测试 import 的**校验库**，没有独立 CLI 入口。
 # 显式登记在案，既避免被误判为「漏登记的门禁」，也保证新增脚本时不会无人察觉。
 _LIBRARY_ONLY_SCRIPTS = frozenset({
-    "tools/check_linux_delivery.py",   # build_linux.sh 与单测共用的判据函数
-    "tools/check_scenario_cards.py",   # 被 tests 直接 import 的校验库
+    "tools/gates/check_linux_delivery.py",   # build_linux.sh 与单测共用的判据函数
+    "tools/gates/check_scenario_cards.py",   # 被 tests 直接 import 的校验库
 })
 
 
+def _stray_root_check_scripts(tools_dir: Path) -> list[str]:
+    """返回散落在 ``tools/`` 顶层的 ``check_*.py`` 文件名（整理后应始终为空）。"""
+    return sorted(path.name for path in tools_dir.glob("check_*.py") if path.is_file())
+
+
+def test_no_flat_check_scripts_at_tools_root(tmp_path: Path) -> None:
+    """``check_*.py`` 统一归入 ``tools/gates/``，顶层不得残留或回流平铺门禁脚本。"""
+    assert not _stray_root_check_scripts(_REPO_ROOT / "tools"), (
+        "tools/ 顶层发现未归入 tools/gates/ 的 check_*.py 脚本"
+    )
+    # 反向断言：一旦往顶层放回 check_*.py，判据必须立即检出
+    fake_tools = tmp_path / "tools"
+    fake_tools.mkdir()
+    (fake_tools / "check_regression_probe.py").write_text("# probe\n", encoding="utf-8")
+    assert _stray_root_check_scripts(fake_tools) == ["check_regression_probe.py"]
+
+
 def test_no_gate_script_is_silently_unaccounted() -> None:
-    """磁盘上的每个 `tools/check_*.py` 要么登记为门禁，要么在库白名单里显式说明。
+    """磁盘上的每个 `tools/gates/check_*.py` 要么登记为门禁，要么在库白名单里显式说明。
 
     原有的双向断言只比较「CI 引用」与「清单登记」，两者都是脚本的子集——
     磁盘上多出的脚本（既没登记也没接线）不会被发现。这一条补上第三向。
     """
-    on_disk = {f"tools/{path.name}" for path in (_REPO_ROOT / "tools").glob("check_*.py")}
+    on_disk = {
+        f"tools/gates/{path.name}"
+        for path in (_REPO_ROOT / "tools" / "gates").glob("check_*.py")
+    }
     unaccounted = on_disk - set(ci_managed_scripts()) - _LIBRARY_ONLY_SCRIPTS
     assert not unaccounted, (
         f"以下 check_*.py 既未登记为门禁、也不在库白名单: {sorted(unaccounted)}"
@@ -206,7 +226,7 @@ def test_gate_names_and_sets_are_well_formed() -> None:
 # 反引号续行，逐字比必脆），而是只比**旗标集合**：CI 用了而清单没声明的旗标 ⇒ 判红。
 
 _CI_COMMAND_RE = re.compile(
-    r"(?:python|py)\s+(tools/(?:check_[a-z0-9_]+|post_bump_steps)\.py)\b([^\n]*)"
+    r"(?:python|py)\s+(tools/(?:gates/check_[a-z0-9_]+|releasing/post_bump_steps)\.py)\b([^\n]*)"
 )
 
 
@@ -249,8 +269,8 @@ def test_ci_flag_scan_is_not_vacuous() -> None:
     """先证明扫描确实抓到了旗标——否则下面的比对会变成「空集 ⊆ 任何集合」的假通过。"""
     by_script = _ci_flags_by_script()
     assert by_script, "一条 CI 门禁命令都没扫到，正则或目录已失效"
-    assert by_script.get("tools/check_coverage_gates.py", set()) >= {"--profile"}
-    assert by_script.get("tools/check_release_integrity.py", set()) >= {"--wheel-dir"}
+    assert by_script.get("tools/gates/check_coverage_gates.py", set()) >= {"--profile"}
+    assert by_script.get("tools/gates/check_release_integrity.py", set()) >= {"--wheel-dir"}
 
 
 def test_ci_flags_are_declared_in_the_registry() -> None:
@@ -324,7 +344,7 @@ def test_docs_do_not_hardcode_gate_counts() -> None:
     **2026-11-14 修正**：这条判据原先只认「N 项 `tools/check_`」一种句式、只扫
     `CONTRIBUTING.md` 与 `tools/gate_registry.py` 两个文件，于是同类的其他形态
     （手抄的测试通过数、i18n 条目数、别的目录下的文档）全都漏在扫描面之外。
-    判据本体已移交 `tools/check_doc_numbers.py`（扫描面 + 句式 + 生成块逐字比对，
+    判据本体已移交 `tools/gates/check_doc_numbers.py`（扫描面 + 句式 + 生成块逐字比对，
     见 `tests/unit/tools/test_doc_numbers_gate.py` 的五条反向断言）。
 
     本用例保留为**扫描面不得收窄**的守卫：新判据必须覆盖旧判据守过的每一处，
@@ -611,3 +631,25 @@ def test_dropping_env_entirely_reproduces_the_windows_defect(
     assert detail != "bash 语法检查无法执行：缺命名管道", (
         f"摘掉 env 后仍然可读，说明 Windows 侧成因不成立: {detail!r}"
     )
+
+
+def test_incremental_gate_selection_scopes_by_domain() -> None:
+    """``--incremental`` 按变更域裁剪门禁，且始终保留基础行尾/卫生红线。"""
+    from tools.self_verify import select_incremental_gates
+
+    static_gates = gates_for(("static",))
+    # 仅改文档时：跑文档门禁与基础卫生门禁，不无谓拉起 mypy / GUI 扫描
+    doc_only = select_incremental_gates(static_gates, ["docs/ARCHITECTURE.md"])
+    doc_names = {g.name for g in doc_only}
+    assert {"check_docs_consistency", "check_doc_numbers", "check_line_endings_policy"} <= doc_names
+    assert "mypy" not in doc_names
+    assert "check_gui_conventions" not in doc_names
+
+    # 改 GUI 源码时：自动纳入 GUI 门禁与 mypy / 架构门禁，且 ruff 缩圈到具体变更文件
+    gui_changed = select_incremental_gates(
+        static_gates, ["src/omnicrawler/gui/command_palette.py"]
+    )
+    gui_by_name = {g.name: g for g in gui_changed}
+    assert {"mypy", "check_gui_conventions", "check_main_window_size", "ruff"} <= set(gui_by_name)
+    assert "src/omnicrawler/gui/command_palette.py" in gui_by_name["ruff"].args
+

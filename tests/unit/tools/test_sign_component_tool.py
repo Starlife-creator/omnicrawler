@@ -70,7 +70,7 @@ def signing_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 def test_canonical_bytes_match_client_verification() -> None:
     """签名工具的规范化必须与客户端验签侧**逐字相同**。"""
-    from tools.sign_component import canonical_manifest, strip_signature
+    from tools.signing.sign_component import canonical_manifest, strip_signature
 
     raw = {
         "name": "ocr-demo",
@@ -100,7 +100,7 @@ def test_signed_package_passes_client_inspection(
 
     from omnicrawler.services.component_manager import ComponentManager
     from omnicrawler.services.update_feed import decode_public_key
-    from tools.sign_component import command_sign
+    from tools.signing.sign_component import command_sign
 
     private_path, public_pem = signing_env
     package = _make_package(tmp_path)
@@ -119,7 +119,7 @@ def test_tampered_hash_is_refused_before_signing(tmp_path: Path, signing_env) ->
     """哈希对不上时必须**拒绝签名**，而不是签一个坏包。"""
     import argparse
 
-    from tools.sign_component import command_sign
+    from tools.signing.sign_component import command_sign
 
     private_path, _ = signing_env
     package = _make_package(tmp_path, tamper=True)
@@ -139,7 +139,7 @@ def test_private_key_inside_repo_is_refused(
     import argparse
 
     from omnicrawler.plugins.signing import generate_keypair
-    from tools.sign_component import command_sign
+    from tools.signing.sign_component import command_sign
 
     private_pem, _ = generate_keypair()
     fake_repo = tmp_path / "fake-repo"
@@ -158,7 +158,7 @@ def test_inspect_is_read_only(tmp_path: Path) -> None:
     """inspect 不得修改包内容。"""
     import argparse
 
-    from tools.sign_component import command_inspect
+    from tools.signing.sign_component import command_inspect
 
     package = _make_package(tmp_path)
     before = hashlib.sha256(package.read_bytes()).hexdigest()
@@ -178,7 +178,7 @@ def test_signature_covers_all_fields_except_signature(
 
     from omnicrawler.services.component_manager import ComponentManager
     from omnicrawler.services.update_feed import decode_public_key
-    from tools.sign_component import command_sign
+    from tools.signing.sign_component import command_sign
 
     private_path, public_pem = signing_env
     package = _make_package(tmp_path)

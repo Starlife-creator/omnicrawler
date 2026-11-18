@@ -44,9 +44,9 @@ jobs:
       # Deliberately install no feature extra: this catches optional dependency
       # leaks that the broad test environment would otherwise conceal.
       - run: python -m pip install -e .
-      - run: python tools/check_minimal_install.py
-      - run: python tools/check_architecture.py
-      - run: python tools/check_sdk_api.py
+      - run: python tools/gates/check_minimal_install.py
+      - run: python tools/gates/check_architecture.py
+      - run: python tools/gates/check_sdk_api.py
 
   feature-install:
     name: feature install / ${{ matrix.profile }}
@@ -55,7 +55,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 清单真源是 tools/check_extra_install.py 的 ci_matrix_profiles()：
+        # 清单真源是 tools/gates/check_extra_install.py 的 ci_matrix_profiles()：
         # 全部 feature extra 减去 HEAVY_PROFILES（理由写在该文件的 dict 里）。
         # tests/unit/utils/test_extra_install_contract.py 断言本行与之逐项一致。
         profile: [html, pdf, pdf-write, excel, browser, selenium, async-http, ai, tls, streams, distributed, scrapy, ocr-tesseract, ocr-captcha, security, storage, postgresql, search, document]
@@ -67,7 +67,7 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[${{ matrix.profile }}]"
-      - run: python tools/check_extra_install.py "${{ matrix.profile }}"
+      - run: python tools/gates/check_extra_install.py "${{ matrix.profile }}"
 
   lockfile:
     name: dependency lock / reproducible install
@@ -79,7 +79,7 @@ jobs:
         with:
           python-version: "3.12"
       # 无需 uv 即可跑的一致性门禁（与其他静态门禁共用清单 tools/gate_registry.py）
-      - run: python tools/check_lockfile_consistency.py
+      - run: python tools/gates/check_lockfile_consistency.py
       - run: python -m pip install --upgrade pip
       - name: Install uv
         # 约束文件不为 uv 自身设计；install uv 时显式绕过，避免约束与解析器依赖打架
@@ -120,7 +120,7 @@ jobs:
       - name: Checkout pinned OmniCrawler-market (sibling)
         env:
           MARKET_REPO_TOKEN: ${{ secrets.MARKET_REPO_TOKEN }}
-        run: python tools/checkout_market.py
+        run: python tools/market/checkout_market.py
       - run: python -m pip install --upgrade pip
       # storage extra 同时提供 duckdb 与 pyarrow：此前只在命令里临时加 duckdb，
       # pyarrow 缺失让 3 条 convertx 用例在 ubuntu/macOS 上失败（2026-09-15 实测）。
@@ -133,49 +133,49 @@ jobs:
         # gettext：msgfmt --check-format 需要（ubuntu-latest 实测不预装）
         run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libpulse0 fonts-noto-cjk gettext
       - run: python -m compileall -q src tests examples
-      - run: python tools/check_release_integrity.py
-      - run: python tools/check_architecture.py
-      - run: python tools/check_sdk_api.py
-      - run: python tools/check_cli_docs.py
-      - run: python tools/check_docs_consistency.py
+      - run: python tools/gates/check_release_integrity.py
+      - run: python tools/gates/check_architecture.py
+      - run: python tools/gates/check_sdk_api.py
+      - run: python tools/gates/check_cli_docs.py
+      - run: python tools/gates/check_docs_consistency.py
       # 版本收口：声明「当前版本」的锚点页（releases/archive README）必须与 pyproject 一致。
       # 这类漂移曾两次漏过——因为它不在任何 check_*.py 的判据里。
-      - run: python tools/post_bump_steps.py --check-current
+      - run: python tools/releasing/post_bump_steps.py --check-current
       # 锚段完整性：项目根 优化方案.md 的 §一/§1.1/§1.2/§1.3 是否被静默改动。
       # 锚文件在项目根（主仓上一级），CI checkout 拿不到 ⇒ 本步会显式 SKIP，
       # 但仍校验摘要登记表结构；它守的是维护者本机（根目录不是 git 仓）。
-      - run: python tools/check_anchor_integrity.py
+      - run: python tools/gates/check_anchor_integrity.py
       # C-#23：换行规则与 .gitattributes 现行规则一致性门禁
-      - run: python tools/check_line_endings_policy.py
+      - run: python tools/gates/check_line_endings_policy.py
       # C-#17 / C-#18 / C-#11：根目录 shell/command 脚本语法、失败保护、venv 守卫、
       # Python ≥3.12 断言与构建 venv extras 语义静态检查
-      - run: python tools/check_shell_scripts.py
+      - run: python tools/gates/check_shell_scripts.py
       # C-#14 / C-#20：OpenCV 单变体、死依赖退役、版本上下界一致性
-      - run: python tools/check_dependency_consistency.py
-      - run: python tools/check_build_profiles.py
+      - run: python tools/gates/check_dependency_consistency.py
+      - run: python tools/gates/check_build_profiles.py
       # 批次5-①：full / full-macos 必须逐条等于 20 个功能 extra 的展开序
       # （集合已由 tests/unit/utils/test_dependency_extras_contract.py 覆盖，这里钉顺序）
-      - run: python tools/check_extras_expansion.py
+      - run: python tools/gates/check_extras_expansion.py
       # 批次6-2：宽类型 except 静默 pass/continue 必须带显式 '# noqa: BLE001'
       # （吞异常有时正确，静默不行：yaml_editor 外部改动探测、change_detector 解析器回退链）
-      - run: python tools/check_silent_exception_handlers.py
+      - run: python tools/gates/check_silent_exception_handlers.py
       # .gitignore 自身被跟踪且不被任何规则匹配；其注释不得含绝对路径 / 本机用户名 /
       # 指向仓外的 .md 引用（仓库公开，注释里写的机器布局会一并公开）
-      - run: python tools/check_gitignore_hygiene.py
+      - run: python tools/gates/check_gitignore_hygiene.py
       # 现状文档的派生数字必须由工具算出：禁止手抄门禁数 / 测试数 / i18n 数，
       # 必须露出的数字放进 BEGIN/END AUTOGEN 生成块并与实测逐字比对（历史文档不扫）
-      - run: python tools/check_doc_numbers.py
+      - run: python tools/gates/check_doc_numbers.py
       # C-#31：按 UTF-8 解子进程输出的调用必须给子进程 UTF-8 环境
       #        （否则 Windows 控制台代码页会把中文写成 cp936，父进程解成 U+FFFD 假红）
-      - run: python tools/check_subprocess_encoding.py
+      - run: python tools/gates/check_subprocess_encoding.py
       # C-#30：tests/unit/gui 与 tests/gui 归属规则（双名文件 / 反向跨目录依赖）
-      - run: python tools/check_gui_test_layout.py
+      - run: python tools/gates/check_gui_test_layout.py
       # C-#13：UI 层直连 StateStore 点位白名单（禁止新增、存量只降不升）
-      - run: python tools/check_gui_state_threading.py
+      - run: python tools/gates/check_gui_state_threading.py
       # C-#19：MainWindow 组合根规模 ratchet（行数 / 方法数 / 最长方法只降不升）
-      - run: python tools/check_main_window_size.py
+      - run: python tools/gates/check_main_window_size.py
       # C-#4 / C-#27：英文翻译覆盖率下限门禁（实测 20.5%；阈值 20.0% 只防下滑，补译完成后上调）
-      - run: python tools/i18n_stats.py --check --min-coverage 0.20
+      - run: python tools/i18n/i18n_stats.py --check --min-coverage 0.20
       # C-#4 / C-#27：.po/.pot 格式与占位符校验（msgfmt --check-format）。
       # ★ ubuntu-latest **不预装** gettext（实测 `msgfmt: command not found`，exit 127），
       #   所以上面的 apt 步骤显式装了 gettext；Windows/macOS 平台同类校验待补装后纳入矩阵。
@@ -184,7 +184,7 @@ jobs:
         run: |
           msgfmt --check-format -o /tmp/omnicrawler-gui.po.mo locale/en_US/LC_MESSAGES/omnicrawler-gui.po
           msgfmt --check-format -o /tmp/omnicrawler-gui.pot.mo locale/omnicrawler-gui.pot
-      - run: python tools/check_network_boundaries.py
+      - run: python tools/gates/check_network_boundaries.py
       - name: egress policy runtime check (B13-001)
         # Windows runner 默认 pwsh 不支持 bash heredoc → 显式用 bash
         shell: bash
@@ -211,7 +211,7 @@ jobs:
           PY
 
 
-      - run: python tools/check_coding_standards.py src
+      - run: python tools/gates/check_coding_standards.py src
       # `--durations` 只追加报告、不改判定：把「哪条腿 / 哪个用例慢」变成可观测数据。
       # 热点必须在 CI 上量：本地开发机与 runner 的倍率可达 6~10×，用本地耗时推断 CI
       # 会得出错误结论（2026-09-21 实测：本地 0.5s 收尾的整段在 CI 上占 267s）。
@@ -223,7 +223,7 @@ jobs:
       # 不是单条），因此不会对正常通过产生噪声；它只加可观测性，不改任何判定。
       - id: core_tests
         run: python -m coverage run -m pytest -q --durations=25 --durations-min=0.5 -o faulthandler_timeout=300 --junitxml=artifacts/ci/pytest-core.xml
-      # `--fail-under=0`：本步骤只**取数据**，判定统一交给 `tools/check_coverage_gates.py`
+      # `--fail-under=0`：本步骤只**取数据**，判定统一交给 `tools/gates/check_coverage_gates.py`
       # （单一判据）。否则 pyproject.toml 的 `fail_under = 66` 会在这里先以 exit 2 抢跑——
       # 全量跑时它恰好也过，但在**子集**（如浏览器 job，实测总覆盖率 23%）会直接把门禁
       # 挡在"数据生成"阶段，连门禁自己的输出都看不到。
@@ -234,7 +234,7 @@ jobs:
       # 永远不可能达标（browser_engines.py 实测 73.47% < 86%）。那些下限**不删除**，
       # 挪到装了 chromium 的 gui-and-browser job 用 --profile browser 检查。
       - if: ${{ !cancelled() && steps.core_coverage.outcome == 'success' }}
-        run: python tools/check_coverage_gates.py --profile core coverage.json
+        run: python tools/gates/check_coverage_gates.py --profile core coverage.json
       - if: ${{ !cancelled() && steps.core_coverage.outcome == 'success' }}
         run: python -m coverage report
       - run: python -m omnicrawler.cli templates validate
@@ -242,25 +242,25 @@ jobs:
       # 本地 `python tools/self_verify.py` 跑的就是同一集合。
       - run: python -m ruff check src tests tools
       # P2-2：被豁免规则的存量违规预算（存量违规只降不升，新代码不许搭便车）
-      - run: python tools/check_lint_budget.py
+      - run: python tools/gates/check_lint_budget.py
       # 设计体系继承约定（a11y / 内联样式 / 裸色值）：新文件零容忍，存量只降不升
-      - run: python tools/check_gui_conventions.py
+      - run: python tools/gates/check_gui_conventions.py
       # 市场内容质量：审查清单里可机器判定的部分（需要 checkout_market.py 拉来的同级市场）
-      - run: python tools/check_market_content.py
+      - run: python tools/gates/check_market_content.py
       # agent 面契约：命令/参数/退出码/stdout 形态必须完整且「解析器 ⇄ 注册表」双向自洽（P2-4）
-      - run: python tools/check_agent_surface.py --check
+      - run: python tools/gates/check_agent_surface.py --check
       - run: python -m mypy src/omnicrawler
-      # 走 tools/build_wheel.py：它先清 build/ 再构建（裸 pip wheel 在同一工作树里
+      # 走 tools/builders/build_wheel.py：它先清 build/ 再构建（裸 pip wheel 在同一工作树里
       # 第二次会因 setuptools 复用 build/ 而失败，见 §5.7 / W6.7-⑥）
-      - run: python tools/build_wheel.py -w dist
-      - run: python tools/check_release_integrity.py --wheel-dir dist
-      - run: python tools/build_source_archive.py --output-dir dist
-      - run: python tools/check_release_integrity.py --source-zip-dir dist
-      - run: python tools/generate_sbom.py --output dist/omnicrawler-sbom.cdx.json
-      - run: python tools/check_guardrails.py --sbom dist/omnicrawler-sbom.cdx.json
-      - run: python tools/generate_checksums.py dist --output SHA256SUMS-ci.txt
-      - run: python tools/generate_checksums.py dist --output SHA256SUMS-ci.txt --check
-      - run: python tools/generate_provenance.py --artifact-dir dist --output dist/omnicrawler-provenance.json
+      - run: python tools/builders/build_wheel.py -w dist
+      - run: python tools/gates/check_release_integrity.py --wheel-dir dist
+      - run: python tools/builders/build_source_archive.py --output-dir dist
+      - run: python tools/gates/check_release_integrity.py --source-zip-dir dist
+      - run: python tools/releasing/generate_sbom.py --output dist/omnicrawler-sbom.cdx.json
+      - run: python tools/gates/check_guardrails.py --sbom dist/omnicrawler-sbom.cdx.json
+      - run: python tools/releasing/generate_checksums.py dist --output SHA256SUMS-ci.txt
+      - run: python tools/releasing/generate_checksums.py dist --output SHA256SUMS-ci.txt --check
+      - run: python tools/releasing/generate_provenance.py --artifact-dir dist --output dist/omnicrawler-provenance.json
 
       - name: Preserve core test and coverage diagnostics
         if: ${{ !cancelled() && (steps.core_tests.outcome == 'success' || steps.core_tests.outcome == 'failure') }}
@@ -281,7 +281,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # ★ W3.4：市场仓在**宿主机**检出（此时还有网）；容器内一律断网。
       - name: 检出市场仓（宿主机、联网；容器内不使用网络）
-        run: python tools/checkout_market.py --latest --destination "$RUNNER_TEMP/OmniCrawler-market"
+        run: python tools/market/checkout_market.py --latest --destination "$RUNNER_TEMP/OmniCrawler-market"
       # ★ W3.4：**测试镜像要多装 `security` extra**（`cryptography`）。
       #   市场包安装要做 ed25519 验签，而 `signing.py` 是惰性导入 `cryptography`
       #   （属可选 `[security]`）⇒ 只装 `[html,async-http,streams]` 的镜像里**验签必失败**。
@@ -343,7 +343,7 @@ jobs:
       - name: Install Qt runtime dependencies
         run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libpulse0 fonts-noto-cjk
       - name: Compare GUI with reviewed source reference in the same environment
-        run: python tools/check_visual_regression.py --output artifacts/visual-regression
+        run: python tools/gates/check_visual_regression.py --output artifacts/visual-regression
       - name: Preserve visual regression evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -355,17 +355,17 @@ jobs:
       - run: python -m pytest --collect-only -q tests/gui/test_gui_smoke.py tests/gui/test_main_window_contract.py tests/integration/browser/test_browser_integration.py
       # 装了 chromium 的环境 ⇒ 在这里执行「需浏览器运行时的单文件下限」（--profile browser）。
       # 这样 browser_engines / browser_pool 的严格下限**仍然有人查**，只是移到能达成的环境。
-      # 用 tools/ci_coverage_pytest.py 而不是 `python -m coverage run -m pytest`：
+      # 用 tools/qa/ci_coverage_pytest.py 而不是 `python -m coverage run -m pytest`：
       # 子集运行下，conftest 的逐用例 Qt 处置（契约要求立即销毁窗口）会把 native
       # 崩溃推迟到解释器最终化阶段——测试本身全绿，进程仍 exit 139。该 runner 在
       # coverage 数据落盘后跳过最终化退出。全量 test 腿不出现该问题，仍用原生命令。
-      - run: python tools/ci_coverage_pytest.py -q -o faulthandler_timeout=300 tests/gui/test_gui_smoke.py tests/gui/test_main_window_contract.py tests/integration/browser/test_browser_integration.py
-      # `--fail-under=0`：本步骤只**取数据**，判定统一交给 `tools/check_coverage_gates.py`
+      - run: python tools/qa/ci_coverage_pytest.py -q -o faulthandler_timeout=300 tests/gui/test_gui_smoke.py tests/gui/test_main_window_contract.py tests/integration/browser/test_browser_integration.py
+      # `--fail-under=0`：本步骤只**取数据**，判定统一交给 `tools/gates/check_coverage_gates.py`
       # （单一判据）。否则 pyproject.toml 的 `fail_under = 66` 会在这里先以 exit 2 抢跑——
       # 全量跑时它恰好也过，但在**子集**（如浏览器 job，实测总覆盖率 23%）会直接把门禁
       # 挡在"数据生成"阶段，连门禁自己的输出都看不到。
       - run: python -m coverage json -o coverage.json --fail-under=0
-      - run: python tools/check_coverage_gates.py --profile browser coverage.json
+      - run: python tools/gates/check_coverage_gates.py --profile browser coverage.json
 
   windows-full-dependency-matrix:
     runs-on: windows-latest
@@ -379,7 +379,7 @@ jobs:
       - name: Checkout pinned OmniCrawler-market (sibling)
         env:
           MARKET_REPO_TOKEN: ${{ secrets.MARKET_REPO_TOKEN }}
-        run: python tools/checkout_market.py
+        run: python tools/market/checkout_market.py
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[full]"
       - run: python -m pip check
@@ -441,11 +441,11 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
       - run: python -m compileall -q src tools tests
-      - run: python tools/check_release_integrity.py
-      - run: python tools/check_architecture.py
-      - run: python tools/check_docs_consistency.py
-      - run: python tools/check_network_boundaries.py
-      - run: python tools/check_coding_standards.py src
+      - run: python tools/gates/check_release_integrity.py
+      - run: python tools/gates/check_architecture.py
+      - run: python tools/gates/check_docs_consistency.py
+      - run: python tools/gates/check_network_boundaries.py
+      - run: python tools/gates/check_coding_standards.py src
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

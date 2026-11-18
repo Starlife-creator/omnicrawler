@@ -15,7 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _load_checker() -> ModuleType:
-    path = REPO_ROOT / "tools" / "check_gui_conventions.py"
+    path = REPO_ROOT / "tools" / "gates" / "check_gui_conventions.py"
     spec = importlib.util.spec_from_file_location("check_gui_conventions", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

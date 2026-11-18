@@ -1,4 +1,4 @@
-"""W3.4：离线运行级验收（`tools/offline_acceptance.py`）的本地可验部分。
+"""W3.4：离线运行级验收（`tools/qa/offline_acceptance.py`）的本地可验部分。
 
 ## 这里守什么
 
@@ -25,7 +25,7 @@ import pytest
 import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_MODULE_PATH = _REPO_ROOT / "tools" / "offline_acceptance.py"
+_MODULE_PATH = _REPO_ROOT / "tools" / "qa" / "offline_acceptance.py"
 _QUALITY = _REPO_ROOT / ".github" / "workflows" / "quality.yml"
 
 

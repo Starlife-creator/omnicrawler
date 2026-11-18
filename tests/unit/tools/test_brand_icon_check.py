@@ -1,4 +1,4 @@
-"""品牌批次 B2：构建产物品牌图标守卫（`tools/portable_smoke_test.py` 的 B2 段）。
+"""品牌批次 B2：构建产物品牌图标守卫（`tools/portable/portable_smoke_test.py` 的 B2 段）。
 
 ## 这里守的是什么
 
@@ -25,8 +25,8 @@ from pathlib import Path
 
 import pytest
 
-_MODULE_PATH = Path(__file__).resolve().parents[3] / "tools" / "portable_smoke_test.py"
-_REPO_ROOT = _MODULE_PATH.parents[1]
+_MODULE_PATH = Path(__file__).resolve().parents[3] / "tools" / "portable" / "portable_smoke_test.py"
+_REPO_ROOT = _MODULE_PATH.parents[2]
 
 
 def _module():

@@ -1,4 +1,4 @@
-"""Tests for tools/sign_plugin.py — offline signing with pre-publish scan
+"""Tests for tools/signing/sign_plugin.py — offline signing with pre-publish scan
 and transparency log."""
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ pytest.importorskip("cryptography")
 from omnicrawler.plugins import signing  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SIGN_TOOL = REPO_ROOT / "tools" / "sign_plugin.py"
+SIGN_TOOL = REPO_ROOT / "tools" / "signing" / "sign_plugin.py"
 
 _UTF8_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
 

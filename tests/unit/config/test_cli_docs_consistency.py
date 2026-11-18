@@ -1,6 +1,6 @@
 import pytest
 
-from tools.check_cli_docs import check_docs, cli_contracts, documented_commands
+from tools.gates.check_cli_docs import check_docs, cli_contracts, documented_commands
 
 
 def test_documented_command_parser_only_reads_top_level_command():

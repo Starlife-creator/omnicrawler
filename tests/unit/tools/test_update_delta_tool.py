@@ -23,8 +23,8 @@ import pytest
 pytest.importorskip("cryptography")
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DELTA_TOOL = REPO_ROOT / "tools" / "build_update_delta.py"
-BUILD_TOOL = REPO_ROOT / "tools" / "build_update_manifest.py"
+DELTA_TOOL = REPO_ROOT / "tools" / "builders" / "build_update_delta.py"
+BUILD_TOOL = REPO_ROOT / "tools" / "builders" / "build_update_manifest.py"
 
 sys.path.insert(0, str(REPO_ROOT / "src"))
 

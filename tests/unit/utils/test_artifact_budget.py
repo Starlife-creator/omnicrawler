@@ -6,7 +6,7 @@ from pathlib import Path
 
 def _load_checker():
     project_root = Path(__file__).resolve().parents[3]
-    path = project_root / "tools" / "check_artifact_budget.py"
+    path = project_root / "tools" / "gates" / "check_artifact_budget.py"
     spec = importlib.util.spec_from_file_location("check_artifact_budget", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -39,5 +39,5 @@ def test_release_workflow_enforces_all_platform_budgets() -> None:
     }
     for platform, filename in platform_workflows.items():
         workflow = (workflow_root / filename).read_text(encoding="utf-8")
-        assert workflow.count("python tools/check_artifact_budget.py --platform") == 1
+        assert workflow.count("python tools/gates/check_artifact_budget.py --platform") == 1
         assert f"--platform {platform}" in workflow

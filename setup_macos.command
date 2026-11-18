@@ -78,7 +78,7 @@ if [ "$PROFILE" = "full" ]; then
       ;;
   esac
   mkdir -p .runtime/models
-  .venv/bin/python tools/download_and_smoke_test.py .runtime/models/paddlex --source "$OMNICRAW_MODEL_SOURCE"
+  .venv/bin/python tools/releasing/download_and_smoke_test.py .runtime/models/paddlex --source "$OMNICRAW_MODEL_SOURCE"
 fi
 
 .venv/bin/python -m omnicrawler capabilities --verify-imports

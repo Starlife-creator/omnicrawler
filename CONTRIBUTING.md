@@ -8,9 +8,9 @@
 安全打包、质量报告、ADR 分区组织。改文档前先去那里定位，别在 `docs/` 里翻。
 
 - **新增或删除 `docs/` 顶层 Markdown 时，必须同步更新 `docs/README.md` 的索引**，
-  否则 `tools/check_docs_consistency.py` 会判定为孤儿页并让门禁失败。
+  否则 `tools/gates/check_docs_consistency.py` 会判定为孤儿页并让门禁失败。
 - `docs/archive/` 是历史归档，描述过去状态，不作为当前行为依据。
-- `docs/releases/` 由 `tools/bump_version.py` 自动生成，不要手写编辑。
+- `docs/releases/` 由 `tools/releasing/bump_version.py` 自动生成，不要手写编辑。
 
 ## 快速开始
 
@@ -65,7 +65,7 @@ python tools/self_verify.py --json evidence.json   # 写出机器可读的证据
 
 第三种跳过专治**环境假红**：Git for Windows 的 bash 在被禁命名管道的沙箱里连启动都做不到，
 `bash -n` 会对每个脚本返回非 0；不区分时 9 个没坏的脚本会被同时写成「语法错误」。
-现在 `tools/check_shell_scripts.py` 先探 bash 能力，探不通就以 77 退出并只跑结构检查——
+现在 `tools/gates/check_shell_scripts.py` 先探 bash 能力，探不通就以 77 退出并只跑结构检查——
 **放行的只有「跑不了语法检查」这一件事**，pipefail / venv 守卫 / 版本断言 / extras 语义照旧判红。
 
 pre-commit hooks 会在提交时自动运行 ruff 和 mypy，从源头防止退化。
@@ -192,7 +192,7 @@ DCO 静态检查，不 import 或执行投稿插件。维护者人工固定 mani
 1. **版本号唯一来源**：`src/omnicrawler/_version.py` 中的 `__version__`（叶子模块；
    `omnicrawler.__version__` 只是对它的惰性 re-export，不是第二份真源）。构建脚本自动读取，
    产物文件名由脚本生成，任何人（包括自动化工具）都不应在构建流程中手动修改版本号。
-2. **修改版本号是独立操作**：使用 `tools/bump_version.py`，不与构建、测试、修复混在一起。
+2. **修改版本号是独立操作**：使用 `tools/releasing/bump_version.py`，不与构建、测试、修复混在一起。
 3. **产物归档**：所有构建产物放入 `artifacts/` 版本化目录，规则见 [`artifacts/README.md`](artifacts/README.md)。
 
 ### 快速构建命令（离线模式）
@@ -215,7 +215,7 @@ $python = "$PWD\.venv\Scripts\python.exe"
   -RuntimeCachePath "$PWD\build_cache\runtime"
 
 # 源码 ZIP + wheel
-.\.venv\Scripts\python.exe tools\build_source_archive.py
+.\.venv\Scripts\python.exe tools\builders\build_source_archive.py
 ```
 
 ### 产物清单

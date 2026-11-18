@@ -115,6 +115,6 @@ for att in attachments:
 - `sdk_version`：**SDK 契约版本**，对应 `omnicrawler.sdk.SDK_VERSION`，表达对外接口的稳定度档位（如 `1.0-preview`）；契约演进时才变更。
 - `application_version`：**应用发布版本**，与 `src/omnicrawler/_version.py` 的 `__version__`（及 `pyproject.toml` 的 `version`）同源；应用每次发版随之更新。
 
-`tools/check_sdk_api.py` 同时校验两个字段：契约版本对照 `SDK_VERSION`，应用版本对照版本叶子模块；任一漂移即判红。SDK 消费者按 `sdk_version` 判断接口兼容，按 `application_version` 识别发行包版本。
+`tools/gates/check_sdk_api.py` 同时校验两个字段：契约版本对照 `SDK_VERSION`，应用版本对照版本叶子模块；任一漂移即判红。SDK 消费者按 `sdk_version` 判断接口兼容，按 `application_version` 识别发行包版本。
 
 详见 `docs/PLUGIN_CONTRACT.md` 和 `docs/SECURITY_AND_COMPLIANCE.md`。

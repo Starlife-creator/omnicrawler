@@ -293,7 +293,7 @@ def test_gate_is_registered_and_wired() -> None:
     from tools.gate_registry import ci_managed_scripts, gates_for
 
     registered = set(ci_managed_scripts())
-    assert "tools/check_doc_numbers.py" in registered
+    assert "tools/gates/check_doc_numbers.py" in registered
     names = {gate.name for gate in gates_for(("static",))}
     assert "check_doc_numbers" in names
 

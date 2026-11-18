@@ -18,7 +18,7 @@ import pathlib
 import pytest
 
 from omnicrawler.core.capabilities import FEATURE_REQUIREMENTS, MODULES, capability_report
-from tools.check_extra_install import AGGREGATE_EXTRAS, PROFILE_IMPORTS
+from tools.gates.check_extra_install import AGGREGATE_EXTRAS, PROFILE_IMPORTS
 
 FEATURE_EXTRAS = tuple(name for name in PROFILE_IMPORTS if name not in AGGREGATE_EXTRAS)
 

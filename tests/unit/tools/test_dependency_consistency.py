@@ -1,4 +1,4 @@
-"""`tools/check_dependency_consistency.py` 门禁反向断言（C-#14 / C-#20）。
+"""`tools/gates/check_dependency_consistency.py` 门禁反向断言（C-#14 / C-#20）。
 
 每一类漂移都在临时目录的合成 pyproject 上装回去，断言脚本判红；干净声明必须通过。
 """
@@ -15,7 +15,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 def _load():
     spec = importlib.util.spec_from_file_location(
         "_check_dependency_consistency_under_test",
-        _ROOT / "tools" / "check_dependency_consistency.py",
+        _ROOT / "tools" / "gates" / "check_dependency_consistency.py",
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

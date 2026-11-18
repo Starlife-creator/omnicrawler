@@ -1,4 +1,4 @@
-"""C-#30：``tools/check_gui_test_layout.py`` 归属规则反向断言。"""
+"""C-#30：``tools/gates/check_gui_test_layout.py`` 归属规则反向断言。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 def _load():
     spec = importlib.util.spec_from_file_location(
         "_check_gui_test_layout_under_test",
-        _ROOT / "tools" / "check_gui_test_layout.py",
+        _ROOT / "tools" / "gates" / "check_gui_test_layout.py",
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

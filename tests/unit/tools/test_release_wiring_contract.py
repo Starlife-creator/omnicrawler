@@ -6,7 +6,7 @@
       → workflow_call 的输入 `delta_baselines` / `release_url_base`
         → reusable-build-*.yml 的 `env:`（**名字必须与脚本读的一致**）
           → build_*.sh / build_windows.ps1 里的 `--baselines` / `--baseline-url-base`
-            → tools/build_update_delta.py
+            → tools/builders/build_update_delta.py
 
 **任何一跳改名漏改，症状都是"静默地没有变更包"**（脚本走 `|| WARN` 分支、构建照样成功），
 要到用户抱怨"小版本还是下了整包"才发现。而它只在**真发布**时才被跑到 ⇒ 常规单测照不到。
@@ -57,8 +57,8 @@ def test_release_workflow_declares_and_exports_the_baseline_inputs() -> None:
     assert 'echo "delta_baselines=' in text, "必须真的往 GITHUB_OUTPUT 写这个值"
     assert 'echo "release_url_base=' in text, "必须真的往 GITHUB_OUTPUT 写这个值"
     # 基线来自**版本 tag**（不是分支、不是 release 名）
-    assert "python tools/release_delta_baselines.py" in text
-    helper = _text(REPO_ROOT / "tools" / "release_delta_baselines.py")
+    assert "python tools/releasing/release_delta_baselines.py" in text
+    helper = _text(REPO_ROOT / "tools" / "releasing" / "release_delta_baselines.py")
     assert '"tag", "--list"' in helper
     assert "limit: int = 3" in helper, "窗口大小 K=3 要能一眼看见"
 

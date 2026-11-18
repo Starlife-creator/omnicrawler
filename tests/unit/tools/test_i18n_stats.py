@@ -1,4 +1,4 @@
-"""`tools/i18n_stats.py` 实测统计与 `tools/extract_i18n.py` 转义护栏（C-#4 / C-#27）。
+"""`tools/i18n/i18n_stats.py` 实测统计与 `tools/i18n/extract_i18n.py` 转义护栏（C-#4 / C-#27）。
 
 门禁反向断言：统计口径只认 ``.pot`` / ``.po`` 实测条目；合成语言包覆盖率
 必须落在预期值上，低于门禁阈值必须退出 1；``.pot`` 转义必须把换行、引号、
@@ -23,8 +23,8 @@ def _load(module_name: str, tool_path: Path):
     return module
 
 
-STATS = _load("_i18n_stats_under_test", _ROOT / "tools" / "i18n_stats.py")
-EXTRACT = _load("_extract_i18n_under_test", _ROOT / "tools" / "extract_i18n.py")
+STATS = _load("_i18n_stats_under_test", _ROOT / "tools" / "i18n" / "i18n_stats.py")
+EXTRACT = _load("_extract_i18n_under_test", _ROOT / "tools" / "i18n" / "extract_i18n.py")
 
 _POT = """msgid ""
 msgstr ""

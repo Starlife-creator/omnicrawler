@@ -8,7 +8,7 @@ from types import ModuleType
 
 
 def _load_checker() -> ModuleType:
-    path = Path(__file__).resolve().parents[3] / "tools" / "check_architecture.py"
+    path = Path(__file__).resolve().parents[3] / "tools" / "gates" / "check_architecture.py"
     spec = importlib.util.spec_from_file_location("check_architecture", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

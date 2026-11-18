@@ -7,7 +7,7 @@
 
 **继承后自动获得**：
 
-- 对象名与**无障碍名**（满足 `tools/check_gui_conventions.py` 的约定，新文件零容忍）
+- 对象名与**无障碍名**（满足 `tools/gates/check_gui_conventions.py` 的约定，新文件零容忍）
 - 当前主题令牌 `self.tokens`（颜色不再需要各页面自取）
 - **三态状态区**：空 / 加载 / 错误（统一走 `EmptyState`，视觉与主题自动一致）
 - 轻提示 `notify()`（统一走 `ToastManager`）

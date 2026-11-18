@@ -9,7 +9,7 @@ Prerequisites::
 
 CI 与本地正式验收优先使用固定参考源码门禁（无需预装基线）：
 
-    python tools/check_visual_regression.py --output <新的证据目录>
+    python tools/gates/check_visual_regression.py --output <新的证据目录>
 
 门禁从 constraints/visual-ref.txt 读取已审查提交，在相同环境生成参考，再比较
 当前界面；CI 的 GUI 作业强制执行并上传证据。OMNI_BASELINE_DIR 可指定独立

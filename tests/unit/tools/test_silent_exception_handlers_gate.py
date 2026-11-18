@@ -1,4 +1,4 @@
-"""Contract tests for `tools/check_silent_exception_handlers.py`.
+"""Contract tests for `tools/gates/check_silent_exception_handlers.py`.
 
 The gate only has value if it turns red when the discipline is broken, so every
 "passes" case here is paired with a reverse assertion that puts the gap back.

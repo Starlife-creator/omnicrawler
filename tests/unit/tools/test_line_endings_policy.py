@@ -1,4 +1,4 @@
-"""`tools/check_line_endings_policy.py` 行尾规则一致性门禁反向断言（C-#23）。
+"""`tools/gates/check_line_endings_policy.py` 行尾规则一致性门禁反向断言（C-#23）。
 
 护栏：``.gitattributes`` 现行规则缺一条必须报红；``AGENTS.md`` 残留「主仓文件
 是 CRLF」过期表述必须报红；规则文档缺准据引用必须报红；真实仓库必须全绿。
@@ -15,7 +15,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 
 def _load():
     spec = importlib.util.spec_from_file_location(
-        "_line_endings_policy_under_test", _ROOT / "tools" / "check_line_endings_policy.py"
+        "_line_endings_policy_under_test", _ROOT / "tools" / "gates" / "check_line_endings_policy.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

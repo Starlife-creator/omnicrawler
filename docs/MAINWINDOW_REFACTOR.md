@@ -23,7 +23,7 @@
 1. ✅ **装配职责下沉**（批次 6-4b 已完成）：`_setup_central_area` 的 227 行面板装配迁入独立面板装配 delegate（参照 `delegates/` 既有弱引用模式），主类只保留组合顺序与跨面板协调。
 2. ✅ **删除纯转发壳**（批次 6-4c 已完成）：菜单 / 工具栏 / 主题访问改为调用点直连 `self._theme_manager` 等成员，4 个转发方法已删除；按 §3 第 4 条先单独提交调用点直连（`00e40678`）再删壳，保留一个可回退的分界。
 3. ✅ **构造分段**（批次 6-4d 已完成）：`__init__` 拆为 `_init_window_frame` / `_init_core_state` / `_init_project_context` / `_init_runtime_state` / `_init_ui_and_signals` 五个私有装配段，`__init__` 只剩 9 行；段间不共享可变临时状态（原有的三个局部变量都只在项目根目录段内使用）。
-4. 拆分后用 `tools/check_main_window_size.py --write-baseline` 按实测下调基线，维持只降不升。
+4. 拆分后用 `tools/gates/check_main_window_size.py --write-baseline` 按实测下调基线，维持只降不升。
 
 ## 3. 迁移顺序与兼容保护
 
@@ -40,7 +40,7 @@
 
 ## 5. 当前状态与环境依赖
 
-- 已落地：规模 ratchet 门禁（`tools/check_main_window_size.py`）、本计划文档，以及 §3 第 1 条要求的 **offscreen 契约测试网** `tests/gui/test_main_window_contract.py`（启动 → 导航/页面栈结构 → 每个菜单动作已接线 → 导航切换每页 → 关闭生命周期完整；含两条反向断言锁住判据本身）。该测试已接入 `.github/workflows/quality.yml` 的 `gui-and-browser` 腿。
+- 已落地：规模 ratchet 门禁（`tools/gates/check_main_window_size.py`）、本计划文档，以及 §3 第 1 条要求的 **offscreen 契约测试网** `tests/gui/test_main_window_contract.py`（启动 → 导航/页面栈结构 → 每个菜单动作已接线 → 导航切换每页 → 关闭生命周期完整；含两条反向断言锁住判据本身）。该测试已接入 `.github/workflows/quality.yml` 的 `gui-and-browser` 腿。
 - 契约测试只断言窗口**最终长成的结构**，不断言由哪个方法拼出来——因此后续把装配搬进 delegate、或把 `__init__` 分段时它仍须全绿；反之搬迁漏接信号、少挂页面、导航映射错位会立刻变红。
 - 已完成 §2 第 1 条（批次 6-4b）：226 行面板装配整块平移进 `gui/delegates/central_area.py` 的 `CentralAreaBuilder.setup()`，`self.` 全量改写为 `mw.`，**未改任何 connect 目标、未改装配顺序**；主类只保留 `self._central_area.setup()` 一次调用，并不再 import 那些 view/widget 类型（改为类级 `Any` 注解，注释写明「主窗口只按名字持有、不碰类型细节」）。
 - 该搬迁让 `MainWindow` 的规模实测降到 2318 行 / 109 方法 / 最长方法 134 行（`__init__`），基线已按 `--write-baseline` 下调到逐项相等。环预算随之按实测上调 39/61/12 → 40/63/13：新 delegate 必然落进既有 GUI 大环（`delegates → central_area → _base →(TYPE_CHECKING) main → delegates`），增量可逐条归因（modules +1 / edges +2 / largest +1），与 `e3e41bf7` 同一模式。

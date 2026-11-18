@@ -3,7 +3,7 @@
 > 适用版本：1.0.2 · 配置协议：v5 · 维护状态：现行（历史状态见归档；功能验证以验收账本为准）
 
 > 本规范是各阶段优化必须遵循的全局纪律，源于审计根因 1（浅拷贝/可变默认值）。
-> CI 层由 `tools/check_coding_standards.py` 强制执行；本地可运行 `python tools/check_coding_standards.py src tools cli`（默认扫 `src`）。
+> CI 层由 `tools/gates/check_coding_standards.py` 强制执行；本地可运行 `python tools/gates/check_coding_standards.py src tools cli`（默认扫 `src`）。
 
 ## 1. 配置合并一律深拷贝
 
@@ -40,7 +40,7 @@
 ## 7. CI 门禁一致性
 
 - 本仓库已有 `check_release_integrity` / `check_architecture` / `check_docs_consistency` / `check_network_boundaries`。
-- 新增门禁规则一律加入 `tools/check_coding_standards.py` 并在 `.github/workflows/quality.yml` 引用。
+- 新增门禁规则一律加入 `tools/gates/check_coding_standards.py` 并在 `.github/workflows/quality.yml` 引用。
 
 ## 8. 正则与解析防护
 
@@ -83,9 +83,9 @@
 
 ## 12. 覆盖率分组门禁与排除记录
 
-覆盖率分组门禁的唯一判据在 `tools/check_coverage_gates.py`：既有阻断分组按 CI 三平台实测最小值 − 2 设定下限，只升不降。
+覆盖率分组门禁的唯一判据在 `tools/gates/check_coverage_gates.py`：既有阻断分组按 CI 三平台实测最小值 − 2 设定下限，只升不降。
 
-C-#8 风险优先补充分组 `services`、`plugins`、`commands`、`gui_views` 当前处于 **baseline pending** 状态：门禁会打印实测值与占位下限，但**不阻断合并**；首轮 CI 覆盖率数据落地后，按同一口径（min − 2）填回实数下限并从 `BASELINE_PENDING_GATES` 移出，即转为阻断。到期日 `BASELINE_PENDING_EXPIRES = 2027-01-31`：到期后该集合必须为空，否则 `tools/check_coverage_gates.py` 的 `_pending_gate_problems` 判红（见 `tests/unit/utils/test_coverage_gates.py` 契约测试）。
+C-#8 风险优先补充分组 `services`、`plugins`、`commands`、`gui_views` 当前处于 **baseline pending** 状态：门禁会打印实测值与占位下限，但**不阻断合并**；首轮 CI 覆盖率数据落地后，按同一口径（min − 2）填回实数下限并从 `BASELINE_PENDING_GATES` 移出，即转为阻断。到期日 `BASELINE_PENDING_EXPIRES = 2027-01-31`：到期后该集合必须为空，否则 `tools/gates/check_coverage_gates.py` 的 `_pending_gate_problems` 判红（见 `tests/unit/utils/test_coverage_gates.py` 契约测试）。
 
 `src/omnicrawler/visual_selector/` 在 `pyproject.toml` 的 coverage `omit` 中排除：它是浏览器坐标选择 E2E 工具，依赖真实页面与浏览器运行时，不进单测覆盖率。**复核期限：2026-12 前**为其补 offscreen/集成测试，达标后从 omit 移除并纳入分组门禁；在此之前不得以「覆盖率低」为由删除该模块功能。
 
@@ -100,10 +100,10 @@ C-#8 风险优先补充分组 `services`、`plugins`、`commands`、`gui_views` 
 | 夹具 | 不引用 `tests/gui` 的 fixture/helper | 可复用 `tests/unit/gui` 已沉淀的 helper，反向禁止 |
 | 覆盖率归属 | `desktop_core` 等单测分组 | 集成/生命周期覆盖，不进单测分组下限 |
 
-阻断规则由 `tools/check_gui_test_layout.py` 执行（接入 `quality.yml` 静态 job）：
+阻断规则由 `tools/gates/check_gui_test_layout.py` 执行（接入 `quality.yml` 静态 job）：
 
 1. 两目录不得出现同名测试文件；
 2. `tests/unit/gui` 不得 import `tests/gui`（单元层禁止依赖集成层）；
 3. `tests/gui` 不得 import `tests/unit/gui`（避免单元层被集成夹具绑架）。
 
-**重复覆盖候选清单（advisory，非阻断）**：`tools/check_gui_test_layout.py --report` 实时列出「同一 `omnicrawler.gui` 源模块被两个目录同时引用」的测试文件对。2026-10 盘点共 26 个模块处于双目录覆盖状态，集中在 `core.config_model`、`design_system`、`views.plugin_market`、`views.change_monitor`、`delegates.*` 等簇；去重原则：纯函数/信号契约留在 `tests/unit/gui`，生命周期与跨组件装配断言并入 `tests/gui`，合并后删除重复用例。物理去重需在可运行 Qt offscreen 的 CI 环境逐簇回归验证，本轮先落归属规则与候选清单，去重迁移列入后续迭代。
+**重复覆盖候选清单（advisory，非阻断）**：`tools/gates/check_gui_test_layout.py --report` 实时列出「同一 `omnicrawler.gui` 源模块被两个目录同时引用」的测试文件对。2026-10 盘点共 26 个模块处于双目录覆盖状态，集中在 `core.config_model`、`design_system`、`views.plugin_market`、`views.change_monitor`、`delegates.*` 等簇；去重原则：纯函数/信号契约留在 `tests/unit/gui`，生命周期与跨组件装配断言并入 `tests/gui`，合并后删除重复用例。物理去重需在可运行 Qt offscreen 的 CI 环境逐簇回归验证，本轮先落归属规则与候选清单，去重迁移列入后续迭代。

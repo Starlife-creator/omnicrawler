@@ -244,7 +244,7 @@ done
 #   Windows 一直有它（`OmniCrawler-Launcher.bat`），Linux 之前没有 ⇒ 装了新版没人启动。
 # ★ 指针格式与 Windows **完全一致**（同一份 `versions/current.txt`），三平台一个心智模型。
 # ★ 用 POSIX sh 而不是 bash：它是用户**唯一**能启动应用的入口，`/bin/sh` 由 POSIX 保证存在。
-#   （形态判据见 tools/check_linux_delivery.py 的 DELIVERY_POSIX_SCRIPTS。）
+#   （形态判据见 tools/gates/check_linux_delivery.py 的 DELIVERY_POSIX_SCRIPTS。）
 for launcher in OmniCrawler-launcher omnicrawler-cli-launcher; do
   cp "$PROJECT_ROOT/packaging/linux/$launcher" "$RELEASE_ROOT/"
   chmod +x "$RELEASE_ROOT/$launcher"
@@ -258,7 +258,7 @@ INSTALL_DIR="$RELEASE_ROOT/installer"
 BRANDING_SRC="$PROJECT_ROOT/src/omnicrawler/gui/branding"
 
 # 交付件判据**只留一处**：LF / 无 BOM / 脚本头 / .desktop 契约字段 / 图标源齐备，
-# 全在 tools/check_linux_delivery.py 里；单测把 CRLF、BOM、缺图标装回去验证它会红。
+# 全在 tools/gates/check_linux_delivery.py 里；单测把 CRLF、BOM、缺图标装回去验证它会红。
 # （.sh / .desktop 若以 CRLF 交付，用户侧 `/usr/bin/env: 'bash\r'` 直接失败，
 #   而构建机是 Linux、本地看不出来 ⇒ 判据必须前移到装配期。）
 "$BUILDER_PYTHON" "$PROJECT_ROOT/tools/check_linux_delivery.py" \
@@ -344,7 +344,7 @@ tar -cJf "$RELEASE_ARCHIVE" -C "$BUILD_ROOT/release" --exclude='OmniCrawler/logs
 #   字节逐字节一致；从暂存目录算就多出一条"打包时排除了什么"（这里是 exclude logs/）
 #   的隐含约定 —— 两处不同步时增量校验会**很晚**才失败（用户侧）。
 # ★ CI 不持有任何密钥（红线）：这里只产**无签名**清单（哈希是数据，随便算）；
-#   签名由维护者本机一条命令完成（tools/sign_update_manifest.py）。
+#   签名由维护者本机一条命令完成（tools/signing/sign_update_manifest.py）。
 EDITION_LC="$(echo "$EDITION" | tr '[:upper:]' '[:lower:]')"
 # 摘要走**文件**而不是 argv：Windows 侧 PS 5.1 传非 ASCII 参数会按控制台代码页转码
 # （中文变 ??）。三平台统一走文件，就没有"某个平台摘要变问号"的差异。

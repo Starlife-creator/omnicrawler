@@ -1,4 +1,4 @@
-"""`tools/check_shell_scripts.py` 静态门禁反向断言（C-#17 / C-#18 / C-#11）。
+"""`tools/gates/check_shell_scripts.py` 静态门禁反向断言（C-#17 / C-#18 / C-#11）。
 
 每一类缺陷都在临时目录装回去，断言脚本判红，再还原确认通过；真实仓库必须全绿。
 """
@@ -17,7 +17,7 @@ from tools.gate_registry import SKIP_EXIT_CODE  # noqa: E402
 
 def _load():
     spec = importlib.util.spec_from_file_location(
-        "_check_shell_scripts_under_test", _ROOT / "tools" / "check_shell_scripts.py"
+        "_check_shell_scripts_under_test", _ROOT / "tools" / "gates" / "check_shell_scripts.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

@@ -135,8 +135,8 @@ omnicrawler benchmark -c config.yaml --profile standard
 （「稳定获得完整、准确、有来源证据的数据；并具备可复现的任务基准与公平对比能力」）。
 
 ```bash
-python tools/benchmark_quality.py                  # 跑全部内置任务（离线）
-python tools/benchmark_quality.py --json report.json
+python tools/benchmarks/benchmark_quality.py                  # 跑全部内置任务（离线）
+python tools/benchmarks/benchmark_quality.py --json report.json
 ```
 
 | 口径 | 含义 |
@@ -165,9 +165,9 @@ python tools/benchmark_quality.py --json report.json
 门槛各自独立）。
 
 ```bash
-python tools/benchmark_pdf_quality.py                 # 跑全部内置用例（离线）
-python tools/benchmark_pdf_quality.py --case digital-text-layer --json report.json
-python tools/benchmark_pdf_quality.py --tesseract /usr/bin/tesseract
+python tools/benchmarks/benchmark_pdf_quality.py                 # 跑全部内置用例（离线）
+python tools/benchmarks/benchmark_pdf_quality.py --case digital-text-layer --json report.json
+python tools/benchmarks/benchmark_pdf_quality.py --tesseract /usr/bin/tesseract
 ```
 
 门槛（`PdfQualityScore.ok`）＝**要么对，要么进复核**：归一后字段逐字相符、每个字段
@@ -198,9 +198,9 @@ python tools/benchmark_pdf_quality.py --tesseract /usr/bin/tesseract
 而 Preview 至今没被升级为证据 —— 缺的不是测试，是一个对照实验。
 
 ```bash
-python tools/benchmark_adaptive_arms.py                  # 跑全部语料（真实站点，需外网）
-python tools/benchmark_adaptive_arms.py --rounds 5 --json arms.json
-python tools/benchmark_adaptive_arms.py --refresh        # 强制重抓页面（默认复用缓存）
+python tools/benchmarks/benchmark_adaptive_arms.py                  # 跑全部语料（真实站点，需外网）
+python tools/benchmarks/benchmark_adaptive_arms.py --rounds 5 --json arms.json
+python tools/benchmarks/benchmark_adaptive_arms.py --refresh        # 强制重抓页面（默认复用缓存）
 ```
 
 | 臂 | 能力 | 实现方式 |
@@ -264,11 +264,11 @@ fail-closed），工具会显式写明，不把「没差别」包装成「LLM �
 
 ## 相关
 
-- 微基准（模板发现、HTML 抽取耗时）：`tools/benchmark_core.py`
-- 转换专项基准：`tools/benchmark_convertx.py`
-- 任务质量基准：`tools/benchmark_quality.py`（离线，跑内置任务并打分）
-- PDF 质量基准：`tools/benchmark_pdf_quality.py`（离线，跑内置 PDF 形态并打分）
-- 三臂对照实验：`tools/benchmark_adaptive_arms.py`（真实站点，量化自适应引擎的边际贡献）
+- 微基准（模板发现、HTML 抽取耗时）：`tools/benchmarks/benchmark_core.py`
+- 转换专项基准：`tools/benchmarks/benchmark_convertx.py`
+- 任务质量基准：`tools/benchmarks/benchmark_quality.py`（离线，跑内置任务并打分）
+- PDF 质量基准：`tools/benchmarks/benchmark_pdf_quality.py`（离线，跑内置 PDF 形态并打分）
+- 三臂对照实验：`tools/benchmarks/benchmark_adaptive_arms.py`（真实站点，量化自适应引擎的边际贡献）
 - 端到端公平性回归：`tests/integration/test_benchmark_fairness.py`
 - 单元测试：`tests/unit/utils/test_benchmarking.py`
 

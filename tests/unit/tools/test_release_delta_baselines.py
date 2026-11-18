@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from tools.release_delta_baselines import select_baselines
+from tools.releasing.release_delta_baselines import select_baselines
 
 
 def test_branch_build_excludes_same_and_future_versions():
@@ -13,7 +13,7 @@ def test_manual_validation_has_no_delta_by_default():
     workflow = (Path(__file__).resolve().parents[3] / ".github/workflows/release.yml").read_text(encoding="utf-8")
     assert "generate_delta_packages:" in workflow
     assert "DELTA_REQUESTED:" in workflow and '"$DELTA_REQUESTED" == "true"' in workflow
-    assert "python tools/release_delta_baselines.py" in workflow
+    assert "python tools/releasing/release_delta_baselines.py" in workflow
 
 
 def test_numeric_order_and_empty_history():

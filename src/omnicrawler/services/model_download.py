@@ -9,7 +9,7 @@
 3. 下载完成后用 ``core.capabilities`` 的口径复检"到底能不能用"。
 
 **责任边界**：模型字节的内容完整性由上游负责，本项目不为其背书。
-这与 ``tools/download_and_smoke_test.py`` 的既有语义一致——那里也是
+这与 ``tools/releasing/download_and_smoke_test.py`` 的既有语义一致——那里也是
 "构造 ``PPStructureV3`` 让 PaddleX 自己去拉"，并明确写着
 "CDN 下载、无哈希钉 … 属已知责任边界"。
 
@@ -164,7 +164,7 @@ def download(source: str | None = None, *, cache_dir: Path | None = None,
         from paddleocr import PPStructureV3
 
         # 构造 pipeline 即触发 PaddleX 自己的下载：这是**唯一**的下载途径。
-        # 参数与 tools/download_and_smoke_test.py 保持一致，避免两处行为漂移。
+        # 参数与 tools/releasing/download_and_smoke_test.py 保持一致，避免两处行为漂移。
         pipeline = PPStructureV3(
             lang="ch",
             device="cpu",

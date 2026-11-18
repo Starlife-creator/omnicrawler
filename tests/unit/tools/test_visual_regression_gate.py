@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tools.check_visual_regression import run_snapshot
+from tools.gates.check_visual_regression import run_snapshot
 
 
 @pytest.mark.parametrize("tests,skipped,code", [(0, 0, 0), (1, 1, 0), (1, 0, 1)])

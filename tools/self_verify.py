@@ -66,6 +66,7 @@ class EvidenceReport:
     duration_seconds: float
     head: str
     dirty: bool
+    incremental: bool = False
     gates: list[GateOutcome] = field(default_factory=list)
 
     @property
@@ -163,8 +164,119 @@ def _skip_reason(gate: Gate) -> str | None:
     return None
 
 
-def verify(sets: list[str], *, fail_fast: bool = False) -> EvidenceReport:
+def _changed_files(since: str = "HEAD~1") -> list[str]:
+    """收集相对 ``since`` 及当前工作区的变更路径（用于 ``--incremental`` 本地快速反馈）。"""
+    paths: set[str] = set()
+    diff_out = _git("diff", "--name-only", since)
+    if diff_out:
+        paths.update(line.strip() for line in diff_out.splitlines() if line.strip())
+    status_out = _git("status", "--porcelain")
+    for raw in status_out.splitlines():
+        if len(raw) > 3:
+            entry = raw[3:].strip()
+            if " -> " in entry:
+                entry = entry.split(" -> ", 1)[1].strip()
+            paths.add(entry.strip('"'))
+    return sorted(p.replace("\\", "/") for p in paths if p)
+
+
+def select_incremental_gates(
+    selected: tuple[Gate, ...],
+    changed: list[str],
+) -> tuple[Gate, ...]:
+    """按变更文件域收窄本地增量门禁，同时对 ``ruff`` / ``compileall`` 精准缩圈至变更文件。"""
+    always = {"check_line_endings_policy", "check_gitignore_hygiene"}
+    wanted = set(always)
+    py_files = [p for p in changed if p.endswith(".py") and (REPO_ROOT / p).is_file()]
+    has_py = any(p.endswith(".py") for p in changed)
+    has_src = any(p.startswith("src/") for p in changed)
+    has_gui = any("gui" in p for p in changed)
+    has_doc = any(p.endswith(".md") or p.startswith("docs/") for p in changed)
+    has_cli = any("cli" in p or "commands" in p for p in changed)
+    has_pkg = any(
+        p in {"pyproject.toml", "uv.lock"}
+        or p.startswith(("constraints/", "packaging/", ".github/"))
+        or p.endswith((".sh", ".ps1", ".bat", ".command"))
+        for p in changed
+    )
+
+    if has_py:
+        wanted |= {
+            "compileall",
+            "ruff",
+            "check_coding_standards",
+            "check_architecture",
+            "check_silent_exception_handlers",
+            "check_subprocess_encoding",
+        }
+    if has_src:
+        wanted |= {"mypy", "check_sdk_api", "check_network_boundaries", "check_minimal_install"}
+    if has_gui:
+        wanted |= {
+            "check_gui_conventions",
+            "check_gui_state_threading",
+            "check_gui_test_layout",
+            "check_main_window_size",
+        }
+    if has_doc or has_cli:
+        wanted |= {
+            "check_docs_consistency",
+            "check_doc_numbers",
+            "check_cli_docs",
+            "check_agent_surface",
+            "post_bump_steps",
+            "check_anchor_integrity",
+        }
+    if has_pkg:
+        wanted |= {
+            "check_lockfile_consistency",
+            "check_dependency_consistency",
+            "check_build_profiles",
+            "check_extras_expansion",
+            "check_shell_scripts",
+            "check_release_integrity",
+        }
+
+    narrowed: list[Gate] = []
+    for gate in selected:
+        if gate.name not in wanted and "static" in gate.sets:
+            continue
+        if gate.name == "ruff" and py_files:
+            narrowed.append(
+                Gate(
+                    name=gate.name,
+                    args=("-m", "ruff", "check", *py_files),
+                    sets=gate.sets,
+                    description=gate.description,
+                    ci_note=gate.ci_note,
+                )
+            )
+        elif gate.name == "compileall" and py_files:
+            narrowed.append(
+                Gate(
+                    name=gate.name,
+                    args=("-m", "py_compile", *py_files),
+                    sets=gate.sets,
+                    description=gate.description,
+                )
+            )
+        else:
+            narrowed.append(gate)
+    return tuple(narrowed)
+
+
+def verify(
+    sets: list[str],
+    *,
+    fail_fast: bool = False,
+    incremental: bool = False,
+    since: str = "HEAD~1",
+    changed_override: list[str] | None = None,
+) -> EvidenceReport:
     selected = gates_for(sets)
+    if incremental:
+        changed = _changed_files(since) if changed_override is None else changed_override
+        selected = select_incremental_gates(selected, changed)
     report = EvidenceReport(
         ok=True,
         sets=list(sets),
@@ -172,9 +284,11 @@ def verify(sets: list[str], *, fail_fast: bool = False) -> EvidenceReport:
         duration_seconds=0.0,
         head=_git("rev-parse", "--short", "HEAD"),
         dirty=bool(_git("status", "--porcelain")),
+        incremental=incremental,
     )
 
-    print(f"质量门禁自证（集合：{', '.join(sets)}）")
+    mode_tag = f"，增量基线：{since}" if incremental else ""
+    print(f"质量门禁自证（集合：{', '.join(sets)}{mode_tag}）")
     started = time.monotonic()
     for gate in selected:
         reason = _skip_reason(gate)
@@ -238,6 +352,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", dest="json_path", help="把证据报告写入该 JSON 文件")
     parser.add_argument("--fail-fast", action="store_true", help="首个失败即停止")
     parser.add_argument("--list", action="store_true", help="只列出所选门禁，不执行")
+    parser.add_argument(
+        "--incremental",
+        action="store_true",
+        help="仅针对相对 --since 及当前工作区变更涉及的域执行快速自证（全量交付仍须不带本旗标运行）",
+    )
+    parser.add_argument(
+        "--since",
+        default="HEAD~1",
+        help="配合 --incremental 使用的 git 比较起点（默认 HEAD~1）",
+    )
     args = parser.parse_args(argv)
 
     sets = list(GATE_SETS) if args.sets == "all" else [s.strip() for s in args.sets.split(",") if s.strip()]
@@ -247,13 +371,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"参数错误：{exc}", file=sys.stderr)
         return 2
 
+    if args.incremental:
+        selected = select_incremental_gates(selected, _changed_files(args.since))
+
     if args.list:
         for gate in selected:
             marks = ",".join(sorted(gate.sets))
             print(f"{gate.name:<28} [{marks:<9}] {gate.description}")
         return 0
 
-    report = verify(sets, fail_fast=args.fail_fast)
+    report = verify(
+        sets,
+        fail_fast=args.fail_fast,
+        incremental=args.incremental,
+        since=args.since,
+    )
     _print_summary(report)
 
     if args.json_path:

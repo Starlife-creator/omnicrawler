@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SCRIPT = REPO_ROOT / "tools" / "sync_snapshot.py"
+SCRIPT = REPO_ROOT / "tools" / "market" / "sync_snapshot.py"
 
 GIT_ENV_ARGS = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
 

@@ -3,7 +3,7 @@
 ## 为什么需要这条
 
 走查文档写着"样本固定：列表第 1 页 6 条、翻页后合计 8 条、附件 1 个"，
-并声称这些数字由 `tools/walkthrough_demo_site.py` 的 `EXPECTED` 提供、
+并声称这些数字由 `tools/qa/walkthrough_demo_site.py` 的 `EXPECTED` 提供、
 "不会与文档悄悄漂移"。但在此之前**没有任何门禁校验文档文字本身** ——
 改一个样本常量（`LIST_TOTAL`），文档就会静默过期，而走查者会按过期数字
 误判"翻页失败"或"漏采"，把环境问题报成产品缺陷。
@@ -24,13 +24,13 @@ import pytest
 
 _ROOT = Path(__file__).resolve().parents[3]
 _DOC = _ROOT / "docs" / "MANUAL_WALKTHROUGH.md"
-_DEMO_SITE = _ROOT / "tools" / "walkthrough_demo_site.py"
+_DEMO_SITE = _ROOT / "tools" / "qa" / "walkthrough_demo_site.py"
 
 
 def _gate():
     """按路径加载门禁模块（`tools/` 不是包，不能 import）。"""
     spec = importlib.util.spec_from_file_location(
-        "_check_docs_consistency_under_test", _ROOT / "tools" / "check_docs_consistency.py"
+        "_check_docs_consistency_under_test", _ROOT / "tools" / "gates" / "check_docs_consistency.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -43,8 +43,8 @@ def _gate():
 def fake_root(tmp_path: Path) -> Path:
     """一个只含所需两个文件的假仓库根。"""
     (tmp_path / "docs").mkdir()
-    (tmp_path / "tools").mkdir()
-    shutil.copy(_DEMO_SITE, tmp_path / "tools" / "walkthrough_demo_site.py")
+    (tmp_path / "tools" / "qa").mkdir(parents=True)
+    shutil.copy(_DEMO_SITE, tmp_path / "tools" / "qa" / "walkthrough_demo_site.py")
     shutil.copy(_DOC, tmp_path / "docs" / "MANUAL_WALKTHROUGH.md")
     return tmp_path
 
@@ -84,7 +84,7 @@ def test_removed_sentence_is_reported(fake_root: Path) -> None:
 
 def test_missing_source_of_truth_is_reported(fake_root: Path) -> None:
     """来源文件缺失 → 报"无法校验"，而不是当作通过。"""
-    (fake_root / "tools" / "walkthrough_demo_site.py").unlink()
+    (fake_root / "tools" / "qa" / "walkthrough_demo_site.py").unlink()
 
     issues = _gate().check_walkthrough_sample_numbers(fake_root)
     assert issues and "无法校验" in issues[0], issues

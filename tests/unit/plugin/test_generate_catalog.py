@@ -158,7 +158,7 @@ def test_standalone_copy_passes_check(tmp_path: Path) -> None:
 def test_real_registry_list_through_market_tool_requires_current_signature() -> None:
     """CLI consumes only a catalog whose detached signature matches its bytes."""
     result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "tools" / "market.py"), "--catalog-url", str(REAL_REGISTRY), "list"],
+        [sys.executable, str(REPO_ROOT / "tools" / "market" / "market.py"), "--catalog-url", str(REAL_REGISTRY), "list"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,

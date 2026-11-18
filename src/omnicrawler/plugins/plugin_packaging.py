@@ -1,7 +1,7 @@
 """插件本地签名、上传包生成与本地目录扫描（GUI 生态闭环核心）。
 
 - ``sign_plugin_local``   ：本地一键签名（creator-sign + 自动加入本地信任列表），
-  等价于 ``tools/sign_plugin.py local-sign``，供 GUI 直接调用；
+  等价于 ``tools/signing/sign_plugin.py local-sign``，供 GUI 直接调用；
 - ``build_plugin_upload`` ：生成提交市场仓库的 PR 文件集（plugin.py /
   creator.sig / creator.identity / plugin.yaml / listing.md /
   keys/<raw32指纹>.pub.pem / authors/<username>.yaml）；

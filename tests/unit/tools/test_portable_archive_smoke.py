@@ -1,4 +1,4 @@
-"""W4.2：归档级便携冒烟工具（`tools/portable_archive_smoke.py`）的本地可验部分。
+"""W4.2：归档级便携冒烟工具（`tools/portable/portable_archive_smoke.py`）的本地可验部分。
 
 ## 这里守的是什么
 
@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-_MODULE_PATH = Path(__file__).resolve().parents[3] / "tools" / "portable_archive_smoke.py"
+_MODULE_PATH = Path(__file__).resolve().parents[3] / "tools" / "portable" / "portable_archive_smoke.py"
 _TOOLS_DIR = _MODULE_PATH.parent
 
 

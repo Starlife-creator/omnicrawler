@@ -1,7 +1,7 @@
 """主仓 market/（内置离线快照）与市场仓 catalog.json 的跨仓一致性守卫。
 
 背景（2026-09-23 审计 + 收口）：
-- ``tools/sync_snapshot.py`` 只做镜像、无断言 —— 漂移只能靠断言看住；
+- ``tools/market/sync_snapshot.py`` 只做镜像、无断言 —— 漂移只能靠断言看住；
 - templates 数组守卫自 B4a 起；plugins 数组已按"收口"裁定同步（主仓快照
   从 1 个 example_news 收口为市场仓全量），守卫同步扩展到 plugins；
 - "签市场"守卫：市场仓每个模板条目的维护者签名（``template.yaml.sig``）
@@ -44,7 +44,7 @@ def test_snapshot_templates_match_market_repo() -> None:
     main_templates = _main_catalog().get("templates") or []
     market_templates = _market_catalog().get("templates") or []
     assert [t.get("id") for t in main_templates] == [t.get("id") for t in market_templates], (
-        "模板 id 集合漂移：请运行 tools/sync_snapshot.py 重新镜像"
+        "模板 id 集合漂移：请运行 tools/market/sync_snapshot.py 重新镜像"
     )
     assert main_templates == market_templates, "模板条目内容漂移（summary/license/versions 等）"
 
@@ -54,7 +54,7 @@ def test_snapshot_plugins_match_market_repo() -> None:
     main_plugins = _main_catalog().get("plugins") or []
     market_plugins = _market_catalog().get("plugins") or []
     assert [p.get("id") for p in main_plugins] == [p.get("id") for p in market_plugins], (
-        "plugins 快照与市场仓分叉（曾长期 1 vs 7）：请运行 tools/sync_snapshot.py"
+        "plugins 快照与市场仓分叉（曾长期 1 vs 7）：请运行 tools/market/sync_snapshot.py"
     )
     assert main_plugins == market_plugins, "plugins 条目内容漂移"
 

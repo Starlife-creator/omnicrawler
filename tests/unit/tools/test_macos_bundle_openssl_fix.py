@@ -12,7 +12,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-_MODULE_PATH = Path(__file__).resolve().parents[3] / "tools" / "fix_macos_bundle_openssl.py"
+_MODULE_PATH = Path(__file__).resolve().parents[3] / "tools" / "builders" / "fix_macos_bundle_openssl.py"
 
 
 def _module():

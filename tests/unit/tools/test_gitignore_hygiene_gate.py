@@ -235,5 +235,5 @@ def test_repo_gitignore_is_actually_checked_by_git() -> None:
 def test_module_reachable_from_the_repo_root() -> None:
     """`tools/` 需可 import——门禁测试与 CI 都靠这一点。"""
     assert hygiene.REPO_ROOT == _REPO_ROOT
-    assert Path(hygiene.__file__).resolve() == (_REPO_ROOT / "tools" / "check_gitignore_hygiene.py").resolve()
+    assert Path(hygiene.__file__).resolve() == (_REPO_ROOT / "tools" / "gates" / "check_gitignore_hygiene.py").resolve()
     assert sys.version_info >= (3, 12)

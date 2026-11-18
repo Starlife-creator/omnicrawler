@@ -5,7 +5,7 @@
 **构建产物的版本号唯一来源是 `src/omnicrawler/_version.py` 中的 `__version__`。**
 （`omnicrawler.__version__` 仍可用，但它只是对 `_version.py` 的惰性 re-export，不是第二份真源。）
 `build_windows.ps1` 启动时会自动读取，产物命名由脚本决定，严禁在构建
-过程中手动修改版本号。版本号的变更是一个独立操作（通过 `tools/bump_version.py`），
+过程中手动修改版本号。版本号的变更是一个独立操作（通过 `tools/releasing/bump_version.py`），
 绝对不与构建、修复、测试等其他操作混在一起。
 
 ---
@@ -41,17 +41,17 @@ artifacts/
 `Get-FileHash -Algorithm SHA256` 核对。完整目录与 ZIP 是同一版本的两种交付形式；
 不要交叉复制其中的 EXE、`_internal`、浏览器或运行时资产。
 
-根目录的 `release/` 与 `dist/` 仅为兼容旧构建工具的默认输出位置。新的可保留发布物应
-显式输出至本目录的版本化路径；`build/`、`build_dist/` 和 `build_cache/` 是构建中间物或
+根目录的 `releasing/` 与 `dist/` 仅为兼容旧构建工具的默认输出位置。新的可保留发布物应
+显式输出至本目录的版本化路径；`builders/`、`build_dist/` 和 `build_cache/` 是构建中间物或
 缓存，不属于版本发行归档。
 
 ## 单一输出规则
 
-- **可保留发布物的唯一归档位置是 `artifacts/` 下的版本化目录**（`build/`、`release/`、`python/`）。
+- **可保留发布物的唯一归档位置是 `artifacts/` 下的版本化目录**（`builders/`、`releasing/`、`python/`）。
 - **`dist/` 只允许作为 CI（quality.yml）的临时构建工作区**：CI 每次从全新 checkout 生成并
   校验产物后即丢弃，不允许在其中留存长期发布物。手工构建请使用
-  `build_windows.ps1`（输出至 `artifacts/`），不要手工把文件放进 `dist/` 或根目录 `release/`。
-- 若发现 `dist/`、根目录 `release/` 或 `build/` 出现可保留产物，视为漂移，应移入
+  `build_windows.ps1`（输出至 `artifacts/`），不要手工把文件放进 `dist/` 或根目录 `releasing/`。
+- 若发现 `dist/`、根目录 `releasing/` 或 `builders/` 出现可保留产物，视为漂移，应移入
   `artifacts/` 对应版本目录后再发布。
 - 发布 tag 上的 CI 会校验 `artifacts/` 中便携产物命名版本 == 源码 `__version__`
   （见 `.github/workflows/quality.yml` 的 `release-artifact-version` job），不一致即失败。

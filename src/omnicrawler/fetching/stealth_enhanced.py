@@ -239,7 +239,7 @@ class ProxyRotator:
         proxy: str,
         # B03-010 / P0 fail-closed（优化方案 §14.2）：不再默认打公共 httpbin.org——
         # 调用方必须显式提供探针 URL（自建/内网探针优先）。探针必须经被测代理本身，
-        # 因此不走 EgressBroker（会循环依赖）；该直连已在 tools/check_network_boundaries.py
+        # 因此不走 EgressBroker（会循环依赖）；该直连已在 tools/gates/check_network_boundaries.py
         # APPROVED_DIRECT_CALLS 白名单登记。
         test_url: str,
         timeout: float = 5.0,

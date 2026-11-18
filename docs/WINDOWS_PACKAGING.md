@@ -15,7 +15,7 @@ OmniCrawler-{version}-Windows-Portable-{edition}.zip
 ```
 
 **因此：构建前不要改版本号。** 版本号就是你当前在开发的那个版本。
-如果要变更版本号，用 `tools/bump_version.py` 独立操作，绝不在构建流程中混着改。
+如果要变更版本号，用 `tools/releasing/bump_version.py` 独立操作，绝不在构建流程中混着改。
 
 ---
 
@@ -103,17 +103,17 @@ Windows 包不携带 Linux/macOS 启动脚本、包管理器缓存或其他平�
 
 ## 源码 ZIP 构建
 
-源码 ZIP 由 `tools/build_source_archive.py` 独立生成，不与便携版共用构建流程。
+源码 ZIP 由 `tools/builders/build_source_archive.py` 独立生成，不与便携版共用构建流程。
 wheel 为独立产物：构建环境（`.venv`）**未预装 `build` 模块**，不能用 `python -m build`，需用 `pip wheel` 单独构建。
 
 ```powershell
 # 1) 源码 ZIP（由 build_source_archive.py 生成；--output-dir 必须与下方产物落点一致）
-.\.venv\Scripts\python.exe tools\build_source_archive.py --output-dir artifacts\python\{version}
+.\.venv\Scripts\python.exe tools\builders\build_source_archive.py --output-dir artifacts\python\{version}
 
 # 2) wheel（--no-deps 仅打包本项目；离线环境加 --no-build-isolation）
-.\.venv\Scripts\python.exe tools\build_wheel.py -w artifacts\python\{version}
-# （等价于 `pip wheel . --no-deps -w ...`，但**先清 `build/`**：同一工作树里第二次
-#   `pip wheel` 会因 setuptools 复用 `build/` 而报 [WinError 183]，见 §5.7 / W6.7-⑥）
+.\.venv\Scripts\python.exe tools\builders\build_wheel.py -w artifacts\python\{version}
+# （等价于 `pip wheel . --no-deps -w ...`，但**先清 `builders/`**：同一工作树里第二次
+#   `pip wheel` 会因 setuptools 复用 `builders/` 而报 [WinError 183]，见 §5.7 / W6.7-⑥）
 ```
 
 产物落点：

@@ -116,7 +116,7 @@ def test_portable_smoke_needs_every_build_and_downloads_its_artifact() -> None:
         "`portable-smoke` 必须**下载已上传的归档**再跑 —— 在构建树上跑就退化成构建期已有的检查，"
         "归档往返（pack→upload→download→unpack）依旧无人验证"
     )
-    assert "tools/portable_archive_smoke.py" in text, "没接线到 W4.2 的工具"
+    assert "tools/portable/portable_archive_smoke.py" in text, "没接线到 W4.2 的工具"
     # 三平台都要在矩阵里，否则"三平台产物可用"仍然只是声称
     for platform in ("linux", "windows", "macos"):
         assert platform in text, f"`portable-smoke` 矩阵缺少 platform={platform}"

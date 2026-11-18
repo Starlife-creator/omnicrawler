@@ -23,7 +23,7 @@ src/omnicrawler/_version.py  →  __version__
 OmniCrawler-<version>-<Platform>-Portable-<Edition>.<ext>
 ```
 
-**因此：构建前不要改版本号。** 版本号变更用 `tools/bump_version.py` 独立操作，绝不在构建流程中混着改。
+**因此：构建前不要改版本号。** 版本号变更用 `tools/releasing/bump_version.py` 独立操作，绝不在构建流程中混着改。
 
 ## 平台矩阵
 
@@ -91,4 +91,4 @@ Linux/macOS 脚本暂未提供与 Windows `-Offline` 完全等价的离线模式
 
 ## 产物归档
 
-三平台产物统一落点见 `artifacts/README.md`（`artifacts/release/<version>/`）。源码 ZIP 与 wheel 由 `tools/build_source_archive.py` + `pip wheel` 独立生成，与便携版构建无关。
+三平台产物统一落点见 `artifacts/README.md`（`artifacts/release/<version>/`）。源码 ZIP 与 wheel 由 `tools/builders/build_source_archive.py` + `pip wheel` 独立生成，与便携版构建无关。

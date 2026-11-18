@@ -119,7 +119,8 @@ def test_f22_create_zip_source_date_epoch(tmp_path) -> None:
     import zipfile
 
     spec = importlib.util.spec_from_file_location(
-        "create_zip", os.path.join(os.path.dirname(__file__), "..", "..", "..", "tools", "create_zip.py")
+        "create_zip",
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "tools", "builders", "create_zip.py"),
     )
     create_zip = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(create_zip)  # type: ignore[union-attr]

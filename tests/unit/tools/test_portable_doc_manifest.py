@@ -1,4 +1,4 @@
-"""`tools/check_portable_doc_manifest.py` 便携包文档清单门禁反向断言（C-#15）。
+"""`tools/gates/check_portable_doc_manifest.py` 便携包文档清单门禁反向断言（C-#15）。
 
 反向断言：历史文档目录漏排除、必备根文件缺失、docs 整体漏拷都必须判红；
 干净暂存目录必须通过。
@@ -15,7 +15,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 
 def _load():
     spec = importlib.util.spec_from_file_location(
-        "_portable_doc_manifest_under_test", _ROOT / "tools" / "check_portable_doc_manifest.py"
+        "_portable_doc_manifest_under_test", _ROOT / "tools" / "gates" / "check_portable_doc_manifest.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

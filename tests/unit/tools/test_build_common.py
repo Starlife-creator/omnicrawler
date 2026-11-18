@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""`tools/build_common.py` 的判据测试。
+"""`tools/builders/build_common.py` 的判据测试。
 
 覆盖三件事：
 1. 清单形状与字段口径（schema / chrome / files 计数 / bytes 总计 / 逐文件 path·bytes·sha256）；
@@ -133,7 +133,7 @@ def test_no_script_spells_out_the_manifest_generation_again() -> None:
     for script in scripts:
         assert script.is_file(), f"缺少制备脚本: {script}"
         text = script.read_text(encoding="utf-8")
-        assert "build_common.py" in text, f"{script.name} 未调用 tools/build_common.py"
+        assert "build_common.py" in text, f"{script.name} 未调用 tools/builders/build_common.py"
         assert " manifest " in text, f"{script.name} 未调用 manifest 子命令"
         # 清单字段字面量：PowerShell 是 `schema = 1`，bash 内嵌 Python 是 `"schema": 1`。
         assert "schema = 1" not in text, f"{script.name} 又自己拼了清单字段"

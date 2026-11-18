@@ -63,7 +63,7 @@ GUI-01—08 已修复并通过各自定向回归、反向证明与本机受影�
 | # | 事项 | 命令 / 位置 | 打勾 |
 |---|---|---|---|
 | P1 | **记录终态标识**：提交号 + 系统/依赖版本 + 工作区路径 | `git -C OmniCrawler rev-parse --short HEAD` | ☑ 环境证据记录提交、系统、依赖和工作区 |
-| P2 | 起走查环境（固定样本 + 隔离工作区 + 能力清单） | `python tools/walkthrough_env.py` | 部分：固定样本和隔离启动器已使用，未执行原定 walkthrough_env.py |
+| P2 | 起走查环境（固定样本 + 隔离工作区 + 能力清单） | `python tools/qa/walkthrough_env.py` | 部分：固定样本和隔离启动器已使用，未执行原定 walkthrough_env.py |
 | P3 | 确认 CI 在终态提交上全绿 | `gh run list --limit 5`（quality / end-to-end 均 success） | ☐ 本轮未核验 CI |
 | P4 | 数据隔离按平台确认（Windows 覆盖 `LOCALAPPDATA`、POSIX 覆盖 `HOME`） | 脚本会直接打印对应命令 | ☑ 本机 Windows 数据/任务隔离；QSettings 定向本轮 INI |
 
@@ -95,10 +95,10 @@ GUI-01—08 已修复并通过各自定向回归、反向证明与本机受影�
 
 | # | 步骤 | 工具 / 位置 | 应有现象 | 打勾 |
 |---|---|---|---|---|
-| B1 | 起可复用走查包 | `python tools/walkthrough_env.py`（固定样本 + 隔离工作区） | 环境就绪、能力清单打印 | ☐ 本轮未执行该走查包入口 |
+| B1 | 起可复用走查包 | `python tools/qa/walkthrough_env.py`（固定样本 + 隔离工作区） | 环境就绪、能力清单打印 | ☐ 本轮未执行该走查包入口 |
 | B2 | 按 8 步清单走 PDF 流程 | `docs/MANUAL_WALKTHROUGH.md` 第 7 步 | 字段带页码/原文证据；不确定性可见 | ☐ 未执行 |
 | B3 | 复核队列人工补齐 | 复核队列 → `apply-review` 写入 `human_review` 值 | 补齐后**再导出可见** | ☐ 未执行 |
-| B4 | 样本期望值对照 | `tools/walkthrough_demo_site.py` 的 `EXPECTED` | 数字与文档一致（有单测锁住，不漂移） | ☐ 未核对 PDF 人工流程真值 |
+| B4 | 样本期望值对照 | `tools/qa/walkthrough_demo_site.py` 的 `EXPECTED` | 数字与文档一致（有单测锁住，不漂移） | ☐ 未核对 PDF 人工流程真值 |
 | B5 | 结论登记 | `审查记录.md`「人工走查记录」一节（**§2.3**） | 判定 + 现象 + 复现路径 | 部分：§2.3.1 已登记本轮范围，PDF 人工结论仍未知 |
 
 **B 组整体打勾**：☐ 通过　☐ 带保留通过　☐ 不通过；**本轮未完成，状态未知**

@@ -9,7 +9,7 @@
 #   Dockerfile                                            → html,async-http,streams
 #   FAQ.md 又声称「默认 standard」
 # 没有任何一份是真源，改一处不会提醒另一处。本文件把每个档位**命名并声明一次**，
-# 由 `tools/check_build_profiles.py` 逐条比对脚本里的字面量——漂移即红。
+# 由 `tools/gates/check_build_profiles.py` 逐条比对脚本里的字面量——漂移即红。
 #
 # ## 边界（重要）
 #

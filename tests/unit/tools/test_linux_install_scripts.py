@@ -3,7 +3,7 @@
 分两组，理由不同
 ----------------
 
-**A 组（平台无关，任何平台都跑）**：`tools/check_linux_delivery.py` 是安装交付件的
+**A 组（平台无关，任何平台都跑）**：`tools/gates/check_linux_delivery.py` 是安装交付件的
 **唯一判据**（LF / 无 BOM / 脚本头 / `.desktop` 契约字段 / hicolor 图标源齐备）。
 这里把每种缺陷**装回去**，断言它立刻判红，再**字节级还原**并比对 —— 否则
 "判据看起来在跑" 与 "判据真的会说话" 分不开。
@@ -45,7 +45,7 @@ BRANDING_SRC = REPO_ROOT / "src" / "omnicrawler" / "gui" / "branding"
 
 # `tools/` 不是包，按路径加载那个唯一判据（构建期调的是同一个文件）。
 _spec = importlib.util.spec_from_file_location(
-    "_check_linux_delivery", REPO_ROOT / "tools" / "check_linux_delivery.py"
+    "_check_linux_delivery", REPO_ROOT / "tools" / "gates" / "check_linux_delivery.py"
 )
 assert _spec is not None and _spec.loader is not None
 check_linux_delivery = importlib.util.module_from_spec(_spec)
@@ -53,7 +53,7 @@ _spec.loader.exec_module(check_linux_delivery)
 
 # I1b 第②层（归档级安装冒烟）也要能被单测直接驱动，才能做反向断言。
 _smoke_spec = importlib.util.spec_from_file_location(
-    "_portable_archive_smoke", REPO_ROOT / "tools" / "portable_archive_smoke.py"
+    "_portable_archive_smoke", REPO_ROOT / "tools" / "portable" / "portable_archive_smoke.py"
 )
 assert _smoke_spec is not None and _smoke_spec.loader is not None
 archive_smoke = importlib.util.module_from_spec(_smoke_spec)

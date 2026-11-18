@@ -18,7 +18,7 @@ Library not loaded: /opt/homebrew/Cellar/tesseract/5.5.3/lib/libtesseract.5.dyli
 
 ## 判据
 
-与 `tools/fix_macos_bundle_openssl.py`（W4.1 的 `_ssl` 修复）**同一条原则**：
+与 `tools/builders/fix_macos_bundle_openssl.py`（W4.1 的 `_ssl` 修复）**同一条原则**：
 **"看起来正常" ≠ "运行时正确"**，判据必须是确定性的 ——
 "**该 basename 在本目录有副本 ⇒ 改写**"，而不是"路径长得像 `@rpath` 才改写"。
 """
@@ -29,7 +29,7 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _PREPARE = _REPO_ROOT / "packaging" / "prepare_macos_runtime.sh"
-_OPENSSL_FIXER = _REPO_ROOT / "tools" / "fix_macos_bundle_openssl.py"
+_OPENSSL_FIXER = _REPO_ROOT / "tools" / "builders" / "fix_macos_bundle_openssl.py"
 
 
 def _prepare_text() -> str:

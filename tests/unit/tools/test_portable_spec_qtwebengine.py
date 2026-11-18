@@ -15,7 +15,7 @@
 只会在构建产物体积上悄悄涨——这正是 `test_portable_spec_qml.py` 当年立守卫的同一理由。
 
 **注意口径**：本守卫只断言「spec 文本包含这些排除项」，
-不承诺实际节省字节数。真实收益必须由构建后 `tools/check_artifact_budget.py`
+不承诺实际节省字节数。真实收益必须由构建后 `tools/gates/check_artifact_budget.py`
 按归档体积测量（`.venv` 口径 ≠ 冻结产物口径）。
 """
 

@@ -87,7 +87,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/runtime
-          key: ocr-runtime-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-${{ hashFiles('tools/prepare_windows_runtime.ps1', 'tools/download_and_smoke_test.py') }}
+          key: ocr-runtime-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-${{ hashFiles('tools/prepare_windows_runtime.ps1', 'tools/releasing/download_and_smoke_test.py') }}
 
       # ── Standard 便携包 ────────────────────────────────────────────
       # 首次构建（无浏览器缓存）走联网下载；命中缓存则跳过下载直接复制。
@@ -125,7 +125,7 @@ jobs:
       - name: 校验分版本体积预算
         shell: pwsh
         run: |
-          python tools/check_artifact_budget.py --platform Windows `
+          python tools/gates/check_artifact_budget.py --platform Windows `
             --directory "$env:RUNNER_TEMP/artifacts" `
             --output "$env:RUNNER_TEMP/artifacts/artifact-size-report-windows.json"
 
@@ -169,17 +169,17 @@ jobs:
       - name: 生成 SBOM
         shell: pwsh
         run: |
-          & "$env:RUNNER_TEMP\metadata-venv\Scripts\python.exe" tools/generate_sbom.py `
+          & "$env:RUNNER_TEMP\metadata-venv\Scripts\python.exe" tools/releasing/generate_sbom.py `
             --output "$env:RUNNER_TEMP/artifacts/omnicrawler-sbom-windows.cdx.json"
-          python tools/check_sbom_lock.py `
+          python tools/gates/check_sbom_lock.py `
             --sbom "$env:RUNNER_TEMP/artifacts/omnicrawler-sbom-windows.cdx.json" --lock uv.lock
 
       - name: 生成并校验 SHA-256 清单
         shell: pwsh
         run: |
-          python tools/generate_checksums.py "$env:RUNNER_TEMP/artifacts" `
+          python tools/releasing/generate_checksums.py "$env:RUNNER_TEMP/artifacts" `
             --output "$env:RUNNER_TEMP/artifacts/SHA256SUMS-windows.txt" --verify
-          python tools/generate_checksums.py "$env:RUNNER_TEMP/artifacts" `
+          python tools/releasing/generate_checksums.py "$env:RUNNER_TEMP/artifacts" `
             --output "$env:RUNNER_TEMP/artifacts/SHA256SUMS-windows.txt" --check
 
       # ── 标准 SLSA provenance（Sigstore / gh attestation）────────────

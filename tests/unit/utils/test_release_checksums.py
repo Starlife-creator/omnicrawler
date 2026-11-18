@@ -1,4 +1,4 @@
-from tools.generate_checksums import _sha256, main, verify_manifest
+from tools.releasing.generate_checksums import _sha256, main, verify_manifest
 
 
 def test_manifest_verification_accepts_valid_release_file(tmp_path):

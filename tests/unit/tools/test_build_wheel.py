@@ -1,12 +1,12 @@
-"""`tools/build_wheel.py`：构建 wheel 前必须清掉 `build/`（W6.7-⑥ 的机器验收）。
+"""`tools/builders/build_wheel.py`：构建 wheel 前必须清掉 `builders/`（W6.7-⑥ 的机器验收）。
 
 ## 背景（§5.7 登记）
 
-`pip wheel .` 在同一工作树里**第二次**会失败：setuptools 复用 `build/`，里面已有上次的
+`pip wheel .` 在同一工作树里**第二次**会失败：setuptools 复用 `builders/`，里面已有上次的
 `.dist-info` ⇒ `[WinError 183] 当文件已存在时，无法创建该文件`。CI 每次干净检出不受影响，
 受影响的是**人**按文档照做第二次。
 
-收进脚本后这件事变成可机检的：① 存在 `build/` 时必须被清掉；② 命令形状正确
+收进脚本后这件事变成可机检的：① 存在 `builders/` 时必须被清掉；② 命令形状正确
 （`--no-deps`、输出目录）；③ 额外参数原样透传（文档里的 `--no-build-isolation` 之类仍可用）。
 """
 
@@ -22,7 +22,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _module():
-    path = _REPO_ROOT / "tools" / "build_wheel.py"
+    path = _REPO_ROOT / "tools" / "builders" / "build_wheel.py"
     spec = importlib.util.spec_from_file_location("build_wheel", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -32,7 +32,7 @@ def _module():
 
 
 def test_clean_build_dirs_removes_stale_build(tmp_path: Path) -> None:
-    """核心：存在 `build/` 时必须被删掉（这正是二次构建失败的原因）。"""
+    """核心：存在 `builders/` 时必须被删掉（这正是二次构建失败的原因）。"""
     module = _module()
     (tmp_path / "build" / "lib").mkdir(parents=True)
     (tmp_path / "build" / "lib" / "x.py").write_text("x = 1\n", encoding="utf-8")
@@ -87,13 +87,13 @@ def test_ci_uses_the_tool_instead_of_a_raw_pip_wheel() -> None:
     """接线守卫：CI 里不该再有裸 `pip wheel`（否则"先清 build/"又变成靠人记得）。"""
     workflow = (_REPO_ROOT / ".github" / "workflows" / "quality.yml").read_text(encoding="utf-8")
     assert "python -m pip wheel . --no-deps -w dist" not in workflow, (
-        "quality.yml 里还有裸 pip wheel —— 请改用 `python tools/build_wheel.py -w dist`"
+        "quality.yml 里还有裸 pip wheel —— 请改用 `python tools/builders/build_wheel.py -w dist`"
     )
-    assert "tools/build_wheel.py" in workflow, "quality.yml 未接入 tools/build_wheel.py"
+    assert "tools/builders/build_wheel.py" in workflow, "quality.yml 未接入 tools/builders/build_wheel.py"
 
 
 @pytest.mark.parametrize("doc", ["docs/WINDOWS_PACKAGING.md"])
 def test_packaging_doc_points_at_the_tool(doc: str) -> None:
     """文档也要指向脚本 —— 否则读者照旧手抄命令、第二次构建再炸一次。"""
     text = (_REPO_ROOT / doc).read_text(encoding="utf-8")
-    assert "build_wheel.py" in text, f"{doc} 未提到 tools/build_wheel.py"
+    assert "build_wheel.py" in text, f"{doc} 未提到 tools/builders/build_wheel.py"

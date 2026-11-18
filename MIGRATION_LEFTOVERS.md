@@ -80,7 +80,7 @@
 | 安全 | 验签与执行两次读盘，TOCTOU 窗口 | 同上 |
 | 支柱 | `table_io` 被绑在插件上 ⇒ `omnicrawler transform` 未装插件时不可用 | `services/data_transform.py` |
 | 支柱 | `compare_runs` 同上 ⇒ `compare-runs` 与删除审计不可用 | `document_facade.compare_runs` |
-| 支柱 | `benchmark_convertx` 同上 | `tools/benchmark_convertx.py` |
+| 支柱 | `benchmark_convertx` 同上 | `tools/benchmarks/benchmark_convertx.py` |
 | 能力判据 | 导航/首页/能力报告用"pdfplumber 装没装"当"PDF 可用"的代理 | `core/capabilities.py` 等 5 处 |
 | 迁移遗漏 | LLM 出网丢 User-Agent（合规回退） | `pdfx/llm.py` |
 | 迁移遗漏 | 5 处函数内导入指向已迁走模块 | GUI 视图 / `compat` |

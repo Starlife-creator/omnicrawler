@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "omnicrawler-platform"
 # ⚠️ 版本号的唯一权威来源。构建脚本 (build_windows.ps1) 和 bump_version.py
-#    都以此为据；不要手工修改此值，统一用 tools/bump_version.py 变更。
+#    都以此为据；不要手工修改此值，统一用 tools/releasing/bump_version.py 变更。
 version = "1.0.2"
 description = "从全类型网站采集、PDF解析/OCR到结构化导出和人工复核的模块化工作台"
 readme = "README.md"
@@ -32,7 +32,7 @@ html = ["beautifulsoup4>=4.12,<5", "lxml>=5,<7", "cssselect>=1.2,<2", "selectola
 pdf = ["pypdfium2>=5,<6", "pdfplumber>=0.11,<1", "pypdf>=4,<7"]
 # 生成 PDF（文档工作台写出 + 新手引导的演示 PDF）。
 # 声明顺序须知：`full` / `full-macos` 是各 feature extra 的**按声明顺序展开**，
-# 由 tools/check_extras_expansion.py 逐项比对。此处 pdf-write 必须排在 excel 之前，
+# 由 tools/gates/check_extras_expansion.py 逐项比对。此处 pdf-write 必须排在 excel 之前，
 # 与 full 里 reportlab 在 openpyxl 之前一致——否则门禁会报 entry #N 错位。
 pdf-write = ["reportlab>=4,<6"]
 # Excel（xlsx）读写：爬虫结果的交付形态，也供文档工作台导出五表使用。
@@ -96,7 +96,7 @@ full = [
 # macOS Full：同 full，但去掉 paddleocr/paddlepaddle（macOS 无稳定 wheel）。
 # C-#14：cv2 直接声明统一收敛到 headless 变体（无 GUI 依赖，服务器/无头环境可加载）；
 # 本仓代码不使用 opencv-contrib 的扩展算法模块。ddddocr / paddlex 传递引入的其余
-# OpenCV 变体需在具备 uv 的环境执行 `uv lock` 重解后收敛（见 tools/check_dependency_consistency.py）。
+# OpenCV 变体需在具备 uv 的环境执行 `uv lock` 重解后收敛（见 tools/gates/check_dependency_consistency.py）。
 # 用于 build_macos.sh --edition Full 的依赖矩阵。
 full-macos = [
   "beautifulsoup4>=4.12,<5", "lxml>=5,<7", "cssselect>=1.2,<2", "selectolax>=0.4.2,<2", "pypdfium2>=5,<6", "pdfplumber>=0.11,<1", "pypdf>=4,<7", "reportlab>=4,<6", "openpyxl>=3.1,<4",
@@ -165,7 +165,7 @@ omit = ["src/omnicrawler/visual_selector/*"]  # Browser E2E tool — integration
 [tool.coverage.report]
 skip_covered = true
 show_missing = true
-# ★ **唯一判据在 tools/check_coverage_gates.py 的 OVERALL_COVERAGE_GATE** —— 本值只求与之
+# ★ **唯一判据在 tools/gates/check_coverage_gates.py 的 OVERALL_COVERAGE_GATE** —— 本值只求与之
 #   **一致**（由 check_docs_consistency 交叉校验）；CI 用 `--fail-under=0` 取数，
 #   避免两处判定互相遮蔽。
 #   本值另会作用于**本地** `coverage report` ⇒ 余量须覆盖「本地低于 CI」那部分

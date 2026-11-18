@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-import tools.check_anchor_integrity as gate
+import tools.gates.check_anchor_integrity as gate
 
 _HEAD = "# OmniCrawler 优化方案（现行版）\n\n> 适用版本：**1.0.1**\n\n"
 

@@ -1,6 +1,6 @@
-"""`tools/benchmark_pdf_quality.py` 的入口契约守卫。
+"""`tools/benchmarks/benchmark_pdf_quality.py` 的入口契约守卫。
 
-为什么要有这个文件：仓库里**同族的 `tools/benchmark_quality.py` 自己就没有任何测试**，
+为什么要有这个文件：仓库里**同族的 `tools/benchmarks/benchmark_quality.py` 自己就没有任何测试**，
 这正是 `services/pdf_quality_benchmark.py`（596 行、5 个用例、逐字门限判据）长期
 "有测试、无入口"的原因——没人跑它，也就没有人接它。所以新入口必须自带守卫。
 
@@ -25,7 +25,7 @@ import pytest
 from omnicrawler.services.pdf_quality_benchmark import PdfQualityScore
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_TOOL_PATH = _REPO_ROOT / "tools" / "benchmark_pdf_quality.py"
+_TOOL_PATH = _REPO_ROOT / "tools" / "benchmarks" / "benchmark_pdf_quality.py"
 
 _TEXT_CASE = "digital-text-layer"
 _OCR_CASE = "scanned-image-only"
@@ -76,7 +76,7 @@ def test_all_cases_skipped_is_red(
 
     assert tool.main(["--case", _TEXT_CASE]) == 3
     captured = capsys.readouterr()
-    # 判红结论走 stderr（与 tools/benchmark_quality.py 同口径）；逐用例明细走 stdout
+    # 判红结论走 stderr（与 tools/benchmarks/benchmark_quality.py 同口径）；逐用例明细走 stdout
     assert "一个都没跑起来" in captured.err
     assert "环境不可达（测试注入）" in captured.out
 

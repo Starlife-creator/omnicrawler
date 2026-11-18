@@ -30,14 +30,14 @@
 2. **起环境**（一条命令：固定样本 + 隔离工作区）：
 
    ```bash
-   python tools/walkthrough_env.py
+   python tools/qa/walkthrough_env.py
    ```
 
    它会 ① 建 `<工作区>/{project,data}`，② 起**固定演示站点**，③ 打印**能力清单**
    （哪项缺、怎么补）与**按平台**的 GUI 启动命令（数据隔离），④ 打印依赖分层提示。
 
    - **样本固定**：列表第 1 页 **6** 条、翻页后合计 **8** 条、附件 **1** 个真 PDF。
-     这些数字由 `tools/walkthrough_demo_site.py` 的 `EXPECTED` 提供，
+     这些数字由 `tools/qa/walkthrough_demo_site.py` 的 `EXPECTED` 提供，
      并由 `tests/unit/tools/test_walkthrough_demo_site.py` 锁住 —— 不会与文档悄悄漂移。
    - **数据隔离按平台**：数据根回落到 `$LOCALAPPDATA/OmniCrawler`，该变量不存在时用
      `~/.omnicrawler`（见 `core/runtime_paths.py`）。所以 Windows 覆盖 `LOCALAPPDATA`、

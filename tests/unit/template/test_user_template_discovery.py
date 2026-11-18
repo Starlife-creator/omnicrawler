@@ -2,7 +2,7 @@
 
 背景：此前只有 GUI 发现 ``<project>/templates`` 与 ``<project>/templates_installed``，
 CLI（commands/template.py）、doctor、pipeline/_extract 都只看 bundled ——
-市场安装的模板 CLI 完全不可见，而 tools/market.py 却提示"GUI/CLI 将自动发现"。
+市场安装的模板 CLI 完全不可见，而 tools/market/market.py 却提示"GUI/CLI 将自动发现"。
 
 本文件钉三件事（均可反向触发：把调用点改回 ``bundled_template_catalog()`` 即红）：
 1. ``user_template_dirs`` 的目录契约（与 GUI 同一组目录名）；

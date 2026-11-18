@@ -23,7 +23,7 @@ from types import ModuleType
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-_TOOLS = REPO_ROOT / "tools"
+_TOOLS = REPO_ROOT / "tools" / "qa"
 
 
 def _load(name: str) -> ModuleType:

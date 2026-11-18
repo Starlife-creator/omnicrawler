@@ -6,7 +6,7 @@ import pytest
 
 from omnicrawler.plugins.plugin_loader import load_local_plugins
 from omnicrawler.plugins.plugin_registry import Registry
-from tools.audit_paper_scenario import audit, resolve_payload
+from tools.qa.audit_paper_scenario import audit, resolve_payload
 
 
 def test_selected_market_paper_plugin_rejected_before_execution():

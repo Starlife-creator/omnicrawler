@@ -62,7 +62,7 @@ MODULES = {
 # 每个功能 extra 都要有同名能力名：装上了 extra 却查不到对应能力，
 # 「安装成功」与「能力可用」就会各说各话。能力只承诺 extra 的一个子集
 # （例如 html 只验 bs4/lxml，不验 cssselect），因为子集就足以决定任务能否跑。
-# extra 侧的真源是 tools/check_extra_install.py 的 PROFILE_IMPORTS，
+# extra 侧的真源是 tools/gates/check_extra_install.py 的 PROFILE_IMPORTS，
 # tests/unit/core/test_capabilities_extra_contract.py 钉住两者的对应关系。
 # 历史名字（web / streams / storage-*）继续保留：它们出现在既有配置、文档和脚本里。
 FEATURE_REQUIREMENTS: dict[str, dict[str, tuple[str, ...]]] = {

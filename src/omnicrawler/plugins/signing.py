@@ -1,7 +1,7 @@
 """Offline ed25519 plugin signing/verification primitives.
 
 Private keys are generated and held ONLY by the offline signing host (see
-``tools/sign_plugin.py``); the runtime only ever sees the public key (the trust
+``tools/signing/sign_plugin.py``); the runtime only ever sees the public key (the trust
 root). This module depends solely on ``cryptography``, which is already a hard
 dependency, so it adds no new packages and works fully offline — fitting the
 project's portable, offline build.

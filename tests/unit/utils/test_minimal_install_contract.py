@@ -14,5 +14,5 @@ def test_quality_workflow_has_base_only_install_smoke() -> None:
     ]
     editable_installs = [line.strip() for line in job.splitlines() if "pip install -e" in line]
     assert editable_installs == ["- run: python -m pip install -e ."]
-    assert "python tools/check_minimal_install.py" in job
-    assert "python tools/check_architecture.py" in job
+    assert "python tools/gates/check_minimal_install.py" in job
+    assert "python tools/gates/check_architecture.py" in job

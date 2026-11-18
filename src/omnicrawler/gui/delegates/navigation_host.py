@@ -3,7 +3,7 @@
 为什么单独放一个模块
 --------------------
 ``main.py`` 受 C-#19 ratchet 门禁约束（**只降不升**，见
-``tools/check_main_window_size.py`` 与 ``docs/MAINWINDOW_REFACTOR.md``）：
+``tools/gates/check_main_window_size.py`` 与 ``docs/MAINWINDOW_REFACTOR.md``）：
 往主类里加方法会被门禁判红——这条纪律是对的，它防止组合根继续膨胀。
 
 所以导航相关的接线按既有 delegate 模式下沉到这里，主类只保留一个极薄的转发

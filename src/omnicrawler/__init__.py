@@ -215,7 +215,7 @@ def __getattr__(name: str):
         return module
 
     # 版本号：真源在叶子模块 _version.py —— 既避免包因 __version__ 成为导入环枢纽
-    # （见 tools/check_architecture.py 的 cycle budget），也保持“import omnicrawler
+    # （见 tools/gates/check_architecture.py 的 cycle budget），也保持“import omnicrawler
     # 不 eager 加载任何顶层子模块”的契约（tests/unit/core/test_lazy_import.py）。
     if name == "__version__":
         from ._version import __version__

@@ -1,4 +1,4 @@
-"""`tools/check_market_content.py` 的自测——重点是**每类缺陷都能被抓到**。
+"""`tools/gates/check_market_content.py` 的自测——重点是**每类缺陷都能被抓到**。
 
 这个工具的意义是把「审查清单里可机器判定的部分」变成证据，进而给
 `plugin_router.classify_in_process_tier` 的 `gates_evidence` 一个真实生产者
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.check_market_content import (
+from tools.gates.check_market_content import (
     DEFAULT_MARKET,
     SPDX_ALLOWLIST,
     audit_market,

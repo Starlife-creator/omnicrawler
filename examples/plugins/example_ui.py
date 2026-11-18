@@ -2,8 +2,8 @@
 
 启用方式（本地插件）：
   1. 复制本文件到项目根 plugins/ 目录（默认加载路径）；
-  2. 创建并签名：python tools/identity.py create <你的用户名>
-     python tools/sign_plugin.py local-sign plugins --username <你的用户名> --file plugin.py
+  2. 创建并签名：python tools/signing/identity.py create <你的用户名>
+     python tools/signing/sign_plugin.py local-sign plugins --username <你的用户名> --file plugin.py
      （local-sign = 创作者签名 + 自动加入本地信任列表）
   3. 启动 GUI 后主题出现在 设置 → 主题 菜单，动作出现在 插件 菜单。
 

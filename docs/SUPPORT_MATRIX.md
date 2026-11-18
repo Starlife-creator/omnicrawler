@@ -30,7 +30,7 @@
 | 推荐 | 一键脚本（见 [安装、运行与平台矩阵](INSTALLATION.md)）| 完整 8 步人工走查（含浏览器与 tesseract） |
 | 按需 | `pip install -e ".[dev,pdf,gui,html]"` | 在最小层之上补 PDF 附件与 GUI 走查 |
 
-补齐不必靠猜：`python tools/walkthrough_env.py` 会打印**当前机器的能力清单**
+补齐不必靠猜：`python tools/qa/walkthrough_env.py` 会打印**当前机器的能力清单**
 （哪项缺、一条补齐命令）。缺可选依赖只**降级**对应步骤（并说明怎么补），
 不会让其余步骤不可用 —— 这条原则见 [人工走查清单](MANUAL_WALKTHROUGH.md)。
 

@@ -97,7 +97,7 @@ jobs:
 
       - name: 校验分版本体积预算
         run: |
-          python tools/check_artifact_budget.py --platform macOS \
+          python tools/gates/check_artifact_budget.py --platform macOS \
             --directory "$RUNNER_TEMP/artifacts-macos" \
             --output "$RUNNER_TEMP/artifacts-macos/artifact-size-report-macos.json"
 
@@ -132,13 +132,13 @@ jobs:
         run: |
           UV_PROJECT_ENVIRONMENT="$RUNNER_TEMP/metadata-venv" uv sync --locked --no-dev --python python \
             --extra html --extra pdf --extra browser --extra async-http
-          "$RUNNER_TEMP/metadata-venv/bin/python" tools/generate_sbom.py \
+          "$RUNNER_TEMP/metadata-venv/bin/python" tools/releasing/generate_sbom.py \
             --output "$RUNNER_TEMP/artifacts-macos/omnicrawler-sbom-macos.cdx.json"
-          python tools/check_sbom_lock.py \
+          python tools/gates/check_sbom_lock.py \
             --sbom "$RUNNER_TEMP/artifacts-macos/omnicrawler-sbom-macos.cdx.json" --lock uv.lock
-          python tools/generate_checksums.py "$RUNNER_TEMP/artifacts-macos" \
+          python tools/releasing/generate_checksums.py "$RUNNER_TEMP/artifacts-macos" \
             --output "$RUNNER_TEMP/artifacts-macos/SHA256SUMS-macos.txt" --verify
-          python tools/generate_checksums.py "$RUNNER_TEMP/artifacts-macos" \
+          python tools/releasing/generate_checksums.py "$RUNNER_TEMP/artifacts-macos" \
             --output "$RUNNER_TEMP/artifacts-macos/SHA256SUMS-macos.txt" --check
 
       - name: 为便携包生成 SLSA provenance

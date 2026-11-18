@@ -362,7 +362,7 @@ Get-ChildItem -LiteralPath $docsSrc -Directory |
 Get-ChildItem -LiteralPath $docsSrc -File -Filter '*.md' |
     Copy-Item -Destination $docsDest
 # C-#15：暂存目录兜底校验——历史文档目录漏排除或必备文件缺失即构建失败。
-& $builderPython (Join-Path $projectRoot 'tools\check_portable_doc_manifest.py') --release-root $releaseRoot
+& $builderPython (Join-Path $projectRoot 'tools\gates\check_portable_doc_manifest.py') --release-root $releaseRoot
 Assert-LastExit "Portable doc manifest check failed."
 
 # F14：只清理 _internal/browsers/runtime 内第三方 wheel 携带的 .sh/.command，
@@ -389,9 +389,9 @@ foreach ($relativeDir in @('data\input', 'data\pdfs', 'work', 'output', 'logs'))
     New-Item -ItemType Directory -Path (Join-Path $releaseRoot $relativeDir) -Force | Out-Null
 }
 
-& $builderPython (Join-Path $projectRoot 'tools\generate_sbom.py') --output (Join-Path $releaseRoot 'SBOM.json')
+& $builderPython (Join-Path $projectRoot 'tools\releasing\generate_sbom.py') --output (Join-Path $releaseRoot 'SBOM.json')
 Assert-LastExit 'SBOM generation failed.'
-& $builderPython (Join-Path $projectRoot 'tools\check_sbom_lock.py') `
+& $builderPython (Join-Path $projectRoot 'tools\gates\check_sbom_lock.py') `
     --sbom (Join-Path $releaseRoot 'SBOM.json') --lock (Join-Path $projectRoot 'uv.lock')
 Assert-LastExit 'Installed dependency versions do not match uv.lock.'
 & (Join-Path $releaseRoot 'omnicrawler-cli.exe') --version
@@ -400,21 +400,21 @@ Assert-LastExit 'Packaged CLI version verification failed.'
 Assert-LastExit 'Packaged template verification failed.'
 # F11：冒烟测试先于清单生成——其 cwd=releaseRoot 会写 .omnicrawler 缓存，
 # 若在清单生成后跑会产出"不在清单中的新文件"导致完整性检查随机失败。
-& $builderPython (Join-Path $projectRoot 'tools\portable_smoke_test.py') $releaseRoot --edition $Edition
+& $builderPython (Join-Path $projectRoot 'tools\portable\portable_smoke_test.py') $releaseRoot --edition $Edition
 Assert-LastExit 'Packaged browser/native runtime verification failed.'
 # F12：CAPABILITIES.json 无 BOM 写入（带 BOM 会让第三方 json.loads 失败）
 $capabilitiesOutput = & (Join-Path $releaseRoot 'omnicrawler-cli.exe') capabilities --verify-imports --portable-paths
 Assert-LastExit 'Packaged capability import verification failed.'
 [IO.File]::WriteAllText((Join-Path $releaseRoot 'CAPABILITIES.json'), ($capabilitiesOutput -join "`n"), (New-Object Text.UTF8Encoding($false)))
 # F9：路径经命令行参数传递，不再把 PowerShell 变量插值进 Python 源码字符串
-& $builderPython (Join-Path $projectRoot 'tools\create_runtime_manifest.py') --release-root $releaseRoot
+& $builderPython (Join-Path $projectRoot 'tools\builders\create_runtime_manifest.py') --release-root $releaseRoot
 Assert-LastExit 'Runtime integrity manifest generation failed.'
-& $builderPython (Join-Path $projectRoot 'tools\generate_release_info.py') `
+& $builderPython (Join-Path $projectRoot 'tools\releasing\generate_release_info.py') `
     --project-root $projectRoot --release-root $releaseRoot --edition $Edition
 Assert-LastExit 'Portable release metadata generation failed.'
 # Regenerate after adding RELEASE-INFO.json so the integrity manifest covers
 # the machine-readable release description as well as executables and runtime.
-& $builderPython (Join-Path $projectRoot 'tools\create_runtime_manifest.py') --release-root $releaseRoot
+& $builderPython (Join-Path $projectRoot 'tools\builders\create_runtime_manifest.py') --release-root $releaseRoot
 Assert-LastExit 'Runtime integrity manifest refresh failed.'
 & (Join-Path $releaseRoot 'omnicrawler-cli.exe') runtime-verify --root $releaseRoot
 Assert-LastExit 'Packaged runtime integrity verification failed.'
@@ -432,15 +432,15 @@ if (Test-Path -LiteralPath $runtimeStateDir) {
 # $appVersion was already resolved at script startup — reuse it.
 New-Item -ItemType Directory -Path $releaseOutput -Force | Out-Null
 $releaseArchive = Join-Path $releaseOutput "OmniCrawler-$appVersion-Windows-Portable-$Edition.zip"
-& $builderPython (Join-Path $projectRoot 'tools\create_zip.py') $releaseRoot $releaseArchive --root-name 'OmniCrawler'
+& $builderPython (Join-Path $projectRoot 'tools\builders\create_zip.py') $releaseRoot $releaseArchive --root-name 'OmniCrawler'
 Assert-LastExit 'ZIP64 portable archive creation failed.'
-& $builderPython (Join-Path $projectRoot 'tools\check_release_integrity.py') $projectRoot `
+& $builderPython (Join-Path $projectRoot 'tools\gates\check_release_integrity.py') $projectRoot `
     --portable-zip $releaseArchive --portable-deep
 Assert-LastExit 'Portable ZIP integrity verification failed.'
 $archiveHash = Get-FileHash -LiteralPath $releaseArchive -Algorithm SHA256
 <# F31：不再自生成 SHA256SUMS-$appVersion.txt。
    发布资产里曾出现两份校验清单（本文件生成 + release.yml 的
-   tools/generate_checksums.py --output SHA256SUMS.txt），内容一致但冗余。
+   tools/releasing/generate_checksums.py --output SHA256SUMS.txt），内容一致但冗余。
    权威清单由 release.yml 统一生成，这里停用；$archiveHash 仍保留供
    下方 Write-Host "SHA-256" 日志输出使用。
 $checksumPath = Join-Path $releaseOutput "SHA256SUMS-$appVersion.txt"
@@ -465,7 +465,7 @@ $existingChecksums = if (Test-Path -LiteralPath $checksumPath) {
 # "what did packing exclude today" contract (here: the top-level logs/ dropped by
 # create_zip.py); when the two drift apart the mismatch only surfaces on the user side.
 # CI holds no key (standing rule): this step only produces an UNSIGNED manifest.
-# The maintainer signs it locally with a single command (tools/sign_update_manifest.py).
+# The maintainer signs it locally with a single command (tools/signing/sign_update_manifest.py).
 $editionLc = $Edition.ToLowerInvariant()
 $updateManifest = Join-Path $releaseOutput "update-windows-$editionLc.unsigned.json"
 # Notes go through a UTF-8 FILE, not an argv value: Windows PowerShell 5.1 re-encodes
@@ -486,7 +486,7 @@ $previousArgsFile = Join-Path $buildRoot '.previous-args.txt'
 Set-Content -LiteralPath $deltaArgsFile -Value '' -NoNewline -Encoding ascii
 Set-Content -LiteralPath $previousArgsFile -Value '' -NoNewline -Encoding ascii
 if ($env:OMNICRAWL_DELTA_BASELINES) {
-    & $builderPython (Join-Path $projectRoot 'tools\build_update_delta.py') `
+    & $builderPython (Join-Path $projectRoot 'tools\builders\build_update_delta.py') `
         --payload-archive $releaseArchive `
         --version $appVersion --platform windows --edition $editionLc `
         --baselines $env:OMNICRAWL_DELTA_BASELINES `
@@ -498,7 +498,7 @@ if ($env:OMNICRAWL_DELTA_BASELINES) {
     }
 }
 
-& $builderPython (Join-Path $projectRoot 'tools\build_update_manifest.py') `
+& $builderPython (Join-Path $projectRoot 'tools\builders\build_update_manifest.py') `
     --payload-archive $releaseArchive `
     --version $appVersion --platform windows --edition $editionLc `
     --notes-file $updateNotesFile `

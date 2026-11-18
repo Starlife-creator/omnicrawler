@@ -1,7 +1,7 @@
 """宿主侧 IPC 循环驱动：能力代理请求与 handle 响应的混排分流。
 
 从 plugin_broker.py 迁出（P1-3 第二批）。为**避免与 plugin_broker 形成静态导入环**
-（架构门禁 tools/check_architecture.py 会遍历 TYPE_CHECKING 内的导入），
+（架构门禁 tools/gates/check_architecture.py 会遍历 TYPE_CHECKING 内的导入），
 本模块不导入 ``CapabilityBroker``，而是用下面的 ``_BrokerLike`` 结构协议描述
 所需的最小契约（仅 ``dispatch``）；运行期只做属性调用，行为不变。
 外部引用方（plugin_contract_suite / plugin_subprocess_adapter / 测试）继续从

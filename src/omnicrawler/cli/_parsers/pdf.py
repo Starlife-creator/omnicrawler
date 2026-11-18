@@ -6,7 +6,7 @@
 （`cli/_main.py` 在 `build_parser` **之前**拦截），后果有三个：
 
 * `omnicrawler --help` **看不到** PDF 能力，用户不知道它存在；
-* `tools/check_cli_docs.py` 的契约校验也看不到它（`cli_contracts` 只遍历真子命令），
+* `tools/gates/check_cli_docs.py` 的契约校验也看不到它（`cli_contracts` 只遍历真子命令），
   于是文档与实现的选项漂移不会被发现；
 * 命令清单有两个真源（`build_parser` + 嗅探集合），新增 PDF 能力容易只改一处。
 

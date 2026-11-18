@@ -1,4 +1,4 @@
-"""`tools/refresh_doc_versions.py` 版本头批量刷新与门禁反向断言（C-#5）。
+"""`tools/releasing/refresh_doc_versions.py` 版本头批量刷新与门禁反向断言（C-#5）。
 
 反向断言：现行文档版本头必须被刷新到 ``pyproject.toml`` 版本；归档入口与
 验收账本保持原样；``--check`` 模式只比对不写盘，存在漂移时退出 1。
@@ -15,7 +15,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 
 def _load():
     spec = importlib.util.spec_from_file_location(
-        "_refresh_doc_versions_under_test", _ROOT / "tools" / "refresh_doc_versions.py"
+        "_refresh_doc_versions_under_test", _ROOT / "tools" / "releasing" / "refresh_doc_versions.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

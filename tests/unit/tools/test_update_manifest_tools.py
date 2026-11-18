@@ -20,8 +20,8 @@ import subprocess
 import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-BUILD_TOOL = REPO_ROOT / "tools" / "build_update_manifest.py"
-SIGN_TOOL = REPO_ROOT / "tools" / "sign_update_manifest.py"
+BUILD_TOOL = REPO_ROOT / "tools" / "builders" / "build_update_manifest.py"
+SIGN_TOOL = REPO_ROOT / "tools" / "signing" / "sign_update_manifest.py"
 
 sys.path.insert(0, str(REPO_ROOT / "src"))
 sys.path.insert(0, str(REPO_ROOT))
@@ -588,7 +588,7 @@ def test_is_not_found_only_trusts_http_status_and_file_absence(tmp_path: Path) -
 # `.omnicrawler/` 则**真的是**打包污染（构建脚本在载荷根跑冒烟，冻结应用把运行期状态
 # 写到 exe 同级）。两件事必须分开：前者跳过，后者硬失败。
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
+sys.path.insert(0, str(REPO_ROOT / "tools" / "builders"))
 
 import manifest_common  # noqa: E402
 

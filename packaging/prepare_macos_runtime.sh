@@ -179,7 +179,7 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
   #
   #   判据改成**确定性**的："该 basename 在本目录有副本 ⇒ 改写"，**不看它长什么样**
   #   （`@rpath/…` 还是 `/opt/homebrew/…` 一视同仁）—— 与
-  #   `tools/fix_macos_bundle_openssl.py` 里"钉到 @loader_path"是同一条原则：
+  #   `tools/builders/fix_macos_bundle_openssl.py` 里"钉到 @loader_path"是同一条原则：
   #   **`@rpath` / 绝对路径的解析结果都不可信，"看起来正常"≠"运行时正确"**。
   #   系统库（`/usr/lib`、`/System`、`/Library`）与已是相对引用的依赖一律跳过。
   for target in "$TESS_ROOT/tesseract" "$TESS_ROOT"/*.dylib; do
@@ -243,7 +243,7 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
   log "Tesseract ready"
 fi
 
-# ---- runtime-manifest.json（与 Windows 对齐；生成逻辑在 tools/build_common.py）----
+# ---- runtime-manifest.json（与 Windows 对齐；生成逻辑在 tools/builders/build_common.py）----
 "$PYTHON" "$PROJECT_ROOT/tools/build_common.py" manifest \
     --runtime-root "$RUNTIME_ROOT" --chrome "$CHROME_BIN" \
   || die "runtime manifest generation failed"

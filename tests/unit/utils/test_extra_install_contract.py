@@ -8,7 +8,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 
 
 def _load_checker():
-    path = _ROOT / "tools" / "check_extra_install.py"
+    path = _ROOT / "tools" / "gates" / "check_extra_install.py"
     spec = importlib.util.spec_from_file_location("check_extra_install", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

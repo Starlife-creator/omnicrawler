@@ -2,7 +2,7 @@
 
 `review_persistence.ReviewStore` 要落这两类对象，而 `review_workbench` /
 `review_feedback` 又要用 `ReviewStore` 持久化——类型定义留在原模块会形成
-`review_*` 三模块导入环（`tools/check_architecture.py` 的单调复杂度预算会判红）。
+`review_*` 三模块导入环（`tools/gates/check_architecture.py` 的单调复杂度预算会判红）。
 把纯数据结构下沉到本叶子模块，依赖方向变成单向：models ← persistence / workbench / feedback。
 """
 

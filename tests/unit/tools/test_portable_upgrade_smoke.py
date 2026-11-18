@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-_MODULE_PATH = Path(__file__).resolve().parents[3] / "tools" / "portable_upgrade_smoke.py"
+_MODULE_PATH = Path(__file__).resolve().parents[3] / "tools" / "portable" / "portable_upgrade_smoke.py"
 
 
 def _module() -> Any:

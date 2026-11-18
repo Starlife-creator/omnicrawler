@@ -139,7 +139,7 @@ python -m omnicrawler.gui
    共多少字节"，`apply` 也只取这些 —— 515MB / 1.9GB 的便携包，常规版本升级通常只需几 MB。
    清单里有、本机没有的文件计入"需下载"；`payload.deleted` 列出本版**已移除**的路径，
    本机若还残留会被显式列出（不会被静默留着）。
-   ★ 维护者生成本文件：`python tools/build_update_manifest.py --payload-dir <解压后的载荷> --version X.Y.Z
+   ★ 维护者生成本文件：`python tools/builders/build_update_manifest.py --payload-dir <解压后的载荷> --version X.Y.Z
    --asset <平台-版本>=<整包> [--delta <旧版本>=<变更包>] [--previous-payload-dir <上一版载荷>]
    --key <ed25519 冷私钥路径> --out update.json`（冷密钥只读入内存，绝不打印/入仓）。
 

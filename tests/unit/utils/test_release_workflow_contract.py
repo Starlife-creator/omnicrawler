@@ -25,10 +25,10 @@ def test_release_preflight_runs_before_reusable_platform_builds() -> None:
     for command in (
         "python -m compileall -q src tests examples tools",
         "python -m ruff check src tests tools",
-        "python tools/check_release_integrity.py",
-        "python tools/check_architecture.py",
-        "python tools/check_docs_consistency.py",
-        "python tools/check_network_boundaries.py --source-root src/omnicrawler",
+        "python tools/gates/check_release_integrity.py",
+        "python tools/gates/check_architecture.py",
+        "python tools/gates/check_docs_consistency.py",
+        "python tools/gates/check_network_boundaries.py --source-root src/omnicrawler",
     ):
         assert command in workflow
 

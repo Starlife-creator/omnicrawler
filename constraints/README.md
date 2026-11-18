@@ -13,7 +13,7 @@ hashes.
 ## Market test snapshot
 
 `market-ref.txt` contains one full commit SHA for the market repository. The
-quality jobs use `tools/checkout_market.py` to fetch that exact commit into the
+quality jobs use `tools/market/checkout_market.py` to fetch that exact commit into the
 sibling `OmniCrawler-market` directory. A missing revision fails the job; it
 never falls back to `main`. The script refuses an existing destination, so a
 developer's checkout and local edits are not reset. Failed fresh checkouts are

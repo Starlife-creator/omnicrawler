@@ -64,8 +64,8 @@ git clone https://github.com/<owner>/OmniCrawler-market
 
 | 组件 | 引用方式 |
 |---|---|
-| `tools/market.py` | `../OmniCrawler-market` 作为默认 catalog 源 |
-| `tools/sign_plugin.py` | `../OmniCrawler-market/tools/scan_plugin.py` 发布前扫描 |
+| `tools/market/market.py` | `../OmniCrawler-market` 作为默认 catalog 源 |
+| `tools/signing/sign_plugin.py` | `../OmniCrawler-market/tools/scan_plugin.py` 发布前扫描 |
 | GUI 插件/模板市场 | 无 `catalog_url` 配置时回退到 `../OmniCrawler-market` 本地浏览 |
 | `tests/unit/plugin/` | 市场相关测试引用同级市场仓库；未 clone 时自动跳过 |
 
@@ -262,9 +262,9 @@ omnicrawler templates validate          # 校验完整性
 ### 国际化
 
 - 界面字符串以中文为源码基准；`.pot` 模板条目数与英文覆盖率由
-  `python tools/i18n_stats.py` 实测，README 不手抄这些数字。
+  `python tools/i18n/i18n_stats.py` 实测，README 不手抄这些数字。
 
-下面的现状数字由 `python tools/check_doc_numbers.py --update` 按实测结果重写，
+下面的现状数字由 `python tools/gates/check_doc_numbers.py --update` 按实测结果重写，
 CI 用同一入口逐字比对（手抄值与实测不一致即判红）：
 
 <!-- BEGIN AUTOGEN:i18n-summary -->
@@ -272,8 +272,8 @@ CI 用同一入口逐字比对（手抄值与实测不一致即判红）：
 <!-- END AUTOGEN:i18n-summary -->
 - 覆盖率口径与缺失清单以上述脚本输出为准，README 不再手抄数字；`--check`
   可作为 CI 覆盖率门禁（阈值见质量工作流，当前下限 20.0%，只防下滑、不替代补译）。
-- 新增语言：`python tools/extract_i18n.py` → 复制 `locale/en_US/` 为目标目录 →
-  翻译 `.po` 文件 → `python tools/compile_i18n.py <lang>` 编译 `.mo`。
+- 新增语言：`python tools/i18n/extract_i18n.py` → 复制 `locale/en_US/` 为目标目录 →
+  翻译 `.po` 文件 → `python tools/i18n/compile_i18n.py <lang>` 编译 `.mo`。
 
 ---
 
@@ -394,36 +394,36 @@ run_gui_windows.bat                   # 启动 GUI（自动 rebase 环境）
 run_windows.bat                       # 启动 CLI
 ```
 
-环境自动自愈：仓库内 `.runtime\python` + `.venv` 每次启动都会执行 `tools/rebase_venv.py`
+环境自动自愈：仓库内 `.runtime\python` + `.venv` 每次启动都会执行 `tools/portable/rebase_venv.py`
 自动对齐——项目目录搬移、版本 bump 后本地环境与源码收敛，无需手动重建。
 
 ```powershell
-.venv\Scripts\python.exe tools\rebase_venv.py   # 手动触发对账（常规无需执行）
+.venv\Scripts\python.exe tools\portable\rebase_venv.py   # 手动触发对账（常规无需执行）
 ```
 
 ### 质量门禁（一键全套）
 
 ```powershell
 # 单项
-.venv\Scripts\python.exe tools\check_docs_consistency.py      # 版本/文档一致性
-.venv\Scripts\python.exe tools\check_release_integrity.py     # 发布完整性
-.venv\Scripts\python.exe tools\check_architecture.py          # 依赖架构
-.venv\Scripts\python.exe tools\check_coding_standards.py src tools  # 编码规范
-.venv\Scripts\python.exe tools\check_cli_docs.py               # CLI 文档一致性
-.venv\Scripts\python.exe tools\check_network_boundaries.py     # 网络边界
+.venv\Scripts\python.exe tools\gates\check_docs_consistency.py      # 版本/文档一致性
+.venv\Scripts\python.exe tools\gates\check_release_integrity.py     # 发布完整性
+.venv\Scripts\python.exe tools\gates\check_architecture.py          # 依赖架构
+.venv\Scripts\python.exe tools\gates\check_coding_standards.py src tools  # 编码规范
+.venv\Scripts\python.exe tools\gates\check_cli_docs.py               # CLI 文档一致性
+.venv\Scripts\python.exe tools\gates\check_network_boundaries.py     # 网络边界
 .venv\Scripts\ruff.exe check src tests tools                   # lint
 .venv\Scripts\python.exe -m mypy src/omnicrawler                 # 类型检查
 .venv\Scripts\python.exe -m pytest -q                           # 测试
-.venv\Scripts\python.exe -m coverage run -m pytest -q && .venv\Scripts\python.exe -m coverage json && .venv\Scripts\python.exe tools\check_coverage_gates.py coverage.json
+.venv\Scripts\python.exe -m coverage run -m pytest -q && .venv\Scripts\python.exe -m coverage json && .venv\Scripts\python.exe tools\gates\check_coverage_gates.py coverage.json
 ```
 
 ### 版本发布
 
 ```powershell
 # 自动 bump：更新 pyproject/__init__/文档 + CHANGELOG + 校验 + git commit/tag
-.venv\Scripts\python.exe tools\bump_version.py <X.Y.Z>
+.venv\Scripts\python.exe tools\releasing\bump_version.py <X.Y.Z>
 # 只改版本不外动 git（如试运行）
-.venv\Scripts\python.exe tools\bump_version.py <X.Y.Z> --no-git --report
+.venv\Scripts\python.exe tools\releasing\bump_version.py <X.Y.Z> --no-git --report
 ```
 
 发布时 `bump_version.py` 会自动运行环境版本对账；若本地 `.venv` 的 installed 版本
@@ -543,10 +543,10 @@ def _handle_my_command(args: argparse.Namespace) -> None:
 ### 添加新语言翻译
 
 ```bash
-python tools/extract_i18n.py                    # 更新 .pot
+python tools/i18n/extract_i18n.py                    # 更新 .pot
 # 复制 locale/en_US/ → locale/xx_XX/
 # 翻译 .po 文件中的 msgstr
-python tools/compile_i18n.py xx_XX              # 编译 .mo
+python tools/i18n/compile_i18n.py xx_XX              # 编译 .mo
 ```
 
 ---

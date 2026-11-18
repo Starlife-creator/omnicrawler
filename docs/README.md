@@ -3,7 +3,7 @@
 当前版本 **1.0.2**，配置协议 **v5**，覆盖率门禁 **≥75%**。
 
 本页是仓库内文档的唯一索引入口。未出现在本页的 `docs/*.md` 视为孤儿页，会被
-`tools/check_docs_consistency.py` 拦截。新增或删除顶层文档时必须同步更新第 2 节。
+`tools/gates/check_docs_consistency.py` 拦截。新增或删除顶层文档时必须同步更新第 2 节。
 
 ## 1. 从这里开始
 
@@ -14,7 +14,7 @@
 | 桌面 GUI 用户 | [桌面运行、工作区与组件](DESKTOP_RUNTIME_1.4.md)、[桌面视觉与交互规范](GUI_DESIGN_2.1.md) |
 | 插件作者 | [插件契约](PLUGIN_CONTRACT.md)、[插件作者指南](AUTHOR_GUIDE.md)、[SDK 使用指南](SDK_USAGE.md) |
 | 代码贡献者 | 根目录 [CONTRIBUTING.md](../CONTRIBUTING.md)、[编码规范](CODING_STANDARDS.md)、[架构](ARCHITECTURE.md) |
-| AI / 自动化脚本 | [Agent 使用指南](AGENT_GUIDE.md)（先取机器契约：`python tools/check_agent_surface.py --json`） |
+| AI / 自动化脚本 | [Agent 使用指南](AGENT_GUIDE.md)（先取机器契约：`python tools/gates/check_agent_surface.py --json`） |
 
 ## 2. 现行文档
 
@@ -108,11 +108,11 @@
 
 以下位置由工具链写入，**不要手写编辑**：
 
-- [docs/releases/](releases/README.md)：按版本存放的发布报告。`tools/bump_version.py` 在版本
-  bump 时自动重命名旧报告并生成占位；**`tools/post_bump_steps.py` 补它没做的那几步**
+- [docs/releases/](releases/README.md)：按版本存放的发布报告。`tools/releasing/bump_version.py` 在版本
+  bump 时自动重命名旧报告并生成占位；**`tools/releasing/post_bump_steps.py` 补它没做的那几步**
   （`uv.lock` 的项目版本、本目录 README 的版本引用、`docs/*.md` 的 `> 适用版本：` 头、
   以及把发布报告草稿落成真实内容），并可用 `--check` **只读**核对是否还有遗漏；
-  `tools/check_docs_consistency.py` 会校验当前版本报告存在。
+  `tools/gates/check_docs_consistency.py` 会校验当前版本报告存在。
 
 ## 4. 归档（内容已冻结，不作为当前行为依据）
 
@@ -133,7 +133,7 @@
 
 ## 维护约定
 
-`tools/check_docs_consistency.py` 强制以下四条，防止文档再次腐化：
+`tools/gates/check_docs_consistency.py` 强制以下四条，防止文档再次腐化：
 
 1. 本页必须被根目录 `README.md` 与 `CONTRIBUTING.md` 引用（防导航页变孤儿）。
 2. `docs/` 下每个顶层 Markdown 都必须被本页收录（现行文档进第 2 节，归档入口进第 4 节；防文档变孤儿）。

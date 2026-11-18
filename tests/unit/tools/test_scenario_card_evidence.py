@@ -6,7 +6,7 @@ import json
 import pytest
 
 from omnicrawler.services.scenario_cards import REQUIRED
-from tools.check_scenario_cards import check
+from tools.gates.check_scenario_cards import check
 
 
 def test_card_checker_verifies_bytes_and_rejects_empty_or_outside_selection(tmp_path):

@@ -7,7 +7,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 
 
 def _load_gate():
-    path = _ROOT / "tools" / "check_extras_expansion.py"
+    path = _ROOT / "tools" / "gates" / "check_extras_expansion.py"
     spec = importlib.util.spec_from_file_location("check_extras_expansion", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -145,4 +145,4 @@ def test_gate_is_wired_into_the_static_set_and_ci() -> None:
     registry = (_ROOT / "tools" / "gate_registry.py").read_text(encoding="utf-8")
     assert 'name="check_extras_expansion"' in registry
     workflow = (_ROOT / ".github" / "workflows" / "quality.yml").read_text(encoding="utf-8")
-    assert "tools/check_extras_expansion.py" in workflow
+    assert "tools/gates/check_extras_expansion.py" in workflow

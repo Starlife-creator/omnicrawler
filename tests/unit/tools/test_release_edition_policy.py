@@ -2,7 +2,7 @@
 
 **停发 Full 后会直接失效的地方**
 
-`tools/portable_smoke_test.py` 里有两处用 `edition == "Full"` 决定要不要跑：
+`tools/portable/portable_smoke_test.py` 里有两处用 `edition == "Full"` 决定要不要跑：
 
 ```
 Line 298:  if edition == "Full":   → 跑 capabilities --self-test（OCR 自检）
@@ -37,7 +37,7 @@ import re
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_SMOKE = _REPO_ROOT / "tools" / "portable_smoke_test.py"
+_SMOKE = _REPO_ROOT / "tools" / "portable" / "portable_smoke_test.py"
 _WORKFLOWS = _REPO_ROOT / ".github" / "workflows"
 
 
@@ -132,7 +132,7 @@ def test_capability_available_is_conservative() -> None:
     import sys
     from pathlib import Path as _Path
 
-    sys.path.insert(0, str(_Path(__file__).resolve().parents[3] / "tools"))
+    sys.path.insert(0, str(_Path(__file__).resolve().parents[3] / "tools" / "portable"))
     try:
         from portable_smoke_test import _capability_available
     finally:

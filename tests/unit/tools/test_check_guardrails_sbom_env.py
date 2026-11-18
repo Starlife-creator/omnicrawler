@@ -26,7 +26,7 @@ import json
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_MODULE_PATH = _REPO_ROOT / "tools" / "check_guardrails.py"
+_MODULE_PATH = _REPO_ROOT / "tools" / "gates" / "check_guardrails.py"
 
 
 def _module():

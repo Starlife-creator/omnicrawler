@@ -48,7 +48,7 @@ jobs:
         run: |
           UV_PROJECT_ENVIRONMENT="$RUNNER_TEMP/finalize-venv" uv sync --locked --no-dev --python python \
             --extra html --extra pdf --extra browser --extra async-http
-          "$RUNNER_TEMP/finalize-venv/bin/python" tools/generate_provenance.py --artifact-dir "$RUNNER_TEMP/artifacts" \
+          "$RUNNER_TEMP/finalize-venv/bin/python" tools/releasing/generate_provenance.py --artifact-dir "$RUNNER_TEMP/artifacts" \
             --output "$RUNNER_TEMP/artifacts/omnicrawler-provenance.json"
 
       # B14-💭-3：供应链完整性检查固化为 release 必跑步骤（任一失败 → 发布中止）。
@@ -59,16 +59,16 @@ jobs:
       - name: 供应链完整性检查（B14 强制）
         shell: bash
         run: |
-          python tools/check_network_boundaries.py --source-root src/omnicrawler
-          "$RUNNER_TEMP/finalize-venv/bin/python" tools/check_guardrails.py \
+          python tools/gates/check_network_boundaries.py --source-root src/omnicrawler
+          "$RUNNER_TEMP/finalize-venv/bin/python" tools/gates/check_guardrails.py \
             --sbom "$RUNNER_TEMP/artifacts/omnicrawler-sbom-linux.cdx.json"
-          python tools/check_release_integrity.py . \
+          python tools/gates/check_release_integrity.py . \
             --portable-zip-dir "$RUNNER_TEMP/artifacts"
           # P5：Linux tar.xz 容器级深校验（聚合期兜底；macOS 主产物是 dmg，
           # 其回退 tar.gz 已在 build_macos.sh 内做 mac 平台深校验，此处不重复）
           for archive in "$RUNNER_TEMP"/artifacts/*Linux-Portable-*.tar.xz; do
             [ -e "$archive" ] || continue
-            python tools/check_release_integrity.py . \
+            python tools/gates/check_release_integrity.py . \
               --portable-tar "$archive" --portable-platform linux --portable-deep
           done
 

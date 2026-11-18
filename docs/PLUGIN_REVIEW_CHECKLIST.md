@@ -10,7 +10,7 @@
 本清单里**能由机器判定**的那些项，无需人工重复核对——在 OmniCrawler 仓库根运行：
 
 ```bash
-python tools/check_market_content.py
+python tools/gates/check_market_content.py
 ```
 
 它会为每个插件产出 `gates_evidence`（声明过的文件是否都在、

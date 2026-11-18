@@ -27,7 +27,7 @@ New-Item -ItemType Directory -Path $RuntimeRoot, $CacheRoot -Force | Out-Null
 #     7zr、7z 解压器），由本脚本维护者钉死，任何更新必须同步复核哈希。
 #   - Chromium / chromedriver：由 Python 侧 Playwright `install chromium`
 #     管理（Playwright 自身维护二进制哈希），**不在本表**、不在此钉。
-#   - PaddleOCR 模型：由 `tools/download_and_smoke_test.py` 下载，CDN 分发、
+#   - PaddleOCR 模型：由 `tools/releasing/download_and_smoke_test.py` 下载，CDN 分发、
 #     **无哈希钉**（仅冒烟验证，见该工具 docstring），属已知责任边界。
 #   - 后续新增手动下载资产：必须在本表登记真实哈希，否则 fail-closed 拒绝。
 $KNOWN_SHA256 = @{
@@ -252,11 +252,11 @@ if (-not $SkipTesseract) {
 if (-not $SkipOcrModels) {
     Write-Host 'Prepare and verify all PPStructureV3 offline models...'
     $modelRoot = Join-Path $RuntimeRoot 'models\paddlex'
-    & $Python (Join-Path $ProjectRoot 'tools\download_and_smoke_test.py') $modelRoot --source aistudio
+    & $Python (Join-Path $ProjectRoot 'tools\releasing\download_and_smoke_test.py') $modelRoot --source aistudio
     if ($LASTEXITCODE -ne 0) { throw 'PaddleOCR model verification failed.' }
 }
 
-# runtime-manifest.json（与 Linux/macOS 对齐；生成逻辑在 tools/build_common.py）
-& $Python (Join-Path $ProjectRoot 'tools\build_common.py') manifest --runtime-root $RuntimeRoot --chrome $chrome.FullName
+# runtime-manifest.json（与 Linux/macOS 对齐；生成逻辑在 tools/builders/build_common.py）
+& $Python (Join-Path $ProjectRoot 'tools\builders\build_common.py') manifest --runtime-root $RuntimeRoot --chrome $chrome.FullName
 if ($LASTEXITCODE -ne 0) { throw 'Runtime manifest generation failed.' }
 Write-Host "Windows runtime ready: $RuntimeRoot"

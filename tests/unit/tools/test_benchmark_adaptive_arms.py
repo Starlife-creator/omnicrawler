@@ -1,4 +1,4 @@
-"""`tools/benchmark_adaptive_arms.py` 的入口契约与实验设计守卫。
+"""`tools/benchmarks/benchmark_adaptive_arms.py` 的入口契约与实验设计守卫。
 
 这个工具回答的是「自适应引擎到底有没有用」，所以它自己的判据必须先站得住：
 
@@ -26,7 +26,7 @@ from types import ModuleType
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_TOOL_PATH = _REPO_ROOT / "tools" / "benchmark_adaptive_arms.py"
+_TOOL_PATH = _REPO_ROOT / "tools" / "benchmarks" / "benchmark_adaptive_arms.py"
 _CORPUS = _REPO_ROOT / "benchmarks" / "adaptive_arms.yaml"
 
 _GENE_METRICS = ("omnicrawler_gene_augment_hits_total", "omnicrawler_gene_augment_misses_total")

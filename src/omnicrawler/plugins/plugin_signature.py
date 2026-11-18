@@ -141,7 +141,7 @@ def _verify_plugin_signature(
                 return decision
         raise signing.PluginSignatureError(
             f"插件 {path} 拒绝加载：作者 {creator.username}（指纹 {creator.key_fingerprint}）"
-            " 未在本地信任列表。信任命令: python tools/identity.py trust add "
+            " 未在本地信任列表。信任命令: python tools/signing/identity.py trust add "
             f"--pubkey <作者的 .pem 公钥文件> --name {creator.username}"
         )
     if signature_policy == SIGNATURE_POLICY_DEVELOPER:

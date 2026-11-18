@@ -5,7 +5,7 @@
 《优化方案》§6.5 R5.1 初稿写的是「直接下推 SQL，不新造聚合实现」，前提是"完整依赖集含 DuckDB"。
 取证后改为纯 Python，理由三条（记在 §6.5 的实施校正里）：
 
-1. `duckdb` 位于 **`storage` 可选 extra**（`pyproject.toml`），而 `tools/check_minimal_install.py`
+1. `duckdb` 位于 **`storage` 可选 extra**（`pyproject.toml`），而 `tools/gates/check_minimal_install.py`
    的定位是「**核心能力不依赖可选 extras**」；而"按 X 排序 / 按 Y 分组 / 统计"是走查里
    **需求频次最高的一类** ⇒ 做成 extras 门控等于把核心能力降级。
 2. **没有规模收益**：调用方 `services/data_transform.py::transform_file` 已经把全部记录读入内存

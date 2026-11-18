@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.check_release_integrity import (
+from tools.gates.check_release_integrity import (
     check_changelog_released,
     check_portable_zip,
     check_project,
@@ -94,7 +94,7 @@ def test_source_zip_checks_paths_generated_files_and_imported_symbols(tmp_path):
         "Demo/pyproject.toml": "[project]\nname='demo'\nversion='1.0'\n",
         "Demo/README.md": "demo",
         "Demo/LICENSE": "MIT",
-        "Demo/tools/check_release_integrity.py": "",
+        "Demo/tools/gates/check_release_integrity.py": "",
         "Demo/src/omnicrawler/__init__.py": "",
         "Demo/src/omnicrawler/quality/__init__.py": "",
         "Demo/src/omnicrawler/quality/diagnostics.py": "class DiagnosticRecorder:\n    pass\n",

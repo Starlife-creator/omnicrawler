@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tools.check_sbom_lock import check
+from tools.gates.check_sbom_lock import check
 
 
 def _write_inputs(tmp_path: Path, components: list[dict[str, str]]) -> tuple[Path, Path]:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
-from tools.create_zip import create_zip
+from tools.builders.create_zip import create_zip
 
 
 def test_clean_source_archive_excludes_retained_portable_runtime(tmp_path: Path) -> None:

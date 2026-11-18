@@ -17,7 +17,7 @@ from types import ModuleType
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-_DEMO_PATH = REPO_ROOT / "tools" / "walkthrough_demo_site.py"
+_DEMO_PATH = REPO_ROOT / "tools" / "qa" / "walkthrough_demo_site.py"
 
 
 def _demo() -> ModuleType:

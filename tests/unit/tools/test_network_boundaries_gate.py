@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import tools.check_network_boundaries as gate
+import tools.gates.check_network_boundaries as gate
 
 
 def _write(root: Path, rel: str, body: str) -> Path:

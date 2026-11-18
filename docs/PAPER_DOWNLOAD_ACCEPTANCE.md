@@ -46,14 +46,14 @@ httpx 直接网络、自建 Playwright 上下文（`sync_playwright()` 两处）
 Cookie 经插件 state 命名空间保存（`_state_get`），不能视为已映射到宿主会话中心。
 
 > 更正（2026-10-30）：本条此前引的是快照 `8744302` 的 0.6.4 与 SHA `5e8628b3…`，
-> 并称包清单（0.3.0）与源不一致。那次 `tools/audit_paper_scenario.py` 实际读的是市场仓
+> 并称包清单（0.3.0）与源不一致。那次 `tools/qa/audit_paper_scenario.py` 实际读的是市场仓
 > **根目录的遗留扁平载荷**，而不是 `market.yaml` 指向的当前版本 —— 工具已改为按指针解析，
 > 并在边界用例里加了布局守卫（`source_file` 必须落在 `versions/<manifest_version>/`）。
 > 修好后 0.8.0 的清单与源是一致的；「停止路线」的结论不变，依据改为
 > httpx 直连 + 内建 Playwright 上下文 + state 命名空间 Cookie。
 
 ```bash
-python tools/audit_paper_scenario.py ../OmniCrawler-market/plugins/academic-paper-downloader --json audit.json
+python tools/qa/audit_paper_scenario.py ../OmniCrawler-market/plugins/academic-paper-downloader --json audit.json
 ```
 
 实际宿主加载在执行代码前以“插件不得直接导入网络客户端”拒绝。此审查未执行插件、未重新验签，不以维护者签名代替运行边界。保留市场受签名字节与固定快照，不添加 AST 豁免、不直连网络、不读取私钥。

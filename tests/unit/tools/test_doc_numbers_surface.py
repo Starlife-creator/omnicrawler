@@ -105,7 +105,7 @@ def test_scan_does_not_depend_on_git(tmp_path: Path) -> None:
     ``"ls-files"`` 这个字符串字面量。只要有人把它改回 git 方案，这条就红，
     逼他先解释「未 add 的新文档怎么办」。
     """
-    source = (_REPO_ROOT / "tools" / "check_doc_numbers.py").read_text(encoding="utf-8")
+    source = (_REPO_ROOT / "tools" / "gates" / "check_doc_numbers.py").read_text(encoding="utf-8")
     assert "import subprocess" not in source, "扫描面又开始跑子进程了（git？）：未 add 的新文档会漏扫"
     assert '"ls-files"' not in source and "'ls-files'" not in source, "扫描面又依赖 git ls-files 了"
 

@@ -1,0 +1,406 @@
+#!/usr/bin/env python
+"""Offline plugin signing tool — run ONLY on the cold signing host.
+
+This tool is intentionally NOT part of the runtime/portable build. It is used
+by the operator on an isolated machine to:
+
+- ``generate-keys`` : create an ed25519 keypair. The PRIVATE key is written to
+  the operator-specified cold-storage location and must be moved away
+  immediately; the PUBLIC key is safe to ship (it becomes the trust root).
+- ``scan``          : run the pre-publish security scan (five checks) on a
+  plugin directory before signing.
+- ``sign``          : produce a detached ``<plugin>.sig`` for a plugin file.
+  Runs the security scan first (unless ``--skip-scan``) and appends a
+  transparency-log entry after signing.
+- ``verify``        : check a plugin's detached signature against a trust root.
+
+Cold-key principle: the private key is generated at a location the operator can
+immediately cut to cold storage; it must never enter the repo, build outputs,
+or the portable zip.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+
+# -- 自引导：让工具在直接用 `python tools/signing/sign_plugin.py` 时也能找到 omnicrawler --
+# 即便没有可编辑安装（如全新 checkout），只要运行它的 Python 装了 cryptography 即可。
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+for _cand in (_REPO_ROOT / "src", _REPO_ROOT):
+    _cand_str = str(_cand)
+    if _cand_str not in sys.path:
+        sys.path.insert(0, _cand_str)
+
+from omnicrawler.plugins.signing import (  # noqa: E402
+    generate_keypair,
+    sign_file,
+    verify_plugin,
+)
+
+
+# Designated private-key generation location (operator moves it to cold storage
+# immediately after generation). Override with --private-out.
+def _default_private_path() -> str:
+    """用户主目录下的 .omnicrawler/keys。
+
+    B12-001：无 HOME 时返回空串并在使用处拒绝——私钥**绝不**回退仓库内
+    ``.private_keys/``（历史分支会引入私钥落仓风险）。
+    """
+    try:
+        return str(Path.home() / ".omnicrawler" / "keys" / "plugin_signing_private.pem")
+    except RuntimeError:
+        return ""
+
+
+PRIVATE_DEFAULT = _default_private_path()
+PUBLIC_DEFAULT = "configs/plugin_trust.pub.pem"
+def _market_tool(name: str) -> Path:
+    """Locate the sibling market checkout from a checkout or nested Git worktree."""
+
+    for parent in (_REPO_ROOT, *_REPO_ROOT.parents):
+        candidate = parent / "OmniCrawler-market" / "tools" / name
+        if candidate.is_file():
+            return candidate
+    return _REPO_ROOT.parent / "OmniCrawler-market" / "tools" / name
+
+
+SCANNER = _market_tool("scan_plugin.py")
+TRANSPARENCY_LOG_DEFAULT = "signing_transparency.jsonl"
+
+
+def _generate_keys(private_out: Path, public_out: Path) -> None:
+    private_pem, public_pem = generate_keypair()
+    private_out.parent.mkdir(parents=True, exist_ok=True)
+    private_out.write_bytes(private_pem)
+    # 冷私钥权限收紧：ed25519 私钥明文落盘必须 0600，禁止继承默认 umask（0644）
+    try:
+        os.chmod(private_out, 0o600)
+    except OSError:  # Windows 上 chmod 语义受限，尽力而为
+        pass
+    public_out.parent.mkdir(parents=True, exist_ok=True)
+    public_out.write_bytes(public_pem)
+    print(f"[冷密钥] 私钥已写入: {private_out}（权限 0600）")
+    print("[冷密钥] 请立即将其剪切至加密 U 盘/离线机，并安全擦除源位置（覆写、不走回收站）。")
+    print(f"[信任根] 公钥已写入（可随构建分发）: {public_out}")
+
+
+def _run_scan(plugin: Path, manifest: Path | None) -> None:
+    """发布前**凭据泄漏检查**（scan_plugin.py：敏感文件/高熵串/API Token/私钥字段）。
+
+    **不是代码行为安全扫描**——scan_plugin.py 不分析恶意代码，危险调用检查
+    由客户端加载期的 AST 预检（B2）承担，两者是不同的事（审查报告 S48）。
+    文案从"第二道防线"改为"凭据泄漏检查"，避免维护者在错误的安全预期上
+    做决策。
+
+    **fail-closed（S41①）**：找不到扫描器时**中止签名**，而不是打印一行
+    "跳过"继续——docstring 承诺的"五项发布前安全检查"对只克隆主仓的操作者
+    一次都没跑却照常签名，等于门禁在 public 仓场景下是空的。
+    显式 ``--skip-scan`` 仍是唯一逃生口（不推荐）。
+    """
+    if not SCANNER.is_file():
+        sys.exit(
+            f"[扫描] FAIL：未找到发布前扫描器 {SCANNER}\n"
+            "签名已中止。请先克隆 OmniCrawler-market 仓库（扫描器在 "
+            "OmniCrawler-market/tools/scan_plugin.py），或显式使用 --skip-scan 跳过（不推荐）。"
+        )
+    cmd = [sys.executable, str(SCANNER), "scan", str(plugin)]
+    if manifest and manifest.is_file():
+        cmd += ["--manifest", str(manifest)]
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    result = subprocess.run(
+        cmd, capture_output=True, text=True,
+        encoding="utf-8", errors="replace", env=env,
+    )
+    print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="")
+    if result.returncode != 0:
+        sys.exit("发布前扫描发现问题，中止签名（--skip-scan 可跳过，不推荐）")
+
+
+def _run_scan_cli(plugin_dir: Path, manifest: Path | None) -> int:
+    """``scan`` 子命令：直接驱动生态扫描器。"""
+    if not SCANNER.is_file():
+        print(f"未找到扫描器 {SCANNER}")
+        return 1
+    cmd = [sys.executable, str(SCANNER), "scan", str(plugin_dir)]
+    if manifest and manifest.is_file():
+        cmd += ["--manifest", str(manifest)]
+    return subprocess.run(cmd).returncode
+
+
+#: 透明日志里的操作者缺省值：**中性占位**，绝不落本机用户名。
+#:
+#: 背景（2026-09-29）：旧实现兜底读 ``USERNAME``/``getpass.getuser()``，
+#: 于是日志里出现了本机用户名（如 ``Lenovo``）并随公开仓库外泄。
+#: 现在只认**显式**来源：``--operator`` 参数 > 环境变量 ``OMNICRAWL_OPERATOR``；
+#: 谁都不给 ⇒ 写中性占位（审计仍可由 plugin 路径 + sha256 + 时间定位）。
+DEFAULT_OPERATOR = "local-operator"
+
+
+def _current_operator(override: str | None = None) -> str:
+    """当前操作者（**只认显式来源**，不推断机器用户名）。
+
+    优先级：``override``（--operator）> ``OMNICRAWL_OPERATOR`` > ``DEFAULT_OPERATOR``。
+    ★ 刻意**不读** ``USERNAME``/``USER``/``LOGNAME``/``getpass.getuser()``：
+    那些是**本机用户名**，会随公开的透明日志外泄（2026-09-29 实测发生过）。
+    """
+    if override:
+        return override
+    value = os.environ.get("OMNICRAWL_OPERATOR", "").strip()
+    if value:
+        return value
+    return DEFAULT_OPERATOR
+
+
+def _append_transparency_log(
+    plugin: Path, log_path: Path, operator: str | None = None,
+) -> None:
+    """签名透明日志：时间 / 文件哈希 / 操作者 / 摘要（仅记录公开信息）。
+
+    B02-004：写日志是冷密钥签名的必经步骤；日志写失败时异常向上传播，
+    使签名整体失败（fail-closed），确保每次冷密钥动用都留下公开记录。
+    FINAL-U5（方案 B）：本日志为 **informational-only**——无哈希链/无防篡改
+    能力，不作为审计证据，仅为人工回溯提供线索（远期蓝图见
+    MARKET_ECOSYSTEM §5）。路径字段只记录相对/文件名，绝不写绝对路径。
+    """
+    digest = hashlib.sha256(plugin.read_bytes()).hexdigest()
+    # FINAL-U5：透明日志绝不写绝对路径，也不写 cwd 下的相对路径——相对路径仍可能
+    # 包含本机用户名等机器身份（例如 pytest-of-<user>/...）。只记录裸文件名，
+    # sha256 足以区分同名文件；后续操作者可通过哈希与私钥位置人工对应。
+    display_path = plugin.name
+    entry = {
+        "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
+        "plugin": display_path,
+        "plugin_sha256": digest,
+        "operator": _current_operator(operator),
+        "operation": "sign",
+        "note": "签名者私钥未导出；本日志仅记录公开元数据",
+    }
+    with log_path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    print(f"[透明日志] 已追加: {log_path}")
+
+
+def _resolve_password(password: str | None) -> str:
+    if password:
+        return password
+    value = os.environ.get("OMNICRAWL_IDENTITY_PASSWORD", "")
+    if value:
+        return value
+    raise ValueError("需要身份密码：--password 或环境变量 OMNICRAWL_IDENTITY_PASSWORD")
+
+
+def _creator_sign(plugin_dir: Path, username: str, password: str, target: str) -> Path:
+    """Create a shareable whole-package signature plus the legacy signature."""
+    from omnicrawler.plugins.identity import IdentityStore
+    from omnicrawler.plugins.package_manifest import sign_creator_package
+
+    target_path = plugin_dir / target
+    if not target_path.is_file():
+        raise FileNotFoundError(f"缺少待签名文件 {target}: {target_path}")
+    identity = IdentityStore().load(username, password)
+    # 载体文件名决定包类型。组件包的载体是 recipe.json（声明式，不含字节）。
+    if target == "template.yaml":
+        package_type = "template"
+    elif target == "recipe.json":
+        package_type = "component"
+    else:
+        package_type = "plugin"
+    package_id = plugin_dir.name
+    version = "0.1.0"
+    if package_type == "component":
+        import json
+
+        # recipe 是 JSON：id 取目录名（catalog 侧同样以目录名为 id），
+        # version 必须来自 recipe 本身——它决定安装目录名。
+        raw_recipe = json.loads(target_path.read_text(encoding="utf-8"))
+        if isinstance(raw_recipe, dict):
+            version = str(raw_recipe.get("version") or version)
+    elif package_type == "plugin":
+        from omnicrawler.plugins.plugin_packaging import _read_metadata
+
+        metadata = _read_metadata(target_path)
+        version = str(metadata.get("version") or version)
+    else:
+        import yaml
+
+        raw = yaml.safe_load(target_path.read_text(encoding="utf-8")) or {}
+        block = raw.get("template", {}) if isinstance(raw, dict) else {}
+        if isinstance(block, dict):
+            package_id = str(block.get("id") or package_id)
+            version = str(block.get("version") or version)
+    signed = sign_creator_package(
+        plugin_dir,
+        package_type=package_type,
+        package_id=package_id,
+        version=version,
+        identity=identity,
+        legacy_target=target,
+    )
+    print(
+        f"[创作者签名] 已生成完整可分享包 + creator.sig 兼容轨（作者: {username}，"
+        f"指纹: {signed.creator.key_fingerprint}，包哈希: {signed.manifest_sha256[:16]}…）"
+    )
+    return plugin_dir / "creator.identity"
+
+
+def _local_sign(plugin_dir: Path, username: str, password: str, target: str) -> Path:
+    """本地一键签名：creator-sign + 自动加入本地信任列表。
+
+    解决"签名了但指纹未入信任列表反而被拒载"的坑——本地用户给
+    自己签名后，本机加载立即可用且显示作者。
+    """
+    identity_path = _creator_sign(plugin_dir, username, password, target)
+    from omnicrawler.plugins.identity import CreatorIdentity
+    from omnicrawler.plugins.trust import TrustedUserList
+
+    creator = CreatorIdentity.from_dict(json.loads(identity_path.read_text(encoding="utf-8")))
+    if TrustedUserList().add(creator, source="local", path_hint=f"（{plugin_dir}）"):
+        print(f"[本地信任] 已加入信任列表: {username}（指纹 {creator.key_fingerprint}）")
+    else:
+        print(f"[本地信任] 作者 {username} 已在信任列表")
+    return identity_path
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="离线插件签名工具（仅冷机器运行）")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    gen = sub.add_parser("generate-keys", help="生成 ed25519 密钥对")
+    gen.add_argument("--private-out", default=PRIVATE_DEFAULT, help="私钥输出路径（冷存储）")
+    gen.add_argument("--public-out", default=PUBLIC_DEFAULT, help="公钥输出路径（信任根）")
+    gen.add_argument(
+        "--overwrite", action="store_true",
+        help="允许覆盖已存在的公钥/私钥文件（默认拒绝——防一条命令误毁既有信任根）",
+    )
+
+    sc = sub.add_parser("scan", help="发布前安全扫描插件目录")
+    sc.add_argument("plugin_dir", help="插件目录路径")
+    sc.add_argument("--manifest", default=None, help="插件清单 YAML 路径（允许列表校验）")
+
+    sg = sub.add_parser("sign", help="对插件文件签名（生成 <plugin>.sig）")
+    sg.add_argument("plugin", help="插件 .py 文件路径")
+    sg.add_argument("--private-key", default=PRIVATE_DEFAULT, help="签名私钥 PEM 路径")
+    sg.add_argument("--manifest", default=None, help="插件清单 YAML 路径（扫描允许列表）")
+    sg.add_argument("--skip-scan", action="store_true", help="跳过发布前扫描（不推荐）")
+    sg.add_argument("--log", default=TRANSPARENCY_LOG_DEFAULT, help="签名透明日志路径")
+    sg.add_argument(
+        "--operator", default=None,
+        help="操作者标识（审计归属，B02-004；缺省回退环境变量/系统用户名）",
+    )
+
+    cs = sub.add_parser(
+        "creator-sign",
+        help="创作者签名（生成 creator.sig + creator.identity，创建即签名）",
+    )
+    cs.add_argument("plugin_dir", help="插件/模板目录路径")
+    cs.add_argument(
+        "--file", default="plugin.py", help="待签名文件名（默认 plugin.py；模板用 template.yaml）"
+    )
+    cs.add_argument("--username", required=True, help="本地身份用户名")
+    cs.add_argument("--password", default=None, help="身份密码（默认读环境变量 OMNICRAWL_IDENTITY_PASSWORD）")
+    cs.add_argument("--manifest", default=None, help="插件清单 YAML 路径（扫描允许列表）")
+    cs.add_argument("--skip-scan", action="store_true", help="跳过发布前扫描（不推荐）")
+
+    ls = sub.add_parser(
+        "local-sign",
+        help="本地一键签名：creator-sign + 自动加入本地信任列表（本机立即可加载并显示作者）",
+    )
+    ls.add_argument("plugin_dir", help="插件/模板目录路径")
+    ls.add_argument(
+        "--file", default="plugin.py", help="待签名文件名（默认 plugin.py；模板用 template.yaml）"
+    )
+    ls.add_argument("--username", required=True, help="本地身份用户名")
+    ls.add_argument("--password", default=None, help="身份密码（默认读环境变量 OMNICRAWL_IDENTITY_PASSWORD）")
+    ls.add_argument("--manifest", default=None, help="插件清单 YAML 路径（扫描允许列表）")
+    ls.add_argument("--skip-scan", action="store_true", help="跳过发布前扫描（不推荐）")
+
+    vf = sub.add_parser("verify", help="验签插件")
+    vf.add_argument("plugin", help="插件 .py 文件路径")
+    vf.add_argument("--trust", required=True, help="信任根公钥 PEM 或公钥文件路径")
+
+    args = parser.parse_args(argv)
+
+    if args.command == "generate-keys":
+        # ★ 守卫（#31 教训）：默认 `--public-out` 就是市场信任根文件，不带参数跑一条命令
+        #   即可把它覆盖掉 ⇒ 任何已存在的目标都拒绝覆盖，除非显式 --overwrite；
+        #   市场信任根路径则**无条件拒绝**（换市场钥匙必须走 ressign_market 流程，不能手滑）。
+        public_target = Path(args.public_out)
+        private_target = Path(args.private_out)
+        if public_target.name == "plugin_trust.pub.pem":
+            raise SystemExit(
+                "拒绝生成：--public-out 指向市场信任根 configs/plugin_trust.pub.pem。\n"
+                "换市场信任钥必须走 tools/signing/ressign_market.py 流程（重签全部插件并同步信任根），"
+                "不能用 generate-keys 覆盖。"
+            )
+        for target, label in ((public_target, "公钥"), (private_target, "私钥")):
+            if target.exists() and not args.overwrite:
+                raise SystemExit(
+                    f"拒绝生成：{label}文件已存在: {target}\n"
+                    "确认要覆盖请加 --overwrite；若要生成**另一把**钥匙，请换一个 --public-out 路径。"
+                )
+        if not args.private_out:
+            print(
+                "FAIL 无法确定用户主目录（无 HOME）；私钥只允许写入用户主目录，"
+                "拒绝回退仓库内路径（B12-001）。请用 --private-out 显式指定冷存储位置。",
+                file=sys.stderr,
+            )
+            return 1
+        _generate_keys(Path(args.private_out).expanduser(), Path(args.public_out).expanduser())
+        return 0
+    if args.command == "scan":
+        manifest = Path(args.manifest) if args.manifest else None
+        return _run_scan_cli(Path(args.plugin_dir), manifest)
+    if args.command == "sign":
+        plugin_path = Path(args.plugin)
+        if not args.skip_scan:
+            _run_scan(plugin_path.parent, Path(args.manifest) if args.manifest else None)
+        if not args.private_key:
+            print(
+                "FAIL 无法确定用户主目录（无 HOME）；私钥只允许从用户主目录读取，"
+                "拒绝回退仓库内路径（B12-001）。请用 --private-key 显式指定冷存储私钥。",
+                file=sys.stderr,
+            )
+            return 1
+        private_pem = Path(args.private_key).expanduser().read_bytes()
+        sig = sign_file(args.plugin, private_pem)
+        print(f"已签名: {sig}")
+        _append_transparency_log(plugin_path, Path(args.log), operator=args.operator)
+        return 0
+    if args.command == "creator-sign":
+        plugin_dir = Path(args.plugin_dir)
+        if not args.skip_scan:
+            _run_scan(plugin_dir, Path(args.manifest) if args.manifest else None)
+        try:
+            _creator_sign(plugin_dir, args.username, _resolve_password(args.password), args.file)
+        except Exception as exc:  # noqa: BLE001 - 统一给出可读错误
+            print(f"FAIL 创作者签名: {exc}")
+            return 1
+        return 0
+    if args.command == "local-sign":
+        plugin_dir = Path(args.plugin_dir)
+        if not args.skip_scan:
+            _run_scan(plugin_dir, Path(args.manifest) if args.manifest else None)
+        try:
+            _local_sign(plugin_dir, args.username, _resolve_password(args.password), args.file)
+        except Exception as exc:  # noqa: BLE001 - 统一给出可读错误
+            print(f"FAIL 本地签名: {exc}")
+            return 1
+        return 0
+    if args.command == "verify":
+        ok, reason = verify_plugin(args.plugin, args.trust)
+        print(("OK: " if ok else "FAIL: ") + reason)
+        return 0 if ok else 1
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

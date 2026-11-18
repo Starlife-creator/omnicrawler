@@ -187,9 +187,9 @@ GUI-01—08 均未闭环；GUI-08 已确认启动进程残留，未确认根因�
   CLI **退出码 1** 并给出"产物声明了锁里没有的依赖 / 锁里有的依赖产物没声明"两向提示。
 
   **顺带发现（维护者体验，已收口）**：`pip wheel .` 在同一工作树里**第二次**会失败 ——
-  setuptools 复用的 `build/` 里已有上次的 `.dist-info`，报 `[WinError 183] 当文件已存在时，
+  setuptools 复用的 `builders/` 里已有上次的 `.dist-info`，报 `[WinError 183] 当文件已存在时，
   无法创建该文件`。`rm -rf build` 后正常。CI 每次是干净检出，因此不受影响。
-  **2026-11-10 复核**：已由 `tools/build_wheel.py`（先清 `build/` 再调 `pip wheel`）收口，
+  **2026-11-10 复核**：已由 `tools/build_wheel.py`（先清 `builders/` 再调 `pip wheel`）收口，
   `.github/workflows/quality.yml` 也改走该脚本；原「未修」措辞不再代表当前状态，保留现象描述供回归对照。
 - **质量基准曾只有 1 个任务、1 种形态**（2026-09-14 扩到 **4 个任务 / 3 种取数形态**）。
   原状：`services/quality_benchmark.TASKS` 只有 `list-three-details`（HTML 列表 + 详情链接）；

@@ -22,7 +22,7 @@ def test_domain_matches_locale_files() -> None:
 
 def test_compiled_mo_exists_and_is_loadable() -> None:
     assert (LOCALE / "en_US" / "LC_MESSAGES" / f"{DOMAIN}.mo").is_file(), (
-        "缺少编译的 .mo（运行 tools/compile_mo.py 生成）"
+        "缺少编译的 .mo（运行 tools/i18n/compile_mo.py 生成）"
     )
     set_language("en_US")
     assert i18n._translation is not None

@@ -7,7 +7,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 
 
 def _load_gate():
-    path = _ROOT / "tools" / "check_build_profiles.py"
+    path = _ROOT / "tools" / "gates" / "check_build_profiles.py"
     spec = importlib.util.spec_from_file_location("check_build_profiles", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

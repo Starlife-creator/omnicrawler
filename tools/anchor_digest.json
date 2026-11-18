@@ -1,5 +1,5 @@
 {
-  "_comment": "锚段摘要（工具生成，勿手改）：optimization plan §1 anchor sections. Regenerate with: python tools/check_anchor_integrity.py --update",
+  "_comment": "锚段摘要（工具生成，勿手改）：optimization plan §1 anchor sections. Regenerate with: python tools/gates/check_anchor_integrity.py --update",
   "_source": "../优化方案.md",
   "sections": {
     "§一 最终目标": "b8faa5b4a62fbe212a6768b0a7c347ac6cdcc4baddb4b697fb6eb36dff6572e5",

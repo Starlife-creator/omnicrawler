@@ -10,7 +10,7 @@
 **新页面接不上**——动效与图标注册表 **0 个视图**接入、`EmptyState` 仅 **3/39**、
 `setAccessibleName` 仅 **6/39**、9 个文件仍写内联样式。也就是「资产齐全、继承路径缺失」。
 
-现在继承路径有了：**`BaseView` 骨架** + **可执行门禁** `tools/check_gui_conventions.py`
+现在继承路径有了：**`BaseView` 骨架** + **可执行门禁** `tools/gates/check_gui_conventions.py`
 （新文件零容忍，存量只降不升）。本文件是那条路径的说明书。
 
 ---
@@ -151,7 +151,7 @@ class MyView(BaseView):
 - [ ] 文案经 `_()` 国际化
 - [ ] 动效接入并尊重 reduced-motion
 - [ ] 图标经 `IconRegistry`，未内嵌 SVG
-- [ ] 本地跑 `python tools/check_gui_conventions.py` 通过
+- [ ] 本地跑 `python tools/gates/check_gui_conventions.py` 通过
 - [ ] 有对应测试（页面构造 + 关键状态切换；用 `isHidden()` 而非 `isVisible()` 断言）
 
 ---
@@ -161,8 +161,8 @@ class MyView(BaseView):
 `tools/gui-conventions-baseline.json` 记录既有违规（只降不升）。改造某个页面后：
 
 ```bash
-python tools/check_gui_conventions.py                 # 会提示哪些项已下降
-python tools/check_gui_conventions.py --write-baseline  # 把下降结果落盘（收紧门槛）
+python tools/gates/check_gui_conventions.py                 # 会提示哪些项已下降
+python tools/gates/check_gui_conventions.py --write-baseline  # 把下降结果落盘（收紧门槛）
 ```
 
 **`task_history.py` 是首个按本指南改造的示范页面**：它从"手写 `QLabel` 空态 + 内联标题样式"

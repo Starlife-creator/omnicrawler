@@ -2,7 +2,7 @@
 
 > 适用版本：1.0.2 · 配置协议：v5 · 维护状态：现行（历史状态见归档；功能验证以验收账本为准）
 
-本文记录 GUI 视图在 UI 线程直连 `StateStore` 的存量点位、已测量负载、异步迁移目标与线程纪律。配套静态门禁：`tools/check_gui_state_threading.py`（禁止新增直连，存量点位只降不升）。
+本文记录 GUI 视图在 UI 线程直连 `StateStore` 的存量点位、已测量负载、异步迁移目标与线程纪律。配套静态门禁：`tools/gates/check_gui_state_threading.py`（禁止新增直连，存量点位只降不升）。
 
 ## 1. 线程纪律
 
@@ -43,7 +43,7 @@
 1. 把查询语义迁入 `state_query_service` 对应函数（同步调用点与 worker 复用同一实现）；
 2. 以 `BackgroundWorker`（或既有 `SqliteQueryWorker`）在后台线程调用该函数，禁止在 `work()` 内触碰控件；
 3. 结果信号回投 UI 线程，槽函数内完成控件写入；失败信号回投错误提示；
-4. 删除视图内直连点位，同步更新 `tools/check_gui_state_threading.py` 基线计数。
+4. 删除视图内直连点位，同步更新 `tools/gates/check_gui_state_threading.py` 基线计数。
 
 ## 5. 待办与环境依赖
 

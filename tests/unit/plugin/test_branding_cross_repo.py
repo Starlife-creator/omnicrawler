@@ -21,7 +21,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BRANDING = REPO_ROOT / "assets" / "branding"
 
-# 与 tools/checkout_market.py 的默认落点一致（两仓同级）。
+# 与 tools/market/checkout_market.py 的默认落点一致（两仓同级）。
 MARKET_ROOT = REPO_ROOT.parent / "OmniCrawler-market"
 MARKET_BRANDING = MARKET_ROOT / "assets" / "branding"
 

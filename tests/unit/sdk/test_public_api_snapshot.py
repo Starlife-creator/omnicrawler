@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def _load_checker(project_root: Path):
-    checker_path = project_root / "tools" / "check_sdk_api.py"
+    checker_path = project_root / "tools" / "gates" / "check_sdk_api.py"
     spec = importlib.util.spec_from_file_location("check_sdk_api", checker_path)
     assert spec is not None and spec.loader is not None
     checker = importlib.util.module_from_spec(spec)
@@ -22,9 +22,11 @@ def test_versioned_sdk_public_api_snapshot() -> None:
 
 def test_application_version_comes_from_version_leaf_module() -> None:
     """C-#22：应用版本真源是 ``src/omnicrawler/_version.py``，与 SDK 契约版本分开。"""
+    from omnicrawler._version import __version__
+
     project_root = Path(__file__).resolve().parents[3]
     checker = _load_checker(project_root)
-    assert checker._application_version(project_root) == "1.0.1"
+    assert checker._application_version(project_root) == __version__
 
 
 def test_application_version_drift_is_reported(tmp_path: Path) -> None:

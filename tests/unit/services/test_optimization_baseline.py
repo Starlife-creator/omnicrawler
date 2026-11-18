@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-_spec = importlib.util.spec_from_file_location("baseline", Path(__file__).resolve().parents[3] / "tools/measure_optimization_baseline.py")
+_spec = importlib.util.spec_from_file_location("baseline", Path(__file__).resolve().parents[3] / "tools/benchmarks/measure_optimization_baseline.py")
 assert _spec is not None and _spec.loader is not None
 _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)

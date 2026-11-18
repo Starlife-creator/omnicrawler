@@ -1,4 +1,4 @@
-"""`tools/check_subprocess_encoding.py` 的反向断言与正向用例。
+"""`tools/gates/check_subprocess_encoding.py` 的反向断言与正向用例。
 
 重点不是「它绿了」，而是**它会不会装死**：扫描面收窄、白名单变宽、判据认错调用，
 三种失效都要求能被钉住。
@@ -169,10 +169,10 @@ def test_gate_is_registered_and_wired() -> None:
 
     entry = next(gate_ for gate_ in GATES if gate_.name == "check_subprocess_encoding")
     assert entry.sets == _STATIC, "应属于 static 集合（秒级、无前置产物）"
-    assert entry.args == ("tools/check_subprocess_encoding.py",)
+    assert entry.args == ("tools/gates/check_subprocess_encoding.py",)
 
     workflow = (_REPO_ROOT / ".github" / "workflows" / "quality.yml").read_text(encoding="utf-8")
-    assert "python tools/check_subprocess_encoding.py" in workflow, "CI 未接线"
+    assert "python tools/gates/check_subprocess_encoding.py" in workflow, "CI 未接线"
 
 
 def test_main_reports_failure_with_nonzero_exit(

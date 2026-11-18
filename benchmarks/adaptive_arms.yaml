@@ -1,6 +1,6 @@
 # 三臂对照实验语料（真实站点）
 #
-# 配套 `tools/benchmark_adaptive_arms.py`。与 `services/quality_benchmark.py` 的内置
+# 配套 `tools/benchmarks/benchmark_adaptive_arms.py`。与 `services/quality_benchmark.py` 的内置
 # 常量任务不同：这里的**页面来自真实站点**，因此语料是**数据**（本文件）而不是代码
 # 常量 —— 页面会变、真值需要标注，这正是 AGENTS.md「站点与格式差异配置化」的落点。
 #
