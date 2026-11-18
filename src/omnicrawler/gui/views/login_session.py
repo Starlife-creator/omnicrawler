@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
@@ -68,6 +69,7 @@ from .login_session_logic import (
     BRIDGE_OVERRIDE_SETTING,
     NOTICE_ACK_KEY,
     bridge_hosts,
+    cross_engine_notice,
     degradation_hint,
     effective_bridge_enabled,
     format_remaining,
@@ -87,6 +89,20 @@ class _PendingLogin:
     url: str
     account: str
     proxy: str
+
+
+def _current_engine_family(config: Any) -> str:
+    """当前生效的浏览器内核（用于与会话快照记录的内核比对）。
+
+    解析失败时返回空串——调用方据此**不显示**提示，而不是猜一个内核。
+    猜错会让提示本身变成误导。
+    """
+    try:
+        from ...fetching.browser_launch import resolve_browser_runtime
+
+        return str(resolve_browser_runtime(config, headless=True).engine_family or "")
+    except Exception:  # noqa: BLE001 —— 探测失败按"未知"处理，不阻断会话列表
+        return ""
 
 
 class LoginSessionView(QWidget):
@@ -244,6 +260,14 @@ class LoginSessionView(QWidget):
         self._expiry_hint.setAccessibleName(_("登录有效性提示"))
         layout.addWidget(self._expiry_hint)
 
+        # 跨内核复用提示：登录态与内核指纹绑定，录制的内核与当前不同时
+        # 必须显式告知，否则用户只会看到"又要登录一次"而不知原因。
+        self._engine_hint = QLabel("")
+        self._engine_hint.setWordWrap(True)
+        self._engine_hint.setAccessibleName(_("浏览器内核一致性提示"))
+        self._engine_hint.setVisible(False)
+        layout.addWidget(self._engine_hint)
+
         self._empty = EmptyState(
             icon="🔐",
             title=_("还没有保存的登录会话"),
@@ -352,6 +376,27 @@ class LoginSessionView(QWidget):
         self._table.setVisible(bool(self._sessions))
         self._empty.setVisible(not self._sessions)
         self._delete_button.setEnabled(False)
+        self._refresh_engine_hint()
+
+    def _refresh_engine_hint(self) -> None:
+        """按当前内核与快照记录的内核，决定是否显示一致性提示。
+
+        多个会话时只提示**第一个不一致的**——堆一屏提示会让人直接忽略，
+        而用户此刻只需要知道"有会话可能不匹配"。
+        """
+        hint = self._engine_hint
+        if not self._sessions:
+            hint.setVisible(False)
+            hint.setText("")
+            return
+        current = _current_engine_family(self._config)
+        message = ""
+        for summary in self._sessions:
+            message = cross_engine_notice(summary, current_engine=current)
+            if message:
+                break
+        hint.setText(message)
+        hint.setVisible(bool(message))
 
     def _on_selection_changed(self) -> None:
         self._delete_button.setEnabled(self._table.currentRow() >= 0)

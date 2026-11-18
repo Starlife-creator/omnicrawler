@@ -136,6 +136,66 @@ def session_row(summary: SessionSummary) -> tuple[str, str, str, str]:
     )
 
 
+#: 内核显示名（用于提示文案）。
+_ENGINE_LABELS: dict[str, str] = {
+    "chromium": "Chromium",
+    "firefox": "Firefox",
+    "webkit": "WebKit",
+}
+
+
+def engine_label(engine_family: str) -> str:
+    """把 engine_family 转成展示用的内核名；未知返回空串。"""
+    key = (engine_family or "").strip().lower()
+    return _ENGINE_LABELS.get(key, "")
+
+
+def cross_engine_notice(
+    summary: SessionSummary,
+    *,
+    current_engine: str,
+) -> str:
+    """跨内核复用会话时的提示正文；无需提示时返回空串。
+
+    **为什么必须提示而不是静默复用**：登录态与内核指纹绑定。用 Chromium
+    登录拿到的 cookie 到 Firefox 下复用，UA 与 TLS 指纹不一致，站点可能
+    直接判定会话异常——用户看到的只是"又要登录一次"，现场没有任何线索。
+
+    三种情形刻意区分开：
+
+    | 情形 | 行为 |
+    |---|---|
+    | 快照内核 == 当前内核 | 无提示 |
+    | 快照内核为空（旧快照，未记录） | 提示"无法确认"，让用户自己判断 |
+    | 两者不同 | 明确提示会不一致，建议重新登录 |
+
+    "未知"不按"相同"处理——把未知当成匹配，正是静默混用的来源。
+    """
+    recorded = (summary.engine_family or "").strip().lower()
+    current = (current_engine or "").strip().lower()
+    if not current:
+        return ""
+
+    if not recorded:
+        return _(
+            "该会话快照未记录录制时使用的浏览器内核（旧版本产生），"
+            "无法确认与当前内核（{current}）是否一致。"
+            "若采集时出现登录态异常，建议重新登录一次。"
+        ).format(current=engine_label(current) or current)
+
+    if recorded == current:
+        return ""
+
+    return _(
+        "该会话是在 {recorded} 内核下录制的，而当前使用 {current} 内核。"
+        "两者的 User-Agent 与 TLS 指纹不一致，站点可能判定会话异常。"
+        "如需在 {current} 下采集，建议重新登录一次。"
+    ).format(
+        recorded=engine_label(recorded) or recorded,
+        current=engine_label(current) or current,
+    )
+
+
 def notice_text(*, sessions_dir: str, bridge_enabled: bool) -> str:
     """首次打开登录页的一次性提醒正文（§11.1 裁定 1）。
 
