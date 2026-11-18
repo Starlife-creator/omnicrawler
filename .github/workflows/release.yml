@@ -1,493 +1,248 @@
 name: release
 
-
-
 # 云端打包构建并发布：
-
 #   - push v* tag（如 v0.7.0）→ 自动构建 Windows / Linux / macOS 便携包并发布正式 Release
-
 #   - workflow_dispatch → 手动构建验证，只保留 Actions artifacts，不创建 GitHub Release
-
 #
-
 # 产物（每个平台包都含 SHA256SUMS 校验和 + SBOM + provenance）：
-
 #   OmniCrawler-<version>-Windows-Portable-{Standard,Full}.zip
-
 #   OmniCrawler-<version>-Linux-Portable-{Standard,Full}.tar.xz
-
 #   OmniCrawler-<version>-macOS-Portable-{Standard,Full}.dmg
-
 #   SHA256SUMS.txt / omnicrawler-sbom.cdx.json / omnicrawler-provenance.json
-
 #
-
 # 结构：三个平台构建 job 各自打包并上传 Actions artifact，聚合 release job
-
 # 下载全部产物后统一发布到 GitHub Release（避免多 job 并发写同一 Release）。
-
 #
-
 # FINAL 发布闸门（三层漏斗）：
-
 #   L0 构建门禁：任一平台 job 失败 ⇒ 聚合 job 不启动，发布不存在（needs 语义）
-
 #   L0.5 归档级冒烟（★ W4.2）：`portable-smoke` 在**全新 runner** 上把**已上传的归档**
-
 #       解压后用包内入口跑固定样例 ⇒ 归档往返与"干净机器可用"都有证据；失败则 `release` 不启动
-
 #   L1 尺寸预分类：各平台构建后本地比对 ASSET_MAX_BYTES（默认 1.9 GiB），
-
 #      超限产物移出发布集并写入 SKIPPED-<platform>.txt 清单
-
 #   L2 逐文件挂载：聚合期按文件循环上传——意外错误硬失败（先修再发），
-
 #      仅"L1 已预判的超限缺席"允许降级；缺席自动写入 Release 说明
 
-
-
 on:
-
   push:
-
     tags:
-
       - "v*"
-
   workflow_dispatch:
-
     inputs:
-
       generate_delta_packages:
-
         description: "同时生成旧版本更新包（默认仅验证便携产物）"
-
         type: boolean
-
         default: false
 
-
-
 concurrency:
-
   group: release-${{ github.ref }}
-
   cancel-in-progress: false
 
-
-
 permissions:
-
   contents: read
 
-
-
 # 单一来源：交付物冻结的 Python 版本。三平台构建 job 与聚合发布 job 均引用此值；
-
 # verify-python-version job 会断言它与 pyproject 的 requires-python 下界一致，防止漂移。
-
 env:
-
   BUILD_PYTHON_VERSION: "3.12"
-
   # FINAL 发布闸门阈值：单资产字节上限（≈1.9 GiB），低于 GitHub 硬限 2 GiB，
-
   # 为签名/计量误差留余量。超限产物在平台 job 内被移出发布集。
-
   ASSET_MAX_BYTES: "2039693706"
-
   # ★ 同 quality.yml：Windows runner 的 stdout 默认 cp1252，而 `tools/` 脚本会打印中文 ⇒
-
   # 非 ASCII 会 `UnicodeEncodeError: 'charmap'` 崩溃。只改 stdio 编码，不动 open() 默认编码。
-
   PYTHONIOENCODING: "utf-8"
 
-
-
 jobs:
-
   verify-python-version:
-
     runs-on: ubuntu-22.04
-
     outputs:
-
       build_python_version: ${{ steps.release-config.outputs.build_python_version }}
-
       asset_max_bytes: ${{ steps.release-config.outputs.asset_max_bytes }}
-
       delta_baselines: ${{ steps.release-config.outputs.delta_baselines }}
-
       release_url_base: ${{ steps.release-config.outputs.release_url_base }}
-
     steps:
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
         with:
-
           fetch-depth: 0
-
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-
         with:
-
           python-version: "${{ env.BUILD_PYTHON_VERSION }}"
-
           cache: pip
-
           cache-dependency-path: constraints/quality.txt
-
       - name: 导出已冻结的发布配置
-
         id: release-config
-
         shell: bash
-
         env:
-
           RELEASE_EVENT: ${{ github.event_name }}
-
           DELTA_REQUESTED: ${{ inputs.generate_delta_packages }}
-
         run: |
-
           echo "build_python_version=${BUILD_PYTHON_VERSION}" >> "$GITHUB_OUTPUT"
-
           echo "asset_max_bytes=${ASSET_MAX_BYTES}" >> "$GITHUB_OUTPUT"
-
           echo "release_url_base=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download" >> "$GITHUB_OUTPUT"
-
           # 变更包基线窗口 K=3：取**当前 tag 之前**最近的 3 个版本 tag。
-
           # 为什么是"窗口"而不是"上一次发全量包的版本"：发布形态已统一（每版都发全量
-
           # 包）⇒ 后一个判据会退化成 K=1；而用户可能跨两三版才升级一次。
-
           # 为什么不能无限大：每个基线都要在**发布时预先算好并上传**（静态托管不能
-
           # 现算），而窗口外的用户走全量即可（每版都有全量 ⇒ 不会卡住）。
-
           DELTA_ARGS=()
-
           if [[ "$RELEASE_EVENT" == "push" || "$DELTA_REQUESTED" == "true" ]]; then
-
             DELTA_ARGS=(--enabled)
-
           fi
-
           BASELINES=$(python tools/releasing/release_delta_baselines.py "${DELTA_ARGS[@]}")
-
           echo "delta_baselines=${BASELINES}" >> "$GITHUB_OUTPUT"
-
           echo "变更包基线窗口：${BASELINES:-（空）}"
-
       - name: 断言 requires-python 下界 == 构建 Python 版本
-
         shell: bash
-
         run: |
-
           PY_MIN=$(python -c "import tomllib; v=tomllib.load(open('pyproject.toml','rb'))['project']['requires-python']; print(v.split('>=')[-1].split(',')[0].split('<')[0].strip())")
-
           BUILD_VER="${BUILD_PYTHON_VERSION}"
-
           if [ "$PY_MIN" != "$BUILD_VER" ]; then
-
             echo "::error::pyproject requires-python 下界 ($PY_MIN) 与构建 Python 版本 ($BUILD_VER) 不一致，请同步"
-
             exit 1
-
           fi
-
           echo "OK: requires-python 下界 $PY_MIN == 构建版本 $BUILD_VER"
 
-
-
       - name: 断言发布 tag == 项目版本
-
         if: github.event_name == 'push'
-
         shell: bash
-
         run: |
-
           PROJECT_VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-
           EXPECTED_TAG="v${PROJECT_VERSION}"
-
           if [ "${GITHUB_REF_NAME}" != "$EXPECTED_TAG" ]; then
-
             echo "::error::发布 tag (${GITHUB_REF_NAME}) 与项目版本 ($EXPECTED_TAG) 不一致"
-
             exit 1
-
           fi
-
           echo "OK: 发布 tag ${GITHUB_REF_NAME} == 项目版本 $PROJECT_VERSION"
 
-
-
       # ★ 发布闸门：CHANGELOG 的 `## Unreleased` 必须**已折进本版本段**。
-
       #   为什么必须挡在发布路径上：`bump_version` 只在 `## Unreleased` **之后插入**新版本段，
-
       #   **不会**把 Unreleased 的正文并进去 ⇒ 忘了折 = **Release 说明缺整批内容**，
-
       #   而这件事**没有任何别的门禁会说话**（2026-09-30 实测：0.15.0 一度就是两段并存）。
-
       #   只在 push（真正的发布）上断言：开发期 Unreleased 非空是正常的。
-
       - name: 断言 CHANGELOG 已折进本版
-
         if: github.event_name == 'push'
-
         shell: bash
-
         run: python tools/gates/check_release_integrity.py --require-released-changelog "${GITHUB_REF_NAME#v}"
 
-
-
       - name: 安装快速门禁工具
-
         run: python -m pip install --constraint constraints/quality.txt ruff
 
-
-
       - name: 发布前快速门禁
-
         shell: bash
-
         run: |
-
           python -m compileall -q src tests examples tools
-
           python -m ruff check src tests tools
-
           python tools/gates/check_release_integrity.py
-
           python tools/gates/check_architecture.py
-
           python tools/gates/check_docs_consistency.py
-
           python tools/gates/check_network_boundaries.py --source-root src/omnicrawler
 
-
-
   build-windows-portable:
-
     needs: [verify-python-version]
-
     permissions:
-
       contents: read
-
       id-token: write
-
       attestations: write
-
     uses: ./.github/workflows/reusable-build-windows.yml
-
     with:
-
       build_python_version: ${{ needs.verify-python-version.outputs.build_python_version }}
-
       asset_max_bytes: ${{ needs.verify-python-version.outputs.asset_max_bytes }}
-
       delta_baselines: ${{ needs.verify-python-version.outputs.delta_baselines }}
-
       release_url_base: ${{ needs.verify-python-version.outputs.release_url_base }}
-
-
 
   build-linux-portable:
-
     needs: [verify-python-version]
-
     permissions:
-
       contents: read
-
       id-token: write
-
       attestations: write
-
     uses: ./.github/workflows/reusable-build-linux.yml
-
     with:
-
       build_python_version: ${{ needs.verify-python-version.outputs.build_python_version }}
-
       asset_max_bytes: ${{ needs.verify-python-version.outputs.asset_max_bytes }}
-
       delta_baselines: ${{ needs.verify-python-version.outputs.delta_baselines }}
-
       release_url_base: ${{ needs.verify-python-version.outputs.release_url_base }}
-
-
 
   build-macos-portable:
-
     needs: [verify-python-version]
-
     permissions:
-
       contents: read
-
       id-token: write
-
       attestations: write
-
     uses: ./.github/workflows/reusable-build-macos.yml
-
     with:
-
       build_python_version: ${{ needs.verify-python-version.outputs.build_python_version }}
-
       asset_max_bytes: ${{ needs.verify-python-version.outputs.asset_max_bytes }}
-
       delta_baselines: ${{ needs.verify-python-version.outputs.delta_baselines }}
-
       release_url_base: ${{ needs.verify-python-version.outputs.release_url_base }}
 
-
-
   # ★ W4.2（2026-09-16）：**在全新 runner 上把「已上传的」便携归档再跑一遍**
-
   #   （下载 → 解压 → 用**包内入口**起本地 fixture 站点跑固定样例）。
-
   #
-
   #   为什么不能省：构建期已有的两道检查（`check_release_integrity --portable-deep`、
-
   #   `portable_smoke_test.py`）都在**构建 job 内、对构建树**执行 ⇒ 两个盲区无人回答：
-
   #   ① **归档往返**（pack→upload→download→unpack）—— 而用户拿到的正是**归档**；
-
   #   ② **干净机器上是否可用** —— 构建 job 自带 PATH / 环境变量 / 缓存，会掩盖只在干净环境暴露的
-
   #      可移植性缺陷（macOS 上 `@rpath` 解析到 cv2 自带 libcrypto 就是这一类）。
-
   #
-
   #   ★ **无 tag 守卫**：手工派发也要跑 —— 那正是我们验证产物可用的方式。
-
   #   ★ `release` job 已把本 job 列入 `needs` ⇒ **产物不可用则不发布**（L0.5 闸门）。
-
   portable-smoke:
-
     needs: [verify-python-version, build-windows-portable, build-linux-portable, build-macos-portable]
-
     strategy:
-
       fail-fast: false
-
       matrix:
-
         include:
-
           - os: ubuntu-latest
-
             artifact: artifacts-linux
-
             platform: linux
-
           - os: windows-latest
-
             artifact: artifacts-windows
-
             platform: windows
-
           - os: macos-latest
-
             artifact: artifacts-macos
-
             platform: macos
-
     runs-on: ${{ matrix.os }}
-
     steps:
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-
         with:
-
           python-version: "${{ needs.verify-python-version.outputs.build_python_version }}"
-
       # ★ W4.2：Linux 便携包的 **GUI 离屏冒烟**需要 Qt6 运行库；构建 job 里有一份同样的清单
-
       #   （`reusable-build-linux.yml`）。这里**复现同一前提**，而不是把 GUI 检查关掉
-
       #   （关掉就是调低口径 —— 第一次派发 Linux 红正是因为这里没装：`libEGL.so.1: cannot open
-
       #   shared object file`）。
-
       #   ★ 两份清单必须保持一致：守卫 `tests/unit/tools/test_release_workflow_guard.py`
-
       #   会**逐包比对**两份清单，任一侧新增而另一侧忘加即判红。
-
       - name: 安装 Qt6 运行库（与 Linux 构建 job 同清单）
-
         if: matrix.platform == 'linux'
-
         run: |
-
           sudo apt-get update
-
           # ★ desktop-file-utils：归档级安装冒烟用它校验生成的 .desktop 语法；缺它只会**可见跳过**。
-
           #   两份清单必须逐包一致（test_release_workflow_guard.py 逐包比对）⇒ 构建 job 同步安装。
-
           sudo apt-get install -y --no-install-recommends \
-
             libegl1 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 \
-
             libxcb-shape0 libxcb-render-util0 libxcb-xkb1 libxkbcommon-x11-0 \
-
             libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 libxcb-randr0 libxcb-glx0 \
-
             desktop-file-utils
-
       - name: 下载本平台构建产物
-
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-
         with:
-
           name: ${{ matrix.artifact }}
-
           path: ${{ runner.temp }}/downloaded
-
       # ★ 单行命令：Windows runner 的默认 shell 是 pwsh，反斜杠续行在那里不成立。
-
       # C-#15：保留解压目录，供后续文档清单复核步骤使用。
-
       - name: 解压并冒烟（包内入口 + 本地 fixture 站点）
-
         run: python tools/portable/portable_archive_smoke.py "${{ runner.temp }}/downloaded" --platform ${{ matrix.platform }} --edition Full --extract-dir "${{ runner.temp }}/kept" --also-extract-editions Standard --manifest "${{ runner.temp }}/portable-smoke-${{ matrix.platform }}.json"
-
       # C-#15：归档解压后复核便携包文档清单（docs/archive、docs/releases 不得随包分发，
-
       # README/LICENSE/第三方声明/EDITION.txt 必须齐备）。
-
       - name: 便携包文档清单复核
-
         shell: bash
-
         env:
-
           SMOKE_MANIFEST: ${{ runner.temp }}/portable-smoke-${{ matrix.platform }}.json
-
           KEEP_DIR: ${{ runner.temp }}/kept
-
         run: |
-
           ROOT="$(python -c 'import json, os, pathlib; m=json.load(open(os.environ["SMOKE_MANIFEST"])); print(pathlib.Path(os.environ["KEEP_DIR"]) / m["release_root"])')"
-
           python tools/gates/check_portable_doc_manifest.py --release-root "$ROOT"
-
       # ★ 等价性对账（2026-11-19，优化方案批次 5）：
       # 停发 Full 之后对外只有 Standard。「Standard 全装齐后与 Full 一模一样」
       # 这条要求必须被**验证**，否则它只是一句声明。
@@ -518,54 +273,28 @@ jobs:
             "$OUT_DIR/cap-full.json" "$OUT_DIR/cap-standard.json"
 
       - name: 上传冒烟日志与清单
-
         if: always()
-
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-
         with:
-
           name: portable-smoke-${{ matrix.platform }}
-
           path: |
-
             ${{ runner.temp }}/portable-smoke-${{ matrix.platform }}.json
-
             ${{ runner.temp }}/cap-full.json
-
             ${{ runner.temp }}/cap-standard.json
-
           if-no-files-found: warn
 
-
-
   release:
-
     # ★ W4.1 / 决策 #3（2026-09-15）：**无参 `workflow_dispatch` 只留 Actions artifacts、不建 Release。**
-
     # 本 job 会调 `reusable-finalize-release.yml` → `softprops/action-gh-release` 建 Release，
-
     # 而那个 reusable workflow 自身**没有**任何事件守卫 ⇒ 不加这一行的话，手工派发也会建 Release。
-
     # 守卫：只在 **tag 推送** 时执行；手工派发跑完三平台构建后，产物留在本次 run 的 artifacts 里。
-
     if: startsWith(github.ref, 'refs/tags/v')
-
     needs: [verify-python-version, build-windows-portable, build-linux-portable, build-macos-portable, portable-smoke]
-
     permissions:
-
       contents: write
-
     uses: ./.github/workflows/reusable-finalize-release.yml
-
     with:
-
       build_python_version: ${{ needs.verify-python-version.outputs.build_python_version }}
-
     secrets:
-
       gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-
       gpg_passphrase: ${{ secrets.GPG_PASSPHRASE }}
-
