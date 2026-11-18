@@ -33,6 +33,32 @@ from tools.child_env import utf8_env
 _EXE_CANDIDATES = ("omnicrawler-cli.exe", "omnicrawler-cli", "omnicrawler")
 
 
+def edition_from_marker(text: str) -> str:
+    """从 `EDITION.txt` 的内容里认出 edition，返回 `standard` / `full` / 空串。
+
+    **不能只做精确匹配**：三个平台的构建脚本实际写入的是整句
+
+        OmniCrawler Full portable edition
+        OmniCrawler Standard portable edition
+
+    而不是裸的 `Full`。早先按 `text == "full"` 判断会永远失败，导致
+    等价性对账在真实产物上**静默跳过**（实测核实构建脚本后才发现）。
+
+    做法：先按 `:` 取尾（兼容 `Edition: Full` 这种写法），再按词匹配；
+    取**最后**一个出现的 edition 词——句子里的第一个 `OmniCrawler` 不是 edition。
+    """
+    first_line = text.strip().splitlines()[0].strip() if text.strip() else ""
+    if not first_line:
+        return ""
+    # 兼容 "Edition: Full" 这类带前缀的写法
+    candidate = first_line.split(":")[-1].strip().casefold()
+    tokens = [token.strip(".,;()[]") for token in candidate.replace("-", " ").split()]
+    for token in reversed(tokens):
+        if token in ("standard", "full"):
+            return token
+    return ""
+
+
 def find_release_roots(kept_dir: Path) -> dict[str, Path]:
     """按 `EDITION.txt` 找出各 edition 的 release root。"""
     roots: dict[str, Path] = {}
@@ -41,14 +67,9 @@ def find_release_roots(kept_dir: Path) -> dict[str, Path]:
             text = marker.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        first_line = text.strip().splitlines()[0].strip() if text.strip() else ""
-        if not first_line:
-            continue
-        # EDITION.txt 可能写成 "Full" 或 "Edition: Full"
-        edition = first_line.split(":")[-1].strip().casefold()
-        for known in ("standard", "full"):
-            if edition == known:
-                roots[known] = marker.parent
+        edition = edition_from_marker(text)
+        if edition:
+            roots[edition] = marker.parent
     return roots
 
 

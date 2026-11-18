@@ -274,3 +274,73 @@ def test_collector_locate_executable_prefers_exe(tmp_path: Path) -> None:
     empty = tmp_path / "empty"
     empty.mkdir()
     assert collect.locate_executable(empty) is None
+
+# ── EDITION.txt 真实格式（构建脚本核实） ─────────────────────────────────
+@pytest.mark.skipif(not _COLLECT.is_file(), reason="需要收集脚本")
+def test_edition_marker_handles_real_build_output(tmp_path: Path) -> None:
+    """必须认得构建脚本实际写出的整句格式。
+
+    三个平台的构建脚本写的是：
+
+        OmniCrawler Full portable edition
+        OmniCrawler Standard portable edition
+
+    而**不是**裸的 `Full`。早先按精确匹配判断会永远失败，导致等价性对账
+    在真实产物上**静默跳过**（实测核实 build_windows.ps1 / build_linux.sh /
+    build_macos.sh 后才发现）。
+    """
+    collect = _load_collector()
+
+    assert collect.edition_from_marker("OmniCrawler Full portable edition") == "full"
+    assert collect.edition_from_marker("OmniCrawler Standard portable edition") == "standard"
+
+    # 也要兼容裸值与前缀写法
+    assert collect.edition_from_marker("Full\n") == "full"
+    assert collect.edition_from_marker("Edition: Standard") == "standard"
+
+    # 认不出来时返回空串，不能瞎猜
+    assert collect.edition_from_marker("") == ""
+    assert collect.edition_from_marker("某个无关内容") == ""
+
+
+@pytest.mark.skipif(not _COLLECT.is_file(), reason="需要收集脚本")
+def test_find_roots_with_real_marker_content(tmp_path: Path) -> None:
+    """端到端：用真实格式的 EDITION.txt 定位两个 release root。"""
+    collect = _load_collector()
+    for edition in ("Standard", "Full"):
+        directory = tmp_path / "pkg" / edition
+        directory.mkdir(parents=True)
+        (directory / "EDITION.txt").write_text(
+            f"OmniCrawler {edition} portable edition", encoding="utf-8"
+        )
+        (directory / "omnicrawler-cli").write_text("", encoding="utf-8")
+
+    roots = collect.find_release_roots(tmp_path)
+    assert set(roots) == {"standard", "full"}, (
+        f"用真实格式未能识别两个 edition：{sorted(roots)}"
+    )
+
+
+def test_build_scripts_still_write_the_expected_marker() -> None:
+    """构建脚本写出的格式若变了，收集脚本要同步——这条守卫盯住契约。
+
+    它不是"验证构建"，而是"验证解析假设与构建脚本一致"。
+    """
+    windows = _REPO / "build_windows.ps1"
+    linux = _REPO / "build_linux.sh"
+    macos = _REPO / "build_macos.sh"
+
+    found = 0
+    for script in (windows, linux, macos):
+        if not script.is_file():
+            continue
+        text = script.read_text(encoding="utf-8", errors="replace")
+        # 三个脚本都写成 `"OmniCrawler $Edition portable edition"`（PS 用 $Edition，
+        # shell 用 $EDITION）；`portable edition` 这个尾缀是关键契约。
+        if "portable edition" in text and "OmniCrawler $" in text:
+            found += 1
+
+    assert found >= 2, (
+        "构建脚本里的 EDITION.txt 写法变了（未找到 "
+        '"OmniCrawler $Edition portable edition"），收集脚本的解析需要同步'
+    )
