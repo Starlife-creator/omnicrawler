@@ -96,6 +96,9 @@
 
 ### 架构决策记录（ADR）
 
+索引与判据见 [`adr/README.md`](adr/README.md)（是什么／不是什么、只读纪律、新增步骤、
+「没有后果的 ADR 不是决策记录」）。
+
 - [ADR-000 模板](adr/0000-template.md)
 - [ADR-0001 DuckDB 列白名单](adr/0001-duckdb-column-whitelist.md)
 - [ADR-005 配置字段审计](adr/ADR-005-config-field-audit.md)
