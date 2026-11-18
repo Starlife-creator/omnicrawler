@@ -43,7 +43,7 @@
 ### 桌面与交互
 
 - [桌面运行、工作区与组件](DESKTOP_RUNTIME_1.4.md)
-- [可选组件管理](COMPONENTS.md)：离线信任、注册表事务、回滚和搬迁。
+- [可选组件管理](COMPONENTS.md)：离线信任、注册表事务、回滚和搬迁；**市场 recipe 装配与 Wheel-Pack 隔离子进程运行**（2026-11-19 起）。
 - [2026-10-04 全面优化实施与验收](COMPREHENSIVE_OPTIMIZATION_2026-10-04.md)：本机 Full 实测、开发场景、证据与发布边界。
 - [本地证据驱动的提取修复](REPAIR_WORKFLOW.md)：候选预览、分级应用、观察与恢复。
 - [选定交付文档分析](ARCHIVE_ANALYSIS.md)：事实回链、可选模型解释和阶段恢复。
@@ -57,7 +57,7 @@
 - [插件作者指南](AUTHOR_GUIDE.md)：契约 2 插件从创建、私下分享到可选市场投稿的完整流程。
 - [SDK 使用指南](SDK_USAGE.md)
 - [2.0 SDK 与插件兼容政策](SDK_PLUGIN_2.0.md)
-- [市场生态与分发协议](MARKET_ECOSYSTEM.md)
+- [市场生态与分发协议](MARKET_ECOSYSTEM.md)：三栏（插件/模板/组件）多源聚合、四类下载通道、官方站与镜像站差异、换源提示边界
 - [插件市场人工审核清单](PLUGIN_REVIEW_CHECKLIST.md)：`reviewed` 质量档的人工审核流程。
 - [新增站点：优先模板，必要时插件](ADDING_A_SITE.md)
 - [生态观察清单](ECOSYSTEM_OBSERVATION.md)
@@ -67,7 +67,7 @@
 
 - [安全与合规](SECURITY_AND_COMPLIANCE.md)
 - [隐私政策与数据留存说明（终端用户）](PRIVACY.md)：本地数据清单、无遥测承诺、日志/缓存/凭据位置与卸载清理范围。
-- [便携版构建（Windows / Linux / macOS）](PORTABLE_PACKAGING.md)
+- [便携版构建（Windows / Linux / macOS）](PORTABLE_PACKAGING.md)：**对外只发 Standard（停发不停建）**、三平台构建流程
 - [Linux 用户级安装（应用菜单条目与图标）](LINUX_INSTALL.md)
 - [Windows 便携版构建](WINDOWS_PACKAGING.md)
 - [发布流水线故障排查手册](RELEASE_PIPELINE_TROUBLESHOOTING.md)：案例基于 v0.9.1 全轮次复盘，排查方法长期有效。

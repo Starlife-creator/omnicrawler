@@ -4,11 +4,20 @@
 
 ## 推荐路径
 
+> **2026-11-19 起：公开下载只有 Standard 一个包。**
+> 过去 Release 页同时提供 Standard 与 Full，现在不再双版并行——用户不需要在
+> 「哪个版本」上做选择。Full 仍在 CI 里每次构建并跑通冒烟，作为冻结兼容性的
+> 回归基准，但不再对外发布（详见 [`PORTABLE_PACKAGING.md`](PORTABLE_PACKAGING.md)）。
+>
+> 需要 Full 级能力时：按需安装 OCR 组件（`omnicrawler components install-recipe`）
+> 与 PDF 工作台插件，达到与 Full 一致的状态。这条路径有 CI 对账守护——
+> 见 [`COMPONENTS.md`](COMPONENTS.md) 与 [`MARKET_ECOSYSTEM.md`](MARKET_ECOSYSTEM.md)。
+
 | 使用者 | 推荐方式 | 是否需要系统 Python | 默认能力 |
 |---|---|---:|---|
-| Windows 普通用户 | 全量便携 ZIP | 否 | 全部本地功能与客户端依赖 |
+| Windows 普通用户 | 便携 ZIP（Standard） | 否 | 完整动态采集 + 轻量文档库；重型 OCR 按需装组件 |
 | Windows 开发者 | `setup_windows.bat`（`-Minimal` 可精简） | 是 | 默认 `full + dev` |
-| Linux 普通用户 | 便携 tar.xz（可选 `installer/install-user.sh` 装进应用菜单） | 否 | 全部本地功能与客户端依赖 |
+| Linux 普通用户 | 便携 tar.xz（可选 `installer/install-user.sh` 装进应用菜单） | 否 | 完整动态采集 + 轻量文档库；重型 OCR 按需装组件 |
 | Linux 开发者/服务器 | `./setup_linux.sh` | 是 | 默认 `standard` 档（可切 `minimal` / `full`） |
 | macOS 开发者 | `./setup_macos.command` | 是 | 默认 `standard` 档（`full` 使用 `full-macos` extras） |
 | 容器/定制服务 | Docker/选择性 extras | 否 | 按镜像用途裁剪 |

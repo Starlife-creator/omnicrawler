@@ -2,6 +2,48 @@
 
 > 适用版本：1.0.2 · 配置协议：v5 · 维护状态：现行
 
+## 两条安装通道（2026-11-19 起）
+
+| 通道 | 字节来源 | 适用 |
+|---|---|---|
+| **市场 recipe 装配** | 上游 URL（PyPI / GitHub / 模型源） | 市场里的组件条目；本仓只托管几十 KB 的声明 |
+| **离线整包 `.ocp`** | 用户手工下载的本地文件 | 离线 / 内网分发 |
+
+**市场只托管声明，不托管字节**：`recipe.json` 列出「从哪个 URL 拉、sha256 是多少、
+怎么拼」，不存模型或二进制。重型运行时（`paddle` 104 MB）与语言包（Tesseract
+`.traineddata`）都走这条；模型权重更走上游直拉（见下）。
+
+```bash
+omnicrawler components inspect-recipe --recipe recipe.json   # 只读：看要拉什么
+omnicrawler components install-recipe --recipe recipe.json  # 默认**不下载**，只展示计划
+omnicrawler components install-recipe --recipe recipe.json --download   # 实际下载并装配
+```
+
+不加 `--download` 时**一个字节都不下载**——从上游拉字节是显式对外动作。
+
+## Wheel-Pack 组件在**隔离子进程**里运行
+
+`entry.runner: worker-wheelpack` 的组件由独立 Python 子进程执行：
+
+```bash
+omnicrawler components run --component-dir <已装配组件> [--payload '{...}'|@file]
+```
+
+- **为什么子进程**：`paddle` / `cv2` / `scipy` 与宿主已加载的 `PySide6` / `lxml`
+  同进程时极易触发原生库符号冲突；Linux 下部分库还要求进程启动前设环境变量。
+- **启动前二次校验**：按 `component.json` 重算每个文件哈希。组件目录可能在装配后
+  被改动，子进程一旦起来就没有拦截机会——**不信任「上次校验过」**。
+- **零 pip、零安装脚本**：`.whl` 是纯数据 ZIP，装配时已校验 SHA-256；运行器只挂
+  `sys.path`，不做任何安装动作。
+
+## 模型绝不进 recipe
+
+`paddle_models` 等大模型权重**严禁**出现在 `recipe.json` 里——上游不提供模型文件的
+内容哈希，伪造一个就是自欺。模型继续走 `services/model_download.py` 的四源直拉
+（AIStudio / ModelScope / BOS / HuggingFace），信任锚点归属上游平台。
+
+## 历史沿革
+
 当前实现支持离线组件包管理与 OCR 独立运行时协议 Preview。2026-10-04 已完成 Windows 本机 Tesseract 独立组件试点：实际冻结入口、原生模型/运行库、隔离开发信任目录、真实 OCR 真值和字节篡改拒绝；完整主程序冻结产物、干净机器、跨平台和浏览器组件仍待验收。现有 Standard/Full 离线套装继续保留。
 
 正常安装会验证组件清单签名及清单内文件的 SHA-256。将维护者明确认可的 Ed25519 公钥保存为便携数据根目录下 `.omnicrawler/component_trust.pub.pem`；不存在信任公钥时默认拒绝安装。替换此文件可切换信任根，已移除的旧密钥签名不再被接受。不要从待安装包中自动导入公钥。`--allow-unsigned` 仅用于本地开发测试。

@@ -2,6 +2,31 @@
 
 > 适用版本：1.0.2 · 配置协议：v5 · 维护状态：现行（历史状态见归档；功能验证以验收账本为准）
 
+## 发行规则：对外只发 Standard（停发不停建）
+
+**自 2026-11-19 起，公开 Release 只发布 Standard 一个包。**
+
+| 项 | Standard | Full |
+|---|---|---|
+| 公开 Release | ✅ 唯一对外产物 | ❌ **不挂 Release** |
+| CI 构建 | ✅ 每次照常 | ✅ **每次照常构建** |
+| CI 冒烟 | ✅ | ✅ **照常跑通** |
+| 产物去向 | Release 附件 | 本次 run 的 Actions artifacts |
+
+**为什么 Full 不删**：它是 PyInstaller 冻结兼容性的**试金石**——`paddle` / `cv2` /
+`lxml` / `PySide6` / `playwright` 同处冻结环境时的 hooks、动态库收集与命名空间包
+冲突，只有全量构建能第一时间暴露。删了它，后续升级 Python 或基础库就失去
+自动化回归基准。
+
+**排除发生在哪一步**：`reusable-finalize-release.yml` 的**资产挂载循环**里按
+`*-Portable-Full.*` 跳过。构建照跑，只是不对外可见。
+
+**等价性由 CI 对账保证**：`tools/portable/{collect_capability_reports,standard_equivalence}.py`
+会比较「Standard + 全量组件 + 插件」与 Full 的能力集，有缺口则阻断发布。
+判据覆盖 `standard` / `full` / `optional` 三段 `items` **以及顶层 `native` 段**
+（`chromium` / `selenium_driver` / `tesseract` / `paddle_models`）——
+后者正是 Full 相对 Standard 多出来的核心能力。
+
 本文是三平台便携包构建的**总纲**。各平台细节与历史沿革见：
 
 - Windows：`docs/WINDOWS_PACKAGING.md`（build_windows.ps1，两 Edition，含 OCR 运行时打包）
