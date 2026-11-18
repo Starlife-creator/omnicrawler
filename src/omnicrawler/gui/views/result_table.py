@@ -18,6 +18,7 @@ from PySide6.QtCore import (
     QEasingCurve,
     QModelIndex,
     QPersistentModelIndex,
+    QPoint,
     QPropertyAnimation,
     QRegularExpression,
     QSortFilterProxyModel,
@@ -25,6 +26,7 @@ from PySide6.QtCore import (
     QThread,
     Signal,
 )
+from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -33,6 +35,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QProgressBar,
@@ -547,6 +550,15 @@ class ResultTable(QWidget):
         export_filtered_btn.clicked.connect(self._export_filtered_csv)
         info_layout.addWidget(export_filtered_btn)
 
+        self._export_selected_btn = QPushButton(_("导出选中行"))
+        self._export_selected_btn.setAccessibleName(_("导出当前选中的表格行"))
+        self._export_selected_btn.setToolTip(_("将选中行导出为 CSV（快捷键 Ctrl+Shift+E）"))
+        self._export_selected_btn.clicked.connect(lambda: self.export_selected_rows_csv())
+        info_layout.addWidget(self._export_selected_btn)
+
+        self._export_selected_shortcut = QShortcut(QKeySequence("Ctrl+Shift+E"), self)
+        self._export_selected_shortcut.activated.connect(lambda: self.export_selected_rows_csv())
+
         # 打开文件夹按钮
         open_folder_btn = QPushButton(_("打开文件夹"))
         open_folder_btn.clicked.connect(self._open_folder)
@@ -576,6 +588,9 @@ class ResultTable(QWidget):
         header = self._table.horizontalHeader()
         assert header is not None
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        header.setSectionsMovable(True)
+        header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._show_header_column_menu)
         self._table.setAlternatingRowColors(True)
         self._table.setSortingEnabled(False)  # 流式加载不支持全局排序
         self._evidence = QPlainTextEdit()
@@ -722,6 +737,112 @@ class ResultTable(QWidget):
         valid = current.isValid()
         self._copy_cell_btn.setEnabled(valid)
         self._copy_row_json_btn.setEnabled(valid)
+        if valid and self._model.headers and 0 <= current.column() < len(self._model.headers):
+            col_idx = current.column()
+            col_name = self._model.headers[col_idx]
+            vals = [
+                str(row[col_idx]).strip()
+                for row in self._model.page_rows
+                if col_idx < len(row) and str(row[col_idx]).strip()
+            ]
+            total = len(self._model.page_rows)
+            unique_cnt = len(set(vals))
+            self._info_label.setText(
+                _("列「{0}」：非空 {1}/{2} · 唯一值 {3} 个").format(
+                    col_name, len(vals), total, unique_cnt
+                )
+            )
+
+    def set_column_hidden(self, column: int, hidden: bool) -> bool:
+        """切换单列显隐（至少保留 1 列可见，避免整表被隐藏成空白）。"""
+        total_cols = len(self._model.headers)
+        if column < 0 or column >= total_cols:
+            return False
+        if hidden:
+            visible_count = sum(
+                1 for idx in range(total_cols) if not self._table.isColumnHidden(idx)
+            )
+            if visible_count <= 1:
+                return False
+        self._table.setColumnHidden(column, hidden)
+        return True
+
+    def show_all_columns(self) -> None:
+        """恢复全部列为可见状态。"""
+        for idx in range(len(self._model.headers)):
+            self._table.setColumnHidden(idx, False)
+
+    def _show_header_column_menu(self, pos: QPoint) -> None:
+        headers = self._model.headers
+        if not headers:
+            return
+        menu = QMenu(self)
+        menu.setAccessibleName(_("表头列显隐菜单"))
+        for idx, name in enumerate(headers):
+            act = QAction(name, menu)
+            act.setCheckable(True)
+            act.setChecked(not self._table.isColumnHidden(idx))
+            act.toggled.connect(lambda checked, c=idx: self.set_column_hidden(c, not checked))
+            menu.addAction(act)
+        menu.addSeparator()
+        reset_act = QAction(_("显示全部列"), menu)
+        reset_act.triggered.connect(self.show_all_columns)
+        menu.addAction(reset_act)
+        header = self._table.horizontalHeader()
+        if header is not None:
+            menu.exec(header.mapToGlobal(pos))
+
+    def export_selected_rows_csv(self, output_path: Path | None = None) -> int:
+        """将当前选中的表格行导出为 CSV（带公式注入防护），返回写出的数据行数。"""
+        headers = self._model.headers
+        if not headers:
+            if output_path is None:
+                QMessageBox.information(self, _("提示"), _("当前没有可导出的表格数据"))
+            return 0
+        sel_model = self._table.selectionModel()
+        proxy_rows: list[int] = []
+        if sel_model is not None:
+            proxy_rows = sorted({idx.row() for idx in sel_model.selectedIndexes()})
+        if not proxy_rows and self._table.currentIndex().isValid():
+            proxy_rows = [self._table.currentIndex().row()]
+        if not proxy_rows:
+            if output_path is None:
+                QMessageBox.information(self, _("提示"), _("请先在结果表中选中至少一行记录"))
+            return 0
+
+        if output_path is None:
+            default_stem = (self._filepath.stem if self._filepath else "records") + "_selected.csv"
+            chosen, _flt = QFileDialog.getSaveFileName(
+                self, _("导出选中行"), default_stem, _("CSV 文件 (*.csv)")
+            )
+            if not chosen:
+                return 0
+            target = Path(chosen)
+        else:
+            target = Path(output_path)
+
+        visible_cols = [
+            idx for idx in range(len(headers)) if not self._table.isColumnHidden(idx)
+        ] or list(range(len(headers)))
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow([excel_safe(headers[c]) for c in visible_cols])
+            for p_row in proxy_rows:
+                writer.writerow(
+                    [
+                        excel_safe(str(self._proxy.data(self._proxy.index(p_row, c)) or ""))
+                        for c in visible_cols
+                    ]
+                )
+        if output_path is None:
+            QMessageBox.information(
+                self,
+                _("导出成功"),
+                _("已导出 {0} 行选中记录到：{1}").format(len(proxy_rows), target),
+            )
+        return len(proxy_rows)
 
     def load_csv(self, filepath: Path) -> bool:
         """异步加载 CSV 文件。

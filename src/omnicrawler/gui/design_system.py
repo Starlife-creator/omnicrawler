@@ -12,6 +12,7 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+from functools import lru_cache as _lru_cache
 
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation
 from PySide6.QtGui import QColor, QFont, QPalette
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from .i18n import _
+from .stylesheets import build_stylesheet_sections as _build_stylesheet_sections
 
 
 def repolish_widget(widget: QWidget) -> None:
@@ -503,11 +505,6 @@ def scaled_padding_px(key: str, *, scale: int | None = None) -> int:
     if scale is None:
         scale = ThemeManager.instance().scale
     return max(2, round(PADDING_SIZE[key] * _scale_factor(scale)))
-
-
-from functools import lru_cache as _lru_cache
-
-from .stylesheets import build_stylesheet_sections as _build_stylesheet_sections
 
 
 @_lru_cache(maxsize=32)

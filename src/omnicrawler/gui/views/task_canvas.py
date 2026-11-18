@@ -469,6 +469,18 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
         cfg.max_pages = self._max_pages.value()
         cfg.delay = self._delay_spin.value()
         cfg.concurrency = self._concurrency_spin.value()
+        browser_val = str(self._browser_engine_combo.currentData() or "").strip()
+        if browser_val:
+            browser_sec = cfg.passthrough.setdefault("browser", {})
+            if isinstance(browser_sec, dict):
+                browser_sec["engine"] = browser_val
+        parser_val = str(self._html_parser_combo.currentData() or "").strip()
+        extract_sec = cfg.passthrough.setdefault("extract", {})
+        if isinstance(extract_sec, dict):
+            if parser_val:
+                extract_sec["parser"] = parser_val
+            else:
+                extract_sec.pop("parser", None)
         cfg.download.enabled = self._download_chk.isChecked()
         cfg.process_pdf = self._pdf_chk.isChecked()
         cfg.monitor_same_url = self._monitor_chk.isChecked()
@@ -591,8 +603,10 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
                        self._source_kind_combo, self._item_path_edit,
                        self._item_selector_edit,
                        self._max_pages, self._delay_spin, self._concurrency_spin,
+                       self._browser_engine_combo, self._html_parser_combo,
                        self._trial_pages_spin, self._download_chk, self._pdf_chk,
                        self._monitor_chk,
+                       self._inspector_toggle_btn, self._inspector_panel,
                        # 分页控件没有「由 URL/业务状态算出」的禁用态，放进这个循环是安全的
                        # （该循环统一 setEnabled(not locked)；有状态禁用的控件不能放进来）。
                        self._pagination_combo, *self._pagination_edits.values()):
@@ -758,6 +772,11 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
         self._advanced_box.setVisible(not enabled)
         # P4：视觉点选为进阶入口，简单模式隐藏（保持极简心智，PRD §3.3 模式可见性）
         self._visual_pick_btn.setVisible(not enabled)
+        self._inspector_toggle_btn.setVisible(not enabled)
+        if enabled:
+            self._inspector_panel.setVisible(False)
+        else:
+            self._inspector_panel.setVisible(self._inspector_toggle_btn.isChecked())
         # 简单模式草稿卡片只显示核心摘要（网址/采集方式/预计页数）
         self._render_summary()
 
@@ -785,6 +804,17 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
         self._source_kind_combo.setCurrentIndex(max(0, index))
         self._source_kind_combo.blockSignals(False)
 
+    @staticmethod
+    def _set_slot_combo_value(combo: Any, value: str) -> None:
+        """把能力下拉切到 *value*；未知插件/组件值原样插入，绝不静默篡改。"""
+        idx = combo.findData(value)
+        if idx < 0 and value:
+            combo.addItem(value, value)
+            idx = combo.findData(value)
+        combo.blockSignals(True)
+        combo.setCurrentIndex(max(0, idx))
+        combo.blockSignals(False)
+
 
     def _rebuild_from_config(self) -> None:
         self._updating = True
@@ -810,6 +840,20 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
             self._trial_pages_spin.setMaximum(max(1, limit))
             self._delay_spin.setValue(cfg.delay)
             self._concurrency_spin.setValue(cfg.concurrency)
+            browser_cfg = cfg.passthrough.get("browser")
+            browser_eng = (
+                str(browser_cfg.get("engine") or "playwright").strip()
+                if isinstance(browser_cfg, dict)
+                else "playwright"
+            )
+            self._set_slot_combo_value(self._browser_engine_combo, browser_eng)
+            extract_cfg = cfg.passthrough.get("extract")
+            parser_eng = (
+                str(extract_cfg.get("parser") or "").strip()
+                if isinstance(extract_cfg, dict)
+                else ""
+            )
+            self._set_slot_combo_value(self._html_parser_combo, parser_eng)
             self._download_chk.setChecked(cfg.download.enabled)
             self._pdf_chk.setChecked(cfg.process_pdf)
             self._monitor_chk.setChecked(cfg.monitor_same_url)

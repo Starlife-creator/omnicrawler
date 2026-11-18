@@ -48,6 +48,44 @@ class PaletteCommand:
     callback: Callable[[], None] | None = None
 
 
+_PLUGIN_PALETTE_COMMANDS: dict[str, PaletteCommand] = {}
+_RECENT_COMMAND_IDS: list[str] = []
+_MAX_RECENT_COMMANDS = 10
+
+
+def register_plugin_palette_command(cmd: PaletteCommand) -> None:
+    """供插件或扩展向全局 Ctrl+K 命令面板注册自定义命令。"""
+    _PLUGIN_PALETTE_COMMANDS[cmd.command_id] = cmd
+
+
+def unregister_plugin_palette_command(command_id: str) -> bool:
+    """卸载已注册的扩展命令。"""
+    return _PLUGIN_PALETTE_COMMANDS.pop(command_id, None) is not None
+
+
+def clear_plugin_palette_commands() -> None:
+    _PLUGIN_PALETTE_COMMANDS.clear()
+
+
+def record_recent_palette_command(command_id: str) -> None:
+    """记录最近执行过的命令 ID（MRU 最多保留 10 条）。"""
+    cid = command_id.strip()
+    if not cid:
+        return
+    if cid in _RECENT_COMMAND_IDS:
+        _RECENT_COMMAND_IDS.remove(cid)
+    _RECENT_COMMAND_IDS.insert(0, cid)
+    del _RECENT_COMMAND_IDS[_MAX_RECENT_COMMANDS:]
+
+
+def recent_palette_commands() -> list[str]:
+    return list(_RECENT_COMMAND_IDS)
+
+
+def clear_recent_palette_commands() -> None:
+    _RECENT_COMMAND_IDS.clear()
+
+
 _NAV_KEYWORDS: dict[str, tuple[str, ...]] = {
     NavKey.HOME: ("home", "start", "index", "shouye"),
     NavKey.WORKSPACE: ("workspace", "canvas", "task", "wizard", "gongzuotai", "renwu"),
@@ -289,6 +327,8 @@ def build_palette_commands(
                 callback=fn,
             )
         )
+    for ext_cmd in _PLUGIN_PALETTE_COMMANDS.values():
+        commands.append(ext_cmd)
     return commands
 
 
@@ -310,31 +350,71 @@ def _command_search_blob(cmd: PaletteCommand) -> str:
     return " ".join(parts).casefold()
 
 
+def _fuzzy_subsequence_penalty(token: str, text: str) -> int | None:
+    """FZF 风格子序列模糊匹配：全部字符按序出现则返回跳跃惩罚值（越小越优），否则返回 None。"""
+    if len(token) < 2:
+        return None
+    pos = -1
+    gaps = 0
+    for ch in token:
+        nxt = text.find(ch, pos + 1)
+        if nxt < 0:
+            return None
+        if pos >= 0:
+            gaps += nxt - pos - 1
+        pos = nxt
+    return gaps
+
+
 def filter_palette_commands(
-    commands: Sequence[PaletteCommand], query: str
+    commands: Sequence[PaletteCommand],
+    query: str,
+    *,
+    recent_ids: Sequence[str] | None = None,
 ) -> list[PaletteCommand]:
-    """多关键词子串 + 英文/拼音关键词过滤，前缀命中优先排序。"""
+    """多关键词子串 + FZF 子序列模糊检索，空查询支持 MRU 最近使用优先排前。"""
     tokens = [tok for tok in query.strip().casefold().split() if tok]
     if not tokens:
-        return list(commands)
+        mru = list(_RECENT_COMMAND_IDS if recent_ids is None else recent_ids)
+        if not mru:
+            return list(commands)
+        mru_rank = {cid: i for i, cid in enumerate(mru)}
+        return sorted(
+            commands,
+            key=lambda c: (0, mru_rank[c.command_id]) if c.command_id in mru_rank else (1, 0),
+        )
 
-    scored: list[tuple[int, int, PaletteCommand]] = []
+    scored: list[tuple[int, int, int, PaletteCommand]] = []
     for index, cmd in enumerate(commands):
         blob = _command_search_blob(cmd)
-        if not all(tok in blob for tok in tokens):
+        if all(tok in blob for tok in tokens):
+            title_cf = cmd.title.casefold()
+            kw_cf = tuple(k.casefold() for k in cmd.keywords)
+            first = tokens[0]
+            if first in kw_cf or title_cf == first:
+                rank = 0
+            elif any(k.startswith(first) for k in kw_cf) or first in title_cf:
+                rank = 1
+            else:
+                rank = 2
+            scored.append((rank, 0, index, cmd))
             continue
-        title_cf = cmd.title.casefold()
-        kw_cf = tuple(k.casefold() for k in cmd.keywords)
-        first = tokens[0]
-        if first in kw_cf or title_cf == first:
-            rank = 0
-        elif any(k.startswith(first) for k in kw_cf) or first in title_cf:
-            rank = 1
-        else:
-            rank = 2
-        scored.append((rank, index, cmd))
-    scored.sort(key=lambda item: (item[0], item[1]))
-    return [item[2] for item in scored]
+
+        total_gap = 0
+        matched_fuzzy = True
+        for tok in tokens:
+            if tok in blob:
+                continue
+            gap = _fuzzy_subsequence_penalty(tok, blob)
+            if gap is None:
+                matched_fuzzy = False
+                break
+            total_gap += gap
+        if matched_fuzzy:
+            scored.append((3, total_gap, index, cmd))
+
+    scored.sort(key=lambda item: (item[0], item[1], item[2]))
+    return [item[3] for item in scored]
 
 
 def format_palette_item_text(cmd: PaletteCommand) -> str:
@@ -492,6 +572,7 @@ class CommandPaletteDialog(QDialog):
             return False
         cmd = self._filtered_commands[row]
         self.executed_command_id = cmd.command_id
+        record_recent_palette_command(cmd.command_id)
         self._pending_callback = cmd.callback
         self.accept()
         callback = self._pending_callback

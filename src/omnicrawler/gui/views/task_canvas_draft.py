@@ -33,6 +33,7 @@ from ..design_system import SPACING
 from ..i18n import _
 from ..widgets.help_tooltip import HelpTooltip
 from .task_canvas_components import _form_row
+from .task_canvas_inspector import slot_combo_items
 from .task_canvas_logic import TRIAL_PAGES_DEFAULT as _TRIAL_PAGES_DEFAULT
 from .task_canvas_logic import TRIAL_PAGES_MAX as _TRIAL_PAGES_MAX
 from .task_canvas_logic import TRIAL_PAGES_MIN as _TRIAL_PAGES_MIN
@@ -138,6 +139,8 @@ class DraftAreaMixin:
     _pagination_keep_original: bool
     _delay_spin: QDoubleSpinBox
     _concurrency_spin: QSpinBox
+    _browser_engine_combo: QComboBox
+    _html_parser_combo: QComboBox
     _trial_pages_spin: QSpinBox
     _trial_btn: QPushButton
     _download_chk: QCheckBox
@@ -348,6 +351,24 @@ class DraftAreaMixin:
         adv.addLayout(_form_row(_("并发数"), self._concurrency_spin, "crawl.concurrency"))
         self._concurrency_spin.setRange(1, 64)
         self._concurrency_spin.valueChanged.connect(self._on_scope_changed)
+
+        # 业务界面就地能力切换（内置 / 插件 / 组件三方平等，不做集中式设置面板）
+        self._browser_engine_combo = QComboBox()
+        self._browser_engine_combo.setObjectName("browserEngineCombo")
+        self._browser_engine_combo.setAccessibleName(_("浏览器引擎"))
+        for val, label in slot_combo_items("browser", include_auto=False):
+            self._browser_engine_combo.addItem(label, val)
+        self._browser_engine_combo.currentIndexChanged.connect(self._on_scope_changed)
+        adv.addLayout(_form_row(_("浏览器引擎"), self._browser_engine_combo))
+
+        self._html_parser_combo = QComboBox()
+        self._html_parser_combo.setObjectName("htmlParserCombo")
+        self._html_parser_combo.setAccessibleName(_("HTML 解析后端"))
+        for val, label in slot_combo_items("html_parser", include_auto=True):
+            self._html_parser_combo.addItem(label, val)
+        self._html_parser_combo.currentIndexChanged.connect(self._on_scope_changed)
+        adv.addLayout(_form_row(_("HTML 解析后端"), self._html_parser_combo))
+
         self._trial_pages_spin = QSpinBox()
         adv.addLayout(_form_row(_("试跑页数"), self._trial_pages_spin))
         self._trial_pages_spin.setRange(_TRIAL_PAGES_MIN, _TRIAL_PAGES_MAX)

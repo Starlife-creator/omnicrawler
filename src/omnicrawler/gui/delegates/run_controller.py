@@ -317,7 +317,7 @@ class RunController(_BaseDelegate):
             mw._task_canvas.set_trial_result(
                 False,
                 _("试跑失败：{0}").format(message),
-                {"status": "failed", "processed": 0, "records": 0, "error": message},
+                dict(status="failed", processed=0, records=0, error=message),
                 input_fingerprint=input_fingerprint,
             )
             ToastManager.instance().warning(_("小样本试跑失败：请在工作台查看诊断"))

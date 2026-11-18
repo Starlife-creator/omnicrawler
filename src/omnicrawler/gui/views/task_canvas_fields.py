@@ -31,6 +31,7 @@ from ..widgets.help_tooltip import HelpTooltip
 from ..widgets.toast import ToastManager
 from .task_canvas_components import FieldCellDelegate
 from .task_canvas_components import FieldTableModel as _FieldTableModel
+from .task_canvas_inspector import FieldPreviewInspectorPanel
 from .task_canvas_logic import GENERIC_FIELD_RULES as _GENERIC_FIELD_RULES
 from .task_canvas_logic import selector_kind as _selector_kind
 
@@ -63,6 +64,8 @@ class FieldsAreaMixin(_Base):
     _complete_btn: QPushButton
     _more_fields_btn: QPushButton
     _visual_pick_btn: QPushButton
+    _inspector_toggle_btn: QPushButton
+    _inspector_panel: FieldPreviewInspectorPanel
     _recommendation: Any | None
     _analyze_worker: Any | None
 
@@ -113,6 +116,14 @@ class FieldsAreaMixin(_Base):
         self._visual_pick_btn = QPushButton(_("👆 视觉点选"))
         self._visual_pick_btn.setToolTip(_("打开可视化选字段：输入网址后点选目标元素生成字段；只追加不覆盖"))
         self._visual_pick_btn.clicked.connect(self._visual_pick)
+        # 可选增强：实时提取预览抽屉（不替代既有 AI/自然语言/表单路径，默认收起）
+        self._inspector_toggle_btn = QPushButton(_("🔬 实时提取预览"))
+        self._inspector_toggle_btn.setCheckable(True)
+        self._inspector_toggle_btn.setAccessibleName(_("展开或收起实时提取预览面板"))
+        self._inspector_toggle_btn.setToolTip(
+            _("按需展开预览面板：粘贴或测试 HTML 片段以核验选择器命中率并追加候选字段")
+        )
+        self._inspector_toggle_btn.toggled.connect(self._toggle_inspector_panel)
         pick_row = QHBoxLayout()
         pick_row.addWidget(self._analyze_btn)
         # 帮助按钮必须真的绑上去：`test_help_ux` 断言"每个声明的帮助条目都挂在界面上"，
@@ -120,8 +131,15 @@ class FieldsAreaMixin(_Base):
         pick_row.addWidget(HelpTooltip("fields.analyze_page"))
         pick_row.addWidget(self._complete_btn)
         pick_row.addWidget(self._visual_pick_btn)
+        pick_row.addWidget(self._inspector_toggle_btn)
         pick_row.addStretch()
         body.addLayout(pick_row)
+
+        self._inspector_panel = FieldPreviewInspectorPanel(self)
+        self._inspector_panel.setVisible(False)
+        self._inspector_panel.preview_btn.clicked.connect(self._run_inspector_preview)
+        self._inspector_panel.candidates_accepted.connect(self._apply_inspector_candidates)
+        body.addWidget(self._inspector_panel)
 
         # 列表项选择器（`extract.item_selector`）：2026-09-14 起 GUI 可**编辑**它。
         # 此前它是只保留不改写的 B 类透传键，于是"从零在表单里建不出列表任务"
@@ -517,3 +535,42 @@ class FieldsAreaMixin(_Base):
                 position=position_of({"selector": selector, "attr": attribute}).key,
             ))
         return fields
+
+    def _toggle_inspector_panel(self, expanded: bool) -> None:
+        self._inspector_panel.setVisible(expanded and not getattr(self, "_simple_mode", False))
+
+    def _run_inspector_preview(self) -> None:
+        if self._locked:
+            return
+        self._sync_form_to_config()
+        html = self._inspector_panel.html_input.toPlainText()
+        self._inspector_panel.inspect_html(html, self._config)
+
+    def _apply_inspector_candidates(
+        self, best_selector: str, candidates: list[FieldDef]
+    ) -> None:
+        if self._locked:
+            return
+        changed = False
+        if best_selector and not self._item_selector_edit.text().strip():
+            self._item_selector_edit.blockSignals(True)
+            self._item_selector_edit.setText(best_selector)
+            self._item_selector_edit.blockSignals(False)
+            changed = True
+        existing = self._current_field_names()
+        added = 0
+        for cand in candidates:
+            if cand.name and cand.name not in existing:
+                self._append_field_row(cand)
+                existing.add(cand.name)
+                added += 1
+                changed = True
+        if changed:
+            self._sync_form_to_config()
+            self._update_more_fields_btn()
+            self._mark_dirty(self._DOMAIN_FIELD)
+            ToastManager.instance().success(
+                _("已追加 {0} 个推断字段（既有字段未覆盖）").format(added)
+            )
+        else:
+            ToastManager.instance().info(_("候选字段已全部存在，无需重复添加"))
