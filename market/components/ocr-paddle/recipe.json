@@ -52,6 +52,272 @@
       "size": 146750,
       "format": "whl",
       "extract_to": "site-packages"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/93/3b/32d5eb2d830587c0a4be39a8ff080bf635ebc3c9a92ef5bc43a2dd5a3abf/paddlex-3.7.0-py3-none-any.whl",
+      "sha256": "70c5762d6bae7efe3a7db0e3264eb88e9ce1c3bf88d8e30cd32759924357acdc",
+      "size": 2220975,
+      "format": "whl",
+      "extract_to": "site-packages"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/a7/9e/7110d2c5d543ab03b9581dbb1f8e2429863e44e0c9b4960b766f230c1279/opencv_contrib_python-4.10.0.84-cp37-abi3-win_amd64.whl",
+      "sha256": "47ec3160dae75f70e099b286d1a2e086d20dac8b06e759f60eaf867e6bdecba7",
+      "size": 45541421,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/b0/e0/8f5d065ebb2e5941d289c5f653f944318f9e418bc5167bc6a346ab5e0f6a/opencv_contrib_python-4.10.0.84-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "sha256": "a261223db41f6e512d76deaf21c8fcfb4fbbcbc2de62ca7f74a05f2c9ee489ef",
+      "size": 68681489,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/09/94/d077c4c976c2d7a88812fd55396e92edae0e0c708689dbd8c8f508920e47/opencv_contrib_python-4.10.0.84-cp37-abi3-macosx_12_0_x86_64.whl",
+      "sha256": "dea80d4db73b8acccf9e16b5744bf3654f47b22745074263f0a6c10de26c5ef5",
+      "size": 66278032,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "macos"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/ba/42/0a1920d276a0e1ca21dc0d13ee9e3ba10a9a8aa3abac76cd5e5a9f503306/pyclipper-1.4.0-cp313-cp313-win_amd64.whl",
+      "sha256": "d4b2d7c41086f1927d14947c563dfc7beed2f6c0d9af13c42fe3dcdc20d35832",
+      "size": 104007,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/db/48/dd301d62c1529efdd721b47b9e5fb52120fcdac5f4d3405cfc0d2f391414/pyclipper-1.4.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "14c8bdb5a72004b721c4e6f448d2c2262d74a7f0c9e3076aeff41e564a92389f",
+      "size": 972142,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/67/d0/cbce7d47de1e6458f66a4d999b091640134deb8f2c7351eab993b70d2e10/pyclipper-1.4.0-cp313-cp313-macosx_10_13_universal2.whl",
+      "sha256": "d49df13cbb2627ccb13a1046f3ea6ebf7177b5504ec61bdef87d6a704046fd6e",
+      "size": 264342,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "macos"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/fe/7f/8aa446529fa14523e5c18f89e823afc95526689f76a75efe68a82a10d850/pypdfium2-5.15.2-py3-none-win_amd64.whl",
+      "sha256": "74d1bace34fb01c660d0b64344d5a4b7d276942b7c6623c88ab59ea21c5acfbd",
+      "size": 4187589,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/c8/e5/2e668bc1bc6fe22f9006694b5571a2dd2c9b874d6a21d16ee839c8f7f6ea/pypdfium2-5.15.2-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "sha256": "dc31aea5b0fb9fefc9b537a65f4113980b2c40798445736a7e6565bc85161e37",
+      "size": 4020833,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/09/de/9e7eda3ee1c00228d72f7fc53a370d76eed51fe5fea25debc428ac684e35/pypdfium2-5.15.2-py3-none-macosx_13_0_x86_64.whl",
+      "sha256": "7f296a298074d76fb7c3d1ecb80d7097a96778bf0ad9c5c48a0170e56e2c6821",
+      "size": 3940099,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "macos"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/84/a3/49451e221c1152532d017ceb45684eebb0cf0132efd017e9c40490cdffc1/python_bidi-0.6.12-cp313-cp313-win_amd64.whl",
+      "sha256": "78f9e4f61d130304a1eecdf9ebd0fb5c921f3442c3c5628fb1eee31d8bbd4101",
+      "size": 162351,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/84/5e/08510d5eecfe7a68513c9a4c2907b4669f988002fa3e9245876bd8dbde17/python_bidi-0.6.12-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+      "sha256": "c7d3530819ee1bd32ed3ce935ed839476f38367ceb8c806ab54c9cd2474b2b52",
+      "size": 291606,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/35/ca/ef30163861e056b857a175f9b630473ad7a2ad534b2fcfce957204655583/python_bidi-0.6.12-cp313-cp313-macosx_10_12_x86_64.whl",
+      "sha256": "234f44048f072154959964587e54761aeea40f557a907472f9af89e433397c68",
+      "size": 265996,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "macos"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/25/ed/7fcd625c9796e61d815ca9545d4e44a16f075f83869c1532206de88f23f1/shapely-2.2.0-cp313-cp313-win_amd64.whl",
+      "sha256": "1eaa2cb64cdedaf65d6bc86f2819c9cd7d6d68f969aa3ebfdc93743ab581f437",
+      "size": 1790191,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/f0/bd/21ed8bfd340455ede2df0d25d896acf4e4bab2ed9b582bb67389e97b2250/shapely-2.2.0-cp313-cp313-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+      "sha256": "4ed79beb8d4b6cc7c67780fd381feed25848a5f9b8a2385ac5711eccd115647a",
+      "size": 2175369,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/28/b6/9ba2a62ab6e831b911a248f0752f0f4120be7637a33ab33d8649ed4ede4d/shapely-2.2.0-cp313-cp313-macosx_10_13_x86_64.whl",
+      "sha256": "c037369c35510f51100dd6d386ee3203bac32f164d53e27ca12c3cea5bb643b1",
+      "size": 1785102,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "macos"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/01/f9/575c8d760eae1fc99651b7cc5efd96ad5379ca4d6b53750b0fb4fe983f34/imagesize-2.0.1-py3-none-any.whl",
+      "sha256": "ea0c9a0384df69ed86a943a15cde37d0360b82491b3910dc2215e202e62b5b02",
+      "size": 14794,
+      "format": "whl",
+      "extract_to": "site-packages"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/b8/d0/2d400c99b00d83b6aa7a1e595f1ad48fc62e888d5848e9ecbc70622cf067/prettytable-3.19.0-py3-none-any.whl",
+      "sha256": "66d0eaf75f21198e92ce09e59a12c140be76c78b8a89252e7e87ac8994f96383",
+      "size": 37554,
+      "format": "whl",
+      "extract_to": "site-packages"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/e0/a9/023730ba63db1e494a271cb018dcd361bd2c917ba7004c3e49d5daf795a2/py_cpuinfo-9.0.0-py3-none-any.whl",
+      "sha256": "859625bc251f64e21f077d099d4162689c762b5d6a4c3c97553d56241c9674d5",
+      "size": 22335,
+      "format": "whl",
+      "extract_to": "site-packages"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl",
+      "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
+      "size": 73075,
+      "format": "whl",
+      "extract_to": "site-packages"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/68/30/173960c42b05a6c59f7558e4b12a4b0d9ba376cf6aa9bde7f9e08a30ca8d/aiohttp-3.14.5-py3-none-any.whl",
+      "sha256": "efc21a454892828368b11c2c780de0ff8bc991f73f6b99c6b66e56205470929b",
+      "size": 279517,
+      "format": "whl",
+      "extract_to": "site-packages"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+      "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+      "size": 45571,
+      "format": "whl",
+      "extract_to": "site-packages"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/8a/8c/824a686c4ba815ddb0722f9e66272088bccd4e1ae1d2f7015375e4a4fc7f/pydantic-2.14.4-py3-none-any.whl",
+      "sha256": "653a2ad9f6d8858529c77c72717d0ea991d6c6837fe683246b2f4b2bbfc3fadc",
+      "size": 494865,
+      "format": "whl",
+      "extract_to": "site-packages"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/97/c9/39d5b874e8b28845e4ec2202b5da735d0199dbe5b8fb85f91398814a9a46/pyyaml-6.0.3-cp313-cp313-win_amd64.whl",
+      "sha256": "79005a0d97d5ddabfeeea4cf676af11e647e41d81c9a7722a193022accdb6b7c",
+      "size": 154090,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/74/27/e5b8f34d02d9995b80abcef563ea1f8b56d20134d8f4e5e81733b1feceb2/pyyaml-6.0.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "0f29edc409a6392443abf94b9cf89ce99889a1dd5376d94316ae5145dfedd5d6",
+      "size": 801626,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/d1/11/0fd08f8192109f7169db964b5707a2f1e8b745d4e239b784a5a1dd80d1db/pyyaml-6.0.3-cp313-cp313-macosx_10_13_x86_64.whl",
+      "sha256": "8da9669d359f02c0b91ccc01cac4a67f16afec0dac22c2ad09f46bee0697eba8",
+      "size": 181669,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "macos"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/38/ef/15b6a24451e75f2d48931062f73a5ebbd00d86394d750699dbd8d6b159b6/pandas-3.1.1-cp313-cp313-win_amd64.whl",
+      "sha256": "6d84760cc1bd799440a66b4df2ceb7a508870f3b8b4d8dda21befd62779cd3b4",
+      "size": 10732758,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/79/c2/c8bc972d6dcba13910fc92b622420704a2f655dd6b01ed54269a1bf7c2d2/pandas-3.1.1-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "645fa00fd85cfced2d2c09dc116d3694f578501b1ce4899153fbe64788ecda98",
+      "size": 11978871,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/f6/ee/2f6c4419fa2bf476ba2776c0fbae91e8bf6ab15c6b3e038d66da4d7824da/pandas-3.1.1-cp313-cp313-macosx_10_13_x86_64.whl",
+      "sha256": "01bd1d4c5fc999324382d55499cef0f9cc7c1b09d91ae6dabe82f0237e43b3a0",
+      "size": 11612513,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "macos"
+      ]
     }
   ],
   "entry": {
