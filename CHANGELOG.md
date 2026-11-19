@@ -1,6 +1,25 @@
 # Changelog
 
 ## Unreleased
+## 1.0.16 - 2026-11-19
+
+### 变更
+
+### 修复（诊断信息）
+
+- fix(portable): 组件目录从 **stdout 与 stderr 两处**找。CLI 的 `安装到：<path>`
+  会随日志进 stderr，只读 stdout 会报「摘要 path=None」但日志里明明有那一行。
+- fix(portable): 错误详情过滤**只认带模块名的 Python logging 行**
+  （`WARNING omnicrawler` / `INFO omnicrawler`）。裸 `ERROR:` 保留 ——
+  它很可能就是业务错误本身（第一版把 `ERROR:` 也滤了，`_tail` 返回空串）。
+- feat(portable): 找不到组件目录时附带安装输出尾部 300 字符。
+
+### 说明
+
+上一版 v1.0.15 三平台构建全绿、两个组件都装上，卡在 run 阶段但日志看不出原因
+（只显示 argparse 的子命令列表）。本轮修的是诊断链路 —— 下次 CI 会把真实错误打出来。
+本机端到端（造 zip 构件 → 装配 → worker import）已通过。
+
 ## 1.0.15 - 2026-11-19
 
 ### 变更
