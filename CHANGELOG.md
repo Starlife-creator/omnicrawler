@@ -1,6 +1,27 @@
 # Changelog
 
 ## Unreleased
+## 1.0.5 - 2026-11-19
+
+### 变更
+
+### 修复
+
+- fix(build): **Windows PowerShell 脚本加 UTF-8 BOM**。`tools/prepare_windows_runtime.ps1`
+  含 663 处中文却无 BOM，Windows PowerShell 5.1 按系统 ANSI 读取，UTF-8 中文字节
+  被解成乱码，连带破坏反引号转义，在第 65 行的 throw 字符串处报解析错误。
+- fix(build): **补 `packaging/prepare_{linux,macos}_runtime.sh` 的 3 处失效工具路径**。
+  上一版只修了根目录 `build_*` 脚本，漏了 `packaging/` 下的运行时准备脚本 ——
+  它们同样调用 `tools/*.py`。Linux 构建因此在
+  `can't open file 'tools/download_and_smoke_test.py'` 处失败。
+- test(tools): `test_build_script_tool_paths.py` 扩展到 5 个入口脚本（12 条），
+  并修正三处判据：正则断言改为 `(?<!\\w)`（`/` 前缀不能被排除）、
+  跳过注释行、阈值按各脚本实测调用数确定（`prepare_macos_runtime.sh` 只调 1 个）。
+
+### 说明
+
+v1.0.3 / v1.0.4 的 tag 都指向构建失败的提交，故发 1.0.5。
+
 ## 1.0.4 - 2026-11-19
 
 ### 变更
