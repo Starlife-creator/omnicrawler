@@ -233,7 +233,25 @@ def verify_all(
             continue
         report.installed.append(cid)
 
-        # ② 跑：给出该组件自己的 entry.payload 或空对象
+        # ② 跑：**只有可执行组件才 run**。
+        #
+        # 纯数据组件（如 tesseract 语言包）的 `entry.path` 是数据文件、
+        # 没有 `runner` —— 它们装好即完成，不该走 `components run`
+        # （那会要求 site-packages 与 entry.json，真实 CI 因此误报失败）。
+        runner = ""
+        try:
+            runner = str(
+                (json.loads(recipe.read_text(encoding="utf-8")).get("entry") or {}).get(
+                    "runner"
+                )
+                or ""
+            )
+        except (OSError, json.JSONDecodeError):
+            runner = ""
+        if not runner:
+            report.ran_ok.append(f"{cid}（数据组件，装好即完成）")
+            continue
+
         payload = entry.get("entry_payload")
         payload_arg = json.dumps(payload, ensure_ascii=False) if isinstance(payload, dict) else "{}"
         # 组件目录从安装摘要的 `path` 取（不猜路径）

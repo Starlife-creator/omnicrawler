@@ -100,7 +100,13 @@ ALLOWED_ARTIFACT_KEYS = frozenset(
 )
 
 #: entry 允许的键。
-ALLOWED_ENTRY_KEYS = frozenset({"path", "protocol", "engine", "runner"})
+#: entry 允许的键。
+#:
+#: `module`：入口在 `site-packages` 内的相对路径。**只对 `runner=worker-wheelpack`
+#: 有意义** —— 此时 `entry.path` 指向装配器生成的声明文件，真正的入口是 `module`。
+#: 声明的是**组件自身依赖**里的模块，不是本仓提供的脚本（与 asset_trust 的
+#: 「recipe 不得含可执行钩子」不冲突：那是"不能带脚本进来"，这是"指个已有模块"）。
+ALLOWED_ENTRY_KEYS = frozenset({"path", "protocol", "engine", "runner", "module"})
 
 
 class RecipeError(ValueError):
@@ -747,9 +753,44 @@ def install_from_recipe(
                 strip_components=int(artifact.get("strip_components") or 0),
             )
 
-        # 阶段三：入口必须存在，然后才原子替换
+        # 阶段三：补齐运行期元数据，再确认入口存在。
+        #
+        # **为什么在这里生成**：`component_runner.build_wheelpack_spec()` 需要
+        # `component.json` 与 `entry.json`，而 wheel 解出来只有 `site-packages/`。
+        # 早先装配不生成这两个文件 ⇒ 装成功后一 run 就报「组件缺少 entry.json」
+        # （真实 CI 踩到）。
+        #
+        # 生成的是**声明文件**（JSON），不是可执行脚本 —— 与 asset_trust 的
+        # 「recipe 里不得有可执行钩子」不冲突。
         entry = recipe["entry"]
         entry_relative = PurePosixPath(entry["path"])
+        if not (assembled / entry_relative).is_file():
+            # entry 指向的不是构件自带文件 ⇒ 由装配器生成声明（wheel-pack 形态）
+            _require(
+                entry.get("runner") == "worker-wheelpack",
+                f"装配完成但入口不存在：{entry_relative}"
+                "（只有 runner=worker-wheelpack 的组件允许自动生成入口声明）",
+            )
+            declared = {
+                "name": name,
+                "version": version,
+                "engine": str(entry.get("engine") or "generic"),
+                # 入口落在 site-packages 里的模块路径；由组件自身提供
+                "entry": str(entry.get("module") or "omnicrawler_component.py"),
+            }
+            (assembled / entry_relative).write_text(
+                json.dumps(declared, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            component_manifest = {
+                "name": name,
+                "version": version,
+                "engine": str(entry.get("engine") or "generic"),
+            }
+            (assembled / "component.json").write_text(
+                json.dumps(component_manifest, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
         _require(
             (assembled / entry_relative).is_file(),
             f"装配完成但入口不存在：{entry_relative}",
