@@ -1,6 +1,24 @@
 # Changelog
 
 ## Unreleased
+## 1.0.7 - 2026-11-19
+
+### 变更
+
+### 修复
+
+- fix(ci): **等价性对账前真的把组件装齐**。v1.0.6 三平台构建全绿，但对账拿**裸 Standard**
+  和 Full 比，报 11 项缺口 —— 方向反了：**Full 才是「全装齐」的基准，Standard 天然不装齐**
+  （内置 Chromium + 轻量文档库，OCR/重型能力按需装组件）。
+- fix(market): `SYNC_ITEMS` 加入 `components`，市场快照开始带组件 recipe
+  （只有声明，两个组件合计 4.8 KB）。
+- fix(market): 递归镜像不再按 `SYNC_ITEMS` 过滤 —— 否则 `components/ocr-paddle/`
+  会被建成空壳（目录有、recipe.json 没进）。
+- feat(portable): 新增 `install_standard_components.py`，从市场快照读全部组件条目
+  并逐个 `install-recipe --download`；空列表/缺 catalog/缺 recipe 分别显式报错。
+- test(tools): 新增 7 条守卫，含「SYNC_ITEMS 必须含 components」与
+  「递归镜像不得过滤」两条直接测代码的判据。
+
 ## 1.0.6 - 2026-11-19
 
 ### 变更

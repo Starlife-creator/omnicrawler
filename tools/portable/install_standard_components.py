@@ -40,6 +40,29 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+def _load_utf8_env():
+    """按文件路径加载 `tools/child_env.py` 的 `utf8_env`。
+
+    不能写 `from tools.child_env import utf8_env`：本脚本在 CI 里是被
+    `python tools/portable/install_standard_components.py` 直接执行的，
+    此时 `sys.path[0]` 是 `tools/portable/`，仓库根不在路径上
+    ⇒ `ModuleNotFoundError`（v1.0.5 在收集脚本上踩过同一个坑）。
+    """
+    import importlib.util as _ilu
+
+    root = Path(__file__).resolve().parents[2]
+    spec = _ilu.spec_from_file_location("_child_env", root / "tools" / "child_env.py")
+    if spec is None or spec.loader is None:  # pragma: no cover
+        raise ImportError(f"无法加载 {root / 'tools' / 'child_env.py'}")
+    module = _ilu.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module.utf8_env
+
+
+_utf8_env = _load_utf8_env()
+
+
 @dataclass
 class InstallReport:
     """装齐过程的结果。"""
@@ -129,6 +152,7 @@ def install_all_components(
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
+            env=_utf8_env(),
             check=False,
         )
         if completed.returncode == 0:
