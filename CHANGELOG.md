@@ -1,6 +1,19 @@
 # Changelog
 
 ## Unreleased
+## 1.0.9 - 2026-11-19
+
+### 变更
+
+### 修复
+
+- fix(ci): **体积预算门禁不再要求 Full 产物**。`check_artifact_budget.py` 硬编码了
+  `for edition in ("Standard", "Full")`，无条件要求两个 edition 都存在 ——
+  删掉 Full 构建后每个平台都报 `missing <platform> Full portable artifact`。
+  改为按**预算表声明**遍历；同时从 `artifact-budgets.json` 移除 Full 条目
+  （两处不改任一处都会红）。
+- test(tools): 新增 2 条守卫 —— 预算表不得声明 Full；门禁不得硬编码 edition 列表。
+
 ## 1.0.8 - 2026-11-19
 
 ### 变更
