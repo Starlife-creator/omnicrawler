@@ -1,6 +1,24 @@
 # Changelog
 
 ## Unreleased
+## 1.0.14 - 2026-11-19
+
+### 变更
+
+### 修复
+
+- fix(components): **`component.json` 必须声明每个文件的 sha256**。
+  `verify_component_files()` 在每次启动前按清单重算哈希（不信任「装配时校验过」），
+  而装配器上一版只写了 name/version/engine ⇒ 一 run 就报
+  「component.json 未声明任何文件，拒绝加载」。现在装配阶段为每个文件算 sha256 写入。
+
+### 进展
+
+v1.0.13 已确认：Python 3.13 下三平台构建全部成功（含 macOS，PYI-5670 未复现）；
+两个市场组件**都装上**，`tesseract-chi-sim`（纯数据语言包）跑通。
+本轮修完 `files` 清单后，Wheel-Pack 组件（ocr-paddle）应能真正跑起来。
+
+
 ## 1.0.13 - 2026-11-19
 
 ### 变更
