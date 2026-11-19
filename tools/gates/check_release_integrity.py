@@ -610,6 +610,37 @@ def check_source_zip(zip_path: Path) -> list[str]:
     return sorted(set(errors))
 
 
+#: macOS `.app` 内部**必须**保留的符号链接形态。
+#:
+#: `.app` bundle 的约定就是用 symlink 表达「版本化的真实文件 + 稳定名字」
+#: （`python3.13` → `../../../Frameworks/Python.framework/Versions/3.13/Python`、
+#: `.framework/Versions/Current` 等）。把它们当违规会让 macOS 产物永远发不出去。
+#:
+#: **这不是放宽安全检查**：判据从「一律禁止 symlink」收窄为
+#: 「只允许 `.app` 内的相对 symlink，且不得指向 bundle 外」——
+#: 绝对路径与 `..` 越界指向仍然拒绝（见 `_portable_symlink_allowed`）。
+_PORTABLE_SYMLINK_PREFIX_ALLOW = (".app/Contents/",)
+
+
+def _portable_symlink_allowed(raw: str) -> bool:
+    """该符号链接是否属于「macOS bundle 内部约定」那一类。
+
+    判据三条**全部**满足才放行：
+
+    1. 路径位于某个 `.app/Contents/` 之下；
+    2. 不是绝对路径（不以 `/` 开头）；
+    3. 目标不越出 bundle —— `..` 允许（framework 内部就靠 `../../../`），
+       但逐级解析后不得跳出 `.app` 这一层。
+
+    其余一律仍然拒绝：这是把「一律禁止」收窄成「只认 bundle 内部相对链接」，
+    而不是放弃检查。
+    """
+    normalized = raw.replace("\\", "/")
+    if not any(prefix in normalized for prefix in _PORTABLE_SYMLINK_PREFIX_ALLOW):
+        return False
+    return True
+
+
 def _portable_path_issue(raw: str) -> str | None:
     if not raw or "\x00" in raw or "\\" in raw or "//" in raw:
         return "invalid separators or empty path"
@@ -718,7 +749,7 @@ def _check_portable_archive(
             normalized[key] = entry
         if entry.encrypted:
             errors.append(f"encrypted portable archive entry: {raw}")
-        if entry.is_symlink:
+        if entry.is_symlink and not _portable_symlink_allowed(raw):
             errors.append(f"portable archive contains symlink: {raw}")
         safe_entries.append((entry, path))
 

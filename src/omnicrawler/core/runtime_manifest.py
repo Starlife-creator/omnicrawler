@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -74,7 +75,7 @@ def create_runtime_manifest(root: Path, *, include: Iterable[Path] | None = None
         relative = path.relative_to(root).as_posix()
         if _is_excluded_relative(relative):
             continue
-        files[relative] = {"sha256": _sha256(path), "bytes": path.stat().st_size}
+        files[relative] = _entry_for(path)
     manifest = {"format": 1, "created_at": utcnow(), "files": files}
     atomic_write(root / RUNTIME_MANIFEST, json.dumps(manifest, ensure_ascii=False, indent=2).encode())
     return manifest
@@ -107,8 +108,16 @@ def verify_runtime_manifest(root: Path) -> dict[str, Any]:
         target = root.joinpath(*manifest_relative.parts)
         if not target.is_file():
             missing.append(str(name))
-        elif target.stat().st_size != int(expected["bytes"]) or _sha256(target) != expected["sha256"]:
-            corrupt.append(str(name))
+        else:
+            # 用**与 create 完全相同的口径**比对：symlink 看链接目标，普通文件看内容。
+            # 否则 macOS 上 `python3.13` 这类链接会因为「create 记目标大小、
+            # verify 记链接大小」而永远 mismatch。
+            actual_entry = _entry_for(target)
+            if (
+                actual_entry["bytes"] != int(expected["bytes"])
+                or actual_entry["sha256"] != expected["sha256"]
+            ):
+                corrupt.append(str(name))
     # S3.2.3：清单比对——磁盘上存在但清单未声明的文件（新增未知文件）
     declared = set(files)
     unknown: list[str] = []
@@ -129,6 +138,32 @@ def verify_runtime_manifest(root: Path) -> dict[str, Any]:
         "unknown": unknown,
         "checked": len(files),
     }
+
+
+#: 符号链接条目的 sha256 前缀，用于与普通文件区分。
+#:
+#: **为什么必须单独对待**：macOS `.app` 里的 `.dylib` / `python3.13` 等是 symlink。
+#: `path.stat()` 会跟随链接、得到**目标文件**的大小；而 `tar` 打包后解压出来的是
+#: **链接本身**（几字节）。两侧量不是同一个东西 ⇒ 校验必然报
+#: `runtime manifest size mismatch`（真实 macOS CI 实测，Python 3.13 的
+#: framework 链接比 3.12 更多，于是问题一次性全暴露）。
+#:
+#: 修法：对 symlink 记录**链接目标字符串**的哈希与长度 —— 这与 tar 归档里的
+#: 形态一致，也与 `verify` 侧读 `lstat` 的口径一致。
+_SYMLINK_TAG = "symlink:"
+
+
+def _entry_for(path: Path) -> dict[str, Any]:
+    """按**文件系统里的真实形态**记录一个条目（symlink 不跟随）。"""
+    if path.is_symlink():
+        target = os.readlink(path)
+        encoded = target.encode("utf-8", errors="surrogateescape")
+        return {
+            "sha256": _SYMLINK_TAG + hashlib.sha256(encoded).hexdigest(),
+            "bytes": len(encoded),
+            "link": True,
+        }
+    return {"sha256": _sha256(path), "bytes": path.stat().st_size}
 
 
 def _sha256(path: Path) -> str:
