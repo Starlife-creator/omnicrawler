@@ -1,6 +1,27 @@
 # Changelog
 
 ## Unreleased
+## 1.0.15 - 2026-11-19
+
+### 变更
+
+### 修复
+
+- feat(components): **Wheel-Pack 改由宿主 worker 执行**。`run_component` 原本执行
+  `python <entry路径>`，要求 entry 是可执行脚本；而 `ocr-paddle` 的 entry 是
+  `paddleocr/__init__.py`（被 import 的库入口），直接跑会触发它自己的命令行解析。
+  组件不该自带脚本（`asset_trust` 铁律：recipe 来自市场，允许下发脚本等于允许第三方
+  代码执行），所以把「怎么执行」固定在宿主：组件只贡献库，worker 负责 import。
+  新增 `services/component_worker.py`，含 `generic` / `paddle` 两个适配器与越界路径拒绝。
+- fix(portable): 错误详情提取先**滤掉日志行**再取末尾。CLI 启动会打两条日志，
+  400 字符窗口被吃光，CI 上只看到截断的 argparse 列表。
+
+### 本机已验证
+
+端到端跑通：造 zip 构件 → 装配 → 校验 2 个文件 → worker import 组件模块 → 返回 JSON，
+退出码 0。这是本机第一次验到「装配后能执行」。
+
+
 ## 1.0.14 - 2026-11-19
 
 ### 变更

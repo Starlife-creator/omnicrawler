@@ -1,6 +1,6 @@
 # Dependency constraints
 
-`quality.txt` pins the tools used by OmniCrawler 1.0.14 CI and release validation. GitHub Actions
+`quality.txt` pins the tools used by OmniCrawler 1.0.15 CI and release validation. GitHub Actions
 sets `PIP_CONSTRAINT` so build isolation and direct installations use the same
 versions.
 
