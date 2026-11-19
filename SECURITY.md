@@ -8,7 +8,7 @@ Vulnerability Reporting（仓库 Settings → Security 已开启）：
 → https://github.com/Starlife-creator/omnicrawler/security/advisories/new
 
 我们承诺在 90 天披露期限内处置。若 PVR 不可用，可改用
-zqx666666@tutamail.com 直接联系维护者（邮件同样遵守披露期限）。
+starlife_creator@zohomail.com 直接联系维护者（邮件同样遵守披露期限）。
 
 ## 安全架构
 
