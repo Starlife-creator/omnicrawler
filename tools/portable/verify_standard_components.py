@@ -311,8 +311,11 @@ def verify_all(
             timeout=run_timeout,
         )
         if ran.returncode != 0:
-            detail = _tail(ran.stderr) or _tail(ran.stdout) or f"退出码 {ran.returncode}"
-            report.failures.append((cid, "运行", detail))
+            # 诊断要点：**先给退出码与命令形态**，再给输出尾部。
+            # 否则日志里只剩一坨被截断的 argparse 列表，看不出是哪一步。
+            detail = _tail(ran.stderr) or _tail(ran.stdout) or "(无输出)"
+            where = f"退出码 {ran.returncode}；命令 argv={' '.join(str(a) for a in (executable.name, 'components', 'run', '--component-dir', str(component_dir), '--payload', payload_arg))}"
+            report.failures.append((cid, "运行", f"{where}；输出尾部：{detail}"))
             continue
         report.ran_ok.append(cid)
     return report
