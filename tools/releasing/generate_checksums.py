@@ -30,10 +30,16 @@ except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
 # 平台产物 → 该平台 job 应覆盖的发行物（不要求其他平台产物）
+#: 每个平台应覆盖的发行物。
+#:
+#: ★ 2026-11-19 维护者裁定：**不再构建 Full**。此前这里列了 Standard + Full
+#: 两件，于是只要 Full 不在就整步失败（真实 CI：`exit code 2`，
+#: 日志报「以下类型的发行物未包含：...Linux-Portable-Full.tar.xz」）。
+#: 现在只要求 Standard —— 它是唯一对外产物。
 _PLATFORM_REQUIRED = {
-    "Windows-Portable": ("Windows-Portable-Standard.zip", "Windows-Portable-Full.zip"),
-    "Linux-Portable": ("Linux-Portable-Standard.tar.xz", "Linux-Portable-Full.tar.xz"),
-    "macOS-Portable": ("macOS-Portable-Standard.dmg", "macOS-Portable-Full.dmg"),
+    "Windows-Portable": ("Windows-Portable-Standard.zip",),
+    "Linux-Portable": ("Linux-Portable-Standard.tar.xz",),
+    "macOS-Portable": ("macOS-Portable-Standard.dmg",),
 }
 
 

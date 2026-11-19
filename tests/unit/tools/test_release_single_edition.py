@@ -184,3 +184,22 @@ def test_budget_gate_iterates_declared_editions() -> None:
         "门禁仍硬编码 Standard/Full —— 会在不支持 Full 时误报缺失"
     )
     assert "for edition in editions" in source, "门禁未按声明列表遍历"
+
+def test_checksums_do_not_require_full_artifact() -> None:
+    """校验和生成器不得再要求 Full 产物。
+
+    它有一张 `_PLATFORM_REQUIRED` 表，早先每个平台列了 Standard + Full 两件。
+    删掉 Full 构建后，这一步会因「以下类型的发行物未包含：...-Full.tar.xz」
+    而 `exit code 2`（真实 CI 实测）。
+    """
+    tool = _REPO / "tools" / "releasing" / "generate_checksums.py"
+    if not tool.is_file():
+        pytest.skip("需要 generate_checksums.py")
+
+    source = tool.read_text(encoding="utf-8")
+    offenders = [
+        line.strip()
+        for line in source.splitlines()
+        if "Portable-Full" in line and not line.strip().startswith("#")
+    ]
+    assert not offenders, f"校验和要求 Full 产物：{offenders}"
