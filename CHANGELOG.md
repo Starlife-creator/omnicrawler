@@ -1,6 +1,22 @@
 # Changelog
 
 ## Unreleased
+## 1.0.10 - 2026-11-19
+
+### 变更
+
+### 修复
+
+- fix(ci): **校验和生成器不再要求 Full 产物**。`generate_checksums.py` 的
+  `_PLATFORM_REQUIRED` 每平台列了 Standard + Full 两件，删掉 Full 构建后
+  必然缺一件 —— 真实 CI 在「生成 SBOM 与校验和」步 `exit code 2`，
+  日志报「以下类型的发行物未包含：...Linux-Portable-Full.tar.xz」。
+  改为只要求 Standard。
+- test(tools): 新增守卫 —— 校验和生成器不得再出现 `Portable-Full`。
+
+说明：`generate_release_info.py` 与 `check_release_integrity.py` 里的
+`Full` 是**按 edition 参数分支**的通用逻辑，不是必须存在 Full 产物，保留不动。
+
 ## 1.0.9 - 2026-11-19
 
 ### 变更
