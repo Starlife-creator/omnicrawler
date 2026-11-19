@@ -105,23 +105,6 @@ jobs:
             -SkipRuntimeAssetDownload @browserArgs
 
       # ── Full 便携包 ────────────────────────────────────────────────
-      - name: 构建 Full 便携包
-        shell: pwsh
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/playwright
-        run: |
-          $browserArgs = @("-BrowserCachePath", ".cache/playwright")
-          $cachedChrome = Get-ChildItem ".cache/playwright" -Recurse -Filter "chrome.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($cachedChrome) { $browserArgs += "-SkipBrowserDownload" }
-          $runtimeArgs = @("-RuntimeCachePath", ".cache/runtime")
-          $runtimeManifest = ".cache/runtime/models/paddlex/omnicrawler-model-manifest.json"
-          $cachedRuntime = (Test-Path $runtimeManifest) -and (Test-Path ".cache/runtime/tesseract/tesseract.exe") -and (Test-Path ".cache/runtime/selenium/chromedriver.exe")
-          if ($cachedRuntime) { $runtimeArgs += "-SkipRuntimeAssetDownload" }
-          powershell -ExecutionPolicy Bypass -File build_windows.ps1 `
-            -Edition Full `
-            -ReleaseOutputPath "$env:RUNNER_TEMP/artifacts" `
-            @browserArgs @runtimeArgs
-
       - name: 校验分版本体积预算
         shell: pwsh
         run: |

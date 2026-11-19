@@ -85,16 +85,6 @@ jobs:
           bash build_macos.sh --edition Standard \
             --release-output "$RUNNER_TEMP/artifacts-macos" "${browserArgs[@]}"
 
-      - name: 构建 Full 便携包
-        shell: bash
-        run: |
-          browserArgs=()
-          if [ -d ".cache/playwright" ]; then
-            browserArgs=(--browser-cache-path .cache/playwright)
-          fi
-          bash build_macos.sh --edition Full \
-            --release-output "$RUNNER_TEMP/artifacts-macos" "${browserArgs[@]}"
-
       - name: 校验分版本体积预算
         run: |
           python tools/gates/check_artifact_budget.py --platform macOS \

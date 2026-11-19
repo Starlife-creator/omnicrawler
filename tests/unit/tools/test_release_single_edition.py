@@ -111,24 +111,32 @@ def test_exclusion_happens_in_mount_loop_not_build() -> None:
     )
 
 
-def test_build_step_still_builds_full() -> None:
-    """构建侧必须仍然编 Full（停发不停建的关键一半）。"""
-    windows = _REPO / ".github" / "workflows" / "reusable-build-windows.yml"
-    if not windows.is_file():
-        pytest.skip("需要 build 工作流")
+def test_full_build_is_no_longer_requested() -> None:
+    """三平台构建脚本**不得**再请求 Full（2026-11-19 维护者裁定）。
 
-    text = windows.read_text(encoding="utf-8")
-    assert "-Edition Full" in text, (
-        "构建侧不再编 Full —— 那就成了「停发也停建」，丢掉了冻结兼容性回归基准"
-    )
+    判据变了：早先要求「停发不停建」（照常编译 Full），现在改为**不构建**。
+    理由是每平台多跑一轮完整 PyInstaller（Linux 实测多约 40 分钟），
+    而它证明的「重依赖共存」并非用户路径 —— 用户拿的是 Standard + 按需装组件。
+    """
+    for name in ("reusable-build-windows.yml", "reusable-build-linux.yml", "reusable-build-macos.yml"):
+        path = _REPO / ".github" / "workflows" / name
+        if not path.is_file():
+            pytest.skip(f"缺少 {name}")
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for needle in ("-Edition Full", "--edition Full"):
+            assert needle not in text, f"{name} 仍然在构建 Full（{needle!r}）"
 
 
-def test_smoke_test_still_checks_full() -> None:
-    """冒烟测试必须仍然验 Full（它是回归基准的价值所在）。"""
-    text = _RELEASE.read_text(encoding="utf-8")
-    assert "--edition Full" in text, (
-        "冒烟不再验 Full —— 停发之后就没有任何机制保证 Full 还能跑"
-    )
+def test_component_verification_replaces_capability_comparison() -> None:
+    """取代关系必须成立：旧对账下线，新验证接线。
+
+    这是同一个判据的两面：只检查"旧的没了"会让新流程漏接也看不出来。
+    """
+    release = _REPO / ".github" / "workflows" / "release.yml"
+    text = release.read_text(encoding="utf-8", errors="replace")
+
+    assert "compare-capabilities" not in text, "旧的等价比对步骤还在"
+    assert "verify_standard_components.py" in text, "新的组件验证步骤没有接线"
 
 
 def test_exclusion_has_explanatory_comment() -> None:

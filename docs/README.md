@@ -67,7 +67,7 @@
 
 - [安全与合规](SECURITY_AND_COMPLIANCE.md)
 - [隐私政策与数据留存说明（终端用户）](PRIVACY.md)：本地数据清单、无遥测承诺、日志/缓存/凭据位置与卸载清理范围。
-- [便携版构建（Windows / Linux / macOS）](PORTABLE_PACKAGING.md)：**对外只发 Standard（停发不停建）**、三平台构建流程
+- [便携版构建（Windows / Linux / macOS）](PORTABLE_PACKAGING.md)：**只构建 Standard（不再构建 Full）**、组件装齐验证、三平台构建流程
 - [Linux 用户级安装（应用菜单条目与图标）](LINUX_INSTALL.md)
 - [Windows 便携版构建](WINDOWS_PACKAGING.md)
 - [发布流水线故障排查手册](RELEASE_PIPELINE_TROUBLESHOOTING.md)：案例基于 v0.9.1 全轮次复盘，排查方法长期有效。

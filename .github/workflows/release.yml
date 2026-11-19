@@ -232,7 +232,7 @@ jobs:
       # ★ 单行命令：Windows runner 的默认 shell 是 pwsh，反斜杠续行在那里不成立。
       # C-#15：保留解压目录，供后续文档清单复核步骤使用。
       - name: 解压并冒烟（包内入口 + 本地 fixture 站点）
-        run: python tools/portable/portable_archive_smoke.py "${{ runner.temp }}/downloaded" --platform ${{ matrix.platform }} --edition Full --extract-dir "${{ runner.temp }}/kept" --also-extract-editions Standard --manifest "${{ runner.temp }}/portable-smoke-${{ matrix.platform }}.json"
+        run: python tools/portable/portable_archive_smoke.py "${{ runner.temp }}/downloaded" --platform ${{ matrix.platform }} --edition Standard --extract-dir "${{ runner.temp }}/kept" --manifest "${{ runner.temp }}/portable-smoke-${{ matrix.platform }}.json"
       # C-#15：归档解压后复核便携包文档清单（docs/archive、docs/releases 不得随包分发，
       # README/LICENSE/第三方声明/EDITION.txt 必须齐备）。
       - name: 便携包文档清单复核
@@ -243,40 +243,23 @@ jobs:
         run: |
           ROOT="$(python -c 'import json, os, pathlib; m=json.load(open(os.environ["SMOKE_MANIFEST"])); print(pathlib.Path(os.environ["KEEP_DIR"]) / m["release_root"])')"
           python tools/gates/check_portable_doc_manifest.py --release-root "$ROOT"
-      # ★ 等价性对账（2026-11-19，优化方案批次 5）：
-      # 停发 Full 之后对外只有 Standard。「Standard 全装齐后与 Full 一模一样」
-      # 这条要求必须被**验证**，否则它只是一句声明。
+      # ★ 组件装齐与兼容性验证（2026-11-19 维护者裁定）：
+      #   不再构建 Full 大号冻结包，也不再比两份能力 JSON。
+      #   理由：Full 的价值是「打包能力」，而它每平台多跑一轮 PyInstaller
+      #   （Linux 实测多约 40 分钟）；它要证明的「重依赖能装上并跑通」
+      #   用真实市场组件覆盖更贴用户路径 —— 用户拿到的是 Standard + 按需装组件。
       #
-      # 本 job 的 artifact 同时含 Standard 与 Full 两个包 ⇒ 可在同一处取两份
-      # 能力报告比对。有缺口则退出码非 0，阻断发布。
-      #
-      # 逻辑抽在 tools/portable/{collect_capability_reports,standard_equivalence}.py，
-      # 不内联 heredoc —— YAML 缩进与 shell 引号会互相打架，出错时报文指向
-      # YAML 而不是真正的逻辑。
-      - name: Standard 全装齐 ↔ Full 等价性对账
+      #   改成的判据是**能不能真用**：逐个 install-recipe --download，
+      #   再逐个 components run 确认在隔离子进程里跑得起来。
+      #   比数字只能证明「声明齐了」，与「装完能用」不是一回事。
+      - name: 装齐市场组件并验证可运行
         shell: bash
         env:
           KEEP_DIR: ${{ runner.temp }}/kept
-          OUT_DIR: ${{ runner.temp }}
         run: |
           set -euo pipefail
-          # 收集脚本退出码：0=正常、3=能力报告读不出来（必须停，不能拿空报告去对账）
-          set +e
-          # ★ 「全装齐」的前提：Standard 天然不装齐（内置 Chromium + 轻量文档库），
-          #   OCR / 重型能力按需装组件。要验「全装齐后 == Full」，就必须先真的装上。
-          #   拿裸 Standard 去比会必然报缺口 —— 那是判据用错了对象，不是产品缺陷。
-          #   组件构件从上游拉（ocr-paddle 约 100 MB），因此这一步只在云上跑。
-          python tools/portable/install_standard_components.py \
+          python tools/portable/verify_standard_components.py \
             "$KEEP_DIR/Standard/OmniCrawler" "$GITHUB_WORKSPACE/market" Standard
-          python tools/portable/collect_capability_reports.py "$KEEP_DIR" "$OUT_DIR"
-          collect_code=$?
-          set -e
-          if [ "$collect_code" -ne 0 ]; then
-            echo "::error::能力报告收集失败（退出码 $collect_code），停止对账"
-            exit "$collect_code"
-          fi
-          python tools/portable/portable_smoke_test.py --compare-capabilities \
-            "$OUT_DIR/cap-full.json" "$OUT_DIR/cap-standard.json"
 
       - name: 上传冒烟日志与清单
         if: always()
@@ -285,8 +268,6 @@ jobs:
           name: portable-smoke-${{ matrix.platform }}
           path: |
             ${{ runner.temp }}/portable-smoke-${{ matrix.platform }}.json
-            ${{ runner.temp }}/cap-full.json
-            ${{ runner.temp }}/cap-standard.json
           if-no-files-found: warn
 
   release:

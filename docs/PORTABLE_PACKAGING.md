@@ -2,30 +2,54 @@
 
 > 适用版本：1.0.7 · 配置协议：v5 · 维护状态：现行（历史状态见归档；功能验证以验收账本为准）
 
-## 发行规则：对外只发 Standard（停发不停建）
+## 发行规则：只构建 Standard（2026-11-19 定案）
 
-**自 2026-11-19 起，公开 Release 只发布 Standard 一个包。**
+**对外只发 Standard 一个包。不再构建 Full 大号冻结包。**
 
-| 项 | Standard | Full |
-|---|---|---|
-| 公开 Release | ✅ 唯一对外产物 | ❌ **不挂 Release** |
-| CI 构建 | ✅ 每次照常 | ✅ **每次照常构建** |
-| CI 冒烟 | ✅ | ✅ **照常跑通** |
-| 产物去向 | Release 附件 | 本次 run 的 Actions artifacts |
+| 项 | Standard |
+|---|---|
+| 公开 Release | ✅ **唯一产物** |
+| CI 构建 | ✅ 每次照常 |
+| CI 冒烟 | ✅ 归档级 + 运行时 |
+| 组件验证 | ✅ **装齐市场组件并逐个跑通** |
 
-**为什么 Full 不删**：它是 PyInstaller 冻结兼容性的**试金石**——`paddle` / `cv2` /
-`lxml` / `PySide6` / `playwright` 同处冻结环境时的 hooks、动态库收集与命名空间包
-冲突，只有全量构建能第一时间暴露。删了它，后续升级 Python 或基础库就失去
-自动化回归基准。
+### 为什么不再构建 Full
 
-**排除发生在哪一步**：`reusable-finalize-release.yml` 的**资产挂载循环**里按
-`*-Portable-Full.*` 跳过。构建照跑，只是不对外可见。
+原先的做法是「停发不停建」——Full 不挂 Release 但每次照常构建，理由是
+它是 PyInstaller 冻结兼容性的试金石。**维护者 2026-11-19 裁定改为不构建**，
+理由成立：
 
-**等价性由 CI 对账保证**：`tools/portable/{collect_capability_reports,standard_equivalence}.py`
-会比较「Standard + 全量组件 + 插件」与 Full 的能力集，有缺口则阻断发布。
-判据覆盖 `standard` / `full` / `optional` 三段 `items` **以及顶层 `native` 段**
-（`chromium` / `selenium_driver` / `tesseract` / `paddle_models`）——
-后者正是 Full 相对 Standard 多出来的核心能力。
+1. **代价高**：每平台多跑一轮完整 PyInstaller（Linux 实测多约 40 分钟），
+   三平台累计一个多小时，而它产出的包没人用；
+2. **证明的不是用户路径**：它验证「所有重依赖在同一个冻结包里能共存」，
+   但用户拿到的从来不是那个包——用户拿到的是 **Standard + 按需装组件**；
+3. **能力对账是错误判据**：拿两份静态能力 JSON 比数字，报出的缺口大多是
+   `full` 档能力（`paddle_models` / `selenium` / `crawl4ai` / `s3`），
+   那些本就不该由 Standard 承担。**比数字只能证明「声明齐了」，
+   与「装完能用」不是一回事。**
+
+### 现在验证什么
+
+`tools/portable/verify_standard_components.py`，在解压后的真实 Standard 产物上：
+
+1. 按市场快照逐个 `components install-recipe --download`（真实从上游拉构件）；
+2. 对每个装好的组件执行 `components run`，确认它在**隔离子进程里真的跑起来**；
+3. 任何一步失败都让 CI 红，并指名**哪个组件、哪个阶段**。
+
+判据是确定性的：组件必须**全部装上**、**全部跑通**；空组件列表判失败
+（空集合会让"全部通过"恒真）。
+
+### 冒烟也改为 Standard
+
+`portable_archive_smoke.py` 现在用 `--edition Standard`，跑归档级 + 运行时冒烟。
+不再需要同时解压两个 edition。
+
+### 与旧流程的关系
+
+历史模块 `standard_equivalence.py` 与 `collect_capability_reports.py`
+**保留在仓库里**（项目纪律不用 `git rm`），但已不再接入任何 workflow。
+守卫 `tests/unit/tools/test_standard_equivalence.py` 会断言
+「旧的 `compare-capabilities` 步骤与 `--edition Full` 都不得回来」。
 
 本文是三平台便携包构建的**总纲**。各平台细节与历史沿革见：
 
