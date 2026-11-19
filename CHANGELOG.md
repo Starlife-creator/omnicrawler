@@ -1,6 +1,32 @@
 # Changelog
 
 ## Unreleased
+## 1.0.8 - 2026-11-19
+
+### 变更
+
+### 变更
+
+- refactor(release): **不再构建 Full 大号冻结包**（维护者 2026-11-19 裁定）。
+  它每平台多跑一轮 PyInstaller（Linux 实测多约 40 分钟），且它证明的
+  「所有重依赖共存于同一冻结包」并非用户路径 —— 用户拿到的是
+  **Standard + 按需装组件**。
+- feat(portable): 新增 `verify_standard_components.py` —— 在真实 Standard 产物上
+  逐个 `install-recipe --download` 再逐个 `components run`，失败指名组件与阶段。
+  取代原先「比两份能力 JSON」的对账：**比数字只能证明声明齐了，与装完能用不是一回事**。
+- fix(components): **ABI 判定把列表当字符串比**。`python_abi` 是列表
+  `["cp313"]`，`str()` 后成 `"['cp313']"` 与 `"cp313"` 永不相等，
+  导致任何声明 ABI 的配方都装不上（包括完全匹配）。改为集合成员判定，
+  兼容列表/元组/单字符串三种写法。
+- fix(market): `SYNC_ITEMS` 加入 `components`；递归镜像不再按它过滤
+  —— 否则组件子目录会被建成空壳。
+- docs: `PORTABLE_PACKAGING.md` 的「停发不停建」章节改写为「只构建 Standard」。
+
+### 说明
+
+v1.0.5 起三平台构建全绿；v1.0.6 修掉收集脚本的 ModuleNotFoundError；
+v1.0.7 修掉 ABI 比较缺陷。本次 1.0.8 是「不再构建 Full」的收口版本。
+
 ## 1.0.7 - 2026-11-19
 
 ### 变更
