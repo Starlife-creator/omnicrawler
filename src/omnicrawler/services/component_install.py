@@ -141,6 +141,10 @@ def describe_recipe(recipe_path: str | Path) -> dict[str, Any]:
     except RecipeError as exc:
         raise RecipeInstallError(f"recipe 校验失败：{exc}") from exc
 
+    # 与 `install_from_recipe` 用**同一个**平台筛选：只列出本平台真要拉的构件。
+    # 否则用户在 `inspect-recipe` 看到 3 个 URL、实际只拉 1 个，会以为漏装。
+    from .component_recipe import artifacts_for_platform, current_platform
+
     artifacts = [
         {
             "url": item["url"],
@@ -148,7 +152,7 @@ def describe_recipe(recipe_path: str | Path) -> dict[str, Any]:
             "size": item.get("size"),
             "extract_to": item.get("extract_to", ""),
         }
-        for item in recipe["artifacts"]
+        for item in artifacts_for_platform(recipe, current_platform())
     ]
     total = sum(int(a["size"] or 0) for a in artifacts)
     return {

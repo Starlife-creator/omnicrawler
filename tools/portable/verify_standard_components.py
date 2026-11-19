@@ -66,16 +66,30 @@ class VerifyReport:
     installed: list[str] = field(default_factory=list)
     ran_ok: list[str] = field(default_factory=list)
     failures: list[tuple[str, str, str]] = field(default_factory=list)  # (id, stage, why)
+    skipped: list[tuple[str, str]] = field(default_factory=list)  # (id, why)
 
     @property
     def ok(self) -> bool:
         return not self.failures and bool(self.installed)
 
     def summary(self) -> str:
-        return (
-            f"装上 {len(self.installed)} 个，跑通 {len(self.ran_ok)} 个，"
-            f"失败 {len(self.failures)} 个"
-        )
+        parts = [
+            f"装上 {len(self.installed)} 个",
+            f"跑通 {len(self.ran_ok)} 个",
+            f"失败 {len(self.failures)} 个",
+        ]
+        if self.skipped:
+            parts.append(f"跳过 {len(self.skipped)} 个")
+        return "，".join(parts)
+
+
+def _current_platform() -> str:
+    """本机平台名，与 recipe 的 `platforms` 同一套拼写。"""
+    if sys.platform.startswith("win"):
+        return "windows"
+    if sys.platform == "darwin":
+        return "macos"
+    return "linux"
 
 
 def _tail(text: str, limit: int = 400) -> str:
@@ -121,6 +135,29 @@ def _run(argv: list[str], cwd: Path, *, timeout: float) -> subprocess.CompletedP
     )
 
 
+def _installed_component_dir(install_stdout: str) -> Path | None:
+    """从 `install-recipe` 的 JSON 摘要里取组件目录。
+
+    摘要里有 `path` 字段 —— 那是**组件自己的**安装目录，不靠我们猜。
+    早先按 `release_root/components/<id>` 推导，与本机实际落点
+    （`AppData/Local/OmniCrawler/components/<id>-<version>`）不符，
+    运行阶段必然报「组件目录不存在」（真实 CI 踩到）。
+    """
+    text = (install_stdout or "").strip()
+    if not text:
+        return None
+    start_index = text.find("{")
+    end_index = text.rfind("}")
+    if start_index < 0 or end_index <= start_index:
+        return None
+    try:
+        payload = json.loads(text[start_index : end_index + 1])
+    except json.JSONDecodeError:
+        return None
+    path = payload.get("path") if isinstance(payload, dict) else None
+    return Path(str(path)) if path else None
+
+
 def verify_all(
     executable: Path,
     release_root: Path,
@@ -148,7 +185,18 @@ def verify_all(
         cid = str(entry["id"])
         recipe = _recipe_path_for(market_root, entry)
 
-        # ① 装
+        # ①a 平台判定：配方声明支持的平台不含本机 ⇒ 显式跳过（可见，不静默）
+        try:
+            declared = json.loads(recipe.read_text(encoding="utf-8")).get("platforms") or []
+        except (OSError, json.JSONDecodeError):
+            declared = []
+        if declared and _current_platform() not in declared:
+            report.skipped.append(
+                (cid, f"组件不支持当前平台（声明 {declared}，本机 {_current_platform()}）")
+            )
+            continue
+
+        # ①b 装
         if not recipe.is_file():
             report.failures.append((cid, "安装", f"recipe 缺失：{recipe}"))
             continue
@@ -175,13 +223,20 @@ def verify_all(
         # ② 跑：给出该组件自己的 entry.payload 或空对象
         payload = entry.get("entry_payload")
         payload_arg = json.dumps(payload, ensure_ascii=False) if isinstance(payload, dict) else "{}"
+        # 组件目录从安装摘要的 `path` 取（不猜路径）
+        component_dir = _installed_component_dir(installed.stdout)
+        if component_dir is None or not component_dir.is_dir():
+            report.failures.append(
+                (cid, "运行", f"装完后找不到组件目录（摘要 path={component_dir}）")
+            )
+            continue
         ran = _run(
             [
                 str(executable),
                 "components",
                 "run",
                 "--component-dir",
-                str(release_root / "components" / cid),
+                str(component_dir),
                 "--payload",
                 payload_arg,
             ],
@@ -217,6 +272,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  ✓ 已装 {cid}")
     for cid in report.ran_ok:
         print(f"  ✓ 跑通 {cid}")
+    for cid, why in report.skipped:
+        print(f"  - 跳过 {cid}：{why}")
     for cid, stage, why in report.failures:
         print(f"::error::{label} 组件 {cid} 在「{stage}」阶段失败：{why}")
     return 0 if report.ok else 1

@@ -90,6 +90,10 @@ ALLOWED_ARTIFACT_KEYS = frozenset(
         "format",
         "filename",
         "extract_to",
+        # 该构件适用于哪些平台。缺省 = 所有平台（向后兼容）。
+        # 用于「同一份 recipe 在不同平台拉不同轮子」：如 paddle 的
+        # win_amd64 / manylinux1_x86_64 / macosx_11_0_arm64。
+        "platforms",
         "include",
         "strip_components",
     }
@@ -148,6 +152,51 @@ def validate_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
     for index, artifact in enumerate(artifacts):
         _validate_artifact(artifact, index)
 
+    # 每个平台都必须至少有一个适用构件 —— 否则装上却缺文件，错在装配期而非下载期。
+    declared_platforms = [str(p) for p in recipe["platforms"]]
+    for platform_name in declared_platforms:
+        applicable = artifacts_for_platform(recipe, platform_name)
+        _require(
+            bool(applicable),
+            f"recipe 声明支持 {platform_name}，但没有任何 artifact 适用于它。"
+            "请给该平台的构件标注 platforms，或从 platforms 里移除该平台。",
+        )
+
+    # ★ 更进一步：**平台专属构件**存在时，每个平台都必须有各自的专属构件。
+    #
+    # 否则「一个 windows 专属轮子 + 一个纯 Python 通用包」会让 linux/macos
+    # 也"有适用构件"（靠那个通用包），掩盖了它们缺少平台专属二进制的真相 ——
+    # 实测踩到：把 ocr-paddle 的 linux 轮子删掉，校验仍然通过。
+    #
+    # 不误伤纯数据组件：tesseract 语言包只有一个通用构件、**没有任何专属构件**，
+    # 此时不触发本规则。
+    platform_specific = [
+        platform
+        for artifact in artifacts
+        if isinstance(artifact.get("platforms"), (list, str))
+        for platform in (
+            [artifact["platforms"]]
+            if isinstance(artifact["platforms"], str)
+            else artifact["platforms"]
+        )
+    ]
+    if platform_specific:
+        specific_by_platform: dict[str, list[dict[str, Any]]] = {p: [] for p in declared_platforms}
+        for artifact in artifacts:
+            declared = artifact.get("platforms")
+            if not isinstance(declared, (list, str)):
+                continue
+            names = [declared] if isinstance(declared, str) else declared
+            for name in names:
+                specific_by_platform.setdefault(str(name), []).append(artifact)
+        for platform_name in declared_platforms:
+            _require(
+                bool(specific_by_platform.get(platform_name)),
+                f"recipe 声明支持 {platform_name}，但它只有通用构件、没有平台专属构件。"
+                "多平台配方应给每个平台各自的二进制；若该组件确实是纯数据，"
+                "请把构件的 platforms 标注去掉（表示全平台通用）。",
+            )
+
     entry = recipe.get("entry")
     _require(isinstance(entry, dict), "recipe 需要 entry（入口声明）")
     assert isinstance(entry, dict)  # 供类型检查收窄
@@ -167,6 +216,27 @@ def validate_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
         )
 
     return recipe
+
+
+def artifacts_for_platform(recipe: dict[str, Any], platform: str) -> list[dict[str, Any]]:
+    """该平台需要拉取的构件。
+
+    构件的 `platforms` 缺省表示「所有平台」（向后兼容早期只有 windows 的配方）。
+    显式声明时按成员判定 —— 这样一份 recipe 可以给不同平台配不同轮子。
+    """
+    selected: list[dict[str, Any]] = []
+    for artifact in recipe.get("artifacts") or []:
+        if not isinstance(artifact, dict):
+            continue
+        declared = artifact.get("platforms")
+        if declared is None:
+            selected.append(artifact)
+            continue
+        if isinstance(declared, str):
+            declared = [declared]
+        if platform in {str(item) for item in declared}:
+            selected.append(artifact)
+    return selected
 
 
 def infer_artifact_format(artifact: dict[str, Any]) -> str:
@@ -625,7 +695,13 @@ def install_from_recipe(
     name = str(recipe["name"])
     version = str(recipe["version"])
     destination = component_root / f"{name}-{version}"
-    artifacts = recipe["artifacts"]
+    # 按**当前平台**筛构件：一份 recipe 可以给不同平台配不同轮子
+    # （paddle 的 win_amd64 / manylinux1_x86_64 / macosx_11_0_arm64）。
+    artifacts = artifacts_for_platform(recipe, current_platform())
+    _require(
+        bool(artifacts),
+        f"recipe 没有任何适用于 {current_platform()} 的构件",
+    )
 
     # 整个装配过程在**暂存目录**里完成，成功后原子替换到 destination。
     # 不能边下边解压到 destination：多构件时若第二个构件坏了，

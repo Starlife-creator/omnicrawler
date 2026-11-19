@@ -143,3 +143,124 @@ def test_market_recipes_are_installable_on_this_interpreter() -> None:
         )
     if checked == 0:
         pytest.skip("当前没有声明 python_abi 的配方")
+
+# ── 构件按平台筛选（一份 recipe 三平台各拉各的轮子） ─────────────────────
+def test_artifact_without_platforms_applies_everywhere() -> None:
+    """未标注 `platforms` 的构件对所有平台适用（向后兼容）。
+
+    早期配方（如 tesseract 语言包、纯 Python 的 paddleocr）不该因为
+    新增了平台筛选就装不上。
+    """
+    from omnicrawler.services.component_recipe import artifacts_for_platform
+
+    recipe = {"artifacts": [{"url": "https://example.invalid/x.whl", "sha256": "0" * 64}]}
+    for platform in ("windows", "linux", "macos"):
+        assert len(artifacts_for_platform(recipe, platform)) == 1
+
+
+def test_artifact_platform_filter_selects_one() -> None:
+    """标注了 `platforms` 的构件只在列出的平台出现。"""
+    from omnicrawler.services.component_recipe import artifacts_for_platform
+
+    recipe = {
+        "artifacts": [
+            {"url": "https://example.invalid/win.whl", "sha256": "a" * 64, "platforms": ["windows"]},
+            {"url": "https://example.invalid/lin.whl", "sha256": "b" * 64, "platforms": ["linux"]},
+            {"url": "https://example.invalid/any.whl", "sha256": "c" * 64},
+        ]
+    }
+    win = artifacts_for_platform(recipe, "windows")
+    lin = artifacts_for_platform(recipe, "linux")
+    assert [a["url"].rsplit("/", 1)[-1] for a in win] == ["win.whl", "any.whl"]
+    assert [a["url"].rsplit("/", 1)[-1] for a in lin] == ["lin.whl", "any.whl"]
+
+
+def test_platform_without_artifacts_is_rejected() -> None:
+    """声明支持某平台却没有任何适用构件 ⇒ 校验必须拒绝。
+
+    否则会「装上了但缺文件」，错误推迟到运行期才暴露。
+    """
+    from omnicrawler.services.component_recipe import RecipeError, validate_recipe
+
+    recipe = {
+        "schema": 1,
+        "name": "x",
+        "version": "1.0.0",
+        "platforms": ["windows", "linux"],
+        "architectures": ["x86_64"],
+        "artifacts": [
+            {"url": "https://example.invalid/w.whl", "sha256": "a" * 64, "platforms": ["windows"]}
+        ],
+        "entry": {"path": "entry.json"},
+    }
+    with pytest.raises(RecipeError) as excinfo:
+        validate_recipe(recipe)
+    assert "linux" in str(excinfo.value)
+
+
+def test_market_paddle_recipe_covers_three_platforms() -> None:
+    """市场里的 ocr-paddle 配方必须每个声明平台都有适用构件。
+
+    这条用**真实配方**：上游给三平台发了不同轮子
+    （win_amd64 / manylinux1_x86_64 / macosx_11_0_arm64）。
+    """
+    import json
+    from pathlib import Path
+
+    market = Path(__file__).resolve().parents[4] / "OmniCrawler-market"
+    recipe_path = market / "components" / "ocr-paddle" / "recipe.json"
+    if not recipe_path.is_file():
+        pytest.skip("需要 ocr-paddle 配方")
+
+    from omnicrawler.services.component_recipe import artifacts_for_platform, validate_recipe
+
+    recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
+    validate_recipe(recipe)  # 含「每个平台都要有构件」的检查
+
+    for platform in recipe["platforms"]:
+        items = artifacts_for_platform(recipe, platform)
+        assert items, f"{platform} 没有适用构件"
+        for item in items:
+            assert item.get("sha256"), f"{platform} 的构件缺 sha256"
+
+# ── 平台名必须用代码里认的那套（windows / linux / macos） ────────────────
+def test_platform_names_use_canonical_spelling() -> None:
+    """`platforms` 只能用 `windows` / `linux` / `macos`。
+
+    **真实缺陷**：`tesseract-chi-sim` 的 `platforms` 曾写成
+    `["windows", "linux", "darwin"]` —— `darwin` 是 `sys.platform` 的取值，
+    而 `current_platform()` 返回 `macos`。写错一个词，macOS 上就永远装不上，
+    而且 `check_compatibility` 只会说「不支持当前平台」，看不出是拼写问题。
+    """
+    from omnicrawler.services.component_recipe import current_platform
+
+    canonical = {"windows", "linux", "macos"}
+    assert current_platform() in canonical, "current_platform() 的取值不在规范集合内"
+
+    import json
+    from pathlib import Path
+
+    market = Path(__file__).resolve().parents[4] / "OmniCrawler-market"
+    components = market / "components"
+    if not components.is_dir():
+        pytest.skip("需要 market 仓的 components 目录")
+
+    checked = 0
+    for recipe_path in sorted(components.glob("*/recipe.json")):
+        recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
+        platforms = recipe.get("platforms") or []
+        checked += 1
+        bad = [p for p in platforms if p not in canonical]
+        assert not bad, (
+            f"{recipe_path.parent.name} 的 platforms 含非规范名 {bad}；"
+            f"允许 {sorted(canonical)}（`darwin` 是 sys.platform 的值，不是这里用的名字）"
+        )
+        for artifact in recipe.get("artifacts") or []:
+            declared = artifact.get("platforms")
+            if declared:
+                bad_art = [p for p in declared if p not in canonical]
+                assert not bad_art, (
+                    f"{recipe_path.parent.name} 的某个构件 platforms 含非规范名 {bad_art}"
+                )
+    if checked == 0:
+        pytest.skip("没有可检查的配方")
