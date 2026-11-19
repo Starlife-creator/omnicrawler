@@ -150,3 +150,37 @@ def test_exclusion_has_explanatory_comment() -> None:
     assert "试金石" in before_loop or "冻结" in before_loop, (
         "未说明为什么不删 Full（它是冻结兼容性基准）"
     )
+
+def test_budget_table_has_no_full_entry() -> None:
+    """预算表不得再声明 Full。
+
+    `check_artifact_budget.py` 会要求「声明的每个 edition 都必须有产物」。
+    保留 Full 条目会让「不再构建 Full」之后每个平台都报
+    `missing <platform> Full portable artifact` —— 判据在要求一个不生产的产物。
+    """
+    import json
+
+    path = _REPO / "packaging" / "artifact-budgets.json"
+    if not path.is_file():
+        pytest.skip("需要 artifact-budgets.json")
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    offenders = [plat for plat, eds in data.items() if isinstance(eds, dict) and "Full" in eds]
+    assert not offenders, f"预算表仍声明 Full：{offenders}"
+
+
+def test_budget_gate_iterates_declared_editions() -> None:
+    """门禁必须按预算表声明遍历，不得硬编码 edition 列表。
+
+    写死 `("Standard", "Full")` 是那个真实缺陷的根因：删掉 Full 构建之后
+    CI 三平台全部报 `missing ... Full portable artifact`。
+    """
+    gate = _REPO / "tools" / "gates" / "check_artifact_budget.py"
+    if not gate.is_file():
+        pytest.skip("需要 check_artifact_budget.py")
+
+    source = gate.read_text(encoding="utf-8")
+    assert 'for edition in ("Standard", "Full")' not in source, (
+        "门禁仍硬编码 Standard/Full —— 会在不支持 Full 时误报缺失"
+    )
+    assert "for edition in editions" in source, "门禁未按声明列表遍历"

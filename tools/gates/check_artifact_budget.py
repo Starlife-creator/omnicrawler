@@ -33,7 +33,16 @@ def check_artifacts(
 
     report: dict[str, Any] = {"platform": platform, "artifacts": {}}
     errors: list[str] = []
-    for edition in ("Standard", "Full"):
+    # 以**预算表声明**为准，不硬编码 edition 列表。
+    #
+    # 早先写死 `("Standard", "Full")`，于是「不再构建 Full」之后
+    # 每个平台都报 `missing <platform> Full portable artifact` —— 判据在
+    # 要求一个**已经不生产**的产物。门禁该守的是「声明的都要有且不超限」，
+    # 而不是「固定两个 edition」。
+    editions = [name for name in platform_budget if isinstance(platform_budget.get(name), dict)]
+    if not editions:
+        errors.append(f"artifact budget declares no edition for {platform}")
+    for edition in editions:
         artifact_path = artifacts.get(edition)
         budget = platform_budget.get(edition)
         if artifact_path is None:
