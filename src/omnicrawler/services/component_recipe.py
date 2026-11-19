@@ -366,9 +366,16 @@ def check_compatibility(
 
     required_abi = recipe.get("python_abi")
     if required_abi:
+        # `python_abi` 是**列表**（一份 recipe 可以声明多个可接受的 ABI）。
+        # 早先写成 `str(required_abi) == target_abi`，把 `["cp313"]` 变成
+        # 字符串 `"['cp313']"` 再比较，与当前 ABI 永远不相等 —— 连"完全匹配"
+        # 也会被判成不符（真实 CI 实测：需要 ['cp313']，当前 cp313，仍被拒）。
+        accepted = (
+            [required_abi] if isinstance(required_abi, str) else list(required_abi)
+        )
         _require(
-            str(required_abi) == target_abi,
-            f"组件要求的 Python ABI 与当前不符：需要 {required_abi}，当前 {target_abi}。"
+            target_abi in accepted,
+            f"组件要求的 Python ABI 与当前不符：需要 {accepted}，当前 {target_abi}。"
             "跨 ABI 的二进制扩展无法加载，装上也用不了。",
         )
 
