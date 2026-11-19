@@ -6,7 +6,7 @@
   "platforms": [
     "windows",
     "linux",
-    "darwin"
+    "macos"
   ],
   "architectures": [
     "x86_64",

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-18T16:28:59+00:00",
-  "sequence": 1791080201,
+  "generated_at": "2026-11-19T08:08:40+00:00",
+  "sequence": 1791080202,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -990,12 +990,15 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/ocr-paddle/recipe.json",
-      "recipe_digest": "49e400fa17b42ef89bd482e83765287611000eda9e86d38d6d646544016a2995",
+      "recipe_digest": "38247552dace70928d27e2a04fe45b1a20941e939d442c7282084ee076295868",
       "platforms": [
-        "windows"
+        "windows",
+        "linux",
+        "macos"
       ],
       "architectures": [
-        "x86_64"
+        "x86_64",
+        "aarch64"
       ],
       "python_abi": [
         "cp313"
@@ -1013,12 +1016,22 @@
           "size": 104794530
         },
         {
+          "url": "https://files.pythonhosted.org/packages/56/8d/5a700dc20c0d3d581f1d429f95f5064eb766c2818c5a05992dfef66b0765/paddlepaddle-3.3.1-cp313-cp313-manylinux1_x86_64.whl",
+          "sha256": "4f28038427649bb2fcfd4d52efa85ed8311df19122b4ebedc942484a0b57b032",
+          "size": 194837642
+        },
+        {
+          "url": "https://files.pythonhosted.org/packages/65/f8/bebb829227ac5574454b4342bcf512dbb02268118b62222fc7c1b420a3ef/paddlepaddle-3.3.1-cp313-cp313-macosx_11_0_arm64.whl",
+          "sha256": "2ce30bfb0023d8c9314b1413ca7a775a4ddd076e4551e74fbed2366cf1395c98",
+          "size": 104538799
+        },
+        {
           "url": "https://files.pythonhosted.org/packages/d2/79/2ade66cf72074a3d2a013e2ba1f256d6116fec797b908fc1b4f9c320d8c4/paddleocr-3.7.0-py3-none-any.whl",
           "sha256": "c0f0a81ad4112727f30c6fcf986ac0ef6a120d31ee0991a01fae0357ee32d338",
           "size": 146750
         }
       ],
-      "declared_total_bytes": 104941280,
+      "declared_total_bytes": 404317721,
       "package_manifest_file": "components/ocr-paddle/package.manifest.json",
       "creator_package_signature_file": "components/ocr-paddle/package.manifest.creator.sig",
       "creator_identity_file": "components/ocr-paddle/creator.identity",
@@ -1030,11 +1043,11 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/tesseract-chi-sim/recipe.json",
-      "recipe_digest": "3c5b24d2cda5e6030c2d2b993e6a7817accca664dbf13e2595f47dcb239fd3e3",
+      "recipe_digest": "36d47434510edbc570e314fa614057a00efe67e4b15d7b21823f0f8a8487e7e7",
       "platforms": [
         "windows",
         "linux",
-        "darwin"
+        "macos"
       ],
       "architectures": [
         "x86_64",
