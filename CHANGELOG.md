@@ -1,6 +1,27 @@
 # Changelog
 
 ## Unreleased
+## 1.0.12 - 2026-11-19
+
+### 变更
+
+### 变更
+
+- feat(build): **构建与发布基线升到 Python 3.13**。此前 CI 用 3.12、开发环境 3.13，
+  导致组件 ABI 对不上（冻结包是 cp312，而 `ocr-paddle` 配方声明 cp313，
+  v1.0.11 真实 CI 报的 `需要 ['cp313']，当前 cp312` 是**正确拒绝**）。
+- 同步改动：`BUILD_PYTHON_VERSION` / `requires-python` / `uv.lock` /
+  三个构建脚本的版本门槛 / 两个安装脚本 / 五个质量工作流的 12 处 `\"3.12\"` /
+  `README` 与 `docs/SUPPORT_MATRIX.md` 的支持版本声明。
+
+### 验证边界
+
+本机已验证：静态门禁 32 通过、文档一致性、锁一致性、ruff 全树。
+**只能由 CI 验证**：三平台 PyInstaller 在 3.13 下是否成功；**macOS 是否真的
+没有 PYI-5670 回归**（历史上 python@3.13 曾失败，但查证后两条根因均已不成立：
+spec 结构已改为 COLLECT→BUNDLE、PYI-5670 是 PyInstaller 6.15 的回归而已锁 6.21.0）。
+脚本保留了 python@3.12 回退候选，若 macOS 仍失败可一处改回。
+
 ## 1.0.11 - 2026-11-19
 
 ### 变更
