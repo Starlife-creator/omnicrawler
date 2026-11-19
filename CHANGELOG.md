@@ -1,6 +1,24 @@
 # Changelog
 
 ## Unreleased
+## 1.0.22 - 2026-11-19
+
+### 变更
+
+### 修复（诊断）
+
+- fix(components): **worker 自报的错误从 stdout 取**。worker 失败时会在 stdout
+  打 `{ok:false, stage, error}`，而 `component_runner` 只读 stderr ——
+  于是真实错误被 `内置 Tesseract 缺失` 这类无关告警淹没（CI 上
+  「退出码 1」后面跟的全是告警）。现在优先取 stdout 的 `stage` + `error`，
+  取不到才退回 stderr。`stage` 直接说明炸在 `import_component` 还是 `backend`。
+- test: 3 条守卫（能取错误 / 成功 JSON 不算错 / 非 JSON 退回空串）。
+
+### 进展（v1.0.21 已确认宿主侧全绿）
+
+`已校验文件：79 个`、组件目录与入口都正确 —— 装配 → 哈希校验 → worker 启动全链路通了，
+失败发生在组件子进程内部。本轮修完错误提取后应能直接看到是哪一步。
+
 ## 1.0.21 - 2026-11-19
 
 ### 变更
