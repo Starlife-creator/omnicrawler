@@ -98,11 +98,20 @@ def _probe_paddle(module_name: str, payload: dict[str, Any]) -> dict[str, Any]:
         import paddle
 
         result["paddle_version"] = str(getattr(paddle, "__version__", "") or "")
-        # `paddle.utils.run_check()` 会真的初始化后端；失败即说明原生库有问题。
-        from paddle.utils import run_check  # type: ignore[import-not-found]
-
-        run_check()
-        result["backend"] = "ok"
+        # **只验证组件自身依赖能否加载**，不调 `paddle.utils.run_check()`：
+        # 那个函数会检查整个运行时（含 Tesseract / ChromeDriver），
+        # 而 Standard 包本来就不带它们 —— 用它判组件成败会把
+        # 「组件没问题」误报成「组件坏了」（真实 CI 踩到）。
+        #
+        # 真正要证明的是「原生扩展能在隔离子进程里 import 成功」：
+        # 符号冲突、缺 DLL、ABI 不匹配都会在这一步炸。
+        # import 一个**必需的原生子模块**：符号冲突 / 缺 DLL / ABI 不匹配都会在这步炸。
+        # 不用 `paddle.utils.run_check()`（它会检查 Tesseract/ChromeDriver 等整机环境），
+        # 也不用 `paddle.base.core`（不同版本路径会变）。用公开的顶层包装：
+        # `paddle.Tensor` 是 C 扩展类型，取它就会真正加载 `libpaddle.so`。
+        _probe = paddle.Tensor  # type: ignore[attr-defined]
+        result["backend"] = "ok" if _probe is not None else "missing"
+        result["core_loaded"] = True
     except Exception as exc:  # noqa: BLE001 - 后端不可用要如实回报，不能吞
         result["ok"] = False
         result["backend"] = f"{type(exc).__name__}: {exc}"

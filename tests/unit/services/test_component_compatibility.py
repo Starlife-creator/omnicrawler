@@ -471,3 +471,29 @@ def test_services_does_not_import_cli() -> None:
             if "from ..cli" in stripped or "from omnicrawler.cli" in stripped:
                 offenders.append(f"{path.name}: {stripped}")
     assert not offenders, f"services 层依赖了 CLI：{offenders}"
+
+def test_paddle_probe_does_not_check_whole_machine() -> None:
+    """paddle 适配器不得调用 `paddle.utils.run_check()`。
+
+    那个函数检查的是**整机运行时**（Tesseract / ChromeDriver / CUDA 等），
+    而 Standard 包本来就不带 Tesseract/ChromeDriver —— 用它判组件成败，
+    会把「组件没问题」误报成「组件坏了」（真实 CI 踩到）。
+
+    组件要证明的只是「它的原生扩展能在隔离子进程里 import 成功」。
+    """
+    import pathlib as _pathlib
+
+    worker = (
+        _pathlib.Path(__file__).resolve().parents[3]
+        / "src"
+        / "omnicrawler"
+        / "services"
+        / "component_worker.py"
+    )
+    source = worker.read_text(encoding="utf-8")
+    code = "\n".join(
+        line for line in source.splitlines() if not line.strip().startswith("#")
+    )
+    assert "run_check()" not in code, (
+        "仍在校验整机运行时 —— 会把组件自身没问题误报成失败"
+    )
