@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-19T08:08:40+00:00",
-  "sequence": 1791080202,
+  "generated_at": "2026-11-19T10:11:28+00:00",
+  "sequence": 1791080203,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -990,7 +990,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/ocr-paddle/recipe.json",
-      "recipe_digest": "38247552dace70928d27e2a04fe45b1a20941e939d442c7282084ee076295868",
+      "recipe_digest": "0a30b1ca95bfc9a5d40641723cd37fecab2b0f8445992e7133dccba53ae8683a",
       "platforms": [
         "windows",
         "linux",
@@ -1007,7 +1007,8 @@
         "path": "entry.json",
         "protocol": "ocr-file-v1",
         "engine": "paddle",
-        "runner": "worker-wheelpack"
+        "runner": "worker-wheelpack",
+        "module": "site-packages/paddleocr/__init__.py"
       },
       "artifacts": [
         {

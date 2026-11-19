@@ -58,6 +58,7 @@
     "path": "entry.json",
     "protocol": "ocr-file-v1",
     "engine": "paddle",
-    "runner": "worker-wheelpack"
+    "runner": "worker-wheelpack",
+    "module": "site-packages/paddleocr/__init__.py"
   }
 }
