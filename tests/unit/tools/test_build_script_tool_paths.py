@@ -32,10 +32,25 @@ from pathlib import Path
 import pytest
 
 _REPO = Path(__file__).resolve().parents[3]
-_BUILD_SCRIPTS = ("build_windows.ps1", "build_linux.sh", "build_macos.sh")
+
+#: 所有会调用 `tools/*.py` 的构建与打包脚本。
+#:
+#: **为什么要包含 `packaging/`**：运行时准备脚本 `prepare_{linux,macos}_runtime.sh`
+#: 也调用工具脚本。第一次只扫了根目录三个构建脚本，漏掉它们 ⇒ 真实 CI 上
+#: Linux 构建在 `can't open file 'tools/download_and_smoke_test.py'` 处失败。
+_BUILD_SCRIPTS = (
+    "build_windows.ps1",
+    "build_linux.sh",
+    "build_macos.sh",
+    "packaging/prepare_linux_runtime.sh",
+    "packaging/prepare_macos_runtime.sh",
+)
 
 #: 匹配 `tools/<路径>.py`，正反斜杠都算（三个平台的写法不同）。
-_TOOL_REF_RE = re.compile(r"tools[/\\][\w/\\\-]+\.py")
+#: `(?<!\w)` 保证不把 `tests/unit/tools/xxx.py` 里的片段当成 `tools/xxx.py`；
+#: 但**必须允许**前面是 `/` 或 `$PROJECT_ROOT/` —— 构建脚本的写法是
+#: `"$PROJECT_ROOT/tools/gates/x.py"`，若把 `/` 也排除就会漏掉全部真实引用。
+_TOOL_REF_RE = re.compile(r"(?<!\w)tools[/\\][\w/\\\-]+\.py")
 
 
 def _existing_scripts() -> list[str]:
@@ -43,8 +58,21 @@ def _existing_scripts() -> list[str]:
 
 
 def _refs_in(script: str) -> set[str]:
+    """脚本里**真正会被执行**的 `tools/*.py` 引用。
+
+    跳过注释行：构建脚本的注释里会提到守卫测试路径
+    （如 `# 守卫：tests/unit/tools/test_xxx.py`），那**不是**执行引用，
+    把它算进来会让守卫对本该通过的脚本判红 —— 那是守卫自己的判据错误。
+    """
     text = (_REPO / script).read_text(encoding="utf-8", errors="replace")
-    return {match.replace("\\", "/") for match in _TOOL_REF_RE.findall(text)}
+    executable_lines: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(("#", "//", "<!--")):
+            continue
+        executable_lines.append(line)
+    body = "\n".join(executable_lines)
+    return {match.replace("\\", "/") for match in _TOOL_REF_RE.findall(body)}
 
 
 def test_build_scripts_are_present() -> None:
@@ -73,17 +101,33 @@ def test_referenced_tool_scripts_exist(script: str) -> None:
 
 @pytest.mark.parametrize("script", _existing_scripts())
 def test_scan_is_not_vacuous(script: str) -> None:
-    """每个脚本都应扫到至少几个引用——扫到 0 个说明解析失效。"""
+    """每个脚本都应扫到至少 1 个引用——扫到 0 个说明解析失效。
+
+    阈值取 1，因为各脚本的调用量天然不同，按实测分别确定：
+
+    | 脚本 | 实际调用 |
+    |---|---|
+    | `build_*.{sh,ps1}` | 10–12 个 |
+    | `packaging/prepare_linux_runtime.sh` | 2 个 |
+    | `packaging/prepare_macos_runtime.sh` | **1 个**（只调 `build_common.py`） |
+
+    把阈值统一抬高会让阈值本身变成假红来源——那是守卫的判据错误，
+    不是产品缺陷。这里只防「正则失效导致扫到 0 个」这一种情况。
+    """
     refs = _refs_in(script)
-    assert len(refs) >= 3, (
-        f"{script} 只扫到 {len(refs)} 个 tools/*.py 引用，解析可能已失效：{sorted(refs)}"
+    assert len(refs) >= 1, (
+        f"{script} 一个 tools/*.py 引用都没扫到，解析已失效"
     )
 
 
-def test_all_three_platforms_are_covered() -> None:
-    """三平台脚本都要在检查范围内——只查一个平台会让另外两个长期失修。"""
+def test_all_platform_entrypoints_are_covered() -> None:
+    """三个平台的**构建入口**都要在检查范围内。
+
+    不再断言「恰好 3 个脚本」——`packaging/prepare_*_runtime.sh` 也是入口，
+    以后还可能加。判据是「三个平台的构建入口都在」，而不是「数量对得上」。
+    """
     covered = set(_existing_scripts())
-    missing_platform = set(_BUILD_SCRIPTS) - covered
-    if missing_platform:
-        pytest.skip(f"仓库内不含这些平台的构建脚本：{sorted(missing_platform)}")
-    assert len(covered) == 3
+    for entry in ("build_windows.ps1", "build_linux.sh", "build_macos.sh"):
+        if not (_REPO / entry).is_file():
+            pytest.skip(f"仓库内不含 {entry}")
+        assert entry in covered, f"{entry} 不在检查范围内"

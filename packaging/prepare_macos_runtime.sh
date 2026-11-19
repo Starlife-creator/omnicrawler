@@ -244,7 +244,7 @@ if [[ "$SKIP_TESSERACT" -eq 0 ]]; then
 fi
 
 # ---- runtime-manifest.json（与 Windows 对齐；生成逻辑在 tools/builders/build_common.py）----
-"$PYTHON" "$PROJECT_ROOT/tools/build_common.py" manifest \
+"$PYTHON" "$PROJECT_ROOT/tools/builders/build_common.py" manifest \
     --runtime-root "$RUNTIME_ROOT" --chrome "$CHROME_BIN" \
   || die "runtime manifest generation failed"
 echo "macOS runtime ready: $RUNTIME_ROOT"

@@ -245,13 +245,13 @@ fi
 # ---- PaddleOCR 模型（复用跨平台下载器）-------------------------------------
 if [[ "$SKIP_OCR_MODELS" -eq 0 ]]; then
   log "Prepare and verify PPStructureV3 offline models..."
-  "$PYTHON" "$PROJECT_ROOT/tools/download_and_smoke_test.py" \
+  "$PYTHON" "$PROJECT_ROOT/tools/releasing/download_and_smoke_test.py" \
       "$RUNTIME_ROOT/models/paddlex" --source aistudio \
     || die "PaddleOCR model verification failed"
 fi
 
 # ---- runtime-manifest.json（与 Windows 对齐；生成逻辑在 tools/builders/build_common.py）----
-"$PYTHON" "$PROJECT_ROOT/tools/build_common.py" manifest \
+"$PYTHON" "$PROJECT_ROOT/tools/builders/build_common.py" manifest \
     --runtime-root "$RUNTIME_ROOT" --chrome "$CHROME_BIN" \
   || die "runtime manifest generation failed"
 echo "Linux runtime ready: $RUNTIME_ROOT"
