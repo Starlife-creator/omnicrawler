@@ -397,3 +397,77 @@ def test_worker_engine_registry_is_not_empty() -> None:
 
     assert "generic" in _ADAPTERS
     assert "paddle" in _ADAPTERS
+
+# ── 冻结环境：不能用 `python -m`（宿主 exe 不认） ────────────────────────
+def test_worker_command_handles_frozen() -> None:
+    """冻结包里必须走 CLI 内部 dispatch，而不是 `python -m`。
+
+    **真实 CI 踩到**：冻结包的 `sys.executable` 是宿主 exe 本身，
+    `[sys.executable, "-m", "omnicrawler.services.component_worker"]`
+    会变成 `omnicrawler-cli -m ...` —— CLI 不认识 `-m`，argparse 报
+    `invalid choice`，日志里只剩一长串子命令列表。
+    """
+    import sys as _sys
+
+    from omnicrawler.services import component_runner as runner
+
+    original = getattr(_sys, "frozen", None)
+    try:
+        _sys.frozen = True  # type: ignore[attr-defined]
+        command = runner._worker_command()
+        assert "-m" not in command, f"冻结环境仍在用 -m：{command}"
+        assert command[0] == _sys.executable
+        assert (
+            command[1] == runner._cli_internal_command()
+        ), "冻结环境应使用 CLI 的内部 dispatch 命令"
+    finally:
+        if original is None:
+            del _sys.frozen  # type: ignore[attr-defined]
+        else:
+            _sys.frozen = original  # type: ignore[attr-defined]
+
+
+def test_worker_command_in_source_env() -> None:
+    """源码环境仍用 `python -m`（可读、可调试）。"""
+
+    from omnicrawler.services import component_runner as runner
+
+    command = runner._worker_command()
+    assert "-m" in command
+    assert "omnicrawler.services.component_worker" in command
+
+
+def test_internal_commands_are_dispatchable() -> None:
+    """CLI 内部 dispatch 表里的每个模块都必须能 import 且有 main()。"""
+
+    from omnicrawler.cli import _main as cli_main
+    from omnicrawler.services import component_runner as runner
+
+    assert runner.INTERNAL_WORKER_COMMAND == cli_main.INTERNAL_WORKER_COMMAND, (
+        f"常量漂移：services={runner.INTERNAL_WORKER_COMMAND!r} "
+        f"vs cli={cli_main.INTERNAL_WORKER_COMMAND!r}"
+    )
+    assert runner.INTERNAL_WORKER_COMMAND in cli_main._INTERNAL_COMMANDS, (
+        "CLI 没有注册这个内部命令"
+    )
+
+
+def test_services_does_not_import_cli() -> None:
+    """`services` 层不得 import `omnicrawler.cli`。
+
+    否则架构门禁的环预算会被顶超。这条是上面那个「两侧各写常量」决定的守门人 ——
+    没有它，后来者「顺手」加一句 `from ..cli import _main` 就会静默破坏分层。
+    """
+    import pathlib as _pathlib
+
+    services = _pathlib.Path(__file__).resolve().parents[3] / "src" / "omnicrawler" / "services"
+    offenders = []
+    for path in services.rglob("*.py"):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if "from ..cli" in stripped or "from omnicrawler.cli" in stripped:
+                offenders.append(f"{path.name}: {stripped}")
+    assert not offenders, f"services 层依赖了 CLI：{offenders}"

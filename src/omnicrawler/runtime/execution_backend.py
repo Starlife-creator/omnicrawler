@@ -226,11 +226,29 @@ class LocalWorkerBackend:
                 command = [*self._worker_command, "--session", str(self.session_file)]
             else:
                 worker_executable = Path(sys.executable).resolve().parent / "omnicrawler-worker.exe"
-                command = (
-                    [str(worker_executable), "--session", str(self.session_file)]
-                    if getattr(sys, "frozen", False) and worker_executable.is_file()
-                    else [sys.executable, "-m", "omnicrawler.runtime.worker_main", "--session", str(self.session_file)]
-                )
+                if getattr(sys, "frozen", False) and worker_executable.is_file():
+                    # 首选：随包分发的独立 worker exe
+                    command = [str(worker_executable), "--session", str(self.session_file)]
+                elif getattr(sys, "frozen", False):
+                    # 冻结包里没有独立 worker exe 时，**不能用 `python -m`**：
+                    # sys.executable 是宿主 exe，它不认 `-m`（argparse 会报
+                    # invalid choice）。改走 CLI 的内部 dispatch 命令。
+                    from ..cli import _main as _cli_main
+
+                    command = [
+                        sys.executable,
+                        _cli_main.INTERNAL_RUNTIME_WORKER_COMMAND,
+                        "--session",
+                        str(self.session_file),
+                    ]
+                else:
+                    command = [
+                        sys.executable,
+                        "-m",
+                        "omnicrawler.runtime.worker_main",
+                        "--session",
+                        str(self.session_file),
+                    ]
             process = subprocess.Popen(
                 command,
                 stdin=subprocess.DEVNULL, stdout=log, stderr=log, close_fds=True,

@@ -189,6 +189,43 @@ def component_runner_env(spec: WheelPackSpec) -> dict[str, str]:
     return env
 
 
+#: CLI 里的内部 dispatch 子命令名（冻结包里用它启动 worker）。
+INTERNAL_WORKER_COMMAND = "__component_worker__"
+
+
+#: CLI 里启动本 worker 的内部 dispatch 命令名。
+#:
+#: **刻意不 import `omnicrawler.cli._main`**：那会给 `services` 引入一条
+#: `services → cli` 的依赖，把架构门禁的环预算顶超（实测 66 > 65）。
+#: services 层不该依赖 CLI 层。这里只是复用一个**稳定的字符串约定**，
+#: 两侧用同一个值，由守卫 `test_internal_commands_are_dispatchable` 保证
+#: CLI 那边确实注册了它。
+INTERNAL_WORKER_COMMAND = "__component_worker__"
+
+
+def _cli_internal_command() -> str:
+    """CLI 里启动本 worker 的内部 dispatch 命令名。"""
+    return INTERNAL_WORKER_COMMAND
+
+
+def _worker_command() -> list[str]:
+    """构造启动 worker 的命令。
+
+    **冻结包里 `sys.executable` 是宿主 exe 本身**（不是 python 解释器），
+    所以 `[sys.executable, "-m", "omnicrawler.services.component_worker"]`
+    会变成 `omnicrawler-cli -m ...` —— CLI 不认识 `-m`，
+    argparse 直接报 `invalid choice`（真实 CI 踩到，日志里只有一长串子命令列表）。
+
+    两种形态：
+
+    * **源码环境**：`python -m omnicrawler.services.component_worker`；
+    * **冻结环境**：`<宿主 exe> __component_worker__`（CLI 里有内部 dispatch）。
+    """
+    if getattr(sys, "frozen", False):
+        return [sys.executable, _cli_internal_command()]
+    return [sys.executable, "-m", "omnicrawler.services.component_worker"]
+
+
 def run_component(
     spec: WheelPackSpec,
     payload: dict[str, Any],
@@ -212,7 +249,7 @@ def run_component(
     #
     # 让组件自带脚本是更糟的选择：recipe 来自市场，允许它下发脚本等于允许
     # 第三方代码执行（asset_trust 铁律禁止）。所以把「怎么执行」固定在宿主。
-    command = [sys.executable, "-m", "omnicrawler.services.component_worker"]
+    command = _worker_command()
     try:
         completed = subprocess.run(  # noqa: S603 - 命令由本模块构造，非用户输入
             command,

@@ -105,8 +105,55 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 
+#: 内部 dispatch 命令：**不出现在 `--help`**，只供宿主自己启动子进程用。
+#:
+#: 为什么需要它：冻结包里 `sys.executable` 是宿主 exe，`python -m <module>`
+#: 这种形态不可用（exe 不认 `-m`，argparse 会报 invalid choice）。
+#: 所以给宿主开一个内部命令，把模块入口变成 `omnicrawler __component_worker__`。
+INTERNAL_WORKER_COMMAND = "__component_worker__"
+
+#: 运行期 worker（`runtime/worker_main.py`）的内部命令。
+INTERNAL_RUNTIME_WORKER_COMMAND = "__runtime_worker__"
+
+#: 内部命令 → 要执行的模块（`python -m` 的等价物）。
+#: 加新条目时**必须**同时确认该模块的 main() 能接受 argv（worker_main 可以，
+#: component_worker 不行 —— 它从环境变量与 stdin 读参数）。
+_INTERNAL_COMMANDS = {
+    INTERNAL_WORKER_COMMAND: "omnicrawler.services.component_worker",
+    INTERNAL_RUNTIME_WORKER_COMMAND: "omnicrawler.runtime.worker_main",
+}
+
+
+def _dispatch_internal(argv: list[str]) -> bool:
+    """若 argv[0] 是内部命令则就地执行对应模块，返回是否已处理。
+
+    **在 argparse 之前拦截**：内部命令不进 subparsers，所以 `--help` 里看不到它，
+    argparse 也不会因为不认识它而报错。
+    """
+    if not argv or argv[0] not in _INTERNAL_COMMANDS:
+        return False
+    module_name = _INTERNAL_COMMANDS[argv[0]]
+    import importlib
+
+    module = importlib.import_module(module_name)
+    entry = getattr(module, "main", None)
+    if entry is None:
+        print(f"内部命令 {argv[0]} 的模块缺少 main()", file=sys.stderr)
+        raise SystemExit(2)
+    # 有的 worker 从环境变量/stdin 读参数（component_worker），有的要 argv
+    # （worker_main 的 --session）。按签名决定，避免两处各写一套。
+    import inspect
+
+    try:
+        _accepts_args = bool(inspect.signature(entry).parameters)
+    except (TypeError, ValueError):  # pragma: no cover - 内建函数无签名
+        _accepts_args = False
+    raise SystemExit(entry(argv[1:]) if _accepts_args else entry())
+
+
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
+    _dispatch_internal(argv)
     # 统一 UTF-8 输出：Windows 管道/重定向下 Python 默认按 locale（cp1252/GBK）
     # 编码 stdout，打印含中文的 JSON（_json ensure_ascii=False）会抛
     # UnicodeEncodeError——CI（capabilities --verify-imports）与任何重定向
