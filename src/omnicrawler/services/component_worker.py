@@ -87,28 +87,28 @@ def _probe_paddle(module_name: str, payload: dict[str, Any]) -> dict[str, Any]:
     """`paddle` 引擎：import `paddleocr`，并检查 PaddlePaddle 后端可用。"""
     import importlib
 
-    ocr = importlib.import_module(module_name)
-    result: dict[str, Any] = {
-        "ok": True,
-        "engine": "paddle",
-        "module": module_name,
-        "version": str(getattr(ocr, "__version__", "") or ""),
-    }
+    # **逐步上报**：哪一步炸就报哪一步，别让调用方只看到一句"退出码 1"。
+    result: dict[str, Any] = {"ok": True, "engine": "paddle", "module": module_name}
+    try:
+        ocr = importlib.import_module(module_name)
+    except Exception as exc:  # noqa: BLE001 - 组件 import 失败要如实回报
+        result["ok"] = False
+        result["stage"] = "import_component"
+        result["error"] = f"{type(exc).__name__}: {exc}"
+        return result
+    result["version"] = str(getattr(ocr, "__version__", "") or "")
     try:
         import paddle
 
         result["paddle_version"] = str(getattr(paddle, "__version__", "") or "")
         # **只验证组件自身依赖能否加载**，不调 `paddle.utils.run_check()`：
-        # 那个函数会检查整个运行时（含 Tesseract / ChromeDriver），
-        # 而 Standard 包本来就不带它们 —— 用它判组件成败会把
-        # 「组件没问题」误报成「组件坏了」（真实 CI 踩到）。
+        # 那个函数检查的是**整机运行时**（Tesseract / ChromeDriver / CUDA），
+        # 而 Standard 本来就不带 Tesseract/ChromeDriver —— 用它判组件成败，
+        # 会把「组件没问题」误报成「组件坏了」（真实 CI 踩到）。
         #
-        # 真正要证明的是「原生扩展能在隔离子进程里 import 成功」：
-        # 符号冲突、缺 DLL、ABI 不匹配都会在这一步炸。
-        # import 一个**必需的原生子模块**：符号冲突 / 缺 DLL / ABI 不匹配都会在这步炸。
-        # 不用 `paddle.utils.run_check()`（它会检查 Tesseract/ChromeDriver 等整机环境），
-        # 也不用 `paddle.base.core`（不同版本路径会变）。用公开的顶层包装：
-        # `paddle.Tensor` 是 C 扩展类型，取它就会真正加载 `libpaddle.so`。
+        # 要证明的只是「原生扩展能在隔离子进程里 import 成功」：
+        # 符号冲突 / 缺 DLL / ABI 不匹配都会在这步炸。
+        # 用公开的顶层类型探针（不依赖 `paddle.base.core` 这种会随版本改动的路径）：
         _probe = paddle.Tensor  # type: ignore[attr-defined]
         result["backend"] = "ok" if _probe is not None else "missing"
         result["core_loaded"] = True
