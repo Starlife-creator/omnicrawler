@@ -81,14 +81,28 @@ def _bump_market_pin(ref_file: Path, head: str) -> None:
     ref_file.write_text(head + "\n", encoding="utf-8")
     print(f"[OK] 已更新市场钉值 {ref_file}: {current[:12]}… -> {head}")
 
-# 只需同步元数据：catalog + 发布者身份 + 信任根，绝不拉插件/模板载荷。
-SYNC_ITEMS = ("catalog.json", "authors", "keys")
+# 只需同步元数据：catalog + 发布者身份 + 信任根 + **组件声明**，绝不拉插件/模板载荷。
+#
+# ★ 为什么 `components` 也算元数据：组件目录**只含声明**——`recipe.json`（几十 KB，
+#   描述"从哪个上游拉、sha256 是多少、怎么拼"）+ 签名轨 + `listing.md`。
+#   真正的字节（wheel、模型、语言包）都在上游，本仓不托管。
+#   当前两个组件合计 4.8 KB；把它们排除会让 CI 里的「装齐」拿不到 recipe。
+SYNC_ITEMS = ("catalog.json", "authors", "keys", "components")
 
 
-def _mirror(src: Path, dest: Path, stats: dict[str, int]) -> None:
-    """把 src 目录镜像进 dest（src 有而 dest 无则拷贝，dest 多余则删除）。"""
+def _mirror(src: Path, dest: Path, stats: dict[str, int], *, top: bool = True) -> None:
+    """把 src 目录镜像进 dest（src 有而 dest 无则拷贝，dest 多余则删除）。
+
+    :param top: 是否是**顶层**调用。只有顶层才按 `SYNC_ITEMS` 过滤；
+        递归进子目录时必须镜像全部内容。
+
+        **为什么**：`components/` 下面是 `ocr-paddle/`、`tesseract-chi-sim/`，
+        这些名字不在 `SYNC_ITEMS` 里。若递归时也按它过滤，子目录会被建成空壳
+        —— 实测踩到：目录有了、recipe.json 没进去，CI 的「装齐」拿不到 recipe。
+    """
     dest.mkdir(parents=True, exist_ok=True)
-    for item in SYNC_ITEMS:
+    items = SYNC_ITEMS if top else tuple(p.name for p in src.iterdir())
+    for item in items:
         s = src / item
         d = dest / item
         if s.is_dir():
@@ -111,7 +125,7 @@ def _mirror(src: Path, dest: Path, stats: dict[str, int]) -> None:
                         shutil.copy2(child, target)
                         stats["updated"] += 1
                 elif child.is_dir():
-                    _mirror(child, target, stats)
+                    _mirror(child, target, stats, top=False)
         elif s.is_file():
             if not d.exists() or not _content_equal(s.read_bytes(), d.read_bytes()):
                 shutil.copy2(s, d)

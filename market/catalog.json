@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-10-04T02:16:27+00:00",
-  "sequence": 1791080187,
+  "generated_at": "2026-11-18T16:28:59+00:00",
+  "sequence": 1791080201,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -12,18 +12,18 @@
     {
       "id": "academic-paper-downloader",
       "name": "academic-paper-downloader",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "publisher": "starlife",
-      "category": "source",
+      "category": "utility",
       "plugin_types": [
         "source",
         "processor",
         "hook"
       ],
       "summary": "从 Web of Science 导出文件批量下载论文 PDF，全优化版",
-      "description_file": "plugins/academic-paper-downloader/versions/0.8.0/listing.md",
-      "plugin_file": "plugins/academic-paper-downloader/versions/0.8.0/plugin.py",
-      "signature_file": "plugins/academic-paper-downloader/versions/0.8.0/plugin.py.sig",
+      "description_file": "plugins/academic-paper-downloader/versions/0.9.0/listing.md",
+      "plugin_file": "plugins/academic-paper-downloader/versions/0.9.0/plugin.py",
+      "signature_file": "plugins/academic-paper-downloader/versions/0.9.0/plugin.py.sig",
       "signature_algorithm": "ed25519",
       "permissions": [
         "network:scoped",
@@ -31,7 +31,8 @@
         "state:read",
         "state:write",
         "secrets:read",
-        "files:read"
+        "files:read",
+        "artifacts:write"
       ],
       "compatible_core": ">=0.11.2",
       "license": "MIT",
@@ -45,9 +46,9 @@
         "openalex",
         "batch-download"
       ],
-      "updated_at": "2026-10-04",
-      "creator_signature_file": "plugins/academic-paper-downloader/versions/0.8.0/creator.sig",
-      "creator_identity_file": "plugins/academic-paper-downloader/versions/0.8.0/creator.identity",
+      "updated_at": "2026-11-04",
+      "creator_signature_file": "plugins/academic-paper-downloader/versions/0.9.0/creator.sig",
+      "creator_identity_file": "plugins/academic-paper-downloader/versions/0.9.0/creator.identity",
       "execution_mode": "subprocess",
       "domains": [
         "api.crossref.org",
@@ -77,11 +78,6 @@
       "state_schema_version": 1,
       "dependencies": [
         {
-          "name": "httpx",
-          "version": ">=0.27,<1.0",
-          "license": "BSD-3-Clause"
-        },
-        {
           "name": "yaml",
           "version": ">=5.4,<7.0",
           "license": "MIT"
@@ -105,37 +101,32 @@
           "name": "pypdf",
           "version": ">=3.0,<4.0",
           "license": "BSD-3-Clause"
-        },
-        {
-          "name": "playwright",
-          "version": ">=1.30,<2.0",
-          "license": "Apache-2.0"
         }
       ],
-      "package_manifest_file": "plugins/academic-paper-downloader/versions/0.8.0/package.manifest.json",
-      "creator_package_signature_file": "plugins/academic-paper-downloader/versions/0.8.0/package.manifest.creator.sig",
-      "maintainer_package_signature_file": "plugins/academic-paper-downloader/versions/0.8.0/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "2bd58f2ba350cb284fc7da91cd8680a980fa04becd65a287ad5baf3e867fa230",
+      "package_manifest_file": "plugins/academic-paper-downloader/versions/0.9.0/package.manifest.json",
+      "creator_package_signature_file": "plugins/academic-paper-downloader/versions/0.9.0/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/academic-paper-downloader/versions/0.9.0/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "ba2ee4f6c3df0733a909fa9d7b8018638a910743776ed8789b81076ef3e90222",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
-        "0.8.0": {
-          "sha256": "a6b87214e25e7066dbecd8b34228a3f2d1affdc087c46d22fa0985083ee1927c"
+        "0.9.0": {
+          "sha256": "d8205bb95d103c2f21f4857c2132628616c99935b244b8a4c2d31321528038b3"
         }
       }
     },
     {
       "id": "chronicle-capsule",
       "name": "chronicle-capsule",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "publisher": "starlife",
-      "category": "exporter",
+      "category": "utility",
       "plugin_types": [
         "exporter"
       ],
       "summary": "以隐私、元数据或原始保全模式生成有界 WARC 1.1 归档",
-      "description_file": "plugins/chronicle-capsule/versions/0.4.0/listing.md",
-      "plugin_file": "plugins/chronicle-capsule/versions/0.4.0/plugin.py",
-      "signature_file": "plugins/chronicle-capsule/versions/0.4.0/plugin.py.sig",
+      "description_file": "plugins/chronicle-capsule/versions/0.4.1/listing.md",
+      "plugin_file": "plugins/chronicle-capsule/versions/0.4.1/plugin.py",
+      "signature_file": "plugins/chronicle-capsule/versions/0.4.1/plugin.py.sig",
       "signature_algorithm": "ed25519",
       "permissions": [
         "records:read",
@@ -152,9 +143,9 @@
         "sha256",
         "streaming"
       ],
-      "updated_at": "2026-10-04",
-      "creator_signature_file": "plugins/chronicle-capsule/versions/0.4.0/creator.sig",
-      "creator_identity_file": "plugins/chronicle-capsule/versions/0.4.0/creator.identity",
+      "updated_at": "2026-11-04",
+      "creator_signature_file": "plugins/chronicle-capsule/versions/0.4.1/creator.sig",
+      "creator_identity_file": "plugins/chronicle-capsule/versions/0.4.1/creator.identity",
       "execution_mode": "subprocess",
       "domains": [],
       "input_files": [],
@@ -169,14 +160,14 @@
       },
       "state_schema_version": 1,
       "dependencies": [],
-      "package_manifest_file": "plugins/chronicle-capsule/versions/0.4.0/package.manifest.json",
-      "creator_package_signature_file": "plugins/chronicle-capsule/versions/0.4.0/package.manifest.creator.sig",
-      "maintainer_package_signature_file": "plugins/chronicle-capsule/versions/0.4.0/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "6bb6c26cc7bb27d93e6ef1ee8a24915c519e592e271a4fd6e2175f3f345220e3",
+      "package_manifest_file": "plugins/chronicle-capsule/versions/0.4.1/package.manifest.json",
+      "creator_package_signature_file": "plugins/chronicle-capsule/versions/0.4.1/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/chronicle-capsule/versions/0.4.1/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "dd5b4e913dc81cd6845d5d53a6aa3fb1e1a2331c63fa414e6efa4767b6a2ab0d",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
-        "0.4.0": {
-          "sha256": "f94bbc01830889e9cb34bf24967ca48a16eb758828fdc2b1a8c705a089f63425"
+        "0.4.1": {
+          "sha256": "8c6402238f7da2f2acf23693fd83cb6fc6042eaac5c7dc81e5068599b1109c96"
         }
       }
     },
@@ -223,6 +214,62 @@
       "versions": {
         "1.2.0": {
           "sha256": "466cef38bbcd740a626f4d0dda58062e394f93ae057233fa7be85a200b0f2c84"
+        }
+      }
+    },
+    {
+      "id": "document-workbench",
+      "name": "document-workbench",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "utility",
+      "plugin_types": [
+        "processor",
+        "exporter"
+      ],
+      "summary": "十万级 PDF 结构化数据抽取工作台——摄取、解析、OCR、字段抽取、复核与五表导出",
+      "description_file": "plugins/document-workbench/listing.md",
+      "plugin_file": "plugins/document-workbench/plugin.py",
+      "signature_file": "plugins/document-workbench/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [],
+      "compatible_core": ">=1.0.2",
+      "license": "Apache-2.0",
+      "tags": [
+        "pdf",
+        "ocr",
+        "extraction",
+        "table",
+        "workbench"
+      ],
+      "updated_at": "2026-11-17",
+      "creator_signature_file": "plugins/document-workbench/creator.sig",
+      "creator_identity_file": "plugins/document-workbench/creator.identity",
+      "execution_mode": "in_process",
+      "domains": [],
+      "input_files": [],
+      "required_capabilities": {},
+      "state_schema_version": 1,
+      "dependencies": [
+        {
+          "name": "omnicrawler_docs",
+          "version": "1.0.0",
+          "license": "Apache-2.0"
+        },
+        {
+          "name": "yaml",
+          "version": ">=6.0,<7.0",
+          "license": "MIT"
+        }
+      ],
+      "package_manifest_file": "plugins/document-workbench/package.manifest.json",
+      "creator_package_signature_file": "plugins/document-workbench/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/document-workbench/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "a12b4eb0d56b2d1f927e7934113eb86bb694527a528e80074e51ccf6e1dde416",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
+      "versions": {
+        "1.0.0": {
+          "sha256": "07e1179cd0b4dbbe651cfee0a0f98bef0c808dbc86e346832debb6e440b05853"
         }
       }
     },
@@ -374,17 +421,17 @@
     {
       "id": "signal-sieve",
       "name": "signal-sieve",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "publisher": "starlife",
-      "category": "extractor",
+      "category": "utility",
       "plugin_types": [
         "extractor",
         "transformer"
       ],
       "summary": "融合文本密度、语义标签与 JSON-LD 提取正文、元数据和可解释诊断",
-      "description_file": "plugins/signal-sieve/versions/0.4.0/listing.md",
-      "plugin_file": "plugins/signal-sieve/versions/0.4.0/plugin.py",
-      "signature_file": "plugins/signal-sieve/versions/0.4.0/plugin.py.sig",
+      "description_file": "plugins/signal-sieve/versions/0.4.1/listing.md",
+      "plugin_file": "plugins/signal-sieve/versions/0.4.1/plugin.py",
+      "signature_file": "plugins/signal-sieve/versions/0.4.1/plugin.py.sig",
       "signature_algorithm": "ed25519",
       "permissions": [],
       "compatible_core": ">=0.11.2",
@@ -395,40 +442,40 @@
         "metadata",
         "explainable"
       ],
-      "updated_at": "2026-10-04",
-      "creator_signature_file": "plugins/signal-sieve/versions/0.4.0/creator.sig",
-      "creator_identity_file": "plugins/signal-sieve/versions/0.4.0/creator.identity",
+      "updated_at": "2026-11-04",
+      "creator_signature_file": "plugins/signal-sieve/versions/0.4.1/creator.sig",
+      "creator_identity_file": "plugins/signal-sieve/versions/0.4.1/creator.identity",
       "execution_mode": "subprocess",
       "domains": [],
       "input_files": [],
       "required_capabilities": {},
       "state_schema_version": 1,
       "dependencies": [],
-      "package_manifest_file": "plugins/signal-sieve/versions/0.4.0/package.manifest.json",
-      "creator_package_signature_file": "plugins/signal-sieve/versions/0.4.0/package.manifest.creator.sig",
-      "maintainer_package_signature_file": "plugins/signal-sieve/versions/0.4.0/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "65559c2e70696a954187907a469dea1a6af6579fa054470db02b7ed751695ff8",
+      "package_manifest_file": "plugins/signal-sieve/versions/0.4.1/package.manifest.json",
+      "creator_package_signature_file": "plugins/signal-sieve/versions/0.4.1/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/signal-sieve/versions/0.4.1/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "e525d3c1a9586f0fca260986431a8a9cd9e49fc672320cfcea8e977a708e3625",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
-        "0.4.0": {
-          "sha256": "d90810e5999a6045f0e88a6f87e5d11149439368a7f8124f802011f43e9d611d"
+        "0.4.1": {
+          "sha256": "6b748513f09e31138bc98e76ec99481ed3251aa5d43fb1e4d09485c8d7dc2e34"
         }
       }
     },
     {
       "id": "tideprint-gate",
       "name": "tideprint-gate",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "publisher": "starlife",
-      "category": "processor",
+      "category": "utility",
       "plugin_types": [
         "processor",
         "hook"
       ],
       "summary": "以持久指纹建议条件重验证，并输出当前运行的可解释变化分类",
-      "description_file": "plugins/tideprint-gate/versions/0.4.0/listing.md",
-      "plugin_file": "plugins/tideprint-gate/versions/0.4.0/plugin.py",
-      "signature_file": "plugins/tideprint-gate/versions/0.4.0/plugin.py.sig",
+      "description_file": "plugins/tideprint-gate/versions/0.4.1/listing.md",
+      "plugin_file": "plugins/tideprint-gate/versions/0.4.1/plugin.py",
+      "signature_file": "plugins/tideprint-gate/versions/0.4.1/plugin.py.sig",
       "signature_algorithm": "ed25519",
       "permissions": [
         "state:read",
@@ -442,9 +489,9 @@
         "change-detection",
         "bounded-state"
       ],
-      "updated_at": "2026-10-04",
-      "creator_signature_file": "plugins/tideprint-gate/versions/0.4.0/creator.sig",
-      "creator_identity_file": "plugins/tideprint-gate/versions/0.4.0/creator.identity",
+      "updated_at": "2026-11-04",
+      "creator_signature_file": "plugins/tideprint-gate/versions/0.4.1/creator.sig",
+      "creator_identity_file": "plugins/tideprint-gate/versions/0.4.1/creator.identity",
       "execution_mode": "subprocess",
       "domains": [],
       "input_files": [],
@@ -454,31 +501,31 @@
       },
       "state_schema_version": 1,
       "dependencies": [],
-      "package_manifest_file": "plugins/tideprint-gate/versions/0.4.0/package.manifest.json",
-      "creator_package_signature_file": "plugins/tideprint-gate/versions/0.4.0/package.manifest.creator.sig",
-      "maintainer_package_signature_file": "plugins/tideprint-gate/versions/0.4.0/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "4247f79c6b4f7a6f2d93d93977a4195589debafc5a32dfab88aa39be4d4ce047",
+      "package_manifest_file": "plugins/tideprint-gate/versions/0.4.1/package.manifest.json",
+      "creator_package_signature_file": "plugins/tideprint-gate/versions/0.4.1/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/tideprint-gate/versions/0.4.1/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "5200dbbc97ec5aaccf97ecc04ec3bda8333c429ee39a45250be0ab177108ad6f",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
-        "0.4.0": {
-          "sha256": "d8ed21ed88cdbe3550a010c67456169f1220162e5c61fce2ed318128b9aac258"
+        "0.4.1": {
+          "sha256": "515d2dde084744c337e258ad45877a9e04f711f5edfa8beadd1f25fadb302244"
         }
       }
     },
     {
       "id": "upstream-lantern",
       "name": "upstream-lantern",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "publisher": "starlife",
-      "category": "source",
+      "category": "utility",
       "plugin_types": [
         "source",
         "extractor"
       ],
       "summary": "将 GitHub 项目转换为发布、提交、工作流和安全公告抓取请求",
-      "description_file": "plugins/upstream-lantern/versions/0.3.0/listing.md",
-      "plugin_file": "plugins/upstream-lantern/versions/0.3.0/plugin.py",
-      "signature_file": "plugins/upstream-lantern/versions/0.3.0/plugin.py.sig",
+      "description_file": "plugins/upstream-lantern/versions/0.3.1/listing.md",
+      "plugin_file": "plugins/upstream-lantern/versions/0.3.1/plugin.py",
+      "signature_file": "plugins/upstream-lantern/versions/0.3.1/plugin.py.sig",
       "signature_algorithm": "ed25519",
       "permissions": [
         "state:read",
@@ -495,9 +542,9 @@
         "security-advisories",
         "monitoring"
       ],
-      "updated_at": "2026-10-04",
-      "creator_signature_file": "plugins/upstream-lantern/versions/0.3.0/creator.sig",
-      "creator_identity_file": "plugins/upstream-lantern/versions/0.3.0/creator.identity",
+      "updated_at": "2026-11-04",
+      "creator_signature_file": "plugins/upstream-lantern/versions/0.3.1/creator.sig",
+      "creator_identity_file": "plugins/upstream-lantern/versions/0.3.1/creator.identity",
       "execution_mode": "subprocess",
       "domains": [
         "api.github.com"
@@ -506,14 +553,14 @@
       "required_capabilities": {},
       "state_schema_version": 1,
       "dependencies": [],
-      "package_manifest_file": "plugins/upstream-lantern/versions/0.3.0/package.manifest.json",
-      "creator_package_signature_file": "plugins/upstream-lantern/versions/0.3.0/package.manifest.creator.sig",
-      "maintainer_package_signature_file": "plugins/upstream-lantern/versions/0.3.0/package.manifest.maintainer.sig",
-      "package_manifest_sha256": "6e4ccd4742a000a7784dd0fa3a4587ba4cdd4edc7d964df269ba44190cc4c9a6",
+      "package_manifest_file": "plugins/upstream-lantern/versions/0.3.1/package.manifest.json",
+      "creator_package_signature_file": "plugins/upstream-lantern/versions/0.3.1/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/upstream-lantern/versions/0.3.1/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "42ccdf8909b276e2e72de079a84d576db9345b0cb1b6793571a941019347b96d",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
-        "0.3.0": {
-          "sha256": "39fcf1840d7d68605c76365ddfbbd4a4d0e5f6d89639679f17fb17e08e9f8ee6"
+        "0.3.1": {
+          "sha256": "d98fe0606c100d65560c60594b2bb5b21f839aacc7b1b9c2f838b4f40288bc2f"
         }
       }
     }
@@ -934,6 +981,84 @@
       "maintainer_package_signature_file": "templates/social--market--zhihu-topic/package.manifest.maintainer.sig",
       "package_manifest_sha256": "833e58c240bcca6b2b3f16e8ade9d72778e9cd3f0ee43b86938ee9d5dce76dfd",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
+    }
+  ],
+  "components": [
+    {
+      "id": "ocr-paddle",
+      "name": "PaddleOCR 重型运行时（Wheel-Pack）——wheel 从上游拉，模型另行直拉，本仓只托管配方",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "recipe_file": "components/ocr-paddle/recipe.json",
+      "recipe_digest": "49e400fa17b42ef89bd482e83765287611000eda9e86d38d6d646544016a2995",
+      "platforms": [
+        "windows"
+      ],
+      "architectures": [
+        "x86_64"
+      ],
+      "python_abi": [
+        "cp313"
+      ],
+      "entry": {
+        "path": "entry.json",
+        "protocol": "ocr-file-v1",
+        "engine": "paddle",
+        "runner": "worker-wheelpack"
+      },
+      "artifacts": [
+        {
+          "url": "https://files.pythonhosted.org/packages/f4/c8/408b9e94ac2e10a55c1122b787359f7a6f79ef894ee1d57d78c5cca838d0/paddlepaddle-3.3.1-cp313-cp313-win_amd64.whl",
+          "sha256": "1203e2e1114b49e73a8440b68837ce5c93fdab51fe4838c5e5874ab40f58f747",
+          "size": 104794530
+        },
+        {
+          "url": "https://files.pythonhosted.org/packages/d2/79/2ade66cf72074a3d2a013e2ba1f256d6116fec797b908fc1b4f9c320d8c4/paddleocr-3.7.0-py3-none-any.whl",
+          "sha256": "c0f0a81ad4112727f30c6fcf986ac0ef6a120d31ee0991a01fae0357ee32d338",
+          "size": 146750
+        }
+      ],
+      "declared_total_bytes": 104941280,
+      "package_manifest_file": "components/ocr-paddle/package.manifest.json",
+      "creator_package_signature_file": "components/ocr-paddle/package.manifest.creator.sig",
+      "creator_identity_file": "components/ocr-paddle/creator.identity",
+      "creator_signature_file": "components/ocr-paddle/creator.sig"
+    },
+    {
+      "id": "tesseract-chi-sim",
+      "name": "Tesseract 中文简体语言包——字节从上游拉取，本仓只托管声明",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "recipe_file": "components/tesseract-chi-sim/recipe.json",
+      "recipe_digest": "3c5b24d2cda5e6030c2d2b993e6a7817accca664dbf13e2595f47dcb239fd3e3",
+      "platforms": [
+        "windows",
+        "linux",
+        "darwin"
+      ],
+      "architectures": [
+        "x86_64",
+        "arm64"
+      ],
+      "python_abi": [],
+      "entry": {
+        "path": "tessdata/chi_sim.traineddata",
+        "protocol": "ocr-file-v1",
+        "engine": "tesseract"
+      },
+      "artifacts": [
+        {
+          "url": "https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_sim.traineddata",
+          "sha256": "a5fcb6f0db1e1d6d8522f39db4e848f05984669172e584e8d76b6b3141e1f730",
+          "size": 2469156
+        }
+      ],
+      "declared_total_bytes": 2469156,
+      "description_file": "components/tesseract-chi-sim/listing.md",
+      "package_manifest_file": "components/tesseract-chi-sim/package.manifest.json",
+      "creator_package_signature_file": "components/tesseract-chi-sim/package.manifest.creator.sig",
+      "creator_identity_file": "components/tesseract-chi-sim/creator.identity",
+      "creator_signature_file": "components/tesseract-chi-sim/creator.sig"
     }
   ]
 }

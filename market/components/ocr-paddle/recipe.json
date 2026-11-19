@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "name": "ocr-paddle",
+  "version": "1.0.0",
+  "description": "PaddleOCR 重型运行时（Wheel-Pack）——wheel 从上游拉，模型另行直拉，本仓只托管配方",
+  "platforms": [
+    "windows"
+  ],
+  "architectures": [
+    "x86_64"
+  ],
+  "python_abi": [
+    "cp313"
+  ],
+  "artifacts": [
+    {
+      "url": "https://files.pythonhosted.org/packages/f4/c8/408b9e94ac2e10a55c1122b787359f7a6f79ef894ee1d57d78c5cca838d0/paddlepaddle-3.3.1-cp313-cp313-win_amd64.whl",
+      "sha256": "1203e2e1114b49e73a8440b68837ce5c93fdab51fe4838c5e5874ab40f58f747",
+      "size": 104794530,
+      "format": "whl",
+      "extract_to": "site-packages"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/d2/79/2ade66cf72074a3d2a013e2ba1f256d6116fec797b908fc1b4f9c320d8c4/paddleocr-3.7.0-py3-none-any.whl",
+      "sha256": "c0f0a81ad4112727f30c6fcf986ac0ef6a120d31ee0991a01fae0357ee32d338",
+      "size": 146750,
+      "format": "whl",
+      "extract_to": "site-packages"
+    }
+  ],
+  "entry": {
+    "path": "entry.json",
+    "protocol": "ocr-file-v1",
+    "engine": "paddle",
+    "runner": "worker-wheelpack"
+  }
+}

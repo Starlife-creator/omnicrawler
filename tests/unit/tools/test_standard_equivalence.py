@@ -609,3 +609,165 @@ def test_utf8_env_still_applied_to_subprocess() -> None:
     source = _COLLECT.read_text(encoding="utf-8")
     assert "_utf8_env()" in source, "UTF-8 环境调用点丢了"
     assert "env=_utf8_env()" in source, "subprocess 未传 utf8 环境"
+
+# ── 「装齐」编排：Standard 天然不装齐，必须先装组件再对账 ────────────────
+_INSTALL = _REPO / "tools" / "portable" / "install_standard_components.py"
+
+
+def _load_installer():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_install_under_test", _INSTALL)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.skipif(not _INSTALL.is_file(), reason="需要装齐编排脚本")
+def test_installer_runs_without_pythonpath() -> None:
+    """装齐脚本必须能在无 PYTHONPATH 下直接执行（与收集脚本同理）。
+
+    CI 用的是 `python tools/portable/install_standard_components.py`，
+    此时仓库根不在 sys.path 上。
+    """
+    import os as _os
+    import subprocess as _sp
+
+    env = {**_os.environ}
+    env.pop("PYTHONPATH", None)
+    result = _sp.run(
+        [sys.executable, str(_INSTALL)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        timeout=60,
+        check=False,
+    )
+    combined = (result.stdout or "") + (result.stderr or "")
+    assert "ModuleNotFoundError" not in combined, combined[-600:]
+    assert result.returncode == 2, f"缺参数应返回 2，实际 {result.returncode}"
+
+
+@pytest.mark.skipif(not _INSTALL.is_file(), reason="需要装齐编排脚本")
+def test_empty_component_list_is_a_failure(tmp_path: Path) -> None:
+    """市场快照里没有组件时必须判失败。
+
+    空集合会让「装齐」变成恒真，从而让等价性对账失去意义 —— 那是
+    本项目判据纪律里明确禁止的形态。
+    """
+    install = _load_installer()
+    market = tmp_path / "market"
+    market.mkdir()
+    (market / "catalog.json").write_text(json.dumps({"components": []}), encoding="utf-8")
+
+    report = install.install_all_components(
+        executable=tmp_path / "fake-cli",  # 不会被调用：条目为空先返回
+        release_root=tmp_path,
+        market_root=market,
+    )
+    assert not report.ok, "空组件列表被判为通过"
+
+
+@pytest.mark.skipif(not _INSTALL.is_file(), reason="需要装齐编排脚本")
+def test_missing_catalog_is_a_failure(tmp_path: Path) -> None:
+    install = _load_installer()
+    report = install.install_all_components(
+        executable=tmp_path / "fake",
+        release_root=tmp_path,
+        market_root=tmp_path / "no-such-market",
+    )
+    assert not report.ok
+    assert report.failed
+
+
+@pytest.mark.skipif(not _INSTALL.is_file(), reason="需要装齐编排脚本")
+def test_missing_recipe_is_reported_not_silently_skipped(tmp_path: Path) -> None:
+    """recipe 文件缺失时要进 `skipped` 并带原因，不能静默当成功。"""
+    install = _load_installer()
+    market = tmp_path / "market"
+    (market / "components").mkdir(parents=True)
+    (market / "catalog.json").write_text(
+        json.dumps(
+            {"components": [{"id": "ghost", "recipe_file": "components/ghost/recipe.json"}]}
+        ),
+        encoding="utf-8",
+    )
+    report = install.install_all_components(
+        executable=tmp_path / "fake",
+        release_root=tmp_path,
+        market_root=market,
+    )
+    assert report.skipped, "缺失的 recipe 未进 skipped"
+    assert any("ghost" in cid for cid, _ in report.skipped)
+
+
+def test_market_snapshot_ships_component_recipes() -> None:
+    """仓内市场快照必须带组件 recipe —— 否则 CI 的装齐拿不到声明。
+
+    `sync_snapshot.py` 的 `SYNC_ITEMS` 曾只含 catalog/authors/keys，
+    组件目录被建成**空壳**（目录有了、recipe.json 没进去）。
+    """
+    catalog = _REPO / "market" / "catalog.json"
+    if not catalog.is_file():
+        pytest.skip("需要市场快照")
+
+    data = json.loads(catalog.read_text(encoding="utf-8"))
+    components = data.get("components") or []
+    if not components:
+        pytest.skip("当前市场快照没有组件条目")
+
+    missing = []
+    for entry in components:
+        rel = str(entry.get("recipe_file") or "")
+        if rel and not (_REPO / "market" / rel).is_file():
+            missing.append(rel)
+    assert not missing, (
+        f"市场快照缺组件 recipe：{missing}。"
+        "sync_snapshot 的 SYNC_ITEMS 必须包含 components，且递归镜像不能按它过滤。"
+    )
+
+
+def test_sync_items_include_components() -> None:
+    """`SYNC_ITEMS` 必须包含 `components`。
+
+    **单独测这一条**，因为上一条只能看"当前快照里有没有文件"——
+    文件一旦同步成功就一直在，把 `components` 从 `SYNC_ITEMS` 移除
+    不会让它们消失（反向断言验证过：上一条不判红）。判据要能抓到"代码被改回去"。
+    """
+    import importlib.util
+
+    sync_file = _REPO / "tools" / "market" / "sync_snapshot.py"
+    if not sync_file.is_file():
+        pytest.skip("需要 sync_snapshot.py")
+
+    spec = importlib.util.spec_from_file_location("_sync_under_test", sync_file)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    assert "components" in module.SYNC_ITEMS, (
+        f"SYNC_ITEMS 缺 components：{module.SYNC_ITEMS}。"
+        "市场快照不带组件 recipe，CI 的「装齐」就拿不到声明。"
+    )
+
+
+def test_recursive_mirror_does_not_filter_by_sync_items() -> None:
+    """递归镜像子目录时不能再按 `SYNC_ITEMS` 过滤。
+
+    `components/` 下面是 `ocr-paddle/`、`tesseract-chi-sim/`，这些名字
+    不在 `SYNC_ITEMS` 里。若递归时也过滤，子目录会被建成**空壳**
+    —— 实测踩到：目录有了、`recipe.json` 没进去。
+    """
+    sync_file = _REPO / "tools" / "market" / "sync_snapshot.py"
+    if not sync_file.is_file():
+        pytest.skip("需要 sync_snapshot.py")
+
+    source = sync_file.read_text(encoding="utf-8")
+    # `_mirror` 必须带 top 参数，且递归调用传 top=False
+    assert "top: bool = True" in source, "_mirror 缺少 top 参数"
+    assert "top=False" in source, "递归调用未传 top=False（会按 SYNC_ITEMS 过滤子目录）"

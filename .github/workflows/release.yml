@@ -262,6 +262,12 @@ jobs:
           set -euo pipefail
           # 收集脚本退出码：0=正常、3=能力报告读不出来（必须停，不能拿空报告去对账）
           set +e
+          # ★ 「全装齐」的前提：Standard 天然不装齐（内置 Chromium + 轻量文档库），
+          #   OCR / 重型能力按需装组件。要验「全装齐后 == Full」，就必须先真的装上。
+          #   拿裸 Standard 去比会必然报缺口 —— 那是判据用错了对象，不是产品缺陷。
+          #   组件构件从上游拉（ocr-paddle 约 100 MB），因此这一步只在云上跑。
+          python tools/portable/install_standard_components.py \
+            "$KEEP_DIR/Standard/OmniCrawler" "$GITHUB_WORKSPACE/market" Standard
           python tools/portable/collect_capability_reports.py "$KEEP_DIR" "$OUT_DIR"
           collect_code=$?
           set -e
