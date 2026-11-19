@@ -1,6 +1,6 @@
 # AGENTS.md — 给 AI / 自动化维护者的开发时指引
 
-> 适用版本：**1.0.17** · 配置协议：v5 · 维护状态：现行
+> 适用版本：**1.0.18** · 配置协议：v5 · 维护状态：现行
 > 骨架来自 `docs/archive/OmniCrawler-0.5.0-Agent-Prompt.md` 的 7 条原则（0.5.0 时期），按当前 1.0.2 维护。
 > ★ 调用面（命令 / 参数 / 退出码 / stdout 形态）请看 [`docs/AGENT_GUIDE.md`](docs/AGENT_GUIDE.md)；
 > 本文件是**开发时**的原则与纪律，两者不重复。

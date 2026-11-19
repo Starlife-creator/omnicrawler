@@ -1,6 +1,32 @@
 # Changelog
 
 ## Unreleased
+## 1.0.18 - 2026-11-19
+
+### 变更
+
+### 修复
+
+- fix(components): **冻结包里不能用 `python -m`**。worker 原用
+  `[sys.executable, "-m", "omnicrawler.services.component_worker"]` 启动，
+  而冻结包的 `sys.executable` 是宿主 exe 本身 —— 命令变成
+  `omnicrawler-cli -m ...`，CLI 不认识 `-m`，argparse 报 `invalid choice`，
+  子进程根本没起来（CI 日志里那串子命令列表就是它的提示）。
+- feat(cli): 新增内部 dispatch 命令 `__component_worker__` / `__runtime_worker__`，
+  **不进 subparsers**（`--help` 看不到），在 argparse 之前拦截并直接执行模块 main()。
+- fix(runtime): `execution_backend` 的同类缺陷 —— 没有 `omnicrawler-worker.exe`
+  时原本退回 `python -m`，已补内部 dispatch 回退。
+
+### 架构约束
+
+`services` 层不得依赖 `cli`（第一版直接 import 常量导致环预算 66 > 65 被门禁拦下），
+改为两侧各写同名常量 + 守卫钉住同值。
+
+### 验证
+
+本机端到端（装配 → worker → import）退出码 0；静态门禁 31 通过；
+架构门禁 edges 63 / 预算 65。
+
 ## 1.0.17 - 2026-11-19
 
 ### 变更
