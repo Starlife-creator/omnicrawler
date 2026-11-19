@@ -22,7 +22,7 @@ if (Test-Path -LiteralPath $BundledPython) {
     } elseif (Get-Command python -ErrorAction SilentlyContinue) {
         & python -m venv .venv
     } else {
-        throw 'Python 3.12 or newer was not found. Add .runtime\python\python.exe or install Python 3.12+ from python.org and enable Add Python to PATH.'
+        throw 'Python 3.13 or newer was not found. Add .runtime\python\python.exe or install Python 3.13+ from python.org and enable Add Python to PATH.'
     }
 }
 # F49：原生命令失败不会触发 $ErrorActionPreference，必须显式检查 $LASTEXITCODE
@@ -38,7 +38,7 @@ $DetectedVersion = (&
 ).Trim()
 & $Python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)'
 if ($LASTEXITCODE -ne 0) {
-    throw "需要 Python 3.12 或更高版本（当前解释器为 $DetectedVersion）。" +
+    throw "需要 Python 3.13 或更高版本（当前解释器为 $DetectedVersion）。" +
         '请安装较新版本，或使用带内置解释器的便携包（.runtime\python\python.exe）。'
 }
 & $Python -m pip install --upgrade pip setuptools wheel

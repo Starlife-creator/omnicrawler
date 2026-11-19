@@ -41,9 +41,9 @@ esac
 
 PROJECT_ROOT="$(pwd)"
 
-# ---- Python 版本断言（与 pyproject requires-python >=3.12 对齐）-----------
-if ! python3 -c 'import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)' 2>/dev/null; then
-  echo "需 Python ≥3.12，当前：$(python3 --version 2>&1 || echo '未找到 python3')" >&2
+# ---- Python 版本断言（与 pyproject requires-python >=3.13 对齐）-----------
+if ! python3 -c 'import sys; sys.exit(0 if sys.version_info>=(3,13) else 1)' 2>/dev/null; then
+  echo "需 Python ≥3.13，当前：$(python3 --version 2>&1 || echo '未找到 python3')" >&2
   exit 1
 fi
 

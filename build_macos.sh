@@ -70,29 +70,43 @@ fi
 # 否则 .app/Contents/Frameworks/Python 缺失，运行时报 Failed to load Python shared
 # library（PYI-9229/2508/20814）。GitHub Actions setup-python 安装的是非 framework
 # build；runner 预装 homebrew python 是 framework build。
-# ⚠ 版本必须与 PyInstaller 6.15.0 兼容：homebrew 默认 python3 已是 3.14（不受支持），
-# **且 python@3.13 的 framework BUNDLE 有 PYI-5670 问题（.app 缺 Frameworks/Python，
-# 见 2026-08-16 v0.9.0/v0.9.1 构建失败）**——故强制用 python@3.12（与
-# BUILD_PYTHON_VERSION=3.12 对齐，v0.8.0 已验证可用），不再 fallback 3.13。
+# ⚠ 版本必须与 PyInstaller 兼容：homebrew 默认 python3 已是 3.14（不受支持）。
+#
+# ★ 2026-11-19 维护者裁定：**升到 3.13**，与 CI 的 BUILD_PYTHON_VERSION 对齐。
+#
+# 历史上 python@3.13 曾在 macOS 上失败过两次，原因已查清且有两条是**已修**的：
+#   ① 真正的根因是 macOS spec 结构不对（直接 BUNDLE 传 EXE+binaries 不会把
+#      Python.framework 拷进 Frameworks）—— 已由 COLLECT→BUNDLE 修掉（见
+#      docs/RELEASE_PIPELINE_TROUBLESHOOTING.md §1.1）；
+#   ② PYI-5670 是 **PyInstaller 6.15 的回归**，当前锁的是 6.21.0。
+# 因此本脚本不再硬绑 3.12。**这条升级需要一次真实 macOS 构建来实证**——
+# 本机（Windows）无法验证，已在提交信息与文档里如实标注。
 FRAMEWORK_PYTHON=""
-if [[ -x /opt/homebrew/opt/python@3.12/bin/python3.12 ]]; then
-  FRAMEWORK_PYTHON=/opt/homebrew/opt/python@3.12/bin/python3.12
-else
-  echo "未找到 python@3.12（framework），尝试 brew install python@3.12 ..." >&2
-  brew install python@3.12 || { echo "brew install python@3.12 失败" >&2; exit 1; }
-  FRAMEWORK_PYTHON=/opt/homebrew/opt/python@3.12/bin/python3.12
+for _candidate in /opt/homebrew/opt/python@3.13/bin/python3.13 /opt/homebrew/opt/python@3.12/bin/python3.12; do
+  if [[ -x "$_candidate" ]]; then
+    FRAMEWORK_PYTHON="$_candidate"
+    break
+  fi
+done
+if [[ -z "$FRAMEWORK_PYTHON" ]]; then
+  echo "未找到 python@3.13（framework），尝试 brew install python@3.13 ..." >&2
+  brew install python@3.13 || { echo "brew install python@3.13 失败" >&2; exit 1; }
+  FRAMEWORK_PYTHON=/opt/homebrew/opt/python@3.13/bin/python3.13
 fi
-# 构建锁与便携运行时当前只验收 framework Python 3.12。
+# 构建锁与便携运行时验收 framework Python 3.13（3.12 作为可见回退保留）。
 _py_minor=$("$FRAMEWORK_PYTHON" -c 'import sys; print(sys.version_info[1])' 2>/dev/null)
-if [[ "$_py_minor" -ne 12 ]]; then
-  echo "framework Python 必须是 3.12，当前：$("$FRAMEWORK_PYTHON" --version 2>&1)" >&2
+if [[ "$_py_minor" -lt 12 ]]; then
+  echo "framework Python 需要 >=3.12，当前：$("$FRAMEWORK_PYTHON" --version 2>&1)" >&2
   exit 1
+fi
+if [[ "$_py_minor" -ne 13 ]]; then
+  echo "⚠ framework Python 是 3.$_py_minor，与 BUILD_PYTHON_VERSION=3.13 不同（见 §1.1 的 PYI-5670 记录）" >&2
 fi
 echo "framework Python: $FRAMEWORK_PYTHON ($("$FRAMEWORK_PYTHON" --version 2>&1))"
 
-# ---- Python 版本断言（与 pyproject requires-python >=3.12 对齐）-----------
-if ! "$FRAMEWORK_PYTHON" -c 'import sys; sys.exit(0 if sys.version_info>=(3,12) else 1)' 2>/dev/null; then
-  echo "需 Python ≥3.12，当前：$("$FRAMEWORK_PYTHON" --version 2>&1 || echo '未知')" >&2
+# ---- Python 版本断言（与 pyproject requires-python >=3.13 对齐）-----------
+if ! "$FRAMEWORK_PYTHON" -c 'import sys; sys.exit(0 if sys.version_info>=(3,13) else 1)' 2>/dev/null; then
+  echo "需 Python ≥3.13，当前：$("$FRAMEWORK_PYTHON" --version 2>&1 || echo '未知')" >&2
   exit 1
 fi
 

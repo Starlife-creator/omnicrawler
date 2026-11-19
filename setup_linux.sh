@@ -11,10 +11,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# ---- Python ≥3.12 版本断言（C-#18）：装依赖之前当场失败，报错点贴近原因 ----
+# ---- Python ≥3.13 版本断言（C-#18）：装依赖之前当场失败，报错点贴近原因 ----
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 if ! "$PYTHON_BIN" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)' 2>/dev/null; then
-  echo "[ERROR] 需要 Python ≥3.12（当前：$("$PYTHON_BIN" --version 2>&1 || echo '未找到 python3')）。" >&2
+  echo "[ERROR] 需要 Python ≥3.13（当前：$("$PYTHON_BIN" --version 2>&1 || echo '未找到 python3')）。" >&2
   exit 1
 fi
 

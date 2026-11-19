@@ -43,7 +43,7 @@ permissions:
 # 单一来源：交付物冻结的 Python 版本。三平台构建 job 与聚合发布 job 均引用此值；
 # verify-python-version job 会断言它与 pyproject 的 requires-python 下界一致，防止漂移。
 env:
-  BUILD_PYTHON_VERSION: "3.12"
+  BUILD_PYTHON_VERSION: "3.13"
   # FINAL 发布闸门阈值：单资产字节上限（≈1.9 GiB），低于 GitHub 硬限 2 GiB，
   # 为签名/计量误差留余量。超限产物在平台 job 内被移出发布集。
   ASSET_MAX_BYTES: "2039693706"

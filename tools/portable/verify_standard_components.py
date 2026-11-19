@@ -136,26 +136,39 @@ def _run(argv: list[str], cwd: Path, *, timeout: float) -> subprocess.CompletedP
 
 
 def _installed_component_dir(install_stdout: str) -> Path | None:
-    """从 `install-recipe` 的 JSON 摘要里取组件目录。
+    """从 `install-recipe` 的输出里取组件目录。
 
-    摘要里有 `path` 字段 —— 那是**组件自己的**安装目录，不靠我们猜。
-    早先按 `release_root/components/<id>` 推导，与本机实际落点
-    （`AppData/Local/OmniCrawler/components/<id>-<version>`）不符，
-    运行阶段必然报「组件目录不存在」（真实 CI 踩到）。
+    **输出是给人看的文本，不是 JSON**（`dumps_summary` 渲染）：
+
+        组件：ocr-paddle 1.0.0
+        安装到：/path/to/components/ocr-paddle-1.0.0
+        入口：entry.json
+        recipe 摘要：…
+
+    早先按 JSON 解析（找 `{"path": ...}`），所以永远拿到 None
+    —— 真实 CI 报「装完后找不到组件目录（摘要 path=None）」。
+    兼容两种写法：优先找 `安装到：` 行，退化到 JSON 的 `path` 键。
     """
-    text = (install_stdout or "").strip()
-    if not text:
-        return None
+    text = install_stdout or ""
+    for line in text.splitlines():
+        stripped = line.strip()
+        for prefix in ("安装到：", "安装到:"):
+            if stripped.startswith(prefix):
+                candidate = stripped[len(prefix) :].strip()
+                if candidate and candidate != "?":
+                    return Path(candidate)
+
+    # 兼容：若将来改成 JSON 输出
     start_index = text.find("{")
     end_index = text.rfind("}")
-    if start_index < 0 or end_index <= start_index:
-        return None
-    try:
-        payload = json.loads(text[start_index : end_index + 1])
-    except json.JSONDecodeError:
-        return None
-    path = payload.get("path") if isinstance(payload, dict) else None
-    return Path(str(path)) if path else None
+    if 0 <= start_index < end_index:
+        try:
+            payload = json.loads(text[start_index : end_index + 1])
+        except json.JSONDecodeError:
+            return None
+        path = payload.get("path") if isinstance(payload, dict) else None
+        return Path(str(path)) if path else None
+    return None
 
 
 def verify_all(

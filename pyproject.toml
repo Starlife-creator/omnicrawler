@@ -9,7 +9,7 @@ name = "omnicrawler-platform"
 version = "1.0.11"
 description = "从全类型网站采集、PDF解析/OCR到结构化导出和人工复核的模块化工作台"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 license = {text = "Apache-2.0"}  # Phase 0 验收（第 81 轮用户决策）：AGPL-3.0 → Apache-2.0
 authors = [{name = "Starlife-creator", email = "starlife_creator@zohomail.com"}]
 maintainers = [{name = "Starlife-creator", email = "starlife_creator@zohomail.com"}]
@@ -198,7 +198,7 @@ ignore = [
 known-first-party = ["omnicrawler"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 # ★ 显式钉住被分析的平台：CI 的 mypy 跑在 **ubuntu** 上，`--platform` 缺省时本地
 #   （Windows）与 CI 的分析环境**不一致** —— 平台专属 API 会在本地被判通过、到 CI 才红。
 #   实测：`ctypes.WinDLL` 在 Windows 的 typeshed 里存在（本地绿），而 Linux 的 typeshed

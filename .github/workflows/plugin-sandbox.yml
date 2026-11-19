@@ -41,7 +41,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.12"]
+        python-version: ["3.13"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
@@ -97,7 +97,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       # 探针：**直接调用产品里的同一份探测**（此前此处自成一套 hasattr(advapi32, …)，
       # 查错导出模块 ⇒ 恒为 false，又因为不判红而长期没人核对，与 spawn 前置口径脱节）。
       # 按文件路径加载 plugin_os_sandbox.py（只用标准库）：本 job 不装包，走

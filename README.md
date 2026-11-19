@@ -31,10 +31,10 @@ Standard 版：GUI + Chromium + 常规采集。Full 版：额外含 ChromeDriver
 
 ### 源码安装
 
-源码版支持 Python 3.12+；CI 覆盖 Windows/Linux/macOS（3.12 为主测版本，3.13 做依赖导入 smoke）。推荐使用当前可用的最新受支持 Python 版本。
+源码版支持 Python 3.13+；CI 覆盖 Windows/Linux/macOS（3.13 为构建与主测版本）。推荐使用当前可用的最新受支持 Python 版本。
 
 ```powershell
-py -3.12 -m venv .venv; .venv\Scripts\activate
+py -3.13 -m venv .venv; .venv\Scripts\activate
 pip install -e ".[full,dev]"
 playwright install chromium
 ```
