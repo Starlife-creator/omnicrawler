@@ -264,3 +264,79 @@ def test_platform_names_use_canonical_spelling() -> None:
                 )
     if checked == 0:
         pytest.skip("没有可检查的配方")
+
+# ── 装配必须产出完整运行期元数据 ─────────────────────────────────────────
+def test_assembly_manifest_declares_file_hashes() -> None:
+    """`component.json` 必须声明每个文件的 sha256。
+
+    `component_runner.verify_component_files()` 在**每次启动前**按它重算哈希
+    （不信任「装配时校验过」）。若清单里没有 `files`，一 run 就报
+    「component.json 未声明任何文件，拒绝加载」—— 真实 CI 踩到。
+
+    这里做**真实装配**：造一个最小 zip 构件，走完整装配路径，检查产物。
+    """
+    import hashlib
+    import io
+    import json
+    import zipfile
+    from pathlib import Path
+
+    from omnicrawler.services.component_recipe import install_from_recipe
+
+    tmp = Path(__file__).resolve().parent / ".pytest_component_assembly"
+    work = tmp
+    work.mkdir(parents=True, exist_ok=True)
+    try:
+        # 造一个含模块文件的 zip 构件
+        payload = io.BytesIO()
+        with zipfile.ZipFile(payload, "w") as bundle:
+            bundle.writestr("pkg/__init__.py", "# demo\n")
+        blob = payload.getvalue()
+        digest = hashlib.sha256(blob).hexdigest()
+        archive = work / "artifact.zip"
+        archive.write_bytes(blob)
+
+        recipe = {
+            "schema": 1,
+            "name": "demo",
+            "version": "1.0.0",
+            "platforms": ["windows", "linux", "macos"],
+            "architectures": ["x86_64"],
+            "artifacts": [
+                {
+                    "url": "https://example.invalid/artifact.zip",
+                    "sha256": digest,
+                    "extract_to": "site-packages",
+                }
+            ],
+            "entry": {
+                "path": "entry.json",
+                "protocol": "demo-v1",
+                "engine": "generic",
+                "runner": "worker-wheelpack",
+                "module": "site-packages/pkg/__init__.py",
+            },
+        }
+
+        def downloader(_url: str, dest: Path) -> None:
+            dest.write_bytes(blob)
+
+        component_root = work / "components"
+        component_root.mkdir(parents=True, exist_ok=True)
+        summary = install_from_recipe(
+            recipe, component_root, downloader=downloader, work_dir=work
+        )
+        installed = Path(summary["path"])
+
+        manifest = json.loads((installed / "component.json").read_text(encoding="utf-8"))
+        assert manifest.get("files"), "component.json 未声明任何文件"
+        for relative, value in manifest["files"].items():
+            assert str(value).startswith("sha256:"), f"{relative} 缺少 sha256 前缀"
+            assert (installed / relative).is_file(), f"{relative} 声明了但不存在"
+
+        entry = json.loads((installed / "entry.json").read_text(encoding="utf-8"))
+        assert entry.get("entry") == "site-packages/pkg/__init__.py"
+    finally:
+        import shutil
+
+        shutil.rmtree(tmp, ignore_errors=True)

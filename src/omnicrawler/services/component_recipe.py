@@ -782,10 +782,25 @@ def install_from_recipe(
                 json.dumps(declared, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
+            # 清单必须声明**每个文件的 sha256**：`verify_component_files()`
+            # 在每次启动前按它重算一遍（不信任"装配时校验过"）。
+            # 早先只写 name/version/engine、没有 files ⇒ 一 run 就报
+            # 「component.json 未声明任何文件，拒绝加载」（真实 CI 踩到）。
+            file_hashes: dict[str, str] = {}
+            for candidate in sorted(assembled.rglob("*")):
+                if not candidate.is_file():
+                    continue
+                relative = candidate.relative_to(assembled).as_posix()
+                digest = hashlib.sha256()
+                with candidate.open("rb") as handle:
+                    for block in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(block)
+                file_hashes[relative] = f"sha256:{digest.hexdigest()}"
             component_manifest = {
                 "name": name,
                 "version": version,
                 "engine": str(entry.get("engine") or "generic"),
+                "files": file_hashes,
             }
             (assembled / "component.json").write_text(
                 json.dumps(component_manifest, ensure_ascii=False, indent=2) + "\n",
