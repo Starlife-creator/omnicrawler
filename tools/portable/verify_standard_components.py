@@ -92,13 +92,34 @@ def _current_platform() -> str:
     return "linux"
 
 
-def _tail(text: str, limit: int = 400) -> str:
-    """取**末尾**若干字符作为错误详情。
+#: 日志行前缀（CLI 运行时会把它们和真实错误一起打到 stderr）。
+_LOG_LINE_PREFIXES = ("WARNING ", "INFO ", "DEBUG ", "ERROR ")
 
-    取末尾而不是开头：上游工具常把 warning 打在开头，真正的错误在最后
-    （v1.0.7 踩过 —— 取前 400 字符把 Tesseract 警告误当成了失败原因）。
+
+def _tail(text: str, limit: int = 600) -> str:
+    """从子进程输出里取出**真正有用的错误详情**。
+
+    两步，缺一不可：
+
+    1. **滤掉日志行**：CLI 启动时会打 `2026-11-19 18:55:27,698 WARNING ...`、
+       `INFO omnicrawler 启动`。它们和真正的错误混在同一个 stderr 里，
+       400 字符窗口会被日志吃光 —— 真实 CI 上就只看到
+       `...ver', 'timeline', 'replay', ...` 这种被截断的 argparse 列表，
+       完全看不出是哪一步坏了。
+    2. **取末尾**：真正的错误在最后（v1.0.7 踩过取开头的坑）。
     """
-    cleaned = (text or "").strip()
+    lines = [
+        line
+        for line in (text or "").strip().splitlines()
+        if line.strip() and not any(line.lstrip().startswith(p) for p in _LOG_LINE_PREFIXES)
+    ]
+    # 日志行里也可能带时间戳前缀（`2026-11-19 18:55:27,698 WARNING`）
+    filtered = [
+        line
+        for line in lines
+        if "WARNING omnicrawler" not in line and "INFO omnicrawler" not in line
+    ]
+    cleaned = "\n".join(filtered or lines).strip()
     return cleaned[-limit:] if len(cleaned) > limit else cleaned
 
 

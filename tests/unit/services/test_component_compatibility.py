@@ -340,3 +340,60 @@ def test_assembly_manifest_declares_file_hashes() -> None:
         import shutil
 
         shutil.rmtree(tmp, ignore_errors=True)
+
+# ── Wheel-Pack 由宿主 worker 执行（组件不自带脚本） ────────────────────────
+def test_runner_uses_host_worker_not_component_script() -> None:
+    """runner 必须执行**宿主提供的 worker**，不得直接跑组件里的文件。
+
+    早先是 `python <spec.entry>` —— 要求 entry 是可执行脚本。而 Wheel-Pack
+    组件的 entry 是 `paddleocr/__init__.py` 这种**库入口**，直接跑会触发
+    它自己的命令行解析（真实 CI 报 argparse 错误）。
+
+    让组件自带脚本更糟：recipe 来自市场，允许下发脚本等于允许第三方代码执行
+    （`asset_trust.py` 铁律禁止）。所以「怎么执行」必须固定在宿主。
+    """
+    import pathlib as _pathlib
+
+    runner = _pathlib.Path(__file__).resolve().parents[3] / "src" / "omnicrawler" / "services" / "component_runner.py"
+    assert runner.is_file()
+    source = runner.read_text(encoding="utf-8")
+
+    assert "omnicrawler.services.component_worker" in source, (
+        "runner 没有调用宿主 worker —— 会退回到直接执行组件文件"
+    )
+    assert "[sys.executable, str(spec.entry)]" not in source, (
+        "runner 仍在直接执行组件路径 —— Wheel-Pack 的库入口不是脚本"
+    )
+
+
+def test_worker_module_name_resolution() -> None:
+    """`site-packages/xxx/__init__.py` 要解析成可 import 的 `xxx`。"""
+    from pathlib import Path
+
+    from omnicrawler.services.component_worker import _resolve_module_name
+
+    site = Path("/tmp/sp")
+    assert _resolve_module_name(site / "paddleocr" / "__init__.py", site) == "paddleocr"
+    assert _resolve_module_name(site / "a" / "b" / "__init__.py", site) == "a.b"
+    assert _resolve_module_name(site / "single.py", site) == "single"
+
+
+def test_worker_rejects_path_escape() -> None:
+    """入口不在 site-packages 内必须拒绝（防 `../` 越界）。"""
+    from pathlib import Path
+
+    import pytest as _pytest
+
+    from omnicrawler.services.component_worker import _resolve_module_name
+
+    site = Path("/tmp/sp")
+    with _pytest.raises(SystemExit):
+        _resolve_module_name(Path("/tmp/elsewhere/x.py"), site)
+
+
+def test_worker_engine_registry_is_not_empty() -> None:
+    """engine 适配器表不能为空 —— 否则任何组件都跑不起来。"""
+    from omnicrawler.services.component_worker import _ADAPTERS
+
+    assert "generic" in _ADAPTERS
+    assert "paddle" in _ADAPTERS

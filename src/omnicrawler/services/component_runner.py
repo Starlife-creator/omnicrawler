@@ -204,7 +204,15 @@ def run_component(
     """
     verify_component_files(spec.component_root)
 
-    command = [sys.executable, str(spec.entry)]
+    # **由宿主提供 worker**，不直接执行组件里的文件。
+    #
+    # 早先是 `python <spec.entry>` —— 要求 entry 是**可执行脚本**。
+    # 而 Wheel-Pack 组件的 entry 是 `paddleocr/__init__.py` 这种**库入口**，
+    # 直接跑只会触发 argparse 报错（真实 CI 踩到）。
+    #
+    # 让组件自带脚本是更糟的选择：recipe 来自市场，允许它下发脚本等于允许
+    # 第三方代码执行（asset_trust 铁律禁止）。所以把「怎么执行」固定在宿主。
+    command = [sys.executable, "-m", "omnicrawler.services.component_worker"]
     try:
         completed = subprocess.run(  # noqa: S603 - 命令由本模块构造，非用户输入
             command,
