@@ -1,6 +1,20 @@
 # Changelog
 
 ## Unreleased
+## 1.0.6 - 2026-11-19
+
+### 变更
+
+### 修复
+
+- fix(portable): **能力报告收集脚本改为按文件路径加载兄弟模块**。v1.0.5 三平台构建全部成功，
+  但便携冒烟三平台全部失败于 `ModuleNotFoundError: No module named 'tools'` ——
+  CI 直接执行 `python tools/portable/collect_capability_reports.py` 时
+  `sys.path[0]` 是 `tools/portable/`，仓库根不在路径上，`from tools.child_env import`
+  必然失败（本地有 `PYTHONPATH=src` 所以全绿）。
+- test(tools): 新增 3 条守卫——清空 `PYTHONPATH` 后子进程直接执行（行为判据）、
+  源码禁止 `from tools.` 写法（静态判据）、`env=_utf8_env()` 不得丢失。
+
 ## 1.0.5 - 2026-11-19
 
 ### 变更
