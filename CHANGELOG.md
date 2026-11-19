@@ -1,6 +1,28 @@
 # Changelog
 
 ## Unreleased
+## 1.0.11 - 2026-11-19
+
+### 变更
+
+### 新增
+
+- feat(components): **recipe 支持按平台选构件**。artifact 新增可选 `platforms`
+  字段（缺省 = 全平台通用）。一份配方可给三平台各配不同轮子 ——
+  `ocr-paddle` 补齐 windows/linux/macos 三个 wheel（真实 sha256 逐个从 PyPI 取）。
+  校验要求「每个声明平台至少有一个**平台专属**构件」，防止纯 Python 通用包
+  掩盖缺平台二进制的真相。
+
+### 修复
+
+- fix(components): `tesseract-chi-sim` 的 `platforms` 原写成 `darwin`
+  （`sys.platform` 的取值），而 `current_platform()` 返回 `macos`
+  ⇒ macOS 上永远装不上。改为 `macos`，并加 canonical 拼写守卫。
+- fix(portable): 验证脚本按 `install-recipe` 摘要的 `path` 字段取组件目录，
+  不再按 `release_root/components/<id>` 猜（实际落点是
+  `portable_data_root()/components/<id>-<version>`）。同时加平台跳过：
+  组件不支持本机平台时进 skipped 并打印原因。
+
 ## 1.0.10 - 2026-11-19
 
 ### 变更
