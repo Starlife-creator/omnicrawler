@@ -119,12 +119,23 @@ def _tail(text: str, limit: int = 600) -> str:
        完全看不出是哪一步坏了。
     2. **取末尾**：真正的错误在最后（v1.0.7 踩过取开头的坑）。
     """
-    lines = [
-        line
-        for line in (text or "").strip().splitlines()
-        if line.strip() and not any(line.lstrip().startswith(p) for p in _LOG_LINE_PREFIXES)
-    ]
-    cleaned = "\n".join(lines).strip()
+    raw_lines = (text or "").strip().splitlines()
+    kept: list[str] = []
+    for line in raw_lines:
+        if not line.strip():
+            continue
+        lowered = line.lower()
+        # 带模块名的 logging 行（`2026-... WARNING omnicrawler.xxx`）
+        if any(marker in lowered for marker in (" warning omnicrawler", " info omnicrawler", " debug omnicrawler")):
+            continue
+        if any(line.lstrip().startswith(p) for p in _LOG_LINE_PREFIXES):
+            continue
+        # 同一条消息还会以不带时间戳的形式重复一次（`内置 Tesseract 缺失: ...`）——
+        # 它们是**告警**，不是失败原因。滤掉，否则真实错误永远被挤在窗口外。
+        if lowered.startswith(("内置 ", "内置tesseract", "内置chromedriver")):
+            continue
+        kept.append(line)
+    cleaned = "\n".join(kept or raw_lines).strip()
     return cleaned[-limit:] if len(cleaned) > limit else cleaned
 
 
@@ -315,6 +326,14 @@ def verify_all(
             # 否则日志里只剩一坨被截断的 argparse 列表，看不出是哪一步。
             detail = _tail(ran.stderr) or _tail(ran.stdout) or "(无输出)"
             where = f"退出码 {ran.returncode}；命令 argv={' '.join(str(a) for a in (executable.name, 'components', 'run', '--component-dir', str(component_dir), '--payload', payload_arg))}"
+            # 同时把 **完整 stdout/stderr** 打到日志里（`::group::` 折叠），
+            # 不然每轮都要重新打 tag 才能看清原因 —— 太慢。
+            print(f"::group::{cid} 完整输出 (stdout)")
+            print((ran.stdout or "")[:4000])
+            print("::endgroup::")
+            print(f"::group::{cid} 完整输出 (stderr)")
+            print((ran.stderr or "")[:4000])
+            print("::endgroup::")
             report.failures.append((cid, "运行", f"{where}；输出尾部：{detail}"))
             continue
         report.ran_ok.append(cid)
