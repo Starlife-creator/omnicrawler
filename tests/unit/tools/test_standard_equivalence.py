@@ -118,7 +118,8 @@ def test_tail_prefers_end_of_output(verify) -> None:
     # 要求纯净会把阈值推向"更长就丢"的错误方向。
     # 判据：错误在**最后**，且前面的警告被截掉了大半（200 行只剩少量）
     assert detail.rstrip().endswith("真正的原因"), "错误不在末尾"
-    assert detail.count("无关警告") < 40, (
+    # 窗口 600 字符 ÷ 每行约 14 字符 ≈ 42 行；原文 200 行 ⇒ 必须远小于原量
+    assert detail.count("无关警告") < 60, (
         f"末尾窗口里塞了 {detail.count('无关警告')} 行警告（原文 200 行），"
         "说明取的不是末尾"
     )

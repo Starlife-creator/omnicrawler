@@ -93,7 +93,18 @@ def _current_platform() -> str:
 
 
 #: 日志行前缀（CLI 运行时会把它们和真实错误一起打到 stderr）。
-_LOG_LINE_PREFIXES = ("WARNING ", "INFO ", "DEBUG ", "ERROR ")
+#: 日志行前缀。要覆盖两种写法：Python logging 的 `WARNING xxx`（空格）
+#: 与自定义格式的 `WARNING: xxx`（冒号）—— 早先只认前者，后者全被当成错误详情。
+#:
+#: **只看带模块名的 Python logging 形态**（`WARNING omnicrawler.xxx`、
+#: `INFO omnicrawler ...`）。不按裸 `ERROR:` 过滤 —— 那样会把业务错误
+#: （如 `ERROR: 组件装配失败`）一起丢掉，结果什么都没剩下。
+_LOG_LINE_PREFIXES = (
+    "WARNING omnicrawler",
+    "INFO omnicrawler",
+    "DEBUG omnicrawler",
+    "ERROR omnicrawler",
+)
 
 
 def _tail(text: str, limit: int = 600) -> str:
@@ -113,13 +124,7 @@ def _tail(text: str, limit: int = 600) -> str:
         for line in (text or "").strip().splitlines()
         if line.strip() and not any(line.lstrip().startswith(p) for p in _LOG_LINE_PREFIXES)
     ]
-    # 日志行里也可能带时间戳前缀（`2026-11-19 18:55:27,698 WARNING`）
-    filtered = [
-        line
-        for line in lines
-        if "WARNING omnicrawler" not in line and "INFO omnicrawler" not in line
-    ]
-    cleaned = "\n".join(filtered or lines).strip()
+    cleaned = "\n".join(lines).strip()
     return cleaned[-limit:] if len(cleaned) > limit else cleaned
 
 
@@ -276,10 +281,20 @@ def verify_all(
         payload = entry.get("entry_payload")
         payload_arg = json.dumps(payload, ensure_ascii=False) if isinstance(payload, dict) else "{}"
         # 组件目录从安装摘要的 `path` 取（不猜路径）
-        component_dir = _installed_component_dir(installed.stdout)
+        # 摘要可能打在 stdout 也可能在 stderr（取决于 CLI 的日志分流）——两处都看，
+        # 否则会报「装完后找不到组件目录（摘要 path=None）」但日志明明有「安装到：」。
+        component_dir = _installed_component_dir(installed.stdout) or _installed_component_dir(
+            installed.stderr
+        )
         if component_dir is None or not component_dir.is_dir():
+            # 把安装输出摘出来，便于定位「摘要里到底有没有 安装到：」
+            preview = _tail((installed.stdout or "") + (installed.stderr or ""), 300)
             report.failures.append(
-                (cid, "运行", f"装完后找不到组件目录（摘要 path={component_dir}）")
+                (
+                    cid,
+                    "运行",
+                    f"装完后找不到组件目录（path={component_dir}）；安装输出尾部：{preview}",
+                )
             )
             continue
         ran = _run(
