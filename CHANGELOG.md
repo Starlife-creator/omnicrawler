@@ -1,6 +1,26 @@
 # Changelog
 
 ## Unreleased
+## 1.0.21 - 2026-11-19
+
+### 变更
+
+### 改进（诊断）
+
+- feat(portable): 组件失败时用 `::group::` 打**完整 stdout/stderr**（各 4 KB）；
+  错误详情额外滤掉『内置 Tesseract/ChromeDriver 缺失』这类告警行 ——
+  它们来自子进程启动时的 runtime_paths 初始化，Standard 本来就不带，
+  是**告警不是失败原因**，却把真实错误挤在了窗口外。
+- feat(components): worker **分级上报** —— `result` 带 `stage`
+  （`import_component` / `backend`）与 `error`（异常类型 + 消息），
+  不再只报一句『退出码 1』。
+
+### 进展
+
+v1.0.20：三平台构建全绿（含 macOS），两个组件都装上，
+`tesseract-chi-sim` 跑通，`ocr-paddle` 的 worker **已能启动执行**，
+卡在后端探针 —— 本轮加强诊断以定位具体是哪一步。
+
 ## 1.0.20 - 2026-11-19
 
 ### 变更
