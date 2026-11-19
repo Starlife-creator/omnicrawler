@@ -1,6 +1,28 @@
 # Changelog
 
 ## Unreleased
+## 1.0.23 - 2026-11-20
+
+### 变更
+
+### 修复
+
+- feat(market): **ocr-paddle 补齐 paddleocr 的完整硬依赖链**（33 个构件）。
+  真实 CI 报 `[import_component] ModuleNotFoundError: No module named 'paddlex'`
+  —— `paddleocr 3.7.0` 的 requires_dist 是 `paddlex[ocr-core]<3.8.0,>=3.7.0`，
+  而配方只声明了 paddlepaddle + paddleocr。补齐 paddlex 及其 ocr-core 的全部依赖
+  （opencv-contrib-python / pyclipper / pypdfium2 / python-bidi / shapely /
+  imagesize / pandas / prettytable / py-cpuinfo / pydantic + pyyaml / requests /
+  aiohttp / typing-extensions），三平台各 17 个构件。
+- test: 2 条守卫 —— 配方必须覆盖 paddleocr 硬依赖；wheel 必须能在 cp313 上加载
+  （防选到 cp310/cp311，平台对了 ABI 不对照样炸）。
+
+### 诊断链回顾
+
+这一轮拿到确切错误，靠的是前几轮把诊断一层层修通：
+v1.0.17 加「退出码 + argv」→ v1.0.21 加「完整 stdout/stderr + 分级上报」
+→ v1.0.22 改为「从 stdout 的 JSON 取 stage/error」。
+
 ## 1.0.22 - 2026-11-19
 
 ### 变更
