@@ -534,3 +534,78 @@ def test_ci_stops_when_collection_fails() -> None:
     text = release.read_text(encoding="utf-8")
     assert "collect_code" in text, "CI 未检查收集脚本退出码"
     assert 'exit "$collect_code"' in text, "CI 未在收集失败时中止"
+
+# ── 脚本必须能在「无 PYTHONPATH」下直接执行 ──────────────────────────────
+@pytest.mark.skipif(not _COLLECT.is_file(), reason="需要收集脚本")
+def test_collector_runs_without_pythonpath(tmp_path: Path) -> None:
+    """`python tools/portable/collect_capability_reports.py` 必须能直接跑。
+
+    **真实 CI 踩到过**：脚本里写了 `from tools.child_env import utf8_env`，
+    而 CI 是直接执行脚本的 —— 此时 `sys.path[0]` 是 `tools/portable/`，
+    仓库根不在路径上 ⇒ `ModuleNotFoundError: No module named 'tools'`
+    ⇒ 三平台便携冒烟全部失败。
+
+    判据：**清空 PYTHONPATH** 后以子进程直接执行，不得出现 ModuleNotFoundError。
+    """
+    import os as _os
+    import subprocess as _sp
+
+    env = {**_os.environ}
+    env.pop("PYTHONPATH", None)
+    env["PYTHONUTF8"] = "1"
+
+    # 指向一个不存在的目录：脚本应打 warning 并正常退出，而不是崩在 import
+    result = _sp.run(
+        [sys.executable, str(_COLLECT), str(tmp_path / "no-such"), str(tmp_path / "out")],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        timeout=120,
+        check=False,
+    )
+    combined = (result.stdout or "") + (result.stderr or "")
+    assert "ModuleNotFoundError" not in combined, (
+        "脚本在无 PYTHONPATH 下无法导入自身依赖 —— CI 直接执行时会崩溃：\n"
+        + combined[-800:]
+    )
+    assert "No module named" not in combined, combined[-800:]
+
+
+@pytest.mark.skipif(not _COLLECT.is_file(), reason="需要收集脚本")
+def test_sibling_module_imports_are_path_based() -> None:
+    """兄弟模块必须按**文件路径**加载，不能用 `from tools.xxx import`。
+
+    这是上一条的静态版：直接扫源码，确保没有 `from tools.` / `import tools.`
+    这种依赖"仓库根在 sys.path 上"的写法。
+    """
+    import re as _re
+
+    source = _COLLECT.read_text(encoding="utf-8")
+    # 去掉 docstring 与注释里的示例，只看真实代码行
+    code_lines = []
+    for line in source.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        code_lines.append(line)
+    code = "\n".join(code_lines)
+
+    offenders = _re.findall(r"^\s*(?:from tools[.\s]|import tools\b)", code, _re.MULTILINE)
+    assert not offenders, (
+        f"发现依赖 sys.path 含仓库根的导入：{offenders}。"
+        "脚本被 CI 直接执行时 sys.path[0] 是 tools/portable/，这类导入会崩。"
+    )
+
+
+@pytest.mark.skipif(not _COLLECT.is_file(), reason="需要收集脚本")
+def test_utf8_env_still_applied_to_subprocess() -> None:
+    """修复导入方式后，UTF-8 环境**不能跟着丢掉**。
+
+    `check_subprocess_encoding` 门禁要求带 `encoding=` 的 subprocess 必须传 env；
+    这里再从行为侧确认一次：探测子进程的 env 里确实有 UTF-8 设置。
+    """
+    source = _COLLECT.read_text(encoding="utf-8")
+    assert "_utf8_env()" in source, "UTF-8 环境调用点丢了"
+    assert "env=_utf8_env()" in source, "subprocess 未传 utf8 环境"

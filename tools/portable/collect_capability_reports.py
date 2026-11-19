@@ -27,7 +27,31 @@ import subprocess
 import sys
 from pathlib import Path
 
-from tools.child_env import utf8_env
+
+def _load_child_env():
+    """按文件路径加载 `tools/child_env.py`。
+
+    **不能用 `from tools.child_env import ...`**：本脚本在 CI 里是被
+    `python tools/portable/collect_capability_reports.py` 直接执行的，
+    此时 `sys.path[0]` 是 `tools/portable/`，仓库根不在路径上
+    ⇒ `ModuleNotFoundError: No module named 'tools'`（真实 CI 踩到）。
+
+    与同目录 `portable_smoke_test.py` 加载兄弟模块的做法保持一致。
+    """
+    import importlib.util as _ilu
+
+    root = Path(__file__).resolve().parents[2]  # 仓库根
+    spec = _ilu.spec_from_file_location("_child_env", root / "tools" / "child_env.py")
+    if spec is None or spec.loader is None:  # pragma: no cover - 文件缺失才走到
+        raise ImportError(f"无法加载 {root / 'tools' / 'child_env.py'}")
+    module = _ilu.module_from_spec(spec)
+    # 必须先注册：dataclass 求值类型注解时会查 sys.modules[cls.__module__]
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_utf8_env = _load_child_env().utf8_env
 
 #: 产物根目录下的可执行文件候选名（三平台不同）。
 _EXE_CANDIDATES = ("omnicrawler-cli.exe", "omnicrawler-cli", "omnicrawler")
@@ -94,7 +118,7 @@ def probe(executable: Path, root: Path, *, timeout: float = 180.0) -> dict:
             timeout=timeout,
             # 必须给子进程 UTF-8 环境：父进程按 UTF-8 解码输出，而 Windows
             # 默认控制台下 Python 子进程按 cp936 写，中文会变成 U+FFFD。
-            env=utf8_env(),
+            env=_utf8_env(),
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
