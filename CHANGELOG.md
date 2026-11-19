@@ -1,6 +1,27 @@
 # Changelog
 
 ## Unreleased
+## 1.0.13 - 2026-11-19
+
+### 变更
+
+### 修复
+
+- fix(components): **装配器补齐运行期元数据**。`build_wheelpack_spec()` 需要
+  `component.json` 与 `entry.json`，而装配器只产出 `site-packages/` ——
+  任何 `runner=worker-wheelpack` 的组件都是「装得上、跑不了」。现在在装配阶段三
+  补齐这两个**声明文件**（JSON，非脚本），且只在 `entry.path` 不指向构件自带文件时
+  生成、要求 `runner=worker-wheelpack`。
+- fix(portable): **纯数据组件不再走 `components run`**。`tesseract-chi-sim` 是
+  语言包、装好即完成，没有可执行入口；验证脚本对它会误报「缺少 site-packages」。
+  现在只有声明了 `entry.runner` 的组件才 run。
+- feat(market): `ocr-paddle` 声明 `entry.module`（入口在 site-packages 内的位置）。
+
+### 验证
+
+三平台构建已在 Python 3.13 下全部成功（含 macOS，PYI-5670 未复现）。
+本轮修复需再一次 CI 实证 `components run` 真正跑通。
+
 ## 1.0.12 - 2026-11-19
 
 ### 变更

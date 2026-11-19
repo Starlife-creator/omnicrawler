@@ -24,7 +24,7 @@ crawl:
 
 http:
 
-  user_agent: "OmniCrawler/1.0.12 (+contact: change-me@example.com)"
+  user_agent: "OmniCrawler/1.0.13 (+contact: change-me@example.com)"
 
   respect_robots: true
 
