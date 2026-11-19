@@ -1,8 +1,8 @@
 # OmniCrawler 测试报告
 
-> 适用版本：1.0.18 · 配置协议：v5 · 维护状态：现行
+> 适用版本：1.0.19 · 配置协议：v5 · 维护状态：现行
 
-> 当前版本：1.0.18。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
+> 当前版本：1.0.19。以下保留 2.1.0 与 2.6.0 的历史基线；当前本地 E2E 结果见同目录 `E2E_TEST_REPORT.md`，全项目回归基线见文末更新。
 
 ## 2026-11-14 扫描面收口：从「三条硬编码 glob」改成「递归枚举 + 显式排除集」
 
@@ -661,7 +661,7 @@ checkout 出来 42 行 CRLF，而 `core.autocrlf=true`）。它不是任何人�
 改动：`change_detector._extract_content` 用 `selectolax.lexbor.LexborHTMLParser`；
 extras `selectolax>=0.2,<1` → `>=0.4.2,<2`（下界抬到 lexbor 存在的版本：0.4.2 起有，实测过）；
 撤销 dependabot 的 semver-major 忽略；`uv lock --upgrade-package selectolax` 把锁定环境
-从 0.4.11 升到 **1.0.18**（否则放宽只在 pip 安装腿被测到，`uv sync --locked` 那条路永远跑旧版）。
+从 0.4.11 升到 **1.0.19**（否则放宽只在 pip 安装腿被测到，`uv sync --locked` 那条路永远跑旧版）。
 
 ### 为什么必须有静态守卫，而不是只靠 mypy
 
@@ -677,7 +677,7 @@ extras `selectolax>=0.2,<1` → `>=0.4.2,<2`（下界抬到 lexbor 存在的版�
 `<script>` 过滤、`&lt;tag&gt;` 转义、未加引号属性、`hidden`、未闭合标签、`<textarea>`）：
 
 ```
-modest 0.4.11（venv pyd）  ==  lexbor 0.4.11（venv pyd）  ==  lexbor 1.0.18（Temp/slx1 pyd）
+modest 0.4.11（venv pyd）  ==  lexbor 0.4.11（venv pyd）  ==  lexbor 1.0.19（Temp/slx1 pyd）
 ```
 
 三者输出**完全一致**，且每次运行都打印了实际加载的 `.pyd` 路径来证明不是"三份都在跑同一个后端"。
@@ -758,14 +758,14 @@ error: The lockfile at `uv.lock` needs to be updated, but `--check` was provided
 （run 40979465961 / job 123815598214）
 
 同一 run 的三条平台 test 腿各装出 `duckdb-2.0.0`、`pillow-13.0.0`、`pyarrow-26.0.0`、
-`selectolax-1.0.18`，**5767 passed** 且覆盖率门禁通过，mypy 只报**一条**错误：
+`selectolax-1.0.19`，**5767 passed** 且覆盖率门禁通过，mypy 只报**一条**错误：
 
 ```
 src/omnicrawler/scheduling/change_detector.py:324: error: Module "selectolax.parser"
 has no attribute "HTMLParser"  [attr-defined]
 ```
 
-本机用 `pip install --target` 隔离装 selectolax 1.0.18 实测（不靠 mypy 的措辞推断）：
+本机用 `pip install --target` 隔离装 selectolax 1.0.19 实测（不靠 mypy 的措辞推断）：
 `import selectolax.parser` 直接抛 `ImportError`，文案是「Modest backend is deprecated since
 selectolax 1.0 … 请改用 `from selectolax.lexbor import LexborHTMLParser`」。⇒ 放宽 selectolax
 需要一次**后端迁移**（现在这条快路径会静默降级到 lxml/BS4），不属于依赖升版，**本批否决这一项**。
@@ -956,7 +956,7 @@ Selenium 的逐请求拦截兼容降级只在测试进程拥有的回环服务�
 
 此次复验的测试进程仅将 `LOCALAPPDATA` 定向到仓库内临时目录，以避开本机既有缓存目录的访问权限；系统 `TEMP` 保持不变，因此不会改变需要真实临时目录语义的配置和 PDF 用例。
 
-## 1.0.18 发布前回归（2026-08-01）
+## 1.0.19 发布前回归（2026-08-01）
 
 | 项目 | 实测结果 |
 |---|---|
@@ -964,7 +964,7 @@ Selenium 的逐请求拦截兼容降级只在测试进程拥有的回环服务�
 | 新增 GUI 回归范围 | 首页自然语言任务入口、必填项前置、通知自动消失兜底、转场析构与线程关闭顺序 |
 | 兼容性 | 公共 API 与配置协议 v5 不变；现有工作区、模板和导出格式不需要迁移 |
 
-1.0.18 的最终离线构建会重新执行发布一致性、构件完整性和便携冒烟验证；构建后的结果以 `docs/releases/RELEASE_REPORT_1.0.18.md` 和版本化 `artifacts/` 目录为准。
+1.0.19 的最终离线构建会重新执行发布一致性、构件完整性和便携冒烟验证；构建后的结果以 `docs/releases/RELEASE_REPORT_1.0.19.md` 和版本化 `artifacts/` 目录为准。
 
 ## 当前覆盖率快照 (2026-08-08) — 66% 门禁达标
 

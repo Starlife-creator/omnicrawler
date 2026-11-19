@@ -1,6 +1,27 @@
 # Changelog
 
 ## Unreleased
+## 1.0.19 - 2026-11-19
+
+### 变更
+
+### 修复
+
+- fix(runtime): **清单按文件系统真实形态记录符号链接**。`create_runtime_manifest`
+  用 `path.stat()`（跟随链接）记录大小，而 `tar` 打包后解压出来的是链接本身
+  ⇒ verify 必然报 `size mismatch`。Python 3.13 的 macOS framework 链接比 3.12 更多，
+  升级后一次性全暴露（几十条 `.dylib` + `python3.13` + `playwright/driver/node`）。
+  新增 `_entry_for()` 让 create 与 verify **共用同一口径**：
+  symlink 记 `链接目标字符串`的哈希与长度，普通文件记内容哈希与大小。
+- fix(gates): 归档 symlink 判据从「一律禁止」收窄为「只允许 `.app/Contents/` 之下」。
+  macOS `.app` 的约定就是用 symlink 表达版本化文件，一律禁止等于 macOS 永远发不出去。
+- test(core): 4 条守卫，含「create/verify 同口径」与「链接目标变化必须判 corrupt」。
+
+### 本机限制
+
+Windows 不允许创建符号链接（WinError 1314），守卫用 monkeypatch 模拟；
+真实 macOS 行为只能由 CI 产物体检覆盖。
+
 ## 1.0.18 - 2026-11-19
 
 ### 变更
