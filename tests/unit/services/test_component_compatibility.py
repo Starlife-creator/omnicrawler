@@ -526,3 +526,85 @@ def test_worker_error_ignores_non_json_stdout() -> None:
 
     assert _extract_worker_error("not json at all") == ""
     assert _extract_worker_error("") == ""
+
+def test_paddle_recipe_declares_full_dependency_chain() -> None:
+    """`ocr-paddle` 配方必须覆盖 `paddleocr` 的**硬依赖**。
+
+    真实 CI 报 `[import_component] ModuleNotFoundError: No module named 'paddlex'`：
+    `paddleocr 3.7.0` 的 requires_dist 是 `paddlex[ocr-core]<3.8.0,>=3.7.0`，
+    而配方原本只声明了 paddlepaddle + paddleocr 两个 wheel ——
+    装得上，但 import 就炸。
+
+    这条守卫用**真实配方**，逐个检查 paddleocr 声明的必需依赖是否都在
+    配方里出现（按包名前缀匹配 wheel 文件名）。
+    """
+    import json
+    from pathlib import Path
+
+    market = Path(__file__).resolve().parents[4] / "OmniCrawler-market"
+    recipe_path = market / "components" / "ocr-paddle" / "recipe.json"
+    if not recipe_path.is_file():
+        pytest.skip("需要 ocr-paddle 配方")
+
+    recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
+    filenames = " ".join(a["url"].rsplit("/", 1)[-1].lower() for a in recipe["artifacts"])
+
+    # paddleocr 3.7.0 的必需依赖（来自 PyPI requires_dist）
+    required = [
+        "paddlex",
+        "pyyaml",
+        "requests",
+        "aiohttp",
+        "typing-extensions",
+        # paddlex[ocr-core] 的额外依赖
+        "opencv-contrib-python",
+        "pyclipper",
+        "pypdfium2",
+        "python-bidi",
+        "shapely",
+        "imagesize",
+        "pandas",
+        "prettytable",
+        "py-cpuinfo",
+        "pydantic",
+    ]
+    missing = [
+        name
+        for name in required
+        # wheel 文件名把 `-` 写成 `_`，两者都认
+        if name.replace("-", "_") not in filenames.replace("-", "_")
+    ]
+    assert not missing, f"配方缺少 paddleocr 的硬依赖：{missing}"
+
+def test_paddle_recipe_wheels_are_abi_compatible() -> None:
+    """配方里的 wheel 必须能在 **cp313** 上加载。
+
+    真实坑：我第一版按「平台标签」选轮子，给 pyyaml / pandas 选中了
+    `cp310` / `cp311` 的轮子 —— 平台对了，但 ABI 不对，3.13 下 import 就炸。
+
+    判据（三者之一即可）：
+    * `py3-none-any` —— 纯 Python；
+    * `py3-none-<platform>` —— 纯 Python + 平台标签（如 pypdfium2，
+      它加载的是独立 .so/.dll，不依赖 CPython ABI）；
+    * 含 `cp313` 或 `abi3` —— 明确兼容当前解释器。
+    """
+    import json
+    from pathlib import Path
+
+    market = Path(__file__).resolve().parents[4] / "OmniCrawler-market"
+    recipe_path = market / "components" / "ocr-paddle" / "recipe.json"
+    if not recipe_path.is_file():
+        pytest.skip("需要 ocr-paddle 配方")
+
+    recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
+    bad = []
+    for artifact in recipe["artifacts"]:
+        filename = artifact["url"].rsplit("/", 1)[-1].lower()
+        if not filename.endswith(".whl"):
+            continue
+        if "py3-none-" in filename:
+            continue
+        if "cp313" in filename or "abi3" in filename:
+            continue
+        bad.append(filename)
+    assert not bad, f"这些 wheel 在 cp313 上不可用：{bad}"
