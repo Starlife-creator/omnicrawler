@@ -226,6 +226,35 @@ def _worker_command() -> list[str]:
     return [sys.executable, "-m", "omnicrawler.services.component_worker"]
 
 
+def _extract_worker_error(stdout: str) -> str:
+    """从 worker 的 stdout 里取出它自报的错误（没有就返回空串）。
+
+    worker 的协议是「stdout 只放一个 JSON」。失败时那个 JSON 长这样：
+
+        {"ok": false, "stage": "import_component", "error": "ImportError: ..."}
+
+    `stage` 是关键 —— 它直接说明炸在 import 还是后端探针。
+    """
+    text = (stdout or "").strip()
+    if not text:
+        return ""
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return ""
+    try:
+        payload = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(payload, dict) or payload.get("ok"):
+        return ""
+    stage = str(payload.get("stage") or "").strip()
+    error = str(payload.get("error") or "").strip()
+    if not stage and not error:
+        return ""
+    return f"[{stage or 'worker'}] {error or '未提供错误信息'}"
+
+
 def run_component(
     spec: WheelPackSpec,
     payload: dict[str, Any],
@@ -269,6 +298,15 @@ def run_component(
         ) from exc
 
     if completed.returncode != 0:
+        # **先看 stdout**：worker 失败时会往 stdout 打一个 JSON
+        # （`{"ok": false, "stage": ..., "error": ...}`）。早先只读 stderr，
+        # 于是真正的错误被 `内置 Tesseract 缺失` 这类无关告警淹没
+        # （真实 CI 上"退出码 1"后面跟的全是告警，看不出失败原因）。
+        reported = _extract_worker_error(completed.stdout or "")
+        if reported:
+            raise ComponentRunnerError(
+                f"组件 {spec.name} 退出码 {completed.returncode}：{reported}"
+            )
         detail = (completed.stderr or "").strip()[-800:]
         raise ComponentRunnerError(
             f"组件 {spec.name} 退出码 {completed.returncode}：{detail}"

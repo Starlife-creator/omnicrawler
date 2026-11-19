@@ -497,3 +497,32 @@ def test_paddle_probe_does_not_check_whole_machine() -> None:
     assert "run_check()" not in code, (
         "仍在校验整机运行时 —— 会把组件自身没问题误报成失败"
     )
+
+def test_worker_error_extracted_from_stdout() -> None:
+    """worker 自报的错误必须从 **stdout 的 JSON** 里取，不能被 stderr 告警淹没。
+
+    **真实 CI**：`组件 ocr-paddle 退出码 1：` 后面跟的全是
+    `内置 Tesseract 缺失` / `内置 ChromeDriver 缺失` 这类无关告警，
+    真正的失败原因（stage + error）在 stdout 的 JSON 里，被完全忽略。
+    """
+    from omnicrawler.services.component_runner import _extract_worker_error
+
+    payload = '{"ok": false, "stage": "import_component", "error": "ImportError: boom"}'
+    detail = _extract_worker_error(payload)
+    assert "import_component" in detail
+    assert "ImportError: boom" in detail
+
+
+def test_worker_error_ignores_success_payload() -> None:
+    """成功的 JSON 不算错误（否则正常路径会被误报成失败）。"""
+    from omnicrawler.services.component_runner import _extract_worker_error
+
+    assert _extract_worker_error('{"ok": true, "engine": "generic"}') == ""
+
+
+def test_worker_error_ignores_non_json_stdout() -> None:
+    """stdout 不是 JSON 时返回空串（由调用方退回 stderr）。"""
+    from omnicrawler.services.component_runner import _extract_worker_error
+
+    assert _extract_worker_error("not json at all") == ""
+    assert _extract_worker_error("") == ""
