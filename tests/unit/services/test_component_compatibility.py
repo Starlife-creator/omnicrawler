@@ -600,6 +600,16 @@ def test_paddle_recipe_declares_full_dependency_chain() -> None:
         "urllib3",
         "wcwidth",
         "yarl",
+        # 闭包补齐（pydantic / aiohttp / cryptography 的传递依赖）
+        "aiohappyeyeballs",
+        "aiosignal",
+        "annotated-types",
+        "anyio",
+        "attrs",
+        "bce-python-sdk",
+        "certifi",
+        "cffi",
+        "charset-normalizer",
     ]
     def normalized(text: str) -> str:
         """包名归一：`-` / `.` / `_` 在 wheel 文件名里可互换。
