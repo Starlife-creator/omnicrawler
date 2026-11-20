@@ -153,11 +153,15 @@ jobs:
   probe:
     needs: [decide, fetch-last, build, build-fallback]
     # 三个上游里只要有一个成功、且不是被 skip 掉的关键路径，就跑
+    # 三个上游里只要有一个成功就跑；全部 skip/fail 才跳过。
+    # 刻意**不引用 `needs.*.outputs`** —— 上游被 skip 时 outputs 不存在，
+    # 表达式在解析阶段就可能判失败（表现为 startup_failure，无任何日志）。
     if: |
-      always() &&
-      (needs.build.result == 'success' ||
-       needs.build-fallback.result == 'success' ||
-       needs.fetch-last.outputs.found == 'true')
+      always() && (
+        needs.build.result == 'success' ||
+        needs.build-fallback.result == 'success' ||
+        needs.fetch-last.result == 'success'
+      )
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
