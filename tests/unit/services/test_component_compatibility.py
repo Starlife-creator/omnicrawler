@@ -1035,3 +1035,59 @@ def test_market_components_declare_provides() -> None:
             missing.append(recipe_path.parent.name)
     assert checked > 0, "没有可检查的组件配方"
     assert not missing, f"这些组件没有声明 provides：{missing}"
+
+# ── 体积声明：下载量与磁盘占用是两个数 ──────────────────────────────────
+def test_installed_bytes_estimate_exceeds_download() -> None:
+    """解压后占用必须**大于**下载量（wheel 是 ZIP，原生扩展约 2×）。
+
+    维护者要求：不设上限，但**三个数都必须声明**（单组件下载量 /
+    单组件磁盘占用 / 全部合计）。只报下载量会形成虚假安全感 ——
+    `ocr-paddle` Linux 下载 208 MiB，解压后约 416 MiB。
+    """
+    from omnicrawler.services.component_install import estimate_installed_bytes
+
+    recipe = {
+        "artifacts": [
+            {"format": "whl", "size": 100 * 1024 * 1024},
+        ]
+    }
+    download = 100 * 1024 * 1024
+    estimated = estimate_installed_bytes(recipe, download)
+    assert estimated > download, "估算没有体现压缩比"
+    assert estimated >= 190 * 1024 * 1024, f"估算过低：{estimated}"
+
+
+def test_raw_artifacts_not_inflated() -> None:
+    """纯数据（`format: raw`）不压缩，不该被乘 2 放大。"""
+    from omnicrawler.services.component_install import estimate_installed_bytes
+
+    size = 10 * 1024 * 1024
+    recipe = {"artifacts": [{"format": "raw", "size": size}]}
+    estimated = estimate_installed_bytes(recipe, size)
+    assert estimated == size, f"raw 构件被放大了：{estimated}"
+
+
+def test_format_bytes_is_human_readable() -> None:
+    """字节数要能读 —— 用户不该看到 `218559999 字节` 这种。"""
+    from omnicrawler.services.component_install import format_bytes
+
+    assert "MiB" in format_bytes(200 * 1024 * 1024)
+    assert "GiB" in format_bytes(2 * 1024 * 1024 * 1024)
+
+
+def test_describe_recipe_reports_both_sizes() -> None:
+    """`describe_recipe` 必须同时给出 `declared_total_bytes` 与磁盘占用估算。"""
+    from pathlib import Path
+
+    from omnicrawler.services.component_install import describe_recipe
+
+    market = Path(__file__).resolve().parents[4] / "OmniCrawler-market"
+    recipe_path = market / "components" / "ocr-paddle" / "recipe.json"
+    if not recipe_path.is_file():
+        pytest.skip("需要 ocr-paddle 配方")
+
+    plan = describe_recipe(recipe_path)
+    assert plan["declared_total_bytes"] > 0, "没有下载量"
+    assert plan["estimated_installed_bytes"] > plan["declared_total_bytes"], (
+        "没有磁盘占用估算，或估算没有体现压缩比"
+    )

@@ -513,10 +513,22 @@ def _run_components(args: argparse.Namespace) -> None:
 
     if args.action in {"uninstall", "rollback"}:
         require_explicit_apply(f"components {args.action}")
-    _json(cmd_components.execute(
+    result = cmd_components.execute(
         args.action, package=args.package or "", name=args.name or "",
         allow_unsigned=bool(args.allow_unsigned), sha256=args.sha256 or "",
-    ))
+    )
+    # `list` 额外报**总占用**：维护者要求「不设上限，但要让用户看到总共占多少」。
+    # 统计的是已装目录的真实字节数，不是下载量估算。
+    if args.action == "list" and isinstance(result, dict):
+        from ..core.runtime_paths import portable_data_root
+        from ..services.component_install import components_size_summary
+
+        root = portable_data_root() / "components"
+        try:
+            result["size_summary"] = components_size_summary(root)
+        except OSError:
+            pass
+    _json(result)
 
 
 def _run_component_in_subprocess(args: argparse.Namespace) -> None:
@@ -609,15 +621,24 @@ def _run_component_recipe(args: argparse.Namespace) -> None:
 
     if not getattr(args, "download", False):
         # 不给 --download：只校验 + 展示将拉什么，一个字节都不写。
+        # 展示**两个数**：下载量与解压后磁盘占用。只给前者会形成虚假安全感
+        # （`ocr-paddle` Linux 下载 322 MB，解压后约 600–700 MB）。
         try:
             plan = describe_recipe(recipe)
         except RecipeInstallError as exc:
             raise SystemExit(str(exc)) from exc
-        total = plan.get("declared_total_bytes") or 0
+        from ..services.component_install import format_bytes
+
+        total = int(plan.get("declared_total_bytes") or 0)
+        installed = int(plan.get("estimated_installed_bytes") or 0)
+        # **两个数都要给**：只报下载量会形成虚假安全感 ——
+        # `.whl` 是 ZIP，原生扩展解压后约为下载量的 2 倍。
         print(
             f"将安装组件 {plan['name']} {plan['version']}，"
-            f"需拉取 {len(plan['artifacts'])} 个构件（声明总大小 {total} 字节）。"
+            f"需拉取 {len(plan['artifacts'])} 个构件。"
         )
+        print(f"  下载量：{format_bytes(total)}（{total} 字节）")
+        print(f"  磁盘占用：约 {format_bytes(installed)}（解压后，估算）")
         for item in plan["artifacts"]:
             print(f"  - {item['url']}")
         print("\n未加 --download，未做任何下载。确认无误后加 --download 执行。")

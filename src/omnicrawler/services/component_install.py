@@ -127,6 +127,39 @@ def install_recipe_file(
     return result
 
 
+#: 压缩比估算：`.whl` 是 ZIP，纯 Python 包几乎不压缩，原生扩展约 2×。
+#:
+#: 这是**估算**而不是实测：实测要解压全部构件（几百 MB），不该在
+#: `inspect-recipe`（只读、秒级）里做。宁可给一个偏保守的数并标注是估算，
+#: 也不要让用户以为「下载 322 MB 就只占 322 MB」。
+_COMPRESSION_RATIO = 2.0
+
+
+def estimate_installed_bytes(recipe: dict[str, Any], download_bytes: int) -> int:
+    """估算解压后的磁盘占用。
+
+    判据：纯数据（`format: raw`）几乎不压缩，按 1× 算；
+    wheel 按 :data:`_COMPRESSION_RATIO` 算。取整到 MiB 便于展示。
+    """
+    raw_bytes = 0
+    for artifact in recipe.get("artifacts") or []:
+        if str(artifact.get("format") or "").lower() == "raw":
+            raw_bytes += int(artifact.get("size") or 0)
+    wheel_bytes = max(0, download_bytes - raw_bytes)
+    estimated = raw_bytes + int(wheel_bytes * _COMPRESSION_RATIO)
+    # 取整到 MiB
+    mib = 1024 * 1024
+    return (estimated // mib) * mib
+
+
+def format_bytes(value: int) -> str:
+    """人类可读的字节数（MiB / GiB）。"""
+    mib = 1024 * 1024
+    if value >= 1024 * mib:
+        return f"{value / (1024 * mib):.1f} GiB"
+    return f"{value / mib:.0f} MiB"
+
+
 def describe_recipe(recipe_path: str | Path) -> dict[str, Any]:
     """只读地描述一份 recipe（不下载、不落盘）。
 
@@ -163,7 +196,12 @@ def describe_recipe(recipe_path: str | Path) -> dict[str, Any]:
         "architectures": recipe.get("architectures", []),
         "entry": recipe.get("entry", {}),
         "artifacts": artifacts,
+        # **下载量**（wheel 压缩后）。与下面的磁盘占用是两个不同的数。
         "declared_total_bytes": total,
+        # **磁盘占用估算**（解压后）：`.whl` 是 ZIP，原生扩展压缩比约 2×。
+        # 分开报是因为只给下载量会形成虚假安全感 ——
+        # `ocr-paddle` 在 Linux 上下载 322 MB，解压后约 600–700 MB。
+        "estimated_installed_bytes": estimate_installed_bytes(recipe, total),
         "recipe_digest": recipe_digest(recipe),
     }
 
@@ -181,3 +219,29 @@ def dumps_summary(summary: dict[str, Any]) -> str:
 
 def summary_json(summary: dict[str, Any]) -> str:
     return json.dumps(summary, ensure_ascii=False, indent=2)
+
+def components_size_summary(component_root: Path) -> dict[str, int | str]:
+    """已装组件的**总占用**（按磁盘上的实际字节数统计）。
+
+    维护者的要求是「不设上限，但要让用户看到总共占多少」。
+    这里统计的是**真实磁盘占用**（不是下载量估算）—— 已装的东西可以直接量。
+    """
+    root = Path(component_root)
+    total = 0
+    count = 0
+    if root.is_dir():
+        for version_dir in root.iterdir():
+            if not version_dir.is_dir():
+                continue
+            count += 1
+            for path in version_dir.rglob("*"):
+                try:
+                    if path.is_file():
+                        total += path.stat().st_size
+                except OSError:
+                    continue
+    return {
+        "components": count,
+        "installed_bytes": total,
+        "human": format_bytes(total),
+    }
