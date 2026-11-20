@@ -1,6 +1,26 @@
 # Changelog
 
 ## Unreleased
+## 1.0.28 - 2026-11-20
+
+### 变更
+
+### 修复
+
+- fix(market): **修正 linux 架构错选**。真实 CI 报
+  `ModuleNotFoundError: No module named 'bidi.bidi'` —— 表面像缺包，
+  实为 `python-bidi` 选中的是 `manylinux_2_17_aarch64` 轮子，
+  x86_64 runner 加载不了那个 `.so`，Python 只能报「子模块不存在」。
+  同时修正 `shapely` 的同类问题，并把 `paddlepaddle` 的 macOS 条目统一到 x86_64。
+- test: 新增架构守卫 —— linux 必须 `manylinux` + `x86_64`（禁 `aarch64`）、
+  windows 必须 `win_amd64`、macos 必须 `macosx`、任何平台禁 `cp313t`
+  （自由线程构建，普通解释器加载不了）。
+
+### 说明
+
+这条报错很容易看错方向：`No module named 'bidi.bidi'` 像是「少装了包」，
+实际是「装错了架构」。守卫把「平台名对了但架构不对」这种情形单独判红。
+
 ## 1.0.27 - 2026-11-20
 
 ### 变更
