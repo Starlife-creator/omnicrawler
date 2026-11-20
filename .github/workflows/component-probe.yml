@@ -82,6 +82,8 @@ jobs:
 
       - name: 分类本轮改动
         id: classify
+        # 注意：不要在本 step 内引用 steps.classify.outputs.* —— 那时刻还没写。
+        # 真实的决策值由下一个 step 打印。
         shell: bash
         env:
           BASE_REF: ${{ inputs.base_ref }}
@@ -103,7 +105,11 @@ jobs:
           fi
           python tools/portable/needs_rebuild.py \
             --base "$BASE" --head HEAD --github-output >> "$GITHUB_OUTPUT"
+
+      - name: 打印本轮决策（独立 step，此时 output 已生效）
+        run: |
           echo "::notice::决策=${{ steps.classify.outputs.decision }}"
+          echo "::notice::理由=${{ steps.classify.outputs.reason }}"
 
   # ── 2a) 取最近一次成功 release 的产物（可复用时） ──────────────────────
   #
@@ -128,15 +134,25 @@ jobs:
           # reuse 路径永远不可用，每次都要重建，提速目的落空。
           # 退一步：任何成功且带该 artifact 的运行都能提供「一个可运行的产物」，
           # 而 reuse 的前提（本轮没改构建链）已由 decide 保证。
+          # 按 workflow 名字过滤：只考虑**会产生产物**的那几个。
+          # 直接扫全部成功运行没用 —— 最近的「成功」几乎都是 secret-scan /
+          # license-gate 这类不构建的检查（实测 20 条里 0 条有产物）。
           RUN_ID=""
-          for CANDIDATE in $(gh run list --repo "$GITHUB_REPOSITORY" \
-              --status success --limit 20 --json databaseId --jq '.[].databaseId' 2>/dev/null); do
-            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE/artifacts" \
-                --jq '.artifacts[].name' 2>/dev/null | grep -qx 'artifacts-linux'; then
-              RUN_ID="$CANDIDATE"
-              break
-            fi
+          for WF in release component-probe; do
+            for CANDIDATE in $(gh run list --repo "$GITHUB_REPOSITORY" \
+                --workflow "$WF" --status success --limit 10 \
+                --json databaseId --jq '.[].databaseId' 2>/dev/null); do
+              if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE/artifacts" \
+                  --jq '.artifacts[].name' 2>/dev/null | grep -qx 'artifacts-linux'; then
+                RUN_ID="$CANDIDATE"
+                echo "在 $WF 里找到带产物的运行：$CANDIDATE"
+                break 2
+              fi
+            done
           done
+          if [ -z "$RUN_ID" ]; then
+            echo "::warning::release 与 component-probe 里都没有带 artifacts-linux 的成功运行"
+          fi
           if [ -z "$RUN_ID" ]; then
             echo "::warning::没有可复用的成功 release 运行"
             exit 0
