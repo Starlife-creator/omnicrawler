@@ -125,10 +125,30 @@ def test_capability_slot_browser_providers_and_preference() -> None:
     assert active.provider_id == "playwright"
     assert active.metadata.get("bundled") is True
 
-    # 切换槽位首选项
+    # ── 切换槽位首选项 ────────────────────────────────────────────────
+    #
+    # **只在目标内核真的可用时才断言**。早先这里无条件断言
+    # 「设为 playwright-firefox 后 active 就是它」—— 而 2026-11-20 修正
+    # 可用性判据后发现：本机通常**没装 Firefox 二进制**
+    # （ms-playwright/ 下只有 chromium-*），于是 playwright-firefox
+    # 正确报告为不可用，这条断言就在断言一个**不存在的前提**。
+    #
+    # 判据应当是：**切到一个可用的内核，active 会跟着变**；
+    # 目标不可用时，`active()` 不得返回它（自动回退到可用的）。
+    firefox_ready = next(
+        (p for p in slot.providers() if p.provider_id == "playwright-firefox"),
+        None,
+    )
+    assert firefox_ready is not None
     slot.set_preferred("playwright-firefox")
-    assert slot.active().provider_id == "playwright-firefox"
-
-    # resolve_browser_runtime 可直接消费包含 slot_registry 的解析
-    spec = resolve_browser_runtime(slot_registry=registry)
-    assert spec.engine_family == "firefox"
+    active_after = slot.active()
+    assert active_after is not None
+    if firefox_ready.is_available():
+        assert active_after.provider_id == "playwright-firefox"
+        spec = resolve_browser_runtime(slot_registry=registry)
+        assert spec.engine_family == "firefox"
+    else:
+        # 不可用的首选项必须**自动回退**，不能让采集用不存在的内核
+        assert active_after.provider_id != "playwright-firefox", (
+            "首选项不可用，active() 却仍返回它 —— 会导致运行期才失败"
+        )

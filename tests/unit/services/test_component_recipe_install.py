@@ -93,6 +93,11 @@ def _local_downloader(url: str, destination: Path) -> None:
 def _recipe(url: str, digest: str, size: int) -> dict:
     return {
         "schema": 1,
+        # `kind` / `smoke` / `entry.runner` 是后加的**必填**判据。
+        # 这个构造器是多条用例的共同入口，缺了它们会全体先被拒绝，
+        # 测不到各自真正想测的判据（哈希不符、兼容性等）。
+        "kind": "wheel-pack",
+        "smoke": {"expect": ["ok"]},
         "name": "fake-ocr-pack",
         "version": "0.0.1",
         "description": "测试用假组件",
@@ -112,6 +117,7 @@ def _recipe(url: str, digest: str, size: int) -> dict:
             "path": "tessdata/chi_sim.traineddata",
             "protocol": "ocr-file-v1",
             "engine": "tesseract",
+            "runner": "worker-wheelpack",
         },
     }
 
