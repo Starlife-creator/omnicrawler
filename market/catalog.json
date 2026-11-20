@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-20T09:40:15+00:00",
-  "sequence": 1791080219,
+  "generated_at": "2026-11-20T14:16:59+00:00",
+  "sequence": 1791080221,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -989,8 +989,8 @@
       "name": "PaddleOCR 重型运行时（Wheel-Pack）——wheel 从上游拉，模型另行直拉，本仓只托管配方",
       "version": "1.0.0",
       "publisher": "starlife",
-      "recipe_file": "components/ocr-paddle/recipe.json",
-      "recipe_digest": "6b7e89eeeae0496e99264dde6407c4660690a737979ddde43d9099648dc30655",
+      "recipe_file": "components/ocr/ocr-paddle/recipe.json",
+      "recipe_digest": "0f4ef50dfc1a1861ecfcf55065ac06c19dd81b1b5fa0cf0c9f796eb89687e3b0",
       "platforms": [
         "windows",
         "linux",
@@ -1593,18 +1593,18 @@
         }
       ],
       "declared_total_bytes": 758486657,
-      "package_manifest_file": "components/ocr-paddle/package.manifest.json",
-      "creator_package_signature_file": "components/ocr-paddle/package.manifest.creator.sig",
-      "creator_identity_file": "components/ocr-paddle/creator.identity",
-      "creator_signature_file": "components/ocr-paddle/creator.sig"
+      "package_manifest_file": "components/ocr/ocr-paddle/package.manifest.json",
+      "creator_package_signature_file": "components/ocr/ocr-paddle/package.manifest.creator.sig",
+      "creator_identity_file": "components/ocr/ocr-paddle/creator.identity",
+      "creator_signature_file": "components/ocr/ocr-paddle/creator.sig"
     },
     {
       "id": "tesseract-chi-sim",
       "name": "Tesseract 中文简体语言包——字节从上游拉取，本仓只托管声明",
       "version": "1.0.0",
       "publisher": "starlife",
-      "recipe_file": "components/tesseract-chi-sim/recipe.json",
-      "recipe_digest": "94d4a229a415a58f199532063cb30eba5fe449197663ee7d0df30141cb1bc3f6",
+      "recipe_file": "components/ocr/tesseract-chi-sim/recipe.json",
+      "recipe_digest": "609876535089b7eb4e0d57c709d7cf2d0d4135fe7fb07c2e23007876cd1aa66f",
       "platforms": [
         "windows",
         "linux",
@@ -1633,11 +1633,11 @@
         }
       ],
       "declared_total_bytes": 2469156,
-      "description_file": "components/tesseract-chi-sim/listing.md",
-      "package_manifest_file": "components/tesseract-chi-sim/package.manifest.json",
-      "creator_package_signature_file": "components/tesseract-chi-sim/package.manifest.creator.sig",
-      "creator_identity_file": "components/tesseract-chi-sim/creator.identity",
-      "creator_signature_file": "components/tesseract-chi-sim/creator.sig"
+      "description_file": "components/ocr/tesseract-chi-sim/listing.md",
+      "package_manifest_file": "components/ocr/tesseract-chi-sim/package.manifest.json",
+      "creator_package_signature_file": "components/ocr/tesseract-chi-sim/package.manifest.creator.sig",
+      "creator_identity_file": "components/ocr/tesseract-chi-sim/creator.identity",
+      "creator_signature_file": "components/ocr/tesseract-chi-sim/creator.sig"
     }
   ]
 }

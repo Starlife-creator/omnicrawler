@@ -107,11 +107,40 @@ def check_recipe(recipe_path: Path) -> list[str]:
     wheels = _wheel_names(recipe)
     kind = cr.component_kind(recipe)
 
+    # ── 0) 目录名必须等于 recipe 的 id ────────────────────────────────────
+    #
+    # 改成分类子目录后，`components/<分类>/<id>/` 里的 `<id>` 是**目录名**，
+    # 而 `recipe.json` 里也有一份 `id`。两者不一致时此前**不报错** ——
+    # 目录说它在 A 组件下、JSON 说它叫 B，catalog 与文件系统对不上。
+    # 扁平结构下这个一致性是隐含的（build.py 直接用 parent.name），
+    # 两级之后必须显式校验。
+    try:
+        _raw = json.loads(recipe_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        _raw = None
+    if isinstance(_raw, dict):
+        # 只校验**显式声明的 id**。
+        # 不拿 `name` 当 id：`name` 是描述性名称（可以写"Tesseract 中文语言包"），
+        # 而 market 侧 `build.py` 用 `directory.name` 当 id —— 两者语义不同。
+        # 不声明 id 时，目录名就是唯一真源（旧行为，保持兼容）。
+        declared_id = str(_raw.get("id") or "").strip()
+        dir_name = recipe_path.parent.name
+        if declared_id and declared_id != dir_name:
+            problems.append(
+                f"{dir_name}: 目录名与 recipe 声明的 id 不一致"
+                f"（目录 {dir_name!r} vs id {declared_id!r}）—— "
+                "id 一旦声明就必须等于目录名，否则 catalog 与文件系统会对不上"
+            )
+
     # **纯数据组件**（如 Tesseract 语言包）与平台/架构无关：
     # 字节是通用数据文件，文件名里不会有 `win_amd64` / `manylinux` 这类标记。
     # 对它套用「每个平台都要有平台标记构件」是**判据过严**，会逼出假阳性。
     if kind == "data":
-        return _check_data_recipe(recipe_path, recipe)
+        # **必须合并已有的 problems**，不能直接 return ——
+        # 那会丢弃前面已经累积的检查结果（例如 id 与目录名不一致）。
+        # 实测踩到：数据组件的 id 判据被这一行静默吞掉。
+        problems.extend(_check_data_recipe(recipe_path, recipe))
+        return problems
 
     # ── 1) platforms：每个声明平台都要有该平台的构件 ──────────────────────
     for platform in recipe["platforms"]:
@@ -272,7 +301,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"目录不存在：{root}", file=sys.stderr)
         return 2
 
-    recipes = sorted(root.glob("*/recipe.json"))
+    # 组件按**分类子目录**组织：`components/<分类>/<id>/recipe.json`。
+    # 用 rglob 兼容扁平布局（`components/<id>/`）与分类布局两种。
+    recipes = sorted(root.rglob("recipe.json"))
     if not recipes:
         # **空集合必须判红**：没有可检查的配方不等于通过
         print(f"未找到任何组件配方（{root}/ */recipe.json）", file=sys.stderr)

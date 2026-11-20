@@ -1007,5 +1007,6 @@
       "module"
     ],
     "timeout_seconds": 300
-  }
+  },
+  "id": "ocr-paddle"
 }

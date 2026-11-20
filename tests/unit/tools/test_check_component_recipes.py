@@ -310,3 +310,94 @@ def test_gate_is_fast() -> None:
     elapsed = time.monotonic() - started
     # 子进程 Python 启动本身约 0.15–0.3 秒；给 3 秒上限防机器抖动
     assert elapsed < 3.0, f"门禁耗时 {elapsed:.2f}s，超出预算"
+
+# ── 分类子目录与 id 一致性 ───────────────────────────────────────────────
+def test_gate_scans_nested_category_dirs(tmp_path: Path) -> None:
+    """门禁必须能扫到 `components/<分类>/<id>/recipe.json`。
+
+    改成分类子目录后，一层 `glob("*/recipe.json")` 会**扫不到任何组件**
+    （实测报「未找到任何组件配方」）。必须用 rglob。
+    """
+    nested = tmp_path / "ocr" / "probe"
+    nested.mkdir(parents=True)
+    (nested / "recipe.json").write_text(
+        json.dumps(_base_recipe(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    sys.path.insert(0, str(_REPO / "src"))
+    from omnicrawler.services.component_recipe import load_recipe, recipe_digest
+
+    loaded = load_recipe(nested / "recipe.json")
+    (nested / "deps.lock.json").write_text(
+        json.dumps(
+            {
+                "recipe_digest": recipe_digest(loaded),
+                "python_version": "3.13",
+                "packages": [],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    code, output = _run_gate(tmp_path)
+    assert code == 0, f"嵌套分类目录扫不到：{output}"
+
+
+def test_gate_rejects_id_directory_mismatch(tmp_path: Path) -> None:
+    """`id` 一旦声明，必须等于所在目录名。
+
+    改成两级目录后，这个一致性此前是**隐含的**（`build.py` 用 `parent.name`
+    当 id）。显式声明 id 后若不校验，会出现「目录说 A、JSON 说 B」且不报错，
+    catalog 与文件系统对不上。
+    """
+    recipe = _base_recipe()
+    recipe["id"] = "definitely-wrong"
+    _write_component(tmp_path, "probe", recipe)
+    code, output = _run_gate(tmp_path)
+    assert code == 1, f"id 与目录名不一致却没判红：{output}"
+    assert "不一致" in output
+
+
+def test_gate_accepts_matching_id(tmp_path: Path) -> None:
+    """`id` 与目录名一致时必须通过。"""
+    recipe = _base_recipe()
+    recipe["id"] = "probe"
+    _write_component(tmp_path, "probe", recipe)
+    code, output = _run_gate(tmp_path)
+    assert code == 0, f"id 与目录名一致却被拒：{output}"
+
+
+def test_data_component_id_is_checked_too(tmp_path: Path) -> None:
+    """**数据组件也要检查 id** —— 分流不能吞掉已累积的问题。
+
+    **真实缺陷**：`if kind == "data": return _check_data_recipe(...)`
+    直接把前面累积的 problems 丢掉了，导致数据组件的 id 判据被静默跳过。
+    """
+    recipe = {
+        "schema": 1,
+        "id": "wrong",
+        "kind": "data",
+        "smoke": {"skip_run": True},
+        "name": "probe-data",
+        "version": "1.0.0",
+        "platforms": ["windows", "linux", "macos"],
+        "architectures": ["x86_64", "aarch64"],
+        "python_abi": [],
+        "provides": ["probe.data"],
+        "artifacts": [
+            {
+                "url": "https://e.invalid/model.traineddata",
+                "sha256": "d" * 64,
+                "size": 2048,
+                "format": "raw",
+                "filename": "model.traineddata",
+                "extract_to": "tessdata",
+            }
+        ],
+        "entry": {"path": "tessdata/model.traineddata", "protocol": "d", "engine": "tesseract"},
+    }
+    _write_component(tmp_path, "probe-data", recipe)
+    code, output = _run_gate(tmp_path)
+    assert code == 1, f"数据组件的 id 不一致没被判红：{output}"
+    assert "不一致" in output

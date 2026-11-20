@@ -87,6 +87,8 @@ ALLOWED_KEYS = frozenset(
         # 误当 Wheel-Pack 去 `run`，报「缺少 site-packages」—— 靠
         # 「有没有 runner」推断类型是脆的，种类应当自己说出来。
         "kind",
+        # 显式 id（可选）。声明后必须等于所在目录名 —— 由门禁校验。
+        "id",
         # 冒烟声明：由**组件自己**说「我怎么算能跑」，验证器只负责执行与核对。
         # 见 `component_smoke.py`。缺省时 wheel-pack 会被判红（必须声明）。
         "smoke",
@@ -156,6 +158,13 @@ def validate_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
         schema == SUPPORTED_SCHEMA,
         f"不支持的 recipe schema 版本：{schema!r}（支持 {SUPPORTED_SCHEMA}）",
     )
+
+    # 可选的显式 id：若声明，必须与所在目录名一致（由门禁校验）。
+    # 不声明时由目录名决定（市场侧 build.py 用 parent.name）。
+    declared_id = recipe.get("id")
+    if declared_id is not None:
+        id_ok = isinstance(declared_id, str) and bool(declared_id.strip())
+        _require(id_ok, "recipe 的 id 若声明必须是非空字符串")
 
     for key in ("name", "version"):
         value = recipe.get(key)
