@@ -80,6 +80,13 @@ ALLOWED_KEYS = frozenset(
         # 例：`["ocr.paddle"]`。插件侧用 required_capabilities 声明需要什么，
         # 两者对上才能判断「装了没装」。
         "provides",
+        # 组件种类：`wheel-pack`（自带 Python 运行时）/ `data`（纯数据资产，
+        # 与平台和架构无关）/ `native`（原生可执行文件）。
+        # 缺省按 `wheel-pack` 处理（向后兼容早期配方）。
+        # **为什么要显式声明**：v1.0.14 曾把纯数据组件（Tesseract 语言包）
+        # 误当 Wheel-Pack 去 `run`，报「缺少 site-packages」—— 靠
+        # 「有没有 runner」推断类型是脆的，种类应当自己说出来。
+        "kind",
         # 过渡字段：`platform_architectures: {平台: [架构...]}`。
         # 全局 `architectures` 表达不了「某平台只支持部分架构」
         # （例：paddlepaddle 的 macOS 只有 arm64）。Schema v2 用
@@ -167,6 +174,7 @@ def validate_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
     for index, artifact in enumerate(artifacts):
         _validate_artifact(artifact, index)
 
+    _validate_kind(recipe)
     _validate_provides(recipe)
     _validate_platform_architectures(recipe, artifacts)
 
@@ -234,6 +242,48 @@ def validate_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
         )
 
     return recipe
+
+
+#: 支持的组件种类。
+COMPONENT_KINDS = ("wheel-pack", "data", "native")
+
+#: 缺省种类（早期配方没有这个字段，按最严格的一类处理）。
+DEFAULT_COMPONENT_KIND = "wheel-pack"
+
+
+def component_kind(recipe: dict[str, Any]) -> str:
+    """取组件种类；缺省 `wheel-pack`。"""
+    value = str(recipe.get("kind") or DEFAULT_COMPONENT_KIND).strip().lower()
+    return value or DEFAULT_COMPONENT_KIND
+
+
+def _validate_kind(recipe: dict[str, Any]) -> None:
+    """校验 `kind`，并检查它与配方其余部分自洽。
+
+    自洽判据（缺一即红）：
+
+    1. `kind` 必须是 `COMPONENT_KINDS` 之一；
+    2. `data` 类不得声明 `entry.runner`（纯数据没有可执行入口）；
+    3. `wheel-pack` 类**必须**声明 `entry.runner`（否则无从执行）。
+    """
+    kind = component_kind(recipe)
+    _require(
+        kind in COMPONENT_KINDS,
+        f"不支持的组件种类：{kind!r}（仅支持 {list(COMPONENT_KINDS)}）",
+    )
+    entry = recipe.get("entry") or {}
+    assert isinstance(entry, dict)
+    runner = entry.get("runner")
+    if kind == "data":
+        _require(
+            not runner,
+            "kind=data 的组件不得声明 entry.runner —— 纯数据没有可执行入口",
+        )
+    elif kind == "wheel-pack":
+        _require(
+            bool(runner),
+            "kind=wheel-pack 的组件必须声明 entry.runner（缺省应写 worker-wheelpack）",
+        )
 
 
 def _validate_provides(recipe: dict[str, Any]) -> None:

@@ -416,6 +416,17 @@ GATES: tuple[Gate, ...] = (
         ci_note="需先在目标平台按 edition 构建并生成 SBOM。",
     ),
     Gate(
+        name="check_component_recipes",
+        args=("tools/gates/check_component_recipes.py",),
+        sets=_STATIC,
+        description="组件配方声明可推导（平台/架构/ABI/闭包/入口）",
+        script="tools/gates/check_component_recipes.py",
+        ci_note=(
+            "零网络、零下载：读 market/ 快照与 deps.lock.json 做集合运算。"
+            "闭包快照由 tools/market/component_deps_lock.py 生成（那步才联网）。"
+        ),
+    ),
+    Gate(
         name="check_artifact_budget",
         args=("tools/gates/check_artifact_budget.py",),
         sets=frozenset({"release"}),

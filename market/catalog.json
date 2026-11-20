@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-20T07:17:32+00:00",
-  "sequence": 1791080211,
+  "generated_at": "2026-11-20T07:57:53+00:00",
+  "sequence": 1791080213,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -990,7 +990,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/ocr-paddle/recipe.json",
-      "recipe_digest": "addcd005462d76975dae2b8a5a3a0f494aea8d15c84d71ec30c7f5583536b5ad",
+      "recipe_digest": "5382c55d88db17bbb056396b3100ef104396c9350e79c500d49cc6f170c44ac7",
       "platforms": [
         "windows",
         "linux",
@@ -1535,9 +1535,39 @@
           "url": "https://files.pythonhosted.org/packages/65/f8/bebb829227ac5574454b4342bcf512dbb02268118b62222fc7c1b420a3ef/paddlepaddle-3.3.1-cp313-cp313-macosx_11_0_arm64.whl",
           "sha256": "2ce30bfb0023d8c9314b1413ca7a775a4ddd076e4551e74fbed2366cf1395c98",
           "size": 104538799
+        },
+        {
+          "url": "https://files.pythonhosted.org/packages/7e/cd/fe58041e9011f307c490e3e17dd48cc516448f7c698a3f2d9d9d65d7e6a8/networkx-3.7-py3-none-any.whl",
+          "sha256": "e3fd2c13a7814cee3746340d8d7f8598a67f16a58bf47fb7f8793fab6efca1b0",
+          "size": 2142205
+        },
+        {
+          "url": "https://files.pythonhosted.org/packages/23/cd/066e86230ae37ed0be70aae89aabf03ca8d9f39c8aea0dec8029455b5540/opt_einsum-3.4.0-py3-none-any.whl",
+          "sha256": "69bb92469f86a1565195ece4ac0323943e83477171b91d24c35afe028a90d7cd",
+          "size": 71932
+        },
+        {
+          "url": "https://files.pythonhosted.org/packages/e4/04/d52c7016b04b6c5108f26691f9d33ec82a9b65d041f1a9c771137693d618/protobuf-7.36.2-py3-none-any.whl",
+          "sha256": "bdb3a345d48db958e6ce1f18e508beb0cc981d64f24088427549c866cd039f1e",
+          "size": 179806
+        },
+        {
+          "url": "https://files.pythonhosted.org/packages/1b/6d/3fba214c1e5e0f69991677ec3bc17023f0421776975e1de0c682dca475e2/safetensors-0.8.0-cp310-abi3-win_amd64.whl",
+          "sha256": "096ec1a98435df7beb08853bb5aa9081a84f23d0adc67ed1a0a10550f608373f",
+          "size": 355540
+        },
+        {
+          "url": "https://files.pythonhosted.org/packages/28/50/f203ff3a3ddfe19308efc83c5a3a29ed02bf786732ec35e68bf9162f3365/safetensors-0.8.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "fd6f3f93c9a0a7cc2788ee63fb763353d4bd2e89b0751bc78fcf7dda00bea774",
+          "size": 516040
+        },
+        {
+          "url": "https://files.pythonhosted.org/packages/39/a0/f718cda65b05407d228f97602cf60dca269c979867aa5beb25410de26cd3/safetensors-0.8.0-cp310-abi3-macosx_10_12_x86_64.whl",
+          "sha256": "c554f85858e05226d3c2828e32395e677434685d6d94594a41643361c5e837f0",
+          "size": 473568
         }
       ],
-      "declared_total_bytes": 754595265,
+      "declared_total_bytes": 758334356,
       "package_manifest_file": "components/ocr-paddle/package.manifest.json",
       "creator_package_signature_file": "components/ocr-paddle/package.manifest.creator.sig",
       "creator_identity_file": "components/ocr-paddle/creator.identity",
@@ -1549,7 +1579,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/tesseract-chi-sim/recipe.json",
-      "recipe_digest": "128e353e638ff2cc123fcac2a37e04f111612203d98a4ed5bdbe522890e6f47e",
+      "recipe_digest": "9e0638e41b7044ddfab5e23d44a282a0987e42c6075c58a7215ad1fd9c8cf06e",
       "platforms": [
         "windows",
         "linux",

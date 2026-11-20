@@ -30,5 +30,6 @@
   },
   "provides": [
     "ocr.tesseract"
-  ]
+  ],
+  "kind": "data"
 }
