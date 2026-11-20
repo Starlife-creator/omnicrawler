@@ -39,6 +39,12 @@ def _recipe(**overrides) -> dict:
     """一份最小合法 recipe。"""
     base = {
         "schema": 1,
+        # `kind` 与 `smoke` 是后加的**必填**字段：
+        # kind=wheel-pack 必须声明 smoke（「能不能跑」由组件自己承诺）。
+        # 这个 fixture 是 8 条用例的共同构造器，缺了它们会全体先被拒绝，
+        # 测不到各自真正想测的判据。
+        "kind": "wheel-pack",
+        "smoke": {"expect": ["ok"]},
         "name": "demo-ocr",
         "version": "1.0.0",
         "platforms": ["windows"],
@@ -52,7 +58,14 @@ def _recipe(**overrides) -> dict:
                 "extract_to": "runtime",
             }
         ],
-        "entry": {"path": "runtime/ocr.exe", "protocol": "ocr-file-v1", "engine": "tesseract"},
+        # `entry.runner` 也是后加的必填判据：kind=wheel-pack 的入口必须
+        # 由宿主的 worker 挂载执行（组件不自带脚本，见 asset_trust 纪律）。
+        "entry": {
+            "path": "runtime/ocr.exe",
+            "protocol": "ocr-file-v1",
+            "engine": "tesseract",
+            "runner": "worker-wheelpack",
+        },
     }
     base.update(overrides)
     return base
@@ -214,7 +227,12 @@ def test_install_from_recipe_end_to_end(tmp_path: Path) -> None:
             "size": archive.stat().st_size,
             "extract_to": "runtime",
         }],
-        entry={"path": "runtime/ocr.exe", "protocol": "ocr-file-v1", "engine": "tesseract"},
+        entry={
+            "path": "runtime/ocr.exe",
+            "protocol": "ocr-file-v1",
+            "engine": "tesseract",
+            "runner": "worker-wheelpack",
+        },
     )
 
     def fake_download(url: str, dest: Path) -> None:
@@ -319,7 +337,12 @@ def test_install_verifies_hashes_itself_not_only_via_extract(tmp_path: Path, mon
             "sha256": good_digest,
             "extract_to": "runtime",
         }],
-        entry={"path": "runtime/ocr.exe", "protocol": "ocr-file-v1", "engine": "tesseract"},
+        entry={
+            "path": "runtime/ocr.exe",
+            "protocol": "ocr-file-v1",
+            "engine": "tesseract",
+            "runner": "worker-wheelpack",
+        },
     )
 
     real_extract = mod.extract_artifact
@@ -385,7 +408,12 @@ def test_raw_single_file_artifact_assembly(tmp_path: Path) -> None:
                 "filename": "eng.traineddata",
             }
         ],
-        entry={"path": "tessdata/eng.traineddata", "protocol": "ocr-file-v1", "engine": "tesseract"},
+        entry={
+            "path": "tessdata/eng.traineddata",
+            "protocol": "ocr-file-v1",
+            "engine": "tesseract",
+            "runner": "worker-wheelpack",
+        },
     )
     validate_recipe(recipe)
 
@@ -448,7 +476,12 @@ def test_tar_gz_artifact_assembly_and_strip_components(tmp_path: Path) -> None:
                 "extract_to": "runtime",
             }
         ],
-        entry={"path": "runtime/bin/tool.exe", "protocol": "ocr-file-v1", "engine": "tesseract"},
+        entry={
+            "path": "runtime/bin/tool.exe",
+            "protocol": "ocr-file-v1",
+            "engine": "tesseract",
+            "runner": "worker-wheelpack",
+        },
     )
 
     def fake_download(url: str, dest: Path) -> None:

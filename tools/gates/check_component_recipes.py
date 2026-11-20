@@ -26,6 +26,7 @@ v1.0.13→v1.0.29 的 17 轮排查里，配方缺陷**全是同一类**——声
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -157,6 +158,89 @@ def _check_builtin_recipe(recipe_path: Path, recipe: dict) -> list[str]:
     return problems
 
 
+def _check_manifest_integrity(recipe_path: Path) -> list[str]:
+    """校验 `package.manifest.json` 记录的哈希与**当前文件**是否一致。
+
+    ## 为什么必须有这一项
+
+    清单是**签名覆盖的字节**。清单里写 `recipe.json: sha256:27662b...`，
+    而实际文件已经是别的哈希时，签名验不过 —— 但**没有任何门禁会报**。
+    结果是：市场声称「这个组件经创作者签名」，实际内容已经变了。
+
+    实测（2026-11-20）：给两个组件补 `id` 字段后，两份清单全部失效，
+    直到写「验签守卫」时才发现。**配方改了没重签**是极易发生的疏漏，
+    因为它不需要任何恶意，只要改一个字忘跑签名脚本就够了。
+
+    判据：清单里**每一个**文件都必须存在且哈希一致；
+    清单本身若存在，签名文件也必须存在。
+    """
+    problems: list[str] = []
+    name = recipe_path.parent.name
+    manifest_path = recipe_path.parent / "package.manifest.json"
+    if not manifest_path.is_file():
+        # 组件可以暂时没有签名轨（早期组件），但**内置组件不允许**——
+        # 内置物随包发布，没有签名链就没有任何来源凭据。
+        return problems
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"{name}: package.manifest.json 无法解析 —— {exc}"]
+
+    files = manifest.get("files")
+    if not isinstance(files, dict) or not files:
+        return [f"{name}: package.manifest.json 的 files 为空 —— 空清单会让校验恒真"]
+
+    for relative, expected in files.items():
+        target = recipe_path.parent / str(relative)
+        if not target.is_file():
+            problems.append(f"{name}: 清单记录了不存在的文件 {relative}")
+            continue
+        actual = "sha256:" + hashlib.sha256(target.read_bytes()).hexdigest()
+        if str(expected) != actual:
+            problems.append(
+                f"{name}: 清单与文件不一致 —— {relative} 记录 "
+                f"{str(expected)[:19]}…，实际 {actual[:19]}…"
+                "（改了文件就必须重跑签名脚本）"
+            )
+
+    # 签名文件必须与清单同在（有清单无签名 = 无法验证来源）
+    if not (recipe_path.parent / "creator.identity").is_file():
+        problems.append(f"{name}: 有清单却缺 creator.identity")
+    if not (recipe_path.parent / "package.manifest.creator.sig").is_file():
+        problems.append(f"{name}: 有清单却缺 package.manifest.creator.sig")
+    return problems
+
+
+def _check_provides(recipe_path, recipe):
+    """`provides` 是插件与组件对上的唯一凭据，不能缺。
+
+    插件用 `required_capabilities` 声明「我需要 ocr.paddle」，
+    组件必须声明「我提供 ocr.paddle」—— 否则两者只能靠人脑对应。
+    """
+    problems = []
+    name = recipe_path.parent.name
+    provides = recipe.get("provides")
+    if not provides:
+        problems.append(f"{name}: 没有声明 provides —— 插件无法与之对接")
+        return problems
+    if not isinstance(provides, list):
+        problems.append(f"{name}: provides 必须是列表")
+        return problems
+    normalized = []
+    for item in provides:
+        if not isinstance(item, str) or not item.strip():
+            problems.append(f"{name}: provides 含非字符串项")
+            continue
+        value = item.strip().lower()
+        if not all(ch.isalnum() or ch in "._-" for ch in value):
+            problems.append(f"{name}: 能力名只允许字母/数字/._-：{item!r}")
+        normalized.append(value)
+    if len(set(normalized)) != len(normalized):
+        problems.append(f"{name}: provides 含重复项 {normalized}")
+    return problems
+
+
 def check_recipe(recipe_path: Path) -> list[str]:
     """返回发现的问题（空列表 = 通过）。"""
     from omnicrawler.services import component_recipe as cr
@@ -196,6 +280,10 @@ def check_recipe(recipe_path: Path) -> list[str]:
                 f"（目录 {dir_name!r} vs id {declared_id!r}）—— "
                 "id 一旦声明就必须等于目录名，否则 catalog 与文件系统会对不上"
             )
+
+    problems.extend(_check_provides(recipe_path, recipe))
+    # 清单完整性：**改过文件就必须重签**，这一项专门抓「忘了重签」。
+    problems.extend(_check_manifest_integrity(recipe_path))
 
     # **纯数据组件**（如 Tesseract 语言包）与平台/架构无关：
     # 字节是通用数据文件，文件名里不会有 `win_amd64` / `manylinux` 这类标记。

@@ -1,3 +1,4 @@
+
 """组件管理面板（条目 10）：把散落两处的组件入口合并成一个可复用控件。
 
 为什么需要它
@@ -62,6 +63,7 @@ from PySide6.QtWidgets import (
 from ..core.background_worker import BackgroundWorker
 from ..core.worker_owned_widget import WorkerOwnedWidget
 from ..i18n import _
+from .browser_kernels import BrowserKernelPanel
 
 _INTRO = _(
     "可选组件是**离线导入**的受信包（.ocp）：安装前会校验签名与每个文件的哈希，"
@@ -231,6 +233,15 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         self._set_write_enabled(False)
 
     # ── 市场（可下载组件）────────────────────────────────────────────────
+        # ── 浏览器内核（§15.16.7）────────────────────────────────────────
+        # 内核本身就是一个组件（`kind: native`），所以放在组件页而不是
+        # 另开一个页面 —— 用户找「能装什么」时不该记住两个入口。
+        self._kernel_label = QLabel(_("浏览器内核"))
+        self._kernel_label.setAccessibleName(_("浏览器内核"))
+        root.addWidget(self._kernel_label)
+        self._kernel_panel = BrowserKernelPanel(self)
+        root.addWidget(self._kernel_panel, 1)
+
     def _reload_catalog(self) -> None:
         """拉取并聚合全部市场源，填充可下载列表。
 

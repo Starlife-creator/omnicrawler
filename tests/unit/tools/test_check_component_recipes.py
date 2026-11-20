@@ -11,6 +11,7 @@ v1.0.13→v1.0.29 的 17 轮里，配方缺陷**全是同一类**——声明与
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -526,3 +527,82 @@ def test_builtin_requires_builtin_path(tmp_path: Path) -> None:
     )
     code, output = _run_gate(tmp_path)
     assert code == 1, f"缺 builtin_path 没判红：{output}"
+
+# ── 清单完整性（改过文件就必须重签）─────────────────────────────────────
+def _write_manifest(component_dir: Path, files: dict[str, str], **extra) -> None:
+    payload = {
+        "creator_fingerprint": "a" * 32,
+        "files": files,
+        "package_id": component_dir.name,
+        "package_type": "component",
+        "requested_username": "tester",
+        "schema_version": 1,
+        "version": "1.0.0",
+    }
+    payload.update(extra)
+    (component_dir / "package.manifest.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def test_manifest_integrity_passes_when_hashes_match(tmp_path: Path) -> None:
+    """清单哈希与文件一致时通过。"""
+    _write_component(tmp_path, "probe", _base_recipe())
+    component = tmp_path / "probe"
+    digest = "sha256:" + hashlib.sha256((component / "recipe.json").read_bytes()).hexdigest()
+    _write_manifest(component, {"recipe.json": digest})
+    (component / "creator.identity").write_text("{}", encoding="utf-8")
+    (component / "package.manifest.creator.sig").write_bytes(b"sig")
+    code, output = _run_gate(tmp_path)
+    assert code == 0, f"清单一致却被拒：{output}"
+
+
+def test_manifest_integrity_fails_when_recipe_changed(tmp_path: Path) -> None:
+    """**改过文件没重签必须判红** —— 这是最容易发生的疏漏。
+
+    实测（2026-11-20）：给两个组件补 `id` 字段后，两份清单全部失效，
+    直到写验签守卫时才发现，此前没有任何门禁会报。
+    """
+    _write_component(tmp_path, "probe", _base_recipe())
+    component = tmp_path / "probe"
+    stale = "sha256:" + "0" * 64  # 故意写错的旧哈希
+    _write_manifest(component, {"recipe.json": stale})
+    (component / "creator.identity").write_text("{}", encoding="utf-8")
+    (component / "package.manifest.creator.sig").write_bytes(b"sig")
+    code, output = _run_gate(tmp_path)
+    assert code == 1, f"清单失效却没判红：{output}"
+    assert "不一致" in output
+
+
+def test_manifest_lists_missing_file(tmp_path: Path) -> None:
+    """清单记录了不存在的文件也必须判红。"""
+    _write_component(tmp_path, "probe", _base_recipe())
+    component = tmp_path / "probe"
+    _write_manifest(component, {"nonexistent.json": "sha256:" + "0" * 64})
+    (component / "creator.identity").write_text("{}", encoding="utf-8")
+    (component / "package.manifest.creator.sig").write_bytes(b"sig")
+    code, output = _run_gate(tmp_path)
+    assert code == 1, f"清单列了不存在的文件却没判红：{output}"
+    assert "不存在" in output
+
+
+def test_manifest_with_empty_files_is_rejected(tmp_path: Path) -> None:
+    """**空清单会让「每项都一致」恒真** —— 必须判红。"""
+    _write_component(tmp_path, "probe", _base_recipe())
+    component = tmp_path / "probe"
+    _write_manifest(component, {})
+    (component / "creator.identity").write_text("{}", encoding="utf-8")
+    (component / "package.manifest.creator.sig").write_bytes(b"sig")
+    code, output = _run_gate(tmp_path)
+    assert code == 1, f"空清单没判红：{output}"
+
+
+def test_manifest_without_signature_files_is_rejected(tmp_path: Path) -> None:
+    """有清单却没有 identity/签名 ⇒ 无法验证来源，必须判红。"""
+    _write_component(tmp_path, "probe", _base_recipe())
+    component = tmp_path / "probe"
+    digest = "sha256:" + hashlib.sha256((component / "recipe.json").read_bytes()).hexdigest()
+    _write_manifest(component, {"recipe.json": digest})
+    code, output = _run_gate(tmp_path)
+    assert code == 1, f"缺签名文件却没判红：{output}"
+    assert "creator.identity" in output or "creator.sig" in output

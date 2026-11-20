@@ -38,7 +38,10 @@ pytestmark = pytest.mark.skipif(
 
 
 def _component_dirs() -> list[Path]:
-    return sorted(p for p in _COMPONENTS.iterdir() if p.is_dir() and (p / "recipe.json").is_file())
+    # 组件按分类子目录组织（components/<分类>/<id>/），必须递归找 recipe.json。
+    # 一层 iterdir 在两级结构下会**返回空列表** ——
+    # 而「没找到任何组件目录」这种提示会把静默失效伪装成正常（实测踩到）。
+    return sorted(p.parent for p in _COMPONENTS.rglob("recipe.json"))
 
 
 def _catalog_components() -> list[dict]:
