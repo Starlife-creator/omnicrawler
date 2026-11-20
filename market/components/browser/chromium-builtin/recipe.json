@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "chromium-builtin",
+  "name": "内置 Chromium（随包）",
+  "version": "1228",
+  "description": "随安装包发布的 Playwright Chromium 内核。首启即用，无需下载；由组件体系管理，可被其他内核替换或设为非默认。",
+  "kind": "native",
+  "provides": [
+    "browser.chromium"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "macos"
+  ],
+  "architectures": [
+    "aarch64",
+    "x86_64"
+  ],
+  "platform_architectures": {
+    "windows": [
+      "x86_64"
+    ],
+    "linux": [
+      "x86_64"
+    ],
+    "macos": [
+      "x86_64",
+      "aarch64"
+    ]
+  },
+  "python_abi": [],
+  "artifacts": [
+    {
+      "source": "builtin",
+      "builtin_path": "browsers/chromium-1228",
+      "sha256": "2c8c6a2ab2218bb45d73191fb084606be99f7745bbfcb620c5a9a38600b14d30",
+      "size": 435574347,
+      "format": "raw",
+      "filename": "chrome.exe",
+      "extract_to": ""
+    }
+  ],
+  "entry": {
+    "path": ".runtime/browsers/chromium-1228/chrome-win64/chrome.exe",
+    "protocol": "browser-cdp",
+    "engine": "chromium",
+    "runner": "native"
+  },
+  "smoke": {
+    "expect": [
+      "ok",
+      "engine"
+    ],
+    "payload": {
+      "action": "version"
+    },
+    "timeout_seconds": 120,
+    "description": "执行 chrome --version，确认内核可启动"
+  }
+}

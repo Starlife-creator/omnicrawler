@@ -92,6 +92,71 @@ def _abi_from_filename(filename: str) -> str:
     return match.group(0) if match else "?"
 
 
+def _check_builtin_recipe(recipe_path: Path, recipe: dict) -> list[str]:
+    """内置构件的专用判据。
+
+    内置构件是「字节随包、但也要被组件体系管理」的东西。
+    它不适用按文件名反推平台/架构，但有**更严格的替代判据**：
+    必须有一份逐文件哈希清单，且与声明对得上。
+
+    **空清单必须判红**：空集合会让所有「每个文件都有哈希」的断言恒真 ——
+    这正是判据纪律里点名的那类陷阱。
+    """
+    problems: list[str] = []
+    name = recipe_path.parent.name
+
+    lock_path = recipe_path.parent / "files.lock.json"
+    if not lock_path.is_file():
+        problems.append(
+            f"{name}: 内置组件缺少 files.lock.json —— "
+            "内置不等于免校验，逐文件哈希必须随配方一起签名"
+        )
+        return problems
+
+    try:
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        problems.append(f"{name}: files.lock.json 无法解析 —— {exc}")
+        return problems
+
+    files = lock.get("files")
+    if not isinstance(files, dict) or not files:
+        problems.append(f"{name}: files.lock.json 的 files 为空 —— 空清单会让校验恒真")
+        return problems
+
+    declared_size = sum(int(a.get("size") or 0) for a in recipe["artifacts"])
+    actual_size = sum(
+        int(v.get("size") or 0) for v in files.values() if isinstance(v, dict)
+    )
+    if declared_size != actual_size:
+        problems.append(
+            f"{name}: 构件 size 合计 {declared_size} 与 files.lock.json 的 "
+            f"{actual_size} 不一致"
+        )
+
+    bad_hash = [
+        path
+        for path, meta in files.items()
+        if not (isinstance(meta, dict) and len(str(meta.get("sha256") or "")) == 64)
+    ]
+    if bad_hash:
+        problems.append(
+            f"{name}: files.lock.json 里有 {len(bad_hash)} 个文件缺少合法 sha256"
+        )
+
+    # builtin 与 url 互斥：同时写会让「到底从哪来」含糊
+    for index, artifact in enumerate(recipe["artifacts"]):
+        if artifact.get("url"):
+            problems.append(
+                f"{name}: artifact #{index} 声明 source=builtin 却还写了 url"
+            )
+        if not str(artifact.get("builtin_path") or "").strip():
+            problems.append(
+                f"{name}: artifact #{index} 声明 source=builtin 但缺少 builtin_path"
+            )
+    return problems
+
+
 def check_recipe(recipe_path: Path) -> list[str]:
     """返回发现的问题（空列表 = 通过）。"""
     from omnicrawler.services import component_recipe as cr
@@ -140,6 +205,17 @@ def check_recipe(recipe_path: Path) -> list[str]:
         # 那会丢弃前面已经累积的检查结果（例如 id 与目录名不一致）。
         # 实测踩到：数据组件的 id 判据被这一行静默吞掉。
         problems.extend(_check_data_recipe(recipe_path, recipe))
+        return problems
+
+    # **内置构件**（`source: builtin`）不适用「按文件名反推平台/架构」：
+    # 它是一整个目录（浏览器内核 310 个文件），文件名里不会有 `win_amd64`
+    # 这类标记。它的推导依据是**逐文件哈希清单**，比文件名更精确 ——
+    # 所以跳过反推，但**不跳过校验**（清单缺失/为空/尺寸不符都判红）。
+    if recipe.get("artifacts") and all(
+        str(a.get("source") or "remote").lower() == "builtin"
+        for a in recipe["artifacts"]
+    ):
+        problems.extend(_check_builtin_recipe(recipe_path, recipe))
         return problems
 
     # ── 1) platforms：每个声明平台都要有该平台的构件 ──────────────────────

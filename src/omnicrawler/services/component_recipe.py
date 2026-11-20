@@ -33,6 +33,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import sys
 import tarfile
 import zipfile
@@ -117,6 +118,17 @@ ALLOWED_ARTIFACT_KEYS = frozenset(
         "platforms",
         "include",
         "strip_components",
+        # 构件来源。缺省 `remote`（从 url 拉取）。
+        #
+        # `builtin` = **字节随包发布，不从网络拉**。用于「内置但也要被组件体系
+        # 管理」的东西 —— 典型就是浏览器内核：415 MiB 的 Chromium 必须随包
+        # 一起发（首启即用），但它同样需要「可列出、可切换、可校验」。
+        #
+        # 选 `builtin` 时**不写 url**，改为 `builtin_path`（相对安装根），
+        # 并且 `sha256` 仍然必填 —— 「内置」不等于「免校验」：
+        # 包内的文件同样可能在两次使用之间被替换或损坏。
+        "source",
+        "builtin_path",
     }
 )
 
@@ -381,6 +393,18 @@ def _validate_platform_architectures(recipe: dict[str, Any], artifacts: list[Any
         normalized = {normalize_architecture(a) for a in archs}
         union |= normalized
 
+        # **内置构件豁免反推**：`source: builtin` 的构件是一整个目录
+        # （浏览器内核有 310 个文件），文件名里不会有 `win_amd64` 这类标记。
+        # 它如实记录了**每个文件**的 sha256 与大小（`files.lock.json`），
+        # 推导依据比文件名更精确 —— 所以这里跳过文件名反推，不跳过校验。
+        platform_artifacts = artifacts_for_platform(recipe, platform)
+        if platform_artifacts and all(
+            str(a.get("source") or "remote").lower() == "builtin"
+            for a in platform_artifacts
+        ):
+            union |= normalized
+            continue
+
         # 反推：该平台构件的文件名里能认出哪些架构
         available: set[str] = set()
         for artifact in artifacts_for_platform(recipe, platform):
@@ -476,11 +500,37 @@ def _validate_artifact(artifact: Any, index: int) -> None:
     unknown = set(artifact) - ALLOWED_ARTIFACT_KEYS
     _require(not unknown, f"artifact #{index} 含不允许的键：{sorted(unknown)}")
 
-    url = artifact.get("url")
+    # 来源：`remote`（默认，从 url 拉）或 `builtin`（字节随包）。
+    source = str(artifact.get("source") or "remote").strip().lower()
     _require(
-        isinstance(url, str) and url.startswith(("https://", "http://")),
-        f"artifact #{index} 的 url 必须是 http(s) 地址",
+        source in ("remote", "builtin"),
+        f"artifact #{index} 的 source 只能是 remote 或 builtin，实际 {source!r}",
     )
+
+    if source == "builtin":
+        # 内置构件：**不写 url**，写 `builtin_path`（相对安装根）。
+        # sha256 仍然必填 —— 「内置」不等于「免校验」。
+        _require(
+            artifact.get("url") in (None, ""),
+            f"artifact #{index} 声明了 source=builtin 就不能再写 url",
+        )
+        builtin_path = artifact.get("builtin_path")
+        builtin_ok = isinstance(builtin_path, str) and bool(builtin_path.strip())
+        _require(
+            builtin_ok,
+            f"artifact #{index} 声明了 source=builtin 就必须写 builtin_path",
+        )
+        _safe_relative(builtin_path)
+    else:
+        _require(
+            artifact.get("builtin_path") in (None, ""),
+            f"artifact #{index} 未声明 source=builtin，不应写 builtin_path",
+        )
+        url = artifact.get("url")
+        _require(
+            isinstance(url, str) and url.startswith(("https://", "http://")),
+            f"artifact #{index} 的 url 必须是 http(s) 地址",
+        )
 
     digest = artifact.get("sha256")
     _require(
@@ -874,7 +924,6 @@ def extract_artifact(
         # 合并语义与 pip 解 wheel 到 site-packages 一致：同路径文件后写覆盖，
         # 不同路径各自保留。
         if target.exists():
-            import shutil
 
             for item in staging_path.iterdir():
                 destination_item = target / item.name
@@ -921,6 +970,28 @@ def _validate_and_select(
     return selected
 
 
+def _resolve_builtin_source(builtin_path: str) -> Path:
+    """把配方里的 `builtin_path` 解析成安装根下的绝对路径。
+
+    **必须防目录穿越**：`builtin_path` 来自市场配方（第三方可写），
+    若允许 `../../etc/passwd`，一个恶意配方就能让宿主去校验任意文件。
+
+    解析基准是**安装根**（`install_root()`）：内置构件随包发布，
+    相对安装根定位，与 `runtime_paths.browsers_root()` 同源。
+    """
+    from ..core.runtime_paths import install_root
+
+    root = Path(install_root()).resolve()
+    candidate = (root / _safe_relative(builtin_path)).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise RecipeError(
+            f"builtin_path 逃出了安装根：{builtin_path!r}（解析为 {candidate}）"
+        ) from exc
+    return candidate
+
+
 def install_from_recipe(
     recipe: dict[str, Any],
     component_root: Path,
@@ -940,7 +1011,18 @@ def install_from_recipe(
     validate_recipe(recipe)
     check_compatibility(recipe)
 
-    _require(downloader is not None, "装配需要显式提供下载器（本模块不内置网络出口）")
+    # **只有含 remote 构件的配方才需要下载器**。
+    # 全 `source: builtin` 的配方（如内置浏览器内核）字节已在安装根里，
+    # 一个字节都不用拉 —— 强求下载器会把「零网络装配」堵死。
+    needs_download = any(
+        str(a.get("source") or "remote").lower() != "builtin"
+        for a in (recipe.get("artifacts") or [])
+    )
+    if needs_download:
+        _require(
+            downloader is not None,
+            "装配需要显式提供下载器（本模块不内置网络出口）",
+        )
 
     import tempfile
 
@@ -972,16 +1054,32 @@ def install_from_recipe(
         # 阶段一：全部下载 + 校验（任何一条失败就整体放弃）
         for index, artifact in enumerate(artifacts):
             archive = downloaded / f"artifact-{index}.zip"
-            downloader(artifact["url"], archive)
-            _require(archive.is_file(), f"下载失败：{artifact['url']}")
+            if str(artifact.get("source") or "remote").lower() == "builtin":
+                # 内置构件：字节已在安装根下，**一个字节都不拉**。
+                # 但仍要走同一套哈希校验 —— 「内置」不等于「免校验」：
+                # 包内文件同样可能在两次使用之间被替换或损坏。
+                builtin_source = _resolve_builtin_source(artifact["builtin_path"])
+                _require(
+                    builtin_source.is_file(),
+                    f"内置构件不存在：{artifact['builtin_path']}（解析为 {builtin_source}）",
+                )
+                shutil.copyfile(builtin_source, archive)
+            else:
+                downloader(artifact["url"], archive)
+                _require(archive.is_file(), f"下载失败：{artifact['url']}")
             digest = hashlib.sha256()
             with archive.open("rb") as handle:
                 while block := handle.read(1024 * 1024):
                     digest.update(block)
             actual = digest.hexdigest()
+            label = (
+                artifact.get("builtin_path")
+                if str(artifact.get("source") or "").lower() == "builtin"
+                else artifact.get("url")
+            )
             _require(
                 actual == artifact["sha256"],
-                f"构件哈希不符（{artifact['url']}）：期望 "
+                f"构件哈希不符（{label}）：期望 "
                 f"{artifact['sha256'][:16]}…，实际 {actual[:16]}…",
             )
 
@@ -1058,7 +1156,6 @@ def install_from_recipe(
             f"装配完成但入口不存在：{entry_relative}",
         )
         if destination.exists():
-            import shutil
 
             shutil.rmtree(destination)
         assembled.replace(destination)

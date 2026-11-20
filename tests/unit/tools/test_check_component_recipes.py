@@ -401,3 +401,128 @@ def test_data_component_id_is_checked_too(tmp_path: Path) -> None:
     code, output = _run_gate(tmp_path)
     assert code == 1, f"数据组件的 id 不一致没被判红：{output}"
     assert "不一致" in output
+
+# ── 内置构件（source: builtin）────────────────────────────────────────────
+def _builtin_recipe(sha: str = "e" * 64, size: int = 2048) -> dict:
+    return {
+        "schema": 1,
+        "id": "probe",
+        "kind": "native",
+        "smoke": {"expect": ["ok"]},
+        "name": "probe-builtin",
+        "version": "1228",
+        "platforms": ["windows", "linux", "macos"],
+        "architectures": ["x86_64"],
+        "python_abi": [],
+        "provides": ["browser.probe"],
+        "artifacts": [
+            {
+                "source": "builtin",
+                "builtin_path": "browsers/probe-1228",
+                "sha256": sha,
+                "size": size,
+                "format": "raw",
+                "filename": "probe.exe",
+            }
+        ],
+        "entry": {
+            "path": "browsers/probe-1228/probe.exe",
+            "protocol": "browser-cdp",
+            "engine": "chromium",
+            "runner": "native",
+        },
+    }
+
+
+def _write_lock(tmp_path: Path, name: str, files: dict, **extra) -> None:
+    directory = tmp_path / name
+    payload = {"schema": 1, "file_count": len(files), "files": files}
+    payload.update(extra)
+    (directory / "files.lock.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def test_builtin_recipe_passes_with_lock(tmp_path: Path) -> None:
+    """内置构件走专用判据：有逐文件清单即可通过（不做文件名反推）。"""
+    _write_component(tmp_path, "probe", _builtin_recipe())
+    _write_lock(
+        tmp_path,
+        "probe",
+        {
+            "browsers/probe-1228/probe.exe": {"sha256": "a" * 64, "size": 2048},
+        },
+    )
+    code, output = _run_gate(tmp_path)
+    assert code == 0, f"合法的内置构件被拒：{output}"
+
+
+def test_builtin_without_lock_is_rejected(tmp_path: Path) -> None:
+    """**内置不等于免校验**：没有 files.lock.json 必须判红。"""
+    _write_component(tmp_path, "probe", _builtin_recipe())
+    code, output = _run_gate(tmp_path)
+    assert code == 1, f"缺清单却没判红：{output}"
+    assert "files.lock.json" in output
+
+
+def test_builtin_lock_with_empty_files_is_rejected(tmp_path: Path) -> None:
+    """**空清单会让校验恒真** —— 必须判红。"""
+    _write_component(tmp_path, "probe", _builtin_recipe())
+    _write_lock(tmp_path, "probe", {})
+    code, output = _run_gate(tmp_path)
+    assert code == 1, f"空清单没判红：{output}"
+    assert "空清单" in output or "为空" in output
+
+
+def test_builtin_size_mismatch_is_rejected(tmp_path: Path) -> None:
+    """配方声明的 size 必须等于清单总和（防两处漂移）。"""
+    _write_component(tmp_path, "probe", _builtin_recipe(size=9999))
+    _write_lock(
+        tmp_path,
+        "probe",
+        {"browsers/probe-1228/probe.exe": {"sha256": "a" * 64, "size": 2048}},
+    )
+    code, output = _run_gate(tmp_path)
+    assert code == 1, f"size 不一致却没判红：{output}"
+    assert "不一致" in output
+
+
+def test_builtin_lock_missing_hash_is_rejected(tmp_path: Path) -> None:
+    """清单里每个文件都必须有合法 sha256。"""
+    _write_component(tmp_path, "probe", _builtin_recipe())
+    _write_lock(
+        tmp_path,
+        "probe",
+        {"browsers/probe-1228/probe.exe": {"sha256": "short", "size": 2048}},
+    )
+    code, output = _run_gate(tmp_path)
+    assert code == 1, f"哈希不合法却没判红：{output}"
+    assert "sha256" in output
+
+
+def test_builtin_artifact_must_not_have_url(tmp_path: Path) -> None:
+    """`source: builtin` 与 `url` 互斥 —— 同时写会让「到底从哪来」含糊。"""
+    recipe = _builtin_recipe()
+    recipe["artifacts"][0]["url"] = "https://example.invalid/x.zip"
+    _write_component(tmp_path, "probe", recipe)
+    _write_lock(
+        tmp_path,
+        "probe",
+        {"browsers/probe-1228/probe.exe": {"sha256": "a" * 64, "size": 2048}},
+    )
+    code, output = _run_gate(tmp_path)
+    assert code == 1, f"builtin+url 没判红：{output}"
+
+
+def test_builtin_requires_builtin_path(tmp_path: Path) -> None:
+    """`source: builtin` 必须写 `builtin_path`。"""
+    recipe = _builtin_recipe()
+    recipe["artifacts"][0].pop("builtin_path")
+    _write_component(tmp_path, "probe", recipe)
+    _write_lock(
+        tmp_path,
+        "probe",
+        {"browsers/probe-1228/probe.exe": {"sha256": "a" * 64, "size": 2048}},
+    )
+    code, output = _run_gate(tmp_path)
+    assert code == 1, f"缺 builtin_path 没判红：{output}"
