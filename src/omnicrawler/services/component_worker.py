@@ -126,6 +126,7 @@ _ADAPTERS = {
 
 
 def main() -> int:
+    _trace("start")
     site_packages = os.environ.get("OMNICRAWL_COMPONENT_SITE_PACKAGES", "").strip()
     entry_env = os.environ.get("OMNICRAWL_COMPONENT_ENTRY", "").strip()
     engine = os.environ.get("OMNICRAWL_COMPONENT_ENGINE", "generic").strip().lower() or "generic"
@@ -161,6 +162,7 @@ def main() -> int:
     if not isinstance(payload, dict):
         payload = {"value": payload}
 
+    _trace(f"dispatch engine={engine} module={module_name}")
     adapter = _ADAPTERS.get(engine)
     if adapter is None:
         print(
@@ -174,13 +176,25 @@ def main() -> int:
         return 2
 
     try:
+        _trace("adapter_call")
         result = adapter(module_name, payload)
+        _trace("adapter_done")
     except Exception as exc:  # noqa: BLE001 - 子进程边界，错误要回传给父进程
         print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"}))
         return 1
 
-    print(json.dumps(result, ensure_ascii=False))
+    _trace(f"result ok={result.get('ok')}")
+    print(json.dumps(result, ensure_ascii=False), flush=True)
     return 0 if result.get("ok") else 1
+
+
+#: 诊断标记：worker 走到哪一步了。写到 stderr（父进程会带出来）。
+#:
+#: **为什么需要**：真实 CI 上出现过「已校验文件 14819 个」「退出码 1」
+#: 但 stdout **完全没有 JSON** 的情况 —— 说明 worker 在写结果之前就被
+#: 终止了（OOM / 段错误 / C 层 abort）。没有轨迹就无法区分「哪一步死的」。
+def _trace(stage: str) -> None:
+    print(f"[worker] {stage}", file=sys.stderr, flush=True)
 
 
 def _guarded_main() -> int:

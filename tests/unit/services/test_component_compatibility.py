@@ -184,6 +184,8 @@ def test_platform_without_artifacts_is_rejected() -> None:
 
     recipe = {
         "schema": 1,
+        "kind": "wheel-pack",
+        "smoke": {"expect": ["ok"]},
         "name": "x",
         "version": "1.0.0",
         "platforms": ["windows", "linux"],
@@ -191,7 +193,12 @@ def test_platform_without_artifacts_is_rejected() -> None:
         "artifacts": [
             {"url": "https://example.invalid/w.whl", "sha256": "a" * 64, "platforms": ["windows"]}
         ],
-        "entry": {"path": "entry.json"},
+        "entry": {
+            "path": "entry.json",
+            "protocol": "demo",
+            "engine": "generic",
+            "runner": "worker-wheelpack",
+        },
     }
     with pytest.raises(RecipeError) as excinfo:
         validate_recipe(recipe)
@@ -298,6 +305,8 @@ def test_assembly_manifest_declares_file_hashes() -> None:
 
         recipe = {
             "schema": 1,
+        "kind": "wheel-pack",
+        "smoke": {"expect": ["ok"]},
             "name": "demo",
             "version": "1.0.0",
             "platforms": ["windows", "linux", "macos"],
@@ -692,6 +701,8 @@ def test_multiple_artifacts_into_same_dir_are_merged() -> None:
 
         recipe = {
             "schema": 1,
+        "kind": "wheel-pack",
+        "smoke": {"expect": ["ok"]},
             "name": "merge-check",
             "version": "1.0.0",
             "platforms": ["windows", "linux", "macos"],
@@ -885,6 +896,8 @@ def test_platform_architectures_derived_from_artifacts() -> None:
 
     base = {
         "schema": 1,
+        "kind": "wheel-pack",
+        "smoke": {"expect": ["ok"]},
         "name": "x",
         "version": "1.0.0",
         "platforms": ["linux", "macos"],
@@ -923,6 +936,8 @@ def test_platform_architectures_union_matches_global() -> None:
 
     recipe = {
         "schema": 1,
+        "kind": "wheel-pack",
+        "smoke": {"expect": ["ok"]},
         "name": "x",
         "version": "1.0.0",
         "platforms": ["linux", "macos"],
@@ -945,6 +960,8 @@ def test_platform_architectures_rejects_unknown_platform() -> None:
 
     recipe = {
         "schema": 1,
+        "kind": "wheel-pack",
+        "smoke": {"expect": ["ok"]},
         "name": "x",
         "version": "1.0.0",
         "platforms": ["linux"],
@@ -970,6 +987,8 @@ def test_provides_validated() -> None:
 
     base = {
         "schema": 1,
+        "kind": "wheel-pack",
+        "smoke": {"expect": ["ok"]},
         "name": "x",
         "version": "1.0.0",
         "platforms": ["linux"],
