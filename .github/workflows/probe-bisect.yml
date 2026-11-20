@@ -1,6 +1,6 @@
 name: probe-bisect
 
-# 临时二分诊断用（第 2 轮）：验证 `uses` 调 reusable + with 传表达式是否可解析。
+# 临时二分（第 3 轮）：只调 reusable，不传表达式（全用字面量）。
 
 on:
   workflow_dispatch:
@@ -9,21 +9,10 @@ permissions:
   contents: read
 
 jobs:
-  decide:
-    runs-on: ubuntu-22.04
-    outputs:
-      decision: ${{ steps.classify.outputs.decision }}
-    steps:
-      - name: emit
-        id: classify
-        run: |
-          echo "decision=reuse" >> "$GITHUB_OUTPUT"
-
   build:
-    needs: [decide]
     uses: ./.github/workflows/reusable-build-linux.yml
     with:
       build_python_version: "3.13"
       asset_max_bytes: "2039693706"
       delta_baselines: ""
-      run_build: ${{ needs.decide.outputs.decision == 'build' }}
+      run_build: false
