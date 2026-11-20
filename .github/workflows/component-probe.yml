@@ -120,6 +120,7 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       found: ${{ steps.dl.outputs.found }}
+      run_id: ${{ steps.dl.outputs.run_id }}
     steps:
       - name: 下载最近一次 release 的 linux 产物
         id: dl
@@ -175,6 +176,7 @@ jobs:
             exit 0
           fi
           echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           ls -la artifacts-linux
 
   # ── 2b) 构建（按 run_build 开关决定，默认不构建） ──────────────────────
@@ -215,14 +217,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts-linux
-          if [ -n "$(ls -A artifacts-linux 2>/dev/null)" ]; then
-            echo "已有产物（复用路径）"
+          # ★ 三个 job 各有独立 workspace：fetch-last 下载的产物**不在**这里。
+          #   必须按来源重新下载 —— 复用路径取 fetch-last 记下的 run_id，
+          #   构建路径取本次运行。
+          SOURCE_RUN="${{ needs.fetch-last.outputs.run_id }}"
+          if [ -z "$SOURCE_RUN" ]; then
+            SOURCE_RUN="$GITHUB_RUN_ID"
+            echo "产物来源：本次运行（构建路径）$SOURCE_RUN"
           else
-            # ★ 子 workflow 的 artifact 不会自动出现在调用方 workspace，必须显式下载
-            echo "从本次运行下载 artifacts-linux"
-            gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-              -n artifacts-linux -D artifacts-linux
+            echo "产物来源：复用运行 $SOURCE_RUN"
           fi
+          gh run download "$SOURCE_RUN" --repo "$GITHUB_REPOSITORY" \
+            -n artifacts-linux -D artifacts-linux
           ls -la artifacts-linux
 
       - name: 解压 Standard 产物
