@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-20T08:52:04+00:00",
-  "sequence": 1791080217,
+  "generated_at": "2026-11-20T09:40:15+00:00",
+  "sequence": 1791080219,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -1003,6 +1003,21 @@
       "python_abi": [
         "cp313"
       ],
+      "kind": "wheel-pack",
+      "provides": [
+        "ocr.paddle"
+      ],
+      "platform_architectures": {
+        "windows": [
+          "x86_64"
+        ],
+        "linux": [
+          "x86_64"
+        ],
+        "macos": [
+          "aarch64"
+        ]
+      },
       "entry": {
         "path": "entry.json",
         "protocol": "ocr-file-v1",
@@ -1600,6 +1615,11 @@
         "arm64"
       ],
       "python_abi": [],
+      "kind": "data",
+      "provides": [
+        "ocr.tesseract"
+      ],
+      "platform_architectures": {},
       "entry": {
         "path": "tessdata/chi_sim.traineddata",
         "protocol": "ocr-file-v1",
