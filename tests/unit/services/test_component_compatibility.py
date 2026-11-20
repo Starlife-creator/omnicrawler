@@ -1256,3 +1256,26 @@ def test_shadow_clearing_actually_switches_version() -> None:
         import shutil
 
         shutil.rmtree(work, ignore_errors=True)
+
+def test_worker_command_detects_frozen_by_executable_name() -> None:
+    """冻结判据不能只看 `sys.frozen`，还要看可执行文件名。
+
+    PyInstaller 的 CLI 入口在部分打包方式下**不设置 `sys.frozen`**，
+    于是走 `-m` 分支，而宿主 exe 根本不认 `-m`（argparse 报 invalid choice，
+    子进程没起来）。真实 CI 上表现为「worker 轨迹完全不出现」。
+
+    这里断言源码里有两道判据。
+    """
+    import pathlib as _pathlib
+
+    runner = (
+        _pathlib.Path(__file__).resolve().parents[3]
+        / "src"
+        / "omnicrawler"
+        / "services"
+        / "component_runner.py"
+    )
+    source = runner.read_text(encoding="utf-8")
+    assert 'getattr(sys, "frozen", False)' in source, "没有 frozen 判据"
+    assert "executable_name" in source, "没有按可执行文件名判断冻结"
+    assert "startswith" in source, "没有用文件名前缀判断"

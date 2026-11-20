@@ -193,10 +193,6 @@ def component_runner_env(spec: WheelPackSpec) -> dict[str, str]:
     return env
 
 
-#: CLI 里的内部 dispatch 子命令名（冻结包里用它启动 worker）。
-INTERNAL_WORKER_COMMAND = "__component_worker__"
-
-
 #: CLI 里启动本 worker 的内部 dispatch 命令名。
 #:
 #: **刻意不 import `omnicrawler.cli._main`**：那会给 `services` 引入一条
@@ -225,7 +221,17 @@ def _worker_command() -> list[str]:
     * **源码环境**：`python -m omnicrawler.services.component_worker`；
     * **冻结环境**：`<宿主 exe> __component_worker__`（CLI 里有内部 dispatch）。
     """
-    if getattr(sys, "frozen", False):
+    # ★ 判据不能只看 `sys.frozen`：PyInstaller 的 CLI 入口在部分打包方式下
+    # 不设置它，于是会走 `-m` 分支，而宿主 exe 根本不认 `-m`
+    # （argparse 报 invalid choice，子进程根本没起来 —— 真实 CI 踩到）。
+    #
+    # 更可靠的判据：**当前进程的 `sys.executable` 是否是一个 `omnicrawler*` 可执行
+    # 文件**。源码环境下它是 python.exe/python，冻结环境下它是 omnicrawler-cli。
+    executable_name = Path(sys.executable).name.lower()
+    looks_frozen = getattr(sys, "frozen", False) or executable_name.startswith(
+        ("omnicrawler",)
+    )
+    if looks_frozen:
         return [sys.executable, _cli_internal_command()]
     return [sys.executable, "-m", "omnicrawler.services.component_worker"]
 
