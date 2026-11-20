@@ -179,6 +179,16 @@ def main() -> int:
         )
         return 2
 
+    # 诊断：paddle 会 `from setuptools.command.easy_install import easy_install`，
+    # 而这条会失败。先把**实际加载到的 setuptools** 打出来 ——
+    # 否则只能看到「模块不存在」，分不清是「没装」还是「被别处的遮蔽」。
+    try:
+        import setuptools as _st
+
+        _trace(f"setuptools={getattr(_st, '__file__', '?')} v={getattr(_st, '__version__', '?')}")
+    except Exception as exc:  # noqa: BLE001 - 诊断而已，不能因此失败
+        _trace(f"setuptools 探测失败：{type(exc).__name__}: {exc}")
+
     try:
         _trace("adapter_call")
         result = adapter(module_name, payload)
