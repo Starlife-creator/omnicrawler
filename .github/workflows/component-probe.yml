@@ -137,10 +137,19 @@ jobs:
           # 按 workflow 名字过滤：只考虑**会产生产物**的那几个。
           # 直接扫全部成功运行没用 —— 最近的「成功」几乎都是 secret-scan /
           # license-gate 这类不构建的检查（实测 20 条里 0 条有产物）。
+          # ★ 判据是「有没有产物」，不是「运行成不成功」。
+          #
+          # 现实：`component-probe` 从没成功过（它自己的 probe 步骤在失败），
+          # 但它的 **build 子任务**是成功的，`artifacts-linux` 就在那里。
+          # 按 `--status success` 筛会把这些合格的产物全漏掉。
+          #
+          # 安全性不变：reuse 的前提（本轮没改构建链）由 decide 保证；
+          # 产物只要「能跑起来」就够用于组件验证 —— 而 build 子任务成功
+          # 正是「能跑起来」的证据。
           RUN_ID=""
-          for WF in release component-probe; do
+          for WF in component-probe release; do
             for CANDIDATE in $(gh run list --repo "$GITHUB_REPOSITORY" \
-                --workflow "$WF" --status success --limit 10 \
+                --workflow "$WF" --limit 15 \
                 --json databaseId --jq '.[].databaseId' 2>/dev/null); do
               if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE/artifacts" \
                   --jq '.artifacts[].name' 2>/dev/null | grep -qx 'artifacts-linux'; then
@@ -151,7 +160,7 @@ jobs:
             done
           done
           if [ -z "$RUN_ID" ]; then
-            echo "::warning::release 与 component-probe 里都没有带 artifacts-linux 的成功运行"
+            echo "::warning::release 与 component-probe 里都没有带 artifacts-linux 的运行"
           fi
           if [ -z "$RUN_ID" ]; then
             echo "::warning::没有可复用的成功 release 运行"
