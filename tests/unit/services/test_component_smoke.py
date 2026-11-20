@@ -128,7 +128,8 @@ def test_verify_script_is_data_driven() -> None:
     # 这两处是旧的「宿主猜类型」标志
     assert 'engine == "paddle"' not in code, "脚本里仍有硬编码的 engine 判断"
     assert "_parse_smoke(" in code, "脚本没有读 smoke 声明"
-    assert "verify_result(" in code, "脚本没有核对 smoke.expect"
+    # 用内联的核对实现（不能 import 宿主包，见另一条守卫）
+    assert "_verify_expect(" in code, "脚本没有核对 smoke.expect"
 
 
 def test_market_components_declare_smoke() -> None:
@@ -148,3 +149,78 @@ def test_market_components_declare_smoke() -> None:
             problems.append(f"{recipe_path.parent.name}: {exc}")
     assert checked > 0, "没有可检查的组件"
     assert not problems, f"smoke 声明不合法：{problems}"
+
+def test_verify_script_does_not_import_host_package() -> None:
+    """便携验证脚本**不得** import `omnicrawler`。
+
+    **真实 CI 踩到**：`verify_standard_components.py` 里
+    `from omnicrawler.services.component_smoke import parse_smoke`，
+    而 CI 跑在解压后的便携产物上 —— 那个环境**不装宿主包**（只有冻结的
+    可执行文件），于是报 `No module named 'omnicrawler'`，
+    两个组件都在「smoke 声明不合法」处失败。
+
+    修法是判据内联一份。这条守卫防止有人图省事把它 import 回去。
+    """
+    script = _REPO / "tools" / "portable" / "verify_standard_components.py"
+    if not script.is_file():
+        pytest.skip("需要 verify_standard_components.py")
+
+    source = script.read_text(encoding="utf-8")
+    code_lines = [
+        line
+        for line in source.splitlines()
+        if not line.strip().startswith("#")
+    ]
+    # 允许出现"**不要** import omnicrawler"这类说明性文字，只拦真正的导入语句。
+    offenders = [
+        line.strip()
+        for line in code_lines
+        if line.strip().startswith(("from omnicrawler", "import omnicrawler"))
+    ]
+    assert not offenders, (
+        "便携验证脚本 import 了宿主包 —— CI 环境里没有它：" + "; ".join(offenders)
+    )
+
+
+def test_inlined_smoke_parity() -> None:
+    """内联在验证脚本里的 smoke 判据必须与 `component_smoke` **行为一致**。
+
+    两边各写一份是有意的（一个跑在宿主、一个跑在便携产物上），
+    但**判据不能漂移**。这里用同一批输入比对结论。
+    """
+    import importlib.util
+
+    script = _REPO / "tools" / "portable" / "verify_standard_components.py"
+    if not script.is_file():
+        pytest.skip("需要 verify_standard_components.py")
+
+    spec = importlib.util.spec_from_file_location("_verify_portable", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    import sys
+
+    sys.modules["_verify_portable"] = module  # dataclass 需要先注册
+    spec.loader.exec_module(module)
+
+    cases = [
+        {"kind": "wheel-pack", "smoke": {"expect": ["ok"]}},
+        {"kind": "data", "smoke": {"skip_run": True}},
+        {"kind": "data"},
+        {"kind": "wheel-pack", "smoke": {"expect": ["ok", "engine"]}},
+    ]
+    for case in cases:
+        ours = parse_smoke(case)
+        theirs = module._parse_smoke(case)
+        assert ours.skip_run == theirs.skip_run, f"skip_run 漂移：{case}"
+        assert ours.expect == theirs.expect, f"expect 漂移：{case}"
+
+    # 非法输入必须**两边都拒**
+    for bad in (
+        {"kind": "wheel-pack", "smoke": {"expect": []}},
+        {"kind": "wheel-pack", "smoke": {"skip_run": True}},
+        {"kind": "data", "smoke": {"expect": ["ok"]}},
+    ):
+        with pytest.raises(SmokeSpecError):
+            parse_smoke(bad)
+        with pytest.raises(ValueError):
+            module._parse_smoke(bad)

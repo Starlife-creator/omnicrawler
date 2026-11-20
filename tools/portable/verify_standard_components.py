@@ -210,16 +210,56 @@ def _installed_component_dir(install_stdout: str) -> Path | None:
 
 
 def _parse_smoke(recipe_data: dict) -> Any:
-    """从配方数据解析 `smoke`（复用宿主实现，不在这里重复一套判据）。"""
-    from omnicrawler.services.component_smoke import parse_smoke
+    """从配方数据解析 `smoke`。
 
-    return parse_smoke(recipe_data)
+    **不 import `omnicrawler`**：本脚本在 CI 里跑在解压后的便携产物上，
+    而那个环境**不装宿主包**（它只有冻结的可执行文件）。
+    早先写 `from omnicrawler.services.component_smoke import parse_smoke`，
+    CI 直接报 `No module named 'omnicrawler'`（真实踩到）。
+
+    所以判据在这里**内联一份**，与 `services/component_smoke.py` 保持等价。
+    两边一致由主仓的守卫保证（`test_component_smoke.py` 断言镜像形态）。
+    """
+    from dataclasses import dataclass
+
+    @dataclass(frozen=True)
+    class _Spec:
+        payload: dict
+        expect: tuple
+        skip_run: bool
+        timeout_seconds: float
+        description: str
+
+    kind = str(recipe_data.get("kind") or "wheel-pack").strip().lower()
+    smoke = recipe_data.get("smoke")
+    if smoke is None:
+        if kind == "data":
+            return _Spec({}, (), True, 300.0, "")
+        raise ValueError(f"kind={kind} 的组件必须声明 smoke")
+    if not isinstance(smoke, dict):
+        raise ValueError("smoke 必须是对象")
+    payload = smoke.get("payload") or {}
+    if not isinstance(payload, dict):
+        raise ValueError("smoke.payload 必须是对象")
+    skip_run = bool(smoke.get("skip_run", False))
+    expect_raw = smoke.get("expect") or []
+    if not isinstance(expect_raw, list):
+        raise ValueError("smoke.expect 必须是字符串列表")
+    expect = tuple(str(x).strip() for x in expect_raw if str(x).strip())
+    if not skip_run and not expect:
+        raise ValueError("smoke.expect 不能为空 —— 空期望等于没验")
+    timeout = smoke.get("timeout_seconds", 300)
+    if not isinstance(timeout, (int, float)) or timeout <= 0:
+        raise ValueError("smoke.timeout_seconds 必须是正数")
+    if kind == "data" and not skip_run:
+        raise ValueError("kind=data 的组件必须写 skip_run: true")
+    if kind == "wheel-pack" and skip_run:
+        raise ValueError("kind=wheel-pack 的组件不能 skip_run")
+    return _Spec(payload, expect, skip_run, float(timeout), str(smoke.get("description") or ""))
 
 
 def _verify_expect(smoke: Any, stdout: str) -> list[str]:
-    """核对组件输出是否满足 `smoke.expect`。"""
-    from omnicrawler.services.component_smoke import verify_result
-
+    """核对组件输出是否满足 `smoke.expect`（内联版，不依赖宿主包）。"""
     text = (stdout or "").strip()
     start = text.find("{")
     end = text.rfind("}")
@@ -229,7 +269,19 @@ def _verify_expect(smoke: Any, stdout: str) -> list[str]:
         result = json.loads(text[start : end + 1])
     except json.JSONDecodeError as exc:
         return [f"组件输出不是合法 JSON：{exc}"]
-    return verify_result(smoke, result)
+    if not isinstance(result, dict):
+        return [f"组件输出不是对象：{type(result).__name__}"]
+    if result.get("ok") is False:
+        stage = result.get("stage") or "worker"
+        error = result.get("error") or "未提供错误信息"
+        return [f"[{stage}] {error}"]
+    problems = []
+    for key in smoke.expect:
+        if key not in result:
+            problems.append(f"结果缺少期望的键：{key}")
+        elif not result[key]:
+            problems.append(f"期望的键值为假：{key}={result[key]!r}")
+    return problems
 
 
 def verify_all(
