@@ -21,6 +21,14 @@ on:
         required: false
         default: ""
         type: string
+      run_build:
+        description: >-
+          是否真的执行构建。默认 true。调用方需要「按条件跳过」时传 false
+          —— GitHub 不允许在 uses: 调用的 job 上写 if，所以开关必须放在
+          被调用方内部（job 级 if 是允许的）。
+        required: false
+        default: true
+        type: boolean
 
 env:
   BUILD_PYTHON_VERSION: ${{ inputs.build_python_version }}
@@ -32,6 +40,8 @@ env:
 
 jobs:
   build:
+    # 供调用方按条件跳过（见 run_build 输入说明）。
+    if: inputs.run_build
     # S6：固定 runner 版本——ubuntu-latest 漂移会改变 glibc（当前 24.04/glibc 2.39），
     # 高版本构建机产出的 onedir 在旧系统（glibc<2.39）跑不了。ubuntu-22.04（glibc 2.35）
     # 覆盖 Ubuntu 22.04+ / Debian 12+ / RHEL 9。

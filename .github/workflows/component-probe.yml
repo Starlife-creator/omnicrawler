@@ -45,9 +45,16 @@ on:
         default: false
         type: boolean
 
+# ★ 必须声明 id-token / attestations：
+#   被调用的 reusable-build-linux.yml 用它们做构建来源证明。
+#   调用方不声明时，GitHub 在**解析阶段**就拒绝整个 workflow，
+#   表现为 startup_failure 且 jobs=0（没有任何日志，极难排查）。
+#   这一条是二分诊断 5 轮后才定位到的。
 permissions:
   contents: read
   actions: read
+  id-token: write
+  attestations: write
 
 concurrency:
   group: component-probe-${{ github.ref }}
