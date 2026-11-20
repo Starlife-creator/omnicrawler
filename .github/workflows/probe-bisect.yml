@@ -1,7 +1,6 @@
 name: probe-bisect
 
-# 临时二分诊断用：只保留最小结构，确认哪种写法会让 GitHub 解析阶段失败。
-# 定位完即删除。
+# 临时二分诊断用（第 2 轮）：验证 `uses` 调 reusable + with 传表达式是否可解析。
 
 on:
   workflow_dispatch:
@@ -15,10 +14,16 @@ jobs:
     outputs:
       decision: ${{ steps.classify.outputs.decision }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
       - name: emit
         id: classify
         run: |
           echo "decision=reuse" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: [decide]
+    uses: ./.github/workflows/reusable-build-linux.yml
+    with:
+      build_python_version: "3.13"
+      asset_max_bytes: "2039693706"
+      delta_baselines: ""
+      run_build: ${{ needs.decide.outputs.decision == 'build' }}
