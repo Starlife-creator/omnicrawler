@@ -608,3 +608,89 @@ def test_paddle_recipe_wheels_are_abi_compatible() -> None:
             continue
         bad.append(filename)
     assert not bad, f"这些 wheel 在 cp313 上不可用：{bad}"
+
+def test_multiple_artifacts_into_same_dir_are_merged() -> None:
+    """多个构件解到**同一个目录**时必须合并，不能后一个删掉前一个。
+
+    **真实 CI**：ocr-paddle 的 17 个 wheel 全部 `extract_to: site-packages`。
+    早先 `extract_artifact` 在目标已存在时 `rmtree(target)` 再 `replace()`，
+    于是**最后一个构件把前面解出来的内容整目录删了** ——
+    `paddleocr/` 就这样消失，装完后报
+    「组件入口不存在：site-packages/paddleocr/__init__.py」。
+
+    这条守卫做**真实装配**：两个构件解到同一目录，断言两者内容都在。
+    """
+    import hashlib
+    import io
+    import json
+    import shutil
+    import zipfile
+    from pathlib import Path
+
+    from omnicrawler.services.component_recipe import install_from_recipe
+
+    work = Path(__file__).resolve().parent / ".pytest_merge_check"
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir(parents=True)
+    try:
+        def make_zip(prefix: str) -> tuple[bytes, str]:
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w") as bundle:
+                bundle.writestr(f"{prefix}/__init__.py", f"# {prefix}\n")
+            blob = buf.getvalue()
+            return blob, hashlib.sha256(blob).hexdigest()
+
+        blob_a, sha_a = make_zip("alpha")
+        blob_b, sha_b = make_zip("beta")
+
+        recipe = {
+            "schema": 1,
+            "name": "merge-check",
+            "version": "1.0.0",
+            "platforms": ["windows", "linux", "macos"],
+            "architectures": ["x86_64"],
+            "artifacts": [
+                {
+                    "url": "https://example.invalid/a.zip",
+                    "sha256": sha_a,
+                    "extract_to": "site-packages",
+                },
+                {
+                    "url": "https://example.invalid/b.zip",
+                    "sha256": sha_b,
+                    "extract_to": "site-packages",
+                },
+            ],
+            "entry": {
+                "path": "entry.json",
+                "protocol": "demo",
+                "engine": "generic",
+                "runner": "worker-wheelpack",
+                "module": "site-packages/alpha/__init__.py",
+            },
+        }
+
+        blobs = {"https://example.invalid/a.zip": blob_a, "https://example.invalid/b.zip": blob_b}
+
+        def downloader(url: str, dest: Path) -> None:
+            dest.write_bytes(blobs[url])
+
+        components = work / "components"
+        components.mkdir()
+        summary = install_from_recipe(recipe, components, downloader=downloader, work_dir=work)
+        installed = Path(summary["path"])
+
+        assert (installed / "site-packages" / "alpha" / "__init__.py").is_file(), (
+            "第一个构件的内容被后一个删掉了"
+        )
+        assert (installed / "site-packages" / "beta" / "__init__.py").is_file(), (
+            "第二个构件的内容缺失"
+        )
+
+        # component.json 必须覆盖合并后的全部文件
+        manifest = json.loads((installed / "component.json").read_text(encoding="utf-8"))
+        declared = set(manifest["files"])
+        assert "site-packages/alpha/__init__.py" in declared
+        assert "site-packages/beta/__init__.py" in declared
+    finally:
+        shutil.rmtree(work, ignore_errors=True)

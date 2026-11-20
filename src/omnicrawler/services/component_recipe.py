@@ -636,12 +636,34 @@ def extract_artifact(
         except UnsafePackageError as exc:
             raise RecipeError(f"构件包不安全，已拒绝装配：{exc}") from exc
 
-        # 全部成功后才原子替换
+        # 全部成功后才落到 target。
+        #
+        # **target 已存在时必须合并，不能删掉重建**：
+        # 一份 recipe 常有多个 `extract_to` 相同的构件（如 ocr-paddle 的
+        # 17 个 wheel 全部解到 `site-packages/`）。早先这里 `rmtree(target)`
+        # 再 `replace()`，于是**后一个构件会把前一个解出来的内容整目录删掉** ——
+        # 最后一个 win 的只剩自己，`paddleocr/` 就这样消失了，
+        # 装完后报「组件入口不存在：site-packages/paddleocr/__init__.py」
+        # （真实 CI 踩到）。
+        #
+        # 合并语义与 pip 解 wheel 到 site-packages 一致：同路径文件后写覆盖，
+        # 不同路径各自保留。
         if target.exists():
             import shutil
 
-            shutil.rmtree(target)
-        staging_path.replace(target)
+            for item in staging_path.iterdir():
+                destination_item = target / item.name
+                if item.is_dir() and destination_item.is_dir():
+                    shutil.copytree(item, destination_item, dirs_exist_ok=True)
+                else:
+                    if destination_item.exists():
+                        if destination_item.is_dir():
+                            shutil.rmtree(destination_item)
+                        else:
+                            destination_item.unlink()
+                    shutil.move(str(item), str(destination_item))
+        else:
+            staging_path.replace(target)
 
 
 def _validate_and_select(
