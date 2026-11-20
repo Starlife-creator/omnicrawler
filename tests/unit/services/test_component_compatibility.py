@@ -1279,3 +1279,54 @@ def test_worker_command_detects_frozen_by_executable_name() -> None:
     assert 'getattr(sys, "frozen", False)' in source, "没有 frozen 判据"
     assert "executable_name" in source, "没有按可执行文件名判断冻结"
     assert "startswith" in source, "没有用文件名前缀判断"
+
+@pytest.mark.parametrize(
+    ("exe", "frozen", "expect_internal"),
+    [
+        (r"C:\py\python.exe", False, False),
+        ("/x/python3", False, False),
+        ("/x/omnicrawler-cli", False, True),
+        ("/x/OmniCrawler", False, True),
+        (r"C:\py\python.exe", True, True),
+    ],
+)
+def test_worker_command_branches(exe: str, frozen: bool, expect_internal: bool) -> None:
+    """四个分支都必须选对启动方式。
+
+    | sys.executable | sys.frozen | 期望 |
+    |---|---|---|
+    | python.exe | False | `-m` |
+    | omnicrawler-cli | False | 内部 dispatch |
+    | python.exe | True | 内部 dispatch |
+
+    中间那行是关键：**PyInstaller 的 CLI 入口在部分打包方式下不设置
+    `sys.frozen`**，只看标志会误走 `-m`，而宿主 exe 不认 `-m` ——
+    子进程根本没起来（CI 上表现为 worker 轨迹完全消失）。
+    """
+    import sys as _sys
+
+    from omnicrawler.services import component_runner as runner
+
+    original_exe = _sys.executable
+    had_frozen = hasattr(_sys, "frozen")
+    original_frozen = getattr(_sys, "frozen", None)
+    try:
+        _sys.executable = exe
+        if frozen:
+            _sys.frozen = True  # type: ignore[attr-defined]
+        elif hasattr(_sys, "frozen"):
+            del _sys.frozen  # type: ignore[attr-defined]
+        command = runner._worker_command()
+        uses_internal = runner.INTERNAL_WORKER_COMMAND in command
+        assert uses_internal is expect_internal, (
+            f"exe={exe!r} frozen={frozen} 应走"
+            f"{'内部 dispatch' if expect_internal else ' -m'}，实际 {command}"
+        )
+        if not expect_internal:
+            assert "-m" in command
+    finally:
+        _sys.executable = original_exe
+        if had_frozen:
+            _sys.frozen = original_frozen  # type: ignore[attr-defined]
+        elif hasattr(_sys, "frozen"):
+            del _sys.frozen  # type: ignore[attr-defined]
