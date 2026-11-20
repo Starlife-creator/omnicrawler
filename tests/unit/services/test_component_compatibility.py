@@ -567,13 +567,29 @@ def test_paddle_recipe_declares_full_dependency_chain() -> None:
         "prettytable",
         "py-cpuinfo",
         "pydantic",
+        # paddlex 自身的必装依赖（pypi requires_dist 无 extra 条件部分）
+        "aistudio-sdk",
+        "chardet",
+        "colorlog",
+        "filelock",
+        "huggingface-hub",
+        "modelscope",
+        "numpy",
+        "packaging",
+        "pillow",
+        "ruamel.yaml",
+        "ujson",
     ]
-    missing = [
-        name
-        for name in required
-        # wheel 文件名把 `-` 写成 `_`，两者都认
-        if name.replace("-", "_") not in filenames.replace("-", "_")
-    ]
+    def normalized(text: str) -> str:
+        """包名归一：`-` / `.` / `_` 在 wheel 文件名里可互换。
+
+        PyPI 的规范名是 `ruamel.yaml`，而 wheel 文件名写 `ruamel_yaml`
+        —— 只换 `-` 会漏掉这一条。
+        """
+        return text.replace("-", "_").replace(".", "_").lower()
+
+    haystack = normalized(filenames)
+    missing = [name for name in required if normalized(name) not in haystack]
     assert not missing, f"配方缺少 paddleocr 的硬依赖：{missing}"
 
 def test_paddle_recipe_wheels_are_abi_compatible() -> None:
