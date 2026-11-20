@@ -1162,3 +1162,97 @@ def test_pth_files_are_not_extracted() -> None:
         assert (installed / "site-packages" / "pkg" / "__init__.py").is_file()
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+def test_worker_clears_shadowed_modules() -> None:
+    """worker 必须**清掉被遮蔽的同名顶层包**，让组件版本生效。
+
+    **真实 CI**：`No module named 'setuptools.command.easy_install'`，
+    而该文件确实在组件 `site-packages` 里。
+
+    根因：冻结包里的 `setuptools` 是 PyInstaller **按需裁剪**过的
+    （只收集被 import 到的子模块）；组件 site-packages 里那份是完整的。
+    但 `sys.path.insert(0, ...)` **只影响尚未 import 的模块** ——
+    如果 `setuptools` 已在 `sys.modules` 里，后续 import 仍命中裁剪版。
+
+    这条守卫断言 worker 确实做了清除，且清除范围**限定**在几个高危包
+    （不能无脑清空 sys.modules，那会连自己的模块一起丢）。
+    """
+    import pathlib as _pathlib
+
+    worker = (
+        _pathlib.Path(__file__).resolve().parents[3]
+        / "src"
+        / "omnicrawler"
+        / "services"
+        / "component_worker.py"
+    )
+    source = worker.read_text(encoding="utf-8")
+    code = "\n".join(
+        line for line in source.splitlines() if not line.strip().startswith("#")
+    )
+
+    assert "_shadow_prone" in code, "worker 没有定义遮蔽包清单"
+    assert "sys.modules.pop" in code, "worker 没有清掉被遮蔽的模块"
+
+    # 必须在**限定清单**内，不是清空一切
+    for required in ("setuptools", "pkg_resources"):
+        assert required in code, f"遮蔽清单里没有 {required}"
+
+    # 不能出现「清空全部」这种危险写法
+    assert "sys.modules.clear()" not in code, "不得清空整个 sys.modules"
+
+
+def test_shadow_clearing_actually_switches_version() -> None:
+    """端到端验证：清遮蔽后 import 到的是组件那份（而非被截断的那份）。
+
+    用两个伪造的 setuptools 包模拟「冻结包裁剪版」与「组件完整版」。
+    """
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path
+
+    work = Path(tempfile.mkdtemp(prefix="shadow-check-"))
+    try:
+        frozen = work / "frozen" / "setuptools"
+        frozen.mkdir(parents=True)
+        (frozen / "__init__.py").write_text("__version__='frozen-truncated'\n", encoding="utf-8")
+
+        comp = work / "comp" / "setuptools"
+        (comp / "command").mkdir(parents=True)
+        (comp / "__init__.py").write_text("__version__='full'\n", encoding="utf-8")
+        (comp / "command" / "__init__.py").write_text("", encoding="utf-8")
+        (comp / "command" / "easy_install.py").write_text(
+            "easy_install = object\n", encoding="utf-8"
+        )
+
+        code = (
+            f"import sys\n"
+            f"sys.path.insert(0, {str(work / 'frozen')!r})\n"
+            f"import setuptools\n"
+            f"before = setuptools.__version__\n"
+            f"sys.path.insert(0, {str(work / 'comp')!r})\n"
+            f"for name in list(sys.modules):\n"
+            f"    if name.split('.')[0] in ('setuptools','pkg_resources','_distutils_hack','distutils'):\n"
+            f"        sys.modules.pop(name, None)\n"
+            f"import setuptools\n"
+            f"from setuptools.command.easy_install import easy_install\n"
+            f"print(before, setuptools.__version__)\n"
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env={**__import__("os").environ, "PYTHONUTF8": "1"},
+            timeout=120,
+            check=False,
+        )
+        assert completed.returncode == 0, f"清遮蔽后仍失败：{completed.stderr[-400:]}"
+        out = (completed.stdout or "").strip().split()
+        assert out == ["frozen-truncated", "full"], f"版本未切换：{out}"
+    finally:
+        import shutil
+
+        shutil.rmtree(work, ignore_errors=True)

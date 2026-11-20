@@ -151,6 +151,27 @@ def main() -> int:
     # **只在该子进程内**挂 sys.path —— 宿主完全不知情。
     sys.path.insert(0, str(site_root))
 
+    # ★ 清掉**已被遮蔽**的同名顶层包，让组件的版本真正生效。
+    #
+    # 问题形状：冻结包里的 `setuptools` 是 PyInstaller **按需裁剪**过的
+    # （只收集被 import 到的子模块），而组件 `site-packages` 里那份是完整的。
+    # 但 `sys.path.insert(0, ...)` 只影响**尚未 import** 的模块 ——
+    # 如果 `setuptools` 已经被 import 过（`sys.modules` 里有），
+    # 后续 `import setuptools.command.easy_install` 仍然命中旧的那份，
+    # 于是报 `No module named 'setuptools.command.easy_install'`，
+    # 而文件明明在组件的 site-packages 里（真实 CI 踩到）。
+    #
+    # 只清这几个「会被宿主预装、又会与组件版本冲突」的包。
+    # 不能无脑 globals().clear()：那会连我们自己的模块一起丢。
+    _shadow_prone = ("setuptools", "pkg_resources", "_distutils_hack", "distutils")
+    dropped = []
+    for _name in list(sys.modules):
+        if _name.split(".")[0] in _shadow_prone:
+            sys.modules.pop(_name, None)
+            dropped.append(_name)
+    if dropped:
+        _trace(f"清除被遮蔽模块 {len(dropped)} 个：{sorted(set(d.split('.')[0] for d in dropped))}")
+
     try:
         module_name = _resolve_module_name(entry, site_root)
     except SystemExit as exc:
