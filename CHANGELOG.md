@@ -1,6 +1,26 @@
 # Changelog
 
 ## Unreleased
+## 1.0.25 - 2026-11-20
+
+### 变更
+
+### 修复
+
+- feat(market): **ocr-paddle 补齐 paddlex 的全部必装依赖**（50 个构件，三平台各 28 个）。
+  真实 CI 反复报 ModuleNotFoundError：先是 `paddlex`，补完又缺 `colorlog` ——
+  与其一轮一个，这里按 PyPI 元数据把 paddlex 3.7.2 的**全部无 extra 必装依赖**一次展开：
+  aistudio-sdk / chardet / colorlog / filelock / huggingface-hub / modelscope /
+  numpy / packaging / pillow / ruamel.yaml / ujson。同时把 paddlex 升到 3.7.2
+  并移除旧的 3.7.0（两份同名包会互相覆盖）。
+- test: 守卫的必需依赖清单同步扩充；包名归一化同时处理 `-` / `.` / `_`
+  （`ruamel.yaml` 在 wheel 文件名里写作 `ruamel_yaml`）。
+
+### 进展
+
+v1.0.24 已确认：三平台构建全绿、两组件都装上、入口已存在、
+`paddlex` 可 import —— 只剩传递依赖缺失。本轮补全后应能真正跑通。
+
 ## 1.0.24 - 2026-11-20
 
 ### 变更

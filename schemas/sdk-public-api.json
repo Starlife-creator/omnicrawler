@@ -1,6 +1,6 @@
 {
   "sdk_version": "1.0-preview",
-  "application_version": "1.0.24",
+  "application_version": "1.0.25",
   "sdk_exports": [
     "API_STABILITY",
     "ApplicationService",
