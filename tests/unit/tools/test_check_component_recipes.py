@@ -41,6 +41,8 @@ def _run_gate(root: Path) -> tuple[int, str]:
 def _base_recipe(**overrides: object) -> dict:
     recipe: dict = {
         "schema": 1,
+        # `kind` 与 `smoke` 是后加的**必填**字段：
+        "smoke": {"expect": ["ok"]},
         "name": "probe",
         "version": "1.0.0",
         "kind": "wheel-pack",
