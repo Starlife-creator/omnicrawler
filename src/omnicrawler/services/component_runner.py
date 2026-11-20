@@ -158,6 +158,23 @@ def build_wheelpack_spec(component_root: Path) -> WheelPackSpec:
     )
 
 
+def _utf8_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    """给子进程一份**保证 UTF-8 I/O** 的环境。
+
+    为什么必须有：本模块按 UTF-8 解子进程的输出（`encoding="utf-8"`），
+    但 Windows 默认控制台/管道下，子进程的 stdout 按 locale（cp936/cp1252）
+    编码。父进程按 UTF-8 解 cp936 字节，中文会变成 U+FFFD ——
+    这在 `smoke.expect` 里表现为「键存在但值是乱码」，极难定位。
+
+    **不能 `from tools.child_env import utf8_env`**：`tools/` 是开发期工具，
+    不在运行时依赖里。`src/` 层不该依赖它。
+    """
+    env = dict(os.environ if base is None else base)
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    return env
+
+
 def component_runner_env(spec: WheelPackSpec) -> dict[str, str]:
     """构造子进程环境：注入组件路径，并把原生库搜索路径前置。
 
@@ -165,7 +182,7 @@ def component_runner_env(spec: WheelPackSpec) -> dict[str, str]:
     `LD_LIBRARY_PATH` / `DYLD_LIBRARY_PATH`——**必须在 exec 前设置**，
     进程启动后再改无效。
     """
-    env = dict(os.environ)
+    env = _utf8_env()
     env[_ENV_COMPONENT_ROOT] = str(spec.component_root)
     env[_ENV_SITE_PACKAGES] = str(spec.site_packages)
     env[_ENV_ENTRY] = str(spec.entry)
@@ -349,6 +366,141 @@ def run_component(
         raise ComponentRunnerError(f"组件 {spec.name} 没有输出结果")
     try:
         result = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ComponentRunnerError(
+            f"组件 {spec.name} 输出不是合法 JSON：{raw[:200]}"
+        ) from exc
+    if not isinstance(result, dict):
+        raise ComponentRunnerError(f"组件 {spec.name} 输出顶层不是对象")
+    return result
+
+
+#: native 组件的运行规格。
+#:
+#: 与 `WheelPackSpec` 的区别：native 组件**自带可执行文件**，不需要
+#: `site-packages`，也不需要宿主 Python 运行时。它直接 exec，走与
+#: wheel-pack 相同的 **JSON-over-stdio** 协议。
+#:
+#: 为什么要单列一个类型而不是给 `WheelPackSpec` 加可选字段：
+#: `site_packages` 在 native 里根本不存在，做成可空字段会让每个使用点
+#: 都要判断"这个字段现在是不是 None"。两个独立的冻结数据类更清楚。
+@dataclass(frozen=True, slots=True)
+class NativeSpec:
+    """native 组件的运行规格（自带可执行文件，直接 exec）。"""
+
+    name: str
+    version: str
+    component_root: Path
+    executable: Path
+    engine: str
+
+
+def build_native_spec(component_root: Path, entry_data: dict[str, Any]) -> NativeSpec:
+    """从已装配的 native 组件目录读出运行规格。
+
+    native 组件的目录形态::
+
+        <component_root>/
+            component.json          # 清单（含 files 哈希）
+            bin/<可执行文件>         # 由 recipe 的 entry.path 指向
+            entry.json              # 入口声明
+
+    **可执行位必须存在**（非 Windows）。装配时保留了文件内容与哈希，
+    但 tar/zip 里的权限位不一定可靠，所以这里显式检查并给出可读的错误，
+    而不是等到 exec 时才报 `Permission denied`。
+    """
+    root = Path(component_root)
+    entry_path = str(entry_data.get("path") or "").strip()
+    if not entry_path:
+        raise ComponentRunnerError(f"native 组件的 entry 缺少 path：{root}")
+
+    executable = (root / entry_path).resolve()
+    # 防目录穿越：入口必须落在组件目录内。
+    try:
+        executable.relative_to(root.resolve())
+    except ValueError as exc:
+        raise ComponentRunnerError(
+            f"native 组件的 entry.path 逃出了组件目录：{entry_path}"
+        ) from exc
+
+    if not executable.is_file():
+        raise ComponentRunnerError(
+            f"native 组件的可执行文件不存在：{executable}（entry.path={entry_path}）"
+        )
+
+    if os.name != "nt" and not os.access(executable, os.X_OK):
+        raise ComponentRunnerError(
+            f"native 组件的可执行文件没有执行权限：{executable}"
+            "（装配应保留可执行位；若是 tar/zip 解压导致丢失，需要 chmod +x）"
+        )
+
+    return NativeSpec(
+        name=str(entry_data.get("name") or root.name),
+        version=str(entry_data.get("version") or ""),
+        component_root=root,
+        executable=executable,
+        engine=str(entry_data.get("engine") or "native"),
+    )
+
+
+def run_native_component(
+    spec: NativeSpec,
+    payload: dict[str, Any] | None = None,
+    *,
+    timeout: float = 300.0,
+) -> dict[str, Any]:
+    """在子进程里 exec native 组件，返回其 JSON 结果。
+
+    协议与 `run_component` 一致：**stdin 一个 JSON 对象，stdout 一个 JSON 对象**。
+    这让 `smoke.expect` 的判据可以对两种 kind 通用，不必各写一套。
+
+    **为什么仍然要 exec 而不是让宿主调用它的库**：native 组件的定义就是
+    「独立可执行文件」。宿主不链接它的任何符号，因此不存在符号冲突。
+    """
+    verify_component_files(spec.component_root)
+
+    command = [str(spec.executable)]
+    try:
+        completed = subprocess.run(  # noqa: S603 - 路径来自已校验的组件目录
+            command,
+            input=json.dumps(payload or {}, ensure_ascii=False),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            cwd=str(spec.component_root),
+            env=_utf8_env(),
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ComponentRunnerError(
+            f"组件 {spec.name} 执行超时（{timeout:.0f}s）"
+        ) from exc
+    except OSError as exc:
+        raise ComponentRunnerError(
+            f"组件 {spec.name} 无法执行：{type(exc).__name__}: {exc}"
+        ) from exc
+
+    raw = (completed.stdout or "").strip()
+    if completed.returncode != 0 and not raw:
+        stderr_lines = [
+            ln for ln in (completed.stderr or "").strip().splitlines() if ln.strip()
+        ]
+        detail = "\n".join(stderr_lines[-10:]) or "（无输出）"
+        raise ComponentRunnerError(
+            f"组件 {spec.name} 退出码 {completed.returncode}：{detail}"
+        )
+    if not raw:
+        raise ComponentRunnerError(f"组件 {spec.name} 没有输出结果")
+
+    start, end = raw.find("{"), raw.rfind("}")
+    if start < 0 or end <= start:
+        raise ComponentRunnerError(
+            f"组件 {spec.name} 输出不是 JSON：{raw[:200]}"
+        )
+    try:
+        result = json.loads(raw[start : end + 1])
     except json.JSONDecodeError as exc:
         raise ComponentRunnerError(
             f"组件 {spec.name} 输出不是合法 JSON：{raw[:200]}"

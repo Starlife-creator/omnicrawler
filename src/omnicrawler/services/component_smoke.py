@@ -117,6 +117,13 @@ def parse_smoke(recipe: dict[str, Any]) -> SmokeSpec:
         raise SmokeSpecError(
             "kind=wheel-pack 的组件不能 skip_run —— 必须真的执行一次"
         )
+    # native 与 wheel-pack 同属「有可执行入口」，必须真的跑一次。
+    # 它走 `run_native_component`（exec 组件自带的二进制），
+    # 协议同为 JSON-over-stdio，所以 `expect` 的判据完全通用。
+    if kind == "native" and skip_run:
+        raise SmokeSpecError(
+            "kind=native 的组件不能 skip_run —— 必须真的执行一次"
+        )
 
     return SmokeSpec(
         payload=payload,

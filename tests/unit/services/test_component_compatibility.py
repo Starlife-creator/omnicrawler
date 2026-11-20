@@ -129,7 +129,10 @@ def test_market_recipes_are_installable_on_this_interpreter() -> None:
     from omnicrawler.services.component_recipe import current_abi, current_architecture, current_platform
 
     checked = 0
-    for recipe_path in sorted(components.glob("*/recipe.json")):
+    # 组件按分类子目录组织（components/<分类>/<id>/），必须递归扫描。
+    # 一层 glob 在两级结构下会**扫到 0 个**，而 `assert checked > 0` 会
+    # 把「扫不到」误报成「没有组件」—— 这类静默失效已在 §15.16.13 预警过。
+    for recipe_path in sorted(components.rglob("recipe.json")):
         recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
         abi = recipe.get("python_abi")
         if not abi:
@@ -253,7 +256,7 @@ def test_platform_names_use_canonical_spelling() -> None:
         pytest.skip("需要 market 仓的 components 目录")
 
     checked = 0
-    for recipe_path in sorted(components.glob("*/recipe.json")):
+    for recipe_path in sorted(components.rglob("recipe.json")):
         recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
         platforms = recipe.get("platforms") or []
         checked += 1
@@ -1028,7 +1031,7 @@ def test_market_components_declare_provides() -> None:
 
     missing = []
     checked = 0
-    for recipe_path in sorted(components.glob("*/recipe.json")):
+    for recipe_path in sorted(components.rglob("recipe.json")):
         data = json.loads(recipe_path.read_text(encoding="utf-8"))
         checked += 1
         if not data.get("provides"):
