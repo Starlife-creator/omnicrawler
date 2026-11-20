@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from pathlib import Path
 
 #: 触及这些路径 ⇒ 必须重建（构建产物会变）。
 BUILD_CHAIN_PATTERNS: tuple[str, ...] = (
@@ -49,6 +50,10 @@ BUILD_CHAIN_PATTERNS: tuple[str, ...] = (
     "tools/portable/prepare_",
     "src/omnicrawler/core/runtime_paths.py",
     "assets/branding/",
+    # 真正会改产物的工作流（构建/release 链路）
+    ".github/workflows/release.yml",
+    ".github/workflows/reusable-build-",
+    ".github/workflows/reusable-finalize-release.yml",
 )
 
 #: 这些改动**不影响**构建产物，可以复用（运行期/组件层）。
@@ -64,6 +69,9 @@ RUNTIME_ONLY_PATTERNS: tuple[str, ...] = (
     "tools/market/component_deps_lock.py",
     "tests/",
     "docs/",
+    # 探针类工作流只影响验证方式，不改产物
+    ".github/workflows/component-probe.yml",
+    "tools/portable/needs_rebuild.py",
 )
 
 
@@ -102,6 +110,24 @@ def classify(paths: list[str]) -> tuple[str, str, list[str]]:
     return "reuse", "改动只在运行期/组件层 —— 构建产物未变，可复用上次产物", []
 
 
+def _utf8_env() -> dict[str, str]:
+    """给子进程 UTF-8 环境（**按文件路径加载** `tools/child_env.py`）。
+
+    不能写 `from tools.child_env import utf8_env`：本脚本也可能被
+    `python tools/portable/needs_rebuild.py` 直接执行，此时 `sys.path[0]`
+    是 `tools/portable/`，`tools` 包不可见（真实 CI 踩过同类问题）。
+    """
+    import importlib.util
+
+    helper = Path(__file__).resolve().parents[1] / "child_env.py"
+    spec = importlib.util.spec_from_file_location("_child_env", helper)
+    if spec is None or spec.loader is None:
+        return {}
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return dict(module.utf8_env())
+
+
 def changed_files(base: str, head: str) -> list[str]:
     """列出 base..head 之间的改动文件。"""
     completed = subprocess.run(
@@ -110,6 +136,7 @@ def changed_files(base: str, head: str) -> list[str]:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=_utf8_env(),
         check=False,
     )
     if completed.returncode != 0:
@@ -138,8 +165,13 @@ def main(argv: list[str] | None = None) -> int:
     decision, reason, triggers = classify(paths)
 
     if args.github_output:
+        # GITHUB_OUTPUT 是 `key=value` 逐行格式：**值里不能有换行**，
+        # 否则后续行会被当成新的 key，把输出写坏（真实 CI 踩到：
+        # decision 变成空值，run_build 表达式失效）。
+        # reason 含中文括号与破折号，长度可控，压成单行即可。
+        flat_reason = " ".join(str(reason).split())
         print(f"decision={decision}")
-        print(f"reason={reason}")
+        print(f"reason={flat_reason}")
     else:
         print(f"决策：{decision}")
         print(f"理由：{reason}")
