@@ -87,6 +87,9 @@ ALLOWED_KEYS = frozenset(
         # 误当 Wheel-Pack 去 `run`，报「缺少 site-packages」—— 靠
         # 「有没有 runner」推断类型是脆的，种类应当自己说出来。
         "kind",
+        # 冒烟声明：由**组件自己**说「我怎么算能跑」，验证器只负责执行与核对。
+        # 见 `component_smoke.py`。缺省时 wheel-pack 会被判红（必须声明）。
+        "smoke",
         # 过渡字段：`platform_architectures: {平台: [架构...]}`。
         # 全局 `architectures` 表达不了「某平台只支持部分架构」
         # （例：paddlepaddle 的 macOS 只有 arm64）。Schema v2 用
@@ -174,6 +177,7 @@ def validate_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
     for index, artifact in enumerate(artifacts):
         _validate_artifact(artifact, index)
 
+    _validate_smoke(recipe)
     _validate_kind(recipe)
     _validate_provides(recipe)
     _validate_platform_architectures(recipe, artifacts)
@@ -255,6 +259,16 @@ def component_kind(recipe: dict[str, Any]) -> str:
     """取组件种类；缺省 `wheel-pack`。"""
     value = str(recipe.get("kind") or DEFAULT_COMPONENT_KIND).strip().lower()
     return value or DEFAULT_COMPONENT_KIND
+
+
+def _validate_smoke(recipe: dict[str, Any]) -> None:
+    """校验 `smoke` 声明（委托给 `component_smoke.parse_smoke`）。"""
+    from .component_smoke import SmokeSpecError, parse_smoke
+
+    try:
+        parse_smoke(recipe)
+    except SmokeSpecError as exc:
+        _require(False, str(exc))
 
 
 def _validate_kind(recipe: dict[str, Any]) -> None:

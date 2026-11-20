@@ -1,6 +1,6 @@
 {
   "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
-  "recipe_digest": "5382c55d88db17bbb056396b3100ef104396c9350e79c500d49cc6f170c44ac7",
+  "recipe_digest": "e06b83b24c4341d0e298f577b36da1adbd5ceafbabd069898b33b3948f84c8fd",
   "python_version": "3.13",
   "packages": [
     "aiohappyeyeballs",

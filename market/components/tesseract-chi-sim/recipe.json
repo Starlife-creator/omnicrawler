@@ -31,5 +31,9 @@
   "provides": [
     "ocr.tesseract"
   ],
-  "kind": "data"
+  "kind": "data",
+  "smoke": {
+    "description": "纯数据组件：装好即完成，无可执行入口",
+    "skip_run": true
+  }
 }

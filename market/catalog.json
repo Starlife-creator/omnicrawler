@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-20T07:57:53+00:00",
-  "sequence": 1791080213,
+  "generated_at": "2026-11-20T08:13:42+00:00",
+  "sequence": 1791080214,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -990,7 +990,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/ocr-paddle/recipe.json",
-      "recipe_digest": "5382c55d88db17bbb056396b3100ef104396c9350e79c500d49cc6f170c44ac7",
+      "recipe_digest": "e06b83b24c4341d0e298f577b36da1adbd5ceafbabd069898b33b3948f84c8fd",
       "platforms": [
         "windows",
         "linux",
@@ -1579,7 +1579,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/tesseract-chi-sim/recipe.json",
-      "recipe_digest": "9e0638e41b7044ddfab5e23d44a282a0987e42c6075c58a7215ad1fd9c8cf06e",
+      "recipe_digest": "94d4a229a415a58f199532063cb30eba5fe449197663ee7d0df30141cb1bc3f6",
       "platforms": [
         "windows",
         "linux",

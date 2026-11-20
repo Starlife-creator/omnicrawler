@@ -983,5 +983,15 @@
   "provides": [
     "ocr.paddle"
   ],
-  "kind": "wheel-pack"
+  "kind": "wheel-pack",
+  "smoke": {
+    "description": "只验核心：能 import paddleocr，且 Paddle 的 C 扩展真的加载起来",
+    "payload": {},
+    "expect": [
+      "ok",
+      "engine",
+      "module"
+    ],
+    "timeout_seconds": 300
+  }
 }

@@ -38,6 +38,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 def _utf8_env() -> dict[str, str]:
@@ -208,6 +209,29 @@ def _installed_component_dir(install_stdout: str) -> Path | None:
     return None
 
 
+def _parse_smoke(recipe_data: dict) -> Any:
+    """从配方数据解析 `smoke`（复用宿主实现，不在这里重复一套判据）。"""
+    from omnicrawler.services.component_smoke import parse_smoke
+
+    return parse_smoke(recipe_data)
+
+
+def _verify_expect(smoke: Any, stdout: str) -> list[str]:
+    """核对组件输出是否满足 `smoke.expect`。"""
+    from omnicrawler.services.component_smoke import verify_result
+
+    text = (stdout or "").strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return [f"组件输出不是 JSON：{text[:200]!r}"]
+    try:
+        result = json.loads(text[start : end + 1])
+    except json.JSONDecodeError as exc:
+        return [f"组件输出不是合法 JSON：{exc}"]
+    return verify_result(smoke, result)
+
+
 def verify_all(
     executable: Path,
     release_root: Path,
@@ -270,27 +294,27 @@ def verify_all(
             continue
         report.installed.append(cid)
 
-        # ② 跑：**只有可执行组件才 run**。
+        # ② 跑：**判据由组件自己的 `smoke` 声明决定**，验证器不再猜。
         #
-        # 纯数据组件（如 tesseract 语言包）的 `entry.path` 是数据文件、
-        # 没有 `runner` —— 它们装好即完成，不该走 `components run`
-        # （那会要求 site-packages 与 entry.json，真实 CI 因此误报失败）。
-        runner = ""
+        # 早先用「有没有 entry.runner」推断组件类型 —— 那是宿主的猜测，
+        # 而且每加一个组件都要改本脚本。现在读 `smoke.skip_run` 与
+        # `smoke.expect`，本脚本只负责执行与核对。
         try:
-            runner = str(
-                (json.loads(recipe.read_text(encoding="utf-8")).get("entry") or {}).get(
-                    "runner"
-                )
-                or ""
-            )
-        except (OSError, json.JSONDecodeError):
-            runner = ""
-        if not runner:
-            report.ran_ok.append(f"{cid}（数据组件，装好即完成）")
+            recipe_data = json.loads(recipe.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            report.failures.append((cid, "运行", f"配方无法解析：{exc}"))
+            continue
+        try:
+            smoke = _parse_smoke(recipe_data)
+        except Exception as exc:  # noqa: BLE001 - smoke 声明不合法要如实报
+            report.failures.append((cid, "运行", f"smoke 声明不合法：{exc}"))
+            continue
+        if smoke.skip_run:
+            report.ran_ok.append(f"{cid}（{smoke.description or '声明 skip_run，装好即完成'}）")
             continue
 
-        payload = entry.get("entry_payload")
-        payload_arg = json.dumps(payload, ensure_ascii=False) if isinstance(payload, dict) else "{}"
+        payload_arg = json.dumps(smoke.payload, ensure_ascii=False)
+        run_timeout = max(run_timeout, smoke.timeout_seconds)
         # 组件目录从安装摘要的 `path` 取（不猜路径）
         # 摘要可能打在 stdout 也可能在 stderr（取决于 CLI 的日志分流）——两处都看，
         # 否则会报「装完后找不到组件目录（摘要 path=None）」但日志明明有「安装到：」。
@@ -321,6 +345,15 @@ def verify_all(
             release_root,
             timeout=run_timeout,
         )
+        if ran.returncode == 0:
+            # 退出码 0 还不够 —— 必须核对组件承诺的 expect
+            unmet = _verify_expect(smoke, ran.stdout)
+            if unmet:
+                report.failures.append((cid, "运行", "；".join(unmet)))
+                continue
+            report.ran_ok.append(cid)
+            continue
+
         if ran.returncode != 0:
             # 诊断要点：**先给退出码与命令形态**，再给输出尾部。
             # 否则日志里只剩一坨被截断的 argparse 列表，看不出是哪一步。
