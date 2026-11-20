@@ -105,7 +105,6 @@ def check_recipe(recipe_path: Path) -> list[str]:
     except cr.RecipeError as exc:
         return [f"{recipe_path.parent.name}: 配方不合法 —— {exc}"]
     wheels = _wheel_names(recipe)
-    haystack = " ".join(wheels)
     kind = cr.component_kind(recipe)
 
     # **纯数据组件**（如 Tesseract 语言包）与平台/架构无关：
@@ -201,11 +200,18 @@ def check_recipe(recipe_path: Path) -> list[str]:
                 f"{recipe_path.parent.name}: deps.lock.json 已过期"
                 f"（配方改过但快照没重算）"
             )
-        normalized_hay = haystack.replace("-", "_").replace(".", "_")
+        # **精确匹配包名，不用子串**：`httpx` 是 `httpx2` 的前缀，
+        # 子串匹配会把「装了 httpx2」误判成「已经装了 httpx」——
+        # 真实踩过（CI 报 No module named 'httpx'，而本地校验说通过）。
+        # 做法：从每个 wheel 文件名里解析出**完整的包名段**再比。
+        wheel_packages = set()
+        for filename in wheels:
+            stem = filename.split("-")[0]
+            wheel_packages.add(re.sub(r"[-_.]+", "_", stem).lower())
         missing_pkgs = [
             name
             for name in snapshot.get("packages") or []
-            if re.sub(r"[-_.]+", "_", name).lower() not in normalized_hay
+            if re.sub(r"[-_.]+", "_", name).lower() not in wheel_packages
         ]
         if missing_pkgs:
             problems.append(
