@@ -76,6 +76,15 @@ ALLOWED_KEYS = frozenset(
         "platforms",
         "architectures",
         "python_abi",
+        # 该组件**提供**哪些能力（供插件声明所需能力时匹配）。
+        # 例：`["ocr.paddle"]`。插件侧用 required_capabilities 声明需要什么，
+        # 两者对上才能判断「装了没装」。
+        "provides",
+        # 过渡字段：`platform_architectures: {平台: [架构...]}`。
+        # 全局 `architectures` 表达不了「某平台只支持部分架构」
+        # （例：paddlepaddle 的 macOS 只有 arm64）。Schema v2 用
+        # `platform_matrix` 取代它，届时删除本键。
+        "platform_architectures",
         "artifacts",
         "entry",
     }
@@ -158,6 +167,9 @@ def validate_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
     for index, artifact in enumerate(artifacts):
         _validate_artifact(artifact, index)
 
+    _validate_provides(recipe)
+    _validate_platform_architectures(recipe, artifacts)
+
     # 每个平台都必须至少有一个适用构件 —— 否则装上却缺文件，错在装配期而非下载期。
     declared_platforms = [str(p) for p in recipe["platforms"]]
     for platform_name in declared_platforms:
@@ -222,6 +234,109 @@ def validate_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
         )
 
     return recipe
+
+
+def _validate_provides(recipe: dict[str, Any]) -> None:
+    """校验 `provides`：组件对外声明提供哪些能力。
+
+    **为什么要它**：插件用 `required_capabilities` 声明「我需要 `ocr.paddle`」，
+    而组件此前**没有任何字段说「我提供 `ocr.paddle`」** —— 两边接不上，
+    只能靠人脑对应。声明 `provides` 后，市场可以校验
+    「每个插件的必需能力都被某个组件覆盖」，宿主也能提示「装 X 组件可解锁此功能」。
+
+    命名约定：小写、点分、无空格（如 `ocr.paddle`）。**不做语义校验** ——
+    能力名是生态约定的字符串，宿主不解释它。
+    """
+    provides = recipe.get("provides")
+    if provides is None:
+        return
+    ok = (
+        isinstance(provides, list)
+        and bool(provides)
+        and all(isinstance(item, str) and item.strip() for item in provides)
+    )
+    _require(ok, "provides 必须是非空字符串列表（如 ocr.paddle 这种点分能力名）")
+    assert isinstance(provides, list)
+    normalized = [item.strip().lower() for item in provides]
+    _require(
+        len(set(normalized)) == len(normalized),
+        f"provides 含重复项：{normalized}",
+    )
+    for item in normalized:
+        _require(
+            all(ch.isalnum() or ch in "._-" for ch in item),
+            f"provides 的能力名只允许字母/数字/._-：{item!r}",
+        )
+
+
+def _validate_platform_architectures(recipe: dict[str, Any], artifacts: list[Any]) -> None:
+    """校验过渡字段 `platform_architectures`，并**从构件字节反推比对**。
+
+    这个字段存在的唯一理由：全局 `architectures` 表达不了「某平台只支持部分架构」。
+    实测例：`paddlepaddle 3.3.1` 的 macOS 轮子只有 arm64，Intel Mac 装不了。
+
+    **判据（缺一即红）**：
+
+    1. 键必须是已声明的平台，不得引入新平台；
+    2. 值必须是非空字符串列表，且每一项都是能识别的架构名；
+    3. 每个 `(平台, 架构)` 组合，**必须能从该平台的构件文件名推出对应架构**
+       —— 也就是说，不允许「声明了某个架构、却没有那个架构的构件」；
+    4. 全局 `architectures` 必须等于各平台声明的**并集**（防两处漂移）。
+    """
+    declared = recipe.get("platform_architectures")
+    if declared is None:
+        return
+    ok = isinstance(declared, dict) and bool(declared)
+    _require(ok, "platform_architectures 必须是非空对象（平台 → 架构列表）")
+    assert isinstance(declared, dict)
+
+    platforms = {str(p) for p in recipe["platforms"]}
+    unknown_platforms = set(declared) - platforms
+    _require(
+        not unknown_platforms,
+        f"platform_architectures 含未声明的平台：{sorted(unknown_platforms)}",
+    )
+
+    union: set[str] = set()
+    for platform, archs in declared.items():
+        archs_ok = (
+            isinstance(archs, list)
+            and bool(archs)
+            and all(isinstance(a, str) and a.strip() for a in archs)
+        )
+        _require(archs_ok, f"platform_architectures[{platform}] 必须是非空字符串列表")
+        normalized = {normalize_architecture(a) for a in archs}
+        union |= normalized
+
+        # 反推：该平台构件的文件名里能认出哪些架构
+        available: set[str] = set()
+        for artifact in artifacts_for_platform(recipe, platform):
+            filename = str(artifact.get("url") or "").rsplit("/", 1)[-1].lower()
+            for token, canonical in (
+                ("aarch64", "aarch64"),
+                ("arm64", "aarch64"),
+                ("universal2", "aarch64"),  # universal2 同时覆盖两种
+                ("win_amd64", "x86_64"),
+                ("x86_64", "x86_64"),
+                ("amd64", "x86_64"),
+            ):
+                if token in filename:
+                    available.add(canonical)
+                    if token == "universal2":
+                        available.add("x86_64")
+        missing = normalized - available
+        _require(
+            not missing,
+            f"platform_architectures[{platform}] 声明了 {sorted(missing)}，"
+            f"但该平台没有任何对应架构的构件 —— 声明必须能从构件字节推出。",
+        )
+
+    declared_union = {normalize_architecture(a) for a in recipe["architectures"]}
+    _require(
+        declared_union == union,
+        f"architectures 与 platform_architectures 的并集不一致："
+        f"全局 {sorted(declared_union)} vs 并集 {sorted(union)}。两处必须同时维护。",
+    )
 
 
 def artifacts_for_platform(recipe: dict[str, Any], platform: str) -> list[dict[str, Any]]:
@@ -403,17 +518,37 @@ def current_platform() -> str:
     return "linux"
 
 
+#: 架构名归一表。**别名收敛到同一规范名**。
+#:
+#: `arm64` 是 Apple 的说法、`aarch64` 是 Linux/GNU 的说法，两者是**同一个架构**。
+#: 早期 `current_architecture()` 返回 `aarch64`，而配方里写 `arm64`
+#: （`tesseract-chi-sim` 就是这样），精确匹配会判「不支持当前架构」——
+#: 明明支持却装不上。所以比对前两侧都要过这张表。
+_ARCHITECTURE_ALIASES = {
+    "amd64": "x86_64",
+    "x86_64": "x86_64",
+    "x64": "x86_64",
+    "i386": "x86",
+    "i686": "x86",
+    "x86": "x86",
+    "arm64": "aarch64",
+    "aarch64": "aarch64",
+    "armv8": "aarch64",
+    "universal2": "universal2",
+}
+
+
+def normalize_architecture(name: str) -> str:
+    """把架构别名收敛到规范名。未知名字原样返回（不猜）。"""
+    lowered = str(name).strip().lower()
+    return _ARCHITECTURE_ALIASES.get(lowered, lowered)
+
+
 def current_architecture() -> str:
-    """架构名（与 recipe 的 architectures 对齐）。"""
+    """架构名（规范名，与 recipe 的 architectures 归一后对齐）。"""
     import platform
 
-    machine = platform.machine().lower()
-    return {
-        "amd64": "x86_64",
-        "x86_64": "x86_64",
-        "arm64": "aarch64",
-        "aarch64": "aarch64",
-    }.get(machine, machine)
+    return normalize_architecture(platform.machine())
 
 
 def check_compatibility(
@@ -435,8 +570,11 @@ def check_compatibility(
     )
 
     architectures = recipe.get("architectures") or []
+    # **归一后比对**：`arm64` 与 `aarch64` 是同一架构的两种叫法。
+    # 精确字符串匹配会把「明明支持」判成不支持（`tesseract-chi-sim` 曾用 `arm64`）。
+    accepted_archs = {normalize_architecture(a) for a in architectures}
     _require(
-        target_arch in architectures,
+        normalize_architecture(target_arch) in accepted_archs,
         f"此组件不支持当前架构：需要 {architectures}，当前 {target_arch}",
     )
 

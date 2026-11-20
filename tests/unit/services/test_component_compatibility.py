@@ -839,3 +839,180 @@ def test_component_env_does_not_inherit_host_library_path() -> None:
     assert str(spec.site_packages) in env["LD_LIBRARY_PATH"], (
         "组件 site-packages 未进入库搜索路径"
     )
+
+# ── 架构名归一（arm64 ≡ aarch64） ────────────────────────────────────────
+def test_architecture_alias_is_normalized() -> None:
+    """`arm64` 与 `aarch64` 是同一架构的两种叫法，比对前必须归一。
+
+    **真实缺陷**：`current_architecture()` 返回 `aarch64`，而
+    `tesseract-chi-sim` 的配方写 `architectures: ["x86_64", "arm64"]`。
+    精确字符串匹配会判「不支持当前架构」——**明明支持却装不上**。
+    """
+    from omnicrawler.services.component_recipe import normalize_architecture
+
+    assert normalize_architecture("arm64") == "aarch64"
+    assert normalize_architecture("aarch64") == "aarch64"
+    assert normalize_architecture("AMD64") == "x86_64"
+    assert normalize_architecture("x86_64") == "x86_64"
+    # 未知名字不猜，原样返回
+    assert normalize_architecture("riscv64") == "riscv64"
+
+
+def test_check_compatibility_accepts_alias() -> None:
+    """配方写 `arm64`、本机是 `aarch64` 时必须判通过（而不是拒绝）。"""
+    from omnicrawler.services.component_recipe import check_compatibility
+
+    recipe = {
+        "platforms": ["linux"],
+        "architectures": ["x86_64", "arm64"],
+        "python_abi": [],
+    }
+    # 显式传 architecture，避免依赖本机
+    check_compatibility(recipe, platform="linux", architecture="aarch64", abi="cp313")
+    check_compatibility(recipe, platform="linux", architecture="arm64", abi="cp313")
+
+
+# ── platform_architectures：声明必须能从构件字节推出 ─────────────────────
+def test_platform_architectures_derived_from_artifacts() -> None:
+    """过渡字段 `platform_architectures` 必须与构件文件名推出的架构一致。
+
+    **为什么需要这个字段**：全局 `architectures` 表达不了「某平台只支持部分架构」。
+    实测：`paddlepaddle 3.3.1` 的 macOS 轮子**只有 arm64**，Intel Mac 装不了。
+
+    这条守卫用一个最小配方验证：声明了某架构但构件里没有 ⇒ 必须拒绝。
+    """
+    from omnicrawler.services.component_recipe import RecipeError, validate_recipe
+
+    base = {
+        "schema": 1,
+        "name": "x",
+        "version": "1.0.0",
+        "platforms": ["linux", "macos"],
+        "architectures": ["x86_64", "aarch64"],
+        "artifacts": [
+            {
+                "url": "https://e.invalid/a-cp313-cp313-manylinux_x86_64.whl",
+                "sha256": "a" * 64,
+                "platforms": ["linux"],
+            },
+            {
+                "url": "https://e.invalid/b-cp313-cp313-macosx_11_0_arm64.whl",
+                "sha256": "b" * 64,
+                "platforms": ["macos"],
+            },
+        ],
+        "entry": {"path": "entry.json", "protocol": "d", "engine": "generic", "runner": "worker-wheelpack"},
+        # 与构件一致 ⇒ 应通过
+        "platform_architectures": {"linux": ["x86_64"], "macos": ["aarch64"]},
+    }
+    validate_recipe(dict(base))
+
+    # 声明 macOS 支持 x86_64，但没有任何 x86_64 的 macOS 构件 ⇒ 必须拒绝
+    broken = dict(base)
+    broken["platform_architectures"] = {"linux": ["x86_64"], "macos": ["x86_64"]}
+    broken["platforms"] = ["linux", "macos"]
+    broken["architectures"] = ["x86_64"]
+    with pytest.raises(RecipeError) as excinfo:
+        validate_recipe(broken)
+    assert "macos" in str(excinfo.value)
+
+
+def test_platform_architectures_union_matches_global() -> None:
+    """全局 `architectures` 必须等于各平台声明的并集（防两处漂移）。"""
+    from omnicrawler.services.component_recipe import RecipeError, validate_recipe
+
+    recipe = {
+        "schema": 1,
+        "name": "x",
+        "version": "1.0.0",
+        "platforms": ["linux", "macos"],
+        "architectures": ["x86_64"],  # 少写了 aarch64
+        "artifacts": [
+            {"url": "https://e.invalid/a-cp313-manylinux_x86_64.whl", "sha256": "a" * 64, "platforms": ["linux"]},
+            {"url": "https://e.invalid/b-cp313-macosx_11_0_arm64.whl", "sha256": "b" * 64, "platforms": ["macos"]},
+        ],
+        "entry": {"path": "entry.json", "protocol": "d", "engine": "generic", "runner": "worker-wheelpack"},
+        "platform_architectures": {"linux": ["x86_64"], "macos": ["aarch64"]},
+    }
+    with pytest.raises(RecipeError) as excinfo:
+        validate_recipe(recipe)
+    assert "并集" in str(excinfo.value)
+
+
+def test_platform_architectures_rejects_unknown_platform() -> None:
+    """`platform_architectures` 不得引入未声明的平台。"""
+    from omnicrawler.services.component_recipe import RecipeError, validate_recipe
+
+    recipe = {
+        "schema": 1,
+        "name": "x",
+        "version": "1.0.0",
+        "platforms": ["linux"],
+        "architectures": ["x86_64"],
+        "artifacts": [
+            {"url": "https://e.invalid/a-cp313-manylinux_x86_64.whl", "sha256": "a" * 64, "platforms": ["linux"]},
+        ],
+        "entry": {"path": "entry.json", "protocol": "d", "engine": "generic", "runner": "worker-wheelpack"},
+        "platform_architectures": {"linux": ["x86_64"], "solaris": ["x86_64"]},
+    }
+    with pytest.raises(RecipeError) as excinfo:
+        validate_recipe(recipe)
+    assert "solaris" in str(excinfo.value)
+
+# ── provides：组件对外声明能力（插件侧的对接点） ──────────────────────────
+def test_provides_validated() -> None:
+    """`provides` 若非空，必须是去重后的点分能力名。
+
+    **为什么需要它**：插件用 `required_capabilities` 声明「我需要 ocr.paddle」，
+    而组件此前**没有任何字段说「我提供 ocr.paddle」** —— 两边接不上，只能靠人脑对应。
+    """
+    from omnicrawler.services.component_recipe import RecipeError, validate_recipe
+
+    base = {
+        "schema": 1,
+        "name": "x",
+        "version": "1.0.0",
+        "platforms": ["linux"],
+        "architectures": ["x86_64"],
+        "artifacts": [
+            {"url": "https://e.invalid/a-cp313-manylinux_x86_64.whl", "sha256": "a" * 64, "platforms": ["linux"]},
+        ],
+        "entry": {"path": "entry.json", "protocol": "d", "engine": "generic", "runner": "worker-wheelpack"},
+        "provides": ["ocr.paddle"],
+    }
+    validate_recipe(dict(base))
+
+    # 重复项必须拒绝
+    dup = dict(base)
+    dup["provides"] = ["ocr.paddle", "OCR.PADDLE"]
+    with pytest.raises(RecipeError) as excinfo:
+        validate_recipe(dup)
+    assert "重复" in str(excinfo.value)
+
+    # 带空格等非法字符必须拒绝
+    bad = dict(base)
+    bad["provides"] = ["ocr paddle"]
+    with pytest.raises(RecipeError) as excinfo:
+        validate_recipe(bad)
+    assert "能力名" in str(excinfo.value)
+
+
+def test_market_components_declare_provides() -> None:
+    """市场里每个组件都必须声明 `provides` —— 否则插件无法与它对上。"""
+    import json
+    from pathlib import Path
+
+    market = Path(__file__).resolve().parents[4] / "OmniCrawler-market"
+    components = market / "components"
+    if not components.is_dir():
+        pytest.skip("需要 market 仓的 components 目录")
+
+    missing = []
+    checked = 0
+    for recipe_path in sorted(components.glob("*/recipe.json")):
+        data = json.loads(recipe_path.read_text(encoding="utf-8"))
+        checked += 1
+        if not data.get("provides"):
+            missing.append(recipe_path.parent.name)
+    assert checked > 0, "没有可检查的组件配方"
+    assert not missing, f"这些组件没有声明 provides：{missing}"

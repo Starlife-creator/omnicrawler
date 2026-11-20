@@ -256,7 +256,16 @@ def _extract_worker_error(stdout: str) -> str:
     error = str(payload.get("error") or "").strip()
     if not stage and not error:
         return ""
-    return f"[{stage or 'worker'}] {error or '未提供错误信息'}"
+    detail = f"[{stage or 'worker'}] {error or '未提供错误信息'}"
+    # 有 traceback 就带上末尾几行 —— 那是定位「哪一行炸的」的关键信息。
+    trace = str(payload.get("traceback") or "").strip()
+    if trace:
+        tail = "\n".join(
+            line for line in trace.splitlines()[-8:] if line.strip()
+        )
+        if tail:
+            detail = f"{detail}\n{tail}"
+    return detail
 
 
 def run_component(
@@ -311,7 +320,11 @@ def run_component(
             raise ComponentRunnerError(
                 f"组件 {spec.name} 退出码 {completed.returncode}：{reported}"
             )
-        detail = (completed.stderr or "").strip()[-800:]
+        # 没有 JSON（worker 自己崩了）：报**最后 10 行**而不是最后 800 字符 ——
+        # 崩溃栈的末尾几行才是「哪一行炸的」，而中文字符占 3 字节，
+        # 800 字符窗口很容易被前面的告警吃光。
+        stderr_lines = [ln for ln in (completed.stderr or "").strip().splitlines() if ln.strip()]
+        detail = "\n".join(stderr_lines[-10:])
         raise ComponentRunnerError(
             f"组件 {spec.name} 退出码 {completed.returncode}：{detail}"
         )

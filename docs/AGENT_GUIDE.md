@@ -107,6 +107,39 @@ python -m omnicrawler.convertx --watch inbox --to .jsonl --watch-settle 5 --watc
   也没在 `tools/gates/check_agent_surface.py` 的 `DECLARED_OUTPUT` 里声明形态。
 
 
+## 组件（components）—— 装什么、能不能跑，都要显式确认
+
+组件的 CLI 面与其它命令同规矩：**默认不联网、默认不写盘**，破坏性/外联动作必须显式。
+
+```bash
+# 1) 只读：看要拉哪些 URL、多大、什么哈希（一个字节都不下载）
+omnicrawler components inspect-recipe --recipe recipe.json
+
+# 2) 装配：默认只展示计划；加 --download 才真的从上游拉字节
+omnicrawler components install-recipe --recipe recipe.json --download
+
+# 3) 运行：在**隔离子进程**里跑已装配的 Wheel-Pack 组件
+omnicrawler components run --component-dir <已装配目录> --payload '{"...":1}'
+```
+
+- **退出码与 `stdout` 形态**：`install-recipe` 的 `stdout` 是**给人看的文本**
+  （`组件：` / `安装到：` / `入口：` / `recipe 摘要：`），**不是 JSON**。
+  脚本要从里面取安装路径，解析 `安装到：` 那一行；`run` 的 `stdout` 才是 JSON。
+- **`run` 的协议**：组件从 `stdin` 读一个 JSON 对象，向 `stdout` 写一个 JSON 对象；
+  失败时也写 JSON（`{"ok": false, "stage": ..., "error": ...}`）。
+  `stage` 指明炸在 `import_component` 还是 `backend`——**先看 stage，不要只看退出码**。
+- **`--payload` 缺省为 `{}`**；传 `@文件路径` 可读文件。
+- **纯数据组件**（如 Tesseract 语言包）没有 `runner`，装好即完成，**不该调用 `run`**
+  （它没有 `site-packages`，`run` 会报「不是 Wheel-Pack 形态」）。
+- **启动前二次校验**：`run` 会按 `component.json` 重算每个文件哈希。
+  组件目录被改动过就跑不起来——这是判据，不是故障。
+- **子进程隔离**：组件不继承宿主的 `LD_LIBRARY_PATH` / `DYLD_LIBRARY_PATH`
+  （冻结包里那两个变量指向宿主 `_internal/`，泄漏进去会让组件调用的外部命令
+  命中宿主打包的旧版系统库）。
+
+组件的形态判据、颗粒度原则、可选能力声明与「什么该拆成组件」见
+[组件体系](../COMPONENTS.md)，以及项目根《优化方案.md》§十五。
+
 ### 自动分析保留中文需求
 
 `omnicrawler auto-analyze <URL> --request "从 <URL> 采集前两页名言正文、作者和全部标签，导出 Excel。" -o task.yaml`

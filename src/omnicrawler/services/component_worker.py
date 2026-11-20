@@ -183,5 +183,36 @@ def main() -> int:
     return 0 if result.get("ok") else 1
 
 
+def _guarded_main() -> int:
+    """顶层兜底：**保证 stdout 一定有 JSON**。
+
+    没有这一层时，任何在 `main()` 之外炸掉的错误（导入期异常、
+    `SystemExit`、C 扩展在 init 阶段 segfault 前抛的错）都会让 stdout 为空，
+    父进程只能看到 stderr 里一堆无关告警（真实 CI 踩到：
+    `组件 ocr-paddle 退出码 1：内置 Tesseract 缺失 ...`，看不出真正原因）。
+
+    用 `traceback.format_exc()` 把完整栈打进 JSON 的 `traceback` 字段。
+    """
+    import traceback
+
+    try:
+        return main()
+    except SystemExit:
+        raise
+    except BaseException as exc:  # noqa: BLE001 - 兜底必须捕获一切
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "stage": "worker_bootstrap",
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "traceback": traceback.format_exc()[-2000:],
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 1
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_guarded_main())

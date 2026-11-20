@@ -27,5 +27,8 @@
     "path": "tessdata/chi_sim.traineddata",
     "protocol": "ocr-file-v1",
     "engine": "tesseract"
-  }
+  },
+  "provides": [
+    "ocr.tesseract"
+  ]
 }
