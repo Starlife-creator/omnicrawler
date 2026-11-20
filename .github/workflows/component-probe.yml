@@ -104,7 +104,6 @@ jobs:
       build_python_version: "3.13"
       asset_max_bytes: "2039693706"
       delta_baselines: ""
-    secrets: inherit
 
   # ── 2b) 可复用：取最近一次成功的 release 产物 ─────────────────────────
   fetch-last:
@@ -149,7 +148,6 @@ jobs:
       build_python_version: "3.13"
       asset_max_bytes: "2039693706"
       delta_baselines: ""
-    secrets: inherit
 
   # ── 3) 组件验证：装齐 + 照 smoke 跑 ───────────────────────────────────
   probe:
