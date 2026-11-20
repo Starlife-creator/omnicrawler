@@ -1091,3 +1091,74 @@ def test_describe_recipe_reports_both_sizes() -> None:
     assert plan["estimated_installed_bytes"] > plan["declared_total_bytes"], (
         "没有磁盘占用估算，或估算没有体现压缩比"
     )
+
+def test_pth_files_are_not_extracted() -> None:
+    """装配 wheel 时必须**跳过 `.pth` 文件**。
+
+    **真实 CI 踩到**：`import setuptools.command.easy_install` 报
+    `No module named`，而该文件明明在 site-packages 里。
+
+    根因是 setuptools 的 `distutils-precedence.pth`：`.pth` 会在解释器**启动时**
+    执行，把 `_distutils_hack` 注入，令系统的 distutils 优先于组件里的那份。
+
+    我方装配是「纯解压、零安装动作」——`.pth` 属于**安装语义**，不在范围内。
+    这条守卫用真实装配验证：造一个含 `.pth` 的 zip，装完不该有它。
+    """
+    import hashlib
+    import io
+    import shutil
+    import zipfile
+    from pathlib import Path
+
+    from omnicrawler.services.component_recipe import install_from_recipe
+
+    work = Path(__file__).resolve().parent / ".pytest_pth_check"
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir(parents=True)
+    try:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as bundle:
+            bundle.writestr("pkg/__init__.py", "# demo\n")
+            bundle.writestr("distutils-precedence.pth", "import _distutils_hack\n")
+        blob = buf.getvalue()
+        digest = hashlib.sha256(blob).hexdigest()
+
+        recipe = {
+            "schema": 1,
+            "kind": "wheel-pack",
+            "smoke": {"expect": ["ok"]},
+            "name": "pth-check",
+            "version": "1.0.0",
+            "platforms": ["windows", "linux", "macos"],
+            "architectures": ["x86_64"],
+            "artifacts": [
+                {
+                    "url": "https://example.invalid/a.zip",
+                    "sha256": digest,
+                    "extract_to": "site-packages",
+                }
+            ],
+            "entry": {
+                "path": "entry.json",
+                "protocol": "demo",
+                "engine": "generic",
+                "runner": "worker-wheelpack",
+                "module": "site-packages/pkg/__init__.py",
+            },
+        }
+
+        def downloader(_url: str, dest: Path) -> None:
+            dest.write_bytes(blob)
+
+        components = work / "components"
+        components.mkdir()
+        summary = install_from_recipe(
+            recipe, components, downloader=downloader, work_dir=work
+        )
+        installed = Path(summary["path"])
+        pth_files = list(installed.rglob("*.pth"))
+        assert not pth_files, f"`.pth` 被解压出来了：{[str(p) for p in pth_files]}"
+        # 正常文件必须在
+        assert (installed / "site-packages" / "pkg" / "__init__.py").is_file()
+    finally:
+        shutil.rmtree(work, ignore_errors=True)

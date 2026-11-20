@@ -833,6 +833,20 @@ def extract_artifact(
                 with zipfile.ZipFile(archive) as zf:
                     resolved = _validate_and_select(zf, wanted, strip_count=strip_components)
                     for info, relative in resolved:
+                        # **跳过 `.pth` 文件**：它们由**安装器**（pip）在解释器
+                        # 启动时执行，解压出来会产生副作用。
+                        #
+                        # 实测后果：setuptools 自带的 `distutils-precedence.pth`
+                        # 会把 `_distutils_hack` 注入，令宿主/系统的 distutils
+                        # 优先于组件 site-packages 里的那份，于是
+                        # `import setuptools.command.easy_install` 失败
+                        # （CI 报 `No module named 'setuptools.command.easy_install'`，
+                        # 而文件明明就在那里）。
+                        #
+                        # 我方装配是「纯解压、零安装动作」，`.pth` 属于安装语义，
+                        # 不在范围内。
+                        if relative.suffix == ".pth":
+                            continue
                         destination = staging_path / relative
                         copy_zip_member(zf, info, destination)
         except UnsafePackageError as exc:
