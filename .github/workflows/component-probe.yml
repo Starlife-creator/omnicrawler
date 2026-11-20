@@ -205,21 +205,32 @@ jobs:
             ls -la artifacts-linux
             exit 1
           fi
+          echo "解压完成，共 $found 个归档"
           ls -la /tmp/release
 
       - name: 装齐市场组件并验证可运行
         shell: bash
         run: |
           set -euo pipefail
-          RELEASE_ROOT="$(find /tmp/release -maxdepth 2 -type d -name 'OmniCrawler*' | head -1)"
+          # 定位 payload 根：优先找含 `omnicrawler` 可执行文件的目录，
+          # 而不是猜目录名。tar 解出来的顶层名可能是 `OmniCrawler/`
+          # 也可能带版本号，靠名字匹配容易失手（真实 CI 踩到过）。
+          RELEASE_ROOT=""
+          while IFS= read -r candidate; do
+            if [ -x "$candidate/omnicrawler" ] || [ -x "$candidate/omnicrawler-cli" ] \
+               || [ -f "$candidate/PORTABLE.flag" ]; then
+              RELEASE_ROOT="$candidate"
+              break
+            fi
+          done < <(find /tmp/release -maxdepth 3 -type d | sort)
           if [ -z "$RELEASE_ROOT" ]; then
-            RELEASE_ROOT="$(find /tmp/release -maxdepth 1 -mindepth 1 -type d | head -1)"
-          fi
-          if [ -z "$RELEASE_ROOT" ]; then
-            echo "::error::没有找到解压后的 Standard 产物目录"
+            echo "::error::没有找到含可执行文件 / PORTABLE.flag 的产物根"
+            echo "解压后的目录树："
+            find /tmp/release -maxdepth 3 | head -40
             exit 1
           fi
           echo "release_root=$RELEASE_ROOT"
+          ls -la "$RELEASE_ROOT" | head -20
           python tools/portable/verify_standard_components.py \
             "$RELEASE_ROOT" "$GITHUB_WORKSPACE/market" "component-probe"
 
