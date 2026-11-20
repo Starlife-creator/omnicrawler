@@ -123,8 +123,20 @@ jobs:
         run: |
           set -euo pipefail
           echo "found=false" >> "$GITHUB_OUTPUT"
-          RUN_ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release \
-            --status success --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null || echo '')"
+          # 找**任意**产出过 artifacts-linux 的成功运行 —— 不限于 release 工作流。
+          # 现实情况：release 一直失败（v1.0.13→v1.0.29），如果只找 release，
+          # reuse 路径永远不可用，每次都要重建，提速目的落空。
+          # 退一步：任何成功且带该 artifact 的运行都能提供「一个可运行的产物」，
+          # 而 reuse 的前提（本轮没改构建链）已由 decide 保证。
+          RUN_ID=""
+          for CANDIDATE in $(gh run list --repo "$GITHUB_REPOSITORY" \
+              --status success --limit 20 --json databaseId --jq '.[].databaseId' 2>/dev/null); do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE/artifacts" \
+                --jq '.artifacts[].name' 2>/dev/null | grep -qx 'artifacts-linux'; then
+              RUN_ID="$CANDIDATE"
+              break
+            fi
+          done
           if [ -z "$RUN_ID" ]; then
             echo "::warning::没有可复用的成功 release 运行"
             exit 0
