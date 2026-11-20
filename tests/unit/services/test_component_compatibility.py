@@ -793,3 +793,49 @@ def test_paddle_recipe_wheels_match_platform_arch() -> None:
             if platform == "macos" and "macosx" not in name:
                 problems.append(f"macos: 平台不符 {name}")
     assert not problems, "轮子与平台/架构不匹配：\n" + "\n".join(problems)
+
+def test_component_env_does_not_inherit_host_library_path() -> None:
+    """组件子进程**不得继承宿主的 LD_LIBRARY_PATH / DYLD_LIBRARY_PATH**。
+
+    **真实 CI**：组件 run 阶段 `exit 1`，日志里真正的错误是
+
+        cat: .../_internal/libsystemd.so.0: version `LIBSYSTEMD_254' not found
+
+    冻结包里 `LD_LIBRARY_PATH` 指向包内 `_internal/`（含 PyInstaller 收集的
+    系统库）。组件子进程是真正的 python 解释器，继承这条路径后，
+    它启动的任何子命令都会先命中包内旧版库 —— 组件本身没问题却跑不起来。
+    """
+    import os as _os
+    from pathlib import Path as _Path
+
+    from omnicrawler.services.component_runner import (
+        WheelPackSpec,
+        component_runner_env,
+    )
+
+    spec = WheelPackSpec(
+        name="demo",
+        version="1.0.0",
+        component_root=_Path("/tmp/demo"),
+        site_packages=_Path("/tmp/demo/site-packages"),
+        entry=_Path("/tmp/demo/site-packages/x.py"),
+        engine="generic",
+    )
+
+    # 模拟冻结包里的宿主环境
+    original = _os.environ.get("LD_LIBRARY_PATH")
+    _os.environ["LD_LIBRARY_PATH"] = "/bundle/_internal"
+    try:
+        env = component_runner_env(spec)
+    finally:
+        if original is None:
+            del _os.environ["LD_LIBRARY_PATH"]
+        else:
+            _os.environ["LD_LIBRARY_PATH"] = original
+
+    assert "/bundle/_internal" not in env["LD_LIBRARY_PATH"], (
+        "宿主打包用的库路径泄漏进了组件子进程"
+    )
+    assert str(spec.site_packages) in env["LD_LIBRARY_PATH"], (
+        "组件 site-packages 未进入库搜索路径"
+    )

@@ -178,14 +178,18 @@ def component_runner_env(spec: WheelPackSpec) -> dict[str, str]:
         str(spec.site_packages / "numpy.libs"),
         str(spec.site_packages / "torch" / "lib"),
     ]
-    existing_lib = env.get("LD_LIBRARY_PATH", "")
-    env["LD_LIBRARY_PATH"] = os.pathsep.join(
-        [*lib_dirs, existing_lib] if existing_lib else lib_dirs
-    )
-    existing_dyld = env.get("DYLD_LIBRARY_PATH", "")
-    env["DYLD_LIBRARY_PATH"] = os.pathsep.join(
-        [*lib_dirs, existing_dyld] if existing_dyld else lib_dirs
-    )
+    # **不继承宿主的 LD_LIBRARY_PATH / DYLD_LIBRARY_PATH**。
+    #
+    # 冻结包里这两个变量指向包内 `_internal/`，那里有 PyInstaller 收集的一批
+    # 系统库（如 `libsystemd.so.0`）。子进程是真正的 `python` 解释器，
+    # 若继承这条路径，它启动的**任何子命令**都会先命中包内的旧版库：
+    #
+    #     cat: .../_internal/libsystemd.so.0: version `LIBSYSTEMD_254' not found
+    #
+    # 真实 CI 踩到（组件 run 阶段 exit 1）。组件子进程只该看它自己的
+    # site-packages，宿主打包用的库不该泄漏进去。
+    env["LD_LIBRARY_PATH"] = os.pathsep.join(lib_dirs)
+    env["DYLD_LIBRARY_PATH"] = os.pathsep.join(lib_dirs)
     return env
 
 
