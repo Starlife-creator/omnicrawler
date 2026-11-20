@@ -741,3 +741,55 @@ def test_multiple_artifacts_into_same_dir_are_merged() -> None:
         assert "site-packages/beta/__init__.py" in declared
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+def test_paddle_recipe_wheels_match_platform_arch() -> None:
+    """每个平台的 wheel 必须匹配该平台**架构**，不只是平台名。
+
+    **真实 CI**：`ModuleNotFoundError: No module named 'bidi.bidi'` ——
+    表面像缺包，实为选中的是 `manylinux_2_17_aarch64` 轮子，
+    x86_64 runner 加载不了那个 `.so`，Python 只能报「子模块不存在」。
+
+    判据（对每个平台筛选后的构件）：
+    * linux ⇒ 含 `manylinux` 且含 `x86_64`，不含 `aarch64`；
+    * windows ⇒ 含 `win_amd64`；
+    * macos ⇒ 含 `macosx`；
+    * 任何平台都不得是 `cp313t`（自由线程，普通解释器加载不了）。
+    """
+    import json
+    from pathlib import Path
+
+    from omnicrawler.services.component_recipe import artifacts_for_platform
+
+    market = Path(__file__).resolve().parents[4] / "OmniCrawler-market"
+    recipe_path = market / "components" / "ocr-paddle" / "recipe.json"
+    if not recipe_path.is_file():
+        pytest.skip("需要 ocr-paddle 配方")
+
+    recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
+    problems: list[str] = []
+    for platform in ("windows", "linux", "macos"):
+        for artifact in artifacts_for_platform(recipe, platform):
+            name = artifact["url"].rsplit("/", 1)[-1].lower()
+            if not name.endswith(".whl"):
+                continue
+            if "cp313t" in name or "cp314" in name:
+                problems.append(f"{platform}: 自由线程版 {name}")
+                continue
+            if "none-" in name or "abi3" in name:
+                # 纯 Python / abi3 仍需平台标签正确
+                if platform == "linux" and ("macosx" in name or "win" in name):
+                    problems.append(f"{platform}: 平台不符 {name}")
+                if platform == "windows" and "macosx" in name:
+                    problems.append(f"{platform}: 平台不符 {name}")
+                if platform == "macos" and ("manylinux" in name or "win_" in name):
+                    problems.append(f"{platform}: 平台不符 {name}")
+                continue
+            if platform == "linux" and (
+                "manylinux" not in name or "x86_64" not in name or "aarch64" in name
+            ):
+                problems.append(f"linux: 架构不符 {name}")
+            if platform == "windows" and "win_amd64" not in name:
+                problems.append(f"windows: 架构不符 {name}")
+            if platform == "macos" and "macosx" not in name:
+                problems.append(f"macos: 平台不符 {name}")
+    assert not problems, "轮子与平台/架构不匹配：\n" + "\n".join(problems)

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-20T03:39:34+00:00",
-  "sequence": 1791080208,
+  "generated_at": "2026-11-20T03:58:40+00:00",
+  "sequence": 1791080209,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -990,7 +990,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/ocr-paddle/recipe.json",
-      "recipe_digest": "5e81aa7a069894344d39baca993ceb1f69b9fc4fb6f719b72c7f5bc3cc3164ce",
+      "recipe_digest": "67fbc8a85ccd39e1bd89f1005be37904c30a66739b30bd7db6b93b625da99c9a",
       "platforms": [
         "windows",
         "linux",
@@ -1020,11 +1020,6 @@
           "url": "https://files.pythonhosted.org/packages/56/8d/5a700dc20c0d3d581f1d429f95f5064eb766c2818c5a05992dfef66b0765/paddlepaddle-3.3.1-cp313-cp313-manylinux1_x86_64.whl",
           "sha256": "4f28038427649bb2fcfd4d52efa85ed8311df19122b4ebedc942484a0b57b032",
           "size": 194837642
-        },
-        {
-          "url": "https://files.pythonhosted.org/packages/65/f8/bebb829227ac5574454b4342bcf512dbb02268118b62222fc7c1b420a3ef/paddlepaddle-3.3.1-cp313-cp313-macosx_11_0_arm64.whl",
-          "sha256": "2ce30bfb0023d8c9314b1413ca7a775a4ddd076e4551e74fbed2366cf1395c98",
-          "size": 104538799
         },
         {
           "url": "https://files.pythonhosted.org/packages/d2/79/2ade66cf72074a3d2a013e2ba1f256d6116fec797b908fc1b4f9c320d8c4/paddleocr-3.7.0-py3-none-any.whl",
@@ -1082,11 +1077,6 @@
           "size": 162351
         },
         {
-          "url": "https://files.pythonhosted.org/packages/84/5e/08510d5eecfe7a68513c9a4c2907b4669f988002fa3e9245876bd8dbde17/python_bidi-0.6.12-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
-          "sha256": "c7d3530819ee1bd32ed3ce935ed839476f38367ceb8c806ab54c9cd2474b2b52",
-          "size": 291606
-        },
-        {
           "url": "https://files.pythonhosted.org/packages/35/ca/ef30163861e056b857a175f9b630473ad7a2ad534b2fcfce957204655583/python_bidi-0.6.12-cp313-cp313-macosx_10_12_x86_64.whl",
           "sha256": "234f44048f072154959964587e54761aeea40f557a907472f9af89e433397c68",
           "size": 265996
@@ -1095,11 +1085,6 @@
           "url": "https://files.pythonhosted.org/packages/25/ed/7fcd625c9796e61d815ca9545d4e44a16f075f83869c1532206de88f23f1/shapely-2.2.0-cp313-cp313-win_amd64.whl",
           "sha256": "1eaa2cb64cdedaf65d6bc86f2819c9cd7d6d68f969aa3ebfdc93743ab581f437",
           "size": 1790191
-        },
-        {
-          "url": "https://files.pythonhosted.org/packages/f0/bd/21ed8bfd340455ede2df0d25d896acf4e4bab2ed9b582bb67389e97b2250/shapely-2.2.0-cp313-cp313-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
-          "sha256": "4ed79beb8d4b6cc7c67780fd381feed25848a5f9b8a2385ac5711eccd115647a",
-          "size": 2175369
         },
         {
           "url": "https://files.pythonhosted.org/packages/28/b6/9ba2a62ab6e831b911a248f0752f0f4120be7637a33ab33d8649ed4ede4d/shapely-2.2.0-cp313-cp313-macosx_10_13_x86_64.whl",
@@ -1535,9 +1520,19 @@
           "url": "https://files.pythonhosted.org/packages/60/3f/3e3f8fd0919249b0200c80fbc4f9a1e70be19f9883da71dfb7f8b9ab8aca/tomli-2.5.0-py3-none-any.whl",
           "sha256": "32a7b79ac57a2e83670ce329ccf675798bc5a2094783a63676866b70503f2e2b",
           "size": 14765
+        },
+        {
+          "url": "https://files.pythonhosted.org/packages/38/c9/ebc3a67639f358fc2bf76e112bbbd8875772458a2e5793fb6d969600aa85/python_bidi-0.6.12-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "862d4c6035f9b75f86ba450d42bebf8cca1ed97a2badb07b5638877fc95bdc97",
+          "size": 296711
+        },
+        {
+          "url": "https://files.pythonhosted.org/packages/5d/df/d67d5c56efddf9b8c2e6913c917c8eca78fdd9e7c6fb73b541dd56b1ce1d/shapely-2.2.0-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "f340e7f99aaee3df5acd6b247cddf723051a7c93d1e1ef09025b80d84e4c0ded",
+          "size": 2299018
         }
       ],
-      "declared_total_bytes": 754466511,
+      "declared_total_bytes": 650056466,
       "package_manifest_file": "components/ocr-paddle/package.manifest.json",
       "creator_package_signature_file": "components/ocr-paddle/package.manifest.creator.sig",
       "creator_identity_file": "components/ocr-paddle/creator.identity",
