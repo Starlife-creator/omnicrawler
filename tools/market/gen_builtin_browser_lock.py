@@ -38,6 +38,28 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
+#: 各平台 Chromium 可执行文件在 `browsers/chromium-*/` 下的相对路径。
+#: 与 `runtime_paths.bundled_browser_executable()` 的 patterns 保持同源。
+_EXECUTABLE_PATTERNS = (
+    "chrome-win/chrome.exe",
+    "chrome-win64/chrome.exe",
+    "chrome-linux/chrome",
+    "chrome-linux64/chrome",
+    "chrome-mac/Chromium",
+    "chrome-mac*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+)
+
+
+def _find_browser_executable(browsers: Path) -> Path | None:
+    """在产物布局里定位 Chromium 可执行文件。"""
+    for chromium_dir in sorted(browsers.glob("chromium-*")):
+        for pattern in _EXECUTABLE_PATTERNS:
+            match = next(chromium_dir.glob(pattern), None)
+            if match is not None and match.is_file():
+                return match
+    return None
+
+
 def build_lock(browser_dir: Path, install_root: Path) -> dict:
     """把浏览器目录折成 `{相对路径: {sha256, size}}`。"""
     root = install_root.resolve()
@@ -65,13 +87,38 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="只校验不写盘")
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
 
-    sys.path.insert(0, str(Path(args.repo_root).resolve() / "src"))
-    from omnicrawler.core.runtime_paths import (  # noqa: PLC0415
-        bundled_browser_executable,
-        install_root,
-    )
+    # 两种运行形态：
+    #
+    # 1. **开发机**：`--repo-root` 是源码根（含 `src/`），
+    #    走 `runtime_paths` 走同一条查找逻辑；
+    # 2. **发布流程**：`--repo-root` 是**解压后的产物根**
+    #    （`<temp>/Standard/OmniCrawler`），那里**没有 `src/`** ——
+    #    冻结产物只有可执行文件与 `browsers/`。
+    #
+    # 早先只写死第 1 种，CI 里会 `sys.path.insert(.../src)` 然后 import 失败。
+    # 所以这里**先判断形态**：有 `src/omnicrawler` 就 import，
+    # 否则直接按产物布局定位（`<root>/browsers/`）。
+    repo_root = Path(args.repo_root).resolve()
+    source_tree = repo_root / "src" / "omnicrawler"
 
-    executable = bundled_browser_executable()
+    if source_tree.is_dir():
+        sys.path.insert(0, str(repo_root / "src"))
+        from omnicrawler.core.runtime_paths import (  # noqa: PLC0415
+            bundled_browser_executable,
+            install_root,
+        )
+
+        executable = bundled_browser_executable()
+        root = Path(install_root()).resolve()
+    else:
+        # 产物布局：浏览器在 `<root>/browsers/chromium-*/…`
+        root = repo_root
+        browsers = root / "browsers"
+        if not browsers.is_dir():
+            print(f"产物里没有 browsers/：{browsers}")
+            return 1
+        executable = _find_browser_executable(browsers)
+
     if executable is None:
         print("没找到随包的 Chromium —— 本机可能没解压产物，跳过")
         return 0
@@ -87,13 +134,11 @@ def main(argv: list[str] | None = None) -> int:
     }:
         browser_dir = browser_dir.parent
 
-    lock = build_lock(browser_dir, Path(install_root()))
+    lock = build_lock(browser_dir, root)
     lock["browser_dir"] = browser_dir.name
     lock["platform"] = sys.platform
     lock["machine"] = platform.machine()
-    lock["executable"] = executable.resolve().relative_to(
-        Path(install_root()).resolve()
-    ).as_posix()
+    lock["executable"] = executable.resolve().relative_to(root).as_posix()
 
     out_dir = Path(args.out)
     target = out_dir / LOCK_NAME

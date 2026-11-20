@@ -252,6 +252,32 @@ jobs:
       #   改成的判据是**能不能真用**：逐个 install-recipe --download，
       #   再逐个 components run 确认在隔离子进程里跑得起来。
       #   比数字只能证明「声明齐了」，与「装完能用」不是一回事。
+      # ★ 内置组件的声明必须由**发布流程**生成，不能由市场仓自己维护。
+      #   理由（维护者 2026-11-21 定）：内置物随主程序发布，字节在装机包内。
+      #   若让市场仓维护声明，主仓换一次 Chromium 版本（1228 → 1300），
+      #   市场仓的 builtin_path 与 files.lock.json 会静默失效，而市场仓不会知道。
+      #   由发布流程从**真实字节**生成，这条约束就是物理事实而非约定。
+      - name: 生成内置浏览器内核的组件声明
+        shell: bash
+        env:
+          KEEP_DIR: ${{ runner.temp }}/kept
+        run: |
+          set -euo pipefail
+          ROOT="$KEEP_DIR/Standard/OmniCrawler"
+          # 产物里必须真有 Chromium；缺了说明构建链有问题，直接失败而不是跳过。
+          if [ ! -d "$ROOT/browsers" ]; then
+            echo "::error::产物里没有 browsers/ —— 内置 Chromium 未随包发布"
+            exit 1
+          fi
+          python tools/market/gen_builtin_browser_lock.py \
+            --repo-root "$ROOT" \
+            --out "$GITHUB_WORKSPACE/market/components/browser/chromium-builtin"
+          # 生成后必须自检：清单与真实字节一致，否则声明不可信。
+          python tools/market/gen_builtin_browser_lock.py \
+            --repo-root "$ROOT" \
+            --out "$GITHUB_WORKSPACE/market/components/browser/chromium-builtin" \
+            --check
+
       - name: 装齐市场组件并验证可运行
         shell: bash
         env:

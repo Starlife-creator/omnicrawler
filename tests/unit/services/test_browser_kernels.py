@@ -21,6 +21,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from omnicrawler.services.browser_kernels import (
@@ -156,3 +158,74 @@ def test_engine_family_preserved(engine: str) -> None:
     options = list_kernels(catalog=_catalog_with_builtin_chromium())
     matching = [o for o in options if o.engine_family == engine]
     assert matching, f"没有 {engine} 内核"
+
+def test_release_workflow_generates_builtin_declaration() -> None:
+    """**内置组件的声明必须由主仓发布流程生成**，不能由市场仓自己维护。
+
+    维护者 2026-11-21 裁定：内置物随主程序发布，字节在装机包内。
+    若让市场仓维护声明，主仓换一次 Chromium 版本（1228 → 1300），
+    市场仓的 `builtin_path` 与 `files.lock.json` 会静默失效，
+    而市场仓不会知道。
+
+    由发布流程从**真实字节**生成，这条约束就是物理事实而非约定。
+    """
+    from pathlib import Path
+
+    workflow = (
+        Path(__file__).resolve().parents[3]
+        / ".github"
+        / "workflows"
+        / "release.yml"
+    )
+    if not workflow.is_file():
+        pytest.skip("需要 release.yml")
+
+    text = workflow.read_text(encoding="utf-8")
+    assert "gen_builtin_browser_lock.py" in text, (
+        "发布流程没有生成内置组件声明 —— 市场仓会与真实字节脱节"
+    )
+    assert "--check" in text, "生成后没有自检（清单必须与真实字节一致）"
+    assert "browsers" in text, "没有验证产物里真有 Chromium"
+
+def test_generator_supports_release_layout(tmp_path: Path) -> None:
+    """内置组件生成器必须同时支持**源码根**与**产物根**两种形态。
+
+    发布流程传的 `--repo-root` 是解压后的产物根（`<temp>/Standard/OmniCrawler`），
+    那里**没有 `src/`** —— 冻结产物只有可执行文件与 `browsers/`。
+    早先脚本写死 `sys.path.insert(repo_root/src)`，在 CI 里会 import 失败。
+    """
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parents[3]
+    work = tmp_path / "release"
+    binary_dir = work / "browsers" / "chromium-1228" / "chrome-win64"
+    binary_dir.mkdir(parents=True)
+    (binary_dir / "chrome.exe").write_bytes(b"fake-binary")
+    (work / "browsers" / "chromium-1228" / "DEPENDENCIES_VALIDATED").write_text(
+        "ok", encoding="utf-8"
+    )
+    out = work / "out"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(repo / "tools" / "market" / "gen_builtin_browser_lock.py"),
+            "--repo-root",
+            str(work),
+            "--out",
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env={**__import__("os").environ, "PYTHONUTF8": "1"},
+        cwd=str(repo),
+        timeout=180,
+        check=False,
+    )
+    assert completed.returncode == 0, (
+        f"产物布局下生成失败：{(completed.stderr or '')[-400:]}"
+    )
+    assert (out / "files.lock.json").is_file(), "没有生成清单"
