@@ -320,6 +320,15 @@ def run_component(
             raise ComponentRunnerError(
                 f"组件 {spec.name} 退出码 {completed.returncode}：{reported}"
             )
+        # worker 可能已经写出了**非 error 形态**的 JSON（`ok=False` 但没带
+        # error 字段，例如 paddle 探针只设了 `backend`）。此时仍然要把 JSON
+        # 带出来 —— 否则调用方看到的只有退出码，拿不到任何有用信息。
+        raw_stdout = (completed.stdout or "").strip()
+        if raw_stdout.startswith("{"):
+            snippet = raw_stdout[:800]
+            raise ComponentRunnerError(
+                f"组件 {spec.name} 退出码 {completed.returncode}：{snippet}"
+            )
         # 没有 JSON（worker 自己崩了）：报**最后 10 行**而不是最后 800 字符 ——
         # 崩溃栈的末尾几行才是「哪一行炸的」，而中文字符占 3 字节，
         # 800 字符窗口很容易被前面的告警吃光。

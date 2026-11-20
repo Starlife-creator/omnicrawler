@@ -114,7 +114,11 @@ def _probe_paddle(module_name: str, payload: dict[str, Any]) -> dict[str, Any]:
         result["core_loaded"] = True
     except Exception as exc:  # noqa: BLE001 - 后端不可用要如实回报，不能吞
         result["ok"] = False
+        result["stage"] = "backend"
+        # **必须同时给 error**：`_extract_worker_error` 靠它拼错误详情。
+        # 只设 `backend` 会让父进程拿不到原因，只剩一句「退出码 1」。
         result["backend"] = f"{type(exc).__name__}: {exc}"
+        result["error"] = f"{type(exc).__name__}: {exc}"
     return result
 
 
