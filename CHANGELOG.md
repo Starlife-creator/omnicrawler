@@ -1,6 +1,26 @@
 # Changelog
 
 ## Unreleased
+## 1.0.27 - 2026-11-20
+
+### 变更
+
+### 修复
+
+- feat(market): **ocr-paddle 依赖闭包收口**（105 个构件，三平台各 69-70 个）。
+  上一轮闭包算法漏了带 marker 的依赖（`annotated-types` 等）。修正后重算，
+  仍缺 12 个并全部补齐：aiohappyeyeballs / aiosignal / annotated-types / anyio /
+  attrs / bce-python-sdk / certifi / cffi / charset-normalizer，以及
+  async-timeout / exceptiongroup / tomli（旧版 Python 的条件依赖，一并纳入以求完整）。
+  **闭包缺口现在为 0。**
+
+### 说明
+
+这条链路暴露的问题很集中：**配料表漏项**不会在安装时暴露，
+只在 import 时才炸 —— 所以每轮 CI 只能发现一个。
+这轮把「缺哪个补哪个」换成「按 PyPI 元数据算闭包 + 守卫断言」，
+本地先判红，不再靠 CI 试错。
+
 ## 1.0.26 - 2026-11-20
 
 ### 变更
