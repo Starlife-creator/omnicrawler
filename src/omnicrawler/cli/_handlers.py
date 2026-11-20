@@ -512,14 +512,14 @@ def _run_browser_kernels(args: argparse.Namespace) -> None:
     from ..services.browser_kernels import describe_kernels, list_kernels
 
     # `--local` 支持 `<路径>` 与 `<标签>=<路径>`
-    local_entries: list[dict[str, object]] = []
+    local_entries: list[dict[str, str]] = []
     for raw in getattr(args, "local", None) or []:
         text = str(raw)
         if "=" in text:
             label, _, path_text = text.partition("=")
         else:
             label, path_text = "", text
-        local_entries.append({"label": label, "path": path_text})
+        local_entries.append({"label": str(label), "path": str(path_text)})
 
     catalog_data = None
     catalog_path = str(getattr(args, "catalog", "") or "").strip()
@@ -529,11 +529,34 @@ def _run_browser_kernels(args: argparse.Namespace) -> None:
         except (OSError, json.JSONDecodeError) as exc:
             raise SystemExit(f"无法读取 catalog：{exc}") from exc
 
+    # 本地内核**探测版本**：驱动主版本必须与浏览器主版本一致，
+    # 这条约束不能靠代码抹平，只能如实提前告知（§15.16.6）。
+    from ..services.browser_kernel_probe import probe_kernel
+
+    probes = [probe_kernel(entry["path"]) for entry in local_entries]
+
     options = list_kernels(catalog=catalog_data, local_kernels=local_entries)
     if getattr(args, "json_output", False):
-        _json([option.as_dict() for option in options])
+        _json(
+            {
+                "kernels": [option.as_dict() for option in options],
+                "local_probes": [probe.as_dict() for probe in probes],
+            }
+        )
         return
     print(describe_kernels(options))
+    for probe in probes:
+        if not probe.version:
+            continue
+        print(
+            f"\n本地内核探测：{probe.path.name}"
+            f"  版本 {probe.version}（{probe.detected_by}）"
+        )
+        hint = probe.driver_hint()
+        if hint:
+            print(f"  ⚠ {hint}")
+        for warning in probe.warnings:
+            print(f"  ⚠ {warning}")
 
 
 @_register("components")
