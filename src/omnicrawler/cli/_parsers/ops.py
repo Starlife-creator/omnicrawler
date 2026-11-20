@@ -163,6 +163,29 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
             "从上游拉字节必须显式确认，与卸载同一条「显式动作」纪律。"
         ),
     )
+    # 浏览器内核清单（§15.16.7 的主界面数据源）。
+    #
+    # 只读：不启动浏览器、不联网、不写盘。GUI 与 CLI 共用同一份数据，
+    # 避免界面自己再推导一遍「哪个可用」而与槽位判断漂移。
+    kernels = sub.add_parser(
+        "browser-kernels",
+        help="列出可用的浏览器内核（内置 / 市场 / 本地导入）",
+    )
+    kernels.add_argument(
+        "--json", dest="json_output", action="store_true", help="以 JSON 输出"
+    )
+    kernels.add_argument(
+        "--local", action="append", default=[],
+        help=(
+            "本地导入的内核，格式 <路径> 或 <标签>=<路径>；可重复。"
+            "本地内核**未经验证**，列表里会显式标注。"
+        ),
+    )
+    kernels.add_argument(
+        "--catalog", default="",
+        help="市场 catalog.json 路径；留空则只列槽位里的内核（不读盘）",
+    )
+
     # 条目 4：模型一律从上游下载。本命令**不托管也不校验模型字节**，
     # 只负责配置源、触发 PaddleX 自带下载器、并按能力口径复检。
     models = sub.add_parser("models", help="从上游下载 OCR 模型（本项目不托管模型）")

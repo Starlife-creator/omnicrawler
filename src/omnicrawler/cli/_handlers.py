@@ -497,6 +497,45 @@ def _run_gen_templates(args: argparse.Namespace) -> None:
         _sys.argv = _saved
 
 
+@_register("browser-kernels")
+def _run_browser_kernels(args: argparse.Namespace) -> None:
+    """列出浏览器内核（只读，不启动浏览器、不联网）。
+
+    这是 §15.16.7「主界面」的数据源。GUI 与 CLI 共用它，
+    避免界面自己再推导一遍「哪个内核可用」而与槽位判断漂移。
+
+    本地导入的内核也会出现在同一张表里 —— **隐藏状态比不做还糟**。
+    """
+    import json
+    from pathlib import Path
+
+    from ..services.browser_kernels import describe_kernels, list_kernels
+
+    # `--local` 支持 `<路径>` 与 `<标签>=<路径>`
+    local_entries: list[dict[str, object]] = []
+    for raw in getattr(args, "local", None) or []:
+        text = str(raw)
+        if "=" in text:
+            label, _, path_text = text.partition("=")
+        else:
+            label, path_text = "", text
+        local_entries.append({"label": label, "path": path_text})
+
+    catalog_data = None
+    catalog_path = str(getattr(args, "catalog", "") or "").strip()
+    if catalog_path:
+        try:
+            catalog_data = json.loads(Path(catalog_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"无法读取 catalog：{exc}") from exc
+
+    options = list_kernels(catalog=catalog_data, local_kernels=local_entries)
+    if getattr(args, "json_output", False):
+        _json([option.as_dict() for option in options])
+        return
+    print(describe_kernels(options))
+
+
 @_register("components")
 def _run_components(args: argparse.Namespace) -> None:
     from ..core.safe_action import require_explicit_apply
