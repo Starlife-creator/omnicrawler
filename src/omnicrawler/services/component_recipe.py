@@ -33,6 +33,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import tarfile
@@ -49,7 +50,22 @@ from ..core.archive_security import (
 )
 
 #: 支持的 recipe schema 版本。未知版本一律拒绝（不猜测、不降级）。
-SUPPORTED_SCHEMA = 1
+#: 支持的 recipe schema 版本。
+#:
+#: v1 → v2 的差别（§15.8）：
+#:
+#: * **新增 `requires`**：配方能**表达依赖图**。此前依赖只有 `deps.lock.json`
+#:   这份**旁路快照**，配方本身看不出「我需要什么」——而 pip 存在的理由
+#:   就是「手写依赖必然漏」（实测漏过 httpx / httpcore / networkx /
+#:   protobuf / safetensors 等）。
+#: * **新增 `platform_matrix`**：每平台显式枚举 `{arch, abi, url|builtin_path,
+#:   sha256}`，取代 v1 的过渡字段 `platform_architectures`。
+#:   过渡字段表达不了「同一平台不同架构用不同 ABI/构件」，
+#:   而 `paddlepaddle` 的 macOS 轮子只有 arm64 就是这类情况。
+#:
+#: **两版都接受**：迁移期 v1 配方继续可用，但 `platform_architectures`
+#: 与 `platform_matrix` **不得同时出现**（不保留双写尾巴）。
+SUPPORTED_SCHEMA = (1, 2)
 
 #: recipe 文件只接受这些扩展名。**刻意不含** .sh/.bat/.py/.exe/.ps1：
 #: recipe 必须是数据，不是程序。
@@ -88,6 +104,14 @@ ALLOWED_KEYS = frozenset(
         # 误当 Wheel-Pack 去 `run`，报「缺少 site-packages」—— 靠
         # 「有没有 runner」推断类型是脆的，种类应当自己说出来。
         "kind",
+        # ── Schema v2（§15.8）──
+        # 依赖图：组件需要哪些包。与 `deps.lock.json` 的区别：
+        # 后者是**解析后的闭包快照**（含传递依赖），本字段是**直接声明**。
+        # 两者不重复：声明说「我要什么」，快照说「实际解析出什么」。
+        "requires",
+        # 每平台显式枚举（`{arch: {abi, artifacts...}}`）。
+        # 取代 v1 的 `platform_architectures`。
+        "platform_matrix",
         # 显式 id（可选）。声明后必须等于所在目录名 —— 由门禁校验。
         "id",
         # 冒烟声明：由**组件自己**说「我怎么算能跑」，验证器只负责执行与核对。
@@ -167,7 +191,7 @@ def validate_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
 
     schema = recipe.get("schema")
     _require(
-        schema == SUPPORTED_SCHEMA,
+        schema in SUPPORTED_SCHEMA,
         f"不支持的 recipe schema 版本：{schema!r}（支持 {SUPPORTED_SCHEMA}）",
     )
 
@@ -201,6 +225,10 @@ def validate_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
     _validate_smoke(recipe)
     _validate_kind(recipe)
     _validate_provides(recipe)
+    # v2 的 platform_matrix 与 v1 的 platform_architectures 互斥，
+    # 由 _validate_platform_matrix 内部强制（两者同时出现即拒）。
+    _validate_platform_matrix(recipe)
+    _validate_requires(recipe)
     _validate_platform_architectures(recipe, artifacts)
 
     # 每个平台都必须至少有一个适用构件 —— 否则装上却缺文件，错在装配期而非下载期。
@@ -434,6 +462,156 @@ def _validate_platform_architectures(recipe: dict[str, Any], artifacts: list[Any
         f"architectures 与 platform_architectures 的并集不一致："
         f"全局 {sorted(declared_union)} vs 并集 {sorted(union)}。两处必须同时维护。",
     )
+
+
+#: `platform_matrix[平台]` 允许的键 —— 键是**架构名**，值为该架构的明细。
+_PLATFORM_MATRIX_DETAIL_KEYS = frozenset({"abi", "artifacts"})
+
+
+def _validate_platform_matrix(recipe: dict[str, Any]) -> None:
+    """校验 Schema v2 的 `platform_matrix`。
+
+    形态::
+
+        "platform_matrix": {
+            "windows": {"x86_64": {"abi": ["cp313"], "artifacts": [0, 3, 7]}},
+            "macos":   {"aarch64": {"abi": ["cp313"], "artifacts": [1, 4]}}
+        }
+
+    `artifacts` 是该架构用到的**构件下标**。这样一个平台可以只支持部分架构
+    （`paddlepaddle 3.3.1` 的 macOS 只有 arm64），而 v1 的
+    `platform_architectures` 只能表达「平台 → 架构列表」，
+    表达不了「同平台不同架构用不同构件/ABI」。
+
+    **与 v1 过渡字段互斥**：不允许双写，否则两处必然漂移。
+    """
+    matrix = recipe.get("platform_matrix")
+    legacy = recipe.get("platform_architectures")
+    _require(
+        not (matrix is not None and legacy is not None),
+        "platform_matrix 与 platform_architectures 不能同时出现 —— "
+        "v2 已用 matrix 取代过渡字段，不保留双写",
+    )
+    if matrix is None:
+        return
+
+    ok = isinstance(matrix, dict) and bool(matrix)
+    _require(ok, "platform_matrix 必须是非空对象（平台 → 架构 → 明细）")
+    assert isinstance(matrix, dict)
+
+    platforms = {str(p) for p in recipe["platforms"]}
+    unknown = set(matrix) - platforms
+    _require(
+        not unknown,
+        f"platform_matrix 含未声明的平台：{sorted(unknown)}",
+    )
+
+    artifacts = recipe.get("artifacts") or []
+    union: set[str] = set()
+    for platform, per_arch in matrix.items():
+        _require(
+            isinstance(per_arch, dict) and bool(per_arch),
+            f"platform_matrix[{platform}] 必须是非空对象（架构 → 明细）",
+        )
+        for arch, detail in per_arch.items():
+            arch_ok = isinstance(arch, str) and bool(arch.strip())
+            _require(
+                arch_ok,
+                f"platform_matrix[{platform}] 的架构名必须是非空字符串",
+            )
+            union.add(normalize_architecture(arch))
+            _require(
+                isinstance(detail, dict),
+                f"platform_matrix[{platform}][{arch}] 的明细必须是对象",
+            )
+            unknown_keys = set(detail) - _PLATFORM_MATRIX_DETAIL_KEYS
+            _require(
+                not unknown_keys,
+                f"platform_matrix[{platform}][{arch}] 含不允许的键："
+                f"{sorted(unknown_keys)}（只允许 {sorted(_PLATFORM_MATRIX_DETAIL_KEYS)}）",
+            )
+            indexes = detail.get("artifacts")
+            if indexes is not None:
+                ok_idx = (
+                    isinstance(indexes, list)
+                    and bool(indexes)
+                    and all(isinstance(i, int) and 0 <= i < len(artifacts) for i in indexes)
+                )
+                _require(
+                    ok_idx,
+                    f"platform_matrix[{platform}][{arch}].artifacts 必须是"
+                    f"合法下标列表（0..{len(artifacts) - 1}）",
+                )
+
+    # 全局 architectures 必须等于 matrix 的并集（防两处漂移）
+    declared = {normalize_architecture(a) for a in recipe["architectures"]}
+    _require(
+        declared == union,
+        f"architectures 与 platform_matrix 的并集不一致："
+        f"全局 {sorted(declared)} vs 并集 {sorted(union)}。两处必须同时维护。",
+    )
+
+
+def _validate_requires(recipe: dict[str, Any]) -> None:
+    """校验 Schema v2 的 `requires`（依赖图声明）。
+
+    形态：包名列表，或 `{包名: 版本约束}`。**只接受字符串或字符串列表** ——
+    不接受可执行内容，与「配方必须是声明式的」同一条纪律。
+
+    与 `deps.lock.json` 的分工：
+
+    | | 表达什么 | 谁维护 |
+    |---|---|---|
+    | `requires` | 组件**直接**依赖什么 | 与配方一起手写/签名 |
+    | `deps.lock.json` | 实际解析出的**闭包**（含传递依赖） | 从 PyPI 生成 |
+
+    两者都要有：只有闭包说不出「为什么需要它」，只有声明说不出「实际解析成什么」。
+    """
+    requires = recipe.get("requires")
+    if requires is None:
+        return
+
+    if isinstance(requires, str):
+        requires = [requires]
+    # 两种形态都合法：列表（只要包名）或对象（包名 → 版本约束）
+    ok = (isinstance(requires, list) and bool(requires)) or (
+        isinstance(requires, dict) and bool(requires)
+    )
+    _require(
+        ok,
+        "requires 必须是非空字符串列表（或 {包名: 版本约束} 的对象）",
+    )
+
+    if isinstance(requires, dict):
+        items = list(requires)
+        bad = [
+            name
+            for name, constraint in requires.items()
+            if not isinstance(name, str) or not name.strip() or not isinstance(constraint, str)
+        ]
+        _require(
+            not bad,
+            f"requires 的 {bad} 项必须写成 {{包名: 版本约束字符串}}",
+        )
+        names = [str(n).strip() for n in items]
+    else:
+        bad_items = [r for r in requires if not isinstance(r, str) or not r.strip()]
+        _require(not bad_items, f"requires 含非字符串项：{bad_items}")
+        names = [str(r).strip() for r in requires]
+
+    # 包名归一后判重：`Foo_Bar` 与 `foo-bar` 是同一个包
+    normalized = [re.sub(r"[-_.]+", "_", n).lower() for n in names]
+    _require(
+        len(set(normalized)) == len(normalized),
+        f"requires 含重复包（归一后）：{sorted(n for n in normalized if normalized.count(n) > 1)}",
+    )
+
+    # 必须是合法包名，且不能是 urllib 式的带路径/URL 形态
+    for name in names:
+        _require(
+            re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name) is not None,
+            f"requires 的 {name!r} 不是合法包名",
+        )
 
 
 def artifacts_for_platform(recipe: dict[str, Any], platform: str) -> list[dict[str, Any]]:
