@@ -1,6 +1,28 @@
 # Changelog
 
 ## Unreleased
+## 1.0.26 - 2026-11-20
+
+### 变更
+
+### 修复
+
+- feat(market): **ocr-paddle 补齐依赖闭包的其余 41 个包**（共 91 个构件，三平台各 57-58 个）。
+  逐轮 `ModuleNotFoundError` 太慢（paddlex → colorlog → urllib3 …），
+  改为从 PyPI 元数据**递归算出完整依赖闭包**，一次性补齐
+  click/colorama/crc32c/cryptography/frozenlist/fsspec/future/h11/hf-xet/
+  httpcore2/httpx2/idna/modelscope-hub/multidict/propcache/psutil/pycparser/
+  pycryptodome/pydantic-core/python-dateutil/setuptools/six/tqdm/truststore/
+  typing-inspection/tzdata/urllib3/wcwidth/yarl 等。
+- fix(market): **psutil 必须用 abi3 轮子**。7.2.2 的 `cp313` 轮子只有 `cp313t`
+  （自由线程构建，普通 cp313 解释器加载不了），改用 `cp36-abi3` / `cp37-abi3`。
+
+### 说明
+
+这轮的目标是**一次收口**：把「跑一次 CI 才发现一个缺包」的循环打断。
+依赖闭包算法 + 守卫断言「配方覆盖 paddleocr 的全部硬依赖」，
+以后再漏包会先在本地判红。
+
 ## 1.0.25 - 2026-11-20
 
 ### 变更
