@@ -66,9 +66,6 @@ def test_build_chain_paths_force_rebuild(path: str) -> None:
     "path",
     [
         "market/components/ocr-paddle/recipe.json",
-        "src/omnicrawler/services/component_worker.py",
-        "src/omnicrawler/services/component_runner.py",
-        "src/omnicrawler/services/component_smoke.py",
         "tools/gates/check_component_recipes.py",
         "tests/unit/services/test_component_smoke.py",
         "docs/COMPONENTS.md",
@@ -212,3 +209,27 @@ def test_probe_workflow_paths_are_classified() -> None:
     assert _classify([".github/workflows/component-probe.yml"])[0] == "reuse"
     assert _classify([".github/workflows/release.yml"])[0] == "build"
     assert _classify([".github/workflows/reusable-build-linux.yml"])[0] == "build"
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "src/omnicrawler/services/component_recipe.py",
+        "src/omnicrawler/services/component_runner.py",
+        "src/omnicrawler/services/component_worker.py",
+        "src/omnicrawler/services/component_smoke.py",
+        "src/omnicrawler/services/component_capability.py",
+        "src/omnicrawler/cli/_handlers.py",
+    ],
+)
+def test_src_paths_always_force_rebuild(path: str) -> None:
+    """**`src/omnicrawler/**` 下一律必须重建。**
+
+    这些文件全部由 PyInstaller 打进冻结包。复用旧产物跑的是**旧代码** —
+    等于没测本轮改动。
+
+    **这是我判断错的一条**：早先把 `component_*.py` 归进「运行期、可复用」，
+    结果修了 `.pth` 跳过逻辑后 CI 仍报同一个 `setuptools.command.easy_install`
+    错误 —— 因为复用产物里还是旧代码。
+    """
+    decision, _reason, _triggers = _classify([path])
+    assert decision == "build", f"{path} 被判成 reuse —— 它在冻结产物里，复用等于没测"

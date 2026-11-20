@@ -56,22 +56,26 @@ BUILD_CHAIN_PATTERNS: tuple[str, ...] = (
     ".github/workflows/reusable-finalize-release.yml",
 )
 
-#: 这些改动**不影响**构建产物，可以复用（运行期/组件层）。
+#: 这些改动**不影响**构建产物，可以复用。
+#:
+#: ★ 判据的核心：`src/omnicrawler/**` 全部由 PyInstaller 打进冻结包，
+#:   所以**任何 src 下的改动都必须重建**。早先把
+#:   `src/omnicrawler/services/component_*.py` 归进「运行期、可复用」，
+#:   是错误的 —— 那些文件就在冻结产物里，复用旧产物跑的是**旧代码**，
+#:   等于没测本轮改动（实测踩到：修了 .pth 跳过逻辑，CI 却仍报同一个错）。
+#:
+#:   真正「不影响产物」的只有：市场侧配方/快照、验证工具、测试、文档、
+#:   探针工作流本身。
 RUNTIME_ONLY_PATTERNS: tuple[str, ...] = (
-    "src/omnicrawler/services/component_",
-    "src/omnicrawler/services/component_runner.py",
-    "src/omnicrawler/services/component_worker.py",
-    "src/omnicrawler/services/component_smoke.py",
-    "src/omnicrawler/services/component_recipe.py",
-    "market/components/",
+    "market/",  # 宿主仓的市场快照（配方 + deps.lock）
     "tools/portable/verify_standard_components.py",
+    "tools/portable/needs_rebuild.py",
     "tools/gates/check_component_recipes.py",
     "tools/market/component_deps_lock.py",
     "tests/",
     "docs/",
     # 探针类工作流只影响验证方式，不改产物
     ".github/workflows/component-probe.yml",
-    "tools/portable/needs_rebuild.py",
 )
 
 
