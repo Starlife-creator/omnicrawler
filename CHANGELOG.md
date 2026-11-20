@@ -1,6 +1,27 @@
 # Changelog
 
 ## Unreleased
+## 1.0.29 - 2026-11-20
+
+### 变更
+
+### 修复
+
+- fix(components): **组件子进程不得继承宿主的 LD_LIBRARY_PATH**。
+  v1.0.28 的 run 阶段 `exit 1`，真正的错误是
+  `cat: .../_internal/libsystemd.so.0: version LIBSYSTEMD_254 not found`。
+  冻结包里该变量指向包内 `_internal/`（PyInstaller 收集的系统库），
+  组件子进程是**真正的 python 解释器**，继承后它启动的任何子命令都会
+  先命中包内旧版库。改为只给组件自己的 site-packages 及常见原生库目录。
+- test: 守卫 —— 模拟冻结包环境，断言宿主库路径不进子进程、组件
+  site-packages 在里面。
+
+### 为什么这条难查
+
+`内置 Tesseract 缺失` 是**无害告警**（Standard 本来就不带），它出现在
+`exit code 1` 之后，看起来像失败原因；真正的错误是子命令的 stderr。
+前面几轮加的完整输出 + 分级上报才把它捞出来。
+
 ## 1.0.28 - 2026-11-20
 
 ### 变更
