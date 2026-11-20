@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,6 +31,106 @@ def _spec_available(*module_names: str) -> Callable[[], bool]:
         return all(importlib.util.find_spec(name) is not None for name in module_names)
 
     return _probe
+
+
+#: Playwright 各内核在 `ms-playwright/` 下的目录前缀。
+#:
+#: **为什么需要它**：`_spec_available("playwright")` 只检查 **Python 包**
+#: 是否安装，三个内核（chromium / firefox / webkit）共用同一个包 ——
+#: 于是 firefox 与 webkit 的二进制根本没有时，也报告 `available=True`。
+#:
+#: 实测（2026-11-20 本机）：`ms-playwright/` 下只有 `chromium-1228`，
+#: 但 `playwright-firefox` 与 `playwright-webkit` 都返回 True。
+#: 用户在界面上看到「可用」、选了它、运行时才失败 —— 正是
+#: §15.2「声明必须能从字节推导」要禁止的那类问题。
+#: Selenium 系 provider 需要的外部驱动（可执行文件名，按平台）。
+#:
+#: **描述自己写着「需配合 X 运行」，探测就必须检查 X**：
+#: `selenium` / `selenium-firefox` 原先只 `_spec_available("selenium")`，
+#: 于是驱动没装也报可用。用户选了它，运行时才失败。
+_WEBDRIVER_NAMES = {
+    "chromedriver": ("chromedriver.exe", "chromedriver"),
+    "geckodriver": ("geckodriver.exe", "geckodriver"),
+}
+
+
+def _find_executable(name: str) -> Path | None:
+    """在 PATH 与常见随包位置里找可执行文件。"""
+    import shutil
+
+    found = shutil.which(name)
+    if found:
+        return Path(found)
+    return None
+
+
+def _webdriver_available(driver: str) -> bool:
+    """检查某个 WebDriver 是否真的存在。
+
+    判据：Python 包 `selenium` 已安装 **且** 驱动可执行文件在 PATH 上。
+    驱动名按平台带不带 `.exe` 都试（Windows 上 `shutil.which` 会自己补）。
+    """
+    if importlib.util.find_spec("selenium") is None:
+        return False
+    names = _WEBDRIVER_NAMES.get(driver)
+    if not names:
+        return False
+    return any(_find_executable(n) is not None for n in names)
+
+
+_PLAYWRIGHT_ENGINE_DIRS = {
+    "chromium": ("chromium-", "chromium_headless_shell-"),
+    "firefox": ("firefox-",),
+    "webkit": ("webkit-",),
+}
+
+
+def _playwright_browser_root() -> Path | None:
+    """定位 Playwright 的浏览器缓存目录（与 Playwright 自身同样的查找顺序）。"""
+    override = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip()
+    if override:
+        candidate = Path(override)
+        return candidate if candidate.is_dir() else None
+    # 默认位置：Windows / macOS / Linux
+    home = Path.home()
+    for candidate in (
+        home / "AppData" / "Local" / "ms-playwright",
+        home / "Library" / "Caches" / "ms-playwright",
+        home / ".cache" / "ms-playwright",
+    ):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def _playwright_engine_available(engine: str) -> bool:
+    """检查 Playwright 的**某个内核**是否真的可用。
+
+    两道判据缺一不可：
+    1. Python 包 `playwright` 已安装（否则连启动都做不到）；
+    2. `ms-playwright/` 下有该内核的二进制目录。
+
+    **找不到浏览器缓存目录时判 False**（fail-closed）：不能因为"看不出有没有"
+    就报可用 —— 那会把「未安装」误报成「可用」。
+    """
+    if importlib.util.find_spec("playwright") is None:
+        return False
+    prefixes = _PLAYWRIGHT_ENGINE_DIRS.get(engine)
+    if not prefixes:
+        return False
+    root = _playwright_browser_root()
+    if root is None:
+        return False
+    try:
+        entries = list(root.iterdir())
+    except OSError:
+        return False
+    for entry in entries:
+        if not entry.is_dir():
+            continue
+        if any(entry.name.startswith(prefix) for prefix in prefixes):
+            return True
+    return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,7 +378,7 @@ def build_builtin_slot_registry() -> CapabilitySlotRegistry:
             source="builtin",
             display_name="Playwright (Chromium 随包预置)",
             priority=120,
-            availability_check=_spec_available("playwright"),
+            availability_check=lambda: _playwright_engine_available("chromium"),
             description="默认浏览器自动化引擎，随包预置完整 Chromium，支持请求级拦截与保真渲染",
             metadata={"engine_family": "chromium", "bundled": True},
         )
@@ -289,7 +390,7 @@ def build_builtin_slot_registry() -> CapabilitySlotRegistry:
             source="builtin",
             display_name="Playwright (Firefox 内核)",
             priority=100,
-            availability_check=_spec_available("playwright"),
+            availability_check=lambda: _playwright_engine_available("firefox"),
             description="可选 Firefox 浏览器内核，支持独立 Gecko 协议栈渲染与登录态隔离",
             metadata={"engine_family": "firefox", "bundled": False},
         )
@@ -301,7 +402,7 @@ def build_builtin_slot_registry() -> CapabilitySlotRegistry:
             source="builtin",
             display_name="Playwright (WebKit 内核)",
             priority=90,
-            availability_check=_spec_available("playwright"),
+            availability_check=lambda: _playwright_engine_available("webkit"),
             description="可选 WebKit 渲染内核，支持 Safari 系列排版引擎模拟",
             metadata={"engine_family": "webkit", "bundled": False},
         )
@@ -313,7 +414,7 @@ def build_builtin_slot_registry() -> CapabilitySlotRegistry:
             source="builtin",
             display_name="Selenium WebDriver (ChromeDriver)",
             priority=85,
-            availability_check=_spec_available("selenium"),
+            availability_check=lambda: _webdriver_available("chromedriver"),
             description="备用 WebDriver 引擎（需配合 ChromeDriver 运行）",
             metadata={"engine_family": "chromium", "bundled": False},
         )
@@ -325,7 +426,7 @@ def build_builtin_slot_registry() -> CapabilitySlotRegistry:
             source="builtin",
             display_name="Selenium WebDriver (GeckoDriver)",
             priority=80,
-            availability_check=_spec_available("selenium"),
+            availability_check=lambda: _webdriver_available("geckodriver"),
             description="备用 Firefox WebDriver 引擎（需配合 GeckoDriver 运行）",
             metadata={"engine_family": "firefox", "bundled": False},
         )
