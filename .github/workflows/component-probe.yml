@@ -1,0 +1,226 @@
+name: component-probe
+
+# 组件快速验证（§15.6）——把「一轮 45 分钟」压到「一轮 5–8 分钟」。
+#
+# ## 它解决什么
+#
+# 组件调试的反馈回路原本是：改代码 → push tag → 三平台 PyInstaller（约 40 分钟）
+# → 冒烟 → 才知道哪一步坏了。v1.0.13→v1.0.29 那 17 轮里，大部分时间在等构建。
+#
+# ## ★ 复用产物的前提（维护者 2026-11-20 指出）
+#
+# 「这次优化了构建，那你直接复用上次构建产物，岂不是就测试不了你这次的结果了吗？」
+#
+# 完全正确。所以本工作流**先判断本轮改动是否触及构建链**：
+#
+#   - 触及构建链（spec / 打包脚本 / runtime_paths / 依赖锁 …） ⇒ **强制重建**
+#   - 只在运行期/组件层（component_*.py / market 配方 / 测试 / 文档）⇒ 可复用
+#   - **无法归类 ⇒ 保守重建**（宁可多花 40 分钟，也不给假的通过）
+#
+# 判断逻辑在 `tools/portable/needs_rebuild.py`，它列出哪些路径算构建链。
+#
+# ## 为什么不用 tag
+#
+# 维护者 2026-11-20 裁定：**不拿版本号试错**。本工作流只用 `workflow_dispatch`，
+# 不产生 tag、不创建 release、不消耗版本号。
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: "对比基线（用于判断是否触及构建链）"
+        required: false
+        default: ""
+        type: string
+      force_build:
+        description: "强制重新构建（忽略改动分类）"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: component-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUILD_PYTHON_VERSION: "3.13"
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  # ── 1) 判断能不能复用上次产物 ──────────────────────────────────────────
+  decide:
+    runs-on: ubuntu-22.04
+    outputs:
+      decision: ${{ steps.classify.outputs.decision }}
+      reason: ${{ steps.classify.outputs.reason }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "${{ env.BUILD_PYTHON_VERSION }}"
+
+      - name: 分类本轮改动
+        id: classify
+        shell: bash
+        env:
+          BASE_REF: ${{ inputs.base_ref }}
+          FORCE_BUILD: ${{ inputs.force_build }}
+        run: |
+          if [ "$FORCE_BUILD" = "true" ]; then
+            echo "decision=build" >> "$GITHUB_OUTPUT"
+            echo "reason=手动要求强制重建" >> "$GITHUB_OUTPUT"
+            echo "::notice::手动强制重建"
+            exit 0
+          fi
+          BASE="${BASE_REF}"
+          if [ -z "$BASE" ]; then
+            BASE="$(git rev-parse HEAD~1 2>/dev/null || echo '')"
+          fi
+          if [ -z "$BASE" ]; then
+            echo "decision=build" >> "$GITHUB_OUTPUT"
+            echo "reason=没有可比基线，保守重建" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python tools/portable/needs_rebuild.py \
+            --base "$BASE" --head HEAD --github-output | tee /tmp/decision.txt
+          cat /tmp/decision.txt >> "$GITHUB_OUTPUT"
+
+  # ── 2a) 需要重建：走真实的单平台构建 ──────────────────────────────────
+  #
+  # 只构建 **linux** 一个平台：组件验证只需要一个可运行的 Standard 产物，
+  # 三平台的差异由 release.yml 在真发版时覆盖。这样 40 分钟压到约 15 分钟。
+  build:
+    needs: decide
+    if: needs.decide.outputs.decision == 'build'
+    uses: ./.github/workflows/reusable-build-linux.yml
+    with:
+      build_python_version: "3.13"
+      asset_max_bytes: "2039693706"
+      delta_baselines: ""
+    secrets: inherit
+
+  # ── 2b) 可复用：取最近一次成功的 release 产物 ─────────────────────────
+  fetch-last:
+    needs: decide
+    if: needs.decide.outputs.decision == 'reuse'
+    runs-on: ubuntu-22.04
+    outputs:
+      found: ${{ steps.dl.outputs.found }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: 下载最近一次 release 的 linux 产物
+        id: dl
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          # 取最近一次成功的 release 运行，下载其上传达标的 artifacts。
+          RUN_ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId' || echo '')"
+          if [ -z "$RUN_ID" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::没有可复用的成功 release 运行，回退为重建"
+            exit 0
+          fi
+          echo "复用运行：$RUN_ID"
+          mkdir -p artifacts-linux
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            -n artifacts-linux -D artifacts-linux || true
+          if [ -z "$(ls -A artifacts-linux 2>/dev/null)" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::该运行没有 artifacts-linux，回退为重建"
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── 2c) 复用的兜底：没取到产物也必须重建 ─────────────────────────────
+  build-fallback:
+    needs: fetch-last
+    if: needs.fetch-last.outputs.found == 'false'
+    uses: ./.github/workflows/reusable-build-linux.yml
+    with:
+      build_python_version: "3.13"
+      asset_max_bytes: "2039693706"
+      delta_baselines: ""
+    secrets: inherit
+
+  # ── 3) 组件验证：装齐 + 照 smoke 跑 ───────────────────────────────────
+  probe:
+    needs: [decide, fetch-last, build, build-fallback]
+    # 三个上游里只要有一个成功、且不是被 skip 掉的关键路径，就跑
+    if: |
+      always() &&
+      (needs.build.result == 'success' ||
+       needs.build-fallback.result == 'success' ||
+       needs.fetch-last.outputs.found == 'true')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "${{ env.BUILD_PYTHON_VERSION }}"
+
+      - name: 汇总本轮决策
+        run: |
+          echo "::notice::决策=${{ needs.decide.outputs.decision }}；理由=${{ needs.decide.outputs.reason }}"
+
+      - name: 下载本次运行的 artifacts-linux
+        # 复用路径由 fetch-last 下好（同名目录），这里只在为空时补下载。
+        # ★ 必须显式下载：`uses:` 调用的子 workflow 产出的 artifact 不会自动
+        #   出现在调用方的 workspace 里，不下载就会「构建成功但找不到产物」。
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts-linux
+          if [ -n "$(ls -A artifacts-linux 2>/dev/null)" ]; then
+            echo "已有产物（来自复用路径）"
+          else
+            echo "从本次运行下载 artifacts-linux"
+            gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+              -n artifacts-linux -D artifacts-linux
+          fi
+          ls -la artifacts-linux
+
+      - name: 准备 Standard 产物
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 解压 Standard 产物
+          shopt -s nullglob
+          for f in artifacts-linux/*Standard*.tar.xz; do
+            echo "解压 $f"
+            tar -xJf "$f" -C /tmp
+          done
+          ls -d /tmp/*Standard* /tmp/OmniCrawler 2>/dev/null || true
+
+      - name: 装齐市场组件并验证可运行
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_ROOT="$(ls -d /tmp/*Standard* 2>/dev/null | head -1)"
+          if [ -z "$RELEASE_ROOT" ]; then
+            echo "::error::没有找到解压后的 Standard 产物"
+            exit 1
+          fi
+          # 用法：<release_root> <market_root> <label>
+          python tools/portable/verify_standard_components.py \
+            "$RELEASE_ROOT" "$GITHUB_WORKSPACE/market" "component-probe"
+
+      - name: 上传验证报告
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4.6.2
+        with:
+          name: component-probe-report
+          path: |
+            *.json
+          if-no-files-found: warn
