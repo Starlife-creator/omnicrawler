@@ -579,6 +579,27 @@ def test_paddle_recipe_declares_full_dependency_chain() -> None:
         "pillow",
         "ruamel.yaml",
         "ujson",
+        # 传递依赖（颜色/HTTP/加密/工具链）
+        "click",
+        "colorama",
+        "cryptography",
+        "frozenlist",
+        "fsspec",
+        "h11",
+        "idna",
+        "multidict",
+        "propcache",
+        "psutil",
+        "pycryptodome",
+        "pydantic-core",
+        "python-dateutil",
+        "six",
+        "tqdm",
+        "typing-inspection",
+        "tzdata",
+        "urllib3",
+        "wcwidth",
+        "yarl",
     ]
     def normalized(text: str) -> str:
         """包名归一：`-` / `.` / `_` 在 wheel 文件名里可互换。
