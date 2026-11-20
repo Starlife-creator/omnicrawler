@@ -1,6 +1,27 @@
 # Changelog
 
 ## Unreleased
+## 1.0.24 - 2026-11-20
+
+### 变更
+
+### 修复
+
+- fix(components): **多个构件解到同一目录必须合并**。`extract_artifact` 原在目标
+  已存在时 `rmtree(target)` 再 `replace()`，而 ocr-paddle 的 17 个 wheel
+  **全部** `extract_to: site-packages` —— 每解一个就把整目录删掉重建，
+  最后只剩最后一个构件（pandas），`paddleocr/` 与 `paddlex/` 全丢，
+  于是报「组件入口不存在：site-packages/paddleocr/__init__.py」。
+  改为合并语义（同名目录 copytree、同名文件后写覆盖、不同路径各自保留），
+  与 pip 解 wheel 一致。暂存区的原子性未变：失败仍不会写进目标目录。
+- test: 真实装配两个构件到同一目录，断言两者内容都在、且 component.json
+  覆盖合并后的全部文件。
+
+### 进展
+
+依赖链补齐后 `paddlex` 问题已解决，本轮修完落盘语义后
+`ocr-paddle` 应能真正跑通。
+
 ## 1.0.23 - 2026-11-20
 
 ### 变更
