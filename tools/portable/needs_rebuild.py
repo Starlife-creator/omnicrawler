@@ -48,6 +48,9 @@ BUILD_CHAIN_PATTERNS: tuple[str, ...] = (
     "tools/prepare_macos_runtime.sh",
     "tools/builders/",
     "tools/portable/prepare_",
+    # ★ `src/omnicrawler/**` 全部由 PyInstaller 打进冻结包：
+    # 任何 src 改动都必须重建，否则复用产物跑的是旧代码。
+    "src/",
     "src/omnicrawler/core/runtime_paths.py",
     "assets/branding/",
     # 真正会改产物的工作流（构建/release 链路）

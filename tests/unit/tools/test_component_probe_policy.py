@@ -233,3 +233,16 @@ def test_src_paths_always_force_rebuild(path: str) -> None:
     """
     decision, _reason, _triggers = _classify([path])
     assert decision == "build", f"{path} 被判成 reuse —— 它在冻结产物里，复用等于没测"
+
+def test_src_files_have_explicit_reason() -> None:
+    """`src/**` 被判 build 时，理由必须是「触及构建链」而不是「无法归类」。
+
+    两者结论都是 build，但**信息质量不同**：
+    「无法归类」说明路径清单有缺口 —— 下次换个文件名可能就漏判了。
+    这条守卫要求 src 走**显式**规则。
+    """
+    decision, reason, triggers = _classify(["src/omnicrawler/cli/_handlers.py"])
+    assert decision == "build"
+    assert "构建链" in reason, f"src 没走显式规则，理由是：{reason!r}"
+    assert triggers, "没有给出触发路径"
+    assert "无法归类" not in reason
