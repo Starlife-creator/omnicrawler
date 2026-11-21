@@ -36,16 +36,16 @@
 | ✅ 已融合 | llm-tab-cleaner | 规则失败→LLM 影子修复→复核 | `quality/shadow_repair.py` `quality/auto_apply.py` `quality/llm_candidate_generator.py` `quality/observation_store.py` | P3-3 L2 观察期/L3 持久化 |
 | ✅ 已融合 | AutoDataCleaner | 类型推断 + 分级修复（L1 幂等 / L2 规则；L3 LLM 槽位默认关） | `quality/normalizers.py` | 无损性硬约束：推断失败/混合类型不猜 |
 | ✅ 已融合 | datatoolkit / Sieve | 流式数据管道、算子组合 | `services/data_transform.py` `commands/transform.py` | P3-2（`omnicrawler transform` 值级变换，写盘需 --confirm） |
-| ✅ 已融合 | VERT | 格式注册表 + 最短路径图搜索 + 零信任 | `convertx/paths.py` `convertx/__main__.py` | P3-2（--list-paths 路径枚举 + 注册表驱动） |
-| ✅ 已融合 | everythingtohtml | 统一文档中间表示（txt/html/eml/docx/pptx/odt/epub → IR → 槽位抽取/文本导出） | `document_ir/` `convertx/document.py` `doc_extractors/` `core/encoding.py` `sources/url_cleaner.py` | S1-S3：文本/Markdown 导出 + 槽位抽取 auto 打通 + 编码自动检测 |
-| ✅ 已融合 | 正文容器/Elementor 类名词典 | 整页 HTML 正文主体识别（class/id 白名单 → 未命中回退全页） | `document_ir/parsers.py` | T 批次：正文容器词典（main/article/[role=main]/#content/#main/.content/.entry-content 等）+ main_content 选项默认开 |
+| ✅ 已融合 | VERT | 格式注册表 + 最短路径图搜索 + 零信任 | （已迁出为可选插件 document-workbench，见其 omnicrawler_docs/convertx） | P3-2（--list-paths 路径枚举 + 注册表驱动） |
+| ✅ 已融合 | everythingtohtml | 统一文档中间表示（txt/html/eml/docx/pptx/odt/epub → IR → 槽位抽取/文本导出） | `doc_extractors/` `core/encoding.py` `sources/url_cleaner.py`（转换边在插件 document-workbench） | S1-S3：文本/Markdown 导出 + 槽位抽取 auto 打通 + 编码自动检测 |
+| ✅ 已融合 | 正文容器/Elementor 类名词典 | 整页 HTML 正文主体识别（class/id 白名单 → 未命中回退全页） | （文档中间表示在插件 document-workbench） | T 批次：正文容器词典（main/article/[role=main]/#content/#main/.content/.entry-content 等）+ main_content 选项默认开 |
 
 ## 文件转换
 
 | 状态 | 资源 | 关注重点 | 落点模块 | 备注 |
 |---|---|---|---|---|
-| ✅ 已融合 | ConvertX | 统一进度事件 + 幂等重试 + 5×5 互转 | `services/progress.py` `convertx/` | P2-4 + P3-2 + CLI `python -m omnicrawler.convertx` |
-| ✅ 已吸收设计 | Filee | 转换边图/最短路、能力目录、输出命名与冲突策略、watcher 稳定性、preset | `convertx/planner.py` `convertx/catalog.py` `convertx/output_rules.py` `convertx/watch.py` `convertx/presets.py` | 只借鉴架构与行为，不复制源码；不引入其 GPL/AGPL 外部引擎链 |
+| ✅ 已融合 | ConvertX | 统一进度事件 + 幂等重试 + 5×5 互转 | `services/progress.py`（转换能力在插件 document-workbench） | P2-4 + P3-2 + CLI `python -m omnicrawler.convertx` |
+| ✅ 已吸收设计 | Filee | 转换边图/最短路、能力目录、输出命名与冲突策略、watcher 稳定性、preset | （已迁出为可选插件 document-workbench） | 只借鉴架构与行为，不复制源码；不引入其 GPL/AGPL 外部引擎链 |
 
 ## 配置与网址
 
