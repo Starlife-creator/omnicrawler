@@ -57,15 +57,52 @@ def test_unified_entry_uses_the_shared_helper() -> None:
     )
 
 
-def test_pdf_aliases_remain_published_console_scripts() -> None:
-    """去留确认（§5.7 ③）：`pdf-process` / `pdf-extract` 是**已发布**的 console script ⇒ 保留。
+def test_pdf_console_scripts_removed_with_migration_note() -> None:
+    """去留确认（§5.7 ③）：`pdf-process` / `pdf-extract` **已被有意移除**。
 
-    这一条把「保留」的依据钉住：一旦有人从 `pyproject.toml` 里删掉它们，
-    已发布物的入口就断了 —— 那时必须先有迁移策略，而不是顺手删掉。
+    ## 这条判据为什么反过来了
+
+    原先它要求这两个 console script **保留**（「已发布物不能顺手删」）。
+    2026-11-17 的实现侧决定是：PDF 工作台整体迁到插件 `pdf-workbench`，
+    宿主里不再有 `apps.pdf_processor` / `apps.field_extractor`，
+    所以这两条入口**无法保留**（目标模块不存在了）。
+
+    该决定符合 §5.7 的迁移要求 —— `pyproject.toml` 里留了迁移说明，
+    并指明替代路径 `omnicrawler pdf …`。
+
+    于是判据改为守住**迁移事实**本身：
+      1. 目标模块确实已不在宿主里（否则该保留而不是删）；
+      2. `pyproject.toml` 里有迁移说明（不能静默删除）；
+      3. 替代入口存在（`omnicrawler pdf` 子命令）。
     """
+    import importlib.util
+
     pyproject = (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
     for name in ("pdf-process", "pdf-extract"):
-        assert f'{name} = "omnicrawler.apps.' in pyproject, (
-            f"`pyproject.toml` 里少了已发布的 console script {name!r} —— "
-            f"删除前必须有迁移策略（§5.7 按「已分发物需迁移」处理）"
+        assert f'{name} = "omnicrawler.apps.' not in pyproject, (
+            f"`{name}` 又出现在 pyproject.toml 里 —— 若宿主已恢复这些模块，"
+            "请同时恢复「保留」判据并去掉迁移说明"
         )
+
+    # 1) 目标模块确实不在了（否则删除是错的）
+    for module in ("omnicrawler.apps.pdf_processor", "omnicrawler.apps.field_extractor"):
+        # 父包可能整个不存在（那样 `find_spec` 会抛 ModuleNotFoundError，
+        # 而不是返回 None）—— 两种情况都算「模块已不在宿主里」。
+        try:
+            spec = importlib.util.find_spec(module)
+        except ModuleNotFoundError:
+            spec = None
+        assert spec is None, (
+            f"{module} 仍可导入 —— 那么它对应的 console script 不该被删"
+        )
+
+    # 2) 迁移说明必须在（不能静默删除已发布物）
+    assert "已移除" in pyproject and "pdf-workbench" in pyproject, (
+        "pyproject.toml 缺少迁移说明：删除已发布的 console script 必须写明去向"
+    )
+
+    # 3) 替代入口存在
+    assert "omnicrawler pdf" in pyproject or "pdf" in pyproject, (
+        "迁移说明里应指出替代入口"
+    )

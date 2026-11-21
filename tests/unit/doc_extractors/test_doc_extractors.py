@@ -13,6 +13,7 @@ from omnicrawler.doc_extractors import extract_slots
 from omnicrawler.doc_extractors.base import JSONDocExtractor, TextDocExtractor
 from omnicrawler.doc_extractors.html import HTMLDocExtractor
 from omnicrawler.state.scene_store import SlotDefinition
+from tests.unit.conftest import requires_document_workbench
 
 
 def _slot(key: str, extractor: str, pattern: str) -> SlotDefinition:
@@ -119,6 +120,7 @@ def test_pdf_extractor_requires_pymupdf() -> None:
         PDFDocExtractor()  # 不应抛错
 
 
+@requires_document_workbench
 def test_extract_slots_auto_document(tmp_path) -> None:
     """auto 模式：富文档经 document_ir 解析为文本后走 TextDocExtractor。"""
     import pytest

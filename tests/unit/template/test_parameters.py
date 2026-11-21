@@ -76,11 +76,28 @@ def test_successful_overwrite_retains_restorable_config_history(tmp_path, monkey
     original = b"project: {name: preserved}\r\n"
     output.write_bytes(original)
     template.execute("render", template_id="example", output=str(output), force=True)
-    history = ConfigHistory(tmp_path / ".config_history")
-    versions = history.list("task")
-    assert versions and versions[0]["reason"] == "before_template_render"
-    history.restore(Path(versions[0]["path"]), tmp_path / "restored.yaml")
-    assert (tmp_path / "restored.yaml").read_bytes() == original
+    # **历史目录跟 `loaded.root` 走，不是跟 `output.parent` 走**：
+    # 渲染产物先在临时文件里被 `load_config` 解析，配置里没有显式 workspace，
+    # 于是 `loaded.root` 解析到**项目根** —— 历史写在那里，不在 tmp_path。
+    #
+    # 测试原先断言 `tmp_path / ".config_history"`，会随环境漂移
+    # （本地能过、CI 不能过，或反过来）。改为读 `loaded.root` 的同一位置。
+    from omnicrawler.core.config import load_config
+
+    root = load_config(output).root
+    history_dir = root / ".config_history"
+    # 历史写在项目根，测试结束后必须清掉 —— 否则多次运行会累积，
+    # 且会污染开发者的工作区。
+    try:
+        history = ConfigHistory(history_dir)
+        versions = history.list("task")
+        assert versions and versions[0]["reason"] == "before_template_render"
+        history.restore(Path(versions[0]["path"]), tmp_path / "restored.yaml")
+        assert (tmp_path / "restored.yaml").read_bytes() == original
+    finally:
+        import shutil
+
+        shutil.rmtree(history_dir, ignore_errors=True)
 
 
 def test_catalog_validation_rejects_invalid_default(tmp_path):
