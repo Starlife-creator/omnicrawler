@@ -58,12 +58,16 @@ def _recipes() -> list[tuple[str, dict]]:
     if not _COMPONENTS.is_dir():
         return []
     out: list[tuple[str, dict]] = []
-    for directory in sorted(_COMPONENTS.iterdir()):
-        recipe_path = directory / "recipe.json"
-        if recipe_path.is_file():
-            out.append(
-                (directory.name, json.loads(recipe_path.read_text(encoding="utf-8")))
+    # 组件按分类子目录组织：`components/<分类>/<id>/recipe.json`。
+    # 一层 iterdir 会扫到 0 个 —— 报错「没找到任何带 python_abi 的配方」
+    # 看起来像配方缺失，实际是扫描深度不够。
+    for recipe_path in sorted(_COMPONENTS.rglob("recipe.json")):
+        out.append(
+            (
+                recipe_path.parent.name,
+                json.loads(recipe_path.read_text(encoding="utf-8")),
             )
+        )
     return out
 
 
@@ -129,8 +133,23 @@ def test_artifacts_use_https_and_official_hosts(name: str, recipe: dict) -> None
         "github.com",
         "raw.githubusercontent.com",
         "objects.githubusercontent.com",
+        # **Playwright 官方浏览器 CDN**：浏览器内核（Firefox / WebKit）
+        # 只能从这里取 —— Playwright 的构建产物不发布到 PyPI/GitHub Releases。
+        # 这是微软官方域名，与 `playwright install` 用的是同一个源。
+        "cdn.playwright.dev",
+        # **PyTorch 官方 CPU 索引**：PyPI 上的 torch 是 CUDA 版，
+        # 装完仍要求系统有 libcublasLt.so，无 GPU 机器上跑不起来
+        # （实测 CI 报 ValueError: libcublasLt.so not found）。
+        # CPU-only 轮子只在这个官方索引里发布。
+        "download.pytorch.org",
+        "download-r2.pytorch.org",
     }
     for artifact in recipe.get("artifacts") or []:
+        # **内置构件没有 URL**：字节随主程序发布（`source: builtin`），
+        # 不存在下载与主机信任问题。跳过它，而不是让它以「空字符串不是
+        # https」的形式判红 —— 那种报错会把人引向「补个 URL」的错误方向。
+        if str(artifact.get("source") or "remote").lower() == "builtin":
+            continue
         url = str(artifact.get("url") or "")
         assert url.startswith("https://"), f"{name} 的构件不是 https：{url}"
         host = url.split("//", 1)[1].split("/", 1)[0]

@@ -251,6 +251,19 @@ jobs:
           echo "解压完成，共 $found 个归档"
           ls -la /tmp/release
 
+      # 主仓的配方校验器必须有 CI 执行者：`gate_registry` 登记了它，
+      # 而实际执行者一直在市场仓（components-runnable.yml）。
+      # 只在市场仓跑会让主仓这边出现「登记了但没人跑」的空洞 ——
+      # 主仓改坏判据时，市场仓的旧副本仍能通过。
+      - name: 校验市场组件配方（主仓判据）
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install "PyYAML==6.0.2"
+          git clone --depth 1 https://github.com/Starlife-creator/OmniCrawler-market.git /tmp/oc-market
+          python tools/gates/check_component_recipes.py --root /tmp/oc-market/components
+
       - name: 装齐市场组件并验证可运行
         shell: bash
         run: |

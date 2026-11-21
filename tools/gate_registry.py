@@ -421,9 +421,14 @@ GATES: tuple[Gate, ...] = (
         sets=_STATIC,
         description="组件配方声明可推导（平台/架构/ABI/闭包/入口）",
         script="tools/gates/check_component_recipes.py",
+        # CI 用 `--root /tmp/oc-market/components` 指向**刚克隆的市场仓**，
+        # 而本地自证读 `market/` 快照（离线、零网络）。
+        # 两者判据同源、目标不同：本地验快照钉值，CI 验市场仓真实状态。
+        declared_ci_flags=("--root",),
         ci_note=(
             "零网络、零下载：读 market/ 快照与 deps.lock.json 做集合运算。"
             "闭包快照由 tools/market/component_deps_lock.py 生成（那步才联网）。"
+            "CI 用 --root 指向刚克隆的市场仓（验真实状态而非快照）。"
         ),
     ),
     Gate(
