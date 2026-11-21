@@ -149,7 +149,18 @@ def test_cli_reexport_verifies_current_files_and_refuses_active_resource(tmp_pat
     path.parent.mkdir(parents=True)
     path.write_bytes(b"original PDF")
     config_path = tmp_path / "task.yaml"
-    config_path.write_text("project: {name: verified, workspace: work}\nsource: {kind: static_html, seeds: [https://example.test/]}\ndownload: {verified_pdf_manifest: true}\noutputs: {xlsx: false}\n", encoding="utf-8")
+    # **workspace 必须用绝对路径**：相对路径 `work` 会解析到项目根，
+    # 而这段测试把 PDF 放在 `tmp_path/work/` 下 —— 两者不一致，
+    # 导出时会报「PDF 交付路径越界或使用链接」（安全防护正确触发，
+    # 但测试自己构造了一个越界的场景）。
+    work_dir = (tmp_path / "work").as_posix()
+    config_path.write_text(
+        f"project: {{name: verified, workspace: {work_dir}}}\n"
+        "source: {kind: static_html, seeds: [https://example.test/]}\n"
+        "download: {verified_pdf_manifest: true}\n"
+        "outputs: {xlsx: false}\n",
+        encoding="utf-8",
+    )
     config = load_config(config_path)
     request = CrawlRequest("https://example.test/paper.pdf", kind="asset")
     with StateStore(config.workspace / "state.sqlite3") as state:
