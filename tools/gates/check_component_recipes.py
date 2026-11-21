@@ -306,6 +306,20 @@ def check_recipe(recipe_path: Path) -> list[str]:
         problems.extend(_check_builtin_recipe(recipe_path, recipe))
         return problems
 
+    # **native 组件的构件是"整个可执行包"**（如 Firefox/WebKit 内核的 zip），
+    # 文件名由上游决定，不含 `win_amd64` / `manylinux` 这类标记。
+    # 对这一形态，平台/架构判据换成**显式声明**：每个构件的 platforms
+    # 必须非空，且与顶层一致 —— 既不强求文件名带标记，也不允许
+    # 「声明了却不指定构件归属」。
+    if kind == "native":
+        for index, artifact in enumerate(recipe["artifacts"]):
+            if not artifact.get("platforms"):
+                problems.append(
+                    f"{recipe_path.parent.name}: native 构件 #{index} 必须显式声明 "
+                    "platforms（该形态的文件名不含平台标记，不能靠反推）"
+                )
+        return problems
+
     # ── 1) platforms：每个声明平台都要有该平台的构件 ──────────────────────
     for platform in recipe["platforms"]:
         tokens = _PLATFORM_TOKENS.get(platform, ())
