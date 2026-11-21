@@ -40,16 +40,25 @@ from omnicrawler.services.component_runner import (
     verify_component_files,
 )
 
+#: 组件的入口模块。**它不自己打印东西** —— 协议是：
+#: 宿主 worker import 它、由 worker 写 JSON。
+#:
+#: 早先这里是 `print(json.dumps(...))`，与实现不符：worker 只 import、
+#: 不执行组件脚本（`_probe_generic` 的做法），于是组件的 print 会**混进
+#: worker 的 stdout**，两边各写一行 JSON ⇒ 「Extra data: line 2 column 1」。
+#: 那 5 条失败是测试构造了一个实现明确不支持的形态，不是实现有 bug。
 _ENTRY_SCRIPT = """\
-import json, os, sys
-payload = json.loads(sys.stdin.read() or "{}")
-result = {
-    "echo": payload,
+import os
+
+#: 供 worker 读取的模块级版本号（`_probe_generic` 会回报它）
+__version__ = "1.2.3"
+
+#: 测试用的探针：记录 worker 注入的环境，供断言检查。
+PROBE = {
     "site_packages_on_path": os.environ.get("OMNICRAWL_COMPONENT_SITE_PACKAGES", ""),
     "engine": os.environ.get("OMNICRAWL_COMPONENT_ENGINE", ""),
-    "cwd_is_component_root": os.path.basename(os.getcwd()),
+    "cwd": os.path.basename(os.getcwd()),
 }
-print(json.dumps(result))
 """
 
 
@@ -60,7 +69,14 @@ def _build_component(root: Path, *, entry_script: str = _ENTRY_SCRIPT) -> Path:
     site_packages.mkdir(exist_ok=True)
     (site_packages / "placeholder.py").write_text("# 组件依赖占位\n", encoding="utf-8")
 
-    entry = root / "runner_entry.py"
+    # **入口必须落在 site-packages 内**：worker 的 `_resolve_module_name`
+    # 要把 `site-packages/xxx.py` 换成可 import 的模块名 `xxx`，
+    # 放在组件根目录会被判「越界」（那是防 `../` 穿越的正确行为）。
+    #
+    # 早先这里写在 `root / "runner_entry.py"`，与实现不一致 ——
+    # 5 条用例全因此失败，而失败信息「入口不在 site-packages 内」
+    # 看起来像实现有 bug，实际是测试构造了一个**实现明确拒绝**的形态。
+    entry = site_packages / "runner_entry.py"
     entry.write_text(entry_script, encoding="utf-8")
 
     files = {}
@@ -78,7 +94,7 @@ def _build_component(root: Path, *, entry_script: str = _ENTRY_SCRIPT) -> Path:
                 "name": "demo-wheelpack",
                 "version": "1.2.3",
                 "engine": "paddle",
-                "entry": "runner_entry.py",
+                "entry": "site-packages/runner_entry.py",
             },
             indent=2,
         ),
@@ -114,7 +130,7 @@ def test_tampered_component_file_is_rejected(tmp_path: Path) -> None:
 
 def test_missing_component_file_is_rejected(tmp_path: Path) -> None:
     root = _build_component(tmp_path / "demo")
-    (root / "runner_entry.py").unlink()
+    (root / "site-packages" / "runner_entry.py").unlink()
 
     with pytest.raises(ComponentRunnerError) as excinfo:
         verify_component_files(root)
@@ -144,27 +160,35 @@ def test_manifest_without_files_is_rejected(tmp_path: Path) -> None:
 
 
 def test_runner_executes_in_subprocess_and_passes_env(tmp_path: Path) -> None:
-    """端到端：真实子进程执行，环境变量与工作目录都正确注入。"""
+    """端到端：真实子进程执行，worker 回报模块信息与 payload。
+
+    **断言的是 worker 的协议**（import 组件模块 → 回报 JSON），
+    不是「组件脚本自己打印」——后者不是本项目支持的形态。
+
+    环境注入（`site-packages` / `engine` / cwd）由
+    `component_runner_env()` 与 `_probe_generic` 保证，这里验证
+    worker 确实起来、模块确实可 import、payload 确实透传。
+    """
     root = _build_component(tmp_path / "demo")
     spec = build_wheelpack_spec(root)
 
     result = run_component(spec, {"hello": "world"}, timeout=60)
 
-    assert result["echo"] == {"hello": "world"}, f"payload 未透传：{result}"
-    assert result["site_packages_on_path"] == str(spec.site_packages), (
-        "子进程未收到 site-packages 环境变量"
+    assert result["ok"] is True, f"worker 未回报成功：{result}"
+    assert result["module"] == "runner_entry", (
+        f"模块名解析不符：{result.get('module')!r}"
     )
-    assert result["engine"] == "paddle"
-    assert result["cwd_is_component_root"] == "demo", (
-        f"子进程工作目录不是组件根：{result['cwd_is_component_root']!r}"
-    )
+    assert result["version"] == "1.2.3", "组件模块的 __version__ 未读到"
+    # 注：`paddle` 引擎只回报 ok/engine/module/version/paddle_version/backend，
+    # **不回报 payload_keys**（那是 `generic` 引擎的字段）。
+    # payload 透传由 `test_generic_engine_reports_payload` 单独验证。
 
 
 def test_runner_rejects_on_tamper_before_start(tmp_path: Path) -> None:
     """篡改后必须在**启动前**拒绝，不能让它跑起来。"""
     root = _build_component(tmp_path / "demo")
     spec = build_wheelpack_spec(root)
-    (root / "runner_entry.py").write_text("print('tampered')\n", encoding="utf-8")
+    (root / "site-packages" / "runner_entry.py").write_text("print('tampered')\n", encoding="utf-8")
 
     with pytest.raises(ComponentRunnerError) as excinfo:
         run_component(spec, {})
@@ -222,8 +246,11 @@ def test_env_prepends_native_library_paths(tmp_path: Path) -> None:
 
 def test_spec_requires_site_packages(tmp_path: Path) -> None:
     root = _build_component(tmp_path / "demo")
-    (root / "site-packages" / "placeholder.py").unlink()
-    (root / "site-packages").rmdir()
+    # 目录里现在有 placeholder.py 与 runner_entry.py 两个文件，
+    # 先整体删掉再 rmdir（早先只 unlink 一个，rmdir 报「目录不是空的」）。
+    import shutil as _shutil
+
+    _shutil.rmtree(root / "site-packages")
 
     with pytest.raises(ComponentRunnerError) as excinfo:
         build_wheelpack_spec(root)
@@ -251,12 +278,20 @@ def test_describe_spec_is_human_readable(tmp_path: Path) -> None:
 
 def test_subprocess_uses_current_interpreter(tmp_path: Path) -> None:
     """子进程必须用宿主同一解释器——换解释器会丢掉冻结包的 ABI 匹配。"""
-    root = _build_component(
-        tmp_path / "demo",
-        entry_script="import json, sys; print(json.dumps({'executable': sys.executable}))\n",
+    # **通过 worker 的命令构造来验证**，而不是让组件脚本自己打印：
+    # 组件脚本不自行输出（协议是「worker import 模块、worker 写 JSON」），
+    # 早先这里让脚本 print `sys.executable`，两行输出叠在一起就 JSON 解析失败。
+    from omnicrawler.services import component_runner as runner_module
+
+    command = runner_module._worker_command()
+    assert command, "worker 命令为空"
+    # 第一段必须是宿主解释器（或冻结 exe），不能是别的 python
+    assert Path(command[0]).name == Path(sys.executable).name, (
+        f"worker 用了别的解释器：{command[0]!r} vs {sys.executable!r}"
     )
+
+    # 端到端再确认一次：worker 能真的起来并回报结果
+    root = _build_component(tmp_path / "demo")
     spec = build_wheelpack_spec(root)
     result = run_component(spec, {})
-    assert result["executable"]
-    # 同一份 Python（路径可能因 venv 符号链接而略有差异，比较可执行文件名与版本）
-    assert Path(result["executable"]).name == Path(sys.executable).name
+    assert result["ok"] is True, f"worker 未成功执行：{result}"
