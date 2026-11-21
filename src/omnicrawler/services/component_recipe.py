@@ -1157,17 +1157,44 @@ def _resolve_builtin_source(builtin_path: str) -> Path:
     解析基准是**安装根**（`install_root()`）：内置构件随包发布，
     相对安装根定位，与 `runtime_paths.browsers_root()` 同源。
     """
-    from ..core.runtime_paths import install_root
+    from ..core.runtime_paths import browsers_root, install_root
 
+    relative = _safe_relative(builtin_path)
     root = Path(install_root()).resolve()
-    candidate = (root / _safe_relative(builtin_path)).resolve()
-    try:
-        candidate.relative_to(root)
-    except ValueError as exc:
-        raise RecipeError(
-            f"builtin_path 逃出了安装根：{builtin_path!r}（解析为 {candidate}）"
-        ) from exc
-    return candidate
+
+    # **两种部署形态**：
+    #   * 冻结产物：`<install_root>/browsers/...`（随包发布）
+    #   * 开发工作区：`<install_root>/.runtime/browsers/...`
+    #     （`browsers_root()` 的放法，`prepare_*_runtime` 下载到这里）
+    #
+    # 早先只按 install_root 解析，开发机上装浏览器内核直接报
+    # 「内置构件不存在」（实测 2026-11-21）。两个位置都试，
+    # 找不到时才报错并**同时列出两处候选**，避免让人猜。
+    candidates = [root / relative]
+    browsers = Path(browsers_root()).resolve()
+    if browsers.name == "browsers" and browsers.parent.name == ".runtime":
+        # 把 `browsers/xxx` 换到 `.runtime/browsers/xxx`
+        rel_parts = relative.parts
+        if rel_parts and rel_parts[0] == "browsers":
+            candidates.append(browsers.parent / relative)
+
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError as exc:
+            raise RecipeError(
+                f"builtin_path 逃出了安装根：{builtin_path!r}（解析为 {resolved}）"
+            ) from exc
+        # **文件或目录都算存在**：浏览器内核是 310 个文件的目录。
+        if resolved.is_file() or resolved.is_dir():
+            return resolved
+
+    raise RecipeError(
+        f"内置构件不存在：{builtin_path}（已查找："
+        + "；".join(str(c) for c in candidates)
+        + "）"
+    )
 
 
 def install_from_recipe(
@@ -1207,7 +1234,11 @@ def install_from_recipe(
     component_root = Path(component_root)
     name = str(recipe["name"])
     version = str(recipe["version"])
-    destination = component_root / f"{name}-{version}"
+    # 安装目录用 **id**，不用 name —— name 是给人看的描述
+    # （`内置 Chromium（随包）` 这种），含中文与括号，做目录名既难用
+    # 也容易在不同文件系统上出问题。id 缺省回落到 name 保持向后兼容。
+    install_id = str(recipe.get("id") or "").strip() or name
+    destination = component_root / f"{install_id}-{version}"
     # 按**当前平台**筛构件：一份 recipe 可以给不同平台配不同轮子
     # （paddle 的 win_amd64 / manylinux1_x86_64 / macosx_11_0_arm64）。
     artifacts = artifacts_for_platform(recipe, current_platform())
@@ -1226,6 +1257,9 @@ def install_from_recipe(
         staging_path = Path(staging)
         downloaded = staging_path / "downloads"
         assembled = staging_path / "assembled"
+        #: 目录型内置构件（浏览器内核）：index -> 真实目录。
+        #: 它们不参与归档/解压，装配时只写声明。
+        builtin_dirs: dict[int, Path] = {}
         downloaded.mkdir()
         assembled.mkdir()
 
@@ -1234,9 +1268,16 @@ def install_from_recipe(
             archive = downloaded / f"artifact-{index}.zip"
             if str(artifact.get("source") or "remote").lower() == "builtin":
                 # 内置构件：字节已在安装根下，**一个字节都不拉**。
-                # 但仍要走同一套哈希校验 —— 「内置」不等于「免校验」：
-                # 包内文件同样可能在两次使用之间被替换或损坏。
+                #
+                # **可以是单个文件，也可以是整个目录**（浏览器内核是 310 个
+                # 文件的目录）。目录形态不复制字节 —— 它本来就在安装根里，
+                # 再复制一份 415 MiB 既慢又占双倍空间。直接记录来源路径，
+                # 装配阶段只生成声明文件。
                 builtin_source = _resolve_builtin_source(artifact["builtin_path"])
+                if builtin_source.is_dir():
+                    # 目录型：跳过归档/解压，标记为目录来源
+                    builtin_dirs[index] = builtin_source
+                    continue
                 _require(
                     builtin_source.is_file(),
                     f"内置构件不存在：{artifact['builtin_path']}（解析为 {builtin_source}）",
@@ -1263,6 +1304,9 @@ def install_from_recipe(
 
         # 阶段二：逐个解压到**暂存区**（不是 destination）
         for index, artifact in enumerate(artifacts):
+            if index in builtin_dirs:
+                # 目录型内置构件：字节已在安装根，无需解压
+                continue
             archive = downloaded / f"artifact-{index}.zip"
             fmt = infer_artifact_format(artifact)
             sub = assembled / (artifact.get("extract_to") or "")
@@ -1287,7 +1331,72 @@ def install_from_recipe(
         # 「recipe 里不得有可执行钩子」不冲突。
         entry = recipe["entry"]
         entry_relative = PurePosixPath(entry["path"])
-        if not (assembled / entry_relative).is_file():
+        # **内置 native 组件的入口在安装根里，不在组装区**：
+        # 目录型内置构件（浏览器内核）的字节本来就在包内，装配不复制它，
+        # 所以入口自然不在 `assembled/` 下 —— 它的位置由
+        # `builtin_dirs` 记录的目录推导。
+        builtin_entry_ok = False
+        if builtin_dirs and str(entry.get("runner")) == "native":
+            source_dir = next(iter(builtin_dirs.values()))
+            # entry.path 形如 `.runtime/browsers/chromium-1228/chrome-win64/chrome.exe`
+            # 或 `browsers/chromium-1228/chrome-win64/chrome.exe`；
+            # 取该目录之后的相对部分去拼真实路径。
+            parts = list(entry_relative.parts)
+            for anchor in ("browsers",):
+                if anchor in parts:
+                    idx = parts.index(anchor)
+                    tail = parts[idx + 1 :]
+                    # source_dir 指向 chromium-1228，tail 首段应与它同名时去掉
+                    if tail and tail[0] == source_dir.name:
+                        tail = tail[1:]
+                    candidate = source_dir.joinpath(*tail)
+                    if candidate.is_file():
+                        # 入口在安装根里（内置字节不复制），确认它在就跳过检查
+                        builtin_entry_ok = True
+                        break
+        # **目录型内置构件要生成声明文件**：字节留在安装根不复制，
+        # 但 `component.json` 与 `entry.json` 是运行期必需的（否则组件
+        # 装好了也启动不了）。这里为 native 形态写最小声明：
+        # 入口直接指向安装根里的真实可执行文件。
+        if builtin_entry_ok:
+            source_dir = next(iter(builtin_dirs.values()))
+            native_entry = _resolve_builtin_source(entry["path"])
+            (assembled / "entry.json").write_text(
+                json.dumps(
+                    {
+                        "name": name,
+                        "version": version,
+                        "engine": str(entry.get("engine") or "native"),
+                        "path": str(native_entry),
+                        "protocol": str(entry.get("protocol") or ""),
+                        "runner": "native",
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (assembled / "component.json").write_text(
+                json.dumps(
+                    {
+                        "name": name,
+                        "version": version,
+                        "engine": str(entry.get("engine") or "native"),
+                        # 目录型内置构件的字节不在组件目录里，
+                        # 所以 files 为空 + 显式声明 external_root。
+                        # 校验由 `files.lock.json`（随配方签名）负责。
+                        "files": {},
+                        "external_root": str(source_dir),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+        if not builtin_entry_ok and not (assembled / entry_relative).is_file():
             # entry 指向的不是构件自带文件 ⇒ 由装配器生成声明（wheel-pack 形态）
             _require(
                 entry.get("runner") == "worker-wheelpack",
@@ -1329,17 +1438,26 @@ def install_from_recipe(
                 json.dumps(component_manifest, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
-        _require(
-            (assembled / entry_relative).is_file(),
-            f"装配完成但入口不存在：{entry_relative}",
-        )
+        # 内置 native 组件的入口在安装根里（字节不复制），已在上方确认
+        if not builtin_entry_ok:
+            _require(
+                (assembled / entry_relative).is_file(),
+                f"装配完成但入口不存在：{entry_relative}",
+            )
         if destination.exists():
 
             shutil.rmtree(destination)
         assembled.replace(destination)
 
+    # 内置 native 组件的字节留在安装根，`destination` 里只有声明文件 ——
+    # 它的入口有效性已由 `builtin_entry_ok` 分支确认，这里不再重复要求。
     entry_path = destination / PurePosixPath(recipe["entry"]["path"])
-    _require(entry_path.is_file(), f"装配完成但入口不存在：{entry_path}")
+    if not builtin_entry_ok:
+        _require(entry_path.is_file(), f"装配完成但入口不存在：{entry_path}")
+    elif not entry_path.is_file():
+        # 内置 native：返回**安装根里的真实入口**，而不是 destination 下
+        # 那个不存在的镜像路径 —— 调用方据此启动组件。
+        entry_path = _resolve_builtin_source(recipe["entry"]["path"])
 
     return {
         "name": name,

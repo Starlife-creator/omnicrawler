@@ -395,6 +395,15 @@ class NativeSpec:
     engine: str
 
 
+def _is_within(path: Path, base: Path) -> bool:
+    """`path` 是否落在 `base` 之内（含 base 本身）。"""
+    try:
+        path.relative_to(base)
+    except ValueError:
+        return False
+    return True
+
+
 def build_native_spec(component_root: Path, entry_data: dict[str, Any]) -> NativeSpec:
     """从已装配的 native 组件目录读出运行规格。
 
@@ -416,12 +425,29 @@ def build_native_spec(component_root: Path, entry_data: dict[str, Any]) -> Nativ
 
     executable = (root / entry_path).resolve()
     # 防目录穿越：入口必须落在组件目录内。
-    try:
-        executable.relative_to(root.resolve())
-    except ValueError as exc:
+    #
+    # **唯一豁免**：目录型内置组件（浏览器内核）的字节留在安装根，
+    # 不复制进组件目录 —— 它的 `component.json` 用 `external_root`
+    # 显式声明真实位置。豁免仍受约束：只能落在 `external_root` 或
+    # 安装根之内，不能指向任意路径。
+    allowed_roots = [root.resolve()]
+    manifest_path = root / "component.json"
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            manifest = {}
+        external = str(manifest.get("external_root") or "").strip()
+        if external:
+            allowed_roots.append(Path(external).resolve())
+            from ..core.runtime_paths import install_root
+
+            allowed_roots.append(Path(install_root()).resolve())
+
+    if not any(_is_within(executable, base) for base in allowed_roots):
         raise ComponentRunnerError(
             f"native 组件的 entry.path 逃出了组件目录：{entry_path}"
-        ) from exc
+        )
 
     if not executable.is_file():
         raise ComponentRunnerError(

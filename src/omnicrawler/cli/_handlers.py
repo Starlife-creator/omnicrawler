@@ -702,7 +702,11 @@ def _run_component_recipe(args: argparse.Namespace) -> None:
         print(f"  下载量：{format_bytes(total)}（{total} 字节）")
         print(f"  磁盘占用：约 {format_bytes(installed)}（解压后，估算）")
         for item in plan["artifacts"]:
-            print(f"  - {item['url']}")
+            # 内置构件没有 url（字节随包），显示来源而不是空行。
+            if str(item.get("source") or "remote").lower() == "builtin":
+                print(f"  - 内置（随包）：{item.get('builtin_path') or '（未声明路径）'}")
+            else:
+                print(f"  - {item['url']}")
         print("\n未加 --download，未做任何下载。确认无误后加 --download 执行。")
         return
 

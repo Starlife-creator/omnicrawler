@@ -180,3 +180,154 @@ def test_native_kind_is_declared() -> None:
 
     assert "native" in COMPONENT_KINDS
     assert component_kind({"kind": "native"}) == "native"
+
+# ── 目录型内置构件（浏览器内核）：装配 → 运行准备全链路 ─────────────────
+def test_builtin_directory_component_assembles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**目录型内置构件**（浏览器内核：310 个文件的目录）能装配。
+
+    它的字节留在安装根，装配**不复制**（415 MiB 复制一份既慢又占双倍空间），
+    只生成 `component.json` / `entry.json` 两个声明文件。
+
+    实测（2026-11-21）此前有三处会失败：
+    1. `_resolve_builtin_source` 只认文件、不认目录；
+    2. 装配循环把目录当单文件去 `copyfile`；
+    3. 三处无条件要求「入口存在于组装区」，而内置字节不在那里。
+    """
+    import json
+
+    # 内置构件的 `builtin_path` 相对**安装根**解析。测试把安装根指向
+    # tmp_path，否则会去真实安装根找不存在的目录。
+    import omnicrawler.core.runtime_paths as rp
+    from omnicrawler.services.component_recipe import (
+        install_from_recipe,
+        load_recipe,
+    )
+
+    monkeypatch.setattr(rp, "install_root", lambda: tmp_path)
+    monkeypatch.setattr(rp, "browsers_root", lambda: tmp_path / "runtime" / "browsers")
+
+    # 造一个真实的目录型内置构件
+    source_dir = tmp_path / "runtime" / "browsers" / "chromium-999"
+    (source_dir / "chrome-win64").mkdir(parents=True)
+    binary = source_dir / "chrome-win64" / "chrome.exe"
+    binary.write_bytes(b"fake-chrome")
+
+    recipe = {
+        "schema": 1,
+        "id": "probe-builtin",
+        "kind": "native",
+        "smoke": {"expect": ["ok"]},
+        "name": "probe builtin",
+        "version": "999",
+        "platforms": ["windows", "linux", "macos"],
+        "architectures": ["x86_64"],
+        "python_abi": [],
+        "provides": ["browser.probe"],
+        "artifacts": [
+            {
+                "source": "builtin",
+                "builtin_path": "runtime/browsers/chromium-999",
+                "sha256": "a" * 64,
+                "size": len(b"fake-chrome"),
+                "format": "raw",
+                "filename": "chrome.exe",
+            }
+        ],
+        "entry": {
+            "path": "runtime/browsers/chromium-999/chrome-win64/chrome.exe",
+            "protocol": "browser-cdp",
+            "engine": "chromium",
+            "runner": "native",
+        },
+    }
+    recipe_path = tmp_path / "probe-builtin" / "recipe.json"
+    recipe_path.parent.mkdir(parents=True)
+    recipe_path.write_text(json.dumps(recipe, ensure_ascii=False), encoding="utf-8")
+
+    loaded = load_recipe(recipe_path)
+    root = tmp_path / "components"
+    root.mkdir()
+    summary = install_from_recipe(loaded, root, work_dir=tmp_path)
+    assembled = Path(summary["path"])
+
+    # 安装目录用 id（不是含中文与括号的 name）
+    assert assembled.name == "probe-builtin-999", (
+        f"安装目录用了 {assembled.name!r} —— 应为 <id>-<version>"
+    )
+    # 声明文件必须生成，否则装好了也启动不了
+    assert (assembled / "entry.json").is_file(), "缺少 entry.json"
+    assert (assembled / "component.json").is_file(), "缺少 component.json"
+    manifest = json.loads((assembled / "component.json").read_text(encoding="utf-8"))
+    assert manifest["external_root"], "目录型内置构件必须声明 external_root"
+    # 字节不复制进组件目录
+    assert not (assembled / "chrome.exe").exists(), "字节不该被复制"
+
+
+def test_builtin_component_can_build_native_spec(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """装配后的内置组件能被 `build_native_spec` 接受（受控豁免）。
+
+    `build_native_spec` 有防目录穿越检查，而内置组件的入口在安装根里
+    —— 需要 `external_root` 这条受控豁免，且豁免仍受「必须在安装根内」约束。
+    """
+    import json
+
+    # 内置构件的 `builtin_path` 相对**安装根**解析。测试把安装根指向
+    # tmp_path，否则会去真实安装根找不存在的目录。
+    import omnicrawler.core.runtime_paths as rp
+    from omnicrawler.services.component_recipe import (
+        install_from_recipe,
+        load_recipe,
+    )
+
+    monkeypatch.setattr(rp, "install_root", lambda: tmp_path)
+    monkeypatch.setattr(rp, "browsers_root", lambda: tmp_path / "runtime" / "browsers")
+
+    source_dir = tmp_path / "runtime" / "browsers" / "chromium-999"
+    (source_dir / "chrome-win64").mkdir(parents=True)
+    (source_dir / "chrome-win64" / "chrome.exe").write_bytes(b"fake")
+
+    recipe = {
+        "schema": 1,
+        "id": "probe-builtin2",
+        "kind": "native",
+        "smoke": {"expect": ["ok"]},
+        "name": "probe builtin 2",
+        "version": "999",
+        "platforms": ["windows", "linux", "macos"],
+        "architectures": ["x86_64"],
+        "python_abi": [],
+        "provides": ["browser.probe2"],
+        "artifacts": [
+            {
+                "source": "builtin",
+                "builtin_path": "runtime/browsers/chromium-999",
+                "sha256": "a" * 64,
+                "size": 4,
+                "format": "raw",
+                "filename": "chrome.exe",
+            }
+        ],
+        "entry": {
+            "path": "runtime/browsers/chromium-999/chrome-win64/chrome.exe",
+            "protocol": "browser-cdp",
+            "engine": "chromium",
+            "runner": "native",
+        },
+    }
+    recipe_path = tmp_path / "probe-builtin2" / "recipe.json"
+    recipe_path.parent.mkdir(parents=True)
+    recipe_path.write_text(json.dumps(recipe, ensure_ascii=False), encoding="utf-8")
+
+    loaded = load_recipe(recipe_path)
+    root = tmp_path / "components"
+    root.mkdir()
+    summary = install_from_recipe(loaded, root, work_dir=tmp_path)
+    assembled = Path(summary["path"])
+    entry_data = json.loads((assembled / "entry.json").read_text(encoding="utf-8"))
+
+    spec = build_native_spec(assembled, entry_data)
+    assert spec.executable.name == "chrome.exe"

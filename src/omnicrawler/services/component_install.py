@@ -180,7 +180,12 @@ def describe_recipe(recipe_path: str | Path) -> dict[str, Any]:
 
     artifacts = [
         {
-            "url": item["url"],
+            # 内置构件（`source: builtin`）没有 url，只有 builtin_path。
+            # 早先这里硬取 item["url"]，`components install-recipe` 对
+            # 浏览器内核直接 KeyError 崩掉（实测 2026-11-21）。
+            "url": item.get("url") or "",
+            "source": str(item.get("source") or "remote"),
+            "builtin_path": item.get("builtin_path") or "",
             "sha256": item["sha256"],
             "size": item.get("size"),
             "extract_to": item.get("extract_to", ""),
