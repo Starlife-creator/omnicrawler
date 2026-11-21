@@ -163,7 +163,21 @@ ALLOWED_ARTIFACT_KEYS = frozenset(
 #: 有意义** —— 此时 `entry.path` 指向装配器生成的声明文件，真正的入口是 `module`。
 #: 声明的是**组件自身依赖**里的模块，不是本仓提供的脚本（与 asset_trust 的
 #: 「recipe 不得含可执行钩子」不冲突：那是"不能带脚本进来"，这是"指个已有模块"）。
-ALLOWED_ENTRY_KEYS = frozenset({"path", "protocol", "engine", "runner", "module"})
+ALLOWED_ENTRY_KEYS = frozenset({
+    "path",
+    "protocol",
+    "engine",
+    "runner",
+    "module",
+    # 平台专属入口：`{"windows": "browser/firefox/firefox.exe", "linux": "..."}`。
+    #
+    # 有些组件的可执行文件在不同平台**不仅扩展名不同，目录结构也不同**：
+    # Firefox 解压后是 `firefox/firefox`（Linux）与 `firefox/firefox.exe`（Windows），
+    # WebKit 是 `Playwright.exe` 与 `pw_run.sh`。单一个 `path` 表达不了，
+    # 而在 `platform_matrix` 里塞 `entry` 会被判「不允许的键」——
+    # 所以给它一个显式的顶层字段。
+    "path_by_platform",
+})
 
 
 class RecipeError(ValueError):
@@ -227,6 +241,7 @@ def validate_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
     _validate_provides(recipe)
     # v2 的 platform_matrix 与 v1 的 platform_architectures 互斥，
     # 由 _validate_platform_matrix 内部强制（两者同时出现即拒）。
+    _validate_entry_paths(recipe)
     _validate_platform_matrix(recipe)
     _validate_requires(recipe)
     _validate_platform_architectures(recipe, artifacts)
@@ -283,10 +298,13 @@ def validate_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
         set(entry) <= ALLOWED_ENTRY_KEYS,
         f"entry 含不允许的键：{sorted(set(entry) - ALLOWED_ENTRY_KEYS)}",
     )
-    path = entry.get("path")
-    _require(bool(isinstance(path, str) and path.strip()), "entry.path 不能为空")
-    assert isinstance(path, str)
-    _safe_relative(path)
+    # `path` 与 `path_by_platform` 二选一：
+    # 后者用于「可执行文件在不同平台结构不同」的组件（浏览器内核）。
+    if entry.get("path_by_platform") is None:
+        path = entry.get("path")
+        _require(bool(isinstance(path, str) and path.strip()), "entry.path 不能为空")
+        assert isinstance(path, str)
+        _safe_relative(path)
     runner = entry.get("runner")
     if runner is not None:
         _require(
@@ -550,6 +568,46 @@ def _validate_platform_matrix(recipe: dict[str, Any]) -> None:
         f"architectures 与 platform_matrix 的并集不一致："
         f"全局 {sorted(declared)} vs 并集 {sorted(union)}。两处必须同时维护。",
     )
+
+
+def _validate_entry_paths(recipe: dict[str, Any]) -> None:
+    """校验 `entry.path` 与 `entry.path_by_platform`。
+
+    两者**至少有一个**：单平台组件用 `path` 就够；可执行文件在不同平台
+    结构不同的（浏览器内核）用 `path_by_platform` 逐平台声明。
+    """
+    entry = recipe.get("entry") or {}
+    by_platform = entry.get("path_by_platform")
+    if by_platform is None:
+        _require(
+            isinstance(entry.get("path"), str) and bool(str(entry.get("path")).strip()),
+            "entry 必须有 path（或改用 path_by_platform 逐平台声明）",
+        )
+        return
+
+    ok = isinstance(by_platform, dict) and bool(by_platform)
+    _require(ok, "entry.path_by_platform 必须是非空对象（平台 → 入口路径）")
+    assert isinstance(by_platform, dict)
+
+    platforms = {str(p) for p in recipe["platforms"]}
+    unknown = set(by_platform) - platforms
+    _require(
+        not unknown,
+        f"entry.path_by_platform 含未声明的平台：{sorted(unknown)}",
+    )
+    # **每个声明平台都要有入口**，缺了装配时就不知道该启动什么
+    missing = platforms - set(by_platform)
+    _require(
+        not missing,
+        f"entry.path_by_platform 缺少这些平台的入口：{sorted(missing)}",
+    )
+    for platform, value in by_platform.items():
+        value_ok = isinstance(value, str) and bool(value.strip())
+        _require(
+            value_ok,
+            f"entry.path_by_platform[{platform}] 必须是非空字符串",
+        )
+        _safe_relative(str(value))
 
 
 def _validate_requires(recipe: dict[str, Any]) -> None:

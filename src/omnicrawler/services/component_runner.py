@@ -421,6 +421,13 @@ def build_native_spec(component_root: Path, entry_data: dict[str, Any]) -> Nativ
     root = Path(component_root)
     entry_path = str(entry_data.get("path") or "").strip()
     if not entry_path:
+        # 平台专属入口（浏览器内核）：按当前平台取
+        by_platform = entry_data.get("path_by_platform") or {}
+        if isinstance(by_platform, dict):
+            from .component_recipe import current_platform as _current
+
+            entry_path = str(by_platform.get(_current()) or "").strip()
+    if not entry_path:
         raise ComponentRunnerError(f"native 组件的 entry 缺少 path：{root}")
 
     executable = (root / entry_path).resolve()

@@ -38,6 +38,7 @@ import argparse
 import json
 import re
 import sys
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -59,6 +60,22 @@ PLATFORM_TOKENS: dict[str, tuple[str, ...]] = {
 ARCH_TOKENS: dict[str, tuple[str, ...]] = {
     "x86_64": ("x86_64", "amd64"),
     "aarch64": ("aarch64", "arm64"),
+}
+
+#: **CPU-only 轮子的独立索引**。
+#:
+#: PyPI 上的 `torch` 是 **CUDA 版**：Linux 上装完仍要求系统里有
+#: `libcublasLt.so.13` 等 CUDA 运行库（实测 CI 报
+#: `ValueError: libcublasLt.so.*[0-9] not found in the system path`），
+#: 在无 GPU 的机器上直接跑不起来。
+#:
+#: 正确的做法是用 pytorch 官方的 CPU 索引，那里的轮子不带 CUDA 依赖。
+#: 版本号会略低于 PyPI（当前 2.9.1 vs 2.15.0），但下游约束都很宽
+#: （easyocr 只要求 torchvision>=0.5，doctr 要求 torch>=2.0.0），
+#: 完全兼容。
+_CPU_INDEX = {
+    "torch": "https://download.pytorch.org/whl/cpu/torch/",
+    "torchvision": "https://download.pytorch.org/whl/cpu/torchvision/",
 }
 
 #: 明确不接受的标记（会在目标环境上装不上或跑不起来）。
@@ -205,6 +222,67 @@ def _wheel_score(filename: str, platform: str, arch: str) -> int | None:
     return None
 
 
+def _head_size(url: str) -> int:
+    """用 HEAD 取构件体积（CPU 索引页面不提供 size）。"""
+    try:
+        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "curl/8"})
+        with urllib.request.urlopen(req, timeout=60) as response:
+            return int(response.headers.get("Content-Length") or 0)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _from_cpu_index(package: str, platform: str, arch: str) -> dict | None:
+    """从 pytorch 的 CPU-only 索引里挑轮子。
+
+    只在 `package` 属于 `_CPU_INDEX` 时调用。返回与 PyPI 同形的条目。
+    """
+    index_url = _CPU_INDEX.get(package)
+    if not index_url:
+        return None
+    try:
+        req = urllib.request.Request(index_url, headers={"User-Agent": "curl/8"})
+        with urllib.request.urlopen(req, timeout=60) as response:
+            html = response.read().decode("utf-8", errors="replace")
+    except Exception:  # noqa: BLE001 - 索引不可达就退回 PyPI
+        return None
+
+    plat_tokens = PLATFORM_TOKENS[platform]
+    arch_tokens = ARCH_TOKENS[arch]
+    candidates: list[tuple[tuple, str, str, str]] = []
+    # href 是**完整绝对 URL**（形如 https://download-r2.pytorch.org/whl/cpu/
+    # torch-2.9.1%2Bcpu-cp313-...whl#sha256=...），不是相对路径。
+    for match in re.finditer(
+        rf'href="(https://[^"]+/whl/cpu/({re.escape(package)}-[^"#]+\.whl))(?:#sha256=([0-9a-f]{{64}}))?"',
+        html,
+    ):
+        full_url, filename, sha = match.group(1), match.group(2), match.group(3)
+        lowered = filename.lower()
+        if f"cp{TARGET_PY[0]}{TARGET_PY[1]}" not in lowered:
+            continue
+        if not any(tok in lowered for tok in plat_tokens):
+            continue
+        if not any(tok in lowered for tok in arch_tokens):
+            continue
+        version_match = re.search(r"-([\d.]+)(?:\+|%2B)cpu", filename)
+        version = version_match.group(1) if version_match else "0"
+        candidates.append((_version_key(version), filename, sha or "", full_url))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    _, filename, sha, url = candidates[-1]
+    basename = urllib.parse.unquote(filename)
+    return {
+        "package": package,
+        "version": re.search(r"-([\d.]+)(?:\+|%2B)cpu", basename).group(1),
+        "url": url,
+        "sha256": sha,
+        "size": 0,  # CPU 索引页面不提供体积，稍后由 HEAD 补
+        "filename": basename,
+    }
+
+
 def _pick_wheel(release_files: list[dict], platform: str, arch: str) -> dict | None:
     """在某个版本的发布文件里挑最合适的轮子。"""
     scored: list[tuple[int, dict]] = []
@@ -238,18 +316,27 @@ def resolve_closure(root_package: str, platform: str, arch: str) -> list[dict]:
 
         version = data["info"]["version"]
         files = data["releases"].get(version) or []
-        wheel = _pick_wheel(files, platform, arch)
+        # **torch / torchvision 优先用 CPU-only 索引**：PyPI 上的是 CUDA 版，
+        # 装完仍要求系统有 libcublasLt.so，无 GPU 机器上直接失败。
+        wheel = _from_cpu_index(name, platform, arch) if _normalize(name) in _CPU_INDEX else None
+        if wheel is None:
+            wheel = _pick_wheel(files, platform, arch)
         if wheel is None:
             print(
                 f"  [warn] {name} {version}: 没有适配 {platform}/{arch} 的轮子",
                 file=sys.stderr,
             )
         else:
+            if not wheel.get("size"):
+                wheel["size"] = _head_size(wheel["url"])
+            # 两种结构：PyPI 的是 `{"digests": {"sha256": ...}}`，
+            # CPU 索引的已拍平成 `{"sha256": ...}`。统一取值。
+            sha = wheel.get("sha256") or (wheel.get("digests") or {}).get("sha256") or ""
             chosen[key] = {
                 "package": name,
-                "version": version,
+                "version": wheel.get("version") or version,
                 "url": wheel["url"],
-                "sha256": wheel["digests"]["sha256"],
+                "sha256": sha,
                 "size": wheel["size"],
                 "filename": wheel["filename"],
             }
