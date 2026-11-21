@@ -70,7 +70,10 @@ def test_component_offline_import_hash_dependencies_and_recoverable_uninstall(tm
     package = tmp_path / "ocr.ocp"
     _component_package(package)
     manager = ComponentManager(tmp_path / "components")
-    with pytest.raises(ValueError, match="受信签名"):
+    # 文案已随实现细化为「未配置组件受信公钥（信任根）」——
+    # 匹配更宽的前缀「受信」而不是旧文案「受信签名」，
+    # 既覆盖当前信息，也不会因下半句调整再次失效。
+    with pytest.raises(ValueError, match="受信"):
         manager.inspect_package(package)
     installed = manager.import_offline(package, allow_unsigned=True)
     assert installed["purpose"] == "中文OCR"

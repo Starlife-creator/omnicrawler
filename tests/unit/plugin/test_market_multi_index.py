@@ -75,8 +75,20 @@ def test_single_source_path_still_works(tmp_path: Path) -> None:
     assert [p["id"] for p in result["plugins"]] == ["demo"]
     assert result["plugins"][0]["_trust"] == "official"
     assert result["plugins"][0]["_source"] == str(market)
+    # `generated_at` 与 `sequence` 是防重放所需的元数据
+    # （`sequence` 单调递增，用于拒绝回退的旧目录）—— 实现增强后
+    # 一并回显在 sources 里，让上层能看到每个源的版本水位。
     assert result["sources"] == [
-        {"url": str(market), "kind": "curated", "trust": "official", "ok": True, "error": "", "count": 1}
+        {
+            "url": str(market),
+            "kind": "curated",
+            "trust": "official",
+            "ok": True,
+            "error": "",
+            "count": 1,
+            "generated_at": "2026-09-29T00:00:01+00:00",
+            "sequence": 1,
+        }
     ]
     assert result["conflicts"] == []
 

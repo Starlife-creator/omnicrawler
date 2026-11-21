@@ -9,9 +9,29 @@ from omnicrawler.sources.frameworks import run_scrapy
 
 
 def config(tmp_path):
-    (tmp_path / "spider.py").write_text("# trusted local code", encoding="utf-8")
+    """`spider_file` 相对 **config.root** 解析，不是相对配置文件所在目录。
+
+    配置里写 `workspace: work`（相对路径）时，`config.root` 会落到
+    **项目根**，于是 `spider.py` 被找去项目根而不是 `tmp_path` ——
+    测试把文件放在 tmp_path，就必然报「Scrapy spider不存在」。
+
+    改为：配置里用显式绝对 workspace，让 `config.root` 指向 tmp_path 的
+    子目录，测试只需把 `spider.py` 放在同一个子目录下。
+    """
+    # `config.resolve` 对**相对路径**按 `config.root` 解析，而 `config.root`
+    # 是**项目根**（与 workspace 无关）—— 于是 `spider.py` 会被找去项目根，
+    # 而测试把文件放在 tmp_path，必然报「Scrapy spider不存在」。
+    #
+    # 用**绝对路径**声明 `spider_file` 即可：`resolve` 对绝对路径直接返回。
+    spider = tmp_path / "spider.py"
+    spider.write_text("# trusted local code", encoding="utf-8")
     path = tmp_path / "task.yaml"
-    path.write_text("project: {name: external, workspace: work}\nsource: {kind: scrapy, spider_file: spider.py, execution_contract: trusted_external}\n", encoding="utf-8")
+    path.write_text(
+        f"project: {{name: external, workspace: {(tmp_path / 'work').as_posix()}}}\n"
+        f"source: {{kind: scrapy, spider_file: {spider.as_posix()}, "
+        "execution_contract: trusted_external}\n",
+        encoding="utf-8",
+    )
     return load_config(path)
 
 
