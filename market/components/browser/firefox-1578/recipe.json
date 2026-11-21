@@ -9,7 +9,8 @@
     "browser.firefox"
   ],
   "platforms": [
-    "windows"
+    "windows",
+    "linux"
   ],
   "architectures": [
     "x86_64"
@@ -28,6 +29,17 @@
       "extract_to": "browser",
       "platforms": [
         "windows"
+      ]
+    },
+    {
+      "url": "https://cdn.playwright.dev/dbazure/download/playwright/builds/firefox/1578/firefox-ubuntu-22.04.zip",
+      "sha256": "891ff502ebcc023385f91a0a9518744da03567169c5cb6c1a82ce9d294e628c8",
+      "size": 118972897,
+      "format": "zip",
+      "strip_components": 0,
+      "extract_to": "browser",
+      "platforms": [
+        "linux"
       ]
     }
   ],

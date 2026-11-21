@@ -64,6 +64,25 @@ ARCH_TOKENS: dict[str, tuple[str, ...]] = {
 #: 明确不接受的标记（会在目标环境上装不上或跑不起来）。
 _REJECT_TOKENS = ("cp313t", "musllinux", "win_arm64", "i686", "ppc64", "s390x")
 
+#: **GPU / CUDA 运行时包前缀** —— 纯 CPU 场景一律排除。
+#:
+#: Linux 上 `torch` 的依赖闭包会带进一整套 CUDA 运行时：
+#: nvidia-cudnn 492 MiB + nvidia-cublas 423 MiB + triton 272 MiB +
+#: nccl 197 MiB + ... 合计约 **2.3 GiB**。
+#:
+#: 而本项目的 OCR 用途是**纯 CPU 推理**（桌面单机、无 GPU 假设）。
+#: 把这些算进组件会让 easyocr 从 248 MiB 膨胀到 2687 MiB —— 那是
+#: 「因为下游的默认依赖而把组件撑爆」，不是用户要的东西。
+#:
+#: 排除它们是安全的：torch 的 CPU 轮子自带所需运行时，
+#: 只有真正要用 CUDA 时才需要这些包。
+_GPU_PACKAGE_PREFIXES = (
+    "nvidia-",
+    "cuda-",
+    "triton",
+    "pytorch-triton",
+)
+
 
 def _fetch(name: str) -> dict:
     with urllib.request.urlopen(f"{PYPI}/{name}/json", timeout=45) as response:
@@ -241,6 +260,9 @@ def resolve_closure(root_package: str, platform: str, arch: str) -> list[dict]:
                 continue
             if not _marker_applies(marker, platform):
                 continue  # 该标记在当前目标平台不成立
+            if _normalize(dep).startswith(_GPU_PACKAGE_PREFIXES):
+                # 纯 CPU 场景：GPU 运行时不进闭包（见 _GPU_PACKAGE_PREFIXES 说明）
+                continue
             if _normalize(dep) not in seen:
                 pending.append(dep)
 
@@ -300,22 +322,53 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--engine", default="generic", help="探测引擎（generic / paddle）")
     parser.add_argument("--module", required=True, help="入口模块名（如 rapidocr）")
     parser.add_argument("--description", default="")
-    parser.add_argument("--platform", default="windows", choices=sorted(PLATFORM_TOKENS))
+    parser.add_argument(
+        "--platform", default="windows", choices=sorted(PLATFORM_TOKENS),
+        help="主平台（构建依赖闭包用）",
+    )
     parser.add_argument("--arch", default="x86_64", choices=sorted(ARCH_TOKENS))
+    parser.add_argument(
+        "--also-platforms", default="",
+        help=(
+            "额外平台，逗号分隔（如 linux）。**必须给**，否则组件只能在本机平台装 —— "
+            "CI 跑在 Linux 上，只声明 windows 会导致装配阶段直接失败"
+            "（实测：5 个新组件在 CI 上全部报「此组件不支持当前平台」）。"
+        ),
+    )
     parser.add_argument("--out", required=True, help="输出目录（市场仓的组件目录）")
     parser.add_argument("--download", action="store_true", help="真的下载并算哈希")
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
 
-    print(f"解析依赖闭包：{args.package}（{args.platform}/{args.arch}）")
-    closure = resolve_closure(args.package, args.platform, args.arch)
+    extra = [p.strip() for p in (args.also_platforms or "").split(",") if p.strip()]
+    all_platforms = [args.platform] + [p for p in extra if p != args.platform]
+
+    # **每个平台单独解析闭包**：同一份配方在不同平台要拉不同的轮子
+    # （onnxruntime 的 win_amd64 与 manylinux_x86_64 是两个构件）。
+    # 合并时按 (包名, 文件名) 去重 —— 同一个纯 Python 轮子在多平台共用。
+    merged: dict[str, dict] = {}
+    for platform in all_platforms:
+        print(f"解析依赖闭包：{args.package}（{platform}/{args.arch}）")
+        for item in resolve_closure(args.package, platform, args.arch):
+            key = f"{item['package']}|{item['filename']}"
+            if key in merged:
+                # 已在别的平台出现过：补上 platforms 标记
+                merged[key].setdefault("platforms", set()).add(platform)
+                continue
+            entry = dict(item)
+            entry["platforms"] = {platform}
+            merged[key] = entry
+        via = len([k for k, v in merged.items() if platform in v["platforms"]])
+        print(f"  该平台 {via} 个构件")
+
+    closure = list(merged.values())
     total = sum(int(item["size"]) for item in closure)
-    print(f"  共 {len(closure)} 个构件，合计 {total // 1024 // 1024} MiB")
+    print(f"合计 {len(closure)} 个构件，{total // 1024 // 1024} MiB")
 
     recipe = build_recipe(
         args.package,
         component_id=args.id,
         kind=args.kind,
-        platforms=[args.platform],
+        platforms=all_platforms,
         architectures=[args.arch],
         engine=args.engine,
         module=args.module,
@@ -329,6 +382,9 @@ def main(argv: list[str] | None = None) -> int:
             "size": item["size"],
             "format": "whl",
             "extract_to": "site-packages",
+            # 每个构件标注适用平台：跨平台配方里同一个包有多个轮子，
+            # 装配时按当前平台筛（`artifacts_for_platform`）。
+            "platforms": sorted(item["platforms"]),
         }
         for item in closure
     ]

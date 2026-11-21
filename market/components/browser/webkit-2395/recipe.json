@@ -9,7 +9,8 @@
     "browser.webkit"
   ],
   "platforms": [
-    "windows"
+    "windows",
+    "linux"
   ],
   "architectures": [
     "x86_64"
@@ -28,6 +29,17 @@
       "extract_to": "browser",
       "platforms": [
         "windows"
+      ]
+    },
+    {
+      "url": "https://cdn.playwright.dev/dbazure/download/playwright/builds/webkit/2395/webkit-ubuntu-22.04.zip",
+      "sha256": "4bd5cafd00b9e725c4947a415c0d9488f07534181498a4990d61fd3aa52ef7df",
+      "size": 113476494,
+      "format": "zip",
+      "strip_components": 0,
+      "extract_to": "browser",
+      "platforms": [
+        "linux"
       ]
     }
   ],
