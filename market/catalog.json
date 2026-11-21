@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-20T15:48:02+00:00",
-  "sequence": 1791080222,
+  "generated_at": "2026-11-21T08:47:30+00:00",
+  "sequence": 1791080223,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -988,7 +988,7 @@
       "id": "chromium-builtin",
       "name": "随安装包发布的 Playwright Chromium 内核。首启即用，无需下载；由组件体系管理，可被其他内核替换或设为非默认。",
       "version": "1228",
-      "publisher": "unknown",
+      "publisher": "starlife",
       "recipe_file": "components/browser/chromium-builtin/recipe.json",
       "recipe_digest": "6de741a977da35d70e44328c4ad15a5789ec54b3b377e992e1adef403d8c960a",
       "platforms": [
@@ -1031,7 +1031,11 @@
           "size": 435574347
         }
       ],
-      "declared_total_bytes": 435574347
+      "declared_total_bytes": 435574347,
+      "package_manifest_file": "components/browser/chromium-builtin/package.manifest.json",
+      "creator_package_signature_file": "components/browser/chromium-builtin/package.manifest.creator.sig",
+      "creator_identity_file": "components/browser/chromium-builtin/creator.identity",
+      "creator_signature_file": "components/browser/chromium-builtin/creator.sig"
     },
     {
       "id": "ocr-paddle",

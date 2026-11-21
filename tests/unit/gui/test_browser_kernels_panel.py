@@ -174,12 +174,41 @@ def test_local_import_shows_probe_and_unverified(qt_app: QApplication) -> None:
 
 
 def test_trust_labels_cover_three_sources(qt_app: QApplication) -> None:
-    """三种来源都要有面向用户的标签（内置 / 市场 / 本地导入）。"""
-    from omnicrawler.gui.views.browser_kernels import _TRUST_STYLE
+    """三种来源都要有面向用户的标签（内置 / 市场 / 本地导入）。
 
-    assert set(_TRUST_STYLE) == {"builtin", "market", "local"}, (
-        f"来源标签不全：{sorted(_TRUST_STYLE)}"
+    **刻意不用颜色区分来源**：GUI 门禁对新文件零容忍裸十六进制色值，
+    而硬编码颜色在深色/高对比度主题下不可读。来源语义用文字表达已足够，
+    且对色盲用户同样清晰 —— 需要视觉强调时交给设计体系令牌，不在视图里写死。
+    """
+    from omnicrawler.gui.views.browser_kernels import _TRUST_LABELS
+
+    assert set(_TRUST_LABELS) == {"builtin", "market", "local"}, (
+        f"来源标签不全：{sorted(_TRUST_LABELS)}"
     )
+    # 标签必须是给人看的文字，不能是色值或空串
+    for key, label in _TRUST_LABELS.items():
+        assert label and not label.startswith("#"), f"{key} 的标签不是可读文字：{label!r}"
+
+
+def test_no_raw_hex_colors_in_panel() -> None:
+    """面板不得出现裸十六进制色值（GUI 门禁的零容忍约定）。
+
+    这条守卫让「加了颜色但忘了走令牌」在**单元测试层**就红，
+    不必等门禁跑完才发现。
+    """
+    import re
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[3]
+        / "src"
+        / "omnicrawler"
+        / "gui"
+        / "views"
+        / "browser_kernels.py"
+    ).read_text(encoding="utf-8")
+    hits = re.findall(r"#[0-9a-fA-F]{3,8}\b", source)
+    assert not hits, f"面板出现裸十六进制色值：{hits}"
 
 
 def test_component_manager_hosts_kernel_panel(qt_app: QApplication) -> None:

@@ -26,7 +26,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -50,10 +49,16 @@ _INTRO = _(
     "切换内核会让已登录站点需要重新登录。"
 )
 
-_TRUST_STYLE = {
-    "builtin": ("内置", "#2f855a"),
-    "market": ("市场", "#2b6cb0"),
-    "local": ("本地导入", "#b7791f"),
+#: 来源 → 面向用户的标签。
+#:
+#: **刻意不用颜色区分来源**：GUI 门禁对新文件零容忍裸十六进制色值，
+#: 而硬编码颜色在深色/高对比度主题下必然不可读。来源的语义
+#: （内置/市场/本地）用**文字**表达已经足够，且对色盲用户同样清晰。
+#: 需要视觉强调时，应由设计体系令牌驱动，而不是在这个视图里写死颜色。
+_TRUST_LABELS: dict[str, str] = {
+    "builtin": "内置",
+    "market": "市场",
+    "local": "本地导入",
 }
 
 
@@ -130,9 +135,9 @@ class BrowserKernelPanel(QWidget):
         for row, option in enumerate(self._options):
             self._table.setItem(row, 0, QTableWidgetItem(option.display_name))
 
-            label, color = _TRUST_STYLE.get(option.source, (option.source, "#4a5568"))
+            label = _TRUST_LABELS.get(option.source, option.source)
             source_item = QTableWidgetItem(label)
-            source_item.setForeground(Qt.GlobalColor.black)
+            # 不设置前景色：颜色应由设计体系（主题/样式表）统一决定。
             source_item.setToolTip(option.trust)
             self._table.setItem(row, 1, source_item)
 

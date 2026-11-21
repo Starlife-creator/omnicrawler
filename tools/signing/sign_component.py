@@ -86,6 +86,23 @@ _NON_PAYLOAD = frozenset(
 )
 
 
+def _manifest_file_count(directory: Path) -> int:
+    """清单覆盖的文件数。
+
+    `PackageVerification` 只携带摘要与身份，不带 manifest 本体 ——
+    所以这里直接读 `package.manifest.json`。
+    """
+    manifest_path = directory / "package.manifest.json"
+    if not manifest_path.is_file():
+        return 0
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0
+    files = manifest.get("files")
+    return len(files) if isinstance(files, dict) else 0
+
+
 def _resolve_password(password: str | None) -> str:
     """密码来源：`--password` > 环境变量（与 identity.py 同一条纪律）。"""
     import os
@@ -188,10 +205,15 @@ def cmd_sign(args: argparse.Namespace) -> int:
 
     # ── 后置自检：刚写进去的签名必须能验过 ────────────────────────────
     try:
-        verification = verify_package(directory)
+        verify_package(directory)
     except PackageManifestError as exc:
         print(f"FAIL 签名后自检失败：{exc}")
         return 1
+
+    # `PackageVerification` 不携带 manifest —— 清单覆盖数要直接读文件。
+    # （我第一版写成 verification.manifest，导致签名成功后崩在最后一行打印，
+    #  用户看到 traceback 容易误判为签名失败。）
+    covered = _manifest_file_count(directory)
 
     print(
         f"[组件签名] 完成（作者: {args.username}，指纹: "
@@ -199,7 +221,7 @@ def cmd_sign(args: argparse.Namespace) -> int:
     )
     print(f"  组件 id      = {package_id}")
     print(f"  版本         = {version}")
-    print(f"  清单覆盖     = {len(verification.manifest.get('files', {}))} 个文件")
+    print(f"  清单覆盖     = {covered} 个文件")
     print("  签名自检     = 通过")
     return 0
 
@@ -213,13 +235,12 @@ def cmd_verify(args: argparse.Namespace) -> int:
         print(f"FAIL 验签失败：{exc}")
         return 1
 
-    manifest = verification.manifest
     print(f"OK {directory.name}")
-    print(f"  包类型       = {manifest.get('package_type')}")
-    print(f"  包 id        = {manifest.get('package_id')}")
-    print(f"  版本         = {manifest.get('version')}")
-    print(f"  创作者指纹   = {manifest.get('creator_fingerprint')}")
-    print(f"  清单覆盖     = {len(manifest.get('files', {}))} 个文件")
+    print(f"  包类型       = {verification.package_type}")
+    print(f"  包 id        = {verification.package_id}")
+    print(f"  版本         = {verification.version}")
+    print(f"  创作者指纹   = {verification.creator.key_fingerprint}")
+    print(f"  清单覆盖     = {_manifest_file_count(directory)} 个文件")
     return 0
 
 
