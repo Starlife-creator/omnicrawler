@@ -109,3 +109,133 @@ def test_package_rejects_private_material(tmp_path: Path) -> None:
             identity=_identity(tmp_path),
             legacy_target="template.yaml",
         )
+
+# ── 组件包与插件/模板**同等地位**：签名与验签都必须支持 ──────────────────
+def _component_dir(tmp_path: Path, version: str = "1.0.0") -> Path:
+    root = tmp_path / "probe-component"
+    root.mkdir()
+    (root / "recipe.json").write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "id": "probe-component",
+                "name": "probe",
+                "version": version,
+                "kind": "wheel-pack",
+                "smoke": {"expect": ["ok"]},
+                "platforms": ["windows"],
+                "architectures": ["x86_64"],
+                "python_abi": ["cp313"],
+                "provides": ["probe.demo"],
+                "artifacts": [{"url": "https://e.invalid/a.whl", "sha256": "a" * 64, "size": 1}],
+                "entry": {
+                    "path": "entry.json",
+                    "protocol": "p",
+                    "engine": "generic",
+                    "runner": "worker-wheelpack",
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_component_package_can_be_verified(tmp_path: Path) -> None:
+    """**组件签完之后必须验得过。**
+
+    实测缺陷（2026-11-21）：`build_manifest` 早就接受
+    `("plugin", "template", "component")`，而 `verify_package` 只列了前两种
+    —— 于是组件**能签但验不了**，任何验签都报
+    「不支持的包类型: 'component'」。
+
+    这个缺陷长期潜伏，因为**签名路径不经过 verify**：
+    CI 里只看得到「签名成功」，看不到「验不了」。
+
+    来源：提交 7677294e「组件市场补齐到与插件/模板同等成熟度」
+    只改了签名侧，漏了验证侧。
+    """
+    root = _component_dir(tmp_path)
+    signed = sign_creator_package(
+        root,
+        package_type="component",
+        package_id="probe-component",
+        version="1.0.0",
+        identity=_identity(tmp_path),
+        legacy_target="recipe.json",
+    )
+    verified = verify_package(root)
+    assert verified.package_type == "component"
+    assert verified.manifest_sha256 == signed.manifest_sha256
+    assert verified.creator.username == "alice"
+
+
+def test_component_derived_files_are_not_payload(tmp_path: Path) -> None:
+    """组件**派生物**不进清单：`deps.lock.json` / `files.lock.json`。
+
+    它们由工具生成（依赖闭包快照、内置组件逐文件哈希），正确性由
+    「与配方一致」决定，而**不是**由签名决定 —— 签名覆盖的是
+    「作者声明了什么」，不该覆盖「工具算出了什么」。
+
+    若把它们算进载荷，每次重算快照都要全包重签，而重算本身不需要作者参与。
+    """
+    root = _component_dir(tmp_path)
+    (root / "deps.lock.json").write_text('{"packages": []}\n', encoding="utf-8")
+    (root / "files.lock.json").write_text('{"files": {}}\n', encoding="utf-8")
+
+    sign_creator_package(
+        root,
+        package_type="component",
+        package_id="probe-component",
+        version="1.0.0",
+        identity=_identity(tmp_path),
+        legacy_target="recipe.json",
+    )
+    manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    assert "deps.lock.json" not in manifest["files"], "派生物不该进清单"
+    assert "files.lock.json" not in manifest["files"], "派生物不该进清单"
+    assert "recipe.json" in manifest["files"]
+    # 验签也必须通过（派生物不算「未声明文件」）
+    verify_package(root)
+
+
+def test_component_recipe_change_breaks_signature(tmp_path: Path) -> None:
+    """改了 `recipe.json` 就必须重签 —— 否则验签必须失败。"""
+    root = _component_dir(tmp_path)
+    sign_creator_package(
+        root,
+        package_type="component",
+        package_id="probe-component",
+        version="1.0.0",
+        identity=_identity(tmp_path),
+        legacy_target="recipe.json",
+    )
+    recipe = json.loads((root / "recipe.json").read_text(encoding="utf-8"))
+    recipe["description"] = "改了一个字节"
+    (root / "recipe.json").write_text(
+        json.dumps(recipe, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    with pytest.raises(PackageManifestError, match="哈希不一致"):
+        verify_package(root)
+
+
+def test_all_three_package_types_are_accepted_by_both_sides() -> None:
+    """签名侧与验证侧支持的包类型**必须同源**。
+
+    这条守卫直接钉住那个潜伏缺陷：两处判定各写一份、不同步，
+    就会长期只签不验。
+    """
+    import inspect
+
+    import omnicrawler.plugins.package_manifest as module
+
+    build_src = inspect.getsource(module.build_manifest)
+    verify_src = inspect.getsource(module.verify_package)
+    for package_type in ("plugin", "template", "component"):
+        assert f'"{package_type}"' in build_src, f"签名侧缺 {package_type}"
+        assert f'"{package_type}"' in verify_src, (
+            f"验证侧缺 {package_type} —— 会出现「能签不能验」"
+        )

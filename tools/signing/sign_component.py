@@ -1,215 +1,255 @@
-#!/usr/bin/env python3
-"""组件包（``.ocp``）签名工具（**仅冷机运行**）。
+"""组件签名工具 —— 与 `sign_plugin.py` 平级的**组件专用**入口。
 
-为什么需要它
-------------
-`tools/signing/sign_plugin.py` 能生成密钥对、能签插件，但**没有签组件的入口**。
-结果是：维护者有了第三把钥匙（``configs/component_trust.pub.pem``）却签不了组件包，
-只能手写 base64/规范化 JSON —— 那正是最容易签错的地方（规范化方式必须与
-客户端 ``ComponentManager.inspect_package`` **逐字一致**，差一个空格就验不过）。
+## 为什么需要这个文件
 
-本工具把"规范化 + 签名 + 写回 zip"收口到一处，保证：
-1. 与客户端使用**同一个**规范化函数（``_canonical_manifest`` 与客户端同构）；
-2. 签名覆盖 ``component.json`` **除 signature 外的全部字段**；
-3. 拒绝把私钥写进仓库（沿用 `sign_plugin.py` 的冷密钥纪律）。
+`sign_plugin.py` 的 `creator-sign` **已经能处理组件**（载体是 `recipe.json`
+时包类型判为 `component`），但它叫"plugin"、参数叫 `--file plugin.py`、
+帮助文本里组件只是一句附注。结果是：
 
-用法
-----
-    # 给一个已有 .ocp 包签名（原地更新，另存原包为 .orig）
-    python tools/signing/sign_component.py sign \\
-        --package build/ocr-tesseract-0.1.0.ocp \\
-        --private-key "%USERPROFILE%\\.omnicrawler\\keys\\component_signing_private.pem"
+* 维护者不知道组件该用哪个工具，于是照着"插件工具"的用法猜；
+* 出现「用维护者 PEM 私钥给组件签创作者名」这种错用
+  （违反 §A.1.3「维护者不得冒充作者」）；
+* 组件与插件在**工具层面看起来不是同等地位**，而它们**应该**是。
 
-    # 只算规范化摘要与预期签名（不写文件，便于核对）
-    python tools/signing/sign_component.py inspect --package build/ocr-tesseract-0.1.0.ocp
+本文件把组件这条路显式化：**同一个创作者身份、同一套保险库、同一条签名链**，
+只是入口和预设不同。
 
-冷密钥纪律
-----------
-私钥只按路径读入内存用于签名，**绝不打印、绝不复制、绝不入仓**。
-本工具不提供"生成密钥"——那由 ``tools/signing/sign_plugin.py generate-keys`` 负责。
+## 身份模型（必须先理解，否则会签错）
+
+```text
+创作者身份 = Ed25519 密钥对，密码加密后存进 OS 密钥库（keyring）
+             ↑ 这是「作者」身份，插件/模板/组件共用同一个
+维护者私钥 = PEM 文件，离线保管，只用于签 catalog
+             ↑ 永不进仓库；**不得**用来给组件签创作者名
+```
+
+组件、插件、模板三者**同一创作者身份**（本机实测只有一个 `starlife`）。
+签名产出 `creator.identity`（含公钥与指纹）+ `package.manifest.json` + 双签名轨。
+
+## 与 `sign_plugin.py` 的关系
+
+不重新实现任何签名逻辑 —— 直接复用
+`omnicrawler.plugins.package_manifest.sign_creator_package`。
+本文件只做三件事：
+
+1. **预设组件参数**（载体固定 `recipe.json`、包类型固定 `component`）；
+2. **组件专属的前置校验**：`recipe.json` 必须已通过 `load_recipe`
+   （否则会给一份非法配方签名，签完才在装配时报错）；
+3. **组件专属的后置自检**：签完立刻用 `verify_package` 验一遍，
+   确认公钥能验过刚写入的签名。
+
+## 用法
+
+```powershell
+# 身份密码走环境变量（推荐），不要写在命令行里
+$sec = Read-Host -AsSecureString "创作者身份密码"
+$env:OMNICRAWL_IDENTITY_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+
+python tools/signing/sign_component.py sign <组件目录> --username starlife
+python tools/signing/sign_component.py verify <组件目录>
+```
 """
 from __future__ import annotations
 
 import argparse
-import base64
-import hashlib
 import json
-import os
 import sys
-import tempfile
-import zipfile
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-for _candidate in (_REPO_ROOT / "src", _REPO_ROOT):
-    _candidate_str = str(_candidate)
-    if _candidate_str not in sys.path:
-        sys.path.insert(0, _candidate_str)
+# ── 自引导：让「直接 python tools/signing/sign_component.py」也能找到包 ──
+_ROOT = Path(__file__).resolve().parents[2]
+if str(_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_ROOT / "src"))
 
-from omnicrawler.plugins.signing import sign_bytes  # noqa: E402
-from omnicrawler.services.component_manager import _safe_component_path  # noqa: E402
+from omnicrawler.plugins.identity import CreatorIdentity, IdentityStore  # noqa: E402
+from omnicrawler.plugins.package_manifest import (  # noqa: E402
+    PackageManifestError,
+    sign_creator_package,
+    verify_package,
+)
 
-MANIFEST_NAME = "component.json"
+#: 组件包的载体文件名。它决定包类型，不能改。
+RECIPE_FILENAME = "recipe.json"
 
-
-def _repo_root() -> Path:
-    """仓库根目录（可被环境变量覆盖，**仅供测试**）。
-
-    为什么需要这个开关：本仓的 pytest 临时目录被配置在**仓库内部**，
-    于是"私钥不得在仓内"这条判据无法用普通 tmp_path 测试——
-    要么放宽判据（错），要么让判据的"仓界"可注入（对）。
-    生产环境不设这个变量，行为完全不变。
-    """
-    override = os.environ.get("OMNICRAWL_SIGN_REPO_ROOT", "").strip()
-    if override:
-        return Path(override).expanduser().resolve()
-    return _REPO_ROOT
-
-
-def canonical_manifest(raw: dict) -> bytes:
-    """规范化清单字节——**必须与客户端验签侧逐字一致**。
-
-    客户端用的是：
-        ``json.dumps(raw, ensure_ascii=False, sort_keys=True, separators=(",", ":"))``
-    其中 ``raw`` 是**弹掉 signature 之后**的字典。任何差异（空格、排序、ensure_ascii）
-    都会让签名验不过，所以这里刻意复用同一串参数，并加了守卫测试钉住一致性。
-    """
-    return json.dumps(raw, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+#: 组件目录里**不参与清单**的文件（签名自身与派生数据）。
+#: 与 `package_manifest._payload_files` 的口径保持一致：
+#: 清单只覆盖"被声明的字节"，签名产物本身不能进清单（否则自引用）。
+_NON_PAYLOAD = frozenset(
+    {
+        "package.manifest.json",
+        "creator.sig",
+        "package.manifest.creator.sig",
+        "deps.lock.json",  # 派生快照：由 component_deps_lock.py 生成，非手写内容
+        "files.lock.json",  # 内置组件的逐文件清单：体量大且由工具生成
+    }
+)
 
 
-def strip_signature(manifest: dict) -> dict:
-    """返回弹掉 ``signature`` 的副本（不改原字典）。"""
-    copied = dict(manifest)
-    copied.pop("signature", None)
-    return copied
+def _resolve_password(password: str | None) -> str:
+    """密码来源：`--password` > 环境变量（与 identity.py 同一条纪律）。"""
+    import os
 
-
-def read_manifest(package: Path) -> tuple[dict, dict[str, bytes]]:
-    """读出 ``component.json`` 与包内全部成员字节。"""
-    with zipfile.ZipFile(package) as archive:
-        names = archive.namelist()
-        if MANIFEST_NAME not in names:
-            raise SystemExit(f"组件包缺少 {MANIFEST_NAME}: {package}")
-        manifest = json.loads(archive.read(MANIFEST_NAME))
-        if not isinstance(manifest, dict):
-            raise SystemExit(f"{MANIFEST_NAME} 必须是 JSON 对象")
-        members = {name: archive.read(name) for name in names if name != MANIFEST_NAME}
-    return manifest, members
-
-
-def verify_local_hashes(manifest: dict, members: dict[str, bytes]) -> list[str]:
-    """按清单里的 files 逐一核对包内成员哈希；返回问题列表。"""
-    problems: list[str] = []
-    files = manifest.get("files")
-    if not isinstance(files, dict) or not files:
-        problems.append("清单 files 为空——签一个没有文件哈希的组件包没有意义")
-        return problems
-    for name, expected in files.items():
-        try:
-            safe = str(_safe_component_path(str(name)))
-        except Exception as exc:  # noqa: BLE001
-            problems.append(f"不安全的组件路径 {name!r}: {exc}")
-            continue
-        payload = members.get(safe)
-        if payload is None:
-            problems.append(f"清单声明了 {name} 但包里没有该文件")
-            continue
-        actual = hashlib.sha256(payload).hexdigest()
-        if actual != expected:
-            problems.append(f"{name} 哈希不匹配：清单={expected[:16]}… 实际={actual[:16]}…")
-    return problems
-
-
-def _write_package(target: Path, manifest: dict, members: dict[str, bytes]) -> None:
-    """原子写回：先写临时名，再替换，避免中断留下半截包。"""
-    target = target.resolve()
-    with tempfile.NamedTemporaryFile(
-        dir=target.parent, prefix=f".{target.name}.", suffix=".tmp", delete=False
-    ) as handle:
-        temp_path = Path(handle.name)
-    try:
-        with zipfile.ZipFile(temp_path, "w", zipfile.ZIP_DEFLATED) as archive:
-            archive.writestr(MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2))
-            for name, payload in members.items():
-                archive.writestr(name, payload)
-        temp_path.replace(target)
-    finally:
-        temp_path.unlink(missing_ok=True)
-
-
-def command_inspect(args: argparse.Namespace) -> int:
-    package = Path(args.package).expanduser()
-    manifest, members = read_manifest(package)
-    body = strip_signature(manifest)
-    problems = verify_local_hashes(body, members)
-    print(json.dumps({
-        "package": str(package),
-        "name": body.get("name"),
-        "version": body.get("version"),
-        "files": len(body.get("files") or {}),
-        "already_signed": "signature" in manifest,
-        "canonical_sha256": hashlib.sha256(canonical_manifest(body)).hexdigest(),
-        "self_check": problems or "ok",
-    }, ensure_ascii=False, indent=2))
-    return 0 if not problems else 1
-
-
-def command_sign(args: argparse.Namespace) -> int:
-    package = Path(args.package).expanduser()
-    if not package.is_file():
-        raise SystemExit(f"组件包不存在: {package}")
-    # 冷密钥安全：绝不从仓库内路径读私钥
-    private_path = Path(args.private_key).expanduser()
-    if not private_path.is_file():
-        raise SystemExit(f"私钥不存在: {private_path}")
-    try:
-        private_path.resolve().relative_to(_repo_root())
-    except ValueError:
-        pass  # 不在仓库内 —— 正常
-    else:
+    if password:
+        return password
+    value = os.environ.get("OMNICRAWL_IDENTITY_PASSWORD", "")
+    if not value:
         raise SystemExit(
-            f"拒绝使用仓库内的私钥文件: {private_path}\n"
-            "冷私钥必须放在仓外（例如桌面档案目录或加密盘）。"
+            "需要身份密码：设 OMNICRAWL_IDENTITY_PASSWORD 环境变量，或用 --password"
+            "（推荐环境变量：命令行参数会进 shell 历史）"
+        )
+    return value
+
+
+def _require_valid_recipe(component_dir: Path) -> dict:
+    """签名前先校验配方。
+
+    **为什么签之前要校验**：给一份非法配方签名，等于用创作者身份背书一个
+    装不上的东西。等到装配时才报错，签名已经发出去了。
+
+    这里只做结构校验（`load_recipe`），不联网、不下载。
+    """
+    from omnicrawler.services.component_recipe import RecipeError, load_recipe
+
+    recipe_path = component_dir / RECIPE_FILENAME
+    if not recipe_path.is_file():
+        raise SystemExit(f"不是组件目录（缺 {RECIPE_FILENAME}）：{component_dir}")
+    try:
+        return load_recipe(recipe_path)
+    except RecipeError as exc:
+        raise SystemExit(f"配方校验失败，拒绝签名：{exc}") from exc
+
+
+def _component_version(recipe: dict, directory: Path) -> str:
+    """版本取自配方本身 —— 它决定安装目录名，不能靠目录推断。"""
+    version = str(recipe.get("version") or "").strip()
+    if not version:
+        raise SystemExit(f"配方缺少 version：{directory / RECIPE_FILENAME}")
+    return version
+
+
+def _component_id(recipe: dict, directory: Path) -> str:
+    """包 id：优先配方显式声明的 `id`，否则用目录名。
+
+    与 catalog 侧同口径（`build.py` 用 `parent.name`），
+    且门禁强制「声明了 id 就必须等于目录名」。
+    """
+    declared = str(recipe.get("id") or "").strip()
+    if declared and declared != directory.name:
+        raise SystemExit(
+            f"配方 id（{declared!r}）与目录名（{directory.name!r}）不一致 —— "
+            "门禁会拒，签名前必须先对齐"
+        )
+    return declared or directory.name
+
+
+def cmd_sign(args: argparse.Namespace) -> int:
+    directory = Path(args.component_dir).resolve()
+    recipe = _require_valid_recipe(directory)
+    password = _resolve_password(args.password)
+
+    try:
+        identity = IdentityStore().load(args.username, password)
+    except Exception as exc:  # noqa: BLE001 - 身份库错误要如实报
+        print(f"FAIL 加载创作者身份 {args.username!r}: {exc}")
+        return 1
+
+    package_id = _component_id(recipe, directory)
+    version = _component_version(recipe, directory)
+
+    # 已签名且不是重签时拒绝 —— 防误改已发布的创作者身份。
+    identity_path = directory / "creator.identity"
+    if identity_path.is_file() and not args.force:
+        existing = CreatorIdentity.from_dict(
+            json.loads(identity_path.read_text(encoding="utf-8"))
+        )
+        if existing.key_fingerprint != identity.key_fingerprint:
+            print(
+                f"FAIL {directory.name} 已有创作者身份 "
+                f"{existing.key_fingerprint}，与当前身份 "
+                f"{identity.key_fingerprint} 不同。\n"
+                "     替换已发布组件的创作者身份会改变所有权语义，必须显式 --force，"
+                "并在文档里记录原因。"
+            )
+            return 1
+        print(
+            f"NOTE {directory.name} 已由同一身份签名过；"
+            "将按当前字节重签（内容变了就必须重签，否则清单失效）"
         )
 
-    manifest, members = read_manifest(package)
-    body = strip_signature(manifest)
-    problems = verify_local_hashes(body, members)
-    if problems:
-        raise SystemExit(
-            "签名前自检失败，已拒绝签名（签一个哈希对不上的包没有意义）：\n  "
-            + "\n  ".join(problems)
-        )
+    signed = sign_creator_package(
+        directory,
+        package_type="component",
+        package_id=package_id,
+        version=version,
+        identity=identity,
+        legacy_target=RECIPE_FILENAME,
+    )
 
-    signature = sign_bytes(canonical_manifest(body), private_path.read_bytes())
-    signed = dict(body, signature=base64.b64encode(signature).decode())
-    _write_package(package, signed, members)
-    print(json.dumps({
-        "package": str(package),
-        "signed": True,
-        "name": body.get("name"),
-        "version": body.get("version"),
-        "files": len(body.get("files") or {}),
-    }, ensure_ascii=False, indent=2))
+    # ── 后置自检：刚写进去的签名必须能验过 ────────────────────────────
+    try:
+        verification = verify_package(directory)
+    except PackageManifestError as exc:
+        print(f"FAIL 签名后自检失败：{exc}")
+        return 1
+
+    print(
+        f"[组件签名] 完成（作者: {args.username}，指纹: "
+        f"{signed.creator.key_fingerprint}，包哈希: {signed.manifest_sha256[:16]}…）"
+    )
+    print(f"  组件 id      = {package_id}")
+    print(f"  版本         = {version}")
+    print(f"  清单覆盖     = {len(verification.manifest.get('files', {}))} 个文件")
+    print("  签名自检     = 通过")
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def cmd_verify(args: argparse.Namespace) -> int:
+    """只验证，不签名。可在 CI 或发布前跑。"""
+    directory = Path(args.component_dir).resolve()
+    try:
+        verification = verify_package(directory)
+    except PackageManifestError as exc:
+        print(f"FAIL 验签失败：{exc}")
+        return 1
+
+    manifest = verification.manifest
+    print(f"OK {directory.name}")
+    print(f"  包类型       = {manifest.get('package_type')}")
+    print(f"  包 id        = {manifest.get('package_id')}")
+    print(f"  版本         = {manifest.get('version')}")
+    print(f"  创作者指纹   = {manifest.get('creator_fingerprint')}")
+    print(f"  清单覆盖     = {len(manifest.get('files', {}))} 个文件")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="组件包签名工具（仅冷机运行；私钥只读不写）"
+        description="组件签名工具（创作者身份；与 sign_plugin.py 同等地位）",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sign = sub.add_parser("sign", help="给 .ocp 组件包签名（原地更新）")
-    sign.add_argument("--package", required=True, help="组件包路径")
-    sign.add_argument("--private-key", required=True, help="签名私钥 PEM 路径（仓外）")
-    sign.set_defaults(func=command_sign)
+    sg = sub.add_parser("sign", help="用创作者身份签名组件（生成清单与双签名）")
+    sg.add_argument("component_dir", help="组件目录（须含 recipe.json）")
+    sg.add_argument("--username", required=True, help="本地创作者身份用户名")
+    sg.add_argument(
+        "--password", default=None,
+        help="身份密码（默认读 OMNICRAWL_IDENTITY_PASSWORD；建议用环境变量）",
+    )
+    sg.add_argument(
+        "--force", action="store_true",
+        help="允许替换已存在的**不同**创作者身份（默认拒绝，防误改已发布所有权）",
+    )
+    sg.set_defaults(func=cmd_sign)
 
-    inspect = sub.add_parser("inspect", help="只读：自检哈希并打印规范化摘要")
-    inspect.add_argument("--package", required=True, help="组件包路径")
-    inspect.set_defaults(func=command_inspect)
+    vf = sub.add_parser("verify", help="验证组件清单与创作者签名")
+    vf.add_argument("component_dir", help="组件目录")
+    vf.set_defaults(func=cmd_verify)
+    return parser
 
-    args = parser.parse_args(argv)
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(list(sys.argv[1:] if argv is None else argv))
     return int(args.func(args))
 
 

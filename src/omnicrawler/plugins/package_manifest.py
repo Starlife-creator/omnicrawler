@@ -32,6 +32,19 @@ _GENERATED_NAMES = {
     "creator.sig",
     "plugin.py.sig",
     "template.yaml.sig",
+    # 组件的**派生物**：由工具从配方与上游解析生成，不是作者手写的内容。
+    #
+    # `deps.lock.json`：依赖闭包快照（`tools/market/component_deps_lock.py`）。
+    # 它的正确性由「与配方一致」决定，而**不是**由签名决定性 ——
+    # 签名要覆盖的是「作者声明了什么」，不该覆盖「工具算出了什么」。
+    # 一致性另有门禁强制（`check_component_recipes.py` 会报「已过期」）。
+    #
+    # `files.lock.json`：内置组件的逐文件哈希清单
+    # （`tools/market/gen_builtin_browser_lock.py` 从包内真实字节生成）。
+    # 同理属于派生物；而且它体量大（内置 Chromium 310 条），
+    # 把它塞进签名载荷只会让每次重新生成都触发全包重签。
+    "deps.lock.json",
+    "files.lock.json",
 }
 _IGNORED_PARTS = {".git", ".mypy_cache", ".pytest_cache", ".ruff_cache", "__pycache__"}
 _FORBIDDEN_NAMES = {".env", "id_rsa", "id_ed25519"}
@@ -205,7 +218,17 @@ def verify_package(
     if manifest_path.read_bytes() != canonical:
         raise PackageManifestError("package manifest 不是规范 JSON，拒绝歧义签名字节")
     package_type = str(manifest.get("package_type", ""))
-    if package_type not in ("plugin", "template"):
+    # **三种包类型必须都支持**：`build_manifest` 早就接受
+    # `("plugin", "template", "component")`，而这里此前只列了前两种 ——
+    # 于是**组件能签但签完验不了**（`sign_creator_package` 成功，
+    # 随后任何 `verify_package` 都报「不支持的包类型: 'component'」）。
+    #
+    # 实测（2026-11-21）：写组件签名工具的 `verify` 子命令时立刻撞上，
+    # 而市场里两个已发布组件的清单里 `package_type` 就是 `component`。
+    #
+    # 两处判定必须**同源**，否则会长期潜伏：签名路径不经过 verify，
+    # 所以 CI 里只看得到「签名成功」，看不到「验不了」。
+    if package_type not in ("plugin", "template", "component"):
         raise PackageManifestError(f"不支持的包类型: {package_type!r}")
     package_id = str(manifest.get("package_id", ""))
     version = str(manifest.get("version", ""))

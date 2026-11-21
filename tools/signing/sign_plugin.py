@@ -301,9 +301,14 @@ def main(argv: list[str] | None = None) -> int:
         "creator-sign",
         help="创作者签名（生成 creator.sig + creator.identity，创建即签名）",
     )
-    cs.add_argument("plugin_dir", help="插件/模板目录路径")
+    cs.add_argument("plugin_dir", help="插件/模板/组件目录路径")
     cs.add_argument(
-        "--file", default="plugin.py", help="待签名文件名（默认 plugin.py；模板用 template.yaml）"
+        "--file", default="plugin.py",
+        help=(
+            "待签名文件名。默认 plugin.py；模板用 template.yaml；"
+            "**组件用 recipe.json**。载体文件名决定包类型 "
+            "（plugin / template / component），三者**同一创作者身份**。"
+        ),
     )
     cs.add_argument("--username", required=True, help="本地身份用户名")
     cs.add_argument("--password", default=None, help="身份密码（默认读环境变量 OMNICRAWL_IDENTITY_PASSWORD）")
@@ -314,9 +319,10 @@ def main(argv: list[str] | None = None) -> int:
         "local-sign",
         help="本地一键签名：creator-sign + 自动加入本地信任列表（本机立即可加载并显示作者）",
     )
-    ls.add_argument("plugin_dir", help="插件/模板目录路径")
+    ls.add_argument("plugin_dir", help="插件/模板/组件目录路径")
     ls.add_argument(
-        "--file", default="plugin.py", help="待签名文件名（默认 plugin.py；模板用 template.yaml）"
+        "--file", default="plugin.py",
+        help="待签名文件名。默认 plugin.py；模板用 template.yaml；组件用 recipe.json",
     )
     ls.add_argument("--username", required=True, help="本地身份用户名")
     ls.add_argument("--password", default=None, help="身份密码（默认读环境变量 OMNICRAWL_IDENTITY_PASSWORD）")
