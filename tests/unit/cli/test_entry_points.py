@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 
 from omnicrawler.cli._main import build_parser
+from tests.unit.conftest import requires_document_workbench
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DOCKERFILE = _REPO_ROOT / "Dockerfile"
@@ -61,6 +62,9 @@ def test_pdf_help_is_listed_at_top_level(capsys) -> None:
     assert "pdf" in capsys.readouterr().out
 
 
+
+
+@requires_document_workbench
 def test_pdf_subcommand_forwards_args_to_the_pdf_subsystem(capsys) -> None:
     """`omnicrawler pdf --help` 转发给 PDF 子系统（拿到的是它的帮助，不是薄包装的）。"""
     from omnicrawler.cli._main import main
@@ -71,6 +75,7 @@ def test_pdf_subcommand_forwards_args_to_the_pdf_subsystem(capsys) -> None:
     assert "pdf-core" in capsys.readouterr().out
 
 
+@requires_document_workbench
 def test_pdf_subcommand_forwards_nested_subcommand(capsys) -> None:
     from omnicrawler.cli._main import main
 
@@ -84,6 +89,7 @@ def test_pdf_subcommand_forwards_nested_subcommand(capsys) -> None:
     ("alias", "expected"),
     [("pdf-process", "pdf-process"), ("pdf-extract", "pdf-extract")],
 )
+@requires_document_workbench
 def test_published_pdf_aliases_still_dispatch(alias: str, expected: str, capsys) -> None:
     """已发布的 console script 别名不能因为收敛而失效。"""
     from omnicrawler.cli._main import main

@@ -29,6 +29,9 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from omnicrawler.cli._main import build_parser, main
+from tests.unit.conftest import requires_document_workbench as _requires_dw
+
+pytestmark = _requires_dw
 
 _MINIMAL_CONFIG = """project_name: forwarding-probe
 input_dir: {root}/in

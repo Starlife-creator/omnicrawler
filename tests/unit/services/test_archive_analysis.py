@@ -7,6 +7,9 @@ from types import SimpleNamespace
 import pytest
 
 from omnicrawler.services import archive_analysis as analysis
+from tests.unit.conftest import requires_document_workbench as _requires_dw
+
+pytestmark = _requires_dw
 
 
 def _inputs(tmp_path):

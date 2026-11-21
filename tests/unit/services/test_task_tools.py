@@ -8,6 +8,9 @@ import pytest
 
 from omnicrawler.services import archive_analysis
 from omnicrawler.services.task_tools import TaskAction, execute, repair_binding
+from tests.unit.conftest import requires_document_workbench as _requires_dw
+
+pytestmark = _requires_dw
 
 
 def _config(tmp_path):
