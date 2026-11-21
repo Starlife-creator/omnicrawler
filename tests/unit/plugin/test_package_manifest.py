@@ -239,3 +239,112 @@ def test_all_three_package_types_are_accepted_by_both_sides() -> None:
         assert f'"{package_type}"' in verify_src, (
             f"验证侧缺 {package_type} —— 会出现「能签不能验」"
         )
+
+# ── 维护者对象级签名（第三种签名，与创作者签名分工明确）────────────────
+def test_maintainer_signature_is_required_when_asked(tmp_path: Path) -> None:
+    """`require_maintainer=True` 时，缺维护者签名必须判红。
+
+    两种签名的语义不同：
+    * 创作者签名 = 「这是我写的」
+    * 维护者签名 = 「我审过，可以进市场」
+
+    市场发布包必须两条轨都在；只有创作者签名只能私下分发。
+    """
+    root = _component_dir(tmp_path)
+    sign_creator_package(
+        root,
+        package_type="component",
+        package_id="probe-component",
+        version="1.0.0",
+        identity=_identity(tmp_path),
+        legacy_target="recipe.json",
+    )
+    # 只有创作者签名 → 要求维护者时应当失败
+    with pytest.raises(PackageManifestError, match="缺少维护者签名"):
+        verify_package(root, maintainer_public_key=b"\x00" * 32, require_maintainer=True)
+
+
+def test_maintainer_signature_verifies_with_public_key(tmp_path: Path) -> None:
+    """维护者签名写进去后，用对应公钥必须验得过。"""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from omnicrawler.plugins.package_manifest import (
+        MAINTAINER_SIGNATURE_NAME,
+        canonical_manifest_bytes,
+    )
+
+    root = _component_dir(tmp_path)
+    sign_creator_package(
+        root,
+        package_type="component",
+        package_id="probe-component",
+        version="1.0.0",
+        identity=_identity(tmp_path),
+        legacy_target="recipe.json",
+    )
+
+    key = Ed25519PrivateKey.generate()
+    public_raw = key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    (root / MAINTAINER_SIGNATURE_NAME).write_bytes(
+        key.sign(canonical_manifest_bytes(manifest))
+    )
+
+    verified = verify_package(
+        root, maintainer_public_key=public_raw, require_maintainer=True
+    )
+    assert verified.maintainer_signed is True
+
+
+def test_maintainer_signature_without_public_key_is_rejected(tmp_path: Path) -> None:
+    """有维护者签名却不给公钥 ⇒ 无法验证 ⇒ 必须判红。
+
+    这是「不能因为验不了就放过」的 fail-closed 纪律。
+    """
+    from omnicrawler.plugins.package_manifest import (
+        MAINTAINER_SIGNATURE_NAME,
+        canonical_manifest_bytes,
+    )
+
+    root = _component_dir(tmp_path)
+    sign_creator_package(
+        root,
+        package_type="component",
+        package_id="probe-component",
+        version="1.0.0",
+        identity=_identity(tmp_path),
+        legacy_target="recipe.json",
+    )
+    manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    (root / MAINTAINER_SIGNATURE_NAME).write_bytes(
+        b"\x00" * 64  # 假签名，只为触发「有签名但没公钥」分支
+    )
+    assert canonical_manifest_bytes(manifest)
+    with pytest.raises(PackageManifestError, match="未提供维护者公钥"):
+        verify_package(root)
+
+
+def test_maintainer_signature_file_is_not_payload(tmp_path: Path) -> None:
+    """维护者签名文件本身不进载荷（否则自引用）。
+
+    `MAINTAINER_SIGNATURE_NAME` 已在 `_GENERATED_NAMES` 里，
+    这条守卫防止有人把它挪出去。
+    """
+    from omnicrawler.plugins.package_manifest import MAINTAINER_SIGNATURE_NAME
+
+    root = _component_dir(tmp_path)
+    (root / MAINTAINER_SIGNATURE_NAME).write_bytes(b"\x00" * 64)
+    sign_creator_package(
+        root,
+        package_type="component",
+        package_id="probe-component",
+        version="1.0.0",
+        identity=_identity(tmp_path),
+        legacy_target="recipe.json",
+    )
+    manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    assert MAINTAINER_SIGNATURE_NAME not in manifest["files"]

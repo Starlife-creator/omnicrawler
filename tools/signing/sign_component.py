@@ -229,8 +229,21 @@ def cmd_sign(args: argparse.Namespace) -> int:
 def cmd_verify(args: argparse.Namespace) -> int:
     """只验证，不签名。可在 CI 或发布前跑。"""
     directory = Path(args.component_dir).resolve()
+    require_maintainer = bool(getattr(args, "require_maintainer", False))
+    maintainer_key = getattr(args, "maintainer_key", None)
+    public_key = None
+    if maintainer_key:
+        public_key = _public_of(Path(maintainer_key))
+    elif require_maintainer:
+        public_key = _public_of(
+            _resolve_maintainer_key(None, "plugin_signing_private.pem")
+        )
     try:
-        verification = verify_package(directory)
+        verification = verify_package(
+            directory,
+            maintainer_public_key=public_key,
+            require_maintainer=require_maintainer,
+        )
     except PackageManifestError as exc:
         print(f"FAIL 验签失败：{exc}")
         return 1
@@ -241,7 +254,108 @@ def cmd_verify(args: argparse.Namespace) -> int:
     print(f"  版本         = {verification.version}")
     print(f"  创作者指纹   = {verification.creator.key_fingerprint}")
     print(f"  清单覆盖     = {_manifest_file_count(directory)} 个文件")
+    print(f"  维护者已签   = {verification.maintainer_signed}")
     return 0
+
+
+#: 维护者私钥的**统一位置**（2026-11-21 维护者裁定）。
+#:
+#: 三把维护者私钥全部集中在这里，不再分散到别的目录：
+#:   plugin_signing_private.pem   市场 catalog / 插件包
+#:   update_signing_private.pem   应用更新清单
+#:   component_signing_private.pem 组件（预留）
+#:
+#: **创作者身份不在这里** —— 它在 OS 密钥库（keyring），靠密码解锁。
+#: 这是两套完全不同的东西，混淆会违反 §A.1.3「维护者不得冒充作者」。
+MAINTAINER_KEY_DIR = Path(r"C:\Users\Lenovo\Desktop\档案")
+
+
+def _resolve_maintainer_key(explicit: str | None, filename: str) -> Path:
+    """定位维护者私钥：显式路径优先，否则用统一目录下的文件名。"""
+    if explicit:
+        path = Path(explicit)
+        if not path.is_file():
+            raise SystemExit(f"维护者私钥不存在：{path}")
+        return path
+    path = MAINTAINER_KEY_DIR / filename
+    if not path.is_file():
+        raise SystemExit(
+            f"维护者私钥不存在：{path}\n"
+            "     用 --maintainer-key 指定其他路径"
+        )
+    return path
+
+
+def _manifest_bytes(directory: Path) -> bytes:
+    """待签的规范清单字节（与 verify 用的是同一份）。"""
+    from omnicrawler.plugins.package_manifest import canonical_manifest_bytes
+
+    manifest_path = directory / "package.manifest.json"
+    if not manifest_path.is_file():
+        raise SystemExit(
+            f"缺少 {manifest_path.name} —— 先跑 `sign` 做创作者签名"
+        )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    canonical = canonical_manifest_bytes(manifest)
+    # 清单必须是规范字节，否则签出来的东西验不过
+    if manifest_path.read_bytes() != canonical:
+        raise SystemExit("清单不是规范 JSON，拒绝歧义签名字节")
+    return canonical
+
+
+def cmd_maintainer_sign(args: argparse.Namespace) -> int:
+    """维护者对象级签名（`package.manifest.maintainer.sig`）。
+
+    与创作者签名**分工明确**：
+
+    | | 谁签 | 用什么 | 签什么 |
+    |---|---|---|---|
+    | 创作者签名 | 作者 | keyring 身份 | 「这是我写的」 |
+    | 维护者签名 | 维护者 | 离线 PEM | 「我审过，可以进市场」 |
+
+    `verify_package(require_maintainer=True)` 会强制要求这一轨。
+    """
+    from omnicrawler.plugins.package_manifest import MAINTAINER_SIGNATURE_NAME
+    from omnicrawler.plugins.signing import sign_bytes
+
+    directory = Path(args.component_dir).resolve()
+    if not (directory / "package.manifest.json").is_file():
+        raise SystemExit(
+            f"{directory.name} 还没有创作者签名 —— "
+            "先跑 `sign --username <创作者>` 再签维护者"
+        )
+
+    key_path = _resolve_maintainer_key(
+        args.maintainer_key, args.key_filename or "plugin_signing_private.pem"
+    )
+    canonical = _manifest_bytes(directory)
+    signature = sign_bytes(canonical, key_path.read_bytes())
+    (directory / MAINTAINER_SIGNATURE_NAME).write_bytes(signature)
+
+    # 自检：用刚写入的私钥对应公钥验一遍
+    verification = verify_package(
+        directory, maintainer_public_key=_public_of(key_path), require_maintainer=True
+    )
+    print(f"[维护者签名] 完成（{directory.name}）")
+    print(f"  私钥         = {key_path.name}")
+    print(f"  签名文件     = {MAINTAINER_SIGNATURE_NAME}")
+    print(f"  维护者已签   = {verification.maintainer_signed}")
+    print("  签名自检     = 通过")
+    return 0
+
+
+def _public_of(private_path: Path) -> bytes:
+    """从私钥派生 Ed25519 公钥原始字节（只用于本地自检）。"""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    key = serialization.load_pem_private_key(private_path.read_bytes(), password=None)
+    if not isinstance(key, Ed25519PrivateKey):
+        raise SystemExit(f"{private_path} 不是 Ed25519 私钥")
+    return key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -263,8 +377,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sg.set_defaults(func=cmd_sign)
 
+    ms = sub.add_parser(
+        "maintainer-sign",
+        help="维护者对象级签名（package.manifest.maintainer.sig）",
+    )
+    ms.add_argument("component_dir", help="已由创作者签名过的组件目录")
+    ms.add_argument(
+        "--maintainer-key", default=None,
+        help=f"维护者私钥路径（缺省用 {MAINTAINER_KEY_DIR}\\plugin_signing_private.pem）",
+    )
+    ms.add_argument(
+        "--key-filename", default=None,
+        help="统一目录下的私钥文件名（默认 plugin_signing_private.pem）",
+    )
+    ms.set_defaults(func=cmd_maintainer_sign)
+
     vf = sub.add_parser("verify", help="验证组件清单与创作者签名")
     vf.add_argument("component_dir", help="组件目录")
+    vf.add_argument(
+        "--require-maintainer", action="store_true",
+        help="同时要求并验证维护者签名（市场发布包必须）",
+    )
+    vf.add_argument(
+        "--maintainer-key", default=None,
+        help="维护者私钥路径（用于派生公钥验维护者轨）",
+    )
     vf.set_defaults(func=cmd_verify)
     return parser
 
