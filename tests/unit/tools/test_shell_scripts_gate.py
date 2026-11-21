@@ -9,6 +9,11 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from tests.unit.env_markers import requires_bash
+
+# 脚本语法检查需要真能执行的 bash（受限沙箱里 `which bash` 能找到，但执行会失败）
+pytestmark = requires_bash
+
 _ROOT = Path(__file__).resolve().parents[3]
 
 sys.path.insert(0, str(_ROOT))

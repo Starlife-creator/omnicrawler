@@ -40,11 +40,19 @@ from __future__ import annotations
 
 import argparse
 import ast
+import os
 import subprocess
 import sys
 from pathlib import Path
 
-from tools.child_env import utf8_env
+# 本文件既可作为 `python tools/fast_check.py` 直接跑，也可被 import。
+# 直接跑时 `sys.path[0]` 是 `tools/`，`import tools.xxx` 会失败 ——
+# 所以先把仓库根放进 sys.path。
+_REPO_ROOT_FOR_IMPORT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT_FOR_IMPORT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT_FOR_IMPORT))
+
+from tools.child_env import utf8_env  # noqa: E402
 
 #: 项目根（`tools/` 的上一级）。
 _ROOT = Path(__file__).resolve().parents[1]
@@ -117,7 +125,9 @@ def check_syntax(paths: list[Path]) -> list[str]:
     return problems
 
 
-def _run_tool(argv: list[str], label: str) -> list[str]:
+def _run_tool(
+    argv: list[str], label: str, *, env: dict[str, str] | None = None
+) -> list[str]:
     """跑一个外部工具；把它的输出原样当问题返回。"""
     try:
         result = subprocess.run(
@@ -127,7 +137,7 @@ def _run_tool(argv: list[str], label: str) -> list[str]:
             text=True,
             encoding="utf-8",
             errors="replace",
-            env=utf8_env(),
+            env=env if env is not None else utf8_env(),
             check=False,
         )
     except OSError as exc:
@@ -149,10 +159,39 @@ def check_mypy(paths: list[Path]) -> list[str]:
     python = _ROOT / ".venv" / "Scripts" / "python.exe"
     exe = str(python) if python.is_file() else sys.executable
     # 单文件 mypy 仍会解析依赖，但比全量快一个数量级。
+    # `--explicit-package-bases`：`tests/` 下没有 `__init__.py`，mypy 会
+    # 按「文件在哪个包」去推断模块名而报 not in a package。
+    # 显式包基址 + 把仓库根设成 MYPYPATH 能正确解析。
+    env = {**os.environ, "MYPYPATH": str(_ROOT)}
     return _run_tool(
-        [exe, "-m", "mypy", "--no-error-summary", *[str(p) for p in paths]],
+        [
+            exe,
+            "-m",
+            "mypy",
+            "--no-error-summary",
+            "--explicit-package-bases",
+            *[str(p) for p in paths],
+        ],
         "mypy",
+        env=env,
     )
+
+
+def _filter_to_paths(lines: list[str], paths: list[Path]) -> list[str]:
+    """只保留报错位置落在 `paths` 里的 mypy 输出行。
+
+    mypy 的输出形如 `path/to/file.py:12: error: ...`；
+    `note:` / `Success:` 等无位置行一并保留（它们是上下文）。
+    """
+    wanted = {str(path) for path in paths}
+    kept: list[str] = []
+    for line in lines:
+        head = line.split(":", 1)[0]
+        if head in wanted:
+            kept.append(line)
+        elif not head.endswith(".py"):
+            kept.append(line)  # `note:`、汇总行等
+    return kept
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -198,7 +237,11 @@ def main(argv: list[str] | None = None) -> int:
     print("  [OK] ruff")
 
     if not args.no_mypy:
-        mypy_problems = check_mypy(paths)
+        # mypy 会连带检查被 import 的模块，于是**未改动文件里的既有错误**
+        # 也会冒出来（如 `self_verify.py` 的 `gates_for` 参数类型）。
+        # 那些不是「本次改动引入的」，报出来只会制造噪音。
+        # 只保留「报错位置在本次检查的文件里」的行。
+        mypy_problems = _filter_to_paths(check_mypy(paths), paths)
         if mypy_problems:
             print("\n".join(mypy_problems))
             print(f"\n[FAIL] mypy：{len(mypy_problems)} 行输出")

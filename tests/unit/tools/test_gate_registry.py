@@ -30,6 +30,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit.env_markers import requires_bash
 from tools.gate_registry import (
     GATE_SETS,
     GATES,
@@ -614,6 +615,7 @@ def test_removing_the_utf8_injection_turns_the_reason_unreadable(
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="只有 Windows 的子进程默认按控制台代码页写管道")
+@requires_bash  # 这条测试本身要跑 bash 才能复现缺陷；bash 不可用时无从验证
 def test_dropping_env_entirely_reproduces_the_windows_defect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

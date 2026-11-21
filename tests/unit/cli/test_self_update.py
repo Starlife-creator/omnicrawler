@@ -26,6 +26,9 @@ from omnicrawler.commands import self_update as cmd_self_update
 from omnicrawler.core.safe_action import ConfirmationRequiredError
 from omnicrawler.services import update_feed as uf
 from omnicrawler.services import updater as up
+from tests.unit.env_markers import requires_network
+
+pytestmark = requires_network  # 本文件所有测试都需要真实外网
 
 
 def _keypair() -> tuple[ed25519.Ed25519PrivateKey, bytes]:

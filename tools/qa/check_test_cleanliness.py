@@ -48,6 +48,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tools.child_env import utf8_env
+
 OK_MARK = "[OK]"
 BAD_MARK = "[FAIL]"
 
@@ -73,6 +75,7 @@ def _git_status() -> list[str]:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=utf8_env(),
         check=False,
     )
     if result.returncode != 0:

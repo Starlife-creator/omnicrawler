@@ -8,13 +8,23 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.unit.env_markers import requires_network
 from tools import checkout_market
+from tools.child_env import utf8_env
+
+# 本文件所有测试都要真的访问 git 远端（本机 DNS 被劫持时无从验证）
+pytestmark = requires_network
 
 
 def git(repo: Path, *args: str) -> str:
     return subprocess.run(
-        ["git", *args], cwd=repo, check=True, capture_output=True,
-        text=True, encoding="utf-8",
+        ["git", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=utf8_env(),
     ).stdout.strip()
 
 

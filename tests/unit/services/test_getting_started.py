@@ -8,6 +8,7 @@ from omnicrawler.pipeline import Pipeline
 from omnicrawler.pipeline_ops.preflight import run_sample
 from omnicrawler.services.getting_started import create_starter, progress
 from omnicrawler.sources.local_files import fetch, seed
+from tests.unit.env_markers import requires_writable_data_dir
 
 
 def test_fresh_starters_preserve_previous_edits_and_need_no_network(tmp_path):
@@ -26,6 +27,7 @@ def test_fresh_starters_preserve_previous_edits_and_need_no_network(tmp_path):
     assert type(zero["price"]) is int and zero["price"] == 0 and zero["in_stock"] is False
 
 
+@requires_writable_data_dir
 def test_progress_is_bound_to_current_trial_and_run_and_keeps_review_pending(tmp_path):
     path = create_starter(tmp_path)
     config = load_config(path)

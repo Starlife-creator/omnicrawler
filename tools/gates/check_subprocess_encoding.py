@@ -73,7 +73,6 @@ ALLOWED: dict[str, str] = {
     "tools/gates/check_shell_scripts.py:186": "子进程是 Git bash -n；同上。",
     "tests/unit/tools/test_linux_install_scripts.py:565": "子进程是 git check-attr；输出固定 UTF-8。",
     "tests/unit/tools/test_sync_snapshot_pin.py:27": "子进程是 git；输出固定 UTF-8。",
-    "tests/unit/utils/test_checkout_market.py:15": "子进程是 git；输出固定 UTF-8。",
     # ---- 被探测方自己把 stdout 重配成 UTF-8，父按 utf-8 解是对的 ----
     "src/omnicrawler/gui/runner/env_checker.py:64": (
         "子进程是 OmniCrawler CLI（--version）；src/omnicrawler/__main__.py:183 已 reconfigure(utf-8)。"
