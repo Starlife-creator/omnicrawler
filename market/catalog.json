@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-21T11:38:45+00:00",
-  "sequence": 1791080228,
+  "generated_at": "2026-11-21T12:41:52+00:00",
+  "sequence": 1791080229,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -1043,7 +1043,7 @@
       "version": "1578",
       "publisher": "starlife",
       "recipe_file": "components/browser/firefox-1578/recipe.json",
-      "recipe_digest": "dd0c9f4bfcad10e7e679a4b36c74007475d6f55aa52454f69ef5a5233e502564",
+      "recipe_digest": "d02878186998b8cbdb9a8fad21110d21cb6165a493d2174afc512fe2e2f29df2",
       "platforms": [
         "windows",
         "linux"
@@ -2716,7 +2716,7 @@
       "version": "2395",
       "publisher": "starlife",
       "recipe_file": "components/browser/webkit-2395/recipe.json",
-      "recipe_digest": "96bad4f46bf9951d46775b1d71f42c52d32a0041f490269b5373c8f5f2f1fc69",
+      "recipe_digest": "d8e89d569afb0e924621ccc0f8eb35eabb9d3ff643b852897b9eddadb3a763b6",
       "platforms": [
         "windows",
         "linux"

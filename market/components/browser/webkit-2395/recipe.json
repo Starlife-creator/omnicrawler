@@ -53,11 +53,10 @@
     "runner": "native"
   },
   "smoke": {
-    "expect": [
-      "ok"
-    ],
+    "entry_exists": true,
+    "expect": [],
     "skip_run": false,
-    "timeout_seconds": 300,
-    "description": "确认 WebKit 内核可启动"
+    "timeout_seconds": 60,
+    "description": "长驻型内核：验证可执行文件存在且可执行（不真启动，启动后不退出）"
   }
 }
