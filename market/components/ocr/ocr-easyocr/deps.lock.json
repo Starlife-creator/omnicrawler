@@ -1,0 +1,33 @@
+{
+  "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
+  "recipe_digest": "13518b7c34331f05f2bf34a275510a384368dbf6a51a6d717155c1b146dff936",
+  "python_version": "3.13",
+  "packages": [
+    "easyocr",
+    "filelock",
+    "fsspec",
+    "imageio",
+    "jinja2",
+    "lazy-loader",
+    "markupsafe",
+    "mpmath",
+    "networkx",
+    "ninja",
+    "numpy",
+    "opencv-python-headless",
+    "packaging",
+    "pillow",
+    "pyclipper",
+    "python-bidi",
+    "pyyaml",
+    "scikit-image",
+    "scipy",
+    "setuptools",
+    "shapely",
+    "sympy",
+    "tifffile",
+    "torch",
+    "torchvision",
+    "typing-extensions"
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "id": "webkit-2395",
+  "name": "Playwright WebKit 内核",
+  "version": "2395",
+  "description": "Playwright WebKit 内核：Safari 排版引擎，适合需要 Safari 行为的回归验证",
+  "kind": "native",
+  "provides": [
+    "browser.webkit"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "architectures": [
+    "x86_64"
+  ],
+  "python_abi": [],
+  "requires": [
+    "playwright"
+  ],
+  "artifacts": [
+    {
+      "url": "https://cdn.playwright.dev/dbazure/download/playwright/builds/webkit/2395/webkit-win64.zip",
+      "sha256": "9707661aeefebffe464ba471e81149b330f242efdb2101c6bc288f4fe9da35f6",
+      "size": 65886479,
+      "format": "zip",
+      "strip_components": 0,
+      "extract_to": "browser",
+      "platforms": [
+        "windows"
+      ]
+    }
+  ],
+  "entry": {
+    "path": "browser",
+    "protocol": "browser-cdp",
+    "engine": "webkit",
+    "runner": "native"
+  },
+  "smoke": {
+    "expect": [
+      "ok"
+    ],
+    "skip_run": false,
+    "timeout_seconds": 300,
+    "description": "确认 WebKit 内核可启动"
+  }
+}
