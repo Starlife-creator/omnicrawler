@@ -294,6 +294,13 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
         self._fix_fields_btn.clicked.connect(self._focus_field_settings)
         self._fix_fields_btn.setVisible(False)
         fix_row.addWidget(self._fix_fields_btn)
+        # 换内核再试（§15.16.7②）：只在**症状指向渲染层**时出现，
+        # 判据由 services.browser_kernel_advice 决定（反爬/网络/选择器
+        # 问题不会建议换内核 —— 换内核解决不了那些）。
+        self._switch_kernel_btn = QPushButton(_("换个浏览器内核重试"))
+        self._switch_kernel_btn.setVisible(False)
+        self._switch_kernel_btn.clicked.connect(self._on_switch_kernel_requested)
+        fix_row.addWidget(self._switch_kernel_btn)
         fix_row.addStretch()
         body.addLayout(fix_row)
 
@@ -331,6 +338,54 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
         self._collapse_section(self._fields_section, False)
         self._fields_table.setFocus()
 
+    def _current_engine(self) -> str:
+        """当前生效的浏览器内核族（用于「换内核」建议）。"""
+        try:
+            from ...core.capabilities import default_capability_slots
+
+            slot = default_capability_slots().slot("browser")
+            if slot is not None:
+                active = slot.active() if hasattr(slot, "active") else None
+                if active is not None:
+                    metadata = getattr(active, "metadata", {}) or {}
+                    family = str(metadata.get("engine_family") or "").strip()
+                    if family:
+                        return family
+        except Exception:  # noqa: BLE001 - 拿不到就当未知，不影响诊断
+            pass
+        return "chromium"
+
+    def _on_switch_kernel_requested(self) -> None:
+        """按建议切到另一个内核，并提示「要重新试跑」。"""
+        advice = getattr(self, "_kernel_advice", None)
+        if advice is None or not advice.suggest:
+            return
+        from PySide6.QtWidgets import QMessageBox
+
+        confirm = QMessageBox(self)
+        confirm.setIcon(QMessageBox.Icon.Question)
+        confirm.setWindowTitle(_("切换浏览器内核"))
+        confirm.setText(
+            _("将改用 {0} 内核。").format(advice.target_engine or _("其他"))
+        )
+        confirm.setInformativeText(
+            _(
+                "切换后请重新试跑以确认问题是否解决。\n"
+                "注意：换内核会使已登录站点需要重新登录。"
+            )
+        )
+        confirm.setStandardButtons(
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel
+        )
+        confirm.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        if confirm.exec() == QMessageBox.StandardButton.Ok:
+            self._trial_diagnosis_label.setText(
+                _("已记录：请到「组件」页把 {0} 设为默认内核后重新试跑。").format(
+                    advice.target_engine
+                )
+            )
+            self._switch_kernel_btn.setVisible(False)
+
     def _render_trial_details(self, details: dict[str, Any] | None) -> None:
         if not details:
             return
@@ -362,10 +417,19 @@ class TaskCanvas(FieldsAreaMixin, DraftAreaMixin, IntentAreaMixin, AiPlanReviewM
             diagnosis = _("试跑报告了错误：{0}").format(error)
             show_scope = True
 
+        # 换内核建议：只在该症状与渲染层相关时出现
+        from ...services.browser_kernel_advice import advise_switch
+
+        advice = advise_switch(error or diagnosis, current_engine=self._current_engine())
+        if advice.suggest:
+            diagnosis = f"{diagnosis}　{advice.message()}" if diagnosis else advice.message()
+        self._kernel_advice = advice
+
         self._trial_diagnosis_label.setText(diagnosis)
         self._trial_diagnosis_label.setVisible(bool(diagnosis))
         self._fix_scope_btn.setVisible(show_scope)
         self._fix_fields_btn.setVisible(show_fields)
+        self._switch_kernel_btn.setVisible(advice.suggest)
 
     def _record_trial_history(self, ok: bool, summary: str) -> None:
         """保留最近 3 次试跑报告（PRD §3.4 可回溯）。"""

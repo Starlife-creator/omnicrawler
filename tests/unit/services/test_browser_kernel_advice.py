@@ -124,3 +124,49 @@ def test_symptom_text_is_human_readable() -> None:
 def test_return_type_is_stable() -> None:
     advice = advise_switch("unknown blob")
     assert isinstance(advice, SwitchKernelAdvice)
+
+# ── GUI 接线（逻辑层已测，这里验证真的接上了）────────────────────────
+def test_task_canvas_wires_kernel_advice() -> None:
+    """任务画布必须真的调用 `advise_switch`，而不是只在 UI 上放个按钮。
+
+    单纯加按钮没有意义 —— 关键是失败诊断时**按症状决定要不要显示**。
+    """
+    from pathlib import Path
+
+    canvas = (
+        Path(__file__).resolve().parents[3]
+        / "src"
+        / "omnicrawler"
+        / "gui"
+        / "views"
+        / "task_canvas.py"
+    )
+    source = canvas.read_text(encoding="utf-8")
+    assert "advise_switch" in source, "任务画布没有调用换内核建议"
+    assert "_switch_kernel_btn" in source, "没有换内核按钮"
+    assert "setVisible(advice.suggest)" in source, (
+        "按钮可见性没有跟建议走 —— 会变成「永远显示」"
+    )
+
+
+def test_switch_button_hidden_when_not_suggested() -> None:
+    """反爬/网络/选择器问题**不得**让换内核按钮出现。
+
+    这条直接读源码断言接线方式：`setVisible(advice.suggest)`。
+    如果写成 `setVisible(True)`，按钮会在任何失败时都出现，
+    把用户引向「换内核能解决一切」的错误认知。
+    """
+    from pathlib import Path
+
+    canvas = (
+        Path(__file__).resolve().parents[3]
+        / "src"
+        / "omnicrawler"
+        / "gui"
+        / "views"
+        / "task_canvas.py"
+    )
+    source = canvas.read_text(encoding="utf-8")
+    assert "_switch_kernel_btn.setVisible(True)" not in source, (
+        "换内核按钮被无条件显示"
+    )
