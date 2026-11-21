@@ -44,6 +44,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tools.child_env import utf8_env
+
 #: 项目根（`tools/` 的上一级）。
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -61,6 +63,7 @@ def _git(*args: str) -> list[str]:
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=utf8_env(),
             check=False,
         )
     except OSError:
@@ -124,6 +127,7 @@ def _run_tool(argv: list[str], label: str) -> list[str]:
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=utf8_env(),
             check=False,
         )
     except OSError as exc:

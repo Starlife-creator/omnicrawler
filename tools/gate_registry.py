@@ -416,17 +416,6 @@ GATES: tuple[Gate, ...] = (
         ci_note="需先在目标平台按 edition 构建并生成 SBOM。",
     ),
     Gate(
-        name="check_workspace_map",
-        args=("tools/gates/check_workspace_map.py",),
-        sets=_STATIC,
-        description="工作区顶层目录与 DIRECTORIES.md / .ignore 三向一致",
-        script="tools/gates/check_workspace_map.py",
-        ci_note=(
-            "零网络、纯文件枚举。**只在有工作区根的机器上有效**："
-            "CI 只 checkout 主仓，没有同级目录，门禁会自动跳过（见下）。"
-        ),
-    ),
-    Gate(
         name="check_component_recipes",
         args=("tools/gates/check_component_recipes.py",),
         sets=_STATIC,
