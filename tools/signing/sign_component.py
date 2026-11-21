@@ -194,6 +194,15 @@ def cmd_sign(args: argparse.Namespace) -> int:
             "将按当前字节重签（内容变了就必须重签，否则清单失效）"
         )
 
+    # **重签前必须先删旧的维护者签名**：清单变了，旧维护者签名对应的字节
+    # 已经不是当前清单，留着会让签后自检报「存在维护者签名但未提供公钥」。
+    # 顺序固定：创作者重签 → 维护者重签（后者由 maintainer-sign 负责）。
+    stale_maintainer = directory / "package.manifest.maintainer.sig"
+    stale_removed = False
+    if stale_maintainer.is_file():
+        stale_maintainer.unlink()
+        stale_removed = True
+
     signed = sign_creator_package(
         directory,
         package_type="component",
@@ -223,6 +232,8 @@ def cmd_sign(args: argparse.Namespace) -> int:
     print(f"  版本         = {version}")
     print(f"  清单覆盖     = {covered} 个文件")
     print("  签名自检     = 通过")
+    if stale_removed:
+        print("  注意         = 旧的维护者签名已删除，需重跑 maintainer-sign")
     return 0
 
 

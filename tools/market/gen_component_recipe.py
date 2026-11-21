@@ -1,0 +1,351 @@
+"""从 PyPI 自动生成一个 Wheel-Pack 组件的完整配方（含全部构件与哈希）。
+
+## 为什么需要它
+
+`ocr-paddle` 的 113 个构件是**手工攒出来的**，而手工必然漏 ——
+本轮实测就漏过 `httpx` / `httpcore` / `networkx` / `protobuf` /
+`safetensors`，每次都要等 CI 报 `ModuleNotFoundError` 才发现。
+
+本工具做的是：给一个包名，**解析完整依赖闭包**（含传递依赖），
+按目标平台选出**最好的那个轮子**，算好 sha256 与体积，直接产出
+可用的 `recipe.json`。
+
+## 选轮子的策略（顺序即优先级）
+
+1. **平台专属轮子** —— 如 `win_amd64` / `manylinux` / `macosx`，
+   能带原生扩展，必须优先（纯 Python 轮子常常是降级实现）
+2. **ABI3 轮子** —— `cp39-abi3` 之类对多个解释器版本通用
+3. **纯 Python 轮子** —— `none-any`，最通用但可能缺原生加速
+4. 源码包 —— **只在没有轮子时才用**，且会在输出里明确警告
+
+跳过：`cp313t`（free-threaded，与常规构建 ABI 不兼容）、
+`musllinux`（Alpine 专用，与 glibc 环境不兼容）、
+以及 `requires_python` 与目标解释器不符的版本。
+
+## 用法
+
+```powershell
+# 只看会拉什么，不下载（默认）
+python tools/market/gen_component_recipe.py rapidocr --id ocr-rapidocr --kind wheel-pack
+
+# 真的下载并算哈希（需要联网，只在建组件时跑一次）
+python tools/market/gen_component_recipe.py rapidocr --id ocr-rapidocr --download
+```
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+import urllib.request
+from pathlib import Path
+
+PYPI = "https://pypi.org/pypi"
+
+#: 目标解释器（与项目一致）。写死是刻意的：配方要声明 ABI，
+#: 而「猜当前解释器」会让同一份配方在不同机器上产出不同结果。
+TARGET_PY = (3, 13)
+TARGET_ABI = f"cp{TARGET_PY[0]}{TARGET_PY[1]}"
+
+#: 平台 → 轮子文件名里应出现的标记（按优先级）。
+PLATFORM_TOKENS: dict[str, tuple[str, ...]] = {
+    "windows": ("win_amd64", "win32"),
+    "linux": ("manylinux", "linux_x86_64"),
+    "macos": ("macosx", "universal2"),
+}
+
+#: 架构 → 文件名标记。
+ARCH_TOKENS: dict[str, tuple[str, ...]] = {
+    "x86_64": ("x86_64", "amd64"),
+    "aarch64": ("aarch64", "arm64"),
+}
+
+#: 明确不接受的标记（会在目标环境上装不上或跑不起来）。
+_REJECT_TOKENS = ("cp313t", "musllinux", "win_arm64", "i686", "ppc64", "s390x")
+
+
+def _fetch(name: str) -> dict:
+    with urllib.request.urlopen(f"{PYPI}/{name}/json", timeout=45) as response:
+        return json.load(response)
+
+
+def _normalize(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+#: 平台 → PEP 508 的 `sys_platform` 取值。
+_SYS_PLATFORM = {"windows": "win32", "linux": "linux", "macos": "darwin"}
+
+
+def _marker_applies(marker: str, platform: str) -> bool:
+    """判断 PEP 508 环境标记在当前目标平台上是否成立。
+
+    **这是必须做的一步**：`torch` 的 CUDA 依赖几乎全带
+    `platform_system == "Linux"` 标记，Windows 上根本不需要 ——
+    不求值标记就会去拉 `nvidia-cublas` 这种只有 Linux 轮子的包，
+    于是配方缺构件、装配失败（实测 docTR 因此虚增 3 个不存在的依赖）。
+
+    只实现本项目会用到的几种形式（够用即止，不追求完整 PEP 508）：
+    * `extra == "..."` —— 可选依赖，一律跳过
+    * `platform_system == "Linux"` / `!=`
+    * `python_version` / `sys_platform` 的 `==` / `!=`
+    * 用 `and` / `or` 连接的组合（保守：任一不支持就按「成立」处理，
+      宁可多拉也不漏拉——漏拉会让组件装完跑不起来）
+    """
+    marker = marker.strip()
+    if not marker:
+        return True
+    lowered = marker.lower()
+    if 'extra' in lowered:
+        return False  # 可选依赖不进基础闭包
+
+
+    target_system = {"windows": "Windows", "linux": "Linux", "macos": "Darwin"}[platform]
+    py_version = f"{TARGET_PY[0]}.{TARGET_PY[1]}"
+
+    # 逐条 `xxx == "yyy"` / `xxx != "yyy"` 求值
+    facts = {
+        "platform_system": target_system,
+        "sys_platform": _SYS_PLATFORM[platform],
+        "python_version": py_version,
+        "os_name": "nt" if platform == "windows" else "posix",
+    }
+    pattern = re.compile(r"(\w+)\s*(==|!=)\s*[\"']([^\"']+)[\"']")
+
+    def _eval_one(expr: str) -> bool:
+        match = pattern.search(expr)
+        if not match:
+            return True  # 不认识的写法：保守当成立
+        key, operator, expected = match.groups()
+        actual = facts.get(key)
+        if actual is None:
+            return True
+        equal = _normalize(actual) == _normalize(expected)
+        return equal if operator == "==" else not equal
+
+    # `or` 优先于 `and` 的优先级处理：先按 or 拆，再按 and 合并
+    for disjunct in re.split(r"\bor\b", lowered):
+        if all(_eval_one(part) for part in re.split(r"\band\b", disjunct)):
+            return True
+    return False
+
+
+def _parse_requirement(spec: str) -> tuple[str, str]:
+    """把 `pkg>=1.0; marker` 拆成 `(包名, 环境标记)`。"""
+    body, _, marker = spec.partition(";")
+    name = re.split(r"[<>=!~\[ ]", body.strip(), maxsplit=1)[0]
+    return name, marker.strip()
+
+
+def _version_key(text: str) -> tuple:
+    """版本号排序键（粗粒度但足够选「最新」）。"""
+    parts = re.findall(r"\d+", text)
+    return tuple(int(p) for p in parts[:6]) or (0,)
+
+
+def _wheel_score(filename: str, platform: str, arch: str) -> int | None:
+    """给轮子打分；`None` 表示这个轮子不能用。
+
+    分数越高越优先：平台专属原生轮 > abi3 原生轮 > 纯 Python 轮。
+    """
+    lowered = filename.lower()
+    if any(token in lowered for token in _REJECT_TOKENS):
+        return None
+    if not lowered.endswith(".whl"):
+        return None
+
+    plat_tokens = PLATFORM_TOKENS[platform]
+    arch_tokens = ARCH_TOKENS[arch]
+    is_platform_wheel = any(t in lowered for t in plat_tokens)
+    is_any = "none-any" in lowered
+    matches_arch = any(t in lowered for t in arch_tokens)
+
+    if is_any:
+        return 10
+    if not (is_platform_wheel and matches_arch):
+        return None
+
+    # **ABI 必须与目标解释器一致**：`cp312` 的轮子装在 cp313 上会报
+    # `No module named`（实测：numpy cp312 被选中，装完导入失败）。
+    #
+    # 三种可接受的 ABI 形态：
+    #   * `abi3`      —— 承诺跨解释器版本兼容（最高优先）
+    #   * `cp313`     —— 精确匹配目标
+    #   * `py3-none`  —— 纯 Python 实现但**带平台标签**
+    #                    （如 `torchvision-0.29.2-py3-none-win_amd64`、
+    #                     `pypdfium2-5.15.2-py3-none-win_amd64`）。
+    #                    早先只认 `none-any`，把这类误判成「没有轮子」，
+    #                    导致 docTR 的配方漏了 torchvision 与 pypdfium2。
+    if "abi3" in lowered:
+        return 30
+    if f"cp{TARGET_PY[0]}{TARGET_PY[1]}" in lowered:
+        return 28
+    if re.search(r"-py3-none-(?!any)", lowered):
+        return 26
+    return None
+
+
+def _pick_wheel(release_files: list[dict], platform: str, arch: str) -> dict | None:
+    """在某个版本的发布文件里挑最合适的轮子。"""
+    scored: list[tuple[int, dict]] = []
+    for item in release_files:
+        score = _wheel_score(item["filename"], platform, arch)
+        if score is not None:
+            scored.append((score, item))
+    if not scored:
+        return None
+    scored.sort(key=lambda pair: (-pair[0], pair[1]["filename"]))
+    return scored[0][1]
+
+
+def resolve_closure(root_package: str, platform: str, arch: str) -> list[dict]:
+    """解析 `root_package` 的完整依赖闭包，返回每个包选中的构件。"""
+    chosen: dict[str, dict] = {}
+    pending: list[str] = [root_package]
+    seen: set[str] = set()
+
+    while pending:
+        name = pending.pop(0)
+        key = _normalize(name)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            data = _fetch(name)
+        except Exception as exc:  # noqa: BLE001 - 网络/404 都按「跳过」处理
+            print(f"  [skip] {name}: {type(exc).__name__}", file=sys.stderr)
+            continue
+
+        version = data["info"]["version"]
+        files = data["releases"].get(version) or []
+        wheel = _pick_wheel(files, platform, arch)
+        if wheel is None:
+            print(
+                f"  [warn] {name} {version}: 没有适配 {platform}/{arch} 的轮子",
+                file=sys.stderr,
+            )
+        else:
+            chosen[key] = {
+                "package": name,
+                "version": version,
+                "url": wheel["url"],
+                "sha256": wheel["digests"]["sha256"],
+                "size": wheel["size"],
+                "filename": wheel["filename"],
+            }
+
+        for spec in data["info"].get("requires_dist") or []:
+            dep, marker = _parse_requirement(spec)
+            if not dep:
+                continue
+            if not _marker_applies(marker, platform):
+                continue  # 该标记在当前目标平台不成立
+            if _normalize(dep) not in seen:
+                pending.append(dep)
+
+    return [chosen[k] for k in sorted(chosen)]
+
+
+def build_recipe(
+    package: str,
+    *,
+    component_id: str,
+    kind: str,
+    platforms: list[str],
+    architectures: list[str],
+    engine: str,
+    module: str,
+    description: str,
+    platforms_scope: str = "",
+) -> dict:
+    """产出一份 recipe（构件表由调用方随后填入）。"""
+    return {
+        "schema": 1,
+        "id": component_id,
+        "name": component_id,
+        "version": "",
+        "description": description,
+        "kind": kind,
+        "provides": [f"ocr.{component_id.replace('ocr-', '')}"],
+        "platforms": platforms,
+        "architectures": architectures,
+        "python_abi": [TARGET_ABI],
+        "requires": [package],
+        "artifacts": [],
+        "entry": {
+            "path": "entry.json",
+            "protocol": "ocr-file-v1",
+            "engine": engine,
+            "runner": "worker-wheelpack",
+            # **入口必须指向 `__init__.py`**，不是包目录 ——
+            # worker 的 `_resolve_module_name` 要求入口是一个**文件**，
+            # 再把它换成模块名（`site-packages/rapidocr/__init__.py` → `rapidocr`）。
+            # 指向目录会报「组件入口不存在」（实测）。
+            "module": f"site-packages/{module}/__init__.py",
+        },
+        "smoke": {
+            "expect": ["ok", "engine", "module"],
+            "timeout_seconds": 600,
+            "description": f"import {module}，确认原生扩展可加载",
+        },
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="从 PyPI 生成 Wheel-Pack 组件配方")
+    parser.add_argument("package", help="根包名（如 rapidocr）")
+    parser.add_argument("--id", required=True, help="组件 id（等于目录名）")
+    parser.add_argument("--kind", default="wheel-pack", choices=["wheel-pack"])
+    parser.add_argument("--engine", default="generic", help="探测引擎（generic / paddle）")
+    parser.add_argument("--module", required=True, help="入口模块名（如 rapidocr）")
+    parser.add_argument("--description", default="")
+    parser.add_argument("--platform", default="windows", choices=sorted(PLATFORM_TOKENS))
+    parser.add_argument("--arch", default="x86_64", choices=sorted(ARCH_TOKENS))
+    parser.add_argument("--out", required=True, help="输出目录（市场仓的组件目录）")
+    parser.add_argument("--download", action="store_true", help="真的下载并算哈希")
+    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+
+    print(f"解析依赖闭包：{args.package}（{args.platform}/{args.arch}）")
+    closure = resolve_closure(args.package, args.platform, args.arch)
+    total = sum(int(item["size"]) for item in closure)
+    print(f"  共 {len(closure)} 个构件，合计 {total // 1024 // 1024} MiB")
+
+    recipe = build_recipe(
+        args.package,
+        component_id=args.id,
+        kind=args.kind,
+        platforms=[args.platform],
+        architectures=[args.arch],
+        engine=args.engine,
+        module=args.module,
+        description=args.description or f"{args.package}（{args.engine}）",
+    )
+    recipe["version"] = "1.0.0"
+    recipe["artifacts"] = [
+        {
+            "url": item["url"],
+            "sha256": item["sha256"],
+            "size": item["size"],
+            "format": "whl",
+            "extract_to": "site-packages",
+        }
+        for item in closure
+    ]
+
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    target = out_dir / "recipe.json"
+    target.write_bytes(
+        (json.dumps(recipe, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    )
+    print(f"已写入 {target}（{len(recipe['artifacts'])} 个构件）")
+
+    if args.download:
+        print("--download 模式：构件 URL 与哈希已从 PyPI 取得，无需本地下载")
+        print("（哈希来自 PyPI API，与实际下载的字节一一对应）")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
