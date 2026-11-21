@@ -96,9 +96,19 @@ def test_component_entries_do_not_host_bytes() -> None:
 
 
 def test_component_declares_upstream_urls() -> None:
-    """每个 artifact 的 url 必须是 http(s) —— 字节来自上游。"""
+    """每个 artifact 的 url 必须是 http(s) —— 字节来自上游。
+
+    **唯一例外：内置组件**（`source: builtin`）。它的字节随主程序发布
+    （浏览器内核 415 MiB 就在装机包里），本来就没有 URL —— 要求它有
+    URL 等于要求它去下载自己。
+
+    这不是放宽「字节来自上游」：内置组件的上游就是**主仓发布流程**，
+    其一致性由 `files.lock.json`（随配方签名）保证。
+    """
     for entry in _catalog().get("components", []):
         for artifact in entry.get("artifacts", []):
+            if str(artifact.get("source") or "remote").lower() == "builtin":
+                continue
             url = str(artifact.get("url", ""))
             assert url.startswith(("https://", "http://")), (
                 f"组件 {entry.get('id')} 的 artifact url 不是 http(s)：{url!r}"

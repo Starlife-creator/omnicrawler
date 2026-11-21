@@ -36,7 +36,7 @@ $Python = Join-Path $ProjectDirectory '.venv\Scripts\python.exe'
 $DetectedVersion = (&
     $Python -c "import sys; print('.'.join(str(part) for part in sys.version_info[:3]))"
 ).Trim()
-& $Python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)'
+& $Python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 13) else 1)'
 if ($LASTEXITCODE -ne 0) {
     throw "需要 Python 3.13 或更高版本（当前解释器为 $DetectedVersion）。" +
         '请安装较新版本，或使用带内置解释器的便携包（.runtime\python\python.exe）。'
