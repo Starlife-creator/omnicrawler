@@ -47,6 +47,11 @@ def _recipe(**artifact_overrides: object) -> dict:
     artifact.update(artifact_overrides)
     return {
         "schema": 1,
+        # **必须声明 kind=data**：这是 tesseract 语言包（裸文件），
+        # 不是 Python 包集合。缺这个字段会按默认 wheel-pack 处理，
+        # 而 wheel-pack 强制要求 `smoke` 声明 —— 于是在装配阶段就被拒
+        # （实测：`kind=wheel-pack 的组件必须声明 smoke`）。
+        "kind": "data",
         "name": "raw-language-pack",
         "version": "1.0.0",
         "description": "raw 单文件构件测试",

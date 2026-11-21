@@ -1,33 +1,29 @@
-"""pipeline 测试的全局隔离。
+"""pipeline 测试的全局隔离（`work/` 共享目录）。
 
 ## 为什么需要它
 
-这组测试的 `task.yaml` 里写的是 `project: {workspace: work}` —— **相对路径**。
-相对路径会解析到**项目根**的 `work/`，于是同一进程内所有 pipeline 测试
-**共用同一个 `state.sqlite3`**。
+这组测试的 task.yaml 里写的是 `project: {workspace: work}` —— **相对路径**。
+它解析到**项目根**的 `work/`，于是同一进程内所有 pipeline 测试
+**共用同一个 `state.sqlite3`**：
 
-后果是测试之间互相污染：
-
-* 前一个测试写入的 records 留在库里，后一个测试拿到别人的记录，
-  报 `ValueError: Record does not belong to the requested run`；
+* 前一个测试写入的 records 留在库里，后一个拿到别人的记录，报
+  `ValueError: Record does not belong to the requested run`；
 * frontier 队列跨测试累积，`frontier_pending` 期望 0 却得到 1。
 
 实测（2026-11-21）原始状态下 `tests/unit/pipeline/` 有 **12 条失败**，
 而每条单独跑都能过 —— 典型的顺序依赖。
 
-## 为什么用「清空目录」而不是 chdir
+## 为什么不用 chdir
 
-试过 `monkeypatch.chdir(tmp_path)`：无效。因为 `Pipeline` 在
-**config 加载时**就把 workspace 解析成绝对路径并缓存，chdir 发生在
-之后再改已经晚了。
+试过 `monkeypatch.chdir(tmp_path)`：无效。`Pipeline` 在 **config 加载时**
+就把 workspace 解析成绝对路径并缓存，chdir 发生在之后再改已经晚了。
 
-清空项目内 `work/` 是对症的做法：它保证每个测试从**空库**开始，
-与 `workspace: work` 的相对路径语义不冲突。
+## 为什么删目录本身而不是清内容
 
-## 边界
+有测试用 `config.workspace.mkdir(parents=True)`（**没有 `exist_ok`**），
+目录残留会让它报 `FileExistsError`。所以整体删掉再重建。
 
-只清 `work/` 下**测试产物**，保留 `.gitkeep`（它让目录在 git 里存在）。
-不会碰项目其它任何目录。
+`.gitkeep` 要放回去 —— 它让 `work/` 在 git 里存在。
 """
 from __future__ import annotations
 
@@ -43,30 +39,33 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _WORK = _PROJECT_ROOT / "work"
 
 
-def _clear_work_dir() -> None:
-    """清空 `work/` 下的测试产物，保留 `.gitkeep`。"""
-    if not _WORK.is_dir():
-        return
-    for entry in _WORK.iterdir():
-        if entry.name == ".gitkeep":
-            continue
-        try:
-            if entry.is_dir():
-                shutil.rmtree(entry, ignore_errors=True)
-            else:
-                entry.unlink()
-        except OSError:
-            # 被占用/权限不足就跳过 —— 隔离失败不该让测试报错，
-            # 否则会把「测试环境问题」伪装成「业务断言失败」。
-            continue
+def remove_work_dir() -> None:
+    """删掉 `work/` 整个目录。
+
+    **不能重建**：有测试用 `config.workspace.mkdir(parents=True)`
+    （没有 `exist_ok`），目录存在就会报 `FileExistsError`。
+    `.gitkeep` 由 session 结束时的 fixture 恢复（见 `_restore_work_dir`）。
+    """
+    if _WORK.is_dir():
+        shutil.rmtree(_WORK, ignore_errors=True)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _restore_work_dir() -> None:
+    """session 结束后把 `work/.gitkeep` 放回去（仓库依赖这个空目录）。"""
+    yield
+    try:
+        _WORK.mkdir(parents=True, exist_ok=True)
+        keep = _WORK / ".gitkeep"
+        if not keep.is_file():
+            keep.write_bytes(b"")
+    except OSError:
+        pass
 
 
 @pytest.fixture(autouse=True)
 def _isolate_shared_workspace() -> None:
-    """每个 pipeline 测试前清空共享的 `work/`。
-
-    autouse：这组测试全部依赖它，逐个声明容易漏。
-    """
-    _clear_work_dir()
+    """每个测试前后重置共享的 `work/`。"""
+    remove_work_dir()
     yield
-    _clear_work_dir()
+    remove_work_dir()
