@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-21T11:20:36+00:00",
-  "sequence": 1791080227,
+  "generated_at": "2026-11-21T11:38:45+00:00",
+  "sequence": 1791080228,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -1043,7 +1043,7 @@
       "version": "1578",
       "publisher": "starlife",
       "recipe_file": "components/browser/firefox-1578/recipe.json",
-      "recipe_digest": "857c816f5fc74eb2994ac29d9f87a3e0e5ab10661f0b9803935ea62388647e3d",
+      "recipe_digest": "dd0c9f4bfcad10e7e679a4b36c74007475d6f55aa52454f69ef5a5233e502564",
       "platforms": [
         "windows",
         "linux"
@@ -1058,7 +1058,10 @@
       ],
       "platform_architectures": {},
       "entry": {
-        "path": "browser",
+        "path_by_platform": {
+          "windows": "browser/firefox/firefox.exe",
+          "linux": "browser/firefox/firefox"
+        },
         "protocol": "browser-cdp",
         "engine": "firefox",
         "runner": "native"
@@ -1085,11 +1088,11 @@
     },
     {
       "id": "ocr-doctr",
-      "name": "docTR：Mindee 的深度学习 OCR，支持表格结构识别",
+      "name": "docTR：Mindee 深度学习 OCR（PyTorch CPU 版）",
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/ocr/ocr-doctr/recipe.json",
-      "recipe_digest": "8e853af1e786847ca46333ffe9588b8590d3681ee21533ce3abf45656c2f3764",
+      "recipe_digest": "978b62c827d8e04bddfd3f2031c6dddc402185ad5b191c6dfca4140c667437d7",
       "platforms": [
         "windows",
         "linux"
@@ -1337,15 +1340,15 @@
         },
         {
           "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/3d/6c/f26ed528d197859cf8a634bbfafc3bc136f5590b6620df179d1858a34fdc/torch-2.15.0-cp313-cp313-win_amd64.whl",
-          "sha256": "e079089d36401261ebe145504309d0114fb9a00529eac4b33048221d2376a15c",
-          "size": 126736947
+          "url": "https://download-r2.pytorch.org/whl/cpu/torch-2.15.0%2Bcpu-cp313-cp313-win_amd64.whl",
+          "sha256": "086f79c78c941b428410dc15f898ce2420a4580ae6983ea314692d71ce76c619",
+          "size": 126626022
         },
         {
           "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/cf/9a/a728c3af061bff5e0c8a8389b6dfe99646f8290a2f6a5f8fb624a0c15b92/torchvision-0.29.2-py3-none-win_amd64.whl",
-          "sha256": "5812c312d4401c3587a045fa4c6228d982ebc4faa9b472275d11afe5852e24f9",
-          "size": 1379121
+          "url": "https://download-r2.pytorch.org/whl/cpu/torchvision-0.29.1%2Bcpu-cp313-cp313-win_amd64.whl",
+          "sha256": "94590cee2298a7b6cc6512159781b577a322d0813baf1add3cf02db744138b31",
+          "size": 1376910
         },
         {
           "source": "remote",
@@ -1469,18 +1472,18 @@
         },
         {
           "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/5a/23/70a1ae507f5ff94505c2c85bf20111020f7a19ecc6f5b36f6275c51b97d8/torch-2.15.0-cp313-cp313-manylinux_2_28_x86_64.whl",
-          "sha256": "241fea2bac4ed8351307cd13eca5020fbe231f990891be299cf683897caebfbc",
-          "size": 539167086
+          "url": "https://download-r2.pytorch.org/whl/cpu/torch-2.15.0%2Bcpu-cp313-cp313-manylinux_2_28_x86_64.whl",
+          "sha256": "0f6f69701b2d38ddc412364dfb92e2e13e74960d33fa3573b4930ced626e81c7",
+          "size": 209528982
         },
         {
           "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/92/74/699d28bed7453dbe40b09d37aab8f6cd75f19a77a77d5ab4588a4f3239e7/torchvision-0.29.2-py3-none-manylinux_2_28_x86_64.whl",
-          "sha256": "0875f7a23bd298813240f716c56df44ce72ddb45146589442a38edd0e1f59637",
-          "size": 7585493
+          "url": "https://download-r2.pytorch.org/whl/cpu/torchvision-0.29.1%2Bcpu-cp313-cp313-manylinux_2_28_x86_64.whl",
+          "sha256": "7b27accfa545169ad070efb8a6679b25d63acc8513bbc0c05937c3ce94c13ea5",
+          "size": 1708101
         }
       ],
-      "declared_total_bytes": 978759543,
+      "declared_total_bytes": 643130911,
       "package_manifest_file": "components/ocr/ocr-doctr/package.manifest.json",
       "creator_package_signature_file": "components/ocr/ocr-doctr/package.manifest.creator.sig",
       "creator_identity_file": "components/ocr/ocr-doctr/creator.identity",
@@ -1488,11 +1491,11 @@
     },
     {
       "id": "ocr-easyocr",
-      "name": "EasyOCR：基于 PyTorch，80+ 语言，端到端检测+识别",
+      "name": "EasyOCR：基于 PyTorch（CPU 版），80+ 语言",
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/ocr/ocr-easyocr/recipe.json",
-      "recipe_digest": "7b827b735be890b0237b53af3c281e27a6e463fe7c2ba934e522e30597b453b1",
+      "recipe_digest": "a841cdaf5f61db2180f19af429afe605fa6ab73b0b8bd91d383ddb519617f66d",
       "platforms": [
         "windows",
         "linux"
@@ -1656,15 +1659,15 @@
         },
         {
           "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/3d/6c/f26ed528d197859cf8a634bbfafc3bc136f5590b6620df179d1858a34fdc/torch-2.15.0-cp313-cp313-win_amd64.whl",
-          "sha256": "e079089d36401261ebe145504309d0114fb9a00529eac4b33048221d2376a15c",
-          "size": 126736947
+          "url": "https://download-r2.pytorch.org/whl/cpu/torch-2.15.0%2Bcpu-cp313-cp313-win_amd64.whl",
+          "sha256": "086f79c78c941b428410dc15f898ce2420a4580ae6983ea314692d71ce76c619",
+          "size": 126626022
         },
         {
           "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/cf/9a/a728c3af061bff5e0c8a8389b6dfe99646f8290a2f6a5f8fb624a0c15b92/torchvision-0.29.2-py3-none-win_amd64.whl",
-          "sha256": "5812c312d4401c3587a045fa4c6228d982ebc4faa9b472275d11afe5852e24f9",
-          "size": 1379121
+          "url": "https://download-r2.pytorch.org/whl/cpu/torchvision-0.29.1%2Bcpu-cp313-cp313-win_amd64.whl",
+          "sha256": "94590cee2298a7b6cc6512159781b577a322d0813baf1add3cf02db744138b31",
+          "size": 1376910
         },
         {
           "source": "remote",
@@ -1740,18 +1743,18 @@
         },
         {
           "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/5a/23/70a1ae507f5ff94505c2c85bf20111020f7a19ecc6f5b36f6275c51b97d8/torch-2.15.0-cp313-cp313-manylinux_2_28_x86_64.whl",
-          "sha256": "241fea2bac4ed8351307cd13eca5020fbe231f990891be299cf683897caebfbc",
-          "size": 539167086
+          "url": "https://download-r2.pytorch.org/whl/cpu/torch-2.15.0%2Bcpu-cp313-cp313-manylinux_2_28_x86_64.whl",
+          "sha256": "0f6f69701b2d38ddc412364dfb92e2e13e74960d33fa3573b4930ced626e81c7",
+          "size": 209528982
         },
         {
           "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/92/74/699d28bed7453dbe40b09d37aab8f6cd75f19a77a77d5ab4588a4f3239e7/torchvision-0.29.2-py3-none-manylinux_2_28_x86_64.whl",
-          "sha256": "0875f7a23bd298813240f716c56df44ce72ddb45146589442a38edd0e1f59637",
-          "size": 7585493
+          "url": "https://download-r2.pytorch.org/whl/cpu/torchvision-0.29.1%2Bcpu-cp313-cp313-manylinux_2_28_x86_64.whl",
+          "sha256": "7b27accfa545169ad070efb8a6679b25d63acc8513bbc0c05937c3ce94c13ea5",
+          "size": 1708101
         }
       ],
-      "declared_total_bytes": 941875262,
+      "declared_total_bytes": 606246630,
       "package_manifest_file": "components/ocr/ocr-easyocr/package.manifest.json",
       "creator_package_signature_file": "components/ocr/ocr-easyocr/package.manifest.creator.sig",
       "creator_identity_file": "components/ocr/ocr-easyocr/creator.identity",
@@ -2713,7 +2716,7 @@
       "version": "2395",
       "publisher": "starlife",
       "recipe_file": "components/browser/webkit-2395/recipe.json",
-      "recipe_digest": "a3541cbe9e85b2501afe00fc6db9ed1fa3115599d09efd518978e9a6a1e07c36",
+      "recipe_digest": "96bad4f46bf9951d46775b1d71f42c52d32a0041f490269b5373c8f5f2f1fc69",
       "platforms": [
         "windows",
         "linux"
@@ -2728,7 +2731,10 @@
       ],
       "platform_architectures": {},
       "entry": {
-        "path": "browser",
+        "path_by_platform": {
+          "windows": "browser/Playwright.exe",
+          "linux": "browser/pw_run.sh"
+        },
         "protocol": "browser-cdp",
         "engine": "webkit",
         "runner": "native"

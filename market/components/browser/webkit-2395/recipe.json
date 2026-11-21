@@ -44,7 +44,10 @@
     }
   ],
   "entry": {
-    "path": "browser",
+    "path_by_platform": {
+      "windows": "browser/Playwright.exe",
+      "linux": "browser/pw_run.sh"
+    },
     "protocol": "browser-cdp",
     "engine": "webkit",
     "runner": "native"

@@ -44,7 +44,10 @@
     }
   ],
   "entry": {
-    "path": "browser",
+    "path_by_platform": {
+      "windows": "browser/firefox/firefox.exe",
+      "linux": "browser/firefox/firefox"
+    },
     "protocol": "browser-cdp",
     "engine": "firefox",
     "runner": "native"
