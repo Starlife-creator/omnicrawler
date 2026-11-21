@@ -34,6 +34,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from ...i18n import _
+
 
 @dataclass(frozen=True, slots=True)
 class MirrorEndpoint:
@@ -65,13 +67,13 @@ class DownloadChannel:
 
 
 _MIRROR_LABELS: dict[str, str] = {
-    "mirrors.tuna.tsinghua.edu.cn": "清华 TUNA",
-    "mirrors.aliyun.com": "阿里云",
-    "mirrors.cloud.tencent.com": "腾讯云",
-    "pypi.mirrors.ustc.edu.cn": "中科大 USTC",
-    "repo.huaweicloud.com": "华为云",
-    "mirrors.huaweicloud.com": "华为云",
-    "registry.npmmirror.com": "淘宝 npmmirror",
+    "mirrors.tuna.tsinghua.edu.cn": _("清华 TUNA"),
+    "mirrors.aliyun.com": _("阿里云"),
+    "mirrors.cloud.tencent.com": _("腾讯云"),
+    "pypi.mirrors.ustc.edu.cn": _("中科大 USTC"),
+    "repo.huaweicloud.com": _("华为云"),
+    "mirrors.huaweicloud.com": _("华为云"),
+    "registry.npmmirror.com": _("淘宝 npmmirror"),
 }
 
 
@@ -119,58 +121,54 @@ def _model_sources() -> list[MirrorEndpoint]:
 CHANNELS: tuple[DownloadChannel, ...] = (
     DownloadChannel(
         channel_id="market",
-        title="市场索引与自更新",
+        title=_("市场索引与自更新"),
         description=(
-            "插件 / 模板 / 组件的 catalog.json 与宿主自更新 latest.json。"
-            "支持多个静态目录树源（官方 Pages / Releases + 自建 HTTPS 镜像或局域网目录）。"
+            _("插件 / 模板 / 组件的 catalog.json 与宿主自更新 latest.json。""支持多个静态目录树源（官方 Pages / Releases + 自建 HTTPS 镜像或局域网目录）。")
         ),
-        official=[MirrorEndpoint("官方 GitHub Pages / Releases", "github.com", official=True)],
+        official=[MirrorEndpoint(_("官方 GitHub Pages / Releases"), "github.com", official=True)],
         mirrors=[],
-        integrity="Ed25519 冷钥签名 + sequence 单调递增防重放 + tombstones 吊销拦截",
+        integrity=_("Ed25519 冷钥签名 + sequence 单调递增防重放 + tombstones 吊销拦截"),
         config_key="plugins.catalogs",
     ),
     DownloadChannel(
         channel_id="pypi",
-        title="Python 轮子与组件构件",
-        description="Wheel-Pack 组件（如 ocr-paddle）的 .whl 闭包及受控依赖。",
+        title=_("Python 轮子与组件构件"),
+        description=_("Wheel-Pack 组件（如 ocr-paddle）的 .whl 闭包及受控依赖。"),
         official=[
-            MirrorEndpoint("PyPI 官方", "pypi.org", official=True),
-            MirrorEndpoint("PyPI 文件存储", "files.pythonhosted.org", official=True),
+            MirrorEndpoint(_("PyPI 官方"), "pypi.org", official=True),
+            MirrorEndpoint(_("PyPI 文件存储"), "files.pythonhosted.org", official=True),
         ],
         mirrors=_pypi_mirrors(),
-        integrity="每个 .whl 强制核对 recipe.json 里锁定的 64 位 SHA-256",
+        integrity=_("每个 .whl 强制核对 recipe.json 里锁定的 64 位 SHA-256"),
         config_key="mirrors.groups",
     ),
     DownloadChannel(
         channel_id="browser",
-        title="浏览器内核与驱动",
+        title=_("浏览器内核与驱动"),
         description=(
-            "按需加装的 Firefox / WebKit / Chromium 更新包及驱动。"
-            "随包预置的 Chromium 不受此通道影响（它已在本机，无需下载）。"
+            _("按需加装的 Firefox / WebKit / Chromium 更新包及驱动。""随包预置的 Chromium 不受此通道影响（它已在本机，无需下载）。")
         ),
         official=[
             MirrorEndpoint("Playwright CDN", "playwright.azureedge.net", official=True),
-            MirrorEndpoint("Playwright CDN（新版）", "cdn.playwright.dev", official=True),
+            MirrorEndpoint(_("Playwright CDN（新版）"), "cdn.playwright.dev", official=True),
         ],
         mirrors=[
-            MirrorEndpoint("淘宝 npmmirror", "registry.npmmirror.com"),
-            MirrorEndpoint("华为云镜像", "mirrors.huaweicloud.com"),
+            MirrorEndpoint(_("淘宝 npmmirror"), "registry.npmmirror.com"),
+            MirrorEndpoint(_("华为云镜像"), "mirrors.huaweicloud.com"),
         ],
-        integrity="EgressBroker 白名单受控下载 + recipe 固定构件 SHA-256",
+        integrity=_("EgressBroker 白名单受控下载 + recipe 固定构件 SHA-256"),
         config_key="browser.download_host",
     ),
     DownloadChannel(
         channel_id="models",
-        title="OCR / AI 模型上游",
+        title=_("OCR / AI 模型上游"),
         description=(
-            "PaddleOCR 等大模型权重（1 GB 级）。"
-            "**本项目不托管也不伪造模型哈希**——完整性由上游负责。"
+            _("PaddleOCR 等大模型权重（1 GB 级）。""**本项目不托管也不伪造模型哈希**——完整性由上游负责。")
         ),
         official=_model_sources(),
         mirrors=[],
         integrity=(
-            "上游不提供内容哈希；本项目的立场是「内容完整性由上游负责，"
-            "本项目不为其背书」，仅在界面上标注信任锚点归属"
+            _("上游不提供内容哈希；本项目的立场是「内容完整性由上游负责，""本项目不为其背书」，仅在界面上标注信任锚点归属")
         ),
         # 模型源是"选择哪个上游"，不是"镜像同一个东西"
         user_configurable=True,
@@ -194,26 +192,32 @@ def channel_ids() -> list[str]:
 #: 官方站 vs 镜像站的差异说明（界面说明卡正文，逐条可核对）。
 OFFICIAL_VS_MIRROR_NOTES: tuple[tuple[str, str], ...] = (
     (
-        "防篡改能力：完全相同",
-        "市场条目有 Ed25519 冷钥签名、轮子与浏览器构件有固定 SHA-256。"
-        "镜像即使返回被篡改的字节，也会被本地校验直接拒绝——"
-        "换镜像不降低防投毒安全性。",
+        _("防篡改能力：完全相同"),
+        _(
+            "市场条目有 Ed25519 冷钥签名、轮子与浏览器构件有固定 SHA-256。"
+            "镜像即使返回被篡改的字节，也会被本地校验直接拒绝——"
+            "换镜像不降低防投毒安全性。"
+        ),
     ),
     (
-        "同步时效：镜像可能滞后",
-        "镜像站按周期同步（数分钟至数小时），可能拉不到刚发布的版本，"
-        "或晚一步收到插件紧急下架（tombstones）。"
-        "因此官方源连通正常时，系统默认优先请求官方源。",
+        _("同步时效：镜像可能滞后"),
+        _(
+            "镜像站按周期同步（数分钟至数小时），可能拉不到刚发布的版本，"
+            "或晚一步收到插件紧急下架（tombstones）。"
+            "因此官方源连通正常时，系统默认优先请求官方源。"
+        ),
     ),
     (
-        "网络元数据可见性：不同",
-        "连接镜像站时，请求方公网 IP 与下载时间对镜像运营机构（高校或云厂商）可见；"
-        "上游模型源（AIStudio / ModelScope / HuggingFace）由对应平台直接提供内容。",
+        _("网络元数据可见性：不同"),
+        _(
+            "连接镜像站时，请求方公网 IP 与下载时间对镜像运营机构（高校或云厂商）可见；"
+            "上游模型源（AIStudio / ModelScope / HuggingFace）由对应平台直接提供内容。"
+        ),
     ),
 )
 
 #: 切换提醒的触发边界（给界面用的说明文本）。
-MIRROR_PROMPT_BOUNDARY = (
+MIRROR_PROMPT_BOUNDARY = _(
     "仅在官方源发生网络连接失败、DNS 解析失败、TLS 握手超时或持续低速时提示切换镜像。"
     "签名校验失败、哈希不符、sequence 回退、ABI/平台不兼容一律阻断报错——"
     "绝不诱导用户通过切换镜像绕过校验。"

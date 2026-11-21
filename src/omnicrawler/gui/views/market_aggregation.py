@@ -27,6 +27,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from ...i18n import _
+
 
 class MarketAggregationError(RuntimeError):
     """所有市场源都不可用。
@@ -94,7 +96,7 @@ def aggregate_market_catalogs(
         config, local_fallback=local_fallback, trust_source=trust_source
     )
     if not sources:
-        raise MarketAggregationError("没有配置任何市场源")
+        raise MarketAggregationError(_("没有配置任何市场源"))
 
     aggregated = aggregate_catalogs(
         sources,
@@ -109,7 +111,7 @@ def aggregate_market_catalogs(
             f"{item.get('url')}: {item.get('error')}" for item in reports
         )
         raise MarketAggregationError(
-            f"全部市场源都不可用：{failures}", sources=list(reports)
+            _("全部市场源都不可用：{0}").format(failures), sources=list(reports)
         )
     return aggregated
 
@@ -134,8 +136,8 @@ def source_summary(aggregated: Mapping[str, Any]) -> str:
     ok = sum(1 for item in reports if item.get("ok"))
     failed = len(reports) - ok
     if failed == 0:
-        return f"{ok} 个市场源可用"
-    return f"{ok} 个市场源可用，{failed} 个失败"
+        return _("{0} 个市场源可用").format(ok)
+    return _("{0} 个市场源可用，{1} 个失败").format(ok, failed)
 
 #: 索引滞后多久算"需要注意"（秒）。镜像同步周期通常数分钟到数小时；
 #: 超过 24 小时基本可以确定对方没在同步了。
@@ -180,7 +182,7 @@ def index_freshness(
     """
     epoch = parse_generated_at(generated_at)
     if epoch <= 0:
-        return "unknown", "索引时间未知"
+        return "unknown", _("索引时间未知")
 
     import time as _time
 
@@ -188,15 +190,15 @@ def index_freshness(
     age = reference - epoch
     if age < 0:
         # 时间在未来：时钟偏差或恶意的旧签名，按未知处理而不是"非常新鲜"
-        return "unknown", "索引时间异常"
+        return "unknown", _("索引时间异常")
 
     hours = age / 3600
     if age <= AGING_AFTER_SECONDS:
-        return "fresh", f"索引生成于 {hours:.0f} 小时前" if hours >= 1 else "索引刚刚更新"
+        return "fresh", _("索引生成于 {0:.0f} 小时前").format(hours) if hours >= 1 else _("索引刚刚更新")
     if age <= STALE_AFTER_SECONDS:
-        return "aging", f"索引已 {hours:.0f} 小时未更新，可能缺少最新内容"
+        return "aging", _("索引已 {0:.0f} 小时未更新，可能缺少最新内容").format(hours)
     days = age / 86400
-    return "stale", f"索引已 {days:.0f} 天未更新，可能缺少最新内容"
+    return "stale", _("索引已 {0:.0f} 天未更新，可能缺少最新内容").format(days)
 
 
 def freshness_of_sources(
