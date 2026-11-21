@@ -40,7 +40,18 @@ from typing import Any
 
 #: `smoke` 允许的键。
 ALLOWED_SMOKE_KEYS = frozenset(
-    {"payload", "expect", "skip_run", "timeout_seconds", "description"}
+    {
+        "payload",
+        "expect",
+        "skip_run",
+        "timeout_seconds",
+        "description",
+        # **长驻型组件**：可执行文件启动后不退出（浏览器内核就是这种），
+        # 无法用「stdin 一个 JSON、stdout 一个 JSON」的协议验证。
+        # 设为 true 时，判据改为「可执行文件存在且可执行」——
+        # 这是能对这类组件做出的**最强静态断言**，比 skip_run 严格。
+        "entry_exists",
+    }
 )
 
 #: 缺省超时（秒）。
@@ -59,6 +70,8 @@ class SmokeSpec:
     expect: tuple[str, ...]
     skip_run: bool
     timeout_seconds: float
+    #: 只验证可执行文件存在（长驻型组件，如浏览器内核）
+    entry_exists: bool
     description: str = ""
 
 
@@ -73,7 +86,11 @@ def parse_smoke(recipe: dict[str, Any]) -> SmokeSpec:
         if kind == "data":
             # 数据组件没有可执行入口，允许省略 smoke（等价于 skip_run）
             return SmokeSpec(
-                payload={}, expect=(), skip_run=True, timeout_seconds=DEFAULT_SMOKE_TIMEOUT
+                payload={},
+                expect=(),
+                skip_run=True,
+                timeout_seconds=DEFAULT_SMOKE_TIMEOUT,
+                entry_exists=False,
             )
         raise SmokeSpecError(
             f"kind={kind} 的组件必须声明 smoke —— "
@@ -100,7 +117,10 @@ def parse_smoke(recipe: dict[str, Any]) -> SmokeSpec:
         raise SmokeSpecError("smoke.expect 必须是字符串列表")
     expect = tuple(item.strip() for item in expect_raw)
 
-    if not skip_run and not expect:
+    # `entry_exists` 形态的判据是「可执行文件存在」，不是 expect，
+    # 所以它不要求 expect（否则这类组件永远无法合法声明）。
+    _entry_exists_declared = bool(smoke.get("entry_exists", False))
+    if not skip_run and not expect and not _entry_exists_declared:
         # **空期望必须判红**：没有期望的冒烟等于没验，会让所有断言恒真。
         raise SmokeSpecError(
             "smoke.expect 不能为空 —— 空期望等于没验（空集合会让断言恒真）"
@@ -125,11 +145,24 @@ def parse_smoke(recipe: dict[str, Any]) -> SmokeSpec:
             "kind=native 的组件不能 skip_run —— 必须真的执行一次"
         )
 
+    # **长驻型组件**（浏览器内核）：启动后不退出，无法用 JSON-over-stdio 验证。
+    # `entry_exists: true` 时判据降级为「可执行文件存在且可执行」——
+    # 这是对这类组件能做出的最强静态断言，比 skip_run 严格。
+    entry_exists = bool(smoke.get("entry_exists", False))
+    if entry_exists and kind != "native":
+        raise SmokeSpecError(
+            "entry_exists 只适用于 kind=native 的组件 —— "
+            "其它形态有可执行入口，应当真跑一次"
+        )
+    if entry_exists and skip_run:
+        raise SmokeSpecError("entry_exists 与 skip_run 不能同时为真")
+
     return SmokeSpec(
         payload=payload,
         expect=expect,
         skip_run=skip_run,
         timeout_seconds=float(timeout),
+        entry_exists=entry_exists,
         description=str(smoke.get("description") or ""),
     )
 

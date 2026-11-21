@@ -611,9 +611,11 @@ def _run_component_in_subprocess(args: argparse.Namespace) -> None:
 
     from ..services.component_runner import (
         ComponentRunnerError,
+        build_native_spec,
         build_wheelpack_spec,
         describe_spec,
         run_component,
+        run_native_component,
         verify_component_files,
     )
 
@@ -638,12 +640,33 @@ def _run_component_in_subprocess(args: argparse.Namespace) -> None:
         raise SystemExit("--payload 顶层必须是 JSON 对象")
 
     try:
-        spec = build_wheelpack_spec(root)
-        checked = verify_component_files(spec.component_root)
-        if not getattr(args, "json_output", False):
-            print(describe_spec(spec))
-            print(f"已校验文件：{checked} 个")
-        result = run_component(spec, payload)
+        # **按组件形态分流**：`native`（浏览器内核）直接 exec 自带可执行文件，
+        # 没有 site-packages；`wheel-pack` 走宿主 worker 挂载 site-packages。
+        # 早先这里只有 wheel-pack 一条路，native 组件在运行阶段报
+        # 「组件缺少 site-packages 目录」（真实 CI 踩到）。
+        entry_file = root / "entry.json"
+        entry_data = (
+            json.loads(entry_file.read_text(encoding="utf-8"))
+            if entry_file.is_file()
+            else {}
+        )
+        runner_kind = str(entry_data.get("runner") or "")
+        if runner_kind == "native":
+            native_spec = build_native_spec(root, entry_data)
+            checked = verify_component_files(native_spec.component_root)
+            if not getattr(args, "json_output", False):
+                print(f"组件：{native_spec.name} {native_spec.version}".rstrip())
+                print(f"引擎：{native_spec.engine}（native）")
+                print(f"入口：{native_spec.executable}")
+                print(f"已校验文件：{checked} 个")
+            result = run_native_component(native_spec, payload)
+        else:
+            spec = build_wheelpack_spec(root)
+            checked = verify_component_files(spec.component_root)
+            if not getattr(args, "json_output", False):
+                print(describe_spec(spec))
+                print(f"已校验文件：{checked} 个")
+            result = run_component(spec, payload)
     except ComponentRunnerError as exc:
         raise SystemExit(str(exc)) from exc
 

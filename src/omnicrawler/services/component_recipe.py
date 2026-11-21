@@ -1255,6 +1255,27 @@ def _resolve_builtin_source(builtin_path: str) -> Path:
     )
 
 
+def _hash_tree(root: Path) -> dict[str, str]:
+    """对目录下所有文件算 sha256（供 `component.json` 的 files 字段）。
+
+    排除声明文件自身（`component.json` 会被写进去，自引用会死循环）。
+    """
+    hashes: dict[str, str] = {}
+    skip = {"component.json"}
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(root).as_posix()
+        if relative in skip:
+            continue
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while block := handle.read(1024 * 1024):
+                digest.update(block)
+        hashes[relative] = f"sha256:{digest.hexdigest()}"
+    return hashes
+
+
 def install_from_recipe(
     recipe: dict[str, Any],
     component_root: Path,
@@ -1431,16 +1452,34 @@ def install_from_recipe(
         # 但 `component.json` 与 `entry.json` 是运行期必需的（否则组件
         # 装好了也启动不了）。这里为 native 形态写最小声明：
         # 入口直接指向安装根里的真实可执行文件。
-        if builtin_entry_ok:
-            source_dir = next(iter(builtin_dirs.values()))
-            native_entry = _resolve_builtin_source(str(_entry_path_value))
+        # **所有 native 组件都要生成 entry.json**：`components run` 靠它
+        # 判断该 exec 还是走 worker。早先只在内置（builtin_entry_ok）分支
+        # 生成，普通 native 组件（Firefox/WebKit 内核）装完缺这个文件，
+        # 运行阶段只能去猜形态，报「缺少 site-packages」（真实 CI 踩到）。
+        _is_native = str(entry.get("runner")) == "native"
+        if builtin_entry_ok or _is_native:
+            source_dir = (
+                next(iter(builtin_dirs.values()))
+                if builtin_dirs
+                else assembled
+            )
+            # **入口路径的两种形态**：
+            #   * 内置：指向安装根里的真实文件（绝对路径，字节不复制）
+            #   * 普通 native：写**相对组件目录**的路径 —— 装配完成后
+            #     staging 目录会被删除，绝对路径立刻失效（实测：写绝对路径
+            #     导致 entry.json 指向已删除的临时目录）
+            native_entry_path = (
+                str(_resolve_builtin_source(str(_entry_path_value)))
+                if builtin_entry_ok
+                else PurePosixPath(str(_entry_path_value)).as_posix()
+            )
             (assembled / "entry.json").write_text(
                 json.dumps(
                     {
                         "name": name,
                         "version": version,
                         "engine": str(entry.get("engine") or "native"),
-                        "path": str(native_entry),
+                        "path": native_entry_path,
                         "protocol": str(entry.get("protocol") or ""),
                         "runner": "native",
                     },
@@ -1459,8 +1498,17 @@ def install_from_recipe(
                         # 目录型内置构件的字节不在组件目录里，
                         # 所以 files 为空 + 显式声明 external_root。
                         # 校验由 `files.lock.json`（随配方签名）负责。
-                        "files": {},
-                        "external_root": str(source_dir),
+                        # **普通 native 组件要算真实文件哈希**：
+                        # `verify_component_files` 拒绝空 files —— 那是
+                        # 「不信任装配时校验过」的纪律，每启动前重算一遍。
+                        # 内置组件的字节在组件目录外，files 只能为空，
+                        # 其完整性由随配方签名的 files.lock.json 保证。
+                        "files": (
+                            {}
+                            if builtin_entry_ok
+                            else _hash_tree(assembled)
+                        ),
+                        **({"external_root": str(source_dir)} if builtin_entry_ok else {}),
                     },
                     ensure_ascii=False,
                     indent=2,
