@@ -1,6 +1,6 @@
 {
   "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
-  "recipe_digest": "13518b7c34331f05f2bf34a275510a384368dbf6a51a6d717155c1b146dff936",
+  "recipe_digest": "9b5c066bd2403b838dd431afc807263337fb88634e6a33628888b646eaa8745f",
   "python_version": "3.13",
   "packages": [
     "easyocr",

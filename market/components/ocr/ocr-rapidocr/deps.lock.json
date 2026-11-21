@@ -1,6 +1,6 @@
 {
   "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
-  "recipe_digest": "2a960f48af6bd41d68af01f4dfe98e8a555ffc89ee831f8613984969d9edd336",
+  "recipe_digest": "1431ac667c559e6108f3f99c0cd19f85c0fed5a2cc3108bae3e332c8546ebee8",
   "python_version": "3.13",
   "packages": [
     "certifi",

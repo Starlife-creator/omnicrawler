@@ -410,7 +410,9 @@ def check_recipe(recipe_path: Path) -> list[str]:
             problems.append(
                 f"{recipe_path.parent.name}: 配方缺少闭包声明的包 {missing_pkgs}"
             )
-    else:
+    elif kind == "wheel-pack":
+        # 只有 wheel-pack 需要闭包快照：native/data 不装 Python 包，
+        # 对它们要求快照既无意义也生成不出来。
         problems.append(
             f"{recipe_path.parent.name}: 缺少依赖闭包快照 deps.lock.json"
             f"（运行 tools/market/component_deps_lock.py 生成）"
