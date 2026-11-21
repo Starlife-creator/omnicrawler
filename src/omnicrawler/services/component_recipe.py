@@ -1296,7 +1296,13 @@ def install_from_recipe(
     # （`内置 Chromium（随包）` 这种），含中文与括号，做目录名既难用
     # 也容易在不同文件系统上出问题。id 缺省回落到 name 保持向后兼容。
     install_id = str(recipe.get("id") or "").strip() or name
-    destination = component_root / f"{install_id}-{version}"
+    # **避免版本号重复**：有些组件 id 本身已含版本（`webkit-2395` 且
+    # version 也是 `2395`），再拼一次会得到 `webkit-2395-2395` —— 难看且
+    # 让用户困惑。id 已以 `-<version>` 结尾时直接用 id。
+    if install_id.endswith(f"-{version}"):
+        destination = component_root / install_id
+    else:
+        destination = component_root / f"{install_id}-{version}"
     # 按**当前平台**筛构件：一份 recipe 可以给不同平台配不同轮子
     # （paddle 的 win_amd64 / manylinux1_x86_64 / macosx_11_0_arm64）。
     artifacts = artifacts_for_platform(recipe, current_platform())
@@ -1388,7 +1394,16 @@ def install_from_recipe(
         # 生成的是**声明文件**（JSON），不是可执行脚本 —— 与 asset_trust 的
         # 「recipe 里不得有可执行钩子」不冲突。
         entry = recipe["entry"]
-        entry_relative = PurePosixPath(entry["path"])
+        # `entry.path` 或 `entry.path_by_platform[当前平台]` 二选一
+        _entry_path_value = entry.get("path")
+        if not _entry_path_value:
+            _by_platform = entry.get("path_by_platform") or {}
+            _entry_path_value = _by_platform.get(current_platform()) or ""
+        _require(
+            bool(_entry_path_value),
+            f"entry 没有当前平台（{current_platform()}）的入口路径",
+        )
+        entry_relative = PurePosixPath(str(_entry_path_value))
         # **内置 native 组件的入口在安装根里，不在组装区**：
         # 目录型内置构件（浏览器内核）的字节本来就在包内，装配不复制它，
         # 所以入口自然不在 `assembled/` 下 —— 它的位置由
@@ -1418,7 +1433,7 @@ def install_from_recipe(
         # 入口直接指向安装根里的真实可执行文件。
         if builtin_entry_ok:
             source_dir = next(iter(builtin_dirs.values()))
-            native_entry = _resolve_builtin_source(entry["path"])
+            native_entry = _resolve_builtin_source(str(_entry_path_value))
             (assembled / "entry.json").write_text(
                 json.dumps(
                     {
@@ -1509,13 +1524,20 @@ def install_from_recipe(
 
     # 内置 native 组件的字节留在安装根，`destination` 里只有声明文件 ——
     # 它的入口有效性已由 `builtin_entry_ok` 分支确认，这里不再重复要求。
-    entry_path = destination / PurePosixPath(recipe["entry"]["path"])
+    # 统一取入口路径（`path` 或 `path_by_platform[当前平台]`）
+    _final_entry = recipe["entry"].get("path")
+    if not _final_entry:
+        _final_entry = (recipe["entry"].get("path_by_platform") or {}).get(
+            current_platform()
+        )
+    _require(bool(_final_entry), f"entry 没有当前平台（{current_platform()}）的入口路径")
+    entry_path = destination / PurePosixPath(str(_final_entry))
     if not builtin_entry_ok:
         _require(entry_path.is_file(), f"装配完成但入口不存在：{entry_path}")
     elif not entry_path.is_file():
         # 内置 native：返回**安装根里的真实入口**，而不是 destination 下
         # 那个不存在的镜像路径 —— 调用方据此启动组件。
-        entry_path = _resolve_builtin_source(recipe["entry"]["path"])
+        entry_path = _resolve_builtin_source(str(_final_entry))
 
     return {
         "name": name,
