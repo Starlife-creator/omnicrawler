@@ -23,11 +23,36 @@ def _use_chinese_ui_language():
     i18n.set_language("zh_CN")
 
 
+def _nav_row(window, nav_key: str) -> int:
+    """按 **NavKey** 取其在实际导航栏里的行号。
+
+    为什么不用 `NavIndex.X`：那是 NAV_LAYOUT 的**静态行号**，
+    而实际导航项会被 visible_entries() 按能力过滤 ——
+    未装 document-workbench 时 pdf_workbench / convert_tool
+    两行不显示，其后所有项的**运行时行号都前移 2**。
+
+    实测（2026-11-22）：YAML_EDITOR 的静态值是 14，
+    而运行时它实际在第 12 行 —— 断言 12 == 14 失败。
+
+    central_area._goto_nav_key 已有同样的教训与解法，这里复用同一判据。
+    """
+    from omnicrawler.core.capabilities import navigation_capabilities
+    from omnicrawler.gui.navigation import visible_entries
+
+    keys = [entry.key for entry in visible_entries(navigation_capabilities())]
+    if nav_key not in keys:
+        raise AssertionError(
+            f"导航项 {nav_key!r} 在当前能力下不可见（可见项：{keys}）"
+        )
+    return keys.index(nav_key)
+
+
 def test_task_workspace_template_library_and_rebuild_start_offscreen(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from omnicrawler.gui.main import MainWindow, NavIndex
+    from omnicrawler.gui.main import MainWindow
+    from omnicrawler.gui.navigation import NavKey
 
     # `TemplateLibraryDialog` 已迁到独立模块（gui/views/template_library_dialog.py），
     # `gui.main` 不再导出它 —— 从新位置导入。
@@ -42,7 +67,7 @@ def test_task_workspace_template_library_and_rebuild_start_offscreen(monkeypatch
     for name in ("_intent_section", "_draft_section", "_fields_section",
                  "_trial_section", "_delivery_section"):
         assert hasattr(window._task_canvas, name)
-    assert "任务工作台" in window._nav.item(NavIndex.WORKSPACE).text()
+    assert "任务工作台" in window._nav.item(_nav_row(window, NavKey.WORKSPACE)).text()
     assert window._task_canvas._intent_section._title_label.text() == "任务目标"
     assert window._task_canvas._draft_section._title_label.text() == "采集方案"
     assert window._task_canvas._fields_section._title_label.text() == "字段规则"
@@ -53,20 +78,22 @@ def test_task_workspace_template_library_and_rebuild_start_offscreen(monkeypatch
 
     # 首页入口必须路由到语义一致的工作区，最近任务进入含任务历史的监控页。
     window._home.open_workspace.emit()
-    assert window._nav.currentRow() == NavIndex.WORKSPACE
+    assert window._nav.currentRow() == _nav_row(window, NavKey.WORKSPACE)
     window._home.open_recent.emit()
-    assert window._nav.currentRow() == NavIndex.MONITOR
+    assert window._nav.currentRow() == _nav_row(window, NavKey.MONITOR)
 
     # 简单模式保留完整核心闭环，专业/开发者工具按能力渐进披露。
     window._theme_manager.apply_ui_mode("simple")
-    for index in (NavIndex.HOME, NavIndex.WORKSPACE, NavIndex.MONITOR, NavIndex.RESULTS):
+    _core_keys = ("home", "workspace", "monitor", "results")
+    for index in (_nav_row(window, key) for key in _core_keys):
         assert not window._nav.item(index).isHidden()
-    for index in (NavIndex.YAML_EDITOR, NavIndex.EVIDENCE, NavIndex.PLUGIN_MARKET, NavIndex.DEVELOPER):
+    _advanced_keys = ("yaml_editor", "evidence", "plugin_market", "developer")
+    for index in (_nav_row(window, key) for key in _advanced_keys):
         assert window._nav.item(index).isHidden()
     window._theme_manager.apply_ui_mode("professional")
-    assert not window._nav.item(NavIndex.YAML_EDITOR).isHidden()
-    assert not window._nav.item(NavIndex.RESULTS).isHidden()
-    assert window._nav.item(NavIndex.DEVELOPER).isHidden()
+    assert not window._nav.item(_nav_row(window, NavKey.YAML_EDITOR)).isHidden()
+    assert not window._nav.item(_nav_row(window, NavKey.RESULTS)).isHidden()
+    assert window._nav.item(_nav_row(window, NavKey.DEVELOPER)).isHidden()
     window._theme_manager.apply_ui_mode("developer")
     assert all(not window._nav.item(index).isHidden() for index in range(window._nav.count()))
 
@@ -309,7 +336,8 @@ def test_editor_toolbar_works_from_monitor_home_and_results(monkeypatch):
     from PySide6.QtWidgets import QApplication
 
     from omnicrawler.gui.core.config_serializer import to_yaml
-    from omnicrawler.gui.main import MainWindow, NavIndex
+    from omnicrawler.gui.main import MainWindow
+    from omnicrawler.gui.navigation import NavKey
 
     monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
     app = QApplication.instance() or QApplication([])
@@ -319,22 +347,23 @@ def test_editor_toolbar_works_from_monitor_home_and_results(monkeypatch):
     original = yaml.safe_load(to_yaml(window._config))
     original_task_id = window._config.task_id
     try:
-        for page in (NavIndex.MONITOR, NavIndex.HOME, NavIndex.RESULTS):
+        for page_key in ("monitor", "home", "results"):
+            page = _nav_row(window, page_key)
             window._nav.setCurrentRow(page)
             window._toggle_workspace_editor()
-            assert window._nav.currentRow() == NavIndex.YAML_EDITOR
+            assert window._nav.currentRow() == _nav_row(window, NavKey.YAML_EDITOR)
             assert window._toggle_btn.text() == "⇄ 工作台"
             assert yaml.safe_load(to_yaml(window._config)) == original
             assert window._config.task_id == original_task_id
             window._toggle_workspace_editor()
-            assert window._nav.currentRow() == NavIndex.WORKSPACE
+            assert window._nav.currentRow() == _nav_row(window, NavKey.WORKSPACE)
             assert window._toggle_btn.text() == "⇄ 编辑器"
         # Navigation remains available while the worker owns its saved run copy;
         # merely opening the editor must not change that copy or current draft.
         window._task_runner._state = "running"
-        window._nav.setCurrentRow(NavIndex.MONITOR)
+        window._nav.setCurrentRow(_nav_row(window, NavKey.MONITOR))
         window._toggle_workspace_editor()
-        assert window._nav.currentRow() == NavIndex.YAML_EDITOR
+        assert window._nav.currentRow() == _nav_row(window, NavKey.YAML_EDITOR)
         assert yaml.safe_load(to_yaml(window._config)) == original
         assert window._config.task_id == original_task_id
     finally:
