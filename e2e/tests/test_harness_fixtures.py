@@ -28,6 +28,12 @@ import pytest
 
 from e2e.harness import create_pdf_bytes
 
+# **必须打 `e2e` 标记**：CI 用 `pytest -m e2e` 过滤收集（见 e2e/run.py），
+# 不打标记的测试**不会被跑到** —— 覆盖率因此不会回升。
+# 我最初漏了这行，本地直接 `pytest e2e/tests` 能过（不过滤），
+# 但 CI 报的仍是 88%，查了一轮才发现是收集条件不同。
+pytestmark = pytest.mark.e2e
+
 
 def test_create_pdf_bytes_returns_a_real_pdf() -> None:
     """夹具必须产出真正的 PDF 字节（以 `%PDF-` 开头、非空）。"""
