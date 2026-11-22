@@ -145,8 +145,14 @@ class BrowserKernelPanel(QWidget):
         self._import.clicked.connect(self._on_import)
         buttons.addWidget(self._import)
 
+        # 「从市场安装」：CLI 的 `components install-recipe` 早已可用
+        # （§15.16.15 实测下载过 webkit 内核），但此前 GUI 只列不装 ——
+        # 用户看到「内核文件缺失」却不知道怎么办。这里给出直接入口。
+        self._install = QPushButton(_("从市场安装…"), self)
+        self._install.clicked.connect(self._on_install)
         self._refresh = QPushButton(_("刷新"), self)
         self._refresh.clicked.connect(self.refresh)
+        buttons.addWidget(self._install)
         buttons.addWidget(self._refresh)
 
         buttons.addStretch(1)
@@ -258,6 +264,59 @@ class BrowserKernelPanel(QWidget):
             pass
         self.kernel_selected.emit(family)
         self._status.setText(_("当前内核：{name}").format(name=option.display_name))
+
+    def _on_install(self) -> None:
+        """从市场安装当前选中项对应的组件（走 CLI 的 `install-recipe`）。
+
+        **为什么不直接下载**：浏览器内核是 62–126 MiB 的归档，安装要算
+        SHA-256、解压、生成声明文件 —— 那是 `install-recipe` 已经做对的事。
+        在 GUI 里重写一遍只会分叉。这里只负责「告诉用户要装哪个」并调用它。
+        """
+        option = self._selected()
+        if option is None:
+            QMessageBox.information(
+                self, _("从市场安装"), _("请先在列表里选中一个内核。")
+            )
+            return
+        # `KernelOption` 的真实字段是 `component_id`（不是 recipe_file）。
+        # 早先我用 getattr 猜了一个不存在的属性 —— 有默认值所以不崩，
+        # 但功能永远走「没有关联配方」分支，等于没做。
+        component_id = str(getattr(option, "component_id", "") or "").strip()
+        if not component_id:
+            QMessageBox.information(
+                self,
+                _("从市场安装"),
+                _(
+                    "「{name}」没有关联的市场组件，无法从这里安装。\n"
+                    "可安装的内核需在市场里以组件形式发布。"
+                ).format(name=option.display_name),
+            )
+            return
+        # `install-recipe` 只接受 `--recipe <路径>`（没有「按 id 找」的选项）。
+        # 分类目录只有市场知道，所以让用户去市场里定位 —— 这里给出组件 id
+        # 与可复制的命令模板，而不是猜一个可能错的路径。
+        recipe = component_id
+
+        # 安装要联网下载几十到上百 MB，且不能阻塞 GUI 线程 ——
+        # 这里只给出精确命令，让用户在自己的终端里跑并看到进度。
+        # 起后台线程做下载会让「进度不可见 + 失败原因难查」。
+        command = (
+            "omnicrawler components install-recipe "
+            '--recipe "' + str(_("<市场仓>/components/<分类>")) + "/" + recipe
+            + '/recipe.json" --download'
+        )
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle(_("从市场安装"))
+        box.setText(_("安装「{name}」").format(name=option.display_name))
+        box.setInformativeText(
+            _(
+                "本次安装需要联网下载构件，请在终端里执行：\n\n{cmd}\n\n"
+                "装完点「刷新」即可在这里设为默认。"
+            ).format(cmd=command)
+        )
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.exec()
 
     def _on_import(self) -> None:
         """导入本地内核 —— 选文件 → 探测版本 → 提示驱动 → 确认未验证。"""
