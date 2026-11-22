@@ -273,6 +273,8 @@ jobs:
       - run: python tools/gates/check_tool_wiring.py
       # 跨仓副本：市场仓内联复制的工具必须与主仓判据等价（防只改一边）
       - run: python tools/gates/check_cross_repo_copies.py
+      # install 声明里的 extra 名必须真实存在（补 profiles.toml 管辖范围之外的部分）
+      - run: python tools/gates/check_extras_exist.py
       - run: python -m mypy src/omnicrawler
       # 走 tools/builders/build_wheel.py：它先清 build/ 再构建（裸 pip wheel 在同一工作树里
       # 第二次会因 setuptools 复用 build/ 而失败，见 §5.7 / W6.7-⑥）

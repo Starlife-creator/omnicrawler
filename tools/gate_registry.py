@@ -444,6 +444,18 @@ GATES: tuple[Gate, ...] = (
         ),
     ),
     Gate(
+        name="check_extras_exist",
+        args=("tools/gates/check_extras_exist.py",),
+        sets=_STATIC,
+        description="所有 pip install -e 声明的 extra 名都真实存在",
+        script="tools/gates/check_extras_exist.py",
+        ci_note=(
+            "零网络。补 check_build_profiles 的盲区：后者只管 constraints/profiles.toml "
+            "声明过的档位，而 CI workflow / e2e 脚本里的 install 行不受管辖。"
+            "本会话就因 e2e.yml 与 e2e/run.sh 各写一遍而漏改一处。"
+        ),
+    ),
+    Gate(
         name="check_cross_repo_copies",
         args=("tools/gates/check_cross_repo_copies.py",),
         sets=_STATIC,
