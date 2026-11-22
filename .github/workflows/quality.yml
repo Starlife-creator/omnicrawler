@@ -223,6 +223,18 @@ jobs:
       # 不是单条），因此不会对正常通过产生噪声；它只加可观测性，不改任何判定。
       - id: core_tests
         run: python -m coverage run -m pytest -q --durations=25 --durations-min=0.5 -o faulthandler_timeout=300 --junitxml=artifacts/ci/pytest-core.xml
+      # 测试洁净度：跑完测试后主仓工作区不得多出**任何未被 .gitignore 忽略**的文件。
+      #
+      # 为什么放在这里：本会话遇到一组「单独跑能过、整目录跑就失败」的测试
+      # （pipeline 12 条 / services 18 条 / fetching 3 条 / template 1 条 / sources 3 条），
+      # 根因都是任务配置写 `workspace: work`（相对路径）⇒ 落到项目根 ⇒
+      # 同进程测试共用一个 state.sqlite3。我为此花了四轮迭代逐个找出来。
+      #
+      # 这条判据能**一次抓住全部**：它们都在往仓库里写东西。
+      # 零误报 —— 测试本来就不该污染仓库。
+      - id: test_cleanliness
+        if: ${{ !cancelled() && steps.core_tests.outcome != 'skipped' }}
+        run: python tools/qa/check_test_cleanliness.py
       # `--fail-under=0`：本步骤只**取数据**，判定统一交给 `tools/gates/check_coverage_gates.py`
       # （单一判据）。否则 pyproject.toml 的 `fail_under = 66` 会在这里先以 exit 2 抢跑——
       # 全量跑时它恰好也过，但在**子集**（如浏览器 job，实测总覆盖率 23%）会直接把门禁

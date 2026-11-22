@@ -26,8 +26,40 @@
 
 **门禁**：
 - 本地轻量自证：`python tools/self_verify.py --set static`（清单真源 `tools/gate_registry.py`）。
+- **改代码时的秒级自检**：`python tools/fast_check.py`（约 2 秒，只查改动的文件）。
+  它是「提交前第一道闸」，**不替代** static：只做 `ast.parse` + `ruff` + 单文件 `mypy`，
+  不查锚完整性、不查跨文件架构约束。用它可以在**最便宜的时机**发现语法/导入错误。
 - 三平台构建与便携冒烟留在 CI；需要本机实机验收时，证据统一写入工作区 user-test-runs，不以本地结果替代 CI 产物验收。
 - 每批改动**本地提交**；红绿全绿再进下一批。
+
+**辅助工具（2026-11-22 补，来自一次「工具存在却没人用」的失误）**：
+- **反向断言**：`python tools/qa/reverse_assert.py --file <源文件> --find <原文> --replace <缺口> --test <测试>`
+  一条命令完成「确认绿 → 破坏 → 确认红 → 字节级还原 → 确认绿」五步。
+  `--find` 必须恰好出现一次；还原后强制校验 sha256。它还能识别**假守卫**：
+  装了缺口仍绿时报「这条守卫没有真正守住该守的东西」。
+- **测试洁净度**：`python tools/qa/check_test_cleanliness.py`（CI 已接入，在跑完测试之后）。
+  判据是「跑完测试后主仓不许多出文件」——能一次抓住所有「测试往仓库写东西」的问题
+  （本会话 37 条「单独跑能过、整目录跑就失败」全属此类）。
+  本地开发用 `--baseline <文件>` 记基线、`--diff-baseline <文件>` 只报增量。
+- **新增组件一条龙**：`python tools/market/new_component.py --package <包> --id <id> --module <模块> --also-platforms linux`
+  自动串「配方 → 闭包快照 → 校验」，跑完打印签名与提交的精确命令
+  （签名需创作者密码，**刻意不自动化**）。
+- **组件发现的唯一真源**：`tools/market/component_discovery.py`。
+  需要遍历组件配方时**必须**用 `iter_component_recipes()`，不要自己写 `glob`/`iterdir` ——
+  目录形状是 `components/<分类>/<id>/`，一层 glob 会扫到空且报错伪装成「未找到任何组件配方」。
+  有反向索引门禁 `tools/gates/check_component_discovery.py` 守着这一点。
+
+**写新工具时的两个高频陷阱（本项目已踩过多次）**：
+- **直接运行找不到 `tools` 包**：`python tools/xxx/yyy.py` 的 `sys.path[0]` 是脚本目录，
+  不是仓库根。每个 `tools/` 下的可执行脚本都要在导入项目内模块**之前**加：
+  ```python
+  _ROOT = Path(__file__).resolve().parents[N]   # 指到仓库根
+  if str(_ROOT) not in sys.path:
+      sys.path.insert(0, str(_ROOT))
+  ```
+- **子进程编码**：`subprocess.run(..., encoding="utf-8")` 必须同时传 `env=utf8_env()`
+  （`from tools.child_env import utf8_env`）。否则 Windows 下子进程按 cp936 写，
+  中文变 `U+FFFD`。`tools/gates/check_subprocess_encoding.py` 会判红。
 
 **判据纪律（最容易翻车）**：
 - 判据必须**确定性**：「看起来正常」≠「运行时正确」；偶然正确 ≠ 正确。

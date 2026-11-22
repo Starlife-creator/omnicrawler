@@ -48,20 +48,30 @@ import subprocess
 import sys
 from pathlib import Path
 
-from tools.child_env import utf8_env
-
 OK_MARK = "[OK]"
 BAD_MARK = "[FAIL]"
 
 _ROOT = Path(__file__).resolve().parents[2]
 
+# ★ 直接运行 `python tools/qa/xxx.py` 时 `sys.path[0]` 是 `tools/qa/`，
+# 不是仓库根 —— `import tools.child_env` 必然失败。
+# 本会话已第五次踩这个坑，故固化在这里。
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from tools.child_env import utf8_env  # noqa: E402
+
 #: 允许被测试改动/新增的路径前缀（相对主仓根）。
 #:
 #: `.pytest_cache` / `.ruff_cache` 是工具缓存，与测试正确性无关。
+#: `artifacts/` 与 `coverage.json` 是 CI 的构建产物（`.gitignore` 已忽略），
+#: 它们由工作流显式生成，不属于「测试偷偷写文件」。
 _ALLOWED_PREFIXES = (
     ".pytest_cache",
     ".ruff_cache",
     ".mypy_cache",
+    "artifacts/",
+    "coverage.json",
     "market/",  # 快照同步会改这里（由 sync_snapshot 负责，不是测试）
 )
 
@@ -129,7 +139,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--baseline",
         default="",
-        help="基线文件：把当前 status 记为基线，之后只报增量",
+        help="基线文件：写入当前 status 作为基线（之后只报增量）",
+    )
+    parser.add_argument(
+        "--diff-baseline",
+        default="",
+        help="与基线比对，只报基线之外的新增（本地开发时用，避免把自己的改动当污染）",
     )
     args = parser.parse_args(argv)
 
@@ -148,6 +163,21 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     paths = filter_allowed(dirty_paths(_git_status()))
+
+    # 基线比对：本地开发时工作区本来就有未提交改动（我自己的编辑），
+    # 那些不是「测试污染」。CI 上工作区是干净的，不需要基线。
+    if args.diff_baseline:
+        try:
+            known = {
+                line.strip()
+                for line in Path(args.diff_baseline).read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            }
+        except OSError as exc:
+            print(f"{BAD_MARK} 读不到基线 {args.diff_baseline}：{exc}")
+            return 2
+        paths = [p for p in paths if p not in known]
+
     if not paths:
         print(f"{OK_MARK} 工作区干净：测试没有往仓库里写文件")
         return 0
