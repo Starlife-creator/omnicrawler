@@ -227,7 +227,16 @@ jobs:
       # 300s 远高于本机最慢用例（20.2s）与 Windows 实测（27–29 分是**整个 job**，
       # 不是单条），因此不会对正常通过产生噪声；它只加可观测性，不改任何判定。
       - id: core_tests
-        run: python -m coverage run -m pytest -q --durations=25 --durations-min=0.5 -o faulthandler_timeout=300 --junitxml=artifacts/ci/pytest-core.xml
+        # **可观测性**：用 `-v` 而不是 `-q`。
+        #
+        # 2026-11-22：CI 在 `coverage run -m pytest` 上跑了 90 分钟仍未结束，
+        # 而 `-q` 模式**要跑完才输出进度** —— 期间日志完全空白，无从判断
+        # 是「慢」还是「卡在某条用例」。`-v` 每条用例打一行，
+        # 卡住时日志末尾就是现场。
+        #
+        # `-p no:cacheprovider`：CI 里 .pytest_cache 本来就没用，
+        # 省掉它的写盘开销与权限告警。
+        run: python -m coverage run -m pytest -v -p no:cacheprovider --durations=25 --durations-min=0.5 -o faulthandler_timeout=300 --junitxml=artifacts/ci/pytest-core.xml
       # 测试洁净度：跑完测试后主仓工作区不得多出**任何未被 .gitignore 忽略**的文件。
       #
       # 为什么放在这里：本会话遇到一组「单独跑能过、整目录跑就失败」的测试

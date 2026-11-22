@@ -71,6 +71,11 @@
   只查改动的 `.py`：`ast.parse` + ruff + 单文件 mypy。
   `static` 要 30 秒 —— 改一行等 30 秒的实际后果是「先写下去、等门禁再说」。
   完整判据仍是 `--set static`；`syntax` 只是「最便宜的时机」那一层。
+- **慢测试扫描**：`python tools/qa/slow_tests.py [--path tests/unit/core] [--threshold 1.0]`
+  跑一遍全量，按**用例**与**目录**两个维度汇总耗时。
+  用于「CI 比本地慢很多」这类排查 —— 2026-11-22 我在这上面
+  逐个假设逐个推翻，浪费了十几轮，因为**手上根本没有数据**。
+  它是测量工具，不是判据：机器差异大，不设「必须多快」的门槛。
 - **CI 日志**：`python tools/qa/ci_log.py [--run <id>] [--errors-only] [--raw]`
   把 `gh` 的原始日志变成可读摘要：自动剥掉 ANSI 转义与 ISO 时间戳，
   按 job 列出失败步骤与关键错误行。缺省自动找最近一次失败的 run。
