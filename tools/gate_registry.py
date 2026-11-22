@@ -624,6 +624,13 @@ def gates_for(sets: frozenset[str] | set[str] | tuple[str, ...]) -> tuple[Gate, 
 #: 要求它进 CI 等于让 CI 重复执行一遍已经跑过的东西。
 _LOCAL_ONLY_SETS = frozenset({"syntax"})
 
+#: **只在本地跑的门禁**（不进 CI），按名字登记。
+#:
+#: `platform_matrix` 在本机模拟三平台跑测试（114 秒），用来把
+#: 「等 CI 40 分钟」压缩成「本地 2 分钟」。而 CI 本身就有三平台真机，
+#: 在那里重复模拟是纯粹的浪费 —— 所以它刻意不进 CI。
+_LOCAL_ONLY_GATES = frozenset({"platform_matrix"})
+
 
 def ci_managed_scripts() -> frozenset[str]:
     """返回参与「与 CI 双向一致」校验的脚本集合。
@@ -635,5 +642,7 @@ def ci_managed_scripts() -> frozenset[str]:
     return frozenset(
         gate.script
         for gate in GATES
-        if gate.script and not (gate.sets & _LOCAL_ONLY_SETS)
+        if gate.script
+        and not (gate.sets & _LOCAL_ONLY_SETS)
+        and gate.name not in _LOCAL_ONLY_GATES
     )
