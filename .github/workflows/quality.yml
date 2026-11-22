@@ -348,7 +348,7 @@ jobs:
             --entrypoint python \
             -v "$PWD/tools:/tools:ro" \
             -v "$RUNNER_TEMP/OmniCrawler-market:/market:ro" \
-            omnicrawler:ci /tools/offline_acceptance.py --market-dir /market --require-offline
+            omnicrawler:ci /tools/qa/offline_acceptance.py --market-dir /market --require-offline
 
   gui-and-browser:
     runs-on: ubuntu-latest
