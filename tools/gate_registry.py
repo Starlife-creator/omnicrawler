@@ -455,11 +455,13 @@ GATES: tuple[Gate, ...] = (
     Gate(
         name="platform_matrix",
         args=("tools/qa/platform_matrix.py",),
-        # **只在 static，不进 syntax**：`syntax` 是「0.6 秒级」那层
-        # （ast.parse + ruff + 单文件 mypy），而本门禁要**跑测试**（114 秒）。
-        # 早先误放进 syntax，导致 `--set syntax` 从 0.6 秒涨到 162 秒 ——
-        # 分层就此失去意义，我于是动辄退回全量。2026-11-22 修正。
-        sets=_STATIC,
+        # **独立成 `matrix` 集合**，不挂在 static：
+        # 本门禁要真跑测试（约 63 秒），而 static 其余门禁合计才 ~40 秒。
+        # 挂在 static 里 ⇒ 每次提交多等一分钟，而 99% 的改动与平台无关
+        # ⇒ 我会开始跳过 static ⇒ 纪律失效。
+        # 2026-11-22 曾误放进 syntax（0.6s 那层），把它撑到 162s；
+        # 2026-11-23 独立成集合，各层职责清晰。
+        sets=frozenset({"matrix"}),
         description="本机模拟 linux/macos/windows 三平台跑测试",
         script="tools/qa/platform_matrix.py",
         ci_note=(
@@ -612,6 +614,11 @@ GATE_SETS: tuple[str, ...] = (
     # 本会话我用批量正则改坏结构化代码 4 次，每次都是写盘之后才暴露。
     "syntax",
     "static",
+    # `matrix`：跨平台模拟跑测试（约 63 秒）。它验的是「按平台名分支的
+    # 逻辑」是否正确，与「提交前静态检查」性质不同 —— 挂在 static 里会让
+    # 每次提交都多等一分钟，而 99% 的改动与平台无关。
+    # 用法：`--set matrix`（跨平台相关改动后跑），或 `--set static,matrix`。
+    "matrix",
     "tests",
     "coverage",
     "install",

@@ -141,10 +141,18 @@ def verify_one(recipe_path: Path, *, timeout: float) -> tuple[bool, str]:
 
 
 def _iter_recipes(market: Path) -> list[Path]:
+    """用 `component_discovery` 的唯一真源，**不自己 glob**。
+
+    目录是 `components/<分类>/<id>/`，一层 glob 会扫到空、而报错会伪装成
+    「未找到任何组件配方」—— 本仓有专门门禁守这一点
+    （`check_component_discovery`），我第一版写完就被它抓到了。
+    """
     components = market / "components"
     if not components.is_dir():
         return []
-    return sorted(components.rglob("recipe.json"))
+    from tools.market.component_discovery import iter_component_recipes
+
+    return list(iter_component_recipes(components))
 
 
 def main(argv: list[str] | None = None) -> int:
