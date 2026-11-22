@@ -193,6 +193,19 @@ def select_incremental_gates(
     has_gui = any("gui" in p for p in changed)
     has_doc = any(p.endswith(".md") or p.startswith("docs/") for p in changed)
     has_cli = any("cli" in p or "commands" in p for p in changed)
+    # **跨平台模拟只在相关改动时跑**：它要真跑测试（114 秒），
+    # 而 `--set static` 的其余门禁合计才 38 秒 —— 无条件跑会让
+    # 「改一行 → 知道对不对」从秒级回到分钟级。
+    #
+    # 判据：改动落在「按平台/架构分支」的代码或它们的测试上。
+    has_platform_surface = any(
+        p.startswith(("src/omnicrawler/services/component_", "src/omnicrawler/core/capability"))
+        or p.startswith("tests/unit/services/test_component")
+        or p.startswith("tests/unit/browser/")
+        or p in {"src/omnicrawler/services/browser_engines.py",
+                 "src/omnicrawler/services/browser_kernels.py"}
+        for p in changed
+    )
     has_pkg = any(
         p in {"pyproject.toml", "uv.lock"}
         or p.startswith(("constraints/", "packaging/", ".github/"))
@@ -211,6 +224,8 @@ def select_incremental_gates(
         }
     if has_src:
         wanted |= {"mypy", "check_sdk_api", "check_network_boundaries", "check_minimal_install"}
+    if has_platform_surface:
+        wanted |= {"platform_matrix", "check_test_platform_defaults"}
     if has_gui:
         wanted |= {
             "check_gui_conventions",
