@@ -13,9 +13,16 @@ from omnicrawler.core.config import load_config
 from omnicrawler.core.models import CrawlRequest
 from omnicrawler.fetching.browser_fetcher import BrowserFetcher
 from omnicrawler.pipeline import Pipeline
+from tests.unit.env_markers import requires_document_workbench
 
 
 @pytest.mark.e2e
+# **需要文档工作台插件**：本测试走 `pdf.create_project`，而 PDF 工作台
+# 在 817bccc5（2026-11-17）迁出为可选插件 `document-workbench`。
+# 插件在独立仓（OmniCrawler-market），e2e job 只 checkout 主仓，
+# 且市场安装只有 GUI 入口 —— CI 无法一条命令装好它。
+# 所以这里按能力跳过，而不是改断言迁就缺失。
+@requires_document_workbench
 def test_local_crawl_pdf_extract_export_and_resume(tmp_path: Path) -> None:
     with local_server(create_pdf_bytes()) as base_url:
         config_path = write_pipeline_config(tmp_path, base_url)

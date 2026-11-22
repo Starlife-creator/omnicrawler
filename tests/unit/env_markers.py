@@ -178,6 +178,26 @@ requires_bash = pytest.mark.skipif(
     reason="bash 不可执行（受限沙箱或未安装）：脚本类测试无法验证",
 )
 
+#: 需要文档工作台插件（`document-workbench`）。
+#:
+#: 插件在**独立仓**（`OmniCrawler-market`），e2e job 只 checkout 主仓，
+#: 且市场安装**只有 GUI 入口、没有 CLI** —— CI 无法一条命令装好它。
+#: 依赖 `pdf` / `convertx` / `document_ir` 的测试都该带上这个标记。
+def document_workbench_available() -> bool:
+    """文档工作台插件是否可用（用 CLI 自己的判据，避免分歧）。"""
+    try:
+        from omnicrawler.services.document_facade import document_capability
+
+        return bool((document_capability() or {}).get("available"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+requires_document_workbench = pytest.mark.skipif(
+    not document_workbench_available(),
+    reason="document-workbench 插件未安装（它在独立仓，CI 无法一条命令装）",
+)
+
 #: 需要真实数据目录可写。
 requires_writable_data_dir = pytest.mark.skipif(
     not writable_data_dir(),

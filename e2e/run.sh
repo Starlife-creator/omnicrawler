@@ -5,7 +5,7 @@ python_bin="${PYTHON:-python}"
 args=()
 for argument in "$@"; do
   case "$argument" in
-    --install) "$python_bin" -m pip install -e "$repo_root[html,pdf,browser,dev]" ;;
+    --install) "$python_bin" -m pip install -e "$repo_root[html,pdf,pdf-write,browser,dev]" ;;
     --browser|--full-regression) args+=("$argument") ;;
     *) echo "Unknown argument: $argument" >&2; exit 2 ;;
   esac
