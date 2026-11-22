@@ -91,7 +91,11 @@ def test_ai_transport_and_document_features_are_declared_and_installed_in_ci():
         assert any(spec.startswith("aiohttp") for spec in extras[edition])
     workflow = (_ROOT / ".github" / "workflows" / "quality.yml").read_text(encoding="utf-8")
     core = workflow[workflow.index("  test:"):workflow.index("  docker:")]
-    assert "[html,pdf,dev,async-http,gui,tls,storage,ai,document]" in core
+    # `pdf-write` 必列：reportlab 已从 `pdf` 拆出（pyproject 条目 12），
+    # 而单测里有生成 PDF 的场景。CI 缺它会 ModuleNotFoundError（2026-11-22 实测）。
+    assert (
+        "[html,pdf,pdf-write,dev,async-http,gui,tls,storage,ai,document]" in core
+    )
 
 
 def test_reverse_assertion_unregistered_extra_turns_red() -> None:

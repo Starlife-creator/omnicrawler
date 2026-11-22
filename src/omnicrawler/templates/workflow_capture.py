@@ -45,7 +45,22 @@ def extend_workflow(config: AppConfig, data: dict[str, Any]) -> dict[str, Any]:
         data["download"] = copy.deepcopy(download)
     browser = config.section("browser")
     if source["kind"] == "browser" or any(isinstance(seed, dict) and seed.get("render") for seed in seeds):
-        allowed_browser = {"engine", "headless", "pool_size", "actions", "capture_api_responses", "max_api_response_bytes", "max_api_capture_bytes", "auto_generate_api_templates", "stealth_level", "selenium_fallback_engine"}
+        # `kernel_family`：用户选的「当前内核」（chromium/firefox/webkit），
+        # 2026-11-22 新增。**必须登记进白名单** —— 否则用 browser 源采模板时
+        # 会被这条「不能静默移除」判据拒掉（实测报错在 test_workflow_capture）。
+        allowed_browser = {
+            "engine",
+            "headless",
+            "pool_size",
+            "actions",
+            "capture_api_responses",
+            "max_api_response_bytes",
+            "max_api_capture_bytes",
+            "auto_generate_api_templates",
+            "stealth_level",
+            "selenium_fallback_engine",
+            "kernel_family",
+        }
         if set(browser) - allowed_browser:
             raise ValueError("浏览器配置含未支持属性，不能静默移除")
         data["browser"] = copy.deepcopy(browser)
