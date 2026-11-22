@@ -88,6 +88,22 @@ SKIP_EXIT_CODE = 77
 _STATIC = frozenset({"static"})
 
 GATES: tuple[Gate, ...] = (
+    # ── syntax 层（秒级）────────────────────────────────────────────
+    #
+    # 只查改动的 .py：ast.parse + ruff + 单文件 mypy。
+    # 工作区干净时**通过**（0 个文件不是失败 —— 那是「没有要查的」）。
+    Gate(
+        name="fast_check",
+        args=("tools/fast_check.py",),
+        sets=frozenset({"syntax"}),
+        description="改动文件的语法/ruff/单文件 mypy（秒级）",
+        script="tools/fast_check.py",
+        ci_note=(
+            "本地快速反馈层。**不进 CI**：CI 跑完整 ruff + mypy 已覆盖；"
+            "这一层的价值是本地「改完立刻查」，不是发布判据。"
+        ),
+    ),
+
     # ---------- static：红线的核心 ----------
     Gate(
         name="compileall",
@@ -480,7 +496,23 @@ GATES: tuple[Gate, ...] = (
 )
 
 #: 全部集合名（供命令行校验）。
-GATE_SETS: tuple[str, ...] = ("static", "tests", "coverage", "install", "release")
+GATE_SETS: tuple[str, ...] = (
+    # ── 分层：从快到慢 ──────────────────────────────────────────────
+    #
+    # `syntax` 是**秒级**的一层：只对改动的 .py 做 ast.parse + ruff + 单文件
+    # mypy。它不查架构约束、不查锚完整性、不查跨文件一致性 ——
+    # 那些是 `static` 的事。
+    #
+    # 为什么单独一层：`static` 要 30 秒，而改一行代码等 30 秒的实际后果是
+    # 「先写下去、等门禁再说」—— 于是一次改坏的结构要等一整轮才能发现。
+    # 本会话我用批量正则改坏结构化代码 4 次，每次都是写盘之后才暴露。
+    "syntax",
+    "static",
+    "tests",
+    "coverage",
+    "install",
+    "release",
+)
 
 
 def gates_for(sets: frozenset[str] | set[str] | tuple[str, ...]) -> tuple[Gate, ...]:

@@ -57,6 +57,15 @@
   用于「测试红了但不知道为什么」——本会话有一条测试卡了很久，
   用探针一次看清了「信任根解析到了随包路径而不是测试注入的路径」。
   模板在 `tools/qa/probe_template.py`（独立文件，避免嵌套 f-string 的转义地狱）。
+- **安全替换**：`python tools/qa/safe_edit.py --file <文件> --find <原文> --replace <新文>`
+  **先验证语法，再写盘**。本会话我用批量正则改结构化代码改坏 4 次
+  （元组粘连、import 插进括号、`_()` 位置错、变量作用域错），全部是写盘后才发现。
+  这个工具在写盘前做三件事：断言锚点出现次数、替换、`ast.parse` 验证。
+  失败时**文件保持原样**。
+- **分层门禁**：`python tools/self_verify.py --set syntax`（**0.6 秒**）
+  只查改动的 `.py`：`ast.parse` + ruff + 单文件 mypy。
+  `static` 要 30 秒 —— 改一行等 30 秒的实际后果是「先写下去、等门禁再说」。
+  完整判据仍是 `--set static`；`syntax` 只是「最便宜的时机」那一层。
 - **CI 日志**：`python tools/qa/ci_log.py [--run <id>] [--errors-only] [--raw]`
   把 `gh` 的原始日志变成可读摘要：自动剥掉 ANSI 转义与 ISO 时间戳，
   按 job 列出失败步骤与关键错误行。缺省自动找最近一次失败的 run。
