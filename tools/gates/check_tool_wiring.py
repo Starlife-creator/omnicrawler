@@ -74,7 +74,13 @@ _HISTORICAL = {
 }
 
 #: 文档里算作「写明了用法」的来源。
-_DOC_SOURCES = ("AGENTS.md", "README.md")
+_DOC_SOURCES = (
+    "AGENTS.md",
+    "README.md",
+    # 工作区根的开发者入口也算「写明了用法」——
+    # 它是新会话最先看到的文件，工具写在那里就等于被发现。
+    "../README.md",
+)
 
 
 def _is_executable_script(text: str) -> bool:
