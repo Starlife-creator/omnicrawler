@@ -46,7 +46,7 @@ def test_available_is_false_without_dependency(without_ddddocr) -> None:
 
 def test_recognize_raises_without_dependency(without_ddddocr) -> None:
     """**缺失时必须抛错**，不能返回空串 —— 空串会被当成「识别结果为空」。"""
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(RuntimeError) as excinfo:
         without_ddddocr.recognize(b"\x89PNG fake")
     message = str(excinfo.value)
     assert "ddddocr" in message.lower() or "安装" in message or "extra" in message.lower(), (
@@ -99,5 +99,6 @@ def test_recognize_from_screenshot_rejects_unknown_page(without_ddddocr) -> None
     class _NoScreenshot:
         pass
 
-    with pytest.raises(Exception):
+    # 实现里对不具备截图能力的对象会走 AttributeError（无 screenshot 属性）
+    with pytest.raises((AttributeError, RuntimeError, ValueError)):
         without_ddddocr.recognize_from_screenshot(_NoScreenshot(), "#captcha")
