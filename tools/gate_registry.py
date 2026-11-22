@@ -444,6 +444,17 @@ GATES: tuple[Gate, ...] = (
         ),
     ),
     Gate(
+        name="check_doc_impl_drift",
+        args=("tools/gates/check_doc_impl_drift.py",),
+        sets=_STATIC,
+        description="文档说「未做」但代码已实现的项目（防文档滞后）",
+        script="tools/gates/check_doc_impl_drift.py",
+        ci_note=(
+            "零网络。工作区根不可达时跳过（CI 单仓场景）。"
+            "本会话发现 5 处「尚未开始/界面未做」实际已完成。"
+        ),
+    ),
+    Gate(
         name="check_extras_exist",
         args=("tools/gates/check_extras_exist.py",),
         sets=_STATIC,

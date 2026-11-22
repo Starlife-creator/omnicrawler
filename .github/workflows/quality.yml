@@ -275,6 +275,8 @@ jobs:
       - run: python tools/gates/check_cross_repo_copies.py
       # install 声明里的 extra 名必须真实存在（补 profiles.toml 管辖范围之外的部分）
       - run: python tools/gates/check_extras_exist.py
+      # 文档滞后：说「未做」但代码已实现的项（工作区根不可达时自动跳过）
+      - run: python tools/gates/check_doc_impl_drift.py
       - run: python -m mypy src/omnicrawler
       # 走 tools/builders/build_wheel.py：它先清 build/ 再构建（裸 pip wheel 在同一工作树里
       # 第二次会因 setuptools 复用 build/ 而失败，见 §5.7 / W6.7-⑥）
