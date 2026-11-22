@@ -50,6 +50,12 @@
   判据是「跑完测试后主仓不许多出文件」——能一次抓住所有「测试往仓库写东西」的问题
   （本会话 37 条「单独跑能过、整目录跑就失败」全属此类）。
   本地开发用 `--baseline <文件>` 记基线、`--diff-baseline <文件>` 只报增量。
+- **组件端到端验证**：`python tools/market/verify_component_e2e.py --recipe <配方>`
+  **真下载 → 真装配 → 真运行**，约 1 分钟（纯 Python 组件）。
+  这是「配方到底能不能用」的**本地判据** —— 此前只能等 CI 的 portable-smoke
+  （约 25 分钟且验的是便携包而非源码环境），于是不验证、把问题留给 CI。
+  `--all` 验全部；`--max-mb` 控制体积上限（torch 系列数百 MB 需显式放宽）。
+  **不做签名校验**：签名是 catalog 层的事，本工具只管「能装能跑」。
 - **新增组件一条龙**：`python tools/market/new_component.py --package <包> --id <id> --module <模块> --also-platforms linux`
   自动串「配方 → 闭包快照 → 校验」，跑完打印签名与提交的精确命令
   （签名需创作者密码，**刻意不自动化**）。
