@@ -416,6 +416,18 @@ GATES: tuple[Gate, ...] = (
         ci_note="需先在目标平台按 edition 构建并生成 SBOM。",
     ),
     Gate(
+        name="check_tool_wiring",
+        args=("tools/gates/check_tool_wiring.py",),
+        sets=_STATIC,
+        description="tools/ 下的可执行脚本都有调用者（防「写了就忘」）",
+        script="tools/gates/check_tool_wiring.py",
+        ci_note=(
+            "零网络、纯文本扫描。判据是「每个可执行脚本至少被一处引用」："
+            "门禁清单 / CI workflow / 文档 / 被其它模块 import。"
+            "本会话新增两个工具却零引用，就是这条要防的。"
+        ),
+    ),
+    Gate(
         name="check_component_discovery",
         args=("tools/gates/check_component_discovery.py",),
         sets=_STATIC,
