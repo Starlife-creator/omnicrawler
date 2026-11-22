@@ -84,7 +84,15 @@ def verify_one(recipe_path: Path, *, timeout: float) -> tuple[bool, str]:
             "（大包请显式放宽阈值）"
         )
 
-    with tempfile.TemporaryDirectory(prefix="ocverify-") as tmp:
+    # **临时目录必须落在仓库外**：`TemporaryDirectory()` 默认用系统临时目录，
+    # 但如果调用方的 cwd 在仓库内、且进程被中断（下载卡住时我 kill 过），
+    # 残留会变成仓库里的未跟踪文件 —— 实测 12.6 MB 的 `ocverify-*` 目录
+    # 就曾出现在仓库根，被 `check_test_cleanliness` 判为污染。
+    # 这里显式指定 `dir=` 到系统临时根，并用 `ignore_cleanup_errors`
+    # 容忍 Windows 上文件句柄未释放导致的删除失败。
+    with tempfile.TemporaryDirectory(
+        prefix="ocverify-", dir=tempfile.gettempdir(), ignore_cleanup_errors=True
+    ) as tmp:
         work = Path(tmp)
         components_root = work / "components"
         components_root.mkdir()

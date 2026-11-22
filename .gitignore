@@ -153,3 +153,7 @@ src/omnicrawler/plugins/omnicrawler-landlock-*/
 # 配置历史（运行时由 GUI/CLI 写入，含时间戳与用户路径，不该入库）。
 # 实测被误提交过一次（297fb3e0 收了 4 个 json/yaml）。
 .config_history/
+
+# 组件端到端验证工具的临时目录（正常应在系统临时目录，
+# 但异常中断时可能残留；见 tools/market/verify_component_e2e.py）
+ocverify-*/
