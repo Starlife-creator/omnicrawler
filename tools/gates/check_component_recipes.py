@@ -35,6 +35,10 @@ from pathlib import Path
 _REPO = Path(__file__).resolve().parents[2]
 if str(_REPO / "src") not in sys.path:
     sys.path.insert(0, str(_REPO / "src"))
+# 本门禁直接跑时 `sys.path[0]` 是 `tools/gates/`，`import tools.market.*` 会失败 ——
+# 仓库根也要在路径上（`component_discovery` 就是这么被引入的）。
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 
 #: 架构名归一（与 `component_recipe.normalize_architecture` 保持同义）。
 _ARCH_ALIASES = {
@@ -483,7 +487,10 @@ def main(argv: list[str] | None = None) -> int:
 
     # 组件按**分类子目录**组织：`components/<分类>/<id>/recipe.json`。
     # 用 rglob 兼容扁平布局（`components/<id>/`）与分类布局两种。
-    recipes = sorted(root.rglob("recipe.json"))
+    # 组件发现走**唯一真源**：目录形状（扁平/两级）只在那里声明一次。
+    from tools.market.component_discovery import iter_component_recipes
+
+    recipes = iter_component_recipes(root)
     if not recipes:
         # **空集合必须判红**：没有可检查的配方不等于通过
         print(f"未找到任何组件配方（{root}/ */recipe.json）", file=sys.stderr)

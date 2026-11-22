@@ -28,6 +28,7 @@ from omnicrawler.services.component_recipe import (
     _validate_requires,
     load_recipe,
 )
+from tools.market.component_discovery import iter_component_recipes
 
 
 def _matrix_recipe() -> dict:
@@ -43,17 +44,14 @@ def _matrix_recipe() -> dict:
         },
     }
 
-
 def test_schema_accepts_both_versions() -> None:
     """v1 与 v2 都必须被接受（迁移期不强制升级）。"""
     assert 1 in SUPPORTED_SCHEMA
     assert 2 in SUPPORTED_SCHEMA
 
-
 def test_platform_matrix_accepts_partial_arch() -> None:
     """**一个平台只支持部分架构必须合法** —— paddle 的 macOS 只有 arm64。"""
     _validate_platform_matrix(_matrix_recipe())
-
 
 def test_platform_matrix_and_legacy_are_mutually_exclusive() -> None:
     """`platform_matrix` 与 `platform_architectures` **不得同时出现**。
@@ -66,7 +64,6 @@ def test_platform_matrix_and_legacy_are_mutually_exclusive() -> None:
         _validate_platform_matrix(recipe)
     assert "不能同时出现" in str(excinfo.value)
 
-
 def test_platform_matrix_union_must_match_global() -> None:
     """全局 `architectures` 必须等于 matrix 的并集（防两处漂移）。"""
     recipe = _matrix_recipe()
@@ -74,7 +71,6 @@ def test_platform_matrix_union_must_match_global() -> None:
     with pytest.raises(RecipeError) as excinfo:
         _validate_platform_matrix(recipe)
     assert "不一致" in str(excinfo.value)
-
 
 def test_platform_matrix_rejects_unknown_platform() -> None:
     """matrix 不得引入未在 `platforms` 里声明的平台。"""
@@ -84,7 +80,6 @@ def test_platform_matrix_rejects_unknown_platform() -> None:
         _validate_platform_matrix(recipe)
     assert "未声明的平台" in str(excinfo.value)
 
-
 def test_platform_matrix_rejects_out_of_range_artifact_index() -> None:
     """构件下标越界必须判红 —— 否则装配时会去索引不存在的构件。"""
     recipe = _matrix_recipe()
@@ -92,7 +87,6 @@ def test_platform_matrix_rejects_out_of_range_artifact_index() -> None:
     with pytest.raises(RecipeError) as excinfo:
         _validate_platform_matrix(recipe)
     assert "下标" in str(excinfo.value)
-
 
 def test_platform_matrix_rejects_unknown_detail_key() -> None:
     """明细只允许 `abi` / `artifacts`，其余键一律拒绝。"""
@@ -102,11 +96,9 @@ def test_platform_matrix_rejects_unknown_detail_key() -> None:
         _validate_platform_matrix(recipe)
     assert "不允许的键" in str(excinfo.value)
 
-
 def test_requires_accepts_list() -> None:
     """`requires` 支持包名列表。"""
     _validate_requires({"requires": ["paddlepaddle", "opencv-contrib-python"]})
-
 
 def test_requires_accepts_mapping() -> None:
     """`requires` 支持 `{包名: 版本约束}`。"""
@@ -114,14 +106,12 @@ def test_requires_accepts_mapping() -> None:
         {"requires": {"paddlepaddle": ">=3.0", "opencv-contrib-python": ">=4"}}
     )
 
-
 def test_requires_rejects_empty() -> None:
     """空 `requires` 会让「依赖都已声明」恒真 —— 必须判红。"""
     with pytest.raises(RecipeError):
         _validate_requires({"requires": []})
     with pytest.raises(RecipeError):
         _validate_requires({"requires": {}})
-
 
 @pytest.mark.parametrize(
     "value",
@@ -137,11 +127,9 @@ def test_requires_rejects_invalid(value: object) -> None:
     with pytest.raises(RecipeError):
         _validate_requires({"requires": value})
 
-
 def test_requires_is_optional() -> None:
     """`requires` 可缺省（v1 配方没有它）。"""
     _validate_requires({})  # 不抛异常即通过
-
 
 def test_existing_market_recipes_still_load() -> None:
     """既有的 v1 配方必须继续能加载（向后兼容）。"""
@@ -151,7 +139,7 @@ def test_existing_market_recipes_still_load() -> None:
     if not market.is_dir():
         pytest.skip("需要市场仓 components 目录")
 
-    recipes = sorted(market.rglob("recipe.json"))
+    recipes = iter_component_recipes(market)
     assert recipes, "没有找到任何配方（扫描本身失效）"
     for path in recipes:
         loaded = load_recipe(path)

@@ -35,6 +35,8 @@ from pathlib import Path
 
 import pytest
 
+from tools.market.component_discovery import iter_component_recipes
+
 _MARKET = Path(__file__).resolve().parents[4] / "OmniCrawler-market"
 _COMPONENTS = _MARKET / "components"
 
@@ -61,7 +63,7 @@ def _recipes() -> list[tuple[str, dict]]:
     # 组件按分类子目录组织：`components/<分类>/<id>/recipe.json`。
     # 一层 iterdir 会扫到 0 个 —— 报错「没找到任何带 python_abi 的配方」
     # 看起来像配方缺失，实际是扫描深度不够。
-    for recipe_path in sorted(_COMPONENTS.rglob("recipe.json")):
+    for recipe_path in iter_component_recipes(_COMPONENTS):
         out.append(
             (
                 recipe_path.parent.name,

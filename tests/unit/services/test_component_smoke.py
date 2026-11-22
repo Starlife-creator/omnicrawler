@@ -24,6 +24,7 @@ from omnicrawler.services.component_smoke import (
     parse_smoke,
     verify_result,
 )
+from tools.market.component_discovery import iter_component_recipes
 
 _REPO = Path(__file__).resolve().parents[3]
 
@@ -143,7 +144,7 @@ def test_market_components_declare_smoke() -> None:
     # 组件按分类子目录组织（components/<分类>/<id>/），必须递归扫描 ——
     # 一层 glob 会扫到 0 个，而「没有可检查的配方」这种提示会把
     # 静默失效伪装成正常。
-    for recipe_path in sorted(market.rglob("recipe.json")):
+    for recipe_path in iter_component_recipes(market):
         data = json.loads(recipe_path.read_text(encoding="utf-8"))
         checked += 1
         try:

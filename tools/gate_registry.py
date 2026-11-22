@@ -416,6 +416,17 @@ GATES: tuple[Gate, ...] = (
         ci_note="需先在目标平台按 edition 构建并生成 SBOM。",
     ),
     Gate(
+        name="check_component_discovery",
+        args=("tools/gates/check_component_discovery.py",),
+        sets=_STATIC,
+        description="组件扫描统一走 component_discovery（反向索引）",
+        script="tools/gates/check_component_discovery.py",
+        ci_note=(
+            "零网络、纯 AST + 行扫描。防止「怎么找组件」再次散落各处："
+            "上次改目录结构时六处扫描点没跟着改，报错各不相同。"
+        ),
+    ),
+    Gate(
         name="check_component_recipes",
         args=("tools/gates/check_component_recipes.py",),
         sets=_STATIC,

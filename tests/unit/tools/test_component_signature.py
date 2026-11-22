@@ -28,6 +28,8 @@ from pathlib import Path
 
 import pytest
 
+from tools.market.component_discovery import iter_component_dirs
+
 _MARKET = Path(__file__).resolve().parents[4] / "OmniCrawler-market"
 _COMPONENTS = _MARKET / "components"
 _CATALOG = _MARKET / "catalog.json"
@@ -41,7 +43,7 @@ def _component_dirs() -> list[Path]:
     # 组件按分类子目录组织（components/<分类>/<id>/），必须递归找 recipe.json。
     # 一层 iterdir 在两级结构下会**返回空列表** ——
     # 而「没找到任何组件目录」这种提示会把静默失效伪装成正常（实测踩到）。
-    return sorted(p.parent for p in _COMPONENTS.rglob("recipe.json"))
+    return sorted(iter_component_dirs(_COMPONENTS))
 
 
 def _catalog_components() -> list[dict]:

@@ -55,6 +55,8 @@ import subprocess
 
 import pytest
 
+from tools.child_env import utf8_env
+
 #: 探测用的域名。选 github.com 是因为它同时被自更新与市场客户端使用 ——
 #: 这两个正是本会话里因 DNS 劫持而失败的用例。
 _PROBE_HOST = "github.com"
@@ -119,6 +121,7 @@ def bash_usable() -> bool:
                 encoding="utf-8",
                 errors="replace",
                 timeout=20,
+                env=utf8_env(),
                 check=False,
             )
             ok = result.returncode == 0 and "ok" in (result.stdout or "")
