@@ -37,7 +37,13 @@ jobs:
           python-version: "3.13"
           cache: pip
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[html,pdf,browser,dev]"
+      # `pdf-write` 必须显式列出：`reportlab` 已从 `pdf` extra 拆出去
+      # （见 pyproject.toml 条目 12 的说明 —— openpyxl/reportlab 服务的是
+      # 「爬虫交付」与「生成 PDF」，不属于文档解析支柱）。
+      # e2e 的 `test_local_crawl_pdf_extract_export_and_resume` 用
+      # `create_pdf_bytes()` 生成测试 PDF，离不开 reportlab ——
+      # 不列会报 `ModuleNotFoundError: No module named 'reportlab'`。
+      - run: python -m pip install -e ".[html,pdf,pdf-write,browser,dev]"
       - run: python -m playwright install --with-deps chromium
       # 覆盖率口径：仅度量 e2e.harness 与 e2e.render_report（见 e2e/run.py --source），
       # 不代表应用代码覆盖率；E2E_TEST_REPORT.md 按同一口径标注，避免端到端覆盖误读。
