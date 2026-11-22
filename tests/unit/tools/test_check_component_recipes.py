@@ -19,8 +19,6 @@ from pathlib import Path
 
 import pytest
 
-from omnicrawler.services.component_recipe import current_architecture
-
 _REPO = Path(__file__).resolve().parents[3]
 _GATE = _REPO / "tools" / "gates" / "check_component_recipes.py"
 
@@ -50,7 +48,11 @@ def _base_recipe(**overrides: object) -> dict:
         "version": "1.0.0",
         "kind": "wheel-pack",
         "platforms": ["windows", "linux", "macos"],
-        "architectures": [current_architecture()],
+        # **只声明 x86_64**：构件只有 `win_amd64.whl` 与 `manylinux_*_x86_64.whl`。
+        # 声明 aarch64 会被判据正确指出「声明虚报」（没有对应构件）。
+        # 早先写 `[current_architecture()]`，在 macOS arm64 上就自动变成
+        # aarch64 而构件仍全是 x86_64 ⇒ 必红。**声明的唯一依据是构件本身。**
+        "architectures": ["x86_64"],
         "python_abi": ["cp313"],
         "provides": ["probe.demo"],
         "artifacts": [
@@ -415,7 +417,9 @@ def _builtin_recipe(sha: str = "e" * 64, size: int = 2048) -> dict:
         "name": "probe-builtin",
         "version": "1228",
         "platforms": ["windows", "linux", "macos"],
-        "architectures": [current_architecture()],
+        # 全架构：构件是 `probe.exe`（Windows 命名），绑当前架构会在
+        # macOS arm64 上报「声明了 aarch64 但构件只有 x86_64」。
+        "architectures": ["x86_64", "aarch64"],
         "python_abi": [],
         "provides": ["browser.probe"],
         "artifacts": [

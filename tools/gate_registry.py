@@ -455,12 +455,27 @@ GATES: tuple[Gate, ...] = (
     Gate(
         name="platform_matrix",
         args=("tools/qa/platform_matrix.py",),
-        sets=frozenset({"syntax", "static"}),
+        # **只在 static，不进 syntax**：`syntax` 是「0.6 秒级」那层
+        # （ast.parse + ruff + 单文件 mypy），而本门禁要**跑测试**（114 秒）。
+        # 早先误放进 syntax，导致 `--set syntax` 从 0.6 秒涨到 162 秒 ——
+        # 分层就此失去意义，我于是动辄退回全量。2026-11-22 修正。
+        sets=_STATIC,
         description="本机模拟 linux/macos/windows 三平台跑测试",
         script="tools/qa/platform_matrix.py",
         ci_note=(
             "零网络。只在**本地**跑：CI 本身就有三平台真机，重复模拟是浪费。"
             "它的价值是把「等 CI 45 分钟」变成「本地 2 分钟」。"
+        ),
+    ),
+    Gate(
+        name="check_schema_derived_whitelists",
+        args=("tools/gates/check_schema_derived_whitelists.py",),
+        sets=_STATIC,
+        description="配置白名单必须从 schema 派生，不得手抄键名",
+        script="tools/gates/check_schema_derived_whitelists.py",
+        ci_note=(
+            "零网络、纯 AST。手抄白名单的后果：schema 加字段时不同步，"
+            "而报错通常不说是哪个属性。2026-11-22 加 kernel_family 时踩过。"
         ),
     ),
     Gate(

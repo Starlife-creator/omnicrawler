@@ -48,21 +48,24 @@ def extend_workflow(config: AppConfig, data: dict[str, Any]) -> dict[str, Any]:
         # `kernel_family`：用户选的「当前内核」（chromium/firefox/webkit），
         # 2026-11-22 新增。**必须登记进白名单** —— 否则用 browser 源采模板时
         # 会被这条「不能静默移除」判据拒掉（实测报错在 test_workflow_capture）。
-        allowed_browser = {
-            "engine",
-            "headless",
-            "pool_size",
-            "actions",
-            "capture_api_responses",
-            "max_api_response_bytes",
-            "max_api_capture_bytes",
-            "auto_generate_api_templates",
-            "stealth_level",
-            "selenium_fallback_engine",
-            "kernel_family",
-        }
-        if set(browser) - allowed_browser:
-            raise ValueError("浏览器配置含未支持属性，不能静默移除")
+        # **从 schema 真源派生，不手抄**。
+        #
+        # 早先是一份手写集合，与 `config_defaults.DEFAULTS["browser"]` 重复。
+        # 加一个字段（`kernel_family`）时忘了同步，于是用 browser 源采模板
+        # 会被这条「不能静默移除」判据拒掉 —— 而报错信息只说「含未支持属性」，
+        # 不说是哪个。2026-11-22 实测踩过一次。
+        #
+        # 派生之后，新增字段自动纳入，不存在漏同步。
+        from omnicrawler.core.config_defaults import DEFAULTS as _DEFAULTS
+
+        allowed_browser = set(_DEFAULTS["browser"])
+        unknown_browser = set(browser) - allowed_browser
+        if unknown_browser:
+            # **报错必须点出是哪个属性**。原消息只说「含未支持属性」，
+            # 我为此多花一轮 CI 才定位到是 `kernel_family`。
+            raise ValueError(
+                f"浏览器配置含未支持属性 {sorted(unknown_browser)}，不能静默移除"
+            )
         data["browser"] = copy.deepcopy(browser)
         actions = data["browser"].get("actions", [])
         for index, action in enumerate(actions):
