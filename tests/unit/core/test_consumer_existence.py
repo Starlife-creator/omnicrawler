@@ -42,7 +42,12 @@ TOKENS = (
 
 @lru_cache(maxsize=1)
 def _source_text() -> str:
-    """整仓 Python 源码拼接文本。缓存保证 rglob + 读取只发生一次。"""
+    """整仓 Python 源码拼接文本（**只供纯文本断言**，不参与 AST 统计）。
+
+    为什么保留：`test_experimental_components_are_marked` 等用例只需要
+    「文件里是否有某个中文标注」，用不着 AST。拼接本身只要 0.08 秒，
+    昂贵的从来是 `ast.parse`（11.42 秒）。
+    """
     texts: list[str] = []
     for path in SRC.rglob("*.py"):
         if "__pycache__" in str(path):
@@ -54,30 +59,77 @@ def _source_text() -> str:
     return "\n".join(texts)
 
 
-@pytest.fixture(scope="module")
-def source() -> str:
-    return _source_text()
+@lru_cache(maxsize=1)
+def _candidate_files() -> tuple[Path, ...]:
+    """**只返回文本里出现过任一 TOKEN 的文件**。
 
+    ## 为什么不再拼接整仓
 
-@pytest.fixture(scope="module")
-def source_tree(source: str) -> ast.AST | None:
-    """全仓源码 AST，module 级只解析一次。
+    原实现把 `src/omnicrawler` 下 **514 个文件、457 万字符**拼成一个大字符串，
+    再 `ast.parse` 一次 —— 实测解析要 **11.42 秒**，是整条测试套件里最慢的一项
+    （全量 5682 条总共才 246 秒，这一项占 4.6%）。
 
-    语法错误时返回 `None`——与原实现「解析失败即视为零消费」的语义一致：
-    用例仍然**失败**并给出「无消费方」诊断，而不是退化成 fixture 错误。
+    而实际判据只关心 10 个 token 是否被消费。**纯文本扫描只要 0.133 秒**
+    （86 倍差距），命中 49 个文件；只解析这 49 个文件总计 **0.237 秒**。
+
+    ## 为什么不直接用文本扫描做判据
+
+    文本扫描会把注释、docstring 续行、字符串里的同名符号误计为消费方 ——
+    这正是原注释里写的「纯文档符号就能绕过守卫」。所以两阶段：
+    **文本筛选（宽）→ AST 精确统计（严）**。
+
+    文本筛选只会**多留**候选（子串命中），不会**漏掉**真消费方
+    （AST 里的 Name/Attribute/Import 必然在其源码文本中出现该 token）。
+    这个方向性是安全的：筛漏了会导致假红，筛宽了只是多解析几个文件。
     """
-    try:
-        return ast.parse(source)
-    except SyntaxError:
-        return None
+    candidates: list[Path] = []
+    for path in SRC.rglob("*.py"):
+        if "__pycache__" in str(path):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if any(token in text for token in TOKENS):
+            candidates.append(path)
+    return tuple(candidates)
+
+
+@lru_cache(maxsize=1)
+def _source_tree_index() -> tuple[tuple[ast.AST, ...], frozenset[int]]:
+    """逐文件解析候选源码，返回 `(树元组, docstring 节点 id 集合)`。
+
+    多棵树而非一棵：判据对每个 token 做 `ast.walk` 累计，
+    逐文件结果与合并结果**等价**（walk 的并集等于并集的 walk）。
+    """
+    trees: list[ast.AST] = []
+    doc_ids: set[int] = set()
+    for path in _candidate_files():
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (OSError, SyntaxError):
+            continue
+        trees.append(tree)
+        doc_ids |= _docstring_nodes(tree)
+    return tuple(trees), frozenset(doc_ids)
 
 
 @pytest.fixture(scope="module")
-def doc_nodes(source_tree: ast.AST | None) -> frozenset[int]:
+def source_trees() -> tuple[ast.AST, ...]:
+    """候选文件的 AST 元组（module 级只解析一次）。
+
+    空元组等价于原实现的 `None`：用例仍**失败**并给出「无消费方」诊断，
+    而不是退化成 fixture 错误。
+    """
+    trees, _doc_ids = _source_tree_index()
+    return trees
+
+
+@pytest.fixture(scope="module")
+def doc_nodes() -> frozenset[int]:
     """docstring 常量节点 id 集合。树在本 module 内常驻 ⇒ 节点 id 稳定有效。"""
-    if source_tree is None:
-        return frozenset()
-    return frozenset(_docstring_nodes(source_tree))
+    _trees, doc_ids = _source_tree_index()
+    return doc_ids
 
 
 def _docstring_nodes(tree: ast.AST) -> set[int]:
@@ -93,7 +145,11 @@ def _docstring_nodes(tree: ast.AST) -> set[int]:
     return doc_nodes
 
 
-def _usage(tree: ast.AST | None, doc_nodes: frozenset[int], token: str) -> int:
+def _usage(
+    trees: tuple[ast.AST, ...] | None,
+    doc_nodes: frozenset[int],
+    token: str,
+) -> int:
     """统计 token 在**已解析**源码树中的真实引用次数（AST，排除注释与 docstring）。
 
     原行扫描会把内联注释/docstring 续行/字符串里的同名符号误计为消费方，
@@ -104,8 +160,16 @@ def _usage(tree: ast.AST | None, doc_nodes: frozenset[int], token: str) -> int:
     树与 docstring 集合由 `source_tree` / `doc_nodes` fixture 提供 ⇒ 本函数**不得**
     再自行 `ast.parse`，否则 11 个 token 会各自重解析一遍整仓源码。
     """
-    if tree is None:
+    if not trees:
         return 0
+    count = 0
+    for tree in trees:
+        count += _usage_in_tree(tree, doc_nodes, token)
+    return count
+
+
+def _usage_in_tree(tree: ast.AST, doc_nodes: frozenset[int], token: str) -> int:
+    """单棵树内的 token 引用计数（`_usage` 的逐文件实现）。"""
     count = 0
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and node.id == token:
@@ -131,9 +195,9 @@ def _usage(tree: ast.AST | None, doc_nodes: frozenset[int], token: str) -> int:
 
 @pytest.mark.parametrize("token", TOKENS)
 def test_guard_or_config_has_consumer(
-    source_tree: ast.AST | None, doc_nodes: frozenset[int], token: str,
+    source_trees: tuple[ast.AST, ...], doc_nodes: frozenset[int], token: str,
 ) -> None:
-    assert _usage(source_tree, doc_nodes, token) >= 1, f"{token} 无消费方（零消费孤儿）"
+    assert _usage(source_trees, doc_nodes, token) >= 1, f"{token} 无消费方（零消费孤儿）"
 
 
 def test_usage_never_reparses_the_source_tree(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -152,10 +216,12 @@ def test_usage_never_reparses_the_source_tree(monkeypatch: pytest.MonkeyPatch) -
         calls.append(1)
         return real_parse(*args, **kwargs)
 
+    # `_usage` 现在接收**树元组**（两阶段筛选后逐文件解析的结果）。
+    # 用单元素元组即可断言同一性质：它只消费传入的树，不自己 parse。
     tiny_tree = real_parse("value_pattern = None")  # 用真实 parse 构造，不计入 calls
     monkeypatch.setattr(ast, "parse", counting_parse)
     for token in TOKENS:
-        _usage(tiny_tree, frozenset(), token)
+        _usage((tiny_tree,), frozenset(), token)
     assert calls == [], (
         f"`_usage` 重复解析了 {len(calls)} 次；应只消费 source_tree fixture 提供的树"
     )
