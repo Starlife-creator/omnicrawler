@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -225,7 +226,22 @@ def test_directory_loading_records_unreadable_plugin_without_hiding_siblings(
         onerror(PermissionError(13, "denied", str(denied)))
         return iter(())
 
-    monkeypatch.setattr("omnicrawler.plugins.plugin_loader.os.walk", fake_walk)
+    # ★ **必须替换模块级的 `os`，不能 patch `os.walk`**。
+    #
+    # `plugin_loader.os is os` 为真 —— `setattr("plugin_loader.os.walk", ...)`
+    # 改的是**全局 `os.walk`**，于是同一进程里所有用 `os.walk` 的代码
+    # （`workspace_references`、`plugin_resources`、`background_host`）
+    # 都会走进这个 fake，触发 `assert Path(root) == tmp_path` 失败。
+    #
+    # 实测：单独跑报 teardown ERROR，`root` 是项目根的 `work/` 而不是 tmp_path。
+    # 换成给 `plugin_loader` 换一个 `os` 替身，作用域就只剩这个模块。
+    import types
+
+    fake_os = types.SimpleNamespace(**{k: getattr(os, k) for k in dir(os) if not k.startswith("__")})
+    fake_os.walk = fake_walk
+    from omnicrawler.plugins import plugin_loader
+
+    monkeypatch.setattr(plugin_loader, "os", fake_os)
     registry = Registry()
     load_local_plugins(registry, [str(tmp_path)], tmp_path, fail_open=True)
 
