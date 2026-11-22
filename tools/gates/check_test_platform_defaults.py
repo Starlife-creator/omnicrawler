@@ -116,7 +116,7 @@ def _literal_names(node: ast.AST) -> set[str]:
 def _dict_env_keys(node: ast.Dict) -> dict[str, set[str]]:
     """从 dict 字面量里取出 `{键: 值里的平台名}`。"""
     found: dict[str, set[str]] = {}
-    for key, value in zip(node.keys, node.values):
+    for key, value in zip(node.keys, node.values, strict=False):
         if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
             continue
         name = key.value.strip().lower()
