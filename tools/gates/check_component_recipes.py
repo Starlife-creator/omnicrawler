@@ -87,6 +87,18 @@ def _arch_from_filename(filename: str) -> set[str]:
     return archs
 
 
+def _is_pure_python_wheel(filename: str) -> bool:
+    """`py3-none-any.whl` 这类纯 Python 轮子：无平台、无架构标记，通用。
+
+    **为什么需要**：纯 Python 组件的每个构件都写着 platforms=[三平台]，
+    但文件名里没有任何平台 token。早先一律要求「文件名含平台 token」，
+    于是 `markdownify` 被判「声明支持 windows 但没有带该平台标记的构件」。
+    2026-11-23 加组件时踩到。
+    """
+    return "-none-any.whl" in filename.lower()
+
+
+
 def _abi_from_filename(filename: str) -> str:
     """从 wheel 文件名推出 ABI 大类。"""
     if "none-any" in filename:
@@ -331,12 +343,12 @@ def check_recipe(recipe_path: Path) -> list[str]:
             w
             for a, w in zip(recipe["artifacts"], wheels, strict=False)
             if platform in (a.get("platforms") or recipe["platforms"])
-            and any(t in w for t in tokens)
+            and (any(t in w for t in tokens) or _is_pure_python_wheel(w))
         ]
         if not specific:
             problems.append(
                 f"{recipe_path.parent.name}: 声明支持 {platform}，"
-                f"但没有任何带该平台标记的构件"
+                f"但没有任何带该平台标记（或通用纯 Python）的构件"
             )
 
     # ── 2) architectures：每个声明架构都要能从构件文件名推出 ─────────────
@@ -347,6 +359,12 @@ def check_recipe(recipe_path: Path) -> list[str]:
     # 纯 Python 轮子没有架构信息，不算覆盖
     if "universal2" in declared_arch:
         available_arch.add("universal2")
+    # **全是纯 Python 轮子时，架构声明不适用**：它们本就是 `none-any`，
+    # 跑在任何架构上。此时不该按「声明了 x86_64 却没有 x86_64 构件」判虚报。
+    # 2026-11-23 加 markdownify 组件时踩到。
+    all_pure = bool(wheels) and all(_is_pure_python_wheel(w) for w in wheels)
+    if all_pure:
+        available_arch |= declared_arch
     missing_arch = declared_arch - available_arch
     if missing_arch:
         problems.append(
