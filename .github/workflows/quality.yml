@@ -265,6 +265,12 @@ jobs:
       - run: python tools/gates/check_market_content.py
       # agent 面契约：命令/参数/退出码/stdout 形态必须完整且「解析器 ⇄ 注册表」双向自洽（P2-4）
       - run: python tools/gates/check_agent_surface.py --check
+      # 组件发现收口：遍历配方必须走 component_discovery（反向索引）。
+      # 上次改目录结构时六处扫描点没跟着改，报错各不相同且都伪装成「配方缺失」。
+      - run: python tools/gates/check_component_discovery.py
+      # 工具接线：tools/ 下的可执行脚本必须至少被一处引用（门禁/CI/文档/被 import），
+      # 防「写了就忘」——本会话新增两个工具却零引用，就是这条要防的。
+      - run: python tools/gates/check_tool_wiring.py
       - run: python -m mypy src/omnicrawler
       # 走 tools/builders/build_wheel.py：它先清 build/ 再构建（裸 pip wheel 在同一工作树里
       # 第二次会因 setuptools 复用 build/ 而失败，见 §5.7 / W6.7-⑥）
