@@ -20,6 +20,33 @@ if str(_REPO_ROOT) not in sys.path:
 
 os.environ.setdefault("PYTHONHASHSEED", "42")
 
+# **统一强制 offscreen**：22 个测试文件里各写一遍 `qapp`/`qt_app`/`_qt_app`，
+# 但只有 5 处设了 `QT_QPA_PLATFORM=offscreen`，其余靠 CI 的全局环境变量兜着
+# —— **本地缺该变量时会真的弹窗**（2026-11-23 实测 17 处缺这一步）。
+# 在 conftest 的模块级设置，一处覆盖全部，且早于任何 Qt import。
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+
+#: **统一的 QApplication fixture**。
+#:
+#: 此前 `qapp` / `qt_app` / `_qt_app` 在 22 个测试文件里各写一遍，实现细节
+#: 互不一致：只有 5 处设了 `QT_QPA_PLATFORM=offscreen`，其余靠 CI 的全局
+#: 环境变量兜着 —— **本地缺该变量时会真的弹窗**。2026-11-23 实测：
+#: 17 处 fixture 缺这一步设置。
+#:
+#: 这里统一：session 级复用（Qt 只允许一个 QApplication）、强制 offscreen、
+#: 并把语言重置为 zh_CN（GUI 断言依赖中文文案；`_restore_i18n_language`
+#: 是逐测试兜底，这里是进入 Qt 前的初值）。
+@pytest.fixture(scope="session")
+def qapp():
+    """整个会话复用同一个 offscreen QApplication。"""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    widgets = pytest.importorskip(
+        "PySide6.QtWidgets", reason="需要 PySide6（gui extra）"
+    )
+    app = widgets.QApplication.instance() or widgets.QApplication([])
+    return app
+
 
 def _dispose_qt_test_widgets(app, widgets=None) -> None:
     """Dispose leaked test windows while their QApplication still owns Qt.
